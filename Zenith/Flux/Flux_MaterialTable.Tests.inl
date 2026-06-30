@@ -1,6 +1,5 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Flux/Flux_MaterialTable.h"
-#include <vector>
 
 // ============================================================================
 // Flux_MaterialTable slot-lifecycle unit tests (Step-H hardening).
@@ -24,15 +23,15 @@ namespace
 	struct MatSlotHarness
 	{
 		Flux_BindlessAllocator m_xAlloc;
-		std::vector<u_int64>   m_xStamp;
-		std::vector<u_int64>   m_xGen;
+		Zenith_Vector<u_int64> m_xStamp;
+		Zenith_Vector<u_int64> m_xGen;
 		u_int                  m_uMaxIndex = 0;
 
 		explicit MatSlotHarness(u_int uCapacity = 16u)
 		{
 			m_xAlloc.Initialise(uCapacity);
-			m_xStamp.assign(uCapacity, ~0ull);
-			m_xGen.assign(uCapacity, ~0ull);
+			m_xStamp.Resize(uCapacity, ~0ull);
+			m_xGen.Resize(uCapacity, ~0ull);
 		}
 
 		Flux_MaterialSlotDecision Decide(u_int uStored, u_int64 uStamp, u_int64 uGen)

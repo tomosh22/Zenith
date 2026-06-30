@@ -177,6 +177,13 @@ public:
 	vk::RenderPass m_xCurrentRenderPass;
 private:
 	void UpdateDescriptorSets();
+	// The three stages UpdateDescriptorSets drives, extracted so each stays
+	// independently readable: (1) ZENITH_DEBUG-only staged-binding + VIEW-set
+	// graph-Read() validation, (2) binding the persistent GLOBAL/VIEW spine sets,
+	// (3) the per-set cache/allocate/write/bind loop.
+	void ValidateDescriptorBindingsDebug(u_int uNumDescSets);
+	void BindPersistentSpineSets(u_int uNumDescSets);
+	void AllocateAndBindDescriptorSets(u_int uNumDescSets, const vk::Device& xDevice);
 	// Walk the bindings for descriptor-set uDescSet and append per-binding write
 	// records into the caller-provided stack buffers. Counts are updated in place.
 	// Extracted from UpdateDescriptorSets so the outer cache/allocate/bind dance

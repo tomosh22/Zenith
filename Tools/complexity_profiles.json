@@ -75,6 +75,7 @@
                 { "name": "SaveData", "layer": 1, "globs": ["Zenith/SaveData/**"] },
                 { "name": "Telemetry", "layer": 1, "globs": ["Zenith/Telemetry/**"] },
                 { "name": "Vulkan", "layer": 2, "globs": ["Zenith/Vulkan/**"] },
+                { "name": "D3D12", "layer": 2, "globs": ["Zenith/D3D12/**"] },
                 { "name": "Flux", "layer": 2, "globs": ["Zenith/Flux/**"] },
                 { "name": "EntityComponent", "layer": 2, "globs": ["Zenith/EntityComponent/**"] },
                 { "name": "Physics", "layer": 2, "globs": ["Zenith/Physics/**"], "public_headers": ["Zenith/Physics/*.h"], "leaf": true },

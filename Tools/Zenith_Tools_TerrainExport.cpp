@@ -139,7 +139,7 @@ static Zenith_Image LoadHeightmapFromZtxtr(const std::string& strPath)
 {
 	// Single .ztxtr parser (no GPU upload). Heightmaps are single-mip R32/R16/RGBA8.
 	Flux_SurfaceInfo xInfo;
-	std::vector<uint8_t> xBytes;
+	Zenith_Vector<uint8_t> xBytes;
 	if (!Zenith_TextureAsset::LoadCPUData(strPath, xInfo, xBytes).IsOk())
 	{
 		Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load .ztxtr file: %s", strPath.c_str());
@@ -149,10 +149,10 @@ static Zenith_Image LoadHeightmapFromZtxtr(const std::string& strPath)
 	const int32_t iWidth = static_cast<int32_t>(xInfo.m_uWidth);
 	const int32_t iHeight = static_cast<int32_t>(xInfo.m_uHeight);
 	const TextureFormat eFormat = xInfo.m_eFormat;
-	const void* pData = xBytes.data();
+	const void* pData = xBytes.GetDataPointer();
 
 	Zenith_Log(LOG_CATEGORY_TOOLS, "Loading .ztxtr heightmap: %dx%d, format=%d, size=%zu",
-		iWidth, iHeight, static_cast<int>(eFormat), xBytes.size());
+		iWidth, iHeight, static_cast<int>(eFormat), static_cast<size_t>(xBytes.GetSize()));
 
 	// Build a float image based on the source format
 	Zenith_Image xResult;

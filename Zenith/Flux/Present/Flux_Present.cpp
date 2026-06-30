@@ -67,8 +67,9 @@ void Flux_PresentImpl::Initialise()
 	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "Debug", "Output MRT" }, dbg_bOutputMRT);
-	g_xEngine.DebugVariables().AddUInt32 ({ "Render", "Debug", "MRT Index" }, dbg_uMRTIndex, 0, MRT_INDEX_COUNT - 1);
+	auto& xEngine = g_xEngine;
+	xEngine.DebugVariables().AddBoolean({ "Render", "Debug", "Output MRT" }, dbg_bOutputMRT);
+	xEngine.DebugVariables().AddUInt32 ({ "Render", "Debug", "MRT Index" }, dbg_uMRTIndex, 0, MRT_INDEX_COUNT - 1);
 #endif
 }
 

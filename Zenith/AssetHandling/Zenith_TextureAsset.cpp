@@ -49,17 +49,19 @@ void Zenith_TextureAsset::MarkAsBindless(bool bRepeatAddressing)
 
 	if (m_xSRV.m_xImageViewHandle.IsValid())
 	{
+		auto& xGraphics = g_xEngine.FluxGraphics();
+
 		// Allocate a dense bindless slot once. The SRV may already own one (created
 		// with the BINDLESS flag set) — reuse it; the descriptor write is idempotent.
 		if (m_xSRV.m_uBindlessIndex == uFLUX_INVALID_BINDLESS_INDEX)
 		{
-			m_xSRV.m_uBindlessIndex = g_xEngine.FluxGraphics().BindlessAllocator().Allocate();
+			m_xSRV.m_uBindlessIndex = xGraphics.BindlessAllocator().Allocate();
 		}
 		// Material textures tile (UV transform) → REPEAT addressing; UI textures CLAMP.
 		// Engine-typed wrapper — backend extracts vk::ImageView / vk::Sampler internally.
 		const Flux_Sampler& xSampler = bRepeatAddressing
-			? g_xEngine.FluxGraphics().m_xRepeatSampler
-			: g_xEngine.FluxGraphics().m_xClampSampler;
+			? xGraphics.m_xRepeatSampler
+			: xGraphics.m_xClampSampler;
 		g_xEngine.FluxBackend().WriteBindlessTextureSlot(
 			m_xSRV.m_uBindlessIndex,
 			m_xSRV,
@@ -68,7 +70,7 @@ void Zenith_TextureAsset::MarkAsBindless(bool bRepeatAddressing)
 }
 
 Zenith_Status Zenith_TextureAsset::ParseZtxtr(const std::string& strPath, Zenith_DataStream& xStream,
-	Flux_SurfaceInfo& xOutInfo, std::vector<uint8_t>& xOutBytes, bool& bOutIsV2)
+	Flux_SurfaceInfo& xOutInfo, Zenith_Vector<uint8_t>& xOutBytes, bool& bOutIsV2)
 {
 	ZENITH_PROFILE_SCOPE("Texture Parse .ztxtr");
 	bOutIsV2 = false;
@@ -147,8 +149,8 @@ Zenith_Status Zenith_TextureAsset::ParseZtxtr(const std::string& strPath, Zenith
 		// rather than trust a stored depth the rest of the v2 path would ignore.
 		xOutInfo.m_uDepth = 1;
 		xOutInfo.m_uNumMips = uNumMips;
-		xOutBytes.resize(ulTotalDataSize);
-		xStream.ReadData(xOutBytes.data(), ulTotalDataSize);
+		xOutBytes.Resize(static_cast<u_int>(ulTotalDataSize));
+		xStream.ReadData(xOutBytes.GetDataPointer(), ulTotalDataSize);
 		bOutIsV2 = true;
 		return true;
 	}
@@ -168,7 +170,7 @@ Zenith_Status Zenith_TextureAsset::ParseZtxtr(const std::string& strPath, Zenith
 	}
 
 	xOutInfo.m_uNumMips = 1;
-	xOutBytes.assign(ulAllocSize, 0);  // zero-init in case the file has less than expected
+	xOutBytes.Resize(static_cast<u_int>(ulAllocSize), 0);  // zero-init in case the file has less than expected
 	const size_t ulReadSize = (ulDataSize > 0) ? ulDataSize : ulExpectedDataSize;
 	if (ulReadSize > 0)
 	{
@@ -177,12 +179,12 @@ Zenith_Status Zenith_TextureAsset::ParseZtxtr(const std::string& strPath, Zenith
 			Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: legacy payload truncated in '%s'", strPath.c_str());
 			return Zenith_ErrorCode::CORRUPT_DATA;
 		}
-		xStream.ReadData(xOutBytes.data(), ulReadSize);
+		xStream.ReadData(xOutBytes.GetDataPointer(), ulReadSize);
 	}
 	return true;
 }
 
-Zenith_Status Zenith_TextureAsset::LoadCPUData(const std::string& strPath, Flux_SurfaceInfo& xOutInfo, std::vector<uint8_t>& xOutBytes)
+Zenith_Status Zenith_TextureAsset::LoadCPUData(const std::string& strPath, Flux_SurfaceInfo& xOutInfo, Zenith_Vector<uint8_t>& xOutBytes)
 {
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(strPath.c_str());
@@ -207,7 +209,7 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 	}
 
 	Flux_SurfaceInfo xFileInfo;
-	std::vector<uint8_t> xBytes;
+	Zenith_Vector<uint8_t> xBytes;
 	bool bV2 = false;
 	Zenith_Status xParseStatus = ParseZtxtr(strPath, xStream, xFileInfo, xBytes, bV2);
 	if (!xParseStatus.IsOk())
@@ -248,7 +250,7 @@ Zenith_Status Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool
 	// would be a behaviour change. Hard-failing on genuine GPU-OOM is Wave-9
 	// error-handling scope, where the tolerant-caller contract is revisited.
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
-	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(xBytes.data(), m_xSurfaceInfo, eMipMode);
+	m_xVRAMHandle = xVulkanMemory.CreateTextureVRAM(xBytes.GetDataPointer(), m_xSurfaceInfo, eMipMode);
 	Zenith_Check(m_xVRAMHandle.IsValid(), "Zenith_TextureAsset: GPU upload returned an invalid handle for '%s'", strPath.c_str());
 	m_xSRV = xVulkanMemory.CreateShaderResourceView(m_xVRAMHandle, m_xSurfaceInfo, 0, m_xSurfaceInfo.m_uNumMips);
 	m_bGPUResourcesAllocated = true;
@@ -348,7 +350,7 @@ bool Zenith_TextureAsset::LoadCubemapFromFiles(
 {
 	ZENITH_PROFILE_SCOPE("Cubemap Load From Files");
 	const char* aszPaths[6] = { szPathPX, szPathNX, szPathPY, szPathNY, szPathPZ, szPathNZ };
-	std::vector<uint8_t> axFaceBytes[6];   // mip 0 of each face
+	Zenith_Vector<uint8_t> axFaceBytes[6];   // mip 0 of each face
 	uint32_t uWidth = 0, uHeight = 0, uDepth = 0;
 	TextureFormat eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
 
@@ -360,7 +362,7 @@ bool Zenith_TextureAsset::LoadCubemapFromFiles(
 		// the engine cubemap faces are re-exported by ExportAllTextures and may
 		// be v2, which the old per-face header read could not parse.
 		Flux_SurfaceInfo xFaceInfo;
-		std::vector<uint8_t> xFaceBytes;
+		Zenith_Vector<uint8_t> xFaceBytes;
 		if (!LoadCPUData(aszPaths[u], xFaceInfo, xFaceBytes).IsOk())
 		{
 			Zenith_Error(LOG_CATEGORY_ASSET, "LoadCubemapFromFiles: Failed to read face %u from '%s'", u, aszPaths[u]);
@@ -368,12 +370,12 @@ bool Zenith_TextureAsset::LoadCubemapFromFiles(
 		}
 
 		const size_t ulMip0Size = CalculateMipDataSize(xFaceInfo.m_eFormat, xFaceInfo.m_uWidth, xFaceInfo.m_uHeight, 0);
-		if (xFaceBytes.size() < ulMip0Size)
+		if (xFaceBytes.GetSize() < ulMip0Size)
 		{
-			Zenith_Error(LOG_CATEGORY_ASSET, "LoadCubemapFromFiles: face %u from '%s' is too small (%zu < %zu)", u, aszPaths[u], xFaceBytes.size(), ulMip0Size);
+			Zenith_Error(LOG_CATEGORY_ASSET, "LoadCubemapFromFiles: face %u from '%s' is too small (%zu < %zu)", u, aszPaths[u], static_cast<size_t>(xFaceBytes.GetSize()), ulMip0Size);
 			return false;
 		}
-		xFaceBytes.resize(ulMip0Size);   // drop any lower mips — cubemap is single-mip
+		xFaceBytes.Resize(static_cast<u_int>(ulMip0Size));   // drop any lower mips — cubemap is single-mip
 		axFaceBytes[u] = std::move(xFaceBytes);
 
 		if (u == 0)
@@ -396,7 +398,7 @@ bool Zenith_TextureAsset::LoadCubemapFromFiles(
 	xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
 	// Create cubemap from face data (mip 0 of each face)
-	const void* apFaceData[6] = { axFaceBytes[0].data(), axFaceBytes[1].data(), axFaceBytes[2].data(), axFaceBytes[3].data(), axFaceBytes[4].data(), axFaceBytes[5].data() };
+	const void* apFaceData[6] = { axFaceBytes[0].GetDataPointer(), axFaceBytes[1].GetDataPointer(), axFaceBytes[2].GetDataPointer(), axFaceBytes[3].GetDataPointer(), axFaceBytes[4].GetDataPointer(), axFaceBytes[5].GetDataPointer() };
 	return CreateCubemap(apFaceData, xInfo);
 }
 
@@ -404,13 +406,15 @@ void Zenith_TextureAsset::ReleaseGPU()
 {
 	if (m_bGPUResourcesAllocated && m_xVRAMHandle.IsValid())
 	{
+		auto& xEngine = g_xEngine;
+
 		// Return the bindless slot to the allocator (deferred-recycled after the
 		// frame-in-flight grace, mirroring the VRAM deferred deletion below).
 		if (m_xSRV.m_uBindlessIndex != uFLUX_INVALID_BINDLESS_INDEX)
 		{
-			g_xEngine.FluxGraphics().BindlessAllocator().Free(m_xSRV.m_uBindlessIndex);
+			xEngine.FluxGraphics().BindlessAllocator().Free(m_xSRV.m_uBindlessIndex);
 		}
-		g_xEngine.FluxMemory().QueueVRAMDeletion(m_xVRAMHandle, m_xSRV.m_xImageViewHandle);
+		xEngine.FluxMemory().QueueVRAMDeletion(m_xVRAMHandle, m_xSRV.m_xImageViewHandle);
 		m_xSRV = Flux_ShaderResourceView();
 		m_bGPUResourcesAllocated = false;
 	}

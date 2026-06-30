@@ -164,7 +164,8 @@ void Flux_GraphicsImpl::Initialise()
 	}
 
 	Flux_MeshGeometry::GenerateFullscreenQuad(m_xQuadMesh);
-	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	auto& xEngine = g_xEngine;
+	Flux_MemoryManager& xVulkanMemory = xEngine.FluxMemory();
 	xVulkanMemory.InitialiseVertexBuffer(m_xQuadMesh.GetVertexData(), m_xQuadMesh.GetVertexDataSize(), m_xQuadMesh.GetVertexBuffer());
 	xVulkanMemory.InitialiseIndexBuffer(m_xQuadMesh.GetIndexData(), m_xQuadMesh.GetIndexDataSize(), m_xQuadMesh.GetIndexBuffer());
 	xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(GlobalConstants), m_xGlobalConstantsBuffer);
@@ -175,14 +176,14 @@ void Flux_GraphicsImpl::Initialise()
 	// SetupRenderGraph pass, which is already a resize callback.
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
-	g_xEngine.DebugVariables().AddVector4({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
+	xEngine.DebugVariables().AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
+	xEngine.DebugVariables().AddVector4({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
 
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
-	g_xEngine.DebugVariables().AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
+	xEngine.DebugVariables().AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
+	xEngine.DebugVariables().AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
 
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "Shadows", "Override ViewProj Mat" }, dbg_bOverrideViewProjMat);
-	g_xEngine.DebugVariables().AddUInt32({ "Render", "Shadows", "Override ViewProj Mat Index" }, dbg_uOverrideViewProjMatIndex, 0, ZENITH_FLUX_NUM_CSMS);
+	xEngine.DebugVariables().AddBoolean({ "Render", "Shadows", "Override ViewProj Mat" }, dbg_bOverrideViewProjMat);
+	xEngine.DebugVariables().AddUInt32({ "Render", "Shadows", "Override ViewProj Mat Index" }, dbg_uOverrideViewProjMatIndex, 0, ZENITH_FLUX_NUM_CSMS);
 #endif
 
 	{

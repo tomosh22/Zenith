@@ -48,10 +48,11 @@ void Flux_RendererImpl::ProcessFrameEnd()
 	// Skipped in headless, where the memory manager is never initialised.
 	if (!Zenith_CommandLine::IsHeadless())
 	{
-		g_xEngine.FluxMemory().ProcessDeferredDeletions();
+		auto& xEngine = g_xEngine;
+		xEngine.FluxMemory().ProcessDeferredDeletions();
 		// Advance the bindless-slot deferred-free clock alongside the VRAM one, so a
 		// freed bindless index is recycled only after MAX_FRAMES_IN_FLIGHT+1 frames.
-		g_xEngine.FluxGraphics().BindlessAllocator().AdvanceFrame();
+		xEngine.FluxGraphics().BindlessAllocator().AdvanceFrame();
 	}
 }
 

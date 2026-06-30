@@ -1,7 +1,7 @@
 #pragma once
 
+#include "Collections/Zenith_Vector.h"
 #include "Core/ZenithConfig.h"
-#include <vector>
 
 // ============================================================================
 // Flux_BindlessAllocator — dense index allocator for the bindless texture table
@@ -43,9 +43,10 @@ public:
 		m_uHighWater  = 1;   // slot 0 reserved for the engine default-white texture
 		m_uFrame      = 0;
 		m_uGeneration = 0;
-		m_xFreeList.clear();
-		m_xPendingFree.clear();
-		m_xLive.assign(uCapacity, 0);
+		m_xFreeList.Clear();
+		m_xPendingFree.Clear();
+		m_xLive.Clear();
+		m_xLive.Resize(uCapacity, 0);
 	}
 
 	// Returns a dense index in [1, uCapacity). Reuses a reclaimed index when
@@ -53,10 +54,10 @@ public:
 	u_int Allocate()
 	{
 		u_int uIndex;
-		if (!m_xFreeList.empty())
+		if (m_xFreeList.GetSize() > 0)
 		{
-			uIndex = m_xFreeList.back();
-			m_xFreeList.pop_back();
+			uIndex = m_xFreeList.GetBack();
+			m_xFreeList.PopBack();
 		}
 		else
 		{
@@ -65,7 +66,7 @@ public:
 				m_uHighWater, m_uCapacity);
 			uIndex = m_uHighWater++;
 		}
-		m_xLive[uIndex] = 1;
+		m_xLive.Get(uIndex) = 1;
 		m_uLiveCount++;
 		return uIndex;
 	}
@@ -76,13 +77,13 @@ public:
 	// Bumps the generation counter on a real free.
 	void Free(u_int uIndex)
 	{
-		if (uIndex == uRESERVED_DEFAULT_WHITE || uIndex >= m_uCapacity || m_xLive[uIndex] == 0)
+		if (uIndex == uRESERVED_DEFAULT_WHITE || uIndex >= m_uCapacity || m_xLive.Get(uIndex) == 0)
 		{
 			return;
 		}
-		m_xLive[uIndex] = 0;
+		m_xLive.Get(uIndex) = 0;
 		m_uLiveCount--;
-		m_xPendingFree.push_back({ uIndex, m_uFrame });
+		m_xPendingFree.PushBack({ uIndex, m_uFrame });
 		m_uGeneration++;
 	}
 
@@ -93,13 +94,13 @@ public:
 		m_uFrame++;
 
 		// Stable order is irrelevant (indices are interchangeable) — swap-erase.
-		for (size_t i = 0; i < m_xPendingFree.size(); )
+		for (u_int i = 0; i < m_xPendingFree.GetSize(); )
 		{
-			if (m_xPendingFree[i].m_uFrameFreed + uFREE_GRACE_FRAMES <= m_uFrame)
+			if (m_xPendingFree.Get(i).m_uFrameFreed + uFREE_GRACE_FRAMES <= m_uFrame)
 			{
-				m_xFreeList.push_back(m_xPendingFree[i].m_uIndex);
-				m_xPendingFree[i] = m_xPendingFree.back();
-				m_xPendingFree.pop_back();
+				m_xFreeList.PushBack(m_xPendingFree.Get(i).m_uIndex);
+				m_xPendingFree.Get(i) = m_xPendingFree.GetBack();
+				m_xPendingFree.PopBack();
 			}
 			else
 			{
@@ -130,7 +131,7 @@ private:
 	u_int                    m_uLiveCount  = 0;
 	u_int64                  m_uFrame      = 0;
 	u_int64                  m_uGeneration = 0;
-	std::vector<u_int>       m_xFreeList;          // reclaimed, ready to reissue
-	std::vector<PendingFree> m_xPendingFree;       // inside the grace window
-	std::vector<u_int8>      m_xLive;               // per-index allocated flag (double-free guard)
+	Zenith_Vector<u_int>       m_xFreeList;          // reclaimed, ready to reissue
+	Zenith_Vector<PendingFree> m_xPendingFree;       // inside the grace window
+	Zenith_Vector<u_int8>      m_xLive;               // per-index allocated flag (double-free guard)
 };

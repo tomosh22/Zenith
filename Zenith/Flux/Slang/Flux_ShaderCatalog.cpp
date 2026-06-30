@@ -128,7 +128,7 @@ std::string Flux_ShaderCatalog::GetComputeArtifactStem(const Flux_ShaderDecl& xD
 bool Flux_ShaderCatalog::Validate(std::string& strErrOut)
 {
 	const u_int uCount = GetProgramCount();
-	std::vector<std::string> axStems;
+	Zenith_Vector<std::string> axStems;
 
 	for (u_int u = 0; u < uCount; u++)
 	{
@@ -152,12 +152,12 @@ bool Flux_ShaderCatalog::Validate(std::string& strErrOut)
 
 		if (bGraphics)
 		{
-			axStems.push_back(GetVertexArtifactStem(xDecl));
-			axStems.push_back(GetFragmentArtifactStem(xDecl));
+			axStems.PushBack(GetVertexArtifactStem(xDecl));
+			axStems.PushBack(GetFragmentArtifactStem(xDecl));
 		}
 		else
 		{
-			axStems.push_back(GetComputeArtifactStem(xDecl));
+			axStems.PushBack(GetComputeArtifactStem(xDecl));
 		}
 	}
 
@@ -176,13 +176,13 @@ bool Flux_ShaderCatalog::Validate(std::string& strErrOut)
 	}
 
 	// Duplicate module+entry stem (would collide on disk).
-	for (size_t i = 0; i < axStems.size(); i++)
+	for (u_int i = 0; i < axStems.GetSize(); i++)
 	{
-		for (size_t j = i + 1; j < axStems.size(); j++)
+		for (u_int j = i + 1; j < axStems.GetSize(); j++)
 		{
-			if (axStems[i] == axStems[j])
+			if (axStems.Get(i) == axStems.Get(j))
 			{
-				strErrOut = "Flux_ShaderCatalog: duplicate artifact stem '" + axStems[i] + "'";
+				strErrOut = "Flux_ShaderCatalog: duplicate artifact stem '" + axStems.Get(i) + "'";
 				return false;
 			}
 		}
@@ -206,12 +206,12 @@ bool Flux_ShaderCatalog::ValidateFeatureParity(const Flux_FeatureRegistry& xRegi
 
 	// 1. The catalog's flat decl set.
 	const u_int uCount = GetProgramCount();
-	std::vector<const Flux_ShaderDecl*> axCatalog;
-	axCatalog.reserve(uCount);
-	for (u_int u = 0; u < uCount; u++) axCatalog.push_back(&GetProgramByIndex(u));
+	Zenith_Vector<const Flux_ShaderDecl*> axCatalog;
+	axCatalog.Reserve(uCount);
+	for (u_int u = 0; u < uCount; u++) axCatalog.PushBack(&GetProgramByIndex(u));
 
 	// 2. Union of every registered feature's apxALL, detecting double-ownership.
-	std::vector<const Flux_ShaderDecl*> axOwned;
+	Zenith_Vector<const Flux_ShaderDecl*> axOwned;
 	const u_int uFeatures = xRegistry.GetNumFeatures();
 	for (u_int f = 0; f < uFeatures; f++)
 	{
@@ -228,7 +228,7 @@ bool Flux_ShaderCatalog::ValidateFeatureParity(const Flux_FeatureRegistry& xRegi
 					return false;
 				}
 			}
-			axOwned.push_back(pxDecl);
+			axOwned.PushBack(pxDecl);
 		}
 	}
 
@@ -242,7 +242,7 @@ bool Flux_ShaderCatalog::ValidateFeatureParity(const Flux_FeatureRegistry& xRegi
 				return false;
 			}
 
-	auto fnContains = [](const std::vector<const Flux_ShaderDecl*>& v, const Flux_ShaderDecl* p)
+	auto fnContains = [](const Zenith_Vector<const Flux_ShaderDecl*>& v, const Flux_ShaderDecl* p)
 	{
 		for (const Flux_ShaderDecl* q : v) if (q == p) return true;
 		return false;
@@ -283,7 +283,7 @@ bool Flux_ShaderCatalog::ValidateFeatureParity(const Flux_FeatureRegistry& xRegi
 	// 5. Belt-and-braces: exact-size match catches a duplicate decl in the catalog
 	// blocks (set equality above would otherwise mask a repeated pointer).
 	const size_t uUnowned = sizeof(Flux_UnownedEngineShaders::apxALL) / sizeof(Flux_UnownedEngineShaders::apxALL[0]);
-	if (axCatalog.size() != axOwned.size() + uUnowned)
+	if (static_cast<size_t>(axCatalog.GetSize()) != static_cast<size_t>(axOwned.GetSize()) + uUnowned)
 	{
 		strErrOut = "Flux_ShaderCatalog::ValidateFeatureParity: catalog count != (feature-owned + unowned) "
 			"— a decl is listed twice in the catalog blocks";

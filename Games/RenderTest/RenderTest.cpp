@@ -1223,7 +1223,7 @@ static void RenderTest_PackRoughnessMetallic(const std::string& strSourceDir)
 		// ship as v2 mip chains. mip 0 is the first bytes of the returned buffer,
 		// which is all RenderTest_DecodeBC1Image reads.
 		Flux_SurfaceInfo xInfo;
-		std::vector<uint8_t> xBytes;
+		Zenith_Vector<uint8_t> xBytes;
 		Zenith_Status xStatus = Zenith_TextureAsset::LoadCPUData(strPath, xInfo, xBytes);
 		if (!xStatus.IsOk() || xInfo.m_eFormat != TEXTURE_FORMAT_BC1_RGB_UNORM)
 		{
@@ -1234,7 +1234,7 @@ static void RenderTest_PackRoughnessMetallic(const std::string& strSourceDir)
 		}
 		iWidthOut = static_cast<int32_t>(xInfo.m_uWidth);
 		iHeightOut = static_cast<int32_t>(xInfo.m_uHeight);
-		return RenderTest_DecodeBC1Image(xBytes.data(), iWidthOut, iHeightOut);
+		return RenderTest_DecodeBC1Image(xBytes.GetDataPointer(), iWidthOut, iHeightOut);
 	};
 
 	int32_t iRWidth = 0, iRHeight = 0;
@@ -2099,17 +2099,17 @@ RenderTest_GrassApplyResult RenderTest_TryApplyGrassDensityFromDisk()
 
 	// Read through the single .ztxtr parser (no GPU upload) — never hand-parse.
 	Flux_SurfaceInfo xInfo;
-	std::vector<uint8_t> xBytes;
+	Zenith_Vector<uint8_t> xBytes;
 	if (!Zenith_TextureAsset::LoadCPUData(strPath, xInfo, xBytes).IsOk()
 		|| xInfo.m_eFormat != TEXTURE_FORMAT_R32_SFLOAT
-		|| xBytes.size() != static_cast<size_t>(xInfo.m_uWidth) * xInfo.m_uHeight * sizeof(float))
+		|| static_cast<size_t>(xBytes.GetSize()) != static_cast<size_t>(xInfo.m_uWidth) * xInfo.m_uHeight * sizeof(float))
 	{
 		return RenderTest_GrassApplyResult::FileMissing;   // invalid layout — treat as missing (caller warns once)
 	}
 	const int32_t iWidth = static_cast<int32_t>(xInfo.m_uWidth);
 	const int32_t iHeight = static_cast<int32_t>(xInfo.m_uHeight);
 	std::vector<float> xDensity(static_cast<size_t>(iWidth) * iHeight);
-	memcpy(xDensity.data(), xBytes.data(), xBytes.size());
+	memcpy(xDensity.data(), xBytes.GetDataPointer(), xBytes.GetSize());
 
 	g_xEngine.Grass().SetDensityMap(xDensity.data(), static_cast<u_int>(iWidth), static_cast<u_int>(iHeight), 4096.0f);
 	g_xEngine.Grass().GenerateFromTerrain(pxTerrain->GetPhysicsMeshGeometry());

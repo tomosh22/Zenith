@@ -252,14 +252,14 @@ static bool LoadZtxtrRaw(const std::string& strPath, int32_t iExpectWidth, int32
 	// Go through the single .ztxtr parser (no GPU upload) rather than hand-parsing.
 	// These splat/grass maps are single-mip; xBytes is their full pixel payload.
 	Flux_SurfaceInfo xInfo;
-	std::vector<uint8_t> xBytes;
+	Zenith_Vector<uint8_t> xBytes;
 	if (!Zenith_TextureAsset::LoadCPUData(strPath, xInfo, xBytes).IsOk())
 	{
 		return false;
 	}
 
 	if (static_cast<int32_t>(xInfo.m_uWidth) != iExpectWidth || static_cast<int32_t>(xInfo.m_uHeight) != iExpectHeight ||
-		xInfo.m_eFormat != eExpectFormat || xBytes.empty())
+		xInfo.m_eFormat != eExpectFormat || xBytes.GetSize() == 0)
 	{
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] %s: unexpected layout (%ux%u fmt %d) - using defaults",
 			strPath.c_str(), xInfo.m_uWidth, xInfo.m_uHeight, static_cast<int>(xInfo.m_eFormat));
@@ -267,10 +267,10 @@ static bool LoadZtxtrRaw(const std::string& strPath, int32_t iExpectWidth, int32
 	}
 
 	xPixelsOut.Clear();
-	xPixelsOut.Reserve(static_cast<u_int>(xBytes.size()));
-	for (size_t u = 0; u < xBytes.size(); u++)
+	xPixelsOut.Reserve(xBytes.GetSize());
+	for (u_int u = 0; u < xBytes.GetSize(); u++)
 	{
-		xPixelsOut.PushBack(xBytes[u]);
+		xPixelsOut.PushBack(xBytes.Get(u));
 	}
 	return true;
 }

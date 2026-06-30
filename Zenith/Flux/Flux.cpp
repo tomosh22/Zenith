@@ -77,7 +77,8 @@ void Flux_RendererImpl::AddResChangeCallback(void(*pfnCallback)())
 
 void Flux_RendererImpl::RecordFrame()
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread(), "RecordFrame: must be called from the main thread (Flux_RenderGraph::Execute)");
+	auto& xEngine = g_xEngine;
+	Zenith_Assert(xEngine.Threading().IsMainThread(), "RecordFrame: must be called from the main thread (Flux_RenderGraph::Execute)");
 
 	// Distribute the queued passes across worker threads. No work this frame →
 	// drain the (already-empty) queue and report no render work so EndFrame skips
@@ -97,26 +98,26 @@ void Flux_RendererImpl::RecordFrame()
 	// thread); this copies the CPU records into the current frame-in-flight buffer.
 	// Frame-indexed + host-coherent → no graph barrier (Flux_FrameIndexedBufferBase
 	// contract). Main-thread + before worker recording, so it is race-free.
-	g_xEngine.FluxGraphics().MaterialTable().Upload();
+	xEngine.FluxGraphics().MaterialTable().Upload();
 
 	// Phase 5.1: write the current frame's persistent GLOBAL/VIEW descriptor sets from
 	// the spine constant buffers, also BEFORE any worker records (write-before-bind).
 	// Main-thread + frame-indexed sets → race-free, no graph barrier. The workers then
 	// bind these persistent sets per pipeline instead of allocating sets 0/1 per draw.
-	g_xEngine.FluxBackend().PreparePersistentSets(
-		g_xEngine.FluxGraphics().GetGlobalConstantsBufferHandle(),
-		g_xEngine.FluxGraphics().MaterialTable().GetSRV().m_xBufferDescHandle,
-		g_xEngine.FluxGraphics().GetViewConstantsBufferHandle());
+	xEngine.FluxBackend().PreparePersistentSets(
+		xEngine.FluxGraphics().GetGlobalConstantsBufferHandle(),
+		xEngine.FluxGraphics().MaterialTable().GetSRV().m_xBufferDescHandle,
+		xEngine.FluxGraphics().GetViewConstantsBufferHandle());
 
 	// Phase 5.4: write the view-frequency SRVs promoted into the persistent VIEW set.
 	// The CSM array is always allocated (cleared-to-far when shadows are disabled), so
 	// VIEW binding 1 is always valid; consumers sample g_xViewSet.g_xCSM and declare the
 	// graph Read() (enforced by the Flux_ViewSetBinding validator). Same write-before-bind
 	// window as PreparePersistentSets.
-	g_xEngine.FluxBackend().WritePersistentViewImage(
+	xEngine.FluxBackend().WritePersistentViewImage(
 		Flux_PersistentSetLayouts::kuViewBinding_CSM,
-		g_xEngine.Shadows().GetCSMArraySRV(),
-		g_xEngine.FluxGraphics().m_xClampSampler);
+		xEngine.Shadows().GetCSMArraySRV(),
+		xEngine.FluxGraphics().m_xClampSampler);
 
 	// Phase 5.4: the all-cascade ShadowMatrices SSBO is also a VIEW-frequency resource.
 	// It is a frame-indexed Flux_DynamicReadWriteBuffer (graph-invisible by contract, like
@@ -124,9 +125,9 @@ void Flux_RendererImpl::RecordFrame()
 	// re-written into the persistent VIEW set every frame (no staleness). Updated earlier this
 	// frame by UpdateShadowMatrices (hoisted to the Zenith_Core main-thread seam), which runs
 	// before record.
-	g_xEngine.FluxBackend().WritePersistentViewBuffer(
+	xEngine.FluxBackend().WritePersistentViewBuffer(
 		Flux_PersistentSetLayouts::kuViewBinding_ShadowMatrices,
-		g_xEngine.Shadows().GetShadowMatricesSRV());
+		xEngine.Shadows().GetShadowMatricesSRV());
 
 	// Phase 5.4: the clustered-lighting read buffers also live in the persistent VIEW set.
 	// g_xLightBuffer is a frame-indexed dynamic buffer (current-frame SRV each frame); the
@@ -134,15 +135,15 @@ void Flux_RendererImpl::RecordFrame()
 	// writes them via UAV, consumers read these persistent SRVs with graph-driven barriers).
 	// All three are always allocated post-init, so the descriptor is always valid — VIEW
 	// bindings 3-5 must never be left unwritten (consumers statically sample them).
-	g_xEngine.FluxBackend().WritePersistentViewBuffer(
+	xEngine.FluxBackend().WritePersistentViewBuffer(
 		Flux_PersistentSetLayouts::kuViewBinding_LightBuffer,
-		g_xEngine.DynamicLights().GetLightBufferSRV());
-	g_xEngine.FluxBackend().WritePersistentViewBuffer(
+		xEngine.DynamicLights().GetLightBufferSRV());
+	xEngine.FluxBackend().WritePersistentViewBuffer(
 		Flux_PersistentSetLayouts::kuViewBinding_ClusterLightCounts,
-		g_xEngine.LightClustering().GetClusterLightCountsSRV());
-	g_xEngine.FluxBackend().WritePersistentViewBuffer(
+		xEngine.LightClustering().GetClusterLightCountsSRV());
+	xEngine.FluxBackend().WritePersistentViewBuffer(
 		Flux_PersistentSetLayouts::kuViewBinding_ClusterLightIndices,
-		g_xEngine.LightClustering().GetClusterLightIndicesSRV());
+		xEngine.LightClustering().GetClusterLightIndicesSRV());
 
 	// Phase 5.4: the IBL trio (BRDF LUT + irradiance/prefiltered cubes) are graph-tracked
 	// render attachments sampled by DeferredShading/Translucency/MaterialPreview. They use
@@ -150,22 +151,22 @@ void Flux_RendererImpl::RecordFrame()
 	// view, so no special path); m_xRepeatSampler matches the per-pass BindSRV default
 	// (render-identical). Always allocated; the hook rewrites the current SRV each frame so
 	// an IBL re-bake (sky change) is absorbed.
-	g_xEngine.FluxBackend().WritePersistentViewImage(
+	xEngine.FluxBackend().WritePersistentViewImage(
 		Flux_PersistentSetLayouts::kuViewBinding_BRDFLUT,
-		g_xEngine.IBL().GetBRDFLUTSRV(), g_xEngine.FluxGraphics().m_xRepeatSampler);
-	g_xEngine.FluxBackend().WritePersistentViewImage(
+		xEngine.IBL().GetBRDFLUTSRV(), xEngine.FluxGraphics().m_xRepeatSampler);
+	xEngine.FluxBackend().WritePersistentViewImage(
 		Flux_PersistentSetLayouts::kuViewBinding_IrradianceMap,
-		g_xEngine.IBL().GetIrradianceMapSRV(), g_xEngine.FluxGraphics().m_xRepeatSampler);
-	g_xEngine.FluxBackend().WritePersistentViewImage(
+		xEngine.IBL().GetIrradianceMapSRV(), xEngine.FluxGraphics().m_xRepeatSampler);
+	xEngine.FluxBackend().WritePersistentViewImage(
 		Flux_PersistentSetLayouts::kuViewBinding_PrefilteredMap,
-		g_xEngine.IBL().GetPrefilteredMapSRV(), g_xEngine.FluxGraphics().m_xRepeatSampler);
+		xEngine.IBL().GetPrefilteredMapSRV(), xEngine.FluxGraphics().m_xRepeatSampler);
 
 	// Drive the backend to record every queued pass directly into its worker
 	// command buffers (Vulkan: parallel worker task; D3D12 null backend: serial
 	// callback loop). Runs synchronously inside the render-task safe window and
 	// BEFORE the frame memory submit, so record-callback uploads land this frame
 	// and ECS reads stay inside the window.
-	g_xEngine.FluxBackend().RecordFrame(xWorkDistribution);
+	xEngine.FluxBackend().RecordFrame(xWorkDistribution);
 	m_bHasRenderWork = true;
 
 	// The backend has finished recording (command buffers retain the recorded
@@ -305,14 +306,17 @@ void Flux_RendererImpl::EarlyInitialise()
 	// first call.
 	PerFrameInitialise();
 
-	g_xEngine.FluxBackend().Initialise();
-	g_xEngine.FluxMemory().Initialise();
-	g_xEngine.FluxBackend().InitialisePerFrameResources(); // Must be after memory manager init
-	g_xEngine.FluxGraphics().InitialiseSamplers(); // Must be before any CreateShaderResourceView calls (bindless registration)
+	auto& xEngine = g_xEngine;
+	xEngine.FluxBackend().Initialise();
+	xEngine.FluxMemory().Initialise();
+	xEngine.FluxBackend().InitialisePerFrameResources(); // Must be after memory manager init
+	xEngine.FluxGraphics().InitialiseSamplers(); // Must be before any CreateShaderResourceView calls (bindless registration)
 }
 
 void Flux_RendererImpl::LateInitialise()
 {
+	auto& xEngine = g_xEngine;
+
 	// Subsystem dependency graph (A -> B means A must init before B):
 	//
 	// MemoryManager -> SlangCompiler -> Swapchain -> Graphics
@@ -337,7 +341,7 @@ void Flux_RendererImpl::LateInitialise()
 	Flux_SlangCompiler::AddSearchPath(SHADER_SOURCE_ROOT);
 #endif
 
-	g_xEngine.FluxSwapchain().Initialise();
+	xEngine.FluxSwapchain().Initialise();
 
 #ifdef ZENITH_TOOLS
 	// Bring up the hot-reload watcher BEFORE any subsystem Initialise() so
@@ -355,7 +359,7 @@ void Flux_RendererImpl::LateInitialise()
 	// (FluxGraphics included), so bringing it up before the feature walk is
 	// dependency-safe. Gizmos (which DOES depend on ImGui) is registered as a
 	// feature and initialised by the walk.
-	g_xEngine.FluxBackend().InitialiseImGui();
+	xEngine.FluxBackend().InitialiseImGui();
 #endif
 
 	// The per-subsystem Initialise() ladder walks the Flux_FeatureRegistry in
@@ -392,7 +396,7 @@ void Flux_RendererImpl::LateInitialise()
 #endif
 
 	// Drain the GPU uploads staged by swapchain init + the feature walk above.
-	g_xEngine.FluxMemory().Flush();
+	xEngine.FluxMemory().Flush();
 
 	// Create and compile the render graph
 	m_pxRenderGraph = new Flux_RenderGraph();
@@ -422,12 +426,12 @@ void Flux_RendererImpl::LateInitialise()
 	// Debug toggle for transient memory aliasing. The graph reads this value
 	// at each SetupRenderGraph invocation and calls SetAliasingEnabled; a
 	// change triggers MarkDirty so the next Compile rebuilds the pool layout.
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "RenderGraph", "Transient Aliasing" }, dbg_bTransientAliasing);
+	xEngine.DebugVariables().AddBoolean({ "Render", "RenderGraph", "Transient Aliasing" }, dbg_bTransientAliasing);
 
 	// Click-to-log button: prints the compiled render-graph pass order. Useful
 	// for newcomers asking "what runs when?" — the answer is the topological
 	// sort of the pass DAG, not the order of AddPass() calls in SetupRenderGraph.
-	g_xEngine.DebugVariables().AddButton({ "Render", "RenderGraph", "Print Pass Order" }, []() {
+	xEngine.DebugVariables().AddButton({ "Render", "RenderGraph", "Print Pass Order" }, []() {
 		if (g_xEngine.FluxRenderer().m_pxRenderGraph != nullptr)
 		{
 			const std::string strOrder = g_xEngine.FluxRenderer().m_pxRenderGraph->GetPassOrderDescription();
@@ -472,6 +476,7 @@ void Flux_RendererImpl::LateInitialise()
 
 void Flux_RendererImpl::ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph)
 {
+	auto& xEngine = g_xEngine;
 	// Order matters here. Both subsystems below run BEFORE Compile() so any
 	// SetPassEnabled / MarkDirty mutations they perform take effect on the
 	// same frame. Neither can live as a pass OnPrepare callback because
@@ -484,19 +489,19 @@ void Flux_RendererImpl::ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph)
 	// UpdateGraphPassEnables checks IsDirty() — which lets IBL force-enable
 	// all 49 of its passes for the upcoming full Compile() so the validator
 	// sees a writer for every IBL texture that DeferredShading reads.
-	g_xEngine.Fog().ApplyTechniqueSelectionToGraph(xGraph);
+	xEngine.Fog().ApplyTechniqueSelectionToGraph(xGraph);
 	// SSR / SSGI runtime output toggles: when blur or denoise flip, these
 	// enable/disable their post-pass and MarkDirty so the deferred-lighting
 	// pass re-reads the correct handle (see g_xEngine.SSR().GetReflectionHandle).
 	// Must run BEFORE IBL's UpdateGraphPassEnables for the same MarkDirty
 	// propagation reason described above.
-	g_xEngine.SSR().ApplyBlurSelectionToGraph(xGraph);
-	g_xEngine.SSGI().ApplyDenoiseSelectionToGraph(xGraph);
+	xEngine.SSR().ApplyBlurSelectionToGraph(xGraph);
+	xEngine.SSGI().ApplyDenoiseSelectionToGraph(xGraph);
 	// Skybox transmittance/sky-view LUT enables. Must run BEFORE IBL's (and after
 	// any graph-dirtying system above) so a dirty compile force-enables the LUT
 	// writers the "Skybox" pass reads — same MarkDirty-propagation reason as IBL.
-	g_xEngine.Skybox().UpdateGraphPassEnables(xGraph);
-	g_xEngine.IBL().UpdateGraphPassEnables(xGraph);
+	xEngine.Skybox().UpdateGraphPassEnables(xGraph);
+	xEngine.IBL().UpdateGraphPassEnables(xGraph);
 }
 
 void Flux_RendererImpl::SyncRenderGraphDebugToggles()
@@ -518,13 +523,14 @@ void Flux_RendererImpl::SyncRenderGraphDebugToggles()
 
 void Flux_RendererImpl::SetupRenderGraph()
 {
-	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+	auto& xEngine = g_xEngine;
+	Zenith_Assert(xEngine.Threading().IsMainThread(),
 		"SetupRenderGraph: must run on the main thread; the pending render-pass queue is accessed without locking here.");
 
 	// Clear the queued render passes first — they hold pointers to the graph's
 	// passes which will be destroyed by Clear(). Caller must have already drained the GPU.
 	ClearPendingRenderPasses();
-	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
+	Flux_RendererImpl& xRenderer = xEngine.FluxRenderer();
 	xRenderer.m_pxRenderGraph->Clear();
 
 	// Sync the transient-aliasing debug toggle into the graph. SetAliasingEnabled
@@ -552,12 +558,13 @@ void Flux_RendererImpl::ReleaseAssetReferences()
 {
 	// Drop refs to Flux-side assets so Zenith_AssetRegistry::Shutdown can delete them
 	// cleanly. Each subsystem releases the handles it owns.
-	g_xEngine.FluxGraphics().ReleaseAssetReferences();
-	g_xEngine.Text().ReleaseAssetReferences();
-	g_xEngine.Particles().ReleaseAssetReferences();
-	g_xEngine.Terrain().ReleaseAssetReferences();
-	g_xEngine.Skybox().ReleaseAssetReferences();
-	g_xEngine.VolumeFog().ReleaseAssetReferences();
+	auto& xEngine = g_xEngine;
+	xEngine.FluxGraphics().ReleaseAssetReferences();
+	xEngine.Text().ReleaseAssetReferences();
+	xEngine.Particles().ReleaseAssetReferences();
+	xEngine.Terrain().ReleaseAssetReferences();
+	xEngine.Skybox().ReleaseAssetReferences();
+	xEngine.VolumeFog().ReleaseAssetReferences();
 
 	// Material defaults live in AssetHandling but are part of the same pre-registry
 	// release window — this is the natural place to drop them.

@@ -140,8 +140,9 @@ namespace
 	{
 		if (uNeeded <= uCap) return;
 		const u_int uNewCap = (uCap * 2u > uNeeded) ? uCap * 2u : uNeeded;
-		if (uCap > 0u) g_xEngine.FluxMemory().DestroyDynamicReadWriteBuffer(xBuf);
-		g_xEngine.FluxMemory().InitialiseDynamicReadWriteBuffer(nullptr, uNewCap * ulElemSize, xBuf);
+		auto& xEngine = g_xEngine;
+		if (uCap > 0u) xEngine.FluxMemory().DestroyDynamicReadWriteBuffer(xBuf);
+		xEngine.FluxMemory().InitialiseDynamicReadWriteBuffer(nullptr, uNewCap * ulElemSize, xBuf);
 		uCap = uNewCap;
 	}
 }
@@ -508,8 +509,9 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	Flux_BuildBucketOffsets(m_auBucketCountScratch, m_auBucketOffsetScratch);
 
 	// --- per-bucket mesh / material resolve + live-bucket draw list ---
-	Flux_MaterialTable&   xTable = g_xEngine.FluxGraphics().MaterialTable();
-	Zenith_MaterialAsset* pxBlank = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
+	auto& xEngine = g_xEngine;
+	Flux_MaterialTable&   xTable = xEngine.FluxGraphics().MaterialTable();
+	Zenith_MaterialAsset* pxBlank = xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
 	for (u_int uSlot = 0; uSlot < uSlotCount; ++uSlot)
 	{
 		const Flux_GPUSceneBucketKey* pxKey = xRegistry.TryGetBucketKey(uSlot);
@@ -587,10 +589,10 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	const u_int uNumViews = Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? kuUNIFIED_NUM_VIEWS : 1u;
 
 	UnifiedCullingConstants xCull = {};
-	Flux_InstanceCullingUtil::ExtractFrustumPlanes(g_xEngine.FluxGraphics().GetViewProjMatrix(), &xCull.m_axFrustumPlanes[0]);
+	Flux_InstanceCullingUtil::ExtractFrustumPlanes(xEngine.FluxGraphics().GetViewProjMatrix(), &xCull.m_axFrustumPlanes[0]);
 	if (uNumViews > 1u)
 	{
-		Flux_ShadowsImpl& xShadows = g_xEngine.Shadows();
+		Flux_ShadowsImpl& xShadows = xEngine.Shadows();
 		for (u_int uCascade = 0; uCascade < ZENITH_FLUX_NUM_CSMS; ++uCascade)
 		{
 			// The cascade ortho box already bakes in the caster near-plane extend, so the same
@@ -599,7 +601,7 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 				xShadows.GetSunViewProjMatrix(uCascade), &xCull.m_axFrustumPlanes[(uCascade + 1u) * 6u]);
 		}
 	}
-	xCull.m_xCameraPosition     = Zenith_Maths::Vector4(g_xEngine.FluxGraphics().GetCameraPosition(), 0.0f);
+	xCull.m_xCameraPosition     = Zenith_Maths::Vector4(xEngine.FluxGraphics().GetCameraPosition(), 0.0f);
 	xCull.m_uTotalDrawItemCount = uNumDrawItems;
 	xCull.m_uNumViews           = uNumViews;
 	xCull.m_uNumBuckets         = uSlotCount;

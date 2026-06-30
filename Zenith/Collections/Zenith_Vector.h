@@ -317,6 +317,19 @@ public:
 		}
 	}
 
+	// std::vector-style resize: grows by copy-constructing xValue into the new
+	// slots, shrinks by destroying the trailing elements. O(uNewSize) on growth
+	// past capacity (Reserve), O(|delta|) otherwise.
+	void Resize(u_int uNewSize, const T& xValue = T())
+	{
+		if (uNewSize > m_uCapacity) Reserve(uNewSize);
+
+		for (u_int u = uNewSize; u < m_uSize; u++) m_pxData[u].~T();
+		for (u_int u = m_uSize; u < uNewSize; u++) new (&m_pxData[u]) T(xValue);
+
+		m_uSize = uNewSize;
+	}
+
 	void Reserve(u_int uNewCapacity)
 	{
 		if (uNewCapacity <= m_uCapacity) return;

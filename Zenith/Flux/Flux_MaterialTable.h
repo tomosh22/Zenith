@@ -3,7 +3,6 @@
 #include "Flux/Flux_Buffers.h"            // Flux_DynamicReadWriteBuffer (frame-indexed, graph-invisible)
 #include "Flux/Flux_BindlessAllocator.h"  // dense index allocator (slot 0 reserved)
 #include "Flux/Flux_MaterialGPU.h"        // Flux_MaterialGPU record
-#include <vector>
 
 class Zenith_MaterialAsset;
 
@@ -38,8 +37,8 @@ struct Flux_MaterialSlotDecision
 // ----------------------------------------------------------------------------
 inline Flux_MaterialSlotDecision Flux_DecideMaterialSlot(
 	Flux_BindlessAllocator& xAlloc,
-	std::vector<u_int64>& xStamp,
-	std::vector<u_int64>& xBindlessGen,
+	Zenith_Vector<u_int64>& xStamp,
+	Zenith_Vector<u_int64>& xBindlessGen,
 	u_int& uMaxIndexInOut,
 	u_int uStoredIndex,
 	u_int uInvalidSentinel,
@@ -53,14 +52,14 @@ inline Flux_MaterialSlotDecision Flux_DecideMaterialSlot(
 		{
 			uMaxIndexInOut = uIndex;
 		}
-		xStamp[uIndex]       = uEditStamp;
-		xBindlessGen[uIndex] = uLiveBindlessGen;
+		xStamp.Get(uIndex)       = uEditStamp;
+		xBindlessGen.Get(uIndex) = uLiveBindlessGen;
 		return { uIndex, true };
 	}
-	if (xStamp[uStoredIndex] != uEditStamp || xBindlessGen[uStoredIndex] != uLiveBindlessGen)
+	if (xStamp.Get(uStoredIndex) != uEditStamp || xBindlessGen.Get(uStoredIndex) != uLiveBindlessGen)
 	{
-		xStamp[uStoredIndex]       = uEditStamp;
-		xBindlessGen[uStoredIndex] = uLiveBindlessGen;
+		xStamp.Get(uStoredIndex)       = uEditStamp;
+		xBindlessGen.Get(uStoredIndex) = uLiveBindlessGen;
 		return { uStoredIndex, true };
 	}
 	return { uStoredIndex, false };
@@ -109,9 +108,9 @@ private:
 
 	Flux_DynamicReadWriteBuffer   m_xBuffer;
 	Flux_BindlessAllocator        m_xIndexAllocator;
-	std::vector<Flux_MaterialGPU> m_xRecords;            // CPU mirror, indexed by table index
-	std::vector<u_int64>          m_xRecordStamp;        // material edit-stamp at last build (per index)
-	std::vector<u_int64>          m_xRecordBindlessGen;  // bindless generation at last build (per index)
+	Zenith_Vector<Flux_MaterialGPU> m_xRecords;            // CPU mirror, indexed by table index
+	Zenith_Vector<u_int64>          m_xRecordStamp;        // material edit-stamp at last build (per index)
+	Zenith_Vector<u_int64>          m_xRecordBindlessGen;  // bindless generation at last build (per index)
 	u_int                         m_uMaxIndex    = 0;    // high-water of assigned indices (upload range)
 	bool                          m_bInitialised = false;
 };

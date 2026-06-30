@@ -318,20 +318,9 @@ void Zenith_Vulkan_CommandBuffer::BuildDescriptorWritesForSet(
 	}
 }
 
-void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
-{
-	m_pxProfiling->BeginProfileZone(ZENITH_PROFILE_ZONE("Vulkan Update Descriptor Sets"));
-	const vk::Device& xDevice = m_pxVulkan->GetDevice();
-
-	Zenith_Assert(m_uWorkerIndex < FLUX_NUM_WORKER_THREADS,
-		"Invalid worker index: %u (max %u)", m_uWorkerIndex, FLUX_NUM_WORKER_THREADS);
-	Zenith_Assert(m_pxCurrentPipeline, "UpdateDescriptorSets called with no pipeline set");
-
-	const u_int uNumDescSets = m_pxCurrentPipeline->m_xRootSig.m_uNumBindingGroups;
-	Zenith_Assert(uNumDescSets <= FLUX_MAX_BINDING_GROUPS,
-		"Pipeline has too many descriptor sets: %u (max %u)", uNumDescSets, FLUX_MAX_BINDING_GROUPS);
-
 #ifdef ZENITH_DEBUG
+void Zenith_Vulkan_CommandBuffer::ValidateDescriptorBindingsDebug(u_int uNumDescSets)
+{
 	// Pre-draw staged-binding validation: every binding the bound pipeline
 	// declares (the reflected active mask) must have a resource staged for this
 	// draw, otherwise the shader samples an undefined descriptor. Pure mask
@@ -423,15 +412,11 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 				pxPass->DebugName(), xVSChk.m_szMissingMember ? xVSChk.m_szMissingMember : "?");
 		}
 	}
+}
 #endif
 
-	// Touch each binding slot to ensure memory is valid (catches corrupted `this`).
-	for (u_int i = 0; i < uNumDescSets; i++)
-	{
-		volatile const void* pxCheck = &m_xBindings[i];
-		(void)pxCheck;
-	}
-
+void Zenith_Vulkan_CommandBuffer::BindPersistentSpineSets(u_int uNumDescSets)
+{
 	// Phase 5.1: bind the persistent spine sets (GLOBAL set 0 / VIEW set 1) this pipeline
 	// uses, from the current frame slot (written once/frame in PreparePersistentSets).
 	// Handle-tracked → bound once per command buffer; a pipeline switch keeps them bound
@@ -439,23 +424,24 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 	// (set 2) stays on the explicit UseBindlessTextures path; non-spine pipelines (class
 	// GENERIC) bind nothing. (The former per-pass BindCBV(hg_xView/hg_xGlobal) no-op binds
 	// were removed in the Phase-5 cleanup — the persistent set is now the sole provider.)
+	const u_int uBP = (m_eCurrentBindPoint == vk::PipelineBindPoint::eCompute) ? 1u : 0u;
+	const Zenith_Vulkan_RootSig& xRootSig = m_pxCurrentPipeline->m_xRootSig;
+	for (u_int uSet = 0; uSet < uNumDescSets; uSet++)
 	{
-		const u_int uBP = (m_eCurrentBindPoint == vk::PipelineBindPoint::eCompute) ? 1u : 0u;
-		const Zenith_Vulkan_RootSig& xRootSig = m_pxCurrentPipeline->m_xRootSig;
-		for (u_int uSet = 0; uSet < uNumDescSets; uSet++)
-		{
-			const FluxFrequencyClass eClass = xRootSig.m_aePersistentClass[uSet];
-			vk::DescriptorSet xDesired;
-			if (eClass == FLUX_FREQUENCY_CLASS_GLOBAL)    xDesired = m_pxVulkan->GetCurrentGlobalSet();
-			else if (eClass == FLUX_FREQUENCY_CLASS_VIEW) xDesired = m_pxVulkan->GetCurrentViewSet();
-			else continue;
-			if (!Flux_PersistentSetLayouts::ShouldRebindPersistentSet(
-					eClass, m_axCurrentPersistentSet[uBP][eClass] == xDesired)) continue;
-			m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, xRootSig.m_xLayout, uSet, 1, &xDesired, 0, nullptr);
-			m_axCurrentPersistentSet[uBP][eClass] = xDesired;
-		}
+		const FluxFrequencyClass eClass = xRootSig.m_aePersistentClass[uSet];
+		vk::DescriptorSet xDesired;
+		if (eClass == FLUX_FREQUENCY_CLASS_GLOBAL)    xDesired = m_pxVulkan->GetCurrentGlobalSet();
+		else if (eClass == FLUX_FREQUENCY_CLASS_VIEW) xDesired = m_pxVulkan->GetCurrentViewSet();
+		else continue;
+		if (!Flux_PersistentSetLayouts::ShouldRebindPersistentSet(
+				eClass, m_axCurrentPersistentSet[uBP][eClass] == xDesired)) continue;
+		m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, xRootSig.m_xLayout, uSet, 1, &xDesired, 0, nullptr);
+		m_axCurrentPersistentSet[uBP][eClass] = xDesired;
 	}
+}
 
+void Zenith_Vulkan_CommandBuffer::AllocateAndBindDescriptorSets(u_int uNumDescSets, const vk::Device& xDevice)
+{
 	for (u_int uDescSet = 0; uDescSet < uNumDescSets; uDescSet++)
 	{
 		// Externally-owned (borrowed) descriptor-set layouts are NOT allocated from
@@ -516,6 +502,35 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 		m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_axCurrentDescSet[uDescSet], 0, nullptr);
 		m_uDescriptorDirty &= ~(1 << uDescSet);
 	}
+}
+
+void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
+{
+	m_pxProfiling->BeginProfileZone(ZENITH_PROFILE_ZONE("Vulkan Update Descriptor Sets"));
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+
+	Zenith_Assert(m_uWorkerIndex < FLUX_NUM_WORKER_THREADS,
+		"Invalid worker index: %u (max %u)", m_uWorkerIndex, FLUX_NUM_WORKER_THREADS);
+	Zenith_Assert(m_pxCurrentPipeline, "UpdateDescriptorSets called with no pipeline set");
+
+	const u_int uNumDescSets = m_pxCurrentPipeline->m_xRootSig.m_uNumBindingGroups;
+	Zenith_Assert(uNumDescSets <= FLUX_MAX_BINDING_GROUPS,
+		"Pipeline has too many descriptor sets: %u (max %u)", uNumDescSets, FLUX_MAX_BINDING_GROUPS);
+
+#ifdef ZENITH_DEBUG
+	ValidateDescriptorBindingsDebug(uNumDescSets);
+#endif
+
+	// Touch each binding slot to ensure memory is valid (catches corrupted `this`).
+	for (u_int i = 0; i < uNumDescSets; i++)
+	{
+		volatile const void* pxCheck = &m_xBindings[i];
+		(void)pxCheck;
+	}
+
+	BindPersistentSpineSets(uNumDescSets);
+	AllocateAndBindDescriptorSets(uNumDescSets, xDevice);
+
 	m_pxProfiling->EndProfileZone(ZENITH_PROFILE_ZONE("Vulkan Update Descriptor Sets"));
 }
 

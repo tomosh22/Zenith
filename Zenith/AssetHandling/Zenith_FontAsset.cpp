@@ -145,7 +145,7 @@ Zenith_Status Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	// which LoadCPUData reads via its legacy branch (identical byte layout).
 	const std::string strAtlasAbsPath = Zenith_AssetRegistry::ResolvePath(strAtlasPrefixedPath);
 	Flux_SurfaceInfo xAtlasInfo;
-	std::vector<uint8_t> xAtlasBytes;
+	Zenith_Vector<uint8_t> xAtlasBytes;
 	if (!Zenith_TextureAsset::LoadCPUData(strAtlasAbsPath, xAtlasInfo, xAtlasBytes).IsOk())
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: failed to read atlas '%s'", strAtlasAbsPath.c_str());
@@ -161,10 +161,10 @@ Zenith_Status Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 		xAtlasInfo.m_uWidth, xAtlasInfo.m_uHeight, m_fAtlasW, m_fAtlasH);
 
 	const size_t ulExpected = static_cast<size_t>(xAtlasInfo.m_uWidth) * static_cast<size_t>(xAtlasInfo.m_uHeight) * 4;
-	if (xAtlasBytes.size() < ulExpected)
+	if (xAtlasBytes.GetSize() < ulExpected)
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: atlas '%s' payload too small (%zu < %zu bytes)",
-			strAtlasAbsPath.c_str(), xAtlasBytes.size(), ulExpected);
+			strAtlasAbsPath.c_str(), static_cast<size_t>(xAtlasBytes.GetSize()), ulExpected);
 		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
@@ -187,7 +187,7 @@ Zenith_Status Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 
 	// MSDF mips generated naïvely break the median reconstruction. Disable mips;
 	// the fwidth-based AA shader handles minification correctly without them.
-	const bool bCreated = pxAtlas->CreateFromData(xAtlasBytes.data(), xSurfaceInfo, /*bCreateMips=*/false);
+	const bool bCreated = pxAtlas->CreateFromData(xAtlasBytes.GetDataPointer(), xSurfaceInfo, /*bCreateMips=*/false);
 
 	if (!bCreated)
 	{

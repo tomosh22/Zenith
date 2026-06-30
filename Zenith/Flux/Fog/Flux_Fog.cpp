@@ -76,32 +76,35 @@ void Flux_FogImpl::BuildPipelines()
 	// technique's BuildPipelines is leak-safe and self-contained (its own
 	// Initialise calls it first), so this is safe both at init — where Initialise
 	// runs it AFTER the techniques are initialised — and on a live reload.
-	g_xEngine.GodRaysFog().BuildPipelines();
-	g_xEngine.RaymarchFog().BuildPipelines();
-	g_xEngine.FroxelFog().BuildPipelines();
+	auto& xEngine = g_xEngine;
+	xEngine.GodRaysFog().BuildPipelines();
+	xEngine.RaymarchFog().BuildPipelines();
+	xEngine.FroxelFog().BuildPipelines();
 }
 
 void Flux_FogImpl::Initialise()
 {
+	auto& xEngine = g_xEngine;
+
 	// Initialize shared infrastructure + every technique FIRST (each builds its
 	// own pipelines + resources), THEN BuildPipelines(). BuildPipelines() now also
 	// (re)builds the techniques' pipelines for hot-reload, so running it after
 	// their Initialise keeps that a harmless leak-safe refresh rather than a build
 	// against not-yet-initialised state.
-	g_xEngine.VolumeFog().Initialise();
+	xEngine.VolumeFog().Initialise();
 
 	// Initialize all volumetric fog techniques (spatial-only, no temporal).
-	g_xEngine.GodRaysFog().Initialise();
-	g_xEngine.RaymarchFog().Initialise();
-	g_xEngine.FroxelFog().Initialise();
+	xEngine.GodRaysFog().Initialise();
+	xEngine.RaymarchFog().Initialise();
+	xEngine.FroxelFog().Initialise();
 
 	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddUInt32({ "Render", "Volumetric Fog", "Debug Mode" }, dbg_uVolFogDebugMode, 0, 23);
-	g_xEngine.DebugVariables().AddVector4({ "Render", "Fog", "Colour" }, dbg_xConstants.m_xColour_Falloff, 0., 1.);
-	g_xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_xColour_Falloff.w, 0., 0.02);
-	g_xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Phase G" }, dbg_xConstants.m_fPhaseG, -0.99f, 0.99f);
+	xEngine.DebugVariables().AddUInt32({ "Render", "Volumetric Fog", "Debug Mode" }, dbg_uVolFogDebugMode, 0, 23);
+	xEngine.DebugVariables().AddVector4({ "Render", "Fog", "Colour" }, dbg_xConstants.m_xColour_Falloff, 0., 1.);
+	xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_xColour_Falloff.w, 0., 0.02);
+	xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Phase G" }, dbg_xConstants.m_fPhaseG, -0.99f, 0.99f);
 #endif
 
 	// Note: Fog ambient irradiance ratio is unified at 0.25 in Flux_VolumetricCommon.fxh
@@ -111,11 +114,12 @@ void Flux_FogImpl::Initialise()
 
 void Flux_FogImpl::Reset()
 {
+	auto& xEngine = g_xEngine;
 	// Reset all volumetric fog techniques (spatial-only, no temporal)
-	g_xEngine.VolumeFog().Reset();
-	g_xEngine.GodRaysFog().Reset();
-	g_xEngine.RaymarchFog().Reset();
-	g_xEngine.FroxelFog().Reset();
+	xEngine.VolumeFog().Reset();
+	xEngine.GodRaysFog().Reset();
+	xEngine.RaymarchFog().Reset();
+	xEngine.FroxelFog().Reset();
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_FogImpl::Reset() - Reset all fog systems");
 }
@@ -168,8 +172,9 @@ static void ExecuteSimpleFog(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	}
 
 	// Trampoline: recover the subsystem singleton; sibling deps via g_xEngine.
-	Flux_FogImpl& xFog = g_xEngine.Fog();
-	Flux_GraphicsImpl& xGfx = g_xEngine.FluxGraphics();
+	auto& xEngine = g_xEngine;
+	Flux_FogImpl& xFog = xEngine.Fog();
+	Flux_GraphicsImpl& xGfx = xEngine.FluxGraphics();
 
 	pxCommandList->SetPipeline(&xFog.m_xPipeline);
 
@@ -246,8 +251,9 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// would never run again and the user could never switch back.
 	m_uLastFogTechnique = UINT32_MAX; // Force initial enable/disable
 
-	Flux_FroxelFogImpl& xFroxelFog = g_xEngine.FroxelFog();
-	Flux_GraphicsImpl&  xGraphics  = g_xEngine.FluxGraphics();
+	auto& xEngine = g_xEngine;
+	Flux_FroxelFogImpl& xFroxelFog = xEngine.FroxelFog();
+	Flux_GraphicsImpl&  xGraphics  = xEngine.FluxGraphics();
 
 	// Let FroxelFog create its transient resources (must happen before pass registration)
 	xFroxelFog.SetupTransients(xGraph);

@@ -467,11 +467,9 @@ void Zenith_Profiling::EndGPUCapture()
 	m_fWorstGPUMs = std::max(m_fWorstGPUMs, fMs);
 }
 
-void Zenith_Profiling::WriteTextReport(FILE* pFile)
+namespace
 {
-	// Live capture: drain completed events into the accumulator, then aggregate.
-	DrainAllRings(*this, m_pxAccumulator);
-
+	// One stats bucket per registered zone (keyed by dense zone id).
 	struct IndexStats
 	{
 		double fTotalMs = 0.0;
@@ -480,127 +478,131 @@ void Zenith_Profiling::WriteTextReport(FILE* pFile)
 		uint32_t uCallCount = 0;
 	};
 
-	// One stats bucket per registered zone (keyed by dense zone id).
-	const u_int uZoneCount = m_uZoneCount.load(std::memory_order_acquire);
-	Zenith_Vector<IndexStats> xStats;
-	xStats.Reserve(uZoneCount);
-	for (u_int u = 0; u < uZoneCount; ++u) xStats.PushBack(IndexStats{});
-
-	// Per-LABEL stats: events that carry a runtime label (currently only the
-	// "Flux Record Pass" zone, labelled with the pass DebugName) are aggregated by
-	// label so the report can show which pass is the CPU-record hotspot — the main
-	// per-zone table aggregates the label away.
+	// Events that carry a runtime label (currently only the "Flux Record Pass" zone,
+	// labelled with the pass DebugName) are aggregated by label so the report can show
+	// which pass is the CPU-record hotspot — the main per-zone table aggregates the
+	// label away.
 	struct LabelStat { const char* m_szLabel; double m_fTotalMs; u_int m_uCount; };
-	Zenith_Vector<LabelStat> xLabelStats;
 
-	u_int uTotalEvents = 0;
-	u_int uThreadCount = 0;
-
-	for (Zenith_HashMap<u_int, Zenith_Vector<Event>>::Iterator xIt(m_pxAccumulator->m_xThreadEvents); !xIt.Done(); xIt.Next())
+	// Drains the accumulated per-thread events into the per-zone and per-label stats.
+	void AggregateZoneAndLabelStats(Zenith_Profiling::Snapshot& xAccumulator, u_int uZoneCount,
+		Zenith_Vector<IndexStats>& xStats, Zenith_Vector<LabelStat>& xLabelStats,
+		u_int& uTotalEvents, u_int& uThreadCount)
 	{
-		const Zenith_Vector<Event>& xEvents = xIt.GetValue();
-		const u_int uEventCount = xEvents.GetSize();
-		if (uEventCount > 0)
-			uThreadCount++;
-		uTotalEvents += uEventCount;
-
-		for (u_int u = 0; u < uEventCount; ++u)
+		for (Zenith_HashMap<u_int, Zenith_Vector<Zenith_Profiling::Event>>::Iterator xIt(xAccumulator.m_xThreadEvents); !xIt.Done(); xIt.Next())
 		{
-			const Event& xEvent = xEvents.Get(u);
-			if (xEvent.m_uZoneID >= uZoneCount) continue;   // sentinel / overflow
-			const double fDurationMs = TickDeltaToMs(xEvent.m_uBeginTicks, xEvent.m_uEndTicks);
+			const Zenith_Vector<Zenith_Profiling::Event>& xEvents = xIt.GetValue();
+			const u_int uEventCount = xEvents.GetSize();
+			if (uEventCount > 0)
+				uThreadCount++;
+			uTotalEvents += uEventCount;
 
-			// Aggregate labelled events by label (pass DebugName pointers are shared
-			// static literals, so a pointer compare hits first; strcmp is the fallback).
-			if (xEvent.m_szLabel != nullptr)
+			for (u_int u = 0; u < uEventCount; ++u)
 			{
-				bool bFoundLabel = false;
-				for (u_int k = 0; k < xLabelStats.GetSize(); ++k)
+				const Zenith_Profiling::Event& xEvent = xEvents.Get(u);
+				if (xEvent.m_uZoneID >= uZoneCount) continue;   // sentinel / overflow
+				const double fDurationMs = TickDeltaToMs(xEvent.m_uBeginTicks, xEvent.m_uEndTicks);
+
+				// Aggregate labelled events by label (pass DebugName pointers are shared
+				// static literals, so a pointer compare hits first; strcmp is the fallback).
+				if (xEvent.m_szLabel != nullptr)
 				{
-					LabelStat& xLS = xLabelStats.Get(k);
-					if (xLS.m_szLabel == xEvent.m_szLabel || strcmp(xLS.m_szLabel, xEvent.m_szLabel) == 0)
+					bool bFoundLabel = false;
+					for (u_int k = 0; k < xLabelStats.GetSize(); ++k)
 					{
-						xLS.m_fTotalMs += fDurationMs;
-						xLS.m_uCount++;
-						bFoundLabel = true;
-						break;
+						LabelStat& xLS = xLabelStats.Get(k);
+						if (xLS.m_szLabel == xEvent.m_szLabel || strcmp(xLS.m_szLabel, xEvent.m_szLabel) == 0)
+						{
+							xLS.m_fTotalMs += fDurationMs;
+							xLS.m_uCount++;
+							bFoundLabel = true;
+							break;
+						}
+					}
+					if (!bFoundLabel)
+					{
+						xLabelStats.PushBack(LabelStat{ xEvent.m_szLabel, fDurationMs, 1 });
 					}
 				}
-				if (!bFoundLabel)
+
+				IndexStats& xStat = xStats.Get(xEvent.m_uZoneID);
+				xStat.uCallCount++;
+				xStat.fTotalMs += fDurationMs;
+				if (fDurationMs < xStat.fMinMs)
+					xStat.fMinMs = fDurationMs;
+				if (fDurationMs > xStat.fMaxMs)
+					xStat.fMaxMs = fDurationMs;
+			}
+		}
+	}
+
+	// Collects zones that fired, then sorts them by total time descending.
+	Zenith_Vector<Zenith_ProfileZoneID> SortZonesByTotalTime(const Zenith_Vector<IndexStats>& xStats, u_int uZoneCount)
+	{
+		Zenith_Vector<Zenith_ProfileZoneID> xSorted;
+		for (u_int i = 0; i < uZoneCount; ++i)
+		{
+			if (xStats.Get(i).uCallCount > 0)
+				xSorted.PushBack(i);
+		}
+
+		for (u_int i = 0; i < xSorted.GetSize(); ++i)
+		{
+			for (u_int j = i + 1; j < xSorted.GetSize(); ++j)
+			{
+				if (xStats.Get(xSorted.Get(j)).fTotalMs > xStats.Get(xSorted.Get(i)).fTotalMs)
 				{
-					xLabelStats.PushBack(LabelStat{ xEvent.m_szLabel, fDurationMs, 1 });
+					const Zenith_ProfileZoneID uTmp = xSorted.Get(i);
+					xSorted.Get(i) = xSorted.Get(j);
+					xSorted.Get(j) = uTmp;
 				}
 			}
-
-			IndexStats& xStat = xStats.Get(xEvent.m_uZoneID);
-			xStat.uCallCount++;
-			xStat.fTotalMs += fDurationMs;
-			if (fDurationMs < xStat.fMinMs)
-				xStat.fMinMs = fDurationMs;
-			if (fDurationMs > xStat.fMaxMs)
-				xStat.fMaxMs = fDurationMs;
 		}
+		return xSorted;
 	}
 
-	// Collect zones that fired, then sort by total time descending.
-	Zenith_Vector<Zenith_ProfileZoneID> xSorted;
-	for (u_int i = 0; i < uZoneCount; ++i)
+	// Frame-time headline + the sorted per-zone CPU table.
+	void WriteHeadlineAndZoneTable(FILE* pFile, const Zenith_Profiling& xSelf, double fDisplayFrameMs,
+		u_int uThreadCount, u_int uTotalEvents,
+		const Zenith_Vector<Zenith_ProfileZoneID>& xSorted, const Zenith_Vector<IndexStats>& xStats)
 	{
-		if (xStats.Get(i).uCallCount > 0)
-			xSorted.PushBack(i);
-	}
+		fprintf(pFile, "\n=== Profiling Report ===\n");
+		fprintf(pFile, "Frame: %.3f ms (%.1f FPS, last complete) | Threads: %u | Events: %u\n\n",
+			fDisplayFrameMs, fDisplayFrameMs > 0.0 ? 1000.0 / fDisplayFrameMs : 0.0, uThreadCount, uTotalEvents);
+		fprintf(pFile, "%-40s %12s %10s %12s %12s %12s\n",
+			"Profile Zone", "Total (ms)", "Calls", "Avg (ms)", "Min (ms)", "Max (ms)");
+		fprintf(pFile, "---------------------------------------- ------------ ---------- ------------ ------------ ------------\n");
 
-	for (u_int i = 0; i < xSorted.GetSize(); ++i)
-	{
-		for (u_int j = i + 1; j < xSorted.GetSize(); ++j)
+		for (u_int i = 0; i < xSorted.GetSize(); ++i)
 		{
-			if (xStats.Get(xSorted.Get(j)).fTotalMs > xStats.Get(xSorted.Get(i)).fTotalMs)
-			{
-				const Zenith_ProfileZoneID uTmp = xSorted.Get(i);
-				xSorted.Get(i) = xSorted.Get(j);
-				xSorted.Get(j) = uTmp;
-			}
+			const Zenith_ProfileZoneID uZoneID = xSorted.Get(i);
+			const IndexStats& xStat = xStats.Get(uZoneID);
+			const double fAvgMs = xStat.fTotalMs / xStat.uCallCount;
+			fprintf(pFile, "%-40s %12.1f %10u %12.3f %12.3f %12.3f\n",
+				xSelf.GetZoneName(uZoneID),
+				xStat.fTotalMs,
+				xStat.uCallCount,
+				fAvgMs,
+				xStat.fMinMs,
+				xStat.fMaxMs);
 		}
-	}
-
-	// Frame time comes from the DISPLAY snapshot (the previous COMPLETE frame): the
-	// live report drains the in-flight frame whose TOTAL_FRAME zone is still open, so
-	// the per-zone table below is the in-flight frame while this headline ms is the
-	// last completed frame's wall-clock.
-	const double fDisplayFrameMs = TickDeltaToMs(m_pxDisplay->m_uBeginTicks, m_pxDisplay->m_uEndTicks);
-	fprintf(pFile, "\n=== Profiling Report ===\n");
-	fprintf(pFile, "Frame: %.3f ms (%.1f FPS, last complete) | Threads: %u | Events: %u\n\n",
-		fDisplayFrameMs, fDisplayFrameMs > 0.0 ? 1000.0 / fDisplayFrameMs : 0.0, uThreadCount, uTotalEvents);
-	fprintf(pFile, "%-40s %12s %10s %12s %12s %12s\n",
-		"Profile Zone", "Total (ms)", "Calls", "Avg (ms)", "Min (ms)", "Max (ms)");
-	fprintf(pFile, "---------------------------------------- ------------ ---------- ------------ ------------ ------------\n");
-
-	for (u_int i = 0; i < xSorted.GetSize(); ++i)
-	{
-		const Zenith_ProfileZoneID uZoneID = xSorted.Get(i);
-		const IndexStats& xStat = xStats.Get(uZoneID);
-		const double fAvgMs = xStat.fTotalMs / xStat.uCallCount;
-		fprintf(pFile, "%-40s %12.1f %10u %12.3f %12.3f %12.3f\n",
-			GetZoneName(uZoneID),
-			xStat.fTotalMs,
-			xStat.uCallCount,
-			fAvgMs,
-			xStat.fMinMs,
-			xStat.fMaxMs);
 	}
 
 	// GPU per-pass timings (populated by the backend's deferred timestamp readback).
 	// Printed in execution order so each line maps to exactly one render-graph pass
 	// bracket. Empty on the null backend or when GPU timestamps are unsupported.
-	if (m_xGPUPasses.GetSize() > 0)
+	void WriteGPUPassesSection(FILE* pFile, const Zenith_Vector<Zenith_Profiling::GPUPass>& xGPUPasses, double fGPUTotalMs)
 	{
+		if (xGPUPasses.GetSize() == 0)
+			return;
+
 		fprintf(pFile, "\n=== GPU Passes (one bracket per Flux_RenderGraph pass, execution order) ===\n");
-		fprintf(pFile, "Total GPU: %.3f ms across %u passes\n\n", m_fGPUTotalMs, m_xGPUPasses.GetSize());
+		fprintf(pFile, "Total GPU: %.3f ms across %u passes\n\n", fGPUTotalMs, xGPUPasses.GetSize());
 		fprintf(pFile, "%4s  %-40s %12s\n", "exec", "GPU Pass", "GPU (ms)");
 		fprintf(pFile, "----  ---------------------------------------- ------------\n");
-		for (u_int i = 0; i < m_xGPUPasses.GetSize(); ++i)
+		for (u_int i = 0; i < xGPUPasses.GetSize(); ++i)
 		{
-			const GPUPass& xPass = m_xGPUPasses.Get(i);
+			const Zenith_Profiling::GPUPass& xPass = xGPUPasses.Get(i);
 			fprintf(pFile, "%4u  %-40s %12.3f\n", xPass.m_uExecIndex, xPass.m_szName ? xPass.m_szName : "(unnamed)", xPass.m_fMilliseconds);
 		}
 	}
@@ -610,8 +612,12 @@ void Zenith_Profiling::WriteTextReport(FILE* pFile)
 	// zone aggregated away WHICH pass is expensive to record on the CPU. Pass names
 	// join 1:1 because both the record label and the GPU pass name come from
 	// pxPass->DebugName() (the same static literal).
-	if (xLabelStats.GetSize() > 0)
+	void WritePerPassCPUVsGPUSection(FILE* pFile, const Zenith_Vector<LabelStat>& xLabelStats,
+		const Zenith_Vector<Zenith_Profiling::GPUPass>& xGPUPasses)
 	{
+		if (xLabelStats.GetSize() == 0)
+			return;
+
 		Zenith_Vector<u_int> xLabelOrder;
 		for (u_int i = 0; i < xLabelStats.GetSize(); ++i) xLabelOrder.PushBack(i);
 		for (u_int i = 0; i < xLabelOrder.GetSize(); ++i)
@@ -628,9 +634,9 @@ void Zenith_Profiling::WriteTextReport(FILE* pFile)
 		{
 			const LabelStat& xLS = xLabelStats.Get(xLabelOrder.Get(r));
 			double fGpuMs = -1.0;
-			for (u_int g = 0; g < m_xGPUPasses.GetSize(); ++g)
+			for (u_int g = 0; g < xGPUPasses.GetSize(); ++g)
 			{
-				const GPUPass& xGP = m_xGPUPasses.Get(g);
+				const Zenith_Profiling::GPUPass& xGP = xGPUPasses.Get(g);
 				if (xGP.m_szName && (xGP.m_szName == xLS.m_szLabel || strcmp(xGP.m_szName, xLS.m_szLabel) == 0))
 				{
 					fGpuMs = xGP.m_fMilliseconds;
@@ -643,6 +649,33 @@ void Zenith_Profiling::WriteTextReport(FILE* pFile)
 				fprintf(pFile, "%-40s %14.3f %12s\n", xLS.m_szLabel, xLS.m_fTotalMs, "-");
 		}
 	}
+}
+
+void Zenith_Profiling::WriteTextReport(FILE* pFile)
+{
+	// Live capture: drain completed events into the accumulator, then aggregate.
+	DrainAllRings(*this, m_pxAccumulator);
+
+	const u_int uZoneCount = m_uZoneCount.load(std::memory_order_acquire);
+	Zenith_Vector<IndexStats> xStats;
+	xStats.Reserve(uZoneCount);
+	for (u_int u = 0; u < uZoneCount; ++u) xStats.PushBack(IndexStats{});
+
+	Zenith_Vector<LabelStat> xLabelStats;
+	u_int uTotalEvents = 0;
+	u_int uThreadCount = 0;
+	AggregateZoneAndLabelStats(*m_pxAccumulator, uZoneCount, xStats, xLabelStats, uTotalEvents, uThreadCount);
+
+	const Zenith_Vector<Zenith_ProfileZoneID> xSorted = SortZonesByTotalTime(xStats, uZoneCount);
+
+	// Frame time comes from the DISPLAY snapshot (the previous COMPLETE frame): the
+	// live report drains the in-flight frame whose TOTAL_FRAME zone is still open, so
+	// the per-zone table below is the in-flight frame while this headline ms is the
+	// last completed frame's wall-clock.
+	const double fDisplayFrameMs = TickDeltaToMs(m_pxDisplay->m_uBeginTicks, m_pxDisplay->m_uEndTicks);
+	WriteHeadlineAndZoneTable(pFile, *this, fDisplayFrameMs, uThreadCount, uTotalEvents, xSorted, xStats);
+	WriteGPUPassesSection(pFile, m_xGPUPasses, m_fGPUTotalMs);
+	WritePerPassCPUVsGPUSection(pFile, xLabelStats, m_xGPUPasses);
 
 	fprintf(pFile, "\n");
 }

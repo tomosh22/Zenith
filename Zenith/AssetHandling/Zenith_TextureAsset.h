@@ -3,8 +3,6 @@
 #include "AssetHandling/Zenith_Asset.h"
 #include "Flux/Flux.h"
 
-#include <vector>
-
 class Zenith_DataStream;
 
 // .ztxtr envelope identity — shared by the loader (Zenith_TextureAsset) and the
@@ -89,7 +87,7 @@ public:
 	 *                    prefix sum of CalculateMipDataSize for mips < M).
 	 * @return SUCCESS, or an error code (FILE_NOT_FOUND / CORRUPT_DATA / ...).
 	 */
-	static Zenith_Status LoadCPUData(const std::string& strPath, Flux_SurfaceInfo& xOutInfo, std::vector<uint8_t>& xOutBytes);
+	static Zenith_Status LoadCPUData(const std::string& strPath, Flux_SurfaceInfo& xOutInfo, Zenith_Vector<uint8_t>& xOutBytes);
 
 	//--------------------------------------------------------------------------
 	// Accessors
@@ -155,7 +153,7 @@ private:
 	// actually present in the file) and bOutIsV2 (true => xOutBytes holds a packed
 	// chain). Used by both LoadFromFile (then GPU-uploads) and LoadCPUData.
 	static Zenith_Status ParseZtxtr(const std::string& strPath, Zenith_DataStream& xStream,
-		Flux_SurfaceInfo& xOutInfo, std::vector<uint8_t>& xOutBytes, bool& bOutIsV2);
+		Flux_SurfaceInfo& xOutInfo, Zenith_Vector<uint8_t>& xOutBytes, bool& bOutIsV2);
 
 	bool m_bGPUResourcesAllocated = false;
 };

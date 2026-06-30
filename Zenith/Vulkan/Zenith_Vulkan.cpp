@@ -187,10 +187,11 @@ void Zenith_Vulkan::Initialise()
 	// the sibling *Impl objects are allocated up-front, so caching their pointers
 	// here (even before they are themselves Initialised) is safe — the cached
 	// objects are only USED later at runtime, exactly as before.
-	m_pxFluxRenderer = &g_xEngine.FluxRenderer();
-	m_pxTasks = &g_xEngine.Tasks();
-	m_pxVulkanSwapchain = &g_xEngine.FluxSwapchain();
-	m_pxVulkanMemory = &g_xEngine.FluxMemory();
+	auto& xEngine = g_xEngine;
+	m_pxFluxRenderer = &xEngine.FluxRenderer();
+	m_pxTasks = &xEngine.Tasks();
+	m_pxVulkanSwapchain = &xEngine.FluxSwapchain();
+	m_pxVulkanMemory = &xEngine.FluxMemory();
 
 	CreateInstance();
 #ifdef ZENITH_DEBUG
@@ -216,7 +217,7 @@ void Zenith_Vulkan::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables& xDebugVariables = g_xEngine.DebugVariables();
+	Zenith_DebugVariables& xDebugVariables = xEngine.DebugVariables();
 	xDebugVariables.AddBoolean({ "Vulkan", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
 	xDebugVariables.AddBoolean({ "Vulkan", "Use Descriptor Set Cache" }, dbg_bUseDescSetCache);
 	xDebugVariables.AddBoolean({ "Vulkan", "Only Update Dirty Descriptors" }, dbg_bOnlyUpdateDirtyDescriptors);
@@ -1168,9 +1169,10 @@ void Zenith_Vulkan::PreparePersistentSets(Flux_BufferDescriptorHandle xGlobalCBV
 	// frame fence in PerFrameBegin).
 	Zenith_Assert(m_pxCurrentFrame != nullptr, "PreparePersistentSets: no current frame slot");
 
-	const vk::DescriptorBufferInfo xGlobalInfo    = g_xEngine.FluxMemory().GetBufferDescriptor(xGlobalCBV);
-	const vk::DescriptorBufferInfo xMaterialsInfo = g_xEngine.FluxMemory().GetBufferDescriptor(xMaterialsSSBO);
-	const vk::DescriptorBufferInfo xViewInfo      = g_xEngine.FluxMemory().GetBufferDescriptor(xViewCBV);
+	auto& xEngine = g_xEngine;
+	const vk::DescriptorBufferInfo xGlobalInfo    = xEngine.FluxMemory().GetBufferDescriptor(xGlobalCBV);
+	const vk::DescriptorBufferInfo xMaterialsInfo = xEngine.FluxMemory().GetBufferDescriptor(xMaterialsSSBO);
+	const vk::DescriptorBufferInfo xViewInfo      = xEngine.FluxMemory().GetBufferDescriptor(xViewCBV);
 
 	vk::WriteDescriptorSet axWrites[3];
 	axWrites[0] = vk::WriteDescriptorSet()
@@ -1597,8 +1599,9 @@ void Zenith_Vulkan_PerFrame::ReadbackGPUTimers()
 	std::sort(auOrder, auOrder + uTimers, [this](u_int a, u_int b)
 		{ return m_auGPUTimerExecIndex[a] < m_auGPUTimerExecIndex[b]; });
 
-	const double fPeriodNs = static_cast<double>(g_xEngine.FluxBackend().GetTimestampPeriod());
-	Zenith_Profiling& xProfiling = g_xEngine.Profiling();
+	auto& xEngine = g_xEngine;
+	const double fPeriodNs = static_cast<double>(xEngine.FluxBackend().GetTimestampPeriod());
+	Zenith_Profiling& xProfiling = xEngine.Profiling();
 	xProfiling.BeginGPUCapture();
 	for (u_int u = 0; u < uTimers; u++)
 	{
@@ -1615,8 +1618,10 @@ void Zenith_Vulkan_PerFrame::ReadbackGPUTimers()
 
 void Zenith_Vulkan_PerFrame::InitialisePerFrameResources()
 {
+	auto& xEngine = g_xEngine;
+
 	// Create scratch buffer for push constant replacement
-	Zenith_Vulkan_MemoryManager::PersistentBuffer xScratch = g_xEngine.FluxMemory().CreatePersistentlyMappedBuffer(
+	Zenith_Vulkan_MemoryManager::PersistentBuffer xScratch = xEngine.FluxMemory().CreatePersistentlyMappedBuffer(
 		uSCRATCH_BUFFER_SIZE,
 		vk::BufferUsageFlagBits::eUniformBuffer);
 	m_xScratchBuffer = xScratch.m_xBuffer;
@@ -1624,7 +1629,7 @@ void Zenith_Vulkan_PerFrame::InitialisePerFrameResources()
 	m_pScratchBufferMapped = xScratch.m_pMappedPtr;
 
 	// Query alignment requirement
-	m_uMinAlignment = static_cast<u_int>(g_xEngine.FluxBackend().GetPhysicalDevice().getProperties().limits.minUniformBufferOffsetAlignment);
+	m_uMinAlignment = static_cast<u_int>(xEngine.FluxBackend().GetPhysicalDevice().getProperties().limits.minUniformBufferOffsetAlignment);
 
 	// Initialize worker offsets
 	for (u_int i = 0; i < NUM_WORKER_THREADS; i++)

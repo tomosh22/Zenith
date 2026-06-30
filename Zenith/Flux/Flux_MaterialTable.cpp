@@ -10,9 +10,9 @@
 
 void Flux_MaterialTable::Initialise()
 {
-	m_xRecords.assign(uFLUX_MATERIAL_TABLE_CAPACITY, Flux_MaterialGPU{});
-	m_xRecordStamp.assign(uFLUX_MATERIAL_TABLE_CAPACITY, ~0ull);
-	m_xRecordBindlessGen.assign(uFLUX_MATERIAL_TABLE_CAPACITY, ~0ull);
+	m_xRecords.Resize(uFLUX_MATERIAL_TABLE_CAPACITY, Flux_MaterialGPU{});
+	m_xRecordStamp.Resize(uFLUX_MATERIAL_TABLE_CAPACITY, ~0ull);
+	m_xRecordBindlessGen.Resize(uFLUX_MATERIAL_TABLE_CAPACITY, ~0ull);
 	m_xIndexAllocator.Initialise(uFLUX_MATERIAL_TABLE_CAPACITY);
 	m_uMaxIndex = 0;
 
@@ -20,7 +20,7 @@ void Flux_MaterialTable::Initialise()
 	// never drawn (draw paths substitute the engine blank material for a null
 	// material, which gets its own real index), so a zeroed record there is safe.
 	const size_t uSize = static_cast<size_t>(uFLUX_MATERIAL_TABLE_CAPACITY) * sizeof(Flux_MaterialGPU);
-	g_xEngine.FluxMemory().InitialiseDynamicReadWriteBuffer(m_xRecords.data(), uSize, m_xBuffer);
+	g_xEngine.FluxMemory().InitialiseDynamicReadWriteBuffer(m_xRecords.GetDataPointer(), uSize, m_xBuffer);
 
 	m_bInitialised = true;
 }
@@ -31,9 +31,9 @@ void Flux_MaterialTable::Shutdown()
 	{
 		g_xEngine.FluxMemory().DestroyDynamicReadWriteBuffer(m_xBuffer);
 	}
-	m_xRecords.clear();
-	m_xRecordStamp.clear();
-	m_xRecordBindlessGen.clear();
+	m_xRecords.Clear();
+	m_xRecordStamp.Clear();
+	m_xRecordBindlessGen.Clear();
 	m_uMaxIndex    = 0;
 	m_bInitialised = false;
 }
@@ -43,7 +43,8 @@ u_int Flux_MaterialTable::GetOrCreateIndex(Zenith_MaterialAsset* pxMaterial)
 	// Contract: called only from the per-subsystem GATHER (Prepare) on the main
 	// thread — it mutates the index allocator + the record mirrors and resolves
 	// bindless texture slots. Workers later read the assigned index lock-free.
-	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+	auto& xEngine = g_xEngine;
+	Zenith_Assert(xEngine.Threading().IsMainThread(),
 		"Flux_MaterialTable::GetOrCreateIndex: main-thread only (mutates the index allocator + writes bindless descriptors)");
 
 	if (!pxMaterial)
@@ -53,7 +54,7 @@ u_int Flux_MaterialTable::GetOrCreateIndex(Zenith_MaterialAsset* pxMaterial)
 
 	const u_int   uStored      = pxMaterial->GetMaterialTableIndex();
 	const u_int64 uStamp       = pxMaterial->GetEditStamp();
-	const u_int64 uBindlessGen = g_xEngine.FluxGraphics().BindlessAllocator().GetGeneration();
+	const u_int64 uBindlessGen = xEngine.FluxGraphics().BindlessAllocator().GetGeneration();
 
 	// Pure decision (allocate / rebuild / reuse + mirror/high-water bookkeeping).
 	const Flux_MaterialSlotDecision xDecision = Flux_DecideMaterialSlot(
@@ -94,7 +95,7 @@ void Flux_MaterialTable::BuildRecord(u_int uIndex, Zenith_MaterialAsset* pxMater
 		}
 	}
 
-	Flux_PackMaterialGPU(m_xRecords[uIndex], pxMaterial->GetResolved(), auTexIdx);
+	Flux_PackMaterialGPU(m_xRecords.Get(uIndex), pxMaterial->GetResolved(), auTexIdx);
 }
 
 void Flux_MaterialTable::Upload()
@@ -106,7 +107,7 @@ void Flux_MaterialTable::Upload()
 	// Whole active range each frame (host-coherent → no barrier). Cheap: a few hundred
 	// 176-byte records at most.
 	const size_t uActiveBytes = static_cast<size_t>(m_uMaxIndex + 1) * sizeof(Flux_MaterialGPU);
-	g_xEngine.FluxMemory().UploadBufferData(m_xBuffer.GetBuffer().m_xVRAMHandle, m_xRecords.data(), uActiveBytes);
+	g_xEngine.FluxMemory().UploadBufferData(m_xBuffer.GetBuffer().m_xVRAMHandle, m_xRecords.GetDataPointer(), uActiveBytes);
 }
 
 #include "Flux/Flux_MaterialTable.Tests.inl"

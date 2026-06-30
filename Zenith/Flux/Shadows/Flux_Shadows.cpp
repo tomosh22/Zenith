@@ -101,34 +101,37 @@ static FrustumCorners WorldSpaceFrustumCornersFromInverseViewProjMatrix(const Ze
 
 void Flux_ShadowsImpl::Initialise()
 {
+	auto& xEngine = g_xEngine;
+
 	// One StructuredBuffer<float4x4> holding all 4 cascade sun view×proj matrices
 	// (Phase 4a collapse — replaces the 4 separate per-cascade constant buffers).
-	g_xEngine.FluxMemory().InitialiseDynamicReadWriteBuffer(nullptr, ZENITH_FLUX_NUM_CSMS * sizeof(Zenith_Maths::Matrix4), m_xShadowMatricesBuffer);
+	xEngine.FluxMemory().InitialiseDynamicReadWriteBuffer(nullptr, ZENITH_FLUX_NUM_CSMS * sizeof(Zenith_Maths::Matrix4), m_xShadowMatricesBuffer);
 	// Seed with sane defaults (not nullptr): a shadows-disabled boot never runs
 	// UpdateShadowMatrices, and the deferred shader still reads the tap count from
 	// this CB to bound its PCF loop. Garbage VRAM there = unbounded loop / 0-divide.
 	const Flux_ShadowSamplingGPU xDefaultSampling;
-	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&xDefaultSampling, sizeof(Flux_ShadowSamplingGPU), m_xShadowSamplingBuffer);
+	xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&xDefaultSampling, sizeof(Flux_ShadowSamplingGPU), m_xShadowSamplingBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Split Lambda"},        dbg_fSplitLambda,        0.f, 1.f);
-	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Shadow Distance"},     dbg_fShadowDistance,     10.f, 2000.f);
-	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Caster Extend Radii"}, dbg_fCasterExtendRadii,  0.f, 8.f);
-	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Normal Offset Texels"},dbg_fNormalOffsetTexels, 0.f, 8.f);
-	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Depth Bias Constant"}, dbg_fShadowDepthBiasConstant, 0.f, 16.f);
-	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Depth Bias Slope"},    dbg_fShadowDepthBiasSlope,    0.f, 16.f);
-	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "PCF Radius Texels"},   dbg_fPCFRadiusTexels,    0.f, 8.f);
-	g_xEngine.DebugVariables().AddUInt32 ({"Render", "Shadows", "PCF Tap Count"},       dbg_uPCFTapCount,        1u, 32u);
-	g_xEngine.DebugVariables().AddBoolean({"Render", "Shadows", "PCSS Enabled"},        dbg_bPCSSEnabled);
-	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Sun Angular Radius"},  dbg_fSunAngularRadius,   0.f, 0.1f);
-	g_xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Cascade Blend Frac"},  dbg_fCascadeBlendFraction, 0.f, 0.5f);
+	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Split Lambda"},        dbg_fSplitLambda,        0.f, 1.f);
+	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Shadow Distance"},     dbg_fShadowDistance,     10.f, 2000.f);
+	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Caster Extend Radii"}, dbg_fCasterExtendRadii,  0.f, 8.f);
+	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Normal Offset Texels"},dbg_fNormalOffsetTexels, 0.f, 8.f);
+	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Depth Bias Constant"}, dbg_fShadowDepthBiasConstant, 0.f, 16.f);
+	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Depth Bias Slope"},    dbg_fShadowDepthBiasSlope,    0.f, 16.f);
+	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "PCF Radius Texels"},   dbg_fPCFRadiusTexels,    0.f, 8.f);
+	xEngine.DebugVariables().AddUInt32 ({"Render", "Shadows", "PCF Tap Count"},       dbg_uPCFTapCount,        1u, 32u);
+	xEngine.DebugVariables().AddBoolean({"Render", "Shadows", "PCSS Enabled"},        dbg_bPCSSEnabled);
+	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Sun Angular Radius"},  dbg_fSunAngularRadius,   0.f, 0.1f);
+	xEngine.DebugVariables().AddFloat  ({"Render", "Shadows", "Cascade Blend Frac"},  dbg_fCascadeBlendFraction, 0.f, 0.5f);
 #endif
 }
 
 void Flux_ShadowsImpl::Shutdown()
 {
-	g_xEngine.FluxMemory().DestroyDynamicReadWriteBuffer(m_xShadowMatricesBuffer);
-	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xShadowSamplingBuffer);
+	auto& xEngine = g_xEngine;
+	xEngine.FluxMemory().DestroyDynamicReadWriteBuffer(m_xShadowMatricesBuffer);
+	xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xShadowSamplingBuffer);
 
 	m_pxGraph = nullptr;
 }
@@ -242,8 +245,9 @@ Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMArraySRV()
 
 void Flux_ShadowsImpl::UpdateShadowMatrices()
 {
-	g_xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("Flux Shadows Update Matrices"));
-	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	auto& xEngine = g_xEngine;
+	xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("Flux Shadows Update Matrices"));
+	Flux_GraphicsImpl& xGraphics = xEngine.FluxGraphics();
 	const Zenith_Maths::Matrix4& xViewMat = xGraphics.GetViewMatrix();
 
 	// GetFOV() returns radians for the game camera but DEGREES for the editor
@@ -334,7 +338,7 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 
 	// Upload all 4 cascade matrices in one write to the single StructuredBuffer
 	// (Phase 4a). m_axSunViewProjMats is a contiguous Matrix4[ZENITH_FLUX_NUM_CSMS].
-	g_xEngine.FluxMemory().UploadBufferData(m_xShadowMatricesBuffer.GetBuffer().m_xVRAMHandle, m_axSunViewProjMats, sizeof(m_axSunViewProjMats));
+	xEngine.FluxMemory().UploadBufferData(m_xShadowMatricesBuffer.GetBuffer().m_xVRAMHandle, m_axSunViewProjMats, sizeof(m_axSunViewProjMats));
 
 	// Mirror runtime-tunable sampling config for the shader (cheap; lets the
 	// debug variables take effect live).
@@ -355,7 +359,7 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 	xGPU.m_xParams0 = Zenith_Maths::Vector4(m_xSamplingConfig.m_fResolution, m_xSamplingConfig.m_fRcpResolution, m_xSamplingConfig.m_fNormalOffsetTexels, 0.f);
 	xGPU.m_xParams1 = Zenith_Maths::Vector4(m_xSamplingConfig.m_fPCFRadiusTexels, m_xSamplingConfig.m_fSunAngularRadius, m_xSamplingConfig.m_fCascadeBlendFraction, float(m_xSamplingConfig.m_uPCFTapCount));
 	xGPU.m_xParams2 = Zenith_Maths::Vector4(float(m_xSamplingConfig.m_bPCSSEnabled), 0.f, 0.f, 0.f);
-	g_xEngine.FluxMemory().UploadBufferData(m_xShadowSamplingBuffer.GetBuffer().m_xVRAMHandle, &xGPU, sizeof(xGPU));
+	xEngine.FluxMemory().UploadBufferData(m_xShadowSamplingBuffer.GetBuffer().m_xVRAMHandle, &xGPU, sizeof(xGPU));
 
-	g_xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("Flux Shadows Update Matrices"));
+	xEngine.Profiling().EndProfileZone(ZENITH_PROFILE_ZONE("Flux Shadows Update Matrices"));
 }
