@@ -135,9 +135,7 @@ static void ExecuteSSAOGenerate(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCommandList->SetPipeline(&xSSAO.m_xGeneratePipeline);
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	xGraphics.BindFullscreenQuad(*pxCommandList, xSSAO.m_xGeneratePipeline);
 
 	namespace NS = Flux_Generated_SSAO::SSAO_Main;
 	Flux_ShaderBinder xBinder(*pxCommandList);
@@ -157,9 +155,7 @@ static void ExecuteSSAOBlur(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCommandList->SetPipeline(&xSSAO.m_xBlurPipeline);
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	xGraphics.BindFullscreenQuad(*pxCommandList, xSSAO.m_xBlurPipeline);
 
 	namespace NS = Flux_Generated_SSAO::SSAO_Blur;
 	Flux_ShaderBinder xBinder(*pxCommandList);

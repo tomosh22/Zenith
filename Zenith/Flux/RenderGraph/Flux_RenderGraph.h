@@ -390,18 +390,18 @@ private:
         // Lifetime data populated by ComputeTransientLifetimes after Compile's
         // resource-lifetime pass. Both fields are UINT32_MAX iff the transient
         // was never referenced by any enabled pass (the single sentinel meaning).
-        // When referenced, m_uFirstWrite is the topological position of the
-        // first writing pass; m_uLastUse is the topological position of the
+        // When referenced, m_uFirstWriteTopoIdx is the topological position of the
+        // first writing pass; m_uLastUseTopoIdx is the topological position of the
         // last access, taking the max across last-read AND last-write so
         // multi-write transients (UAV ping-pong patterns) extend their
         // lifetime through every actual write — pre-fix the field collapsed
         // to last-read only and the packer would silently alias other
         // transients into the period between the first read and the final
-        // write. For a write-only single-writer transient m_uLastUse ==
-        // m_uFirstWrite, so the aliasing packer can compare lifetimes without
+        // write. For a write-only single-writer transient m_uLastUseTopoIdx ==
+        // m_uFirstWriteTopoIdx, so the aliasing packer can compare lifetimes without
         // special-casing the "never read" case.
-        u_int m_uFirstWrite = UINT32_MAX;
-        u_int m_uLastUse    = UINT32_MAX;
+        u_int m_uFirstWriteTopoIdx = UINT32_MAX;
+        u_int m_uLastUseTopoIdx    = UINT32_MAX;
         // Aliasing packer output (populated by AssignAliasingGroups). UINT32_MAX
         // when aliasing is disabled or the transient hasn't been packed yet.
         // When set, the transient shares its backing memory with other transients
@@ -439,7 +439,7 @@ private:
     // step is independently readable and testable. Run in order:
     //   sort → pack → size.
     // SortTransientsByLifetime: build sort-order over referenced transients,
-    //   ascending by m_uFirstWrite (matches classic interval-coloring order).
+    //   ascending by m_uFirstWriteTopoIdx (matches classic interval-coloring order).
     // PackTransientsIntoPools: greedy first-fit per memory signature; updates
     //   each transient's m_uAliasPoolIndex and pushes into m_axAliasPools.
     // ComputePoolSizes: per-pool size = max(occupant size); alignment = max

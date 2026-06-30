@@ -18,6 +18,21 @@ struct aiNode;
 class Flux_MeshGeometry;
 
 //=============================================================================
+// Timestamped-keyframe (value, time) vector serialization helpers.
+//
+// The MeshAnimation system stores keyframes as Zenith_Vector<std::pair<V, float>>
+// (V = Vector3 for position/scale, Quat for rotation) and serializes them with the
+// recurring "uint32 count, then per key: value components then float time" block.
+// These collapse that count+loop (and the Clear/Reserve/PushBack read scaffolding)
+// to one call per vector. The on-disk format is unchanged — byte-identical to the
+// former hand-rolled loops (Vec3: x,y,z,time; Quat: w,x,y,z,time).
+//=============================================================================
+void Flux_WriteVec3Keys(Zenith_DataStream& xStream, const Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& xKeys);
+void Flux_ReadVec3Keys (Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& xKeys);
+void Flux_WriteQuatKeys(Zenith_DataStream& xStream, const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys);
+void Flux_ReadQuatKeys (Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys);
+
+//=============================================================================
 // Animation Event
 // Callback triggered at specific times during animation playback
 //=============================================================================

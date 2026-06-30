@@ -6,7 +6,6 @@
 // Flux/Flux.h for the broader migration note.
 
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/Flux_BackendTypes.h"
@@ -28,6 +27,13 @@
 
 Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetViewProjMatrix()    { return m_xFrameConstants.m_xViewProjMat; }
 Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetInvViewProjMatrix() { return m_xFrameConstants.m_xInvViewProjMat; }
+
+void Flux_GraphicsImpl::BindFullscreenQuad(Flux_CommandBuffer& xCmd, Flux_Pipeline& xPipeline)
+{
+	xCmd.SetPipeline(&xPipeline);
+	xCmd.SetVertexBuffer(m_xQuadMesh.GetVertexBuffer());
+	xCmd.SetIndexBuffer(m_xQuadMesh.GetIndexBuffer());
+}
 Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetViewMatrix()        { return m_xFrameConstants.m_xViewMat; }
 Zenith_Maths::Vector3 Flux_GraphicsImpl::GetSunDir()            { return m_xFrameConstants.m_xSunDir_Pad; }
 

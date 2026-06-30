@@ -4,10 +4,7 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/SSGI/Flux_SSGIImpl.h"
-#include "Flux/SSGI/Flux_SSGIImpl.h"
 #include "Flux/HiZ/Flux_HiZImpl.h"
-#include "Flux/HiZ/Flux_HiZImpl.h"
-#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
@@ -107,21 +104,21 @@ Flux_RenderAttachment& Flux_SSGIImpl::GetDenoisedAttachment()
 // tripping the null-guard asserts in the attachment getters above.
 static const Flux_ShaderResourceView* DebugGetRawSRV()
 {
-	auto& xZZ = g_xEngine.SSGI();
-	if (xZZ.m_pxGraph == nullptr) return nullptr;
-	return &xZZ.GetRawResultAttachment().SRV();
+	auto& xSSGI = g_xEngine.SSGI();
+	if (xSSGI.m_pxGraph == nullptr) return nullptr;
+	return &xSSGI.GetRawResultAttachment().SRV();
 }
 static const Flux_ShaderResourceView* DebugGetResolvedSRV()
 {
-	auto& xZZ = g_xEngine.SSGI();
-	if (xZZ.m_pxGraph == nullptr) return nullptr;
-	return &xZZ.GetResolvedAttachment().SRV();
+	auto& xSSGI = g_xEngine.SSGI();
+	if (xSSGI.m_pxGraph == nullptr) return nullptr;
+	return &xSSGI.GetResolvedAttachment().SRV();
 }
 static const Flux_ShaderResourceView* DebugGetDenoisedSRV()
 {
-	auto& xZZ = g_xEngine.SSGI();
-	if (xZZ.m_pxGraph == nullptr) return nullptr;
-	return &xZZ.GetDenoisedAttachment().SRV();
+	auto& xSSGI = g_xEngine.SSGI();
+	if (xSSGI.m_pxGraph == nullptr) return nullptr;
+	return &xSSGI.GetDenoisedAttachment().SRV();
 }
 #endif
 
@@ -226,20 +223,17 @@ void Flux_SSGIImpl::UpdateSSGIConstants()
 
 static void ExecuteSSGIRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 {
-	auto& xZZ = g_xEngine.SSGI();
-	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
+	auto& xSSGI = g_xEngine.SSGI();
+	if (!xSSGI.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("Flux SSGI"));
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	xZZ.UpdateSSGIConstants();
+	xSSGI.UpdateSSGIConstants();
 
-	pxCommandList->SetPipeline(&xZZ.m_xRayMarchPipeline);
-
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	xGraphics.BindFullscreenQuad(*pxCommandList, xSSGI.m_xRayMarchPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace RM = Flux_Generated_SSGI::SSGI_RayMarch;
@@ -249,7 +243,7 @@ static void ExecuteSSGIRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 	// system reads back into ImGui every frame — a write here would surprise
 	// the user with a different value than they typed).
 	SSGIConstants xFrameConstants = dbg_xSSGIConstants;
-	xFrameConstants.m_uBinarySearchIterations = xZZ.ComputeEffectiveBinarySearchIterations();
+	xFrameConstants.m_uBinarySearchIterations = xSSGI.ComputeEffectiveBinarySearchIterations();
 
 	xBinder.BindDrawConstants(RM::hSSGIConstants, &xFrameConstants, sizeof(SSGIConstants));
 
@@ -265,23 +259,20 @@ static void ExecuteSSGIRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 
 static void ExecuteSSGIUpsample(Flux_CommandBuffer* pxCommandList, void*)
 {
-	auto& xZZ = g_xEngine.SSGI();
-	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
+	auto& xSSGI = g_xEngine.SSGI();
+	if (!xSSGI.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("Flux SSGI"));
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCommandList->SetPipeline(&xZZ.m_xUpsamplePipeline);
-
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	xGraphics.BindFullscreenQuad(*pxCommandList, xSSGI.m_xUpsamplePipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace US = Flux_Generated_SSGI::SSGI_Upsample;
 
-	xBinder.BindSRV(US::hg_xSSGITex, &xZZ.GetRawResultAttachment().SRV());
+	xBinder.BindSRV(US::hg_xSSGITex, &xSSGI.GetRawResultAttachment().SRV());
 	xBinder.BindSRV(US::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
 
 	pxCommandList->DrawIndexed(6);
@@ -292,18 +283,15 @@ static void ExecuteSSGIUpsample(Flux_CommandBuffer* pxCommandList, void*)
 // direction is the only difference between the two shaders.
 static void ExecuteSSGIDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 {
-	auto& xZZ = g_xEngine.SSGI();
-	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
+	auto& xSSGI = g_xEngine.SSGI();
+	if (!xSSGI.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("Flux SSGI"));
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCommandList->SetPipeline(&xZZ.m_xDenoiseHPipeline);
-
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	xGraphics.BindFullscreenQuad(*pxCommandList, xSSGI.m_xDenoiseHPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace DH = Flux_Generated_SSGI::SSGI_DenoiseH;
@@ -311,7 +299,7 @@ static void ExecuteSSGIDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 	dbg_xSSGIDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
 	xBinder.BindDrawConstants(DH::hPushConstants, &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
 
-	xBinder.BindSRV(DH::hg_xSSGITex,    &xZZ.GetResolvedAttachment().SRV());
+	xBinder.BindSRV(DH::hg_xSSGITex,    &xSSGI.GetResolvedAttachment().SRV());
 	xBinder.BindSRV(DH::hg_xDepthTex,   xGraphics.GetDepthStencilSRV());
 	xBinder.BindSRV(DH::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(DH::hg_xAlbedoTex,  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
@@ -323,18 +311,15 @@ static void ExecuteSSGIDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 // denoised result that deferred shading consumes.
 static void ExecuteSSGIDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 {
-	auto& xZZ = g_xEngine.SSGI();
-	if (!xZZ.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
+	auto& xSSGI = g_xEngine.SSGI();
+	if (!xSSGI.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
 	Zenith_Profiling::ScopeZone xScope(ZENITH_PROFILE_ZONE("Flux SSGI"));
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	pxCommandList->SetPipeline(&xZZ.m_xDenoiseVPipeline);
-
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	xGraphics.BindFullscreenQuad(*pxCommandList, xSSGI.m_xDenoiseVPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace DV = Flux_Generated_SSGI::SSGI_DenoiseV;
@@ -342,7 +327,7 @@ static void ExecuteSSGIDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 	dbg_xSSGIDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
 	xBinder.BindDrawConstants(DV::hPushConstants, &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
 
-	xBinder.BindSRV(DV::hg_xSSGITex,    &xZZ.m_pxGraph->GetTransientAttachment(xZZ.m_xDenoiseHHandle).SRV());
+	xBinder.BindSRV(DV::hg_xSSGITex,    &xSSGI.m_pxGraph->GetTransientAttachment(xSSGI.m_xDenoiseHHandle).SRV());
 	xBinder.BindSRV(DV::hg_xDepthTex,   xGraphics.GetDepthStencilSRV());
 	xBinder.BindSRV(DV::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
 	xBinder.BindSRV(DV::hg_xAlbedoTex,  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));

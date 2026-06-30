@@ -10,6 +10,71 @@
 #endif
 
 //=============================================================================
+// Timestamped-keyframe vector serialization helpers (see Flux_AnimationClip.h).
+// On-disk format unchanged: uint32 count, then per key the value components then the
+// float time. Byte-identical to the former hand-rolled count+loop blocks.
+//=============================================================================
+void Flux_WriteVec3Keys(Zenith_DataStream& xStream, const Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& xKeys)
+{
+	xStream << static_cast<uint32_t>(xKeys.GetSize());
+	for (const auto& xKey : xKeys)
+	{
+		xStream << xKey.first.x;
+		xStream << xKey.first.y;
+		xStream << xKey.first.z;
+		xStream << xKey.second;
+	}
+}
+
+void Flux_ReadVec3Keys(Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& xKeys)
+{
+	uint32_t uCount = 0;
+	xStream >> uCount;
+	xKeys.Clear();
+	xKeys.Reserve(uCount);
+	for (u_int i = 0; i < uCount; ++i)
+	{
+		std::pair<Zenith_Maths::Vector3, float> xKey;
+		xStream >> xKey.first.x;
+		xStream >> xKey.first.y;
+		xStream >> xKey.first.z;
+		xStream >> xKey.second;
+		xKeys.PushBack(xKey);
+	}
+}
+
+void Flux_WriteQuatKeys(Zenith_DataStream& xStream, const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys)
+{
+	xStream << static_cast<uint32_t>(xKeys.GetSize());
+	for (const auto& xKey : xKeys)
+	{
+		xStream << xKey.first.w;
+		xStream << xKey.first.x;
+		xStream << xKey.first.y;
+		xStream << xKey.first.z;
+		xStream << xKey.second;
+	}
+}
+
+void Flux_ReadQuatKeys(Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys)
+{
+	uint32_t uCount = 0;
+	xStream >> uCount;
+	xKeys.Clear();
+	xKeys.Reserve(uCount);
+	for (u_int i = 0; i < uCount; ++i)
+	{
+		std::pair<Zenith_Maths::Quat, float> xKey;
+		xStream >> xKey.first.w;
+		xStream >> xKey.first.x;
+		xStream >> xKey.first.y;
+		xStream >> xKey.first.z;
+		xStream >> xKey.second;
+		xKeys.PushBack(xKey);
+	}
+}
+
+//=============================================================================
 // Flux_AnimationEvent
 //=============================================================================
 void Flux_AnimationEvent::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -105,61 +170,15 @@ Zenith_Maths::Quat Flux_RootMotion::SampleRotationDelta(float fTime) const
 void Flux_RootMotion::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	xStream << m_bEnabled;
-
-	uint32_t uNumPosDelta = static_cast<uint32_t>(m_xPositionDeltas.GetSize());
-	xStream << uNumPosDelta;
-	for (const auto& xDelta : m_xPositionDeltas)
-	{
-		xStream << xDelta.first.x;
-		xStream << xDelta.first.y;
-		xStream << xDelta.first.z;
-		xStream << xDelta.second;
-	}
-
-	uint32_t uNumRotDelta = static_cast<uint32_t>(m_xRotationDeltas.GetSize());
-	xStream << uNumRotDelta;
-	for (const auto& xDelta : m_xRotationDeltas)
-	{
-		xStream << xDelta.first.w;
-		xStream << xDelta.first.x;
-		xStream << xDelta.first.y;
-		xStream << xDelta.first.z;
-		xStream << xDelta.second;
-	}
+	Flux_WriteVec3Keys(xStream, m_xPositionDeltas);
+	Flux_WriteQuatKeys(xStream, m_xRotationDeltas);
 }
 
 void Flux_RootMotion::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	xStream >> m_bEnabled;
-
-	uint32_t uNumPosDelta = 0;
-	xStream >> uNumPosDelta;
-	m_xPositionDeltas.Clear();
-	m_xPositionDeltas.Reserve(uNumPosDelta);
-	for (u_int i = 0; i < uNumPosDelta; ++i)
-	{
-		std::pair<Zenith_Maths::Vector3, float> xDelta;
-		xStream >> xDelta.first.x;
-		xStream >> xDelta.first.y;
-		xStream >> xDelta.first.z;
-		xStream >> xDelta.second;
-		m_xPositionDeltas.PushBack(xDelta);
-	}
-
-	uint32_t uNumRotDelta = 0;
-	xStream >> uNumRotDelta;
-	m_xRotationDeltas.Clear();
-	m_xRotationDeltas.Reserve(uNumRotDelta);
-	for (u_int i = 0; i < uNumRotDelta; ++i)
-	{
-		std::pair<Zenith_Maths::Quat, float> xDelta;
-		xStream >> xDelta.first.w;
-		xStream >> xDelta.first.x;
-		xStream >> xDelta.first.y;
-		xStream >> xDelta.first.z;
-		xStream >> xDelta.second;
-		m_xRotationDeltas.PushBack(xDelta);
-	}
+	Flux_ReadVec3Keys(xStream, m_xPositionDeltas);
+	Flux_ReadQuatKeys(xStream, m_xRotationDeltas);
 }
 
 //=============================================================================
@@ -345,91 +364,17 @@ Zenith_Maths::Matrix4 Flux_BoneChannel::Sample(float fTime) const
 void Flux_BoneChannel::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	xStream << m_strBoneName;
-
-	// Positions
-	uint32_t uNumPositions = static_cast<uint32_t>(m_xPositions.GetSize());
-	xStream << uNumPositions;
-	for (const auto& xKey : m_xPositions)
-	{
-		xStream << xKey.first.x;
-		xStream << xKey.first.y;
-		xStream << xKey.first.z;
-		xStream << xKey.second;
-	}
-
-	// Rotations
-	uint32_t uNumRotations = static_cast<uint32_t>(m_xRotations.GetSize());
-	xStream << uNumRotations;
-	for (const auto& xKey : m_xRotations)
-	{
-		xStream << xKey.first.w;
-		xStream << xKey.first.x;
-		xStream << xKey.first.y;
-		xStream << xKey.first.z;
-		xStream << xKey.second;
-	}
-
-	// Scales
-	uint32_t uNumScales = static_cast<uint32_t>(m_xScales.GetSize());
-	xStream << uNumScales;
-	for (const auto& xKey : m_xScales)
-	{
-		xStream << xKey.first.x;
-		xStream << xKey.first.y;
-		xStream << xKey.first.z;
-		xStream << xKey.second;
-	}
+	Flux_WriteVec3Keys(xStream, m_xPositions);
+	Flux_WriteQuatKeys(xStream, m_xRotations);
+	Flux_WriteVec3Keys(xStream, m_xScales);
 }
 
 void Flux_BoneChannel::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	xStream >> m_strBoneName;
-
-	// Positions
-	uint32_t uNumPositions = 0;
-	xStream >> uNumPositions;
-	m_xPositions.Clear();
-	m_xPositions.Reserve(uNumPositions);
-	for (u_int i = 0; i < uNumPositions; ++i)
-	{
-		std::pair<Zenith_Maths::Vector3, float> xKey;
-		xStream >> xKey.first.x;
-		xStream >> xKey.first.y;
-		xStream >> xKey.first.z;
-		xStream >> xKey.second;
-		m_xPositions.PushBack(xKey);
-	}
-
-	// Rotations
-	uint32_t uNumRotations = 0;
-	xStream >> uNumRotations;
-	m_xRotations.Clear();
-	m_xRotations.Reserve(uNumRotations);
-	for (u_int i = 0; i < uNumRotations; ++i)
-	{
-		std::pair<Zenith_Maths::Quat, float> xKey;
-		xStream >> xKey.first.w;
-		xStream >> xKey.first.x;
-		xStream >> xKey.first.y;
-		xStream >> xKey.first.z;
-		xStream >> xKey.second;
-		m_xRotations.PushBack(xKey);
-	}
-
-	// Scales
-	uint32_t uNumScales = 0;
-	xStream >> uNumScales;
-	m_xScales.Clear();
-	m_xScales.Reserve(uNumScales);
-	for (u_int i = 0; i < uNumScales; ++i)
-	{
-		std::pair<Zenith_Maths::Vector3, float> xKey;
-		xStream >> xKey.first.x;
-		xStream >> xKey.first.y;
-		xStream >> xKey.first.z;
-		xStream >> xKey.second;
-		m_xScales.PushBack(xKey);
-	}
+	Flux_ReadVec3Keys(xStream, m_xPositions);
+	Flux_ReadQuatKeys(xStream, m_xRotations);
+	Flux_ReadVec3Keys(xStream, m_xScales);
 }
 
 void Flux_BoneChannel::AddPositionKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xPosition)

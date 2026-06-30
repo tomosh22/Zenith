@@ -250,3 +250,49 @@ void Zenith_UnitTests::TestBoneChannelScaleClampsAtClipEnd()
 	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SampleScale(50.0f), Zenith_Maths::Vector3(1.5f, 1.5f, 1.5f)),
 		"SampleScale past the clip end must clamp to the last keyframe");
 }
+
+// ============================================================================
+// Timestamped-keyframe serialization helpers (Flux_Write/ReadVec3Keys + ...QuatKeys).
+// Pins the on-disk byte LENGTH (so a format change can't slip through internally-
+// consistent round-trips) AND verifies a full round-trip. These back the shared
+// helpers the MeshAnimation Read/WriteToDataStream paths were migrated onto.
+// ============================================================================
+ZENITH_TEST(AnimationSerialization, Vec3KeysRoundTripAndByteLength)
+{
+	Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>> xKeys;
+	xKeys.PushBack(std::make_pair(Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f), 0.5f));
+	xKeys.PushBack(std::make_pair(Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f), 1.5f));
+
+	Zenith_DataStream xStream;
+	Flux_WriteVec3Keys(xStream, xKeys);
+
+	// Format pin: uint32 count + N * (3 position floats + 1 time float) = 4 + N*16.
+	const uint64_t uExpected = sizeof(uint32_t) + 2ull * (4ull * sizeof(float));
+	ZENITH_ASSERT_EQ(xStream.GetCursor(), uExpected, "Vec3 keys must serialize to count(4)+N*16 bytes; got %llu", xStream.GetCursor());
+
+	xStream.SetCursor(0);
+	Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>> xOut;
+	Flux_ReadVec3Keys(xStream, xOut);
+	ZENITH_ASSERT_EQ(xOut.GetSize(), 2u, "round-trip restores 2 keys");
+	ZENITH_ASSERT_TRUE(xOut.Get(0).first.x == 1.0f && xOut.Get(0).first.z == 3.0f && xOut.Get(0).second == 0.5f, "key 0 round-trips exactly");
+	ZENITH_ASSERT_TRUE(xOut.Get(1).first.y == 5.0f && xOut.Get(1).second == 1.5f, "key 1 round-trips exactly");
+}
+
+ZENITH_TEST(AnimationSerialization, QuatKeysRoundTripAndByteLength)
+{
+	Zenith_Vector<std::pair<Zenith_Maths::Quat, float>> xKeys;
+	xKeys.PushBack(std::make_pair(Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), 0.25f)); // Quat(w,x,y,z) = identity
+
+	Zenith_DataStream xStream;
+	Flux_WriteQuatKeys(xStream, xKeys);
+
+	// Format pin: uint32 count + N * (4 quat floats + 1 time float) = 4 + N*20.
+	const uint64_t uExpected = sizeof(uint32_t) + 1ull * (5ull * sizeof(float));
+	ZENITH_ASSERT_EQ(xStream.GetCursor(), uExpected, "Quat keys must serialize to count(4)+N*20 bytes; got %llu", xStream.GetCursor());
+
+	xStream.SetCursor(0);
+	Zenith_Vector<std::pair<Zenith_Maths::Quat, float>> xOut;
+	Flux_ReadQuatKeys(xStream, xOut);
+	ZENITH_ASSERT_EQ(xOut.GetSize(), 1u, "round-trip restores 1 key");
+	ZENITH_ASSERT_TRUE(xOut.Get(0).first.w == 1.0f && xOut.Get(0).second == 0.25f, "quat key round-trips exactly");
+}

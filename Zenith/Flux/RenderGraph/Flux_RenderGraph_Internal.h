@@ -33,14 +33,14 @@ struct Flux_RenderGraph_Resource
     // packer compares them as execution-time-ordered intervals; pass-
     // declaration indices would mis-rank passes from different subsystems
     // that interleave during topological sort.
-    u_int m_uFirstWrite = UINT32_MAX;
-    u_int m_uLastRead   = UINT32_MAX;
-    // Last write. Distinct from m_uFirstWrite for transients that are
-    // written multiple times (e.g. UAV ping-pong patterns). m_uLastUse
-    // on TransientResource is max(m_uLastRead, m_uLastWrite) so the
+    u_int m_uFirstWriteTopoIdx = UINT32_MAX;
+    u_int m_uLastReadTopoIdx   = UINT32_MAX;
+    // Last write. Distinct from m_uFirstWriteTopoIdx for transients that are
+    // written multiple times (e.g. UAV ping-pong patterns). m_uLastUseTopoIdx
+    // on TransientResource is max(m_uLastReadTopoIdx, m_uLastWriteTopoIdx) so the
     // packer / aliasing-barrier pass treats the lifetime as covering
     // every actual access, not just up to the first write.
-    u_int m_uLastWrite  = UINT32_MAX;
+    u_int m_uLastWriteTopoIdx  = UINT32_MAX;
 };
 
 // Per-(resource, subresource) state transition emitted by the graph as a

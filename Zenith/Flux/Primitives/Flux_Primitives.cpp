@@ -473,9 +473,6 @@ void Flux_PrimitivesImpl::Initialise()
 		m_bTriangleBuffersInitialised = true;
 	}
 
-#ifdef ZENITH_DEBUG_VARIABLES
-#endif
-
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives initialised");
 }
 

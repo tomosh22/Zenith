@@ -164,6 +164,88 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromGeometry(Flux_MeshGeometry* pxGe
 	return pxInstance;
 }
 
+// Single source of the standard interleaved vertex layout — see the header comment.
+// Byte-identical to the formerly-duplicated loops; keep this in lockstep with the
+// SHADER_DATA_TYPE_* layouts the callers assert (72 B static / 104 B skinned).
+void Flux_InterleaveMeshVertices(uint8_t* pDst, const Zenith_MeshAsset& xAsset, uint32_t uNumVerts, bool bSkinned)
+{
+	const uint32_t uStride = bSkinned ? 104u : 72u;
+
+	const bool bHasPositions   = xAsset.m_xPositions.GetSize()   >= uNumVerts;
+	const bool bHasUVs         = xAsset.m_xUVs.GetSize()         >= uNumVerts;
+	const bool bHasNormals     = xAsset.m_xNormals.GetSize()     >= uNumVerts;
+	const bool bHasTangents    = xAsset.m_xTangents.GetSize()    >= uNumVerts;
+	const bool bHasBitangents  = xAsset.m_xBitangents.GetSize()  >= uNumVerts;
+	const bool bHasColors      = xAsset.m_xColors.GetSize()      >= uNumVerts;
+	const bool bHasBoneIndices = bSkinned && xAsset.m_xBoneIndices.GetSize() >= uNumVerts;
+	const bool bHasBoneWeights = bSkinned && xAsset.m_xBoneWeights.GetSize() >= uNumVerts;
+
+	const Zenith_Maths::Vector3 xDefaultPosition(0.0f, 0.0f, 0.0f);
+	const Zenith_Maths::Vector2 xDefaultUV(0.0f, 0.0f);
+	const Zenith_Maths::Vector3 xDefaultNormal(0.0f, 1.0f, 0.0f);
+	const Zenith_Maths::Vector3 xDefaultTangent(1.0f, 0.0f, 0.0f);
+	const Zenith_Maths::Vector3 xDefaultBitangent(0.0f, 0.0f, 1.0f);
+	const Zenith_Maths::Vector4 xDefaultColor(1.0f, 1.0f, 1.0f, 1.0f);
+	const glm::uvec4 xDefaultBoneIndices(0u, 0u, 0u, 0u);
+	const glm::vec4  xDefaultBoneWeights(0.0f, 0.0f, 0.0f, 0.0f);
+
+	for (uint32_t i = 0; i < uNumVerts; i++)
+	{
+		uint8_t* pVtx = pDst + static_cast<size_t>(i) * uStride;
+		float* pFloatData = reinterpret_cast<float*>(pVtx);
+		size_t uFloatIndex = 0;
+
+		const Zenith_Maths::Vector3& xPos = bHasPositions ? xAsset.m_xPositions.Get(i) : xDefaultPosition;
+		pFloatData[uFloatIndex++] = xPos.x;
+		pFloatData[uFloatIndex++] = xPos.y;
+		pFloatData[uFloatIndex++] = xPos.z;
+
+		const Zenith_Maths::Vector2& xUV = bHasUVs ? xAsset.m_xUVs.Get(i) : xDefaultUV;
+		pFloatData[uFloatIndex++] = xUV.x;
+		pFloatData[uFloatIndex++] = xUV.y;
+
+		const Zenith_Maths::Vector3& xNormal = bHasNormals ? xAsset.m_xNormals.Get(i) : xDefaultNormal;
+		pFloatData[uFloatIndex++] = xNormal.x;
+		pFloatData[uFloatIndex++] = xNormal.y;
+		pFloatData[uFloatIndex++] = xNormal.z;
+
+		const Zenith_Maths::Vector3& xTangent = bHasTangents ? xAsset.m_xTangents.Get(i) : xDefaultTangent;
+		pFloatData[uFloatIndex++] = xTangent.x;
+		pFloatData[uFloatIndex++] = xTangent.y;
+		pFloatData[uFloatIndex++] = xTangent.z;
+
+		const Zenith_Maths::Vector3& xBitangent = bHasBitangents ? xAsset.m_xBitangents.Get(i) : xDefaultBitangent;
+		pFloatData[uFloatIndex++] = xBitangent.x;
+		pFloatData[uFloatIndex++] = xBitangent.y;
+		pFloatData[uFloatIndex++] = xBitangent.z;
+
+		const Zenith_Maths::Vector4& xColor = bHasColors ? xAsset.m_xColors.Get(i) : xDefaultColor;
+		pFloatData[uFloatIndex++] = xColor.x;
+		pFloatData[uFloatIndex++] = xColor.y;
+		pFloatData[uFloatIndex++] = xColor.z;
+		pFloatData[uFloatIndex++] = xColor.w;
+
+		if (bSkinned)
+		{
+			// BoneIndices (4 uints = 16 bytes) at offset 72
+			const glm::uvec4& xBoneIndices = bHasBoneIndices ? xAsset.m_xBoneIndices.Get(i) : xDefaultBoneIndices;
+			uint32_t* pUintData = reinterpret_cast<uint32_t*>(pVtx + 72);
+			pUintData[0] = xBoneIndices.x;
+			pUintData[1] = xBoneIndices.y;
+			pUintData[2] = xBoneIndices.z;
+			pUintData[3] = xBoneIndices.w;
+
+			// BoneWeights (4 floats = 16 bytes) at offset 88
+			const glm::vec4& xBoneWeights = bHasBoneWeights ? xAsset.m_xBoneWeights.Get(i) : xDefaultBoneWeights;
+			float* pWeightData = reinterpret_cast<float*>(pVtx + 88);
+			pWeightData[0] = xBoneWeights.x;
+			pWeightData[1] = xBoneWeights.y;
+			pWeightData[2] = xBoneWeights.z;
+			pWeightData[3] = xBoneWeights.w;
+		}
+	}
+}
+
 Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset)
 {
 	Zenith_Assert(pxAsset != nullptr, "Cannot create mesh instance from null asset");
@@ -213,64 +295,8 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset)
 	const size_t uVertexDataSize = static_cast<size_t>(uNumVerts) * xLayout.GetStride();
 	uint8_t* pVertexData = new uint8_t[uVertexDataSize];
 
-	// Check which attributes are available from the asset
-	const bool bHasPositions = pxAsset->m_xPositions.GetSize() >= uNumVerts;
-	const bool bHasUVs = pxAsset->m_xUVs.GetSize() >= uNumVerts;
-	const bool bHasNormals = pxAsset->m_xNormals.GetSize() >= uNumVerts;
-	const bool bHasTangents = pxAsset->m_xTangents.GetSize() >= uNumVerts;
-	const bool bHasBitangents = pxAsset->m_xBitangents.GetSize() >= uNumVerts;
-	const bool bHasColors = pxAsset->m_xColors.GetSize() >= uNumVerts;
-
-	// Default values for missing attributes
-	const Zenith_Maths::Vector3 xDefaultPosition(0.0f, 0.0f, 0.0f);
-	const Zenith_Maths::Vector2 xDefaultUV(0.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultNormal(0.0f, 1.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultTangent(1.0f, 0.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultBitangent(0.0f, 0.0f, 1.0f);
-	const Zenith_Maths::Vector4 xDefaultColor(1.0f, 1.0f, 1.0f, 1.0f);
-
-	// Interleave vertex data
-	size_t uFloatIndex = 0;
-	float* pFloatData = reinterpret_cast<float*>(pVertexData);
-
-	for (uint32_t i = 0; i < uNumVerts; i++)
-	{
-		// Position (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xPos = bHasPositions ? pxAsset->m_xPositions.Get(i) : xDefaultPosition;
-		pFloatData[uFloatIndex++] = xPos.x;
-		pFloatData[uFloatIndex++] = xPos.y;
-		pFloatData[uFloatIndex++] = xPos.z;
-
-		// UV (2 floats = 8 bytes)
-		const Zenith_Maths::Vector2& xUV = bHasUVs ? pxAsset->m_xUVs.Get(i) : xDefaultUV;
-		pFloatData[uFloatIndex++] = xUV.x;
-		pFloatData[uFloatIndex++] = xUV.y;
-
-		// Normal (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xNormal = bHasNormals ? pxAsset->m_xNormals.Get(i) : xDefaultNormal;
-		pFloatData[uFloatIndex++] = xNormal.x;
-		pFloatData[uFloatIndex++] = xNormal.y;
-		pFloatData[uFloatIndex++] = xNormal.z;
-
-		// Tangent (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xTangent = bHasTangents ? pxAsset->m_xTangents.Get(i) : xDefaultTangent;
-		pFloatData[uFloatIndex++] = xTangent.x;
-		pFloatData[uFloatIndex++] = xTangent.y;
-		pFloatData[uFloatIndex++] = xTangent.z;
-
-		// Bitangent (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xBitangent = bHasBitangents ? pxAsset->m_xBitangents.Get(i) : xDefaultBitangent;
-		pFloatData[uFloatIndex++] = xBitangent.x;
-		pFloatData[uFloatIndex++] = xBitangent.y;
-		pFloatData[uFloatIndex++] = xBitangent.z;
-
-		// Color (4 floats = 16 bytes)
-		const Zenith_Maths::Vector4& xColor = bHasColors ? pxAsset->m_xColors.Get(i) : xDefaultColor;
-		pFloatData[uFloatIndex++] = xColor.x;
-		pFloatData[uFloatIndex++] = xColor.y;
-		pFloatData[uFloatIndex++] = xColor.z;
-		pFloatData[uFloatIndex++] = xColor.w;
-	}
+	// Interleave the standard 72-byte static vertex (shared layout helper).
+	Flux_InterleaveMeshVertices(pVertexData, *pxAsset, uNumVerts, /*bSkinned*/ false);
 
 	// Create GPU vertex buffer
 	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
@@ -438,88 +464,8 @@ Flux_MeshInstance* Flux_MeshInstance::CreateSkinnedFromAsset(Zenith_MeshAsset* p
 	const size_t uVertexDataSize = static_cast<size_t>(uNumVerts) * xLayout.GetStride();
 	uint8_t* pVertexData = new uint8_t[uVertexDataSize];
 
-	// Check which attributes are available
-	const bool bHasPositions = pxAsset->m_xPositions.GetSize() >= uNumVerts;
-	const bool bHasUVs = pxAsset->m_xUVs.GetSize() >= uNumVerts;
-	const bool bHasNormals = pxAsset->m_xNormals.GetSize() >= uNumVerts;
-	const bool bHasTangents = pxAsset->m_xTangents.GetSize() >= uNumVerts;
-	const bool bHasBitangents = pxAsset->m_xBitangents.GetSize() >= uNumVerts;
-	const bool bHasColors = pxAsset->m_xColors.GetSize() >= uNumVerts;
-	const bool bHasBoneIndices = pxAsset->m_xBoneIndices.GetSize() >= uNumVerts;
-	const bool bHasBoneWeights = pxAsset->m_xBoneWeights.GetSize() >= uNumVerts;
-
-	// Default values
-	const Zenith_Maths::Vector3 xDefaultPosition(0.0f, 0.0f, 0.0f);
-	const Zenith_Maths::Vector2 xDefaultUV(0.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultNormal(0.0f, 1.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultTangent(1.0f, 0.0f, 0.0f);
-	const Zenith_Maths::Vector3 xDefaultBitangent(0.0f, 0.0f, 1.0f);
-	const Zenith_Maths::Vector4 xDefaultColor(1.0f, 1.0f, 1.0f, 1.0f);
-	const glm::uvec4 xDefaultBoneIndices(0, 0, 0, 0);
-	const glm::vec4 xDefaultBoneWeights(0.0f, 0.0f, 0.0f, 0.0f);
-
-	// Interleave vertex data
-	uint8_t* pCurrentVertex = pVertexData;
-
-	for (uint32_t i = 0; i < uNumVerts; i++)
-	{
-		float* pFloatData = reinterpret_cast<float*>(pCurrentVertex);
-		size_t uFloatIndex = 0;
-
-		// Position (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xPos = bHasPositions ? pxAsset->m_xPositions.Get(i) : xDefaultPosition;
-		pFloatData[uFloatIndex++] = xPos.x;
-		pFloatData[uFloatIndex++] = xPos.y;
-		pFloatData[uFloatIndex++] = xPos.z;
-
-		// UV (2 floats = 8 bytes)
-		const Zenith_Maths::Vector2& xUV = bHasUVs ? pxAsset->m_xUVs.Get(i) : xDefaultUV;
-		pFloatData[uFloatIndex++] = xUV.x;
-		pFloatData[uFloatIndex++] = xUV.y;
-
-		// Normal (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xNormal = bHasNormals ? pxAsset->m_xNormals.Get(i) : xDefaultNormal;
-		pFloatData[uFloatIndex++] = xNormal.x;
-		pFloatData[uFloatIndex++] = xNormal.y;
-		pFloatData[uFloatIndex++] = xNormal.z;
-
-		// Tangent (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xTangent = bHasTangents ? pxAsset->m_xTangents.Get(i) : xDefaultTangent;
-		pFloatData[uFloatIndex++] = xTangent.x;
-		pFloatData[uFloatIndex++] = xTangent.y;
-		pFloatData[uFloatIndex++] = xTangent.z;
-
-		// Bitangent (3 floats = 12 bytes)
-		const Zenith_Maths::Vector3& xBitangent = bHasBitangents ? pxAsset->m_xBitangents.Get(i) : xDefaultBitangent;
-		pFloatData[uFloatIndex++] = xBitangent.x;
-		pFloatData[uFloatIndex++] = xBitangent.y;
-		pFloatData[uFloatIndex++] = xBitangent.z;
-
-		// Color (4 floats = 16 bytes)
-		const Zenith_Maths::Vector4& xColor = bHasColors ? pxAsset->m_xColors.Get(i) : xDefaultColor;
-		pFloatData[uFloatIndex++] = xColor.x;
-		pFloatData[uFloatIndex++] = xColor.y;
-		pFloatData[uFloatIndex++] = xColor.z;
-		pFloatData[uFloatIndex++] = xColor.w;
-
-		// BoneIndices (4 uints = 16 bytes) at offset 72
-		const glm::uvec4& xBoneIndices = bHasBoneIndices ? pxAsset->m_xBoneIndices.Get(i) : xDefaultBoneIndices;
-		uint32_t* pUintData = reinterpret_cast<uint32_t*>(pCurrentVertex + 72);
-		pUintData[0] = xBoneIndices.x;
-		pUintData[1] = xBoneIndices.y;
-		pUintData[2] = xBoneIndices.z;
-		pUintData[3] = xBoneIndices.w;
-
-		// BoneWeights (4 floats = 16 bytes) at offset 88
-		const glm::vec4& xBoneWeights = bHasBoneWeights ? pxAsset->m_xBoneWeights.Get(i) : xDefaultBoneWeights;
-		float* pWeightData = reinterpret_cast<float*>(pCurrentVertex + 88);
-		pWeightData[0] = xBoneWeights.x;
-		pWeightData[1] = xBoneWeights.y;
-		pWeightData[2] = xBoneWeights.z;
-		pWeightData[3] = xBoneWeights.w;
-
-		pCurrentVertex += 104;
-	}
+	// Interleave the standard 104-byte skinned vertex (shared layout helper).
+	Flux_InterleaveMeshVertices(pVertexData, *pxAsset, uNumVerts, /*bSkinned*/ true);
 
 	// Create GPU vertex buffer
 	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
@@ -699,3 +645,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset,
 // test-body calls pull the otherwise-inert Flux_MeshGeometryRegistry.obj into the
 // link (same pattern + rationale as the bottom of Flux_GPUScene.cpp).
 #include "Flux/Flux_MeshGeometryRegistry.Tests.inl"
+
+// Shared vertex-interleaver tests — hosted here (same TU as Flux_InterleaveMeshVertices)
+// so the always-linked .obj carries them; pins the 72/104-byte layout + attr defaults.
+#include "Flux/MeshGeometry/Flux_VertexInterleave.Tests.inl"

@@ -333,9 +333,9 @@ void Flux_RenderGraph::TrackResource(const Flux_GraphResource& xResource)
     {
         Flux_RenderGraph_Resource xRes;
         xRes.m_xResource = xResource;
-        xRes.m_uFirstWrite = UINT32_MAX;
-        xRes.m_uLastRead   = UINT32_MAX;
-        xRes.m_uLastWrite  = UINT32_MAX;
+        xRes.m_uFirstWriteTopoIdx = UINT32_MAX;
+        xRes.m_uLastReadTopoIdx   = UINT32_MAX;
+        xRes.m_uLastWriteTopoIdx  = UINT32_MAX;
         m_xResources.Insert(pRes, xRes);
     }
 }

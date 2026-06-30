@@ -281,6 +281,33 @@ namespace
 			strContentOut += szOffsetAssert;
 		}
 	}
+
+	// True for the persistent-set spine CBs (g_xGlobal @ set 0, g_xView @ set 1) whose
+	// reflected struct is byte-identical across every program that binds them. Emitted
+	// ONCE per generated file in a `Shared` sub-namespace (see BuildSubsystemHeaderContent)
+	// rather than re-emitted in every program namespace. Safe because the *_CB structs are
+	// layout-assert artifacts — no call site references them by the per-program name (only
+	// the binding handles hg_xGlobal/hg_xView are used).
+	bool IsSharedSpineCB(const std::string& strBindIdent)
+	{
+		return strBindIdent == "g_xGlobal" || strBindIdent == "g_xView";
+	}
+
+	// Emit one `struct <Name>_CB { ... };` + its sizeof/offsetof drift asserts at the
+	// standard 2-tab (namespace-member) depth. Factored so both the per-program loop and
+	// the per-file Shared sub-namespace produce identical struct text.
+	void EmitCBStructDefinition(const Flux_ReflectedBinding& xBinding, const std::string& strBindIdent, std::string& strContentOut)
+	{
+		strContentOut += "\t\tstruct " + strBindIdent + "_CB\n\t\t{\n";
+		u_int uRunningOffset = 0;
+		for (u_int f = 0; f < xBinding.m_axFields.GetSize(); f++)
+		{
+			EmitCBField(xBinding.m_axFields.Get(f), uRunningOffset, strContentOut);
+		}
+		EmitTrailingCBPad(xBinding, uRunningOffset, strContentOut);
+		strContentOut += "\t\t};\n";
+		EmitCBStructAsserts(xBinding, strBindIdent, strContentOut);
+	}
 }
 
 std::string Flux_CodeGenerator::BuildSubsystemHeaderContent(const char* szSubsystem,
@@ -296,6 +323,44 @@ std::string Flux_CodeGenerator::BuildSubsystemHeaderContent(const char* szSubsys
 	strContent += "#include \"glm/glm.hpp\"\n";
 	strContent += "#include <cstddef>\n\n";
 	strContent += "namespace Flux_Generated_" + SanitizeIdentifier(strSubsystem) + "\n{\n";
+
+	// Shared persistent-set CB structs (g_xGlobal @ set 0, g_xView @ set 1) are byte-
+	// identical across every program that binds them. Emit each ONCE here in a `Shared`
+	// sub-namespace instead of re-emitting the full struct (the ~48 B global + ~432 B view)
+	// in every program namespace below — the big win on multi-program files (Fog/HDR/SSR/
+	// SSGI/UnifiedMesh). The per-program binding handles (hg_xGlobal/hg_xView) still emit;
+	// only the duplicate *_CB struct text is hoisted. Safe: the *_CB structs are layout-
+	// assert artifacts, never referenced by the per-program qualified name.
+	{
+		std::string strShared;
+		bool bEmittedGlobal = false;
+		bool bEmittedView   = false;
+		for (u_int u = 0; u < uProgramCount; u++)
+		{
+			const ProgramReflection& xPR = axPrograms[u];
+			if (!xPR.m_pxReflection || !xPR.m_pxDecl) continue;
+			const Zenith_Vector<Flux_ReflectedBinding>& axBindings = xPR.m_pxReflection->GetBindings();
+			for (u_int b = 0; b < axBindings.GetSize(); b++)
+			{
+				const Flux_ReflectedBinding& xBinding = axBindings.Get(b);
+				if (xBinding.m_strName.empty()) continue;
+				const std::string strBindIdent = SanitizeIdentifier(xBinding.m_strName);
+				if (!IsSharedSpineCB(strBindIdent)) continue;
+				const bool bIsCB = (xBinding.m_eResourceKind == FLUX_RESOURCE_KIND_CONSTANT_BUFFER ||
+									 xBinding.m_eResourceKind == FLUX_RESOURCE_KIND_PARAMETER_BLOCK);
+				if (!bIsCB || xBinding.m_axFields.GetSize() == 0) continue;
+				if (strBindIdent == "g_xGlobal") { if (bEmittedGlobal) continue; bEmittedGlobal = true; }
+				else                             { if (bEmittedView)   continue; bEmittedView   = true; }
+				EmitCBStructDefinition(xBinding, strBindIdent, strShared);
+			}
+		}
+		if (!strShared.empty())
+		{
+			strContent += "\tnamespace Shared\n\t{\n";
+			strContent += strShared;
+			strContent += "\t}\n\n";
+		}
+	}
 
 	// Per-program section: emit binding-path constants for every reflected
 	// resource, plus a CB struct skeleton when the program has CB or PB
@@ -343,19 +408,15 @@ std::string Flux_CodeGenerator::BuildSubsystemHeaderContent(const char* szSubsys
 			// offset is past the running cursor (or the struct's total size
 			// exceeds the sum of fields). Without this, sizeof asserts fail
 			// for any CB whose layout has interior or trailing pad.
+			// Shared spine CBs (g_xGlobal/g_xView) are emitted once in the `Shared`
+			// sub-namespace above — skip the per-program duplicate (the handle is
+			// already emitted above; only the struct text is hoisted).
 			if ((xBinding.m_eResourceKind == FLUX_RESOURCE_KIND_CONSTANT_BUFFER ||
 				 xBinding.m_eResourceKind == FLUX_RESOURCE_KIND_PARAMETER_BLOCK) &&
-				xBinding.m_axFields.GetSize() > 0)
+				xBinding.m_axFields.GetSize() > 0 &&
+				!IsSharedSpineCB(strBindIdent))
 			{
-				strContent += "\t\tstruct " + strBindIdent + "_CB\n\t\t{\n";
-				u_int uRunningOffset = 0;
-				for (u_int f = 0; f < xBinding.m_axFields.GetSize(); f++)
-				{
-					EmitCBField(xBinding.m_axFields.Get(f), uRunningOffset, strContent);
-				}
-				EmitTrailingCBPad(xBinding, uRunningOffset, strContent);
-				strContent += "\t\t};\n";
-				EmitCBStructAsserts(xBinding, strBindIdent, strContent);
+				EmitCBStructDefinition(xBinding, strBindIdent, strContent);
 			}
 		}
 

@@ -48,6 +48,9 @@ inline constexpr u_int uFLUX_GPUSCENE_SKINNED_MESH_BIT = 0x80000000u;
 inline constexpr bool Flux_IsSkinnedMeshGeometryId(u_int uId) { return (uId & uFLUX_GPUSCENE_SKINNED_MESH_BIT) != 0u; }
 inline constexpr u_int Flux_SkinnedMeshGeometryIndex(u_int uId) { return uId & ~uFLUX_GPUSCENE_SKINNED_MESH_BIT; }
 
+// INVARIANT: this 80-byte layout is locked to GPUSceneObject in
+// Common/SceneObjects.slang (see LAYOUT RULE above); the static_asserts below
+// enforce it. Do not add/remove/reorder members without editing the shader in lockstep.
 struct Flux_GPUSceneObject
 {
 	Zenith_Maths::Matrix4 m_xModelMatrix;     // offset  0 — object world transform
@@ -62,6 +65,9 @@ static_assert(offsetof(Flux_GPUSceneObject, m_uBonePaletteRef) == 68, "Flux_GPUS
 static_assert(offsetof(Flux_GPUSceneObject, m_uVATAnimPacked) == 72, "Flux_GPUSceneObject::m_uVATAnimPacked must sit at offset 72");
 static_assert(offsetof(Flux_GPUSceneObject, m_uVATAnimTime) == 76, "Flux_GPUSceneObject::m_uVATAnimTime must sit at offset 76 (last word of the 80B record)");
 
+// INVARIANT: this 32-byte layout is locked to GPUSceneDrawItem in
+// Common/SceneObjects.slang (see LAYOUT RULE above); the static_asserts below
+// enforce it. Change the shader in lockstep with any member edit.
 struct Flux_GPUSceneDrawItem
 {
 	u_int                 m_uObjectIndex;       // offset  0 — index into the object array

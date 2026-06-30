@@ -202,6 +202,6 @@ indirection. It was removed: passes now call the backend command-recorder method
 ordered worker stage. To add a new GPU operation, add the method to the
 `FluxBackendCommandRecorder` concept + each backend, and call it from the pass callback.
 
-### Buffer Wrapper Classes (Candidate for Simplification)
+### Buffer Wrapper Classes (Consolidated)
 
-Note: The buffer wrapper classes (`Flux_VertexBuffer`, `Flux_DynamicVertexBuffer`, etc.) DO represent genuine code duplication. Eight classes follow two patterns (single-buffer vs frame-indexed-array), and template consolidation could reduce ~100 lines while preserving type safety. This is a candidate for future simplification.
+The buffer wrapper classes (`Flux_VertexBuffer`, `Flux_DynamicVertexBuffer`, etc.) are already consolidated onto two template bases in `Flux_Buffers.h`: `Flux_SingleBufferBase<TView>` (one buffer + optional view) and `Flux_FrameIndexedBufferBase<TView>` (per-frame-in-flight buffer/view arrays), each with a `Flux_NoView` specialization. The eight concrete types are thin leaves whose only remaining content is the domain-specific accessor names (`GetCBV`/`GetUAV`/`GetSRV`) — these forward to the base on purpose so the command-buffer binders stay type-safe at call sites and reject e.g. a vertex buffer passed as an index buffer. The two `Reset` overrides on `Flux_ReadWriteBuffer` / `Flux_DynamicReadWriteBuffer` exist to also clear their SRV-mirror views, which live outside the base's `TView` slot. This is intentional type-safety plumbing, not removable duplication — **not** a simplification candidate.

@@ -127,8 +127,14 @@ void Flux_IKChain::ReadFromDataStream(Zenith_DataStream& xStream)
 	// (0, 0, ±1) this is a no-op, and for stale position values it produces a
 	// best-effort direction rather than letting the solver consume garbage.
 	{
+		// "Approximately unit length" = squared length within [0.9, 1.1]^2 =
+		// [0.81, 1.21]. Outside that band (and not near-zero) the value is a stale
+		// world-space position from an old save, so normalize to a best-effort dir.
+		constexpr float fPOLE_MIN_NONZERO_LENSQ = 0.0001f;
+		constexpr float fPOLE_UNIT_LENSQ_MIN    = 0.81f; // 0.9^2
+		constexpr float fPOLE_UNIT_LENSQ_MAX    = 1.21f; // 1.1^2
 		const float fLenSq = glm::dot(m_xPoleVector, m_xPoleVector);
-		if (fLenSq > 0.0001f && (fLenSq < 0.81f || fLenSq > 1.21f))
+		if (fLenSq > fPOLE_MIN_NONZERO_LENSQ && (fLenSq < fPOLE_UNIT_LENSQ_MIN || fLenSq > fPOLE_UNIT_LENSQ_MAX))
 		{
 			m_xPoleVector = m_xPoleVector / std::sqrt(fLenSq);
 		}

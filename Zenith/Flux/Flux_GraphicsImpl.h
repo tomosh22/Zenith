@@ -116,6 +116,14 @@ public:
 	// or hot-reload. Present only to satisfy the uniform FluxRenderFeature interface.
 	void BuildPipelines() {}
 
+	// Fullscreen-quad pass prologue shared by the screen-space effects: bind the given
+	// pipeline + the shared fullscreen quad's vertex/index buffers. The caller then binds
+	// its per-effect SRVs/constants and issues DrawIndexed(6). Centralises the m_xQuadMesh
+	// fetch + the "6 indices" quad knowledge so each Execute callback reads as just its
+	// pipeline + binds. (Deliberately on FluxGraphics — which owns m_xQuadMesh — not on the
+	// SSR/SSGI CRTP base, so non-CRTP effects like SSAO can use it too.)
+	void BindFullscreenQuad(Flux_CommandBuffer& xCmd, Flux_Pipeline& xPipeline);
+
 	Flux_RenderAttachment& GetMRTAttachment(MRTIndex eIndex);
 	Flux_RenderAttachment& GetDepthAttachment();
 	Flux_RenderAttachment& GetFinalRenderTarget();

@@ -11,6 +11,7 @@
 class Flux_RenderGraph;
 class Zenith_MeshAsset;    // Stage 5: skinned-pose store keyed by mesh asset
 class Flux_MeshInstance;   // Stage 1: shared geometry resolved from the mesh-geometry registry for the unified draw
+class Zenith_MaterialAsset; // bucket-key material identity (passed by ptr to the Sync extractors)
 // Held by POINTER (forward-declared, heap-allocated in Zenith_Engine::AllocateRenderer /
 // freed in Shutdown + the dtor backstop) rather than by value: the snapshot header pulls
 // Flux_ModelInstance.h -> AssetHandle ->
@@ -231,4 +232,14 @@ public:
 
 	// Unit tests inspect private state.
 	friend class Zenith_UnitTests;
+
+private:
+	// Per-source extractors for SyncUnifiedBucketsFromSnapshot — each fills exactly ONE
+	// data source into the single unified GPU scene the orchestrator brackets with
+	// BeginSync/EndGPUSceneBuild. Pure factoring of the old 320-line body (no behaviour
+	// change); defined in Flux_GPUSceneBuilder.cpp next to the orchestrator. pxBlankMaterial is threaded
+	// in (rather than re-fetched) so the helpers add no new g_xEngine reaches.
+	void ExtractSnapshotStaticBuckets(const Flux_RenderSceneSnapshot& xSnapshot, Zenith_MaterialAsset* pxBlankMaterial);
+	void ExtractInstanceGroupBuckets(Zenith_MaterialAsset* pxBlankMaterial);
+	void ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xSnapshot, Zenith_MaterialAsset* pxBlankMaterial);
 };

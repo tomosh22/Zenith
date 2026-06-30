@@ -13,8 +13,6 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "Core/Zenith_GizmoTransformAccess.h" // Wave 3: drives the EC-side transform write-accessor instead of including Zenith_TransformComponent.h
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
-#include "Flux/Gizmos/Flux_GizmosImpl.h"
-#include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"

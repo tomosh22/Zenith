@@ -130,3 +130,14 @@ private:
 	mutable Zenith_AABB m_xLocalBounds;
 	mutable bool m_bLocalBoundsValid = false;
 };
+
+// Shared mesh-vertex interleaver — the single source of the engine's standard vertex
+// layout. Fills pDst with uNumVerts interleaved vertices:
+//   pos(3f) uv(2f) normal(3f) tangent(3f) bitangent(3f) color(4f)                 = 72 B
+//   + when bSkinned: boneIndices(4u) @offset 72, boneWeights(4f) @offset 88       = 104 B
+// Missing asset attributes fall back to canonical defaults (normal +Y, tangent +X,
+// bitangent +Z, white colour, zero bone indices/weights). pDst must hold at least
+// uNumVerts * (bSkinned ? 104 : 72) bytes. Pure (no GPU/engine access) so it is
+// headlessly unit-tested; previously this loop was hand-rolled in three places
+// (CreateFromAsset / CreateSkinnedFromAsset / Flux_RealBuildSkinnedPose).
+void Flux_InterleaveMeshVertices(uint8_t* pDst, const Zenith_MeshAsset& xAsset, uint32_t uNumVerts, bool bSkinned);

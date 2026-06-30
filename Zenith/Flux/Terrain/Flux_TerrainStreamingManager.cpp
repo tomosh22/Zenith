@@ -2,7 +2,6 @@
 #include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
-#include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/Terrain.h" // typed binding handles

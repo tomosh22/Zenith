@@ -613,7 +613,7 @@ void Flux_RenderGraph::ComputeResourceLifetimes()
 {
     // Lifetime values are stored as TOPOLOGICAL ORDER indices (positions in
     // m_xExecutionOrder), NOT pass-declaration indices. The aliasing packer
-    // treats m_uFirstWrite / m_uLastRead / m_uLastWrite as execution-time-
+    // treats m_uFirstWriteTopoIdx / m_uLastReadTopoIdx / m_uLastWriteTopoIdx as execution-time-
     // ordered values (T1 ends before T2 starts ⇒ they can share memory),
     // and that's only true if we use the topological position. Two passes
     // from different subsystems may have non-overlapping pass indices but
@@ -630,7 +630,7 @@ void Flux_RenderGraph::ComputeResourceLifetimes()
     // m_bEnabledMaskDirty triggers a barrier re-synth. In the latter case
     // we MUST skip disabled passes so lifetimes reflect what will actually
     // run this frame; otherwise SynthesizeAliasingBarriers would resolve
-    // pxPrior->m_uLastUse to a disabled pass and read a src access that
+    // pxPrior->m_uLastUseTopoIdx to a disabled pass and read a src access that
     // doesn't reflect the resource's true GPU state.
     //
     // The reset loop at the top makes this idempotent — every call rebuilds
@@ -639,9 +639,9 @@ void Flux_RenderGraph::ComputeResourceLifetimes()
     for (Zenith_HashMap<void*, Flux_RenderGraph_Resource>::Iterator it(m_xResources); !it.Done(); it.Next())
     {
         Flux_RenderGraph_Resource& xRes = it.GetValueMutable();
-        xRes.m_uFirstWrite = UINT32_MAX;
-        xRes.m_uLastRead   = UINT32_MAX;
-        xRes.m_uLastWrite  = UINT32_MAX;
+        xRes.m_uFirstWriteTopoIdx = UINT32_MAX;
+        xRes.m_uLastReadTopoIdx   = UINT32_MAX;
+        xRes.m_uLastWriteTopoIdx  = UINT32_MAX;
     }
 
     u_int uTopo = 0;
@@ -656,9 +656,9 @@ void Flux_RenderGraph::ComputeResourceLifetimes()
             void* pRes = xWrite.m_xResource.GetVoidPtr();
             Flux_RenderGraph_Resource* pxRes = m_xResources.TryGet(pRes);
             Zenith_Assert(pxRes != nullptr, "Flux_RenderGraph::ComputeResourceLifetimes: resource not tracked");
-            if (uTopo < pxRes->m_uFirstWrite) pxRes->m_uFirstWrite = uTopo;
-            if (pxRes->m_uLastWrite == UINT32_MAX || uTopo > pxRes->m_uLastWrite)
-                pxRes->m_uLastWrite = uTopo;
+            if (uTopo < pxRes->m_uFirstWriteTopoIdx) pxRes->m_uFirstWriteTopoIdx = uTopo;
+            if (pxRes->m_uLastWriteTopoIdx == UINT32_MAX || uTopo > pxRes->m_uLastWriteTopoIdx)
+                pxRes->m_uLastWriteTopoIdx = uTopo;
         }
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xReads); !it.Done(); it.Next())
         {
@@ -666,8 +666,8 @@ void Flux_RenderGraph::ComputeResourceLifetimes()
             void* pRes = xRead.m_xResource.GetVoidPtr();
             Flux_RenderGraph_Resource* pxRes = m_xResources.TryGet(pRes);
             Zenith_Assert(pxRes != nullptr, "Flux_RenderGraph::ComputeResourceLifetimes: resource not tracked");
-            if (pxRes->m_uLastRead == UINT32_MAX || uTopo > pxRes->m_uLastRead)
-                pxRes->m_uLastRead = uTopo;
+            if (pxRes->m_uLastReadTopoIdx == UINT32_MAX || uTopo > pxRes->m_uLastReadTopoIdx)
+                pxRes->m_uLastReadTopoIdx = uTopo;
         }
     }
 }
@@ -799,7 +799,7 @@ void Flux_RenderGraph::SynthesizeAliasingBarriers()
 
     // Lifetime values on TransientResource are TOPOLOGICAL ORDER indices
     // (see ComputeResourceLifetimes for why). Iterate by topological order
-    // and compare m_uFirstWrite / m_uLastUse against uTopo, then translate
+    // and compare m_uFirstWriteTopoIdx / m_uLastUseTopoIdx against uTopo, then translate
     // back to pass indices when calling FindAccessForTransientInPass
     // (which looks pass usage up by pass index).
     u_int uTopo = 0;
@@ -813,7 +813,7 @@ void Flux_RenderGraph::SynthesizeAliasingBarriers()
         {
             TransientResource* pxT = m_axTransients.Get(u);
             if (pxT->m_uAliasPoolIndex == UINT32_MAX) continue;  // standalone
-            if (pxT->m_uFirstWrite != uTopo) continue;            // not its first-use pass (topo order)
+            if (pxT->m_uFirstWriteTopoIdx != uTopo) continue;            // not its first-use pass (topo order)
 
             const u_int uPool = pxT->m_uAliasPoolIndex;
             const u_int uPriorOccupant = axCurrent.Get(uPool).m_uTransientIndex;
@@ -826,7 +826,7 @@ void Flux_RenderGraph::SynthesizeAliasingBarriers()
                 // pre-fix this overwrote a single scalar pair and lost all
                 // but the last src/dst mask.
                 const TransientResource* pxPrior = m_axTransients.Get(uPriorOccupant);
-                const u_int uPriorLastTopo = pxPrior->m_uLastUse;
+                const u_int uPriorLastTopo = pxPrior->m_uLastUseTopoIdx;
                 const u_int uPriorLastPassIdx = m_xExecutionOrder.Get(uPriorLastTopo);
                 Flux_RenderGraph_AliasingBarrier xBarrier;
                 xBarrier.m_eSrcAccess = FindAccessForTransientInPass(pxPrior, uPriorLastPassIdx);
@@ -879,7 +879,7 @@ void Flux_RenderGraph::ComputeTransientLifetimes()
     // sentinel UINT32_MAX — the packer treats those as not-referenced and
     // skips them.
     //
-    // m_uLastUse is the max of {last read, last write}, both topological-
+    // m_uLastUseTopoIdx is the max of {last read, last write}, both topological-
     // order indices. For a transient with multiple writes (e.g. a UAV
     // ping-pong target), the last write must extend the lifetime — using
     // first-write here would let the packer alias a second transient into
@@ -891,8 +891,8 @@ void Flux_RenderGraph::ComputeTransientLifetimes()
     for (u_int u = 0; u < m_axTransients.GetSize(); u++)
     {
         TransientResource* pxT = m_axTransients.Get(u);
-        pxT->m_uFirstWrite = UINT32_MAX;
-        pxT->m_uLastUse    = UINT32_MAX;
+        pxT->m_uFirstWriteTopoIdx = UINT32_MAX;
+        pxT->m_uLastUseTopoIdx    = UINT32_MAX;
 
         // TrackResource adds entries keyed on the attachment pointer. If the
         // transient was never read or written in any enabled pass it won't be
@@ -903,23 +903,23 @@ void Flux_RenderGraph::ComputeTransientLifetimes()
             continue;
 
         const Flux_RenderGraph_Resource& xRes = *pxRes;
-        pxT->m_uFirstWrite = xRes.m_uFirstWrite;
+        pxT->m_uFirstWriteTopoIdx = xRes.m_uFirstWriteTopoIdx;
 
         // Last-use = max(last read, last write), tolerant of UINT32_MAX
-        // sentinels on either side. Falls back to m_uFirstWrite if both
+        // sentinels on either side. Falls back to m_uFirstWriteTopoIdx if both
         // are sentinel (which only happens if the transient was tracked
         // via TrackResource but had every access stripped — e.g. all its
         // writers/readers were disabled when ComputeResourceLifetimes ran).
-        u_int uLastUse = pxT->m_uFirstWrite;
-        if (xRes.m_uLastRead != UINT32_MAX && (uLastUse == UINT32_MAX || xRes.m_uLastRead > uLastUse))
-            uLastUse = xRes.m_uLastRead;
-        if (xRes.m_uLastWrite != UINT32_MAX && (uLastUse == UINT32_MAX || xRes.m_uLastWrite > uLastUse))
-            uLastUse = xRes.m_uLastWrite;
-        pxT->m_uLastUse = uLastUse;
+        u_int uLastUse = pxT->m_uFirstWriteTopoIdx;
+        if (xRes.m_uLastReadTopoIdx != UINT32_MAX && (uLastUse == UINT32_MAX || xRes.m_uLastReadTopoIdx > uLastUse))
+            uLastUse = xRes.m_uLastReadTopoIdx;
+        if (xRes.m_uLastWriteTopoIdx != UINT32_MAX && (uLastUse == UINT32_MAX || xRes.m_uLastWriteTopoIdx > uLastUse))
+            uLastUse = xRes.m_uLastWriteTopoIdx;
+        pxT->m_uLastUseTopoIdx = uLastUse;
     }
 }
 
-// Build a sort-order over referenced transients, ascending by m_uFirstWrite.
+// Build a sort-order over referenced transients, ascending by m_uFirstWriteTopoIdx.
 // Drives the greedy packer (interval-coloring works best when intervals are
 // seen in start-time order). Insertion sort is fine — N is small (~30).
 void Flux_RenderGraph::SortTransientsByLifetime(Zenith_Vector<u_int>& axSortedIndices) const
@@ -928,15 +928,15 @@ void Flux_RenderGraph::SortTransientsByLifetime(Zenith_Vector<u_int>& axSortedIn
     for (u_int u = 0; u < m_axTransients.GetSize(); u++)
     {
         const TransientResource* pxT = m_axTransients.Get(u);
-        if (pxT->m_uFirstWrite == UINT32_MAX) continue; // unreferenced → keep standalone
+        if (pxT->m_uFirstWriteTopoIdx == UINT32_MAX) continue; // unreferenced → keep standalone
         axSortedIndices.PushBack(u);
     }
     for (u_int i = 1; i < axSortedIndices.GetSize(); i++)
     {
         const u_int uCur = axSortedIndices.Get(i);
-        const u_int uCurFirst = m_axTransients.Get(uCur)->m_uFirstWrite;
+        const u_int uCurFirst = m_axTransients.Get(uCur)->m_uFirstWriteTopoIdx;
         u_int j = i;
-        while (j > 0 && m_axTransients.Get(axSortedIndices.Get(j - 1))->m_uFirstWrite > uCurFirst)
+        while (j > 0 && m_axTransients.Get(axSortedIndices.Get(j - 1))->m_uFirstWriteTopoIdx > uCurFirst)
         {
             axSortedIndices.Get(j) = axSortedIndices.Get(j - 1);
             j--;
@@ -954,7 +954,7 @@ void Flux_RenderGraph::SortTransientsByLifetime(Zenith_Vector<u_int>& axSortedIn
 // first-write.
 //
 // ComputeTransientLifetimes collapsed the "last read" and "last write when
-// never read" sentinels into a single m_uLastUse, so the comparison below is
+// never read" sentinels into a single m_uLastUseTopoIdx, so the comparison below is
 // a clean strict-greater without a UINT32_MAX special case.
 void Flux_RenderGraph::PackTransientsIntoPools(const Zenith_Vector<u_int>& axSortedIndices)
 {
@@ -977,7 +977,7 @@ void Flux_RenderGraph::PackTransientsIntoPools(const Zenith_Vector<u_int>& axSor
             if (axOccupancy.Get(p).m_ulSignature != ulSig) continue;
             // Strict-greater: equal is an overlap (writer and reader both touch
             // memory in the same pass-ordering slot).
-            if (pxT->m_uFirstWrite > axOccupancy.Get(p).m_uMaxLastUse)
+            if (pxT->m_uFirstWriteTopoIdx > axOccupancy.Get(p).m_uMaxLastUse)
             {
                 uAssignedPool = p;
                 break;
@@ -994,7 +994,7 @@ void Flux_RenderGraph::PackTransientsIntoPools(const Zenith_Vector<u_int>& axSor
 
             PoolOccupancy xOcc;
             xOcc.m_ulSignature = ulSig;
-            xOcc.m_uMaxLastUse = pxT->m_uLastUse;
+            xOcc.m_uMaxLastUse = pxT->m_uLastUseTopoIdx;
             axOccupancy.PushBack(xOcc);
 
             uAssignedPool = m_axAliasPools.GetSize() - 1;
@@ -1002,8 +1002,8 @@ void Flux_RenderGraph::PackTransientsIntoPools(const Zenith_Vector<u_int>& axSor
         else
         {
             PoolOccupancy& xOcc = axOccupancy.Get(uAssignedPool);
-            if (pxT->m_uLastUse > xOcc.m_uMaxLastUse)
-                xOcc.m_uMaxLastUse = pxT->m_uLastUse;
+            if (pxT->m_uLastUseTopoIdx > xOcc.m_uMaxLastUse)
+                xOcc.m_uMaxLastUse = pxT->m_uLastUseTopoIdx;
 
             // Defence-in-depth: the signature already includes m_bIsDepthStencil
             // (bit 8 of MakeTransientMemorySignature). This assertion trips if
@@ -1061,7 +1061,7 @@ void Flux_RenderGraph::ComputePoolSizes()
 }
 
 // Greedy interval coloring packer: for each memory-signature bin, sort
-// transients by m_uFirstWrite and assign each to the first existing pool
+// transients by m_uFirstWriteTopoIdx and assign each to the first existing pool
 // whose occupants do NOT overlap the new transient's lifetime; allocate a
 // new pool when none fits. Pure pointer math — no Vulkan calls — so unit
 // tests can exercise this without a live device. Runs after lifetime
@@ -1211,6 +1211,26 @@ void Flux_RenderGraph::AssignClearFlags()
 }
 
 
+// Compile pipeline — runs once per dirty cycle, strictly in this order. Each
+// phase consumes state produced by the ones above it; do not reorder. The only
+// fallible phase is TopologicalSort (cycle => false, logged at the point of
+// detection); everything after assumes its predecessors succeeded.
+//
+//   BuildResourceTraffic        per-resource reader/writer tables  <- declared Reads/Writes
+//   Validate                    orphaned reads / attachment counts / memory flags
+//   TopologicalSort             m_xExecutionOrder (Kahn)           [FALLIBLE: cycle => false]
+//   ComputeResourceLifetimes    per-resource (firstWrite,lastRead,lastWrite) as TOPO indices
+//   ComputeTransientLifetimes   per-transient (firstWrite,lastUse) TOPO indices for aliasing
+//   AssignAliasingGroups        pack non-overlapping transients into shared pool slots
+//   InferPassAttachments        colour/depth attachment set per pass (from Writes)
+//   MarkPassesAsComputeOrGraphics
+//   ResolveClearFlags           first writer of each subresource owns the clear
+//   AllocateTransients          transient VRAM (aliased slots when enabled)
+//   [post-alloc sanity checks]  every transient has a valid handle + matching mip count
+//   SynthesizeBarriers          image/buffer transitions into each pass prologue
+//   SynthesizeAliasingBarriers  hand-off barriers for transients sharing a pool slot
+//
+// See Flux/RenderGraph/CLAUDE.md ("Compile phase") for the full per-phase prose.
 bool Flux_RenderGraph::Compile()
 {
     Zenith_Assert(g_xEngine.Threading().IsMainThread(), "Flux_RenderGraph::Compile: must be called from main thread");

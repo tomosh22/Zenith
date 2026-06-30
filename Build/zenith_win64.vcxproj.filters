@@ -460,6 +460,9 @@
     <ClCompile Include="..\Zenith\Flux\Flux_GPUScene.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Flux_GPUSceneBuilder.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
@@ -479,6 +482,9 @@
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_Screenshot.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Flux_SkinnedPoseProvider.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_Types.cpp">
@@ -2577,6 +2583,12 @@
     <ClInclude Include="..\Zenith\Flux\Flux_RecordValidation.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_RefcountDiffRegistry.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_RefcountDiffRegistry.Tests.inl">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_RendererImpl.h">
       <Filter>Flux</Filter>
     </ClInclude>
@@ -2704,6 +2716,9 @@
       <Filter>Flux\MeshGeometry</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h">
+      <Filter>Flux\MeshGeometry</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_VertexInterleave.Tests.inl">
       <Filter>Flux\MeshGeometry</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleData.h">
@@ -3268,6 +3283,9 @@
       <Filter>UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h">
+      <Filter>UnitTests</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_TempScene.h">
       <Filter>UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_UnitTests.h">

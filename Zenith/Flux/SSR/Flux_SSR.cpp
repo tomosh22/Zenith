@@ -369,10 +369,7 @@ static void ExecuteSSRRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 		xSSR.m_xSSRConstantsBuffer.GetBuffer().m_xVRAMHandle,
 		&dbg_xSSRConstants, sizeof(SSRConstants));
 
-	pxCommandList->SetPipeline(&xSSR.m_xRayMarchPipeline);
-
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	xGraphics.BindFullscreenQuad(*pxCommandList, xSSR.m_xRayMarchPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -397,10 +394,7 @@ static void ExecuteSSRUpsample(Flux_CommandBuffer* pxCommandList, void*)
 	if (!xSSR.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
-	pxCommandList->SetPipeline(&xSSR.m_xUpsamplePipeline);
-
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	xGraphics.BindFullscreenQuad(*pxCommandList, xSSR.m_xUpsamplePipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -427,10 +421,7 @@ static void ExecuteSSRDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 	if (!xSSR.IsEnabled() || !g_xEngine.HiZ().IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return;
 
-	pxCommandList->SetPipeline(&xSSR.m_xDenoiseHPipeline);
-
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	xGraphics.BindFullscreenQuad(*pxCommandList, xSSR.m_xDenoiseHPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
@@ -455,10 +446,7 @@ static void ExecuteSSRDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 	if (!xSSR.IsEnabled() || !g_xEngine.HiZ().IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return;
 
-	pxCommandList->SetPipeline(&xSSR.m_xDenoiseVPipeline);
-
-	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+	xGraphics.BindFullscreenQuad(*pxCommandList, xSSR.m_xDenoiseVPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 

@@ -123,7 +123,7 @@ void Flux_RenderGraph::Execute()
 		// is no longer in (sync-validator layout-mismatch error).
 		//
 		// Recompute resource/transient lifetimes too — SynthesizeAliasingBarriers
-		// reads pxPrior->m_uLastUse to look up the prior pool occupant's last
+		// reads pxPrior->m_uLastUseTopoIdx to look up the prior pool occupant's last
 		// access (line ~1199). If a transient's last access was at a now-
 		// disabled pass, the compile-time lifetime points there and the barrier's
 		// src access would reflect what the disabled pass would have done, not

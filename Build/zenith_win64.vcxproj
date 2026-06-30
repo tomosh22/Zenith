@@ -1277,6 +1277,8 @@
     <ClInclude Include="..\Zenith\Flux\Flux_PersistentSetLayouts.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Pipeline.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RecordValidation.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_RefcountDiffRegistry.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_RefcountDiffRegistry.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\Flux_RendererImpl.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RenderResources.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h" />
@@ -1320,6 +1322,7 @@
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_SkeletonInstance.h" />
     <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
     <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h" />
+    <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_VertexInterleave.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleData.h" />
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleEmitterConfig.h" />
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleGPUImpl.h" />
@@ -1508,6 +1511,7 @@
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AITests.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AssertCapture.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h" />
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_TempScene.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_UnitTests.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan.h" />
@@ -2182,6 +2186,7 @@
     <ClCompile Include="..\Zenith\Flux\Flux_Buffers.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_FeatureRegistry.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_GPUScene.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Flux_GPUSceneBuilder.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_MaterialTable.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_MeshGeometryRegistry.cpp" />
@@ -2189,6 +2194,7 @@
     <ClCompile Include="..\Zenith\Flux\Flux_PerFrame.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_RenderTargets.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Screenshot.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Flux_SkinnedPoseProvider.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Types.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_ViewSetBinding.cpp" />
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_Fog.cpp" />
