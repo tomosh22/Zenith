@@ -335,12 +335,11 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 			// Audit §3.18 fix: resolve each target's own scene — cross-scene
 			// perception (e.g. a persistent player entity, or a target in an
 			// additively-loaded scene) now works as Unity would expect.
-			Zenith_SceneData* pxTargetScene = Zenith_SceneSystem::Get().GetSceneDataForEntity(xTargetID);
-			if (!pxTargetScene)
+			Zenith_Entity xTargetEntity = Zenith_SceneSystem::Get().ResolveEntity(xTargetID);
+			if (!xTargetEntity.IsValid())
 			{
 				continue;
 			}
-			Zenith_Entity xTargetEntity = pxTargetScene->TryGetEntity(xTargetID);
 			// A false position probe covers stale-handle / no-transform — skip,
 			// matching the prior IsValid() + transform-component gate.
 			Zenith_Maths::Vector3 xTargetProbe;

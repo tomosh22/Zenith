@@ -710,12 +710,11 @@ private:
 		// Register cover points around obstacles
 		for (uint32_t u = 0; u < m_uObstacleCount; ++u)
 		{
-			// C1: resolve owning scene from the obstacle's entity id.
-			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_axObstacleIDs[u]);
-			if (!pxSceneData)
+			// C1: resolve obstacle entity from its id.
+			Zenith_Entity xObstacle = g_xEngine.Scenes().ResolveEntity(m_axObstacleIDs[u]);
+			if (!xObstacle.IsValid())
 				continue;
 
-			Zenith_Entity xObstacle = pxSceneData->GetEntity(m_axObstacleIDs[u]);
 			Zenith_Maths::Vector3 xPos;
 			xObstacle.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
 			Zenith_Maths::Vector3 xScale;
@@ -980,11 +979,11 @@ private:
 				continue;
 
 			Zenith_Entity xEnemy = pxSceneData->GetEntity(m_axEnemyIDs[u]);
-			if (!xEnemy.HasComponent<Zenith_AIAgentComponent>())
+			Zenith_AIAgentComponent* pxAI = xEnemy.TryGetComponent<Zenith_AIAgentComponent>();
+			if (pxAI == nullptr)
 				continue;
 
-			Zenith_AIAgentComponent& xAI = xEnemy.GetComponent<Zenith_AIAgentComponent>();
-			xAI.OnUpdate(fDt);
+			pxAI->OnUpdate(fDt);
 		}
 
 		m_fPatrolTimer += fDt;
@@ -1037,10 +1036,11 @@ private:
 	// ========================================================================
 	void UpdateUI()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		// Update status text
 		Zenith_UI::Zenith_UIText* pxStatus = xUI.FindElement<Zenith_UI::Zenith_UIText>("Status");

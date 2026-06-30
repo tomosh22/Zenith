@@ -112,13 +112,11 @@ public:
 		//     never tip over from a glancing wall hit. EnforceUpright /
 		//     LockRotation reset both axes' inverse inertia to zero so
 		//     Jolt won't even try to integrate them.
-		if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		if (Zenith_ColliderComponent* pxCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>())
 		{
-			Zenith_ColliderComponent& xCollider =
-				m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
-			if (xCollider.HasValidBody())
+			if (pxCollider->HasValidBody())
 			{
-				const Zenith_PhysicsBodyID xBodyID = xCollider.GetBodyID();
+				const Zenith_PhysicsBodyID xBodyID = pxCollider->GetBodyID();
 				g_xEngine.Physics().SetGravityEnabled(xBodyID, false);
 				g_xEngine.Physics().LockRotation(xBodyID, /*X=*/true, /*Y=*/false, /*Z=*/true);
 			}
@@ -498,10 +496,9 @@ private:
 		// raycasting, no transform writes. The villager body's gravity is
 		// disabled and pitch/roll are locked in OnAwake, so a 2D horizontal
 		// velocity vector is all we need.
-		if (!m_xParentEntity.HasComponent<Zenith_ColliderComponent>()) return;
-		Zenith_ColliderComponent& xCollider =
-			m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
-		if (!xCollider.HasValidBody()) return;
+		Zenith_ColliderComponent* pxCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr) return;
+		if (!pxCollider->HasValidBody()) return;
 
 		// Camera-relative axes when a main camera exists; world axes
 		// otherwise (gym map without camera entity).
@@ -535,7 +532,7 @@ private:
 			}
 			xVel = xDir * fSpeed;
 		}
-		g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVel);
+		g_xEngine.Physics().SetLinearVelocity(pxCollider->GetBodyID(), xVel);
 	}
 
 	// MVP-1.7.5: footstep emission. Called once per frame from
@@ -572,9 +569,9 @@ private:
 		}
 
 		Zenith_Maths::Vector3 xPos(0.0f);
-		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 		{
-			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+			pxTransform->GetPosition(xPos);
 		}
 
 		// Tag emissions with a name the AudioBus test recorder can
@@ -593,11 +590,10 @@ private:
 	{
 		// Stop the dynamic body when not possessed so it doesn't coast on
 		// residual velocity from the last possession.
-		if (!m_xParentEntity.HasComponent<Zenith_ColliderComponent>()) return;
-		Zenith_ColliderComponent& xCollider =
-			m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
-		if (!xCollider.HasValidBody()) return;
-		g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(),
+		Zenith_ColliderComponent* pxCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr) return;
+		if (!pxCollider->HasValidBody()) return;
+		g_xEngine.Physics().SetLinearVelocity(pxCollider->GetBodyID(),
 			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	}
 
@@ -607,9 +603,9 @@ private:
 	// material is set externally before possession the original is preserved.
 	void ApplyPossessionMaterial(bool bPossessed)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_ModelComponent>()) return;
-		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
-		Flux_ModelInstance* pxModelInstance = xModel.GetModelInstance();
+		Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr) return;
+		Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
 		if (!pxModelInstance) return;
 
 		const uint32_t uNumMaterials = pxModelInstance->GetNumMaterials();
@@ -688,8 +684,9 @@ private:
 		// themselves use so the floating cube matches the picked-up item.
 		Zenith_Entity xVisual = pxScene->TryGetEntity(m_xHeldItemVisual);
 		if (!xVisual.IsValid()) return;
-		if (!xVisual.HasComponent<Zenith_ModelComponent>()) return;
-		Flux_ModelInstance* pxInst = xVisual.GetComponent<Zenith_ModelComponent>().GetModelInstance();
+		Zenith_ModelComponent* pxVisualModel = xVisual.TryGetComponent<Zenith_ModelComponent>();
+		if (pxVisualModel == nullptr) return;
+		Flux_ModelInstance* pxInst = pxVisualModel->GetModelInstance();
 		if (!pxInst) return;
 
 		Zenith_Maths::Vector3 xRgb(1.0f, 1.0f, 1.0f);
@@ -725,18 +722,18 @@ private:
 	void PositionHeldItemVisual()
 	{
 		if (!m_xHeldItemVisual.IsValid()) return;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(m_xHeldItemVisual);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xVisual = pxScene->TryGetEntity(m_xHeldItemVisual);
+		Zenith_Entity xVisual = g_xEngine.Scenes().ResolveEntity(m_xHeldItemVisual);
 		if (!xVisual.IsValid()) return;
-		if (!xVisual.HasComponent<Zenith_TransformComponent>()) return;
-		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_TransformComponent* pxVisualTransform = xVisual.TryGetComponent<Zenith_TransformComponent>();
+		if (pxVisualTransform == nullptr) return;
+		Zenith_TransformComponent* pxParentTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxParentTransform == nullptr) return;
 
 		Zenith_Maths::Vector3 xPos;
-		m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		pxParentTransform->GetPosition(xPos);
 		// Hover roughly head-height above the villager.
 		xPos.y += 1.6f;
-		xVisual.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		pxVisualTransform->SetPosition(xPos);
 	}
 
 	void DestroyHeldItemVisual()
@@ -748,9 +745,7 @@ private:
 		Zenith_EntityID xHandle = m_xHeldItemVisual;
 		m_xHeldItemVisual = INVALID_ENTITY_ID;
 
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xHandle);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xVisual = pxScene->TryGetEntity(xHandle);
+		Zenith_Entity xVisual = g_xEngine.Scenes().ResolveEntity(xHandle);
 		if (!xVisual.IsValid()) return;
 		xVisual.Destroy();
 	}

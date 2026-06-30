@@ -379,9 +379,9 @@ public:
 				m_xTraffic.Update(m_xRoadCtrl.GetGraph(), m_xHeightfield, fTrafficDt, m_auTrafficOrigins, m_auTrafficDests, uTarget);
 			}
 			m_xTraffic.Render();       // cars driving their routed home→work/shop trips
-			if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 			{
-				Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+				Zenith_UIComponent& xUI = *pxUI;
 				// (Re)build the UI on first use AND whenever the window/canvas size changes, so the
 				// pixel-anchored layout always matches the live framebuffer (handles maximize/DPI/resize).
 				const Zenith_Maths::Vector2 xCanvasSz = xUI.GetCanvas().GetSize();
@@ -713,8 +713,10 @@ public:
 	static const char* ShowcaseHoverTool(int iTool)
 	{
 		CB_CityManagerComponent* pxMgr = GetActive();
-		if (pxMgr == nullptr || !pxMgr->m_xParentEntity.HasComponent<Zenith_UIComponent>()) { return nullptr; }
-		Zenith_UIComponent& xUI = pxMgr->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		if (pxMgr == nullptr) { return nullptr; }
+		Zenith_UIComponent* pxUI = pxMgr->m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr) { return nullptr; }
+		Zenith_UIComponent& xUI = *pxUI;
 		char acName[24]; snprintf(acName, sizeof(acName), "CB_Tool_%d", iTool);
 		Zenith_UI::Zenith_UIButton* pxBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>(acName);
 		if (pxBtn == nullptr) { return nullptr; }
@@ -1018,11 +1020,12 @@ public:
 
 	void UpdateHUD()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 		{
 			return;
 		}
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 		char acBuf[192];
 		if (Zenith_UI::Zenith_UIText* p = xUI.FindElement<Zenith_UI::Zenith_UIText>("CB_Pop"))    { snprintf(acBuf, sizeof(acBuf), "Population: %u   Jobs: %u   Bldgs: %u   Services: %u", m_xBuild.GetPopulation(), m_xBuild.GetJobs(), m_xBuild.GetActiveBuildings(), m_xBuild.GetActiveServices()); p->SetText(acBuf); }
 		if (Zenith_UI::Zenith_UIText* p = xUI.FindElement<Zenith_UI::Zenith_UIText>("CB_Money"))  { snprintf(acBuf, sizeof(acBuf), "Treasury: $%d   Tax: %d%%   Debt: $%d", static_cast<int>(m_xBuild.GetTreasury()), static_cast<int>(m_xBuild.GetTaxRate() * 100.0f), static_cast<int>(m_xBuild.GetDebt())); p->SetText(acBuf); }

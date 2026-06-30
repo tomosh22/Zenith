@@ -169,8 +169,7 @@ void Zenith_EditorTestFixture::ResetEditorState()
 
 Zenith_SceneData* Zenith_EditorTestFixture::GetTestScene()
 {
-	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-	return g_xEngine.Scenes().GetSceneData(xActiveScene);
+	return g_xEngine.Scenes().GetActiveSceneData();
 }
 
 #endif // ZENITH_TOOLS

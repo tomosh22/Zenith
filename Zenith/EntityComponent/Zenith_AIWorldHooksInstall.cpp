@@ -23,66 +23,61 @@
 
 namespace
 {
-	// Resolve an entity handle from its EntityID across all loaded scenes (Unity
-	// GameObject.scene parity). Returns an invalid handle if the id is stale / gone.
-	Zenith_Entity ResolveEntity(Zenith_EntityID xEntityID)
-	{
-		Zenith_SceneData* pxSceneData = Zenith_SceneSystem::Get().GetSceneDataForEntity(xEntityID);
-		if (!pxSceneData)
-		{
-			return Zenith_Entity();
-		}
-		return pxSceneData->TryGetEntity(xEntityID);
-	}
+	// Stored-EntityID -> live-handle resolution is the leaf's own
+	// Zenith_SceneSystem::ResolveEntity (returns an invalid handle if the id is
+	// stale / gone), reached engine-free via Get().
 
 	bool GetEntityPosition(Zenith_EntityID xEntityID, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_Entity xEntity = ResolveEntity(xEntityID);
-		if (!xEntity.IsValid() || !xEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_Entity xEntity = Zenith_SceneSystem::Get().ResolveEntity(xEntityID);
+		Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 		{
 			return false;
 		}
-		xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 
 	bool GetEntityRotation(Zenith_EntityID xEntityID, Zenith_Maths::Quat& xOut)
 	{
-		Zenith_Entity xEntity = ResolveEntity(xEntityID);
-		if (!xEntity.IsValid() || !xEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_Entity xEntity = Zenith_SceneSystem::Get().ResolveEntity(xEntityID);
+		Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 		{
 			return false;
 		}
-		xEntity.GetComponent<Zenith_TransformComponent>().GetRotation(xOut);
+		pxTransform->GetRotation(xOut);
 		return true;
 	}
 
 	void SetEntityPosition(Zenith_EntityID xEntityID, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_Entity xEntity = ResolveEntity(xEntityID);
-		if (xEntity.IsValid() && xEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_Entity xEntity = Zenith_SceneSystem::Get().ResolveEntity(xEntityID);
+		if (Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+			pxTransform->SetPosition(xPos);
 		}
 	}
 
 	void SetEntityRotation(Zenith_EntityID xEntityID, const Zenith_Maths::Quat& xRot)
 	{
-		Zenith_Entity xEntity = ResolveEntity(xEntityID);
-		if (xEntity.IsValid() && xEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_Entity xEntity = Zenith_SceneSystem::Get().ResolveEntity(xEntityID);
+		if (Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xEntity.GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
+			pxTransform->SetRotation(xRot);
 		}
 	}
 
 	bool GetEntityColliderBody(Zenith_EntityID xEntityID, Zenith_PhysicsBodyID& xOutBody, bool& bOutDynamic)
 	{
-		Zenith_Entity xEntity = ResolveEntity(xEntityID);
-		if (!xEntity.IsValid() || !xEntity.HasComponent<Zenith_ColliderComponent>())
+		Zenith_Entity xEntity = Zenith_SceneSystem::Get().ResolveEntity(xEntityID);
+		Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr)
 		{
 			return false;
 		}
-		Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = *pxCollider;
 		if (!xCollider.HasValidBody())
 		{
 			return false;
@@ -94,12 +89,13 @@ namespace
 
 	Zenith_NavMeshAgent* GetNavMeshAgent(Zenith_EntityID xEntityID)
 	{
-		Zenith_Entity xEntity = ResolveEntity(xEntityID);
-		if (!xEntity.IsValid() || !xEntity.HasComponent<Zenith_AIAgentComponent>())
+		Zenith_Entity xEntity = Zenith_SceneSystem::Get().ResolveEntity(xEntityID);
+		Zenith_AIAgentComponent* pxAgent = xEntity.TryGetComponent<Zenith_AIAgentComponent>();
+		if (pxAgent == nullptr)
 		{
 			return nullptr;
 		}
-		return xEntity.GetComponent<Zenith_AIAgentComponent>().GetNavMeshAgent();
+		return pxAgent->GetNavMeshAgent();
 	}
 
 	void RunDataParallel(void (*pfnInvoke)(void*, u_int, u_int), void* pUserData, u_int uCount)

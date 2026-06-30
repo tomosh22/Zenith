@@ -139,9 +139,9 @@ public:
 
 		// Wire menu button callback
 		bool bHasMenu = false;
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 			if (pxPlay)
 			{
@@ -373,9 +373,10 @@ private:
 	// ========================================================================
 	void SetMenuVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
 		if (pxTitle) pxTitle->SetVisible(bVisible);
@@ -385,9 +386,10 @@ private:
 
 	void SetHUDVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		const char* aszElements[] = { "Title", "Distance", "Score", "HighScore", "Speed", "Controls", "Status" };
 		for (const char* szName : aszElements)
@@ -401,9 +403,9 @@ private:
 	{
 		// Only one button, but still support keyboard focus
 		Zenith_UI::Zenith_UIButton* pxPlay = nullptr;
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 			pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 		}
 		if (pxPlay) pxPlay->SetFocused(true);
@@ -579,10 +581,11 @@ private:
 	// ========================================================================
 	void UpdateUI()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		float fDistance = Runner_CharacterController::GetDistanceTraveled();
 		float fSpeed = Runner_CharacterController::GetCurrentSpeed();
@@ -597,11 +600,12 @@ private:
 	// ========================================================================
 	void FireRunTick()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
 		{
 			return;
 		}
-		m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("RunTick");
+		pxGraph->FireCustomEvent("RunTick");
 	}
 
 	// Per-frame systems results consumed by the Runner_RunFlow graph nodes.

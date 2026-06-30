@@ -51,11 +51,10 @@ namespace
 
 	bool PriestHasInvestigateFlag(Zenith_EntityID xPriest)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xPriest);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriest);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_AIAgentComponent>()) return false;
-		return xEnt.GetComponent<Zenith_AIAgentComponent>().GetBlackboard()
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriest);
+		Zenith_AIAgentComponent* pxAgent = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
+		if (pxAgent == nullptr) return false;
+		return pxAgent->GetBlackboard()
 			.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
 	}
 }
@@ -94,16 +93,12 @@ static bool Step_PriestBBBridge(int iFrame)
 
 			// Place noise close to the priest so it falls inside the 25m
 			// hearing radius regardless of authored positions.
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPriest);
-			if (pxScene != nullptr)
+			Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xPriest);
+			if (Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>())
 			{
-				Zenith_Entity xEnt = pxScene->TryGetEntity(g_xPriest);
-				if (xEnt.IsValid() && xEnt.HasComponent<Zenith_TransformComponent>())
-				{
-					Zenith_Maths::Vector3 xPriestPos;
-					xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPriestPos);
-					g_xNoisePos = xPriestPos + Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f);
-				}
+				Zenith_Maths::Vector3 xPriestPos;
+				pxTransform->GetPosition(xPriestPos);
+				g_xNoisePos = xPriestPos + Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f);
 			}
 			g_iBBPhase = kBB_Emit;
 		}

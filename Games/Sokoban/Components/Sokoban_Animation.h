@@ -106,11 +106,12 @@ private:
 			return nullptr;
 		}
 		Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(uDustEmitterID);
-		if (!xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
+		Zenith_ParticleEmitterComponent* pxEmitter = xEmitterEntity.TryGetComponent<Zenith_ParticleEmitterComponent>();
+		if (pxEmitter == nullptr)
 		{
 			return nullptr;
 		}
-		return &xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>();
+		return pxEmitter;
 	}
 
 	void UpdateDust(uint32_t uGridWidth, uint32_t uGridHeight, Zenith_EntityID uDustEmitterID)

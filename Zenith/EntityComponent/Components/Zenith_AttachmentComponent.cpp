@@ -32,21 +32,21 @@ void Zenith_AttachmentComponent::OnLateUpdate(float)
 		return;
 	if (!m_xSelf.IsValid() || !m_xSkeletonEntity.IsValid())
 		return;
-	if (!m_xSkeletonEntity.HasComponent<Zenith_ModelComponent>()
-		|| !m_xSkeletonEntity.HasComponent<Zenith_TransformComponent>()
-		|| !m_xSelf.HasComponent<Zenith_TransformComponent>())
-		return;
-
 	// Posed bone model-space matrix (resolved by ModelComponent so this TU names
 	// no Flux skeleton type). Bails when the skeleton isn't ready or the bone name
 	// is unknown — the attached entity is simply left where it is.
-	Zenith_ModelComponent& xSkelModel = m_xSkeletonEntity.GetComponent<Zenith_ModelComponent>();
+	Zenith_ModelComponent* pxSkelModel = m_xSkeletonEntity.TryGetComponent<Zenith_ModelComponent>();
+	Zenith_TransformComponent* pxSkelTransform = m_xSkeletonEntity.TryGetComponent<Zenith_TransformComponent>();
+	Zenith_TransformComponent* pxSelfT = m_xSelf.TryGetComponent<Zenith_TransformComponent>();
+	if (pxSkelModel == nullptr || pxSkelTransform == nullptr || pxSelfT == nullptr)
+		return;
+
 	Zenith_Maths::Matrix4 xBoneModel;
-	if (!xSkelModel.GetBoneModelMatrix(m_strBone, xBoneModel))
+	if (!pxSkelModel->GetBoneModelMatrix(m_strBone, xBoneModel))
 	{
 		// Warn once if the skeleton is present but the bone name is wrong (a real
 		// misconfiguration); stay silent while the skeleton is merely not loaded yet.
-		if (!m_bWarnedMissingBone && xSkelModel.HasSkeleton())
+		if (!m_bWarnedMissingBone && pxSkelModel->HasSkeleton())
 		{
 			Zenith_Warning(LOG_CATEGORY_ECS,
 				"[Attachment] bone '%s' not found on the target skeleton — attached entity left in place",
@@ -59,10 +59,10 @@ void Zenith_AttachmentComponent::OnLateUpdate(float)
 	// world = skeletonEntityWorld * boneModelTransform * mountOffset.
 	// The offset is on the RIGHT (bone-local), so it tracks the bone's frame.
 	Zenith_Maths::Matrix4 xSkelWorld;
-	m_xSkeletonEntity.GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xSkelWorld);
+	pxSkelTransform->BuildModelMatrix(xSkelWorld);
 	const Zenith_Maths::Matrix4 xWorld = xSkelWorld * xBoneModel * m_xOffset;
 
-	Zenith_TransformComponent& xSelfT = m_xSelf.GetComponent<Zenith_TransformComponent>();
+	Zenith_TransformComponent& xSelfT = *pxSelfT;
 	xSelfT.SetPosition(Zenith_Maths::Vector3(xWorld[3]));
 
 	// Orthonormalise the basis before extracting the rotation. quat_cast on a

@@ -301,9 +301,10 @@ private:
 	// ======================================================================
 	bool TryBallBody(Zenith_PhysicsBodyID& xOut) const
 	{
-		if (!m_xBall.IsValid() || !m_xBall.HasComponent<Zenith_ColliderComponent>())
+		Zenith_ColliderComponent* pxCol = m_xBall.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCol == nullptr)
 			return false;
-		Zenith_ColliderComponent& xCol = m_xBall.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCol = *pxCol;
 		if (!xCol.HasValidBody())
 			return false;
 		xOut = xCol.GetBodyID();
@@ -313,35 +314,35 @@ private:
 	Zenith_Maths::Vector3 BallPos() const
 	{
 		Zenith_Maths::Vector3 xPos(0.0f);
-		if (m_xBall.IsValid() && m_xBall.HasComponent<Zenith_TransformComponent>())
-			m_xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		if (Zenith_TransformComponent* pxTransform = m_xBall.TryGetComponent<Zenith_TransformComponent>())
+			pxTransform->GetPosition(xPos);
 		return xPos;
 	}
 
 	RenderTest_TennisPlayerComponent* Npc(int i) const
 	{
-		if (m_xNpc[i].IsValid() && m_xNpc[i].HasComponent<RenderTest_TennisPlayerComponent>())
-			return &m_xNpc[i].GetComponent<RenderTest_TennisPlayerComponent>();
+		if (RenderTest_TennisPlayerComponent* pxPlayer = m_xNpc[i].TryGetComponent<RenderTest_TennisPlayerComponent>())
+			return pxPlayer;
 		return nullptr;
 	}
 	Zenith_AIAgentComponent* AIAgent(int i) const
 	{
-		if (m_xNpc[i].IsValid() && m_xNpc[i].HasComponent<Zenith_AIAgentComponent>())
-			return &m_xNpc[i].GetComponent<Zenith_AIAgentComponent>();
+		if (Zenith_AIAgentComponent* pxAgent = m_xNpc[i].TryGetComponent<Zenith_AIAgentComponent>())
+			return pxAgent;
 		return nullptr;
 	}
 	RenderTest_TennisAgentComponent* Brain(int i) const
 	{
-		if (m_xNpc[i].IsValid() && m_xNpc[i].HasComponent<RenderTest_TennisAgentComponent>())
-			return &m_xNpc[i].GetComponent<RenderTest_TennisAgentComponent>();
+		if (RenderTest_TennisAgentComponent* pxBrain = m_xNpc[i].TryGetComponent<RenderTest_TennisAgentComponent>())
+			return pxBrain;
 		return nullptr;
 	}
 
 	Zenith_Maths::Vector3 NpcPos(int i) const
 	{
 		Zenith_Maths::Vector3 xPos(m_xCourt.m_fCenterX, m_xCourt.m_fSurfaceY, m_xCourt.BaselineZ(i));
-		if (m_xNpc[i].IsValid() && m_xNpc[i].HasComponent<Zenith_TransformComponent>())
-			m_xNpc[i].GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		if (Zenith_TransformComponent* pxTransform = m_xNpc[i].TryGetComponent<Zenith_TransformComponent>())
+			pxTransform->GetPosition(xPos);
 		return xPos;
 	}
 

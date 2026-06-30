@@ -123,20 +123,20 @@ public:
 	void Update(float fDt)
 	{
 		// C1: resolve owning scene from the enemy's entity id.
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_uEntityID);
-		if (!pxSceneData)
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(m_uEntityID);
+		if (!xEntity.IsValid())
 			return;
 
-		Zenith_Entity xEntity = pxSceneData->GetEntity(m_uEntityID);
-		if (!xEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 			return;
 
-		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent& xTransform = *pxTransform;
 
 		// Enforce upright orientation every frame (collision impulses can still tip characters)
-		if (xEntity.HasComponent<Zenith_ColliderComponent>())
+		if (Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>())
 		{
-			Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
+			Zenith_ColliderComponent& xCollider = *pxCollider;
 			if (xCollider.HasValidBody())
 			{
 				g_xEngine.Physics().EnforceUpright(xCollider.GetBodyID());
@@ -277,9 +277,9 @@ private:
 				xDirection = xDirection / fLen;
 
 				// Apply movement via physics
-				if (xEntity.HasComponent<Zenith_ColliderComponent>())
+				if (Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>())
 				{
-					Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
+					Zenith_ColliderComponent& xCollider = *pxCollider;
 					if (xCollider.HasValidBody())
 					{
 						Zenith_Maths::Vector3 xVelocity = xDirection * m_xConfig.m_fMoveSpeed;
@@ -297,9 +297,9 @@ private:
 		else
 		{
 			// Stop movement but keep facing player
-			if (xEntity.HasComponent<Zenith_ColliderComponent>())
+			if (Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>())
 			{
-				Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
+				Zenith_ColliderComponent& xCollider = *pxCollider;
 				if (xCollider.HasValidBody())
 				{
 					Zenith_Maths::Vector3 xVelocity = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());

@@ -506,13 +506,14 @@ static bool RenderTest_LogIKSmokeState(uint32_t uFrame)
 		return false;
 	}
 
-	if (!xPlayer.HasComponent<Zenith_AnimatorComponent>())
+	Zenith_AnimatorComponent* pxAnimator = xPlayer.TryGetComponent<Zenith_AnimatorComponent>();
+	if (pxAnimator == nullptr)
 	{
 		Zenith_Error(LOG_CATEGORY_ANIMATION, "RENDERTEST_SMOKE_FAIL: player has no AnimatorComponent at frame %u", uFrame);
 		return false;
 	}
 
-	Zenith_AnimatorComponent& xAnimator = xPlayer.GetComponent<Zenith_AnimatorComponent>();
+	Zenith_AnimatorComponent& xAnimator = *pxAnimator;
 	Flux_AnimationController& xController = xAnimator.GetController();
 	const Flux_IKSolver* pxIK = xController.GetIKSolverPtr();
 	if (!pxIK)
@@ -532,8 +533,9 @@ static bool RenderTest_LogIKSmokeState(uint32_t uFrame)
 		bPass = false;
 	}
 
-	if (!xPlayer.HasComponent<Zenith_ModelComponent>()) return bPass;
-	Zenith_ModelComponent& xModel = xPlayer.GetComponent<Zenith_ModelComponent>();
+	Zenith_ModelComponent* pxModel = xPlayer.TryGetComponent<Zenith_ModelComponent>();
+	if (pxModel == nullptr) return bPass;
+	Zenith_ModelComponent& xModel = *pxModel;
 	if (!xModel.HasSkeleton()) return bPass;
 	Flux_SkeletonInstance* pxSkel = xModel.GetSkeletonInstance();
 	if (!pxSkel) return bPass;
@@ -574,11 +576,12 @@ static bool RenderTest_LogIKSmokeState(uint32_t uFrame)
 static bool RenderTest_LogIKOnSurfaceState(uint32_t uFrame, float fExpectedSurfaceY, float fTolerance)
 {
 	Zenith_Entity xPlayer = RenderTest_FindPlayerEntity();
-	if (!xPlayer.IsValid() || !xPlayer.HasComponent<Zenith_ModelComponent>())
+	Zenith_ModelComponent* pxModel = xPlayer.TryGetComponent<Zenith_ModelComponent>();
+	if (pxModel == nullptr)
 	{
 		return RenderTest_LogIKSmokeState(uFrame);
 	}
-	Zenith_ModelComponent& xModel = xPlayer.GetComponent<Zenith_ModelComponent>();
+	Zenith_ModelComponent& xModel = *pxModel;
 	if (!xModel.HasSkeleton()) return RenderTest_LogIKSmokeState(uFrame);
 	Flux_SkeletonInstance* pxSkel = xModel.GetSkeletonInstance();
 	if (!pxSkel) return RenderTest_LogIKSmokeState(uFrame);
@@ -753,8 +756,9 @@ private:
 	void TeleportPlayerTo(const Zenith_Maths::Vector3& xTarget)
 	{
 		Zenith_Entity xPlayer = RenderTest_FindPlayerEntity();
-		if (!xPlayer.IsValid() || !xPlayer.HasComponent<Zenith_ColliderComponent>()) return;
-		g_xEngine.Physics().TeleportBody(xPlayer.GetComponent<Zenith_ColliderComponent>().GetBodyID(), xTarget);
+		Zenith_ColliderComponent* pxCollider = xPlayer.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr) return;
+		g_xEngine.Physics().TeleportBody(pxCollider->GetBodyID(), xTarget);
 	}
 
 	void CaptureResidencySnapshots(Zenith_Vector<RenderTest_ResidencySnapshot>& axSnapshots)
@@ -1523,9 +1527,9 @@ static void RenderTest_ApplyTestbedEntityConfig()
 	{
 		const RenderTest_Guns::GunType eType = static_cast<RenderTest_Guns::GunType>(i);
 		Zenith_Entity xGun = pxSceneData->FindEntityByName(RenderTest_GunEntityName(eType));
-		if (xGun.IsValid() && xGun.HasComponent<RenderTest_GunComponent>())
+		if (RenderTest_GunComponent* pxGun = xGun.TryGetComponent<RenderTest_GunComponent>())
 		{
-			xGun.GetComponent<RenderTest_GunComponent>().Init(RenderTest_Guns::GetSpec(eType));
+			pxGun->Init(RenderTest_Guns::GetSpec(eType));
 		}
 	}
 
@@ -1536,10 +1540,10 @@ static void RenderTest_ApplyTestbedEntityConfig()
 		Zenith_Entity xNpc = pxSceneData->FindEntityByName(szName);
 		if (!xNpc.IsValid())
 			return;
-		if (xNpc.HasComponent<RenderTest_TennisPlayerComponent>())
-			xNpc.GetComponent<RenderTest_TennisPlayerComponent>().Init(bNear);
-		if (xNpc.HasComponent<Zenith_AIAgentComponent>())
-			xNpc.GetComponent<Zenith_AIAgentComponent>().SetUpdateInterval(0.08f);
+		if (RenderTest_TennisPlayerComponent* pxTennisPlayer = xNpc.TryGetComponent<RenderTest_TennisPlayerComponent>())
+			pxTennisPlayer->Init(bNear);
+		if (Zenith_AIAgentComponent* pxAgent = xNpc.TryGetComponent<Zenith_AIAgentComponent>())
+			pxAgent->SetUpdateInterval(0.08f);
 	};
 	ConfigNpc("Tennis_NPC_Near", true);
 	ConfigNpc("Tennis_NPC_Far", false);

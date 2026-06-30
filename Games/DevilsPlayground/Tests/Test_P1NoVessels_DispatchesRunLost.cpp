@@ -148,9 +148,7 @@ static bool Step_P1NoVessels(int iFrame)
 		for (uint32_t u = 0; u < axVillagers.GetSize(); ++u)
 		{
 			Zenith_EntityID xId = axVillagers.Get(u);
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-			if (pxScene == nullptr) continue;
-			Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+			Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 			if (!xEnt.IsValid()) continue;
 			DPVillager_Component* pxV =
 				xEnt.TryGetComponent<DPVillager_Component>();

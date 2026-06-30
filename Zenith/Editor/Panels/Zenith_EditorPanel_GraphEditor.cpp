@@ -196,11 +196,16 @@ namespace
 			return nullptr;
 		}
 		Zenith_Entity* pxSelected = g_xEngine.Editor().GetSelectedEntity();
-		if (!pxSelected || !pxSelected->IsValid() || !pxSelected->HasComponent<Zenith_GraphComponent>())
+		if (!pxSelected || !pxSelected->IsValid())
 		{
 			return nullptr;
 		}
-		Zenith_GraphComponent& xComponent = pxSelected->GetComponent<Zenith_GraphComponent>();
+		Zenith_GraphComponent* pxComponent = pxSelected->TryGetComponent<Zenith_GraphComponent>();
+		if (pxComponent == nullptr)
+		{
+			return nullptr;
+		}
+		Zenith_GraphComponent& xComponent = *pxComponent;
 		for (u_int u = 0; u < xComponent.GetGraphCount(); ++u)
 		{
 			if (g_xGraphEditor.m_strAssetPath == xComponent.GetGraphAssetPathAt(u) && xComponent.GetGraphAt(u))

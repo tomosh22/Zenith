@@ -215,10 +215,11 @@ public:
 				continue;
 
 			Zenith_Entity xEntity = pxSceneData->GetEntity(xNode.m_uEntityID);
-			if (!xEntity.HasComponent<Zenith_TransformComponent>())
+			Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>();
+			if (pxTransform == nullptr)
 				continue;
 
-			Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+			Zenith_TransformComponent& xTransform = *pxTransform;
 
 			if (xNode.m_bDepleted)
 			{

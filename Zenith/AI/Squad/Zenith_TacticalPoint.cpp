@@ -257,13 +257,8 @@ void Zenith_TacticalPointSystem::Update()
 		// Check if occupied entity still exists
 		if (xPoint.m_xOccupiedBy.IsValid())
 		{
-			Zenith_SceneData* pxOccupantScene = xScenes.GetSceneDataForEntity(xPoint.m_xOccupiedBy);
-			bool bValid = false;
-			if (pxOccupantScene)
-			{
-				Zenith_Entity xEntity = pxOccupantScene->TryGetEntity(xPoint.m_xOccupiedBy);
-				bValid = xEntity.IsValid();
-			}
+			Zenith_Entity xEntity = xScenes.ResolveEntity(xPoint.m_xOccupiedBy);
+			bool bValid = xEntity.IsValid();
 			if (!bValid)
 			{
 				xPoint.m_xOccupiedBy = Zenith_EntityID();
@@ -274,13 +269,8 @@ void Zenith_TacticalPointSystem::Update()
 		// Check if owner entity (dynamic points) still exists
 		if ((xPoint.m_uFlags & TACPOINT_FLAG_DYNAMIC) && xPoint.m_xOwnerEntity.IsValid())
 		{
-			Zenith_SceneData* pxOwnerScene = xScenes.GetSceneDataForEntity(xPoint.m_xOwnerEntity);
-			bool bValid = false;
-			if (pxOwnerScene)
-			{
-				Zenith_Entity xEntity = pxOwnerScene->TryGetEntity(xPoint.m_xOwnerEntity);
-				bValid = xEntity.IsValid();
-			}
+			Zenith_Entity xEntity = xScenes.ResolveEntity(xPoint.m_xOwnerEntity);
+			bool bValid = xEntity.IsValid();
 			if (!bValid)
 			{
 				FreePointSlot(u);

@@ -63,14 +63,13 @@ public:
 	 */
 	static bool IsPlayer(Zenith_EntityID uEntityID)
 	{
-		// C1: resolve owning scene via the entity ID instead of assuming the
-		// caller's entity lives in the active scene — works across additive
-		// scenes and persistent entities alike.
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uEntityID);
-		if (!pxSceneData)
+		// Resolve the entity by its OWN owning scene (works across additive scenes
+		// and persistent entities alike).
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(uEntityID);
+		if (!xEntity.IsValid())
 			return false;
 
-		const std::string& strName = pxSceneData->GetEntity(uEntityID).GetName();
+		const std::string& strName = xEntity.GetName();
 		return strName.find(s_szPlayerPrefix) == 0;
 	}
 
@@ -79,11 +78,11 @@ public:
 	 */
 	static bool IsEnemy(Zenith_EntityID uEntityID)
 	{
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uEntityID);
-		if (!pxSceneData)
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(uEntityID);
+		if (!xEntity.IsValid())
 			return false;
 
-		const std::string& strName = pxSceneData->GetEntity(uEntityID).GetName();
+		const std::string& strName = xEntity.GetName();
 		return strName.find(s_szEnemyPrefix) == 0;
 	}
 
@@ -92,11 +91,11 @@ public:
 	 */
 	static bool IsArena(Zenith_EntityID uEntityID)
 	{
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uEntityID);
-		if (!pxSceneData)
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(uEntityID);
+		if (!xEntity.IsValid())
 			return false;
 
-		const std::string& strName = pxSceneData->GetEntity(uEntityID).GetName();
+		const std::string& strName = xEntity.GetName();
 		return strName.find(s_szArenaPrefix) == 0;
 	}
 
@@ -109,11 +108,9 @@ public:
 	 */
 	static Zenith_EntityID FindPlayer()
 	{
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		Zenith_EntityID uPlayerID = INVALID_ENTITY_ID;
 
-		pxSceneData->Query<Zenith_TransformComponent>()
+		g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>()
 			.ForEach([&](Zenith_EntityID uID, Zenith_TransformComponent&)
 			{
 				if (IsPlayer(uID))
@@ -134,15 +131,15 @@ public:
 		if (uPlayerID == INVALID_ENTITY_ID)
 			return Zenith_Maths::Vector3(0.0f);
 
-		// C1: resolve owning scene via the entity id (the player may live in
-		// an additive scene or in DontDestroyOnLoad).
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uPlayerID);
-		if (!pxSceneData)
+		// Resolve via the entity id (the player may live in an additive scene
+		// or in DontDestroyOnLoad).
+		Zenith_Entity xPlayer = g_xEngine.Scenes().ResolveEntity(uPlayerID);
+		Zenith_TransformComponent* pxTransform = xPlayer.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 			return Zenith_Maths::Vector3(0.0f);
-		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerID);
 
 		Zenith_Maths::Vector3 xPos;
-		xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		pxTransform->GetPosition(xPos);
 		return xPos;
 	}
 
@@ -156,10 +153,7 @@ public:
 	static std::vector<Zenith_EntityID> FindAllEnemies()
 	{
 		std::vector<Zenith_EntityID> axEnemies;
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-
-		pxSceneData->Query<Zenith_TransformComponent>()
+		g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>()
 			.ForEach([&](Zenith_EntityID uID, Zenith_TransformComponent&)
 			{
 				if (IsEnemy(uID))
@@ -176,12 +170,10 @@ public:
 	 */
 	static Zenith_EntityID FindNearestEnemy(const Zenith_Maths::Vector3& xPosition)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		Zenith_EntityID uNearestID = INVALID_ENTITY_ID;
 		float fNearestDist = std::numeric_limits<float>::max();
 
-		pxSceneData->Query<Zenith_TransformComponent>()
+		g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>()
 			.ForEach([&](Zenith_EntityID uID, Zenith_TransformComponent& xTransform)
 			{
 				if (!IsEnemy(uID))
@@ -208,10 +200,7 @@ public:
 		const Zenith_Maths::Vector3& xPosition, float fRadius)
 	{
 		std::vector<Combat_EntityDistance> axResults;
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-
-		pxSceneData->Query<Zenith_TransformComponent>()
+		g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>()
 			.ForEach([&](Zenith_EntityID uID, Zenith_TransformComponent& xTransform)
 			{
 				if (!IsEnemy(uID))
@@ -248,10 +237,7 @@ public:
 	static uint32_t CountLivingEnemies()
 	{
 		uint32_t uCount = 0;
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-
-		pxSceneData->Query<Zenith_TransformComponent>()
+		g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>()
 			.ForEach([&](Zenith_EntityID uID, Zenith_TransformComponent&)
 			{
 				if (IsEnemy(uID))
@@ -275,10 +261,7 @@ public:
 		const Zenith_Maths::Vector3& xPosition, float fRadius)
 	{
 		std::vector<Combat_EntityDistance> axResults;
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-
-		pxSceneData->Query<Zenith_TransformComponent>()
+		g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>()
 			.ForEach([&](Zenith_EntityID uID, Zenith_TransformComponent& xTransform)
 			{
 				Zenith_Maths::Vector3 xEntityPos;
@@ -303,16 +286,13 @@ public:
 	 */
 	static bool GetEntityPosition(Zenith_EntityID uEntityID, Zenith_Maths::Vector3& xOutPos)
 	{
-		// C1: resolve owning scene via the entity id, not the active scene.
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uEntityID);
-		if (!pxSceneData)
+		// Resolve the entity by its OWN owning scene (not the active scene).
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(uEntityID);
+		Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 			return false;
 
-		Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);
-		if (!xEntity.HasComponent<Zenith_TransformComponent>())
-			return false;
-
-		xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xOutPos);
+		pxTransform->GetPosition(xOutPos);
 		return true;
 	}
 

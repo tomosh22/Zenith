@@ -25,12 +25,17 @@ public:
 protected:
 	void HandleInteract(Zenith_EntityID xVillager) override
 	{
-		if (!m_xParentEntity.IsValid() || !m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+		if (!m_xParentEntity.IsValid())
+		{
+			return;
+		}
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
 		{
 			return;
 		}
 		Zenith_PropertyValue xPayload;
 		xPayload.SetPackedEntityID(xVillager.GetPacked());
-		m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("Interact", &xPayload);
+		pxGraph->FireCustomEvent("Interact", &xPayload);
 	}
 };

@@ -97,11 +97,12 @@ namespace
 	Flux_AnimationStateMachine* Human_BaseSM()
 	{
 		Zenith_Entity xPlayer = Human_FindPlayer();
-		if (!xPlayer.IsValid() || !xPlayer.HasComponent<Zenith_AnimatorComponent>())
+		Zenith_AnimatorComponent* pxAnimator = xPlayer.TryGetComponent<Zenith_AnimatorComponent>();
+		if (pxAnimator == nullptr)
 		{
 			return nullptr;
 		}
-		Flux_AnimationController& xController = xPlayer.GetComponent<Zenith_AnimatorComponent>().GetController();
+		Flux_AnimationController& xController = pxAnimator->GetController();
 		Flux_AnimationLayer* pxBase = xController.GetLayer(0);
 		return pxBase ? &pxBase->GetStateMachine() : nullptr;
 	}
@@ -189,9 +190,10 @@ namespace
 			// transition-less showcase state the marks below CrossFade into.
 			Zenith_Entity xPlayer = Human_FindPlayer();
 			Flux_AnimationStateMachine* pxSM = Human_BaseSM();
-			if (xPlayer.IsValid() && xPlayer.HasComponent<Zenith_AnimatorComponent>() && pxSM)
+			Zenith_AnimatorComponent* pxAnimator = xPlayer.TryGetComponent<Zenith_AnimatorComponent>();
+			if (pxAnimator != nullptr && pxSM)
 			{
-				Zenith_AnimatorComponent& xAnimator = xPlayer.GetComponent<Zenith_AnimatorComponent>();
+				Zenith_AnimatorComponent& xAnimator = *pxAnimator;
 				const std::string strDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
 
 				struct ShowState { const char* szState; const char* szFile; };

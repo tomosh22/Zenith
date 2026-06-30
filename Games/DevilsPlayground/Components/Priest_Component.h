@@ -170,14 +170,12 @@ public:
 		// authoring time, trapping it on a sub-polygon island disconnected
 		// from every villager. (SetIncludeInNavMesh is a one-time hint
 		// consumed by the generator; it has no per-frame cost.)
-		if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		if (Zenith_ColliderComponent* pxCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>())
 		{
-			Zenith_ColliderComponent& xCollider =
-				m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
-			xCollider.SetIncludeInNavMesh(false);
-			if (xCollider.HasValidBody())
+			pxCollider->SetIncludeInNavMesh(false);
+			if (pxCollider->HasValidBody())
 			{
-				const Zenith_PhysicsBodyID xBodyID = xCollider.GetBodyID();
+				const Zenith_PhysicsBodyID xBodyID = pxCollider->GetBodyID();
 				g_xEngine.Physics().SetGravityEnabled(xBodyID, false);
 				g_xEngine.Physics().LockRotation(xBodyID, /*X=*/true, /*Y=*/false, /*Z=*/true);
 			}
@@ -208,9 +206,9 @@ public:
 
 		// Reset blackboard transient state — Editor Stop/Play replay would
 		// otherwise inherit a stale TargetWithDevil from the previous run.
-		if (!m_xParentEntity.HasComponent<Zenith_AIAgentComponent>()) return;
-		Zenith_AIAgentComponent& xAgent = m_xParentEntity.GetComponent<Zenith_AIAgentComponent>();
-		Zenith_Blackboard& xBB = xAgent.GetBlackboard();
+		Zenith_AIAgentComponent* pxAgent = m_xParentEntity.TryGetComponent<Zenith_AIAgentComponent>();
+		if (pxAgent == nullptr) return;
+		Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
 		xBB.SetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL, INVALID_ENTITY_ID);
 		xBB.SetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
 		xBB.SetFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, m_fSuspicionRadius);
@@ -222,10 +220,12 @@ public:
 		// goes out of scope — the component holds a non-owning pointer that
 		// would otherwise dangle when the auto-OnDestroy lifecycle hook tries
 		// to use it.
-		if (m_xParentEntity.IsValid() && m_xParentEntity.HasComponent<Zenith_AIAgentComponent>())
+		if (m_xParentEntity.IsValid())
 		{
-			Zenith_AIAgentComponent& xAgent = m_xParentEntity.GetComponent<Zenith_AIAgentComponent>();
-			xAgent.SetNavMeshAgent(nullptr);
+			if (Zenith_AIAgentComponent* pxAgent = m_xParentEntity.TryGetComponent<Zenith_AIAgentComponent>())
+			{
+				pxAgent->SetNavMeshAgent(nullptr);
+			}
 		}
 		Zenith_PerceptionSystem::UnregisterAgent(m_xParentEntity.GetEntityID());
 	}
@@ -321,9 +321,9 @@ public:
 
 	void OnUpdate(const float fDt)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_AIAgentComponent>()) return;
-		Zenith_AIAgentComponent& xAgent = m_xParentEntity.GetComponent<Zenith_AIAgentComponent>();
-		Zenith_Blackboard& xBB = xAgent.GetBlackboard();
+		Zenith_AIAgentComponent* pxAgent = m_xParentEntity.TryGetComponent<Zenith_AIAgentComponent>();
+		if (pxAgent == nullptr) return;
+		Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
 
 		// Refresh the cached navmesh pointer. DP_AI's navmesh can be rebuilt
 		// at runtime (e.g., a test setup that adds scene geometry then calls
@@ -364,10 +364,10 @@ public:
 		// at corridor midpoints and the wall gaps were always
 		// open -- the priest's pre-PR navmesh was the union of
 		// every room and corridor).
-		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxDoorTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 		{
 			Zenith_Maths::Vector3 xPriestPosForDoors;
-			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPriestPosForDoors);
+			pxDoorTransform->GetPosition(xPriestPosForDoors);
 			DP_AI::OpenNearbyDoorsFor(m_xParentEntity.GetEntityID(), xPriestPosForDoors);
 		}
 
@@ -411,9 +411,9 @@ public:
 		// Falling edge (target lost, priest returns to patrol) is NOT
 		// emitted; the particles + HUD auto-clear on their own timers.
 		Zenith_Maths::Vector3 xPriestPos(0.0f);
-		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxPriestTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 		{
-			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPriestPos);
+			pxPriestTransform->GetPosition(xPriestPos);
 		}
 
 		// Priority order: Apprehend > Pursue > Investigate. We only fire
@@ -425,14 +425,13 @@ public:
 		bool bWithinApprehendRange = false;
 		if (xCurrentTarget.IsValid() && m_xParentEntity.HasComponent<Zenith_TransformComponent>())
 		{
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCurrentTarget);
-			if (pxScene != nullptr)
+			Zenith_Entity xTgt = g_xEngine.Scenes().ResolveEntity(xCurrentTarget);
+			if (xTgt.IsValid())
 			{
-				Zenith_Entity xTgt = pxScene->TryGetEntity(xCurrentTarget);
-				if (xTgt.IsValid() && xTgt.HasComponent<Zenith_TransformComponent>())
+				if (Zenith_TransformComponent* pxTgtTransform = xTgt.TryGetComponent<Zenith_TransformComponent>())
 				{
 					Zenith_Maths::Vector3 xTgtPos;
-					xTgt.GetComponent<Zenith_TransformComponent>().GetPosition(xTgtPos);
+					pxTgtTransform->GetPosition(xTgtPos);
 					const float fDx = xTgtPos.x - xPriestPos.x;
 					const float fDz = xTgtPos.z - xPriestPos.z;
 					bWithinApprehendRange = (fDx*fDx + fDz*fDz)
@@ -482,11 +481,11 @@ public:
 		if (m_uDebugFrameCounter % 30 == 0)
 		{
 			const Zenith_EntityID xTgt = xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
-			const Zenith_NavMeshAgent* pxNav = xAgent.GetNavMeshAgent();
+			const Zenith_NavMeshAgent* pxNav = pxAgent->GetNavMeshAgent();
 			Zenith_Maths::Vector3 xPos(0.0f);
-			if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+			if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 			{
-				m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+				pxTransform->GetPosition(xPos);
 			}
 			Zenith_Log(LOG_CATEGORY_AI,
 				"Priest_Component::OnUpdate frame=%u tgt=(%u/%u) navAgent=%p hasPath=%d pos=(%.1f,%.1f,%.1f) lastNodeStatus=%d",
@@ -508,11 +507,11 @@ private:
 	{
 		xOther.m_pxFindPosNode = nullptr;
 		if (!m_xParentEntity.IsValid()) return;
-		if (!m_xParentEntity.HasComponent<Zenith_AIAgentComponent>()) return;
-		Zenith_AIAgentComponent& xAgent = m_xParentEntity.GetComponent<Zenith_AIAgentComponent>();
-		if (xAgent.GetNavMeshAgent() == &xOther.m_xNavAgent)
+		Zenith_AIAgentComponent* pxAgent = m_xParentEntity.TryGetComponent<Zenith_AIAgentComponent>();
+		if (pxAgent == nullptr) return;
+		if (pxAgent->GetNavMeshAgent() == &xOther.m_xNavAgent)
 		{
-			xAgent.SetNavMeshAgent(&m_xNavAgent);
+			pxAgent->SetNavMeshAgent(&m_xNavAgent);
 		}
 	}
 
@@ -577,16 +576,15 @@ private:
 		// an unconditional zero here erases the velocity the nav tick just
 		// wrote and freezes the priest. Only zero when the agent is NOT
 		// path-following (kills residual slide after a path completes/aborts).
-		if (!m_xParentEntity.HasComponent<Zenith_ColliderComponent>()) return;
-		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
-		if (!xCollider.HasValidBody()) return;
-		if (m_xParentEntity.HasComponent<Zenith_AIAgentComponent>())
+		Zenith_ColliderComponent* pxCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr) return;
+		if (!pxCollider->HasValidBody()) return;
+		if (Zenith_AIAgentComponent* pxAgent = m_xParentEntity.TryGetComponent<Zenith_AIAgentComponent>())
 		{
-			const Zenith_NavMeshAgent* pxNav =
-				m_xParentEntity.GetComponent<Zenith_AIAgentComponent>().GetNavMeshAgent();
+			const Zenith_NavMeshAgent* pxNav = pxAgent->GetNavMeshAgent();
 			if (pxNav != nullptr && pxNav->HasPath()) return;
 		}
-		g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(),
+		g_xEngine.Physics().SetLinearVelocity(pxCollider->GetBodyID(),
 			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	}
 

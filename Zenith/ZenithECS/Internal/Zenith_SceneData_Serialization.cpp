@@ -10,9 +10,6 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
-// Relocated RAII scope type: the load path scopes creation onto the scene being
-// deserialized via Zenith_SceneCreationTargetScope.
-#include "ZenithECS/Internal/Zenith_SceneSystem_InternalScopes.h"
 // Phase 7a: the explicit default-component AddComponent in the entity load loop is gone --
 // the loader now creates entities BARE and the component stream supplies the owning component via
 // the engine-registered meta create-thunk. This TU no longer names any concrete component,
@@ -265,17 +262,6 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 		"Zenith_SceneData::LoadFromDataStream: scene is not empty (entityCount=%u). "
 		"Load against a fresh scene (CreateEmptyScene) or call Reset() first.",
 		m_xActiveEntities.GetSize());
-
-	// B1: route GetDefaultCreationScene-aware APIs at the scene being deserialized
-	// for the duration of this call. Defense-in-depth: the sync LoadScene body and
-	// async Phase 1 already open an outer scope around their CreateEmptyScene/
-	// LoadFromDataStream pair, but direct callers (editor backup restore, tests
-	// rebuilding state from a stream) shouldn't have to know about the contract.
-	// Save/restore stack semantics make the redundant push harmless under nesting.
-	Zenith_Scene xSelf;
-	xSelf.m_iHandle = m_iHandle;
-	xSelf.m_uGeneration = m_uGeneration;
-	Zenith_SceneCreationTargetScope xCreationTargetScope(xSelf);
 
 	// Single source of truth for header checks. ValidateSceneStream is
 	// non-destructive (restores the cursor to its entry offset), so after it

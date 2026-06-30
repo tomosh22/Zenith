@@ -125,19 +125,11 @@ namespace
 		// Re-instantiate every live slot referencing this asset, across all
 		// loaded scenes. Blackboard state migrates name+type-matched.
 		u_int uReloadedSlots = 0;
-		for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.Scenes().GetSceneSlotCount(); ++uSceneSlot)
+		g_xEngine.Scenes().QueryAllScenes<Zenith_GraphComponent>()
+			.ForEach([&uReloadedSlots, &strNormalizedPath](Zenith_EntityID, Zenith_GraphComponent& xComponent)
 		{
-			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataAtSlot(uSceneSlot);
-			if (!pxSceneData || !pxSceneData->IsLoaded())
-			{
-				continue;
-			}
-			pxSceneData->Query<Zenith_GraphComponent>()
-				.ForEach([&uReloadedSlots, &strNormalizedPath](Zenith_EntityID, Zenith_GraphComponent& xComponent)
-			{
-				uReloadedSlots += xComponent.ReloadSlotsForAsset(strNormalizedPath.c_str());
-			});
-		}
+			uReloadedSlots += xComponent.ReloadSlotsForAsset(strNormalizedPath.c_str());
+		});
 
 		++g_xGraphReload.m_uReloadCount;
 		SetStatus("reloaded '%s' (%u live instance%s)", strNormalizedPath.c_str(), uReloadedSlots, uReloadedSlots == 1 ? "" : "s");

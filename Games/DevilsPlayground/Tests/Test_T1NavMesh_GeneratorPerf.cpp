@@ -82,16 +82,16 @@ static bool Step_T1NavMeshGeneratorPerf(int iFrame)
 		{
 			Zenith_Entity xEnt = pxScene->TryGetEntity(axIds.Get(u));
 			if (!xEnt.IsValid()) continue;
-			if (!xEnt.HasComponent<Zenith_ColliderComponent>()) continue;
-			Zenith_ColliderComponent& xCol = xEnt.GetComponent<Zenith_ColliderComponent>();
-			if (xCol.GetRigidBodyType() != RIGIDBODY_TYPE_STATIC) continue;
-			if (!xEnt.HasComponent<Zenith_TransformComponent>()) continue;
+			Zenith_ColliderComponent* pxCol = xEnt.TryGetComponent<Zenith_ColliderComponent>();
+			if (pxCol == nullptr) continue;
+			if (pxCol->GetRigidBodyType() != RIGIDBODY_TYPE_STATIC) continue;
+			Zenith_TransformComponent* pxT = xEnt.TryGetComponent<Zenith_TransformComponent>();
+			if (pxT == nullptr) continue;
 
 			++uColliderCount;
-			Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
 			Zenith_Maths::Vector3 xPos, xScl;
-			xT.GetPosition(xPos);
-			xT.GetScale(xScl);
+			pxT->GetPosition(xPos);
+			pxT->GetScale(xScl);
 
 			const float fHalfX = std::fabs(xScl.x) * 0.5f;
 			const float fHalfY = std::fabs(xScl.y) * 0.5f;

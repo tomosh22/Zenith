@@ -121,10 +121,9 @@ namespace
 		{
 			// By now the evicted chunks re-streamed (budgeted at 16 evictions /
 			// 8 uploads per frame) and the splat upload drained.
-			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(g_uTerrainEntity);
-			if (pxSceneData != nullptr)
+			Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(g_uTerrainEntity);
+			if (xEntity.IsValid())
 			{
-				Zenith_Entity xEntity = pxSceneData->GetEntity(g_uTerrainEntity);
 				Zenith_TerrainComponent* pxTerrain = xEntity.TryGetComponent<Zenith_TerrainComponent>();
 				if (pxTerrain != nullptr && pxTerrain->m_pxStreamingState != nullptr)
 				{

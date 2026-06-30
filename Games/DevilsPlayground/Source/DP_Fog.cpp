@@ -68,13 +68,12 @@ namespace DP_Fog
 			(Zenith_EntityID xHoleId, float fRadius)
 			{
 				if (uWritten >= uMaxHoles) return;
-				Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xHoleId);
-				if (pxScene == nullptr) return;
-				Zenith_Entity xEnt = pxScene->TryGetEntity(xHoleId);
+				Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xHoleId);
 				if (!xEnt.IsValid()) return;
-				if (!xEnt.HasComponent<Zenith_TransformComponent>()) return;
+				Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+				if (pxTransform == nullptr) return;
 				Vec3 xPos;
-				xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+				pxTransform->GetPosition(xPos);
 				pxOutHoles[uWritten++] = Vec4(xPos.x, xPos.y, xPos.z, fRadius);
 			});
 		return uWritten;
@@ -175,13 +174,13 @@ namespace DP_Fog
 				// VisitedVisible -> VisitedDim -> VisitedHidden
 				// states over the next 30 s.
 				Zenith_Maths::Vector3 xVPos;
-				Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-				if (pxScene != nullptr)
+				Zenith_Entity xV = g_xEngine.Scenes().ResolveEntity(xId);
+				if (xV.IsValid())
 				{
-					Zenith_Entity xV = pxScene->TryGetEntity(xId);
-					if (xV.IsValid() && xV.HasComponent<Zenith_TransformComponent>())
+					Zenith_TransformComponent* pxTransform = xV.TryGetComponent<Zenith_TransformComponent>();
+					if (pxTransform != nullptr)
 					{
-						xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
+						pxTransform->GetPosition(xVPos);
 						RecordMemoryReveal(xVPos);
 					}
 				}

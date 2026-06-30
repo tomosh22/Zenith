@@ -499,9 +499,9 @@ public:
 		CreateMaterials();
 
 		// Wire up UI buttons
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 
 			Zenith_UI::Zenith_UIButton* pxBackBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("PinballBackBtn");
 			if (pxBackBtn)
@@ -1474,10 +1474,11 @@ private:
 			return;
 
 		Zenith_Entity xBall = pxScene->GetEntity(m_xBallEntityID);
-		if (!xBall.HasComponent<Zenith_ColliderComponent>())
+		Zenith_ColliderComponent* pxCollider = xBall.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr)
 			return;
 
-		Zenith_ColliderComponent& xCollider = xBall.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = *pxCollider;
 		if (!xCollider.HasValidBody())
 			return;
 
@@ -1505,9 +1506,9 @@ private:
 		xTransform.SetPosition({ fChannelCenterX, fBallY, 0.f });
 
 		// Keep velocity zeroed while on plunger
-		if (xBall.HasComponent<Zenith_ColliderComponent>())
+		if (Zenith_ColliderComponent* pxCollider = xBall.TryGetComponent<Zenith_ColliderComponent>())
 		{
-			Zenith_ColliderComponent& xCollider = xBall.GetComponent<Zenith_ColliderComponent>();
+			Zenith_ColliderComponent& xCollider = *pxCollider;
 			if (xCollider.HasValidBody())
 			{
 				g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0.f));
@@ -1550,9 +1551,9 @@ private:
 			xPos.z = 0.f;
 			xTransform.SetPosition(xPos);
 
-			if (xBall.HasComponent<Zenith_ColliderComponent>())
+			if (Zenith_ColliderComponent* pxCollider = xBall.TryGetComponent<Zenith_ColliderComponent>())
 			{
-				Zenith_ColliderComponent& xCollider = xBall.GetComponent<Zenith_ColliderComponent>();
+				Zenith_ColliderComponent& xCollider = *pxCollider;
 				if (xCollider.HasValidBody())
 				{
 					Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xCollider.GetBodyID());
@@ -1574,10 +1575,9 @@ private:
 			return;
 
 		Zenith_Entity xBall = pxScene->GetEntity(m_xBallEntityID);
-		if (!xBall.HasComponent<Pinball_BallComponent>())
+		Pinball_BallComponent* pxBallBehaviour = xBall.TryGetComponent<Pinball_BallComponent>();
+		if (pxBallBehaviour == nullptr)
 			return;
-
-		Pinball_BallComponent* pxBallBehaviour = &xBall.GetComponent<Pinball_BallComponent>();
 
 		// Check target via collision callback
 		if (m_fTargetCooldown <= 0.f && pxBallBehaviour->DidCollideWith(m_xTargetEntityID))
@@ -1757,11 +1757,12 @@ private:
 
 	void FireBallLostEvent()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
 		{
 			return;
 		}
-		m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("BallLost");
+		pxGraph->FireCustomEvent("BallLost");
 	}
 
 	void OnGateCleared()
@@ -1846,10 +1847,11 @@ private:
 
 	void ShowPinballVictoryOverlay()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		Zenith_UI::Zenith_UIElement* pxBg = xUI.FindElement("PinballVictoryBg");
 		if (pxBg) pxBg->SetVisible(true);
@@ -1889,10 +1891,11 @@ private:
 
 	void HidePinballVictoryOverlay()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		const char* aszElements[] = {
 			"PinballVictoryBg", "PinballVictoryTitle",
@@ -1984,9 +1987,9 @@ private:
 			return;
 
 		Zenith_Entity xPeg = pxScene->GetEntity(m_axPegEntityIDs[uPegIndex]);
-		if (xPeg.HasComponent<Zenith_ModelComponent>())
+		if (Zenith_ModelComponent* pxModel = xPeg.TryGetComponent<Zenith_ModelComponent>())
 		{
-			Zenith_ModelComponent& xModel = xPeg.GetComponent<Zenith_ModelComponent>();
+			Zenith_ModelComponent& xModel = *pxModel;
 			if (xModel.GetNumMeshes() > 0 && xModel.GetModelInstance())
 			{
 				xModel.GetModelInstance()->SetMaterial(0, xMaterial.GetDirect());
@@ -2035,10 +2038,11 @@ private:
 	{
 		if (m_bHUDCreated)
 			return;
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		// Objective text - top left
 		Zenith_UI::Zenith_UIText* pxObjective = xUI.CreateText("PinballObjective", "");
@@ -2156,10 +2160,11 @@ private:
 
 	bool ScreenToWorld(float fScreenX, float fScreenY, float& fWorldX, float& fWorldY)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>();
+		if (pxCam == nullptr)
 			return false;
 
-		Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+		Zenith_CameraComponent& xCam = *pxCam;
 
 		Zenith_Maths::Vector3 xNear = xCam.ScreenSpaceToWorldSpace(Zenith_Maths::Vector3(fScreenX, fScreenY, 0.f));
 		Zenith_Maths::Vector3 xFar = xCam.ScreenSpaceToWorldSpace(Zenith_Maths::Vector3(fScreenX, fScreenY, 1.f));
@@ -2184,10 +2189,11 @@ private:
 
 	void UpdateUI()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		char szBuffer[128];
 

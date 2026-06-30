@@ -85,14 +85,14 @@ static bool Step_HearingFlow(int iFrame)
 			// Place the synthetic noise 2m in front of the priest so it
 			// always lies inside the priest's 35 m hearing radius regardless
 			// of the priest's authored position.
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPriest);
-			if (pxScene != nullptr)
+			Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xPriest);
+			if (xEnt.IsValid())
 			{
-				Zenith_Entity xEnt = pxScene->TryGetEntity(g_xPriest);
-				if (xEnt.IsValid() && xEnt.HasComponent<Zenith_TransformComponent>())
+				Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+				if (pxTransform != nullptr)
 				{
 					Zenith_Maths::Vector3 xPriestPos;
-					xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPriestPos);
+					pxTransform->GetPosition(xPriestPos);
 					g_xNoisePos = xPriestPos + Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f);
 				}
 			}

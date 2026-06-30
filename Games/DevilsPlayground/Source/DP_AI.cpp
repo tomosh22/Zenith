@@ -100,15 +100,10 @@ namespace DP_AI
 		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
 			[&xPos](Zenith_EntityID xPriestId, Priest_Component&)
 			{
-				Zenith_SceneData* pxScene =
-					g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
-				if (pxScene == nullptr) return;
-				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
-				if (!xEnt.IsValid()) return;
-				if (!xEnt.HasComponent<Zenith_AIAgentComponent>()) return;
-				Zenith_AIAgentComponent& xAg =
-					xEnt.GetComponent<Zenith_AIAgentComponent>();
-				Zenith_Blackboard& xBB = xAg.GetBlackboard();
+				Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
+				Zenith_AIAgentComponent* pxAg = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
+				if (pxAg == nullptr) return;
+				Zenith_Blackboard& xBB = pxAg->GetBlackboard();
 				xBB.SetVector3(BB_KEY_INVESTIGATE_POS, xPos);
 				xBB.SetBool(BB_KEY_HAS_INVESTIGATE_POS, true);
 			});
@@ -260,15 +255,11 @@ namespace DP_AI
 			[&bPursuing](Zenith_EntityID xPriestId, Priest_Component&)
 			{
 				if (bPursuing) return;
-				Zenith_SceneData* pxScene =
-					g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
-				if (pxScene == nullptr) return;
-				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
+				Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
 				if (!xEnt.IsValid()) return;
-				if (!xEnt.HasComponent<Zenith_AIAgentComponent>()) return;
-				Zenith_AIAgentComponent& xAg =
-					xEnt.GetComponent<Zenith_AIAgentComponent>();
-				Zenith_Blackboard& xBB = xAg.GetBlackboard();
+				Zenith_AIAgentComponent* pxAg = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
+				if (pxAg == nullptr) return;
+				Zenith_Blackboard& xBB = pxAg->GetBlackboard();
 				if (xBB.GetEntityID(BB_KEY_TARGET_WITH_DEVIL).IsValid())
 				{
 					bPursuing = true;
@@ -284,15 +275,11 @@ namespace DP_AI
 			[&bInvestigating](Zenith_EntityID xPriestId, Priest_Component&)
 			{
 				if (bInvestigating) return;
-				Zenith_SceneData* pxScene =
-					g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
-				if (pxScene == nullptr) return;
-				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
+				Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
 				if (!xEnt.IsValid()) return;
-				if (!xEnt.HasComponent<Zenith_AIAgentComponent>()) return;
-				Zenith_AIAgentComponent& xAg =
-					xEnt.GetComponent<Zenith_AIAgentComponent>();
-				Zenith_Blackboard& xBB = xAg.GetBlackboard();
+				Zenith_AIAgentComponent* pxAg = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
+				if (pxAg == nullptr) return;
+				Zenith_Blackboard& xBB = pxAg->GetBlackboard();
 				if (xBB.GetBool(BB_KEY_HAS_INVESTIGATE_POS))
 				{
 					bInvestigating = true;
@@ -307,14 +294,12 @@ namespace DP_AI
 		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
 			[&xFrom, &fClosestDist](Zenith_EntityID xPriestId, Priest_Component&)
 			{
-				Zenith_SceneData* pxScene =
-					g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
-				if (pxScene == nullptr) return;
-				Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
+				Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
 				if (!xEnt.IsValid()) return;
-				if (!xEnt.HasComponent<Zenith_TransformComponent>()) return;
+				Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+				if (pxTransform == nullptr) return;
 				Zenith_Maths::Vector3 xPPos(0.0f);
-				xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPPos);
+				pxTransform->GetPosition(xPPos);
 				const float fDx = xPPos.x - xFrom.x;
 				const float fDz = xPPos.z - xFrom.z;
 				const float fD = std::sqrt(fDx * fDx + fDz * fDz);

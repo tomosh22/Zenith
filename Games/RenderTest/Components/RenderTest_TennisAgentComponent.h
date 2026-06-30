@@ -126,9 +126,9 @@ public:
 	void OnStart()
 	{
 		// Read our side from the sibling body (it derived it from the v2 stream).
-		if (m_xParentEntity.HasComponent<RenderTest_TennisPlayerComponent>())
+		if (RenderTest_TennisPlayerComponent* pxTennisPlayer = m_xParentEntity.TryGetComponent<RenderTest_TennisPlayerComponent>())
 		{
-			m_eSide = m_xParentEntity.GetComponent<RenderTest_TennisPlayerComponent>().IsNearSide()
+			m_eSide = pxTennisPlayer->IsNearSide()
 				? RenderTest_Tennis::TENNIS_SIDE_NEAR : RenderTest_Tennis::TENNIS_SIDE_FAR;
 		}
 
@@ -260,8 +260,8 @@ private:
 
 	Zenith_AIAgentComponent* ResolveAgent() const
 	{
-		if (m_xParentEntity.IsValid() && m_xParentEntity.HasComponent<Zenith_AIAgentComponent>())
-			return &m_xParentEntity.GetComponent<Zenith_AIAgentComponent>();
+		if (Zenith_AIAgentComponent* pxAgent = m_xParentEntity.TryGetComponent<Zenith_AIAgentComponent>())
+			return pxAgent;
 		return nullptr;
 	}
 
@@ -330,12 +330,9 @@ private:
 		Zenith_Maths::Vector3 xPos(0.0f);
 		if (xID == INVALID_ENTITY_ID)
 			return xPos;
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xID);
-		if (!pxSceneData)
-			return xPos;
-		Zenith_Entity xEnt = pxSceneData->GetEntity(xID);
-		if (xEnt.IsValid() && xEnt.HasComponent<Zenith_TransformComponent>())
-			xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xID);
+		if (Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>())
+			pxTransform->GetPosition(xPos);
 		return xPos;
 	}
 

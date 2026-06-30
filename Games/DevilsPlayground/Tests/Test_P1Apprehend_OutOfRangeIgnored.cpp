@@ -87,12 +87,11 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 }
@@ -176,15 +175,14 @@ static bool Step_P1ApprehendOutOfRange(int iFrame)
 		Zenith_Maths::Vector3 xPriestPos;
 		if (TryGetEntityPos(g_xPriest, xPriestPos))
 		{
-			Zenith_SceneData* pxScene =
-				g_xEngine.Scenes().GetSceneDataForEntity(g_xVillager);
-			if (pxScene != nullptr)
+			Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xVillager);
+			if (xEnt.IsValid())
 			{
-				Zenith_Entity xEnt = pxScene->TryGetEntity(g_xVillager);
-				if (xEnt.IsValid()
-				 && xEnt.HasComponent<Zenith_TransformComponent>())
+				Zenith_TransformComponent* pxTransform =
+					xEnt.TryGetComponent<Zenith_TransformComponent>();
+				if (pxTransform != nullptr)
 				{
-					xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(
+					pxTransform->SetPosition(
 						Zenith_Maths::Vector3(
 							xPriestPos.x, xPriestPos.y, xPriestPos.z + 4.0f));
 					g_fInitialSeparation = 4.0f;

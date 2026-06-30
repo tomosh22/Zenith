@@ -21,11 +21,12 @@ namespace
 		{
 			return;
 		}
-		if (!xParent.HasComponent<Zenith_GraphComponent>())
+		Zenith_GraphComponent* pxGraph = xParent.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
 		{
 			return;
 		}
-		xParent.GetComponent<Zenith_GraphComponent>().FlushPendingRemovals();
+		pxGraph->FlushPendingRemovals();
 	}
 }
 

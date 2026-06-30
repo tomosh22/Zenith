@@ -66,9 +66,7 @@ namespace
 
 	DPVillager_Component* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return nullptr;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
 		return xEnt.TryGetComponent<DPVillager_Component>();
 	}

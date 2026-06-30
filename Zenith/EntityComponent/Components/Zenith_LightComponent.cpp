@@ -43,10 +43,12 @@ Zenith_LightComponent::Zenith_LightComponent(Zenith_Entity& xEntity)
 Zenith_Maths::Vector3 Zenith_LightComponent::GetWorldPosition() const
 {
 	Zenith_Maths::Vector3 xPos(0.0f);
-	if (m_xParentEntity.IsValid() && m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+	if (m_xParentEntity.IsValid())
 	{
-		Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
-		xTransform.GetPosition(xPos);
+		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
+		{
+			pxTransform->GetPosition(xPos);
+		}
 	}
 	if (m_bUsePositionOffset)
 	{
@@ -72,12 +74,14 @@ Zenith_Maths::Vector3 Zenith_LightComponent::GetWorldDirection() const
 
 	// Default: use transform rotation applied to forward vector (-Z)
 	Zenith_Maths::Vector3 xDir(0.0f, 0.0f, -1.0f);
-	if (m_xParentEntity.IsValid() && m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+	if (m_xParentEntity.IsValid())
 	{
-		Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
-		Zenith_Maths::Quat xRot;
-		xTransform.GetRotation(xRot);
-		xDir = xRot * Zenith_Maths::Vector3(0.0f, 0.0f, -1.0f);
+		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
+		{
+			Zenith_Maths::Quat xRot;
+			pxTransform->GetRotation(xRot);
+			xDir = xRot * Zenith_Maths::Vector3(0.0f, 0.0f, -1.0f);
+		}
 	}
 	return xDir;
 }
@@ -330,33 +334,27 @@ void Zenith_LightComponent::RenderTransformOffsets()
 // ---------------------------------------------------------------------------
 static void Zenith_GatherLightsImpl(Zenith_Vector<Zenith_LightRenderData>& xOut)
 {
-	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.Scenes().GetSceneSlotCount(); ++uSceneSlot)
+	g_xEngine.Scenes().QueryAllScenes<Zenith_LightComponent, Zenith_TransformComponent>()
+		.ForEach([&xOut](Zenith_EntityID uID, Zenith_LightComponent& xLight, Zenith_TransformComponent&)
 	{
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataAtSlot(uSceneSlot);
-		if (!pxSceneData || !pxSceneData->IsLoaded()) continue;
-
-		pxSceneData->Query<Zenith_LightComponent, Zenith_TransformComponent>()
-			.ForEach([&xOut](Zenith_EntityID uID, Zenith_LightComponent& xLight, Zenith_TransformComponent&)
+		Zenith_LightRenderData xData;
+		switch (xLight.GetLightType())
 		{
-			Zenith_LightRenderData xData;
-			switch (xLight.GetLightType())
-			{
-			case LIGHT_TYPE_POINT:       xData.m_eType = ZENITH_LIGHT_RENDER_POINT;       break;
-			case LIGHT_TYPE_SPOT:        xData.m_eType = ZENITH_LIGHT_RENDER_SPOT;        break;
-			case LIGHT_TYPE_DIRECTIONAL: xData.m_eType = ZENITH_LIGHT_RENDER_DIRECTIONAL; break;
-			default: return; // invalid type — skip (renderer previously asserted; here we just drop)
-			}
-			xData.m_xColor          = xLight.GetColor();
-			xData.m_fIntensity      = xLight.GetIntensity();
-			xData.m_xWorldPosition  = xLight.GetWorldPosition();
-			xData.m_fRange          = xLight.GetRange();
-			xData.m_xWorldDirection = xLight.GetWorldDirection();
-			xData.m_fSpotInnerAngle = xLight.GetSpotInnerAngle();
-			xData.m_fSpotOuterAngle = xLight.GetSpotOuterAngle();
-			xData.m_uEntityIndex    = uID.m_uIndex;
-			xOut.PushBack(xData);
-		});
-	}
+		case LIGHT_TYPE_POINT:       xData.m_eType = ZENITH_LIGHT_RENDER_POINT;       break;
+		case LIGHT_TYPE_SPOT:        xData.m_eType = ZENITH_LIGHT_RENDER_SPOT;        break;
+		case LIGHT_TYPE_DIRECTIONAL: xData.m_eType = ZENITH_LIGHT_RENDER_DIRECTIONAL; break;
+		default: return; // invalid type — skip (renderer previously asserted; here we just drop)
+		}
+		xData.m_xColor          = xLight.GetColor();
+		xData.m_fIntensity      = xLight.GetIntensity();
+		xData.m_xWorldPosition  = xLight.GetWorldPosition();
+		xData.m_fRange          = xLight.GetRange();
+		xData.m_xWorldDirection = xLight.GetWorldDirection();
+		xData.m_fSpotInnerAngle = xLight.GetSpotInnerAngle();
+		xData.m_fSpotOuterAngle = xLight.GetSpotOuterAngle();
+		xData.m_uEntityIndex    = uID.m_uIndex;
+		xOut.PushBack(xData);
+	});
 }
 
 // Published to the renderer. Constant-initialised, so referencing g_pfnZenithLightGather

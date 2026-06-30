@@ -49,13 +49,11 @@ enum Zenith_SceneLoadMode : uint8_t
 // Zenith_SceneInfo — POD snapshot of a scene's metadata.
 //
 // Replaces the former per-field Zenith_Scene metadata getters (GetName /
-// GetPath / GetBuildIndex / IsLoaded / WasLoadedAdditively / HasUnsavedChanges /
-// GetRootEntityCount). Fetched in one call via
-// Zenith_SceneSystem::GetSceneInfo(xScene). For an invalid / stale / unloaded
-// scene handle, GetSceneInfo returns a default-constructed Zenith_SceneInfo
-// (empty strings, m_iBuildIndex == -1, m_bLoaded == false,
-// m_bLoadedAdditively == false, m_uRootEntityCount == 0) — matching the old
-// getters' null-scene fallbacks.
+// GetPath / GetBuildIndex / IsLoaded / HasUnsavedChanges). Fetched in one call
+// via Zenith_SceneSystem::GetSceneInfo(xScene). For an invalid / stale /
+// unloaded scene handle, GetSceneInfo returns a default-constructed
+// Zenith_SceneInfo (empty strings, m_iBuildIndex == -1, m_bLoaded == false) —
+// matching the old getters' null-scene fallbacks.
 //==============================================================================
 struct Zenith_SceneInfo
 {
@@ -63,8 +61,6 @@ struct Zenith_SceneInfo
 	std::string m_strPath;
 	int         m_iBuildIndex       = -1;
 	bool        m_bLoaded           = false;
-	bool        m_bLoadedAdditively = false;
-	u_int       m_uRootEntityCount  = 0;
 #ifdef ZENITH_TOOLS
 	// Editor-only dirty flag.
 	bool        m_bHasUnsavedChanges = false;
@@ -110,14 +106,6 @@ public:
 #endif
 
 	//==========================================================================
-	// Slot table + lifecycle
-	//==========================================================================
-
-	uint32_t          GetSceneSlotCount();
-	Zenith_SceneData* GetSceneDataAtSlot(uint32_t uIndex);
-	Zenith_SceneData* GetLoadedSceneDataAtSlot(uint32_t uIndex);
-
-	//==========================================================================
 	// Scene handle / data resolution
 	//
 	// LIFETIME: these return a RAW Zenith_SceneData* into recyclable scene storage,
@@ -130,13 +118,28 @@ public:
 	Zenith_SceneData* GetSceneData(Zenith_Scene xScene);
 	Zenith_SceneData* GetSceneDataForEntity(Zenith_EntityID xID);
 
+	// Convenience: resolve a stored Zenith_EntityID straight to a live
+	// Zenith_Entity handle, collapsing the pervasive
+	// GetSceneDataForEntity(id) -> null-check -> TryGetEntity(id) chain. NON-
+	// asserting: returns an invalid handle (IsValid() == false) when the entity's
+	// owning scene is gone or the slot generation is stale, so it is a drop-in for
+	// prune / validity loops. Resolves the entity's OWN owning scene (correct
+	// across additive scenes + DontDestroyOnLoad), exactly like GetSceneDataForEntity.
+	Zenith_Entity ResolveEntity(Zenith_EntityID xID);
+
 	//==========================================================================
 	// Scene queries
 	//==========================================================================
 
 	Zenith_Scene GetActiveScene();
 	Zenith_Scene GetSceneAt(uint32_t uIndex);
-	Zenith_Scene GetSceneByName(const std::string& strName);
+
+	// Convenience forwarder for the pervasive GetSceneData(GetActiveScene())
+	// two-step: returns the active scene's SceneData, or nullptr when there is no
+	// active scene / it is unloaded (the same null contract GetSceneData callers
+	// already handle). Same LIFETIME caveat as GetSceneData — the returned pointer
+	// is raw + recyclable; never cache it across a load/unload.
+	Zenith_SceneData* GetActiveSceneData() { return GetSceneData(GetActiveScene()); }
 
 	//==========================================================================
 	// Scene metadata snapshot + root-entity iteration
@@ -191,6 +194,18 @@ public:
 
 	template<typename... Ts>
 	AllScenesQuery<Ts...> QueryAllScenes();
+
+	// QueryActiveScene — the active-scene counterpart to QueryAllScenes (and the
+	// engine-level form of the GetActiveSceneData()->Query<Ts...>() preamble every
+	// game hand-rolls). Mirrors the per-scene Query API (ForEach / Count / First /
+	// Any); when there is no active scene it is a safe no-op (zero iterations /
+	// Count 0 / First == INVALID_ENTITY_ID) rather than a crash, so it is usable at
+	// boot before a scene loads. Defined in Internal/Zenith_AllScenesQuery.inl.
+	template<typename... Ts>
+	class ActiveSceneQuery;
+
+	template<typename... Ts>
+	ActiveSceneQuery<Ts...> QueryActiveScene();
 
 	//==========================================================================
 	// Load / Unload
@@ -252,18 +267,16 @@ public:
 	// Entity creation — the ONLY public entity-construction entry points.
 	// CreateEntity runs the engine-installed default-components hook after the
 	// slot is set up (the everyday creation API); CreateEntityBare never runs
-	// the hook (loaders/prefabs add their own components). Overloads target
-	// the current creation scope / a scene handle / a SceneData*.
+	// the hook (loaders/prefabs add their own components). Overloads target a
+	// scene handle or a SceneData*. CreateEntityBare has a single (handle) form,
+	// kept public only because the out-of-lib SentinelECS link-proof exercises it.
 	// LEAF INVARIANT: none of these name a concrete component type.
 	//==========================================================================
 
-	Zenith_Entity CreateEntity(const std::string& strName);
 	Zenith_Entity CreateEntity(Zenith_Scene xScene, const std::string& strName);
 	Zenith_Entity CreateEntity(Zenith_SceneData* pxSceneData, const std::string& strName);
 
-	Zenith_Entity CreateEntityBare(const std::string& strName);
 	Zenith_Entity CreateEntityBare(Zenith_Scene xScene, const std::string& strName);
-	Zenith_Entity CreateEntityBare(Zenith_SceneData* pxSceneData, const std::string& strName);
 
 	// Lifecycle-deferral guard accessor (engine bootstrap + Zenith_LifecycleDeferralGuard).
 	bool& MutableLifecycleLoadingFlagForGuard();
@@ -285,7 +298,6 @@ private:
 	// directly in their ctor/dtor bodies.
 	friend struct Zenith_PrefabInstantiationGuard;
 	friend struct Zenith_SceneUpdateDeferralGuard;
-	friend struct Zenith_SceneCreationTargetScope;
 	// Leaf-internal free-function forwarders (declared in
 	// Internal/Zenith_RenderTaskState.h) reach the SceneSystem-owned entity store +
 	// runtime hooks via Get() without naming the engine singleton. Befriend them so
@@ -336,9 +348,6 @@ private:
 	void ClearBuildIndexRegistry();
 	static std::string CanonicalisePath(const std::string& strPath);
 
-	// Default creation-target resolution (creation-target scope / active scene).
-	Zenith_Scene GetDefaultCreationScene();
-
 	// Lifecycle-deferral state readers (Zenith_SceneData, a friend, reads these
 	// via Get() to gate deferred work).
 	bool IsLoadingScene() const        { return m_bIsLoadingScene; }
@@ -364,6 +373,14 @@ private:
 	// remains for game-defined events.
 	//==========================================================================
 	void FireUnloadCallbacksAndSelectNewActive(int iHandle, Zenith_Scene xScene);
+
+	// Slot-table walk primitives. PRIVATE: the only caller is the nested
+	// AllScenesQuery<Ts...> (Internal/Zenith_AllScenesQuery.inl), which iterates
+	// loaded scenes in slot order. External multi-scene gather goes through
+	// QueryAllScenes<Ts...> / QueryActiveScene<Ts...> instead of a raw slot loop;
+	// the unfiltered GetSceneDataAtSlot was removed (zero callers).
+	uint32_t          GetSceneSlotCount();
+	Zenith_SceneData* GetLoadedSceneDataAtSlot(uint32_t uIndex);
 
 	// Engine-internal scene resolution + lifecycle-context + active-selection +
 	// per-scene-update predicate + handle release + bulk-unload step. Internal
@@ -468,8 +485,6 @@ private:
 
 	int                           m_iPendingBuildIndex       = -1;
 
-	Zenith_Vector<Zenith_Scene>   m_axCreationTargetStack;
-
 	bool                          m_bIsMainLoopRunning       = false;
 
 	// Deferred LoadScene slot — populated by LoadScene/LoadSceneByIndex when
@@ -551,11 +566,6 @@ struct Zenith_SceneUpdateDeferralGuard
 private:
 	bool m_bPrevValue;
 };
-
-// Zenith_SceneCreationTargetScope lives in
-// Internal/Zenith_SceneSystem_InternalScopes.h (used only by the Zenith_SceneSystem
-// Internal/ TUs); the matching `friend` declaration in the class body above
-// doubles as its forward declaration.
 
 // Pull in the complete Zenith_SceneData (for GetLoadedSceneDataAtSlot's result)
 // AND Zenith_Query: the AllScenesQuery member-template bodies below name

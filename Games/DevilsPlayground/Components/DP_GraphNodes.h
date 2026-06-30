@@ -94,14 +94,10 @@ public:
 		DP_Player::RemoveHeldItem(xVillager);
 		if (xItem.IsValid())
 		{
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xItem);
-			if (pxScene != nullptr)
+			Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xItem);
+			if (xEnt.IsValid())
 			{
-				Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
-				if (xEnt.IsValid())
-				{
-					xEnt.Destroy();
-				}
+				xEnt.Destroy();
 			}
 		}
 
@@ -133,9 +129,12 @@ public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_Maths::Vector3 xPos(0.0f);
-		if (xContext.m_xSelf.IsValid() && xContext.m_xSelf.HasComponent<Zenith_TransformComponent>())
+		if (xContext.m_xSelf.IsValid())
 		{
-			xContext.m_xSelf.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+			if (Zenith_TransformComponent* pxTransform = xContext.m_xSelf.TryGetComponent<Zenith_TransformComponent>())
+			{
+				pxTransform->GetPosition(xPos);
+			}
 		}
 		const float fLoudness = DP_Tuning::Get<float>(m_strLoudnessKey.c_str());
 		const float fRadius   = DP_Tuning::Get<float>(m_strRadiusKey.c_str());
@@ -223,8 +222,9 @@ private:
 			Zenith_Entity xChild = pxScene->TryGetEntity(xChildren.Get(u));
 			if (!xChild.IsValid()) continue;
 			if (xChild.GetName() != szName) continue;
-			if (!xChild.HasComponent<Zenith_TransformComponent>()) continue;
-			return &xChild.GetComponent<Zenith_TransformComponent>();
+			Zenith_TransformComponent* pxChildTransform = xChild.TryGetComponent<Zenith_TransformComponent>();
+			if (pxChildTransform == nullptr) continue;
+			return pxChildTransform;
 		}
 		return nullptr;
 	}

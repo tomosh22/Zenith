@@ -80,9 +80,9 @@ public:
 			return;
 		}
 		Zenith_Entity xJetpack = pxSceneData->FindEntityByName("Jetpack");
-		if (xJetpack.IsValid() && xJetpack.HasComponent<Zenith_AttachmentComponent>())
+		if (Zenith_AttachmentComponent* pxAttachment = xJetpack.TryGetComponent<Zenith_AttachmentComponent>())
 		{
-			xJetpack.GetComponent<Zenith_AttachmentComponent>().SetOffset(RenderTest_BuildJetpackMount());
+			pxAttachment->SetOffset(RenderTest_BuildJetpackMount());
 		}
 	}
 

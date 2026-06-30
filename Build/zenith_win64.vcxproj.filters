@@ -3342,9 +3342,6 @@
     <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_RenderTaskState.h">
       <Filter>ZenithECS\Internal</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_InternalScopes.h">
-      <Filter>ZenithECS\Internal</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\ZenithECS\Zenith_ComponentMeta.h">
       <Filter>ZenithECS</Filter>
     </ClInclude>

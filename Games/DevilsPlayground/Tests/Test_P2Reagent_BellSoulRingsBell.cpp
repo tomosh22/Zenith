@@ -148,9 +148,9 @@ static bool Step_P2BellSoulRings(int iFrame)
 		if (!xEnt.IsValid()) { g_iPhase = kBS_Done; return false; }
 		g_xBellSoul = xEnt.GetEntityID();
 		g_xBellSoulSpawnPos = Zenith_Maths::Vector3(300.0f, 0.0f, 300.0f);
-		if (xEnt.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(g_xBellSoulSpawnPos);
+			pxTransform->SetPosition(g_xBellSoulSpawnPos);
 		}
 		xEnt.AddComponent<Zenith_ModelComponent>().LoadModel(
 			std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" ZENITH_MODEL_EXT);
@@ -164,13 +164,13 @@ static bool Step_P2BellSoulRings(int iFrame)
 	{
 		DP_Player::SetPossessedVillager(g_xVillager);
 		// Teleport villager onto BellSoul spawn position.
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xVillager);
-		if (pxScene != nullptr)
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xVillager);
+		if (xEnt.IsValid())
 		{
-			Zenith_Entity xEnt = pxScene->TryGetEntity(g_xVillager);
-			if (xEnt.IsValid() && xEnt.HasComponent<Zenith_TransformComponent>())
+			Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+			if (pxTransform != nullptr)
 			{
-				xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(g_xBellSoulSpawnPos);
+				pxTransform->SetPosition(g_xBellSoulSpawnPos);
 			}
 		}
 		g_iTickCounter = 0;

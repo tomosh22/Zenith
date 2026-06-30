@@ -931,23 +931,14 @@ private:
 	// Find the TilePuzzle_GameComponent from the GameManager entity
 	TilePuzzle_GameComponent* FindPuzzleBehaviour()
 	{
-		// Search all loaded scenes for the GameManager entity
-		for (uint32_t uSlot = 0; uSlot < 16; ++uSlot)
-		{
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataAtSlot(uSlot);
-			if (!pxScene)
-				continue;
-
-			Zenith_Entity xEntity = pxScene->FindEntityByName("GameManager");
-			if (!xEntity.IsValid())
-				continue;
-
-			if (!xEntity.HasComponent<TilePuzzle_GameComponent>())
-				continue;
-
-			return &xEntity.GetComponent<TilePuzzle_GameComponent>();
-		}
-		return nullptr;
+		// Search all loaded scenes for the GameManager's puzzle component.
+		TilePuzzle_GameComponent* pxResult = nullptr;
+		g_xEngine.Scenes().QueryAllScenes<TilePuzzle_GameComponent>().ForEach(
+			[&pxResult](Zenith_EntityID, TilePuzzle_GameComponent& xComp)
+			{
+				if (pxResult == nullptr) pxResult = &xComp;
+			});
+		return pxResult;
 	}
 
 	// ========================================================================
@@ -1761,19 +1752,13 @@ private:
 
 	Pinball_GameComponent* FindPinballBehaviour()
 	{
-		for (uint32_t uSlot = 0; uSlot < 16; ++uSlot)
-		{
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataAtSlot(uSlot);
-			if (!pxScene)
-				continue;
-			Zenith_Entity xEntity = pxScene->FindEntityByName("PinballManager");
-			if (!xEntity.IsValid())
-				continue;
-			if (!xEntity.HasComponent<Pinball_GameComponent>())
-				continue;
-			return &xEntity.GetComponent<Pinball_GameComponent>();
-		}
-		return nullptr;
+		Pinball_GameComponent* pxResult = nullptr;
+		g_xEngine.Scenes().QueryAllScenes<Pinball_GameComponent>().ForEach(
+			[&pxResult](Zenith_EntityID, Pinball_GameComponent& xComp)
+			{
+				if (pxResult == nullptr) pxResult = &xComp;
+			});
+		return pxResult;
 	}
 
 	void UpdateFullGame_PinballEnter()

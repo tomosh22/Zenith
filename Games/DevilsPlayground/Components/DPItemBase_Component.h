@@ -82,25 +82,21 @@ public:
 			if (m_fEvaporateRemaining <= 0.0f)
 			{
 				m_fEvaporateRemaining = 0.0f;
-				Zenith_SceneData* pxScene =
-					g_xEngine.Scenes().GetSceneDataForEntity(m_xParentEntity.GetEntityID());
-				if (pxScene != nullptr)
+				Zenith_Entity xEnt =
+					g_xEngine.Scenes().ResolveEntity(m_xParentEntity.GetEntityID());
+				if (xEnt.IsValid())
 				{
-					Zenith_Entity xEnt = pxScene->TryGetEntity(m_xParentEntity.GetEntityID());
-					if (xEnt.IsValid())
-					{
-						// 2026-05-21: capture the position before the
-						// destroy so DP_Particles can fire the steam
-						// burst at the right location. The destroy
-						// invalidates the entity ID for any post-hoc
-						// world-position lookup.
-						Zenith_Maths::Vector3 xPos = DP_Items::GetItemWorldPos(
-							m_xParentEntity.GetEntityID());
-						Zenith_EventDispatcher::Get().Dispatch(
-							DP_OnItemEvaporated{
-								m_xParentEntity.GetEntityID(), m_eTag, xPos });
-						xEnt.Destroy();
-					}
+					// 2026-05-21: capture the position before the
+					// destroy so DP_Particles can fire the steam
+					// burst at the right location. The destroy
+					// invalidates the entity ID for any post-hoc
+					// world-position lookup.
+					Zenith_Maths::Vector3 xPos = DP_Items::GetItemWorldPos(
+						m_xParentEntity.GetEntityID());
+					Zenith_EventDispatcher::Get().Dispatch(
+						DP_OnItemEvaporated{
+							m_xParentEntity.GetEntityID(), m_eTag, xPos });
+					xEnt.Destroy();
 				}
 				return;
 			}
@@ -129,13 +125,12 @@ public:
 
 		Zenith_Maths::Vector3 xMyPos = DP_Items::GetItemWorldPos(m_xParentEntity.GetEntityID());
 
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xV = pxScene->TryGetEntity(xVillager);
+		Zenith_Entity xV = g_xEngine.Scenes().ResolveEntity(xVillager);
 		if (!xV.IsValid()) return;
-		if (!xV.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_TransformComponent* pxVTransform = xV.TryGetComponent<Zenith_TransformComponent>();
+		if (pxVTransform == nullptr) return;
 		Zenith_Maths::Vector3 xVPos;
-		xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
+		pxVTransform->GetPosition(xVPos);
 
 		const float fDx = xMyPos.x - xVPos.x;
 		const float fDz = xMyPos.z - xVPos.z;
@@ -272,9 +267,9 @@ private:
 	{
 		if (m_bTintApplied) return;
 		if (m_eTag == DP_ItemTag::None) return;
-		if (!m_xParentEntity.HasComponent<Zenith_ModelComponent>()) return;
-		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
-		Flux_ModelInstance* pxModelInstance = xModel.GetModelInstance();
+		Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr) return;
+		Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
 		if (!pxModelInstance) return;
 		const uint32_t uNumMaterials = pxModelInstance->GetNumMaterials();
 		if (uNumMaterials == 0) return;

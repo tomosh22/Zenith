@@ -306,7 +306,7 @@ set. Step is called every main-loop frame until it returns false or the
 test's `m_iMaxFrames` is hit.
 
 If your test needs to load the gameplay scene, call
-`Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE)` — that is
+`Zenith_SceneSystem::LoadSceneByIndex(1, SCENE_LOAD_SINGLE)` — that is
 ProcLevel. Use `DP_Query::ForEachComponentInActiveScene<T>` to find
 priest / villager / item entities by type; do NOT bake in entity names
 or world positions, because procgen reshuffles those per seed.

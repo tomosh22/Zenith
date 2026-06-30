@@ -76,10 +76,11 @@ void UpdateCatCafeDisplayMaterial()
 
 void SetCatCafeVisible(bool bVisible)
 {
-	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+	Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+	if (pxUI == nullptr)
 		return;
 
-	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+	Zenith_UIComponent& xUI = *pxUI;
 
 	const char* aszCatCafeElements[] = {
 		"CatCafeTitle", "CatCafeCount",
@@ -104,9 +105,9 @@ void SetCatCafeVisible(bool bVisible)
 	if (bVisible)
 	{
 		// Save camera state and set up front-facing view for 3D cat display
-		if (m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		if (Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>())
 		{
-			Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xCam = *pxCam;
 			xCam.GetPosition(m_xCatCafeSavedCameraPos);
 			m_fCatCafeSavedPitch = xCam.GetPitch();
 			m_fCatCafeSavedYaw = xCam.GetYaw();
@@ -143,9 +144,9 @@ void SetCatCafeVisible(bool bVisible)
 		DestroyCatCafeDisplayEntity();
 
 		// Restore camera state
-		if (m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		if (Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>())
 		{
-			Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xCam = *pxCam;
 			xCam.SetPosition(m_xCatCafeSavedCameraPos);
 			xCam.SetPitch(m_fCatCafeSavedPitch);
 			xCam.SetYaw(m_fCatCafeSavedYaw);
@@ -156,10 +157,11 @@ void SetCatCafeVisible(bool bVisible)
 
 void UpdateCatCafeUI()
 {
-	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+	Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+	if (pxUI == nullptr)
 		return;
 
-	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+	Zenith_UIComponent& xUI = *pxUI;
 
 	// Update total count
 	Zenith_UI::Zenith_UIText* pxCount = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatCafeCount");
@@ -300,10 +302,11 @@ static void OnCatCafeNextPageClicked(void* pxUserData)
 
 void SetVictoryOverlayVisible(bool bVisible)
 {
-	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+	Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+	if (pxUI == nullptr)
 		return;
 
-	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+	Zenith_UIComponent& xUI = *pxUI;
 
 	const char* aszVictoryElements[] = {
 		"VictoryBg", "VictoryTitle", "VictoryStars",
@@ -387,10 +390,11 @@ void UpdateVictoryOverlay(float fDeltaTime)
 {
 	m_fVictoryTimer += fDeltaTime;
 
-	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+	Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+	if (pxUI == nullptr)
 		return;
 
-	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+	Zenith_UIComponent& xUI = *pxUI;
 
 	// Staggered reveal timing constants
 	static constexpr float s_fBgFadeStart    = 0.0f;
@@ -750,10 +754,11 @@ void OnDailyPuzzleCompleted()
 
 void SetSettingsVisible(bool bVisible)
 {
-	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+	Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+	if (pxUI == nullptr)
 		return;
 
-	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+	Zenith_UIComponent& xUI = *pxUI;
 
 	const char* aszSettingsElements[] = {
 		"SettingsBg", "SettingsTitle"
@@ -776,10 +781,11 @@ void SetSettingsVisible(bool bVisible)
 
 void SyncSettingsToggles()
 {
-	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+	Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+	if (pxUI == nullptr)
 		return;
 
-	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+	Zenith_UIComponent& xUI = *pxUI;
 
 	Zenith_UI::Zenith_UIToggle* pxSound = xUI.FindElement<Zenith_UI::Zenith_UIToggle>("SettingsSoundBtn");
 	if (pxSound) pxSound->SetIsOn(m_xSaveData.bSoundEnabled);

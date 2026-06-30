@@ -57,8 +57,9 @@ public:
 		Combat_PlayerComponent* pxShim = xContext.m_xSelf.IsValid()
 			? xContext.m_xSelf.TryGetComponent<Combat_PlayerComponent>() : nullptr;
 		if (pxShim == nullptr) return GRAPH_NODE_STATUS_FAILURE;
-		if (!xContext.m_xSelf.HasComponent<Zenith_TransformComponent>()) return GRAPH_NODE_STATUS_FAILURE;
-		Zenith_TransformComponent& xTransform = xContext.m_xSelf.GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent* pxTransform = xContext.m_xSelf.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return GRAPH_NODE_STATUS_FAILURE;
+		Zenith_TransformComponent& xTransform = *pxTransform;
 		const Combat_PlayerController& xController = pxShim->GetController();
 
 		if (xController.WasAttackJustStarted())

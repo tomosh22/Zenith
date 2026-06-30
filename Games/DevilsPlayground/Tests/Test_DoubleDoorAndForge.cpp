@@ -158,13 +158,12 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 		// fire the Interact event with the villager payload, exactly what
 		// the shim does on F-press.
 		{
-			Zenith_SceneData* pxDoorScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xDoor);
-			Zenith_Entity xDoorEnt = pxDoorScene ? pxDoorScene->TryGetEntity(g_xDoor) : Zenith_Entity();
-			if (xDoorEnt.IsValid() && xDoorEnt.HasComponent<Zenith_GraphComponent>())
+			Zenith_Entity xDoorEnt = g_xEngine.Scenes().ResolveEntity(g_xDoor);
+			if (Zenith_GraphComponent* pxGraph = xDoorEnt.TryGetComponent<Zenith_GraphComponent>())
 			{
 				Zenith_PropertyValue xPayload;
 				xPayload.SetPackedEntityID(g_xVillager.GetPacked());
-				xDoorEnt.GetComponent<Zenith_GraphComponent>().FireCustomEvent("Interact", &xPayload);
+				pxGraph->FireCustomEvent("Interact", &xPayload);
 			}
 		}
 		g_iPhase = kDD_Settle;
@@ -198,16 +197,16 @@ static bool Step_DoubleDoor(int /*iFrame*/)
 			Zenith_Entity xL = pxScene->TryGetEntity(g_xLeftLeaf);
 			Zenith_Entity xR = pxScene->TryGetEntity(g_xRightLeaf);
 			Zenith_Maths::Quat xRot;
-			if (xL.IsValid() && xL.HasComponent<Zenith_TransformComponent>())
+			if (Zenith_TransformComponent* pxLeftTransform = xL.TryGetComponent<Zenith_TransformComponent>())
 			{
-				xL.GetComponent<Zenith_TransformComponent>().GetRotation(xRot);
+				pxLeftTransform->GetRotation(xRot);
 				// Identity quat is (0,0,0,1). Any non-zero xyz means rotation
 				// was applied.
 				g_bLeftRotated = (glm::abs(xRot.x) + glm::abs(xRot.y) + glm::abs(xRot.z)) > 1e-4f;
 			}
-			if (xR.IsValid() && xR.HasComponent<Zenith_TransformComponent>())
+			if (Zenith_TransformComponent* pxRightTransform = xR.TryGetComponent<Zenith_TransformComponent>())
 			{
-				xR.GetComponent<Zenith_TransformComponent>().GetRotation(xRot);
+				pxRightTransform->GetRotation(xRot);
 				g_bRightRotated = (glm::abs(xRot.x) + glm::abs(xRot.y) + glm::abs(xRot.z)) > 1e-4f;
 			}
 		}
@@ -380,11 +379,7 @@ static bool Step_Forge(int /*iFrame*/)
 	case kF_Verify:
 	{
 		// The original Iron entity should be destroyed.
-		Zenith_SceneData* pxIronScene =
-			g_xEngine.Scenes().GetSceneDataForEntity(g_xIronItem);
-		Zenith_Entity xIron = pxIronScene
-			? pxIronScene->TryGetEntity(g_xIronItem)
-			: Zenith_Entity();
+		Zenith_Entity xIron = g_xEngine.Scenes().ResolveEntity(g_xIronItem);
 		g_bIronExistsAfter = xIron.IsValid();
 
 		// The villager's held item should now be the recipe output (Key).

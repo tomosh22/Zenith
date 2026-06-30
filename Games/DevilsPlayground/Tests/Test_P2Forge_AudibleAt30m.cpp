@@ -139,9 +139,9 @@ static bool Step_P2ForgeAudible(int iFrame)
 		if (!xForge.IsValid()) { g_iPhase = kFA_Done; return false; }
 		g_xForge = xForge.GetEntityID();
 		g_xForgePos = Zenith_Maths::Vector3(150.0f, 0.0f, 150.0f);
-		if (xForge.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = xForge.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xForge.GetComponent<Zenith_TransformComponent>().SetPosition(g_xForgePos);
+			pxTransform->SetPosition(g_xForgePos);
 		}
 		g_pxForge = &xForge.AddComponent<DPForge_Component>();
 		// Default recipe Iron -> Key (no SetRecipe needed).

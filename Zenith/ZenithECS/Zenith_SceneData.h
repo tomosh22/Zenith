@@ -335,7 +335,6 @@ private:
 		SCENE_STATE_LOADED,         // steady state
 	};
 	bool IsActivated() const { return m_eLoadState == SCENE_STATE_LOADED; }
-	bool WasLoadedAdditively() const { return m_bWasLoadedAdditively; }
 	bool IsPaused() const { return m_bIsPaused; }
 
 	// Transition state with a legal-edge assert. Catches the persistent-scene
@@ -350,12 +349,7 @@ private:
 	void ClearDirty() {}
 #endif
 
-	// Root entity cache for O(1) count access (Unity scene.rootCount parity)
-	uint32_t GetCachedRootEntityCount();
-	void GetCachedRootEntities(Zenith_Vector<Zenith_EntityID>& axOut);
-
 	bool IsMarkedForDestruction(Zenith_EntityID xID) const;
-	void InvalidateRootEntityCache() { Zenith_Assert(Zenith_ECS_IsMainThread(), "InvalidateRootEntityCache must be called from main thread"); m_bRootEntitiesDirty = true; }
 
 	// Returns the scene handle that owns this entity (-1 if invalid)
 	static int GetEntitySceneHandle(Zenith_EntityID xID)
@@ -445,7 +439,6 @@ private:
 	// Initial state matches the historical default (m_bIsLoaded=false,
 	// m_bIsActivated=true) — the constructor body promotes to LOADED.
 	LoadState m_eLoadState = SCENE_STATE_DESTROYED;
-	bool m_bWasLoadedAdditively = false;
 	bool m_bIsPaused = false;  // When true, Update is skipped for this scene
 	uint64_t m_ulLoadTimestamp = 0;  // For selecting most recently loaded scene when active is unloaded
 
@@ -701,11 +694,6 @@ private:
 	// Update tracking
 	bool m_bIsUpdating = false;
 	bool m_bIsBeingDestroyed = false;
-
-	// Root entity cache for O(1) count access
-	Zenith_Vector<Zenith_EntityID> m_axCachedRootEntities;
-	bool m_bRootEntitiesDirty = true;
-	void RebuildRootEntityCache();
 
 	// Component pools (per-scene)
 	Zenith_Vector<Zenith_ComponentPoolBase*> m_xComponents;

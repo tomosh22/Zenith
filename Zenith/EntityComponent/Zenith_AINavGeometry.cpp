@@ -33,17 +33,17 @@ namespace
 			}
 
 			// Check if entity has a ColliderComponent
-			if (!xEntity.HasComponent<Zenith_ColliderComponent>())
+			Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>();
+			if (pxCollider == nullptr)
 			{
 				continue;
 			}
 
-			Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
 			++uEntitiesWithColliders;
 
 			// Only include static bodies (floors, walls, etc.)
 			// Dynamic bodies (players, enemies) shouldn't be part of the navmesh
-			if (xCollider.GetRigidBodyType() != RIGIDBODY_TYPE_STATIC)
+			if (pxCollider->GetRigidBodyType() != RIGIDBODY_TYPE_STATIC)
 			{
 				continue;
 			}
@@ -55,25 +55,25 @@ namespace
 			// calls Zenith_NavMesh::SetBlockedAtPoint at runtime to mark those
 			// polygons blocked when the door is closed. See
 			// Zenith_ColliderComponent::SetIncludeInNavMesh for the contract.
-			if (!xCollider.GetIncludeInNavMesh())
+			if (!pxCollider->GetIncludeInNavMesh())
 			{
 				continue;
 			}
 
 			++uEntitiesWithValidBodies;
 
-			if (!xEntity.HasComponent<Zenith_TransformComponent>())
+			Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>();
+			if (pxTransform == nullptr)
 			{
 				continue;
 			}
 
-			Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 			Zenith_Maths::Vector3 xPos;
 			Zenith_Maths::Vector3 xScale;
 			Zenith_Maths::Quat    xRot;
-			xTransform.GetPosition(xPos);
-			xTransform.GetScale(xScale);
-			xTransform.GetRotation(xRot);
+			pxTransform->GetPosition(xPos);
+			pxTransform->GetScale(xScale);
+			pxTransform->GetRotation(xRot);
 
 			// 2026-05-23: build the world-space box corners properly. The
 			// previous implementation used (xPos + axis-aligned half-extents)
@@ -116,7 +116,7 @@ namespace
 			// every collider is.
 			Zenith_Maths::Vector3 xHalfExtents;
 			Zenith_Maths::Vector3 xLocalOffset;
-			xCollider.ComputeBoxDimensionsAndOffset(xScale, xHalfExtents,
+			pxCollider->ComputeBoxDimensionsAndOffset(xScale, xHalfExtents,
 				xLocalOffset, /*bWarnOnDegenerateBounds=*/false);
 
 			const Zenith_Maths::Vector3 xRotatedOffset =

@@ -92,9 +92,12 @@ validate up front, or stage via ADDITIVE, if that matters.
 - **The persistent ("DontDestroyOnLoad") scene** is created un-activated and can
   never be the active scene. `MarkEntityPersistent` is strict root-only; non-root
   callers are rejected with a logged error (walk to the root yourself first).
-- **`SceneCreationTargetScope` drives `GetDefaultCreationScene()`.** While open
-  (around scene load + deserialisation), `CreateEntity(name)` and
-  `Zenith_Prefab::Instantiate(name)` target the loading scene, not the active one.
+- **Entity creation always names its target scene explicitly** —
+  `CreateEntity(Zenith_Scene, name)` / `CreateEntity(Zenith_SceneData*, name)`.
+  There is no implicit "creation-target scope": the loader and prefab paths create
+  entities directly into the `Zenith_SceneData*` they are populating (the loader via
+  the private `Zenith_SceneData::CreateEntity()` slot allocator;
+  `Zenith_Prefab::Instantiate` via `CreateEntity(pxSceneData, name)`).
 - **`GetSceneDataForEntity(id)` is the correct cross-scene ownership predicate.**
   `Zenith_SceneData::EntityExists(id)` only reads the process-wide slot table — it
   does not prove the slot is owned by a particular scene.

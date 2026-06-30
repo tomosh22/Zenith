@@ -150,15 +150,6 @@ uint32_t Zenith_SceneSystem::GetSceneSlotCount()
 	return m_axScenes.GetSize();
 }
 
-Zenith_SceneData* Zenith_SceneSystem::GetSceneDataAtSlot(uint32_t uIndex)
-{
-	Zenith_Assert(Zenith_ECS_IsMainThread() || AreRenderTasksActive(),
-		"GetSceneDataAtSlot must be called from main thread or during render task execution");
-	if (uIndex >= m_axScenes.GetSize())
-		return nullptr;
-	return m_axScenes.Get(uIndex);
-}
-
 Zenith_SceneData* Zenith_SceneSystem::GetLoadedSceneDataAtSlot(uint32_t uIndex)
 {
 	Zenith_Assert(Zenith_ECS_IsMainThread() || AreRenderTasksActive(),
@@ -206,6 +197,17 @@ Zenith_SceneData* Zenith_SceneSystem::GetSceneDataForEntity(Zenith_EntityID xID)
 	const Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_ECS_EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 	if (!xSlot.IsOccupied() || xSlot.m_uGeneration != xID.m_uGeneration) return nullptr;
 	return GetSceneDataByHandle(xSlot.m_iSceneHandle);
+}
+
+Zenith_Entity Zenith_SceneSystem::ResolveEntity(Zenith_EntityID xID)
+{
+	// One-call equivalent of the GetSceneDataForEntity(id) -> TryGetEntity(id)
+	// chain. GetSceneDataForEntity already gen-checks the slot and returns nullptr
+	// for a dead/stale id; TryGetEntity is non-asserting and yields an invalid
+	// handle if the entity does not exist, so the composed result is an invalid
+	// Zenith_Entity exactly when the manual chain would have bailed.
+	Zenith_SceneData* pxData = GetSceneDataForEntity(xID);
+	return pxData ? pxData->TryGetEntity(xID) : Zenith_Entity();
 }
 
 Zenith_Scene Zenith_SceneSystem::GetSceneFromHandle(int iHandle)
@@ -261,79 +263,15 @@ Zenith_Scene Zenith_SceneSystem::GetSceneAt(uint32_t uIndex)
 	return xScene;
 }
 
-Zenith_Scene Zenith_SceneSystem::GetSceneByName(const std::string& strName)
-{
-	Zenith_Assert(Zenith_ECS_IsMainThread(), "GetSceneByName must be called from main thread");
-	Zenith_Scene xScene = Zenith_Scene::INVALID_SCENE;
-	int iFirstMatchHandle = -1;
-	bool bAmbiguous = false;
-
-	for (u_int i = 0; i < m_axLoadedSceneNames.GetSize(); ++i)
-	{
-		const SceneNameEntry& xEntry = m_axLoadedSceneNames.Get(i);
-		const int iHandle = xEntry.m_iHandle;
-
-		Zenith_SceneData* pxData = (iHandle >= 0 && iHandle < static_cast<int>(m_axScenes.GetSize()))
-			? m_axScenes.Get(iHandle) : nullptr;
-		if (!pxData || !pxData->IsLoaded()) continue;
-
-		const std::string& strSceneName = xEntry.m_strName;
-		bool bMatched = false;
-
-		if (strSceneName == strName)
-		{
-			bMatched = true;
-		}
-		else
-		{
-			size_t uLastSlash = strSceneName.find_last_of("/\\");
-			size_t uStart = (uLastSlash == std::string::npos) ? 0 : uLastSlash + 1;
-			size_t uLastDot = strSceneName.find_last_of('.');
-			size_t uEnd = (uLastDot == std::string::npos || uLastDot < uStart) ?
-				strSceneName.size() : uLastDot;
-			std::string strBaseName = strSceneName.substr(uStart, uEnd - uStart);
-			if (strBaseName == strName) bMatched = true;
-		}
-
-		if (bMatched)
-		{
-			if (iFirstMatchHandle < 0)
-			{
-				iFirstMatchHandle = iHandle;
-			}
-			else
-			{
-				bAmbiguous = true;
-				break;
-			}
-		}
-	}
-
-	if (bAmbiguous)
-	{
-		Zenith_Warning(LOG_CATEGORY_SCENE,
-			"GetSceneByName('%s'): more than one loaded scene matches; returning first.",
-			strName.c_str());
-	}
-
-	if (iFirstMatchHandle >= 0)
-	{
-		xScene.m_iHandle = iFirstMatchHandle;
-		xScene.m_uGeneration = m_axSceneGenerations.Get(iFirstMatchHandle);
-	}
-	return xScene;
-}
-
 //=============================================================================
 // Scene metadata snapshot
 //
 // GetSceneInfo replaces the deleted per-field Zenith_Scene metadata getters
-// (GetName / GetPath / GetBuildIndex / IsLoaded / WasLoadedAdditively /
-// HasUnsavedChanges / GetRootEntityCount). It reads exactly the same SceneData
-// sources, with the same null-scene fallbacks. Declared const; GetSceneData is
-// logically const (slot-table read) but returns a mutable pointer, so the
-// const_cast here is benign — we only READ through pxData (all SceneData getters
-// used are const).
+// (GetName / GetPath / GetBuildIndex / IsLoaded / HasUnsavedChanges). It reads
+// exactly the same SceneData sources, with the same null-scene fallbacks.
+// Declared const; GetSceneData is logically const (slot-table read) but returns
+// a mutable pointer, so the const_cast here is benign — we only READ through
+// pxData (all SceneData getters used are const).
 //=============================================================================
 
 Zenith_SceneInfo Zenith_SceneSystem::GetSceneInfo(Zenith_Scene xScene) const
@@ -345,8 +283,7 @@ Zenith_SceneInfo Zenith_SceneSystem::GetSceneInfo(Zenith_Scene xScene) const
 	if (pxData == nullptr)
 	{
 		// Invalid / stale / unloaded handle: defaults match the old getters'
-		// null-scene fallbacks (empty name+path, build index -1, all flags false,
-		// root count 0).
+		// null-scene fallbacks (empty name+path, build index -1, all flags false).
 		return xInfo;
 	}
 
@@ -355,9 +292,6 @@ Zenith_SceneInfo Zenith_SceneSystem::GetSceneInfo(Zenith_Scene xScene) const
 	xInfo.m_iBuildIndex       = pxData->GetBuildIndex();
 	// Old Zenith_Scene::IsLoaded(): loaded AND activated.
 	xInfo.m_bLoaded           = pxData->IsLoaded() && pxData->IsActivated();
-	xInfo.m_bLoadedAdditively = pxData->WasLoadedAdditively();
-	// Old Zenith_Scene::GetRootEntityCount(): 0 unless loaded, else cached count.
-	xInfo.m_uRootEntityCount  = pxData->IsLoaded() ? pxData->GetCachedRootEntityCount() : 0u;
 #ifdef ZENITH_TOOLS
 	xInfo.m_bHasUnsavedChanges = pxData->HasUnsavedChanges();
 #endif

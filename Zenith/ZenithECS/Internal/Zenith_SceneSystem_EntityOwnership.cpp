@@ -68,11 +68,6 @@ Zenith_Entity Zenith_SceneSystem::CreateEntity(Zenith_SceneData* pxSceneData, co
 	return CreateEntityInScene(pxSceneData, strName, /*bRunDefaultComponentsHook*/ true);
 }
 
-Zenith_Entity Zenith_SceneSystem::CreateEntityBare(Zenith_SceneData* pxSceneData, const std::string& strName)
-{
-	return CreateEntityInScene(pxSceneData, strName, /*bRunDefaultComponentsHook*/ false);
-}
-
 Zenith_Entity Zenith_SceneSystem::CreateEntity(Zenith_Scene xScene, const std::string& strName)
 {
 	Zenith_SceneData* pxData = GetSceneData(xScene);
@@ -96,57 +91,7 @@ Zenith_Entity Zenith_SceneSystem::CreateEntityBare(Zenith_Scene xScene, const st
 			xScene.m_iHandle, xScene.m_uGeneration, strName.c_str());
 		return Zenith_Entity();
 	}
-	return CreateEntityBare(pxData, strName);
-}
-
-Zenith_Entity Zenith_SceneSystem::CreateEntity(const std::string& strName)
-{
-	const Zenith_Scene xTarget = GetDefaultCreationScene();
-	if (!xTarget.IsValid())
-	{
-		Zenith_Error(LOG_CATEGORY_SCENE,
-			"CreateEntity: no creation target available (no active scene and no SceneCreationTargetScope); "
-			"entity '%s' was not created",
-			strName.c_str());
-		return Zenith_Entity();
-	}
-
-	Zenith_SceneData* pxData = GetSceneData(xTarget);
-	if (!pxData)
-	{
-		Zenith_Error(LOG_CATEGORY_SCENE,
-			"CreateEntity: creation target scene (handle=%d gen=%u) is not loaded; "
-			"entity '%s' was not created",
-			xTarget.m_iHandle, xTarget.m_uGeneration, strName.c_str());
-		return Zenith_Entity();
-	}
-
-	return CreateEntity(pxData, strName);
-}
-
-Zenith_Entity Zenith_SceneSystem::CreateEntityBare(const std::string& strName)
-{
-	const Zenith_Scene xTarget = GetDefaultCreationScene();
-	if (!xTarget.IsValid())
-	{
-		Zenith_Error(LOG_CATEGORY_SCENE,
-			"CreateEntityBare: no creation target available (no active scene and no SceneCreationTargetScope); "
-			"entity '%s' was not created",
-			strName.c_str());
-		return Zenith_Entity();
-	}
-
-	Zenith_SceneData* pxData = GetSceneData(xTarget);
-	if (!pxData)
-	{
-		Zenith_Error(LOG_CATEGORY_SCENE,
-			"CreateEntityBare: creation target scene (handle=%d gen=%u) is not loaded; "
-			"entity '%s' was not created",
-			xTarget.m_iHandle, xTarget.m_uGeneration, strName.c_str());
-		return Zenith_Entity();
-	}
-
-	return CreateEntityBare(pxData, strName);
+	return CreateEntityInScene(pxData, strName, /*bRunDefaultComponentsHook*/ false);
 }
 
 bool Zenith_SceneSystem::MoveEntityInternal(Zenith_Entity& xEntity, Zenith_SceneData* pxTargetData)
@@ -235,9 +180,6 @@ bool Zenith_SceneSystem::MoveEntityInternal(Zenith_Entity& xEntity, Zenith_Scene
 		}
 	}
 
-	// Invalidate root caches on both scenes
-	pxSourceData->InvalidateRootEntityCache();
-	pxTargetData->InvalidateRootEntityCache();
 	pxSourceData->MarkDirty();
 	pxTargetData->MarkDirty();
 

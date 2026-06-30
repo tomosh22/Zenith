@@ -14,7 +14,7 @@ An infinite runner game demonstrating Animation State Machine and Terrain featur
 | **Prefab Instantiation** | `Zenith_Prefab`, `Zenith_Scene::Instantiate` | Runtime entity creation |
 | **UI Text** | `Zenith_UIComponent`, `Zenith_UIText` | Distance, score, speed HUD |
 | **DataAsset System** | `Runner_Config` | Configurable gameplay parameters |
-| **Multi-Scene** | `Zenith_SceneManager` | `LoadSceneByIndex(..., SCENE_LOAD_SINGLE)`, `LoadScene(..., SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, `UnloadScene()`, `SetActiveScene()` |
+| **Multi-Scene** | `Zenith_SceneSystem` | `LoadSceneByIndex(..., SCENE_LOAD_SINGLE)`, `LoadScene(..., SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, `UnloadScene()`, `SetActiveScene()` |
 | **Menu Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure

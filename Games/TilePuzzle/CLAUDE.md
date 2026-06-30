@@ -236,14 +236,14 @@ uint32_t  layoutCount
 | Feature | Engine Class | Usage |
 |---------|--------------|-------|
 | **Game Components** | `Zenith_ComponentMetaRegistry` | Main game logic in `TilePuzzle_GameComponent` |
-| **Scene Management** | `Zenith_SceneManager` | Get active scene, create entities |
+| **Scene Management** | `Zenith_SceneSystem` | Get active scene, create entities |
 | **Entity Creation** | `Zenith_Entity` | Floor tiles, shapes, cats |
 | **Prefab System** | `Zenith_Prefab` | Template-based entity instantiation |
 | **Components** | `Zenith_TransformComponent`, `Zenith_ModelComponent`, `Zenith_UIComponent` | Position, rendering, UI |
 | **Input System** | `Zenith_Input` | Keyboard and mouse/touch controls |
-| **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()` |
+| **Multi-Scene** | `Zenith_SceneSystem` | `DontDestroyOnLoad()`, `LoadScene(..., SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, `UnloadScene()` |
 | **UI Buttons** | `Zenith_UIButton` | Clickable/tappable buttons with `SetOnClick()` callback |
-| **Timed Destruction** | `Zenith_SceneManager::Destroy(entity, delay)` | Cat elimination with 0.3s delay |
+| **Timed Destruction** | `Zenith_Entity::Destroy(delay)` | Cat elimination with 0.3s delay |
 | **Save System** | `Zenith_SaveData` | Persistent progress with static callbacks |
 
 ## Game Architecture

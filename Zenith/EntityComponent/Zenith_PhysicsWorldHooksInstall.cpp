@@ -16,20 +16,20 @@ namespace
 	void OnBodyPoseChanged(Zenith_EntityID xEntityID)
 	{
 		// Resolve the entity across all loaded scenes (engine-free, via Zenith_SceneSystem::Get()).
-		Zenith_SceneData* pxSceneData = Zenith_SceneSystem::Get().GetSceneDataForEntity(xEntityID);
-		if (!pxSceneData)
+		Zenith_Entity xEntity = Zenith_SceneSystem::Get().ResolveEntity(xEntityID);
+		if (!xEntity.IsValid())
 		{
 			return;
 		}
-		Zenith_Entity xEntity = pxSceneData->TryGetEntity(xEntityID);
-		if (!xEntity.IsValid() || !xEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 		{
 			return;
 		}
 		// Commits the new body pose into the cache and bumps the entity's subtree
 		// revision (immediate invalidation, not next frame). No-op if the body pose
 		// happens to match the cached pose.
-		xEntity.GetComponent<Zenith_TransformComponent>().SyncPhysicsPoseAndInvalidate();
+		pxTransform->SyncPhysicsPoseAndInvalidate();
 	}
 }
 

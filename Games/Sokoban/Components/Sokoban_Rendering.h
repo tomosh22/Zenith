@@ -212,9 +212,9 @@ public:
 		if (m_uPlayerEntityID.IsValid() && pxSceneData->EntityExists(m_uPlayerEntityID))
 		{
 			Zenith_Entity xPlayer = pxSceneData->GetEntity(m_uPlayerEntityID);
-			if (xPlayer.HasComponent<Zenith_TransformComponent>())
+			if (Zenith_TransformComponent* pxTransform = xPlayer.TryGetComponent<Zenith_TransformComponent>())
 			{
-				Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
+				Zenith_TransformComponent& xTransform = *pxTransform;
 				Zenith_Maths::Vector3 xPos = GridToWorld(fVisualX, fVisualY, s_fPlayerHeight, m_uGridWidth, m_uGridHeight);
 				xPos.y += s_fFloorHeight;
 				xTransform.SetPosition(xPos);
@@ -251,9 +251,9 @@ public:
 					if (pxSceneData->EntityExists(uBoxID))
 					{
 						Zenith_Entity xBox = pxSceneData->GetEntity(uBoxID);
-						if (xBox.HasComponent<Zenith_TransformComponent>())
+						if (Zenith_TransformComponent* pxTransform = xBox.TryGetComponent<Zenith_TransformComponent>())
 						{
-							Zenith_TransformComponent& xTransform = xBox.GetComponent<Zenith_TransformComponent>();
+							Zenith_TransformComponent& xTransform = *pxTransform;
 
 							float fVisualX = static_cast<float>(uX);
 							float fVisualY = static_cast<float>(uY);

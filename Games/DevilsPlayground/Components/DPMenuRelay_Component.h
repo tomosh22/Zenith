@@ -28,8 +28,9 @@ public:
 		// Per-scene singleton entity id: the static button handlers resolve the
 		// live entity through it (components relocate; EntityIDs don't).
 		s_xMenuEntityID = m_xParentEntity.GetEntityID();
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>()) return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr) return;
+		Zenith_UIComponent& xUI = *pxUI;
 		if (auto* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay"))
 		{
 			pxPlay->SetOnClick(&OnPlayClicked, nullptr);
@@ -80,11 +81,11 @@ private:
 	static void FireMenuEvent(const char* szName)
 	{
 		if (!s_xMenuEntityID.IsValid()) return;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(s_xMenuEntityID);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xEntity = pxScene->TryGetEntity(s_xMenuEntityID);
-		if (!xEntity.IsValid() || !xEntity.HasComponent<Zenith_GraphComponent>()) return;
-		xEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent(szName);
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(s_xMenuEntityID);
+		if (!xEntity.IsValid()) return;
+		Zenith_GraphComponent* pxGraph = xEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr) return;
+		pxGraph->FireCustomEvent(szName);
 	}
 
 	Zenith_Entity m_xParentEntity;

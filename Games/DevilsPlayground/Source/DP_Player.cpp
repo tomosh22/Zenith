@@ -29,12 +29,11 @@ namespace
 	// passed a stale handle after the villager was destroyed).
 	bool TryGetVillagerPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 }
@@ -154,14 +153,10 @@ namespace DP_Player
 		DPVillager_Component* pxCandidateVillager = nullptr;
 		if (xId.IsValid())
 		{
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-			if (pxScene != nullptr)
+			Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+			if (xEnt.IsValid())
 			{
-				Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-				if (xEnt.IsValid())
-				{
-					pxCandidateVillager = xEnt.TryGetComponent<DPVillager_Component>();
-				}
+				pxCandidateVillager = xEnt.TryGetComponent<DPVillager_Component>();
 			}
 		}
 
@@ -372,20 +367,13 @@ namespace DP_Player
 			pxCtrl->m_bHighScentBlackboardDirty = false;
 		}
 
-		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
-		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
-		{
-			Zenith_SceneData* pxScene =
-				g_xEngine.Scenes().GetLoadedSceneDataAtSlot(uSlot);
-			if (pxScene == nullptr) continue;
-			pxScene->Query<Zenith_AIAgentComponent>().ForEach(
-				[xHighestId]
-				(Zenith_EntityID, Zenith_AIAgentComponent& xAgent)
-				{
-					xAgent.GetBlackboard().SetEntityID(
-						DP_AI::BB_KEY_HIGH_SCENT_TARGET, xHighestId);
-				});
-		}
+		g_xEngine.Scenes().QueryAllScenes<Zenith_AIAgentComponent>().ForEach(
+			[xHighestId]
+			(Zenith_EntityID, Zenith_AIAgentComponent& xAgent)
+			{
+				xAgent.GetBlackboard().SetEntityID(
+					DP_AI::BB_KEY_HIGH_SCENT_TARGET, xHighestId);
+			});
 	}
 
 	DP_ItemTag GetHeldItemTag(Zenith_EntityID xVillager)
@@ -458,9 +446,7 @@ namespace DP_Player
 
 	bool IsPossessedVillager(Zenith_EntityID xCandidate)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xCandidate);
 		if (!xEnt.IsValid()) return false;
 		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV != nullptr && pxV->IsPossessed();
@@ -468,9 +454,7 @@ namespace DP_Player
 
 	bool IsBeggarVillager(Zenith_EntityID xCandidate)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xCandidate);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xCandidate);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xCandidate);
 		if (!xEnt.IsValid()) return false;
 		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV != nullptr && pxV->GetArchetypeId() == "Beggar";
@@ -478,9 +462,7 @@ namespace DP_Player
 
 	bool IsChildVillagerWithToolTag(Zenith_EntityID xVillager, DP_ItemTag eTag)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xVillager);
 		if (!xEnt.IsValid()) return false;
 		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV != nullptr && pxV->GetArchetypeId() == "Child" && DP_IsToolTag(eTag);
@@ -488,9 +470,7 @@ namespace DP_Player
 
 	float GetVillagerRemainingLife(Zenith_EntityID xVillager)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxScene == nullptr) return 0.0f;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xVillager);
 		if (!xEnt.IsValid()) return 0.0f;
 		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV ? pxV->GetRemainingLife() : 0.0f;
@@ -498,9 +478,7 @@ namespace DP_Player
 
 	float GetVillagerMaxLife(Zenith_EntityID xVillager)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxScene == nullptr) return 0.0f;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xVillager);
 		if (!xEnt.IsValid()) return 0.0f;
 		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV ? pxV->GetMaxLife() : 0.0f;
@@ -508,9 +486,7 @@ namespace DP_Player
 
 	const char* GetVillagerArchetypeId(Zenith_EntityID xVillager)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxScene == nullptr) return "";
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xVillager);
 		if (!xEnt.IsValid()) return "";
 		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV ? pxV->GetArchetypeId().c_str() : "";
@@ -518,9 +494,7 @@ namespace DP_Player
 
 	bool IsVillagerSprintingNow(Zenith_EntityID xVillager)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xVillager);
 		if (!xEnt.IsValid()) return false;
 		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV != nullptr && pxV->IsSprintingNow();
@@ -528,9 +502,7 @@ namespace DP_Player
 
 	bool IsVillagerWalkQuietNow(Zenith_EntityID xVillager)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xVillager);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xVillager);
 		if (!xEnt.IsValid()) return false;
 		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		return pxV != nullptr && pxV->IsWalkQuietNow();

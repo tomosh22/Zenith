@@ -85,12 +85,11 @@ namespace
 
 	void TeleportTo(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return;
-		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
+		pxTransform->SetPosition(xPos);
 	}
 
 	void ReadPriestBB(Zenith_EntityID xPriestId,
@@ -98,12 +97,11 @@ namespace
 	{
 		bHasInvOut = false;
 		xInvOut = Zenith_Maths::Vector3(0.0f);
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_AIAgentComponent>()) return;
-		Zenith_Blackboard& xBB =
-			xEnt.GetComponent<Zenith_AIAgentComponent>().GetBlackboard();
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
+		if (!xEnt.IsValid()) return;
+		Zenith_AIAgentComponent* pxAgent = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
+		if (pxAgent == nullptr) return;
+		Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
 		bHasInvOut = xBB.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
 		xInvOut = xBB.GetVector3(DP_AI::BB_KEY_INVESTIGATE_POS);
 	}
@@ -165,9 +163,9 @@ static bool Step_P2ForgePriestHears(int iFrame)
 		if (!xForge.IsValid()) { g_iPhase = kFP_Done; return false; }
 		g_xForge = xForge.GetEntityID();
 		g_xForgePos = Zenith_Maths::Vector3(400.0f, 0.0f, 400.0f);
-		if (xForge.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = xForge.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xForge.GetComponent<Zenith_TransformComponent>().SetPosition(g_xForgePos);
+			pxTransform->SetPosition(g_xForgePos);
 		}
 		g_pxForge = &xForge.AddComponent<DPForge_Component>();
 		// Default recipe Iron -> Key.

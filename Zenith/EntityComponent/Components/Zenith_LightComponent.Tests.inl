@@ -11,6 +11,7 @@
 
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "UnitTests/Zenith_TempScene.h"
 
 ZENITH_TEST(PropertySystem, LightComponentTableShape)
 {
@@ -35,8 +36,8 @@ ZENITH_TEST(PropertySystem, LightComponentTableShape)
 
 ZENITH_TEST(PropertySystem, LightComponentLiveRoundTrip)
 {
-	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("TestLightPropertyScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	Zenith_TempScene xTempScene("TestLightPropertyScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
 
 	Zenith_Entity xSourceEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "PropSourceLight");
 	Zenith_LightComponent& xSource = xSourceEntity.AddComponent<Zenith_LightComponent>();

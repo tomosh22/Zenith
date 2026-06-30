@@ -85,9 +85,11 @@ namespace DP_Win
 		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
 		if (pxScene == nullptr) return false;
 		Zenith_Entity xV = pxScene->TryGetEntity(xVillager);
-		if (!xV.IsValid() || !xV.HasComponent<Zenith_TransformComponent>()) return false;
+		if (!xV.IsValid()) return false;
+		Zenith_TransformComponent* pxVTransform = xV.TryGetComponent<Zenith_TransformComponent>();
+		if (pxVTransform == nullptr) return false;
 		Zenith_Maths::Vector3 xVPos;
-		xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
+		pxVTransform->GetPosition(xVPos);
 
 		// Pentagrams are graph-driven: scan the interactable shims and match
 		// the pentagram graph slot (radius still lives on the shim's base).
@@ -97,13 +99,14 @@ namespace DP_Win
 			{
 				if (bInRange) return;  // already found one
 				Zenith_Entity xP = pxScene->TryGetEntity(xId);
-				if (!xP.IsValid() || !xP.HasComponent<Zenith_TransformComponent>()
-					|| !xP.HasComponent<Zenith_GraphComponent>()) return;
-				Zenith_GraphComponent& xGraphs = xP.GetComponent<Zenith_GraphComponent>();
+				if (!xP.IsValid()) return;
+				Zenith_TransformComponent* pxPTransform = xP.TryGetComponent<Zenith_TransformComponent>();
+				Zenith_GraphComponent* pxGraphs = xP.TryGetComponent<Zenith_GraphComponent>();
+				if (pxPTransform == nullptr || pxGraphs == nullptr) return;
 				bool bIsPentagram = false;
-				for (u_int u = 0; u < xGraphs.GetGraphCount(); ++u)
+				for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
 				{
-					if (std::strcmp(xGraphs.GetGraphAssetPathAt(u), "game:Graphs/DP_Pentagram.bgraph") == 0)
+					if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), "game:Graphs/DP_Pentagram.bgraph") == 0)
 					{
 						bIsPentagram = true;
 						break;
@@ -112,7 +115,7 @@ namespace DP_Win
 				if (!bIsPentagram) return;
 				const float fR = xShim.GetInteractRadius();
 				Zenith_Maths::Vector3 xPPos;
-				xP.GetComponent<Zenith_TransformComponent>().GetPosition(xPPos);
+				pxPTransform->GetPosition(xPPos);
 				const float fDx = xVPos.x - xPPos.x;
 				const float fDz = xVPos.z - xPPos.z;
 				if (fDx * fDx + fDz * fDz <= fR * fR) bInRange = true;

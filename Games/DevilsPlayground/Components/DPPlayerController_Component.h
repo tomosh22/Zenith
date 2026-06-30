@@ -410,12 +410,12 @@ private:
 	static void PickClosestVillagerCb(Zenith_EntityID xId, void* pUser)
 	{
 		PickContext& xCtx = *static_cast<PickContext*>(pUser);
-		Zenith_SceneData* pxS = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxS == nullptr) return;
-		Zenith_Entity xEnt = pxS->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		if (!xEnt.IsValid()) return;
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
 		Zenith_Maths::Vector3 xWorld;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xWorld);
+		pxTransform->GetPosition(xWorld);
 		// Aim at body centre rather than feet — the visible silhouette
 		// is centred ~1 m above the entity origin.
 		xWorld.y += 1.0f;
@@ -445,22 +445,20 @@ private:
 
 		// Read the villager's foot position (transform origin == feet by
 		// authoring convention -- the visible mesh is centred ~1 m above).
-		Zenith_SceneData* pxVScene =
-			g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxVScene == nullptr) return;
-		Zenith_Entity xV = pxVScene->TryGetEntity(xVillager);
-		if (!xV.IsValid() || !xV.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_Entity xV = g_xEngine.Scenes().ResolveEntity(xVillager);
+		if (!xV.IsValid()) return;
+		Zenith_TransformComponent* pxVTransform = xV.TryGetComponent<Zenith_TransformComponent>();
+		if (pxVTransform == nullptr) return;
 		Zenith_Maths::Vector3 xFootPos;
-		xV.GetComponent<Zenith_TransformComponent>().GetPosition(xFootPos);
+		pxVTransform->GetPosition(xFootPos);
 
 		// Resolve the item entity (may be in a different scene if
 		// MoveEntityToScene was used -- defensive scene lookup).
-		Zenith_SceneData* pxIScene =
-			g_xEngine.Scenes().GetSceneDataForEntity(xItem);
-		if (pxIScene == nullptr) return;
-		Zenith_Entity xI = pxIScene->TryGetEntity(xItem);
-		if (!xI.IsValid() || !xI.HasComponent<Zenith_TransformComponent>()) return;
-		xI.GetComponent<Zenith_TransformComponent>().SetPosition(xFootPos);
+		Zenith_Entity xI = g_xEngine.Scenes().ResolveEntity(xItem);
+		if (!xI.IsValid()) return;
+		Zenith_TransformComponent* pxITransform = xI.TryGetComponent<Zenith_TransformComponent>();
+		if (pxITransform == nullptr) return;
+		pxITransform->SetPosition(xFootPos);
 
 		// Arm the item's post-drop cooldown so DPItemBase::OnUpdate
 		// doesn't immediately re-pick-up from the foot position.

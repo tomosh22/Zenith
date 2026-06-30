@@ -95,23 +95,21 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 
 	void TeleportTo(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return;
-		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
+		pxTransform->SetPosition(xPos);
 	}
 
 	void ReadPriestBB(Zenith_EntityID xPriestId,
@@ -120,12 +118,11 @@ namespace
 	{
 		bHasInvestigatePosOut = false;
 		xInvestigatePosOut = Zenith_Maths::Vector3(0.0f);
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_AIAgentComponent>()) return;
-		Zenith_AIAgentComponent& xAg = xEnt.GetComponent<Zenith_AIAgentComponent>();
-		Zenith_Blackboard& xBB = xAg.GetBlackboard();
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
+		if (!xEnt.IsValid()) return;
+		Zenith_AIAgentComponent* pxAgent = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
+		if (pxAgent == nullptr) return;
+		Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
 		bHasInvestigatePosOut = xBB.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
 		xInvestigatePosOut = xBB.GetVector3(DP_AI::BB_KEY_INVESTIGATE_POS);
 	}
@@ -189,9 +186,9 @@ static bool Step_P2BellSoulPriestHears(int iFrame)
 		// Place the BellSoul far from the priest's start spot so the
 		// teleport step (next) has somewhere to go.
 		g_xBellSoulPos = Zenith_Maths::Vector3(500.0f, 0.0f, 500.0f);
-		if (xEnt.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(g_xBellSoulPos);
+			pxTransform->SetPosition(g_xBellSoulPos);
 		}
 		xEnt.AddComponent<Zenith_ModelComponent>().LoadModel(
 			std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" ZENITH_MODEL_EXT);

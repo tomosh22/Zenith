@@ -116,19 +116,12 @@ namespace
 	Zenith_UI::Zenith_UIText* FindRestartPromptText()
 	{
 		Zenith_UI::Zenith_UIText* pxResult = nullptr;
-		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
-		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
-		{
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetLoadedSceneDataAtSlot(uSlot);
-			if (pxScene == nullptr) continue;
-			pxScene->Query<Zenith_UIComponent>().ForEach(
-				[&pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
-				{
-					if (pxResult != nullptr) return;
-					pxResult = xUI.FindElement<Zenith_UI::Zenith_UIText>("RestartPrompt");
-				});
-			if (pxResult) break;
-		}
+		g_xEngine.Scenes().QueryAllScenes<Zenith_UIComponent>().ForEach(
+			[&pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
+			{
+				if (pxResult != nullptr) return;
+				pxResult = xUI.FindElement<Zenith_UI::Zenith_UIText>("RestartPrompt");
+			});
 		return pxResult;
 	}
 

@@ -193,8 +193,9 @@ public:
 		}
 
 		if (!bEsc) return;
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>()) return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr) return;
+		Zenith_UIComponent& xUI = *pxUI;
 		auto* pxOverlay = xUI.FindElement<Zenith_UI::Zenith_UIText>("PauseOverlay");
 		if (pxOverlay == nullptr) return;
 
@@ -355,9 +356,9 @@ private:
 		// Force overlay off + unpause the (possibly stale) captured scene.
 		// Used both when a new gameplay scene takes over and from the test
 		// harness's between-tests hook.
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 			auto* pxOverlay = xUI.FindElement<Zenith_UI::Zenith_UIText>("PauseOverlay");
 			if (pxOverlay != nullptr) pxOverlay->SetVisible(false);
 		}

@@ -133,8 +133,9 @@ public:
 
 	void OnUpdate(const float fDt)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>()) return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr) return;
+		Zenith_UIComponent& xUI = *pxUI;
 
 		// Status banner timed clear.
 		if (m_fStatusHoldRemaining > 0.0f)
@@ -1117,12 +1118,11 @@ private:
 
 	static bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 
@@ -1132,8 +1132,9 @@ private:
 
 	void SetStatusText(const char* szText, const Zenith_Maths::Vector4& xColor, float fHoldSeconds)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>()) return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr) return;
+		Zenith_UIComponent& xUI = *pxUI;
 		if (auto* pxStatus = xUI.FindElement<Zenith_UI::Zenith_UIText>("Status"))
 		{
 			pxStatus->SetText(szText);

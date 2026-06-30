@@ -113,23 +113,21 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 
 	void TeleportTo(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return;
-		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
+		pxTransform->SetPosition(xPos);
 	}
 
 	Zenith_EntityID BuildItem(const char* szName, DP_ItemTag eTag,
@@ -141,9 +139,9 @@ namespace
 		if (pxScene == nullptr) return INVALID_ENTITY_ID;
 		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxScene, std::string(szName));
 		if (!xEnt.IsValid()) return INVALID_ENTITY_ID;
-		if (xEnt.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+			pxTransform->SetPosition(xPos);
 		}
 		xEnt.AddComponent<Zenith_ModelComponent>().LoadModel(
 			std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube" ZENITH_MODEL_EXT);

@@ -32,25 +32,23 @@ class RenderTest_TennisLeaf : public Zenith_BTLeaf
 protected:
 	static RenderTest_TennisAgentComponent* Brain(Zenith_Entity& xA)
 	{
-		return xA.HasComponent<RenderTest_TennisAgentComponent>()
-			? &xA.GetComponent<RenderTest_TennisAgentComponent>() : nullptr;
+		return xA.TryGetComponent<RenderTest_TennisAgentComponent>();
 	}
 	static RenderTest_TennisPlayerComponent* Body(Zenith_Entity& xA)
 	{
-		return xA.HasComponent<RenderTest_TennisPlayerComponent>()
-			? &xA.GetComponent<RenderTest_TennisPlayerComponent>() : nullptr;
+		return xA.TryGetComponent<RenderTest_TennisPlayerComponent>();
 	}
 	static Zenith_NavMeshAgent* Nav(Zenith_Entity& xA)
 	{
-		if (xA.HasComponent<Zenith_AIAgentComponent>())
-			return xA.GetComponent<Zenith_AIAgentComponent>().GetNavMeshAgent();
+		if (Zenith_AIAgentComponent* pxAgent = xA.TryGetComponent<Zenith_AIAgentComponent>())
+			return pxAgent->GetNavMeshAgent();
 		return nullptr;
 	}
 	static Zenith_Maths::Vector3 SelfPos(Zenith_Entity& xA)
 	{
 		Zenith_Maths::Vector3 xPos(0.0f);
-		if (xA.HasComponent<Zenith_TransformComponent>())
-			xA.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		if (Zenith_TransformComponent* pxTransform = xA.TryGetComponent<Zenith_TransformComponent>())
+			pxTransform->GetPosition(xPos);
 		return xPos;
 	}
 	static RenderTest_Tennis::TennisCourt Court() { return RenderTest_Tennis::DefaultCourt(); }
@@ -64,19 +62,16 @@ protected:
 		const Zenith_EntityID xBall = xBB.GetEntityID(RenderTest_TennisBB::k_szBallEntity);
 		if (xBall == INVALID_ENTITY_ID)
 			return false;
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xBall);
-		if (!pxSceneData)
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xBall);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 			return false;
-		Zenith_Entity xEnt = pxSceneData->GetEntity(xBall);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>())
-			return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		pxTransform->GetPosition(xPos);
 		xVel = Zenith_Maths::Vector3(0.0f);
-		if (xEnt.HasComponent<Zenith_ColliderComponent>())
+		if (Zenith_ColliderComponent* pxCol = xEnt.TryGetComponent<Zenith_ColliderComponent>())
 		{
-			Zenith_ColliderComponent& xCol = xEnt.GetComponent<Zenith_ColliderComponent>();
-			if (xCol.HasValidBody())
-				xVel = g_xEngine.Physics().GetLinearVelocity(xCol.GetBodyID());
+			if (pxCol->HasValidBody())
+				xVel = g_xEngine.Physics().GetLinearVelocity(pxCol->GetBodyID());
 		}
 		return true;
 	}

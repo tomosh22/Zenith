@@ -141,14 +141,13 @@ static bool Step_P2HUDAelfricRealScene(int iFrame)
 		// CLASSIFIER mapping (clean BB -> Calm), independent of what the procgen
 		// priest happens to perceive. The damage -> BB -> Pursuing integration is
 		// still exercised by the phases below.
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPriest);
-		if (pxScene != nullptr)
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xPriest);
+		if (xEnt.IsValid())
 		{
-			Zenith_Entity xEnt = pxScene->TryGetEntity(g_xPriest);
-			if (xEnt.IsValid() && xEnt.HasComponent<Zenith_AIAgentComponent>())
+			Zenith_AIAgentComponent* pxAgent = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
+			if (pxAgent != nullptr)
 			{
-				Zenith_Blackboard& xBB =
-					xEnt.GetComponent<Zenith_AIAgentComponent>().GetBlackboard();
+				Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
 				xBB.SetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
 				xBB.SetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL, INVALID_ENTITY_ID);
 			}

@@ -58,8 +58,9 @@ public:
 		Survival_ResourceNodeManager& xResourceMgr)
 	{
 		QueryResult xResult;
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
+		if (!pxSceneData)
+			return xResult;
 
 		xResourceMgr.ForEachActive([&](Survival_ResourceNodeData& xNode, uint32_t uIndex)
 		{
@@ -93,8 +94,9 @@ public:
 		std::vector<QueryResult>& axResults)
 	{
 		axResults.clear();
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
+		if (!pxSceneData)
+			return;
 
 		xResourceMgr.ForEachActive([&](Survival_ResourceNodeData& xNode, uint32_t uIndex)
 		{
@@ -126,9 +128,7 @@ public:
 	 */
 	static uint32_t CountEntitiesWithTransform()
 	{
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-		return pxSceneData->Query<Zenith_TransformComponent>().Count();
+		return g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>().Count();
 	}
 
 	/**
@@ -137,9 +137,7 @@ public:
 	 */
 	static uint32_t CountRenderableEntities()
 	{
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-		return pxSceneData->Query<Zenith_TransformComponent, Zenith_ModelComponent>().Count();
+		return g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent, Zenith_ModelComponent>().Count();
 	}
 
 	/**
@@ -152,10 +150,7 @@ public:
 		float fRange,
 		Func&& fn)
 	{
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-
-		pxSceneData->Query<Zenith_TransformComponent, Zenith_ModelComponent>()
+		g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent, Zenith_ModelComponent>()
 			.ForEach([&](Zenith_EntityID uID, Zenith_TransformComponent& xTransform, Zenith_ModelComponent& xModel)
 			{
 				Zenith_Maths::Vector3 xPos;
@@ -175,9 +170,7 @@ public:
 	 */
 	static Zenith_EntityID FindFirstEntityWithTransform()
 	{
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-		return pxSceneData->Query<Zenith_TransformComponent>().First();
+		return g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>().First();
 	}
 
 	/**
@@ -186,9 +179,7 @@ public:
 	 */
 	static bool HasAnyRenderableEntities()
 	{
-		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
-		return pxSceneData->Query<Zenith_TransformComponent, Zenith_ModelComponent>().Any();
+		return g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent, Zenith_ModelComponent>().Any();
 	}
 
 	/**
@@ -198,15 +189,12 @@ public:
 	{
 		// C1: resolve owning scene from the entity id rather than the active
 		// scene — entity may legitimately live in a non-active scene.
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uEntityID);
-		if (!pxSceneData)
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(uEntityID);
+		Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 			return false;
 
-		Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);
-		if (!xEntity.HasComponent<Zenith_TransformComponent>())
-			return false;
-
-		xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPosOut);
+		pxTransform->GetPosition(xPosOut);
 		return true;
 	}
 

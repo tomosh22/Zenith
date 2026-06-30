@@ -129,9 +129,9 @@ public:
 
 		// Wire menu button callbacks
 		bool bHasMenu = false;
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 
 			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 			if (pxPlay)
@@ -163,9 +163,9 @@ public:
 		}
 
 		// Create HUD elements via UIManager
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 			Exploration_UIManager::CreateUI(xUI);
 		}
 
@@ -419,9 +419,10 @@ private:
 	// ========================================================================
 	void SetMenuVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
 		if (pxTitle) pxTitle->SetVisible(bVisible);
@@ -431,9 +432,10 @@ private:
 
 	void SetHUDVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		const char* aszElements[] = { "Time", "Position", "Chunk", "Weather", "FPS", "Controls", "Loading", "TerrainLOD", "Streaming" };
 		for (const char* szName : aszElements)
@@ -445,9 +447,10 @@ private:
 
 	void UpdateMenuInput()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		// Single button - keep it focused
 		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
@@ -513,10 +516,11 @@ private:
 	// ========================================================================
 	void UpdateUI(const Zenith_Maths::Vector3& xPlayerPos)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		// Get time string
 		char szTimeStr[16];

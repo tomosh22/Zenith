@@ -81,11 +81,10 @@ static bool IsAuraEmitting()
 	const Zenith_EntityID xAura = DP_Particles::GetEmitterEntityForTest(
 		DP_Particles::Kind::HighScentAura);
 	if (!xAura.IsValid()) return false;
-	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xAura);
-	if (pxScene == nullptr) return false;
-	Zenith_Entity xEnt = pxScene->TryGetEntity(xAura);
-	if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ParticleEmitterComponent>()) return false;
-	return xEnt.GetComponent<Zenith_ParticleEmitterComponent>().IsEmitting();
+	Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xAura);
+	Zenith_ParticleEmitterComponent* pxEmitter = xEnt.TryGetComponent<Zenith_ParticleEmitterComponent>();
+	if (pxEmitter == nullptr) return false;
+	return pxEmitter->IsEmitting();
 }
 
 static void Setup_P5ScentBias()
@@ -126,13 +125,11 @@ static bool Step_P5ScentBias(int iFrame)
 	{
 		// Teleport villager to a known position so the bias check is
 		// deterministic.
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xVillager);
-		if (pxScene == nullptr) { g_iPhase = kSP_Done; return false; }
-		Zenith_Entity xV = pxScene->TryGetEntity(g_xVillager);
+		Zenith_Entity xV = g_xEngine.Scenes().ResolveEntity(g_xVillager);
 		if (!xV.IsValid()) { g_iPhase = kSP_Done; return false; }
-		if (xV.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = xV.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xV.GetComponent<Zenith_TransformComponent>().SetPosition(g_xVillagerPos);
+			pxTransform->SetPosition(g_xVillagerPos);
 		}
 		g_iPhase = kSP_BumpScent;
 		return true;
@@ -185,42 +182,36 @@ static bool Step_P5ScentBias(int iFrame)
 			});
 		if (xPriest.IsValid())
 		{
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xPriest);
-			if (pxScene != nullptr)
+			Zenith_Entity xP = g_xEngine.Scenes().ResolveEntity(xPriest);
+			if (Zenith_AIAgentComponent* pxAgent = xP.TryGetComponent<Zenith_AIAgentComponent>())
 			{
-				Zenith_Entity xP = pxScene->TryGetEntity(xPriest);
-				if (xP.IsValid() && xP.HasComponent<Zenith_AIAgentComponent>())
+				Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
+				// Ensure scent target BB is set.
+				xBB.SetEntityID(DP_AI::BB_KEY_HIGH_SCENT_TARGET, g_xVillager);
+				DP_BTAction_FindPosInSuspicionSphere xNode;
+				xNode.SetNavMesh(DP_AI::GetOrBuildLevelNavMesh());
+				// Bump priest patrol radius so the random pick has
+				// generous room even when the navmesh has lots of
+				// occlusion near the villager.
+				xBB.SetFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, 15.0f);
+				BTNodeStatus eStatus = xNode.Execute(xP, xBB, 0.0f);
+				if (eStatus == BTNodeStatus::SUCCESS)
 				{
-					Zenith_AIAgentComponent& xAgent =
-						xP.GetComponent<Zenith_AIAgentComponent>();
-					Zenith_Blackboard& xBB = xAgent.GetBlackboard();
-					// Ensure scent target BB is set.
-					xBB.SetEntityID(DP_AI::BB_KEY_HIGH_SCENT_TARGET, g_xVillager);
-					DP_BTAction_FindPosInSuspicionSphere xNode;
-					xNode.SetNavMesh(DP_AI::GetOrBuildLevelNavMesh());
-					// Bump priest patrol radius so the random pick has
-					// generous room even when the navmesh has lots of
-					// occlusion near the villager.
-					xBB.SetFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, 15.0f);
-					BTNodeStatus eStatus = xNode.Execute(xP, xBB, 0.0f);
-					if (eStatus == BTNodeStatus::SUCCESS)
-					{
-						const Zenith_Maths::Vector3 xPatrol =
-							xBB.GetVector3(DP_AI::BB_KEY_PATROL_TARGET);
-						// Check patrol point is within suspicion radius
-						// of the VILLAGER (not the priest). The radius
-						// itself is the test -- bias should center on
-						// the scent target.
-						const float fDx = xPatrol.x - g_xVillagerPos.x;
-						const float fDz = xPatrol.z - g_xVillagerPos.z;
-						const float fDist = std::sqrt(fDx*fDx + fDz*fDz);
-						g_bPriestBiasNearVillager = (fDist <= 15.0f + 0.5f);
-						std::printf("[P5Scent] biased patrol target = (%.1f, %.1f, %.1f); villager at (%.1f, %.1f, %.1f); dist = %.2f\n",
-							xPatrol.x, xPatrol.y, xPatrol.z,
-							g_xVillagerPos.x, g_xVillagerPos.y, g_xVillagerPos.z,
-							fDist);
-						std::fflush(stdout);
-					}
+					const Zenith_Maths::Vector3 xPatrol =
+						xBB.GetVector3(DP_AI::BB_KEY_PATROL_TARGET);
+					// Check patrol point is within suspicion radius
+					// of the VILLAGER (not the priest). The radius
+					// itself is the test -- bias should center on
+					// the scent target.
+					const float fDx = xPatrol.x - g_xVillagerPos.x;
+					const float fDz = xPatrol.z - g_xVillagerPos.z;
+					const float fDist = std::sqrt(fDx*fDx + fDz*fDz);
+					g_bPriestBiasNearVillager = (fDist <= 15.0f + 0.5f);
+					std::printf("[P5Scent] biased patrol target = (%.1f, %.1f, %.1f); villager at (%.1f, %.1f, %.1f); dist = %.2f\n",
+						xPatrol.x, xPatrol.y, xPatrol.z,
+						g_xVillagerPos.x, g_xVillagerPos.y, g_xVillagerPos.z,
+						fDist);
+					std::fflush(stdout);
 				}
 			}
 		}

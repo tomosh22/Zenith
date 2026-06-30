@@ -128,13 +128,13 @@ static bool Step_ItemPickup(int iFrame)
 		// SetPosition. The collider's body position is updated separately
 		// inside the engine, so for skeleton-grade we just do the raw move.
 		Zenith_Maths::Vector3 xItemPos = DP_Items::GetItemWorldPos(g_xIPItem);
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xIPVillager);
-		if (pxScene != nullptr)
+		Zenith_Entity xV = g_xEngine.Scenes().ResolveEntity(g_xIPVillager);
+		if (xV.IsValid())
 		{
-			Zenith_Entity xV = pxScene->TryGetEntity(g_xIPVillager);
-			if (xV.IsValid() && xV.HasComponent<Zenith_TransformComponent>())
+			Zenith_TransformComponent* pxTransform = xV.TryGetComponent<Zenith_TransformComponent>();
+			if (pxTransform != nullptr)
 			{
-				xV.GetComponent<Zenith_TransformComponent>().SetPosition(xItemPos);
+				pxTransform->SetPosition(xItemPos);
 			}
 		}
 		g_iIPPhase = kIP_WaitPickup;

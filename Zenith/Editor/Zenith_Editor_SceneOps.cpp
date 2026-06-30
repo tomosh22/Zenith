@@ -275,8 +275,7 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 		}
 	}
 
-	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
 	if (pxSceneData)
 	{
 		Zenith_EditorSceneAccess::LoadFromFile(pxSceneData, m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);

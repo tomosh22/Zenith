@@ -165,6 +165,12 @@ public:
 	static void TestEntityNameFromScene();
 	static void TestEntityCopyPreservesAccess();
 
+	// Scene-API convenience adds (GetActiveSceneData / ResolveEntity / QueryActiveScene)
+	static void TestGetActiveSceneData();
+	static void TestResolveEntity();
+	static void TestQueryActiveScene();
+	static void TestTempSceneFixture();
+
 	// Render-phase boundary signal (always-compiled atomic)
 	static void TestRenderPhaseTransitions();
 
@@ -200,6 +206,7 @@ public:
 	// ECS event system tests (Phase 5)
 	static void TestEventSubscribeDispatch();
 	static void TestEventUnsubscribe();
+	static void TestEventSubscriptionRAII();
 	static void TestEventDeferredQueue();
 	static void TestEventMultipleSubscribers();
 	static void TestEventClearSubscriptions();

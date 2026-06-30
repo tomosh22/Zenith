@@ -97,17 +97,19 @@ public:
 	Zenith_Maths::Vector3 GetRacketSweetSpotPos() const
 	{
 		Zenith_Maths::Vector3 xPos(0.0f);
-		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 			return xPos;
-		m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
-		if (!m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+		pxTransform->GetPosition(xPos);
+		Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr)
 			return xPos;
-		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
+		Zenith_ModelComponent& xModel = *pxModel;
 		Zenith_Maths::Matrix4 xBoneModel;
 		if (!xModel.HasSkeleton() || !xModel.GetBoneModelMatrix("RightHand", xBoneModel))
 			return xPos;
 		Zenith_Maths::Matrix4 xWorld;
-		m_xParentEntity.GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xWorld);
+		pxTransform->BuildModelMatrix(xWorld);
 		const Zenith_Maths::Matrix4 xHandWorld = xWorld * xBoneModel;
 		return RenderTest_Tennis::ComputeRacketSweetSpot(xHandWorld, k_fRacketReach);
 	}
@@ -117,9 +119,10 @@ public:
 	// the nav agent's last velocity.
 	void ParkBody()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		Zenith_ColliderComponent* pxCol = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCol == nullptr)
 			return;
-		Zenith_ColliderComponent& xCol = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCol = *pxCol;
 		if (!xCol.HasValidBody())
 			return;
 		Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xCol.GetBodyID());
@@ -163,8 +166,9 @@ public:
 			m_xBall = pxSceneData->FindEntityByName("Tennis_Ball");
 
 		// Dynamic capsule for footwork (proper physics movement, like the player).
-		Zenith_ColliderComponent& xCollider = m_xParentEntity.HasComponent<Zenith_ColliderComponent>()
-			? m_xParentEntity.GetComponent<Zenith_ColliderComponent>()
+		Zenith_ColliderComponent* pxExistingCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = pxExistingCollider != nullptr
+			? *pxExistingCollider
 			: m_xParentEntity.AddComponent<Zenith_ColliderComponent>();
 		if (!xCollider.HasValidBody())
 			xCollider.AddCapsuleCollider(0.10f, 0.95f, RIGIDBODY_TYPE_DYNAMIC);
@@ -172,16 +176,16 @@ public:
 			g_xEngine.Physics().LockRotation(xCollider.GetBodyID(), true, false, true);
 
 		// Face the net.
-		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 		{
-			Zenith_TransformComponent& xT = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+			Zenith_TransformComponent& xT = *pxTransform;
 			const float fYaw = m_bFacingPositiveZ ? 0.0f : static_cast<float>(Zenith_Maths::Pi);
 			xT.SetRotation(glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
 		}
 
-		if (m_xParentEntity.HasComponent<Zenith_AnimatorComponent>())
+		if (Zenith_AnimatorComponent* pxAnimator = m_xParentEntity.TryGetComponent<Zenith_AnimatorComponent>())
 		{
-			m_pxAnimator = &m_xParentEntity.GetComponent<Zenith_AnimatorComponent>();
+			m_pxAnimator = pxAnimator;
 			SetupAnimator();
 		}
 	}
@@ -235,16 +239,16 @@ private:
 	float PlayerX() const
 	{
 		Zenith_Maths::Vector3 xPos(0.0f);
-		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
-			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
+			pxTransform->GetPosition(xPos);
 		return xPos.x;
 	}
 
 	Zenith_Maths::Vector3 BallPos() const
 	{
 		Zenith_Maths::Vector3 xPos(0.0f);
-		if (m_xBall.IsValid() && m_xBall.HasComponent<Zenith_TransformComponent>())
-			m_xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		if (Zenith_TransformComponent* pxTransform = m_xBall.TryGetComponent<Zenith_TransformComponent>())
+			pxTransform->GetPosition(xPos);
 		return xPos;
 	}
 
@@ -270,9 +274,10 @@ private:
 	// rotated the body toward its travel direction).
 	void ReassertFacing()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 			return;
-		Zenith_TransformComponent& xT = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent& xT = *pxTransform;
 		const float fYaw = m_bFacingPositiveZ ? 0.0f : static_cast<float>(Zenith_Maths::Pi);
 		xT.SetRotation(glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
 	}
@@ -283,9 +288,10 @@ private:
 	// but skips its velocity write so the two don't fight.
 	void Footwork(float)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		Zenith_ColliderComponent* pxCol = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCol == nullptr)
 			return;
-		Zenith_ColliderComponent& xCol = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCol = *pxCol;
 		if (!xCol.HasValidBody())
 			return;
 		g_xEngine.Physics().EnforceUpright(xCol.GetBodyID());

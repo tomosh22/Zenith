@@ -25,9 +25,9 @@ void Combat_PlayerComponent::OnStart()
 {
 	// Animator skeleton is auto-discovered from ModelComponent during the entity's
 	// first frame, so initialise the animation controller here rather than in OnAwake.
-	if (m_xParentEntity.HasComponent<Zenith_AnimatorComponent>())
+	if (Zenith_AnimatorComponent* pxAnimator = m_xParentEntity.TryGetComponent<Zenith_AnimatorComponent>())
 	{
-		Zenith_AnimatorComponent& xAnimator = m_xParentEntity.GetComponent<Zenith_AnimatorComponent>();
+		Zenith_AnimatorComponent& xAnimator = *pxAnimator;
 		m_xAnimController.Initialize(xAnimator);
 	}
 }
@@ -43,14 +43,15 @@ void Combat_PlayerComponent::OnUpdate(float fDt)
 	{
 		return;
 	}
-	if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>() ||
-		!m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+	Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
+	Zenith_ColliderComponent* pxCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
+	if (pxTransform == nullptr || pxCollider == nullptr)
 	{
 		return;
 	}
 
-	Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
-	Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+	Zenith_TransformComponent& xTransform = *pxTransform;
+	Zenith_ColliderComponent& xCollider = *pxCollider;
 
 	if (xCollider.HasValidBody())
 	{
@@ -82,9 +83,10 @@ void Combat_PlayerComponent::TriggerHitStun(float fDuration)
 
 void Combat_PlayerComponent::FireAttackTick()
 {
-	if (!m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+	Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+	if (pxGraph == nullptr)
 	{
 		return;
 	}
-	m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("AttackTick");
+	pxGraph->FireCustomEvent("AttackTick");
 }

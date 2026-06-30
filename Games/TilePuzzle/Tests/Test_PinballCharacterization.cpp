@@ -52,11 +52,11 @@ namespace
 	{
 		Zenith_EntityID xId;
 		if (FindPinball(&xId) == nullptr || !xId.IsValid()) return nullptr;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return nullptr;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_CameraComponent>()) return nullptr;
-		return &xEnt.GetComponent<Zenith_CameraComponent>();
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		if (!xEnt.IsValid()) return nullptr;
+		Zenith_CameraComponent* pxCam = xEnt.TryGetComponent<Zenith_CameraComponent>();
+		if (pxCam == nullptr) return nullptr;
+		return pxCam;
 	}
 
 	// Replica of Pinball_GameComponent::ScreenToWorld (ray to the Z=0 plane)

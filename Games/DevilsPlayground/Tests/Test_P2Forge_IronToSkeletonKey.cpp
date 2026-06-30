@@ -107,9 +107,9 @@ static bool Step_P2ForgeSkeletonKey(int iFrame)
 		Zenith_Entity xForge = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Test_SkeletonKeyForge"));
 		if (!xForge.IsValid()) { g_iPhase = kFS_Done; return false; }
 		g_xForge = xForge.GetEntityID();
-		if (xForge.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = xForge.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xForge.GetComponent<Zenith_TransformComponent>().SetPosition(
+			pxTransform->SetPosition(
 				Zenith_Maths::Vector3(-60.0f, 0.0f, -60.0f));
 		}
 		g_pxForge = &xForge.AddComponent<DPForge_Component>();
@@ -129,9 +129,9 @@ static bool Step_P2ForgeSkeletonKey(int iFrame)
 		Zenith_Entity xInput = g_xEngine.Scenes().CreateEntity(pxScene, std::string("ForgeIntake_Iron"));
 		if (!xInput.IsValid()) { g_iPhase = kFS_Done; return false; }
 		g_xInput = xInput.GetEntityID();
-		if (xInput.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = xInput.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xInput.GetComponent<Zenith_TransformComponent>().SetPosition(
+			pxTransform->SetPosition(
 				Zenith_Maths::Vector3(-65.0f, 0.0f, -60.0f));
 		}
 		xInput.AddComponent<Zenith_ModelComponent>().LoadModel(

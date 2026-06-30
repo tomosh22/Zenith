@@ -803,8 +803,7 @@ bool Zenith_Editor::HandlePendingSceneLoad()
 	}
 
 	// Load the scene file into the active scene (backup restore or explicit scene load)
-	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
 	if (pxSceneData)
 	{
 		Zenith_EditorSceneAccess::LoadFromFile(pxSceneData, m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
@@ -1217,8 +1216,7 @@ void Zenith_Editor::SelectRange(Zenith_EntityID uEndEntityID)
 	// Clear existing selection for shift+click (standard behavior)
 	m_xEditorState.m_xSelection.m_xSelectedEntityIDs.clear();
 
-	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
 	if (!pxSceneData)
 	{
 		return;
@@ -1323,8 +1321,8 @@ Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 		return nullptr;
 
 	// Search all loaded scenes for the entity (not just active scene)
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
-	if (!pxSceneData)
+	Zenith_Entity xResolved = g_xEngine.Scenes().ResolveEntity(m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
+	if (!xResolved.IsValid())
 	{
 		// Entity no longer exists in any scene - remove from selection
 		m_xEditorState.m_xSelection.m_xSelectedEntityIDs.erase(m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
@@ -1335,7 +1333,7 @@ Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 
 	// Return pointer to static entity handle (valid until next call)
 	static Zenith_Entity s_xSelectedEntity;
-	s_xSelectedEntity = pxSceneData->GetEntity(m_xEditorState.m_xSelection.m_uPrimarySelectedEntityID);
+	s_xSelectedEntity = xResolved;
 	return &s_xSelectedEntity;
 }
 

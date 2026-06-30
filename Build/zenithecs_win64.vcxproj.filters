@@ -66,9 +66,6 @@
     <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_RenderTaskState.h">
       <Filter>Internal</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_InternalScopes.h">
-      <Filter>Internal</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\ZenithECS\Zenith_ComponentMeta.h" />
     <ClInclude Include="..\Zenith\ZenithECS\Zenith_Entity.h" />
     <ClInclude Include="..\Zenith\ZenithECS\Zenith_EventSystem.h" />

@@ -45,11 +45,7 @@ void Combat_EnemyComponent::EnsureInitialized()
 	{
 		return;
 	}
-	Zenith_AnimatorComponent* pxAnimator = nullptr;
-	if (m_xParentEntity.HasComponent<Zenith_AnimatorComponent>())
-	{
-		pxAnimator = &m_xParentEntity.GetComponent<Zenith_AnimatorComponent>();
-	}
+	Zenith_AnimatorComponent* pxAnimator = m_xParentEntity.TryGetComponent<Zenith_AnimatorComponent>();
 	m_xAI.Initialize(m_xParentEntity.GetEntityID(), m_xConfig, pxAnimator);
 	m_bInitialized = true;
 }

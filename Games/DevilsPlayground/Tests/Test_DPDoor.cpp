@@ -51,20 +51,18 @@ namespace
 	template<typename T>
 	T* GetGameComponent(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return nullptr;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
 		return xEnt.TryGetComponent<T>();
 	}
 
 	bool TrySetEntityPosition(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		if (!xEnt.IsValid()) return false;
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->SetPosition(xPos);
 		return true;
 	}
 

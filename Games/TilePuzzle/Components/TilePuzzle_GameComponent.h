@@ -462,9 +462,9 @@ public:
 
 		// Wire up button callbacks
 		bool bHasMenu = false;
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 
 			// New menu buttons
 			Zenith_UI::Zenith_UIButton* pxContinueBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("ContinueButton");
@@ -3538,9 +3538,12 @@ private:
 		// Camera effects (shake / zoom pulse)
 		UpdateScreenShake(fDeltaTime);
 		UpdateZoomPulse(fDeltaTime);
-		if (m_fScreenShakeTimer <= 0.0f && m_fZoomPulseTimer <= 0.0f && m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		if (m_fScreenShakeTimer <= 0.0f && m_fZoomPulseTimer <= 0.0f)
 		{
-			m_xParentEntity.GetComponent<Zenith_CameraComponent>().SetPosition(m_xCameraBasePosition);
+			if (Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>())
+			{
+				pxCam->SetPosition(m_xCameraBasePosition);
+			}
 		}
 
 		// Render text indicators above conditional (locked) shapes
@@ -3557,7 +3560,8 @@ private:
 		if (!pxCanvas)
 			return;
 
-		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>();
+		if (pxCam == nullptr)
 			return;
 
 		// Count currently eliminated cats
@@ -3569,7 +3573,7 @@ private:
 		}
 
 		// Build VP matrix from camera (consistent with ScreenSpaceToWorldSpace)
-		Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+		Zenith_CameraComponent& xCam = *pxCam;
 		Zenith_Maths::Matrix4 xViewMat, xProjMat;
 		xCam.BuildViewMatrix(xViewMat);
 		xCam.BuildProjectionMatrix(xProjMat);
@@ -3650,9 +3654,10 @@ private:
 					if (pxSceneData->EntityExists(xPrevShape.xEntityID))
 					{
 						Zenith_Entity xEntity = pxSceneData->GetEntity(xPrevShape.xEntityID);
-						if (xEntity.IsValid() && xEntity.HasComponent<Zenith_ModelComponent>())
+						Zenith_ModelComponent* pxModel = xEntity.IsValid() ? xEntity.TryGetComponent<Zenith_ModelComponent>() : nullptr;
+						if (pxModel != nullptr)
 						{
-							Zenith_ModelComponent& xModel = xEntity.GetComponent<Zenith_ModelComponent>();
+							Zenith_ModelComponent& xModel = *pxModel;
 							if (xModel.GetNumMeshes() > 0 && xModel.GetModelInstance())
 							{
 								xModel.GetModelInstance()->SetMaterial(0, pxNormalMaterial);
@@ -3660,9 +3665,9 @@ private:
 						}
 
 						// Reset scale: cancel breathing pulse, return to base
-						if (xEntity.HasComponent<Zenith_TweenComponent>())
+						if (Zenith_TweenComponent* pxTween = xEntity.TryGetComponent<Zenith_TweenComponent>())
 						{
-							Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+							Zenith_TweenComponent& xTween = *pxTween;
 							xTween.CancelByProperty(TWEEN_PROPERTY_SCALE);
 							xTween.TweenScale(xBaseScale, 0.1f, EASING_CUBIC_OUT);
 						}
@@ -3681,9 +3686,10 @@ private:
 					if (pxSceneData->EntityExists(xShape.xEntityID))
 					{
 						Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
-						if (xEntity.IsValid() && xEntity.HasComponent<Zenith_ModelComponent>())
+						Zenith_ModelComponent* pxModel = xEntity.IsValid() ? xEntity.TryGetComponent<Zenith_ModelComponent>() : nullptr;
+						if (pxModel != nullptr)
 						{
-							Zenith_ModelComponent& xModel = xEntity.GetComponent<Zenith_ModelComponent>();
+							Zenith_ModelComponent& xModel = *pxModel;
 							if (xModel.GetNumMeshes() > 0 && xModel.GetModelInstance())
 							{
 								xModel.GetModelInstance()->SetMaterial(0, pxHighlightMaterial);
@@ -4109,7 +4115,8 @@ private:
 		if (!pxCanvas)
 			return;
 
-		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>();
+		if (pxCam == nullptr)
 			return;
 
 		// Flashing effect: visible for half the cycle
@@ -4124,7 +4131,7 @@ private:
 			return;
 		}
 
-		Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+		Zenith_CameraComponent& xCam = *pxCam;
 		Zenith_Maths::Matrix4 xViewMat, xProjMat;
 		xCam.BuildViewMatrix(xViewMat);
 		xCam.BuildProjectionMatrix(xProjMat);
@@ -4217,10 +4224,11 @@ private:
 	// ========================================================================
 	bool ScreenToGrid(float fScreenX, float fScreenY, int32_t& iGridX, int32_t& iGridY)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>();
+		if (pxCam == nullptr)
 			return false;
 
-		Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+		Zenith_CameraComponent& xCam = *pxCam;
 
 		Zenith_Maths::Vector3 xNear = xCam.ScreenSpaceToWorldSpace(Zenith_Maths::Vector3(fScreenX, fScreenY, 0.0f));
 		Zenith_Maths::Vector3 xFar = xCam.ScreenSpaceToWorldSpace(Zenith_Maths::Vector3(fScreenX, fScreenY, 1.0f));
@@ -4258,10 +4266,11 @@ private:
 
 	void UpdateCameraForGridSize()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>();
+		if (pxCam == nullptr)
 			return;
 
-		Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+		Zenith_CameraComponent& xCam = *pxCam;
 
 		// Half-extent of the grid in world units
 		float fHalfExtentX = static_cast<float>(m_xCurrentLevel.uGridWidth) * s_fCellSize * 0.5f;
@@ -4315,9 +4324,9 @@ private:
 		float fOffsetX = (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f - 1.0f) * fCurrentIntensity;
 		float fOffsetZ = (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f - 1.0f) * fCurrentIntensity;
 
-		if (m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		if (Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>())
 		{
-			Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xCam = *pxCam;
 			xCam.SetPosition(m_xCameraBasePosition + Zenith_Maths::Vector3(fOffsetX, 0.0f, fOffsetZ));
 		}
 	}
@@ -4357,9 +4366,9 @@ private:
 			fZoomOffset = -fMaxZoom * (1.0f - Zenith_ApplyEasing(EASING_QUAD_IN_OUT, fT));
 		}
 
-		if (m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		if (Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>())
 		{
-			Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xCam = *pxCam;
 			Zenith_Maths::Vector3 xPos = m_xCameraBasePosition;
 			xPos.y += fZoomOffset;
 			xCam.SetPosition(xPos);

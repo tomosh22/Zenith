@@ -78,3 +78,47 @@ inline Zenith_SceneSystem::AllScenesQuery<Ts...> Zenith_SceneSystem::QueryAllSce
 {
 	return AllScenesQuery<Ts...>(*this);
 }
+
+// ActiveSceneQuery mirrors the per-scene Zenith_Query<Ts...> surface but binds to
+// the ACTIVE scene only, resolving it once per call via GetActiveSceneData(). When
+// there is no active scene (boot, or after the only scene unloads) every verb is a
+// safe no-op — exactly the null-guard each hand-rolled GetActiveScene()+GetSceneData()
+// +Query preamble already performed.
+template<typename... Ts>
+class Zenith_SceneSystem::ActiveSceneQuery
+{
+public:
+	explicit ActiveSceneQuery(Zenith_SceneSystem& xSystem) : m_pxSystem(&xSystem) {}
+
+	template<typename Func>
+	void ForEach(Func&& fn)
+	{
+		if (Zenith_SceneData* pxData = m_pxSystem->GetActiveSceneData())
+		{
+			pxData->Query<Ts...>().ForEach(std::forward<Func>(fn));
+		}
+	}
+
+	u_int Count()
+	{
+		Zenith_SceneData* pxData = m_pxSystem->GetActiveSceneData();
+		return pxData ? pxData->Query<Ts...>().Count() : 0u;
+	}
+
+	Zenith_EntityID First()
+	{
+		Zenith_SceneData* pxData = m_pxSystem->GetActiveSceneData();
+		return pxData ? pxData->Query<Ts...>().First() : INVALID_ENTITY_ID;
+	}
+
+	bool Any() { return First().IsValid(); }
+
+private:
+	Zenith_SceneSystem* m_pxSystem;
+};
+
+template<typename... Ts>
+inline Zenith_SceneSystem::ActiveSceneQuery<Ts...> Zenith_SceneSystem::QueryActiveScene()
+{
+	return ActiveSceneQuery<Ts...>(*this);
+}

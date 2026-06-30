@@ -143,23 +143,21 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 
 	bool TrySetEntityPos(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->SetPosition(xPos);
 		return true;
 	}
 
@@ -174,19 +172,12 @@ namespace
 	Zenith_UI::Zenith_UIText* FindStatusText()
 	{
 		Zenith_UI::Zenith_UIText* pxResult = nullptr;
-		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
-		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
-		{
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetLoadedSceneDataAtSlot(uSlot);
-			if (pxScene == nullptr) continue;
-			pxScene->Query<Zenith_UIComponent>().ForEach(
-				[&pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
-				{
-					if (pxResult != nullptr) return;
-					pxResult = xUI.FindElement<Zenith_UI::Zenith_UIText>("Status");
-				});
-			if (pxResult) break;
-		}
+		g_xEngine.Scenes().QueryAllScenes<Zenith_UIComponent>().ForEach(
+			[&pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
+			{
+				if (pxResult != nullptr) return;
+				pxResult = xUI.FindElement<Zenith_UI::Zenith_UIText>("Status");
+			});
 		return pxResult;
 	}
 
@@ -260,15 +251,12 @@ static bool Step_P4WinGolden(int iFrame)
 			// poll path; matches FullPlaythrough_Test's pattern and the
 			// 3 loss-state tests' rising-edge approach). The overlap flag
 			// lives on the graph-era interactable shim.
-			if (Zenith_SceneData* pxPentScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPentagram))
+			Zenith_Entity xPentEnt = g_xEngine.Scenes().ResolveEntity(g_xPentagram);
+			if (xPentEnt.IsValid())
 			{
-				Zenith_Entity xPentEnt = pxPentScene->TryGetEntity(g_xPentagram);
-				if (xPentEnt.IsValid())
+				if (DPGraphInteractable_Component* pxShim = xPentEnt.TryGetComponent<DPGraphInteractable_Component>())
 				{
-					if (DPGraphInteractable_Component* pxShim = xPentEnt.TryGetComponent<DPGraphInteractable_Component>())
-					{
-						pxShim->SetInteractOnOverlap(true);
-					}
+					pxShim->SetInteractOnOverlap(true);
 				}
 			}
 			g_iPhase = kWG_Possess;

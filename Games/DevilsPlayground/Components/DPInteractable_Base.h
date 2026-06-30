@@ -198,16 +198,16 @@ protected:
 	virtual bool IsVillagerInRange(Zenith_EntityID xVillager) const
 	{
 		if (!xVillager.IsValid()) return false;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xV = pxScene->TryGetEntity(xVillager);
+		Zenith_Entity xV = g_xEngine.Scenes().ResolveEntity(xVillager);
 		if (!xV.IsValid()) return false;
-		if (!xV.HasComponent<Zenith_TransformComponent>()) return false;
+		Zenith_TransformComponent* pxVTransform = xV.TryGetComponent<Zenith_TransformComponent>();
+		if (pxVTransform == nullptr) return false;
 
 		Zenith_Maths::Vector3 xVPos, xMyPos;
-		xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
-		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>()) return false;
-		m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xMyPos);
+		pxVTransform->GetPosition(xVPos);
+		Zenith_TransformComponent* pxMyTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxMyTransform == nullptr) return false;
+		pxMyTransform->GetPosition(xMyPos);
 
 		const float fDx = xVPos.x - xMyPos.x;
 		const float fDz = xVPos.z - xMyPos.z;

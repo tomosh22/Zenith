@@ -446,9 +446,6 @@ void Zenith_Entity::SetParent(Zenith_EntityID xParentID)
 		ECS_SlotByID(xMySlot.m_xParentEntityID).m_xChildEntityIDs.PushBack(uMyEntityID);
 	}
 
-	// Invalidate root entity cache since parent changed (entity may have become/stopped being a root)
-	pxSceneData->InvalidateRootEntityCache();
-
 	// Invalidate cached activeInHierarchy (new parent may have different enabled state).
 	// (The former Zenith_Entity::SetParent shim did this after delegating to the
 	// owning component; preserved here so the cache stays consistent with the slot chain.)
@@ -495,7 +492,6 @@ void Zenith_Entity::DetachAllChildren()
 		}
 	}
 	xMySlot.m_xChildEntityIDs.Clear();
-	pxSceneData->InvalidateRootEntityCache();
 }
 
 const Zenith_Vector<Zenith_EntityID>& Zenith_Entity::GetChildEntityIDs() const

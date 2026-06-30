@@ -19,13 +19,12 @@ Zenith_Physics::RaycastResult Zenith_PhysicsQuery::RaycastIgnoring(
 	// behaviour the leaf's former EntityID overload had.
 	if (xIgnoreEntity != INVALID_ENTITY_ID)
 	{
-		Zenith_SceneData* pxSceneData = Zenith_SceneSystem::Get().GetSceneDataForEntity(xIgnoreEntity);
-		if (pxSceneData)
+		Zenith_Entity xEntity = Zenith_SceneSystem::Get().ResolveEntity(xIgnoreEntity);
+		if (xEntity.IsValid())
 		{
-			Zenith_Entity xEntity = pxSceneData->GetEntity(xIgnoreEntity);
-			if (xEntity.IsValid() && xEntity.HasComponent<Zenith_ColliderComponent>())
+			if (Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>())
 			{
-				const Zenith_PhysicsBodyID xIgnoreBody = xEntity.GetComponent<Zenith_ColliderComponent>().GetBodyID();
+				const Zenith_PhysicsBodyID xIgnoreBody = pxCollider->GetBodyID();
 				if (!xIgnoreBody.IsInvalid())
 				{
 					return g_xEngine.Physics().Raycast(xOrigin, xDirection, fMaxDistance, xIgnoreBody);

@@ -13,6 +13,7 @@
 #include "Core/Zenith_Engine.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
+#include "UnitTests/Zenith_TempScene.h"
 #include <chrono>
 #include <filesystem>
 
@@ -61,8 +62,8 @@ ZENITH_TEST(GraphComponent, AssetRoundTripAndUpdateDispatch)
 {
 	const std::string strAssetPath = SaveRotateGraphAsset("UnitTest_Rotate90.bgraph", 90.0f);
 
-	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("TestGraphComponentScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	Zenith_TempScene xTempScene("TestGraphComponentScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
 	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "GraphRotator");
 
 	Zenith_GraphComponent& xComponent = xEntity.AddComponent<Zenith_GraphComponent>();
@@ -86,8 +87,8 @@ ZENITH_TEST(GraphComponent, SerializationRoundTripWithOverridesAndUnresolved)
 {
 	const std::string strAssetPath = SaveRotateGraphAsset("UnitTest_RotateSer.bgraph", 45.0f);
 
-	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("TestGraphSerScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	Zenith_TempScene xTempScene("TestGraphSerScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
 
 	Zenith_Entity xSource = g_xEngine.Scenes().CreateEntity(pxSceneData, "GraphSerSource");
 	Zenith_GraphComponent& xSourceComponent = xSource.AddComponent<Zenith_GraphComponent>();
@@ -139,8 +140,8 @@ ZENITH_TEST(GraphComponent, CollisionDispatchViaMetaRegistry)
 
 	// Functional: an OnCollisionEnter graph chain runs and captures the other
 	// entity when the registry dispatches.
-	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("TestGraphCollisionScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	Zenith_TempScene xTempScene("TestGraphCollisionScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
 	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "GraphCollider");
 	Zenith_Entity xOther = g_xEngine.Scenes().CreateEntity(pxSceneData, "GraphOther");
 
@@ -183,8 +184,8 @@ ZENITH_TEST(GraphComponent, ThousandEntityUpdateBenchmark)
 {
 	const std::string strAssetPath = SaveRotateGraphAsset("UnitTest_RotateBench.bgraph", 90.0f);
 
-	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("TestGraphBenchScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	Zenith_TempScene xTempScene("TestGraphBenchScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
 
 	constexpr u_int uENTITY_COUNT = 1000;
 	Zenith_Vector<Zenith_Entity> axEntities;

@@ -515,11 +515,10 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 		return;
 	}
 
-	if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+	if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 	{
-		Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
 		Zenith_Maths::Vector3 xScale;
-		xTransform.GetScale(xScale);
+		pxTransform->GetScale(xScale);
 		Zenith_Log(LOG_CATEGORY_PHYSICS, "Generating physics mesh with entity scale (%.3f, %.3f, %.3f)",
 			xScale.x, xScale.y, xScale.z);
 	}

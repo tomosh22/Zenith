@@ -210,16 +210,20 @@ namespace
 
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
-			if (!xContext.m_xSelf.IsValid() || !xContext.m_xSelf.HasComponent<Zenith_TransformComponent>())
+			if (!xContext.m_xSelf.IsValid())
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			Zenith_TransformComponent& xTransform = xContext.m_xSelf.GetComponent<Zenith_TransformComponent>();
+			Zenith_TransformComponent* pxTransform = xContext.m_xSelf.TryGetComponent<Zenith_TransformComponent>();
+			if (pxTransform == nullptr)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
 			Zenith_Maths::Quat xRotation;
-			xTransform.GetRotation(xRotation);
+			pxTransform->GetRotation(xRotation);
 			const float fRadians = glm::radians(m_fDegreesPerSecond) * xContext.m_fDt;
 			const Zenith_Maths::Quat xDelta = glm::angleAxis(fRadians, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-			xTransform.SetRotation(glm::normalize(xDelta * xRotation));
+			pxTransform->SetRotation(glm::normalize(xDelta * xRotation));
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "RotateEntity"; }
@@ -235,14 +239,18 @@ namespace
 
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
-			if (!xContext.m_xSelf.IsValid() || !xContext.m_xSelf.HasComponent<Zenith_TransformComponent>())
+			if (!xContext.m_xSelf.IsValid())
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			Zenith_TransformComponent& xTransform = xContext.m_xSelf.GetComponent<Zenith_TransformComponent>();
+			Zenith_TransformComponent* pxTransform = xContext.m_xSelf.TryGetComponent<Zenith_TransformComponent>();
+			if (pxTransform == nullptr)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
 			Zenith_Maths::Vector3 xPosition;
-			xTransform.GetPosition(xPosition);
-			xTransform.SetPosition(xPosition + m_xUnitsPerSecond * xContext.m_fDt);
+			pxTransform->GetPosition(xPosition);
+			pxTransform->SetPosition(xPosition + m_xUnitsPerSecond * xContext.m_fDt);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "TranslateEntity"; }
@@ -327,11 +335,16 @@ namespace
 
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
-			if (!xContext.m_xSelf.IsValid() || !xContext.m_xSelf.HasComponent<Zenith_GraphComponent>())
+			if (!xContext.m_xSelf.IsValid())
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			xContext.m_xSelf.GetComponent<Zenith_GraphComponent>().FireCustomEvent(m_strEventName.c_str());
+			Zenith_GraphComponent* pxGraph = xContext.m_xSelf.TryGetComponent<Zenith_GraphComponent>();
+			if (pxGraph == nullptr)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+			pxGraph->FireCustomEvent(m_strEventName.c_str());
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "FireCustomEvent"; }

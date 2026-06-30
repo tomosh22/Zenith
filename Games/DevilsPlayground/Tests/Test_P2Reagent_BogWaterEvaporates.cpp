@@ -83,9 +83,7 @@ namespace
 
 	bool IsEntityValid(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		return xEnt.IsValid();
 	}
 }
@@ -141,9 +139,9 @@ static bool Step_P2BogWaterEvap(int iFrame)
 		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Test_BogWaterEvap"));
 		if (!xEnt.IsValid()) { g_iPhase = kBV_Done; return false; }
 		g_xBogWater = xEnt.GetEntityID();
-		if (xEnt.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(
+			pxTransform->SetPosition(
 				Zenith_Maths::Vector3(200.0f, 0.0f, 200.0f));
 		}
 		xEnt.AddComponent<Zenith_ModelComponent>().LoadModel(

@@ -2,9 +2,6 @@
 
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Entity.h"
-// Relocated RAII scope types: this TU defines Zenith_SceneCreationTargetScope's
-// ctor/dtor bodies.
-#include "ZenithECS/Internal/Zenith_SceneSystem_InternalScopes.h"
 
 #include <algorithm>
 
@@ -95,22 +92,6 @@ Zenith_SceneUpdateDeferralGuard::~Zenith_SceneUpdateDeferralGuard()
 		xScn.DrainPendingLoadIfAny();
 }
 
-Zenith_SceneCreationTargetScope::Zenith_SceneCreationTargetScope(Zenith_Scene xScene)
-{
-	Zenith_Assert(Zenith_ECS_IsMainThread(),
-		"Zenith_SceneCreationTargetScope must be constructed on the main thread");
-	Zenith_SceneSystem::Get().m_axCreationTargetStack.PushBack(xScene);
-}
-
-Zenith_SceneCreationTargetScope::~Zenith_SceneCreationTargetScope()
-{
-	Zenith_Assert(Zenith_ECS_IsMainThread(),
-		"Zenith_SceneCreationTargetScope must be destroyed on the main thread");
-	Zenith_Assert(Zenith_SceneSystem::Get().m_axCreationTargetStack.GetSize() > 0,
-		"Zenith_SceneCreationTargetScope: creation-target stack underflow on destruction");
-	Zenith_SceneSystem::Get().m_axCreationTargetStack.PopBack();
-}
-
 //=============================================================================
 // Lifecycle
 //=============================================================================
@@ -125,7 +106,6 @@ void Zenith_SceneSystem::Shutdown()
 	m_axCurrentlyLoadingPaths.Clear();
 	m_axLifecycleLoadStack.Clear();
 	m_iPendingBuildIndex = -1;
-	m_axCreationTargetStack.Clear();
 	m_bIsMainLoopRunning = false;
 	// Drop any deferred LoadScene/LoadSceneByIndex request — if Shutdown or
 	// ResetForNextTest runs while a load is stashed, executing it later would
@@ -275,18 +255,8 @@ bool Zenith_SceneSystem::IsCircularLoadDependency(const std::string& strCanonica
 }
 
 //=============================================================================
-// Default creation target + main-loop flag.
+// Main-loop flag.
 //=============================================================================
-
-Zenith_Scene Zenith_SceneSystem::GetDefaultCreationScene()
-{
-	const u_int uDepth = m_axCreationTargetStack.GetSize();
-	if (uDepth > 0)
-	{
-		return m_axCreationTargetStack.Get(uDepth - 1);
-	}
-	return GetActiveScene();
-}
 
 void Zenith_SceneSystem::SetMainLoopRunning(bool bRunning)
 {

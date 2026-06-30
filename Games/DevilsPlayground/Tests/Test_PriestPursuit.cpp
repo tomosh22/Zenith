@@ -59,23 +59,19 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 
 	bool TrySetEntityPos(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->SetPosition(xPos);
 		return true;
 	}
 
@@ -90,12 +86,11 @@ namespace
 	{
 		Zenith_Maths::Vector3 xPriestPos;
 		if (!TryGetEntityPos(xPriest, xPriestPos)) return;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xPriest);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriest);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriest);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
 		Zenith_Maths::Quaternion xQuat;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetRotation(xQuat);
+		pxTransform->GetRotation(xQuat);
 		const Zenith_Maths::Vector3 xFwd = xQuat * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
 		TrySetEntityPos(xVillager, xPriestPos + xFwd * fDist);
 	}

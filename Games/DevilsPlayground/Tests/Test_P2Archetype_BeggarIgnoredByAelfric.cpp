@@ -75,21 +75,16 @@ namespace
 
 	Zenith_EntityID ReadPriestBBTarget(Zenith_EntityID xPriestId)
 	{
-		Zenith_SceneData* pxScene =
-			g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
-		if (pxScene == nullptr) return INVALID_ENTITY_ID;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
 		if (!xEnt.IsValid()) return INVALID_ENTITY_ID;
-		if (!xEnt.HasComponent<Zenith_AIAgentComponent>()) return INVALID_ENTITY_ID;
-		Zenith_AIAgentComponent& xAg = xEnt.GetComponent<Zenith_AIAgentComponent>();
-		return xAg.GetBlackboard().GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
+		Zenith_AIAgentComponent* pxAgent = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
+		if (pxAgent == nullptr) return INVALID_ENTITY_ID;
+		return pxAgent->GetBlackboard().GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
 	}
 
 	DPVillager_Component* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return nullptr;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
 		return xEnt.TryGetComponent<DPVillager_Component>();
 	}

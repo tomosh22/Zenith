@@ -23,16 +23,11 @@ BTNodeStatus Zenith_BTCondition_HasTarget::Execute(Zenith_Entity&, Zenith_Blackb
 		// Audit §3.18 fix: resolve target's OWN scene so cross-scene targets
 		// (persistent entity, additive-scene boss, etc.) are validated correctly.
 		// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-		Zenith_SceneData* pxSceneData = Zenith_SceneSystem::Get().GetSceneDataForEntity(xTarget);
-		if (pxSceneData)
+		Zenith_Entity xTargetEntity = Zenith_SceneSystem::Get().ResolveEntity(xTarget);
+		if (xTargetEntity.IsValid())
 		{
-			Zenith_Entity xTargetEntity = pxSceneData->TryGetEntity(xTarget);
-
-			if (xTargetEntity.IsValid())
-			{
-				m_eLastStatus = BTNodeStatus::SUCCESS;
-				return m_eLastStatus;
-			}
+			m_eLastStatus = BTNodeStatus::SUCCESS;
+			return m_eLastStatus;
 		}
 	}
 

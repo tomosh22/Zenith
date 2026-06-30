@@ -16,9 +16,9 @@ An arena-based combat game demonstrating Animation State Machines, Inverse Kinem
 | **Physics Hit Detection** | `Zenith_ColliderComponent` | Capsule colliders for characters |
 | **Game Components** | `Zenith_ComponentMetaRegistry` | Game logic via component lifecycle hooks (OnAwake, OnStart, OnUpdate) |
 | **DataAsset Configuration** | `Zenith_DataAsset` | Combat tuning parameters |
-| **Multi-Scene Management** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()`, `SetScenePaused()` |
+| **Multi-Scene Management** | `Zenith_SceneSystem` (`g_xEngine.Scenes()`) | `DontDestroyOnLoad()`, `LoadScene(..., SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, `UnloadScene()`, `SetScenePaused()` |
 | **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
-| **Timed Destruction** | `Zenith_SceneManager::Destroy` | Corpse auto-cleanup with delayed entity destruction |
+| **Timed Destruction** | `Zenith_Entity::Destroy(delay)` | Corpse auto-cleanup with delayed entity destruction |
 
 ## File Structure
 
@@ -259,7 +259,7 @@ Add `Zenith_AnimatorComponent` to the entity (separate from `Zenith_ModelCompone
 Create IK chains via `Flux_IKSolver::CreateLegChain()` and add them to `xAnimator.GetController().GetIKSolver()`. Set targets each frame from raycasts via `Zenith_AnimatorComponent::SetIKTarget()` (or `SetIKTargetModelSpace()` for one-frame-latency-immune targets). The controller invokes `Flux_IKSolver::Solve()` automatically inside `ApplyOutputPoseToSkeleton` — do not call it directly when using the animator pipeline, or IK will run twice per frame.
 
 ### Event-Based Damage
-Define custom event structs (e.g., `Combat_DamageEvent`), subscribe via `Zenith_EventDispatcher::Get().SubscribeLambda<>()`, and dispatch events on hit.
+Define custom event structs (e.g., `Combat_DamageEvent`), subscribe via `Zenith_EventDispatcher::Get().Subscribe<>()` (or `SubscribeScoped<>()` for RAII auto-unsubscribe), and dispatch events on hit.
 
 ### Entity Queries
 Query entities via `xScene.Query<ComponentA, ComponentB>().ForEach()` with lambda, filtering by distance or tag.

@@ -69,12 +69,12 @@ inline Zenith_EntityID DP_FindClosestEntityWithGraph(const char* szAssetPath, co
 				if (std::strcmp(xGraphs.GetGraphAssetPathAt(u), szAssetPath) == 0) { bMatch = true; break; }
 			}
 			if (!bMatch) return;
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-			if (pxScene == nullptr) return;
-			Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-			if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
+			Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+			if (!xEnt.IsValid()) return;
+			Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+			if (pxTransform == nullptr) return;
 			Zenith_Maths::Vector3 xPos;
-			xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+			pxTransform->GetPosition(xPos);
 			const float fDx = xPos.x - xTo.x;
 			const float fDz = xPos.z - xTo.z;
 			const float fSq = fDx * fDx + fDz * fDz;
@@ -87,11 +87,11 @@ inline Zenith_EntityID DP_FindClosestEntityWithGraph(const char* szAssetPath, co
 // or unresolved).
 inline Zenith_BehaviourGraph* DP_GetGraphOn(Zenith_EntityID xId, const char* szAssetPath)
 {
-	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-	if (pxScene == nullptr) return nullptr;
-	Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-	if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_GraphComponent>()) return nullptr;
-	Zenith_GraphComponent& xGraphs = xEnt.GetComponent<Zenith_GraphComponent>();
+	Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+	if (!xEnt.IsValid()) return nullptr;
+	Zenith_GraphComponent* pxGraphs = xEnt.TryGetComponent<Zenith_GraphComponent>();
+	if (pxGraphs == nullptr) return nullptr;
+	Zenith_GraphComponent& xGraphs = *pxGraphs;
 	for (u_int u = 0; u < xGraphs.GetGraphCount(); ++u)
 	{
 		if (std::strcmp(xGraphs.GetGraphAssetPathAt(u), szAssetPath) == 0)

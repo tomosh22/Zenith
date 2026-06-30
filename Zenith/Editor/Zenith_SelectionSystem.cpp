@@ -272,10 +272,11 @@ bool Zenith_SelectionSystem::TestEntityHit(Zenith_ModelComponent* pxModel,
 			return false;
 	}
 
-	if (!xEntity.HasComponent<Zenith_TransformComponent>())
+	Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>();
+	if (pxTransform == nullptr)
 		return false;
 
-	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	Zenith_TransformComponent& xTransform = *pxTransform;
 	Zenith_Maths::Matrix4 xTransformMatrix;
 	xTransform.BuildModelMatrix(xTransformMatrix);
 

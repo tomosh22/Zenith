@@ -230,9 +230,9 @@ void Test_PlayerControllerComponent::OnUpdate(const float)
 	{
 		// The shoot binding lives in the Test_PlayerActions graph; fire its
 		// driving event at exactly the point the old Shoot() call sat.
-		if (m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+		if (Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>())
 		{
-			m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("Shoot");
+			pxGraph->FireCustomEvent("Shoot");
 		}
 	}
 
@@ -314,13 +314,14 @@ void Test_PlayerControllerComponent::FindHUDElements()
 		return;
 	}
 
-	if (!xHUDEntity.HasComponent<Zenith_UIComponent>())
+	Zenith_UIComponent* pxUI = xHUDEntity.TryGetComponent<Zenith_UIComponent>();
+	if (pxUI == nullptr)
 	{
 		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] HUD entity has no UIComponent");
 		return;
 	}
 
-	Zenith_UIComponent& xUI = xHUDEntity.GetComponent<Zenith_UIComponent>();
+	Zenith_UIComponent& xUI = *pxUI;
 
 	// Find health bar fill
 	m_pxHealthFill = xUI.FindElement<Zenith_UI::Zenith_UIRect>("HealthBar_Fill");
@@ -378,10 +379,11 @@ void Test_PlayerControllerComponent::UpdateCompassUI()
 		return;
 
 	// Get camera yaw to determine facing direction
-	if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+	Zenith_CameraComponent* pxCamera = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>();
+	if (pxCamera == nullptr)
 		return;
 
-	Zenith_CameraComponent& xCamera = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+	Zenith_CameraComponent& xCamera = *pxCamera;
 	double dYaw = xCamera.GetYaw();
 
 	// Normalize yaw to [0, 2*PI)

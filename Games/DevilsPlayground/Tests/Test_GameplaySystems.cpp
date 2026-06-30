@@ -51,30 +51,26 @@ namespace
 	template<typename T>
 	T* GetGameComponent(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return nullptr;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
 		return xEnt.TryGetComponent<T>();
 	}
 
 	bool TryGetEntityPosition(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 
 	void TrySetEntityPosition(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
-		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
+		pxTransform->SetPosition(xPos);
 	}
 }
 
@@ -586,14 +582,10 @@ static bool Step_OrbitCamera(int /*iFrame*/)
 		// Snapshot camera position BEFORE possession.
 		// DPOrbitCamera_Component writes to Zenith_CameraComponent::SetPosition
 		// (the camera's logical view position), NOT the entity transform.
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xCamera);
-		if (pxScene != nullptr)
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xCamera);
+		if (Zenith_CameraComponent* pxCamera = xEnt.TryGetComponent<Zenith_CameraComponent>())
 		{
-			Zenith_Entity xEnt = pxScene->TryGetEntity(g_xCamera);
-			if (xEnt.IsValid() && xEnt.HasComponent<Zenith_CameraComponent>())
-			{
-				xEnt.GetComponent<Zenith_CameraComponent>().GetPosition(g_xCamPosBefore);
-			}
+			pxCamera->GetPosition(g_xCamPosBefore);
 		}
 		DP_Player::SetPossessedVillager(g_xVillager);
 		g_iPhase = kTick;
@@ -609,14 +601,10 @@ static bool Step_OrbitCamera(int /*iFrame*/)
 
 	case kVerify:
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xCamera);
-		if (pxScene != nullptr)
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xCamera);
+		if (Zenith_CameraComponent* pxCamera = xEnt.TryGetComponent<Zenith_CameraComponent>())
 		{
-			Zenith_Entity xEnt = pxScene->TryGetEntity(g_xCamera);
-			if (xEnt.IsValid() && xEnt.HasComponent<Zenith_CameraComponent>())
-			{
-				xEnt.GetComponent<Zenith_CameraComponent>().GetPosition(g_xCamPosAfter);
-			}
+			pxCamera->GetPosition(g_xCamPosAfter);
 		}
 		g_iPhase = kDone;
 		return false;
@@ -712,17 +700,12 @@ static bool Step_HUDLifeBar(int /*iFrame*/)
 
 	case kVerify:
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xHUD);
-		if (pxScene != nullptr)
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xHUD);
+		if (Zenith_UIComponent* pxUI = xEnt.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_Entity xEnt = pxScene->TryGetEntity(g_xHUD);
-			if (xEnt.IsValid() && xEnt.HasComponent<Zenith_UIComponent>())
+			if (auto* pxBar = pxUI->FindElement<Zenith_UI::Zenith_UIText>("LifeBar"))
 			{
-				Zenith_UIComponent& xUI = xEnt.GetComponent<Zenith_UIComponent>();
-				if (auto* pxBar = xUI.FindElement<Zenith_UI::Zenith_UIText>("LifeBar"))
-				{
-					g_bHadVisibleLifeBar = pxBar->IsVisible() && !pxBar->GetText().empty();
-				}
+				g_bHadVisibleLifeBar = pxBar->IsVisible() && !pxBar->GetText().empty();
 			}
 		}
 		g_iPhase = kDone;

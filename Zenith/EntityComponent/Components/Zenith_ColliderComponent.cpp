@@ -229,10 +229,9 @@ void Zenith_ColliderComponent::ComputeBoxDimensionsAndOffset(
 	xHalfExtentsOut.z = std::abs(xScale.z) * 0.5f;
 	xLocalOffsetOut = Zenith_Maths::Vector3(0.0f);
 
-	if (m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+	if (const Zenith_ModelComponent* pxModel =
+		m_xParentEntity.TryGetComponent<Zenith_ModelComponent>())
 	{
-		const Zenith_ModelComponent& xModel =
-			m_xParentEntity.GetComponent<Zenith_ModelComponent>();
 		// Single-slot contract: we size the OBB from mesh #0's bounds only.
 		// Multi-mesh models (e.g., a character composed of body + clothing
 		// sub-meshes, or a kitbash prop with a base + decoration) end up
@@ -243,7 +242,7 @@ void Zenith_ColliderComponent::ComputeBoxDimensionsAndOffset(
 		// all sub-mesh bounds itself and call AddCapsuleCollider /
 		// equivalent with explicit dimensions, or sit behind multiple
 		// child entities each owning their own ColliderComponent.
-		if (Flux_MeshInstance* pxMeshInstance = xModel.GetMeshInstance(0))
+		if (Flux_MeshInstance* pxMeshInstance = pxModel->GetMeshInstance(0))
 		{
 			if (Zenith_MeshAsset* pxAsset = pxMeshInstance->GetSourceAsset())
 			{
@@ -275,7 +274,7 @@ void Zenith_ColliderComponent::ComputeBoxDimensionsAndOffset(
 						"CreateBoxShape: mesh bounds degenerate (asset='%s', "
 						"min=(%g,%g,%g) max=(%g,%g,%g)); using scale-only "
 						"sizing — call RebuildCollider() after asset load",
-						xModel.GetModelPath().c_str(),
+						pxModel->GetModelPath().c_str(),
 						xMin.x, xMin.y, xMin.z, xMax.x, xMax.y, xMax.z);
 				}
 			}
@@ -723,32 +722,32 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 
 	case COLLISION_VOLUME_TYPE_TERRAIN:
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_TerrainComponent>())
+		const Zenith_TerrainComponent* pxTerrain = m_xParentEntity.TryGetComponent<Zenith_TerrainComponent>();
+		if (pxTerrain == nullptr)
 		{
 			return;
 		}
 
 		Zenith_Maths::Matrix4 xModelMatrix;
 		xTransform.BuildModelMatrix(xModelMatrix);
-		const Zenith_TerrainComponent& xTerrain = m_xParentEntity.GetComponent<Zenith_TerrainComponent>();
 		// Same null-tolerance contract as CreateTerrainShape — skip the
 		// debug draw if the physics geometry never loaded.
-		if (xTerrain.HasPhysicsGeometry())
+		if (pxTerrain->HasPhysicsGeometry())
 		{
-			Zenith_PhysicsDebugDraw::DrawMesh(&xTerrain.GetPhysicsMeshGeometry(), xModelMatrix, xColor);
+			Zenith_PhysicsDebugDraw::DrawMesh(&pxTerrain->GetPhysicsMeshGeometry(), xModelMatrix, xColor);
 		}
 		break;
 	}
 
 	case COLLISION_VOLUME_TYPE_MODEL_MESH:
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+		Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr)
 		{
 			return;
 		}
 
-		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
-		const Flux_MeshGeometry* pxPhysicsMesh = xModel.GetPhysicsMesh();
+		const Flux_MeshGeometry* pxPhysicsMesh = pxModel->GetPhysicsMesh();
 		if (!pxPhysicsMesh)
 		{
 			return;
@@ -829,9 +828,12 @@ void Zenith_ColliderComponent::RebuildCollider()
 	// m_xRotation once the body is gone; without this snapshot a body that was
 	// moved (by a setter or by physics simulation) would rebuild at a stale
 	// transform (commonly the origin). Covers both move paths.
-	if (HasValidBody() && m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+	if (HasValidBody())
 	{
-		m_xParentEntity.GetComponent<Zenith_TransformComponent>().CommitPhysicsTransformToCache();
+		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
+		{
+			pxTransform->CommitPhysicsTransformToCache();
+		}
 	}
 
 	// Remove existing collider

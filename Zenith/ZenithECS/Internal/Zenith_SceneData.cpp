@@ -108,12 +108,11 @@ void Zenith_SceneData::DestroyEntityComponents(Zenith_EntityID xID)
 
 void Zenith_SceneData::CollectResetHierarchy(Zenith_Vector<Zenith_EntityID>& axHierarchyOut)
 {
-	// Collect roots directly from m_xActiveEntities rather than relying on the cached
-	// list. Roots are identified slot-based via IsRoot() (which reads the slot's parent
-	// link — Phase 5 relocated the hierarchy onto the slot, so this is component-agnostic
-	// and stays correct for every active entity even mid-teardown). We deliberately avoid
-	// RebuildRootEntityCache here: it asserts on IsRoot() in contexts where Reset() may run
-	// with a partially torn-down scene (e.g. TestSceneDisableDestroyHelpers).
+	// Collect roots directly from m_xActiveEntities. Roots are identified slot-based via
+	// IsRoot() (which reads the slot's parent link — Phase 5 relocated the hierarchy onto
+	// the slot, so this is component-agnostic and stays correct for every active entity
+	// even mid-teardown during Reset() of a partially torn-down scene, e.g.
+	// TestSceneDisableDestroyHelpers).
 	Zenith_Vector<Zenith_EntityID> axRoots;
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
 	{
@@ -239,8 +238,6 @@ void Zenith_SceneData::ClearSceneStateAfterReset()
 	m_axTimedDestructions.Clear();
 	m_bIsUpdating = false;
 	m_xMainCameraEntity = INVALID_ENTITY_ID;
-	m_axCachedRootEntities.Clear();
-	m_bRootEntitiesDirty = true;
 }
 
 void Zenith_SceneData::Reset()
@@ -317,7 +314,6 @@ void Zenith_SceneData::ScrubAndReset()
 	m_strPath.clear();
 	m_iBuildIndex = -1;
 	TransitionTo(SCENE_STATE_DESTROYED);
-	m_bWasLoadedAdditively = false;
 	m_bIsPaused = false;
 	m_ulLoadTimestamp = 0;
 #ifdef ZENITH_TOOLS
@@ -325,50 +321,6 @@ void Zenith_SceneData::ScrubAndReset()
 #endif
 }
 
-//==========================================================================
-// Root Entity Cache (O(1) count access for Unity parity)
-//==========================================================================
-
-void Zenith_SceneData::RebuildRootEntityCache()
-{
-	m_axCachedRootEntities.Clear();
-	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
-	{
-		Zenith_EntityID xID = m_xActiveEntities.Get(u);
-		if (EntityExists(xID))
-		{
-			Zenith_Entity xEntity = GetEntity(xID);
-			if (xEntity.IsRoot())
-			{
-				m_axCachedRootEntities.PushBack(xID);
-			}
-		}
-	}
-	m_bRootEntitiesDirty = false;
-}
-
-uint32_t Zenith_SceneData::GetCachedRootEntityCount()
-{
-	Zenith_Assert(Zenith_ECS_IsMainThread(), "GetCachedRootEntityCount must be called from main thread");
-	if (m_bRootEntitiesDirty)
-	{
-		RebuildRootEntityCache();
-	}
-	return m_axCachedRootEntities.GetSize();
-}
-
-void Zenith_SceneData::GetCachedRootEntities(Zenith_Vector<Zenith_EntityID>& axOut)
-{
-	Zenith_Assert(Zenith_ECS_IsMainThread(), "GetCachedRootEntities must be called from main thread");
-	if (m_bRootEntitiesDirty)
-	{
-		RebuildRootEntityCache();
-	}
-	for (u_int u = 0; u < m_axCachedRootEntities.GetSize(); ++u)
-	{
-		axOut.PushBack(m_axCachedRootEntities.Get(u));
-	}
-}
 
 //==========================================================================
 // Entity Management
@@ -435,7 +387,6 @@ Zenith_EntityID Zenith_SceneData::CreateEntity()
 	m_xActiveEntities.PushBack(xNewID);
 	m_axNewlyCreatedEntities.PushBack(xNewID);
 	MarkDirty();
-	InvalidateRootEntityCache();  // New entity might be a root
 	return xNewID;
 }
 
@@ -516,7 +467,6 @@ void Zenith_SceneData::RemoveEntity(Zenith_EntityID xID)
 	}
 
 	MarkDirty();
-	InvalidateRootEntityCache();
 
 	Zenith_Log(LOG_CATEGORY_SCENE, "Entity (idx=%u, gen=%u) and hierarchy removed from scene", xID.m_uIndex, xID.m_uGeneration);
 }

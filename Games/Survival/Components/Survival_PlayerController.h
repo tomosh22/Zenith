@@ -94,15 +94,15 @@ public:
 		float fDt)
 	{
 		// C1: resolve owning scene from the player's entity id.
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uPlayerEntityID);
-		if (!pxSceneData)
+		Zenith_Entity xPlayer = g_xEngine.Scenes().ResolveEntity(uPlayerEntityID);
+		if (!xPlayer.IsValid())
 			return;
 
-		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerEntityID);
-		if (!xPlayer.HasComponent<Zenith_TransformComponent>())
+		Zenith_TransformComponent* pxTransform = xPlayer.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 			return;
 
-		Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent& xTransform = *pxTransform;
 		Zenith_Maths::Vector3 xPos;
 		xTransform.GetPosition(xPos);
 
@@ -177,16 +177,16 @@ public:
 	static Zenith_Maths::Vector3 GetPlayerPosition(Zenith_EntityID uPlayerEntityID)
 	{
 		// C1: resolve owning scene from the player's entity id.
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uPlayerEntityID);
-		if (!pxSceneData)
+		Zenith_Entity xPlayer = g_xEngine.Scenes().ResolveEntity(uPlayerEntityID);
+		if (!xPlayer.IsValid())
 			return Zenith_Maths::Vector3(0.f);
 
-		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerEntityID);
-		if (!xPlayer.HasComponent<Zenith_TransformComponent>())
+		Zenith_TransformComponent* pxTransform = xPlayer.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 			return Zenith_Maths::Vector3(0.f);
 
 		Zenith_Maths::Vector3 xPos;
-		xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		pxTransform->GetPosition(xPos);
 		return xPos;
 	}
 
@@ -247,12 +247,12 @@ public:
 		float fDt)
 	{
 		// C1: resolve owning scene from the player's entity id.
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uPlayerEntityID);
-		if (!pxSceneData)
+		Zenith_Entity xPlayer = g_xEngine.Scenes().ResolveEntity(uPlayerEntityID);
+		if (!xPlayer.IsValid())
 			return;
 
-		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerEntityID);
-		if (!xPlayer.HasComponent<Zenith_TransformComponent>())
+		Zenith_TransformComponent* pxTransform = xPlayer.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr)
 			return;
 
 		// Get camera from persistent scene
@@ -261,7 +261,7 @@ public:
 			return;
 
 		Zenith_Maths::Vector3 xPlayerPos;
-		xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
+		pxTransform->GetPosition(xPlayerPos);
 
 		// Target camera position: behind and above player
 		Zenith_Maths::Vector3 xTargetPos = xPlayerPos + Zenith_Maths::Vector3(0.f, fHeight, -fDistance);

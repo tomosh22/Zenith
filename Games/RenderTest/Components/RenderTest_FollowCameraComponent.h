@@ -81,7 +81,8 @@ public:
 
 	void OnLateUpdate(float fDt)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		Zenith_CameraComponent* pxCamera = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>();
+		if (pxCamera == nullptr)
 			return;
 
 		// Runtime toggle: press T to cycle the tennis camera (off -> court overlook
@@ -98,7 +99,7 @@ public:
 		// player, so it short-circuits before any main-player resolution.
 		if (RenderTest_GameplayState::s_bTennisSpectatorActive)
 		{
-			Zenith_CameraComponent& xSpecCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xSpecCam = *pxCamera;
 
 			// Follow sub-mode: track one NPC up close in a 3/4 view so the strokes
 			// + IK + racket are clearly visible (instead of the fixed overlook).
@@ -139,7 +140,8 @@ public:
 		}
 
 		Zenith_Entity xPlayer = pxSceneData->GetEntity(m_uPlayerEntityID);
-		if (!xPlayer.IsValid() || !xPlayer.HasComponent<Zenith_TransformComponent>())
+		Zenith_TransformComponent* pxPlayerTransform = xPlayer.TryGetComponent<Zenith_TransformComponent>();
+		if (pxPlayerTransform == nullptr)
 			return;
 
 		// --- Photo mode (visual tests / capture harnesses) ---
@@ -149,8 +151,8 @@ public:
 		if (RenderTest_GameplayState::s_bPhotoModeActive)
 		{
 			Zenith_Maths::Vector3 xPhotoPlayerPos;
-			xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPhotoPlayerPos);
-			Zenith_CameraComponent& xPhotoCamera = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			pxPlayerTransform->GetPosition(xPhotoPlayerPos);
+			Zenith_CameraComponent& xPhotoCamera = *pxCamera;
 			xPhotoCamera.SetPosition(xPhotoPlayerPos + Zenith_Maths::Vector3(
 				RenderTest_GameplayState::s_fPhotoOffsetX,
 				RenderTest_GameplayState::s_fPhotoOffsetY,
@@ -216,9 +218,9 @@ public:
 		const Zenith_Maths::Vector3 xRotatedOffset(xRotatedOffset4);
 
 		Zenith_Maths::Vector3 xPlayerPos;
-		xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
+		pxPlayerTransform->GetPosition(xPlayerPos);
 
-		Zenith_CameraComponent& xCamera = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+		Zenith_CameraComponent& xCamera = *pxCamera;
 		xCamera.SetPosition(xPlayerPos + xRotatedOffset);
 		xCamera.SetYaw(m_fCameraYaw);
 		xCamera.SetPitch(m_fCameraPitch);
@@ -265,11 +267,12 @@ private:
 		const int iSide = RenderTest_GameplayState::s_iTennisFollowSide;
 		const char* szName = (iSide == 0) ? "Tennis_NPC_Near" : "Tennis_NPC_Far";
 		Zenith_Entity xNpc = pxSceneData->FindEntityByName(szName);
-		if (!xNpc.IsValid() || !xNpc.HasComponent<Zenith_TransformComponent>())
+		Zenith_TransformComponent* pxNpcTransform = xNpc.TryGetComponent<Zenith_TransformComponent>();
+		if (pxNpcTransform == nullptr)
 			return false;
 
 		Zenith_Maths::Vector3 xNpcPos;
-		xNpc.GetComponent<Zenith_TransformComponent>().GetPosition(xNpcPos);
+		pxNpcTransform->GetPosition(xNpcPos);
 
 		// World-space 3/4 offset from the player's front side (near faces +Z, far
 		// faces -Z), lifted to shoulder height; aim at the chest. Constant offset →

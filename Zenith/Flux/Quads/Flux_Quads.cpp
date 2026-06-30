@@ -9,8 +9,6 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_GraphicsImpl.h"
-#include "Flux/Flux_GraphicsImpl.h"
-#include "ZenithECS/Zenith_Scene.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"

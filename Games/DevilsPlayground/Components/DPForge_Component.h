@@ -83,12 +83,8 @@ protected:
 		DP_Player::RemoveHeldItem(xVillager);
 		if (xInput.IsValid())
 		{
-			Zenith_SceneData* pxInputScene = g_xEngine.Scenes().GetSceneDataForEntity(xInput);
-			if (pxInputScene != nullptr)
-			{
-				Zenith_Entity xInputEnt = pxInputScene->TryGetEntity(xInput);
-				if (xInputEnt.IsValid()) xInputEnt.Destroy();
-			}
+			Zenith_Entity xInputEnt = g_xEngine.Scenes().ResolveEntity(xInput);
+			if (xInputEnt.IsValid()) xInputEnt.Destroy();
 		}
 
 		// 2. Spawn output item at the forge position and auto-equip it.
@@ -110,9 +106,9 @@ protected:
 		// stimulus intensity. Future variant aelfrics could tune
 		// their hearing threshold to attenuate.
 		Zenith_Maths::Vector3 xForgePos(0.0f);
-		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 		{
-			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xForgePos);
+			pxTransform->GetPosition(xForgePos);
 		}
 		const float fAudibleRadius =
 			DP_Tuning::Get<float>("interactables.forge_audible_at_m");
@@ -152,9 +148,9 @@ private:
 		if (pxScene == nullptr) return INVALID_ENTITY_ID;
 
 		Zenith_Maths::Vector3 xForgePos(0.0f);
-		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 		{
-			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xForgePos);
+			pxTransform->GetPosition(xForgePos);
 		}
 		// Slight offset so the new item doesn't perfectly overlap the forge mesh.
 		xForgePos.x += 0.5f;

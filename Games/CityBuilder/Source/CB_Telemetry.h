@@ -66,21 +66,23 @@ namespace CB_Telemetry
 	{
 	public:
 		Hooks();
-		~Hooks();
+		// No explicit ~Hooks(): each Zenith_Subscription member Unsubscribes itself
+		// on destruction (RAII). The callbacks are non-capturing (stable-address),
+		// so this is the safe case for SubscribeScoped — see Zenith_EventSystem.h.
 		Hooks(const Hooks&)            = delete;
 		Hooks& operator=(const Hooks&) = delete;
 
 	private:
-		Zenith_EventHandle m_xToolSelected  = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xRoadPlaced    = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xZonePainted   = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xServicePlaced = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xBuildingGrew  = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xBulldozed     = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xPauseToggled  = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xMilestone     = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xSaved         = INVALID_EVENT_HANDLE;
-		Zenith_EventHandle m_xLoaded        = INVALID_EVENT_HANDLE;
+		Zenith_Subscription m_xToolSelected;
+		Zenith_Subscription m_xRoadPlaced;
+		Zenith_Subscription m_xZonePainted;
+		Zenith_Subscription m_xServicePlaced;
+		Zenith_Subscription m_xBuildingGrew;
+		Zenith_Subscription m_xBulldozed;
+		Zenith_Subscription m_xPauseToggled;
+		Zenith_Subscription m_xMilestone;
+		Zenith_Subscription m_xSaved;
+		Zenith_Subscription m_xLoaded;
 	};
 
 	// ---- Evaluation: a digest folded from the recorded event stream. ----

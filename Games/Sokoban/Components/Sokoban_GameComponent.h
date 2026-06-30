@@ -242,9 +242,9 @@ public:
 
 		// Wire up button callbacks
 		bool bHasMenu = false;
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 			Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 			if (pxPlayBtn)
 			{
@@ -535,10 +535,11 @@ private:
 
 	void SetMenuVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
 		if (pxTitle) pxTitle->SetVisible(bVisible);
@@ -549,10 +550,11 @@ private:
 
 	void SetHUDVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		const char* aszHUDElements[] = {
 			"Title", "ControlsHeader", "MoveInstr", "ResetInstr",
@@ -584,9 +586,9 @@ private:
 			m_iFocusIndex = (m_iFocusIndex + 1) % s_iButtonCount;
 		}
 
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 			if (pxPlay) pxPlay->SetFocused(m_iFocusIndex == 0);
 		}
@@ -733,10 +735,11 @@ private:
 	// ========================================================================
 	void UpdateUI()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 		uint32_t uBoxesOnTargets = Sokoban_GridLogic::CountBoxesOnTargets(
 			m_abBoxes, m_abTargets, m_uGridWidth * m_uGridHeight);
 

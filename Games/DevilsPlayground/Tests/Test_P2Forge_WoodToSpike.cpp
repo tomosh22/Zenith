@@ -135,9 +135,9 @@ static bool Step_P2ForgeWoodSpike(int iFrame)
 		Zenith_Entity xForge = g_xEngine.Scenes().CreateEntity(pxScene, std::string("Test_WoodForge"));
 		if (!xForge.IsValid()) { g_iPhase = kFW_Done; return false; }
 		g_xForge = xForge.GetEntityID();
-		if (xForge.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = xForge.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xForge.GetComponent<Zenith_TransformComponent>().SetPosition(
+			pxTransform->SetPosition(
 				Zenith_Maths::Vector3(-50.0f, 0.0f, -50.0f));
 		}
 		g_pxForge = &xForge.AddComponent<DPForge_Component>();
@@ -161,9 +161,9 @@ static bool Step_P2ForgeWoodSpike(int iFrame)
 		Zenith_Entity xInput = g_xEngine.Scenes().CreateEntity(pxScene, std::string("ForgeIntake_Wood"));
 		if (!xInput.IsValid()) { g_iPhase = kFW_Done; return false; }
 		g_xInput = xInput.GetEntityID();
-		if (xInput.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = xInput.TryGetComponent<Zenith_TransformComponent>())
 		{
-			xInput.GetComponent<Zenith_TransformComponent>().SetPosition(
+			pxTransform->SetPosition(
 				Zenith_Maths::Vector3(-55.0f, 0.0f, -50.0f));
 		}
 		xInput.AddComponent<Zenith_ModelComponent>().LoadModel(

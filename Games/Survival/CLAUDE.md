@@ -18,7 +18,7 @@ A resource gathering and crafting survival game demonstrating advanced Zenith en
 | **Materials/Textures** | `Zenith_MaterialAsset` | Color-coded materials for game objects |
 | **DataAsset System** | `Zenith_DataAsset` | Configuration with serialization |
 | **Camera** | `Zenith_CameraComponent` | Third-person follow camera |
-| **Multi-Scene** | `Zenith_SceneManager` | `LoadSceneByIndex()`, `LoadScene()`, `SetActiveScene()`, `UnloadScene()` |
+| **Multi-Scene** | `Zenith_SceneSystem` (`g_xEngine.Scenes()`) | `LoadSceneByIndex()`, `LoadScene()`, `SetActiveScene()`, `UnloadScene()` |
 | **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
@@ -60,7 +60,7 @@ Key patterns:
 
 Demonstrates `Zenith_EventDispatcher`:
 
-Define custom event structs, subscribe via `SubscribeLambda<EventType>()`, dispatch immediately on main thread via `Dispatch()`, or queue from background tasks via `QueueEvent()` for deferred processing.
+Define custom event structs, subscribe via `Subscribe<EventType>()` (or `SubscribeScoped<EventType>()` for RAII auto-unsubscribe), dispatch immediately on main thread via `Dispatch()`, or queue from background tasks via `QueueEvent()` for deferred processing.
 
 ### Query System Integration (Survival_WorldQuery.h)
 

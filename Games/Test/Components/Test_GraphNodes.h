@@ -28,11 +28,16 @@ public:
 
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		if (!xContext.m_xSelf.IsValid() || !xContext.m_xSelf.HasComponent<Zenith_ColliderComponent>())
+		if (!xContext.m_xSelf.IsValid())
 		{
 			return GRAPH_NODE_STATUS_FAILURE;
 		}
-		Zenith_ColliderComponent& xCollider = xContext.m_xSelf.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent* pxCollider = xContext.m_xSelf.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr)
+		{
+			return GRAPH_NODE_STATUS_FAILURE;
+		}
+		Zenith_ColliderComponent& xCollider = *pxCollider;
 		g_xEngine.Physics().SetAngularVelocity(xCollider.GetBodyID(), m_xAngularVel);
 		g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 		return GRAPH_NODE_STATUS_SUCCESS;
@@ -51,17 +56,21 @@ public:
 
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		if (!xContext.m_xSelf.IsValid()
-			|| !xContext.m_xSelf.HasComponent<Zenith_TransformComponent>()
-			|| !xContext.m_xSelf.HasComponent<Zenith_ColliderComponent>())
+		if (!xContext.m_xSelf.IsValid())
 		{
 			return GRAPH_NODE_STATUS_FAILURE;
 		}
-		Zenith_TransformComponent& xTrans = xContext.m_xSelf.GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent* pxTrans = xContext.m_xSelf.TryGetComponent<Zenith_TransformComponent>();
+		Zenith_ColliderComponent* pxCollider = xContext.m_xSelf.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxTrans == nullptr || pxCollider == nullptr)
+		{
+			return GRAPH_NODE_STATUS_FAILURE;
+		}
+		Zenith_TransformComponent& xTrans = *pxTrans;
 		Zenith_Maths::Vector3 xPosDelta;
 		xTrans.GetPosition(xPosDelta);
 		xPosDelta = m_xDesiredPosition - xPosDelta;
-		Zenith_ColliderComponent& xCollider = xContext.m_xSelf.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = *pxCollider;
 		g_xEngine.Physics().AddForce(xCollider.GetBodyID(), xPosDelta);
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}

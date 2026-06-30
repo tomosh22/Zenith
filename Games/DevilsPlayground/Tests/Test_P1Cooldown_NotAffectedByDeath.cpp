@@ -136,9 +136,7 @@ static bool Step_P1CooldownDeath(int iFrame)
 		// m_bIsPossessed flag and bumped m_fRemainingLife back to
 		// m_fMaxLife (the "freshly-possessed transition" handler). Now
 		// the test can shrink life without it being clobbered.
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xA);
-		if (pxScene == nullptr) { g_iPhase = kND_Done; return false; }
-		Zenith_Entity xEnt = pxScene->TryGetEntity(g_xA);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xA);
 		if (!xEnt.IsValid()) { g_iPhase = kND_Done; return false; }
 		DPVillager_Component* pxV = xEnt.TryGetComponent<DPVillager_Component>();
 		if (pxV == nullptr) { g_iPhase = kND_Done; return false; }

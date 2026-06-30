@@ -23,6 +23,7 @@
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_Query.h"
 #include "ZenithECS/Zenith_EventSystem.h"
+#include "UnitTests/Zenith_TempScene.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -7971,6 +7972,145 @@ void Zenith_UnitTests::TestEntityCopyPreservesAccess(){
 }
 
 //------------------------------------------------------------------------------
+// Scene-API convenience adds: GetActiveSceneData / ResolveEntity / QueryActiveScene
+//------------------------------------------------------------------------------
+
+// GetActiveSceneData() is the GetSceneData(GetActiveScene()) forwarder; it must
+// equal the manual two-step for the active scene (and is nullptr when there is no
+// active scene, which is exactly GetSceneData(INVALID_SCENE)).
+ZENITH_TEST(ECS, GetActiveSceneData) { Zenith_UnitTests::TestGetActiveSceneData(); }
+void Zenith_UnitTests::TestGetActiveSceneData(){
+	const Zenith_Scene xPrevActive = g_xEngine.Scenes().GetActiveScene();
+
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("TestGetActiveSceneDataScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	g_xEngine.Scenes().SetActiveScene(xTestScene);
+
+	Zenith_SceneData* pxViaForwarder = g_xEngine.Scenes().GetActiveSceneData();
+	Zenith_SceneData* pxViaTwoStep   = g_xEngine.Scenes().GetSceneData(g_xEngine.Scenes().GetActiveScene());
+	ZENITH_ASSERT_TRUE(pxViaForwarder != nullptr, "GetActiveSceneData: returned null for a valid active scene");
+	ZENITH_ASSERT_EQ(pxViaForwarder, pxViaTwoStep, "GetActiveSceneData: did not match GetSceneData(GetActiveScene())");
+
+	// Null-fallback contract: GetActiveSceneData() returns GetSceneData(GetActiveScene()),
+	// so when there is no active scene (GetActiveScene() == INVALID_SCENE) it yields
+	// nullptr. Pin that the invalid-scene resolve is nullptr (the value the forwarder
+	// returns in the no-active-scene / boot window).
+	ZENITH_ASSERT_TRUE(g_xEngine.Scenes().GetSceneData(Zenith_Scene::INVALID_SCENE) == nullptr, "GetActiveSceneData null-path: GetSceneData(INVALID_SCENE) must be nullptr");
+
+	g_xEngine.Scenes().UnloadScene(xTestScene);
+	if (xPrevActive.IsValid())
+	{
+		g_xEngine.Scenes().SetActiveScene(xPrevActive);
+	}
+}
+
+// ResolveEntity(id) == GetSceneDataForEntity(id) -> TryGetEntity(id), and must be
+// NON-asserting for every dead/stale/out-of-range id (returns an invalid handle).
+ZENITH_TEST(ECS, ResolveEntity) { Zenith_UnitTests::TestResolveEntity(); }
+void Zenith_UnitTests::TestResolveEntity(){
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("TestResolveEntityScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "ResolveTarget");
+	const Zenith_EntityID xID = xEntity.GetEntityID();
+
+	// (i) valid live id -> valid handle to the same entity.
+	Zenith_Entity xResolved = g_xEngine.Scenes().ResolveEntity(xID);
+	ZENITH_ASSERT_TRUE(xResolved.IsValid(), "ResolveEntity: valid id resolved to an invalid handle");
+	ZENITH_ASSERT_EQ(xResolved.GetEntityID(), xID, "ResolveEntity: resolved a different entity id");
+
+	// (ii) INVALID_ENTITY_ID -> invalid handle (no assert).
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().ResolveEntity(INVALID_ENTITY_ID).IsValid(), "ResolveEntity: INVALID_ENTITY_ID must resolve invalid");
+
+	// (iii) out-of-range index -> invalid handle (no assert).
+	const Zenith_EntityID xOutOfRange = { 0x7FFFFFFFu, 0u };
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().ResolveEntity(xOutOfRange).IsValid(), "ResolveEntity: out-of-range id must resolve invalid");
+
+	// (iv) stale generation (same index, wrong gen) -> invalid handle (no assert).
+	const Zenith_EntityID xStale = { xID.m_uIndex, xID.m_uGeneration + 1u };
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().ResolveEntity(xStale).IsValid(), "ResolveEntity: stale-generation id must resolve invalid");
+
+	// (v) destroyed entity -> invalid handle.
+	xEntity.DestroyImmediate();
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().ResolveEntity(xID).IsValid(), "ResolveEntity: destroyed id must resolve invalid");
+
+	g_xEngine.Scenes().UnloadScene(xTestScene);
+}
+
+// QueryActiveScene<Ts...>() mirrors the active scene's per-scene Query (Count /
+// ForEach / First / Any).
+ZENITH_TEST(ECS, QueryActiveScene) { Zenith_UnitTests::TestQueryActiveScene(); }
+void Zenith_UnitTests::TestQueryActiveScene(){
+	const Zenith_Scene xPrevActive = g_xEngine.Scenes().GetActiveScene();
+
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("TestQueryActiveSceneScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	g_xEngine.Scenes().SetActiveScene(xTestScene);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+
+	// CreateEntity (non-bare) adds a Zenith_TransformComponent via the default hook.
+	g_xEngine.Scenes().CreateEntity(pxSceneData, "Q0");
+	g_xEngine.Scenes().CreateEntity(pxSceneData, "Q1");
+	g_xEngine.Scenes().CreateEntity(pxSceneData, "Q2");
+
+	const u_int uViaActive = g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>().Count();
+	const u_int uViaScene  = pxSceneData->Query<Zenith_TransformComponent>().Count();
+	ZENITH_ASSERT_EQ(uViaActive, uViaScene, "QueryActiveScene: Count did not match the active scene's per-scene Query");
+	ZENITH_ASSERT_TRUE(uViaActive >= 3u, "QueryActiveScene: expected at least the 3 created entities");
+
+	u_int uForEachCount = 0;
+	g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>().ForEach(
+		[&uForEachCount](Zenith_EntityID, Zenith_TransformComponent&) { ++uForEachCount; });
+	ZENITH_ASSERT_EQ(uForEachCount, uViaActive, "QueryActiveScene: ForEach count != Count()");
+
+	ZENITH_ASSERT_TRUE(g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>().Any(), "QueryActiveScene: Any() false despite matches");
+	ZENITH_ASSERT_TRUE(g_xEngine.Scenes().QueryActiveScene<Zenith_TransformComponent>().First().IsValid(), "QueryActiveScene: First() invalid despite matches");
+
+	// Empty-result / no-op contract: a component type with ZERO instances in the
+	// active scene (these entities have Transform but no Model) must Count 0, be
+	// !Any, First() invalid, and ForEach zero times — the same no-op shape the
+	// verbs guarantee when there is no active scene at all.
+	ZENITH_ASSERT_EQ(g_xEngine.Scenes().QueryActiveScene<Zenith_ModelComponent>().Count(), 0u, "QueryActiveScene: zero-instance type should Count 0");
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().QueryActiveScene<Zenith_ModelComponent>().Any(), "QueryActiveScene: zero-instance type Any() should be false");
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().QueryActiveScene<Zenith_ModelComponent>().First().IsValid(), "QueryActiveScene: zero-instance type First() should be invalid");
+	u_int uEmptyForEach = 0;
+	g_xEngine.Scenes().QueryActiveScene<Zenith_ModelComponent>().ForEach(
+		[&uEmptyForEach](Zenith_EntityID, Zenith_ModelComponent&) { ++uEmptyForEach; });
+	ZENITH_ASSERT_EQ(uEmptyForEach, 0u, "QueryActiveScene: zero-instance type ForEach must not fire");
+
+	g_xEngine.Scenes().UnloadScene(xTestScene);
+	if (xPrevActive.IsValid())
+	{
+		g_xEngine.Scenes().SetActiveScene(xPrevActive);
+	}
+}
+
+// Zenith_TempScene RAII: mints an active empty scene, exposes Data(), and
+// force-unloads on scope exit (so a test can never leak its scene).
+ZENITH_TEST(ECS, TempSceneFixture) { Zenith_UnitTests::TestTempSceneFixture(); }
+void Zenith_UnitTests::TestTempSceneFixture(){
+	const Zenith_Scene xPrevActive = g_xEngine.Scenes().GetActiveScene();
+	Zenith_Scene xCaptured;
+	{
+		Zenith_TempScene xTemp("TestTempSceneFixtureScene");
+		ZENITH_ASSERT_TRUE(xTemp.Data() != nullptr, "Zenith_TempScene: Data() null for a fresh scene");
+		ZENITH_ASSERT_TRUE(xTemp.Scene().IsValid(), "Zenith_TempScene: scene handle invalid");
+		ZENITH_ASSERT_EQ(g_xEngine.Scenes().GetActiveScene(), xTemp.Scene(), "Zenith_TempScene: ctor did not make the scene active");
+
+		// CreateEntity() helper lands the entity in this scene and resolves back.
+		Zenith_Entity xE = xTemp.CreateEntity("TempEnt");
+		ZENITH_ASSERT_TRUE(xE.IsValid(), "Zenith_TempScene: CreateEntity returned invalid handle");
+		ZENITH_ASSERT_EQ(g_xEngine.Scenes().GetSceneDataForEntity(xE.GetEntityID()), xTemp.Data(), "Zenith_TempScene: entity not owned by the temp scene");
+
+		xCaptured = xTemp.Scene();
+	}
+	// Destructor force-unloaded the scene: the captured handle is now stale.
+	ZENITH_ASSERT_FALSE(xCaptured.IsValid(), "Zenith_TempScene: dtor did not unload the scene");
+
+	if (xPrevActive.IsValid())
+	{
+		g_xEngine.Scenes().SetActiveScene(xPrevActive);
+	}
+}
+
+//------------------------------------------------------------------------------
 // ECS Reflection System Tests (Phase 2)
 //------------------------------------------------------------------------------
 
@@ -8628,6 +8768,52 @@ void Zenith_UnitTests::TestEventUnsubscribe(){
 	// Cleanup
 	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
 
+}
+
+// RAII Zenith_Subscription / SubscribeScoped: dtor unsubscribes once, move
+// transfers ownership (no double-unsubscribe), moved-from is inert.
+ZENITH_TEST(ECS, EventSubscriptionRAII) { Zenith_UnitTests::TestEventSubscriptionRAII(); }
+void Zenith_UnitTests::TestEventSubscriptionRAII(){
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+
+	// (1) Scope-bound subscription unsubscribes on destruction.
+	{
+		Zenith_Subscription xSub = Zenith_EventDispatcher::Get().SubscribeScoped<TestEvent_Custom>(&TestEventCallback);
+		ZENITH_ASSERT_TRUE(xSub.IsValid(), "SubscribeScoped: returned an invalid subscription");
+		ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>(), 1u, "SubscribeScoped: should have 1 subscriber inside scope");
+	}
+	ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>(), 0u, "Zenith_Subscription: dtor did not unsubscribe");
+
+	// (2) Move transfers ownership; the moved-from subscription is inert (no
+	// double-unsubscribe when both go out of scope).
+	{
+		Zenith_Subscription xMovedFrom = Zenith_EventDispatcher::Get().SubscribeScoped<TestEvent_Custom>(&TestEventCallback);
+		ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>(), 1u, "SubscribeScoped(2): should have 1 subscriber");
+		Zenith_Subscription xMovedTo = std::move(xMovedFrom);
+		ZENITH_ASSERT_FALSE(xMovedFrom.IsValid(), "Zenith_Subscription: moved-from should be invalid");
+		ZENITH_ASSERT_TRUE(xMovedTo.IsValid(), "Zenith_Subscription: moved-to should own the handle");
+		// Still exactly one subscriber (the move did not duplicate or drop it).
+		ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>(), 1u, "Zenith_Subscription: move changed the subscriber count");
+	}
+	// Both destroyed; exactly one unsubscribe ran (moved-from was a no-op).
+	ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>(), 0u, "Zenith_Subscription: move-pair teardown left a dangling subscriber");
+
+	// (3) Explicit Reset() is idempotent.
+	{
+		Zenith_Subscription xSub = Zenith_EventDispatcher::Get().SubscribeScoped<TestEvent_Custom>(&TestEventCallback);
+		xSub.Reset();
+		ZENITH_ASSERT_FALSE(xSub.IsValid(), "Zenith_Subscription: Reset() should invalidate");
+		ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>(), 0u, "Zenith_Subscription: Reset() did not unsubscribe");
+		xSub.Reset();  // second Reset is a safe no-op
+	}
+
+	// (4) A default-constructed subscription is inert (dtor must not crash / wrongly unsubscribe).
+	{
+		Zenith_Subscription xEmpty;
+		ZENITH_ASSERT_FALSE(xEmpty.IsValid(), "Zenith_Subscription: default ctor should be invalid");
+	}
+
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
 }
 
 ZENITH_TEST(ECS, EventDeferredQueue) { Zenith_UnitTests::TestEventDeferredQueue(); }

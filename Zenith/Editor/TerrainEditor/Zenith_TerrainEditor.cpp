@@ -157,12 +157,11 @@ Zenith_TerrainComponent* Zenith_TerrainEditor::ResolveTargetComponent() const
 	{
 		return nullptr;
 	}
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_uTargetEntity);
-	if (pxSceneData == nullptr)
+	Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(m_uTargetEntity);
+	if (!xEntity.IsValid())
 	{
 		return nullptr;
 	}
-	Zenith_Entity xEntity = pxSceneData->GetEntity(m_uTargetEntity);
 	return xEntity.TryGetComponent<Zenith_TerrainComponent>();
 }
 

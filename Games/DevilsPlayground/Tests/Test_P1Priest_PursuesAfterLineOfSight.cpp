@@ -59,23 +59,21 @@ namespace
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 
 	bool TrySetEntityPos(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->SetPosition(xPos);
 		return true;
 	}
 
@@ -90,12 +88,12 @@ namespace
 	{
 		Zenith_Maths::Vector3 xPriestPos;
 		if (!TryGetEntityPos(xPriest, xPriestPos)) return;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xPriest);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriest);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriest);
+		if (!xEnt.IsValid()) return;
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
 		Zenith_Maths::Quaternion xQuat;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetRotation(xQuat);
+		pxTransform->GetRotation(xQuat);
 		// HORIZONTAL forward (zero the Y, renormalise) to match the perception
 		// system's yaw-only sight forward, and place at the priest's OWN height.
 		// A forward with any vertical component drops the villager off the sight
@@ -112,14 +110,11 @@ namespace
 
 	Zenith_EntityID ReadPriestBBTarget(Zenith_EntityID xPriestId)
 	{
-		Zenith_SceneData* pxScene =
-			g_xEngine.Scenes().GetSceneDataForEntity(xPriestId);
-		if (pxScene == nullptr) return INVALID_ENTITY_ID;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xPriestId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
 		if (!xEnt.IsValid()) return INVALID_ENTITY_ID;
-		if (!xEnt.HasComponent<Zenith_AIAgentComponent>()) return INVALID_ENTITY_ID;
-		Zenith_AIAgentComponent& xAg = xEnt.GetComponent<Zenith_AIAgentComponent>();
-		return xAg.GetBlackboard().GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
+		Zenith_AIAgentComponent* pxAgent = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
+		if (pxAgent == nullptr) return INVALID_ENTITY_ID;
+		return pxAgent->GetBlackboard().GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
 	}
 }
 

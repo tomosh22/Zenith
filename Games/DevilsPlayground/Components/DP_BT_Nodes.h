@@ -34,10 +34,11 @@ public:
 	BTNodeStatus Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBB, float /*fDt*/) override
 	{
 		if (m_pxNavMesh == nullptr) return BTNodeStatus::FAILURE;
-		if (!xAgent.HasComponent<Zenith_TransformComponent>()) return BTNodeStatus::FAILURE;
+		Zenith_TransformComponent* pxAgentTransform = xAgent.TryGetComponent<Zenith_TransformComponent>();
+		if (pxAgentTransform == nullptr) return BTNodeStatus::FAILURE;
 
 		Zenith_Maths::Vector3 xAgentPos;
-		xAgent.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
+		pxAgentTransform->GetPosition(xAgentPos);
 
 		// 2026-05-21: bias patrol toward the high-scent villager when
 		// one's been written to BB_KEY_HIGH_SCENT_TARGET AND that
@@ -59,14 +60,12 @@ public:
 				DP_Tuning::Get<float>("possession.demon_scent_hound_bark_threshold");
 			if (fScent >= fThreshold)
 			{
-				Zenith_SceneData* pxScene =
-					g_xEngine.Scenes().GetSceneDataForEntity(xScentTarget);
-				if (pxScene != nullptr)
+				Zenith_Entity xTgt = g_xEngine.Scenes().ResolveEntity(xScentTarget);
+				if (xTgt.IsValid())
 				{
-					Zenith_Entity xTgt = pxScene->TryGetEntity(xScentTarget);
-					if (xTgt.IsValid() && xTgt.HasComponent<Zenith_TransformComponent>())
+					if (Zenith_TransformComponent* pxTransform = xTgt.TryGetComponent<Zenith_TransformComponent>())
 					{
-						xTgt.GetComponent<Zenith_TransformComponent>().GetPosition(xCenter);
+						pxTransform->GetPosition(xCenter);
 						bScentDiversion = true;
 					}
 				}
@@ -258,25 +257,20 @@ public:
 		}
 
 		// Resolve target's scene + transform.
-		Zenith_SceneData* pxScene =
-			g_xEngine.Scenes().GetSceneDataForEntity(xTarget);
-		if (pxScene == nullptr)
-		{
-			EmitInterruptedIfRunning(xPriestID, DP_ApprehendInterruptReason::TargetLost);
-			m_eLastStatus = BTNodeStatus::FAILURE; return m_eLastStatus;
-		}
-		Zenith_Entity xTargetEnt = pxScene->TryGetEntity(xTarget);
-		if (!xTargetEnt.IsValid()
-		 || !xTargetEnt.HasComponent<Zenith_TransformComponent>()
-		 || !xAgent.HasComponent<Zenith_TransformComponent>())
+		Zenith_Entity xTargetEnt = g_xEngine.Scenes().ResolveEntity(xTarget);
+		Zenith_TransformComponent* pxTargetTransform =
+			xTargetEnt.IsValid() ? xTargetEnt.TryGetComponent<Zenith_TransformComponent>() : nullptr;
+		Zenith_TransformComponent* pxAgentTransform = xAgent.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTargetTransform == nullptr
+		 || pxAgentTransform == nullptr)
 		{
 			EmitInterruptedIfRunning(xPriestID, DP_ApprehendInterruptReason::TargetLost);
 			m_eLastStatus = BTNodeStatus::FAILURE; return m_eLastStatus;
 		}
 
 		Zenith_Maths::Vector3 xTargetPos, xAgentPos;
-		xTargetEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xTargetPos);
-		xAgent.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
+		pxTargetTransform->GetPosition(xTargetPos);
+		pxAgentTransform->GetPosition(xAgentPos);
 
 		// Horizontal distance only -- DP's gameplay plane is flat-ish and
 		// the priest/villager Y values are body-capsule-driven (settle at
@@ -330,10 +324,9 @@ public:
 		// channel times out on OutOfRange. Throttle SetDestination to
 		// once per BT tick (default 10 Hz) so we don't thrash the
 		// pathfinder.
-		if (xAgent.HasComponent<Zenith_AIAgentComponent>())
+		if (Zenith_AIAgentComponent* pxAI = xAgent.TryGetComponent<Zenith_AIAgentComponent>())
 		{
-			Zenith_AIAgentComponent& xAI = xAgent.GetComponent<Zenith_AIAgentComponent>();
-			if (Zenith_NavMeshAgent* pxNav = xAI.GetNavMeshAgent())
+			if (Zenith_NavMeshAgent* pxNav = pxAI->GetNavMeshAgent())
 			{
 				pxNav->SetDestination(xTargetPos);
 			}

@@ -176,8 +176,9 @@ public:
 		// capsule via the ColliderComponent's saved volume type. Only call
 		// AddCapsuleCollider when no body exists yet to avoid the
 		// "ColliderComponent already has a collider" assert in AddCollider.
-		Zenith_ColliderComponent& xCollider = m_xParentEntity.HasComponent<Zenith_ColliderComponent>()
-			? m_xParentEntity.GetComponent<Zenith_ColliderComponent>()
+		Zenith_ColliderComponent* pxExistingCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = pxExistingCollider != nullptr
+			? *pxExistingCollider
 			: m_xParentEntity.AddComponent<Zenith_ColliderComponent>();
 		if (!xCollider.HasValidBody())
 		{
@@ -202,17 +203,17 @@ public:
 			g_xEngine.Physics().LockRotation(xCollider.GetBodyID(), true, false, true);
 		}
 
-		if (m_xParentEntity.HasComponent<Zenith_AnimatorComponent>())
+		if (Zenith_AnimatorComponent* pxAnimator = m_xParentEntity.TryGetComponent<Zenith_AnimatorComponent>())
 		{
-			m_pxAnimator = &m_xParentEntity.GetComponent<Zenith_AnimatorComponent>();
+			m_pxAnimator = pxAnimator;
 			SetupLayeredAnimator();
 		}
 
 		// Cache the muzzle-flash emitter (component lives on the Player entity
 		// itself so we don't need a separate gun-barrel child).
-		if (m_xParentEntity.HasComponent<Zenith_ParticleEmitterComponent>())
+		if (Zenith_ParticleEmitterComponent* pxEmitter = m_xParentEntity.TryGetComponent<Zenith_ParticleEmitterComponent>())
 		{
-			m_pxMuzzleEmitter = &m_xParentEntity.GetComponent<Zenith_ParticleEmitterComponent>();
+			m_pxMuzzleEmitter = pxEmitter;
 		}
 
 		// Resolve HUD ammo text (best-effort; HUD entity may not exist yet on
@@ -221,10 +222,10 @@ public:
 		if (pxSceneData)
 		{
 			Zenith_Entity xHUD = pxSceneData->FindEntityByName("HUD");
-			if (xHUD.IsValid() && xHUD.HasComponent<Zenith_UIComponent>())
+			if (Zenith_UIComponent* pxUI = xHUD.TryGetComponent<Zenith_UIComponent>())
 			{
-				m_pxAmmoText = xHUD.GetComponent<Zenith_UIComponent>().FindElement<Zenith_UI::Zenith_UIText>("AmmoText");
-				m_pxGunPromptText = xHUD.GetComponent<Zenith_UIComponent>().FindElement<Zenith_UI::Zenith_UIText>("GunPrompt");
+				m_pxAmmoText = pxUI->FindElement<Zenith_UI::Zenith_UIText>("AmmoText");
+				m_pxGunPromptText = pxUI->FindElement<Zenith_UI::Zenith_UIText>("GunPrompt");
 			}
 		}
 	}
@@ -985,8 +986,7 @@ private:
 			m_pxAnimator->ClearIKTarget("RightLeg");
 			return;
 		}
-		Zenith_ModelComponent* pxModel = m_xParentEntity.HasComponent<Zenith_ModelComponent>()
-			? &m_xParentEntity.GetComponent<Zenith_ModelComponent>() : nullptr;
+		Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
 		if (!pxModel || !pxModel->HasSkeleton()) return;
 		Flux_SkeletonInstance* pxSkel = pxModel->GetSkeletonInstance();
 		if (!pxSkel) return;
@@ -1005,9 +1005,9 @@ private:
 		// locomotion and only plant feet when standing still. (See unit tests
 		// IKLocksFootXZAcrossFramesAtFullWeight and IKLetsAnimationDriveFootXZAtZeroWeight.)
 		float fHorizontalSpeedSq = 0.0f;
-		if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		if (Zenith_ColliderComponent* pxCollider2 = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>())
 		{
-			Zenith_ColliderComponent& xCollider2 = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+			Zenith_ColliderComponent& xCollider2 = *pxCollider2;
 			if (xCollider2.HasValidBody())
 			{
 				const Zenith_Maths::Vector3 xVel = g_xEngine.Physics().GetLinearVelocity(xCollider2.GetBodyID());
@@ -1119,20 +1119,22 @@ private:
 	{
 		fOutDist = 1e30f;
 		Zenith_Entity xBest;
-		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_TransformComponent* pxPlayerTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxPlayerTransform == nullptr)
 			return xBest;
 		Zenith_Maths::Vector3 xPlayerPos;
-		m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
+		pxPlayerTransform->GetPosition(xPlayerPos);
 		g_xEngine.Scenes().QueryAllScenes<RenderTest_GunComponent>().ForEach(
 			[&](Zenith_EntityID, RenderTest_GunComponent& xGun)
 			{
 				if (xGun.IsHeld())
 					return;
 				Zenith_Entity xEnt = xGun.GetParentEntity();
-				if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>())
+				Zenith_TransformComponent* pxEntTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+				if (pxEntTransform == nullptr)
 					return;
 				Zenith_Maths::Vector3 xPos;
-				xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+				pxEntTransform->GetPosition(xPos);
 				const float fD = glm::length(xPos - xPlayerPos);
 				if (fD < fOutDist) { fOutDist = fD; xBest = xEnt; }
 			});
@@ -1194,8 +1196,8 @@ private:
 		// Persist ammo so picking the same gun back up resumes its state.
 		xGunComp.SetAmmo(m_uAmmoInClip, m_uReserveAmmo);
 		xGunComp.SetHeld(false);
-		if (xGun.HasComponent<Zenith_AttachmentComponent>())
-			xGun.GetComponent<Zenith_AttachmentComponent>().Detach();
+		if (Zenith_AttachmentComponent* pxAttachment = xGun.TryGetComponent<Zenith_AttachmentComponent>())
+			pxAttachment->Detach();
 		PlaceGunOnFloor(xGun);
 
 		m_xHeldGun = Zenith_Entity();
@@ -1296,9 +1298,10 @@ private:
 			return;
 		}
 
-		if (!m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+		Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr)
 			return;
-		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
+		Zenith_ModelComponent& xModel = *pxModel;
 		if (!xModel.HasSkeleton())
 			return;
 
@@ -1370,8 +1373,8 @@ private:
 			const Zenith_Maths::Vector3 xLHw(xPlayerW * xLH * Zenith_Maths::Vector4(0, 0, 0, 1));
 			const Zenith_Maths::Vector3 xAnchorW(xPlayerW * Zenith_Maths::Vector4(xAnchor, 1.0f));
 			Zenith_Maths::Vector3 xGunW(0.0f);
-			if (m_xHeldGun.HasComponent<Zenith_TransformComponent>())
-				m_xHeldGun.GetComponent<Zenith_TransformComponent>().GetPosition(xGunW);
+			if (Zenith_TransformComponent* pxGunTransform = m_xHeldGun.TryGetComponent<Zenith_TransformComponent>())
+				pxGunTransform->GetPosition(xGunW);
 			Zenith_Log(LOG_CATEGORY_GAMEPLAY,
 				"[GunIK] %s held: RightHand=(%.2f,%.2f,%.2f) gun=(%.2f,%.2f,%.2f) anchorW=(%.2f,%.2f,%.2f) LeftHand=(%.2f,%.2f,%.2f)",
 				m_xHeldGun.GetComponent<RenderTest_GunComponent>().GetName(),

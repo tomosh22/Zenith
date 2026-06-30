@@ -121,9 +121,10 @@ static bool Step_ShootAction(int /*iFrame*/)
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
 		if (pxSceneData == nullptr) return false;
 		Zenith_Entity xBullet = pxSceneData->FindEntityByName("Bullet0");
-		if (xBullet.IsValid() && xBullet.HasComponent<Zenith_ColliderComponent>())
+		Zenith_ColliderComponent* pxBulletCollider = xBullet.IsValid() ? xBullet.TryGetComponent<Zenith_ColliderComponent>() : nullptr;
+		if (pxBulletCollider != nullptr)
 		{
-			Zenith_ColliderComponent& xCollider = xBullet.GetComponent<Zenith_ColliderComponent>();
+			Zenith_ColliderComponent& xCollider = *pxBulletCollider;
 			if (xCollider.HasValidBody())
 			{
 				g_bBulletSeen = true;

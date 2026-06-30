@@ -25,13 +25,12 @@ namespace DP_Items
 
 	Vec3 GetItemWorldPos(Zenith_EntityID xItem)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xItem);
-		if (pxScene == nullptr) return Vec3(0.0f);
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xItem);
 		if (!xEnt.IsValid()) return Vec3(0.0f);
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return Vec3(0.0f);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return Vec3(0.0f);
 		Vec3 xPos;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		pxTransform->GetPosition(xPos);
 		return xPos;
 	}
 
@@ -51,14 +50,10 @@ namespace DP_Items
 			DP_Player::RemoveHeldItem(xVillager);
 			if (xItem.IsValid())
 			{
-				Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xItem);
-				if (pxScene != nullptr)
+				Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xItem);
+				if (xEnt.IsValid())
 				{
-					Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
-					if (xEnt.IsValid())
-					{
-						xEnt.Destroy();
-					}
+					xEnt.Destroy();
 				}
 			}
 		}
@@ -100,9 +95,7 @@ namespace DP_Items
 	{
 		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 			"DP_Items::BeginPostDropCooldownForItem must be called from main thread");
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xItem);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xItem);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xItem);
 		if (!xEnt.IsValid()) return;
 		DPItemBase_Component* pxItem = xEnt.TryGetComponent<DPItemBase_Component>();
 		if (pxItem) pxItem->BeginPostDropCooldown();

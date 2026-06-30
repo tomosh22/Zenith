@@ -121,8 +121,7 @@ void Zenith_Editor::RenderFileMenu()
 			if (!strFilePath.empty())
 			{
 				// Safe to call directly - no render tasks active
-				Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-				Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+				Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
 				if (pxSceneData)
 				{
 					Zenith_EditorSceneAccess::SaveToFile(pxSceneData, strFilePath);

@@ -14,7 +14,7 @@ A physics-based ball rolling game demonstrating Jolt Physics integration and dyn
 | **Game State Machine** | `MarbleGameState` enum | Playing/Paused/Won/Lost states |
 | **Distance-Based Pickups** | Manual distance check | Simple collectible system |
 | **Entity Lifetime** | `Zenith_Scene::Destroy` | Dynamic entity creation/destruction |
-| **Multi-Scene Management** | `Zenith_SceneManager` | `LoadScene(..., SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, `SetActiveScene()`, `UnloadScene()`, `LoadSceneByIndex(..., SCENE_LOAD_SINGLE)`, `SetScenePaused()` |
+| **Multi-Scene Management** | `Zenith_SceneSystem` | `LoadScene(..., SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, `SetActiveScene()`, `UnloadScene()`, `LoadSceneByIndex(..., SCENE_LOAD_SINGLE)`, `SetScenePaused()` |
 | **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
@@ -141,7 +141,7 @@ Demonstrates:
 ## Multi-Scene Architecture
 
 ### Entity Layout
-The engine's persistent scene (`Zenith_SceneManager::GetPersistentScene()`) holds the GameManager entity (Camera + UI + MarbleGame component); there is no explicit `DontDestroyOnLoad()` call. Level scene holds platforms, collectibles, goal, and player ball, created/destroyed on transitions.
+The engine's persistent scene (`Zenith_SceneSystem::GetPersistentScene()`) holds the GameManager entity (Camera + UI + MarbleGame component); there is no explicit `DontDestroyOnLoad()` call. Level scene holds platforms, collectibles, goal, and player ball, created/destroyed on transitions.
 
 ### Game State Machine
 ```

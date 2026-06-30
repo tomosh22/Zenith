@@ -6,6 +6,7 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
+#include "UnitTests/Zenith_TempScene.h"
 #include "Collections/Zenith_HashMap.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Maths/Zenith_Maths.h"
@@ -17,22 +18,22 @@
 
 namespace
 {
+	// Attachment-specific fixture: a Zenith_TempScene (RAII empty scene that
+	// force-unloads on scope exit) plus the two entities these tests need.
 	struct AttachTestScene
 	{
-		Zenith_Scene xScene;
-		Zenith_SceneData* pxData = nullptr;
+		Zenith_TempScene xTemp;
 		Zenith_Entity xSkel;
 		Zenith_Entity xItem;
 
 		explicit AttachTestScene(const char* szName)
+			: xTemp(szName)
+			, xSkel(xTemp.CreateEntity("Skel"))
+			, xItem(xTemp.CreateEntity("Item"))
 		{
-			xScene = g_xEngine.Scenes().LoadScene(szName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-			g_xEngine.Scenes().SetActiveScene(xScene);
-			pxData = g_xEngine.Scenes().GetSceneData(xScene);
-			xSkel = g_xEngine.Scenes().CreateEntity(pxData, "Skel");
-			xItem = g_xEngine.Scenes().CreateEntity(pxData, "Item");
 		}
-		~AttachTestScene() { g_xEngine.Scenes().UnloadSceneForced(xScene); }
+
+		Zenith_SceneData* Data() const { return xTemp.Data(); }
 	};
 }
 

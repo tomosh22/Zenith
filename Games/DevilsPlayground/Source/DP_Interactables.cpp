@@ -21,12 +21,11 @@ namespace
 	// former static TryGetEntityPos helper.
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return false;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 
@@ -62,14 +61,13 @@ namespace
 	// type label is derived from the attached graph asset.
 	const char* LabelForGraphEntity(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return nullptr;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_GraphComponent>()) return nullptr;
-		Zenith_GraphComponent& xGraphs = xEnt.GetComponent<Zenith_GraphComponent>();
-		for (u_int u = 0; u < xGraphs.GetGraphCount(); ++u)
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		if (!xEnt.IsValid()) return nullptr;
+		Zenith_GraphComponent* pxGraphs = xEnt.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraphs == nullptr) return nullptr;
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
 		{
-			const char* szPath = xGraphs.GetGraphAssetPathAt(u);
+			const char* szPath = pxGraphs->GetGraphAssetPathAt(u);
 			if (std::strcmp(szPath, "game:Graphs/DP_Chest.bgraph") == 0)        return "chest";
 			if (std::strcmp(szPath, "game:Graphs/DP_Pentagram.bgraph") == 0)    return "pentagram";
 			if (std::strcmp(szPath, "game:Graphs/DP_NoiseMachine.bgraph") == 0) return "noise machine";

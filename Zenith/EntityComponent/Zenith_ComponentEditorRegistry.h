@@ -125,9 +125,9 @@ public:
 		// Only renders if entity has this component type
 		xEntry.m_pfnRenderPropertiesPanel = +[](Zenith_Entity& xEntity) -> void
 		{
-			if (xEntity.HasComponent<T>())
+			if (T* pxComponent = xEntity.TryGetComponent<T>())
 			{
-				xEntity.GetComponent<T>().RenderPropertiesPanel();
+				pxComponent->RenderPropertiesPanel();
 			}
 		};
 		

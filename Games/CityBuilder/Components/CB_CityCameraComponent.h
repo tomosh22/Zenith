@@ -157,9 +157,9 @@ public:
 		}
 
 		// ---- Drive the camera component ----
-		if (m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		if (Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>())
 		{
-			Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xCam = *pxCam;
 			Zenith_Maths::Vector3 xPos;
 			double fYaw = 0.0;
 			double fPitch = 0.0;

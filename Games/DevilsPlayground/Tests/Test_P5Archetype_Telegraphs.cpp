@@ -53,11 +53,10 @@ static bool IsAuraEmitting(DP_Particles::Kind eKind)
 {
 	const Zenith_EntityID xId = DP_Particles::GetEmitterEntityForTest(eKind);
 	if (!xId.IsValid()) return false;
-	Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-	if (pxScene == nullptr) return false;
-	Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-	if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_ParticleEmitterComponent>()) return false;
-	return xEnt.GetComponent<Zenith_ParticleEmitterComponent>().IsEmitting();
+	Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+	Zenith_ParticleEmitterComponent* pxEmitter = xEnt.TryGetComponent<Zenith_ParticleEmitterComponent>();
+	if (pxEmitter == nullptr) return false;
+	return pxEmitter->IsEmitting();
 }
 
 static void Setup_P5ArchetypeTelegraphs()

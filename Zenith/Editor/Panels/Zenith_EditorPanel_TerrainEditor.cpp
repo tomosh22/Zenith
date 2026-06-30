@@ -37,12 +37,11 @@ namespace
 		{
 			return nullptr;
 		}
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uEntity);
-		if (pxSceneData == nullptr)
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(uEntity);
+		if (!xEntity.IsValid())
 		{
 			return nullptr;
 		}
-		Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 		return xEntity.TryGetComponent<Zenith_TerrainComponent>();
 	}
 

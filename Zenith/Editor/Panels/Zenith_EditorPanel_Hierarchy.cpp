@@ -46,22 +46,12 @@ bool IsAncestorOf(Zenith_EntityID uCandidateAncestor, Zenith_EntityID uTarget)
 		return false;
 	}
 
-	Zenith_EntityID uCheckID = uTarget;
-	while (uCheckID.IsValid())
-	{
-		Zenith_SceneData* pxCheckData = g_xEngine.Scenes().GetSceneDataForEntity(uCheckID);
-		if (!pxCheckData || !pxCheckData->EntityExists(uCheckID))
-		{
-			break;
-		}
-		Zenith_EntityID uParentID = pxCheckData->GetEntity(uCheckID).GetParentEntityID();
-		if (uParentID == uCandidateAncestor)
-		{
-			return true;
-		}
-		uCheckID = uParentID;
-	}
-	return false;
+	// Resolve the target to its live handle (correct across additive scenes +
+	// DontDestroyOnLoad) and ask the slot-backed hierarchy directly, rather than
+	// re-walking the parent chain by hand. IsDescendantOf starts from the target's
+	// PARENT, so self is excluded -- matching the candidate == target guard above.
+	Zenith_Entity xTarget = g_xEngine.Scenes().ResolveEntity(uTarget);
+	return xTarget.IsValid() && xTarget.IsDescendantOf(uCandidateAncestor);
 }
 
 //-----------------------------------------------------------------------------

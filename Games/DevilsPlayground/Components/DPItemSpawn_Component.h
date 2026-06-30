@@ -53,9 +53,9 @@ public:
 	Zenith_Maths::Vector3 GetSpawnWorldPos() const
 	{
 		Zenith_Maths::Vector3 xPos(0.0f);
-		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 		{
-			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+			pxTransform->GetPosition(xPos);
 		}
 		return xPos;
 	}

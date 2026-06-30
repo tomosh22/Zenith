@@ -532,33 +532,25 @@ namespace DP_Particles
 			if (iKind < 0 || iKind >= kNumKinds) return;
 			Zenith_EntityID xEmitterId = g_axEmitterEntities[iKind];
 			if (!xEmitterId.IsValid()) return;
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xEmitterId);
-			if (pxScene == nullptr) return;
-			Zenith_Entity xEnt = pxScene->TryGetEntity(xEmitterId);
-			if (!xEnt.IsValid()) return;
-			if (!xEnt.HasComponent<Zenith_ParticleEmitterComponent>()) return;
-			Zenith_ParticleEmitterComponent& xEmitter =
-				xEnt.GetComponent<Zenith_ParticleEmitterComponent>();
+			Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xEmitterId);
+			Zenith_ParticleEmitterComponent* pxEmitter = xEnt.TryGetComponent<Zenith_ParticleEmitterComponent>();
+			if (pxEmitter == nullptr) return;
+			Zenith_ParticleEmitterComponent& xEmitter = *pxEmitter;
 			const bool bWantEmit = bShow && xVillager.IsValid();
 			if (!bWantEmit)
 			{
 				xEmitter.SetEmitting(false);
 				return;
 			}
-			Zenith_SceneData* pxVilScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-			if (pxVilScene == nullptr)
-			{
-				xEmitter.SetEmitting(false);
-				return;
-			}
-			Zenith_Entity xVilEnt = pxVilScene->TryGetEntity(xVillager);
-			if (!xVilEnt.IsValid() || !xVilEnt.HasComponent<Zenith_TransformComponent>())
+			Zenith_Entity xVilEnt = g_xEngine.Scenes().ResolveEntity(xVillager);
+			Zenith_TransformComponent* pxVilTransform = xVilEnt.TryGetComponent<Zenith_TransformComponent>();
+			if (pxVilTransform == nullptr)
 			{
 				xEmitter.SetEmitting(false);
 				return;
 			}
 			Zenith_Maths::Vector3 xPos;
-			xVilEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+			pxVilTransform->GetPosition(xPos);
 			xPos.y += kKindHeightOffset[iKind];
 			xEmitter.SetEmitPosition(xPos);
 			xEmitter.SetEmitting(true);
@@ -685,14 +677,11 @@ namespace DP_Particles
 		// but the lookup is scene-agnostic via GetSceneDataForEntity.
 		Zenith_EntityID xId = g_axEmitterEntities[iKind];
 		if (!xId.IsValid()) return;
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxSceneData == nullptr) return;
-		Zenith_Entity xEnt = pxSceneData->TryGetEntity(xId);
-		if (!xEnt.IsValid()) return;
-		if (!xEnt.HasComponent<Zenith_ParticleEmitterComponent>()) return;
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		Zenith_ParticleEmitterComponent* pxEmitter = xEnt.TryGetComponent<Zenith_ParticleEmitterComponent>();
+		if (pxEmitter == nullptr) return;
 
-		Zenith_ParticleEmitterComponent& xEmitter =
-			xEnt.GetComponent<Zenith_ParticleEmitterComponent>();
+		Zenith_ParticleEmitterComponent& xEmitter = *pxEmitter;
 
 		Zenith_Maths::Vector3 xEmitPos = xWorldPos;
 		xEmitPos.y += kKindHeightOffset[iKind];
@@ -705,13 +694,11 @@ namespace DP_Particles
 	void BurstAtEntity(Kind eKind, Zenith_EntityID xEntity)
 	{
 		if (!xEntity.IsValid()) return;
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(xEntity);
-		if (pxSceneData == nullptr) return;
-		Zenith_Entity xEnt = pxSceneData->TryGetEntity(xEntity);
-		if (!xEnt.IsValid()) return;
-		if (!xEnt.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xEntity);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
 		Zenith_Maths::Vector3 xPos;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		pxTransform->GetPosition(xPos);
 		Burst(eKind, xPos);
 	}
 

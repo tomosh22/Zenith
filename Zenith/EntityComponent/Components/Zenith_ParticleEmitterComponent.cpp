@@ -253,10 +253,10 @@ Zenith_Maths::Vector3 Zenith_ParticleEmitterComponent::GetEmitPosition() const
 	}
 
 	// Use transform component position
-	if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+	if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 	{
 		Zenith_Maths::Vector3 xPos;
-		m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		pxTransform->GetPosition(xPos);
 		return xPos;
 	}
 
@@ -437,30 +437,24 @@ void Zenith_ParticleEmitterComponent::RenderPropertiesPanel()
 // ---------------------------------------------------------------------------
 static void Zenith_GatherParticleEmittersImpl(float fDt, Zenith_Vector<Zenith_ParticleEmitterRenderData>& xOut)
 {
-	for (uint32_t uSceneSlot = 0; uSceneSlot < g_xEngine.Scenes().GetSceneSlotCount(); ++uSceneSlot)
+	g_xEngine.Scenes().QueryAllScenes<Zenith_ParticleEmitterComponent>()
+		.ForEach([&xOut, fDt](Zenith_EntityID, Zenith_ParticleEmitterComponent& xEmitter)
 	{
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataAtSlot(uSceneSlot);
-		if (!pxSceneData || !pxSceneData->IsLoaded()) continue;
+		// Update ALL emitters (handles spawning for both CPU and GPU).
+		xEmitter.Update(fDt);
 
-		pxSceneData->Query<Zenith_ParticleEmitterComponent>()
-			.ForEach([&xOut, fDt](Zenith_EntityID, Zenith_ParticleEmitterComponent& xEmitter)
-		{
-			// Update ALL emitters (handles spawning for both CPU and GPU).
-			xEmitter.Update(fDt);
+		// Only CPU emitters contribute instance data here.
+		if (xEmitter.UsesGPUCompute()) return;
 
-			// Only CPU emitters contribute instance data here.
-			if (xEmitter.UsesGPUCompute()) return;
+		Zenith_ParticleEmitterRenderData xData;
+		xData.m_pxParticles = xEmitter.GetParticles().GetDataPointer();
+		xData.m_uAliveCount = xEmitter.GetAliveCount();
 
-			Zenith_ParticleEmitterRenderData xData;
-			xData.m_pxParticles = xEmitter.GetParticles().GetDataPointer();
-			xData.m_uAliveCount = xEmitter.GetAliveCount();
+		Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetConfig();
+		xData.m_bAdditive = (pxConfig != nullptr && pxConfig->m_bAdditiveBlending);
 
-			Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetConfig();
-			xData.m_bAdditive = (pxConfig != nullptr && pxConfig->m_bAdditiveBlending);
-
-			xOut.PushBack(xData);
-		});
-	}
+		xOut.PushBack(xData);
+	});
 }
 
 Zenith_ParticleGatherFn g_pfnZenithParticleGather = &Zenith_GatherParticleEmittersImpl;

@@ -86,9 +86,9 @@ public:
 		// open. Mark the collider as nav-mesh-excluded so the generator emits
 		// walkable polygons through the doorway; SyncNavMeshBlock then toggles
 		// those polygons' BLOCKED flag at runtime based on open/closed state.
-		if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		if (Zenith_ColliderComponent* pxCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>())
 		{
-			m_xParentEntity.GetComponent<Zenith_ColliderComponent>().SetIncludeInNavMesh(false);
+			pxCollider->SetIncludeInNavMesh(false);
 		}
 	}
 
@@ -102,10 +102,9 @@ public:
 		// Cache the original materials BEFORE the first tint so RefreshLockTint
 		// can re-tint to a different colour on unlock without building a chain
 		// of variants.
-		if (m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+		if (Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>())
 		{
-			Flux_ModelInstance* pxInstance =
-				m_xParentEntity.GetComponent<Zenith_ModelComponent>().GetModelInstance();
+			Flux_ModelInstance* pxInstance = pxModel->GetModelInstance();
 			if (pxInstance != nullptr)
 			{
 				const uint32_t uMats = pxInstance->GetNumMaterials();
@@ -119,10 +118,10 @@ public:
 
 		// Capture the door's CLOSED yaw from its current transform rotation so
 		// the open-rotation interpolation starts from the procgen-set angle.
-		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 		{
 			Zenith_Maths::Quat xQuat;
-			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetRotation(xQuat);
+			pxTransform->GetRotation(xQuat);
 			const float fSiny_cosp = 2.0f * (xQuat.w * xQuat.y + xQuat.x * xQuat.z);
 			const float fCosy_cosp = 1.0f - 2.0f * (xQuat.y * xQuat.y + xQuat.x * xQuat.x);
 			m_fClosedYaw = glm::degrees(std::atan2(fSiny_cosp, fCosy_cosp));
@@ -193,9 +192,9 @@ public:
 	{
 		if (m_bHasLogicalCentre) return m_xLogicalCentre;
 		Zenith_Maths::Vector3 xPos(0.0f);
-		if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
 		{
-			m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+			pxTransform->GetPosition(xPos);
 		}
 		return xPos;
 	}
@@ -233,19 +232,19 @@ public:
 	// captured closed yaw (procgen doors have non-zero closed yaw).
 	void ApplyRotationFromT(float fOpenT)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>()) return;
-		Zenith_TransformComponent& xT = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
 		const float fOpenYaw = DP_Tuning::Get<float>("interactables.door_open_yaw_deg");
 		const float fAngle = glm::radians(m_fClosedYaw + fOpenYaw * fOpenT);
-		xT.SetRotation(glm::angleAxis(fAngle, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+		pxTransform->SetRotation(glm::angleAxis(fAngle, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
 	}
 
 	// Re-tint from the cached ORIGINAL materials (red locked / green unlocked).
 	void RefreshLockTint()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_ModelComponent>()) return;
-		Flux_ModelInstance* pxInstance =
-			m_xParentEntity.GetComponent<Zenith_ModelComponent>().GetModelInstance();
+		Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr) return;
+		Flux_ModelInstance* pxInstance = pxModel->GetModelInstance();
 		if (pxInstance == nullptr) return;
 		const Zenith_Maths::Vector3 xLocked  (0.9f, 0.2f, 0.2f);   // red
 		const Zenith_Maths::Vector3 xUnlocked(0.2f, 0.9f, 0.2f);   // green
@@ -268,14 +267,13 @@ protected:
 	bool IsVillagerInRange(Zenith_EntityID xVillager) const override
 	{
 		if (!xVillager.IsValid()) return false;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xVillager);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xV = pxScene->TryGetEntity(xVillager);
+		Zenith_Entity xV = g_xEngine.Scenes().ResolveEntity(xVillager);
 		if (!xV.IsValid()) return false;
-		if (!xV.HasComponent<Zenith_TransformComponent>()) return false;
+		Zenith_TransformComponent* pxTransform = xV.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
 
 		Zenith_Maths::Vector3 xVPos;
-		xV.GetComponent<Zenith_TransformComponent>().GetPosition(xVPos);
+		pxTransform->GetPosition(xVPos);
 		const Zenith_Maths::Vector3 xMyPos = GetInteractionCentre();
 
 		const float fDx = xVPos.x - xMyPos.x;
@@ -295,13 +293,18 @@ protected:
 private:
 	void FireInteractEvent(Zenith_EntityID xActor)
 	{
-		if (!m_xParentEntity.IsValid() || !m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+		if (!m_xParentEntity.IsValid())
+		{
+			return;
+		}
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
 		{
 			return;
 		}
 		Zenith_PropertyValue xPayload;
 		xPayload.SetPackedEntityID(xActor.GetPacked());
-		m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("Interact", &xPayload);
+		pxGraph->FireCustomEvent("Interact", &xPayload);
 	}
 
 	//--------------------------------------------------------------------------
@@ -310,16 +313,20 @@ private:
 
 	Zenith_BehaviourGraph* FindDoorGraph() const
 	{
-		if (!m_xParentEntity.IsValid() || !m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+		if (!m_xParentEntity.IsValid())
 		{
 			return nullptr;
 		}
-		Zenith_GraphComponent& xGraphs = m_xParentEntity.GetComponent<Zenith_GraphComponent>();
-		for (u_int u = 0; u < xGraphs.GetGraphCount(); ++u)
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraphs == nullptr)
 		{
-			if (std::strcmp(xGraphs.GetGraphAssetPathAt(u), kszGraphAsset) == 0)
+			return nullptr;
+		}
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+		{
+			if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) == 0)
 			{
-				return xGraphs.GetGraphAt(u);
+				return pxGraphs->GetGraphAt(u);
 			}
 		}
 		return nullptr;
@@ -349,9 +356,10 @@ private:
 	// toggle the player capsule gets shoved and wedges in the corridor).
 	void ApplyColliderSolidity()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_ColliderComponent>()) return;
+		Zenith_ColliderComponent* pxCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr) return;
 		const bool bSolid = (GetAnim() == DoorAnim::Closed);
-		m_xParentEntity.GetComponent<Zenith_ColliderComponent>().SetIsSensor(!bSolid);
+		pxCollider->SetIsSensor(!bSolid);
 	}
 
 	void StitchNavMeshPortal()
@@ -359,7 +367,8 @@ private:
 		// Bridge the two rooms separated by this door at the navmesh level
 		// (graph-only neighbour link between the nearest walkable polygons on
 		// each side of the door's facing direction).
-		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>()) return;
+		Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
 		const Zenith_NavMesh* pxNavMesh = DP_AI::GetOrBuildLevelNavMesh();
 		if (pxNavMesh == nullptr) return;
 
@@ -371,7 +380,7 @@ private:
 		// land inside a wall).
 		const Zenith_Maths::Vector3 xPos = GetInteractionCentre();
 		Zenith_Maths::Quat xRot;
-		m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetRotation(xRot);
+		pxTransform->GetRotation(xRot);
 
 		const float fYaw = std::atan2(2.0f * (xRot.w * xRot.y + xRot.x * xRot.z),
 			1.0f - 2.0f * (xRot.y * xRot.y + xRot.z * xRot.z));

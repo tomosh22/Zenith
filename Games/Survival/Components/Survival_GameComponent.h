@@ -221,9 +221,9 @@ public:
 
 		// Wire menu button callback
 		bool bHasMenu = false;
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 			Zenith_UI::Zenith_UIButton* pxPlay = static_cast<Zenith_UI::Zenith_UIButton*>(xUI.FindElement("MenuPlay"));
 			if (pxPlay)
 			{
@@ -539,9 +539,9 @@ private:
 			m_xCrafting.CollectCraftedItem(m_xInventory);
 
 			// Show message
-			if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 			{
-				Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+				Zenith_UIComponent& xUI = *pxUI;
 				Survival_UIManager::ShowCraftingComplete(xUI, xEvent.m_eItemType);
 				m_fStatusMessageTimer = s_fStatusMessageDuration;
 			}
@@ -661,10 +661,11 @@ private:
 
 	void UpdateUI()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		// Find nearest resource for interaction prompt
 		Zenith_Maths::Vector3 xPlayerPos = Survival_PlayerController::GetPlayerPosition(m_uPlayerEntityID);
@@ -684,30 +685,33 @@ private:
 
 	void ShowStatusMessage(SurvivalItemType eItemType, uint32_t uAmount)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 		Survival_UIManager::ShowHarvestFeedback(xUI, eItemType, uAmount);
 		m_fStatusMessageTimer = s_fStatusMessageDuration;
 	}
 
 	void ShowNotEnoughMaterials()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 		Survival_UIManager::ShowNotEnoughMaterials(xUI);
 		m_fStatusMessageTimer = s_fStatusMessageDuration;
 	}
 
 	void ClearStatusMessage()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 		Survival_UIManager::ClearStatusMessage(xUI);
 	}
 
@@ -881,10 +885,11 @@ private:
 
 	void SetMenuVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		Zenith_UI::Zenith_UIElement* pxMenuTitle = xUI.FindElement("MenuTitle");
 		Zenith_UI::Zenith_UIElement* pxMenuPlay = xUI.FindElement("MenuPlay");
@@ -895,10 +900,11 @@ private:
 
 	void SetHUDVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		const char* aszHUDElements[] = {
 			"Title", "ControlsHeader", "MoveInstr", "CraftInstr",
@@ -918,9 +924,9 @@ private:
 	void UpdateMenuInput()
 	{
 		// Single button - keep it focused
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 			Zenith_UI::Zenith_UIButton* pxPlay = static_cast<Zenith_UI::Zenith_UIButton*>(xUI.FindElement("MenuPlay"));
 			if (pxPlay)
 				pxPlay->SetFocused(true);
@@ -934,10 +940,9 @@ private:
 
 		// Reset player position
 		// C1: resolve owning scene from the player's entity id.
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_uPlayerEntityID);
-		if (pxSceneData)
+		Zenith_Entity xPlayer = g_xEngine.Scenes().ResolveEntity(m_uPlayerEntityID);
+		if (xPlayer.IsValid())
 		{
-			Zenith_Entity xPlayer = pxSceneData->GetEntity(m_uPlayerEntityID);
 			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition(
 				Zenith_Maths::Vector3(0.f, s_fPlayerHeight * 0.5f, 0.f));
 		}

@@ -462,10 +462,11 @@ private:
 
 	void SetMenuVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
 		if (pxTitle) pxTitle->SetVisible(bVisible);
@@ -480,10 +481,11 @@ private:
 
 	void SetHUDVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		const char* aszNames[] = {
 			"PlayerHealth", "PlayerHealthBar", "EnemyCount",
@@ -779,9 +781,9 @@ private:
 		if (glm::length(xHitPos) < 0.001f && pxSceneData->EntityExists(xEvent.m_uTargetEntityID))
 		{
 			Zenith_Entity xTarget = pxSceneData->GetEntity(xEvent.m_uTargetEntityID);
-			if (xTarget.HasComponent<Zenith_TransformComponent>())
+			if (Zenith_TransformComponent* pxTransform = xTarget.TryGetComponent<Zenith_TransformComponent>())
 			{
-				xTarget.GetComponent<Zenith_TransformComponent>().GetPosition(xHitPos);
+				pxTransform->GetPosition(xHitPos);
 				xHitPos.y += 1.0f;
 			}
 		}
@@ -796,9 +798,9 @@ private:
 			pxSceneData->EntityExists(Combat::Resources().m_uHitSparkEmitterID))
 		{
 			Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Combat::Resources().m_uHitSparkEmitterID);
-			if (xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
+			if (Zenith_ParticleEmitterComponent* pxEmitter = xEmitterEntity.TryGetComponent<Zenith_ParticleEmitterComponent>())
 			{
-				Zenith_ParticleEmitterComponent& xEmitter = xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>();
+				Zenith_ParticleEmitterComponent& xEmitter = *pxEmitter;
 				xEmitter.SetEmitPosition(xHitPos);
 				xEmitter.SetEmitDirection(xHitDir);
 
@@ -871,13 +873,14 @@ private:
 
 	void FireRoundTick(float fDt)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
 		{
 			return;
 		}
 		Zenith_PropertyValue xDt;
 		xDt.SetFloat(fDt);
-		m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("RoundTick", &xDt);
+		pxGraph->FireCustomEvent("RoundTick", &xDt);
 	}
 
 	uint32_t CountAliveEnemies() const
@@ -903,10 +906,11 @@ private:
 
 	void UpdateUI()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		float fPlayerHealth = Combat_DamageSystem::GetHealth(s_uPlayerEntityID);
 		float fPlayerMaxHealth = Combat_DamageSystem::GetMaxHealth(s_uPlayerEntityID);
@@ -1012,10 +1016,10 @@ private:
 		if (s_uPlayerEntityID != INVALID_ENTITY_ID && pxSceneData->EntityExists(s_uPlayerEntityID))
 		{
 			Zenith_Entity xPlayer = pxSceneData->GetEntity(s_uPlayerEntityID);
-			if (xPlayer.HasComponent<Zenith_TransformComponent>())
+			if (Zenith_TransformComponent* pxTransform = xPlayer.TryGetComponent<Zenith_TransformComponent>())
 			{
 				Zenith_Maths::Vector3 xWorldPos;
-				xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xWorldPos);
+				pxTransform->GetPosition(xWorldPos);
 				xWorldPos.y += fBarHeightOffset;
 
 				Zenith_Maths::Vector2 xScreenPos;
@@ -1036,11 +1040,12 @@ private:
 				continue;
 
 			Zenith_Entity xEnemyEntity = pxSceneData->GetEntity(uEnemyID);
-			if (!xEnemyEntity.HasComponent<Zenith_TransformComponent>())
+			Zenith_TransformComponent* pxTransform = xEnemyEntity.TryGetComponent<Zenith_TransformComponent>();
+			if (pxTransform == nullptr)
 				continue;
 
 			Zenith_Maths::Vector3 xWorldPos;
-			xEnemyEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xWorldPos);
+			pxTransform->GetPosition(xWorldPos);
 			xWorldPos.y += fBarHeightOffset;
 
 			Zenith_Maths::Vector2 xScreenPos;
@@ -1086,12 +1091,13 @@ private:
 				continue;
 
 			Zenith_Entity xWall = pxSceneData->GetEntity(uWallID);
-			if (!xWall.HasComponent<Zenith_LightComponent>() ||
-				!xWall.HasComponent<Zenith_TransformComponent>())
+			Zenith_LightComponent* pxLight = xWall.TryGetComponent<Zenith_LightComponent>();
+			Zenith_TransformComponent* pxTransform = xWall.TryGetComponent<Zenith_TransformComponent>();
+			if (pxLight == nullptr || pxTransform == nullptr)
 				continue;
 
-			Zenith_LightComponent& xLight = xWall.GetComponent<Zenith_LightComponent>();
-			Zenith_TransformComponent& xTransform = xWall.GetComponent<Zenith_TransformComponent>();
+			Zenith_LightComponent& xLight = *pxLight;
+			Zenith_TransformComponent& xTransform = *pxTransform;
 
 			Zenith_Maths::Vector3 xWallPos;
 			xTransform.GetPosition(xWallPos);

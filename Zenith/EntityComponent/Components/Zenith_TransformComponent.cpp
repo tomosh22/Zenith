@@ -105,16 +105,16 @@ Zenith_TransformComponent::~Zenith_TransformComponent()
 // getters/setters share. Names no Jolt type — the body is a Zenith_PhysicsBodyID.
 bool Zenith_TransformComponent::TryGetColliderBody(Zenith_PhysicsBodyID& xOutBodyID)
 {
-	if (!m_xOwningEntity.HasComponent<Zenith_ColliderComponent>())
+	Zenith_ColliderComponent* pxCollider = m_xOwningEntity.TryGetComponent<Zenith_ColliderComponent>();
+	if (pxCollider == nullptr)
 	{
 		return false;
 	}
-	Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
-	if (!xCollider.HasValidBody())
+	if (!pxCollider->HasValidBody())
 	{
 		return false;
 	}
-	xOutBodyID = xCollider.GetBodyID();
+	xOutBodyID = pxCollider->GetBodyID();
 	return true;
 }
 
@@ -163,20 +163,18 @@ void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3& xScale)
 	m_xScale = xScale;
 
 	// If entity has a model component, regenerate physics mesh with new baked scale
-	if (m_xOwningEntity.HasComponent<Zenith_ModelComponent>())
+	if (Zenith_ModelComponent* pxModel = m_xOwningEntity.TryGetComponent<Zenith_ModelComponent>())
 	{
-		Zenith_ModelComponent& xModel = m_xOwningEntity.GetComponent<Zenith_ModelComponent>();
-		if (xModel.HasPhysicsMesh())
+		if (pxModel->HasPhysicsMesh())
 		{
-			xModel.GeneratePhysicsMesh();
+			pxModel->GeneratePhysicsMesh();
 		}
 	}
 
 	// If entity has a collider component, rebuild it to reflect new scale
-	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>())
+	if (Zenith_ColliderComponent* pxCollider = m_xOwningEntity.TryGetComponent<Zenith_ColliderComponent>())
 	{
-		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
-		xCollider.RebuildCollider();
+		pxCollider->RebuildCollider();
 	}
 
 	// Scale changed (we early-returned above if it didn't) — invalidate this entity's

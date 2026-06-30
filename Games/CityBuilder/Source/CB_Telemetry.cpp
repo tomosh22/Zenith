@@ -156,7 +156,7 @@ namespace CB_Telemetry
 	{
 		auto& xDisp = Zenith_EventDispatcher::Get();
 
-		m_xToolSelected = xDisp.Subscribe<CB_OnToolSelected>(
+		m_xToolSelected = xDisp.SubscribeScoped<CB_OnToolSelected>(
 			[](const CB_OnToolSelected& xEvt)
 			{
 				EmitEvent(CB_EventType::ToolSelected, static_cast<int32_t>(xEvt.m_uTool),
@@ -164,27 +164,27 @@ namespace CB_Telemetry
 					CB_ToolSystem::ToolName(static_cast<CB_ETool>(xEvt.m_uTool)));
 			});
 
-		m_xRoadPlaced = xDisp.Subscribe<CB_OnRoadPlaced>(
+		m_xRoadPlaced = xDisp.SubscribeScoped<CB_OnRoadPlaced>(
 			[](const CB_OnRoadPlaced& xEvt)
 			{
 				EmitEvent(CB_EventType::RoadPlaced, static_cast<int32_t>(xEvt.m_uX), static_cast<int32_t>(xEvt.m_uZ));
 			});
 
-		m_xZonePainted = xDisp.Subscribe<CB_OnZonePainted>(
+		m_xZonePainted = xDisp.SubscribeScoped<CB_OnZonePainted>(
 			[](const CB_OnZonePainted& xEvt)
 			{
 				EmitEvent(CB_EventType::ZonePainted, static_cast<int32_t>(xEvt.m_uX),
 					static_cast<int32_t>(xEvt.m_uZ), static_cast<int32_t>(xEvt.m_uZone));
 			});
 
-		m_xServicePlaced = xDisp.Subscribe<CB_OnServicePlaced>(
+		m_xServicePlaced = xDisp.SubscribeScoped<CB_OnServicePlaced>(
 			[](const CB_OnServicePlaced& xEvt)
 			{
 				EmitEvent(CB_EventType::ServicePlaced, static_cast<int32_t>(xEvt.m_uX),
 					static_cast<int32_t>(xEvt.m_uZ), static_cast<int32_t>(xEvt.m_uBuildingType));
 			});
 
-		m_xBuildingGrew = xDisp.Subscribe<CB_OnBuildingGrew>(
+		m_xBuildingGrew = xDisp.SubscribeScoped<CB_OnBuildingGrew>(
 			[](const CB_OnBuildingGrew& xEvt)
 			{
 				EmitEvent(CB_EventType::BuildingGrew, static_cast<int32_t>(xEvt.m_uX),
@@ -192,52 +192,37 @@ namespace CB_Telemetry
 					static_cast<int32_t>(xEvt.m_uOccupants));
 			});
 
-		m_xBulldozed = xDisp.Subscribe<CB_OnBulldozed>(
+		m_xBulldozed = xDisp.SubscribeScoped<CB_OnBulldozed>(
 			[](const CB_OnBulldozed& xEvt)
 			{
 				EmitEvent(CB_EventType::Bulldozed, static_cast<int32_t>(xEvt.m_uX), static_cast<int32_t>(xEvt.m_uZ));
 			});
 
-		m_xPauseToggled = xDisp.Subscribe<CB_OnPauseToggled>(
+		m_xPauseToggled = xDisp.SubscribeScoped<CB_OnPauseToggled>(
 			[](const CB_OnPauseToggled& xEvt)
 			{
 				EmitEvent(CB_EventType::PauseToggled, xEvt.m_bPaused ? 1 : 0);
 			});
 
-		m_xMilestone = xDisp.Subscribe<CB_OnMilestone>(
+		m_xMilestone = xDisp.SubscribeScoped<CB_OnMilestone>(
 			[](const CB_OnMilestone& xEvt)
 			{
 				EmitEvent(CB_EventType::Milestone, static_cast<int32_t>(xEvt.m_uPopulation), xEvt.m_iThreshold);
 			});
 
-		m_xSaved = xDisp.Subscribe<CB_OnSaved>(
+		m_xSaved = xDisp.SubscribeScoped<CB_OnSaved>(
 			[](const CB_OnSaved& xEvt)
 			{
 				EmitEvent(CB_EventType::Saved, static_cast<int32_t>(xEvt.m_uRoads),
 					static_cast<int32_t>(xEvt.m_uBuildings), 0, 0, xEvt.m_fTreasury);
 			});
 
-		m_xLoaded = xDisp.Subscribe<CB_OnLoaded>(
+		m_xLoaded = xDisp.SubscribeScoped<CB_OnLoaded>(
 			[](const CB_OnLoaded& xEvt)
 			{
 				EmitEvent(CB_EventType::Loaded, static_cast<int32_t>(xEvt.m_uRoads),
 					static_cast<int32_t>(xEvt.m_uBuildings), 0, 0, xEvt.m_fTreasury);
 			});
-	}
-
-	Hooks::~Hooks()
-	{
-		auto& xDisp = Zenith_EventDispatcher::Get();
-		if (m_xToolSelected  != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xToolSelected);
-		if (m_xRoadPlaced    != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xRoadPlaced);
-		if (m_xZonePainted   != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xZonePainted);
-		if (m_xServicePlaced != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xServicePlaced);
-		if (m_xBuildingGrew  != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xBuildingGrew);
-		if (m_xBulldozed     != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xBulldozed);
-		if (m_xPauseToggled  != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xPauseToggled);
-		if (m_xMilestone     != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xMilestone);
-		if (m_xSaved         != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xSaved);
-		if (m_xLoaded        != INVALID_EVENT_HANDLE) xDisp.Unsubscribe(m_xLoaded);
 	}
 
 	// ====================== Evaluation ======================

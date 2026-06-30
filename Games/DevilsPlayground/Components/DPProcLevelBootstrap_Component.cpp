@@ -131,8 +131,10 @@ void DPProcLevelBootstrap_Component::OnDestroy()
 // (Same per-slot loop the priest tint already used inline.)
 static void DP_ApplyEntityMaterial(Zenith_Entity& xEntity, Zenith_MaterialAsset* pxMat)
 {
-	if (pxMat == nullptr || !xEntity.HasComponent<Zenith_ModelComponent>()) return;
-	Flux_ModelInstance* pxInst = xEntity.GetComponent<Zenith_ModelComponent>().GetModelInstance();
+	if (pxMat == nullptr) return;
+	Zenith_ModelComponent* pxModel = xEntity.TryGetComponent<Zenith_ModelComponent>();
+	if (pxModel == nullptr) return;
+	Flux_ModelInstance* pxInst = pxModel->GetModelInstance();
 	if (pxInst == nullptr) return;
 	const uint32_t uMatCount = pxInst->GetNumMaterials();
 	for (uint32_t u = 0; u < uMatCount; ++u)
@@ -318,8 +320,8 @@ void DPProcLevelBootstrap_Component::SpawnGameElements()
 		switch (xElem.eType)
 		{
 		case DPProcLevel::GameElementType::Pentagram:
-			if (xEntity.HasComponent<Zenith_ColliderComponent>())
-				xEntity.GetComponent<Zenith_ColliderComponent>().SetIncludeInNavMesh(false);
+			if (Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>())
+				pxCollider->SetIncludeInNavMesh(false);
 			// Graph-driven interactable: the shim owns proximity + F-press; the
 			// boot-authored DP_Pentagram graph owns the deposit/victory logic.
 			// (DP_Win::Reset rides the graph's OnStart.)
@@ -343,8 +345,8 @@ void DPProcLevelBootstrap_Component::SpawnGameElements()
 			break;
 		}
 		case DPProcLevel::GameElementType::Chest:
-			if (xEntity.HasComponent<Zenith_ColliderComponent>())
-				xEntity.GetComponent<Zenith_ColliderComponent>().SetIncludeInNavMesh(false);
+			if (Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>())
+				pxCollider->SetIncludeInNavMesh(false);
 			// Graph-driven: open guard + DP_OnChestOpened + lid progress live in
 			// the boot-authored DP_Chest graph.
 			xEntity.AddComponent<DPGraphInteractable_Component>().OnAwake();
@@ -363,8 +365,8 @@ void DPProcLevelBootstrap_Component::SpawnGameElements()
 		case DPProcLevel::GameElementType::Objective4:
 		case DPProcLevel::GameElementType::Objective5:
 		{
-			if (xEntity.HasComponent<Zenith_ColliderComponent>())
-				xEntity.GetComponent<Zenith_ColliderComponent>().SetIncludeInNavMesh(false);
+			if (Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>())
+				pxCollider->SetIncludeInNavMesh(false);
 			DPItemBase_Component& xItem = xEntity.AddComponent<DPItemBase_Component>();
 			xItem.OnAwake();
 			xItem.SetTag(GameElementToItemTag(xElem.eType));
@@ -606,12 +608,11 @@ bool DPProcLevelBootstrap_Component::SpawnCharacterEntity(
 	}
 
 	// Disable gravity + lock rotation on the (already-final) capsule body.
-	if (xEntity.HasComponent<Zenith_ColliderComponent>())
+	if (Zenith_ColliderComponent* pxCol = xEntity.TryGetComponent<Zenith_ColliderComponent>())
 	{
-		Zenith_ColliderComponent& xCol = xEntity.GetComponent<Zenith_ColliderComponent>();
-		if (xCol.HasValidBody())
+		if (pxCol->HasValidBody())
 		{
-			const Zenith_PhysicsBodyID xBodyID = xCol.GetBodyID();
+			const Zenith_PhysicsBodyID xBodyID = pxCol->GetBodyID();
 			g_xEngine.Physics().SetGravityEnabled(xBodyID, false);
 			g_xEngine.Physics().LockRotation(xBodyID, /*X=*/true, /*Y=*/true, /*Z=*/true);
 		}

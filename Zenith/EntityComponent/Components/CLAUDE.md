@@ -127,23 +127,55 @@ auto& component = entity.GetComponent<Zenith_MyComponent>();
 entity.RemoveComponent<Zenith_MyComponent>();
 ```
 
-## Querying Multiple Components
+### Guarded reads: prefer `TryGetComponent<T>()`
 
-Use the Query system to iterate entities with specific component combinations:
-
-`Query` lives on `Zenith_SceneData`, not on the opaque `Zenith_Scene` handle. Get the per-scene data via `g_xEngine.Scenes().GetSceneDataAtSlot(uSlot)`, or query every loaded scene at once with `Zenith_SceneSystem::QueryAllScenes`:
+For the common "use it only if present" pattern, use the single-lookup
+`TryGetComponent<T>()` (returns `T*`, or `nullptr` if absent) rather than the
+`HasComponent<T>()` + `GetComponent<T>()` double lookup:
 
 ```cpp
-// Single scene:
-Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataAtSlot(uSceneSlot);
-pxSceneData->Query<TransformComponent, ColliderComponent>()
+// CANONICAL guarded read — one pool lookup, and it additionally short-circuits
+// to nullptr on an unloaded / stale scene (a safety property Has+Get lack).
+if (Zenith_MyComponent* pxC = entity.TryGetComponent<Zenith_MyComponent>())
+{
+    pxC->DoThing();
+}
+
+// AVOID — two pool lookups, and GetComponent asserts at the unload edge.
+if (entity.HasComponent<Zenith_MyComponent>())
+{
+    entity.GetComponent<Zenith_MyComponent>().DoThing();
+}
+```
+
+Keep `HasComponent<T>()` for pure presence checks, and keep an explicit
+`Zenith_Assert(entity.HasComponent<T>()); entity.GetComponent<T>()...` where the
+component is a hard precondition (an intentional assert — do NOT silently convert
+those to a `TryGetComponent` guard).
+
+## Querying Multiple Components
+
+Use the Query system to iterate entities with specific component combinations.
+There are three query scopes on `g_xEngine.Scenes()` — pick by which scenes you
+mean; none requires a raw slot loop (the slot accessors are internal):
+
+```cpp
+// Active scene only:
+g_xEngine.Scenes().QueryActiveScene<TransformComponent, ColliderComponent>()
     .ForEach([](Zenith_EntityID id, TransformComponent& t, ColliderComponent& c) {
-        // Process entities with both components
+        // Process entities with both components in the active scene
     });
 
-// All loaded scenes:
+// Every loaded scene:
 g_xEngine.Scenes().QueryAllScenes<TransformComponent, ColliderComponent>()
     .ForEach([](Zenith_EntityID id, TransformComponent& t, ColliderComponent& c) {
-        // Process entities with both components
+        // Process entities with both components across all loaded scenes
     });
+
+// One specific scene you already hold a SceneData* for (e.g. via
+// GetActiveSceneData() / GetSceneDataForEntity(id)):
+pxSceneData->Query<TransformComponent, ColliderComponent>()
+    .ForEach([](Zenith_EntityID id, TransformComponent& t, ColliderComponent& c) { /* ... */ });
 ```
+
+All four query forms expose `ForEach` / `Count` / `First` / `Any`.

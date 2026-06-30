@@ -966,7 +966,6 @@
     <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_EventSystem_Detail.h" />
     <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_QueryScratch.h" />
     <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_RenderTaskState.h" />
-    <ClInclude Include="..\Zenith\ZenithECS\Internal\Zenith_SceneSystem_InternalScopes.h" />
     <ClInclude Include="..\Zenith\ZenithECS\Zenith_ComponentMeta.h" />
     <ClInclude Include="..\Zenith\ZenithECS\Zenith_Entity.h" />
     <ClInclude Include="..\Zenith\ZenithECS\Zenith_EventSystem.h" />

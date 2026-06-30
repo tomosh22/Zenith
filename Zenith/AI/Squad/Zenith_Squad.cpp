@@ -423,13 +423,7 @@ void Zenith_Squad::Update(float fDt)
 	for (int32_t i = static_cast<int32_t>(m_axMembers.GetSize()) - 1; i >= 0; --i)
 	{
 		Zenith_EntityID xMemberID = m_axMembers.Get(static_cast<uint32_t>(i)).m_xEntityID;
-		Zenith_SceneData* pxMemberScene = Zenith_SceneSystem::Get().GetSceneDataForEntity(xMemberID);
-		if (!pxMemberScene)
-		{
-			RemoveMember(xMemberID);
-			continue;
-		}
-		Zenith_Entity xEntity = pxMemberScene->TryGetEntity(xMemberID);
+		Zenith_Entity xEntity = Zenith_SceneSystem::Get().ResolveEntity(xMemberID);
 		if (!xEntity.IsValid())
 		{
 			RemoveMember(xMemberID);

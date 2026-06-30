@@ -42,11 +42,11 @@ namespace
 {
 	bool GetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		if (!xEnt.IsValid()) return false;
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 
@@ -54,11 +54,11 @@ namespace
 	{
 		const Zenith_EntityID xId = Combat_GameComponent::GetPlayerEntityID();
 		if (!xId.IsValid()) return nullptr;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (pxScene == nullptr) return nullptr;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Combat_PlayerComponent>()) return nullptr;
-		return &xEnt.GetComponent<Combat_PlayerComponent>();
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		if (!xEnt.IsValid()) return nullptr;
+		Combat_PlayerComponent* pxPlayer = xEnt.TryGetComponent<Combat_PlayerComponent>();
+		if (pxPlayer == nullptr) return nullptr;
+		return pxPlayer;
 	}
 
 	// Nearest alive enemy to the player (XZ). Returns INVALID when none.

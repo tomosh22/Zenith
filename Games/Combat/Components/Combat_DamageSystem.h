@@ -317,13 +317,12 @@ public:
 			Zenith_Maths::Vector3 xDeathPos(0.0f);
 			// C1: resolve owning scene from the target entity id rather than
 			// assuming it lives in the active scene.
-			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uTargetID);
-			if (pxSceneData)
+			Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(uTargetID);
+			if (xEntity.IsValid())
 			{
-				Zenith_Entity xEntity = pxSceneData->GetEntity(uTargetID);
-				if (xEntity.HasComponent<Zenith_TransformComponent>())
+				if (Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>())
 				{
-					xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xDeathPos);
+					pxTransform->GetPosition(xDeathPos);
 				}
 			}
 
@@ -383,15 +382,15 @@ private:
 		float fForce, float fResistance)
 	{
 		// C1: resolve owning scene from the entity id.
-		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(uEntityID);
-		if (!pxSceneData)
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(uEntityID);
+		if (!xEntity.IsValid())
 			return;
 
-		Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);
-		if (!xEntity.HasComponent<Zenith_ColliderComponent>())
+		Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr)
 			return;
 
-		Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = *pxCollider;
 		if (!xCollider.HasValidBody())
 			return;
 

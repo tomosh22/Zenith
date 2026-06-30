@@ -43,11 +43,12 @@ namespace
 			return nullptr;
 		}
 		Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
-		if (!xEntity.HasComponent<Zenith_InstancedMeshComponent>())
+		Zenith_InstancedMeshComponent* pxComp = xEntity.TryGetComponent<Zenith_InstancedMeshComponent>();
+		if (pxComp == nullptr)
 		{
 			return nullptr;
 		}
-		return &xEntity.GetComponent<Zenith_InstancedMeshComponent>();
+		return pxComp;
 	}
 
 	void ConfigureTreeComponent(Zenith_InstancedMeshComponent& xComp,
@@ -89,8 +90,7 @@ bool Zenith_TerrainEditor::EnsureTreeEntities()
 		return true;
 	}
 
-	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
 	if (pxSceneData == nullptr)
 	{
 		return false;

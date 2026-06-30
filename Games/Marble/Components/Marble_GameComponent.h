@@ -144,9 +144,9 @@ public:
 
 		// Wire menu button callbacks
 		bool bHasMenu = false;
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UIComponent& xUI = *pxUI;
 
 			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 			if (pxPlay)
@@ -411,9 +411,10 @@ private:
 	// ========================================================================
 	void SetMenuVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
 		if (pxTitle) pxTitle->SetVisible(bVisible);
@@ -425,9 +426,10 @@ private:
 
 	void SetHUDVisible(bool bVisible)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		const char* aszElements[] = { "Title", "Score", "Time", "Collected", "Controls", "Status" };
 		for (const char* szName : aszElements)
@@ -439,9 +441,10 @@ private:
 
 	void UpdateMenuInput()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		static constexpr int32_t s_iButtonCount = 2;
 
@@ -468,10 +471,11 @@ private:
 			return;
 
 		Zenith_Entity xBall = pxSceneData->GetEntity(m_xLevelEntities.uBallEntityID);
-		if (!xBall.HasComponent<Zenith_ColliderComponent>())
+		Zenith_ColliderComponent* pxCollider = xBall.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr)
 			return;
 
-		Zenith_ColliderComponent& xCollider = xBall.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = *pxCollider;
 
 		// Get camera from persistent scene
 		Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
@@ -516,13 +520,14 @@ private:
 
 	void FireLevelTick(float fDt)
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_GraphComponent>())
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
 		{
 			return;
 		}
 		Zenith_PropertyValue xDt;
 		xDt.SetFloat(fDt);
-		m_xParentEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("LevelTick", &xDt);
+		pxGraph->FireCustomEvent("LevelTick", &xDt);
 	}
 
 	// ========================================================================
@@ -579,10 +584,11 @@ private:
 	// ========================================================================
 	void UpdateUI()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
 			return;
 
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UIComponent& xUI = *pxUI;
 
 		uint32_t uTotalCollectibles = static_cast<uint32_t>(m_xLevelEntities.axCollectibleEntityIDs.size()) + m_uCollectedCount;
 

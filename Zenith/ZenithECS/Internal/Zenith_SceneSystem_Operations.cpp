@@ -1,8 +1,5 @@
 #include "Zenith.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
-// Relocated RAII scope type Zenith_SceneCreationTargetScope, used to bracket the
-// new scene's deserialisation below.
-#include "ZenithECS/Internal/Zenith_SceneSystem_InternalScopes.h"
 
 #include <algorithm>
 #include "FileAccess/Zenith_FileAccess.h"
@@ -163,14 +160,10 @@ Zenith_Scene Zenith_SceneSystem::LoadScene(const std::string& strPath, Zenith_Sc
 	const std::string strName = ExtractSceneNameFromPath(strCanonicalPath);
 	Zenith_Scene xScene = AllocateEmptyScene(strName);
 	{
-		Zenith_SceneCreationTargetScope xCreationTargetScope(xScene);
-
 		Zenith_SceneData* pxSceneData = GetSceneData(xScene);
 		pxSceneData->m_strPath     = strCanonicalPath;
 		pxSceneData->m_iBuildIndex = iPendingBuildIndex;
 		pxSceneData->TransitionTo(Zenith_SceneData::SCENE_STATE_LOADING);
-		if (eMode == SCENE_LOAD_ADDITIVE)
-			pxSceneData->m_bWasLoadedAdditively = true;
 
 		xLoadedData.SetCursor(0);
 		// Scene files are assumed well-formed in practice, but a defensive

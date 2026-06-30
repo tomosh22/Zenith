@@ -18,13 +18,12 @@ namespace DP_Query
 {
 	// Iterate every entity in the active scene that carries a component of type T.
 	// Fn signature: void(Zenith_EntityID, T&)
+	// Thin forward to the engine's QueryActiveScene<T> (which owns the active-scene
+	// resolution + the no-active-scene null guard).
 	template<typename T, typename Fn>
 	void ForEachComponentInActiveScene(Fn&& fn)
 	{
-		Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneData(xScene);
-		if (pxScene == nullptr) return;
-		pxScene->Query<T>().ForEach(
+		g_xEngine.Scenes().QueryActiveScene<T>().ForEach(
 			[&fn](Zenith_EntityID xId, T& xComponent)
 			{
 				fn(xId, xComponent);
@@ -33,19 +32,14 @@ namespace DP_Query
 
 	// Iterate every entity in ALL currently-loaded scenes that carries a component of type T.
 	// Fn signature: void(Zenith_EntityID, T&)
+	// Thin forward to the engine's QueryAllScenes<T> (the canonical all-loaded-scenes form).
 	template<typename T, typename Fn>
 	void ForEachComponentInLoadedScenes(Fn&& fn)
 	{
-		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
-		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
-		{
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetLoadedSceneDataAtSlot(uSlot);
-			if (pxScene == nullptr) continue;
-			pxScene->Query<T>().ForEach(
-				[&fn](Zenith_EntityID xId, T& xComponent)
-				{
-					fn(xId, xComponent);
-				});
-		}
+		g_xEngine.Scenes().QueryAllScenes<T>().ForEach(
+			[&fn](Zenith_EntityID xId, T& xComponent)
+			{
+				fn(xId, xComponent);
+			});
 	}
 }

@@ -196,30 +196,26 @@ namespace
 	template<typename T>
 	T* GetGameComponent(Zenith_EntityID xId)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (!pxScene) return nullptr;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
 		if (!xEnt.IsValid()) return nullptr;
 		return xEnt.TryGetComponent<T>();
 	}
 
 	bool TryGetEntityPos(Zenith_EntityID xId, Zenith_Maths::Vector3& xOut)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (!pxScene) return false;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return false;
-		xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOut);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->GetPosition(xOut);
 		return true;
 	}
 
 	void TrySetEntityPos(Zenith_EntityID xId, const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(xId);
-		if (!pxScene) return;
-		Zenith_Entity xEnt = pxScene->TryGetEntity(xId);
-		if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>()) return;
-		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
+		pxTransform->SetPosition(xPos);
 	}
 
 	// Helper: synthesise a held item with the requested tag. Registers a
@@ -250,19 +246,12 @@ namespace
 	Zenith_UI::Zenith_UIText* FindHudText(const char* szName)
 	{
 		Zenith_UI::Zenith_UIText* pxResult = nullptr;
-		const uint32_t uSlotCount = g_xEngine.Scenes().GetSceneSlotCount();
-		for (uint32_t uSlot = 0; uSlot < uSlotCount; ++uSlot)
-		{
-			Zenith_SceneData* pxScene = g_xEngine.Scenes().GetLoadedSceneDataAtSlot(uSlot);
-			if (pxScene == nullptr) continue;
-			pxScene->Query<Zenith_UIComponent>().ForEach(
-				[szName, &pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
-				{
-					if (pxResult) return;
-					pxResult = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
-				});
-			if (pxResult) break;
-		}
+		g_xEngine.Scenes().QueryAllScenes<Zenith_UIComponent>().ForEach(
+			[szName, &pxResult](Zenith_EntityID, Zenith_UIComponent& xUI)
+			{
+				if (pxResult) return;
+				pxResult = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
+			});
 		return pxResult;
 	}
 
@@ -743,18 +732,12 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 		if (g_iWait < 5) return true;
 
 		// Read the priest's blackboard for the investigate-pos flag.
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPriest);
-		if (pxScene)
+		Zenith_Entity xPriestEnt = g_xEngine.Scenes().ResolveEntity(g_xPriest);
+		if (Zenith_AIAgentComponent* pxAgent = xPriestEnt.TryGetComponent<Zenith_AIAgentComponent>())
 		{
-			Zenith_Entity xPriestEnt = pxScene->TryGetEntity(g_xPriest);
-			if (xPriestEnt.IsValid() && xPriestEnt.HasComponent<Zenith_AIAgentComponent>())
-			{
-				Zenith_AIAgentComponent& xAgent =
-					xPriestEnt.GetComponent<Zenith_AIAgentComponent>();
-				Zenith_Blackboard& xBB = xAgent.GetBlackboard();
-				g_bPriestHasInvestigate = xBB.GetBool(
-					DP_AI::BB_KEY_HAS_INVESTIGATE_POS, /*bDefault=*/false);
-			}
+			Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
+			g_bPriestHasInvestigate = xBB.GetBool(
+				DP_AI::BB_KEY_HAS_INVESTIGATE_POS, /*bDefault=*/false);
 		}
 		g_iPhase = kFP_AssertNoise;
 		return true;

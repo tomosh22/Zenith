@@ -104,24 +104,20 @@ namespace
 	void TeleportVillager(const Zenith_Maths::Vector3& xPos)
 	{
 		if (!g_xPVVillager.IsValid()) return;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPVVillager);
-		if (pxScene == nullptr) return;
-		Zenith_Entity xV = pxScene->TryGetEntity(g_xPVVillager);
-		if (!xV.IsValid()) return;
-		if (!xV.HasComponent<Zenith_TransformComponent>()) return;
-		xV.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+		Zenith_Entity xV = g_xEngine.Scenes().ResolveEntity(g_xPVVillager);
+		Zenith_TransformComponent* pxTransform = xV.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return;
+		pxTransform->SetPosition(xPos);
 	}
 
 	Zenith_Maths::Vector3 GetPentagramPosition()
 	{
 		Zenith_Maths::Vector3 xPos(0.0f);
 		if (!g_xPVPentagram.IsValid()) return xPos;
-		Zenith_SceneData* pxScene = g_xEngine.Scenes().GetSceneDataForEntity(g_xPVPentagram);
-		if (pxScene == nullptr) return xPos;
-		Zenith_Entity xP = pxScene->TryGetEntity(g_xPVPentagram);
-		if (!xP.IsValid()) return xPos;
-		if (!xP.HasComponent<Zenith_TransformComponent>()) return xPos;
-		xP.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		Zenith_Entity xP = g_xEngine.Scenes().ResolveEntity(g_xPVPentagram);
+		Zenith_TransformComponent* pxTransform = xP.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return xPos;
+		pxTransform->GetPosition(xPos);
 		return xPos;
 	}
 }

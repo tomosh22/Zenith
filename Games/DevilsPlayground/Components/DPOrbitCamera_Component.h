@@ -96,9 +96,9 @@ public:
 			fCosY * fCosP);
 		const Zenith_Maths::Vector3 xCamPos = m_xOrbitTarget + xOffset * m_fOrbitDistance;
 
-		if (m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		if (Zenith_CameraComponent* pxCam = m_xParentEntity.TryGetComponent<Zenith_CameraComponent>())
 		{
-			Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xCam = *pxCam;
 			xCam.SetPosition(xCamPos);
 			// Camera component computes forward as
 			//   fwd = (-sin(yaw)*cos(pitch), sin(pitch), cos(yaw)*cos(pitch))
