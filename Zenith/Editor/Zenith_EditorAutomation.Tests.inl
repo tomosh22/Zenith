@@ -11,6 +11,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_AttachmentComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "Editor/Panels/Zenith_EditorPanel_GraphEditor.h"
@@ -304,6 +305,42 @@ ZENITH_TEST(Automation, SetTransformScaleStep)
 	g_xEngine.EditorAutomation().Reset();
 
 	EDITOR_TEST_END(TestSetTransformScaleStep);
+}
+
+//=============================================================================
+// Collider Operation Tests
+//=============================================================================
+ZENITH_TEST(Automation, AddCapsuleColliderStep)
+{
+	EDITOR_TEST_BEGIN(TestAddCapsuleColliderStep);
+
+	g_xEngine.EditorAutomation().Reset();
+
+	// Create an entity, add a ColliderComponent, then attach an EXPLICIT capsule.
+	g_xEngine.EditorAutomation().AddStep_CreateEntity("AutoCapsuleEntity");
+	g_xEngine.EditorAutomation().AddStep_AddCollider();
+	g_xEngine.EditorAutomation().AddStep_AddCapsuleCollider(0.4f, 0.4f, RIGIDBODY_TYPE_STATIC);
+	g_xEngine.EditorAutomation().Begin();
+
+	g_xEngine.EditorAutomation().ExecuteNextStep(); // Create entity
+	g_xEngine.EditorAutomation().ExecuteNextStep(); // Add ColliderComponent
+	g_xEngine.EditorAutomation().ExecuteNextStep(); // Add explicit capsule shape
+
+	Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+	ZENITH_ASSERT_NOT_NULL(pxEntity, "Should have selected entity");
+	ZENITH_ASSERT_TRUE(pxEntity->HasComponent<Zenith_ColliderComponent>(),
+		"Entity should have ColliderComponent");
+	ZENITH_ASSERT_TRUE(
+		pxEntity->GetComponent<Zenith_ColliderComponent>().GetCollisionVolumeType() == COLLISION_VOLUME_TYPE_CAPSULE,
+		"Volume type should be CAPSULE after AddCapsuleCollider step");
+	ZENITH_ASSERT_TRUE(
+		pxEntity->GetComponent<Zenith_ColliderComponent>().GetRigidBodyType() == RIGIDBODY_TYPE_STATIC,
+		"Body type should be STATIC");
+
+	g_xEngine.EditorAutomation().ExecuteNextStep();
+	g_xEngine.EditorAutomation().Reset();
+
+	EDITOR_TEST_END(TestAddCapsuleColliderStep);
 }
 
 //=============================================================================

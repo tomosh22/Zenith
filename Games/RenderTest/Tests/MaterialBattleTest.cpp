@@ -15,17 +15,16 @@
 
 // ============================================================================
 // MaterialBattleTest -- windowed capture sweep of the RenderTest material
-// showcase platform (RenderTest_SpawnMaterialShowcase), proving every shape and
-// material renders through the real deferred path. Runs in Stopped mode so the
+// showcase platform (authored into RenderTest.zscen from the disk assets baked by
+// RenderTest_ExportMaterialShowcaseAssets), proving every shape and material renders
+// through the real deferred path. Runs in Stopped mode so the
 // editor free-camera (which we drive directly) frames the scene instead of the
 // player camera; dumps a swapchain TGA at each waypoint via Flux_Screenshot.
 // requiresGraphics -> windowed only (headless counts as passed-skip).
 // ============================================================================
 
-// Spawns the showcase platform/grid into the active scene (defined in RenderTest.cpp).
-void RenderTest_SpawnMaterialShowcase();
-
-// Showcase grid extents, filled by RenderTest_SpawnMaterialShowcase.
+// Showcase grid extents, filled by the tools export/authoring
+// (RenderTest_MaterialShowcase.cpp).
 namespace RenderTest_Showcase
 {
 	extern int   g_iColumns;
@@ -87,9 +86,9 @@ namespace
 static void Setup_MaterialBattleTest()
 {
 	// Stopped -> editor free-camera renders the world scene (player camera idle).
-	// The harness runs requiresGraphics tests through a Play->Stop cycle whose
-	// deferred Stop-restore strips the boot-spawned procedural showcase (meshes
-	// don't serialize), so we re-spawn it from Step once the restore has settled.
+	// The showcase is now a serialized part of RenderTest.zscen (platform + per-shape
+	// cell entities with static colliders), so it survives the harness's Play->Stop
+	// restore — no manual re-spawn is needed any more.
 	g_xEngine.Editor().SetEditorMode(EditorMode::Stopped);
 }
 
@@ -99,10 +98,10 @@ static bool Step_MaterialBattleTest(int iFrame)
 
 	switch (iFrame)
 	{
-	// Re-spawn the showcase AFTER the deferred Play->Stop scene restore (queued
-	// for ~frame 1) has completed, so the procedural meshes are live for capture.
+	// The showcase is authored into the scene and loaded normally, so by the time the
+	// capture waypoints run the grid is already present. Confirm the grid table is
+	// populated (filled by the tools export/authoring) before framing the shots.
 	case 8:
-		RenderTest_SpawnMaterialShowcase();
 		g_bShowcasePresent = (RenderTest_Showcase::g_iColumns > 0);
 		break;
 

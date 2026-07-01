@@ -70,6 +70,12 @@
 #include "RenderTest/RenderTest_Jetpack.h"
 #include "RenderTest/Components/RenderTest_JetpackComponent.h"
 
+// Material-showcase testbed (platform + grid of every shape × a wide material matrix,
+// each shape a saved entity with a static per-primitive collider). Assets baked to
+// disk by RenderTest_ExportMaterialShowcaseAssets; entities authored by
+// RenderTest_AuthorMaterialShowcase.
+#include "RenderTest/RenderTest_MaterialShowcase.h"
+
 // Per-launch bootstrap (CLI/tuning state + post-terrain grass apply) now that the
 // testbeds are baked into the saved scene. Header-only component; also declares
 // RenderTest_TryApplyGrassDensityFromDisk (defined in this TU).
@@ -113,32 +119,9 @@ static constexpr float fCAMPUS_SHIFT = 1792.0f;   // = fCAMPUS_CX - 256.0f (lega
 static void RenderTest_ApplyGrassDensityFromDisk();
 #endif
 
-// Material battle-test showcase: a second platform carrying a grid of every
-// shape × a wide matrix of materials, spawned at runtime (procedural meshes do
-// not serialize, so this runs post-load every boot — tools via AddStep_Custom,
-// runtime via Project_LoadInitialScene). World-anchored near the player plateau.
-void RenderTest_SpawnMaterialShowcase();
-namespace RenderTest_Showcase
-{
-	// World framing constants the capture test reads to aim the editor camera.
-	// Centred on the terrain with the rest of the campus (fCAMPUS_C*); the showcase
-	// sits 44 m north of the campus centre (was Z=300 vs the old 256 anchor).
-	constexpr float fPLATFORM_CX = fCAMPUS_CX;
-	constexpr float fPLATFORM_CZ = fCAMPUS_CZ + 44.0f;
-	// Sits flush on the flattened campus plateau, co-planar with the player deck
-	// (top Y = 48.75) and the tennis court, so the three platforms form one
-	// connected campus. The ring of hills is the material backdrop now (the grid
-	// used to be floated to read against the sky/IBL).
-	constexpr float fPLATFORM_TOP_Y = 48.75f;
-	constexpr int   iROWS = 5;
-	constexpr float fCOL_SPACING = 3.0f;
-	constexpr float fROW_SPACING = 3.6f;
-	constexpr float fSHAPE_SCALE = 1.6f;
-	// Filled in by the spawn so the test knows how wide the grid ended up.
-	extern int g_iColumns;
-	extern float g_fGridMinX;
-	extern float g_fGridMaxX;
-}
+// Material-showcase testbed: the platform + grid of every shape × material matrix are
+// now baked to disk + authored into the saved scene (with static per-primitive
+// colliders) like the other testbeds — see RenderTest_MaterialShowcase.{h,cpp}.
 
 #include <algorithm>
 #include <cmath>
@@ -1371,6 +1354,9 @@ void Project_Shutdown()
 
 	// Likewise the jetpack-testbed material handle.
 	RenderTest_JetpackShutdown();
+
+	// Likewise the material-showcase material/model handles.
+	RenderTest_MaterialShowcaseShutdown();
 }
 
 void Project_LoadInitialScene();
@@ -1408,6 +1394,10 @@ static void GenerateRenderTestTestbedAssets()
 	RenderTest_ExportJetpackAssets(strMatPath.c_str());
 	RenderTest_ExportGunAssets(strMatPath.c_str());
 	RenderTest_ExportTennisAssets(strMatPath.c_str());
+
+	// Material showcase builds its own per-cell materials/textures (no shared vtx-colour
+	// material), so it takes no path argument.
+	RenderTest_ExportMaterialShowcaseAssets();
 }
 
 void Project_InitializeResources()
@@ -2005,6 +1995,12 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_Custom(&RenderTest_ApplyTestbedEntityConfig);
 	}
 
+	// Material showcase — platform + a grid of every shape × the material matrix,
+	// authored as saved entities (each with a static per-primitive collider) from the
+	// disk assets baked by RenderTest_ExportMaterialShowcaseAssets. Authored BEFORE
+	// SaveScene so it ends up in RenderTest.zscen (was a procedural post-load spawn).
+	RenderTest_AuthorMaterialShowcase(g_xEngine.EditorAutomation());
+
 	// Smoke runner — attached BEFORE save so it ends up in the saved scene.
 	if (RenderTest_IsSmokeMode())
 	{
@@ -2023,14 +2019,10 @@ void Project_RegisterEditorAutomationSteps()
 	// map one automation step (== one frame) later.
 	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_ApplyGrassDensityFromDisk);
 
-	// Material battle-test showcase platform — spawned post-load (procedural
-	// meshes don't serialize, so it can't go in the saved scene). Out of scope of
-	// the testbed-bake work; still the only procedural post-load spawn.
-	g_xEngine.EditorAutomation().AddStep_Custom(&RenderTest_SpawnMaterialShowcase);
-
-	// (The jetpack / guns / tennis testbeds are no longer spawned post-load — they
-	// are authored into the saved scene above, before AddStep_SaveScene, and their
-	// meshes/materials/textures are baked to disk by GenerateRenderTestTestbedAssets.)
+	// (The material showcase + jetpack / guns / tennis testbeds are no longer spawned
+	// post-load — they are authored into the saved scene above, before AddStep_SaveScene,
+	// and their meshes/materials/textures are baked to disk by
+	// GenerateRenderTestTestbedAssets.)
 
 	// Smoke play-mode entry LAST — by this step the deferred load has
 	// completed, so the smoke runner's first tick probes the fully loaded
@@ -2137,234 +2129,6 @@ static void RenderTest_ApplyGrassDensityFromDisk()
 	}
 }
 #endif
-
-//=============================================================================
-// Material battle-test showcase
-//
-// A second platform north of the player carrying a grid of every procedural
-// shape painted with a wide matrix of materials (roughness/metallic ladders,
-// coloured metals, specular F0, clear coat, HDR emissive, unlit, normal maps,
-// detail/texture, alpha cutout, translucency, additive, two-sided, and
-// parent/instance overrides). Spawned at runtime because procedural meshes do
-// not serialize through SaveScene/LoadScene.
-//=============================================================================
-namespace RenderTest_Showcase
-{
-	int   g_iColumns  = 0;
-	float g_fGridMinX = 0.0f;
-	float g_fGridMaxX = 0.0f;
-}
-
-namespace
-{
-	Zenith_TextureAsset* RT_MakeRGBA8(u_int uSize, const std::vector<u_int8>& xPixels)
-	{
-		Zenith_TextureAsset* pxTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-		Flux_SurfaceInfo xInfo;
-		xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-		xInfo.m_eTextureType = TEXTURE_TYPE_2D;
-		xInfo.m_uWidth = uSize;
-		xInfo.m_uHeight = uSize;
-		xInfo.m_uDepth = 1;
-		xInfo.m_uNumMips = 1;
-		xInfo.m_uNumLayers = 1;
-		xInfo.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
-		pxTex->CreateFromData(xPixels.data(), xInfo, false);
-		return pxTex;
-	}
-
-	// Tangent-space bump normal map (rounded sinusoidal dimples).
-	Zenith_TextureAsset* RT_MakeNormalMap(u_int uSize)
-	{
-		std::vector<u_int8> xPx(static_cast<size_t>(uSize) * uSize * 4);
-		for (u_int y = 0; y < uSize; y++)
-			for (u_int x = 0; x < uSize; x++)
-			{
-				const float fU = (x / float(uSize)) * 6.2831853f * 5.0f;
-				const float fV = (y / float(uSize)) * 6.2831853f * 5.0f;
-				Zenith_Maths::Vector3 xN = glm::normalize(Zenith_Maths::Vector3(0.55f * sinf(fU), 0.55f * sinf(fV), 1.0f));
-				u_int8* p = &xPx[(static_cast<size_t>(y) * uSize + x) * 4];
-				p[0] = u_int8((xN.x * 0.5f + 0.5f) * 255.0f);
-				p[1] = u_int8((xN.y * 0.5f + 0.5f) * 255.0f);
-				p[2] = u_int8((xN.z * 0.5f + 0.5f) * 255.0f);
-				p[3] = 255;
-			}
-		return RT_MakeRGBA8(uSize, xPx);
-	}
-
-	// Checker with hard 0/255 alpha for alpha-cutout proofs.
-	Zenith_TextureAsset* RT_MakeCheckerAlpha(u_int uSize)
-	{
-		std::vector<u_int8> xPx(static_cast<size_t>(uSize) * uSize * 4);
-		for (u_int y = 0; y < uSize; y++)
-			for (u_int x = 0; x < uSize; x++)
-			{
-				const bool bOn = (((x / 8) + (y / 8)) & 1) == 0;
-				u_int8* p = &xPx[(static_cast<size_t>(y) * uSize + x) * 4];
-				p[0] = p[1] = p[2] = 235;
-				p[3] = bOn ? 255 : 0;
-			}
-		return RT_MakeRGBA8(uSize, xPx);
-	}
-
-	// Two-tone checker base-colour map (opaque) for the textured cells.
-	Zenith_TextureAsset* RT_MakeCheckerColour(u_int uSize)
-	{
-		std::vector<u_int8> xPx(static_cast<size_t>(uSize) * uSize * 4);
-		for (u_int y = 0; y < uSize; y++)
-			for (u_int x = 0; x < uSize; x++)
-			{
-				const bool bOn = (((x / 8) + (y / 8)) & 1) == 0;
-				u_int8* p = &xPx[(static_cast<size_t>(y) * uSize + x) * 4];
-				p[0] = bOn ? 230 : 30;
-				p[1] = bOn ? 120 : 90;
-				p[2] = bOn ? 40  : 170;
-				p[3] = 255;
-			}
-		return RT_MakeRGBA8(uSize, xPx);
-	}
-}
-
-void RenderTest_SpawnMaterialShowcase()
-{
-	using namespace RenderTest_Showcase;
-
-	if (Zenith_CommandLine::IsHeadless())
-	{
-		return;	// GPU-dependent (procedural meshes/textures); windowed only.
-	}
-	Zenith_Scene xScene = g_xEngine.Scenes().GetActiveScene();
-	if (!xScene.IsValid())
-	{
-		Zenith_Warning(LOG_CATEGORY_CORE, "[Showcase] no active scene; skipping material showcase");
-		return;
-	}
-
-	// --- Procedural textures (shared) ---
-	TextureHandle xNormalTex(RT_MakeNormalMap(128));
-	TextureHandle xCutoutTex(RT_MakeCheckerAlpha(64));
-	TextureHandle xCheckerTex(RT_MakeCheckerColour(64));
-
-	// --- Shape geometries (registry-cached) ---
-	Flux_MeshGeometry* pxSphere = Zenith_MeshGeometryAsset::CreateUnitSphere(32)->GetGeometry();
-	Flux_MeshGeometry* pxCube   = Zenith_MeshGeometryAsset::CreateUnitCube()->GetGeometry();
-	Flux_MeshGeometry* pxCyl    = Zenith_MeshGeometryAsset::CreateUnitCylinder(32)->GetGeometry();
-	Flux_MeshGeometry* pxCone   = Zenith_MeshGeometryAsset::CreateUnitCone(28)->GetGeometry();
-	Flux_MeshGeometry* pxCaps   = Zenith_MeshGeometryAsset::CreateUnitCapsule(24)->GetGeometry();
-
-	auto SetF = [](Zenith_MaterialAsset* m, MaterialParamID e, float v) { Zenith_MaterialParamTable::SetParamFloat(m->ModifyParams(), e, v); };
-	auto SetV = [](Zenith_MaterialAsset* m, MaterialParamID e, float r, float g, float b, float a) { Zenith_MaterialParamTable::SetParamVector(m->ModifyParams(), e, Zenith_Maths::Vector4(r, g, b, a)); };
-	auto SetI = [](Zenith_MaterialAsset* m, MaterialParamID e, u_int v) { Zenith_MaterialParamTable::SetParamInt(m->ModifyParams(), e, v); };
-
-	auto NewMat = [&](const char* szName) -> Zenith_MaterialAsset*
-	{
-		Zenith_MaterialAsset* m = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
-		m->SetName(szName);
-		SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.82f, 0.82f, 0.82f, 1.0f);
-		SetF(m, MATERIAL_PARAM_METALLIC, 0.0f);
-		SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.5f);
-		SetF(m, MATERIAL_PARAM_SPECULAR, 0.5f);
-		return m;
-	};
-
-	struct Cell { Flux_MeshGeometry* m_pxGeom; Zenith_MaterialAsset* m_pxMat; bool m_bPanel; };
-	std::vector<Cell> xCells;
-	auto Add = [&](Flux_MeshGeometry* g, Zenith_MaterialAsset* m, bool bPanel = false) { xCells.push_back({ g, m, bPanel }); };
-
-	// ---- Row 0: dielectric roughness ladder (5) + metallic roughness ladder (5) ----
-	const float afRough[5] = { 0.03f, 0.27f, 0.5f, 0.74f, 1.0f };
-	for (int i = 0; i < 5; i++) { Zenith_MaterialAsset* m = NewMat("Showcase_DielRough"); SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.85f, 0.85f, 0.87f, 1.0f); SetF(m, MATERIAL_PARAM_ROUGHNESS, afRough[i]); Add(pxSphere, m); }
-	for (int i = 0; i < 5; i++) { Zenith_MaterialAsset* m = NewMat("Showcase_MetalRough"); SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.72f, 0.74f, 0.78f, 1.0f); SetF(m, MATERIAL_PARAM_METALLIC, 1.0f); SetF(m, MATERIAL_PARAM_ROUGHNESS, afRough[i]); Add(pxSphere, m); }
-
-	// ---- Row 1: coloured metals (6) + specular ladder (4) ----
-	struct Col { float r, g, b; const char* n; };
-	const Col axMetals[6] = { {1.0f,0.78f,0.34f,"Gold"},{0.95f,0.64f,0.54f,"Copper"},{0.96f,0.96f,0.97f,"Silver"},{0.92f,0.70f,0.78f,"Rose"},{0.40f,0.55f,0.95f,"BlueSteel"},{0.35f,0.82f,0.50f,"GreenMetal"} };
-	for (int i = 0; i < 6; i++) { Zenith_MaterialAsset* m = NewMat("Showcase_Metal"); SetV(m, MATERIAL_PARAM_BASE_COLOR, axMetals[i].r, axMetals[i].g, axMetals[i].b, 1.0f); SetF(m, MATERIAL_PARAM_METALLIC, 1.0f); SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.16f); Add(pxSphere, m); }
-	const float afSpec[4] = { 0.0f, 0.35f, 0.7f, 1.0f };
-	for (int i = 0; i < 4; i++) { Zenith_MaterialAsset* m = NewMat("Showcase_Specular"); SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.20f, 0.42f, 0.82f, 1.0f); SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.22f); SetF(m, MATERIAL_PARAM_SPECULAR, afSpec[i]); Add(pxSphere, m); }
-
-	// ---- Row 2: clear coat (4, capsules) + HDR emissive (6, cones) ----
-	const Col axCoat[4] = { {0.6f,0.05f,0.05f,"Red"},{0.05f,0.1f,0.5f,"Blue"},{0.02f,0.02f,0.02f,"Black"},{0.7f,0.35f,0.02f,"Orange"} };
-	for (int i = 0; i < 4; i++) { Zenith_MaterialAsset* m = NewMat("Showcase_ClearCoat"); SetV(m, MATERIAL_PARAM_BASE_COLOR, axCoat[i].r, axCoat[i].g, axCoat[i].b, 1.0f); SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.75f); SetF(m, MATERIAL_PARAM_CLEARCOAT_STRENGTH, 1.0f); SetF(m, MATERIAL_PARAM_CLEARCOAT_ROUGHNESS, 0.05f); Add(pxCaps, m); }
-	struct Em { float r, g, b, i; }; const Em axEm[6] = { {1,0.1f,0.1f,6},{0.1f,1,0.2f,6},{0.2f,0.4f,1,6},{0.1f,0.9f,1,10},{1,0.2f,1,10},{1,1,1,14} };
-	for (int i = 0; i < 6; i++) { Zenith_MaterialAsset* m = NewMat("Showcase_Emissive"); SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.02f, 0.02f, 0.02f, 1.0f); SetV(m, MATERIAL_PARAM_EMISSIVE_COLOR, axEm[i].r, axEm[i].g, axEm[i].b, 0.0f); SetF(m, MATERIAL_PARAM_EMISSIVE_INTENSITY, axEm[i].i); Add(pxCone, m); }
-
-	// ---- Row 3: unlit (3) + normal-mapped (4) + textured/detail (3) ----
-	const Col axUnlit[3] = { {0.9f,0.15f,0.15f,"R"},{0.15f,0.85f,0.25f,"G"},{0.2f,0.35f,0.95f,"B"} };
-	for (int i = 0; i < 3; i++) { Zenith_MaterialAsset* m = NewMat("Showcase_Unlit"); SetI(m, MATERIAL_PARAM_SHADING_MODEL, MATERIAL_SHADING_UNLIT); SetV(m, MATERIAL_PARAM_BASE_COLOR, axUnlit[i].r, axUnlit[i].g, axUnlit[i].b, 1.0f); Add(pxCube, m); }
-	const float afNrm[4] = { 0.6f, 1.0f, 1.6f, 2.2f };
-	for (int i = 0; i < 4; i++) { Zenith_MaterialAsset* m = NewMat("Showcase_Normal"); SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.55f, 0.55f, 0.6f, 1.0f); SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.35f); m->SetTexture(MATERIAL_TEXTURE_NORMAL, xNormalTex); SetF(m, MATERIAL_PARAM_NORMAL_STRENGTH, afNrm[i]); Add(i < 2 ? pxCube : pxCyl, m); }
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_TexChecker"); m->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, xCheckerTex); SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.4f); Add(pxCube, m); }
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_TexCheckerTiled"); m->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, xCheckerTex); SetV(m, MATERIAL_PARAM_UV_TILING, 3.0f, 3.0f, 0.0f, 0.0f); SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.4f); Add(pxCube, m); }
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_TexNormalCombo"); m->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, xCheckerTex); m->SetTexture(MATERIAL_TEXTURE_NORMAL, xNormalTex); SetF(m, MATERIAL_PARAM_NORMAL_STRENGTH, 1.4f); SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.3f); SetF(m, MATERIAL_PARAM_METALLIC, 0.5f); Add(pxCyl, m); }
-
-	// ---- Row 4: cutout (2 panels) + translucent (2) + additive (1) + instances (4) + two-sided (1 panel) ----
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_Cutout50"); SetI(m, MATERIAL_PARAM_BLEND_MODE, MATERIAL_BLEND_MASKED); SetF(m, MATERIAL_PARAM_ALPHA_CUTOFF, 0.5f); m->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, xCutoutTex); Add(pxCube, m, true); }
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_Cutout30"); SetI(m, MATERIAL_PARAM_BLEND_MODE, MATERIAL_BLEND_MASKED); SetF(m, MATERIAL_PARAM_ALPHA_CUTOFF, 0.3f); m->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, xCutoutTex); SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.9f, 0.7f, 0.2f, 1.0f); Add(pxCube, m, true); }
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_TransCyan"); SetI(m, MATERIAL_PARAM_BLEND_MODE, MATERIAL_BLEND_TRANSLUCENT); SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.1f, 0.7f, 0.9f, 0.4f); SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.1f); Add(pxSphere, m); }
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_TransOrange"); SetI(m, MATERIAL_PARAM_BLEND_MODE, MATERIAL_BLEND_TRANSLUCENT); SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.95f, 0.45f, 0.1f, 0.55f); SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.15f); Add(pxSphere, m); }
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_Additive"); SetI(m, MATERIAL_PARAM_BLEND_MODE, MATERIAL_BLEND_ADDITIVE); SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.2f, 0.8f, 1.0f, 0.6f); SetV(m, MATERIAL_PARAM_EMISSIVE_COLOR, 0.2f, 0.8f, 1.0f, 0.0f); SetF(m, MATERIAL_PARAM_EMISSIVE_INTENSITY, 3.0f); Add(pxSphere, m); }
-	// Instances: a shared brushed-gold parent + three children overriding one param each.
-	Zenith_MaterialAsset* pxParent = NewMat("Showcase_InstanceParent"); SetV(pxParent, MATERIAL_PARAM_BASE_COLOR, 0.9f, 0.75f, 0.35f, 1.0f); SetF(pxParent, MATERIAL_PARAM_METALLIC, 1.0f); SetF(pxParent, MATERIAL_PARAM_ROUGHNESS, 0.45f);
-	Add(pxSphere, pxParent);
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_InstColour"); m->SetParent(MaterialHandle(pxParent)); SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.85f, 0.1f, 0.12f, 1.0f); m->SetOverride(MATERIAL_PARAM_BASE_COLOR, true); Add(pxSphere, m); }
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_InstSmooth"); m->SetParent(MaterialHandle(pxParent)); SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.04f); m->SetOverride(MATERIAL_PARAM_ROUGHNESS, true); Add(pxSphere, m); }
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_InstEmissive"); m->SetParent(MaterialHandle(pxParent)); SetV(m, MATERIAL_PARAM_EMISSIVE_COLOR, 1.0f, 0.3f, 0.05f, 0.0f); SetF(m, MATERIAL_PARAM_EMISSIVE_INTENSITY, 6.0f); m->SetOverride(MATERIAL_PARAM_EMISSIVE_COLOR, true); m->SetOverride(MATERIAL_PARAM_EMISSIVE_INTENSITY, true); Add(pxSphere, m); }
-	{ Zenith_MaterialAsset* m = NewMat("Showcase_TwoSided"); SetI(m, MATERIAL_PARAM_TWO_SIDED, 1); SetV(m, MATERIAL_PARAM_BASE_COLOR, 0.9f, 0.2f, 0.6f, 1.0f); SetF(m, MATERIAL_PARAM_ROUGHNESS, 0.4f); Add(pxCube, m, true); }
-
-	// --- Layout: ROWS rows, columns derived; row-major in cell order ---
-	const int iN = static_cast<int>(xCells.size());
-	const int iColumns = (iN + iROWS - 1) / iROWS;
-	g_iColumns = iColumns;
-	const float fGridW = (iColumns - 1) * fCOL_SPACING;
-	g_fGridMinX = fPLATFORM_CX - fGridW * 0.5f;
-	g_fGridMaxX = fPLATFORM_CX + fGridW * 0.5f;
-	const float fGridD = (iROWS - 1) * fROW_SPACING;
-
-	// --- Platform (a wide flat slab) ---
-	{
-		Zenith_Entity xPlat = g_xEngine.Scenes().CreateEntity(xScene, "MatShowcase_Platform");
-		Zenith_TransformComponent& xT = xPlat.GetComponent<Zenith_TransformComponent>();
-		xT.SetPosition(Zenith_Maths::Vector3(fPLATFORM_CX, fPLATFORM_TOP_Y - 0.5f, fPLATFORM_CZ));
-		xT.SetScale(Zenith_Maths::Vector3(fGridW + 6.0f, 1.0f, fGridD + 6.0f));
-		Zenith_MaterialAsset* pxPlatMat = NewMat("Showcase_PlatformMat");
-		SetV(pxPlatMat, MATERIAL_PARAM_BASE_COLOR, 0.32f, 0.33f, 0.35f, 1.0f);
-		SetF(pxPlatMat, MATERIAL_PARAM_ROUGHNESS, 0.8f);
-		Zenith_ModelComponent& xM = xPlat.AddComponent<Zenith_ModelComponent>();
-		xM.AddMeshEntry(*pxCube, *pxPlatMat);
-	}
-
-	// --- Shape cells ---
-	for (int i = 0; i < iN; i++)
-	{
-		const int iCol = i % iColumns;
-		const int iRow = i / iColumns;
-		const float fX = fPLATFORM_CX + (iCol - (iColumns - 1) * 0.5f) * fCOL_SPACING;
-		const float fZ = fPLATFORM_CZ + (iRow - (iROWS - 1) * 0.5f) * fROW_SPACING;
-		const Cell& xC = xCells[i];
-
-		char szName[64];
-		snprintf(szName, sizeof(szName), "MatShowcase_Cell_%02d", i);
-		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(xScene, szName);
-		Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
-		if (xC.m_bPanel)
-		{
-			// Upright thin panel: cutout holes + two-sided are clearest on a flat face.
-			xT.SetPosition(Zenith_Maths::Vector3(fX, fPLATFORM_TOP_Y + fSHAPE_SCALE * 0.5f, fZ));
-			xT.SetScale(Zenith_Maths::Vector3(fSHAPE_SCALE, fSHAPE_SCALE, 0.08f));
-		}
-		else
-		{
-			xT.SetPosition(Zenith_Maths::Vector3(fX, fPLATFORM_TOP_Y + fSHAPE_SCALE * 0.5f, fZ));
-			xT.SetScale(Zenith_Maths::Vector3(fSHAPE_SCALE, fSHAPE_SCALE, fSHAPE_SCALE));
-		}
-		Zenith_ModelComponent& xM = xEnt.AddComponent<Zenith_ModelComponent>();
-		xM.AddMeshEntry(*xC.m_pxGeom, *xC.m_pxMat);
-	}
-
-	Zenith_Log(LOG_CATEGORY_CORE, "[Showcase] spawned %d material cells in %dx%d grid (X[%.1f..%.1f] Z~%.1f)",
-		iN, iColumns, iROWS, g_fGridMinX, g_fGridMaxX, fPLATFORM_CZ);
-}
 
 void Project_LoadInitialScene()
 {

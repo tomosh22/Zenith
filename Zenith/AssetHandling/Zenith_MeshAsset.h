@@ -205,6 +205,47 @@ public:
 	 */
 	static void GenerateUnitSphere(Zenith_MeshAsset& xMeshOut, uint32_t uSegments = 16);
 
+	/**
+	 * Generate a unit cylinder (radius 0.5, height 1.0; bounds y in [-0.5, 0.5],
+	 * x/z in [-0.5, 0.5]). Body + top/bottom caps, analytic normals/UVs/tangents.
+	 * Matches Zenith_MeshGeometryAsset::CreateUnitCylinder's dimensions so a
+	 * scale-derived OBB collider lines up with the mesh.
+	 *
+	 * CPU-only: does NOT create GPU buffers (suits offline asset export).
+	 *
+	 * @param xMeshOut  Output mesh asset (will be reset first)
+	 * @param uSegments Radial slice count (>= 3)
+	 */
+	static void GenerateUnitCylinder(Zenith_MeshAsset& xMeshOut, uint32_t uSegments = 16);
+
+	/**
+	 * Generate a unit cone (radius 0.5, height 1.0; base ring at y=0, apex at y=1,
+	 * so bounds are y in [0, 1] — matches Zenith_MeshGeometryAsset::CreateUnitCone).
+	 * Side + base-cap triangles, analytic outward-and-up side normals. An OBB
+	 * collider sized from these bounds wraps the mesh with the correct local offset.
+	 *
+	 * CPU-only: does NOT create GPU buffers (suits offline asset export).
+	 *
+	 * @param xMeshOut  Output mesh asset (will be reset first)
+	 * @param uSegments Radial slice count (>= 3)
+	 */
+	static void GenerateUnitCone(Zenith_MeshAsset& xMeshOut, uint32_t uSegments = 16);
+
+	/**
+	 * Generate a unit capsule aligned to Y: radius 0.5, cylinder height 1.0, total
+	 * height 2.0 (bounds y in [-1, 1], x/z in [-0.5, 0.5]). This radius-0.5 /
+	 * height-2.0 convention is what the physics CAPSULE volume expects
+	 * (CreateCapsuleShape derives radius = max(sx,sz)*0.5 and cylinder-half =
+	 * sy*0.5 - radius), so a UNIFORM entity scale produces a physics capsule that
+	 * exactly matches this mesh.
+	 *
+	 * CPU-only: does NOT create GPU buffers (suits offline asset export).
+	 *
+	 * @param xMeshOut  Output mesh asset (will be reset first)
+	 * @param uSegments Latitude/longitude segment count (>= 2)
+	 */
+	static void GenerateUnitCapsule(Zenith_MeshAsset& xMeshOut, uint32_t uSegments = 16);
+
 	//--------------------------------------------------------------------------
 	// Vertex Data (public for direct access during export/building)
 	//--------------------------------------------------------------------------

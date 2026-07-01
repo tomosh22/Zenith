@@ -911,5 +911,238 @@ void Zenith_MeshAsset::GenerateUnitSphere(Zenith_MeshAsset& xMeshOut, uint32_t u
 	// CPU-only: no EnsureGPUBuffers (offline export path; W2/V1).
 }
 
+void Zenith_MeshAsset::GenerateUnitCylinder(Zenith_MeshAsset& xMeshOut, uint32_t uSegments)
+{
+	Zenith_Assert(uSegments >= 3, "GenerateUnitCylinder: uSegments must be >= 3");
+
+	const float fPI = 3.14159265359f;
+	const float fRadius = 0.5f;
+	const float fHalfHeight = 0.5f;   // height 1.0
+	const uint32_t uSlices = uSegments;
+
+	xMeshOut.Reset();
+	// Body (two rings) + top cap (ring + centre) + bottom cap (ring + centre).
+	const uint32_t uNumVerts = (uSlices + 1u) * 2u + (uSlices + 1u) * 2u;
+	const uint32_t uNumIndices = uSlices * 6u + uSlices * 3u * 2u;
+	xMeshOut.Reserve(uNumVerts, uNumIndices);
+
+	// Mirrors Zenith_MeshGeometryAsset::GenerateCylinder exactly (same ring
+	// layout + cap fans + outward winding), but emits a CPU Zenith_MeshAsset.
+	// AddVertex doesn't take a bitangent, so push it in parallel.
+	auto Push = [&xMeshOut](const Zenith_Maths::Vector3& xPos, const Zenith_Maths::Vector3& xN,
+		const Zenith_Maths::Vector2& xUV, const Zenith_Maths::Vector3& xTan,
+		const Zenith_Maths::Vector3& xBit)
+	{
+		xMeshOut.AddVertex(xPos, xN, xUV, xTan, Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+		xMeshOut.m_xBitangents.PushBack(xBit);
+	};
+
+	// Body vertices (two rings: ring 0 at -half, ring 1 at +half).
+	for (uint32_t uRing = 0; uRing < 2u; ++uRing)
+	{
+		const float fY = (uRing == 0u) ? -fHalfHeight : fHalfHeight;
+		for (uint32_t i = 0; i <= uSlices; ++i)
+		{
+			const float fTheta = static_cast<float>(i) / static_cast<float>(uSlices) * 2.0f * fPI;
+			const float fX = cosf(fTheta) * fRadius;
+			const float fZ = sinf(fTheta) * fRadius;
+			Push(Zenith_Maths::Vector3(fX, fY, fZ),
+				glm::normalize(Zenith_Maths::Vector3(fX, 0.0f, fZ)),
+				Zenith_Maths::Vector2(static_cast<float>(i) / static_cast<float>(uSlices), static_cast<float>(uRing)),
+				Zenith_Maths::Vector3(-sinf(fTheta), 0.0f, cosf(fTheta)),
+				Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		}
+	}
+
+	// Top cap ring (+ closing centre at index uTopCapStart + uSlices).
+	const uint32_t uTopCapStart = xMeshOut.GetNumVerts();
+	for (uint32_t i = 0; i <= uSlices; ++i)
+	{
+		const float fTheta = static_cast<float>(i) / static_cast<float>(uSlices) * 2.0f * fPI;
+		const float fX = (i < uSlices) ? cosf(fTheta) * fRadius : 0.0f;
+		const float fZ = (i < uSlices) ? sinf(fTheta) * fRadius : 0.0f;
+		Push(Zenith_Maths::Vector3(fX, fHalfHeight, fZ),
+			Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
+			Zenith_Maths::Vector2(fX + 0.5f, fZ + 0.5f),
+			Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f),
+			Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+	}
+
+	// Bottom cap ring (+ closing centre).
+	const uint32_t uBottomCapStart = xMeshOut.GetNumVerts();
+	for (uint32_t i = 0; i <= uSlices; ++i)
+	{
+		const float fTheta = static_cast<float>(i) / static_cast<float>(uSlices) * 2.0f * fPI;
+		const float fX = (i < uSlices) ? cosf(fTheta) * fRadius : 0.0f;
+		const float fZ = (i < uSlices) ? sinf(fTheta) * fRadius : 0.0f;
+		Push(Zenith_Maths::Vector3(fX, -fHalfHeight, fZ),
+			Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f),
+			Zenith_Maths::Vector2(fX + 0.5f, fZ + 0.5f),
+			Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f),
+			Zenith_Maths::Vector3(0.0f, 0.0f, -1.0f));
+	}
+
+	// Body indices (outward winding).
+	for (uint32_t i = 0; i < uSlices; ++i)
+	{
+		const uint32_t uBottom = i;
+		const uint32_t uTop = i + uSlices + 1u;
+		xMeshOut.AddTriangle(uBottom, uBottom + 1u, uTop);
+		xMeshOut.AddTriangle(uBottom + 1u, uTop + 1u, uTop);
+	}
+
+	// Top cap fan (modulo wrap for the closing wedge).
+	const uint32_t uTopCenter = uTopCapStart + uSlices;
+	for (uint32_t i = 0; i < uSlices; ++i)
+	{
+		xMeshOut.AddTriangle(uTopCapStart + i, uTopCapStart + ((i + 1u) % uSlices), uTopCenter);
+	}
+
+	// Bottom cap fan (reversed winding).
+	const uint32_t uBottomCenter = uBottomCapStart + uSlices;
+	for (uint32_t i = 0; i < uSlices; ++i)
+	{
+		xMeshOut.AddTriangle(uBottomCapStart + ((i + 1u) % uSlices), uBottomCapStart + i, uBottomCenter);
+	}
+
+	xMeshOut.ComputeBounds();
+	// CPU-only: no EnsureGPUBuffers (offline export path).
+}
+
+void Zenith_MeshAsset::GenerateUnitCone(Zenith_MeshAsset& xMeshOut, uint32_t uSegments)
+{
+	Zenith_Assert(uSegments >= 3, "GenerateUnitCone: uSegments must be >= 3");
+
+	const float fPI = 3.14159265359f;
+	const float fRadius = 0.5f;
+	const float fHeight = 1.0f;
+	const uint32_t uSlices = uSegments;
+
+	xMeshOut.Reset();
+	const uint32_t uNumVerts = uSlices + 2u;    // base ring + apex + base centre
+	const uint32_t uNumIndices = uSlices * 6u;  // side + base
+	xMeshOut.Reserve(uNumVerts, uNumIndices);
+
+	// Mirrors Zenith_MeshGeometryAsset::GenerateCone exactly (base ring at y=0,
+	// apex at y=1, outward-and-up side normals), emitting a CPU Zenith_MeshAsset.
+	auto Push = [&xMeshOut](const Zenith_Maths::Vector3& xPos, const Zenith_Maths::Vector3& xN,
+		const Zenith_Maths::Vector2& xUV, const Zenith_Maths::Vector3& xTan,
+		const Zenith_Maths::Vector3& xBit)
+	{
+		xMeshOut.AddVertex(xPos, xN, xUV, xTan, Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+		xMeshOut.m_xBitangents.PushBack(xBit);
+	};
+
+	const float fSlope = fRadius / fHeight;
+	for (uint32_t i = 0; i < uSlices; ++i)
+	{
+		const float fTheta = static_cast<float>(i) / static_cast<float>(uSlices) * 2.0f * fPI;
+		const Zenith_Maths::Vector3 xN = glm::normalize(Zenith_Maths::Vector3(cosf(fTheta), fSlope, sinf(fTheta)));
+		const Zenith_Maths::Vector3 xTan(-sinf(fTheta), 0.0f, cosf(fTheta));
+		Push(Zenith_Maths::Vector3(cosf(fTheta) * fRadius, 0.0f, sinf(fTheta) * fRadius),
+			xN, Zenith_Maths::Vector2(static_cast<float>(i) / static_cast<float>(uSlices), 0.0f),
+			xTan, glm::cross(xN, xTan));
+	}
+
+	const uint32_t uApex = uSlices;
+	Push(Zenith_Maths::Vector3(0.0f, fHeight, 0.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
+		Zenith_Maths::Vector2(0.5f, 1.0f), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+
+	const uint32_t uBaseCenter = uSlices + 1u;
+	Push(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f),
+		Zenith_Maths::Vector2(0.5f, 0.5f), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
+
+	// Side triangles (outward + up).
+	for (uint32_t i = 0; i < uSlices; ++i)
+	{
+		const uint32_t uNext = (i + 1u) % uSlices;
+		xMeshOut.AddTriangle(i, uNext, uApex);
+	}
+	// Base triangles (face -Y).
+	for (uint32_t i = 0; i < uSlices; ++i)
+	{
+		const uint32_t uNext = (i + 1u) % uSlices;
+		xMeshOut.AddTriangle(uNext, i, uBaseCenter);
+	}
+
+	xMeshOut.ComputeBounds();
+	// CPU-only: no EnsureGPUBuffers (offline export path).
+}
+
+void Zenith_MeshAsset::GenerateUnitCapsule(Zenith_MeshAsset& xMeshOut, uint32_t uSegments)
+{
+	Zenith_Assert(uSegments >= 2, "GenerateUnitCapsule: uSegments must be >= 2");
+
+	const float fPI = 3.14159265359f;
+	const float fRadius = 0.5f;
+	const float fCylHalf = 0.5f;   // cylinder height 1.0 -> total height 2.0
+	const uint32_t uSlices = uSegments;
+	const uint32_t uStacks = uSegments;
+
+	xMeshOut.Reset();
+	const uint32_t uNumVerts = (uStacks + 1u) * (uSlices + 1u);
+	const uint32_t uNumIndices = uStacks * uSlices * 6u;
+	xMeshOut.Reserve(uNumVerts, uNumIndices);
+
+	// Mirrors Zenith_MeshGeometryAsset::GenerateCapsule (hemisphere caps offset by
+	// the cylinder half-height) with radius 0.5 / cyl-height 1.0 so a uniform entity
+	// scale yields a physics CAPSULE that matches the mesh. Emits a CPU asset.
+	auto Push = [&xMeshOut](const Zenith_Maths::Vector3& xPos, const Zenith_Maths::Vector3& xN,
+		const Zenith_Maths::Vector2& xUV, const Zenith_Maths::Vector3& xTan,
+		const Zenith_Maths::Vector3& xBit)
+	{
+		xMeshOut.AddVertex(xPos, xN, xUV, xTan, Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+		xMeshOut.m_xBitangents.PushBack(xBit);
+	};
+
+	for (uint32_t uStack = 0; uStack <= uStacks; ++uStack)
+	{
+		const float fPhi = static_cast<float>(uStack) / static_cast<float>(uStacks) * fPI;
+		const float fSphereY = cosf(fPhi);
+		const float fStackRadius = sinf(fPhi) * fRadius;
+		const float fY = (fSphereY > 0.0f) ? (fSphereY * fRadius + fCylHalf)
+		                                    : (fSphereY * fRadius - fCylHalf);
+
+		for (uint32_t uSlice = 0; uSlice <= uSlices; ++uSlice)
+		{
+			const float fTheta = static_cast<float>(uSlice) / static_cast<float>(uSlices) * 2.0f * fPI;
+			const float fX = cosf(fTheta) * fStackRadius;
+			const float fZ = sinf(fTheta) * fStackRadius;
+
+			Zenith_Maths::Vector3 xN(fX, cosf(fPhi) * fRadius, fZ);
+			if (glm::length(xN) > 0.001f)
+			{
+				xN = glm::normalize(xN);
+			}
+			else
+			{
+				xN = Zenith_Maths::Vector3(0.0f, fSphereY > 0.0f ? 1.0f : -1.0f, 0.0f);
+			}
+
+			const Zenith_Maths::Vector3 xTan(-sinf(fTheta), 0.0f, cosf(fTheta));
+			Push(Zenith_Maths::Vector3(fX, fY, fZ), xN,
+				Zenith_Maths::Vector2(static_cast<float>(uSlice) / static_cast<float>(uSlices),
+					static_cast<float>(uStack) / static_cast<float>(uStacks)),
+				xTan, glm::cross(xN, xTan));
+		}
+	}
+
+	for (uint32_t uStack = 0; uStack < uStacks; ++uStack)
+	{
+		for (uint32_t uSlice = 0; uSlice < uSlices; ++uSlice)
+		{
+			const uint32_t uCurrent = uStack * (uSlices + 1u) + uSlice;
+			const uint32_t uNext = uCurrent + uSlices + 1u;
+			xMeshOut.AddTriangle(uCurrent, uNext, uCurrent + 1u);
+			xMeshOut.AddTriangle(uCurrent + 1u, uNext, uNext + 1u);
+		}
+	}
+
+	xMeshOut.ComputeBounds();
+	// CPU-only: no EnsureGPUBuffers (offline export path).
+}
+
 #include "AssetHandling/Zenith_MeshAsset.Tests.inl"
 

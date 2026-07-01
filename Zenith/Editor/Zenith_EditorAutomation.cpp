@@ -232,6 +232,15 @@ namespace
 		xAction.m_aiArgs[1] = i2;
 		xActions.PushBack(xAction);
 	}
+	inline void Push(ActionList& xActions, ActionType eType, float f1, float f2, int i1)
+	{
+		Zenith_EditorAction xAction = {};
+		xAction.m_eType = eType;
+		xAction.m_afArgs[0] = f1;
+		xAction.m_afArgs[1] = f2;
+		xAction.m_aiArgs[0] = i1;
+		xActions.PushBack(xAction);
+	}
 	inline void Push(ActionList& xActions, ActionType eType, void* pArg)
 	{
 		Zenith_EditorAction xAction = {};
@@ -563,6 +572,7 @@ void Zenith_EditorAutomation::AddStep_SetParticleEmitting    (bool bEmitting)   
 // -- Collider --
 
 void Zenith_EditorAutomation::AddStep_AddColliderShape(int iVolumeType, int iBodyType) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ADD_COLLIDER_SHAPE, iVolumeType, iBodyType); }
+void Zenith_EditorAutomation::AddStep_AddCapsuleCollider(float fRadius, float fHalfHeight, int iBodyType) { Push(Zenith_EditorAutomation::m_axActions, ActionType::ADD_CAPSULE_COLLIDER, fRadius, fHalfHeight, iBodyType); }
 
 // -- Model --
 
@@ -1852,13 +1862,23 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	// Collider operations
 	//--------------------------------------------------------------------------
 	case Zenith_EditorActionType::ADD_COLLIDER_SHAPE:
+	case Zenith_EditorActionType::ADD_CAPSULE_COLLIDER:
 	{
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for ADD_COLLIDER_SHAPE");
+		Zenith_Assert(pxEntity, "No entity selected for collider-shape action");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_ColliderComponent>(), "Selected entity has no ColliderComponent");
-		pxEntity->GetComponent<Zenith_ColliderComponent>().AddCollider(
-			static_cast<CollisionVolumeType>(xAction.m_aiArgs[0]),
-			static_cast<RigidBodyType>(xAction.m_aiArgs[1]));
+		Zenith_ColliderComponent& xCollider = pxEntity->GetComponent<Zenith_ColliderComponent>();
+		if (xAction.m_eType == Zenith_EditorActionType::ADD_CAPSULE_COLLIDER)
+		{
+			// Explicit capsule dimensions (radius, cylinder half-height).
+			xCollider.AddCapsuleCollider(xAction.m_afArgs[0], xAction.m_afArgs[1],
+				static_cast<RigidBodyType>(xAction.m_aiArgs[0]));
+		}
+		else
+		{
+			xCollider.AddCollider(static_cast<CollisionVolumeType>(xAction.m_aiArgs[0]),
+				static_cast<RigidBodyType>(xAction.m_aiArgs[1]));
+		}
 		break;
 	}
 

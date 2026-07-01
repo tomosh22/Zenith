@@ -197,6 +197,7 @@ enum class Zenith_EditorActionType
 
 	// Collider
 	ADD_COLLIDER_SHAPE,
+	ADD_CAPSULE_COLLIDER,
 
 	// Model
 	ADD_MESH_ENTRY,
@@ -520,6 +521,13 @@ void AddStep_SetParticleEmitting(bool bEmitting);
 	// Collider Step Helpers
 	//--------------------------------------------------------------------------
 void AddStep_AddColliderShape(int iVolumeType, int iBodyType);
+
+	// Add a CAPSULE collider with EXPLICIT dimensions (radius + cylinder half-height,
+	// metres) to the selected entity's ColliderComponent. Unlike AddColliderShape's
+	// scale-derived capsule (which degenerates to a sphere under a uniform scale), the
+	// explicit form fits a capsule MESH exactly — for a unit-capsule mesh (radius 0.5,
+	// total height 2.0) scaled uniformly by s, pass fRadius = fHalfHeight = 0.5*s.
+	void AddStep_AddCapsuleCollider(float fRadius, float fHalfHeight, int iBodyType);
 
 	//--------------------------------------------------------------------------
 	// Model Step Helpers
