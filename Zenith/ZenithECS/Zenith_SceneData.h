@@ -4,13 +4,6 @@
 // which conflicts with the engine's memory management overrides of global operator new/delete.
 // This pattern saves whether the zone was already active, defines it if not, disables memory
 // management overrides for this header, and restores the zone state at the bottom of the file.
-// See the matching #undef block at the end of this header.
-#ifdef ZENITH_PLACEMENT_NEW_ZONE
-#define ZENITH_SCENEDATA_ZONE_WAS_SET
-#else
-#define ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashMap.h"
@@ -855,11 +848,6 @@ void Zenith_SceneData::TransferComponent(Zenith_EntityID xEntityID, Zenith_Scene
 	xMap[uTypeID] = uNewPoolIndex;
 }
 
-// Restore zone state
-#ifndef ZENITH_SCENEDATA_ZONE_WAS_SET
-#undef ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#undef ZENITH_SCENEDATA_ZONE_WAS_SET
 
 //==============================================================================
 // Zenith_Entity template implementations live in Zenith_Entity.inl.

@@ -6,7 +6,6 @@
 // + assert callbacks below) without already pulling the header in, so it carries
 // the explicit include here.
 #include <iostream>
-#define ZENITH_PLACEMENT_NEW_ZONE
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "Physics/Zenith_PhysicsWorldHooks.h"
@@ -14,12 +13,6 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
 // Re-enter the placement-new disabled zone for the additional Jolt headers
-// not already pulled in by Zenith_Physics.h (which re-enables on exit).
-#ifdef ZENITH_PLACEMENT_NEW_ZONE
-#define ZENITH_PHYSICS_CPP_ZONE_WAS_SET
-#else
-#define ZENITH_PLACEMENT_NEW_ZONE
-#endif
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/TempAllocator.h>
@@ -33,10 +26,6 @@
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
-#ifndef ZENITH_PHYSICS_CPP_ZONE_WAS_SET
-#undef ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#undef ZENITH_PHYSICS_CPP_ZONE_WAS_SET
 
 // Wrapper<->Jolt conversion: Zenith_PhysicsBodyID mirrors JPH::BodyID's
 // single-uint32 representation, so conversion is a bit copy.

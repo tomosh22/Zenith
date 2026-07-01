@@ -157,6 +157,18 @@ public abstract class ZenithBaseProject : Project
 		// Sharpmake regen is required for this define to materialise in the .vcxproj; the
 		// header default keeps current (already-generated) builds at 1 until then.
 		conf.Defines.Add("ZENITH_PROFILING_ENABLED=1");
+
+		// Memory tracking tier: 2=FULL (Debug) / 1=LITE (Release) / 0=OFF (future
+		// shipping/Final). FULL = per-alloc hashmap tracking + guard bytes + callstacks;
+		// LITE = lock-free per-category atomic counters only; OFF = straight malloc/free.
+		// Same lockstep + regen rule as ZENITH_PROFILING_ENABLED above: it MUST be set
+		// identically on the base/PCH lib and the engine/game/tool projects (else
+		// sizeof(Zenith_MemoryStats)/operator-inlining ODR mismatch). Zenith.h defaults
+		// this off ZENITH_DEBUG when undefined, so already-generated builds hold
+		// Debug=2/Release=1 until a regen materialises this define.
+		conf.Defines.Add(target.Optimization == Optimization.Debug
+			? "ZENITH_MEMORY_TRACKING_LEVEL=2"
+			: "ZENITH_MEMORY_TRACKING_LEVEL=1");
 	}
 
 	protected void ConfigureCommonIncludePaths(Configuration conf, ZenithTarget target)

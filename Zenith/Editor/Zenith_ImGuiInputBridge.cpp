@@ -7,9 +7,7 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 namespace
 {

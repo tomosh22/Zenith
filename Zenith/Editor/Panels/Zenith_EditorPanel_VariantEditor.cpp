@@ -6,9 +6,7 @@
 #include "Core/Zenith_EditorWindowNames.h"
 #include "Editor/Zenith_Editor.h"
 
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #include "Prefab/Zenith_Prefab.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"

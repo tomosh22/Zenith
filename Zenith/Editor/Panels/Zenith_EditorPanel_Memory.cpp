@@ -3,7 +3,7 @@
 #include "Core/Zenith_EditorWindowNames.h"
 
 #ifdef ZENITH_TOOLS
-#ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
+#if ZENITH_MEMORY_TRACKING_FULL
 
 #include "Zenith_EditorPanel_Memory.h"
 #include "Memory/Zenith_MemoryManagement.h"
@@ -17,9 +17,7 @@
 #include "Windows/Zenith_Windows_Window.h"
 #endif
 
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include <algorithm>
 #include "Collections/Zenith_Vector.h"
 
@@ -81,7 +79,7 @@ namespace Zenith_EditorPanelMemory
 
 	static void RenderSummaryTab()
 	{
-		const Zenith_MemoryStats& xStats = Zenith_MemoryManagement::GetStats();
+		const Zenith_MemoryStats xStats = Zenith_MemoryManagement::GetStatsCopy();
 
 		char acBuffer[64];
 
@@ -262,7 +260,7 @@ namespace Zenith_EditorPanelMemory
 
 	static void RenderCategoryTab()
 	{
-		const Zenith_MemoryStats& xStats = Zenith_MemoryManagement::GetStats();
+		const Zenith_MemoryStats xStats = Zenith_MemoryManagement::GetStatsCopy();
 
 		ImGui::Text("Memory by Category");
 		ImGui::Separator();
@@ -723,5 +721,5 @@ namespace Zenith_EditorPanelMemory
 	}
 }
 
-#endif // ZENITH_MEMORY_MANAGEMENT_ENABLED
+#endif // ZENITH_MEMORY_TRACKING_FULL
 #endif // ZENITH_TOOLS

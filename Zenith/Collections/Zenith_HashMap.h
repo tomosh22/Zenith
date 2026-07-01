@@ -1,12 +1,5 @@
 #pragma once
 
-// Save zone state and set up placement new protection
-#ifdef ZENITH_PLACEMENT_NEW_ZONE
-#define ZENITH_HASHMAP_ZONE_WAS_SET
-#else
-#define ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "DataStream/Zenith_DataStream.h"
 #include <functional>
@@ -604,9 +597,3 @@ private:
 	u_int m_uGeneration;
 };
 
-// Restore zone state - only undefine if we defined it ourselves
-#ifndef ZENITH_HASHMAP_ZONE_WAS_SET
-#undef ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#undef ZENITH_HASHMAP_ZONE_WAS_SET
-#include "Memory/Zenith_MemoryManagement_Enabled.h"

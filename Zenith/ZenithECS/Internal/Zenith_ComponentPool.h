@@ -8,13 +8,6 @@
 //
 // Lifted out of Zenith_SceneData.h so the pool types are reachable without
 // pulling in SceneData/SceneManager — this is the T2.4 cycle-break that
-// breaks the Scene.h ↔ SceneRegistry.h ↔ SceneData.h ↔ SceneManager.h chain.
-#ifdef ZENITH_PLACEMENT_NEW_ZONE
-#define ZENITH_COMPONENTPOOL_ZONE_WAS_SET
-#else
-#define ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "Collections/Zenith_Vector.h"
 #include "ZenithECS/Zenith_Entity.h"
@@ -267,8 +260,3 @@ concept Zenith_Component =
 #endif
 ;
 
-// Restore zone state
-#ifndef ZENITH_COMPONENTPOOL_ZONE_WAS_SET
-#undef ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#undef ZENITH_COMPONENTPOOL_ZONE_WAS_SET

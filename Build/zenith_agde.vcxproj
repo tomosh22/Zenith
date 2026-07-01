@@ -74,7 +74,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;SHADER_SOURCE_ROOT="";VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_PROFILING_ENABLED=1;ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;SHADER_SOURCE_ROOT="";VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_MEMORY_TRACKING_LEVEL=2;ZENITH_PROFILING_ENABLED=1;ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\android;..\zenith\android\nativeglue;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
@@ -106,7 +106,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="";VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_PROFILING_ENABLED=1;ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="";VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_MEMORY_TRACKING_LEVEL=1;ZENITH_PROFILING_ENABLED=1;ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\android;..\zenith\android\nativeglue;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
@@ -550,6 +550,7 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandle.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.Tests.inl" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetTypeIds.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_BehaviourGraphAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FontAsset.h" />
@@ -561,9 +562,11 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.Tests.inl" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_ModelAsset.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_ModelAsset.Tests.inl" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_PropertyTuning.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_PropertyTuning.Tests.inl" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.Tests.inl" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_TextureAsset.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_CircularQueue.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_HashMap.h" />
@@ -572,11 +575,12 @@
     <ClInclude Include="..\Zenith\Collections\Zenith_Vector.h" />
     <ClInclude Include="..\Zenith\Core\Callstack\Zenith_Callstack.h" />
     <ClInclude Include="..\Zenith\Core\FrameContext.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryAccounting.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryCategories.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryFrameSample.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.h" />
-    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h" />
-    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.Tests.inl" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.h" />
     <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
     <ClInclude Include="..\Zenith\Core\Zenith.h" />
@@ -1151,6 +1155,10 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_TextureAsset.cpp" />
     <ClCompile Include="..\Zenith\Core\Callstack\Zenith_Callstack.cpp" />
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryAccounting.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>

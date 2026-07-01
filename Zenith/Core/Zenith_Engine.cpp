@@ -405,6 +405,42 @@ void Zenith_Engine::AllocateEditorSubsystems()
 }
 
 // Thread registry, graphics options, memory tracking, profiling, task workers.
+#if ZENITH_MEMORY_TRACKING_ANY
+#include "Memory/Zenith_MemoryAccounting.h"
+#include "Memory/Zenith_MemoryFrameSample.h"
+
+// Unified-accounting poll callbacks (captureless free fns). Registered once at boot;
+// each reads a per-subsystem accessor at poll time (once/frame from EndFrame). Keeping
+// them at the engine-composition layer means leaf libs never depend on the memory
+// tracker. GPU/VRAM sources are only valid once Flux is up, so they no-op in headless.
+namespace
+{
+	void PollEngineCPU(Zenith_MemorySource& xOut)
+	{
+		const Zenith_MemoryFrameSample xSample = Zenith_MemoryManagement::SampleFrame();
+		xOut.m_ulBytes = xSample.m_ulTotalBytes;
+		xOut.m_ulAllocCount = xSample.m_ulTotalAllocations;
+	}
+	void PollJolt(Zenith_MemorySource& xOut)
+	{
+		xOut.m_ulBytes = g_xEngine.Physics().GetJoltMemoryAllocated();
+		xOut.m_ulAllocCount = g_xEngine.Physics().GetJoltAllocationCount();
+	}
+	void PollVMA(Zenith_MemorySource& xOut)
+	{
+		if (Zenith_CommandLine::IsHeadless())
+		{
+			xOut.m_ulBytes = 0;
+			xOut.m_ulAllocCount = 0;
+			return;
+		}
+		const auto xStats = g_xEngine.FluxMemory().GetVMAStats();
+		xOut.m_ulBytes = xStats.m_ulTotalAllocatedBytes;
+		xOut.m_ulAllocCount = xStats.m_ulAllocationCount;
+	}
+}
+#endif
+
 void Zenith_Engine::InitialiseRuntimeServices()
 {
 	// multithreading registry (thread-ID allocator +
@@ -420,6 +456,15 @@ void Zenith_Engine::InitialiseRuntimeServices()
 
 	// CRITICAL: Memory tracking must be initialized FIRST to capture all allocations
 	Zenith_MemoryManagement::Initialise();
+
+#if ZENITH_MEMORY_TRACKING_ANY
+	// Register the unified-accounting sources (polled once per frame from EndFrame).
+	// m_bIsVRAM keeps GPU memory out of process-RAM sums. VRAM no-ops in headless.
+	Zenith_MemoryAccounting::Initialise();
+	Zenith_MemoryAccounting::RegisterSource("Engine CPU", &PollEngineCPU, 0, false);
+	Zenith_MemoryAccounting::RegisterSource("Jolt Physics", &PollJolt, 0, false);
+	Zenith_MemoryAccounting::RegisterSource("VMA VRAM", &PollVMA, 0, true);
+#endif
 
 	// per-Engine Profiling state. Allocate BEFORE
 	// g_xEngine.Threading().RegisterThread(true) below --
@@ -978,6 +1023,12 @@ void Zenith_Engine::Shutdown()
 	DeleteSceneAndInputState();
 	DeleteRendererState();
 	DeleteEditorState();
+
+	// LAST: read-only memory leak checkpoint, after every engine-owned tracked object
+	// has been freed above. Deliberately the final step — it does NOT disable tracking
+	// or tear down the allocator, so base recovery stays valid for any frees still
+	// happening during static destruction. See Zenith_MemoryManagement::Shutdown().
+	Zenith_MemoryManagement::Shutdown();
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }

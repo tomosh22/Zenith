@@ -4,11 +4,9 @@
 #include "AssetHandling/Zenith_FontAsset.h"
 #include "DataStream/Zenith_DataStream.h"
 
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #pragma warning(push, 0)
 #include "msdf-atlas-gen/msdf-atlas-gen.h"
 #pragma warning(pop)
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #include <vector>
 

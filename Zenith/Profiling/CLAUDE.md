@@ -150,6 +150,15 @@ and every subsystem method becomes a no-op stub. The subsystem object is still a
   events carry their `DebugName()` as a label.
 - **Statistics** — per-zone total/avg/max/calls, sorted, with a substring filter.
 - **Thread Breakdown** — per-thread hierarchical self/total tree.
+- **Memory** (`ZENITH_MEMORY_TRACKING_ANY`) — total tracked-bytes history (256-frame ring) + a
+  per-category live table (bytes / count / share bar) + the **unified sources** list (Engine CPU,
+  Jolt, VMA VRAM, …) with a RAM-vs-VRAM split. Fed by `Zenith_MemoryManagement::SampleFrame()` (a pure
+  counter-read POD) pushed once per frame from the main loop via `PushMemorySample` (skipped while
+  paused, so it freezes with the CPU/GPU timeline). A small always-on **HUD** overlay
+  (`RenderMemoryHUD`, toggled by the `dbg_bShowMemoryHUD` debug variable) shows total MB + frame delta.
+  The profiler stays architecture-layer-0: it includes only the leaf POD `Zenith_MemoryFrameSample.h`,
+  never the allocator/tracker headers. `--profiling-dump` appends a `=== Memory ===` section; the memory
+  module also has its own `--memory-dump` (text + CSV, the CI budget-gate feed).
 
 ## Key types & invariants
 

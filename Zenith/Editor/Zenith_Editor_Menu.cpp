@@ -16,9 +16,7 @@
 #include "Panels/Zenith_EditorPanel_RenderGraph.h"
 #include "Panels/Zenith_EditorPanel_VariantEditor.h"
 
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 //==========================================================================
 // Zenith_Editor — main menu bar
@@ -199,7 +197,7 @@ void Zenith_Editor::RenderViewMenu()
 			g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowTerrainEditor = !g_xEngine.Editor().m_xEditorState.m_xPanels.m_bShowTerrainEditor;
 		}
 
-#ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
+#if ZENITH_MEMORY_TRACKING_FULL
 		if (ImGui::MenuItem("Memory Profiler", nullptr, Zenith_EditorPanelMemory::IsVisible()))
 		{
 			Zenith_EditorPanelMemory::SetVisible(!Zenith_EditorPanelMemory::IsVisible());

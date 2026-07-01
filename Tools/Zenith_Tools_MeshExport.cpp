@@ -29,14 +29,12 @@ static std::string GetEngineAssetsDirectory()
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include "stb/stb_image.h"
 #include <vector>
 #include <unordered_map>
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 //------------------------------------------------------------------------------
 // Forward declarations for helper functions

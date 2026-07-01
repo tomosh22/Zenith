@@ -4,9 +4,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_ModelComponent.h"
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Core/Zenith_EditorQuery.h"
 #include "Core/Zenith_DragDropPayloads.h"
 #include "Editor/Zenith_Editor_MaterialUI.h"

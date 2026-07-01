@@ -1,13 +1,10 @@
 #pragma once
 
 //=============================================================================
-// IMPORTANT: This header requires Assimp headers to be included BEFORE it.
-// Include assimp headers wrapped in memory management disable/enable:
+// IMPORTANT: This header requires Assimp headers to be included BEFORE it:
 //
-//     #include "Memory/Zenith_MemoryManagement_Disabled.h"
 //     #include <assimp/scene.h>
 //     #include <assimp/anim.h>
-//     #include "Memory/Zenith_MemoryManagement_Enabled.h"
 //     #include "Zenith_Tools_AssimpConvert.h"
 //=============================================================================
 

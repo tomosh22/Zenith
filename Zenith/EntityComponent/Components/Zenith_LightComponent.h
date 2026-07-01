@@ -5,9 +5,7 @@
 #include "Core/Zenith_PropertySystem.h"
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
 // Forward declarations for RegisterProperties (cycle-avoidance — see TransformComponent.h).

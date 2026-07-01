@@ -211,20 +211,47 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 #define DEBUGVAR static const
 #endif
 
-// Memory tracking with guard bytes, leak detection, and callstack capture
-// Thread-safety approach:
-// - std::atomic<bool> for initialization flag (acquire/release semantics)
-// - thread_local recursion guards (no cross-thread interference)
-// - Initialization check BEFORE accessing TLS (avoids TLS init allocating)
-// - Untracked allocations (static init) silently use plain malloc/free
+// -----------------------------------------------------------------------------
+// Memory tracking tier (AAA memory overhaul).
 //
-// STATUS: currently DISABLED, but planned to be enabled in the future.
-// The tracked code path (AllocateTracked, guard bytes, MemoryTracker,
-// category stacking) is the target implementation, NOT dead scaffolding.
-// Do not remove or restructure either path. Both paths intentionally live
-// side-by-side in Zenith_MemoryManagement.cpp behind this macro until
-// enablement lands.
-//#define ZENITH_MEMORY_MANAGEMENT_ENABLED
+// ZENITH_MEMORY_TRACKING_LEVEL selects the cost/feature tier of the global
+// operator new/delete tracking layer:
+//
+//   2 = FULL  (Debug):   per-alloc hashmap records, guard bytes (0xDEADBEEF),
+//                        0xCD/0xDD fill, callstack capture, leak + double-free +
+//                        guard checks, per-category + frame stats.
+//   1 = LITE  (Release): lock-free per-category atomic counters + totals + peak
+//                        via a 16-byte header-before-user cookie. No hashmap, no
+//                        guards, no callstacks. Near-zero overhead.
+//   0 = OFF   (Final):   operator new/delete fall straight through to malloc/free.
+//                        Everything compiles out.
+//
+// Attribution is callstack + thread-local category scopes (ZENITH_MEMORY_SCOPE),
+// resolved INSIDE the allocator (behind the init-flag check) — there is no longer
+// any `#define new` hammer, so enabling a tier is near-zero call-site churn.
+//
+// The build system sets this per config in Build/Sharpmake_Common.cs (Debug=2,
+// Release=1), in lockstep across the base/PCH lib + engine/game/tool projects
+// (same ODR rule as ZENITH_TOOLS / ZENITH_PROFILING_ENABLED).
+//
+// The header default keys off ZENITH_DEBUG (which Sharpmake sets per config), so
+// Debug=FULL / Release=LITE holds even before the explicit Sharpmake define lands.
+// A future shipping/Final config defines ZENITH_MEMORY_TRACKING_LEVEL=0 to strip it.
+#ifndef ZENITH_MEMORY_TRACKING_LEVEL
+	#ifdef ZENITH_DEBUG
+		#define ZENITH_MEMORY_TRACKING_LEVEL 2
+	#else
+		#define ZENITH_MEMORY_TRACKING_LEVEL 1
+	#endif
+#endif
+#if ZENITH_MEMORY_TRACKING_LEVEL < 0 || ZENITH_MEMORY_TRACKING_LEVEL > 2
+	#error "ZENITH_MEMORY_TRACKING_LEVEL must be 0 (OFF), 1 (LITE), or 2 (FULL)"
+#endif
+// FULL-only machinery (hashmap tracker, guard bytes, callstacks, per-alloc records,
+// forensics editor tabs). ANY = LITE or FULL (category stack, stats, budgets, the
+// unified aggregator, the profiler Memory tab + HUD). Both are 0 at tier OFF.
+#define ZENITH_MEMORY_TRACKING_FULL (ZENITH_MEMORY_TRACKING_LEVEL >= 2)
+#define ZENITH_MEMORY_TRACKING_ANY  (ZENITH_MEMORY_TRACKING_LEVEL >= 1)
 #define ZENITH_INPUT_SIMULATOR
 
 #define COUNT_OF(x) sizeof(x) / sizeof(x[0])
@@ -286,13 +313,11 @@ extern const char* Project_GetGameAssetsDirectory();
 #define ZENITH_MAX_MESHES ZenithConfig::MAX_MESHES
 #define ZENITH_MAX_MATERIALS ZenithConfig::MAX_MATERIALS
 
-// Memory management system setup
-// The macro is only enabled via Zenith_MemoryManagement_Enabled.h if:
-// 1. ZENITH_MEMORY_MANAGEMENT_ENABLED is defined (line 156)
-// 2. ZENITH_PLACEMENT_NEW_ZONE is NOT defined (files that create third-party objects define this)
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
+// Memory management: global operator new/delete overloads + the tiered tracking
+// layer (ZENITH_MEMORY_TRACKING_LEVEL, defined above). There is no longer a
+// `#define new` hammer, so no include sandwich is needed here — the two legacy
+// _Disabled.h/_Enabled.h stubs are being swept out.
 #include "Memory/Zenith_MemoryManagement.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 // Unit test framework - macros compile to no-ops when ZENITH_TESTING is undefined.
 #include "Core/Zenith_TestFramework.h"

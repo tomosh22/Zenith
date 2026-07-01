@@ -4,11 +4,9 @@
 #include "Profiling/Zenith_Profiling.h"
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
 Zenith_AnimationAsset::Zenith_AnimationAsset()

@@ -292,6 +292,12 @@ static void EndFrameSubmitAndPresent(bool bSubmitRenderWork)
 
 	Zenith_MemoryManagement::EndFrame();
 
+#if ZENITH_MEMORY_TRACKING_ANY
+	// Feed the once-per-frame memory snapshot into the profiler's Memory tab/HUD/report.
+	// SampleFrame() is a pure counter read; PushMemorySample skips itself while paused.
+	g_xEngine.Profiling().PushMemorySample(Zenith_MemoryManagement::SampleFrame());
+#endif
+
 	if (!Zenith_CommandLine::IsHeadless())
 	{
 		{
@@ -307,6 +313,11 @@ static void EndFrameSubmitAndPresent(bool bSubmitRenderWork)
 
 void Zenith_Core::Zenith_MainLoop()
 {
+	// Reset the per-frame memory delta / alloc / free counters at frame start,
+	// symmetric with Zenith_MemoryManagement::EndFrame() in EndFrameSubmitAndPresent.
+	// (Was never wired before, so frame-delta stats grew unbounded.)
+	Zenith_MemoryManagement::BeginFrame();
+
 	BeginFrame_Platform();
 
 	if (!AcquireSwapchainOrSkip())

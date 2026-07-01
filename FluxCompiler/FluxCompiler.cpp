@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #pragma warning(disable: 4005) // APIENTRY macro redefinition (GLFW vs Windows SDK)
-#include "Core/Memory/Zenith_MemoryManagement_Disabled.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Slang/Flux_ShaderCatalog.h"
 #include "Flux/Slang/Flux_FrequencyTaxonomy.h"  // ValidateReflection — spine gate

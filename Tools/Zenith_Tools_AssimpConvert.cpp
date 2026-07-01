@@ -6,10 +6,8 @@
 // Disable Zenith memory management for the entire file.
 // All Assimp object allocations must use standard C++ allocator
 // so that Assimp's destructors can properly free them.
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <assimp/scene.h>
 #include <assimp/anim.h>
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #include "Zenith_Tools_AssimpConvert.h"
 

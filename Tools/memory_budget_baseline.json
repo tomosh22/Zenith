@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Per-category / per-source MEMORY BUDGET baseline for the CI memory gate.",
+    "These are CEILINGS, not targets: shrink them, don't grow them. The gate",
+    "(Tools/check_memory_budget.py) fails when (a) a budgeted entry's budget is",
+    "raised without justification, (b) a budget drops below its own recorded",
+    "baseline_peak, or (c) a live-captured actual peak exceeds budget or regresses",
+    "beyond tolerance_pct vs baseline_peak_bytes.",
+    "",
+    "ci_capturable=true entries are measurable on the default headless GitHub runner",
+    "(CPU categories + Jolt via a bounded --memory-dump boot). ci_capturable=false",
+    "entries (RENDERER / VMA VRAM) need a GPU and are only enforced on the self-hosted",
+    "GPU runner. baseline_peak_bytes=0 means 'not yet measured' (ratchet-only).",
+    "",
+    "Regenerate captured peaks with:  python Tools/check_memory_budget.py --update <csv>"
+  ],
+  "tolerance_pct": 10.0,
+  "categories": {
+    "General":    { "budget_bytes": 0,          "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Engine":     { "budget_bytes": 0,          "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Renderer":   { "budget_bytes": 536870912,  "baseline_peak_bytes": 0, "ci_capturable": false },
+    "Physics":    { "budget_bytes": 134217728,  "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Scene":      { "budget_bytes": 134217728,  "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Asset":      { "budget_bytes": 1073741824, "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Animation":  { "budget_bytes": 67108864,   "baseline_peak_bytes": 0, "ci_capturable": true },
+    "AI":         { "budget_bytes": 33554432,   "baseline_peak_bytes": 0, "ci_capturable": true },
+    "UI":         { "budget_bytes": 33554432,   "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Audio":      { "budget_bytes": 67108864,   "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Scripting":  { "budget_bytes": 16777216,   "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Tools":      { "budget_bytes": 0,          "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Temp":       { "budget_bytes": 0,          "baseline_peak_bytes": 0, "ci_capturable": true },
+    "ECS":        { "budget_bytes": 67108864,   "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Terrain":    { "budget_bytes": 268435456,  "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Network":    { "budget_bytes": 0,          "baseline_peak_bytes": 0, "ci_capturable": true },
+    "GPUStaging": { "budget_bytes": 134217728,  "baseline_peak_bytes": 0, "ci_capturable": true }
+  },
+  "sources": {
+    "Engine CPU":   { "budget_bytes": 0, "baseline_peak_bytes": 0, "ci_capturable": true },
+    "Jolt Physics": { "budget_bytes": 0, "baseline_peak_bytes": 0, "ci_capturable": true },
+    "VMA VRAM":     { "budget_bytes": 0, "baseline_peak_bytes": 0, "ci_capturable": false }
+  }
+}

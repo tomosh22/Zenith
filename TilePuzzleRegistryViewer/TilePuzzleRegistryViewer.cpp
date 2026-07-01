@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #pragma warning(disable: 4005) // APIENTRY macro redefinition
-#include "Core/Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Profiling/Zenith_Profiling.h"

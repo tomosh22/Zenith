@@ -4,9 +4,7 @@
 #include "RenderTest/RenderTest_Guns.h"
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
 // Per-gun-entity data for the FPS pickup/drop testbed. A gun entity carries this

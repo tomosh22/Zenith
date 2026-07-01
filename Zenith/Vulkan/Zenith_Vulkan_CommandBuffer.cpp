@@ -16,10 +16,8 @@
 //#TO purely for the static assert in SetIndexBuffer
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "backends/imgui_impl_vulkan.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
 void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_GRAPHICS*/)

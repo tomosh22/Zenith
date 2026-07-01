@@ -51,15 +51,43 @@ Central configuration avoiding magic numbers scattered in code.
 
 ## Memory Management
 
-Location: `Memory/Zenith_MemoryManagement.h/cpp`
+Location: `Memory/Zenith_MemoryManagement.h/cpp` (+ `Zenith_MemoryTracker`, `Zenith_MemoryBudgets`, `Zenith_MemoryCategories`, `Zenith_MemoryFrameSample`).
 
-Memory allocation abstraction layer. Overloads global `new`/`delete` operators. Currently delegates to standard `malloc`/`realloc`/`free` but provides hook point for custom allocators. File/line tracking is stubbed but not yet implemented.
+Tiered global allocator. The global `operator new/delete` overloads route ALL heap
+traffic through `Zenith_MemoryManagement`; the tier `ZENITH_MEMORY_TRACKING_LEVEL`
+(set in `Zenith.h`, keyed off `ZENITH_DEBUG`) decides what routing does:
 
-### Allocation Consistency (CRITICAL)
+| Level | Config | Path | What it does |
+|-------|--------|------|--------------|
+| `2` FULL | Debug | `AllocateTracked` | guard bytes (`0xDEADBEEF`), `Zenith_HashMap` of live allocations, `0xCD`/`0xDD` fill, callstack capture, leak + double-free + guard checks, per-category + frame stats |
+| `1` LITE | Release | `AllocateLite` | 24-byte header-before-user cookie (magic + real-base offset + size + category) + lock-free per-category atomic counters/total/peak. No hashmap/guards/callstacks |
+| `0` OFF | (future Final) | `Allocate` | straight `malloc`/`free`, everything compiled out |
 
-**Never mix allocation strategies:**
-- `Allocate()`/`Reallocate()`/`Deallocate()` use `malloc`/`realloc`/`free`
-- `new[]`/`delete[]` may use a different heap
+Convenience macros: `ZENITH_MEMORY_TRACKING_FULL` (FULL only) and
+`ZENITH_MEMORY_TRACKING_ANY` (LITE or FULL) gate the tracker/budgets/stats.
+
+**Attribution = callstack + tag scopes — there is NO `#define new` hammer.** Wrap a
+region in `ZENITH_MEMORY_SCOPE(MEMORY_CATEGORY_RENDERER)` and every `new` inside it is
+attributed to that category. The category is resolved INSIDE the allocator, behind the
+init-flag check (the operators pass the `MEMORY_CATEGORY_FROM_SCOPE` sentinel), so the
+pre-init / TLS-setup window never touches thread-local storage. The legacy
+`Zenith_MemoryManagement_Enabled.h`/`_Disabled.h` "hammer" headers are neutralised
+no-op stubs being swept out; do NOT reintroduce a `#define new`.
+
+**Shutdown is a read-only leak checkpoint** called as the LAST step of
+`Zenith_Engine::Shutdown()`. It never flips the init flag false and never tears the
+tracker down, so base recovery stays valid for frees during static destruction.
+`BeginFrame()` (frame start) resets the per-frame delta counters; `EndFrame()` (frame
+end) runs the budget check.
+
+### Allocation Consistency (CRITICAL — sharper now)
+
+At FULL/LITE a `new` pointer's real base differs from the returned pointer (a guard or
+cookie sits in front), so freeing a `new` pointer via `Deallocate()` — or an
+`Allocate()` pointer via `delete` — is **guaranteed heap corruption**, not merely a
+different heap. Never mix the two strategies on the same pointer:
+- `Allocate()`/`Reallocate()`/`Deallocate()` use `malloc`/`realloc`/`free` and return the bare pointer.
+- `new`/`delete` route through the tiered tracked allocator (offset base).
 
 ```cpp
 // WRONG: Heap corruption!

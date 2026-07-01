@@ -16,9 +16,7 @@
 #include "Zenith_OS_Include.h"
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Editor/Zenith_Editor.h"
 #endif
 #ifdef ZENITH_INPUT_SIMULATOR

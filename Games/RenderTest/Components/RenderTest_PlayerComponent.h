@@ -39,9 +39,7 @@
 #include "RenderTest/Components/RenderTest_JetpackComponent.h"
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
 #include "RenderTest/Components/RenderTest_GameplayState.h"

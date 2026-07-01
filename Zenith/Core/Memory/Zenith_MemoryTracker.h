@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
+#if ZENITH_MEMORY_TRACKING_FULL
 
 #include "Zenith_MemoryCategories.h"
 #include "Collections/Zenith_HashMap.h"
@@ -80,7 +80,16 @@ public:
 
 	// Query functions
 	static const Zenith_MemoryStats& GetStats();
+	// Race-free copy taken UNDER the mutex — consumers that read concurrently with
+	// allocating worker threads (editor panel, profiler SampleFrame, budgets) must
+	// use this, not the live reference from GetStats().
+	static Zenith_MemoryStats CopyStats();
 	static const Zenith_AllocationRecord* FindAllocation(void* pAddress);
+	// Race-free: copies the record BY VALUE under the mutex. Callers that then act on
+	// the record (e.g. DeallocateTracked reading m_pRealAddress) MUST use this, never
+	// the raw FindAllocation pointer — that points into the hashmap's internal array,
+	// which a concurrent insert's rehash can free out from under an unlocked reader.
+	static bool CopyAllocation(void* pAddress, Zenith_AllocationRecord& xOut);
 	static bool IsValidAllocation(void* pAddress);
 
 	// Leak detection
@@ -98,7 +107,15 @@ public:
 	static u_int GetAllocationCount();
 
 private:
-	static Zenith_HashMap<void*, Zenith_AllocationRecord> s_xAllocations;
+	// The mutex and the live-allocation map are IMMORTAL — constructed once into static
+	// storage and NEVER destroyed. They must outlive all static destruction so that
+	// frees happening during process teardown (after Zenith_Engine::Shutdown()) can
+	// still lock the mutex and recover their real base from the map. Ordinary static
+	// members would have their destructors run by the CRT at exit in unspecified order
+	// relative to other TUs' statics, so a later static free would lock a deleted
+	// CRITICAL_SECTION / read a freed map array (UB). These accessors avoid that.
+	static Zenith_Mutex_NoProfiling& Mutex();
+	static Zenith_HashMap<void*, Zenith_AllocationRecord>& Allocations();
 
 	// Recently freed addresses for double-free detection
 	static constexpr u_int uFREED_HISTORY_SIZE = 1024;
@@ -106,10 +123,9 @@ private:
 	static u_int s_uFreedIndex;
 
 	static Zenith_MemoryStats s_xStats;
-	static Zenith_Mutex_NoProfiling s_xMutex;
 	static u_int64 s_ulFrameNumber;
 	static std::atomic<u_int64> s_ulNextAllocationID;
 	static bool s_bInitialised;
 };
 
-#endif // ZENITH_MEMORY_MANAGEMENT_ENABLED
+#endif // ZENITH_MEMORY_TRACKING_FULL

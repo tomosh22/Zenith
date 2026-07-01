@@ -181,6 +181,9 @@
     <ClCompile Include="..\Zenith\Core\Callstack\Zenith_Callstack.cpp">
       <Filter>Core\Callstack</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryAccounting.cpp">
+      <Filter>Core\Memory</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.cpp">
       <Filter>Core\Memory</Filter>
     </ClCompile>
@@ -2100,6 +2103,9 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.Tests.inl">
       <Filter>AssetHandling</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetTypeIds.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_BehaviourGraphAsset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
@@ -2133,6 +2139,9 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_ModelAsset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_ModelAsset.Tests.inl">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_PropertyTuning.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
@@ -2140,6 +2149,9 @@
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.Tests.inl">
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_TextureAsset.h">
@@ -2166,19 +2178,22 @@
     <ClInclude Include="..\Zenith\Core\FrameContext.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryAccounting.h">
+      <Filter>Core\Memory</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.h">
       <Filter>Core\Memory</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryCategories.h">
       <Filter>Core\Memory</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryFrameSample.h">
+      <Filter>Core\Memory</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.h">
       <Filter>Core\Memory</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h">
-      <Filter>Core\Memory</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h">
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.Tests.inl">
       <Filter>Core\Memory</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.h">

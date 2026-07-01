@@ -2,22 +2,11 @@
 
 #include "Physics/Zenith_Physics_Fwd.h"
 
-#ifdef ZENITH_PLACEMENT_NEW_ZONE
-#define ZENITH_PHYSICS_ZONE_WAS_SET
-#else
-#define ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 // Only what the class shape itself needs: the by-value PhysicsContactListener
 // member derives JPH::ContactListener. Everything else is fwd-declared
 // (Zenith_Physics_Fwd.h) — the full Jolt headers live in Zenith_Physics.cpp.
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
-#ifndef ZENITH_PHYSICS_ZONE_WAS_SET
-#undef ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#undef ZENITH_PHYSICS_ZONE_WAS_SET
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Collections/Zenith_Vector.h"
 #include "ZenithECS/Zenith_Entity.h"
 

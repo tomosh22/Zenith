@@ -101,6 +101,52 @@ void Zenith_Core::Zenith_Main()
 		if (std::strcmp(__argv[i], "--profiling-dump") == 0) { bProfilingDump = true; break; }
 	u_int uProfilingDumpFrame = 0;
 
+#if ZENITH_MEMORY_TRACKING_ANY
+	// --memory-dump: every 120 frames, dump the memory report (per-category + unified
+	// sources) to stdout, a truncated zenith_memory_dump.txt, AND a machine-readable
+	// zenith_memory_dump.csv (the feed the CI budget gate consumes). Mirrors --profiling-dump.
+	bool bMemoryDump = false;
+	for (int i = 1; i < __argc; ++i)
+		if (std::strcmp(__argv[i], "--memory-dump") == 0) { bMemoryDump = true; break; }
+	u_int uMemoryDumpFrame = 0;
+
+	// --memory-capture[=N]: run N headless frames so allocations settle, dump the memory
+	// report (stdout) + the machine-readable zenith_memory_dump.csv (the CI budget-gate
+	// LIVE-mode feed), then exit cleanly through the normal teardown. Deterministic and
+	// bounded — the Tier-A capture (CPU categories + Jolt; VRAM is 0 headless). Mirrors
+	// the --bench-ecs run-then-exit pattern.
+	for (int i = 1; i < __argc; ++i)
+	{
+		if (std::strncmp(__argv[i], "--memory-capture", 16) == 0)
+		{
+			u_int uCaptureFrames = 300;
+			const char* pxEq = std::strchr(__argv[i], '=');
+			if (pxEq != nullptr)
+			{
+				const int iN = std::atoi(pxEq + 1);
+				if (iN > 0) { uCaptureFrames = static_cast<u_int>(iN); }
+			}
+			for (u_int f = 0; f < uCaptureFrames && !Zenith_Window::GetInstance()->ShouldClose(); ++f)
+			{
+				g_xEngine.Profiling().BeginFrame();
+				Zenith_Core::Zenith_MainLoop();
+				g_xEngine.Profiling().EndFrame();
+			}
+			Zenith_MemoryManagement::WriteReport(stdout);
+			fflush(stdout);
+			FILE* pxCsv = nullptr;
+			fopen_s(&pxCsv, "zenith_memory_dump.csv", "w");
+			if (pxCsv != nullptr)
+			{
+				Zenith_MemoryManagement::WriteReportCSV(pxCsv);
+				fclose(pxCsv);
+			}
+			Zenith_Core::Zenith_FullShutdown();
+			std::exit(0);
+		}
+	}
+#endif
+
 	while (!Zenith_Window::GetInstance()->ShouldClose())
 	{
 		g_xEngine.Profiling().BeginFrame();
@@ -117,6 +163,27 @@ void Zenith_Core::Zenith_Main()
 				fclose(pxDumpFile);
 			}
 		}
+#if ZENITH_MEMORY_TRACKING_ANY
+		if (bMemoryDump && (++uMemoryDumpFrame % 120u) == 0u)
+		{
+			Zenith_MemoryManagement::WriteReport(stdout);
+			fflush(stdout);
+			FILE* pxMemTxt = nullptr;
+			fopen_s(&pxMemTxt, "zenith_memory_dump.txt", "w");
+			if (pxMemTxt)
+			{
+				Zenith_MemoryManagement::WriteReport(pxMemTxt);
+				fclose(pxMemTxt);
+			}
+			FILE* pxMemCsv = nullptr;
+			fopen_s(&pxMemCsv, "zenith_memory_dump.csv", "w");
+			if (pxMemCsv)
+			{
+				Zenith_MemoryManagement::WriteReportCSV(pxMemCsv);
+				fclose(pxMemCsv);
+			}
+		}
+#endif
 		g_xEngine.Profiling().EndFrame();
 	}
 

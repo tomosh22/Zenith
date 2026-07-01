@@ -3,9 +3,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
 ZENITH_REGISTER_ASSET_TYPE(Zenith_BehaviourGraphAsset)

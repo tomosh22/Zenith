@@ -36,9 +36,7 @@
 #include "Input/Zenith_InputSimulator.h"
 #endif
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 #include "Input/Zenith_Input.h"
 #include "Core/Zenith_CommandLine.h"

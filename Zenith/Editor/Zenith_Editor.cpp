@@ -73,12 +73,10 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Panels/Zenith_EditorPanel_VariantEditor.h"
 #include "Panels/Zenith_EditorPanel_Viewport.h"
 
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 // DockBuilder API (code-built default dock layout) lives in the internal
 // header by design — see BuildDefaultDockLayout below.
 #include "imgui_internal.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_EditorWindowNames.h"
@@ -529,6 +527,10 @@ void Zenith_Editor::RenderImGuiFrame()
 	{
 		Zenith_Profiling::ScopeZone xRenderProfileScope(ZENITH_PROFILE_ZONE("ImGUI Profiling"));
 		m_pxProfiling->RenderToImGui();
+#if ZENITH_MEMORY_TRACKING_ANY
+		// Always-on memory HUD overlay (toggled by the dbg_bShowMemoryHUD debug variable).
+		m_pxProfiling->RenderMemoryHUD();
+#endif
 	}
 
 	// Finalize ImGui rendering data - this MUST be called before submitting the render task
@@ -945,7 +947,7 @@ void Zenith_Editor::Render()
 	if (m_xEditorState.m_xPanels.m_bShowConsole) RenderConsolePanel();
 	RenderMaterialEditorPanel();
 
-#ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
+#if ZENITH_MEMORY_TRACKING_FULL
 	Zenith_EditorPanelMemory::Render();
 #endif
 

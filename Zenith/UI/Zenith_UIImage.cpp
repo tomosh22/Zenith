@@ -6,9 +6,7 @@
 #include "Flux/Flux_Buffers.h"
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
 namespace Zenith_UI {

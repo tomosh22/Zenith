@@ -2,8 +2,6 @@
 // Zenith_ColliderComponent.h pulls <Jolt/Jolt.h> raw (and Zenith_TransformComponent.h
 // is pulled transitively through it). Disable the memory-tracking placement-new macro
 // before those component headers to avoid clashing with Jolt's custom operator new,
-// exactly as Zenith_ColliderComponent.cpp / Zenith_TransformComponent.cpp do.
-#define ZENITH_PLACEMENT_NEW_ZONE
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TweenComponent.h"

@@ -6,6 +6,12 @@
 #include <chrono>
 #include <atomic>
 
+#if ZENITH_MEMORY_TRACKING_ANY
+// Leaf POD only (no allocator/tracker header) — keeps the layer-0 profiler free of an
+// up-edge onto the memory module. The sample is produced by the main loop.
+#include "Memory/Zenith_MemoryFrameSample.h"
+#endif
+
 // Compile-time master switch. Default ON; a shipping/Retail config defines this to 0
 // to strip the profiler. When 0: the hot path (ZENITH_PROFILE_SCOPE / ScopeZone +
 // ZENITH_PROFILING_FUNCTION_WRAPPER) compiles to nothing, the per-task profiling calls
@@ -195,6 +201,16 @@ public:
 	const Zenith_Vector<GPUPass>& GetGPUPasses() const { return m_xGPUPasses; }
 	double GetGPUTotalMs() const { return m_fGPUTotalMs; }
 
+#if ZENITH_MEMORY_TRACKING_ANY
+	// ---- Memory channel ----------------------------------------------------
+	// The main loop calls PushMemorySample once per frame with a POD snapshot from
+	// Zenith_MemoryManagement::SampleFrame() (a pure counter read). We append it to a
+	// rolling history (mirroring the frame-time ring) and keep the frozen latest sample.
+	// Skipped while paused so the Memory tab freezes with the CPU/GPU timeline.
+	void PushMemorySample(const Zenith_MemoryFrameSample& xSample);
+	const Zenith_MemoryFrameSample& GetMemorySample() const { return m_xMemSample; }
+#endif
+
 	#ifdef ZENITH_TOOLS
 	struct TimelineViewState
 	{
@@ -209,6 +225,11 @@ public:
 	void RenderToImGui();
 	void RenderTimelineView(TimelineViewState& xState);
 	void RenderThreadBreakdown(float fFrameDurationMs, u_int& uThreadID);
+	#if ZENITH_MEMORY_TRACKING_ANY
+	// Small always-on corner overlay (total MB + frame delta + worst category),
+	// toggled by dbg_bShowMemoryHUD. Drawn from the editor's ImGui frame.
+	void RenderMemoryHUD();
+	#endif
 	#endif
 
 	// RAII begin/end for a dense zone id (used by the ZENITH_PROFILE_SCOPE macro).
@@ -271,6 +292,17 @@ public:
 	u_int  m_uGPUHistoryHead = 0;
 	u_int  m_uGPUHistoryCount = 0;
 	float  m_fWorstGPUMs = 0.0f;
+
+#if ZENITH_MEMORY_TRACKING_ANY
+	// Memory history (mirrors the frame-time ring): total tracked bytes/frame + per
+	// category, plus the frozen latest sample and a running peak. Main-thread only.
+	float  m_afMemHistoryBytes[uFRAME_HISTORY]{};
+	float  m_aafMemHistoryCat[uFRAME_HISTORY][ZENITH_MEM_CAT_MAX]{};
+	u_int  m_uMemHistoryHead = 0;
+	u_int  m_uMemHistoryCount = 0;
+	float  m_fMemPeakBytes = 0.0f;
+	Zenith_MemoryFrameSample m_xMemSample{};
+#endif
 
 	// Zone descriptor table: fixed capacity (never reallocates), published count read
 	// with acquire so the UI can iterate lock-free while a worker appends a new zone.

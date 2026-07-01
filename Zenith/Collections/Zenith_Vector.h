@@ -1,12 +1,5 @@
 #pragma once
 
-// Save zone state and set up placement new protection
-#ifdef ZENITH_PLACEMENT_NEW_ZONE
-#define ZENITH_VECTOR_ZONE_WAS_SET
-#else
-#define ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "DataStream/Zenith_DataStream.h"
 
@@ -516,9 +509,3 @@ private:
 	u_int m_uGeneration = 0;  // Incremented on reallocation to detect iterator invalidation
 };
 
-// Restore zone state - only undefine if we defined it ourselves
-#ifndef ZENITH_VECTOR_ZONE_WAS_SET
-#undef ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#undef ZENITH_VECTOR_ZONE_WAS_SET
-#include "Memory/Zenith_MemoryManagement_Enabled.h"

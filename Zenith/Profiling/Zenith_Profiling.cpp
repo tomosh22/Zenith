@@ -10,6 +10,14 @@
 
 #include <cstring>
 
+#if ZENITH_MEMORY_TRACKING_ANY
+// Category names for the Memory tab/HUD (same layer-0 module; a trivial enum + names,
+// no code dependency). The per-frame sample itself is the leaf POD in the header.
+#include "Memory/Zenith_MemoryCategories.h"
+#include "Memory/Zenith_MemoryAccounting.h"
+#include "Memory/Zenith_MemoryBudgets.h"
+#endif
+
 #if ZENITH_PROFILING_ENABLED
 
 static constexpr float fPROFILING_MAX_EVENT_TIME_SECONDS = 0.5f;
@@ -42,6 +50,11 @@ DEBUGVAR bool dbg_bPauseRequested = false;
 #ifdef ZENITH_DEBUG_VARIABLES
 DEBUGVAR bool  dbg_bPauseOnSpike      = false;
 DEBUGVAR float dbg_fSpikeThresholdMs  = 33.3f;
+
+#if ZENITH_MEMORY_TRACKING_ANY
+// Toggles the always-on memory HUD overlay (drawn from the editor ImGui frame).
+DEBUGVAR bool  dbg_bShowMemoryHUD     = false;
+#endif
 #endif
 
 // --- Hot path (producer, lock-free) ---------------------------------------
@@ -355,6 +368,37 @@ void Zenith_Profiling::EndFrame()
 	}
 #endif
 }
+
+#if ZENITH_MEMORY_TRACKING_ANY
+void Zenith_Profiling::PushMemorySample(const Zenith_MemoryFrameSample& xSample)
+{
+	// Skip while paused so the Memory tab freezes with the CPU/GPU timeline (the last
+	// sample + history persist). Main-thread only — no locking, just a POD copy + ring push.
+	if (dbg_bPauseRequested)
+	{
+		return;
+	}
+
+	m_xMemSample = xSample;
+
+	const float fTotal = static_cast<float>(xSample.m_ulTotalBytes);
+	m_afMemHistoryBytes[m_uMemHistoryHead] = fTotal;
+	const u_int uCats = (xSample.m_uCategoryCount < ZENITH_MEM_CAT_MAX) ? xSample.m_uCategoryCount : ZENITH_MEM_CAT_MAX;
+	for (u_int c = 0; c < ZENITH_MEM_CAT_MAX; ++c)
+	{
+		m_aafMemHistoryCat[m_uMemHistoryHead][c] = (c < uCats) ? static_cast<float>(xSample.m_aulCategoryBytes[c]) : 0.0f;
+	}
+	m_uMemHistoryHead = (m_uMemHistoryHead + 1) % uFRAME_HISTORY;
+	if (m_uMemHistoryCount < uFRAME_HISTORY)
+	{
+		m_uMemHistoryCount++;
+	}
+	if (fTotal > m_fMemPeakBytes)
+	{
+		m_fMemPeakBytes = fTotal;
+	}
+}
+#endif
 
 // --- Hot-path member + bridge entry points --------------------------------
 
@@ -676,6 +720,12 @@ void Zenith_Profiling::WriteTextReport(FILE* pFile)
 	WriteHeadlineAndZoneTable(pFile, *this, fDisplayFrameMs, uThreadCount, uTotalEvents, xSorted, xStats);
 	WriteGPUPassesSection(pFile, m_xGPUPasses, m_fGPUTotalMs);
 	WritePerPassCPUVsGPUSection(pFile, xLabelStats, m_xGPUPasses);
+
+#if ZENITH_MEMORY_TRACKING_ANY
+	// Combined CPU+GPU+memory snapshot: a single --profiling-dump now also covers memory.
+	fprintf(pFile, "\n");
+	Zenith_MemoryManagement::WriteReport(pFile);
+#endif
 
 	fprintf(pFile, "\n");
 }
@@ -1177,6 +1227,143 @@ static void RenderGPUView(Zenith_Profiling& xSelf, GPUViewState& xView)
 	RenderGPUPassTable(xSelf, xView, xCats);
 }
 
+#if ZENITH_MEMORY_TRACKING_ANY
+// Human-readable byte formatter for the Memory tab/HUD.
+static const char* MemFormatBytes(u_int64 ulBytes, char* acBuf, size_t uLen)
+{
+	if (ulBytes >= (1ull << 30))      snprintf(acBuf, uLen, "%.2f GB", static_cast<double>(ulBytes) / (1024.0 * 1024.0 * 1024.0));
+	else if (ulBytes >= (1ull << 20)) snprintf(acBuf, uLen, "%.2f MB", static_cast<double>(ulBytes) / (1024.0 * 1024.0));
+	else if (ulBytes >= 1024)         snprintf(acBuf, uLen, "%.2f KB", static_cast<double>(ulBytes) / 1024.0);
+	else                              snprintf(acBuf, uLen, "%llu B", ulBytes);
+	return acBuf;
+}
+
+// Memory tab: total-bytes history graph + per-category live breakdown, read from the
+// per-frame POD sample the main loop pushes. LITE leaves per-frame delta counters at 0.
+static void RenderMemoryView(Zenith_Profiling& xSelf)
+{
+	const Zenith_MemoryFrameSample& xS = xSelf.m_xMemSample;
+	char acA[64], acB[64];
+
+	ImGui::Text("Tracked: %s   Peak: %s   Live allocations: %llu",
+		MemFormatBytes(xS.m_ulTotalBytes, acA, sizeof(acA)),
+		MemFormatBytes(xS.m_ulPeakBytes, acB, sizeof(acB)),
+		xS.m_ulTotalAllocations);
+	if (xS.m_ilFrameDeltaBytes != 0 || xS.m_uFrameAllocations != 0 || xS.m_uFrameDeallocations != 0)
+	{
+		ImGui::Text("Frame delta: %+.2f KB   allocs: %u  frees: %u",
+			static_cast<double>(xS.m_ilFrameDeltaBytes) / 1024.0, xS.m_uFrameAllocations, xS.m_uFrameDeallocations);
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Reset Peak")) xSelf.m_fMemPeakBytes = 0.0f;
+
+	// Total-bytes history (peak MB annotated), mirroring the GPU-history plot.
+	{
+		float fMaxBytes = 1.0f;
+		for (u_int i = 0; i < Zenith_Profiling::uFRAME_HISTORY; ++i) fMaxBytes = std::max(fMaxBytes, xSelf.m_afMemHistoryBytes[i]);
+		char acOverlay[48];
+		snprintf(acOverlay, sizeof(acOverlay), "%.1f MB", fMaxBytes / (1024.0f * 1024.0f));
+		ImGui::PlotLines("##MemTotal", xSelf.m_afMemHistoryBytes, static_cast<int>(Zenith_Profiling::uFRAME_HISTORY),
+			static_cast<int>(xSelf.m_uMemHistoryHead), acOverlay, 0.0f, fMaxBytes * 1.1f, ImVec2(-1.0f, 60.0f));
+	}
+
+	ImGui::Separator();
+
+	// Per-category table: bytes, live count, and a share bar vs the current total.
+	if (ImGui::BeginTable("MemCategoryTable", 4,
+		ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable))
+	{
+		ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+		ImGui::TableSetupColumn("Allocated", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+		ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+		ImGui::TableSetupColumn("Share", ImGuiTableColumnFlags_WidthStretch);
+		ImGui::TableHeadersRow();
+
+		const u_int uCats = (xS.m_uCategoryCount < ZENITH_MEM_CAT_MAX) ? xS.m_uCategoryCount : ZENITH_MEM_CAT_MAX;
+		const double fTotal = (xS.m_ulTotalBytes > 0) ? static_cast<double>(xS.m_ulTotalBytes) : 1.0;
+		for (u_int i = 0; i < uCats && i < MEMORY_CATEGORY_COUNT; ++i)
+		{
+			if (xS.m_aulCategoryBytes[i] == 0 && xS.m_aulCategoryCount[i] == 0)
+			{
+				continue;
+			}
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn(); ImGui::Text("%s", GetMemoryCategoryName(static_cast<Zenith_MemoryCategory>(i)));
+			ImGui::TableNextColumn(); ImGui::Text("%s", MemFormatBytes(xS.m_aulCategoryBytes[i], acA, sizeof(acA)));
+			ImGui::TableNextColumn(); ImGui::Text("%llu", xS.m_aulCategoryCount[i]);
+			ImGui::TableNextColumn();
+			ImGui::ProgressBar(static_cast<float>(static_cast<double>(xS.m_aulCategoryBytes[i]) / fTotal), ImVec2(-1.0f, 0.0f));
+		}
+		ImGui::EndTable();
+	}
+
+	// Unified sources — engine CPU + Jolt + VRAM + ... (VRAM shown separately, never
+	// summed into process RAM). Populated once per frame by Zenith_MemoryAccounting.
+	ImGui::Separator();
+	ImGui::TextDisabled("Unified sources");
+	if (ImGui::BeginTable("MemSourcesTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+	{
+		ImGui::TableSetupColumn("Source", ImGuiTableColumnFlags_WidthFixed, 140.0f);
+		ImGui::TableSetupColumn("Bytes", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+		ImGui::TableSetupColumn("Allocations", ImGuiTableColumnFlags_WidthStretch);
+		ImGui::TableHeadersRow();
+		for (u_int i = 0; i < Zenith_MemoryAccounting::GetSourceCount(); ++i)
+		{
+			const Zenith_MemorySource& xSrc = Zenith_MemoryAccounting::GetSource(i);
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn(); ImGui::Text("%s%s", xSrc.m_szName, xSrc.m_bIsVRAM ? " [VRAM]" : "");
+			ImGui::TableNextColumn(); ImGui::Text("%s", MemFormatBytes(xSrc.m_ulBytes, acA, sizeof(acA)));
+			ImGui::TableNextColumn(); ImGui::Text("%llu", xSrc.m_ulAllocCount);
+		}
+		ImGui::EndTable();
+	}
+	ImGui::Text("Process RAM: %s   |   VRAM: %s",
+		MemFormatBytes(Zenith_MemoryAccounting::GetTotalProcessRAM(), acA, sizeof(acA)),
+		MemFormatBytes(Zenith_MemoryAccounting::GetTotalVRAM(), acB, sizeof(acB)));
+}
+
+void Zenith_Profiling::RenderMemoryHUD()
+{
+	if (!dbg_bShowMemoryHUD)
+	{
+		return;
+	}
+
+	const Zenith_MemoryFrameSample& xS = m_xMemSample;
+	ImGuiViewport* pxVP = ImGui::GetMainViewport();
+	const ImVec2 xPos(pxVP->WorkPos.x + pxVP->WorkSize.x - 10.0f, pxVP->WorkPos.y + 10.0f);
+	ImGui::SetNextWindowPos(xPos, ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+	ImGui::SetNextWindowBgAlpha(0.55f);
+	const ImGuiWindowFlags uFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+		ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize |
+		ImGuiWindowFlags_NoFocusOnAppearing;
+	if (ImGui::Begin("##MemoryHUD", nullptr, uFlags))
+	{
+		char acA[64];
+		if (xS.m_ilFrameDeltaBytes != 0)
+		{
+			ImGui::Text("MEM %s  (%+.1f KB)", MemFormatBytes(xS.m_ulTotalBytes, acA, sizeof(acA)),
+				static_cast<double>(xS.m_ilFrameDeltaBytes) / 1024.0);
+		}
+		else
+		{
+			ImGui::Text("MEM %s", MemFormatBytes(xS.m_ulTotalBytes, acA, sizeof(acA)));
+		}
+
+		// Worst category vs its budget — red when over, orange when near.
+		const Zenith_MemoryWorstOffender xWorst = Zenith_MemoryBudgets::GetWorstOffender();
+		if (xWorst.m_fUsagePercent > 0.0f)
+		{
+			const ImVec4 xCol = (xWorst.m_fUsagePercent > 100.0f)
+				? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(1.0f, 0.7f, 0.2f, 1.0f);
+			ImGui::TextColored(xCol, "%s %.0f%% of budget",
+				GetMemoryCategoryName(xWorst.m_eCategory), xWorst.m_fUsagePercent);
+		}
+	}
+	ImGui::End();
+}
+#endif // ZENITH_MEMORY_TRACKING_ANY
+
 void Zenith_Profiling::RenderToImGui()
 {
 	ImGui::Begin(szEDITOR_WINDOW_PROFILING);
@@ -1250,6 +1437,16 @@ void Zenith_Profiling::RenderToImGui()
 			RenderGPUView(*this, ls_xGPUView);
 			ImGui::EndTabItem();
 		}
+
+#if ZENITH_MEMORY_TRACKING_ANY
+		// Memory tab: per-frame tracked-bytes history + per-category live breakdown,
+		// from Zenith_MemoryManagement::SampleFrame() pushed each frame by the main loop.
+		if (ImGui::BeginTabItem("Memory"))
+		{
+			RenderMemoryView(*this);
+			ImGui::EndTabItem();
+		}
+#endif
 
 		ImGui::EndTabBar();
 	}
@@ -1766,6 +1963,9 @@ void Zenith_Profiling::WriteTextReport(FILE*) {}
 void Zenith_Profiling::BeginGPUCapture() {}
 void Zenith_Profiling::AddGPUPass(const char*, double, u_int) {}
 void Zenith_Profiling::EndGPUCapture() {}
+#if ZENITH_MEMORY_TRACKING_ANY
+void Zenith_Profiling::PushMemorySample(const Zenith_MemoryFrameSample&) {}
+#endif
 
 void Zenith_Profiling_Detail::BeginProfileZone(Zenith_ProfileZoneID, const char*) {}
 void Zenith_Profiling_Detail::EndProfileZone(Zenith_ProfileZoneID) {}
@@ -1776,6 +1976,9 @@ void Zenith_Profiling_Detail::UnregisterThread() {}
 void Zenith_Profiling::RenderToImGui() {}
 void Zenith_Profiling::RenderTimelineView(TimelineViewState&) {}
 void Zenith_Profiling::RenderThreadBreakdown(float, u_int&) {}
+#if ZENITH_MEMORY_TRACKING_ANY
+void Zenith_Profiling::RenderMemoryHUD() {}
+#endif
 #endif
 
 #endif // ZENITH_PROFILING_ENABLED

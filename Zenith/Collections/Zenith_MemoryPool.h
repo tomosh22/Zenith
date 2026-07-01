@@ -64,9 +64,7 @@ public:
 		Zenith_Assert(!m_abAllocated[uIndex], "Memory pool slot already allocated - corruption detected");
 		m_abAllocated[uIndex] = true;
 
-		#include "Memory/Zenith_MemoryManagement_Disabled.h"
 		return (new (pxSlot) T(std::forward<Args>(args)...));
-		#include "Memory/Zenith_MemoryManagement_Enabled.h"
 	}
 
 	void Deallocate(T* const pxVal)

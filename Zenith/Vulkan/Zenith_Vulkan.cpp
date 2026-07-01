@@ -22,13 +22,11 @@
 #endif
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "backends/imgui_impl_vulkan.h"
 #ifdef ZENITH_WINDOWS
 #include "backends/imgui_impl_glfw.h"
 #endif //ZENITH_WINDOWS
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif //ZENITH_TOOLS
 
@@ -51,7 +49,6 @@ static std::atomic<u_int64> s_ulImGuiMemoryAllocated = 0;
 static std::atomic<u_int64> s_ulImGuiAllocationCount = 0;
 
 // Disable memory management macros for ImGui allocator (uses raw malloc/free)
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 // Custom ImGui allocator with tracking
 static void* ImGuiAllocWrapper(size_t sz, void* user_data)
@@ -88,7 +85,6 @@ static void ImGuiFreeWrapper(void* ptr, void* user_data)
 }
 
 // Re-enable memory management macros
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 u_int64 Zenith_Vulkan::GetImGuiMemoryAllocated()
 {

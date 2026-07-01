@@ -1,0 +1,47 @@
+# Memory-budget gate. Fires on every PR / push to master.
+#
+# Mirrors the complexity gate: a committed baseline of per-category / per-source
+# memory budgets (Tools/memory_budget_baseline.json) and a checker
+# (Tools/check_memory_budget.py) that fails on a regression. This job runs the
+# RATCHET mode — pure-JSON validation with no live capture, so it needs no build
+# and no GPU: every budgeted entry's budget must be >= its recorded baseline peak,
+# and (by review discipline) budgets shrink, they don't grow.
+#
+# LIVE capture (comparing a `--memory-dump` CSV against the baseline) is a
+# follow-up: Tier-A (CPU categories + Jolt) is capturable on this headless runner
+# once a bounded --memory-dump boot is wired into the game build; Tier-B (VRAM /
+# RENDERER) needs the self-hosted GPU runner (--include-gpu).
+#
+# Required check name: `memory-gate`.
+
+name: Memory Gate
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  memory-gate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run memory-budget gate (ratchet)
+        working-directory: ${{ env.GITHUB_WORKSPACE }}
+        shell: cmd
+        run: Tools\CheckMemoryBudget.bat
+
+      - name: Run gate unit tests
+        working-directory: ${{ env.GITHUB_WORKSPACE }}
+        shell: cmd
+        run: python Tools\tests\test_check_memory_budget.py

@@ -1,6 +1,6 @@
 #include "Zenith.h"
 
-#ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
+#if ZENITH_MEMORY_TRACKING_FULL
 
 #include "Memory/Zenith_MemoryTracker.h"
 #include "Callstack/Zenith_Callstack.h"
@@ -8,14 +8,32 @@
 
 #include <cstring>
 
-Zenith_HashMap<void*, Zenith_AllocationRecord> Zenith_MemoryTracker::s_xAllocations;
 void* Zenith_MemoryTracker::s_apFreedAddresses[uFREED_HISTORY_SIZE] = { nullptr };
 u_int Zenith_MemoryTracker::s_uFreedIndex = 0;
 Zenith_MemoryStats Zenith_MemoryTracker::s_xStats = {};
-Zenith_Mutex_NoProfiling Zenith_MemoryTracker::s_xMutex;
 u_int64 Zenith_MemoryTracker::s_ulFrameNumber = 0;
 std::atomic<u_int64> Zenith_MemoryTracker::s_ulNextAllocationID(0);
 bool Zenith_MemoryTracker::s_bInitialised = false;
+
+// Immortal mutex + map (see the header comment). Constructed once via placement-new
+// into static storage on first use; only a trivially-destructible pointer has static
+// storage duration, so the mutex/map objects themselves are NEVER destroyed and remain
+// valid through the entire process teardown (post-Shutdown static-destruction frees
+// still lock the mutex and recover their base from the map). ::new here is the standard
+// non-allocating placement new (NOT our overloaded operator new) — no re-entrancy.
+Zenith_Mutex_NoProfiling& Zenith_MemoryTracker::Mutex()
+{
+	alignas(Zenith_Mutex_NoProfiling) static unsigned char s_axStorage[sizeof(Zenith_Mutex_NoProfiling)];
+	static Zenith_Mutex_NoProfiling* s_pxMutex = ::new (static_cast<void*>(s_axStorage)) Zenith_Mutex_NoProfiling();
+	return *s_pxMutex;
+}
+
+Zenith_HashMap<void*, Zenith_AllocationRecord>& Zenith_MemoryTracker::Allocations()
+{
+	alignas(Zenith_HashMap<void*, Zenith_AllocationRecord>) static unsigned char s_axStorage[sizeof(Zenith_HashMap<void*, Zenith_AllocationRecord>)];
+	static Zenith_HashMap<void*, Zenith_AllocationRecord>* s_pxMap = ::new (static_cast<void*>(s_axStorage)) Zenith_HashMap<void*, Zenith_AllocationRecord>();
+	return *s_pxMap;
+}
 
 void Zenith_MemoryTracker::Initialise()
 {
@@ -25,7 +43,7 @@ void Zenith_MemoryTracker::Initialise()
 	}
 
 	// Reserve space for allocations to reduce rehashing
-	s_xAllocations.Reserve(10000);
+	Allocations().Reserve(10000);
 
 	// Initialize stats
 	memset(&s_xStats, 0, sizeof(s_xStats));
@@ -44,13 +62,13 @@ void Zenith_MemoryTracker::Shutdown()
 	// Report any leaks before shutdown
 	ReportLeaks();
 
-	s_xAllocations.Clear();
+	Allocations().Clear();
 	s_bInitialised = false;
 }
 
 void Zenith_MemoryTracker::BeginFrame()
 {
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
 
 	// Reset frame stats
 	s_xStats.m_ilFrameDelta = 0;
@@ -60,7 +78,7 @@ void Zenith_MemoryTracker::BeginFrame()
 
 void Zenith_MemoryTracker::EndFrame()
 {
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
 	++s_ulFrameNumber;
 }
 
@@ -100,11 +118,11 @@ void Zenith_MemoryTracker::TrackAllocation(
 	);
 
 	{
-		Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
+		Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
 
 		xRecord.m_ulFrameNumber = s_ulFrameNumber;
 
-		s_xAllocations[pUserAddress] = xRecord;
+		Allocations()[pUserAddress] = xRecord;
 
 		// Update stats
 		s_xStats.m_ulTotalAllocated += ulSize;
@@ -145,9 +163,9 @@ bool Zenith_MemoryTracker::TrackDeallocation(void* pUserAddress)
 		return false;
 	}
 
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
 
-	const Zenith_AllocationRecord* pxRecord = s_xAllocations.TryGet(pUserAddress);
+	const Zenith_AllocationRecord* pxRecord = Allocations().TryGet(pUserAddress);
 	if (pxRecord == nullptr)
 	{
 		// Check if this was recently freed (double-free detection)
@@ -187,7 +205,7 @@ bool Zenith_MemoryTracker::TrackDeallocation(void* pUserAddress)
 	s_uFreedIndex = (s_uFreedIndex + 1) % uFREED_HISTORY_SIZE;
 
 	// Remove from map
-	s_xAllocations.Remove(pUserAddress);
+	Allocations().Remove(pUserAddress);
 
 	return true;
 }
@@ -197,24 +215,44 @@ const Zenith_MemoryStats& Zenith_MemoryTracker::GetStats()
 	return s_xStats;
 }
 
+Zenith_MemoryStats Zenith_MemoryTracker::CopyStats()
+{
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
+	return s_xStats; // copy under the lock — no torn reads while workers allocate
+}
+
 const Zenith_AllocationRecord* Zenith_MemoryTracker::FindAllocation(void* pAddress)
 {
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
 
-	return s_xAllocations.TryGet(pAddress);
+	return Allocations().TryGet(pAddress);
+}
+
+bool Zenith_MemoryTracker::CopyAllocation(void* pAddress, Zenith_AllocationRecord& xOut)
+{
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
+
+	const Zenith_AllocationRecord* pRecord = Allocations().TryGet(pAddress);
+	if (pRecord == nullptr)
+	{
+		return false;
+	}
+	xOut = *pRecord; // copy the whole record BY VALUE while the lock is held — the
+	                 // returned pointer would dangle on a concurrent insert's rehash.
+	return true;
 }
 
 bool Zenith_MemoryTracker::IsValidAllocation(void* pAddress)
 {
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
-	return s_xAllocations.Contains(pAddress);
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
+	return Allocations().Contains(pAddress);
 }
 
 void Zenith_MemoryTracker::ReportLeaks()
 {
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
 
-	if (s_xAllocations.GetSize() == 0)
+	if (Allocations().GetSize() == 0)
 	{
 		Zenith_Log(LOG_CATEGORY_CORE, "No memory leaks detected");
 		return;
@@ -222,17 +260,17 @@ void Zenith_MemoryTracker::ReportLeaks()
 
 	Zenith_Error(LOG_CATEGORY_CORE, "=== MEMORY LEAK REPORT ===");
 	Zenith_Error(LOG_CATEGORY_CORE, "%u allocations still active, %llu bytes total",
-		s_xAllocations.GetSize(), s_xStats.m_ulTotalAllocated);
+		Allocations().GetSize(), s_xStats.m_ulTotalAllocated);
 
 	u_int uLeakCount = 0;
 	constexpr u_int uMAX_LEAKS_TO_REPORT = 100;
 
-	for (Zenith_HashMap<void*, Zenith_AllocationRecord>::Iterator xIt(s_xAllocations); !xIt.Done(); xIt.Next())
+	for (Zenith_HashMap<void*, Zenith_AllocationRecord>::Iterator xIt(Allocations()); !xIt.Done(); xIt.Next())
 	{
 		if (uLeakCount >= uMAX_LEAKS_TO_REPORT)
 		{
 			Zenith_Error(LOG_CATEGORY_CORE, "... and %u more leaks",
-				s_xAllocations.GetSize() - uMAX_LEAKS_TO_REPORT);
+				Allocations().GetSize() - uMAX_LEAKS_TO_REPORT);
 			break;
 		}
 
@@ -270,15 +308,15 @@ void Zenith_MemoryTracker::ReportLeaks()
 
 u_int Zenith_MemoryTracker::GetLeakCount()
 {
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
-	return s_xAllocations.GetSize();
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
+	return Allocations().GetSize();
 }
 
 bool Zenith_MemoryTracker::CheckGuards(void* pUserAddress)
 {
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
 
-	const Zenith_AllocationRecord* pxRecord = s_xAllocations.TryGet(pUserAddress);
+	const Zenith_AllocationRecord* pxRecord = Allocations().TryGet(pUserAddress);
 	if (pxRecord == nullptr)
 	{
 		return false;
@@ -286,9 +324,11 @@ bool Zenith_MemoryTracker::CheckGuards(void* pUserAddress)
 
 	const Zenith_AllocationRecord& xRecord = *pxRecord;
 
-	// Check front guard
+	// Check front guard — it lives in the 4 bytes IMMEDIATELY BEFORE the user pointer
+	// (not at the real base), because the front region is padded up to the requested
+	// alignment. See AllocateTracked's layout in Zenith_MemoryManagement.cpp.
 	u_int32* pFrontGuard = reinterpret_cast<u_int32*>(
-		static_cast<u_int8*>(xRecord.m_pRealAddress));
+		static_cast<u_int8*>(xRecord.m_pAddress) - uGUARD_SIZE);
 	if (*pFrontGuard != uMEMORY_GUARD_PATTERN)
 	{
 		Zenith_Error(LOG_CATEGORY_CORE,
@@ -313,16 +353,17 @@ bool Zenith_MemoryTracker::CheckGuards(void* pUserAddress)
 
 void Zenith_MemoryTracker::CheckAllGuards()
 {
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
 
 	u_int uCorruptionCount = 0;
 
-	for (Zenith_HashMap<void*, Zenith_AllocationRecord>::Iterator xIt(s_xAllocations); !xIt.Done(); xIt.Next())
+	for (Zenith_HashMap<void*, Zenith_AllocationRecord>::Iterator xIt(Allocations()); !xIt.Done(); xIt.Next())
 	{
 		const Zenith_AllocationRecord& xRecord = xIt.GetValue();
 
-		// Check front guard
-		u_int32* pFrontGuard = reinterpret_cast<u_int32*>(xRecord.m_pRealAddress);
+		// Check front guard — in the 4 bytes immediately before the user pointer.
+		u_int32* pFrontGuard = reinterpret_cast<u_int32*>(
+			static_cast<u_int8*>(xRecord.m_pAddress) - uGUARD_SIZE);
 		if (*pFrontGuard != uMEMORY_GUARD_PATTERN)
 		{
 			Zenith_Error(LOG_CATEGORY_CORE,
@@ -349,13 +390,13 @@ void Zenith_MemoryTracker::CheckAllGuards()
 	}
 	else
 	{
-		Zenith_Log(LOG_CATEGORY_CORE, "Guard check passed for %u allocations", s_xAllocations.GetSize());
+		Zenith_Log(LOG_CATEGORY_CORE, "Guard check passed for %u allocations", Allocations().GetSize());
 	}
 }
 
 bool Zenith_MemoryTracker::IsDoubleFree(void* pAddress)
 {
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
 
 	for (u_int i = 0; i < uFREED_HISTORY_SIZE; ++i)
 	{
@@ -372,7 +413,7 @@ void Zenith_MemoryTracker::ForEachAllocation(AllocationCallback pfnCallback, voi
 	// CRITICAL: We must NOT hold the mutex while calling the callback!
 	// The callback may allocate memory (e.g., vector::push_back), which would:
 	// 1. Call operator new -> AllocateTracked -> TrackAllocation
-	// 2. TrackAllocation tries to acquire s_xMutex -> DEADLOCK
+	// 2. TrackAllocation tries to acquire Mutex() -> DEADLOCK
 	//
 	// Solution: Copy allocation records while holding lock, then iterate unlocked.
 	// This is safe because we're copying by value and the callback only reads.
@@ -384,9 +425,9 @@ void Zenith_MemoryTracker::ForEachAllocation(AllocationCallback pfnCallback, voi
 	size_t uRecordCount = 0;
 
 	{
-		Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
+		Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
 
-		for (Zenith_HashMap<void*, Zenith_AllocationRecord>::Iterator xIt(s_xAllocations); !xIt.Done(); xIt.Next())
+		for (Zenith_HashMap<void*, Zenith_AllocationRecord>::Iterator xIt(Allocations()); !xIt.Done(); xIt.Next())
 		{
 			if (uRecordCount >= uMAX_RECORDS)
 			{
@@ -405,8 +446,8 @@ void Zenith_MemoryTracker::ForEachAllocation(AllocationCallback pfnCallback, voi
 
 u_int Zenith_MemoryTracker::GetAllocationCount()
 {
-	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xMutex);
-	return s_xAllocations.GetSize();
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Mutex());
+	return Allocations().GetSize();
 }
 
-#endif // ZENITH_MEMORY_MANAGEMENT_ENABLED
+#endif // ZENITH_MEMORY_TRACKING_FULL

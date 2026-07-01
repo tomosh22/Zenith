@@ -26,13 +26,11 @@ static std::string GetEngineAssetsDirectory()
 #include <algorithm>
 #include <cmath>
 #define STB_IMAGE_IMPLEMENTATION
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #pragma warning(push, 0)
 #include "stb/stb_image.h"
 #define STB_DXT_IMPLEMENTATION
 #include "stb/stb_dxt.h"
 #pragma warning(pop)
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 bool Zenith_Tools_TextureExport::IsCompressedFormat(TextureFormat eFormat)
 {

@@ -3,13 +3,6 @@
 // Placement-new scope guard: Zenith_Vector and other containers use placement
 // new internally, which conflicts with the engine's global operator new/delete
 // overrides. Save the zone state, define it for this header, and restore on
-// exit. Mirrors Zenith_SceneData.h's pattern.
-#ifdef ZENITH_PLACEMENT_NEW_ZONE
-#define ZENITH_ENTITYSTORE_ZONE_WAS_SET
-#else
-#define ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashMap.h"
@@ -210,9 +203,3 @@ public:
 	}
 };
 
-// Restore placement-new zone state -- only undefine if we set it
-#ifndef ZENITH_ENTITYSTORE_ZONE_WAS_SET
-#undef ZENITH_PLACEMENT_NEW_ZONE
-#endif
-#undef ZENITH_ENTITYSTORE_ZONE_WAS_SET
-#include "Memory/Zenith_MemoryManagement_Enabled.h"

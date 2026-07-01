@@ -1,7 +1,7 @@
 #pragma once
 
 #ifdef ZENITH_TOOLS
-#ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
+#if ZENITH_MEMORY_TRACKING_FULL
 
 #include "Collections/Zenith_Vector.h"
 
@@ -46,5 +46,5 @@ namespace Zenith_EditorPanelMemory
 	}
 }
 
-#endif // ZENITH_MEMORY_MANAGEMENT_ENABLED
+#endif // ZENITH_MEMORY_TRACKING_FULL
 #endif // ZENITH_TOOLS

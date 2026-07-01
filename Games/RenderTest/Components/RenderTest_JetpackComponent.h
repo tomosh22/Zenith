@@ -4,9 +4,7 @@
 #include "Maths/Zenith_Maths.h"
 
 #ifdef ZENITH_TOOLS
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
 // Per-jetpack-entity data for the RenderTest jetpack testbed. A jetpack entity
