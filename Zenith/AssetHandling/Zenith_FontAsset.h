@@ -96,7 +96,7 @@ public:
 	static const FontMetrics& GetActiveOrDefaultMetrics();
 
 private:
-	friend Zenith_Result<Zenith_Asset*> LoadFontAsset(const std::string&);
+	template<typename U> friend struct Zenith_AssetLoadTraits;   // DoLoad calls private LoadFromFile
 
 	// Loads the .zfont (and its referenced atlas .ztxtr as a procedural texture).
 	// Path is "engine:..." or "game:..." form; resolved via Zenith_AssetRegistry::ResolvePath.
@@ -114,5 +114,3 @@ private:
 
 	static const FontMetrics s_xDefaultMetrics;
 };
-
-Zenith_Result<Zenith_Asset*> LoadFontAsset(const std::string& strPath);

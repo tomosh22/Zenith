@@ -110,6 +110,68 @@ void Flux_MaterialTable::Upload()
 	g_xEngine.FluxMemory().UploadBufferData(m_xBuffer.GetBuffer().m_xVRAMHandle, m_xRecords.GetDataPointer(), uActiveBytes);
 }
 
+void Flux_MaterialTable::AdvanceFrame()
+{
+	if (!m_bInitialised)
+	{
+		return;
+	}
+
+	// Drain the queued releases on the main thread (the allocator is not thread-safe).
+	{
+		Zenith_ScopedMutexLock xLock(m_xReleaseMutex);
+		for (u_int u = 0; u < m_xPendingReleases.GetSize(); u++)
+		{
+			const u_int uIndex = m_xPendingReleases.Get(u);
+			// Free defers reclaim by MAX_FRAMES_IN_FLIGHT+1 frames and bumps the
+			// allocator generation (so any cached GPU record keyed on it rebuilds).
+			m_xIndexAllocator.Free(uIndex);
+			// Reset this slot's build mirrors so a reissued index always rebuilds its
+			// record rather than matching a stale stamp from the previous owner.
+			if (uIndex < m_xRecordStamp.GetSize())
+			{
+				m_xRecordStamp.Get(uIndex)       = ~0ull;
+				m_xRecordBindlessGen.Get(uIndex) = ~0ull;
+			}
+		}
+		m_xPendingReleases.Clear();
+	}
+
+	// Reclaim indices whose grace window has now elapsed.
+	m_xIndexAllocator.AdvanceFrame();
+}
+
+void Flux_MaterialTable::ReleaseIndex(u_int uIndex)
+{
+	if (uIndex == Flux_BindlessAllocator::uRESERVED_DEFAULT_WHITE || uIndex == uFLUX_INVALID_MATERIAL_INDEX)
+	{
+		return;   // reserved slot 0 and the unassigned sentinel are never freed
+	}
+	Zenith_ScopedMutexLock xLock(m_xReleaseMutex);
+	m_xPendingReleases.PushBack(uIndex);
+}
+
+void Flux_ReleaseMaterialIndex(u_int uIndex)
+{
+	if (uIndex == uFLUX_INVALID_MATERIAL_INDEX)
+	{
+		return;
+	}
+	// Single engine access: null when the renderer holder is gone (headless, or after
+	// Shutdown deleted+nulled it); IsInitialised covers the window where Flux_Graphics
+	// has shut down but the holder is not yet freed. Enqueue-only, thread-agnostic.
+	Flux_GraphicsImpl* pxGraphics = g_xEngine.TryGetFluxGraphics();
+	if (pxGraphics == nullptr)
+	{
+		return;
+	}
+	Flux_MaterialTable& xTable = pxGraphics->MaterialTable();
+	if (xTable.IsInitialised())
+	{
+		xTable.ReleaseIndex(uIndex);
+	}
+}
+
 #include "Flux/Flux_MaterialTable.Tests.inl"
 
 // The shared refcount-diff registry the unified-mesh registries all instantiate. Pure

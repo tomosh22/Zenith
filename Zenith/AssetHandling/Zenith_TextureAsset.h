@@ -1,16 +1,10 @@
 #pragma once
 
 #include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetTypeIds.h"   // uZENITH_TEXTURE_ASSET_TYPE_ID / uZENITH_TEXTURE_SCHEMA_V2
 #include "Flux/Flux.h"
 
 class Zenith_DataStream;
-
-// .ztxtr envelope identity — shared by the loader (Zenith_TextureAsset) and the
-// exporter (Zenith_Tools_TextureExport) so the asset-type-id and the current
-// payload schema version have ONE definition. Schema <=1 == legacy single-mip;
-// schema 2 == uNumMips field + a packed full mip chain (see Zenith_TextureAsset.cpp).
-inline constexpr u_int uZENITH_TEXTURE_ASSET_TYPE_ID = 1;
-inline constexpr u_int uZENITH_TEXTURE_SCHEMA_V2 = 2;
 
 /**
  * Zenith_TextureAsset - GPU texture asset
@@ -127,6 +121,14 @@ public:
 	 */
 	void ReleaseGPU();
 
+	// Uniform GPU-lifetime vocabulary (Zenith_Asset). Texture is EAGER — its VRAM +
+	// SRV are created during LoadFromFile/CreateFromData, so Ensure is a no-op (there
+	// is nothing to lazily upload; the source bytes are not retained). IsGPUReady
+	// reflects the eager upload; Release routes to the deferred-free ReleaseGPU.
+	void EnsureGPUResources() override {}
+	bool IsGPUReady() const override { return m_bGPUResourcesAllocated && m_xVRAMHandle.IsValid(); }
+	void ReleaseGPUResources() override { ReleaseGPU(); }
+
 	//--------------------------------------------------------------------------
 	// GPU Data (public for renderer access)
 	//--------------------------------------------------------------------------
@@ -137,7 +139,7 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Result<Zenith_Asset*> LoadTextureAsset(const std::string&);
+	template<typename U> friend struct Zenith_AssetLoadTraits;   // DoLoad calls private LoadFromFile
 
 	/**
 	 * Load texture data from an image file (private - use Zenith_AssetRegistry::Get)

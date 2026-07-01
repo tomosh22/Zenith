@@ -75,6 +75,13 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
+	// Envelope-aware, status-returning parse of an in-memory .zmtrl stream — the
+	// file-load error contract (INVALID_ARGUMENT on wrong type id, VERSION_MISMATCH
+	// on a newer schema; else reads new-format or legacy-headerless payload).
+	// LoadFromFile is ReadFromFile + ParseStream; the void ReadFromDataStream above
+	// delegates here. Public so round-trip / robustness tests can drive it stream-only.
+	Zenith_Status ParseStream(Zenith_DataStream& xStream);
+
 	//--------------------------------------------------------------------------
 	// Identity
 	//--------------------------------------------------------------------------
@@ -252,7 +259,7 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Result<Zenith_Asset*> LoadMaterialAsset(const std::string&);
+	template<typename U> friend struct Zenith_AssetLoadTraits;   // DoLoad calls private LoadFromFile
 
 	/**
 	 * Load material data from file (private - use Zenith_AssetRegistry::Get)
@@ -313,11 +320,11 @@ private:
 	static TextureHandle s_xDefaultNormal;
 };
 
-// Material file version
-// v5: param block + specular/normal-strength/POM/detail/clear-coat, blend +
-//     shading enums, parent path + override mask, 9 texture slots.
-// v4: flat params, 5 texture slots by path. v3: no UV/occlusion/flags block.
-#define ZENITH_MATERIAL_FILE_VERSION 5
+// Material on-disk schema version now lives in AssetHandling/Zenith_AssetTypeIds.h
+// (uZENITH_MATERIAL_SCHEMA_CURRENT == 5), alongside every other typed asset's id
+// and schema. Legacy layouts still read: v5 = param block + specular/normal-strength/
+// POM/detail/clear-coat + blend/shading enums + parent path + override mask + 9 slots;
+// v4 = flat params, 5 texture slots by path; v3 = no UV/occlusion/flags block.
 
 //--------------------------------------------------------------------------
 // Register loader with asset registry

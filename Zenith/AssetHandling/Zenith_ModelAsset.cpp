@@ -1,5 +1,7 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_AssetTypeIds.h"
+#include "DataStream/Zenith_StreamEnvelope.h"
 #include "Profiling/Zenith_Profiling.h"
 
 //------------------------------------------------------------------------------
@@ -89,7 +91,12 @@ Zenith_Result<Zenith_ModelAsset*> Zenith_ModelAsset::LoadFromFile(const char* sz
 	}
 
 	Zenith_ModelAsset* pxAsset = new Zenith_ModelAsset();
-	pxAsset->ReadFromDataStream(xStream);
+	Zenith_Status xStatus = pxAsset->ParseStream(xStream);
+	if (!xStatus.IsOk())
+	{
+		delete pxAsset;
+		return xStatus.Error();
+	}
 	pxAsset->m_strSourcePath = Zenith_AssetRegistry::NormalizeAssetPath(szPath);
 
 	Zenith_Log(LOG_CATEGORY_ASSET, "Loaded model asset '%s' from %s with %u mesh bindings",
@@ -120,8 +127,9 @@ void Zenith_ModelAsset::Export(const char* szPath) const
 
 void Zenith_ModelAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Version
-	xStream << static_cast<uint32_t>(ZENITH_MODEL_ASSET_VERSION);
+	// Typed-asset envelope (magic + type id + current schema). Legacy pre-envelope
+	// .zmodel files still load via the BAD_MAGIC rewind path in ParseStream.
+	Zenith_WriteStreamHeader(xStream, uZENITH_MODEL_ASSET_TYPE_ID, uZENITH_MODEL_SCHEMA_CURRENT);
 
 	// Name
 	xStream << m_strName;
@@ -151,18 +159,23 @@ void Zenith_ModelAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 	}
 }
 
-void Zenith_ModelAsset::ReadFromDataStream(Zenith_DataStream& xStream)
+Zenith_Status Zenith_ModelAsset::ParseStream(Zenith_DataStream& xStream)
 {
 	Reset();
 
-	// Version
-	uint32_t uVersion;
-	xStream >> uVersion;
-
-	if (uVersion != ZENITH_MODEL_ASSET_VERSION)
+	// Shared envelope preamble (see Zenith_ReadAssetStreamVersion).
+	uint32_t uVersion = 0;
+	const Zenith_Status xVerStatus = Zenith_ReadAssetStreamVersion(xStream, uZENITH_MODEL_ASSET_TYPE_ID, uVersion);
+	if (!xVerStatus.IsOk())
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "ERROR: Unsupported model asset version %u (expected %u). Please re-export the asset.", uVersion, ZENITH_MODEL_ASSET_VERSION);
-		return;
+		Zenith_Error(LOG_CATEGORY_ASSET, "Zenith_ModelAsset: unsupported envelope");
+		return xVerStatus.Error();
+	}
+
+	if (uVersion != uZENITH_MODEL_SCHEMA_CURRENT)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "ERROR: Unsupported model asset version %u (expected %u). Please re-export the asset.", uVersion, uZENITH_MODEL_SCHEMA_CURRENT);
+		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 
 	// Name
@@ -197,6 +210,15 @@ void Zenith_ModelAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 		strPath = Zenith_AssetRegistry::NormalizeAssetPath(strPath);
 		m_xAnimationPaths.PushBack(strPath);
 	}
+
+	return true;
+}
+
+void Zenith_ModelAsset::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	// The void virtual is kept for DataStream <</>> dispatch; the file-load error
+	// contract lives in ParseStream (called by the static LoadFromFile).
+	(void)ParseStream(xStream);
 }
 
 //------------------------------------------------------------------------------
@@ -234,3 +256,5 @@ void Zenith_ModelAsset::Reset()
 	m_xAnimationPaths.Clear();
 	m_strSourcePath.clear();
 }
+
+#include "AssetHandling/Zenith_ModelAsset.Tests.inl"

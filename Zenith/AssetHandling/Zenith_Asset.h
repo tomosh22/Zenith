@@ -81,6 +81,17 @@ public:
 	 */
 	virtual void ReadFromDataStream(Zenith_DataStream& xStream) { (void)xStream; }
 
+	//--------------------------------------------------------------------------
+	// GPU resource lifetime (optional — override for GPU-backed assets)
+	//--------------------------------------------------------------------------
+	// One uniform vocabulary across GPU-backed assets, even though the timing still
+	// differs by type: a texture uploads eagerly at load (Ensure is a no-op — it is
+	// already resident), a mesh uploads lazily (Ensure builds its buffers). Release
+	// is idempotent and defers the actual GPU free. Pure-CPU assets keep the no-ops.
+	virtual void EnsureGPUResources() {}
+	virtual bool IsGPUReady() const { return true; }
+	virtual void ReleaseGPUResources() {}
+
 #ifdef ZENITH_TOOLS
 	/**
 	 * Render the asset's properties in ImGui for editing
@@ -130,3 +141,17 @@ private:
 		}; \
 		static ClassName##_AssetTypeRegistrar g_x##ClassName##Registrar; \
 	}
+
+//--------------------------------------------------------------------------
+// Unified asset-loader friendship hooks
+//--------------------------------------------------------------------------
+// Typed file assets keep LoadFromFile private but grant the unified loaders
+// access. Both live in Zenith_AssetRegistry.cpp; they are forward-declared here
+// (the one header every asset includes) so each asset header can name them in a
+// friend declaration:
+//   - member-contract assets (Texture/Material/Animation/MeshGeometry/Font/Prefab)
+//     friend the trait, whose DoLoad() calls their private LoadFromFile().
+//   - static-factory assets (Mesh/Skeleton/Model) friend LoadAssetViaStaticFactory,
+//     which calls their private static LoadFromFile().
+template<typename T> struct Zenith_AssetLoadTraits;
+template<typename T> Zenith_Result<Zenith_Asset*> LoadAssetViaStaticFactory(const std::string& strPath);

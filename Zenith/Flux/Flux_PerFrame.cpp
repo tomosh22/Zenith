@@ -53,6 +53,10 @@ void Flux_RendererImpl::ProcessFrameEnd()
 		// Advance the bindless-slot deferred-free clock alongside the VRAM one, so a
 		// freed bindless index is recycled only after MAX_FRAMES_IN_FLIGHT+1 frames.
 		xEngine.FluxGraphics().BindlessAllocator().AdvanceFrame();
+		// Same clock for the material table's index allocator: drain queued
+		// ReleaseIndex requests and reclaim slots whose grace has elapsed, so the
+		// table's live-index count is bounded across scene reloads.
+		xEngine.FluxGraphics().MaterialTable().AdvanceFrame();
 	}
 }
 

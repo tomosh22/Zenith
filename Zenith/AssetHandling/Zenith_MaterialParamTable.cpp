@@ -1,7 +1,99 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_MaterialParamTable.h"
+#include "DataStream/Zenith_DataStream.h"
 
 #include <cstring>
+
+// ============================================================================
+// Zenith_MaterialParams (de)serialization — the single source of truth for the
+// schema-5 parameter field order. The material asset's WriteToDataStream and its
+// v5 read branch both defer here, so the ~22-field list is written ONCE instead of
+// being mirrored by hand in two directions. Byte-identical to the historical inline
+// layout. Fields are streamed explicitly (padding never leaks into the file).
+// ============================================================================
+void Zenith_MaterialParams::WriteToDataStream(Zenith_DataStream& xStream) const
+{
+	xStream << static_cast<uint32_t>(m_eBlendMode);
+	xStream << static_cast<uint32_t>(m_eShadingModel);
+	xStream << m_bTwoSided;
+	xStream << m_fAlphaCutoff;
+
+	xStream << m_xBaseColor.x;
+	xStream << m_xBaseColor.y;
+	xStream << m_xBaseColor.z;
+	xStream << m_xBaseColor.w;
+	xStream << m_fMetallic;
+	xStream << m_fRoughness;
+	xStream << m_fSpecular;
+
+	xStream << m_fNormalStrength;
+	xStream << m_fHeightScale;
+	xStream << m_fPOMMinSteps;
+	xStream << m_fPOMMaxSteps;
+	xStream << m_xDetailTiling.x;
+	xStream << m_xDetailTiling.y;
+	xStream << m_fDetailNormalStrength;
+	xStream << m_fDetailAlbedoStrength;
+
+	xStream << m_xEmissiveColor.x;
+	xStream << m_xEmissiveColor.y;
+	xStream << m_xEmissiveColor.z;
+	xStream << m_fEmissiveIntensity;
+
+	xStream << m_fOcclusionStrength;
+
+	xStream << m_xUVTiling.x;
+	xStream << m_xUVTiling.y;
+	xStream << m_xUVOffset.x;
+	xStream << m_xUVOffset.y;
+
+	xStream << m_fClearCoatStrength;
+	xStream << m_fClearCoatRoughness;
+}
+
+void Zenith_MaterialParams::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	uint32_t uBlendMode = 0;
+	uint32_t uShadingModel = 0;
+	xStream >> uBlendMode;
+	xStream >> uShadingModel;
+	m_eBlendMode = (uBlendMode < MATERIAL_BLEND_COUNT) ? static_cast<MaterialBlendMode>(uBlendMode) : MATERIAL_BLEND_OPAQUE;
+	m_eShadingModel = (uShadingModel < MATERIAL_SHADING_COUNT) ? static_cast<MaterialShadingModel>(uShadingModel) : MATERIAL_SHADING_DEFAULT_LIT;
+	xStream >> m_bTwoSided;
+	xStream >> m_fAlphaCutoff;
+
+	xStream >> m_xBaseColor.x;
+	xStream >> m_xBaseColor.y;
+	xStream >> m_xBaseColor.z;
+	xStream >> m_xBaseColor.w;
+	xStream >> m_fMetallic;
+	xStream >> m_fRoughness;
+	xStream >> m_fSpecular;
+
+	xStream >> m_fNormalStrength;
+	xStream >> m_fHeightScale;
+	xStream >> m_fPOMMinSteps;
+	xStream >> m_fPOMMaxSteps;
+	xStream >> m_xDetailTiling.x;
+	xStream >> m_xDetailTiling.y;
+	xStream >> m_fDetailNormalStrength;
+	xStream >> m_fDetailAlbedoStrength;
+
+	xStream >> m_xEmissiveColor.x;
+	xStream >> m_xEmissiveColor.y;
+	xStream >> m_xEmissiveColor.z;
+	xStream >> m_fEmissiveIntensity;
+
+	xStream >> m_fOcclusionStrength;
+
+	xStream >> m_xUVTiling.x;
+	xStream >> m_xUVTiling.y;
+	xStream >> m_xUVOffset.x;
+	xStream >> m_xUVOffset.y;
+
+	xStream >> m_fClearCoatStrength;
+	xStream >> m_fClearCoatRoughness;
+}
 
 // ============================================================================
 // The material parameter contract - see header for the design notes.

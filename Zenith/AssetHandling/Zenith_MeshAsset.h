@@ -5,7 +5,9 @@
 #include "Collections/Zenith_Vector.h"
 #include "Flux/Flux_Buffers.h"
 
-#define ZENITH_MESH_ASSET_VERSION 1
+// .zmesh schema version now lives in AssetHandling/Zenith_AssetTypeIds.h
+// (uZENITH_MESH_SCHEMA_CURRENT). Bumping it needs a legacy read branch keyed on
+// the old value; the envelope's BAD_MAGIC rewind covers pre-envelope files.
 
 // Forward declarations
 class Zenith_SkeletonAsset;
@@ -69,6 +71,11 @@ public:
 	 */
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
+
+	// Envelope-aware, status-returning parse of an in-memory .zmesh stream — the
+	// file-load error contract. The static LoadFromFile is ReadFromFile + ParseStream;
+	// the void ReadFromDataStream above delegates here. Public for stream-only tests.
+	Zenith_Status ParseStream(Zenith_DataStream& xStream);
 
 	//--------------------------------------------------------------------------
 	// Accessors
@@ -258,6 +265,14 @@ public:
 	 */
 	bool HasGPUBuffers() const { return m_bGPUBuffersReady; }
 
+	// Uniform GPU-lifetime vocabulary (Zenith_Asset). Mesh is LAZY — Ensure builds the
+	// (unskinned) GPU buffers on demand; Release frees them (also auto-run via the
+	// destructor's Reset()). The skinned path still uses EnsureGPUBuffers(skeleton)
+	// directly, since skinned-ness is only known at the use site.
+	void EnsureGPUResources() override { EnsureGPUBuffers(false); }
+	bool IsGPUReady() const override { return m_bGPUBuffersReady; }
+	void ReleaseGPUResources() override { ReleaseGPU(); }
+
 	/**
 	 * Get vertex buffer for rendering
 	 */
@@ -275,7 +290,7 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Result<Zenith_Asset*> LoadMeshAsset(const std::string&);
+	template<typename U> friend Zenith_Result<Zenith_Asset*> LoadAssetViaStaticFactory(const std::string&);
 
 	/**
 	 * Load a mesh asset from file (private - use Zenith_AssetRegistry::Get)

@@ -1,5 +1,8 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
+#include "AssetHandling/Zenith_AssetTypeIds.h"
+#include "DataStream/Zenith_DataStream.h"
+#include "DataStream/Zenith_StreamEnvelope.h"
 #include "Maths/Zenith_Maths.h"
 #include <cmath>
 
@@ -72,4 +75,55 @@ ZENITH_TEST(MeshAsset, GenerateUnitSphere_AnalyticAttributes)
 	{
 		ZENITH_ASSERT_LT(xMesh.m_xIndices.Get(u), xMesh.GetNumVerts(), "index in range");
 	}
+}
+
+ZENITH_TEST(MeshAsset, StreamEnvelopeRoundtrip)
+{
+	// Build a small mesh, serialize, assert the shared stream envelope is present
+	// (Workstream B: .zmesh joined the unified versioning idiom), then read it back
+	// through ParseStream and confirm the geometry survives the round-trip.
+	Zenith_MeshAsset xMesh;
+	Zenith_MeshAsset::GenerateUnitSphere(xMesh, 4);
+	xMesh.AddSubmesh(0, xMesh.GetNumIndices(), 0);
+	xMesh.ComputeBounds();
+
+	Zenith_DataStream xStream;
+	xMesh.WriteToDataStream(xStream);
+
+	// Envelope header written with the right identity.
+	xStream.SetCursor(0);
+	Zenith_Result<Zenith_StreamHeader> xHdr = Zenith_ReadStreamHeader(xStream, uZENITH_MESH_ASSET_TYPE_ID);
+	ZENITH_ASSERT_TRUE(xHdr.IsOk(), "mesh write must emit the shared stream envelope");
+	if (xHdr.IsOk())
+	{
+		ZENITH_ASSERT_EQ(xHdr.Value().m_uAssetTypeId, uZENITH_MESH_ASSET_TYPE_ID, "mesh envelope type id");
+		ZENITH_ASSERT_EQ(xHdr.Value().m_uSchemaVersion, uZENITH_MESH_SCHEMA_CURRENT, "mesh envelope schema");
+	}
+
+	// Full round-trip through the status-returning parse.
+	xStream.SetCursor(0);
+	Zenith_MeshAsset xLoaded;
+	Zenith_Status xStatus = xLoaded.ParseStream(xStream);
+	ZENITH_ASSERT_TRUE(xStatus.IsOk(), "mesh ParseStream must accept its own output");
+	ZENITH_ASSERT_EQ(xLoaded.GetNumVerts(), xMesh.GetNumVerts(), "vert count round-trips");
+	ZENITH_ASSERT_EQ(xLoaded.GetNumIndices(), xMesh.GetNumIndices(), "index count round-trips");
+	ZENITH_ASSERT_EQ(xLoaded.GetNumSubmeshes(), xMesh.GetNumSubmeshes(), "submesh count round-trips");
+	ZENITH_ASSERT_NEAR_VEC3(xLoaded.GetBoundsMin(), xMesh.GetBoundsMin(), 1e-5f, "bounds min round-trips");
+	ZENITH_ASSERT_NEAR_VEC3(xLoaded.GetBoundsMax(), xMesh.GetBoundsMax(), 1e-5f, "bounds max round-trips");
+}
+
+ZENITH_TEST(MeshAsset, WrongTypeIdRejected)
+{
+	// A stream carrying a DIFFERENT asset's envelope must be rejected by the typed
+	// parse (INVALID_ARGUMENT), never silently misread. Write a Skeleton-id header
+	// then a byte or two, and parse it as a mesh.
+	Zenith_DataStream xStream;
+	Zenith_WriteStreamHeader(xStream, uZENITH_SKELETON_ASSET_TYPE_ID, uZENITH_SKELETON_SCHEMA_CURRENT);
+	xStream << uint32_t(0);
+	xStream.SetCursor(0);
+
+	Zenith_MeshAsset xMesh;
+	Zenith_Status xStatus = xMesh.ParseStream(xStream);
+	ZENITH_ASSERT_FALSE(xStatus.IsOk(), "mesh parse of a skeleton-typed stream must fail");
+	ZENITH_ASSERT_TRUE(xStatus.Error() == Zenith_ErrorCode::INVALID_ARGUMENT, "wrong type id -> INVALID_ARGUMENT");
 }

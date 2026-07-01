@@ -133,6 +133,82 @@ These are initialized by `Zenith_AssetRegistry::InitializeGPUDependentAssets()`.
 | Animation | `.zanim` | Keyframe animation clips |
 | Behaviour Graph | `.bgraph` | Designer-authored visual-scripting graph (see below) |
 
+## Loader Contract (unified)
+
+Every file-backed asset type is loaded through **one of two templates** in
+`Zenith_AssetRegistry.cpp` — there is no longer a per-type `LoadXxxAsset` free
+function:
+
+- **`LoadAssetGeneric<T>`** — member-contract types (Texture, Material, Animation,
+  MeshGeometry, Font, Prefab). Empty path → `new T()` (the `Create<T>()` path); else
+  `new T()` + `T::LoadFromFile(...)` + delete-on-failure.
+- **`LoadAssetViaStaticFactory<T>`** — the static-factory trio (Mesh, Skeleton, Model),
+  whose `static LoadFromFile → Zenith_Result<T*>` owns the new+parse internally.
+
+Per-type knobs live in one place — `Zenith_AssetLoadTraits<T>`: `kGuardProcedural`
+(reject `procedural://` load paths — Animation + MeshGeometry only) and `DoLoad`
+(bakes each type's default args, e.g. Texture's `bCreateMips=true`). The trait is
+friended by each member-contract asset so `DoLoad` can call the private `LoadFromFile`.
+The generic `.zdata` serializable path (`RegisterAssetType<T>` / `LoadSerializableAsset`)
+is separate and untouched.
+
+`Zenith_AssetRegistry::ForceUnload(path)` copies the key **before** deleting the asset
+(callers pass `pxAsset->GetPath()`, a reference into the asset's own `m_strPath`; using
+it after `delete` would read freed memory).
+
+## Typed-Asset Serialization (Stream Envelope)
+
+Texture, Material, Mesh, Skeleton and Model prefix their DataStream payload with the
+shared `Zenith_StreamEnvelope` header (`magic + envelope version + asset-type-id +
+schema version`). The **single source of truth** for every asset-type-id and current
+schema version is `AssetHandling/Zenith_AssetTypeIds.h` — no more per-asset
+`#define ZENITH_*_VERSION`.
+
+- **Write**: `WriteToDataStream` calls `Zenith_WriteStreamHeader(stream, <typeId>,
+  <schemaCurrent>)` first, then the payload. Tools exporters that call `Export()`
+  inherit the header for free (texture is the exception — its exporter writes the
+  header directly).
+- **Read**: a status-returning `ParseStream(stream)` does the envelope read
+  (`Zenith_ReadStreamHeader`): wrong type-id → `INVALID_ARGUMENT`, newer envelope →
+  `VERSION_MISMATCH`, and a **legacy pre-envelope file** trips `BAD_MAGIC` — the read
+  is non-destructive, so the cursor rewinds to 0 and the old bare-version-word layout
+  is read exactly as before. `LoadFromFile` = `ReadFromFile` + `ParseStream`; the void
+  `ReadFromDataStream` virtual delegates to `ParseStream` (the file-load error contract
+  lives in `ParseStream`).
+- **Back-compat note**: a *new-format* payload has NO bare version word (the envelope's
+  schema field replaces it); a *legacy* file does, and `ParseStream` reads it after the
+  `BAD_MAGIC` rewind. Do not bump a `*_SCHEMA_CURRENT` without adding a legacy branch.
+
+`Zenith_MaterialParams` (in `Zenith_MaterialParamTable.h`) owns the ~22-field v5
+parameter order **once** via its own `WriteToDataStream`/`ReadFromDataStream` (called
+explicitly, never via `<<`, so struct padding never leaks into the file); the material
+asset defers to it in both directions.
+
+## GPU/CPU Resource Lifetime
+
+`Zenith_Asset` exposes a uniform vocabulary — `EnsureGPUResources()`, `IsGPUReady()`,
+`ReleaseGPUResources()` (default no-ops for pure-CPU assets). The **timing still differs
+by type** by design:
+
+- **Texture — eager**: VRAM + SRV are created during `LoadFromFile`/`CreateFromData`,
+  so `EnsureGPUResources()` is a no-op (nothing to lazily upload; source bytes aren't
+  retained). `IsGPUReady()` reflects the eager upload; `ReleaseGPUResources()` routes to
+  the deferred-free `ReleaseGPU()`.
+- **Mesh — lazy**: `EnsureGPUResources()` builds the (unskinned) buffers on demand;
+  the skinned path still calls `EnsureGPUBuffers(skeleton)` directly (skinned-ness is
+  only known at the use site). The destructor already auto-releases via `Reset()`.
+
+**Material GPU-table index reclamation**: a material's `Flux_MaterialTable` slot is
+freed when the material asset is destroyed. `~Zenith_MaterialAsset` calls the guarded
+`Flux_ReleaseMaterialIndex(GetMaterialTableIndex())`, which **enqueues** the index
+(any thread); `Flux_MaterialTable::AdvanceFrame()` (main thread, once per frame in
+`Flux_RendererImpl::ProcessFrameEnd`) drains the queue into the index allocator's
+deferred `Free` (recycled after the frames-in-flight grace) and resets the slot's
+build mirrors. The forwarder is a no-op when the renderer is unavailable
+(`g_xEngine.HasFluxGraphics()` false, or `Flux_MaterialTable::IsInitialised()` false),
+so a late destructor during shutdown teardown is safe. Net effect: the table's live
+index count is **bounded across scene reloads** instead of growing forever.
+
 ## Behaviour Graph Assets (Zenith_BehaviourGraphAsset)
 
 `Zenith_BehaviourGraphAsset.{h,cpp}` wraps a serialized `Zenith_GraphDefinition`

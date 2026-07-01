@@ -125,7 +125,7 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Result<Zenith_Asset*> LoadMeshGeometryAsset(const std::string&);
+	template<typename U> friend struct Zenith_AssetLoadTraits;   // DoLoad calls private LoadFromFile
 
 	/**
 	 * Load geometry from file (private - use Zenith_AssetRegistry::Get)

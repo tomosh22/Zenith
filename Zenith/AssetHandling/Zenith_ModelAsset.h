@@ -4,7 +4,9 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include <string>
 
-#define ZENITH_MODEL_ASSET_VERSION 2
+// .zmodel schema version now lives in AssetHandling/Zenith_AssetTypeIds.h
+// (uZENITH_MODEL_SCHEMA_CURRENT). The envelope's BAD_MAGIC rewind covers
+// pre-envelope files; a version mismatch is rejected (re-export required).
 
 // Forward declarations
 class Zenith_MeshAsset;
@@ -74,6 +76,11 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
+	// Envelope-aware, status-returning parse of an in-memory .zmodel stream — the
+	// file-load error contract. The static LoadFromFile is ReadFromFile + ParseStream;
+	// the void ReadFromDataStream above delegates here. Public for stream-only tests.
+	Zenith_Status ParseStream(Zenith_DataStream& xStream);
+
 	//--------------------------------------------------------------------------
 	// Accessors
 	//--------------------------------------------------------------------------
@@ -136,7 +143,7 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Result<Zenith_Asset*> LoadModelAsset(const std::string&);
+	template<typename U> friend Zenith_Result<Zenith_Asset*> LoadAssetViaStaticFactory(const std::string&);
 
 	/**
 	 * Load a model asset from file (private - use Zenith_AssetRegistry::Get)

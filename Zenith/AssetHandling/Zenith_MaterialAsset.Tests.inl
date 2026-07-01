@@ -1,5 +1,7 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "DataStream/Zenith_StreamEnvelope.h"
+#include "AssetHandling/Zenith_AssetTypeIds.h"
 
 // ============================================================================
 // Zenith_MaterialAsset unit tests
@@ -111,6 +113,34 @@ ZENITH_TEST(MaterialAsset, ParamTableTypedAccessors)
 //--------------------------------------------------------------------------
 // Serialization
 //--------------------------------------------------------------------------
+
+ZENITH_TEST(MaterialAsset, WritesSharedStreamEnvelope)
+{
+	// Workstream B: .zmtrl now leads with the shared stream envelope (was a bare
+	// version word). Lock the identity so the format stays consistent with the
+	// other typed assets, and confirm ParseStream accepts its own output.
+	Zenith_MaterialAsset xSource;
+	xSource.SetName("EnvelopeMat");
+	xSource.SetRoughness(0.4f);
+
+	Zenith_DataStream xStream;
+	xSource.WriteToDataStream(xStream);
+
+	xStream.SetCursor(0);
+	Zenith_Result<Zenith_StreamHeader> xHdr = Zenith_ReadStreamHeader(xStream, uZENITH_MATERIAL_ASSET_TYPE_ID);
+	ZENITH_ASSERT_TRUE(xHdr.IsOk(), "material write must emit the shared stream envelope");
+	if (xHdr.IsOk())
+	{
+		ZENITH_ASSERT_EQ(xHdr.Value().m_uAssetTypeId, uZENITH_MATERIAL_ASSET_TYPE_ID, "material envelope type id");
+		ZENITH_ASSERT_EQ(xHdr.Value().m_uSchemaVersion, uZENITH_MATERIAL_SCHEMA_CURRENT, "material envelope schema");
+	}
+
+	xStream.SetCursor(0);
+	Zenith_MaterialAsset xLoaded;
+	ZENITH_ASSERT_TRUE(xLoaded.ParseStream(xStream).IsOk(), "ParseStream must accept its own output");
+	ZENITH_ASSERT_EQ(xLoaded.GetName(), std::string("EnvelopeMat"), "name round-trips through the envelope");
+	ZENITH_ASSERT_EQ_FLOAT(xLoaded.GetRoughness(), 0.4f, 1e-6f, "param round-trips through the envelope");
+}
 
 ZENITH_TEST(MaterialAsset, V5SerializationRoundtrip)
 {

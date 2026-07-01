@@ -3,6 +3,8 @@
 #include "Core/Zenith_Engine.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
+#include "AssetHandling/Zenith_AssetTypeIds.h"
+#include "DataStream/Zenith_StreamEnvelope.h"
 
 //------------------------------------------------------------------------------
 // Helper Functions for Serialization
@@ -137,7 +139,12 @@ Zenith_Result<Zenith_MeshAsset*> Zenith_MeshAsset::LoadFromFile(const char* szPa
 	}
 
 	Zenith_MeshAsset* pxAsset = new Zenith_MeshAsset();
-	pxAsset->ReadFromDataStream(xStream);
+	Zenith_Status xStatus = pxAsset->ParseStream(xStream);
+	if (!xStatus.IsOk())
+	{
+		delete pxAsset;
+		return xStatus.Error();
+	}
 	pxAsset->m_strSourcePath = Zenith_AssetRegistry::NormalizeAssetPath(szPath);
 
 	// Debug: Log mesh bounds and first few vertex positions
@@ -165,8 +172,9 @@ void Zenith_MeshAsset::Export(const char* szPath) const
 
 void Zenith_MeshAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Version
-	xStream << static_cast<uint32_t>(ZENITH_MESH_ASSET_VERSION);
+	// Typed-asset envelope (magic + type id + current schema). Legacy pre-envelope
+	// .zmesh files still load via the BAD_MAGIC rewind path in ParseStream.
+	Zenith_WriteStreamHeader(xStream, uZENITH_MESH_ASSET_TYPE_ID, uZENITH_MESH_SCHEMA_CURRENT);
 
 	// Counts
 	xStream << m_uNumVerts;
@@ -221,17 +229,22 @@ void Zenith_MeshAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 	}
 }
 
-void Zenith_MeshAsset::ReadFromDataStream(Zenith_DataStream& xStream)
+Zenith_Status Zenith_MeshAsset::ParseStream(Zenith_DataStream& xStream)
 {
 	Reset();
 
-	// Version
-	uint32_t uVersion;
-	xStream >> uVersion;
-
-	if (uVersion != ZENITH_MESH_ASSET_VERSION)
+	// Shared envelope preamble (see Zenith_ReadAssetStreamVersion).
+	uint32_t uVersion = 0;
+	const Zenith_Status xVerStatus = Zenith_ReadAssetStreamVersion(xStream, uZENITH_MESH_ASSET_TYPE_ID, uVersion);
+	if (!xVerStatus.IsOk())
 	{
-		Zenith_Log(LOG_CATEGORY_MESH, "Version mismatch: expected %u, got %u", ZENITH_MESH_ASSET_VERSION, uVersion);
+		Zenith_Error(LOG_CATEGORY_MESH, "Zenith_MeshAsset: unsupported envelope");
+		return xVerStatus.Error();
+	}
+
+	if (uVersion != uZENITH_MESH_SCHEMA_CURRENT)
+	{
+		Zenith_Log(LOG_CATEGORY_MESH, "Version mismatch: expected %u, got %u", uZENITH_MESH_SCHEMA_CURRENT, uVersion);
 	}
 
 	// Counts
@@ -308,6 +321,15 @@ void Zenith_MeshAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 			m_xBoneWeights.PushBack(xBoneWeight);
 		}
 	}
+
+	return true;
+}
+
+void Zenith_MeshAsset::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	// The void virtual is kept for DataStream <</>> dispatch; the file-load error
+	// contract lives in ParseStream (called by the static LoadFromFile).
+	(void)ParseStream(xStream);
 }
 
 //------------------------------------------------------------------------------

@@ -15,23 +15,71 @@
 #include "Profiling/Zenith_Profiling.h"
 #include <fstream>
 
-// Loader implementations
+// Unified asset loaders
 //
-// Each loader returns Zenith_Result<Zenith_Asset*>: the freshly-new'd asset on
-// success (implicit SUCCESS via the value ctor), or a specific Zenith_ErrorCode
-// on failure. The Result lives only inside this asset-loading boundary; the
-// public Get<T>()/Create<T>() facade still hands callers a raw T* (nullptr on
-// failure), so nothing outside AssetHandling changes.
-Zenith_Result<Zenith_Asset*> LoadTextureAsset(const std::string& strPath)
+// Every typed file asset is loaded through ONE of two templates instead of a
+// per-type free function. Both return Zenith_Result<Zenith_Asset*>: the loaded
+// asset on success, or a specific Zenith_ErrorCode on failure. The Result lives
+// only inside this asset-loading boundary; the public Get<T>()/Create<T>() facade
+// still hands callers a raw T* (nullptr on failure), so nothing outside
+// AssetHandling changes.
+//
+// The only real per-type differences — whether a procedural:// path is rejected,
+// and the exact default args LoadFromFile wants — live in the trait below.
+
+// Member-contract trait: the asset exposes a private Zenith_Status LoadFromFile(...).
+// Specialize only where a type differs from "guard off, single-arg LoadFromFile".
+template<typename T>
+struct Zenith_AssetLoadTraits
+{
+	static constexpr bool kGuardProcedural = false;
+	static Zenith_Status DoLoad(T* pxAsset, const std::string& strPath) { return pxAsset->LoadFromFile(strPath); }
+};
+
+// Texture loads WITH runtime mip generation by default (the registry contract).
+template<>
+struct Zenith_AssetLoadTraits<Zenith_TextureAsset>
+{
+	static constexpr bool kGuardProcedural = false;
+	static Zenith_Status DoLoad(Zenith_TextureAsset* pxAsset, const std::string& strPath) { return pxAsset->LoadFromFile(strPath, /*bCreateMips*/ true); }
+};
+
+// Animation + MeshGeometry are created procedurally via Create<T>(), never loaded
+// from a procedural:// path — reject it (preserves the historical INVALID_ARGUMENT).
+template<>
+struct Zenith_AssetLoadTraits<Zenith_AnimationAsset>
+{
+	static constexpr bool kGuardProcedural = true;
+	static Zenith_Status DoLoad(Zenith_AnimationAsset* pxAsset, const std::string& strPath) { return pxAsset->LoadFromFile(strPath); }
+};
+
+template<>
+struct Zenith_AssetLoadTraits<Zenith_MeshGeometryAsset>
+{
+	static constexpr bool kGuardProcedural = true;
+	static Zenith_Status DoLoad(Zenith_MeshGeometryAsset* pxAsset, const std::string& strPath) { return pxAsset->LoadFromFile(strPath); }
+};
+
+// Member-contract loader: empty path -> a fresh procedural instance (the Create<T>()
+// path); else new -> LoadFromFile -> delete-on-failure.
+template<typename T>
+Zenith_Result<Zenith_Asset*> LoadAssetGeneric(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
-		// Create empty procedural texture
-		return static_cast<Zenith_Asset*>(new Zenith_TextureAsset());
+		return static_cast<Zenith_Asset*>(new T());
 	}
-
-	Zenith_TextureAsset* pxAsset = new Zenith_TextureAsset();
-	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath, true);
+	if constexpr (Zenith_AssetLoadTraits<T>::kGuardProcedural)
+	{
+		// Guarded types (Animation, MeshGeometry) are created via Create<T>(), never
+		// loaded from a procedural:// path — reject it as the old loaders did.
+		if (strPath.find("procedural://") == 0)
+		{
+			return Zenith_ErrorCode::INVALID_ARGUMENT;
+		}
+	}
+	T* pxAsset = new T();
+	Zenith_Status xStatus = Zenith_AssetLoadTraits<T>::DoLoad(pxAsset, strPath);
 	if (!xStatus.IsOk())
 	{
 		delete pxAsset;
@@ -40,136 +88,21 @@ Zenith_Result<Zenith_Asset*> LoadTextureAsset(const std::string& strPath)
 	return static_cast<Zenith_Asset*>(pxAsset);
 }
 
-Zenith_Result<Zenith_Asset*> LoadMaterialAsset(const std::string& strPath)
+// Static-factory loader: Mesh/Skeleton/Model own the new+parse internally and return
+// Zenith_Result<T*> from a private static LoadFromFile. Empty path -> fresh instance.
+template<typename T>
+Zenith_Result<Zenith_Asset*> LoadAssetViaStaticFactory(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
-		// Create empty material
-		return static_cast<Zenith_Asset*>(new Zenith_MaterialAsset());
+		return static_cast<Zenith_Asset*>(new T());
 	}
-
-	Zenith_MaterialAsset* pxAsset = new Zenith_MaterialAsset();
-	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath);
-	if (!xStatus.IsOk())
-	{
-		delete pxAsset;
-		return xStatus.Error();
-	}
-	return static_cast<Zenith_Asset*>(pxAsset);
-}
-
-Zenith_Result<Zenith_Asset*> LoadMeshAsset(const std::string& strPath)
-{
-	if (strPath.empty())
-	{
-		// Create empty mesh
-		return static_cast<Zenith_Asset*>(new Zenith_MeshAsset());
-	}
-
-	Zenith_Result<Zenith_MeshAsset*> xRes = Zenith_MeshAsset::LoadFromFile(strPath.c_str());
+	Zenith_Result<T*> xRes = T::LoadFromFile(strPath.c_str());
 	if (!xRes.IsOk())
 	{
 		return xRes.Error();
 	}
 	return static_cast<Zenith_Asset*>(xRes.Value());
-}
-
-Zenith_Result<Zenith_Asset*> LoadSkeletonAsset(const std::string& strPath)
-{
-	if (strPath.empty())
-	{
-		// Create empty skeleton
-		return static_cast<Zenith_Asset*>(new Zenith_SkeletonAsset());
-	}
-
-	Zenith_Result<Zenith_SkeletonAsset*> xRes = Zenith_SkeletonAsset::LoadFromFile(strPath.c_str());
-	if (!xRes.IsOk())
-	{
-		return xRes.Error();
-	}
-	return static_cast<Zenith_Asset*>(xRes.Value());
-}
-
-Zenith_Result<Zenith_Asset*> LoadModelAsset(const std::string& strPath)
-{
-	if (strPath.empty())
-	{
-		// Create empty model
-		return static_cast<Zenith_Asset*>(new Zenith_ModelAsset());
-	}
-
-	Zenith_Result<Zenith_ModelAsset*> xRes = Zenith_ModelAsset::LoadFromFile(strPath.c_str());
-	if (!xRes.IsOk())
-	{
-		return xRes.Error();
-	}
-	return static_cast<Zenith_Asset*>(xRes.Value());
-}
-
-Zenith_Result<Zenith_Asset*> LoadPrefabAsset(const std::string& strPath)
-{
-	if (strPath.empty())
-	{
-		// Create empty prefab
-		return static_cast<Zenith_Asset*>(new Zenith_Prefab());
-	}
-
-	Zenith_Prefab* pxAsset = new Zenith_Prefab();
-	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath);
-	if (!xStatus.IsOk())
-	{
-		delete pxAsset;
-		return xStatus.Error();
-	}
-	return static_cast<Zenith_Asset*>(pxAsset);
-}
-
-Zenith_Result<Zenith_Asset*> LoadAnimationAsset(const std::string& strPath)
-{
-	if (strPath.empty())
-	{
-		// Create empty animation asset (for procedural animations)
-		return static_cast<Zenith_Asset*>(new Zenith_AnimationAsset());
-	}
-
-	// Procedural assets are created via Create(), not loaded
-	if (strPath.find("procedural://") == 0)
-	{
-		return Zenith_ErrorCode::INVALID_ARGUMENT;
-	}
-
-	Zenith_AnimationAsset* pxAsset = new Zenith_AnimationAsset();
-	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath);
-	if (!xStatus.IsOk())
-	{
-		delete pxAsset;
-		return xStatus.Error();
-	}
-	return static_cast<Zenith_Asset*>(pxAsset);
-}
-
-Zenith_Result<Zenith_Asset*> LoadMeshGeometryAsset(const std::string& strPath)
-{
-	if (strPath.empty())
-	{
-		// Create empty mesh geometry asset (for procedural geometry)
-		return static_cast<Zenith_Asset*>(new Zenith_MeshGeometryAsset());
-	}
-
-	// Procedural assets are created via Create(), not loaded
-	if (strPath.find("procedural://") == 0)
-	{
-		return Zenith_ErrorCode::INVALID_ARGUMENT;
-	}
-
-	Zenith_MeshGeometryAsset* pxAsset = new Zenith_MeshGeometryAsset();
-	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath);
-	if (!xStatus.IsOk())
-	{
-		delete pxAsset;
-		return xStatus.Error();
-	}
-	return static_cast<Zenith_Asset*>(pxAsset);
 }
 
 // Static instance
@@ -330,16 +263,19 @@ void Zenith_AssetRegistry::Initialize()
 	// calling here; this function only registers loaders.
 	Zenith_Assert(s_pxInstance != nullptr, "Zenith_AssetRegistry::Initialize called before Zenith_Engine bound s_pxInstance");
 
-	// Register asset loaders
-	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_TextureAsset>(), LoadTextureAsset);
-	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MaterialAsset>(), LoadMaterialAsset);
-	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MeshAsset>(), LoadMeshAsset);
-	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_SkeletonAsset>(), LoadSkeletonAsset);
-	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_ModelAsset>(), LoadModelAsset);
-	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_Prefab>(), LoadPrefabAsset);
-	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_AnimationAsset>(), LoadAnimationAsset);
-	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MeshGeometryAsset>(), LoadMeshGeometryAsset);
-	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_FontAsset>(), LoadFontAsset);
+	// Register asset loaders. Member-contract assets (private LoadFromFile -> Status)
+	// go through LoadAssetGeneric<T>; the static-factory trio (private static
+	// LoadFromFile -> Result<T*>) through LoadAssetViaStaticFactory<T>. Both decay to
+	// the plain AssetLoaderFn function pointer (no std::function — house rule).
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_TextureAsset>(), &LoadAssetGeneric<Zenith_TextureAsset>);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MaterialAsset>(), &LoadAssetGeneric<Zenith_MaterialAsset>);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MeshAsset>(), &LoadAssetViaStaticFactory<Zenith_MeshAsset>);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_SkeletonAsset>(), &LoadAssetViaStaticFactory<Zenith_SkeletonAsset>);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_ModelAsset>(), &LoadAssetViaStaticFactory<Zenith_ModelAsset>);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_Prefab>(), &LoadAssetGeneric<Zenith_Prefab>);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_AnimationAsset>(), &LoadAssetGeneric<Zenith_AnimationAsset>);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MeshGeometryAsset>(), &LoadAssetGeneric<Zenith_MeshGeometryAsset>);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_FontAsset>(), &LoadAssetGeneric<Zenith_FontAsset>);
 
 	// Behaviour Graph assets (.bgraph). RegisterAssetType wires BOTH the
 	// serializable-type factory and the typed loader - the static-init
@@ -396,8 +332,14 @@ void Zenith_AssetRegistry::ForceUnloadInternal(const std::string& strPath)
 			Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Force unloading '%s' (ref count: %u)", strPath.c_str(), pxAsset->GetRefCount());
 		}
 
+		// Bind the cache key to a stable local BEFORE deleting the asset. Callers
+		// routinely pass pxAsset->GetPath(), which is a reference INTO the asset's
+		// own m_strPath — after `delete pxAsset` that reference dangles, so removing
+		// with `strPath` directly would hash/compare freed memory (heap corruption).
+		// (UnloadUnused is immune: it removes by copied keys collected up-front.)
+		const std::string strKey = strPath;
 		delete pxAsset;
-		m_xAssetsByPath.Remove(strPath);
+		m_xAssetsByPath.Remove(strKey);
 	}
 }
 

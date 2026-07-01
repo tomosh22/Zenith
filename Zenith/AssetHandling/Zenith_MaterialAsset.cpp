@@ -1,6 +1,9 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "AssetHandling/Zenith_AssetTypeIds.h"
+#include "DataStream/Zenith_StreamEnvelope.h"
+#include "Flux/Flux_MaterialTable.h"   // Flux_ReleaseMaterialIndex (GPU slot reclamation)
 #include <filesystem>
 
 // Static default textures (pinned via handle).
@@ -18,7 +21,12 @@ Zenith_MaterialAsset::Zenith_MaterialAsset()
 
 Zenith_MaterialAsset::~Zenith_MaterialAsset()
 {
-	// Handles will clean up their refs automatically
+	// Reclaim the GPU material-table slot this material was assigned (if any). The
+	// forwarder is a guarded no-op when the renderer is unavailable (headless / during
+	// shutdown teardown) and enqueue-only, so calling it from the destructor is safe on
+	// any thread. Without this the table's index count only ever grew across reloads.
+	Flux_ReleaseMaterialIndex(GetMaterialTableIndex());
+	// Texture/parent handles clean up their refs automatically.
 }
 
 //--------------------------------------------------------------------------
@@ -36,9 +44,13 @@ Zenith_Status Zenith_MaterialAsset::LoadFromFile(const std::string& strPath)
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(strPath.c_str());
 
-	ReadFromDataStream(xStream);
+	m_strPath = strPath;   // set before parse so ParseStream's error logs name the file
+	Zenith_Status xStatus = ParseStream(xStream);
+	if (!xStatus.IsOk())
+	{
+		return xStatus.Error();
+	}
 
-	m_strPath = strPath;
 	m_bDirty = false;
 
 	Zenith_Log(LOG_CATEGORY_ASSET, "Loaded material: %s (name: %s)", strPath.c_str(), m_strName.c_str());
@@ -72,51 +84,16 @@ bool Zenith_MaterialAsset::Reload()
 
 void Zenith_MaterialAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// File version - always written as the current version (v5).
-	uint32_t uVersion = ZENITH_MATERIAL_FILE_VERSION;
-	xStream << uVersion;
+	// Typed-asset envelope (magic + type id + current schema). Legacy pre-envelope
+	// .zmtrl files still load via the BAD_MAGIC rewind path in ParseStream.
+	Zenith_WriteStreamHeader(xStream, uZENITH_MATERIAL_ASSET_TYPE_ID, uZENITH_MATERIAL_SCHEMA_CURRENT);
 
 	// Material identity
 	xStream << m_strName;
 
-	// Parameter block - explicit field-by-field order (never the whole POD:
-	// struct padding must not leak into the file format).
-	xStream << static_cast<uint32_t>(m_xParams.m_eBlendMode);
-	xStream << static_cast<uint32_t>(m_xParams.m_eShadingModel);
-	xStream << m_xParams.m_bTwoSided;
-	xStream << m_xParams.m_fAlphaCutoff;
-
-	xStream << m_xParams.m_xBaseColor.x;
-	xStream << m_xParams.m_xBaseColor.y;
-	xStream << m_xParams.m_xBaseColor.z;
-	xStream << m_xParams.m_xBaseColor.w;
-	xStream << m_xParams.m_fMetallic;
-	xStream << m_xParams.m_fRoughness;
-	xStream << m_xParams.m_fSpecular;
-
-	xStream << m_xParams.m_fNormalStrength;
-	xStream << m_xParams.m_fHeightScale;
-	xStream << m_xParams.m_fPOMMinSteps;
-	xStream << m_xParams.m_fPOMMaxSteps;
-	xStream << m_xParams.m_xDetailTiling.x;
-	xStream << m_xParams.m_xDetailTiling.y;
-	xStream << m_xParams.m_fDetailNormalStrength;
-	xStream << m_xParams.m_fDetailAlbedoStrength;
-
-	xStream << m_xParams.m_xEmissiveColor.x;
-	xStream << m_xParams.m_xEmissiveColor.y;
-	xStream << m_xParams.m_xEmissiveColor.z;
-	xStream << m_xParams.m_fEmissiveIntensity;
-
-	xStream << m_xParams.m_fOcclusionStrength;
-
-	xStream << m_xParams.m_xUVTiling.x;
-	xStream << m_xParams.m_xUVTiling.y;
-	xStream << m_xParams.m_xUVOffset.x;
-	xStream << m_xParams.m_xUVOffset.y;
-
-	xStream << m_xParams.m_fClearCoatStrength;
-	xStream << m_xParams.m_fClearCoatRoughness;
+	// Parameter block — the field order lives once in Zenith_MaterialParams. Called
+	// explicitly (not via <<) so the POD's padding never leaks into the file.
+	m_xParams.WriteToDataStream(xStream);
 
 	// Instance state
 	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_xParentMaterial.GetPath());
@@ -129,17 +106,23 @@ void Zenith_MaterialAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 	}
 }
 
-void Zenith_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
+Zenith_Status Zenith_MaterialAsset::ParseStream(Zenith_DataStream& xStream)
 {
-	// File version
-	uint32_t uVersion;
-	xStream >> uVersion;
+	// Shared envelope preamble: new files carry the header + schema; a legacy
+	// pre-envelope .zmtrl trips BAD_MAGIC and yields the bare leading version word.
+	uint32_t uVersion = 0;
+	const Zenith_Status xVerStatus = Zenith_ReadAssetStreamVersion(xStream, uZENITH_MATERIAL_ASSET_TYPE_ID, uVersion);
+	if (!xVerStatus.IsOk())
+	{
+		Zenith_Error(LOG_CATEGORY_ASSET, "Zenith_MaterialAsset: unsupported envelope for '%s'", m_strPath.c_str());
+		return xVerStatus.Error();
+	}
 
-	if (uVersion > ZENITH_MATERIAL_FILE_VERSION)
+	if (uVersion > uZENITH_MATERIAL_SCHEMA_CURRENT)
 	{
 		Zenith_Error(LOG_CATEGORY_ASSET, "Unsupported material version %u (max: %u)",
-			uVersion, ZENITH_MATERIAL_FILE_VERSION);
-		return;
+			uVersion, uZENITH_MATERIAL_SCHEMA_CURRENT);
+		return Zenith_ErrorCode::VERSION_MISMATCH;
 	}
 
 	// Reset to defaults first so reloading an existing asset never keeps
@@ -158,46 +141,8 @@ void Zenith_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	if (uVersion >= 5)
 	{
-		uint32_t uBlendMode = 0;
-		uint32_t uShadingModel = 0;
-		xStream >> uBlendMode;
-		xStream >> uShadingModel;
-		m_xParams.m_eBlendMode = (uBlendMode < MATERIAL_BLEND_COUNT) ? static_cast<MaterialBlendMode>(uBlendMode) : MATERIAL_BLEND_OPAQUE;
-		m_xParams.m_eShadingModel = (uShadingModel < MATERIAL_SHADING_COUNT) ? static_cast<MaterialShadingModel>(uShadingModel) : MATERIAL_SHADING_DEFAULT_LIT;
-		xStream >> m_xParams.m_bTwoSided;
-		xStream >> m_xParams.m_fAlphaCutoff;
-
-		xStream >> m_xParams.m_xBaseColor.x;
-		xStream >> m_xParams.m_xBaseColor.y;
-		xStream >> m_xParams.m_xBaseColor.z;
-		xStream >> m_xParams.m_xBaseColor.w;
-		xStream >> m_xParams.m_fMetallic;
-		xStream >> m_xParams.m_fRoughness;
-		xStream >> m_xParams.m_fSpecular;
-
-		xStream >> m_xParams.m_fNormalStrength;
-		xStream >> m_xParams.m_fHeightScale;
-		xStream >> m_xParams.m_fPOMMinSteps;
-		xStream >> m_xParams.m_fPOMMaxSteps;
-		xStream >> m_xParams.m_xDetailTiling.x;
-		xStream >> m_xParams.m_xDetailTiling.y;
-		xStream >> m_xParams.m_fDetailNormalStrength;
-		xStream >> m_xParams.m_fDetailAlbedoStrength;
-
-		xStream >> m_xParams.m_xEmissiveColor.x;
-		xStream >> m_xParams.m_xEmissiveColor.y;
-		xStream >> m_xParams.m_xEmissiveColor.z;
-		xStream >> m_xParams.m_fEmissiveIntensity;
-
-		xStream >> m_xParams.m_fOcclusionStrength;
-
-		xStream >> m_xParams.m_xUVTiling.x;
-		xStream >> m_xParams.m_xUVTiling.y;
-		xStream >> m_xParams.m_xUVOffset.x;
-		xStream >> m_xParams.m_xUVOffset.y;
-
-		xStream >> m_xParams.m_fClearCoatStrength;
-		xStream >> m_xParams.m_fClearCoatRoughness;
+		// Parameter block — field order owned by Zenith_MaterialParams.
+		m_xParams.ReadFromDataStream(xStream);
 
 		std::string strParentPath;
 		xStream >> strParentPath;
@@ -292,6 +237,14 @@ void Zenith_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	// Invalidate any cached resolve - the whole asset just changed.
 	MarkEdited();
+	return true;
+}
+
+void Zenith_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	// The void virtual is kept for the DataStream <</>> / .zdata dispatch contract;
+	// the file-load error contract lives in ParseStream (called by LoadFromFile).
+	(void)ParseStream(xStream);
 }
 
 //--------------------------------------------------------------------------

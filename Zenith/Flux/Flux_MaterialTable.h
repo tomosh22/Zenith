@@ -3,6 +3,7 @@
 #include "Flux/Flux_Buffers.h"            // Flux_DynamicReadWriteBuffer (frame-indexed, graph-invisible)
 #include "Flux/Flux_BindlessAllocator.h"  // dense index allocator (slot 0 reserved)
 #include "Flux/Flux_MaterialGPU.h"        // Flux_MaterialGPU record
+#include "Core/Multithreading/Zenith_Multithreading.h"  // Zenith_Mutex for the release queue
 
 class Zenith_MaterialAsset;
 
@@ -103,6 +104,24 @@ public:
 	// SRV to bind as g_axMaterials (GLOBAL set, current frame's view).
 	const Flux_ShaderResourceView_Buffer& GetSRV() const { return m_xBuffer.GetSRV(); }
 
+	// MAIN THREAD, once per rendered frame (Flux_RendererImpl::ProcessFrameEnd):
+	// drain the ReleaseIndex queue (freeing each slot into the allocator, deferred by
+	// the frames-in-flight grace) and tick the allocator's reclaim clock. This is what
+	// actually recycles freed material slots — without it the table only ever grows.
+	void AdvanceFrame();
+
+	// ANY THREAD: mark a material's table index for reclamation. The index is enqueued
+	// and freed on the main thread by AdvanceFrame (the allocator is not thread-safe),
+	// so a material destructor on any thread is safe. Reserved slot 0 and the invalid
+	// sentinel are ignored.
+	void ReleaseIndex(u_int uIndex);
+
+	// True between Initialise() and Shutdown(). Guards late-teardown callers.
+	bool IsInitialised() const { return m_bInitialised; }
+
+	// Live (allocated, not-yet-reclaimed) index count — for tests / diagnostics.
+	u_int GetLiveIndexCount() const { return m_xIndexAllocator.GetLiveCount(); }
+
 private:
 	void BuildRecord(u_int uIndex, Zenith_MaterialAsset* pxMaterial);
 
@@ -113,4 +132,16 @@ private:
 	Zenith_Vector<u_int64>          m_xRecordBindlessGen;  // bindless generation at last build (per index)
 	u_int                         m_uMaxIndex    = 0;    // high-water of assigned indices (upload range)
 	bool                          m_bInitialised = false;
+
+	// ReleaseIndex (any thread) enqueues here; AdvanceFrame (main thread) drains +
+	// frees. Decouples the material-destructor thread from the main-thread-only
+	// allocator.
+	Zenith_Mutex          m_xReleaseMutex;
+	Zenith_Vector<u_int>  m_xPendingReleases;
 };
+
+// Guarded engine forwarder for a material destructor to reclaim its GPU table slot.
+// No-op when the renderer is unavailable (headless, or during/after shutdown
+// teardown), so a late destructor never touches a destroyed table. Enqueue-only, so
+// the caller's thread does not matter. Defined in Flux_MaterialTable.cpp.
+void Flux_ReleaseMaterialIndex(u_int uIndex);

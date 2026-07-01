@@ -203,20 +203,3 @@ Zenith_Status Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 
 	return true;
 }
-
-Zenith_Result<Zenith_Asset*> LoadFontAsset(const std::string& strPath)
-{
-	if (strPath.empty())
-	{
-		return static_cast<Zenith_Asset*>(new Zenith_FontAsset());
-	}
-
-	Zenith_FontAsset* pxAsset = new Zenith_FontAsset();
-	Zenith_Status xStatus = pxAsset->LoadFromFile(strPath);
-	if (!xStatus.IsOk())
-	{
-		delete pxAsset;
-		return xStatus.Error();
-	}
-	return static_cast<Zenith_Asset*>(pxAsset);
-}

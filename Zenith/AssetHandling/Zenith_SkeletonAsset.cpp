@@ -1,6 +1,8 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_AssetTypeIds.h"
+#include "DataStream/Zenith_StreamEnvelope.h"
 
 //------------------------------------------------------------------------------
 // Bone Serialization
@@ -97,7 +99,12 @@ Zenith_Result<Zenith_SkeletonAsset*> Zenith_SkeletonAsset::LoadFromFile(const ch
 	}
 
 	Zenith_SkeletonAsset* pxAsset = new Zenith_SkeletonAsset();
-	pxAsset->ReadFromDataStream(xStream);
+	Zenith_Status xStatus = pxAsset->ParseStream(xStream);
+	if (!xStatus.IsOk())
+	{
+		delete pxAsset;
+		return xStatus.Error();
+	}
 	pxAsset->m_strSourcePath = Zenith_AssetRegistry::NormalizeAssetPath(szPath);
 
 	// Debug logging for skeleton
@@ -123,8 +130,9 @@ void Zenith_SkeletonAsset::Export(const char* szPath) const
 
 void Zenith_SkeletonAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Version
-	xStream << static_cast<uint32_t>(ZENITH_SKELETON_ASSET_VERSION);
+	// Typed-asset envelope (magic + type id + current schema). Legacy pre-envelope
+	// .zskel files still load via the BAD_MAGIC rewind path in ParseStream.
+	Zenith_WriteStreamHeader(xStream, uZENITH_SKELETON_ASSET_TYPE_ID, uZENITH_SKELETON_SCHEMA_CURRENT);
 
 	// Bone count
 	uint32_t uNumBones = static_cast<uint32_t>(m_xBones.GetSize());
@@ -137,17 +145,22 @@ void Zenith_SkeletonAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 	}
 }
 
-void Zenith_SkeletonAsset::ReadFromDataStream(Zenith_DataStream& xStream)
+Zenith_Status Zenith_SkeletonAsset::ParseStream(Zenith_DataStream& xStream)
 {
 	Reset();
 
-	// Version
-	uint32_t uVersion;
-	xStream >> uVersion;
-
-	if (uVersion != ZENITH_SKELETON_ASSET_VERSION)
+	// Shared envelope preamble (see Zenith_ReadAssetStreamVersion).
+	uint32_t uVersion = 0;
+	const Zenith_Status xVerStatus = Zenith_ReadAssetStreamVersion(xStream, uZENITH_SKELETON_ASSET_TYPE_ID, uVersion);
+	if (!xVerStatus.IsOk())
 	{
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "Version mismatch: expected %u, got %u", ZENITH_SKELETON_ASSET_VERSION, uVersion);
+		Zenith_Error(LOG_CATEGORY_ANIMATION, "Zenith_SkeletonAsset: unsupported envelope");
+		return xVerStatus.Error();
+	}
+
+	if (uVersion != uZENITH_SKELETON_SCHEMA_CURRENT)
+	{
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "Version mismatch: expected %u, got %u", uZENITH_SKELETON_SCHEMA_CURRENT, uVersion);
 	}
 
 	// Bone count
@@ -163,6 +176,15 @@ void Zenith_SkeletonAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 		m_xBoneNameToIndex[xBone.m_strName] = u;
 		m_xBones.PushBack(std::move(xBone));
 	}
+
+	return true;
+}
+
+void Zenith_SkeletonAsset::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	// The void virtual is kept for DataStream <</>> dispatch; the file-load error
+	// contract lives in ParseStream (called by the static LoadFromFile).
+	(void)ParseStream(xStream);
 }
 
 //------------------------------------------------------------------------------
@@ -316,3 +338,5 @@ void Zenith_SkeletonAsset::Reset()
 	m_xBoneNameToIndex.Clear();
 	m_strSourcePath.clear();
 }
+
+#include "AssetHandling/Zenith_SkeletonAsset.Tests.inl"

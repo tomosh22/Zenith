@@ -49,3 +49,11 @@ void Zenith_WriteStreamHeader(Zenith_DataStream& xStream, u_int uAssetTypeId, u_
 //   - VERSION_MISMATCH : envelope version newer than uSTREAM_ENVELOPE_VERSION_CURRENT
 //   - INVALID_ARGUMENT : asset-type-id mismatch against uExpectedTypeId
 Zenith_Result<Zenith_StreamHeader> Zenith_ReadStreamHeader(Zenith_DataStream& xStream, u_int uExpectedTypeId);
+
+// Resolve a typed-asset stream's schema version — the read preamble every typed
+// asset's ParseStream shares. Reads the shared envelope (validating uExpectedTypeId)
+// and yields its schema version; on a legacy pre-envelope stream (BAD_MAGIC, cursor
+// restored) reads the bare leading version word instead. Returns the envelope error
+// (INVALID_ARGUMENT on a type-id mismatch, VERSION_MISMATCH on a newer envelope) on a
+// genuine failure; the caller applies its own per-schema payload policy afterwards.
+Zenith_Status Zenith_ReadAssetStreamVersion(Zenith_DataStream& xStream, u_int uExpectedTypeId, uint32_t& uOutVersion);

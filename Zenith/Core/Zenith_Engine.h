@@ -121,6 +121,12 @@ public:
 	Zenith_TouchInput& Touch();
 	Flux_RendererImpl& FluxRenderer();
 	Flux_GraphicsImpl& FluxGraphics();
+	// Pointer-or-null variant. Lets late-teardown callers (e.g. a material destructor
+	// reclaiming its GPU table slot) reach the graphics holder ONLY while it is live —
+	// Shutdown deletes+nulls it — and does so through a single g_xEngine access rather
+	// than a HasFluxGraphics()+FluxGraphics() pair. Returns an incomplete-type pointer,
+	// so the caller's TU must include Flux_GraphicsImpl.h to dereference it.
+	Flux_GraphicsImpl* TryGetFluxGraphics() const { return m_pxFluxGraphics; }
 	Flux_PlatformAPI& FluxBackend();
 	Flux_MemoryManager& FluxMemory();
 	Flux_Swapchain& FluxSwapchain();

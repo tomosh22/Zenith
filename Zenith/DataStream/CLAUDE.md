@@ -71,6 +71,8 @@ Built-in `<<`/`>>` specializations for:
 - `Zenith_WriteStreamHeader(xStream, uAssetTypeId, uSchemaVersion)` - writes the header at the current cursor, before the payload
 - `Zenith_ReadStreamHeader(xStream, uExpectedTypeId)` - non-destructive peek returning `Zenith_Result<Zenith_StreamHeader>`; on any error (`BAD_MAGIC` / `VERSION_MISMATCH` / `INVALID_ARGUMENT`) it restores the cursor so a legacy headerless stream can be rewound and read by the old path
 
+**Adopters:** every typed binary asset — `.ztxtr` / `.zmtrl` / `.zmesh` / `.zskel` / `.zmodel` — now leads with this envelope. Their asset-type-ids and current schema versions are centralized in `AssetHandling/Zenith_AssetTypeIds.h`, and each reads through a status-returning `ParseStream` that rewinds to the pre-envelope layout on `BAD_MAGIC`. See `AssetHandling/CLAUDE.md` → "Typed-Asset Serialization".
+
 ## Key Patterns
 
 - `WriteToFile` writes from start to cursor position (not full buffer)

@@ -4,7 +4,9 @@
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashMap.h"
 
-#define ZENITH_SKELETON_ASSET_VERSION 2
+// .zskel schema version now lives in AssetHandling/Zenith_AssetTypeIds.h
+// (uZENITH_SKELETON_SCHEMA_CURRENT). The envelope's BAD_MAGIC rewind covers
+// pre-envelope files; Bone::ReadFromDataStream is threaded the resolved version.
 
 /**
  * Zenith_SkeletonAsset - Bone hierarchy and bind pose data
@@ -81,6 +83,11 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
+	// Envelope-aware, status-returning parse of an in-memory .zskel stream — the
+	// file-load error contract. The static LoadFromFile is ReadFromFile + ParseStream;
+	// the void ReadFromDataStream above delegates here. Public for stream-only tests.
+	Zenith_Status ParseStream(Zenith_DataStream& xStream);
+
 	//--------------------------------------------------------------------------
 	// Accessors
 	//--------------------------------------------------------------------------
@@ -155,7 +162,7 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
-	friend Zenith_Result<Zenith_Asset*> LoadSkeletonAsset(const std::string&);
+	template<typename U> friend Zenith_Result<Zenith_Asset*> LoadAssetViaStaticFactory(const std::string&);
 
 	/**
 	 * Load a skeleton asset from file (private - use Zenith_AssetRegistry::Get)

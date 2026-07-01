@@ -2,6 +2,8 @@
 
 #include "Maths/Zenith_Maths.h"
 
+class Zenith_DataStream;
+
 // ============================================================================
 // Zenith_MaterialParamTable - the material system's parameter contract.
 //
@@ -165,6 +167,15 @@ struct Zenith_MaterialParams
 	// Clear coat
 	float m_fClearCoatStrength = 0.0f;
 	float m_fClearCoatRoughness = 0.1f;
+
+	// Serialize the parameter block in the fixed schema-5 field order (the single
+	// source of truth for that order — the material asset's WriteToDataStream and
+	// its v5 read branch both defer to these). Called EXPLICITLY (never via
+	// operator<< / >>) so the trivially-copyable memcpy dispatch can't fire and
+	// leak struct padding into the file. ReadFromDataStream clamps the two enum
+	// fields to their valid range (forward-compat with unknown future values).
+	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void ReadFromDataStream(Zenith_DataStream& xStream);
 };
 
 struct Zenith_MaterialParamDesc

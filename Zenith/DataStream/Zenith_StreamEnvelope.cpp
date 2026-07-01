@@ -58,3 +58,23 @@ Zenith_Result<Zenith_StreamHeader> Zenith_ReadStreamHeader(Zenith_DataStream& xS
 	// Success: cursor is left immediately after the header for the payload read.
 	return xHeader;
 }
+
+Zenith_Status Zenith_ReadAssetStreamVersion(Zenith_DataStream& xStream, u_int uExpectedTypeId, uint32_t& uOutVersion)
+{
+	Zenith_Result<Zenith_StreamHeader> xHeader = Zenith_ReadStreamHeader(xStream, uExpectedTypeId);
+	if (!xHeader.IsOk() && xHeader.Error() != Zenith_ErrorCode::BAD_MAGIC)
+	{
+		return xHeader.Error();   // wrong type id / newer envelope — not a legacy file
+	}
+	if (xHeader.IsOk())
+	{
+		uOutVersion = xHeader.Value().m_uSchemaVersion;
+	}
+	else
+	{
+		// Legacy pre-envelope stream: the peek restored the cursor to 0, so the bare
+		// leading version word is still there.
+		xStream >> uOutVersion;
+	}
+	return true;
+}
