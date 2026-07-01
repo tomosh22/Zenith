@@ -23,13 +23,13 @@ void GenerateSphere(Flux_MeshGeometry& xGeometryOut, uint32_t uLatitudeSegments,
 	xGeometryOut.m_uNumVerts = uNumVerts;
 	xGeometryOut.m_uNumIndices = uNumIndices;
 
-	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[uNumVerts];
-	xGeometryOut.m_pxNormals = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxTangents = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxBitangents = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxColors = new Zenith_Maths::Vector4[uNumVerts];
-	xGeometryOut.m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
+	xGeometryOut.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxUVs = static_cast<Zenith_Maths::Vector2*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
+	xGeometryOut.m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
+	xGeometryOut.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
 
 	uint32_t uVertIdx = 0;
 	for (uint32_t lat = 0; lat <= uLatitudeSegments; ++lat)
@@ -100,13 +100,13 @@ void GenerateCapsule(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeig
 
 	xGeometryOut.m_uNumVerts = uNumVerts;
 	xGeometryOut.m_uNumIndices = uNumIndices;
-	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxNormals = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[uNumVerts];
-	xGeometryOut.m_pxTangents = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxBitangents = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxColors = new Zenith_Maths::Vector4[uNumVerts];
-	xGeometryOut.m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
+	xGeometryOut.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxUVs = static_cast<Zenith_Maths::Vector2*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
+	xGeometryOut.m_pxTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
+	xGeometryOut.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
 
 	uint32_t uVertIdx = 0;
 	for (uint32_t uStack = 0; uStack <= uStacks; uStack++)
@@ -196,13 +196,13 @@ void GenerateCylinder(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHei
 
 	xGeometryOut.m_uNumVerts = uNumVerts;
 	xGeometryOut.m_uNumIndices = uNumIndices;
-	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxNormals = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[uNumVerts];
-	xGeometryOut.m_pxTangents = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxBitangents = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxColors = new Zenith_Maths::Vector4[uNumVerts];
-	xGeometryOut.m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
+	xGeometryOut.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxUVs = static_cast<Zenith_Maths::Vector2*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
+	xGeometryOut.m_pxTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
+	xGeometryOut.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
 
 	uint32_t uVertIdx = 0;
 
@@ -317,13 +317,13 @@ void GenerateCone(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight,
 
 	xGeometryOut.m_uNumVerts = uNumVerts;
 	xGeometryOut.m_uNumIndices = uNumIndices;
-	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxNormals = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[uNumVerts];
-	xGeometryOut.m_pxTangents = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxBitangents = new Zenith_Maths::Vector3[uNumVerts];
-	xGeometryOut.m_pxColors = new Zenith_Maths::Vector4[uNumVerts];
-	xGeometryOut.m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
+	xGeometryOut.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxUVs = static_cast<Zenith_Maths::Vector2*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
+	xGeometryOut.m_pxTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
+	xGeometryOut.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
 
 	// Base ring vertices
 	for (uint32_t i = 0; i < uSlices; i++)
