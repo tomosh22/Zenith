@@ -34,6 +34,7 @@ namespace DPTelemetryAnalyzer
 		case Criterion::ForgeCraftedFired:      return "ForgeCraftedFired";
 		case Criterion::ObjectivePlacedFired:   return "ObjectivePlacedFired";
 		case Criterion::PriestMoved:            return "PriestMoved";
+		case Criterion::FogMemoryAges:          return "FogMemoryAges";
 		default:                              return "Unknown";
 		}
 	}
@@ -325,6 +326,33 @@ namespace DPTelemetryAnalyzer
 					{ xR.bPassed = true; xR.szReason = "ok"; }
 				else
 					xR.szReason = "priest never moved (path length below threshold)";
+				break;
+			}
+			case Criterion::FogMemoryAges:
+			{
+				// Health gate for the fog memory table (see the enum's
+				// comment). Passes on the first FogMemorySample that is
+				// both populated and mid-aging.
+				bool bAnySample = false, bAnyPopulated = false;
+				const auto& axE = xReader.GetEvents();
+				const uint32_t uN = axE.GetSize();
+				for (uint32_t i = 0; i < uN && !xR.bPassed; ++i)
+				{
+					const auto& xE = axE.Get(i);
+					if (xE.uEventType != static_cast<uint16_t>(DPTelemetry::DPEventType::FogMemorySample)) continue;
+					bAnySample = true;
+					if (xE.xPayload.aiInts[0] <= 0) continue;
+					bAnyPopulated = true;
+					const float fAgedFraction = xE.xPayload.afFloats[0];
+					if (fAgedFraction > 0.0f && fAgedFraction < 1.0f)
+						{ xR.bPassed = true; xR.szReason = "ok"; }
+				}
+				if (!xR.bPassed)
+				{
+					if      (!bAnySample)    xR.szReason = "no FogMemorySample events (fog sampling dead?)";
+					else if (!bAnyPopulated) xR.szReason = "memory table never populated (no reveals recorded)";
+					else                     xR.szReason = "memory never mid-aging (ages frozen at 0 or reveals never refreshing)";
+				}
 				break;
 			}
 			case Criterion::None:

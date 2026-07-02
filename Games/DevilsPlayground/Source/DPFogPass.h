@@ -15,4 +15,20 @@ namespace DPFogPass
 {
 	void Init();
 	void Shutdown();
+
+	// Rasterizes DP_Fog's memory-cell table into the pass's R8 memory
+	// texture and stages the upload (Flux_MemoryManager::UpdateTextureVRAM,
+	// drained ahead of render work). Main-thread, once per frame — driven
+	// from DPFogPass_Component::OnUpdate after the frame's reveals landed.
+	// No-op when the texture isn't created (headless) or nothing has been
+	// revealed yet (the shader's memory term stays disabled).
+	void UpdateMemoryTexture();
+
+	// Zeroes the shader's memory window. Called from the fog component's
+	// OnDestroy: the DP_Fog render pass is process-global and records in
+	// EVERY scene, but only ProcLevel carries the component that refreshes
+	// the window — without this reset the previous run's window + texture
+	// would keep rendering ghost reveal patches after the scene unloads
+	// (one-frame flash at the next run's start; persistent in editor Stop).
+	void ResetMemoryWindow();
 }

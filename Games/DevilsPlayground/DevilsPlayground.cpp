@@ -26,6 +26,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#include "SaveData/Zenith_SaveData.h"
 #include "Physics/Zenith_Physics_Fwd.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -53,6 +54,8 @@
 #include "Components/DPHUDController_Component.h"
 #include "Components/DPPauseMenuController_Component.h"
 #include "Components/DPFogPass_Component.h"
+#include "Components/DPLiminalHub_Component.h"
+#include "Components/DPMinimap_Component.h"
 #include "Components/DPProcLevelBootstrap_Component.h"
 
 #ifdef ZENITH_TOOLS
@@ -84,6 +87,7 @@ ZENITH_REGISTER_COMPONENT(DPItemManager_Component,       "DPItemManager",       
 ZENITH_REGISTER_COMPONENT(DPFogPass_Component,           "DPFogPass",           102u)
 ZENITH_REGISTER_COMPONENT(DPHUDController_Component,     "DPHUDController",     103u)
 ZENITH_REGISTER_COMPONENT(DPOrbitCamera_Component,       "DPOrbitCamera",       104u)
+ZENITH_REGISTER_COMPONENT(DPMinimap_Component,           "DPMinimap",           105u)
 ZENITH_REGISTER_COMPONENT(DPPauseMenuController_Component, "DPPauseMenuController", 106u)
 ZENITH_REGISTER_COMPONENT(DPProcLevelBootstrap_Component, "DPProcLevelBootstrap", 107u)
 ZENITH_REGISTER_COMPONENT(DPVillager_Component,          "DPVillager",          108u)
@@ -91,6 +95,7 @@ ZENITH_REGISTER_COMPONENT(Priest_Component,              "Priest",              
 ZENITH_REGISTER_COMPONENT(DPItemBase_Component,          "DPItemBase",          110u)
 ZENITH_REGISTER_COMPONENT(DPItemSpawn_Component,         "DPItemSpawn",         111u)
 ZENITH_REGISTER_COMPONENT(DPDoor_Component,              "DPDoor",              112u)
+ZENITH_REGISTER_COMPONENT(DPLiminalHub_Component,        "DPLiminalHub",        113u)
 ZENITH_REGISTER_COMPONENT(DPForge_Component,             "DPForge",             115u)
 ZENITH_REGISTER_COMPONENT(DPGraphInteractable_Component, "DPGraphInteractable", 118u)
 ZENITH_REGISTER_COMPONENT(DPMenuRelay_Component,         "DPMenuRelay",         119u)
@@ -256,6 +261,12 @@ namespace DevilsPlayground
 			// Clear shown-flags so first-encounter tips fire for each
 			// batched test independently. Subscriptions stay alive.
 			DP_Tutorial::ResetForNewRun();
+			// Metagame: per-run Knot tally/chain/banked latch + the meta-
+			// save cache and the Zenith_SaveData test recording/readback
+			// stash, so meta-progression can't leak across batched tests.
+			DP_Knots::ResetForNewRun();
+			DP_MetaSave::InvalidateCacheForTest();
+			Zenith_SaveData::ClearForTest();
 		});
 #endif
 	}
@@ -333,6 +344,7 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<DPFogPass_Component>("DPFogPass");
 	xEditorRegistry.RegisterComponent<DPHUDController_Component>("DPHUDController");
 	xEditorRegistry.RegisterComponent<DPOrbitCamera_Component>("DPOrbitCamera");
+	xEditorRegistry.RegisterComponent<DPMinimap_Component>("DPMinimap");
 	xEditorRegistry.RegisterComponent<DPPauseMenuController_Component>("DPPauseMenuController");
 	xEditorRegistry.RegisterComponent<DPProcLevelBootstrap_Component>("DPProcLevelBootstrap");
 	xEditorRegistry.RegisterComponent<DPVillager_Component>("DPVillager");
@@ -340,6 +352,7 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<DPItemBase_Component>("DPItemBase");
 	xEditorRegistry.RegisterComponent<DPItemSpawn_Component>("DPItemSpawn");
 	xEditorRegistry.RegisterComponent<DPDoor_Component>("DPDoor");
+	xEditorRegistry.RegisterComponent<DPLiminalHub_Component>("DPLiminalHub");
 	xEditorRegistry.RegisterComponent<DPForge_Component>("DPForge");
 	xEditorRegistry.RegisterComponent<DPGraphInteractable_Component>("DPGraphInteractable");
 	xEditorRegistry.RegisterComponent<DPMenuRelay_Component>("DPMenuRelay");
@@ -348,6 +361,13 @@ void Project_RegisterGameComponents()
 	// Behaviour Graph node library (used by the boot-authored interactable +
 	// menu graphs).
 	DP_RegisterGraphNodes();
+
+	// Metagame: meta-save persistence (DP_MetaSave writes the "meta" slot
+	// under %APPDATA%/Zenith/DevilsPlayground/) + run-end Knot banking and
+	// hand-off-chain reset subscriptions (captureless, process-lifetime;
+	// idempotent).
+	Zenith_SaveData::Initialise("DevilsPlayground");
+	DP_Knots::Initialise();
 
 	DevilsPlayground::InitializeResources();
 
@@ -532,10 +552,19 @@ namespace
 		g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", DPUI::fMENU_BTN_W, DPUI::fMENU_BTN_H);
 		g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("MenuPlay", DPUI::fMENU_BTN_FONT);
 
-		// MVP-2.5.6: main-menu Quit button. Sits below Play.
+		// Metagame v1: the Liminal (hermit shrines / Knot spending). Sits
+		// below Play; DPMenuRelay fires "MenuLiminal" -> DP_MainMenu.bgraph
+		// loads scene index 2.
+		g_xEngine.EditorAutomation().AddStep_CreateUIButton("MenuLiminal", "The Liminal");
+		g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuLiminal", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuLiminal", 0.0f, DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING);
+		g_xEngine.EditorAutomation().AddStep_SetUISize("MenuLiminal", DPUI::fMENU_BTN_W, DPUI::fMENU_BTN_H);
+		g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("MenuLiminal", DPUI::fMENU_BTN_FONT);
+
+		// MVP-2.5.6: main-menu Quit button. Sits below the Liminal.
 		g_xEngine.EditorAutomation().AddStep_CreateUIButton("MenuQuit", "Quit");
 		g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuQuit", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-		g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuQuit", 0.0f, DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING);
+		g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuQuit", 0.0f, 2.0f * (DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING));
 		g_xEngine.EditorAutomation().AddStep_SetUISize("MenuQuit", DPUI::fMENU_BTN_W, DPUI::fMENU_BTN_H);
 		g_xEngine.EditorAutomation().AddStep_SetUIButtonFontSize("MenuQuit", DPUI::fMENU_BTN_FONT);
 
@@ -557,7 +586,10 @@ namespace
 		g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuHowToTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 		g_xEngine.EditorAutomation().AddStep_SetUIAlignment("MenuHowToTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
 		g_xEngine.EditorAutomation().AddStep_SetUISize("MenuHowToTitle", 1000.0f, 50.0f);
-		g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuHowToTitle", 0.0f, DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING + 102.0f);
+		// One extra button row (the Liminal) shifted the how-to block down
+		// a slot vs the original 2-button layout — same 102/252 gaps below
+		// the LAST button, which is now at 2*(H+SPACING).
+		g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuHowToTitle", 0.0f, 2.0f * (DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING) + 102.0f);
 		g_xEngine.EditorAutomation().AddStep_SetUIFontSize("MenuHowToTitle", DPUI::fMENU_HOWTO_TITLE_FONT);
 		g_xEngine.EditorAutomation().AddStep_SetUIColor("MenuHowToTitle", 1.0f, 0.85f, 0.6f, 1.0f);
 
@@ -571,7 +603,7 @@ namespace
 		g_xEngine.EditorAutomation().AddStep_SetUIAnchor("MenuHowToBody", static_cast<int>(Zenith_UI::AnchorPreset::Center));
 		g_xEngine.EditorAutomation().AddStep_SetUIAlignment("MenuHowToBody", static_cast<int>(Zenith_UI::TextAlignment::Center));
 		g_xEngine.EditorAutomation().AddStep_SetUISize("MenuHowToBody", 1100.0f, 220.0f);
-		g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuHowToBody", 0.0f, DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING + 252.0f);
+		g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuHowToBody", 0.0f, 2.0f * (DPUI::fMENU_BTN_H + DPUI::fMENU_BTN_SPACING) + 252.0f);
 		g_xEngine.EditorAutomation().AddStep_SetUIFontSize("MenuHowToBody", DPUI::fMENU_HOWTO_FONT);
 		g_xEngine.EditorAutomation().AddStep_SetUIColor("MenuHowToBody", 0.9f, 0.9f, 0.85f, 1.0f);
 
@@ -583,6 +615,104 @@ namespace
 
 		g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT);
 		g_xEngine.EditorAutomation().AddStep_UnloadScene();
+	}
+
+	// ============================================================================
+	// AuthorLiminalScene — the between-Nights meta-progression hub (metagame
+	// v1, GDD §5.4). Three hermit shrines (Wynstan's Forge / Mereworth's Eye /
+	// Old Bett's Breath), each a 12-node unlock column, plus the Knot balance
+	// + last-run readouts and a back button. All spend/refresh logic lives in
+	// DPLiminalHub_Component (plain C++ — documented doctrine divergence; see
+	// the component header). Saved as build index 2.
+	// ============================================================================
+	void AuthorLiminalScene()
+	{
+		Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+		xAuto.AddStep_CreateScene("Liminal");
+
+		xAuto.AddStep_CreateEntity("GameManager");
+		xAuto.AddStep_AddCamera();
+		xAuto.AddStep_SetCameraPosition(0.0f, 5.0f, -10.0f);
+		xAuto.AddStep_SetCameraPitch(-0.3f);
+		xAuto.AddStep_SetCameraFOV(glm::radians(60.0f));
+		xAuto.AddStep_SetAsMainCamera();
+
+		xAuto.AddStep_AddUI();
+		xAuto.AddStep_CreateUIText("LiminalTitle", "THE LIMINAL");
+		xAuto.AddStep_SetUIAnchor("LiminalTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		xAuto.AddStep_SetUIAlignment("LiminalTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		xAuto.AddStep_SetUIPosition("LiminalTitle", 0.0f, -330.0f);
+		xAuto.AddStep_SetUIFontSize("LiminalTitle", DPUI::fMENU_TITLE_FONT);
+		xAuto.AddStep_SetUIColor("LiminalTitle", 0.75f, 0.75f, 0.95f, 1.0f);
+
+		// Balance + run-results readouts; text refreshed by the hub component.
+		xAuto.AddStep_CreateUIText("LiminalKnotBalance", "Knots: 0");
+		xAuto.AddStep_SetUIAnchor("LiminalKnotBalance", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		xAuto.AddStep_SetUIAlignment("LiminalKnotBalance", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		xAuto.AddStep_SetUIPosition("LiminalKnotBalance", -160.0f, -295.0f);
+		xAuto.AddStep_SetUIFontSize("LiminalKnotBalance", 30.0f);
+		xAuto.AddStep_SetUIColor("LiminalKnotBalance", 0.95f, 0.80f, 0.30f, 1.0f);
+
+		xAuto.AddStep_CreateUIText("LiminalLastRun", "Last run: +0 Knots");
+		xAuto.AddStep_SetUIAnchor("LiminalLastRun", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		xAuto.AddStep_SetUIAlignment("LiminalLastRun", static_cast<int>(Zenith_UI::TextAlignment::Center));
+		xAuto.AddStep_SetUIPosition("LiminalLastRun", 160.0f, -295.0f);
+		xAuto.AddStep_SetUIFontSize("LiminalLastRun", 24.0f);
+		xAuto.AddStep_SetUIColor("LiminalLastRun", 0.85f, 0.85f, 0.9f, 1.0f);
+
+		// Three shrine columns. Track order matches DP_MetaSave::HermitTrack.
+		//
+		// LIFETIME GOTCHA: AddStep_* stores its const char* args BY POINTER
+		// until the boot drain executes the queue — every other caller in
+		// this file passes string literals (immortal), but generated names
+		// from a stack buffer DANGLE by drain time (all 36 buttons collapsed
+		// into one garbage-named element before this used static storage).
+		static std::string s_astrHeaderNames[3];
+		static std::string s_astrNodeNames[3 * 12];
+		static std::string s_astrNodeLabels[3 * 12];
+
+		const char* aszTrackNames[3] = { "Wynstan's Forge", "Mereworth's Eye", "Old Bett's Breath" };
+		const float afColumnX[3] = { -420.0f, 0.0f, 420.0f };
+		for (uint32_t uTrack = 0; uTrack < 3; ++uTrack)
+		{
+			char szScratch[48];
+			std::snprintf(szScratch, sizeof(szScratch), "LiminalTrack%u", uTrack);
+			s_astrHeaderNames[uTrack] = szScratch;
+			const char* szHeader = s_astrHeaderNames[uTrack].c_str();
+			xAuto.AddStep_CreateUIText(szHeader, aszTrackNames[uTrack]);
+			xAuto.AddStep_SetUIAnchor(szHeader, static_cast<int>(Zenith_UI::AnchorPreset::Center));
+			xAuto.AddStep_SetUIAlignment(szHeader, static_cast<int>(Zenith_UI::TextAlignment::Center));
+			xAuto.AddStep_SetUISize(szHeader, 320.0f, 32.0f);
+			xAuto.AddStep_SetUIPosition(szHeader, afColumnX[uTrack], -255.0f);
+			xAuto.AddStep_SetUIFontSize(szHeader, 26.0f);
+			xAuto.AddStep_SetUIColor(szHeader, 0.9f, 0.85f, 0.7f, 1.0f);
+
+			for (uint32_t uNode = 0; uNode < 12; ++uNode)
+			{
+				const uint32_t uIdx = uTrack * 12 + uNode;
+				std::snprintf(szScratch, sizeof(szScratch), "LiminalNode_T%u_N%u", uTrack, uNode);
+				s_astrNodeNames[uIdx] = szScratch;
+				std::snprintf(szScratch, sizeof(szScratch), "Node %u  (%u Knots)", uNode + 1, 2u + uNode);
+				s_astrNodeLabels[uIdx] = szScratch;
+				const char* szName = s_astrNodeNames[uIdx].c_str();
+				xAuto.AddStep_CreateUIButton(szName, s_astrNodeLabels[uIdx].c_str());
+				xAuto.AddStep_SetUIAnchor(szName, static_cast<int>(Zenith_UI::AnchorPreset::Center));
+				xAuto.AddStep_SetUIPosition(szName, afColumnX[uTrack], -215.0f + 40.0f * static_cast<float>(uNode));
+				xAuto.AddStep_SetUISize(szName, 260.0f, 36.0f);
+				xAuto.AddStep_SetUIButtonFontSize(szName, 18.0f);
+			}
+		}
+
+		xAuto.AddStep_CreateUIButton("LiminalBack", "Back");
+		xAuto.AddStep_SetUIAnchor("LiminalBack", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		xAuto.AddStep_SetUIPosition("LiminalBack", 0.0f, 290.0f);
+		xAuto.AddStep_SetUISize("LiminalBack", DPUI::fMENU_BTN_W, DPUI::fMENU_BTN_H * 0.6f);
+		xAuto.AddStep_SetUIButtonFontSize("LiminalBack", DPUI::fMENU_BTN_FONT);
+
+		xAuto.AddStep_AddComponent("DPLiminalHub");
+
+		xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Liminal" ZENITH_SCENE_EXT);
+		xAuto.AddStep_UnloadScene();
 	}
 
 	// ============================================================================
@@ -945,6 +1075,7 @@ namespace
 		g_xEngine.EditorAutomation().AddStep_AddComponent("DPFogPass");
 		g_xEngine.EditorAutomation().AddStep_AddComponent("DPHUDController");
 		g_xEngine.EditorAutomation().AddStep_AddComponent("DPOrbitCamera");
+		g_xEngine.EditorAutomation().AddStep_AddComponent("DPMinimap");
 
 		// ------ PauseManager: dedicated entity for the pause controller -------
 		// MVP-1.1: the pause controller migrates itself to the persistent
@@ -1084,6 +1215,14 @@ static void AuthorBehaviourGraphs()
 	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "MenuQuit");
 	xAuto.AddStep_GraphAddNode("DPRequestQuit");
 	xAuto.AddStep_GraphConnect("OnCustomEvent", 1, 0, "DPRequestQuit", 0);
+	// Metagame v1: Liminal (hermit shrines) entry — third menu button.
+	xAuto.AddStep_GraphAddNode("OnCustomEvent");
+	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 2);
+	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "MenuLiminal");
+	xAuto.AddStep_GraphAddNode("LoadSceneByIndex");
+	xAuto.AddStep_GraphSelectNode("LoadSceneByIndex", 1);
+	xAuto.AddStep_GraphSetNodeParamInt("m_iSceneIndex", 2);
+	xAuto.AddStep_GraphConnect("OnCustomEvent", 2, 0, "LoadSceneByIndex", 1);
 	xAuto.AddStep_GraphSave();
 	xAuto.AddStep_GraphClose();
 
@@ -1167,6 +1306,7 @@ void Project_RegisterEditorAutomationSteps()
 	AuthorBehaviourGraphs();  // .bgraph assets (regenerated every boot)
 	AuthorFrontEndScene();    // build index 0
 	AuthorProcLevelScene();   // build index 1
+	AuthorLiminalScene();     // build index 2 (metagame hub)
 
 	g_xEngine.EditorAutomation().AddStep_LoadInitialScene(&Project_LoadInitialScene);
 }
@@ -1176,5 +1316,6 @@ void Project_LoadInitialScene()
 {
 	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/FrontEnd"  ZENITH_SCENE_EXT);
 	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/ProcLevel" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(2, GAME_ASSETS_DIR "Scenes/Liminal"   ZENITH_SCENE_EXT);
 	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

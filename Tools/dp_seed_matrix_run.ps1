@@ -63,10 +63,13 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
+# 2026-07-01: config names gained the render-backend prefix (Vulkan_/D3D12_)
+# in the backend-neutral-flux work; the old un-prefixed output dirs held a
+# stale pre-rename exe that crashed (0xC0000005) against regenerated assets.
 $exeMap = @{
-    "Debug_True"    = "Games/DevilsPlayground/Build/output/win64/vs2022_debug_win64_true/devilsplayground.exe"
-    "Debug_False"   = "Games/DevilsPlayground/Build/output/win64/vs2022_debug_win64_false/devilsplayground.exe"
-    "Release_False" = "Games/DevilsPlayground/Build/output/win64/vs2022_release_win64_false/devilsplayground.exe"
+    "Debug_True"    = "Games/DevilsPlayground/Build/output/win64/vulkan_vs2022_debug_win64_true/devilsplayground.exe"
+    "Debug_False"   = "Games/DevilsPlayground/Build/output/win64/vulkan_vs2022_debug_win64_false/devilsplayground.exe"
+    "Release_False" = "Games/DevilsPlayground/Build/output/win64/vulkan_vs2022_release_win64_false/devilsplayground.exe"
 }
 $exe = $exeMap[$ConfigName]
 if (-not (Test-Path $exe)) {

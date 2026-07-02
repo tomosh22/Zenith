@@ -93,6 +93,15 @@ namespace DPTelemetry
 		// it). DoorClosed mirrors DoorOpened so the analyser can pair
 		// them on the timeline.
 		DoorClosed                  = 24, // entityA=villager, entityB=door
+		// 2026-07-01 fog-memory GPU fix: periodic health sample emitted by
+		// DPFogPass_Component (~every 60 frames while recording). Lets
+		// aggregate runs catch "memory ages never advance" (fraction pinned
+		// at 0) and "reveals never refresh" (fraction pinned at ~1).
+		FogMemorySample             = 25, // ints[0]=revealed cell count, floats[0]=fraction of cells aged past memory_visible_s
+		// 2026-07-01 camera third-person mode: emitted by DPOrbitCamera on
+		// every mode-target flip. Mode-thrash (rapid flip chains) or a
+		// stuck blend shows up directly in recordings.
+		CameraModeChanged           = 26, // entityA=followed villager, ints[0]=new DPCameraMode, floats[0]=blendT at the flip
 
 		_Count
 	};

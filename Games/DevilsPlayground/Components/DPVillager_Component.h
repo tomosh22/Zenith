@@ -89,7 +89,12 @@ public:
 		// frame from TickLife / TickMovement / TickFootsteps while possessed;
 		// DP_Tuning::Get is a linear scan + string compare, so per the
 		// "hot keys read once at OnAwake" convention they are cached here.
-		m_fSprintLifeCostExtra      = DP_Tuning::Get<float>("movement.sprint_life_cost_extra_per_s");
+		// Old Bett's Breath (metagame): unlocks cheapen sprint (GDD "30%
+		// sprint efficiency" at a full track). Scale is 1.0 on a fresh
+		// profile, so the ratified sprint-cost balance is untouched until
+		// the player buys Breath nodes at the Liminal.
+		m_fSprintLifeCostExtra      = DP_Tuning::Get<float>("movement.sprint_life_cost_extra_per_s")
+		                            * DP_MetaSave::GetSprintDrainScale();
 		m_fSprintSpeed              = DP_Tuning::Get<float>("movement.sprint_speed_mps");
 		m_fWalkSpeed                = DP_Tuning::Get<float>("movement.walk_speed_mps");
 		m_fFootstepInterval         = DP_Tuning::Get<float>("movement.footstep_interval_s");

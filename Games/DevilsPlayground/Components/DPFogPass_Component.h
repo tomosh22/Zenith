@@ -17,6 +17,8 @@
 #include "DataStream/Zenith_DataStream.h"
 
 #include "Source/PublicInterfaces.h"
+#include "Source/DPFogPass.h"
+#include "Source/DPTelemetry.h"
 
 #include "Collections/Zenith_HashMap.h"
 
@@ -64,6 +66,7 @@ public:
 		: m_xParentEntity(xOther.m_xParentEntity)
 		, m_fVillagerHoleRadius(xOther.m_fVillagerHoleRadius)
 		, m_fLightHoleSlop(xOther.m_fLightHoleSlop)
+		, m_uUpdateCounter(xOther.m_uUpdateCounter)
 		, m_xFogHoles(std::move(xOther.m_xFogHoles))
 		, m_xMemoryReveals(std::move(xOther.m_xMemoryReveals))
 	{
@@ -77,6 +80,7 @@ public:
 			m_xParentEntity       = xOther.m_xParentEntity;
 			m_fVillagerHoleRadius = xOther.m_fVillagerHoleRadius;
 			m_fLightHoleSlop      = xOther.m_fLightHoleSlop;
+			m_uUpdateCounter      = xOther.m_uUpdateCounter;
 			m_xFogHoles           = std::move(xOther.m_xFogHoles);
 			m_xMemoryReveals      = std::move(xOther.m_xMemoryReveals);
 			if (s_pxInstance == &xOther) s_pxInstance = this;
@@ -88,7 +92,11 @@ public:
 	{
 		// Pool relocation destructs the moved-from source; only clear the
 		// singleton when it still points at THIS instance.
-		if (s_pxInstance == this) s_pxInstance = nullptr;
+		if (s_pxInstance == this)
+		{
+			s_pxInstance = nullptr;
+			DPFogPass::ResetMemoryWindow();
+		}
 	}
 
 	void OnAwake()
@@ -104,7 +112,14 @@ public:
 
 	void OnDestroy()
 	{
-		if (s_pxInstance == this) s_pxInstance = nullptr;
+		if (s_pxInstance == this)
+		{
+			s_pxInstance = nullptr;
+			// The render pass outlives this scene-owned component — zero
+			// the shader's memory window so menu / Liminal / editor-Stop
+			// frames don't sample the dead run's reveal pattern.
+			DPFogPass::ResetMemoryWindow();
+		}
 	}
 
 	// Component contract: version-only payload (fog tables rebuild per frame).
@@ -186,6 +201,20 @@ public:
 		return *pxAge;
 	}
 
+	// Callback iteration over the memory cells -- decouples the namespace
+	// consumer (DP_Fog rasterizer/bounds) from Zenith_HashMap. Callback
+	// signature: void(const DPMemoryCellKey&, float fAgeSeconds).
+	template <typename TFn>
+	void ForEachMemoryCell(TFn xFn) const
+	{
+		Zenith_HashMap<DPMemoryCellKey, float, DPMemoryCellKeyHash>::Iterator it(m_xMemoryReveals);
+		while (!it.Done())
+		{
+			xFn(it.GetKey(), it.GetValue());
+			it.Next();
+		}
+	}
+
 	void ClearAllMemoryReveals() { m_xMemoryReveals.Clear(); }
 
 	uint32_t GetMemoryRevealCount() const { return static_cast<uint32_t>(m_xMemoryReveals.GetSize()); }
@@ -223,6 +252,30 @@ public:
 					DP_Fog::RegisterFogHole(xId, fRadius);
 				});
 		}
+
+		// GPU mirror: rasterize the memory table and stage the R8 texture
+		// upload once per frame, after this frame's reveals landed above.
+		// Ordering vs TickMemoryFog (player controller's OnUpdate) is one
+		// frame loose at worst -- invisible at the 10-30 s state timescales.
+		DPFogPass::UpdateMemoryTexture();
+
+		// Telemetry: periodic fog-memory health sample (~1 Hz at 60 fps).
+		// ints[0] = revealed cell count, floats[0] = fraction aged past
+		// the visible window -- the DPTelemetryAnalyzer::FogMemoryAges
+		// criterion reads these. RecordEvent no-ops outside a recording.
+		if ((m_uUpdateCounter++ % 60u) == 0u)
+		{
+			uint32_t uVisible = 0, uDim = 0, uHidden = 0;
+			DP_Fog::GetMemoryStateCounts(uVisible, uDim, uHidden);
+			const uint32_t uTotal = uVisible + uDim + uHidden;
+			const float fAgedFraction = uTotal > 0u
+				? static_cast<float>(uDim + uHidden) / static_cast<float>(uTotal)
+				: 0.0f;
+			DPTelemetry::EmitEvent(DPTelemetry::DPEventType::FogMemorySample,
+				Zenith_EntityID{}, Zenith_EntityID{},
+				static_cast<int32_t>(uTotal), fAgedFraction,
+				nullptr, "DPFogPass");
+		}
 	}
 
 private:
@@ -233,6 +286,9 @@ private:
 	// just above 0 so the hole envelops the actual lit area without a
 	// visible "ring of fog" where the light's contribution drops to zero.
 	float m_fLightHoleSlop      = 0.5f;
+
+	// Frame counter for the periodic telemetry sample above.
+	uint32_t m_uUpdateCounter   = 0;
 
 	static inline DPFogPass_Component* s_pxInstance = nullptr;
 

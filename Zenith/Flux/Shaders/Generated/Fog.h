@@ -399,14 +399,17 @@ namespace Flux_Generated_Fog
 			unsigned int m_u_pad0; // slang=uint offset=980
 			unsigned int m_u_pad1; // slang=uint offset=984
 			unsigned int m_u_pad2; // slang=uint offset=988
+			unsigned char m_ag_xMemoryRect[16]; // slang=vector offset=992 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(DPFogConstants_CB) == 992, "DPFogConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(DPFogConstants_CB) == 1008, "DPFogConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(DPFogConstants_CB, m_ug_uHoleCount) == 976, "DPFogConstants.g_uHoleCount offset drifted from Slang reflection");
 		static_assert(offsetof(DPFogConstants_CB, m_u_pad0) == 980, "DPFogConstants._pad0 offset drifted from Slang reflection");
 		static_assert(offsetof(DPFogConstants_CB, m_u_pad1) == 984, "DPFogConstants._pad1 offset drifted from Slang reflection");
 		static_assert(offsetof(DPFogConstants_CB, m_u_pad2) == 988, "DPFogConstants._pad2 offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xDepthTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xMemoryTex{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
 }

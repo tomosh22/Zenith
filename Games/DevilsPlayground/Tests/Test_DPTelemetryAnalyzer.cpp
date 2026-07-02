@@ -346,6 +346,8 @@ static bool TestCriterionToString()
 		return Fail("name: ObjectivePlacedFired");
 	if (std::strcmp(DPTelemetryAnalyzer::CriterionToString(A::PriestMoved), "PriestMoved") != 0)
 		return Fail("name: PriestMoved");
+	if (std::strcmp(DPTelemetryAnalyzer::CriterionToString(A::FogMemoryAges), "FogMemoryAges") != 0)
+		return Fail("name: FogMemoryAges");
 	if (std::strcmp(DPTelemetryAnalyzer::CriterionToString(static_cast<A>(0xFFu)), "Unknown") != 0)
 		return Fail("name: unknown enum should be 'Unknown'");
 	return true;
@@ -440,6 +442,59 @@ static bool TestPriestMoved()
 	return true;
 }
 
+// ============================================================================
+// 9) FogMemoryAges: passes only when a FogMemorySample event shows a
+//    populated, mid-aging memory table. Every silent-failure mode the
+//    criterion exists to catch gets its own negative case.
+// ============================================================================
+static bool TestFogMemoryAges()
+{
+	auto MakeSample = [](int32_t iCells, float fFraction)
+	{
+		Zenith_Telemetry::Event xE;
+		xE.uEventType = static_cast<uint16_t>(DPTelemetry::DPEventType::FogMemorySample);
+		xE.xPayload.aiInts[0]   = iCells;
+		xE.xPayload.afFloats[0] = fFraction;
+		return xE;
+	};
+
+	// Positive: an early empty sample followed by a populated, mid-aging one.
+	{
+		const Zenith_Telemetry::Event axE[] = { MakeSample(0, 0.0f), MakeSample(120, 0.35f) };
+		const std::string str = BuildRecording("fogmem_ok.ztlm", "FogMemTest", 3, 0, axE, 2);
+		if (!CheckOne(str.c_str(), A::FogMemoryAges))
+			return Fail("fogmem: populated mid-aging sample should pass");
+	}
+	// Negative: no FogMemorySample events at all (fog sampling dead).
+	{
+		const std::string str = BuildRecording("fogmem_none.ztlm", "FogMemTest", 3, 0, nullptr, 0);
+		if (CheckOne(str.c_str(), A::FogMemoryAges))
+			return Fail("fogmem: no samples should fail");
+	}
+	// Negative: samples exist but the table is never populated.
+	{
+		const Zenith_Telemetry::Event axE[] = { MakeSample(0, 0.0f), MakeSample(0, 0.0f) };
+		const std::string str = BuildRecording("fogmem_empty.ztlm", "FogMemTest", 3, 0, axE, 2);
+		if (CheckOne(str.c_str(), A::FogMemoryAges))
+			return Fail("fogmem: never-populated table should fail");
+	}
+	// Negative: populated but ages frozen at 0 for the whole run.
+	{
+		const Zenith_Telemetry::Event axE[] = { MakeSample(200, 0.0f), MakeSample(220, 0.0f) };
+		const std::string str = BuildRecording("fogmem_frozen.ztlm", "FogMemTest", 3, 0, axE, 2);
+		if (CheckOne(str.c_str(), A::FogMemoryAges))
+			return Fail("fogmem: frozen-at-0 fraction should fail");
+	}
+	// Negative: populated but reveals never refresh (fraction pinned at 1).
+	{
+		const Zenith_Telemetry::Event axE[] = { MakeSample(200, 1.0f) };
+		const std::string str = BuildRecording("fogmem_stale.ztlm", "FogMemTest", 3, 0, axE, 1);
+		if (CheckOne(str.c_str(), A::FogMemoryAges))
+			return Fail("fogmem: pinned-at-1 fraction should fail");
+	}
+	return true;
+}
+
 static void Setup_Analyzer()
 {
 	g_bPassed = false;
@@ -453,9 +508,10 @@ static void Setup_Analyzer()
 	if (!TestPipelineHealthPreset())return;
 	if (!TestCriterionToString())   return;
 	if (!TestPriestMoved())         return;
+	if (!TestFogMemoryAges())       return;
 
 	g_bPassed = true;
-	std::printf("[DPTelemetryAnalyzer] all 8 test clusters passed\n");
+	std::printf("[DPTelemetryAnalyzer] all 9 test clusters passed\n");
 	std::fflush(stdout);
 }
 

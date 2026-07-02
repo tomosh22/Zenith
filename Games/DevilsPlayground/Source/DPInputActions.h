@@ -88,4 +88,12 @@ namespace DP_Input
 	{
 		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_H);
 	}
+
+	// 2026-07-01: camera-mode toggle. C flips the orbit camera between
+	// birds-eye and third-person, overriding the possession-driven auto
+	// switch until the next possession change. Single-frame edge.
+	inline bool ReadCameraTogglePressed()
+	{
+		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_C);
+	}
 }

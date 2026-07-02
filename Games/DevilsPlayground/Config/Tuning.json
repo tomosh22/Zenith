@@ -127,7 +127,28 @@
     "max_holes_per_frame": 64,
     "memory_visible_s": 10.0,
     "memory_dim_s": 30.0,
-    "_comment_memory_states": "Tiles have 4 states: NEVER_SEEN (full grey, default), VISITED_VISIBLE (tile last seen <=memory_visible_s ago), VISITED_DIM (last seen between memory_visible_s and memory_dim_s ago), VISITED_HIDDEN (last seen >memory_dim_s ago, returns to grey). A tile in NEVER_SEEN is distinct from a tile in VISITED_HIDDEN: NEVER_SEEN tiles can be exposed by FIRST visit; VISITED_HIDDEN tiles are 'forgotten' visited tiles. The shader treats both as grey but the test (Test_P2Fog_MemoryDimsAfter10s) distinguishes them via the never_seen flag in the tile buffer."
+    "_comment_memory_states": "Tiles have 4 states: NEVER_SEEN (full grey, default), VISITED_VISIBLE (tile last seen <=memory_visible_s ago), VISITED_DIM (last seen between memory_visible_s and memory_dim_s ago), VISITED_HIDDEN (last seen >memory_dim_s ago, returns to grey). A tile in NEVER_SEEN is distinct from a tile in VISITED_HIDDEN: NEVER_SEEN tiles can be exposed by FIRST visit; VISITED_HIDDEN tiles are 'forgotten' visited tiles. The shader treats both as grey but the test (Test_P2Fog_MemoryDimsAfter10s) distinguishes them via the never_seen flag in the tile buffer.",
+    "memory_dim_visibility": 0.4,
+    "_comment_memory_dim_visibility": "Rendered/minimap visibility factor at the memory_dim_s boundary (1 = fully clear, 0 = full fog). DP_Fog::MemoryVisibilityForAge lerps 1.0 -> this across the visible->dim window so dimming is continuous rather than a pop at memory_visible_s.",
+    "memory_hidden_fade_s": 5.0,
+    "_comment_memory_hidden_fade": "Cosmetic fade tail after memory_dim_s: rendered visibility lerps from memory_dim_visibility down to 0 over this many seconds so forgotten tiles return to full fog smoothly instead of popping. The VISITED_HIDDEN state boundary itself (GetMemoryStateAt) stays exactly at memory_dim_s."
+  },
+
+  "metagame": {
+    "_comment": "GDD §5.4 meta-progression (metagame v1, 2026-07-01). Knots are the run currency (earned during a run, banked into the persistent DP_MetaSave profile at run end, spent at the Liminal's hermit shrines). All effect scales are 1.0 with zero unlocks and lerp linearly to their *_at_full value at 12/12 nodes, so bots/tests/the ratified balance matrix are untouched until the player actually buys nodes.",
+    "knots_per_reagent": 1,
+    "handoff_chain_min": 2,
+    "handoff_chain_bonus": 1,
+    "_comment_handoff": "A hand-off chain = consecutive voluntary possession switches with every prior vessel still alive (any villager death breaks it). Chains of handoff_chain_min or longer add handoff_chain_bonus Knots to each reagent inscription.",
+    "node_cost_base": 2,
+    "node_cost_per_node": 1,
+    "_comment_node_cost": "Node N in any track costs node_cost_base + N * node_cost_per_node Knots (node 0 = 2, node 11 = 13; a full 12-node track = 102). With ~3-5 Knots earned per successful run this paces a full track across roughly 25-30 wins -- placeholder economy pending real playtest data.",
+    "breath_sprint_drain_scale_at_full": 0.7,
+    "_comment_breath_sprint": "GDD: '30% sprint efficiency' at a full Old Bett's Breath track -- sprint life drain scales 1.0 -> 0.7.",
+    "breath_cooldown_scale_at_full": 0.667,
+    "_comment_breath_cooldown": "GDD: possession cooldown 1.5 s -> 1.0 s at a full Breath track.",
+    "eye_memory_scale_at_full": 2.0,
+    "_comment_eye_memory": "GDD: 'longer fog memory' -- Mereworth's Eye scales the memory_visible_s / memory_dim_s thresholds up to 2x at a full track (world fog texture AND minimap, which share the same curve)."
   },
 
   "night": {

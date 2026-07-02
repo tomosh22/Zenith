@@ -34,12 +34,17 @@ struct DPFogConstantsLayout
 	uint   _pad0;
 	uint   _pad1;
 	uint   _pad2;
+	// Memory-fog window: xy = world-space XZ of g_xMemoryTex texel (0,0)'s
+	// corner, zw = 1 / world-space extent the texture covers. zw == 0
+	// disables the memory term (nothing revealed yet / non-gameplay scene).
+	float4 g_xMemoryRect;
 };
 // PASS frequency — declared AFTER the spine #include so it lands at set 3.
 struct PassParams
 {
 	ConstantBuffer<DPFogConstantsLayout> DPFogConstants;
 	Sampler2D g_xDepthTex;
+	Sampler2D g_xMemoryTex; // R8: per-1m-cell remembered visibility (1 = clear)
 };
 ParameterBlock<PassParams> g_xPassSet;
 
@@ -75,6 +80,23 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		// bubble and leaves fog untouched outside.
 		float fLocal = saturate(fHoleDist / max(fRadius, 0.0001));
 		fAttenuation = min(fAttenuation, fLocal);
+	}
+
+	// Memory fog — cells a villager revealed earlier stay (partially) clear
+	// while their memory ages through VisitedVisible -> VisitedDim ->
+	// VisitedHidden. The R8 texture holds per-cell visibility rasterized on
+	// the CPU each frame (1 = remembered-visible, 0 = forgotten/never seen);
+	// bilinear filtering softens the 1 m cell edges. Combined with holes via
+	// min() so whichever clears the most fog wins.
+	float4 xMemRect = g_xPassSet.DPFogConstants.g_xMemoryRect;
+	if (xMemRect.z > 0.0)
+	{
+		float2 xMemUV = (xWorldPos.xz - xMemRect.xy) * xMemRect.zw;
+		if (all(xMemUV >= 0.0) && all(xMemUV <= 1.0))
+		{
+			float fMemoryVis = g_xPassSet.g_xMemoryTex.SampleLevel(xMemUV, 0.0).r;
+			fAttenuation = min(fAttenuation, 1.0 - fMemoryVis);
+		}
 	}
 
 	fFogAlpha *= fAttenuation;

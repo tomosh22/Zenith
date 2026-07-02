@@ -396,12 +396,24 @@ private:
 		Zenith_NavMesh& xMutable = const_cast<Zenith_NavMesh&>(*pxNavMesh);
 
 		const Zenith_Maths::Vector3 xPerp(-fSin, 0.0f, -fCos);
-		const Zenith_Maths::Vector3 axProbeAxes[2] = { xForward, xPerp };
-		const float afProbeDistances[3] = { 1.0f, 1.5f, 2.5f };
+		// 2026-07-01 widened probe set (priest stuck-in-buildings fix).
+		// Procgen emits doors on yawed walls whose voxelised navmesh edges
+		// are jagged + erosion-widened; the original 2-axis x 3-distance set
+		// missed on ~9 doors per level, and a missed stitch seals the room
+		// for pathfinding even with the door physically open. The original
+		// axis/distance combos run FIRST (unchanged stitch geometry for
+		// doors that already worked); the diagonals + extra distances only
+		// engage where the old set failed. Failures are now counted via
+		// DP_AI::NotifyDoorStitchFailed and gated at 0 across the canonical
+		// 10 seeds by Test_ProcLevel_PriestReachability.
+		const Zenith_Maths::Vector3 xDiagA = glm::normalize(xForward + xPerp);
+		const Zenith_Maths::Vector3 xDiagB = glm::normalize(xForward - xPerp);
+		const Zenith_Maths::Vector3 axProbeAxes[4] = { xForward, xPerp, xDiagA, xDiagB };
+		const float afProbeDistances[7] = { 1.0f, 1.5f, 2.5f, 0.75f, 1.25f, 2.0f, 3.0f };
 		bool bStitched = false;
-		for (int iAxis = 0; iAxis < 2 && !bStitched; ++iAxis)
+		for (int iAxis = 0; iAxis < 4 && !bStitched; ++iAxis)
 		{
-			for (int iDist = 0; iDist < 3 && !bStitched; ++iDist)
+			for (int iDist = 0; iDist < 7 && !bStitched; ++iDist)
 			{
 				bStitched = xMutable.StitchPortalAt(xPos, axProbeAxes[iAxis],
 					afProbeDistances[iDist], /*fMaxVerticalDist=*/3.0f);
@@ -409,10 +421,40 @@ private:
 		}
 		if (!bStitched)
 		{
-			Zenith_Log(LOG_CATEGORY_AI,
-				"DPDoor::StitchNavMeshPortal: stitch failed at (%g,%g,%g) yaw=%g -- "
-				"every probe axis/distance combo returned same-poly or no-poly",
-				xPos.x, xPos.y, xPos.z, fYaw);
+			// StitchPortalAt returns false BOTH when no polygon pair was
+			// found AND when the two sides are already connected (same poly
+			// / already neighbours — a benign no-op). Only count + log when
+			// the door's two sides genuinely sit in different connected
+			// components: that is the "room sealed for pathfinding" hazard
+			// Test_ProcLevel_PriestReachability gates at zero.
+			Zenith_Maths::Vector3 xSideA = xPos;
+			Zenith_Maths::Vector3 xSideB = xPos;
+			bool bFoundA = false, bFoundB = false;
+			for (int iDist = 0; iDist < 3 && (!bFoundA || !bFoundB); ++iDist)
+			{
+				const float fD = afProbeDistances[iDist];
+				if (!bFoundA && pxNavMesh->FindPolygonContaining(xPos + xForward * fD, 3.0f) != UINT32_MAX)
+				{
+					xSideA = xPos + xForward * fD;
+					bFoundA = true;
+				}
+				if (!bFoundB && pxNavMesh->FindPolygonContaining(xPos - xForward * fD, 3.0f) != UINT32_MAX)
+				{
+					xSideB = xPos - xForward * fD;
+					bFoundB = true;
+				}
+			}
+			const bool bSidesConnected = bFoundA && bFoundB &&
+				DP_AI::ArePositionsConnected(xSideA, xSideB);
+			if (!bSidesConnected)
+			{
+				DP_AI::NotifyDoorStitchFailed();
+				Zenith_Log(LOG_CATEGORY_AI,
+					"DPDoor::StitchNavMeshPortal: stitch failed at (%g,%g,%g) yaw=%g -- "
+					"every probe axis/distance combo returned no-poly and the door's "
+					"sides are not path-connected (room sealed for pathfinding)",
+					xPos.x, xPos.y, xPos.z, fYaw);
+			}
 		}
 	}
 

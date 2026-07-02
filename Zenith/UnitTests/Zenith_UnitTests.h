@@ -38,6 +38,8 @@ public:
 	static void TestHashMapCollisions();
 	static void TestHashMapRehash();
 	static void TestHashMapTombstones();
+	static void TestHashMapChurnCapacityBounded();
+	static void TestHashMapCopyPreservesProbeChains();
 	static void TestHashMapIterator();
 	static void TestHashMapIteratorInvalidation();
 	static void TestHashMapCopyMove();

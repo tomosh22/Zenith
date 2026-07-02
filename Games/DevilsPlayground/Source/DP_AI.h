@@ -54,6 +54,26 @@ namespace DP_AI
 	void OpenNearbyDoorsFor(Zenith_EntityID xActor,
 	                        const Vec3& xActorPos);
 
+	// 2026-07-01 stitch-health instrumentation (priest stuck-in-buildings
+	// fix). DPDoor_Component calls NotifyDoorStitchFailed when every
+	// navmesh-portal probe combo fails for a door -- previously log-only,
+	// which let procgen seeds ship rooms that were sealed for pathfinding
+	// even with the door physically open. The count is scene-scoped
+	// (cleared by ResetLevelNavMesh) and gated at 0 by
+	// Test_ProcLevel_PriestReachability across the canonical 10 seeds.
+	void NotifyDoorStitchFailed();
+	uint32_t GetUnstitchedDoorCount();
+
+	// True when both positions sit on (within fMaxVerticalDist of) the
+	// level navmesh AND their polygons share a connected component of the
+	// polygon-neighbour graph. Door stitches count as connections; dynamic
+	// BLOCKED state is deliberately ignored -- a stitched door that is
+	// merely closed still counts, because the priest opens unlocked doors
+	// on approach (OpenNearbyDoorsFor). False when either point is
+	// off-mesh.
+	bool ArePositionsConnected(const Vec3& xFrom, const Vec3& xTo,
+	                           float fMaxVerticalDist = 3.0f);
+
 	// ========================================================================
 	// Cross-component priest-state forwarders for the HUD. Iterate every
 	// Priest_Component in the active scene and read its blackboard / position.

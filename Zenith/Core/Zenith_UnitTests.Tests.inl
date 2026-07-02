@@ -1118,6 +1118,90 @@ void Zenith_UnitTests::TestHashMapTombstones(){
 
 }
 
+ZENITH_TEST(Core, HashMapChurnCapacityBounded) { Zenith_UnitTests::TestHashMapChurnCapacityBounded(); }
+
+void Zenith_UnitTests::TestHashMapChurnCapacityBounded(){
+
+	// Regression: steady insert/remove churn at a small live size must NOT
+	// grow capacity. Before the tombstone-aware rehash split, every load-
+	// factor trip doubled capacity even when tombstones (not live entries)
+	// tripped it — the memory tracker's per-allocation record map reached
+	// the 2^25-capacity overflow assert this way during a DP procgen scene
+	// reload (tens of millions of tracked alloc/free pairs at a modest
+	// live count).
+	Zenith_HashMap<u_int, u_int> xMap(64);
+
+	// Keep ~32 live entries while churning 100k insert+remove pairs —
+	// enough to have doubled the old implementation ~10 times over.
+	constexpr u_int uLIVE = 32;
+	for (u_int u = 0; u < uLIVE; u++)
+	{
+		xMap.Insert(u, u);
+	}
+	constexpr u_int uCHURN = 100000;
+	for (u_int u = 0; u < uCHURN; u++)
+	{
+		const u_int uKey = 1000 + u;
+		xMap.Insert(uKey, uKey);
+		xMap.Remove(uKey);
+	}
+
+	ZENITH_ASSERT_EQ(xMap.GetSize(), uLIVE, "Live entries survive churn");
+	// In-place tombstone rehashes keep capacity at (or near) its start;
+	// allow one doubling of slack so the bound isn't implementation-exact.
+	ZENITH_ASSERT_LE(xMap.GetCapacity(), 128, "Churn must not grow capacity");
+	for (u_int u = 0; u < uLIVE; u++)
+	{
+		ZENITH_ASSERT_TRUE(xMap.Contains(u), "Live key survived churn rehashes");
+		ZENITH_ASSERT_EQ(xMap.Get(u), u, "Live value survived churn rehashes");
+	}
+
+	// Genuine growth still works: push live size past the load factor.
+	for (u_int u = 0; u < 512; u++)
+	{
+		xMap.Insert(500000 + u, u);
+	}
+	ZENITH_ASSERT_GT(xMap.GetCapacity(), 128, "Live growth still doubles capacity");
+	ZENITH_ASSERT_EQ(xMap.GetSize(), uLIVE + 512, "All live entries present after growth");
+
+}
+
+ZENITH_TEST(Core, HashMapCopyPreservesProbeChains) { Zenith_UnitTests::TestHashMapCopyPreservesProbeChains(); }
+
+void Zenith_UnitTests::TestHashMapCopyPreservesProbeChains(){
+
+	// Regression: copying a map whose live keys sit BEHIND tombstones in
+	// their probe chains must keep those keys reachable. The old
+	// CopyFromOther slot-copied occupied entries at their original indices
+	// but rewrote tombstones as EMPTY, so lookups in the copy stopped at
+	// the (now empty) tombstone slot and missed live keys.
+	Zenith_HashMap<CollidingKey, u_int> xMap(32);
+	// All CollidingKeys hash identically: K1 lands at the home slot, K2/K3
+	// probe past it.
+	xMap.Insert({1}, 10);
+	xMap.Insert({2}, 20);
+	xMap.Insert({3}, 30);
+	// Tombstone the head of the probe chain.
+	xMap.Remove({1});
+	ZENITH_ASSERT_TRUE(xMap.Contains({2}), "K2 reachable in the original");
+	ZENITH_ASSERT_TRUE(xMap.Contains({3}), "K3 reachable in the original");
+
+	// Copy-construct + copy-assign both go through CopyFromOther.
+	Zenith_HashMap<CollidingKey, u_int> xCopy(xMap);
+	ZENITH_ASSERT_EQ(xCopy.GetSize(), 2, "Copy size matches");
+	ZENITH_ASSERT_TRUE(xCopy.Contains({2}), "K2 reachable in the copy");
+	ZENITH_ASSERT_TRUE(xCopy.Contains({3}), "K3 reachable in the copy");
+	ZENITH_ASSERT_EQ(xCopy.Get({2}), 20, "K2 value survived the copy");
+	ZENITH_ASSERT_EQ(xCopy.Get({3}), 30, "K3 value survived the copy");
+	ZENITH_ASSERT_FALSE(xCopy.Contains({1}), "Removed key stays missing in the copy");
+
+	Zenith_HashMap<CollidingKey, u_int> xAssigned;
+	xAssigned = xMap;
+	ZENITH_ASSERT_TRUE(xAssigned.Contains({2}) && xAssigned.Contains({3}),
+		"Copy-assign preserves probe chains too");
+
+}
+
 ZENITH_TEST(Core, HashMapIterator) { Zenith_UnitTests::TestHashMapIterator(); }
 
 void Zenith_UnitTests::TestHashMapIterator(){

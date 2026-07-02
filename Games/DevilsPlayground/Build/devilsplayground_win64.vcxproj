@@ -901,7 +901,9 @@
     <ClInclude Include="..\Components\DPItemBase_Component.h" />
     <ClInclude Include="..\Components\DPItemManager_Component.h" />
     <ClInclude Include="..\Components\DPItemSpawn_Component.h" />
+    <ClInclude Include="..\Components\DPLiminalHub_Component.h" />
     <ClInclude Include="..\Components\DPMenuRelay_Component.h" />
+    <ClInclude Include="..\Components\DPMinimap_Component.h" />
     <ClInclude Include="..\Components\DPOrbitCamera_Component.h" />
     <ClInclude Include="..\Components\DPPauseMenuController_Component.h" />
     <ClInclude Include="..\Components\DPPlayerController_Component.h" />
@@ -930,6 +932,9 @@
     <ClInclude Include="..\Source\DP_Interactables.h" />
     <ClInclude Include="..\Source\DP_Items.h" />
     <ClInclude Include="..\Source\DP_Json.h" />
+    <ClInclude Include="..\Source\DP_Knots.h" />
+    <ClInclude Include="..\Source\DP_MetaSave.h" />
+    <ClInclude Include="..\Source\DP_Minimap.h" />
     <ClInclude Include="..\Source\DP_Night.h" />
     <ClInclude Include="..\Source\DP_Player.h" />
     <ClInclude Include="..\Source\DP_Query.h" />
@@ -940,6 +945,7 @@
     <ClInclude Include="..\Source\PublicInterfaces.h" />
     <ClInclude Include="..\Tests\DPTestSupport.h" />
     <ClInclude Include="..\Tests\DP_TestGraphHelpers.h" />
+    <ClInclude Include="..\Tests\DP_TestTGAHelpers.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Components\DPProcLevelBootstrap_Component.cpp" />
@@ -958,6 +964,9 @@
     <ClCompile Include="..\Source\DP_Interactables.cpp" />
     <ClCompile Include="..\Source\DP_Items.cpp" />
     <ClCompile Include="..\Source\DP_Json.cpp" />
+    <ClCompile Include="..\Source\DP_Knots.cpp" />
+    <ClCompile Include="..\Source\DP_MetaSave.cpp" />
+    <ClCompile Include="..\Source\DP_Minimap.cpp" />
     <ClCompile Include="..\Source\DP_Night.cpp" />
     <ClCompile Include="..\Source\DP_Player.cpp" />
     <ClCompile Include="..\Source\DP_Reagents.cpp" />
@@ -967,10 +976,14 @@
     <ClCompile Include="..\Tests\MaterialEntityShowcase.cpp" />
     <ClCompile Include="..\Tests\Test_DimLightsCutFog.cpp" />
     <ClCompile Include="..\Tests\Test_DoubleDoorAndForge.cpp" />
+    <ClCompile Include="..\Tests\Test_DPCamera_ModeTransition.cpp" />
     <ClCompile Include="..\Tests\Test_DPDoor.cpp" />
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp" />
+    <ClCompile Include="..\Tests\Test_DPFogPass_VisualOutput.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryAnalyzer.cpp" />
     <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp" />
+    <ClCompile Include="..\Tests\Test_DP_LiminalHub_Spend.cpp" />
+    <ClCompile Include="..\Tests\Test_DP_Minimap_RevealAndTracking.cpp" />
     <ClCompile Include="..\Tests\Test_EditorSceneCycle.cpp" />
     <ClCompile Include="..\Tests\Test_FrontEndPlay.cpp" />
     <ClCompile Include="..\Tests\Test_FullPlaythrough.cpp" />
@@ -996,6 +1009,7 @@
     <ClCompile Include="..\Tests\Test_P1Drop_PickupChainHandoff.cpp" />
     <ClCompile Include="..\Tests\Test_P1Faint_RecoversToIdle.cpp" />
     <ClCompile Include="..\Tests\Test_P1Faint_SystemPossessBypassesGate.cpp" />
+    <ClCompile Include="..\Tests\Test_P1MetaSave_Suite.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_ClosedDoorBlocksPath.cpp" />
     <ClCompile Include="..\Tests\Test_P1NavMesh_PathRespectsWalls.cpp" />
     <ClCompile Include="..\Tests\Test_P1NoVessels_DispatchesRunLost.cpp" />
@@ -1035,6 +1049,8 @@
     <ClCompile Include="..\Tests\Test_P2Fog_LightAddsHole.cpp" />
     <ClCompile Include="..\Tests\Test_P2Fog_MemoryDimsAfter10s.cpp" />
     <ClCompile Include="..\Tests\Test_P2Fog_MemoryFollowsPossessedVillager.cpp" />
+    <ClCompile Include="..\Tests\Test_P2Fog_MemoryRasterizeGrid.cpp" />
+    <ClCompile Include="..\Tests\Test_P2Fog_MemoryVisibilityCurve.cpp" />
     <ClCompile Include="..\Tests\Test_P2Forge_AudibleAt30m.cpp" />
     <ClCompile Include="..\Tests\Test_P2Forge_IronToSkeletonKey.cpp" />
     <ClCompile Include="..\Tests\Test_P2Forge_PriestHearsTheHammer.cpp" />
@@ -1072,9 +1088,12 @@
     <ClCompile Include="..\Tests\Test_ProcLevel_BuildingWallClosure.cpp" />
     <ClCompile Include="..\Tests\Test_ProcLevel_DeterminismCheck.cpp" />
     <ClCompile Include="..\Tests\Test_ProcLevel_Locks.cpp" />
+    <ClCompile Include="..\Tests\Test_ProcLevel_PriestReachability.cpp" />
     <ClCompile Include="..\Tests\Test_PublicInterfaces.cpp" />
     <ClCompile Include="..\Tests\Test_SSGIDenoiseToggle.cpp" />
     <ClCompile Include="..\Tests\Test_T0AudioBus_EmitsAndRecords.cpp" />
+    <ClCompile Include="..\Tests\Test_T0Knots_Earning.cpp" />
+    <ClCompile Include="..\Tests\Test_T0Minimap_PureMaths.cpp" />
     <ClCompile Include="..\Tests\Test_T0NavMesh_QueryCountIncrements.cpp" />
     <ClCompile Include="..\Tests\Test_T0RenderBus_RecordsDrawCalls.cpp" />
     <ClCompile Include="..\Tests\Test_T0SaveData_TestHooks.cpp" />

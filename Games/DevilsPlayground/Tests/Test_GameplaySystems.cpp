@@ -30,7 +30,7 @@
 //   VillagerDeath_Test    — Possessed villager life timer expires → DP_OnVillagerDied + possession cleared
 //   ChestInteract_Test    — F-press near chest → graph blackboard isOpen flips
 //   NoiseMachineFlow_Test — F-press near noise machine → priest hears (BB.HasInvestigatePos true)
-//   OrbitCameraStaysFixed_Test — Possess villager → bird's-eye camera position unchanged
+//   OrbitCameraFollowsPossession_Test — No possession → zero camera drift; possess → blends to third-person near the villager
 //   HUDLifeBar_Test       — Possess villager → HUD's "LifeBar" UI text becomes visible + non-empty
 //
 // Each follows the multi-frame state-machine pattern from Test_Possession.cpp.
@@ -528,22 +528,26 @@ static const Zenith_AutomatedTest g_xNoiseMachineFlowTest = {
 ZENITH_AUTOMATED_TEST_REGISTER(g_xNoiseMachineFlowTest);
 
 // ============================================================================
-// OrbitCameraStaysFixed_Test
+// OrbitCameraFollowsPossession_Test
 //
-// DPOrbitCamera_Component is a fixed bird's-eye camera pinned to the map
-// centre — it does NOT chase the possessed villager. This test verifies
-// the invariant that, between possess + 30 frames of villager motion, the
-// camera barely moves (small scripted yaw drift on Q/E only, but no input
-// is simulated here so the position should be effectively unchanged).
+// 2026-07-01 camera third-person mode. Replaces OrbitCameraStaysFixed_Test,
+// which pinned the pre-third-person contract ("the camera never follows the
+// possessed villager") that the camera-mode feature deliberately retired.
+// The surviving half of the old invariant — the bird's-eye camera has no
+// scripted drift while nothing is possessed and no input arrives — is still
+// asserted (phase kHold); the new half asserts possession BLENDS the camera
+// down to a third-person pose near the villager.
 // ============================================================================
 namespace OrbitCameraState
 {
-	enum Phase : int { kStart, kWait, kPossess, kTick, kVerify, kDone };
+	enum Phase : int { kStart, kWait, kHold, kPossess, kTick, kVerify, kDone };
 	int             g_iPhase = kStart;
 	Zenith_EntityID g_xVillager;
 	Zenith_EntityID g_xCamera;
+	Zenith_Maths::Vector3 g_xCamPosHoldStart(0.0f);
 	Zenith_Maths::Vector3 g_xCamPosBefore(0.0f);
 	Zenith_Maths::Vector3 g_xCamPosAfter(0.0f);
+	float           g_fDistToVillagerAfter = -1.0f;
 	int             g_iWait = 0;
 }
 
@@ -553,8 +557,10 @@ static void Setup_OrbitCamera()
 	g_iPhase = kStart;
 	g_xVillager = INVALID_ENTITY_ID;
 	g_xCamera = INVALID_ENTITY_ID;
+	g_xCamPosHoldStart = Zenith_Maths::Vector3(0.0f);
 	g_xCamPosBefore = Zenith_Maths::Vector3(0.0f);
 	g_xCamPosAfter  = Zenith_Maths::Vector3(0.0f);
+	g_fDistToVillagerAfter = -1.0f;
 	g_iWait = 0;
 }
 
@@ -573,30 +579,43 @@ static bool Step_OrbitCamera(int /*iFrame*/)
 		g_xVillager = FindFirstEntityWith<DPVillager_Component>();
 		g_xCamera   = FindFirstEntityWith<DPOrbitCamera_Component>();
 		if (!g_xVillager.IsValid() || !g_xCamera.IsValid()) return true;
-		g_iPhase = kPossess;
+		// Snapshot at the start of the unpossessed hold window.
+		// DPOrbitCamera_Component writes to Zenith_CameraComponent::SetPosition
+		// (the camera's logical view position), NOT the entity transform.
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xCamera);
+		if (Zenith_CameraComponent* pxCamera = xEnt.TryGetComponent<Zenith_CameraComponent>())
+		{
+			pxCamera->GetPosition(g_xCamPosHoldStart);
+		}
+		g_iWait = 0;
+		g_iPhase = kHold;
 		return true;
 	}
 
+	case kHold:
+		// 30 unpossessed frames with no input: the bird's-eye pose must not
+		// drift at all (the blend target stays 0 with nothing possessed).
+		++g_iWait;
+		if (g_iWait >= 30) g_iPhase = kPossess;
+		return true;
+
 	case kPossess:
 	{
-		// Snapshot camera position BEFORE possession.
-		// DPOrbitCamera_Component writes to Zenith_CameraComponent::SetPosition
-		// (the camera's logical view position), NOT the entity transform.
 		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xCamera);
 		if (Zenith_CameraComponent* pxCamera = xEnt.TryGetComponent<Zenith_CameraComponent>())
 		{
 			pxCamera->GetPosition(g_xCamPosBefore);
 		}
 		DP_Player::SetPossessedVillager(g_xVillager);
+		g_iWait = 0;
 		g_iPhase = kTick;
 		return true;
 	}
 
 	case kTick:
-		// 30 frames of doing nothing. A close-following third-person
-		// camera would drift toward the villager during this window.
+		// 90 frames: comfortably past the ~0.4 s mode blend.
 		++g_iWait;
-		if (g_iWait >= 30) g_iPhase = kVerify;
+		if (g_iWait >= 90) g_iPhase = kVerify;
 		return true;
 
 	case kVerify:
@@ -605,6 +624,16 @@ static bool Step_OrbitCamera(int /*iFrame*/)
 		if (Zenith_CameraComponent* pxCamera = xEnt.TryGetComponent<Zenith_CameraComponent>())
 		{
 			pxCamera->GetPosition(g_xCamPosAfter);
+		}
+		Zenith_Entity xVillagerEnt = g_xEngine.Scenes().ResolveEntity(g_xVillager);
+		if (xVillagerEnt.IsValid())
+		{
+			if (Zenith_TransformComponent* pxT = xVillagerEnt.TryGetComponent<Zenith_TransformComponent>())
+			{
+				Zenith_Maths::Vector3 xVPos;
+				pxT->GetPosition(xVPos);
+				g_fDistToVillagerAfter = glm::length(g_xCamPosAfter - xVPos);
+			}
 		}
 		g_iPhase = kDone;
 		return false;
@@ -620,21 +649,19 @@ static bool Verify_OrbitCamera()
 {
 	using namespace OrbitCameraState;
 	if (!g_xVillager.IsValid() || !g_xCamera.IsValid()) return false;
-	// 1) Camera must be high above the map (bird's-eye, not third-person).
-	if (g_xCamPosBefore.y < 50.0f) return false;
-	if (g_xCamPosAfter.y  < 50.0f) return false;
-	// 2) Camera position must be effectively unchanged across the
-	//    possession + 30-frame window. No player input is simulated, so
-	//    only frame-to-frame scripted drift could shift it — and the
-	//    bird's-eye camera has no scripted drift when no Q/E/wheel input
-	//    arrives.
-	const Zenith_Maths::Vector3 xDelta = g_xCamPosAfter - g_xCamPosBefore;
-	if (glm::length(xDelta) > 1.0f) return false;
+	// 1) Unpossessed: bird's-eye (high above the map) and zero drift over
+	//    the 30-frame hold — the regression guarantee for menu/gym scenes.
+	if (g_xCamPosHoldStart.y < 50.0f) return false;
+	if (glm::length(g_xCamPosBefore - g_xCamPosHoldStart) > 0.01f) return false;
+	// 2) Possessed: the camera blends DOWN into a third-person pose a few
+	//    metres from the villager (vs the ~80 m bird's-eye orbit radius).
+	if (g_fDistToVillagerAfter < 0.0f || g_fDistToVillagerAfter > 8.0f) return false;
+	if (g_xCamPosAfter.y >= g_xCamPosBefore.y) return false;
 	return true;
 }
 
 static const Zenith_AutomatedTest g_xOrbitCameraTest = {
-	"OrbitCameraStaysFixed_Test",
+	"OrbitCameraFollowsPossession_Test",
 	&Setup_OrbitCamera,
 	&Step_OrbitCamera,
 	&Verify_OrbitCamera,

@@ -4,6 +4,8 @@
 #include "DP_Player.h"
 #include "DP_Items.h"
 #include "DP_AI.h"
+#include "DP_Knots.h"
+#include "DP_MetaSave.h"
 #include "DP_Query.h"
 #include "DPCommonTypes.h"
 #include "DP_Tuning.h"
@@ -53,9 +55,21 @@ void DPPlayerController_Component::CommitVoluntaryPossession(
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"CommitVoluntaryPossession must be called from main thread");
+	// Metagame v1: a voluntary switch away from a living villager extends
+	// the hand-off chain (paid out as bonus Knots on the next reagent
+	// inscription). Both voluntary paths — immediate and channel-completion
+	// — converge here; the system/death path (SetPossessedVillager) never
+	// does, so forced switches don't count.
+	if (xCtrl.m_xPossessedVillager.IsValid() && xId.IsValid())
+	{
+		DP_Knots::NotifyVoluntaryHandoff();
+	}
 	xCtrl.m_xPossessedVillager = xId;
+	// Old Bett's Breath (metagame): unlocks shorten the cooldown (GDD:
+	// 1.5 s -> 1.0 s at a full track). Scale is 1.0 on a fresh profile.
 	xCtrl.m_fPossessionCooldownSec =
-		DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s");
+		DP_Tuning::Get<float>("possession.cooldown_after_voluntary_switch_s")
+		* DP_MetaSave::GetPossessionCooldownScale();
 
 	if (bGotNewPos)
 	{

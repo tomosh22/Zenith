@@ -446,7 +446,19 @@ private:
 		// Load factor 0.75: rehash when (size + tombstones) * 4 >= capacity * 3
 		if ((m_uSize + m_uTombstones) * 4 >= m_uCapacity * 3)
 		{
-			Rehash(m_uCapacity * 2);
+			// Distinguish tombstone churn from genuine growth: only DOUBLE
+			// when live entries alone fill half the load-factor budget
+			// (size >= 0.375 * capacity); otherwise rehash at the SAME
+			// capacity, which drops every tombstone and restores ~0.375c of
+			// insert headroom. Without this split, steady insert/remove
+			// churn at a modest live size doubles capacity forever — the
+			// memory tracker's per-allocation record map reached the 2^25 ×
+			// 216 B capacity-overflow assert this way during a DP procgen
+			// scene reload (tens of millions of tracked alloc/free pairs).
+			const u_int uNewCapacity = (m_uSize * 8 >= m_uCapacity * 3)
+				? m_uCapacity * 2
+				: m_uCapacity;
+			Rehash(uNewCapacity);
 		}
 	}
 
@@ -568,24 +580,25 @@ private:
 			return;
 		}
 		AllocateStorage(xOther.m_uCapacity);
+		// RE-INSERT rather than slot-copy. The old slot-copy preserved each
+		// occupied entry's index but rewrote tombstones as EMPTY — which
+		// SEVERS probe chains: a key that had probed past a tombstone became
+		// unreachable in the copy (LocateExisting stops at the first EMPTY).
+		// Re-inserting into the fresh (tombstone-free) table recomputes every
+		// probe chain correctly, exactly like Rehash().
+		m_uSize = 0;
+		m_uTombstones = 0;
 		for (u_int u = 0; u < xOther.m_uCapacity; u++)
 		{
-			if (xOther.m_puMeta[u] == uMETA_OCCUPIED)
-			{
-				new (&m_pxKeys[u]) K(xOther.m_pxKeys[u]);
-				new (&m_pxValues[u]) V(xOther.m_pxValues[u]);
-				m_puMeta[u] = uMETA_OCCUPIED;
-			}
-			else
-			{
-				// Tombstones are lost on copy — not a correctness concern because
-				// lookup on tombstoned slots returns miss either way, and copy
-				// starts with a fresh generation anyway.
-				m_puMeta[u] = uMETA_EMPTY;
-			}
+			if (xOther.m_puMeta[u] != uMETA_OCCUPIED) continue;
+			u_int uSlot;
+			// Fresh table, no duplicates possible — always a new slot.
+			LocateForInsert(xOther.m_pxKeys[u], uSlot);
+			new (&m_pxKeys[uSlot]) K(xOther.m_pxKeys[u]);
+			new (&m_pxValues[uSlot]) V(xOther.m_pxValues[u]);
+			m_puMeta[uSlot] = uMETA_OCCUPIED;
+			m_uSize++;
 		}
-		m_uSize = xOther.m_uSize;
-		m_uTombstones = 0;
 	}
 
 	K* m_pxKeys;

@@ -40,6 +40,8 @@ namespace DPTelemetry
 		case DPEventType::PauseToggle:                 return "PauseToggle";
 		case DPEventType::PerceptionContactBegin:      return "PerceptionContactBegin";
 		case DPEventType::PerceptionContactEnd:        return "PerceptionContactEnd";
+		case DPEventType::FogMemorySample:             return "FogMemorySample";
+		case DPEventType::CameraModeChanged:           return "CameraModeChanged";
 		case DPEventType::_Count:
 		default:
 			return nullptr;

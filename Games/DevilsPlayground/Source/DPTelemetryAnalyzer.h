@@ -74,6 +74,16 @@ namespace DPTelemetryAnalyzer
 		// passed the analyzer with the priest stuck at its spawn for
 		// the full 57 s; this criterion makes that loud.
 		PriestMoved            = 20,
+		// 2026-07-01 fog-memory-health gate (part of the memory-fog GPU
+		// fix). Passes iff at least one FogMemorySample event shows a
+		// POPULATED, MID-AGING memory table (cells > 0 and aged fraction
+		// strictly between 0 and 1). Catches four silent-failure modes:
+		// fog sampling dead (no events at all), memory never recorded
+		// (0 cells), ages frozen at 0 (fraction pinned to 0 on a run
+		// longer than memory_visible_s), reveals never refreshing
+		// (fraction pinned to 1). Only meaningful on recordings longer
+		// than memory_visible_s -- don't add to short-run criteria lists.
+		FogMemoryAges          = 21,
 	};
 
 	// Thresholds for the numeric criteria. Const-ref input so callers

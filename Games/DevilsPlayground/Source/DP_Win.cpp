@@ -3,6 +3,7 @@
 
 #include "DP_Win.h"
 #include "DPCommonTypes.h"
+#include "DP_Knots.h"
 #include "DP_Tuning.h"
 #include "DP_Query.h"
 
@@ -46,7 +47,15 @@ namespace DP_Win
 		if (pxCtrl == nullptr) return;
 		const uint32_t uBit = DP_ObjectiveTagToBit(eObjective);
 		if (uBit == 0) return;
+		// Metagame v1 (GDD §5.4): each NEWLY-inscribed reagent earns Knots.
+		// Gated on the bit being new so a redundant re-delivery of the same
+		// objective can't farm currency.
+		const bool bNewObjective = (pxCtrl->m_uCollectedObjectivesMask & uBit) == 0;
 		pxCtrl->m_uCollectedObjectivesMask |= uBit;
+		if (bNewObjective)
+		{
+			DP_Knots::NotifyReagentInscribed();
+		}
 		// 2026-05-21 balance pass: was `mask == DP_ALL_OBJECTIVES_MASK`
 		// (all 5 objectives required), changed to popcount(mask) >=
 		// tuning-value. This lets the design ratchet between "5 of 5"

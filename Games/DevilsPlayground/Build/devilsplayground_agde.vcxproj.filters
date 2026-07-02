@@ -47,6 +47,15 @@
     <ClCompile Include="..\Source\DP_Json.cpp">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\Source\DP_Knots.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Source\DP_MetaSave.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Source\DP_Minimap.cpp">
+      <Filter>Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\Source\DP_Night.cpp">
       <Filter>Source</Filter>
     </ClCompile>
@@ -74,16 +83,28 @@
     <ClCompile Include="..\Tests\Test_DoubleDoorAndForge.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_DPCamera_ModeTransition.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_DPDoor.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_DPFogPass.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_DPFogPass_VisualOutput.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_DPTelemetryAnalyzer.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_DPTelemetryHooks.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_DP_LiminalHub_Spend.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_DP_Minimap_RevealAndTracking.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_EditorSceneCycle.cpp">
@@ -159,6 +180,9 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P1Faint_SystemPossessBypassesGate.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P1MetaSave_Suite.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_P1NavMesh_ClosedDoorBlocksPath.cpp">
@@ -278,6 +302,12 @@
     <ClCompile Include="..\Tests\Test_P2Fog_MemoryFollowsPossessedVillager.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_P2Fog_MemoryRasterizeGrid.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_P2Fog_MemoryVisibilityCurve.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_P2Forge_AudibleAt30m.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -389,6 +419,9 @@
     <ClCompile Include="..\Tests\Test_ProcLevel_Locks.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_ProcLevel_PriestReachability.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_PublicInterfaces.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
@@ -396,6 +429,12 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_T0AudioBus_EmitsAndRecords.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_T0Knots_Earning.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_T0Minimap_PureMaths.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_T0NavMesh_QueryCountIncrements.cpp">
@@ -451,7 +490,13 @@
     <ClInclude Include="..\Components\DPItemSpawn_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\DPLiminalHub_Component.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\DPMenuRelay_Component.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\DPMinimap_Component.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DPOrbitCamera_Component.h">
@@ -538,6 +583,15 @@
     <ClInclude Include="..\Source\DP_Json.h">
       <Filter>Source</Filter>
     </ClInclude>
+    <ClInclude Include="..\Source\DP_Knots.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_MetaSave.h">
+      <Filter>Source</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Source\DP_Minimap.h">
+      <Filter>Source</Filter>
+    </ClInclude>
     <ClInclude Include="..\Source\DP_Night.h">
       <Filter>Source</Filter>
     </ClInclude>
@@ -566,6 +620,9 @@
       <Filter>Tests</Filter>
     </ClInclude>
     <ClInclude Include="..\Tests\DP_TestGraphHelpers.h">
+      <Filter>Tests</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Tests\DP_TestTGAHelpers.h">
       <Filter>Tests</Filter>
     </ClInclude>
   </ItemGroup>

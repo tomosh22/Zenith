@@ -3,6 +3,7 @@
 
 #include "DP_Fog.h"
 #include "DPCommonTypes.h"
+#include "DP_MetaSave.h"
 #include "DP_Tuning.h"
 
 #include "ZenithECS/Zenith_Entity.h"
@@ -14,7 +15,10 @@
 #include "../Components/DPFogPass_Component.h"
 #include "../Components/DPVillager_Component.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 
 namespace DP_Fog
 {
@@ -126,13 +130,24 @@ namespace DP_Fog
 		const DPMemoryCellKey k = CellKeyForPosition(xPosition);
 		const float fAge = pxFog->GetMemoryCellAgeOrNeg1(k);
 		if (fAge < 0.0f) return MemoryTileState::NeverSeen;
+		// Mereworth's Eye (metagame): unlocks stretch the memory windows
+		// ("longer fog memory"). Scale is 1.0 on a fresh profile, so the
+		// pinned 10 s / 30 s contract tests are unaffected.
+		const float fMemoryScale = DP_MetaSave::GetFogMemoryScale();
 		const float fVisibleThreshold =
-			DP_Tuning::Get<float>("fog_of_war.memory_visible_s");
+			DP_Tuning::Get<float>("fog_of_war.memory_visible_s") * fMemoryScale;
 		const float fDimThreshold =
-			DP_Tuning::Get<float>("fog_of_war.memory_dim_s");
+			DP_Tuning::Get<float>("fog_of_war.memory_dim_s") * fMemoryScale;
 		if (fAge <= fVisibleThreshold) return MemoryTileState::VisitedVisible;
 		if (fAge <= fDimThreshold)     return MemoryTileState::VisitedDim;
 		return MemoryTileState::VisitedHidden;
+	}
+
+	float GetMemoryAgeAt(Vec3 xPosition)
+	{
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
+		if (pxFog == nullptr) return -1.0f;
+		return pxFog->GetMemoryCellAgeOrNeg1(CellKeyForPosition(xPosition));
 	}
 
 	uint32_t GetMemoryRevealCount()
@@ -140,6 +155,95 @@ namespace DP_Fog
 		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
 		if (pxFog == nullptr) return 0;
 		return pxFog->GetMemoryRevealCount();
+	}
+
+	uint8_t MemoryVisibilityForAge(float fAgeSeconds, float fVisibleS, float fDimS,
+		float fDimVisibility01, float fHiddenFadeS)
+	{
+		if (fAgeSeconds < 0.0f) return 0u;
+		if (fAgeSeconds <= fVisibleS) return 255u;
+		const float fDimVis = std::clamp(fDimVisibility01, 0.0f, 1.0f);
+		if (fAgeSeconds <= fDimS)
+		{
+			// Visible -> dim floor across the (visible_s, dim_s] window.
+			const float fT = (fAgeSeconds - fVisibleS) / std::max(fDimS - fVisibleS, 0.0001f);
+			return static_cast<uint8_t>((1.0f + (fDimVis - 1.0f) * fT) * 255.0f + 0.5f);
+		}
+		// Dim floor -> 0 across the hidden fade tail. Purely cosmetic
+		// smoothing — the VisitedHidden state boundary itself stays at
+		// dim_s (GetMemoryStateAt is unaffected).
+		const float fT = (fAgeSeconds - fDimS) / std::max(fHiddenFadeS, 0.0001f);
+		if (fT >= 1.0f) return 0u;
+		return static_cast<uint8_t>(fDimVis * (1.0f - fT) * 255.0f + 0.5f);
+	}
+
+	uint32_t RasterizeMemoryVisibility(uint8_t* pOut, const MemoryGrid& xGrid)
+	{
+		if (pOut == nullptr || xGrid.m_uSize == 0) return 0;
+		std::memset(pOut, 0, static_cast<size_t>(xGrid.m_uSize) * xGrid.m_uSize);
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
+		if (pxFog == nullptr) return 0;
+
+		// Thresholds read once per rasterize, not per cell. Mereworth's Eye
+		// stretches the age windows (scale 1.0 on a fresh profile) — same
+		// scaling GetMemoryStateAt applies, so texture and state agree.
+		const float fMemoryScale = DP_MetaSave::GetFogMemoryScale();
+		const float fVisibleS = DP_Tuning::Get<float>("fog_of_war.memory_visible_s") * fMemoryScale;
+		const float fDimS     = DP_Tuning::Get<float>("fog_of_war.memory_dim_s") * fMemoryScale;
+		const float fDimVis   = DP_Tuning::Get<float>("fog_of_war.memory_dim_visibility");
+		const float fFadeS    = DP_Tuning::Get<float>("fog_of_war.memory_hidden_fade_s");
+
+		const int32_t iSize = static_cast<int32_t>(xGrid.m_uSize);
+		uint32_t uWritten = 0;
+		pxFog->ForEachMemoryCell(
+			[&](const DPMemoryCellKey& xKey, float fAge)
+			{
+				const int32_t iU = xKey.iX - xGrid.m_iOriginCellX;
+				const int32_t iV = xKey.iZ - xGrid.m_iOriginCellZ;
+				if (iU < 0 || iV < 0 || iU >= iSize || iV >= iSize) return;
+				pOut[static_cast<uint32_t>(iV) * xGrid.m_uSize + static_cast<uint32_t>(iU)] =
+					MemoryVisibilityForAge(fAge, fVisibleS, fDimS, fDimVis, fFadeS);
+				++uWritten;
+			});
+		return uWritten;
+	}
+
+	bool ComputeMemoryCellBounds(int32_t& iMinXOut, int32_t& iMinZOut,
+		int32_t& iMaxXOut, int32_t& iMaxZOut)
+	{
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
+		if (pxFog == nullptr || pxFog->GetMemoryRevealCount() == 0) return false;
+		int32_t iMinX = INT32_MAX, iMinZ = INT32_MAX;
+		int32_t iMaxX = INT32_MIN, iMaxZ = INT32_MIN;
+		pxFog->ForEachMemoryCell(
+			[&](const DPMemoryCellKey& xKey, float /*fAge*/)
+			{
+				iMinX = std::min(iMinX, xKey.iX);
+				iMinZ = std::min(iMinZ, xKey.iZ);
+				iMaxX = std::max(iMaxX, xKey.iX);
+				iMaxZ = std::max(iMaxZ, xKey.iZ);
+			});
+		iMinXOut = iMinX; iMinZOut = iMinZ;
+		iMaxXOut = iMaxX; iMaxZOut = iMaxZ;
+		return true;
+	}
+
+	void GetMemoryStateCounts(uint32_t& uVisibleOut, uint32_t& uDimOut,
+		uint32_t& uHiddenOut)
+	{
+		uVisibleOut = 0; uDimOut = 0; uHiddenOut = 0;
+		DPFogPass_Component* pxFog = DPFogPass_Component::Instance();
+		if (pxFog == nullptr) return;
+		const float fMemoryScale = DP_MetaSave::GetFogMemoryScale();
+		const float fVisibleS = DP_Tuning::Get<float>("fog_of_war.memory_visible_s") * fMemoryScale;
+		const float fDimS     = DP_Tuning::Get<float>("fog_of_war.memory_dim_s") * fMemoryScale;
+		pxFog->ForEachMemoryCell(
+			[&](const DPMemoryCellKey& /*xKey*/, float fAge)
+			{
+				if      (fAge <= fVisibleS) ++uVisibleOut;
+				else if (fAge <= fDimS)     ++uDimOut;
+				else                        ++uHiddenOut;
+			});
 	}
 
 	void ClearAllMemoryReveals()

@@ -875,7 +875,7 @@ namespace
 		Zenith_Telemetry::CameraState xCam;
 		xCam.bValid = 0;
 		DP_Query::ForEachComponentInActiveScene<DPOrbitCamera_Component>(
-			[&xCam](Zenith_EntityID, DPOrbitCamera_Component& xOrbit)
+			[&xCam](Zenith_EntityID xId, DPOrbitCamera_Component& xOrbit)
 			{
 				if (xCam.bValid) return;  // first one wins; there's only one
 				const Zenith_Maths::Vector3 xTarget = xOrbit.GetOrbitTarget();
@@ -892,6 +892,20 @@ namespace
 					std::sin(fYaw) * fCp);
 				xCam.xLookAt        = xTarget;
 				xCam.xPos           = xTarget + xOff * fDist;
+				// 2026-07-01 third-person mode: while a villager is
+				// possessed the RENDERED eye no longer sits on the orbit
+				// sphere, so prefer the live camera component's position
+				// (same entity as the orbit script). The orbit-derived
+				// value above stays as the fallback; xLookAt remains the
+				// orbit target (a documented approximation mid-blend).
+				Zenith_Entity xCamEnt = g_xEngine.Scenes().ResolveEntity(xId);
+				if (xCamEnt.IsValid())
+				{
+					if (Zenith_CameraComponent* pxRealCam = xCamEnt.TryGetComponent<Zenith_CameraComponent>())
+					{
+						pxRealCam->GetPosition(xCam.xPos);
+					}
+				}
 				xCam.fOrbitYawRad   = fYaw;
 				xCam.fOrbitDistance = fDist;
 				// 55-degree FOV matches the camera authoring in

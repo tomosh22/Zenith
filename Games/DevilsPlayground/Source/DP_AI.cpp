@@ -20,6 +20,7 @@
 #include "../Components/DPDoor_Component.h"
 
 #include <cmath>
+#include <cstdint>
 
 namespace
 {
@@ -40,6 +41,11 @@ namespace
 	// FindPos node to cycle between rooms). Cleared by ResetLevelNavMesh
 	// so scene reloads start fresh.
 	Zenith_Vector<Vec3> g_axPatrolNodes;
+
+	// 2026-07-01: count of doors whose navmesh-portal stitch failed every
+	// probe (scene-scoped; cleared with the navmesh). Nonzero means at
+	// least one room is sealed for pathfinding regardless of door state.
+	uint32_t g_uUnstitchedDoorCount = 0;
 
 	void BuildSyntheticFlatNavMesh()
 	{
@@ -215,6 +221,66 @@ namespace DP_AI
 		// 2026-05-25: patrol nodes are scene-scoped, drop them alongside
 		// the navmesh so the next Generate writes a fresh set.
 		g_axPatrolNodes.Clear();
+		// Stitch-failure count is scene-scoped too — the doors that failed
+		// died with the scene that owned them.
+		g_uUnstitchedDoorCount = 0;
+	}
+
+	void NotifyDoorStitchFailed()
+	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_AI::NotifyDoorStitchFailed must be called from main thread");
+		++g_uUnstitchedDoorCount;
+	}
+
+	uint32_t GetUnstitchedDoorCount()
+	{
+		return g_uUnstitchedDoorCount;
+	}
+
+	bool ArePositionsConnected(const Vec3& xFrom, const Vec3& xTo,
+	                           float fMaxVerticalDist)
+	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_AI::ArePositionsConnected must be called from main thread");
+		const Zenith_NavMesh* pxNav = GetOrBuildLevelNavMesh();
+		if (pxNav == nullptr) return false;
+
+		const uint32_t uFrom = pxNav->FindPolygonContaining(xFrom, fMaxVerticalDist);
+		const uint32_t uTo   = pxNav->FindPolygonContaining(xTo,   fMaxVerticalDist);
+		if (uFrom == UINT32_MAX || uTo == UINT32_MAX) return false;
+		if (uFrom == uTo) return true;
+
+		// BFS over the polygon-neighbour graph. No distance cap — the
+		// question is pure connectivity, not range (this is what makes it
+		// a usable oracle for "can the priest ever reach this room").
+		const uint32_t uPolyCount = pxNav->GetPolygonCount();
+		Zenith_Vector<uint8_t> xVisited;
+		xVisited.Reserve(uPolyCount);
+		for (uint32_t u = 0; u < uPolyCount; ++u) xVisited.PushBack(0u);
+
+		Zenith_Vector<uint32_t> xQueue;
+		xQueue.Reserve(uPolyCount);
+		xQueue.PushBack(uFrom);
+		xVisited.Get(uFrom) = 1u;
+		uint32_t uHead = 0;
+		while (uHead < xQueue.GetSize())
+		{
+			const uint32_t uPoly = xQueue.Get(uHead++);
+			if (uPoly == uTo) return true;
+			const Zenith_NavMeshPolygon& xPoly = pxNav->GetPolygon(uPoly);
+			const uint32_t uNeighbours = xPoly.m_axNeighborIndices.GetSize();
+			for (uint32_t uN = 0; uN < uNeighbours; ++uN)
+			{
+				const int32_t iNext = xPoly.m_axNeighborIndices.Get(uN);
+				if (iNext < 0) continue;
+				const uint32_t uNext = static_cast<uint32_t>(iNext);
+				if (uNext >= uPolyCount || xVisited.Get(uNext) != 0u) continue;
+				xVisited.Get(uNext) = 1u;
+				xQueue.PushBack(uNext);
+			}
+		}
+		return false;
 	}
 
 	void SetPatrolNodes(const Zenith_Vector<Vec3>& axNodes)

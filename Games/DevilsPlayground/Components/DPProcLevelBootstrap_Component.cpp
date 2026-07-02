@@ -60,6 +60,18 @@ void DPProcLevelBootstrap_Component::OnAwake()
 		"DPProcLevelBootstrap_Component singleton double-instantiated");
 	s_pxInstance = this;
 
+	// Metagame: a bootstrap awake IS the start of a new run — zero the
+	// per-run Knot tally / hand-off chain / banked latch, and RE-SUBSCRIBE
+	// the run-end banking handlers. The re-subscribe is load-bearing: the
+	// boot-time engine unit tests wipe the global event dispatcher
+	// (ClearAllSubscriptions) AFTER Project_RegisterGameComponents ran, so
+	// the boot-time subscriptions are dead in any launch that doesn't pass
+	// --skip-unit-tests. Run start is after the unit-test phase by
+	// construction. (Restart via R reloads this scene, so restarts get a
+	// fresh tally + live handlers too.)
+	DP_Knots::ResetForNewRun();
+	DP_Knots::Initialise();
+
 #if defined(_MSC_VER)
 #  pragma warning(push)
 #  pragma warning(disable: 4996)

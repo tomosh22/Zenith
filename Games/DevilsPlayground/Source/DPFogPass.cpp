@@ -21,6 +21,9 @@
 
 #include "Flux/Shaders/Generated/Fog.h"
 
+#include "AssetHandling/Zenith_AssetHandle.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 #include <cstring>
@@ -64,9 +67,9 @@ namespace
 	// Flux_CommandBindDrawConstants::uMAX_SIZE was bumped to 2048 B to fit.
 	constexpr uint32_t DP_FOG_HOLE_CAP = 60;
 	constexpr uint32_t DP_FOG_CBV_SIZE = sizeof(Flux_Generated_Fog::DevilsPlayground_DPFog::DPFogConstants_CB);
-	static_assert(DP_FOG_CBV_SIZE == 992,
+	static_assert(DP_FOG_CBV_SIZE == 1008,
 		"DP_Fog CBV size drift — keep aligned with DP_FOG_MAX_HOLES (60) "
-		"× 16 B + 16 B colour/density + 16 B count/pad = 992 B. "
+		"× 16 B + 16 B colour/density + 16 B count/pad + 16 B memory rect = 1008 B. "
 		"Update Flux_CommandBindDrawConstants::uMAX_SIZE if growing the cap further.");
 
 	struct DPFogPayload
@@ -77,11 +80,52 @@ namespace
 		uint32_t              m_u_pad0              = 0;
 		uint32_t              m_u_pad1              = 0;
 		uint32_t              m_u_pad2              = 0;
+		Zenith_Maths::Vector4 m_xMemoryRect         = { 0.0f, 0.0f, 0.0f, 0.0f };
 	};
 	static_assert(sizeof(DPFogPayload) == DP_FOG_CBV_SIZE,
 		"DPFogPayload size drift — keep aligned with reflected DPFogConstants_CB layout");
 
 	DPFogPayload s_xPayload;
+
+	// Memory-fog GPU mirror. DP_Fog's sparse 1 m cell table is rasterized
+	// into this staging grid each frame and staged into an R8 texture the
+	// shader samples (see UpdateMemoryTexture). 256 texels at 1 texel/m
+	// covers the largest procgen level (~200 m) with margin; cells outside
+	// the window (shouldn't happen in practice) are simply not drawn.
+	constexpr uint32_t DP_FOG_MEMORY_TEX_SIZE = 256;
+	TextureHandle s_xMemoryTexture;
+	uint8_t s_auMemoryStaging[DP_FOG_MEMORY_TEX_SIZE * DP_FOG_MEMORY_TEX_SIZE] = {};
+
+	// World-space window of the memory texture this frame: xy = cell-corner
+	// world XZ of texel (0,0), zw = 1 / covered extent. zw == 0 disables the
+	// shader's memory term (nothing revealed / no texture). Written on the
+	// main thread (UpdateMemoryTexture) before render tasks are submitted;
+	// read at record time by ExecuteDPFog.
+	Zenith_Maths::Vector4 s_xMemoryRect = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+	// Created once by InitialiseDPFog (Flux is up when the feature registers;
+	// in headless runs the null-allocator guard leaves the handle invalid and
+	// every consumer no-ops). Initial contents: all zeros = no memory.
+	void CreateMemoryTexture()
+	{
+		std::memset(s_auMemoryStaging, 0, sizeof(s_auMemoryStaging));
+
+		Flux_SurfaceInfo xInfo;
+		xInfo.m_eFormat      = TEXTURE_FORMAT_R8_UNORM;
+		xInfo.m_eTextureType = TEXTURE_TYPE_2D;
+		xInfo.m_uWidth       = DP_FOG_MEMORY_TEX_SIZE;
+		xInfo.m_uHeight      = DP_FOG_MEMORY_TEX_SIZE;
+		xInfo.m_uDepth       = 1;
+		xInfo.m_uNumMips     = 1;
+		xInfo.m_uNumLayers   = 1;
+		xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
+
+		if (Zenith_TextureAsset* pxTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+		{
+			pxTex->CreateFromData(s_auMemoryStaging, xInfo, false);
+			s_xMemoryTexture.Set(pxTex);
+		}
+	}
 
 	void BuildPipelines()
 	{
@@ -157,10 +201,63 @@ void DPFogPass::Shutdown()
 	Zenith_GameRenderFeatures::Unregister("DP_Fog");
 }
 
+void DPFogPass::ResetMemoryWindow()
+{
+	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+		"DPFogPass::ResetMemoryWindow must be called from main thread");
+	s_xMemoryRect = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+}
+
+void DPFogPass::UpdateMemoryTexture()
+{
+	Zenith_TextureAsset* pxTex = s_xMemoryTexture.GetDirect();
+	if (pxTex == nullptr || !pxTex->IsValid())
+	{
+		// Headless / no allocator: leave the memory term disabled.
+		s_xMemoryRect = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+		return;
+	}
+
+	int32_t iMinX = 0, iMinZ = 0, iMaxX = 0, iMaxZ = 0;
+	if (!DP_Fog::ComputeMemoryCellBounds(iMinX, iMinZ, iMaxX, iMaxZ))
+	{
+		// Nothing revealed yet (or the fog component isn't loaded — menu
+		// scenes). rect.zw == 0 gates the shader term off; the texture's
+		// stale contents are never sampled.
+		s_xMemoryRect = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+		return;
+	}
+
+	// Window the fixed-size grid over the revealed cells, with a 1-texel
+	// zero border so bilinear filtering fades the outermost cells to full
+	// fog instead of clamping. Cell keys are integer metres, so the origin
+	// is integer-snapped by construction and texel centres stay aligned to
+	// cell centres frame over frame.
+	DP_Fog::MemoryGrid xGrid;
+	xGrid.m_iOriginCellX = iMinX - 1;
+	xGrid.m_iOriginCellZ = iMinZ - 1;
+	xGrid.m_uSize        = DP_FOG_MEMORY_TEX_SIZE;
+	DP_Fog::RasterizeMemoryVisibility(s_auMemoryStaging, xGrid);
+
+	// Staged, race-free re-upload (same path as the terrain editor's live
+	// splat paints) — drained ahead of render work this frame.
+	g_xEngine.FluxMemory().UpdateTextureVRAM(
+		pxTex->GetVRAMHandle(), s_auMemoryStaging, pxTex->GetSurfaceInfo());
+
+	const float fInvExtent = 1.0f / static_cast<float>(DP_FOG_MEMORY_TEX_SIZE); // 1 texel = 1 m
+	s_xMemoryRect = Zenith_Maths::Vector4(
+		static_cast<float>(xGrid.m_iOriginCellX),
+		static_cast<float>(xGrid.m_iOriginCellZ),
+		fInvExtent,
+		fInvExtent);
+}
+
 namespace
 {
 	void InitialiseDPFog()
 	{
+		CreateMemoryTexture();
+
 #ifdef ZENITH_TOOLS
 		g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "Density"          }, s_fDebugDensity,         0.0f, 10.0f);
 		g_xEngine.DebugVariables().AddFloat({ "DevilsPlayground", "Fog", "ColorR"           }, s_fDebugColorR,          0.0f,  1.0f);
@@ -215,6 +312,12 @@ namespace
 		delete s_pxShader;
 		s_pxShader = nullptr;
 		s_bPipelineBuilt = false;
+
+		// Release the memory texture through the asset registry (deferred
+		// VRAM deletion) while the device is still alive; zero the window so
+		// a re-registered feature starts with the memory term disabled.
+		s_xMemoryTexture.Clear();
+		s_xMemoryRect = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
 	}
 
 	void ExecuteDPFog(Flux_CommandBuffer* pxCommandList, void* /*pUserData*/)
@@ -266,6 +369,20 @@ namespace
 		s_xPayload.m_xFogColor_Density = Zenith_Maths::Vector4(
 			s_fDebugColorR, s_fDebugColorG, s_fDebugColorB, s_fDebugDensity);
 
+		// Memory-fog window (written on the main thread this frame by
+		// UpdateMemoryTexture; zw == 0 whenever the texture below can't be
+		// sampled, so the shader's memory term stays off in lock-step).
+		Zenith_TextureAsset* pxMemoryTex = s_xMemoryTexture.GetDirect();
+		const bool bMemoryTexValid = pxMemoryTex != nullptr && pxMemoryTex->IsValid();
+		if (!bMemoryTexValid)
+		{
+			// Without the texture the pass's descriptor set can't be
+			// completed — skip the draw entirely (no fog beats a crash;
+			// only reachable if texture creation failed at init).
+			return;
+		}
+		s_xPayload.m_xMemoryRect = s_xMemoryRect;
+
 		pxCommandList->SetPipeline(s_pxPipeline);
 
 		pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
@@ -274,6 +391,7 @@ namespace
 		Flux_ShaderBinder xBinder(*pxCommandList);
 		namespace NS = Flux_Generated_Fog::DevilsPlayground_DPFog;
 		xBinder.BindSRV(NS::hg_xDepthTex, g_xEngine.FluxGraphics().GetDepthStencilSRV());
+		xBinder.BindSRV(NS::hg_xMemoryTex, &pxMemoryTex->GetSRV());
 		xBinder.BindDrawConstants(NS::hDPFogConstants, &s_xPayload, sizeof(s_xPayload));
 
 		pxCommandList->DrawIndexed(6);

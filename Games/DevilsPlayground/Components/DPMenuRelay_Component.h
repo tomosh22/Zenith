@@ -39,6 +39,10 @@ public:
 		{
 			pxQuit->SetOnClick(&OnQuitClicked, nullptr);
 		}
+		if (auto* pxLiminal = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuLiminal"))
+		{
+			pxLiminal->SetOnClick(&OnLiminalClicked, nullptr);
+		}
 	}
 
 	void OnDestroy()
@@ -77,6 +81,7 @@ public:
 private:
 	static void OnPlayClicked(void* /*pUserData*/) { FireMenuEvent("MenuPlay"); }
 	static void OnQuitClicked(void* /*pUserData*/) { FireMenuEvent("MenuQuit"); }
+	static void OnLiminalClicked(void* /*pUserData*/) { FireMenuEvent("MenuLiminal"); }
 
 	static void FireMenuEvent(const char* szName)
 	{

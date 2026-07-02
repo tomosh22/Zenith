@@ -17,3 +17,5 @@
 #include "DP_Win.h"
 #include "DP_Night.h"
 #include "DP_Query.h"
+#include "DP_Knots.h"
+#include "DP_MetaSave.h"

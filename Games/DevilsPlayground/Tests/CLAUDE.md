@@ -365,6 +365,8 @@ APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 | Possession range | `Test_P1Range_RefusedOutOfRange`, `Test_P1Range_AcceptedInRange`, `Test_P1Range_AnchorMovesWithEachHop` |
 | Priest perception | `Test_P1Priest_DoesNotChasePossessedOutOfSight`, `Test_P1Priest_PursuesAfterLineOfSight` |
 | Save / load | `Test_P1Save_RoundTripMeta`, `Test_P1Save_RobustToCorruption`, `Test_P1Save_VersionMismatchFallsBackToDefault` |
+| Meta save (metagame v1) | `Test_P1MetaSave_RoundTripMeta`, `Test_P1MetaSave_RobustToCorruption`, `Test_P1MetaSave_VersionMismatchFallsBackToDefault`, `Test_T0MetaSave_DiskHooks` |
+| Knots + Liminal (metagame v1) | `Test_T0Knots_EarningAndChain`, `Test_T0Knots_RunEndBanking`, `Test_DP_LiminalHub_Spend` |
 | Dawn | `Test_P1Dawn_DispatchesRunLost`, `Test_P1Dawn_NoFireWhenNotStarted` |
 | NoVessels | `Test_P1NoVessels_DispatchesRunLost` |
 | Tuning | `Test_P1Tuning_LoadsAndValuesInBand`, `Test_P1Tuning_*ValuesMatchConfig` (2 tests), `Test_P1Villager_TuningMigration` |
@@ -376,7 +378,9 @@ APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 | Archetypes | `Test_P2Archetype_TimersMatchSpec`, `Test_P2Archetype_DevoutChannel*`, `Test_P2Archetype_ChildCannotCarryTools`, `Test_P2Archetype_BeggarIgnoredByAelfric`, `Test_P2Villager_ArchetypeStatsApplied` |
 | Reagents | `Test_P2Reagent_UniquePickupChannel`, `Test_P2Reagent_BogWaterEvaporates`, `Test_P2Reagent_BellSoulRingsBell`, `Test_P2BellSoul_*` |
 | Forge | `Test_P2Forge_*` (4 tests: recipe variants [Iron→SkeletonKey, Wood→Spike], audible-at-30m, priest-hears-the-hammer) |
-| Fog memory | `Test_P2Fog_AelfricNotRevealed`, `Test_P2Fog_LightAddsHole`, `Test_P2Fog_MemoryDimsAfter10s` |
+| Fog memory | `Test_P2Fog_AelfricNotRevealed`, `Test_P2Fog_LightAddsHole`, `Test_P2Fog_MemoryDimsAfter10s`, `Test_P2Fog_MemoryVisibilityCurve`, `Test_P2Fog_MemoryRasterizeGrid`, `Test_DPFogPass_VisualOutput` (graphics; screenshot pixel-diff via `DP_TestTGAHelpers.h`) |
+| Minimap | `Test_T0Minimap_PureMaths`, `Test_DP_Minimap_RevealAndTracking` |
+| Camera modes | `Test_DPCamera_ModeTransition`, `OrbitCameraFollowsPossession_Test` (in Test_GameplaySystems.cpp; replaced `OrbitCameraStaysFixed_Test` when the third-person mode retired the never-follow contract) |
 | HUD | `Test_P2HUD_TutorialHint` (9 cases), `Test_P2HUD_DetailedReadouts` (9 clusters) |
 | Pause / Menu | `Test_P2Menu_PauseAndMainMenuShortcuts`, `Test_P2Pause_RestartActuallyReloadsScene` |
 
@@ -391,7 +395,7 @@ APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 
 | Cluster | Tests |
 |---|---|
-| Procgen | `Test_ProcLevel_BSP`, `Test_ProcLevel_DeterminismCheck`, `Test_ProcLevelScene`, `Test_ProcLevelBootstrap`, `Test_ProcLevel_BuildingWallClosure` |
+| Procgen | `Test_ProcLevel_BSP`, `Test_ProcLevel_DeterminismCheck`, `Test_ProcLevelScene`, `Test_ProcLevelBootstrap`, `Test_ProcLevel_BuildingWallClosure`, `Test_ProcLevel_PriestReachability` (10 canonical seeds: 0 sealed doors + every room reachable from the priest spawn) |
 | Telemetry | `Test_TelemetryRoundTrip`, `Test_TelemetryEdgeCases`, `Test_DPTelemetryHooks`, `Test_DPTelemetryAnalyzer` |
 | Heuristic bot | `Test_DPHeuristicBotPlaythrough`, `Test_DPHeuristicBot_Pathing`, `Test_DPHeuristicBot_GoalDispatch` |
 | Personality matrix | `PersonalityPlaythrough_Casual`, `_Stealth`, `_Speedrunner`, `_Zealot`, `_Magpie`, `_Relay`, `_Heretic`, `_Trickster` |
