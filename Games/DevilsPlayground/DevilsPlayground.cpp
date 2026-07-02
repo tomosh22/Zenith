@@ -662,23 +662,20 @@ namespace
 
 		// Three shrine columns. Track order matches DP_MetaSave::HermitTrack.
 		//
-		// LIFETIME GOTCHA: AddStep_* stores its const char* args BY POINTER
-		// until the boot drain executes the queue — every other caller in
-		// this file passes string literals (immortal), but generated names
-		// from a stack buffer DANGLE by drain time (all 36 buttons collapsed
-		// into one garbage-named element before this used static storage).
-		static std::string s_astrHeaderNames[3];
-		static std::string s_astrNodeNames[3 * 12];
-		static std::string s_astrNodeLabels[3 * 12];
-
+		// REGRESSION NOTE: this used to hold names in `static std::string`
+		// arrays because Zenith_EditorAutomation::AddStep_* stored its
+		// const char* args BY POINTER until the boot-time drain executed the
+		// queue, so names generated into a stack buffer dangled by drain time
+		// (all 36 buttons collapsed into one garbage-named element). Fixed
+		// engine-side: Zenith_EditorAction now owns copies of its string args
+		// (see Zenith/Editor/Zenith_EditorAutomation.h), so plain per-iteration
+		// stack buffers are safe again.
 		const char* aszTrackNames[3] = { "Wynstan's Forge", "Mereworth's Eye", "Old Bett's Breath" };
 		const float afColumnX[3] = { -420.0f, 0.0f, 420.0f };
 		for (uint32_t uTrack = 0; uTrack < 3; ++uTrack)
 		{
-			char szScratch[48];
-			std::snprintf(szScratch, sizeof(szScratch), "LiminalTrack%u", uTrack);
-			s_astrHeaderNames[uTrack] = szScratch;
-			const char* szHeader = s_astrHeaderNames[uTrack].c_str();
+			char szHeader[48];
+			std::snprintf(szHeader, sizeof(szHeader), "LiminalTrack%u", uTrack);
 			xAuto.AddStep_CreateUIText(szHeader, aszTrackNames[uTrack]);
 			xAuto.AddStep_SetUIAnchor(szHeader, static_cast<int>(Zenith_UI::AnchorPreset::Center));
 			xAuto.AddStep_SetUIAlignment(szHeader, static_cast<int>(Zenith_UI::TextAlignment::Center));
@@ -689,13 +686,11 @@ namespace
 
 			for (uint32_t uNode = 0; uNode < 12; ++uNode)
 			{
-				const uint32_t uIdx = uTrack * 12 + uNode;
-				std::snprintf(szScratch, sizeof(szScratch), "LiminalNode_T%u_N%u", uTrack, uNode);
-				s_astrNodeNames[uIdx] = szScratch;
-				std::snprintf(szScratch, sizeof(szScratch), "Node %u  (%u Knots)", uNode + 1, 2u + uNode);
-				s_astrNodeLabels[uIdx] = szScratch;
-				const char* szName = s_astrNodeNames[uIdx].c_str();
-				xAuto.AddStep_CreateUIButton(szName, s_astrNodeLabels[uIdx].c_str());
+				char szName[48];
+				char szLabel[48];
+				std::snprintf(szName, sizeof(szName), "LiminalNode_T%u_N%u", uTrack, uNode);
+				std::snprintf(szLabel, sizeof(szLabel), "Node %u  (%u Knots)", uNode + 1, 2u + uNode);
+				xAuto.AddStep_CreateUIButton(szName, szLabel);
 				xAuto.AddStep_SetUIAnchor(szName, static_cast<int>(Zenith_UI::AnchorPreset::Center));
 				xAuto.AddStep_SetUIPosition(szName, afColumnX[uTrack], -215.0f + 40.0f * static_cast<float>(uNode));
 				xAuto.AddStep_SetUISize(szName, 260.0f, 36.0f);

@@ -4,6 +4,7 @@
 
 #include "Collections/Zenith_Vector.h"
 #include "Maths/Zenith_Maths.h"   // Matrix4 / Quat return types on the euler-authoring helpers
+#include <string>
 
 //=============================================================================
 // Editor Automation System
@@ -253,11 +254,20 @@ enum class Zenith_EditorActionType
 struct Zenith_EditorAction
 {
 	Zenith_EditorActionType m_eType = Zenith_EditorActionType::CUSTOM_STEP;
-	// IMPORTANT: String pointers must point to static storage (string literals,
-	// static const arrays) that outlives the action queue. Do NOT pass
-	// std::string::c_str() or stack buffers — they will be dangling when executed.
-	const char* m_szArg1 = nullptr;
-	const char* m_szArg2 = nullptr;
+	// Owned copies: AddStep_* callers may pass string-literal pointers OR
+	// pointers into transient storage (e.g. a stack buffer built in a loop) —
+	// the action queue is only drained much later (boot-time), so the struct
+	// must not merely alias caller-owned memory. Zenith_Vector<T> move/copy
+	// constructs elements via placement-new (see Zenith_Vector::Reserve), so
+	// std::string members here relocate safely across queue growth.
+	// m_szArg3/4/5 exist only for the handful of action types needing more
+	// than two strings (SET_UI_NAVIGATION's up/down/left/right, prefab-variant
+	// save path / property name) — most steps leave them empty.
+	std::string m_szArg1;
+	std::string m_szArg2;
+	std::string m_szArg3;
+	std::string m_szArg4;
+	std::string m_szArg5;
 	// Up to 10 floats: most steps use <=4; INSTANTIATE_PREFAB packs a full
 	// transform here as pos[0..2], quat[3..6] (wxyz), scale[7..9].
 	float m_afArgs[10] = {};

@@ -94,6 +94,11 @@ namespace
 	using ActionType = Zenith_EditorActionType;
 	using ActionList = Zenith_Vector<Zenith_EditorAction>;
 
+	// nullptr-safe: Zenith_EditorAction's string members own their storage, so
+	// a null caller pointer (e.g. AddStep_MaterialSetParent(nullptr) to clear
+	// the parent) becomes an empty string rather than dereferencing null.
+	inline std::string SafeStr(const char* sz) { return sz ? std::string(sz) : std::string(); }
+
 	inline void Push(ActionList& xActions, ActionType eType)
 	{
 		Zenith_EditorAction xAction = {};
@@ -104,22 +109,22 @@ namespace
 	{
 		Zenith_EditorAction xAction = {};
 		xAction.m_eType = eType;
-		xAction.m_szArg1 = sz;
+		xAction.m_szArg1 = SafeStr(sz);
 		xActions.PushBack(xAction);
 	}
 	inline void Push(ActionList& xActions, ActionType eType, const char* sz1, const char* sz2)
 	{
 		Zenith_EditorAction xAction = {};
 		xAction.m_eType = eType;
-		xAction.m_szArg1 = sz1;
-		xAction.m_szArg2 = sz2;
+		xAction.m_szArg1 = SafeStr(sz1);
+		xAction.m_szArg2 = SafeStr(sz2);
 		xActions.PushBack(xAction);
 	}
 	inline void Push(ActionList& xActions, ActionType eType, const char* sz, bool b)
 	{
 		Zenith_EditorAction xAction = {};
 		xAction.m_eType = eType;
-		xAction.m_szArg1 = sz;
+		xAction.m_szArg1 = SafeStr(sz);
 		xAction.m_bArg = b;
 		xActions.PushBack(xAction);
 	}
@@ -127,7 +132,7 @@ namespace
 	{
 		Zenith_EditorAction xAction = {};
 		xAction.m_eType = eType;
-		xAction.m_szArg1 = sz;
+		xAction.m_szArg1 = SafeStr(sz);
 		xAction.m_aiArgs[0] = i;
 		xActions.PushBack(xAction);
 	}
@@ -135,7 +140,7 @@ namespace
 	{
 		Zenith_EditorAction xAction = {};
 		xAction.m_eType = eType;
-		xAction.m_szArg1 = sz;
+		xAction.m_szArg1 = SafeStr(sz);
 		xAction.m_afArgs[0] = f;
 		xActions.PushBack(xAction);
 	}
@@ -143,7 +148,7 @@ namespace
 	{
 		Zenith_EditorAction xAction = {};
 		xAction.m_eType = eType;
-		xAction.m_szArg1 = sz;
+		xAction.m_szArg1 = SafeStr(sz);
 		xAction.m_afArgs[0] = f1;
 		xAction.m_afArgs[1] = f2;
 		xActions.PushBack(xAction);
@@ -152,7 +157,7 @@ namespace
 	{
 		Zenith_EditorAction xAction = {};
 		xAction.m_eType = eType;
-		xAction.m_szArg1 = sz;
+		xAction.m_szArg1 = SafeStr(sz);
 		xAction.m_afArgs[0] = f1;
 		xAction.m_afArgs[1] = f2;
 		xAction.m_afArgs[2] = f3;
@@ -162,7 +167,7 @@ namespace
 	{
 		Zenith_EditorAction xAction = {};
 		xAction.m_eType = eType;
-		xAction.m_szArg1 = sz;
+		xAction.m_szArg1 = SafeStr(sz);
 		xAction.m_afArgs[0] = f1;
 		xAction.m_afArgs[1] = f2;
 		xAction.m_afArgs[2] = f3;
@@ -173,7 +178,7 @@ namespace
 	{
 		Zenith_EditorAction xAction = {};
 		xAction.m_eType = eType;
-		xAction.m_szArg1 = sz;
+		xAction.m_szArg1 = SafeStr(sz);
 		xAction.m_afArgs[0] = f1;
 		xAction.m_afArgs[1] = f2;
 		xAction.m_bArg = b;
@@ -183,7 +188,7 @@ namespace
 	{
 		Zenith_EditorAction xAction = {};
 		xAction.m_eType = eType;
-		xAction.m_szArg1 = sz;
+		xAction.m_szArg1 = SafeStr(sz);
 		xAction.m_afArgs[0] = f1;
 		xAction.m_afArgs[1] = f2;
 		xAction.m_afArgs[2] = f3;
@@ -196,7 +201,7 @@ namespace
 		// SetUILayoutChildForceExpand(width, height) only.
 		Zenith_EditorAction xAction = {};
 		xAction.m_eType = eType;
-		xAction.m_szArg1 = sz;
+		xAction.m_szArg1 = SafeStr(sz);
 		xAction.m_aiArgs[0] = b1 ? 1 : 0;
 		xAction.m_aiArgs[1] = b2 ? 1 : 0;
 		xActions.PushBack(xAction);
@@ -308,8 +313,8 @@ void Zenith_EditorAutomation::AddStep_AttachToBone(const char* szTargetEntityNam
 {
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = ActionType::ATTACH_TO_BONE;
-	xAction.m_szArg1 = szTargetEntityName;
-	xAction.m_szArg2 = szBone;
+	xAction.m_szArg1 = SafeStr(szTargetEntityName);
+	xAction.m_szArg2 = SafeStr(szBone);
 	xAction.m_afArgs[0] = fPosX;
 	xAction.m_afArgs[1] = fPosY;
 	xAction.m_afArgs[2] = fPosZ;
@@ -392,11 +397,11 @@ void Zenith_EditorAutomation::AddStep_SetUINavigation(const char* szElement, con
 {
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = Zenith_EditorActionType::SET_UI_NAVIGATION;
-	xAction.m_szArg1 = szElement;
-	xAction.m_szArg2 = szUp;
-	xAction.m_pArg = const_cast<void*>(static_cast<const void*>(szDown));
-	xAction.m_pArg2 = const_cast<void*>(static_cast<const void*>(szLeft));
-	xAction.m_pfnFunc = reinterpret_cast<void(*)()>(const_cast<char*>(szRight));
+	xAction.m_szArg1 = SafeStr(szElement);
+	xAction.m_szArg2 = SafeStr(szUp);
+	xAction.m_szArg3 = SafeStr(szDown);
+	xAction.m_szArg4 = SafeStr(szLeft);
+	xAction.m_szArg5 = SafeStr(szRight);
 	m_axActions.PushBack(xAction);
 }
 
@@ -473,7 +478,7 @@ void Zenith_EditorAutomation::AddStep_MaterialSetParamColor(const char* szParamN
 {
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = ActionType::MATERIAL_SET_PARAM_COLOR;
-	xAction.m_szArg1 = szParamName;
+	xAction.m_szArg1 = SafeStr(szParamName);
 	xAction.m_afArgs[0] = fR; xAction.m_afArgs[1] = fG; xAction.m_afArgs[2] = fB; xAction.m_afArgs[3] = fA;
 	m_axActions.PushBack(xAction);
 }
@@ -498,7 +503,7 @@ void Zenith_EditorAutomation::AddStep_GraphSelectNode(const char* szTypeName, in
 {
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = ActionType::GRAPH_SELECT_NODE;
-	xAction.m_szArg1 = szTypeName;
+	xAction.m_szArg1 = SafeStr(szTypeName);
 	xAction.m_aiArgs[0] = iOccurrence;
 	m_axActions.PushBack(xAction);
 }
@@ -507,7 +512,7 @@ void Zenith_EditorAutomation::AddStep_GraphSetNodeParamFloat(const char* szPrope
 {
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = ActionType::GRAPH_SET_NODE_PARAM_FLOAT;
-	xAction.m_szArg1 = szPropertyName;
+	xAction.m_szArg1 = SafeStr(szPropertyName);
 	xAction.m_afArgs[0] = fValue;
 	m_axActions.PushBack(xAction);
 }
@@ -516,8 +521,8 @@ void Zenith_EditorAutomation::AddStep_GraphSetNodeParamString(const char* szProp
 {
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = ActionType::GRAPH_SET_NODE_PARAM_STRING;
-	xAction.m_szArg1 = szPropertyName;
-	xAction.m_szArg2 = szValue;
+	xAction.m_szArg1 = SafeStr(szPropertyName);
+	xAction.m_szArg2 = SafeStr(szValue);
 	m_axActions.PushBack(xAction);
 }
 
@@ -525,7 +530,7 @@ void Zenith_EditorAutomation::AddStep_GraphSetNodeParamInt(const char* szPropert
 {
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = ActionType::GRAPH_SET_NODE_PARAM_INT;
-	xAction.m_szArg1 = szPropertyName;
+	xAction.m_szArg1 = SafeStr(szPropertyName);
 	xAction.m_aiArgs[0] = iValue;
 	m_axActions.PushBack(xAction);
 }
@@ -534,7 +539,7 @@ void Zenith_EditorAutomation::AddStep_GraphSetNodeParamVec3(const char* szProper
 {
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = ActionType::GRAPH_SET_NODE_PARAM_VEC3;
-	xAction.m_szArg1 = szPropertyName;
+	xAction.m_szArg1 = SafeStr(szPropertyName);
 	xAction.m_afArgs[0] = fX;
 	xAction.m_afArgs[1] = fY;
 	xAction.m_afArgs[2] = fZ;
@@ -545,8 +550,8 @@ void Zenith_EditorAutomation::AddStep_GraphConnect(const char* szSrcTypeName, in
 {
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = ActionType::GRAPH_CONNECT;
-	xAction.m_szArg1 = szSrcTypeName;
-	xAction.m_szArg2 = szDstTypeName;
+	xAction.m_szArg1 = SafeStr(szSrcTypeName);
+	xAction.m_szArg2 = SafeStr(szDstTypeName);
 	xAction.m_aiArgs[0] = iSrcOccurrence;
 	xAction.m_aiArgs[1] = iDstOccurrence;
 	xAction.m_afArgs[0] = static_cast<float>(iSrcPin);
@@ -557,8 +562,8 @@ void Zenith_EditorAutomation::AddStep_GraphAddVariable(const char* szName, const
 {
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = ActionType::GRAPH_ADD_VARIABLE;
-	xAction.m_szArg1 = szName;
-	xAction.m_szArg2 = szTypeName;
+	xAction.m_szArg1 = SafeStr(szName);
+	xAction.m_szArg2 = SafeStr(szTypeName);
 	xAction.m_afArgs[0] = fDefaultNumeric;
 	m_axActions.PushBack(xAction);
 }
@@ -707,15 +712,12 @@ void Zenith_EditorAutomation::AddStep_CreatePrefabVariant(
 	const char* szSavePath)
 {
 	// CREATE_PREFAB_VARIANT needs THREE strings (name + base path + save path),
-	// one more than the Push helpers cover. Stash the third in m_pArg as a
-	// const char* — the action struct is purely declarative so this is safe
-	// (m_pArg already serves variable-meaning string/pointer roles for other
-	// step types).
+	// one more than the two-string Push helper covers — the third lives in m_szArg3.
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType  = ActionType::CREATE_PREFAB_VARIANT;
-	xAction.m_szArg1 = szVariantName;
-	xAction.m_szArg2 = szBasePath;
-	xAction.m_pArg   = const_cast<char*>(szSavePath);
+	xAction.m_szArg1 = SafeStr(szVariantName);
+	xAction.m_szArg2 = SafeStr(szBasePath);
+	xAction.m_szArg3 = SafeStr(szSavePath);
 	m_axActions.PushBack(xAction);
 }
 
@@ -725,13 +727,13 @@ void Zenith_EditorAutomation::AddStep_AddPrefabVariantOverrideVec3(
 	const char* szPropertyName,
 	float fX, float fY, float fZ)
 {
-	// Uses both static-storage strings and m_pArg (property name) — same
-	// pattern as CREATE_PREFAB_VARIANT — plus the float triple.
+	// Uses m_szArg3 for the property name — same pattern as CREATE_PREFAB_VARIANT —
+	// plus the float triple.
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType     = ActionType::ADD_PREFAB_VARIANT_OVERRIDE_VEC3;
-	xAction.m_szArg1    = szPrefabPath;
-	xAction.m_szArg2    = szComponentName;
-	xAction.m_pArg      = const_cast<char*>(szPropertyName);
+	xAction.m_szArg1    = SafeStr(szPrefabPath);
+	xAction.m_szArg2    = SafeStr(szComponentName);
+	xAction.m_szArg3    = SafeStr(szPropertyName);
 	xAction.m_afArgs[0] = fX;
 	xAction.m_afArgs[1] = fY;
 	xAction.m_afArgs[2] = fZ;
@@ -745,8 +747,8 @@ void Zenith_EditorAutomation::AddStep_InstantiatePrefab(const char* szPrefabPath
 {
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = Zenith_EditorActionType::INSTANTIATE_PREFAB;
-	xAction.m_szArg1 = szPrefabPath;
-	xAction.m_szArg2 = szEntityName;
+	xAction.m_szArg1 = SafeStr(szPrefabPath);
+	xAction.m_szArg2 = SafeStr(szEntityName);
 	// pos[0..2], quat[3..6] (wxyz), scale[7..9] — see INSTANTIATE_PREFAB executor.
 	xAction.m_afArgs[0] = fPosX;   xAction.m_afArgs[1] = fPosY;   xAction.m_afArgs[2] = fPosZ;
 	xAction.m_afArgs[3] = fRotW;   xAction.m_afArgs[4] = fRotX;   xAction.m_afArgs[5] = fRotY;   xAction.m_afArgs[6] = fRotZ;
@@ -896,15 +898,15 @@ static void ExecuteMaterialAction(const Zenith_EditorAction& xAction)
 {
 	switch (xAction.m_eType)
 	{
-	case Zenith_EditorActionType::MATERIAL_CREATE:           MaterialActionChecked(Zenith_MaterialEditorPanel::Action_CreateMaterial(xAction.m_szArg1), "MaterialCreate", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::MATERIAL_OPEN:             MaterialActionChecked(Zenith_MaterialEditorPanel::Action_OpenMaterial(xAction.m_szArg1), "MaterialOpen", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::MATERIAL_SAVE:             MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SaveMaterial(xAction.m_szArg1), "MaterialSave", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::MATERIAL_SET_PARAM_FLOAT:  MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParamFloat(xAction.m_szArg1, xAction.m_afArgs[0]), "MaterialSetParamFloat", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::MATERIAL_SET_PARAM_COLOR:  MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParamColor(xAction.m_szArg1, xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]), "MaterialSetParamColor", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::MATERIAL_SET_PARAM_INT:    MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParamInt(xAction.m_szArg1, xAction.m_aiArgs[0]), "MaterialSetParamInt", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::MATERIAL_SET_TEXTURE:      MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetTexture(xAction.m_szArg1, xAction.m_szArg2), "MaterialSetTexture", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::MATERIAL_SET_PARENT:       MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParent(xAction.m_szArg1), "MaterialSetParent", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::MATERIAL_SET_OVERRIDE:     MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetOverride(xAction.m_szArg1, xAction.m_bArg), "MaterialSetOverride", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::MATERIAL_CREATE:           MaterialActionChecked(Zenith_MaterialEditorPanel::Action_CreateMaterial(xAction.m_szArg1.c_str()), "MaterialCreate", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::MATERIAL_OPEN:             MaterialActionChecked(Zenith_MaterialEditorPanel::Action_OpenMaterial(xAction.m_szArg1.c_str()), "MaterialOpen", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::MATERIAL_SAVE:             MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SaveMaterial(xAction.m_szArg1.c_str()), "MaterialSave", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::MATERIAL_SET_PARAM_FLOAT:  MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParamFloat(xAction.m_szArg1.c_str(), xAction.m_afArgs[0]), "MaterialSetParamFloat", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::MATERIAL_SET_PARAM_COLOR:  MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParamColor(xAction.m_szArg1.c_str(), xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]), "MaterialSetParamColor", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::MATERIAL_SET_PARAM_INT:    MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParamInt(xAction.m_szArg1.c_str(), xAction.m_aiArgs[0]), "MaterialSetParamInt", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::MATERIAL_SET_TEXTURE:      MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetTexture(xAction.m_szArg1.c_str(), xAction.m_szArg2.c_str()), "MaterialSetTexture", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::MATERIAL_SET_PARENT:       MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetParent(xAction.m_szArg1.c_str()), "MaterialSetParent", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::MATERIAL_SET_OVERRIDE:     MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetOverride(xAction.m_szArg1.c_str(), xAction.m_bArg), "MaterialSetOverride", xAction.m_szArg1.c_str()); break;
 	case Zenith_EditorActionType::MATERIAL_SET_PREVIEW_MESH: MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetPreviewMesh(xAction.m_aiArgs[0]), "MaterialSetPreviewMesh", nullptr); break;
 	case Zenith_EditorActionType::MATERIAL_SET_PREVIEW_LIGHT:MaterialActionChecked(Zenith_MaterialEditorPanel::Action_SetPreviewLight(xAction.m_afArgs[0], xAction.m_afArgs[1]), "MaterialSetPreviewLight", nullptr); break;
 	default:
@@ -927,7 +929,7 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_TEXT");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Selected entity has no UIComponent");
-		pxEntity->GetComponent<Zenith_UIComponent>().CreateText(xAction.m_szArg1, xAction.m_szArg2);
+		pxEntity->GetComponent<Zenith_UIComponent>().CreateText(xAction.m_szArg1.c_str(), xAction.m_szArg2.c_str());
 		break;
 	}
 
@@ -936,7 +938,7 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_BUTTON");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Selected entity has no UIComponent");
-		pxEntity->GetComponent<Zenith_UIComponent>().CreateButton(xAction.m_szArg1, xAction.m_szArg2);
+		pxEntity->GetComponent<Zenith_UIComponent>().CreateButton(xAction.m_szArg1.c_str(), xAction.m_szArg2.c_str());
 		break;
 	}
 
@@ -945,7 +947,7 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_RECT");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Selected entity has no UIComponent");
-		pxEntity->GetComponent<Zenith_UIComponent>().CreateRect(xAction.m_szArg1);
+		pxEntity->GetComponent<Zenith_UIComponent>().CreateRect(xAction.m_szArg1.c_str());
 		break;
 	}
 
@@ -954,7 +956,7 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_IMAGE");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Selected entity has no UIComponent");
-		pxEntity->GetComponent<Zenith_UIComponent>().CreateImage(xAction.m_szArg1);
+		pxEntity->GetComponent<Zenith_UIComponent>().CreateImage(xAction.m_szArg1.c_str());
 		break;
 	}
 
@@ -963,9 +965,9 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_IMAGE_TEXTURE_PATH");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIImage* pxImage = xUI.FindElement<Zenith_UI::Zenith_UIImage>(xAction.m_szArg1);
-		Zenith_Assert(pxImage, "UI image not found: %s", xAction.m_szArg1);
-		pxImage->SetTexturePath(xAction.m_szArg2);
+		Zenith_UI::Zenith_UIImage* pxImage = xUI.FindElement<Zenith_UI::Zenith_UIImage>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxImage, "UI image not found: %s", xAction.m_szArg1.c_str());
+		pxImage->SetTexturePath(xAction.m_szArg2.c_str());
 		break;
 	}
 
@@ -974,8 +976,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_ANCHOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
-		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1.c_str());
 		pxElement->SetAnchorAndPivot(static_cast<Zenith_UI::AnchorPreset>(xAction.m_aiArgs[0]));
 		break;
 	}
@@ -985,8 +987,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_POSITION");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
-		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1.c_str());
 		pxElement->SetPosition(xAction.m_afArgs[0], xAction.m_afArgs[1]);
 		break;
 	}
@@ -996,8 +998,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_SIZE");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
-		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1.c_str());
 		pxElement->SetSize(xAction.m_afArgs[0], xAction.m_afArgs[1]);
 		break;
 	}
@@ -1007,8 +1009,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_FONT_SIZE");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(xAction.m_szArg1);
-		Zenith_Assert(pxText, "UI text element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxText, "UI text element not found: %s", xAction.m_szArg1.c_str());
 		pxText->SetFontSize(xAction.m_afArgs[0]);
 		break;
 	}
@@ -1018,8 +1020,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
-		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1.c_str());
 		pxElement->SetColor(Zenith_Maths::Vector4(
 			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]));
 		break;
@@ -1030,8 +1032,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_ALIGNMENT");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(xAction.m_szArg1);
-		Zenith_Assert(pxText, "UI text element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxText, "UI text element not found: %s", xAction.m_szArg1.c_str());
 		pxText->SetAlignment(static_cast<Zenith_UI::TextAlignment>(xAction.m_aiArgs[0]));
 		break;
 	}
@@ -1041,8 +1043,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_VISIBLE");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
-		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1.c_str());
 		pxElement->SetVisible(xAction.m_bArg);
 		break;
 	}
@@ -1055,7 +1057,7 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_LAYOUT_GROUP");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Selected entity has no UIComponent");
-		pxEntity->GetComponent<Zenith_UIComponent>().CreateLayoutGroup(xAction.m_szArg1);
+		pxEntity->GetComponent<Zenith_UIComponent>().CreateLayoutGroup(xAction.m_szArg1.c_str());
 		break;
 	}
 
@@ -1064,10 +1066,10 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for ADD_UI_CHILD");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIElement* pxParent = xUI.FindElement(xAction.m_szArg1);
-		Zenith_Assert(pxParent, "UI parent element not found: %s", xAction.m_szArg1);
-		Zenith_UI::Zenith_UIElement* pxChild = xUI.FindElement(xAction.m_szArg2);
-		Zenith_Assert(pxChild, "UI child element not found: %s", xAction.m_szArg2);
+		Zenith_UI::Zenith_UIElement* pxParent = xUI.FindElement(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxParent, "UI parent element not found: %s", xAction.m_szArg1.c_str());
+		Zenith_UI::Zenith_UIElement* pxChild = xUI.FindElement(xAction.m_szArg2.c_str());
+		Zenith_Assert(pxChild, "UI child element not found: %s", xAction.m_szArg2.c_str());
 		xUI.GetCanvas().ReparentElement(pxChild, pxParent);
 		break;
 	}
@@ -1077,8 +1079,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_DIRECTION");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
-		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1.c_str());
 		pxLayout->SetDirection(static_cast<Zenith_UI::LayoutDirection>(xAction.m_aiArgs[0]));
 		break;
 	}
@@ -1088,8 +1090,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_SPACING");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
-		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1.c_str());
 		pxLayout->SetSpacing(xAction.m_afArgs[0]);
 		break;
 	}
@@ -1099,8 +1101,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_CHILD_ALIGNMENT");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
-		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1.c_str());
 		pxLayout->SetChildAlignment(static_cast<Zenith_UI::ChildAlignment>(xAction.m_aiArgs[0]));
 		break;
 	}
@@ -1110,8 +1112,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_PADDING");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
-		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1.c_str());
 		pxLayout->SetPadding(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]);
 		break;
 	}
@@ -1121,8 +1123,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_FIT_TO_CONTENT");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
-		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1.c_str());
 		pxLayout->SetFitToContent(xAction.m_bArg);
 		break;
 	}
@@ -1132,8 +1134,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_CHILD_FORCE_EXPAND");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
-		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1.c_str());
 		pxLayout->SetChildForceExpandWidth(xAction.m_aiArgs[0] != 0);
 		pxLayout->SetChildForceExpandHeight(xAction.m_aiArgs[1] != 0);
 		break;
@@ -1144,8 +1146,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_REVERSE");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
-		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1.c_str());
 		pxLayout->SetReverseArrangement(xAction.m_bArg);
 		break;
 	}
@@ -1158,7 +1160,7 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_TOGGLE");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Selected entity has no UIComponent");
-		pxEntity->GetComponent<Zenith_UIComponent>().CreateToggle(xAction.m_szArg1, xAction.m_szArg2);
+		pxEntity->GetComponent<Zenith_UIComponent>().CreateToggle(xAction.m_szArg1.c_str(), xAction.m_szArg2.c_str());
 		break;
 	}
 
@@ -1167,8 +1169,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_TOGGLE_ON_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIToggle* pxToggle = xUI.FindElement<Zenith_UI::Zenith_UIToggle>(xAction.m_szArg1);
-		Zenith_Assert(pxToggle, "UI toggle not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIToggle* pxToggle = xUI.FindElement<Zenith_UI::Zenith_UIToggle>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxToggle, "UI toggle not found: %s", xAction.m_szArg1.c_str());
 		pxToggle->SetOnColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1178,8 +1180,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_TOGGLE_OFF_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIToggle* pxToggle = xUI.FindElement<Zenith_UI::Zenith_UIToggle>(xAction.m_szArg1);
-		Zenith_Assert(pxToggle, "UI toggle not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIToggle* pxToggle = xUI.FindElement<Zenith_UI::Zenith_UIToggle>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxToggle, "UI toggle not found: %s", xAction.m_szArg1.c_str());
 		pxToggle->SetOffColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1192,7 +1194,7 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_OVERLAY");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Selected entity has no UIComponent");
-		pxEntity->GetComponent<Zenith_UIComponent>().CreateOverlay(xAction.m_szArg1);
+		pxEntity->GetComponent<Zenith_UIComponent>().CreateOverlay(xAction.m_szArg1.c_str());
 		break;
 	}
 
@@ -1201,8 +1203,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_OVERLAY_DIM_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIOverlay* pxOverlay = xUI.FindElement<Zenith_UI::Zenith_UIOverlay>(xAction.m_szArg1);
-		Zenith_Assert(pxOverlay, "UI overlay not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIOverlay* pxOverlay = xUI.FindElement<Zenith_UI::Zenith_UIOverlay>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxOverlay, "UI overlay not found: %s", xAction.m_szArg1.c_str());
 		pxOverlay->SetDimColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1212,8 +1214,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_OVERLAY_CONTENT_SIZE");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIOverlay* pxOverlay = xUI.FindElement<Zenith_UI::Zenith_UIOverlay>(xAction.m_szArg1);
-		Zenith_Assert(pxOverlay, "UI overlay not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIOverlay* pxOverlay = xUI.FindElement<Zenith_UI::Zenith_UIOverlay>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxOverlay, "UI overlay not found: %s", xAction.m_szArg1.c_str());
 		pxOverlay->SetContentSize(xAction.m_afArgs[0], xAction.m_afArgs[1]);
 		break;
 	}
@@ -1226,18 +1228,13 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_NAVIGATION");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
-		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1.c_str());
 
-		const char* szUp = xAction.m_szArg2;
-		const char* szDown = static_cast<const char*>(xAction.m_pArg);
-		const char* szLeft = static_cast<const char*>(xAction.m_pArg2);
-		const char* szRight = reinterpret_cast<const char*>(xAction.m_pfnFunc);
-
-		Zenith_UI::Zenith_UIElement* pxUp = szUp ? xUI.FindElement(szUp) : nullptr;
-		Zenith_UI::Zenith_UIElement* pxDown = szDown ? xUI.FindElement(szDown) : nullptr;
-		Zenith_UI::Zenith_UIElement* pxLeft = szLeft ? xUI.FindElement(szLeft) : nullptr;
-		Zenith_UI::Zenith_UIElement* pxRight = szRight ? xUI.FindElement(szRight) : nullptr;
+		Zenith_UI::Zenith_UIElement* pxUp = !xAction.m_szArg2.empty() ? xUI.FindElement(xAction.m_szArg2.c_str()) : nullptr;
+		Zenith_UI::Zenith_UIElement* pxDown = !xAction.m_szArg3.empty() ? xUI.FindElement(xAction.m_szArg3.c_str()) : nullptr;
+		Zenith_UI::Zenith_UIElement* pxLeft = !xAction.m_szArg4.empty() ? xUI.FindElement(xAction.m_szArg4.c_str()) : nullptr;
+		Zenith_UI::Zenith_UIElement* pxRight = !xAction.m_szArg5.empty() ? xUI.FindElement(xAction.m_szArg5.c_str()) : nullptr;
 
 		pxElement->SetNavigation(pxUp, pxDown, pxLeft, pxRight);
 		break;
@@ -1251,7 +1248,7 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_SCROLL_VIEW");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		xUI.CreateScrollView(xAction.m_szArg1);
+		xUI.CreateScrollView(xAction.m_szArg1.c_str());
 		break;
 	}
 
@@ -1260,8 +1257,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_SCROLL_VIEW_CONTENT_SIZE");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIScrollView* pxScrollView = xUI.FindElement<Zenith_UI::Zenith_UIScrollView>(xAction.m_szArg1);
-		Zenith_Assert(pxScrollView, "UI scroll view not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIScrollView* pxScrollView = xUI.FindElement<Zenith_UI::Zenith_UIScrollView>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxScrollView, "UI scroll view not found: %s", xAction.m_szArg1.c_str());
 		pxScrollView->SetContentSize(xAction.m_afArgs[0], xAction.m_afArgs[1]);
 		break;
 	}
@@ -1274,8 +1271,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_NORMAL_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetNormalColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1285,8 +1282,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_HOVER_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetHoverColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1296,8 +1293,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_PRESSED_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetPressedColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1307,8 +1304,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_FONT_SIZE");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetFontSize(xAction.m_afArgs[0]);
 		break;
 	}
@@ -1318,9 +1315,9 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_ICON");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
-		pxButton->SetIconTexturePath(xAction.m_szArg2);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
+		pxButton->SetIconTexturePath(xAction.m_szArg2.c_str());
 		break;
 	}
 
@@ -1329,8 +1326,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_ICON_SIZE");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetIconSize(xAction.m_afArgs[0], xAction.m_afArgs[1]);
 		break;
 	}
@@ -1340,8 +1337,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_ICON_PLACEMENT");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetIconPlacement(static_cast<Zenith_UI::Zenith_UIButton::IconPlacement>(xAction.m_aiArgs[0]));
 		break;
 	}
@@ -1354,8 +1351,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BACKGROUND_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
-		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1.c_str());
 		pxElement->SetBackgroundColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1365,8 +1362,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BACKGROUND_CORNER_RADIUS");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
-		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1.c_str());
 		pxElement->SetBackgroundCornerRadius(xAction.m_afArgs[0]);
 		break;
 	}
@@ -1376,8 +1373,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BACKGROUND_BORDER");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
-		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1.c_str());
 		pxElement->SetBackgroundBorderColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], 1.0f});
 		pxElement->SetBackgroundBorderThickness(xAction.m_afArgs[3]);
 		break;
@@ -1391,8 +1388,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_CORNER_RADIUS");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1);
-		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1.c_str());
 		pxRect->SetCornerRadius(xAction.m_afArgs[0]);
 		break;
 	}
@@ -1402,8 +1399,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_GRADIENT_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1);
-		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1.c_str());
 		pxRect->SetGradientColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1413,8 +1410,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_SHADOW");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1);
-		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1.c_str());
 		pxRect->SetShadowEnabled(xAction.m_bArg);
 		pxRect->SetShadowOffset({xAction.m_afArgs[0], xAction.m_afArgs[1]});
 		pxRect->SetShadowSpread(xAction.m_afArgs[2]);
@@ -1426,8 +1423,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_SHADOW_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1);
-		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1.c_str());
 		pxRect->SetShadowColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1437,8 +1434,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_RECT_BORDER");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1);
-		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1.c_str());
 		pxRect->SetBorderColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], 1.0f});
 		pxRect->SetBorderThickness(xAction.m_afArgs[3]);
 		break;
@@ -1452,8 +1449,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_TEXT_SHADOW");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(xAction.m_szArg1);
-		Zenith_Assert(pxText, "UI text not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxText, "UI text not found: %s", xAction.m_szArg1.c_str());
 		pxText->SetShadowEnabled(xAction.m_bArg);
 		pxText->SetShadowOffset({xAction.m_afArgs[0], xAction.m_afArgs[1]});
 		break;
@@ -1464,8 +1461,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_TEXT_SHADOW_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(xAction.m_szArg1);
-		Zenith_Assert(pxText, "UI text not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxText, "UI text not found: %s", xAction.m_szArg1.c_str());
 		pxText->SetShadowColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1478,8 +1475,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_CORNER_RADIUS");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetCornerRadius(xAction.m_afArgs[0]);
 		break;
 	}
@@ -1489,8 +1486,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_SHADOW");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetShadowEnabled(xAction.m_bArg);
 		pxButton->SetShadowOffset({xAction.m_afArgs[0], xAction.m_afArgs[1]});
 		pxButton->SetShadowSpread(xAction.m_afArgs[2]);
@@ -1502,8 +1499,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_SHADOW_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetShadowColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1513,8 +1510,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_GRADIENT_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetGradientColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1524,8 +1521,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_BORDER_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetBorderColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1535,8 +1532,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_BORDER_THICKNESS");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetBorderThickness(xAction.m_afArgs[0]);
 		break;
 	}
@@ -1546,8 +1543,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_TRANSITION_DURATION");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetTransitionDuration(xAction.m_afArgs[0]);
 		break;
 	}
@@ -1557,8 +1554,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_TEXT_SHADOW");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetTextShadowEnabled(xAction.m_bArg);
 		pxButton->SetTextShadowOffset({xAction.m_afArgs[0], xAction.m_afArgs[1]});
 		break;
@@ -1569,8 +1566,8 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_TEXT_SHADOW_COLOR");
 		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
-		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1.c_str());
 		pxButton->SetTextShadowColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
@@ -1613,11 +1610,11 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	// Scene operations
 	//--------------------------------------------------------------------------
 	case Zenith_EditorActionType::CREATE_SCENE:
-		g_xEngine.Editor().CreateNewScene(xAction.m_szArg1);
+		g_xEngine.Editor().CreateNewScene(xAction.m_szArg1.c_str());
 		break;
 
 	case Zenith_EditorActionType::SAVE_SCENE:
-		g_xEngine.Editor().SaveActiveScene(xAction.m_szArg1);
+		g_xEngine.Editor().SaveActiveScene(xAction.m_szArg1.c_str());
 		break;
 
 	case Zenith_EditorActionType::UNLOAD_SCENE:
@@ -1628,11 +1625,11 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	// Entity operations
 	//--------------------------------------------------------------------------
 	case Zenith_EditorActionType::CREATE_ENTITY:
-		g_xEngine.Editor().CreateEntity(xAction.m_szArg1);
+		g_xEngine.Editor().CreateEntity(xAction.m_szArg1.c_str());
 		break;
 
 	case Zenith_EditorActionType::SELECT_ENTITY:
-		g_xEngine.Editor().SelectEntityByName(xAction.m_szArg1);
+		g_xEngine.Editor().SelectEntityByName(xAction.m_szArg1.c_str());
 		break;
 
 	case Zenith_EditorActionType::SET_ENTITY_TRANSIENT:
@@ -1643,7 +1640,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	// Component operations
 	//--------------------------------------------------------------------------
 	case Zenith_EditorActionType::ADD_COMPONENT:
-		g_xEngine.Editor().AddComponentToSelected(xAction.m_szArg1);
+		g_xEngine.Editor().AddComponentToSelected(xAction.m_szArg1.c_str());
 		break;
 
 	case Zenith_EditorActionType::ATTACH_TO_BONE:
@@ -1654,7 +1651,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Assert(pxSceneData, "ATTACH_TO_BONE: selected entity has no scene");
 		// Resolve the skeleton target by name within the same scene (authored earlier
 		// in the step list).
-		Zenith_Entity xTarget = pxSceneData->FindEntityByName(xAction.m_szArg1);
+		Zenith_Entity xTarget = pxSceneData->FindEntityByName(xAction.m_szArg1.c_str());
 		Zenith_Assert(xTarget.IsValid(), "ATTACH_TO_BONE: target entity not found by name");
 		if (!pxEntity->HasComponent<Zenith_AttachmentComponent>())
 		{
@@ -1664,7 +1661,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2],
 			xAction.m_afArgs[3], xAction.m_afArgs[4], xAction.m_afArgs[5]);
 		pxEntity->GetComponent<Zenith_AttachmentComponent>().AttachToBone(
-			xTarget, xAction.m_szArg2, xOffset);
+			xTarget, xAction.m_szArg2.c_str(), xOffset);
 		break;
 	}
 
@@ -1808,20 +1805,20 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	//--------------------------------------------------------------------------
 	// Script operations
 	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::ATTACH_GRAPH:  g_xEngine.Editor().AttachGraphToSelected(xAction.m_szArg1); break;
+	case Zenith_EditorActionType::ATTACH_GRAPH:  g_xEngine.Editor().AttachGraphToSelected(xAction.m_szArg1.c_str()); break;
 
 	//--------------------------------------------------------------------------
 	// Graph authoring (each case = one atomic graph-editor action)
 	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::GRAPH_OPEN_FRESH:            Zenith_GraphEditorPanel::OpenAssetFresh(xAction.m_szArg1); break;
-	case Zenith_EditorActionType::GRAPH_ADD_NODE:              GraphActionChecked(Zenith_GraphEditorPanel::Action_AddNode(xAction.m_szArg1), "GraphAddNode", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::GRAPH_SELECT_NODE:           GraphActionChecked(Zenith_GraphEditorPanel::Action_SelectNode(xAction.m_szArg1, static_cast<u_int>(xAction.m_aiArgs[0])), "GraphSelectNode", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_FLOAT:  GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamFloat(xAction.m_szArg1, xAction.m_afArgs[0]), "GraphSetNodeParamFloat", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_STRING: GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamString(xAction.m_szArg1, xAction.m_szArg2), "GraphSetNodeParamString", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_INT:    GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamInt(xAction.m_szArg1, xAction.m_aiArgs[0]), "GraphSetNodeParamInt", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_VEC3:   GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamVec3(xAction.m_szArg1, xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]), "GraphSetNodeParamVec3", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::GRAPH_CONNECT:               GraphActionChecked(Zenith_GraphEditorPanel::Action_Connect(xAction.m_szArg1, static_cast<u_int>(xAction.m_aiArgs[0]), static_cast<u_int>(xAction.m_afArgs[0]), xAction.m_szArg2, static_cast<u_int>(xAction.m_aiArgs[1])), "GraphConnect", xAction.m_szArg1); break;
-	case Zenith_EditorActionType::GRAPH_ADD_VARIABLE:          GraphActionChecked(Zenith_GraphEditorPanel::Action_AddVariable(xAction.m_szArg1, xAction.m_szArg2, xAction.m_afArgs[0]), "GraphAddVariable", xAction.m_szArg1); break;
+	case Zenith_EditorActionType::GRAPH_OPEN_FRESH:            Zenith_GraphEditorPanel::OpenAssetFresh(xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRAPH_ADD_NODE:              GraphActionChecked(Zenith_GraphEditorPanel::Action_AddNode(xAction.m_szArg1.c_str()), "GraphAddNode", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRAPH_SELECT_NODE:           GraphActionChecked(Zenith_GraphEditorPanel::Action_SelectNode(xAction.m_szArg1.c_str(), static_cast<u_int>(xAction.m_aiArgs[0])), "GraphSelectNode", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_FLOAT:  GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamFloat(xAction.m_szArg1.c_str(), xAction.m_afArgs[0]), "GraphSetNodeParamFloat", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_STRING: GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamString(xAction.m_szArg1.c_str(), xAction.m_szArg2.c_str()), "GraphSetNodeParamString", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_INT:    GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamInt(xAction.m_szArg1.c_str(), xAction.m_aiArgs[0]), "GraphSetNodeParamInt", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_VEC3:   GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamVec3(xAction.m_szArg1.c_str(), xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]), "GraphSetNodeParamVec3", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRAPH_CONNECT:               GraphActionChecked(Zenith_GraphEditorPanel::Action_Connect(xAction.m_szArg1.c_str(), static_cast<u_int>(xAction.m_aiArgs[0]), static_cast<u_int>(xAction.m_afArgs[0]), xAction.m_szArg2.c_str(), static_cast<u_int>(xAction.m_aiArgs[1])), "GraphConnect", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRAPH_ADD_VARIABLE:          GraphActionChecked(Zenith_GraphEditorPanel::Action_AddVariable(xAction.m_szArg1.c_str(), xAction.m_szArg2.c_str(), xAction.m_afArgs[0]), "GraphAddVariable", xAction.m_szArg1.c_str()); break;
 	case Zenith_EditorActionType::GRAPH_SAVE:                  Zenith_GraphEditorPanel::Save(); break;
 	case Zenith_EditorActionType::GRAPH_CLOSE:                 Zenith_GraphEditorPanel::Close(); break;
 
@@ -1843,8 +1840,8 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_PARTICLE_CONFIG_BY_NAME");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_ParticleEmitterComponent>(), "Selected entity has no ParticleEmitterComponent");
-		Flux_ParticleEmitterConfig* pxConfig = Flux_ParticleEmitterConfig::Find(xAction.m_szArg1);
-		Zenith_Assert(pxConfig, "Particle config not found: %s", xAction.m_szArg1);
+		Flux_ParticleEmitterConfig* pxConfig = Flux_ParticleEmitterConfig::Find(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxConfig, "Particle config not found: %s", xAction.m_szArg1.c_str());
 		pxEntity->GetComponent<Zenith_ParticleEmitterComponent>().SetConfig(pxConfig);
 		break;
 	}
@@ -1903,8 +1900,8 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for LOAD_MODEL");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_ModelComponent>(), "Selected entity has no ModelComponent");
-		Zenith_Assert(xAction.m_szArg1, "Null path for LOAD_MODEL");
-		pxEntity->GetComponent<Zenith_ModelComponent>().LoadModel(xAction.m_szArg1);
+		Zenith_Assert(!xAction.m_szArg1.empty(), "Null path for LOAD_MODEL");
+		pxEntity->GetComponent<Zenith_ModelComponent>().LoadModel(xAction.m_szArg1.c_str());
 		break;
 	}
 
@@ -1960,8 +1957,8 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for SET_TERRAIN_SPLATMAP_PATH");
 		Zenith_Assert(pxEntity->HasComponent<Zenith_TerrainComponent>(), "Selected entity has no TerrainComponent");
-		Zenith_Assert(xAction.m_szArg1, "Null path for SET_TERRAIN_SPLATMAP_PATH");
-		pxEntity->GetComponent<Zenith_TerrainComponent>().GetSplatmapHandle().SetPath(xAction.m_szArg1);
+		Zenith_Assert(!xAction.m_szArg1.empty(), "Null path for SET_TERRAIN_SPLATMAP_PATH");
+		pxEntity->GetComponent<Zenith_TerrainComponent>().GetSplatmapHandle().SetPath(xAction.m_szArg1.c_str());
 		break;
 	}
 
@@ -1972,43 +1969,43 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	{
 		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
 		Zenith_Assert(pxEntity, "No entity selected for CREATE_PREFAB_FROM_SELECTED");
-		Zenith_Assert(xAction.m_szArg1, "Null prefab name for CREATE_PREFAB_FROM_SELECTED");
-		Zenith_Assert(xAction.m_szArg2, "Null save path for CREATE_PREFAB_FROM_SELECTED");
+		Zenith_Assert(!xAction.m_szArg1.empty(), "Null prefab name for CREATE_PREFAB_FROM_SELECTED");
+		Zenith_Assert(!xAction.m_szArg2.empty(), "Null save path for CREATE_PREFAB_FROM_SELECTED");
 
 		Zenith_Prefab xPrefab;
-		const bool bCreated = xPrefab.CreateFromEntity(*pxEntity, xAction.m_szArg1);
-		Zenith_Assert(bCreated, "CreateFromEntity failed for '%s'", xAction.m_szArg1);
-		const bool bSaved = xPrefab.SaveToFile(xAction.m_szArg2);
-		Zenith_Assert(bSaved, "SaveToFile failed for '%s'", xAction.m_szArg2);
+		const bool bCreated = xPrefab.CreateFromEntity(*pxEntity, xAction.m_szArg1.c_str());
+		Zenith_Assert(bCreated, "CreateFromEntity failed for '%s'", xAction.m_szArg1.c_str());
+		const bool bSaved = xPrefab.SaveToFile(xAction.m_szArg2.c_str());
+		Zenith_Assert(bSaved, "SaveToFile failed for '%s'", xAction.m_szArg2.c_str());
 
 		// Force-cache through the registry so subsequent steps that look the
 		// path up via PrefabHandle resolve cheaply (no disk re-read on every
 		// CreateAsVariant cycle check).
-		Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg2);
+		Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg2.c_str());
 		break;
 	}
 
 	case Zenith_EditorActionType::CREATE_PREFAB_VARIANT:
 	{
-		Zenith_Assert(xAction.m_szArg1, "Null variant name for CREATE_PREFAB_VARIANT");
-		Zenith_Assert(xAction.m_szArg2, "Null base path for CREATE_PREFAB_VARIANT");
-		const char* szSavePath = static_cast<const char*>(xAction.m_pArg);
-		Zenith_Assert(szSavePath, "Null save path for CREATE_PREFAB_VARIANT");
+		Zenith_Assert(!xAction.m_szArg1.empty(), "Null variant name for CREATE_PREFAB_VARIANT");
+		Zenith_Assert(!xAction.m_szArg2.empty(), "Null base path for CREATE_PREFAB_VARIANT");
+		const char* szSavePath = xAction.m_szArg3.c_str();
+		Zenith_Assert(!xAction.m_szArg3.empty(), "Null save path for CREATE_PREFAB_VARIANT");
 
 		// Make sure the base prefab is loaded so PrefabHandle's cycle check
 		// can resolve it. The cycle detector deliberately does NOT trigger a
 		// disk load (see Zenith_Prefab::WouldFormVariantCycle) — we have to
 		// prime the registry here.
-		Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg2);
+		Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg2.c_str());
 
-		PrefabHandle xBaseHandle(xAction.m_szArg2);
+		PrefabHandle xBaseHandle(xAction.m_szArg2.c_str());
 		Zenith_Prefab xVariant;
-		const bool bCreated = xVariant.CreateAsVariant(xBaseHandle, xAction.m_szArg1);
+		const bool bCreated = xVariant.CreateAsVariant(xBaseHandle, xAction.m_szArg1.c_str());
 		Zenith_Assert(bCreated, "CreateAsVariant failed for '%s' (base '%s')",
-			xAction.m_szArg1, xAction.m_szArg2);
+			xAction.m_szArg1.c_str(), xAction.m_szArg2.c_str());
 		const bool bSaved = xVariant.SaveToFile(szSavePath);
 		Zenith_Assert(bSaved, "SaveToFile failed for variant '%s' at '%s'",
-			xAction.m_szArg1, szSavePath);
+			xAction.m_szArg1.c_str(), szSavePath);
 
 		Zenith_AssetRegistry::Get<Zenith_Prefab>(szSavePath);
 		break;
@@ -2016,48 +2013,48 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 
 	case Zenith_EditorActionType::ADD_PREFAB_VARIANT_OVERRIDE_VEC3:
 	{
-		Zenith_Assert(xAction.m_szArg1, "Null prefab path for ADD_PREFAB_VARIANT_OVERRIDE_VEC3");
-		Zenith_Assert(xAction.m_szArg2, "Null component name for ADD_PREFAB_VARIANT_OVERRIDE_VEC3");
-		const char* szPropertyName = static_cast<const char*>(xAction.m_pArg);
-		Zenith_Assert(szPropertyName, "Null property name for ADD_PREFAB_VARIANT_OVERRIDE_VEC3");
+		Zenith_Assert(!xAction.m_szArg1.empty(), "Null prefab path for ADD_PREFAB_VARIANT_OVERRIDE_VEC3");
+		Zenith_Assert(!xAction.m_szArg2.empty(), "Null component name for ADD_PREFAB_VARIANT_OVERRIDE_VEC3");
+		const char* szPropertyName = xAction.m_szArg3.c_str();
+		Zenith_Assert(!xAction.m_szArg3.empty(), "Null property name for ADD_PREFAB_VARIANT_OVERRIDE_VEC3");
 
 		// Modifying a prefab held by the registry is safe because Zenith_Prefab*
 		// is the same pointer the registry caches — adding an override mutates
 		// in-memory state, then SaveToFile rewrites the .zpfb. Callers that load
 		// the file again get the updated overrides.
-		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg1);
-		Zenith_Assert(pxPrefab, "Could not load prefab '%s' for override", xAction.m_szArg1);
+		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxPrefab, "Could not load prefab '%s' for override", xAction.m_szArg1.c_str());
 
 		Zenith_PropertyOverride xOv;
-		xOv.m_strComponentName = xAction.m_szArg2;
+		xOv.m_strComponentName = xAction.m_szArg2.c_str();
 		xOv.m_strPropertyPath  = szPropertyName;
 		xOv.m_xValue << Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]);
 		pxPrefab->AddOverride(std::move(xOv));
 
-		const bool bSaved = pxPrefab->SaveToFile(xAction.m_szArg1);
-		Zenith_Assert(bSaved, "SaveToFile failed after AddOverride for '%s'", xAction.m_szArg1);
+		const bool bSaved = pxPrefab->SaveToFile(xAction.m_szArg1.c_str());
+		Zenith_Assert(bSaved, "SaveToFile failed after AddOverride for '%s'", xAction.m_szArg1.c_str());
 		break;
 	}
 
 	case Zenith_EditorActionType::INSTANTIATE_PREFAB:
 	{
-		Zenith_Assert(xAction.m_szArg1, "Null prefab path for INSTANTIATE_PREFAB");
+		Zenith_Assert(!xAction.m_szArg1.empty(), "Null prefab path for INSTANTIATE_PREFAB");
 
 		Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
 		Zenith_Assert(xActiveScene.IsValid(), "INSTANTIATE_PREFAB requires an active scene");
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		Zenith_Assert(pxSceneData, "Active scene data was null in INSTANTIATE_PREFAB");
 
-		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg1);
-		Zenith_Assert(pxPrefab, "Could not load prefab '%s' for instantiation", xAction.m_szArg1);
+		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg1.c_str());
+		Zenith_Assert(pxPrefab, "Could not load prefab '%s' for instantiation", xAction.m_szArg1.c_str());
 
-		const char* szEntityName = (xAction.m_szArg2 != nullptr) ? xAction.m_szArg2 : "";
+		const char* szEntityName = xAction.m_szArg2.c_str();
 		// Transform payload: pos[0..2], quat[3..6] (wxyz), scale[7..9].
 		const Zenith_Maths::Vector3 xPos(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]);
 		const Zenith_Maths::Quat    xRot(xAction.m_afArgs[3], xAction.m_afArgs[4], xAction.m_afArgs[5], xAction.m_afArgs[6]);
 		const Zenith_Maths::Vector3 xScale(xAction.m_afArgs[7], xAction.m_afArgs[8], xAction.m_afArgs[9]);
 		Zenith_Entity xEntity = pxPrefab->Instantiate(pxSceneData, szEntityName, xPos, xRot, xScale);
-		Zenith_Assert(xEntity.IsValid(), "Instantiate returned invalid entity for '%s'", xAction.m_szArg1);
+		Zenith_Assert(xEntity.IsValid(), "Instantiate returned invalid entity for '%s'", xAction.m_szArg1.c_str());
 
 		// Mirror the editor's normal selection behaviour after entity creation
 		// so subsequent transform/component steps target the new entity.
