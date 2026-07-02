@@ -139,6 +139,34 @@ private:
 		Subscription& operator=(const Subscription&) = delete;
 	};
 
+public:
+	// Test-support RAII guard. On construction it snapshots the process-global
+	// dispatcher's subscription state and leaves the live dispatcher empty; on
+	// destruction it discards whatever ran inside the scope and restores the
+	// snapshot. Unit tests use this instead of ClearAllSubscriptions() so the
+	// boot-time test phase (which runs AFTER Project_RegisterGameComponents) can
+	// no longer wipe a game's boot-time subscriptions — the whole class behind the
+	// "DP_Tutorial / DP_Particles dead in normal launches" bug. Nested, so it
+	// reaches the enclosing private Subscription type + members with no friend.
+	// Main-thread use only; not for use mid-Dispatch.
+	class ScopedTestIsolation
+	{
+	public:
+		ScopedTestIsolation();
+		~ScopedTestIsolation();
+
+		ScopedTestIsolation(const ScopedTestIsolation&) = delete;
+		ScopedTestIsolation& operator=(const ScopedTestIsolation&) = delete;
+		ScopedTestIsolation(ScopedTestIsolation&&) = delete;
+		ScopedTestIsolation& operator=(ScopedTestIsolation&&) = delete;
+
+	private:
+		Zenith_HashMap<Zenith_EventHandle, Subscription> m_xSavedSubs;
+		Zenith_HashMap<u_int, Zenith_Vector<Zenith_EventHandle>> m_xSavedByType;
+		Zenith_Vector<Zenith_EventBase*> m_axSavedDeferred;
+	};
+
+private:
 	Zenith_HashMap<Zenith_EventHandle, Subscription> m_xSubscriptions;
 	Zenith_HashMap<u_int, Zenith_Vector<Zenith_EventHandle>> m_xSubscribersByEventType;
 
@@ -151,6 +179,47 @@ private:
 	bool m_bDispatching = false;
 	Zenith_Vector<Zenith_EventHandle> m_axPendingUnsubscribes;
 };
+
+//------------------------------------------------------------------------------
+// Zenith_EventDispatcher::ScopedTestIsolation — snapshot/restore guard
+//------------------------------------------------------------------------------
+
+inline Zenith_EventDispatcher::ScopedTestIsolation::ScopedTestIsolation()
+{
+	Zenith_EventDispatcher& xDispatcher = Zenith_EventDispatcher::Get();
+
+	// Steal the live subscription tables into the guard, leaving the dispatcher
+	// empty for the lifetime of the scope. m_uNextHandle is deliberately left
+	// untouched (it is monotonic), so any handle a test allocates is strictly
+	// greater than every saved boot handle and cannot collide on restore. The
+	// transient dispatch bookkeeping (m_bDispatching / m_axPendingUnsubscribes)
+	// never straddles a test boundary, so it needs no snapshot.
+	m_xSavedSubs   = std::move(xDispatcher.m_xSubscriptions);
+	m_xSavedByType = std::move(xDispatcher.m_xSubscribersByEventType);
+
+	xDispatcher.m_xDeferredMutex.Lock();
+	m_axSavedDeferred = std::move(xDispatcher.m_axDeferredEvents);
+	xDispatcher.m_xDeferredMutex.Unlock();
+}
+
+inline Zenith_EventDispatcher::ScopedTestIsolation::~ScopedTestIsolation()
+{
+	Zenith_EventDispatcher& xDispatcher = Zenith_EventDispatcher::Get();
+
+	// Discard whatever the scope subscribed / queued — ClearAllSubscriptions is
+	// the existing teardown that deletes the owned callbacks and any leftover
+	// deferred events — then move the snapshot back over the now-empty tables.
+	// HashMap move-assign frees the destination first and Subscription's move
+	// nulls its source pointer, so every callback is deleted exactly once.
+	xDispatcher.ClearAllSubscriptions();
+
+	xDispatcher.m_xSubscriptions          = std::move(m_xSavedSubs);
+	xDispatcher.m_xSubscribersByEventType = std::move(m_xSavedByType);
+
+	xDispatcher.m_xDeferredMutex.Lock();
+	xDispatcher.m_axDeferredEvents = std::move(m_axSavedDeferred);
+	xDispatcher.m_xDeferredMutex.Unlock();
+}
 
 //------------------------------------------------------------------------------
 // Zenith_Subscription — move-only RAII handle owner

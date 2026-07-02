@@ -8796,8 +8796,9 @@ ZENITH_TEST(ECS, EventSubscribeDispatch) { Zenith_UnitTests::TestEventSubscribeD
 
 void Zenith_UnitTests::TestEventSubscribeDispatch(){
 
-	// Clear any existing state
-	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	// Snapshot + restore the global dispatcher so this test's subscriptions can't
+	// wipe boot-time subscribers (Zenith_EventDispatcher::ScopedTestIsolation).
+	Zenith_EventDispatcher::ScopedTestIsolation xIsolate;
 	s_uTestEventCallCount = 0;
 	s_uTestEventLastValue = 0;
 
@@ -8814,8 +8815,7 @@ void Zenith_UnitTests::TestEventSubscribeDispatch(){
 	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 1, "TestEventSubscribeDispatch: Callback should be called once");
 	ZENITH_ASSERT_EQ(s_uTestEventLastValue, 42, "TestEventSubscribeDispatch: Callback should receive correct value");
 
-	// Cleanup
-	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	// Cleanup is automatic when xIsolate leaves scope (restores boot subs).
 
 }
 
@@ -8823,8 +8823,8 @@ ZENITH_TEST(ECS, EventUnsubscribe) { Zenith_UnitTests::TestEventUnsubscribe(); }
 
 void Zenith_UnitTests::TestEventUnsubscribe(){
 
-	// Clear any existing state
-	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	// Snapshot + restore the global dispatcher (Zenith_EventDispatcher::ScopedTestIsolation).
+	Zenith_EventDispatcher::ScopedTestIsolation xIsolate;
 	s_uTestEventCallCount = 0;
 
 	// Subscribe to test event
@@ -8849,8 +8849,7 @@ void Zenith_UnitTests::TestEventUnsubscribe(){
 
 	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 0, "TestEventUnsubscribe: Callback should not be called after unsubscribe");
 
-	// Cleanup
-	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	// Cleanup is automatic when xIsolate leaves scope (restores boot subs).
 
 }
 
@@ -8858,7 +8857,9 @@ void Zenith_UnitTests::TestEventUnsubscribe(){
 // transfers ownership (no double-unsubscribe), moved-from is inert.
 ZENITH_TEST(ECS, EventSubscriptionRAII) { Zenith_UnitTests::TestEventSubscriptionRAII(); }
 void Zenith_UnitTests::TestEventSubscriptionRAII(){
-	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	// Must stay on the global dispatcher (Zenith_Subscription::Reset routes through
+	// Get()); the guard snapshots + restores it so boot subs survive.
+	Zenith_EventDispatcher::ScopedTestIsolation xIsolate;
 
 	// (1) Scope-bound subscription unsubscribes on destruction.
 	{
@@ -8897,15 +8898,15 @@ void Zenith_UnitTests::TestEventSubscriptionRAII(){
 		ZENITH_ASSERT_FALSE(xEmpty.IsValid(), "Zenith_Subscription: default ctor should be invalid");
 	}
 
-	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	// xIsolate restores the pre-test subscriptions on scope exit.
 }
 
 ZENITH_TEST(ECS, EventDeferredQueue) { Zenith_UnitTests::TestEventDeferredQueue(); }
 
 void Zenith_UnitTests::TestEventDeferredQueue(){
 
-	// Clear any existing state
-	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	// Snapshot + restore the global dispatcher (Zenith_EventDispatcher::ScopedTestIsolation).
+	Zenith_EventDispatcher::ScopedTestIsolation xIsolate;
 	s_uTestEventCallCount = 0;
 	s_uTestEventLastValue = 0;
 
@@ -8941,8 +8942,7 @@ void Zenith_UnitTests::TestEventDeferredQueue(){
 
 	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 2, "TestEventDeferredQueue: Both callbacks should be called after processing");
 
-	// Cleanup
-	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	// Cleanup is automatic when xIsolate leaves scope (restores boot subs).
 
 }
 
@@ -8964,8 +8964,8 @@ ZENITH_TEST(ECS, EventMultipleSubscribers) { Zenith_UnitTests::TestEventMultiple
 
 void Zenith_UnitTests::TestEventMultipleSubscribers(){
 
-	// Clear any existing state
-	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	// Snapshot + restore the global dispatcher (Zenith_EventDispatcher::ScopedTestIsolation).
+	Zenith_EventDispatcher::ScopedTestIsolation xIsolate;
 	s_uMultiSub1Count = 0;
 	s_uMultiSub2Count = 0;
 
@@ -8994,8 +8994,7 @@ void Zenith_UnitTests::TestEventMultipleSubscribers(){
 	ZENITH_ASSERT_EQ(s_uMultiSub1Count, 1, "TestEventMultipleSubscribers: Subscriber1 should not be called after unsubscribe");
 	ZENITH_ASSERT_EQ(s_uMultiSub2Count, 2, "TestEventMultipleSubscribers: Subscriber2 should be called again");
 
-	// Cleanup
-	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	// Cleanup is automatic when xIsolate leaves scope (restores boot subs).
 
 }
 
@@ -9003,8 +9002,9 @@ ZENITH_TEST(ECS, EventClearSubscriptions) { Zenith_UnitTests::TestEventClearSubs
 
 void Zenith_UnitTests::TestEventClearSubscriptions(){
 
-	// Clear any existing state
-	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	// Snapshot + restore the global dispatcher (Zenith_EventDispatcher::ScopedTestIsolation).
+	// The mid-test ClearAllSubscriptions() below is the behaviour under test and stays.
+	Zenith_EventDispatcher::ScopedTestIsolation xIsolate;
 	s_uTestEventCallCount = 0;
 
 	// Subscribe multiple callbacks
@@ -9032,6 +9032,56 @@ void Zenith_UnitTests::TestEventClearSubscriptions(){
 
 	ZENITH_ASSERT_TRUE(s_uTestEventCallCount == 0 && s_uMultiSub1Count == 0 && s_uMultiSub2Count == 0, "TestEventClearSubscriptions: No callbacks should be called after clear");
 
+}
+
+// Zenith_EventDispatcher::ScopedTestIsolation: verifies the snapshot/restore guard
+// hides the global dispatcher's subscriptions inside the scope and restores them on
+// exit, so the boot-time unit-test phase can never wipe a game's boot subscriptions.
+// The test itself is wrapped in an OUTER guard: it manipulates the global directly
+// (bare Subscribe / ClearAllSubscriptions to simulate a boot subscriber), and without
+// the outer guard those bare calls would be the very boot-subscription wipe we fix.
+// A NESTED inner guard is then exercised against the simulated boot subscription.
+ZENITH_TEST(ECS, EventScopedTestIsolation) { Zenith_UnitTests::TestEventScopedTestIsolation(); }
+
+void Zenith_UnitTests::TestEventScopedTestIsolation(){
+
+	// Outer guard protects any REAL boot-time subscriptions (e.g. a game's) from the
+	// direct dispatcher manipulation below, and gives us a clean global to work in.
+	Zenith_EventDispatcher::ScopedTestIsolation xOuterIsolate;
+
+	// Stand up a "boot-time" subscription to be protected by the nested inner guard.
+	s_uTestEventCallCount = 0;
+	Zenith_EventHandle uBootSub = Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&TestEventCallback);
+	ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>(), 1u, "ScopedTestIsolation: simulated boot subscription should be live before the inner scope");
+
+	{
+		Zenith_EventDispatcher::ScopedTestIsolation xInnerIsolate;
+
+		// Inside the inner scope the boot subscription is hidden -- a clean dispatcher.
+		ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>(), 0u, "ScopedTestIsolation: boot subscription should be hidden inside the scope");
+
+		// A test may freely subscribe -- and even ClearAllSubscriptions() -- inside.
+		Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&MultiSubscriber1);
+		ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>(), 1u, "ScopedTestIsolation: inner subscribe should be visible inside the scope");
+		Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+		Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&MultiSubscriber2);
+	}
+
+	// On inner-scope exit the inner subscriptions are gone and the boot subscription
+	// is restored -- and still routes to the original callback.
+	ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>(), 1u, "ScopedTestIsolation: boot subscription should be restored after the scope");
+	s_uTestEventCallCount = 0;
+	s_uMultiSub1Count = 0;
+	s_uMultiSub2Count = 0;
+	TestEvent_Custom xEvent;
+	xEvent.m_uValue = 7;
+	Zenith_EventDispatcher::Get().Dispatch(xEvent);
+	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 1, "ScopedTestIsolation: restored boot subscription should fire on dispatch");
+	ZENITH_ASSERT_TRUE(s_uMultiSub1Count == 0 && s_uMultiSub2Count == 0, "ScopedTestIsolation: inner subscriptions must not survive the scope");
+
+	Zenith_EventDispatcher::Get().Unsubscribe(uBootSub);
+	ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>(), 0u, "ScopedTestIsolation: teardown should leave zero subscribers");
+	// xOuterIsolate restores any real pre-test subscriptions on scope exit.
 }
 
 //------------------------------------------------------------------------------

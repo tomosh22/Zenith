@@ -212,6 +212,7 @@ public:
 	static void TestEventDeferredQueue();
 	static void TestEventMultipleSubscribers();
 	static void TestEventClearSubscriptions();
+	static void TestEventScopedTestIsolation();
 
 	// Entity hierarchy tests
 	static void TestEntityAddChild();
