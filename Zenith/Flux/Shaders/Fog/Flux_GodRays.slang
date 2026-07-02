@@ -92,7 +92,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		// is the sky-mask trick that produces the classic crepuscular look.
 		float occlusion = sampleDepth > 0.9999 ? 1.0 : 0.0;
 
-		float3 lightColour = g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.rgb * occlusion;
+		float3 lightColour = g_xViewSet.g_xView.g_xSunColour_Pad.rgb * occlusion;
 		colour            += lightColour * illuminationDecay * weight;
 		illuminationDecay *= decay;
 	}

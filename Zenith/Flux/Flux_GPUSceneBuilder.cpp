@@ -20,6 +20,9 @@
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"      // Flux_InstanceGroup / bounds / anim data
 #include "AssetHandling/Zenith_MaterialAsset.h"           // material blend mode + resolved params
 #include "AssetHandling/Zenith_MeshAsset.h"               // mesh-asset geometry identity
+#ifdef ZENITH_TOOLS
+#include "Flux/RenderViews/Flux_MaterialPreviewController.h" // per-frame preview-view drive (complete type for Update())
+#endif
 
 // Build a static GPU-scene submesh descriptor from a mesh instance + material — resolving the
 // shared mesh geometry (referencing it for this sync's residency refcount) and the cull mode /
@@ -90,6 +93,13 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 	const Flux_RenderSceneSnapshot& xSnapshot = *m_pxSceneSnapshot;
 	Zenith_MaterialAsset* pxBlankMaterial = g_xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
 
+	// Drive the material-preview controller (panel liveness -> view activation +
+	// camera/sun staging + preview-mesh external-item submission) BEFORE the sync
+	// consumes external items.
+#ifdef ZENITH_TOOLS
+	g_xEngine.MaterialPreview().Update();
+#endif
+
 	// ONE sync covers both sources: snapshot statics (Zenith_ModelComponent meshes) AND
 	// instance-group foliage (trees). The mesh-geometry residency refcount + the GPU-scene
 	// record build + the bucket-topology refcount diff all run over this single main-thread
@@ -113,6 +123,7 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 	ExtractSnapshotStaticBuckets(xSnapshot, pxBlankMaterial);   // Zenith_ModelComponent static meshes
 	ExtractInstanceGroupBuckets(pxBlankMaterial);               // instance-group foliage (trees)
 	ExtractSkinnedBuckets(xSnapshot, pxBlankMaterial);          // animated skinned models (compute-skinned to the arena)
+	ExtractExternalSceneItems(pxBlankMaterial);                 // renderer-level submissions (the material-preview mesh)
 
 	Flux_EndGPUSceneBuild(m_xUnifiedGPUScene, m_xUnifiedBucketRegistry);
 	m_xUnifiedMeshGeometryRegistry.EndSync();
@@ -440,4 +451,52 @@ void Flux_RendererImpl::ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xS
 		m_uUnifiedSkinTotalOutVerts = uArenaCursor;
 		m_xUnifiedSkinnedIdRegistry.EndSync();   // recycle stable ids for skinned instances no longer drawn
 	}
+}
+
+// Source 4/4 - renderer-level external submissions (the material-preview mesh).
+// Same descriptor build as the static walk; the item view mask (preview-only for
+// the preview mesh) rides into the draw-item so the GPU cull scopes it to its
+// target view slots. Translucent/additive-material items divert to the preserved
+// translucent list instead of an opaque submesh: the owner keeps mesh + material
+// alive for the frame, and the Translucency per-view gather (a pass Prepare,
+// which runs AFTER this sync) consumes it. Consumes then clears this frame's
+// submissions.
+void Flux_RendererImpl::ExtractExternalSceneItems(Zenith_MaterialAsset* pxBlankMaterial)
+{
+	m_axExternalTranslucentItems.Clear();
+
+	for (u_int u = 0; u < m_axExternalSceneItems.GetSize(); ++u)
+	{
+		const Flux_ExternalSceneItem& xExt = m_axExternalSceneItems.Get(u);
+
+		// Route translucent/additive items to the forward Translucency path (the
+		// opaque build below would skip them anyway — this preserves them for the
+		// per-view gather, with the material pre-resolved so consumers never see null).
+		if (xExt.m_pxMeshInstance != nullptr)
+		{
+			Zenith_MaterialAsset* pxMat = xExt.m_pxMaterial != nullptr ? xExt.m_pxMaterial : pxBlankMaterial;
+			const MaterialBlendMode eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
+			if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
+			{
+				Flux_ExternalSceneItem xTranslucent = xExt;
+				xTranslucent.m_pxMaterial = pxMat;
+				m_axExternalTranslucentItems.PushBack(xTranslucent);
+				continue;
+			}
+		}
+
+		Flux_GPUSceneSourceItem xSrc;
+		xSrc.m_xWorldMatrix = xExt.m_xWorldMatrix;
+		xSrc.m_uViewMask    = xExt.m_uViewMask;
+
+		Flux_GPUSceneSourceSubmesh xSub;
+		if (!BuildStaticSubmeshDesc(m_xUnifiedMeshGeometryRegistry, xExt.m_pxMeshInstance,
+			xExt.m_pxMaterial, pxBlankMaterial, xSub))
+		{
+			continue;   // invalid -> not an opaque unified draw
+		}
+		xSrc.m_xSubmeshes.PushBack(xSub);
+		Flux_AppendGPUSceneItem(xSrc, m_xUnifiedBucketRegistry, m_xUnifiedGPUScene);
+	}
+	m_axExternalSceneItems.Clear();
 }

@@ -30,7 +30,7 @@ unnecessary.
 | InstancedMeshes G-buffer | `Flux_InstancedMesh_ToGBuffer.slang:80-92` — 9 + VAT anim tex | per-draw material index (VAT tex is per-instance vertex anim, draw-uniform index) | DRAW-UNIFORM | no | 2D | HIGH |
 | Terrain G-buffer | `Flux_Terrain_ToGBuffer.slang:74-99` — 20 named `Sampler2D` (4 mat × 5) + splatmap | 4 material base indices in draw/pass constants; splatmap **weights** are per-fragment but the 4 **indices** are pass-constant | DRAW-UNIFORM (indices) | no | 2D | **Phase 4** (collapse via splatmap) |
 | Translucency forward | `Flux_Translucent_Forward.slang:97-105` — 9 (set 4) | per-draw material index | DRAW-UNIFORM | no | 2D | HIGH |
-| MaterialPreview forward | `Flux_MaterialPreview_Forward.slang:99-107` — 9 (set 4) | per-draw material index | DRAW-UNIFORM | no | 2D | HIGH (tools) |
+| ~~MaterialPreview forward~~ | (DELETED — the material preview now renders through the shared UnifiedMesh/Translucency programs as a second render view; see `Flux/RenderViews/`) | — | — | — | — | — |
 | Text / font atlas | `Flux_Text.slang:65-100` — 1 `Sampler2D` (MSDF atlas, set 3) | per-pass atlas index | DRAW-UNIFORM (pass-constant) | no | 2D | LOW |
 | Particles | `Flux_Particles.slang:18` — 1 `Sampler2D` (set 3) | per-pass billboard index | DRAW-UNIFORM (pass-constant) | no | 2D | LOW |
 | Decals (textured-brush) | `Flux_Decals_Apply.slang:49` — 1 `Sampler2D` `g_xBrushTex` (set 3) | per-pass brush index | DRAW-UNIFORM (pass-constant) | no | 2D | LOW (procedural mode samples nothing) |
@@ -41,7 +41,7 @@ Every other candidate is draw- or pass-uniform.
 
 ## STATUS — Phase 3 maximal-bindless COMPLETE (2026-06-26)
 All sampled-2D consumers now route through `g_xBindlessSet.g_axTextures[]`:
-- **Materials** (Static/Animated/Instanced mesh G-buffer+shadow, Translucency, MaterialPreview) — B2/B3, `46f39273`.
+- **Materials** (Static/Animated/Instanced mesh G-buffer+shadow, Translucency; the tools material preview rode its own forward fork until it was replaced by the multi-view preview, which reuses these programs) — B2/B3, `46f39273`.
 - **Quads/UI** — `NonUniformResourceIndex` added, `f6947796`.
 - **Text** (MSDF atlas) — index in `TextConstants.g_uAtlasIdx` (pass-uniform).
 - **Particles** (billboard) — index in a new `ParticleConstantsLayout.g_uTexIdx` PASS CB (pass-uniform).

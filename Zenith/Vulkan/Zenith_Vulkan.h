@@ -11,6 +11,7 @@
 #endif
 #pragma warning(pop)
 #include "Flux/Flux_Types.h"
+#include "Flux/RenderViews/Flux_RenderViews.h" // FLUX_MAX_RENDER_VIEWS (per-view persistent VIEW sets)
 #include "Zenith_Vulkan_CommandBuffer.h"
 
 #include <vector>
@@ -83,7 +84,11 @@ public:
 	// Zenith_Vulkan::PreparePersistentSets before any worker records. One set per frame
 	// slot means frame N's descriptors are never overwritten while N-1 is in flight.
 	vk::DescriptorSet m_xGlobalSet;
-	vk::DescriptorSet m_xViewSet;
+	// One VIEW set per render-view slot (Flux/RenderViews/Flux_RenderViews.h):
+	// binding 0 holds that slot's per-view constants CB; bindings 1-8 are the
+	// replicated-shared view-frequency resources (written identically into every
+	// slot's set). A pass's declared view slot selects which instance gets bound.
+	vk::DescriptorSet m_axViewSets[FLUX_MAX_RENDER_VIEWS];
 
 	// Deferred destruction of per-frame Vulkan objects
 	void DeferDestroyFramebuffer(vk::Framebuffer xFramebuffer);
@@ -236,20 +241,25 @@ public:
 	// Phase 5.1: rewrite the current frame's persistent GLOBAL/VIEW descriptor sets
 	// from the spine constant buffers — called once per frame on the main thread
 	// (Flux_RendererImpl::RecordFrame), before any worker binds (write-before-bind).
-	void PreparePersistentSets(Flux_BufferDescriptorHandle xGlobalCBV, Flux_BufferDescriptorHandle xMaterialsSSBO, Flux_BufferDescriptorHandle xViewCBV);
+	// axViewCBVs = one per-view constants CB per render-view slot (all
+	// FLUX_MAX_RENDER_VIEWS of them; every slot's buffer exists, inactive slots'
+	// descriptors are written but their sets are never bound).
+	void PreparePersistentSets(Flux_BufferDescriptorHandle xGlobalCBV, Flux_BufferDescriptorHandle xMaterialsSSBO, const Flux_BufferDescriptorHandle* axViewCBVs, u_int uNumViewCBVs);
 
 	// Phase 5.4: rewrite one VIEW-set image SRV (combined image sampler) into the
-	// current frame's persistent VIEW set — called once per frame per promoted
+	// current frame's persistent VIEW sets — called once per frame per promoted
 	// view-frequency resource (CSM, etc.), right after PreparePersistentSets. The
 	// descriptor is a stable pointer to the resource's view; the render graph's
 	// per-pass Read() declarations (enforced by Flux_ViewSetBinding) drive the
 	// layout/contents barriers, so writing it once at frame start is safe.
+	// Bindings 1-8 are replicated-shared across views: the SAME descriptor is
+	// fanned out to every view slot's set (see Flux_ViewSetBinding.h).
 	void WritePersistentViewImage(u_int uBinding, const Flux_ShaderResourceView& xSRV, const Zenith_Vulkan_Sampler& xSampler);
 
 	// Phase 5.4: rewrite one VIEW-set storage buffer (SSBO) into the current frame's
-	// persistent VIEW set — the buffer analogue of WritePersistentViewImage, for
+	// persistent VIEW sets — the buffer analogue of WritePersistentViewImage, for
 	// view-frequency StructuredBuffers (the all-cascade ShadowMatrices SSBO, etc.).
-	// Same write-before-bind window; the buffer descriptor is stable across the frame.
+	// Same write-before-bind window + same fan-out to every view slot's set.
 	void WritePersistentViewBuffer(u_int uBinding, const Flux_ShaderResourceView_Buffer& xSRV);
 
 	void EndFrame(bool bSubmitRenderWork);
@@ -290,7 +300,11 @@ public:
 	vk::DescriptorSetLayout GetGlobalSetLayout() const { return m_xGlobalSetLayout; }
 	vk::DescriptorSetLayout GetViewSetLayout()   const { return m_xViewSetLayout; }
 	vk::DescriptorSet GetCurrentGlobalSet() const { return m_pxCurrentFrame->m_xGlobalSet; }
-	vk::DescriptorSet GetCurrentViewSet()   const { return m_pxCurrentFrame->m_xViewSet; }
+	vk::DescriptorSet GetCurrentViewSet(u_int uViewSlot = kuFluxViewSlotMain) const
+	{
+		Zenith_Assert(uViewSlot < FLUX_MAX_RENDER_VIEWS, "GetCurrentViewSet: view slot %u out of range", uViewSlot);
+		return m_pxCurrentFrame->m_axViewSets[uViewSlot];
+	}
 	// Device-clamped bindless table capacity (set by QueryDescriptorIndexingLimits).
 	// Drives Flux_BindlessAllocator's capacity. Backend-neutral surface (mirrored by
 	// the D3D12 null backend).

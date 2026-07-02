@@ -4,6 +4,7 @@
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashMap.h"
 #include "Flux/Flux_RefcountDiffRegistry.h"
+#include "Flux/RenderViews/Flux_RenderViews.h"   // view-slot mask helpers (per-draw-item visibility)
 #include <cstddef>   // offsetof, size_t
 #include <cmath>     // sqrtf
 
@@ -117,6 +118,29 @@ inline void Flux_BuildGPUSceneDrawItem(Flux_GPUSceneDrawItem& xOut, u_int uObjec
 	xOut.m_uColorTintPacked   = uColorTintPacked;
 	xOut.m_uFlags             = uFlags;
 	xOut.m_xLocalBoundsSphere = xLocalBoundsSphere;
+}
+
+// ---- per-draw-item render-view visibility mask -------------------------------
+// The HIGH 16 bits of Flux_GPUSceneDrawItem::m_uFlags carry a bit-per-view-slot
+// visibility mask (mirror GPUSCENE_DRAWITEM_VIEWMASK_SHIFT in Common/
+// SceneObjects.slang): the cull compute tests bit (16+viewSlot) before anything
+// else, so an item participates only in the render views its producer targeted.
+// Scene content passes Flux_ViewMaskAllSceneViews(true) (camera + every cascade
+// slot — inactive cascades are skipped by the cull's ACTIVE-view mask, so the
+// item mask needn't track the shadows toggle); the material-preview mesh passes
+// Flux_ViewMaskPreviewOnly(). Low 16 bits stay reserved for item flags.
+inline constexpr u_int uFLUX_GPUSCENE_DRAWITEM_VIEWMASK_SHIFT = 16u;
+static_assert(FLUX_MAX_RENDER_VIEWS <= 16u,
+	"the draw-item view mask packs one bit per view slot into the high 16 flag bits");
+
+inline u_int Flux_PackDrawItemViewMask(u_int uLowFlags, u_int uViewMask)
+{
+	return (uLowFlags & 0xFFFFu) | (uViewMask << uFLUX_GPUSCENE_DRAWITEM_VIEWMASK_SHIFT);
+}
+
+inline bool Flux_DrawItemVisibleInView(u_int uFlags, u_int uViewSlot)
+{
+	return ((uFlags >> uFLUX_GPUSCENE_DRAWITEM_VIEWMASK_SHIFT) & (1u << uViewSlot)) != 0u;
 }
 
 // Conservative bounding sphere (center.xyz, radius.w) enclosing a local-space AABB
@@ -274,6 +298,10 @@ struct Flux_GPUSceneSourceItem
 	u_int   m_uBonePaletteRef  = 0u;
 	u_int   m_uVATAnimPacked   = 0u;   // VAT animIndex|frameCount (0 = none)
 	u_int   m_uVATAnimTimeBits = 0u;   // VAT normalised time (float bits)
+	// Which render-view slots this item's draw-items participate in (see the
+	// view-mask helpers above). Scene content defaults to camera + cascades;
+	// the preview injection overrides with Flux_ViewMaskPreviewOnly().
+	u_int   m_uViewMask        = Flux_ViewMaskAllSceneViews(true);
 	Zenith_Vector<Flux_GPUSceneSourceSubmesh> m_xSubmeshes;
 };
 
@@ -340,7 +368,8 @@ void Flux_AppendGPUSceneItem(const Flux_GPUSceneSourceItem& xItem,
 // the path that scales to thousands of trees built CPU-side each frame.
 void Flux_AppendGPUSceneInstance(Flux_GPUSceneBucketRegistry& xRegistry, Flux_GPUSceneBuildResult& xOut,
 	const Zenith_Maths::Matrix4& xModel, u_int uObjFlags, u_int uVATAnimPacked, u_int uVATAnimTimeBits,
-	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked);
+	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked,
+	u_int uViewMask = Flux_ViewMaskAllSceneViews(true));
 
 // Append one compute-skinned animated submesh-instance (Stage 5): 1 object (carrying the
 // instance transform + its skeleton's bone-palette base + the SKINNED flag; no VAT) + 1
@@ -350,7 +379,8 @@ void Flux_AppendGPUSceneInstance(Flux_GPUSceneBucketRegistry& xRegistry, Flux_GP
 // resolved per-bucket at gather (via the skinIndex), not stored here.
 void Flux_AppendGPUSceneSkinnedInstance(Flux_GPUSceneBucketRegistry& xRegistry, Flux_GPUSceneBuildResult& xOut,
 	const Zenith_Maths::Matrix4& xModel, u_int uBonePaletteBase,
-	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked);
+	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked,
+	u_int uViewMask = Flux_ViewMaskAllSceneViews(true));
 
 void Flux_EndGPUSceneBuild(Flux_GPUSceneBuildResult& xOut, Flux_GPUSceneBucketRegistry& xRegistry);
 

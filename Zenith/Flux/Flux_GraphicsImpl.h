@@ -3,6 +3,8 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_BindlessAllocator.h"
 #include "Flux/Flux_MaterialTable.h"
+#include "Flux/Flux_ViewConstants.h"
+#include "Flux/RenderViews/Flux_RenderViews.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
@@ -26,71 +28,13 @@ public:
 	Flux_GraphicsImpl(const Flux_GraphicsImpl&) = delete;
 	Flux_GraphicsImpl& operator=(const Flux_GraphicsImpl&) = delete;
 
-	struct FrameConstants
-	{
-		// Value-initialised to identity so the FIRST frame (before BuildCameraMatrices first
-		// succeeds — UploadFrameConstants skips the refresh while the camera is invalid) reads
-		// a DEFINED view-proj rather than indeterminate VRAM. The scene-graph snapshot stamps
-		// its camera frustum from m_xViewProjMat, so an indeterminate value would cull every
-		// renderable against garbage on frame 0. In-class initializers don't change the GPU
-		// constant-buffer layout (the struct stays trivially copyable for the memcpy upload).
-		Zenith_Maths::Matrix4 m_xViewMat        = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Matrix4 m_xProjMat        = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Matrix4 m_xViewProjMat    = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Matrix4 m_xInvViewProjMat = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Matrix4 m_xInvViewMat     = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Matrix4 m_xInvProjMat     = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Vector4 m_xCamPos_Pad;
-		Zenith_Maths::Vector4 m_xSunDir_Pad;
-		Zenith_Maths::Vector4 m_xSunColour_Pad;
-		Zenith_Maths::UVector2 m_xScreenDims;
-		Zenith_Maths::Vector2 m_xRcpScreenDims;
-#ifdef ZENITH_TOOLS
-		u_int m_uQuadUtilisationAnalysis;
-		u_int m_uTargetPixelsPerTri;
-#else
-		u_int m_uPad0;
-		u_int m_uPad1;
-#endif
-		Zenith_Maths::Vector2 m_xCameraNearFar;
-	};
-
-	// The GLOBAL (view-invariant) and VIEW (per-camera) spine frequencies — what
-	// every shader on the ParameterBlock spine reads (GlobalConstants @ set 0 +
-	// ViewConstants @ set 1). Both are filled each frame from the CPU-side
-	// m_xFrameConstants (UploadFrameConstants). Layouts mirror the matching Slang
-	// GlobalConstantsLayout / ViewConstantsLayout in Common/Bindings.slang.
-	// (FrameConstants is no longer GPU-uploaded — Common/Frame.slang was deleted —
-	// it survives only as the CPU camera-matrix struct + the mirror source here.)
-	struct GlobalConstants
-	{
-		Zenith_Maths::Vector4  m_xSunDir_Pad;
-		Zenith_Maths::Vector4  m_xSunColour_Pad;
-		float                  m_fTimeSeconds = 0.0f;
-		u_int                  m_uFrameIndex  = 0;
-		Zenith_Maths::Vector2  m_xPad;
-	};
-
-	struct ViewConstants
-	{
-		Zenith_Maths::Matrix4 m_xViewMat        = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Matrix4 m_xProjMat        = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Matrix4 m_xViewProjMat    = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Matrix4 m_xInvViewProjMat = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Matrix4 m_xInvViewMat     = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Matrix4 m_xInvProjMat     = Zenith_Maths::Matrix4(1.0f);
-		Zenith_Maths::Vector4 m_xCamPos_Pad;
-		Zenith_Maths::UVector2 m_xScreenDims;
-		Zenith_Maths::Vector2 m_xRcpScreenDims;
-#ifdef ZENITH_TOOLS
-		u_int m_uQuadUtilisationAnalysis;
-		u_int m_uTargetPixelsPerTri;
-#else
-		u_int m_uPad0;
-		u_int m_uPad1;
-#endif
-		Zenith_Maths::Vector2 m_xCameraNearFar;
-	};
+	// The spine constant payloads + the CPU camera struct live in
+	// Flux/Flux_ViewConstants.h (extracted so the render-view registry can carry
+	// a per-view ViewConstants payload). The nested names below are aliases so
+	// existing Flux_GraphicsImpl::FrameConstants/... references compile unchanged.
+	using FrameConstants  = Flux_FrameConstants;
+	using GlobalConstants = Flux_GlobalConstants;
+	using ViewConstants   = Flux_ViewConstants;
 
 	void InitialiseSamplers();
 	void Initialise();
@@ -100,9 +44,22 @@ public:
 
 	// Phase 5.1: the spine GLOBAL/VIEW constant-buffer descriptor handles for THIS frame,
 	// written into the persistent descriptor sets each frame (Zenith_Vulkan::Prepare-
-	// PersistentSets). GetCBV() resolves the current frame-in-flight buffer.
+	// PersistentSets). GetCBV() resolves the current frame-in-flight buffer. VIEW is
+	// per-render-view (one frame-indexed CB per fixed view slot); slot 0 = main camera.
 	Flux_BufferDescriptorHandle GetGlobalConstantsBufferHandle() const { return m_xGlobalConstantsBuffer.GetCBV().m_xBufferDescHandle; }
-	Flux_BufferDescriptorHandle GetViewConstantsBufferHandle()   const { return m_xViewConstantsBuffer.GetCBV().m_xBufferDescHandle; }
+	Flux_BufferDescriptorHandle GetViewConstantsBufferHandle(u_int uViewSlot = kuFluxViewSlotMain) const
+	{
+		Zenith_Assert(uViewSlot < FLUX_MAX_RENDER_VIEWS, "GetViewConstantsBufferHandle: view slot %u out of range", uViewSlot);
+		return m_axViewConstantsBuffers[uViewSlot].GetCBV().m_xBufferDescHandle;
+	}
+
+	// The render-view registry (fixed slots: 0 main / 1..N cascades / preview).
+	// Owners stage each view's ViewConstants + frustum planes here per frame;
+	// UploadRenderViewConstants copies every ACTIVE non-main slot's payload into
+	// its frame-indexed CB (slot 0 is uploaded by UploadFrameConstants).
+	Flux_RenderViewRegistry&       RenderViews()       { return m_xRenderViews; }
+	const Flux_RenderViewRegistry& RenderViews() const { return m_xRenderViews; }
+	void UploadRenderViewConstants();
 
 	void SetupTransients(Flux_RenderGraph& xGraph);
 
@@ -124,15 +81,19 @@ public:
 	// SSR/SSGI CRTP base, so non-CRTP effects like SSAO can use it too.)
 	void BindFullscreenQuad(Flux_CommandBuffer& xCmd, Flux_Pipeline& xPipeline);
 
-	Flux_RenderAttachment& GetMRTAttachment(MRTIndex eIndex);
-	Flux_RenderAttachment& GetDepthAttachment();
+	// Per-view target accessors: each active FULL-PIPELINE view (main + preview)
+	// owns its own G-buffer/depth/HDR transients at its own dims. uViewSlot
+	// defaults to the main camera so single-view callers stay unchanged; per-view
+	// pass record callbacks pass Flux_RenderGraph::GetCurrentRecordingPassViewSlot().
+	Flux_RenderAttachment& GetMRTAttachment(MRTIndex eIndex, u_int uViewSlot = kuFluxViewSlotMain);
+	Flux_RenderAttachment& GetDepthAttachment(u_int uViewSlot = kuFluxViewSlotMain);
 	Flux_RenderAttachment& GetFinalRenderTarget();
 
 	// HDR scene target — the shared scene-colour buffer many features write and the
 	// HDR tonemap reads. Owned here (alongside the other shared targets) so it exists
 	// before the first writer; the HDR feature keeps only its private bloom chain.
 	// (Was Flux_HDRImpl's, created by the removed @SetupTransients:HDR step.)
-	Flux_RenderAttachment&   GetHDRSceneTarget();
+	Flux_RenderAttachment&   GetHDRSceneTarget(u_int uViewSlot = kuFluxViewSlotMain);
 	Flux_ShaderResourceView& GetHDRSceneSRV();
 	void GetHDRSceneTargetSetup(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
 	void GetHDRSceneTargetSetupWithDepth(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
@@ -141,10 +102,15 @@ public:
 
 	const Zenith_Maths::Vector3& GetCameraPosition();
 
-	Flux_ShaderResourceView* GetGBufferSRV(MRTIndex eIndex);
-	Flux_ShaderResourceView* GetDepthStencilSRV();
+	Flux_ShaderResourceView* GetGBufferSRV(MRTIndex eIndex, u_int uViewSlot = kuFluxViewSlotMain);
+	Flux_ShaderResourceView* GetDepthStencilSRV(u_int uViewSlot = kuFluxViewSlotMain);
 	Flux_RenderTargetView*   GetGBufferRTV(MRTIndex eIndex);
 	Flux_DepthStencilView*   GetDepthStencilDSV();
+
+	// The material-preview view's persistent LDR output (512², RGBA8). Persistent —
+	// NOT a transient — so the SRV handed to ImGui stays valid across graph
+	// rebuilds. Written by the HDR feature's preview tonemap pass.
+	Flux_RenderAttachment& GetPreviewLDR() { return m_xPreviewLDR; }
 
 #ifdef ZENITH_TOOLS
 	const Flux_ShaderResourceView* GetDebugSRV_MRTDiffuse();
@@ -208,7 +174,15 @@ public:
 	// shader bound it. The CPU m_xFrameConstants struct stays as the camera-matrix
 	// source for CPU systems + the mirror source for these two.)
 	Flux_DynamicConstantBuffer  m_xGlobalConstantsBuffer;
-	Flux_DynamicConstantBuffer  m_xViewConstantsBuffer;
+	// One VIEW CB per fixed render-view slot (all allocated up front — tiny).
+	// Slot 0 (main) is filled by UploadFrameConstants; other ACTIVE slots by
+	// UploadRenderViewConstants from the registry payloads. Every slot's CB is
+	// written into its persistent VIEW descriptor set each frame, so inactive
+	// slots still carry a VALID (identity-initialised) buffer descriptor.
+	Flux_DynamicConstantBuffer  m_axViewConstantsBuffers[FLUX_MAX_RENDER_VIEWS];
+
+	// The render-view registry (see RenderViews() accessor).
+	Flux_RenderViewRegistry     m_xRenderViews;
 
 	// Fallback assets.
 	TextureHandle               m_xWhiteTexture;
@@ -238,10 +212,17 @@ public:
 	Zenith_Maths::Vector4       m_xSunColourOverride = { 1.0f, 1.0f, 1.0f, 1.0f };
 	Flux_BindingGroupLayout     m_xFrameConstantsLayout;
 
-	// Graph-owned transient render-target handles + graph back-ref.
-	Flux_TransientHandle        m_axMRTHandles[MRT_INDEX_COUNT];
+	// Graph-owned transient render-target handles + graph back-ref. G-buffer/
+	// depth/HDR are PER FULL-PIPELINE VIEW SLOT (created in SetupTransients only
+	// for slots active this compile — slot 0 always, at swapchain dims; the
+	// preview slot at its own dims when its view is active). Final RT is
+	// main-view-only (the preview tonemaps into the persistent m_xPreviewLDR).
+	Flux_TransientHandle        m_aaxMRTHandles[FLUX_MAX_RENDER_VIEWS][MRT_INDEX_COUNT];
 	Flux_TransientHandle        m_xFinalRTHandle;
-	Flux_TransientHandle        m_xDepthHandle;
-	Flux_TransientHandle        m_xHDRSceneTargetHandle;
+	Flux_TransientHandle        m_axDepthHandles[FLUX_MAX_RENDER_VIEWS];
+	Flux_TransientHandle        m_axHDRSceneTargetHandles[FLUX_MAX_RENDER_VIEWS];
 	Flux_RenderGraph*           m_pxGraph = nullptr;
+
+	// Persistent preview LDR output (see GetPreviewLDR).
+	Flux_RenderAttachment       m_xPreviewLDR;
 };

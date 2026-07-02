@@ -440,7 +440,12 @@ static void ExecuteBloomThreshold(Flux_CommandBuffer* pxCommandList, void* pUser
 	// route reach-ins through it and its injected member pointers.
 	Flux_HDRImpl& xHDR = g_xEngine.HDR();
 
-	Flux_RenderAttachment& xBloom0 = xHDR.GetBloomChainAttachment(0);
+	// The pass's declared view slot selects this view's bloom chain + HDR scene
+	// target (slot 0 = main/swapchain, preview = 512² → 256² base). Texel sizes
+	// come from the per-view attachment, so no explicit viewport work is needed.
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
+	Flux_RenderAttachment& xBloom0 = xHDR.GetBloomChainAttachment(0, uViewSlot);
 	BloomConstants xBloomConsts;
 	xBloomConsts.m_fThreshold = xHDR.m_fBloomThreshold;
 	xBloomConsts.m_fIntensity = xHDR.m_fBloomIntensity;
@@ -452,7 +457,7 @@ static void ExecuteBloomThreshold(Flux_CommandBuffer* pxCommandList, void* pUser
 
 	namespace BT = Flux_Generated_HDR::BloomThreshold;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(BT::hg_xHDRTex, &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
+	xBinder.BindSRV(BT::hg_xHDRTex, &g_xEngine.FluxGraphics().GetHDRSceneTarget(uViewSlot).SRV());
 	xBinder.BindDrawConstants(BT::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
@@ -466,10 +471,14 @@ static void ExecuteBloomDownsample(Flux_CommandBuffer* pxCommandList, void* pUse
 	// route reach-ins through it and its injected member pointers.
 	Flux_HDRImpl& xHDR = g_xEngine.HDR();
 
+	// UserData carries the MIP only; the view comes from the recording pass's
+	// declared slot (mirrors the HiZ per-view conversion).
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
 	// The 13-tap downsample samples the SOURCE mip, so its tap offsets must be in
 	// SOURCE-texel units. Using the destination (half-res) texel size spread the
 	// taps 2x too far -> over-blurred + aliased bloom chain. Use the source mip.
-	Flux_RenderAttachment& xSource = xHDR.GetBloomChainAttachment(uMipIndex - 1);
+	Flux_RenderAttachment& xSource = xHDR.GetBloomChainAttachment(uMipIndex - 1, uViewSlot);
 	BloomConstants xBloomConsts;
 	xBloomConsts.m_fThreshold = xHDR.m_fBloomThreshold;
 	xBloomConsts.m_fIntensity = xHDR.m_fBloomIntensity;
@@ -481,7 +490,7 @@ static void ExecuteBloomDownsample(Flux_CommandBuffer* pxCommandList, void* pUse
 
 	namespace BD = Flux_Generated_HDR::BloomDownsample;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(BD::hg_xSourceTex, &xHDR.GetBloomChainAttachment(uMipIndex - 1).SRV());
+	xBinder.BindSRV(BD::hg_xSourceTex, &xSource.SRV());
 	xBinder.BindDrawConstants(BD::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
@@ -497,7 +506,11 @@ static void ExecuteBloomUpsample(Flux_CommandBuffer* pxCommandList, void* pUserD
 	// route reach-ins through it and its injected member pointers.
 	Flux_HDRImpl& xHDR = g_xEngine.HDR();
 
-	Flux_RenderAttachment& xTarget = xHDR.GetBloomChainAttachment(uTargetMip);
+	// UserData carries the upsample step only; the view comes from the recording
+	// pass's declared slot (mirrors the HiZ per-view conversion).
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
+	Flux_RenderAttachment& xTarget = xHDR.GetBloomChainAttachment(uTargetMip, uViewSlot);
 	BloomConstants xBloomConsts;
 	xBloomConsts.m_fThreshold = xHDR.m_fBloomThreshold;
 	xBloomConsts.m_fIntensity = xHDR.m_fBloomIntensity;
@@ -509,7 +522,7 @@ static void ExecuteBloomUpsample(Flux_CommandBuffer* pxCommandList, void* pUserD
 
 	namespace BU = Flux_Generated_HDR::BloomUpsample;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(BU::hg_xSourceTex, &xHDR.GetBloomChainAttachment(uSourceMip).SRV());
+	xBinder.BindSRV(BU::hg_xSourceTex, &xHDR.GetBloomChainAttachment(uSourceMip, uViewSlot).SRV());
 	xBinder.BindDrawConstants(BU::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
@@ -558,29 +571,133 @@ static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserDat
 	}
 }
 
-void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
+// Preview-view tonemap (S5a/S5c): FIXED exposure, no auto-exposure — the
+// preview must read the same every frame regardless of the main scene's
+// adaptation state. Bloom IS real (S5c): the preview owns its own bloom chain,
+// whose mip 0 binds here with m_fBloomIntensity forwarded exactly like the main
+// tonemap, so emissive materials glow in the preview. Reuses the tonemap
+// pipeline (the persistent preview LDR is FINAL_RT_FORMAT); the
+// histogram/exposure UAVs bind the shared buffers purely for descriptor
+// validity (m_bAutoExposure=0 skips the read).
+static void ExecutePreviewTonemap(Flux_CommandBuffer* pxCommandList, void*)
 {
-	m_pxGraph = &xGraph;
+	Flux_HDRImpl& xHDR = g_xEngine.HDR();
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	// The HDR scene target is created + owned by Flux_Graphics (a shared target,
-	// created before the first writer); HDR creates only its private bloom chain
-	// here, then declares its bloom / tonemap / exposure passes.
+	ToneMappingConstants xConsts;
+	xConsts.m_fExposure = 1.0f;
+	xConsts.m_fBloomIntensity = Zenith_GraphicsOptions::Get().m_bHDRBloomEnabled ? xHDR.m_fBloomIntensity : 0.0f;
+	xConsts.m_uToneMappingOperator = static_cast<u_int>(xHDR.m_eToneMappingOperator);
+	xConsts.m_uDebugMode = 0;
+	xConsts.m_bShowHistogram = 0;
+	xConsts.m_bAutoExposure = 0;
+	xConsts.m_uPad0 = 0;
+	xConsts.m_uPad1 = 0;
 
-	u_int uBloomWidth = g_xEngine.FluxSwapchain().GetWidth() / 2;
-	u_int uBloomHeight = g_xEngine.FluxSwapchain().GetHeight() / 2;
+	pxCommandList->SetPipeline(&xHDR.m_xToneMappingPipeline);
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
 
-	for (u_int i = 0; i < 5; i++)
+	{
+		namespace TM = Flux_Generated_HDR::HDR_ToneMapping;
+		Flux_ShaderBinder xBinder(*pxCommandList);
+		xBinder.BindSRV(TM::hg_xHDRTex, &xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview).SRV());
+		xBinder.BindSRV(TM::hg_xBloomTex, &xHDR.GetBloomChainAttachment(0, kuFluxViewSlotPreview).SRV());
+		xBinder.BindUAV_Buffer(TM::hg_auHistogram,   &xHDR.m_xHistogramBuffer.GetUAV());
+		xBinder.BindUAV_Buffer(TM::hg_afExposureData, &xHDR.m_xExposureBuffer.GetUAV());
+		xBinder.BindDrawConstants(TM::hToneMappingConstants, &xConsts, sizeof(ToneMappingConstants));
+	}
+
+	pxCommandList->DrawIndexed(6);
+}
+
+// No-op record: the .Reads(m_xPreviewLDR) declaration makes the graph leave the
+// persistent preview LDR in SHADER_READ_ONLY for the editor's ImGui sample
+// (mirrors the Present feature's final-RT layout-transition pass).
+static void ExecutePreviewLDRTransition(Flux_CommandBuffer*, void*)
+{
+}
+
+// Per-view bloom chain: creates one view's 5-mip transients (half the view's
+// dims at the base) then declares its threshold / downsample / upsample pass
+// chain against that view's HDR scene target. Pass names must be per-view
+// unique + static-lifetime (duplicate names are a hard assert): view 0 keeps
+// the historical names (profiling / FindPass stability); the preview gets its
+// own " (Preview)" tables. The executes derive the view from the recording
+// pass's slot (declared via .View below), so the per-mip UserData stays
+// mip-only — mirrors the HiZ per-view conversion.
+void Flux_HDRImpl::SetupBloomViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight)
+{
+	u_int uBloomWidth = uWidth / 2;
+	u_int uBloomHeight = uHeight / 2;
+
+	for (u_int i = 0; i < uHDR_BLOOM_MIP_COUNT; i++)
 	{
 		Flux_TransientTextureDesc xDesc;
 		xDesc.m_uWidth = uBloomWidth;
 		xDesc.m_uHeight = uBloomHeight;
 		xDesc.m_eFormat = BLOOM_FORMAT;
 		xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-		m_axBloomChainHandles[i] = xGraph.CreateTransient(xDesc);
+		m_aaxBloomChainHandles[uViewSlot][i] = xGraph.CreateTransient(xDesc);
 
 		uBloomWidth = std::max(1u, uBloomWidth / 2);
 		uBloomHeight = std::max(1u, uBloomHeight / 2);
 	}
+
+	const bool bMainView = (uViewSlot == kuFluxViewSlotMain);
+
+	xGraph.AddPass(bMainView ? "HDR_BloomThreshold" : "HDR_BloomThreshold (Preview)", ExecuteBloomThreshold)
+		.View(uViewSlot)
+		.ClearTargets()
+		.Reads          (g_xEngine.FluxGraphics().GetHDRSceneTarget(uViewSlot),             RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_aaxBloomChainHandles[uViewSlot][0],        RESOURCE_ACCESS_WRITE_RTV);
+
+	static const char* s_aszBloomDownsampleNames[] = {
+		"HDR_BloomDownsample Mip1", "HDR_BloomDownsample Mip2",
+		"HDR_BloomDownsample Mip3", "HDR_BloomDownsample Mip4",
+	};
+	static const char* s_aszBloomDownsamplePreviewNames[] = {
+		"HDR_BloomDownsample Mip1 (Preview)", "HDR_BloomDownsample Mip2 (Preview)",
+		"HDR_BloomDownsample Mip3 (Preview)", "HDR_BloomDownsample Mip4 (Preview)",
+	};
+	const char* const* pszDownsampleNames = bMainView ? s_aszBloomDownsampleNames : s_aszBloomDownsamplePreviewNames;
+	for (u_int i = 1; i < uHDR_BLOOM_MIP_COUNT; i++)
+	{
+		xGraph.AddPass(pszDownsampleNames[i - 1], ExecuteBloomDownsample, &m_axBloomMipUserData[i])
+			.View(uViewSlot)
+			.ClearTargets()
+			.ReadsTransient (m_aaxBloomChainHandles[uViewSlot][i - 1], RESOURCE_ACCESS_READ_SRV)
+			.WritesTransient(m_aaxBloomChainHandles[uViewSlot][i],     RESOURCE_ACCESS_WRITE_RTV);
+	}
+
+	static const char* s_aszBloomUpsampleNames[] = {
+		"HDR_BloomUpsample Mip3", "HDR_BloomUpsample Mip2",
+		"HDR_BloomUpsample Mip1", "HDR_BloomUpsample Mip0",
+	};
+	static const char* s_aszBloomUpsamplePreviewNames[] = {
+		"HDR_BloomUpsample Mip3 (Preview)", "HDR_BloomUpsample Mip2 (Preview)",
+		"HDR_BloomUpsample Mip1 (Preview)", "HDR_BloomUpsample Mip0 (Preview)",
+	};
+	const char* const* pszUpsampleNames = bMainView ? s_aszBloomUpsampleNames : s_aszBloomUpsamplePreviewNames;
+	for (u_int i = 0; i < uHDR_BLOOM_MIP_COUNT - 1; i++)
+	{
+		const u_int uTargetMip = 3 - i;
+		const u_int uSourceMip = uTargetMip + 1;
+		xGraph.AddPass(pszUpsampleNames[i], ExecuteBloomUpsample, &m_axBloomUpsampleUserData[i])
+			.View(uViewSlot)
+			.ReadsTransient (m_aaxBloomChainHandles[uViewSlot][uSourceMip], RESOURCE_ACCESS_READ_SRV)
+			.WritesTransient(m_aaxBloomChainHandles[uViewSlot][uTargetMip], RESOURCE_ACCESS_WRITE_RTV);
+	}
+}
+
+void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	m_pxGraph = &xGraph;
+
+	// The HDR scene target is created + owned by Flux_Graphics (a shared target,
+	// created before the first writer); HDR creates only its private per-view
+	// bloom chains here (SetupBloomViewPasses), then declares its bloom /
+	// tonemap / exposure passes.
 
 	xGraph.AddPass("HDR_LuminanceHistogram", ExecuteLuminanceHistogram)
 		.Prepare    (PreExecuteLuminanceHistogram)
@@ -593,35 +710,9 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.ReadsBuffer (m_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV)
 		.WritesBuffer(m_xExposureBuffer.GetBuffer(),  RESOURCE_ACCESS_WRITE_UAV);
 
-	xGraph.AddPass("HDR_BloomThreshold", ExecuteBloomThreshold)
-		.ClearTargets()
-		.Reads          (g_xEngine.FluxGraphics().GetHDRSceneTarget(),             RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_axBloomChainHandles[0],        RESOURCE_ACCESS_WRITE_RTV);
-
-	static const char* s_aszBloomDownsampleNames[] = {
-		"HDR_BloomDownsample Mip1", "HDR_BloomDownsample Mip2",
-		"HDR_BloomDownsample Mip3", "HDR_BloomDownsample Mip4",
-	};
-	for (u_int i = 1; i < 5; i++)
-	{
-		xGraph.AddPass(s_aszBloomDownsampleNames[i - 1], ExecuteBloomDownsample, &m_axBloomMipUserData[i])
-			.ClearTargets()
-			.ReadsTransient (m_axBloomChainHandles[i - 1], RESOURCE_ACCESS_READ_SRV)
-			.WritesTransient(m_axBloomChainHandles[i],     RESOURCE_ACCESS_WRITE_RTV);
-	}
-
-	static const char* s_aszBloomUpsampleNames[] = {
-		"HDR_BloomUpsample Mip3", "HDR_BloomUpsample Mip2",
-		"HDR_BloomUpsample Mip1", "HDR_BloomUpsample Mip0",
-	};
-	for (u_int i = 0; i < 4; i++)
-	{
-		const u_int uTargetMip = 3 - i;
-		const u_int uSourceMip = uTargetMip + 1;
-		xGraph.AddPass(s_aszBloomUpsampleNames[i], ExecuteBloomUpsample, &m_axBloomUpsampleUserData[i])
-			.ReadsTransient (m_axBloomChainHandles[uSourceMip], RESOURCE_ACCESS_READ_SRV)
-			.WritesTransient(m_axBloomChainHandles[uTargetMip], RESOURCE_ACCESS_WRITE_RTV);
-	}
+	// Main-view bloom chain — half swapchain dims, historical pass names.
+	SetupBloomViewPasses(xGraph, kuFluxViewSlotMain,
+		g_xEngine.FluxSwapchain().GetWidth(), g_xEngine.FluxSwapchain().GetHeight());
 
 	// Tone mapping samples exposure (and optionally histogram for a debug
 	// overlay). Both are bound as UAV_Buffer in ExecuteToneMapping so declare
@@ -633,7 +724,32 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Writes        (g_xEngine.FluxGraphics().GetFinalRenderTarget(),  RESOURCE_ACCESS_WRITE_RTV)
 		.ReadsBuffer   (m_xHistogramBuffer.GetBuffer(),         RESOURCE_ACCESS_READWRITE_UAV)
 		.ReadsBuffer   (m_xExposureBuffer.GetBuffer(),          RESOURCE_ACCESS_READWRITE_UAV)
-		.ReadsTransient(m_axBloomChainHandles[0],               RESOURCE_ACCESS_READ_SRV);
+		.ReadsTransient(m_aaxBloomChainHandles[kuFluxViewSlotMain][0], RESOURCE_ACCESS_READ_SRV);
+
+	// Preview view (S5a/S5c): the preview's own bloom chain (256² base) + a
+	// fixed-exposure tonemap of the preview HDR into the persistent preview LDR
+	// (now reading the preview bloom mip 0 — emissive materials glow) + a no-op
+	// reader pass that leaves the LDR in SHADER_READ_ONLY for the editor's
+	// ImGui sample. The histogram/exposure UAV binds are descriptor-validity
+	// only (auto-exposure off) but must be declared so the graph's bind
+	// validator + barriers stay honest.
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	{
+		SetupBloomViewPasses(xGraph, kuFluxViewSlotPreview, kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
+
+		xGraph.AddPass("HDR_ToneMapping (Preview)", ExecutePreviewTonemap)
+			.View(kuFluxViewSlotPreview)
+			.ClearTargets()
+			.Reads         (xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview),        RESOURCE_ACCESS_READ_SRV)
+			.Writes        (xGraphics.GetPreviewLDR(),                                 RESOURCE_ACCESS_WRITE_RTV)
+			.ReadsBuffer   (m_xHistogramBuffer.GetBuffer(),                            RESOURCE_ACCESS_READWRITE_UAV)
+			.ReadsBuffer   (m_xExposureBuffer.GetBuffer(),                             RESOURCE_ACCESS_READWRITE_UAV)
+			.ReadsTransient(m_aaxBloomChainHandles[kuFluxViewSlotPreview][0],          RESOURCE_ACCESS_READ_SRV);
+
+		xGraph.AddPass("Preview LDR Transition", ExecutePreviewLDRTransition)
+			.Reads(xGraphics.GetPreviewLDR(), RESOURCE_ACCESS_READ_SRV);
+	}
 }
 
 // GetHDRSceneTarget / GetHDRSceneSRV / GetHDRSceneTargetSetup{,WithDepth} moved to
@@ -698,11 +814,12 @@ float Flux_HDRImpl::GetTargetLuminance()
 	return m_fTargetLuminance;
 }
 
-Flux_RenderAttachment& Flux_HDRImpl::GetBloomChainAttachment(u_int uIndex)
+Flux_RenderAttachment& Flux_HDRImpl::GetBloomChainAttachment(u_int uIndex, u_int uViewSlot)
 {
-	Zenith_Assert(uIndex < 5, "Flux_HDRImpl::GetBloomChainAttachment: index %u out of range", uIndex);
+	Zenith_Assert(uIndex < uHDR_BLOOM_MIP_COUNT, "Flux_HDRImpl::GetBloomChainAttachment: index %u out of range", uIndex);
+	Zenith_Assert(uViewSlot < FLUX_MAX_RENDER_VIEWS, "Flux_HDRImpl::GetBloomChainAttachment: view slot %u out of range", uViewSlot);
 	Zenith_Assert(m_pxGraph, "Flux_HDRImpl::GetBloomChainAttachment: graph pointer is null");
-	return m_pxGraph->GetTransientAttachment(m_axBloomChainHandles[uIndex]);
+	return m_pxGraph->GetTransientAttachment(m_aaxBloomChainHandles[uViewSlot][uIndex]);
 }
 
 bool Flux_HDRImpl::IsEnabled()
@@ -737,16 +854,16 @@ void Flux_HDRImpl::RegisterDebugVariables()
 const Flux_ShaderResourceView* Flux_HDRImpl::GetDebugSRV_Bloom0()
 {
 	if (m_pxGraph == nullptr) return nullptr;
-	return &m_pxGraph->GetTransientAttachment(m_axBloomChainHandles[0]).SRV();
+	return &m_pxGraph->GetTransientAttachment(m_aaxBloomChainHandles[kuFluxViewSlotMain][0]).SRV();
 }
 const Flux_ShaderResourceView* Flux_HDRImpl::GetDebugSRV_Bloom1()
 {
 	if (m_pxGraph == nullptr) return nullptr;
-	return &m_pxGraph->GetTransientAttachment(m_axBloomChainHandles[1]).SRV();
+	return &m_pxGraph->GetTransientAttachment(m_aaxBloomChainHandles[kuFluxViewSlotMain][1]).SRV();
 }
 const Flux_ShaderResourceView* Flux_HDRImpl::GetDebugSRV_Bloom2()
 {
 	if (m_pxGraph == nullptr) return nullptr;
-	return &m_pxGraph->GetTransientAttachment(m_axBloomChainHandles[2]).SRV();
+	return &m_pxGraph->GetTransientAttachment(m_aaxBloomChainHandles[kuFluxViewSlotMain][2]).SRV();
 }
 #endif

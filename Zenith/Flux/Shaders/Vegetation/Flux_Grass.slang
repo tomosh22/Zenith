@@ -201,8 +201,8 @@ float4 fsMain(VsOut input) : SV_Target
 	// Wrap lighting (no harsh shadows on grass) plus translucency for
 	// blades back-lit by the sun. Ambient floor of 0.2 keeps shaded
 	// blades visible.
-	float3 xSunDir   = normalize(g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
-	float3 xSunColor = g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.rgb;
+	float3 xSunDir   = normalize(g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
+	float3 xSunColor = g_xViewSet.g_xView.g_xSunColour_Pad.rgb;
 	float  fNdotL    = dot(input.normal, xSunDir) * 0.5 + 0.5;
 	fNdotL           = fNdotL * 0.8 + 0.2;
 	float  fTrans    = max(0.0, -dot(normalize(input.normal), xSunDir)) * fHeightFactor * 0.5;

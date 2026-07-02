@@ -125,6 +125,11 @@ public:
 
 	Flux_RenderGraph*           m_pxGraph = nullptr;
 	Flux_TransientHandle        m_xNormalsCopyHandle;
+	// Per-view normals clone for the preview view's parity pass pair. Created
+	// (and thus valid) only while the preview view is active at setup time —
+	// referenced solely by the "(Preview)" pass declarations, whose Executes
+	// early-out for non-main views.
+	Flux_TransientHandle        m_xPreviewNormalsCopyHandle;
 	Flux_PassHandle             m_xNormalsCopyPass;
 	Flux_PassHandle             m_xApplyPass;
 

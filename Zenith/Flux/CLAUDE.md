@@ -104,7 +104,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `Quads/` - Textured/UI quad rendering
 - `Present/` - Final-RT → backbuffer blit (backend-neutral present)
 - `SceneGraph/` - Render scene snapshot + culling
-- `MaterialPreview/` - Material preview rendering (tools)
+- `RenderViews/` - Render-view registry (fixed slots: main camera / shadow cascades / material preview) + the editor material-preview controller. Each view owns a persistent VIEW descriptor-set instance (`.View(slot)` on a graph pass selects it) and, for full-pipeline views, its own G-buffer/depth/HDR transients. The material preview renders through the REAL pipeline as a second view (per-draw-item view masks scope content); its old bespoke render system was deleted.
 - `MeshGeometry/` - Shared mesh geometry buffers
 - `Shaders/` - `.slang` shader sources (`Common/` shared helper modules)
 - `Slang/` - Shader catalog + Slang compilation glue (`Flux_ShaderCatalog`)

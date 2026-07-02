@@ -35,9 +35,14 @@ struct GPUSceneDrawItem
     uint   m_uObjectIndex;       // offset  0 — index into the object array
     uint   m_uBucketIndex;       // offset  4 — owning bucket (one indirect draw)
     uint   m_uColorTintPacked;   // offset  8 — per-instance tint (RGBA8)
-    uint   m_uFlags;             // offset 12
+    uint   m_uFlags;             // offset 12 — low 16 reserved; high 16 = per-view-slot visibility mask
     float4 m_xLocalBoundsSphere; // offset 16 — submesh local sphere (center.xyz, radius.w)
 };                               // size 32
+
+// Per-view-slot visibility mask packing (mirror Flux_PackDrawItemViewMask /
+// Flux_DrawItemVisibleInView in Flux_GPUScene.h): bit (16+slot) of m_uFlags set
+// ⇔ the item participates in that render-view slot's cull.
+static const uint GPUSCENE_DRAWITEM_VIEWMASK_SHIFT = 16u;
 
 // Stage-5 compute-skinning job descriptor (mirrors Flux_GPUSkinJob in
 // Flux/UnifiedMesh/Flux_Skinning.h, 16B all-uint — no vec3 alignment trap).

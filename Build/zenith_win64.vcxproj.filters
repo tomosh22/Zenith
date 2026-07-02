@@ -532,9 +532,6 @@
     <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.cpp">
       <Filter>Flux\InstancedMeshes</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreview.cpp">
-      <Filter>Flux\MaterialPreview</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.cpp">
       <Filter>Flux\MeshAnimation</Filter>
     </ClCompile>
@@ -594,6 +591,12 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Execution.cpp">
       <Filter>Flux\RenderGraph</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\RenderViews\Flux_MaterialPreviewController.cpp">
+      <Filter>Flux\RenderViews</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\RenderViews\Flux_RenderViews.cpp">
+      <Filter>Flux\RenderViews</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\SceneGraph\Flux_RenderSceneSnapshot.cpp">
       <Filter>Flux\SceneGraph</Filter>
@@ -2625,6 +2628,9 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h">
       <Filter>Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_ViewConstants.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_ViewSetBinding.h">
       <Filter>Flux</Filter>
     </ClInclude>
@@ -2687,12 +2693,6 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h">
       <Filter>Flux\InstancedMeshes</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreviewImpl.h">
-      <Filter>Flux\MaterialPreview</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreview_Shaders.h">
-      <Filter>Flux\MaterialPreview</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h">
       <Filter>Flux\MeshAnimation</Filter>
@@ -2774,6 +2774,18 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Internal.h">
       <Filter>Flux\RenderGraph</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\RenderViews\Flux_MaterialPreviewController.h">
+      <Filter>Flux\RenderViews</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\RenderViews\Flux_MaterialPreviewController.Tests.inl">
+      <Filter>Flux\RenderViews</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\RenderViews\Flux_RenderViews.h">
+      <Filter>Flux\RenderViews</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\RenderViews\Flux_RenderViews.Tests.inl">
+      <Filter>Flux\RenderViews</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SceneGraph\Flux_RenderSceneSnapshot.h">
       <Filter>Flux\SceneGraph</Filter>
@@ -2880,9 +2892,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\IBL.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\MaterialPreview.h">
-      <Filter>Flux\Shaders\Generated</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Particles.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
@@ -2960,15 +2969,6 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_PrefilterEnvMap.slang">
       <Filter>Flux\Shaders\IBL</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Background.slang">
-      <Filter>Flux\Shaders\MaterialPreview</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Forward.slang">
-      <Filter>Flux\Shaders\MaterialPreview</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Tonemap.slang">
-      <Filter>Flux\Shaders\MaterialPreview</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.slang">
       <Filter>Flux\Shaders\Particles</Filter>
@@ -3513,9 +3513,6 @@
     <Filter Include="Flux\InstancedMeshes">
       <UniqueIdentifier>{7109fc1e-ca9a-d2fa-7525-1fec74c49b4d}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Flux\MaterialPreview">
-      <UniqueIdentifier>{00f07789-62f9-5e93-f2bb-baee312de31e}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Flux\MeshAnimation">
       <UniqueIdentifier>{eaca438f-c905-fe04-4c8e-faed919b2340}</UniqueIdentifier>
     </Filter>
@@ -3536,6 +3533,9 @@
     </Filter>
     <Filter Include="Flux\RenderGraph">
       <UniqueIdentifier>{b4854dfe-bc31-a4a4-5bd0-5ade1b517896}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\RenderViews">
+      <UniqueIdentifier>{1f6cde59-307b-e96d-f589-194894f1f6cd}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\SDFs">
       <UniqueIdentifier>{87ce86cb-333b-cc52-e70b-72cb7608d982}</UniqueIdentifier>
@@ -3584,9 +3584,6 @@
     </Filter>
     <Filter Include="Flux\Shaders\IBL">
       <UniqueIdentifier>{6d583209-5b9d-2c7d-8404-8b073c591308}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Flux\Shaders\MaterialPreview">
-      <UniqueIdentifier>{aa152075-de9f-03b0-2f3c-77c6db29088c}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders\Particles">
       <UniqueIdentifier>{4ebcffad-75d4-aa28-cf01-3889f4480f8b}</UniqueIdentifier>

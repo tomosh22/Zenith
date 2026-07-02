@@ -80,7 +80,7 @@ struct GBufferOut
 GBufferOut fsMain(FullscreenVsOut input)
 {
 	float3 xRayDir = RayDir(input.uv);
-	float3 xSunDir = normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
+	float3 xSunDir = normalize(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
 
 	// Camera lifted to a few metres above ground so the atmosphere solver
 	// always sees a non-degenerate height. 100 m is consistent with the

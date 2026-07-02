@@ -197,6 +197,12 @@ void Flux_SkyboxImpl::CreateRenderTargets()
 	xBuilder.m_uWidth = AtmosphereConfig::uSKYVIEW_LUT_WIDTH;
 	xBuilder.m_uHeight = AtmosphereConfig::uSKYVIEW_LUT_HEIGHT;
 	xBuilder.BuildColour(this->m_xSkyViewLUT, "Skybox Sky-View LUT");
+
+	// Preview-view sky-view LUT (S5c) — same dims/format. The LUT is camera+sun
+	// dependent and the preview view owns its own sun, so the main LUT cannot be
+	// shared. ~166 KB, so it is built unconditionally rather than churned on
+	// preview (de)activation.
+	xBuilder.BuildColour(this->m_xPreviewSkyViewLUT, "Skybox Sky-View LUT (Preview)");
 }
 
 void Flux_SkyboxImpl::DestroyRenderTargets()
@@ -212,6 +218,12 @@ void Flux_SkyboxImpl::DestroyRenderTargets()
 		g_xEngine.FluxMemory().QueueVRAMDeletion(this->m_xSkyViewLUT.m_xVRAMHandle,
 			this->m_xSkyViewLUT.RTV().m_xImageViewHandle, this->m_xSkyViewLUT.DSV().m_xImageViewHandle,
 			this->m_xSkyViewLUT.SRV().m_xImageViewHandle, this->m_xSkyViewLUT.UAV(0).m_xImageViewHandle);
+	}
+	if (this->m_xPreviewSkyViewLUT.m_xVRAMHandle.IsValid())
+	{
+		g_xEngine.FluxMemory().QueueVRAMDeletion(this->m_xPreviewSkyViewLUT.m_xVRAMHandle,
+			this->m_xPreviewSkyViewLUT.RTV().m_xImageViewHandle, this->m_xPreviewSkyViewLUT.DSV().m_xImageViewHandle,
+			this->m_xPreviewSkyViewLUT.SRV().m_xImageViewHandle, this->m_xPreviewSkyViewLUT.UAV(0).m_xImageViewHandle);
 	}
 }
 
@@ -300,7 +312,14 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 			Flux_ShaderBinder xBinder(*pxCommandList);
 			namespace SkyAtmos = Flux_Generated_Skybox::SkyboxAtmosphere;
 			xBinder.BindCBV(SkyAtmos::hAtmosphereConstants, &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
-			xBinder.BindSRV(SkyAtmos::hg_xSkyViewLUT, &xSkybox.m_xSkyViewLUT.SRV());
+			// Per-view LUT select: the sky-view LUT is camera+sun dependent and
+			// the preview view raymarches its own copy from its own sun ("Skybox
+			// Sky-View LUT (Preview)"); the main view keeps m_xSkyViewLUT.
+			Flux_RenderAttachment& xSkyViewLUT =
+				(Flux_RenderGraph::GetCurrentRecordingPassViewSlot() == kuFluxViewSlotPreview)
+					? xSkybox.m_xPreviewSkyViewLUT
+					: xSkybox.m_xSkyViewLUT;
+			xBinder.BindSRV(SkyAtmos::hg_xSkyViewLUT, &xSkyViewLUT.SRV());
 		}
 
 		pxCommandList->DrawIndexed(6);
@@ -373,6 +392,12 @@ static void ExecuteSkyViewLUT(Flux_CommandBuffer* pxCommandList, void*)
 
 void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
+	// Reset the preview sky-view LUT writer handle every setup: it must be valid
+	// ONLY when the pass exists in the CURRENT graph generation (it is assigned
+	// below only while the preview view is active), so UpdateGraphPassEnables'
+	// IsValid() gate can never touch a stale handle.
+	this->m_xPreviewSkyViewLUTPassHandle = {};
+
 	// Transmittance LUT generation (256x64). Camera-independent; runs only when
 	// the LUT needs a refresh (gated by UpdateGraphPassEnables). Declared before
 	// the "Skybox" pass for producer-before-consumer; the Read/Write edge below
@@ -416,6 +441,34 @@ void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Reads (this->m_xSkyViewLUT,                                  RESOURCE_ACCESS_READ_SRV)
 		.Prepare(PreExecuteSkybox)
 		.ClearTargets();
+
+	// Preview view (S5a/S5c): the same sky draw over the preview view's G-buffer —
+	// the record callback reconstructs rays from the bound per-view g_xView, so
+	// the preview camera comes for free. The transmittance LUT stays shared
+	// (camera-independent); the sky-view LUT is per-view — the pass below
+	// regenerates the preview copy against the PREVIEW view's own sun (its
+	// .View(preview) selects that slot's g_xView in the shader), and
+	// ExecuteSkybox selects the LUT by recording view slot.
+	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	{
+		// Enabled with the same cadence as the main sky-view pass — see
+		// UpdateGraphPassEnables (which gates on this handle's validity).
+		this->m_xPreviewSkyViewLUTPassHandle = xGraph.AddPass("Skybox Sky-View LUT (Preview)", ExecuteSkyViewLUT)
+			.View(kuFluxViewSlotPreview)
+			.ClearTargets()
+			.Reads (this->m_xTransmittanceLUT,  RESOURCE_ACCESS_READ_SRV)
+			.Writes(this->m_xPreviewSkyViewLUT, RESOURCE_ACCESS_WRITE_RTV);
+
+		xGraph.AddPass("Skybox (Preview)", ExecuteSkybox)
+			.View(kuFluxViewSlotPreview)
+			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE,        kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
+			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
+			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL,       kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
+			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE,       kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
+			.Writes(xGraphics.GetDepthAttachment(kuFluxViewSlotPreview),                         RESOURCE_ACCESS_WRITE_DSV)
+			.Reads (this->m_xPreviewSkyViewLUT,                                                  RESOURCE_ACCESS_READ_SRV)
+			.ClearTargets();
+	}
 }
 
 void Flux_SkyboxImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
@@ -454,6 +507,15 @@ void Flux_SkyboxImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 	// never sampled.
 	const bool bRunSkyView = IsAtmosphereEnabled() || xGraph.IsDirty();
 	xGraph.SetEnabled(m_xSkyViewLUTPassHandle, bRunSkyView);
+
+	// Preview sky-view LUT writer: identical cadence to the main pass. The
+	// handle is valid ONLY when the pass was added by the CURRENT setup (it is
+	// reset at the top of SetupRenderGraph and assigned only while the preview
+	// view is active that compile), so this never touches a stale handle.
+	if (m_xPreviewSkyViewLUTPassHandle.IsValid())
+	{
+		xGraph.SetEnabled(m_xPreviewSkyViewLUTPassHandle, bRunSkyView);
+	}
 }
 
 // Setters (continuous parameters; on/off toggles live in Zenith_GraphicsOptions)

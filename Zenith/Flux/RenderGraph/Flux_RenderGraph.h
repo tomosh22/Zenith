@@ -52,6 +52,12 @@ struct Flux_RenderGraph_Pass
     Flux_RenderGraph_OnRecordFunc m_pfnOnRecord = nullptr;
     Flux_RenderGraph_OnPrepareFunc m_pfnOnPrepare = nullptr;
     void* m_pUserData = nullptr;
+    // The render-view slot this pass renders (Flux/RenderViews/Flux_RenderViews.h).
+    // Selects which persistent VIEW descriptor-set instance the backend binds while
+    // recording this pass (BindPersistentSpineSets reads it via the recording-pass
+    // TLS). Default 0 = the main camera; cascade passes use slots 1..N, the preview
+    // its fixed slot. Declared via Flux_PassBuilder::View(u).
+    u_int m_uViewSlot = 0;
     u_int m_uTopologicalOrder = UINT32_MAX;
     bool m_bIsCompute = false;
     bool m_bEnabled = true;
@@ -139,6 +145,8 @@ public:
     Flux_PassBuilder&& DependsOn (Flux_PassHandle xDependency) &&;
     Flux_PassBuilder&& ClearTargets(bool bClear = true) &&;
     Flux_PassBuilder&& Prepare   (Flux_RenderGraph_OnPrepareFunc pfnPrepare) &&;
+    // Declare the render-view slot this pass renders (default 0 = main camera).
+    Flux_PassBuilder&& View      (u_int uViewSlot) &&;
 
     // Typed user data — packs T bitwise into the pass's void* m_pUserData slot.
     // Retrieve via Flux_UnpackUserData<T>(pUserData) in the record callback.
@@ -308,6 +316,10 @@ public:
     // this pass?") without threading the pass through every Flux_ShaderBinder
     // call. Null outside a pass's recording window.
     static const Flux_RenderGraph_Pass* GetCurrentRecordingPass();
+    // The recording pass's declared render-view slot; 0 (main) outside a pass's
+    // recording window (e.g. the present blit). The backend's persistent-set bind
+    // reads this to select the pass's VIEW descriptor-set instance.
+    static u_int GetCurrentRecordingPassViewSlot();
     // Scoped guard — sets TLS to the pass on construction, restores prior value
     // (usually nullptr) on destruction. Used by RecordPassInto.
     class CurrentPassScope
@@ -376,6 +388,7 @@ public:
     void DependsOn(Flux_PassHandle xDependentPass, Flux_PassHandle xDependencyPass);
     void SetPrepare(Flux_PassHandle xPass, Flux_RenderGraph_OnPrepareFunc pfnOnPrepare);
     void SetClear(Flux_PassHandle xPass, bool bClearTargets);
+    void SetPassView(Flux_PassHandle xPass, u_int uViewSlot);
 
 private:
 

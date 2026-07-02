@@ -38,8 +38,8 @@ const Zenith_Vector<Flux_ViewSetBinding>& Flux_GetViewSetBindingRegistry()
 		// INVISIBLE by contract (host-coherent; visibility via the submit barrier), exactly
 		// like g_xView / g_axMaterials — so it is CPU_GLOBAL_BUFFER (no graph Read() demanded).
 		// Not flagged per-camera: although the cascade fit uses the main camera's frustum,
-		// the only secondary view (MaterialPreview) disables shadows — same view-sharing
-		// rationale as g_xCSM above (see kbFluxMultiViewSupported).
+		// secondary views disable shadow sampling via their per-view flags — same
+		// view-sharing rationale as g_xCSM above (see kbFluxPerViewSharedResourcesSupported).
 		xReg.PushBack({ "g_xShadowMatrices", Flux_PersistentSetLayouts::kuSetView,
 			FLUX_VIEWSET_SOURCE_CPU_GLOBAL_BUFFER, nullptr, nullptr });
 		// Phase 5.4: clustered-lighting read buffers. g_xLightBuffer is a frame-indexed
@@ -71,16 +71,17 @@ const Zenith_Vector<Flux_ViewSetBinding>& Flux_GetViewSetBindingRegistry()
 		xReg.PushBack({ "g_xPrefilteredMap", Flux_PersistentSetLayouts::kuSetView, FLUX_VIEWSET_SOURCE_GRAPH_RESOURCE,
 			[]() -> Flux_VRAMHandle { return g_xEngine.IBL().GetPrefilteredMapSRV().m_xVRAMHandle; }, nullptr });
 
-		// Per-camera view-sharing guard (W2): with multi-view (Phase 5.6) unsupported the
-		// VIEW set is shared by every view, so a per-camera resource here would alias the
-		// main camera for secondary views (MaterialPreview). Fail loud at build-of-registry
-		// rather than render silently wrong. No per-camera VIEW row exists today (CSM is
-		// view-invariant); this guards future promotions.
+		// Per-camera view-sharing guard (W2): VIEW bindings 1-8 are REPLICATED-SHARED
+		// across every render view's set (only binding 0, g_xView, is per-view), so a
+		// per-camera resource here would alias the main camera for secondary views.
+		// Fail loud at build-of-registry rather than render silently wrong. No
+		// per-camera VIEW row exists today (CSM is view-invariant); this guards
+		// future promotions until a per-view WRITE path for bindings 1+ exists.
 		const char* szOffender = nullptr;
 		Zenith_Assert(Flux_ViewSetRegistryRespectsViewSharing(xReg.GetDataPointer(), xReg.GetSize(),
-			kbFluxMultiViewSupported, &szOffender),
-			"Flux_ViewSetBinding: per-camera member '%s' promoted into the SHARED persistent VIEW set while "
-			"multi-view (Phase 5.6) is unsupported — keep it per-pass (set 3) or implement 5.6.",
+			kbFluxPerViewSharedResourcesSupported, &szOffender),
+			"Flux_ViewSetBinding: per-camera member '%s' promoted into the persistent VIEW set while "
+			"bindings 1+ are replicated-shared across views — keep it per-pass (set 3) or add a per-view write path.",
 			szOffender ? szOffender : "?");
 		return xReg;
 	}();

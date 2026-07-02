@@ -24,14 +24,14 @@
 
 // Graph-owned transient handles — backing Flux_RenderAttachments are allocated
 // and destroyed by the render graph, sized from the descriptors set in
-// SetupRenderGraph.
-//   g_xEngine.SSR().m_xRayMarchHandle     — half-res RT0, RGB=colour, A=confidence
-//   g_xEngine.SSR().m_xRayMarchAuxHandle  — half-res RT1, RG=hitUV, B=travelDist, A=rayCount
-//   g_xEngine.SSR().m_xUpsampledHandle    — full-res RT0, bilateral 2x2 upsample of RT0
-//   g_xEngine.SSR().m_xUpsampledAuxHandle — full-res RT1, bilateral 2x2 upsample of RT1
-//   g_xEngine.SSR().m_xDenoiseHHandle     — full-res, H pass RT0: rgb=Σ(w·color), a=Σ(w)
-//   g_xEngine.SSR().m_xDenoiseHConfHandle — full-res, H pass RT1: r=Σ(w·conf) — Phase 3b accumulator
-//   g_xEngine.SSR().m_xDenoiseVHandle     — full-res, written by DenoiseV (final denoised output)
+// SetupRenderGraph. One set per render-view slot (S5b); [v] below is the slot:
+//   g_xEngine.SSR().m_axRayMarchHandles[v]     — half-res RT0, RGB=colour, A=confidence
+//   g_xEngine.SSR().m_axRayMarchAuxHandles[v]  — half-res RT1, RG=hitUV, B=travelDist, A=rayCount
+//   g_xEngine.SSR().m_axUpsampledHandles[v]    — full-res RT0, bilateral 2x2 upsample of RT0
+//   g_xEngine.SSR().m_axUpsampledAuxHandles[v] — full-res RT1, bilateral 2x2 upsample of RT1
+//   g_xEngine.SSR().m_axDenoiseHHandles[v]     — full-res, H pass RT0: rgb=Σ(w·color), a=Σ(w)
+//   g_xEngine.SSR().m_axDenoiseHConfHandles[v] — full-res, H pass RT1: r=Σ(w·conf) — Phase 3b accumulator
+//   g_xEngine.SSR().m_axDenoiseVHandles[v]     — full-res, written by DenoiseV (final denoised output)
 //
 // The Aux transients carry per-pixel hit metadata used by Phase 3b denoise
 // (BRDF reuse needs neighbour hit UV) and Phase 4 variance estimation
@@ -71,9 +71,9 @@ static struct SSRConstants
 	// Reflections are sharp within this distance, blur beyond
 	// 2.0m is appropriate for human-scale environments (floor reflections)
 	float m_fContactHardeningDist = 2.0f;
-	// Half-resolution ray-march target dimensions (populated each frame in
-	// UpdateSSRConstants from the swapchain). Passed via CBV so the shaders
-	// never need GetDimensions() on the bound textures.
+	// Half-resolution ray-march target dimensions (populated per view each
+	// frame in UpdateSSRConstants from the view's base dims). Passed via CBV
+	// so the shaders never need GetDimensions() on the bound textures.
 	float m_fHalfResWidth     = 0.0f;
 	float m_fHalfResHeight    = 0.0f;
 	float m_fRcpHalfResWidth  = 0.0f;
@@ -91,10 +91,10 @@ static struct SSRConstants
 	u_int m_uPad1             = 0u;
 	u_int m_uPad2             = 0u;
 	// Cached HiZ mip dimensions. Indexed by mip level. Each entry packs
-	// (width, height, 1/width, 1/height) into a float4. Populated each
-	// frame in UpdateSSRConstants from the swapchain — replaces in-shader
-	// GetDimensions(g_xHiZTex, mip, ...) calls in the ray-march loop.
-	// Array size matches Flux_HiZImpl::uHIZ_MAX_MIPS (12).
+	// (width, height, 1/width, 1/height) into a float4. Populated per view
+	// each frame in UpdateSSRConstants from the view's base dims — replaces
+	// in-shader GetDimensions(g_xHiZTex, mip, ...) calls in the ray-march
+	// loop. Array size matches Flux_HiZImpl::uHIZ_MAX_MIPS (12).
 	float m_axHiZMipSizes[12][4] = {};
 } dbg_xSSRConstants;
 
@@ -117,56 +117,56 @@ static struct SSRDenoiseConstants
 	float m_fPad1             = 0.0f;
 } dbg_xSSRDenoiseConstants;
 
-// SSR constants are uploaded once per frame (in the RayMarch pass) and the
-// CBV is then bound by every SSR pass that consumes them. Driven this way
-// instead of via push constants because the cached HiZ mip-size array
-// exceeds the 128-byte push limit, and to honour the project convention of
-// passing texture dimensions through CBVs rather than calling GetDimensions
-// inside shaders.
+// SSR constants are uploaded once per frame per view (in that view's RayMarch
+// pass) and the view's CBV is then bound by every SSR pass that consumes
+// them. Driven this way instead of via push constants because the cached HiZ
+// mip-size array exceeds the 128-byte push limit, and to honour the project
+// convention of passing texture dimensions through CBVs rather than calling
+// GetDimensions inside shaders.
 
 // ---- Helpers to get the right attachment regardless of path ----
 
-Flux_RenderAttachment& Flux_SSRImpl::GetRayMarchAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetRayMarchAttachment(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "Flux_SSRImpl::GetRayMarchAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xRayMarchHandle);
+	return m_pxGraph->GetTransientAttachment(m_axRayMarchHandles[uViewSlot]);
 }
-Flux_RenderAttachment& Flux_SSRImpl::GetRayMarchAuxAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetRayMarchAuxAttachment(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "Flux_SSRImpl::GetRayMarchAuxAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xRayMarchAuxHandle);
+	return m_pxGraph->GetTransientAttachment(m_axRayMarchAuxHandles[uViewSlot]);
 }
-Flux_RenderAttachment& Flux_SSRImpl::GetUpsampledAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetUpsampledAttachment(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "Flux_SSRImpl::GetUpsampledAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xUpsampledHandle);
+	return m_pxGraph->GetTransientAttachment(m_axUpsampledHandles[uViewSlot]);
 }
-Flux_RenderAttachment& Flux_SSRImpl::GetUpsampledAuxAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetUpsampledAuxAttachment(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "Flux_SSRImpl::GetUpsampledAuxAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xUpsampledAuxHandle);
+	return m_pxGraph->GetTransientAttachment(m_axUpsampledAuxHandles[uViewSlot]);
 }
-Flux_RenderAttachment& Flux_SSRImpl::GetDenoiseHAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetDenoiseHAttachment(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "Flux_SSRImpl::GetDenoiseHAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xDenoiseHHandle);
+	return m_pxGraph->GetTransientAttachment(m_axDenoiseHHandles[uViewSlot]);
 }
-Flux_RenderAttachment& Flux_SSRImpl::GetDenoiseHConfAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetDenoiseHConfAttachment(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "Flux_SSRImpl::GetDenoiseHConfAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xDenoiseHConfHandle);
+	return m_pxGraph->GetTransientAttachment(m_axDenoiseHConfHandles[uViewSlot]);
 }
-Flux_RenderAttachment& Flux_SSRImpl::GetDenoiseVAttachment()
+Flux_RenderAttachment& Flux_SSRImpl::GetDenoiseVAttachment(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "Flux_SSRImpl::GetDenoiseVAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xDenoiseVHandle);
+	return m_pxGraph->GetTransientAttachment(m_axDenoiseVHandles[uViewSlot]);
 }
 
 #ifdef ZENITH_DEBUG_VARIABLES
 // Debug-texture callbacks — resolved every ImGui draw so the preview follows
 // render-graph rebuilds (the transient SRVs are recreated on resize). Returning
 // nullptr before SetupRenderGraph / after Shutdown renders nothing, avoiding
-// the null-guard in the getters above.
+// the null-guard in the getters above. Main view only (default view slot).
 static const Flux_ShaderResourceView* DebugGetRayMarchSRV()
 {
 	auto& xSSR = g_xEngine.SSR();
@@ -247,8 +247,15 @@ void Flux_SSRImpl::Initialise()
 {
 	BuildPipelines();
 
-	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(
-		&dbg_xSSRConstants, sizeof(SSRConstants), m_xSSRConstantsBuffer);
+	// One SSR-constants CBV per render-view slot (S5b): each full-pipeline view
+	// uploads its own dims + HiZ mip-size table in UpdateSSRConstants. Inactive
+	// slots still carry a valid buffer descriptor (mirrors
+	// Flux_GraphicsImpl::m_axViewConstantsBuffers).
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(
+			&dbg_xSSRConstants, sizeof(SSRConstants), m_axSSRConstantsBuffers[u]);
+	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	g_xEngine.DebugVariables().AddUInt32({ "Flux", "SSR", "DebugMode" }, dbg_uDebugMode, 0, 100);  // Extended range for diagnostic mode 99
@@ -288,18 +295,21 @@ void Flux_SSRImpl::ShutdownImpl()
 {
 	// CRTP hook from Flux_ScreenSpaceEffectBase::Shutdown(); the base owns the
 	// m_bInitialised guard and the m_pxGraph / m_bInitialised resets.
-	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_xSSRConstantsBuffer);
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(m_axSSRConstantsBuffers[u]);
+	}
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSR shut down");
 }
 
-void Flux_SSRImpl::UpdateSSRConstants()
+void Flux_SSRImpl::UpdateSSRConstants(u_int uViewSlot)
 {
-	Flux_Swapchain& xSwapchain = g_xEngine.FluxSwapchain();
-
-	// Update constants from debug variables and HiZ system
+	// View-independent refreshes on the debug-var-bound tuning struct. Every
+	// view's record callback writes the SAME values here (record callbacks can
+	// run on parallel workers), so the shared mutation is benign; every
+	// view-dependent field is overridden on the frame-local snapshot below.
 	dbg_xSSRConstants.m_uDebugMode = dbg_uDebugMode;
-	dbg_xSSRConstants.m_uHiZMipCount = g_xEngine.HiZ().GetMipCount();
 	// SSR has no temporal accumulation, so rotating the blue-noise field per
 	// frame produces visible shimmer rather than integrating across frames.
 	// The blue noise itself is still useful for spatial dithering, multi-ray
@@ -310,45 +320,61 @@ void Flux_SSRImpl::UpdateSSRConstants()
 	// underlying counter and surfaced this latent design mismatch.)
 	dbg_xSSRConstants.m_uFrameIndex = 0;
 
+	// Clamp start mip against the MAIN chain — this write-back is what the
+	// debug-var UI reflects; the per-view snapshot re-clamps below (a no-op
+	// for the main view).
+	const u_int uMainMipCount = g_xEngine.HiZ().GetMipCount();
+	if (dbg_xSSRConstants.m_uStartMip >= uMainMipCount)
+		dbg_xSSRConstants.m_uStartMip = uMainMipCount - 1;
+
+	// Frame-local per-view snapshot: dims + the HiZ mip chain come from THIS
+	// view (slot 0 = swapchain, preview = kuFLUX_PREVIEW_VIEW_SIZE²), so the
+	// main view's fill is byte-identical to the historical single-view path.
+	SSRConstants xConstants = dbg_xSSRConstants;
+	xConstants.m_uHiZMipCount = g_xEngine.HiZ().GetMipCount(uViewSlot);
+	if (xConstants.m_uStartMip >= xConstants.m_uHiZMipCount)
+		xConstants.m_uStartMip = xConstants.m_uHiZMipCount - 1;
+
 	// Resolution-based binary search iterations for sub-pixel hit precision.
 	// Half-res ray origins (Phase B) make sub-1/16-pixel precision wasted —
 	// the bilateral upsample reconstructs full-res positions anyway.
 	// 1080p (≤1920): 4 iterations
 	// 1440p / 4K (>1920): 5 iterations
-	u_int uWidth = xSwapchain.GetWidth();
-	dbg_xSSRConstants.m_uBinarySearchIterations = 4 + (uWidth > 1920 ? 1 : 0);
+	const u_int uFullWidth  = m_auViewWidths[uViewSlot];
+	const u_int uFullHeight = m_auViewHeights[uViewSlot];
+	xConstants.m_uBinarySearchIterations = 4 + (uFullWidth > 1920 ? 1 : 0);
 
-	// Clamp start mip to valid range
-	if (dbg_xSSRConstants.m_uStartMip >= dbg_xSSRConstants.m_uHiZMipCount)
-		dbg_xSSRConstants.m_uStartMip = dbg_xSSRConstants.m_uHiZMipCount - 1;
+	// Half-res ray-march output dimensions (matches the per-view half-res
+	// transient created in SetupViewPasses; both derive from the same base
+	// dims so they stay in sync).
+	const u_int uHalfWidth  = std::max(1u, uFullWidth  / 2u);
+	const u_int uHalfHeight = std::max(1u, uFullHeight / 2u);
+	xConstants.m_fHalfResWidth     = (float)uHalfWidth;
+	xConstants.m_fHalfResHeight    = (float)uHalfHeight;
+	xConstants.m_fRcpHalfResWidth  = 1.0f / (float)uHalfWidth;
+	xConstants.m_fRcpHalfResHeight = 1.0f / (float)uHalfHeight;
 
-	// Half-res ray-march output dimensions (matches the half-res transient
-	// created in SetupRenderGraph; both derive from the swapchain so they
-	// stay in sync).
-	const u_int uHalfWidth  = std::max(1u, xSwapchain.GetWidth()  / 2u);
-	const u_int uHalfHeight = std::max(1u, xSwapchain.GetHeight() / 2u);
-	dbg_xSSRConstants.m_fHalfResWidth     = (float)uHalfWidth;
-	dbg_xSSRConstants.m_fHalfResHeight    = (float)uHalfHeight;
-	dbg_xSSRConstants.m_fRcpHalfResWidth  = 1.0f / (float)uHalfWidth;
-	dbg_xSSRConstants.m_fRcpHalfResHeight = 1.0f / (float)uHalfHeight;
-
-	// HiZ per-mip dimensions. HiZ mip 0 matches the swapchain (the depth
-	// buffer); each subsequent mip is a 2x2 reduction. Pre-computing the
+	// HiZ per-mip dimensions. HiZ mip 0 matches the view's base dims (its
+	// depth buffer); each subsequent mip is a 2x2 reduction. Pre-computing the
 	// (size, rcp size) here means the ray-march shader doesn't need to
 	// call GetDimensions in its inner loop (project convention: dims
 	// flow through the CBV).
-	const u_int uFullWidth  = xSwapchain.GetWidth();
-	const u_int uFullHeight = xSwapchain.GetHeight();
-	const u_int uMipCount   = dbg_xSSRConstants.m_uHiZMipCount;
+	const u_int uMipCount = xConstants.m_uHiZMipCount;
 	for (u_int uMip = 0; uMip < uMipCount && uMip < 12u; ++uMip)
 	{
 		const u_int uW = std::max(1u, uFullWidth  >> uMip);
 		const u_int uH = std::max(1u, uFullHeight >> uMip);
-		dbg_xSSRConstants.m_axHiZMipSizes[uMip][0] = (float)uW;
-		dbg_xSSRConstants.m_axHiZMipSizes[uMip][1] = (float)uH;
-		dbg_xSSRConstants.m_axHiZMipSizes[uMip][2] = 1.0f / (float)uW;
-		dbg_xSSRConstants.m_axHiZMipSizes[uMip][3] = 1.0f / (float)uH;
+		xConstants.m_axHiZMipSizes[uMip][0] = (float)uW;
+		xConstants.m_axHiZMipSizes[uMip][1] = (float)uH;
+		xConstants.m_axHiZMipSizes[uMip][2] = 1.0f / (float)uW;
+		xConstants.m_axHiZMipSizes[uMip][3] = 1.0f / (float)uH;
 	}
+
+	// Upload straight to this view's CBV (the snapshot is frame-local). Every
+	// SSR pass for this view binds the same CBV without re-uploading.
+	g_xEngine.FluxMemory().UploadBufferData(
+		m_axSSRConstantsBuffers[uViewSlot].GetBuffer().m_xVRAMHandle,
+		&xConstants, sizeof(SSRConstants));
 }
 
 static void ExecuteSSRRayMarch(Flux_CommandBuffer* pxCommandList, void*)
@@ -361,26 +387,26 @@ static void ExecuteSSRRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 	if (!xSSR.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
-	xSSR.UpdateSSRConstants();
+	// The pass's declared view slot selects this view's chain (transients,
+	// CBV, G-buffer, HiZ pyramid).
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
 
-	// First SSR pass of the frame: refresh the CBV. The Resolve (and the
-	// new Upsample) pass binds the same CBV without re-uploading.
-	g_xEngine.FluxMemory().UploadBufferData(
-		xSSR.m_xSSRConstantsBuffer.GetBuffer().m_xVRAMHandle,
-		&dbg_xSSRConstants, sizeof(SSRConstants));
+	// First SSR pass of this view's chain: refresh + upload the view's CBV.
+	// The Upsample pass binds the same CBV without re-uploading.
+	xSSR.UpdateSSRConstants(uViewSlot);
 
 	xGraphics.BindFullscreenQuad(*pxCommandList, xSSR.m_xRayMarchPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	namespace RM = Flux_Generated_SSR::SSR_RayMarch;
-	xBinder.BindCBV(RM::hSSRConstants,   &xSSR.m_xSSRConstantsBuffer.GetCBV());
+	xBinder.BindCBV(RM::hSSRConstants,   &xSSR.m_axSSRConstantsBuffers[uViewSlot].GetCBV());
 
-	xBinder.BindSRV(RM::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(RM::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(RM::hg_xMaterialTex, xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(RM::hg_xHiZTex, &g_xEngine.HiZ().GetHiZSRV());
-	xBinder.BindSRV(RM::hg_xDiffuseTex, xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(RM::hg_xDepthTex, xGraphics.GetDepthStencilSRV(uViewSlot));
+	xBinder.BindSRV(RM::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT, uViewSlot));
+	xBinder.BindSRV(RM::hg_xMaterialTex, xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL, uViewSlot));
+	xBinder.BindSRV(RM::hg_xHiZTex, &g_xEngine.HiZ().GetHiZSRV(uViewSlot));
+	xBinder.BindSRV(RM::hg_xDiffuseTex, xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE, uViewSlot));
 	xBinder.BindSRV(RM::hg_xBlueNoiseTex, &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
 
 	pxCommandList->DrawIndexed(6);
@@ -394,21 +420,23 @@ static void ExecuteSSRUpsample(Flux_CommandBuffer* pxCommandList, void*)
 	if (!xSSR.IsEnabled() || !g_xEngine.HiZ().IsEnabled())
 		return;
 
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
 	xGraphics.BindFullscreenQuad(*pxCommandList, xSSR.m_xUpsamplePipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	namespace US = Flux_Generated_SSR::SSR_Upsample;
-	// Half-res dimensions live in the SSR CBV — the upsample shader reads
-	// them from there rather than calling GetDimensions on g_xSSRTex.
-	xBinder.BindCBV(US::hSSRConstants, &xSSR.m_xSSRConstantsBuffer.GetCBV());
+	// Half-res dimensions live in the view's SSR CBV — the upsample shader
+	// reads them from there rather than calling GetDimensions on g_xSSRTex.
+	xBinder.BindCBV(US::hSSRConstants, &xSSR.m_axSSRConstantsBuffers[uViewSlot].GetCBV());
 
-	xBinder.BindSRV(US::hg_xSSRTex,      &xSSR.GetRayMarchAttachment().SRV());
-	xBinder.BindSRV(US::hg_xDepthTex,    xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(US::hg_xSSRAuxTex,   &xSSR.GetRayMarchAuxAttachment().SRV());
+	xBinder.BindSRV(US::hg_xSSRTex,      &xSSR.GetRayMarchAttachment(uViewSlot).SRV());
+	xBinder.BindSRV(US::hg_xDepthTex,    xGraphics.GetDepthStencilSRV(uViewSlot));
+	xBinder.BindSRV(US::hg_xSSRAuxTex,   &xSSR.GetRayMarchAuxAttachment(uViewSlot).SRV());
 	// Phase 5 — KNN composite-similarity scoring needs full-res normals + material.
-	xBinder.BindSRV(US::hg_xNormalsTex,  xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(US::hg_xMaterialTex, xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(US::hg_xNormalsTex,  xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT, uViewSlot));
+	xBinder.BindSRV(US::hg_xMaterialTex, xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL, uViewSlot));
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -421,19 +449,25 @@ static void ExecuteSSRDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 	if (!xSSR.IsEnabled() || !g_xEngine.HiZ().IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return;
 
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
 	xGraphics.BindFullscreenQuad(*pxCommandList, xSSR.m_xDenoiseHPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	namespace DH = Flux_Generated_SSR::SSR_DenoiseH;
-	dbg_xSSRDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? 1u : 0u;
-	xBinder.BindDrawConstants(DH::hPushConstants, &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
+	// Frame-local snapshot so the per-view (main + preview) records — which run on
+	// parallel workers — never write the shared file-scope dbg_xSSRDenoiseConstants
+	// (mirrors the RayMarch snapshot at UpdateSSRConstants / the SSGI frame-local).
+	SSRDenoiseConstants xLocal = dbg_xSSRDenoiseConstants;
+	xLocal.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? 1u : 0u;
+	xBinder.BindDrawConstants(DH::hPushConstants, &xLocal, sizeof(SSRDenoiseConstants));
 
-	xBinder.BindSRV(DH::hg_xSSRUpsampledTex,    &xSSR.GetUpsampledAttachment().SRV());
-	xBinder.BindSRV(DH::hg_xDepthTex,           xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(DH::hg_xNormalsTex,         xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(DH::hg_xMaterialTex,        xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(DH::hg_xSSRUpsampledAuxTex, &xSSR.GetUpsampledAuxAttachment().SRV());
+	xBinder.BindSRV(DH::hg_xSSRUpsampledTex,    &xSSR.GetUpsampledAttachment(uViewSlot).SRV());
+	xBinder.BindSRV(DH::hg_xDepthTex,           xGraphics.GetDepthStencilSRV(uViewSlot));
+	xBinder.BindSRV(DH::hg_xNormalsTex,         xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT, uViewSlot));
+	xBinder.BindSRV(DH::hg_xMaterialTex,        xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL, uViewSlot));
+	xBinder.BindSRV(DH::hg_xSSRUpsampledAuxTex, &xSSR.GetUpsampledAuxAttachment(uViewSlot).SRV());
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -446,39 +480,59 @@ static void ExecuteSSRDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 	if (!xSSR.IsEnabled() || !g_xEngine.HiZ().IsEnabled() || !Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled)
 		return;
 
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
 	xGraphics.BindFullscreenQuad(*pxCommandList, xSSR.m_xDenoiseVPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	namespace DV = Flux_Generated_SSR::SSR_DenoiseV;
-	dbg_xSSRDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? 1u : 0u;
-	xBinder.BindDrawConstants(DV::hPushConstants, &dbg_xSSRDenoiseConstants, sizeof(SSRDenoiseConstants));
+	// Frame-local snapshot (see ExecuteSSRDenoiseH): no shared write under parallel per-view record.
+	SSRDenoiseConstants xLocal = dbg_xSSRDenoiseConstants;
+	xLocal.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled ? 1u : 0u;
+	xBinder.BindDrawConstants(DV::hPushConstants, &xLocal, sizeof(SSRDenoiseConstants));
 
-	xBinder.BindSRV(DV::hg_xSSRDenoiseHColTex,  &xSSR.GetDenoiseHAttachment().SRV());
-	xBinder.BindSRV(DV::hg_xDepthTex,           xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(DV::hg_xNormalsTex,         xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(DV::hg_xMaterialTex,        xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(DV::hg_xSSRUpsampledAuxTex, &xSSR.GetUpsampledAuxAttachment().SRV());
-	xBinder.BindSRV(DV::hg_xSSRDenoiseHConfTex, &xSSR.GetDenoiseHConfAttachment().SRV());
-	xBinder.BindSRV(DV::hg_xSSRUpsampledTex,    &xSSR.GetUpsampledAttachment().SRV());
+	xBinder.BindSRV(DV::hg_xSSRDenoiseHColTex,  &xSSR.GetDenoiseHAttachment(uViewSlot).SRV());
+	xBinder.BindSRV(DV::hg_xDepthTex,           xGraphics.GetDepthStencilSRV(uViewSlot));
+	xBinder.BindSRV(DV::hg_xNormalsTex,         xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT, uViewSlot));
+	xBinder.BindSRV(DV::hg_xMaterialTex,        xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL, uViewSlot));
+	xBinder.BindSRV(DV::hg_xSSRUpsampledAuxTex, &xSSR.GetUpsampledAuxAttachment(uViewSlot).SRV());
+	xBinder.BindSRV(DV::hg_xSSRDenoiseHConfTex, &xSSR.GetDenoiseHConfAttachment(uViewSlot).SRV());
+	xBinder.BindSRV(DV::hg_xSSRUpsampledTex,    &xSSR.GetUpsampledAttachment(uViewSlot).SRV());
 
 	pxCommandList->DrawIndexed(6);
 }
 
-// Pass handles so ApplyBlurSelectionToGraph can toggle their enable bits when
-// m_bSSRRoughnessBlurEnabled changes — both H and V toggle together.
-// Last value seen by ApplyBlurSelectionToGraph — change triggers a graph rebuild.
-// Handle committed at SetupRenderGraph exit. GetReflectionHandle asserts the
-// live toggle still resolves to this handle — otherwise a toggle has happened
-// without a corresponding g_xEngine.FluxRenderer().RequestGraphRebuild(), which would leave the
-// deferred pass's declared Read referencing the stale transient.
+// The H/V denoise pass handles are locals in SetupViewPasses (their enable
+// bits are set right after declaration). Per-view committed handles are
+// re-seeded at SetupRenderGraph exit; GetReflectionHandle asserts the live
+// toggle still resolves to the committed handle — otherwise a toggle has
+// happened without a corresponding g_xEngine.FluxRenderer().RequestGraphRebuild(),
+// which would leave the deferred pass's declared Read referencing the stale
+// transient.
 
 void Flux_SSRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	m_pxGraph = &xGraph;
 
+	// Main view at swapchain dims (byte-equivalent to the historical
+	// single-view path), then the preview view at its fixed 512² dims — only
+	// while active, so its transients exist exactly when its passes do (the
+	// graph's unused-transient validation demands this).
 	Flux_Swapchain& xSwapchain = g_xEngine.FluxSwapchain();
+	SetupViewPasses(xGraph, kuFluxViewSlotMain, xSwapchain.GetWidth(), xSwapchain.GetHeight());
+	if (g_xEngine.FluxGraphics().RenderViews().IsViewActive(kuFluxViewSlotPreview))
+		SetupViewPasses(xGraph, kuFluxViewSlotPreview, kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
+}
+
+void Flux_SSRImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight)
+{
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+
+	// Per-view base dims — UpdateSSRConstants derives the half-res + HiZ
+	// mip-size CBV fields from these at record time.
+	m_auViewWidths[uViewSlot]  = uWidth;
+	m_auViewHeights[uViewSlot] = uHeight;
 
 	// Three-pass SSR pipeline (mirrors SSGI):
 	//   RayMarch (half-res) → Upsample (full-res) → Resolve (full-res, optional)
@@ -486,97 +540,109 @@ void Flux_SSRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// pass is a depth-weighted bilateral 2x2 reconstruction to full-res; it
 	// is mandatory so the deferred consumer always reads a full-res image.
 	Flux_TransientTextureDesc xHalfDesc;
-	xHalfDesc.m_uWidth       = std::max(1u, xSwapchain.GetWidth()  / 2u);
-	xHalfDesc.m_uHeight      = std::max(1u, xSwapchain.GetHeight() / 2u);
+	xHalfDesc.m_uWidth       = std::max(1u, uWidth  / 2u);
+	xHalfDesc.m_uHeight      = std::max(1u, uHeight / 2u);
 	xHalfDesc.m_eFormat      = SSR_FORMAT;
 	xHalfDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 
 	Flux_TransientTextureDesc xFullDesc = xHalfDesc;
-	xFullDesc.m_uWidth  = xSwapchain.GetWidth();
-	xFullDesc.m_uHeight = xSwapchain.GetHeight();
+	xFullDesc.m_uWidth  = uWidth;
+	xFullDesc.m_uHeight = uHeight;
 
-	m_xRayMarchHandle     = xGraph.CreateTransient(xHalfDesc);
-	m_xRayMarchAuxHandle  = xGraph.CreateTransient(xHalfDesc);
-	m_xUpsampledHandle    = xGraph.CreateTransient(xFullDesc);
-	m_xUpsampledAuxHandle = xGraph.CreateTransient(xFullDesc);
-	m_xDenoiseHHandle     = xGraph.CreateTransient(xFullDesc);
-	m_xDenoiseHConfHandle = xGraph.CreateTransient(xFullDesc);
-	m_xDenoiseVHandle     = xGraph.CreateTransient(xFullDesc);
+	m_axRayMarchHandles[uViewSlot]     = xGraph.CreateTransient(xHalfDesc);
+	m_axRayMarchAuxHandles[uViewSlot]  = xGraph.CreateTransient(xHalfDesc);
+	m_axUpsampledHandles[uViewSlot]    = xGraph.CreateTransient(xFullDesc);
+	m_axUpsampledAuxHandles[uViewSlot] = xGraph.CreateTransient(xFullDesc);
+	m_axDenoiseHHandles[uViewSlot]     = xGraph.CreateTransient(xFullDesc);
+	m_axDenoiseHConfHandles[uViewSlot] = xGraph.CreateTransient(xFullDesc);
+	m_axDenoiseVHandles[uViewSlot]     = xGraph.CreateTransient(xFullDesc);
+
+	// Pass names must be per-view unique + static-lifetime (duplicate names
+	// are a hard assert). View 0 keeps the historical names (profiling /
+	// FindPass stability).
+	const bool bMainView = (uViewSlot == kuFluxViewSlotMain);
 
 	// RayMarch pass — first writer of its targets; clear so the initial
 	// render-pass LoadOp is valid. Dual-MRT: order matters — RT0 = colour,
 	// RT1 = aux metadata (must match the shader's SV_Target indices).
-	xGraph.AddPass("SSR RayMarch", ExecuteSSRRayMarch)
+	xGraph.AddPass(bMainView ? "SSR RayMarch" : "SSR RayMarch (Preview)", ExecuteSSRRayMarch)
+		.View(uViewSlot)
 		.ClearTargets()
-		.Reads          (xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (g_xEngine.HiZ().GetHiZAttachment(),                   RESOURCE_ACCESS_READ_SRV, 0, g_xEngine.HiZ().m_uMipCount)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_xRayMarchHandle,                                     RESOURCE_ACCESS_WRITE_RTV)
-		.WritesTransient(m_xRayMarchAuxHandle,                                  RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.HiZ().GetHiZAttachment(uViewSlot),                     RESOURCE_ACCESS_READ_SRV, 0, g_xEngine.HiZ().GetMipCount(uViewSlot))
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uViewSlot), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL, uViewSlot),       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE, uViewSlot),        RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_axRayMarchHandles[uViewSlot],                                  RESOURCE_ACCESS_WRITE_RTV)
+		.WritesTransient(m_axRayMarchAuxHandles[uViewSlot],                               RESOURCE_ACCESS_WRITE_RTV);
 
 	// Upsample pass — depth-weighted bilateral 2x2 from half to full-res.
 	// Always enabled; produces the canonical full-res SSR output. Same dual-MRT
 	// shape as RayMarch — RT0 colour, RT1 aux — both reconstructed with the
 	// same depth weights so they stay spatially aligned.
-	xGraph.AddPass("SSR Upsample", ExecuteSSRUpsample)
+	xGraph.AddPass(bMainView ? "SSR Upsample" : "SSR Upsample (Preview)", ExecuteSSRUpsample)
+		.View(uViewSlot)
 		.ClearTargets()
-		.Reads          (xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xRayMarchHandle,                                     RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xRayMarchAuxHandle,                                  RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_xUpsampledHandle,                                    RESOURCE_ACCESS_WRITE_RTV)
-		.WritesTransient(m_xUpsampledAuxHandle,                                 RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uViewSlot), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL, uViewSlot),       RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axRayMarchHandles[uViewSlot],                                  RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axRayMarchAuxHandles[uViewSlot],                               RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_axUpsampledHandles[uViewSlot],                                 RESOURCE_ACCESS_WRITE_RTV)
+		.WritesTransient(m_axUpsampledAuxHandles[uViewSlot],                              RESOURCE_ACCESS_WRITE_RTV);
 
 	// DenoiseH pass — separable bilateral with BRDF reuse, horizontal half.
 	// Dual-MRT output (Phase 3b): RT0 carries the (Σw·color, Σw) accumulator
 	// pair, RT1 carries the (Σw·conf) parallel accumulator. V applies the
-	// final ratio. ApplyBlurSelectionToGraph toggles its enable bit based on
-	// m_bSSRRoughnessBlurEnabled. Roughness gating inside the shader skips
-	// smooth/rough pixels.
-	m_xDenoiseHPass = xGraph.AddPass("SSR DenoiseH", ExecuteSSRDenoiseH)
+	// final ratio. The enable bit tracks m_bSSRRoughnessBlurEnabled. Roughness
+	// gating inside the shader skips smooth/rough pixels.
+	const Flux_PassHandle xDenoiseHPass = xGraph.AddPass(bMainView ? "SSR DenoiseH" : "SSR DenoiseH (Preview)", ExecuteSSRDenoiseH)
+		.View(uViewSlot)
 		.ClearTargets()
-		.Reads          (xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xUpsampledHandle,                                    RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xUpsampledAuxHandle,                                 RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_xDenoiseHHandle,                                     RESOURCE_ACCESS_WRITE_RTV)
-		.WritesTransient(m_xDenoiseHConfHandle,                                 RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uViewSlot), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL, uViewSlot),       RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axUpsampledHandles[uViewSlot],                                 RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axUpsampledAuxHandles[uViewSlot],                              RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_axDenoiseHHandles[uViewSlot],                                  RESOURCE_ACCESS_WRITE_RTV)
+		.WritesTransient(m_axDenoiseHConfHandles[uViewSlot],                              RESOURCE_ACCESS_WRITE_RTV);
 
 	// DenoiseV pass — vertical half, reads H's dual-MRT accumulators + the
 	// upsampled colour (passthrough fallback) + aux (BRDF reuse), applies its
 	// own bilateral × BRDF kernel, divides numerator/denominator at the end,
 	// and outputs the final RGBA the deferred shader consumes.
-	m_xDenoiseVPass = xGraph.AddPass("SSR DenoiseV", ExecuteSSRDenoiseV)
+	const Flux_PassHandle xDenoiseVPass = xGraph.AddPass(bMainView ? "SSR DenoiseV" : "SSR DenoiseV (Preview)", ExecuteSSRDenoiseV)
+		.View(uViewSlot)
 		.ClearTargets()
-		.Reads          (xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xUpsampledHandle,                                    RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xUpsampledAuxHandle,                                 RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xDenoiseHHandle,                                     RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xDenoiseHConfHandle,                                 RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_xDenoiseVHandle,                                     RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uViewSlot), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL, uViewSlot),       RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axUpsampledHandles[uViewSlot],                                 RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axUpsampledAuxHandles[uViewSlot],                              RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axDenoiseHHandles[uViewSlot],                                  RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axDenoiseHConfHandles[uViewSlot],                              RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_axDenoiseVHandles[uViewSlot],                                  RESOURCE_ACCESS_WRITE_RTV);
 
 	const bool bRoughnessBlur = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled;
-	xGraph.SetEnabled(m_xDenoiseHPass, bRoughnessBlur);
-	xGraph.SetEnabled(m_xDenoiseVPass, bRoughnessBlur);
+	xGraph.SetEnabled(xDenoiseHPass, bRoughnessBlur);
+	xGraph.SetEnabled(xDenoiseVPass, bRoughnessBlur);
 
-	// Commit the handle the deferred pass will now read. GetReflectionHandle
-	// resolves to this value — any runtime toggle without a matching
-	// g_xEngine.FluxRenderer().RequestGraphRebuild() trips at the point of the
-	// mistake, not downstream in Validate() or AssertBoundResourceDeclared.
-	// When denoise is off, deferred reads the upsampled (full-res) output —
-	// never the raw half-res raymarch. The selection is the enabled bool itself.
-	m_xReflectionSelector.Commit(m_xDenoiseVHandle, m_xUpsampledHandle, bRoughnessBlur, bRoughnessBlur);
+	// Commit the handle the deferred pass will now read for this view.
+	// GetReflectionHandle resolves to this value — any runtime toggle without a
+	// matching g_xEngine.FluxRenderer().RequestGraphRebuild() trips at the point
+	// of the mistake, not downstream in Validate() or
+	// AssertBoundResourceDeclared. When denoise is off, deferred reads the
+	// upsampled (full-res) output — never the raw half-res raymarch. The
+	// selection is the enabled bool itself.
+	m_axReflectionSelectors[uViewSlot].Commit(m_axDenoiseVHandles[uViewSlot], m_axUpsampledHandles[uViewSlot], bRoughnessBlur, bRoughnessBlur);
 }
 
 void Flux_SSRImpl::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 {
-	if (!m_xReflectionSelector.RequestRebuildIfSelectionChanged(Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled))
+	// The selection (the blur toggle) is view-independent — every view's
+	// selector commits with the same bool — so checking the MAIN slot's
+	// selector covers all views.
+	if (!m_axReflectionSelectors[kuFluxViewSlotMain].RequestRebuildIfSelectionChanged(Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled))
 		return;
 
 	// Full graph rebuild — not just xGraph.MarkDirty() — because
@@ -589,13 +655,13 @@ void Flux_SSRImpl::ApplyBlurSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 	// g_xEngine.FluxRenderer().RequestGraphRebuild() re-runs every subsystem's SetupRenderGraph
 	// on the next frame, so the deferred pass's declared Read resolves to the
 	// handle matching the new m_bSSRRoughnessBlurEnabled value. SetupRenderGraph
-	// above will also re-Commit the selector (re-seeding the committed handle)
-	// and re-set the resolve pass's enable bit.
+	// above will also re-Commit the per-view selectors (re-seeding the committed
+	// handles) and re-set the denoise passes' enable bits.
 	g_xEngine.FluxRenderer().RequestGraphRebuild();
 }
 
 
-Flux_ShaderResourceView& Flux_SSRImpl::GetReflectionSRV()
+Flux_ShaderResourceView& Flux_SSRImpl::GetReflectionSRV(u_int uViewSlot)
 {
 	// Resolve from the committed handle — the value GetReflectionHandle()
 	// returned when Flux_DeferredShading declared its Read — NOT the live
@@ -603,11 +669,10 @@ Flux_ShaderResourceView& Flux_SSRImpl::GetReflectionSRV()
 	// landing (next frame), the live option diverges from the graph for one
 	// frame; resolving from the option trips AssertBoundResourceDeclared.
 	Zenith_Assert(m_pxGraph, "GetReflectionSRV: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(GetReflectionHandle()).SRV();
+	return m_pxGraph->GetTransientAttachment(GetReflectionHandle(uViewSlot)).SRV();
 }
 
 bool Flux_SSRImpl::IsEnabled() const
 {
 	return Zenith_GraphicsOptions::Get().m_bSSREnabled && m_bInitialised;
 }
-

@@ -82,20 +82,20 @@ static struct SSGIDenoiseConstants
 // Denoise is split into two separable sub-passes (H then V) for a cheap
 // approximation of the 2D joint bilateral. Both share the same CB layout.
 
-Flux_RenderAttachment& Flux_SSGIImpl::GetRawResultAttachment()
+Flux_RenderAttachment& Flux_SSGIImpl::GetRawResultAttachment(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "GetRawResultAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xRawResultHandle);
+	return m_pxGraph->GetTransientAttachment(m_axRawResultHandles[uViewSlot]);
 }
-Flux_RenderAttachment& Flux_SSGIImpl::GetResolvedAttachment()
+Flux_RenderAttachment& Flux_SSGIImpl::GetResolvedAttachment(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "GetResolvedAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xResolvedHandle);
+	return m_pxGraph->GetTransientAttachment(m_axResolvedHandles[uViewSlot]);
 }
-Flux_RenderAttachment& Flux_SSGIImpl::GetDenoisedAttachment()
+Flux_RenderAttachment& Flux_SSGIImpl::GetDenoisedAttachment(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "GetDenoisedAttachment: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xDenoisedHandle);
+	return m_pxGraph->GetTransientAttachment(m_axDenoisedHandles[uViewSlot]);
 }
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -192,11 +192,13 @@ void Flux_SSGIImpl::ShutdownImpl()
 // Pulled out of UpdateSSGIConstants so the executes can build a per-frame
 // snapshot without mutating the debug-var-bound storage (which the ImGui UI
 // reads/writes every frame). The base value is the user-tuned 1080p target;
-// the effective value is bumped for higher screen resolutions and clamped.
-u_int Flux_SSGIImpl::ComputeEffectiveBinarySearchIterations() const
+// the effective value is bumped for higher VIEW resolutions and clamped
+// (slot 0 = the swapchain width captured at setup, so the main view is
+// unchanged; the preview's 512 base never bumps).
+u_int Flux_SSGIImpl::ComputeEffectiveBinarySearchIterations(u_int uViewSlot) const
 {
 	const u_int uBase = dbg_xSSGIConstants.m_uBinarySearchIterations;
-	const u_int uW    = g_xEngine.FluxSwapchain().GetWidth();
+	const u_int uW    = m_auViewWidths[uViewSlot];
 	const u_int uBumped = uBase + (uW > 1920u ? 1u : 0u) + (uW > 2560u ? 1u : 0u);
 	// Ceiling at 6 — diffuse GI doesn't need finer than ~1/64 px sub-pixel hits.
 	return uBumped > 6u ? 6u : uBumped;
@@ -204,6 +206,13 @@ u_int Flux_SSGIImpl::ComputeEffectiveBinarySearchIterations() const
 
 void Flux_SSGIImpl::UpdateSSGIConstants()
 {
+	// View-independent refreshes on the debug-var-bound tuning struct. Every
+	// view's record callback writes the SAME values here (record callbacks can
+	// run on parallel workers), so the shared mutation is benign; the
+	// view-dependent fields (HiZ mip count / start-mip clamp / iteration bump)
+	// are overridden on ExecuteSSGIRayMarch's frame-local snapshot. The MAIN
+	// chain's mip count + clamp stay here so the debug-var UI write-back is
+	// preserved.
 	dbg_xSSGIConstants.m_uDebugMode = dbg_uDebugMode;
 	dbg_xSSGIConstants.m_uHiZMipCount = g_xEngine.HiZ().GetMipCount();
 	// SSGI has no temporal accumulation, so rotating the blue-noise field per
@@ -231,6 +240,10 @@ static void ExecuteSSGIRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
+	// The pass's declared view slot selects this view's chain (transients,
+	// G-buffer, HiZ pyramid).
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
 	xSSGI.UpdateSSGIConstants();
 
 	xGraphics.BindFullscreenQuad(*pxCommandList, xSSGI.m_xRayMarchPipeline);
@@ -243,15 +256,21 @@ static void ExecuteSSGIRayMarch(Flux_CommandBuffer* pxCommandList, void*)
 	// system reads back into ImGui every frame — a write here would surprise
 	// the user with a different value than they typed).
 	SSGIConstants xFrameConstants = dbg_xSSGIConstants;
-	xFrameConstants.m_uBinarySearchIterations = xSSGI.ComputeEffectiveBinarySearchIterations();
+	xFrameConstants.m_uBinarySearchIterations = xSSGI.ComputeEffectiveBinarySearchIterations(uViewSlot);
+	// Per-view HiZ chain: the preview's 512² pyramid has fewer mips than the
+	// main chain — override the count + re-clamp the start mip on the
+	// snapshot (both no-ops for the main view).
+	xFrameConstants.m_uHiZMipCount = g_xEngine.HiZ().GetMipCount(uViewSlot);
+	if (xFrameConstants.m_uStartMip >= xFrameConstants.m_uHiZMipCount)
+		xFrameConstants.m_uStartMip = xFrameConstants.m_uHiZMipCount - 1;
 
 	xBinder.BindDrawConstants(RM::hSSGIConstants, &xFrameConstants, sizeof(SSGIConstants));
 
-	xBinder.BindSRV(RM::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(RM::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(RM::hg_xMaterialTex, xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(RM::hg_xHiZTex, &g_xEngine.HiZ().GetHiZSRV());
-	xBinder.BindSRV(RM::hg_xDiffuseTex, xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(RM::hg_xDepthTex, xGraphics.GetDepthStencilSRV(uViewSlot));
+	xBinder.BindSRV(RM::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT, uViewSlot));
+	xBinder.BindSRV(RM::hg_xMaterialTex, xGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL, uViewSlot));
+	xBinder.BindSRV(RM::hg_xHiZTex, &g_xEngine.HiZ().GetHiZSRV(uViewSlot));
+	xBinder.BindSRV(RM::hg_xDiffuseTex, xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE, uViewSlot));
 	xBinder.BindSRV(RM::hg_xBlueNoiseTex, &g_xEngine.VolumeFog().GetBlueNoiseTexture()->m_xSRV);
 
 	pxCommandList->DrawIndexed(6);
@@ -267,13 +286,15 @@ static void ExecuteSSGIUpsample(Flux_CommandBuffer* pxCommandList, void*)
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
 	xGraphics.BindFullscreenQuad(*pxCommandList, xSSGI.m_xUpsamplePipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace US = Flux_Generated_SSGI::SSGI_Upsample;
 
-	xBinder.BindSRV(US::hg_xSSGITex, &xSSGI.GetRawResultAttachment().SRV());
-	xBinder.BindSRV(US::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(US::hg_xSSGITex, &xSSGI.GetRawResultAttachment(uViewSlot).SRV());
+	xBinder.BindSRV(US::hg_xDepthTex, xGraphics.GetDepthStencilSRV(uViewSlot));
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -291,18 +312,24 @@ static void ExecuteSSGIDenoiseH(Flux_CommandBuffer* pxCommandList, void*)
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
 	xGraphics.BindFullscreenQuad(*pxCommandList, xSSGI.m_xDenoiseHPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace DH = Flux_Generated_SSGI::SSGI_DenoiseH;
 
-	dbg_xSSGIDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
-	xBinder.BindDrawConstants(DH::hPushConstants, &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
+	// Frame-local snapshot so the per-view (main + preview) records — which run on
+	// parallel workers — never write the shared file-scope dbg_xSSGIDenoiseConstants
+	// (mirrors the RayMarch frame-local snapshot in ExecuteSSGIRayMarch).
+	SSGIDenoiseConstants xLocal = dbg_xSSGIDenoiseConstants;
+	xLocal.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
+	xBinder.BindDrawConstants(DH::hPushConstants, &xLocal, sizeof(SSGIDenoiseConstants));
 
-	xBinder.BindSRV(DH::hg_xSSGITex,    &xSSGI.GetResolvedAttachment().SRV());
-	xBinder.BindSRV(DH::hg_xDepthTex,   xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(DH::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(DH::hg_xAlbedoTex,  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(DH::hg_xSSGITex,    &xSSGI.GetResolvedAttachment(uViewSlot).SRV());
+	xBinder.BindSRV(DH::hg_xDepthTex,   xGraphics.GetDepthStencilSRV(uViewSlot));
+	xBinder.BindSRV(DH::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT, uViewSlot));
+	xBinder.BindSRV(DH::hg_xAlbedoTex,  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE, uViewSlot));
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -319,43 +346,61 @@ static void ExecuteSSGIDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
 	xGraphics.BindFullscreenQuad(*pxCommandList, xSSGI.m_xDenoiseVPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	namespace DV = Flux_Generated_SSGI::SSGI_DenoiseV;
 
-	dbg_xSSGIDenoiseConstants.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
-	xBinder.BindDrawConstants(DV::hPushConstants, &dbg_xSSGIDenoiseConstants, sizeof(SSGIDenoiseConstants));
+	// Frame-local snapshot (see ExecuteSSGIDenoiseH): no shared write under parallel per-view record.
+	SSGIDenoiseConstants xLocal = dbg_xSSGIDenoiseConstants;
+	xLocal.m_bEnabled = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled ? 1u : 0u;
+	xBinder.BindDrawConstants(DV::hPushConstants, &xLocal, sizeof(SSGIDenoiseConstants));
 
-	xBinder.BindSRV(DV::hg_xSSGITex,    &xSSGI.m_pxGraph->GetTransientAttachment(xSSGI.m_xDenoiseHHandle).SRV());
-	xBinder.BindSRV(DV::hg_xDepthTex,   xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(DV::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(DV::hg_xAlbedoTex,  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(DV::hg_xSSGITex,    &xSSGI.m_pxGraph->GetTransientAttachment(xSSGI.m_axDenoiseHHandles[uViewSlot]).SRV());
+	xBinder.BindSRV(DV::hg_xDepthTex,   xGraphics.GetDepthStencilSRV(uViewSlot));
+	xBinder.BindSRV(DV::hg_xNormalsTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT, uViewSlot));
+	xBinder.BindSRV(DV::hg_xAlbedoTex,  xGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE, uViewSlot));
 
 	pxCommandList->DrawIndexed(6);
 }
 
-// Handles for the H/V denoise sub-passes so ApplyDenoiseSelectionToGraph can
-// toggle them together when GraphicsOptions::m_bSSGIDenoiseEnabled changes.
-// Last value seen by ApplyDenoiseSelectionToGraph — change triggers a graph rebuild.
-// Handle committed at SetupRenderGraph exit. GetSSGIHandle asserts the live
-// toggle still resolves to this handle — any runtime toggle without a matching
-// g_xEngine.FluxRenderer().RequestGraphRebuild() trips at the point of the mistake.
+// The H/V denoise pass handles are locals in SetupViewPasses (their enable
+// bits are set right after declaration). Per-view committed handles are
+// re-seeded at SetupRenderGraph exit. GetSSGIHandle asserts the live toggle
+// still resolves to the committed handle — any runtime toggle without a
+// matching g_xEngine.FluxRenderer().RequestGraphRebuild() trips at the point
+// of the mistake.
 
 void Flux_SSGIImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	m_pxGraph = &xGraph;
 
+	// Main view at swapchain dims (byte-equivalent to the historical
+	// single-view path), then the preview view at its fixed 512² dims — only
+	// while active, so its transients exist exactly when its passes do (the
+	// graph's unused-transient validation demands this).
+	SetupViewPasses(xGraph, kuFluxViewSlotMain, g_xEngine.FluxSwapchain().GetWidth(), g_xEngine.FluxSwapchain().GetHeight());
+	if (g_xEngine.FluxGraphics().RenderViews().IsViewActive(kuFluxViewSlotPreview))
+		SetupViewPasses(xGraph, kuFluxViewSlotPreview, kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
+}
+
+void Flux_SSGIImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight)
+{
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	const u_int uFullWidth  = g_xEngine.FluxSwapchain().GetWidth();
-	const u_int uFullHeight = g_xEngine.FluxSwapchain().GetHeight();
-	// Raymarch target resolution = full / m_uRayMarchResolutionDivisor. Track the
-	// value used so ApplyDenoiseSelectionToGraph can detect runtime changes.
+	// Per-view base width — ComputeEffectiveBinarySearchIterations scales its
+	// resolution bump from this at record time.
+	m_auViewWidths[uViewSlot] = uWidth;
+
+	// Raymarch target resolution = view base / m_uRayMarchResolutionDivisor.
+	// Track the value used so ApplyDenoiseSelectionToGraph can detect runtime
+	// changes (the divisor is view-independent).
 	const u_int uDivisor    = m_uRayMarchResolutionDivisor < 2u ? 2u : m_uRayMarchResolutionDivisor;
 	m_uLastResolutionDivisor = uDivisor;
-	const u_int uRayWidth   = uFullWidth  / uDivisor;
-	const u_int uRayHeight  = uFullHeight / uDivisor;
+	const u_int uRayWidth   = uWidth  / uDivisor;
+	const u_int uRayHeight  = uHeight / uDivisor;
 
 	// Raw result is at the divisor's resolution; resolved / denoised are full-res.
 	Flux_TransientTextureDesc xRayDesc;
@@ -363,72 +408,85 @@ void Flux_SSGIImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xRayDesc.m_uHeight      = uRayHeight;
 	xRayDesc.m_eFormat      = SSGI_FORMAT;
 	xRayDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-	m_xRawResultHandle = xGraph.CreateTransient(xRayDesc);
+	m_axRawResultHandles[uViewSlot] = xGraph.CreateTransient(xRayDesc);
 
 	Flux_TransientTextureDesc xFull = xRayDesc;
-	xFull.m_uWidth  = uFullWidth;
-	xFull.m_uHeight = uFullHeight;
-	m_xResolvedHandle = xGraph.CreateTransient(xFull);
+	xFull.m_uWidth  = uWidth;
+	xFull.m_uHeight = uHeight;
+	m_axResolvedHandles[uViewSlot] = xGraph.CreateTransient(xFull);
 	// Intermediate between the H and V denoise sub-passes — same dimensions
 	// and format as the resolved/denoised targets.
-	m_xDenoiseHHandle = xGraph.CreateTransient(xFull);
-	m_xDenoisedHandle = xGraph.CreateTransient(xFull);
+	m_axDenoiseHHandles[uViewSlot] = xGraph.CreateTransient(xFull);
+	m_axDenoisedHandles[uViewSlot] = xGraph.CreateTransient(xFull);
+
+	// Pass names must be per-view unique + static-lifetime (duplicate names
+	// are a hard assert). View 0 keeps the historical names (profiling /
+	// FindPass stability).
+	const bool bMainView = (uViewSlot == kuFluxViewSlotMain);
 
 	// RayMarch pass (half-res) — reads G-Buffer + HiZ, writes raw result.
-	xGraph.AddPass("SSGI RayMarch", ExecuteSSGIRayMarch)
+	xGraph.AddPass(bMainView ? "SSGI RayMarch" : "SSGI RayMarch (Preview)", ExecuteSSGIRayMarch)
+		.View(uViewSlot)
 		.ClearTargets()
-		.Reads          (xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (g_xEngine.HiZ().GetHiZAttachment(),                   RESOURCE_ACCESS_READ_SRV, 0, g_xEngine.HiZ().m_uMipCount)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_xRawResultHandle,                                    RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.HiZ().GetHiZAttachment(uViewSlot),                     RESOURCE_ACCESS_READ_SRV, 0, g_xEngine.HiZ().GetMipCount(uViewSlot))
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uViewSlot), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL, uViewSlot),       RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE, uViewSlot),        RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_axRawResultHandles[uViewSlot],                                 RESOURCE_ACCESS_WRITE_RTV);
 
 	// Upsample pass — half→full res bilateral upsample.
-	xGraph.AddPass("SSGI Upsample", ExecuteSSGIUpsample)
+	xGraph.AddPass(bMainView ? "SSGI Upsample" : "SSGI Upsample (Preview)", ExecuteSSGIUpsample)
+		.View(uViewSlot)
 		.ClearTargets()
-		.Reads          (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xRawResultHandle,              RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_xResolvedHandle,               RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (xGraphics.GetDepthAttachment(uViewSlot), RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axRawResultHandles[uViewSlot],         RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_axResolvedHandles[uViewSlot],          RESOURCE_ACCESS_WRITE_RTV);
 
 	// Separable joint-bilateral denoise — split into horizontal then vertical
-	// sub-passes. Registered unconditionally; ApplyDenoiseSelectionToGraph
-	// toggles both enable bits together when m_bSSGIDenoiseEnabled changes.
-	m_xDenoisePassH = xGraph.AddPass("SSGI Denoise H", ExecuteSSGIDenoiseH)
+	// sub-passes. Registered unconditionally; the enable bits track
+	// m_bSSGIDenoiseEnabled (ApplyDenoiseSelectionToGraph forces a rebuild when
+	// the toggle changes).
+	const Flux_PassHandle xDenoisePassH = xGraph.AddPass(bMainView ? "SSGI Denoise H" : "SSGI Denoise H (Preview)", ExecuteSSGIDenoiseH)
+		.View(uViewSlot)
 		.ClearTargets()
-		.Reads          (xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xResolvedHandle,                                     RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_xDenoiseHHandle,                                     RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uViewSlot), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE, uViewSlot),        RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axResolvedHandles[uViewSlot],                                  RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_axDenoiseHHandles[uViewSlot],                                  RESOURCE_ACCESS_WRITE_RTV);
 
-	m_xDenoisePassV = xGraph.AddPass("SSGI Denoise V", ExecuteSSGIDenoiseV)
+	const Flux_PassHandle xDenoisePassV = xGraph.AddPass(bMainView ? "SSGI Denoise V" : "SSGI Denoise V (Preview)", ExecuteSSGIDenoiseV)
+		.View(uViewSlot)
 		.ClearTargets()
-		.Reads          (xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xDenoiseHHandle,                                     RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_xDenoisedHandle,                                     RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uViewSlot), RESOURCE_ACCESS_READ_SRV)
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE, uViewSlot),        RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axDenoiseHHandles[uViewSlot],                                  RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_axDenoisedHandles[uViewSlot],                                  RESOURCE_ACCESS_WRITE_RTV);
 
 	const bool bDenoise = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled;
-	xGraph.SetEnabled(m_xDenoisePassH, bDenoise);
-	xGraph.SetEnabled(m_xDenoisePassV, bDenoise);
+	xGraph.SetEnabled(xDenoisePassH, bDenoise);
+	xGraph.SetEnabled(xDenoisePassV, bDenoise);
 
-	// Commit the handle the deferred pass will now read. GetSSGIHandle resolves
-	// to this value — any runtime toggle without a matching
-	// g_xEngine.FluxRenderer().RequestGraphRebuild() trips at the point of the
-	// mistake. The composite selection captures BOTH the denoise toggle and the
-	// (clamped) resolution divisor, so a divisor change also forces a rebuild.
-	m_xSSGISelector.Commit(m_xDenoisedHandle, m_xResolvedHandle, bDenoise, Flux_SSGISelection{ bDenoise, uDivisor });
+	// Commit the handle the deferred pass will now read for this view.
+	// GetSSGIHandle resolves to this value — any runtime toggle without a
+	// matching g_xEngine.FluxRenderer().RequestGraphRebuild() trips at the
+	// point of the mistake. The composite selection captures BOTH the denoise
+	// toggle and the (clamped) resolution divisor, so a divisor change also
+	// forces a rebuild.
+	m_axSSGISelectors[uViewSlot].Commit(m_axDenoisedHandles[uViewSlot], m_axResolvedHandles[uViewSlot], bDenoise, Flux_SSGISelection{ bDenoise, uDivisor });
 }
 
 void Flux_SSGIImpl::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 {
 	// The composite selection covers BOTH triggers in one comparison: the
 	// denoise toggle and the raymarch resolution divisor (which resizes the
-	// raymarch transient). This is where the composite TSelection earns its keep.
+	// raymarch transient). This is where the composite TSelection earns its
+	// keep. The selection is view-independent — every view's selector commits
+	// with the same value — so checking the MAIN slot covers all views.
 	const Flux_SSGISelection xSelection{ Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled, m_uRayMarchResolutionDivisor };
-	if (!m_xSSGISelector.RequestRebuildIfSelectionChanged(xSelection))
+	if (!m_axSSGISelectors[kuFluxViewSlotMain].RequestRebuildIfSelectionChanged(xSelection))
 		return;
 
 	// Full graph rebuild — see Flux_SSR::ApplyBlurSelectionToGraph for the same
@@ -439,7 +497,7 @@ void Flux_SSGIImpl::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)
 }
 
 
-Flux_ShaderResourceView& Flux_SSGIImpl::GetSSGISRV()
+Flux_ShaderResourceView& Flux_SSGIImpl::GetSSGISRV(u_int uViewSlot)
 {
 	// Resolve from the committed handle — the value GetSSGIHandle() returned
 	// when Flux_DeferredShading declared its Read — NOT the live graphics
@@ -447,7 +505,7 @@ Flux_ShaderResourceView& Flux_SSGIImpl::GetSSGISRV()
 	// (next frame), the live option diverges from the graph for one frame;
 	// resolving from the option trips AssertBoundResourceDeclared.
 	Zenith_Assert(m_pxGraph, "GetSSGISRV: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(GetSSGIHandle()).SRV();
+	return m_pxGraph->GetTransientAttachment(GetSSGIHandle(uViewSlot)).SRV();
 }
 
 bool Flux_SSGIImpl::IsEnabled() const

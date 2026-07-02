@@ -193,6 +193,6 @@ ZENITH_TEST(ViewSetBinding, PerCameraMemberRejectedFromSharedViewSet)
 
 	// And the LIVE registry must itself be clean under the current multi-view setting.
 	const Zenith_Vector<Flux_ViewSetBinding>& xReg = Flux_GetViewSetBindingRegistry();
-	ZENITH_ASSERT_TRUE(Flux_ViewSetRegistryRespectsViewSharing(xReg.GetDataPointer(), xReg.GetSize(), kbFluxMultiViewSupported, nullptr),
+	ZENITH_ASSERT_TRUE(Flux_ViewSetRegistryRespectsViewSharing(xReg.GetDataPointer(), xReg.GetSize(), kbFluxPerViewSharedResourcesSupported, nullptr),
 		"the live VIEW-set registry must respect view-sharing under the current multi-view setting");
 }

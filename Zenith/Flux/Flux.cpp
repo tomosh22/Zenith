@@ -15,7 +15,7 @@
 #endif
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
-#include "Flux/MaterialPreview/Flux_MaterialPreviewImpl.h"
+#include "Flux/RenderViews/Flux_MaterialPreviewController.h" // ReleaseAssetReferences (pre-registry pin drop)
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
@@ -100,14 +100,26 @@ void Flux_RendererImpl::RecordFrame()
 	// contract). Main-thread + before worker recording, so it is race-free.
 	xEngine.FluxGraphics().MaterialTable().Upload();
 
+	// Upload every ACTIVE non-main render view's staged ViewConstants into its
+	// frame-indexed CB (slot 0 was uploaded by UploadFrameConstants earlier in the
+	// frame). Must precede PreparePersistentSets so the descriptors see this
+	// frame's buffers.
+	xEngine.FluxGraphics().UploadRenderViewConstants();
+
 	// Phase 5.1: write the current frame's persistent GLOBAL/VIEW descriptor sets from
 	// the spine constant buffers, also BEFORE any worker records (write-before-bind).
 	// Main-thread + frame-indexed sets → race-free, no graph barrier. The workers then
 	// bind these persistent sets per pipeline instead of allocating sets 0/1 per draw.
+	// VIEW is per-render-view: one CBV per fixed view slot (see Flux_RenderViews.h).
+	Flux_BufferDescriptorHandle axViewCBVs[FLUX_MAX_RENDER_VIEWS];
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		axViewCBVs[u] = xEngine.FluxGraphics().GetViewConstantsBufferHandle(u);
+	}
 	xEngine.FluxBackend().PreparePersistentSets(
 		xEngine.FluxGraphics().GetGlobalConstantsBufferHandle(),
 		xEngine.FluxGraphics().MaterialTable().GetSRV().m_xBufferDescHandle,
-		xEngine.FluxGraphics().GetViewConstantsBufferHandle());
+		axViewCBVs, FLUX_MAX_RENDER_VIEWS);
 
 	// Phase 5.4: write the view-frequency SRVs promoted into the persistent VIEW set.
 	// The CSM array is always allocated (cleared-to-far when shadows are disabled), so
@@ -565,6 +577,12 @@ void Flux_RendererImpl::ReleaseAssetReferences()
 	xEngine.Terrain().ReleaseAssetReferences();
 	xEngine.Skybox().ReleaseAssetReferences();
 	xEngine.VolumeFog().ReleaseAssetReferences();
+#ifdef ZENITH_TOOLS
+	// The material-preview controller pins the procedural primitives + the
+	// previewed material; its feature-walk Shutdown runs AFTER the registry is
+	// gone, so the pins must drop here.
+	xEngine.MaterialPreview().ReleaseAssetReferences();
+#endif
 
 	// Material defaults live in AssetHandling but are part of the same pre-registry
 	// release window — this is the natural place to drop them.

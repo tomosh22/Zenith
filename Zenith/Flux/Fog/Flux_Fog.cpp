@@ -166,6 +166,14 @@ void Flux_FogImpl::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 static void ExecuteSimpleFog(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
+	// Per-view parity: fog is scene-derived and the preview view's flags carry no
+	// FLUX_VIEW_FLAG_SCENE_CONTENT, so only the main view ever renders fog — the
+	// "Fog_Simple (Preview)" instance exists for structural parity and records
+	// nothing.
+	if (Flux_RenderGraph::GetCurrentRecordingPassViewSlot() != kuFluxViewSlotMain)
+	{
+		return;
+	}
 	if (!Zenith_GraphicsOptions::Get().m_bFogEnabled)
 	{
 		return;
@@ -299,6 +307,23 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	m_xGodRaysPass = xGraph.AddPass("Fog_GodRays", ExecuteGodRays)
 		.Writes(xGraphics.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+
+	// Preview view (S5c): a structural-parity instance of the simple-fog pass
+	// ONLY — the froxel 3D volumes / raymarch / god-rays are deliberately NOT
+	// duplicated (their grid memory and cost are unjustified for a 512²
+	// single-mesh preview, which never wants volumetrics). Fog is scene-derived
+	// and the preview view's flags carry no FLUX_VIEW_FLAG_SCENE_CONTENT, so
+	// ExecuteSimpleFog early-outs for non-main views and this pass renders
+	// nothing. No ClearTargets — the preview HDR clear is owned by
+	// "Apply Lighting (Preview)" and a declared clear here would clobber the
+	// lit result (declared clears still run for passes that record nothing).
+	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	{
+		xGraph.AddPass("Fog_Simple (Preview)", ExecuteSimpleFog)
+			.View  (kuFluxViewSlotPreview)
+			.Writes(xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview),  RESOURCE_ACCESS_WRITE_RTV)
+			.Reads (xGraphics.GetDepthAttachment(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
+	}
 
 	// A game that overrides fog force-disables owner "Fog" on the graph; that
 	// overlay persists across graph rebuilds (it is NOT cleared by Clear()), so a

@@ -429,7 +429,10 @@ void Zenith_Vulkan_CommandBuffer::BindPersistentSpineSets(u_int uNumDescSets)
 		const FluxFrequencyClass eClass = xRootSig.m_aePersistentClass[uSet];
 		vk::DescriptorSet xDesired;
 		if (eClass == FLUX_FREQUENCY_CLASS_GLOBAL)    xDesired = m_pxVulkan->GetCurrentGlobalSet();
-		else if (eClass == FLUX_FREQUENCY_CLASS_VIEW) xDesired = m_pxVulkan->GetCurrentViewSet();
+		// VIEW selects the recording pass's declared render-view slot (TLS; slot 0
+		// outside a pass window). The handle-tracked compare below then rebinds
+		// exactly when consecutive passes in this command buffer differ in view.
+		else if (eClass == FLUX_FREQUENCY_CLASS_VIEW) xDesired = m_pxVulkan->GetCurrentViewSet(Flux_RenderGraph::GetCurrentRecordingPassViewSlot());
 		else continue;
 		if (!Flux_PersistentSetLayouts::ShouldRebindPersistentSet(
 				eClass, m_axCurrentPersistentSet[uBP][eClass] == xDesired)) continue;

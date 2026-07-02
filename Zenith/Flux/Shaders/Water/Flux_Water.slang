@@ -58,7 +58,7 @@ float4 fsMain(VsOut input) : SV_Target
 
 	// Sun lambert against the water surface; alpha 0.5 for translucent
 	// blend over the terrain underneath.
-	float3 xLightDir = -g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz;
+	float3 xLightDir = -g_xViewSet.g_xView.g_xSunDir_Pad.xyz;
 	float3 xDiffuse  = float3(0.2, 0.3, 0.5) * dot(xWorldNormal, xLightDir);
 	return float4(xDiffuse, 0.5);
 }

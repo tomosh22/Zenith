@@ -9,10 +9,14 @@
 // shared visible-index buffer + atomically bumps that (view,bucket) indirect
 // instanceCount.
 //
-// VIEW dimension (Stage 2): view 0 = camera, views 1..N = the shadow cascades.
-// The thread id decodes to (v, gid) view-major: v = tid / totalDrawItems,
-// gid = tid % totalDrawItems. Each view has its own 6 frustum planes (extracted
-// from the camera view-proj / each cascade's sun ortho view-proj on the CPU).
+// VIEW dimension: FIXED render-view slots (Flux/RenderViews/Flux_RenderViews.h —
+// 0 = camera, 1..N = shadow cascades, then the preview). The thread id decodes to
+// (v, gid) view-major: v = tid / totalDrawItems, gid = tid % totalDrawItems. Each
+// ACTIVE view has its own 6 frustum planes (extracted from its staged view-proj on
+// the CPU); inactive slots inside [0, numViews) are skipped via activeViewMask.
+// Each draw-item also carries a per-view-slot VISIBILITY MASK (high 16 bits of
+// m_uFlags): scene content targets the camera + cascades; the material-preview
+// mesh targets only the preview slot.
 //
 // Output partitioning: per view, the visible-index buffer holds a totalDrawItems-
 // wide slice (base v*totalDrawItems) split into per-bucket sub-ranges by
@@ -27,8 +31,8 @@
 #include "Common/Bindings.slang"
 #include "Common/SceneObjects.slang"
 
-// Must match kuUNIFIED_NUM_VIEWS in Flux_UnifiedMesh.cpp (1 camera + 4 CSM cascades).
-static const uint kUNIFIED_NUM_VIEWS = 5u;
+// Must match kuUNIFIED_MAX_VIEWS in Flux_UnifiedMesh.cpp (fixed render-view slot capacity).
+static const uint kUNIFIED_MAX_VIEWS = 8u;
 
 struct FrustumPlane
 {
@@ -37,12 +41,16 @@ struct FrustumPlane
 
 struct CullingConstantsLayout
 {
-    FrustumPlane frustumPlanes[kUNIFIED_NUM_VIEWS * 6]; // per view: Left,Right,Bottom,Top,Near,Far
+    FrustumPlane frustumPlanes[kUNIFIED_MAX_VIEWS * 6]; // per view slot: Left,Right,Bottom,Top,Near,Far
     float4       cameraPosition;
     uint         totalDrawItemCount;  // per-view draw-item count (per-view stride)
-    uint         numViews;            // active views this frame
+    uint         numViews;            // 1 + highest active view slot this frame
     uint         numBuckets;          // bucket slot count (per-view indirect stride)
     uint         numObjects;          // object-array size — bounds-guards the Objects[] read
+    uint         activeViewMask;      // bit i ⇔ view slot i active (skip inactive holes)
+    uint         pad0;
+    uint         pad1;
+    uint         pad2;
 };
 
 struct PassParams
@@ -87,10 +95,20 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
     uint tid = dispatchId.x;
     if (tid >= totalDrawItems * g_xPassSet.CullingConstants.numViews) return;
 
-    uint v   = tid / totalDrawItems;       // view (0 = camera, 1.. = cascades)
+    uint v   = tid / totalDrawItems;       // render-view slot (0 = camera)
     uint gid = tid - v * totalDrawItems;   // draw-item index within the view's slice
 
+    // Inactive view slots inside [0, numViews) — e.g. cascades off while the
+    // preview is active — cull nothing (their passes never read the partition).
+    if ((g_xPassSet.CullingConstants.activeViewMask & (1u << v)) == 0u) return;
+
     GPUSceneDrawItem di = g_xPassSet.DrawItems[gid];
+
+    // Per-draw-item view mask (high 16 bits of m_uFlags): the item participates
+    // only in the view slots its producer targeted. Tested BEFORE the object
+    // fetch — the mask alone excludes preview-only items from every scene view
+    // (and scene items from the preview) without touching the object record.
+    if (((di.m_uFlags >> GPUSCENE_DRAWITEM_VIEWMASK_SHIFT) & (1u << v)) == 0u) return;
 
     // Defensive bounds on the DATA-DRIVEN indices before any UAV access. A correct host
     // build keeps objectIndex < numObjects and bucketIndex < numBuckets by construction,

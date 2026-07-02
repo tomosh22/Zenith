@@ -17,15 +17,13 @@ namespace Flux_Generated_UnifiedMesh
 	{
 		struct g_xGlobal_CB
 		{
-			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
-			float m_fg_fTimeSeconds; // slang=float offset=32
-			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
-			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=0
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=4
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=8 arrayCount=2 (no C++ mapping)
 		};
-		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
-		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
-		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		static_assert(sizeof(g_xGlobal_CB) == 16, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 0, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 4, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
 		struct g_xView_CB
 		{
 			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
@@ -40,10 +38,17 @@ namespace Flux_Generated_UnifiedMesh
 			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
 			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
 			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=432 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=448 arrayCount=4 (no C++ mapping)
+			unsigned int m_ug_uViewFlags; // slang=uint offset=464
+			unsigned int m_ug_uViewSlot; // slang=uint offset=468
+			unsigned char m_ag_xViewPad[8]; // slang=vector offset=472 arrayCount=2 (no C++ mapping)
 		};
-		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(sizeof(g_xView_CB) == 480, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uViewFlags) == 464, "g_xView.g_uViewFlags offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uViewSlot) == 468, "g_xView.g_uViewSlot offset drifted from Slang reflection");
 	}
 
 	// ----- UnifiedMesh_ToGBuffer (UnifiedMesh/Flux_UnifiedMesh_ToGBuffer) -----
@@ -83,15 +88,15 @@ namespace Flux_Generated_UnifiedMesh
 		{
 			unsigned int m_ug_uMaterialIndex; // slang=uint offset=0
 			unsigned int m_ug_uBucketOffset; // slang=uint offset=4
-			unsigned int m_ug_uShadowCascade; // slang=uint offset=8
-			unsigned int m_ug_uPad0; // slang=uint offset=12
+			unsigned int m_ug_uPad0; // slang=uint offset=8
+			unsigned int m_ug_uPad1; // slang=uint offset=12
 			unsigned char m_ag_xVATParams[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
 		};
 		static_assert(sizeof(DrawConstants_CB) == 32, "DrawConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 0, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uBucketOffset) == 4, "DrawConstants.g_uBucketOffset offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 8, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 12, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 8, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 12, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
@@ -135,15 +140,15 @@ namespace Flux_Generated_UnifiedMesh
 		{
 			unsigned int m_ug_uMaterialIndex; // slang=uint offset=0
 			unsigned int m_ug_uBucketOffset; // slang=uint offset=4
-			unsigned int m_ug_uShadowCascade; // slang=uint offset=8
-			unsigned int m_ug_uPad0; // slang=uint offset=12
+			unsigned int m_ug_uPad0; // slang=uint offset=8
+			unsigned int m_ug_uPad1; // slang=uint offset=12
 			unsigned char m_ag_xVATParams[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
 		};
 		static_assert(sizeof(DrawConstants_CB) == 32, "DrawConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 0, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uBucketOffset) == 4, "DrawConstants.g_uBucketOffset offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 8, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 12, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 8, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 12, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
@@ -181,18 +186,26 @@ namespace Flux_Generated_UnifiedMesh
 		inline constexpr Flux_BindingHandle hCullingConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct CullingConstants_CB
 		{
-			unsigned char m_afrustumPlanes[480]; // slang=Array offset=0 arrayCount=30 (no C++ mapping)
-			unsigned char m_acameraPosition[16]; // slang=vector offset=480 arrayCount=4 (no C++ mapping)
-			unsigned int m_utotalDrawItemCount; // slang=uint offset=496
-			unsigned int m_unumViews; // slang=uint offset=500
-			unsigned int m_unumBuckets; // slang=uint offset=504
-			unsigned int m_unumObjects; // slang=uint offset=508
+			unsigned char m_afrustumPlanes[768]; // slang=Array offset=0 arrayCount=48 (no C++ mapping)
+			unsigned char m_acameraPosition[16]; // slang=vector offset=768 arrayCount=4 (no C++ mapping)
+			unsigned int m_utotalDrawItemCount; // slang=uint offset=784
+			unsigned int m_unumViews; // slang=uint offset=788
+			unsigned int m_unumBuckets; // slang=uint offset=792
+			unsigned int m_unumObjects; // slang=uint offset=796
+			unsigned int m_uactiveViewMask; // slang=uint offset=800
+			unsigned int m_upad0; // slang=uint offset=804
+			unsigned int m_upad1; // slang=uint offset=808
+			unsigned int m_upad2; // slang=uint offset=812
 		};
-		static_assert(sizeof(CullingConstants_CB) == 512, "CullingConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(CullingConstants_CB, m_utotalDrawItemCount) == 496, "CullingConstants.totalDrawItemCount offset drifted from Slang reflection");
-		static_assert(offsetof(CullingConstants_CB, m_unumViews) == 500, "CullingConstants.numViews offset drifted from Slang reflection");
-		static_assert(offsetof(CullingConstants_CB, m_unumBuckets) == 504, "CullingConstants.numBuckets offset drifted from Slang reflection");
-		static_assert(offsetof(CullingConstants_CB, m_unumObjects) == 508, "CullingConstants.numObjects offset drifted from Slang reflection");
+		static_assert(sizeof(CullingConstants_CB) == 816, "CullingConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_utotalDrawItemCount) == 784, "CullingConstants.totalDrawItemCount offset drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_unumViews) == 788, "CullingConstants.numViews offset drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_unumBuckets) == 792, "CullingConstants.numBuckets offset drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_unumObjects) == 796, "CullingConstants.numObjects offset drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_uactiveViewMask) == 800, "CullingConstants.activeViewMask offset drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_upad0) == 804, "CullingConstants.pad0 offset drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_upad1) == 808, "CullingConstants.pad1 offset drifted from Slang reflection");
+		static_assert(offsetof(CullingConstants_CB, m_upad2) == 812, "CullingConstants.pad2 offset drifted from Slang reflection");
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hObjects{ 3u, 1u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer

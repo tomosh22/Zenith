@@ -37,9 +37,8 @@
 #include "Flux/Present/Flux_PresentImpl.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
-#include "Flux/MaterialPreview/Flux_MaterialPreviewImpl.h"
+#include "Flux/RenderViews/Flux_MaterialPreviewController.h"
 #include "Flux/Gizmos/Flux_Gizmos_Shaders.h"
-#include "Flux/MaterialPreview/Flux_MaterialPreview_Shaders.h"
 #endif
 
 // Per-feature shader decls — each feature passes its apxALL to RegisterFeature so
@@ -385,9 +384,11 @@ void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xRe
 	RegisterFeature<&Zenith_Engine::Text>(xReg, "Text", Flux_TextShaders::apxALL);
 #ifdef ZENITH_TOOLS
 	RegisterFeature<&Zenith_Engine::Gizmos>(xReg, "Gizmos", Flux_GizmosShaders::apxALL);
-	// Material-preview offscreen passes last — they own persistent targets and
-	// early-out when the editor panel is closed, so placement is cosmetic.
-	RegisterFeature<&Zenith_Engine::MaterialPreview>(xReg, "MaterialPreview", Flux_MaterialPreviewShaders::apxALL);
+	// Material-preview controller: pure per-frame staging for the PREVIEW render
+	// view (no passes, no pipelines, no shaders of its own — the per-view features
+	// add the preview passes), so its SetupRenderGraph/BuildPipelines are no-op
+	// stubs and it registers via the no-shader overload. Placement is cosmetic.
+	RegisterFeature<&Zenith_Engine::MaterialPreview>(xReg, "MaterialPreview");
 #endif
 	// Present is the LAST feature: its SetupRenderGraph adds the final-RT
 	// layout-transition reader (subsuming the former @FinalRTLayoutTransition raw

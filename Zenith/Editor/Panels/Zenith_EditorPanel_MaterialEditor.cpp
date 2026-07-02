@@ -14,7 +14,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_ImGuiIntegration.h"
-#include "Flux/MaterialPreview/Flux_MaterialPreviewImpl.h"
+#include "Flux/RenderViews/Flux_MaterialPreviewController.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
 #include "imgui.h"
@@ -519,7 +519,15 @@ void Zenith_MaterialEditorPanel::Render()
 
 	MaybeFrontMaterialEditor();
 
-	ImGui::Begin(szEDITOR_WINDOW_MATERIAL_EDITOR, &bShow);
+	if (!ImGui::Begin(szEDITOR_WINDOW_MATERIAL_EDITOR, &bShow))
+	{
+		// Collapsed window or an unfocused dock tab: ImGui renders no content, so
+		// don't refresh the preview's liveness either — the full-pipeline preview
+		// view (its ~40 passes + 512² target chain) tears down after the grace
+		// window instead of rendering an invisible image forever.
+		ImGui::End();
+		return;
+	}
 
 	RenderToolbar();
 	ImGui::Separator();

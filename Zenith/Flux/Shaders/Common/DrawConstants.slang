@@ -18,7 +18,7 @@ public struct DrawConstantsLayout
 {
 	public float4x4 g_xModelMatrix;       // 64 bytes — offset  0
 	public uint     g_uMaterialIndex;     //  4 bytes — offset 64 — index into g_axMaterials
-	public uint     g_uShadowCascade;     //  4 bytes — offset 68 — CSM cascade index (shadow caster passes; 0 otherwise) → ShadowMatrices[idx]
+	public uint     g_uShadowCascade;     //  4 bytes — offset 68 — LEGACY layout pad (casters read the pass's per-view g_xView now; always 0, unread)
 	public uint     g_uPad1;              //  4 bytes — offset 72
 	public uint     g_uPad2;              //  4 bytes — offset 76
 	public float4   g_xVATParams;         // 16 bytes — offset 80 — InstancedMeshes VAT (texW, texH, vat-enabled, unused); 0 for non-instanced

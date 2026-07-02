@@ -7,6 +7,13 @@
 #define ZENITH_FLUX_NUM_CSMS 4
 #define ZENITH_FLUX_CSM_RESOLUTION 2048
 
+// The render-view registry reserves one fixed view slot per cascade (slots
+// 1..N; see Flux/RenderViews/Flux_RenderViews.h). Its dependency-light local
+// count must track the cascade count here.
+#include "Flux/RenderViews/Flux_RenderViews.h"
+static_assert(kuFluxViewNumShadowSlots == ZENITH_FLUX_NUM_CSMS,
+	"kuFluxViewNumShadowSlots (Flux_RenderViews.h) must equal ZENITH_FLUX_NUM_CSMS");
+
 // CSM depth format — exposed here so subsystems that build shadow pipelines at
 // Initialise() time can reference it without going through a graph-owned
 // transient accessor (which requires the graph to exist).

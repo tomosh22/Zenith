@@ -41,17 +41,17 @@ static struct SSAOBlurConstants
 } dbg_xBlurConstants;
 
 // Attachment accessors — always resolve through the graph's transient slot.
-// Now non-static members: read their own m_pxGraph / m_x*Handle instead of
+// Now non-static members: read their own m_pxGraph / m_ax*Handles instead of
 // reaching for g_xEngine.SSAO() (mirror HiZ GetHiZBuffer).
-Flux_RenderAttachment& Flux_SSAOImpl::GetRawOcclusion()
+Flux_RenderAttachment& Flux_SSAOImpl::GetRawOcclusion(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "Flux_SSAOImpl::GetRawOcclusion: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xRawOcclusionHandle);
+	return m_pxGraph->GetTransientAttachment(m_axRawOcclusionHandles[uViewSlot]);
 }
-Flux_RenderAttachment& Flux_SSAOImpl::GetBlurred()
+Flux_RenderAttachment& Flux_SSAOImpl::GetBlurred(u_int uViewSlot)
 {
 	Zenith_Assert(m_pxGraph, "Flux_SSAOImpl::GetBlurred: graph pointer is null (called before SetupRenderGraph or after Shutdown)");
-	return m_pxGraph->GetTransientAttachment(m_xBlurredHandle);
+	return m_pxGraph->GetTransientAttachment(m_axBlurredHandles[uViewSlot]);
 }
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -135,13 +135,16 @@ static void ExecuteSSAOGenerate(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
+	// The pass's declared view slot selects this view's G-buffer/depth inputs.
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
 	xGraphics.BindFullscreenQuad(*pxCommandList, xSSAO.m_xGeneratePipeline);
 
 	namespace NS = Flux_Generated_SSAO::SSAO_Main;
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindDrawConstants(NS::hSSAOConstants, &dbg_xGenerateConstants, sizeof(SSAOGenerateConstants));
-	xBinder.BindSRV(NS::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(NS::hg_xNormalTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(NS::hg_xDepthTex, xGraphics.GetDepthStencilSRV(uViewSlot));
+	xBinder.BindSRV(NS::hg_xNormalTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT, uViewSlot));
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -155,14 +158,17 @@ static void ExecuteSSAOBlur(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
+	// The pass's declared view slot selects this view's occlusion + G-buffer.
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
 	xGraphics.BindFullscreenQuad(*pxCommandList, xSSAO.m_xBlurPipeline);
 
 	namespace NS = Flux_Generated_SSAO::SSAO_Blur;
 	Flux_ShaderBinder xBinder(*pxCommandList);
 	xBinder.BindDrawConstants(NS::hSSAOBlurConstants, &dbg_xBlurConstants, sizeof(SSAOBlurConstants));
-	xBinder.BindSRV(NS::hg_xOcclusionTex, &xSSAO.GetRawOcclusion().SRV());
-	xBinder.BindSRV(NS::hg_xDepthTex, xGraphics.GetDepthStencilSRV());
-	xBinder.BindSRV(NS::hg_xNormalTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(NS::hg_xOcclusionTex, &xSSAO.GetRawOcclusion(uViewSlot).SRV());
+	xBinder.BindSRV(NS::hg_xDepthTex, xGraphics.GetDepthStencilSRV(uViewSlot));
+	xBinder.BindSRV(NS::hg_xNormalTex, xGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT, uViewSlot));
 
 	pxCommandList->DrawIndexed(6);
 }
@@ -173,34 +179,53 @@ void Flux_SSAOImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	m_pxGraph = &xGraph;
 
+	// Main view at swapchain dims (byte-equivalent to the historical
+	// single-view path), then the preview view at its fixed 512² dims — only
+	// while active, so its transients exist exactly when its passes do (the
+	// graph's unused-transient validation demands this).
+	SetupViewPasses(xGraph, kuFluxViewSlotMain, g_xEngine.FluxSwapchain().GetWidth(), g_xEngine.FluxSwapchain().GetHeight());
+	if (g_xEngine.FluxGraphics().RenderViews().IsViewActive(kuFluxViewSlotPreview))
+		SetupViewPasses(xGraph, kuFluxViewSlotPreview, kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
+}
+
+void Flux_SSAOImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight)
+{
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
-	const u_int uHalfWidth  = g_xEngine.FluxSwapchain().GetWidth()  / 2;
-	const u_int uHalfHeight = g_xEngine.FluxSwapchain().GetHeight() / 2;
+	const u_int uHalfWidth  = uWidth  / 2;
+	const u_int uHalfHeight = uHeight / 2;
 
 	Flux_TransientTextureDesc xSSAODesc;
 	xSSAODesc.m_uWidth       = uHalfWidth;
 	xSSAODesc.m_uHeight      = uHalfHeight;
 	xSSAODesc.m_eFormat      = SSAO_FORMAT;
 	xSSAODesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-	m_xRawOcclusionHandle = xGraph.CreateTransient(xSSAODesc);
-	m_xBlurredHandle      = xGraph.CreateTransient(xSSAODesc);
+	m_axRawOcclusionHandles[uViewSlot] = xGraph.CreateTransient(xSSAODesc);
+	m_axBlurredHandles[uViewSlot]      = xGraph.CreateTransient(xSSAODesc);
 
-	xGraph.AddPass("SSAO Generate", ExecuteSSAOGenerate)
+	// Pass names must be per-view unique + static-lifetime (duplicate names
+	// are a hard assert). View 0 keeps the historical names (profiling /
+	// FindPass stability).
+	const bool bMainView = (uViewSlot == kuFluxViewSlotMain);
+
+	xGraph.AddPass(bMainView ? "SSAO Generate" : "SSAO Generate (Preview)", ExecuteSSAOGenerate)
+		.View(uViewSlot)
 		.ClearTargets()
-		.Reads         (xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads         (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_xRawOcclusionHandle,                               RESOURCE_ACCESS_WRITE_RTV);
+		.Reads         (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
+		.Reads         (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uViewSlot), RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_axRawOcclusionHandles[uViewSlot],                             RESOURCE_ACCESS_WRITE_RTV);
 
-	xGraph.AddPass("SSAO Blur", ExecuteSSAOBlur)
+	xGraph.AddPass(bMainView ? "SSAO Blur" : "SSAO Blur (Preview)", ExecuteSSAOBlur)
+		.View(uViewSlot)
 		.ClearTargets()
-		.Reads         (xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_READ_SRV)
-		.Reads         (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient (m_xRawOcclusionHandle,                               RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_xBlurredHandle,                                    RESOURCE_ACCESS_WRITE_RTV);
+		.Reads         (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
+		.Reads         (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uViewSlot), RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient (m_axRawOcclusionHandles[uViewSlot],                             RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_axBlurredHandles[uViewSlot],                                  RESOURCE_ACCESS_WRITE_RTV);
 
-	// No upsample/composite pass: DeferredShading reads m_xBlurredHandle (or the
-	// raw handle when the blur is toggled off) and multiplies the AO into its
-	// ambient term. The graph orders these passes before DeferredShading via that
-	// read; SSAO registers ahead of DeferredShading in the feature setup walk.
+	// No upsample/composite pass: DeferredShading reads this view's blurred
+	// handle (or the raw handle when the blur is toggled off) and multiplies
+	// the AO into its ambient term. The graph orders these passes before
+	// DeferredShading via that read; SSAO registers ahead of DeferredShading
+	// in the feature setup walk.
 }

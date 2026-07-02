@@ -54,7 +54,7 @@ namespace Flux_ShaderCatalog
 	bool ValidateFeatureParity(const Flux_FeatureRegistry& xRegistry, std::string& strErrOut);
 
 	// True iff this TU was compiled with ZENITH_TOOLS — i.e. the catalog holds the
-	// FULL shader set (incl. the tools-only Gizmos/MaterialPreview programs). The
+	// FULL shader set (incl. the tools-only Gizmos programs). The
 	// canonical FluxCompiler (built Tools=True) uses this to gate codegen + the
 	// destructive artifact prune; a Tools=False FluxCompiler compiles its reduced
 	// set but must NOT regenerate headers or delete tools-only artifacts.

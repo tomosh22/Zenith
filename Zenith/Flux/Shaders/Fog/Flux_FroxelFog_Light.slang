@@ -139,12 +139,12 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	float4 viewPos = mul(invProj, clipPos);
 	float3 viewDir = -normalize(viewPos.xyz);
 
-	float3 lightDir = normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
+	float3 lightDir = normalize(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
 
 	float cosTheta = dot(viewDir, lightDir);
 	float phase    = HenyeyGreenstein(cosTheta, g_xPassSet.LightConstants.u_fPhaseG);
 
-	float3 lightColour = g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.rgb * g_xPassSet.LightConstants.u_xLightColour.a;
+	float3 lightColour = g_xViewSet.g_xView.g_xSunColour_Pad.rgb * g_xPassSet.LightConstants.u_xLightColour.a;
 	float  shadowTerm  = SampleVolumetricShadow(worldPos);
 
 	// Single-scattering albedo normalisation — scattered light cannot

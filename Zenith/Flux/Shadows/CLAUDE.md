@@ -49,14 +49,22 @@ engine has **no TAA** — anything that jitters per-frame would crawl/sparkle.
 
 ## Data flow / contract
 
+- Each cascade is a first-class RENDER VIEW (fixed slots 1..4 in
+  `Flux/RenderViews/Flux_RenderViews.h`): its pass declares `.View(1+cascade)`,
+  which binds a per-cascade VIEW descriptor set whose `g_xView` holds the sun
+  ortho matrices (staged by `UpdateShadowMatrices` into the view registry). The
+  CASTER shaders (`UnifiedMesh`/`Terrain` `*_ToShadowmap.slang`) read
+  `g_xViewSet.g_xView.g_xViewProjMat` like any other pass — no per-draw cascade
+  index remains.
 - All-cascade `sun view×proj` matrices → a single `StructuredBuffer<float4x4>
-  g_xShadowMatrices` in the persistent VIEW descriptor set (set 1, binding 2;
-  `g_xViewSet.g_xShadowMatrices` in `Common/Bindings.slang`, Phase 5.4). A frame-indexed
+  g_xShadowMatrices` in the persistent VIEW set (set 1, binding 2;
+  `g_xViewSet.g_xShadowMatrices` in `Common/Bindings.slang`) — RECEIVERS ONLY:
+  the lit/fog consumers project receiver positions with it. A frame-indexed
   host-coherent dynamic buffer (graph-invisible), written once per frame by
-  `Zenith_Vulkan::WritePersistentViewBuffer`. The geometry caster shaders (Static/
-  Animated/Instanced/Terrain `*_ToShadowmap.slang`) and the lit/fog consumers read
-  element `DrawConstants.g_uShadowCascade` (or the explicit cascade) from it — no
-  per-pass shadow-matrices bind remains in any DRAW/PASS set.
+  `Zenith_Vulkan::WritePersistentViewBuffer` (replicated into every view slot's
+  set). Per-cascade GPU frustum culling of the unified scene populates each
+  cascade view's slice of the shared cull-output buffers, so each shadow view
+  draws only the objects inside its own frustum.
 - `ShadowSampling` CB (binding 24, set 0) carries per-cascade split view-depths /
   world-per-texel / depth-range + global filter params. GPU mirror is
   `Flux_ShadowSamplingGPU` (`Flux_ShadowsImpl.h`); it MUST match

@@ -158,7 +158,7 @@ public:
 	// Per-frame frozen state (gather → execute).
 	u_int m_uTotalDrawItems  = 0u;
 	u_int m_uBucketSlotCount = 0u;
-	u_int m_uNumViews        = 1u;  // Stage 2: 1 (camera) or 1+ZENITH_FLUX_NUM_CSMS (shadows on)
+	u_int m_uNumViews        = 1u;  // 1 + highest ACTIVE render-view slot this frame (registry-driven; inactive holes skipped by the cull's active-view mask)
 	Zenith_Vector<Flux_UnifiedBucketDraw> m_axBucketDraws;
 
 	// Stage 5 per-frame skinning state (gather -> skinning execute).

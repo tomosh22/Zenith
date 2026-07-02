@@ -17,15 +17,13 @@ namespace Flux_Generated_Translucency
 	{
 		struct g_xGlobal_CB
 		{
-			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
-			float m_fg_fTimeSeconds; // slang=float offset=32
-			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
-			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=0
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=4
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=8 arrayCount=2 (no C++ mapping)
 		};
-		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
-		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
-		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		static_assert(sizeof(g_xGlobal_CB) == 16, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 0, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 4, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
 		struct g_xView_CB
 		{
 			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
@@ -40,10 +38,17 @@ namespace Flux_Generated_Translucency
 			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
 			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
 			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=432 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=448 arrayCount=4 (no C++ mapping)
+			unsigned int m_ug_uViewFlags; // slang=uint offset=464
+			unsigned int m_ug_uViewSlot; // slang=uint offset=468
+			unsigned char m_ag_xViewPad[8]; // slang=vector offset=472 arrayCount=2 (no C++ mapping)
 		};
-		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(sizeof(g_xView_CB) == 480, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uViewFlags) == 464, "g_xView.g_uViewFlags offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uViewSlot) == 468, "g_xView.g_uViewSlot offset drifted from Slang reflection");
 	}
 
 	// ----- Translucent_Forward (Translucency/Flux_Translucent_Forward) -----
@@ -81,21 +86,16 @@ namespace Flux_Generated_Translucency
 			unsigned int m_ug_bIBLDiffuseEnabled; // slang=uint offset=4
 			unsigned int m_ug_bIBLSpecularEnabled; // slang=uint offset=8
 			float m_fg_fIBLIntensity; // slang=float offset=12
-			unsigned int m_ug_bShadowsEnabled; // slang=uint offset=16
-			unsigned int m_ug_bDynamicLightsEnabled; // slang=uint offset=20
-			float m_fg_fAmbientFallbackIntensity; // slang=float offset=24
-			unsigned char m_aPad_28[4];
-			unsigned char m_ag_xCSMTexelSize[8]; // slang=vector offset=32 arrayCount=2 (no C++ mapping)
-			unsigned char m_aPad_40[8];
+			float m_fg_fAmbientFallbackIntensity; // slang=float offset=16
+			unsigned char m_aPad_20[4];
+			unsigned char m_ag_xCSMTexelSize[8]; // slang=vector offset=24 arrayCount=2 (no C++ mapping)
 		};
-		static_assert(sizeof(TranslucencyConstants_CB) == 48, "TranslucencyConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(TranslucencyConstants_CB) == 32, "TranslucencyConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bIBLEnabled) == 0, "TranslucencyConstants.g_bIBLEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bIBLDiffuseEnabled) == 4, "TranslucencyConstants.g_bIBLDiffuseEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bIBLSpecularEnabled) == 8, "TranslucencyConstants.g_bIBLSpecularEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(TranslucencyConstants_CB, m_fg_fIBLIntensity) == 12, "TranslucencyConstants.g_fIBLIntensity offset drifted from Slang reflection");
-		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bShadowsEnabled) == 16, "TranslucencyConstants.g_bShadowsEnabled offset drifted from Slang reflection");
-		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bDynamicLightsEnabled) == 20, "TranslucencyConstants.g_bDynamicLightsEnabled offset drifted from Slang reflection");
-		static_assert(offsetof(TranslucencyConstants_CB, m_fg_fAmbientFallbackIntensity) == 24, "TranslucencyConstants.g_fAmbientFallbackIntensity offset drifted from Slang reflection");
+		static_assert(offsetof(TranslucencyConstants_CB, m_fg_fAmbientFallbackIntensity) == 16, "TranslucencyConstants.g_fAmbientFallbackIntensity offset drifted from Slang reflection");
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hDrawConstants{ 4u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB

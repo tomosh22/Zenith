@@ -546,7 +546,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 7u) return float4(xNormal * 0.5 + 0.5, 1.0);
 	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 8u)
 	{
-		float fNdotLDbg = max(dot(xNormal, normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz)), 0.0);
+		float fNdotLDbg = max(dot(xNormal, normalize(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz)), 0.0);
 		return float4(fNdotLDbg.xxx, 1.0);
 	}
 	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 10u)
@@ -574,8 +574,8 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	// jittery projection bounds), then sampled with normal-offset bias + PCSS/PCF,
 	// and cross-faded into the next cascade across a band to hide the seam.
 	DirectionalLight xLight;
-	xLight.m_xColour    = g_xGlobalSet.g_xGlobal.g_xSunColour_Pad;
-	xLight.m_xDirection = float4(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz, 0.0);
+	xLight.m_xColour    = g_xViewSet.g_xView.g_xSunColour_Pad;
+	xLight.m_xDirection = float4(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz, 0.0);
 
 	const int  iNumCSMs    = 4;
 	float3     xLightDir   = normalize(xLight.m_xDirection.xyz);
@@ -598,9 +598,13 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		return float4(v, v, v, 1.0);
 	}
 
+	// Per-view shadow gate: a view with shadows disabled (the material preview)
+	// skips CSM + contact shadows entirely — fShadowFactor stays 1 (fully lit).
+	const bool bViewShadows = (g_xViewSet.g_xView.g_uViewFlags & FLUX_VIEW_FLAG_SHADOWS_ENABLED) != 0u;
+
 	// Only resolve the sun shadow on surfaces that actually face the sun; a
 	// surface with NdotL<=0 is self-shadowed (handled by the NdotL term below).
-	if (fNdotL > 0.0)
+	if (bViewShadows && fNdotL > 0.0)
 	{
 		float fRotation = ShadowKernelRotation(input.uv * float2(g_xViewSet.g_xView.g_xScreenDims));
 
@@ -632,7 +636,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 	// Screen-space contact shadows refine the CSM result for small-scale
 	// occlusion. Only meaningful on lit surfaces; take the darker of the two.
-	if (fNdotL > 0.0)
+	if (bViewShadows && fNdotL > 0.0)
 		fShadowFactor = min(fShadowFactor, ScreenSpaceContactShadow(xWorldPos, xLightDir));
 
 	// Debug: 9 = sun shadow factor (white=lit, black=shadowed); 11 = IBL ambient only.
@@ -654,7 +658,10 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	// directional lights. Inserted AFTER the sun-shadow resolution
 	// (so CSM shadows don't accidentally attenuate dynamic lights, which
 	// have nothing to do with the sun shadow map) and BEFORE emissive
-	// (which is unlit by design).
+	// (which is unlit by design). Per-view gate: the cluster grid is
+	// main-camera froxel space, so a secondary view (the material preview)
+	// disables cluster sampling via its flag word.
+	if ((g_xViewSet.g_xView.g_uViewFlags & FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED) != 0u)
 	{
 		float fViewZ = DepthToViewZ(input.uv, fDepth);
 		uint3 xClusterCoord = ClusterCoordFromUVDepth(input.uv, fViewZ);

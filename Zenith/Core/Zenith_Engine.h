@@ -31,7 +31,7 @@ class Flux_ShadowsImpl;
 class Flux_TerrainStreamingManagerImpl;
 class Flux_VolumeFogImpl;
 class Flux_GizmosImpl;
-class Flux_MaterialPreviewImpl;
+class Flux_MaterialPreviewController;
 class Flux_InstancedMeshesImpl;
 class Flux_UnifiedMeshImpl;
 class Flux_ParticlesImpl;
@@ -170,7 +170,7 @@ public:
 	Flux_PresentImpl& Present();
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl& Gizmos();
-	Flux_MaterialPreviewImpl& MaterialPreview();
+	Flux_MaterialPreviewController& MaterialPreview();
 #endif
 #ifdef ZENITH_TOOLS
 	Zenith_Editor& Editor();
@@ -269,7 +269,7 @@ private:
 	Flux_PresentImpl*                   m_pxPresent          = nullptr;
 #ifdef ZENITH_TOOLS
 	Flux_GizmosImpl*                    m_pxGizmos           = nullptr;
-	Flux_MaterialPreviewImpl*           m_pxMaterialPreview  = nullptr;
+	Flux_MaterialPreviewController*     m_pxMaterialPreview  = nullptr;
 #endif
 #ifdef ZENITH_TOOLS
 	Zenith_Editor*                  m_pxEditor             = nullptr;

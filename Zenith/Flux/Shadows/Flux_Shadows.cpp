@@ -213,8 +213,14 @@ void Flux_ShadowsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	{
 		// CSM targets are depth textures — declared as per-layer DSV writes (mip 0,
 		// layer u). The disjoint-layer writes record in parallel.
+		// Each cascade renders as its own VIEW: .View binds the cascade's VIEW
+		// descriptor set (g_xView = the sun ortho matrices staged by
+		// UpdateShadowMatrices) while recording; casters read g_xView directly.
+		// UserData keeps carrying the cascade index for depth bias + the per-view
+		// indirect-slice selection in RenderToShadowMap.
 		const Flux_PassHandle xPass = xGraph.AddPass(s_aszShadowCascadePassNames[u], ExecuteShadowCascade)
 			.UserData(u)
+			.View(kuFluxViewSlotShadowFirst + u)
 			.ClearTargets()
 			.WritesTransient(m_xCSMArrayHandle, RESOURCE_ACCESS_WRITE_DSV, 0, 1, u, 1);
 
@@ -334,6 +340,33 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 		m_xCascadeSamplingData.m_xCascadeSplitViewDepth[u] = fSliceFar;
 		m_xCascadeSamplingData.m_xCascadeWorldPerTexel[u]  = fWorldPerTexel;
 		m_xCascadeSamplingData.m_xCascadeDepthRange[u]     = fDepthRange;
+
+		// Stage this cascade's render-view constants (slot 1+u): the cascade pass
+		// binds this view's VIEW set and the casters read g_xView.g_xViewProjMat
+		// (the snapped ortho). "Screen dims" = the shadow-map resolution; near/far
+		// = the ortho depth range (perspective-only helpers are undefined for an
+		// ortho view — no caster uses them). Uploaded by UploadRenderViewConstants.
+		{
+			Flux_RenderView& xView = xGraphics.RenderViews().View(kuFluxViewSlotShadowFirst + u);
+			Flux_ViewConstants& xVC = xView.m_xConstants;
+			xVC.m_xViewMat        = xLightView;
+			xVC.m_xProjMat        = xLightProj;
+			xVC.m_xViewProjMat    = m_axSunViewProjMats[u];
+			xVC.m_xInvViewProjMat = glm::inverse(m_axSunViewProjMats[u]);
+			xVC.m_xInvViewMat     = glm::inverse(xLightView);
+			xVC.m_xInvProjMat     = glm::inverse(xLightProj);
+			xVC.m_xCamPos_Pad     = Zenith_Maths::Vector4(xLightEye, 1.f);
+			xVC.m_xScreenDims     = Zenith_Maths::UVector2(ZENITH_FLUX_CSM_RESOLUTION, ZENITH_FLUX_CSM_RESOLUTION);
+			xVC.m_xRcpScreenDims  = Zenith_Maths::Vector2(1.f / fResolution, 1.f / fResolution);
+			xVC.m_xCameraNearFar  = Zenith_Maths::Vector2(0.f, fDepthRange);
+			// Depth-only view: no lit features (flags 0); sun copied for definedness
+			// (no caster samples it).
+			xVC.m_xSunDir_Pad     = Zenith_Maths::Vector4(xSunDir, 0.f);
+			xVC.m_xSunColour_Pad  = Zenith_Maths::Vector4(0.f, 0.f, 0.f, 0.f);
+			xVC.m_uViewFlags      = 0u;
+			xVC.m_uViewSlot       = kuFluxViewSlotShadowFirst + u;
+			xGraphics.RenderViews().SetViewActive(kuFluxViewSlotShadowFirst + u, true);
+		}
 	}
 
 	// Upload all 4 cascade matrices in one write to the single StructuredBuffer

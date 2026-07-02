@@ -102,6 +102,13 @@ void Flux_SDFsImpl::Render(void*)
 static void ExecuteSDFs(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
+	// Per-view parity: SDFs are scene-derived and the preview view's flags carry
+	// no FLUX_VIEW_FLAG_SCENE_CONTENT — the "SDFs (Preview)" instance exists for
+	// structural parity and records nothing.
+	if (Flux_RenderGraph::GetCurrentRecordingPassViewSlot() != kuFluxViewSlotMain)
+	{
+		return;
+	}
 	if (!Zenith_GraphicsOptions::Get().m_bSDFsEnabled)
 	{
 		return;
@@ -132,7 +139,21 @@ void Flux_SDFsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// The pipeline uses default depth-test+write enabled, so the depth attachment
 	// is bound as a writable DSV for the renderpass.
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	xGraph.AddPass("SDFs", ExecuteSDFs)
-		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(),                RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(g_xEngine.FluxGraphics().GetDepthAttachment(),      RESOURCE_ACCESS_WRITE_DSV);
+		.Writes(xGraphics.GetHDRSceneTarget(),                RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetDepthAttachment(),      RESOURCE_ACCESS_WRITE_DSV);
+
+	// Preview view (S5c): parity instance against the preview HDR + depth. SDFs
+	// are scene-derived (the preview view's flags carry no
+	// FLUX_VIEW_FLAG_SCENE_CONTENT), so ExecuteSDFs early-outs for non-main
+	// views and records nothing. No ClearTargets — "Apply Lighting (Preview)"
+	// owns the preview HDR clear.
+	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	{
+		xGraph.AddPass("SDFs (Preview)", ExecuteSDFs)
+			.View  (kuFluxViewSlotPreview)
+			.Writes(xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview),  RESOURCE_ACCESS_WRITE_RTV)
+			.Writes(xGraphics.GetDepthAttachment(kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_DSV);
+	}
 }

@@ -57,7 +57,7 @@ float3 SampleEnvironment(float3 xDir)
 {
 	if (g_xPassSet.PrefilterConstants.g_uUseAtmosphere > 0u)
 	{
-		float3 xSunDir = normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
+		float3 xSunDir = normalize(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
 		AtmosphereResult xResult = ComputeAtmosphereScattering(
 			float3(0.0, EARTH_RADIUS + IBL_REFERENCE_HEIGHT_METERS, 0.0),
 			normalize(xDir),

@@ -42,14 +42,16 @@ void Flux_AppendGPUSceneItem(const Flux_GPUSceneSourceItem& xItem,
 
 		Flux_GPUSceneDrawItem xDrawItem;
 		Flux_BuildGPUSceneDrawItem(xDrawItem, uObjectIndex, uBucket,
-			xSub.m_uColorTintPacked, xSub.m_uFlags, xSub.m_xLocalBoundsSphere);
+			xSub.m_uColorTintPacked, Flux_PackDrawItemViewMask(xSub.m_uFlags, xItem.m_uViewMask),
+			xSub.m_xLocalBoundsSphere);
 		xOut.m_xDrawItems.PushBack(xDrawItem);
 	}
 }
 
 void Flux_AppendGPUSceneInstance(Flux_GPUSceneBucketRegistry& xRegistry, Flux_GPUSceneBuildResult& xOut,
 	const Zenith_Maths::Matrix4& xModel, u_int uObjFlags, u_int uVATAnimPacked, u_int uVATAnimTimeBits,
-	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked)
+	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked,
+	u_int uViewMask)
 {
 	const u_int uObjectIndex = xOut.m_xObjects.GetSize();
 	Flux_GPUSceneObject xObj;
@@ -59,13 +61,15 @@ void Flux_AppendGPUSceneInstance(Flux_GPUSceneBucketRegistry& xRegistry, Flux_GP
 	const u_int uBucket = xRegistry.Reference(xKey);
 
 	Flux_GPUSceneDrawItem xDrawItem;
-	Flux_BuildGPUSceneDrawItem(xDrawItem, uObjectIndex, uBucket, uColorTintPacked, 0u, xLocalBoundsSphere);
+	Flux_BuildGPUSceneDrawItem(xDrawItem, uObjectIndex, uBucket, uColorTintPacked,
+		Flux_PackDrawItemViewMask(0u, uViewMask), xLocalBoundsSphere);
 	xOut.m_xDrawItems.PushBack(xDrawItem);
 }
 
 void Flux_AppendGPUSceneSkinnedInstance(Flux_GPUSceneBucketRegistry& xRegistry, Flux_GPUSceneBuildResult& xOut,
 	const Zenith_Maths::Matrix4& xModel, u_int uBonePaletteBase,
-	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked)
+	const Flux_GPUSceneBucketKey& xKey, const Zenith_Maths::Vector4& xLocalBoundsSphere, u_int uColorTintPacked,
+	u_int uViewMask)
 {
 	const u_int uObjectIndex = xOut.m_xObjects.GetSize();
 	Flux_GPUSceneObject xObj;
@@ -77,7 +81,8 @@ void Flux_AppendGPUSceneSkinnedInstance(Flux_GPUSceneBucketRegistry& xRegistry, 
 	const u_int uBucket = xRegistry.Reference(xKey);
 
 	Flux_GPUSceneDrawItem xDrawItem;
-	Flux_BuildGPUSceneDrawItem(xDrawItem, uObjectIndex, uBucket, uColorTintPacked, 0u, xLocalBoundsSphere);
+	Flux_BuildGPUSceneDrawItem(xDrawItem, uObjectIndex, uBucket, uColorTintPacked,
+		Flux_PackDrawItemViewMask(0u, uViewMask), xLocalBoundsSphere);
 	xOut.m_xDrawItems.PushBack(xDrawItem);
 }
 

@@ -66,16 +66,17 @@ ParameterBlock<PassParams> g_xPassSet;
 
 // DRAW block (set 4) — per-bucket constants + the bucket's slice of the visible
 // list. Declared AFTER the PASS block so it lands at physical space 4.
-// Shared by the GBuffer (camera) + ToShadowmap (cascade) unified draws. g_uBucketOffset
-// already encodes the per-VIEW base (v*totalDrawItems + bucketOffset[b]); g_uShadowCascade
-// selects g_xViewSet.g_xShadowMatrices[cascade] in the shadow VS and is ignored (0) by the
-// GBuffer.
+// Shared by the GBuffer (camera) + ToShadowmap (cascade) unified draws — change in
+// lockstep with Flux_UnifiedMesh_ToShadowmap.slang AND the C++ mirror in
+// Flux_UnifiedMesh.cpp. g_uBucketOffset already encodes the per-VIEW base
+// (v*totalDrawItems + bucketOffset[b]); both VS variants read their view-proj from
+// the pass's bound per-view g_xView.
 struct UnifiedDrawConstantsLayout
 {
     uint   g_uMaterialIndex;  // index into g_axMaterials (GLOBAL set 0)
     uint   g_uBucketOffset;   // base offset of this draw's slice in VisibleIndexBuffer (per-view)
-    uint   g_uShadowCascade;  // cascade index (shadow VS); 0 for the camera GBuffer
-    uint   g_uPad0;
+    uint   g_uPad0;           // was g_uShadowCascade — casters now read the bound per-view g_xView
+    uint   g_uPad1;
     float4 g_xVATParams;      // xy = VAT texture size, z = >0 when the bucket has a VAT texture, w unused
 };
 

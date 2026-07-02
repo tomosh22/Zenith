@@ -3,6 +3,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Flux/RenderViews/Flux_RenderViews.h"
 
 enum ToneMappingOperator : u_int
 {
@@ -48,8 +49,14 @@ public:
 
 	// HDR no longer owns the scene target — Flux_Graphics does (it's a shared target
 	// created before the first writer). HDR reads it via g_xEngine.FluxGraphics()
-	// .GetHDRSceneTarget() and owns only its private bloom chain (below).
+	// .GetHDRSceneTarget() and owns only its private per-view bloom chains (below).
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	// Create one view's 5-mip bloom-chain transients (half the view's dims at the
+	// base) + its threshold/downsample/upsample pass chain. Slot 0 keeps the
+	// historical pass names; the preview slot uses " (Preview)" static name
+	// tables. Mirrors Flux_HiZImpl::SetupViewPasses.
+	void SetupBloomViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight);
 
 	void SetToneMappingOperator(ToneMappingOperator eOperator);
 	void SetExposure(float fExposure);
@@ -60,7 +67,7 @@ public:
 	float GetAverageLuminance();
 	bool IsEnabled();
 
-	Flux_RenderAttachment& GetBloomChainAttachment(u_int uIndex);
+	Flux_RenderAttachment& GetBloomChainAttachment(u_int uIndex, u_int uViewSlot = kuFluxViewSlotMain);
 
 	void SetAdaptationSpeed(float fSpeed);
 	void SetTargetLuminance(float fLuminance);
@@ -80,7 +87,13 @@ public:
 
 	void SyncDebugVariables();
 
-	Flux_TransientHandle      m_axBloomChainHandles[5];
+	// Bloom chain length (base + 4 downsampled mips).
+	static constexpr u_int    uHDR_BLOOM_MIP_COUNT = 5u;
+
+	// Per-view bloom chains: [view slot][mip]. Slot 0 (main) is created every
+	// SetupRenderGraph at half swapchain dims; the preview slot only while the
+	// preview view is active (half of 512 = 256 base). Other slots are unused.
+	Flux_TransientHandle      m_aaxBloomChainHandles[FLUX_MAX_RENDER_VIEWS][uHDR_BLOOM_MIP_COUNT];
 	Flux_RenderGraph*         m_pxGraph = nullptr;
 	bool                      m_bAutoExposureWasEnabled = false;
 
@@ -88,9 +101,11 @@ public:
 	// downsample / upsample pass gets &m_axBloom*UserData[i]. Stored here (rather
 	// than module-scope statics) so the pointers stay stable for the graph's
 	// lifetime — the Impl is engine-owned and outlives the graph. The Execute*
-	// trampolines recover the index purely via pUserData.
-	u_int                     m_axBloomMipUserData[5]      = { 0, 1, 2, 3, 4 };
-	u_int                     m_axBloomUpsampleUserData[4] = { 0, 1, 2, 3 };
+	// trampolines recover the MIP index purely via pUserData and derive the VIEW
+	// from the recording pass's slot (mirrors the HiZ per-view conversion), so
+	// both view instances of a pass share the same per-mip payload.
+	u_int                     m_axBloomMipUserData[uHDR_BLOOM_MIP_COUNT]          = { 0, 1, 2, 3, 4 };
+	u_int                     m_axBloomUpsampleUserData[uHDR_BLOOM_MIP_COUNT - 1] = { 0, 1, 2, 3 };
 
 	Flux_Pipeline             m_xToneMappingPipeline;
 	Flux_Pipeline             m_xBloomDownsamplePipeline;

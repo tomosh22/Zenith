@@ -10,7 +10,12 @@
 //   gid   = VisibleIndexBuffer[bucketOffset + SV_InstanceID]   (cull-compacted, per-view)
 //   di    = DrawItems[gid]                                       (PASS set 3)
 //   model = Objects[di.objectIndex].model                        (PASS set 3)
-//   clip  = g_xViewSet.g_xShadowMatrices[shadowCascade] * world  (VIEW set 1, Phase 5.4)
+//   clip  = g_xViewSet.g_xView.g_xViewProjMat * world            (the cascade VIEW's own camera)
+//
+// Each cascade pass binds its own per-view VIEW set (Flux_RenderViews slot 1+c)
+// whose g_xView holds the sun ortho matrices — the caster is view-agnostic, like
+// any other pass. g_xShadowMatrices stays in the VIEW set for RECEIVERS only
+// (deferred/translucency/fog sample it to project receiver positions).
 //
 // Two-block descriptor shape, identical to the GBuffer caster so binding code is
 // shared:
@@ -58,13 +63,14 @@ struct PassParams
 ParameterBlock<PassParams> g_xPassSet;
 
 // DRAW block (set 4) — per-bucket constants + the (view,bucket) slice of the visible
-// list. Same UnifiedDrawConstantsLayout as the GBuffer caster (g_uShadowCascade live here).
+// list. Same UnifiedDrawConstantsLayout as the GBuffer caster (change in lockstep with
+// it AND the C++ mirror in Flux_UnifiedMesh.cpp — the layout is shared).
 struct UnifiedDrawConstantsLayout
 {
     uint   g_uMaterialIndex;
     uint   g_uBucketOffset;   // per-view base: cascadeView*totalDrawItems + bucketOffset[b]
-    uint   g_uShadowCascade;  // selects g_xViewSet.g_xShadowMatrices[cascade]
-    uint   g_uPad0;
+    uint   g_uPad0;           // was g_uShadowCascade — casters now read the bound per-view g_xView
+    uint   g_uPad1;
     float4 g_xVATParams;      // xy = VAT texture size, z = >0 when the bucket has a VAT texture
 };
 
@@ -93,7 +99,8 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
     float3 xLocalPos = Flux_ApplyVAT(g_xDrawSet.g_xAnimationTex, vertexId, input.a_xPosition,
         obj.m_uFlags, obj.m_uVATAnimPacked, asfloat(obj.m_uVATAnimTime), dc.g_xVATParams);
     float3 xWorldPos = mul(obj.m_xModelMatrix, float4(xLocalPos, 1.0)).xyz;
-    o.position    = mul(g_xViewSet.g_xShadowMatrices[dc.g_uShadowCascade], float4(xWorldPos, 1.0));
+    // The cascade pass's own VIEW set: g_xView holds the sun ortho view×proj.
+    o.position    = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
     o.uv          = input.a_xUV;
     o.vertexColor = input.a_xColor;
     return o;

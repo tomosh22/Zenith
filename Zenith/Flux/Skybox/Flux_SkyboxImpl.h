@@ -146,6 +146,14 @@ public:
 	// a stably-allocated target. ~192x108 RGBA16F (~166 KB) — trivial VRAM.
 	Flux_RenderAttachment      m_xSkyViewLUT;
 
+	// Preview-view sky-view LUT (S5c). The LUT is camera+sun dependent and the
+	// preview view owns its OWN sun, so it cannot share the main LUT. Same
+	// dims/format; persistent for the same reasons as m_xSkyViewLUT (and cheap
+	// enough to build unconditionally rather than churn on preview toggles).
+	// Written by "Skybox Sky-View LUT (Preview)" (whose .View(preview) makes the
+	// shader read the PREVIEW slot's g_xView sun); sampled by "Skybox (Preview)".
+	Flux_RenderAttachment      m_xPreviewSkyViewLUT;
+
 	Flux_Pipeline              m_xCubemapPipeline;
 	Flux_Pipeline              m_xAtmospherePipeline;
 	Flux_Pipeline              m_xSolidColourPipeline;
@@ -165,6 +173,11 @@ public:
 	// sky samples, which don't affect transmittance).
 	Flux_PassHandle            m_xTransmittanceLUTPassHandle = {};
 	Flux_PassHandle            m_xSkyViewLUTPassHandle       = {};
+	// Preview sky-view LUT writer. Reset to invalid at the top of every
+	// SetupRenderGraph and (re)assigned only while the preview view is active
+	// that compile — UpdateGraphPassEnables gates on IsValid(), so it never
+	// touches a stale handle after the preview view deactivates.
+	Flux_PassHandle            m_xPreviewSkyViewLUTPassHandle = {};
 	float                      m_fLastLUTRayleighScale      = 1.0f;
 	float                      m_fLastLUTMieScale           = 1.0f;
 

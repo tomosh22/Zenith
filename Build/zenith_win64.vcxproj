@@ -1290,6 +1290,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_ScreenSpaceEffectBase.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_TransientDesc.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_ViewConstants.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ViewSetBinding.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ViewSetBinding.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\Flux_WorkDistribution.h" />
@@ -1311,8 +1312,6 @@
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceCulling.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshesImpl.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h" />
-    <ClInclude Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreviewImpl.h" />
-    <ClInclude Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreview_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.h" />
@@ -1340,6 +1339,10 @@
     <ClInclude Include="..\Zenith\Flux\Quads\Flux_Quads_Shaders.h" />
     <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.h" />
     <ClInclude Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Internal.h" />
+    <ClInclude Include="..\Zenith\Flux\RenderViews\Flux_MaterialPreviewController.h" />
+    <ClInclude Include="..\Zenith\Flux\RenderViews\Flux_MaterialPreviewController.Tests.inl" />
+    <ClInclude Include="..\Zenith\Flux\RenderViews\Flux_RenderViews.h" />
+    <ClInclude Include="..\Zenith\Flux\RenderViews\Flux_RenderViews.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\SceneGraph\Flux_RenderSceneSnapshot.h" />
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFsImpl.h" />
     <ClInclude Include="..\Zenith\Flux\SDFs\Flux_SDFs_Shaders.h" />
@@ -1375,7 +1378,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\HDR.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\HiZ.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\IBL.h" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\MaterialPreview.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Particles.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Present.h" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Primitives.h" />
@@ -1402,9 +1404,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_BRDFIntegration.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_IrradianceConvolution.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_PrefilterEnvMap.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Background.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Forward.slang" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialPreview\Flux_MaterialPreview_Tonemap.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_ParticleUpdate.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.slang" />
@@ -2223,7 +2222,6 @@
     <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.cpp" />
     <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes.cpp" />
     <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.cpp" />
-    <ClCompile Include="..\Zenith\Flux\MaterialPreview\Flux_MaterialPreview.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationControllerStore.cpp" />
@@ -2244,6 +2242,8 @@
     <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph.cpp" />
     <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Compilation.cpp" />
     <ClCompile Include="..\Zenith\Flux\RenderGraph\Flux_RenderGraph_Execution.cpp" />
+    <ClCompile Include="..\Zenith\Flux\RenderViews\Flux_MaterialPreviewController.cpp" />
+    <ClCompile Include="..\Zenith\Flux\RenderViews\Flux_RenderViews.cpp" />
     <ClCompile Include="..\Zenith\Flux\SceneGraph\Flux_RenderSceneSnapshot.cpp" />
     <ClCompile Include="..\Zenith\Flux\SDFs\Flux_SDFs.cpp" />
     <ClCompile Include="..\Zenith\Flux\Shadows\Flux_Shadows.cpp" />

@@ -2,6 +2,7 @@
 
 #include "Flux/Flux.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Flux/RenderViews/Flux_RenderViews.h"	// FLUX_MAX_RENDER_VIEWS (per-view draw packets)
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 
@@ -54,11 +55,17 @@ public:
 	// Prepare reads it instead of running its own ECS scan. Keeps this TU off the ratchet.
 	void SetSnapshot(const Flux_RenderSceneSnapshot* pxSnapshot) { m_pxSnapshot = pxSnapshot; }
 
-	// Prepare callback: gathers + depth-sorts the per-frame packet (main thread).
+	// Prepare callback: gathers + depth-sorts the per-frame packets (main thread).
+	// ONE callback — on the MAIN pass — fills EVERY view's packet: the main view
+	// from the snapshot walk (+ main-masked external items), the preview view from
+	// the renderer's preserved external translucent items. The preview pass has no
+	// Prepare of its own (a second one would double-gather).
 	void GatherDrawPacket(void* pUserData);
 
-	// Per-frame draw packet (gather-sorted back-to-front).
-	Zenith_Vector<Flux_TranslucentDrawItem> m_xDrawPacket;
+	// Per-frame draw packets, one per fixed render-view slot (gather-sorted
+	// back-to-front against THAT view's camera). Only the main + preview slots
+	// are ever filled; the record callback indexes by its recording pass's slot.
+	Zenith_Vector<Flux_TranslucentDrawItem> m_axDrawPackets[FLUX_MAX_RENDER_VIEWS];
 
 	Flux_Shader   m_xShader;
 	// Blend x cull permutations (cull is baked into pipelines; blend mode is

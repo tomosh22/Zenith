@@ -420,6 +420,12 @@ static void ExecuteNormalsCopy(Flux_CommandBuffer* pxCommandList, void*)
 	// cannot capture, so it re-enters via g_xEngine.Decals() to reach the
 	// singleton instance; FluxGraphics is reached via g_xEngine at point of
 	// use (mirrors ExecuteSSAOGenerate).
+	// Per-view parity: decals are scene-derived and the preview view's flags
+	// carry no FLUX_VIEW_FLAG_SCENE_CONTENT — the "(Preview)" pass pair exists
+	// for structural parity and records nothing.
+	if (Flux_RenderGraph::GetCurrentRecordingPassViewSlot() != kuFluxViewSlotMain)
+		return;
+
 	Flux_DecalsImpl& xDecals = g_xEngine.Decals();
 	if (xDecals.m_uActiveDecalCount == 0)
 		return;
@@ -442,6 +448,10 @@ static void ExecuteApply(Flux_CommandBuffer* pxCommandList, void*)
 	// Non-capturing graph callback — re-enters via g_xEngine.Decals() to reach
 	// the singleton instance; FluxGraphics is reached via g_xEngine at point
 	// of use (mirrors ExecuteSSAOGenerate).
+	// Per-view parity: early-out for non-main views (see ExecuteNormalsCopy).
+	if (Flux_RenderGraph::GetCurrentRecordingPassViewSlot() != kuFluxViewSlotMain)
+		return;
+
 	Flux_DecalsImpl& xDecals = g_xEngine.Decals();
 	if (xDecals.m_uActiveDecalCount == 0)
 		return;
@@ -544,6 +554,42 @@ void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// active count from ever lifting off zero. Idle-frame cost is bounded
 	// by the early-out at the top of each Execute callback (no commands
 	// recorded when active==0; only the render-pass setup runs).
+
+	// Preview view (S5c): parity pass pair against a PER-VIEW normals clone +
+	// the preview MRTs/depth. Decals are scene-derived (the preview view's
+	// flags carry no FLUX_VIEW_FLAG_SCENE_CONTENT), so both Executes early-out
+	// for non-main views and record nothing. CRITICAL: the decal lifetime-tick
+	// Prepare stays ONLY on the main-view NormalsCopy pass above (see
+	// Decals/CLAUDE.md "Idle-frame cost" — a second Prepare would double-tick
+	// lifetimes). No ClearTargets on the Apply instance — the preview MRT
+	// clears belong to the preview geometry passes; the NormalsCopy clone is
+	// decal-private, so its declared clear (mirroring the main pass) is
+	// harmless. The clone transient is legal even though nothing samples it in
+	// practice: ValidateUnusedTransients only requires that some pass
+	// references it, and ValidateOrphanedReads sees an enabled writer.
+	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	{
+		Flux_TransientTextureDesc xPreviewDesc;
+		xPreviewDesc.m_uWidth       = kuFLUX_PREVIEW_VIEW_SIZE;
+		xPreviewDesc.m_uHeight      = kuFLUX_PREVIEW_VIEW_SIZE;
+		xPreviewDesc.m_eFormat      = k_eNormalsCopyFormat;
+		xPreviewDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
+		m_xPreviewNormalsCopyHandle = xGraph.CreateTransient(xPreviewDesc);
+
+		xGraph.AddPass("Decal Normals Copy (Preview)", ExecuteNormalsCopy)
+			.View           (kuFluxViewSlotPreview)
+			.ClearTargets()
+			.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV)
+			.WritesTransient(m_xPreviewNormalsCopyHandle,                                                 RESOURCE_ACCESS_WRITE_RTV);
+
+		xGraph.AddPass("Decal Apply (Preview)", ExecuteApply)
+			.View          (kuFluxViewSlotPreview)
+			.Reads         (xGraphics.GetDepthAttachment(kuFluxViewSlotPreview),                         RESOURCE_ACCESS_READ_SRV)
+			.ReadsTransient(m_xPreviewNormalsCopyHandle,                                                 RESOURCE_ACCESS_READ_SRV)
+			.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE,        kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
+			.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
+			.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL,       kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV);
+	}
 }
 
 // ===== TEST HOOKS =====

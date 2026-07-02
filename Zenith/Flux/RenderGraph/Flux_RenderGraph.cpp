@@ -4,6 +4,7 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/RenderViews/Flux_RenderViews.h" // FLUX_MAX_RENDER_VIEWS (SetPassView range assert)
 #include "TaskSystem/Zenith_TaskSystem.h"
 
 #include <cstring> // strcmp — FindPass + force-disable overlay membership tests
@@ -504,6 +505,13 @@ Flux_PassBuilder&& Flux_PassBuilder::Prepare(Flux_RenderGraph_OnPrepareFunc pfnP
     return std::move(*this);
 }
 
+Flux_PassBuilder&& Flux_PassBuilder::View(u_int uViewSlot) &&
+{
+    AssertAlive("View");
+    m_pxGraph->SetPassView(m_xPass, uViewSlot);
+    return std::move(*this);
+}
+
 void Flux_PassBuilder::SetUserData(void* pData)
 {
     AssertAlive("UserData");
@@ -723,6 +731,15 @@ void Flux_RenderGraph::SetPrepare(Flux_PassHandle xPass, Flux_RenderGraph_OnPrep
     Zenith_Assert(GetPass(xPass.m_uIndex)->m_pfnOnPrepare == nullptr,
         "Flux_RenderGraph::SetPrepare: prepare callback already set for pass %u (would silently overwrite)", xPass.m_uIndex);
     GetPass(xPass.m_uIndex)->m_pfnOnPrepare = pfnOnPrepare;
+}
+
+void Flux_RenderGraph::SetPassView(Flux_PassHandle xPass, u_int uViewSlot)
+{
+    AssertMutable("SetPassView");
+    AssertPassHandleValid(xPass, "SetPassView");
+    Zenith_Assert(uViewSlot < FLUX_MAX_RENDER_VIEWS,
+        "Flux_RenderGraph::SetPassView: view slot %u out of range for pass %u", uViewSlot, xPass.m_uIndex);
+    GetPass(xPass.m_uIndex)->m_uViewSlot = uViewSlot;
 }
 
 void Flux_RenderGraph::MarkDirty() { m_bDirty = true; }

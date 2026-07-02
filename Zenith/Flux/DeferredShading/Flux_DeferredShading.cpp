@@ -93,12 +93,18 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 
 	namespace DS = Flux_Generated_DeferredShading::DeferredShading;
 
+	// The SAME callback lights every full-pipeline view: the recording pass's
+	// declared view slot selects that view's G-buffer (and its VIEW set was bound
+	// by SetPipeline). S5b: every full-pipeline view owns its own SSAO/SSR/SSGI
+	// chains too, so the screen-space binds below are per-view as well.
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
 	// Bind G-buffer textures (named bindings)
-	xBinder.BindSRV(DS::hg_xDiffuseTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
-	xBinder.BindSRV(DS::hg_xNormalsAmbientTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
-	xBinder.BindSRV(DS::hg_xMaterialTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL));
-	xBinder.BindSRV(DS::hg_xGBufferEmissiveTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_EMISSIVE));
-	xBinder.BindSRV(DS::hg_xDepthTex, xFluxGraphics.GetDepthStencilSRV());
+	xBinder.BindSRV(DS::hg_xDiffuseTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE, uViewSlot));
+	xBinder.BindSRV(DS::hg_xNormalsAmbientTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT, uViewSlot));
+	xBinder.BindSRV(DS::hg_xMaterialTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_MATERIAL, uViewSlot));
+	xBinder.BindSRV(DS::hg_xGBufferEmissiveTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_EMISSIVE, uViewSlot));
+	xBinder.BindSRV(DS::hg_xDepthTex, xFluxGraphics.GetDepthStencilSRV(uViewSlot));
 
 	// CSM (g_xCSM) AND the all-cascade ShadowMatrices SSBO (g_xShadowMatrices) are now in
 	// the persistent VIEW set (Phase 5.4) — written once/frame in PreparePersistentSets /
@@ -113,26 +119,28 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	// set now, Phase 5.4; read via g_xViewSet. The graph Reads stay in SetupRenderGraph.)
 
 	// Always bind SSR texture if initialised (shader checks g_bSSREnabled before sampling)
-	// This avoids Vulkan validation errors for unbound descriptors
+	// This avoids Vulkan validation errors for unbound descriptors. S5b: every
+	// full-pipeline view owns its own reflection chain, so the bind resolves
+	// through the recording view's committed handle.
 	if (xSSR.IsInitialised())
 	{
-		xBinder.BindSRV(DS::hg_xSSRTex, &xSSR.GetReflectionSRV());
+		xBinder.BindSRV(DS::hg_xSSRTex, &xSSR.GetReflectionSRV(uViewSlot));
 	}
 	else
 	{
-		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(DS::hg_xSSRTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		// Fallback: placeholder to satisfy descriptor validation
+		xBinder.BindSRV(DS::hg_xSSRTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE, uViewSlot));
 	}
 
 	// Always bind SSGI texture if initialised (shader checks g_bSSGIEnabled before sampling)
 	if (xSSGI.IsInitialised())
 	{
-		xBinder.BindSRV(DS::hg_xSSGITex, &xSSGI.GetSSGISRV());
+		xBinder.BindSRV(DS::hg_xSSGITex, &xSSGI.GetSSGISRV(uViewSlot));
 	}
 	else
 	{
-		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
-		xBinder.BindSRV(DS::hg_xSSGITex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE));
+		// Fallback: placeholder to satisfy descriptor validation
+		xBinder.BindSRV(DS::hg_xSSGITex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE, uViewSlot));
 	}
 
 	// SSAO modulates the ambient term inside the shader (g_bSSAOEnabled gates the
@@ -143,7 +151,7 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 		const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
 		const bool bUseBlurred = !xOpts.m_bSSAOEnabled || xOpts.m_bSSAOBlurEnabled;
 		xBinder.BindSRV(DS::hg_xSSAOTex,
-			bUseBlurred ? &xSSAO.GetBlurred().SRV() : &xSSAO.GetRawOcclusion().SRV());
+			bUseBlurred ? &xSSAO.GetBlurred(uViewSlot).SRV() : &xSSAO.GetRawOcclusion(uViewSlot).SRV());
 	}
 
 	// (Clustered dynamic lights — LightBuffer + cluster counts/indices — are in the
@@ -178,14 +186,17 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	// 9=shadowFactor 10=shadingModel 11=IBLambient). Lets a capture harness dump
 	// any G-buffer channel without a debug-panel toggle.
 	{
-		static int s_iDsDebugOverride = -2;
-		if (s_iDsDebugOverride == -2)
+		// Magic-static (thread-safe one-time init): this callback now records for
+		// BOTH the main and preview lighting passes, potentially on different
+		// workers concurrently — a hand-rolled check-then-write static here would
+		// be a data race.
+		static const int s_iDsDebugOverride = []
 		{
-			s_iDsDebugOverride = -1;
 			for (int i = 1; i < __argc; i++)
 				if (std::strncmp(__argv[i], "--ds-debug=", 11) == 0)
-					s_iDsDebugOverride = std::atoi(__argv[i] + 11);
-		}
+					return std::atoi(__argv[i] + 11);
+			return -1;
+		}();
 		if (s_iDsDebugOverride >= 0) xConstants.m_uDebugMode = (u_int)s_iDsDebugOverride;
 	}
 #endif
@@ -195,6 +206,8 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	xConstants.m_bShowBRDFLUT = xIBL.IsShowBRDFLUT() ? 1 : 0;
 	xConstants.m_bForceRoughness = xIBL.IsForceRoughness() ? 1 : 0;
 	xConstants.m_fForcedRoughness = xIBL.GetForcedRoughness();
+	// Screen-space effects are per-view since S5b (each full-pipeline view owns
+	// its own chains), so the gates are view-independent again.
 	xConstants.m_bSSREnabled = xSSR.IsEnabled() ? 1 : 0;
 	xConstants.m_bSSGIEnabled = xSSGI.IsEnabled() ? 1 : 0;
 	xConstants.m_fAmbientFallbackIntensity = dbg_fAmbientFallbackIntensity;
@@ -228,8 +241,8 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// covers both the blur-on (blurred) and blur-off (raw) bind paths. The passes
 	// clear-only when SSAO is disabled — harmless, the shader gate skips the tap.
 	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
-	xGraph.ReadTransient(xPass, xSSAO.m_xRawOcclusionHandle, RESOURCE_ACCESS_READ_SRV);
-	xGraph.ReadTransient(xPass, xSSAO.m_xBlurredHandle, RESOURCE_ACCESS_READ_SRV);
+	xGraph.ReadTransient(xPass, xSSAO.m_axRawOcclusionHandles[kuFluxViewSlotMain], RESOURCE_ACCESS_READ_SRV);
+	xGraph.ReadTransient(xPass, xSSAO.m_axBlurredHandles[kuFluxViewSlotMain], RESOURCE_ACCESS_READ_SRV);
 
 	// Shadow maps — one 4-cascade depth array (Phase 4b). Read ALL layers so the
 	// graph transitions every cascade WRITE_DSV → SHADER_READ before this pass
@@ -267,4 +280,40 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.Read(xPass, xIBL.m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
 	xGraph.Read(xPass, xIBL.m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
 	xGraph.Read(xPass, xIBL.m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+
+	// Preview view (S5a): a second lighting instance over the preview view's own
+	// G-buffer, writing its HDR target. Same record callback — the pass's view
+	// slot selects the per-view G-buffer accessors + the preview VIEW set (whose
+	// flags disable shadow/cluster sampling). S5b: the preview owns its own
+	// SSAO/SSR/SSGI chains, so the same screen-space reads as the main pass are
+	// declared against the preview-slot handles.
+	// The CSM/cluster/IBL reads are still declared: the shader STATICALLY samples
+	// those persistent VIEW members, so the graph-Read validator demands them.
+	if (xFluxGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	{
+		const Flux_PassHandle xPreviewPass = xGraph.AddPass("Apply Lighting (Preview)", ExecuteApplyLighting)
+			.View(kuFluxViewSlotPreview)
+			.Writes(xFluxGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
+			.ClearTargets();
+		for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+			xGraph.Read(xPreviewPass, xFluxGraphics.GetMRTAttachment(static_cast<MRTIndex>(u), kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(xPreviewPass, xFluxGraphics.GetDepthAttachment(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
+		xGraph.ReadTransient(xPreviewPass, xSSAO.m_axRawOcclusionHandles[kuFluxViewSlotPreview], RESOURCE_ACCESS_READ_SRV);
+		xGraph.ReadTransient(xPreviewPass, xSSAO.m_axBlurredHandles[kuFluxViewSlotPreview], RESOURCE_ACCESS_READ_SRV);
+		xGraph.ReadTransient(xPreviewPass, g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
+		if (xLightClustering.IsInitialised())
+		{
+			xGraph.ReadBuffer(xPreviewPass, xLightClustering.GetClusterLightCountsBuffer().GetBuffer(),
+				RESOURCE_ACCESS_READ_SRV);
+			xGraph.ReadBuffer(xPreviewPass, xLightClustering.GetClusterLightIndicesBuffer().GetBuffer(),
+				RESOURCE_ACCESS_READ_SRV);
+		}
+		if (g_xEngine.SSR().IsInitialised())
+			xGraph.ReadTransient(xPreviewPass, g_xEngine.SSR().GetReflectionHandle(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
+		if (g_xEngine.SSGI().IsInitialised())
+			xGraph.ReadTransient(xPreviewPass, g_xEngine.SSGI().GetSSGIHandle(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(xPreviewPass, xIBL.m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(xPreviewPass, xIBL.m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(xPreviewPass, xIBL.m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+	}
 }

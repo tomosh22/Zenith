@@ -90,7 +90,8 @@ public:
 	// (the null backend submits nothing).
 	void RecordFrame(const Flux_WorkDistribution& xWorkDistribution);
 	// Phase 5.1: no-op on the null backend — it has no persistent descriptor sets.
-	void PreparePersistentSets(Flux_BufferDescriptorHandle /*xGlobalCBV*/, Flux_BufferDescriptorHandle /*xMaterialsSSBO*/, Flux_BufferDescriptorHandle /*xViewCBV*/) { }
+	// (axViewCBVs = one per-view constants CB per render-view slot on the real backend.)
+	void PreparePersistentSets(Flux_BufferDescriptorHandle /*xGlobalCBV*/, Flux_BufferDescriptorHandle /*xMaterialsSSBO*/, const Flux_BufferDescriptorHandle* /*axViewCBVs*/, u_int /*uNumViewCBVs*/) { }
 	// Phase 5.4: no-op on the null backend (no real VIEW-set image/buffer descriptors).
 	void WritePersistentViewImage(u_int /*uBinding*/, const Flux_ShaderResourceView& /*xSRV*/, const Zenith_D3D12_Sampler& /*xSampler*/) { }
 	void WritePersistentViewBuffer(u_int /*uBinding*/, const Flux_ShaderResourceView_Buffer& /*xSRV*/) { }

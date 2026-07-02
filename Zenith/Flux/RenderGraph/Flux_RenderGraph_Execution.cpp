@@ -250,6 +250,13 @@ const Flux_RenderGraph_Pass* Flux_RenderGraph::GetCurrentRecordingPass()
 	return tls_pxCurrentRecordingPass;
 }
 
+u_int Flux_RenderGraph::GetCurrentRecordingPassViewSlot()
+{
+	// Slot 0 (main camera) outside any pass's recording window — e.g. the
+	// swapchain present blit, which records with no graph pass on the TLS.
+	return tls_pxCurrentRecordingPass ? tls_pxCurrentRecordingPass->m_uViewSlot : 0u;
+}
+
 Flux_RenderGraph::CurrentPassScope::CurrentPassScope(const Flux_RenderGraph_Pass* pxPass)
 	: m_pxPrev(tls_pxCurrentRecordingPass)
 {

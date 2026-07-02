@@ -141,6 +141,20 @@ public class GameProject : ZenithBaseProject
 			// Use zenithRoot which is the actual project root (one level up from Build/)
 			string slangBinPath = zenithRoot + "/Middleware/slang/bin";
 			conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\*.dll\" \"$(OutDir)\"");
+
+			// The material-preview controller (Flux/RenderViews) references
+			// Zenith_MeshGeometryAsset's procedural generators, which links the
+			// engine->assimp import chain into every game exe — the assimp runtime
+			// DLLs (config-specific names — assimp-vc143-mt[d].dll + poly2tri/
+			// minizip/zlib/pugixml) must sit beside the exe or STATUS_DLL_NOT_FOUND
+			// fires at launch, same as slang above. On-disk assimp DLL layout is
+			// asymmetric: debug DLLs live in assimp/debug/bin, release DLLs in the
+			// BARE assimp/bin (there is no assimp/release/ directory). Mirrors the
+			// identical post-build in Sharpmake_FluxCompiler.cs.
+			string assimpBinPath = (target.Optimization == Optimization.Debug)
+				? zenithRoot + "/Tools/Middleware/assimp/debug/bin"
+				: zenithRoot + "/Tools/Middleware/assimp/bin";
+			conf.EventPostBuild.Add($"xcopy /Y /D \"{assimpBinPath}\\*.dll\" \"$(OutDir)\"");
 		}
 	}
 }

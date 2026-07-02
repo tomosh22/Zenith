@@ -17,15 +17,13 @@ namespace Flux_Generated_SSAO
 	{
 		struct g_xGlobal_CB
 		{
-			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
-			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
-			float m_fg_fTimeSeconds; // slang=float offset=32
-			unsigned int m_ug_uFrameIndex; // slang=uint offset=36
-			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=40 arrayCount=2 (no C++ mapping)
+			float m_fg_fTimeSeconds; // slang=float offset=0
+			unsigned int m_ug_uFrameIndex; // slang=uint offset=4
+			unsigned char m_ag_xGlobalPad[8]; // slang=vector offset=8 arrayCount=2 (no C++ mapping)
 		};
-		static_assert(sizeof(g_xGlobal_CB) == 48, "g_xGlobal_CB size drifted from Slang reflection");
-		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 32, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
-		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 36, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
+		static_assert(sizeof(g_xGlobal_CB) == 16, "g_xGlobal_CB size drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_fg_fTimeSeconds) == 0, "g_xGlobal.g_fTimeSeconds offset drifted from Slang reflection");
+		static_assert(offsetof(g_xGlobal_CB, m_ug_uFrameIndex) == 4, "g_xGlobal.g_uFrameIndex offset drifted from Slang reflection");
 		struct g_xView_CB
 		{
 			unsigned char m_ag_xViewMat[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
@@ -40,10 +38,17 @@ namespace Flux_Generated_SSAO
 			unsigned int m_ug_bQuadUtilisationAnalysis; // slang=uint offset=416
 			unsigned int m_ug_uTargetPixelsPerTri; // slang=uint offset=420
 			unsigned char m_ag_xCameraNearFar[8]; // slang=vector offset=424 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xSunDir_Pad[16]; // slang=vector offset=432 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=448 arrayCount=4 (no C++ mapping)
+			unsigned int m_ug_uViewFlags; // slang=uint offset=464
+			unsigned int m_ug_uViewSlot; // slang=uint offset=468
+			unsigned char m_ag_xViewPad[8]; // slang=vector offset=472 arrayCount=2 (no C++ mapping)
 		};
-		static_assert(sizeof(g_xView_CB) == 432, "g_xView_CB size drifted from Slang reflection");
+		static_assert(sizeof(g_xView_CB) == 480, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uViewFlags) == 464, "g_xView.g_uViewFlags offset drifted from Slang reflection");
+		static_assert(offsetof(g_xView_CB, m_ug_uViewSlot) == 468, "g_xView.g_uViewSlot offset drifted from Slang reflection");
 	}
 
 	// ----- SSAO_Blur (SSAO/Flux_SSAO_Blur) -----

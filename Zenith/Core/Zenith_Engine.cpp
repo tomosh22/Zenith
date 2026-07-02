@@ -78,7 +78,7 @@
 #include "Editor/Zenith_UndoSystem.h"
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
-#include "Flux/MaterialPreview/Flux_MaterialPreviewImpl.h"
+#include "Flux/RenderViews/Flux_MaterialPreviewController.h"
 #endif
 #include "Physics/Zenith_Physics.h"
 #include "UnitTests/Zenith_UnitTests.h"
@@ -221,7 +221,7 @@ ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_TerrainImpl,                 Terrain,       
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_PresentImpl,                 Present,              m_pxPresent)
 #ifdef ZENITH_TOOLS
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_GizmosImpl,                  Gizmos,               m_pxGizmos)
-ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_MaterialPreviewImpl,         MaterialPreview,      m_pxMaterialPreview)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_MaterialPreviewController,   MaterialPreview,      m_pxMaterialPreview)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Editor,                   Editor,               m_pxEditor)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_Gizmo,                    Gizmo,                m_pxGizmo)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Zenith_SelectionSystem,          Selection,            m_pxSelection)
@@ -367,7 +367,7 @@ void Zenith_Engine::AllocateFluxSubsystems()
 	m_pxPresent = new Flux_PresentImpl();
 #ifdef ZENITH_TOOLS
 	m_pxGizmos          = new Flux_GizmosImpl();
-	m_pxMaterialPreview = new Flux_MaterialPreviewImpl();
+	m_pxMaterialPreview = new Flux_MaterialPreviewController();
 #endif
 }
 

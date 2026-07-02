@@ -11,9 +11,11 @@ class Zenith_MaterialAsset;
 // Zenith_MaterialEditorPanel - UE5/Unity-style material editor.
 //
 // A dockable ImGui window editing one .zmtrl asset at a time:
-//   - a LIVE IBL-lit preview viewport (Flux_MaterialPreview offscreen render)
-//     with a mesh selector (sphere/cube/plane/cylinder), orbit (LMB-drag),
-//     zoom (wheel), and rotatable light (L+drag, UE convention),
+//   - a LIVE preview viewport (the material-preview RENDER VIEW: the full Flux
+//     pipeline re-run for a second view containing only the preview mesh —
+//     Flux_MaterialPreviewController in Flux/RenderViews/) with a mesh selector
+//     (sphere/cube/plane/cylinder), orbit (LMB-drag), zoom (wheel), and a
+//     rotatable per-view light (L+drag, UE convention),
 //   - a parent slot (drag-drop a material to make this an instance),
 //   - grouped, auto-generated property foldouts driven by the
 //     Zenith_MaterialParamTable reflection table, with UE-style pin gating

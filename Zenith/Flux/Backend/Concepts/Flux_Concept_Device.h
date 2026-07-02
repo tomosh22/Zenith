@@ -46,7 +46,8 @@ concept FluxBackendDevice = requires(
 	const Flux_ShaderResourceView& xView,
 	const Flux_ShaderResourceView_Buffer& xViewBuf,
 	const Flux_Sampler& xSampler,
-	Flux_BufferDescriptorHandle h)
+	Flux_BufferDescriptorHandle h,
+	const Flux_BufferDescriptorHandle* ph)
 {
 	{ t.Initialise()                                                 } -> std::same_as<void>;
 	{ t.InitialisePerFrameResources()                                } -> std::same_as<void>;
@@ -57,7 +58,8 @@ concept FluxBackendDevice = requires(
 	{ t.WriteBindlessTextureSlot(u, xView, xSampler)                 } -> std::same_as<void>;
 	// Persistent descriptor sets (Phase 5.1 GLOBAL/VIEW + 5.4 VIEW image SRVs). In
 	// the concept so D3D12 signature drift fails the build, not the first frame.
-	{ t.PreparePersistentSets(h, h, h)                               } -> std::same_as<void>;
+	// VIEW is per-render-view: one CBV per fixed view slot (Flux_RenderViews.h).
+	{ t.PreparePersistentSets(h, h, ph, u)                           } -> std::same_as<void>;
 	{ t.WritePersistentViewImage(u, xView, xSampler)                 } -> std::same_as<void>;
 	{ t.WritePersistentViewBuffer(u, xViewBuf)                       } -> std::same_as<void>;
 };

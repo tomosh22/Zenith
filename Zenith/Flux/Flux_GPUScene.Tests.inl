@@ -687,3 +687,68 @@ ZENITH_TEST(GPUScene, IncrementalBuildMixesItemsAndInstances)
 	ZENITH_ASSERT_TRUE(xA.m_uObjectIndex != xB.m_uObjectIndex, "distinct instance objects");
 	ZENITH_ASSERT_EQ(xA.m_uColorTintPacked, 0xAABBCCDDu, "instance A tint preserved");
 }
+
+// ---- per-draw-item render-view visibility mask (S4 multi-view) ----------------
+
+ZENITH_TEST(GPUScene, DrawItemViewMaskPackAndTest)
+{
+	// Low 16 bits stay item flags; high 16 carry the per-view-slot mask.
+	const u_int uPacked = Flux_PackDrawItemViewMask(0x2u, Flux_ViewMaskPreviewOnly());
+	ZENITH_ASSERT_EQ(uPacked & 0xFFFFu, 0x2u, "low flag bits preserved");
+	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(uPacked, kuFluxViewSlotPreview), "preview-only item visible in the preview slot");
+	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uPacked, kuFluxViewSlotMain), "preview-only item invisible to the camera");
+	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uPacked, kuFluxViewSlotShadowFirst), "preview-only item invisible to cascades");
+
+	const u_int uScene = Flux_PackDrawItemViewMask(0u, Flux_ViewMaskAllSceneViews(true));
+	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(uScene, kuFluxViewSlotMain), "scene item visible to the camera");
+	for (u_int u = 0; u < kuFluxViewNumShadowSlots; u++)
+	{
+		ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(uScene, kuFluxViewSlotShadowFirst + u), "scene item visible to every cascade");
+	}
+	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uScene, kuFluxViewSlotPreview), "scene item never leaks into the preview");
+}
+
+ZENITH_TEST(GPUScene, BuildersDefaultToAllSceneViews)
+{
+	Flux_GPUSceneBucketRegistry xReg;
+	Flux_GPUSceneBuildResult xOut;
+	Flux_BeginGPUSceneBuild(xOut, xReg);
+
+	// Snapshot item path (default source-item mask) + instance path (default param).
+	Flux_GPUSceneSourceItem xItem;
+	xItem.m_xSubmeshes.PushBack(GPUScene_MakeSub(1u, uFLUX_GPUSCENE_CULL_ONE_SIDED, 100u, 0u));
+	Flux_AppendGPUSceneItem(xItem, xReg, xOut);
+
+	Flux_GPUSceneBucketKey xKey;
+	xKey.m_uMeshGeometryId = 2u;
+	Flux_AppendGPUSceneInstance(xReg, xOut, Zenith_Maths::Matrix4(1.0f), 0u, 0u, 0u,
+		xKey, Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 1.0f), uFLUX_GPUSCENE_TINT_WHITE);
+
+	// Preview-exclusive override rides the source item.
+	Flux_GPUSceneSourceItem xPreviewItem;
+	xPreviewItem.m_uViewMask = Flux_ViewMaskPreviewOnly();
+	xPreviewItem.m_xSubmeshes.PushBack(GPUScene_MakeSub(3u, uFLUX_GPUSCENE_CULL_ONE_SIDED, 300u, 0u));
+	Flux_AppendGPUSceneItem(xPreviewItem, xReg, xOut);
+
+	Flux_EndGPUSceneBuild(xOut, xReg);
+
+	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(0).m_uFlags, kuFluxViewSlotMain), "snapshot item defaults into the camera view");
+	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(0).m_uFlags, kuFluxViewSlotShadowFirst), "snapshot item defaults into the cascades");
+	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(0).m_uFlags, kuFluxViewSlotPreview), "snapshot item stays out of the preview");
+	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(1).m_uFlags, kuFluxViewSlotMain), "instance defaults into the camera view");
+	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(2).m_uFlags, kuFluxViewSlotMain), "preview-only item stays out of the camera view");
+	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(2).m_uFlags, kuFluxViewSlotPreview), "preview-only item lands in the preview slot");
+}
+
+ZENITH_TEST(GPUScene, UnifiedAddressingAtMaxViewSlots)
+{
+	// The visible/indirect buffers are sized to the FIXED slot capacity (8). The
+	// highest slot's addressing must land exactly at the end of both allocations.
+	const u_int uMaxViews  = FLUX_MAX_RENDER_VIEWS;
+	const u_int uItems     = 100u;
+	const u_int uBuckets   = 7u;
+	ZENITH_ASSERT_EQ(Flux_UnifiedVisibleWriteIndex(uMaxViews - 1u, uItems, uItems - 1u, 0u),
+		uMaxViews * uItems - 1u, "last view slot's final visible index is the last allocated word");
+	ZENITH_ASSERT_EQ(Flux_UnifiedIndirectCommandWord(uMaxViews - 1u, uBuckets - 1u, uBuckets) + uFLUX_GPUSCENE_INDIRECT_WORDS,
+		uMaxViews * uBuckets * uFLUX_GPUSCENE_INDIRECT_WORDS, "last view slot's final indirect command fits the allocation exactly");
+}

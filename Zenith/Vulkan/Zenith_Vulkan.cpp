@@ -1068,26 +1068,27 @@ void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 
 void Zenith_Vulkan::CreatePersistentDescriptorSets()
 {
-	// Pool sized for the GLOBAL + VIEW sets across all frames in flight. The sets are
-	// written BEFORE bind each frame (PreparePersistentSets, ahead of worker recording),
-	// so no update-after-bind is needed — a plain pool/layout keeps them simple.
-	// Per frame: GLOBAL holds g_xGlobal (uniform) + g_axMaterials (storage); VIEW holds
-	// g_xView (uniform) + g_xCSM (combined image sampler, Phase 5.4) + g_xShadowMatrices
-	// (storage, Phase 5.4). Sizes are per-type sums across both persistent sets — bump
-	// these in lockstep when a VIEW/GLOBAL member of that type is added (uniform: g_xGlobal
-	// + g_xView = 2; storage: g_axMaterials + g_xShadowMatrices + g_xLightBuffer +
-	// g_xClusterLightCounts + g_xClusterLightIndices = 5; combined: g_xCSM + IBL trio
-	// (g_xBRDFLUT + g_xIrradianceMap + g_xPrefilteredMap) = 4).
+	// Pool sized for the GLOBAL set + one VIEW set PER RENDER-VIEW SLOT across all
+	// frames in flight. The sets are written BEFORE bind each frame
+	// (PreparePersistentSets, ahead of worker recording), so no update-after-bind is
+	// needed — a plain pool/layout keeps them simple.
+	// Per frame: 1× GLOBAL { g_xGlobal (uniform) + g_axMaterials (storage) } +
+	// FLUX_MAX_RENDER_VIEWS× VIEW { g_xView (uniform) + g_xCSM + IBL trio (4 combined
+	// image samplers) + g_xShadowMatrices + light/cluster buffers (4 storage) }.
+	// Bump the per-set member counts in lockstep when a VIEW/GLOBAL member is added.
+	constexpr u_int kuViewUniformPerSet  = 1u; // g_xView
+	constexpr u_int kuViewStoragePerSet  = 4u; // g_xShadowMatrices + g_xLightBuffer + cluster counts/indices
+	constexpr u_int kuViewCombinedPerSet = 4u; // g_xCSM + IBL trio
 	vk::DescriptorPoolSize axPoolSizes[] =
 	{
-		{ vk::DescriptorType::eUniformBuffer,        MAX_FRAMES_IN_FLIGHT * 2u },
-		{ vk::DescriptorType::eStorageBuffer,        MAX_FRAMES_IN_FLIGHT * 5u },
-		{ vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * 4u },
+		{ vk::DescriptorType::eUniformBuffer,        MAX_FRAMES_IN_FLIGHT * (1u + FLUX_MAX_RENDER_VIEWS * kuViewUniformPerSet) },
+		{ vk::DescriptorType::eStorageBuffer,        MAX_FRAMES_IN_FLIGHT * (1u + FLUX_MAX_RENDER_VIEWS * kuViewStoragePerSet) },
+		{ vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * (FLUX_MAX_RENDER_VIEWS * kuViewCombinedPerSet) },
 	};
 	vk::DescriptorPoolCreateInfo xPoolInfo = vk::DescriptorPoolCreateInfo()
 		.setPoolSizeCount(COUNT_OF(axPoolSizes))
 		.setPPoolSizes(axPoolSizes)
-		.setMaxSets(MAX_FRAMES_IN_FLIGHT * 2u);
+		.setMaxSets(MAX_FRAMES_IN_FLIGHT * (1u + FLUX_MAX_RENDER_VIEWS));
 	m_xPersistentDescriptorPool = VkUnwrap(m_xDevice.createDescriptorPool(xPoolInfo));
 
 	// Layouts must match exactly what the spine reflects so every pipeline's RootSig can
@@ -1140,37 +1141,49 @@ void Zenith_Vulkan::CreatePersistentDescriptorSets()
 		m_xViewSetLayout = VkUnwrap(m_xDevice.createDescriptorSetLayout(xInfo));
 	}
 
-	// One GLOBAL + one VIEW set per frame in flight (allocated once; never reset).
+	// One GLOBAL + one VIEW set per render-view slot, per frame in flight
+	// (allocated once; never reset). Every slot's set exists up front so a view
+	// activating later (preview panel opening) never allocates mid-frame.
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		vk::DescriptorSetLayout axLayouts[2] = { m_xGlobalSetLayout, m_xViewSetLayout };
+		vk::DescriptorSetLayout axLayouts[1u + FLUX_MAX_RENDER_VIEWS];
+		axLayouts[0] = m_xGlobalSetLayout;
+		for (u_int uView = 0; uView < FLUX_MAX_RENDER_VIEWS; uView++) { axLayouts[1u + uView] = m_xViewSetLayout; }
 		vk::DescriptorSetAllocateInfo xAlloc = vk::DescriptorSetAllocateInfo()
 			.setDescriptorPool(m_xPersistentDescriptorPool)
-			.setDescriptorSetCount(2)
+			.setDescriptorSetCount(1u + FLUX_MAX_RENDER_VIEWS)
 			.setPSetLayouts(axLayouts);
 		std::vector<vk::DescriptorSet> axSets = VkUnwrap(m_xDevice.allocateDescriptorSets(xAlloc));
 		m_axPerFrame[u].m_xGlobalSet = axSets[0];
-		m_axPerFrame[u].m_xViewSet   = axSets[1];
+		for (u_int uView = 0; uView < FLUX_MAX_RENDER_VIEWS; uView++) { m_axPerFrame[u].m_axViewSets[uView] = axSets[1u + uView]; }
 	}
 
-	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan persistent GLOBAL/VIEW descriptor sets created (%u frames)", (u_int)MAX_FRAMES_IN_FLIGHT);
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan persistent GLOBAL/VIEW descriptor sets created (%u frames x %u views)",
+		(u_int)MAX_FRAMES_IN_FLIGHT, (u_int)FLUX_MAX_RENDER_VIEWS);
 }
 
-void Zenith_Vulkan::PreparePersistentSets(Flux_BufferDescriptorHandle xGlobalCBV, Flux_BufferDescriptorHandle xMaterialsSSBO, Flux_BufferDescriptorHandle xViewCBV)
+void Zenith_Vulkan::PreparePersistentSets(Flux_BufferDescriptorHandle xGlobalCBV, Flux_BufferDescriptorHandle xMaterialsSSBO, const Flux_BufferDescriptorHandle* axViewCBVs, u_int uNumViewCBVs)
 {
 	// Main thread, once per frame, before any worker records. Rewrites the CURRENT frame
-	// slot's GLOBAL (g_xGlobal CB + g_axMaterials SSBO, Phase 5.3) + VIEW (g_xView CB)
-	// descriptors from the spine buffers' current-frame views. One set per frame-in-flight
-	// → safe to write without a barrier (the slot's prior GPU use already completed via the
-	// frame fence in PerFrameBegin).
+	// slot's GLOBAL (g_xGlobal CB + g_axMaterials SSBO, Phase 5.3) descriptors plus
+	// binding 0 (g_xView CB) of EVERY render-view slot's VIEW set — each slot gets its
+	// own per-view constants buffer (inactive slots' sets are written but never bound).
+	// One set per frame-in-flight → safe to write without a barrier (the slot's prior
+	// GPU use already completed via the frame fence in PerFrameBegin).
 	Zenith_Assert(m_pxCurrentFrame != nullptr, "PreparePersistentSets: no current frame slot");
+	Zenith_Assert(axViewCBVs != nullptr && uNumViewCBVs == FLUX_MAX_RENDER_VIEWS,
+		"PreparePersistentSets: expected one view CBV per render-view slot (%u), got %u", FLUX_MAX_RENDER_VIEWS, uNumViewCBVs);
 
 	auto& xEngine = g_xEngine;
 	const vk::DescriptorBufferInfo xGlobalInfo    = xEngine.FluxMemory().GetBufferDescriptor(xGlobalCBV);
 	const vk::DescriptorBufferInfo xMaterialsInfo = xEngine.FluxMemory().GetBufferDescriptor(xMaterialsSSBO);
-	const vk::DescriptorBufferInfo xViewInfo      = xEngine.FluxMemory().GetBufferDescriptor(xViewCBV);
+	vk::DescriptorBufferInfo axViewInfos[FLUX_MAX_RENDER_VIEWS];
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		axViewInfos[u] = xEngine.FluxMemory().GetBufferDescriptor(axViewCBVs[u]);
+	}
 
-	vk::WriteDescriptorSet axWrites[3];
+	vk::WriteDescriptorSet axWrites[2u + FLUX_MAX_RENDER_VIEWS];
 	axWrites[0] = vk::WriteDescriptorSet()
 		.setDstSet(m_pxCurrentFrame->m_xGlobalSet).setDstBinding(0).setDstArrayElement(0)
 		.setDescriptorCount(1).setDescriptorType(vk::DescriptorType::eUniformBuffer)
@@ -1179,11 +1192,14 @@ void Zenith_Vulkan::PreparePersistentSets(Flux_BufferDescriptorHandle xGlobalCBV
 		.setDstSet(m_pxCurrentFrame->m_xGlobalSet).setDstBinding(1).setDstArrayElement(0)
 		.setDescriptorCount(1).setDescriptorType(vk::DescriptorType::eStorageBuffer)
 		.setPBufferInfo(&xMaterialsInfo);
-	axWrites[2] = vk::WriteDescriptorSet()
-		.setDstSet(m_pxCurrentFrame->m_xViewSet).setDstBinding(0).setDstArrayElement(0)
-		.setDescriptorCount(1).setDescriptorType(vk::DescriptorType::eUniformBuffer)
-		.setPBufferInfo(&xViewInfo);
-	m_xDevice.updateDescriptorSets(3, axWrites, 0, nullptr);
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		axWrites[2u + u] = vk::WriteDescriptorSet()
+			.setDstSet(m_pxCurrentFrame->m_axViewSets[u]).setDstBinding(0).setDstArrayElement(0)
+			.setDescriptorCount(1).setDescriptorType(vk::DescriptorType::eUniformBuffer)
+			.setPBufferInfo(&axViewInfos[u]);
+	}
+	m_xDevice.updateDescriptorSets(2u + FLUX_MAX_RENDER_VIEWS, axWrites, 0, nullptr);
 }
 
 void Zenith_Vulkan::WritePersistentViewImage(u_int uBinding, const Flux_ShaderResourceView& xSRV, const Zenith_Vulkan_Sampler& xSampler)
@@ -1210,11 +1226,17 @@ void Zenith_Vulkan::WritePersistentViewImage(u_int uBinding, const Flux_ShaderRe
 		.setImageLayout(eLayout)
 		.setImageView(xVkView)
 		.setSampler(xSampler.GetSampler());
-	vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
-		.setDstSet(m_pxCurrentFrame->m_xViewSet).setDstBinding(uBinding).setDstArrayElement(0)
-		.setDescriptorCount(1).setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setPImageInfo(&xImageInfo);
-	m_xDevice.updateDescriptorSets(1, &xWrite, 0, nullptr);
+	// Replicated-shared across views: fan the SAME descriptor out to every render-
+	// view slot's VIEW set (bindings 1-8 are view-invariant; see Flux_ViewSetBinding.h).
+	vk::WriteDescriptorSet axWrites[FLUX_MAX_RENDER_VIEWS];
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		axWrites[u] = vk::WriteDescriptorSet()
+			.setDstSet(m_pxCurrentFrame->m_axViewSets[u]).setDstBinding(uBinding).setDstArrayElement(0)
+			.setDescriptorCount(1).setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+			.setPImageInfo(&xImageInfo);
+	}
+	m_xDevice.updateDescriptorSets(FLUX_MAX_RENDER_VIEWS, axWrites, 0, nullptr);
 }
 
 void Zenith_Vulkan::WritePersistentViewBuffer(u_int uBinding, const Flux_ShaderResourceView_Buffer& xSRV)
@@ -1228,11 +1250,16 @@ void Zenith_Vulkan::WritePersistentViewBuffer(u_int uBinding, const Flux_ShaderR
 	Zenith_Assert(xSRV.m_xBufferDescHandle.IsValid(),
 		"WritePersistentViewBuffer: SRV for VIEW binding %u has an invalid buffer descriptor", uBinding);
 	const vk::DescriptorBufferInfo xInfo = g_xEngine.FluxMemory().GetBufferDescriptor(xSRV.m_xBufferDescHandle);
-	vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
-		.setDstSet(m_pxCurrentFrame->m_xViewSet).setDstBinding(uBinding).setDstArrayElement(0)
-		.setDescriptorCount(1).setDescriptorType(vk::DescriptorType::eStorageBuffer)
-		.setPBufferInfo(&xInfo);
-	m_xDevice.updateDescriptorSets(1, &xWrite, 0, nullptr);
+	// Replicated-shared across views (see WritePersistentViewImage).
+	vk::WriteDescriptorSet axWrites[FLUX_MAX_RENDER_VIEWS];
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		axWrites[u] = vk::WriteDescriptorSet()
+			.setDstSet(m_pxCurrentFrame->m_axViewSets[u]).setDstBinding(uBinding).setDstArrayElement(0)
+			.setDescriptorCount(1).setDescriptorType(vk::DescriptorType::eStorageBuffer)
+			.setPBufferInfo(&xInfo);
+	}
+	m_xDevice.updateDescriptorSets(FLUX_MAX_RENDER_VIEWS, axWrites, 0, nullptr);
 }
 
 void Zenith_Vulkan::WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler)

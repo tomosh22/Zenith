@@ -58,8 +58,8 @@ struct TranslucencyConstantsLayout
 	uint   g_bIBLDiffuseEnabled;
 	uint   g_bIBLSpecularEnabled;
 	float  g_fIBLIntensity;
-	uint   g_bShadowsEnabled;
-	uint   g_bDynamicLightsEnabled;	// preview disables the scene's cluster walk
+	// (the shadow/dynamic-light gates moved to the per-view g_xView.g_uViewFlags
+	//  — each render view decides; pass constants carry only pass-local state)
 	float  g_fAmbientFallbackIntensity;
 	float2 g_xCSMTexelSize;	// 1 / CSM resolution (engine rule: dims via CBV)
 };
@@ -137,7 +137,7 @@ float SampleCascadeShadow(int iCascade, float2 xSamplePos, float fBiasedDepth, f
 
 float ComputeSunShadowFactor(float3 xWorldPos, float fNdotL)
 {
-	if (g_xPassSet.TranslucencyConstants.g_bShadowsEnabled == 0u) return 1.0;
+	if ((g_xViewSet.g_xView.g_uViewFlags & FLUX_VIEW_FLAG_SHADOWS_ENABLED) == 0u) return 1.0;
 
 	const uint uNumCSMs = 4;
 	float4x4 axShadowMats[4] = {
@@ -263,7 +263,7 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 
 float3 ComputeSunDirect(MaterialSurface s, float3 xViewDir, float3 xWorldPos)
 {
-	float3 xLightDir = normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
+	float3 xLightDir = normalize(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
 	float3 xHalfDir  = normalize(xLightDir + xViewDir);
 
 	float NdotL = max(dot(s.worldNormal, xLightDir), 0.0);
@@ -272,7 +272,7 @@ float3 ComputeSunDirect(MaterialSurface s, float3 xViewDir, float3 xWorldPos)
 	float HdotV = max(dot(xHalfDir, xViewDir), 0.0);
 
 	if (NdotL <= PBR_EPSILON) return float3(0.0, 0.0, 0.0);
-	if (g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.a <= 0.1) return float3(0.0, 0.0, 0.0);
+	if (g_xViewSet.g_xView.g_xSunColour_Pad.a <= 0.1) return float3(0.0, 0.0, 0.0);
 
 	float roughness = max(s.roughness, PBR_MIN_ROUGHNESS);
 	float3 F0 = ComputeF0(s.albedo.rgb, s.metallic, s.specular);
@@ -295,7 +295,7 @@ float3 ComputeSunDirect(MaterialSurface s, float3 xViewDir, float3 xWorldPos)
 		Lo = Lo * fBaseAttenuation + xCoat;
 	}
 
-	float3 xRadiance = g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.rgb * g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.a;
+	float3 xRadiance = g_xViewSet.g_xView.g_xSunColour_Pad.rgb * g_xViewSet.g_xView.g_xSunColour_Pad.a;
 	float fShadow = ComputeSunShadowFactor(xWorldPos, NdotL);
 	return Lo * xRadiance * NdotL * fShadow;
 }
@@ -339,7 +339,7 @@ float4 fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace) : SV_Target
 
 	// Clustered dynamic lights — same cluster walk as the deferred composite,
 	// view-space Z computed from the world position (forward has no depth tex).
-	if (g_xPassSet.TranslucencyConstants.g_bDynamicLightsEnabled != 0u)
+	if ((g_xViewSet.g_xView.g_uViewFlags & FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED) != 0u)
 	{
 		float fViewZ = mul(g_xViewSet.g_xView.g_xViewMat, float4(input.worldPos, 1.0)).z;
 		float2 xScreenUV = input.position.xy * g_xViewSet.g_xView.g_xRcpScreenDims;

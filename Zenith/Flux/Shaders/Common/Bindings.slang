@@ -30,10 +30,10 @@ public struct DirectionalLight
 };
 
 // ---- GLOBAL (set 0) — view-invariant per-frame data ----
+// (The sun moved into ViewConstantsLayout: each render view owns its sun so a
+// secondary view — the editor material preview — can light itself independently.)
 public struct GlobalConstantsLayout
 {
-	public float4 g_xSunDir_Pad;     // xyz = sun direction
-	public float4 g_xSunColour_Pad;  // rgb = sun colour
 	public float  g_fTimeSeconds;
 	public uint   g_uFrameIndex;
 	public float2 g_xGlobalPad;
@@ -69,7 +69,22 @@ public struct ViewConstantsLayout
 	public uint     g_bQuadUtilisationAnalysis;
 	public uint     g_uTargetPixelsPerTri;
 	public float2   g_xCameraNearFar;
+	// Per-view sun (moved from GlobalConstantsLayout): the main view carries the
+	// scene sun; the preview view carries its own orbit light.
+	public float4   g_xSunDir_Pad;     // xyz = sun direction
+	public float4   g_xSunColour_Pad;  // rgb = sun colour, a = intensity
+	// Per-view feature flags (FLUX_VIEW_FLAG_* below) + this view's registry slot.
+	public uint     g_uViewFlags;
+	public uint     g_uViewSlot;
+	public float2   g_xViewPad;
 };
+
+// Per-view feature-flag bits in g_uViewFlags — mirror FLUX_VIEW_FLAG_* in
+// Flux/RenderViews/Flux_RenderViews.h (change in lockstep). Lit shaders gate
+// CSM + clustered-light sampling per view (the preview view disables both).
+public static const uint FLUX_VIEW_FLAG_SHADOWS_ENABLED        = 1u << 0;
+public static const uint FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED = 1u << 1;
+public static const uint FLUX_VIEW_FLAG_SCENE_CONTENT          = 1u << 2;
 struct ViewParams
 {
 	ConstantBuffer<ViewConstantsLayout> g_xView;            // binding 0

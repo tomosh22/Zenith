@@ -151,6 +151,29 @@ public:
 	const Flux_GPUSceneBuildResult&    GetUnifiedGPUScene()       const { return m_xUnifiedGPUScene; }
 	const Flux_GPUSceneBucketRegistry& GetUnifiedBucketRegistry() const { return m_xUnifiedBucketRegistry; }
 
+	// ===== External scene items (renderer-level draw submissions) =====
+	// The generic seam for content that is NOT in the scene snapshot — today the
+	// material-preview mesh (view-masked to the preview slot only). Submitted on
+	// the MAIN THREAD each frame BEFORE SyncUnifiedBucketsFromSnapshot (which
+	// consumes then clears the list). The owner keeps the mesh instance +
+	// material alive for the frame.
+	struct Flux_ExternalSceneItem
+	{
+		Zenith_Maths::Matrix4  m_xWorldMatrix   = Zenith_Maths::Matrix4(1.0f);
+		Flux_MeshInstance*     m_pxMeshInstance = nullptr;
+		Zenith_MaterialAsset*  m_pxMaterial     = nullptr;   // null -> blank material
+		u_int                  m_uViewMask      = 0u;        // Flux_ViewMask* helpers
+	};
+	void SubmitExternalSceneItem(const Flux_ExternalSceneItem& xItem) { m_axExternalSceneItems.PushBack(xItem); }
+
+	// This frame's translucent/additive-material external items, preserved by
+	// ExtractExternalSceneItems (which routes them off the opaque unified path).
+	// Consumed by the Translucency per-view gather — a pass Prepare that runs
+	// AFTER the sync, same frame; the owner keeps the mesh instance + material
+	// alive for the frame. Materials are pre-resolved (never null: a null
+	// submission resolves to the blank material, which is opaque).
+	const Zenith_Vector<Flux_ExternalSceneItem>& GetExternalTranslucentItems() const { return m_axExternalTranslucentItems; }
+
 	// Stage 1: resolve a bucket's shared mesh geometry (VB/IB built by the mesh-geometry
 	// registry's real provider) for the per-bucket indirect draw. nullptr in id-only mode
 	// (Stage 0) or on a build failure.
@@ -242,4 +265,14 @@ private:
 	void ExtractSnapshotStaticBuckets(const Flux_RenderSceneSnapshot& xSnapshot, Zenith_MaterialAsset* pxBlankMaterial);
 	void ExtractInstanceGroupBuckets(Zenith_MaterialAsset* pxBlankMaterial);
 	void ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xSnapshot, Zenith_MaterialAsset* pxBlankMaterial);
+	void ExtractExternalSceneItems(Zenith_MaterialAsset* pxBlankMaterial);
+
+	// Pending external submissions for this frame (see SubmitExternalSceneItem);
+	// consumed + cleared by ExtractExternalSceneItems inside the sync.
+	Zenith_Vector<Flux_ExternalSceneItem> m_axExternalSceneItems;
+
+	// Translucent/additive external items diverted off the opaque unified path —
+	// cleared + refilled by ExtractExternalSceneItems each sync (see
+	// GetExternalTranslucentItems above for the consumer contract).
+	Zenith_Vector<Flux_ExternalSceneItem> m_axExternalTranslucentItems;
 };

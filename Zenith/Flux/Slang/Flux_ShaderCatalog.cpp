@@ -30,7 +30,6 @@
 #include "Flux/Text/Flux_Text_Shaders.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos_Shaders.h"
-#include "Flux/MaterialPreview/Flux_MaterialPreview_Shaders.h"
 #endif
 #include "Flux/Present/Flux_Present_Shaders.h"
 // Engine programs no feature owns (ComputeTest* vestigial; DPFog game-interim).
@@ -70,7 +69,6 @@ namespace
 		MakeBlock(Flux_TextShaders::apxALL),
 #ifdef ZENITH_TOOLS
 		MakeBlock(Flux_GizmosShaders::apxALL),
-		MakeBlock(Flux_MaterialPreviewShaders::apxALL),
 #endif
 		MakeBlock(Flux_PresentShaders::apxALL),
 		MakeBlock(Flux_UnownedEngineShaders::apxALL),

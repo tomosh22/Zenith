@@ -6,6 +6,7 @@
 #include "Profiling/Zenith_Profiling.h"
 
 #include "Flux/Flux_GraphicsImpl.h"
+#include "Flux/Flux_RendererImpl.h"	// GetExternalTranslucentItems (per-view external gather)
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
@@ -29,12 +30,17 @@ struct TranslucencyPassConstants
 	u_int m_bIBLDiffuseEnabled;
 	u_int m_bIBLSpecularEnabled;
 	float m_fIBLIntensity;
-	u_int m_bShadowsEnabled;
-	u_int m_bDynamicLightsEnabled;
+	// (shadow/dynamic-light gates are per-view now — g_xView.g_uViewFlags)
 	float m_fAmbientFallbackIntensity;
+	// std140: g_xCSMTexelSize (float2) is 8-byte aligned → offset 24, with a
+	// 4-byte pad at 20. Mirrors TranslucencyConstants_CB in Generated/
+	// Translucency.h (static_asserted below against the reflected layout).
+	u_int m_uPad0;
 	float m_fCSMTexelSizeX;
 	float m_fCSMTexelSizeY;
 };
+static_assert(sizeof(TranslucencyPassConstants) == 32, "TranslucencyPassConstants must match the reflected TranslucencyConstants_CB (32B, texelSize at offset 24)");
+static_assert(offsetof(TranslucencyPassConstants, m_fCSMTexelSizeX) == 24, "g_xCSMTexelSize must sit at offset 24 (std140 float2 alignment)");
 
 static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*);
 
@@ -136,77 +142,60 @@ void Flux_TranslucencyImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.Read(xPass, xIBL.m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
 	xGraph.Read(xPass, xIBL.m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
 	xGraph.Read(xPass, xIBL.m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+
+	// Preview view (S5b): a second translucency instance over the preview view's
+	// HDR target + depth (NO ClearTargets — deferred already cleared the target).
+	// Same record callback — the pass's view slot selects the per-view packet +
+	// the preview VIEW set (whose flags gate shadow/cluster sampling off). The
+	// CSM/cluster/IBL reads are still declared: the shader STATICALLY samples
+	// those persistent VIEW members, so the graph-Read validator demands them.
+	// NO Prepare here — the main pass's gather above fills EVERY view's packet
+	// (a second Prepare would double-gather).
+	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	{
+		const Flux_PassHandle xPreviewPass = xGraph.AddPass("Translucency (Preview)", ExecuteTranslucency)
+			.View(kuFluxViewSlotPreview)
+			.Writes(xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
+			.Reads (xGraphics.GetDepthAttachment(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_DEPTH);
+		xGraph.ReadTransient(xPreviewPass, g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
+		if (xLightClustering.IsInitialised())
+		{
+			xGraph.ReadBuffer(xPreviewPass, xLightClustering.GetClusterLightCountsBuffer().GetBuffer(),
+				RESOURCE_ACCESS_READ_SRV);
+			xGraph.ReadBuffer(xPreviewPass, xLightClustering.GetClusterLightIndicesBuffer().GetBuffer(),
+				RESOURCE_ACCESS_READ_SRV);
+		}
+		xGraph.Read(xPreviewPass, xIBL.m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(xPreviewPass, xIBL.m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(xPreviewPass, xIBL.m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+	}
 }
 
-// Prepare callback (main thread): pull every Translucent/Additive submesh out
-// of the EC-side model gather and depth-sort the result back-to-front.
-// The opaque unified path skips these submeshes symmetrically, so each
-// submesh renders on exactly one path.
-void Flux_TranslucencyImpl::GatherDrawPacket(void*)
+// Build one translucent packet entry from a draw source — mesh instance +
+// (non-null) material + world matrix — with the sort key measured against the
+// TARGET view's camera. Shared by the snapshot walk and the external-item
+// gather so both build byte-identical entries.
+static Flux_TranslucentDrawItem BuildTranslucentDrawItem(Flux_MeshInstance* pxMeshInstance,
+	Zenith_MaterialAsset* pxMaterial, const Zenith_Maths::Matrix4& xModelMatrix,
+	const Zenith_Maths::Vector3& xCameraPos)
 {
-	ZENITH_PROFILE_SCOPE("Flux Translucency Gather");
-	Zenith_Vector<Flux_TranslucentDrawItem>& xPacket = m_xDrawPacket;
-	xPacket.Clear();
+	const Zenith_MaterialParams& xParams = pxMaterial->GetResolved().m_xParams;
+	Flux_TranslucentDrawItem xItem;
+	xItem.m_pxMeshInstance = pxMeshInstance;
+	xItem.m_pxMaterial = pxMaterial;
+	xItem.m_xModelMatrix = xModelMatrix;
+	const Zenith_Maths::Vector3 xToCamera = Zenith_Maths::Vector3(xModelMatrix[3]) - xCameraPos;
+	xItem.m_fViewDepthSq = glm::dot(xToCamera, xToCamera);
+	xItem.m_bAdditive = (xParams.m_eBlendMode == MATERIAL_BLEND_ADDITIVE);
+	xItem.m_bTwoSided = xParams.m_bTwoSided;
+	return xItem;
+}
 
-	// Phase 2: read the engine-owned uncullled snapshot (rebuilt once per frame) instead
-	// of running our own ECS scan. Per-submesh translucent/additive selection below is
-	// unchanged, so the same submeshes render in the same order.
-	if (!m_pxSnapshot) return;
-	const Zenith_Vector<Flux_RenderSceneItem>& xItems = m_pxSnapshot->Items();
-	const bool bCull = m_pxSnapshot->IsCameraFrustumValid();   // skip culling against an unresolved camera
-	const Zenith_Frustum& xFrustum = m_pxSnapshot->GetCameraFrustum();
-
-	const Zenith_Maths::Vector3& xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
-
-	for (u_int u = 0; u < xItems.GetSize(); ++u)
-	{
-		const Flux_RenderSceneItem& xSrc = xItems.Get(u);
-		Flux_ModelInstance* pxModelInstance = xSrc.m_pxModelInstance;
-		const Zenith_Maths::Matrix4& xModelMatrix = xSrc.m_xWorldMatrix;
-
-		// Phase 3: camera-frustum cull the whole model before walking submeshes (translucency
-		// is a screen effect — off-screen translucent geometry contributes nothing). Conservative:
-		// an invalid AABB is never culled; culling is skipped entirely when the camera is unresolved.
-		if (bCull && xSrc.m_xWorldAABB.IsValid() && !Zenith_FrustumCulling::TestAABBFrustum(xFrustum, xSrc.m_xWorldAABB)) continue;
-
-		for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
-		{
-			Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
-			if (!pxMaterial) continue;
-
-			const Zenith_MaterialParams& xParams = pxMaterial->GetResolved().m_xParams;
-			const bool bTranslucent = (xParams.m_eBlendMode == MATERIAL_BLEND_TRANSLUCENT) ||
-									  (xParams.m_eBlendMode == MATERIAL_BLEND_ADDITIVE);
-			if (!bTranslucent) continue;
-
-			// v1: skinned-animated translucent submeshes are not supported.
-			if (pxModelInstance->GetSkinnedMeshInstance(uMesh) != nullptr)
-			{
-				if (!m_bWarnedAnimatedTranslucent)
-				{
-					Zenith_Warning(LOG_CATEGORY_RENDERER,
-						"Flux_Translucency: skinned-animated translucent submesh skipped — animated translucency is not supported yet");
-					m_bWarnedAnimatedTranslucent = true;
-				}
-				continue;
-			}
-
-			Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
-			if (!pxMeshInstance) continue;
-
-			Flux_TranslucentDrawItem xItem;
-			xItem.m_pxMeshInstance = pxMeshInstance;
-			xItem.m_pxMaterial = pxMaterial;
-			xItem.m_xModelMatrix = xModelMatrix;
-			const Zenith_Maths::Vector3 xToCamera = Zenith_Maths::Vector3(xModelMatrix[3]) - xCameraPos;
-			xItem.m_fViewDepthSq = glm::dot(xToCamera, xToCamera);
-			xItem.m_bAdditive = (xParams.m_eBlendMode == MATERIAL_BLEND_ADDITIVE);
-			xItem.m_bTwoSided = xParams.m_bTwoSided;
-			xPacket.PushBack(xItem);
-		}
-	}
-
-	// Back-to-front: farthest first so closer translucents blend over them.
+// Back-to-front: farthest first so closer translucents blend over them. The one
+// comparator for every view's packet (each packet's keys were measured against
+// its own view's camera).
+static void SortPacketBackToFront(Zenith_Vector<Flux_TranslucentDrawItem>& xPacket)
+{
 	if (xPacket.GetSize() > 1)
 	{
 		std::sort(&xPacket.Get(0), &xPacket.Get(0) + xPacket.GetSize(),
@@ -215,14 +204,120 @@ void Flux_TranslucencyImpl::GatherDrawPacket(void*)
 				return xA.m_fViewDepthSq > xB.m_fViewDepthSq;
 			});
 	}
+}
 
-	// Register every translucent material with the GPU material table (MAIN THREAD —
-	// assigns the table index + builds the record + makes its textures bindless). The
-	// worker draw path reads the index off the asset lock-free.
-	Flux_MaterialTable& xTable = g_xEngine.FluxGraphics().MaterialTable();
-	for (u_int u = 0; u < xPacket.GetSize(); ++u)
+// Prepare callback (main thread): pull every Translucent/Additive submesh out
+// of the EC-side model gather and depth-sort the result back-to-front.
+// The opaque unified path skips these submeshes symmetrically, so each
+// submesh renders on exactly one path.
+// ONE callback fills EVERY view's packet: the MAIN packet from the snapshot
+// walk (+ main-masked external items), the PREVIEW packet from the renderer's
+// preserved external translucent items (scene content never enters the preview).
+void Flux_TranslucencyImpl::GatherDrawPacket(void*)
+{
+	ZENITH_PROFILE_SCOPE("Flux Translucency Gather");
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; ++u)
 	{
-		if (xPacket.Get(u).m_pxMaterial) xTable.GetOrCreateIndex(xPacket.Get(u).m_pxMaterial);
+		m_axDrawPackets[u].Clear();
+	}
+	Zenith_Vector<Flux_TranslucentDrawItem>& xPacket = m_axDrawPackets[kuFluxViewSlotMain];
+
+	const Zenith_Maths::Vector3& xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
+
+	// Phase 2: read the engine-owned uncullled snapshot (rebuilt once per frame) instead
+	// of running our own ECS scan. Per-submesh translucent/additive selection below is
+	// unchanged, so the same submeshes render in the same order.
+	if (m_pxSnapshot)
+	{
+		const Zenith_Vector<Flux_RenderSceneItem>& xItems = m_pxSnapshot->Items();
+		const bool bCull = m_pxSnapshot->IsCameraFrustumValid();   // skip culling against an unresolved camera
+		const Zenith_Frustum& xFrustum = m_pxSnapshot->GetCameraFrustum();
+
+		for (u_int u = 0; u < xItems.GetSize(); ++u)
+		{
+			const Flux_RenderSceneItem& xSrc = xItems.Get(u);
+			Flux_ModelInstance* pxModelInstance = xSrc.m_pxModelInstance;
+			const Zenith_Maths::Matrix4& xModelMatrix = xSrc.m_xWorldMatrix;
+
+			// Phase 3: camera-frustum cull the whole model before walking submeshes (translucency
+			// is a screen effect — off-screen translucent geometry contributes nothing). Conservative:
+			// an invalid AABB is never culled; culling is skipped entirely when the camera is unresolved.
+			if (bCull && xSrc.m_xWorldAABB.IsValid() && !Zenith_FrustumCulling::TestAABBFrustum(xFrustum, xSrc.m_xWorldAABB)) continue;
+
+			for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
+			{
+				Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
+				if (!pxMaterial) continue;
+
+				const Zenith_MaterialParams& xParams = pxMaterial->GetResolved().m_xParams;
+				const bool bTranslucent = (xParams.m_eBlendMode == MATERIAL_BLEND_TRANSLUCENT) ||
+										  (xParams.m_eBlendMode == MATERIAL_BLEND_ADDITIVE);
+				if (!bTranslucent) continue;
+
+				// v1: skinned-animated translucent submeshes are not supported.
+				if (pxModelInstance->GetSkinnedMeshInstance(uMesh) != nullptr)
+				{
+					if (!m_bWarnedAnimatedTranslucent)
+					{
+						Zenith_Warning(LOG_CATEGORY_RENDERER,
+							"Flux_Translucency: skinned-animated translucent submesh skipped — animated translucency is not supported yet");
+						m_bWarnedAnimatedTranslucent = true;
+					}
+					continue;
+				}
+
+				Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
+				if (!pxMeshInstance) continue;
+
+				xPacket.PushBack(BuildTranslucentDrawItem(pxMeshInstance, pxMaterial, xModelMatrix, xCameraPos));
+			}
+		}
+	}
+
+	// External renderer-level submissions, preserved for us by the sync's
+	// ExtractExternalSceneItems (mesh + material kept alive by the owner for the
+	// frame; the material is pre-resolved, never null). Filtered per view by the
+	// item's view-mask bit. No frustum cull (a handful of items at most), but the
+	// sort key is measured against each TARGET view's camera so the shared
+	// comparator sorts every packet consistently.
+	const Flux_RenderViewRegistry& xViews = g_xEngine.FluxGraphics().RenderViews();
+	const bool bPreviewActive = xViews.IsViewActive(kuFluxViewSlotPreview);
+	const Zenith_Maths::Vector3 xPreviewCamPos =
+		Zenith_Maths::Vector3(xViews.View(kuFluxViewSlotPreview).m_xConstants.m_xCamPos_Pad);
+
+	const Zenith_Vector<Flux_RendererImpl::Flux_ExternalSceneItem>& xExternalItems =
+		g_xEngine.FluxRenderer().GetExternalTranslucentItems();
+	for (u_int u = 0; u < xExternalItems.GetSize(); ++u)
+	{
+		const Flux_RendererImpl::Flux_ExternalSceneItem& xExt = xExternalItems.Get(u);
+		if (xExt.m_pxMeshInstance == nullptr || xExt.m_pxMaterial == nullptr) continue;
+
+		// Main view is opt-in via the mask bit — a future caller can inject
+		// translucent content into the main view (nothing sets it today).
+		if ((xExt.m_uViewMask >> kuFluxViewSlotMain) & 1u)
+		{
+			xPacket.PushBack(BuildTranslucentDrawItem(xExt.m_pxMeshInstance, xExt.m_pxMaterial, xExt.m_xWorldMatrix, xCameraPos));
+		}
+		if (bPreviewActive && ((xExt.m_uViewMask >> kuFluxViewSlotPreview) & 1u))
+		{
+			m_axDrawPackets[kuFluxViewSlotPreview].PushBack(
+				BuildTranslucentDrawItem(xExt.m_pxMeshInstance, xExt.m_pxMaterial, xExt.m_xWorldMatrix, xPreviewCamPos));
+		}
+	}
+
+	// Sort every view's packet back-to-front and register its materials with the
+	// GPU material table (MAIN THREAD — assigns the table index + builds the
+	// record + makes its textures bindless). The worker draw path reads the
+	// index off the asset lock-free.
+	Flux_MaterialTable& xTable = g_xEngine.FluxGraphics().MaterialTable();
+	for (u_int uView = 0; uView < FLUX_MAX_RENDER_VIEWS; ++uView)
+	{
+		Zenith_Vector<Flux_TranslucentDrawItem>& xViewPacket = m_axDrawPackets[uView];
+		SortPacketBackToFront(xViewPacket);
+		for (u_int u = 0; u < xViewPacket.GetSize(); ++u)
+		{
+			if (xViewPacket.Get(u).m_pxMaterial) xTable.GetOrCreateIndex(xViewPacket.Get(u).m_pxMaterial);
+		}
 	}
 }
 
@@ -231,7 +326,12 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 	if (!Zenith_GraphicsOptions::Get().m_bTranslucencyEnabled) return;
 
 	Flux_TranslucencyImpl& xZZ = g_xEngine.Translucency();
-	if (xZZ.m_xDrawPacket.GetSize() == 0) return;
+	// The SAME callback records both the main pass and "Translucency (Preview)":
+	// the recording pass's declared view slot selects that view's packet (and its
+	// VIEW set was bound by the backend's per-pass persistent-set bind).
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+	Zenith_Vector<Flux_TranslucentDrawItem>& xPacket = xZZ.m_axDrawPackets[uViewSlot];
+	if (xPacket.GetSize() == 0) return;
 
 	Flux_IBLImpl& xIBL = g_xEngine.IBL();
 
@@ -243,9 +343,8 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 	xConstants.m_bIBLDiffuseEnabled = xIBL.IsDiffuseEnabled() ? 1 : 0;
 	xConstants.m_bIBLSpecularEnabled = xIBL.IsSpecularEnabled() ? 1 : 0;
 	xConstants.m_fIBLIntensity = xIBL.GetIntensity();
-	xConstants.m_bShadowsEnabled = 1;
-	xConstants.m_bDynamicLightsEnabled = 1;
 	xConstants.m_fAmbientFallbackIntensity = 0.03f;	// matches the deferred default
+	xConstants.m_uPad0 = 0u;
 	xConstants.m_fCSMTexelSizeX = 1.0f / static_cast<float>(ZENITH_FLUX_CSM_RESOLUTION);
 	xConstants.m_fCSMTexelSizeY = 1.0f / static_cast<float>(ZENITH_FLUX_CSM_RESOLUTION);
 
@@ -253,7 +352,6 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 	// (blend, cull) bucket changes between consecutive items.
 	Flux_Pipeline* pxBoundPipeline = nullptr;
 
-	Zenith_Vector<Flux_TranslucentDrawItem>& xPacket = xZZ.m_xDrawPacket;
 	for (u_int u = 0; u < xPacket.GetSize(); u++)
 	{
 		const Flux_TranslucentDrawItem& xItem = xPacket.Get(u);

@@ -137,8 +137,8 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 	float  lastShadowSample        = 1.0;
 	uint   actualSteps             = 0;
 
-	float3 lightDir   = normalize(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz);
-	float3 lightColor = g_xGlobalSet.g_xGlobal.g_xSunColour_Pad.rgb;
+	float3 lightDir   = normalize(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
+	float3 lightColor = g_xViewSet.g_xView.g_xSunColour_Pad.rgb;
 
 	for (uint i = 0; i < g_xPassSet.RaymarchConstants.u_uNumSteps; i++)
 	{

@@ -7,7 +7,7 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Panels/Zenith_EditorPanel_MaterialEditor.h"
-#include "Flux/MaterialPreview/Flux_MaterialPreviewImpl.h"
+#include "Flux/RenderViews/Flux_MaterialPreviewController.h"
 #include "Flux/Flux_Screenshot.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"

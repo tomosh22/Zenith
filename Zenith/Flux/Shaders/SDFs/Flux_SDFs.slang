@@ -110,7 +110,7 @@ float4 RayMarch(float3 xRayDir)
 		if (fNearestDistance < kHitDistance)
 		{
 			float3 xNormal = GetNormal(g_xViewSet.g_xView.g_xCamPos_Pad.xyz + fDistanceFromOrigin * xRayDir);
-			return xColour + dot(-g_xGlobalSet.g_xGlobal.g_xSunDir_Pad.xyz, xNormal) / 2.0;
+			return xColour + dot(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz, xNormal) / 2.0;
 		}
 		if (fDistanceFromOrigin > kMissDistance) return float4(0.0, 0.0, 0.0, 0.0);
 	}

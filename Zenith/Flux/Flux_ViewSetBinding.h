@@ -86,14 +86,19 @@ struct Flux_ViewSetBinding
 	bool                    m_bPerCamera          = false;                              // contents depend on the active camera (depth/HiZ/G-buffer/SSR) → unsafe in the SHARED VIEW set until multi-view (Phase 5.6)
 };
 
-// Multi-view (secondary-view PushViewSet/PopViewSet, Phase 5.6) is NOT implemented.
-// The persistent VIEW set is therefore SHARED: every view (incl. MaterialPreview's
-// secondary view) samples the MAIN camera's copy. A PER-CAMERA resource — one whose
-// contents depend on the active camera (scene depth, HiZ, G-buffer, SSR/SSGI/SSAO) —
-// MUST NOT be promoted into VIEW until 5.6, or a secondary view silently reads the
-// main camera's data and no validator catches it. View-invariant resources (CSM, IBL,
-// shadow matrices, light clusters) are always safe to share. Flip this when 5.6 lands.
-inline constexpr bool kbFluxMultiViewSupported = false;
+// Multi-view exists at the CAMERA level: each render view (Flux/RenderViews/
+// Flux_RenderViews.h) owns a VIEW descriptor-set instance whose binding 0
+// (g_xView) is per-view. Bindings 1-8, however, are REPLICATED-SHARED — the
+// same descriptor is fanned out to every view's set (WritePersistentViewImage/
+// Buffer), so their CONTENTS are still single-copy. A PER-CAMERA resource — one
+// whose contents depend on the active camera (scene depth, HiZ, G-buffer,
+// SSR/SSGI/SSAO) — MUST NOT be promoted into VIEW until a per-view WRITE path
+// for bindings 1+ exists, or a secondary view silently reads the main camera's
+// data and no validator catches it. View-invariant resources (CSM, IBL, shadow
+// matrices, light clusters) are safe to share; secondary views gate shadow/
+// cluster SAMPLING off via their per-view flags. Flip this if/when per-view
+// resource writes land.
+inline constexpr bool kbFluxPerViewSharedResourcesSupported = false;
 
 // Pure guard: false (naming the offender) if any VIEW (set 1) row is per-camera while
 // multi-view is unsupported. Device-free; unit-tested; asserted once at registry build,

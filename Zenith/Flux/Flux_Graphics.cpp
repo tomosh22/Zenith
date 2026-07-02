@@ -10,6 +10,8 @@
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/Flux_BackendTypes.h"
 #include "Core/Zenith_RenderGather.h" // Wave 3: main camera comes through the neutral gather
+#include "Core/Zenith_GraphicsOptions.h" // m_bShadowsEnabled (cascade render-view activity sync)
+#include "Flux/DynamicLights/Flux_LightClusteringImpl.h" // IsInitialised (main-view cluster-lights flag)
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -169,7 +171,26 @@ void Flux_GraphicsImpl::Initialise()
 	xVulkanMemory.InitialiseVertexBuffer(m_xQuadMesh.GetVertexData(), m_xQuadMesh.GetVertexDataSize(), m_xQuadMesh.GetVertexBuffer());
 	xVulkanMemory.InitialiseIndexBuffer(m_xQuadMesh.GetIndexData(), m_xQuadMesh.GetIndexDataSize(), m_xQuadMesh.GetIndexBuffer());
 	xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(GlobalConstants), m_xGlobalConstantsBuffer);
-	xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(ViewConstants), m_xViewConstantsBuffer);
+	// One VIEW CB per fixed render-view slot. An inactive slot's buffer is a
+	// valid descriptor (written into its persistent VIEW set each frame) whose
+	// contents are never read — no pass ever binds an inactive view's set.
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		xVulkanMemory.InitialiseDynamicConstantBuffer(nullptr, sizeof(ViewConstants), m_axViewConstantsBuffers[u]);
+	}
+
+	// Persistent preview-view LDR output — survives graph rebuilds so the SRV
+	// the editor registers with ImGui stays valid (transients would dangle it).
+	// FINAL_RT_FORMAT so the HDR feature's existing tonemap pipeline (built
+	// against the final-RT format) can render straight into it.
+	{
+		Flux_RenderAttachmentBuilder xBuilder;
+		xBuilder.m_uWidth       = kuFLUX_PREVIEW_VIEW_SIZE;
+		xBuilder.m_uHeight      = kuFLUX_PREVIEW_VIEW_SIZE;
+		xBuilder.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
+		xBuilder.m_eFormat      = FINAL_RT_FORMAT;
+		xBuilder.BuildColour(m_xPreviewLDR, "Preview View LDR");
+	}
 
 	// Render targets are graph-owned transients, created in SetupTransients.
 	// No resize callback needed — the graph re-creates them on every
@@ -269,8 +290,6 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 	// buffers the GPU sees (m_xFrameConstants itself is no longer uploaded; its GPU
 	// buffer was removed with Common/Frame.slang, but it stays as the CPU camera-
 	// matrix source for GetViewProjMatrix()/etc. and the mirror source here).
-	m_xGlobalConstantsData.m_xSunDir_Pad    = m_xFrameConstants.m_xSunDir_Pad;
-	m_xGlobalConstantsData.m_xSunColour_Pad = m_xFrameConstants.m_xSunColour_Pad;
 	m_xGlobalConstantsData.m_uFrameIndex    = g_xEngine.Frame().GetFrameIndex();
 	m_xGlobalConstantsData.m_fTimeSeconds   = static_cast<float>(g_xEngine.Frame().GetTimePassed());
 
@@ -288,8 +307,50 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 	m_xViewConstantsData.m_uQuadUtilisationAnalysis = m_xFrameConstants.m_uQuadUtilisationAnalysis;
 	m_xViewConstantsData.m_uTargetPixelsPerTri      = m_xFrameConstants.m_uTargetPixelsPerTri;
 #endif
+	// Per-view sun + flags (main view): the scene sun, with the global feature
+	// toggles folded into this view's flag word each frame. Lit shaders read
+	// these from g_xView — a secondary view (the material preview) carries its
+	// own sun and zeroed shadow/cluster flags instead.
+	m_xViewConstantsData.m_xSunDir_Pad     = m_xFrameConstants.m_xSunDir_Pad;
+	m_xViewConstantsData.m_xSunColour_Pad  = m_xFrameConstants.m_xSunColour_Pad;
+	m_xViewConstantsData.m_uViewFlags      =
+		  (Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? FLUX_VIEW_FLAG_SHADOWS_ENABLED : 0u)
+		| (g_xEngine.LightClustering().IsInitialised() ? FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED : 0u)
+		| FLUX_VIEW_FLAG_SCENE_CONTENT;
+	m_xViewConstantsData.m_uViewSlot       = kuFluxViewSlotMain;
 	g_xEngine.FluxMemory().UploadBufferData(m_xGlobalConstantsBuffer.GetBuffer().m_xVRAMHandle, &m_xGlobalConstantsData, sizeof(GlobalConstants));
-	g_xEngine.FluxMemory().UploadBufferData(m_xViewConstantsBuffer.GetBuffer().m_xVRAMHandle, &m_xViewConstantsData, sizeof(ViewConstants));
+	g_xEngine.FluxMemory().UploadBufferData(m_axViewConstantsBuffers[kuFluxViewSlotMain].GetBuffer().m_xVRAMHandle, &m_xViewConstantsData, sizeof(ViewConstants));
+
+	// Keep the registry's MAIN payload in sync — it is the single CPU source of
+	// truth per view (cascade/preview owners stage theirs the same way).
+	m_xRenderViews.View(kuFluxViewSlotMain).m_xConstants = m_xViewConstantsData;
+}
+
+void Flux_GraphicsImpl::UploadRenderViewConstants()
+{
+	// Main thread, once per frame, before the persistent VIEW sets are written
+	// (Flux_RendererImpl::RecordFrame). Uploads every ACTIVE non-main view's
+	// staged ViewConstants payload into its frame-indexed CB. Slot 0 (main) is
+	// uploaded by UploadFrameConstants, which also mirrors into the registry.
+
+	// Cascade views activate where their constants are staged (UpdateShadowMatrices)
+	// — but that never runs while shadows are OFF, so the toggle-off side is synced
+	// here: deactivate the cascade slots so the active-view mask reflects reality
+	// (their passes early-out; their sets are never bound while inactive).
+	if (!Zenith_GraphicsOptions::Get().m_bShadowsEnabled)
+	{
+		for (u_int u = 0; u < kuFluxViewNumShadowSlots; u++)
+		{
+			m_xRenderViews.SetViewActive(kuFluxViewSlotShadowFirst + u, false);
+		}
+	}
+
+	for (u_int u = kuFluxViewSlotMain + 1u; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		if (!m_xRenderViews.IsViewActive(u)) { continue; }
+		g_xEngine.FluxMemory().UploadBufferData(m_axViewConstantsBuffers[u].GetBuffer().m_xVRAMHandle,
+			&m_xRenderViews.View(u).m_xConstants, sizeof(ViewConstants));
+	}
 }
 
 TextureFormat Flux_GraphicsImpl::GetMRTFormat(MRTIndex eIndex)
@@ -305,14 +366,14 @@ const Zenith_Maths::Vector3& Flux_GraphicsImpl::GetCameraPosition()
 	return *reinterpret_cast<const Zenith_Maths::Vector3*>(&m_xFrameConstants.m_xCamPos_Pad);
 }
 
-Flux_ShaderResourceView* Flux_GraphicsImpl::GetGBufferSRV(MRTIndex eIndex)
+Flux_ShaderResourceView* Flux_GraphicsImpl::GetGBufferSRV(MRTIndex eIndex, u_int uViewSlot)
 {
-	return &GetMRTAttachment(eIndex).SRV();
+	return &GetMRTAttachment(eIndex, uViewSlot).SRV();
 }
 
-Flux_ShaderResourceView* Flux_GraphicsImpl::GetDepthStencilSRV()
+Flux_ShaderResourceView* Flux_GraphicsImpl::GetDepthStencilSRV(u_int uViewSlot)
 {
-	return &GetDepthAttachment().SRV();
+	return &GetDepthAttachment(uViewSlot).SRV();
 }
 
 Flux_RenderTargetView* Flux_GraphicsImpl::GetGBufferRTV(MRTIndex eIndex)
@@ -380,29 +441,59 @@ void Flux_GraphicsImpl::SetupTransients(Flux_RenderGraph& xGraph)
 		"Flux_Graphics::SetupTransients: swapchain dimensions are %ux%u — window minimised or swapchain not yet created",
 		uWidth, uHeight);
 
-	// MRT colour attachments (sRGB diffuse, RGBA16F normals+AO, RGBA8 material).
-	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+	// G-buffer MRTs / depth / HDR scene are created PER ACTIVE FULL-PIPELINE VIEW
+	// (slot 0 = main camera at swapchain dims, always; the preview slot at its own
+	// dims when its view is active). Transients for inactive slots are NOT created
+	// — no feature declares passes on them, so the graph's unused-transient
+	// validation stays clean. A view (de)activation triggers a graph rebuild,
+	// which re-runs this walk.
+	for (u_int uView = 0; uView < FLUX_MAX_RENDER_VIEWS; uView++)
 	{
-		Flux_TransientTextureDesc xDesc;
-		xDesc.m_uWidth       = uWidth;
-		xDesc.m_uHeight      = uHeight;
-		xDesc.m_eFormat      = m_aeMRTFormats[u];
-		xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-		m_axMRTHandles[u] = xGraph.CreateTransient(xDesc);
+		const Flux_RenderView& xView = m_xRenderViews.View(uView);
+		if (!xView.m_bActive || !xView.m_bFullPipeline) { continue; }
+		const u_int uViewW = (uView == kuFluxViewSlotMain) ? uWidth  : xView.m_xTargetDims.x;
+		const u_int uViewH = (uView == kuFluxViewSlotMain) ? uHeight : xView.m_xTargetDims.y;
+		Zenith_Assert(uViewW > 0 && uViewH > 0,
+			"Flux_Graphics::SetupTransients: view slot %u has zero target dims", uView);
+
+		// MRT colour attachments (sRGB diffuse, RGBA16F normals+AO, RGBA8 material).
+		for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+		{
+			Flux_TransientTextureDesc xDesc;
+			xDesc.m_uWidth       = uViewW;
+			xDesc.m_uHeight      = uViewH;
+			xDesc.m_eFormat      = m_aeMRTFormats[u];
+			xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
+			m_aaxMRTHandles[uView][u] = xGraph.CreateTransient(xDesc);
+		}
+
+		// Depth buffer.
+		{
+			Flux_TransientTextureDesc xDesc;
+			xDesc.m_uWidth          = uViewW;
+			xDesc.m_uHeight         = uViewH;
+			xDesc.m_eFormat         = DEPTH_FORMAT;
+			xDesc.m_uMemoryFlags    = (1u << MEMORY_FLAGS__SHADER_READ);
+			xDesc.m_bIsDepthStencil = true;
+			m_axDepthHandles[uView] = xGraph.CreateTransient(xDesc);
+		}
+
+		// HDR scene target — the shared scene-colour buffer. Created here (with the
+		// other shared targets) so it exists before the first feature that writes it
+		// (DeferredShading and the post-lighting passes); the HDR feature
+		// reads/tonemaps it and owns only its private bloom chain.
+		{
+			Flux_TransientTextureDesc xDesc;
+			xDesc.m_uWidth       = uViewW;
+			xDesc.m_uHeight      = uViewH;
+			xDesc.m_eFormat      = HDR_SCENE_FORMAT;
+			xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
+			m_axHDRSceneTargetHandles[uView] = xGraph.CreateTransient(xDesc);
+		}
 	}
 
-	// Depth buffer.
-	{
-		Flux_TransientTextureDesc xDesc;
-		xDesc.m_uWidth          = uWidth;
-		xDesc.m_uHeight         = uHeight;
-		xDesc.m_eFormat         = DEPTH_FORMAT;
-		xDesc.m_uMemoryFlags    = (1u << MEMORY_FLAGS__SHADER_READ);
-		xDesc.m_bIsDepthStencil = true;
-		m_xDepthHandle = xGraph.CreateTransient(xDesc);
-	}
-
-	// Final render target.
+	// Final render target — main view only (the preview tonemaps into the
+	// persistent m_xPreviewLDR instead).
 	{
 		Flux_TransientTextureDesc xDesc;
 		xDesc.m_uWidth       = uWidth;
@@ -410,19 +501,6 @@ void Flux_GraphicsImpl::SetupTransients(Flux_RenderGraph& xGraph)
 		xDesc.m_eFormat      = FINAL_RT_FORMAT;
 		xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 		m_xFinalRTHandle = xGraph.CreateTransient(xDesc);
-	}
-
-	// HDR scene target — the shared scene-colour buffer. Created here (with the other
-	// shared targets) so it exists before the first feature that writes it
-	// (DeferredShading and the post-lighting passes); the HDR feature reads/tonemaps
-	// it and owns only its private bloom chain.
-	{
-		Flux_TransientTextureDesc xDesc;
-		xDesc.m_uWidth       = uWidth;
-		xDesc.m_uHeight      = uHeight;
-		xDesc.m_eFormat      = HDR_SCENE_FORMAT;
-		xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-		m_xHDRSceneTargetHandle = xGraph.CreateTransient(xDesc);
 	}
 }
 
@@ -436,42 +514,46 @@ void Flux_GraphicsImpl::SetupTransients(Flux_RenderGraph& xGraph)
 const Flux_ShaderResourceView* Flux_GraphicsImpl::GetDebugSRV_MRTDiffuse()
 {
 	if (m_pxGraph == nullptr) return nullptr;
-	return &m_pxGraph->GetTransientAttachment(m_axMRTHandles[MRT_INDEX_DIFFUSE]).SRV();
+	return &m_pxGraph->GetTransientAttachment(m_aaxMRTHandles[kuFluxViewSlotMain][MRT_INDEX_DIFFUSE]).SRV();
 }
 const Flux_ShaderResourceView* Flux_GraphicsImpl::GetDebugSRV_MRTNormalsAO()
 {
 	if (m_pxGraph == nullptr) return nullptr;
-	return &m_pxGraph->GetTransientAttachment(m_axMRTHandles[MRT_INDEX_NORMALSAMBIENT]).SRV();
+	return &m_pxGraph->GetTransientAttachment(m_aaxMRTHandles[kuFluxViewSlotMain][MRT_INDEX_NORMALSAMBIENT]).SRV();
 }
 const Flux_ShaderResourceView* Flux_GraphicsImpl::GetDebugSRV_MRTMaterial()
 {
 	if (m_pxGraph == nullptr) return nullptr;
-	return &m_pxGraph->GetTransientAttachment(m_axMRTHandles[MRT_INDEX_MATERIAL]).SRV();
+	return &m_pxGraph->GetTransientAttachment(m_aaxMRTHandles[kuFluxViewSlotMain][MRT_INDEX_MATERIAL]).SRV();
 }
 const Flux_ShaderResourceView* Flux_GraphicsImpl::GetDebugSRV_Depth()
 {
 	if (m_pxGraph == nullptr) return nullptr;
-	return &m_pxGraph->GetTransientAttachment(m_xDepthHandle).SRV();
+	return &m_pxGraph->GetTransientAttachment(m_axDepthHandles[kuFluxViewSlotMain]).SRV();
 }
 const Flux_ShaderResourceView* Flux_GraphicsImpl::GetDebugSRV_HDRScene()
 {
 	if (m_pxGraph == nullptr) return nullptr;
-	return &m_pxGraph->GetTransientAttachment(m_xHDRSceneTargetHandle).SRV();
+	return &m_pxGraph->GetTransientAttachment(m_axHDRSceneTargetHandles[kuFluxViewSlotMain]).SRV();
 }
 #endif
 
 // Render target getters — always resolve through the graph's transient slot.
-Flux_RenderAttachment& Flux_GraphicsImpl::GetMRTAttachment(MRTIndex eIndex)
+// Per-view: the slot's transients exist only while its view is active (the
+// handle assert below fires on a stale/inactive slot).
+Flux_RenderAttachment& Flux_GraphicsImpl::GetMRTAttachment(MRTIndex eIndex, u_int uViewSlot)
 {
 	Zenith_Assert(eIndex < MRT_INDEX_COUNT, "Flux_Graphics::GetMRTAttachment: index %u out of range", static_cast<u_int>(eIndex));
+	Zenith_Assert(uViewSlot < FLUX_MAX_RENDER_VIEWS, "Flux_Graphics::GetMRTAttachment: view slot %u out of range", uViewSlot);
 	Zenith_Assert(m_pxGraph, "Flux_Graphics::GetMRTAttachment: graph pointer is null — call SetupTransients first");
-	return m_pxGraph->GetTransientAttachment(m_axMRTHandles[eIndex]);
+	return m_pxGraph->GetTransientAttachment(m_aaxMRTHandles[uViewSlot][eIndex]);
 }
 
-Flux_RenderAttachment& Flux_GraphicsImpl::GetDepthAttachment()
+Flux_RenderAttachment& Flux_GraphicsImpl::GetDepthAttachment(u_int uViewSlot)
 {
+	Zenith_Assert(uViewSlot < FLUX_MAX_RENDER_VIEWS, "Flux_Graphics::GetDepthAttachment: view slot %u out of range", uViewSlot);
 	Zenith_Assert(m_pxGraph, "Flux_Graphics::GetDepthAttachment: graph pointer is null");
-	return m_pxGraph->GetTransientAttachment(m_xDepthHandle);
+	return m_pxGraph->GetTransientAttachment(m_axDepthHandles[uViewSlot]);
 }
 
 Flux_RenderAttachment& Flux_GraphicsImpl::GetFinalRenderTarget()
@@ -480,10 +562,11 @@ Flux_RenderAttachment& Flux_GraphicsImpl::GetFinalRenderTarget()
 	return m_pxGraph->GetTransientAttachment(m_xFinalRTHandle);
 }
 
-Flux_RenderAttachment& Flux_GraphicsImpl::GetHDRSceneTarget()
+Flux_RenderAttachment& Flux_GraphicsImpl::GetHDRSceneTarget(u_int uViewSlot)
 {
+	Zenith_Assert(uViewSlot < FLUX_MAX_RENDER_VIEWS, "Flux_Graphics::GetHDRSceneTarget: view slot %u out of range", uViewSlot);
 	Zenith_Assert(m_pxGraph, "Flux_Graphics::GetHDRSceneTarget: graph pointer is null");
-	return m_pxGraph->GetTransientAttachment(m_xHDRSceneTargetHandle);
+	return m_pxGraph->GetTransientAttachment(m_axHDRSceneTargetHandles[uViewSlot]);
 }
 
 Flux_ShaderResourceView& Flux_GraphicsImpl::GetHDRSceneSRV()
@@ -530,9 +613,15 @@ void Flux_GraphicsImpl::Shutdown()
 	xVulkanMemory.DestroyVertexBuffer(m_xQuadMesh.GetVertexBuffer());
 	xVulkanMemory.DestroyIndexBuffer(m_xQuadMesh.GetIndexBuffer());
 
-	// Destroy the GLOBAL/VIEW spine constant buffers.
+	// Destroy the GLOBAL/VIEW spine constant buffers (one VIEW CB per view slot).
 	xVulkanMemory.DestroyDynamicConstantBuffer(m_xGlobalConstantsBuffer);
-	xVulkanMemory.DestroyDynamicConstantBuffer(m_xViewConstantsBuffer);
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		xVulkanMemory.DestroyDynamicConstantBuffer(m_axViewConstantsBuffers[u]);
+	}
+
+	// Destroy the persistent preview-view LDR.
+	Flux_RenderAttachmentBuilder::Destroy(m_xPreviewLDR);
 
 	// Destroy the GPU material table buffer.
 	m_xMaterialTable.Shutdown();

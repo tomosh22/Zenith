@@ -203,6 +203,13 @@ void Flux_ParticlesImpl::Render(void*)
 static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
+	// Per-view parity: scene particles must never appear in the preview view (its
+	// flags carry no FLUX_VIEW_FLAG_SCENE_CONTENT) — the "Particles (Preview)"
+	// instance exists for structural parity and records nothing.
+	if (Flux_RenderGraph::GetCurrentRecordingPassViewSlot() != kuFluxViewSlotMain)
+	{
+		return;
+	}
 	if (!Zenith_GraphicsOptions::Get().m_bCPUParticlesEnabled)
 	{
 		return;
@@ -296,8 +303,22 @@ void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// draw commands. This moves the xEmitter.Update ECS mutation off the worker
 	// thread. Render was previously defined but never registered — this is a new,
 	// required edge (without it the CPU particle sim/upload would never run).
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	xGraph.AddPass("Particles", ExecuteParticles)
 		.Prepare([](void* p){ g_xEngine.Particles().Render(p); })
-		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
 		.DependsOn(xComputePass);
+
+	// Preview view (S5c): parity instance writing the preview HDR target. Scene
+	// particles never render in the preview (no FLUX_VIEW_FLAG_SCENE_CONTENT) —
+	// ExecuteParticles early-outs for non-main views. The compute/sim pass is
+	// NOT duplicated and no Prepare is attached (the main pass's Prepare owns
+	// the once-per-frame emitter sim). No ClearTargets — "Apply Lighting
+	// (Preview)" owns the preview HDR clear.
+	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	{
+		xGraph.AddPass("Particles (Preview)", ExecuteParticles)
+			.View  (kuFluxViewSlotPreview)
+			.Writes(xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV);
+	}
 }
