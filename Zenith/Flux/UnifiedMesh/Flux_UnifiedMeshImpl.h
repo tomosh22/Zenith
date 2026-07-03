@@ -97,6 +97,9 @@ public:
 
 	// Frame-indexed dynamic inputs (host-uploaded each frame; NOT graph-tracked).
 	Flux_DynamicReadWriteBuffer m_xObjectsBuffer;        // GPUSceneObject[]
+	// TAA (Stage 4.3): previous-frame object model matrices, index-locked to Objects. Uploaded
+	// parallel to m_xObjectsBuffer only while the velocity latch is on; read by the velocity VS.
+	Flux_DynamicReadWriteBuffer m_xPrevTransformsBuffer; // Matrix4[] (float4x4)
 	Flux_DynamicReadWriteBuffer m_xDrawItemsBuffer;      // GPUSceneDrawItem[]
 	Flux_DynamicReadWriteBuffer m_xBucketOffsetBuffer;   // uint[bucketSlots] prefix-sum
 	Flux_DynamicReadWriteBuffer m_xBucketIndexCountBuffer;// uint[bucketSlots] mesh index count
@@ -107,6 +110,7 @@ public:
 	u_int m_uVisibleIndexCapacity   = 0u;  // uints
 	u_int m_uIndirectBucketCapacity = 0u;  // commands (5 uints each)
 	u_int m_uObjectCapacity         = 0u;
+	u_int m_uPrevTransformCapacity  = 0u;  // TAA (Stage 4.3): prev-transform buffer capacity (matrices)
 	u_int m_uDrawItemCapacity       = 0u;
 	u_int m_uBucketMetaCapacity     = 0u;
 
@@ -114,6 +118,11 @@ public:
 	Flux_Shader   m_xGBufferShader;
 	Flux_Pipeline m_xGBufferPipeline;          // one-sided (CULL_MODE_BACK)
 	Flux_Pipeline m_xGBufferPipelineTwoSided;  // two-sided (CULL_MODE_NONE)
+	// TAA velocity variants (5-attachment: 4 core MRTs + velocity). Selected at record
+	// time INSTEAD of the base pipelines when the velocity latch is on (IsVelocityMRTActive).
+	Flux_Shader   m_xGBufferVelocityShader;
+	Flux_Pipeline m_xGBufferPipelineVelocity;          // one-sided + velocity
+	Flux_Pipeline m_xGBufferPipelineVelocityTwoSided;  // two-sided + velocity
 	Flux_Shader   m_xShadowShader;             // Stage 2: depth-only caster (one pipeline, all buckets)
 	Flux_Pipeline m_xShadowPipeline;
 	Flux_Shader   m_xCullingShader;
@@ -131,21 +140,40 @@ public:
 	Flux_Pipeline m_xSkinningPipeline;
 	Flux_RootSig  m_xSkinningRootSig;
 
+	// Stage 4.3b: TAA previous-pose skinning pre-pass. A second, positions-only dispatch that
+	// reuses the current skin-jobs with the PREVIOUS palette, feeding the velocity VS the prior
+	// skinned pose. Built alongside the main skinning pipeline; dispatched only while the velocity
+	// latch is on (and there is a prev palette). Off => never bound / dispatched (byte-identical).
+	Flux_Shader   m_xSkinningPrevShader;
+	Flux_Pipeline m_xSkinningPrevPipeline;
+	Flux_RootSig  m_xSkinningPrevRootSig;
+
 	// Persistent, grow-only (graph-tracked) skinned-vertex arena: 72B static verts the
 	// skinned buckets draw via SetVertexBuffer(this) + per-bucket indirect vertexOffset.
 	// Created with BOTH UAV (compute write) and VERTEX (draw) usage.
 	Flux_ReadWriteBuffer        m_xSkinnedArenaBuffer;
 	u_int m_uSkinnedArenaVertCapacity = 0u;   // output verts (72B / 18 words each)
 
+	// Stage 4.3b: persistent, grow-only (graph-tracked) PREVIOUS skinned-position arena — 3 words
+	// (12B, positions only) per output vertex, index-locked to the main arena's out-vert bases. UAV
+	// (prev-pose compute write) + SRV (velocity VS read); NOT a vertex buffer. Grown parallel to the
+	// main arena, but only touched (grow/write/read/graph-track) while the velocity latch is on.
+	Flux_ReadWriteBuffer        m_xPrevSkinnedArenaBuffer;
+	u_int m_uPrevSkinnedArenaVertCapacity = 0u;   // output verts (12B / 3 words each)
+
 	// Frame-indexed dynamic skinning inputs (NOT graph-tracked). The bind-pose pool holds STATIC
 	// content (rest-pose verts) so it is host-uploaded only on GROWTH (m_uBindPosePool* below); the
 	// palette + skin-jobs are genuinely per-frame and upload every frame.
 	Flux_DynamicReadWriteBuffer m_xBindPosePoolBuffer;   // 104B bind-pose verts, raw words (SRV)
 	Flux_DynamicReadWriteBuffer m_xBonePaletteBuffer;    // all live skeletons' skinning matrices
+	// Stage 4.3b: previous-frame bone palette, laid out at the SAME bases as m_xBonePaletteBuffer.
+	// Grown + uploaded only while the velocity latch is on; read by the prev-pose skinning dispatch.
+	Flux_DynamicReadWriteBuffer m_xPrevBonePaletteBuffer;
 	Flux_DynamicReadWriteBuffer m_xSkinJobsBuffer;       // Flux_GPUSkinJob[]
 	Flux_DynamicConstantBuffer  m_xSkinConstantsBuffer;
 	u_int m_uBindPosePoolWordCapacity = 0u;  // 26-word input verts
 	u_int m_uBonePaletteMatCapacity   = 0u;
+	u_int m_uPrevBonePaletteMatCapacity = 0u;  // Stage 4.3b: prev-palette buffer capacity (matrices)
 	u_int m_uSkinJobCapacity          = 0u;
 	// Bind-pose pool is static + persistent: re-upload only after a CHANGE (grow or eviction
 	// re-pack — the renderer bumps a pool generation), for MAX_FRAMES_IN_FLIGHT frames (so every
@@ -165,6 +193,9 @@ public:
 	u_int m_uSkinJobCount     = 0u;  // animated submesh-instances to skin this frame (0 = no dispatch)
 	u_int m_uSkinMaxVertCount = 0u;  // largest job's vertex count (skinning dispatch X dimension)
 	u_int m_uBonePaletteCount = 0u;  // matrices uploaded into the palette (compute bounds-guard)
+	// Stage 4.3b: prev-palette matrix count uploaded this frame (0 unless velocity active AND there
+	// is skinned content) — the prev-pose dispatch runs iff this is non-zero. Frozen by the gather.
+	u_int m_uPrevBonePaletteCount = 0u;
 
 	// Reusable scratch for the per-bucket metadata (avoids per-frame allocation).
 	Zenith_Vector<u_int> m_auBucketCountScratch;

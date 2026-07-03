@@ -87,24 +87,46 @@ struct Flux_ViewConstants
 	// mirrored in Common/Bindings.slang) + this view's registry slot.
 	u_int                 m_uViewFlags = 0u;
 	u_int                 m_uViewSlot  = 0u;
-	Zenith_Maths::Vector2 m_xViewPad;
+	// Reciprocal OUTPUT (swapchain) dims for this view. Under temporal upscaling the main view's
+	// m_xRcpScreenDims above is the RENDER resolution, but the UI/text overlay (quads/text) draws
+	// onto the OUTPUT-res FinalRT — so they read THIS field (g_xRcpOutputDims) for their pixel->NDC
+	// mapping. For a non-upscaled view it just equals m_xRcpScreenDims. Repurposed from the former
+	// 8-byte pad @472 (was m_xViewPad) → ZERO sizeof change; the spine stays 624B.
+	Zenith_Maths::Vector2 m_xRcpOutputDims;
+	// --- TAA temporal foundation (Stage 2) ---------------------------------
+	// The UNJITTERED current + previous view-proj (the main view's m_xViewProjMat
+	// above carries the sub-pixel jitter in its GPU copy; these two never do). The
+	// velocity pass reprojects with them so motion vectors are jitter-free at the
+	// source, and the GPU cull reads m_xViewProjMatNoJitter (never the jittered
+	// m_xViewProjMat). Non-main views (cascades/preview) stage NoJitter == their own
+	// unjittered view-proj and PrevNoJitter == current (they never do velocity/jitter).
+	// m_xJitterUV_PrevJitterUV: xy = this frame's jitter offset in UV space, zw =
+	// previous frame's (both zero when jitter is disabled).
+	Zenith_Maths::Matrix4 m_xViewProjMatNoJitter     = Zenith_Maths::Matrix4(1.0f);
+	Zenith_Maths::Matrix4 m_xPrevViewProjMatNoJitter = Zenith_Maths::Matrix4(1.0f);
+	Zenith_Maths::Vector4 m_xJitterUV_PrevJitterUV   = Zenith_Maths::Vector4(0.0f);
 };
 
 // Spine CB layout is hand-authored in Common/Bindings.slang (there is no single
 // canonical Generated/*_CB header for the spine). These pin the C++ mirrors to the
-// reflected 480B/16B std140 layout that every Generated/*.h already static_asserts
-// against Slang reflection (g_xView_CB @ 480 with sun@432/448, g_uViewFlags@464,
-// g_uViewSlot@468; g_xGlobal_CB @ 16). A future member add/reorder therefore fails
-// the build instead of silently corrupting the sizeof()-driven per-view CB upload
-// (Flux_Graphics.cpp UploadRenderViewConstants). Offsets are asserted only on fields
-// outside the ZENITH_TOOLS #ifdef (it swaps field NAMES, not sizes) so one set of
-// asserts covers all four config permutations.
+// reflected 624B/16B std140 layout that every Generated/*.h already static_asserts
+// against Slang reflection (g_xView_CB @ 624 with sun@432/448, g_uViewFlags@464,
+// g_uViewSlot@468, the TAA NoJitter matrices@480/544 and jitter-UV@608; g_xGlobal_CB
+// @ 16). A future member add/reorder therefore fails the build instead of silently
+// corrupting the sizeof()-driven per-view CB upload (Flux_Graphics.cpp
+// UploadRenderViewConstants). Offsets are asserted only on fields outside the
+// ZENITH_TOOLS #ifdef (it swaps field NAMES, not sizes) so one set of asserts covers
+// all four config permutations.
 static_assert(sizeof(Flux_GlobalConstants) == 16, "Flux_GlobalConstants drifted from g_xGlobal_CB (16B)");
 static_assert(offsetof(Flux_GlobalConstants, m_uFrameIndex) == 4, "g_uFrameIndex offset drifted");
 
-static_assert(sizeof(Flux_ViewConstants) == 480, "Flux_ViewConstants drifted from g_xView_CB (480B)");
+static_assert(sizeof(Flux_ViewConstants) == 624, "Flux_ViewConstants drifted from g_xView_CB (624B)");
 static_assert(offsetof(Flux_ViewConstants, m_xCameraNearFar) == 424, "nearFar offset drifted");
 static_assert(offsetof(Flux_ViewConstants, m_xSunDir_Pad)    == 432, "per-view sun dir offset drifted");
 static_assert(offsetof(Flux_ViewConstants, m_xSunColour_Pad) == 448, "per-view sun colour offset drifted");
 static_assert(offsetof(Flux_ViewConstants, m_uViewFlags)     == 464, "g_uViewFlags offset drifted");
 static_assert(offsetof(Flux_ViewConstants, m_uViewSlot)      == 468, "g_uViewSlot offset drifted");
+static_assert(offsetof(Flux_ViewConstants, m_xRcpOutputDims) == 472, "TAA rcp-output-dims offset drifted (repurposed pad @472)");
+static_assert(offsetof(Flux_ViewConstants, m_xViewProjMatNoJitter)     == 480, "TAA NoJitter view-proj offset drifted");
+static_assert(offsetof(Flux_ViewConstants, m_xPrevViewProjMatNoJitter) == 544, "TAA prev NoJitter view-proj offset drifted");
+static_assert(offsetof(Flux_ViewConstants, m_xJitterUV_PrevJitterUV)   == 608, "TAA jitter-UV offset drifted");

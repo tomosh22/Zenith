@@ -634,6 +634,9 @@
     <ClCompile Include="..\Zenith\Flux\SSR\Flux_SSR.cpp">
       <Filter>Flux\SSR</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\TAA\Flux_TAA.cpp">
+      <Filter>Flux\TAA</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_Terrain.cpp">
       <Filter>Flux\Terrain</Filter>
     </ClCompile>
@@ -2832,6 +2835,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\VAT.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\Velocity.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Volumetric.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
@@ -2917,6 +2923,9 @@
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\SSR.h">
+      <Filter>Flux\Shaders\Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Generated\TAA.h">
       <Filter>Flux\Shaders\Generated</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Generated\Terrain.h">
@@ -3036,6 +3045,15 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Upsample.slang">
       <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\TAA\Flux_TAA_CopyToHistory.slang">
+      <Filter>Flux\Shaders\TAA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\TAA\Flux_TAA_Resolve.slang">
+      <Filter>Flux\Shaders\TAA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\TAA\Flux_TAA_Sharpen.slang">
+      <Filter>Flux\Shaders\TAA</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.slang">
       <Filter>Flux\Shaders\Terrain</Filter>
     </ClInclude>
@@ -3043,6 +3061,9 @@
       <Filter>Flux\Shaders\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.slang">
+      <Filter>Flux\Shaders\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBufferVelocity.slang">
       <Filter>Flux\Shaders\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.slang">
@@ -3063,7 +3084,13 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_Skinning.slang">
       <Filter>Flux\Shaders\UnifiedMesh</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_SkinningPrev.slang">
+      <Filter>Flux\Shaders\UnifiedMesh</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToGBuffer.slang">
+      <Filter>Flux\Shaders\UnifiedMesh</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToGBufferVelocity.slang">
       <Filter>Flux\Shaders\UnifiedMesh</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\UnifiedMesh\Flux_UnifiedMesh_ToShadowmap.slang">
@@ -3125,6 +3152,30 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR_Shaders.h">
       <Filter>Flux\SSR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\TAA\Flux_TAAImpl.h">
+      <Filter>Flux\TAA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\TAA\Flux_TAAJitter.h">
+      <Filter>Flux\TAA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\TAA\Flux_TAAJitter.Tests.inl">
+      <Filter>Flux\TAA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\TAA\Flux_TAA_ResolveCPU.h">
+      <Filter>Flux\TAA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\TAA\Flux_TAA_ResolveCPU.Tests.inl">
+      <Filter>Flux\TAA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\TAA\Flux_TAA_Shaders.h">
+      <Filter>Flux\TAA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\TAA\Flux_VelocityHistory.h">
+      <Filter>Flux\TAA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\TAA\Flux_VelocityHistory.Tests.inl">
+      <Filter>Flux\TAA</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainConfig.h">
       <Filter>Flux\Terrain</Filter>
@@ -3609,6 +3660,9 @@
     <Filter Include="Flux\Shaders\Skybox">
       <UniqueIdentifier>{ed42d642-cecc-72a0-ed7f-7226dba9a2a4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\Shaders\TAA">
+      <UniqueIdentifier>{d76134ae-7a23-6773-318e-48b14be496d4}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\Shaders\Terrain">
       <UniqueIdentifier>{20e59a91-5417-9c53-d557-a0dccb872bd0}</UniqueIdentifier>
     </Filter>
@@ -3635,6 +3689,9 @@
     </Filter>
     <Filter Include="Flux\Slang">
       <UniqueIdentifier>{bcaf7916-8dc3-e560-877d-372dcef62076}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\TAA">
+      <UniqueIdentifier>{7c93c908-8b95-7863-1bfc-2838dae6775c}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Terrain">
       <UniqueIdentifier>{e8234a3b-8c6b-26b9-aa00-d5423f3ce33b}</UniqueIdentifier>

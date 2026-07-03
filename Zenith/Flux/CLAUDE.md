@@ -40,9 +40,14 @@ A typical frame compiles into roughly this topologically-sorted order. The rende
 +-----------------------------+
               |
               v
-+-----------------------------+    HDR -> LDR
-| HDR Bloom + Tonemap         |--> reads HDR scene, writes swapchain LDR
-+-----------------------------+
++-----------------------------+    Temporal AA (default ON) + optional upscaling (see TAA/CLAUDE.md)
+| TAA Resolve / History / Sharpen |--> resolves the lit HDR scene (main view) via motion vectors +
++-----------------------------+     sub-pixel jitter -> the post-FX scene colour. With upscaling on,
+              |                      the scene chain above renders below output res and TAA
+              v                      reconstructs at full res here. (Off/`--taa=0` -> raw HDR passes through.)
++-----------------------------+    HDR -> LDR (bloom is AFTER TAA)
+| HDR Bloom + Tonemap         |--> reads the TAA output (GetSceneColourForPostFX; raw HDR when TAA off),
++-----------------------------+     writes swapchain LDR. (The FXAA stopgap here was removed once TAA shipped.)
               |
               v
 +-----------------------------+    Overlays (LDR)

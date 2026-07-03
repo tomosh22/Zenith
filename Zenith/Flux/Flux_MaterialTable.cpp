@@ -189,4 +189,12 @@ void Flux_ReleaseMaterialIndex(u_int uIndex)
 // Flux_SkinVertexCPU mirror is header-inline and not yet referenced by engine code
 // (the GPU skinning pass arrives in Stage 5d), so its static-init test registrations
 // would be dead-stripped from any inert host TU. This already-linked TU keeps them live.
+// (Also carries the TAA Flux_BonePaletteHistory tests appended to that file.)
 #include "Flux/UnifiedMesh/Flux_Skinning.Tests.inl"
+
+// TAA Part-1 pure-core tests (jitter/velocity-encode, prev-transform cache, resolve math).
+// Header-only cores not yet referenced by engine code until the TAA path is wired (Stage 3+),
+// so — same dead-strip idiom — they are hosted in this always-linked TU to stay live.
+#include "Flux/TAA/Flux_TAAJitter.Tests.inl"
+#include "Flux/TAA/Flux_VelocityHistory.Tests.inl"
+#include "Flux/TAA/Flux_TAA_ResolveCPU.Tests.inl"

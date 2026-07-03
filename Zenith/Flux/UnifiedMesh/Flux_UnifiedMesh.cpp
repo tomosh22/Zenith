@@ -19,6 +19,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"           // white dummy VAT texture SRV
 #include "Core/Zenith_GraphicsOptions.h"                 // m_bShadowsEnabled (active-view count)
 #include "Profiling/Zenith_Profiling.h"
+#include <cstring>                                        // std::strcmp — --taa-no-prevpose A/B capture toggle
 
 // =====================================================================
 // Flux_UnifiedMesh — unified GPU-driven opaque static-mesh feature (Stage 1).
@@ -44,6 +45,7 @@ namespace
 	constexpr u_int kuINITIAL_PALETTE_MATS = 4096u;
 	constexpr u_int kuSKIN_INPUT_WORDS     = 26u;     // 104B bind-pose vertex (raw words) — matches uFLUX_SKIN_INPUT_WORDS
 	constexpr u_int kuSKIN_OUTPUT_WORDS    = 18u;     //  72B static vertex (raw words) — matches uFLUX_SKIN_OUTPUT_WORDS
+	constexpr u_int kuSKIN_PREV_WORDS      = 3u;      //  12B prev position-only vertex (raw words) — matches uFLUX_SKIN_PREV_WORDS
 
 	constexpr u_int kuINDIRECT_WORDS = 5u;   // VkDrawIndexedIndirectCommand = 5 uints
 	constexpr u_int kuINDIRECT_STRIDE = kuINDIRECT_WORDS * sizeof(u_int); // 20 bytes
@@ -184,7 +186,7 @@ void Flux_UnifiedMeshImpl::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL]      = MRT_FORMAT_MATERIAL;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE]      = MRT_FORMAT_EMISSIVE;
-		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // base G-buffer pipeline (4 MRTs); the velocity variant (5 MRTs) is built separately
 		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xSpec.m_pxShader = &m_xGBufferShader;
 		xSpec.m_xVertexInputDesc = xVertexDesc;
@@ -201,6 +203,36 @@ void Flux_UnifiedMeshImpl::BuildPipelines()
 		// Two-sided variant for materials flagged m_bTwoSided.
 		xSpec.m_eCullMode = CULL_MODE_NONE;
 		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipelineTwoSided, xSpec);
+	}
+
+	// TAA velocity variants: same state, but 5 colour attachments (4 core + velocity) and
+	// the velocity shader (writes SV_Target4). Selected at record time when the velocity
+	// latch is on; the 5-attachment count must match the G-buffer pass's framebuffer.
+	{
+		m_xGBufferVelocityShader.Initialise(Flux_UnifiedMeshShaders::xUnifiedMesh_ToGBufferVelocity);
+
+		Flux_PipelineSpecification xSpec;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE]        = MRT_FORMAT_DIFFUSE;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL]       = MRT_FORMAT_MATERIAL;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE]       = MRT_FORMAT_EMISSIVE;
+		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_VELOCITY]       = MRT_FORMAT_VELOCITY;
+		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;   // 5 (core + velocity)
+		xSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
+		xSpec.m_pxShader = &m_xGBufferVelocityShader;
+		xSpec.m_xVertexInputDesc = xVertexDesc;
+		xSpec.m_eCullMode = CULL_MODE_BACK;
+		m_xGBufferVelocityShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
+		for (Flux_BlendState& xBlend : xSpec.m_axBlendStates)
+		{
+			xBlend.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+			xBlend.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+			xBlend.m_bBlendEnabled = false;
+		}
+		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipelineVelocity, xSpec);
+
+		xSpec.m_eCullMode = CULL_MODE_NONE;
+		Flux_PipelineBuilder::FromSpecification(m_xGBufferPipelineVelocityTwoSided, xSpec);
 	}
 
 	// Stage 2: depth-only shadow caster pipeline. Mirrors Flux_StaticMeshes' single shadow
@@ -250,6 +282,15 @@ void Flux_UnifiedMeshImpl::BuildPipelines()
 		xBuilder.WithShader(m_xSkinningShader).WithLayout(m_xSkinningRootSig.m_xLayout).Build(m_xSkinningPipeline);
 		m_xSkinningPipeline.m_xRootSig = m_xSkinningRootSig;
 	}
+
+	// Stage 4.3b: TAA previous-pose skinning pre-pass (positions-only, previous palette).
+	{
+		m_xSkinningPrevShader.Initialise(Flux_UnifiedMeshShaders::xUnifiedMesh_SkinningPrev);
+		Flux_RootSigBuilder::FromReflection(m_xSkinningPrevRootSig, m_xSkinningPrevShader.GetReflection());
+		Flux_ComputePipelineBuilder xBuilder;
+		xBuilder.WithShader(m_xSkinningPrevShader).WithLayout(m_xSkinningPrevRootSig.m_xLayout).Build(m_xSkinningPrevPipeline);
+		m_xSkinningPrevPipeline.m_xRootSig = m_xSkinningPrevRootSig;
+	}
 }
 
 void Flux_UnifiedMeshImpl::Initialise()
@@ -275,6 +316,10 @@ void Flux_UnifiedMeshImpl::Initialise()
 	xMem.InitialiseDynamicReadWriteBuffer(nullptr, kuINITIAL_OBJECTS * sizeof(Flux_GPUSceneObject), m_xObjectsBuffer);
 	m_uObjectCapacity = kuINITIAL_OBJECTS;
 
+	// TAA (Stage 4.3): previous-frame object model matrices, parallel to m_xObjectsBuffer.
+	xMem.InitialiseDynamicReadWriteBuffer(nullptr, (size_t)kuINITIAL_OBJECTS * sizeof(Zenith_Maths::Matrix4), m_xPrevTransformsBuffer);
+	m_uPrevTransformCapacity = kuINITIAL_OBJECTS;
+
 	xMem.InitialiseDynamicReadWriteBuffer(nullptr, kuINITIAL_DRAWITEMS * sizeof(Flux_GPUSceneDrawItem), m_xDrawItemsBuffer);
 	m_uDrawItemCapacity = kuINITIAL_DRAWITEMS;
 
@@ -291,11 +336,23 @@ void Flux_UnifiedMeshImpl::Initialise()
 		m_xSkinnedArenaBuffer, /*bAlsoVertexBuffer*/ true);
 	m_uSkinnedArenaVertCapacity = kuINITIAL_SKIN_VERTS;
 
+	// Stage 4.3b: the PREVIOUS position-only arena (3 words/vertex) — UAV (prev-pose compute) +
+	// SRV (velocity VS), NOT a vertex buffer. Allocated always (like m_xPrevTransformsBuffer) so it
+	// is declarable, but only grown/written/read while the velocity latch is on.
+	xMem.InitialiseReadWriteBuffer(nullptr, (size_t)kuINITIAL_SKIN_VERTS * kuSKIN_PREV_WORDS * sizeof(u_int),
+		m_xPrevSkinnedArenaBuffer, /*bAlsoVertexBuffer*/ false);
+	m_uPrevSkinnedArenaVertCapacity = kuINITIAL_SKIN_VERTS;
+
 	xMem.InitialiseDynamicReadWriteBuffer(nullptr, (size_t)kuINITIAL_SKIN_VERTS * kuSKIN_INPUT_WORDS * sizeof(u_int), m_xBindPosePoolBuffer);
 	m_uBindPosePoolWordCapacity = kuINITIAL_SKIN_VERTS * kuSKIN_INPUT_WORDS;
 
 	xMem.InitialiseDynamicReadWriteBuffer(nullptr, (size_t)kuINITIAL_PALETTE_MATS * sizeof(Zenith_Maths::Matrix4), m_xBonePaletteBuffer);
 	m_uBonePaletteMatCapacity = kuINITIAL_PALETTE_MATS;
+
+	// Stage 4.3b: previous-frame palette (same layout as m_xBonePaletteBuffer). Allocated always,
+	// grown/uploaded only while the velocity latch is on.
+	xMem.InitialiseDynamicReadWriteBuffer(nullptr, (size_t)kuINITIAL_PALETTE_MATS * sizeof(Zenith_Maths::Matrix4), m_xPrevBonePaletteBuffer);
+	m_uPrevBonePaletteMatCapacity = kuINITIAL_PALETTE_MATS;
 
 	xMem.InitialiseDynamicReadWriteBuffer(nullptr, (size_t)kuINITIAL_SKIN_JOBS * sizeof(Flux_GPUSkinJob), m_xSkinJobsBuffer);
 	m_uSkinJobCapacity = kuINITIAL_SKIN_JOBS;
@@ -331,13 +388,16 @@ void Flux_UnifiedMeshImpl::Shutdown()
 		xMem.DestroyReadWriteBuffer(m_xVisibleIndexBuffer);
 		xMem.DestroyIndirectBuffer(m_xIndirectBuffer);
 		xMem.DestroyDynamicReadWriteBuffer(m_xObjectsBuffer);
+		xMem.DestroyDynamicReadWriteBuffer(m_xPrevTransformsBuffer);
 		xMem.DestroyDynamicReadWriteBuffer(m_xDrawItemsBuffer);
 		xMem.DestroyDynamicReadWriteBuffer(m_xBucketOffsetBuffer);
 		xMem.DestroyDynamicReadWriteBuffer(m_xBucketIndexCountBuffer);
 		xMem.DestroyDynamicConstantBuffer(m_xCullingConstantsBuffer);
 		xMem.DestroyReadWriteBuffer(m_xSkinnedArenaBuffer);
+		xMem.DestroyReadWriteBuffer(m_xPrevSkinnedArenaBuffer);   // Stage 4.3b
 		xMem.DestroyDynamicReadWriteBuffer(m_xBindPosePoolBuffer);
 		xMem.DestroyDynamicReadWriteBuffer(m_xBonePaletteBuffer);
+		xMem.DestroyDynamicReadWriteBuffer(m_xPrevBonePaletteBuffer);   // Stage 4.3b
 		xMem.DestroyDynamicReadWriteBuffer(m_xSkinJobsBuffer);
 		xMem.DestroyDynamicConstantBuffer(m_xSkinConstantsBuffer);
 		// The renderer's persistent bind-pose pool is cleared on its shutdown; reset our GPU-upload
@@ -353,11 +413,13 @@ void Flux_UnifiedMeshImpl::Shutdown()
 	m_xCullingPipeline.Reset();
 	m_xResetPipeline.Reset();
 	m_xSkinningPipeline.Reset();
+	m_xSkinningPrevPipeline.Reset();   // Stage 4.3b
 	m_xGBufferShader.Reset();
 	m_xShadowShader.Reset();
 	m_xCullingShader.Reset();
 	m_xResetShader.Reset();
 	m_xSkinningShader.Reset();
+	m_xSkinningPrevShader.Reset();     // Stage 4.3b
 
 	Zenith_Log(LOG_CATEGORY_MESH, "Flux_UnifiedMesh shutdown");
 }
@@ -371,6 +433,7 @@ void Flux_UnifiedMeshImpl::Reset()
 	m_uSkinJobCount = 0u;
 	m_uSkinMaxVertCount = 0u;
 	m_uBonePaletteCount = 0u;
+	m_uPrevBonePaletteCount = 0u;   // Stage 4.3b
 }
 
 //=============================================================================
@@ -407,6 +470,14 @@ void Flux_UnifiedMeshImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Writes(xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV)
 		.DependsOn(xCullPass);
 
+	// Optional velocity MRT — MAIN view only, when the latch is on. Added non-fluently (the
+	// fluent builder is rvalue-only). This makes the pass a 5-attachment framebuffer, matching
+	// the velocity pipeline variant selected at record time. The preview pass never writes it.
+	if (xGraphics.IsVelocityMRTActive())
+	{
+		xGraph.Write(xGBufferPass, xGraphics.GetVelocityAttachment(), RESOURCE_ACCESS_WRITE_RTV);
+	}
+
 	// The two persistent cull-output buffers — the only graph-tracked buffers. Their
 	// declaration is independent of bucket count, so the graph structure is static.
 	Flux_Buffer& xVisible  = m_xVisibleIndexBuffer.GetBuffer();
@@ -431,6 +502,18 @@ void Flux_UnifiedMeshImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	Flux_Buffer& xArena = m_xSkinnedArenaBuffer.GetBuffer();
 	xGraph.WriteBuffer(xSkinPass,    xArena, RESOURCE_ACCESS_WRITE_UAV);
 	xGraph.ReadBuffer(xGBufferPass,  xArena, RESOURCE_ACCESS_READ_VERTEX_BUFFER);   // fetched as a vertex stream
+
+	// Stage 4.3b: while the velocity latch is on, the prev-pose dispatch (same skinning pass) writes
+	// the previous position arena and the velocity G-buffer VS reads it (SRV). Declaring the write+read
+	// orders prev-skinning before the velocity draw and synthesises the compute-write -> SRV-read
+	// barrier. Off => not declared (byte-identical), matching the conditional velocity MRT above. The
+	// preview view never uses velocity, so only the MAIN G-buffer pass reads it.
+	if (xGraphics.IsVelocityMRTActive())
+	{
+		Flux_Buffer& xPrevArena = m_xPrevSkinnedArenaBuffer.GetBuffer();
+		xGraph.WriteBuffer(xSkinPass,   xPrevArena, RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.ReadBuffer(xGBufferPass, xPrevArena, RESOURCE_ACCESS_READ_BUFFER_SRV);
+	}
 
 	// Preview view (S5a): a second G-buffer instance drawing the preview slot's
 	// cull slices into the preview view's own targets. Same record callback — the
@@ -501,6 +584,14 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	}
 	GrowDynamicRW(m_xObjectsBuffer,         m_uObjectCapacity,     uNumObjects,   sizeof(Flux_GPUSceneObject));
 	GrowDynamicRW(m_xDrawItemsBuffer,       m_uDrawItemCapacity,   uNumDrawItems, sizeof(Flux_GPUSceneDrawItem));
+	// TAA (Stage 4.3): the prev-transform buffer only needs growing / uploading while the velocity
+	// latch is on (the velocity VS is its sole reader). Off => untouched, so the GPU path is
+	// byte-identical to the pre-TAA frame.
+	const bool bVelocityActive = g_xEngine.FluxGraphics().IsVelocityMRTActive();
+	if (bVelocityActive)
+	{
+		GrowDynamicRW(m_xPrevTransformsBuffer, m_uPrevTransformCapacity, uNumObjects, sizeof(Zenith_Maths::Matrix4));
+	}
 	// The offset + index-count buffers share one bucket-meta capacity and must grow in
 	// lockstep. GrowDynamicRW advances m_uBucketMetaCapacity by reference, so capture the
 	// pre-grow capacity first — re-testing uSlotCount against the (already-advanced)
@@ -600,6 +691,14 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	// --- host uploads into the current frame's dynamic buffers ---
 	xMem.UploadBufferData(m_xObjectsBuffer.GetBuffer().m_xVRAMHandle,
 		xScene.m_xObjects.GetDataPointer(), uNumObjects * sizeof(Flux_GPUSceneObject));
+	if (bVelocityActive)
+	{
+		// Index-locked to m_xObjects (SyncUnifiedBucketsFromSnapshot asserts the sizes match), so
+		// upload exactly uNumObjects matrices — the velocity VS indexes it by di.m_uObjectIndex.
+		const Zenith_Vector<Zenith_Maths::Matrix4>& xPrev = xRenderer.GetUnifiedPrevTransforms();
+		xMem.UploadBufferData(m_xPrevTransformsBuffer.GetBuffer().m_xVRAMHandle,
+			xPrev.GetDataPointer(), uNumObjects * sizeof(Zenith_Maths::Matrix4));
+	}
 	xMem.UploadBufferData(m_xDrawItemsBuffer.GetBuffer().m_xVRAMHandle,
 		xScene.m_xDrawItems.GetDataPointer(), uNumDrawItems * sizeof(Flux_GPUSceneDrawItem));
 	xMem.UploadBufferData(m_xBucketOffsetBuffer.GetBuffer().m_xVRAMHandle,
@@ -626,8 +725,11 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 		// The cascade ortho boxes already bake in the caster near-plane extend, so the
 		// same 6-plane sphere test retains occluders behind the cascade that still cast
 		// into it.
+		// NoJitter, never the jittered m_xViewProjMat: the main view's GPU proj carries
+		// TAA sub-pixel jitter, and culling against a jittered frustum would shimmer the
+		// visible set. Non-main views stage NoJitter == their own view-proj (== m_xViewProjMat).
 		Flux_InstanceCullingUtil::ExtractFrustumPlanes(
-			xViews.View(uView).m_xConstants.m_xViewProjMat, &xCull.m_axFrustumPlanes[uView * 6u]);
+			xViews.View(uView).m_xConstants.m_xViewProjMatNoJitter, &xCull.m_axFrustumPlanes[uView * 6u]);
 	}
 	xCull.m_xCameraPosition     = Zenith_Maths::Vector4(xEngine.FluxGraphics().GetCameraPosition(), 0.0f);
 	xCull.m_uTotalDrawItemCount = uNumDrawItems;
@@ -641,12 +743,16 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	// The renderer built the bind-pose pool / bone palette / skin-jobs CPU-side in
 	// SyncUnifiedBucketsFromSnapshot; upload them + size the per-frame skinning dispatch. The arena
 	// is persistent grow-only (reuse the object so the graph barrier key stays valid).
-	const Zenith_Vector<u_int>&                 auBindPose = xRenderer.GetUnifiedBindPosePoolWords();
-	const Zenith_Vector<Zenith_Maths::Matrix4>& axPalette  = xRenderer.GetUnifiedBonePalette();
-	const Zenith_Vector<Flux_GPUSkinJob>&       axJobs     = xRenderer.GetUnifiedSkinJobs();
+	const Zenith_Vector<u_int>&                 auBindPose   = xRenderer.GetUnifiedBindPosePoolWords();
+	const Zenith_Vector<Zenith_Maths::Matrix4>& axPalette    = xRenderer.GetUnifiedBonePalette();
+	const Zenith_Vector<Zenith_Maths::Matrix4>& axPrevPalette = xRenderer.GetUnifiedPrevBonePalette();   // Stage 4.3b
+	const Zenith_Vector<Flux_GPUSkinJob>&       axJobs       = xRenderer.GetUnifiedSkinJobs();
 	m_uSkinJobCount     = axJobs.GetSize();
 	m_uSkinMaxVertCount = xRenderer.GetUnifiedSkinMaxVerts();
 	m_uBonePaletteCount = axPalette.GetSize();
+	// Stage 4.3b: the prev-pose dispatch runs iff this is non-zero — only when velocity is active
+	// (the prev palette buffer is only uploaded then; a stale one must never drive a dispatch).
+	m_uPrevBonePaletteCount = bVelocityActive ? axPrevPalette.GetSize() : 0u;
 
 	// Bind-pose pool refresh runs EVERY frame (NOT gated by skin-job count). The pool is persistent
 	// + STATIC; it changes only when a new distinct skinned mesh appears (grow) or an eviction
@@ -678,6 +784,26 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 		GrowDynamicRW(m_xSkinJobsBuffer,     m_uSkinJobCapacity,          axJobs.GetSize(),     sizeof(Flux_GPUSkinJob));
 		xMem.UploadBufferData(m_xBonePaletteBuffer.GetBuffer().m_xVRAMHandle,  axPalette.GetDataPointer(),  axPalette.GetSize() * sizeof(Zenith_Maths::Matrix4));
 		xMem.UploadBufferData(m_xSkinJobsBuffer.GetBuffer().m_xVRAMHandle,     axJobs.GetDataPointer(),     axJobs.GetSize() * sizeof(Flux_GPUSkinJob));
+
+		// Stage 4.3b: prev-pose inputs — only while the velocity latch is on (byte-identical off).
+		// The prev arena grows parallel to the main arena (3 words/vertex, same out-vert bases); the
+		// prev palette mirrors the current palette's layout. Buffer objects are reused on grow so the
+		// graph barrier key (by C++ object address) stays valid, exactly like the main arena above.
+		if (bVelocityActive)
+		{
+			if (uTotalOutVerts > m_uPrevSkinnedArenaVertCapacity)
+			{
+				xMem.DestroyReadWriteBuffer(m_xPrevSkinnedArenaBuffer);
+				m_uPrevSkinnedArenaVertCapacity = (m_uPrevSkinnedArenaVertCapacity * 2u > uTotalOutVerts) ? m_uPrevSkinnedArenaVertCapacity * 2u : uTotalOutVerts;
+				xMem.InitialiseReadWriteBuffer(nullptr, (size_t)m_uPrevSkinnedArenaVertCapacity * kuSKIN_PREV_WORDS * sizeof(u_int),
+					m_xPrevSkinnedArenaBuffer, /*bAlsoVertexBuffer*/ false);
+			}
+			if (axPrevPalette.GetSize() > 0u)
+			{
+				GrowDynamicRW(m_xPrevBonePaletteBuffer, m_uPrevBonePaletteMatCapacity, axPrevPalette.GetSize(), sizeof(Zenith_Maths::Matrix4));
+				xMem.UploadBufferData(m_xPrevBonePaletteBuffer.GetBuffer().m_xVRAMHandle, axPrevPalette.GetDataPointer(), axPrevPalette.GetSize() * sizeof(Zenith_Maths::Matrix4));
+			}
+		}
 	}
 
 	m_uTotalDrawItems  = uNumDrawItems;
@@ -713,6 +839,26 @@ static void ExecuteUnifiedSkinning(Flux_CommandBuffer* pxCmdList, void*)
 	// thread guards vx < job.vertCount and jobIdx < numJobs (the shader's own guards).
 	const u_int uGroupsX = (xSelf.m_uSkinMaxVertCount + 63u) / 64u;
 	pxCmdList->Dispatch(uGroupsX, xSelf.m_uSkinJobCount, 1u);
+
+	// Stage 4.3b: second, positions-only PREV-pose dispatch — reuses the SAME skin-jobs (bases,
+	// counts) with the PREVIOUS palette, writing the compact prev position arena for skeletal
+	// motion vectors. Only while the velocity latch is on AND a prev palette was uploaded this
+	// frame (m_uPrevBonePaletteCount is 0 when velocity is off). Writes a DISJOINT buffer from the
+	// main dispatch above, so no barrier between them; the graph orders it before the velocity draw.
+	if (g_xEngine.FluxGraphics().IsVelocityMRTActive() && xSelf.m_uPrevBonePaletteCount > 0u)
+	{
+		pxCmdList->BindComputePipeline(&xSelf.m_xSkinningPrevPipeline);
+
+		UnifiedSkinConstants xPrevConsts = {};
+		xPrevConsts.m_uNumJobs      = xSelf.m_uSkinJobCount;
+		xPrevConsts.m_uPaletteCount = xSelf.m_uPrevBonePaletteCount;
+		xBinder.BindDrawConstants(xSelf.m_xSkinningPrevShader, "SkinConstants", &xPrevConsts, sizeof(xPrevConsts));
+		xBinder.BindSRV_Buffer(xSelf.m_xSkinningPrevShader, "bindPose",         xSelf.m_xBindPosePoolBuffer.GetSRV());
+		xBinder.BindSRV_Buffer(xSelf.m_xSkinningPrevShader, "prevBonePalette",  xSelf.m_xPrevBonePaletteBuffer.GetSRV());
+		xBinder.BindSRV_Buffer(xSelf.m_xSkinningPrevShader, "skinJobs",         xSelf.m_xSkinJobsBuffer.GetSRV());
+		xBinder.BindUAV_Buffer(xSelf.m_xSkinningPrevShader, "prevSkinnedArena", &xSelf.m_xPrevSkinnedArenaBuffer.GetUAV());
+		pxCmdList->Dispatch(uGroupsX, xSelf.m_uSkinJobCount, 1u);
+	}
 }
 
 static void ExecuteUnifiedReset(Flux_CommandBuffer* pxCmdList, void*)
@@ -761,6 +907,29 @@ static void ExecuteUnifiedCulling(Flux_CommandBuffer* pxCmdList, void*)
 	pxCmdList->Dispatch((uCullThreads + 63u) / 64u, 1u, 1u);
 }
 
+// TAA A/B capture toggle (Stage 4.4): --taa-no-prevpose forces skinned draws back to
+// camera+model-only velocity (the pre-Stage-4.3b behaviour) by clearing the per-draw skinned
+// flag, so the velocity VS takes the static branch (current local pose through the previous
+// transform) and an ANIMATING skeletal mesh smears its limbs under TAA. Lets a capture prove the
+// prev-pose motion vectors are what de-ghost the character. Verification-only; default off (prev
+// pose ON). Scanned once. The prev-pose skinning dispatch still runs when this is set (its output
+// is simply not read) — the ONLY difference is the velocity VS branch, isolating the pose vector.
+static bool Flux_TAA_PrevPoseVelocityDisabled()
+{
+	static int s_iDisabled = -1;   // -1 = unscanned
+	if (s_iDisabled == -1)
+	{
+		s_iDisabled = 0;
+#ifdef ZENITH_WINDOWS
+		for (int i = 1; i < __argc; i++)
+		{
+			if (std::strcmp(__argv[i], "--taa-no-prevpose") == 0) { s_iDisabled = 1; break; }
+		}
+#endif
+	}
+	return s_iDisabled != 0;
+}
+
 static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 {
 	Flux_UnifiedMeshImpl& xSelf = g_xEngine.UnifiedMesh();
@@ -780,18 +949,37 @@ static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
 
+	// TAA velocity: the MAIN view's G-buffer pass is a 5-attachment framebuffer when the
+	// velocity latch is on, so bind the velocity pipeline variant (writes SV_Target4). The
+	// preview view stays 4-attachment (never velocity). The velocity shader has an IDENTICAL
+	// binding layout to the base, so the same named binds below resolve to the same slots and
+	// the pipeline layout is compatible — no per-bind shader switch needed.
+	const bool bVelocity = g_xEngine.FluxGraphics().IsVelocityMRTActive() && (uViewSlot == kuFluxViewSlotMain);
+
 	// Two cull-mode passes (one-sided / two-sided), mirroring InstancedMeshes: the
 	// pipeline + PASS block (scene SSBOs) + bindless table are bound once per pass.
 	for (u_int uCullPass = 0; uCullPass < 2u; ++uCullPass)
 	{
 		const bool bTwoSidedPass = (uCullPass == 1u);
-		pxCmdList->SetPipeline(bTwoSidedPass ? &xSelf.m_xGBufferPipelineTwoSided : &xSelf.m_xGBufferPipeline);
+		pxCmdList->SetPipeline(bTwoSidedPass
+			? (bVelocity ? &xSelf.m_xGBufferPipelineVelocityTwoSided : &xSelf.m_xGBufferPipelineTwoSided)
+			: (bVelocity ? &xSelf.m_xGBufferPipelineVelocity          : &xSelf.m_xGBufferPipeline));
 		pxCmdList->UseBindlessTextures(2);
 
 		// PASS block (set 3) — scene records bound once per pass (BindDrawConstants on
 		// the DRAW set 4 below never disturbs these).
 		xBinder.BindSRV_Buffer(xSelf.m_xGBufferShader, "Objects",   xSelf.m_xObjectsBuffer.GetSRV());
 		xBinder.BindSRV_Buffer(xSelf.m_xGBufferShader, "DrawItems", xSelf.m_xDrawItemsBuffer.GetSRV());
+		// TAA (Stage 4.3): the velocity pipeline's PASS set adds PrevTransforms (binding 2). Bind it
+		// via the velocity shader's reflection (the base shader has no such binding); Objects/DrawItems
+		// stay at bindings 0/1 in BOTH layouts, so the base-shader binds above resolve to the same slots.
+		if (bVelocity)
+		{
+			xBinder.BindSRV_Buffer(xSelf.m_xGBufferVelocityShader, "PrevTransforms", xSelf.m_xPrevTransformsBuffer.GetSRV());
+			// Stage 4.3b: the prev skinned-position arena (positions-only). Bound once per pass with a
+			// valid buffer for EVERY draw; only skinned draws index it (g_uIsSkinned in the draw consts).
+			xBinder.BindSRV_Buffer(xSelf.m_xGBufferVelocityShader, "PrevSkinnedPosArena", xSelf.m_xPrevSkinnedArenaBuffer.GetSRV());
+		}
 
 		for (u_int u = 0; u < xSelf.m_axBucketDraws.GetSize(); ++u)
 		{
@@ -821,6 +1009,16 @@ static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 			xConsts.m_uMaterialIndex = xDraw.m_uMaterialIndex;
 			xConsts.m_uBucketOffset  = Flux_UnifiedVisibleWriteIndex(uViewSlot, xSelf.m_uTotalDrawItems, xDraw.m_uVisibleOffset, 0u);
 			xConsts.m_xVATParams     = xDraw.m_xVATParams;
+			// Stage 4.3b: only the velocity variant reads these (m_uPad0/m_uPad1); set them just for the
+			// velocity pass so the off-path draw constants stay byte-identical. A skinned draw passes its
+			// arena slice base + the is-skinned flag so the velocity VS fetches the prev pose (base + SV_VertexID).
+			// The --taa-no-prevpose A/B toggle clears the flag => skinned reverts to camera+model-only velocity.
+			if (bVelocity)
+			{
+				const bool bUsePrevPose = xDraw.m_bSkinned && !Flux_TAA_PrevPoseVelocityDisabled();
+				xConsts.m_uPad0 = bUsePrevPose ? xDraw.m_uVertexOffset : 0u;   // g_uSkinnedPrevVertBase
+				xConsts.m_uPad1 = bUsePrevPose ? 1u : 0u;                       // g_uIsSkinned
+			}
 			xBinder.BindDrawConstants(xSelf.m_xGBufferShader, "DrawConstants", &xConsts, sizeof(xConsts));
 			xBinder.BindSRV_Buffer(xSelf.m_xGBufferShader, "VisibleIndexBuffer", xSelf.m_xVisibleIndexBuffer.GetSRV());
 			BindBucketVAT(xBinder, xSelf.m_xGBufferShader, xDraw.m_pxVATTexture);

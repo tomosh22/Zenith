@@ -9,6 +9,9 @@
 namespace Flux_TerrainShaders
 {
 	inline constexpr Flux_ShaderDecl xTerrain_ToGBuffer{ "Terrain_ToGBuffer", "Terrain/Flux_Terrain_ToGBuffer", "vsMain", "fsMain", nullptr, "spirv_1_3", "Terrain" };
+	// TAA (Stage 4.3c): velocity variant of Terrain_ToGBuffer — writes MRT_INDEX_VELOCITY (5-MRT
+	// framebuffer) when the velocity latch is on. Static terrain => velocity = pure camera reprojection.
+	inline constexpr Flux_ShaderDecl xTerrain_ToGBufferVelocity{ "Terrain_ToGBufferVelocity", "Terrain/Flux_Terrain_ToGBufferVelocity", "vsMain", "fsMain", nullptr, "spirv_1_3", "Terrain" };
 	inline constexpr Flux_ShaderDecl xTerrain_ToShadowmap{ "Terrain_ToShadowmap", "Terrain/Flux_Terrain_ToShadowmap", "vsMain", "fsMain", nullptr, "spirv_1_3", "Terrain" };
 	inline constexpr Flux_ShaderDecl xTerrainCulling{ "TerrainCulling", "Terrain/Flux_TerrainCulling", nullptr, nullptr, "csMain", "spirv_1_3", "Terrain" };
 	inline constexpr Flux_ShaderDecl xTerrainResetCounters{ "TerrainResetCounters", "Terrain/Flux_TerrainResetCounters", nullptr, nullptr, "csMain", "spirv_1_3", "Terrain" };
@@ -17,6 +20,7 @@ namespace Flux_TerrainShaders
 	inline constexpr const Flux_ShaderDecl* apxALL[] =
 	{
 		&xTerrain_ToGBuffer,
+		&xTerrain_ToGBufferVelocity,
 		&xTerrain_ToShadowmap,
 		&xTerrainCulling,
 		&xTerrainResetCounters,

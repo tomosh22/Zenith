@@ -304,8 +304,10 @@ static void ExecuteLuminanceHistogram(Flux_CommandBuffer* pxCommandList, void* p
 	pxCommandList->BindComputePipeline(&xHDR.m_xLuminanceHistogramPipeline);
 
 	LuminanceConstants xConsts;
-	xConsts.m_uImageWidth = g_xEngine.FluxSwapchain().GetWidth();
-	xConsts.m_uImageHeight = g_xEngine.FluxSwapchain().GetHeight();
+	// RENDER dims: the histogram reads the RAW render-res HDR scene target (bloom/tonemap read the
+	// upscaled post-FX colour instead). The coverage bound + UV normaliser must match that texture.
+	xConsts.m_uImageWidth = g_xEngine.FluxGraphics().GetRenderWidth();
+	xConsts.m_uImageHeight = g_xEngine.FluxGraphics().GetRenderHeight();
 	xConsts.m_fMinLogLum = xHDR.m_fMinLogLuminance;
 	xConsts.m_fLogLumRange = xHDR.m_fLogLuminanceRange;
 
@@ -315,8 +317,8 @@ static void ExecuteLuminanceHistogram(Flux_CommandBuffer* pxCommandList, void* p
 	xBinder.BindSRV(LUM::hg_xHDRTex, &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
 	xBinder.BindUAV_Buffer(LUM::hg_auHistogram, &xHDR.m_xHistogramBuffer.GetUAV());
 
-	u_int uGroupsX = (g_xEngine.FluxSwapchain().GetWidth() + 15) / 16;
-	u_int uGroupsY = (g_xEngine.FluxSwapchain().GetHeight() + 15) / 16;
+	u_int uGroupsX = (g_xEngine.FluxGraphics().GetRenderWidth() + 15) / 16;
+	u_int uGroupsY = (g_xEngine.FluxGraphics().GetRenderHeight() + 15) / 16;
 	pxCommandList->Dispatch(uGroupsX, uGroupsY, 1);
 }
 
@@ -346,7 +348,9 @@ static void ExecuteAdaptation(Flux_CommandBuffer* pxCommandList, void* pUserData
 	xConsts.m_fMaxExposure = xHDR.m_fMaxExposure;
 	xConsts.m_fLowPercentile = 0.05f;
 	xConsts.m_fHighPercentile = 0.95f;
-	xConsts.m_uTotalPixels = g_xEngine.FluxSwapchain().GetWidth() * g_xEngine.FluxSwapchain().GetHeight();
+	// RENDER-res pixel count: the histogram bins were built over the render-res HDR scene, so the
+	// percentile denominator must be the render-res pixel count (else auto-exposure metering skews).
+	xConsts.m_uTotalPixels = g_xEngine.FluxGraphics().GetRenderWidth() * g_xEngine.FluxGraphics().GetRenderHeight();
 	xConsts.m_uPad0 = 0;
 	xConsts.m_uPad1 = 0;
 
@@ -457,7 +461,7 @@ static void ExecuteBloomThreshold(Flux_CommandBuffer* pxCommandList, void* pUser
 
 	namespace BT = Flux_Generated_HDR::BloomThreshold;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(BT::hg_xHDRTex, &g_xEngine.FluxGraphics().GetHDRSceneTarget(uViewSlot).SRV());
+	xBinder.BindSRV(BT::hg_xHDRTex, &g_xEngine.FluxGraphics().GetSceneColourForPostFX(uViewSlot).SRV());
 	xBinder.BindDrawConstants(BT::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
@@ -553,7 +557,7 @@ static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserDat
 	{
 		namespace TM = Flux_Generated_HDR::HDR_ToneMapping;
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindSRV(TM::hg_xHDRTex, &g_xEngine.FluxGraphics().GetHDRSceneTarget().SRV());
+		xBinder.BindSRV(TM::hg_xHDRTex, &g_xEngine.FluxGraphics().GetSceneColourForPostFX().SRV());
 		xBinder.BindSRV(TM::hg_xBloomTex, &xHDR.GetBloomChainAttachment(0).SRV());
 		// Slang reflection keys on the variable name (not the GLSL block
 		// name) — match the names declared in Flux_ToneMapping.slang.
@@ -649,7 +653,7 @@ void Flux_HDRImpl::SetupBloomViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlo
 	xGraph.AddPass(bMainView ? "HDR_BloomThreshold" : "HDR_BloomThreshold (Preview)", ExecuteBloomThreshold)
 		.View(uViewSlot)
 		.ClearTargets()
-		.Reads          (g_xEngine.FluxGraphics().GetHDRSceneTarget(uViewSlot),             RESOURCE_ACCESS_READ_SRV)
+		.Reads          (g_xEngine.FluxGraphics().GetSceneColourForPostFX(uViewSlot),       RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(m_aaxBloomChainHandles[uViewSlot][0],        RESOURCE_ACCESS_WRITE_RTV);
 
 	static const char* s_aszBloomDownsampleNames[] = {
@@ -720,7 +724,7 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// rather than the shader's actual read-only intent.
 	xGraph.AddPass("HDR_ToneMapping", ExecuteToneMapping)
 		.ClearTargets()
-		.Reads         (g_xEngine.FluxGraphics().GetHDRSceneTarget(),                    RESOURCE_ACCESS_READ_SRV)
+		.Reads         (g_xEngine.FluxGraphics().GetSceneColourForPostFX(),              RESOURCE_ACCESS_READ_SRV)
 		.Writes        (g_xEngine.FluxGraphics().GetFinalRenderTarget(),  RESOURCE_ACCESS_WRITE_RTV)
 		.ReadsBuffer   (m_xHistogramBuffer.GetBuffer(),         RESOURCE_ACCESS_READWRITE_UAV)
 		.ReadsBuffer   (m_xExposureBuffer.GetBuffer(),          RESOURCE_ACCESS_READWRITE_UAV)

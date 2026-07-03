@@ -183,7 +183,7 @@ void Flux_SSAOImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// single-view path), then the preview view at its fixed 512² dims — only
 	// while active, so its transients exist exactly when its passes do (the
 	// graph's unused-transient validation demands this).
-	SetupViewPasses(xGraph, kuFluxViewSlotMain, g_xEngine.FluxSwapchain().GetWidth(), g_xEngine.FluxSwapchain().GetHeight());
+	SetupViewPasses(xGraph, kuFluxViewSlotMain, g_xEngine.FluxGraphics().GetRenderWidth(), g_xEngine.FluxGraphics().GetRenderHeight());
 	if (g_xEngine.FluxGraphics().RenderViews().IsViewActive(kuFluxViewSlotPreview))
 		SetupViewPasses(xGraph, kuFluxViewSlotPreview, kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
 }

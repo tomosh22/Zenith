@@ -12,6 +12,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
+#include "Flux/TAA/Flux_TAAImpl.h"
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/IBL/Flux_IBLImpl.h"
@@ -62,6 +63,7 @@
 #include "Flux/SDFs/Flux_SDFs_Shaders.h"
 #include "Flux/Particles/Flux_Particles_Shaders.h"
 #include "Flux/HDR/Flux_HDR_Shaders.h"
+#include "Flux/TAA/Flux_TAA_Shaders.h"
 #include "Flux/Quads/Flux_Quads_Shaders.h"
 #include "Flux/Text/Flux_Text_Shaders.h"
 #include "Flux/Present/Flux_Present_Shaders.h"
@@ -379,6 +381,13 @@ void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xRe
 	// HDR scene target it reads is created/owned by FluxGraphics (first step); HDR
 	// creates only its private bloom chain in SetupRenderGraph and its histogram /
 	// exposure buffers in Initialise (order-free).
+	// TAA (temporal anti-aliasing) resolves the fully-composited lit HDR scene BEFORE
+	// the HDR bloom+tonemap read it (they read GetSceneColourForPostFX, which returns
+	// the TAA output when active). Declared after every HDR-scene producer
+	// (DeferredShading/Grass/Translucency/Fog/SDFs/Particles) and before HDR, so
+	// producer-before-consumer holds both ways. Main view only; when the velocity latch
+	// is off it declares no pass and the seam falls through to raw HDR (byte-identical).
+	RegisterFeature<&Zenith_Engine::TAA>(xReg, "TAA", Flux_TAAShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::HDR>(xReg, "HDR", Flux_HDRShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Quads>(xReg, "Quads", Flux_QuadsShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Text>(xReg, "Text", Flux_TextShaders::apxALL);

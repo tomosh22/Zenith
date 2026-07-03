@@ -230,7 +230,7 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	Flux_GraphicsImpl& xFluxGraphics = g_xEngine.FluxGraphics();
 
-	for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+	for (u_int u = 0; u < uFLUX_MRT_CORE_COUNT; u++)   // lighting reads the 4 core G-buffer MRTs, never velocity
 		xGraph.Read(xPass, xFluxGraphics.GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
 
 	xGraph.Read(xPass, xFluxGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
@@ -295,7 +295,7 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			.View(kuFluxViewSlotPreview)
 			.Writes(xFluxGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
 			.ClearTargets();
-		for (u_int u = 0; u < MRT_INDEX_COUNT; u++)
+		for (u_int u = 0; u < uFLUX_MRT_CORE_COUNT; u++)   // lighting reads the 4 core G-buffer MRTs, never velocity
 			xGraph.Read(xPreviewPass, xFluxGraphics.GetMRTAttachment(static_cast<MRTIndex>(u), kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
 		xGraph.Read(xPreviewPass, xFluxGraphics.GetDepthAttachment(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
 		xGraph.ReadTransient(xPreviewPass, xSSAO.m_axRawOcclusionHandles[kuFluxViewSlotPreview], RESOURCE_ACCESS_READ_SRV);

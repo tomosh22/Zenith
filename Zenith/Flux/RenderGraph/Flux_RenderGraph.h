@@ -465,6 +465,17 @@ private:
     Zenith_Vector<Flux_RenderGraph_Pass*> m_xPasses;
     Zenith_HashMap<void*, Flux_RenderGraph_Resource> m_xResources;
     Zenith_Vector<u_int> m_xExecutionOrder;
+
+    // Cross-frame resident-layout prime tracker for the cyclic IMAGE seed (see
+    // SeedCyclicImageState + SynthesizeBarriers). Persistent (non-transient) attachment
+    // pointer -> the VRAM handle we last primed it at. A persistent image whose seeded
+    // end-of-frame access is a WRITE rests between frames in a layout other than the
+    // SHADER_READ it is created in; the first time such an image is seen (or after a resize
+    // hands it a new VRAM handle) it is primed once to that resident layout so the seeded
+    // cross-frame first-touch barrier is layout-valid from frame 0 (and preserves content on
+    // tiled GPUs). PERSISTS across Clear()/rebuild (NOT cleared there) so the prime fires
+    // exactly once per (re)creation — never per Compile, which would re-discard the image.
+    Zenith_HashMap<void*, Flux_VRAMHandle> m_xPrimedCyclicImages;
     bool m_bCompiled = false;
     bool m_bDirty = true;
     bool m_bEnabledMaskDirty = false;

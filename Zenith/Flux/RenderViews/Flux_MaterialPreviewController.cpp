@@ -187,6 +187,12 @@ void Flux_MaterialPreviewController::Update()
 	xVC.m_xSunColour_Pad = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 3.0f);
 	xVC.m_uViewFlags     = 0u;
 	xVC.m_uViewSlot      = kuFluxViewSlotPreview;
+	// TAA NoJitter: the preview view never jitters and never runs velocity/TAA, but the
+	// GPU cull reads m_xViewProjMatNoJitter for EVERY active view — so stage it to this
+	// view's own (unjittered) view-proj (prev == current; jitter UV = 0).
+	xVC.m_xViewProjMatNoJitter     = xVC.m_xViewProjMat;
+	xVC.m_xPrevViewProjMatNoJitter = xVC.m_xViewProjMat;
+	xVC.m_xJitterUV_PrevJitterUV   = Zenith_Maths::Vector4(0.0f);
 
 	EnsureMeshes();
 	Flux_MeshInstance* pxMesh = m_apxMeshInstances[m_eMesh];

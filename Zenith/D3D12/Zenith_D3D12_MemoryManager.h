@@ -132,6 +132,13 @@ public:
 		Flux_VRAMHandle x; x.SetValue(ms_uDummyHandle++); return x;
 	}
 
+	// No-op: the null backend performs no layout transitions (see Zenith_Vulkan_MemoryManager
+	// for the real cyclic-image resident-layout prime the render graph drives).
+	void TransitionImageInitialLayout(Flux_VRAMHandle xHandle, bool bIsDepth, ResourceAccess eTargetAccess, u_int uNumMips, u_int uNumLayers)
+	{
+		(void)xHandle; (void)bIsDepth; (void)eTargetAccess; (void)uNumMips; (void)uNumLayers;
+	}
+
 	// ===== View creation (FluxBackendMemoryAlloc) =====
 	// Views carry a valid dummy image-view handle + the (already valid) VRAM
 	// handle so engine validity asserts pass; the no-op recorder never reads them.

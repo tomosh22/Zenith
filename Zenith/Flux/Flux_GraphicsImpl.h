@@ -14,6 +14,7 @@ static constexpr TextureFormat MRT_FORMAT_DIFFUSE         = TEXTURE_FORMAT_RGBA8
 static constexpr TextureFormat MRT_FORMAT_NORMALSAMBIENT  = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
 static constexpr TextureFormat MRT_FORMAT_MATERIAL        = TEXTURE_FORMAT_RGBA8_UNORM;
 static constexpr TextureFormat MRT_FORMAT_EMISSIVE        = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;	// HDR emissive (feeds bloom) + clear-coat roughness in A
+static constexpr TextureFormat MRT_FORMAT_VELOCITY       = TEXTURE_FORMAT_R16G16_SFLOAT;			// TAA motion vectors (uvCurrent - uvPrev, UV space); optional 5th MRT
 static constexpr TextureFormat DEPTH_FORMAT               = TEXTURE_FORMAT_D32_SFLOAT;
 static constexpr TextureFormat FINAL_RT_FORMAT            = TEXTURE_FORMAT_R16G16B16A16_UNORM;
 static constexpr TextureFormat HDR_SCENE_FORMAT           = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
@@ -89,11 +90,63 @@ public:
 	Flux_RenderAttachment& GetDepthAttachment(u_int uViewSlot = kuFluxViewSlotMain);
 	Flux_RenderAttachment& GetFinalRenderTarget();
 
+	// --- Temporal upscaling (Stage 5) — render/output resolution split ------------
+	// GetOutputDims() = the swapchain/window resolution (what Present, the FinalRT and the
+	// UI/text overlay use — never changed by upscaling). GetRenderDims() = the resolution the
+	// MAIN-view scene chain (G-buffer/depth/HDR + HiZ/SSAO/SSR/SSGI/Decals/histogram) renders
+	// at; it EQUALS GetOutputDims() unless temporal upscaling is active (TAA on + Upscaling on
+	// + RenderScale<1), when it is the even-quantised round_to_even(RenderScale * output)
+	// latched at the last graph build (Flux_TAAComputeRenderDims). Returning the LATCHED value
+	// (not the live scale) keeps every per-frame caller consistent with the current graph's
+	// transient sizes. OFF path returns GetOutputDims() verbatim so it can never perturb the
+	// byte-identical-off gate.
+	Zenith_Maths::UVector2 GetOutputDims() const;
+	Zenith_Maths::UVector2 GetRenderDims() const;
+	// The render dims the CURRENT frame's graph WILL be (re)built at — derived from the *requested*
+	// upscaling state, i.e. what SetupTransients is about to latch. UploadFrameConstants stages the
+	// slot-0 VIEW CB (screen dims + jitter) BEFORE the rebuild's SetupTransients runs, so it must use
+	// THIS (not the latched GetRenderDims(), which still holds the previous build's dims) — otherwise
+	// the slot-0 CB lags the freshly-resized transients by one frame on an upscaling/scale toggle
+	// (decals/translucency/SSR-denoise map SV_Position×g_xRcpScreenDims → a one-frame edge glitch).
+	// The poll that updates *Requested runs AFTER UploadFrameConstants and AFTER SetupTransients in
+	// the same frame, so requested-now == what SetupTransients latches. Equals GetRenderDims() on
+	// every non-transition frame; equals GetOutputDims() whenever upscaling is (pending-)off.
+	Zenith_Maths::UVector2 GetPendingRenderDims() const;
+	u_int GetRenderWidth()  const { return GetRenderDims().x; }
+	u_int GetRenderHeight() const { return GetRenderDims().y; }
+	bool  IsUpscalingActive() const { return m_bUpscalingActive; }
+	float GetRenderScale()    const { return m_fRenderScaleActive; }
+
+	// TAA velocity MRT (optional 5th G-buffer target). Materialised only for the MAIN
+	// view, only while the velocity latch is on. Reached via this DISTINCT accessor —
+	// GetMRTAttachment asserts core-only so velocity can never leak through the normal
+	// G-buffer getters. IsVelocityMRTActive() is the single latched flag both the pass
+	// declarations and the record-time pipeline selection read.
+	Flux_RenderAttachment& GetVelocityAttachment(u_int uViewSlot = kuFluxViewSlotMain);
+	bool IsVelocityMRTActive() const { return m_bVelocityMRTActive; }
+	// Polled each frame (ApplySubsystemGraphSelections): flips velocity 4↔5-MRT and drives
+	// the Stage-2 jitter enable in lockstep. Returns TRUE when the requested state diverged
+	// from the latched one — the caller then issues the full graph rebuild (the MRT count
+	// changes). Returning the signal keeps the renderer reach out of this graphics method.
+	bool UpdateVelocityTargetSelection(Flux_RenderGraph& xGraph);
+
+	// Runtime TAA-enable override for automation/tests (TAAToggleStress). -1 = no override
+	// (the debug var / --taa CLI decide — byte-identical default); 0/1 = force the requested
+	// state, applied LAST in UpdateVelocityTargetSelection so a test can flip TAA mid-run (and
+	// trigger the graph rebuild) without the ImGui panel. g_xEngine.TAA().SetEnabled(bool) forwards here.
+	void SetTAAEnableOverride(int iState) { m_iTAARuntimeEnableOverride = iState; }
+
 	// HDR scene target — the shared scene-colour buffer many features write and the
 	// HDR tonemap reads. Owned here (alongside the other shared targets) so it exists
 	// before the first writer; the HDR feature keeps only its private bloom chain.
 	// (Was Flux_HDRImpl's, created by the removed @SetupTransients:HDR step.)
 	Flux_RenderAttachment&   GetHDRSceneTarget(u_int uViewSlot = kuFluxViewSlotMain);
+	// The scene colour the HDR post-FX (bloom threshold + main tonemap) should read.
+	// Returns the TAA-resolved output when TAA is active on the MAIN view, else the raw
+	// HDR scene. Histogram/auto-exposure + the material-preview tonemap deliberately keep
+	// reading GetHDRSceneTarget (raw). TAA-off => identical to GetHDRSceneTarget
+	// everywhere (the byte-identical pre-TAA path).
+	Flux_RenderAttachment&   GetSceneColourForPostFX(u_int uViewSlot = kuFluxViewSlotMain);
 	Flux_ShaderResourceView& GetHDRSceneSRV();
 	void GetHDRSceneTargetSetup(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
 	void GetHDRSceneTargetSetupWithDepth(Flux_RenderAttachment* apxColourAttachments[], uint32_t& uNumColour, Flux_RenderAttachment*& pxDepthStencil);
@@ -206,6 +259,44 @@ public:
 	ViewConstants               m_xViewConstantsData;
 	// Set each UploadFrameConstants to whether a valid main camera was resolved this frame.
 	bool                        m_bCameraValid = false;
+
+	// --- TAA sub-pixel jitter state (Stage 2 plumbing; the {"Render","TAA"} toggle
+	// wires m_bTAAJitterEnabled in Stage 3). Jitter is injected ONLY into the slot-0
+	// GPU CB payload (m_xViewConstantsData) — m_xFrameConstants stays unjittered so
+	// culling / CSM / preview / terrain streaming are jitter-free by construction.
+	// While disabled the offset is (0,0), which Flux_ApplyJitterToProjection returns
+	// byte-for-byte, so the whole GPU payload is byte-identical to the no-TAA frame.
+	// m_xPrevFrameViewProjNoJitter / m_xPrevJitterUV feed the velocity reprojection's
+	// previous-frame terms (staged into the slot-0 payload each frame).
+	bool                        m_bTAAJitterEnabled          = false;
+	u_int                       m_uTAAJitterPhase            = 0u;
+	u_int                       m_uTAAJitterPhaseCount       = 8u;
+	Zenith_Maths::Matrix4       m_xPrevFrameViewProjNoJitter = Zenith_Maths::Matrix4(1.0f);
+	Zenith_Maths::Vector2       m_xPrevJitterUV              = Zenith_Maths::Vector2(0.0f);
+
+	// --- TAA velocity MRT toggle/latch (Stage 3). m_bVelocityMRTRequested is set by the
+	// per-frame poll; SetupTransients latches it into m_bVelocityMRTActive at the start of
+	// each graph build, and EVERYTHING else in that build (velocity transient creation, the
+	// geometry pass .Writes, the record-time pipeline selection) reads m_bVelocityMRTActive —
+	// so they can never disagree within a frame. Default OFF ⇒ 4-MRT frame, byte-identical.
+	bool                        m_bVelocityMRTRequested      = false;
+	bool                        m_bVelocityMRTActive         = false;
+	int                         m_iTAARuntimeEnableOverride  = -1;   // -1=none, 0/1=forced (test/automation hook)
+
+	// --- TAA temporal upscaling toggle/latch (Stage 5). *Requested is set by the per-frame
+	// poll; SetupTransients latches Active + the even-quantised m_xRenderDimsThisBuild at the
+	// start of each graph build (parallel to the velocity latch), so every consumer this build
+	// agrees on the render dims. m_bUpscalingActive is gated on m_bVelocityMRTActive: upscaling
+	// can NEVER engage while TAA is off (there is no resolve pass to reconstruct output res, so
+	// the scene must render at output res). Default OFF / scale 1.0 ⇒ render == output ⇒
+	// byte-identical. Both are STRUCTURAL (they resize the slot-0 scene transients) so a change
+	// requests a full graph rebuild, not a MarkDirty. m_xRenderDimsThisBuild is read by
+	// GetRenderDims() only while active (it starts (0,0) but is set before any consumer runs).
+	bool                        m_bUpscalingRequested        = false;
+	bool                        m_bUpscalingActive           = false;
+	float                       m_fRenderScaleRequested      = 1.0f;
+	float                       m_fRenderScaleActive         = 1.0f;
+	Zenith_Maths::UVector2      m_xRenderDimsThisBuild       = Zenith_Maths::UVector2(0u, 0u);
 	// Per-scene sun override (see SetSunOverride). Default OFF.
 	bool                        m_bSunOverride = false;
 	Zenith_Maths::Vector3       m_xSunDirOverride = { 0.0f, -1.0f, 0.0f };

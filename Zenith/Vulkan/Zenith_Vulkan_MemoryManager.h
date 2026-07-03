@@ -168,6 +168,20 @@ public:
 	void UpdateTextureVRAM(Flux_VRAMHandle xHandle, const void* pData, const Flux_SurfaceInfo& xInfo);
 	Flux_VRAMHandle CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo);
 
+	// One-time "resident layout" prime for a persistent (non-transient) render
+	// attachment that the render graph seeds cyclically. CreateRenderTargetVRAM leaves
+	// a fresh colour target in SHADER_READ_ONLY, but a write-last cyclic image (e.g. the
+	// TAA history, which each frame ends written via UAV) rests in GENERAL between frames.
+	// The graph's cross-frame seed makes such an image's first-touch barrier name the
+	// resident (write) layout as its source; without this prime the first frame after
+	// (re)creation would transition from a layout the image is not in (a validation-layer
+	// error + a real content discard on tiled GPUs). Called by the render graph from
+	// SynthesizeBarriers when it first sees a write-last persistent image's VRAM handle.
+	// UNDEFINED source is legal from any layout and safe here (pre-frame contents are
+	// invalid on the (re)creation frame). Recorded on the same ad-hoc memory command
+	// buffer as creation, submitted ahead of render work.
+	void TransitionImageInitialLayout(Flux_VRAMHandle xHandle, bool bIsDepth, ResourceAccess eTargetAccess, u_int uNumMips, u_int uNumLayers);
+
 	// Create a persistently mapped host-visible buffer (for scratch buffers, etc.)
 	struct PersistentBuffer
 	{

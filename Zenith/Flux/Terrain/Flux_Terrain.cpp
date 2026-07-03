@@ -111,7 +111,7 @@ void Flux_TerrainImpl::BuildPipelines()
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
-		xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		xPipelineSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // base terrain G-buffer pipeline (4 MRTs); the velocity variant (5 MRTs) is built separately
 		xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 		xPipelineSpec.m_pxShader = &m_xTerrainGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
@@ -129,6 +129,35 @@ void Flux_TerrainImpl::BuildPipelines()
 
 		xPipelineSpec.m_bWireframe = true;
 		Flux_PipelineBuilder::FromSpecification(m_xTerrainWireframePipeline, xPipelineSpec);
+	}
+
+	// TAA velocity variant (Stage 4.3c): a 5-attachment pipeline (4 core MRTs + velocity), drawn
+	// INSTEAD of the base terrain G-buffer pipeline when the velocity latch is on. Same vertex
+	// layout + shading; the extra SV_Target4 carries the per-pixel camera-reprojection motion vector.
+	{
+		m_xTerrainGBufferVelocityShader.Initialise(Flux_TerrainShaders::xTerrain_ToGBufferVelocity);
+
+		Flux_PipelineSpecification xVelocitySpec;
+		xVelocitySpec.m_aeColourAttachmentFormats[MRT_INDEX_DIFFUSE]        = MRT_FORMAT_DIFFUSE;
+		xVelocitySpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
+		xVelocitySpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL]       = MRT_FORMAT_MATERIAL;
+		xVelocitySpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE]       = MRT_FORMAT_EMISSIVE;
+		xVelocitySpec.m_aeColourAttachmentFormats[MRT_INDEX_VELOCITY]       = MRT_FORMAT_VELOCITY;
+		xVelocitySpec.m_uNumColourAttachments = MRT_INDEX_COUNT;   // 5
+		xVelocitySpec.m_eDepthStencilFormat = DEPTH_FORMAT;
+		xVelocitySpec.m_pxShader = &m_xTerrainGBufferVelocityShader;
+		xVelocitySpec.m_xVertexInputDesc = xVertexDesc;
+
+		m_xTerrainGBufferVelocityShader.GetReflection().PopulateLayout(xVelocitySpec.m_xPipelineLayout);
+
+		for (Flux_BlendState& xBlendState : xVelocitySpec.m_axBlendStates)
+		{
+			xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+			xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+			xBlendState.m_bBlendEnabled = false;
+		}
+
+		Flux_PipelineBuilder::FromSpecification(m_xTerrainGBufferVelocityPipeline, xVelocitySpec);
 	}
 
 
@@ -322,6 +351,14 @@ void Flux_TerrainImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Writes(xGraphics.GetDepthAttachment(),						RESOURCE_ACCESS_WRITE_DSV)
 		.DependsOn(xCullingPass);
 
+	// TAA velocity (Stage 4.3c): make the terrain G-buffer pass a 5-attachment framebuffer when the
+	// velocity latch is on, matching the velocity pipeline selected at record time. Terrain is
+	// main-view only, so no view guard. Added non-fluently (the fluent builder is rvalue-only).
+	if (xGraphics.IsVelocityMRTActive())
+	{
+		xGraph.Write(xGBufferPass, xGraphics.GetVelocityAttachment(), RESOURCE_ACCESS_WRITE_RTV);
+	}
+
 	for (u_int u = 0; u < xTerrains.GetSize(); u++)
 	{
 		Flux_TerrainStreamingState* pxState = xTerrains.Get(u).m_pxState;
@@ -371,6 +408,10 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 	// see the RENDER-GRAPH CONTRACT on Flux_FrameIndexedBufferBase, Flux_Buffers.h).
 	g_xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("Flux Terrain Streaming"));
 	const Zenith_Maths::Vector3 xCameraPos = g_xEngine.FluxGraphics().GetCameraPosition();
+	// m_xFrameConstants.m_xViewProjMat is the CPU camera-matrix source and stays UNJITTERED
+	// (TAA jitter is injected only into the slot-0 GPU CB payload), so terrain streaming
+	// culls against the jitter-free frustum by construction — do NOT switch this to the
+	// per-view GPU payload's m_xViewProjMat (that copy carries the sub-pixel jitter).
 	const Zenith_Maths::Matrix4& xViewProj = g_xEngine.FluxGraphics().m_xFrameConstants.m_xViewProjMat;
 	Flux_TerrainStreamingManagerImpl& xTerrainStreaming = g_xEngine.TerrainStreaming();
 	for (u_int u = 0; u < m_xTerrainRenderRecords.GetSize(); u++)
@@ -454,7 +495,14 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	// promoted member helper.
 	Flux_TerrainImpl& xTerrain = g_xEngine.Terrain();
 
-	pxCmdList->SetPipeline(dbg_bWireframe ? &xTerrain.m_xTerrainWireframePipeline : &xTerrain.m_xTerrainGBufferPipeline);
+	// TAA velocity (Stage 4.3c): when the velocity latch is on, the terrain G-buffer pass is a
+	// 5-attachment framebuffer, so draw the velocity pipeline (writes SV_Target4). Wireframe is a
+	// 4-attachment debug pipeline that can't coexist with the 5-attachment pass — velocity wins
+	// (losing wireframe while TAA is on is an acceptable debug-tool tradeoff).
+	const bool bVelocity = g_xEngine.FluxGraphics().IsVelocityMRTActive();
+	pxCmdList->SetPipeline(bVelocity
+		? &xTerrain.m_xTerrainGBufferVelocityPipeline
+		: (dbg_bWireframe ? &xTerrain.m_xTerrainWireframePipeline : &xTerrain.m_xTerrainGBufferPipeline));
 
 	// Create binder for named resource binding
 	Flux_ShaderBinder xBinder(*pxCmdList);

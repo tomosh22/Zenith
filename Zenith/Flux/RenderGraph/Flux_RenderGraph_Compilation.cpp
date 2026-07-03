@@ -1569,6 +1569,61 @@ namespace
             return;
         xTracker.SetBufferState(pxBuffer, PostPassAccess(rxUsage.m_eAccess));
     }
+
+    // Cross-frame cyclic seed for PERSISTENT (non-transient) IMAGES — the image analog of
+    // SeedCyclicBufferState. Same rationale: the compiled pass order re-executes every frame,
+    // so a persistent image physically carries its contents AND its last layout/access across
+    // the frame boundary. Seeding each subresource's last PostPassAccess makes the frame's
+    // FIRST touch of the image emit the correct cross-frame WAR/RAW barrier (its real src is the
+    // prior frame's final access, because the order is identical) instead of the old
+    // UNDEFINED->access barrier whose TOP_OF_PIPE source waited for nothing — and, on tiled GPUs,
+    // physically discarded the prior frame's contents (the desktop-only history-preservation gap).
+    //
+    // TRANSIENT images are excluded (rxTransientPtrs): they alias by pool and their cross-frame /
+    // handoff synchronisation is owned by the aliasing barriers + a fresh-UNDEFINED first use each
+    // frame, which a naive cyclic seed would fight (mirrors the "Buffers ONLY" exclusion note).
+    //
+    // This seeds EVERY persistent image usage (read or write) so the tracker ends the walk holding
+    // each image's true end-of-frame access. SynthesizeBarriers then keeps the seed ONLY for
+    // WRITE-LAST images and UN-SEEDS the rest back to UNDEFINED (see the prime/un-seed pass) — a
+    // read-last/baked image (IBL LUT) must retain the pre-existing UNDEFINED-first-touch because its
+    // mip>0 subresources are UNDEFINED at creation. So the only NET behavioural change is for images
+    // whose last access is a WRITE (today just the TAA history).
+    //
+    // The same cheap-toggle invariant as SeedCyclicBufferState applies: the seed reflects the CURRENT
+    // frame's enabled mask and is correct only because the EXECUTED order is byte-identical to the
+    // prior frame. The one write-last image (the history) has its writer gated by a STRUCTURAL latch
+    // that rebuilds the graph, not the cheap SetEnabled mask toggle. If you add a SetEnabled-togglable
+    // pass that WRITES a persistent image as its last access, route that toggle through MarkDirty()
+    // (full re-Compile + re-seed), NOT the cheap mask path.
+    //
+    // Collects each distinct seeded persistent image into raxSeeded (deduped via rxSeededSet) so
+    // SynthesizeBarriers can classify + prime/un-seed them after the walk.
+    void SeedCyclicImageState(const Flux_RenderGraph_ResourceUsage& rxUsage,
+                              BarrierStateTracker& xTracker,
+                              const Zenith_HashSet<void*>& rxTransientPtrs,
+                              Zenith_Vector<Flux_GraphResource>& raxSeeded,
+                              Zenith_HashSet<void*>& rxSeededSet)
+    {
+        if (!rxUsage.m_xResource.IsImageLike())
+            return;
+        if (!rxUsage.m_xResource.GetVRAMHandle().IsValid())
+            return;
+        void* pRes = rxUsage.m_xResource.GetVoidPtr();
+        if (rxTransientPtrs.Contains(pRes))
+            return; // transient — cross-frame/handoff sync owned by aliasing barriers, not seeded
+
+        u_int uBaseMip, uMipCount, uBaseLayer, uLayerCount;
+        if (!ResolveSubresourceRange(rxUsage, uBaseMip, uMipCount, uBaseLayer, uLayerCount))
+            return;
+        const ResourceAccess ePost = PostPassAccess(rxUsage.m_eAccess);
+        for (u_int uLayer = uBaseLayer; uLayer < uBaseLayer + uLayerCount; uLayer++)
+            for (u_int uMip = uBaseMip; uMip < uBaseMip + uMipCount; uMip++)
+                xTracker.SetImageState(pRes, uMip, uLayer, ePost);
+
+        if (rxSeededSet.Insert(pRes))          // Insert returns true only the first time
+            raxSeeded.PushBack(rxUsage.m_xResource);
+    }
 }
 
 void Flux_RenderGraph::SynthesizeBarriers()
@@ -1581,20 +1636,99 @@ void Flux_RenderGraph::SynthesizeBarriers()
     // in the tracker.
     BarrierStateTracker xTracker;
 
-    // Cross-frame cyclic seed (buffers only) — see SeedCyclicBufferState. Walk the
-    // SAME pass order (and reads-before-writes per pass) as the main loop below so
-    // each persistent buffer's seeded state is EXACTLY its final access this frame;
-    // the main loop's first access then sees that prior-frame state and emits the
-    // cross-frame WAR/WAW barrier that the old "fresh UNDEFINED every frame"
-    // behaviour silently dropped. Images are intentionally not seeded here.
+    // Cross-frame cyclic seed (buffers + persistent images) — see SeedCyclicBufferState /
+    // SeedCyclicImageState. Walk the SAME pass order (and reads-before-writes per pass) as the
+    // main loop below so each persistent resource's seeded state is EXACTLY its final access this
+    // frame; the main loop's first access then sees that prior-frame state and emits the cross-
+    // frame WAR/WAW barrier that the old "fresh UNDEFINED every frame" behaviour silently dropped.
+    // Transient images are excluded (their handoff sync is owned by the aliasing barriers), so
+    // build their pointer set once up front to reject them in the image seed.
+    Zenith_HashSet<void*> xTransientPtrs;
+    for (u_int i = 0; i < m_axTransients.GetSize(); i++)
+        xTransientPtrs.Insert(static_cast<void*>(&m_axTransients.Get(i)->m_xAttachment));
+
+    Zenith_Vector<Flux_GraphResource> axSeededImages;   // distinct persistent images the seed touched
+    Zenith_HashSet<void*>             xSeededImageSet;   // dedup guard for axSeededImages
     for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())
     {
         Flux_RenderGraph_Pass* pxPass = m_xPasses.Get(itE.GetData());
         if (!IsPassEffectivelyEnabled(pxPass)) continue;
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xReads); !it.Done(); it.Next())
+        {
             SeedCyclicBufferState(it.GetData(), xTracker);
+            SeedCyclicImageState(it.GetData(), xTracker, xTransientPtrs, axSeededImages, xSeededImageSet);
+        }
         for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(pxPass->m_xWrites); !it.Done(); it.Next())
+        {
             SeedCyclicBufferState(it.GetData(), xTracker);
+            SeedCyclicImageState(it.GetData(), xTracker, xTransientPtrs, axSeededImages, xSeededImageSet);
+        }
+    }
+
+    // Restrict the image seed to WRITE-LAST images, and prime them (see m_xPrimedCyclicImages).
+    // After the seed loop the tracker holds each seeded image's end-of-frame access. The cyclic seed
+    // is only correct + safe for an image the graph WRITES each frame (its content is graph-produced,
+    // and it rests between frames in a write layout — e.g. GENERAL for the UAV-written TAA history):
+    //   * KEEP the seed  → the frame's first touch emits the real cross-frame barrier instead of a
+    //                       UNDEFINED first-touch that discards on tiled GPUs.
+    //   * PRIME it once per (re)creation → CreateRenderTargetVRAM leaves a fresh target in SHADER_READ
+    //     (and only transitions MIP 0), so without an explicit prime the seeded first-touch barrier
+    //     would name a layout the image is not in on the first frame after (re)creation (a validation
+    //     error). The UNDEFINED-sourced prime is safe: a freshly (re)created image's contents are invalid.
+    // A READ-LAST persistent image (a baked/read-only LUT — e.g. the IBL prefilter/irradiance maps)
+    // must NOT keep the seed: its mip>0 subresources are UNDEFINED at creation (only mip 0 is
+    // transitioned), so collapsing their first-touch read barrier would sample an UNDEFINED subresource.
+    // UN-SEED those (reset every subresource to UNDEFINED) so they keep the proven per-frame
+    // UNDEFINED->access first touch — identical to the behaviour before this seed existed.
+    for (Zenith_Vector<Flux_GraphResource>::Iterator it(axSeededImages); !it.Done(); it.Next())
+    {
+        const Flux_GraphResource& rxRes = it.GetData();
+        void* pRes = rxRes.GetVoidPtr();
+        const Flux_SurfaceInfo& rxInfo = rxRes.GetSurfaceInfo();
+
+        // Classify the whole image from ALL accessed subresources (state != UNDEFINED), not just the
+        // base one: an image is "write-last" iff its seeded subresources end in a WRITE. A mixed image
+        // (some subresource write-last, some read-last) can't be classified/primed as a unit — a single
+        // resident layout would be wrong for half of it — so assert it out (there is no such resource
+        // today; the TAA history is one full-surface UAV write). Untouched subresources stay UNDEFINED
+        // and are ignored by the classification.
+        bool           bAnyWrite      = false;
+        bool           bAnyReadSeeded = false;
+        ResourceAccess eResidentWrite = RESOURCE_ACCESS_UNDEFINED;
+        for (u_int uLayer = 0; uLayer < rxInfo.m_uNumLayers; uLayer++)
+        {
+            for (u_int uMip = 0; uMip < rxInfo.m_uNumMips; uMip++)
+            {
+                const ResourceAccess eState = xTracker.QueryImageState(pRes, uMip, uLayer);
+                if (eState == RESOURCE_ACCESS_UNDEFINED) continue;   // untouched this frame
+                if (AccessIsWrite(eState)) { bAnyWrite = true; eResidentWrite = eState; }
+                else                       { bAnyReadSeeded = true; }
+            }
+        }
+        Zenith_Assert(!(bAnyWrite && bAnyReadSeeded),
+            "Cyclic image seed: '%s' has mixed write-last/read-last subresources — the base-classification "
+            "prime can't pick one resident layout. Classify + prime per-subresource before adding such a resource.",
+            rxRes.GetName().c_str());
+
+        if (!bAnyWrite)
+        {
+            // Read-last (or fully untouched) => un-seed every subresource back to UNDEFINED so the image
+            // keeps the pre-existing per-frame UNDEFINED->access first touch (correct for baked/read-only
+            // LUTs whose mip>0 subresources are UNDEFINED at creation).
+            for (u_int uLayer = 0; uLayer < rxInfo.m_uNumLayers; uLayer++)
+                for (u_int uMip = 0; uMip < rxInfo.m_uNumMips; uMip++)
+                    xTracker.SetImageState(pRes, uMip, uLayer, RESOURCE_ACCESS_UNDEFINED);
+            continue;
+        }
+
+        // Write-last: keep the seed and prime to the resident (write) layout once per (re)creation.
+        const Flux_VRAMHandle xHandle = rxRes.GetVRAMHandle();
+        const Flux_VRAMHandle* pxPrimed = m_xPrimedCyclicImages.TryGet(pRes);
+        if (pxPrimed != nullptr && *pxPrimed == xHandle) continue;   // already primed at this handle
+
+        g_xEngine.FluxMemory().TransitionImageInitialLayout(
+            xHandle, IsDepthFormat(rxInfo.m_eFormat), eResidentWrite, rxInfo.m_uNumMips, rxInfo.m_uNumLayers);
+        m_xPrimedCyclicImages[pRes] = xHandle;
     }
 
     for (Zenith_Vector<u_int>::Iterator itE(m_xExecutionOrder); !itE.Done(); itE.Next())

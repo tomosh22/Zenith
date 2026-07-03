@@ -925,6 +925,7 @@
     <ClCompile Include="..\Tests\EngineBootShutdownSmoke.cpp" />
     <ClCompile Include="..\Tests\HumanShowcase.cpp" />
     <ClCompile Include="..\Tests\MaterialBattleTest.cpp" />
+    <ClCompile Include="..\Tests\TAAToggleStress.cpp" />
     <ClCompile Include="..\Tests\TerrainEditorShowcase.cpp" />
     <ClCompile Include="..\Tests\TerrainEditorSmoke.cpp" />
   </ItemGroup>

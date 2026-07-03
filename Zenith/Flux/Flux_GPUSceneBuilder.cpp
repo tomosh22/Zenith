@@ -88,6 +88,21 @@ static bool BuildStaticSubmeshDesc(Flux_MeshGeometryRegistry& xRegistry, Flux_Me
 	return true;
 }
 
+// Stage 4.3 (TAA): record one object's previous-frame world matrix — index-locked to
+// m_xUnifiedGPUScene.m_xObjects (called immediately after EACH append) — and remember this
+// frame's matrix as next frame's prev. A miss / id-0 (foliage, external) yields prev == current,
+// i.e. camera-only velocity (sub-texel, invisible), which is the correct degrade.
+void Flux_RendererImpl::RecordUnifiedPrevTransform(u_int64 ulEntityId, const Zenith_Maths::Matrix4& xCurrentWorld)
+{
+	Zenith_Maths::Matrix4 xPrev;
+	if (!m_xUnifiedPrevTransformCache.TryGetPrev(ulEntityId, xPrev))
+	{
+		xPrev = xCurrentWorld;
+	}
+	m_axUnifiedPrevTransforms.PushBack(xPrev);
+	m_xUnifiedPrevTransformCache.RecordCurrent(ulEntityId, xCurrentWorld);
+}
+
 void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 {
 	const Flux_RenderSceneSnapshot& xSnapshot = *m_pxSceneSnapshot;
@@ -116,6 +131,14 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 	m_xUnifiedMeshGeometryRegistry.BeginSync();
 	Flux_BeginGPUSceneBuild(m_xUnifiedGPUScene, m_xUnifiedBucketRegistry);
 
+	// Stage 4.3 (TAA): open the per-object previous-transform frame BEFORE the extractors.
+	// BeginFrame ping-pongs prev<-cur (last frame's records) then clears cur, so it MUST run once
+	// before any RecordUnifiedPrevTransform this frame. The parallel array is rebuilt in lockstep
+	// with m_xObjects (one push per append). Run every frame so prev data exists the instant the
+	// velocity latch turns on; GatherUnifiedPacket uploads it only when velocity is active.
+	m_xUnifiedPrevTransformCache.BeginFrame();
+	m_axUnifiedPrevTransforms.Clear();
+
 	// Three independent data sources fill the one unified GPU scene; each is extracted
 	// into its own helper below for readability (pure factoring — no behaviour change).
 	// The refcount-diff bracket (mesh-geometry BeginSync/EndSync + the GPU-scene build
@@ -127,6 +150,13 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 
 	Flux_EndGPUSceneBuild(m_xUnifiedGPUScene, m_xUnifiedBucketRegistry);
 	m_xUnifiedMeshGeometryRegistry.EndSync();
+
+	// Stage 4.3: the prev-transform array MUST stay index-locked to the GPU-scene objects (one
+	// push per append). A mismatch means an append site was missed — the velocity VS would then
+	// read the wrong / out-of-range prev matrix. This tripwire makes any desync loud + immediate.
+	Zenith_Assert(m_axUnifiedPrevTransforms.GetSize() == m_xUnifiedGPUScene.m_xObjects.GetSize(),
+		"Flux_RendererImpl: prev-transform array (%u) desynced from GPU-scene objects (%u) — a Flux_AppendGPUScene* site is missing its RecordUnifiedPrevTransform",
+		m_axUnifiedPrevTransforms.GetSize(), m_xUnifiedGPUScene.m_xObjects.GetSize());
 
 #ifdef ZENITH_DEBUG
 	// One-shot proof the build ran on a real (non-empty) scene. Silent on empty snapshots
@@ -183,6 +213,7 @@ void Flux_RendererImpl::ExtractSnapshotStaticBuckets(const Flux_RenderSceneSnaps
 		if (xItem.m_xSubmeshes.GetSize() > 0u)
 		{
 			Flux_AppendGPUSceneItem(xItem, m_xUnifiedBucketRegistry, m_xUnifiedGPUScene);
+			RecordUnifiedPrevTransform(xSrc.m_ulEntityIDPacked, xSrc.m_xWorldMatrix);   // Stage 4.3 (index-locked to the append above)
 		}
 	}
 }
@@ -274,6 +305,7 @@ void Flux_RendererImpl::ExtractInstanceGroupBuckets(Zenith_MaterialAsset* pxBlan
 
 			Flux_AppendGPUSceneInstance(m_xUnifiedBucketRegistry, m_xUnifiedGPUScene,
 				axTransforms.Get(uInst), uObjFlags, uVATPacked, uVATTimeBits, xKey, xSphere, xAnim.m_uColorTint);
+			RecordUnifiedPrevTransform(0u, axTransforms.Get(uInst));   // Stage 4.3: foliage has no stable id -> camera-only velocity (wind sway absorbed by the resolve clamp)
 		}
 	}
 }
@@ -296,6 +328,10 @@ void Flux_RendererImpl::ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xS
 	m_xUnifiedSkinnedPoseRegistry.BeginFrameEvictingPrevious();
 
 	m_xUnifiedBonePalette.Begin(Flux_SkeletonInstance::MAX_BONES);
+	// Stage 4.3b: assemble this frame's PREVIOUS palette (same bases as the current one) for
+	// skeletal motion vectors. Runs every frame in lockstep with m_xUnifiedBonePalette so prev
+	// poses are ready the instant the velocity latch turns on. EndFrame() closes it below.
+	m_xUnifiedBonePaletteHistory.BeginFrame(Flux_SkeletonInstance::MAX_BONES);
 	// NOTE: the bind-pose pool is PERSISTENT (grow-only between evictions) — owned by the pose registry.
 	m_axUnifiedSkinJobs.Clear();
 	m_xUnifiedSkinnedDrawById.Clear();
@@ -336,6 +372,12 @@ void Flux_RendererImpl::ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xS
 				{
 					m_xUnifiedBonePalette.Matrices().Get(uBonePaletteBase + b) = pxMats[b];
 				}
+				// Stage 4.3b: emit this skeleton (at the SAME block base) into the prev palette —
+				// last frame's matrices for these bones, or these matrices on first sight (prev ==
+				// current => zero skeletal velocity). Once per distinct skeleton (this bNewSkel branch).
+				m_xUnifiedBonePaletteHistory.SubmitSkeleton(
+					reinterpret_cast<u_int64>(pxSkeleton), uBonePaletteBase, pxMats,
+					(uNumBones < Flux_SkeletonInstance::MAX_BONES) ? uNumBones : Flux_SkeletonInstance::MAX_BONES);
 			}
 
 			// Mixed static+skinned model: the static walk above skipped the whole m_bAnimatedSkinned
@@ -439,6 +481,7 @@ void Flux_RendererImpl::ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xS
 
 				Flux_AppendGPUSceneSkinnedInstance(m_xUnifiedBucketRegistry, m_xUnifiedGPUScene,
 					xSrc.m_xWorldMatrix, uBonePaletteBase, xKey, xSphere, uFLUX_GPUSCENE_TINT_WHITE);
+				RecordUnifiedPrevTransform(xSrc.m_ulEntityIDPacked, xSrc.m_xWorldMatrix);   // Stage 4.3: one per skinned submesh append (same entity => same prev)
 			}
 
 			// Append the model's non-skinned submeshes (if any) as one static item — drawn via the
@@ -446,11 +489,16 @@ void Flux_RendererImpl::ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xS
 			if (xStaticOfAnimated.m_xSubmeshes.GetSize() > 0u)
 			{
 				Flux_AppendGPUSceneItem(xStaticOfAnimated, m_xUnifiedBucketRegistry, m_xUnifiedGPUScene);
+				RecordUnifiedPrevTransform(xSrc.m_ulEntityIDPacked, xSrc.m_xWorldMatrix);   // Stage 4.3: animated model's non-skinned submeshes (index-locked)
 			}
 		}
 		m_uUnifiedSkinTotalOutVerts = uArenaCursor;
 		m_xUnifiedSkinnedIdRegistry.EndSync();   // recycle stable ids for skinned instances no longer drawn
 	}
+
+	// Stage 4.3b: this frame's palette becomes next frame's history (skeletons not seen this
+	// frame drop out and restart at prev == current). Must follow every SubmitSkeleton above.
+	m_xUnifiedBonePaletteHistory.EndFrame();
 }
 
 // Source 4/4 - renderer-level external submissions (the material-preview mesh).
@@ -497,6 +545,7 @@ void Flux_RendererImpl::ExtractExternalSceneItems(Zenith_MaterialAsset* pxBlankM
 		}
 		xSrc.m_xSubmeshes.PushBack(xSub);
 		Flux_AppendGPUSceneItem(xSrc, m_xUnifiedBucketRegistry, m_xUnifiedGPUScene);
+		RecordUnifiedPrevTransform(0u, xSrc.m_xWorldMatrix);   // Stage 4.3: external/preview item has no stable id -> camera-only velocity
 	}
 	m_axExternalSceneItems.Clear();
 }

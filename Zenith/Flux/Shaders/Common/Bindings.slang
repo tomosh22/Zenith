@@ -76,7 +76,20 @@ public struct ViewConstantsLayout
 	// Per-view feature flags (FLUX_VIEW_FLAG_* below) + this view's registry slot.
 	public uint     g_uViewFlags;
 	public uint     g_uViewSlot;
-	public float2   g_xViewPad;
+	// Rcp OUTPUT (swapchain) dims. Under temporal upscaling g_xRcpScreenDims (above) is the RENDER
+	// res, but the UI/text overlay (Quads/Text) draws onto the output-res FinalRT — they read THIS
+	// for pixel->NDC. Equals g_xRcpScreenDims for non-upscaled views. (Repurposed pad @472.)
+	public float2   g_xRcpOutputDims;
+	// TAA temporal foundation (Stage 2): the UNJITTERED current + previous view-proj
+	// (g_xViewProjMat above carries the sub-pixel jitter; these never do). The velocity
+	// pass reprojects with them so motion vectors are jitter-free at the source. GPU
+	// cull reads g_xViewProjMatNoJitter, never the jittered g_xViewProjMat. Non-main
+	// views (cascades/preview) stage NoJitter == their own unjittered view-proj.
+	// g_xJitterUV_PrevJitterUV: xy = this frame's jitter offset in UV space, zw = the
+	// previous frame's (both zero while jitter is disabled).
+	public float4x4 g_xViewProjMatNoJitter;
+	public float4x4 g_xPrevViewProjMatNoJitter;
+	public float4   g_xJitterUV_PrevJitterUV;
 };
 
 // Per-view feature-flag bits in g_uViewFlags — mirror FLUX_VIEW_FLAG_* in

@@ -62,6 +62,7 @@
 #include "Flux/Translucency/Flux_TranslucencyImpl.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
+#include "Flux/TAA/Flux_TAAImpl.h"
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Present/Flux_PresentImpl.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -217,6 +218,7 @@ ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_GrassImpl,                   Grass,         
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_TranslucencyImpl,            Translucency,         m_pxTranslucency)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_PrimitivesImpl,              Primitives,           m_pxPrimitives)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_HDRImpl,                     HDR,                  m_pxHDR)
+ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_TAAImpl,                     TAA,                  m_pxTAA)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_TerrainImpl,                 Terrain,              m_pxTerrain)
 ZENITH_ENGINE_ACCESSOR_HOTPATH(Flux_PresentImpl,                 Present,              m_pxPresent)
 #ifdef ZENITH_TOOLS
@@ -363,6 +365,7 @@ void Zenith_Engine::AllocateFluxSubsystems()
 
 	// biggest subsystems.
 	m_pxHDR     = new Flux_HDRImpl();
+	m_pxTAA     = new Flux_TAAImpl();
 	m_pxTerrain = new Flux_TerrainImpl();
 	m_pxPresent = new Flux_PresentImpl();
 #ifdef ZENITH_TOOLS
@@ -960,6 +963,7 @@ void Zenith_Engine::DeleteRendererState()
 	delete m_pxTranslucency; m_pxTranslucency = nullptr;
 	delete m_pxPrimitives; m_pxPrimitives = nullptr;
 	delete m_pxHDR;     m_pxHDR     = nullptr;
+	delete m_pxTAA;     m_pxTAA     = nullptr;
 	delete m_pxTerrain; m_pxTerrain = nullptr;
 	delete m_pxPresent; m_pxPresent = nullptr;
 #ifdef ZENITH_TOOLS

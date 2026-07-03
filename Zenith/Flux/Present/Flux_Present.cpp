@@ -69,7 +69,7 @@ void Flux_PresentImpl::Initialise()
 #ifdef ZENITH_DEBUG_VARIABLES
 	auto& xEngine = g_xEngine;
 	xEngine.DebugVariables().AddBoolean({ "Render", "Debug", "Output MRT" }, dbg_bOutputMRT);
-	xEngine.DebugVariables().AddUInt32 ({ "Render", "Debug", "MRT Index" }, dbg_uMRTIndex, 0, MRT_INDEX_COUNT - 1);
+	xEngine.DebugVariables().AddUInt32 ({ "Render", "Debug", "MRT Index" }, dbg_uMRTIndex, 0, uFLUX_MRT_CORE_COUNT - 1);   // debug viewer covers the 4 core G-buffer MRTs
 #endif
 }
 

@@ -26,6 +26,7 @@
 #include "Flux/SDFs/Flux_SDFs_Shaders.h"
 #include "Flux/Particles/Flux_Particles_Shaders.h"
 #include "Flux/HDR/Flux_HDR_Shaders.h"
+#include "Flux/TAA/Flux_TAA_Shaders.h"
 #include "Flux/Quads/Flux_Quads_Shaders.h"
 #include "Flux/Text/Flux_Text_Shaders.h"
 #ifdef ZENITH_TOOLS
@@ -64,6 +65,7 @@ namespace
 		MakeBlock(Flux_FogShaders::apxALL),
 		MakeBlock(Flux_SDFsShaders::apxALL),
 		MakeBlock(Flux_ParticlesShaders::apxALL),
+		MakeBlock(Flux_TAAShaders::apxALL),
 		MakeBlock(Flux_HDRShaders::apxALL),
 		MakeBlock(Flux_QuadsShaders::apxALL),
 		MakeBlock(Flux_TextShaders::apxALL),

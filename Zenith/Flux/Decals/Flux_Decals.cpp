@@ -522,8 +522,10 @@ void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	m_pxGraph = &xGraph;
 
 	Flux_TransientTextureDesc xDesc;
-	xDesc.m_uWidth       = g_xEngine.FluxSwapchain().GetWidth();
-	xDesc.m_uHeight      = g_xEngine.FluxSwapchain().GetHeight();
+	// RENDER dims: the NormalsCopy clones the render-res normalsAmbient MRT and the Apply pass
+	// writes the render-res G-buffer, so this transient must match them (== output when off).
+	xDesc.m_uWidth       = g_xEngine.FluxGraphics().GetRenderWidth();
+	xDesc.m_uHeight      = g_xEngine.FluxGraphics().GetRenderHeight();
 	xDesc.m_eFormat      = k_eNormalsCopyFormat;
 	xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
 	m_xNormalsCopyHandle = xGraph.CreateTransient(xDesc);

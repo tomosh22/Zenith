@@ -7,6 +7,7 @@
 #include "Flux/Flux_GPUScene.h"             // Flux_GPUSceneBucketRegistry / Flux_GPUSceneBuildResult (Stage 0)
 #include "Flux/Flux_MeshGeometryRegistry.h" // Flux_MeshGeometryRegistry (Stage 0)
 #include "Flux/UnifiedMesh/Flux_Skinning.h" // Flux_BonePaletteBuilder / Flux_GPUSkinJob (Stage 5)
+#include "Flux/TAA/Flux_VelocityHistory.h"  // Flux_PrevTransformCache (Stage 4.3 per-object motion vectors)
 
 class Flux_RenderGraph;
 class Zenith_MeshAsset;    // Stage 5: skinned-pose store keyed by mesh asset
@@ -200,6 +201,14 @@ public:
 	const Zenith_Vector<Flux_GPUSkinJob>& GetUnifiedSkinJobs() const { return m_axUnifiedSkinJobs; }
 	u_int GetUnifiedSkinMaxVerts()      const { return m_uUnifiedSkinMaxVerts; }
 	u_int GetUnifiedSkinTotalOutVerts() const { return m_uUnifiedSkinTotalOutVerts; }
+	// Stage 4.3: previous-frame object model matrices, index-locked to m_xUnifiedGPUScene.m_xObjects
+	// (one per appended object, in append order). GatherUnifiedPacket uploads these parallel to the
+	// Objects buffer when the velocity latch is on; the velocity VS reprojects each object's prev pos.
+	const Zenith_Vector<Zenith_Maths::Matrix4>& GetUnifiedPrevTransforms() const { return m_axUnifiedPrevTransforms; }
+	// Stage 4.3b: the previous-frame bone palette, laid out at the SAME per-skeleton bases as
+	// the current palette (GetUnifiedBonePalette). GatherUnifiedPacket uploads it parallel to the
+	// current palette when the velocity latch is on; the prev-pose skinning dispatch reads it.
+	const Zenith_Vector<Zenith_Maths::Matrix4>& GetUnifiedPrevBonePalette() const { return m_xUnifiedBonePaletteHistory.PrevPalette(); }
 
 	// ===== Data members =====
 
@@ -248,10 +257,23 @@ public:
 
 	// Per-frame skin-build state (rebuilt each SyncUnifiedBucketsFromSnapshot, read by GatherUnifiedPacket).
 	Flux_BonePaletteBuilder               m_xUnifiedBonePalette;             // dedup skeletons -> concatenated palette
+	// Stage 4.3b: previous-frame palette history for skeletal motion vectors. BeginFrame/SubmitSkeleton
+	// (once per distinct skeleton, at the current palette's block base)/EndFrame run EVERY frame (so prev
+	// poses exist the moment velocity latches — no enable glitch); the GPU prev-pose dispatch only runs
+	// while velocity is active. Keyed by skeleton id so an eviction re-pack keeps each skeleton's history.
+	Flux_BonePaletteHistory               m_xUnifiedBonePaletteHistory;
 	Zenith_Vector<Flux_GPUSkinJob>        m_axUnifiedSkinJobs;               // one per animated submesh-instance
 	Zenith_HashMap<u_int, Flux_UnifiedSkinnedDraw> m_xUnifiedSkinnedDrawById; // stable skinned id -> arena slice + IB mesh (per-frame)
 	u_int m_uUnifiedSkinMaxVerts      = 0u;   // largest job's vertex count (skinning dispatch X)
 	u_int m_uUnifiedSkinTotalOutVerts = 0u;   // arena vertices used this frame
+
+	// ===== Stage 4.3: TAA per-object previous transforms (moving-body motion vectors) =====
+	// Double-buffered per-entity prev model-matrix store + the per-frame array index-locked to
+	// m_xUnifiedGPUScene.m_xObjects (one prev transform per appended object, in append order).
+	// Built EVERY frame (so prev data exists the moment the velocity latch turns on — no enable
+	// glitch); uploaded to the GPU only while velocity is active. Key = m_ulEntityIDPacked.
+	Flux_PrevTransformCache               m_xUnifiedPrevTransformCache;
+	Zenith_Vector<Zenith_Maths::Matrix4>  m_axUnifiedPrevTransforms;
 
 	// Unit tests inspect private state.
 	friend class Zenith_UnitTests;
@@ -266,6 +288,12 @@ private:
 	void ExtractInstanceGroupBuckets(Zenith_MaterialAsset* pxBlankMaterial);
 	void ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xSnapshot, Zenith_MaterialAsset* pxBlankMaterial);
 	void ExtractExternalSceneItems(Zenith_MaterialAsset* pxBlankMaterial);
+
+	// Stage 4.3: push one previous-frame world matrix into m_axUnifiedPrevTransforms (called
+	// immediately after EACH GPU-scene object append, so the array stays index-locked to
+	// m_xObjects) and record this frame's matrix as next frame's prev. ulEntityId 0
+	// (foliage / external — no stable id) => prev == current => camera-only velocity.
+	void RecordUnifiedPrevTransform(u_int64 ulEntityId, const Zenith_Maths::Matrix4& xCurrentWorld);
 
 	// Pending external submissions for this frame (see SubmitExternalSceneItem);
 	// consumed + cleared by ExtractExternalSceneItems inside the sync.

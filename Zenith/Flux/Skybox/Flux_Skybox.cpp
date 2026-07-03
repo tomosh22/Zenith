@@ -40,7 +40,7 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
-		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // sky never writes velocity (resolve reprojects sky from the camera)
 		// Skybox now renders after the opaque geometry passes, so it depth-TESTS
 		// against scene depth instead of disabling the test: the fullscreen quad
 		// rasterises at NDC z=1.0 (far), and LESSEQUAL passes only where the stored
@@ -70,7 +70,7 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
-		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // sky never writes velocity (resolve reprojects sky from the camera)
 		// Skybox now renders after the opaque geometry passes, so it depth-TESTS
 		// against scene depth instead of disabling the test: the fullscreen quad
 		// rasterises at NDC z=1.0 (far), and LESSEQUAL passes only where the stored
@@ -100,7 +100,7 @@ void Flux_SkyboxImpl::BuildPipelines()
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 		xSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
-		xSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+		xSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // sky never writes velocity (resolve reprojects sky from the camera)
 		// Skybox now renders after the opaque geometry passes, so it depth-TESTS
 		// against scene depth instead of disabling the test: the fullscreen quad
 		// rasterises at NDC z=1.0 (far), and LESSEQUAL passes only where the stored

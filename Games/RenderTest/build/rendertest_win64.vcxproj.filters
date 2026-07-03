@@ -15,6 +15,9 @@
     <ClCompile Include="..\Tests\MaterialBattleTest.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\TAAToggleStress.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\TerrainEditorShowcase.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

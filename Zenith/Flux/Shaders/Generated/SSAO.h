@@ -42,9 +42,12 @@ namespace Flux_Generated_SSAO
 			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=448 arrayCount=4 (no C++ mapping)
 			unsigned int m_ug_uViewFlags; // slang=uint offset=464
 			unsigned int m_ug_uViewSlot; // slang=uint offset=468
-			unsigned char m_ag_xViewPad[8]; // slang=vector offset=472 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpOutputDims[8]; // slang=vector offset=472 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xViewProjMatNoJitter[64]; // slang=matrix offset=480 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xPrevViewProjMatNoJitter[64]; // slang=matrix offset=544 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xJitterUV_PrevJitterUV[16]; // slang=vector offset=608 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(g_xView_CB) == 480, "g_xView_CB size drifted from Slang reflection");
+		static_assert(sizeof(g_xView_CB) == 624, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uViewFlags) == 464, "g_xView.g_uViewFlags offset drifted from Slang reflection");

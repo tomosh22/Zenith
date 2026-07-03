@@ -56,6 +56,10 @@ public:
 	// GBuffer / shadow pass pipelines + shaders.
 	Flux_Shader   m_xTerrainGBufferShader;
 	Flux_Pipeline m_xTerrainGBufferPipeline;
+	// TAA velocity variant (5-attachment: 4 core MRTs + velocity). Selected at record time INSTEAD
+	// of the base pipeline when the velocity latch is on (IsVelocityMRTActive).
+	Flux_Shader   m_xTerrainGBufferVelocityShader;
+	Flux_Pipeline m_xTerrainGBufferVelocityPipeline;
 	Flux_Shader   m_xTerrainShadowShader;
 	Flux_Pipeline m_xTerrainShadowPipeline;
 	Flux_Pipeline m_xTerrainWireframePipeline;

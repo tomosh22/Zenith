@@ -59,7 +59,9 @@ VsOut vsMain(VsIn input)
 	float2 xQuadPos  = input.a_xPosition.xy * 0.5 + 0.5;
 	float2 xPixelPos = xQuadPos * float2(input.a_xInstancePositionSize.zw) +
 					   float2(input.a_xInstancePositionSize.xy);
-	float2 xNDC      = xPixelPos * g_xViewSet.g_xView.g_xRcpScreenDims * 2.0 - 1.0;
+	// UI quads are authored in OUTPUT pixels and drawn onto the output-res FinalRT (after any TAA
+	// upscale) — map pixel->NDC with the OUTPUT rcp dims, not the (render-res) g_xRcpScreenDims.
+	float2 xNDC      = xPixelPos * g_xViewSet.g_xView.g_xRcpOutputDims * 2.0 - 1.0;
 	o.position       = float4(xNDC, 0.0, 1.0);
 	return o;
 }

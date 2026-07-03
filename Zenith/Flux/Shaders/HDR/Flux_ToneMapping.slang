@@ -235,16 +235,6 @@ float Luminance(float3 colour)
 	return dot(colour, float3(0.2126, 0.7152, 0.0722));
 }
 
-// Exposed + bloomed + tonemapped colour at an arbitrary UV. Used by the inline
-// FXAA below to evaluate neighbour pixels. SampleLevel(0) so it is safe inside
-// the (non-uniform) FXAA edge branch.
-float3 ToneAt(float2 xUV, float fExposure, uint uOperator)
-{
-	float3 xHDR = g_xPassSet.g_xHDRTex.SampleLevel(xUV, 0).rgb * fExposure;
-	xHDR += g_xPassSet.g_xBloomTex.SampleLevel(xUV, 0).rgb * g_xPassSet.ToneMappingConstants.g_fBloomIntensity;
-	return ApplyToneMapping(xHDR, uOperator);
-}
-
 float3 DebugHeatmap(float fValue)
 {
 	fValue = saturate(fValue);
@@ -416,45 +406,8 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		if (RenderHistogramOverlay(input.uv, xOverlay)) return float4(xOverlay, 1.0);
 	}
 
-	// --- FXAA (luma edge anti-aliasing on the tonemapped 3D scene) ---
-	// Stopgap edge AA until the TAA temporal foundation lands. Runs here, before
-	// UI/text/gizmos draw onto the final target, so overlays stay razor-sharp.
-	// Classic FXAA-console: detect a luma edge from the 4 diagonals, then blend
-	// along the gradient. Neighbours are re-tonemapped via ToneAt (a few extra
-	// samples on edge pixels). texel size comes from screen-space derivatives.
-	{
-		uint  uOp   = g_xPassSet.ToneMappingConstants.g_uToneMappingOperator;
-		float2 xTexel = float2(abs(ddx(input.uv.x)), abs(ddy(input.uv.y)));
-
-		float fLumaC  = Luminance(xToneMapped);
-		float fLumaNW = Luminance(ToneAt(input.uv + float2(-xTexel.x, -xTexel.y), fExposure, uOp));
-		float fLumaNE = Luminance(ToneAt(input.uv + float2( xTexel.x, -xTexel.y), fExposure, uOp));
-		float fLumaSW = Luminance(ToneAt(input.uv + float2(-xTexel.x,  xTexel.y), fExposure, uOp));
-		float fLumaSE = Luminance(ToneAt(input.uv + float2( xTexel.x,  xTexel.y), fExposure, uOp));
-
-		float fLumaMin = min(fLumaC, min(min(fLumaNW, fLumaNE), min(fLumaSW, fLumaSE)));
-		float fLumaMax = max(fLumaC, max(max(fLumaNW, fLumaNE), max(fLumaSW, fLumaSE)));
-		float fRange   = fLumaMax - fLumaMin;
-
-		// Only touch pixels with a meaningful local edge (relative + absolute floor).
-		if (fRange >= max(0.0312, fLumaMax * 0.125))
-		{
-			float2 xDir;
-			xDir.x = -((fLumaNW + fLumaNE) - (fLumaSW + fLumaSE));
-			xDir.y =  ((fLumaNW + fLumaSW) - (fLumaNE + fLumaSE));
-
-			float fDirReduce = max((fLumaNW + fLumaNE + fLumaSW + fLumaSE) * 0.25 * 0.125, 0.0078125);
-			float fRcpMin    = 1.0 / (min(abs(xDir.x), abs(xDir.y)) + fDirReduce);
-			xDir = clamp(xDir * fRcpMin, float2(-8.0, -8.0), float2(8.0, 8.0)) * xTexel;
-
-			float3 xRgbA = 0.5 * (ToneAt(input.uv + xDir * (1.0/3.0 - 0.5), fExposure, uOp)
-								+ ToneAt(input.uv + xDir * (2.0/3.0 - 0.5), fExposure, uOp));
-			float3 xRgbB = xRgbA * 0.5 + 0.25 * (ToneAt(input.uv + xDir * -0.5, fExposure, uOp)
-											   + ToneAt(input.uv + xDir *  0.5, fExposure, uOp));
-			float fLumaB = Luminance(xRgbB);
-			xToneMapped = (fLumaB < fLumaMin || fLumaB > fLumaMax) ? xRgbA : xRgbB;
-		}
-	}
+	// Scene anti-aliasing is handled by TAA (Flux/TAA) upstream of the HDR bloom/tonemap; the
+	// inline FXAA stopgap and its ToneAt helper were removed once TAA shipped as the default AA.
 
 	// Anti-banding dither in perceptual space, keyed on the pixel coordinate.
 	xToneMapped = ApplyOutputDither(xToneMapped, input.position.xy);

@@ -242,6 +242,67 @@ ZENITH_TEST(Skinning, RawWordSkinHonoursVertexIndexStrides)
 	ZENITH_ASSERT_EQ_FLOAT(xOut1.m_xPosition.x, 105.0f, 0.0001f, "vertex 1 -> 100+5 (stride addressed its own slot)");
 }
 
+// ---- previous-pose positions-only raw skinning (TAA velocity) --------------
+
+ZENITH_TEST(Skinning, PrevPositionRawMatchesFullSkinPosition)
+{
+	// The prev arena is positions-only (3 words/vertex) written by a second skinning
+	// dispatch that shares the current jobs but uses the PREVIOUS palette. Require the
+	// prev-position raw write to equal Flux_SkinVertexCPU's POSITION for the same input +
+	// palette — so the compact 3-word path never drifts from the pinned skinning math.
+	Zenith_Maths::Matrix4 axPalette[2] = { Zenith_Maths::Matrix4(1.0f), Skin_Translate(10.0f, -3.0f, 2.0f) };
+
+	Flux_SkinInputVertex xIn = Skin_MakeVertex(
+		Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f),
+		0u, 1u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL,
+		0.25f, 0.75f, 0.0f, 0.0f);
+
+	u_int auIn[uFLUX_SKIN_INPUT_WORDS];
+	memcpy(auIn, &xIn, sizeof(xIn));
+
+	u_int auPrev[uFLUX_SKIN_PREV_WORDS] = {};
+	Flux_SkinPrevPositionRaw(auIn, 0u, axPalette, 0u, 2u, auPrev, 0u);
+
+	float fPx, fPy, fPz;
+	memcpy(&fPx, &auPrev[0], sizeof(fPx));
+	memcpy(&fPy, &auPrev[1], sizeof(fPy));
+	memcpy(&fPz, &auPrev[2], sizeof(fPz));
+
+	const Flux_SkinOutputVertex xTyped = Flux_SkinVertexCPU(xIn, axPalette, 0u, 2u);
+	ZENITH_ASSERT_EQ_FLOAT(fPx, xTyped.m_xPosition.x, 0.0001f, "prev raw pos X == full skinner position");
+	ZENITH_ASSERT_EQ_FLOAT(fPy, xTyped.m_xPosition.y, 0.0001f, "prev raw pos Y == full skinner position");
+	ZENITH_ASSERT_EQ_FLOAT(fPz, xTyped.m_xPosition.z, 0.0001f, "prev raw pos Z == full skinner position");
+}
+
+ZENITH_TEST(Skinning, PrevPositionRawHonoursThreeWordStride)
+{
+	// Two vertices into two prev-arena slots: the 3-word stride must address distinct
+	// slots (vertex 1 must not clobber vertex 0). This pins the GLOBAL-index layout the
+	// velocity VS relies on (prevArena[(outBase + SV_VertexID) * 3 + k]).
+	Zenith_Maths::Matrix4 axPalette[1] = { Skin_Translate(5.0f, 0.0f, 0.0f) };
+
+	Flux_SkinInputVertex xIn0 = Skin_MakeVertex(
+		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
+		0u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL, 1.0f, 0.0f, 0.0f, 0.0f);
+	Flux_SkinInputVertex xIn1 = Skin_MakeVertex(
+		Zenith_Maths::Vector3(100.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),
+		0u, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL, uFLUX_SKIN_BONE_SENTINEL, 1.0f, 0.0f, 0.0f, 0.0f);
+
+	u_int auIn[2u * uFLUX_SKIN_INPUT_WORDS];
+	memcpy(auIn + 0u * uFLUX_SKIN_INPUT_WORDS, &xIn0, sizeof(xIn0));
+	memcpy(auIn + 1u * uFLUX_SKIN_INPUT_WORDS, &xIn1, sizeof(xIn1));
+
+	u_int auPrev[2u * uFLUX_SKIN_PREV_WORDS] = {};
+	Flux_SkinPrevPositionRaw(auIn, 0u, axPalette, 0u, 1u, auPrev, 0u);
+	Flux_SkinPrevPositionRaw(auIn, 1u, axPalette, 0u, 1u, auPrev, 1u);
+
+	float fX0, fX1;
+	memcpy(&fX0, &auPrev[0u * uFLUX_SKIN_PREV_WORDS], sizeof(fX0));
+	memcpy(&fX1, &auPrev[1u * uFLUX_SKIN_PREV_WORDS], sizeof(fX1));
+	ZENITH_ASSERT_EQ_FLOAT(fX0, 5.0f,   0.0001f, "prev vertex 0 -> 0+5");
+	ZENITH_ASSERT_EQ_FLOAT(fX1, 105.0f, 0.0001f, "prev vertex 1 -> 100+5 (3-word stride addressed its own slot)");
+}
+
 // ---- cull-bounds inflation -------------------------------------------------
 
 ZENITH_TEST(Skinning, InflateBoundsSphereScalesRadiusKeepsCentre)
@@ -628,4 +689,132 @@ ZENITH_TEST(SkinnedPose, NullAssetIsRejected)
 	ZENITH_ASSERT_NULL(xReg.Reference(nullptr), "a null asset builds no pose");
 	ZENITH_ASSERT_EQ(g_iPoseBuilds, 0, "a null asset never invokes the provider");
 	ZENITH_ASSERT_EQ(xReg.GetLiveCount(), 0u, "a null asset registers no entry");
+}
+
+// ---- previous-frame bone-palette history (skinned motion vectors) ----------
+// Flux_BonePaletteHistory rebuilds a prev-frame palette laid out at the SAME bases as the
+// current palette, keyed by OPAQUE skeleton id (not base). Pure CPU; it drives the second
+// positions-only skinning dispatch that produces skinned uvPrev for TAA velocity.
+
+namespace
+{
+	Zenith_Maths::Matrix4 Hist_Translate(float fX)   // distinct, easily-probed matrix
+	{
+		Zenith_Maths::Matrix4 xM(1.0f);
+		xM[3] = Zenith_Maths::Vector4(fX, 0.0f, 0.0f, 1.0f);
+		return xM;
+	}
+	float Hist_TX(const Zenith_Maths::Matrix4& xM) { return xM[3].x; }   // translation.x probe
+}
+
+ZENITH_TEST(BonePaletteHistory, FirstSightPrevEqualsCurrent)
+{
+	Flux_BonePaletteHistory xHist;
+	xHist.BeginFrame(2u);
+	const Zenith_Maths::Matrix4 axCur[2] = { Hist_Translate(3.0f), Hist_Translate(4.0f) };
+	xHist.SubmitSkeleton(0xA1ull, /*base*/ 0u, axCur, 2u);
+	const Zenith_Vector<Zenith_Maths::Matrix4>& xPrev = xHist.PrevPalette();
+	ZENITH_ASSERT_EQ(xPrev.GetSize(), 2u, "prev palette covers the one 2-bone block");
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(0u)), 3.0f, 1e-6f, "first sight: prev == current (bone 0)");
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(1u)), 4.0f, 1e-6f, "first sight: prev == current (bone 1)");
+}
+
+ZENITH_TEST(BonePaletteHistory, SecondFramePrevEqualsPriorFrame)
+{
+	Flux_BonePaletteHistory xHist;
+	xHist.BeginFrame(2u);
+	const Zenith_Maths::Matrix4 axF1[2] = { Hist_Translate(1.0f), Hist_Translate(2.0f) };
+	xHist.SubmitSkeleton(0xA1ull, 0u, axF1, 2u);
+	xHist.EndFrame();
+
+	xHist.BeginFrame(2u);   // frame 2: skeleton moved
+	const Zenith_Maths::Matrix4 axF2[2] = { Hist_Translate(10.0f), Hist_Translate(20.0f) };
+	xHist.SubmitSkeleton(0xA1ull, 0u, axF2, 2u);
+	const Zenith_Vector<Zenith_Maths::Matrix4>& xPrev = xHist.PrevPalette();
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(0u)), 1.0f, 1e-6f, "prev is last frame's matrices, not this frame's");
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(1u)), 2.0f, 1e-6f, "prev is last frame's matrices (bone 1)");
+}
+
+ZENITH_TEST(BonePaletteHistory, BlockTailStaysIdentity)
+{
+	Flux_BonePaletteHistory xHist;
+	xHist.BeginFrame(4u);   // 4-bone blocks
+	const Zenith_Maths::Matrix4 axCur[2] = { Hist_Translate(5.0f), Hist_Translate(6.0f) };
+	xHist.SubmitSkeleton(0xA1ull, 0u, axCur, 2u);   // only 2 bones used
+	const Zenith_Vector<Zenith_Maths::Matrix4>& xPrev = xHist.PrevPalette();
+	ZENITH_ASSERT_EQ(xPrev.GetSize(), 4u, "block covers bonesPerSkeleton (4) even with 2 used bones");
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(2u)), 0.0f, 1e-6f, "unused tail bone 2 is identity");
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(3u)), 0.0f, 1e-6f, "unused tail bone 3 is identity");
+}
+
+ZENITH_TEST(BonePaletteHistory, TwoSkeletonsAtDistinctBases)
+{
+	Flux_BonePaletteHistory xHist;
+	xHist.BeginFrame(2u);
+	const Zenith_Maths::Matrix4 axA[2] = { Hist_Translate(1.0f), Hist_Translate(1.5f) };
+	const Zenith_Maths::Matrix4 axB[2] = { Hist_Translate(2.0f), Hist_Translate(2.5f) };
+	xHist.SubmitSkeleton(0xAAull, 0u, axA, 2u);
+	xHist.SubmitSkeleton(0xBBull, 2u, axB, 2u);
+	xHist.EndFrame();
+
+	xHist.BeginFrame(2u);   // frame 2: both moved
+	const Zenith_Maths::Matrix4 ax9[2] = { Hist_Translate(9.0f), Hist_Translate(9.0f) };
+	xHist.SubmitSkeleton(0xAAull, 0u, ax9, 2u);
+	xHist.SubmitSkeleton(0xBBull, 2u, ax9, 2u);
+	const Zenith_Vector<Zenith_Maths::Matrix4>& xPrev = xHist.PrevPalette();
+	ZENITH_ASSERT_EQ(xPrev.GetSize(), 4u, "palette covers both blocks");
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(0u)), 1.0f, 1e-6f, "A's prev at base 0");
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(2u)), 2.0f, 1e-6f, "B's prev at base 2");
+}
+
+ZENITH_TEST(BonePaletteHistory, HistoryKeyedByIdNotBaseAcrossRepack)
+{
+	// Skeleton B moves to a DIFFERENT base after A is evicted (a re-pack). Its prev must still be
+	// B's own last-frame matrices — proving history is keyed by id, not by base.
+	Flux_BonePaletteHistory xHist;
+	xHist.BeginFrame(2u);
+	const Zenith_Maths::Matrix4 axA[2] = { Hist_Translate(1.0f), Hist_Translate(1.0f) };
+	const Zenith_Maths::Matrix4 axB[2] = { Hist_Translate(7.0f), Hist_Translate(8.0f) };
+	xHist.SubmitSkeleton(0xAAull, 0u, axA, 2u);
+	xHist.SubmitSkeleton(0xBBull, 2u, axB, 2u);
+	xHist.EndFrame();
+
+	xHist.BeginFrame(2u);   // frame 2: A gone; B re-packed to base 0
+	const Zenith_Maths::Matrix4 axB2[2] = { Hist_Translate(70.0f), Hist_Translate(80.0f) };
+	xHist.SubmitSkeleton(0xBBull, /*new base*/ 0u, axB2, 2u);
+	const Zenith_Vector<Zenith_Maths::Matrix4>& xPrev = xHist.PrevPalette();
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(0u)), 7.0f, 1e-6f, "B's prev follows B's id to its new base (bone 0)");
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(1u)), 8.0f, 1e-6f, "B's prev follows B's id to its new base (bone 1)");
+}
+
+ZENITH_TEST(BonePaletteHistory, MidFrameWriteDoesNotCorruptEarlierBlock)
+{
+	Flux_BonePaletteHistory xHist;
+	xHist.BeginFrame(2u);
+	const Zenith_Maths::Matrix4 axA[2] = { Hist_Translate(11.0f), Hist_Translate(12.0f) };
+	xHist.SubmitSkeleton(0xAAull, 0u, axA, 2u);   // first block written
+	const Zenith_Maths::Matrix4 axB[2] = { Hist_Translate(21.0f), Hist_Translate(22.0f) };
+	xHist.SubmitSkeleton(0xBBull, 2u, axB, 2u);   // second block appended (grows palette)
+	const Zenith_Vector<Zenith_Maths::Matrix4>& xPrev = xHist.PrevPalette();
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(0u)), 11.0f, 1e-6f, "A block intact after B appended (bone 0)");
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(1u)), 12.0f, 1e-6f, "A block intact after B appended (bone 1)");
+}
+
+ZENITH_TEST(BonePaletteHistory, DroppedSkeletonRestartsAtPrevEqualsCurrent)
+{
+	Flux_BonePaletteHistory xHist;
+	xHist.BeginFrame(2u);
+	const Zenith_Maths::Matrix4 axF1[2] = { Hist_Translate(4.0f), Hist_Translate(4.0f) };
+	xHist.SubmitSkeleton(0xCCull, 0u, axF1, 2u);
+	xHist.EndFrame();
+
+	xHist.BeginFrame(2u);   // a frame WITHOUT skeleton CC
+	xHist.EndFrame();
+	ZENITH_ASSERT_EQ(xHist.GetHistoryCount(), 0u, "history empty after a frame with no skeletons");
+
+	xHist.BeginFrame(2u);   // CC reappears — no history => prev == current
+	const Zenith_Maths::Matrix4 axF3[2] = { Hist_Translate(30.0f), Hist_Translate(31.0f) };
+	xHist.SubmitSkeleton(0xCCull, 0u, axF3, 2u);
+	const Zenith_Vector<Zenith_Maths::Matrix4>& xPrev = xHist.PrevPalette();
+	ZENITH_ASSERT_EQ_FLOAT(Hist_TX(xPrev.Get(0u)), 30.0f, 1e-6f, "dropped skeleton restarts at prev == current");
 }

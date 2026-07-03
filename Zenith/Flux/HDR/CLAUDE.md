@@ -4,6 +4,14 @@
 
 High Dynamic Range rendering pipeline that enables proper handling of bright light sources, bloom effects, and tone mapping for photorealistic output. The system renders the scene to a 16-bit floating-point HDR buffer, applies bloom, and then tone maps to the final LDR output. The default tone-mapping operator is `TONEMAPPING_AGX` (modern filmic); all operators are implemented in `Flux_ToneMapping.slang`.
 
+> **Bloom is AFTER TAA.** The bloom threshold and the tonemap read `Flux_GraphicsImpl::GetSceneColourForPostFX()`,
+> which returns the **TAA-resolved** scene colour when TAA is on (the default), else the raw HDR scene target.
+> So the whole bloom + tonemap chain operates on the temporally-resolved (and, under upscaling, output-res)
+> image. The **auto-exposure histogram** still reads the raw `GetHDRSceneTarget` (render res under upscaling —
+> its CB/dispatch dims come from `GetRenderDims()`), because exposure should meter the scene, not the AA'd result.
+> The inline **FXAA stopgap** that used to live in `Flux_ToneMapping.slang` was **removed** once TAA became the
+> shipping AA (see `Flux/TAA/CLAUDE.md`).
+
 ## Architecture
 
 ```

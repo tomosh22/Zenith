@@ -5,6 +5,7 @@
 #include "Collections/Zenith_HashMap.h"   // Flux_SkinnedInstanceIdRegistry (stable skinned bucket key)
 #include "Flux/Flux_RefcountDiffRegistry.h"   // shared refcount-diff sync machinery
 #include <cstddef>   // offsetof, size_t
+#include <utility>   // std::move (Flux_BonePaletteHistory ping-pong)
 
 // ============================================================================
 // Flux compute-skinning core (Stage 5 — unified GPU-driven opaque-mesh pipeline).
@@ -198,6 +199,51 @@ inline void Flux_SkinVertexRaw(
 	o[14] = FloatToWord(xOut.m_xColor.x);     o[15] = FloatToWord(xOut.m_xColor.y);     o[16] = FloatToWord(xOut.m_xColor.z); o[17] = FloatToWord(xOut.m_xColor.w);
 }
 
+// ---- previous-pose positions-only raw skinning (TAA velocity motion vectors) --
+// The velocity path runs a SECOND skinning dispatch (Flux_UnifiedMesh_SkinningPrev.slang)
+// that reuses the current frame's skin-jobs UNCHANGED (same bind-pose bases, out bases and
+// per-instance palette base) but with the PREVIOUS-frame bone palette, and writes ONLY the
+// skinned OBJECT-space POSITION into a compact prev arena (3 words / vertex). The velocity
+// VS reads it as the vertex's prior-frame local position to encode uvPrev. Positions-only
+// because a motion vector needs only the reprojected position, so the prev arena is 1/6 the
+// size of the full 18-word arena.
+//
+// Pure CPU mirror of that shader: it delegates the bone-weighted accumulation to
+// Flux_SkinVertexCPU (the SAME pinned math the full skinner uses) and writes just the
+// position as 3 raw words at (uOutVertexIndex * uFLUX_SKIN_PREV_WORDS). The velocity VS
+// addresses the GLOBAL arena index = (this skinned draw's uOutVertBase + SV_VertexID),
+// because the indirect draw's vertexOffset is 0 and the arena slice base is applied via the
+// vertex-buffer bind offset — so SV_VertexID is the submesh-LOCAL index (pinned by the
+// stride test below, and empirically by Flux_UnifiedMesh_Reset.slang writing vertexOffset=0).
+inline constexpr u_int uFLUX_SKIN_PREV_WORDS = 3u;   // positions only (12B / 3 words per vertex)
+
+inline void Flux_SkinPrevPositionRaw(
+	const u_int* pInputWords, u_int uInVertexIndex,
+	const Zenith_Maths::Matrix4* pxPrevBonePalette, u_int uBonePaletteBase, u_int uPaletteCount,
+	u_int* pPrevArenaWords, u_int uOutVertexIndex)
+{
+	using namespace Flux_SkinDetail;
+	const u_int* p = pInputWords + (size_t)uInVertexIndex * uFLUX_SKIN_INPUT_WORDS;
+
+	Flux_SkinInputVertex xIn;
+	xIn.m_xPosition  = Zenith_Maths::Vector3(WordToFloat(p[0]),  WordToFloat(p[1]),  WordToFloat(p[2]));
+	xIn.m_xUV        = Zenith_Maths::Vector2(WordToFloat(p[3]),  WordToFloat(p[4]));
+	xIn.m_xNormal    = Zenith_Maths::Vector3(WordToFloat(p[5]),  WordToFloat(p[6]),  WordToFloat(p[7]));
+	xIn.m_xTangent   = Zenith_Maths::Vector3(WordToFloat(p[8]),  WordToFloat(p[9]),  WordToFloat(p[10]));
+	xIn.m_xBitangent = Zenith_Maths::Vector3(WordToFloat(p[11]), WordToFloat(p[12]), WordToFloat(p[13]));
+	xIn.m_xColor     = Zenith_Maths::Vector4(WordToFloat(p[14]), WordToFloat(p[15]), WordToFloat(p[16]), WordToFloat(p[17]));
+	xIn.m_auBoneIDs[0] = p[18]; xIn.m_auBoneIDs[1] = p[19]; xIn.m_auBoneIDs[2] = p[20]; xIn.m_auBoneIDs[3] = p[21];
+	xIn.m_xBoneWeights = Zenith_Maths::Vector4(WordToFloat(p[22]), WordToFloat(p[23]), WordToFloat(p[24]), WordToFloat(p[25]));
+
+	// Same accumulation as the full skinner — only the position is written to the prev arena.
+	const Flux_SkinOutputVertex xOut = Flux_SkinVertexCPU(xIn, pxPrevBonePalette, uBonePaletteBase, uPaletteCount);
+
+	u_int* o = pPrevArenaWords + (size_t)uOutVertexIndex * uFLUX_SKIN_PREV_WORDS;
+	o[0] = FloatToWord(xOut.m_xPosition.x);
+	o[1] = FloatToWord(xOut.m_xPosition.y);
+	o[2] = FloatToWord(xOut.m_xPosition.z);
+}
+
 // ---- cull-bounds inflation for skinned submeshes ----------------------------
 // Scale a (center.xyz, radius.w) bounding sphere's radius by fFactor, leaving the
 // centre put. The unified cull transforms centre by the model matrix and scales the
@@ -263,6 +309,80 @@ private:
 	Zenith_Vector<u_int64> m_auSeenIds;    // distinct skeleton ids this frame
 	Zenith_Vector<u_int>   m_auSeenBases;  // parallel: each id's base matrix index
 	Zenith_Vector<Zenith_Maths::Matrix4> m_xMatrices;  // concatenated MAX_BONES blocks
+};
+
+// ---- previous-frame bone-palette history (skinned motion vectors) -----------
+// The velocity path runs a SECOND, positions-only skinning dispatch using the PREVIOUS
+// frame's bone palette, so a skinned vertex's prior-frame world position is available to
+// encode uvPrev. That dispatch reuses the CURRENT frame's skin-jobs UNCHANGED (same
+// Flux_GPUSkinJob.m_uBonePaletteBase), so the prev palette must be laid out at the SAME
+// per-skeleton bases as the current palette. This pure store rebuilds that prev palette
+// each frame: for every skeleton block the current Flux_BonePaletteBuilder placed at base B
+// with matrices M, SubmitSkeleton emits the SAME skeleton's matrices from LAST frame at base
+// B — or M itself the first frame a skeleton is seen (prev == current => zero surface
+// velocity, absorbed by the resolve clamp). Keyed by the OPAQUE skeleton id (the
+// Flux_SkeletonInstance pointer bits), NOT the base, so a skeleton that moves to a different
+// block (an eviction re-pack) still reprojects against its own history.
+//
+// Pure CPU (no GPU); headless-testable (tests in Flux_Skinning.Tests.inl).
+class Flux_BonePaletteHistory
+{
+public:
+	// Start assembling this frame's prev palette. uBonesPerSkeleton must match the current
+	// Flux_BonePaletteBuilder's block size (so bases line up).
+	void BeginFrame(u_int uBonesPerSkeleton)
+	{
+		m_uBonesPerSkeleton = uBonesPerSkeleton;
+		m_xPrevPalette.Clear();
+		m_xThisFrameById.Clear();
+	}
+
+	// Emit skeleton ulSkeletonId (placed at matrix base uBase in the CURRENT palette, with
+	// current matrices pxCurrent[0..uNumBones)) into the prev palette. Writes LAST frame's
+	// matrices for this id into [uBase, uBase+uNumBones); a missing history copies pxCurrent
+	// (prev == current on first sight). The block tail [uBase+uNumBones, uBase+bonesPerSkeleton)
+	// stays identity, matching Flux_BonePaletteBuilder. Also records pxCurrent as next frame's
+	// history for this id.
+	void SubmitSkeleton(u_int64 ulSkeletonId, u_int uBase,
+		const Zenith_Maths::Matrix4* pxCurrent, u_int uNumBones)
+	{
+		const u_int uBlockEnd = uBase + m_uBonesPerSkeleton;
+		if (m_xPrevPalette.GetSize() < uBlockEnd)
+		{
+			m_xPrevPalette.Resize(uBlockEnd, Zenith_Maths::Matrix4(1.0f));   // identity-fill the new tail
+		}
+
+		const Zenith_Vector<Zenith_Maths::Matrix4>* pxHistory = m_xPrevById.TryGet(ulSkeletonId);
+		const bool bHaveHistory = (pxHistory != nullptr) && (pxHistory->GetSize() >= uNumBones);
+		for (u_int u = 0; u < uNumBones; ++u)
+		{
+			m_xPrevPalette.Get(uBase + u) = bHaveHistory ? pxHistory->Get(u) : pxCurrent[u];
+		}
+
+		// Record this frame's matrices as next frame's history for this id.
+		Zenith_Vector<Zenith_Maths::Matrix4> xCur;
+		for (u_int u = 0; u < uNumBones; ++u) { xCur.PushBack(pxCurrent[u]); }
+		m_xThisFrameById.Insert(ulSkeletonId, std::move(xCur));
+	}
+
+	// The assembled previous-frame palette, laid out identically to the current palette.
+	const Zenith_Vector<Zenith_Maths::Matrix4>& PrevPalette() const { return m_xPrevPalette; }
+
+	// End of frame: this frame's recorded matrices become next frame's history; skeletons not
+	// seen this frame drop out (their next appearance starts fresh at prev == current).
+	void EndFrame()
+	{
+		m_xPrevById = std::move(m_xThisFrameById);
+		m_xThisFrameById.Clear();
+	}
+
+	u_int GetHistoryCount() const { return m_xPrevById.GetSize(); }
+
+private:
+	u_int m_uBonesPerSkeleton = 0u;
+	Zenith_Vector<Zenith_Maths::Matrix4>                          m_xPrevPalette;    // assembled this frame (same bases as current)
+	Zenith_HashMap<u_int64, Zenith_Vector<Zenith_Maths::Matrix4>> m_xPrevById;       // last frame's matrices per skeleton id
+	Zenith_HashMap<u_int64, Zenith_Vector<Zenith_Maths::Matrix4>> m_xThisFrameById;  // this frame's matrices per skeleton id
 };
 
 // ---- golden hash over a skinned-vertex run (characterisation tests) ---------

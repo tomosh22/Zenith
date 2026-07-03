@@ -92,6 +92,7 @@ inline void Flux_PreviewBuildViewConstants(float fYaw, float fPitch, float fDist
 
 	xOut.m_xScreenDims    = { kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE };
 	xOut.m_xRcpScreenDims = { 1.0f / kuFLUX_PREVIEW_VIEW_SIZE, 1.0f / kuFLUX_PREVIEW_VIEW_SIZE };
+	xOut.m_xRcpOutputDims = xOut.m_xRcpScreenDims;   // preview view is never upscaled (output == render)
 	xOut.m_xCameraNearFar = { 0.05f, 50.0f };
 }
 

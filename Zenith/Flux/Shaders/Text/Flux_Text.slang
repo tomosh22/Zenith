@@ -39,7 +39,9 @@ VsOut vsMain(VsIn input)
 				   + xQuadXY * input.a_xQuadSizePx;
 
 	VsOut o;
-	o.position = float4(xPxPos * g_xViewSet.g_xView.g_xRcpScreenDims * 2.0 - 1.0, 0.0, 1.0);
+	// Text roots/glyphs are in OUTPUT pixels on the output-res FinalRT (after any TAA upscale) →
+	// map with OUTPUT rcp dims, not the render-res g_xRcpScreenDims.
+	o.position = float4(xPxPos * g_xViewSet.g_xView.g_xRcpOutputDims * 2.0 - 1.0, 0.0, 1.0);
 	o.uv       = input.a_xAtlasUVOrigin + xQuadXY * input.a_xAtlasUVSize;
 	o.colour   = input.a_xColour;
 	return o;

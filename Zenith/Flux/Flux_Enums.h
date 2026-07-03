@@ -234,8 +234,18 @@ enum MRTIndex
 	MRT_INDEX_NORMALSAMBIENT,
 	MRT_INDEX_MATERIAL,			// R=roughness, G=metallic, B=specular, A=packed flags (shading model + clear coat)
 	MRT_INDEX_EMISSIVE,			// RGB=HDR emissive colour, A=clear-coat roughness
+	MRT_INDEX_VELOCITY,			// OPTIONAL 5th MRT — TAA motion vectors (R16G16_SFLOAT), present ONLY when TAA is active
 	MRT_INDEX_COUNT,
 };
+// The always-present geometry targets (indices 0..3). Velocity is appended and
+// OPTIONAL, so nearly every consumer iterates CORE — only the conditional
+// 5-attachment G-buffer geometry passes (UnifiedMesh/Terrain, when the velocity
+// latch is on) ever touch MRT_INDEX_VELOCITY (via the distinct velocity accessor,
+// never GetMRTAttachment). Skybox/Primitives/DeferredShading reads/Present debug
+// view all stay at CORE.
+inline constexpr u_int uFLUX_MRT_CORE_COUNT = 4u;
+static_assert(uFLUX_MRT_CORE_COUNT == MRT_INDEX_VELOCITY, "uFLUX_MRT_CORE_COUNT must equal the velocity MRT slot index");
+static_assert(MRT_INDEX_COUNT == 5, "MRT_INDEX_COUNT must be 5 after appending velocity");
 
 enum MemoryFlags : u_int
 {

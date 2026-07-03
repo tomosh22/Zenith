@@ -358,6 +358,7 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 			xVC.m_xCamPos_Pad     = Zenith_Maths::Vector4(xLightEye, 1.f);
 			xVC.m_xScreenDims     = Zenith_Maths::UVector2(ZENITH_FLUX_CSM_RESOLUTION, ZENITH_FLUX_CSM_RESOLUTION);
 			xVC.m_xRcpScreenDims  = Zenith_Maths::Vector2(1.f / fResolution, 1.f / fResolution);
+			xVC.m_xRcpOutputDims  = xVC.m_xRcpScreenDims;   // cascade views are never upscaled (no UI overlay)
 			xVC.m_xCameraNearFar  = Zenith_Maths::Vector2(0.f, fDepthRange);
 			// Depth-only view: no lit features (flags 0); sun copied for definedness
 			// (no caster samples it).
@@ -365,6 +366,12 @@ void Flux_ShadowsImpl::UpdateShadowMatrices()
 			xVC.m_xSunColour_Pad  = Zenith_Maths::Vector4(0.f, 0.f, 0.f, 0.f);
 			xVC.m_uViewFlags      = 0u;
 			xVC.m_uViewSlot       = kuFluxViewSlotShadowFirst + u;
+			// TAA NoJitter: cascades never jitter and never run velocity/TAA, but the GPU
+			// cull reads m_xViewProjMatNoJitter for EVERY active view — so it must equal
+			// this cascade's ortho view-proj (prev == current; jitter UV = 0).
+			xVC.m_xViewProjMatNoJitter     = m_axSunViewProjMats[u];
+			xVC.m_xPrevViewProjMatNoJitter = m_axSunViewProjMats[u];
+			xVC.m_xJitterUV_PrevJitterUV   = Zenith_Maths::Vector4(0.f);
 			xGraphics.RenderViews().SetViewActive(kuFluxViewSlotShadowFirst + u, true);
 		}
 	}

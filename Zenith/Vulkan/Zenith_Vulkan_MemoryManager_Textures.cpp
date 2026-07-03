@@ -124,6 +124,32 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 	return xHandle;
 }
 
+void Zenith_Vulkan_MemoryManager::TransitionImageInitialLayout(Flux_VRAMHandle xHandle, bool bIsDepth, ResourceAccess eTargetAccess, u_int uNumMips, u_int uNumLayers)
+{
+	// Headless guard (mirrors CreateRenderTargetVRAM): no allocator => no images to transition.
+	if (m_xAllocator == VK_NULL_HANDLE) return;
+	if (!xHandle.IsValid()) return;
+	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xHandle);
+	if (pxVRAM == nullptr) return;
+
+	// Resolve the resident (destination) layout from the render graph's access enum, reusing the
+	// single access->layout authority so this can never drift from the barrier synthesiser.
+	vk::ImageLayout eResidentLayout;
+	vk::AccessFlags eAccessUnused;
+	vk::PipelineStageFlags eStageUnused;
+	Flux_ResourceAccessToVulkan(eTargetAccess, bIsDepth, eResidentLayout, eAccessUnused, eStageUnused);
+
+	const vk::ImageAspectFlags eAspect = bIsDepth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
+	for (u_int uLayer = 0; uLayer < uNumLayers; uLayer++)
+	{
+		for (u_int uMip = 0; uMip < uNumMips; uMip++)
+		{
+			ImageTransitionBarrier(pxVRAM->GetImage(), vk::ImageLayout::eUndefined, eResidentLayout, eAspect,
+				vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+		}
+	}
+}
+
 void Zenith_Vulkan_MemoryManager::NormalizeTextureInfo(Flux_SurfaceInfo& xInfo, TextureUploadMipMode eMipMode)
 {
 	switch (eMipMode)

@@ -42,9 +42,12 @@ namespace Flux_Generated_Terrain
 			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=448 arrayCount=4 (no C++ mapping)
 			unsigned int m_ug_uViewFlags; // slang=uint offset=464
 			unsigned int m_ug_uViewSlot; // slang=uint offset=468
-			unsigned char m_ag_xViewPad[8]; // slang=vector offset=472 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpOutputDims[8]; // slang=vector offset=472 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xViewProjMatNoJitter[64]; // slang=matrix offset=480 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xPrevViewProjMatNoJitter[64]; // slang=matrix offset=544 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xJitterUV_PrevJitterUV[16]; // slang=vector offset=608 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(g_xView_CB) == 480, "g_xView_CB size drifted from Slang reflection");
+		static_assert(sizeof(g_xView_CB) == 624, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uViewFlags) == 464, "g_xView.g_uViewFlags offset drifted from Slang reflection");
@@ -53,6 +56,61 @@ namespace Flux_Generated_Terrain
 
 	// ----- Terrain_ToGBuffer (Terrain/Flux_Terrain_ToGBuffer) -----
 	namespace Terrain_ToGBuffer
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hTerrainConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct TerrainConstants_CB
+		{
+			float m_fg_fUVScale; // slang=float offset=0
+			unsigned char m_aPad_4[12];
+		};
+		static_assert(sizeof(TerrainConstants_CB) == 16, "TerrainConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(TerrainConstants_CB, m_fg_fUVScale) == 0, "TerrainConstants.g_fUVScale offset drifted from Slang reflection");
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hTerrainMaterialConstants{ 3u, 1u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct TerrainMaterialConstants_CB
+		{
+			unsigned char m_ag_axBaseColors[64]; // slang=Array offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_axUVParams[64]; // slang=Array offset=64 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_axMaterialParams[64]; // slang=Array offset=128 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_axEmissiveParams[64]; // slang=Array offset=192 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xTerrainParams[16]; // slang=vector offset=256 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xTerrainParams2[16]; // slang=vector offset=272 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xMaterialTableIndices[16]; // slang=vector offset=288 arrayCount=4 (no C++ mapping)
+		};
+		static_assert(sizeof(TerrainMaterialConstants_CB) == 304, "TerrainMaterialConstants_CB size drifted from Slang reflection");
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hLODLevelBuffer{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xSplatmap{ 3u, 3u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+	}
+
+	// ----- Terrain_ToGBufferVelocity (Terrain/Flux_Terrain_ToGBufferVelocity) -----
+	namespace Terrain_ToGBufferVelocity
 	{
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };

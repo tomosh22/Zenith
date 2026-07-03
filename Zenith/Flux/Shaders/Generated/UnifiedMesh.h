@@ -42,9 +42,12 @@ namespace Flux_Generated_UnifiedMesh
 			unsigned char m_ag_xSunColour_Pad[16]; // slang=vector offset=448 arrayCount=4 (no C++ mapping)
 			unsigned int m_ug_uViewFlags; // slang=uint offset=464
 			unsigned int m_ug_uViewSlot; // slang=uint offset=468
-			unsigned char m_ag_xViewPad[8]; // slang=vector offset=472 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xRcpOutputDims[8]; // slang=vector offset=472 arrayCount=2 (no C++ mapping)
+			unsigned char m_ag_xViewProjMatNoJitter[64]; // slang=matrix offset=480 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xPrevViewProjMatNoJitter[64]; // slang=matrix offset=544 arrayCount=0 (no C++ mapping)
+			unsigned char m_ag_xJitterUV_PrevJitterUV[16]; // slang=vector offset=608 arrayCount=4 (no C++ mapping)
 		};
-		static_assert(sizeof(g_xView_CB) == 480, "g_xView_CB size drifted from Slang reflection");
+		static_assert(sizeof(g_xView_CB) == 624, "g_xView_CB size drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_bQuadUtilisationAnalysis) == 416, "g_xView.g_bQuadUtilisationAnalysis offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uTargetPixelsPerTri) == 420, "g_xView.g_uTargetPixelsPerTri offset drifted from Slang reflection");
 		static_assert(offsetof(g_xView_CB, m_ug_uViewFlags) == 464, "g_xView.g_uViewFlags offset drifted from Slang reflection");
@@ -97,6 +100,62 @@ namespace Flux_Generated_UnifiedMesh
 		static_assert(offsetof(DrawConstants_CB, m_ug_uBucketOffset) == 4, "DrawConstants.g_uBucketOffset offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 8, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 12, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xAnimationTex{ 4u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+	}
+
+	// ----- UnifiedMesh_ToGBufferVelocity (UnifiedMesh/Flux_UnifiedMesh_ToGBufferVelocity) -----
+	namespace UnifiedMesh_ToGBufferVelocity
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hObjects{ 3u, 0u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hDrawItems{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hPrevTransforms{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hPrevSkinnedPosArena{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hDrawConstants{ 4u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct DrawConstants_CB
+		{
+			unsigned int m_ug_uMaterialIndex; // slang=uint offset=0
+			unsigned int m_ug_uBucketOffset; // slang=uint offset=4
+			unsigned int m_ug_uSkinnedPrevVertBase; // slang=uint offset=8
+			unsigned int m_ug_uIsSkinned; // slang=uint offset=12
+			unsigned char m_ag_xVATParams[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+		};
+		static_assert(sizeof(DrawConstants_CB) == 32, "DrawConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 0, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uBucketOffset) == 4, "DrawConstants.g_uBucketOffset offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uSkinnedPrevVertBase) == 8, "DrawConstants.g_uSkinnedPrevVertBase offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uIsSkinned) == 12, "DrawConstants.g_uIsSkinned offset drifted from Slang reflection");
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
@@ -314,6 +373,57 @@ namespace Flux_Generated_UnifiedMesh
 		inline constexpr Flux_BindingHandle hskinJobs{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: RWStructuredBuffer
 		inline constexpr Flux_BindingHandle hskinnedArena{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
+	}
+
+	// ----- UnifiedMesh_SkinningPrev (UnifiedMesh/Flux_UnifiedMesh_SkinningPrev) -----
+	namespace UnifiedMesh_SkinningPrev
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hSkinConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct SkinConstants_CB
+		{
+			unsigned int m_unumJobs; // slang=uint offset=0
+			unsigned int m_upaletteCount; // slang=uint offset=4
+			unsigned int m_upad0; // slang=uint offset=8
+			unsigned int m_upad1; // slang=uint offset=12
+		};
+		static_assert(sizeof(SkinConstants_CB) == 16, "SkinConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(SkinConstants_CB, m_unumJobs) == 0, "SkinConstants.numJobs offset drifted from Slang reflection");
+		static_assert(offsetof(SkinConstants_CB, m_upaletteCount) == 4, "SkinConstants.paletteCount offset drifted from Slang reflection");
+		static_assert(offsetof(SkinConstants_CB, m_upad0) == 8, "SkinConstants.pad0 offset drifted from Slang reflection");
+		static_assert(offsetof(SkinConstants_CB, m_upad1) == 12, "SkinConstants.pad1 offset drifted from Slang reflection");
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hbindPose{ 3u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hprevBonePalette{ 3u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hskinJobs{ 3u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: RWStructuredBuffer
+		inline constexpr Flux_BindingHandle hprevSkinnedArena{ 3u, 4u, FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER, 1u };
 	}
 
 }

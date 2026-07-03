@@ -514,6 +514,13 @@ void Flux_RendererImpl::ApplySubsystemGraphSelections(Flux_RenderGraph& xGraph)
 	// writers the "Skybox" pass reads — same MarkDirty-propagation reason as IBL.
 	xEngine.Skybox().UpdateGraphPassEnables(xGraph);
 	xEngine.IBL().UpdateGraphPassEnables(xGraph);
+	// TAA velocity-MRT toggle: flips the G-buffer between 4 and 5 targets. On a change it
+	// needs a full rebuild (not just MarkDirty) — the geometry passes' declared colour
+	// attachments change — so this renderer issues it (via this, no g_xEngine reach).
+	if (xEngine.FluxGraphics().UpdateVelocityTargetSelection(xGraph))
+	{
+		RequestGraphRebuild();
+	}
 }
 
 void Flux_RendererImpl::SyncRenderGraphDebugToggles()

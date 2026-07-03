@@ -50,8 +50,11 @@ u_int Flux_HiZImpl::ComputeMipCount(u_int uWidth, u_int uHeight)
 // keeps it consistent with the current framebuffer size.
 void Flux_HiZImpl::UpdateMipCountFromSwapchain()
 {
-	const u_int uWidth  = g_xEngine.FluxSwapchain().GetWidth();
-	const u_int uHeight = g_xEngine.FluxSwapchain().GetHeight();
+	// RENDER dims (== output when upscaling off): the HiZ chain is built from the render-res
+	// scene depth, so mip 0 must be 1:1 with it. SetupViewPasses recomputes this from the same
+	// GetRenderWidth/Height each setup — this only seeds the pre-first-frame / resize mip count.
+	const u_int uWidth  = g_xEngine.FluxGraphics().GetRenderWidth();
+	const u_int uHeight = g_xEngine.FluxGraphics().GetRenderHeight();
 	m_auMipCounts[kuFluxViewSlotMain] = ComputeMipCount(uWidth, uHeight);
 }
 
@@ -223,7 +226,7 @@ void Flux_HiZImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// single-view path), then the preview view at its fixed 512² dims — only
 	// while active, so its transients exist exactly when its passes do (the
 	// graph's unused-transient validation demands this).
-	SetupViewPasses(xGraph, kuFluxViewSlotMain, g_xEngine.FluxSwapchain().GetWidth(), g_xEngine.FluxSwapchain().GetHeight());
+	SetupViewPasses(xGraph, kuFluxViewSlotMain, g_xEngine.FluxGraphics().GetRenderWidth(), g_xEngine.FluxGraphics().GetRenderHeight());
 	if (g_xEngine.FluxGraphics().RenderViews().IsViewActive(kuFluxViewSlotPreview))
 		SetupViewPasses(xGraph, kuFluxViewSlotPreview, kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
 }

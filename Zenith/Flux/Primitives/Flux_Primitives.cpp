@@ -393,7 +393,7 @@ void Flux_PrimitivesImpl::BuildPipelines()
 	xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_NORMALSAMBIENT] = MRT_FORMAT_NORMALSAMBIENT;
 	xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_MATERIAL] = MRT_FORMAT_MATERIAL;
 	xPipelineSpec.m_aeColourAttachmentFormats[MRT_INDEX_EMISSIVE] = MRT_FORMAT_EMISSIVE;
-	xPipelineSpec.m_uNumColourAttachments = MRT_INDEX_COUNT;
+	xPipelineSpec.m_uNumColourAttachments = uFLUX_MRT_CORE_COUNT;   // debug primitives never write velocity
 	xPipelineSpec.m_eDepthStencilFormat = DEPTH_FORMAT;
 	xPipelineSpec.m_pxShader = &m_xPrimitivesShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
