@@ -164,8 +164,8 @@ static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
 	// --- UE5-class additions (indices 16+; the 16 core bones above are unchanged) ---
 	// Jaw + eyes hang off the head (world: head at (0,1.4,0)); toes off the feet.
 	pxSkel->AddBone("Jaw",      STICK_BONE_HEAD,       Zenith_Maths::Vector3(0.0f, -0.050f, -0.020f), xIdentity, xUnitScale);
-	pxSkel->AddBone("LeftEye",  STICK_BONE_HEAD,       Zenith_Maths::Vector3(-0.034f, 0.029f, 0.060f), xIdentity, xUnitScale);
-	pxSkel->AddBone("RightEye", STICK_BONE_HEAD,       Zenith_Maths::Vector3(0.034f, 0.029f, 0.060f), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftEye",  STICK_BONE_HEAD,       Zenith_Maths::Vector3(-0.0391f, -0.008f, 0.068f), xIdentity, xUnitScale);   // X/Z track the widened, forward eyeball; Y tracks the head Y-squash (BuildHumanEyes + fHEAD_SQUASH_*)
+	pxSkel->AddBone("RightEye", STICK_BONE_HEAD,       Zenith_Maths::Vector3(0.0391f, -0.008f, 0.068f), xIdentity, xUnitScale);
 	pxSkel->AddBone("LeftToe",  STICK_BONE_LEFT_FOOT,  Zenith_Maths::Vector3(0.0f, -0.010f, 0.100f), xIdentity, xUnitScale);
 	pxSkel->AddBone("RightToe", STICK_BONE_RIGHT_FOOT, Zenith_Maths::Vector3(0.0f, -0.010f, 0.100f), xIdentity, xUnitScale);
 
@@ -678,17 +678,19 @@ void BuildHumanTorso(Zenith_MeshAsset* pxMesh)
 	const u_int S = STICK_BONE_SPINE;
 	const HumanRing axRings[] = {
 		//   y      cx     cz      rx      rz      boneA boneB blend
-		{ 1.140f, 0.0f, -0.004f, 0.140f, 0.088f,  S, S, 0.0f },   // trap (wide enough for the deltoid to overlap)
+		{ 1.198f, 0.0f, -0.006f, 0.070f, 0.068f,  S, S, 0.0f },   // neck base — hugs the neck (buried under the neck loft) so the top rounds over instead of flat-capping
+		{ 1.172f, 0.0f, -0.006f, 0.116f, 0.094f,  S, S, 0.0f },   // upper trapezius — slopes neck -> shoulder (kills the flat shelf / shrug)
+		{ 1.145f, 0.0f, -0.004f, 0.150f, 0.092f,  S, S, 0.0f },   // shoulder yoke — stays broad so the deltoid dome overlaps it (no plateau)
 		{ 1.060f, 0.0f, -0.006f, 0.235f, 0.112f,  S, S, 0.0f },   // shoulder line (broad)
-		{ 0.950f, 0.0f, -0.005f, 0.212f, 0.124f,  S, S, 0.0f },   // upper chest (pecs)
-		{ 0.800f, 0.0f,  0.002f, 0.188f, 0.124f,  S, S, 0.0f },   // chest
-		{ 0.620f, 0.0f,  0.004f, 0.164f, 0.111f,  S, S, 0.0f },   // lower ribs
-		{ 0.450f, 0.0f,  0.002f, 0.150f, 0.101f,  R, S, 0.80f },  // upper waist
-		{ 0.300f, 0.0f,  0.000f, 0.144f, 0.097f,  R, S, 0.50f },  // waist (narrowest)
+		{ 0.950f, 0.0f, -0.005f, 0.224f, 0.124f,  S, S, 0.0f },   // upper chest (pecs) — broadened (rx only; rz frozen for jetpack clearance) so the torso isn't a thin tube
+		{ 0.800f, 0.0f,  0.002f, 0.202f, 0.124f,  S, S, 0.0f },   // chest
+		{ 0.620f, 0.0f,  0.004f, 0.178f, 0.111f,  S, S, 0.0f },   // lower ribs
+		{ 0.450f, 0.0f,  0.002f, 0.162f, 0.101f,  R, S, 0.80f },  // upper waist
+		{ 0.300f, 0.0f,  0.000f, 0.155f, 0.097f,  R, S, 0.50f },  // waist (narrowest)
 		{ 0.180f, 0.0f,  0.000f, 0.160f, 0.108f,  R, S, 0.22f },  // belt line
-		{ 0.060f, 0.0f,  0.000f, 0.190f, 0.118f,  R, R, 0.0f },   // hips (wide to cover the thigh tops)
-		{ -0.040f, 0.0f, 0.000f, 0.196f, 0.120f,  R, R, 0.0f },   // widest (seat)
-		{ -0.120f, 0.0f, 0.000f, 0.172f, 0.110f,  R, R, 0.0f },   // pelvis bottom
+		{ 0.060f, 0.0f,  0.000f, 0.198f, 0.118f,  R, R, 0.0f },   // hips (wide to cover the thigh tops)
+		{ -0.040f, 0.0f, 0.000f, 0.206f, 0.120f,  R, R, 0.0f },   // widest (seat) — a touch broader so the thighs no longer read as saddlebags
+		{ -0.120f, 0.0f, 0.000f, 0.182f, 0.110f,  R, R, 0.0f },   // pelvis bottom
 	};
 	constexpr u_int uSEGS = 48;
 	const uint32_t uFirst = AddHumanLoft(pxMesh, axRings, sizeof(axRings) / sizeof(axRings[0]), uSEGS, xUV_TORSO);
@@ -696,7 +698,7 @@ void BuildHumanTorso(Zenith_MeshAsset* pxMesh)
 	// Close the trunk: shoulder cap up top (the neck loft overlaps it), crotch
 	// cap underneath (the thigh lofts overlap it).
 	CapHumanRing(pxMesh, uFirst, uSEGS,
-		Zenith_Maths::Vector3(0.0f, 1.155f, -0.004f), Zenith_Maths::Vector3(0, 1, 0),
+		Zenith_Maths::Vector3(0.0f, 1.208f, -0.006f), Zenith_Maths::Vector3(0, 1, 0),
 		xUV_TORSO, 0.5f, 0.0f, S, S, 0.0f, true);
 	const uint32_t uLastRing = pxMesh->GetNumVerts() - (uSEGS + 1);
 	CapHumanRing(pxMesh, uLastRing, uSEGS,
@@ -711,15 +713,19 @@ void BuildHumanHeadNeck(Zenith_MeshAsset* pxMesh)
 	const u_int H = STICK_BONE_HEAD;
 	const HumanRing axRings[] = {
 		//   y      cx     cz      rx      rz      boneA boneB blend
-		{ 1.575f, 0.0f, -0.008f, 0.058f, 0.064f,  H, H, 0.0f },   // crown taper
-		{ 1.525f, 0.0f, -0.004f, 0.084f, 0.092f,  H, H, 0.0f },   // cranium
-		{ 1.465f, 0.0f,  0.000f, 0.086f, 0.096f,  H, H, 0.0f },   // brow/temples
-		{ 1.400f, 0.0f,  0.006f, 0.080f, 0.092f,  H, H, 0.0f },   // cheeks/nose
-		{ 1.340f, 0.0f,  0.008f, 0.072f, 0.082f,  H, H, 0.0f },   // mouth
-		{ 1.300f, 0.0f,  0.010f, 0.063f, 0.070f,  H, H, 0.0f },   // jaw/chin
-		{ 1.270f, 0.0f,  0.002f, 0.056f, 0.057f,  N, H, 0.60f },  // under-jaw
-		{ 1.200f, 0.0f,  0.000f, 0.057f, 0.058f,  N, N, 0.0f },   // neck
-		{ 1.130f, 0.0f, -0.002f, 0.062f, 0.062f,  S, N, 0.60f },  // neck base (into torso)
+		// Widened vs the old stretched-alien head: head rings rx x1.15 / rz x1.06 (kept
+		// deeper than wide, as real skulls are); under-jaw rx x1.15 / rz x1.08; neck rings
+		// rx x1.12 / rz x1.10. All Y values UNCHANGED so the (1.55,1.65) crown-bounds pin
+		// and every painted head feature (vN-anchored) stay put.
+		{ 1.575f, 0.0f, -0.008f, 0.0667f, 0.0678f,  H, H, 0.0f },   // crown taper
+		{ 1.525f, 0.0f, -0.004f, 0.0966f, 0.0975f,  H, H, 0.0f },   // cranium
+		{ 1.465f, 0.0f,  0.000f, 0.0989f, 0.1018f,  H, H, 0.0f },   // brow/temples
+		{ 1.400f, 0.0f,  0.006f, 0.0920f, 0.0975f,  H, H, 0.0f },   // cheeks/nose
+		{ 1.340f, 0.0f,  0.008f, 0.0828f, 0.0869f,  H, H, 0.0f },   // mouth
+		{ 1.300f, 0.0f,  0.004f, 0.0725f, 0.0742f,  H, H, 0.0f },   // jaw/chin — less forward jut (was cz0.010) so the chin doesn't point out
+		{ 1.270f, 0.0f,  0.002f, 0.0644f, 0.0616f,  N, H, 0.60f },  // under-jaw
+		{ 1.200f, 0.0f,  0.000f, 0.0638f, 0.0638f,  N, N, 0.0f },   // neck
+		{ 1.130f, 0.0f, -0.002f, 0.0694f, 0.0682f,  S, N, 0.60f },  // neck base (into torso)
 	};
 	constexpr u_int uSEGS = 64;   // dense enough for sculpted facial features
 	const uint32_t uFirst = AddHumanLoft(pxMesh, axRings, sizeof(axRings) / sizeof(axRings[0]), uSEGS, xUV_HEAD);
@@ -752,10 +758,31 @@ void BuildHumanArm(Zenith_MeshAsset* pxMesh, float fSide, u_int uUpper, u_int uL
 	constexpr u_int uSEGS = 28;
 	const uint32_t uFirst = AddHumanLoft(pxMesh, axRings, sizeof(axRings) / sizeof(axRings[0]), uSEGS, xIsland);
 
-	// Shoulder cap — closes the top of the deltoid (its inner half is inside the torso).
-	CapHumanRing(pxMesh, uFirst, uSEGS,
-		Zenith_Maths::Vector3(fSide * 0.205f, 1.166f, -0.004f), Zenith_Maths::Vector3(0, 1, 0),
-		xIsland, 0.5f, 0.0f, S, uUpper, 0.15f, true);
+	// Rounded deltoid dome replaces the old flat shoulder cap (which read as a flat
+	// epaulette). Two tapering rows are built ABOVE the arm loft's first ring and
+	// stitched down onto it, then a small top cap. The rows tilt strongly INBOARD so
+	// the dome's inner edge and apex stay buried inside the torso's shoulder yoke
+	// (limb seam rule) — the exposed OUTER surface rounds the shoulder ball over
+	// instead of capping it flat, and nothing pokes out into open air. The arm loft's
+	// own ring list is untouched, so its V spread (sleeve hem / elbow crease / watch)
+	// is byte-identical: no arm-island repaint needed. Rows pinned into the sleeve-
+	// cloth V band and skinned like the deltoid (mostly spine).
+	const HumanRing axDome[] = {
+		//   y       cx              cz      rx      rz      boneA  boneB  blend
+		{ 1.159f, fSide * 0.192f, -0.004f, 0.086f, 0.081f,  S, uUpper, 0.15f },
+		{ 1.165f, fSide * 0.172f, -0.004f, 0.062f, 0.058f,  S, uUpper, 0.15f },
+		{ 1.169f, fSide * 0.145f, -0.004f, 0.038f, 0.036f,  S, uUpper, 0.15f },
+	};
+	uint32_t uDomePrev = uFirst;
+	for (u_int d = 0; d < sizeof(axDome) / sizeof(axDome[0]); d++)
+	{
+		const uint32_t uRow = AddHumanRing(pxMesh, axDome[d], uSEGS, xIsland, 0.010f + 0.007f * static_cast<float>(d));
+		StitchHumanRings(pxMesh, uRow, uDomePrev, uSEGS);   // new row is ABOVE the previous
+		uDomePrev = uRow;
+	}
+	CapHumanRing(pxMesh, uDomePrev, uSEGS,
+		Zenith_Maths::Vector3(fSide * 0.110f, 1.172f, -0.004f), Zenith_Maths::Vector3(0, 1, 0),
+		xIsland, 0.5f, 0.026f, S, uUpper, 0.15f, true);
 }
 
 // Loft a tapered digit articulated over THREE phalanx bones (proximal/middle/
@@ -793,7 +820,7 @@ void BuildHumanHand(Zenith_MeshAsset* pxMesh, float fSide, u_int uLower, u_int u
 	// Palm: flattened (thin across X, broad front-to-back in Z), wrist -> knuckles.
 	const HumanRing axPalm[] = {
 		//   y       cx     cz      rx      rz      boneA  boneB  blend
-		{ 0.425f, fSide * 0.300f, 0.000f, 0.026f, 0.030f,  uLower, uHand, 0.65f },  // wrist
+		{ 0.455f, fSide * 0.300f, 0.000f, 0.026f, 0.030f,  uLower, uHand, 0.35f },  // wrist — tucked INSIDE the forearm tube (rx/rz < tube ~0.034/0.035) so the butt-joint gap is closed; skinned ~forearm-heavy so it doesn't shear out on bend (hidden under the painted watch band)
 		{ 0.380f, fCx,            0.004f, 0.024f, 0.044f,  uHand, uHand, 0.0f },     // mid-palm
 		{ 0.330f, fCx,            0.006f, 0.022f, 0.050f,  uHand, uHand, 0.0f },     // knuckle line
 		{ 0.305f, fCx,            0.006f, 0.020f, 0.048f,  uHand, uHand, 0.0f },     // knuckle base
@@ -827,9 +854,9 @@ void BuildHumanLeg(Zenith_MeshAsset* pxMesh, float fSide, u_int uUpper, u_int uL
 	// Hip pivot at (side*0.15, 0); knee at y -0.5; ankle at y -1.0.
 	const HumanRing axRings[] = {
 		//   y       cx            cz      rx      rz      boneA  boneB  blend
-		{  0.075f, fSide * 0.130f, 0.004f, 0.060f, 0.068f,  R,     uUpper, 0.18f }, // thigh root — tucked inside the pelvis so the seam is hidden
-		{ -0.020f, fSide * 0.143f, 0.004f, 0.101f, 0.109f,  R,     uUpper, 0.50f }, // hip
-		{ -0.120f, fSide * 0.149f, 0.004f, 0.099f, 0.107f,  R,     uUpper, 0.88f }, // quad
+		{  0.075f, fSide * 0.128f, 0.004f, 0.058f, 0.066f,  R,     uUpper, 0.18f }, // thigh root — tucked inside the pelvis so the seam is hidden
+		{ -0.020f, fSide * 0.140f, 0.004f, 0.094f, 0.104f,  R,     uUpper, 0.50f }, // hip — pulled in so the outer edge stops overhanging the pelvis (saddlebags)
+		{ -0.120f, fSide * 0.146f, 0.004f, 0.093f, 0.103f,  R,     uUpper, 0.88f }, // quad
 		{ -0.250f, fSide * 0.150f, 0.002f, 0.089f, 0.096f,  uUpper, uUpper, 0.0f }, // mid thigh
 		{ -0.400f, fSide * 0.150f, 0.000f, 0.073f, 0.080f,  uUpper, uUpper, 0.0f }, // above knee
 		{ -0.445f, fSide * 0.150f, 0.000f, 0.066f, 0.071f,  uUpper, uLower, 0.20f }, // knee upper loop
@@ -868,68 +895,78 @@ void SculptHumanFace(Zenith_MeshAsset* pxMesh)
 			continue;   // head region only
 		}
 
+		// The head rings were widened (rx x1.15). The facial features below were
+		// authored against the OLD narrow head, so evaluate them in the pre-widened
+		// x-space (xn = x / fXS): a feature centred at 0.034 in xn lands at 0.034*fXS
+		// on the wide skull, and its xn-space radius covers 1.15x more world width —
+		// so every socket/nose/lip/jaw feature widens proportionally with the head,
+		// with the Z-relief depth and Y unchanged. Ear world-x displacements are
+		// scaled by fXS so the ears stand off the wider skull by the same fraction.
+		constexpr float fXS = 1.15f;
+		const float xn = x / fXS;
+
 		// Front-hemisphere weight so the sides/back of the skull stay untouched.
 		const float fFront = std::clamp(z / 0.04f, 0.0f, 1.0f);
 
 		float fDZ = 0.0f;   // forward (+z) relief, applied with fFront
 
 		// Brow ridge — protrudes above the eyes, widest at centre.
-		fDZ += 0.013f * HumanGauss(x * 0.7f, y - 1.454f, 0.056f, 0.013f);
+		fDZ += 0.013f * HumanGauss(xn * 0.7f, y - 1.454f, 0.056f, 0.013f);
 
 		// Eye sockets (recessed) each with an eyeball dome and an upper-lid fold.
 		for (int s = -1; s <= 1; s += 2)
 		{
-			const float fEX = x - static_cast<float>(s) * 0.034f;
+			const float fEX = xn - static_cast<float>(s) * 0.034f;
 			fDZ -= 0.019f * HumanGauss(fEX, y - 1.429f, 0.026f, 0.020f);   // socket recess (deeper)
 			fDZ += 0.010f * HumanGauss(fEX, y - 1.426f, 0.014f, 0.012f);   // eyeball dome
 			fDZ += 0.006f * HumanGauss(fEX, y - 1.438f, 0.020f, 0.006f);   // upper-lid fold
 		}
 
 		// Nose — narrow bridge ridge, rounded tip, nostril wings, sub-nose scoop.
-		fDZ += 0.022f * HumanGauss(x, y - 1.418f, 0.012f, 0.040f);        // bridge
-		fDZ += 0.017f * HumanGauss(x, y - 1.388f, 0.015f, 0.014f);        // tip ball
+		fDZ += 0.022f * HumanGauss(xn, y - 1.418f, 0.012f, 0.040f);        // bridge
+		fDZ += 0.017f * HumanGauss(xn, y - 1.388f, 0.015f, 0.014f);        // tip ball
 		for (int s = -1; s <= 1; s += 2)
 		{
-			fDZ += 0.009f * HumanGauss(x - static_cast<float>(s) * 0.012f, y - 1.382f, 0.010f, 0.012f);  // wings
+			fDZ += 0.009f * HumanGauss(xn - static_cast<float>(s) * 0.012f, y - 1.382f, 0.010f, 0.012f);  // wings
 		}
-		fDZ -= 0.006f * HumanGauss(x, y - 1.360f, 0.020f, 0.009f);        // under the nose
+		fDZ -= 0.006f * HumanGauss(xn, y - 1.360f, 0.020f, 0.009f);        // under the nose
 
 		// Cheekbones (zygomatic).
 		for (int s = -1; s <= 1; s += 2)
 		{
-			fDZ += 0.009f * HumanGauss(x - static_cast<float>(s) * 0.046f, y - 1.396f, 0.028f, 0.024f);
+			fDZ += 0.009f * HumanGauss(xn - static_cast<float>(s) * 0.046f, y - 1.396f, 0.028f, 0.024f);
 		}
 
 		// Lips: fuller and closed (the gap/seam used to read as an open mouth).
-		fDZ += 0.013f * HumanGauss(x, y - 1.338f, 0.030f, 0.011f);        // upper lip
-		fDZ += 0.015f * HumanGauss(x, y - 1.325f, 0.029f, 0.012f);        // lower lip (fuller)
-		fDZ -= 0.0025f * HumanGauss(x, y - 1.332f, 0.032f, 0.0035f);     // mouth seam (subtle)
-		fDZ -= 0.004f * HumanGauss(x, y - 1.351f, 0.006f, 0.010f);        // philtrum
+		fDZ += 0.013f * HumanGauss(xn, y - 1.338f, 0.030f, 0.011f);        // upper lip
+		fDZ += 0.015f * HumanGauss(xn, y - 1.325f, 0.029f, 0.012f);        // lower lip (fuller)
+		fDZ -= 0.0025f * HumanGauss(xn, y - 1.332f, 0.032f, 0.0035f);     // mouth seam (subtle)
+		fDZ -= 0.004f * HumanGauss(xn, y - 1.351f, 0.006f, 0.010f);        // philtrum
 
 		// Chin (mental protrusion) + mentolabial crease above it.
-		fDZ += 0.013f * HumanGauss(x, y - 1.300f, 0.026f, 0.018f);
-		fDZ -= 0.005f * HumanGauss(x, y - 1.316f, 0.024f, 0.008f);
+		fDZ += 0.013f * HumanGauss(xn, y - 1.300f, 0.026f, 0.018f);
+		fDZ -= 0.005f * HumanGauss(xn, y - 1.316f, 0.024f, 0.008f);
 
 		// Jawline — define the mandible corners for a sharper jaw.
 		for (int s = -1; s <= 1; s += 2)
 		{
-			fDZ += 0.007f * HumanGauss(x - static_cast<float>(s) * 0.058f, y - 1.306f, 0.022f, 0.026f);
+			fDZ += 0.007f * HumanGauss(xn - static_cast<float>(s) * 0.058f, y - 1.306f, 0.022f, 0.026f);
 		}
 
 		xPos.z += fDZ * fFront;
 		// The nose tip droops a touch.
-		xPos.y -= 0.004f * HumanGauss(x, y - 1.388f, 0.015f, 0.014f) * fFront;
+		xPos.y -= 0.004f * HumanGauss(xn, y - 1.388f, 0.015f, 0.014f) * fFront;
 
 		// Ears — lateral protrusions at the temple line with a helix rim and a
 		// recessed concha bowl, near z~0 on both sides.
 		const float fEarZ = std::clamp(1.0f - std::abs(z + 0.004f) / 0.042f, 0.0f, 1.0f);
 		for (int s = -1; s <= 1; s += 2)
 		{
-			const float fEar = HumanGauss(x - static_cast<float>(s) * 0.085f, y - 1.418f, 0.019f, 0.034f) * fEarZ;
-			xPos.x += static_cast<float>(s) * 0.024f * fEar;   // push outward (helix rim)
-			xPos.z -= 0.006f * fEar;                           // and slightly back
-			const float fConcha = HumanGauss(x - static_cast<float>(s) * 0.088f, y - 1.416f, 0.008f, 0.014f) * fEarZ;
-			xPos.x -= static_cast<float>(s) * 0.012f * fConcha;  // concha bowl indent
+			const float fEar = HumanGauss(xn - static_cast<float>(s) * 0.085f, y - 1.418f, 0.019f, 0.034f) * fEarZ;
+			xPos.x += static_cast<float>(s) * 0.024f * fXS * fEar;   // push outward (helix rim)
+			xPos.z -= 0.006f * fEar;                                 // and slightly back
+			const float fConcha = HumanGauss(xn - static_cast<float>(s) * 0.088f, y - 1.416f, 0.008f, 0.014f) * fEarZ;
+			xPos.x -= static_cast<float>(s) * 0.012f * fXS * fConcha;  // concha bowl indent
 		}
 		// (Hair is now real geometry — see BuildHumanHair — so the scalp is no
 		// longer inflated here.)
@@ -1004,11 +1041,11 @@ void BuildHumanHair(Zenith_MeshAsset* pxMesh)
 	auto HeadProfile = [](float fY, float& fRx, float& fRz, float& fCz)
 	{
 		struct P { float fY, fRx, fRz, fCz; };
-		static const P aP[] = {
-			{ 1.600f, 0.050f, 0.058f, -0.008f },
-			{ 1.520f, 0.085f, 0.093f, -0.004f },
-			{ 1.460f, 0.087f, 0.097f,  0.000f },
-			{ 1.400f, 0.081f, 0.093f,  0.006f },
+		static const P aP[] = {   // rx x1.15 / rz x1.06 to hug the widened head rings; fY/fCz unchanged
+			{ 1.600f, 0.0575f, 0.0615f, -0.008f },
+			{ 1.520f, 0.0978f, 0.0986f, -0.004f },
+			{ 1.460f, 0.1001f, 0.1028f,  0.000f },
+			{ 1.400f, 0.0932f, 0.0986f,  0.006f },
 		};
 		const float fC = std::clamp(fY, aP[3].fY, aP[0].fY);
 		for (int i = 0; i < 3; i++)
@@ -1069,13 +1106,17 @@ void BuildHumanHair(Zenith_MeshAsset* pxMesh)
 // of the sculpted socket so it reads as a real eyeball. Built after the sculpt.
 void BuildHumanEyes(Zenith_MeshAsset* pxMesh)
 {
+	// fCx x1.15 (matches the widened head rings) so the eyeballs sit on the wider
+	// face; fCz +0.006 tracks the front face surface moving forward under rz x1.06
+	// (keeps the eyeball ~3mm proud of the recessed socket). fR unchanged — still
+	// covers the (proportionally wider) painted almond, which is UV-anchored.
 	struct EyeDef { float fCx; u_int uBone; float fUNorm; };
 	const EyeDef axEyes[2] = {
-		{ -0.034f, STICK_BONE_LEFT_EYE,  0.563f },
-		{  0.034f, STICK_BONE_RIGHT_EYE, 0.437f },
+		{ -0.0391f, STICK_BONE_LEFT_EYE,  0.563f },
+		{  0.0391f, STICK_BONE_RIGHT_EYE, 0.437f },
 	};
 	const float fCy = 1.429f;
-	const float fCz = 0.062f;
+	const float fCz = 0.068f;
 	const float fR = 0.018f;
 	const float fEyeVN = 0.328f;
 	constexpr u_int uLAT = 8;
@@ -1245,6 +1286,29 @@ void SanitizeHumanTangents(Zenith_MeshAsset* pxMesh)
 // The human body mesh. Same signature as the old cube builder — the skeleton
 // parameter documents the rig the proportions are authored against.
 //------------------------------------------------------------------------------
+// Uniform vertical squash of a contiguous vertex range about a pivot plane. Used
+// to de-stretch the head+neck AFTER all its geometry (loft, sculpt, hair, eyeballs)
+// is placed, so painted UVs, sculpted relief, hair and eyeballs shorten TOGETHER and
+// stay perfectly registered — no per-feature Y bookkeeping. Y only; X/Z untouched.
+void SquashVertsY(Zenith_MeshAsset* pxMesh, uint32_t uStart, uint32_t uEnd, float fPivotY, float fScaleY)
+{
+	for (uint32_t u = uStart; u < uEnd; u++)
+	{
+		Zenith_Maths::Vector3& xPos = pxMesh->m_xPositions.Get(u);
+		xPos.y = fPivotY + (xPos.y - fPivotY) * fScaleY;
+	}
+}
+
+// How much the head+neck assembly is squashed vertically, and about which plane.
+// The rig freezes the head bone at y1.4 and the crown-bounds unit test pins the top
+// to (1.55,1.65); pivoting just above the shoulders (1.18) and scaling 0.85 pulls
+// the crown down from ~1.628 to ~1.561 (still inside the pin) and shortens the long
+// thin neck, killing the "stretched alien head on a giraffe neck" read. The eye
+// bone bind Y (skeleton side, not squashed here) is authored to match — see
+// CreateStickFigureSkeleton.
+constexpr float fHEAD_SQUASH_PIVOT_Y = 1.18f;
+constexpr float fHEAD_SQUASH_SCALE_Y = 0.85f;
+
 static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSkeleton)
 {
 	Zenith_Assert(pxSkeleton->GetNumBones() == STICK_BONE_COUNT, "StickFigure rig changed — body proportions are authored against the 16-core + UE5-additions layout");
@@ -1255,7 +1319,9 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 	pxMesh->Reserve(16384, 98304);
 
 	BuildHumanTorso(pxMesh);
+	const uint32_t uHeadNeckVertStart = pxMesh->GetNumVerts();
 	BuildHumanHeadNeck(pxMesh);
+	const uint32_t uHeadNeckVertEnd = pxMesh->GetNumVerts();
 	BuildHumanArm(pxMesh, -1.0f, STICK_BONE_LEFT_UPPER_ARM, STICK_BONE_LEFT_LOWER_ARM, STICK_BONE_LEFT_HAND, xUV_ARM_L);
 	BuildHumanArm(pxMesh, 1.0f, STICK_BONE_RIGHT_UPPER_ARM, STICK_BONE_RIGHT_LOWER_ARM, STICK_BONE_RIGHT_HAND, xUV_ARM_R);
 	BuildHumanHand(pxMesh, -1.0f, STICK_BONE_LEFT_LOWER_ARM, STICK_BONE_LEFT_HAND, xUV_HAND_L);
@@ -1267,9 +1333,21 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 
 	SculptHumanFace(pxMesh);
 	SculptHumanBody(pxMesh);
+	const uint32_t uHairVertStart = pxMesh->GetNumVerts();
 	BuildHumanHair(pxMesh);   // real hair geometry, after sculpt so it isn't deformed
+	const uint32_t uHairVertEnd = pxMesh->GetNumVerts();
 	const uint32_t uEyeIndexStart = pxMesh->GetNumIndices();
+	const uint32_t uEyeVertStart = pxMesh->GetNumVerts();
 	BuildHumanEyes(pxMesh);   // separate eyeball geometry skinned to the eye bones
+	const uint32_t uEyeVertEnd = pxMesh->GetNumVerts();
+
+	// De-stretch the head+neck: squash the head loft, the hair shell and the
+	// eyeballs together in Y (see fHEAD_SQUASH_* + SquashVertsY). Done here, after
+	// every head vertex is in place, so UVs/sculpt/hair/eyes stay registered.
+	SquashVertsY(pxMesh, uHeadNeckVertStart, uHeadNeckVertEnd, fHEAD_SQUASH_PIVOT_Y, fHEAD_SQUASH_SCALE_Y);
+	SquashVertsY(pxMesh, uHairVertStart, uHairVertEnd, fHEAD_SQUASH_PIVOT_Y, fHEAD_SQUASH_SCALE_Y);
+	SquashVertsY(pxMesh, uEyeVertStart, uEyeVertEnd, fHEAD_SQUASH_PIVOT_Y, fHEAD_SQUASH_SCALE_Y);
+
 	ComputeHumanSmoothNormals(pxMesh);
 	pxMesh->GenerateTangents();
 	SanitizeHumanTangents(pxMesh);
@@ -1832,7 +1910,7 @@ void PaintHumanTorso(HumanAtlas& xAtlas)
 			return;
 		}
 
-		if (fVN < 0.773f)
+		if (fVN < 0.703f)   // waistline raised (was .773 ~= y0.18, now ~y0.27) so the shirt is shorter and the legs read longer — the torso stops looking lanky
 		{
 			HumanShirtCloth(fUN, fVN, xP);
 			// Collar rib band.
@@ -1841,14 +1919,14 @@ void PaintHumanTorso(HumanAtlas& xAtlas)
 			xP.fHeight += 0.10f * fRib;
 			// Side seams + hem stitching.
 			HumanApplySeam(xP, HumanLine(fabsf(fSide) - 0.25f, 0.006f));
-			HumanApplySeam(xP, HumanLine(fVN - 0.760f, 0.005f));
+			HumanApplySeam(xP, HumanLine(fVN - 0.690f, 0.005f));
 			// Soft chest shading.
 			const float fPecs = HumanGauss(fabsf(fSide) - 0.075f, fVN - 0.16f, 0.06f, 0.10f);
 			xP.fR += 0.02f * fPecs; xP.fG += 0.02f * fPecs; xP.fB += 0.02f * fPecs;
 			return;
 		}
 
-		if (fVN < 0.815f)
+		if (fVN < 0.745f)   // belt band raised to match the higher waistline
 		{
 			// Leather belt with a metal buckle at the front.
 			const float fGrain = HumanFBM2D(fUN * 60.0f, fVN * 60.0f, 2, 951u) - 0.5f;
@@ -1858,7 +1936,7 @@ void PaintHumanTorso(HumanAtlas& xAtlas)
 			xP.fHeight = 0.62f + fGrain * 0.05f;
 			xP.fRough = 0.50f;
 			xP.fMetal = 0.0f;
-			const float fBuckle = HumanSmoothStep(0.026f, 0.020f, fabsf(fSide)) * HumanSmoothStep(0.815f, 0.795f, fVN) * HumanSmoothStep(0.773f, 0.788f, fVN);
+			const float fBuckle = HumanSmoothStep(0.026f, 0.020f, fabsf(fSide)) * HumanSmoothStep(0.745f, 0.725f, fVN) * HumanSmoothStep(0.703f, 0.718f, fVN);
 			if (fBuckle > 0.0f)
 			{
 				xP.fR = glm::mix(xP.fR, 0.62f, fBuckle);
