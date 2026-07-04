@@ -50,7 +50,21 @@ void Flux_DeferredShadingImpl::BuildPipelines()
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineBuilder::FromSpecification(m_xPipeline, xPipelineSpec);
+	// One pipeline per view-shading mode (Stage 3a/3b). Bake the per-mode
+	// view-shading permission mask (Stage 3b spec constants): FULL permits shadows +
+	// cluster lights (identical to pre-3b since the constants default true), BASIC
+	// bakes both FALSE so the compiler strips the CSM/cluster clauses for
+	// cascade-derived + material-preview views. Resolved by NAME via reflection in
+	// the backend — C++ never hardcodes an ID.
+	namespace DSGen = Flux_Generated_DeferredShading::DeferredShading;
+	for (u_int uMode = 0; uMode < FLUX_VIEW_SHADING_MODE_COUNT; uMode++)
+	{
+		const bool bPermitLit = (uMode == FLUX_VIEW_SHADING_MODE_FULL);
+		xPipelineSpec.m_xSpecConstants = Flux_SpecConstantTable{};
+		xPipelineSpec.m_xSpecConstants.AddBool(DSGen::hscFLUX_SC_VIEW_SHADOWS_PERMITTED,        bPermitLit);
+		xPipelineSpec.m_xSpecConstants.AddBool(DSGen::hscFLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED, bPermitLit);
+		Flux_PipelineBuilder::FromSpecification(m_axPipelines[uMode], xPipelineSpec);
+	}
 }
 
 void Flux_DeferredShadingImpl::Initialise()
@@ -68,8 +82,11 @@ void Flux_DeferredShadingImpl::Initialise()
 
 void Flux_DeferredShadingImpl::Shutdown()
 {
-	// Pipeline references its shader, so destroy pipeline first.
-	m_xPipeline.Reset();
+	// Pipeline references its shader, so destroy pipelines first.
+	for (u_int uMode = 0; uMode < FLUX_VIEW_SHADING_MODE_COUNT; uMode++)
+	{
+		m_axPipelines[uMode].Reset();
+	}
 	m_xShader.Reset();
 }
 
@@ -83,7 +100,20 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_SSGIImpl& xSSGI = g_xEngine.SSGI();
 	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
 
-	pxCommandList->SetPipeline(&xDS.m_xPipeline);
+	// The SAME callback lights every full-pipeline view: the recording pass's
+	// declared view slot selects that view's G-buffer (and its VIEW set was bound
+	// by SetPipeline). S5b: every full-pipeline view owns its own SSAO/SSR/SSGI
+	// chains too, so the screen-space binds below are per-view as well.
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+
+	// Select the view-shading pipeline variant (Stage 3a/3b): FULL for the main
+	// view, BASIC for the material preview. Reads the per-view CONSTANTS flag word
+	// (m_xConstants.m_uViewFlags) — the SAME field the shader branches on via
+	// g_xView.g_uViewFlags — so the picked variant's baked permission mask is always
+	// consistent with the runtime flag the shader reads (single source of truth).
+	const FluxViewShadingMode eShadingMode =
+		Flux_ViewShadingModeFromFlags(xFluxGraphics.RenderViews().View(uViewSlot).m_xConstants.m_uViewFlags);
+	pxCommandList->SetPipeline(&xDS.m_axPipelines[eShadingMode]);
 
 	pxCommandList->SetVertexBuffer(xFluxGraphics.m_xQuadMesh.GetVertexBuffer());
 	pxCommandList->SetIndexBuffer(xFluxGraphics.m_xQuadMesh.GetIndexBuffer());
@@ -92,12 +122,6 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	Flux_ShaderBinder xBinder(*pxCommandList);
 
 	namespace DS = Flux_Generated_DeferredShading::DeferredShading;
-
-	// The SAME callback lights every full-pipeline view: the recording pass's
-	// declared view slot selects that view's G-buffer (and its VIEW set was bound
-	// by SetPipeline). S5b: every full-pipeline view owns its own SSAO/SSR/SSGI
-	// chains too, so the screen-space binds below are per-view as well.
-	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
 
 	// Bind G-buffer textures (named bindings)
 	xBinder.BindSRV(DS::hg_xDiffuseTex, xFluxGraphics.GetGBufferSRV(MRT_INDEX_DIFFUSE, uViewSlot));

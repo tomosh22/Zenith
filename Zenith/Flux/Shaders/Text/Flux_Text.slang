@@ -41,7 +41,7 @@ VsOut vsMain(VsIn input)
 	VsOut o;
 	// Text roots/glyphs are in OUTPUT pixels on the output-res FinalRT (after any TAA upscale) →
 	// map with OUTPUT rcp dims, not the render-res g_xRcpScreenDims.
-	o.position = float4(xPxPos * g_xViewSet.g_xView.g_xRcpOutputDims * 2.0 - 1.0, 0.0, 1.0);
+	o.position = float4(xPxPos * GetRcpOutputDims() * 2.0 - 1.0, 0.0, 1.0);
 	o.uv       = input.a_xAtlasUVOrigin + xQuadXY * input.a_xAtlasUVSize;
 	o.colour   = input.a_xColour;
 	return o;
@@ -101,7 +101,7 @@ float4 fsMain(VsOut input, float4 fragCoord : SV_Position) : SV_Target
 	}
 
 	float  fScreenPxRange = ScreenPxRange(input.uv);
-	float3 xMSD           = g_xBindlessSet.g_axTextures[g_xPassSet.TextConstants.g_uAtlasIdx].Sample(input.uv).rgb;
+	float3 xMSD           = GetBindlessTexture(g_xPassSet.TextConstants.g_uAtlasIdx).Sample(input.uv).rgb;
 	float  fSD            = Median3(xMSD.r, xMSD.g, xMSD.b);
 	float  fScreenPxDist  = fScreenPxRange * (fSD - 0.5);
 

@@ -55,7 +55,7 @@ FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertex
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
 	float3 xWorldPos      = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, input.uv);
-	float3 xCameraToPixel = xWorldPos - g_xViewSet.g_xView.g_xCamPos_Pad.xyz;
+	float3 xCameraToPixel = xWorldPos - GetCamPos_Pad().xyz;
 	float  fDist          = length(xCameraToPixel);
 
 	// Beer-Lambert exponential fog amount (scalar form).

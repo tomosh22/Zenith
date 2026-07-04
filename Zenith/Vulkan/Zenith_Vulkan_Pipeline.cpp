@@ -15,10 +15,10 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_PersistentSetLayouts.h"   // Phase 5: persistent-set layout precondition
 #include "Flux/Flux_RenderTargets.h"
 
-// Hot-reload state was removed when the Slang migration retired the
-// .vert/.frag string-pair path. Slang hot reload is tracked as a
-// follow-up — it'll need a .slang file watcher that maps edits back to
-// FluxShaderProgram IDs.
+// The backend pipeline/shader classes hold no hot-reload state — Slang shader
+// hot-reload (ZENITH_TOOLS) is owned by Flux_ShaderHotReload, which watches the
+// .slang sources and rebuilds each feature's pipelines via its BuildPipelines
+// callback (keyed by Flux_ShaderDecl identity). See Flux/CLAUDE.md.
 
 // Zenith_Vulkan_Shader implementation lives in Zenith_Vulkan_Shader.cpp.
 
@@ -677,9 +677,52 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 
 	vk::GraphicsPipelineCreateInfo xPipelineInfo;
 
-	// Shaders
-	xPipelineInfo.setStageCount(xSpec.m_pxShader->m_uStageCount);
-	xPipelineInfo.setPStages(xSpec.m_pxShader->m_xInfos);
+	// Shaders. When the spec carries specialization constants (Stage 3a), resolve
+	// them against the shader's reflection and attach one vk::SpecializationInfo to
+	// a LOCAL copy of the stage array — m_xInfos is SHARED across every pipeline
+	// built from this shader, so it must NEVER be mutated in place (writing
+	// pSpecializationInfo into it would leak this variant's values into every other
+	// pipeline from the same shader). The scratch below stays in scope through
+	// createGraphicsPipeline (which consumes the create-info synchronously). An
+	// empty table (today's default, and every Stage-3a variant) takes the original
+	// path → byte-identical pipeline creation.
+	constexpr u_int uMAX_LOCAL_STAGES = 8;
+	vk::PipelineShaderStageCreateInfo axLocalStages[uMAX_LOCAL_STAGES];
+	Flux_ResolvedSpecConstant         axResolved[FLUX_MAX_SPEC_CONSTANTS];
+	vk::SpecializationMapEntry        axMapEntries[FLUX_MAX_SPEC_CONSTANTS];
+	u_int                             auSpecData[FLUX_MAX_SPEC_CONSTANTS];
+	vk::SpecializationInfo            xSpecInfo;
+	if (!xSpec.m_xSpecConstants.IsEmpty())
+	{
+		Zenith_Assert(xSpec.m_pxShader->m_uStageCount <= uMAX_LOCAL_STAGES, "Spec-constant path: stage count exceeds local scratch");
+		const u_int uResolved = Flux_ResolveSpecConstants(xSpec.m_xSpecConstants, xSpec.m_pxShader->GetReflection(),
+														  axResolved, FLUX_MAX_SPEC_CONSTANTS);
+		for (u_int u = 0; u < uResolved; u++)
+		{
+			auSpecData[u]          = axResolved[u].m_uValue;
+			axMapEntries[u].constantID = axResolved[u].m_uConstantId;
+			axMapEntries[u].offset     = static_cast<uint32_t>(u * sizeof(u_int));
+			axMapEntries[u].size       = axResolved[u].m_uSize;   // 4 (int-family)
+		}
+		xSpecInfo.mapEntryCount = uResolved;
+		xSpecInfo.pMapEntries   = axMapEntries;
+		xSpecInfo.dataSize      = uResolved * sizeof(u_int);
+		xSpecInfo.pData         = auSpecData;
+
+		// Same info on every stage; Vulkan ignores IDs absent from a stage's module.
+		for (u_int s = 0; s < xSpec.m_pxShader->m_uStageCount; s++)
+		{
+			axLocalStages[s] = xSpec.m_pxShader->m_xInfos[s];
+			axLocalStages[s].pSpecializationInfo = &xSpecInfo;
+		}
+		xPipelineInfo.setStageCount(xSpec.m_pxShader->m_uStageCount);
+		xPipelineInfo.setPStages(axLocalStages);
+	}
+	else
+	{
+		xPipelineInfo.setStageCount(xSpec.m_pxShader->m_uStageCount);
+		xPipelineInfo.setPStages(xSpec.m_pxShader->m_xInfos);
+	}
 
 	// Vertex input + topology
 	std::vector<vk::VertexInputBindingDescription> xBindDescs;

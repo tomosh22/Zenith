@@ -3,6 +3,7 @@
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Slang/Flux_ShaderCatalog.h"
 #include "Flux/Slang/Flux_FrequencyTaxonomy.h"  // ValidateReflection — spine gate
+#include "Flux/Slang/Flux_SpineLint.h"          // D6 spine access-control lint (5th gate)
 #include "DataStream/Zenith_DataStream.h"
 
 #include "Flux/Slang/Flux_CodeGenerator.h"
@@ -172,6 +173,58 @@ int main()
 			return 1;
 		}
 		printf("Catalog validated: %u programs, feature parity OK\n\n", Flux_ShaderCatalog::GetProgramCount());
+	}
+
+	// =====================================================================
+	// Flux Shader System Overhaul — D6 spine access-control lint (the 5th shader
+	// gate). Walks the shader source tree and fails the build on any raw spine-set
+	// poke, rogue `extension GlobalParams|ViewParams|BindlessParams`, or rogue
+	// `ParameterBlock<SpineStruct>` outside Common/Bindings.slang.
+	//
+	// ENFORCING (Stage 2 landed): all feature shaders now reach the spine only via
+	// the Bindings.slang accessor facade, so any new direct poke is a hard error
+	// here — CI enforces it via this same exe. (Comment/string mentions are stripped
+	// by the scanner, so doc references to the sets are fine.)
+	// =====================================================================
+	{
+		Zenith_Vector<Flux_SpineLint::Violation> axViolations;
+		u_int uFilesScanned = 0;
+		std::error_code ec;
+		for (std::filesystem::recursive_directory_iterator it(SHADER_SOURCE_ROOT, ec), end; it != end; it.increment(ec))
+		{
+			if (ec) break;
+			if (!it->is_regular_file()) continue;
+			const std::filesystem::path& xPath = it->path();
+			if (xPath.extension() != ".slang") continue;
+
+			std::ifstream xFile(xPath, std::ios::binary);
+			if (!xFile) continue;
+			std::string strSrc((std::istreambuf_iterator<char>(xFile)), std::istreambuf_iterator<char>());
+			const std::string strPath = xPath.string();
+			Flux_SpineLint::ScanSource(strPath.c_str(), strSrc.c_str(),
+									   Flux_SpineLint::IsBindingsFile(strPath.c_str()), axViolations);
+			uFilesScanned++;
+		}
+
+		u_int auByRule[3] = { 0u, 0u, 0u };
+		for (u_int i = 0; i < axViolations.GetSize(); i++) auByRule[axViolations.Get(i).m_eRule]++;
+		printf("Spine lint: scanned %u .slang files, %u violation(s) "
+			   "[pokes=%u extensions=%u block-redecls=%u]\n",
+			   uFilesScanned, axViolations.GetSize(), auByRule[0], auByRule[1], auByRule[2]);
+
+		if (axViolations.GetSize() > 0)
+		{
+			for (u_int i = 0; i < axViolations.GetSize(); i++)
+			{
+				const Flux_SpineLint::Violation& xV = axViolations.Get(i);
+				printf("  ERROR [%s] %s(%u): raw spine access '%s' — reach it via the Bindings.slang accessor facade\n",
+					   Flux_SpineLint::RuleName(xV.m_eRule), xV.m_strFile.c_str(), xV.m_uLine, xV.m_strDetail.c_str());
+			}
+			printf("Spine lint FAILED: %u violation(s). Feature shaders must not touch g_xGlobalSet/g_xViewSet/g_xBindlessSet directly.\n",
+				   axViolations.GetSize());
+			return 1;
+		}
+		printf("\n");
 	}
 
 	// =====================================================================

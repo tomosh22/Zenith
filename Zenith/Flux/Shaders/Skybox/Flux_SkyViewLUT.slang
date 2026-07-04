@@ -56,7 +56,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target0
 {
 	// Lat-long texel -> world view direction (shared mapping with the reader).
 	float3 xRayDir = SkyViewUvToDir(input.uv);
-	float3 xSunDir = normalize(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
+	float3 xSunDir = normalize(-GetSunDir_Pad().xyz);
 
 	// Same fixed camera height as the legacy full-res solver.
 	float3 xCamPos = float3(0.0, g_xPassSet.AtmosphereConstants.g_fPlanetRadius + 100.0, 0.0);

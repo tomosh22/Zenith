@@ -2,6 +2,7 @@
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_Types.h"
 #include "Flux/Flux_PersistentSetLayouts.h"   // Phase 5: persistent-set classification
+#include "Flux/Flux_SpecConstants.h"          // Stage 3a: spec-constant table + resolver (backend-free)
 
 #if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
 #include <slang.h>
@@ -99,6 +100,58 @@ void Flux_ShaderReflection::AddBinding(const Flux_ReflectedBinding& xBinding)
 	m_axBindings.PushBack(xBinding);
 }
 
+void Flux_ShaderReflection::AddSpecConstant(const Flux_ReflectedSpecConstant& xSpec)
+{
+	m_axSpecConstants.PushBack(xSpec);
+}
+
+const Flux_ReflectedSpecConstant* Flux_ShaderReflection::GetSpecConstant(const char* szName) const
+{
+	if (!szName) return nullptr;
+	for (u_int u = 0; u < m_axSpecConstants.GetSize(); u++)
+	{
+		if (m_axSpecConstants.Get(u).m_strName == szName)
+		{
+			return &m_axSpecConstants.Get(u);
+		}
+	}
+	return nullptr;
+}
+
+// Resolve a name-keyed spec-constant table against a shader's reflection into
+// backend-ready (id, size, value) entries (Flux Shader System Overhaul — Stage
+// 3a). Pure + backend-free — lives in the ungated region so every backend (and
+// the null D3D12 build) links it. Names absent from the reflection are skipped.
+u_int Flux_ResolveSpecConstants(const Flux_SpecConstantTable& xTable,
+								const Flux_ShaderReflection& xReflection,
+								Flux_ResolvedSpecConstant* paxOut, u_int uMaxOut)
+{
+	if (!paxOut || uMaxOut == 0) return 0;
+	u_int uWritten = 0;
+	for (u_int u = 0; u < xTable.m_uCount && uWritten < uMaxOut; u++)
+	{
+		const Flux_SpecConstantEntry& xEntry = xTable.m_axEntries[u];
+		const Flux_ReflectedSpecConstant* pxRefl = xReflection.GetSpecConstant(xEntry.m_szName);
+		if (!pxRefl)
+		{
+			// The shader this pipeline is built from does not declare this constant —
+			// harmless (Vulkan ignores a constant_id absent from the module). Skip.
+			continue;
+		}
+		// Hot-reload drift tripwire: a name-keyed add carrying a codegen-baked id must
+		// still match the reflected id. A mismatch means the generated header is stale
+		// relative to the .spv.refl — rerun FluxCompiler.
+		Zenith_Assert(xEntry.m_uBakedConstantId == UINT32_MAX || xEntry.m_uBakedConstantId == pxRefl->m_uConstantId,
+			"Flux_ResolveSpecConstants: spec '%s' baked id %u != reflected id %u — rerun FluxCompiler.",
+			xEntry.m_szName, xEntry.m_uBakedConstantId, pxRefl->m_uConstantId);
+		Flux_ResolvedSpecConstant& xOut = paxOut[uWritten++];
+		xOut.m_uConstantId = pxRefl->m_uConstantId;
+		xOut.m_uSize       = pxRefl->m_uSize;
+		xOut.m_uValue      = xEntry.m_uValue;
+	}
+	return uWritten;
+}
+
 void Flux_ShaderReflection::SetBindingStaticUse(u_int uIndex, bool bUsed)
 {
 	if (uIndex >= m_axBindings.GetSize()) return;
@@ -122,8 +175,12 @@ void Flux_ShaderReflection::BuildLookupMap()
 //     Slang IMetadata::isParameterLocationUsed). The reader accepts ONLY the
 //     current version and fails loudly otherwise (every sidecar is regenerated
 //     by FluxCompiler in lockstep — no legacy fallback).
+// v5: + specialization-constant table (Flux Shader System Overhaul — Stage 3a —
+//     name, constant id, size, u32 default, type name). Empty for every program
+//     until Stage 3b adds the first [SpecializationConstant] decls, so the v5
+//     bump changes only the sidecar bytes (a trailing count of 0), never the .spv.
 static constexpr u_int32 kFluxReflectionMagic   = 0x46525846; // 'FXRF'
-static constexpr u_int32 kFluxReflectionVersion = 4;
+static constexpr u_int32 kFluxReflectionVersion = 5;
 
 void Flux_ShaderReflection::WriteToDataStream(Zenith_DataStream& xStream) const
 {
@@ -154,6 +211,19 @@ void Flux_ShaderReflection::WriteToDataStream(Zenith_DataStream& xStream) const
 			xStream << xField.m_uArrayCount;
 			xStream << xField.m_strTypeName;
 		}
+	}
+
+	// v5: specialization-constant table.
+	const u_int uSpecCount = m_axSpecConstants.GetSize();
+	xStream << uSpecCount;
+	for (u_int u = 0; u < uSpecCount; u++)
+	{
+		const Flux_ReflectedSpecConstant& xSpec = m_axSpecConstants.Get(u);
+		xStream << xSpec.m_strName;
+		xStream << xSpec.m_uConstantId;
+		xStream << xSpec.m_uSize;
+		xStream << xSpec.m_uDefaultValue;
+		xStream << xSpec.m_strTypeName;
 	}
 }
 
@@ -198,6 +268,21 @@ void Flux_ShaderReflection::ReadFromDataStream(Zenith_DataStream& xStream)
 		}
 		m_axBindings.PushBack(xBinding);
 	}
+
+	// v5: specialization-constant table.
+	u_int uSpecCount;
+	xStream >> uSpecCount;
+	for (u_int u = 0; u < uSpecCount; u++)
+	{
+		Flux_ReflectedSpecConstant xSpec;
+		xStream >> xSpec.m_strName;
+		xStream >> xSpec.m_uConstantId;
+		xStream >> xSpec.m_uSize;
+		xStream >> xSpec.m_uDefaultValue;
+		xStream >> xSpec.m_strTypeName;
+		m_axSpecConstants.PushBack(xSpec);
+	}
+
 	BuildLookupMap();
 }
 
@@ -209,10 +294,8 @@ void Flux_SlangCompiler::Initialise()
 		return;
 	}
 
-	// Slang-only — `enableGLSL` is intentionally left false. The engine's
-	// compile path uses CompileProgram (modern session/module/link API)
-	// for .slang sources only; the GLSL compatibility module is no
-	// longer needed and slang-glslang.dll is not deployed.
+	// Slang-only: CompileProgram (session/module/link API) compiles .slang sources.
+	// `enableGLSL` stays false (slang-glslang.dll is not deployed).
 	SlangGlobalSessionDesc xDesc = {};
 
 	SlangResult xResult = slang::createGlobalSession(&xDesc, s_pxGlobalSession.writeRef());
@@ -361,7 +444,12 @@ static bool BuildV2BindingFromParam(slang::VariableLayoutReflection* pxParam,
 	if (eCategory == slang::ParameterCategory::VaryingInput ||
 		eCategory == slang::ParameterCategory::VaryingOutput ||
 		eCategory == slang::ParameterCategory::VertexInput ||
-		eCategory == slang::ParameterCategory::FragmentOutput)
+		eCategory == slang::ParameterCategory::FragmentOutput ||
+		// Stage 3a: specialization constants occupy NO descriptor binding — they
+		// ride the reflection's spec-constant table (ExtractSpecConstants), never
+		// the root signature. Reject them here explicitly (auditable intent) rather
+		// than relying on the implicit FLUX_RESOURCE_KIND_UNKNOWN drop below.
+		eCategory == slang::ParameterCategory::SpecializationConstant)
 	{
 		return false;
 	}
@@ -592,6 +680,58 @@ static void ExtractV2Reflection(slang::ProgramLayout* pxLayout,
 	xReflectionOut.BuildLookupMap();
 }
 
+// Extract specialization constants from the linked program layout into the
+// reflection's spec table (Flux Shader System Overhaul — Stage 3a). Spec
+// constants appear in the top-level parameter walk (Stage-0 probe E4) but are NOT
+// descriptor bindings — ExtractV2Reflection / BuildV2BindingFromParam drop them.
+// Int-family only (bool/int): Slang exposes getDefaultValueInt for these; the
+// default is packed as u32 (bool → 0/1) and the size is always 4. Runs AFTER
+// ExtractV2Reflection so a program's reflection carries both tables.
+static void ExtractSpecConstants(slang::ProgramLayout* pxLayout,
+								 Flux_ShaderReflection& xReflectionOut)
+{
+	if (!pxLayout) return;
+	const u_int uParamCount = static_cast<u_int>(pxLayout->getParameterCount());
+	for (u_int p = 0; p < uParamCount; p++)
+	{
+		slang::VariableLayoutReflection* pxVar = pxLayout->getParameterByIndex(p);
+		if (!pxVar) continue;
+
+		bool bIsSpec = false;
+		const u_int uCatCount = static_cast<u_int>(pxVar->getCategoryCount());
+		for (u_int c = 0; c < uCatCount; c++)
+		{
+			if (pxVar->getCategoryByIndex(c) == slang::ParameterCategory::SpecializationConstant)
+			{
+				bIsSpec = true;
+				break;
+			}
+		}
+		if (!bIsSpec) continue;
+
+		Flux_ReflectedSpecConstant xSpec;
+		xSpec.m_strName     = pxVar->getName() ? pxVar->getName() : "";
+		xSpec.m_uConstantId = static_cast<u_int>(pxVar->getOffset(SLANG_PARAMETER_CATEGORY_SPECIALIZATION_CONSTANT));
+		xSpec.m_uSize       = 4u;   // int-family spec constants are 32-bit
+		if (slang::TypeLayoutReflection* pxTL = pxVar->getTypeLayout())
+		{
+			if (slang::TypeReflection* pxType = pxTL->getType())
+			{
+				xSpec.m_strTypeName = pxType->getName() ? pxType->getName() : "";
+			}
+		}
+		if (slang::VariableReflection* pxV = pxVar->getVariable())
+		{
+			int64_t iVal = 0;
+			if (pxV->hasDefaultValue() && SLANG_SUCCEEDED(pxV->getDefaultValueInt(&iVal)))
+			{
+				xSpec.m_uDefaultValue = static_cast<u_int>(static_cast<u_int64>(iVal));
+			}
+		}
+		xReflectionOut.AddSpecConstant(xSpec);
+	}
+}
+
 // One found entry point in a Slang module: the live IEntryPoint, the stage
 // it targets, and the source name used to resolve it.
 struct Flux_SlangEntryPointBinding
@@ -613,6 +753,34 @@ static bool CreateSlangSession(const Flux_SlangProgramDesc& xDesc,
 	slang::TargetDesc xTarget = {};
 	xTarget.format  = SLANG_SPIRV;
 	xTarget.profile = s_pxGlobalSession->findProfile(xDesc.m_szTargetProfile ? xDesc.m_szTargetProfile : "spirv_1_3");
+
+	// Optional per-compile compiler options (Flux Shader System Overhaul — Stage 1).
+	// Debug info (RenderDoc) is requested ONLY by the runtime-compile path in Debug
+	// builds; the offline FluxCompiler leaves both flags false, so the checked-in
+	// artifacts stay byte-identical. The entries vector must outlive createSession
+	// (below) — it does, being function-scoped.
+	std::vector<slang::CompilerOptionEntry> axOptions;
+	if (xDesc.m_bEmitDebugInfo)
+	{
+		slang::CompilerOptionEntry xEntry = {};
+		xEntry.name            = slang::CompilerOptionName::DebugInformation;
+		xEntry.value.kind      = slang::CompilerOptionValueKind::Int;
+		xEntry.value.intValue0 = SLANG_DEBUG_INFO_LEVEL_MAXIMAL;
+		axOptions.push_back(xEntry);
+	}
+	if (xDesc.m_bDisableOptimization)
+	{
+		slang::CompilerOptionEntry xEntry = {};
+		xEntry.name            = slang::CompilerOptionName::Optimization;
+		xEntry.value.kind      = slang::CompilerOptionValueKind::Int;
+		xEntry.value.intValue0 = SLANG_OPTIMIZATION_LEVEL_NONE;
+		axOptions.push_back(xEntry);
+	}
+	if (!axOptions.empty())
+	{
+		xTarget.compilerOptionEntries    = axOptions.data();
+		xTarget.compilerOptionEntryCount = static_cast<uint32_t>(axOptions.size());
+	}
 
 	// Build session descriptor with current search paths.
 	std::vector<const char*> aszPaths;
@@ -881,7 +1049,173 @@ bool Flux_SlangCompiler::CompileProgram(const Flux_SlangProgramDesc& xDesc, Flux
 		}
 	}
 
+	// Stage 3a: capture specialization constants into the reflection's spec table
+	// (serialized in the v5 sidecar; drives per-mode pipeline variants). Empty for
+	// every program until Stage 3b adds the first [SpecializationConstant] decls.
+	ExtractSpecConstants(pxReflection, xResultOut.m_xReflection);
+
 	xResultOut.m_bSuccess = true;
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Stage-0 capability probe (see Flux_SlangProbes.Tests.inl). Deliberately mirrors
+// CompileProgram's session/compose/link/emit path but takes an in-memory source
+// string (loadModuleFromSourceString) so a test can compile a crafted snippet and
+// inspect accept/reject + reflection + SPIR-V without touching the shader tree.
+// ---------------------------------------------------------------------------
+bool Flux_SlangCompiler::CompileProbeFromSource(const char* szSource, const char* szComputeEntry, Flux_SlangProbeResult& xOut,
+												bool bEmitDebugInfo)
+{
+	xOut = Flux_SlangProbeResult{};
+
+	if (!s_pxGlobalSession)
+	{
+		// Unit tests run before Flux initialises Slang — bring the global session up lazily.
+		// Initialise() is idempotent, so a later engine init is a no-op on the same session.
+		Initialise();
+	}
+	if (!s_pxGlobalSession)
+	{
+		xOut.m_strDiagnostics = "Slang global session unavailable";
+		return false;
+	}
+	if (!szSource)
+	{
+		xOut.m_strDiagnostics = "null probe source";
+		return false;
+	}
+
+	// Session config identical to the engine compile path (search paths + column-major).
+	Flux_SlangProgramDesc xDesc = {};
+	xDesc.m_bEmitDebugInfo = bEmitDebugInfo;
+	Slang::ComPtr<slang::ISession> pxSession;
+	std::string strSessionErr;
+	if (!CreateSlangSession(xDesc, pxSession, strSessionErr))
+	{
+		xOut.m_strDiagnostics = strSessionErr;
+		return false;
+	}
+
+	// Front-end: load the module from the in-memory source string.
+	Slang::ComPtr<slang::IBlob> pxLoadDiag;
+	slang::IModule* pxModule = pxSession->loadModuleFromSourceString(
+		"flux_probe", "flux_probe.slang", szSource, pxLoadDiag.writeRef());
+	if (pxLoadDiag && pxLoadDiag->getBufferSize() > 0)
+	{
+		xOut.m_strDiagnostics.append(static_cast<const char*>(pxLoadDiag->getBufferPointer()),
+									  pxLoadDiag->getBufferSize());
+	}
+	if (!pxModule)
+	{
+		xOut.m_bCompiled = false;   // compile REJECTED (e.g. a private-access violation) — a valid probe outcome
+		return false;
+	}
+
+	// No entry point requested → the front-end accept is the whole answer.
+	if (!szComputeEntry || !szComputeEntry[0])
+	{
+		xOut.m_bCompiled = true;
+		return true;
+	}
+
+	// Back-end: compose + link the compute entry, then emit its SPIR-V + reflection.
+	Slang::ComPtr<slang::IEntryPoint> pxEntry;
+	if (SLANG_FAILED(pxModule->findEntryPointByName(szComputeEntry, pxEntry.writeRef())) || !pxEntry)
+	{
+		xOut.m_strDiagnostics += "\nentry point '" + std::string(szComputeEntry) + "' not found";
+		xOut.m_bCompiled = false;
+		return false;
+	}
+
+	slang::IComponentType* apxComponents[2] = { pxModule, pxEntry.get() };
+	Slang::ComPtr<slang::IComponentType> pxComposed;
+	Slang::ComPtr<slang::IBlob> pxComposeDiag;
+	if (SLANG_FAILED(pxSession->createCompositeComponentType(apxComponents, 2, pxComposed.writeRef(), pxComposeDiag.writeRef())) || !pxComposed)
+	{
+		if (pxComposeDiag && pxComposeDiag->getBufferSize() > 0)
+			xOut.m_strDiagnostics.append(static_cast<const char*>(pxComposeDiag->getBufferPointer()), pxComposeDiag->getBufferSize());
+		xOut.m_bCompiled = false;
+		return false;
+	}
+
+	Slang::ComPtr<slang::IComponentType> pxLinked;
+	Slang::ComPtr<slang::IBlob> pxLinkDiag;
+	if (SLANG_FAILED(pxComposed->link(pxLinked.writeRef(), pxLinkDiag.writeRef())) || !pxLinked)
+	{
+		if (pxLinkDiag && pxLinkDiag->getBufferSize() > 0)
+			xOut.m_strDiagnostics.append(static_cast<const char*>(pxLinkDiag->getBufferPointer()), pxLinkDiag->getBufferSize());
+		xOut.m_bCompiled = false;
+		return false;
+	}
+
+	Slang::ComPtr<slang::IBlob> pxCode;
+	Slang::ComPtr<slang::IBlob> pxCodeDiag;
+	if (SLANG_FAILED(pxLinked->getEntryPointCode(0, 0, pxCode.writeRef(), pxCodeDiag.writeRef())) || !pxCode)
+	{
+		if (pxCodeDiag && pxCodeDiag->getBufferSize() > 0)
+			xOut.m_strDiagnostics.append(static_cast<const char*>(pxCodeDiag->getBufferPointer()), pxCodeDiag->getBufferSize());
+		xOut.m_bCompiled = false;
+		return false;
+	}
+	{
+		const uint32_t* puCode = static_cast<const uint32_t*>(pxCode->getBufferPointer());
+		const size_t ulWords   = pxCode->getBufferSize() / sizeof(uint32_t);
+		xOut.m_axSpirv.Reserve(static_cast<u_int>(ulWords));
+		for (size_t w = 0; w < ulWords; w++) xOut.m_axSpirv.PushBack(puCode[w]);
+	}
+
+	// Reflection via the engine's own extractor (parity with real compiles — E2 checks this is
+	// byte-identical under visibility changes; note it DROPS spec constants from the binding table,
+	// which E4 relies on). Stage 3a: ExtractSpecConstants then captures them into the reflection's
+	// dedicated spec table (parity with CompileProgram) so unit tests can exercise the real path.
+	slang::ProgramLayout* pxReflection = pxLinked->getLayout(0);
+	ExtractV2Reflection(pxReflection, xOut.m_xReflection);
+	ExtractSpecConstants(pxReflection, xOut.m_xReflection);
+	xOut.m_bHasReflection = true;
+
+	// Raw spec-constant capture (E4): walk the program-layout parameters for the
+	// SpecializationConstant category — the extraction path D5 will formalise.
+	if (pxReflection)
+	{
+		const u_int uParamCount = static_cast<u_int>(pxReflection->getParameterCount());
+		for (u_int p = 0; p < uParamCount; p++)
+		{
+			slang::VariableLayoutReflection* pxVar = pxReflection->getParameterByIndex(p);
+			if (!pxVar) continue;
+
+			bool bIsSpec = false;
+			const u_int uCatCount = static_cast<u_int>(pxVar->getCategoryCount());
+			for (u_int c = 0; c < uCatCount; c++)
+			{
+				if (pxVar->getCategoryByIndex(c) == slang::ParameterCategory::SpecializationConstant)
+				{
+					bIsSpec = true;
+					break;
+				}
+			}
+			if (!bIsSpec) continue;
+
+			Flux_SlangProbeResult::SpecConstant xSC;
+			xSC.m_strName = pxVar->getName() ? pxVar->getName() : "";
+			xSC.m_uId = static_cast<u_int>(pxVar->getOffset(SLANG_PARAMETER_CATEGORY_SPECIALIZATION_CONSTANT));
+			if (slang::VariableReflection* pxV = pxVar->getVariable())
+			{
+				if (pxV->hasDefaultValue())
+				{
+					int64_t iVal = 0;
+					if (SLANG_SUCCEEDED(pxV->getDefaultValueInt(&iVal)))
+					{
+						xSC.m_iDefault    = iVal;
+						xSC.m_bHasDefault = true;
+					}
+				}
+			}
+			xOut.m_axSpecConstants.PushBack(xSC);
+		}
+	}
+
+	xOut.m_bCompiled = true;
 	return true;
 }
 #endif // ZENITH_WINDOWS

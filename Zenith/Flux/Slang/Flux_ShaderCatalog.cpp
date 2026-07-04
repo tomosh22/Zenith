@@ -292,3 +292,13 @@ bool Flux_ShaderCatalog::ValidateFeatureParity(const Flux_FeatureRegistry& xRegi
 
 	return true;
 }
+
+// Flux Shader System Overhaul — D6 spine-lint tests. Pure (Flux_SpineLint is a
+// header-only text scanner), so hosted in this always-linked catalog TU in every
+// config (dead-strip idiom — the .inl's static test registrations stay live).
+#include "Flux/Slang/Flux_SpineLint.Tests.inl"
+
+// Flux Shader System Overhaul — Stage 3a reflection-sidecar v5 round-trip tests.
+// The serializer is backend-neutral (all configs read .spv.refl), so host here in
+// the always-linked catalog TU.
+#include "Flux/Slang/Flux_ShaderReflection.Tests.inl"

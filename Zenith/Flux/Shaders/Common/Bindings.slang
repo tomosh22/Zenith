@@ -124,6 +124,75 @@ struct BindlessParams
 };
 ParameterBlock<BindlessParams> g_xBindlessSet;
 
+// ============================================================================
+// Spine accessor facade (Flux Shader System Overhaul — D1).
+//
+// Feature shaders reach the GLOBAL / VIEW / BINDLESS sets ONLY through these free
+// functions; the raw g_xGlobalSet / g_xViewSet / g_xBindlessSet instances never
+// appear outside THIS file (enforced by the FluxCompiler spine lint, D6). Each is a
+// trivial pure forwarder — substituting it for the former direct poke is referentially
+// transparent (analytically behaviour-preserving). Slang re-numbers SSA ids / re-
+// materialises pointer types for the refactored source, so the .spv regenerate
+// (semantically identical, reflection byte-identical) rather than staying byte-identical.
+//
+// Sampler accessors return the SAMPLER (not a pre-baked sample) so each call site
+// keeps its exact .Sample / .SampleLevel / .Gather form (Stage-0 probe E1d).
+// ============================================================================
+
+// --- GLOBAL (set 0) ---
+float    GetTimeSeconds()  { return g_xGlobalSet.g_xGlobal.g_fTimeSeconds; }
+uint     GetFrameIndex()   { return g_xGlobalSet.g_xGlobal.g_uFrameIndex; }
+MaterialGPU GetMaterial(uint uIndex) { return g_xGlobalSet.g_axMaterials[uIndex]; }
+
+// --- VIEW (set 1) matrices ---
+float4x4 GetViewMat()                 { return g_xViewSet.g_xView.g_xViewMat; }
+float4x4 GetProjMat()                 { return g_xViewSet.g_xView.g_xProjMat; }
+float4x4 GetViewProjMat()             { return g_xViewSet.g_xView.g_xViewProjMat; }
+float4x4 GetInvViewProjMat()          { return g_xViewSet.g_xView.g_xInvViewProjMat; }
+float4x4 GetInvViewMat()              { return g_xViewSet.g_xView.g_xInvViewMat; }
+float4x4 GetInvProjMat()              { return g_xViewSet.g_xView.g_xInvProjMat; }
+float4x4 GetViewProjMatNoJitter()     { return g_xViewSet.g_xView.g_xViewProjMatNoJitter; }
+float4x4 GetPrevViewProjMatNoJitter() { return g_xViewSet.g_xView.g_xPrevViewProjMatNoJitter; }
+float4   GetJitterUV_PrevJitterUV()   { return g_xViewSet.g_xView.g_xJitterUV_PrevJitterUV; }
+
+// --- VIEW camera / screen ---
+float4   GetCamPos_Pad()      { return g_xViewSet.g_xView.g_xCamPos_Pad; }
+float3   GetCamPos()          { return g_xViewSet.g_xView.g_xCamPos_Pad.xyz; }
+uint2    GetScreenDims()      { return g_xViewSet.g_xView.g_xScreenDims; }
+float2   GetRcpScreenDims()   { return g_xViewSet.g_xView.g_xRcpScreenDims; }
+float2   GetRcpOutputDims()   { return g_xViewSet.g_xView.g_xRcpOutputDims; }
+float2   GetCameraNearFar()   { return g_xViewSet.g_xView.g_xCameraNearFar; }
+uint     GetQuadUtilisationAnalysis() { return g_xViewSet.g_xView.g_bQuadUtilisationAnalysis; }
+uint     GetTargetPixelsPerTri()      { return g_xViewSet.g_xView.g_uTargetPixelsPerTri; }
+
+// --- VIEW sun (per-view) ---
+float4   GetSunDir_Pad()         { return g_xViewSet.g_xView.g_xSunDir_Pad; }
+float4   GetSunColour_Pad()      { return g_xViewSet.g_xView.g_xSunColour_Pad; }
+float3   GetSunDir()             { return g_xViewSet.g_xView.g_xSunDir_Pad.xyz; }
+float3   GetSunColour()          { return g_xViewSet.g_xView.g_xSunColour_Pad.rgb; }
+float    GetSunIntensity()       { return g_xViewSet.g_xView.g_xSunColour_Pad.a; }
+float4   GetSunColourIntensity() { return g_xViewSet.g_xView.g_xSunColour_Pad; }
+
+// --- VIEW feature flags ---
+uint     GetViewFlags()             { return g_xViewSet.g_xView.g_uViewFlags; }
+uint     GetViewSlot()              { return g_xViewSet.g_xView.g_uViewSlot; }
+bool     ViewShadowsEnabled()       { return (g_xViewSet.g_xView.g_uViewFlags & FLUX_VIEW_FLAG_SHADOWS_ENABLED) != 0u; }
+bool     ViewClusterLightsEnabled() { return (g_xViewSet.g_xView.g_uViewFlags & FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED) != 0u; }
+bool     ViewHasSceneContent()      { return (g_xViewSet.g_xView.g_uViewFlags & FLUX_VIEW_FLAG_SCENE_CONTENT) != 0u; }
+
+// --- VIEW shadows / cluster lights (structured-buffer element loads) ---
+float4x4 GetShadowMatrix(int iCascade)      { return g_xViewSet.g_xShadowMatrices[iCascade]; }
+LightInstance GetLight(uint uIndex)         { return g_xViewSet.g_xLightBuffer[uIndex]; }
+uint     GetClusterLightCount(uint uCluster){ return g_xViewSet.g_xClusterLightCounts[uCluster]; }
+uint     GetClusterLightIndex(uint uIndex)  { return g_xViewSet.g_xClusterLightIndices[uIndex]; }
+
+// --- VIEW / BINDLESS samplers (return the sampler; call sites keep their form) ---
+Sampler2DArray GetCSM()            { return g_xViewSet.g_xCSM; }
+Sampler2D      GetBRDFLUT()        { return g_xViewSet.g_xBRDFLUT; }
+SamplerCube    GetIrradianceMap()  { return g_xViewSet.g_xIrradianceMap; }
+SamplerCube    GetPrefilteredMap() { return g_xViewSet.g_xPrefilteredMap; }
+Sampler2D      GetBindlessTexture(uint uIndex) { return g_xBindlessSet.g_axTextures[uIndex]; }
+
 // ---- View-space helpers (spine versions of Common.Frame's, reading g_xViewSet) ----
 // Converted shaders #include this instead of importing Common.Frame, so the same
 // reconstruction helpers must be available here, sourced from the VIEW set.

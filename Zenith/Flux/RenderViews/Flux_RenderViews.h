@@ -59,6 +59,32 @@ inline constexpr u_int FLUX_VIEW_FLAG_SHADOWS_ENABLED        = 1u << 0;
 inline constexpr u_int FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED = 1u << 1;
 inline constexpr u_int FLUX_VIEW_FLAG_SCENE_CONTENT          = 1u << 2;	// scene-derived features (terrain/grass/particles/decals/SDFs/fog) render in this view
 
+// View-shading pipeline variant (Flux Shader System Overhaul — Stage 3a/3b). The
+// two lit programs (DeferredShading, Translucency) build one pipeline per mode; a
+// specialization-constant permission mask (Stage 3b) lets the compiler strip the
+// shadow / cluster-light clauses for views that carry neither. FULL keeps them
+// (the main view, flags 0b111); BASIC strips them (shadow-cascade-derived views +
+// the material preview, flags 0b000). Stage 3a lands the variant arrays with EMPTY
+// spec tables → every variant is byte-identical; Stage 3b bakes the per-mode values.
+enum FluxViewShadingMode : u_int
+{
+	FLUX_VIEW_SHADING_MODE_FULL  = 0,
+	FLUX_VIEW_SHADING_MODE_BASIC = 1,
+	FLUX_VIEW_SHADING_MODE_COUNT = 2,
+};
+
+// Map a view's flag word to its shading variant. A view that permits EITHER the
+// shadow or cluster-light clause (the main view) uses FULL; a view carrying
+// neither (cascade-derived / material-preview) uses BASIC. Total over all inputs
+// (no "mixed" combo to reject): every flag word maps cleanly, and BASIC only ever
+// strips clauses the runtime flag would already gate off, so the mapping is
+// behaviour-preserving regardless of the global shadow/cluster toggles.
+constexpr FluxViewShadingMode Flux_ViewShadingModeFromFlags(u_int uViewFlags)
+{
+	const u_int uLitMask = FLUX_VIEW_FLAG_SHADOWS_ENABLED | FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED;
+	return (uViewFlags & uLitMask) ? FLUX_VIEW_SHADING_MODE_FULL : FLUX_VIEW_SHADING_MODE_BASIC;
+}
+
 // View-mask helpers — the per-draw-item mask (Stage S4) is a bit per view slot.
 inline constexpr u_int Flux_ViewMaskAllSceneViews(bool bShadowsEnabled)
 {

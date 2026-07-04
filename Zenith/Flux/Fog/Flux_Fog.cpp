@@ -107,8 +107,9 @@ void Flux_FogImpl::Initialise()
 	xEngine.DebugVariables().AddFloat({ "Render", "Fog", "Phase G" }, dbg_xConstants.m_fPhaseG, -0.99f, 0.99f);
 #endif
 
-	// Note: Fog ambient irradiance ratio is unified at 0.25 in Flux_VolumetricCommon.fxh
-	// To make it runtime-adjustable, add to Flux_VolumeFogConstants and pass through uniform buffers
+	// Note: Fog ambient irradiance ratio defaults to 0.25 (FOG_AMBIENT_IRRADIANCE_RATIO_DEFAULT
+	// in Common/Volumetric.slang); the froxel/raymarch passes already take it as a runtime CB
+	// field (u_fAmbientIrradianceRatio).
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Fog initialised (4 spatial-only techniques: Simple, Froxel, Raymarch, GodRays)");
 }
 

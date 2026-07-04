@@ -26,6 +26,12 @@ engine has **no TAA** — anything that jitters per-frame would crawl/sparkle.
   *without* the old 17× depth-range inflation that destroyed depth precision.
 
 **Sampling (deferred shader):**
+- The PCF/PCSS **filter** lives in `Shaders/Common/ShadowSampling.slang` as
+  `ShadowFilterPCSS` (an `IShadowFilter` — the shared shadow-filter seam). The
+  deferred composite fills one from its `ShadowSampling` CB and drives it; the
+  **cascade walk stays in the shader** (each consumer's differs — the translucent
+  pass has its own cheaper 4-tap `ShadowFilterSimple4Tap` conformed via
+  `extension`). See `Shaders/SHADER_STYLE.md` → *Interface / Extension Seams*.
 - Cascade selected by **view-space depth** vs the CPU-computed split distances
   (stable), with a **cross-fade band** into the next cascade to hide the seam.
 - **Depth bias is fixed-function only** — never in the sampling shader. The
@@ -53,13 +59,14 @@ engine has **no TAA** — anything that jitters per-frame would crawl/sparkle.
   `Flux/RenderViews/Flux_RenderViews.h`): its pass declares `.View(1+cascade)`,
   which binds a per-cascade VIEW descriptor set whose `g_xView` holds the sun
   ortho matrices (staged by `UpdateShadowMatrices` into the view registry). The
-  CASTER shaders (`UnifiedMesh`/`Terrain` `*_ToShadowmap.slang`) read
-  `g_xViewSet.g_xView.g_xViewProjMat` like any other pass — no per-draw cascade
-  index remains.
-- All-cascade `sun view×proj` matrices → a single `StructuredBuffer<float4x4>
-  g_xShadowMatrices` in the persistent VIEW set (set 1, binding 2;
-  `g_xViewSet.g_xShadowMatrices` in `Common/Bindings.slang`) — RECEIVERS ONLY:
-  the lit/fog consumers project receiver positions with it. A frame-indexed
+  CASTER shaders (`UnifiedMesh`/`Terrain` `*_ToShadowmap.slang`) read the sun
+  view-proj via the spine accessor `GetViewProjMat()` like any other pass — no
+  per-draw cascade index remains.
+- All-cascade `sun view×proj` matrices → a single `StructuredBuffer<float4x4>`
+  in the persistent VIEW set (set 1, binding 2; declared as
+  `g_xViewSet.g_xShadowMatrices` in `Common/Bindings.slang`, read by RECEIVERS via
+  the `GetShadowMatrix(iCascade)` accessor) — RECEIVERS ONLY: the lit/fog consumers
+  project receiver positions with it. A frame-indexed
   host-coherent dynamic buffer (graph-invisible), written once per frame by
   `Zenith_Vulkan::WritePersistentViewBuffer` (replicated into every view slot's
   set). Per-cascade GPU frustum culling of the unified scene populates each

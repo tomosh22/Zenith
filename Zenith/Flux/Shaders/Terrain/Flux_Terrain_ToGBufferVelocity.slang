@@ -87,12 +87,12 @@ VsOut vsMain(VsIn input,
 	o.lodLevel = g_xPassSet.LODLevelBuffer[uChunkId];
 	o.chunkIndex = uChunkId;
 
-	o.position = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
+	o.position = mul(GetViewProjMat(), float4(xWorldPos, 1.0));
 
 	// Static terrain: prev world pos == current world pos, so the motion vector is pure
 	// camera reprojection through the unjittered current + previous view-proj matrices.
-	o.clipCurNoJitter  = mul(g_xViewSet.g_xView.g_xViewProjMatNoJitter,     float4(xWorldPos, 1.0));
-	o.clipPrevNoJitter = mul(g_xViewSet.g_xView.g_xPrevViewProjMatNoJitter, float4(xWorldPos, 1.0));
+	o.clipCurNoJitter  = mul(GetViewProjMatNoJitter(),     float4(xWorldPos, 1.0));
+	o.clipPrevNoJitter = mul(GetPrevViewProjMatNoJitter(), float4(xWorldPos, 1.0));
 	return o;
 }
 
@@ -173,34 +173,34 @@ GBufferVelocityOut fsMain(VsOut input)
 	float2 xUV2 = TransformUV(input.uv, g_xPassSet.TerrainMaterialConstants.g_axUVParams[2].xy, g_xPassSet.TerrainMaterialConstants.g_axUVParams[2].zw);
 	float2 xUV3 = TransformUV(input.uv, g_xPassSet.TerrainMaterialConstants.g_axUVParams[3].xy, g_xPassSet.TerrainMaterialConstants.g_axUVParams[3].zw);
 
-	MaterialGPU xMat0 = g_xGlobalSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[0]];
-	MaterialGPU xMat1 = g_xGlobalSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[1]];
-	MaterialGPU xMat2 = g_xGlobalSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[2]];
-	MaterialGPU xMat3 = g_xGlobalSet.g_axMaterials[g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[3]];
+	MaterialGPU xMat0 = GetMaterial(g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[0]);
+	MaterialGPU xMat1 = GetMaterial(g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[1]);
+	MaterialGPU xMat2 = GetMaterial(g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[2]);
+	MaterialGPU xMat3 = GetMaterial(g_xPassSet.TerrainMaterialConstants.g_xMaterialTableIndices[3]);
 
-	float4 xDiffuse0 = SampleDiffuseWithBaseColor(g_xBindlessSet.g_axTextures[xMat0.g_xTexIdx0.x], xUV0, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[0]);
-	float3 xNormalMap0 = g_xBindlessSet.g_axTextures[xMat0.g_xTexIdx0.y].Sample(xUV0).xyz * 2.0 - 1.0;
-	float2 xRM0       = g_xBindlessSet.g_axTextures[xMat0.g_xTexIdx0.z].Sample(xUV0).gb;
-	float  fOcc0      = SampleOcclusion(g_xBindlessSet.g_axTextures[xMat0.g_xTexIdx0.w], xUV0, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[0].z);
-	float3 xEm0       = SampleEmissiveRGB(g_xBindlessSet.g_axTextures[xMat0.g_xTexIdx1.x], xUV0, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[0].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[0].w);
+	float4 xDiffuse0 = SampleDiffuseWithBaseColor(GetBindlessTexture(xMat0.g_xTexIdx0.x), xUV0, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[0]);
+	float3 xNormalMap0 = GetBindlessTexture(xMat0.g_xTexIdx0.y).Sample(xUV0).xyz * 2.0 - 1.0;
+	float2 xRM0       = GetBindlessTexture(xMat0.g_xTexIdx0.z).Sample(xUV0).gb;
+	float  fOcc0      = SampleOcclusion(GetBindlessTexture(xMat0.g_xTexIdx0.w), xUV0, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[0].z);
+	float3 xEm0       = SampleEmissiveRGB(GetBindlessTexture(xMat0.g_xTexIdx1.x), xUV0, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[0].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[0].w);
 
-	float4 xDiffuse1 = SampleDiffuseWithBaseColor(g_xBindlessSet.g_axTextures[xMat1.g_xTexIdx0.x], xUV1, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[1]);
-	float3 xNormalMap1 = g_xBindlessSet.g_axTextures[xMat1.g_xTexIdx0.y].Sample(xUV1).xyz * 2.0 - 1.0;
-	float2 xRM1       = g_xBindlessSet.g_axTextures[xMat1.g_xTexIdx0.z].Sample(xUV1).gb;
-	float  fOcc1      = SampleOcclusion(g_xBindlessSet.g_axTextures[xMat1.g_xTexIdx0.w], xUV1, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[1].z);
-	float3 xEm1       = SampleEmissiveRGB(g_xBindlessSet.g_axTextures[xMat1.g_xTexIdx1.x], xUV1, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[1].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[1].w);
+	float4 xDiffuse1 = SampleDiffuseWithBaseColor(GetBindlessTexture(xMat1.g_xTexIdx0.x), xUV1, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[1]);
+	float3 xNormalMap1 = GetBindlessTexture(xMat1.g_xTexIdx0.y).Sample(xUV1).xyz * 2.0 - 1.0;
+	float2 xRM1       = GetBindlessTexture(xMat1.g_xTexIdx0.z).Sample(xUV1).gb;
+	float  fOcc1      = SampleOcclusion(GetBindlessTexture(xMat1.g_xTexIdx0.w), xUV1, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[1].z);
+	float3 xEm1       = SampleEmissiveRGB(GetBindlessTexture(xMat1.g_xTexIdx1.x), xUV1, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[1].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[1].w);
 
-	float4 xDiffuse2 = SampleDiffuseWithBaseColor(g_xBindlessSet.g_axTextures[xMat2.g_xTexIdx0.x], xUV2, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[2]);
-	float3 xNormalMap2 = g_xBindlessSet.g_axTextures[xMat2.g_xTexIdx0.y].Sample(xUV2).xyz * 2.0 - 1.0;
-	float2 xRM2       = g_xBindlessSet.g_axTextures[xMat2.g_xTexIdx0.z].Sample(xUV2).gb;
-	float  fOcc2      = SampleOcclusion(g_xBindlessSet.g_axTextures[xMat2.g_xTexIdx0.w], xUV2, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[2].z);
-	float3 xEm2       = SampleEmissiveRGB(g_xBindlessSet.g_axTextures[xMat2.g_xTexIdx1.x], xUV2, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[2].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[2].w);
+	float4 xDiffuse2 = SampleDiffuseWithBaseColor(GetBindlessTexture(xMat2.g_xTexIdx0.x), xUV2, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[2]);
+	float3 xNormalMap2 = GetBindlessTexture(xMat2.g_xTexIdx0.y).Sample(xUV2).xyz * 2.0 - 1.0;
+	float2 xRM2       = GetBindlessTexture(xMat2.g_xTexIdx0.z).Sample(xUV2).gb;
+	float  fOcc2      = SampleOcclusion(GetBindlessTexture(xMat2.g_xTexIdx0.w), xUV2, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[2].z);
+	float3 xEm2       = SampleEmissiveRGB(GetBindlessTexture(xMat2.g_xTexIdx1.x), xUV2, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[2].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[2].w);
 
-	float4 xDiffuse3 = SampleDiffuseWithBaseColor(g_xBindlessSet.g_axTextures[xMat3.g_xTexIdx0.x], xUV3, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[3]);
-	float3 xNormalMap3 = g_xBindlessSet.g_axTextures[xMat3.g_xTexIdx0.y].Sample(xUV3).xyz * 2.0 - 1.0;
-	float2 xRM3       = g_xBindlessSet.g_axTextures[xMat3.g_xTexIdx0.z].Sample(xUV3).gb;
-	float  fOcc3      = SampleOcclusion(g_xBindlessSet.g_axTextures[xMat3.g_xTexIdx0.w], xUV3, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[3].z);
-	float3 xEm3       = SampleEmissiveRGB(g_xBindlessSet.g_axTextures[xMat3.g_xTexIdx1.x], xUV3, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[3].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[3].w);
+	float4 xDiffuse3 = SampleDiffuseWithBaseColor(GetBindlessTexture(xMat3.g_xTexIdx0.x), xUV3, g_xPassSet.TerrainMaterialConstants.g_axBaseColors[3]);
+	float3 xNormalMap3 = GetBindlessTexture(xMat3.g_xTexIdx0.y).Sample(xUV3).xyz * 2.0 - 1.0;
+	float2 xRM3       = GetBindlessTexture(xMat3.g_xTexIdx0.z).Sample(xUV3).gb;
+	float  fOcc3      = SampleOcclusion(GetBindlessTexture(xMat3.g_xTexIdx0.w), xUV3, g_xPassSet.TerrainMaterialConstants.g_axMaterialParams[3].z);
+	float3 xEm3       = SampleEmissiveRGB(GetBindlessTexture(xMat3.g_xTexIdx1.x), xUV3, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[3].rgb, g_xPassSet.TerrainMaterialConstants.g_axEmissiveParams[3].w);
 
 	float4 xDiffuse = xDiffuse0 * xWeights.r + xDiffuse1 * xWeights.g
 					 + xDiffuse2 * xWeights.b + xDiffuse3 * xWeights.a;

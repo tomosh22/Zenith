@@ -201,3 +201,54 @@ public GBufferOut MakeGBuffer(MaterialSurface s)
 	return MakeGBuffer(s.albedo, s.worldNormal, s.ao, s.roughness, s.metallic,
 						s.specular, s.emissive, s.ccStrength, s.ccRoughness, s.uShadingModel);
 }
+
+// =====================================================================
+// Surface-model seam (Slang interface).
+//
+// A "surface model" is anything that produces the shared MaterialSurface for a
+// fragment; the G-buffer packing (MakeGBuffer above) and the lighting stay OUTSIDE it.
+// This interface is the extension point a subsystem with a bespoke surface — e.g.
+// Terrain's 4-material splatmap blend — plugs into WITHOUT editing Common: it declares
+// its own conforming type via `extension` next to its shader (see
+// Flux_Terrain_ToGBuffer.slang's TerrainSplatSurface). ISurfaceModel is used as a
+// generic/extension CONSTRAINT only, never as an existential value, so it adds no
+// reflection.
+// =====================================================================
+public interface ISurfaceModel
+{
+	MaterialSurface Evaluate();
+}
+
+// The canonical uber-material conformance: the same parameter-based 9-texture
+// evaluation every mesh G-buffer writer uses (EvaluateMaterialSurface above), wrapped
+// as an ISurfaceModel. It holds its inputs as fields so the interface method is nullary;
+// Evaluate() forwards to EvaluateMaterialSurface with the body unchanged. (A mesh shader
+// may build one and call Evaluate() instead of calling EvaluateMaterialSurface directly;
+// the two are identical.)
+public struct UberMaterialSurface : ISurfaceModel
+{
+	public Sampler2D baseColorTex;
+	public Sampler2D normalTex;
+	public Sampler2D roughnessMetallicTex;
+	public Sampler2D occlusionTex;
+	public Sampler2D emissiveTex;
+	public Sampler2D heightTex;
+	public Sampler2D detailAlbedoTex;
+	public Sampler2D detailNormalTex;
+	public Sampler2D detailMaskTex;
+	public float2     uv;
+	public float3x3   tbn;
+	public float3     worldViewDir;
+	public float4     vertexColor;
+	public bool       frontFace;
+	public MaterialGPU material;
+
+	public MaterialSurface Evaluate()
+	{
+		return EvaluateMaterialSurface(
+			baseColorTex, normalTex, roughnessMetallicTex,
+			occlusionTex, emissiveTex, heightTex,
+			detailAlbedoTex, detailNormalTex, detailMaskTex,
+			uv, tbn, worldViewDir, vertexColor, frontFace, material);
+	}
+}

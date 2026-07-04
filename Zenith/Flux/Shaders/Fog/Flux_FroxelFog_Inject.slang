@@ -51,7 +51,7 @@ float3 FroxelToWorldPosition(int3 froxelCoord)
 
 	float2 ndc     = uv * 2.0 - 1.0;
 	float4 clipPos = float4(ndc, 0.0, 1.0);
-	float4 viewPos = mul(g_xViewSet.g_xView.g_xInvProjMat, clipPos);
+	float4 viewPos = mul(GetInvProjMat(), clipPos);
 	viewPos /= viewPos.w;
 
 	// Scale view position so its z reaches linearDepth exactly. Engine uses
@@ -59,7 +59,7 @@ float3 FroxelToWorldPosition(int3 froxelCoord)
 	float  viewZ          = max(abs(viewPos.z), SAFE_NEAR_Z);
 	float3 scaledViewPos  = viewPos.xyz * (linearDepth / viewZ);
 
-	float4 worldPos = mul(g_xViewSet.g_xView.g_xInvViewMat, float4(scaledViewPos, 1.0));
+	float4 worldPos = mul(GetInvViewMat(), float4(scaledViewPos, 1.0));
 	return worldPos.xyz;
 }
 

@@ -3,8 +3,13 @@
 //
 // Recorded INSTEAD of the base G-buffer program inside the 5-attachment unified
 // G-buffer pass when the velocity latch is on (TAA active). Identical shading to the
-// base (same EvaluateMaterialSurface), plus it writes MRT_INDEX_VELOCITY (SV_Target4)
-// with the per-pixel motion vector from the UNJITTERED current/previous view-proj.
+// base (the SHARED EvaluateUnifiedGBuffer via EmitUnifiedFragment), plus it writes
+// MRT_INDEX_VELOCITY (SV_Target4) with the per-pixel motion vector from the UNJITTERED
+// current/previous view-proj. The extra MRT is supplied by a shell-local
+// GBufferVelocityPolicy conforming to the shared IUnifiedMeshOutput interface
+// (Common/UnifiedMeshDraw.slang) — the base GBuffer shell uses GBufferPolicy over the
+// same seam, so the two lit shells share the whole material path and differ only by
+// their output policy.
 //
 // Stage 3 computes CAMERA + STATIC velocity: prev world pos == current world pos, so a
 // pixel's motion is pure camera reprojection (exactly correct for static geometry; a
@@ -13,24 +18,8 @@
 // Stage-4 refinement — they only become observable once the temporal resolve exists.
 // =====================================================================
 
-#include "Common/Bindings.slang"
-#include "Common/SceneObjects.slang"
-#include "Common/VAT.slang"
-import Common.MaterialTable;
-import Common.Material;
-import Common.MaterialSurface;
-import Common.GBuffer;
-import Common.Velocity;
-
-struct VsIn
-{
-    float3 a_xPosition  : POSITION;
-    float2 a_xUV        : TEXCOORD0;
-    float3 a_xNormal    : NORMAL;
-    float3 a_xTangent   : TANGENT;
-    float3 a_xBitangent : BINORMAL;
-    float4 a_xColor     : COLOR;
-};
+#include "Common/UnifiedMeshDraw.slang"   // VsIn / UnifiedDrawConstantsLayout / DrawParams / shared transform + fragment + spine
+import Common.Velocity;                    // GBufferVelocityOut / Flux_EncodeVelocityUV / MakeGBufferVelocity
 
 struct VsOut
 {
@@ -68,34 +57,19 @@ struct PassParams
 };
 ParameterBlock<PassParams> g_xPassSet;
 
-struct UnifiedDrawConstantsLayout
-{
-    uint   g_uMaterialIndex;
-    uint   g_uBucketOffset;
-    // Stage 4.3b (velocity variant only — byte-identical layout to the base ToGBuffer's
-    // g_uPad0/g_uPad1, which ignore them): for a SKINNED draw, g_uSkinnedPrevVertBase is the
-    // draw's arena slice base (uOutVertBase) and g_uIsSkinned is 1. Static/VAT draws leave both
-    // 0 => the prev pose is the current local position through the previous transform.
-    uint   g_uSkinnedPrevVertBase;
-    uint   g_uIsSkinned;
-    float4 g_xVATParams;
-};
-
-struct DrawParams
-{
-    ConstantBuffer<UnifiedDrawConstantsLayout> DrawConstants;
-    StructuredBuffer<uint>                     VisibleIndexBuffer;
-    Sampler2D                                  g_xAnimationTex;
-};
+// DRAW block (set 4) — declared AFTER the PASS block so it lands at physical space 4.
 ParameterBlock<DrawParams> g_xDrawSet;
 
-float4 UnpackRGBA8(uint uPacked)
+// This shell's output policy over the shared IUnifiedMeshOutput seam: append the
+// per-pixel motion vector to the shared 4-target G-buffer core (the base GBuffer shell
+// conforms GBufferPolicy over the same interface and drops the velocity).
+struct GBufferVelocityPolicy : IUnifiedMeshOutput
 {
-    return float4(
-        (float)((uPacked >> 0)  & 0xFFu) / 255.0,
-        (float)((uPacked >> 8)  & 0xFFu) / 255.0,
-        (float)((uPacked >> 16) & 0xFFu) / 255.0,
-        (float)((uPacked >> 24) & 0xFFu) / 255.0);
+    typealias TOut = GBufferVelocityOut;
+    static GBufferVelocityOut Emit(GBufferOut xCore, float2 xVelocityUV)
+    {
+        return MakeGBufferVelocity(xCore, xVelocityUV);
+    }
 }
 
 [shader("vertex")]
@@ -109,23 +83,19 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
     GPUSceneDrawItem di  = g_xPassSet.DrawItems[gid];
     GPUSceneObject   obj = g_xPassSet.Objects[di.m_uObjectIndex];
 
-    float4x4 xModelMatrix  = obj.m_xModelMatrix;
-    float4   xInstanceTint = UnpackRGBA8(di.m_uColorTintPacked);
+    // Shared VAT sway + model transform + world-space TBN basis — byte-identical to the
+    // base GBuffer VS (and, for the position path, the shadow caster). b.xLocalPos is the
+    // VAT-deformed local position; the prev-pose reprojection below reuses it.
+    UnifiedVertexBasis b = TransformUnifiedVertex(input, vertexId, obj, dc, g_xDrawSet.g_xAnimationTex);
 
-    float3   xLocalPos     = Flux_ApplyVAT(g_xDrawSet.g_xAnimationTex, vertexId, input.a_xPosition,
-        obj.m_uFlags, obj.m_uVATAnimPacked, asfloat(obj.m_uVATAnimTime), dc.g_xVATParams);
-    float3   xWorldPos     = mul(xModelMatrix, float4(xLocalPos, 1.0)).xyz;
-    float3x3 xNormalMatrix = transpose(Inverse3x3((float3x3)xModelMatrix));
-
-    o.uv          = input.a_xUV;
-    o.vertexColor = input.a_xColor;
-    o.worldNormal = normalize(mul(xNormalMatrix, input.a_xNormal));
-    o.worldTangent = normalize(mul(xNormalMatrix, input.a_xTangent));
-    float3 xBitangent = normalize(mul(xNormalMatrix, input.a_xBitangent));
-    o.bitangentSign = sign(dot(xBitangent, cross(o.worldNormal, o.worldTangent)));
-    o.instanceTint = xInstanceTint;
-    o.worldPos     = xWorldPos;
-    o.position     = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
+    o.uv           = input.a_xUV;
+    o.vertexColor  = input.a_xColor;
+    o.worldNormal  = b.xWorldNormal;
+    o.worldTangent = b.xWorldTangent;
+    o.bitangentSign = b.fBitangentSign;
+    o.instanceTint = UnpackRGBA8(di.m_uColorTintPacked);
+    o.worldPos     = b.xWorldPos;
+    o.position     = mul(GetViewProjMat(), float4(b.xWorldPos, 1.0));
 
     // Stage 4.3: reproject through the PREVIOUS-frame model matrix (index-locked to
     // Objects by object index). Same local position, previous transform => an exact
@@ -141,7 +111,7 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
     // base rides the vertex-buffer bind offset — see Flux_UnifiedMesh_SkinningPrev / Reset).
     // Static / VAT draws keep the current local position (VAT sway is absorbed by the resolve
     // clamp). Both then go through the PREVIOUS model matrix.
-    float3 xPrevLocalPos = xLocalPos;
+    float3 xPrevLocalPos = b.xLocalPos;
     if (dc.g_uIsSkinned != 0u)
     {
         uint pv = (dc.g_uSkinnedPrevVertBase + vertexId) * 3u;
@@ -151,44 +121,26 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
             asfloat(g_xPassSet.PrevSkinnedPosArena[pv + 2u]));
     }
     float3   xPrevWorldPos    = mul(xPrevModelMatrix, float4(xPrevLocalPos, 1.0)).xyz;
-    o.clipCurNoJitter  = mul(g_xViewSet.g_xView.g_xViewProjMatNoJitter,     float4(xWorldPos, 1.0));
-    o.clipPrevNoJitter = mul(g_xViewSet.g_xView.g_xPrevViewProjMatNoJitter, float4(xPrevWorldPos, 1.0));
+    o.clipCurNoJitter  = mul(GetViewProjMatNoJitter(),     float4(b.xWorldPos, 1.0));
+    o.clipPrevNoJitter = mul(GetPrevViewProjMatNoJitter(), float4(xPrevWorldPos, 1.0));
     return o;
 }
 
 [shader("fragment")]
 GBufferVelocityOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
 {
-    float3x3 TBN = BuildTBN(input.worldNormal, input.worldTangent, input.bitangentSign);
-    float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - input.worldPos);
+    UnifiedFragmentSurface s;
+    s.uv            = input.uv;
+    s.worldNormal   = input.worldNormal;
+    s.worldPos      = input.worldPos;
+    s.worldTangent  = input.worldTangent;
+    s.bitangentSign = input.bitangentSign;
+    s.vertexColor   = input.vertexColor;
+    s.instanceTint  = input.instanceTint;
 
-    UnifiedDrawConstantsLayout dc = g_xDrawSet.DrawConstants;
-    MaterialGPU m = g_xGlobalSet.g_axMaterials[dc.g_uMaterialIndex];
+    // Motion vector from the UNJITTERED clip positions (jitter-free at the source).
+    float2 xVelocity = Flux_EncodeVelocityUV(input.clipCurNoJitter, input.clipPrevNoJitter);
 
-    Sampler2D xBaseColorTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.x];
-    Sampler2D xNormalTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.y];
-    Sampler2D xRoughnessMetallicTex = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.z];
-    Sampler2D xOcclusionTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.w];
-    Sampler2D xEmissiveTex          = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.x];
-    Sampler2D xHeightTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.y];
-    Sampler2D xDetailAlbedoTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.z];
-    Sampler2D xDetailNormalTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.w];
-    Sampler2D xDetailMaskTex        = g_xBindlessSet.g_axTextures[m.g_xTexIdx2.x];
-
-    MaterialSurface xSurface = EvaluateMaterialSurface(
-        xBaseColorTex, xNormalTex, xRoughnessMetallicTex,
-        xOcclusionTex, xEmissiveTex, xHeightTex,
-        xDetailAlbedoTex, xDetailNormalTex, xDetailMaskTex,
-        input.uv, TBN, xViewDir, input.vertexColor, bFrontFace, m);
-
-    xSurface.albedo.rgb *= input.instanceTint.rgb;
-
-    GBufferOut g = MakeGBuffer(xSurface);
-    GBufferVelocityOut o;
-    o.diffuse        = g.diffuse;
-    o.normalsAmbient = g.normalsAmbient;
-    o.material       = g.material;
-    o.emissive       = g.emissive;
-    o.velocity       = Flux_EncodeVelocityUV(input.clipCurNoJitter, input.clipPrevNoJitter);
-    return o;
+    return EmitUnifiedFragment<GBufferVelocityPolicy>(s, g_xDrawSet.DrawConstants.g_uMaterialIndex,
+        bFrontFace, xVelocity);
 }

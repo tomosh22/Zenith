@@ -41,7 +41,7 @@ VsOut vsMain(VsIn input)
 {
 	VsOut o;
 	float4 worldPos = mul(g_xDrawSet.GizmoPushConstants.g_xModelMatrix, float4(input.a_xPosition, 1.0));
-	o.position      = mul(g_xViewSet.g_xView.g_xViewProjMat, worldPos);
+	o.position      = mul(GetViewProjMat(), worldPos);
 	o.colour        = input.a_xColor * (1.0 + g_xDrawSet.GizmoPushConstants.g_fHighlightIntensity * 0.5);
 	return o;
 }

@@ -53,7 +53,7 @@ VsOut vsMain(VsIn input)
 	// Camera-facing billboard: extract the inverse-view basis directly
 	// from the view matrix's first row of each column. (View matrix's
 	// rows are world→view; inverse-view rows are columns of view.)
-	float4x4 V = g_xViewSet.g_xView.g_xViewMat;
+	float4x4 V = GetViewMat();
 	float3 xRight   = normalize(float3(V._m00, V._m01, V._m02));
 	float3 xUp      = normalize(float3(V._m10, V._m11, V._m12));
 	float3 xForward = normalize(float3(V._m20, V._m21, V._m22));
@@ -69,14 +69,14 @@ VsOut vsMain(VsIn input)
 	float3 xRotatedPos = mul(xBillboardMatrix, input.a_xPosition);
 	float3 xWorldPos   = xRotatedPos * input.a_xInstancePositionRadius.w
 						 + input.a_xInstancePositionRadius.xyz;
-	o.position = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
+	o.position = mul(GetViewProjMat(), float4(xWorldPos, 1.0));
 	return o;
 }
 
 [shader("fragment")]
 float4 fsMain(VsOut input) : SV_Target
 {
-	float4 c = g_xBindlessSet.g_axTextures[g_xPassSet.ParticleConstants.g_uTexIdx].Sample(input.uv) * input.colour;
+	float4 c = GetBindlessTexture(g_xPassSet.ParticleConstants.g_uTexIdx).Sample(input.uv) * input.colour;
 	if (c.a < 0.01) discard;
 	return c;
 }

@@ -163,7 +163,7 @@ float4 RayMarch(float3 xViewOrigin,
 
 	// Clamp probe to stay in front of the near plane — unbounded reciprocal-z
 	// interpolation past the near plane breaks the perspective math.
-	float fNearPlane = g_xViewSet.g_xView.g_xCameraNearFar.x;
+	float fNearPlane = GetCameraNearFar().x;
 	if (xRaySampleView.z < fNearPlane)
 	{
 		if (abs(xRayDir.z) > PBR_DIRECTION_EPSILON)
@@ -216,10 +216,10 @@ float4 RayMarch(float3 xViewOrigin,
 
 	// Reciprocal-Z interpolation endpoints — gives perspective-correct depth
 	// at every fT along the screen-space line.
-	float fSafeStartZ      = max(xViewStart.z, g_xViewSet.g_xView.g_xCameraNearFar.x);
+	float fSafeStartZ      = max(xViewStart.z, GetCameraNearFar().x);
 	float fInvZStart       = 1.0 / fSafeStartZ;
 	float fEstimatedRayDist = g_xPassSet.SSGIConstants.u_fMaxDistance * fMaxScreenDist;
-	float fEstimatedEndZ   = max(g_xViewSet.g_xView.g_xCameraNearFar.x,
+	float fEstimatedEndZ   = max(GetCameraNearFar().x,
 								  fSafeStartZ + xRayDir.z * fEstimatedRayDist);
 	float fInvZEnd         = 1.0 / fEstimatedEndZ;
 
@@ -311,7 +311,7 @@ float4 RayMarch(float3 xViewOrigin,
 
 					// Backface hits aren't visible from the camera — skip.
 					float3 xHitWorldNormal = g_xPassSet.g_xNormalsTex.Sample(xFinalUV).rgb;
-					float3 xHitViewNormal  = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xHitWorldNormal));
+					float3 xHitViewNormal  = normalize(mul((float3x3)GetViewMat(), xHitWorldNormal));
 					float  fBackfaceDot    = dot(xHitViewNormal, xRayDir);
 					if (fBackfaceDot > SSGI_BACKFACE_THRESHOLD)
 					{
@@ -397,7 +397,7 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 	if (fRoughness > SSGI_ROUGH_GATE) return float4(0.0, 0.0, 0.0, 0.0);
 
 	float3 xViewPos    = GetViewPosFromDepth(input.uv, fDepth);
-	float3 xViewNormal = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xWorldNormal));
+	float3 xViewNormal = normalize(mul((float3x3)GetViewMat(), xWorldNormal));
 
 	int2 xPixelCoord = (int2)fragCoord.xy;
 

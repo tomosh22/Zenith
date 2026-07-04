@@ -94,3 +94,29 @@ ZENITH_TEST(RenderViews, ForEachActiveFullPipelineView)
 	xReg.ForEachActiveFullPipelineView(RenderViewsCountFullPipeline, &xCtx);
 	ZENITH_ASSERT_TRUE(xCtx.m_uCount == 2u && (xCtx.m_uMask & Flux_ViewMaskPreviewOnly()) != 0u, "active preview joins the full-pipeline walk");
 }
+
+// ----------------------------------------------------------------------------
+// FluxViewShadingMode selector (Flux Shader System Overhaul — Stage 3a). Maps a
+// view's flag word to the FULL/BASIC pipeline variant: FULL when the view permits
+// EITHER shadows or cluster lights (the main view), BASIC when it carries neither
+// (shadow-cascade-derived + material-preview views). Total over all inputs.
+// ----------------------------------------------------------------------------
+ZENITH_TEST(RenderViews, ViewShadingModeFromFlags)
+{
+	static_assert(FLUX_VIEW_SHADING_MODE_COUNT == 2u, "two shading variants (FULL, BASIC)");
+
+	// Main view (0b111): scene content + shadows + cluster -> FULL.
+	const u_int uMain = FLUX_VIEW_FLAG_SHADOWS_ENABLED | FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED | FLUX_VIEW_FLAG_SCENE_CONTENT;
+	ZENITH_ASSERT_EQ(Flux_ViewShadingModeFromFlags(uMain), FLUX_VIEW_SHADING_MODE_FULL, "main view (0b111) -> FULL");
+
+	// Cascade / preview (0b000): no shadow/cluster/scene flags -> BASIC.
+	ZENITH_ASSERT_EQ(Flux_ViewShadingModeFromFlags(0u), FLUX_VIEW_SHADING_MODE_BASIC, "flags 0 -> BASIC");
+
+	// Scene content WITHOUT the lit clauses (e.g. shadows globally off, no cluster)
+	// still strips → BASIC (behaviour-preserving: the runtime flag would gate them off anyway).
+	ZENITH_ASSERT_EQ(Flux_ViewShadingModeFromFlags(FLUX_VIEW_FLAG_SCENE_CONTENT), FLUX_VIEW_SHADING_MODE_BASIC, "scene-content-only -> BASIC");
+
+	// Either lit clause alone is enough for FULL.
+	ZENITH_ASSERT_EQ(Flux_ViewShadingModeFromFlags(FLUX_VIEW_FLAG_SHADOWS_ENABLED), FLUX_VIEW_SHADING_MODE_FULL, "shadows-only -> FULL");
+	ZENITH_ASSERT_EQ(Flux_ViewShadingModeFromFlags(FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED), FLUX_VIEW_SHADING_MODE_FULL, "cluster-only -> FULL");
+}

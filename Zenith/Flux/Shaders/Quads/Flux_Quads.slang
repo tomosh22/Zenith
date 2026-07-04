@@ -61,7 +61,7 @@ VsOut vsMain(VsIn input)
 					   float2(input.a_xInstancePositionSize.xy);
 	// UI quads are authored in OUTPUT pixels and drawn onto the output-res FinalRT (after any TAA
 	// upscale) — map pixel->NDC with the OUTPUT rcp dims, not the (render-res) g_xRcpScreenDims.
-	float2 xNDC      = xPixelPos * g_xViewSet.g_xView.g_xRcpOutputDims * 2.0 - 1.0;
+	float2 xNDC      = xPixelPos * GetRcpOutputDims() * 2.0 - 1.0;
 	o.position       = float4(xNDC, 0.0, 1.0);
 	return o;
 }
@@ -76,7 +76,7 @@ float4 fsMain(VsOut input) : SV_Target
 	if (input.texture == 0u)
 		xBaseColour = input.colour;
 	else
-		xBaseColour = g_xBindlessSet.g_axTextures[NonUniformResourceIndex(input.texture)].Sample(input.uv) * input.colour;
+		xBaseColour = GetBindlessTexture(NonUniformResourceIndex(input.texture)).Sample(input.uv) * input.colour;
 
 	// Vertical gradient when colour2 has a non-negative sentinel.
 	if (input.colour2.x >= 0.0)
@@ -84,7 +84,7 @@ float4 fsMain(VsOut input) : SV_Target
 		float4 xTop    = xBaseColour;
 		float4 xBottom = input.colour2;
 		if (input.texture != 0u)
-			xBottom *= g_xBindlessSet.g_axTextures[NonUniformResourceIndex(input.texture)].Sample(input.uv);
+			xBottom *= GetBindlessTexture(NonUniformResourceIndex(input.texture)).Sample(input.uv);
 		xBaseColour = lerp(xTop, xBottom, input.uv.y);
 	}
 

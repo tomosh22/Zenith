@@ -145,7 +145,7 @@ VsOut vsMain(VsIn input, uint instanceId : SV_InstanceID)
 	float3 xNormal   = normalize(cross(xWidthDir, xWorldTangent));
 
 	// Distance-fade alpha for the LOD3→max-distance transition.
-	float fDistToCamera = length(xWorldPos - g_xViewSet.g_xView.g_xCamPos_Pad.xyz);
+	float fDistToCamera = length(xWorldPos - GetCamPos_Pad().xyz);
 	float fFade         = 1.0 - smoothstep(g_xPassSet.GrassConstants.g_xLODDistances.z,
 											g_xPassSet.GrassConstants.g_xLODDistances.w,
 											fDistToCamera);
@@ -157,7 +157,7 @@ VsOut vsMain(VsIn input, uint instanceId : SV_InstanceID)
 	o.uv         = input.a_xUV;
 	o.colour     = float4(xColorTint.rgb, fFade);
 	o.instanceId = instanceId;
-	o.position   = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
+	o.position   = mul(GetViewProjMat(), float4(xWorldPos, 1.0));
 	return o;
 }
 
@@ -201,8 +201,8 @@ float4 fsMain(VsOut input) : SV_Target
 	// Wrap lighting (no harsh shadows on grass) plus translucency for
 	// blades back-lit by the sun. Ambient floor of 0.2 keeps shaded
 	// blades visible.
-	float3 xSunDir   = normalize(g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
-	float3 xSunColor = g_xViewSet.g_xView.g_xSunColour_Pad.rgb;
+	float3 xSunDir   = normalize(GetSunDir_Pad().xyz);
+	float3 xSunColor = GetSunColour_Pad().rgb;
 	float  fNdotL    = dot(input.normal, xSunDir) * 0.5 + 0.5;
 	fNdotL           = fNdotL * 0.8 + 0.2;
 	float  fTrans    = max(0.0, -dot(normalize(input.normal), xSunDir)) * fHeightFactor * 0.5;
@@ -217,7 +217,7 @@ float4 fsMain(VsOut input) : SV_Target
 			case GRASS_DEBUG_LOD_COLORS:
 			{
 				// Match CPU LOD selection: < threshold² → smaller LOD.
-				float3 xToCam = input.worldPos - g_xViewSet.g_xView.g_xCamPos_Pad.xyz;
+				float3 xToCam = input.worldPos - GetCamPos_Pad().xyz;
 				float  fDistSq = dot(xToCam, xToCam);
 				float  fLOD0Sq = g_xPassSet.GrassConstants.g_xLODDistances.x * g_xPassSet.GrassConstants.g_xLODDistances.x;
 				float  fLOD1Sq = g_xPassSet.GrassConstants.g_xLODDistances.y * g_xPassSet.GrassConstants.g_xLODDistances.y;

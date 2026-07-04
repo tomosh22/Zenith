@@ -69,11 +69,14 @@ public:
 
 	Flux_Shader   m_xShader;
 	// Blend x cull permutations (cull is baked into pipelines; blend mode is
-	// per-material state).
-	Flux_Pipeline m_xPipelineTranslucent;			// alpha blend, cull back
-	Flux_Pipeline m_xPipelineTranslucentTwoSided;	// alpha blend, cull none
-	Flux_Pipeline m_xPipelineAdditive;				// additive,    cull back
-	Flux_Pipeline m_xPipelineAdditiveTwoSided;		// additive,    cull none
+	// per-material state). Stage 3a: each is now one pipeline per view-shading mode
+	// (FULL/BASIC), selected at record time from the recording pass's view slot.
+	// Empty spec tables → the two modes are byte-identical until Stage 3b bakes the
+	// per-mode permission mask.
+	Flux_Pipeline m_axPipelineTranslucent[FLUX_VIEW_SHADING_MODE_COUNT];			// alpha blend, cull back
+	Flux_Pipeline m_axPipelineTranslucentTwoSided[FLUX_VIEW_SHADING_MODE_COUNT];	// alpha blend, cull none
+	Flux_Pipeline m_axPipelineAdditive[FLUX_VIEW_SHADING_MODE_COUNT];			// additive,    cull back
+	Flux_Pipeline m_axPipelineAdditiveTwoSided[FLUX_VIEW_SHADING_MODE_COUNT];	// additive,    cull none
 
 	// One-shot warning latch for unsupported animated translucent submeshes.
 	bool m_bWarnedAnimatedTranslucent = false;

@@ -11,6 +11,7 @@ namespace
     bool        s_bHeadless         = false;
     bool        s_bAutomatedTestRun = false;
     bool        s_bNoImGuiIni       = false;
+    bool        s_bShaderDebugO0    = false;
     const char* s_szScreenshotPath  = nullptr;
     u_int       s_uScreenshotFrame  = 120;
 }
@@ -25,6 +26,7 @@ namespace Zenith_CommandLine
         s_bHeadless         = false;
         s_bAutomatedTestRun = false;
         s_bNoImGuiIni       = false;
+        s_bShaderDebugO0    = false;
         s_szScreenshotPath  = nullptr;
         s_uScreenshotFrame  = 120;
 
@@ -56,6 +58,10 @@ namespace Zenith_CommandLine
                 else if (std::strcmp(argv[i], "--screenshot-frame") == 0 && i + 1 < argc)
                 {
                     s_uScreenshotFrame = static_cast<u_int>(std::atoi(argv[++i]));
+                }
+                else if (std::strcmp(argv[i], "--shader-debug-o0") == 0)
+                {
+                    s_bShaderDebugO0 = true;
                 }
             }
         }
@@ -93,5 +99,11 @@ namespace Zenith_CommandLine
     u_int GetScreenshotFrame()
     {
         return s_uScreenshotFrame;
+    }
+
+    bool IsShaderDebugO0()
+    {
+        if (!s_bParsed) return false;
+        return s_bShaderDebugO0;
     }
 }

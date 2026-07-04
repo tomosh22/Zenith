@@ -21,6 +21,8 @@
 // =====================================================================
 
 #include "Common/Bindings.slang"
+#include "Common/ViewModes.slang"      // Stage 3b: FLUX_SC_VIEW_*_PERMITTED spec-constant view-mode mask
+#include "Common/ShadowSampling.slang" // Stage 6: IShadowFilter seam (this pass conforms its own 4-tap tier below)
 import Common.DrawConstants;
 import Common.MaterialTable;
 import Common.Material;
@@ -99,11 +101,18 @@ VsOut vsMain(VsIn input)
 	float3 xBitangent = normalize(mul(xNormalMatrix, input.a_xBitangent));
 	o.bitangentSign  = sign(dot(xBitangent, cross(o.worldNormal, o.worldTangent)));
 	o.worldPos       = xWorldPos;
-	o.position       = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
+	o.position       = mul(GetViewProjMat(), float4(xWorldPos, 1.0));
 	return o;
 }
 
 // ----- Shadow sampling (deferred recipe, texel size from CB) -----
+// Stage 6: the 4-tap PCF tier is a subsystem-LOCAL IShadowFilter — declared and
+// conformed to the Common seam (Common/ShadowSampling.slang) via `extension` right
+// here, with ZERO edits to Common. This is the living proof that a subsystem plugs
+// in its own filter through the seam. The cascade walk (loop + edge-band blend) in
+// ComputeSunShadowFactor is this pass's own and stays put; it drives the 4-tap
+// sample directly (the generic EvaluateCascade conformance is provided for any
+// consumer wanting the IShadowFilter shape).
 
 static const float SHADOW_MIN_BIAS        = 0.0005;
 static const float SHADOW_MAX_BIAS        = 0.005;
@@ -112,43 +121,88 @@ static const float PCF_OFFSET_OUTER       = 1.5;
 static const float PCF_SAMPLE_COUNT       = 16.0;
 static const float CASCADE_BLEND_DISTANCE = 0.15;
 
-float SampleCascadeShadow(int iCascade, float2 xSamplePos, float fBiasedDepth, float2 texelSize)
+// The translucent pass's cheaper shadow tier: a fixed 4-tap (2×2 Gather) box PCF.
+// Holds only the CSM texel size (from TranslucencyConstants). SampleCascadeShadow is
+// a VERBATIM move of the former free function — texelSize is the one former parameter
+// that became a field; the sampling math is unchanged.
+struct ShadowFilterSimple4Tap
 {
-	float fShadow = 0.0;
+	float2 texelSize;   // 1 / CSM resolution (engine rule: dims via CBV)
 
-	float2 axOffsets[4] = {
-		float2(-PCF_OFFSET_OUTER, -PCF_OFFSET_OUTER) * texelSize,
-		float2( PCF_OFFSET_INNER, -PCF_OFFSET_OUTER) * texelSize,
-		float2(-PCF_OFFSET_OUTER,  PCF_OFFSET_INNER) * texelSize,
-		float2( PCF_OFFSET_INNER,  PCF_OFFSET_INNER) * texelSize,
-	};
-
-	for (int i = 0; i < 4; i++)
+	float SampleCascadeShadow(int iCascade, float2 xSamplePos, float fBiasedDepth)
 	{
-		float2 xSampleUV = xSamplePos + axOffsets[i];
-		float4 shadowDepths = g_xViewSet.g_xCSM.Gather(float3(xSampleUV, float(iCascade)));
+		float fShadow = 0.0;
 
-		float4 comparison = step(float4(fBiasedDepth, fBiasedDepth, fBiasedDepth, fBiasedDepth), shadowDepths);
-		fShadow += dot(comparison, float4(1.0, 1.0, 1.0, 1.0));
+		float2 axOffsets[4] = {
+			float2(-PCF_OFFSET_OUTER, -PCF_OFFSET_OUTER) * texelSize,
+			float2( PCF_OFFSET_INNER, -PCF_OFFSET_OUTER) * texelSize,
+			float2(-PCF_OFFSET_OUTER,  PCF_OFFSET_INNER) * texelSize,
+			float2( PCF_OFFSET_INNER,  PCF_OFFSET_INNER) * texelSize,
+		};
+
+		for (int i = 0; i < 4; i++)
+		{
+			float2 xSampleUV = xSamplePos + axOffsets[i];
+			float4 shadowDepths = GetCSM().Gather(float3(xSampleUV, float(iCascade)));
+
+			float4 comparison = step(float4(fBiasedDepth, fBiasedDepth, fBiasedDepth, fBiasedDepth), shadowDepths);
+			fShadow += dot(comparison, float4(1.0, 1.0, 1.0, 1.0));
+		}
+
+		return fShadow / PCF_SAMPLE_COUNT;
 	}
+};
 
-	return fShadow / PCF_SAMPLE_COUNT;
+// Conform the local tier to the Common shadow-filter seam WITHOUT touching Common
+// (the mirror of DeferredShading's ShadowFilterPCSS). EvaluateCascade is the full
+// per-cascade unit — project + bounds + N·L bias + 4-tap — so this type satisfies the
+// same IShadowFilter contract as the deferred tier. (This pass's own walk below calls
+// SampleCascadeShadow directly because it also needs the projected sample position for
+// its edge-band blend; the conformance exists to demonstrate the seam.)
+extension ShadowFilterSimple4Tap : IShadowFilter
+{
+	bool EvaluateCascade(int iCascade, float3 xWorldPos, float3 xNormal, float fNdotL, out float fShadow)
+	{
+		fShadow = 1.0;
+
+		float4 xShadowSpace  = mul(GetShadowMatrix(iCascade), float4(xWorldPos, 1.0));
+		float2 xSamplePos    = xShadowSpace.xy / xShadowSpace.w * 0.5 + 0.5;
+		float  fCurrentDepth = xShadowSpace.z / xShadowSpace.w;
+
+		if (xSamplePos.x < 0.0 || xSamplePos.x > 1.0 ||
+			xSamplePos.y < 0.0 || xSamplePos.y > 1.0) return false;
+		if (fCurrentDepth < 0.0 || fCurrentDepth > 1.0) return false;
+
+		float fBias        = max(SHADOW_MIN_BIAS, SHADOW_MAX_BIAS * (1.0 - fNdotL));
+		float fBiasedDepth  = fCurrentDepth - fBias;
+		fShadow = this.SampleCascadeShadow(iCascade, xSamplePos, fBiasedDepth);
+		return true;
+	}
 }
 
 float ComputeSunShadowFactor(float3 xWorldPos, float fNdotL)
 {
-	if ((g_xViewSet.g_xView.g_uViewFlags & FLUX_VIEW_FLAG_SHADOWS_ENABLED) == 0u) return 1.0;
+	// Stage 3b: fully lit (no shadow) when shadows are not PERMITTED for this view
+	// mode OR not runtime-enabled. In BASIC mode the spec constant is FALSE, so
+	// `!false || ...` folds to true → the whole shadow evaluation below is stripped.
+	if (!FLUX_SC_VIEW_SHADOWS_PERMITTED || (GetViewFlags() & FLUX_VIEW_FLAG_SHADOWS_ENABLED) == 0u) return 1.0;
 
 	const uint uNumCSMs = 4;
 	float4x4 axShadowMats[4] = {
-		g_xViewSet.g_xShadowMatrices[0],
-		g_xViewSet.g_xShadowMatrices[1],
-		g_xViewSet.g_xShadowMatrices[2],
-		g_xViewSet.g_xShadowMatrices[3],
+		GetShadowMatrix(0),
+		GetShadowMatrix(1),
+		GetShadowMatrix(2),
+		GetShadowMatrix(3),
 	};
 
 	float2 texelSize = g_xPassSet.TranslucencyConstants.g_xCSMTexelSize;
 	float fShadowFactor = 1.0;
+
+	// Stage 6: the 4-tap sample now comes from this pass's own ShadowFilterSimple4Tap
+	// (the CSM texel size is its only state). The projection / bounds / bias / edge-band
+	// blend walk is unchanged.
+	ShadowFilterSimple4Tap xFilter;
+	xFilter.texelSize = texelSize;
 
 	for (int iCascade = 0; iCascade < (int)uNumCSMs; iCascade++)
 	{
@@ -168,7 +222,7 @@ float ComputeSunShadowFactor(float3 xWorldPos, float fNdotL)
 		bool   bInBlendZone = (fMinEdgeDist < CASCADE_BLEND_DISTANCE) &&
 							  (iCascade < (int)uNumCSMs - 1);
 
-		float fShadow1 = SampleCascadeShadow(iCascade, xSamplePos, fBiasedDepth, texelSize);
+		float fShadow1 = xFilter.SampleCascadeShadow(iCascade, xSamplePos, fBiasedDepth);
 
 		if (bInBlendZone)
 		{
@@ -182,7 +236,7 @@ float ComputeSunShadowFactor(float3 xWorldPos, float fNdotL)
 				fNextDepth >= 0.0 && fNextDepth <= 1.0)
 			{
 				float fNextBiasedDepth = fNextDepth - fBias;
-				float fShadow2 = SampleCascadeShadow(iCascade + 1, xNextSamplePos, fNextBiasedDepth, texelSize);
+				float fShadow2 = xFilter.SampleCascadeShadow(iCascade + 1, xNextSamplePos, fNextBiasedDepth);
 				fShadowFactor = lerp(fShadow1, fShadow2, fBlendWeight);
 			}
 			else
@@ -215,7 +269,7 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 	float3 F     = FresnelSchlickRoughness(NdotV, F0, s.roughness);
 
 	float  fRoughnessForLUT = clamp(s.roughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-	float2 xBRDF = g_xViewSet.g_xBRDFLUT.Sample(float2(NdotV, fRoughnessForLUT)).rg;
+	float2 xBRDF = GetBRDFLUT().Sample(float2(NdotV, fRoughnessForLUT)).rg;
 
 	float3 kS = F;
 	float3 kD = (1.0 - kS) * (1.0 - s.metallic);
@@ -223,7 +277,7 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 	float3 xDiffuseIBL = float3(0.0, 0.0, 0.0);
 	if (g_xPassSet.TranslucencyConstants.g_bIBLDiffuseEnabled != 0u)
 	{
-		float3 xIrradiance = g_xViewSet.g_xIrradianceMap.Sample(s.worldNormal).rgb;
+		float3 xIrradiance = GetIrradianceMap().Sample(s.worldNormal).rgb;
 		xDiffuseIBL        = kD * xIrradiance * s.albedo.rgb;
 	}
 
@@ -232,7 +286,7 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 	{
 		float3 xReflect = reflect(-xViewDir, s.worldNormal);
 		float  fLOD     = s.roughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xPrefiltered = g_xViewSet.g_xPrefilteredMap.SampleLevel(xReflect, fLOD).rgb;
+		float3 xPrefiltered = GetPrefilteredMap().SampleLevel(xReflect, fLOD).rgb;
 		xSpecularIBL = xPrefiltered * MultiscatterBRDF(F0, NdotV, fRoughnessForLUT, xBRDF);
 	}
 
@@ -248,10 +302,10 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 	{
 		float fCoatFresnel = PBR_CLEARCOAT_F0 + (1.0 - PBR_CLEARCOAT_F0) * pow(saturate(1.0 - NdotV), PBR_FRESNEL_POWER);
 		float fCoatRoughForLUT = clamp(s.ccRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-		float2 xCoatBRDF = g_xViewSet.g_xBRDFLUT.Sample(float2(NdotV, fCoatRoughForLUT)).rg;
+		float2 xCoatBRDF = GetBRDFLUT().Sample(float2(NdotV, fCoatRoughForLUT)).rg;
 		float3 xReflect = reflect(-xViewDir, s.worldNormal);
 		float  fCoatLOD = s.ccRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xCoatPrefiltered = g_xViewSet.g_xPrefilteredMap.SampleLevel(xReflect, fCoatLOD).rgb;
+		float3 xCoatPrefiltered = GetPrefilteredMap().SampleLevel(xReflect, fCoatLOD).rgb;
 		float3 xCoatSpecular = xCoatPrefiltered * (PBR_CLEARCOAT_F0 * xCoatBRDF.x + xCoatBRDF.y) * s.ccStrength;
 		xBase = xBase * (1.0 - s.ccStrength * fCoatFresnel) + xCoatSpecular * fSpecularAO;
 	}
@@ -263,7 +317,7 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 
 float3 ComputeSunDirect(MaterialSurface s, float3 xViewDir, float3 xWorldPos)
 {
-	float3 xLightDir = normalize(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
+	float3 xLightDir = normalize(-GetSunDir_Pad().xyz);
 	float3 xHalfDir  = normalize(xLightDir + xViewDir);
 
 	float NdotL = max(dot(s.worldNormal, xLightDir), 0.0);
@@ -272,7 +326,7 @@ float3 ComputeSunDirect(MaterialSurface s, float3 xViewDir, float3 xWorldPos)
 	float HdotV = max(dot(xHalfDir, xViewDir), 0.0);
 
 	if (NdotL <= PBR_EPSILON) return float3(0.0, 0.0, 0.0);
-	if (g_xViewSet.g_xView.g_xSunColour_Pad.a <= 0.1) return float3(0.0, 0.0, 0.0);
+	if (GetSunColour_Pad().a <= 0.1) return float3(0.0, 0.0, 0.0);
 
 	float roughness = max(s.roughness, PBR_MIN_ROUGHNESS);
 	float3 F0 = ComputeF0(s.albedo.rgb, s.metallic, s.specular);
@@ -295,7 +349,7 @@ float3 ComputeSunDirect(MaterialSurface s, float3 xViewDir, float3 xWorldPos)
 		Lo = Lo * fBaseAttenuation + xCoat;
 	}
 
-	float3 xRadiance = g_xViewSet.g_xView.g_xSunColour_Pad.rgb * g_xViewSet.g_xView.g_xSunColour_Pad.a;
+	float3 xRadiance = GetSunColour_Pad().rgb * GetSunColour_Pad().a;
 	float fShadow = ComputeSunShadowFactor(xWorldPos, NdotL);
 	return Lo * xRadiance * NdotL * fShadow;
 }
@@ -304,21 +358,21 @@ float3 ComputeSunDirect(MaterialSurface s, float3 xViewDir, float3 xWorldPos)
 float4 fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace) : SV_Target
 {
 	float3x3 TBN = BuildTBN(input.worldNormal, input.worldTangent, input.bitangentSign);
-	float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - input.worldPos);
+	float3 xViewDir = normalize(GetCamPos_Pad().xyz - input.worldPos);
 
 	DrawConstantsLayout dc = g_xDrawSet.DrawConstants;
-	MaterialGPU m = g_xGlobalSet.g_axMaterials[dc.g_uMaterialIndex];
+	MaterialGPU m = GetMaterial(dc.g_uMaterialIndex);
 
 	// Bindless material textures (draw-uniform index → no NonUniformResourceIndex).
-	Sampler2D xBaseColorTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.x];
-	Sampler2D xNormalTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.y];
-	Sampler2D xRoughnessMetallicTex = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.z];
-	Sampler2D xOcclusionTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.w];
-	Sampler2D xEmissiveTex          = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.x];
-	Sampler2D xHeightTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.y];
-	Sampler2D xDetailAlbedoTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.z];
-	Sampler2D xDetailNormalTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.w];
-	Sampler2D xDetailMaskTex        = g_xBindlessSet.g_axTextures[m.g_xTexIdx2.x];
+	Sampler2D xBaseColorTex         = GetBindlessTexture(m.g_xTexIdx0.x);
+	Sampler2D xNormalTex            = GetBindlessTexture(m.g_xTexIdx0.y);
+	Sampler2D xRoughnessMetallicTex = GetBindlessTexture(m.g_xTexIdx0.z);
+	Sampler2D xOcclusionTex         = GetBindlessTexture(m.g_xTexIdx0.w);
+	Sampler2D xEmissiveTex          = GetBindlessTexture(m.g_xTexIdx1.x);
+	Sampler2D xHeightTex            = GetBindlessTexture(m.g_xTexIdx1.y);
+	Sampler2D xDetailAlbedoTex      = GetBindlessTexture(m.g_xTexIdx1.z);
+	Sampler2D xDetailNormalTex      = GetBindlessTexture(m.g_xTexIdx1.w);
+	Sampler2D xDetailMaskTex        = GetBindlessTexture(m.g_xTexIdx2.x);
 
 	MaterialSurface xSurface = EvaluateMaterialSurface(
 		xBaseColorTex, xNormalTex, xRoughnessMetallicTex,
@@ -339,22 +393,24 @@ float4 fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace) : SV_Target
 
 	// Clustered dynamic lights — same cluster walk as the deferred composite,
 	// view-space Z computed from the world position (forward has no depth tex).
-	if ((g_xViewSet.g_xView.g_uViewFlags & FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED) != 0u)
+	// Stage 3b: ANDed under FLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED — BASIC mode bakes
+	// it FALSE, stripping this cluster-light block.
+	if (FLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED && ((GetViewFlags() & FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED) != 0u))
 	{
-		float fViewZ = mul(g_xViewSet.g_xView.g_xViewMat, float4(input.worldPos, 1.0)).z;
-		float2 xScreenUV = input.position.xy * g_xViewSet.g_xView.g_xRcpScreenDims;
+		float fViewZ = mul(GetViewMat(), float4(input.worldPos, 1.0)).z;
+		float2 xScreenUV = input.position.xy * GetRcpScreenDims();
 		uint3 xClusterCoord = ClusterCoordFromUVDepth(xScreenUV, fViewZ);
 		uint  uClusterIdx   = ClusterIndex(xClusterCoord);
-		uint  uLightCount   = g_xViewSet.g_xClusterLightCounts[uClusterIdx];
+		uint  uLightCount   = GetClusterLightCount(uClusterIdx);
 
 		float3 xDynLights = float3(0.0, 0.0, 0.0);
 		for (uint i = 0u; i < uLightCount; ++i)
 		{
-			uint uLightIdx = g_xViewSet.g_xClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
-			LightInstance xL = g_xViewSet.g_xLightBuffer[uLightIdx];
+			uint uLightIdx = GetClusterLightIndex(uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i);
+			LightInstance xL = GetLight(uLightIdx);
 			xDynLights += EvaluateLight(xL, input.worldPos, xSurface.worldNormal, xViewDir,
 			                            xSurface.albedo.rgb, xSurface.metallic, xSurface.roughness,
-			                            xSurface.specular, g_xViewSet.g_xBRDFLUT);
+			                            xSurface.specular, GetBRDFLUT());
 		}
 		xColour += xDynLights;
 	}

@@ -63,7 +63,7 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	// the cluster's UV corners and the slice's near/far Z planes.
 	float3 xClusterMin;
 	float3 xClusterMax;
-	ComputeClusterAABB(xClusterCoord, g_xViewSet.g_xView.g_xInvProjMat, xClusterMin, xClusterMax);
+	ComputeClusterAABB(xClusterCoord, GetInvProjMat(), xClusterMin, xClusterMax);
 
 	uint uLocalCount = 0u;
 	uint uLightCount = g_xPassSet.PushConstants.m_uLightCount;
@@ -72,7 +72,7 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	{
 		if (uLocalCount >= MAX_LIGHTS_PER_CLUSTER) break;
 
-		LightInstance xLight = g_xViewSet.g_xLightBuffer[i];
+		LightInstance xLight = GetLight(i);
 		uint uType = uint(xLight.m_xTypeOuter.y);
 
 		bool bInclude = false;
@@ -93,7 +93,7 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 			float  fRange    = xLight.m_xPositionRange.w;
 
 			// Transform light position into view space.
-			float4 xViewPos4 = mul(g_xViewSet.g_xView.g_xViewMat, float4(xWorldPos, 1.0));
+			float4 xViewPos4 = mul(GetViewMat(), float4(xWorldPos, 1.0));
 			float3 xViewPos = xViewPos4.xyz;
 
 			bInclude = SphereIntersectsAABB(xViewPos, fRange, xClusterMin, xClusterMax);

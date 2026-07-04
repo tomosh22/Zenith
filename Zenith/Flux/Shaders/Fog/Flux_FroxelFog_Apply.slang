@@ -86,7 +86,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	// Reconstruct linear depth in view space. Engine uses +Z forward, so
 	// viewPos.z is positive — no negation needed.
 	float4 clipPos = float4(input.uv * 2.0 - 1.0, depth, 1.0);
-	float4 viewPos = mul(g_xViewSet.g_xView.g_xInvProjMat, clipPos);
+	float4 viewPos = mul(GetInvProjMat(), clipPos);
 	viewPos /= viewPos.w;
 	float linearDepth = viewPos.z;
 

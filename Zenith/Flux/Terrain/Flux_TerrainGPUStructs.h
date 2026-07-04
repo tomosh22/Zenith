@@ -24,7 +24,7 @@ struct Zenith_TerrainLODData
 };
 
 // Chunk data structure that gets uploaded to GPU
-// Must match the GLSL struct in Flux_TerrainCulling.comp
+// Must match the struct in Flux_TerrainCulling.slang
 struct Zenith_TerrainChunkData
 {
 	Zenith_Maths::Vector4 m_xAABBMin;                            // xyz = min corner, w = padding

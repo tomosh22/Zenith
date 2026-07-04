@@ -59,10 +59,10 @@ FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertex
 float SampleVolumetricShadow(float3 worldPos)
 {
 	float4x4 axShadowMats[4] = {
-		g_xViewSet.g_xShadowMatrices[0],
-		g_xViewSet.g_xShadowMatrices[1],
-		g_xViewSet.g_xShadowMatrices[2],
-		g_xViewSet.g_xShadowMatrices[3],
+		GetShadowMatrix(0),
+		GetShadowMatrix(1),
+		GetShadowMatrix(2),
+		GetShadowMatrix(3),
 	};
 
 	const float2 axOffsets[4] = {
@@ -88,7 +88,7 @@ float SampleVolumetricShadow(float3 worldPos)
 		{
 			float2 xSampleUV = xSamplePos + axOffsets[i] * g_xPassSet.RaymarchConstants.u_fVolShadowConeRadius;
 			// Cascade selects the array layer (Phase 4b collapse).
-			float fShadowDepth = g_xViewSet.g_xCSM.Sample(float3(xSampleUV, float(iCascade))).r;
+			float fShadowDepth = GetCSM().Sample(float3(xSampleUV, float(iCascade))).r;
 			fShadow += (fBiasedDepth <= fShadowDepth) ? 1.0 : 0.0;
 		}
 		return fShadow / (float)VOL_SHADOW_SAMPLES;
@@ -116,7 +116,7 @@ float SampleDensity(float3 worldPos)
 float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 {
 	float3 worldPos  = GetWorldPosFromDepthTex(g_xPassSet.u_xDepthTexture, input.uv);
-	float3 cameraPos = g_xViewSet.g_xView.g_xCamPos_Pad.xyz;
+	float3 cameraPos = GetCamPos_Pad().xyz;
 
 	float3 rayDir      = normalize(worldPos - cameraPos);
 	float  maxDistance = min(length(worldPos - cameraPos), g_xPassSet.RaymarchConstants.u_xFogParams.w);
@@ -137,8 +137,8 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 	float  lastShadowSample        = 1.0;
 	uint   actualSteps             = 0;
 
-	float3 lightDir   = normalize(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
-	float3 lightColor = g_xViewSet.g_xView.g_xSunColour_Pad.rgb;
+	float3 lightDir   = normalize(-GetSunDir_Pad().xyz);
+	float3 lightColor = GetSunColour_Pad().rgb;
 
 	for (uint i = 0; i < g_xPassSet.RaymarchConstants.u_uNumSteps; i++)
 	{

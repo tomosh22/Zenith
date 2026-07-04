@@ -30,7 +30,7 @@ struct VsIn
 float4 vsMain(VsIn input) : SV_Position
 {
 	// The cascade pass's own VIEW set: g_xView holds the sun ortho view×proj.
-	return mul(g_xViewSet.g_xView.g_xViewProjMat, float4(input.a_xPosition, 1.0));
+	return mul(GetViewProjMat(), float4(input.a_xPosition, 1.0));
 }
 
 [shader("fragment")]

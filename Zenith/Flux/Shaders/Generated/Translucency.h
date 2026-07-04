@@ -105,16 +105,20 @@ namespace Flux_Generated_Translucency
 		{
 			unsigned char m_ag_xModelMatrix[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
 			unsigned int m_ug_uMaterialIndex; // slang=uint offset=64
-			unsigned int m_ug_uShadowCascade; // slang=uint offset=68
+			unsigned int m_ug_uPad0; // slang=uint offset=68
 			unsigned int m_ug_uPad1; // slang=uint offset=72
 			unsigned int m_ug_uPad2; // slang=uint offset=76
 			unsigned char m_ag_xVATParams[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
 		};
 		static_assert(sizeof(DrawConstants_CB) == 96, "DrawConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 64, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uShadowCascade) == 68, "DrawConstants.g_uShadowCascade offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 68, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 72, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uPad2) == 76, "DrawConstants.g_uPad2 offset drifted from Slang reflection");
+		// spec constant: bool
+		inline constexpr Flux_SpecConstantHandle hscFLUX_SC_VIEW_SHADOWS_PERMITTED{ "FLUX_SC_VIEW_SHADOWS_PERMITTED", 0u, 4u, 1u };
+		// spec constant: bool
+		inline constexpr Flux_SpecConstantHandle hscFLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED{ "FLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED", 1u, 4u, 1u };
 	}
 
 }

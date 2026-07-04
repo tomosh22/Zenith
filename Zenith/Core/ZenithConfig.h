@@ -109,6 +109,11 @@ static constexpr uint32_t FLUX_MAX_ATTACHMENT_LAYERS = 8;
 static constexpr uint32_t FLUX_MAX_BINDINGS_PER_GROUP = 32;
 // Binding-model spine: set 0 GLOBAL, 1 VIEW, 2 BINDLESS, 3 PASS, 4 DRAW, 5 reserved (future TLAS).
 static constexpr uint32_t FLUX_MAX_BINDING_GROUPS = 6;
+// Max specialization constants a single pipeline spec / shader reflection carries
+// (Flux Shader System Overhaul — Stage 3a). Spec constants occupy no descriptor
+// binding; this bounds the fixed-size Flux_SpecConstantTable and the backend's
+// per-pipeline VkSpecializationInfo scratch arrays.
+static constexpr uint32_t FLUX_MAX_SPEC_CONSTANTS = 8;
 
 // Bindless combined-image-sampler table (set 2 = BINDLESS, g_axTextures[]).
 // TARGET is the desired capacity; the runtime size is clamped to the device's
@@ -185,6 +190,10 @@ static constexpr PhysicsMeshQuality DEFAULT_PHYSICS_MESH_QUALITY = PhysicsMeshQu
 
 #ifndef FLUX_MAX_BINDING_GROUPS
 #define FLUX_MAX_BINDING_GROUPS ZenithConfig::FLUX_MAX_BINDING_GROUPS
+#endif
+
+#ifndef FLUX_MAX_SPEC_CONSTANTS
+#define FLUX_MAX_SPEC_CONSTANTS ZenithConfig::FLUX_MAX_SPEC_CONSTANTS
 #endif
 
 #ifndef FLUX_BINDLESS_TABLE_SIZE_TARGET

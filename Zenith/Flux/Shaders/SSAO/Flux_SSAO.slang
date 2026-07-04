@@ -49,15 +49,15 @@ float4 fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position) : SV_Target
 
 	float3 xFragPos     = GetViewPosFromDepth(input.uv, fDepth);
 	float3 xWorldNormal = normalize(g_xPassSet.g_xNormalTex.Sample(input.uv).rgb);
-	float3 xNormal      = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xWorldNormal));
+	float3 xNormal      = normalize(mul((float3x3)GetViewMat(), xWorldNormal));
 
 	// World-space SSAO radius projected into UV space scales by 1/depth and
 	// by the projection's per-axis scale — so the screen footprint of the
 	// sphere stays correct under perspective.
 	float fInvZ        = 0.5 / abs(xFragPos.z);
 	float2 xScreenScale = float2(
-		g_xPassSet.SSAOConstants.RADIUS * abs(g_xViewSet.g_xView.g_xProjMat[0][0]) * fInvZ,
-		g_xPassSet.SSAOConstants.RADIUS * abs(g_xViewSet.g_xView.g_xProjMat[1][1]) * fInvZ);
+		g_xPassSet.SSAOConstants.RADIUS * abs(GetProjMat()[0][0]) * fInvZ,
+		g_xPassSet.SSAOConstants.RADIUS * abs(GetProjMat()[1][1]) * fInvZ);
 
 	// Per-pixel random rotation breaks the banding pattern an unrotated
 	// 8-direction sample would otherwise produce.

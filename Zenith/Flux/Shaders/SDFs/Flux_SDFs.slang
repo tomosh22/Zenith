@@ -102,15 +102,15 @@ float4 RayMarch(float3 xRayDir)
 	float fDistanceFromOrigin = 0.0;
 	for (uint u = 0; u < kMaxSteps; u++)
 	{
-		float3 xSamplePoint = g_xViewSet.g_xView.g_xCamPos_Pad.xyz + fDistanceFromOrigin * xRayDir;
+		float3 xSamplePoint = GetCamPos_Pad().xyz + fDistanceFromOrigin * xRayDir;
 		float4 xColour;
 		float  fNearestDistance = SDF(xSamplePoint, xColour);
 		fDistanceFromOrigin += fNearestDistance;
 
 		if (fNearestDistance < kHitDistance)
 		{
-			float3 xNormal = GetNormal(g_xViewSet.g_xView.g_xCamPos_Pad.xyz + fDistanceFromOrigin * xRayDir);
-			return xColour + dot(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz, xNormal) / 2.0;
+			float3 xNormal = GetNormal(GetCamPos_Pad().xyz + fDistanceFromOrigin * xRayDir);
+			return xColour + dot(-GetSunDir_Pad().xyz, xNormal) / 2.0;
 		}
 		if (fDistanceFromOrigin > kMissDistance) return float4(0.0, 0.0, 0.0, 0.0);
 	}

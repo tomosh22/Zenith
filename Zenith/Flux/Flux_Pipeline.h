@@ -4,6 +4,7 @@
 // Split out of Flux.h.
 #include "Flux/Flux_BackendTypes.h"             // Flux_Shader, Flux_BlendState, Flux_PipelineLayout, Flux_VertexInputDescription, Flux_Pipeline
 #include "Flux/Flux_Enums.h"                    // TextureFormat, DepthCompareFunc, LoadAction, CullMode
+#include "Flux/Flux_SpecConstants.h"            // Flux_SpecConstantTable (Stage 3a per-pipeline spec-constant values)
 #include "Flux/Slang/Flux_ShaderDecl.h"  // const Flux_ShaderDecl& param of Flux_PipelineHelper
 
 struct Flux_PipelineSpecification
@@ -47,6 +48,12 @@ struct Flux_PipelineSpecification
 	// VK_EXT_extended_dynamic_state (Vulkan 1.3) and is not exported by the Android
 	// NDK libvulkan loader.
 	bool m_bDynamicDepthBias = false;
+
+	// Specialization-constant values baked into this pipeline variant (Flux Shader
+	// System Overhaul — Stage 3a). Name-keyed; resolved to the shader's runtime
+	// constant IDs via reflection in the backend's FromSpecification. Empty by
+	// default → the backend takes its original stage path (byte-identical pipeline).
+	Flux_SpecConstantTable m_xSpecConstants;
 };
 
 // Helper to reduce boilerplate when creating fullscreen post-processing pipelines.

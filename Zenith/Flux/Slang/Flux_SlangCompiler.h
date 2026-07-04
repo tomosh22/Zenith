@@ -17,6 +17,22 @@ struct Flux_BindingHandle
 	bool IsValid() const { return m_uSet != UINT32_MAX && m_uBinding != UINT32_MAX; }
 };
 
+// Codegen handle for a Slang specialization constant (Flux Shader System Overhaul
+// — Stage 3a). Emitted per program next to the binding handles: a feature passes
+// m_szName to Flux_SpecConstantTable::AddBool/AddUInt and the backend resolves it
+// to m_uConstantId via reflection at pipeline-build (name-keyed, so a hot-reload
+// that renumbers IDs stays correct). m_uConstantId is the baked ID for a drift
+// tripwire. Int-family only → m_uSize is always 4.
+struct Flux_SpecConstantHandle
+{
+	const char* m_szName        = nullptr;
+	u_int       m_uConstantId   = UINT32_MAX;
+	u_int       m_uSize         = 4;
+	u_int       m_uDefaultValue = 0;
+
+	bool IsValid() const { return m_szName != nullptr && m_uConstantId != UINT32_MAX; }
+};
+
 // Stage mask bit flags. Used in Flux_ReflectedBinding::m_uStageMask to record
 // which shader stages reference a resource. Bit values match a fresh enum, not
 // vk::ShaderStageFlagBits, so the .spv.refl format stays backend-neutral.
@@ -72,6 +88,22 @@ struct Flux_ReflectedBinding
 	bool                        m_bStaticallyUsed   = true;
 };
 
+// One reflected specialization constant (Slang [SpecializationConstant]).
+// Captured from the linked program layout (Stage-0 probe E4 pinned the API:
+// getOffset(SPECIALIZATION_CONSTANT) for the ID + getDefaultValueInt for the
+// default). Int-family only (bool/int) — Slang exposes int-family default reads
+// only — so m_uSize is always 4 (bool/int spec constants are 32-bit in SPIR-V).
+// Spec constants occupy NO descriptor binding; they ride the sidecar (v5) beside
+// m_axBindings and drive per-mode pipeline variants, never the root signature.
+struct Flux_ReflectedSpecConstant
+{
+	std::string m_strName;
+	u_int       m_uConstantId  = 0;   // SPIR-V constant_id (declaration order, 0..N-1)
+	u_int       m_uSize         = 4;  // bytes; always 4 (int-family)
+	u_int       m_uDefaultValue = 0;  // default packed as u32 (bool: 0/1)
+	std::string m_strTypeName;        // e.g. "bool", "int"
+};
+
 class Flux_ShaderReflection
 {
 public:
@@ -103,11 +135,22 @@ public:
 	// .spv.refl sidecar at runtime. No-op if uIndex is out of range.
 	void SetBindingStaticUse(u_int uIndex, bool bUsed);
 
+	// Specialization-constant table (Flux Shader System Overhaul — Stage 3a).
+	// Populated by ExtractSpecConstants after the binding walk; serialized in the
+	// v5 sidecar; merged per-stage (dedup by constant id) at shader load. Lookups
+	// are by name (the codegen handle carries the name; the backend resolves it to
+	// the runtime id). Linear scan — a program declares only a handful.
+	void AddSpecConstant(const Flux_ReflectedSpecConstant& xSpec);
+	const Flux_ReflectedSpecConstant* GetSpecConstant(const char* szName) const;
+	const Zenith_Vector<Flux_ReflectedSpecConstant>& GetSpecConstants() const { return m_axSpecConstants; }
+
 private:
 	Zenith_Vector<Flux_ReflectedBinding> m_axBindings;
 	// Map stores indices into m_axBindings so GetBinding returns a stable
 	// pointer into the vector.
 	Zenith_HashMap<std::string, u_int> m_xBindingMap;
+	// Spec constants (v5). Kept as a small flat vector — no map (handful per program).
+	Zenith_Vector<Flux_ReflectedSpecConstant> m_axSpecConstants;
 };
 
 // Description for a Slang program compile. One module file (mega-file per
@@ -121,6 +164,17 @@ struct Flux_SlangProgramDesc
 	const char* m_szFragmentEntry = nullptr;
 	const char* m_szComputeEntry  = nullptr;
 	const char* m_szTargetProfile = "spirv_1_3";
+
+	// Slang debug-info emission (Flux Shader System Overhaul — Stage 1). Set TRUE
+	// ONLY by the runtime-compile path (Zenith_Vulkan_Shader::InitialiseFromProgramSource)
+	// under #ifdef ZENITH_DEBUG, so RenderDoc sees Slang source in the SPIR-V it captures.
+	// FluxCompiler leaves it FALSE → the checked-in .spv/.spv.refl stay byte-identical.
+	// Adds DebugInformation=MAXIMAL without changing the optimized code (semantics-preserving).
+	bool        m_bEmitDebugInfo     = false;
+	// Opt-in (`--shader-debug-o0`): disable optimization for the runtime compile. NOT paired
+	// with m_bEmitDebugInfo by default — O0 changes float re-association (moves pixels), so it
+	// is a deliberate deep-debug opt-in, never the default.
+	bool        m_bDisableOptimization = false;
 };
 
 // Compiled artifacts for a multi-entry program. Each populated SPIR-V vector
@@ -136,6 +190,29 @@ struct Flux_SlangProgramResult
 	Flux_ShaderReflection m_xReflection;
 };
 
+#if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
+// Result of a single in-memory Slang probe compile (Flux_SlangCompiler::CompileProbeFromSource).
+// The Stage-0 capability probe suite (Flux_SlangProbes.Tests.inl) uses it to lock in the exact
+// Slang-language behaviours the shader-system overhaul stands on — `private` access control under
+// textual include (D1), visibility-invariant reflection (D1 fork), unreferenced-block space
+// assignment (spine spaces 0/1/2), spec-constant IDs (D4/D5), and generic-vs-concrete SPIR-V
+// parity (D2/Stage 4). A failed compile is a valid, inspectable outcome — the probe never asserts.
+struct Flux_SlangProbeResult
+{
+	bool                    m_bCompiled = false;      // front-end load (+ link, if an entry point was requested) succeeded
+	bool                    m_bHasReflection = false; // m_xReflection populated (a compute entry point was linked)
+	std::string             m_strDiagnostics;         // Slang diagnostics (compile errors / warnings), empty on clean success
+	Flux_ShaderReflection   m_xReflection;            // linked-program reflection via the engine's ExtractV2Reflection
+	Zenith_Vector<uint32_t> m_axSpirv;                // linked compute SPIR-V words (entry 0), when an entry point was requested
+
+	// Raw spec-constant reflection captured directly from the linked program layout (NOT via
+	// ExtractV2Reflection, which drops the SpecializationConstant category). Lets probe E4 pin the
+	// D5 extraction API and assert current behaviour.
+	struct SpecConstant { std::string m_strName; u_int m_uId = 0; int64_t m_iDefault = 0; bool m_bHasDefault = false; };
+	Zenith_Vector<SpecConstant> m_axSpecConstants;
+};
+#endif // ZENITH_WINDOWS && ZENITH_VULKAN
+
 class Flux_SlangCompiler
 {
 	friend class Zenith_UnitTests;
@@ -143,6 +220,18 @@ public:
 	static void Initialise();
 	static void Shutdown();
 	static bool IsInitialised();
+
+#if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
+	// Stage-0 capability probe. Compiles a single in-memory Slang source string through the SAME
+	// session config the engine's CompileProgram uses (search paths incl. SHADER_SOURCE_ROOT +
+	// column-major). Lazily calls Initialise() (unit tests run before Flux brings Slang up). If
+	// szComputeEntry is non-null it is composed/linked and its SPIR-V + reflection emitted (forces
+	// full back-end codegen); otherwise only the front-end module load runs (a pure accepts/rejects
+	// probe). Returns xOut.m_bCompiled; never asserts — a rejected compile fills m_strDiagnostics.
+	// bEmitDebugInfo forces DebugInformation=MAXIMAL for the compile (Stage-1 debug-info probe E6).
+	static bool CompileProbeFromSource(const char* szSource, const char* szComputeEntry, Flux_SlangProbeResult& xOut,
+									   bool bEmitDebugInfo = false);
+#endif // ZENITH_WINDOWS && ZENITH_VULKAN
 
 	// Modern Slang compile path. Loads xDesc.m_szModuleName as a Slang module
 	// from the configured search paths, finds the named entry points,

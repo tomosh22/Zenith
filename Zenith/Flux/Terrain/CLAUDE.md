@@ -18,7 +18,11 @@ GPU-driven terrain rendering with LOD streaming and frustum culling. Supports 4,
 - Shaders in `Zenith/Flux/Shaders/Terrain/` (all `.slang`):
   - `Flux_TerrainCulling.slang` - GPU compute shader for frustum culling
   - `Flux_TerrainResetCounters.slang` - GPU compute shader that zeroes the visible-count atomics
-  - `Flux_Terrain_ToGBuffer.slang` - G-buffer (splatmap 4-material blend)
+  - `Flux_Terrain_ToGBuffer.slang` - G-buffer (splatmap 4-material blend). The
+    splat blend is expressed as `TerrainSplatSurface`, conformed to the shared
+    `ISurfaceModel` seam (`Common/MaterialSurface.slang`) via `extension` — it
+    produces a `MaterialSurface` and the G-buffer packing stays outside. See
+    `Shaders/SHADER_STYLE.md` → *Interface / Extension Seams*.
   - `Flux_Terrain_ToShadowmap.slang` - shadow-cascade depth
 - The Terrain feature also OWNS the Water shader: `xWater` is declared in `Flux_TerrainShaders::apxALL` (`Flux_Terrain_Shaders.h`) and instantiated in `Flux_Terrain.cpp` (`m_xWaterShader`/`m_xWaterPipeline`). Its source lives at `Zenith/Flux/Shaders/Water/Flux_Water.slang` and its `m_szSubsystem` is `"Water"` (controls only generated-header grouping → `Generated/Water.h`); pipeline/compile/hot-reload all run through the Terrain subsystem.
 

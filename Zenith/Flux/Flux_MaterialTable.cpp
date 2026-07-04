@@ -198,3 +198,14 @@ void Flux_ReleaseMaterialIndex(u_int uIndex)
 #include "Flux/TAA/Flux_TAAJitter.Tests.inl"
 #include "Flux/TAA/Flux_VelocityHistory.Tests.inl"
 #include "Flux/TAA/Flux_TAA_ResolveCPU.Tests.inl"
+
+// Stage-0 Slang capability probes (Flux Shader System Overhaul). Compile crafted
+// in-memory snippets through Flux_SlangCompiler::CompileProbeFromSource, which only
+// exists in Windows+Vulkan builds (the runtime Slang compile path) — gate to match.
+#if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
+#include "Flux/Slang/Flux_SlangProbes.Tests.inl"
+#endif
+
+// Spec-constant value table + resolver (Flux Shader System Overhaul — Stage 3a).
+// Pure + backend-neutral (no device / no Slang) — hosted unconditionally.
+#include "Flux/Flux_SpecConstants.Tests.inl"

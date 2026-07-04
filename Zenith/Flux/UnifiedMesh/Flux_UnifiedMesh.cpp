@@ -84,7 +84,7 @@ namespace
 	{
 		u_int m_uMaterialIndex;
 		u_int m_uBucketOffset;   // per-view base: view*totalDrawItems + bucketOffset[slot]
-		u_int m_uPad0;           // was m_uShadowCascade — casters read the pass's bound per-view g_xView
+		u_int m_uPad0;           // pad (velocity path repurposes it as g_uSkinnedPrevVertBase; 0 otherwise)
 		u_int m_uPad1;
 		Zenith_Maths::Vector4 m_xVATParams;  // xy = VAT texture size, z = >0 when the bucket has VAT, w unused
 	};

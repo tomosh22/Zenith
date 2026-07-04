@@ -18,6 +18,7 @@
 // =====================================================================
 
 import Common.Fullscreen;
+import Common.GBuffer;   // DecodeNormal (shared with DenoiseH — no bindings, does not shift spine spaces)
 // Spine #include even though this shader uses no FrameConstants — it reserves
 // sets 0/1/2 so PassParams lands at set 3.
 #include "Common/Bindings.slang"
@@ -58,7 +59,7 @@ float GaussianWeight(float fDist, float fSigma)
 	return exp(-0.5 * fNorm * fNorm);
 }
 
-float3 DecodeNormal(float3 xRaw) { return normalize(xRaw); }
+// DecodeNormal moved to Common.GBuffer (shared with DenoiseH).
 
 [shader("fragment")]
 float4 fsMain(FullscreenVsOut input) : SV_Target

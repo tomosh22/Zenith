@@ -55,7 +55,7 @@ VsOut vsMain(VsIn input)
 	o.worldNormal = normalize(mul(xNormalMatrix, input.a_xNormal));
 
 	o.colour     = g_xDrawSet.PrimitivePushConstant.m_xColor;
-	o.position   = mul(g_xViewSet.g_xView.g_xViewProjMat, xWorldPos);
+	o.position   = mul(GetViewProjMat(), xWorldPos);
 	return o;
 }
 

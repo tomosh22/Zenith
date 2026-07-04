@@ -4,7 +4,7 @@
 #include "Maths/Zenith_FrustumCulling.h"
 
 //=============================================================================
-// GPU Culling Constants (matches layout in Flux_InstanceCulling.comp)
+// GPU Culling Constants (matches the frustum-plane layout in Flux_UnifiedMesh_Culling.slang)
 //=============================================================================
 
 // Frustum plane in GPU format (16 bytes)

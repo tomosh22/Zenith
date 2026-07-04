@@ -91,15 +91,15 @@ namespace Flux_Generated_UnifiedMesh
 		{
 			unsigned int m_ug_uMaterialIndex; // slang=uint offset=0
 			unsigned int m_ug_uBucketOffset; // slang=uint offset=4
-			unsigned int m_ug_uPad0; // slang=uint offset=8
-			unsigned int m_ug_uPad1; // slang=uint offset=12
+			unsigned int m_ug_uSkinnedPrevVertBase; // slang=uint offset=8
+			unsigned int m_ug_uIsSkinned; // slang=uint offset=12
 			unsigned char m_ag_xVATParams[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
 		};
 		static_assert(sizeof(DrawConstants_CB) == 32, "DrawConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 0, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uBucketOffset) == 4, "DrawConstants.g_uBucketOffset offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 8, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 12, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uSkinnedPrevVertBase) == 8, "DrawConstants.g_uSkinnedPrevVertBase offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uIsSkinned) == 12, "DrawConstants.g_uIsSkinned offset drifted from Slang reflection");
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler
@@ -199,15 +199,15 @@ namespace Flux_Generated_UnifiedMesh
 		{
 			unsigned int m_ug_uMaterialIndex; // slang=uint offset=0
 			unsigned int m_ug_uBucketOffset; // slang=uint offset=4
-			unsigned int m_ug_uPad0; // slang=uint offset=8
-			unsigned int m_ug_uPad1; // slang=uint offset=12
+			unsigned int m_ug_uSkinnedPrevVertBase; // slang=uint offset=8
+			unsigned int m_ug_uIsSkinned; // slang=uint offset=12
 			unsigned char m_ag_xVATParams[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
 		};
 		static_assert(sizeof(DrawConstants_CB) == 32, "DrawConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uMaterialIndex) == 0, "DrawConstants.g_uMaterialIndex offset drifted from Slang reflection");
 		static_assert(offsetof(DrawConstants_CB, m_ug_uBucketOffset) == 4, "DrawConstants.g_uBucketOffset offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad0) == 8, "DrawConstants.g_uPad0 offset drifted from Slang reflection");
-		static_assert(offsetof(DrawConstants_CB, m_ug_uPad1) == 12, "DrawConstants.g_uPad1 offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uSkinnedPrevVertBase) == 8, "DrawConstants.g_uSkinnedPrevVertBase offset drifted from Slang reflection");
+		static_assert(offsetof(DrawConstants_CB, m_ug_uIsSkinned) == 12, "DrawConstants.g_uIsSkinned offset drifted from Slang reflection");
 		// kind: StructuredBuffer
 		inline constexpr Flux_BindingHandle hVisibleIndexBuffer{ 4u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
 		// kind: CombinedTextureSampler

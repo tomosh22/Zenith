@@ -6,15 +6,15 @@
  * This header provides a single source of truth for all terrain LOD-related constants.
  * These values MUST be kept in sync between:
  *   - CPU streaming (Flux_TerrainStreamingManager)
- *   - GPU culling (Flux_TerrainCulling.comp)
- *   - GPU rendering (Flux_Terrain_VertCommon.fxh)
+ *   - GPU culling (Shaders/Terrain/Flux_TerrainCulling.slang)
+ *   - GPU rendering (Shaders/Terrain/Flux_Terrain_ToGBuffer.slang + the terrain vertex format)
  *
  * LOD System (2 levels):
  *   - HIGH (LOD 0): Highest detail, density divisor 1, streamed dynamically
  *   - LOW (LOD 1): Lower detail, density divisor 4, always-resident (never evicted)
  *
  * CRITICAL: If you change LOD thresholds here, also update:
- *   - Zenith/Flux/Shaders/Terrain/Flux_TerrainCulling.comp (selectLOD function)
+ *   - Zenith/Flux/Shaders/Terrain/Flux_TerrainCulling.slang (selectLOD function)
  */
 
 #include <cstdint>

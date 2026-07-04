@@ -22,7 +22,9 @@
 // ComputeClusterAABB is dead-stripped, that function being unused here.)
 // =====================================================================
 
-#include "Common/Bindings.slang"   // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
+#include "Common/Bindings.slang"       // spine: GLOBAL/VIEW/BINDLESS at sets 0/1/2
+#include "Common/ViewModes.slang"      // Stage 3b: FLUX_SC_VIEW_*_PERMITTED spec-constant view-mode mask
+#include "Common/ShadowSampling.slang" // Stage 6: IShadowFilter + ShadowFilterPCSS (this pass's 16-tap Vogel PCF + PCSS tier)
 import Common.Fullscreen;
 import Common.PBR;
 import Common.Lighting;
@@ -95,148 +97,10 @@ ParameterBlock<PassParams> g_xPassSet;
 [shader("vertex")]
 FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertexId); }
 
-// ============================ Cascaded shadow mapping ============================
-// Method: stabilised bounding-sphere cascades (fit + texel-snapped on the CPU) +
-// normal-offset receiver bias + optimised multi-tap PCF over a Vogel disk, with
-// an optional PCSS blocker search for contact-hardening soft shadows. All sample
-// patterns are deterministic frame-to-frame (this engine has no TAA), so nothing
-// crawls or sparkles.
-
-static const float SHADOW_GOLDEN_ANGLE = 2.39996323;   // rad — Vogel disk spiral
-static const float SHADOW_MAX_PENUMBRA_TEXELS = 16.0;  // clamp on PCSS softening
-static const uint  SHADOW_BLOCKER_TAPS = 16u;
-
-// Per-pixel kernel rotation via interleaved gradient noise (Jimenez). Stable for
-// a given pixel/frame, so it decorrelates the disk without introducing temporal
-// shimmer the way a time-varying jitter would.
-float ShadowKernelRotation(float2 xPixel)
-{
-	float fIGN = frac(52.9829189 * frac(dot(xPixel, float2(0.06711056, 0.00583715))));
-	return fIGN * 6.2831853;
-}
-
-float2 VogelDiskSample(uint uIndex, uint uCount, float fRotation)
-{
-	float fR     = sqrt((float(uIndex) + 0.5) / float(uCount));
-	float fTheta = float(uIndex) * SHADOW_GOLDEN_ANGLE + fRotation;
-	return float2(fR * cos(fTheta), fR * sin(fTheta));
-}
-
-float4 GatherCascadeDepth(int iCascade, float2 xUV)
-{
-	// Cascade selects the array layer (Phase 4b: one Sampler2DArray, no if-ladder).
-	return g_xViewSet.g_xCSM.Gather(float3(xUV, float(iCascade)));
-}
-
-// All 4 cascade sun view×proj matrices live in one StructuredBuffer (Phase 4a) —
-// directly indexable by the runtime cascade index (no per-CB switch needed).
-float4x4 ShadowMatrixForCascade(int iCascade)
-{
-	return g_xViewSet.g_xShadowMatrices[iCascade];
-}
-
-// Multi-tap PCF. Each Vogel tap issues a 4-texel Gather and compares each texel
-// against the (already biased) receiver depth — comparing raw depths individually
-// (never averaging depth before the compare) is what keeps shadow edges correct.
-// fRadiusTexels controls penumbra width.
-float SampleShadowPCF(int iCascade, float2 xUV, float fCompareDepth, float fRadiusTexels, uint uTaps, float fRotation)
-{
-	float fRcpRes = g_xPassSet.ShadowSampling.g_xParams0.y;
-	float fSum    = 0.0;
-	for (uint i = 0u; i < uTaps; ++i)
-	{
-		float2 xOffset = VogelDiskSample(i, uTaps, fRotation) * fRadiusTexels * fRcpRes;
-		float4 xDepths = GatherCascadeDepth(iCascade, xUV + xOffset);
-		float4 xLit    = step(float4(fCompareDepth, fCompareDepth, fCompareDepth, fCompareDepth), xDepths);
-		fSum          += dot(xLit, float4(0.25, 0.25, 0.25, 0.25));
-	}
-	return fSum / float(uTaps);
-}
-
-// PCSS blocker search: average depth of occluders nearer than the receiver, over
-// a disk scaled by the sun's angular size. Returns false in bFound when the
-// receiver is unoccluded (→ skip the expensive filter, surface is fully lit).
-float BlockerSearch(int iCascade, float2 xUV, float fReceiverDepth, float fSearchRadiusTexels, float fRotation, out bool bFound)
-{
-	float fRcpRes     = g_xPassSet.ShadowSampling.g_xParams0.y;
-	float fBlockerSum = 0.0;
-	float fCount      = 0.0;
-	for (uint i = 0u; i < SHADOW_BLOCKER_TAPS; ++i)
-	{
-		float2 xOffset = VogelDiskSample(i, SHADOW_BLOCKER_TAPS, fRotation) * fSearchRadiusTexels * fRcpRes;
-		float4 xDepths = GatherCascadeDepth(iCascade, xUV + xOffset);
-		[unroll]
-		for (int k = 0; k < 4; ++k)
-		{
-			if (xDepths[k] < fReceiverDepth)
-			{
-				fBlockerSum += xDepths[k];
-				fCount      += 1.0;
-			}
-		}
-	}
-	bFound = fCount > 0.5;
-	return bFound ? (fBlockerSum / fCount) : 0.0;
-}
-
-// Full per-cascade shadow evaluation: normal-offset bias → project → bounds test
-// → PCSS/PCF. Writes 1=lit … 0=shadowed into fShadow and returns whether the
-// receiver projected inside this cascade's map.
-bool EvaluateCascadeShadow(int iCascade, float3 xWorldPos, float3 xNormal, float fNdotL, float fRotation, out float fShadow)
-{
-	fShadow = 1.0;
-
-	float fWorldPerTexel = g_xPassSet.ShadowSampling.g_xCascadeWorldPerTexel[iCascade];
-	float fDepthRange    = g_xPassSet.ShadowSampling.g_xCascadeDepthRange[iCascade];
-	float fNormalOffset  = g_xPassSet.ShadowSampling.g_xParams0.z;
-	float fPCFRadius     = g_xPassSet.ShadowSampling.g_xParams1.x;
-	float fSunAngle      = g_xPassSet.ShadowSampling.g_xParams1.y;
-	// Clamp the tap count to a sane, bounded range — guarantees the PCF loop
-	// terminates and never divides by zero even if the CB were ever unpopulated.
-	uint  uTaps          = clamp(uint(g_xPassSet.ShadowSampling.g_xParams1.w), 1u, 32u);
-	bool  bPCSS          = g_xPassSet.ShadowSampling.g_xParams2.x > 0.5;
-
-	// Normal-offset bias: shift the receiver along its normal by a few texels,
-	// scaled by sin(angle-to-light) so grazing surfaces (worst acne) get the most
-	// push and forward-facing ones get almost none. Per-cascade texel size makes
-	// this self-scaling across cascades — no per-cascade tuning needed.
-	float fSinTheta   = sqrt(saturate(1.0 - fNdotL * fNdotL));
-	float3 xOffsetPos = xWorldPos + xNormal * (fWorldPerTexel * fNormalOffset * (fSinTheta + 0.15));
-
-	float4 xShadowClip = mul(ShadowMatrixForCascade(iCascade), float4(xOffsetPos, 1.0));
-	float3 xProj       = xShadowClip.xyz / xShadowClip.w;
-	float2 xUV         = xProj.xy * 0.5 + 0.5;
-	float  fDepth      = xProj.z;
-
-	if (xUV.x < 0.0 || xUV.x > 1.0 || xUV.y < 0.0 || xUV.y > 1.0) return false;
-	if (fDepth < 0.0 || fDepth > 1.0)                              return false;
-
-	// No depth bias is applied here — it is baked into the stored caster depth by
-	// the rasterizer's fixed-function slope-scaled depth bias (vkCmdSetDepthBias on
-	// the shadow-caster pipelines). The receiver compares its true depth.
-	float fCompareDepth = fDepth;
-
-	float fRadiusTexels = fPCFRadius;
-	if (bPCSS)
-	{
-		// Largest plausible penumbra (blocker at the far end of the depth range),
-		// in texels — also used as the blocker-search radius.
-		float fMaxPenumbra = clamp(fSunAngle * fDepthRange / fWorldPerTexel,
-								   fPCFRadius, SHADOW_MAX_PENUMBRA_TEXELS);
-		bool  bFound;
-		float fAvgBlocker = BlockerSearch(iCascade, xUV, fCompareDepth, fMaxPenumbra, fRotation, bFound);
-		if (!bFound) return true; // unoccluded → fully lit
-
-		// Convert NDC blocker→receiver gap to a world distance (ortho depth is
-		// linear), then to a penumbra radius via the sun's angular size.
-		float fGapWorld     = max(fCompareDepth - fAvgBlocker, 0.0) * fDepthRange;
-		float fPenumbraWorld = fGapWorld * fSunAngle;
-		fRadiusTexels = clamp(fPenumbraWorld / fWorldPerTexel, fPCFRadius, fMaxPenumbra);
-	}
-
-	fShadow = SampleShadowPCF(iCascade, xUV, fCompareDepth, fRadiusTexels, uTaps, fRotation);
-	return true;
-}
+// The cascaded-shadow FILTER (16-tap Vogel PCF + PCSS blocker search) now lives in
+// Common/ShadowSampling.slang as ShadowFilterPCSS (an IShadowFilter). fsMain fills
+// one from this pass's ShadowSampling CB and drives it with its OWN cascade walk
+// (depth-split selection + cross-fade) below. Nothing about the filter math moved.
 
 // ----- IBL composition (was DeferredShading_IBL.fxh) -----
 
@@ -252,7 +116,7 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	float3 F     = FresnelSchlickRoughness(NdotV, F0, fRoughness);
 
 	float  fRoughnessForLUT = clamp(fRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-	float2 xBRDF = g_xViewSet.g_xBRDFLUT.Sample(float2(NdotV, fRoughnessForLUT)).rg;
+	float2 xBRDF = GetBRDFLUT().Sample(float2(NdotV, fRoughnessForLUT)).rg;
 
 	// SSR specular contribution (Fresnel applied here, not in SSR shader,
 	// so SSR + IBL share consistent Fresnel and energy is conserved).
@@ -285,7 +149,7 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	float3 xDiffuseIBL = float3(0.0, 0.0, 0.0);
 	if (g_xPassSet.DeferredShadingConstants.g_bIBLDiffuseEnabled != 0)
 	{
-		float3 xIrradiance = g_xViewSet.g_xIrradianceMap.Sample(xNormal).rgb;
+		float3 xIrradiance = GetIrradianceMap().Sample(xNormal).rgb;
 		xDiffuseIBL        = kD * xIrradiance * xAlbedo;
 	}
 
@@ -308,7 +172,7 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	{
 		float3 xReflect = reflect(-xViewDir, xNormal);
 		float  fLOD     = fRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xPrefiltered = g_xViewSet.g_xPrefilteredMap.SampleLevel(xReflect, fLOD).rgb;
+		float3 xPrefiltered = GetPrefilteredMap().SampleLevel(xReflect, fLOD).rgb;
 		xSpecularIBL = xPrefiltered * MultiscatterBRDF(F0, NdotV, fRoughness, xBRDF);
 	}
 
@@ -333,10 +197,10 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 	{
 		float fCoatFresnel = PBR_CLEARCOAT_F0 + (1.0 - PBR_CLEARCOAT_F0) * pow(saturate(1.0 - NdotV), PBR_FRESNEL_POWER);
 		float fCoatRoughForLUT = clamp(fClearCoatRoughness, PBR_BRDF_LUT_MIN_ROUGHNESS, PBR_BRDF_LUT_MAX_ROUGHNESS);
-		float2 xCoatBRDF = g_xViewSet.g_xBRDFLUT.Sample(float2(NdotV, fCoatRoughForLUT)).rg;
+		float2 xCoatBRDF = GetBRDFLUT().Sample(float2(NdotV, fCoatRoughForLUT)).rg;
 		float3 xReflect = reflect(-xViewDir, xNormal);
 		float  fCoatLOD = fClearCoatRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
-		float3 xCoatPrefiltered = g_xViewSet.g_xPrefilteredMap.SampleLevel(xReflect, fCoatLOD).rgb;
+		float3 xCoatPrefiltered = GetPrefilteredMap().SampleLevel(xReflect, fCoatLOD).rgb;
 		float3 xCoatSpecular = xCoatPrefiltered * (PBR_CLEARCOAT_F0 * xCoatBRDF.x + xCoatBRDF.y) * fClearCoat;
 		xBase = xBase * (1.0 - fClearCoat * fCoatFresnel) + xCoatSpecular * fSpecularAO;
 	}
@@ -362,7 +226,7 @@ void CookTorrance_Directional(inout float4 xFinalColor,
 								uint  uShadingModel)
 {
 	float3 xLightDir = normalize(xLight.m_xDirection.xyz);
-	float3 xViewDir  = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - xWorldPos);
+	float3 xViewDir  = normalize(GetCamPos_Pad().xyz - xWorldPos);
 	float3 xHalfDir  = normalize(xLightDir + xViewDir);
 
 	float fRawNdotL = dot(xNormal, xLightDir);
@@ -445,7 +309,7 @@ float ScreenSpaceContactShadow(float3 xWorldPos, float3 xLightDir)
 	for (int i = 0; i < iSteps; ++i)
 	{
 		xPosW += xStepW;
-		float3 xViewPos = mul(g_xViewSet.g_xView.g_xViewMat, float4(xPosW, 1.0)).xyz;
+		float3 xViewPos = mul(GetViewMat(), float4(xPosW, 1.0)).xyz;
 		if (xViewPos.z <= 0.0) break;               // behind camera (+Z forward)
 		float3 xScreen = ViewToScreen(xViewPos);    // .xy = UV
 		float2 xUV = xScreen.xy;
@@ -486,7 +350,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 		{
 			float2 xLutUV = float2((input.uv.x - fMinX) / fSize,
 									(input.uv.y - fMinY) / fSize);
-			float2 xBRDF  = g_xViewSet.g_xBRDFLUT.Sample(xLutUV).rg;
+			float2 xBRDF  = GetBRDFLUT().Sample(xLutUV).rg;
 			return float4(xBRDF.r, xBRDF.g, 0.0, 1.0);
 		}
 	}
@@ -546,7 +410,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 7u) return float4(xNormal * 0.5 + 0.5, 1.0);
 	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 8u)
 	{
-		float fNdotLDbg = max(dot(xNormal, normalize(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz)), 0.0);
+		float fNdotLDbg = max(dot(xNormal, normalize(-GetSunDir_Pad().xyz)), 0.0);
 		return float4(fNdotLDbg.xxx, 1.0);
 	}
 	if (g_xPassSet.DeferredShadingConstants.g_uDebugMode == 10u)
@@ -561,7 +425,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	if (uShadingModel == GBUFFER_SHADING_UNLIT)
 		return float4(xDiffuse.rgb + xEmissive, 1.0);
 
-	float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - xWorldPos);
+	float3 xViewDir = normalize(GetCamPos_Pad().xyz - xWorldPos);
 
 	// IBL + SSR + SSGI ambient — produces the base colour before direct light.
 	float3 xIBLAmbient = ComputeIBLAmbient(xNormal, xViewDir, xDiffuse.rgb,
@@ -574,8 +438,8 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	// jittery projection bounds), then sampled with normal-offset bias + PCSS/PCF,
 	// and cross-faded into the next cascade across a band to hide the seam.
 	DirectionalLight xLight;
-	xLight.m_xColour    = g_xViewSet.g_xView.g_xSunColour_Pad;
-	xLight.m_xDirection = float4(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz, 0.0);
+	xLight.m_xColour    = GetSunColour_Pad();
+	xLight.m_xDirection = float4(-GetSunDir_Pad().xyz, 0.0);
 
 	const int  iNumCSMs    = 4;
 	float3     xLightDir   = normalize(xLight.m_xDirection.xyz);
@@ -600,20 +464,37 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 
 	// Per-view shadow gate: a view with shadows disabled (the material preview)
 	// skips CSM + contact shadows entirely — fShadowFactor stays 1 (fully lit).
-	const bool bViewShadows = (g_xViewSet.g_xView.g_uViewFlags & FLUX_VIEW_FLAG_SHADOWS_ENABLED) != 0u;
+	// Stage 3b: ANDed under the FLUX_SC_VIEW_SHADOWS_PERMITTED permission mask — the
+	// BASIC-mode pipeline bakes it FALSE, constant-folding bViewShadows to false so
+	// the whole CSM + contact-shadow path below is stripped. FULL mode (default true)
+	// is identical to the pre-3b flag test.
+	const bool bViewShadows = FLUX_SC_VIEW_SHADOWS_PERMITTED && ((GetViewFlags() & FLUX_VIEW_FLAG_SHADOWS_ENABLED) != 0u);
 
 	// Only resolve the sun shadow on surfaces that actually face the sun; a
 	// surface with NdotL<=0 is self-shadowed (handled by the NdotL term below).
 	if (bViewShadows && fNdotL > 0.0)
 	{
-		float fRotation = ShadowKernelRotation(input.uv * float2(g_xViewSet.g_xView.g_xScreenDims));
+		// Build this pass's shadow filter from its own ShadowSampling CB (Stage 6:
+		// the filter math lives in Common/ShadowSampling.slang; the cascade walk —
+		// selection above + cross-fade below — stays here). Field values are exactly
+		// what the inline filter used to read straight from g_xPassSet.
+		ShadowFilterPCSS xFilter;
+		xFilter.fRcpRes               = g_xPassSet.ShadowSampling.g_xParams0.y;
+		xFilter.fNormalOffset         = g_xPassSet.ShadowSampling.g_xParams0.z;
+		xFilter.fPCFRadius            = g_xPassSet.ShadowSampling.g_xParams1.x;
+		xFilter.fSunAngle             = g_xPassSet.ShadowSampling.g_xParams1.y;
+		xFilter.fTapCountRaw          = g_xPassSet.ShadowSampling.g_xParams1.w;
+		xFilter.fPCSSEnabled          = g_xPassSet.ShadowSampling.g_xParams2.x;
+		xFilter.xCascadeWorldPerTexel = g_xPassSet.ShadowSampling.g_xCascadeWorldPerTexel;
+		xFilter.xCascadeDepthRange    = g_xPassSet.ShadowSampling.g_xCascadeDepthRange;
+		xFilter.fRotation             = ShadowKernelRotation(input.uv * float2(GetScreenDims()));
 
 		float fShadow;
-		bool  bInside = EvaluateCascadeShadow(iCascade, xWorldPos, xNormal, fNdotL, fRotation, fShadow);
+		bool  bInside = xFilter.EvaluateCascade(iCascade, xWorldPos, xNormal, fNdotL, fShadow);
 		// Sphere-fit cascades cover the whole slice, but normal-offset can push a
 		// grazing receiver just past the edge — fall back to the coarser cascade.
 		if (!bInside && iCascade + 1 < iNumCSMs)
-			bInside = EvaluateCascadeShadow(iCascade + 1, xWorldPos, xNormal, fNdotL, fRotation, fShadow);
+			bInside = xFilter.EvaluateCascade(iCascade + 1, xWorldPos, xNormal, fNdotL, fShadow);
 
 		fShadowFactor = bInside ? fShadow : 1.0;
 
@@ -628,7 +509,7 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 			{
 				float fW = saturate((fViewZ - fStart) / fBand);
 				float fNextShadow;
-				if (EvaluateCascadeShadow(iCascade + 1, xWorldPos, xNormal, fNdotL, fRotation, fNextShadow))
+				if (xFilter.EvaluateCascade(iCascade + 1, xWorldPos, xNormal, fNdotL, fNextShadow))
 					fShadowFactor = lerp(fShadowFactor, fNextShadow, fW);
 			}
 		}
@@ -661,21 +542,23 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	// (which is unlit by design). Per-view gate: the cluster grid is
 	// main-camera froxel space, so a secondary view (the material preview)
 	// disables cluster sampling via its flag word.
-	if ((g_xViewSet.g_xView.g_uViewFlags & FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED) != 0u)
+	// Stage 3b: ANDed under FLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED — the BASIC-mode
+	// pipeline bakes it FALSE, stripping this whole cluster-light block.
+	if (FLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED && ((GetViewFlags() & FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED) != 0u))
 	{
 		float fViewZ = DepthToViewZ(input.uv, fDepth);
 		uint3 xClusterCoord = ClusterCoordFromUVDepth(input.uv, fViewZ);
 		uint  uClusterIdx   = ClusterIndex(xClusterCoord);
-		uint  uLightCount   = g_xViewSet.g_xClusterLightCounts[uClusterIdx];
+		uint  uLightCount   = GetClusterLightCount(uClusterIdx);
 
 		float3 xDynLights = float3(0.0, 0.0, 0.0);
 		for (uint i = 0u; i < uLightCount; ++i)
 		{
-			uint uLightIdx = g_xViewSet.g_xClusterLightIndices[uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i];
-			LightInstance xL = g_xViewSet.g_xLightBuffer[uLightIdx];
+			uint uLightIdx = GetClusterLightIndex(uClusterIdx * MAX_LIGHTS_PER_CLUSTER + i);
+			LightInstance xL = GetLight(uLightIdx);
 			xDynLights += EvaluateLight(xL, xWorldPos, xNormal, xViewDir,
 			                            xDiffuse.rgb, fMetallic, fRoughness, fSpecular,
-			                            g_xViewSet.g_xBRDFLUT);
+			                            GetBRDFLUT());
 		}
 		xColour.rgb += xDynLights;
 	}

@@ -111,8 +111,8 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `SceneGraph/` - Render scene snapshot + culling
 - `RenderViews/` - Render-view registry (fixed slots: main camera / shadow cascades / material preview) + the editor material-preview controller. Each view owns a persistent VIEW descriptor-set instance (`.View(slot)` on a graph pass selects it) and, for full-pipeline views, its own G-buffer/depth/HDR transients. The material preview renders through the REAL pipeline as a second view (per-draw-item view masks scope content); its old bespoke render system was deleted.
 - `MeshGeometry/` - Shared mesh geometry buffers
-- `Shaders/` - `.slang` shader sources (`Common/` shared helper modules)
-- `Slang/` - Shader catalog + Slang compilation glue (`Flux_ShaderCatalog`)
+- `Shaders/` - `.slang` shader sources (`Common/` shared helper modules). Conventions + the frequency-set spine, accessor facade, `interface`/`extension` seams, spec-constant folding, and include-vs-import rules are in [Shaders/SHADER_STYLE.md](Shaders/SHADER_STYLE.md). Feature shaders reach the GLOBAL/VIEW/BINDLESS sets only through the free-function accessors in `Common/Bindings.slang` — never the raw `g_xViewSet`/`g_xGlobalSet`/`g_xBindlessSet` blocks (enforced by the spine lint below).
+- `Slang/` - Shader catalog + Slang compilation glue (`Flux_ShaderCatalog`) + the spine lint (`Flux_SpineLint.h`, a FluxCompiler gate that fails the build on any direct spine poke / spine `extension` / block redeclaration outside `Common/Bindings.slang`).
 - `Backend/` - Backend concept conformance asserts (`Flux_BackendConformance.cpp`)
 - `RenderGraph/` - Render graph lifecycle, barrier synthesis, builder API (see RenderGraph/CLAUDE.md)
 

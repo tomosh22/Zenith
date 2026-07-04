@@ -100,11 +100,6 @@ private:
 	void CreateRenderTargets();
 	void DestroyRenderTargets();
 
-	void GenerateIrradianceMap();
-	void GeneratePrefilteredMap();
-	void GenerateIrradianceFace(u_int uFace);
-	void GeneratePrefilteredFace(u_int uMip, u_int uFace);
-
 	void ResetIBLRegenStateForRecompile();
 	bool ResolveBRDFLUTRun();
 	void RunFirstGenerationFrame(bool (&abRunIrradiance)[6],

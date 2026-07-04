@@ -60,10 +60,10 @@ static const int VOL_SHADOW_SAMPLES = 4;
 float SampleVolumetricShadow(float3 worldPos)
 {
 	float4x4 axShadowMats[4] = {
-		g_xViewSet.g_xShadowMatrices[0],
-		g_xViewSet.g_xShadowMatrices[1],
-		g_xViewSet.g_xShadowMatrices[2],
-		g_xViewSet.g_xShadowMatrices[3],
+		GetShadowMatrix(0),
+		GetShadowMatrix(1),
+		GetShadowMatrix(2),
+		GetShadowMatrix(3),
 	};
 
 	// Fixed 4-tap rotated cone offsets — deterministic, no temporal noise.
@@ -94,7 +94,7 @@ float SampleVolumetricShadow(float3 worldPos)
 			// would force Slang to declare ComputeDerivativeGroupQuadsKHR.
 			// Explicit LOD 0 is what we want here anyway (CSMs are
 			// non-mipped depth textures). Cascade selects the array layer.
-			float fShadowDepth = g_xViewSet.g_xCSM.SampleLevel(float3(xSampleUV, float(iCascade)), 0).r;
+			float fShadowDepth = GetCSM().SampleLevel(float3(xSampleUV, float(iCascade)), 0).r;
 			fShadow += (fBiasedDepth <= fShadowDepth) ? 1.0 : 0.0;
 		}
 		return fShadow / (float)VOL_SHADOW_SAMPLES;
@@ -124,27 +124,27 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	}
 
 	int3 gridSize = (int3)g_xPassSet.LightConstants.u_xGridDimensions.xyz;
-	float3 worldPos = FroxelToWorld(froxelCoord, gridSize, g_xViewSet.g_xView.g_xInvViewProjMat,
-									 g_xViewSet.g_xView.g_xCameraNearFar.x,
-									 g_xViewSet.g_xView.g_xCameraNearFar.y);
+	float3 worldPos = FroxelToWorld(froxelCoord, gridSize, GetInvViewProjMat(),
+									 GetCameraNearFar().x,
+									 GetCameraNearFar().y);
 	// FroxelToWorld returns a camera-relative position; lift it to world.
-	worldPos += g_xViewSet.g_xView.g_xCamPos_Pad.xyz;
+	worldPos += GetCamPos_Pad().xyz;
 
 	// View direction towards camera (for the phase function dot).
 	float2 uv     = (float2(froxelCoord.xy) + 0.5) / g_xPassSet.LightConstants.u_xGridDimensions.xy;
 	float2 ndc    = uv * 2.0 - 1.0;
 	float4 clipPos = float4(ndc, 0.5, 1.0);
 	// Inverse projection from clip → view, then negate to get camera-facing.
-	float4x4 invProj = g_xViewSet.g_xView.g_xInvProjMat;
+	float4x4 invProj = GetInvProjMat();
 	float4 viewPos = mul(invProj, clipPos);
 	float3 viewDir = -normalize(viewPos.xyz);
 
-	float3 lightDir = normalize(-g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
+	float3 lightDir = normalize(-GetSunDir_Pad().xyz);
 
 	float cosTheta = dot(viewDir, lightDir);
 	float phase    = HenyeyGreenstein(cosTheta, g_xPassSet.LightConstants.u_fPhaseG);
 
-	float3 lightColour = g_xViewSet.g_xView.g_xSunColour_Pad.rgb * g_xPassSet.LightConstants.u_xLightColour.a;
+	float3 lightColour = GetSunColour_Pad().rgb * g_xPassSet.LightConstants.u_xLightColour.a;
 	float  shadowTerm  = SampleVolumetricShadow(worldPos);
 
 	// Single-scattering albedo normalisation — scattered light cannot

@@ -420,6 +420,28 @@ std::string Flux_CodeGenerator::BuildSubsystemHeaderContent(const char* szSubsys
 			}
 		}
 
+		// Specialization-constant handles (Flux Shader System Overhaul — Stage 3a).
+		// One typed handle per spec constant (hsc<Name>{ "name", id, size, default }),
+		// name-keyed so a feature stages values via Flux_SpecConstantTable::AddBool/
+		// AddUInt and the backend resolves the id via reflection. Empty for every
+		// program until Stage 3b declares the first [SpecializationConstant] — so this
+		// loop emits nothing today (the generated tree stays byte-identical).
+		const Zenith_Vector<Flux_ReflectedSpecConstant>& axSpecs = xPR.m_pxReflection->GetSpecConstants();
+		for (u_int s = 0; s < axSpecs.GetSize(); s++)
+		{
+			const Flux_ReflectedSpecConstant& xSpec = axSpecs.Get(s);
+			if (xSpec.m_strName.empty()) continue;
+			std::string strSpecIdent = SanitizeIdentifier(xSpec.m_strName);
+			char szSpecLine[768];
+			snprintf(szSpecLine, sizeof(szSpecLine),
+					 "\t\t// spec constant: %s\n"
+					 "\t\tinline constexpr Flux_SpecConstantHandle hsc%s{ \"%s\", %uu, %uu, %uu };\n",
+					 xSpec.m_strTypeName.c_str(),
+					 strSpecIdent.c_str(), xSpec.m_strName.c_str(),
+					 xSpec.m_uConstantId, xSpec.m_uSize, xSpec.m_uDefaultValue);
+			strContent += szSpecLine;
+		}
+
 		strContent += "\t}\n\n";
 	}
 

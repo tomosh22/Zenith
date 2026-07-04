@@ -37,7 +37,7 @@ FullscreenVsOut vsMain(uint vertexId : SV_VertexID) { return FullscreenVS(vertex
 float4 fsMain(FullscreenVsOut input) : SV_Target
 {
 	float3 xWorldPos      = GetWorldPosFromDepthTex(g_xPassSet.g_xDepthTex, input.uv);
-	float3 xCameraToPixel = xWorldPos - g_xViewSet.g_xView.g_xCamPos_Pad.xyz;
+	float3 xCameraToPixel = xWorldPos - GetCamPos_Pad().xyz;
 	float  fDist          = length(xCameraToPixel);
 
 	// Beer-Lambert extinction (scalar form).
@@ -47,14 +47,14 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	// pow(cosTheta, 8). g_fPhaseG ∈ [0, 0.95]: 0 = isotropic, 0.8 ≈ haze,
 	// 0.95 ≈ Mie water droplets. Exposed via Render/Fog/Phase G debug var.
 	float3 xViewDir   = normalize(xCameraToPixel);
-	float  fCosTheta  = dot(xViewDir, -g_xViewSet.g_xView.g_xSunDir_Pad.xyz);
+	float  fCosTheta  = dot(xViewDir, -GetSunDir_Pad().xyz);
 
 	float fPhase           = HenyeyGreenstein(fCosTheta, g_xPassSet.FogConstants.g_fPhaseG);
 	float fPhaseMax        = HenyeyGreenstein(1.0, g_xPassSet.FogConstants.g_fPhaseG);
 	float fPhaseNormalized = fPhase / fPhaseMax;
 
 	float3 xFogColour = lerp(g_xPassSet.FogConstants.g_xFogColour_Falloff.xyz,
-							  g_xViewSet.g_xView.g_xSunColour_Pad.xyz,
+							  GetSunColour_Pad().xyz,
 							  fPhaseNormalized);
 	return float4(xFogColour, fFogAmount);
 }

@@ -347,9 +347,8 @@ void Flux_RendererImpl::LateInitialise()
 	// Initialize Slang compiler before any shader loading. Slang is the Vulkan
 	// SPIR-V toolchain; the D3D12 null backend loads pre-baked reflection only.
 	Flux_SlangCompiler::Initialise();
-	// Tell the modern session API where to resolve `loadModule` paths from.
-	// Required for FluxShaderProgram-based runtime compilation; the legacy
-	// per-file paths embed their own search root via spAddSearchPath.
+	// Tell the Slang session where to resolve `import` / `loadModule` paths from
+	// (the shader source root) so runtime shader compilation finds the Common/* modules.
 	Flux_SlangCompiler::AddSearchPath(SHADER_SOURCE_ROOT);
 #endif
 

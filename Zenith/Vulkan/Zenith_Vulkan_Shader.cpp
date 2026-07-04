@@ -4,6 +4,7 @@
 #include "Zenith_Vulkan_Pipeline.h"
 #include "Zenith_Vulkan.h"
 #include "Flux/Slang/Flux_ShaderCatalog.h"
+#include "Core/Zenith_CommandLine.h"   // --shader-debug-o0 (runtime-compile debug info, Stage 1)
 
 #ifdef ZENITH_WINDOWS
 #include "Flux/Slang/Flux_ShaderHotReload.h"
@@ -142,6 +143,17 @@ Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramSource(const Flux_Shade
 	Flux_SlangProgramDesc xDesc;
 	Flux_ShaderCatalog::DescribeProgram(xDecl, xDesc);
 
+	// Flux Shader System Overhaul — Stage 1: emit Slang debug info in Debug builds so
+	// RenderDoc shows source in the runtime-compiled SPIR-V. This is the runtime path
+	// ONLY — the offline FluxCompiler never sets it, so checked-in artifacts stay
+	// optimized + byte-identical. Debug info is semantics-preserving (no float re-assoc).
+#ifdef ZENITH_DEBUG
+	xDesc.m_bEmitDebugInfo = true;
+#endif
+	// Opt-in deep-debug (`--shader-debug-o0`): additionally disable optimization. NOT
+	// default — O0 moves pixels (float re-association), so it is a deliberate opt-in.
+	xDesc.m_bDisableOptimization = Zenith_CommandLine::IsShaderDebugO0();
+
 	Flux_SlangProgramResult xResult;
 	if (!Flux_SlangCompiler::CompileProgram(xDesc, xResult))
 	{
@@ -203,12 +215,10 @@ Zenith_Status Zenith_Vulkan_Shader::InitialiseFromProgramSource(const Flux_Shade
 }
 #endif
 
-// Legacy Initialise(strVert, strFrag, ...) and InitialiseCompute(strCompute)
-// were removed when the Slang migration completed. Engine code now uses
-// Initialise(FluxShaderProgram) + the registry; offline path goes through
-// InitialiseFromProgramArtifacts (Android), runtime through
-// InitialiseFromProgramSource (Windows). Tessellation has no callers
-// post-migration; reintroduce when an actual user lands.
+// A shader is initialised from a Flux_ShaderDecl: Initialise(xDecl) — runtime Slang
+// compile via InitialiseFromProgramSource (Windows), precompiled .spv + .spv.refl via
+// InitialiseFromProgramArtifacts (Android). There is no string-pair (vert/frag) path.
+// Tessellation has no callers; reintroduce when an actual user lands.
 
 Zenith_Vulkan_Shader::~Zenith_Vulkan_Shader()
 {
@@ -289,10 +299,32 @@ void Zenith_Vulkan_Shader::MergeReflection(const Flux_ShaderReflection& xStageRe
 		}
 	}
 
+	// Stage 3a: merge specialization constants (dedup by constant id). A graphics
+	// program's VS and FS sidecars each carry the whole-program spec table, so this
+	// runs twice with identical entries — the id dedup keeps each constant once.
+	const Zenith_Vector<Flux_ReflectedSpecConstant>& axNewSpecs = xStageReflection.GetSpecConstants();
+	for (u_int u = 0; u < axNewSpecs.GetSize(); u++)
+	{
+		const Flux_ReflectedSpecConstant& xNewSpec = axNewSpecs.Get(u);
+		bool bSpecExists = false;
+		const Zenith_Vector<Flux_ReflectedSpecConstant>& axExistingSpecs = m_xReflection.GetSpecConstants();
+		for (u_int e = 0; e < axExistingSpecs.GetSize(); e++)
+		{
+			if (axExistingSpecs.Get(e).m_uConstantId == xNewSpec.m_uConstantId)
+			{
+				bSpecExists = true;
+				break;
+			}
+		}
+		if (!bSpecExists)
+		{
+			m_xReflection.AddSpecConstant(xNewSpec);
+		}
+	}
+
 	// Rebuild the lookup map after merging
 	m_xReflection.BuildLookupMap();
 }
 
-// Legacy InitialiseFromSource / InitialiseComputeFromSource were removed
-// alongside the Slang migration. The runtime path is now
-// InitialiseFromProgramSource (FluxShaderProgram, defined above).
+// The runtime shader-compile path is InitialiseFromProgramSource (defined above),
+// which compiles the Flux_ShaderDecl's Slang program in-process.

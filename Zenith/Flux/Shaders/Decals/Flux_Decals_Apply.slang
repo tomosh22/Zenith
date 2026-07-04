@@ -91,7 +91,7 @@ VsOut vsMain(uint uVertexID : SV_VertexID, uint uInstanceID : SV_InstanceID)
 	float4 xWorldPos = mul(d.m_xWorld, float4(xLocalCorner, 1.0));
 
 	VsOut o;
-	o.m_xSvPos      = mul(g_xViewSet.g_xView.g_xViewProjMat, xWorldPos);
+	o.m_xSvPos      = mul(GetViewProjMat(), xWorldPos);
 	o.m_uInstanceID = uInstanceID;
 	return o;
 }
@@ -106,7 +106,7 @@ struct ApplyOut
 [shader("fragment")]
 ApplyOut fsMain(VsOut input)
 {
-	float2 uv = input.m_xSvPos.xy * g_xViewSet.g_xView.g_xRcpScreenDims;
+	float2 uv = input.m_xSvPos.xy * GetRcpScreenDims();
 
 	// Sky / background — no scene geometry to project onto.
 	float fDepth = g_xPassSet.g_xDepthTex.Sample(uv).r;
@@ -142,7 +142,7 @@ ApplyOut fsMain(VsOut input)
 	{
 		float2 xBrushUV = xLocal.xy + 0.5;
 		// Per-decal brush index → non-uniform across the instanced draw.
-		float4 xBrush = g_xBindlessSet.g_axTextures[NonUniformResourceIndex(asuint(d.m_xParams.z))].Sample(xBrushUV);
+		float4 xBrush = GetBindlessTexture(NonUniformResourceIndex(asuint(d.m_xParams.z))).Sample(xBrushUV);
 		float fBrushAlpha = xBrush.a * d.m_xColour.a * fEdge * d.m_xAxisOpacity.w;
 		if (fBrushAlpha <= 0.0)
 			discard;

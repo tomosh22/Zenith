@@ -17,29 +17,17 @@
 //     BindDrawConstants (which resets only its own set 4). The PASS block pushes the
 //     DRAW block to physical space 4 (a program with no PASS block lands DRAW at 3).
 //
-// Material evaluation is the SHARED uber-material path (identical to StaticMeshes /
+// The vertex transform (TransformUnifiedVertex) and the fragment uber-material write
+// (EmitUnifiedFragment<GBufferPolicy>) are the SHARED definitions in
+// Common/UnifiedMeshDraw.slang — identical to the velocity variant and (for the VAT +
+// world transform) the shadow caster, so the three shells can never drift. Material
+// evaluation is the SHARED uber-material path (identical to StaticMeshes /
 // InstancedMeshes): g_axMaterials lives in the persistent GLOBAL set 0 and the index
 // is draw-uniform, so the existing fragment shading is reused verbatim plus the
-// per-instance colour tint. No VAT on the static path (foliage: Stage 3).
+// per-instance colour tint.
 // =====================================================================
 
-#include "Common/Bindings.slang"
-#include "Common/SceneObjects.slang"
-#include "Common/VAT.slang"
-import Common.MaterialTable;
-import Common.Material;
-import Common.MaterialSurface;
-import Common.GBuffer;
-
-struct VsIn
-{
-    float3 a_xPosition  : POSITION;
-    float2 a_xUV        : TEXCOORD0;
-    float3 a_xNormal    : NORMAL;
-    float3 a_xTangent   : TANGENT;
-    float3 a_xBitangent : BINORMAL;
-    float4 a_xColor     : COLOR;
-};
+#include "Common/UnifiedMeshDraw.slang"   // VsIn / UnifiedDrawConstantsLayout / DrawParams / shared transform + fragment + spine
 
 struct VsOut
 {
@@ -64,38 +52,8 @@ struct PassParams
 };
 ParameterBlock<PassParams> g_xPassSet;
 
-// DRAW block (set 4) — per-bucket constants + the bucket's slice of the visible
-// list. Declared AFTER the PASS block so it lands at physical space 4.
-// Shared by the GBuffer (camera) + ToShadowmap (cascade) unified draws — change in
-// lockstep with Flux_UnifiedMesh_ToShadowmap.slang AND the C++ mirror in
-// Flux_UnifiedMesh.cpp. g_uBucketOffset already encodes the per-VIEW base
-// (v*totalDrawItems + bucketOffset[b]); both VS variants read their view-proj from
-// the pass's bound per-view g_xView.
-struct UnifiedDrawConstantsLayout
-{
-    uint   g_uMaterialIndex;  // index into g_axMaterials (GLOBAL set 0)
-    uint   g_uBucketOffset;   // base offset of this draw's slice in VisibleIndexBuffer (per-view)
-    uint   g_uPad0;           // was g_uShadowCascade — casters now read the bound per-view g_xView
-    uint   g_uPad1;
-    float4 g_xVATParams;      // xy = VAT texture size, z = >0 when the bucket has a VAT texture, w unused
-};
-
-struct DrawParams
-{
-    ConstantBuffer<UnifiedDrawConstantsLayout> DrawConstants;
-    StructuredBuffer<uint>                     VisibleIndexBuffer;
-    Sampler2D                                  g_xAnimationTex;   // per-bucket VAT positions (POINT sampler; white dummy when none)
-};
+// DRAW block (set 4) — declared AFTER the PASS block so it lands at physical space 4.
 ParameterBlock<DrawParams> g_xDrawSet;
-
-float4 UnpackRGBA8(uint uPacked)
-{
-    return float4(
-        (float)((uPacked >> 0)  & 0xFFu) / 255.0,
-        (float)((uPacked >> 8)  & 0xFFu) / 255.0,
-        (float)((uPacked >> 16) & 0xFFu) / 255.0,
-        (float)((uPacked >> 24) & 0xFFu) / 255.0);
-}
 
 [shader("vertex")]
 VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID)
@@ -110,56 +68,37 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
     GPUSceneDrawItem di  = g_xPassSet.DrawItems[gid];
     GPUSceneObject   obj = g_xPassSet.Objects[di.m_uObjectIndex];
 
-    float4x4 xModelMatrix  = obj.m_xModelMatrix;
-    float4   xInstanceTint = UnpackRGBA8(di.m_uColorTintPacked);
+    // Shared VAT sway + model transform + world-space TBN basis (byte-identical to the
+    // velocity VS, and — for the position path — the shadow caster). Static objects pass
+    // through VAT unchanged.
+    UnifiedVertexBasis b = TransformUnifiedVertex(input, vertexId, obj, dc, g_xDrawSet.g_xAnimationTex);
 
-    // VAT (foliage) deforms the local position before the world transform; static objects
-    // (flag clear / no bucket VAT texture) pass through unchanged. Shadow VS matches this.
-    float3   xLocalPos     = Flux_ApplyVAT(g_xDrawSet.g_xAnimationTex, vertexId, input.a_xPosition,
-        obj.m_uFlags, obj.m_uVATAnimPacked, asfloat(obj.m_uVATAnimTime), dc.g_xVATParams);
-    float3   xWorldPos     = mul(xModelMatrix, float4(xLocalPos, 1.0)).xyz;
-    float3x3 xNormalMatrix = transpose(Inverse3x3((float3x3)xModelMatrix));
-
-    o.uv          = input.a_xUV;
-    o.vertexColor = input.a_xColor;
-    o.worldNormal = normalize(mul(xNormalMatrix, input.a_xNormal));
-    o.worldTangent = normalize(mul(xNormalMatrix, input.a_xTangent));
-    float3 xBitangent = normalize(mul(xNormalMatrix, input.a_xBitangent));
-    o.bitangentSign = sign(dot(xBitangent, cross(o.worldNormal, o.worldTangent)));
-    o.instanceTint = xInstanceTint;
-    o.worldPos     = xWorldPos;
-    o.position     = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
+    o.uv           = input.a_xUV;
+    o.vertexColor  = input.a_xColor;
+    o.worldNormal  = b.xWorldNormal;
+    o.worldTangent = b.xWorldTangent;
+    o.bitangentSign = b.fBitangentSign;
+    o.instanceTint = UnpackRGBA8(di.m_uColorTintPacked);
+    o.worldPos     = b.xWorldPos;
+    o.position     = mul(GetViewProjMat(), float4(b.xWorldPos, 1.0));
     return o;
 }
 
-// Shared uber-material evaluation — identical to StaticMeshes/InstancedMeshes, plus
-// the per-instance colour tint applied to the resolved albedo.
+// Shared uber-material evaluation via EmitUnifiedFragment<GBufferPolicy> — identical to
+// StaticMeshes/InstancedMeshes, plus the per-instance colour tint (applied inside
+// EvaluateUnifiedGBuffer). The GBuffer policy emits the 4-target core unchanged.
 [shader("fragment")]
 GBufferOut fsMain(VsOut input, bool bFrontFace : SV_IsFrontFace)
 {
-    float3x3 TBN = BuildTBN(input.worldNormal, input.worldTangent, input.bitangentSign);
-    float3 xViewDir = normalize(g_xViewSet.g_xView.g_xCamPos_Pad.xyz - input.worldPos);
+    UnifiedFragmentSurface s;
+    s.uv            = input.uv;
+    s.worldNormal   = input.worldNormal;
+    s.worldPos      = input.worldPos;
+    s.worldTangent  = input.worldTangent;
+    s.bitangentSign = input.bitangentSign;
+    s.vertexColor   = input.vertexColor;
+    s.instanceTint  = input.instanceTint;
 
-    UnifiedDrawConstantsLayout dc = g_xDrawSet.DrawConstants;
-    MaterialGPU m = g_xGlobalSet.g_axMaterials[dc.g_uMaterialIndex];
-
-    Sampler2D xBaseColorTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.x];
-    Sampler2D xNormalTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.y];
-    Sampler2D xRoughnessMetallicTex = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.z];
-    Sampler2D xOcclusionTex         = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.w];
-    Sampler2D xEmissiveTex          = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.x];
-    Sampler2D xHeightTex            = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.y];
-    Sampler2D xDetailAlbedoTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.z];
-    Sampler2D xDetailNormalTex      = g_xBindlessSet.g_axTextures[m.g_xTexIdx1.w];
-    Sampler2D xDetailMaskTex        = g_xBindlessSet.g_axTextures[m.g_xTexIdx2.x];
-
-    MaterialSurface xSurface = EvaluateMaterialSurface(
-        xBaseColorTex, xNormalTex, xRoughnessMetallicTex,
-        xOcclusionTex, xEmissiveTex, xHeightTex,
-        xDetailAlbedoTex, xDetailNormalTex, xDetailMaskTex,
-        input.uv, TBN, xViewDir, input.vertexColor, bFrontFace, m);
-
-    xSurface.albedo.rgb *= input.instanceTint.rgb;
-
-    return MakeGBuffer(xSurface);
+    return EmitUnifiedFragment<GBufferPolicy>(s, g_xDrawSet.DrawConstants.g_uMaterialIndex,
+        bFrontFace, float2(0.0, 0.0));
 }

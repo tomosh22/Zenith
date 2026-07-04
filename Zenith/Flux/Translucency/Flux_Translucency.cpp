@@ -73,24 +73,38 @@ void Flux_TranslucencyImpl::BuildPipelines()
 
 	m_xShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 
-	// Classic alpha blend.
-	xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
-	xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
-	xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
+	// One (blend × cull) quad per view-shading mode (Stage 3a/3b). The whole
+	// blend/cull setup is re-established each iteration (the additive block below
+	// mutates it). Stage 3b bakes the per-mode view-shading permission mask: FULL
+	// permits shadows + cluster lights (identical to pre-3b, constants default true),
+	// BASIC bakes both FALSE so the compiler strips the shadow/cluster clauses.
+	namespace TFGen = Flux_Generated_Translucency::Translucent_Forward;
+	for (u_int uMode = 0; uMode < FLUX_VIEW_SHADING_MODE_COUNT; uMode++)
+	{
+		const bool bPermitLit = (uMode == FLUX_VIEW_SHADING_MODE_FULL);
+		xSpec.m_xSpecConstants = Flux_SpecConstantTable{};
+		xSpec.m_xSpecConstants.AddBool(TFGen::hscFLUX_SC_VIEW_SHADOWS_PERMITTED,        bPermitLit);
+		xSpec.m_xSpecConstants.AddBool(TFGen::hscFLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED, bPermitLit);
 
-	xSpec.m_eCullMode = CULL_MODE_BACK;
-	Flux_PipelineBuilder::FromSpecification(m_xPipelineTranslucent, xSpec);
-	xSpec.m_eCullMode = CULL_MODE_NONE;
-	Flux_PipelineBuilder::FromSpecification(m_xPipelineTranslucentTwoSided, xSpec);
+		// Classic alpha blend.
+		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
+		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
+		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
-	// Additive (alpha scales the contribution: src*alpha + dst).
-	xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
-	xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
+		xSpec.m_eCullMode = CULL_MODE_BACK;
+		Flux_PipelineBuilder::FromSpecification(m_axPipelineTranslucent[uMode], xSpec);
+		xSpec.m_eCullMode = CULL_MODE_NONE;
+		Flux_PipelineBuilder::FromSpecification(m_axPipelineTranslucentTwoSided[uMode], xSpec);
 
-	xSpec.m_eCullMode = CULL_MODE_BACK;
-	Flux_PipelineBuilder::FromSpecification(m_xPipelineAdditive, xSpec);
-	xSpec.m_eCullMode = CULL_MODE_NONE;
-	Flux_PipelineBuilder::FromSpecification(m_xPipelineAdditiveTwoSided, xSpec);
+		// Additive (alpha scales the contribution: src*alpha + dst).
+		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
+		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
+
+		xSpec.m_eCullMode = CULL_MODE_BACK;
+		Flux_PipelineBuilder::FromSpecification(m_axPipelineAdditive[uMode], xSpec);
+		xSpec.m_eCullMode = CULL_MODE_NONE;
+		Flux_PipelineBuilder::FromSpecification(m_axPipelineAdditiveTwoSided[uMode], xSpec);
+	}
 }
 
 void Flux_TranslucencyImpl::Initialise()
@@ -103,10 +117,13 @@ void Flux_TranslucencyImpl::Initialise()
 void Flux_TranslucencyImpl::Shutdown()
 {
 	// Pipelines reference the shader, so destroy pipelines first.
-	m_xPipelineTranslucent.Reset();
-	m_xPipelineTranslucentTwoSided.Reset();
-	m_xPipelineAdditive.Reset();
-	m_xPipelineAdditiveTwoSided.Reset();
+	for (u_int uMode = 0; uMode < FLUX_VIEW_SHADING_MODE_COUNT; uMode++)
+	{
+		m_axPipelineTranslucent[uMode].Reset();
+		m_axPipelineTranslucentTwoSided[uMode].Reset();
+		m_axPipelineAdditive[uMode].Reset();
+		m_axPipelineAdditiveTwoSided[uMode].Reset();
+	}
 	m_xShader.Reset();
 }
 
@@ -333,6 +350,13 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 	Zenith_Vector<Flux_TranslucentDrawItem>& xPacket = xZZ.m_axDrawPackets[uViewSlot];
 	if (xPacket.GetSize() == 0) return;
 
+	// View-shading pipeline variant for this pass's view (Stage 3a/3b): FULL for the
+	// main view, BASIC for the material preview. Reads the per-view CONSTANTS flag
+	// word (m_xConstants.m_uViewFlags) — the SAME field the shader branches on via
+	// g_xView.g_uViewFlags — a single source of truth for the variant + runtime flag.
+	const FluxViewShadingMode eShadingMode =
+		Flux_ViewShadingModeFromFlags(g_xEngine.FluxGraphics().RenderViews().View(uViewSlot).m_xConstants.m_uViewFlags);
+
 	Flux_IBLImpl& xIBL = g_xEngine.IBL();
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
@@ -357,8 +381,8 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 		const Flux_TranslucentDrawItem& xItem = xPacket.Get(u);
 
 		Flux_Pipeline* pxPipeline =
-			xItem.m_bAdditive ? (xItem.m_bTwoSided ? &xZZ.m_xPipelineAdditiveTwoSided : &xZZ.m_xPipelineAdditive)
-							  : (xItem.m_bTwoSided ? &xZZ.m_xPipelineTranslucentTwoSided : &xZZ.m_xPipelineTranslucent);
+			xItem.m_bAdditive ? (xItem.m_bTwoSided ? &xZZ.m_axPipelineAdditiveTwoSided[eShadingMode] : &xZZ.m_axPipelineAdditive[eShadingMode])
+							  : (xItem.m_bTwoSided ? &xZZ.m_axPipelineTranslucentTwoSided[eShadingMode] : &xZZ.m_axPipelineTranslucent[eShadingMode]);
 		if (pxPipeline != pxBoundPipeline)
 		{
 			pxCmdList->SetPipeline(pxPipeline);

@@ -463,14 +463,6 @@ void Flux_IBLImpl::UpdateSkyIBL()
 	m_bSkyIBLDirty = true;
 }
 
-// GenerateIrradianceMap / GeneratePrefilteredMap / GenerateIrradianceFace /
-// GeneratePrefilteredFace were the bypass-submit helpers — now obsolete.
-// All work is performed by the per-pass execute callbacks above.
-void Flux_IBLImpl::GenerateIrradianceMap() {}
-void Flux_IBLImpl::GeneratePrefilteredMap() {}
-void Flux_IBLImpl::GenerateIrradianceFace(u_int /*uFace*/) {}
-void Flux_IBLImpl::GeneratePrefilteredFace(u_int /*uMip*/, u_int /*uFace*/) {}
-
 void Flux_IBLImpl::MarkAllProbesDirty()
 {
 	m_bSkyIBLDirty = true;

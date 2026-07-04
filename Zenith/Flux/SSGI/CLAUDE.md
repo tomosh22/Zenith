@@ -87,7 +87,10 @@ The render graph schedules these passes via Read/Write declarations; there is no
 **Purpose:** Reduce noise while preserving geometric and material edges. Split
 into two 1D sub-passes for O(2r) total cost instead of O(r²). Each sub-pass
 shares the exact same `DenoisePushConstantsLayout` constant buffer; only the
-inner-loop direction (`xOffset = (i, 0)` vs `(0, i)`) differs.
+inner-loop direction (`xOffset = (i, 0)` vs `(0, i)`) differs. Both `import
+Common.GBuffer` and decode the G-buffer normal through the shared
+`DecodeNormal()` helper there (a single re-normalize point, so the two halves
+can never drift).
 
 **Algorithm:**
 The joint bilateral filter computes weights based on four factors:

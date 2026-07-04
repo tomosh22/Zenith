@@ -126,6 +126,31 @@ private:
 				m_xReflection.AddBinding(xNewBinding);
 			}
 		}
+
+		// Stage 3a: merge specialization constants (dedup by constant id), mirroring
+		// Zenith_Vulkan_Shader::MergeReflection so the null backend's reflection model
+		// stays identical to the real one (spec constants are stored, never consumed —
+		// FromSpecification is a no-op here).
+		const Zenith_Vector<Flux_ReflectedSpecConstant>& axNewSpecs = xStageReflection.GetSpecConstants();
+		for (u_int uNew = 0; uNew < axNewSpecs.GetSize(); uNew++)
+		{
+			const Flux_ReflectedSpecConstant& xNewSpec = axNewSpecs.Get(uNew);
+			bool bSpecPresent = false;
+			const Zenith_Vector<Flux_ReflectedSpecConstant>& axExistingSpecs = m_xReflection.GetSpecConstants();
+			for (u_int uExisting = 0; uExisting < axExistingSpecs.GetSize(); uExisting++)
+			{
+				if (axExistingSpecs.Get(uExisting).m_uConstantId == xNewSpec.m_uConstantId)
+				{
+					bSpecPresent = true;
+					break;
+				}
+			}
+			if (!bSpecPresent)
+			{
+				m_xReflection.AddSpecConstant(xNewSpec);
+			}
+		}
+
 		m_xReflection.BuildLookupMap();
 	}
 

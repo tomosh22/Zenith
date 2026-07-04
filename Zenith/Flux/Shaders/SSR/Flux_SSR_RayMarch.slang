@@ -223,7 +223,7 @@ float4 RayMarch(float3 xViewOrigin,
 	float fRaySampleDist = min(g_xPassSet.SSRConstants.u_fMaxDistance * 0.5, xViewStart.z * 0.5);
 	float3 xRaySampleView = xViewStart + xReflectDir * fRaySampleDist;
 
-	float fNearPlane = g_xViewSet.g_xView.g_xCameraNearFar.x;
+	float fNearPlane = GetCameraNearFar().x;
 	if (xRaySampleView.z < fNearPlane)
 	{
 		if (abs(xReflectDir.z) > PBR_DIRECTION_EPSILON)
@@ -273,10 +273,10 @@ float4 RayMarch(float3 xViewOrigin,
 	fMaxScreenDist = max(fMaxScreenDist, SSR_MIN_SCREEN_TRACE_DIST);
 
 	// Reciprocal-Z LERP endpoints for perspective-correct depth at every fT.
-	float fSafeStartZ      = max(xViewStart.z, g_xViewSet.g_xView.g_xCameraNearFar.x);
+	float fSafeStartZ      = max(xViewStart.z, GetCameraNearFar().x);
 	float fInvZStart       = 1.0 / fSafeStartZ;
 	float fEstimatedRayDist = g_xPassSet.SSRConstants.u_fMaxDistance * fMaxScreenDist;
-	float fEstimatedEndZ   = max(g_xViewSet.g_xView.g_xCameraNearFar.x,
+	float fEstimatedEndZ   = max(GetCameraNearFar().x,
 								  fSafeStartZ + xReflectDir.z * fEstimatedRayDist);
 	float fInvZEnd         = 1.0 / fEstimatedEndZ;
 
@@ -370,7 +370,7 @@ float4 RayMarch(float3 xViewOrigin,
 					float fFinalSceneZ     = DepthToViewZ(xFinalUV, fFinalSceneDepth);
 
 					float3 xHitWorldNormal = g_xPassSet.g_xNormalsTex.Sample(xFinalUV).rgb;
-					float3 xHitViewNormal  = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xHitWorldNormal));
+					float3 xHitViewNormal  = normalize(mul((float3x3)GetViewMat(), xHitWorldNormal));
 					float  fBackfaceDot    = dot(xHitViewNormal, xReflectDir);
 					if (fBackfaceDot > SSR_BACKFACE_THRESHOLD)
 					{
@@ -465,7 +465,7 @@ RayMarchOut fsMain(FullscreenVsOut input, float4 fragCoord : SV_Position)
 	if (fRoughness > g_xPassSet.SSRConstants.u_fMaxRoughness) return MakeRayMarchOut(xZero4, xZero4);
 
 	float3 xViewPos          = GetViewPosFromDepth(input.uv, fDepth);
-	float3 xViewNormal       = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xWorldNormal));
+	float3 xViewNormal       = normalize(mul((float3x3)GetViewMat(), xWorldNormal));
 	float3 xViewDir          = normalize(xViewPos);
 	float3 xMirrorReflectDir = reflect(xViewDir, xViewNormal);
 	float  fNdotV            = max(dot(xViewNormal, -xViewDir), 0.0);

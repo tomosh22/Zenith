@@ -142,6 +142,10 @@ namespace Flux_Generated_DeferredShading
 			unsigned char m_ag_xParams2[16]; // slang=vector offset=80 arrayCount=4 (no C++ mapping)
 		};
 		static_assert(sizeof(ShadowSampling_CB) == 96, "ShadowSampling_CB size drifted from Slang reflection");
+		// spec constant: bool
+		inline constexpr Flux_SpecConstantHandle hscFLUX_SC_VIEW_SHADOWS_PERMITTED{ "FLUX_SC_VIEW_SHADOWS_PERMITTED", 0u, 4u, 1u };
+		// spec constant: bool
+		inline constexpr Flux_SpecConstantHandle hscFLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED{ "FLUX_SC_VIEW_CLUSTER_LIGHTS_PERMITTED", 1u, 4u, 1u };
 	}
 
 }

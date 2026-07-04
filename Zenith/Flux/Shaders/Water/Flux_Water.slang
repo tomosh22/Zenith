@@ -38,7 +38,7 @@ VsOut vsMain(VsIn input)
 	VsOut o;
 	o.uv       = input.a_xUV;
 	o.worldPos = input.a_xPosition;
-	o.position = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(o.worldPos, 1.0));
+	o.position = mul(GetViewProjMat(), float4(o.worldPos, 1.0));
 	return o;
 }
 
@@ -58,7 +58,7 @@ float4 fsMain(VsOut input) : SV_Target
 
 	// Sun lambert against the water surface; alpha 0.5 for translucent
 	// blend over the terrain underneath.
-	float3 xLightDir = -g_xViewSet.g_xView.g_xSunDir_Pad.xyz;
+	float3 xLightDir = -GetSunDir_Pad().xyz;
 	float3 xDiffuse  = float3(0.2, 0.3, 0.5) * dot(xWorldNormal, xLightDir);
 	return float4(xDiffuse, 0.5);
 }

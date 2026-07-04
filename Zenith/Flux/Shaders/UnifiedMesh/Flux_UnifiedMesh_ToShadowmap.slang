@@ -3,14 +3,17 @@
 //
 // Depth-only caster pass that writes the unified opaque static meshes into a CSM
 // cascade — the Stage-2 shadow analogue of Flux_UnifiedMesh_ToGBuffer. The vertex
-// transform is BYTE-IDENTICAL to the GBuffer VS (same two-level indirection into the
-// GPU-scene records) so the shadow pose matches the lit pose exactly; only the final
-// projection differs (the cascade's sun view×proj instead of the camera view×proj).
+// transform is the SHARED TransformUnifiedVertexPosition (Common/UnifiedMeshDraw.slang),
+// bit-for-bit the same VAT sway + model transform the GBuffer + velocity VS use, so the
+// shadow pose matches the lit pose exactly; only the final projection differs (the
+// cascade's sun view x proj instead of the camera view x proj). This is the STRUCTURAL
+// replacement for the old hand-maintained "keep these BYTE-IDENTICAL or foliage self-
+// shadows flicker" comment contract — there is now one position path, three callers.
 //
 //   gid   = VisibleIndexBuffer[bucketOffset + SV_InstanceID]   (cull-compacted, per-view)
 //   di    = DrawItems[gid]                                       (PASS set 3)
 //   model = Objects[di.objectIndex].model                        (PASS set 3)
-//   clip  = g_xViewSet.g_xView.g_xViewProjMat * world            (the cascade VIEW's own camera)
+//   clip  = GetViewProjMat() * world            (the cascade VIEW's own camera)
 //
 // Each cascade pass binds its own per-view VIEW set (Flux_RenderViews slot 1+c)
 // whose g_xView holds the sun ortho matrices — the caster is view-agnostic, like
@@ -21,7 +24,7 @@
 // shared:
 //   PASS block @ set 3 (g_xPassSet): GPUSceneObject + GPUSceneDrawItem SSBOs.
 //   DRAW block @ set 4 (g_xDrawSet): per-bucket DrawConstants (material index +
-//     per-view bucketOffset + cascade) + the per-(view,bucket) visible-index SRV.
+//     per-view bucketOffset) + the per-(view,bucket) visible-index SRV + VAT texture.
 //
 // Fragment runs the SHARED masked alpha cutout (identical to the StaticMeshes /
 // InstancedMeshes shadow casters): opaque casters (cutoff 0) uniform-branch out →
@@ -30,22 +33,7 @@
 // texture is bindless (set 2).
 // =====================================================================
 
-#include "Common/Bindings.slang"
-#include "Common/SceneObjects.slang"
-#include "Common/VAT.slang"
-import Common.MaterialTable;
-import Common.Material;
-import Common.MaterialSurface;
-
-struct VsIn
-{
-    float3 a_xPosition  : POSITION;
-    float2 a_xUV        : TEXCOORD0;
-    float3 a_xNormal    : NORMAL;
-    float3 a_xTangent   : TANGENT;
-    float3 a_xBitangent : BINORMAL;
-    float4 a_xColor     : COLOR;
-};
+#include "Common/UnifiedMeshDraw.slang"   // VsIn / UnifiedDrawConstantsLayout / DrawParams / shared transform + spine
 
 struct VsOut
 {
@@ -62,24 +50,7 @@ struct PassParams
 };
 ParameterBlock<PassParams> g_xPassSet;
 
-// DRAW block (set 4) — per-bucket constants + the (view,bucket) slice of the visible
-// list. Same UnifiedDrawConstantsLayout as the GBuffer caster (change in lockstep with
-// it AND the C++ mirror in Flux_UnifiedMesh.cpp — the layout is shared).
-struct UnifiedDrawConstantsLayout
-{
-    uint   g_uMaterialIndex;
-    uint   g_uBucketOffset;   // per-view base: cascadeView*totalDrawItems + bucketOffset[b]
-    uint   g_uPad0;           // was g_uShadowCascade — casters now read the bound per-view g_xView
-    uint   g_uPad1;
-    float4 g_xVATParams;      // xy = VAT texture size, z = >0 when the bucket has a VAT texture
-};
-
-struct DrawParams
-{
-    ConstantBuffer<UnifiedDrawConstantsLayout> DrawConstants;
-    StructuredBuffer<uint>                     VisibleIndexBuffer;
-    Sampler2D                                  g_xAnimationTex;   // per-bucket VAT positions (POINT sampler; white dummy when none)
-};
+// DRAW block (set 4) — declared AFTER the PASS block so it lands at physical space 4.
 ParameterBlock<DrawParams> g_xDrawSet;
 
 [shader("vertex")]
@@ -89,18 +60,19 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 
     UnifiedDrawConstantsLayout dc = g_xDrawSet.DrawConstants;
 
-    // Same two-level indirection as the GBuffer VS → identical world transform.
+    // Same two-level indirection as the GBuffer VS → identical object transform.
     uint             gid = g_xDrawSet.VisibleIndexBuffer[dc.g_uBucketOffset + instanceId];
     GPUSceneDrawItem di  = g_xPassSet.DrawItems[gid];
     GPUSceneObject   obj = g_xPassSet.Objects[di.m_uObjectIndex];
 
-    // IDENTICAL VAT deformation to the GBuffer VS — the shadow pose must match the lit pose
-    // exactly or self-shadows flicker as foliage sways.
-    float3 xLocalPos = Flux_ApplyVAT(g_xDrawSet.g_xAnimationTex, vertexId, input.a_xPosition,
-        obj.m_uFlags, obj.m_uVATAnimPacked, asfloat(obj.m_uVATAnimTime), dc.g_xVATParams);
-    float3 xWorldPos = mul(obj.m_xModelMatrix, float4(xLocalPos, 1.0)).xyz;
+    // Shared VAT sway + model transform — byte-identical to the GBuffer / velocity VS so
+    // the shadow pose matches the lit pose exactly (foliage self-shadows never flicker).
+    // The VAT-deformed local position is unused by the depth-only caster (dead-stripped).
+    float3 xLocalPos;
+    float3 xWorldPos = TransformUnifiedVertexPosition(input, vertexId, obj, dc,
+        g_xDrawSet.g_xAnimationTex, xLocalPos);
     // The cascade pass's own VIEW set: g_xView holds the sun ortho view×proj.
-    o.position    = mul(g_xViewSet.g_xView.g_xViewProjMat, float4(xWorldPos, 1.0));
+    o.position    = mul(GetViewProjMat(), float4(xWorldPos, 1.0));
     o.uv          = input.a_xUV;
     o.vertexColor = input.a_xColor;
     return o;
@@ -110,12 +82,12 @@ VsOut vsMain(VsIn input, uint vertexId : SV_VertexID, uint instanceId : SV_Insta
 void fsMain(VsOut input)
 {
     UnifiedDrawConstantsLayout dc = g_xDrawSet.DrawConstants;
-    MaterialGPU m = g_xGlobalSet.g_axMaterials[dc.g_uMaterialIndex];
+    MaterialGPU m = GetMaterial(dc.g_uMaterialIndex);
     // Uniform branch: opaque casters (cutoff 0) skip the sample entirely → depth-only
     // cost preserved. Masked casters run the SAME cutout as the G-buffer path.
     if (GetAlphaCutoff(m) > 0.0)
     {
-        Sampler2D xBaseColorTex = g_xBindlessSet.g_axTextures[m.g_xTexIdx0.x];
+        Sampler2D xBaseColorTex = GetBindlessTexture(m.g_xTexIdx0.x);
         SampleAlbedoWithCutout(xBaseColorTex,
             TransformUV(input.uv, GetUVTiling(m), GetUVOffset(m)), input.vertexColor, m);
     }

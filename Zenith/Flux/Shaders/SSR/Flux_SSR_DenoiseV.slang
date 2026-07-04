@@ -69,12 +69,12 @@ float4 fsMain(FullscreenVsOut input) : SV_Target
 	float3 xCenterWNormal = g_xPassSet.g_xNormalsTex.Sample(input.uv).rgb;
 
 	float3 xCenterViewPos    = GetViewPosFromDepth(input.uv, fCenterDepth);
-	float3 xCenterViewNormal = normalize(mul((float3x3)g_xViewSet.g_xView.g_xViewMat, xCenterWNormal));
+	float3 xCenterViewNormal = normalize(mul((float3x3)GetViewMat(), xCenterWNormal));
 	float3 xCenterV          = -normalize(xCenterViewPos);
 
 	float fDepthSigmaAbs    = max(fCenterDepth * g_xPassSet.PushConstants.u_fDepthSigma, SSR_DENOISE_MIN_DEPTH_SIGMA);
 	float fRoughnessSigma   = max(g_xPassSet.PushConstants.u_fRoughnessSigma, SSR_DENOISE_MIN_ROUGHNESS_SIGMA);
-	float2 xRcpScreen       = g_xViewSet.g_xView.g_xRcpScreenDims;
+	float2 xRcpScreen       = GetRcpScreenDims();
 
 	float3 xTotalColourNum = float3(0.0);
 	float  fTotalWeightDen = 0.0;

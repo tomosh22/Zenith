@@ -64,4 +64,10 @@ namespace Zenith_CommandLine
     // automated-test runner. GetScreenshotFrame() defaults to 120.
     const char* GetScreenshotPath();
     u_int       GetScreenshotFrame();
+
+    // True iff `--shader-debug-o0` was on the command line. Opt-in deep-debug: the
+    // runtime Slang compile disables optimization (O0) in ADDITION to the Debug-build
+    // debug info. Off by default because O0 changes float re-association (moves pixels),
+    // so it is never the shipping/default path. (Flux Shader System Overhaul — Stage 1.)
+    bool        IsShaderDebugO0();
 }

@@ -45,6 +45,13 @@ public void UnpackGBufferFlags(float fPacked, out uint uShadingModel, out float 
 	fClearCoatStrength = float(uPacked >> 2) / 63.0;
 }
 
+// Decode a world normal read from the G-buffer normals target (SV_Target1 above
+// stores it directly, un-encoded), re-normalising after bilinear interpolation.
+// Shared by the SSGI joint-bilateral denoise halves (DenoiseH / DenoiseV) so the
+// two never drift; a trivial normalize today, but the single decode point is where
+// an octahedral / packed-normal scheme would land if the layout ever changes.
+public float3 DecodeNormal(float3 xRaw) { return normalize(xRaw); }
+
 // Full-fat G-buffer write — the uber-material path (Static/Animated/
 // Instanced mesh shaders go through the MaterialSurface wrapper in
 // Common.MaterialSurface, Terrain calls this directly).
