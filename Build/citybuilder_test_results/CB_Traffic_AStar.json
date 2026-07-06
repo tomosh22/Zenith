@@ -2,7 +2,7 @@
   "name": "CB_Traffic_AStar",
   "passed": true,
   "frames": 2,
-  "durationMs": 0.046,
+  "durationMs": 0.049,
   "failures": [],
   "skipped": false
 }

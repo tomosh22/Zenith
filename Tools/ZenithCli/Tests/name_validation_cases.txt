@@ -1,0 +1,54 @@
+# Shared game-name validation vectors.
+# Format: <expected>|<name>   where <expected> is 'valid' or 'invalid'.
+# Lines beginning with '#' and blank lines are ignored. The name is EVERYTHING
+# after the first '|' (so it may contain spaces); it is not trimmed.
+#
+# Consumed by BOTH:
+#   * Build/Tests/run_buildsystem_tests.ps1  (via Get-ZenithNameValidationCases)
+#   * ZenithHub --selftest                   (ZenithHub_SelfTest.cpp)
+# These pin the PowerShell (Test-ZenithGameNameSyntax) and C++ name validators in
+# lockstep. Rules covered here are SYNTAX only (regex + reserved device names +
+# reserved project names/prefixes) -- filesystem collision is NOT tested here
+# because it depends on repo state.
+
+# --- Valid ---
+valid|Sokoban
+valid|Test
+valid|A
+valid|Game123
+valid|MyCoolGame
+valid|TilePuzzle
+valid|RenderTest
+valid|DevilsPlayground
+valid|Zebra
+valid|X0
+
+# --- Invalid: regex (case, leading char, illegal chars) ---
+invalid|sokoban
+invalid|9Lives
+invalid|My Game
+invalid|My-Game
+invalid|My_Game
+invalid|Game!
+invalid|
+
+# --- Invalid: reserved Windows device names ---
+invalid|CON
+invalid|NUL
+invalid|AUX
+invalid|COM1
+invalid|LPT9
+
+# --- Invalid: reserved engine prefixes (Zenith* / Sentinel*) ---
+invalid|Zenith
+invalid|ZenithFoo
+invalid|SentinelX
+
+# --- Invalid: reserved project names ---
+invalid|FluxCompiler
+invalid|MsdfAtlasGen
+invalid|TilePuzzleLevelGen
+invalid|ZenithHub
+
+# --- Invalid: too long (> 64 chars) ---
+invalid|ThisGameNameIsIntentionallyFarTooLongToBeAcceptedBecauseItGoesWellPastSixtyFourCharacters

@@ -1,0 +1,94 @@
+#include "Zenith.h"
+#include "Core/Zenith_Engine.h"
+#include "Core/Zenith_GraphicsOptions.h"
+#include "{{GAME_NAME}}/Components/{{GAME_NAME}}_GameComponent.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+
+#ifdef ZENITH_TOOLS
+#include "Editor/Zenith_EditorAutomation.h"
+#include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
+#endif
+
+// ============================================================================
+// {{GAME_NAME}} -- scaffolded by `zenith new`.
+//
+// The game component registers with the component-meta registry via the
+// static-init macro (NOT a direct call from Project_RegisterGameComponents: the
+// registry is sealed before that hook runs). Dead-strip safe: this TU defines
+// the Project_* entry points the engine references, so its static initializers
+// always run. Serialization order 100.
+// ============================================================================
+ZENITH_REGISTER_COMPONENT({{GAME_NAME}}_GameComponent, "{{GAME_NAME}}Game", 100u)
+
+const char* Project_GetName()
+{
+	return "{{GAME_NAME}}";
+}
+
+const char* Project_GetGameAssetsDirectory()
+{
+	return GAME_ASSETS_DIR;
+}
+
+void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
+{
+}
+
+void Project_RegisterGameComponents()
+{
+	// Meta-registry registration is the ZENITH_REGISTER_COMPONENT macro above.
+	// Tools builds additionally register with the editor "Add Component" menu
+	// (append-anytime registry, not sealed).
+#ifdef ZENITH_TOOLS
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<{{GAME_NAME}}_GameComponent>("{{GAME_NAME}}Game");
+#endif
+}
+
+void Project_Shutdown()
+{
+}
+
+void Project_LoadInitialScene();	// forward decl for the automation step below
+
+#ifdef ZENITH_TOOLS
+void Project_InitializeResources()
+{
+	// Nothing to pre-create: the component builds its own cube in OnStart.
+}
+
+// Boot-authored scene: a camera, a title, and the game component, saved to
+// Assets/Scenes/Main.zscen. A _False / Android build LOADS that baked scene
+// instead of authoring it (this function is tools-only), so the FIRST build+run
+// must be a *_True config to bake Main.zscen; thereafter _False / Android load it.
+void Project_RegisterEditorAutomationSteps()
+{
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+
+	xAuto.AddStep_CreateScene("Main");
+	xAuto.AddStep_CreateEntity("GameManager");
+	xAuto.AddStep_AddCamera();
+	xAuto.AddStep_SetCameraPosition(0.f, 3.f, 6.f);
+	xAuto.AddStep_SetCameraPitch(-0.4f);
+	xAuto.AddStep_SetCameraFOV(glm::radians(60.f));
+	xAuto.AddStep_SetAsMainCamera();
+	xAuto.AddStep_AddUI();
+	xAuto.AddStep_CreateUIText("Title", "{{GAME_NAME}}");
+	xAuto.AddStep_SetUIAnchor("Title", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	xAuto.AddStep_SetUIPosition("Title", 0.f, -220.f);
+	xAuto.AddStep_SetUIFontSize("Title", 54.f);
+	xAuto.AddStep_SetUIColor("Title", 1.f, 1.f, 1.f, 1.f);
+	xAuto.AddStep_AddComponent("{{GAME_NAME}}Game");
+	xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Main" ZENITH_SCENE_EXT);
+	xAuto.AddStep_UnloadScene();
+
+	xAuto.AddStep_LoadInitialScene(&Project_LoadInitialScene);
+}
+#endif
+
+void Project_LoadInitialScene()
+{
+	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/Main" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+}

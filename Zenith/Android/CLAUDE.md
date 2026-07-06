@@ -146,10 +146,10 @@ Android does not have the Slang shader compiler at runtime. Shaders must be pre-
 ### Deployment Steps
 
 ```
-1. Sharpmake_Build.bat              # Regenerate solutions
+1. Build\regen.ps1                  # Regenerate solutions (per-game + engine)
 2. Build FluxCompiler (Win64)       # Build shader compiler
 3. Run FluxCompiler.exe             # Generate .spv + .spv.refl
-4. Build zenith_agde.sln            # Build AGDE solution
+4. Build Games\<Game>\<game>_agde.sln /t:<Game>   # Build the game's AGDE solution
 5. deploy_android.bat debug Game    # Stage .so + libc++_shared.so
 6. cd Games/Game/Android
 7. gradlew assembleDebug            # Build APK

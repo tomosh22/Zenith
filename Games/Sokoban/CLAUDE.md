@@ -375,7 +375,7 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ```batch
 cd Build
-msbuild zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
+msbuild Games\Sokoban\sokoban_win64.sln /t:Sokoban /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
 cd ..\Games\Sokoban\Build\output\win64\vs2022_debug_win64_true
 sokoban.exe
 ```

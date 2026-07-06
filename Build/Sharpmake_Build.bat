@@ -1,23 +1,14 @@
 @echo off
-REM Zenith Engine - Sharpmake Build Script
-REM Generates Visual Studio solution files for all platforms
+REM Zenith Engine - Sharpmake Build Script (thin forwarder).
+REM The real logic lives in Build/regen.ps1: descriptor validation, codegen of
+REM Sharpmake_GameInstances.generated.cs, glob-based /sources, a single Sharpmake
+REM run (engine sln + all per-game slns), AGDE fixup, and stale-sln cleanup.
 
-..\Sharpmake\Sharpmake.Application.exe /sources('Sharpmake_Common.cs', 'Sharpmake_FreeType.cs', 'Sharpmake_Msdfgen.cs', 'Sharpmake_MsdfAtlasGen.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_ZenithECS.cs', 'Sharpmake_ZenithPhysics.cs', 'Sharpmake_ZenithAI.cs', 'Sharpmake_SentinelECS.cs', 'Sharpmake_SentinelPhysics.cs', 'Sharpmake_SentinelAI.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs', 'Sharpmake_TilePuzzleLevelGen.cs', 'Sharpmake_TilePuzzleRegistryViewer.cs')
+powershell -ExecutionPolicy Bypass -File "%~dp0regen.ps1" %*
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo ERROR: Sharpmake generation failed!
+    echo ERROR: Sharpmake regeneration failed!
     pause
     exit /b 1
 )
-
-REM Fix AGDE vcxproj: C++ standard (cpp20->cpp2a) and inject UBSan flags for debug builds
-powershell -ExecutionPolicy Bypass -File "%~dp0fix_agde_vcxproj.ps1"
-
-echo.
-echo Solution files generated successfully.
-echo Generated solutions:
-echo   - zenith_win64.sln (Windows)
-echo   - zenith_agde.sln (Android)
-echo.
-echo AGDE debug builds have UBSan enabled (-fsanitize=undefined)

@@ -1,0 +1,61 @@
+# {{GAME_NAME}}
+
+Scaffolded by `zenith new {{GAME_NAME}}`. A minimal Zenith game: one lit cube
+that bobs up and down. Replace the component logic with your own game.
+
+## File structure
+
+```
+Games/{{GAME_NAME}}/
+  {{GAME_NAME}}.zproj                       # Build descriptor (name, android flag, extras)
+  {{GAME_NAME}}.cpp                         # Project_* entry points + component registration
+  Components/{{GAME_NAME}}_GameComponent.h  # The starter component (spawns + bobs a cube)
+  Tests/{{GAME_NAME}}_BootCharacterization.cpp  # Boot test (game component resolves)
+  Assets/Scenes/                            # Main.zscen is BOOT-AUTHORED (see below)
+  CLAUDE.md                                 # This file
+```
+
+## Build & run
+
+New games are managed by the `zenith` CLI (no Sharpmake edits):
+
+```
+zenith build {{GAME_NAME}}          # Vulkan_vs2022_Debug_Win64_True
+zenith run   {{GAME_NAME}}          # launch the newest built exe
+zenith open  {{GAME_NAME}}          # regen + open the solution in Visual Studio
+```
+
+Or directly:
+
+```
+msbuild Games\{{GAME_NAME}}\{{GAME_NAME_LOWER}}_win64.sln /t:{{GAME_NAME}} /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
+Games\{{GAME_NAME}}\Build\output\win64\vulkan_vs2022_debug_win64_true\{{GAME_NAME_LOWER}}.exe
+```
+
+## First-run scene caveat (IMPORTANT)
+
+`Assets/Scenes/Main.zscen` is **not checked in** -- it is authored on boot by
+`Project_RegisterEditorAutomationSteps` (a **tools-only** function) and saved via
+`AddStep_SaveScene`. Because that function is compiled out of non-tools builds:
+
+* Your **first build + run must be a `*_True` config** (e.g.
+  `Vulkan_vs2022_Debug_Win64_True`). That boot authors and saves `Main.zscen`.
+* Thereafter, `*_False` and Android builds **load** the baked `Main.zscen`.
+
+If a `_False` build shows an empty scene, run a `_True` build once to bake it.
+
+## Where to go next
+
+* `Components/{{GAME_NAME}}_GameComponent.h` -- lifecycle hooks (`OnStart`,
+  `OnUpdate`, `WriteToDataStream`/`ReadFromDataStream`) are concept-detected by
+  the component-meta registry; there is no base class.
+* `{{GAME_NAME}}.cpp` -- the `Project_*` contract + the boot-authored scene.
+* For richer examples: `Games/Sokoban` (multi-scene + Behaviour Graphs),
+  `Games/Marble` (physics), `Games/RenderTest` (rendering showcase).
+
+## Android
+
+This game is win64-only (`"android": false` in `{{GAME_NAME}}.zproj`). To add an
+Android build: copy an existing game's `Android/` Gradle tree (e.g.
+`Games/Sokoban/Android`), retarget its package/name, set `"android": true` in the
+descriptor, and run `zenith regen`.

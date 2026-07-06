@@ -181,7 +181,7 @@ All command paths in this section (`Build/...`, `Tools/...`) are relative
 to the **Zenith repo root**, not this game directory — run them from there.
 
 ```
-msbuild Build/zenith_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
+msbuild Games\DevilsPlayground\devilsplayground_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
 powershell -NoProfile -File Tools/run_dp_tests.ps1 -Headless
 ```
 

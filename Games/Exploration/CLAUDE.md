@@ -244,7 +244,7 @@ Distance thresholds for LOD (from `Flux_TerrainConfig.h`):
 ```batch
 cd Build
 Sharpmake_Build.bat
-msbuild zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
+msbuild Games\Exploration\exploration_win64.sln /t:Exploration /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
 cd ..\Games\Exploration\Build\output\win64\vs2022_debug_win64_true
 exploration.exe
 ```

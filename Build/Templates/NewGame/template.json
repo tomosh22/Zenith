@@ -1,0 +1,6 @@
+{
+    "name": "NewGame",
+    "displayName": "Empty game (bobbing cube)",
+    "description": "A minimal Zenith game: one lit cube that bobs up and down. The starting point for a new game -- replace the component logic with your own.",
+    "android": false
+}

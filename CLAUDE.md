@@ -152,14 +152,25 @@ The project uses [Sharpmake](https://github.com/ubisoft/Sharpmake) to generate V
 
 ### Generating Solution Files
 
-Run from the `Build/` directory:
-```batch
-Sharpmake_Build.bat
-```
+Games are **descriptor-driven**: each game has a `Games/<Name>/<Name>.zproj` (JSON —
+`schemaVersion`, `name`, `android`, optional `extraDefines`/`extraSharpmakeProjects`).
+Adding or removing a game touches only its descriptor — **no Sharpmake C# edits**.
 
-This generates:
-- `zenith_win64.sln` - Windows x64 solution
-- `zenith_agde.sln` - Android (AGDE) solution
+Regenerate every solution from the repo root (or `Build/`):
+```batch
+Build\regen.ps1
+```
+(`zenith regen` and the legacy `Build\Sharpmake_Build.bat` / `run_sharpmake.ps1`
+forward here.) regen.ps1 validates all descriptors, codegens
+`Build/Sharpmake_GameInstances.generated.cs`, runs Sharpmake once, and fixes up AGDE.
+
+This generates **per-game solutions** plus one **engine-only** solution — there is
+NO all-games solution:
+- `Games/<Name>/<name>_win64.sln` — one per game (+ `<name>_agde.sln` when `android:true`)
+- `Build/zenith_engine_win64.sln` — engine libs + Sentinels + tools + ZenithHub, **zero games**
+
+Generated `.sln` / generated `.cs` are gitignored. See **`Docs/GameProjects.md`** for
+the schema, validation rules, sln inventory, CI mapping, and troubleshooting.
 
 ### Build Configurations
 
@@ -189,13 +200,23 @@ that proves Flux is backend-neutral). The table shows the `Vulkan_` rows; the
 
 ### Building and Running
 
-**Windows (with editor):**
+**The `zenith` CLI (recommended):**
 ```batch
-cd Build
-msbuild zenith_win64.sln /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
-cd ..\Games\Sokoban\Build\output\win64\vulkan_vs2022_debug_win64_true
-sokoban.exe
+zenith new <Name>          REM scaffold a new game (regen + open its sln)
+zenith build Sokoban       REM msbuild the game's per-game sln (/t:<Game>)
+zenith run Sokoban         REM launch the newest built exe
+zenith open Sokoban        REM regen + open the game's sln in Visual Studio
+zenith list                REM list games + built configs
+zenith hub                 REM launch the Unity-Hub-style GUI launcher
 ```
+
+**Direct msbuild (per-game solution):**
+```batch
+msbuild Games\Sokoban\sokoban_win64.sln /t:Sokoban /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
+Games\Sokoban\Build\output\win64\vulkan_vs2022_debug_win64_true\sokoban.exe
+```
+Always build with `/t:<Game>`, never the whole solution: the aux tools (FluxCompiler /
+font libs) present in the sln are pre-existing-red in `ToolsEnabled=True`.
 
 > **Config-name prefix (RenderBackend fragment):** every win64 config is prefixed
 > with the render backend — `Vulkan_vs2022_Debug_Win64_True` (the real renderer)
@@ -203,11 +224,13 @@ sokoban.exe
 > surface is backend-neutral; see `Zenith/D3D12/CLAUDE.md`). The output dir is the
 > lowercased config name. agde is Vulkan-only (`Vulkan_` prefix on all configs).
 
-**Using Visual Studio:**
-1. Open `Build\zenith_win64.sln`
-2. Set Sokoban as startup project
-3. Select configuration (e.g., `Vulkan_vs2022_Debug_Win64_True|x64`)
-4. Build and run (F5)
+**Using Visual Studio:** `zenith open <Name>` regenerates then opens
+`Games/<Name>/<name>_win64.sln`; set the game as startup project, pick a config
+(e.g. `Vulkan_vs2022_Debug_Win64_True|x64`), F5.
+
+**Engine-only work:** `msbuild Build\zenith_engine_win64.sln /t:Zenith` (or
+`/t:FluxCompiler` / `/t:Sentinel*` / `/t:ZenithHub`); `zenith build engine` does this.
+Never build the whole engine sln (pre-existing-red aux tools).
 
 ### Build Troubleshooting
 
@@ -244,7 +267,7 @@ msbuild %*
 
 **Usage:**
 ```batch
-CleanBuild.bat zenith_win64.sln /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
+CleanBuild.bat Games\Sokoban\sokoban_win64.sln /t:Sokoban /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
 ```
 
 **Alternative - Manual Cleanup:**
@@ -283,10 +306,15 @@ Set automatically by the build system:
 ### Sharpmake Files
 
 Located in `Build/`:
-- `Sharpmake_Common.cs` - Base project class, platform configuration
+- `Sharpmake_Common.cs` - Base project class, platform configuration (no `[Sharpmake.Main]`)
 - `Sharpmake_Zenith.cs` - Zenith engine project
 - `Sharpmake_FluxCompiler.cs` - Shader compiler project
-- `Sharpmake_Games.cs` - Game project template
+- `Sharpmake_Games.cs` - Abstract `GameProject` / `GameSolution` bases (concrete per-game classes are generated)
+- `Sharpmake_Solutions.cs` - `[Sharpmake.Main]` + SHA256 manifest guard + engine-only `ZenithEngineSolution`
+- `Sharpmake_GameInstances.generated.cs` - **generated** per-game project/solution shells + manifest (gitignored)
+- `Sharpmake_ZenithHub.cs` - Unity-Hub-style launcher project (engine sln only)
+- `zenith_buildsystem.psm1` - descriptor scan / validate / codegen / name-validation module (single source of truth)
+- `regen.ps1` - canonical regenerator (worktree-guard -> validate -> codegen -> one Sharpmake run -> AGDE fixup)
 - `Sharpmake_ZenithTools.cs` - Asset tools project
 - `Sharpmake_ZenithAI.cs` - AI module project
 - `Sharpmake_ZenithECS.cs` - ECS module project

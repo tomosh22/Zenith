@@ -454,7 +454,7 @@ On shutdown: `[Combat] Resources cleaned up`.
 ```batch
 cd Build
 Sharpmake_Build.bat
-msbuild zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
+msbuild Games\Combat\combat_win64.sln /t:Combat /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
 cd ..\Games\Combat\Build\output\win64\vs2022_debug_win64_true
 combat.exe
 ```

@@ -2,7 +2,7 @@
   "name": "CB_Terrain_Active",
   "passed": true,
   "frames": 2,
-  "durationMs": 0.034,
+  "durationMs": 0.050,
   "failures": [],
   "skipped": false
 }

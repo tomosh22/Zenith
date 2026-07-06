@@ -30,7 +30,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Exe       = "Games/DevilsPlayground/Build/output/win64/vs2022_debug_win64_true/devilsplayground.exe",
+    [string]$Exe       = "Games/DevilsPlayground/Build/output/win64/vulkan_vs2022_debug_win64_true/devilsplayground.exe",
     [string]$OutDir    = "build/dp_telemetry",
     [switch]$Headless  = $true,
     [switch]$Build     = $false,
@@ -72,9 +72,9 @@ if ($Build) {
         Write-Warning "MSBuild not found at $msbuild; assuming PATH"
         $msbuild = "msbuild"
     }
-    & $msbuild 'Build/zenith_win64.sln' `
+    & $msbuild 'Games/DevilsPlayground/devilsplayground_win64.sln' `
         '-target:DevilsPlayground' `
-        '-property:Configuration=vs2022_Debug_Win64_True' `
+        '-property:Configuration=Vulkan_vs2022_Debug_Win64_True' `
         '-property:Platform=x64' `
         '-maxCpuCount' `
         '-nologo' `

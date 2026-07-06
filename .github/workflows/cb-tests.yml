@@ -147,13 +147,13 @@ jobs:
         shell: pwsh
         working-directory: Build
         run: |
-          dotnet exec '..\Sharpmake\Sharpmake.Application.dll' "/sources('Sharpmake_Common.cs', 'Sharpmake_FreeType.cs', 'Sharpmake_Msdfgen.cs', 'Sharpmake_MsdfAtlasGen.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_ZenithECS.cs', 'Sharpmake_SentinelECS.cs', 'Sharpmake_ZenithPhysics.cs', 'Sharpmake_SentinelPhysics.cs', 'Sharpmake_ZenithAI.cs', 'Sharpmake_SentinelAI.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs', 'Sharpmake_TilePuzzleLevelGen.cs', 'Sharpmake_TilePuzzleRegistryViewer.cs')"
+          ./regen.ps1 -UseDotnet
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build CityBuilder
         shell: pwsh
         run: |
-          msbuild Build\zenith_win64.sln `
+          msbuild Games\CityBuilder\citybuilder_win64.sln `
               /t:CityBuilder `
               /p:Configuration=Vulkan_vs2022_Debug_Win64_True `
               /p:Platform=x64 `
@@ -173,7 +173,7 @@ jobs:
           # config omits editor/tools + Slang/Vulkan; it links the system d3d12/
           # dxgi import libs only. A clean link here = every concept + non-concept
           # call the engine makes is satisfied by a second backend.
-          msbuild Build\zenith_win64.sln `
+          msbuild Games\CityBuilder\citybuilder_win64.sln `
               /t:CityBuilder `
               /p:Configuration=D3D12_vs2022_Debug_Win64_False `
               /p:Platform=x64 `

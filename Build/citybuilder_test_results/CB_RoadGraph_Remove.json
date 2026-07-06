@@ -2,7 +2,7 @@
   "name": "CB_RoadGraph_Remove",
   "passed": true,
   "frames": 2,
-  "durationMs": 0.033,
+  "durationMs": 0.036,
   "failures": [],
   "skipped": false
 }

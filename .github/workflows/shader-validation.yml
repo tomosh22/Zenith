@@ -109,13 +109,13 @@ jobs:
         shell: pwsh
         working-directory: Build
         run: |
-          dotnet exec '..\Sharpmake\Sharpmake.Application.dll' "/sources('Sharpmake_Common.cs', 'Sharpmake_FreeType.cs', 'Sharpmake_Msdfgen.cs', 'Sharpmake_MsdfAtlasGen.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_ZenithECS.cs', 'Sharpmake_SentinelECS.cs', 'Sharpmake_ZenithPhysics.cs', 'Sharpmake_SentinelPhysics.cs', 'Sharpmake_ZenithAI.cs', 'Sharpmake_SentinelAI.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs', 'Sharpmake_TilePuzzleLevelGen.cs', 'Sharpmake_TilePuzzleRegistryViewer.cs')"
+          ./regen.ps1 -UseDotnet
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build FluxCompiler (canonical Tools=True)
         shell: pwsh
         run: |
-          msbuild Build\zenith_win64.sln `
+          msbuild Build\zenith_engine_win64.sln `
               /t:FluxCompiler `
               /p:Configuration=Vulkan_vs2022_Release_Win64_True `
               /p:Platform=x64 `

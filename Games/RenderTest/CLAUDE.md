@@ -92,7 +92,7 @@ VERBATIM with blackboard reads redirected at the graph blackboard.
 ```powershell
 # Build (solution target; PowerShell, never Git-Bash for msbuild)
 & "C:\Program Files\Microsoft Visual Studio\18\Insiders\MSBuild\Current\Bin\MSBuild.exe" `
-  C:\dev\Zenith\Build\zenith_win64.sln -t:RenderTest `
+  C:\dev\Zenith\Games\RenderTest\rendertest_win64.sln -t:RenderTest `
   -p:Configuration=Vulkan_vs2022_Debug_Win64_True -p:Platform=x64 -m -v:minimal -nologo
 
 # One characterization, WINDOWED (headless skips Flux; StickFigure GPU state)

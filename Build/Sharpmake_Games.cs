@@ -2,20 +2,44 @@ using Sharpmake;
 using System;
 using System.IO;
 
-// Game project - Executable that links Zenith engine
-// This is parameterized - create instances for each game (Test, EmptyGame, etc.)
-[Sharpmake.Generate]
-public class GameProject : ZenithBaseProject
+// =============================================================================
+// Game build-system base classes.
+//
+// The 12 concrete per-game project + solution classes are NO LONGER hand-written
+// here. They are generated into Build/Sharpmake_GameInstances.generated.cs from
+// Games/<Name>/<Name>.zproj descriptors by Build/zenith_buildsystem.psm1
+// (Invoke-ZenithCodegen), which regen.ps1 runs before Sharpmake. Adding or
+// removing a game touches only its descriptor -- never this file.
+//
+// This file holds the two ABSTRACT bases the generated shells derive from:
+//   * GameProject  -- the game .exe/.so (was the old [Generate] GameProject with
+//                     a "Sokoban" default; now abstract, name/android supplied by
+//                     the concrete subclass).
+//   * GameSolution -- the per-game .sln (engine + this one game + its extras).
+// =============================================================================
+
+// Game project - the executable that links the Zenith engine. Abstract: the
+// concrete GameName / HasAndroid / ExtraDefines come from the generated subclass.
+public abstract class GameProject : ZenithBaseProject
 {
-	// The name of the game - override in derived classes or set before generation
-	public virtual string GameName => "Sokoban";
+	// The game's name -- supplied by the generated subclass. Drives the source
+	// root, project name, output paths, and all asset-path defines.
+	public abstract string GameName { get; }
+
+	// True iff this game ships an Android (AGDE) build. Games without a Gradle
+	// tree (Games/<Name>/Android) leave this false so no agde target is emitted.
+	public virtual bool HasAndroid => false;
+
+	// Descriptor escape hatch: extra preprocessor defines for this game. Empty
+	// for every game today; kept so the first non-uniform game needs no C# edit.
+	public virtual string[] ExtraDefines => new string[0];
 
 	public GameProject()
 	{
 		Name = GameName;
 		SourceRootPath = RootPath + "/Games/" + GameName;
 
-		// Add Windows and Android targets
+		// Windows target: both backends, both tools variants, Debug + Release.
 		AddTargets(new ZenithTarget
 		{
 			Platform = Platform.win64,
@@ -25,15 +49,19 @@ public class GameProject : ZenithBaseProject
 			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
 		});
 
-		AddTargets(new ZenithTarget
+		// Android target only for games that actually have a Gradle project.
+		if (HasAndroid)
 		{
-			Platform = Platform.agde,
-			DevEnv = DevEnv.vs2022,
-			Optimization = Optimization.Debug | Optimization.Release,
-			ToolsEnabled = ToolsEnabled.False,
-			RenderBackend = RenderBackend.Vulkan,
-			AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
-		});
+			AddTargets(new ZenithTarget
+			{
+				Platform = Platform.agde,
+				DevEnv = DevEnv.vs2022,
+				Optimization = Optimization.Debug | Optimization.Release,
+				ToolsEnabled = ToolsEnabled.False,
+				RenderBackend = RenderBackend.Vulkan,
+				AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
+			});
+		}
 	}
 
 	[Configure]
@@ -49,7 +77,15 @@ public class GameProject : ZenithBaseProject
 		ConfigureCommonIncludePaths(conf, target);
 		ConfigureCommonLibraryPaths(conf, target);
 
-		// Game-specific include paths
+		// Game include paths -- BOTH are load-bearing:
+		//   * Games/<GameName> : this game's own root.
+		//   * Games/           : games #include their own headers via the
+		//     "<GameName>/Sub/Header.h" form (e.g. Sokoban.cpp does
+		//     #include "Sokoban/Components/Sokoban_GameComponent.h"), which resolves
+		//     ONLY through this parent dir. Dropping it breaks 11/12 games with
+		//     C1083 (verified 2026-07-06). The theoretical cross-game-coupling
+		//     surface is tolerated: rewriting every game's include style to shed it
+		//     is a large, out-of-scope change.
 		conf.IncludePaths.Add(RootPath + "/Games/" + GameName);
 		conf.IncludePaths.Add(RootPath + "/Games");
 
@@ -87,6 +123,13 @@ public class GameProject : ZenithBaseProject
 		if (target.ToolsEnabled == ToolsEnabled.True && target.Platform == Platform.win64)
 		{
 			conf.Defines.Add("ZENITH_TOOLS");
+		}
+
+		// Descriptor-supplied extra defines (escape hatch). Empty for all games
+		// today, so this loop is a no-op and leaves the generated vcxproj unchanged.
+		foreach (string strExtraDefine in ExtraDefines)
+		{
+			conf.Defines.Add(strExtraDefine);
 		}
 
 		// Output executable
@@ -159,150 +202,101 @@ public class GameProject : ZenithBaseProject
 	}
 }
 
-// Sokoban game project (historically misnamed TestGameProject — renamed so the
-// real Games/Test project below can carry the honest name)
-[Sharpmake.Generate]
-public class SokobanGameProject : GameProject
+// Per-game solution - the engine libraries + aggregate + this ONE game + the
+// game's extra Sharpmake projects (e.g. TilePuzzle's offline tools). Abstract:
+// the concrete GameName / HasAndroid / GameProjectType / ExtraProjectTypeNames
+// come from the generated subclass. The .sln lands at the game root
+// (Games/<Name>/<Name>_<platform>.sln); the game vcxproj stays under
+// Games/<Name>/Build so output paths are unchanged.
+public abstract class GameSolution : Solution
 {
-	public override string GameName => "Sokoban";
+	// Supplied by the generated subclass.
+	public abstract string GameName { get; }
+	public virtual bool HasAndroid => false;
+	public abstract Type GameProjectType { get; }
 
-	public SokobanGameProject() : base()
+	// Extra Sharpmake project TYPE names to include in this game's solution
+	// (resolved via Type.GetType against the compiled Sharpmake assembly). Used
+	// by TilePuzzle to carry its offline LevelGen / RegistryViewer tools so they
+	// live in the game's own sln and stay out of the game-free engine sln.
+	public virtual string[] ExtraProjectTypeNames => new string[0];
+
+	public GameSolution() : base(typeof(ZenithTarget))
 	{
-		// Sokoban-specific configuration if needed
+		Name = GameName;
+
+		AddTargets(new ZenithTarget
+		{
+			Platform = Platform.win64,
+			DevEnv = DevEnv.vs2022,
+			Optimization = Optimization.Debug | Optimization.Release,
+			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False,
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
+		});
+
+		if (HasAndroid)
+		{
+			AddTargets(new ZenithTarget
+			{
+				Platform = Platform.agde,
+				DevEnv = DevEnv.vs2022,
+				Optimization = Optimization.Debug | Optimization.Release,
+				ToolsEnabled = ToolsEnabled.False,
+				RenderBackend = RenderBackend.Vulkan,
+				AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
+			});
+		}
 	}
-}
 
-// Test game project - the engine-feature test game (Games/Test). Restored to
-// the build after the misnamed class above was found generating Sokoban
-// instead; its stale hand-era vcxproj predated the RenderBackend config prefix.
-[Sharpmake.Generate]
-public class TestGameProject : GameProject
-{
-	public override string GameName => "Test";
-
-	public TestGameProject() : base()
+	[Configure]
+	public void ConfigureAll(Configuration conf, ZenithTarget target)
 	{
-		// Test-specific configuration if needed
-	}
-}
+		conf.SolutionFileName = "[solution.Name]_[target.Platform]";
+		// Solution lives at the game root. The generated subclass is defined in
+		// Build/, so [solution.SharpmakeCsPath] resolves to Build/ and ../Games/<N>
+		// lands at the game folder.
+		conf.SolutionPath = @"[solution.SharpmakeCsPath]/../Games/" + GameName;
 
-// Marble game project - physics showcase
-[Sharpmake.Generate]
-public class MarbleGameProject : GameProject
-{
-	public override string GameName => "Marble";
+		// Engine leaf libs (visible/buildable on their own) + the aggregate engine.
+		conf.AddProject<ZenithBaseLibProject>(target);
+		conf.AddProject<ZenithECSLibProject>(target);
+		conf.AddProject<ZenithPhysicsLibProject>(target);
+		conf.AddProject<ZenithAILibProject>(target);
+		conf.AddProject<ZenithProject>(target);
 
-	public MarbleGameProject() : base()
-	{
-		// Marble-specific configuration if needed
-	}
-}
+		// The game itself. Non-generic AddProject: the concrete project type comes
+		// from the descriptor-generated subclass, so this base needs no per-game code.
+		conf.AddProject(GameProjectType, target);
 
-// Runner game project - Animation + Terrain showcase
-[Sharpmake.Generate]
-public class RunnerGameProject : GameProject
-{
-	public override string GameName => "Runner";
+		// Windows-only tools.
+		if (target.Platform == Platform.win64)
+		{
+			// FluxCompiler (Slang -> SPIR-V) + any per-game extra projects are
+			// inherently Vulkan-side; add them only on Vulkan configs (their
+			// projects declare Vulkan-only targets to match).
+			if (target.RenderBackend == RenderBackend.Vulkan)
+			{
+				conf.AddProject<FluxCompilerProject>(target);
 
-	public RunnerGameProject() : base()
-	{
-		// Runner-specific configuration if needed
-	}
-}
+				foreach (string strTypeName in ExtraProjectTypeNames)
+				{
+					Type xExtraType = Type.GetType(strTypeName);
+					if (xExtraType == null)
+					{
+						throw new Exception("GameSolution '" + GameName +
+							"': extraSharpmakeProjects references unknown type '" + strTypeName + "'");
+					}
+					conf.AddProject(xExtraType, target);
+				}
+			}
 
-// Combat game project - Animation + Events + IK showcase
-[Sharpmake.Generate]
-public class CombatGameProject : GameProject
-{
-	public override string GameName => "Combat";
-
-	public CombatGameProject() : base()
-	{
-		// Combat-specific configuration if needed
-	}
-}
-
-// Exploration game project - Terrain + Atmosphere showcase
-[Sharpmake.Generate]
-public class ExplorationGameProject : GameProject
-{
-	public override string GameName => "Exploration";
-
-	public ExplorationGameProject() : base()
-	{
-		// Exploration-specific configuration if needed
-	}
-}
-
-// RenderTest game project - Procedural terrain render test
-[Sharpmake.Generate]
-public class RenderTestGameProject : GameProject
-{
-	public override string GameName => "RenderTest";
-
-	public RenderTestGameProject() : base()
-	{
-		// RenderTest-specific configuration if needed
-	}
-}
-
-// Survival game project - Task System + Multi-Feature showcase
-[Sharpmake.Generate]
-public class SurvivalGameProject : GameProject
-{
-	public override string GameName => "Survival";
-
-	public SurvivalGameProject() : base()
-	{
-		// Survival-specific configuration if needed
-	}
-}
-
-// TilePuzzle game project - Sliding puzzle with colored shapes and cats
-[Sharpmake.Generate]
-public class TilePuzzleGameProject : GameProject
-{
-	public override string GameName => "TilePuzzle";
-
-	public TilePuzzleGameProject() : base()
-	{
-		// TilePuzzle-specific configuration if needed
-	}
-}
-
-// AIShowcase game project - AI System demonstration
-[Sharpmake.Generate]
-public class AIShowcaseGameProject : GameProject
-{
-	public override string GameName => "AIShowcase";
-
-	public AIShowcaseGameProject() : base()
-	{
-		// AIShowcase-specific configuration if needed
-	}
-}
-
-// DevilsPlayground game project - Click-to-possess top-down occult horror (UE5 game-jam port)
-[Sharpmake.Generate]
-public class DevilsPlaygroundGameProject : GameProject
-{
-	public override string GameName => "DevilsPlayground";
-
-	public DevilsPlaygroundGameProject() : base()
-	{
-		// DevilsPlayground-specific configuration if needed
-	}
-}
-
-// CityBuilder game project - SimCity/Cities-Skylines-style city builder with
-// runtime terrain deformation (Flux_TerrainModification engine subsystem).
-[Sharpmake.Generate]
-public class CityBuilderGameProject : GameProject
-{
-	public override string GameName => "CityBuilder";
-
-	public CityBuilderGameProject() : base()
-	{
-		// CityBuilder-specific configuration if needed
+			// MSDF font deps — only present in tools-enabled builds.
+			if (target.ToolsEnabled == ToolsEnabled.True)
+			{
+				conf.AddProject<FreeTypeProject>(target);
+				conf.AddProject<MsdfgenProject>(target);
+				conf.AddProject<MsdfAtlasGenProject>(target);
+			}
+		}
 	}
 }

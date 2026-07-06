@@ -153,7 +153,7 @@ TilePuzzleLevelGen/LevelRegistry/
 Sharpmake_Build.bat
 
 # Build (Release recommended for generation speed)
-msbuild Build/zenith_win64.sln /p:Configuration=vs2022_Release_Win64_True /p:Platform=x64 -maxCpuCount
+msbuild Games/TilePuzzle/tilepuzzle_win64.sln /t:TilePuzzleLevelGen /p:Configuration=Vulkan_vs2022_Release_Win64_True /p:Platform=x64 -maxCpuCount
 
 # Run with required arguments
 tilepuzzlelevelgen.exe --count 10 --min-moves 12

@@ -1,0 +1,67 @@
+#include "Zenith.h"
+
+#ifdef ZENITH_INPUT_SIMULATOR
+
+// ============================================================================
+// {{GAME_NAME}}_Boot_Test -- proves the scaffolded game boots its scene and
+// attaches its game component. A starting point: add your own characterization
+// tests here (see Games/Sokoban/Tests/Test_SokobanCharacterization.cpp).
+// ============================================================================
+
+#include "Core/Zenith_AutomatedTest.h"
+#include "Core/Zenith_Engine.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "{{GAME_NAME}}/Components/{{GAME_NAME}}_GameComponent.h"
+
+namespace
+{
+	{{GAME_NAME}}_GameComponent* Find{{GAME_NAME}}Game()
+	{
+		{{GAME_NAME}}_GameComponent* pxFound = nullptr;
+		g_xEngine.Scenes().QueryAllScenes<{{GAME_NAME}}_GameComponent>().ForEach(
+			[&pxFound](Zenith_EntityID, {{GAME_NAME}}_GameComponent& xGame)
+			{
+				if (pxFound == nullptr) { pxFound = &xGame; }
+			});
+		return pxFound;
+	}
+
+	bool g_b{{GAME_NAME}}BootOk = false;
+}
+
+static void Setup_{{GAME_NAME}}Boot()
+{
+	g_b{{GAME_NAME}}BootOk = false;
+}
+
+static bool Step_{{GAME_NAME}}Boot(int iFrame)
+{
+	// The boot-authored scene attaches the game component to GameManager; once it
+	// resolves, the game exe has booted its scene successfully.
+	if (Find{{GAME_NAME}}Game() != nullptr)
+	{
+		g_b{{GAME_NAME}}BootOk = true;
+		return false;
+	}
+	return iFrame < 300;
+}
+
+static bool Verify_{{GAME_NAME}}Boot()
+{
+	if (!g_b{{GAME_NAME}}BootOk)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[{{GAME_NAME}}Boot] game component was not found after boot");
+	}
+	return g_b{{GAME_NAME}}BootOk;
+}
+
+static const Zenith_AutomatedTest g_x{{GAME_NAME}}BootTest = {
+	"{{GAME_NAME}}_Boot_Test",
+	&Setup_{{GAME_NAME}}Boot,
+	&Step_{{GAME_NAME}}Boot,
+	&Verify_{{GAME_NAME}}Boot,
+	/*maxFrames*/ 600,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_x{{GAME_NAME}}BootTest);
+
+#endif // ZENITH_INPUT_SIMULATOR

@@ -52,7 +52,7 @@ registers the 3 game components, disables SS*/shadows/fog (keeps skybox + IBL), 
 
 ```
 cd Build && Sharpmake_Build.bat                        # regen after adding .cpp files
-msbuild zenith_win64.sln /t:CityBuilder /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
+msbuild Games\CityBuilder\citybuilder_win64.sln /t:CityBuilder /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
 pwsh ./Tools/run_cb_tests.ps1 -Headless                # logic tests (CI-style)
 pwsh ./Tools/run_cb_tests.ps1 -Filter CB_HumanSession  # windowed full human playthrough
 pwsh ./Tools/run_cb_tests.ps1 -Filter CB_CityGrow      # windowed free-form render check

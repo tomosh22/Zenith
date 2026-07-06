@@ -179,13 +179,13 @@ jobs:
         shell: pwsh
         working-directory: Build
         run: |
-          dotnet exec '..\Sharpmake\Sharpmake.Application.dll' "/sources('Sharpmake_Common.cs', 'Sharpmake_FreeType.cs', 'Sharpmake_Msdfgen.cs', 'Sharpmake_MsdfAtlasGen.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_ZenithECS.cs', 'Sharpmake_SentinelECS.cs', 'Sharpmake_ZenithPhysics.cs', 'Sharpmake_SentinelPhysics.cs', 'Sharpmake_ZenithAI.cs', 'Sharpmake_SentinelAI.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs', 'Sharpmake_TilePuzzleLevelGen.cs', 'Sharpmake_TilePuzzleRegistryViewer.cs')"
+          ./regen.ps1 -UseDotnet
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build DevilsPlayground
         shell: pwsh
         run: |
-          msbuild Build\zenith_win64.sln `
+          msbuild Games\DevilsPlayground\devilsplayground_win64.sln `
               /t:DevilsPlayground `
               /p:Configuration=Vulkan_vs2022_Debug_Win64_True `
               /p:Platform=x64 `
@@ -203,7 +203,7 @@ jobs:
           # the Flux renderer surface is backend-neutral (zero real rendering;
           # Vulkan stays the shipping backend). _False omits editor/tools +
           # Slang/Vulkan and links the system d3d12/dxgi import libs only.
-          msbuild Build\zenith_win64.sln `
+          msbuild Games\DevilsPlayground\devilsplayground_win64.sln `
               /t:DevilsPlayground `
               /p:Configuration=D3D12_vs2022_Debug_Win64_False `
               /p:Platform=x64 `

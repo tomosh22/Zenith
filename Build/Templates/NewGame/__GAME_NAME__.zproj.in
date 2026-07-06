@@ -1,0 +1,7 @@
+{
+    "schemaVersion": 1,
+    "name": "{{GAME_NAME}}",
+    "android": false,
+    "extraDefines": [],
+    "extraSharpmakeProjects": []
+}

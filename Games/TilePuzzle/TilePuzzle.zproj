@@ -1,0 +1,7 @@
+{
+    "schemaVersion": 1,
+    "name": "TilePuzzle",
+    "android": true,
+    "extraDefines": [],
+    "extraSharpmakeProjects": ["TilePuzzleLevelGenProject", "TilePuzzleRegistryViewerProject"]
+}

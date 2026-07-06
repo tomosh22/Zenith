@@ -140,14 +140,18 @@ The project uses [Sharpmake](https://github.com/ubisoft/Sharpmake) to generate V
 
 ### Generating Solution Files
 
-Run from the `Build/` directory:
+Games are **descriptor-driven** (`Games/<Name>/<Name>.zproj`); adding/removing a game
+needs no Sharpmake C# edits. Regenerate all solutions:
 ```batch
-Sharpmake_Build.bat
+Build\regen.ps1
 ```
+(`zenith regen` / `Build\Sharpmake_Build.bat` / `run_sharpmake.ps1` forward here.)
 
-This generates:
-- `zenith_win64.sln` - Windows x64 solution
-- `zenith_agde.sln` - Android (AGDE) solution
+This generates **per-game** solutions plus one **engine-only** solution (NO all-games sln):
+- `Games/<Name>/<name>_win64.sln` (+ `<name>_agde.sln` when `android:true`)
+- `Build/zenith_engine_win64.sln` — engine libs + Sentinels + tools + ZenithHub, zero games
+
+Generated `.sln`/`.cs` are gitignored. Full reference: **`Docs/GameProjects.md`**.
 
 ### Build Configurations
 
@@ -173,21 +177,21 @@ Each project supports these configurations:
 
 ### Building and Running
 
-**Windows (with editor):**
+**The `zenith` CLI (recommended):** `zenith build|run|open|new|list|hub <Name>`.
+
+**Direct msbuild — always `/t:<Game>`, never the whole sln** (aux tools are
+pre-existing-red in `ToolsEnabled=True`):
 ```batch
-cd Build
 REM win64 configs are prefixed by render backend: Vulkan_ (real) or D3D12_ (null
 REM backend; backend-neutrality proof). Output dir is the lowercased config name.
-msbuild zenith_win64.sln /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
-cd ..\Games\Sokoban\Build\output\win64\vulkan_vs2022_debug_win64_true
-sokoban.exe
+msbuild Games\Sokoban\sokoban_win64.sln /t:Sokoban /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
+Games\Sokoban\Build\output\win64\vulkan_vs2022_debug_win64_true\sokoban.exe
 ```
+Engine work: `msbuild Build\zenith_engine_win64.sln /t:Zenith` (or `/t:Sentinel*` /
+`/t:FluxCompiler` / `/t:ZenithHub`).
 
-**Using Visual Studio:**
-1. Open `Build\zenith_win64.sln`
-2. Set Sokoban as startup project
-3. Select configuration (e.g., `vs2022_Debug_Win64_True|x64`)
-4. Build and run (F5)
+**Using Visual Studio:** `zenith open <Name>` (regens + opens
+`Games/<Name>/<name>_win64.sln`); set the game as startup, pick a config, F5.
 
 ### Build Troubleshooting
 
@@ -224,7 +228,7 @@ msbuild %*
 
 **Usage:**
 ```batch
-CleanBuild.bat zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
+CleanBuild.bat Games\Sokoban\sokoban_win64.sln /t:Sokoban /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
 ```
 
 **Alternative - Manual Cleanup:**

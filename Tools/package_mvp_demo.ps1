@@ -36,7 +36,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Configuration = "vs2022_Debug_Win64_True",
+    [string]$Configuration = "Vulkan_vs2022_Debug_Win64_True",
     [string]$OutDir        = "Build/dp_demo_package",
     [switch]$Force
 )
@@ -51,7 +51,7 @@ if (-not (Test-Path $exePath)) {
     Write-Error @"
 Built executable not found: $exePath
 Build it first via:
-  msbuild Build/zenith_win64.sln /t:DevilsPlayground /p:Configuration=$Configuration /p:Platform=x64
+  msbuild Games/DevilsPlayground/devilsplayground_win64.sln /t:DevilsPlayground /p:Configuration=$Configuration /p:Platform=x64
 "@
     exit 1
 }

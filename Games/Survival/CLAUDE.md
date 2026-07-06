@@ -257,7 +257,7 @@ Find nearest harvestable resource within interaction range, then apply hit with 
 
 ```batch
 cd Build
-msbuild zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
+msbuild Games\Survival\survival_win64.sln /t:Survival /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64
 cd ..\Games\Survival\Build\output\win64\vs2022_debug_win64_true
 survival.exe
 ```

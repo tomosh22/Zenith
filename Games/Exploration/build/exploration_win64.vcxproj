@@ -895,6 +895,7 @@
     <ClInclude Include="..\Components\Exploration_AtmosphereController.h" />
     <ClInclude Include="..\Components\Exploration_Config.h" />
     <ClInclude Include="..\Components\Exploration_GameComponent.h" />
+    <ClInclude Include="..\Components\Exploration_GraphNodes.h" />
     <ClInclude Include="..\Components\Exploration_PlayerController.h" />
     <ClInclude Include="..\Components\Exploration_TerrainExplorer.h" />
     <ClInclude Include="..\Components\Exploration_UIManager.h" />

@@ -16,6 +16,9 @@
     <ClInclude Include="..\Components\Exploration_GameComponent.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\Exploration_GraphNodes.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\Exploration_PlayerController.h">
       <Filter>Components</Filter>
     </ClInclude>
