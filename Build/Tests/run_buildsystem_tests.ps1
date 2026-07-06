@@ -320,6 +320,120 @@ try {
         Assert-AnyLike $tp.ExtraSharpmakeProjects "TilePuzzleLevelGenProject" "levelgen extra"
         Assert-AnyLike $tp.ExtraSharpmakeProjects "TilePuzzleRegistryViewerProject" "registryviewer extra"
     }
+
+    # ========================================================================
+    Write-Host "`n[8] Central config (zenith_config.psd1)" -ForegroundColor Cyan
+
+    Invoke-Test "config data loads with the expected keys" {
+        $cfg = Get-ZenithBuildConfigData
+        foreach ($k in @('DefaultConfigWin64', 'HubConfigWin64', 'AndroidConfigTemplate', 'SlangVersion', 'VulkanSdkVersion', 'ArtifactsRoot')) {
+            Assert-True ($cfg.ContainsKey($k)) "config key '$k' present"
+        }
+    }
+    Invoke-Test "default config is the documented Vulkan Debug True" {
+        Assert-Equal 'Vulkan_vs2022_Debug_Win64_True' (Get-ZenithDefaultConfig) "default config"
+    }
+    Invoke-Test "ConvertTo-ZenithOutputDir lowercases the config name" {
+        Assert-Equal 'vulkan_vs2022_debug_win64_true' (ConvertTo-ZenithOutputDir -Config 'Vulkan_vs2022_Debug_Win64_True') "lowercase mapping"
+    }
+    Invoke-Test "Get-ZenithGameExePath composes the exact expected path" {
+        $p = Get-ZenithGameExePath -Name 'Sokoban' -Config 'Vulkan_vs2022_Debug_Win64_True' -RepoRoot 'C:\r'
+        $norm = $p.Replace('\', '/')
+        Assert-Equal 'C:/r/Games/Sokoban/Build/output/win64/vulkan_vs2022_debug_win64_true/sokoban.exe' $norm "exe path"
+    }
+
+    # ========================================================================
+    Write-Host "`n[9] Regen drift detection (Test-ZenithRegenDrift)" -ForegroundColor Cyan
+
+    # Shared fixture: a valid games root + a generated file + fake slns.
+    function New-DriftFixture {
+        $root = New-IsolatedGamesRoot 'drift'
+        New-FixtureDescriptor -Root $root -Folder 'Widget' -FileBase 'Widget' -Json (Good-Json -Name 'Widget') | Out-Null
+        $fakeRepo = Join-Path $script:TempRoot ("driftrepo_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        New-Item -ItemType Directory -Force -Path (Join-Path $fakeRepo 'Build') | Out-Null
+        $gen = Join-Path $fakeRepo 'Build/Sharpmake_GameInstances.generated.cs'
+        Invoke-ZenithCodegen -GamesRoot $root -OutputPath $gen | Out-Null
+        New-Item -ItemType File -Force -Path (Join-Path $fakeRepo 'Build/zenith_engine_win64.sln') | Out-Null
+        New-Item -ItemType File -Force -Path (Join-Path $root 'Widget/widget_win64.sln') | Out-Null
+        return [PSCustomObject]@{ GamesRoot = $root; RepoRoot = $fakeRepo; Generated = $gen }
+    }
+
+    Invoke-Test "in-sync fixture reports InSync" {
+        $f = New-DriftFixture
+        # GamesRoot is outside the fake repo, so pass all three explicitly.
+        $d = Test-ZenithRegenDrift -GamesRoot $f.GamesRoot -GeneratedPath $f.Generated -RepoRoot $f.RepoRoot
+        Assert-True $d.InSync "expected in-sync. reasons: $($d.Reasons -join '; ')"
+    }
+    Invoke-Test "mutated descriptor reports drift" {
+        $f = New-DriftFixture
+        $zproj = Join-Path $f.GamesRoot 'Widget/Widget.zproj'
+        [System.IO.File]::AppendAllText($zproj, ' ')
+        $d = Test-ZenithRegenDrift -GamesRoot $f.GamesRoot -GeneratedPath $f.Generated -RepoRoot $f.RepoRoot
+        Assert-False $d.InSync "expected drift after descriptor mutation"
+        Assert-AnyLike $d.Reasons "*stale relative to the descriptors*" "stale reason"
+    }
+    Invoke-Test "missing generated file reports drift" {
+        $f = New-DriftFixture
+        Remove-Item -LiteralPath $f.Generated -Force
+        $d = Test-ZenithRegenDrift -GamesRoot $f.GamesRoot -GeneratedPath $f.Generated -RepoRoot $f.RepoRoot
+        Assert-False $d.InSync "expected drift when generated file missing"
+        Assert-AnyLike $d.Reasons "*generated file missing*" "missing reason"
+    }
+    Invoke-Test "missing game sln reports drift" {
+        $f = New-DriftFixture
+        Remove-Item -LiteralPath (Join-Path $f.GamesRoot 'Widget/widget_win64.sln') -Force
+        $d = Test-ZenithRegenDrift -GamesRoot $f.GamesRoot -GeneratedPath $f.Generated -RepoRoot $f.RepoRoot
+        Assert-False $d.InSync "expected drift when a game sln is missing"
+        Assert-AnyLike $d.Reasons "*game solution missing*" "sln reason"
+    }
+    Invoke-Test "descriptor validation errors report drift with reasons" {
+        $f = New-DriftFixture
+        New-FixtureDescriptor -Root $f.GamesRoot -Folder 'Bad' -FileBase 'Bad' -Json '{ not json' | Out-Null
+        $d = Test-ZenithRegenDrift -GamesRoot $f.GamesRoot -GeneratedPath $f.Generated -RepoRoot $f.RepoRoot
+        Assert-False $d.InSync "expected drift on descriptor errors"
+        Assert-AnyLike $d.Reasons "descriptor:*" "descriptor-prefixed reason"
+    }
+
+    # ========================================================================
+    Write-Host "`n[10] Build-process hygiene" -ForegroundColor Cyan
+
+    Invoke-Test "Stop-ZenithBuildProcesses -DryRun runs without throwing" {
+        # Callers always wrap with @(...): an empty enumerated return unwraps to
+        # $null in plain assignment, which @() normalizes to a 0-count array.
+        $r = @(Stop-ZenithBuildProcesses -DryRun)
+        Assert-True ($r.Count -ge 0) "dry-run sweep completed"
+    }
+    Invoke-Test "impossible age filter returns empty (kills nothing)" {
+        $r = @(Stop-ZenithBuildProcesses -DryRun -OlderThanMinutes 525600)
+        Assert-Equal 0 $r.Count "one-year age filter should match nothing"
+    }
+
+    # ========================================================================
+    Write-Host "`n[11] Runtime DLL heal (Repair-ZenithRuntimeDlls)" -ForegroundColor Cyan
+
+    Invoke-Test "copies missing slang DLLs, never overwrites existing ones" {
+        $base = Join-Path $script:TempRoot ("dll_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        $exeDir = Join-Path $base 'out'
+        $slang = Join-Path $base 'slangbin'
+        New-Item -ItemType Directory -Force -Path $exeDir, $slang | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $slang 'slang.dll'), 'fresh', $utf8NoBom)
+        [System.IO.File]::WriteAllText((Join-Path $slang 'slang-rt.dll'), 'fresh', $utf8NoBom)
+        [System.IO.File]::WriteAllText((Join-Path $exeDir 'slang.dll'), 'existing', $utf8NoBom)
+        $copied = @(Repair-ZenithRuntimeDlls -ExeDir $exeDir -SlangBinDir $slang -SiblingGlob (Join-Path $base 'nosuch/*'))
+        Assert-Equal 1 $copied.Count "exactly one DLL copied"
+        Assert-Equal 'slang-rt.dll' $copied[0] "the missing one"
+        Assert-Equal 'existing' (Get-Content -LiteralPath (Join-Path $exeDir 'slang.dll') -Raw) "existing DLL untouched"
+    }
+    Invoke-Test "pulls missing DLLs from sibling output dirs" {
+        $base = Join-Path $script:TempRoot ("sib_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        $exeDir = Join-Path $base 'games/A/leaf'
+        $sib = Join-Path $base 'games/B/leaf'
+        New-Item -ItemType Directory -Force -Path $exeDir, $sib | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $sib 'assimp.dll'), 'sib', $utf8NoBom)
+        $copied = @(Repair-ZenithRuntimeDlls -ExeDir $exeDir -SlangBinDir (Join-Path $base 'nosuchslang') -SiblingGlob (Join-Path $base 'games/*/leaf'))
+        Assert-Equal 1 $copied.Count "one DLL from sibling"
+        Assert-True (Test-Path (Join-Path $exeDir 'assimp.dll')) "assimp.dll copied"
+    }
 }
 finally {
     Remove-Item -Recurse -Force -Path $script:TempRoot -ErrorAction SilentlyContinue

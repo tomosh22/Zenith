@@ -252,45 +252,23 @@ MSBuild can sometimes leave hanging `cl.exe` (compiler) and `mspdbsrv.exe` (debu
 **Cause:**
 Parallel builds (`-maxCpuCount`) or interrupted builds can leave compiler subprocesses running. These processes hold locks on `.pdb`, `.pch`, and `.obj` files.
 
-**Solution - Clean Build Script:**
-
-Create a helper script `CleanBuild.bat` to kill hanging processes before building:
+**Solution:**
 
 ```batch
-@echo off
-REM Kill any hanging compiler processes
-taskkill /F /IM cl.exe /T 2>nul
-taskkill /F /IM mspdbsrv.exe /T 2>nul
-taskkill /F /IM link.exe /T 2>nul
-taskkill /F /IM vctip.exe /T 2>nul
-
-REM Wait for processes to terminate
-timeout /t 1 /nobreak >nul
-
-REM Now build
-msbuild %*
+zenith clean                  REM kill hanging cl/mspdbsrv/link/vctip/msbuild
+zenith clean Sokoban          REM ...and also wipe that game's output/ + obj/
+zenith clean engine           REM ...engine + hub intermediates
+zenith clean --processes-only REM just the process sweep
 ```
 
-**Usage:**
-```batch
-CleanBuild.bat Games\Sokoban\sokoban_win64.sln /t:Sokoban /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
-```
-
-**Alternative - Manual Cleanup:**
-
-PowerShell:
-```powershell
-Get-Process cl,mspdbsrv,link,vctip -ErrorAction SilentlyContinue | Stop-Process -Force
-```
-
-Command Prompt:
-```batch
-taskkill /F /IM cl.exe /T
-taskkill /F /IM mspdbsrv.exe /T
-```
+`zenith build` also self-heals on entry: it kills compiler processes older than
+30 minutes (genuinely hung ones only — a live concurrent build is never touched)
+before invoking MSBuild, and accepts `--timeout <min>` as a watchdog that kills
+the msbuild tree if a build wedges. (Implementation:
+`Stop-ZenithBuildProcesses` in `Build/zenith_buildsystem.psm1`.)
 
 **Prevention:**
-- Builds use parallel compilation (`-maxCpuCount`, all cores). If a parallel build leaves hanging processes, run `CleanBuild.bat` (above) before retrying — don't fall back to single-threaded
+- Builds use parallel compilation (`-maxCpuCount`, all cores). If a parallel build leaves hanging processes, run `zenith clean` before retrying — don't fall back to single-threaded
 - Always let builds complete or use Ctrl+C to properly terminate
 - Close Visual Studio when building from command line to avoid file conflicts
 

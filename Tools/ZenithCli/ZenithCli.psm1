@@ -21,7 +21,8 @@ $script:EXIT_GENERATION = 3
 $script:EXIT_BUILD = 4
 $script:EXIT_NOTFOUND = 5
 
-$script:DefaultConfig = 'Vulkan_vs2022_Debug_Win64_True'
+# Default/hub configs live in Build/zenith_config.psd1 (single source of truth);
+# resolved lazily after Import-BuildSystem via Get-ZenithDefaultConfig etc.
 
 # --- Paths / imports ---------------------------------------------------------
 
@@ -73,12 +74,15 @@ function Resolve-ExistingGameName {
 
 function Get-GameOutputExe {
     # Newest built exe for a game across win64 output dirs, or a specific config.
+    # Config->dir mapping comes from the buildsystem module (Sharpmake lowercases
+    # output dir names) -- callers must Import-BuildSystem first.
     param([string]$Name, [string]$Config)
     $outRoot = Join-Path (Get-GameDir $Name) 'Build/output/win64'
     if (-not (Test-Path $outRoot)) { return $null }
     $exeName = "$($Name.ToLowerInvariant()).exe"
     if ($Config) {
-        $p = Join-Path $outRoot "$($Config.ToLowerInvariant())/$exeName"
+        if (-not (Get-Command Get-ZenithGameExePath -ErrorAction SilentlyContinue)) { Import-BuildSystem }
+        $p = Get-ZenithGameExePath -Name $Name -Config $Config -RepoRoot (Get-CliRepoRoot)
         if (Test-Path $p) { return (Get-Item $p) }
         return $null
     }
@@ -270,35 +274,151 @@ function Invoke-ZenithList {
 
 function Invoke-ZenithRegenCmd {
     param([string[]]$CmdArgs)
+    $check = $false
+    foreach ($a in $CmdArgs) {
+        if ($a -eq '--check') { $check = $true }
+        else { Write-CliError "unknown option '$a' for 'regen'"; return $script:EXIT_USAGE }
+    }
+
+    if ($check) {
+        # Read-only staleness report: since nothing generated is git-tracked,
+        # a branch switch/pull can silently leave on-disk generated files stale.
+        Import-BuildSystem
+        $drift = Test-ZenithRegenDrift
+        if ($drift.InSync) {
+            Write-Host "regen check: in sync (generated files match the descriptors)." -ForegroundColor Green
+            return $script:EXIT_OK
+        }
+        Write-CliError "regen check: generated files are STALE -- run 'zenith regen':"
+        $drift.Reasons | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
+        return $script:EXIT_GENERATION
+    }
+
     $rc = Invoke-Regen
     if ($rc -ne 0) { return $script:EXIT_GENERATION }
     return $script:EXIT_OK
 }
 
+function Invoke-ZenithClean {
+    param([string[]]$CmdArgs)
+    Import-BuildSystem
+
+    $target = $null; $processesOnly = $false; $dryRun = $false
+    for ($i = 0; $i -lt $CmdArgs.Count; $i++) {
+        $a = $CmdArgs[$i]
+        if ($a -eq '--processes-only') { $processesOnly = $true }
+        elseif ($a -eq '--dry-run') { $dryRun = $true }
+        elseif ($a -like '--*') { Write-CliError "unknown option '$a' for 'clean'"; return $script:EXIT_USAGE }
+        else { if ($null -eq $target) { $target = $a } else { Write-CliError "unexpected argument '$a'"; return $script:EXIT_USAGE } }
+    }
+
+    # Always sweep hanging build processes first ('clean' means clean: msbuild
+    # included, no age filter).
+    $verb = if ($dryRun) { 'would kill' } else { 'killed' }
+    $killed = @(Stop-ZenithBuildProcesses -IncludeMsbuild -DryRun:$dryRun)
+    foreach ($p in $killed) { Write-Host "  $verb $($p.Name) (pid $($p.Id))" -ForegroundColor Yellow }
+    if ($killed.Count -eq 0) { Write-Host "  no hanging build processes." -ForegroundColor DarkGray }
+    if ($processesOnly -or $null -eq $target) { return $script:EXIT_OK }
+
+    $repoRoot = Get-CliRepoRoot
+    $paths = @()
+    if ($target -ieq 'engine') {
+        $paths = @('Build/output', 'Build/obj', 'ZenithHub/output')
+    }
+    elseif ($target -ieq 'all') {
+        $paths = @('Build/output', 'Build/obj', 'ZenithHub/output')
+        foreach ($d in (Get-ChildItem -LiteralPath (Join-Path $repoRoot 'Games') -Directory -ErrorAction SilentlyContinue)) {
+            $paths += @("Games/$($d.Name)/Build/output", "Games/$($d.Name)/Build/obj")
+        }
+    }
+    else {
+        $name = Resolve-ExistingGameName $target
+        if (-not $name) { Write-CliError "no such game '$target'"; return $script:EXIT_NOTFOUND }
+        $paths = @("Games/$name/Build/output", "Games/$name/Build/obj")
+    }
+
+    foreach ($rel in $paths) {
+        $full = Join-Path $repoRoot $rel
+        if (-not (Test-Path -LiteralPath $full)) { continue }
+        if ($dryRun) { Write-Host "  would delete $full" -ForegroundColor Yellow }
+        else {
+            Write-Host "  deleting $full" -ForegroundColor Yellow
+            Remove-Item -LiteralPath $full -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Host "Clean done." -ForegroundColor Green
+    return $script:EXIT_OK
+}
+
+function Invoke-ZenithMsbuildStep {
+    # One msbuild invocation with optional watchdog. Returns msbuild's exit code
+    # (124 on watchdog timeout, after killing the process tree + stale compilers).
+    param(
+        [string]$Msbuild,
+        [string[]]$BuildArgs,
+        [int]$TimeoutMinutes = 0
+    )
+    if ($TimeoutMinutes -le 0) {
+        & $Msbuild @BuildArgs | Out-Host
+        return $LASTEXITCODE
+    }
+    # Watchdog path: -NoNewWindow inherits the console so output still streams.
+    $proc = Start-Process -FilePath $Msbuild -ArgumentList $BuildArgs -NoNewWindow -PassThru
+    if (-not $proc.WaitForExit($TimeoutMinutes * 60 * 1000)) {
+        Write-CliError "build exceeded $TimeoutMinutes min watchdog; killing msbuild tree..."
+        & taskkill /T /F /PID $proc.Id 2>&1 | Out-Host
+        Stop-ZenithBuildProcesses -IncludeMsbuild | Out-Null
+        return 124
+    }
+    return $proc.ExitCode
+}
+
 function Invoke-ZenithBuild {
     param([string[]]$CmdArgs)
     Import-BuildSystem
-    $target = $null; $config = $script:DefaultConfig
+    $target = $null; $config = Get-ZenithDefaultConfig; $timeoutMin = 0
     for ($i = 0; $i -lt $CmdArgs.Count; $i++) {
         $a = $CmdArgs[$i]
         if ($a -eq '--config') { $config = $CmdArgs[++$i] }
+        elseif ($a -eq '--timeout') { $timeoutMin = [int]$CmdArgs[++$i] }
         elseif ($a -like '--*') { Write-CliError "unknown option '$a'"; return $script:EXIT_USAGE }
         else { if ($null -eq $target) { $target = $a } }
     }
-    if ([string]::IsNullOrEmpty($target)) { Write-CliError "usage: zenith build <Name|engine> [--config <C>]"; return $script:EXIT_USAGE }
+    if ([string]::IsNullOrEmpty($target)) { Write-CliError "usage: zenith build <Name|engine> [--config <C>] [--timeout <min>]"; return $script:EXIT_USAGE }
 
     $msbuild = Get-ZenithMsbuild
-    if (-not $msbuild) { Write-CliError "MSBuild not found (PATH or vswhere)."; return $script:EXIT_BUILD }
+    if (-not $msbuild) {
+        Write-CliError ("MSBuild not found on PATH or via vswhere. Install Visual Studio 2022 " +
+            "with the C++ workload, or run from a 'Developer PowerShell for VS' prompt. " +
+            "(CI uses microsoft/setup-msbuild.)")
+        return $script:EXIT_BUILD
+    }
+
+    # Self-heal: an interrupted parallel build can leave cl.exe/mspdbsrv holding
+    # locks on .pdb/.pch files, failing this build with MSB3027 'file in use'.
+    # Only kill genuinely-hung compilers (>= 30 min old) so a live concurrent
+    # build on this machine is never touched.
+    $stale = @(Stop-ZenithBuildProcesses -OlderThanMinutes 30)
+    foreach ($p in $stale) { Write-Host "  killed stale $($p.Name) (pid $($p.Id))" -ForegroundColor Yellow }
 
     if ($target -ieq 'engine') {
         # Engine build: Zenith + Sentinels, NEVER the whole sln (aux tools are
-        # pre-existing-red in ToolsEnabled=True).
+        # pre-existing-red in ToolsEnabled=True). Sentinels exist only in
+        # ToolsEnabled=False configs (leaf-purity proof), so they build with the
+        # config's _False sibling.
         $sln = Join-Path (Get-CliRepoRoot) 'Build/zenith_engine_win64.sln'
-        $targets = @('Zenith', 'SentinelECS', 'SentinelPhysics', 'SentinelAI')
-        foreach ($t in $targets) {
-            Write-CliInfo "[build] $t ($config)..."
-            & $msbuild $sln /t:$t /p:Configuration=$config /p:Platform=x64 /m /nologo /v:minimal | Out-Host
-            if ($LASTEXITCODE -ne 0) { Write-CliError "engine target '$t' failed"; return $script:EXIT_BUILD }
+        $sentinelConfig = $config -replace '_True$', '_False'
+        $steps = @(
+            @{ Target = 'Zenith'; Config = $config },
+            @{ Target = 'SentinelECS'; Config = $sentinelConfig },
+            @{ Target = 'SentinelPhysics'; Config = $sentinelConfig },
+            @{ Target = 'SentinelAI'; Config = $sentinelConfig }
+        )
+        foreach ($s in $steps) {
+            Write-CliInfo "[build] $($s.Target) ($($s.Config))..."
+            $buildArgs = @($sln, "/t:$($s.Target)", "/p:Configuration=$($s.Config)", '/p:Platform=x64', '/m', '/nologo', '/v:minimal')
+            $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs -TimeoutMinutes $timeoutMin
+            if ($rc -ne 0) { Write-CliError "engine target '$($s.Target)' failed"; return $script:EXIT_BUILD }
         }
         return $script:EXIT_OK
     }
@@ -308,8 +428,9 @@ function Invoke-ZenithBuild {
     $sln = Get-GameWin64Sln $name
     if (-not (Test-Path $sln)) { Write-CliError "solution not found: $sln (run 'zenith regen')"; return $script:EXIT_GENERATION }
     Write-CliInfo "[build] $name ($config)..."
-    & $msbuild $sln /t:$name /p:Configuration=$config /p:Platform=x64 /m /nologo /v:minimal | Out-Host
-    if ($LASTEXITCODE -ne 0) { Write-CliError "build failed"; return $script:EXIT_BUILD }
+    $buildArgs = @($sln, "/t:$name", "/p:Configuration=$config", '/p:Platform=x64', '/m', '/nologo', '/v:minimal')
+    $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs -TimeoutMinutes $timeoutMin
+    if ($rc -ne 0) { Write-CliError "build failed"; return $script:EXIT_BUILD }
     Write-Host "Built $name ($config)." -ForegroundColor Green
     return $script:EXIT_OK
 }
@@ -347,14 +468,21 @@ function Invoke-ZenithRun {
 
 function Invoke-ZenithHub {
     param([string[]]$CmdArgs)
+    Import-BuildSystem
     $rebuild = ($CmdArgs -contains '--rebuild')
-    $hubExe = Join-Path (Get-CliRepoRoot) 'ZenithHub/output/win64/vulkan_vs2022_release_win64_false/zenithhub.exe'
+    $hubConfig = (Get-ZenithBuildConfigData).HubConfigWin64
+    $hubLeaf = ConvertTo-ZenithOutputDir -Config $hubConfig
+    $hubExe = Join-Path (Get-CliRepoRoot) "ZenithHub/output/win64/$hubLeaf/zenithhub.exe"
     if ($rebuild -or -not (Test-Path $hubExe)) {
         $msbuild = Get-ZenithMsbuild
-        if (-not $msbuild) { Write-CliError "MSBuild not found."; return $script:EXIT_BUILD }
+        if (-not $msbuild) {
+            Write-CliError ("MSBuild not found on PATH or via vswhere. Install Visual Studio 2022 " +
+                "with the C++ workload, or run from a 'Developer PowerShell for VS' prompt.")
+            return $script:EXIT_BUILD
+        }
         $sln = Join-Path (Get-CliRepoRoot) 'Build/zenith_engine_win64.sln'
-        Write-CliInfo "[hub] Building ZenithHub (Vulkan_vs2022_Release_Win64_False)..."
-        & $msbuild $sln /t:ZenithHub /p:Configuration=Vulkan_vs2022_Release_Win64_False /p:Platform=x64 /m /nologo /v:minimal | Out-Host
+        Write-CliInfo "[hub] Building ZenithHub ($hubConfig)..."
+        & $msbuild $sln /t:ZenithHub /p:Configuration=$hubConfig /p:Platform=x64 /m /nologo /v:minimal | Out-Host
         if ($LASTEXITCODE -ne 0) { Write-CliError "hub build failed (is ZenithHub in the engine sln? Stage 4)"; return $script:EXIT_BUILD }
     }
     if (-not (Test-Path $hubExe)) { Write-CliError "hub exe not found: $hubExe"; return $script:EXIT_NOTFOUND }
@@ -390,9 +518,10 @@ Usage:
   zenith new <Name> [--template <T>] [--no-android] [--no-open]
   zenith open <Name>
   zenith list [--json]
-  zenith regen
-  zenith build <Name|engine> [--config <C>]
+  zenith regen [--check]
+  zenith build <Name|engine> [--config <C>] [--timeout <min>]
   zenith run <Name> [--config <C>] [--build] [-- <game args>]
+  zenith clean [<Name>|engine|all] [--processes-only] [--dry-run]
   zenith hub [--rebuild]
   zenith selftest
 
@@ -416,6 +545,7 @@ function Invoke-ZenithCli {
         '^regen$' { return (Invoke-ZenithRegenCmd -CmdArgs $rest) }
         '^build$' { return (Invoke-ZenithBuild -CmdArgs $rest) }
         '^run$' { return (Invoke-ZenithRun -CmdArgs $rest) }
+        '^clean$' { return (Invoke-ZenithClean -CmdArgs $rest) }
         '^hub$' { return (Invoke-ZenithHub -CmdArgs $rest) }
         '^selftest$' { return (Invoke-ZenithSelftest -CmdArgs $rest) }
         default { Write-CliError "unknown command '$cmd'"; Show-ZenithUsage; return $script:EXIT_USAGE }

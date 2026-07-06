@@ -22,6 +22,15 @@ function Invoke-Test([string]$Name, [scriptblock]$Body) {
 }
 function Assert([bool]$Cond, [string]$Msg) { if (-not $Cond) { throw $Msg } }
 
+# Host-agnostic CLI invoker. PS 5.1 does NOT flatten an array passed
+# positionally into a ValueFromRemainingArguments param (pwsh 7 does), so
+# `Invoke-ZenithCli @('open','X')` arrives as ONE nested element under 5.1.
+# Splatting behaves identically on both hosts (zenith.ps1 splats @args too).
+function Invoke-CliCode([string[]]$CliArgs) {
+    if ($null -eq $CliArgs) { $CliArgs = @() }
+    return (@(Invoke-ZenithCli @CliArgs))[-1]
+}
+
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("zenith_cli_tests_" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
@@ -85,24 +94,45 @@ try {
     }
 
     Write-Host "`n[2] Dispatcher exit codes" -ForegroundColor Cyan
-    Invoke-Test "help exits 0" { Assert ((@(Invoke-ZenithCli @('help')))[-1] -eq 0) "help -> 0" }
-    Invoke-Test "no args exits 0 (usage banner)" { Assert ((@(Invoke-ZenithCli @()))[-1] -eq 0) "no args -> 0" }
-    Invoke-Test "unknown command exits 1 (usage)" { Assert ((@(Invoke-ZenithCli @('bogus')))[-1] -eq 1) "bogus -> 1" }
-    Invoke-Test "new without a name exits 1 (usage)" { Assert ((@(Invoke-ZenithCli @('new')))[-1] -eq 1) "new -> 1" }
-    Invoke-Test "open without a name exits 1 (usage)" { Assert ((@(Invoke-ZenithCli @('open')))[-1] -eq 1) "open -> 1" }
-    Invoke-Test "build without a target exits 1 (usage)" { Assert ((@(Invoke-ZenithCli @('build')))[-1] -eq 1) "build -> 1" }
-    Invoke-Test "new with an invalid name exits 2 (validation)" { Assert ((@(Invoke-ZenithCli @('new', 'sokoban')))[-1] -eq 2) "new lowercase -> 2" }
-    Invoke-Test "open a non-existent game exits 5 (not-found)" { Assert ((@(Invoke-ZenithCli @('open', 'NoSuchGameXYZ')))[-1] -eq 5) "open missing -> 5" }
+    Invoke-Test "help exits 0" { Assert ((Invoke-CliCode @('help')) -eq 0) "help -> 0" }
+    Invoke-Test "no args exits 0 (usage banner)" { Assert ((Invoke-CliCode @()) -eq 0) "no args -> 0" }
+    Invoke-Test "unknown command exits 1 (usage)" { Assert ((Invoke-CliCode @('bogus')) -eq 1) "bogus -> 1" }
+    Invoke-Test "new without a name exits 1 (usage)" { Assert ((Invoke-CliCode @('new')) -eq 1) "new -> 1" }
+    Invoke-Test "open without a name exits 1 (usage)" { Assert ((Invoke-CliCode @('open')) -eq 1) "open -> 1" }
+    Invoke-Test "build without a target exits 1 (usage)" { Assert ((Invoke-CliCode @('build')) -eq 1) "build -> 1" }
+    Invoke-Test "new with an invalid name exits 2 (validation)" { Assert ((Invoke-CliCode @('new', 'sokoban')) -eq 2) "new lowercase -> 2" }
+    Invoke-Test "open a non-existent game exits 5 (not-found)" { Assert ((Invoke-CliCode @('open', 'NoSuchGameXYZ')) -eq 5) "open missing -> 5" }
     Invoke-Test "known flags parse (not rejected as unknown)" {
         # A valid name + a missing template => not-found (5). If --no-open/--template
         # were mis-parsed as unknown options, this would be usage (1) instead.
-        Assert ((@(Invoke-ZenithCli @('new', 'TmpFlagCheckXyz', '--template', 'NoSuchTemplate', '--no-open')))[-1] -eq 5) "flags parse -> 5 not 1"
+        Assert ((Invoke-CliCode @('new', 'TmpFlagCheckXyz', '--template', 'NoSuchTemplate', '--no-open')) -eq 5) "flags parse -> 5 not 1"
     }
 
     Write-Host "`n[3] MSBuild resolver" -ForegroundColor Cyan
     Invoke-Test "Get-ZenithMsbuild finds an msbuild" {
         $mb = Get-ZenithMsbuild
         Assert ($null -ne $mb -and (Test-Path $mb)) "msbuild resolved to a real path (got '$mb')"
+    }
+
+    Write-Host "`n[4] clean / regen --check dispatcher exit codes" -ForegroundColor Cyan
+    Invoke-Test "clean with unknown game exits 5 (not-found)" { Assert ((Invoke-CliCode @('clean', 'NoSuchGameXYZ')) -eq 5) "clean missing -> 5" }
+    Invoke-Test "clean with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('clean', '--bogus')) -eq 1) "clean --bogus -> 1" }
+    Invoke-Test "clean --processes-only --dry-run exits 0" { Assert ((Invoke-CliCode @('clean', '--processes-only', '--dry-run')) -eq 0) "clean dry-run -> 0" }
+    Invoke-Test "clean <Game> --dry-run exits 0 and deletes nothing" {
+        $out = Join-Path $repoRoot 'Games/Sokoban/Build/output'
+        $existedBefore = Test-Path $out
+        Assert ((Invoke-CliCode @('clean', 'Sokoban', '--dry-run')) -eq 0) "clean dry-run -> 0"
+        Assert ($existedBefore -eq (Test-Path $out)) "dry-run must not delete output dirs"
+    }
+    Invoke-Test "regen with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('regen', '--bogus')) -eq 1) "regen --bogus -> 1" }
+    Invoke-Test "regen --check on the real repo exits 0 or 3 (never usage/crash)" {
+        # 0 when the tree is freshly regenerated; 3 when stale -- both are valid
+        # states for a dev tree. Anything else is a bug.
+        $rc = (Invoke-CliCode @('regen', '--check'))
+        Assert ($rc -eq 0 -or $rc -eq 3) "regen --check -> 0|3 (got $rc)"
+    }
+    Invoke-Test "build --timeout parses (missing target still usage=1)" {
+        Assert ((Invoke-CliCode @('build', '--timeout', '5')) -eq 1) "build --timeout no target -> 1"
     }
 }
 finally {

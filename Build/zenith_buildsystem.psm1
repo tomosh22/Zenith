@@ -446,6 +446,205 @@ function Invoke-ZenithCodegen {
     return $text
 }
 
+# --- Central config (Build/zenith_config.psd1) --------------------------------
+
+$script:ZenithConfigData = $null
+
+function Get-ZenithBuildConfigData {
+    # Cached load of Build/zenith_config.psd1 (pure data). -Path override is for
+    # test fixtures only.
+    [CmdletBinding()]
+    param([string]$Path)
+
+    if (-not [string]::IsNullOrEmpty($Path)) {
+        return (Import-PowerShellDataFile -LiteralPath $Path)
+    }
+    if ($null -eq $script:ZenithConfigData) {
+        $p = Join-Path $PSScriptRoot 'zenith_config.psd1'
+        $script:ZenithConfigData = Import-PowerShellDataFile -LiteralPath $p
+    }
+    return $script:ZenithConfigData
+}
+
+function Get-ZenithDefaultConfig {
+    [CmdletBinding()]
+    param()
+    return (Get-ZenithBuildConfigData).DefaultConfigWin64
+}
+
+function ConvertTo-ZenithOutputDir {
+    # Sharpmake lowercases the config name to form the output directory leaf:
+    # /p:Configuration=Vulkan_vs2022_Debug_Win64_True builds into
+    # .../output/win64/vulkan_vs2022_debug_win64_true/. This is the ONE place
+    # that fact lives; never .ToLowerInvariant() a config name at a call site.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Config)
+    return $Config.ToLowerInvariant()
+}
+
+function Get-ZenithGameExePath {
+    # Composes the expected exe path for a game+config. Pure string composition;
+    # existence is the caller's concern.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [string]$Config,
+        [string]$RepoRoot
+    )
+    if ([string]::IsNullOrEmpty($Config)) { $Config = Get-ZenithDefaultConfig }
+    if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
+    $leaf = ConvertTo-ZenithOutputDir -Config $Config
+    $lower = $Name.ToLowerInvariant()
+    return (Join-Path $RepoRoot "Games/$Name/Build/output/win64/$leaf/$lower.exe")
+}
+
+# --- Build-process hygiene ----------------------------------------------------
+
+function Stop-ZenithBuildProcesses {
+    # Kill hanging MSVC toolchain processes (cl/mspdbsrv/link/vctip) that lock
+    # .pdb/.pch/.obj files after an interrupted parallel build. -IncludeMsbuild
+    # extends the sweep to msbuild itself (only safe when no build is wanted
+    # alive, e.g. `zenith clean`). -OlderThanMinutes N restricts to processes
+    # started at least N minutes ago (0 = all). -DryRun reports without killing.
+    # Returns the affected processes as @{ Name; Id } records.
+    [CmdletBinding()]
+    param(
+        [switch]$IncludeMsbuild,
+        [int]$OlderThanMinutes = 0,
+        [switch]$DryRun
+    )
+
+    $names = @('cl', 'mspdbsrv', 'link', 'vctip')
+    if ($IncludeMsbuild) { $names += @('msbuild', 'MSBuild') }
+
+    $cutoff = (Get-Date).AddMinutes(-$OlderThanMinutes)
+    $affected = New-Object System.Collections.Generic.List[object]
+
+    foreach ($p in @(Get-Process -Name $names -ErrorAction SilentlyContinue)) {
+        if ($OlderThanMinutes -gt 0) {
+            $started = $null
+            try { $started = $p.StartTime } catch { }
+            # Inaccessible StartTime (other session/elevation) => skip under an
+            # age filter rather than kill something possibly fresh.
+            if ($null -eq $started -or $started -gt $cutoff) { continue }
+        }
+        $affected.Add([PSCustomObject]@{ Name = $p.ProcessName; Id = $p.Id })
+        if (-not $DryRun) {
+            try { Stop-Process -Id $p.Id -Force -Confirm:$false -ErrorAction Stop } catch { }
+        }
+    }
+    # Plain enumerated return (no comma trick): callers wrap with @(...), which
+    # must see 0 items for an empty result, not a 1-item wrapper.
+    return $affected.ToArray()
+}
+
+function Repair-ZenithRuntimeDlls {
+    # Copy-missing-only runtime DLL heal for a game exe dir. Two sources:
+    #   1. Middleware/slang/bin/*.dll -- the Sharpmake post-build only copies
+    #      slang.dll, but slang has a dependency tree (slang-rt, slang-glslang,
+    #      slang-glsl-module, slang-llvm, slang-compiler, gfx); missing any of
+    #      them kills the exe with STATUS_DLL_NOT_FOUND before main().
+    #   2. Sibling game output dirs with the same config leaf (assimp etc. that
+    #      a first build of this game has not produced yet).
+    # Never overwrites an existing DLL. Returns the copied file names.
+    # -SlangBinDir / -SiblingGlob overrides are for test fixtures.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ExeDir,
+        [string]$RepoRoot,
+        [string]$SlangBinDir,
+        [string]$SiblingGlob
+    )
+
+    if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
+    $exeDirFull = (Resolve-Path -LiteralPath $ExeDir).Path
+    $leaf = Split-Path -Leaf $exeDirFull
+    if ([string]::IsNullOrEmpty($SlangBinDir)) { $SlangBinDir = Join-Path $RepoRoot 'Middleware/slang/bin' }
+    if ([string]::IsNullOrEmpty($SiblingGlob)) { $SiblingGlob = Join-Path $RepoRoot "Games/*/Build/output/win64/$leaf" }
+
+    $copied = New-Object System.Collections.Generic.List[string]
+
+    if (Test-Path -LiteralPath $SlangBinDir) {
+        foreach ($dll in @(Get-ChildItem (Join-Path $SlangBinDir '*.dll') -ErrorAction SilentlyContinue)) {
+            $dest = Join-Path $exeDirFull $dll.Name
+            if (-not (Test-Path -LiteralPath $dest)) {
+                Copy-Item -LiteralPath $dll.FullName -Destination $dest -Force
+                $copied.Add($dll.Name)
+            }
+        }
+    }
+
+    foreach ($sib in @(Get-ChildItem $SiblingGlob -Directory -ErrorAction SilentlyContinue)) {
+        if ($sib.FullName -ieq $exeDirFull) { continue }
+        foreach ($dll in @(Get-ChildItem (Join-Path $sib.FullName '*.dll') -ErrorAction SilentlyContinue)) {
+            $dest = Join-Path $exeDirFull $dll.Name
+            if (-not (Test-Path -LiteralPath $dest)) {
+                Copy-Item -LiteralPath $dll.FullName -Destination $dest -Force
+                $copied.Add($dll.Name)
+            }
+        }
+    }
+
+    return $copied.ToArray()
+}
+
+# --- Regen drift detection ----------------------------------------------------
+
+function Test-ZenithRegenDrift {
+    # Read-only staleness check for the generated build files (never writes).
+    # Since NOTHING generated is git-tracked (regenerate-first policy), a branch
+    # switch or pull can leave the on-disk Sharpmake_GameInstances.generated.cs
+    # and slns stale relative to the descriptors. Detects:
+    #   * descriptor validation errors
+    #   * missing/stale generated .cs (byte-compare vs freshly recomputed text --
+    #     stronger than a hash manifest: catches codegen-template changes too)
+    #   * missing engine / per-game slns
+    # Returns @{ InSync = [bool]; Reasons = [string[]] }.
+    [CmdletBinding()]
+    param(
+        [string]$GamesRoot,
+        [string]$GeneratedPath,
+        [string]$RepoRoot
+    )
+
+    if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
+    if ([string]::IsNullOrEmpty($GamesRoot)) { $GamesRoot = Join-Path $RepoRoot 'Games' }
+    if ([string]::IsNullOrEmpty($GeneratedPath)) { $GeneratedPath = Join-Path $RepoRoot 'Build/Sharpmake_GameInstances.generated.cs' }
+
+    $reasons = New-Object System.Collections.Generic.List[string]
+
+    $scan = Get-ZenithGameDescriptors -GamesRoot $GamesRoot
+    if ($scan.Errors.Count -gt 0) {
+        foreach ($e in $scan.Errors) { $reasons.Add("descriptor: $e") }
+        return [PSCustomObject]@{ InSync = $false; Reasons = $reasons.ToArray() }
+    }
+
+    if (-not (Test-Path -LiteralPath $GeneratedPath)) {
+        $reasons.Add("generated file missing: $GeneratedPath")
+    }
+    else {
+        $expected = Invoke-ZenithCodegen -GamesRoot $GamesRoot -Descriptors $scan.Descriptors -OutputPath ''
+        $actual = Get-Content -LiteralPath $GeneratedPath -Raw
+        if ($expected -cne $actual) {
+            $reasons.Add("generated file is stale relative to the descriptors: $GeneratedPath")
+        }
+    }
+
+    $engineSln = Join-Path $RepoRoot 'Build/zenith_engine_win64.sln'
+    if (-not (Test-Path -LiteralPath $engineSln)) {
+        $reasons.Add("engine solution missing: $engineSln")
+    }
+    foreach ($d in $scan.Descriptors) {
+        $lower = ([string]$d.Name).ToLowerInvariant()
+        $sln = Join-Path $GamesRoot "$($d.Name)/${lower}_win64.sln"
+        if (-not (Test-Path -LiteralPath $sln)) {
+            $reasons.Add("game solution missing: $sln")
+        }
+    }
+
+    return [PSCustomObject]@{ InSync = ($reasons.Count -eq 0); Reasons = $reasons.ToArray() }
+}
+
 # --- Worktree guard ----------------------------------------------------------
 
 function Test-ZenithInWorktree {
@@ -523,5 +722,12 @@ Export-ModuleMember -Function @(
     'Get-ZenithGameDescriptors',
     'Invoke-ZenithCodegen',
     'Test-ZenithInWorktree',
-    'Get-ZenithNameValidationCases'
+    'Get-ZenithNameValidationCases',
+    'Get-ZenithBuildConfigData',
+    'Get-ZenithDefaultConfig',
+    'ConvertTo-ZenithOutputDir',
+    'Get-ZenithGameExePath',
+    'Stop-ZenithBuildProcesses',
+    'Repair-ZenithRuntimeDlls',
+    'Test-ZenithRegenDrift'
 )

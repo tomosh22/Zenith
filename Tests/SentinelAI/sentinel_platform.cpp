@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Windows/Multithreading/Zenith_Windows_Multithreading.h"
+#include "Core/Callstack/Zenith_Callstack.h"
 #include "Profiling/Zenith_Profiling.h"
 
 // L0 platform + infra contract for the AI leaf
@@ -46,15 +47,22 @@ namespace Zenith_FileAccess
 	}
 }
 
-// Profiling bridge — no-op shims. The real impl (Zenith_Profiling.cpp) routes
-// through g_xEngine.Profiling(); the AI core only needs the markers to be callable.
+// Profiling bridge -- no-op shims for the string-zone API (the profiler overhaul
+// replaced the old Zenith_ProfileIndex enum markers). The real impl
+// (Zenith_Profiling.cpp) routes through g_xEngine.Profiling(); the AI core only
+// needs the zone markers to be callable.
 namespace Zenith_Profiling_Detail
 {
-	void BeginProfile(Zenith_ProfileIndex /*eIndex*/, const char* /*szLabel*/)
+	u_int RegisterZone(const char* /*szName*/)
+	{
+		return 0u;
+	}
+
+	void BeginProfileZone(u_int /*uZone*/, const char* /*szName*/)
 	{
 	}
 
-	void EndProfile(Zenith_ProfileIndex /*eIndex*/)
+	void EndProfileZone(u_int /*uZone*/)
 	{
 	}
 }
@@ -85,4 +93,58 @@ template<>
 void Zenith_Windows_Mutex_T<false>::Unlock()
 {
 	LeaveCriticalSection(reinterpret_cast<CRITICAL_SECTION*>(m_axCriticalSectionStorage));
+}
+
+// Unit-test + callstack seams of the L0 memory system
+// ====================================================
+// ZenithBase's memory TUs reference two more L0-adjacent facilities whose real
+// implementations stay in the aggregate (Core/Zenith_TestFramework.cpp,
+// Core/Callstack/):
+//   * Zenith_MemoryManagement registers its own unit tests (ZENITH_TESTING is
+//     on in every current config) and asserts through Zenith_TestRunner in
+//     DumpLargestAllocations.
+//   * Zenith_MemoryTracker captures + formats allocation callstacks at the
+//     FULL tracking tier (Debug).
+// The sentinel never runs unit tests or dumps allocations, so registration is
+// accepted-and-ignored and the runtime paths fail LOUD if ever reached. These
+// definitions keep the leaf-proof link honest without dragging the aggregate's
+// test framework (and its engine deps) into the sentinel.
+#ifdef ZENITH_TESTING
+Zenith_TestRunner& Zenith_TestRunner::Instance()
+{
+	static Zenith_TestRunner ls_xRunner;
+	return ls_xRunner;
+}
+
+void Zenith_TestRunner::RegisterTest(Zenith_TestCase* /*pxCase*/)
+{
+	// Static-init registrars from linked zenithbase TUs land here; the sentinel
+	// never calls RunAllTests, so the case list is not kept.
+}
+
+void Zenith_TestRunner::AssertTrue(bool bExpr, const char* strExpr, const char* strFile, int iLine, const char* /*strFormat*/, ...)
+{
+	if (!bExpr)
+	{
+		fprintf(stderr, "sentinel: AssertTrue(%s) FAILED at %s:%d\n", strExpr, strFile, iLine);
+		Zenith_DebugBreak();
+	}
+}
+#endif
+
+void Zenith_Callstack::Initialise()
+{
+}
+
+u_int Zenith_Callstack::Capture(void** /*apFrames*/, u_int /*uMaxFrames*/, u_int /*uSkipFrames*/)
+{
+	return 0u;
+}
+
+void Zenith_Callstack::FormatCallstack(void** /*apFrames*/, u_int /*uFrameCount*/, char* szBuffer, size_t ulBufferSize)
+{
+	if (szBuffer != nullptr && ulBufferSize > 0u)
+	{
+		szBuffer[0] = '\0';
+	}
 }
