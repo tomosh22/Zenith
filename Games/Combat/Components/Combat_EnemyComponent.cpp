@@ -2,6 +2,7 @@
 #include "Combat_EnemyComponent.h"
 
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 
 #include "Combat_GameComponent.h"   // static GameManager state (enemy registry, game state)
 
@@ -30,13 +31,28 @@ void Combat_EnemyComponent::OnUpdate(float fDt)
 		return;
 	}
 	EnsureInitialized();
-	m_xAI.Update(fDt);
+	// The enemy decision-switch lives in the Combat_EnemyBrain graph now; fire
+	// its driving event at exactly the point m_xAI.Update(fDt) used to run, with
+	// dt riding the payload (the graph context dt is 0 under custom events).
+	FireEnemyBrainTick(fDt);
 }
 
 void Combat_EnemyComponent::TriggerHitStun()
 {
 	EnsureInitialized();
 	m_xAI.TriggerHitStun();
+}
+
+void Combat_EnemyComponent::FireEnemyBrainTick(float fDt)
+{
+	Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+	if (pxGraph == nullptr)
+	{
+		return;
+	}
+	Zenith_PropertyValue xDt;
+	xDt.SetFloat(fDt);
+	pxGraph->FireCustomEvent("EnemyBrainTick", &xDt);
 }
 
 void Combat_EnemyComponent::EnsureInitialized()

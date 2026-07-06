@@ -5,6 +5,12 @@
       <Filter>Components</Filter>
     </ClCompile>
     <ClCompile Include="..\Test.cpp" />
+    <ClCompile Include="..\Tests\Test_PhysicsToysCharacterization.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_PlayerStateCharacterization.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tests\Test_ShootCharacterization.cpp">
       <Filter>Tests</Filter>
     </ClCompile>

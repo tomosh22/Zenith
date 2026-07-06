@@ -27,6 +27,8 @@
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
+#include "Scripting/Zenith_GraphBuilder.h"
+#include "Input/Zenith_KeyCodes.h"
 #endif
 
 // ============================================================================
@@ -454,6 +456,9 @@ void Project_RegisterGameComponents()
 	// registry (display name used by AddStep_AddComponent / the editor menu).
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 	xRegistry.RegisterComponent<Runner_GameComponent>("RunnerGame", 100);
+	// The character shim (static-scope wrapper the Runner_CharacterActions
+	// graph resolves through) - added at runtime by CreateCharacter.
+	xRegistry.RegisterComponent<Runner_CharacterShim>("RunnerCharacter", 101);
 	Runner_RegisterGraphNodes();
 #ifdef ZENITH_TOOLS
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<Runner_GameComponent>("RunnerGame");
@@ -487,23 +492,319 @@ void Project_InitializeResources()
 	// All resources initialized in Project_RegisterGameComponents
 }
 
+namespace
+{
+	// Runner_RunFlow: the gameplay GameManager's graph. OWNS the run's game
+	// state (gameState int; score/highScore FLOATS so the accumulate/max
+	// arithmetic is engine float nodes); C++ reads it back through the
+	// Runner_GameComponent accessors.
+	//
+	// Anchors, in dispatch order:
+	//   OnStart              - show the HUD (the old StartGame visibility).
+	//   OnCustomEvent chains - "RunTick", fired once per PLAYING frame at the
+	//       old decision block's callsite. Node order = the old same-frame
+	//       decision order: stage facts -> scoring -> obstacle -> dead.
+	//   OnKeyPressed chains  - the old top-of-PLAYING key decisions.
+	//   StateMachine (LAST)  - reactive dispatcher on gameState; its
+	//       RunnerEnter_Paused / RunnerExit_Paused transition events drive
+	//       the run-scene pause.
+	void BuildGraph_RunnerRunFlow(Zenith_GraphBuilder& xBuilder)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetInt32(static_cast<int32_t>(RunnerGameState::PLAYING));
+		xBuilder.Variable("gameState", xValue);
+		xValue.SetFloat(0.0f);
+		xBuilder.Variable("score", xValue);
+		xBuilder.Variable("highScore", xValue);
+
+		// ---- OnStart: show the HUD ----------------------------------------
+		const char* aszHUD[] = { "Title", "Distance", "Score", "HighScore", "Speed", "Controls", "Status" };
+		u_int uPrevious = xBuilder.Node("OnStart");
+		for (const char* szElement : aszHUD)
+		{
+			const u_int uShow = xBuilder.Node("SetUIVisible");
+			xBuilder.ParamString(uShow, "m_strElement", szElement);
+			xBuilder.ParamBool(uShow, "m_bVisible", true);
+			xBuilder.Chain(uPrevious, uShow);
+			uPrevious = uShow;
+		}
+
+		// ---- RunTick 1: publish the frame's systems results -----------------
+		const u_int uTickStage = xBuilder.Node("OnCustomEvent");
+		xBuilder.ParamString(uTickStage, "m_strEventName", "RunTick");
+		const u_int uStage = xBuilder.Node("RunnerStageFrameResults");
+		xBuilder.Chain(uTickStage, uStage);
+
+		// ---- RunTick 2: scoring (score += the frame's pickup points) --------
+		const u_int uTickScore = xBuilder.Node("OnCustomEvent");
+		xBuilder.ParamString(uTickScore, "m_strEventName", "RunTick");
+		const u_int uAddScore = xBuilder.Node("AddBlackboardFloat");
+		xBuilder.ParamString(uAddScore, "m_strVariable", "score");
+		xBuilder.ParamString(uAddScore, "m_strDeltaVar", "pointsGained");
+		xBuilder.Chain(uTickScore, uAddScore);
+
+		// ---- RunTick 3: obstacle hit -> kill + GAME_OVER + high-score sync --
+		const u_int uTickObstacle = xBuilder.Node("OnCustomEvent");
+		xBuilder.ParamString(uTickObstacle, "m_strEventName", "RunTick");
+		const u_int uBrHit = xBuilder.Node("Branch");
+		xBuilder.ParamString(uBrHit, "m_strConditionVar", "obstacleHit");
+		const u_int uKill = xBuilder.Node("RunnerKillCharacter");
+		const u_int uHitOver = xBuilder.Node("SetBlackboardInt");
+		xBuilder.ParamString(uHitOver, "m_strVariable", "gameState");
+		xBuilder.ParamInt(uHitOver, "m_iValue", static_cast<int32_t>(RunnerGameState::GAME_OVER));
+		const u_int uHitSync = xBuilder.Node("MathBlackboardFloat");
+		xBuilder.ParamString(uHitSync, "m_strVar", "score");
+		xBuilder.ParamInt(uHitSync, "m_iOp", 5);	// max
+		xBuilder.ParamString(uHitSync, "m_strOperandVar", "highScore");
+		xBuilder.ParamString(uHitSync, "m_strResultVar", "highScore");
+		xBuilder.Chain(uTickObstacle, uBrHit);
+		xBuilder.Edge(uBrHit, 0, uKill);
+		xBuilder.Chain(uKill, uHitOver).Chain(uHitOver, uHitSync);
+
+		// ---- RunTick 4: character dead -> GAME_OVER ------------------------
+		// Deliberately WITHOUT a high-score sync - the pre-graph quirk,
+		// preserved structurally (this chain simply has no max node).
+		const u_int uTickDead = xBuilder.Node("OnCustomEvent");
+		xBuilder.ParamString(uTickDead, "m_strEventName", "RunTick");
+		const u_int uBrDead = xBuilder.Node("Branch");
+		xBuilder.ParamString(uBrDead, "m_strConditionVar", "characterDead");
+		const u_int uDeadOver = xBuilder.Node("SetBlackboardInt");
+		xBuilder.ParamString(uDeadOver, "m_strVariable", "gameState");
+		xBuilder.ParamInt(uDeadOver, "m_iValue", static_cast<int32_t>(RunnerGameState::GAME_OVER));
+		xBuilder.Chain(uTickDead, uBrDead);
+		xBuilder.Edge(uBrDead, 0, uDeadOver);
+
+		// ---- P: pause toggle (PLAYING <-> PAUSED) ---------------------------
+		{
+			const u_int uKey = xBuilder.Node("OnKeyPressed");
+			xBuilder.ParamInt(uKey, "m_iKeyCode", ZENITH_KEY_P);
+			const u_int uSwitch = xBuilder.Node("SwitchOnInt");
+			xBuilder.ParamString(uSwitch, "m_strVar", "gameState");
+			xBuilder.ParamInt(uSwitch, "m_iCaseCount", 4);
+			xBuilder.Chain(uKey, uSwitch);
+			const u_int uToPaused = xBuilder.Node("SetBlackboardInt");
+			xBuilder.ParamString(uToPaused, "m_strVariable", "gameState");
+			xBuilder.ParamInt(uToPaused, "m_iValue", static_cast<int32_t>(RunnerGameState::PAUSED));
+			xBuilder.Edge(uSwitch, static_cast<u_int>(RunnerGameState::PLAYING), uToPaused);
+			const u_int uToPlaying = xBuilder.Node("SetBlackboardInt");
+			xBuilder.ParamString(uToPlaying, "m_strVariable", "gameState");
+			xBuilder.ParamInt(uToPlaying, "m_iValue", static_cast<int32_t>(RunnerGameState::PLAYING));
+			xBuilder.Edge(uSwitch, static_cast<u_int>(RunnerGameState::PAUSED), uToPlaying);
+		}
+
+		// ---- R: reset (PLAYING/GAME_OVER - every run state except PAUSED) ---
+		{
+			const u_int uKey = xBuilder.Node("OnKeyPressed");
+			xBuilder.ParamInt(uKey, "m_iKeyCode", ZENITH_KEY_R);
+			const u_int uCanReset = xBuilder.Node("CompareBlackboardInt");
+			xBuilder.ParamString(uCanReset, "m_strVar", "gameState");
+			xBuilder.ParamInt(uCanReset, "m_iCompareTo", static_cast<int32_t>(RunnerGameState::PAUSED));
+			xBuilder.ParamInt(uCanReset, "m_iOp", 5);	// notEqual
+			xBuilder.ParamString(uCanReset, "m_strResultVar", "canReset");
+			const u_int uBrReset = xBuilder.Node("Branch");
+			xBuilder.ParamString(uBrReset, "m_strConditionVar", "canReset");
+			const u_int uSync = xBuilder.Node("MathBlackboardFloat");
+			xBuilder.ParamString(uSync, "m_strVar", "score");
+			xBuilder.ParamInt(uSync, "m_iOp", 5);	// max
+			xBuilder.ParamString(uSync, "m_strOperandVar", "highScore");
+			xBuilder.ParamString(uSync, "m_strResultVar", "highScore");
+			const u_int uRegen = xBuilder.Node("RunnerRegenerateRun");
+			const u_int uResetScore = xBuilder.Node("SetBlackboardFloat");
+			xBuilder.ParamString(uResetScore, "m_strVariable", "score");
+			xBuilder.ParamFloat(uResetScore, "m_fValue", 0.0f);
+			const u_int uResetState = xBuilder.Node("SetBlackboardInt");
+			xBuilder.ParamString(uResetState, "m_strVariable", "gameState");
+			xBuilder.ParamInt(uResetState, "m_iValue", static_cast<int32_t>(RunnerGameState::PLAYING));
+			xBuilder.Chain(uKey, uCanReset).Chain(uCanReset, uBrReset);
+			xBuilder.Edge(uBrReset, 0, uSync);
+			xBuilder.Chain(uSync, uRegen).Chain(uRegen, uResetScore).Chain(uResetScore, uResetState);
+		}
+
+		// ---- Esc: back to the menu from ANY run state (sync high score,
+		// ---- tear down, SINGLE load at the end of the chain) -----------------
+		{
+			const u_int uKey = xBuilder.Node("OnKeyPressed");
+			xBuilder.ParamInt(uKey, "m_iKeyCode", ZENITH_KEY_ESCAPE);
+			const u_int uSync = xBuilder.Node("MathBlackboardFloat");
+			xBuilder.ParamString(uSync, "m_strVar", "score");
+			xBuilder.ParamInt(uSync, "m_iOp", 5);	// max
+			xBuilder.ParamString(uSync, "m_strOperandVar", "highScore");
+			xBuilder.ParamString(uSync, "m_strResultVar", "highScore");
+			const u_int uUnload = xBuilder.Node("RunnerUnloadRun");
+			const u_int uMenu = xBuilder.Node("LoadSceneByIndex");
+			xBuilder.ParamInt(uMenu, "m_iSceneIndex", 0);
+			xBuilder.Chain(uKey, uSync).Chain(uSync, uUnload).Chain(uUnload, uMenu);
+		}
+
+		// ---- Pause side effects: StateMachine transition events -------------
+		{
+			const u_int uEnterPaused = xBuilder.Node("OnCustomEvent");
+			xBuilder.ParamString(uEnterPaused, "m_strEventName", "RunnerEnter_Paused");
+			const u_int uDoPause = xBuilder.Node("RunnerSetRunPaused");
+			xBuilder.ParamBool(uDoPause, "m_bPaused", true);
+			xBuilder.Chain(uEnterPaused, uDoPause);
+
+			const u_int uExitPaused = xBuilder.Node("OnCustomEvent");
+			xBuilder.ParamString(uExitPaused, "m_strEventName", "RunnerExit_Paused");
+			const u_int uDoResume = xBuilder.Node("RunnerSetRunPaused");
+			xBuilder.ParamBool(uDoResume, "m_bPaused", false);
+			xBuilder.Chain(uExitPaused, uDoResume);
+		}
+
+		// ---- Reactive StateMachine, LAST in the ON_UPDATE dispatch ----------
+		{
+			const u_int uTick = xBuilder.Node("OnUpdate");
+			const u_int uMachine = xBuilder.Node("StateMachine");
+			xBuilder.ParamString(uMachine, "m_strStateVar", "gameState");
+			xBuilder.ParamInt(uMachine, "m_iStateCount", 4);
+			xBuilder.ParamString(uMachine, "m_strStateNames", "Menu,Playing,Paused,GameOver");
+			xBuilder.ParamString(uMachine, "m_strEventPrefix", "Runner");
+			xBuilder.Chain(uTick, uMachine);
+		}
+	}
+
+	// Runner_GameFlow: the menu GameManager's graph. gameState pinned at
+	// MAIN_MENU for the shim accessors; the single Play button holds focus
+	// every frame and drives the scene load through the engine's UIButton
+	// trampoline source (keyboard Enter activation included).
+	void BuildGraph_RunnerGameFlow(Zenith_GraphBuilder& xBuilder)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetInt32(static_cast<int32_t>(RunnerGameState::MAIN_MENU));
+		xBuilder.Variable("gameState", xValue);
+
+		const u_int uPlayClicked = xBuilder.Node("OnUIButtonClicked");
+		xBuilder.ParamString(uPlayClicked, "m_strButton", "MenuPlay");
+		const u_int uLoadGame = xBuilder.Node("LoadSceneByIndex");
+		xBuilder.ParamInt(uLoadGame, "m_iSceneIndex", 1);
+		xBuilder.Chain(uPlayClicked, uLoadGame);
+
+		const u_int uTick = xBuilder.Node("OnUpdate");
+		const u_int uFocus = xBuilder.Node("RunnerFocusPlayButton");
+		xBuilder.Chain(uTick, uFocus);
+	}
+
+	// Runner_CharacterActions: the character entity's graph (runtime-attached
+	// by CreateCharacter; nodes resolve Runner_CharacterShim - the
+	// static-scope -> shim-wrapper pilot).
+	//
+	//   OnKeyPressed chains - which input triggers which Try* gate (the old
+	//       HandleInput dispatch); the gate CONDITIONS stay in the controller.
+	//   "CharTick" chains   - fired by the GameComponent between the
+	//       controller and animation systems passes (dt payload):
+	//       1. the slide-duration countdown -> EndSlide (DecrementTimer
+	//          pilot; armed by RunnerTrySlide from the config duration),
+	//       2. the character-state -> animation-state mapping (SwitchOnInt;
+	//          the DEAD pin is deliberately unwired - keep-last-state).
+	void BuildGraph_RunnerCharacterActions(Zenith_GraphBuilder& xBuilder)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetFloat(0.0f);
+		xBuilder.Variable("slideTimer", xValue);
+
+		// ---- Input -> Try* gates --------------------------------------------
+		const int32_t aiLeftKeys[] = { ZENITH_KEY_A, ZENITH_KEY_LEFT };
+		for (const int32_t iKey : aiLeftKeys)
+		{
+			const u_int uKey = xBuilder.Node("OnKeyPressed");
+			xBuilder.ParamInt(uKey, "m_iKeyCode", iKey);
+			const u_int uLane = xBuilder.Node("RunnerTrySwitchLane");
+			xBuilder.ParamInt(uLane, "m_iDirection", -1);
+			xBuilder.Chain(uKey, uLane);
+		}
+		const int32_t aiRightKeys[] = { ZENITH_KEY_D, ZENITH_KEY_RIGHT };
+		for (const int32_t iKey : aiRightKeys)
+		{
+			const u_int uKey = xBuilder.Node("OnKeyPressed");
+			xBuilder.ParamInt(uKey, "m_iKeyCode", iKey);
+			const u_int uLane = xBuilder.Node("RunnerTrySwitchLane");
+			xBuilder.ParamInt(uLane, "m_iDirection", 1);
+			xBuilder.Chain(uKey, uLane);
+		}
+		const int32_t aiJumpKeys[] = { ZENITH_KEY_SPACE, ZENITH_KEY_W, ZENITH_KEY_UP };
+		for (const int32_t iKey : aiJumpKeys)
+		{
+			const u_int uKey = xBuilder.Node("OnKeyPressed");
+			xBuilder.ParamInt(uKey, "m_iKeyCode", iKey);
+			const u_int uJump = xBuilder.Node("RunnerTryJump");
+			xBuilder.Chain(uKey, uJump);
+		}
+		const int32_t aiSlideKeys[] = { ZENITH_KEY_S, ZENITH_KEY_DOWN };
+		for (const int32_t iKey : aiSlideKeys)
+		{
+			const u_int uKey = xBuilder.Node("OnKeyPressed");
+			xBuilder.ParamInt(uKey, "m_iKeyCode", iKey);
+			const u_int uSlide = xBuilder.Node("RunnerTrySlide");
+			xBuilder.Chain(uKey, uSlide);
+		}
+
+		// ---- CharTick 1: slide-duration countdown -> EndSlide ----------------
+		// (custom-event dispatch carries no dt; the payload var is the dt)
+		const u_int uTickSlide = xBuilder.Node("OnCustomEvent");
+		xBuilder.ParamString(uTickSlide, "m_strEventName", "CharTick");
+		const u_int uSubDt = xBuilder.Node("MathBlackboardFloat");
+		xBuilder.ParamString(uSubDt, "m_strVar", "slideTimer");
+		xBuilder.ParamInt(uSubDt, "m_iOp", 0);	// sub
+		xBuilder.ParamString(uSubDt, "m_strOperandVar", "payload");
+		const u_int uClamp = xBuilder.Node("ClampBlackboardFloat");
+		xBuilder.ParamString(uClamp, "m_strVar", "slideTimer");
+		xBuilder.ParamFloat(uClamp, "m_fMin", 0.0f);
+		xBuilder.ParamFloat(uClamp, "m_fMax", 3600.0f);
+		const u_int uCmpExpired = xBuilder.Node("CompareBlackboardFloat");
+		xBuilder.ParamString(uCmpExpired, "m_strVar", "slideTimer");
+		xBuilder.ParamFloat(uCmpExpired, "m_fCompareTo", 0.0f);
+		xBuilder.ParamInt(uCmpExpired, "m_iOp", 1);	// lessEqual
+		xBuilder.ParamString(uCmpExpired, "m_strResultVar", "slideExpired");
+		const u_int uBrExpired = xBuilder.Node("Branch");
+		xBuilder.ParamString(uBrExpired, "m_strConditionVar", "slideExpired");
+		const u_int uEndSlide = xBuilder.Node("RunnerEndSlide");
+		xBuilder.Chain(uTickSlide, uSubDt).Chain(uSubDt, uClamp).Chain(uClamp, uCmpExpired).Chain(uCmpExpired, uBrExpired);
+		xBuilder.Edge(uBrExpired, 0, uEndSlide);
+
+		// ---- CharTick 2: character state -> animation state -----------------
+		const u_int uTickAnim = xBuilder.Node("OnCustomEvent");
+		xBuilder.ParamString(uTickAnim, "m_strEventName", "CharTick");
+		const u_int uFacts = xBuilder.Node("RunnerStageCharacterFacts");
+		const u_int uSwitch = xBuilder.Node("SwitchOnInt");
+		xBuilder.ParamString(uSwitch, "m_strVar", "charState");
+		xBuilder.ParamInt(uSwitch, "m_iCaseCount", 4);
+		xBuilder.Chain(uTickAnim, uFacts).Chain(uFacts, uSwitch);
+
+		// RUNNING: speed > 0.1 ? RUN : IDLE
+		const u_int uCmpMoving = xBuilder.Node("CompareBlackboardFloat");
+		xBuilder.ParamString(uCmpMoving, "m_strVar", "speed");
+		xBuilder.ParamFloat(uCmpMoving, "m_fCompareTo", 0.1f);
+		xBuilder.ParamInt(uCmpMoving, "m_iOp", 2);	// greater
+		xBuilder.ParamString(uCmpMoving, "m_strResultVar", "isMoving");
+		const u_int uBrMoving = xBuilder.Node("Branch");
+		xBuilder.ParamString(uBrMoving, "m_strConditionVar", "isMoving");
+		const u_int uAnimRun = xBuilder.Node("RunnerSetAnimState");
+		xBuilder.ParamInt(uAnimRun, "m_iAnimState", static_cast<int32_t>(RunnerAnimState::RUN));
+		const u_int uAnimIdle = xBuilder.Node("RunnerSetAnimState");
+		xBuilder.ParamInt(uAnimIdle, "m_iAnimState", static_cast<int32_t>(RunnerAnimState::IDLE));
+		xBuilder.Edge(uSwitch, static_cast<u_int>(RunnerCharacterState::RUNNING), uCmpMoving);
+		xBuilder.Chain(uCmpMoving, uBrMoving);
+		xBuilder.Edge(uBrMoving, 0, uAnimRun);
+		xBuilder.Edge(uBrMoving, 1, uAnimIdle);
+
+		// JUMPING / SLIDING -> direct mappings; DEAD pin unwired (keep last).
+		const u_int uAnimJump = xBuilder.Node("RunnerSetAnimState");
+		xBuilder.ParamInt(uAnimJump, "m_iAnimState", static_cast<int32_t>(RunnerAnimState::JUMP));
+		xBuilder.Edge(uSwitch, static_cast<u_int>(RunnerCharacterState::JUMPING), uAnimJump);
+		const u_int uAnimSlide = xBuilder.Node("RunnerSetAnimState");
+		xBuilder.ParamInt(uAnimSlide, "m_iAnimState", static_cast<int32_t>(RunnerAnimState::SLIDE));
+		xBuilder.Edge(uSwitch, static_cast<u_int>(RunnerCharacterState::SLIDING), uAnimSlide);
+	}
+}
+
 void Project_RegisterEditorAutomationSteps()
 {
-	// ---- Behaviour graphs (regenerated every boot, like the scenes) --------
-	// Wave-2 conversion: the scoring + game-over decisions live here;
-	// Runner_GameComponent fires "RunTick" once per PLAYING frame at exactly
-	// the point the old decision block ran.
+	// ---- Behaviour graphs (regenerated every boot through the programmatic
+	// ---- builder - the W1 conversion's decomposed engine-node graphs) ----
 	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
-	xAuto.AddStep_GraphOpenFresh("game:Graphs/Runner_RunFlow.bgraph");
-	xAuto.AddStep_GraphAddNode("OnCustomEvent");
-	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
-	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "RunTick");
-	xAuto.AddStep_GraphAddNode("RunnerApplyScoring");
-	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "RunnerApplyScoring", 0);
-	xAuto.AddStep_GraphAddNode("RunnerCheckGameOver");
-	xAuto.AddStep_GraphConnect("RunnerApplyScoring", 0, 0, "RunnerCheckGameOver", 0);
-	xAuto.AddStep_GraphSave();
-	xAuto.AddStep_GraphClose();
+	xAuto.AddStep_GraphBuild("game:Graphs/Runner_RunFlow.bgraph", &BuildGraph_RunnerRunFlow);
+	xAuto.AddStep_GraphBuild("game:Graphs/Runner_GameFlow.bgraph", &BuildGraph_RunnerGameFlow);
+	xAuto.AddStep_GraphBuild("game:Graphs/Runner_CharacterActions.bgraph", &BuildGraph_RunnerCharacterActions);
 
 	// --- MainMenu scene (build index 0) ---
 	g_xEngine.EditorAutomation().AddStep_CreateScene("MainMenu");
@@ -526,6 +827,8 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
 	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.f, 50.f);
 	g_xEngine.EditorAutomation().AddStep_AddComponent("RunnerGame");
+	// Menu flow graph (Play click + focus + MAIN_MENU state).
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Runner_GameFlow.bgraph");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 

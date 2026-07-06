@@ -1,7 +1,6 @@
 #include "Zenith.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_BehaviorTree.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
@@ -42,25 +41,19 @@ Zenith_AIAgentComponent::Zenith_AIAgentComponent(Zenith_Entity& xParentEntity)
 
 Zenith_AIAgentComponent::~Zenith_AIAgentComponent()
 {
-	// Note: We don't own the behavior tree or nav agent, they're set externally
+	// Note: we don't own the nav agent, it's set externally.
 }
 
 Zenith_AIAgentComponent::Zenith_AIAgentComponent(Zenith_AIAgentComponent&& xOther) noexcept
 	: m_xParentEntity(xOther.m_xParentEntity)
-	, m_xBlackboard(std::move(xOther.m_xBlackboard))
-	, m_pxBehaviorTree(xOther.m_pxBehaviorTree)
 	, m_pxNavMeshAgent(xOther.m_pxNavMeshAgent)
-	, m_fBehaviorUpdateInterval(xOther.m_fBehaviorUpdateInterval)
-	, m_fTimeSinceLastUpdate(xOther.m_fTimeSinceLastUpdate)
+	, m_fUpdateInterval(xOther.m_fUpdateInterval)
 	, m_bEnabled(xOther.m_bEnabled)
-	, m_szCurrentNodeName(xOther.m_szCurrentNodeName)
-	, m_strBehaviorTreeAsset(std::move(xOther.m_strBehaviorTreeAsset))
 {
-	// Clear moved-from object's pointers to prevent dangling references
-	xOther.m_pxBehaviorTree = nullptr;
+	// Clear moved-from object's pointer to prevent a dangling borrow, and disable
+	// it so the pool's move-construct-then-destruct-source never ticks a corpse.
 	xOther.m_pxNavMeshAgent = nullptr;
-	xOther.m_szCurrentNodeName = "";  // Reset to safe empty string literal
-	xOther.m_bEnabled = false;  // Disable moved-from object
+	xOther.m_bEnabled = false;
 }
 
 Zenith_AIAgentComponent& Zenith_AIAgentComponent::operator=(Zenith_AIAgentComponent&& xOther) noexcept
@@ -68,20 +61,12 @@ Zenith_AIAgentComponent& Zenith_AIAgentComponent::operator=(Zenith_AIAgentCompon
 	if (this != &xOther)
 	{
 		m_xParentEntity = xOther.m_xParentEntity;
-		m_xBlackboard = std::move(xOther.m_xBlackboard);
-		m_pxBehaviorTree = xOther.m_pxBehaviorTree;
 		m_pxNavMeshAgent = xOther.m_pxNavMeshAgent;
-		m_fBehaviorUpdateInterval = xOther.m_fBehaviorUpdateInterval;
-		m_fTimeSinceLastUpdate = xOther.m_fTimeSinceLastUpdate;
+		m_fUpdateInterval = xOther.m_fUpdateInterval;
 		m_bEnabled = xOther.m_bEnabled;
-		m_szCurrentNodeName = xOther.m_szCurrentNodeName;
-		m_strBehaviorTreeAsset = std::move(xOther.m_strBehaviorTreeAsset);
 
-		// Clear moved-from object's pointers to prevent dangling references
-		xOther.m_pxBehaviorTree = nullptr;
 		xOther.m_pxNavMeshAgent = nullptr;
-		xOther.m_szCurrentNodeName = "";  // Reset to safe empty string literal
-		xOther.m_bEnabled = false;  // Disable moved-from object
+		xOther.m_bEnabled = false;
 	}
 	return *this;
 }
@@ -92,16 +77,6 @@ void Zenith_AIAgentComponent::OnAwake()
 	Zenith_PerceptionSystem::RegisterAgent(m_xParentEntity.GetEntityID());
 }
 
-void Zenith_AIAgentComponent::OnStart()
-{
-	// Behavior trees are built in code; there is no asset loader.
-	if (!m_strBehaviorTreeAsset.empty() && m_pxBehaviorTree == nullptr)
-	{
-		Zenith_Log(LOG_CATEGORY_AI, "Behavior tree asset '%s' requested but trees are built in code. Disabling AI agent.", m_strBehaviorTreeAsset.c_str());
-		m_bEnabled = false;
-	}
-}
-
 void Zenith_AIAgentComponent::OnUpdate(float fDt)
 {
 	if (!m_bEnabled)
@@ -109,19 +84,11 @@ void Zenith_AIAgentComponent::OnUpdate(float fDt)
 		return;
 	}
 
-	// Update behavior tree at configured interval
-	m_fTimeSinceLastUpdate += fDt;
-	if (m_fTimeSinceLastUpdate >= m_fBehaviorUpdateInterval)
-	{
-		TickBehaviorTree(m_fTimeSinceLastUpdate);
-		m_fTimeSinceLastUpdate = 0.0f;
-	}
-
-	// Update navigation (runs every frame for smooth movement). The agent now
-	// takes only the entity id and resolves its transform + collider body through
-	// the AI world hooks (engine-side): it prefers the physics path
-	// (SetLinearVelocity on a dynamic Jolt body) when the entity has one, else
-	// falls back to direct transform writes for transform-only test fixtures.
+	// Update navigation (runs every frame for smooth movement). The agent takes
+	// only the entity id and resolves its transform + collider body through the
+	// AI world hooks (engine-side): it prefers the physics path (SetLinearVelocity
+	// on a dynamic Jolt body) when the entity has one, else falls back to direct
+	// transform writes for transform-only test fixtures.
 	if (m_pxNavMeshAgent != nullptr && m_xParentEntity.IsValid())
 	{
 		m_pxNavMeshAgent->Update(fDt, m_xParentEntity.GetEntityID());
@@ -132,87 +99,30 @@ void Zenith_AIAgentComponent::OnDestroy()
 {
 	// Unregister from perception system
 	Zenith_PerceptionSystem::UnregisterAgent(m_xParentEntity.GetEntityID());
-
-	// Abort behavior tree if running
-	if (m_pxBehaviorTree != nullptr)
-	{
-		m_pxBehaviorTree->Abort(m_xParentEntity, m_xBlackboard);
-	}
-}
-
-void Zenith_AIAgentComponent::SetBehaviorTree(Zenith_BehaviorTree* pxTree)
-{
-	// Abort old tree if running
-	if (m_pxBehaviorTree != nullptr)
-	{
-		m_pxBehaviorTree->Abort(m_xParentEntity, m_xBlackboard);
-	}
-
-	m_pxBehaviorTree = pxTree;
-	m_szCurrentNodeName = "";
-}
-
-void Zenith_AIAgentComponent::TickBehaviorTree(float fDt)
-{
-	ZENITH_PROFILE_SCOPE("AI BehaviorTree Tick");
-	if (m_pxBehaviorTree == nullptr)
-	{
-		return;
-	}
-
-	m_pxBehaviorTree->Tick(m_xParentEntity, m_xBlackboard, fDt);
-	m_szCurrentNodeName = m_pxBehaviorTree->GetCurrentNodeName();
 }
 
 void Zenith_AIAgentComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	xStream << m_bEnabled;
-	xStream << m_fBehaviorUpdateInterval;
-	xStream << m_strBehaviorTreeAsset;
-	m_xBlackboard.WriteToDataStream(xStream);
+	xStream << m_fUpdateInterval;
 }
 
 void Zenith_AIAgentComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
+	// Back-compat: pre-teardown streams also carried a behaviour-tree asset path +
+	// a blackboard here. The component-meta reader is size-prefixed and realigns
+	// the cursor to the declared payload boundary after this returns, so those
+	// trailing legacy bytes are absorbed without desyncing the stream.
 	xStream >> m_bEnabled;
-	xStream >> m_fBehaviorUpdateInterval;
-	xStream >> m_strBehaviorTreeAsset;
-	m_xBlackboard.ReadFromDataStream(xStream);
+	xStream >> m_fUpdateInterval;
 }
 
 #ifdef ZENITH_TOOLS
 void Zenith_AIAgentComponent::RenderPropertiesPanel()
 {
 	ImGui::Checkbox("Enabled", &m_bEnabled);
-
-	ImGui::DragFloat("Update Interval", &m_fBehaviorUpdateInterval, 0.01f, 0.016f, 1.0f, "%.3f sec");
-
-	ImGui::Text("Behavior Tree: %s", m_pxBehaviorTree ? m_pxBehaviorTree->GetName().c_str() : "(none)");
-	ImGui::Text("Current Node: %s", m_szCurrentNodeName);
-
-	if (m_pxBehaviorTree != nullptr)
-	{
-		const char* szStatus = "Unknown";
-		switch (m_pxBehaviorTree->GetLastStatus())
-		{
-		case BTNodeStatus::SUCCESS: szStatus = "SUCCESS"; break;
-		case BTNodeStatus::FAILURE: szStatus = "FAILURE"; break;
-		case BTNodeStatus::RUNNING: szStatus = "RUNNING"; break;
-		}
-		ImGui::Text("Status: %s", szStatus);
-	}
-
-	// Blackboard viewer
-	if (ImGui::CollapsingHeader("Blackboard"))
-	{
-		ImGui::Text("Entries: %u", m_xBlackboard.GetSize());
-		m_xBlackboard.IterateEntries(
-			[](void*, const char* szKey, const char* szType, const char* szValue)
-			{
-				ImGui::BulletText("%s = %s (%s)", szKey, szValue, szType);
-			},
-			nullptr);
-	}
+	ImGui::DragFloat("Update Interval", &m_fUpdateInterval, 0.01f, 0.016f, 1.0f, "%.3f sec");
+	ImGui::Text("Nav agent: %s", m_pxNavMeshAgent ? "wired" : "(none)");
 }
 #endif
 
@@ -222,8 +132,6 @@ void Zenith_AIAgentComponent::RenderPropertiesPanel()
 // Zenith_AIAgentComponent), so the ZENITH_TEST registrars survive /OPT:REF.
 #ifdef ZENITH_TESTING
 #include "AI/Zenith_AIDebugVariables.Tests.inl"
-#include "AI/BehaviorTree/Zenith_BehaviorTree.Tests.inl"
-#include "AI/BehaviorTree/Zenith_Blackboard.Tests.inl"
 #include "AI/Navigation/Zenith_NavMesh.Tests.inl"
 #include "AI/Navigation/Zenith_NavMeshAgent.Tests.inl"
 #include "AI/Navigation/Zenith_NavMeshGenerator.Tests.inl"

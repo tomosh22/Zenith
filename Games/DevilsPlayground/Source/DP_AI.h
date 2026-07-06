@@ -25,6 +25,11 @@ namespace DP_AI
 	// clamp by writing straight into every Priest_Component agent's blackboard.
 	void NotifyAllPriestsOfInvestigatePos(Vec3 xPos);
 
+	// W3: the scent-fanout twin - writes the highest-scent villager handle to
+	// every priest's decision blackboard (DP_Priest.bgraph). Called from
+	// DP_Player::WriteHighestScentToBlackboard; INVALID is a legitimate value.
+	void WriteHighScentTargetToAllPriests(Zenith_EntityID xHighestId);
+
 	// Lazily-built level navmesh.
 	const Zenith_NavMesh* GetOrBuildLevelNavMesh();
 

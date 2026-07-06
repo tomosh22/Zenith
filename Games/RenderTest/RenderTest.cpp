@@ -54,7 +54,8 @@
 #include "RenderTest/Components/RenderTest_TennisMatchComponent.h"
 #include "RenderTest/Components/RenderTest_TennisPlayerComponent.h"
 #include "RenderTest/Components/RenderTest_TennisAgentComponent.h"
-#include "RenderTest/Components/RenderTest_TennisBTNodes.h"
+#include "RenderTest/Components/RenderTest_GraphNodes.h"
+#include "Scripting/Zenith_GraphBuilder.h"
 
 // FPS gun pickup/drop testbed (guns lying on the spawn platform; player picks
 // them up, shoots, drops; arm IK keeps the hands on the gun). Header included so
@@ -1303,6 +1304,11 @@ void Project_RegisterGameComponents()
 	xEditorRegistry.RegisterComponent<RenderTest_BootstrapComponent>("RenderTestBootstrap");
 #endif
 
+	// Behaviour-graph node library (tennis brain verbs + player action verbs).
+	// The graph-node registry is append-any-time (not sealed like the
+	// component meta registry), so a plain call here works in every config.
+	RenderTest_RegisterGraphNodes();
+
 	s_uRenderTestSmokeFrameLimit = RenderTest_GetCommandLineUInt("--rendertest-smoke-frames=", 240);
 	InitializeRenderTestResources();
 }
@@ -1539,9 +1545,159 @@ static void RenderTest_ApplyTestbedEntityConfig()
 	ConfigNpc("Tennis_NPC_Far", false);
 }
 
+// ============================================================================
+// Behaviour-graph builders (W3 conversion; regenerated every tools boot via
+// AddStep_GraphBuild before the scene authoring references them).
+// ============================================================================
+
+// The tennis NPC brain: the retired BT (root Selector over serve / rally /
+// recover, NO RUNNING leaves) as a fully reactive graph. Driven by the
+// engine ON_UPDATE dispatch at component order 60 through an authored tick
+// accumulator that reproduces the retired AIAgent 0.08 s interval semantics
+// EXACTLY (RNG-cadence contract, pinned by RT_TennisDeterminismDigest):
+//   - RTTennisTickGate mirrors `if (!m_bEnabled) return;` - no accumulation
+//     while the referee has the agent parked (freeze, not reset);
+//   - AddBlackboardFloat(dt) then CompareBlackboardFloat(>= 0.08) then
+//     SetBlackboardFloat(0) is accumulate -> fire -> RESET-TO-ZERO (the
+//     remainder is discarded, exactly like the AIAgent; the engine Timer
+//     node's subtractive carry would drift the cadence);
+//   - one ON_UPDATE dispatch per frame = at most one tick per frame.
+// The BT tick ran at order 90 BEFORE the same AIAgent update's nav step, so
+// a tick at order 60 sees identical inputs (ball physics pre-stepped, BB +
+// awareness from last frame's referee OnLateUpdate) and its SetDestination
+// is consumed by the same frame's nav update at 90 - frame-for-frame parity.
+static void BuildGraph_RenderTestTennisBrain(Zenith_GraphBuilder& xBuilder)
+{
+	using namespace RenderTest_TennisBB;
+	Zenith_PropertyValue xF0;    xF0.SetFloat(0.0f);
+	Zenith_PropertyValue xI0;    xI0.SetInt32(0);
+	Zenith_PropertyValue xBF;    xBF.SetBool(false);
+	Zenith_PropertyValue xBT;    xBT.SetBool(true);
+	Zenith_PropertyValue xV0;    xV0.SetVector3(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xBuilder.Variable("tickAccum", xF0);
+	xBuilder.Variable("tickDue", xBF);
+	xBuilder.Variable("phaseIsServing", xBF);
+	xBuilder.Variable("phaseIsLive", xBF);
+	xBuilder.Variable(k_szPhase, xI0);           // POINT_PHASE_WARMUP
+	xBuilder.Variable(k_szBallEpoch, xI0);
+	xBuilder.Variable(k_szMySide, xI0);
+	xBuilder.Variable(k_szMyPoints, xI0);
+	xBuilder.Variable(k_szOppPoints, xI0);
+	xBuilder.Variable(k_szIsServer, xBF);
+	xBuilder.Variable(k_szServeFromDeuce, xBT);
+	xBuilder.Variable(k_szIsSecondServe, xBF);
+	xBuilder.Variable(k_szIsMyBall, xBF);
+	xBuilder.Variable(k_szServeBallParked, xBF);
+	xBuilder.Variable(k_szBallSpin, xV0);
+	// BallEntity/OppEntity are runtime handles seeded by the brain shim's
+	// OnStart (SeedGraphBlackboard) - deliberately NOT declared here.
+
+	// Tick spine.
+	const u_int uUpdate = xBuilder.Node("OnUpdate");
+	const u_int uGateEnabled = xBuilder.Node("RTTennisTickGate");
+	const u_int uAccum = xBuilder.Node("AddBlackboardFloat");
+	xBuilder.ParamString(uAccum, "m_strVariable", "tickAccum");
+	xBuilder.ParamBool(uAccum, "m_bScaleByDt", true);
+	const u_int uDue = xBuilder.Node("CompareBlackboardFloat");
+	xBuilder.ParamString(uDue, "m_strVar", "tickAccum");
+	xBuilder.ParamFloat(uDue, "m_fCompareTo", 0.08f);
+	xBuilder.ParamInt(uDue, "m_iOp", 3);   // greaterEqual
+	xBuilder.ParamString(uDue, "m_strResultVar", "tickDue");
+	const u_int uGateDue = xBuilder.Node("Gate");
+	xBuilder.ParamString(uGateDue, "m_strOpenVar", "tickDue");
+	const u_int uReset = xBuilder.Node("SetBlackboardFloat");
+	xBuilder.ParamString(uReset, "m_strVariable", "tickAccum");
+	const u_int uSelector = xBuilder.Node("Selector");
+	xBuilder.ParamInt(uSelector, "m_iBranchCount", 3);
+	// Defaults kept (reactive, abort-preempted): no chain in this graph ever
+	// suspends (the tree had NO RUNNING leaves), so neither flag can engage.
+	xBuilder.Chain(uUpdate, uGateEnabled).Chain(uGateEnabled, uAccum)
+		.Chain(uAccum, uDue).Chain(uDue, uGateDue).Chain(uGateDue, uReset)
+		.Chain(uReset, uSelector);
+
+	// Pin 0 - serve: phase==SERVING && IsServer && ServeBallParked (the
+	// retired IsMyServeAndBallParked condition, decomposed to engine gates)
+	// -> decide -> position -> arm.
+	const u_int uPhaseServe = xBuilder.Node("CompareBlackboardInt");
+	xBuilder.ParamString(uPhaseServe, "m_strVar", k_szPhase);
+	xBuilder.ParamInt(uPhaseServe, "m_iCompareTo", static_cast<int32_t>(RenderTest_Tennis::POINT_PHASE_SERVING));
+	xBuilder.ParamString(uPhaseServe, "m_strResultVar", "phaseIsServing");
+	const u_int uGateServing = xBuilder.Node("Gate");
+	xBuilder.ParamString(uGateServing, "m_strOpenVar", "phaseIsServing");
+	const u_int uGateServer = xBuilder.Node("Gate");
+	xBuilder.ParamString(uGateServer, "m_strOpenVar", k_szIsServer);
+	const u_int uGateParked = xBuilder.Node("Gate");
+	xBuilder.ParamString(uGateParked, "m_strOpenVar", k_szServeBallParked);
+	const u_int uDecideServe = xBuilder.Node("RTTennisDecideServe");
+	const u_int uPositionServe = xBuilder.Node("RTTennisPositionForServe");
+	const u_int uArmServe = xBuilder.Node("RTTennisArmServe");
+	xBuilder.Edge(uSelector, 0, uPhaseServe);
+	xBuilder.Chain(uPhaseServe, uGateServing).Chain(uGateServing, uGateServer)
+		.Chain(uGateServer, uGateParked).Chain(uGateParked, uDecideServe)
+		.Chain(uDecideServe, uPositionServe).Chain(uPositionServe, uArmServe);
+
+	// Pin 1 - rally: phase==LIVE && IsMyBall (the retired BallIsMine's pure
+	// gates) -> aware+reachable (its systems half) -> move -> decide -> arm.
+	const u_int uPhaseLive = xBuilder.Node("CompareBlackboardInt");
+	xBuilder.ParamString(uPhaseLive, "m_strVar", k_szPhase);
+	xBuilder.ParamInt(uPhaseLive, "m_iCompareTo", static_cast<int32_t>(RenderTest_Tennis::POINT_PHASE_LIVE));
+	xBuilder.ParamString(uPhaseLive, "m_strResultVar", "phaseIsLive");
+	const u_int uGateLive = xBuilder.Node("Gate");
+	xBuilder.ParamString(uGateLive, "m_strOpenVar", "phaseIsLive");
+	const u_int uGateMyBall = xBuilder.Node("Gate");
+	xBuilder.ParamString(uGateMyBall, "m_strOpenVar", k_szIsMyBall);
+	const u_int uReachable = xBuilder.Node("RTTennisBallReachable");
+	const u_int uMove = xBuilder.Node("RTTennisMoveToIntercept");
+	const u_int uDecideShot = xBuilder.Node("RTTennisDecideShot");
+	const u_int uArmSwing = xBuilder.Node("RTTennisArmSwing");
+	xBuilder.Edge(uSelector, 1, uPhaseLive);
+	xBuilder.Chain(uPhaseLive, uGateLive).Chain(uGateLive, uGateMyBall)
+		.Chain(uGateMyBall, uReachable).Chain(uReachable, uMove)
+		.Chain(uMove, uDecideShot).Chain(uDecideShot, uArmSwing);
+
+	// Pin 2 - recover fallback (always succeeds).
+	const u_int uRecover = xBuilder.Node("RTTennisRecoverToReady");
+	xBuilder.Edge(uSelector, 2, uRecover);
+}
+
+// The slim player-actions graph: the discrete key/button PRESS decisions.
+// Continuous holds (WASD / Shift sprint / Space jump+jetpack / RMB ADS) and
+// all systems stay C++ in RenderTest_PlayerComponent / FollowCamera.
+static void BuildGraph_RenderTestPlayerActions(Zenith_GraphBuilder& xBuilder)
+{
+	const u_int uKeyE = xBuilder.Node("OnKeyPressed");
+	xBuilder.ParamInt(uKeyE, "m_iKeyCode", ZENITH_KEY_E);
+	const u_int uInteract = xBuilder.Node("RTPlayerInteractGun");
+	xBuilder.Chain(uKeyE, uInteract);
+
+	const u_int uKeyR = xBuilder.Node("OnKeyPressed");
+	xBuilder.ParamInt(uKeyR, "m_iKeyCode", ZENITH_KEY_R);
+	const u_int uReload = xBuilder.Node("RTPlayerTryReload");
+	xBuilder.Chain(uKeyR, uReload);
+
+	const u_int uFireBtn = xBuilder.Node("OnMouseButton");
+	// Defaults: LEFT button, mode 0 = pressed edge - exactly the retired
+	// WasKeyPressedThisFrame(LMB) poll.
+	const u_int uFire = xBuilder.Node("RTPlayerTryFire");
+	xBuilder.Chain(uFireBtn, uFire);
+
+	const u_int uKeyT = xBuilder.Node("OnKeyPressed");
+	xBuilder.ParamInt(uKeyT, "m_iKeyCode", ZENITH_KEY_T);
+	const u_int uCycleCam = xBuilder.Node("RTPlayerCycleTennisCam");
+	xBuilder.Chain(uKeyT, uCycleCam);
+}
+
 void Project_RegisterEditorAutomationSteps()
 {
 	using namespace Flux_TerrainConfig;
+
+	// Behaviour-graph assets first: authored via the builder so the attach
+	// steps (player + tennis NPCs, below) resolve them, and SaveScene
+	// serializes the GraphComponent slots into RenderTest.zscen.
+	g_xEngine.EditorAutomation().AddStep_GraphBuild(
+		RenderTest_TennisAgentComponent::kszGraphAsset, &BuildGraph_RenderTestTennisBrain);
+	g_xEngine.EditorAutomation().AddStep_GraphBuild(
+		"game:Graphs/RenderTest_PlayerActions.bgraph", &BuildGraph_RenderTestPlayerActions);
 
 	// Resources (cube model + stick figure model + materials) are initialized
 	// from Project_RegisterGameComponents, which runs before automation steps.
@@ -1782,6 +1938,9 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetParticleConfigByName("RenderTest_MuzzleFlash");
 	g_xEngine.EditorAutomation().AddStep_SetParticleEmitting(false);
 	g_xEngine.EditorAutomation().AddStep_AddComponent("RenderTestPlayer");
+	// W3: the discrete-press action decisions (E/R/LMB/T) live in the
+	// PlayerActions graph; the component keeps the holds + systems.
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/RenderTest_PlayerActions.bgraph");
 
 	// HUD canvas — crosshair (5 small UIRects) + ammo counter text.
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("HUD");
@@ -1938,12 +2097,15 @@ void Project_RegisterEditorAutomationSteps()
 				xAuto.AddStep_LoadModel(RenderTest::Resources().m_strStickFigureModelPath.c_str());
 				xAuto.AddStep_AddAnimator();
 				xAuto.AddStep_AddComponent("RenderTestTennisPlayer");
-				// Autonomous AI: the engine AIAgent (BT tick + nav) + the tennis brain
-				// (builds/owns the BT, decides shots). Both authored + serialized so the
-				// scene plays the same in tools and _False. The brain's OnStart wires the
-				// BT onto the AIAgent at load.
+				// Autonomous AI (W3): the engine AIAgent survives as perception
+				// registrar + nav-agent host; the DECISION body lives in the
+				// TennisBrain graph attached below (its own tick chain reproduces
+				// the retired 0.08 s AIAgent interval). The brain shim keeps the
+				// RNG / decided-shot / player-state systems. All authored +
+				// serialized so the scene plays the same in tools and _False.
 				xAuto.AddStep_AddComponent("AIAgent");
 				xAuto.AddStep_AddComponent("RenderTestTennisAgent");
+				xAuto.AddStep_AttachGraph(RenderTest_TennisAgentComponent::kszGraphAsset);
 
 				// Racket, seated at the NPC for frame 0, attached to the right hand
 				// (Rx 180deg so the head extends along the hand).

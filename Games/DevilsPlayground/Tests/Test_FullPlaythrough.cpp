@@ -13,7 +13,6 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "Maths/Zenith_Maths.h"
 #include "UI/Zenith_UIText.h"
 
@@ -733,10 +732,10 @@ static bool Step_FullPlaythrough(int /*iFrame*/)
 
 		// Read the priest's blackboard for the investigate-pos flag.
 		Zenith_Entity xPriestEnt = g_xEngine.Scenes().ResolveEntity(g_xPriest);
-		if (Zenith_AIAgentComponent* pxAgent = xPriestEnt.TryGetComponent<Zenith_AIAgentComponent>())
+		if (Priest_Component* pxPriestC = xPriestEnt.TryGetComponent<Priest_Component>())
 		{
-			Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
-			g_bPriestHasInvestigate = xBB.GetBool(
+			// W3: the bridge writes the priest's decision blackboard.
+			g_bPriestHasInvestigate = pxPriestC->ReadBBBool(
 				DP_AI::BB_KEY_HAS_INVESTIGATE_POS, /*bDefault=*/false);
 		}
 		g_iPhase = kFP_AssertNoise;

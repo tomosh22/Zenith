@@ -113,46 +113,32 @@ public:
 
 	// ========================================================================
 	// Update (called each frame)
+	//
+	// W1 conversion: the character-state -> animation-state DECISION lives in
+	// the Runner_CharacterActions graph (SwitchOnInt over the staged character
+	// state -> SetStateFromGraph below); this body is pure systems - blend
+	// parameter, state time, procedural application.
 	// ========================================================================
 	static void Update(float fDt, Zenith_TransformComponent& xTransform)
 	{
-		// Get character state for animation decisions
-		RunnerCharacterState eCharState = Runner_CharacterController::GetState();
-		float fSpeed = Runner_CharacterController::GetCurrentSpeed();
+		const float fSpeed = Runner_CharacterController::GetCurrentSpeed();
 
 		// Update animation parameters (would feed into state machine)
 		s_fBlendSpaceParameter = glm::clamp(fSpeed / s_xConfig.m_fBlendSpaceMaxSpeed, 0.0f, 1.0f);
 
-		// State machine logic
-		RunnerAnimState eNewState = s_eCurrentState;
+		// Update state time
+		s_fStateTime += fDt;
 
-		switch (eCharState)
-		{
-		case RunnerCharacterState::DEAD:
-			// Keep last state
-			break;
+		// Apply visual animation (procedural for this demo)
+		ApplyProceduralAnimation(fDt, xTransform);
+	}
 
-		case RunnerCharacterState::JUMPING:
-			eNewState = RunnerAnimState::JUMP;
-			break;
-
-		case RunnerCharacterState::SLIDING:
-			eNewState = RunnerAnimState::SLIDE;
-			break;
-
-		case RunnerCharacterState::RUNNING:
-			if (fSpeed > 0.1f)
-			{
-				eNewState = RunnerAnimState::RUN;
-			}
-			else
-			{
-				eNewState = RunnerAnimState::IDLE;
-			}
-			break;
-		}
-
-		// Handle state transitions
+	// Graph-facing transition (the old inline transition block verbatim):
+	// idempotent - same-state calls are no-ops, a change runs OnStateExit /
+	// OnStateEnter and resets the state clock. In a real skeletal setup this
+	// is where the engine SetAnimatorTrigger/Float nodes would take over.
+	static void SetStateFromGraph(RunnerAnimState eNewState)
+	{
 		if (eNewState != s_eCurrentState)
 		{
 			OnStateExit();
@@ -160,22 +146,6 @@ public:
 			s_fStateTime = 0.0f;
 			OnStateEnter(s_eCurrentState);
 		}
-
-		// Update state time
-		s_fStateTime += fDt;
-
-		// Apply visual animation (procedural for this demo)
-		ApplyProceduralAnimation(fDt, xTransform);
-
-		/*
-		// In a real implementation with Zenith_AnimatorComponent:
-		// Just set parameters each frame - AnimatorComponent::OnUpdate handles everything else
-		xAnimator.SetFloat("Speed", fSpeed);
-		if (eCharState == RunnerCharacterState::JUMPING)
-			xAnimator.SetTrigger("Jump");
-		if (eCharState == RunnerCharacterState::SLIDING)
-			xAnimator.SetTrigger("Slide");
-		*/
 	}
 
 	// ========================================================================

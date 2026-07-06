@@ -94,8 +94,23 @@ public:
 	Combat_HitDetection& HitDetection() { return m_xHitDetection; }
 	const Combat_AnimationController& AnimController() const { return m_xAnimController; }
 
+	// Combat_PlayerState.bgraph tick shims: the graph's StateMachine drives these
+	// (the old Combat_PlayerController::Update decision switch is gone). PreTick
+	// resolves the transform/collider and returns false if either is missing, so
+	// the graph aborts the tick; m_eState stays the C++ source of truth
+	// (GetState()/GetComboCount() are unchanged), mirrored to the blackboard only
+	// to drive the StateMachine dispatch.
+	bool Graph_PreTick(float fDt); // defined in .cpp (needs Transform/Collider)
+	void Graph_MovementTick(float fDt) { m_xController.GraphMovementTick(fDt); }
+	void Graph_AttackTick(float fDt)   { m_xController.GraphAttackTick(fDt); }
+	void Graph_DodgeTick(float fDt)    { m_xController.GraphDodgeTick(fDt); }
+	void Graph_HitStunTick(float fDt)  { m_xController.GraphHitStunTick(fDt); }
+	void Graph_PostTick()              { m_xController.GraphPostTick(); }
+	int  Graph_GetPlayerStateInt() const { return static_cast<int>(m_xController.GetState()); }
+
 private:
 	void FireAttackTick();
+	void FirePlayerTick(float fDt);
 
 	Zenith_Entity              m_xParentEntity;
 	Combat_PlayerController    m_xController;

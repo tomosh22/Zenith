@@ -175,23 +175,55 @@ void Zenith_SceneSystem::Update(float fDt)
 	const bool bPrevUpdating = m_bIsUpdating;
 	m_bIsUpdating = true;
 
-	// E.20 (finding 3.21): collect updatable scenes once per frame.
-	Zenith_Vector<Zenith_SceneData*> axUpdatable;
+	// E.20 (finding 3.21): collect updatable scenes once per frame - as
+	// handle+generation pairs, NOT SceneData pointers. Dispatched user logic
+	// below (component updates, behaviour-graph chains) can synchronously
+	// UnloadScene a scene that sits later in this snapshot (e.g. a game-flow
+	// update unloading its additive level scene); UnloadOneScene deletes the
+	// SceneData immediately, so a pointer snapshot would hand freed memory to
+	// the loops below. Each loop re-resolves the handle and skips freed slots
+	// (nulled) and same-frame slot reuse (generation bump). NOTE: a scene
+	// synchronously unloading ITSELF from inside its own dispatch remains
+	// unsupported (the SceneData whose Update frame is on the stack would be
+	// freed) - self-teardown goes through the deferred SINGLE-load path.
+	struct UpdatableScene
+	{
+		int m_iHandle = -1;
+		uint32_t m_uGeneration = 0;
+	};
+	Zenith_Vector<UpdatableScene> axUpdatable;
 	for (u_int i = 0; i < m_axScenes.GetSize(); ++i)
 	{
 		Zenith_SceneData* pxData = m_axScenes.Get(i);
 		if (IsSceneUpdatable(pxData))
 		{
-			axUpdatable.PushBack(pxData);
+			UpdatableScene xEntry;
+			xEntry.m_iHandle = static_cast<int>(i);
+			xEntry.m_uGeneration = m_axSceneGenerations.Get(i);
+			axUpdatable.PushBack(xEntry);
 		}
 	}
+
+	// nullptr = unloaded (or its slot reused) by an earlier dispatch this frame.
+	auto ResolveUpdatable = [this](const UpdatableScene& xEntry) -> Zenith_SceneData*
+	{
+		Zenith_SceneData* pxData = m_axScenes.Get(xEntry.m_iHandle);
+		if (pxData == nullptr || m_axSceneGenerations.Get(xEntry.m_iHandle) != xEntry.m_uGeneration)
+		{
+			return nullptr;
+		}
+		return pxData;
+	};
 
 	// HIGH-1: Unity execution order is Awake -> OnEnable -> Start -> FixedUpdate
 	// -> Update -> LateUpdate. Flush pending Starts BEFORE the FixedUpdate
 	// accumulator.
 	for (u_int i = 0; i < axUpdatable.GetSize(); ++i)
 	{
-		axUpdatable.Get(i)->DispatchPendingStarts();
+		if (Zenith_SceneData* pxData = ResolveUpdatable(axUpdatable.Get(i)))
+		{
+			pxData->DispatchPendingStarts();
+		}
 	}
 
 	// Fixed-timestep accumulation.
@@ -201,14 +233,20 @@ void Zenith_SceneSystem::Update(float fDt)
 	{
 		for (u_int i = 0; i < axUpdatable.GetSize(); ++i)
 		{
-			axUpdatable.Get(i)->FixedUpdate(m_fFixedTimestep);
+			if (Zenith_SceneData* pxData = ResolveUpdatable(axUpdatable.Get(i)))
+			{
+				pxData->FixedUpdate(m_fFixedTimestep);
+			}
 		}
 		m_fFixedTimeAccumulator -= m_fFixedTimestep;
 	}
 
 	for (u_int i = 0; i < axUpdatable.GetSize(); ++i)
 	{
-		axUpdatable.Get(i)->Update(fDt);
+		if (Zenith_SceneData* pxData = ResolveUpdatable(axUpdatable.Get(i)))
+		{
+			pxData->Update(fDt);
+		}
 	}
 
 	// Skeletal animation is dispatched by Zenith_AnimatorComponent::OnUpdate

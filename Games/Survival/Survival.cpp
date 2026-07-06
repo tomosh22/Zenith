@@ -2,7 +2,9 @@
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Survival/Components/Survival_GameComponent.h"
+#include "Survival/Components/Survival_GraphNodes.h"
 #include "Survival/Components/Survival_Config.h"
+#include "Scripting/Zenith_GraphBuilder.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
@@ -626,6 +628,9 @@ void Project_RegisterGameComponents()
 	// Initialize resources at startup
 	InitializeSurvivalResources();
 
+	// Register Survival's Behaviour Graph node library (wave-2 conversion).
+	Survival_RegisterGraphNodes();
+
 	// Register the Survival game component with the component-meta registry
 	// (serialization/lifecycle) and, in tools builds, the editor "Add Component"
 	// registry (display name used by AddStep_AddComponent / the editor menu).
@@ -664,8 +669,130 @@ void Project_InitializeResources()
 	// All resources initialized in Project_RegisterGameComponents
 }
 
+// ============================================================================
+// Behaviour Graph builders (boot-authored via AddStep_GraphBuild).
+// ============================================================================
+
+// Survival_GameFlow.bgraph - the menu Play / Escape->menu / R->reset / menu-focus
+// input DECISIONS at order 60 (before the SurvivalGame systems at order 100).
+// m_eGameState stays the per-instance source of truth; the P/R/Escape chains read
+// it via SurvivalGetGameState and gate on PLAYING (Survival has just two states:
+// MAIN_MENU=0, PLAYING=1). ACCEPTED divergence (AIShowcase/Combat-precedented): the
+// @60 pass shifts the Escape/reset decision ahead of the @100 systems block by one
+// frame (Escape pre-clears world state so the rest of that tick is a no-op; reset
+// runs the systems on the reset state one frame early) - unobservable.
+static void BuildGraph_SurvivalGameFlow(Zenith_GraphBuilder& xBuilder)
+{
+	Zenith_PropertyValue xVal;
+	xVal.SetInt32(static_cast<int32_t>(SurvivalGameState::MAIN_MENU));
+	xBuilder.Variable("gameState", xVal);
+
+	// Menu Play button -> load the gameplay scene (SINGLE mode = old OnPlayClicked;
+	// SCENE_LOAD_SINGLE is the LoadSceneByIndex node's default load mode).
+	const u_int uPlay = xBuilder.Node("OnUIButtonClicked");
+	xBuilder.ParamString(uPlay, "m_strButton", "MenuPlay");
+	const u_int uLoad = xBuilder.Node("LoadSceneByIndex");
+	xBuilder.ParamInt(uLoad, "m_iSceneIndex", 1);
+	xBuilder.Chain(uPlay, uLoad);
+
+	// Menu focus (single button; SurvivalFocusPlayButton no-ops in the gameplay
+	// scene, where there is no MenuPlay element - matching the old UpdateMenuInput
+	// which only ran in the MAIN_MENU branch).
+	const u_int uFocusTick = xBuilder.Node("OnUpdate");
+	const u_int uFocus = xBuilder.Node("SurvivalFocusPlayButton");
+	xBuilder.Chain(uFocusTick, uFocus);
+
+	// Escape: return to menu (only from PLAYING - the MenuManager's gameState is
+	// MAIN_MENU so its Escape is a no-op, matching the old in-PLAYING-only check).
+	const u_int uOnEsc = xBuilder.Node("OnKeyPressed");
+	xBuilder.ParamInt(uOnEsc, "m_iKeyCode", ZENITH_KEY_ESCAPE);
+	const u_int uGetE = xBuilder.Node("SurvivalGetGameState");
+	const u_int uSwE = xBuilder.Node("SwitchOnInt");
+	xBuilder.ParamString(uSwE, "m_strVar", "gameState");
+	xBuilder.ParamInt(uSwE, "m_iCaseCount", 2);
+	xBuilder.Chain(uOnEsc, uGetE).Chain(uGetE, uSwE);
+	const u_int uMenu = xBuilder.Node("SurvivalReturnToMenu");
+	xBuilder.Edge(uSwE, static_cast<u_int>(SurvivalGameState::PLAYING), uMenu);
+
+	// R: reset (only from PLAYING; SurvivalResetGame also self-guards on PLAYING).
+	const u_int uOnR = xBuilder.Node("OnKeyPressed");
+	xBuilder.ParamInt(uOnR, "m_iKeyCode", ZENITH_KEY_R);
+	const u_int uGetR = xBuilder.Node("SurvivalGetGameState");
+	const u_int uSwR = xBuilder.Node("SwitchOnInt");
+	xBuilder.ParamString(uSwR, "m_strVar", "gameState");
+	xBuilder.ParamInt(uSwR, "m_iCaseCount", 2);
+	xBuilder.Chain(uOnR, uGetR).Chain(uGetR, uSwR);
+	const u_int uReset = xBuilder.Node("SurvivalResetGame");
+	xBuilder.Edge(uSwR, static_cast<u_int>(SurvivalGameState::PLAYING), uReset);
+}
+
+// Survival_PlayerActions.bgraph - E->harvest, 1/2->craft. Driven by the inline
+// "SurvivalPlayerTick" event fired from OnUpdate where HandleInteraction /
+// HandleCrafting sat. Two "SurvivalPlayerTick" sources fire in node-add order
+// (harvest then craft) = the old HandleInteraction-before-HandleCrafting order;
+// each is a terminal chain (no fan-in needed).
+static void BuildGraph_SurvivalPlayerActions(Zenith_GraphBuilder& xBuilder)
+{
+	// Chain 1: E -> harvest nearest in-range resource.
+	const u_int uEvt1 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt1, "m_strEventName", "SurvivalPlayerTick");
+	const u_int uHarvest = xBuilder.Node("SurvivalHarvest");
+	xBuilder.Chain(uEvt1, uHarvest);
+
+	// Chain 2: 1/2 -> start crafting an axe / pickaxe.
+	const u_int uEvt2 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt2, "m_strEventName", "SurvivalPlayerTick");
+	const u_int uCraft = xBuilder.Node("SurvivalHandleCrafting");
+	xBuilder.Chain(uEvt2, uCraft);
+}
+
+// Survival_CraftTick.bgraph - per-tick craft progression (m_xCrafting.Update(dt)).
+// Driven by the inline "SurvivalCraftTick" event fired from OnUpdate where
+// UpdateCrafting ran; dt rides the payload (custom-event context dt is 0).
+static void BuildGraph_SurvivalCraftTick(Zenith_GraphBuilder& xBuilder)
+{
+	const u_int uEvt = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt, "m_strEventName", "SurvivalCraftTick");
+	const u_int uAdvance = xBuilder.Node("SurvivalAdvanceCraft");
+	xBuilder.ParamString(uAdvance, "m_strDtVar", "payload");
+	xBuilder.Chain(uEvt, uAdvance);
+}
+
+// Survival_WorldEvents.bgraph - the event-handler DECISIONS. The C++ event
+// subscribers forward each event into this graph (multi-field payloads via
+// FireCustomEventWithArgs) at the exact point the old handler ran:
+//   ResourceHarvested (nested inside the harvest node's Hit()) -> add to inventory
+//   ResourceRespawned (from the top-level ProcessDeferredEvents drain) -> empty hook
+//   CraftingComplete  (nested inside the craft-tick node's Update()) -> collect item
+// The SurvivalOn* node property defaults ("harvestItemType"/"harvestAmount"/
+// "craftItemType"/"craftSuccess") match the arg names the forwarders stage.
+static void BuildGraph_SurvivalWorldEvents(Zenith_GraphBuilder& xBuilder)
+{
+	const u_int uEvt1 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt1, "m_strEventName", "ResourceHarvested");
+	const u_int uHarvested = xBuilder.Node("SurvivalOnResourceHarvested");
+	xBuilder.Chain(uEvt1, uHarvested);
+
+	const u_int uEvt2 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt2, "m_strEventName", "ResourceRespawned");
+	const u_int uRespawn = xBuilder.Node("SurvivalOnResourceRespawned");
+	xBuilder.Chain(uEvt2, uRespawn);
+
+	const u_int uEvt3 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt3, "m_strEventName", "CraftingComplete");
+	const u_int uComplete = xBuilder.Node("SurvivalOnCraftingComplete");
+	xBuilder.Chain(uEvt3, uComplete);
+}
+
 void Project_RegisterEditorAutomationSteps()
 {
+	// ---- Behaviour graphs (regenerated every boot, like the scenes) --------
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.AddStep_GraphBuild("game:Graphs/Survival_GameFlow.bgraph", &BuildGraph_SurvivalGameFlow);
+	xAuto.AddStep_GraphBuild("game:Graphs/Survival_PlayerActions.bgraph", &BuildGraph_SurvivalPlayerActions);
+	xAuto.AddStep_GraphBuild("game:Graphs/Survival_CraftTick.bgraph", &BuildGraph_SurvivalCraftTick);
+	xAuto.AddStep_GraphBuild("game:Graphs/Survival_WorldEvents.bgraph", &BuildGraph_SurvivalWorldEvents);
+
 	// ---- MainMenu scene (build index 0) ----
 	g_xEngine.EditorAutomation().AddStep_CreateScene("MainMenu");
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("MenuManager");
@@ -685,6 +812,9 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
 	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.f, 50.f);
 	g_xEngine.EditorAutomation().AddStep_AddComponent("SurvivalGame");
+	// Game-flow graph on the MenuManager: OnUIButtonClicked("MenuPlay") ->
+	// LoadSceneByIndex(1), plus the menu-focus tick.
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Survival_GameFlow.bgraph");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
@@ -828,6 +958,18 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIVisible("Status", false);
 
 	g_xEngine.EditorAutomation().AddStep_AddComponent("SurvivalGame");
+	// Game-flow graph on the GameManager: the P/R/Escape input chains read the
+	// game state and reset / return-to-menu (menu Play / focus no-op here).
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Survival_GameFlow.bgraph");
+	// Player-actions graph: SurvivalGame fires "SurvivalPlayerTick" into it from
+	// the PLAYING branch of OnUpdate (harvest + craft-start decisions).
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Survival_PlayerActions.bgraph");
+	// Craft-tick graph: SurvivalGame fires "SurvivalCraftTick" (dt payload) into it
+	// where UpdateCrafting ran (per-tick craft progression).
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Survival_CraftTick.bgraph");
+	// World-events graph: the C++ event subscribers forward ResourceHarvested /
+	// ResourceRespawned / CraftingComplete into it (the event-handler decisions).
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Survival_WorldEvents.bgraph");
 
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Survival" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();

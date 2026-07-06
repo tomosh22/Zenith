@@ -510,15 +510,6 @@
     <ClInclude Include="..\Tools\Zenith_Tools_TestAssetExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TestAssetExport.Tests.inl" />
     <ClInclude Include="..\Tools\Zenith_Tools_TextureExport.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.Tests.inl" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.Tests.inl" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTActions.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTComposites.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTConditions.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTDecorators.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.h" />
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMesh.h" />
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMesh.Tests.inl" />
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshAgent.h" />
@@ -667,6 +658,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_AINavGeometry.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_CameraResolve.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentEditorRegistry.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_GraphNodeHelpers.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_GraphReload.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Physics.Tests.inl" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.h" />
@@ -722,6 +714,8 @@
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Screenshot.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ScreenSpaceEffectBase.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_SpecConstants.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_SpecConstants.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\Flux_TransientDesc.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ViewConstants.h" />
@@ -791,8 +785,11 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\MaterialTable.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\PBR.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\SceneObjects.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\ShadowSampling.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\UnifiedMeshDraw.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\VAT.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Velocity.slang" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\ViewModes.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Volumetric.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_Apply.slang" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Decals\Flux_Decals_NormalsCopy.slang" />
@@ -890,7 +887,11 @@
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderCatalog.h" />
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderDecl.h" />
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.h" />
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderReflection.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h" />
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangProbes.Tests.inl" />
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_SpineLint.h" />
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_SpineLint.Tests.inl" />
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_UnownedEngineShaders.h" />
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAOImpl.h" />
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO_Shaders.h" />
@@ -941,6 +942,7 @@
     <ClInclude Include="..\Zenith\SaveData\Zenith_SaveData.h" />
     <ClInclude Include="..\Zenith\Scripting\Zenith_BehaviourGraph.h" />
     <ClInclude Include="..\Zenith\Scripting\Zenith_GraphBlackboard.h" />
+    <ClInclude Include="..\Zenith\Scripting\Zenith_GraphBuilder.h" />
     <ClInclude Include="..\Zenith\Scripting\Zenith_GraphNode.h" />
     <ClInclude Include="..\Zenith\Scripting\Zenith_GraphNodeRegistry.h" />
     <ClInclude Include="..\Zenith\Scripting\Zenith_Scripting.Tests.inl" />
@@ -1064,34 +1066,6 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_TreeAssetExport.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTActions.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTComposites.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTConditions.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTDecorators.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Vulkan_arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
@@ -1377,6 +1351,15 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentEditorRegistry.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta_Registration.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_AI.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Animation.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Entity.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Flow.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Input.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Math.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Physics.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Scene.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_UI.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphReload.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsDebugDraw.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_PhysicsQuery.cpp" />
@@ -1491,6 +1474,7 @@
     <ClCompile Include="..\Zenith\SaveData\Zenith_SaveData.cpp" />
     <ClCompile Include="..\Zenith\Scripting\Zenith_BehaviourGraph.cpp" />
     <ClCompile Include="..\Zenith\Scripting\Zenith_GraphBlackboard.cpp" />
+    <ClCompile Include="..\Zenith\Scripting\Zenith_GraphBuilder.cpp" />
     <ClCompile Include="..\Zenith\Scripting\Zenith_GraphNodeRegistry.cpp" />
     <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
     <ClCompile Include="..\Zenith\Telemetry\Zenith_Telemetry.cpp" />

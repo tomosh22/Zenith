@@ -12,6 +12,9 @@
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
+#include "Scripting/Zenith_GraphBlackboard.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -24,9 +27,21 @@
 #include "Source/DPMaterials.h"
 #include "Source/DP_Reagents.h"
 
+#include <cstring>
+
 class DPItemBase_Component ZENITH_FINAL
 {
 public:
+	// W3 conversion: the pickup DECISIONS (evaporate countdown, post-drop
+	// cooldown gate, possessed/held/range/child gates, the reagent channel
+	// state machine, the commit + bell sequence) live on this graph; the
+	// component keeps the SYSTEMS (side-table registration, tint, transform
+	// reads, the reagent-registry resolve) and stages per-frame facts.
+	// Mutable decision state (cooldown, channel, evaporate countdown) lives
+	// on the blackboard; reagent CONFIG (channel duration, special
+	// behaviour, evaporate duration) is resolved C++-side and mirrored.
+	static constexpr const char* kszGraphAsset = "game:Graphs/DP_Item.bgraph";
+
 	DPItemBase_Component() = delete;
 	DPItemBase_Component(Zenith_Entity& xParentEntity)
 		: m_xParentEntity(xParentEntity)
@@ -36,7 +51,30 @@ public:
 	{
 		DP_Items::Internal_RegisterItemTag(m_xParentEntity.GetEntityID(), m_eTag);
 		ApplyTagTint();
+		// Self-attach the decisions graph BEFORE the reagent resolve so the
+		// config mirror lands on the blackboard (idempotent on re-entry).
+		EnsureGraphAttached();
 		ResolveReagentChannelFromRegistry();
+	}
+
+	// Idempotent self-attach; also invoked from SetTag so a test's
+	// AddComponent + SetTag in the same pre-awake frame lands the config
+	// mirror immediately (the pre-W3 component worked immediately too).
+	void EnsureGraphAttached()
+	{
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraphs == nullptr)
+		{
+			pxGraphs = &m_xParentEntity.AddComponent<Zenith_GraphComponent>();
+		}
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+		{
+			if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) == 0)
+			{
+				return;
+			}
+		}
+		pxGraphs->AddGraphByAssetPath(kszGraphAsset);
 	}
 
 	void OnStart()
@@ -70,172 +108,56 @@ public:
 
 	void OnUpdate(const float fDt)
 	{
-		// MVP-2.2.4: evaporate countdown. Set by BeginPostDropCooldown
-		// for items with special_behaviour="evaporates_after_drop".
-		// On zero-crossing the entity is destroyed. We check this
-		// BEFORE the post-drop cooldown block so a dropped reagent's
-		// evaporate timer keeps ticking through the cooldown window
-		// (the cooldown only gates re-pickup, not the destroy timer).
-		if (m_fEvaporateRemaining > 0.0f)
-		{
-			m_fEvaporateRemaining -= fDt;
-			if (m_fEvaporateRemaining <= 0.0f)
-			{
-				m_fEvaporateRemaining = 0.0f;
-				Zenith_Entity xEnt =
-					g_xEngine.Scenes().ResolveEntity(m_xParentEntity.GetEntityID());
-				if (xEnt.IsValid())
-				{
-					// 2026-05-21: capture the position before the
-					// destroy so DP_Particles can fire the steam
-					// burst at the right location. The destroy
-					// invalidates the entity ID for any post-hoc
-					// world-position lookup.
-					Zenith_Maths::Vector3 xPos = DP_Items::GetItemWorldPos(
-						m_xParentEntity.GetEntityID());
-					Zenith_EventDispatcher::Get().Dispatch(
-						DP_OnItemEvaporated{
-							m_xParentEntity.GetEntityID(), m_eTag, xPos });
-					xEnt.Destroy();
-				}
-				return;
-			}
-		}
+		// W3: the early-return decision chain (evaporate -> cooldown ->
+		// possessed/held/range/child gates -> channel state machine ->
+		// commit + bell) lives on DP_Item.bgraph. Stage this frame's facts,
+		// then fire "ItemTick" with dt as the payload. The graph's chains
+		// reproduce the returns via chain-reuse events (ItemGate2/3,
+		// ItemCommit) - see BuildGraph_DPItem.
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		Zenith_BehaviourGraph* pxGraph = FindItemGraph();
+		if (pxGraphs == nullptr || pxGraph == nullptr) return;
 
-		// MVP-1.4.5: after a drop, the item sits AT the villager's
-		// foot position -- which is well inside m_fPickupRadius, so the
-		// next-frame OnUpdate would immediately re-pick-up. Hold a
-		// short cooldown so the player has to step away (or another
-		// villager has to walk over) before pickup re-engages.
-		if (m_fPostDropCooldownSec > 0.0f)
-		{
-			m_fPostDropCooldownSec -= fDt;
-			if (m_fPostDropCooldownSec < 0.0f) m_fPostDropCooldownSec = 0.0f;
-			return;
-		}
-
-		// Distance-based pickup: when the possessed villager wanders within
-		// m_fPickupRadius of an item that has no holder, the villager picks
-		// it up. Source-game semantics: an item already in the villager's
-		// hand is dropped (swap), but for skeleton-grade we just refuse the
-		// new pickup if held — the swap behaviour can be added in Wave 4.
 		const Zenith_EntityID xVillager = DP_Player::GetPossessedVillager();
-		if (!xVillager.IsValid()) return;
-		if (DP_Player::GetHeldItemTag(xVillager) != DP_ItemTag::None) return;
+		const bool bPossessedValid = xVillager.IsValid();
+		const bool bHandsEmpty = bPossessedValid
+			&& DP_Player::GetHeldItemTag(xVillager) == DP_ItemTag::None;
 
-		Zenith_Maths::Vector3 xMyPos = DP_Items::GetItemWorldPos(m_xParentEntity.GetEntityID());
-
-		Zenith_Entity xV = g_xEngine.Scenes().ResolveEntity(xVillager);
-		if (!xV.IsValid()) return;
-		Zenith_TransformComponent* pxVTransform = xV.TryGetComponent<Zenith_TransformComponent>();
-		if (pxVTransform == nullptr) return;
-		Zenith_Maths::Vector3 xVPos;
-		pxVTransform->GetPosition(xVPos);
-
-		const float fDx = xMyPos.x - xVPos.x;
-		const float fDz = xMyPos.z - xVPos.z;
-		if (fDx * fDx + fDz * fDz > m_fPickupRadius * m_fPickupRadius) return;
-
-		// MVP-2.1.4: Child archetype can't carry tools. The GDD framing
-		// is "small hands"; mechanically it means the Child has to
-		// route through other villagers for any door / forge work. We
-		// look up the possessed villager's archetype id and refuse
-		// pickup if it's "Child" AND the item is in the tool set
-		// (DP_IsToolTag -- Iron, Key). Objectives + SkeletonKey are
-		// exempt so a Child can still complete the run.
-		if (DP_Player::IsChildVillagerWithToolTag(xVillager, m_eTag))
+		// XZ-only squared-distance range fact (strict >, radius 1.5
+		// hardcoded - the retired step-4 semantics).
+		bool bInRange = false;
+		if (bPossessedValid)
 		{
-			// 2026-05-21: telegraph the refusal so the player can
-			// SEE that the Child silently can't carry tools.
-			// Pre-fix this branch was a bare return -- the only
-			// indication was "I walked over an Iron and nothing
-			// happened." The DP_OnChildToolRefused event drives
-			// the ChildToolRefusal particle burst (red X) at the
-			// villager position.
-			Zenith_EventDispatcher::Get().Dispatch(
-				DP_OnChildToolRefused{
-					xVillager,
-					m_xParentEntity.GetEntityID(),
-					m_eTag,
-					xVPos });
-			return;
-		}
-
-		// MVP-2.2.2: per-tag pickup channel. For reagents,
-		// m_fPickupChannelDuration > 0 (loaded from DP_Reagents at
-		// OnAwake); pickup only fires after the villager stays in
-		// range for the full channel duration. For tools / objectives
-		// (channel duration 0), pickup fires immediately.
-		//
-		// State machine on the ITEM:
-		//   * No channel yet: start one with the current villager.
-		//   * Same villager in range: tick down. On 0, fire pickup.
-		//   * Same villager OUT of range: reset (player can walk away
-		//     to cancel mid-channel).
-		//   * Different villager: not a real concern in MVP (only one
-		//     possessed villager at a time); treated as restart.
-		if (m_fPickupChannelDuration > 0.0f)
-		{
-			const bool bSameVillager = m_xChannelingVillager.IsValid()
-				&& m_xChannelingVillager.m_uIndex == xVillager.m_uIndex
-				&& m_xChannelingVillager.m_uGeneration == xVillager.m_uGeneration;
-			if (!bSameVillager)
+			Zenith_Entity xV = g_xEngine.Scenes().ResolveEntity(xVillager);
+			if (xV.IsValid())
 			{
-				// Fresh channel.
-				m_xChannelingVillager = xVillager;
-				m_fChannelRemaining = m_fPickupChannelDuration;
-				return;
+				if (Zenith_TransformComponent* pxVTransform = xV.TryGetComponent<Zenith_TransformComponent>())
+				{
+					Zenith_Maths::Vector3 xVPos;
+					pxVTransform->GetPosition(xVPos);
+					const Zenith_Maths::Vector3 xMyPos =
+						DP_Items::GetItemWorldPos(m_xParentEntity.GetEntityID());
+					const float fDx = xMyPos.x - xVPos.x;
+					const float fDz = xMyPos.z - xVPos.z;
+					bInRange = !(fDx * fDx + fDz * fDz > m_fPickupRadius * m_fPickupRadius);
+				}
 			}
-			m_fChannelRemaining -= fDt;
-			if (m_fChannelRemaining > 0.0f)
-			{
-				return; // still channeling
-			}
-			// Channel complete: fall through to the SetHeldItem block
-			// below. Reset state so a future drop+re-channel restarts
-			// from full.
-			m_xChannelingVillager = INVALID_ENTITY_ID;
-			m_fChannelRemaining = 0.0f;
 		}
 
-		DP_Player::SetHeldItem(xVillager, m_xParentEntity.GetEntityID());
-		Zenith_EventDispatcher::Get().Dispatch(
-			DP_OnItemPickedUp{ xVillager, m_xParentEntity.GetEntityID(), m_eTag });
+		Zenith_GraphBlackboard& xBB = pxGraph->GetBlackboard();
+		Zenith_PropertyValue xValue;
+		xValue.SetBool(bPossessedValid);
+		xBB.SetValue("possessedValid", xValue);
+		xValue.SetBool(bHandsEmpty);
+		xBB.SetValue("handsEmpty", xValue);
+		xValue.SetBool(bInRange);
+		xBB.SetValue("inRange", xValue);
+		xValue.SetPackedEntityID(xVillager.GetPacked());
+		xBB.SetValue("possessedVillager", xValue);
 
-		// MVP-2.2.6: BellSoul rings the bell on pickup -- audible to
-		// every priest on the map. Dispatches DP_OnBellRing (HUD +
-		// state-machine subscribers) AND triggers the map-wide priest
-		// fanout.
-		//
-		// Two propagation paths run in parallel:
-		//   1. Zenith_PerceptionSystem::EmitSoundStimulus -- the normal
-		//      hearing path. Priests within their own hearing_range_m
-		//      (30 m default) pick it up here. Going through perception
-		//      gives the priest's BridgePerceptionToBlackboard the
-		//      stale-source-entity scrub it needs (the BellSoul entity
-		//      is destroyed on pickup so the perception system would
-		//      otherwise drop the stimulus on its next tick).
-		//   2. DP_AI::NotifyAllPriestsOfInvestigatePos -- direct BB
-		//      write to every priest in the scene, regardless of
-		//      distance. This delivers the GDD's "audible from the
-		//      entire map" intent; the perception system's
-		//      min(emit_radius, agent_max_range) clamp would otherwise
-		//      cap audibility at the 30 m hearing range no matter how
-		//      loud the bell.
-		if (m_strSpecialBehaviour == "rings_bell_on_pickup")
-		{
-			DP_OnBellRing xEvt;
-			xEvt.m_xVillager = xVillager;
-			xEvt.m_xBellSoul = m_xParentEntity.GetEntityID();
-			xEvt.m_xPosition = xMyPos;
-			Zenith_EventDispatcher::Get().Dispatch(xEvt);
-			// Perception stimulus: serves priests within hearing range.
-			Zenith_PerceptionSystem::EmitSoundStimulus(
-				xMyPos, 1.0f, 200.0f, m_xParentEntity.GetEntityID());
-			// Direct BB fanout: serves every priest beyond hearing
-			// range. Both paths together = truly map-wide.
-			DP_AI::NotifyAllPriestsOfInvestigatePos(xMyPos);
-		}
+		Zenith_PropertyValue xDtPayload;
+		xDtPayload.SetFloat(fDt);
+		pxGraphs->FireCustomEvent("ItemTick", &xDtPayload);
 	}
 
 	DP_ItemTag GetTag() const { return m_eTag; }
@@ -243,6 +165,7 @@ public:
 	{
 		// Re-register if the tag changed after OnAwake (e.g. editor setter).
 		if (m_eTag == eTag) return;
+		EnsureGraphAttached();
 		DP_Items::Internal_UnregisterItemTag(m_xParentEntity.GetEntityID());
 		m_eTag = eTag;
 		DP_Items::Internal_RegisterItemTag(m_xParentEntity.GetEntityID(), m_eTag);
@@ -322,31 +245,66 @@ public:
 	// speed (which covers 2 m in 0.5 s).
 	void BeginPostDropCooldown()
 	{
-		m_fPostDropCooldownSec = 0.5f;
+		WriteBBFloat("postDropCooldown", 0.5f);
 		// MVP-2.2.4: BogWater + post-MVP reagents with
 		// special_behaviour="evaporates_after_drop" start a destroy
 		// timer when dropped. The duration is loaded from
 		// Reagents.json (8.0s for BogWater). Once expired the entity
-		// destroys itself in OnUpdate.
+		// destroys itself from the graph's evaporate chain.
 		if (m_strSpecialBehaviour == "evaporates_after_drop"
 			&& m_fEvaporateDuration > 0.0f)
 		{
-			m_fEvaporateRemaining = m_fEvaporateDuration;
+			WriteBBFloat("evaporateRemaining", m_fEvaporateDuration);
+		}
+	}
+
+	// ---- W3 graph plumbing (the DPDoor shim pattern) ----
+	Zenith_BehaviourGraph* FindItemGraph() const
+	{
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraphs == nullptr) return nullptr;
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+		{
+			if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) == 0)
+			{
+				return pxGraphs->GetGraphAt(u);
+			}
+		}
+		return nullptr;
+	}
+	float ReadBBFloat(const char* szVar, float fDefault) const
+	{
+		Zenith_BehaviourGraph* pxGraph = FindItemGraph();
+		return pxGraph ? pxGraph->GetBlackboard().GetFloat(szVar, fDefault) : fDefault;
+	}
+	void WriteBBFloat(const char* szVar, float fValue)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindItemGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetFloat(fValue);
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
 		}
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
-	float GetPostDropCooldownForTest() const { return m_fPostDropCooldownSec; }
+	float GetPostDropCooldownForTest() const { return ReadBBFloat("postDropCooldown", 0.0f); }
 
 	// MVP-2.2 test accessors. ChannelDuration is the per-tag value
-	// resolved at OnAwake from DP_Reagents; ChannelRemaining tracks
-	// the in-flight countdown when a villager is in pickup range.
+	// resolved at OnAwake from DP_Reagents; the in-flight countdown +
+	// channeling-villager identity live on the graph blackboard (W3).
 	float           GetPickupChannelDurationForTest() const { return m_fPickupChannelDuration; }
-	float           GetChannelRemainingForTest() const { return m_fChannelRemaining; }
-	Zenith_EntityID GetChannelingVillagerForTest() const { return m_xChannelingVillager; }
+	float           GetChannelRemainingForTest() const { return ReadBBFloat("channelRemaining", 0.0f); }
+	Zenith_EntityID GetChannelingVillagerForTest() const
+	{
+		Zenith_BehaviourGraph* pxGraph = FindItemGraph();
+		if (pxGraph == nullptr) return INVALID_ENTITY_ID;
+		return Zenith_EntityID::FromPacked(
+			pxGraph->GetBlackboard().GetPackedEntityID("channelVillager", 0));
+	}
 	// MVP-2.2.4 evaporate test accessors.
 	float           GetEvaporateDurationForTest() const { return m_fEvaporateDuration; }
-	float           GetEvaporateRemainingForTest() const { return m_fEvaporateRemaining; }
+	float           GetEvaporateRemainingForTest() const { return ReadBBFloat("evaporateRemaining", 0.0f); }
 	const std::string& GetSpecialBehaviourForTest() const { return m_strSpecialBehaviour; }
 #endif
 
@@ -372,6 +330,20 @@ private:
 			m_strSpecialBehaviour.clear();
 			m_fEvaporateDuration     = 0.0f;
 		}
+		// Mirror the config the graph's decision chains read (the members
+		// stay the systems-side source of truth for BeginPostDropCooldown +
+		// the test accessors that report config, not state).
+		if (Zenith_BehaviourGraph* pxGraph = FindItemGraph())
+		{
+			Zenith_GraphBlackboard& xBB = pxGraph->GetBlackboard();
+			Zenith_PropertyValue xValue;
+			xValue.SetFloat(m_fPickupChannelDuration);
+			xBB.SetValue("channelDuration", xValue);
+			xValue.SetInt32((int32_t)m_eTag);
+			xBB.SetValue("tag", xValue);
+			xValue.SetString(m_strSpecialBehaviour.c_str());
+			xBB.SetValue("specialBehaviour", xValue);
+		}
 	}
 
 	Zenith_Entity m_xParentEntity;
@@ -379,21 +351,11 @@ private:
 	DP_ItemTag m_eTag = DP_ItemTag::None;
 	float      m_fPickupRadius = 1.5f;
 	bool       m_bTintApplied = false;
-	float      m_fPostDropCooldownSec = 0.0f;
-	// MVP-2.2.2 pickup-channel state. Duration is loaded from
-	// DP_Reagents at OnAwake; >0 means the item is a reagent and
-	// requires staying in range for that many seconds before pickup
-	// fires. Remaining counts down per frame while a villager is in
-	// range. Channeling villager identity is tracked so a different
-	// villager wandering into range mid-channel restarts cleanly.
-	float           m_fPickupChannelDuration = 0.0f;
-	float           m_fChannelRemaining      = 0.0f;
-	Zenith_EntityID m_xChannelingVillager;
-	// MVP-2.2.4 evaporate state. Set when BeginPostDropCooldown is
-	// called on an item with special_behaviour=evaporates_after_drop
-	// (currently only BogWater). When > 0, the timer counts down in
-	// OnUpdate; on 0, the entity is destroyed.
+	// MVP-2.2 reagent CONFIG (resolved from DP_Reagents at OnAwake/SetTag,
+	// mirrored onto the graph blackboard). The MUTABLE countdown state
+	// (postDropCooldown / channelRemaining / channelVillager /
+	// evaporateRemaining) lives on DP_Item.bgraph's blackboard since W3.
+	float       m_fPickupChannelDuration = 0.0f;
 	std::string m_strSpecialBehaviour;
 	float       m_fEvaporateDuration  = 0.0f;
-	float       m_fEvaporateRemaining = 0.0f;
 };

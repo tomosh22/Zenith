@@ -1,14 +1,22 @@
 #include "Zenith.h"
+#include "Core/Zenith_Engine.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "AssetHandling/Zenith_BehaviourGraphAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
+#include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_Query.h"
 
 namespace
 {
 	// Current GraphComponent serialization version.
 	//   v1 = framed multi-slot blob: per slot path + framed blackboard overrides.
-	constexpr u_int uGRAPH_COMPONENT_VERSION = 1;
+	// v1: framed slot blob (path + values-only blackboard override bytes).
+	// v2: identical layout; the override bytes gain the blackboard's list
+	//     section. v1 blobs still load (values only) - the ONLY on-disk format
+	//     change of the behaviour-graph program.
+	constexpr u_int uGRAPH_COMPONENT_VERSION = 2;
+	constexpr u_int uGRAPH_COMPONENT_MIN_VERSION = 1;
 
 	// File-scope dispatch depth (the hardened dispatch discipline): the component
 	// instance can be relocated by a pool resize triggered from node logic, so
@@ -78,7 +86,7 @@ Zenith_BehaviourGraph* Zenith_GraphComponent::InstantiateSlotGraph(Zenith_GraphS
 	{
 		Zenith_DataStream xRead(const_cast<void*>(xSlot.m_xPendingOverrides.GetData()), xSlot.m_xPendingOverrides.GetCursor());
 		Zenith_GraphBlackboard xOverrides;
-		xOverrides.ReadFromDataStream(xRead);
+		xOverrides.ReadFromDataStream(xRead, xSlot.m_bOverridesIncludeLists);
 		pxGraph->GetBlackboard().ApplyOverridesFrom(xOverrides);
 	}
 
@@ -142,22 +150,30 @@ void Zenith_GraphComponent::FlushPendingRemovals()
 
 void Zenith_GraphComponent::FireEventOnSlots(GraphEventType eEvent, float fDt, const Zenith_PropertyValue* pxPayload, bool bReverse)
 {
-	// Snapshot heap-stable graph pointers before running user logic.
+	// Snapshot heap-stable graph pointers before running user logic. ON_UPDATE
+	// additionally drives Timer ticking + suspended-chain resumption, but only
+	// for graphs that actually need it (NeedsUpdateDispatch) - a graph anchored
+	// purely on collisions/custom events is skipped entirely, so idle graphs
+	// cost no dispatch and no snapshot allocation.
 	Zenith_Vector<Zenith_BehaviourGraph*> axGraphs;
 	for (u_int u = 0; u < m_axSlots.GetSize(); ++u)
 	{
 		const Zenith_GraphSlot& xSlot = m_axSlots.Get(u);
-		if (!xSlot.m_bMarkedForRemoval && xSlot.m_pxGraph && xSlot.m_pxGraph->HasEventSource(eEvent))
+		if (xSlot.m_bMarkedForRemoval || !xSlot.m_pxGraph)
+		{
+			continue;
+		}
+		const bool bWantsDispatch = (eEvent == GRAPH_EVENT_ON_UPDATE)
+			? xSlot.m_pxGraph->NeedsUpdateDispatch()
+			: xSlot.m_pxGraph->HasEventSource(eEvent);
+		if (bWantsDispatch)
 		{
 			axGraphs.PushBack(xSlot.m_pxGraph);
 		}
-		else if (!xSlot.m_bMarkedForRemoval && xSlot.m_pxGraph
-			&& eEvent == GRAPH_EVENT_ON_UPDATE)
-		{
-			// ON_UPDATE dispatch also drives Timer ticking + suspended one-shot
-			// chain resumption even without an OnUpdate source.
-			axGraphs.PushBack(xSlot.m_pxGraph);
-		}
+	}
+	if (axGraphs.GetSize() == 0)
+	{
+		return;
 	}
 
 	const Zenith_Entity xParent = m_xParentEntity;	// copy - `this` may relocate
@@ -170,6 +186,7 @@ void Zenith_GraphComponent::FireEventOnSlots(GraphEventType eEvent, float fDt, c
 		Zenith_GraphContext xContext;
 		xContext.m_xSelf = xParent;
 		xContext.m_fDt = fDt;
+		xContext.m_fTimeSeconds = g_xEngine.Frame().GetTimePassed();
 		xContext.m_pxGraph = pxGraph;
 		xContext.m_pxBlackboard = &pxGraph->GetBlackboard();
 		xContext.m_pxEventPayload = pxPayload;
@@ -185,8 +202,58 @@ void Zenith_GraphComponent::FireEventOnSlots(GraphEventType eEvent, float fDt, c
 
 void Zenith_GraphComponent::FireCustomEvent(const char* szName, const Zenith_PropertyValue* pxPayload)
 {
+	FireCustomEventWithArgs(szName, nullptr, 0, pxPayload);
+}
+
+void Zenith_GraphComponent::BroadcastCustomEvent(const char* szName, const Zenith_PropertyValue* pxPayload)
+{
 	if (!szName)
 	{
+		return;
+	}
+	// Snapshot the receiving components first (the hardened-dispatch lesson:
+	// a fired chain may add/remove components mid-iteration).
+	Zenith_Vector<Zenith_EntityID> axReceivers;
+	g_xEngine.Scenes().QueryAllScenes<Zenith_GraphComponent>()
+		.ForEach([&axReceivers](Zenith_EntityID xID, Zenith_GraphComponent&)
+	{
+		axReceivers.PushBack(xID);
+	});
+	for (u_int u = 0; u < axReceivers.GetSize(); ++u)
+	{
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(axReceivers.Get(u));
+		if (!xEntity.IsValid())
+		{
+			continue;	// destroyed by an earlier receiver's chain
+		}
+		if (Zenith_GraphComponent* pxComponent = xEntity.TryGetComponent<Zenith_GraphComponent>())
+		{
+			pxComponent->FireCustomEvent(szName, pxPayload);
+		}
+	}
+}
+
+void Zenith_GraphComponent::FireCustomEventWithArgs(const char* szName, const Zenith_GraphEventArg* pxArgs, u_int uArgCount)
+{
+	// Arg 0's value doubles as the legacy single payload so existing
+	// stash-the-payload sources keep working under the args form.
+	FireCustomEventWithArgs(szName, pxArgs, uArgCount, uArgCount > 0 ? &pxArgs[0].m_xValue : nullptr);
+}
+
+void Zenith_GraphComponent::FireCustomEventWithArgs(const char* szName, const Zenith_GraphEventArg* pxArgs, u_int uArgCount, const Zenith_PropertyValue* pxPayload)
+{
+	if (!szName)
+	{
+		return;
+	}
+	// Cross-entity events nest through the depth counter; a hard cap kills
+	// event ping-pong recursion (graph A fires at B fires at A ...) instead of
+	// overflowing the stack. Reported once per offending cascade.
+	if (s_iGraphDispatchDepth >= 16)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE,
+			"GraphComponent: custom event '%s' dropped at dispatch depth %d (event ping-pong recursion?)",
+			szName, s_iGraphDispatchDepth);
 		return;
 	}
 	Zenith_Vector<Zenith_BehaviourGraph*> axGraphs;
@@ -206,9 +273,12 @@ void Zenith_GraphComponent::FireCustomEvent(const char* szName, const Zenith_Pro
 	{
 		Zenith_GraphContext xContext;
 		xContext.m_xSelf = xParent;
+		xContext.m_fTimeSeconds = g_xEngine.Frame().GetTimePassed();
 		xContext.m_pxGraph = axGraphs.Get(u);
 		xContext.m_pxBlackboard = &axGraphs.Get(u)->GetBlackboard();
 		xContext.m_pxEventPayload = pxPayload;
+		xContext.m_pxEventArgs = pxArgs;
+		xContext.m_uEventArgCount = uArgCount;
 		axGraphs.Get(u)->FireCustomEvent(szName, xContext);
 	}
 	--s_iGraphDispatchDepth;
@@ -344,11 +414,11 @@ void Zenith_GraphComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> uBlobBytes;
 	const uint64_t ulBlobEnd = xStream.GetCursor() + uBlobBytes;
 
-	if (uVersion != uGRAPH_COMPONENT_VERSION)
+	if (uVersion < uGRAPH_COMPONENT_MIN_VERSION || uVersion > uGRAPH_COMPONENT_VERSION)
 	{
 		Zenith_Log(LOG_CATEGORY_ECS,
-			"GraphComponent: unsupported serialization version %u (expected %u); skipping blob",
-			uVersion, uGRAPH_COMPONENT_VERSION);
+			"GraphComponent: unsupported serialization version %u (supported %u..%u); skipping blob",
+			uVersion, uGRAPH_COMPONENT_MIN_VERSION, uGRAPH_COMPONENT_VERSION);
 		xStream.SkipBytes(uBlobBytes);
 		return;
 	}
@@ -359,6 +429,7 @@ void Zenith_GraphComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	{
 		Zenith_GraphSlot xSlot;
 		xStream >> xSlot.m_strGraphAssetPath;
+		xSlot.m_bOverridesIncludeLists = (uVersion >= 2);
 
 		u_int uOverrideBytes = 0;
 		xStream >> uOverrideBytes;
@@ -426,7 +497,7 @@ u_int Zenith_GraphComponent::ReloadSlotsForAsset(const char* szNormalizedPath)
 			// Unresolved slot becoming resolved: apply the preserved overrides.
 			Zenith_DataStream xRead(const_cast<void*>(xSlot.m_xPendingOverrides.GetData()), xSlot.m_xPendingOverrides.GetCursor());
 			Zenith_GraphBlackboard xOverrides;
-			xOverrides.ReadFromDataStream(xRead);
+			xOverrides.ReadFromDataStream(xRead, xSlot.m_bOverridesIncludeLists);
 			pxNewGraph->GetBlackboard().ApplyOverridesFrom(xOverrides);
 		}
 

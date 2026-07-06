@@ -21,6 +21,7 @@
 // Behaviour Graphs: the node-type registry the engine installs its node
 // registrar onto (the Scripting module's twin of the component-meta inversion).
 #include "Scripting/Zenith_GraphNodeRegistry.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"	// m_pfnSceneLoaded -> BroadcastCustomEvent thunk
 // Engine-side (NOT the ECS leaf): needed so the m_pfnAddDefaultComponents hook
 // installed below can name Zenith_TransformComponent and add it via the
 // AddComponent<> template. Keeping this name on the engine side is exactly how
@@ -618,6 +619,14 @@ void Zenith_Engine::InitialiseECS()
 	// AddComponent<Zenith_TransformComponent>() call. Installed engine-side so the
 	// ECS leaf never names the component type.
 	xHooks.m_pfnAddDefaultComponents = [](Zenith_Entity& xEntity) { xEntity.AddComponent<Zenith_TransformComponent>(); };
+	// Load-completion -> behaviour graphs: broadcast "__SceneLoaded" with the
+	// canonical path as a string payload; OnSceneLoaded source nodes filter it.
+	xHooks.m_pfnSceneLoaded = [](const char* szCanonicalPath, int /*iBuildIndex*/)
+	{
+		Zenith_PropertyValue xPayload;
+		xPayload.SetString(szCanonicalPath ? szCanonicalPath : "");
+		Zenith_GraphComponent::BroadcastCustomEvent("__SceneLoaded", &xPayload);
+	};
 	g_xEngine.Scenes().SetRuntimeHooks(xHooks);
 
 	// Install the AI-leaf world hooks (see AI/Zenith_AIWorldHooks.h): the AI core's

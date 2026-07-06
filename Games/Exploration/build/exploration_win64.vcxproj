@@ -901,6 +901,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Exploration.cpp" />
+    <ClCompile Include="..\Tests\Test_ExplorationCharacterization.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -167,13 +167,13 @@
     <ClInclude Include="..\Components\RenderTest_BootstrapComponent.h" />
     <ClInclude Include="..\Components\RenderTest_FollowCameraComponent.h" />
     <ClInclude Include="..\Components\RenderTest_GameplayState.h" />
+    <ClInclude Include="..\Components\RenderTest_GraphNodes.h" />
     <ClInclude Include="..\Components\RenderTest_GunComponent.h" />
     <ClInclude Include="..\Components\RenderTest_JetpackComponent.h" />
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.h" />
     <ClInclude Include="..\Components\RenderTest_PlayerComponent.Tests.inl" />
     <ClInclude Include="..\Components\RenderTest_Tennis.Tests.inl" />
     <ClInclude Include="..\Components\RenderTest_TennisAgentComponent.h" />
-    <ClInclude Include="..\Components\RenderTest_TennisBTNodes.h" />
     <ClInclude Include="..\Components\RenderTest_TennisCourtGeometry.h" />
     <ClInclude Include="..\Components\RenderTest_TennisDecision.h" />
     <ClInclude Include="..\Components\RenderTest_TennisMatchComponent.h" />
@@ -200,6 +200,7 @@
     <ClCompile Include="..\Tests\TAAToggleStress.cpp" />
     <ClCompile Include="..\Tests\TerrainEditorShowcase.cpp" />
     <ClCompile Include="..\Tests\TerrainEditorSmoke.cpp" />
+    <ClCompile Include="..\Tests\Test_TennisCharacterization.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

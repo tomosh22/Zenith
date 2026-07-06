@@ -28,7 +28,8 @@ Games/Survival/
   CLAUDE.md                      # This documentation
   Survival.cpp                   # Project entry points, resource initialization
   Components/
-    Survival_GameComponent.h     # Main coordinator component (uses all modules below)
+    Survival_GameComponent.h     # Main coordinator component (uses all modules below); holds the Graph_* shims
+    Survival_GraphNodes.h        # Behaviour Graph node library (all 4 graphs) + Survival_RegisterGraphNodes
     Survival_Config.h            # DataAsset for game configuration
     Survival_EventBus.h          # Custom game events
     Survival_Inventory.h         # Item storage
@@ -38,9 +39,14 @@ Games/Survival/
     Survival_CraftingSystem.h    # Recipe processing
     Survival_TaskProcessor.h     # Background task management
     Survival_UIManager.h         # HUD updates
+  Tests/
+    Test_SurvivalCharacterization.cpp  # 6 automated tests (harvest/craft/respawn-seam/menu-play/escape/reset)
   Assets/
     Scenes/MainMenu.zscen        # Serialized main-menu scene (build index 0)
     Scenes/Survival.zscen        # Serialized gameplay scene (build index 1)
+    Graphs/                      # Boot-authored Behaviour Graphs (.bgraph):
+                                 #   Survival_GameFlow, Survival_PlayerActions,
+                                 #   Survival_CraftTick, Survival_WorldEvents
 ```
 
 ## Key Systems
@@ -128,6 +134,68 @@ Use `scene.Query<ComponentA, ComponentB>()` with `.Count()`, `.First()`, `.Any()
 - Crafting progress bar
 - Interaction prompts
 - Status messages
+
+## Behaviour Graphs (all game DECISION logic — 4 graphs)
+
+Every piece of Survival's gameplay DECISION logic lives in behaviour graphs; the
+`Survival_GameComponent` keeps only SYSTEMS (camera-relative movement, camera
+follow, resource-node visuals, HUD render, the background respawn task, scene
+management) behind small graph-facing `Graph_*` shims. The graphs are
+boot-authored via a fluent `Zenith_GraphBuilder` in `BuildGraph_Survival*`
+functions (`AddStep_GraphBuild` in `Project_RegisterEditorAutomationSteps`;
+runtime docs in `Zenith/Scripting/CLAUDE.md`). Nodes live header-only in
+`Components/Survival_GraphNodes.h`, registered via `Survival_RegisterGraphNodes()`
+from `Project_RegisterGameComponents`. dt rides the event PAYLOAD (custom-event
+context dt is 0).
+
+| Graph | Attached | Driven by | What moved |
+|---|---|---|---|
+| `Survival_GameFlow.bgraph` | authored, BOTH managers (MenuManager + GameManager) | order-60 input sources (`OnUIButtonClicked`/`OnKeyPressed`/`OnUpdate`) | The menu Play / Escape->menu / R->reset / menu-focus DECISIONS. Menu Play → `OnUIButtonClicked("MenuPlay")`→`LoadSceneByIndex(1)` (SINGLE = old `OnPlayClicked`); Escape/R → `SurvivalGetGameState`→`SwitchOnInt(gameState, 2)`→pin PLAYING→`SurvivalReturnToMenu`/`SurvivalResetGame`; focus → `OnUpdate`→`SurvivalFocusPlayButton`. Only 2 states (MAIN_MENU=0, PLAYING=1); the MenuManager's gameState gates its Escape/R off. |
+| `Survival_PlayerActions.bgraph` | authored, GameManager | `"SurvivalPlayerTick"` (inline from `OnUpdate` where `HandleInteraction`/`HandleCrafting` sat) | E→harvest, 1/2→craft. Two `"SurvivalPlayerTick"` sources fire in node order (`SurvivalHarvest` then `SurvivalHandleCrafting`) = the old HandleInteraction-before-HandleCrafting order; fired AFTER movement, BEFORE the craft tick. |
+| `Survival_CraftTick.bgraph` | authored, GameManager | `"SurvivalCraftTick"` (dt payload, inline where `UpdateCrafting` ran) | Per-tick craft progression (`SurvivalAdvanceCraft`→`m_xCrafting.Update(dt)`; accumulates `m_fCraftingProgress += payload-dt`, NOT a Timer node). |
+| `Survival_WorldEvents.bgraph` | authored, GameManager | the C++ event subscribers forward each event into it at the exact fire point | The event-handler DECISIONS: `ResourceHarvested`→`SurvivalOnResourceHarvested` (AddItem + status), `ResourceRespawned`→`SurvivalOnResourceRespawned` (empty hook), `CraftingComplete`→`SurvivalOnCraftingComplete` (collect + status). Multi-field payloads ride `FireCustomEventWithArgs` (arg names match the node property defaults). |
+
+### The background-task → deferred-event seam (the wave's headline)
+
+Respawn STAYS C++: `Survival_TaskProcessor`'s parallel node update runs off-thread,
+respawns a depleted node, and `QueueEvent(ResourceRespawned)` (thread-safe). The
+main thread drains the deferred queue in `ProcessDeferredEvents()` (PLAYING step 1);
+the C++ subscriber then forwards it into `Survival_WorldEvents` where the empty
+`SurvivalOnResourceRespawned` hook consumes it. The graph never touches the task.
+
+### Shims + source of truth
+
+`m_eGameState` stays the per-instance source of truth (`GetGameState` unchanged);
+`SurvivalGetGameState` only mirrors it to the blackboard to gate the Escape/R
+chains. The decision bodies live verbatim in the `Graph_*` shims
+(`Graph_ReturnToMenu`/`ResetGame`/`FocusPlayButton`/`Harvest`/`HandleCrafting`/
+`AdvanceCraft`/`OnResourceHarvested`/`OnResourceRespawned`/`OnCraftingComplete`);
+the nodes resolve the self component and call them synchronously. The three C++
+event subscribers became FORWARDERS (stage the payload → fire the graph event);
+the harvest / craft-complete fires are nested inside the harvest / craft-tick
+node's `Hit()` / `Update()` (a proven-safe re-entrant graph dispatch), while the
+respawn fire comes from the top-level `ProcessDeferredEvents` drain.
+
+**Accepted divergences** (unobservable / AIShowcase/Combat-precedented): the `@60`
+GameFlow / `@100`-component split shifts the Escape/reset decision ahead of the
+systems block by one frame (Escape's `ReturnToMenu` pre-clears world state so the
+rest of that tick is a no-op; reset runs the systems on the reset state one frame
+early); and Escape/R are independent `OnKeyPressed` sources, so two distinct keys
+on the exact same frame both fire (the old `if`/`if`/return checks were sequential).
+
+**Equivalence proof:** `Tests/Test_SurvivalCharacterization.cpp` — 6 tests written
+against the C++ versions FIRST, all identical pre/post conversion. Run (windowed;
+games hang at shutdown, so tally the per-test JSON):
+
+```
+survival.exe --all-automated-tests --exit-after-frames 30000 --fixed-dt 0.01666 --skip-unit-tests --test-results-dir <dir>
+```
+
+Coverage: `Harvest` (E → +1 wood / −1 hit via the harvest event handler),
+`Craft` (3W+2S → axe crafted + materials consumed), `RespawnSeam` (the
+background-task → deferred-event respawn, end to end), `MenuPlay`, `ReturnToMenu`
+(Escape → MAIN_MENU), `Reset` (R → inventory cleared + nodes full). The
+conversion touched ZERO engine files.
 
 ## Multi-Scene Architecture
 

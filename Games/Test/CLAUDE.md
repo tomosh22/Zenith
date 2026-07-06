@@ -40,24 +40,33 @@ Authored every tools boot in `Project_RegisterEditorAutomationSteps` through
 `Zenith_EditorAutomation` graph steps (runtime docs in
 `Zenith/Scripting/CLAUDE.md`):
 
+W1 conversion: graphs are authored through `AddStep_GraphBuild` (programmatic
+`Zenith_GraphBuilder` functions `BuildGraph_*` in Test.cpp — the builder's
+first client); the physics-toy mega-nodes were decomposed into engine nodes
+and deleted.
+
 | Graph | Attached to | Logic |
 |---|---|---|
-| `Test_Spinner.bgraph` | "Spinner" entity (authored, `AddStep_AttachGraph`) | OnUpdate → `TestSpinPlatform` (constant angular velocity, zeroed linear velocity — the retired TestRotation logic) |
-| `Test_Spring.bgraph` | "Spring" entity (authored) | OnUpdate → `TestHookesForce` (Hooke's-law force toward a target — the retired TestHookesLaw logic) |
+| `Test_Spinner.bgraph` | "Spinner" entity (authored, `AddStep_AttachGraph`) | OnUpdate → `SetAngularVelocity`(0,2,0) → `SetVelocity`(zero, all axes — the anchor) |
+| `Test_Spring.bgraph` | "Spring" entity (authored) | declared var `springTarget`=(0,5,0); OnUpdate → `ReadEntityPosition`→springPos → `MathBlackboardVector3`(sub: target−pos)→springForce → `ApplyForce`(springForce) |
 | `Test_PlayerActions.bgraph` | the player entity (whoever attaches `TestPlayerController` also attaches this) | OnCustomEvent("Shoot") → `TestSpawnProjectile` (executes the component's `Shoot()` systems body) |
 
 ### Node library (`Components/Test_GraphNodes.h`)
 
 | Node | What it does |
 |---|---|
-| `TestSpinPlatform` | Sets angular velocity on the physics body (param `m_xAngularVel`), zeroes linear velocity |
-| `TestHookesForce` | Applies spring force toward `m_xDesiredPosition` |
-| `TestSpawnProjectile` | Calls `Test_PlayerControllerComponent::Shoot()` on the context entity |
+| `TestSpawnProjectile` | Calls `Test_PlayerControllerComponent::Shoot()` on the context entity (the systems seam — pooling/prefab/impulse stay C++) |
 
 Registered via `Test_RegisterGraphNodes()` from
 `Project_RegisterGameComponents`.
 
 ## Tests
+
+`Tests/Test_PhysicsToysCharacterization.cpp` — `Test_PhysicsToys_Test` loads
+the Test scene and pins the toys' observable physics (Spinner angular velocity
+(0,2,0) + zero linear drift; Spring X pulled toward the target — the X axis
+isolates the spring force from gravity). Written against the C++ mega-nodes
+first; green unchanged against the decomposed engine-node graphs.
 
 `Tests/Test_ShootCharacterization.cpp` — `Test_ShootAction_Test` constructs
 the player the way a user authors it (capsule collider + camera +

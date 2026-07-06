@@ -24,6 +24,9 @@
     <ClCompile Include="..\Tests\TerrainEditorSmoke.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tests\Test_TennisCharacterization.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Components\RenderTest_BootstrapComponent.h">
@@ -33,6 +36,9 @@
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\RenderTest_GameplayState.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\RenderTest_GraphNodes.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\RenderTest_GunComponent.h">
@@ -51,9 +57,6 @@
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\RenderTest_TennisAgentComponent.h">
-      <Filter>Components</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Components\RenderTest_TennisBTNodes.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\RenderTest_TennisCourtGeometry.h">

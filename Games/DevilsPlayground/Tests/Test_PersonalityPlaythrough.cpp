@@ -22,7 +22,6 @@
 // of this test would pull in GLFW/Win32 declarations that clash with
 // Zenith_Android_Window.
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "Maths/Zenith_Maths.h"
 #include "UI/Zenith_UICanvas.h"
@@ -807,9 +806,10 @@ namespace
 		return true;
 	}
 
-	// Resolve the priest's current BT branch + nav-target by inspecting
-	// the blackboard keys Priest_Component writes. Mirror of the priest BT
-	// Selector ordering -- Apprehend > Pursue > Investigate > Patrol.
+	// Resolve the priest's current decision branch + nav-target by inspecting
+	// the blackboard keys Priest_Component's bridge writes. Mirror of the
+	// DP_Priest.bgraph Selector ordering -- Apprehend > Pursue > Investigate >
+	// Patrol. (W3: the keys live on the priest's decision-graph blackboard.)
 	void DerivePriestIntentAndTarget(Zenith_EntityID xPriestId,
 	                                 const Zenith_Maths::Vector3& xPriestPos,
 	                                 DPTelemetry::PriestIntent& eIntent,
@@ -819,13 +819,14 @@ namespace
 		xTargetPos = Zenith_Maths::Vector3(0.0f);
 
 		Zenith_Entity xPriest = g_xEngine.Scenes().ResolveEntity(xPriestId);
-		Zenith_AIAgentComponent* pxAgent = xPriest.TryGetComponent<Zenith_AIAgentComponent>();
-		if (pxAgent == nullptr) return;
+		Priest_Component* pxPriestC = xPriest.TryGetComponent<Priest_Component>();
+		Zenith_BehaviourGraph* pxGraph = pxPriestC ? pxPriestC->FindPriestGraph() : nullptr;
+		if (pxGraph == nullptr) return;
+		Zenith_GraphBlackboard& xBB = pxGraph->GetBlackboard();
 
-		Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
-
-		const Zenith_EntityID xTgtWithDevil =
-			xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
+		const Zenith_EntityID xTgtWithDevil = Zenith_EntityID::FromPacked(
+			xBB.GetPackedEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL,
+				INVALID_ENTITY_ID.GetPacked()));
 		if (xTgtWithDevil.IsValid())
 		{
 			// Pursue or Apprehend, depending on horizontal distance to the
@@ -849,17 +850,19 @@ namespace
 			return;
 		}
 
-		if (xBB.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS))
+		if (xBB.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false))
 		{
-			xTargetPos = xBB.GetVector3(DP_AI::BB_KEY_INVESTIGATE_POS);
+			xTargetPos = xBB.GetVector3(DP_AI::BB_KEY_INVESTIGATE_POS,
+				Zenith_Maths::Vector3(0.0f));
 			eIntent    = DPTelemetry::PriestIntent::Investigate;
 			return;
 		}
 
 		// PatrolTarget is a Vector3; "no patrol" reads as (0,0,0). The
-		// real first patrol point picked by DP_BTAction_FindPos lands
+		// real first patrol point picked by DPPriestPickPatrolTarget lands
 		// inside the playable area, so a true zero is a safe sentinel.
-		const Zenith_Maths::Vector3 xPatrol = xBB.GetVector3(DP_AI::BB_KEY_PATROL_TARGET);
+		const Zenith_Maths::Vector3 xPatrol = xBB.GetVector3(DP_AI::BB_KEY_PATROL_TARGET,
+			Zenith_Maths::Vector3(0.0f));
 		if (std::fabs(xPatrol.x) + std::fabs(xPatrol.z) > 0.001f)
 		{
 			xTargetPos = xPatrol;
@@ -3220,10 +3223,10 @@ static bool Step_HumanPlaythrough(int /*iFrame*/)
 		if (g_xPriest.IsValid())
 		{
 			Zenith_Entity xP = g_xEngine.Scenes().ResolveEntity(g_xPriest);
-			if (Zenith_AIAgentComponent* pxAgent = xP.TryGetComponent<Zenith_AIAgentComponent>())
+			if (Priest_Component* pxPriestC = xP.TryGetComponent<Priest_Component>())
 			{
-				Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
-				g_bPriestHeardNoise = xBB.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, /*bDefault=*/false);
+				// W3: the bridge writes the priest's decision blackboard.
+				g_bPriestHeardNoise = pxPriestC->ReadBBBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
 			}
 		}
 		std::printf("[HumanPlaythrough] noise: priest_has_investigate=%d\n",

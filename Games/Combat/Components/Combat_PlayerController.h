@@ -130,44 +130,42 @@ public:
 	/**
 	 * Update - Process input and update state
 	 */
-	void Update(Zenith_TransformComponent& xTransform, Zenith_ColliderComponent& xCollider, float fDt)
+	// ========================================================================
+	// Graph tick (the old Update decision-switch now lives in the
+	// Combat_PlayerState.bgraph StateMachine; these are its leaf shims). The
+	// per-frame order is preserved: PreTick (clear flags + snapshot prev +
+	// UpdateTimers) -> per-state handler -> PostTick (recompute state-changed),
+	// all run synchronously in one PlayerTick dispatch. m_eState stays the C++
+	// source of truth (GetState() is unchanged); the graph mirrors it to the
+	// blackboard only to drive the StateMachine dispatch.
+	// ========================================================================
+
+	// Pre-switch work: clear per-frame flags, snapshot the previous state, and
+	// tick the timers (which may transition via the combo-window expiry). Caches
+	// the transform/collider for the state handlers this tick.
+	void GraphPreTick(Zenith_TransformComponent& xTransform, Zenith_ColliderComponent& xCollider, float fDt)
 	{
+		m_pxTickTransform = &xTransform;
+		m_pxTickCollider = &xCollider;
+
 		m_bAttackJustStarted = false;
 		m_bStateChangedThisFrame = false;
 		m_ePreviousState = m_eState;
 
-		// Update timers
+		// Update timers (runs before the state dispatch, as in the old Update).
 		UpdateTimers(fDt);
+	}
 
-		// State machine update
-		switch (m_eState)
-		{
-		case Combat_PlayerState::IDLE:
-		case Combat_PlayerState::WALKING:
-			HandleMovementState(xTransform, xCollider, fDt);
-			break;
+	// Per-state handlers (dispatched by the graph StateMachine on playerState).
+	void GraphMovementTick(float fDt) { HandleMovementState(*m_pxTickTransform, *m_pxTickCollider, fDt); }
+	void GraphAttackTick(float fDt)   { HandleAttackState(fDt); }
+	void GraphDodgeTick(float fDt)    { HandleDodgeState(*m_pxTickCollider, fDt); }
+	void GraphHitStunTick(float fDt)  { HandleHitStunState(fDt); }
 
-		case Combat_PlayerState::LIGHT_ATTACK_1:
-		case Combat_PlayerState::LIGHT_ATTACK_2:
-		case Combat_PlayerState::LIGHT_ATTACK_3:
-		case Combat_PlayerState::HEAVY_ATTACK:
-			HandleAttackState(fDt);
-			break;
-
-		case Combat_PlayerState::DODGING:
-			HandleDodgeState(xCollider, fDt);
-			break;
-
-		case Combat_PlayerState::HIT_STUN:
-			HandleHitStunState(fDt);
-			break;
-
-		case Combat_PlayerState::DEAD:
-			// No updates when dead
-			break;
-		}
-
-		// Track state changes
+	// Post-switch work: recompute the state-changed edge flag (consumed by the
+	// animation controller's trigger sync back in Combat_PlayerComponent).
+	void GraphPostTick()
+	{
 		m_bStateChangedThisFrame = (m_eState != m_ePreviousState);
 	}
 
@@ -531,4 +529,9 @@ private:
 	Zenith_Maths::Vector3 m_xFacingDirection = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
 	Zenith_Maths::Vector3 m_xDodgeDirection = Zenith_Maths::Vector3(0.0f);
 	float m_fCurrentSpeed = 0.0f;
+
+	// Resolved once per tick by GraphPreTick; consumed by the state handlers this
+	// tick (valid only within one PlayerTick dispatch).
+	Zenith_TransformComponent* m_pxTickTransform = nullptr;
+	Zenith_ColliderComponent* m_pxTickCollider = nullptr;
 };

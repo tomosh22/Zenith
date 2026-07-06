@@ -117,24 +117,36 @@ public:
 	// Update
 	// ========================================================================
 
-	/**
-	 * Update - Main AI update loop
-	 */
-	void Update(float fDt)
+	// ========================================================================
+	// Graph tick (the old Update decision-switch now lives in the
+	// Combat_EnemyBrain.bgraph StateMachine; these are its leaf shims). The
+	// per-frame order is preserved: PreTick -> per-state handler -> PostTick,
+	// all run synchronously in one EnemyBrainTick dispatch.
+	// ========================================================================
+
+	// Pre-switch work: resolve + guards + EnforceUpright + death-check +
+	// cooldown decrement. Caches the entity/transform for the state handlers +
+	// PostTick this tick. Returns false if the entity/transform are gone (the
+	// old early-returns), so the graph aborts the rest of the tick.
+	bool GraphPreTick(float fDt)
 	{
-		// C1: resolve owning scene from the enemy's entity id.
-		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(m_uEntityID);
-		if (!xEntity.IsValid())
-			return;
+		// Clear the cached transform up-front so PostTick's null-guard reproduces
+		// the old Update's full early-return on the entity-invalid path (the old
+		// body ran neither the state handler nor anim/IK when the entity was gone;
+		// PostTick fires from a separate EnemyBrainTick source, so without this it
+		// would dereference a stale/freed transform from a prior tick).
+		m_pxTickTransform = nullptr;
 
-		Zenith_TransformComponent* pxTransform = xEntity.TryGetComponent<Zenith_TransformComponent>();
-		if (pxTransform == nullptr)
-			return;
+		m_xTickEntity = g_xEngine.Scenes().ResolveEntity(m_uEntityID);
+		if (!m_xTickEntity.IsValid())
+			return false;
 
-		Zenith_TransformComponent& xTransform = *pxTransform;
+		m_pxTickTransform = m_xTickEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (m_pxTickTransform == nullptr)
+			return false;
 
 		// Enforce upright orientation every frame (collision impulses can still tip characters)
-		if (Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>())
+		if (Zenith_ColliderComponent* pxCollider = m_xTickEntity.TryGetComponent<Zenith_ColliderComponent>())
 		{
 			Zenith_ColliderComponent& xCollider = *pxCollider;
 			if (xCollider.HasValidBody())
@@ -157,29 +169,20 @@ public:
 		if (m_fAttackCooldownTimer > 0.0f)
 			m_fAttackCooldownTimer -= fDt;
 
-		// State machine
-		switch (m_eState)
-		{
-		case Combat_EnemyState::IDLE:
-			UpdateIdleState(xTransform);
-			break;
+		return true;
+	}
 
-		case Combat_EnemyState::CHASING:
-			UpdateChaseState(xEntity, xTransform, fDt);
-			break;
+	// Per-state handlers (dispatched by the graph StateMachine on enemyState).
+	void GraphIdleTick()           { UpdateIdleState(*m_pxTickTransform); }
+	void GraphChaseTick(float fDt)  { UpdateChaseState(m_xTickEntity, *m_pxTickTransform, fDt); }
+	void GraphAttackTick(float fDt) { UpdateAttackState(*m_pxTickTransform, fDt); }
+	void GraphHitStunTick(float fDt){ UpdateHitStunState(fDt); }
 
-		case Combat_EnemyState::ATTACKING:
-			UpdateAttackState(xTransform, fDt);
-			break;
-
-		case Combat_EnemyState::HIT_STUN:
-			UpdateHitStunState(fDt);
-			break;
-
-		case Combat_EnemyState::DEAD:
-			// No updates when dead
-			break;
-		}
+	// Post-switch work: animation + IK from the post-dispatch state.
+	void GraphPostTick(float fDt)
+	{
+		if (m_pxTickTransform == nullptr)
+			return;
 
 		// Update animation
 		bool bIsAttacking = (m_eState == Combat_EnemyState::ATTACKING);
@@ -189,7 +192,7 @@ public:
 
 		// Update IK
 		bool bCanUseIK = (m_eState != Combat_EnemyState::DEAD && m_eState != Combat_EnemyState::HIT_STUN);
-		m_xIKController.UpdateWithAutoTarget(xTransform, m_uEntityID, 0.0f, bCanUseIK, fDt);
+		m_xIKController.UpdateWithAutoTarget(*m_pxTickTransform, m_uEntityID, 0.0f, bCanUseIK, fDt);
 	}
 
 	/**
@@ -396,121 +399,18 @@ private:
 	float m_fAttackCooldownTimer = 0.0f;
 	float m_fCurrentSpeed = 0.0f;
 
+	// Resolved once per tick by GraphPreTick; consumed by the state handlers +
+	// GraphPostTick this tick (valid only within one EnemyBrainTick dispatch).
+	Zenith_Entity m_xTickEntity;
+	Zenith_TransformComponent* m_pxTickTransform = nullptr;
+
 	Combat_HitDetection m_xHitDetection;
 	Combat_AnimationController m_xAnimController;
 	Combat_IKController m_xIKController;
 };
 
-// ============================================================================
-// Enemy Manager
-// ============================================================================
-
-/**
- * Combat_EnemyManager - Manages all enemies in the arena
- */
-class Combat_EnemyManager
-{
-public:
-	/**
-	 * RegisterEnemy - Add an enemy to the manager
-	 */
-	void RegisterEnemy(Zenith_EntityID uEntityID, const Combat_EnemyConfig& xConfig, Zenith_AnimatorComponent* pxAnimator = nullptr)
-	{
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[EnemyManager] RegisterEnemy %u, animator=%p, vector size before=%zu",
-			uEntityID.m_uIndex, pxAnimator, m_axEnemies.size());
-		Combat_EnemyAI xAI;
-		xAI.Initialize(uEntityID, xConfig, pxAnimator);
-		m_axEnemies.push_back(std::move(xAI));
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[EnemyManager] After push_back, vector size=%zu", m_axEnemies.size());
-	}
-
-	/**
-	 * Update - Update all enemies
-	 */
-	void Update(float fDt)
-	{
-		static float s_fLogTimer = 0.0f;
-		s_fLogTimer += fDt;
-		bool bLogThisFrame = s_fLogTimer > 2.0f;
-		if (bLogThisFrame)
-		{
-			Zenith_Log(LOG_CATEGORY_ANIMATION, "[EnemyManager] Updating %zu enemies", m_axEnemies.size());
-			s_fLogTimer = 0.0f;
-		}
-
-		for (Combat_EnemyAI& xEnemy : m_axEnemies)
-		{
-			if (bLogThisFrame)
-			{
-				Zenith_Log(LOG_CATEGORY_ANIMATION, "[EnemyManager] Enemy %u state=%d", xEnemy.GetEntityID().m_uIndex, (int)xEnemy.GetState());
-			}
-			xEnemy.Update(fDt);
-		}
-
-		// Process deferred hit stuns AFTER update loop completes
-		// This avoids nested iteration over m_axEnemies which can cause crashes
-		ProcessDeferredHitStuns();
-	}
-
-	/**
-	 * TriggerHitStunForEntity - Queue enemy for hit stun (deferred processing)
-	 * Note: This is called during damage events which may occur during Update iteration.
-	 * We defer processing to avoid nested iteration over m_axEnemies.
-	 */
-	void TriggerHitStunForEntity(Zenith_EntityID uEntityID)
-	{
-		m_axDeferredHitStuns.push_back(uEntityID);
-	}
-
-	/**
-	 * GetAliveCount - Count living enemies
-	 */
-	uint32_t GetAliveCount() const
-	{
-		uint32_t uCount = 0;
-		for (const Combat_EnemyAI& xEnemy : m_axEnemies)
-		{
-			if (xEnemy.IsAlive())
-				uCount++;
-		}
-		return uCount;
-	}
-
-	/**
-	 * Reset - Clear all enemies
-	 */
-	void Reset()
-	{
-		m_axEnemies.clear();
-		m_axDeferredHitStuns.clear();
-	}
-
-	/**
-	 * GetEnemies - Get reference to enemy list
-	 */
-	std::vector<Combat_EnemyAI>& GetEnemies() { return m_axEnemies; }
-	const std::vector<Combat_EnemyAI>& GetEnemies() const { return m_axEnemies; }
-
-private:
-	/**
-	 * ProcessDeferredHitStuns - Apply queued hit stuns after Update completes
-	 */
-	void ProcessDeferredHitStuns()
-	{
-		for (Zenith_EntityID uEntityID : m_axDeferredHitStuns)
-		{
-			for (Combat_EnemyAI& xEnemy : m_axEnemies)
-			{
-				if (xEnemy.GetEntityID() == uEntityID)
-				{
-					xEnemy.TriggerHitStun();
-					break;
-				}
-			}
-		}
-		m_axDeferredHitStuns.clear();
-	}
-
-	std::vector<Combat_EnemyAI> m_axEnemies;
-	std::vector<Zenith_EntityID> m_axDeferredHitStuns;
-};
+// (Combat_EnemyManager removed - it was dead code, a legacy central manager
+//  that iterated a std::vector<Combat_EnemyAI> calling Update(). The live
+//  architecture is per-entity Combat_EnemyComponent, and Combat_EnemyAI's
+//  decision switch now lives in the Combat_EnemyBrain graph, so the manager's
+//  only remaining call site - xEnemy.Update(fDt) - no longer exists.)

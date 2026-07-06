@@ -6,6 +6,7 @@
 #include "Combat/Components/Combat_EnemyComponent.h"
 #include "Combat/Components/Combat_GraphNodes.h"
 #include "Combat/Components/Combat_Config.h"
+#include "Scripting/Zenith_GraphBuilder.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
@@ -498,6 +499,261 @@ void Project_InitializeResources()
 	// All combat resources initialized in Project_RegisterGameComponents via InitializeCombatResources
 }
 
+// ============================================================================
+// Behaviour Graph builders (boot-authored via AddStep_GraphBuild).
+// ============================================================================
+
+// Combat_PlayerAttack.bgraph - decomposed CombatAttackFlow. The old mega-node
+// ran three independent guards top-to-bottom each AttackTick; each becomes a
+// chain under its own "AttackTick" OnCustomEvent source. The sources fire in
+// node order, so guard order is preserved; the first chain runs
+// CombatQueryAttackState to populate the blackboard before the later guards
+// read it.
+static void BuildGraph_CombatPlayerAttack(Zenith_GraphBuilder& xBuilder)
+{
+	// Guard 1: query attack state, then activate the hitbox on attack start.
+	const u_int uEvt1 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt1, "m_strEventName", "AttackTick");
+	const u_int uQuery = xBuilder.Node("CombatQueryAttackState");
+	const u_int uBranchStart = xBuilder.Node("Branch");
+	xBuilder.ParamString(uBranchStart, "m_strConditionVar", "attackJustStarted");
+	const u_int uActivate = xBuilder.Node("CombatActivateHitbox");
+	xBuilder.Chain(uEvt1, uQuery).Chain(uQuery, uBranchStart);
+	xBuilder.Edge(uBranchStart, 0, uActivate);
+
+	// Guard 2: on the attack hit-frame, register hits; push combo on a landed hit.
+	const u_int uEvt2 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt2, "m_strEventName", "AttackTick");
+	const u_int uBranchHit = xBuilder.Node("Branch");
+	xBuilder.ParamString(uBranchHit, "m_strConditionVar", "hitFrameReady");
+	const u_int uRegister = xBuilder.Node("CombatRegisterHits");
+	const u_int uCmpHits = xBuilder.Node("CompareBlackboardInt");
+	xBuilder.ParamString(uCmpHits, "m_strVar", "uHits");
+	xBuilder.ParamInt(uCmpHits, "m_iOp", 2); // 2 = greater
+	xBuilder.ParamInt(uCmpHits, "m_iCompareTo", 0);
+	xBuilder.ParamString(uCmpHits, "m_strResultVar", "uHitsPositive");
+	const u_int uBranchHits = xBuilder.Node("Branch");
+	xBuilder.ParamString(uBranchHits, "m_strConditionVar", "uHitsPositive");
+	const u_int uNotify = xBuilder.Node("CombatNotifyComboHit");
+	xBuilder.Chain(uEvt2, uBranchHit);
+	xBuilder.Edge(uBranchHit, 0, uRegister);
+	xBuilder.Chain(uRegister, uCmpHits).Chain(uCmpHits, uBranchHits);
+	xBuilder.Edge(uBranchHits, 0, uNotify);
+
+	// Guard 3: deactivate the hitbox when no longer attacking (false pin).
+	const u_int uEvt3 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt3, "m_strEventName", "AttackTick");
+	const u_int uBranchAtk = xBuilder.Node("Branch");
+	xBuilder.ParamString(uBranchAtk, "m_strConditionVar", "isAttacking");
+	const u_int uDeactivate = xBuilder.Node("CombatDeactivateHitbox");
+	xBuilder.Chain(uEvt3, uBranchAtk);
+	xBuilder.Edge(uBranchAtk, 1, uDeactivate);
+}
+
+// Combat_RoundFlow.bgraph - combo-timer tick (kept as one node; dt rides the
+// payload) then the decomposed win/lose decision. Two "RoundTick" chains run in
+// node order: chain 1 = tick + VICTORY check, chain 2 = GAME_OVER check,
+// preserving the old VICTORY-before-GAME_OVER, both-independent evaluation.
+static void BuildGraph_CombatRoundFlow(Zenith_GraphBuilder& xBuilder)
+{
+	// Chain 1: combo-timer tick, count living enemies, VICTORY if all dead and
+	// at least one enemy was registered.
+	const u_int uEvt1 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt1, "m_strEventName", "RoundTick");
+	const u_int uTick = xBuilder.Node("CombatTickComboTimer");
+	xBuilder.ParamString(uTick, "m_strDtVar", "payload");
+	const u_int uCount = xBuilder.Node("CombatCountAliveEnemies");
+	const u_int uCmpZero = xBuilder.Node("CompareBlackboardInt");
+	xBuilder.ParamString(uCmpZero, "m_strVar", "aliveCount");
+	xBuilder.ParamInt(uCmpZero, "m_iOp", 4); // 4 = equal
+	xBuilder.ParamInt(uCmpZero, "m_iCompareTo", 0);
+	xBuilder.ParamString(uCmpZero, "m_strResultVar", "aliveIsZero");
+	const u_int uBranchZero = xBuilder.Node("Branch");
+	xBuilder.ParamString(uBranchZero, "m_strConditionVar", "aliveIsZero");
+	const u_int uBranchHas = xBuilder.Node("Branch");
+	xBuilder.ParamString(uBranchHas, "m_strConditionVar", "hasEnemies");
+	const u_int uWin = xBuilder.Node("CombatSetGameState");
+	xBuilder.ParamInt(uWin, "m_iState", static_cast<int32_t>(Combat_GameState::VICTORY));
+	xBuilder.Chain(uEvt1, uTick).Chain(uTick, uCount).Chain(uCount, uCmpZero).Chain(uCmpZero, uBranchZero);
+	xBuilder.Edge(uBranchZero, 0, uBranchHas);
+	xBuilder.Edge(uBranchHas, 0, uWin);
+
+	// Chain 2: GAME_OVER if the player is dead (runs after chain 1 in node order).
+	const u_int uEvt2 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt2, "m_strEventName", "RoundTick");
+	const u_int uCheckDead = xBuilder.Node("CombatCheckPlayerDead");
+	const u_int uBranchDead = xBuilder.Node("Branch");
+	xBuilder.ParamString(uBranchDead, "m_strConditionVar", "playerDead");
+	const u_int uLose = xBuilder.Node("CombatSetGameState");
+	xBuilder.ParamInt(uLose, "m_iState", static_cast<int32_t>(Combat_GameState::GAME_OVER));
+	xBuilder.Chain(uEvt2, uCheckDead).Chain(uCheckDead, uBranchDead);
+	xBuilder.Edge(uBranchDead, 0, uLose);
+}
+
+// Combat_PlayerState.bgraph - attached alongside Combat_PlayerAttack on the
+// player. The deleted Combat_PlayerController::Update decision switch becomes a
+// StateMachine(playerState). Two "PlayerTick" chains run in node order: chain 1
+// = PreTick then per-state dispatch; chain 2 = PostTick. Per-pin node instances
+// avoid exec fan-in (IDLE/WALKING share the movement handler; the four attack
+// states share the attack handler).
+static void BuildGraph_CombatPlayerState(Zenith_GraphBuilder& xBuilder)
+{
+	Zenith_PropertyValue xVal;
+	xVal.SetInt32(static_cast<int32_t>(Combat_PlayerState::IDLE));
+	xBuilder.Variable("playerState", xVal);
+
+	// Chain 1: pre-tick + StateMachine dispatch.
+	const u_int uTick = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uTick, "m_strEventName", "PlayerTick");
+	const u_int uPre = xBuilder.Node("CombatPlayerPreTick");
+	const u_int uSM = xBuilder.Node("StateMachine");
+	xBuilder.ParamString(uSM, "m_strStateVar", "playerState");
+	xBuilder.ParamInt(uSM, "m_iStateCount", 9);
+	xBuilder.ParamString(uSM, "m_strStateNames", "Idle,Walking,LightAttack1,LightAttack2,LightAttack3,HeavyAttack,Dodging,HitStun,Dead");
+	xBuilder.Chain(uTick, uPre).Chain(uPre, uSM);
+
+	const u_int uIdle = xBuilder.Node("CombatPlayerMovementTick");
+	const u_int uWalk = xBuilder.Node("CombatPlayerMovementTick");
+	const u_int uLA1 = xBuilder.Node("CombatPlayerAttackTick");
+	const u_int uLA2 = xBuilder.Node("CombatPlayerAttackTick");
+	const u_int uLA3 = xBuilder.Node("CombatPlayerAttackTick");
+	const u_int uHeavy = xBuilder.Node("CombatPlayerAttackTick");
+	const u_int uDodge = xBuilder.Node("CombatPlayerDodgeTick");
+	const u_int uHitStun = xBuilder.Node("CombatPlayerHitStunTick");
+	xBuilder.Edge(uSM, 0, uIdle);    // IDLE
+	xBuilder.Edge(uSM, 1, uWalk);    // WALKING
+	xBuilder.Edge(uSM, 2, uLA1);     // LIGHT_ATTACK_1
+	xBuilder.Edge(uSM, 3, uLA2);     // LIGHT_ATTACK_2
+	xBuilder.Edge(uSM, 4, uLA3);     // LIGHT_ATTACK_3
+	xBuilder.Edge(uSM, 5, uHeavy);   // HEAVY_ATTACK
+	xBuilder.Edge(uSM, 6, uDodge);   // DODGING
+	xBuilder.Edge(uSM, 7, uHitStun); // HIT_STUN
+	// pin 8 (DEAD) intentionally unwired - no-op, matching the old switch.
+
+	// Chain 2: post-tick (recompute state-changed) after the handler ran.
+	const u_int uTick2 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uTick2, "m_strEventName", "PlayerTick");
+	const u_int uPost = xBuilder.Node("CombatPlayerPostTick");
+	xBuilder.Chain(uTick2, uPost);
+}
+
+// Combat_EnemyBrain.bgraph - runtime-attached per enemy. The deleted
+// Combat_EnemyAI::Update decision switch becomes a StateMachine(enemyState).
+// Two "EnemyBrainTick" chains run in node order: chain 1 = PreTick then the
+// per-state handler dispatch; chain 2 = PostTick (anim + IK).
+static void BuildGraph_CombatEnemyBrain(Zenith_GraphBuilder& xBuilder)
+{
+	Zenith_PropertyValue xVal;
+	xVal.SetInt32(static_cast<int32_t>(Combat_EnemyState::IDLE));
+	xBuilder.Variable("enemyState", xVal);
+
+	// Chain 1: pre-tick + StateMachine dispatch.
+	const u_int uTick = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uTick, "m_strEventName", "EnemyBrainTick");
+	const u_int uPre = xBuilder.Node("CombatEnemyPreTick");
+	const u_int uSM = xBuilder.Node("StateMachine");
+	xBuilder.ParamString(uSM, "m_strStateVar", "enemyState");
+	xBuilder.ParamInt(uSM, "m_iStateCount", 5);
+	xBuilder.ParamString(uSM, "m_strStateNames", "Idle,Chasing,Attacking,HitStun,Dead");
+	// No m_strEventPrefix: the old switch fired no enter/exit events.
+	const u_int uIdle = xBuilder.Node("CombatEnemyIdleTick");
+	const u_int uChase = xBuilder.Node("CombatEnemyChaseTick");
+	const u_int uAttack = xBuilder.Node("CombatEnemyAttackTick");
+	const u_int uHitStun = xBuilder.Node("CombatEnemyHitStunTick");
+	xBuilder.Chain(uTick, uPre).Chain(uPre, uSM);
+	xBuilder.Edge(uSM, 0, uIdle);    // IDLE
+	xBuilder.Edge(uSM, 1, uChase);   // CHASING
+	xBuilder.Edge(uSM, 2, uAttack);  // ATTACKING
+	xBuilder.Edge(uSM, 3, uHitStun); // HIT_STUN
+	// pin 4 (DEAD) intentionally unwired - no-op, matching the old switch.
+
+	// Chain 2: post-tick (anim + IK) after the handler ran.
+	const u_int uTick2 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uTick2, "m_strEventName", "EnemyBrainTick");
+	const u_int uPost = xBuilder.Node("CombatEnemyPostTick");
+	xBuilder.Chain(uTick2, uPost);
+}
+
+// Combat_GameFlow.bgraph - attached to both GameManagers. Handles the
+// menu/pause/reset input DECISIONS at order 60 (before CombatGame's systems at
+// order 100). s_eGameState stays the static source of truth; the P/R/Escape
+// chains read it via CombatGetGameState and dispatch by state with SwitchOnInt.
+// ACCEPTED divergence (AIShowcase-precedented, humanly unreachable): P/R/Escape
+// are independent OnKeyPressed sources, so pressing two distinct keys on the
+// exact SAME frame lets both fire (the second re-reads the state the first set),
+// where the old if/else-if/return switch was mutually exclusive per frame.
+static void BuildGraph_CombatGameFlow(Zenith_GraphBuilder& xBuilder)
+{
+	Zenith_PropertyValue xVal;
+	xVal.SetInt32(static_cast<int32_t>(Combat_GameState::MAIN_MENU));
+	xBuilder.Variable("gameState", xVal);
+
+	// Menu Play button -> load the arena (SINGLE mode = old OnPlayClicked).
+	const u_int uPlay = xBuilder.Node("OnUIButtonClicked");
+	xBuilder.ParamString(uPlay, "m_strButton", "MenuPlay");
+	const u_int uLoad = xBuilder.Node("LoadSceneByIndex");
+	xBuilder.ParamInt(uLoad, "m_iSceneIndex", 1);
+	xBuilder.Chain(uPlay, uLoad);
+
+	// Menu focus (single button; the node no-ops in the arena).
+	const u_int uFocusTick = xBuilder.Node("OnUpdate");
+	const u_int uFocus = xBuilder.Node("CombatFocusPlayButton");
+	xBuilder.Chain(uFocusTick, uFocus);
+
+	// P: pause (from PLAYING) / resume (from PAUSED).
+	const u_int uOnP = xBuilder.Node("OnKeyPressed");
+	xBuilder.ParamInt(uOnP, "m_iKeyCode", ZENITH_KEY_P);
+	const u_int uGetP = xBuilder.Node("CombatGetGameState");
+	const u_int uSwP = xBuilder.Node("SwitchOnInt");
+	xBuilder.ParamString(uSwP, "m_strVar", "gameState");
+	xBuilder.ParamInt(uSwP, "m_iCaseCount", 5);
+	xBuilder.Chain(uOnP, uGetP).Chain(uGetP, uSwP);
+	const u_int uPause = xBuilder.Node("CombatSetScenePaused");
+	xBuilder.ParamBool(uPause, "m_bPaused", true);
+	const u_int uToPaused = xBuilder.Node("CombatSetGameState");
+	xBuilder.ParamInt(uToPaused, "m_iState", static_cast<int32_t>(Combat_GameState::PAUSED));
+	xBuilder.Edge(uSwP, static_cast<u_int>(Combat_GameState::PLAYING), uPause);
+	xBuilder.Chain(uPause, uToPaused);
+	const u_int uUnpause = xBuilder.Node("CombatSetScenePaused");
+	xBuilder.ParamBool(uUnpause, "m_bPaused", false);
+	const u_int uToPlaying = xBuilder.Node("CombatSetGameState");
+	xBuilder.ParamInt(uToPlaying, "m_iState", static_cast<int32_t>(Combat_GameState::PLAYING));
+	xBuilder.Edge(uSwP, static_cast<u_int>(Combat_GameState::PAUSED), uUnpause);
+	xBuilder.Chain(uUnpause, uToPlaying);
+
+	// R: restart (from PLAYING / VICTORY / GAME_OVER). Per-pin node instances.
+	const u_int uOnR = xBuilder.Node("OnKeyPressed");
+	xBuilder.ParamInt(uOnR, "m_iKeyCode", ZENITH_KEY_R);
+	const u_int uGetR = xBuilder.Node("CombatGetGameState");
+	const u_int uSwR = xBuilder.Node("SwitchOnInt");
+	xBuilder.ParamString(uSwR, "m_strVar", "gameState");
+	xBuilder.ParamInt(uSwR, "m_iCaseCount", 5);
+	xBuilder.Chain(uOnR, uGetR).Chain(uGetR, uSwR);
+	const u_int uResetP = xBuilder.Node("CombatResetGame");
+	xBuilder.Edge(uSwR, static_cast<u_int>(Combat_GameState::PLAYING), uResetP);
+	const u_int uResetV = xBuilder.Node("CombatResetGame");
+	xBuilder.Edge(uSwR, static_cast<u_int>(Combat_GameState::VICTORY), uResetV);
+	const u_int uResetG = xBuilder.Node("CombatResetGame");
+	xBuilder.Edge(uSwR, static_cast<u_int>(Combat_GameState::GAME_OVER), uResetG);
+
+	// Escape: return to menu (from PLAYING / PAUSED / VICTORY / GAME_OVER).
+	const u_int uOnEsc = xBuilder.Node("OnKeyPressed");
+	xBuilder.ParamInt(uOnEsc, "m_iKeyCode", ZENITH_KEY_ESCAPE);
+	const u_int uGetE = xBuilder.Node("CombatGetGameState");
+	const u_int uSwE = xBuilder.Node("SwitchOnInt");
+	xBuilder.ParamString(uSwE, "m_strVar", "gameState");
+	xBuilder.ParamInt(uSwE, "m_iCaseCount", 5);
+	xBuilder.Chain(uOnEsc, uGetE).Chain(uGetE, uSwE);
+	const u_int uMenuPl = xBuilder.Node("CombatReturnToMenu");
+	xBuilder.Edge(uSwE, static_cast<u_int>(Combat_GameState::PLAYING), uMenuPl);
+	const u_int uMenuPa = xBuilder.Node("CombatReturnToMenu");
+	xBuilder.Edge(uSwE, static_cast<u_int>(Combat_GameState::PAUSED), uMenuPa);
+	const u_int uMenuV = xBuilder.Node("CombatReturnToMenu");
+	xBuilder.Edge(uSwE, static_cast<u_int>(Combat_GameState::VICTORY), uMenuV);
+	const u_int uMenuG = xBuilder.Node("CombatReturnToMenu");
+	xBuilder.Edge(uSwE, static_cast<u_int>(Combat_GameState::GAME_OVER), uMenuG);
+}
+
 void Project_RegisterEditorAutomationSteps()
 {
 	// ---- Behaviour graphs (regenerated every boot, like the scenes) --------
@@ -507,28 +763,22 @@ void Project_RegisterEditorAutomationSteps()
 	// execute systems back through the components.
 	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
 
-	// Player attack flow: hitbox lifecycle + hit registration + combo push.
-	xAuto.AddStep_GraphOpenFresh("game:Graphs/Combat_PlayerAttack.bgraph");
-	xAuto.AddStep_GraphAddNode("OnCustomEvent");
-	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
-	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "AttackTick");
-	xAuto.AddStep_GraphAddNode("CombatAttackFlow");
-	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "CombatAttackFlow", 0);
-	xAuto.AddStep_GraphSave();
-	xAuto.AddStep_GraphClose();
+	// Player attack flow: hitbox lifecycle + hit registration + combo push,
+	// decomposed into single-action nodes (see BuildGraph_CombatPlayerAttack).
+	xAuto.AddStep_GraphBuild("game:Graphs/Combat_PlayerAttack.bgraph", &BuildGraph_CombatPlayerAttack);
 
-	// Round flow: combo-timer tick (dt rides the event payload) then the
-	// win/lose decision, chained in the old call order.
-	xAuto.AddStep_GraphOpenFresh("game:Graphs/Combat_RoundFlow.bgraph");
-	xAuto.AddStep_GraphAddNode("OnCustomEvent");
-	xAuto.AddStep_GraphSelectNode("OnCustomEvent", 0);
-	xAuto.AddStep_GraphSetNodeParamString("m_strEventName", "RoundTick");
-	xAuto.AddStep_GraphAddNode("CombatTickComboTimer");
-	xAuto.AddStep_GraphConnect("OnCustomEvent", 0, 0, "CombatTickComboTimer", 0);
-	xAuto.AddStep_GraphAddNode("CombatCheckRoundState");
-	xAuto.AddStep_GraphConnect("CombatTickComboTimer", 0, 0, "CombatCheckRoundState", 0);
-	xAuto.AddStep_GraphSave();
-	xAuto.AddStep_GraphClose();
+	// Round flow: combo-timer tick then the decomposed win/lose decision
+	// (see BuildGraph_CombatRoundFlow).
+	xAuto.AddStep_GraphBuild("game:Graphs/Combat_RoundFlow.bgraph", &BuildGraph_CombatRoundFlow);
+
+	// Player state machine: attached alongside the attack graph on the player.
+	xAuto.AddStep_GraphBuild("game:Graphs/Combat_PlayerState.bgraph", &BuildGraph_CombatPlayerState);
+
+	// Enemy brain: per-enemy StateMachine (runtime-attached in SpawnEnemies).
+	xAuto.AddStep_GraphBuild("game:Graphs/Combat_EnemyBrain.bgraph", &BuildGraph_CombatEnemyBrain);
+
+	// Game flow: menu/pause/reset input (attached to both GameManagers below).
+	xAuto.AddStep_GraphBuild("game:Graphs/Combat_GameFlow.bgraph", &BuildGraph_CombatGameFlow);
 
 	// ---- MainMenu scene (build index 0) ----
 	g_xEngine.EditorAutomation().AddStep_CreateScene("MainMenu");
@@ -549,6 +799,9 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.0f, 0.0f);
 	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.0f, 50.0f);
 	g_xEngine.EditorAutomation().AddStep_AddComponent("CombatGame");
+	// Game-flow graph on the MainMenu GameManager: OnUIButtonClicked("MenuPlay")
+	// -> LoadSceneByIndex(1), plus the menu-focus tick.
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Combat_GameFlow.bgraph");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
@@ -629,6 +882,9 @@ void Project_RegisterEditorAutomationSteps()
 	// Round-flow graph on the Arena GameManager: CombatGame fires "RoundTick"
 	// into it from the PLAYING branch of its OnUpdate.
 	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Combat_RoundFlow.bgraph");
+	// Game-flow graph on the Arena GameManager too: the P/R/Escape input chains
+	// read s_eGameState and pause/restart/return-to-menu.
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Combat_GameFlow.bgraph");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Arena" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 

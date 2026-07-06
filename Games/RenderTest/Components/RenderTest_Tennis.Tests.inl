@@ -3,7 +3,8 @@
 //
 // Phase 0 section: the PURE logic headers (Types/CourtGeometry/Rng/Spin/Decision)
 // — engine-free, headless. Later phases append engine-bound tests (player getters,
-// brain relocation/serialisation, BT leaves, the integration fixture) below.
+// brain relocation/serialisation, the RTTennis* graph nodes that replaced the BT
+// leaves in the W3 conversion, the integration fixture) below.
 
 #include "RenderTest/Components/RenderTest_TennisTypes.h"
 #include "RenderTest/Components/RenderTest_TennisCourtGeometry.h"
@@ -11,7 +12,7 @@
 #include "RenderTest/Components/RenderTest_TennisSpin.h"
 #include "RenderTest/Components/RenderTest_TennisDecision.h"
 #include "RenderTest/Components/RenderTest_TennisAgentComponent.h"
-#include "RenderTest/Components/RenderTest_TennisBTNodes.h"
+#include "RenderTest/Components/RenderTest_GraphNodes.h"
 #include "RenderTest/Components/RenderTest_TennisTelemetry.h"
 #include "RenderTest/Components/RenderTest_TennisMatchComponent.h"
 #include "RenderTest/RenderTest_Tennis.h"
@@ -786,25 +787,33 @@ namespace
 	};
 }
 
+// W3: the brain no longer owns a heap behaviour tree (the decision body lives
+// in RenderTest_TennisBrain.bgraph). Relocation tests pin the BY-VALUE state
+// the referee/nodes depend on instead: the deterministic RNG stream position,
+// the decided-shot storage + arm guard, and the derived side.
+
 ZENITH_TEST(RenderTestTennis, TennisBrainSurvivesPoolGrowth)
 {
 	TennisBrainFixture xFix;
 	const char* aszEarly[4] = { "B0", "B1", "B2", "B3" };
 	Zenith_EntityID axEarly[4];
-	for (int i = 0; i < 4; ++i)
-		axEarly[i] = xFix.MakeBrainEntity(aszEarly[i]);
-
-	// Build trees on the early brains, then record the heap tree pointers.
-	Zenith_BehaviorTree* apxTree[4];
+	uint32_t auRng[4];
 	for (int i = 0; i < 4; ++i)
 	{
+		axEarly[i] = xFix.MakeBrainEntity(aszEarly[i]);
 		xFix.Brain(axEarly[i]).OnStart();
-		apxTree[i] = xFix.Brain(axEarly[i]).GetTree();
-		ZENITH_ASSERT_NOT_NULL(apxTree[i], "brain OnStart must build a tree");
+		// Advance each stream a distinct number of steps, park a distinctive
+		// decision, then record the stream position.
+		for (int k = 0; k <= i; ++k)
+			xFix.Brain(axEarly[i]).Rng().Next();
+		TennisShotDecision xShot;
+		xShot.m_xAim = Zenith_Maths::Vector3(static_cast<float>(i), 2.0f, 3.0f);
+		xFix.Brain(axEarly[i]).SetDecidedShot(xShot);
+		auRng[i] = xFix.Brain(axEarly[i]).Rng().m_uState;
 	}
 
 	// Force the brain pool to grow (move-construct every live brain) by adding many
-	// more brains AFTER the early ones already own trees.
+	// more brains AFTER the early ones already carry live state.
 	for (int j = 0; j < 48; ++j)
 	{
 		char acName[16];
@@ -812,16 +821,16 @@ ZENITH_TEST(RenderTestTennis, TennisBrainSurvivesPoolGrowth)
 		xFix.MakeBrainEntity(acName);
 	}
 
-	// The early brains' trees survived relocation: same heap pointer, still owned.
+	// The early brains' decision state survived relocation bit-exact.
 	for (int i = 0; i < 4; ++i)
 	{
-		Zenith_BehaviorTree* pxNow = xFix.Brain(axEarly[i]).GetTree();
-		ZENITH_ASSERT_NOT_NULL(pxNow, "tree must survive pool growth");
-		ZENITH_ASSERT_TRUE(pxNow == apxTree[i], "moved brain keeps the same heap tree (no realloc/dup)");
+		ZENITH_ASSERT_EQ(xFix.Brain(axEarly[i]).Rng().m_uState, auRng[i]);
+		ZENITH_ASSERT_EQ_FLOAT(xFix.Brain(axEarly[i]).GetDecidedShot().m_xAim.x, static_cast<float>(i), 1e-6f);
+		ZENITH_ASSERT_FALSE(xFix.Brain(axEarly[i]).IsArmed(), "unarmed state survives relocation");
 	}
 }
 
-ZENITH_TEST(RenderTestTennis, TennisBrainSwapAndPopNoDoubleFree)
+ZENITH_TEST(RenderTestTennis, TennisBrainSwapAndPopKeepsNeighbourState)
 {
 	TennisBrainFixture xFix;
 	Zenith_EntityID axID[6];
@@ -832,17 +841,19 @@ ZENITH_TEST(RenderTestTennis, TennisBrainSwapAndPopNoDoubleFree)
 		axID[i] = xFix.MakeBrainEntity(acName);
 		xFix.Brain(axID[i]).OnStart();
 	}
-	Zenith_BehaviorTree* pxLastTree = xFix.Brain(axID[5]).GetTree();
+	xFix.Brain(axID[5]).ArmDecidedShot(9u);
+	const uint32_t uLastRng = xFix.Brain(axID[5]).Rng().m_uState;
 
 	// Remove a middle brain -> swap-and-pop moves the last brain into the gap.
 	xFix.pxSceneData->GetEntity(axID[2]).RemoveComponent<RenderTest_TennisAgentComponent>();
 
 	ZENITH_ASSERT_FALSE(xFix.pxSceneData->GetEntity(axID[2]).HasComponent<RenderTest_TennisAgentComponent>(),
 		"removed brain is gone");
-	// The moved (formerly-last) brain kept its tree; neighbours intact.
-	ZENITH_ASSERT_TRUE(xFix.Brain(axID[5]).GetTree() == pxLastTree, "swap-moved brain keeps its tree");
-	ZENITH_ASSERT_NOT_NULL(xFix.Brain(axID[0]).GetTree(), "neighbour brain intact");
-	ZENITH_ASSERT_NOT_NULL(xFix.Brain(axID[4]).GetTree(), "neighbour brain intact");
+	// The moved (formerly-last) brain kept its state; neighbours intact.
+	ZENITH_ASSERT_TRUE(xFix.Brain(axID[5]).IsArmed(), "swap-moved brain keeps its arm guard");
+	ZENITH_ASSERT_EQ(xFix.Brain(axID[5]).Rng().m_uState, uLastRng);
+	ZENITH_ASSERT_TRUE(xFix.Brain(axID[0]).IsStarted(), "neighbour brain intact");
+	ZENITH_ASSERT_TRUE(xFix.Brain(axID[4]).IsStarted(), "neighbour brain intact");
 }
 
 ZENITH_TEST(RenderTestTennis, TennisBrainMoveCtorTransfers)
@@ -851,15 +862,18 @@ ZENITH_TEST(RenderTestTennis, TennisBrainMoveCtorTransfers)
 	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeBrainEntity("MoveCtor"));
 	RenderTest_TennisAgentComponent xSrc(xE);
 	xSrc.OnStart();
-	Zenith_BehaviorTree* pxTree = xSrc.GetTree();
-	ZENITH_ASSERT_NOT_NULL(pxTree, "source owns a tree");
+	xSrc.Rng().Next();
+	const uint32_t uRng = xSrc.Rng().m_uState;
+	TennisShotDecision xShot; xShot.m_xAim = Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f);
+	xSrc.SetDecidedShot(xShot);
 
 	RenderTest_TennisAgentComponent xDst(std::move(xSrc));
-	ZENITH_ASSERT_TRUE(xDst.GetTree() == pxTree, "move ctor transfers the tree");
-	ZENITH_ASSERT_NULL(xSrc.GetTree(), "moved-from source is nulled (dtor becomes a no-op)");
+	ZENITH_ASSERT_EQ(xDst.Rng().m_uState, uRng);
+	ZENITH_ASSERT_EQ_FLOAT(xDst.GetDecidedShot().m_xAim.x, 4.0f, 1e-6f);
+	ZENITH_ASSERT_TRUE(xDst.IsStarted(), "move ctor carries the started flag");
 }
 
-ZENITH_TEST(RenderTestTennis, TennisBrainMoveAssignReleasesOld)
+ZENITH_TEST(RenderTestTennis, TennisBrainMoveAssignAdoptsSourceState)
 {
 	TennisBrainFixture xFix;
 	Zenith_Entity xE1 = xFix.pxSceneData->GetEntity(xFix.MakeBrainEntity("MA1"));
@@ -868,30 +882,15 @@ ZENITH_TEST(RenderTestTennis, TennisBrainMoveAssignReleasesOld)
 	RenderTest_TennisAgentComponent xSrc(xE2);
 	xDst.OnStart();
 	xSrc.OnStart();
-	Zenith_BehaviorTree* pxDstOld = xDst.GetTree();
-	Zenith_BehaviorTree* pxSrcTree = xSrc.GetTree();
-	ZENITH_ASSERT_TRUE(pxDstOld != nullptr && pxSrcTree != nullptr && pxDstOld != pxSrcTree, "two distinct trees");
+	xSrc.Rng().Next(); xSrc.Rng().Next();
+	const uint32_t uSrcRng = xSrc.Rng().m_uState;
+	xSrc.ArmDecidedShot(3u);
 
-	// Move-assign into a LIVE brain: its old tree is released first, then it adopts
-	// the source's tree; the source is nulled. (No crash == old tree freed once.)
 	xDst = std::move(xSrc);
-	ZENITH_ASSERT_TRUE(xDst.GetTree() == pxSrcTree, "destination adopts the source tree");
-	ZENITH_ASSERT_NULL(xSrc.GetTree(), "source is neutralised");
-}
-
-ZENITH_TEST(RenderTestTennis, TennisOnDestroyThenDtorNoDoubleFree)
-{
-	TennisBrainFixture xFix;
-	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeBrainEntity("Destroy"));
-	{
-		RenderTest_TennisAgentComponent xB(xE);
-		xB.OnStart();
-		ZENITH_ASSERT_NOT_NULL(xB.GetTree(), "tree built");
-		xB.OnDestroy();
-		ZENITH_ASSERT_NULL(xB.GetTree(), "OnDestroy deletes + nulls the tree");
-		// Scope exit runs the dtor: it must be a no-op (no double free).
-	}
-	ZENITH_ASSERT_TRUE(true, "OnDestroy-then-dtor did not double free");
+	ZENITH_ASSERT_EQ(xDst.Rng().m_uState, uSrcRng);
+	ZENITH_ASSERT_TRUE(xDst.IsArmed(), "destination adopts the source arm guard");
+	TennisShotDecision xOut;
+	ZENITH_ASSERT_TRUE(xDst.TryGetDecidedShot(3u, xOut), "destination adopts the source epoch stamp");
 }
 
 ZENITH_TEST(RenderTestTennis, TryGetDecidedShotRejectsStaleEpoch)
@@ -992,29 +991,6 @@ ZENITH_TEST(RenderTestTennis, TennisRefereeMoveAssignReleasesOld)
 	ZENITH_ASSERT_NULL(xSrc.GetNavMesh(), "source is neutralised");
 }
 
-ZENITH_TEST(RenderTestTennis, TennisBrainMoveAssignClearsLiveBorrow)
-{
-	// Move-assigning into a brain whose entity's AIAgent BORROWS the (about-to-be-freed)
-	// tree must null that borrow first, or the AIAgent dangles. Dest entity has an
-	// AIAgent (the live borrow); source is agentless (so its tree has no borrow and the
-	// scope-exit dtor frees it without leaving a pooled AIAgent pointing at it).
-	TennisBrainFixture xFix;
-	Zenith_Entity xE1 = g_xEngine.Scenes().CreateEntity(xFix.pxSceneData, "MA_Borrow1");
-	xE1.AddComponent<Zenith_AIAgentComponent>();
-	Zenith_Entity xE2 = xFix.pxSceneData->GetEntity(xFix.MakeBareEntity("MA_Borrow2"));
-	RenderTest_TennisAgentComponent xDst(xE1);  xDst.OnStart();   // wires E1's AIAgent BT borrow
-	RenderTest_TennisAgentComponent xSrc(xE2);  xSrc.OnStart();   // agentless -> owns tree, no borrow
-	Zenith_BehaviorTree* pxSrcTree = xSrc.GetTree();
-	ZENITH_ASSERT_TRUE(xE1.GetComponent<Zenith_AIAgentComponent>().GetBehaviorTree() == xDst.GetTree());
-
-	xDst = std::move(xSrc);   // must null E1's borrow BEFORE freeing xDst's old tree
-
-	ZENITH_ASSERT_NULL(xE1.GetComponent<Zenith_AIAgentComponent>().GetBehaviorTree(),
-		"move-assign clears the destination entity's stale BT borrow before freeing the old tree");
-	ZENITH_ASSERT_TRUE(xDst.GetTree() == pxSrcTree);
-	ZENITH_ASSERT_NULL(xSrc.GetTree());
-}
-
 ZENITH_TEST(RenderTestTennis, TennisRefereeSurvivesPoolGrowth)
 {
 	TennisBrainFixture xFix;
@@ -1045,190 +1021,244 @@ ZENITH_TEST(RenderTestTennis, TennisRefereeSurvivesPoolGrowth)
 }
 
 // ============================================================================
-// BT leaves — one dedicated test each. Every leaf reports SUCCESS or FAILURE,
-// NEVER RUNNING (the root selector re-evaluates each tick). Decide leaves leave
-// the brain UNARMED; arm leaves arm only on a confirmed stroke start (no animator
-// in the fixture -> RequestServe/Swing return false -> stays unarmed).
+// Graph nodes (the W3 replacements for the BT leaves) — one dedicated test
+// each, executed standalone against a hand-built Zenith_GraphContext (the
+// DP Test_P5Scent pattern). Every node reports SUCCESS or FAILURE, NEVER
+// RUNNING (the Selector re-evaluates each 0.08 s tick). Decide nodes leave
+// the brain UNARMED; arm nodes arm only on a confirmed stroke start (no
+// animator in the fixture -> RequestServe/Swing return false -> stays
+// unarmed). The retired pure-blackboard condition (phase / IsServer /
+// IsMyBall / ServeBallParked gating) decomposed into engine
+// CompareBlackboardInt + Gate nodes inside the graph, and its aggregate
+// behaviour is pinned end-to-end by RT_TennisDeterminismDigest.
 // ============================================================================
 
 namespace
 {
-	// A blackboard with the keys the leaves read, defaulted to a benign WARMUP.
-	inline void SeedLeafBB(Zenith_Blackboard& xBB, int iPhase, bool bServer, bool bMyBall, int iSide)
+	// A graph blackboard with the keys the nodes read, defaulted per phase.
+	inline void SeedNodeBB(Zenith_GraphBlackboard& xBB, int iPhase, bool bServer, bool bMyBall, int iSide)
 	{
-		xBB.SetInt(RenderTest_TennisBB::k_szPhase, iPhase);
-		xBB.SetInt(RenderTest_TennisBB::k_szBallEpoch, 7);
-		xBB.SetInt(RenderTest_TennisBB::k_szMySide, iSide);
-		xBB.SetBool(RenderTest_TennisBB::k_szIsServer, bServer);
-		xBB.SetBool(RenderTest_TennisBB::k_szServeFromDeuce, true);
-		xBB.SetBool(RenderTest_TennisBB::k_szServeBallParked, iPhase == RenderTest_Tennis::POINT_PHASE_SERVING);
-		xBB.SetBool(RenderTest_TennisBB::k_szIsSecondServe, false);
-		xBB.SetBool(RenderTest_TennisBB::k_szIsMyBall, bMyBall);
+		Zenith_PropertyValue xV;
+		xV.SetInt32(iPhase);  xBB.SetValue(RenderTest_TennisBB::k_szPhase, xV);
+		xV.SetInt32(7);       xBB.SetValue(RenderTest_TennisBB::k_szBallEpoch, xV);
+		xV.SetInt32(iSide);   xBB.SetValue(RenderTest_TennisBB::k_szMySide, xV);
+		xV.SetBool(bServer);  xBB.SetValue(RenderTest_TennisBB::k_szIsServer, xV);
+		xV.SetBool(true);     xBB.SetValue(RenderTest_TennisBB::k_szServeFromDeuce, xV);
+		xV.SetBool(iPhase == RenderTest_Tennis::POINT_PHASE_SERVING);
+		                      xBB.SetValue(RenderTest_TennisBB::k_szServeBallParked, xV);
+		xV.SetBool(false);    xBB.SetValue(RenderTest_TennisBB::k_szIsSecondServe, xV);
+		xV.SetBool(bMyBall);  xBB.SetValue(RenderTest_TennisBB::k_szIsMyBall, xV);
+	}
+
+	inline Zenith_GraphContext MakeNodeCtx(Zenith_Entity xSelf, Zenith_GraphBlackboard& xBB)
+	{
+		Zenith_GraphContext xCtx;
+		xCtx.m_xSelf = xSelf;
+		xCtx.m_pxBlackboard = &xBB;
+		return xCtx;
+	}
+
+	inline void SetBBEntity(Zenith_GraphBlackboard& xBB, const char* szKey, Zenith_EntityID xId)
+	{
+		Zenith_PropertyValue xV;
+		xV.SetPackedEntityID(xId.GetPacked());
+		xBB.SetValue(szKey, xV);
 	}
 }
 
-ZENITH_TEST(RenderTestTennis, BTLeaf_IsMyServeAndBallParked)
+ZENITH_TEST(RenderTestTennis, Node_TennisTickGateMirrorsAgentEnable)
 {
 	TennisBrainFixture xFix;
-	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("L_Serve", true));
-	RenderTest_BTCond_IsMyServeAndBallParked xLeaf;
-
-	Zenith_Blackboard xBB;
-	SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_SERVING, /*server*/ true, false, 0);
-	ZENITH_ASSERT_EQ(static_cast<int>(xLeaf.Execute(xE, xBB, 0.0f)), static_cast<int>(BTNodeStatus::SUCCESS));
-	SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_SERVING, /*server*/ false, false, 0);
-	ZENITH_ASSERT_EQ(static_cast<int>(xLeaf.Execute(xE, xBB, 0.0f)), static_cast<int>(BTNodeStatus::FAILURE));
-	SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_LIVE, /*server*/ true, false, 0);
-	ZENITH_ASSERT_EQ(static_cast<int>(xLeaf.Execute(xE, xBB, 0.0f)), static_cast<int>(BTNodeStatus::FAILURE));
-	// Serve already STRUCK (ball in flight, not parked) -> FAILURE even when SERVING +
-	// server, so the serve branch can't re-flail a phantom swing.
-	SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_SERVING, /*server*/ true, false, 0);
-	xBB.SetBool(RenderTest_TennisBB::k_szServeBallParked, false);
-	ZENITH_ASSERT_EQ(static_cast<int>(xLeaf.Execute(xE, xBB, 0.0f)), static_cast<int>(BTNodeStatus::FAILURE));
+	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("N_Gate", true));
+	Zenith_GraphBlackboard xBB;
+	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
+	RTNode_TennisTickGate xGate;
+	// Agent enabled (default) -> the tick chain runs.
+	ZENITH_ASSERT_EQ(static_cast<int>(xGate.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	// Referee parks the agent -> FAILURE stops the chain BEFORE the accumulator
+	// adds dt (the AIAgent early-return's freeze-not-reset semantics).
+	xE.GetComponent<Zenith_AIAgentComponent>().SetEnabled(false);
+	ZENITH_ASSERT_EQ(static_cast<int>(xGate.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
+	// No AIAgent at all -> FAILURE.
+	Zenith_Entity xBare = xFix.pxSceneData->GetEntity(xFix.MakeBareEntity("N_GateBare"));
+	Zenith_GraphContext xCtxBare = MakeNodeCtx(xBare, xBB);
+	ZENITH_ASSERT_EQ(static_cast<int>(xGate.Execute(xCtxBare)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 }
 
-ZENITH_TEST(RenderTestTennis, BTLeaf_BallIsMineFailsUnlessLive)
+ZENITH_TEST(RenderTestTennis, Node_BallReachableFailsWithoutBallOrAwareness)
 {
-	TennisBrainFixture xFix;
-	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("L_Mine", true));
-	RenderTest_BTCond_BallIsMine xLeaf;
-
-	Zenith_Blackboard xBB;
-	// SERVING: receiver must NOT arm -> FAILURE regardless of IsMyBall.
-	SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_SERVING, false, true, 0);
-	BTNodeStatus eServing = xLeaf.Execute(xE, xBB, 0.0f);
-	ZENITH_ASSERT_EQ(static_cast<int>(eServing), static_cast<int>(BTNodeStatus::FAILURE));
-	ZENITH_ASSERT_NE(static_cast<int>(eServing), static_cast<int>(BTNodeStatus::RUNNING));
-	// LIVE but not my ball -> FAILURE.
-	SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_LIVE, false, false, 0);
-	ZENITH_ASSERT_EQ(static_cast<int>(xLeaf.Execute(xE, xBB, 0.0f)), static_cast<int>(BTNodeStatus::FAILURE));
-}
-
-ZENITH_TEST(RenderTestTennis, BTLeaf_BallIsMineReachesAwarenessGate)
-{
-	// Phase==LIVE, IsMyBall, and a reachable descending ball are ALL satisfied (so the
-	// leaf gets past the phase / IsMyBall / reachability checks), yet with no perception
-	// awareness of the ball the "seen" gate still FAILs the condition — proving the
-	// awareness gate is wired and reached. The full all-gates-pass SUCCESS path (which
-	// needs live perception awareness) is exercised in the windowed _False run, where
-	// receivers commit + return.
 	TennisBrainFixture xFix;
 	const TennisCourt xC = DefaultCourt();
-	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("L_MineAw", true));
-	xE.GetComponent<Zenith_TransformComponent>().SetPosition(
-		Zenith_Maths::Vector3(xC.m_fCenterX, xC.m_fSurfaceY, xC.BaselineZ(0)));
-	Zenith_Entity xBall = xFix.pxSceneData->GetEntity(xFix.MakeBareEntity("L_MineAw_Ball"));
-	xBall.GetComponent<Zenith_TransformComponent>().SetPosition(
-		Zenith_Maths::Vector3(xC.m_fCenterX, xC.m_fSurfaceY + 1.5f, xC.BaselineZ(0) + 1.0f));
+	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("N_Reach", true));
+	Zenith_GraphBlackboard xBB;
+	SeedNodeBB(xBB, RenderTest_Tennis::POINT_PHASE_LIVE, false, true, 0);
+	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
+	RTNode_TennisBallReachable xNode;
 
-	Zenith_Blackboard xBB; SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_LIVE, false, true, 0);
-	xBB.SetEntityID(RenderTest_TennisBB::k_szBallEntity, xBall.GetEntityID());
-	RenderTest_BTCond_BallIsMine xLeaf;
-	ZENITH_ASSERT_EQ(static_cast<int>(xLeaf.Execute(xE, xBB, 0.0f)), static_cast<int>(BTNodeStatus::FAILURE));
+	// No ball entity published -> FAILURE (the BT BallState-miss path).
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
+
+	// Reachable descending ball published, but ZERO perception awareness of it
+	// -> the "seen" gate still FAILs (proves the awareness gate is wired and
+	// reached; the all-gates-pass SUCCESS needs live perception and is
+	// exercised by the windowed match).
+	xE.GetComponent<Zenith_TransformComponent>().SetPosition(
+		Zenith_Maths::Vector3(xC.m_fCenterX, xC.m_fSurfaceY, xC.BaselineZ(TENNIS_SIDE_NEAR)));
+	Zenith_Entity xBall = xFix.pxSceneData->GetEntity(xFix.MakeBareEntity("N_Reach_Ball"));
+	xBall.GetComponent<Zenith_TransformComponent>().SetPosition(
+		Zenith_Maths::Vector3(xC.m_fCenterX, xC.m_fSurfaceY + 1.5f, xC.BaselineZ(TENNIS_SIDE_NEAR) + 1.0f));
+	SetBBEntity(xBB, RenderTest_TennisBB::k_szBallEntity, xBall.GetEntityID());
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 }
 
-ZENITH_TEST(RenderTestTennis, BTLeaf_DecideServeLeavesUnarmed)
+ZENITH_TEST(RenderTestTennis, Node_DecideServeLeavesUnarmed)
 {
 	TennisBrainFixture xFix;
-	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("L_DecS", true));
-	RenderTest_BTAction_DecideServe xLeaf;
-	Zenith_Blackboard xBB; SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_SERVING, true, false, 0);
+	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("N_DecS", true));
+	Zenith_GraphBlackboard xBB;
+	SeedNodeBB(xBB, RenderTest_Tennis::POINT_PHASE_SERVING, true, false, 0);
+	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
+	RTNode_TennisDecideServe xNode;
 
-	ZENITH_ASSERT_EQ(static_cast<int>(xLeaf.Execute(xE, xBB, 0.0f)), static_cast<int>(BTNodeStatus::SUCCESS));
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_FALSE(xE.GetComponent<RenderTest_TennisAgentComponent>().IsArmed(),
 		"DecideServe stores the decision UNARMED");
+	// No brain on the entity -> FAILURE (fails the Selector pin).
+	Zenith_Entity xBare = xFix.pxSceneData->GetEntity(xFix.MakeBareEntity("N_DecS_Bare"));
+	Zenith_GraphContext xCtxBare = MakeNodeCtx(xBare, xBB);
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtxBare)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 }
 
-ZENITH_TEST(RenderTestTennis, BTLeaf_PositionForServeSucceeds)
+ZENITH_TEST(RenderTestTennis, Node_DecideServeKeepsCommittedDecision)
 {
+	// The IsArmed early-SUCCESS is THE RNG-determinism guard: a committed
+	// decision must not be re-rolled (and must not consume draws) mid-swing.
 	TennisBrainFixture xFix;
-	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("L_Pos", true));
-	RenderTest_BTAction_PositionForServe xLeaf;
-	Zenith_Blackboard xBB; SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_SERVING, true, false, 0);
-	ZENITH_ASSERT_EQ(static_cast<int>(xLeaf.Execute(xE, xBB, 0.0f)), static_cast<int>(BTNodeStatus::SUCCESS));
+	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("N_DecSArm", true));
+	RenderTest_TennisAgentComponent& xBrain = xE.GetComponent<RenderTest_TennisAgentComponent>();
+	Zenith_GraphBlackboard xBB;
+	SeedNodeBB(xBB, RenderTest_Tennis::POINT_PHASE_SERVING, true, false, 0);
+	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
+
+	TennisShotDecision xShot; xShot.m_xAim = Zenith_Maths::Vector3(9.0f, 8.0f, 7.0f);
+	xBrain.SetDecidedShot(xShot);
+	xBrain.ArmDecidedShot(7u);
+	const uint32_t uRngBefore = xBrain.Rng().m_uState;
+
+	RTNode_TennisDecideServe xNode;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_EQ(xBrain.Rng().m_uState, uRngBefore);   // ZERO draws while armed
+	ZENITH_ASSERT_EQ_FLOAT(xBrain.GetDecidedShot().m_xAim.x, 9.0f, 1e-6f);
+	ZENITH_ASSERT_TRUE(xBrain.IsArmed(), "committed decision kept");
 }
 
-ZENITH_TEST(RenderTestTennis, BTLeaf_ArmServeNoAnimatorStaysUnarmed)
+ZENITH_TEST(RenderTestTennis, Node_PositionForServeSucceeds)
 {
 	TennisBrainFixture xFix;
-	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("L_ArmS", true));
+	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("N_Pos", true));
+	Zenith_GraphBlackboard xBB;
+	SeedNodeBB(xBB, RenderTest_Tennis::POINT_PHASE_SERVING, true, false, 0);
+	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
+	RTNode_TennisPositionForServe xNode;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+}
+
+ZENITH_TEST(RenderTestTennis, Node_ArmServeNoAnimatorStaysUnarmed)
+{
+	TennisBrainFixture xFix;
+	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("N_ArmS", true));
+	Zenith_GraphBlackboard xBB;
+	SeedNodeBB(xBB, RenderTest_Tennis::POINT_PHASE_SERVING, true, false, 0);
+	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
 	// Decide first so there is a shot to arm.
-	Zenith_Blackboard xBB; SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_SERVING, true, false, 0);
-	RenderTest_BTAction_DecideServe xDecide;  xDecide.Execute(xE, xBB, 0.0f);
+	RTNode_TennisDecideServe xDecide;  xDecide.Execute(xCtx);
 
-	RenderTest_BTAction_ArmServe xArm;
-	const BTNodeStatus e = xArm.Execute(xE, xBB, 0.0f);
-	ZENITH_ASSERT_NE(static_cast<int>(e), static_cast<int>(BTNodeStatus::RUNNING));
+	RTNode_TennisArmServe xArm;
+	const GraphNodeStatus e = xArm.Execute(xCtx);
+	ZENITH_ASSERT_NE(static_cast<int>(e), static_cast<int>(GRAPH_NODE_STATUS_RUNNING));
 	// No animator -> RequestServe returns false -> brain stays UNARMED.
 	ZENITH_ASSERT_FALSE(xE.GetComponent<RenderTest_TennisAgentComponent>().IsArmed(),
 		"ArmServe must not arm when the stroke can't start");
 }
 
-ZENITH_TEST(RenderTestTennis, BTLeaf_MoveToInterceptSucceeds)
+ZENITH_TEST(RenderTestTennis, Node_MoveToInterceptSucceeds)
 {
 	TennisBrainFixture xFix;
-	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("L_Move", true));
-	RenderTest_BTAction_MoveToIntercept xLeaf;
-	Zenith_Blackboard xBB; SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_LIVE, false, true, 0);
+	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("N_Move", true));
+	Zenith_GraphBlackboard xBB;
+	SeedNodeBB(xBB, RenderTest_Tennis::POINT_PHASE_LIVE, false, true, 0);
+	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
+	RTNode_TennisMoveToIntercept xNode;
 	// No ball entity resolvable -> still SUCCESS (positioning is best-effort).
-	ZENITH_ASSERT_EQ(static_cast<int>(xLeaf.Execute(xE, xBB, 0.0f)), static_cast<int>(BTNodeStatus::SUCCESS));
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 }
 
-ZENITH_TEST(RenderTestTennis, BTLeaf_DecideShotLeavesUnarmed)
+ZENITH_TEST(RenderTestTennis, Node_DecideShotLeavesUnarmed)
 {
 	TennisBrainFixture xFix;
-	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("L_DecH", true));
-	RenderTest_BTAction_DecideShot xLeaf;
-	Zenith_Blackboard xBB; SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_LIVE, false, true, 0);
-	ZENITH_ASSERT_EQ(static_cast<int>(xLeaf.Execute(xE, xBB, 0.0f)), static_cast<int>(BTNodeStatus::SUCCESS));
+	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("N_DecH", true));
+	Zenith_GraphBlackboard xBB;
+	SeedNodeBB(xBB, RenderTest_Tennis::POINT_PHASE_LIVE, false, true, 0);
+	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
+	RTNode_TennisDecideShot xNode;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_FALSE(xE.GetComponent<RenderTest_TennisAgentComponent>().IsArmed(),
 		"DecideShot stores the decision UNARMED");
 }
 
-ZENITH_TEST(RenderTestTennis, BTLeaf_ArmSwingNeverRunsAndStaysUnarmedWithoutAnimator)
+ZENITH_TEST(RenderTestTennis, Node_ArmSwingNeverRunsAndStaysUnarmedWithoutAnimator)
 {
-	// Leaf-level smoke over the full ArmSwing path with a resolvable, reachable ball
-	// (it runs BallState + PredictIntercept without crashing): the leaf never returns
+	// Node-level smoke over the full ArmSwing path with a resolvable, reachable ball
+	// (it runs BallState + PredictIntercept without crashing): the node never returns
 	// RUNNING and, with no animator (RequestSwing returns false), never arms. The
 	// reachability MATH itself is verified observably by the pure PredictIntercept*
 	// tests above; the arm-only-on-true-RequestSwing rule is verified observably by
 	// the ArmServe test (which has no reachability gate to obscure it).
 	TennisBrainFixture xFix;
 	const TennisCourt xC = DefaultCourt();
-	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("L_ArmH", true));
+	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("N_ArmH", true));
 	xE.GetComponent<Zenith_TransformComponent>().SetPosition(
-		Zenith_Maths::Vector3(xC.m_fCenterX, xC.m_fSurfaceY, xC.BaselineZ(0)));
-	Zenith_Entity xBall = xFix.pxSceneData->GetEntity(xFix.MakeBareEntity("L_ArmH_Ball"));
+		Zenith_Maths::Vector3(xC.m_fCenterX, xC.m_fSurfaceY, xC.BaselineZ(TENNIS_SIDE_NEAR)));
+	Zenith_Entity xBall = xFix.pxSceneData->GetEntity(xFix.MakeBareEntity("N_ArmH_Ball"));
 	xBall.GetComponent<Zenith_TransformComponent>().SetPosition(
-		Zenith_Maths::Vector3(xC.m_fCenterX, xC.m_fSurfaceY + 1.5f, xC.BaselineZ(0) + 1.0f));
+		Zenith_Maths::Vector3(xC.m_fCenterX, xC.m_fSurfaceY + 1.5f, xC.BaselineZ(TENNIS_SIDE_NEAR) + 1.0f));
 
-	Zenith_Blackboard xBB; SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_LIVE, false, true, 0);
-	xBB.SetEntityID(RenderTest_TennisBB::k_szBallEntity, xBall.GetEntityID());
+	Zenith_GraphBlackboard xBB;
+	SeedNodeBB(xBB, RenderTest_Tennis::POINT_PHASE_LIVE, false, true, 0);
+	SetBBEntity(xBB, RenderTest_TennisBB::k_szBallEntity, xBall.GetEntityID());
+	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
 	xE.GetComponent<RenderTest_TennisAgentComponent>().SetDecidedShot(TennisShotDecision());
 
-	RenderTest_BTAction_ArmSwing xLeaf;
-	const BTNodeStatus e = xLeaf.Execute(xE, xBB, 0.0f);
-	ZENITH_ASSERT_NE(static_cast<int>(e), static_cast<int>(BTNodeStatus::RUNNING));
-	ZENITH_ASSERT_EQ(static_cast<int>(e), static_cast<int>(BTNodeStatus::SUCCESS));
+	RTNode_TennisArmSwing xNode;
+	const GraphNodeStatus e = xNode.Execute(xCtx);
+	ZENITH_ASSERT_NE(static_cast<int>(e), static_cast<int>(GRAPH_NODE_STATUS_RUNNING));
+	ZENITH_ASSERT_EQ(static_cast<int>(e), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_FALSE(xE.GetComponent<RenderTest_TennisAgentComponent>().IsArmed());
 }
 
-ZENITH_TEST(RenderTestTennis, BTLeaf_RecoverAlwaysSucceeds)
+ZENITH_TEST(RenderTestTennis, Node_RecoverAlwaysSucceeds)
 {
 	TennisBrainFixture xFix;
-	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("L_Rec", true));
-	RenderTest_BTAction_RecoverToReady xLeaf;
-	Zenith_Blackboard xBB; SeedLeafBB(xBB, RenderTest_Tennis::POINT_PHASE_POINT_OVER, false, false, 0);
-	ZENITH_ASSERT_EQ(static_cast<int>(xLeaf.Execute(xE, xBB, 0.0f)), static_cast<int>(BTNodeStatus::SUCCESS));
+	Zenith_Entity xE = xFix.pxSceneData->GetEntity(xFix.MakeAgentEntity("N_Rec", true));
+	Zenith_GraphBlackboard xBB;
+	SeedNodeBB(xBB, RenderTest_Tennis::POINT_PHASE_POINT_OVER, false, false, 0);
+	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
+	RTNode_TennisRecoverToReady xNode;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 }
 
 // ============================================================================
 // Integration fixture — a minimal authored scene (ball + 2 NPCs with
-// AIAgent/body/brain + the referee), driven through the load-order lifecycle.
-// Validates the cross-component wiring the pure tests can't: the brain builds +
-// wires its BT, the referee builds the navmesh + wires it onto the AIAgents +
-// publishes the blackboard, and AdvanceBallEpoch resets BOTH brains. (Contact /
-// launch is animator+physics driven and is verified in the windowed run.)
+// AIAgent/body/brain + graph + the referee), driven through the load-order
+// lifecycle. Validates the cross-component wiring the pure tests can't: the
+// brain seeds the GRAPH blackboard, the referee builds the navmesh + wires it
+// onto the AIAgents + publishes the graph blackboards, and AdvanceBallEpoch
+// resets BOTH brains. (Contact / launch is animator+physics driven and is
+// verified in the windowed run.)
+//
+// The NPCs attach the REAL RenderTest_TennisBrain.bgraph by path (the DP
+// convention): the asset is (re)authored every tools boot via
+// AddStep_GraphBuild, so it exists on disk for any post-first-boot run.
 // ============================================================================
 
 namespace
@@ -1256,14 +1286,16 @@ namespace
 				xE.AddComponent<Zenith_AIAgentComponent>();
 				xE.AddComponent<RenderTest_TennisPlayerComponent>().Init(i == 0);
 				xE.AddComponent<RenderTest_TennisAgentComponent>();
+				xE.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath(
+					RenderTest_TennisAgentComponent::kszGraphAsset);
 				xNpcID[i] = xE.GetEntityID();
 			}
 			xMatchID = g_xEngine.Scenes().CreateEntity(pxSceneData, "Tennis_Match").GetEntityID();
 			pxSceneData->GetEntity(xMatchID).AddComponent<RenderTest_TennisMatchComponent>();
 
 			// Authored-order lifecycle: AIAgent OnAwake (perception register) -> the
-			// brains' OnStart (build + wire the BT) -> the referee's OnStart (nav +
-			// perception targets), matching Tennis_Match being authored last.
+			// brains' OnStart (seed the graph blackboard) -> the referee's OnStart
+			// (nav + perception targets), matching Tennis_Match being authored last.
 			for (int i = 0; i < 2; ++i)
 				AIAgent(i).OnAwake();
 			for (int i = 0; i < 2; ++i)
@@ -1284,17 +1316,22 @@ namespace
 ZENITH_TEST(RenderTestTennis, IntegrationLoadWiring)
 {
 	TennisMatchFixture xFix;
-	// Each brain built + wired its BT onto the sibling AIAgent.
 	for (int i = 0; i < 2; ++i)
 	{
-		ZENITH_ASSERT_NOT_NULL(xFix.Brain(i).GetTree(), "brain owns a tree");
-		ZENITH_ASSERT_TRUE(xFix.AIAgent(i).GetBehaviorTree() == xFix.Brain(i).GetTree(),
-			"AIAgent borrows the brain's tree");
 		// Referee wired its heap nav agent onto each AIAgent.
 		ZENITH_ASSERT_NOT_NULL(xFix.AIAgent(i).GetNavMeshAgent(), "referee wired a nav agent");
-		// Brain seeded the blackboard with the ball entity.
-		ZENITH_ASSERT_TRUE(xFix.AIAgent(i).GetBlackboard().GetEntityID(RenderTest_TennisBB::k_szBallEntity) == xFix.xBallID,
-			"brain seeded the ball entity into the blackboard");
+		// Brain resolved the shared ball + its opponent by name.
+		ZENITH_ASSERT_TRUE(xFix.Brain(i).GetBallID() == xFix.xBallID, "brain resolved the ball");
+		ZENITH_ASSERT_TRUE(xFix.Brain(i).GetOpponentID() == xFix.xNpcID[1 - i], "brain resolved the opponent");
+		// Brain seeded the GRAPH blackboard with the ball entity handle.
+		Zenith_BehaviourGraph* pxGraph = xFix.Brain(i).FindTennisGraph();
+		ZENITH_ASSERT_NOT_NULL(pxGraph, "TennisBrain graph attached (asset authored by a prior tools boot)");
+		if (pxGraph)
+		{
+			ZENITH_ASSERT_TRUE(
+				pxGraph->GetBlackboard().GetPackedEntityID(RenderTest_TennisBB::k_szBallEntity, 0) == xFix.xBallID.GetPacked(),
+				"brain seeded the ball entity into the graph blackboard");
+		}
 	}
 	ZENITH_ASSERT_TRUE(xFix.Referee().IsNavMeshValid(), "referee built a valid slab navmesh");
 }
@@ -1303,11 +1340,18 @@ ZENITH_TEST(RenderTestTennis, IntegrationBlackboardPublish)
 {
 	TennisMatchFixture xFix;
 	xFix.Referee().OnLateUpdate(1.0f / 60.0f);
-	// The referee publishes its phase into BOTH NPCs' blackboards.
+	// The referee publishes its phase into BOTH NPCs' GRAPH blackboards.
 	for (int i = 0; i < 2; ++i)
-		ZENITH_ASSERT_EQ(
-			xFix.AIAgent(i).GetBlackboard().GetInt(RenderTest_TennisBB::k_szPhase, -1),
-			static_cast<int>(xFix.Referee().GetPhase()));
+	{
+		Zenith_BehaviourGraph* pxGraph = xFix.Brain(i).FindTennisGraph();
+		ZENITH_ASSERT_NOT_NULL(pxGraph, "TennisBrain graph attached");
+		if (pxGraph)
+		{
+			ZENITH_ASSERT_EQ(
+				pxGraph->GetBlackboard().GetInt32(RenderTest_TennisBB::k_szPhase, -1),
+				static_cast<int>(xFix.Referee().GetPhase()));
+		}
+	}
 }
 
 ZENITH_TEST(RenderTestTennis, IntegrationEpochResetsBothBrains)
@@ -1437,23 +1481,10 @@ ZENITH_TEST(RenderTestTennis, ContactDispatchInRangeArmedLaunches)
 	ZENITH_ASSERT_EQ(static_cast<int>(xFix.Referee().GetPhase()), iPhase0);
 }
 
-// Plan unit-test #5 (D5 trap): an authored AIAgent with an empty BT-asset string and a
-// tree wired by the brain must NOT self-disable at OnStart (a self-disabled agent skips
-// its nav update and freezes on its last velocity). The brain pre-builds + wires the
-// tree before the AIAgent's OnStart in authored order, so the asset stays empty.
-ZENITH_TEST(RenderTestTennis, AIAgentDoesNotSelfDisableWithEmptyAsset)
-{
-	TennisMatchFixture xFix;
-	// Fixture drove OnAwake -> Brain.OnStart (wires the tree) already; now run the
-	// AIAgent's own OnStart and confirm it stays enabled.
-	for (int i = 0; i < 2; ++i)
-	{
-		xFix.AIAgent(i).SetEnabled(true);   // play phase: agent enabled
-		xFix.AIAgent(i).OnStart();          // must leave it enabled (empty asset + wired tree)
-		ZENITH_ASSERT_TRUE(xFix.AIAgent(i).GetBehaviorTree() != nullptr, "tree wired before AIAgent OnStart");
-		ZENITH_ASSERT_TRUE(xFix.AIAgent(i).IsEnabled(), "AIAgent must not self-disable with empty asset + non-null tree");
-	}
-}
+// (The former AIAgentDoesNotSelfDisableWithEmptyAsset test guarded the OnStart
+// BT-asset self-disable trap. That trap — and Zenith_AIAgentComponent::OnStart
+// with it — was removed by the Zenith/AI/BehaviorTree teardown; the agent no
+// longer carries a tree, an asset string, or a self-disable path.)
 
 // New body getter (plan Phase-1): IsFacingPositiveZ tracks the side passed to Init.
 ZENITH_TEST(RenderTestTennis, PlayerFacingMatchesInitSide)
@@ -1488,7 +1519,7 @@ ZENITH_TEST(RenderTestTennis, RefereeMoveAssignClearsLiveNavBorrow)
 ZENITH_TEST(RenderTestTennis, IntegrationCleanTeardown)
 {
 	// Build + tear down the full mini-scene: OnDestroy frees the nav + unregisters
-	// perception + releases the BTs with no double-free (scope exit = the test).
+	// perception + releases the graph slots with no double-free (scope exit = the test).
 	{
 		TennisMatchFixture xFix;
 		xFix.Referee().OnLateUpdate(1.0f / 60.0f);

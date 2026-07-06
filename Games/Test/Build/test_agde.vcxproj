@@ -170,6 +170,8 @@
   <ItemGroup>
     <ClCompile Include="..\Components\Test_PlayerControllerComponent.cpp" />
     <ClCompile Include="..\Test.cpp" />
+    <ClCompile Include="..\Tests\Test_PhysicsToysCharacterization.cpp" />
+    <ClCompile Include="..\Tests\Test_PlayerStateCharacterization.cpp" />
     <ClCompile Include="..\Tests\Test_ShootCharacterization.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

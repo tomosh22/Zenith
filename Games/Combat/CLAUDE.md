@@ -39,13 +39,14 @@ Games/Combat/
     Combat_EnemyAI.h             # Simple enemy behavior (chase + attack)
     Combat_QueryHelper.h         # Entity query utilities
     Combat_UIManager.h           # Health bars + combo display
-    Combat_GraphNodes.h          # Behaviour Graph node library (attack + round flow)
+    Combat_GraphNodes.h          # Behaviour Graph node library (all 5 graphs)
   Tests/
-    Test_CombatCharacterization.cpp  # 4 automated tests (attack flow, victory, game over, combo timer)
+    Test_CombatCharacterization.cpp  # 14 automated tests (attack/heavy, player combo/dodge/hit-stun, enemy engage/hit-stun, victory/game-over/combo-timer, pause/restart/menu/play)
   Assets/
     Scenes/MainMenu.zscen, Arena.zscen  # Boot-authored scenes
     Graphs/                      # Boot-authored Behaviour Graphs:
-                                 #   Combat_PlayerAttack.bgraph, Combat_RoundFlow.bgraph
+                                 #   Combat_PlayerAttack, Combat_PlayerState, Combat_EnemyBrain,
+                                 #   Combat_RoundFlow, Combat_GameFlow (.bgraph)
 ```
 
 ## Module Breakdown
@@ -144,39 +145,64 @@ Demonstrates:
 - Enemy health indicators
 - Game over / victory screens
 
-## Behaviour Graphs (attack flow + round flow)
+## Behaviour Graphs (all game DECISION logic — 5 graphs)
 
-The combat DECISION logic lives in two boot-authored graphs (regenerated every
-tools boot via `Zenith_EditorAutomation` graph steps in
-`Project_RegisterEditorAutomationSteps`; runtime docs in
-`Zenith/Scripting/CLAUDE.md`). The C++ components fire the driving custom
-events at EXACTLY the points the old bodies ran, so per-frame ordering is
-unchanged:
+Every piece of combat DECISION logic lives in behaviour graphs; the C++
+components keep only SYSTEMS (physics, IK, damage math, HUD render, scene
+mgmt, hit overlap) behind small graph-facing shims. Graphs are boot-authored
+via a fluent `Zenith_GraphBuilder` in `BuildGraph_Combat*` functions
+(`AddStep_GraphBuild` in `Project_RegisterEditorAutomationSteps`; runtime docs
+in `Zenith/Scripting/CLAUDE.md`). The components fire the driving custom events
+at EXACTLY the points the old bodies ran, and each event runs its graph
+SYNCHRONOUSLY, so per-frame ordering is byte-identical. dt rides the event
+PAYLOAD (custom-event context dt is 0).
 
-| Graph | Attached | Driven by | Nodes |
+| Graph | Attached | Driven by | Decomposition |
 |---|---|---|---|
-| `Combat_PlayerAttack.bgraph` | runtime, in `CreateArena` (`AddGraphByAssetPath`) | "AttackTick" fired at the end of `Combat_PlayerComponent::OnUpdate` | `CombatAttackFlow` — hitbox activation on attack start (light/heavy damage + range are node properties: 10/1.5, 25/2.0 defaults), hit registration on attack hit-frames, `NotifyComboHit` push, deactivation when the attack ends |
-| `Combat_RoundFlow.bgraph` | authored, `AddStep_AttachGraph` on the Arena GameManager | "RoundTick" (dt as float payload) fired from the PLAYING branch of `Combat_GameComponent::OnUpdate` | `CombatTickComboTimer` → `CombatCheckRoundState` (all enemies dead → VICTORY; player dead → GAME_OVER) |
+| `Combat_PlayerAttack.bgraph` | runtime, `CreateArena` (`AddGraphByAssetPath`, player) | `"AttackTick"` (end of `Combat_PlayerComponent::OnUpdate`, no payload) | Old `CombatAttackFlow` mega-node DECOMPOSED into 3 `"AttackTick"` chains (node-order = old guard order): `CombatQueryAttackState`→`Branch`→`CombatActivateHitbox` (10/1.5 light, 25/2.0 heavy props) / `Branch`→`CombatRegisterHits`→`CompareBlackboardInt`→`CombatNotifyComboHit` / `Branch`→`CombatDeactivateHitbox` |
+| `Combat_PlayerState.bgraph` | runtime, `CreateArena` (2nd graph on the player) | `"PlayerTick"` (where `m_xController.Update` ran, dt payload) | Old `Combat_PlayerController::Update` switch DELETED → `CombatPlayerPreTick`→`StateMachine(playerState, 9 states)`→per-state handler (`Movement`/`Attack`/`Dodge`/`HitStun`; DEAD unwired)→`CombatPlayerPostTick` |
+| `Combat_EnemyBrain.bgraph` | runtime, `SpawnEnemies` (`AddGraphByAssetPath`, per enemy) | `"EnemyBrainTick"` (`Combat_EnemyComponent::OnUpdate`, dt payload) | Old `Combat_EnemyAI::Update` switch DELETED → `CombatEnemyPreTick`→`StateMachine(enemyState, 5 states)`→per-state handler (`Idle`/`Chase`/`Attack`/`HitStun`; DEAD unwired)→`CombatEnemyPostTick` |
+| `Combat_RoundFlow.bgraph` | authored, Arena GameManager | `"RoundTick"` (PLAYING branch of `Combat_GameComponent::OnUpdate`, dt payload) | `CombatTickComboTimer` (kept — combo state is a cross-entity static) then old `CombatCheckRoundState` mega-node DECOMPOSED: `CombatCountAliveEnemies`→`CompareBlackboardInt`→`CombatSetGameState(VICTORY)`; `CombatCheckPlayerDead`→`CombatSetGameState(GAME_OVER)` (VICTORY-before-GAME_OVER, independent) |
+| `Combat_GameFlow.bgraph` | authored, BOTH GameManagers | order-60 input sources (`OnKeyPressed`/`OnUIButtonClicked`/`OnUpdate`) | Old `OnUpdate` menu/pause/reset switch made systems-only; the input DECISIONS moved here: P/R/Escape → `CombatGetGameState`→`SwitchOnInt(gameState)`→ pause/`CombatResetGame`/`CombatReturnToMenu`; menu Play → `OnUIButtonClicked`→`LoadSceneByIndex(1)`; focus → `OnUpdate`→`CombatFocusPlayButton` |
 
-The shims expose the systems the nodes execute through:
-`Combat_PlayerComponent::HitDetection()/AnimController()/GetController()`;
-`Combat_GameComponent::SetGameState` is public static. The old C++
-`UpdateAttack` / `CheckGameState` / `UpdateComboTimer` bodies are DELETED.
-Nodes registered via `Combat_RegisterGraphNodes()` from
-`Project_RegisterGameComponents`.
+The old C++ decision bodies are all DELETED: `UpdateAttack`, `CheckGameState`,
+`UpdateComboTimer`, `Combat_EnemyAI::Update` (+ the dead `Combat_EnemyManager`),
+`Combat_PlayerController::Update`, and the `Combat_GameComponent::OnUpdate`
+P/R/Escape switch. The C++ member state stays the source of truth for the two
+state machines (`GetState()`/`GetComboCount()` unchanged); a `PreTick` node
+mirrors it to the blackboard only to drive the `StateMachine` dispatch (no
+Enter/Exit events, no RUNNING leaves). Shims: `Combat_PlayerComponent`/
+`Combat_EnemyComponent` `Graph_*` forwarders, `Combat_GameComponent::SetGameState`/
+`Graph_*` (public static / public). Nodes registered via
+`Combat_RegisterGraphNodes()` from `Project_RegisterGameComponents`.
 
-**Equivalence proof:** `Tests/Test_CombatCharacterization.cpp` — written
-against the C++ versions FIRST, identical pre/post conversion. Run WINDOWED
-(headless asserts on the skeletal model's GPU buffers):
+**Accepted divergences** (unobservable / precedented): `Combat_GameFlow`'s
+`@60`-graph / `@100`-component split shifts the systems block by one frame on a
+reset / resume frame (runs on fresh/resumed state); and P/R/Escape are
+independent `OnKeyPressed` sources, so two distinct keys on the exact same frame
+both fire (the old `if/else-if/return` switch was mutually exclusive). Combo
+count/timer stay `Combat_GameComponent` statics (cross-entity shared: written by
+the attack graph, ticked by the round graph, read by the HUD).
+
+**Equivalence proof:** `Tests/Test_CombatCharacterization.cpp` — 14 tests
+written against the C++ versions FIRST, all identical pre/post conversion. Run
+WINDOWED (headless asserts on the skeletal model's GPU buffers):
 
 ```
 combat.exe --all-automated-tests --exit-after-frames 30000 --fixed-dt 0.01666 --skip-unit-tests
 ```
 
-`Combat_AttackFlow_Test` (steers via held WASD + real left-click; asserts
-EXACTLY 10 damage, combo 1, no double-dip per swing),
-`Combat_RoundVictory_Test` / `Combat_RoundGameOver_Test` (real
-damage-event path), `Combat_ComboTimer_Test`.
+Coverage: attack (`AttackFlow`=10 dmg/combo1/no-double-dip, `HeavyAttack`=25/
+combo0), player state machine (`PlayerCombo`=LA1→LA2 chain, `PlayerDodge`,
+`PlayerHitStun`), enemy brain (`EnemyEngages`=chase+attack+player-damage,
+`EnemyHitStun`), round (`RoundVictory`/`RoundGameOver`/`ComboTimer`), game flow
+(`PauseResume`/`Restart`/`ReturnToMenu`/`MenuPlay`).
+
+> ★ `AttackFlow`/`HeavyAttack` steer to a RANDOM-spawned enemy (`SpawnEnemies`
+> seeds `m_xRng` with `std::random_device`) amid combat, so they occasionally
+> flake (the player gets ganged-up and killed → GAME_OVER freezes the steer →
+> timeout). On a steer-timeout fail, RE-RUN; the state/round/gameflow tests are
+> deterministic and never flake.
 
 > Note: the menu→Play path (`LoadSceneByIndex(1)` → Arena GameComponent
 > OnAwake → `StartGame` → additive `LoadScene`) depends on the engine's

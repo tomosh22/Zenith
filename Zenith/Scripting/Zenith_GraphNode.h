@@ -19,9 +19,9 @@
 //     anchor chains. A (node, pin) has AT MOST ONE outgoing exec edge - chains
 //     are linear; branching/looping is done by flow nodes with multiple output
 //     pins that run their sub-chains via Zenith_BehaviourGraph::RunChainFromPin.
-//   - Node status follows the AI BehaviorTree shape (Zenith_BTNode):
-//     SUCCESS continues the chain, FAILURE aborts it, RUNNING suspends it (the
-//     graph resumes at the running node on the next OnUpdate dispatch).
+//   - Node status is a tri-state (SUCCESS / FAILURE / RUNNING): SUCCESS
+//     continues the chain, FAILURE aborts it, RUNNING suspends it (the graph
+//     resumes at the running node on the next OnUpdate dispatch).
 //   - Node instances are per-graph-instance: plain members ARE per-instance
 //     state (timers, loop counters). Node parameters are declared with the
 //     ZENITH_PROPERTY macros - the registry serializes/inspects them through
@@ -54,7 +54,17 @@ enum GraphEventType : u_int8
 	GRAPH_EVENT_ON_COLLISION_EXIT,
 	GRAPH_EVENT_TIMER,
 	GRAPH_EVENT_CUSTOM,
+	GRAPH_EVENT_ON_GRAPH_CALL,	// entry anchor of a callable sub-graph (CallGraph node / RunGraphCall)
 	GRAPH_EVENT_COUNT
+};	// append-only: event types are registry-derived at instantiation, never serialized
+
+// One named value of a multi-field custom-event payload. The firer owns the
+// names; OnCustomEvent sources stash every arg to the blackboard verbatim
+// under its name (the generalized collision-source stash pattern).
+struct Zenith_GraphEventArg
+{
+	std::string m_strName;
+	Zenith_PropertyValue m_xValue;
 };
 
 // Everything a node needs while executing. Passed by reference down the chain.
@@ -62,9 +72,20 @@ struct Zenith_GraphContext
 {
 	Zenith_Entity m_xSelf;								// the entity hosting the graph
 	float m_fDt = 0.0f;									// dt of the dispatching event (0 for non-tick events)
+	float m_fTimeSeconds = 0.0f;						// engine wall-clock at dispatch (Cooldown-style gates under 0-dt events)
 	Zenith_BehaviourGraph* m_pxGraph = nullptr;			// owning graph (RunChainFromPin for flow nodes)
 	Zenith_GraphBlackboard* m_pxBlackboard = nullptr;	// the graph instance's variables
 	const Zenith_PropertyValue* m_pxEventPayload = nullptr;	// event-specific payload (e.g. other entity on collision), null otherwise
+	const Zenith_GraphEventArg* m_pxEventArgs = nullptr;	// named multi-field payload (FireCustomEventWithArgs), null otherwise
+	u_int m_uEventArgCount = 0;
+
+	// The standard entity-targeting convention: a node that acts on an entity
+	// declares ZENITH_PROPERTY(std::string, m_strTargetVar, "") and resolves it
+	// here - empty var = self; otherwise the blackboard var must hold a packed
+	// EntityID. Returns an INVALID entity on missing var / wrong type / dead
+	// entity (callers FAILURE their chain). Body in Zenith_BehaviourGraph.cpp
+	// (leaf-safe: resolves through Zenith_SceneSystem::Get(), no engine types).
+	Zenith_Entity ResolveTargetEntity(const std::string& strTargetVar) const;
 };
 
 class Zenith_GraphNode
@@ -77,11 +98,25 @@ public:
 	// per-instance memory that needs (remembered branch pin, loop counter...).
 	virtual GraphNodeStatus Execute(Zenith_GraphContext& xContext) = 0;
 
-	// Chain lifecycle. OnEnter fires when a chain run first reaches the node;
-	// OnExit fires when the node completes (either status) or its chain is
-	// reset. Default no-ops.
+	// Chain lifecycle, invoked by RunChainFromPin. OnEnter fires when a chain
+	// walk reaches the node FRESH (a suspended node resuming does NOT re-enter);
+	// OnExit fires when Execute completes with SUCCESS or FAILURE (never on
+	// RUNNING). Default no-ops.
 	virtual void OnEnter(Zenith_GraphContext& /*xContext*/) {}
 	virtual void OnExit(Zenith_GraphContext& /*xContext*/) {}
+
+	// Preemption hook: the node was suspended (RUNNING) and its chain has been
+	// aborted (reactive Selector/StateMachine switched away, or the owner reset).
+	// Reset per-run instance state here (elapsed timers, remembered pins); flow
+	// nodes must forward the abort into their active output pins via
+	// Zenith_BehaviourGraph::AbortChain. Default no-op.
+	virtual void OnAbort(Zenith_GraphContext& /*xContext*/) {}
+
+	// Variable-pin flow nodes (Switch/StateMachine/Selector) override this to
+	// report their configured pin count AFTER params are applied; -1 = use the
+	// registry's static m_uExecOutputCount. Capped at 255 by the chain-cursor
+	// key layout (pin lives in the key's low byte).
+	virtual int32_t GetDynamicExecOutputCount() const { return -1; }
 
 	// Canonical registered type name (matches Zenith_GraphNodeRegistry).
 	virtual const char* GetTypeName() const = 0;

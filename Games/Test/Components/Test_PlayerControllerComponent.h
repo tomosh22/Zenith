@@ -49,6 +49,16 @@ public:
 	void SetSelectedSlot(int iSlot);
 	int GetSelectedSlot() const { return m_iSelectedSlot; }
 
+	// Fly-cam API (the toggle DECISION lives in the Test_PlayerActions graph;
+	// the movement bodies stay C++ systems gated on this flag - and so do
+	// the graph shim nodes, preserving the old early-return semantics where
+	// slots/health/compass/shoot are dead while flying).
+	void ToggleFlyCam() { m_bFlyCamEnabled = !m_bFlyCamEnabled; }
+	bool IsFlyCamEnabled() const { return m_bFlyCamEnabled; }
+
+	// Compass presentation (called per-tick by the graph's compass chain).
+	void UpdateCompassUI();
+
 	// Serialization - no persistent tunables
 	void WriteToDataStream(Zenith_DataStream& xStream) const
 	{
@@ -102,7 +112,6 @@ public:
 private:
 	void FindHUDElements();
 	void UpdateHealthUI();
-	void UpdateCompassUI();
 	void UpdateInventoryUI();
 
 	bool m_bFlyCamEnabled = false;

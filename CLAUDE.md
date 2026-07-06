@@ -31,8 +31,7 @@ Zenith/
 │                      #   InstancedMeshes, MaterialPreview, MeshGeometry, Particles,
 │                      #   Present, Primitives, Quads, SDFs, SceneGraph, Shaders, Skybox,
 │                      #   Slang, SSAO, UnifiedMesh, Text, Translucency, and more
-├── AI/                # AI systems (see AI/CLAUDE.md)
-│   ├── BehaviorTree/  # Decision-making (see AI/BehaviorTree/CLAUDE.md)
+├── AI/                # AI systems (see AI/CLAUDE.md); decisions live in Scripting/ graphs
 │   ├── Navigation/    # NavMesh pathfinding (see AI/Navigation/CLAUDE.md)
 │   ├── Perception/    # Sensory systems (see AI/Perception/CLAUDE.md)
 │   └── Squad/         # Squad tactics (see AI/Squad/CLAUDE.md)

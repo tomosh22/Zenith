@@ -354,7 +354,7 @@ APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 | Cluster | Tests |
 |---|---|
 | Pause | `Test_P1Pause_TimerStopsOnEscape`, `Test_P1Pause_InputSimDuringPause` |
-| NavMesh | `Test_P1NavMesh_PathRespectsWalls`, `Test_P1NavMesh_ClosedDoorBlocksPath`, `Test_T1NavMesh_GeneratorPerf`, `Test_T1NavMesh_BTUnitsCanFollowRealPath` |
+| NavMesh | `Test_P1NavMesh_PathRespectsWalls`, `Test_P1NavMesh_ClosedDoorBlocksPath`, `Test_T1NavMesh_GeneratorPerf`, `Test_T1NavMesh_UnitsCanFollowRealPath` |
 | Apprehend | `Test_P1Apprehend_SwitchBreaksChannel`, `Test_P1Apprehend_OutOfRangeIgnored` |
 | Faint / Switch | `Test_P1Faint_RecoversToIdle`, `Test_P1Faint_SystemPossessBypassesGate`, `Test_P1Switch_FaintNotDie`, `Test_P1Switch_BurnOutDoesDie` |
 | Drop | `Test_P1Drop_GoesToGroundAtBodyPosition`, `Test_P1Drop_PickupChainHandoff` |
@@ -407,6 +407,25 @@ APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 `Test_ItemPickup`, `Test_DoubleDoorAndForge`, `Test_GameplaySystems`,
 `Test_VisualWiring`, `Test_FullPlaythrough`, `Test_FrontEndPlay`,
 `Test_PriestBBBridge`, `Test_PriestPursuit`, etc.
+
+### W3 graph-conversion characterizations
+
+`Test_W3GraphConversionCharacterization.cpp` — written GREEN against the
+pre-W3 C++ first, passing unchanged against the graphs:
+`Test_W3Priest_ApprehendStartsInRange` (channel only ever STARTS within
+`priest.apprehend_range_m` XZ — an upper-bound pin that survives the
+reactive-Selector timing delta), `Test_W3Item_ReagentChannelResumesAfterExit`
+(walk-out pauses, never resets, the channel), `Test_W3Villager_FootstepCadence`
+(first-step-immediate + exact interval under fixed dt).
+
+**Priest staging lesson (hard-won, 3 iterations):** to get the priest's SIGHT
+to acquire a staged villager in batch runs you must RE-PLACE the villager in
+the priest's live FOV EVERY FRAME until the bridge acquires it (horizontal
+yaw-only forward, villager at the priest's own height — the
+`PlaceInPriestFOV` recipe from `Test_P1Priest_PursuesAfterLineOfSight`).
+One-shot transform teleports lose to the priest's patrol rotation and to the
+physics sync. Priest decision state reads go through
+`Priest_Component::ReadBB*` (the DP_Priest.bgraph blackboard) since W3.
 
 ### Editor + material + graph tooling (post-2026-06-12)
 

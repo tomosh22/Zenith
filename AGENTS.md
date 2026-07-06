@@ -23,8 +23,7 @@ Zenith/
 │   └── ...            # + DeferredShading, DynamicLights,
 │                      #   InstancedMeshes, Particles, Primitives, Shadows,
 │                      #   Skybox, SSAO, Text, UnifiedMesh, and more
-├── AI/                # AI systems (see AI/AGENTS.md)
-│   ├── BehaviorTree/  # Decision-making (see AI/BehaviorTree/AGENTS.md)
+├── AI/                # AI systems (see AI/AGENTS.md); decisions live in Scripting/ graphs
 │   ├── Navigation/    # NavMesh pathfinding (see AI/Navigation/AGENTS.md)
 │   ├── Perception/    # Sensory systems (see AI/Perception/AGENTS.md)
 │   └── Squad/         # Squad tactics (see AI/Squad/AGENTS.md)

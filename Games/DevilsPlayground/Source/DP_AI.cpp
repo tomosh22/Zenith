@@ -14,7 +14,6 @@
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
 #include "EntityComponent/Zenith_AINavGeometry.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #include "../Components/Priest_Component.h"
 #include "../Components/DPDoor_Component.h"
@@ -102,16 +101,27 @@ namespace DP_AI
 		// at agent_max_range (priest default 30 m) -- so a 200 m bell
 		// emit doesn't reach a priest 100 m away. The GDD intent for
 		// BellSoul is "map-wide" so we iterate every priest in the
-		// active scene and write straight into its BB.
+		// active scene and write straight into its decision blackboard
+		// (the DP_Priest.bgraph blackboard since W3).
 		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
-			[&xPos](Zenith_EntityID xPriestId, Priest_Component&)
+			[&xPos](Zenith_EntityID /*xPriestId*/, Priest_Component& xPriest)
 			{
-				Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
-				Zenith_AIAgentComponent* pxAg = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
-				if (pxAg == nullptr) return;
-				Zenith_Blackboard& xBB = pxAg->GetBlackboard();
-				xBB.SetVector3(BB_KEY_INVESTIGATE_POS, xPos);
-				xBB.SetBool(BB_KEY_HAS_INVESTIGATE_POS, true);
+				xPriest.WriteBBVector3(BB_KEY_INVESTIGATE_POS, xPos);
+				xPriest.WriteBBBool(BB_KEY_HAS_INVESTIGATE_POS, true);
+			});
+	}
+
+	void WriteHighScentTargetToAllPriests(Zenith_EntityID xHighestId)
+	{
+		Zenith_Assert(g_xEngine.Threading().IsMainThread(),
+			"DP_AI::WriteHighScentTargetToAllPriests must be called from main thread");
+		// W3: the scent bias input lives on each priest's decision graph
+		// blackboard (read by DPPriestPickPatrolTarget). Loaded-scenes scope
+		// mirrors the retired QueryAllScenes<Zenith_AIAgentComponent> fanout.
+		DP_Query::ForEachComponentInLoadedScenes<Priest_Component>(
+			[&xHighestId](Zenith_EntityID /*xPriestId*/, Priest_Component& xPriest)
+			{
+				xPriest.WriteBBEntity(BB_KEY_HIGH_SCENT_TARGET, xHighestId);
 			});
 	}
 
@@ -318,15 +328,11 @@ namespace DP_AI
 	{
 		bool bPursuing = false;
 		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
-			[&bPursuing](Zenith_EntityID xPriestId, Priest_Component&)
+			[&bPursuing](Zenith_EntityID /*xPriestId*/, Priest_Component& xPriest)
 			{
 				if (bPursuing) return;
-				Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
-				if (!xEnt.IsValid()) return;
-				Zenith_AIAgentComponent* pxAg = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
-				if (pxAg == nullptr) return;
-				Zenith_Blackboard& xBB = pxAg->GetBlackboard();
-				if (xBB.GetEntityID(BB_KEY_TARGET_WITH_DEVIL).IsValid())
+				// W3: the priest's decision inputs live on its graph blackboard.
+				if (xPriest.ReadBBEntity(BB_KEY_TARGET_WITH_DEVIL).IsValid())
 				{
 					bPursuing = true;
 				}
@@ -338,15 +344,10 @@ namespace DP_AI
 	{
 		bool bInvestigating = false;
 		DP_Query::ForEachComponentInActiveScene<Priest_Component>(
-			[&bInvestigating](Zenith_EntityID xPriestId, Priest_Component&)
+			[&bInvestigating](Zenith_EntityID /*xPriestId*/, Priest_Component& xPriest)
 			{
 				if (bInvestigating) return;
-				Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
-				if (!xEnt.IsValid()) return;
-				Zenith_AIAgentComponent* pxAg = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
-				if (pxAg == nullptr) return;
-				Zenith_Blackboard& xBB = pxAg->GetBlackboard();
-				if (xBB.GetBool(BB_KEY_HAS_INVESTIGATE_POS))
+				if (xPriest.ReadBBBool(BB_KEY_HAS_INVESTIGATE_POS, false))
 				{
 					bInvestigating = true;
 				}

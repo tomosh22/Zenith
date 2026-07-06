@@ -1,19 +1,20 @@
 #pragma once
 #include "Core/Zenith_Engine.h"
 /**
- * Priest_Component - the priest agent. Owns its Zenith_BehaviorTree and ticks
- * it manually each frame using the AGENT'S blackboard (so engine-built BT
- * tasks like Zenith_BTAction_MoveToEntity see the same NavMeshAgent the
- * agent component holds).
+ * Priest_Component - the priest agent, a SYSTEMS SHIM (W3). Decisions (the
+ * reactive Selector apprehend > pursue > investigate > patrol) live in
+ * DP_Priest.bgraph, driven by the "PriestTick" event this shim fires from
+ * OnUpdate. The graph's NavMoveTo / SetNavDestination nodes push destinations
+ * onto the same NavMeshAgent this component holds.
  *
- * Per-frame: bridges Zenith_PerceptionSystem stimuli into BB keys
- * (BB.TargetWithDevil + BB.InvestigatePos) before ticking the tree.
+ * Per-frame: bridges Zenith_PerceptionSystem stimuli into the GRAPH blackboard
+ * keys (BB.TargetWithDevil + BB.InvestigatePos) before firing "PriestTick".
  *
  * Movement: a Zenith_NavMeshAgent lives on this component and is wired into
- * the Zenith_AIAgentComponent via SetNavMeshAgent. Engine BT actions (MoveTo /
- * MoveToEntity) push destinations onto the agent; AIAgentComponent::OnUpdate
- * (auto-dispatched by the lifecycle scheduler each frame) ticks the agent's
- * Update() which walks the path and writes the priest's transform.
+ * the Zenith_AIAgentComponent via SetNavMeshAgent. The graph's nav nodes push
+ * destinations onto the agent; AIAgentComponent::OnUpdate (auto-dispatched by
+ * the lifecycle scheduler each frame) ticks the agent's Update() which walks
+ * the path and writes the priest's transform.
  *
  * Optional physics path: if the priest has a Zenith_ColliderComponent with a
  * valid body, each frame we additionally write the agent's desired XZ velocity
@@ -31,12 +32,9 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_BehaviorTree.h"
-#include "AI/BehaviorTree/Zenith_BTNode.h"
-#include "AI/BehaviorTree/Zenith_BTComposites.h"
-#include "AI/BehaviorTree/Zenith_BTActions.h"
-#include "AI/BehaviorTree/Zenith_BTConditions.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
+#include "Scripting/Zenith_GraphBlackboard.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
@@ -44,15 +42,92 @@
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DP_Tuning.h"
-#include "Components/DP_BT_Nodes.h"
+
+#include <cstring>
 
 class Priest_Component ZENITH_FINAL
 {
 public:
+	// W3 conversion (risk R3): the BT decision body is DP_Priest.bgraph's
+	// reactive Selector (apprehend > pursue > investigate > patrol); this
+	// component is the SYSTEMS shim - nav agent ownership/wiring, perception
+	// registration/config, the perception->blackboard BRIDGE (writes the
+	// GRAPH blackboard under the same DP_AI::BB_KEY_* names), door opening,
+	// the alert telegraph edges, and the body-velocity guard. It fires
+	// "PriestTick" (dt payload) where m_xTree.Tick sat, and
+	// "PriestTargetChanged" where m_xTree.Reset sat (the reactive Selector
+	// re-scans priorities every tick, so the event is a parity hook - wired
+	// to nothing today, kept for a non-reactive fallback).
+	static constexpr const char* kszGraphAsset = "game:Graphs/DP_Priest.bgraph";
+
 	Priest_Component() = delete;
 	Priest_Component(Zenith_Entity& xParentEntity)
 		: m_xParentEntity(xParentEntity)
 	{}
+
+	// ---- Graph blackboard plumbing (public: DP_AI's forwarders + the scent
+	// ---- fanout read/write the priest's decision inputs through these) ----
+	Zenith_BehaviourGraph* FindPriestGraph() const
+	{
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraphs == nullptr) return nullptr;
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+		{
+			if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) == 0)
+			{
+				return pxGraphs->GetGraphAt(u);
+			}
+		}
+		return nullptr;
+	}
+	Zenith_EntityID ReadBBEntity(const char* szVar) const
+	{
+		Zenith_BehaviourGraph* pxGraph = FindPriestGraph();
+		if (pxGraph == nullptr) return INVALID_ENTITY_ID;
+		return Zenith_EntityID::FromPacked(pxGraph->GetBlackboard().GetPackedEntityID(szVar,
+			INVALID_ENTITY_ID.GetPacked()));
+	}
+	bool ReadBBBool(const char* szVar, bool bDefault) const
+	{
+		Zenith_BehaviourGraph* pxGraph = FindPriestGraph();
+		return pxGraph ? pxGraph->GetBlackboard().GetBool(szVar, bDefault) : bDefault;
+	}
+	void WriteBBEntity(const char* szVar, Zenith_EntityID xId)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindPriestGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetPackedEntityID(xId.GetPacked());
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
+	}
+	void WriteBBBool(const char* szVar, bool bValue)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindPriestGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetBool(bValue);
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
+	}
+	void WriteBBFloat(const char* szVar, float fValue)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindPriestGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetFloat(fValue);
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
+	}
+	void WriteBBVector3(const char* szVar, const Zenith_Maths::Vector3& xValue3)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindPriestGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetVector3(xValue3);
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
+	}
 
 	// Heap-stability: the parent's AIAgentComponent holds a raw pointer to
 	// m_xNavAgent — moves must re-wire it at the new address. The BT is
@@ -62,13 +137,11 @@ public:
 
 	Priest_Component(Priest_Component&& xOther) noexcept
 		: m_xParentEntity(xOther.m_xParentEntity)
-		, m_xTree(std::move(xOther.m_xTree))
 		, m_xNavAgent(std::move(xOther.m_xNavAgent))
 		, m_uDebugFrameCounter(xOther.m_uDebugFrameCounter)
 		, m_xLastSeenTarget(xOther.m_xLastSeenTarget)
 		, m_bLastHadInvestigate(xOther.m_bLastHadInvestigate)
 		, m_bLastWithinApprehendRange(xOther.m_bLastWithinApprehendRange)
-		, m_pxFindPosNode(xOther.m_pxFindPosNode)
 		, m_fSuspicionRadius(xOther.m_fSuspicionRadius)
 		, m_fInvestigateMaxAge(xOther.m_fInvestigateMaxAge)
 		, m_fHearingRange(xOther.m_fHearingRange)
@@ -90,13 +163,11 @@ public:
 		if (this != &xOther)
 		{
 			m_xParentEntity             = xOther.m_xParentEntity;
-			m_xTree                     = std::move(xOther.m_xTree);
 			m_xNavAgent                 = std::move(xOther.m_xNavAgent);
 			m_uDebugFrameCounter        = xOther.m_uDebugFrameCounter;
 			m_xLastSeenTarget           = xOther.m_xLastSeenTarget;
 			m_bLastHadInvestigate       = xOther.m_bLastHadInvestigate;
 			m_bLastWithinApprehendRange = xOther.m_bLastWithinApprehendRange;
-			m_pxFindPosNode             = xOther.m_pxFindPosNode;
 			m_fSuspicionRadius          = xOther.m_fSuspicionRadius;
 			m_fInvestigateMaxAge        = xOther.m_fInvestigateMaxAge;
 			m_fHearingRange             = xOther.m_fHearingRange;
@@ -116,6 +187,29 @@ public:
 
 	void OnAwake()
 	{
+		// W3: self-attach the decisions graph FIRST so the blackboard seeds
+		// below land (idempotent on re-entry).
+		{
+			Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+			if (pxGraphs == nullptr)
+			{
+				pxGraphs = &m_xParentEntity.AddComponent<Zenith_GraphComponent>();
+			}
+			bool bAttached = false;
+			for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+			{
+				if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) == 0)
+				{
+					bAttached = true;
+					break;
+				}
+			}
+			if (!bAttached)
+			{
+				pxGraphs->AddGraphByAssetPath(kszGraphAsset);
+			}
+		}
+
 		// MVP-0.1.3: read priest tuning from DP_Tuning instead of hard-coded
 		// initializers. Resolves the existing drift between the prototype's
 		// hardcodes (sight=20, hearing=25, FOV=120, move=5, peripheral=FOV*1.25)
@@ -206,12 +300,11 @@ public:
 
 		// Reset blackboard transient state — Editor Stop/Play replay would
 		// otherwise inherit a stale TargetWithDevil from the previous run.
-		Zenith_AIAgentComponent* pxAgent = m_xParentEntity.TryGetComponent<Zenith_AIAgentComponent>();
-		if (pxAgent == nullptr) return;
-		Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
-		xBB.SetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL, INVALID_ENTITY_ID);
-		xBB.SetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
-		xBB.SetFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, m_fSuspicionRadius);
+		// W3: the decision inputs live on the GRAPH blackboard now (same
+		// DP_AI::BB_KEY_* names, read by DP_Priest.bgraph's Selector pins).
+		WriteBBEntity(DP_AI::BB_KEY_TARGET_WITH_DEVIL, INVALID_ENTITY_ID);
+		WriteBBBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
+		WriteBBFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, m_fSuspicionRadius);
 	}
 
 	void OnDestroy()
@@ -267,83 +360,31 @@ public:
 			m_xParentEntity.GetEntityID().m_uIndex, m_xParentEntity.GetEntityID().m_uGeneration,
 			bHasAI ? 1 : 0, (void*)pxNavMesh);
 
-		// Build the BT root: Selector → Apprehend / Pursue / Investigate / Patrol.
-		auto* pxRoot = new Zenith_BTSelector();
-
-		// ---- Apprehend branch (MVP-1.3.2, highest priority) -----------------
-		// HasTarget(BB.TargetWithDevil) → Apprehend (channels in place)
-		// Apprehend internally checks range/channel-duration and dispatches
-		// DP_OnRunLost{Apprehended} when the channel completes.
-		auto* pxApprehend = new Zenith_BTSequence();
-		pxApprehend->AddChild(new Zenith_BTCondition_HasTarget(DP_AI::BB_KEY_TARGET_WITH_DEVIL));
-		pxApprehend->AddChild(new DP_BTAction_Apprehend());
-		pxRoot->AddChild(pxApprehend);
-
-		// ---- Pursue branch ---------------------------------------------------
-		// HasTarget(BB.TargetWithDevil) → MoveToEntity(BB.TargetWithDevil)
-		auto* pxPursue = new Zenith_BTSequence();
-		pxPursue->AddChild(new Zenith_BTCondition_HasTarget(DP_AI::BB_KEY_TARGET_WITH_DEVIL));
-		auto* pxMoveToTarget = new Zenith_BTAction_MoveToEntity(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
-		pxMoveToTarget->SetAcceptanceRadius(1.5f);
-		pxMoveToTarget->SetRepathInterval(0.4f);
-		pxPursue->AddChild(pxMoveToTarget);
-		pxRoot->AddChild(pxPursue);
-
-		// ---- Investigate branch ---------------------------------------------
-		// HasInvestigatePos → MoveTo(BB.InvestigatePos) → Wait 2s → Clear flag
-		auto* pxInvestigate = new Zenith_BTSequence();
-		pxInvestigate->AddChild(new DP_BTCondition_HasInvestigatePos());
-		auto* pxMoveToNoise = new Zenith_BTAction_MoveTo(DP_AI::BB_KEY_INVESTIGATE_POS);
-		pxMoveToNoise->SetAcceptanceRadius(1.0f);
-		pxInvestigate->AddChild(pxMoveToNoise);
-		pxInvestigate->AddChild(new Zenith_BTAction_Wait(2.0f));
-		pxInvestigate->AddChild(new DP_BTAction_ClearInvestigatePos());
-		pxRoot->AddChild(pxInvestigate);
-
-		// ---- Patrol fallback ------------------------------------------------
-		// FindPosInSuspicionSphere(BB.PatrolTarget) → MoveTo(BB.PatrolTarget) → Wait 1s
-		auto* pxPatrol = new Zenith_BTSequence();
-		auto* pxFindPos = new DP_BTAction_FindPosInSuspicionSphere();
-		pxFindPos->SetNavMesh(pxNavMesh);
-		// Stash the FindPos pointer so OnUpdate can refresh its navmesh handle
-		// when DP_AI rebuilds the cache (e.g., after a test adds scene
-		// geometry and calls ResetLevelNavMesh).
-		m_pxFindPosNode = pxFindPos;
-		pxPatrol->AddChild(pxFindPos);
-		auto* pxMoveToPatrol = new Zenith_BTAction_MoveTo(DP_AI::BB_KEY_PATROL_TARGET);
-		pxMoveToPatrol->SetAcceptanceRadius(1.0f);
-		pxPatrol->AddChild(pxMoveToPatrol);
-		pxPatrol->AddChild(new Zenith_BTAction_Wait(1.0f));
-		pxRoot->AddChild(pxPatrol);
-
-		m_xTree.SetRootNode(pxRoot);
+		// W3: the decision body (Selector -> Apprehend / Pursue / Investigate /
+		// Patrol) lives on DP_Priest.bgraph, attached in OnAwake and driven by
+		// the "PriestTick" event below. The Zenith/AI/BehaviorTree module is
+		// gone (deleted at the adoption-program teardown); the graph's reactive
+		// Selector re-scans priorities every tick, which subsumes the old
+		// m_xTree.Reset() hack.
 	}
 
 	void OnUpdate(const float fDt)
 	{
 		Zenith_AIAgentComponent* pxAgent = m_xParentEntity.TryGetComponent<Zenith_AIAgentComponent>();
 		if (pxAgent == nullptr) return;
-		Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
 
 		// Refresh the cached navmesh pointer. DP_AI's navmesh can be rebuilt
 		// at runtime (e.g., a test setup that adds scene geometry then calls
 		// DP_AI::ResetLevelNavMesh), invalidating the pointer the agent
-		// captured during OnStart. Re-pulling here keeps the agent + the
-		// patrol-target picker in sync with the live cache, at the cost of
-		// one hash-table lookup per frame.
+		// captured during OnStart. (The graph's patrol picker resolves the
+		// live cache per Execute, so only the agent needs the re-pull.)
 		const Zenith_NavMesh* pxLiveNavMesh = DP_AI::GetOrBuildLevelNavMesh();
 		if (pxLiveNavMesh != m_xNavAgent.GetNavMesh())
 		{
 			m_xNavAgent.SetNavMesh(pxLiveNavMesh);
-			// FindPos node holds its own navmesh pointer too -- update it
-			// in lock-step so patrol picks reachable points on the new mesh.
-			if (m_pxFindPosNode != nullptr)
-			{
-				m_pxFindPosNode->SetNavMesh(pxLiveNavMesh);
-			}
 		}
 
-		BridgePerceptionToBlackboard(xBB);
+		BridgePerceptionToBlackboard();
 
 		// 2026-05-25 v4: priest opens any closed unlocked door it's
 		// adjacent to, regardless of BT branch (Idle / Patrol /
@@ -371,33 +412,19 @@ public:
 			DP_AI::OpenNearbyDoorsFor(m_xParentEntity.GetEntityID(), xPriestPosForDoors);
 		}
 
-		// Reactive-selector hack: Zenith_BTSelector resumes at the last
-		// RUNNING child rather than re-evaluating from the top each tick.
-		// That's the standard "memory selector" semantics, but it breaks our
-		// priority ordering — if the priest's BT lands in the patrol branch
-		// (because pursue's HasTarget was false on frame 0 before the
-		// possession side-table propagated to DPVillager_Component) then
-		// patrol keeps RUNNING for ~1s before completing, and only THEN does
-		// the Selector get another shot at pursue. During that ~1s the
-		// priest visibly ignores a possessed villager standing right next to
-		// it.
-		//
-		// Detect the rising edge of BB_KEY_TARGET_WITH_DEVIL and call
-		// m_xTree.Reset() to abort the in-flight branch (which calls OnAbort
-		// on the running node, e.g. MoveTo::OnAbort which calls
-		// NavMeshAgent::Stop) and force the next Tick to re-enter from the
-		// root. That re-runs HasTarget which now passes, and pursue takes
-		// over with a freshly requested path to the possessed villager.
-		const Zenith_EntityID xCurrentTarget =
-			xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
-		// Reset on ANY change to a new valid target -- both INVALID->A and a
-		// direct A->B villager switch. The old `!m_xLastSeenTarget.IsValid()`
-		// edge only fired on INVALID->valid, so a direct possessed-target swap
-		// (valid A -> valid B) skipped the reset and left the priest pursuing A
-		// for the in-flight branch's remaining ~1s.
+		// W3: the graph's Selector is REACTIVE - it re-scans from pin 0 every
+		// tick, so the retired memory-selector Reset() hack is structurally
+		// unnecessary. "PriestTargetChanged" still fires on the same edge
+		// (INVALID->A and direct A->B) as a parity hook: telemetry/debug can
+		// observe it, and a future non-reactive fallback wires it to an
+		// abort chain. The graph currently has no consumer for it.
+		const Zenith_EntityID xCurrentTarget = ReadBBEntity(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
 		if (xCurrentTarget.IsValid() && xCurrentTarget != m_xLastSeenTarget)
 		{
-			m_xTree.Reset(m_xParentEntity, xBB);
+			if (Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>())
+			{
+				pxGraphs->FireCustomEvent("PriestTargetChanged");
+			}
 		}
 
 		// 2026-05-21: in-world alert telegraph. The priest's BT can shift
@@ -421,7 +448,7 @@ public:
 		// stimuli rose at once -- otherwise three particle bursts stack
 		// onto each other and read as noise rather than the cleaner
 		// "the priest just noticed you" signal.
-		const bool bHasInvestigate = xBB.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
+		const bool bHasInvestigate = ReadBBBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
 		bool bWithinApprehendRange = false;
 		if (xCurrentTarget.IsValid() && m_xParentEntity.HasComponent<Zenith_TransformComponent>())
 		{
@@ -464,9 +491,23 @@ public:
 		m_bLastHadInvestigate      = bHasInvestigate;
 		m_bLastWithinApprehendRange = bWithinApprehendRange;
 
-		// Tick the tree manually. We do NOT call xAgent.SetBehaviorTree(&m_xTree)
-		// because Zenith_AIAgentComponent::Update would then double-tick.
-		m_xTree.Tick(m_xParentEntity, xBB, fDt);
+		// W3: drive the decisions graph where m_xTree.Tick sat - AFTER the
+		// bridge wrote this frame's perception facts, so decisions see fresh
+		// data. NOTE the graph's suspended Selector chain is ALSO re-driven
+		// by the engine's ON_UPDATE dispatch (GraphComponent order 60, real
+		// dt) each frame; this custom-event drive carries dt 0 in its
+		// context, so timers accumulate exactly once per frame (on the
+		// ON_UPDATE drive) while the decisions settle on the freshest
+		// bridge data (this drive). The dt payload is stashed to "dt" for
+		// any chain that needs it explicitly.
+		{
+			if (Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>())
+			{
+				Zenith_PropertyValue xDtPayload;
+				xDtPayload.SetFloat(fDt);
+				pxGraphs->FireCustomEvent("PriestTick", &xDtPayload);
+			}
+		}
 
 		// Optional physics-driven movement: if a collider is present, mirror
 		// the navmesh agent's planned XZ velocity into the rigid body. The
@@ -480,7 +521,7 @@ public:
 		++m_uDebugFrameCounter;
 		if (m_uDebugFrameCounter % 30 == 0)
 		{
-			const Zenith_EntityID xTgt = xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
+			const Zenith_EntityID xTgt = ReadBBEntity(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
 			const Zenith_NavMeshAgent* pxNav = pxAgent->GetNavMeshAgent();
 			Zenith_Maths::Vector3 xPos(0.0f);
 			if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
@@ -488,12 +529,11 @@ public:
 				pxTransform->GetPosition(xPos);
 			}
 			Zenith_Log(LOG_CATEGORY_AI,
-				"Priest_Component::OnUpdate frame=%u tgt=(%u/%u) navAgent=%p hasPath=%d pos=(%.1f,%.1f,%.1f) lastNodeStatus=%d",
+				"Priest_Component::OnUpdate frame=%u tgt=(%u/%u) navAgent=%p hasPath=%d pos=(%.1f,%.1f,%.1f)",
 				m_uDebugFrameCounter,
 				xTgt.m_uIndex, xTgt.m_uGeneration,
 				(void*)pxNav, pxNav ? (pxNav->HasPath() ? 1 : 0) : -1,
-				xPos.x, xPos.y, xPos.z,
-				static_cast<int>(m_xTree.GetLastStatus()));
+				xPos.x, xPos.y, xPos.z);
 		}
 	}
 
@@ -505,7 +545,6 @@ private:
 	// pre-OnStart move stays a no-op.
 	void RewireNavAgentPointer(Priest_Component& xOther)
 	{
-		xOther.m_pxFindPosNode = nullptr;
 		if (!m_xParentEntity.IsValid()) return;
 		Zenith_AIAgentComponent* pxAgent = m_xParentEntity.TryGetComponent<Zenith_AIAgentComponent>();
 		if (pxAgent == nullptr) return;
@@ -515,7 +554,7 @@ private:
 		}
 	}
 
-	void BridgePerceptionToBlackboard(Zenith_Blackboard& xBB)
+	void BridgePerceptionToBlackboard()
 	{
 		const Zenith_EntityID xSelf = m_xParentEntity.GetEntityID();
 
@@ -550,18 +589,18 @@ private:
 		// Zenith_PerceptionSystem::RegisterTarget(villager, hostile)
 		// and position the villager inside the priest's sight cone --
 		// exercising the same code path production gameplay uses.
-		xBB.SetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL, xTargetWithDevil);
+		WriteBBEntity(DP_AI::BB_KEY_TARGET_WITH_DEVIL, xTargetWithDevil);
 
 		// EXT-6: typed sound accessor. Bridge the freshest hearing stimulus
-		// (delivered via DP_AI::EmitNoise → PerceptionSystem) into the BT's
-		// investigate-pos slot. The DP_BTAction_ClearInvestigatePos node
+		// (delivered via DP_AI::EmitNoise → PerceptionSystem) into the graph's
+		// investigate-pos slot. The investigate chain's SetBlackboardBool
 		// resets HasInvestigatePos after the wait completes.
 		const Zenith_PerceptionSystem::Zenith_LastHeardSound xHeard
 			= Zenith_PerceptionSystem::GetLastHeardSoundFor(xSelf);
 		if (xHeard.m_bValid && xHeard.m_fAge < m_fInvestigateMaxAge)
 		{
-			xBB.SetVector3(DP_AI::BB_KEY_INVESTIGATE_POS, xHeard.m_xPosition);
-			xBB.SetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, true);
+			WriteBBVector3(DP_AI::BB_KEY_INVESTIGATE_POS, xHeard.m_xPosition);
+			WriteBBBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, true);
 		}
 	}
 
@@ -590,14 +629,12 @@ private:
 
 	Zenith_Entity       m_xParentEntity;
 
-	Zenith_BehaviorTree m_xTree;
 	Zenith_NavMeshAgent m_xNavAgent;
 	uint32_t            m_uDebugFrameCounter = 0;
 
-	// Used by the reactive-selector hack in OnUpdate: a rising-edge from
-	// INVALID → valid on BB_KEY_TARGET_WITH_DEVIL triggers m_xTree.Reset()
-	// so pursue gets re-evaluated immediately rather than waiting for the
-	// in-flight patrol branch to complete.
+	// Edge memory for the "PriestTargetChanged" parity event (fires on
+	// INVALID->A and direct A->B target changes, where the retired
+	// m_xTree.Reset() hack sat).
 	Zenith_EntityID     m_xLastSeenTarget = INVALID_ENTITY_ID;
 
 	// 2026-05-21: rising-edge tracking for DP_OnPriestAlerted dispatch.
@@ -607,12 +644,6 @@ private:
 	// transition into a higher-priority branch.
 	bool                m_bLastHadInvestigate       = false;
 	bool                m_bLastWithinApprehendRange = false;
-
-	// Non-owning pointer to the patrol's FindPos node. Set in OnStart so
-	// OnUpdate can refresh the navmesh handle when DP_AI rebuilds the cache.
-	// The BT itself owns the node's memory (heap-allocated, so the pointer
-	// survives a BT move); we only need read access to call SetNavMesh on it.
-	DP_BTAction_FindPosInSuspicionSphere* m_pxFindPosNode = nullptr;
 
 	// Class-body initializers below are FALLBACKS only -- production gameplay
 	// always overwrites them in OnAwake via DP_Tuning::Get<float>() reads.

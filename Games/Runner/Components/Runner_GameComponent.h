@@ -28,6 +28,8 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
+#include "Scripting/Zenith_GraphBlackboard.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
@@ -39,6 +41,7 @@
 #include "Runner_Config.h"
 #include "Runner_CharacterController.h"
 #include "Runner_AnimationDriver.h"
+#include "Runner_CharacterShim.h"
 #include "Runner_TerrainManager.h"
 #include "Runner_CollectibleSpawner.h"
 #include "Runner_ParticleManager.h"
@@ -97,30 +100,99 @@ class Runner_GameComponent
 public:
 	Runner_GameComponent() = delete;
 	Runner_GameComponent(Zenith_Entity& xParentEntity)
-		: m_eGameState(RunnerGameState::MAIN_MENU)
-		, m_uScore(0)
-		, m_uHighScore(0)
-		, m_xRng(std::random_device{}())
-		, m_iFocusIndex(0)
+		: m_xRng(std::random_device{}())
 		, m_xParentEntity(xParentEntity)
 	{
 	}
 	~Runner_GameComponent() = default;
 
-	// State probes for the characterization tests (read-only; same surface
-	// before and after the wave-2 graph conversion).
-	RunnerGameState GetGameState() const { return m_eGameState; }
-	uint32_t GetScore() const { return m_uScore; }
-	uint32_t GetHighScore() const { return m_uHighScore; }
+	// ========================================================================
+	// Graph-state accessors - the probe surface. State lives on the attached
+	// graph's blackboard (Runner_RunFlow declares gameState/score/highScore;
+	// Runner_GameFlow pins gameState at MAIN_MENU); C++ (HUD, systems gating,
+	// characterization tests) READS it here. score/highScore are FLOAT vars
+	// so the accumulate/max arithmetic is pure engine float nodes.
+	// ========================================================================
+	RunnerGameState GetGameState()
+	{
+		Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard();
+		if (pxBlackboard == nullptr)
+		{
+			return RunnerGameState::MAIN_MENU;	// pre-resolve fallback
+		}
+		int32_t iState = pxBlackboard->GetInt32("gameState", 0);
+		iState = iState < 0 ? 0 : (iState > 3 ? 3 : iState);
+		return static_cast<RunnerGameState>(iState);
+	}
+	uint32_t GetScore()
+	{
+		Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard();
+		const float fScore = pxBlackboard ? pxBlackboard->GetFloat("score", 0.0f) : 0.0f;
+		return fScore < 0.5f ? 0u : static_cast<uint32_t>(fScore + 0.5f);
+	}
+	uint32_t GetHighScore()
+	{
+		Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard();
+		const float fHighScore = pxBlackboard ? pxBlackboard->GetFloat("highScore", 0.0f) : 0.0f;
+		return fHighScore < 0.5f ? 0u : static_cast<uint32_t>(fHighScore + 0.5f);
+	}
 
-	// Graph-facing surface (wave-2): the scoring / game-over DECISIONS live
-	// in the boot-authored Runner_RunFlow graph; the nodes read the frame's
-	// systems results and write the decisions back through these.
+	// ========================================================================
+	// Graph-facing systems surface (the node seams)
+	// ========================================================================
 	const Runner_CollectibleSpawner::CollectionResult& GetLastCollection() const { return m_xLastCollection; }
 	bool WasObstacleHit() const { return m_bObstacleHitThisFrame; }
-	void AddScore(uint32_t uScore) { m_uScore += uScore; }
-	void SetHighScore(uint32_t uScore) { m_uHighScore = uScore; }
-	void SetGameStateFromGraph(RunnerGameState eState) { m_eGameState = eState; }
+
+	// Run (re)creation: unload any existing run scene, create a fresh one,
+	// initialise every system + the character. State/score resets are
+	// GRAPH-side (the R chain).
+	void RegenerateRun()
+	{
+		m_uCharacterEntityID = INVALID_ENTITY_ID;
+		if (m_xGameScene.IsValid())
+		{
+			g_xEngine.Scenes().UnloadScene(m_xGameScene);
+			m_xGameScene = Zenith_Scene();
+		}
+
+		m_xGameScene = g_xEngine.Scenes().LoadScene("Run", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		g_xEngine.Scenes().SetActiveScene(m_xGameScene);
+
+		InitializeGame();
+	}
+
+	// Run teardown (the escape-to-menu systems body; the menu-scene load is
+	// an engine LoadSceneByIndex node at the end of the graph chain).
+	void UnloadRun()
+	{
+		m_uCharacterEntityID = INVALID_ENTITY_ID;
+		if (m_xGameScene.IsValid())
+		{
+			g_xEngine.Scenes().UnloadScene(m_xGameScene);
+			m_xGameScene = Zenith_Scene();
+		}
+	}
+
+	// Pause/resume the RUN scene only - the GameManager's scene keeps
+	// updating so the graphs still see the resume key.
+	void SetRunPaused(bool bPaused)
+	{
+		if (m_xGameScene.IsValid())
+		{
+			g_xEngine.Scenes().SetScenePaused(m_xGameScene, bPaused);
+		}
+	}
+
+	// Characterization-test seam: the next PLAYING tick consumes this injected
+	// collection result INSTEAD of computing one (deterministic scoring probes
+	// without steering the auto-runner). Conversion-neutral: the decision
+	// consumers read m_xLastCollection identically before and after the wave.
+	void Test_InjectCollection(uint32_t uPoints, uint32_t uCount)
+	{
+		m_xInjectedCollection.m_uPointsGained = uPoints;
+		m_xInjectedCollection.m_uCollectedCount = uCount;
+		m_bHasInjectedCollection = true;
+	}
 
 	void OnAwake()
 	{
@@ -135,98 +207,38 @@ public:
 		m_xDustMaterial = Runner::Resources().m_xDustMaterial;
 		m_xCollectParticleMaterial = Runner::Resources().m_xCollectParticleMaterial;
 
-		// Wire menu button callback
+		// The menu scene's GameManager owns the Play canvas (its clicks are
+		// the graph's OnUIButtonClicked source - no C++ wiring). The gameplay
+		// scene's GameManager has no menu: build the run directly; its state
+		// comes from Runner_RunFlow's declared gameState default (PLAYING).
 		bool bHasMenu = false;
 		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = *pxUI;
-			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-			if (pxPlay)
-			{
-				pxPlay->SetOnClick(&OnPlayClicked, nullptr);
-				bHasMenu = true;
-			}
+			bHasMenu = pxUI->FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay") != nullptr;
 		}
-
-		if (bHasMenu)
+		if (!bHasMenu)
 		{
-			m_eGameState = RunnerGameState::MAIN_MENU;
-			SetMenuVisible(true);
-			SetHUDVisible(false);
-		}
-		else
-		{
-			// No menu UI (gameplay scene) - start game directly
-			StartGame();
+			RegenerateRun();
 		}
 	}
 
-	void OnStart()
-	{
-		if (m_eGameState == RunnerGameState::MAIN_MENU)
-		{
-			SetMenuVisible(true);
-			SetHUDVisible(false);
-		}
-	}
-
+	// Per-state SYSTEMS dispatch - reads the graph-owned state, runs the
+	// systems passes, and fires "RunTick"/"CharTick" into the graphs. All
+	// transitions (keys, scoring, game over, menu) are graph chains.
 	void OnUpdate(const float fDt)
 	{
-		switch (m_eGameState)
+		switch (GetGameState())
 		{
 		case RunnerGameState::MAIN_MENU:
-			UpdateMenuInput();
+			// Menu focus/click handling is fully graph + UI-system side.
 			break;
 
 		case RunnerGameState::PLAYING:
-		{
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
-			{
-				m_eGameState = RunnerGameState::PAUSED;
-				g_xEngine.Scenes().SetScenePaused(m_xGameScene, true);
-				UpdateUI();
-				return;
-			}
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
-			{
-				ResetGame();
-				return;
-			}
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				ReturnToMenu();
-				return;
-			}
-
 			UpdatePlaying(fDt);
 			break;
-		}
 
 		case RunnerGameState::PAUSED:
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
-			{
-				m_eGameState = RunnerGameState::PLAYING;
-				g_xEngine.Scenes().SetScenePaused(m_xGameScene, false);
-			}
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				ReturnToMenu();
-				return;
-			}
-			UpdateUI();
-			break;
-
 		case RunnerGameState::GAME_OVER:
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
-			{
-				ResetGame();
-				return;
-			}
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				ReturnToMenu();
-				return;
-			}
 			UpdateUI();
 			break;
 		}
@@ -239,15 +251,16 @@ public:
 		ImGui::Separator();
 
 		const char* szStates[] = { "MENU", "PLAYING", "PAUSED", "GAME_OVER" };
-		ImGui::Text("State: %s", szStates[static_cast<int>(m_eGameState)]);
+		const RunnerGameState eGameState = GetGameState();
+		ImGui::Text("State: %s", szStates[static_cast<int>(eGameState)]);
 
-		if (m_eGameState != RunnerGameState::MAIN_MENU)
+		if (eGameState != RunnerGameState::MAIN_MENU)
 		{
 			float fDistance = Runner_CharacterController::GetDistanceTraveled();
 			float fSpeed = Runner_CharacterController::GetCurrentSpeed();
 			ImGui::Text("Distance: %.1f m", fDistance);
-			ImGui::Text("Score: %u", m_uScore);
-			ImGui::Text("High Score: %u", m_uHighScore);
+			ImGui::Text("Score: %u", GetScore());
+			ImGui::Text("High Score: %u", GetHighScore());
 			ImGui::Text("Speed: %.1f", fSpeed);
 
 			const char* szCharStates[] = { "RUNNING", "JUMPING", "SLIDING", "DEAD" };
@@ -255,18 +268,9 @@ public:
 			ImGui::Text("Lane: %d", Runner_CharacterController::GetCurrentLane());
 		}
 
-		if (m_eGameState == RunnerGameState::MAIN_MENU)
-		{
-			if (ImGui::Button("Start Game"))
-				StartGame();
-		}
-		else
-		{
-			if (ImGui::Button("Reset Game"))
-				ResetGame();
-			if (ImGui::Button("Return to Menu"))
-				ReturnToMenu();
-		}
+		ImGui::TextWrapped("Flow decisions live in Runner_RunFlow / Runner_GameFlow / "
+			"Runner_CharacterActions; state is on the graph blackboard "
+			"(gameState/score/highScore).");
 	}
 #endif
 
@@ -276,11 +280,12 @@ public:
 		const u_int uComponentVersion = 1;
 		xStream << uComponentVersion;
 
-		// Parameter payload (byte-identical to the pre-migration parameter block,
-		// including its own internal version field).
+		// Parameter payload kept byte-identical to the pre-conversion block.
+		// The RUNTIME high score now lives on the graph blackboard; this
+		// field is the authored initial value only.
 		const uint32_t uVersion = 1;
 		xStream << uVersion;
-		xStream << m_uHighScore;
+		xStream << m_uSerializedHighScore;
 	}
 
 	void ReadFromDataStream(Zenith_DataStream& xStream)
@@ -292,121 +297,26 @@ public:
 		xStream >> uVersion;
 		if (uVersion >= 1)
 		{
-			xStream >> m_uHighScore;
+			xStream >> m_uSerializedHighScore;
 		}
 	}
 
 private:
-	// ========================================================================
-	// Menu Button Callbacks
-	// ========================================================================
-	static void OnPlayClicked(void* /*pxUserData*/)
+	// The attached graph's blackboard (first slot): Runner_RunFlow on the
+	// gameplay GameManager, Runner_GameFlow on the menu GameManager.
+	Zenith_GraphBlackboard* TryGetGraphBlackboard()
 	{
-		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
-	}
-
-	// ========================================================================
-	// State Transitions
-	// ========================================================================
-	void StartGame()
-	{
-		SetMenuVisible(false);
-		SetHUDVisible(true);
-
-		// Create game scene
-		m_xGameScene = g_xEngine.Scenes().LoadScene("Run", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-		g_xEngine.Scenes().SetActiveScene(m_xGameScene);
-
-		// Initialize all systems (uses GetActiveScene internally)
-		InitializeGame();
-
-		m_eGameState = RunnerGameState::PLAYING;
-		m_uScore = 0;
-	}
-
-	void ReturnToMenu()
-	{
-		// Update high score before leaving
-		if (m_uScore > m_uHighScore)
-			m_uHighScore = m_uScore;
-
-		m_uCharacterEntityID = INVALID_ENTITY_ID;
-
-		if (m_xGameScene.IsValid())
+		if (!m_xParentEntity.IsValid())
 		{
-			g_xEngine.Scenes().UnloadScene(m_xGameScene);
-			m_xGameScene = Zenith_Scene();
+			return nullptr;
 		}
-
-		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
-	}
-
-	void ResetGame()
-	{
-		// Update high score
-		if (m_uScore > m_uHighScore)
-			m_uHighScore = m_uScore;
-
-		m_uCharacterEntityID = INVALID_ENTITY_ID;
-
-		if (m_xGameScene.IsValid())
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr || pxGraph->GetGraphCount() == 0)
 		{
-			g_xEngine.Scenes().UnloadScene(m_xGameScene);
-			m_xGameScene = Zenith_Scene();
+			return nullptr;
 		}
-
-		// Create fresh game scene
-		m_xGameScene = g_xEngine.Scenes().LoadScene("Run", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-		g_xEngine.Scenes().SetActiveScene(m_xGameScene);
-
-		// Re-initialize all systems
-		InitializeGame();
-
-		m_eGameState = RunnerGameState::PLAYING;
-		m_uScore = 0;
-	}
-
-	// ========================================================================
-	// Menu UI
-	// ========================================================================
-	void SetMenuVisible(bool bVisible)
-	{
-		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
-		if (pxUI == nullptr)
-			return;
-		Zenith_UIComponent& xUI = *pxUI;
-
-		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
-		if (pxTitle) pxTitle->SetVisible(bVisible);
-		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-		if (pxPlay) pxPlay->SetVisible(bVisible);
-	}
-
-	void SetHUDVisible(bool bVisible)
-	{
-		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
-		if (pxUI == nullptr)
-			return;
-		Zenith_UIComponent& xUI = *pxUI;
-
-		const char* aszElements[] = { "Title", "Distance", "Score", "HighScore", "Speed", "Controls", "Status" };
-		for (const char* szName : aszElements)
-		{
-			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
-			if (pxText) pxText->SetVisible(bVisible);
-		}
-	}
-
-	void UpdateMenuInput()
-	{
-		// Only one button, but still support keyboard focus
-		Zenith_UI::Zenith_UIButton* pxPlay = nullptr;
-		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
-		{
-			Zenith_UIComponent& xUI = *pxUI;
-			pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-		}
-		if (pxPlay) pxPlay->SetFocused(true);
+		Zenith_BehaviourGraph* pxBehaviour = pxGraph->GetGraphAt(0);
+		return pxBehaviour ? &pxBehaviour->GetBlackboard() : nullptr;
 	}
 
 	// ========================================================================
@@ -473,6 +383,12 @@ private:
 		Zenith_ModelComponent& xModel = xCharacter.AddComponent<Zenith_ModelComponent>();
 		xModel.AddMeshEntry(*m_pxCapsuleGeometry, *m_xCharacterMaterial.GetDirect());
 
+		// The character's input/animation DECISIONS live on its own graph
+		// (runtime-spawned entity pattern: AddGraphByAssetPath); the shim
+		// forwards the graph-facing surface to the static-scope modules.
+		xCharacter.AddComponent<Runner_CharacterShim>();
+		xCharacter.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath("game:Graphs/Runner_CharacterActions.bgraph");
+
 		m_uCharacterEntityID = xCharacter.GetEntityID();
 	}
 
@@ -492,10 +408,18 @@ private:
 		float fPlayerZ = Runner_CharacterController::GetDistanceTraveled();
 		float fTerrainHeight = Runner_TerrainManager::GetTerrainHeightAt(fPlayerZ);
 
-		// Update character controller
+		// Update character controller (pure movement systems - the input and
+		// slide-timer decisions run on the character's graph, dispatched
+		// before this component updates)
 		Runner_CharacterController::Update(fDt, xTransform, fTerrainHeight);
 
-		// Update animation driver
+		// Character-frame decisions (slide-timer countdown, animation state
+		// mapping): fired between the controller and the animation systems -
+		// exactly where the old inline decisions sat. dt rides the payload.
+		FireCharTick(xCharacter, fDt);
+
+		// Update animation driver (systems: blend param, state time,
+		// procedural application - the state DECISION arrived via CharTick)
 		Runner_AnimationDriver::Update(fDt, xTransform);
 
 		// Get current player position for other systems
@@ -511,7 +435,17 @@ private:
 		// Check collectible pickups (detection + the particle bursts are
 		// systems; the SCORING decision lives in the Runner_RunFlow graph).
 		float fPlayerRadius = 0.4f;
-		m_xLastCollection = Runner_CollectibleSpawner::CheckCollectibles(xPlayerPos, fPlayerRadius);
+		if (m_bHasInjectedCollection)
+		{
+			// Test seam (see Test_InjectCollection): consume the injected
+			// result verbatim this frame.
+			m_xLastCollection = m_xInjectedCollection;
+			m_bHasInjectedCollection = false;
+		}
+		else
+		{
+			m_xLastCollection = Runner_CollectibleSpawner::CheckCollectibles(xPlayerPos, fPlayerRadius);
+		}
 		for (uint32_t i = 0; i < m_xLastCollection.m_uCollectedCount; i++)
 		{
 			Runner_ParticleManager::SpawnCollectEffect(xPlayerPos);
@@ -589,8 +523,9 @@ private:
 		float fSpeed = Runner_CharacterController::GetCurrentSpeed();
 		static constexpr float s_fMaxSpeed = 35.0f;
 
-		Runner_UIManager::UpdateUI(xUI, fDistance, m_uScore, fSpeed, s_fMaxSpeed, m_eGameState);
-		Runner_UIManager::UpdateHighScore(xUI, m_uHighScore);
+		// HUD text is a systems WRITE that READS the graph-owned state.
+		Runner_UIManager::UpdateUI(xUI, fDistance, GetScore(), fSpeed, s_fMaxSpeed, GetGameState());
+		Runner_UIManager::UpdateHighScore(xUI, GetHighScore());
 	}
 
 	// ========================================================================
@@ -606,13 +541,29 @@ private:
 		pxGraph->FireCustomEvent("RunTick");
 	}
 
+	void FireCharTick(Zenith_Entity& xCharacter, float fDt)
+	{
+		Zenith_GraphComponent* pxGraph = xCharacter.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
+		{
+			return;
+		}
+		Zenith_PropertyValue xDt;
+		xDt.SetFloat(fDt);
+		pxGraph->FireCustomEvent("CharTick", &xDt);
+	}
+
 	// Per-frame systems results consumed by the Runner_RunFlow graph nodes.
 	Runner_CollectibleSpawner::CollectionResult m_xLastCollection;
 	bool m_bObstacleHitThisFrame = false;
 
-	RunnerGameState m_eGameState;
-	uint32_t m_uScore;
-	uint32_t m_uHighScore;
+	// Characterization-test injection seam (Test_InjectCollection).
+	Runner_CollectibleSpawner::CollectionResult m_xInjectedCollection;
+	bool m_bHasInjectedCollection = false;
+
+	// Authored initial high score: serialization ballast only (the runtime
+	// high score is the graph blackboard's "highScore").
+	uint32_t m_uSerializedHighScore = 0;
 
 	Zenith_EntityID m_uCharacterEntityID = INVALID_ENTITY_ID;
 
@@ -621,9 +572,6 @@ private:
 
 	// Random number generator
 	std::mt19937 m_xRng;
-
-	// Menu keyboard focus
-	int32_t m_iFocusIndex;
 
 	// Resource pointers (set in OnAwake from globals)
 	Flux_MeshGeometry* m_pxCapsuleGeometry = nullptr;

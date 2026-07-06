@@ -79,6 +79,10 @@ public:
 	float    GetFireCooldown() const { return m_fFireCooldown; }
 	float    GetAimLayerWeight() const { return m_fAimLayerWeight; }
 	bool     IsReloading()    const { return m_fReloadTimer > 0.0f; }
+	bool     IsHoldingGun()   const
+	{
+		return m_xHeldGun.IsValid() && m_xHeldGun.HasComponent<RenderTest_GunComponent>();
+	}
 
 	// Pure jetpack thrust integrator: accelerate the vertical velocity upward by
 	// one frame's thrust, capped at the ascent ceiling. Gravity is applied
@@ -108,6 +112,82 @@ public:
 	// Single-player game; the smoke runner uses this to drive a test shot
 	// from outside the input system. nullptr until OnAwake fires.
 	static RenderTest_PlayerComponent* GetActiveInstance() { return s_pxActiveInstance; }
+
+	// ---- Discrete-press action verbs (W3 graph conversion) -----------------
+	// Dispatched by RenderTest_PlayerActions.bgraph (OnKeyPressed/OnMouseButton
+	// chains at component order 60) instead of polled inside OnUpdate. Bodies
+	// + guards moved INTACT from the retired OnUpdate/UpdateGunHandling input
+	// blocks; each keeps OnUpdate's transform/collider early-out so a bare
+	// fixture entity can never reach Shoot()/EquipGun().
+
+	// E: drop the held gun, else pick up the nearest free gun in radius.
+	void TryInteractGun()
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>() ||
+			!m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		{
+			return;
+		}
+		if (IsHoldingGun())
+		{
+			DropHeldGun();
+			return;
+		}
+		float fDist = 1e30f;
+		Zenith_Entity xGun = FindNearestGun(fDist);
+		if (xGun.IsValid() && fDist <= RenderTest_Guns::fPICKUP_RADIUS)
+			EquipGun(xGun);
+	}
+
+	// R: need ammo + have reserve + can act -> start reload. Ammo transfer is
+	// deferred to OnUpdate's gated "just finished" block.
+	void TryStartReload()
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>() ||
+			!m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		{
+			return;
+		}
+		const bool bCanAct = !(m_fReloadTimer > 0.0f);
+		if (bCanAct && m_uAmmoInClip < m_uCurrentMagSize && m_uReserveAmmo > 0)
+		{
+			StartReload();
+		}
+	}
+
+	// LMB press: auto-reload on empty, else fire (cooldown + ammo gated).
+	// Hipfire clicks force ADS for the fire animation via m_fForceAimTimer.
+	void TryFire()
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>() ||
+			!m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+		{
+			return;
+		}
+		const bool bCanAct = !(m_fReloadTimer > 0.0f);
+		if (!bCanAct)
+			return;
+		if (m_uAmmoInClip == 0 && m_uReserveAmmo > 0)
+		{
+			// Auto-reload on empty fire-attempt - feels better than a
+			// silent click. Else-if into the fire path so we don't fire
+			// AND reload in the same frame.
+			StartReload();
+		}
+		else if (m_fFireCooldown <= 0.0f && m_uAmmoInClip > 0)
+		{
+			m_fForceAimTimer = 0.4f;  // hold ADS through the fire animation
+			if (m_pxAimLayer)
+			{
+				m_pxAimLayer->GetStateMachine().GetParameters().SetTrigger("FireTrigger");
+			}
+			Shoot();
+			m_uAmmoInClip--;
+			m_fFireCooldown = m_fCurrentFireInterval;
+			if (IsHoldingGun())
+				m_fGunRecoilKick = 1.0f;   // brief anchor pull-back (visible recoil)
+		}
+	}
 
 	// Smoke-runner hook: aim straight down and fire one shot, ignoring fire
 	// cooldown / ammo / reload state. Restores the camera pitch on exit so
@@ -338,47 +418,12 @@ public:
 			g_xEngine.Physics().SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
 		}
 
-		// --- Reload input ---
-		// R + need ammo + have reserve + can act -> start reload. Ammo transfer
-		// is deferred to the gated "just finished" block below — without the
-		// gate the clip would refill every frame after the timer crossed 0.
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R)
-			&& bCanAct
-			&& m_uAmmoInClip < m_uCurrentMagSize
-			&& m_uReserveAmmo > 0)
-		{
-			StartReload();
-		}
-
-		// --- ADS + Fire input ---
+		// --- ADS input (holds stay C++; the R-reload and LMB-fire PRESSES moved
+		// to RenderTest_PlayerActions.bgraph -> TryStartReload()/TryFire()) ---
 		// RMB held -> aim. LMB hipfire-clicks force ADS for the duration of the
-		// fire animation via m_fForceAimTimer so the recoil pose still plays.
+		// fire animation via m_fForceAimTimer (set by TryFire) so the recoil
+		// pose still plays.
 		const bool bAimingRMB = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_RIGHT);
-		const bool bFirePressed = g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
-
-		if (bFirePressed && bCanAct)
-		{
-			if (m_uAmmoInClip == 0 && m_uReserveAmmo > 0)
-			{
-				// Auto-reload on empty fire-attempt — feels better than a
-				// silent click. Else-if into the fire path so we don't fire
-				// AND reload in the same frame.
-				StartReload();
-			}
-			else if (m_fFireCooldown <= 0.0f && m_uAmmoInClip > 0)
-			{
-				m_fForceAimTimer = 0.4f;  // hold ADS through the fire animation
-				if (m_pxAimLayer)
-				{
-					m_pxAimLayer->GetStateMachine().GetParameters().SetTrigger("FireTrigger");
-				}
-				Shoot();
-				m_uAmmoInClip--;
-				m_fFireCooldown = m_fCurrentFireInterval;
-				if (IsHoldingGun())
-					m_fGunRecoilKick = 1.0f;   // brief anchor pull-back (visible recoil)
-			}
-		}
 
 		const bool bAiming = bAimingRMB || (m_fForceAimTimer > 0.0f);
 		RenderTest_GameplayState::s_bLocalPlayerAiming = bAiming;
@@ -1061,12 +1106,8 @@ private:
 
 	//=========================================================================
 	// Gun pickup / drop / hold
+	// (IsHoldingGun lives with the public read-only accessors near the top.)
 	//=========================================================================
-
-	bool IsHoldingGun() const
-	{
-		return m_xHeldGun.IsValid() && m_xHeldGun.HasComponent<RenderTest_GunComponent>();
-	}
 
 	// Per-frame: showcase auto-equip + camera, nearest-gun proximity, E pickup/drop,
 	// and the HUD prompt. Cheap and fully gated — does nothing useful (and never
@@ -1096,19 +1137,14 @@ private:
 			}
 		}
 
-		// Nearest free gun (only relevant when empty-handed).
+		// Nearest free gun (only relevant when empty-handed; feeds the HUD
+		// prompt). The E pickup/drop PRESS moved to RenderTest_PlayerActions
+		// .bgraph -> TryInteractGun(), which re-resolves the nearest gun at
+		// press time (same-frame data, matching the old poll-after-refresh).
 		m_xNearestGun = Zenith_Entity();
 		m_fNearestGunDist = 1e30f;
 		if (!IsHoldingGun())
 			m_xNearestGun = FindNearestGun(m_fNearestGunDist);
-
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_E))
-		{
-			if (IsHoldingGun())
-				DropHeldGun();
-			else if (m_xNearestGun.IsValid() && m_fNearestGunDist <= RenderTest_Guns::fPICKUP_RADIUS)
-				EquipGun(m_xNearestGun);
-		}
 
 		UpdateGunPrompt();
 	}

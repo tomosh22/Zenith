@@ -203,9 +203,9 @@ public:
 		Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 		if (pxPlayButton)
 		{
-			// User data deliberately nullptr (the callback only needs statics):
-			// passing 'this' would dangle when the component pool relocates.
-			pxPlayButton->SetOnClick(&OnPlayClicked, nullptr);
+			// The menu Play click is wired by the Combat_GameFlow graph's
+			// OnUIButtonClicked("MenuPlay") node (self-wires the button's onClick
+			// when the graph ticks); no C++ SetOnClick needed.
 			// Start in menu state
 			SetGameState(Combat_GameState::MAIN_MENU);
 			m_iFocusIndex = 0;
@@ -236,38 +236,25 @@ public:
 
 		switch (s_eGameState)
 		{
+		// The menu/pause/reset input DECISIONS (P/R/Escape, menu Play, menu focus)
+		// live in the Combat_GameFlow graph now (order 60, before this systems
+		// dispatch at order 100). A transition the graph makes this frame lands
+		// in s_eGameState before this switch reads it, so this pass runs the
+		// systems for the *new* state - reproducing the old early-return-skips-
+		// systems behaviour (a P-in-PLAYING frame runs the PAUSED systems here,
+		// not the PLAYING block). This switch is now systems-only.
 		case Combat_GameState::MAIN_MENU:
-			UpdateMenuInput();
 			break;
 
 		case Combat_GameState::PLAYING:
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
-			{
-				SetGameState(Combat_GameState::PAUSED);
-				g_xEngine.Scenes().SetScenePaused(m_xArenaScene, true);
-				UpdateUI();
-				return;
-			}
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
-			{
-				ResetGame();
-				return;
-			}
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				ReturnToMenu();
-				return;
-			}
-
-			// GameManager only ticks GAME-WIDE state. Per-entity work (player movement,
-			// enemy AI) lives on Combat_PlayerComponent and Combat_EnemyComponent and is
-			// dispatched via their own OnUpdate hooks - the engine routes those for us.
+			// GameManager only ticks GAME-WIDE state. Per-entity work (player
+			// movement, enemy AI) lives on Combat_PlayerComponent /
+			// Combat_EnemyComponent, dispatched via their own OnUpdate hooks.
 			Combat_DamageSystem::Update(fDt);
 			ProcessDeferredEvents();
 			// Round flow (combo-timer tick + win/lose decision) lives in the
 			// boot-authored Combat_RoundFlow graph; fire its driving event at
 			// exactly the point the old UpdateComboTimer/CheckGameState ran.
-			// dt rides the payload for the timer node.
 			FireRoundTick(fDt);
 			UpdateCamera(fDt);
 			UpdateUI();
@@ -275,36 +262,25 @@ public:
 			break;
 
 		case Combat_GameState::PAUSED:
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
-			{
-				SetGameState(Combat_GameState::PLAYING);
-				g_xEngine.Scenes().SetScenePaused(m_xArenaScene, false);
-			}
-			else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				ReturnToMenu();
-				return;
-			}
 			UpdateUI();
 			break;
 
 		case Combat_GameState::VICTORY:
 		case Combat_GameState::GAME_OVER:
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
-			{
-				ResetGame();
-				return;
-			}
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				ReturnToMenu();
-				return;
-			}
 			UpdateCamera(fDt);
 			UpdateUI();
 			break;
 		}
 	}
+
+	// Combat_GameFlow.bgraph tick shims: the graph handles the menu/pause/reset
+	// input DECISIONS at order 60, before this component's systems dispatch at
+	// order 100 reads s_eGameState. s_eGameState stays the static source of truth
+	// (SetGameState authoritative); these expose the systems the nodes execute.
+	void Graph_SetScenePaused(bool bPaused) { g_xEngine.Scenes().SetScenePaused(m_xArenaScene, bPaused); }
+	void Graph_ResetGame() { ResetGame(); }
+	void Graph_ReturnToMenu() { ReturnToMenu(); }
+	void Graph_FocusPlayButton() { UpdateMenuInput(); }
 
 #ifdef ZENITH_TOOLS
 	void RenderPropertiesPanel()
@@ -366,14 +342,8 @@ public:
 	}
 
 private:
-	// ========================================================================
-	// Menu Callbacks
-	// ========================================================================
-
-	static void OnPlayClicked(void* /*pxUserData*/)
-	{
-		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
-	}
+	// (OnPlayClicked removed - the menu Play click is handled by the
+	//  Combat_GameFlow graph's OnUIButtonClicked -> LoadSceneByIndex node.)
 
 	// ========================================================================
 	// State Transitions
@@ -636,10 +606,14 @@ private:
 		// arrives via the entity's pending-start dispatch next frame.
 		xPlayer.AddComponent<Combat_PlayerComponent>().OnAwake();
 
-		// Attach the boot-authored attack-flow graph: the player component
-		// fires "AttackTick" into it at the end of its OnUpdate (the decisions
-		// run in the graph; the systems run back through the component).
-		xPlayer.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath("game:Graphs/Combat_PlayerAttack.bgraph");
+		// Attach the boot-authored player graphs: the player component fires
+		// "PlayerTick" (controller state machine) then "AttackTick" (attack flow)
+		// into them each OnUpdate, at exactly the points the old
+		// m_xController.Update / UpdateAttack bodies ran. Decisions run in the
+		// graphs; the systems run back through the component.
+		Zenith_GraphComponent& xPlayerGraph = xPlayer.AddComponent<Zenith_GraphComponent>();
+		xPlayerGraph.AddGraphByAssetPath("game:Graphs/Combat_PlayerAttack.bgraph");
+		xPlayerGraph.AddGraphByAssetPath("game:Graphs/Combat_PlayerState.bgraph");
 
 		// Create hit spark emitter in arena scene
 		Zenith_Entity xHitSparkEmitter = g_xEngine.Scenes().CreateEntity(pxSceneData, "HitSparkEmitter");
@@ -731,6 +705,12 @@ private:
 			Combat_EnemyComponent& xEnemyComponent = xEnemy.AddComponent<Combat_EnemyComponent>();
 			xEnemyComponent.OnAwake();
 			xEnemyComponent.SetConfig(xConfig);
+
+			// Attach the per-enemy brain graph: the enemy component fires
+			// "EnemyBrainTick" into it each OnUpdate (dt rides the payload); its
+			// StateMachine dispatches the state handlers the old
+			// Combat_EnemyAI::Update switch used to.
+			xEnemy.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath("game:Graphs/Combat_EnemyBrain.bgraph");
 		}
 	}
 

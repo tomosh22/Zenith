@@ -4,9 +4,13 @@
 
 The AI system provides comprehensive game AI capabilities including:
 - **Navigation**: NavMesh-based pathfinding with A* and path smoothing
-- **Behavior Trees**: Flexible decision-making framework
 - **Perception**: Sight cones, hearing, damage awareness, and memory
 - **Squad Tactics**: Formations, roles, tactical points, and coordinated behavior
+
+> Decision-making is authored in **Behaviour Graphs** (`Zenith/Scripting/`,
+> `Zenith_GraphComponent`), not here. The former `Zenith/AI/BehaviorTree` module
+> was removed once every game had converted (doctrine: systems = C++, logic =
+> graphs); `Zenith_AIAgentComponent` survives as a perception/nav host only.
 
 ## Architecture
 
@@ -17,14 +21,6 @@ AI/
 │   ├── Zenith_NavMeshGenerator.h/cpp
 │   ├── Zenith_Pathfinding.h/cpp
 │   └── Zenith_NavMeshAgent.h/cpp
-├── BehaviorTree/        # Decision-making framework
-│   ├── Zenith_BehaviorTree.h/cpp
-│   ├── Zenith_BTNode.h/cpp
-│   ├── Zenith_BTComposites.h/cpp
-│   ├── Zenith_BTDecorators.h/cpp
-│   ├── Zenith_BTActions.h/cpp
-│   ├── Zenith_BTConditions.h/cpp
-│   └── Zenith_Blackboard.h/cpp
 ├── Perception/          # Sensory systems
 │   └── Zenith_PerceptionSystem.h/cpp
 ├── Squad/               # Tactical coordination
@@ -73,23 +69,14 @@ AI/
 - Smooth acceleration/deceleration
 - Rotation towards movement direction
 
-### Behavior Tree System
+### Decision-making (Behaviour Graphs)
 
-**Node Types**:
-- `Zenith_BTNode`: Abstract base with Execute(), OnEnter(), OnExit(), OnAbort()
-- `Zenith_BTComposite`: Multiple children (Sequence, Selector, Parallel)
-- `Zenith_BTDecorator`: Single child modifier (Inverter, Repeater, Cooldown)
-- `Zenith_BTLeaf`: Actions and conditions
-
-**Execution Model**:
-- Trees tick at configurable interval (default 10 Hz)
-- Nodes return SUCCESS, FAILURE, or RUNNING
-- RUNNING nodes resume on next tick
-- Blackboard provides shared state storage
-
-**Blackboard** supports types:
-- float, int32, bool, Vector3, EntityID
-- Key-value storage with serialization
+Agent decision-making is authored in Behaviour Graphs (`Zenith/Scripting/`,
+hosted by `Zenith_GraphComponent`), not in this module. The graph runtime
+provides the BT-equivalent constructs — a reactive `Selector`, `StateMachine`,
+`Repeat`, `Cooldown`, RUNNING suspension/resume, and AI leaf nodes (`NavMoveTo`,
+`SetNavDestination`, perception queries) in `Zenith_GraphNode_Registration_AI.cpp`.
+See `Zenith/Scripting/CLAUDE.md`.
 
 ### Perception System
 
@@ -118,19 +105,17 @@ AI/
 ### Adding AI to an Entity
 
 ```cpp
-// Add the component
+// Add the component (a perception/nav host; decisions live in a Behaviour Graph)
 auto& xAI = xEntity.AddComponent<Zenith_AIAgentComponent>();
 
-// Configure behavior tree
-xAI.SetBehaviorTree(pxPatrolTree);
-
-// Set up blackboard
-xAI.GetBlackboard().SetFloat("PatrolRadius", 10.0f);
-xAI.GetBlackboard().SetVector3("HomePosition", xHomePos);
+// Wire a nav agent (non-owning) so the graph's nav nodes can drive movement
+xAI.SetNavMeshAgent(&xMyNavAgent);
 
 // Register with perception system
 Zenith_PerceptionSystem::RegisterAgent(xEntity.GetEntityID());
 Zenith_PerceptionSystem::SetSightConfig(xEntity.GetEntityID(), xSightConfig);
+
+// Author the decision graph on a Zenith_GraphComponent (see Zenith/Scripting/)
 ```
 
 ### Generating NavMesh
@@ -200,8 +185,8 @@ after the scene update. Do not also tick the managers from game code when enable
 The typical per-frame sequence (whichever drives the managers):
 1. Physics update (provides collision data)
 2. AI managers: `PerceptionSystem::Update()` (+ squad / tactical-point) — game-driven, or the opt-in engine tick
-3. `AIAgentComponent::OnUpdate()` - ticks behavior trees
-4. `NavMeshAgent::Update()` - moves agents
+3. Behaviour-graph decision tick (`Zenith_GraphComponent`, e.g. a "PriestTick" event) sets nav destinations
+4. `AIAgentComponent::OnUpdate()` → `NavMeshAgent::Update()` - moves agents along the path
 
 ## Debug Visualization
 
@@ -245,5 +230,4 @@ derivation (see *Facing / heading convention* above).
 ## See Also
 
 - [Navigation/CLAUDE.md](Navigation/CLAUDE.md) - NavMesh details
-- [BehaviorTree/CLAUDE.md](BehaviorTree/CLAUDE.md) - BT node reference
 - [Perception/CLAUDE.md](Perception/CLAUDE.md) - Perception configuration

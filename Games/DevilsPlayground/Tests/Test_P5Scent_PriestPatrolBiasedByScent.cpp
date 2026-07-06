@@ -8,7 +8,6 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 
@@ -17,7 +16,9 @@
 #include "Source/DPParticles.h"
 #include "Components/DPVillager_Component.h"
 #include "Components/DPPlayerController_Component.h"
-#include "Components/DP_BT_Nodes.h"
+#include "Components/DP_GraphNodes.h"
+#include "Scripting/Zenith_GraphNode.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
 #include "Components/Priest_Component.h"
 
 #include <cmath>
@@ -183,22 +184,28 @@ static bool Step_P5ScentBias(int iFrame)
 		if (xPriest.IsValid())
 		{
 			Zenith_Entity xP = g_xEngine.Scenes().ResolveEntity(xPriest);
-			if (Zenith_AIAgentComponent* pxAgent = xP.TryGetComponent<Zenith_AIAgentComponent>())
+			Priest_Component* pxPriest = xP.TryGetComponent<Priest_Component>();
+			Zenith_BehaviourGraph* pxGraph = pxPriest ? pxPriest->FindPriestGraph() : nullptr;
+			if (pxGraph != nullptr)
 			{
-				Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
-				// Ensure scent target BB is set.
-				xBB.SetEntityID(DP_AI::BB_KEY_HIGH_SCENT_TARGET, g_xVillager);
-				DP_BTAction_FindPosInSuspicionSphere xNode;
-				xNode.SetNavMesh(DP_AI::GetOrBuildLevelNavMesh());
+				// W3: the patrol picker is the DPPriestPickPatrolTarget graph
+				// node reading the priest's DECISION blackboard - same
+				// standalone-Execute seam the retired BT node offered.
+				pxPriest->WriteBBEntity(DP_AI::BB_KEY_HIGH_SCENT_TARGET, g_xVillager);
 				// Bump priest patrol radius so the random pick has
 				// generous room even when the navmesh has lots of
 				// occlusion near the villager.
-				xBB.SetFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, 15.0f);
-				BTNodeStatus eStatus = xNode.Execute(xP, xBB, 0.0f);
-				if (eStatus == BTNodeStatus::SUCCESS)
+				pxPriest->WriteBBFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, 15.0f);
+				DPNode_PriestPickPatrolTarget xNode;
+				Zenith_GraphContext xCtx;
+				xCtx.m_xSelf = xP;
+				xCtx.m_pxBlackboard = &pxGraph->GetBlackboard();
+				const GraphNodeStatus eStatus = xNode.Execute(xCtx);
+				if (eStatus == GRAPH_NODE_STATUS_SUCCESS)
 				{
 					const Zenith_Maths::Vector3 xPatrol =
-						xBB.GetVector3(DP_AI::BB_KEY_PATROL_TARGET);
+						pxGraph->GetBlackboard().GetVector3(
+							DP_AI::BB_KEY_PATROL_TARGET, Zenith_Maths::Vector3(0.0f));
 					// Check patrol point is within suspicion radius
 					// of the VILLAGER (not the priest). The radius
 					// itself is the test -- bias should center on

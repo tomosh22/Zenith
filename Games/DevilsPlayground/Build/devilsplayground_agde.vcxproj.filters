@@ -446,10 +446,10 @@
     <ClCompile Include="..\Tests\Test_T0SaveData_TestHooks.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="..\Tests\Test_T1NavMesh_BTUnitsCanFollowRealPath.cpp">
+    <ClCompile Include="..\Tests\Test_T1NavMesh_GeneratorPerf.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
-    <ClCompile Include="..\Tests\Test_T1NavMesh_GeneratorPerf.cpp">
+    <ClCompile Include="..\Tests\Test_T1NavMesh_UnitsCanFollowRealPath.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_TelemetryEdgeCases.cpp">
@@ -459,6 +459,9 @@
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\Tests\Test_VisualWiring.cpp">
+      <Filter>Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tests\Test_W3GraphConversionCharacterization.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
   </ItemGroup>
@@ -512,9 +515,6 @@
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DPVillager_Component.h">
-      <Filter>Components</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Components\DP_BT_Nodes.h">
       <Filter>Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Components\DP_GraphNodes.h">

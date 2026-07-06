@@ -26,45 +26,114 @@ Games/Runner/
   Components/
     Runner_Config.h              # DataAsset for game configuration
     Runner_GameComponent.h       # Main game coordinator component
-    Runner_CharacterController.h # Lane-based movement, jump, slide
-    Runner_AnimationDriver.h     # Animation state machine control
+    Runner_CharacterController.h # Lane-based movement, jump, slide (systems + Try* gates)
+    Runner_AnimationDriver.h     # Animation systems (blend param, procedural apply)
+    Runner_CharacterShim.h       # Graph-facing wrapper over the static character modules
     Runner_TerrainManager.h      # Terrain chunk management
     Runner_CollectibleSpawner.h  # Obstacles and collectibles
     Runner_ParticleManager.h     # Visual particle effects
     Runner_UIManager.h           # HUD management
-    Runner_GraphNodes.h          # Behaviour Graph node library (scoring + game-over flow)
+    Runner_GraphNodes.h          # Behaviour Graph node library (12 systems-seam nodes)
   Tests/
-    Test_RunnerCharacterization.cpp  # Automated game-over flow test
+    Test_RunnerCharacterization.cpp  # 7 automated tests (game-over, pause, reset, escape, menu, scoring, character actions)
   Assets/
-    Scenes/MainMenu.zscen, Runner.zscen  # Boot-authored scenes
-    Graphs/Runner_RunFlow.bgraph         # Boot-authored run-flow graph
+    Scenes/MainMenu.zscen, Runner.zscen        # Boot-authored scenes
+    Graphs/Runner_RunFlow.bgraph               # Run flow (owns the game state)
+    Graphs/Runner_GameFlow.bgraph              # Menu flow (Play click + focus)
+    Graphs/Runner_CharacterActions.bgraph      # Character input/slide-timer/anim decisions
 ```
 
-## Behaviour Graphs (scoring + game-over flow)
+## Behaviour Graphs (W1 conversion — ALL decisions graph-side)
 
-The run-flow DECISIONS live in `Runner_RunFlow.bgraph` (boot-authored via
-`Zenith_EditorAutomation` graph steps; attached to the gameplay GameManager
-with `AddStep_AttachGraph`; runtime docs in `Zenith/Scripting/CLAUDE.md`).
-`Runner_GameComponent`'s PLAYING tick computes the systems results
-(`CheckCollectibles` → stashed `CollectionResult` + particle bursts;
-`CheckObstacleCollision` → stashed flag) then fires "RunTick" at exactly the
-point the old decision block ran:
+Three graphs, all boot-authored through `Zenith_GraphBuilder`
+(`AddStep_GraphBuild`, `BuildGraph_Runner*` in Runner.cpp; runtime docs in
+`Zenith/Scripting/CLAUDE.md`). The game state LIVES on the graph blackboard:
+`Runner_GameComponent`'s `GetGameState`/`GetScore`/`GetHighScore` read the
+attached graph's blackboard (`gameState` int; `score`/`highScore` FLOATS so
+the accumulate/max arithmetic is engine float nodes); the HUD and the
+characterization tests consume state only through those accessors. The
+component keeps SYSTEMS only.
 
-`RunnerApplyScoring` (score += the frame's collectible points) →
-`RunnerCheckGameOver` (obstacle hit → `Runner_CharacterController::OnObstacleHit`
-+ GAME_OVER + high-score sync; character DEAD → GAME_OVER — deliberately
-WITHOUT high-score sync, a preserved pre-graph quirk).
+**`Runner_RunFlow.bgraph`** (gameplay GameManager; `gameState`=PLAYING,
+`score`/`highScore`=0):
+- `OnStart` → 7× `SetUIVisible(true)` (the old StartGame HUD show).
+- Four `OnCustomEvent("RunTick")` chains (fired once per PLAYING frame at the
+  old decision block's callsite; node order = the old same-frame order):
+  1. `RunnerStageFrameResults` (pointsGained/collectedCount/obstacleHit/
+     characterDead onto the blackboard),
+  2. scoring: `AddBlackboardFloat`(score += pointsGained),
+  3. obstacle: `Branch`(obstacleHit) → `RunnerKillCharacter` → GAME_OVER →
+     `MathBlackboardFloat`(max) high-score sync,
+  4. dead: `Branch`(characterDead) → GAME_OVER — **deliberately WITHOUT a
+     high-score sync node** (the pre-graph quirk, preserved structurally).
+- `OnKeyPressed(P)` → `SwitchOnInt(gameState)`: PLAYING↔PAUSED; the scene
+  pause itself is the **`StateMachine`** node's `RunnerEnter_Paused`/
+  `RunnerExit_Paused` transition events → `RunnerSetRunPaused(true/false)`.
+- `OnKeyPressed(R)` → `CompareBlackboardInt`(≠PAUSED) → `Branch` → high-score
+  sync (max) → `RunnerRegenerateRun` → score=0 → PLAYING.
+- `OnKeyPressed(Esc)` → high-score sync → `RunnerUnloadRun` →
+  `LoadSceneByIndex(0)` (unconditional — Esc returns to menu from every run
+  state; Runner has no Esc-pauses quirk).
+- `OnUpdate` → `StateMachine`(gameState, prefix "Runner", LAST in node order
+  so key-driven transitions land the same dispatch).
 
-Shim surface: `GetLastCollection`, `WasObstacleHit`, `AddScore`,
-`SetHighScore`, `SetGameStateFromGraph`. Nodes registered via
-`Runner_RegisterGraphNodes()`.
+**`Runner_GameFlow.bgraph`** (menu GameManager; `gameState`=MAIN_MENU):
+`OnUIButtonClicked("MenuPlay")` → `LoadSceneByIndex(1)` (engine UIButton
+trampoline — no C++ click wiring; focused-Enter activation included);
+`OnUpdate` → `RunnerFocusPlayButton`.
 
-**Equivalence proof:** `Tests/Test_RunnerCharacterization.cpp` (headless OK):
-`Runner_GameOverFlow_Test` — the auto-runner with no evasive input must reach
-GAME_OVER, score stays monotonic, final high score >= final score.
+**`Runner_CharacterActions.bgraph`** (character entity, runtime-attached by
+`CreateCharacter` via `AddGraphByAssetPath`; nodes resolve
+**`Runner_CharacterShim`** — the static-scope → shim-wrapper pilot over
+`Runner_CharacterController`/`Runner_AnimationDriver`):
+- Input → Try*-gate chains: A/Left → `RunnerTrySwitchLane(-1)`, D/Right →
+  `(+1)`, Space/W/Up → `RunnerTryJump`, S/Down → `RunnerTrySlide` (the old
+  `HandleInput` dispatch; the gate CONDITIONS — grounded, not-sliding,
+  outer-lane clamp, DEAD — stay in the controller).
+- Two `OnCustomEvent("CharTick")` chains (fired by the component between the
+  controller and animation systems passes, dt as payload):
+  1. slide-duration countdown (the **DecrementTimer pilot**): `RunnerTrySlide`
+     arms blackboard `slideTimer` from the config duration →
+     `MathBlackboardFloat`(sub payload) → clamp → compare ≤0 → `Branch` →
+     `RunnerEndSlide`,
+  2. animation mapping: `RunnerStageCharacterFacts` →
+     `SwitchOnInt(charState)`: RUNNING → speed>0.1 `Branch` → RUN/IDLE;
+     JUMPING → JUMP; SLIDING → SLIDE; **DEAD pin unwired** (keep-last-state)
+     → `RunnerSetAnimState`. (Engine animator nodes don't apply here — the
+     capsule demo has no `Zenith_AnimatorComponent`; a real skeletal setup
+     would use `SetAnimatorFloat`/`SetAnimatorTrigger` instead.)
+
+### Game node library (`Components/Runner_GraphNodes.h`, 12 systems seams)
+
+| Node | What it does |
+|---|---|
+| `RunnerStageFrameResults` | Publishes pointsGained/collectedCount/obstacleHit/characterDead |
+| `RunnerKillCharacter` | `Runner_CharacterController::OnObstacleHit` |
+| `RunnerRegenerateRun` | Unload old run scene + create fresh + init systems + character |
+| `RunnerUnloadRun` | Run teardown |
+| `RunnerSetRunPaused` | `SetScenePaused` on the run scene |
+| `RunnerFocusPlayButton` | Keeps the single menu button focused |
+| `RunnerTrySwitchLane` | Lane-switch gate (m_iDirection; FAILURE on clamp/dead) |
+| `RunnerTryJump` | Jump gate (grounded + not sliding) |
+| `RunnerTrySlide` | Slide gate; arms the blackboard slide timer from config |
+| `RunnerEndSlide` | Slide-expiry systems body (gated on SLIDING) |
+| `RunnerStageCharacterFacts` | Publishes charState/speed for the anim chain |
+| `RunnerSetAnimState` | Applies the graph-decided animation state |
+
+Registered via `Runner_RegisterGraphNodes()`. The old wave-2 verbatim-wrapped
+decision nodes (`RunnerApplyScoring`/`RunnerCheckGameOver`) are DELETED.
+
+**Equivalence proof:** `Tests/Test_RunnerCharacterization.cpp` (headless OK; 7
+tests, written green against the C++ decisions FIRST and passing unchanged
+against the graphs): `Runner_GameOverFlow_Test` (auto-run → GAME_OVER,
+monotonic score, high ≥ final), `Runner_PauseResume_Test`,
+`Runner_ResetFlow_Test`, `Runner_EscapeMenu_Test`, `Runner_MenuPlay_Test`,
+`Runner_ScoringHighScore_Test` (via the `Test_InjectCollection` seam),
+`Runner_CharacterActions_Test` (lanes + clamping, jump/slide + anim states,
+~0.8 s slide duration, no-jump-while-sliding gate; death-tolerant via R-retry).
 
 ```
-runner.exe --all-automated-tests --headless --exit-after-frames 30000 --fixed-dt 0.01666 --skip-unit-tests
+runner.exe --all-automated-tests --headless --exit-after-frames 45000 --fixed-dt 0.01666 --skip-unit-tests
 ```
 
 ## Module Breakdown
@@ -90,15 +159,17 @@ Configurable parameters:
 - Particle emission rates
 
 ### Runner_CharacterController.h - Movement
-**Engine APIs:** `Zenith_Input`, `Zenith_TransformComponent`
+**Engine APIs:** `Zenith_TransformComponent`
 
 Demonstrates:
 - Lane-based lateral movement (mobile-style)
 - Smooth lane switching with easing
 - Jump mechanics with gravity
-- Slide mechanics with duration timer
+- Slide mechanics (duration countdown lives in the character graph)
 - Terrain height following
 - Character state machine (Running, Jumping, Sliding, Dead)
+- Public Try* gates consumed by the Runner_CharacterActions graph (which
+  input triggers which gate is graph-authored; the gate conditions stay here)
 
 ### Runner_AnimationDriver.h - Animation Control
 **Engine APIs:** `Flux_AnimationStateMachine` concepts, `Flux_BlendTreeNode_BlendSpace1D` concepts

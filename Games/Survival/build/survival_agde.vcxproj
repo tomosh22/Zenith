@@ -168,6 +168,7 @@
     <ClInclude Include="..\Components\Survival_CraftingSystem.h" />
     <ClInclude Include="..\Components\Survival_EventBus.h" />
     <ClInclude Include="..\Components\Survival_GameComponent.h" />
+    <ClInclude Include="..\Components\Survival_GraphNodes.h" />
     <ClInclude Include="..\Components\Survival_Inventory.h" />
     <ClInclude Include="..\Components\Survival_PlayerController.h" />
     <ClInclude Include="..\Components\Survival_ResourceNode.h" />
@@ -177,6 +178,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Survival.cpp" />
+    <ClCompile Include="..\Tests\Test_SurvivalCharacterization.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -700,15 +700,6 @@
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.Tests.inl" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.Tests.inl" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTActions.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTComposites.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTConditions.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTDecorators.h" />
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.h" />
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMesh.h" />
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMesh.Tests.inl" />
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshAgent.h" />
@@ -732,13 +723,6 @@
     <ClInclude Include="..\Zenith\AI\Zenith_AIWorldHooks.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.cpp" />
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.cpp" />
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTActions.cpp" />
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTComposites.cpp" />
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTConditions.cpp" />
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTDecorators.cpp" />
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.cpp" />
     <ClCompile Include="..\Zenith\AI\Internal\Zenith_AIPCH.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_False|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='D3D12_vs2022_Debug_Win64_True|x64'">Create</PrecompiledHeader>

@@ -21,10 +21,18 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   (slot list, blackboard overrides, lifecycle/collision dispatch, custom-event
   firing with optional payload, registered at meta order 60 as "Graph").
 - `EntityComponent/Zenith_GraphNode_Registration.cpp` — the engine node library
-  (26 nodes: 11 event sources, 10 actions, 5 flow), installed by
+  (128 nodes as of the adoption-program Part 2: core events/blackboard/flow in
+  the main TU + domain sub-registrar TUs `Zenith_GraphNode_Registration_
+  {Input,Flow,Entity,Math,Scene,Physics,Animation,UI,AI}.cpp` — all filled;
+  see `EntityComponent/CLAUDE.md` for the per-TU node families), installed by
   `Zenith_Engine::Initialise` via `SetNodeRegistrar`. Games register custom
   nodes from their `Project_RegisterGameComponents` hook (see "Game node
   libraries" below).
+- `Scripting/Zenith_GraphBuilder.{h,cpp}` — leaf-safe fluent programmatic
+  authoring (Variable/Node/Param*/Edge/Chain/Build; error-latching; auto grid
+  layout). The bulk boot-authoring path: games use
+  `Zenith_EditorAutomation::AddStep_GraphBuild(path, pfnBuild)`; the
+  `AddStep_Graph*` click-steps stay for editor-coverage tests.
 - `EntityComponent/Zenith_GraphReload` — TOOLS-only hot reload (editor Save +
   FileWatcher on `game:Graphs/*.bgraph`), drained at the main loop's safe point.
 
@@ -32,23 +40,35 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
 
 - `Zenith_GraphNode.h` — `GraphNodeStatus` (SUCCESS / FAILURE / RUNNING),
   `GraphEventType` (None, OnStart, OnUpdate, OnFixedUpdate, OnEnable, OnDisable,
-  OnDestroy, OnCollisionEnter/Stay/Exit, Timer, Custom), `Zenith_GraphContext`
-  (`m_xSelf`, `m_fDt`, graph/blackboard pointers, optional
-  `m_pxEventPayload`), and the node base class (`Execute`, `GetTypeName`,
-  `MatchesCustomEvent`, optional `OnEnter`/`OnExit` — declared on the base
-  class but **not yet called by the runtime** (`RunChainFromPin` only invokes
-  `Execute`); reserved for future chain-lifecycle hooks).
+  OnDestroy, OnCollisionEnter/Stay/Exit, Timer, Custom, OnGraphCall — append-only,
+  never serialized), `Zenith_GraphEventArg` (named multi-field payload element),
+  `Zenith_GraphContext` (`m_xSelf`, `m_fDt`, `m_fTimeSeconds` wall-clock,
+  graph/blackboard pointers, optional `m_pxEventPayload` + named
+  `m_pxEventArgs`/count, and `ResolveTargetEntity(var)` — the entity-targeting
+  seam: "" = self, else a packed-EntityID blackboard var, resolved leaf-safe via
+  `Zenith_SceneSystem::Get()`), and the node base class (`Execute`,
+  `GetTypeName`, `MatchesCustomEvent`, chain-lifecycle `OnEnter`/`OnExit` —
+  **now invoked by `RunChainFromPin`**: one OnEnter per run of a node (a
+  suspended node resuming does NOT re-enter), OnExit on SUCCESS/FAILURE never
+  RUNNING — plus `OnAbort` (preemption: reset per-run state; flow nodes forward
+  into their active pins via `AbortChain`) and `GetDynamicExecOutputCount`
+  (variable-pin flow nodes; pin ≤ 255 by the cursor-key layout)).
 - `Zenith_GraphNodeRegistry.{h,cpp}` — `RegisterNodeType<T>(name, eventType,
   outputCount, bFlowNode, category)` derives the create-fn, property table
   (via `ZENITH_PROPERTY`), and type version from the node class; name-keyed;
   duplicate-guarded; registrar inversion keeps this module leaf-safe.
 - `Zenith_GraphBlackboard.{h,cpp}` — name → `Zenith_PropertyValue` store with
-  typed getters (`GetFloat/GetBool/GetInt32(name, default)` — return the
-  default on missing OR type mismatch, never reinterpret), `SetValue`,
-  `TryGetValue`, `VisitAll`. Two copy semantics, chosen deliberately:
-  `ApplyOverridesFrom` (scene-load: ad-hoc variables restore verbatim, type
-  conflicts drop) vs `CopyMatchingFrom` (hot reload: strict name+type match
-  only).
+  typed getters (`GetFloat/GetBool/GetInt32/GetVector2/3/4/GetString/
+  GetPackedEntityID(name, default)` — return the default on missing OR type
+  mismatch, never reinterpret), `SetValue`, `TryGetValue`, `VisitAll`, plus a
+  parallel LIST store (`GetOrCreateList`/`TryGetList`/`RemoveList` — runtime
+  collections like entity-query results; deliberately NOT a PropertyValue type,
+  never asset-declared; serialized as a section after the values, gated by the
+  container's version via `ReadFromDataStream(stream, bWithLists)`). Two copy
+  semantics, chosen deliberately: `ApplyOverridesFrom` (scene-load: ad-hoc
+  variables restore verbatim, type conflicts drop) vs `CopyMatchingFrom` (hot
+  reload: strict name+type match only); lists carry verbatim in both (always
+  ad-hoc).
 - `Zenith_BehaviourGraph.{h,cpp}` — `Zenith_GraphDefinition` (variables, nodes
   with length-framed param blobs, edges, editor positions; magic `XBGR`,
   version 1; UNKNOWN node types preserved verbatim as unresolved nodes — a
@@ -89,6 +109,22 @@ seeded from the declared variables.
 - **Editor introspection:** `GetRecentlyExecuted()` (cleared per ON_UPDATE,
   capped 64) and the currently-executing node ID feed the editor's live
   execution highlighting.
+- **Preemption (adoption-program Part 1):** `AbortChain(node, pin, ctx)` kills
+  a suspended chain — OnAbort on the cursor node (flow nodes cascade into
+  their active pins), cursor + matching one-shot anchor cleared;
+  `AbortAllChains` for whole-graph teardown (CallGraph). This is what makes
+  the reactive `Selector`/`StateMachine` flow nodes BT-equivalent. `Sequence`
+  is deliberately absent — a linear exec chain IS a sequence.
+- **Sub-graphs:** `RunGraphCall(ctx)` runs every `OnGraphCall` entry anchor
+  (RUNNING if any suspended, FAILURE when all anchors failed). The `CallGraph`
+  node executes a child asset against the CALLER's blackboard (shared scope;
+  the child's declared variables are its parameter list, defaults seeded where
+  absent), caches the child per call-site, cuts recursion at depth 8, and
+  re-resolves after TOOLS hot reloads.
+- **Idle-graph skip:** `NeedsUpdateDispatch()` — the component skips graphs
+  with no OnUpdate/Timer sources, no suspended chains, and no cursors from the
+  ON_UPDATE dispatch entirely (pinned by the idle phase of the 1000-entity
+  benchmark).
 
 ## Contracts worth knowing
 
@@ -151,6 +187,7 @@ Each converted game keeps its custom nodes in one header, registered from
 | Combat | `Games/Combat/Components/Combat_GraphNodes.h` | `Combat_RegisterGraphNodes` |
 | Marble | `Games/Marble/Components/Marble_GraphNodes.h` | `Marble_RegisterGraphNodes` |
 | Runner | `Games/Runner/Components/Runner_GraphNodes.h` | `Runner_RegisterGraphNodes` |
+| Sokoban | `Games/Sokoban/Components/Sokoban_GraphNodes.h` | `Sokoban_RegisterGraphNodes` |
 | Test | `Games/Test/Components/Test_GraphNodes.h` | `Test_RegisterGraphNodes` |
 | TilePuzzle | `Games/TilePuzzle/Components/Pinball_GraphNodes.h` | `Pinball_RegisterGraphNodes` |
 

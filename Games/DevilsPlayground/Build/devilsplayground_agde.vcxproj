@@ -181,7 +181,6 @@
     <ClInclude Include="..\Components\DPPlayerController_Component.h" />
     <ClInclude Include="..\Components\DPProcLevelBootstrap_Component.h" />
     <ClInclude Include="..\Components\DPVillager_Component.h" />
-    <ClInclude Include="..\Components\DP_BT_Nodes.h" />
     <ClInclude Include="..\Components\DP_GraphNodes.h" />
     <ClInclude Include="..\Components\Priest_Component.h" />
     <ClInclude Include="..\Source\DevilsPlayground_Tags.h" />
@@ -369,11 +368,12 @@
     <ClCompile Include="..\Tests\Test_T0NavMesh_QueryCountIncrements.cpp" />
     <ClCompile Include="..\Tests\Test_T0RenderBus_RecordsDrawCalls.cpp" />
     <ClCompile Include="..\Tests\Test_T0SaveData_TestHooks.cpp" />
-    <ClCompile Include="..\Tests\Test_T1NavMesh_BTUnitsCanFollowRealPath.cpp" />
     <ClCompile Include="..\Tests\Test_T1NavMesh_GeneratorPerf.cpp" />
+    <ClCompile Include="..\Tests\Test_T1NavMesh_UnitsCanFollowRealPath.cpp" />
     <ClCompile Include="..\Tests\Test_TelemetryEdgeCases.cpp" />
     <ClCompile Include="..\Tests\Test_TelemetryRoundTrip.cpp" />
     <ClCompile Include="..\Tests\Test_VisualWiring.cpp" />
+    <ClCompile Include="..\Tests\Test_W3GraphConversionCharacterization.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

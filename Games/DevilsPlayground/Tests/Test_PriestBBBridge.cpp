@@ -7,7 +7,6 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -51,11 +50,12 @@ namespace
 
 	bool PriestHasInvestigateFlag(Zenith_EntityID xPriest)
 	{
+		// W3: the bridge writes the priest's DECISION blackboard - the
+		// DP_Priest.bgraph blackboard - not the AIAgent blackboard.
 		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriest);
-		Zenith_AIAgentComponent* pxAgent = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
-		if (pxAgent == nullptr) return false;
-		return pxAgent->GetBlackboard()
-			.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
+		Priest_Component* pxPriest = xEnt.TryGetComponent<Priest_Component>();
+		if (pxPriest == nullptr) return false;
+		return pxPriest->ReadBBBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
 	}
 }
 

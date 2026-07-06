@@ -33,6 +33,10 @@ struct Zenith_GraphSlot
 	std::string m_strGraphAssetPath;			// "game:Graphs/Foo.bgraph"
 	Zenith_BehaviourGraph* m_pxGraph = nullptr;	// null when unresolved
 	Zenith_DataStream m_xPendingOverrides;		// override bytes preserved while unresolved
+	// The override bytes' format is stamped by the COMPONENT stream version at
+	// capture (v1 = values only, v2+ = values + list section) - the blackboard
+	// stream itself is unversioned.
+	bool m_bOverridesIncludeLists = true;
 	bool m_bMarkedForRemoval = false;
 
 	Zenith_GraphSlot() = default;
@@ -47,6 +51,7 @@ struct Zenith_GraphSlot
 		: m_strGraphAssetPath(std::move(xOther.m_strGraphAssetPath))
 		, m_pxGraph(xOther.m_pxGraph)
 		, m_xPendingOverrides(std::move(xOther.m_xPendingOverrides))
+		, m_bOverridesIncludeLists(xOther.m_bOverridesIncludeLists)
 		, m_bMarkedForRemoval(xOther.m_bMarkedForRemoval)
 	{
 		xOther.m_pxGraph = nullptr;
@@ -61,6 +66,7 @@ struct Zenith_GraphSlot
 			m_strGraphAssetPath = std::move(xOther.m_strGraphAssetPath);
 			m_pxGraph = xOther.m_pxGraph;
 			m_xPendingOverrides = std::move(xOther.m_xPendingOverrides);
+			m_bOverridesIncludeLists = xOther.m_bOverridesIncludeLists;
 			m_bMarkedForRemoval = xOther.m_bMarkedForRemoval;
 			xOther.m_pxGraph = nullptr;
 			xOther.m_bMarkedForRemoval = false;
@@ -126,6 +132,17 @@ public:
 	// to a blackboard variable (the collision sources' packed-EntityID pattern).
 	void FireCustomEvent(const char* szName, const Zenith_PropertyValue* pxPayload = nullptr);
 
+	// Multi-field variant: OnCustomEvent sources stash every named arg to the
+	// receiving graph's blackboard verbatim under its name (arg 0's value
+	// doubles as the legacy single payload). Args are read per-dispatch, never
+	// retained.
+	void FireCustomEventWithArgs(const char* szName, const Zenith_GraphEventArg* pxArgs, u_int uArgCount);
+
+	// Fires on every Zenith_GraphComponent across all loaded scenes - the
+	// C++-shim-facing broadcast (and the BroadcastCustomEvent node's body).
+	// Synchronous, same-frame, at the call point.
+	static void BroadcastCustomEvent(const char* szName, const Zenith_PropertyValue* pxPayload = nullptr);
+
 	//--------------------------------------------------------------------------
 	// Lifecycle hooks (concept-detected by Zenith_ComponentMeta)
 	//--------------------------------------------------------------------------
@@ -161,6 +178,7 @@ public:
 
 private:
 	void FireEventOnSlots(GraphEventType eEvent, float fDt, const Zenith_PropertyValue* pxPayload, bool bReverse = false);
+	void FireCustomEventWithArgs(const char* szName, const Zenith_GraphEventArg* pxArgs, u_int uArgCount, const Zenith_PropertyValue* pxPayload);
 	Zenith_BehaviourGraph* InstantiateSlotGraph(Zenith_GraphSlot& xSlot);
 
 	Zenith_Vector<Zenith_GraphSlot> m_axSlots;

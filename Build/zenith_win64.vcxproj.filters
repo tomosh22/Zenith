@@ -52,27 +52,6 @@
     <ClCompile Include="..\Tools\Zenith_Tools_TreeAssetExport.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.cpp">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.cpp">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTActions.cpp">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTComposites.cpp">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTConditions.cpp">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTDecorators.cpp">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.cpp">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\AI\Internal\Zenith_AIPCH.cpp">
       <Filter>AI\Internal</Filter>
     </ClCompile>
@@ -415,6 +394,33 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_AI.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Animation.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Entity.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Flow.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Input.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Math.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Physics.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_Scene.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphNode_Registration_UI.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_GraphReload.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
@@ -701,6 +707,9 @@
       <Filter>Scripting</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Scripting\Zenith_GraphBlackboard.cpp">
+      <Filter>Scripting</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Scripting\Zenith_GraphBuilder.cpp">
       <Filter>Scripting</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Scripting\Zenith_GraphNodeRegistry.cpp">
@@ -1989,33 +1998,6 @@
     <ClInclude Include="..\Tools\Zenith_Tools_TextureExport.h">
       <Filter>Tools</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.h">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.Tests.inl">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.h">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.Tests.inl">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTActions.h">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTComposites.h">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTConditions.h">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTDecorators.h">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.h">
-      <Filter>AI\BehaviorTree</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMesh.h">
       <Filter>AI\Navigation</Filter>
     </ClInclude>
@@ -2460,6 +2442,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentEditorRegistry.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_GraphNodeHelpers.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_GraphReload.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
@@ -2623,6 +2608,12 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_ScreenSpaceEffectBase.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_SpecConstants.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_SpecConstants.Tests.inl">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_TransientDesc.h">
@@ -2832,10 +2823,19 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\SceneObjects.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\ShadowSampling.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\UnifiedMeshDraw.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\VAT.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Velocity.slang">
+      <Filter>Flux\Shaders\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Common\ViewModes.slang">
       <Filter>Flux\Shaders\Common</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Common\Volumetric.slang">
@@ -3129,7 +3129,19 @@
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.h">
       <Filter>Flux\Slang</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderReflection.Tests.inl">
+      <Filter>Flux\Slang</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h">
+      <Filter>Flux\Slang</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangProbes.Tests.inl">
+      <Filter>Flux\Slang</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_SpineLint.h">
+      <Filter>Flux\Slang</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_SpineLint.Tests.inl">
       <Filter>Flux\Slang</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_UnownedEngineShaders.h">
@@ -3280,6 +3292,9 @@
       <Filter>Scripting</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Scripting\Zenith_GraphBlackboard.h">
+      <Filter>Scripting</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Scripting\Zenith_GraphBuilder.h">
       <Filter>Scripting</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Scripting\Zenith_GraphNode.h">
@@ -3452,9 +3467,6 @@
   <ItemGroup>
     <Filter Include="AI">
       <UniqueIdentifier>{c9e3400a-3a1a-c955-a374-28c6d194d0e5}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="AI\BehaviorTree">
-      <UniqueIdentifier>{7163b185-7f4c-c3e7-fde6-a2288cdd461d}</UniqueIdentifier>
     </Filter>
     <Filter Include="AI\Internal">
       <UniqueIdentifier>{96cb6c6b-c7db-c467-5493-9203c26e76e9}</UniqueIdentifier>

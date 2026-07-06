@@ -86,7 +86,6 @@ public:
 		s_iTargetLane = 1;
 		s_fLaneSwitchProgress = 1.0f;  // 1 = fully at target lane
 		s_fVerticalVelocity = 0.0f;
-		s_fSlideTimer = 0.0f;
 		s_fDistanceTraveled = 0.0f;
 		s_bIsGrounded = true;
 		s_fCurrentHeight = 0.0f;
@@ -94,6 +93,12 @@ public:
 
 	// ========================================================================
 	// Update (called each frame)
+	//
+	// W1 conversion: input DECISIONS (which key does what) live in the
+	// Runner_CharacterActions graph, which calls the public Try* gates below
+	// through Runner_CharacterShim; the slide-duration countdown + expiry
+	// decision live in the same graph (blackboard var "slideTimer" ->
+	// EndSlide). This body is pure movement systems.
 	// ========================================================================
 	static void Update(float fDt, Zenith_TransformComponent& xTransform, float fTerrainHeight)
 	{
@@ -101,9 +106,6 @@ public:
 		{
 			return;
 		}
-
-		// Handle input
-		HandleInput();
 
 		// Update speed (increases over time)
 		if (s_fCurrentSpeed < s_xConfig.m_fMaxForwardSpeed)
@@ -131,16 +133,8 @@ public:
 		// Update vertical movement
 		UpdateVerticalMovement(fDt, fTerrainHeight);
 
-		// Update slide timer
-		if (s_eState == RunnerCharacterState::SLIDING)
-		{
-			s_fSlideTimer -= fDt;
-			if (s_fSlideTimer <= 0.0f)
-			{
-				s_eState = RunnerCharacterState::RUNNING;
-				s_fSlideTimer = 0.0f;
-			}
-		}
+		// (Slide-duration countdown + expiry -> EndSlide moved to the
+		// Runner_CharacterActions graph.)
 
 		// Calculate final position
 		Zenith_Maths::Vector3 xPosition;
@@ -166,6 +160,72 @@ public:
 	{
 		s_eState = RunnerCharacterState::DEAD;
 	}
+
+	// ========================================================================
+	// Action gates (graph-facing, via Runner_CharacterShim). Each returns
+	// whether the action was taken; the DEAD gates preserve the old
+	// HandleInput early-return. The gate CONDITIONS are movement-system
+	// rules and stay here; which INPUT triggers them is graph-authored.
+	// ========================================================================
+	static bool TrySwitchLane(int32_t iDirection)
+	{
+		if (s_eState == RunnerCharacterState::DEAD)
+		{
+			return false;
+		}
+		int32_t iNewLane = s_iTargetLane + iDirection;
+		int32_t iMaxLane = static_cast<int32_t>(s_xConfig.m_uLaneCount) - 1;
+
+		if (iNewLane >= 0 && iNewLane <= iMaxLane)
+		{
+			s_iCurrentLane = s_iTargetLane;
+			s_iTargetLane = iNewLane;
+			s_fLaneSwitchProgress = 0.0f;
+			return true;
+		}
+		return false;
+	}
+
+	static bool TryJump()
+	{
+		if (s_eState == RunnerCharacterState::DEAD)
+		{
+			return false;
+		}
+		if (s_bIsGrounded && s_eState != RunnerCharacterState::SLIDING)
+		{
+			s_eState = RunnerCharacterState::JUMPING;
+			s_fVerticalVelocity = s_xConfig.m_fJumpForce;
+			s_bIsGrounded = false;
+			return true;
+		}
+		return false;
+	}
+
+	static bool TrySlide()
+	{
+		if (s_eState == RunnerCharacterState::DEAD)
+		{
+			return false;
+		}
+		if (s_bIsGrounded && s_eState == RunnerCharacterState::RUNNING)
+		{
+			s_eState = RunnerCharacterState::SLIDING;
+			return true;
+		}
+		return false;
+	}
+
+	// Slide-expiry systems body (the countdown decision is graph-side).
+	static void EndSlide()
+	{
+		if (s_eState == RunnerCharacterState::SLIDING)
+		{
+			s_eState = RunnerCharacterState::RUNNING;
+		}
+	}
+
+	static float GetSlideDuration() { return s_xConfig.m_fSlideDuration; }
 
 	// ========================================================================
 	// Animation Feedback
@@ -195,78 +255,6 @@ public:
 	}
 
 private:
-	// ========================================================================
-	// Input Handling
-	// ========================================================================
-	static void HandleInput()
-	{
-		if (s_eState == RunnerCharacterState::DEAD)
-		{
-			return;
-		}
-
-		// Lane switching - Left (A or Left Arrow)
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_A) ||
-			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
-		{
-			TrySwitchLane(-1);
-		}
-
-		// Lane switching - Right (D or Right Arrow)
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_D) ||
-			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
-		{
-			TrySwitchLane(1);
-		}
-
-		// Jump (Space or W or Up Arrow)
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE) ||
-			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W) ||
-			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_UP))
-		{
-			TryJump();
-		}
-
-		// Slide (S or Down Arrow)
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_S) ||
-			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
-		{
-			TrySlide();
-		}
-	}
-
-	static void TrySwitchLane(int32_t iDirection)
-	{
-		int32_t iNewLane = s_iTargetLane + iDirection;
-		int32_t iMaxLane = static_cast<int32_t>(s_xConfig.m_uLaneCount) - 1;
-
-		if (iNewLane >= 0 && iNewLane <= iMaxLane)
-		{
-			s_iCurrentLane = s_iTargetLane;
-			s_iTargetLane = iNewLane;
-			s_fLaneSwitchProgress = 0.0f;
-		}
-	}
-
-	static void TryJump()
-	{
-		if (s_bIsGrounded && s_eState != RunnerCharacterState::SLIDING)
-		{
-			s_eState = RunnerCharacterState::JUMPING;
-			s_fVerticalVelocity = s_xConfig.m_fJumpForce;
-			s_bIsGrounded = false;
-		}
-	}
-
-	static void TrySlide()
-	{
-		if (s_bIsGrounded && s_eState == RunnerCharacterState::RUNNING)
-		{
-			s_eState = RunnerCharacterState::SLIDING;
-			s_fSlideTimer = s_xConfig.m_fSlideDuration;
-		}
-	}
-
 	// ========================================================================
 	// Movement Updates
 	// ========================================================================
@@ -336,7 +324,6 @@ private:
 	static inline int32_t s_iTargetLane = 1;
 	static inline float s_fLaneSwitchProgress = 1.0f;
 	static inline float s_fVerticalVelocity = 0.0f;
-	static inline float s_fSlideTimer = 0.0f;
 	static inline float s_fDistanceTraveled = 0.0f;
 	static inline bool s_bIsGrounded = true;
 	static inline float s_fCurrentHeight = 0.0f;

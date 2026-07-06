@@ -125,10 +125,10 @@ void Test_PlayerControllerComponent::OnUpdate(const float)
 	//#TO i don't think i need to multiply by fDt? physics update should handle frame rate inconsistencies right?
 	const double dMoveSpeed = s_dMoveSpeed;
 
-	if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_C))
-	{
-		m_bFlyCamEnabled = !m_bFlyCamEnabled;
-	}
+	// The C fly-cam toggle, 1-6 slot selection, T/H health demo, E shoot
+	// binding, and the per-tick compass update all moved to the
+	// Test_PlayerActions graph (W1 conversion) - only the movement/camera
+	// SYSTEMS bodies remain here.
 
 	if (m_bFlyCamEnabled)
 	{
@@ -225,38 +225,6 @@ void Test_PlayerControllerComponent::OnUpdate(const float)
 	Zenith_Maths::Vector3 xPos;
 	xTrans.GetPosition(xPos);
 	xCamera.SetPosition(xPos + Zenith_Maths::Vector3(0, 20, 0) + xOffsetXZ);
-
-	if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_E))
-	{
-		// The shoot binding lives in the Test_PlayerActions graph; fire its
-		// driving event at exactly the point the old Shoot() call sat.
-		if (Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>())
-		{
-			pxGraph->FireCustomEvent("Shoot");
-		}
-	}
-
-	// Inventory slot selection (keys 1-6)
-	for (int i = 0; i < s_iInventorySlots; i++)
-	{
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_1 + i))
-		{
-			SetSelectedSlot(i);
-		}
-	}
-
-	// Update compass based on camera yaw
-	UpdateCompassUI();
-
-	// Demo: take damage when pressing T, heal when pressing H
-	if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_T))
-	{
-		TakeDamage(10.0f);
-	}
-	if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_H))
-	{
-		Heal(15.0f);
-	}
 }
 
 // ========== UI Integration ==========

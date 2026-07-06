@@ -203,6 +203,14 @@ Zenith_Scene Zenith_SceneSystem::LoadScene(const std::string& strPath, Zenith_Sc
 		// but keep m_bIsLoadingScene set so a re-entrant LoadScene call defers
 		// rather than recursing.
 		pxSceneData->TransitionTo(Zenith_SceneData::SCENE_STATE_LOADED);
+
+		// Load-completion hook (behaviour graphs' OnSceneLoaded seam). Fired
+		// while m_bIsLoadingScene is still set, so a hook-triggered LoadScene
+		// defers and drains below instead of recursing into this load.
+		if (m_xRuntimeHooks.m_pfnSceneLoaded)
+		{
+			m_xRuntimeHooks.m_pfnSceneLoaded(strCanonicalPath.c_str(), pxSceneData->m_iBuildIndex);
+		}
 	}
 
 	// Clear loading-scene flag AFTER lifecycle dispatch (kept set above so a

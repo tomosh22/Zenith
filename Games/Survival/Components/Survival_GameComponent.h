@@ -26,6 +26,7 @@
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -217,7 +218,10 @@ public:
 		// Subscribe to events
 		SubscribeToEvents();
 
-		// Wire menu button callback
+		// Detect the menu scene by its Play button. The click itself is wired by
+		// the Survival_GameFlow graph's OnUIButtonClicked("MenuPlay") node (which
+		// self-wires the button's onClick when the graph ticks) -> LoadSceneByIndex,
+		// so no C++ SetOnClick is needed.
 		bool bHasMenu = false;
 		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
@@ -225,7 +229,6 @@ public:
 			Zenith_UI::Zenith_UIButton* pxPlay = static_cast<Zenith_UI::Zenith_UIButton*>(xUI.FindElement("MenuPlay"));
 			if (pxPlay)
 			{
-				pxPlay->SetOnClick(&OnPlayClicked, nullptr);
 				pxPlay->SetFocused(true);
 				bHasMenu = true;
 			}
@@ -280,10 +283,17 @@ public:
 	 */
 	void OnUpdate(const float fDt)
 	{
+		// The menu Play / Escape->menu / R->reset / menu-focus input DECISIONS live
+		// in the Survival_GameFlow graph now (order 60, before this systems dispatch
+		// at order 100). A transition it makes this frame lands before this switch
+		// reads m_eGameState, reproducing the old early-return-skips-systems shape
+		// (Escape's ReturnToMenu pre-clears world state so the rest of this tick is a
+		// no-op; R's ResetGame runs the systems on the reset state one frame earlier -
+		// the AIShowcase/Combat-precedented, unobservable divergence). This switch is
+		// now systems-only for both states.
 		switch (m_eGameState)
 		{
 		case SurvivalGameState::MAIN_MENU:
-			UpdateMenuInput();
 			break;
 
 		case SurvivalGameState::PLAYING:
@@ -291,27 +301,18 @@ public:
 			// Process deferred events from background tasks
 			Survival_EventBus::ProcessDeferredEvents();
 
-			// Handle escape -> return to menu
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				ReturnToMenu();
-				return;
-			}
-
-			// Handle reset
-			if (Survival_PlayerController::WasResetPressed())
-			{
-				ResetGame();
-				return;
-			}
-
 			// Handle input
 			HandleMovement(fDt);
-			HandleInteraction();
-			HandleCrafting();
+			// Harvest (E) + craft-start (1/2) DECISIONS live in the
+			// Survival_PlayerActions graph now; fire its driving event at exactly
+			// the point the old HandleInteraction/HandleCrafting calls sat, so the
+			// order relative to movement and the crafting tick is byte-identical.
+			FireGraphEvent("SurvivalPlayerTick", fDt);
 
 			// Update game systems
-			UpdateCrafting(fDt);
+			// Per-tick craft progression lives in the Survival_CraftTick graph;
+			// fire its driving event (dt on the payload) where UpdateCrafting ran.
+			FireGraphEvent("SurvivalCraftTick", fDt);
 			UpdateResourceNodes(fDt);
 
 			// Update camera
@@ -469,6 +470,173 @@ public:
 		}
 	}
 
+	// ========================================================================
+	// Characterization-test surface (read-only observers + test scaffolding).
+	//
+	// Behaviour-neutral: these expose the private game state the behaviour-graph
+	// characterization tests assert against and provide test-only setup pokes
+	// (place the player, seed inventory, arm a respawn). Added alongside the
+	// wave-2 graph conversion so the tests probe surfaces that survive it
+	// (mirrors Combat's Test_/Graph_ accessors). No production code calls them.
+	// ========================================================================
+
+	SurvivalGameState GetGameState() const { return m_eGameState; }
+	int32_t Graph_GetGameStateInt() const { return static_cast<int32_t>(m_eGameState); }
+
+	// The currently-live component's state, resolved through s_pxInstance. A
+	// menu<->game transition swaps the whole scene (and thus the live instance);
+	// this reads whichever manager is awake now (MenuManager=MAIN_MENU,
+	// GameManager=PLAYING), so a test can watch a transition across the swap.
+	static SurvivalGameState Test_GetLiveGameState()
+	{
+		return s_pxInstance ? s_pxInstance->m_eGameState : SurvivalGameState::MAIN_MENU;
+	}
+
+	// The currently-awake SurvivalGame component (the MenuManager's or the
+	// GameManager's, depending on the active scene). Tests reach the instance
+	// observers/pokes through this.
+	static Survival_GameComponent* Test_GetLiveInstance() { return s_pxInstance; }
+
+	uint32_t Test_GetItemCount(SurvivalItemType eType) const { return m_xInventory.GetCount(eType); }
+	bool     Test_IsCrafting() const { return m_xCrafting.IsCrafting(); }
+	int32_t  Test_GetCraftStateInt() const { return static_cast<int32_t>(m_xCrafting.GetState()); }
+	float    Test_GetCraftProgress() const { return m_xCrafting.GetProgress(); }
+	SurvivalItemType Test_GetCurrentCrafting() const { return m_xCrafting.GetCurrentCrafting(); }
+
+	uint32_t Test_GetResourceNodeCount() { return m_xResourceManager.GetCount(); }
+	uint32_t Test_GetActiveResourceCount() { return m_xResourceManager.GetActiveCount(); }
+	uint32_t Test_GetDepletedResourceCount() { return m_xResourceManager.GetDepletedCount(); }
+
+	uint32_t Test_GetResourceNodeHits(uint32_t uIndex)
+	{
+		Survival_ResourceNodeData* pNode = m_xResourceManager.GetNode(uIndex);
+		return pNode ? pNode->m_uCurrentHits : 0;
+	}
+	bool Test_IsResourceNodeDepleted(uint32_t uIndex)
+	{
+		Survival_ResourceNodeData* pNode = m_xResourceManager.GetNode(uIndex);
+		return pNode ? pNode->m_bDepleted : true;
+	}
+	int32_t Test_GetResourceNodeYieldType(uint32_t uIndex)
+	{
+		Survival_ResourceNodeData* pNode = m_xResourceManager.GetNode(uIndex);
+		return pNode ? static_cast<int32_t>(pNode->m_eYieldType) : static_cast<int32_t>(ITEM_TYPE_NONE);
+	}
+	bool Test_GetResourceNodePosition(uint32_t uIndex, Zenith_Maths::Vector3& xOut)
+	{
+		Survival_ResourceNodeData* pNode = m_xResourceManager.GetNode(uIndex);
+		if (pNode == nullptr) return false;
+		xOut = pNode->m_xPosition;
+		return true;
+	}
+
+	// Place the player at a world position (test scaffolding only - the harvest
+	// range gate reads the player's transform, so this puts a chosen resource in
+	// range without walking the whole (slow, Debug) navmesh-free path).
+	bool Test_SetPlayerPosition(const Zenith_Maths::Vector3& xPos)
+	{
+		Zenith_Entity xPlayer = g_xEngine.Scenes().ResolveEntity(m_uPlayerEntityID);
+		if (!xPlayer.IsValid()) return false;
+		Zenith_TransformComponent* pxTransform = xPlayer.TryGetComponent<Zenith_TransformComponent>();
+		if (pxTransform == nullptr) return false;
+		pxTransform->SetPosition(xPos);
+		return true;
+	}
+
+	// Seed the inventory directly (test scaffolding - e.g. give crafting mats).
+	uint32_t Test_GiveItem(SurvivalItemType eType, uint32_t uAmount) { return m_xInventory.AddItem(eType, uAmount); }
+
+	// Force a node into the depleted/respawning state with a chosen timer, so the
+	// background-task respawn seam can be exercised without harvesting to zero
+	// and waiting the full 30 s respawn duration.
+	void Test_ArmRespawn(uint32_t uIndex, float fTimer)
+	{
+		Survival_ResourceNodeData* pNode = m_xResourceManager.GetNode(uIndex);
+		if (pNode == nullptr) return;
+		pNode->m_bDepleted = true;
+		pNode->m_uCurrentHits = 0;
+		pNode->m_fRespawnTimer = fTimer;
+	}
+
+	// ========================================================================
+	// Behaviour-graph shims (wave-2 conversion).
+	//
+	// The DECISION bodies stay here verbatim; the behaviour-graph nodes
+	// (Survival_GraphNodes.h) resolve the self component and call these
+	// synchronously. Systems (movement, camera, visuals, HUD, respawn task,
+	// scene management) stay in OnUpdate. m_eGameState remains the per-instance
+	// source of truth (GetGameState unchanged) - SurvivalGetGameState only
+	// mirrors it to the blackboard to gate the P/R/Escape chains.
+	// ========================================================================
+
+	// Survival_GameFlow.bgraph.
+	void Graph_ReturnToMenu() { ReturnToMenu(); }
+	void Graph_ResetGame() { ResetGame(); }
+	void Graph_FocusPlayButton() { UpdateMenuInput(); }
+
+	// Survival_PlayerActions.bgraph.
+	void Graph_Harvest() { HandleInteraction(); }
+	void Graph_HandleCrafting() { HandleCrafting(); }
+
+	// Survival_CraftTick.bgraph (matches UpdateCrafting = m_xCrafting.Update(dt);
+	// completion is delivered by the CraftingComplete event handler below).
+	void Graph_AdvanceCraft(float fDt) { m_xCrafting.Update(fDt); }
+
+	// Survival_WorldEvents.bgraph - the event-handler decision bodies verbatim.
+	void Graph_OnResourceHarvested(SurvivalItemType eItemType, uint32_t uAmount)
+	{
+		// Add items to inventory
+		m_xInventory.AddItem(eItemType, uAmount);
+		// Show feedback
+		ShowStatusMessage(eItemType, uAmount);
+	}
+
+	void Graph_OnResourceRespawned()
+	{
+		// Could show visual feedback, play sound, etc.
+	}
+
+	void Graph_OnCraftingComplete(SurvivalItemType eItemType, bool bSuccess)
+	{
+		if (bSuccess)
+		{
+			// Collect the crafted item
+			m_xCrafting.CollectCraftedItem(m_xInventory);
+
+			// Show message
+			if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
+			{
+				Zenith_UIComponent& xUI = *pxUI;
+				Survival_UIManager::ShowCraftingComplete(xUI, eItemType);
+				m_fStatusMessageTimer = s_fStatusMessageDuration;
+			}
+		}
+	}
+
+	// Fires a custom event on this GameManager's graph component (the inline
+	// C++->graph seam for "SurvivalPlayerTick" / "SurvivalCraftTick", and the
+	// event-forwarder path). Nothing happens if no graph is attached.
+	void FireGraphEvent(const char* szName, float fDt)
+	{
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
+			return;
+		Zenith_PropertyValue xDt;
+		xDt.SetFloat(fDt);
+		pxGraph->FireCustomEvent(szName, &xDt);
+	}
+
+	// Multi-field variant: the WorldEvents forwarders stage each event field as a
+	// named arg (OnCustomEvent sources stash them verbatim to the graph blackboard
+	// under the same names the SurvivalOn* nodes read).
+	void FireGraphEventWithArgs(const char* szName, const Zenith_GraphEventArg* pxArgs, u_int uArgCount)
+	{
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
+			return;
+		pxGraph->FireCustomEventWithArgs(szName, pxArgs, uArgCount);
+	}
+
 private:
 	// ========================================================================
 	// Event Handling
@@ -515,35 +683,39 @@ private:
 				}));
 	}
 
+	// The three event handlers are now FORWARDERS into the Survival_WorldEvents
+	// graph: they stage the event's fields as named args and fire the matching
+	// custom event at exactly the point the C++ subscriber ran (harvest/craft
+	// fires are nested inside the Hit()/Update() call the harvest/craft-tick nodes
+	// made - a proven-safe re-entrant dispatch; respawn fires from the top-level
+	// ProcessDeferredEvents drain). The decision bodies live verbatim in the
+	// Graph_On* shims above, which the graph nodes call back.
+
 	void OnResourceHarvested(const Survival_Event_ResourceHarvested& xEvent)
 	{
-		// Add items to inventory
-		m_xInventory.AddItem(xEvent.m_eItemType, xEvent.m_uAmount);
-
-		// Show feedback
-		ShowStatusMessage(xEvent.m_eItemType, xEvent.m_uAmount);
+		Zenith_GraphEventArg axArgs[2];
+		axArgs[0].m_strName = "harvestItemType";
+		axArgs[0].m_xValue.SetInt32(static_cast<int32_t>(xEvent.m_eItemType));
+		axArgs[1].m_strName = "harvestAmount";
+		axArgs[1].m_xValue.SetInt32(static_cast<int32_t>(xEvent.m_uAmount));
+		FireGraphEventWithArgs("ResourceHarvested", axArgs, 2);
 	}
 
 	void OnResourceRespawned()
 	{
-		// Could show visual feedback, play sound, etc.
+		// The plan's headline: the respawn is produced by the C++ background task
+		// and drained here on the main thread; forward it to the empty graph hook.
+		FireGraphEvent("ResourceRespawned", 0.0f);
 	}
 
 	void OnCraftingComplete(const Survival_Event_CraftingComplete& xEvent)
 	{
-		if (xEvent.m_bSuccess)
-		{
-			// Collect the crafted item
-			m_xCrafting.CollectCraftedItem(m_xInventory);
-
-			// Show message
-			if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
-			{
-				Zenith_UIComponent& xUI = *pxUI;
-				Survival_UIManager::ShowCraftingComplete(xUI, xEvent.m_eItemType);
-				m_fStatusMessageTimer = s_fStatusMessageDuration;
-			}
-		}
+		Zenith_GraphEventArg axArgs[2];
+		axArgs[0].m_strName = "craftItemType";
+		axArgs[0].m_xValue.SetInt32(static_cast<int32_t>(xEvent.m_eItemType));
+		axArgs[1].m_strName = "craftSuccess";
+		axArgs[1].m_xValue.SetBool(xEvent.m_bSuccess);
+		FireGraphEventWithArgs("CraftingComplete", axArgs, 2);
 	}
 
 	// ========================================================================
@@ -632,11 +804,9 @@ private:
 	// Game Systems Update
 	// ========================================================================
 
-	void UpdateCrafting(float fDt)
-	{
-		m_xCrafting.Update(fDt);
-		// Completion handled by event
-	}
+	// (UpdateCrafting removed - the per-tick craft progression now lives in the
+	//  Survival_CraftTick graph, driven by the "SurvivalCraftTick" event above;
+	//  Graph_AdvanceCraft holds the m_xCrafting.Update(dt) body verbatim.)
 
 	void UpdateResourceNodes(float fDt)
 	{
@@ -834,10 +1004,8 @@ private:
 	// Menu / Scene Transition
 	// ========================================================================
 
-	static void OnPlayClicked(void* /*pxUserData*/)
-	{
-		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
-	}
+	// (OnPlayClicked removed - the menu Play click is handled by the
+	//  Survival_GameFlow graph's OnUIButtonClicked -> LoadSceneByIndex node.)
 
 	void StartGame()
 	{

@@ -893,9 +893,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Components\AIShowcase_GameComponent.h" />
+    <ClInclude Include="..\Components\AIShowcase_GraphNodes.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\AIShowcase.cpp" />
+    <ClCompile Include="..\Tests\Test_AIShowcaseCharacterization.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

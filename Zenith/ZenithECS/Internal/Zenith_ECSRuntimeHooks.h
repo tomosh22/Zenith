@@ -31,4 +31,8 @@ struct Zenith_ECSRuntimeHooks
 	void (*m_pfnUnloadUnusedAssets)() = nullptr;       // null => no-op
 	void (*m_pfnResetPhysics)() = nullptr;             // null => no-op
 	void (*m_pfnAddDefaultComponents)(Zenith_Entity&) = nullptr; // null => no default components added; Phase 3 wires this (engine adds its default component(s))
+	// Fired at LoadScene completion (file-backed loads, after the new scene's
+	// Awake/OnEnable dispatch, while re-entrant loads still defer). The engine
+	// wires this to the behaviour-graph "__SceneLoaded" broadcast. null => no-op.
+	void (*m_pfnSceneLoaded)(const char* szCanonicalPath, int iBuildIndex) = nullptr;
 };

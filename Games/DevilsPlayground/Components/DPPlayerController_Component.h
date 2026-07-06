@@ -23,6 +23,9 @@
 // Android build when DevilsPlayground was added to zenith_agde.sln.
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "Maths/Zenith_Maths.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
+#include "Scripting/Zenith_GraphBlackboard.h"
 
 #include "Source/PublicInterfaces.h"
 #include "Source/DPInputActions.h"
@@ -31,6 +34,7 @@
 
 #include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_Vector.h"
+#include <cstring>
 
 // VillagerHeldRecord lives outside the class so callers (DP_Player
 // namespace functions in DP_Player.cpp) can refer to it without
@@ -110,6 +114,11 @@ public:
 		if (s_pxInstance == this) s_pxInstance = nullptr;
 	}
 
+	// W3 conversion: the input-dispatch decisions (click -> pick -> possess,
+	// G -> drop) live on this graph; the controller stages the input edges
+	// and fires "PlayerTick" where the retired handler calls sat.
+	static constexpr const char* kszGraphAsset = "game:Graphs/DP_PlayerControl.bgraph";
+
 	void OnAwake()
 	{
 		// Singleton: per-scene component, set as soon as OnAwake fires
@@ -120,6 +129,26 @@ public:
 		// B2: force a fresh high-scent blackboard write on the first OnUpdate
 		// so freshly-created AI agents (spawned at scene start) get the value.
 		m_bHighScentBlackboardDirty = true;
+
+		// W3: self-attach the input-dispatch decisions graph (idempotent).
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraphs == nullptr)
+		{
+			pxGraphs = &m_xParentEntity.AddComponent<Zenith_GraphComponent>();
+		}
+		bool bAttached = false;
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+		{
+			if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) == 0)
+			{
+				bAttached = true;
+				break;
+			}
+		}
+		if (!bAttached)
+		{
+			pxGraphs->AddGraphByAssetPath(kszGraphAsset);
+		}
 	}
 
 	void OnDestroy()
@@ -324,151 +353,33 @@ public:
 		// crosses 0, DP_OnRunLost{Dawn} dispatches exactly once.
 		DP_Night::TickNight(fDt);
 
-		HandleClickToPossess();
-		HandleDropItem();
-	}
-
-private:
-	void HandleClickToPossess()
-	{
-		if (!DP_Input::ReadPossessClickPressed()) return;
-
-		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
-		if (pxCam == nullptr) return;
-
-		// Pick the villager whose world position projects closest to the
-		// current mouse cursor in screen space. We prefer screen-space
-		// proximity over a physics raycast because:
-		//   - Building wall colliders sit between the orbit camera and
-		//     villagers standing inside, so a raycast catches the wall.
-		//   - Multi-hit raycasts can't recover when the villager's sphere
-		//     collider overlaps the wall AABB (advancing past the wall
-		//     advances past the villager too).
-		// Screen-space picking matches what the player sees: clicking near a
-		// villager's silhouette possesses it, regardless of intervening
-		// geometry. Bounded by a screen-pixel tolerance so misclicks in empty
-		// space don't possess a far-away villager.
-		Zenith_Window* pxWindow = Zenith_Window::GetInstance();
-		if (pxWindow == nullptr) return;
-		int32_t iW = 0, iH = 0;
-		pxWindow->GetSize(iW, iH);
-		if (iW <= 0 || iH <= 0) return;
-
-		Zenith_Maths::Vector2_64 xMousePos;
-		g_xEngine.Input().GetMousePosition(xMousePos);
-
-		Zenith_Maths::Matrix4 xView, xProj;
-		pxCam->BuildViewMatrix(xView);
-		pxCam->BuildProjectionMatrix(xProj);
-		const Zenith_Maths::Matrix4 xVP = xProj * xView;
-
-		// Pixel tolerance for picking — generous enough that a click within
-		// the visual silhouette of a humanoid (~80 pixels at typical zoom)
-		// still snaps onto it.
-		constexpr double kMaxPixelDistSq = 120.0 * 120.0;
-
-		// Screen-space pick context. Carried through DP_Player::ForEach-
-		// VillagerInActiveScene's function-pointer callback so the villager
-		// type-filter lives in DP_Player.cpp (the controller header no
-		// longer needs DPVillager_Component.h). The picking math itself is
-		// unchanged from the previous inline lambda.
-		PickContext xCtx;
-		xCtx.m_xVP        = xVP;
-		xCtx.m_iW         = iW;
-		xCtx.m_iH         = iH;
-		xCtx.m_xMousePos  = xMousePos;
-		xCtx.m_fBestSq    = kMaxPixelDistSq;
-
-		DP_Player::ForEachVillagerInActiveScene(&PickClosestVillagerCb, &xCtx);
-
-		if (xCtx.m_xBest.IsValid())
+		// W3: the input-dispatch decisions (click -> pick -> possess, G ->
+		// drop) live on DP_PlayerControl.bgraph. Stage this frame's input
+		// edges, then fire "PlayerTick" at the exact spot the retired
+		// HandleClickToPossess/HandleDropItem calls sat - so pick/drop still
+		// run AFTER TickChannel/TickNight in frame order (a channel that
+		// completes and a click that lands the same frame: commit first,
+		// then the click evaluates against the NEW possession).
+		if (Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>())
 		{
-			// Voluntary switch path -- triggers the cooldown gate. If the
-			// click lands within the cooldown window (1.5 s default) the
-			// possession refuses, silently. Cosmetic feedback (HUD flash /
-			// audio) is a future-MVP polish item.
-			DP_Player::TryVoluntaryPossessSwitch(xCtx.m_xBest);
+			for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+			{
+				if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) != 0) continue;
+				if (Zenith_BehaviourGraph* pxGraph = pxGraphs->GetGraphAt(u))
+				{
+					Zenith_PropertyValue xValue;
+					xValue.SetBool(DP_Input::ReadPossessClickPressed());
+					pxGraph->GetBlackboard().SetValue("clickPressed", xValue);
+					xValue.SetBool(DP_Input::ReadDropPressed());
+					pxGraph->GetBlackboard().SetValue("dropPressed", xValue);
+					pxGraphs->FireCustomEvent("PlayerTick");
+				}
+				break;
+			}
 		}
 	}
 
-	// Screen-space pick state shared between HandleClickToPossess and the
-	// function-pointer callback below.
-	struct PickContext
-	{
-		Zenith_Maths::Matrix4    m_xVP;
-		int32_t                  m_iW = 0;
-		int32_t                  m_iH = 0;
-		Zenith_Maths::Vector2_64 m_xMousePos;
-		double                   m_fBestSq = 0.0;
-		Zenith_EntityID          m_xBest;
-	};
-
-	// Per-villager screen-space projection + nearest-to-cursor pick. Identical
-	// math to the previous inline DP_Query lambda; relocated to a static
-	// callback so DP_Player::ForEachVillagerInActiveScene can drive it without
-	// the controller naming DPVillager_Component.
-	static void PickClosestVillagerCb(Zenith_EntityID xId, void* pUser)
-	{
-		PickContext& xCtx = *static_cast<PickContext*>(pUser);
-		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
-		if (!xEnt.IsValid()) return;
-		Zenith_TransformComponent* pxTransform = xEnt.TryGetComponent<Zenith_TransformComponent>();
-		if (pxTransform == nullptr) return;
-		Zenith_Maths::Vector3 xWorld;
-		pxTransform->GetPosition(xWorld);
-		// Aim at body centre rather than feet — the visible silhouette
-		// is centred ~1 m above the entity origin.
-		xWorld.y += 1.0f;
-		const Zenith_Maths::Vector4 xClip = xCtx.m_xVP *
-			Zenith_Maths::Vector4(xWorld.x, xWorld.y, xWorld.z, 1.0f);
-		if (xClip.w <= 1e-4f) return;
-		const float fNdcX = xClip.x / xClip.w;
-		const float fNdcY = xClip.y / xClip.w;
-		const double fSx = (fNdcX + 1.0f) * 0.5f * static_cast<float>(xCtx.m_iW);
-		const double fSy = (fNdcY + 1.0f) * 0.5f * static_cast<float>(xCtx.m_iH);
-		const double fDx = fSx - xCtx.m_xMousePos.x;
-		const double fDy = fSy - xCtx.m_xMousePos.y;
-		const double fSq = fDx * fDx + fDy * fDy;
-		if (fSq < xCtx.m_fBestSq) { xCtx.m_fBestSq = fSq; xCtx.m_xBest = xId; }
-	}
-
-	// MVP-1.4.5: drop verb. G releases the possessed villager's held
-	// item at the villager's foot position and starts a short pickup
-	// cooldown on the item so it doesn't immediately re-pick-up.
-	void HandleDropItem()
-	{
-		if (!DP_Input::ReadDropPressed()) return;
-		const Zenith_EntityID xVillager = DP_Player::GetPossessedVillager();
-		if (!xVillager.IsValid()) return;
-		const Zenith_EntityID xItem = DP_Player::GetHeldItemEntity(xVillager);
-		if (!xItem.IsValid()) return;
-
-		// Read the villager's foot position (transform origin == feet by
-		// authoring convention -- the visible mesh is centred ~1 m above).
-		Zenith_Entity xV = g_xEngine.Scenes().ResolveEntity(xVillager);
-		if (!xV.IsValid()) return;
-		Zenith_TransformComponent* pxVTransform = xV.TryGetComponent<Zenith_TransformComponent>();
-		if (pxVTransform == nullptr) return;
-		Zenith_Maths::Vector3 xFootPos;
-		pxVTransform->GetPosition(xFootPos);
-
-		// Resolve the item entity (may be in a different scene if
-		// MoveEntityToScene was used -- defensive scene lookup).
-		Zenith_Entity xI = g_xEngine.Scenes().ResolveEntity(xItem);
-		if (!xI.IsValid()) return;
-		Zenith_TransformComponent* pxITransform = xI.TryGetComponent<Zenith_TransformComponent>();
-		if (pxITransform == nullptr) return;
-		pxITransform->SetPosition(xFootPos);
-
-		// Arm the item's post-drop cooldown so DPItemBase::OnUpdate
-		// doesn't immediately re-pick-up from the foot position.
-		DP_Items::BeginPostDropCooldownForItem(xItem);
-
-		// Clear the held-item side-table entry. The villager's
-		// floating held-item visual is rebuilt on the next OnUpdate
-		// when GetHeldItemTag flips back to None.
-		DP_Player::RemoveHeldItem(xVillager);
-	}
+private:
 
 	// Internal commit helper shared by the immediate-possession path and
 	// the channel-completion path in DP_Player::TryVoluntaryPossessSwitch /

@@ -70,7 +70,7 @@ After those five, you'll be ready for the harder ones in any order:
 | Vulkan backend | [Vulkan/CLAUDE.md](../../Zenith/Vulkan/CLAUDE.md) | `Zenith_Vulkan.h`, `Zenith_PlatformGraphics_Include.h` |
 | Physics | [Physics/CLAUDE.md](../../Zenith/Physics/CLAUDE.md) | `Zenith_Physics.h`, `Zenith_ColliderComponent.h` |
 | Tasks | [TaskSystem/CLAUDE.md](../../Zenith/TaskSystem/CLAUDE.md) | `Zenith_TaskSystem.h` |
-| AI | [AI/CLAUDE.md](../../Zenith/AI/CLAUDE.md) | `Zenith_BTNode.h`, `Zenith_NavMesh.h`, `Zenith_AIAgentComponent.h` |
+| AI | [AI/CLAUDE.md](../../Zenith/AI/CLAUDE.md) | `Zenith_NavMesh.h`, `Zenith_AIAgentComponent.h`, `Zenith_PerceptionSystem.h` |
 | Assets | [AssetHandling/CLAUDE.md](../../Zenith/AssetHandling/CLAUDE.md) | `Zenith_AssetRegistry.h`, `Zenith_AssetHandle.h` |
 | Prefabs | [Prefab/CLAUDE.md](../../Zenith/Prefab/CLAUDE.md) | `Zenith_Prefab.h` |
 | Editor | [Editor/CLAUDE.md](../../Zenith/Editor/CLAUDE.md) | `Zenith_Editor.h` |

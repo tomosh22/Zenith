@@ -2,6 +2,9 @@
 #include <fstream>
 #include "UnitTests/Zenith_AITests.h"
 
+class Zenith_SceneData;
+struct Zenith_EntityID;
+
 class Zenith_UnitTests
 {
 public:
@@ -11,6 +14,12 @@ public:
 	struct PerFrameSnapshot;
 	static void SnapshotPerFrameAndReset(PerFrameSnapshot& xOut);
 	static void RestorePerFrame         (const PerFrameSnapshot& xIn);
+
+	// Test seam: main-camera assignment is deliberately private on
+	// Zenith_SceneData (friend-gated); free ZENITH_TEST functions route
+	// through this forwarder so camera-dependent nodes get success-path
+	// coverage. Defined in Zenith_GraphComponent.Tests.inl.
+	static void SetMainCameraForTest(Zenith_SceneData* pxSceneData, Zenith_EntityID xEntity);
 
 public:
 	static void TestDataStream();
@@ -322,39 +331,6 @@ public:
 	static void TestDataAssetCreateAndSave();
 	static void TestDataAssetLoad();
 	static void TestDataAssetRoundTrip();
-
-	// AI System tests - Blackboard
-	static void TestBlackboardBasicTypes();
-	static void TestBlackboardVector3();
-	static void TestBlackboardEntityID();
-	static void TestBlackboardHasKey();
-	static void TestBlackboardClear();
-	static void TestBlackboardDefaultValues();
-	static void TestBlackboardOverwrite();
-	static void TestBlackboardSerialization();
-
-	// AI System tests - Behavior Tree
-	static void TestBTSequenceAllSuccess();
-	static void TestBTSequenceFirstFails();
-	static void TestBTSequenceRunning();
-	static void TestBTSelectorFirstSucceeds();
-	static void TestBTSelectorAllFail();
-	static void TestBTSelectorRunning();
-	static void TestBTParallelRequireOne();
-	static void TestBTParallelRequireAll();
-	static void TestBTParallelAllRunning();
-	static void TestBTParallelNeitherPolicyMet();
-	static void TestBTParallelRequireOneAbortsRunning();
-	// Regression guard for the BTComposites refactor: when both policies are
-	// REQUIRE_ONE and a single tick returns SUCCESS and FAILURE simultaneously,
-	// SUCCESS must win (it's checked first). The refactor preserved this order
-	// but no prior test pinned it — flagged in code review.
-	static void TestBTParallelRequireOneSuccessWinsOverSimultaneousFailure();
-	static void TestBTInverter();
-	static void TestBTRepeaterCount();
-	static void TestBTCooldown();
-	static void TestBTSucceeder();
-	static void TestBTNodeOwnership();
 
 	// AI System tests - NavMesh
 	static void TestNavMeshPolygonCreation();

@@ -22,25 +22,26 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
+#include "Scripting/Zenith_GraphBlackboard.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "DataStream/Zenith_DataStream.h"
-#include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "UI/Zenith_UIButton.h"
 
-// Include extracted modules
-#include "Sokoban_Input.h"
+// Include extracted modules (W2: Sokoban_Input + Sokoban_UIManager are GONE -
+// input dispatch is OnKeyPressed chains, HUD text is SetUIText nodes)
 #include "Sokoban_Animation.h"
 #include "Sokoban_GridLogic.h"
 #include "Sokoban_Rendering.h"
 #include "Sokoban_LevelGenerator.h"
 #include "Sokoban_Solver.h"
-#include "Sokoban_UIManager.h"
 
 #include <random>
 
@@ -115,13 +116,9 @@ public:
 		, m_uGridHeight(8)
 		, m_uPlayerX(0)
 		, m_uPlayerY(0)
-		, m_uMoveCount(0)
 		, m_uTargetCount(0)
 		, m_uMinMoves(0)
-		, m_bWon(false)
 		, m_xRng(std::random_device{}())
-		, m_eState(SokobanGameState::MAIN_MENU)
-		, m_iFocusIndex(0)
 		, m_xParentEntity(xParentEntity)
 	{
 		memset(m_aeTiles, 0, sizeof(m_aeTiles));
@@ -149,15 +146,11 @@ public:
 		, m_uGridHeight(xOther.m_uGridHeight)
 		, m_uPlayerX(xOther.m_uPlayerX)
 		, m_uPlayerY(xOther.m_uPlayerY)
-		, m_uMoveCount(xOther.m_uMoveCount)
 		, m_uTargetCount(xOther.m_uTargetCount)
 		, m_uMinMoves(xOther.m_uMinMoves)
-		, m_bWon(xOther.m_bWon)
 		, m_xAnimation(xOther.m_xAnimation)
 		, m_xRng(xOther.m_xRng)
 		, m_xRenderer(std::move(xOther.m_xRenderer))
-		, m_eState(xOther.m_eState)
-		, m_iFocusIndex(xOther.m_iFocusIndex)
 		, m_xPuzzleScene(xOther.m_xPuzzleScene)
 		, m_xParentEntity(xOther.m_xParentEntity)
 		, m_pxCubeGeometry(xOther.m_pxCubeGeometry)
@@ -192,15 +185,11 @@ public:
 			memcpy(m_abBoxes, xOther.m_abBoxes, sizeof(m_abBoxes));
 			m_uPlayerX = xOther.m_uPlayerX;
 			m_uPlayerY = xOther.m_uPlayerY;
-			m_uMoveCount = xOther.m_uMoveCount;
 			m_uTargetCount = xOther.m_uTargetCount;
 			m_uMinMoves = xOther.m_uMinMoves;
-			m_bWon = xOther.m_bWon;
 			m_xAnimation = xOther.m_xAnimation;
 			m_xRng = xOther.m_xRng;
 			m_xRenderer = std::move(xOther.m_xRenderer);
-			m_eState = xOther.m_eState;
-			m_iFocusIndex = xOther.m_iFocusIndex;
 			m_xPuzzleScene = xOther.m_xPuzzleScene;
 			m_xParentEntity = xOther.m_xParentEntity;
 			m_pxCubeGeometry = xOther.m_pxCubeGeometry;
@@ -219,13 +208,180 @@ public:
 	}
 
 	// ========================================================================
+	// State probes for the characterization tests (read-only; same surface
+	// before and after the W2 graph conversion). gameState/moveCount/won LIVE
+	// on the attached graph's blackboard (Sokoban_LevelFlow declares them;
+	// Sokoban_GameFlow pins gameState at MAIN_MENU) - "state moves to the
+	// graph blackboard, shim accessor reads it". Grid facts stay C++.
+	// ========================================================================
+	SokobanGameState GetGameState()
+	{
+		Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard();
+		if (pxBlackboard == nullptr)
+		{
+			return SokobanGameState::MAIN_MENU;	// pre-resolve fallback
+		}
+		int32_t iState = pxBlackboard->GetInt32("gameState", 0);
+		iState = iState < 0 ? 0 : (iState > 2 ? 2 : iState);
+		return static_cast<SokobanGameState>(iState);
+	}
+	uint32_t GetMoveCount()
+	{
+		Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard();
+		const int32_t iMoves = pxBlackboard ? pxBlackboard->GetInt32("moveCount", 0) : 0;
+		return iMoves < 0 ? 0u : static_cast<uint32_t>(iMoves);
+	}
+	bool IsWon()
+	{
+		Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard();
+		return pxBlackboard ? pxBlackboard->GetBool("won", false) : false;
+	}
+	bool IsAnimating() const { return m_xAnimation.IsAnimating(); }
+	uint32_t GetPlayerX() const { return m_uPlayerX; }
+	uint32_t GetPlayerY() const { return m_uPlayerY; }
+	uint32_t GetTargetCount() const { return m_uTargetCount; }
+	uint32_t GetMinMoves() const { return m_uMinMoves; }
+	uint32_t GetBoxesOnTargets() const
+	{
+		return Sokoban_GridLogic::CountBoxesOnTargets(m_abBoxes, m_abTargets, m_uGridWidth * m_uGridHeight);
+	}
+
+	// ========================================================================
+	// Graph-facing systems surface (the node seams)
+	// ========================================================================
+
+	// The old TryMove body minus its DECISIONS' bookkeeping (the move-count
+	// increment and HUD refresh are graph chains). GridLogic queries, the
+	// grid/box/player state writes, and the step animation are systems.
+	bool TryMoveSystems(SokobanDirection eDir)
+	{
+		if (m_xAnimation.IsAnimating()) return false;
+
+		if (!Sokoban_GridLogic::CanMove(m_aeTiles, m_abBoxes, m_uPlayerX, m_uPlayerY,
+			m_uGridWidth, m_uGridHeight, eDir))
+		{
+			return false;
+		}
+
+		int32_t iDeltaX, iDeltaY;
+		Sokoban_GridLogic::GetDirectionDelta(eDir, iDeltaX, iDeltaY);
+
+		uint32_t uNewX = m_uPlayerX + iDeltaX;
+		uint32_t uNewY = m_uPlayerY + iDeltaY;
+		uint32_t uNewIndex = uNewY * m_uGridWidth + uNewX;
+
+		bool bPushingBox = false;
+		uint32_t uBoxDestX = 0, uBoxDestY = 0;
+
+		if (m_abBoxes[uNewIndex])
+		{
+			bPushingBox = true;
+			uBoxDestX = uNewX + iDeltaX;
+			uBoxDestY = uNewY + iDeltaY;
+			Sokoban_GridLogic::PushBox(m_abBoxes, uNewX, uNewY, m_uGridWidth, eDir);
+		}
+
+		uint32_t uOldX = m_uPlayerX;
+		uint32_t uOldY = m_uPlayerY;
+		m_uPlayerX = uNewX;
+		m_uPlayerY = uNewY;
+
+		m_xAnimation.StartPlayerMove(uOldX, uOldY, uNewX, uNewY);
+		if (bPushingBox)
+		{
+			m_xAnimation.StartBoxPush(uNewX, uNewY, uBoxDestX, uBoxDestY);
+		}
+		return true;
+	}
+
+	// Fresh puzzle scene + generation (the old StartGame/StartNewLevel systems
+	// body; counter/state resets are graph-side).
+	void RegenerateLevel()
+	{
+		if (m_xPuzzleScene.IsValid())
+		{
+			m_xRenderer.ClearEntityIDs();
+			g_xEngine.Scenes().UnloadScene(m_xPuzzleScene);
+		}
+		m_xPuzzleScene = g_xEngine.Scenes().LoadScene("Puzzle", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
+
+		GenerateNewLevel();
+	}
+
+	// Level teardown (the escape-to-menu systems body; the menu-scene load is
+	// an engine LoadSceneByIndex node at the end of the graph chain).
+	void UnloadLevel()
+	{
+		if (m_xPuzzleScene.IsValid())
+		{
+			m_xRenderer.ClearEntityIDs();
+			g_xEngine.Scenes().UnloadScene(m_xPuzzleScene);
+			m_xPuzzleScene = Zenith_Scene();
+		}
+		m_xAnimation.Cancel(Sokoban::Resources().m_uDustEmitterID);
+	}
+
+	// Characterization-test seam: replace the generated level with a tiny
+	// fixed corridor - player (1,1), box (3,1), target (4,1) in a 6x3 walled
+	// grid, so D is a neutral move and a second D pushes the box onto the
+	// target (deterministic win). Systems-only (grid arrays + visuals); no
+	// counter/state writes, so it is conversion-neutral. Use at a fresh
+	// level only (counters are whatever the current level left them as).
+	void Test_LoadFixtureLevel()
+	{
+		if (m_xPuzzleScene.IsValid())
+		{
+			m_xRenderer.ClearEntityIDs();
+			g_xEngine.Scenes().UnloadScene(m_xPuzzleScene);
+		}
+		m_xPuzzleScene = g_xEngine.Scenes().LoadScene("Puzzle", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
+
+		m_xAnimation.Cancel(Sokoban::Resources().m_uDustEmitterID);
+
+		memset(m_aeTiles, 0, sizeof(m_aeTiles));	// SOKOBAN_TILE_FLOOR == 0
+		memset(m_abTargets, false, sizeof(m_abTargets));
+		memset(m_abBoxes, false, sizeof(m_abBoxes));
+
+		m_uGridWidth = 6;
+		m_uGridHeight = 3;
+		for (uint32_t uX = 0; uX < m_uGridWidth; uX++)
+		{
+			m_aeTiles[0 * m_uGridWidth + uX] = SOKOBAN_TILE_WALL;
+			m_aeTiles[2 * m_uGridWidth + uX] = SOKOBAN_TILE_WALL;
+		}
+		m_aeTiles[1 * m_uGridWidth + 0] = SOKOBAN_TILE_WALL;
+		m_aeTiles[1 * m_uGridWidth + 5] = SOKOBAN_TILE_WALL;
+		m_abBoxes[1 * m_uGridWidth + 3] = true;
+		m_abTargets[1 * m_uGridWidth + 4] = true;
+		m_uPlayerX = 1;
+		m_uPlayerY = 1;
+		m_uTargetCount = 1;
+		m_uMinMoves = 2;
+
+		m_xAnimation.SnapPlayerTo(m_uPlayerX, m_uPlayerY);
+
+		Zenith_SceneData* pxPuzzleData = g_xEngine.Scenes().GetSceneData(m_xPuzzleScene);
+		m_xRenderer.Create3DLevel(
+			m_uGridWidth, m_uGridHeight,
+			m_aeTiles, m_abBoxes, m_abTargets,
+			m_uPlayerX, m_uPlayerY,
+			Sokoban::Resources().m_xTilePrefab.GetDirect(), Sokoban::Resources().m_xBoxPrefab.GetDirect(), Sokoban::Resources().m_xPlayerPrefab.GetDirect(),
+			m_pxCubeGeometry,
+			m_xFloorMaterial.GetDirect(), m_xWallMaterial.GetDirect(), m_xTargetMaterial.GetDirect(),
+			m_xBoxMaterial.GetDirect(), m_xBoxOnTargetMaterial.GetDirect(), m_xPlayerMaterial.GetDirect(),
+			pxPuzzleData);
+		m_xRenderer.RepositionCamera(m_uGridWidth, m_uGridHeight);
+	}
+
+	// ========================================================================
 	// Lifecycle Hooks - Called by engine (concept-detected by the meta registry)
 	// ========================================================================
 
 	/**
 	 * OnAwake - Called when the component is created at RUNTIME
 	 * NOT called during scene loading/deserialization.
-	 * Use for: Initial resource setup, wiring button callbacks.
 	 */
 	void OnAwake()
 	{
@@ -238,89 +394,47 @@ public:
 		m_xPlayerMaterial = Sokoban::Resources().m_xPlayerMaterial;
 		m_xTargetMaterial = Sokoban::Resources().m_xTargetMaterial;
 
-		// Wire up button callbacks
+		// The menu scene's MenuManager owns the Play canvas (its clicks are
+		// the graph's OnUIButtonClicked source - no C++ wiring). The gameplay
+		// scene's GameManager has no menu: build the level directly; its
+		// state comes from Sokoban_LevelFlow's declared defaults (PLAYING,
+		// moveCount 0, not won).
 		bool bHasMenu = false;
 		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = *pxUI;
-			Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-			if (pxPlayBtn)
-			{
-				// No instance userdata: components RELOCATE on pool resize, so a
-				// captured `this` could dangle. The callback needs no instance state.
-				pxPlayBtn->SetOnClick(&OnPlayClicked, nullptr);
-				pxPlayBtn->SetFocused(true);
-				bHasMenu = true;
-			}
+			bHasMenu = pxUI->FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay") != nullptr;
 		}
-
-		if (bHasMenu)
+		if (!bHasMenu)
 		{
-			// Start in main menu state
-			m_eState = SokobanGameState::MAIN_MENU;
-			SetMenuVisible(true);
-			SetHUDVisible(false);
-		}
-		else
-		{
-			// No menu UI (gameplay scene) - start game directly
-			StartGame();
+			RegenerateLevel();
 		}
 	}
 
 	/**
-	 * OnStart - Called before first OnUpdate, for ALL entities
-	 * Called even for entities loaded from scene file.
-	 */
-	void OnStart()
-	{
-		// Ensure menu state if no level is loaded yet
-		if (m_eState == SokobanGameState::MAIN_MENU)
-		{
-			SetMenuVisible(true);
-			SetHUDVisible(false);
-		}
-	}
-
-	/**
-	 * OnUpdate - Called every frame
-	 * Dispatches to the current game state handler.
+	 * OnUpdate - per-state SYSTEMS dispatch. Reads the graph-owned state and
+	 * runs the systems passes (step-animation tween + visuals); every
+	 * DECISION - key -> move dispatch, blocked/push, move counting, the
+	 * win-on-step-complete check, R/Esc level flow, menu focus - is a chain
+	 * in Sokoban_LevelFlow / Sokoban_GameFlow.
 	 */
 	void OnUpdate(const float fDt)
 	{
-		switch (m_eState)
+		switch (GetGameState())
 		{
 		case SokobanGameState::MAIN_MENU:
-			UpdateMenuInput();
+			// Menu focus/click handling is fully graph + UI-system side.
 			break;
 
 		case SokobanGameState::PLAYING:
-			// Escape returns to menu
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				ReturnToMenu();
-				return;
-			}
-			// R starts a new level
-			if (Sokoban_Input::WasResetPressed())
-			{
-				StartNewLevel();
-				return;
-			}
-
 			if (m_xAnimation.IsAnimating())
 			{
 				const bool bStepComplete = m_xAnimation.Update(fDt, m_uGridWidth, m_uGridHeight, Sokoban::Resources().m_uDustEmitterID);
-				if (bStepComplete && Sokoban_GridLogic::CheckWinCondition(m_abBoxes, m_abTargets,
-					m_uGridWidth * m_uGridHeight, m_uTargetCount))
+				if (bStepComplete)
 				{
-					m_bWon = true;
-					UpdateUI();
+					// The win decision lives in the graph (board facts are
+					// staged, compared, and the won flag set graph-side).
+					FireStepComplete();
 				}
-			}
-			else if (!m_bWon)
-			{
-				HandleInput();
 			}
 			UpdateVisuals();
 			break;
@@ -336,28 +450,39 @@ public:
 	 */
 	void RenderPropertiesPanel()
 	{
+		const SokobanGameState eState = GetGameState();
 		ImGui::Text("Sokoban Puzzle Game");
 		ImGui::Separator();
-		ImGui::Text("State: %s", m_eState == SokobanGameState::MAIN_MENU ? "Menu" :
-			m_eState == SokobanGameState::PLAYING ? "Playing" : "Game Over");
+		ImGui::Text("State: %s", eState == SokobanGameState::MAIN_MENU ? "Menu" :
+			eState == SokobanGameState::PLAYING ? "Playing" : "Game Over");
 		ImGui::Text("Grid Size: %u x %u", m_uGridWidth, m_uGridHeight);
-		ImGui::Text("Moves: %u", m_uMoveCount);
+		ImGui::Text("Moves: %u", GetMoveCount());
 		ImGui::Text("Min Moves: %u", m_uMinMoves);
-		ImGui::Text("Boxes on targets: %u / %u",
-			Sokoban_GridLogic::CountBoxesOnTargets(m_abBoxes, m_abTargets, m_uGridWidth * m_uGridHeight),
-			m_uTargetCount);
+		ImGui::Text("Boxes on targets: %u / %u", GetBoxesOnTargets(), m_uTargetCount);
 
-		if (m_bWon)
+		if (IsWon())
 		{
 			ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "LEVEL COMPLETE!");
 		}
 
 		if (ImGui::Button("New Level"))
 		{
-			StartNewLevel();
+			// Editor convenience: the systems body + the same blackboard
+			// resets the graph's R chain performs.
+			RegenerateLevel();
+			if (Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard())
+			{
+				Zenith_PropertyValue xValue;
+				xValue.SetInt32(0);
+				pxBlackboard->SetValue("moveCount", xValue);
+				xValue.SetBool(false);
+				pxBlackboard->SetValue("won", xValue);
+			}
 		}
 
 		ImGui::Separator();
+		ImGui::TextWrapped("Flow decisions live in Sokoban_LevelFlow / Sokoban_GameFlow; "
+			"state is on the graph blackboard (gameState/moveCount/won).");
 		ImGui::Text("Controls:");
 		ImGui::Text("  WASD / Arrow Keys: Move");
 		ImGui::Text("  R: New Level");
@@ -467,190 +592,33 @@ public:
 	}
 
 private:
-	// ========================================================================
-	// Button Callbacks (static function pointers, NOT std::function)
-	// ========================================================================
-
-	static void OnPlayClicked(void* /*pxUserData*/)
+	// The attached graph's blackboard (first slot): Sokoban_LevelFlow on the
+	// gameplay GameManager, Sokoban_GameFlow on the menu MenuManager.
+	Zenith_GraphBlackboard* TryGetGraphBlackboard()
 	{
-		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
-	}
-
-	// ========================================================================
-	// State Transitions
-	// ========================================================================
-
-	void StartGame()
-	{
-		SetMenuVisible(false);
-		SetHUDVisible(true);
-
-		// Create puzzle scene for level entities
-		m_xPuzzleScene = g_xEngine.Scenes().LoadScene("Puzzle", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
-
-		m_eState = SokobanGameState::PLAYING;
-		GenerateNewLevel();
-	}
-
-	void StartNewLevel()
-	{
-		// Unload current puzzle scene (destroys all level entities automatically)
-		if (m_xPuzzleScene.IsValid())
+		if (!m_xParentEntity.IsValid())
 		{
-			m_xRenderer.ClearEntityIDs();
-			g_xEngine.Scenes().UnloadScene(m_xPuzzleScene);
+			return nullptr;
 		}
-
-		// Create fresh puzzle scene
-		m_xPuzzleScene = g_xEngine.Scenes().LoadScene("Puzzle", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-		g_xEngine.Scenes().SetActiveScene(m_xPuzzleScene);
-
-		m_eState = SokobanGameState::PLAYING;
-		GenerateNewLevel();
-	}
-
-	void ReturnToMenu()
-	{
-		// Unload puzzle scene (destroys all level entities automatically)
-		if (m_xPuzzleScene.IsValid())
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr || pxGraph->GetGraphCount() == 0)
 		{
-			m_xRenderer.ClearEntityIDs();
-			g_xEngine.Scenes().UnloadScene(m_xPuzzleScene);
-			m_xPuzzleScene = Zenith_Scene();
+			return nullptr;
 		}
-
-		// Reset game state
-		m_bWon = false;
-		m_xAnimation.Cancel(Sokoban::Resources().m_uDustEmitterID);
-
-		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+		Zenith_BehaviourGraph* pxBehaviour = pxGraph->GetGraphAt(0);
+		return pxBehaviour ? &pxBehaviour->GetBlackboard() : nullptr;
 	}
 
-	// ========================================================================
-	// Menu UI
-	// ========================================================================
-
-	void SetMenuVisible(bool bVisible)
+	// Fired the frame a step animation completes - the graph stages the board
+	// facts and makes the win decision.
+	void FireStepComplete()
 	{
-		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
-		if (pxUI == nullptr)
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
+		{
 			return;
-
-		Zenith_UIComponent& xUI = *pxUI;
-
-		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
-		if (pxTitle) pxTitle->SetVisible(bVisible);
-
-		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-		if (pxPlay) pxPlay->SetVisible(bVisible);
-	}
-
-	void SetHUDVisible(bool bVisible)
-	{
-		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
-		if (pxUI == nullptr)
-			return;
-
-		Zenith_UIComponent& xUI = *pxUI;
-
-		const char* aszHUDElements[] = {
-			"Title", "ControlsHeader", "MoveInstr", "ResetInstr",
-			"GoalHeader", "GoalDesc", "Status", "Progress", "MinMoves", "WinText"
-		};
-
-		for (const char* szName : aszHUDElements)
-		{
-			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
-			if (pxText) pxText->SetVisible(bVisible);
 		}
-	}
-
-	void UpdateMenuInput()
-	{
-		// Only 1 button (Play) - keyboard focus stays on it
-		// Enter/Space activates via the button's own focus handling
-		// Up/Down would cycle if more buttons existed
-		static constexpr int32_t s_iButtonCount = 1;
-
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_UP) ||
-			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W))
-		{
-			m_iFocusIndex = (m_iFocusIndex - 1 + s_iButtonCount) % s_iButtonCount;
-		}
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_DOWN) ||
-			g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_S))
-		{
-			m_iFocusIndex = (m_iFocusIndex + 1) % s_iButtonCount;
-		}
-
-		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
-		{
-			Zenith_UIComponent& xUI = *pxUI;
-			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-			if (pxPlay) pxPlay->SetFocused(m_iFocusIndex == 0);
-		}
-	}
-
-	// ========================================================================
-	// Input Handling (movement only - R and Esc handled in OnUpdate)
-	// ========================================================================
-	void HandleInput()
-	{
-		if (m_xAnimation.IsAnimating()) return;
-
-		SokobanDirection eDir = Sokoban_Input::GetInputDirection();
-		if (eDir != SOKOBAN_DIR_NONE)
-		{
-			TryMove(eDir);
-		}
-	}
-
-	// ========================================================================
-	// Movement Logic
-	// ========================================================================
-	bool TryMove(SokobanDirection eDir)
-	{
-		if (m_xAnimation.IsAnimating()) return false;
-
-		if (!Sokoban_GridLogic::CanMove(m_aeTiles, m_abBoxes, m_uPlayerX, m_uPlayerY,
-			m_uGridWidth, m_uGridHeight, eDir))
-		{
-			return false;
-		}
-
-		int32_t iDeltaX, iDeltaY;
-		Sokoban_GridLogic::GetDirectionDelta(eDir, iDeltaX, iDeltaY);
-
-		uint32_t uNewX = m_uPlayerX + iDeltaX;
-		uint32_t uNewY = m_uPlayerY + iDeltaY;
-		uint32_t uNewIndex = uNewY * m_uGridWidth + uNewX;
-
-		bool bPushingBox = false;
-		uint32_t uBoxDestX = 0, uBoxDestY = 0;
-
-		if (m_abBoxes[uNewIndex])
-		{
-			bPushingBox = true;
-			uBoxDestX = uNewX + iDeltaX;
-			uBoxDestY = uNewY + iDeltaY;
-			Sokoban_GridLogic::PushBox(m_abBoxes, uNewX, uNewY, m_uGridWidth, eDir);
-		}
-
-		uint32_t uOldX = m_uPlayerX;
-		uint32_t uOldY = m_uPlayerY;
-		m_uPlayerX = uNewX;
-		m_uPlayerY = uNewY;
-		m_uMoveCount++;
-
-		m_xAnimation.StartPlayerMove(uOldX, uOldY, uNewX, uNewY);
-		if (bPushingBox)
-		{
-			m_xAnimation.StartBoxPush(uNewX, uNewY, uBoxDestX, uBoxDestY);
-		}
-
-		UpdateUI();
-		return true;
+		pxGraph->FireCustomEvent("SokobanStepComplete");
 	}
 
 	// ========================================================================
@@ -676,12 +644,11 @@ private:
 	}
 
 	// ========================================================================
-	// Level Generation
+	// Level Generation (systems: generator + solver + visuals; the counter/
+	// state resets are the graph's R chain)
 	// ========================================================================
 	void GenerateNewLevel()
 	{
-		m_uMoveCount = 0;
-		m_bWon = false;
 		m_xAnimation.Cancel(Sokoban::Resources().m_uDustEmitterID);
 
 		Sokoban_LevelGenerator::LevelData xData;
@@ -725,24 +692,8 @@ private:
 			pxPuzzleData);
 
 		m_xRenderer.RepositionCamera(m_uGridWidth, m_uGridHeight);
-		UpdateUI();
-	}
-
-	// ========================================================================
-	// UI Management
-	// ========================================================================
-	void UpdateUI()
-	{
-		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
-		if (pxUI == nullptr)
-			return;
-
-		Zenith_UIComponent& xUI = *pxUI;
-		uint32_t uBoxesOnTargets = Sokoban_GridLogic::CountBoxesOnTargets(
-			m_abBoxes, m_abTargets, m_uGridWidth * m_uGridHeight);
-
-		Sokoban_UIManager::UpdateStatusText(xUI, m_uMoveCount, uBoxesOnTargets,
-			m_uTargetCount, m_uMinMoves, m_bWon);
+		// HUD text is graph-side now (the "SokobanRefreshHUD" chain's
+		// SetUIText nodes), fired by the R / OnStart / move / win chains.
 	}
 
 	// ========================================================================
@@ -839,11 +790,9 @@ private:
 	uint32_t m_uPlayerX;
 	uint32_t m_uPlayerY;
 
-	// Game state
-	uint32_t m_uMoveCount;
+	// Level facts (gameState/moveCount/won live on the graph blackboard)
 	uint32_t m_uTargetCount;
 	uint32_t m_uMinMoves;
-	bool m_bWon;
 
 	// Player/box step animation (tween state + dust emitter driving).
 	Sokoban_Animation m_xAnimation;
@@ -853,10 +802,6 @@ private:
 
 	// Renderer module instance
 	Sokoban_Renderer m_xRenderer;
-
-	// State machine
-	SokobanGameState m_eState;
-	int32_t m_iFocusIndex;
 
 	// Scene handle for the puzzle scene (created/destroyed on transitions)
 	Zenith_Scene m_xPuzzleScene;

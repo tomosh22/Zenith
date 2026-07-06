@@ -263,6 +263,53 @@ Zenith_Scene Zenith_SceneSystem::GetSceneAt(uint32_t uIndex)
 	return xScene;
 }
 
+Zenith_Scene Zenith_SceneSystem::FindLoadedSceneByPath(const std::string& strPath)
+{
+	Zenith_Assert(Zenith_ECS_IsMainThread(), "FindLoadedSceneByPath must be called from main thread");
+	if (strPath.empty())
+	{
+		return Zenith_Scene::INVALID_SCENE;
+	}
+	const std::string strCanonical = CanonicalisePath(strPath);
+
+	Zenith_Scene xSuffixMatch = Zenith_Scene::INVALID_SCENE;
+	for (u_int i = 0; i < m_axScenes.GetSize(); ++i)
+	{
+		if (!IsSceneVisibleToUser(i, m_axScenes.Get(i)))
+		{
+			continue;
+		}
+		Zenith_Scene xScene;
+		xScene.m_iHandle = static_cast<int>(i);
+		xScene.m_uGeneration = m_axSceneGenerations.Get(i);
+		const Zenith_SceneData* pxData = GetSceneData(xScene);
+		if (pxData == nullptr)
+		{
+			continue;
+		}
+		const std::string& strScenePath = pxData->m_strPath;
+		if (strScenePath == strCanonical)
+		{
+			return xScene;	// exact canonical match wins outright
+		}
+		if (xSuffixMatch.m_iHandle < 0
+			&& strScenePath.size() >= strCanonical.size()
+			&& strScenePath.compare(strScenePath.size() - strCanonical.size(), strCanonical.size(), strCanonical) == 0)
+		{
+			// Require the matched region to start at a path boundary, so a bare-filename
+			// query like "Menu.zscen" does NOT false-match ".../MainMenu.zscen".
+			// CanonicalisePath normalises all separators to '/', so '/' is the only boundary.
+			const size_t uMatchStart = strScenePath.size() - strCanonical.size();
+			const bool bAtPathBoundary = (uMatchStart == 0) || (strScenePath[uMatchStart - 1] == '/');
+			if (bAtPathBoundary)
+			{
+				xSuffixMatch = xScene;
+			}
+		}
+	}
+	return xSuffixMatch;
+}
+
 //=============================================================================
 // Scene metadata snapshot
 //

@@ -36,6 +36,9 @@
  */
 
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
+#include "Scripting/Zenith_GraphBlackboard.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -47,22 +50,55 @@
 
 #include "Source/PublicInterfaces.h"
 
+#include <cstring>
+
 class DPPauseMenuController_Component ZENITH_FINAL
 {
 public:
+	// W3 conversion (risk R6, spiked green by the engine unit
+	// GraphComponent::GraphSurvivesDontDestroyOnLoadRelocation): the pause
+	// DECISIONS (Esc toggle, R/Q gates, run-over latch) live on this graph;
+	// its blackboard travels with the GraphComponent through the
+	// DontDestroyOnLoad relocation. The component keeps the SYSTEMS: the
+	// persistent-scene singleton machinery, the Victory/RunLost
+	// subscriptions (forwarded to the blackboard), SetScenePaused on the
+	// captured scene handle, the reset-then-load sequences, and the UI find/
+	// SetVisible calls - invoked synchronously by the DPPause* nodes.
+	static constexpr const char* kszGraphAsset = "game:Graphs/DP_PauseMenu.bgraph";
+
 	DPPauseMenuController_Component() = delete;
 	DPPauseMenuController_Component(Zenith_Entity& xParentEntity)
 		: m_xParentEntity(xParentEntity)
 	{}
 
+	void OnAwake()
+	{
+		// Self-attach the decisions graph (idempotent). Runs BEFORE OnStart's
+		// DontDestroyOnLoad, so the graph + blackboard ride the relocation.
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraphs == nullptr)
+		{
+			pxGraphs = &m_xParentEntity.AddComponent<Zenith_GraphComponent>();
+		}
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+		{
+			if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) == 0)
+			{
+				return;
+			}
+		}
+		pxGraphs->AddGraphByAssetPath(kszGraphAsset);
+	}
+
 	// Heap-stability: hand-written moves (see header comment); copies deleted.
 	DPPauseMenuController_Component(const DPPauseMenuController_Component&) = delete;
 	DPPauseMenuController_Component& operator=(const DPPauseMenuController_Component&) = delete;
 
+	// The shown/run-over flags live on the graph blackboard since W3 - they
+	// travel with the sibling GraphComponent's move, so the hand-written
+	// moves here only carry the scene handle + singleton + subscriptions.
 	DPPauseMenuController_Component(DPPauseMenuController_Component&& xOther) noexcept
 		: m_xParentEntity(xOther.m_xParentEntity)
-		, m_bShown(xOther.m_bShown)
-		, m_bRunOver(xOther.m_bRunOver)
 		, m_xGameplayScene(xOther.m_xGameplayScene)
 	{
 		if (s_pxPersistentInstance == &xOther) s_pxPersistentInstance = this;
@@ -75,8 +111,6 @@ public:
 		{
 			UnsubscribeRunOverEvents();
 			m_xParentEntity  = xOther.m_xParentEntity;
-			m_bShown         = xOther.m_bShown;
-			m_bRunOver       = xOther.m_bRunOver;
 			m_xGameplayScene = xOther.m_xGameplayScene;
 			if (s_pxPersistentInstance == &xOther) s_pxPersistentInstance = this;
 			TakeOverSubscriptionsFrom(xOther);
@@ -107,7 +141,7 @@ public:
 		{
 			s_pxPersistentInstance->m_xGameplayScene = m_xParentEntity.GetScene();
 			s_pxPersistentInstance->ResetVisibleAndUnpause();
-			s_pxPersistentInstance->m_bRunOver = false;
+			s_pxPersistentInstance->WriteBBBool("runOver", false);
 			return;
 		}
 
@@ -169,56 +203,62 @@ public:
 
 	void OnUpdate(const float /*fDt*/)
 	{
-		const bool bEsc = g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE);
+		// W3: the Esc/R/Q decisions (MVP-2.5.5 shortcuts, MVP-4.3.2 run-over
+		// gate, MVP-1.1 toggle) live on DP_PauseMenu.bgraph. Stage this
+		// frame's key edges, then fire "PauseKeys"; the graph's chains call
+		// the verbs below synchronously. Both instances after a restart
+		// (persistent singleton + fresh scene copy) stage-and-fire, exactly
+		// like both OnUpdates ran before.
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		Zenith_BehaviourGraph* pxGraph = FindPauseGraph();
+		if (pxGraphs == nullptr || pxGraph == nullptr) return;
 
-		// MVP-2.5.5: while paused, R restarts the run (reload
-		// gameplay scene) and Q quits to the main menu.
-		// MVP-4.3.2: same shortcuts also honoured when the run is
-		// over (m_bRunOver set by Victory / RunLost subscribers).
-		// The player sees the permanent banner + "Press R to restart"
-		// HUD prompt and can press the key without first opening the
-		// pause menu.
-		if (m_bShown || m_bRunOver)
+		Zenith_PropertyValue xValue;
+		xValue.SetBool(g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE));
+		pxGraph->GetBlackboard().SetValue("escPressed", xValue);
+		xValue.SetBool(g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R));
+		pxGraph->GetBlackboard().SetValue("rPressed", xValue);
+		xValue.SetBool(g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_Q));
+		pxGraph->GetBlackboard().SetValue("qPressed", xValue);
+		pxGraphs->FireCustomEvent("PauseKeys");
+	}
+
+	// ---- Graph-facing verbs (SYSTEMS, called synchronously by DPPause*) ----
+
+	// The retired toggle's UI-presence quirk: if the UI component or the
+	// overlay element is missing, Esc does NOTHING at all - no pause, no
+	// event (the graph gates on this before flipping "shown").
+	bool CanToggleOverlay()
+	{
+		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr) return false;
+		return pxUI->FindElement<Zenith_UI::Zenith_UIText>("PauseOverlay") != nullptr;
+	}
+
+	// Applies the (already-flipped) blackboard "shown" state: overlay
+	// visibility, the real scene pause (skipped on a stale handle - the
+	// overlay-still-toggles quirk), then the telemetry toggle event. Same
+	// three calls, same order as the retired inline body.
+	void ApplyToggleFromGraph()
+	{
+		const bool bShown = ReadBBBool("shown", false);
+		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
+			if (auto* pxOverlay = pxUI->FindElement<Zenith_UI::Zenith_UIText>("PauseOverlay"))
 			{
-				HandleRestart();
-				return;
-			}
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_Q))
-			{
-				HandleQuit();
-				return;
+				pxOverlay->SetVisible(bShown);
 			}
 		}
-
-		if (!bEsc) return;
-		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
-		if (pxUI == nullptr) return;
-		Zenith_UIComponent& xUI = *pxUI;
-		auto* pxOverlay = xUI.FindElement<Zenith_UI::Zenith_UIText>("PauseOverlay");
-		if (pxOverlay == nullptr) return;
-
-		m_bShown = !m_bShown;
-		pxOverlay->SetVisible(m_bShown);
-
-		// MVP-1.1.2: drive the real pause. If the gameplay scene was unloaded
-		// for some reason (handle no longer valid), we still toggle the
-		// overlay but skip the pause call -- nothing to pause.
 		if (m_xGameplayScene.IsValid())
 		{
-			g_xEngine.Scenes().SetScenePaused(m_xGameplayScene, m_bShown);
+			g_xEngine.Scenes().SetScenePaused(m_xGameplayScene, bShown);
 		}
-
-		// Telemetry-v3: surface the toggle transition so the visualiser
-		// can render a "paused frames" band on the timeline. Fires on
-		// every Esc-press (both enter-pause and leave-pause).
-		Zenith_EventDispatcher::Get().Dispatch(DP_OnPauseToggle{ m_bShown });
+		Zenith_EventDispatcher::Get().Dispatch(DP_OnPauseToggle{ bShown });
 	}
 
 #ifdef ZENITH_INPUT_SIMULATOR
 	// Test-only accessors. Not part of the shipping API.
-	bool IsPausedForTest() const { return m_bShown; }
+	bool IsPausedForTest() const { return ReadBBBool("shown", false); }
 	Zenith_Scene GetGameplaySceneForTest() const { return m_xGameplayScene; }
 
 	// MVP-2.5.5 test accessors. Both are flags flipped by
@@ -250,7 +290,7 @@ public:
 		{
 			s_pxPersistentInstance->ResetVisibleAndUnpause();
 			s_pxPersistentInstance->m_xGameplayScene = Zenith_Scene();
-			s_pxPersistentInstance->m_bRunOver = false;
+			s_pxPersistentInstance->WriteBBBool("runOver", false);
 		}
 		s_bRestartRequestedForTest = false;
 		s_bQuitToMenuRequestedForTest = false;
@@ -260,7 +300,8 @@ public:
 	// that verify R/Q work without first opening the pause menu.
 	static bool IsRunOverForTest()
 	{
-		return s_pxPersistentInstance != nullptr && s_pxPersistentInstance->m_bRunOver;
+		return s_pxPersistentInstance != nullptr
+			&& s_pxPersistentInstance->ReadBBBool("runOver", false);
 	}
 	static DPPauseMenuController_Component* GetPersistentInstanceForTest()
 	{
@@ -268,24 +309,9 @@ public:
 	}
 #endif
 
-private:
-	// Shared post-pause-menu reset. Clears every per-run DP state
-	// owner so the next scene-load starts from a fresh demon run.
-	// Called by both HandleRestart (re-load gameplay scene) and HandleQuit
-	// (load FrontEnd) -- both intents leave no state-leak across the
-	// transition.
-	void ResetAllRunStateBeforeReload()
-	{
-		ResetVisibleAndUnpause();
-		DP_Player::ResetForNewRun();    // Clears possessed handle,
-		                                // held items, cooldown, scent,
-		                                // anchor, channel.
-		DP_Win::Reset();
-		DP_Fog::ClearAllFogHoles();
-		DP_Fog::ClearAllMemoryReveals();
-		DP_Night::Reset();
-	}
-
+	// Public since W3: the graph's DPPauseRestart/DPPauseQuit nodes invoke
+	// these directly (the same bodies the static test hooks call), so the
+	// flag-before-load ordering and the reset sequence stay byte-identical.
 	void HandleRestart()
 	{
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -306,20 +332,68 @@ private:
 		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
+	// ---- Graph blackboard plumbing (the DPDoor shim pattern) ----
+	Zenith_BehaviourGraph* FindPauseGraph() const
+	{
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraphs == nullptr) return nullptr;
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+		{
+			if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) == 0)
+			{
+				return pxGraphs->GetGraphAt(u);
+			}
+		}
+		return nullptr;
+	}
+	bool ReadBBBool(const char* szVar, bool bDefault) const
+	{
+		Zenith_BehaviourGraph* pxGraph = FindPauseGraph();
+		return pxGraph ? pxGraph->GetBlackboard().GetBool(szVar, bDefault) : bDefault;
+	}
+	void WriteBBBool(const char* szVar, bool bValue)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindPauseGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetBool(bValue);
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
+	}
+
+private:
+	// Shared post-pause-menu reset. Clears every per-run DP state
+	// owner so the next scene-load starts from a fresh demon run.
+	// Called by both HandleRestart (re-load gameplay scene) and HandleQuit
+	// (load FrontEnd) -- both intents leave no state-leak across the
+	// transition.
+	void ResetAllRunStateBeforeReload()
+	{
+		ResetVisibleAndUnpause();
+		DP_Player::ResetForNewRun();    // Clears possessed handle,
+		                                // held items, cooldown, scent,
+		                                // anchor, channel.
+		DP_Win::Reset();
+		DP_Fog::ClearAllFogHoles();
+		DP_Fog::ClearAllMemoryReveals();
+		DP_Night::Reset();
+	}
+
 	// The single factored subscription site. Called from OnStart (first
 	// instance only) and from the move operations so the relocated instance
-	// re-captures the new `this`.
+	// re-captures the new `this`. The latch itself lives on the graph
+	// blackboard since W3 (the R/Q gate chain reads it).
 	void SubscribeRunOverEvents()
 	{
 		m_xVictoryHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnVictory>(
 			[this](const DP_OnVictory&)
 			{
-				m_bRunOver = true;
+				WriteBBBool("runOver", true);
 			});
 		m_xRunLostHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnRunLost>(
 			[this](const DP_OnRunLost&)
 			{
-				m_bRunOver = true;
+				WriteBBBool("runOver", true);
 			});
 	}
 
@@ -366,16 +440,13 @@ private:
 		{
 			g_xEngine.Scenes().SetScenePaused(m_xGameplayScene, false);
 		}
-		m_bShown = false;
+		WriteBBBool("shown", false);
 	}
 
 	Zenith_Entity      m_xParentEntity;
 
-	bool               m_bShown = false;
-	// MVP-4.3.2: set by Victory / RunLost subscribers in OnStart. Lets the
-	// R/Q shortcuts fire when the run is over without first opening the
-	// pause menu (the HUD's RestartPrompt element prompts the player).
-	bool               m_bRunOver = false;
+	// The shown/run-over decision flags live on DP_PauseMenu.bgraph's
+	// blackboard (W3); only the captured scene handle stays a member.
 	Zenith_Scene       m_xGameplayScene;
 	Zenith_EventHandle m_xVictoryHandle = INVALID_EVENT_HANDLE;
 	Zenith_EventHandle m_xRunLostHandle = INVALID_EVENT_HANDLE;

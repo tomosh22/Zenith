@@ -36,6 +36,8 @@ const char* Project_GetGameAssetsDirectory()
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
+#include "Scripting/Zenith_GraphBuilder.h"
+#include "Input/Zenith_KeyCodes.h"
 #endif
 
 void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
@@ -71,6 +73,94 @@ void Project_InitializeResources()
 	// Test game has no resources that need initialization
 }
 
+namespace
+{
+	// Test_Spinner: the retired TestSpinPlatform mega-node decomposed into
+	// engine physics nodes - same call order (angular velocity, then the
+	// zero-linear-velocity anchor).
+	void BuildGraph_TestSpinner(Zenith_GraphBuilder& xBuilder)
+	{
+		const u_int uSource = xBuilder.Node("OnUpdate");
+		const u_int uAngular = xBuilder.Node("SetAngularVelocity");
+		xBuilder.ParamVec3(uAngular, "m_xAngularVelocity", Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f));
+		// SetVelocity's defaults ((0,0,0), all axes) ARE the anchor.
+		const u_int uAnchor = xBuilder.Node("SetVelocity");
+		xBuilder.Chain(uSource, uAngular).Chain(uAngular, uAnchor);
+	}
+
+	// Test_Spring: the retired TestHookesForce mega-node decomposed - read
+	// own position, force = target - position (Hooke with k = 1), apply.
+	// The target is a declared blackboard variable (per-entity tunable).
+	void BuildGraph_TestSpring(Zenith_GraphBuilder& xBuilder)
+	{
+		Zenith_PropertyValue xTarget;
+		xTarget.SetVector3(Zenith_Maths::Vector3(0.0f, 5.0f, 0.0f));
+		xBuilder.Variable("springTarget", xTarget);
+
+		const u_int uSource = xBuilder.Node("OnUpdate");
+		const u_int uReadPos = xBuilder.Node("ReadEntityPosition");
+		xBuilder.ParamString(uReadPos, "m_strResultVar", "springPos");
+		const u_int uForce = xBuilder.Node("MathBlackboardVector3");
+		xBuilder.ParamString(uForce, "m_strVar", "springTarget");
+		xBuilder.ParamInt(uForce, "m_iOp", 1);	// sub: target - position
+		xBuilder.ParamString(uForce, "m_strOperandVar", "springPos");
+		xBuilder.ParamString(uForce, "m_strResultVar", "springForce");
+		const u_int uApply = xBuilder.Node("ApplyForce");
+		xBuilder.ParamString(uApply, "m_strForceVar", "springForce");
+		xBuilder.Chain(uSource, uReadPos).Chain(uReadPos, uForce).Chain(uForce, uApply);
+	}
+
+	// Player actions: every decision the controller's OnUpdate used to make -
+	// the E shoot binding, C fly-cam toggle, 1-6 slot selection, T/H health
+	// demo, and the per-tick compass update. The shim nodes gate themselves
+	// on walk mode (the old early-return semantics); movement/camera systems
+	// stay C++.
+	void BuildGraph_TestPlayerActions(Zenith_GraphBuilder& xBuilder)
+	{
+		// Programmatic seam: FireCustomEvent("Shoot") still spawns.
+		const u_int uShootEvent = xBuilder.Node("OnCustomEvent");
+		xBuilder.ParamString(uShootEvent, "m_strEventName", "Shoot");
+		const u_int uShootAction = xBuilder.Node("TestSpawnProjectile");
+		xBuilder.Chain(uShootEvent, uShootAction);
+
+		// E-press drives the same action through the real input path.
+		const u_int uShootKey = xBuilder.Node("OnKeyPressed");
+		xBuilder.ParamInt(uShootKey, "m_iKeyCode", ZENITH_KEY_E);
+		const u_int uShootAction2 = xBuilder.Node("TestSpawnProjectile");
+		xBuilder.Chain(uShootKey, uShootAction2);
+
+		const u_int uToggleKey = xBuilder.Node("OnKeyPressed");
+		xBuilder.ParamInt(uToggleKey, "m_iKeyCode", ZENITH_KEY_C);
+		const u_int uToggle = xBuilder.Node("TestToggleFlyCam");
+		xBuilder.Chain(uToggleKey, uToggle);
+
+		const u_int uDamageKey = xBuilder.Node("OnKeyPressed");
+		xBuilder.ParamInt(uDamageKey, "m_iKeyCode", ZENITH_KEY_T);
+		const u_int uDamage = xBuilder.Node("TestModifyHealth");
+		xBuilder.ParamFloat(uDamage, "m_fDelta", -10.0f);
+		xBuilder.Chain(uDamageKey, uDamage);
+
+		const u_int uHealKey = xBuilder.Node("OnKeyPressed");
+		xBuilder.ParamInt(uHealKey, "m_iKeyCode", ZENITH_KEY_H);
+		const u_int uHeal = xBuilder.Node("TestModifyHealth");
+		xBuilder.ParamFloat(uHeal, "m_fDelta", 15.0f);
+		xBuilder.Chain(uHealKey, uHeal);
+
+		for (int32_t i = 0; i < 6; ++i)
+		{
+			const u_int uSlotKey = xBuilder.Node("OnKeyPressed");
+			xBuilder.ParamInt(uSlotKey, "m_iKeyCode", ZENITH_KEY_1 + i);
+			const u_int uSlot = xBuilder.Node("TestSelectSlot");
+			xBuilder.ParamInt(uSlot, "m_iSlot", i);
+			xBuilder.Chain(uSlotKey, uSlot);
+		}
+
+		const u_int uTick = xBuilder.Node("OnUpdate");
+		const u_int uCompass = xBuilder.Node("TestUpdateCompass");
+		xBuilder.Chain(uTick, uCompass);
+	}
+}
+
 void Project_RegisterEditorAutomationSteps()
 {
 	// ---- MainMenu scene (build index 0) ----
@@ -91,36 +181,11 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
-	// ---- Behaviour graphs (regenerated every boot through the graph editor's
-	// ---- atomic actions; the physics-toy entities below run them) ----
-	g_xEngine.EditorAutomation().AddStep_GraphOpenFresh("game:Graphs/Test_Spinner.bgraph");
-	g_xEngine.EditorAutomation().AddStep_GraphAddNode("OnUpdate");
-	g_xEngine.EditorAutomation().AddStep_GraphAddNode("TestSpinPlatform");
-	g_xEngine.EditorAutomation().AddStep_GraphSelectNode("TestSpinPlatform", 0);
-	g_xEngine.EditorAutomation().AddStep_GraphSetNodeParamVec3("m_xAngularVel", 0.f, 2.f, 0.f);
-	g_xEngine.EditorAutomation().AddStep_GraphConnect("OnUpdate", 0, 0, "TestSpinPlatform", 0);
-	g_xEngine.EditorAutomation().AddStep_GraphSave();
-	g_xEngine.EditorAutomation().AddStep_GraphClose();
-
-	g_xEngine.EditorAutomation().AddStep_GraphOpenFresh("game:Graphs/Test_Spring.bgraph");
-	g_xEngine.EditorAutomation().AddStep_GraphAddNode("OnUpdate");
-	g_xEngine.EditorAutomation().AddStep_GraphAddNode("TestHookesForce");
-	g_xEngine.EditorAutomation().AddStep_GraphSelectNode("TestHookesForce", 0);
-	g_xEngine.EditorAutomation().AddStep_GraphSetNodeParamVec3("m_xDesiredPosition", 0.f, 5.f, 0.f);
-	g_xEngine.EditorAutomation().AddStep_GraphConnect("OnUpdate", 0, 0, "TestHookesForce", 0);
-	g_xEngine.EditorAutomation().AddStep_GraphSave();
-	g_xEngine.EditorAutomation().AddStep_GraphClose();
-
-	// Player actions (wave 2): the controller fires "Shoot" on E-press; the
-	// graph binds it to the projectile-spawn action.
-	g_xEngine.EditorAutomation().AddStep_GraphOpenFresh("game:Graphs/Test_PlayerActions.bgraph");
-	g_xEngine.EditorAutomation().AddStep_GraphAddNode("OnCustomEvent");
-	g_xEngine.EditorAutomation().AddStep_GraphSelectNode("OnCustomEvent", 0);
-	g_xEngine.EditorAutomation().AddStep_GraphSetNodeParamString("m_strEventName", "Shoot");
-	g_xEngine.EditorAutomation().AddStep_GraphAddNode("TestSpawnProjectile");
-	g_xEngine.EditorAutomation().AddStep_GraphConnect("OnCustomEvent", 0, 0, "TestSpawnProjectile", 0);
-	g_xEngine.EditorAutomation().AddStep_GraphSave();
-	g_xEngine.EditorAutomation().AddStep_GraphClose();
+	// ---- Behaviour graphs (regenerated every boot through the programmatic
+	// ---- builder - the W1 conversion's decomposed engine-node graphs) ----
+	g_xEngine.EditorAutomation().AddStep_GraphBuild("game:Graphs/Test_Spinner.bgraph", &BuildGraph_TestSpinner);
+	g_xEngine.EditorAutomation().AddStep_GraphBuild("game:Graphs/Test_Spring.bgraph", &BuildGraph_TestSpring);
+	g_xEngine.EditorAutomation().AddStep_GraphBuild("game:Graphs/Test_PlayerActions.bgraph", &BuildGraph_TestPlayerActions);
 
 	// ---- Test gameplay scene (build index 1) ----
 	g_xEngine.EditorAutomation().AddStep_CreateScene("Test");

@@ -41,11 +41,9 @@
 #include "EntityComponent/Zenith_AINavGeometry.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_Pathfinding.h"
-#include "AI/BehaviorTree/Zenith_BehaviorTree.h"
-#include "AI/BehaviorTree/Zenith_BTComposites.h"
-#include "AI/BehaviorTree/Zenith_BTActions.h"
-#include "AI/BehaviorTree/Zenith_BTConditions.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
+#include "Scripting/Zenith_GraphBlackboard.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Squad/Zenith_Formation.h"
@@ -142,43 +140,62 @@ public:
 
 	void OnAwake()
 	{
-		// Wire menu button callback
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 		if (pxPlay)
 		{
-			pxPlay->SetOnClick(&OnPlayClicked, nullptr);
+			// The menu Play click is handled by the AIShowcase_GameFlow graph's
+			// OnUIButtonClicked trampoline (no C++ SetOnClick wiring).
 			pxPlay->SetFocused(true);
-			// Start in menu state
-			m_eGameState = AIShowcaseGameState::MAIN_MENU;
+			// Start in menu state (also the graph's declared blackboard default).
+			SetGameState(AIShowcaseGameState::MAIN_MENU);
 			SetMenuVisible(true);
 			SetHUDVisible(false);
 		}
 		else
 		{
-			// No menu UI (gameplay scene) - start game directly
-			StartGame();
+			// No menu UI (gameplay scene) - defer StartGame to OnStart, AFTER
+			// the AI systems are (re-)initialised. Registering the player target
+			// / squads / tactical points here in OnAwake and THEN clearing them
+			// in OnStart's Initialise left the perception demo with no target to
+			// perceive (enemies patrolled forever). ResetDemo already does the
+			// correct init-then-register order; this makes the initial start match.
+			m_bPendingStart = true;
 		}
 	}
 
 	void OnStart()
 	{
-		// Ensure AI systems are initialized (may have been shut down by unit tests)
+		// Clean slate first (also recovers if a unit test shut the systems down),
+		// THEN build the arena so its perception/squad/tactical registrations
+		// survive - the order ResetDemo already uses.
 		Zenith_PerceptionSystem::Initialise();
 		Zenith_SquadManager::Initialise();
 		Zenith_TacticalPointSystem::Initialise();
+
+		if (m_bPendingStart)
+		{
+			m_bPendingStart = false;
+			StartGame();
+		}
 	}
 
 	void OnUpdate(const float fDt)
 	{
-		switch (m_eGameState)
+		// Input + state transitions are the AIShowcase_GameFlow graph's job
+		// (OnKeyPressed / OnUIButtonClicked / the StateMachine); this component
+		// keeps the SYSTEMS only, reading the state the graph owns. On a
+		// pause/menu transition frame the graph sets the new state first
+		// (order 60), so the systems pass is skipped here (order 100) - no
+		// UpdateAISystems against a torn-down SquadManager.
+		switch (GetGameState())
 		{
 		case AIShowcaseGameState::MAIN_MENU:
-			UpdateMenuInput();
+			// Menu focus is the graph's AIShowcaseFocusPlayButton chain.
 			break;
 
 		case AIShowcaseGameState::PLAYING:
-			HandlePlayerInput(fDt);
+			UpdatePlayerMovement(fDt);
 			UpdateAISystems(fDt);
 			UpdateUI();
 
@@ -191,17 +208,6 @@ public:
 			break;
 
 		case AIShowcaseGameState::PAUSED:
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
-			{
-				m_eGameState = AIShowcaseGameState::PLAYING;
-				g_xEngine.Scenes().SetScenePaused(m_xArenaScene, false);
-			}
-			else if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				g_xEngine.Scenes().SetScenePaused(m_xArenaScene, false);
-				ReturnToMenu();
-				return;
-			}
 			UpdateUI();
 			break;
 		}
@@ -214,7 +220,7 @@ public:
 		ImGui::Separator();
 
 		const char* astrStates[] = { "Main Menu", "Playing", "Paused" };
-		ImGui::Text("State: %s", astrStates[static_cast<int>(m_eGameState)]);
+		ImGui::Text("State: %s", astrStates[static_cast<int>(GetGameState())]);
 
 		ImGui::Text("Player Position: (%.1f, %.1f, %.1f)",
 			m_xPlayerPos.x, m_xPlayerPos.y, m_xPlayerPos.z);
@@ -262,7 +268,7 @@ public:
 			}
 		}
 
-		if (m_eGameState == AIShowcaseGameState::PLAYING && ImGui::Button("Reset Demo"))
+		if (GetGameState() == AIShowcaseGameState::PLAYING && ImGui::Button("Reset Demo"))
 		{
 			ResetDemo();
 		}
@@ -286,14 +292,125 @@ public:
 		xStream >> uComponentVersion;
 	}
 
+	// ========================================================================
+	// Characterization-test seams + read accessors (conversion-neutral -
+	// pure reads of systems state, plus a scenario-setup teleport). The
+	// behaviour-graph conversion keeps these interfaces identical (GetGameState
+	// will read the graph blackboard instead of the member, but the signature
+	// and observable value are unchanged).
+	// ========================================================================
+	// The game state LIVES on the AIShowcase_GameFlow graph's blackboard
+	// (var "gameState"); the systems component reads it here (OnUpdate / HUD /
+	// characterization tests) and the graph's key chains write it.
+	AIShowcaseGameState GetGameState()
+	{
+		Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard();
+		if (pxBlackboard == nullptr)
+		{
+			return m_eGameState;	// pre-resolve fallback (mirror)
+		}
+		int32_t iState = pxBlackboard->GetInt32("gameState", static_cast<int32_t>(m_eGameState));
+		iState = iState < 0 ? 0 : (iState > 2 ? 2 : iState);
+		return static_cast<AIShowcaseGameState>(iState);
+	}
+
+	void SetGameState(AIShowcaseGameState eState)
+	{
+		m_eGameState = eState;	// keep the mirror for the pre-resolve fallback
+		if (Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetInt32(static_cast<int32_t>(eState));
+			pxBlackboard->SetValue("gameState", xValue);
+		}
+	}
+
+	uint32_t GetCurrentFormation() const { return m_uCurrentFormation; }
+	Zenith_Scene GetArenaScene() const { return m_xArenaScene; }
+	uint32_t GetEnemyCount() const { return m_uEnemyCount; }
+	Zenith_EntityID GetPlayerEntityID() const { return m_xPlayerEntity; }
+
+	bool Test_GetEnemyEntityID(uint32_t u, Zenith_EntityID& xOut) const
+	{
+		if (u >= m_uEnemyCount) return false;
+		xOut = m_axEnemyIDs[u];
+		return true;
+	}
+
+	// The enemy's currently-requested nav destination (chase target or patrol
+	// waypoint) - the observable output of the per-enemy decision.
+	bool Test_GetEnemyDestination(uint32_t u, Zenith_Maths::Vector3& xOut) const
+	{
+		if (u >= m_uEnemyCount) return false;
+		xOut = m_axNavAgents[u].GetDestination();
+		return true;
+	}
+
+	uint32_t Test_GetEnemyPerceivedCount(uint32_t u) const
+	{
+		if (u >= m_uEnemyCount) return 0;
+		const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
+			Zenith_PerceptionSystem::GetPerceivedTargets(m_axEnemyIDs[u]);
+		return pxTargets ? pxTargets->GetSize() : 0;
+	}
+
+	bool Test_EnemyPerceivesPlayer(uint32_t u) const
+	{
+		if (u >= m_uEnemyCount) return false;
+		const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
+			Zenith_PerceptionSystem::GetPerceivedTargets(m_axEnemyIDs[u]);
+		if (pxTargets == nullptr) return false;
+		for (uint32_t t = 0; t < pxTargets->GetSize(); ++t)
+		{
+			if (pxTargets->Get(t).m_xEntityID == m_xPlayerEntity)
+				return true;
+		}
+		return false;
+	}
+
+	// Scenario-setup teleport (test only): reposition the player entity + the
+	// cached position, matching how the game itself moves the player.
+	void Test_SetPlayerPosition(const Zenith_Maths::Vector3& xPos)
+	{
+		m_xPlayerPos = xPos;
+		Zenith_Entity xPlayer = g_xEngine.Scenes().ResolveEntity(m_xPlayerEntity);
+		if (xPlayer.IsValid())
+			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition(xPos);
+	}
+
+	// Scenario-setup (test only): pin enemy u at a fixed pose facing +Z (the
+	// perception forward) and freeze its nav, so a controlled open-space chase
+	// encounter can be staged without fighting the patrol wander.
+	void Test_SetEnemyPose(uint32_t u, const Zenith_Maths::Vector3& xPos)
+	{
+		if (u >= m_uEnemyCount) return;
+		Zenith_Entity xEnemy = g_xEngine.Scenes().ResolveEntity(m_axEnemyIDs[u]);
+		if (xEnemy.IsValid())
+		{
+			Zenith_TransformComponent& xTransform = xEnemy.GetComponent<Zenith_TransformComponent>();
+			xTransform.SetPosition(xPos);
+			xTransform.SetRotation(Zenith_Maths::Quaternion(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f)));
+		}
+		m_axNavAgents[u].Stop();
+	}
+
 private:
 	// ========================================================================
 	// Menu / State Management
 	// ========================================================================
 
-	static void OnPlayClicked(void* /*pxUserData*/)
+	// The AIShowcase_GameFlow graph lives in slot 0 of the GameManager's
+	// GraphComponent; its blackboard owns "gameState" (null before the slot
+	// resolves).
+	Zenith_GraphBlackboard* TryGetGraphBlackboard()
 	{
-		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr)
+		{
+			return nullptr;
+		}
+		Zenith_BehaviourGraph* pxBehaviour = pxGraph->GetGraphAt(0);
+		return pxBehaviour ? &pxBehaviour->GetBlackboard() : nullptr;
 	}
 
 	void StartGame()
@@ -312,7 +429,7 @@ private:
 		GenerateNavMesh();
 		SetupTacticalPoints();
 
-		m_eGameState = AIShowcaseGameState::PLAYING;
+		SetGameState(AIShowcaseGameState::PLAYING);
 	}
 
 	void ReturnToMenu()
@@ -398,15 +515,6 @@ private:
 			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(aszElements[u]);
 			if (pxText) pxText->SetVisible(bVisible);
 		}
-	}
-
-	void UpdateMenuInput()
-	{
-		// Single button - keep it focused for keyboard activation
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-		if (pxPlay)
-			pxPlay->SetFocused(true);
 	}
 
 	// ========================================================================
@@ -663,6 +771,24 @@ private:
 		Zenith_PerceptionSystem::RegisterAgent(xEnemy.GetEntityID());
 		Zenith_PerceptionSystem::SetSightConfig(xEnemy.GetEntityID(), xSightConfig);
 
+		// Attach the per-enemy brain graph + seed its blackboard. The graph
+		// decides chase-vs-patrol each frame when UpdateEnemyAI Phase 1 fires
+		// "EnemyBrainTick" on it (self = this enemy). playerTarget is the packed
+		// player id (the player was created just before the enemies in StartGame);
+		// enemyIndex is this enemy's slot (m_uEnemyCount is incremented by the
+		// caller AFTER this returns), used by the patrol-waypoint formula.
+		Zenith_BehaviourGraph* pxBrain = xEnemy.AddComponent<Zenith_GraphComponent>()
+			.AddGraphByAssetPath("game:Graphs/AIShowcase_EnemyBrain.bgraph");
+		if (pxBrain != nullptr)
+		{
+			Zenith_GraphBlackboard& xBB = pxBrain->GetBlackboard();
+			Zenith_PropertyValue xVal;
+			xVal.SetPackedEntityID(m_xPlayerEntity.GetPacked());
+			xBB.SetValue("playerTarget", xVal);
+			xVal.SetInt32(static_cast<int32_t>(m_uEnemyCount));
+			xBB.SetValue("enemyIndex", xVal);
+		}
+
 		return xEnemy.GetEntityID();
 	}
 
@@ -775,32 +901,17 @@ private:
 	}
 
 	// ========================================================================
-	// Input Handling
+	// Player Movement (systems - WASD teleport-clamp). The discrete player
+	// verbs (P/Esc pause-menu, Space sound, 1-5 formation, R reset) moved to
+	// the AIShowcase_GameFlow graph's OnKeyPressed chains.
 	// ========================================================================
-	void HandlePlayerInput(float fDt)
+	void UpdatePlayerMovement(float fDt)
 	{
-		// Pause
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_P))
-		{
-			m_eGameState = AIShowcaseGameState::PAUSED;
-			g_xEngine.Scenes().SetScenePaused(m_xArenaScene, true);
-			UpdateUI();
-			return;
-		}
-
-		// Escape - return to menu
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-		{
-			ReturnToMenu();
-			return;
-		}
-
 		// C1: resolve owning scene from the player's entity id.
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneDataForEntity(m_xPlayerEntity);
 		if (!pxSceneData)
 			return;
 
-		// Movement
 		Zenith_Maths::Vector3 xMoveDir(0.0f);
 		if (g_xEngine.Input().IsKeyDown(ZENITH_KEY_W))
 			xMoveDir.z += 1.0f;  // Forward = +Z (away from camera)
@@ -829,34 +940,21 @@ private:
 			Zenith_Entity xPlayer = pxSceneData->GetEntity(m_xPlayerEntity);
 			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition(m_xPlayerPos);
 		}
-
-		// Attack / Make sound
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
-		{
-			// Emit sound stimulus for hearing test
-			Zenith_PerceptionSystem::EmitSoundStimulus(
-				m_xPlayerPos, 1.0f, 15.0f, m_xPlayerEntity);
-		}
-
-		// Formation switching (1-5 keys)
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_1))
-			SetFormation(0);
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_2))
-			SetFormation(1);
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_3))
-			SetFormation(2);
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_4))
-			SetFormation(3);
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_5))
-			SetFormation(4);
-
-		// Reset
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_R))
-		{
-			ResetDemo();
-			return;
-		}
 	}
+
+	// ========================================================================
+	// Graph-facing verbs (the AIShowcase_GameFlow game nodes call these).
+	// ========================================================================
+public:
+	void Graph_ReturnToMenu() { ReturnToMenu(); }
+	void Graph_ResetDemo() { ResetDemo(); }
+	void Graph_SetArenaPaused(bool bPaused) { g_xEngine.Scenes().SetScenePaused(m_xArenaScene, bPaused); }
+	void Graph_SetFormation(uint32_t uFormation) { SetFormation(uFormation); }
+	void Graph_EmitPlayerSound()
+	{
+		Zenith_PerceptionSystem::EmitSoundStimulus(m_xPlayerPos, 1.0f, 15.0f, m_xPlayerEntity);
+	}
+private:
 
 	void SetFormation(uint32_t uFormation)
 	{
@@ -905,7 +1003,13 @@ private:
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 
 		// Phase 1: Determine destinations for all agents (sets m_bPathPending = true)
-		// This must happen BEFORE batch pathfinding so that pending requests exist
+		// This must happen BEFORE batch pathfinding so that pending requests exist.
+		// The per-enemy DECISION (chase the perceived player + share with the
+		// squad, else patrol a waypoint) now lives in the AIShowcase_EnemyBrain
+		// graph on each enemy. Fire it synchronously here - exactly where the old
+		// inline decision sat - so the SetNavDestination it issues feeds Phase 2's
+		// batch pathfinding this same frame. The patrol timer rides the payload
+		// (custom-event context dt = 0; the patrol node reads it for the formula).
 		for (uint32_t u = 0; u < m_uEnemyCount; ++u)
 		{
 			if (!pxSceneData->EntityExists(m_axEnemyIDs[u]))
@@ -918,51 +1022,11 @@ private:
 			// Set start position for batch pathfinding
 			m_axNavAgents[u].SetStartPosition(xPos);
 
-			// Check perception for player
-			const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
-				Zenith_PerceptionSystem::GetPerceivedTargets(m_axEnemyIDs[u]);
-
-			bool bSeesPlayer = false;
-			if (pxTargets && pxTargets->GetSize() > 0)
+			if (Zenith_GraphComponent* pxGraph = xEnemy.TryGetComponent<Zenith_GraphComponent>())
 			{
-				// If we see the player, move towards them
-				for (uint32_t t = 0; t < pxTargets->GetSize(); ++t)
-				{
-					if (pxTargets->Get(t).m_xEntityID == m_xPlayerEntity)
-					{
-						bSeesPlayer = true;
-						const Zenith_PerceivedTarget& xTarget = pxTargets->Get(t);
-
-						// Share target info with squad (enables Shared Targets visualization)
-						Zenith_Squad* pxSquad = Zenith_SquadManager::GetSquadForEntity(m_axEnemyIDs[u]);
-						if (pxSquad)
-						{
-							pxSquad->ShareTargetInfo(m_xPlayerEntity, xTarget.m_xLastKnownPosition, m_axEnemyIDs[u]);
-						}
-
-						// Set destination to player position (sets m_bPathPending = true)
-						m_axNavAgents[u].SetDestination(xTarget.m_xLastKnownPosition);
-						break;
-					}
-				}
-			}
-
-			// If no target, patrol between waypoints
-			if (!bSeesPlayer)
-			{
-				Zenith_NavMeshAgent& xNav = m_axNavAgents[u];
-				if (!xNav.HasPath() || xNav.HasReachedDestination())
-				{
-					// Pick a patrol waypoint
-					static const Zenith_Maths::Vector3 s_axPatrolPoints[] = {
-						Zenith_Maths::Vector3(-15.0f, 0.0f, 0.0f),
-						Zenith_Maths::Vector3(15.0f, 0.0f, 0.0f),
-						Zenith_Maths::Vector3(0.0f, 0.0f, -12.0f),
-						Zenith_Maths::Vector3(0.0f, 0.0f, 10.0f),
-					};
-					uint32_t uPatrolIdx = (u + static_cast<uint32_t>(m_fPatrolTimer * 0.5f)) % 4;
-					xNav.SetDestination(s_axPatrolPoints[uPatrolIdx]);
-				}
+				Zenith_PropertyValue xPayload;
+				xPayload.SetFloat(m_fPatrolTimer);
+				pxGraph->FireCustomEvent("EnemyBrainTick", &xPayload);
 			}
 		}
 
@@ -1207,6 +1271,7 @@ private:
 	AIShowcaseGameState m_eGameState;
 	Zenith_Scene m_xArenaScene;
 	int32_t m_iFocusIndex;
+	bool m_bPendingStart = false;	// gameplay-scene StartGame deferred to OnStart
 
 	// Player
 	Zenith_EntityID m_xPlayerEntity;

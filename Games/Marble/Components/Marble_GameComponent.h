@@ -1,27 +1,36 @@
 #pragma once
 #include "Core/Zenith_Engine.h"
 /**
- * Marble_GameComponent.h - Main game coordinator
+ * Marble_GameComponent.h - Marble's systems coordinator (W1 graph conversion)
  *
- * This file orchestrates the Marble Ball Game using modular components.
- * Each module handles a specific responsibility:
+ * This component is the SYSTEMS half of the game. All gameplay DECISIONS -
+ * the state machine (menu/playing/paused/won/lost), the timer countdown, the
+ * score/win/loss flow, the pause/reset/escape key handling, and the menu
+ * focus logic - live in two boot-authored behaviour graphs:
  *
- * - Marble_Input.h           - Camera-relative input handling
+ *   Marble_LevelFlow.bgraph - on the gameplay GameManager. OWNS the game
+ *       state: blackboard vars gameState (int, MarbleGameState values),
+ *       timeRemaining (float), score (int), collected (int). Chains: stage
+ *       frame results -> timer -> collection -> fall (the old same-frame
+ *       decision order), P/Esc SwitchOnInt key dispatch, R reset, and a
+ *       reactive StateMachine whose MarbleEnter_Paused / MarbleExit_Paused
+ *       transition events drive the level-scene pause.
+ *   Marble_GameFlow.bgraph  - on the menu GameManager. OnUIButtonClicked
+ *       (MenuPlay) -> LoadSceneByIndex(1); W/S/Up/Down focus-toggle chains +
+ *       per-frame MarbleApplyMenuFocus. gameState defaults to MAIN_MENU.
+ *
+ * C++ (this file + the modules) keeps: physics input, camera follow, level
+ * generation, collectible detection/animation, fall query, HUD text writes -
+ * and READS the graph state through the accessors below ("state moves to the
+ * graph blackboard, shim accessor reads it").
+ *
+ * Modules:
+ * - Marble_Input.h             - Camera-relative input handling
  * - Marble_PhysicsController.h - Physics-based ball movement
- * - Marble_CameraFollow.h    - Smooth camera following
- * - Marble_LevelGenerator.h  - Procedural level generation
+ * - Marble_CameraFollow.h      - Smooth camera following
+ * - Marble_LevelGenerator.h    - Procedural level generation
  * - Marble_CollectibleSystem.h - Pickup detection and scoring
- * - Marble_UIManager.h       - HUD management
- *
- * Key Engine Features Demonstrated:
- * - Game ECS component lifecycle hooks (OnAwake, OnStart, OnUpdate -
- *   concept-detected by the component-meta registry)
- * - Jolt Physics integration via Zenith_ColliderComponent
- * - Camera-relative input with continuous polling (IsKeyDown)
- * - Prefab-based entity instantiation
- * - Component order dependencies (Transform before Collider)
- * - Multi-scene architecture (persistent GameManager + level scene)
- * - Zenith_UIButton for clickable/tappable menu
+ * - Marble_UIManager.h         - HUD management
  */
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -30,6 +39,8 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
+#include "Scripting/Zenith_GraphBlackboard.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
@@ -88,46 +99,127 @@ static constexpr float s_fInitialTime = 60.0f;
 // MarbleGameState is defined in Marble_UIManager.h
 
 /**
- * Marble_GameComponent - Main game coordinator
+ * Marble_GameComponent - systems coordinator
  *
  * Architecture:
- * - GameManager entity (camera + UI + game component) per scene
+ * - GameManager entity (camera + UI + game component + graph) per scene
  * - Level scene created/destroyed on transitions via CreateEmptyScene/UnloadScene
  *
- * State machine: MAIN_MENU -> PLAYING -> PAUSED / WON / LOST -> MAIN_MENU
+ * State machine (graph-owned): MAIN_MENU -> PLAYING -> PAUSED / WON / LOST -> MAIN_MENU
  */
 class Marble_GameComponent
 {
 public:
 	Marble_GameComponent() = delete;
 	Marble_GameComponent(Zenith_Entity& xParentEntity)
-		: m_eGameState(MarbleGameState::MAIN_MENU)
-		, m_uScore(0)
-		, m_fTimeRemaining(s_fInitialTime)
-		, m_uCollectedCount(0)
-		, m_xRng(std::random_device{}())
-		, m_iFocusIndex(0)
+		: m_xRng(std::random_device{}())
 		, m_xParentEntity(xParentEntity)
 	{
 	}
 	~Marble_GameComponent() = default;
 
-	// State probes for the characterization tests (read-only; same surface
-	// before and after the wave-2 graph conversion).
-	MarbleGameState GetGameState() const { return m_eGameState; }
-	float GetTimeRemaining() const { return m_fTimeRemaining; }
-	uint32_t GetScore() const { return m_uScore; }
-	uint32_t GetCollectedCount() const { return m_uCollectedCount; }
+	// ========================================================================
+	// Graph-state accessors - the probe surface. State lives on the attached
+	// graph's blackboard (Marble_LevelFlow / Marble_GameFlow declare the
+	// vars); C++ (HUD, camera gating, characterization tests) READS it here.
+	// ========================================================================
+	MarbleGameState GetGameState()
+	{
+		Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard();
+		if (pxBlackboard == nullptr)
+		{
+			return MarbleGameState::MAIN_MENU;	// pre-resolve fallback
+		}
+		int32_t iState = pxBlackboard->GetInt32("gameState", 0);
+		iState = iState < 0 ? 0 : (iState > 4 ? 4 : iState);
+		return static_cast<MarbleGameState>(iState);
+	}
+	float GetTimeRemaining()
+	{
+		Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard();
+		return pxBlackboard ? pxBlackboard->GetFloat("timeRemaining", s_fInitialTime) : s_fInitialTime;
+	}
+	uint32_t GetScore()
+	{
+		Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard();
+		const int32_t iScore = pxBlackboard ? pxBlackboard->GetInt32("score", 0) : 0;
+		return iScore < 0 ? 0u : static_cast<uint32_t>(iScore);
+	}
+	uint32_t GetCollectedCount()
+	{
+		Zenith_GraphBlackboard* pxBlackboard = TryGetGraphBlackboard();
+		const int32_t iCollected = pxBlackboard ? pxBlackboard->GetInt32("collected", 0) : 0;
+		return iCollected < 0 ? 0u : static_cast<uint32_t>(iCollected);
+	}
 
-	// Graph-facing surface (wave-2): the timer / win-loss DECISIONS live in
-	// the boot-authored Marble_LevelFlow graph; the nodes read the frame's
-	// systems results below and write the decisions back through these.
-	void SetTimeRemaining(float fTime) { m_fTimeRemaining = fTime; }
-	void SetGameStateFromGraph(MarbleGameState eState) { m_eGameState = eState; }
-	void AddScore(uint32_t uScore) { m_uScore += uScore; }
-	void AddCollectedCount(uint32_t uCount) { m_uCollectedCount += uCount; }
+	// ========================================================================
+	// Graph-facing systems surface (the node seams)
+	// ========================================================================
 	const Marble_CollectibleSystem::CollectionResult& GetLastCollection() const { return m_xLastCollection; }
 	bool HasBallFallen() const { return m_bBallFellThisFrame; }
+
+	// Level (re)creation: unload any existing level scene, create a fresh one,
+	// run the generator. State/timer/score resets are GRAPH-side (the R chain).
+	void RegenerateLevel()
+	{
+		ClearEntityReferences();
+		if (m_xLevelScene.IsValid())
+		{
+			g_xEngine.Scenes().UnloadScene(m_xLevelScene);
+			m_xLevelScene = Zenith_Scene();
+		}
+
+		m_xLevelScene = g_xEngine.Scenes().LoadScene("Level", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		g_xEngine.Scenes().SetActiveScene(m_xLevelScene);
+
+		Marble_LevelGenerator::GenerateLevel(
+			m_xLevelEntities,
+			m_xRng,
+			Marble::Resources().m_xBallPrefab.GetDirect(),
+			Marble::Resources().m_xPlatformPrefab.GetDirect(),
+			Marble::Resources().m_xGoalPrefab.GetDirect(),
+			Marble::Resources().m_xCollectiblePrefab.GetDirect(),
+			m_pxSphereGeometry,
+			m_pxCubeGeometry,
+			m_xBallMaterial.GetDirect(),
+			m_xPlatformMaterial.GetDirect(),
+			m_xGoalMaterial.GetDirect(),
+			m_xCollectibleMaterial.GetDirect());
+	}
+
+	// Level teardown (the escape-to-menu systems body; the menu-scene load is
+	// an engine LoadSceneByIndex node at the end of the graph chain).
+	void UnloadLevel()
+	{
+		ClearEntityReferences();
+		if (m_xLevelScene.IsValid())
+		{
+			g_xEngine.Scenes().UnloadScene(m_xLevelScene);
+			m_xLevelScene = Zenith_Scene();
+		}
+	}
+
+	// Pause/resume the LEVEL scene only - the GameManager's scene keeps
+	// updating so the graphs still see the resume key.
+	void SetLevelPaused(bool bPaused)
+	{
+		if (m_xLevelScene.IsValid())
+		{
+			g_xEngine.Scenes().SetScenePaused(m_xLevelScene, bPaused);
+		}
+	}
+
+	// Characterization-test seam: the next ComputeCollectibles consumes this
+	// injected result INSTEAD of computing one (deterministic collection/win
+	// probing without driving the ball). Conversion-neutral: the decision
+	// consumers read m_xLastCollection identically before and after the wave.
+	void Test_InjectCollection(uint32_t uCount, uint32_t uScore, bool bAllCollected)
+	{
+		m_xInjectedCollection.uCollectedCount = uCount;
+		m_xInjectedCollection.uScoreGained = uScore;
+		m_xInjectedCollection.bAllCollected = bAllCollected;
+		m_bHasInjectedCollection = true;
+	}
 
 	void OnAwake()
 	{
@@ -140,107 +232,50 @@ public:
 		m_xCollectibleMaterial = Marble::Resources().m_xCollectibleMaterial;
 		m_xFloorMaterial = Marble::Resources().m_xFloorMaterial;
 
-		// Wire menu button callbacks
+		// The menu scene's GameManager owns the Play/Quit canvas (its clicks
+		// are the graph's OnUIButtonClicked source - no C++ wiring). The
+		// gameplay scene's GameManager has no menu: generate the level
+		// directly; its state comes from Marble_LevelFlow's declared
+		// gameState default (PLAYING).
 		bool bHasMenu = false;
 		if (Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>())
 		{
-			Zenith_UIComponent& xUI = *pxUI;
-
-			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-			if (pxPlay)
-			{
-				pxPlay->SetOnClick(&OnPlayClicked, nullptr);
-				bHasMenu = true;
-			}
+			bHasMenu = pxUI->FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay") != nullptr;
 		}
-
-		if (bHasMenu)
+		if (!bHasMenu)
 		{
-			// Start in menu state
-			m_eGameState = MarbleGameState::MAIN_MENU;
-			SetMenuVisible(true);
-			SetHUDVisible(false);
-		}
-		else
-		{
-			// No menu UI (gameplay scene) - start game directly
-			StartGame();
+			RegenerateLevel();
 		}
 	}
 
-	void OnStart()
-	{
-		if (m_eGameState == MarbleGameState::MAIN_MENU)
-		{
-			SetMenuVisible(true);
-			SetHUDVisible(false);
-		}
-	}
-
+	// Per-state SYSTEMS dispatch - reads the graph-owned state, runs the
+	// systems passes, and fires "LevelTick" (dt payload) into the graph. All
+	// transitions (keys, timer, win/loss, menu) are graph chains.
 	void OnUpdate(const float fDt)
 	{
-		switch (m_eGameState)
+		switch (GetGameState())
 		{
 		case MarbleGameState::MAIN_MENU:
-			UpdateMenuInput();
+			// Menu focus/click handling is fully graph + UI-system side.
 			break;
 
 		case MarbleGameState::PLAYING:
-			if (Marble_Input::WasPausePressed())
-			{
-				m_eGameState = MarbleGameState::PAUSED;
-				g_xEngine.Scenes().SetScenePaused(m_xLevelScene, true);
-				UpdateUI();
-				return;
-			}
-			if (Marble_Input::WasResetPressed())
-			{
-				ResetLevel();
-				return;
-			}
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				ReturnToMenu();
-				return;
-			}
-
 			HandleInput(fDt);
 			ComputeCollectibles(fDt);
 			ComputeFallState();
-			// Timer countdown + win/lose decisions live in the boot-authored
-			// Marble_LevelFlow graph (chain: timer -> collection -> fall,
-			// the old same-frame decision order); dt rides the payload.
+			// Decisions (timer -> collection -> fall, the old same-frame
+			// order) live in Marble_LevelFlow; dt rides the payload.
 			FireLevelTick(fDt);
 			UpdateCamera(fDt);
 			UpdateUI();
 			break;
 
 		case MarbleGameState::PAUSED:
-			if (Marble_Input::WasPausePressed())
-			{
-				m_eGameState = MarbleGameState::PLAYING;
-				g_xEngine.Scenes().SetScenePaused(m_xLevelScene, false);
-			}
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				ReturnToMenu();
-				return;
-			}
 			UpdateUI();
 			break;
 
 		case MarbleGameState::WON:
 		case MarbleGameState::LOST:
-			if (Marble_Input::WasResetPressed())
-			{
-				ResetLevel();
-				return;
-			}
-			if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
-			{
-				ReturnToMenu();
-				return;
-			}
 			UpdateCamera(fDt);
 			UpdateUI();
 			break;
@@ -254,28 +289,19 @@ public:
 		ImGui::Separator();
 
 		const char* szStates[] = { "MENU", "PLAYING", "PAUSED", "WON", "LOST" };
-		ImGui::Text("State: %s", szStates[static_cast<int>(m_eGameState)]);
+		const MarbleGameState eGameState = GetGameState();
+		ImGui::Text("State: %s", szStates[static_cast<int>(eGameState)]);
 
-		if (m_eGameState != MarbleGameState::MAIN_MENU)
+		if (eGameState != MarbleGameState::MAIN_MENU)
 		{
-			ImGui::Text("Score: %u", m_uScore);
-			ImGui::Text("Time: %.1f", m_fTimeRemaining);
-			ImGui::Text("Collected: %u / %u", m_uCollectedCount,
-				static_cast<uint32_t>(m_xLevelEntities.axCollectibleEntityIDs.size()) + m_uCollectedCount);
+			ImGui::Text("Score: %u", GetScore());
+			ImGui::Text("Time: %.1f", GetTimeRemaining());
+			ImGui::Text("Collected: %u / %u", GetCollectedCount(),
+				static_cast<uint32_t>(m_xLevelEntities.axCollectibleEntityIDs.size()) + GetCollectedCount());
 		}
 
-		if (m_eGameState == MarbleGameState::MAIN_MENU)
-		{
-			if (ImGui::Button("Start Game"))
-				StartGame();
-		}
-		else
-		{
-			if (ImGui::Button("Reset Level"))
-				ResetLevel();
-			if (ImGui::Button("Return to Menu"))
-				ReturnToMenu();
-		}
+		ImGui::TextWrapped("Flow decisions live in Marble_LevelFlow / Marble_GameFlow; "
+			"state is on the graph blackboard (gameState/timeRemaining/score/collected).");
 	}
 #endif
 
@@ -285,11 +311,12 @@ public:
 		const u_int uComponentVersion = 1;
 		xStream << uComponentVersion;
 
-		// Parameter payload (byte-identical to the pre-migration parameter block,
-		// including its own internal version field).
+		// Parameter payload kept byte-identical to the pre-conversion block.
+		// The RUNTIME timer now lives on the graph blackboard; this field is
+		// the authored initial value only.
 		const uint32_t uVersion = 1;
 		xStream << uVersion;
-		xStream << m_fTimeRemaining;
+		xStream << m_fSerializedTimeRemaining;
 	}
 
 	void ReadFromDataStream(Zenith_DataStream& xStream)
@@ -301,99 +328,26 @@ public:
 		xStream >> uVersion;
 		if (uVersion >= 1)
 		{
-			xStream >> m_fTimeRemaining;
+			xStream >> m_fSerializedTimeRemaining;
 		}
 	}
 
 private:
-	// ========================================================================
-	// Menu Button Callbacks
-	// ========================================================================
-	static void OnPlayClicked(void* /*pxUserData*/)
+	// The attached graph's blackboard (first slot): Marble_LevelFlow on the
+	// gameplay GameManager, Marble_GameFlow on the menu GameManager.
+	Zenith_GraphBlackboard* TryGetGraphBlackboard()
 	{
-		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
-	}
-
-	// ========================================================================
-	// State Transitions
-	// ========================================================================
-	void StartGame()
-	{
-		SetMenuVisible(false);
-		SetHUDVisible(true);
-
-		// Create level scene
-		m_xLevelScene = g_xEngine.Scenes().LoadScene("Level", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-		g_xEngine.Scenes().SetActiveScene(m_xLevelScene);
-
-		// Generate level (uses GetActiveScene internally)
-		Marble_LevelGenerator::GenerateLevel(
-			m_xLevelEntities,
-			m_xRng,
-			Marble::Resources().m_xBallPrefab.GetDirect(),
-			Marble::Resources().m_xPlatformPrefab.GetDirect(),
-			Marble::Resources().m_xGoalPrefab.GetDirect(),
-			Marble::Resources().m_xCollectiblePrefab.GetDirect(),
-			m_pxSphereGeometry,
-			m_pxCubeGeometry,
-			m_xBallMaterial.GetDirect(),
-			m_xPlatformMaterial.GetDirect(),
-			m_xGoalMaterial.GetDirect(),
-			m_xCollectibleMaterial.GetDirect());
-
-		// Reset game state
-		m_eGameState = MarbleGameState::PLAYING;
-		m_uScore = 0;
-		m_fTimeRemaining = s_fInitialTime;
-		m_uCollectedCount = 0;
-	}
-
-	void ReturnToMenu()
-	{
-		ClearEntityReferences();
-
-		if (m_xLevelScene.IsValid())
+		if (!m_xParentEntity.IsValid())
 		{
-			g_xEngine.Scenes().UnloadScene(m_xLevelScene);
-			m_xLevelScene = Zenith_Scene();
+			return nullptr;
 		}
-
-		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
-	}
-
-	void ResetLevel()
-	{
-		ClearEntityReferences();
-
-		if (m_xLevelScene.IsValid())
+		Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraph == nullptr || pxGraph->GetGraphCount() == 0)
 		{
-			g_xEngine.Scenes().UnloadScene(m_xLevelScene);
-			m_xLevelScene = Zenith_Scene();
+			return nullptr;
 		}
-
-		// Create fresh level scene
-		m_xLevelScene = g_xEngine.Scenes().LoadScene("Level", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-		g_xEngine.Scenes().SetActiveScene(m_xLevelScene);
-
-		// Generate level
-		Marble_LevelGenerator::GenerateLevel(
-			m_xLevelEntities,
-			m_xRng,
-			Marble::Resources().m_xBallPrefab.GetDirect(),
-			Marble::Resources().m_xPlatformPrefab.GetDirect(),
-			Marble::Resources().m_xGoalPrefab.GetDirect(),
-			Marble::Resources().m_xCollectiblePrefab.GetDirect(),
-			m_pxSphereGeometry,
-			m_pxCubeGeometry,
-			m_xBallMaterial.GetDirect(),
-			m_xPlatformMaterial.GetDirect(),
-			m_xGoalMaterial.GetDirect(),
-			m_xCollectibleMaterial.GetDirect());
-
-		m_eGameState = MarbleGameState::PLAYING;
-		m_uScore = 0;
-		m_fTimeRemaining = s_fInitialTime;
-		m_uCollectedCount = 0;
+		Zenith_BehaviourGraph* pxBehaviour = pxGraph->GetGraphAt(0);
+		return pxBehaviour ? &pxBehaviour->GetBlackboard() : nullptr;
 	}
 
 	void ClearEntityReferences()
@@ -402,59 +356,6 @@ private:
 		m_xLevelEntities.uGoalEntityID = INVALID_ENTITY_ID;
 		m_xLevelEntities.axPlatformEntityIDs.clear();
 		m_xLevelEntities.axCollectibleEntityIDs.clear();
-	}
-
-	// ========================================================================
-	// Menu UI
-	// ========================================================================
-	void SetMenuVisible(bool bVisible)
-	{
-		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
-		if (pxUI == nullptr)
-			return;
-		Zenith_UIComponent& xUI = *pxUI;
-
-		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
-		if (pxTitle) pxTitle->SetVisible(bVisible);
-		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-		if (pxPlay) pxPlay->SetVisible(bVisible);
-		Zenith_UI::Zenith_UIButton* pxQuit = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuQuit");
-		if (pxQuit) pxQuit->SetVisible(bVisible);
-	}
-
-	void SetHUDVisible(bool bVisible)
-	{
-		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
-		if (pxUI == nullptr)
-			return;
-		Zenith_UIComponent& xUI = *pxUI;
-
-		const char* aszElements[] = { "Title", "Score", "Time", "Collected", "Controls", "Status" };
-		for (const char* szName : aszElements)
-		{
-			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
-			if (pxText) pxText->SetVisible(bVisible);
-		}
-	}
-
-	void UpdateMenuInput()
-	{
-		Zenith_UIComponent* pxUI = m_xParentEntity.TryGetComponent<Zenith_UIComponent>();
-		if (pxUI == nullptr)
-			return;
-		Zenith_UIComponent& xUI = *pxUI;
-
-		static constexpr int32_t s_iButtonCount = 2;
-
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_UP) || g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_W))
-			m_iFocusIndex = (m_iFocusIndex - 1 + s_iButtonCount) % s_iButtonCount;
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_DOWN) || g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_S))
-			m_iFocusIndex = (m_iFocusIndex + 1) % s_iButtonCount;
-
-		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-		Zenith_UI::Zenith_UIButton* pxQuit = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuQuit");
-		if (pxPlay) pxPlay->SetFocused(m_iFocusIndex == 0);
-		if (pxQuit) pxQuit->SetFocused(m_iFocusIndex == 1);
 	}
 
 	// ========================================================================
@@ -498,8 +399,8 @@ private:
 		}
 	}
 
-	// Systems query only - the fell -> LOST decision lives in the graph
-	// (MarbleNode_CheckFall reads HasBallFallen()).
+	// Systems query only - the fell -> LOST decision is a Branch in the graph
+	// (MarbleStageFrameResults publishes this as the "ballFell" var).
 	void ComputeFallState()
 	{
 		m_bBallFellThisFrame = false;
@@ -554,11 +455,19 @@ private:
 	// Collectibles (delegates to Marble_CollectibleSystem)
 	// ========================================================================
 	// Systems pass only - detection + the destroy + the spin animation. The
-	// score/collected accumulation and the all-collected -> WON decision live
-	// in the graph (MarbleNode_ApplyCollection reads GetLastCollection()).
+	// score/collected accumulation and the all-collected -> WON decision are
+	// engine nodes in the graph, fed by MarbleStageFrameResults.
 	void ComputeCollectibles(float fDt)
 	{
 		m_xLastCollection = Marble_CollectibleSystem::CollectionResult();
+		if (m_bHasInjectedCollection)
+		{
+			// Test seam (see Test_InjectCollection): consume the injected
+			// result verbatim this frame.
+			m_xLastCollection = m_xInjectedCollection;
+			m_bHasInjectedCollection = false;
+			return;
+		}
 		if (!m_xLevelScene.IsValid())
 			return;
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(m_xLevelScene);
@@ -571,14 +480,15 @@ private:
 
 		// Check for collections (uses GetActiveScene internally - still works)
 		m_xLastCollection =
-			Marble_CollectibleSystem::CheckCollectibles(xBallPos, m_xLevelEntities.axCollectibleEntityIDs, m_uCollectedCount);
+			Marble_CollectibleSystem::CheckCollectibles(xBallPos, m_xLevelEntities.axCollectibleEntityIDs, GetCollectedCount());
 
 		// Animate collectibles (uses GetActiveScene internally - still works)
 		Marble_CollectibleSystem::UpdateCollectibleRotation(m_xLevelEntities.axCollectibleEntityIDs, fDt);
 	}
 
 	// ========================================================================
-	// UI (delegates to Marble_UIManager)
+	// UI (delegates to Marble_UIManager) - HUD text is a systems WRITE that
+	// READS the graph-owned state through the accessors.
 	// ========================================================================
 	void UpdateUI()
 	{
@@ -588,24 +498,21 @@ private:
 
 		Zenith_UIComponent& xUI = *pxUI;
 
-		uint32_t uTotalCollectibles = static_cast<uint32_t>(m_xLevelEntities.axCollectibleEntityIDs.size()) + m_uCollectedCount;
+		const uint32_t uCollected = GetCollectedCount();
+		const uint32_t uTotalCollectibles = static_cast<uint32_t>(m_xLevelEntities.axCollectibleEntityIDs.size()) + uCollected;
 
 		Marble_UIManager::UpdateUI(
 			xUI,
-			m_uScore,
-			m_fTimeRemaining,
-			m_uCollectedCount,
+			GetScore(),
+			GetTimeRemaining(),
+			uCollected,
 			uTotalCollectibles,
-			m_eGameState);
+			GetGameState());
 	}
 
 	// ========================================================================
 	// Member Variables
 	// ========================================================================
-	MarbleGameState m_eGameState;
-	uint32_t m_uScore;
-	float m_fTimeRemaining;
-	uint32_t m_uCollectedCount;
 
 	// Level entities (managed by Marble_LevelGenerator)
 	Marble_LevelGenerator::LevelEntities m_xLevelEntities;
@@ -617,11 +524,16 @@ private:
 	Marble_CollectibleSystem::CollectionResult m_xLastCollection;
 	bool m_bBallFellThisFrame = false;
 
+	// Characterization-test injection seam (Test_InjectCollection).
+	Marble_CollectibleSystem::CollectionResult m_xInjectedCollection;
+	bool m_bHasInjectedCollection = false;
+
+	// Authored initial-timer value: serialization ballast only (the runtime
+	// timer is the graph blackboard's "timeRemaining").
+	float m_fSerializedTimeRemaining = s_fInitialTime;
+
 	// Random number generator
 	std::mt19937 m_xRng;
-
-	// Menu keyboard focus
-	int32_t m_iFocusIndex;
 
 	// Owning entity (explicit member now - was provided by the old script base)
 	Zenith_Entity m_xParentEntity;

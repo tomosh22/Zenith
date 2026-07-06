@@ -63,9 +63,11 @@ public:
 	static bool Action_SetSelectedNodeParamString(const char* szPropertyName, const char* szValue);
 	static bool Action_SetSelectedNodeParamVec3(const char* szPropertyName, float fX, float fY, float fZ);
 	static bool Action_SetSelectedNodeParamInt(const char* szPropertyName, int iValue);
+	static bool Action_SetSelectedNodeParamBool(const char* szPropertyName, bool bValue);
 	// "Add Var" button: declare a blackboard variable. szTypeName is one of
-	// float|int|bool|string|vector3 (the combo entries); fDefaultNumeric seeds
-	// float/int/bool defaults (string/vector3 start empty/zero, as in the UI).
+	// float|int|bool|string|vector3|vector2|vector4|entity (the combo entries);
+	// fDefaultNumeric seeds float/int/bool defaults (the rest start empty/zero,
+	// as in the UI).
 	static bool Action_AddVariable(const char* szName, const char* szTypeName, float fDefaultNumeric);
 	// Boot-regeneration variant of OpenAsset: opens the path and resets the
 	// definition to empty so authoring steps rebuild it from scratch each boot

@@ -16,7 +16,6 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #include "../Components/DPVillager_Component.h"
 #include "../Components/Priest_Component.h"
@@ -381,13 +380,10 @@ namespace DP_Player
 			pxCtrl->m_bHighScentBlackboardDirty = false;
 		}
 
-		g_xEngine.Scenes().QueryAllScenes<Zenith_AIAgentComponent>().ForEach(
-			[xHighestId]
-			(Zenith_EntityID, Zenith_AIAgentComponent& xAgent)
-			{
-				xAgent.GetBlackboard().SetEntityID(
-					DP_AI::BB_KEY_HIGH_SCENT_TARGET, xHighestId);
-			});
+		// W3: the priest's decision inputs live on DP_Priest.bgraph's
+		// blackboard - fan out through DP_AI's forwarder (loaded-scenes
+		// scope, mirroring the retired all-scenes AI-agent write).
+		DP_AI::WriteHighScentTargetToAllPriests(xHighestId);
 	}
 
 	DP_ItemTag GetHeldItemTag(Zenith_EntityID xVillager)

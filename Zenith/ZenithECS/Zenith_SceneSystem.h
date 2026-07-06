@@ -134,6 +134,12 @@ public:
 	Zenith_Scene GetActiveScene();
 	Zenith_Scene GetSceneAt(uint32_t uIndex);
 
+	// Resolves a LOADED scene by path: exact canonical-path match first, then a
+	// path-boundary-aware ends-with match (so "FrontEnd.zscen" or a full path both
+	// resolve, but "Menu.zscen" does NOT match ".../MainMenu.zscen"). Case-sensitive.
+	// INVALID_SCENE when nothing matches. The behaviour-graph scene nodes' lookup seam.
+	Zenith_Scene FindLoadedSceneByPath(const std::string& strPath);
+
 	// Convenience forwarder for the pervasive GetSceneData(GetActiveScene())
 	// two-step: returns the active scene's SceneData, or nullptr when there is no
 	// active scene / it is unloaded (the same null contract GetSceneData callers

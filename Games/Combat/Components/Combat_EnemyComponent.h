@@ -94,8 +94,21 @@ public:
 	bool IsAlive() const { return m_xAI.IsAlive(); }
 	const Combat_EnemyAI& GetAI() const { return m_xAI; }
 
+	// Graph-facing tick shims: the Combat_EnemyBrain graph's StateMachine drives
+	// these (the old C++ decision switch that dispatched them is gone). PreTick
+	// returns false when the entity/transform are gone so the graph aborts the
+	// tick; the per-state handlers run the matching old switch case verbatim.
+	bool Graph_PreTick(float fDt)    { EnsureInitialized(); return m_xAI.GraphPreTick(fDt); }
+	void Graph_IdleTick()            { m_xAI.GraphIdleTick(); }
+	void Graph_ChaseTick(float fDt)  { m_xAI.GraphChaseTick(fDt); }
+	void Graph_AttackTick(float fDt) { m_xAI.GraphAttackTick(fDt); }
+	void Graph_HitStunTick(float fDt){ m_xAI.GraphHitStunTick(fDt); }
+	void Graph_PostTick(float fDt)   { m_xAI.GraphPostTick(fDt); }
+	int  Graph_GetStateInt() const   { return static_cast<int>(m_xAI.GetState()); }
+
 private:
 	void EnsureInitialized();
+	void FireEnemyBrainTick(float fDt);
 
 	Zenith_Entity      m_xParentEntity;
 	Combat_EnemyAI     m_xAI;

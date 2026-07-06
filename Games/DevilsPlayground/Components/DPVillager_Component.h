@@ -19,6 +19,9 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
+#include "Scripting/Zenith_GraphBlackboard.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -40,6 +43,7 @@
 #include "Source/DP_Archetypes.h"
 
 #include <cstdio>
+#include <cstring>
 
 // MVP-1.4.1-3: villager lifecycle state machine.
 //
@@ -65,6 +69,13 @@ enum class DPVillagerState : uint8_t
 class DPVillager_Component ZENITH_FINAL
 {
 public:
+	// W3 conversion: the villager's DECISIONS (state machine, movement-mode
+	// booleans, life drain, footstep cadence) live on this boot-authored
+	// graph; the component is the SYSTEMS shim (body config, velocity apply,
+	// materials, held visual, sound emission) + the blackboard-backed
+	// accessor surface the HUD / DP_Player / tests consume.
+	static constexpr const char* kszGraphAsset = "game:Graphs/DP_Villager.bgraph";
+
 	DPVillager_Component() = delete;
 	DPVillager_Component(Zenith_Entity& xParentEntity)
 		: m_xParentEntity(xParentEntity)
@@ -77,6 +88,13 @@ public:
 
 	void OnAwake()
 	{
+		// W3: the decisions graph is SELF-ATTACHED (not bootstrap-attached)
+		// so every DPVillager - procgen-spawned AND test-spawned - carries
+		// it. Idempotent: re-entry (bootstrap's explicit OnAwake + a later
+		// wave) finds the existing slot. Attach happens FIRST so the
+		// ApplyArchetype/tuning seeding below lands on the blackboard.
+		EnsureGraphAttached();
+
 		// MVP-0.2.3: apply the archetype's life_timer + jog_speed. Archetype
 		// id is stored in m_strArchetypeId; default "Farmhand" matches the
 		// pre-MVP-0.2.3 behaviour (life=30s, jog=8m/s). Per-villager authoring
@@ -102,10 +120,25 @@ public:
 		m_fFootstepRadius           = DP_Tuning::Get<float>("movement.footstep_radius_m");
 		m_fWalkFootstepLoudnessMult = DP_Tuning::Get<float>("movement.walk_footstep_loudness_multiplier");
 
+		// Mirror the graph's decision inputs onto the blackboard. The sprint
+		// cost keeps the OnAwake-baked MetaSave scale (NOT re-read live -
+		// the ratified balance semantics); footstep numbers are the cached
+		// hot keys under the same one-read convention.
+		WriteBBFloat("sprintCostExtra", m_fSprintLifeCostExtra);
+		WriteBBFloat("footstepInterval", m_fFootstepInterval);
+		WriteBBFloat("footstepLoudness", m_fFootstepLoudness);
+		WriteBBFloat("footstepRadius", m_fFootstepRadius);
+		WriteBBFloat("quietLoudnessMult", m_fWalkFootstepLoudnessMult);
+
 		// Reset transient state — Editor Stop/Play would otherwise leave a
 		// stale possession flag from a previous play session.
 		m_bIsPossessed = false;
-		m_fRemainingLife = m_fMaxLife;
+		WriteBBInt("state", (int32_t)DPVillagerState::Idle);
+		WriteBBFloat("remainingLife", m_fMaxLife);
+		WriteBBFloat("faintRecovery", 0.0f);
+		WriteBBFloat("footstepCountdown", 0.0f);
+		WriteBBBool("sprinting", false);
+		WriteBBBool("walkQuiet", false);
 
 		// Villagers use a DYNAMIC capsule rigid body so Jolt resolves wall
 		// collisions natively (the player drives the possessed villager via
@@ -146,95 +179,42 @@ public:
 
 	void OnUpdate(const float fDt)
 	{
-		// MVP-1.4.1-3: state-machine-driven possession transitions.
-		// Observe DP_Player's possessed handle each frame and drive
-		// m_eState through Idle/Possessed/Fainted/Dead.
-		//
-		// Transition table:
-		//   Idle      + possessed         -> Possessed  (bump life to max)
-		//   Possessed + un-possessed      -> Fainted    (arm faint timer)
-		//                                                EXCEPT if we're
-		//                                                already Dead --
-		//                                                Kill() ran inline
-		//                                                from TickLife and
-		//                                                set state=Dead
-		//                                                before OnUpdate
-		//                                                got a chance to
-		//                                                observe the
-		//                                                un-possession.
-		//   Fainted   + (timer expires)   -> Idle
-		//   Fainted   + possessed (SYSTEM path bypass) -> Possessed
-		//                                                (test backdoor;
-		//                                                 voluntary switch
-		//                                                 is refused at
-		//                                                 the TryVoluntary-
-		//                                                 PossessSwitch
-		//                                                 level via
-		//                                                 IsPossessable())
-		//   Dead      + *                 -> Dead (terminal)
+		// W3 conversion: the transition table (MVP-1.4.1-3), movement-mode
+		// booleans (MVP-1.7, sprint-wins-ties), life drain + Kill decision
+		// and footstep cadence (MVP-1.7.5) live on DP_Villager.bgraph. The
+		// shim stages this frame's facts, fires "VillagerTick" (dt as the
+		// payload - custom-event contexts have dt=0, the graph subtracts the
+		// payload var), then runs the systems the decisions selected.
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		Zenith_BehaviourGraph* pxGraph = FindVillagerGraph();
+		if (pxGraphs == nullptr || pxGraph == nullptr)
+		{
+			return;	// attached in OnAwake; nothing to drive pre-awake
+		}
+
 		const Zenith_EntityID xPossessed = DP_Player::GetPossessedVillager();
 		const bool bIsPossessedThisFrame =
 			(xPossessed.m_uIndex == m_xParentEntity.GetEntityID().m_uIndex)
 			&& (xPossessed.m_uGeneration == m_xParentEntity.GetEntityID().m_uGeneration);
-		const DPVillagerState ePrevState = m_eState;
+		const bool bWasPossessed =
+			(ReadBBInt("state", 0) == (int32_t)DPVillagerState::Possessed);
+		const Zenith_Maths::Vector2 xMove = DP_Input::ReadMoveVillager();
+		const bool bMoving = (glm::length(xMove) > 0.01f);
 
-		switch (m_eState)
-		{
-		case DPVillagerState::Idle:
-			if (bIsPossessedThisFrame)
-			{
-				m_eState = DPVillagerState::Possessed;
-				m_fRemainingLife = m_fMaxLife;
-			}
-			break;
-		case DPVillagerState::Possessed:
-			if (!bIsPossessedThisFrame)
-			{
-				// We were the possessed villager last frame and we're
-				// not now. Two ways this can happen:
-				//   1. Voluntary switch: player chose another vessel.
-				//      Kill() did NOT run; m_bDispatchedDeath is false.
-				//      -> Fainted.
-				//   2. Death: Kill() already set m_eState=Dead inline
-				//      from TickLife. We won't reach this branch then
-				//      because the switch's outer case is Dead, not
-				//      Possessed. So unconditional Fainted is correct.
-				m_eState = DPVillagerState::Fainted;
-				m_fFaintRecoveryRemaining =
-					DP_Tuning::Get<float>("possession.voluntary_switch_faint_recovery_s");
-			}
-			break;
-		case DPVillagerState::Fainted:
-			if (bIsPossessedThisFrame)
-			{
-				// System path bypass -- e.g., a test calling
-				// SetPossessedVillager(faintedVillager) directly.
-				// The voluntary-switch path refuses this via
-				// IsPossessable(); reaching here means the developer
-				// chose to override. Wake up.
-				m_eState = DPVillagerState::Possessed;
-				m_fRemainingLife = m_fMaxLife;
-				m_fFaintRecoveryRemaining = 0.0f;
-			}
-			else
-			{
-				m_fFaintRecoveryRemaining -= fDt;
-				if (m_fFaintRecoveryRemaining <= 0.0f)
-				{
-					m_fFaintRecoveryRemaining = 0.0f;
-					m_eState = DPVillagerState::Idle;
-				}
-			}
-			break;
-		case DPVillagerState::Dead:
-			// Terminal.
-			break;
-		}
+		WriteBBBool("possessedNow", bIsPossessedThisFrame);
+		WriteBBBool("moving", bMoving);
+		WriteBBBool("sprintHeld", DP_Input::ReadSprintHeld());
+		WriteBBBool("quietHeld", DP_Input::ReadWalkQuietHeld());
 
-		// Legacy flag sync. Kept for the existing public API
-		// (IsPossessed()) and the rest of OnUpdate's gate below.
-		m_bIsPossessed = (m_eState == DPVillagerState::Possessed);
-		const bool bWasPossessed = (ePrevState == DPVillagerState::Possessed);
+		Zenith_PropertyValue xDtPayload;
+		xDtPayload.SetFloat(fDt);
+		pxGraphs->FireCustomEvent("VillagerTick", &xDtPayload);
+
+		// Legacy flag sync off the POST-decision state. Kept for the
+		// existing public API (IsPossessed()) and Kill()'s conditional
+		// possession clear (same one-frame-stale semantics as before).
+		m_bIsPossessed =
+			(ReadBBInt("state", 0) == (int32_t)DPVillagerState::Possessed);
 
 		// Swap to / from the possessed-tint material on transition. Only swap
 		// when the possession state actually flipped to avoid thrashing the
@@ -256,32 +236,17 @@ public:
 			m_eLastSeenHeldTag = eHeldNow;
 		}
 
-		if (m_bIsPossessed)
+		// Movement systems gate on the graph's mid-tick possession fact
+		// ("stateIsPossessed", computed AFTER transitions but BEFORE the
+		// life-drain chain) - so on a burn-out death frame the movement
+		// still applies once, exactly like the retired inline order
+		// (TickLife -> Kill -> TickMovement all inside the same gate).
+		if (ReadBBBool("stateIsPossessed", false))
 		{
-			// MVP-1.7: compute movement-state booleans once per frame so
-			// TickLife / TickMovement / TickFootsteps all agree. Sprint
-			// requires Shift+moving; walk-quiet requires Ctrl+moving;
-			// sprint wins ties so Shift+Ctrl resolves to sprint.
-			const Zenith_Maths::Vector2 xMove = DP_Input::ReadMoveVillager();
-			const float fMoveLen = glm::length(xMove);
-			const bool bMoving = (fMoveLen > 0.01f);
-			m_bIsSprintingNow = DP_Input::ReadSprintHeld() && bMoving;
-			m_bIsWalkQuietNow = !m_bIsSprintingNow
-				&& DP_Input::ReadWalkQuietHeld() && bMoving;
-			// 2026-05-21: first-encounter tutorialisation hooks.
-			// Sprint + walk-quiet are continuous states without a
-			// dedicated event, so the tutorial fires programmatically
-			// on the first frame each state is active.
-			if (m_bIsSprintingNow) DP_Tutorial::TriggerIfFirstTime(DP_Tutorial::Kind::FirstSprintUse);
-			if (m_bIsWalkQuietNow) DP_Tutorial::TriggerIfFirstTime(DP_Tutorial::Kind::FirstWalkQuietUse);
-			TickLife(fDt);
 			TickMovement(fDt);
-			TickFootsteps(fDt, bMoving);
 		}
 		else
 		{
-			m_bIsSprintingNow = false;
-			m_bIsWalkQuietNow = false;
 			ZeroHorizontalVelocity();
 		}
 
@@ -297,7 +262,11 @@ public:
 		}
 	}
 
-	float GetRemainingLife() const { return m_fRemainingLife; }
+	// W3: the decision state lives on the graph blackboard; the accessor
+	// surface reads it back so every consumer (HUD via DP_Player forwarders,
+	// priest bridge, tests) compiles unchanged (the W1/W2 shim-accessor
+	// pattern).
+	float GetRemainingLife() const { return ReadBBFloat("remainingLife", 0.0f); }
 	float GetMaxLife() const { return m_fMaxLife; }
 	const std::string& GetArchetypeId() const { return m_strArchetypeId; }
 
@@ -339,9 +308,10 @@ public:
 		}
 		m_fMaxLife   = fLife;
 		m_fMoveSpeed = fSpeed;
+		WriteBBFloat("maxLife", m_fMaxLife);
 		if (!m_bIsPossessed)
 		{
-			m_fRemainingLife = m_fMaxLife;
+			WriteBBFloat("remainingLife", m_fMaxLife);
 		}
 	}
 
@@ -359,8 +329,11 @@ public:
 	float GetMoveSpeed() const { return m_fMoveSpeed; }
 	bool IsPossessed() const { return m_bIsPossessed; }
 
-	// MVP-1.4.1-3 state accessors.
-	DPVillagerState GetState() const { return m_eState; }
+	// MVP-1.4.1-3 state accessors (blackboard-backed since W3).
+	DPVillagerState GetState() const
+	{
+		return (DPVillagerState)ReadBBInt("state", (int32_t)DPVillagerState::Idle);
+	}
 
 	// Whether the player's voluntary-switch path is allowed to
 	// possess this villager. Refused for Fainted (still recovering)
@@ -369,63 +342,35 @@ public:
 	// TryVoluntaryPossessSwitch.
 	bool IsPossessable() const
 	{
-		return m_eState == DPVillagerState::Idle
-			|| m_eState == DPVillagerState::Possessed;
+		const DPVillagerState eState = GetState();
+		return eState == DPVillagerState::Idle
+			|| eState == DPVillagerState::Possessed;
 	}
 
 	// Diagnostic only -- the recovery countdown while Fainted, 0
 	// otherwise. Tests inspect this to assert the timer arms on
 	// voluntary switch.
-	float GetFaintRecoveryRemaining() const { return m_fFaintRecoveryRemaining; }
+	float GetFaintRecoveryRemaining() const { return ReadBBFloat("faintRecovery", 0.0f); }
 	// MVP-1.7: test accessor -- returns true if Shift was held AND the
 	// villager was actually moving on the most recent OnUpdate. Used by
 	// Test_P1Sprint_* to verify the sprint state machine without
 	// faking input.
-	bool IsSprintingNow() const { return m_bIsSprintingNow; }
+	bool IsSprintingNow() const { return ReadBBBool("sprinting", false); }
 	// MVP-1.7: walk-quiet cache; same shape as IsSprintingNow.
-	bool IsWalkQuietNow() const { return m_bIsWalkQuietNow; }
+	bool IsWalkQuietNow() const { return ReadBBBool("walkQuiet", false); }
 
 	// Test/debug only: shrink the timer so death-by-timeout tests don't need
 	// 1800+ simulated frames to fire. Production gameplay sets m_fMaxLife
 	// once at authoring and never touches it again.
-	void SetRemainingLifeForTest(float fSeconds) { m_fRemainingLife = fSeconds; }
+	void SetRemainingLifeForTest(float fSeconds) { WriteBBFloat("remainingLife", fSeconds); }
 
 	// MVP-1.4 test accessor: shortcut the 10s faint-recovery countdown
 	// so Test_P1Faint_RecoversToIdle can verify the Fainted->Idle
-	// transition without ticking 600 frames. The OnUpdate state machine
-	// reads m_fFaintRecoveryRemaining and transitions to Idle on the
-	// frame it reaches 0; the test sets it close to 0 and confirms the
-	// next-frame OnUpdate makes the transition.
-	void SetFaintRecoveryForTest(float fSeconds) { m_fFaintRecoveryRemaining = fSeconds; }
-
-private:
-	void TickLife(float fDt)
-	{
-		// MVP-1.7: sprinting AND moving drains an extra
-		// movement.sprint_life_cost_extra_per_s on TOP of the baseline
-		// 1.0 s/s drain. The "AND moving" condition is enforced by
-		// OnUpdate's m_bIsSprintingNow computation so a player who
-		// holds Shift while standing still doesn't burn life for
-		// nothing (Test_P1Sprint_NoDrainWhenNotMoving).
-		float fDrain = fDt;
-		if (m_bIsSprintingNow)
-		{
-			const float fExtra =
-				m_fSprintLifeCostExtra;
-			fDrain += fExtra * fDt;
-		}
-		m_fRemainingLife -= fDrain;
-		if (m_fRemainingLife <= 0.0f)
-		{
-			// MVP-1.3.5: route the death through Kill() so the
-			// NoVessels-detection scan runs alongside the per-death
-			// DP_OnVillagerDied dispatch. Previously the dispatch
-			// happened inline here; refactored so a test (or future
-			// non-natural-cause death path) can fire the same
-			// sequence without driving TickLife to drain.
-			Kill();
-		}
-	}
+	// transition without ticking 600 frames. The graph's Fainted chain
+	// reads faintRecovery and transitions to Idle on the frame it
+	// reaches 0; the test sets it close to 0 and confirms the
+	// next-frame tick makes the transition.
+	void SetFaintRecoveryForTest(float fSeconds) { WriteBBFloat("faintRecovery", fSeconds); }
 
 public:
 	// MVP-1.3.5: dispatch a villager's death + scan for "no remaining
@@ -446,14 +391,14 @@ public:
 	{
 		if (m_bDispatchedDeath) return;
 		m_bDispatchedDeath = true;
-		m_fRemainingLife = 0.0f;
+		WriteBBFloat("remainingLife", 0.0f);
 		// MVP-1.4.3: distinguish death from voluntary-switch faint.
-		// Setting state=Dead here (BEFORE the next OnUpdate observes
-		// the un-possession) is what makes the burn-out path skip the
-		// Possessed -> Fainted transition. The OnUpdate switch's outer
-		// `case Dead` is terminal, so the un-possession on the next
-		// frame is a no-op rather than a faint.
-		m_eState = DPVillagerState::Dead;
+		// Setting state=Dead here (BEFORE the next tick observes the
+		// un-possession) is what makes the burn-out path skip the
+		// Possessed -> Fainted transition. The graph's SwitchOnInt
+		// dispatches on the NEW state next tick, and its Dead pin is
+		// terminal, so the un-possession is a no-op rather than a faint.
+		WriteBBInt("state", (int32_t)DPVillagerState::Dead);
 		Zenith_EventDispatcher::Get().Dispatch(
 			DP_OnVillagerDied{ m_xParentEntity.GetEntityID() });
 		// Only clear possession if WE were the possessed villager.
@@ -525,13 +470,15 @@ private:
 			const Zenith_Maths::Vector3 xDir =
 				glm::normalize(xInput.x * xRight + xInput.y * xForward);
 			// MVP-1.7: speed override based on movement modifier state.
-			// Sprint wins ties; walk-quiet takes the slow speed.
+			// Sprint wins ties; walk-quiet takes the slow speed. The
+			// booleans are the graph's decisions (chain T2), read back
+			// off the blackboard; the speed table is shim data.
 			float fSpeed = m_fMoveSpeed;
-			if (m_bIsSprintingNow)
+			if (ReadBBBool("sprinting", false))
 			{
 				fSpeed = m_fSprintSpeed;
 			}
-			else if (m_bIsWalkQuietNow)
+			else if (ReadBBBool("walkQuiet", false))
 			{
 				fSpeed = m_fWalkSpeed;
 			}
@@ -540,57 +487,88 @@ private:
 		g_xEngine.Physics().SetLinearVelocity(pxCollider->GetBodyID(), xVel);
 	}
 
-	// MVP-1.7.5: footstep emission. Called once per frame from
-	// OnUpdate while the villager is possessed. While moving,
-	// accumulates a countdown timer; when it expires, emits a
-	// footstep via Zenith_AudioBus::EmitSound (for the test recorder)
-	// AND Zenith_PerceptionSystem::EmitSoundStimulus (so the priest
-	// can actually hear it). Loudness is multiplied by
-	// `movement.walk_footstep_loudness_multiplier` while walk-quiet
-	// is active; sprint runs at full loudness (no extra loudness mult
-	// in MVP -- the sprint cost is movement.sprint_life_cost, the
-	// audibility multiplier is post-MVP).
-	void TickFootsteps(float fDt, bool bMoving)
+	// ---- W3 graph plumbing (mirrors DPDoor_Component's blackboard shim) ----
+
+	// Idempotent self-attach of the decisions graph. Called from OnAwake
+	// (which the bootstrap invokes explicitly after AddComponent, and the
+	// lifecycle wave may invoke again - both orders are safe).
+	void EnsureGraphAttached()
 	{
-		if (!bMoving)
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraphs == nullptr)
 		{
-			// Hold the timer at zero so the FIRST step after starting
-			// to move emits immediately, not after a full interval.
-			m_fFootstepCountdown = 0.0f;
-			return;
+			pxGraphs = &m_xParentEntity.AddComponent<Zenith_GraphComponent>();
 		}
-		m_fFootstepCountdown -= fDt;
-		if (m_fFootstepCountdown > 0.0f) return;
-
-		const float fInterval = m_fFootstepInterval;
-		m_fFootstepCountdown = fInterval;
-
-		const float fBaseLoudness = m_fFootstepLoudness;
-		const float fRadius = m_fFootstepRadius;
-		float fLoudness = fBaseLoudness;
-		if (m_bIsWalkQuietNow)
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
 		{
-			fLoudness *= m_fWalkFootstepLoudnessMult;
+			if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) == 0)
+			{
+				return;
+			}
 		}
-
-		Zenith_Maths::Vector3 xPos(0.0f);
-		if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
-		{
-			pxTransform->GetPosition(xPos);
-		}
-
-		// Tag emissions with a name the AudioBus test recorder can
-		// filter on. The "DP.Villager.Footstep" prefix lets future
-		// graphics builds attach an actual sample file by name.
-		Zenith_AudioBus::EmitSound("DP.Villager.Footstep", xPos, fLoudness, fRadius);
-
-		// Drive priest hearing through the perception system. The
-		// Priest_Component bridge consumes the freshest hearing
-		// stimulus into BB.InvestigatePos.
-		Zenith_PerceptionSystem::EmitSoundStimulus(
-			xPos, fLoudness, fRadius, m_xParentEntity.GetEntityID());
+		pxGraphs->AddGraphByAssetPath(kszGraphAsset);
 	}
 
+	Zenith_BehaviourGraph* FindVillagerGraph() const
+	{
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraphs == nullptr) return nullptr;
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+		{
+			if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) == 0)
+			{
+				return pxGraphs->GetGraphAt(u);
+			}
+		}
+		return nullptr;
+	}
+
+	// Silent no-ops / defaults when the graph isn't attached yet (pre-awake
+	// reads, unresolved asset) - the DPDoor SetRequiredKey convention.
+	float ReadBBFloat(const char* szVar, float fDefault) const
+	{
+		Zenith_BehaviourGraph* pxGraph = FindVillagerGraph();
+		return pxGraph ? pxGraph->GetBlackboard().GetFloat(szVar, fDefault) : fDefault;
+	}
+	int32_t ReadBBInt(const char* szVar, int32_t iDefault) const
+	{
+		Zenith_BehaviourGraph* pxGraph = FindVillagerGraph();
+		return pxGraph ? pxGraph->GetBlackboard().GetInt32(szVar, iDefault) : iDefault;
+	}
+	bool ReadBBBool(const char* szVar, bool bDefault) const
+	{
+		Zenith_BehaviourGraph* pxGraph = FindVillagerGraph();
+		return pxGraph ? pxGraph->GetBlackboard().GetBool(szVar, bDefault) : bDefault;
+	}
+	void WriteBBFloat(const char* szVar, float fValue)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindVillagerGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetFloat(fValue);
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
+	}
+	void WriteBBInt(const char* szVar, int32_t iValue)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindVillagerGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetInt32(iValue);
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
+	}
+	void WriteBBBool(const char* szVar, bool bValue)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindVillagerGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetBool(bValue);
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
+	}
+
+private:
 	void ZeroHorizontalVelocity()
 	{
 		// Stop the dynamic body when not possessed so it doesn't coast on
@@ -769,7 +747,6 @@ private:
 	Zenith_Entity m_xParentEntity;
 
 	float m_fMaxLife        = 60.0f;
-	float m_fRemainingLife  = 60.0f;
 	// MVP-0.2.3: archetype id (resolved at OnAwake via DP_Archetypes). Default
 	// "Farmhand" keeps pre-MVP-0.2.3 stats (life=30s, jog=8m/s) for scenes
 	// that don't yet override per-villager. Updated through SetArchetype()
@@ -791,27 +768,14 @@ private:
 	// pathing behaviour. Still well below "teleporting" speeds that would
 	// skip collider response.
 	float m_fMoveSpeed      = 8.0f;
+	// Legacy mirror of (blackboard state == Possessed), synced once per
+	// OnUpdate AFTER the decision graph runs. Kept for the IsPossessed()
+	// API, Kill()'s conditional possession clear and ApplyArchetype's
+	// mid-possession guard - same one-frame-stale semantics as the
+	// pre-W3 inline sync. The lifecycle state itself, the faint
+	// countdown, the sprint/walk-quiet booleans and the footstep
+	// countdown all live on DP_Villager.bgraph's blackboard.
 	bool  m_bIsPossessed    = false;
-	// MVP-1.4.1-3: villager lifecycle state. Drives the Idle/Possessed/
-	// Fainted/Dead transitions in OnUpdate. The legacy m_bIsPossessed
-	// flag (above) is kept in sync for the IsPossessed() API.
-	DPVillagerState m_eState = DPVillagerState::Idle;
-	// MVP-1.4.2: countdown while Fainted. Set on Possessed->Fainted
-	// transition from possession.faint_recovery_s. When it reaches 0
-	// the state advances to Idle.
-	float m_fFaintRecoveryRemaining = 0.0f;
-	// MVP-1.7: sprint-state cache. Set in OnUpdate to
-	// (DP_Input::ReadSprintHeld() && moving). TickLife / TickMovement
-	// both read this so they agree on whether sprint is active this
-	// tick.
-	bool  m_bIsSprintingNow = false;
-	// MVP-1.7: walk-quiet cache, computed similarly. Sprint wins on
-	// Shift+Ctrl ties (the louder, faster mode shouldn't be silenced
-	// by a held Ctrl).
-	bool  m_bIsWalkQuietNow = false;
-	// MVP-1.7: footstep emission countdown. Counts down each frame
-	// while moving; when it hits 0, TickFootsteps emits a step + resets.
-	float m_fFootstepCountdown = 0.0f;
 	// MVP-1.3.5: idempotency flag for Kill(). Flipped true on the
 	// first Kill(); subsequent calls early-return. Using a dedicated
 	// flag (rather than reading m_fRemainingLife) is necessary because

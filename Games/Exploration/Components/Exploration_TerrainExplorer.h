@@ -173,6 +173,8 @@ namespace Exploration_TerrainExplorer
 		StreamingStats xStats;
 
 		Zenith_TerrainComponent* pxTerrain = GetFirstTerrainComponent();
+		if (pxTerrain == nullptr)
+			return xStats;  // no terrain entity (reduced-world) -> default zeros
 		Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
 		if (pxState != nullptr)
 		{
@@ -198,6 +200,7 @@ namespace Exploration_TerrainExplorer
 			return LOD_ALWAYS_RESIDENT;
 
 		Zenith_TerrainComponent* pxTerrain = GetFirstTerrainComponent();
+		if (pxTerrain == nullptr) return LOD_ALWAYS_RESIDENT;  // no terrain (reduced-world)
 		Flux_TerrainStreamingState* pxState = pxTerrain->m_pxStreamingState;
 		if (pxState == nullptr) return LOD_ALWAYS_RESIDENT;
 

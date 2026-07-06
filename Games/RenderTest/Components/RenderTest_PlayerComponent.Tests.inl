@@ -373,6 +373,13 @@ void Zenith_UnitTests::TestRenderTestAimingFlagSetByRMB()
 		"Aiming flag should drop when RMB released without prior fire");
 }
 
+// W3 NOTE: the LMB-fire / R-reload PRESS dispatch moved into
+// RenderTest_PlayerActions.bgraph (OnMouseButton/OnKeyPressed -> RTPlayerTryFire/
+// RTPlayerTryReload); the press->verb wiring is pinned by the RT_PlayerActions
+// windowed characterization. These units pin the VERB semantics directly (the
+// graph calls the same TryFire/TryStartReload the tests call, at the same
+// pre-OnUpdate point in the frame).
+
 ZENITH_TEST(RenderTestInput, FireDecrementsAmmo)
 { Zenith_UnitTests::TestRenderTestFireDecrementsAmmo(); }
 void Zenith_UnitTests::TestRenderTestFireDecrementsAmmo()
@@ -383,13 +390,13 @@ void Zenith_UnitTests::TestRenderTestFireDecrementsAmmo()
 	ZENITH_ASSERT_TRUE(uStartAmmo > 0, "Mag should start non-empty");
 
 	xFix.BeginFrame();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
+	xFix.pxPlayer->TryFire();
 	xFix.Step();
 
 	const uint32_t uAfter = xFix.pxPlayer->GetAmmoInClip();
 
 	ZENITH_ASSERT_TRUE(uAfter == uStartAmmo - 1,
-		"Ammo should decrement by 1 on a single LMB press");
+		"Ammo should decrement by 1 on a single fire verb");
 }
 
 ZENITH_TEST(RenderTestInput, FireRespectsCooldown)
@@ -400,19 +407,19 @@ void Zenith_UnitTests::TestRenderTestFireRespectsCooldown()
 
 	// First shot: hits the cooldown gate from cold (cooldown=0).
 	xFix.BeginFrame();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
+	xFix.pxPlayer->TryFire();
 	xFix.Step();
 	const uint32_t uAfterFirst = xFix.pxPlayer->GetAmmoInClip();
 
-	// Second click on the very next frame: cooldown is still ~0.12s, should
+	// Second fire on the very next frame: cooldown is still ~0.12s, should
 	// be blocked. Step with tiny dt so cooldown doesn't drain.
 	xFix.BeginFrame();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
+	xFix.pxPlayer->TryFire();
 	xFix.Step(0.001f);
 	const uint32_t uAfterSecond = xFix.pxPlayer->GetAmmoInClip();
 
 	ZENITH_ASSERT_TRUE(uAfterFirst == uAfterSecond,
-		"Second click within fire-cooldown window must NOT decrement ammo");
+		"Second fire within the cooldown window must NOT decrement ammo");
 }
 
 ZENITH_TEST(RenderTestInput, AutoReloadOnEmptyClick)
@@ -421,25 +428,23 @@ void Zenith_UnitTests::TestRenderTestAutoReloadOnEmptyClick()
 {
 	RenderTest_TestFixture xFix;
 
-	// Drain the clip to zero by repeatedly firing with tiny dt steps to dodge
-	// the cooldown — drain is tested separately; here we just need to set up
-	// the empty-clip state.
+	// Drain the clip to zero — big-dt steps drain the cooldown between shots.
 	while (xFix.pxPlayer->GetAmmoInClip() > 0)
 	{
 		xFix.BeginFrame();
-		Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
+		xFix.pxPlayer->TryFire();
 		xFix.Step(1.0f);  // big dt to drain cooldown
 	}
 	ZENITH_ASSERT_TRUE(xFix.pxPlayer->GetAmmoInClip() == 0, "Clip should be empty");
 	ZENITH_ASSERT_FALSE(xFix.pxPlayer->IsReloading(), "Should not be reloading yet");
 
-	// Empty-clip click should auto-start a reload, NOT fire.
+	// Empty-clip fire-attempt should auto-start a reload, NOT fire.
 	xFix.BeginFrame();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
+	xFix.pxPlayer->TryFire();
 	xFix.Step();
 	const bool bReloading = xFix.pxPlayer->IsReloading();
 	ZENITH_ASSERT_TRUE(bReloading,
-		"Empty-clip click should auto-start a reload");
+		"Empty-clip fire-attempt should auto-start a reload");
 }
 
 ZENITH_TEST(RenderTestInput, HipfireReloadRaisesAimLayer)
@@ -453,7 +458,7 @@ void Zenith_UnitTests::TestRenderTestHipfireReloadRaisesAimLayer()
 	// which previously left the aim layer at weight 0 because the SM had no
 	// Hipfire->Reload transition AND the weight ramp ignored the reload state.
 	xFix.BeginFrame();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
+	xFix.pxPlayer->TryFire();
 	xFix.Step(1.0f);
 
 	// LMB triggers a 0.4s force-aim timer that ramps the layer to 1 for the
@@ -469,12 +474,12 @@ void Zenith_UnitTests::TestRenderTestHipfireReloadRaisesAimLayer()
 	ZENITH_ASSERT_TRUE(fWeightBeforeReload < 0.05f,
 		"Aim layer should be near 0 before reload while hipfire");
 
-	// Press R from hipfire.
+	// Reload verb from hipfire.
 	xFix.BeginFrame();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_R);
+	xFix.pxPlayer->TryStartReload();
 	xFix.Step();
 	ZENITH_ASSERT_TRUE(xFix.pxPlayer->IsReloading(),
-		"R from hipfire must start a reload");
+		"the reload verb from hipfire must start a reload");
 
 	// Step a few more frames so the layer-weight lerp has time to ramp.
 	for (int i = 0; i < 20; ++i)
@@ -496,21 +501,21 @@ void Zenith_UnitTests::TestRenderTestReloadBlocksFire()
 {
 	RenderTest_TestFixture xFix;
 
-	// Burn one shot so the clip is below max (R is otherwise no-op).
+	// Burn one shot so the clip is below max (reload is otherwise no-op).
 	xFix.BeginFrame();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
+	xFix.pxPlayer->TryFire();
 	xFix.Step(1.0f);  // big dt drains cooldown
 	const uint32_t uAmmoAfterFirstShot = xFix.pxPlayer->GetAmmoInClip();
 
-	// Press R to reload.
+	// Start the reload.
 	xFix.BeginFrame();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_R);
+	xFix.pxPlayer->TryStartReload();
 	xFix.Step();
 	ZENITH_ASSERT_TRUE(xFix.pxPlayer->IsReloading(), "Reload should be in progress");
 
-	// LMB during reload should NOT fire — ammo stays put.
+	// A fire-attempt during reload should NOT fire — ammo stays put.
 	xFix.BeginFrame();
-	Zenith_InputSimulator::SimulateKeyPress(ZENITH_MOUSE_BUTTON_LEFT);
+	xFix.pxPlayer->TryFire();
 	xFix.Step();
 	const uint32_t uAfterClickDuringReload = xFix.pxPlayer->GetAmmoInClip();
 	ZENITH_ASSERT_TRUE(uAfterClickDuringReload == uAmmoAfterFirstShot,

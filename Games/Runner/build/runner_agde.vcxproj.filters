@@ -13,6 +13,9 @@
     <ClInclude Include="..\Components\Runner_CharacterController.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\Runner_CharacterShim.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\Runner_CollectibleSpawner.h">
       <Filter>Components</Filter>
     </ClInclude>

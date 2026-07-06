@@ -123,17 +123,21 @@ DPItemManager_Component.h         # Singleton. OnStart walks every DPItemSpawn i
 ### AI components
 
 ```
-Priest_Component.h                # Roaming witch-finder Aelfric. Owns a Zenith_BehaviorTree;
-                                  #   manual Tick. BridgePerceptionToBlackboard runs each
-                                  #   frame to translate Zenith_PerceptionSystem targets into
-                                  #   BB keys (BB_KEY_TARGET_WITH_DEVIL,
-                                  #   BB_KEY_HAS_INVESTIGATE_POS, BB_KEY_PATROL_TARGET,
-                                  #   BB_KEY_HIGH_SCENT_TARGET). Hand-written moves re-wire
-                                  #   the AIAgentComponent's pointer to the by-value
-                                  #   Zenith_NavMeshAgent member after a pool relocation.
-DP_BT_Nodes.h                     # Custom BT nodes (FindPosInSuspicionSphere /
-                                  #   HasInvestigatePos / ClearInvestigatePos / Apprehend...).
-                                  #   NOT components -- plain BT leaf classes.
+Priest_Component.h                # Roaming witch-finder Aelfric — SYSTEMS SHIM since W3. The
+                                  #   decision body (reactive Selector apprehend > pursue >
+                                  #   investigate > patrol) lives in DP_Priest.bgraph, driven by
+                                  #   "PriestTick" fired from OnUpdate AFTER the bridge.
+                                  #   BridgePerceptionToBlackboard translates perception targets
+                                  #   into the GRAPH blackboard each frame (same DP_AI::BB_KEY_*
+                                  #   names: TargetWithDevil / HasInvestigatePos / PatrolTarget /
+                                  #   HighScentTarget). Keeps: nav agent ownership (hand-written
+                                  #   moves re-wire the AIAgentComponent's pointer to the by-value
+                                  #   Zenith_NavMeshAgent), perception register/config, per-frame
+                                  #   door opening, alert telegraph edges, body-velocity guard.
+                                  #   "PriestTargetChanged" fires on target change (parity hook,
+                                  #   unwired — the reactive Selector subsumes the old
+                                  #   m_xTree.Reset()). The old BT + DP_BT_Nodes.h are DELETED,
+                                  #   and Zenith/AI/BehaviorTree itself is now gone (program teardown).
 ```
 
 ### Visual / system components
@@ -152,36 +156,50 @@ DPProcLevelBootstrap_Component.h  # ProcLevel scene's bootstrap (impl in matchin
 
 ## Behaviour Graphs & shims
 
-The interactable/menu LOGIC lives in six boot-authored graphs (regenerated
-every tools boot by `AuthorBehaviourGraphs()` in DevilsPlayground.cpp; see the
-game-root CLAUDE.md for the graph table and `Zenith/Scripting/CLAUDE.md` for
-the runtime + conversion playbook). The split:
+ALL gameplay LOGIC lives in twelve boot-authored graphs since W3 (regenerated
+every tools boot by `AuthorBehaviourGraphs()` in DevilsPlayground.cpp through
+`Zenith_GraphBuilder`; see the game-root CLAUDE.md for the graph table and
+`Zenith/Scripting/CLAUDE.md` for the runtime + conversion playbook). The split:
 
-- **Shims (C++, this directory):** input plumbing + systems execution.
-  `DPGraphInteractable_Component` and `DPMenuRelay_Component` only fire custom
-  events; `DPDoor_Component` additionally owns the door's navmesh/collider/
-  tint/rotation systems, called back synchronously by the door nodes.
-- **Nodes (`DP_GraphNodes.h`):** each `Execute` body is the retired C++
-  handler VERBATIM (same DP_* calls, same analytics events, same guards;
-  tuning read LIVE via key-string node params). Observable state (isOpen,
-  openT, door anim) lives on graph blackboards; tests read it via
-  `Tests/DP_TestGraphHelpers.h`.
+- **Shims (C++, this directory):** input plumbing + systems execution +
+  per-frame fact staging. Interact shims fire "Interact"; the per-frame shims
+  stage facts on the blackboard and fire their `<X>Tick` event at the exact
+  old call site (VillagerTick / PlayerTick / ItemTick / PauseKeys /
+  PriestTick). Graphs are SELF-ATTACHED in OnAwake, idempotently, and
+  on-demand from any pre-awake blackboard-seeding setter (SetRecipe / SetTag —
+  the door's attach-before-SetRequiredKey rule generalised).
+- **Nodes (`DP_GraphNodes.h`):** single-action verbs whose bodies are the
+  retired C++ VERBATIM (same DP_* calls, same analytics events, same guards;
+  tuning read LIVE). The W2-era mega-nodes (DPDepositHeldObjective /
+  DPTryOpenDoor / DPOpenChest / DPAdvanceChestLid / DPDoorHandleInteract) are
+  DELETED — their decision steps are engine Branch/Gate/Compare/Math/Switch
+  chains. Observable state lives on graph blackboards; tests read it via
+  `Tests/DP_TestGraphHelpers.h` (+ `Priest_Component::ReadBB*`).
 
-| Node | Replaced C++ |
+| Node | Carries |
 |---|---|
-| `DPResetWinState` | DPPentagram OnAwake win-state reset |
-| `DPDepositHeldObjective` | DPPentagram HandleInteract |
-| `DPEmitNoise` | DummyNoiseMachine HandleInteract |
-| `DPTryOpenDoor` / `DPAnimateDoorLeaves` | DPDoubleDoor interact / OnUpdate |
-| `DPOpenChest` / `DPAdvanceChestLid` | DPChest interact / OnUpdate |
-| `DPRequestQuit` | DPMainMenuController OnQuitClicked |
-| `DPDoorHandleInteract` / `DPDoorAdvanceAnim` | DPDoor HandleInteract / OnUpdate animation |
+| `DPResetWinState` | pentagram OnStart win-state reset |
+| `DPReadHeldObjective` / `DPWinCheckAlreadyCollected` / `DPWinNotifyCollected` / `DPConsumeHeldItem` / `DPDispatchObjectivePlaced` | the decomposed deposit chain (notify BEFORE consume; placed-event after destroy) |
+| `DPEmitNoise` | noise-machine stimulus |
+| `DPConsumeKeyForUnlock` / `DPDispatchDoorOpened` / `DPDispatchDoorClosed` | double-door key consume + door event dispatches |
+| `DPAnimateDoorLeaves` | double-door per-frame leaf swing (systems body) |
+| `DPDispatchChestOpened` | chest opened event (lid math is engine nodes) |
+| `DPRequestQuit` | menu quit request (+ test statics) |
+| `DPDoorCheckKey` / `DPDoorPentagramDeferral` / `DPDoorStateChanged` / `DPDoorEmitNoise` | the decomposed single-leaf door chains (sticky unlock, priest-probe spam guard, close-deferral, synchronous shim sync) |
+| `DPDoorAdvanceAnim` | single-leaf door per-frame animation (systems body) |
+| `DPVillagerKill` / `DPVillagerEmitFootstep` / `DPVillagerTutorialPing` | villager death sequence (atomic on the shim), footstep emission, first-encounter pings |
+| `DPPickVillagerUnderCursor` / `DPTryPossess` / `DPDropHeldItem` | player input dispatch (screen-space pick, voluntary switch entry, drop verb) |
+| `DPItemChildRefusal` / `DPItemArmChannel` / `DPItemCommitPickup` / `DPItemRingBell` / `DPItemEvaporate` | the decomposed item pickup chain |
+| `DPForgeCraft` | the forge craft transaction |
+| `DPPauseCanToggle` / `DPPauseApplyToggle` / `DPPauseRestart` / `DPPauseQuit` | pause overlay quirk gate, toggle application, R/Q flows (shim bodies) |
+| `DPPriestApprehendChannel` / `DPPriestPickPatrolTarget` | the priest's apprehend channel + scent-biased patrol picker (retired BT leaves, verbatim) |
+| `DPReadTuningFloat` | live `DP_Tuning` float → blackboard stage (shared) |
 
 Registered via `DP_RegisterGraphNodes()` from `Project_RegisterGameComponents`.
-The deleted components (DPPentagram / DPChest / DPDoubleDoor /
-DummyNoiseMachine / DPMainMenuController) have NO C++ remnants — equivalence
-was proven by characterization tests that pass identically pre/post conversion
-(DP suite 138/138).
+The wave-1 deleted components (DPPentagram / DPChest / DPDoubleDoor /
+DummyNoiseMachine / DPMainMenuController) have NO C++ remnants; equivalence
+at every wave is proven by characterization tests passing identically
+pre/post conversion against the full batch suite.
 
 ## The component pattern
 

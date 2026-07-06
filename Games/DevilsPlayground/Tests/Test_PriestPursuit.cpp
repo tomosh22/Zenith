@@ -12,7 +12,6 @@
 #include "Components/Priest_Component.h"
 #include "Components/DPVillager_Component.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_Pathfinding.h"
@@ -232,13 +231,18 @@ static bool Step_PriestPursuit(int iFrame)
 		if (pxScene != nullptr)
 		{
 			Zenith_Entity xEnt = pxScene->TryGetEntity(g_xPriest);
-			if (xEnt.IsValid() && xEnt.HasComponent<Zenith_AIAgentComponent>())
+			Priest_Component* pxPriestC = xEnt.IsValid()
+				? xEnt.TryGetComponent<Priest_Component>() : nullptr;
+			Zenith_BehaviourGraph* pxPriestGraph = pxPriestC ? pxPriestC->FindPriestGraph() : nullptr;
+			if (pxPriestGraph != nullptr)
 			{
-				Zenith_AIAgentComponent& xAg = xEnt.GetComponent<Zenith_AIAgentComponent>();
-				const Zenith_Blackboard& xBB = xAg.GetBlackboard();
-				Zenith_NavMeshAgent* pxNav = xAg.GetNavMeshAgent();
-				const Zenith_EntityID xTgt = xBB.GetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL);
-				const Zenith_Maths::Vector3 xPatrol = xBB.GetVector3(DP_AI::BB_KEY_PATROL_TARGET);
+				// W3: the priest's decision blackboard.
+				const Zenith_GraphBlackboard& xBB = pxPriestGraph->GetBlackboard();
+				Zenith_AIAgentComponent* pxAg = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
+				Zenith_NavMeshAgent* pxNav = pxAg ? pxAg->GetNavMeshAgent() : nullptr;
+				const Zenith_EntityID xTgt = Zenith_EntityID::FromPacked(
+					xBB.GetPackedEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL, INVALID_ENTITY_ID.GetPacked()));
+				const Zenith_Maths::Vector3 xPatrol = xBB.GetVector3(DP_AI::BB_KEY_PATROL_TARGET, Zenith_Maths::Vector3(0.0f));
 				const Zenith_Maths::Vector3 xVel = pxNav ? pxNav->GetVelocity() : Zenith_Maths::Vector3(0.0f);
 				const bool bHasPath = pxNav ? pxNav->HasPath() : false;
 				Zenith_Log(LOG_CATEGORY_AI,

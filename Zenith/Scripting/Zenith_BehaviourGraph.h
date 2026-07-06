@@ -159,6 +159,12 @@ public:
 
 	bool HasEventSource(GraphEventType eEvent) const;
 
+	// True when an ON_UPDATE dispatch would actually do work: OnUpdate/Timer
+	// sources, suspended one-shot chains, or live chain cursors. The hosting
+	// component skips idle graphs entirely - graphs anchored only on
+	// collisions/custom events cost ~nothing per frame.
+	bool NeedsUpdateDispatch() const;
+
 	// Runs every source of eEvent (sources gate themselves via Execute - e.g.
 	// Timer returns SUCCESS only when its interval elapses). ON_UPDATE dispatch
 	// additionally resumes suspended one-shot chains.
@@ -168,6 +174,23 @@ public:
 	// Runs (or resumes) the chain hanging off (uNodeID, uPin). Public for flow
 	// nodes (Branch/Loop) to drive their output sub-chains from inside Execute.
 	GraphNodeStatus RunChainFromPin(u_int uNodeID, u_int uPin, Zenith_GraphContext& xContext);
+
+	// Aborts the suspended chain hanging off (uNodeID, uPin), if any: calls
+	// OnAbort on the cursor node (flow nodes forward the abort into their own
+	// active pins from there) and clears the cursor + any matching suspended
+	// one-shot anchor. No-op when nothing is suspended. The preemption
+	// primitive behind reactive Selector / StateMachine transitions.
+	void AbortChain(u_int uNodeID, u_int uPin, Zenith_GraphContext& xContext);
+
+	// Aborts EVERY suspended chain (OnAbort per cursor node) - CallGraph
+	// teardown / preemption of a whole child graph.
+	void AbortAllChains(Zenith_GraphContext& xContext);
+
+	// Runs every ON_GRAPH_CALL entry anchor (the callable-sub-graph protocol
+	// behind the CallGraph node): RUNNING if any chain suspended (the next call
+	// resumes it), FAILURE when anchors exist but every chain failed, SUCCESS
+	// otherwise (including a graph with no anchors - a no-op call).
+	GraphNodeStatus RunGraphCall(Zenith_GraphContext& xContext);
 
 	Zenith_GraphNode* FindNode(u_int uNodeID);
 	u_int GetNodeCount() const { return m_axNodes.GetSize(); }

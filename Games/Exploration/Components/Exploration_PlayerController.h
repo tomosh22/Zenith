@@ -26,23 +26,23 @@ namespace Exploration_PlayerController
 	// ========================================================================
 	// Configuration (can be overridden via Exploration_Config)
 	// ========================================================================
-	static float s_fMoveSpeed = 10.0f;
-	static float s_fSprintMultiplier = 2.5f;
-	static float s_fMouseSensitivity = 0.002f;
-	static float s_fPlayerEyeHeight = 1.8f;
-	static float s_fPitchLimit = 1.4f;  // ~80 degrees
-	static float s_fGravity = 20.0f;
-	static float s_fJumpVelocity = 8.0f;
+	inline float s_fMoveSpeed = 10.0f;
+	inline float s_fSprintMultiplier = 2.5f;
+	inline float s_fMouseSensitivity = 0.002f;
+	inline float s_fPlayerEyeHeight = 1.8f;
+	inline float s_fPitchLimit = 1.4f;  // ~80 degrees
+	inline float s_fGravity = 20.0f;
+	inline float s_fJumpVelocity = 8.0f;
 
 	// ========================================================================
 	// State
 	// ========================================================================
-	static bool s_bMouseCaptured = false;
-	static float s_fVerticalVelocity = 0.0f;
-	static bool s_bOnGround = true;
-	static int32_t s_iLastMouseX = 0;
-	static int32_t s_iLastMouseY = 0;
-	static bool s_bFirstMouse = true;
+	inline bool s_bMouseCaptured = false;
+	inline float s_fVerticalVelocity = 0.0f;
+	inline bool s_bOnGround = true;
+	inline int32_t s_iLastMouseX = 0;
+	inline int32_t s_iLastMouseY = 0;
+	inline bool s_bFirstMouse = true;
 
 	/**
 	 * Configure controller with settings from Exploration_Config

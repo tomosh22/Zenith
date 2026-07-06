@@ -9,7 +9,6 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "Maths/Zenith_Maths.h"
 
 #include "Source/PublicInterfaces.h"
@@ -99,11 +98,12 @@ namespace
 		xInvOut = Zenith_Maths::Vector3(0.0f);
 		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
 		if (!xEnt.IsValid()) return;
-		Zenith_AIAgentComponent* pxAgent = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
-		if (pxAgent == nullptr) return;
-		Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
-		bHasInvOut = xBB.GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
-		xInvOut = xBB.GetVector3(DP_AI::BB_KEY_INVESTIGATE_POS);
+		Priest_Component* pxPriestC = xEnt.TryGetComponent<Priest_Component>();
+		Zenith_BehaviourGraph* pxGraph = pxPriestC ? pxPriestC->FindPriestGraph() : nullptr;
+		if (pxGraph == nullptr) return;
+		// W3: the bridge writes the priest's decision blackboard.
+		bHasInvOut = pxGraph->GetBlackboard().GetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
+		xInvOut = pxGraph->GetBlackboard().GetVector3(DP_AI::BB_KEY_INVESTIGATE_POS, Zenith_Maths::Vector3(0.0f));
 	}
 }
 

@@ -8,7 +8,6 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "Collections/Zenith_Vector.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -114,9 +113,11 @@ namespace
 	{
 		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xPriestId);
 		if (!xEnt.IsValid()) return INVALID_ENTITY_ID;
-		Zenith_AIAgentComponent* pxAgent = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
-		if (pxAgent == nullptr) return INVALID_ENTITY_ID;
-		return pxAgent->GetBlackboard().GetEntityID(DP_AI::BB_KEY_HIGH_SCENT_TARGET);
+		// W3: the bridge writes the priest's decision blackboard
+		// (DP_Priest.bgraph), read back through the shim.
+		Priest_Component* pxPriest = xEnt.TryGetComponent<Priest_Component>();
+		if (pxPriest == nullptr) return INVALID_ENTITY_ID;
+		return pxPriest->ReadBBEntity(DP_AI::BB_KEY_HIGH_SCENT_TARGET);
 	}
 }
 

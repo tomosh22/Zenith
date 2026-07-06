@@ -255,6 +255,14 @@ public:
 	// would make the contact gate tautological).
 	Zenith_Maths::Vector3 GetServeTossPos() const { return ServeTossPos(); }
 	int GetPendingWinner() const { return m_iPendingWinner; }   // side awarded the in-flight point
+	// W3 graph-conversion characterization seams (diagnostics-tier, conversion-
+	// neutral): the tennis determinism digest folds these every stepped frame to
+	// pin the exact RNG/decision stream across the BT -> behaviour-graph rewrite.
+	uint32_t GetSideGames(int iSide) const { return m_auGames[iSide & 1]; }
+	int GetRallyShots() const { return m_iRallyShots; }
+	int GetLastHitter() const { return m_iLastHitter; }
+	int GetExpectedReceiver() const { return m_iExpectedReceiver; }
+	uint32_t GetJitterRngState() const { return m_xJitterRng.m_uState; }
 
 	// The non-physics half of the contact dispatch: map the gate outcome to its
 	// referee effect and report whether the caller should LAUNCH. Out-of-range = a
@@ -1168,37 +1176,36 @@ private:
 	}
 
 	// ======================================================================
-	// Blackboard publish (referee -> brain/leaves)
+	// Blackboard publish (referee -> the brains' GRAPH blackboards, W3)
 	// ======================================================================
 	void PublishBlackboards()
 	{
 		for (int i = 0; i < 2; ++i)
 		{
-			Zenith_AIAgentComponent* pxAgent = AIAgent(i);
-			if (!pxAgent)
+			RenderTest_TennisAgentComponent* pxBrain = Brain(i);
+			if (!pxBrain)
 				continue;
-			Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
 			using namespace RenderTest_TennisBB;
-			xBB.SetInt(k_szPhase, static_cast<int32_t>(m_ePhase));
-			xBB.SetInt(k_szBallEpoch, static_cast<int32_t>(m_uBallEpoch));
-			xBB.SetInt(k_szMySide, i);
-			xBB.SetBool(k_szIsServer, i == m_iServer);
-			xBB.SetBool(k_szServeFromDeuce, GetServeFromDeuceCourt());
-			xBB.SetBool(k_szIsSecondServe, m_eServeAttempt == RenderTest_Tennis::SERVE_ATTEMPT_SECOND);
-			xBB.SetInt(k_szMyPoints, static_cast<int32_t>(m_auPoints[i]));
-			xBB.SetInt(k_szOppPoints, static_cast<int32_t>(m_auPoints[RenderTest_Tennis::OtherSideIndex(i)]));
-			xBB.SetBool(k_szIsMyBall,
+			pxBrain->WriteBBInt(k_szPhase, static_cast<int32_t>(m_ePhase));
+			pxBrain->WriteBBInt(k_szBallEpoch, static_cast<int32_t>(m_uBallEpoch));
+			pxBrain->WriteBBInt(k_szMySide, i);
+			pxBrain->WriteBBBool(k_szIsServer, i == m_iServer);
+			pxBrain->WriteBBBool(k_szServeFromDeuce, GetServeFromDeuceCourt());
+			pxBrain->WriteBBBool(k_szIsSecondServe, m_eServeAttempt == RenderTest_Tennis::SERVE_ATTEMPT_SECOND);
+			pxBrain->WriteBBInt(k_szMyPoints, static_cast<int32_t>(m_auPoints[i]));
+			pxBrain->WriteBBInt(k_szOppPoints, static_cast<int32_t>(m_auPoints[RenderTest_Tennis::OtherSideIndex(i)]));
+			pxBrain->WriteBBBool(k_szIsMyBall,
 				m_ePhase == RenderTest_Tennis::POINT_PHASE_LIVE && i == m_iExpectedReceiver);
 			// The serve is only armable while the ball is parked above the server
 			// (not yet struck). Once struck the ball is in flight and the serve
 			// branch must NOT re-fire (phase stays SERVING until the bounce).
-			xBB.SetBool(k_szServeBallParked,
+			pxBrain->WriteBBBool(k_szServeBallParked,
 				m_ePhase == RenderTest_Tennis::POINT_PHASE_SERVING && m_iLastHitter < 0);
-			xBB.SetVector3(k_szBallSpin, m_xBallAngVel);
+			pxBrain->WriteBBVector3(k_szBallSpin, m_xBallAngVel);
 			if (m_xBall.IsValid())
-				xBB.SetEntityID(k_szBallEntity, m_xBall.GetEntityID());
+				pxBrain->WriteBBEntity(k_szBallEntity, m_xBall.GetEntityID());
 			if (m_xNpc[RenderTest_Tennis::OtherSideIndex(i)].IsValid())
-				xBB.SetEntityID(k_szOppEntity, m_xNpc[RenderTest_Tennis::OtherSideIndex(i)].GetEntityID());
+				pxBrain->WriteBBEntity(k_szOppEntity, m_xNpc[RenderTest_Tennis::OtherSideIndex(i)].GetEntityID());
 		}
 	}
 

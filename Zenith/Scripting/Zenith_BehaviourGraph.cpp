@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Scripting/Zenith_BehaviourGraph.h"
+#include "ZenithECS/Zenith_SceneSystem.h"	// ResolveTargetEntity (leaf-legal: ZenithECS is a Scripting dependency)
 
 //==============================================================================
 // Zenith_GraphDefinition
@@ -469,6 +470,14 @@ bool Zenith_BehaviourGraph::HasEventSource(GraphEventType eEvent) const
 	return m_auEventSources[eEvent].GetSize() > 0;
 }
 
+bool Zenith_BehaviourGraph::NeedsUpdateDispatch() const
+{
+	return m_auEventSources[GRAPH_EVENT_ON_UPDATE].GetSize() > 0
+		|| m_auEventSources[GRAPH_EVENT_TIMER].GetSize() > 0
+		|| m_auSuspendedOneShotAnchors.GetSize() > 0
+		|| m_xChainCursors.GetSize() > 0;
+}
+
 void Zenith_BehaviourGraph::RunSourceNode(NodeInstance& xSource, Zenith_GraphContext& xContext)
 {
 	const u_int64 ulKey = MakeChainKey(xSource.m_uNodeID, 0);
@@ -592,9 +601,13 @@ GraphNodeStatus Zenith_BehaviourGraph::RunChainFromPin(u_int uNodeID, u_int uPin
 
 	u_int uCurrent = 0;
 	const u_int* puResume = m_xChainCursors.TryGet(ulKey);
+	// A resuming chain re-executes its suspended node WITHOUT re-entering it -
+	// one OnEnter per run of a node, however many RUNNING ticks it spans.
+	bool bResuming = false;
 	if (puResume)
 	{
 		uCurrent = *puResume;
+		bResuming = true;
 	}
 	else
 	{
@@ -626,7 +639,16 @@ GraphNodeStatus Zenith_BehaviourGraph::RunChainFromPin(u_int uNodeID, u_int uPin
 		{
 			m_auRecentlyExecuted.PushBack(uCurrent);
 		}
+		if (!bResuming)
+		{
+			pxInstance->m_pxNode->OnEnter(xContext);
+		}
+		bResuming = false;	// only the resume-target node skips OnEnter
 		const GraphNodeStatus eStatus = pxInstance->m_pxNode->Execute(xContext);
+		if (eStatus != GRAPH_NODE_STATUS_RUNNING)
+		{
+			pxInstance->m_pxNode->OnExit(xContext);
+		}
 		m_uExecutingNodeID = uPreviousExecuting;
 
 		if (eStatus == GRAPH_NODE_STATUS_RUNNING)
@@ -652,6 +674,132 @@ GraphNodeStatus Zenith_BehaviourGraph::RunChainFromPin(u_int uNodeID, u_int uPin
 
 	m_xChainCursors.Remove(ulKey);
 	return GRAPH_NODE_STATUS_SUCCESS;
+}
+
+void Zenith_BehaviourGraph::AbortChain(u_int uNodeID, u_int uPin, Zenith_GraphContext& xContext)
+{
+	const u_int64 ulKey = MakeChainKey(uNodeID, uPin);
+	const u_int* puCursor = m_xChainCursors.TryGet(ulKey);
+	if (!puCursor)
+	{
+		return;	// nothing suspended on this pin
+	}
+	const u_int uCursorNode = *puCursor;
+
+	// Clear the cursor BEFORE the hook so a fresh run of this pin starts from
+	// the chain head even if OnAbort itself re-enters graph machinery.
+	m_xChainCursors.Remove(ulKey);
+
+	NodeInstance* pxInstance = FindInstance(uCursorNode);
+	if (pxInstance && pxInstance->m_pxNode)
+	{
+		// Suspended flow nodes forward the abort into their active pins from
+		// their OnAbort override (the cascade that resets a whole sub-tree).
+		pxInstance->m_pxNode->OnAbort(xContext);
+	}
+
+	// An aborted one-shot anchor must not be re-driven by the next ON_UPDATE.
+	if (uPin == 0)
+	{
+		for (u_int u = 0; u < m_auSuspendedOneShotAnchors.GetSize(); ++u)
+		{
+			if (m_auSuspendedOneShotAnchors.Get(u) == uNodeID)
+			{
+				m_auSuspendedOneShotAnchors.Remove(u);
+				break;
+			}
+		}
+	}
+}
+
+void Zenith_BehaviourGraph::AbortAllChains(Zenith_GraphContext& xContext)
+{
+	// Snapshot keys first - AbortChain mutates the cursor map.
+	Zenith_Vector<u_int64> aulKeys;
+	for (Zenith_HashMap<u_int64, u_int>::Iterator xIt(m_xChainCursors); !xIt.Done(); xIt.Next())
+	{
+		aulKeys.PushBack(xIt.GetKey());
+	}
+	for (u_int u = 0; u < aulKeys.GetSize(); ++u)
+	{
+		const u_int64 ulKey = aulKeys.Get(u);
+		AbortChain(static_cast<u_int>(ulKey >> 8), static_cast<u_int>(ulKey & 0xFFull), xContext);
+	}
+	m_auSuspendedOneShotAnchors.Clear();
+}
+
+GraphNodeStatus Zenith_BehaviourGraph::RunGraphCall(Zenith_GraphContext& xContext)
+{
+	Zenith_Vector<u_int> auSources;
+	for (u_int u = 0; u < m_auEventSources[GRAPH_EVENT_ON_GRAPH_CALL].GetSize(); ++u)
+	{
+		auSources.PushBack(m_auEventSources[GRAPH_EVENT_ON_GRAPH_CALL].Get(u));
+	}
+	if (auSources.GetSize() == 0)
+	{
+		return GRAPH_NODE_STATUS_SUCCESS;	// callable graph without an entry anchor = no-op
+	}
+
+	bool bAnyRunning = false;
+	bool bAnyCompleted = false;
+	for (u_int u = 0; u < auSources.GetSize(); ++u)
+	{
+		NodeInstance* pxSource = FindInstance(auSources.Get(u));
+		if (!pxSource || !pxSource->m_pxNode)
+		{
+			continue;
+		}
+		GraphNodeStatus eStatus;
+		if (m_xChainCursors.Contains(MakeChainKey(pxSource->m_uNodeID, 0)))
+		{
+			// A suspended call resumes in place of re-firing its anchor.
+			eStatus = RunChainFromPin(pxSource->m_uNodeID, 0, xContext);
+		}
+		else
+		{
+			m_uExecutingNodeID = pxSource->m_uNodeID;
+			const GraphNodeStatus eGate = pxSource->m_pxNode->Execute(xContext);
+			m_uExecutingNodeID = 0;
+			if (eGate != GRAPH_NODE_STATUS_SUCCESS)
+			{
+				continue;
+			}
+			eStatus = RunChainFromPin(pxSource->m_uNodeID, 0, xContext);
+		}
+		if (eStatus == GRAPH_NODE_STATUS_RUNNING)
+		{
+			bAnyRunning = true;
+		}
+		else if (eStatus == GRAPH_NODE_STATUS_SUCCESS)
+		{
+			bAnyCompleted = true;
+		}
+	}
+	if (bAnyRunning)
+	{
+		return GRAPH_NODE_STATUS_RUNNING;
+	}
+	return bAnyCompleted ? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
+}
+
+Zenith_Entity Zenith_GraphContext::ResolveTargetEntity(const std::string& strTargetVar) const
+{
+	if (strTargetVar.empty())
+	{
+		return m_xSelf;
+	}
+	if (m_pxBlackboard == nullptr)
+	{
+		return Zenith_Entity();
+	}
+	const u_int64 ulPacked = m_pxBlackboard->GetPackedEntityID(strTargetVar, 0);
+	if (ulPacked == 0)
+	{
+		return Zenith_Entity();	// missing var / wrong type / never-stored
+	}
+	// Resolves the entity's own owning scene (correct across additive scenes +
+	// DontDestroyOnLoad); stale generations come back invalid.
+	return Zenith_SceneSystem::Get().ResolveEntity(Zenith_EntityID::FromPacked(ulPacked));
 }
 
 Zenith_GraphNode* Zenith_BehaviourGraph::FindNode(u_int uNodeID)

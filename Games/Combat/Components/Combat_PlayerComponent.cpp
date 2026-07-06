@@ -63,7 +63,12 @@ void Combat_PlayerComponent::OnUpdate(float fDt)
 		m_xController.TriggerDeath();
 	}
 
-	m_xController.Update(xTransform, xCollider, fDt);
+	// The player controller state machine lives in the Combat_PlayerState graph
+	// now; fire its driving event at exactly the point m_xController.Update ran,
+	// so the animation/IK updates below still see the post-tick controller state
+	// and per-frame ordering is unchanged. dt rides the payload (custom-event
+	// context dt is 0). The graph resolves the transform/collider it needs.
+	FirePlayerTick(fDt);
 	m_xAnimController.UpdateFromPlayerState(m_xController);
 
 	const bool bCanUseIK = !m_xController.IsDodging() &&
@@ -89,4 +94,28 @@ void Combat_PlayerComponent::FireAttackTick()
 		return;
 	}
 	pxGraph->FireCustomEvent("AttackTick");
+}
+
+bool Combat_PlayerComponent::Graph_PreTick(float fDt)
+{
+	Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
+	Zenith_ColliderComponent* pxCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
+	if (pxTransform == nullptr || pxCollider == nullptr)
+	{
+		return false;
+	}
+	m_xController.GraphPreTick(*pxTransform, *pxCollider, fDt);
+	return true;
+}
+
+void Combat_PlayerComponent::FirePlayerTick(float fDt)
+{
+	Zenith_GraphComponent* pxGraph = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+	if (pxGraph == nullptr)
+	{
+		return;
+	}
+	Zenith_PropertyValue xDt;
+	xDt.SetFloat(fDt);
+	pxGraph->FireCustomEvent("PlayerTick", &xDt);
 }

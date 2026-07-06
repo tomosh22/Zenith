@@ -186,10 +186,16 @@ enum class Zenith_EditorActionType
 	GRAPH_SET_NODE_PARAM_STRING,
 	GRAPH_SET_NODE_PARAM_VEC3,
 	GRAPH_SET_NODE_PARAM_INT,
+	GRAPH_SET_NODE_PARAM_BOOL,
 	GRAPH_CONNECT,
 	GRAPH_ADD_VARIABLE,
 	GRAPH_SAVE,
 	GRAPH_CLOSE,
+	// Programmatic authoring: builds a whole .bgraph through Zenith_GraphBuilder
+	// (the conversion program's bulk path - no simulated editor clicks), saves it
+	// through the asset registry, and queues hot reload. The click-step verbs
+	// above stay for editor-coverage tests.
+	GRAPH_BUILD,
 
 	// Particles
 	SET_PARTICLE_CONFIG,
@@ -276,6 +282,7 @@ struct Zenith_EditorAction
 	void* m_pArg = nullptr;   // Type determined by m_eType (e.g. Flux_ParticleEmitterConfig*, Flux_MeshGeometry*)
 	void* m_pArg2 = nullptr;  // Type determined by m_eType (e.g. Zenith_MaterialAsset*)
 	void (*m_pfnFunc)() = nullptr;
+	void (*m_pfnGraphBuild)(class Zenith_GraphBuilder&) = nullptr;	// GRAPH_BUILD only
 };
 
 //-----------------------------------------------------------------------------
@@ -492,10 +499,17 @@ void AddStep_GraphSetNodeParamFloat(const char* szPropertyName, float fValue);
 void AddStep_GraphSetNodeParamString(const char* szPropertyName, const char* szValue);
 void AddStep_GraphSetNodeParamVec3(const char* szPropertyName, float fX, float fY, float fZ);
 void AddStep_GraphSetNodeParamInt(const char* szPropertyName, int iValue);
+void AddStep_GraphSetNodeParamBool(const char* szPropertyName, bool bValue);
 void AddStep_GraphConnect(const char* szSrcTypeName, int iSrcOccurrence, int iSrcPin, const char* szDstTypeName, int iDstOccurrence);
 void AddStep_GraphAddVariable(const char* szName, const char* szTypeName, float fDefaultNumeric);
 void AddStep_GraphSave();
 void AddStep_GraphClose();
+
+	// Programmatic graph authoring: pfnBuild receives a Zenith_GraphBuilder over
+	// a fresh definition; the step Build()s it (asserting on authoring errors),
+	// saves the asset to szAssetPath, and queues Zenith_GraphReload. This is the
+	// bulk boot-authoring path for the behaviour-graph conversion program.
+void AddStep_GraphBuild(const char* szAssetPath, void (*pfnBuild)(class Zenith_GraphBuilder&));
 
 	//--------------------------------------------------------------------------
 	// Material editor step helpers (drive Zenith_MaterialEditorPanel's atomic

@@ -24,21 +24,108 @@ A classic box-pushing puzzle game demonstrating core Zenith engine features.
 ```
 Games/Sokoban/
   CLAUDE.md                      # This documentation
-  Sokoban.cpp                    # Project entry points, resource initialization
+  Sokoban.cpp                    # Project entry points, resources, graph builders (BuildGraph_Sokoban*)
   Components/
-    Sokoban_GameComponent.h      # Main coordinator component (uses modules below)
+    Sokoban_GameComponent.h      # Systems coordinator (step animation, visuals, level gen seams)
     Sokoban_Config.h             # DataAsset for game configuration
-    Sokoban_Input.h              # Keyboard input handling
-    Sokoban_GridLogic.h          # Movement and puzzle logic
+    Sokoban_GridLogic.h          # Movement and puzzle logic (pure C++, the systems the graph calls)
     Sokoban_Rendering.h          # 3D visualization (entity creation/update)
     Sokoban_LevelGenerator.h     # Procedural level generation
     Sokoban_Solver.h             # BFS solver for level validation
-    Sokoban_UIManager.h          # HUD text management
     Sokoban_Animation.h          # Smooth grid-step animation for player/boxes, dust emitter driving
+    Sokoban_GraphNodes.h         # Behaviour Graph node library (5 systems-seam nodes)
+  Tests/
+    Test_SokobanCharacterization.cpp  # 4 automated tests (menu, move flow, reset, escape)
   Assets/
     Scenes/MainMenu.zscen         # Main menu scene (build index 0)
     Scenes/Sokoban.zscen          # Gameplay scene (build index 1)
+    Graphs/Sokoban_LevelFlow.bgraph   # Level flow (owns the game state)
+    Graphs/Sokoban_GameFlow.bgraph    # Menu flow (Play click + focus)
 ```
+
+W2 conversion note: `Sokoban_Input.h` and `Sokoban_UIManager.h` are DELETED —
+key→move dispatch is `OnKeyPressed` graph chains, and the HUD text writes are
+engine `SetUIText` nodes (the one composite "Boxes: X / Y" string is staged by
+`SokobanStageBoardFacts`).
+
+## Behaviour Graphs (W2 — the first zero → full conversion)
+
+Both graphs are boot-authored through `Zenith_GraphBuilder`
+(`AddStep_GraphBuild`, `BuildGraph_Sokoban*` in Sokoban.cpp) and attached with
+`AddStep_AttachGraph`. The game state LIVES on the graph blackboard:
+`GetGameState`/`GetMoveCount`/`IsWon` read the attached graph's blackboard
+(`gameState`/`moveCount`/`won`); grid facts (player/boxes/targets/minMoves)
+stay C++. The component keeps SYSTEMS only (step-animation tween, visuals,
+generator+solver, GridLogic move mechanics).
+
+**`Sokoban_LevelFlow.bgraph`** (gameplay GameManager; `gameState`=PLAYING,
+`moveCount`=0, `won`=false). The plan's separate "MoveFlow" lives as the move
+section of this graph — move and level chains share `moveCount`/`won`, and
+graph slots have separate blackboards, so one gameplay graph owns them (the
+same shape Marble/Runner shipped). Anchors, mirroring the old OnUpdate order
+(Esc before R before movement):
+- `OnStart` → 10× `SetUIVisible(true)` → fire "SokobanRefreshHUD".
+- `OnKeyPressed(Esc)` → `SokobanUnloadLevel` → `LoadSceneByIndex(0)`.
+- `OnKeyPressed(R)` → `SokobanRegenerateLevel` → reset moveCount/won →
+  fire "SokobanRefreshHUD".
+- 8× `OnKeyPressed(W/A/S/D/arrows)` → `SokobanTryMove(direction)` (gates on
+  won + mid-step; runs the GridLogic move/push + starts the step animation;
+  FAILURE = blocked) → `AddBlackboardInt`(moveCount+1) → fire refresh.
+- `OnCustomEvent("SokobanStepComplete")` (fired by the component the frame a
+  step animation finishes) → `SokobanStageBoardFacts` →
+  `CompareBlackboardInt`(targetCount>0) → `Branch` →
+  `CompareBlackboardInt`(boxesOnTargets == targetCount, var-vs-var) →
+  `Branch` → `SetBlackboardBool`(won) → fire refresh — the old
+  `CheckWinCondition` as engine nodes.
+- `OnCustomEvent("SokobanRefreshHUD")` → `SokobanStageBoardFacts` →
+  `SetUIText`(Status "Moves: {}") → `SetUIText`(Progress "{}"=progressText) →
+  `SetUIText`(MinMoves "Min Moves: {}") → `Branch`(won) →
+  `SetUIText`(WinText "LEVEL COMPLETE!" / "") — the old Sokoban_UIManager.
+  The graph fires this event at itself (`FireCustomEvent` node) from the
+  move/win/R/OnStart chains — the chain-reuse pattern.
+
+**`Sokoban_GameFlow.bgraph`** (menu MenuManager; `gameState`=MAIN_MENU):
+`OnUIButtonClicked("MenuPlay")` → `LoadSceneByIndex(1)` (engine UIButton
+trampoline — no C++ click wiring); `OnUpdate` → `SokobanFocusPlayButton`.
+
+### Game node library (`Components/Sokoban_GraphNodes.h`, 5 systems seams)
+
+| Node | What it does |
+|---|---|
+| `SokobanTryMove` | Move gate (won/mid-step) + GridLogic move/push + step-animation start; FAILURE = refused |
+| `SokobanStageBoardFacts` | Publishes boxesOnTargets/targetCount/minMoves + the "Boxes: X / Y" progress string |
+| `SokobanRegenerateLevel` | Fresh puzzle scene + generator + solver + visuals |
+| `SokobanUnloadLevel` | Cancel step animation + clear renderer IDs + unload puzzle scene |
+| `SokobanFocusPlayButton` | Keeps the single menu button focused |
+
+Registered via `Sokoban_RegisterGraphNodes()` from
+`Project_RegisterGameComponents`.
+
+**Equivalence proof:** `Tests/Test_SokobanCharacterization.cpp` (headless OK;
+written green against the C++ decisions FIRST, passing unchanged against the
+graphs): `Sokoban_MenuPlay_Test` (Play focus + activation → PLAYING),
+`Sokoban_MoveFlow_Test` (on the `Test_LoadFixtureLevel` corridor: blocked move
+does nothing and doesn't count, neutral move counts, push-onto-target wins on
+step completion, exact HUD strings, input dead after win),
+`Sokoban_ResetFlow_Test` (R → fresh solver-validated level, counters reset),
+`Sokoban_EscapeMenu_Test` (Esc → menu).
+
+```
+sokoban.exe --all-automated-tests --headless --exit-after-frames 45000 --fixed-dt 0.01666 --skip-unit-tests
+```
+
+> `--skip-unit-tests` is required: sokoban.exe units-at-boot trip the known
+> layout-sensitive latent corruption (same family as test.exe — see the
+> adoption-program notes); DP units are the reliable units gate.
+
+**Engine fix found by this wave:** Sokoban's Esc path (unloading the puzzle
+scene mid-update from gameplay code) exposed a use-after-free in
+`Zenith_SceneSystem::Update` — the update loop snapshotted raw `SceneData*`
+pointers while `UnloadScene` deletes synchronously. The snapshot is
+handle+generation now (pinned by
+`GraphComponent::UnloadSceneMidUpdateIsSafe`). Marble had dodged it by
+accident (its Esc only fires from PAUSED; paused scenes are excluded from the
+snapshot) and Runner had been silently reading freed memory.
 
 ## Module Breakdown
 
@@ -61,14 +148,6 @@ Demonstrates:
 - `OnUpdate(float fDt)` - Main game loop
 - `RenderPropertiesPanel()` - Editor UI (tools build only)
 - `WriteToDataStream/ReadFromDataStream` - Serialization (leading component version + parameter payload)
-
-### Sokoban_Input.h - Input Handling
-**Engine APIs:** `Zenith_Input::WasKeyPressedThisFrame`
-
-Demonstrates:
-- Polling keyboard state
-- Key code constants (`ZENITH_KEY_W`, `ZENITH_KEY_UP`, etc.)
-- Frame-based input (pressed this frame vs held)
 
 ### Sokoban_GridLogic.h - Game Logic
 **Engine APIs:** None (pure logic)
@@ -104,14 +183,6 @@ Demonstrates:
 - State space exploration with cycle detection
 - Custom hash functions for complex state types
 - Performance limiting (max states to explore)
-
-### Sokoban_UIManager.h - UI Management
-**Engine APIs:** `Zenith_UIComponent`, `Zenith_UIText`
-
-Demonstrates:
-- Finding UI elements by name
-- Dynamic text updates
-- UI anchor/pivot system (TopRight positioning)
 
 ### Sokoban_Animation.h - Grid-Step Animation
 **Engine APIs:** `Zenith_ParticleEmitterComponent`

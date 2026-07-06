@@ -11,7 +11,7 @@ A physics-based ball rolling game demonstrating Jolt Physics integration and dyn
 | **Impulse-Based Movement** | `Zenith_Physics::AddImpulse` | Physics-based input response |
 | **Camera Following** | `Zenith_CameraComponent` | Smooth follow with look-at |
 | **Procedural Geometry** | `GenerateUVSphere()` (file-static helper in `Marble.cpp`) | Runtime sphere mesh generation into a `Flux_MeshGeometry` |
-| **Game State Machine** | `MarbleGameState` enum | Playing/Paused/Won/Lost states |
+| **Game State Machine** | Behaviour Graph `StateMachine` node (`Marble_LevelFlow.bgraph`) | Playing/Paused/Won/Lost as blackboard int; `MarbleGameState` enum names the values C++-side |
 | **Distance-Based Pickups** | Manual distance check | Simple collectible system |
 | **Entity Lifetime** | `Zenith_Scene::Destroy` | Dynamic entity creation/destruction |
 | **Multi-Scene Management** | `Zenith_SceneSystem` | `LoadScene(..., SCENE_LOAD_ADDITIVE_WITHOUT_LOADING)`, `SetActiveScene()`, `UnloadScene()`, `LoadSceneByIndex(..., SCENE_LOAD_SINGLE)`, `SetScenePaused()` |
@@ -32,39 +32,90 @@ Games/Marble/
     Marble_LevelGenerator.h      # Platform and collectible placement
     Marble_CollectibleSystem.h   # Pickup detection and scoring
     Marble_UIManager.h           # HUD management
-    Marble_GraphNodes.h          # Behaviour Graph node library (timer + win/loss flow)
+    Marble_GraphNodes.h          # Behaviour Graph node library (5 systems-seam nodes)
   Tests/
-    Test_MarbleCharacterization.cpp  # 2 automated tests (timer flow, fall loss)
+    Test_MarbleCharacterization.cpp  # 7 automated tests (timer, fall, pause, reset, escape, menu, collection-win)
   Assets/
-    Scenes/MainMenu.zscen, Marble.zscen  # Boot-authored scenes
-    Graphs/Marble_LevelFlow.bgraph       # Boot-authored level-flow graph
+    Scenes/MainMenu.zscen, Marble.zscen        # Boot-authored scenes
+    Graphs/Marble_LevelFlow.bgraph             # Gameplay flow (owns the game state)
+    Graphs/Marble_GameFlow.bgraph              # Menu flow (Play click + focus)
 ```
 
-## Behaviour Graphs (timer + win/loss flow)
+## Behaviour Graphs (W1 conversion — ALL decisions graph-side)
 
-The level-flow DECISIONS live in `Marble_LevelFlow.bgraph` (boot-authored via
-`Zenith_EditorAutomation` graph steps; attached to the gameplay GameManager
-with `AddStep_AttachGraph`; runtime docs in `Zenith/Scripting/CLAUDE.md`).
-`Marble_GameComponent`'s PLAYING branch runs the systems pass
-(`HandleInput` → `ComputeCollectibles` → `ComputeFallState`) then fires
-"LevelTick" (dt as float payload); the chain preserves the old same-frame
-decision order:
+Both graphs are boot-authored through `Zenith_GraphBuilder`
+(`AddStep_GraphBuild`, `BuildGraph_Marble*` in Marble.cpp) and attached with
+`AddStep_AttachGraph` (runtime docs in `Zenith/Scripting/CLAUDE.md`). The
+game state LIVES on the graph blackboard — **the "state moves to the graph
+blackboard, shim accessor reads it" pilot**: `Marble_GameComponent`'s
+`GetGameState`/`GetTimeRemaining`/`GetScore`/`GetCollectedCount` read the
+attached graph's blackboard (`gameState`/`timeRemaining`/`score`/`collected`);
+the HUD, camera gating, and characterization tests consume state only through
+those accessors. The component keeps SYSTEMS only (physics input, camera,
+level gen, collectible detection, fall query, HUD text writes).
 
-`MarbleTickTimer` (countdown −dt, clamp 0, LOST at expiry) →
-`MarbleApplyCollection` (score/collected accumulation from the stashed
-`CollectionResult`; all collected → WON) →
-`MarbleCheckFall` (ball below the kill plane → LOST).
+**`Marble_LevelFlow.bgraph`** (gameplay GameManager; declares
+`gameState`=PLAYING, `timeRemaining`=60, `score`/`collected`=0):
+- `OnStart` → 6× `SetUIVisible(true)` (the old StartGame HUD show).
+- Four `OnCustomEvent("LevelTick")` chains (component fires it once per
+  PLAYING frame with dt as payload; custom-event sources run in node order,
+  preserving the old same-frame decision order):
+  1. `MarbleStageFrameResults` (publishes scoreGained/collectedDelta/
+     allCollected/ballFell from the systems pass),
+  2. timer: `MathBlackboardFloat`(sub payload) → `ClampBlackboardFloat`(0) →
+     `CompareBlackboardFloat`(≤0) → `Branch` → LOST,
+  3. collection: `AddBlackboardInt`(score+=scoreGained) →
+     `AddBlackboardInt`(collected+=collectedDelta) → `Branch`(allCollected) → WON,
+  4. fall: `Branch`(ballFell) → LOST.
+- `OnKeyPressed(P)` → `SwitchOnInt(gameState)`: PLAYING→PAUSED, PAUSED→PLAYING.
+- `OnKeyPressed(Esc)` → `SwitchOnInt(gameState)`: PLAYING→PAUSED (the
+  `WasPausePressed` P-or-Esc quirk, preserved); PAUSED→resume →
+  `MarbleUnloadLevel` → `LoadSceneByIndex(0)`; WON/LOST→unload→menu.
+- `OnKeyPressed(R)` → `CompareBlackboardInt`(≠PAUSED) → `Branch` →
+  `MarbleRegenerateLevel` → reset time/score/collected/state.
+- `OnUpdate` → **`StateMachine`**(gameState, prefix "Marble", LAST in node
+  order so key-driven transitions land the same dispatch); its
+  `MarbleEnter_Paused`/`MarbleExit_Paused` transition events drive
+  `MarbleSetLevelPaused(true/false)` — the scene-pause side effect is
+  decoupled from the key chains.
 
-The shim exposes the graph-facing surface (`GetLastCollection`,
-`HasBallFallen`, `SetTimeRemaining`, `SetGameStateFromGraph`, `AddScore`,
-`AddCollectedCount`); the old inline timer/win/loss C++ is DELETED. Nodes
-registered via `Marble_RegisterGraphNodes()`.
+**`Marble_GameFlow.bgraph`** (menu GameManager; declares `gameState`=MAIN_MENU,
+`focusIndex`=0):
+- `OnUIButtonClicked("MenuPlay")` → `LoadSceneByIndex(1)` (the engine UIButton
+  trampoline source — no C++ click wiring; keyboard Enter activation reaches
+  it too). **MenuQuit is deliberately unwired** (pre-conversion quirk).
+- W/Up/S/Down `OnKeyPressed` chains: `CompareBlackboardInt`(focusIndex==0) →
+  `Branch` → `SetBlackboardInt` toggle (2 buttons ⇒ every direction toggles).
+- `OnUpdate` → `MarbleApplyMenuFocus` (SetFocused visuals from focusIndex).
 
-**Equivalence proof:** `Tests/Test_MarbleCharacterization.cpp` (headless OK):
-`Marble_TimerFlow_Test` pins the countdown rate (±1 s over 600 fixed-dt
-frames) + LOST at expiry with time clamped to 0; `Marble_FallLoss_Test` rolls
-off via held W (real input injected through `Zenith_InputSimulator`:
-`SetKeyHeld`/`SetFixedDt`/`ClearFixedDt`) and requires LOST with >5 s remaining.
+### Game node library (`Components/Marble_GraphNodes.h`, ~5 systems seams)
+
+| Node | What it does |
+|---|---|
+| `MarbleStageFrameResults` | Publishes the frame's systems results (CollectionResult + fall query) onto the blackboard |
+| `MarbleRegenerateLevel` | Unload old level scene + create fresh + run generator (state resets are graph-side) |
+| `MarbleUnloadLevel` | Clear entity refs + unload the level scene |
+| `MarbleSetLevelPaused` | `SetScenePaused` on the level scene (from the StateMachine transition events) |
+| `MarbleApplyMenuFocus` | Applies blackboard focusIndex to the two menu buttons (visuals only) |
+
+Registered via `Marble_RegisterGraphNodes()`. The old wave-2 verbatim-wrapped
+decision nodes (`MarbleTickTimer`/`MarbleApplyCollection`/`MarbleCheckFall`)
+are DELETED — their decisions are engine nodes now.
+
+**Known quirk (pinned by tests, preserved by the conversion):** collectible 0
+spawns on the START platform inside the ball's pickup radius, so every level
+start auto-collects it within a couple of frames (score opens at 100).
+
+**Equivalence proof:** `Tests/Test_MarbleCharacterization.cpp` (headless OK; 7
+tests, all written green against the C++ decisions FIRST and passing unchanged
+against the graphs): `Marble_TimerFlow_Test` (countdown rate ±1 s/600 frames,
+clamp, LOST at expiry), `Marble_FallLoss_Test` (held-W roll-off → LOST, real
+input path), `Marble_PauseResume_Test` (P toggles PAUSED/PLAYING, timer
+freezes), `Marble_ResetFlow_Test` (R resets timer/score/collected; score
+pre-inflated via the `Test_InjectCollection` seam), `Marble_EscapeMenu_Test`
+(Esc pauses, Esc again returns to menu), `Marble_MenuPlay_Test` (initial focus
+Play, W/S toggle, Quit inert, Play activation → PLAYING),
+`Marble_CollectionWin_Test` (injected results accumulate; allCollected → WON).
 
 ```
 marble.exe --all-automated-tests --headless --exit-after-frames 30000 --fixed-dt 0.01666 --skip-unit-tests
@@ -141,7 +192,12 @@ Demonstrates:
 ## Multi-Scene Architecture
 
 ### Entity Layout
-The engine's persistent scene (`Zenith_SceneSystem::GetPersistentScene()`) holds the GameManager entity (Camera + UI + MarbleGame component); there is no explicit `DontDestroyOnLoad()` call. Level scene holds platforms, collectibles, goal, and player ball, created/destroyed on transitions.
+Each authored scene (MainMenu, Marble) carries its own GameManager entity
+(Camera + UI + MarbleGame component + Graph component); the SINGLE-mode scene
+loads swap them wholesale, so per-scene graph blackboards never coexist. The
+Level scene holds platforms, collectibles, goal, and player ball,
+created/destroyed on transitions. (The persistent scene is used only during
+resource init for the prefab templates.)
 
 ### Game State Machine
 ```

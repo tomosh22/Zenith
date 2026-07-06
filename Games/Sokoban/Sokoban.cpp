@@ -2,6 +2,7 @@
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Sokoban/Components/Sokoban_GameComponent.h"
+#include "Sokoban/Components/Sokoban_GraphNodes.h"
 #include "Sokoban/Components/Sokoban_Config.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -24,6 +25,8 @@
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
+#include "Scripting/Zenith_GraphBuilder.h"
+#include "Input/Zenith_KeyCodes.h"
 #endif
 
 // ============================================================================
@@ -181,6 +184,10 @@ void Project_RegisterGameComponents()
 	Sokoban::Resources().m_pxDustConfig->m_bUseGPUCompute = false;
 	Flux_ParticleEmitterConfig::Register("Sokoban_DustTrail", Sokoban::Resources().m_pxDustConfig);
 
+	// Behaviour Graph node library (the systems seams the boot-authored
+	// Sokoban_LevelFlow / Sokoban_GameFlow graphs call back into).
+	Sokoban_RegisterGraphNodes();
+
 	// Meta-registry registration happens via the ZENITH_REGISTER_COMPONENT macro
 	// at the top of this file (see the note there - the registry is sealed before
 	// this hook runs). Tools builds additionally register with the editor
@@ -221,8 +228,191 @@ void Project_InitializeResources()
 	// All Sokoban resources initialized in Project_RegisterGameComponents
 }
 
+namespace
+{
+	// Sokoban_LevelFlow: the gameplay GameManager's graph. OWNS the level's
+	// game state (gameState/moveCount/won declared here); C++ reads it back
+	// through the Sokoban_GameComponent accessors. Anchors in dispatch order
+	// mirror the old OnUpdate: Esc before R before the move keys; the
+	// step-complete win check and the HUD refresh ride custom events.
+	void BuildGraph_SokobanLevelFlow(Zenith_GraphBuilder& xBuilder)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetInt32(static_cast<int32_t>(SokobanGameState::PLAYING));
+		xBuilder.Variable("gameState", xValue);
+		xValue.SetInt32(0);
+		xBuilder.Variable("moveCount", xValue);
+		xValue.SetBool(false);
+		xBuilder.Variable("won", xValue);
+
+		// ---- OnStart: show the HUD (the old StartGame visibility), then
+		// ---- paint the initial values ---------------------------------------
+		const char* aszHUD[] = {
+			"Title", "ControlsHeader", "MoveInstr", "ResetInstr",
+			"GoalHeader", "GoalDesc", "Status", "Progress", "MinMoves", "WinText"
+		};
+		u_int uPrevious = xBuilder.Node("OnStart");
+		for (const char* szElement : aszHUD)
+		{
+			const u_int uShow = xBuilder.Node("SetUIVisible");
+			xBuilder.ParamString(uShow, "m_strElement", szElement);
+			xBuilder.ParamBool(uShow, "m_bVisible", true);
+			xBuilder.Chain(uPrevious, uShow);
+			uPrevious = uShow;
+		}
+		const u_int uStartRefresh = xBuilder.Node("FireCustomEvent");
+		xBuilder.ParamString(uStartRefresh, "m_strEventName", "SokobanRefreshHUD");
+		xBuilder.Chain(uPrevious, uStartRefresh);
+
+		// ---- Esc: back to the menu (checked before R, like the old OnUpdate;
+		// ---- SINGLE load at the end of the chain) ----------------------------
+		{
+			const u_int uKey = xBuilder.Node("OnKeyPressed");
+			xBuilder.ParamInt(uKey, "m_iKeyCode", ZENITH_KEY_ESCAPE);
+			const u_int uUnload = xBuilder.Node("SokobanUnloadLevel");
+			const u_int uMenu = xBuilder.Node("LoadSceneByIndex");
+			xBuilder.ParamInt(uMenu, "m_iSceneIndex", 0);
+			xBuilder.Chain(uKey, uUnload).Chain(uUnload, uMenu);
+		}
+
+		// ---- R: fresh level + graph-side counter/state resets ---------------
+		{
+			const u_int uKey = xBuilder.Node("OnKeyPressed");
+			xBuilder.ParamInt(uKey, "m_iKeyCode", ZENITH_KEY_R);
+			const u_int uRegen = xBuilder.Node("SokobanRegenerateLevel");
+			const u_int uResetMoves = xBuilder.Node("SetBlackboardInt");
+			xBuilder.ParamString(uResetMoves, "m_strVariable", "moveCount");
+			xBuilder.ParamInt(uResetMoves, "m_iValue", 0);
+			const u_int uResetWon = xBuilder.Node("SetBlackboardBool");
+			xBuilder.ParamString(uResetWon, "m_strVariable", "won");
+			xBuilder.ParamBool(uResetWon, "m_bValue", false);
+			const u_int uRefresh = xBuilder.Node("FireCustomEvent");
+			xBuilder.ParamString(uRefresh, "m_strEventName", "SokobanRefreshHUD");
+			xBuilder.Chain(uKey, uRegen).Chain(uRegen, uResetMoves)
+				.Chain(uResetMoves, uResetWon).Chain(uResetWon, uRefresh);
+		}
+
+		// ---- Movement: key -> direction dispatch (the old Sokoban_Input +
+		// ---- HandleInput). SokobanTryMove gates on won/mid-step and runs the
+		// ---- GridLogic systems; a taken move counts + refreshes the HUD. ----
+		struct MoveKey { int32_t m_iKeyCode; int32_t m_iDirection; };
+		const MoveKey axMoveKeys[] = {
+			{ ZENITH_KEY_W, static_cast<int32_t>(SOKOBAN_DIR_UP) },
+			{ ZENITH_KEY_UP, static_cast<int32_t>(SOKOBAN_DIR_UP) },
+			{ ZENITH_KEY_S, static_cast<int32_t>(SOKOBAN_DIR_DOWN) },
+			{ ZENITH_KEY_DOWN, static_cast<int32_t>(SOKOBAN_DIR_DOWN) },
+			{ ZENITH_KEY_A, static_cast<int32_t>(SOKOBAN_DIR_LEFT) },
+			{ ZENITH_KEY_LEFT, static_cast<int32_t>(SOKOBAN_DIR_LEFT) },
+			{ ZENITH_KEY_D, static_cast<int32_t>(SOKOBAN_DIR_RIGHT) },
+			{ ZENITH_KEY_RIGHT, static_cast<int32_t>(SOKOBAN_DIR_RIGHT) },
+		};
+		for (const MoveKey& xMoveKey : axMoveKeys)
+		{
+			const u_int uKey = xBuilder.Node("OnKeyPressed");
+			xBuilder.ParamInt(uKey, "m_iKeyCode", xMoveKey.m_iKeyCode);
+			const u_int uMove = xBuilder.Node("SokobanTryMove");
+			xBuilder.ParamInt(uMove, "m_iDirection", xMoveKey.m_iDirection);
+			const u_int uCount = xBuilder.Node("AddBlackboardInt");
+			xBuilder.ParamString(uCount, "m_strVariable", "moveCount");
+			const u_int uRefresh = xBuilder.Node("FireCustomEvent");
+			xBuilder.ParamString(uRefresh, "m_strEventName", "SokobanRefreshHUD");
+			xBuilder.Chain(uKey, uMove).Chain(uMove, uCount).Chain(uCount, uRefresh);
+		}
+
+		// ---- Step complete: the win decision (fired by the component the
+		// ---- frame a step animation finishes) --------------------------------
+		{
+			const u_int uStep = xBuilder.Node("OnCustomEvent");
+			xBuilder.ParamString(uStep, "m_strEventName", "SokobanStepComplete");
+			const u_int uStage = xBuilder.Node("SokobanStageBoardFacts");
+			const u_int uHasTargets = xBuilder.Node("CompareBlackboardInt");
+			xBuilder.ParamString(uHasTargets, "m_strVar", "targetCount");
+			xBuilder.ParamInt(uHasTargets, "m_iCompareTo", 0);
+			xBuilder.ParamInt(uHasTargets, "m_iOp", 2);	// greater
+			xBuilder.ParamString(uHasTargets, "m_strResultVar", "hasTargets");
+			const u_int uBrTargets = xBuilder.Node("Branch");
+			xBuilder.ParamString(uBrTargets, "m_strConditionVar", "hasTargets");
+			const u_int uAllOn = xBuilder.Node("CompareBlackboardInt");
+			xBuilder.ParamString(uAllOn, "m_strVar", "boxesOnTargets");
+			xBuilder.ParamString(uAllOn, "m_strCompareVar", "targetCount");
+			xBuilder.ParamInt(uAllOn, "m_iOp", 4);	// equal (var vs var)
+			xBuilder.ParamString(uAllOn, "m_strResultVar", "allOnTargets");
+			const u_int uBrAllOn = xBuilder.Node("Branch");
+			xBuilder.ParamString(uBrAllOn, "m_strConditionVar", "allOnTargets");
+			const u_int uSetWon = xBuilder.Node("SetBlackboardBool");
+			xBuilder.ParamString(uSetWon, "m_strVariable", "won");
+			xBuilder.ParamBool(uSetWon, "m_bValue", true);
+			const u_int uRefresh = xBuilder.Node("FireCustomEvent");
+			xBuilder.ParamString(uRefresh, "m_strEventName", "SokobanRefreshHUD");
+			xBuilder.Chain(uStep, uStage).Chain(uStage, uHasTargets).Chain(uHasTargets, uBrTargets);
+			xBuilder.Edge(uBrTargets, 0, uAllOn);
+			xBuilder.Chain(uAllOn, uBrAllOn);
+			xBuilder.Edge(uBrAllOn, 0, uSetWon);
+			xBuilder.Chain(uSetWon, uRefresh);
+		}
+
+		// ---- HUD refresh: the old Sokoban_UIManager as SetUIText chains ------
+		{
+			const u_int uRefresh = xBuilder.Node("OnCustomEvent");
+			xBuilder.ParamString(uRefresh, "m_strEventName", "SokobanRefreshHUD");
+			const u_int uStage = xBuilder.Node("SokobanStageBoardFacts");
+			const u_int uMoves = xBuilder.Node("SetUIText");
+			xBuilder.ParamString(uMoves, "m_strElement", "Status");
+			xBuilder.ParamString(uMoves, "m_strText", "Moves: {}");
+			xBuilder.ParamString(uMoves, "m_strValueVar", "moveCount");
+			const u_int uProgress = xBuilder.Node("SetUIText");
+			xBuilder.ParamString(uProgress, "m_strElement", "Progress");
+			xBuilder.ParamString(uProgress, "m_strText", "{}");
+			xBuilder.ParamString(uProgress, "m_strValueVar", "progressText");
+			const u_int uMinMoves = xBuilder.Node("SetUIText");
+			xBuilder.ParamString(uMinMoves, "m_strElement", "MinMoves");
+			xBuilder.ParamString(uMinMoves, "m_strText", "Min Moves: {}");
+			xBuilder.ParamString(uMinMoves, "m_strValueVar", "minMoves");
+			const u_int uBrWon = xBuilder.Node("Branch");
+			xBuilder.ParamString(uBrWon, "m_strConditionVar", "won");
+			const u_int uWinOn = xBuilder.Node("SetUIText");
+			xBuilder.ParamString(uWinOn, "m_strElement", "WinText");
+			xBuilder.ParamString(uWinOn, "m_strText", "LEVEL COMPLETE!");
+			const u_int uWinOff = xBuilder.Node("SetUIText");
+			xBuilder.ParamString(uWinOff, "m_strElement", "WinText");
+			xBuilder.ParamString(uWinOff, "m_strText", "");
+			xBuilder.Chain(uRefresh, uStage).Chain(uStage, uMoves)
+				.Chain(uMoves, uProgress).Chain(uProgress, uMinMoves).Chain(uMinMoves, uBrWon);
+			xBuilder.Edge(uBrWon, 0, uWinOn);
+			xBuilder.Edge(uBrWon, 1, uWinOff);
+		}
+	}
+
+	// Sokoban_GameFlow: the menu MenuManager's graph. gameState pinned at
+	// MAIN_MENU for the shim accessors; the single Play button holds focus
+	// every frame and drives the scene load through the engine's UIButton
+	// trampoline source (keyboard Enter activation included).
+	void BuildGraph_SokobanGameFlow(Zenith_GraphBuilder& xBuilder)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetInt32(static_cast<int32_t>(SokobanGameState::MAIN_MENU));
+		xBuilder.Variable("gameState", xValue);
+
+		const u_int uPlayClicked = xBuilder.Node("OnUIButtonClicked");
+		xBuilder.ParamString(uPlayClicked, "m_strButton", "MenuPlay");
+		const u_int uLoadGame = xBuilder.Node("LoadSceneByIndex");
+		xBuilder.ParamInt(uLoadGame, "m_iSceneIndex", 1);
+		xBuilder.Chain(uPlayClicked, uLoadGame);
+
+		const u_int uTick = xBuilder.Node("OnUpdate");
+		const u_int uFocus = xBuilder.Node("SokobanFocusPlayButton");
+		xBuilder.Chain(uTick, uFocus);
+	}
+}
+
 void Project_RegisterEditorAutomationSteps()
 {
+	// ---- Behaviour graphs (regenerated every boot through the programmatic
+	// ---- builder - the W2 zero -> full conversion's graphs) ----
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.AddStep_GraphBuild("game:Graphs/Sokoban_LevelFlow.bgraph", &BuildGraph_SokobanLevelFlow);
+	xAuto.AddStep_GraphBuild("game:Graphs/Sokoban_GameFlow.bgraph", &BuildGraph_SokobanGameFlow);
+
 	// ---- MainMenu scene (build index 0) ----
 	g_xEngine.EditorAutomation().AddStep_CreateScene("MainMenu");
 	g_xEngine.EditorAutomation().AddStep_CreateEntity("MenuManager");
@@ -242,6 +432,8 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
 	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.f, 50.f);
 	g_xEngine.EditorAutomation().AddStep_AddComponent("SokobanGame");
+	// Menu flow graph (Play click + focus + MAIN_MENU state).
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Sokoban_GameFlow.bgraph");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
@@ -362,6 +554,8 @@ void Project_RegisterEditorAutomationSteps()
 	// Back to GameManager for the game component
 	g_xEngine.EditorAutomation().AddStep_SelectEntity("GameManager");
 	g_xEngine.EditorAutomation().AddStep_AddComponent("SokobanGame");
+	// Level flow graph (owns gameState/moveCount/won; move/win/R/Esc/HUD chains).
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Sokoban_LevelFlow.bgraph");
 
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Sokoban" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();

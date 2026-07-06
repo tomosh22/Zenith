@@ -20,7 +20,6 @@
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Navigation/Zenith_Pathfinding.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
@@ -88,11 +87,6 @@ int main()
 	Zenith_NavMesh* pxGenerated = Zenith_NavMeshGenerator::GenerateFromGeometry(axVerts, axGenIdx, xCfg);
 	Expect(true, "GenerateFromGeometry ran (pure leaf generation path)");
 	delete pxGenerated;  // null-safe (generation may legitimately produce none for tiny input)
-
-	// Blackboard round-trip.
-	Zenith_Blackboard xBB;
-	xBB.SetFloat("k", 1.5f);
-	Expect(xBB.GetFloat("k", 0.0f) == 1.5f, "Blackboard round-trips a float");
 
 	// NavMeshAgent config (its Update uses the null world hooks -> no-op).
 	Zenith_NavMeshAgent xAgent;

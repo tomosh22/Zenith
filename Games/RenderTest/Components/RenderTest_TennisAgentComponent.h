@@ -6,7 +6,9 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_BehaviorTree.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
+#include "Scripting/Zenith_GraphBlackboard.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Maths/Zenith_Maths.h"
@@ -15,32 +17,31 @@
 #include "RenderTest/Components/RenderTest_TennisPlayerComponent.h"
 
 #include <cstdint>
+#include <cstring>
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
 #endif
 
-// The autonomous-tennis "brain" (order 135). Builds + SOLELY owns the behaviour
-// tree, configures its agent's sight, exposes the decided shot + arm guard to the
-// referee, and refreshes the pure TennisPlayerState each frame.
+// The autonomous-tennis "brain" (order 135) - SYSTEMS SHIM since the W3
+// behaviour-graph conversion. The decision body (the old behaviour tree's
+// Selector over serve / rally / recover) lives in
+// RenderTest_TennisBrain.bgraph on this entity's Zenith_GraphComponent,
+// driven by the graph's own ON_UPDATE tick chain (an authored accumulator
+// reproducing the retired AIAgent 0.08 s interval semantics exactly:
+// accumulate-while-enabled, fire at >= 0.08, reset-to-zero). The shim keeps:
+// the per-side deterministic TennisRng, the decided-shot storage + arm guard
+// the referee consumes, the TennisPlayerState refresh, and the sight config.
+// The old Zenith_BehaviorTree + RenderTest_TennisBTNodes.h are DELETED.
 //
-// Ownership (D1): Zenith_AIAgentComponent::SetBehaviorTree is a NON-owning borrow
-// (its dtor never deletes the tree). The brain therefore owns the heap tree: it
-// `new`s it, hands the raw pointer to the agent, keeps it in m_pxTree for delete +
-// move-transfer, and nulls the agent's borrow before freeing.
-//
-// Referee<->brain signalling rides the blackboard (D8): the referee publishes
-// Phase / BallEpoch / points / role / entities into this agent's blackboard each
-// OnLateUpdate; the BT leaves + this component read them. That one-directional
-// flow (referee -> blackboard -> leaves) is what keeps the brain/BT/referee
-// headers acyclic — the brain never includes the referee.
+// Referee<->brain signalling rides the GRAPH blackboard (previously the
+// AIAgent blackboard): the referee publishes Phase / BallEpoch / points /
+// role / entities into this entity's graph blackboard each OnLateUpdate; the
+// graph's gate/verb nodes and RefreshPlayerState read them. That
+// one-directional flow (referee -> blackboard -> graph) keeps the headers
+// acyclic - the brain never includes the referee.
 
-// Tree built by RenderTest_BuildTennisTree (defined in RenderTest_TennisBTNodes.h,
-// included by RenderTest.cpp). Forward-declared so the brain header stays free of
-// the BT-leaf header (which itself includes THIS header to reach the brain).
-Zenith_BehaviorTree* RenderTest_BuildTennisTree();
-
-// Blackboard keys shared by the referee (writer) and the BT leaves (readers).
+// Blackboard keys shared by the referee (writer) and the graph (readers).
 namespace RenderTest_TennisBB
 {
 	inline constexpr const char* k_szPhase          = "Phase";
@@ -61,6 +62,8 @@ namespace RenderTest_TennisBB
 class RenderTest_TennisAgentComponent
 {
 public:
+	static constexpr const char* kszGraphAsset = "game:Graphs/RenderTest_TennisBrain.bgraph";
+
 	explicit RenderTest_TennisAgentComponent(Zenith_Entity& xEntity)
 		: m_xParentEntity(xEntity)
 	{
@@ -69,13 +72,12 @@ public:
 	RenderTest_TennisAgentComponent(const RenderTest_TennisAgentComponent&) = delete;
 	RenderTest_TennisAgentComponent& operator=(const RenderTest_TennisAgentComponent&) = delete;
 
-	// Move ctor: transfer the heap tree + null the source (its dtor becomes a
-	// no-op). All other members are POD/by-value.
+	// All members are POD/by-value since the heap behaviour tree left with the
+	// graph conversion - default-style moves suffice (pools relocate instances).
 	RenderTest_TennisAgentComponent(RenderTest_TennisAgentComponent&& xOther) noexcept
 		: m_xParentEntity(xOther.m_xParentEntity)
 		, m_xOpponentID(xOther.m_xOpponentID)
 		, m_xBallID(xOther.m_xBallID)
-		, m_pxTree(xOther.m_pxTree)
 		, m_xDecidedShot(xOther.m_xDecidedShot)
 		, m_xState(xOther.m_xState)
 		, m_xRng(xOther.m_xRng)
@@ -83,41 +85,79 @@ public:
 		, m_eSide(xOther.m_eSide)
 		, m_bStarted(xOther.m_bStarted)
 	{
-		xOther.m_pxTree = nullptr;
 	}
 
-	// Move assign: release our OWN current tree first (never leak when assigning
-	// into a live component), then take + null the source.
 	RenderTest_TennisAgentComponent& operator=(RenderTest_TennisAgentComponent&& xOther) noexcept
 	{
 		if (this != &xOther)
 		{
-			// Null THIS (old) entity's AIAgent behaviour-tree borrow BEFORE freeing the
-			// tree it points at — assigning into a live brain would otherwise leave its
-			// former entity's AIAgent dereferencing a freed tree.
-			ClearTreeBorrow();
-			DeleteTree();
 			m_xParentEntity = xOther.m_xParentEntity;
 			m_xOpponentID   = xOther.m_xOpponentID;
 			m_xBallID       = xOther.m_xBallID;
-			m_pxTree        = xOther.m_pxTree;
 			m_xDecidedShot  = xOther.m_xDecidedShot;
 			m_xState        = xOther.m_xState;
 			m_xRng          = xOther.m_xRng;
 			m_uEpoch        = xOther.m_uEpoch;
 			m_eSide         = xOther.m_eSide;
 			m_bStarted      = xOther.m_bStarted;
-			xOther.m_pxTree = nullptr;
 		}
 		return *this;
 	}
 
-	~RenderTest_TennisAgentComponent()
+	// ---- Graph blackboard plumbing (public: the referee's publish and the
+	// ---- unit tests read/write the decision inputs through these) ---------
+	Zenith_BehaviourGraph* FindTennisGraph() const
 	{
-		// No-op after OnDestroy (which nulls m_pxTree). On the pure pool-teardown
-		// path OnDestroy may not have run; delete iff non-null. Never reach back
-		// into the AIAgent here — its component may already be gone.
-		DeleteTree();
+		Zenith_GraphComponent* pxGraphs = m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+		if (pxGraphs == nullptr) return nullptr;
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+		{
+			if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), kszGraphAsset) == 0)
+			{
+				return pxGraphs->GetGraphAt(u);
+			}
+		}
+		return nullptr;
+	}
+	void WriteBBInt(const char* szVar, int32_t iValue)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindTennisGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetInt32(iValue);
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
+	}
+	void WriteBBBool(const char* szVar, bool bValue)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindTennisGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetBool(bValue);
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
+	}
+	void WriteBBVector3(const char* szVar, const Zenith_Maths::Vector3& xValue3)
+	{
+		if (Zenith_BehaviourGraph* pxGraph = FindTennisGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetVector3(xValue3);
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
+	}
+	// Written ONLY for valid ids (parity with the retired AIAgent-blackboard
+	// publish, which skipped invalid handles): an unpublished key reads back
+	// as the INVALID sentinel default at the node side.
+	void WriteBBEntity(const char* szVar, Zenith_EntityID xId)
+	{
+		if (xId == INVALID_ENTITY_ID) return;
+		if (Zenith_BehaviourGraph* pxGraph = FindTennisGraph())
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetPackedEntityID(xId.GetPacked());
+			pxGraph->GetBlackboard().SetValue(szVar, xValue);
+		}
 	}
 
 	// ---- Lifecycle -------------------------------------------------------
@@ -142,18 +182,13 @@ public:
 		m_xRng = RenderTest_Tennis::TennisRng(
 			k_uDecisionSeed ^ (static_cast<uint32_t>(m_eSide) * 0x9E3779B9u));
 
-		// Build + own the tree (always), then wire it onto the sibling agent when
-		// present. Building unconditionally keeps ownership self-contained: a brain
-		// with no agent still owns + frees its tree (exercised by the move tests).
-		if (m_pxTree == nullptr)
-			m_pxTree = RenderTest_BuildTennisTree();
+		// The AIAgent survives the graph conversion as perception registrar +
+		// nav-agent host; its behaviour-tree borrow is simply never set.
 		if (Zenith_AIAgentComponent* pxAgent = ResolveAgent())
 		{
-			pxAgent->SetBehaviorTree(m_pxTree);          // non-owning borrow
-			pxAgent->SetUpdateInterval(0.08f);
 			ConfigureSight(pxAgent->GetEntity().GetEntityID());
-			SeedBlackboard(pxAgent->GetBlackboard());
 		}
+		SeedGraphBlackboard();
 		m_bStarted = true;
 	}
 
@@ -162,24 +197,15 @@ public:
 		RefreshPlayerState();
 	}
 
-	void OnDestroy()
-	{
-		// Null the agent's borrow BEFORE freeing so a later AIAgent abort/dtor can't
-		// dereference a freed tree (pool dtor order across components is unspecified).
-		ClearTreeBorrow();
-		DeleteTree();   // delete + null; the dtor is then a no-op
-	}
-
 	// ---- Referee-facing (called from the referee's OnLateUpdate) ----------
 	// Synchronous per-ball reset: clear the arm guard + stale decision, adopt the
 	// new epoch. Because the referee runs in OnLateUpdate, both brains are reset
-	// before the next frame's AIAgent tick — the BT can never act on a stale guard.
+	// before the next frame's graph tick - the graph can never act on a stale guard.
 	void ResetForNewBall(u_int uEpoch)
 	{
 		m_uEpoch = uEpoch;
 		m_xDecidedShot = RenderTest_Tennis::TennisShotDecision();   // armed=false, epoch=0
-		if (Zenith_AIAgentComponent* pxAgent = ResolveAgent())
-			pxAgent->GetBlackboard().SetInt(RenderTest_TennisBB::k_szBallEpoch, static_cast<int32_t>(uEpoch));
+		WriteBBInt(RenderTest_TennisBB::k_szBallEpoch, static_cast<int32_t>(uEpoch));
 	}
 
 	// The referee consumes the decided shot only when it is armed AND stamped with
@@ -196,8 +222,8 @@ public:
 
 	const RenderTest_Tennis::TennisPlayerState& GetPlayerState() const { return m_xState; }
 
-	// ---- BT-leaf-facing ---------------------------------------------------
-	// Store a freshly-decided shot UNARMED (the decide leaves); arming is a
+	// ---- Graph-node-facing ------------------------------------------------
+	// Store a freshly-decided shot UNARMED (the decide nodes); arming is a
 	// separate step gated on a confirmed stroke start.
 	void SetDecidedShot(const RenderTest_Tennis::TennisShotDecision& xShot)
 	{
@@ -206,7 +232,7 @@ public:
 		m_xDecidedShot.m_uEpoch = 0u;
 	}
 	// Arm the stored decision, stamping it with the current ball epoch. Called by
-	// the arm leaves ONLY after RequestSwing/RequestServe returned true.
+	// the arm nodes ONLY after RequestSwing/RequestServe returned true.
 	void ArmDecidedShot(u_int uEpoch)
 	{
 		m_xDecidedShot.m_bArmed = true;
@@ -219,7 +245,6 @@ public:
 	RenderTest_Tennis::TennisSide GetSide() const { return m_eSide; }
 	Zenith_EntityID GetBallID() const { return m_xBallID; }
 	Zenith_EntityID GetOpponentID() const { return m_xOpponentID; }
-	Zenith_BehaviorTree* GetTree() const { return m_pxTree; }
 	bool IsStarted() const { return m_bStarted; }
 
 	// ---- Serialization (version-only; side/RNG/entities re-derived in OnStart) -
@@ -239,23 +264,6 @@ public:
 private:
 	static constexpr uint32_t k_uDecisionSeed = 0x1234567u;
 
-	void DeleteTree()
-	{
-		if (m_pxTree != nullptr)
-		{
-			delete m_pxTree;   // Zenith_BehaviorTree dtor deletes its root subtree
-			m_pxTree = nullptr;
-		}
-	}
-
-	// Null the (current) entity's AIAgent behaviour-tree borrow so nobody
-	// dereferences a tree we are about to free (used by OnDestroy AND move-assign).
-	void ClearTreeBorrow()
-	{
-		if (Zenith_AIAgentComponent* pxAgent = ResolveAgent())
-			pxAgent->SetBehaviorTree(nullptr);
-	}
-
 	Zenith_AIAgentComponent* ResolveAgent() const
 	{
 		if (Zenith_AIAgentComponent* pxAgent = m_xParentEntity.TryGetComponent<Zenith_AIAgentComponent>())
@@ -270,7 +278,7 @@ private:
 		// A generous forward cone. The far player faces -Z and the near player +Z; the
 		// incoming ball always arrives from the net side (in front of the player), so a
 		// forward cone contains it. (This was briefly set to 360 to work around an engine
-		// bug where the perception forward was mis-derived via glm::eulerAngles().y — a
+		// bug where the perception forward was mis-derived via glm::eulerAngles().y - a
 		// -Z facing decoded to a +Z forward, blinding the far player. That is now fixed at
 		// the source in Zenith_PerceptionSystem, so a realistic cone works on both sides.)
 		xCfg.m_fFOVAngle = 200.0f;
@@ -281,22 +289,24 @@ private:
 		Zenith_PerceptionSystem::SetSightConfig(xSelf, xCfg);
 	}
 
-	// Seed the blackboard so the FIRST BT tick (before the referee's first
-	// OnLateUpdate) has valid entity handles + a safe WARMUP phase.
-	void SeedBlackboard(Zenith_Blackboard& xBB) const
+	// Seed the graph blackboard so ticks that beat the referee's first
+	// OnLateUpdate publish see valid entity handles + a safe WARMUP phase
+	// (declared graph-variable defaults cover the scalars; the entity handles
+	// are runtime-resolved and can only be seeded here).
+	void SeedGraphBlackboard()
 	{
-		xBB.SetInt(RenderTest_TennisBB::k_szPhase, static_cast<int32_t>(RenderTest_Tennis::POINT_PHASE_WARMUP));
-		xBB.SetInt(RenderTest_TennisBB::k_szBallEpoch, 0);
-		xBB.SetInt(RenderTest_TennisBB::k_szMySide, static_cast<int32_t>(m_eSide));
-		xBB.SetBool(RenderTest_TennisBB::k_szIsServer, false);
-		xBB.SetBool(RenderTest_TennisBB::k_szServeBallParked, false);
-		xBB.SetBool(RenderTest_TennisBB::k_szServeFromDeuce, true);
-		xBB.SetBool(RenderTest_TennisBB::k_szIsSecondServe, false);
-		xBB.SetBool(RenderTest_TennisBB::k_szIsMyBall, false);
-		xBB.SetInt(RenderTest_TennisBB::k_szMyPoints, 0);
-		xBB.SetInt(RenderTest_TennisBB::k_szOppPoints, 0);
-		xBB.SetEntityID(RenderTest_TennisBB::k_szBallEntity, m_xBallID);
-		xBB.SetEntityID(RenderTest_TennisBB::k_szOppEntity, m_xOpponentID);
+		WriteBBInt(RenderTest_TennisBB::k_szPhase, static_cast<int32_t>(RenderTest_Tennis::POINT_PHASE_WARMUP));
+		WriteBBInt(RenderTest_TennisBB::k_szBallEpoch, 0);
+		WriteBBInt(RenderTest_TennisBB::k_szMySide, static_cast<int32_t>(m_eSide));
+		WriteBBBool(RenderTest_TennisBB::k_szIsServer, false);
+		WriteBBBool(RenderTest_TennisBB::k_szServeBallParked, false);
+		WriteBBBool(RenderTest_TennisBB::k_szServeFromDeuce, true);
+		WriteBBBool(RenderTest_TennisBB::k_szIsSecondServe, false);
+		WriteBBBool(RenderTest_TennisBB::k_szIsMyBall, false);
+		WriteBBInt(RenderTest_TennisBB::k_szMyPoints, 0);
+		WriteBBInt(RenderTest_TennisBB::k_szOppPoints, 0);
+		WriteBBEntity(RenderTest_TennisBB::k_szBallEntity, m_xBallID);
+		WriteBBEntity(RenderTest_TennisBB::k_szOppEntity, m_xOpponentID);
 	}
 
 	void RefreshPlayerState()
@@ -308,17 +318,17 @@ private:
 
 		// Balance = how laterally centred I am (in control vs stretched wide). Use the
 		// SAME Z as my current position so being deep behind the baseline (normal in a
-		// baseline rally) does NOT read as "stretched" — only lateral displacement does.
+		// baseline rally) does NOT read as "stretched" - only lateral displacement does.
 		// (Measuring full distance-from-baseline-centre made every deep rally shot look
 		// defensive, so the AI only ever sliced.)
 		const Zenith_Maths::Vector3 xReady(xCourt.m_fCenterX, xCourt.m_fSurfaceY, m_xState.m_xMyPos.z);
 		m_xState.m_fBalance = RenderTest_Tennis::ComputeBalance(m_xState.m_xMyPos, xReady, xCourt.m_fSinglesHalfWidth);
 
-		if (Zenith_AIAgentComponent* pxAgent = ResolveAgent())
+		if (Zenith_BehaviourGraph* pxGraph = FindTennisGraph())
 		{
-			const Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
-			m_xState.m_iMyPoints  = xBB.GetInt(RenderTest_TennisBB::k_szMyPoints, 0);
-			m_xState.m_iOppPoints = xBB.GetInt(RenderTest_TennisBB::k_szOppPoints, 0);
+			const Zenith_GraphBlackboard& xBB = pxGraph->GetBlackboard();
+			m_xState.m_iMyPoints  = xBB.GetInt32(RenderTest_TennisBB::k_szMyPoints, 0);
+			m_xState.m_iOppPoints = xBB.GetInt32(RenderTest_TennisBB::k_szOppPoints, 0);
 			m_xState.m_bIsServer  = xBB.GetBool(RenderTest_TennisBB::k_szIsServer, false);
 		}
 	}
@@ -337,7 +347,6 @@ private:
 	Zenith_Entity m_xParentEntity;
 	Zenith_EntityID m_xOpponentID = INVALID_ENTITY_ID;
 	Zenith_EntityID m_xBallID = INVALID_ENTITY_ID;
-	Zenith_BehaviorTree* m_pxTree = nullptr;   // SOLE owner
 
 	RenderTest_Tennis::TennisShotDecision m_xDecidedShot;
 	RenderTest_Tennis::TennisPlayerState  m_xState;

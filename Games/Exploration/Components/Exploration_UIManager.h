@@ -42,8 +42,8 @@ namespace Exploration_UIManager
 	static constexpr float s_fFontSize = 14.0f;
 	static constexpr float s_fTitleFontSize = 16.0f;
 
-	static bool s_bShowDebugHUD = false;
-	static bool s_bShowControls = true;
+	inline bool s_bShowDebugHUD = false;
+	inline bool s_bShowControls = true;
 
 	/**
 	 * Create UI elements for the HUD

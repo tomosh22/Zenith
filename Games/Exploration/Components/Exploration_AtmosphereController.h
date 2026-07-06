@@ -69,41 +69,41 @@ namespace Exploration_AtmosphereController
 	// ========================================================================
 	// Configuration
 	// ========================================================================
-	static float s_fDayCycleDuration = 600.0f;  // Seconds for full cycle
-	static bool s_bDayCycleEnabled = true;
-	static float s_fSunIntensity = 1.0f;
-	static float s_fAmbientDay = 0.15f;
-	static float s_fAmbientNight = 0.02f;
+	inline float s_fDayCycleDuration = 600.0f;  // Seconds for full cycle
+	inline bool s_bDayCycleEnabled = true;
+	inline float s_fSunIntensity = 1.0f;
+	inline float s_fAmbientDay = 0.15f;
+	inline float s_fAmbientNight = 0.02f;
 
 	// Sun colors at different times
-	static Zenith_Maths::Vector3 s_xSunriseColor = Zenith_Maths::Vector3(1.0f, 0.6f, 0.3f);
-	static Zenith_Maths::Vector3 s_xMiddayColor = Zenith_Maths::Vector3(1.0f, 0.98f, 0.95f);
-	static Zenith_Maths::Vector3 s_xSunsetColor = Zenith_Maths::Vector3(1.0f, 0.5f, 0.2f);
-	static Zenith_Maths::Vector3 s_xNightColor = Zenith_Maths::Vector3(0.1f, 0.1f, 0.2f);
+	inline Zenith_Maths::Vector3 s_xSunriseColor = Zenith_Maths::Vector3(1.0f, 0.6f, 0.3f);
+	inline Zenith_Maths::Vector3 s_xMiddayColor = Zenith_Maths::Vector3(1.0f, 0.98f, 0.95f);
+	inline Zenith_Maths::Vector3 s_xSunsetColor = Zenith_Maths::Vector3(1.0f, 0.5f, 0.2f);
+	inline Zenith_Maths::Vector3 s_xNightColor = Zenith_Maths::Vector3(0.1f, 0.1f, 0.2f);
 
 	// Fog settings
-	static float s_fFogDensityClear = 0.00015f;
-	static float s_fFogDensityFoggy = 0.0015f;
-	static float s_fFogTransitionSpeed = 0.5f;
-	static Zenith_Maths::Vector3 s_xFogColorDay = Zenith_Maths::Vector3(0.7f, 0.8f, 0.9f);
-	static Zenith_Maths::Vector3 s_xFogColorNight = Zenith_Maths::Vector3(0.02f, 0.02f, 0.05f);
-	static Zenith_Maths::Vector3 s_xFogColorSunrise = Zenith_Maths::Vector3(0.9f, 0.7f, 0.5f);
+	inline float s_fFogDensityClear = 0.00015f;
+	inline float s_fFogDensityFoggy = 0.0015f;
+	inline float s_fFogTransitionSpeed = 0.5f;
+	inline Zenith_Maths::Vector3 s_xFogColorDay = Zenith_Maths::Vector3(0.7f, 0.8f, 0.9f);
+	inline Zenith_Maths::Vector3 s_xFogColorNight = Zenith_Maths::Vector3(0.02f, 0.02f, 0.05f);
+	inline Zenith_Maths::Vector3 s_xFogColorSunrise = Zenith_Maths::Vector3(0.9f, 0.7f, 0.5f);
 
 	// Weather settings
-	static float s_fWeatherChangeInterval = 120.0f;
-	static float s_fWeatherTransitionDuration = 30.0f;
-	static bool s_bRandomWeather = true;
+	inline float s_fWeatherChangeInterval = 120.0f;
+	inline float s_fWeatherTransitionDuration = 30.0f;
+	inline bool s_bRandomWeather = true;
 
 	// ========================================================================
 	// Internal State
 	// ========================================================================
-	static AtmosphereState s_xCurrentState;
-	static AtmosphereState s_xTargetState;
-	static float s_fWeatherTimer = 0.0f;
-	static WeatherState s_ePreviousWeather = WEATHER_CLEAR;
-	static float s_fTargetFogDensity = 0.00015f;
-	static std::mt19937 s_xRng(12345);
-	static Zenith_Maths::Vector3 s_xPreviousSunDirection = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+	inline AtmosphereState s_xCurrentState;
+	inline AtmosphereState s_xTargetState;
+	inline float s_fWeatherTimer = 0.0f;
+	inline WeatherState s_ePreviousWeather = WEATHER_CLEAR;
+	inline float s_fTargetFogDensity = 0.00015f;
+	inline std::mt19937 s_xRng(12345);
+	inline Zenith_Maths::Vector3 s_xPreviousSunDirection = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
 	static constexpr float s_fSunChangeThreshold = 0.1f;  // Threshold for IBL update
 
 	/**
@@ -355,10 +355,11 @@ namespace Exploration_AtmosphereController
 	}
 
 	/**
-	 * Update atmosphere state
-	 * @param fDt Delta time in seconds
+	 * Advance the day/night time-of-day (step A of the old Update): gated on the
+	 * cycle being enabled + a positive duration; wraps at 1.0. Moved verbatim to a
+	 * graph node (ExplorationAdvanceTime) - the DECISION.
 	 */
-	inline void Update(float fDt)
+	inline void AdvanceTimeOfDay(float fDt)
 	{
 		// Update time of day
 		if (s_bDayCycleEnabled && s_fDayCycleDuration > 0.0f)
@@ -369,10 +370,18 @@ namespace Exploration_AtmosphereController
 				s_xCurrentState.m_fTimeOfDay -= 1.0f;
 			}
 		}
+	}
 
-		// Update weather
-		UpdateWeather(fDt);
-
+	/**
+	 * Sun/fog math + engine upload (steps C-I of the old Update): reads the just-
+	 * advanced time-of-day + weather state, then writes the sun/fog properties and
+	 * uploads them to the engine. Stays a C++ SYSTEM shim (the plan's ApplyAtmosphere),
+	 * called from OnUpdate immediately after the graph advances time (A) + weather (B),
+	 * preserving the old A->B->(C-I) read-after-write order. fDt drives the fog-density
+	 * interpolation.
+	 */
+	inline void ApplyAtmosphere(float fDt)
+	{
 		// Calculate sun properties
 		s_xCurrentState.m_xSunDirection = CalculateSunDirection(s_xCurrentState.m_fTimeOfDay);
 		s_xCurrentState.m_xSunColor = CalculateSunColor(s_xCurrentState.m_fTimeOfDay);
@@ -391,6 +400,21 @@ namespace Exploration_AtmosphereController
 
 		// Apply to engine
 		ApplyToEngine();
+	}
+
+	/**
+	 * Update atmosphere state = A (advance time) + B (weather FSM) + C-I (sun/fog
+	 * math + apply), in the original order. Kept as a thin composition; the wave-2
+	 * conversion drives A + B via graph nodes (fired from OnUpdate) and calls
+	 * ApplyAtmosphere directly, so this is no longer the live per-frame path (no
+	 * non-graph caller remains) - retained for completeness.
+	 * @param fDt Delta time in seconds
+	 */
+	inline void Update(float fDt)
+	{
+		AdvanceTimeOfDay(fDt);
+		UpdateWeather(fDt);
+		ApplyAtmosphere(fDt);
 	}
 
 	/**
@@ -452,6 +476,17 @@ namespace Exploration_AtmosphereController
 	inline const AtmosphereState& GetState()
 	{
 		return s_xCurrentState;
+	}
+
+	/**
+	 * Read the weather-change timer (behaviour-neutral observer; the timer is a
+	 * namespace static not carried in AtmosphereState). Used by the cross-scene
+	 * characterization to prove Configure resets time-of-day but NOT the weather
+	 * timer on a menu->play re-entry.
+	 */
+	inline float GetWeatherTimer()
+	{
+		return s_fWeatherTimer;
 	}
 
 	/**

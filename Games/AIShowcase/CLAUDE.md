@@ -14,7 +14,7 @@ A tactical demonstration game showcasing all Zenith AI system features:
 | Feature | Engine Class | Usage |
 |---------|--------------|-------|
 | **NavMesh Navigation** | `Zenith_NavMesh`, `Zenith_NavMeshAgent` | Pathfinding around obstacles |
-| **Behavior Trees** | `Zenith_BehaviorTree`, `Zenith_Blackboard` | Patrol, investigate, engage, retreat AI |
+| **Behaviour Graphs** | `Zenith_GraphComponent` (`.bgraph`) | Menu/state flow + the per-enemy chase/patrol brain (see below) |
 | **Perception System** | `Zenith_PerceptionSystem` | Sight cones, hearing, damage awareness |
 | **Squad Tactics** | `Zenith_Squad`, `Zenith_Formation` | Formations, roles, coordinated flanking |
 | **Tactical Points** | `Zenith_TacticalPointSystem` | Cover and flanking position evaluation |
@@ -54,11 +54,17 @@ Games/AIShowcase/
 - Agents pathfind around obstacles to reach targets
 - Debug view shows NavMesh polygon edges
 
-### Behavior Trees
-- **Patrol** - Move between waypoints
-- **Investigate** - Check sounds/last known positions
-- **Engage** - Move toward and attack player
-- **Retreat** - Fall back when health is low
+### Enemy Brain (Behaviour Graph)
+Each enemy carries `AIShowcase_EnemyBrain.bgraph` (attached at runtime in
+`CreateEnemy`). A reactive `Selector` decides each tick:
+- **Chase** - if the enemy perceives the player, share the sighting with its
+  squad and set the nav destination to the player's last-known position.
+- **Patrol** - otherwise move between the four waypoints.
+
+The decision is fired synchronously from `UpdateEnemyAI` Phase 1 via the
+`"EnemyBrainTick"` custom event (patrol timer on the payload) - exactly where
+the old inline decision sat - so the batch pathfinding and nav movement stay in
+C++ (systems). See the Behaviour Graphs section below.
 
 ### Perception System
 
@@ -142,6 +148,81 @@ Access via the AIShowcase properties panel checkbox or Zenith_DebugVariables sys
 | Cover Points | Green | Full/half cover positions |
 | Flank Positions | Orange | Flanking tactical points |
 | Tactical Scores | Yellow | Height indicators for point scores |
+
+## Behaviour Graphs (W3 conversion)
+
+Input/decision logic lives in two boot-authored graphs (built via
+`Zenith_GraphBuilder` / `AddStep_GraphBuild` in `AIShowcase.cpp`); the
+`AIShowcase_GameComponent` keeps the SYSTEMS (arena build, the perception/squad/
+tactical/batch-pathfinding/nav-movement driver, UI, debug draw, WASD movement).
+
+**`AIShowcase_GameFlow.bgraph`** (attached to the GameManager in BOTH scenes;
+`gameState` = MENU by default, `StartGame` writes PLAYING). The game state LIVES
+on this graph's blackboard - `GetGameState`/`SetGameState` read/write it.
+- `OnUIButtonClicked("MenuPlay")` → `LoadSceneByIndex(1)` (engine UIButton
+  trampoline - no C++ SetOnClick); `OnUpdate` → `AIShowcaseFocusPlayButton`.
+- `OnKeyPressed(P)` → `SwitchOnInt(gameState)` → PLAYING↔PAUSED (`SetBlackboardInt`).
+- `OnKeyPressed(Esc)` → `SwitchOnInt(gameState)` → `AIShowcaseReturnToMenu` +
+  `SetBlackboardInt(gameState, MENU)` (setting MENU is required so the systems
+  component reads MENU that same frame and skips `UpdateAISystems` - ReturnToMenu
+  shut the AI systems down).
+- `OnKeyPressed(Space/1-5/R)` → `CompareBlackboardInt(gameState==PLAYING)` →
+  `Branch` → `AIShowcaseEmitPlayerSound` / `AIShowcaseSetFormation(i)` /
+  `AIShowcaseResetDemo` (the PLAYING gate keeps R from rebuilding an arena in the menu).
+- `OnUpdate` → `StateMachine(gameState, prefix "AIS")` LAST in node order → fires
+  `AISEnter_Paused`/`AISExit_Paused` → `AIShowcaseSetArenaPaused(true/false)`
+  (arena pause decoupled from the key chains).
+
+**`AIShowcase_EnemyBrain.bgraph`** (per enemy, attached at runtime in
+`CreateEnemy`; blackboard seeded with `playerTarget` = packed player id,
+`enemyIndex` = the enemy's slot). Driven by `"EnemyBrainTick"` (patrol timer on
+the payload) fired from `UpdateEnemyAI` Phase 1:
+- `OnCustomEvent("EnemyBrainTick")` → `Selector(2, reactive, abortPreempted=false)`:
+  - branch 0 (chase): `AIShowcaseSensePlayer` → `AIShowcaseShareTargetWithSquad`
+    → `SetNavDestination(chaseDest)`.
+  - branch 1 (patrol): `AIShowcasePatrol`.
+  No RUNNING leaves ⇒ the Selector fully re-evaluates each tick; `abortPreempted=false`
+  per the shared-nav-agent guidance.
+
+### Game node library (`Components/AIShowcase_GraphNodes.h`, 9 nodes)
+
+| Node | Role |
+|---|---|
+| `AIShowcaseFocusPlayButton` | Keeps the single menu button focused |
+| `AIShowcaseReturnToMenu` | Teardown arena + load menu (the old ReturnToMenu) |
+| `AIShowcaseResetDemo` | Rebuild + re-initialise the arena |
+| `AIShowcaseSetArenaPaused` | Pause/unpause the arena scene (StateMachine seam) |
+| `AIShowcaseEmitPlayerSound` | Emit the player's hearing stimulus (Space) |
+| `AIShowcaseSetFormation` | Select a squad formation (1-5) |
+| `AIShowcaseSensePlayer` | Perceive the player → write `chaseDest`; FAILURE if not seen |
+| `AIShowcaseShareTargetWithSquad` | Share the sighting with the enemy's squad |
+| `AIShowcasePatrol` | Idle/arrived → pick the next waypoint (enemyIndex + timer) |
+
+GameFlow nodes resolve the GameManager's `AIShowcase_GameComponent` (self);
+EnemyBrain nodes work off the enemy entity + the AI systems directly.
+
+### Two pre-existing bugs fixed by this conversion
+- **Esc-during-play crash**: `OnUpdate` PLAYING ran `HandlePlayerInput` (Esc →
+  `ReturnToMenu` shuts the AI systems down) then unconditionally
+  `UpdateAISystems` → `SquadManager::Update` asserted. The conversion skips
+  systems on a transition frame (the component reads the new state first).
+- **Perception dead on initial start**: `StartGame` (in `OnAwake`) registered the
+  player target, then `OnStart`'s `Initialise()` cleared the whole registry and
+  only the enemy *agents* were re-registered (by the engine `AIAgentComponent`) -
+  so enemies patrolled forever. `StartGame` is now deferred to `OnStart` (after
+  `Initialise`), matching `ResetDemo`'s correct init-then-register order.
+
+### Equivalence proof
+`Tests/Test_AIShowcaseCharacterization.cpp` (WINDOWED - `requiresGraphics=true`;
+run one process per test with `--skip-unit-tests` because `--all-automated-tests`
+trips the game's global AI-singleton teardown across tests). Written GREEN
+against the (bug-fixed) C++ FIRST, then passing unchanged against the graphs:
+`AIShowcase_MenuPlay_Test`, `_PauseResume_Test`, `_EscapeMenu_Test`,
+`_PlayerMove_Test`, `_Formation_Test`, `_EnemyChase_Test`, `_EnemyPatrol_Test`.
+
+```
+aishowcase.exe --automated-test <name> --skip-unit-tests --fixed-dt 0.01666
+```
 
 ## Multi-Scene Architecture
 
@@ -235,9 +316,11 @@ These are `MaterialHandle` values (`m_x` prefix), not pointers.
 ## Extending
 
 ### Adding New Behaviors
-1. Create behavior tree in code (or load from .zbtree)
-2. Assign to AIAgentComponent via `SetBehaviorTree()`
-3. Use blackboard keys for state
+1. Add a game node to `Components/AIShowcase_GraphNodes.h` (or reuse an engine
+   node) and register it in `AIShowcase_RegisterGraphNodes()`.
+2. Wire it into `BuildGraph_AIShowcaseEnemyBrain` (or `_GameFlow`) in
+   `AIShowcase.cpp` via `Zenith_GraphBuilder`.
+3. Per-instance state travels on the graph blackboard (seeded in `CreateEnemy`).
 
 ### Adding Enemies
 1. Call `CreateEnemy()` with position and material
@@ -285,6 +368,5 @@ These are `MaterialHandle` values (`m_x` prefix), not pointers.
 
 - [Zenith/AI/CLAUDE.md](../../Zenith/AI/CLAUDE.md) - AI system overview
 - [Zenith/AI/Navigation/CLAUDE.md](../../Zenith/AI/Navigation/CLAUDE.md) - NavMesh details
-- [Zenith/AI/BehaviorTree/CLAUDE.md](../../Zenith/AI/BehaviorTree/CLAUDE.md) - Behavior tree reference
 - [Zenith/AI/Perception/CLAUDE.md](../../Zenith/AI/Perception/CLAUDE.md) - Perception configuration
 - [Zenith/AI/Squad/CLAUDE.md](../../Zenith/AI/Squad/CLAUDE.md) - Squad tactics

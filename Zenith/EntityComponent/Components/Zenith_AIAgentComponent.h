@@ -1,7 +1,6 @@
 #pragma once
 
 #include "ZenithECS/Zenith_Entity.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -9,22 +8,25 @@
 #endif
 
 class Zenith_DataStream;
-class Zenith_BehaviorTree;
 class Zenith_NavMeshAgent;
 
 /**
- * Zenith_AIAgentComponent - Main AI component for entities
+ * Zenith_AIAgentComponent - AI host component for entities
  *
- * This component provides AI capabilities to an entity:
- * - Behavior tree execution for decision-making
- * - Blackboard for state sharing between nodes
- * - Navigation integration (via NavMeshAgent, set externally)
- * - Perception integration (via PerceptionSystem)
+ * Provides an entity's AI-system integration seams:
+ * - Perception registration (via PerceptionSystem, in OnAwake/OnDestroy)
+ * - Navigation: a non-owning NavMeshAgent borrow, ticked every frame in
+ *   OnUpdate while the agent is enabled
+ * - An enable flag that gates the per-frame nav tick (game logic / behaviour
+ *   graphs park an agent by disabling it)
+ *
+ * Decision-making lives in behaviour graphs (Zenith_GraphComponent) now; the
+ * former in-component behaviour tree + blackboard were removed together with the
+ * Zenith/AI/BehaviorTree module.
  *
  * Usage:
  *   auto& xAI = xEntity.AddComponent<Zenith_AIAgentComponent>();
- *   xAI.SetBehaviorTree(pxPatrolTree);
- *   xAI.GetBlackboard().SetFloat("PatrolRadius", 10.0f);
+ *   xAI.SetNavMeshAgent(&xMyNavAgent);
  */
 class Zenith_AIAgentComponent
 {
@@ -44,19 +46,8 @@ public:
 	// ========== Lifecycle ==========
 
 	void OnAwake();
-	void OnStart();
 	void OnUpdate(float fDt);
 	void OnDestroy();
-
-	// ========== Behavior Tree ==========
-
-	void SetBehaviorTree(Zenith_BehaviorTree* pxTree);
-	Zenith_BehaviorTree* GetBehaviorTree() const { return m_pxBehaviorTree; }
-
-	// ========== Blackboard ==========
-
-	Zenith_Blackboard& GetBlackboard() { return m_xBlackboard; }
-	const Zenith_Blackboard& GetBlackboard() const { return m_xBlackboard; }
 
 	// ========== Navigation ==========
 
@@ -77,12 +68,10 @@ public:
 	void SetEnabled(bool b) { m_bEnabled = b; }
 	bool IsEnabled() const { return m_bEnabled; }
 
-	void SetUpdateInterval(float f) { m_fBehaviorUpdateInterval = f; }
-	float GetUpdateInterval() const { return m_fBehaviorUpdateInterval; }
-
-	// ========== Debug ==========
-
-	const char* GetCurrentNodeName() const { return m_szCurrentNodeName; }
+	// Tick-interval tuning knob (retained across the BehaviorTree teardown; it no
+	// longer gates any in-component tick — the nav agent updates every frame).
+	void SetUpdateInterval(float f) { m_fUpdateInterval = f; }
+	float GetUpdateInterval() const { return m_fUpdateInterval; }
 
 	// ========== Serialization ==========
 
@@ -96,23 +85,11 @@ public:
 #endif
 
 private:
-	void TickBehaviorTree(float fDt);
-
 	Zenith_Entity m_xParentEntity;
-	Zenith_Blackboard m_xBlackboard;
-	Zenith_BehaviorTree* m_pxBehaviorTree = nullptr;
 	// Non-owning. See SetNavMeshAgent() for ownership rules.
 	Zenith_NavMeshAgent* m_pxNavMeshAgent = nullptr;
 
-	// Behavior tree tick rate control
-	float m_fBehaviorUpdateInterval = 0.1f;  // Default 10 Hz
-	float m_fTimeSinceLastUpdate = 0.0f;
+	float m_fUpdateInterval = 0.1f;
 
 	bool m_bEnabled = true;
-
-	// Debug info
-	const char* m_szCurrentNodeName = "";
-
-	// Asset path for serialization
-	std::string m_strBehaviorTreeAsset;
 };

@@ -3,7 +3,9 @@
 
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Exploration/Components/Exploration_GameComponent.h"
+#include "Exploration/Components/Exploration_GraphNodes.h"
 #include "Exploration/Components/Exploration_Config.h"
+#include "Scripting/Zenith_GraphBuilder.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
@@ -578,6 +580,18 @@ void Exploration_CreateWorldContent(Zenith_SceneData* pxSceneData)
 {
 	using namespace Exploration;
 
+	// Reduced-world (characterization tests): skip the whole terrain + tree world.
+	// GetTerrainHeightAt is pure procedural noise (needs no terrain entity), and the
+	// two terrain streaming-stat sites are null-guarded, so movement / atmosphere /
+	// game-flow / debug behaviour is unchanged - but StartGame no longer pays the
+	// per-entry cost (TOOLS builds otherwise regenerate the 4096^2 heightmap +
+	// splatmap + textures and stream 4096 chunks on every StartGame). Behaviour-
+	// neutral for every DECISION the graphs own.
+	if (Exploration_GameComponent::Test_IsReducedWorld())
+	{
+		return;
+	}
+
 	// Create terrain entity
 	auto CreateTerrainEntity = [&]()
 	{
@@ -652,6 +666,9 @@ void Project_RegisterGameComponents()
 	// Initialize resources at startup
 	InitializeExplorationResources();
 
+	// Register Exploration's Behaviour Graph node library (wave-2 conversion).
+	Exploration_RegisterGraphNodes();
+
 	// Register the Exploration game component with the component-meta registry
 	// (serialization/lifecycle) and, in tools builds, the editor "Add Component"
 	// registry (display name used by AddStep_AddComponent / the editor menu).
@@ -685,9 +702,94 @@ void Project_InitializeResources()
 	// All resources initialized in Project_RegisterGameComponents
 }
 
+// ============================================================================
+// Behaviour Graph builders (boot-authored via AddStep_GraphBuild).
+// ============================================================================
+
+// Exploration_GameFlow.bgraph - the menu Play / Escape->menu / menu-focus input
+// DECISIONS at order 60 (before the ExplorationGame systems at order 100).
+// m_eGameState stays the per-instance source of truth; the Escape chain reads it
+// via ExplorationGetGameState and gates on PLAYING (Exploration has just two states:
+// MAIN_MENU=0, PLAYING=1; no pause, no reset). ACCEPTED divergence (AIShowcase /
+// Combat / Survival-precedented): the @60 pass shifts the Escape decision ahead of
+// the @100 systems block by one frame (Escape's ReturnToMenu does not set the state,
+// so the systems run one more frame on the doomed scene before the deferred scene
+// swap) - unobservable.
+static void BuildGraph_ExplorationGameFlow(Zenith_GraphBuilder& xBuilder)
+{
+	Zenith_PropertyValue xVal;
+	xVal.SetInt32(static_cast<int32_t>(ExplorationGameState::MAIN_MENU));
+	xBuilder.Variable("gameState", xVal);
+
+	// Menu Play button -> load the gameplay scene (SINGLE mode = old OnPlayClicked;
+	// SCENE_LOAD_SINGLE is the LoadSceneByIndex node's default load mode).
+	const u_int uPlay = xBuilder.Node("OnUIButtonClicked");
+	xBuilder.ParamString(uPlay, "m_strButton", "MenuPlay");
+	const u_int uLoad = xBuilder.Node("LoadSceneByIndex");
+	xBuilder.ParamInt(uLoad, "m_iSceneIndex", 1);
+	xBuilder.Chain(uPlay, uLoad);
+
+	// Menu focus (single button; ExplorationFocusPlayButton no-ops in the gameplay
+	// scene, where there is no MenuPlay element - matching the old UpdateMenuInput
+	// which only ran in the MAIN_MENU branch).
+	const u_int uFocusTick = xBuilder.Node("OnUpdate");
+	const u_int uFocus = xBuilder.Node("ExplorationFocusPlayButton");
+	xBuilder.Chain(uFocusTick, uFocus);
+
+	// Escape: return to menu (only from PLAYING - the MenuManager's gameState is
+	// MAIN_MENU so its Escape is a no-op, matching the old in-PLAYING-only check).
+	const u_int uOnEsc = xBuilder.Node("OnKeyPressed");
+	xBuilder.ParamInt(uOnEsc, "m_iKeyCode", ZENITH_KEY_ESCAPE);
+	const u_int uGetE = xBuilder.Node("ExplorationGetGameState");
+	const u_int uSwE = xBuilder.Node("SwitchOnInt");
+	xBuilder.ParamString(uSwE, "m_strVar", "gameState");
+	xBuilder.ParamInt(uSwE, "m_iCaseCount", 2);
+	xBuilder.Chain(uOnEsc, uGetE).Chain(uGetE, uSwE);
+	const u_int uMenu = xBuilder.Node("ExplorationReturnToMenu");
+	xBuilder.Edge(uSwE, static_cast<u_int>(ExplorationGameState::PLAYING), uMenu);
+}
+
+// Exploration_PlayerActions.bgraph - the Tab debug-HUD toggle. On the GameManager
+// only (always PLAYING), so the old only-toggle-when-PLAYING guard is preserved.
+static void BuildGraph_ExplorationPlayerActions(Zenith_GraphBuilder& xBuilder)
+{
+	const u_int uOnTab = xBuilder.Node("OnKeyPressed");
+	xBuilder.ParamInt(uOnTab, "m_iKeyCode", ZENITH_KEY_TAB);
+	const u_int uToggle = xBuilder.Node("ExplorationToggleDebugHUD");
+	xBuilder.Chain(uOnTab, uToggle);
+}
+
+// Exploration_Atmosphere.bgraph - day/night time-advance (A) + weather FSM (B),
+// driven by the inline "ExplorationAtmosphereTick" event fired from OnUpdate where
+// AtmosphereController::Update sat (then OnUpdate calls ApplyAtmosphere = C-I). Two
+// OnCustomEvent chains in node-add order (AdvanceTime BEFORE TickWeather) give the
+// strict A-before-B ordering synchronously; ApplyAtmosphere runs after the fire.
+// dt rides the payload (custom-event context dt is 0); the shims do the div/accumulate.
+static void BuildGraph_ExplorationAtmosphere(Zenith_GraphBuilder& xBuilder)
+{
+	// Chain 1 (added first): advance the day/night time-of-day.
+	const u_int uEvt1 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt1, "m_strEventName", "ExplorationAtmosphereTick");
+	const u_int uAdvance = xBuilder.Node("ExplorationAdvanceTime");
+	xBuilder.ParamString(uAdvance, "m_strDtVar", "payload");
+	xBuilder.Chain(uEvt1, uAdvance);
+
+	// Chain 2 (added second): tick the weather state machine.
+	const u_int uEvt2 = xBuilder.Node("OnCustomEvent");
+	xBuilder.ParamString(uEvt2, "m_strEventName", "ExplorationAtmosphereTick");
+	const u_int uWeather = xBuilder.Node("ExplorationTickWeather");
+	xBuilder.ParamString(uWeather, "m_strDtVar", "payload");
+	xBuilder.Chain(uEvt2, uWeather);
+}
+
 void Project_RegisterEditorAutomationSteps()
 {
 	using namespace Flux_TerrainConfig;
+
+	// ---- Behaviour graphs (regenerated every boot, like the scenes) --------
+	g_xEngine.EditorAutomation().AddStep_GraphBuild("game:Graphs/Exploration_GameFlow.bgraph", &BuildGraph_ExplorationGameFlow);
+	g_xEngine.EditorAutomation().AddStep_GraphBuild("game:Graphs/Exploration_PlayerActions.bgraph", &BuildGraph_ExplorationPlayerActions);
+	g_xEngine.EditorAutomation().AddStep_GraphBuild("game:Graphs/Exploration_Atmosphere.bgraph", &BuildGraph_ExplorationAtmosphere);
 
 	// Pre-compute camera start position
 	static constexpr float fStartX = TERRAIN_SIZE * 0.5f;
@@ -714,6 +816,10 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
 	g_xEngine.EditorAutomation().AddStep_SetUISize("MenuPlay", 200.f, 50.f);
 	g_xEngine.EditorAutomation().AddStep_AddComponent("ExplorationGame");
+	// Game-flow graph on the MenuManager: OnUIButtonClicked("MenuPlay") ->
+	// LoadSceneByIndex(1), plus the menu-focus tick (its Escape chain no-ops here
+	// since the MenuManager's gameState stays MAIN_MENU).
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Exploration_GameFlow.bgraph");
 	g_xEngine.EditorAutomation().AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	g_xEngine.EditorAutomation().AddStep_UnloadScene();
 
@@ -728,6 +834,14 @@ void Project_RegisterEditorAutomationSteps()
 	g_xEngine.EditorAutomation().AddStep_SetAsMainCamera();
 	// HUD UI is created by Exploration_UIManager in OnStart
 	g_xEngine.EditorAutomation().AddStep_AddComponent("ExplorationGame");
+	// Game-flow graph on the GameManager: the Escape chain reads the game state and
+	// returns to menu (menu Play / focus no-op here).
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Exploration_GameFlow.bgraph");
+	// Player-actions graph on the GameManager: OnKeyPressed(TAB) -> toggle debug HUD.
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Exploration_PlayerActions.bgraph");
+	// Atmosphere graph on the GameManager: ExplorationGame fires "ExplorationAtmosphereTick"
+	// into it from OnUpdate (day/night time-advance + weather FSM), then ApplyAtmosphere.
+	g_xEngine.EditorAutomation().AddStep_AttachGraph("game:Graphs/Exploration_Atmosphere.bgraph");
 	// NOTE: Procedural world generation (terrain + vegetation) cannot be decomposed into
 	// atomic editor steps. This is an intentional exception to the one-action-per-step rule.
 	g_xEngine.EditorAutomation().AddStep_Custom(&Exploration_GenerateTerrainDataWrapper);

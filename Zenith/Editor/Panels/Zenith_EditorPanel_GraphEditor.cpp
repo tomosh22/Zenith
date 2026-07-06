@@ -360,6 +360,31 @@ namespace
 			}
 			break;
 		}
+		case PROPERTY_TYPE_VECTOR2:
+		{
+			Zenith_Maths::Vector2 xVec = xValue.GetVector2();
+			if (ImGui::DragFloat2("##default", &xVec.x, 0.01f))
+			{
+				xValue.SetVector2(xVec);
+				g_xGraphEditor.m_bDirty = true;
+			}
+			break;
+		}
+		case PROPERTY_TYPE_VECTOR4:
+		{
+			Zenith_Maths::Vector4 xVec = xValue.GetVector4();
+			if (ImGui::DragFloat4("##default", &xVec.x, 0.01f))
+			{
+				xValue.SetVector4(xVec);
+				g_xGraphEditor.m_bDirty = true;
+			}
+			break;
+		}
+		case PROPERTY_TYPE_ENTITY_ID:
+			// Entity references are runtime-only wiring - no meaningful editable
+			// default (0 = invalid until a node/override stores a live ID).
+			ImGui::TextDisabled("(entity)");
+			break;
 		default:
 			ImGui::TextDisabled("(type %u)", xValue.GetType());
 			break;
@@ -408,9 +433,9 @@ namespace
 		ImGui::SetNextItemWidth(110.0f);
 		ImGui::InputText("##newvarname", g_xGraphEditor.m_acNewVarName, sizeof(g_xGraphEditor.m_acNewVarName));
 		ImGui::SameLine();
-		const char* aszTypes[] = { "float", "int", "bool", "string", "vector3" };
+		const char* aszTypes[] = { "float", "int", "bool", "string", "vector3", "vector2", "vector4", "entity" };
 		ImGui::SetNextItemWidth(70.0f);
-		ImGui::Combo("##newvartype", &g_xGraphEditor.m_iNewVarType, aszTypes, 5);
+		ImGui::Combo("##newvartype", &g_xGraphEditor.m_iNewVarType, aszTypes, 8);
 		ImGui::SameLine();
 		if (ImGui::SmallButton("Add Var") && g_xGraphEditor.m_acNewVarName[0] != '\0')
 		{
@@ -422,6 +447,9 @@ namespace
 			case 2: xDefault.SetBool(false); break;
 			case 3: xDefault.SetString(std::string()); break;
 			case 4: xDefault.SetVector3(Zenith_Maths::Vector3(0.0f)); break;
+			case 5: xDefault.SetVector2(Zenith_Maths::Vector2(0.0f)); break;
+			case 6: xDefault.SetVector4(Zenith_Maths::Vector4(0.0f)); break;
+			case 7: xDefault.SetPackedEntityID(0); break;
 			default: break;
 			}
 			pxDef->DeclareVariable(g_xGraphEditor.m_acNewVarName, xDefault);
@@ -473,6 +501,33 @@ namespace
 	constexpr float fPIN_SPACING = 18.0f;
 	constexpr float fPIN_RADIUS = 5.0f;
 
+	// Effective exec-pin count for a node def. Variable-pin flow nodes
+	// (Switch/StateMachine/Selector) report their configured count through
+	// GetDynamicExecOutputCount on a param-applied temp instance; every other
+	// type uses the registered static count. Editor-scale cost (one temp
+	// instance per dynamic node per query).
+	u_int GetNodeExecOutputCount(const Zenith_GraphNodeDef& xNodeDef, const Zenith_GraphNodeTypeInfo* pxInfo)
+	{
+		if (!pxInfo)
+		{
+			return 1;
+		}
+		Zenith_GraphNode* pxTemp = pxInfo->m_pfnCreate();
+		if (pxTemp->GetDynamicExecOutputCount() < 0)
+		{
+			delete pxTemp;
+			return pxInfo->m_uExecOutputCount;	// static-pin type
+		}
+		if (pxInfo->m_pfnGetPropertyTable && xNodeDef.m_xParamBlob.GetCursor() > 0)
+		{
+			Zenith_DataStream xParamRead(const_cast<void*>(xNodeDef.m_xParamBlob.GetData()), xNodeDef.m_xParamBlob.GetCursor());
+			Zenith_PropertySystem::ReadProperties(pxTemp, *pxInfo->m_pfnGetPropertyTable(), xParamRead);
+		}
+		const int32_t iDynamic = pxTemp->GetDynamicExecOutputCount();
+		delete pxTemp;
+		return iDynamic < 0 ? pxInfo->m_uExecOutputCount : static_cast<u_int>(iDynamic > 255 ? 255 : iDynamic);
+	}
+
 	struct PinPos
 	{
 		ImVec2 m_xInput;
@@ -492,7 +547,7 @@ namespace
 			const ImVec2 xMin(xOrigin.x + xPos.x, xOrigin.y + xPos.y);
 
 			const Zenith_GraphNodeTypeInfo* pxInfo = xRegistry.Find(xNodeDef.m_strTypeName.c_str());
-			const u_int uOutputs = pxInfo ? pxInfo->m_uExecOutputCount : 1;
+			const u_int uOutputs = GetNodeExecOutputCount(xNodeDef, pxInfo);
 
 			PinPos xPins;
 			xPins.m_xInput = ImVec2(xMin.x, xMin.y + fHEADER_HEIGHT + 10.0f);
@@ -609,7 +664,7 @@ namespace
 		xDef.GetNodeEditorPos(uNodeID, xPos);
 
 		const Zenith_GraphNodeTypeInfo* pxInfo = Zenith_GraphNodeRegistry::Get().Find(xNodeDef.m_strTypeName.c_str());
-		const u_int uOutputs = pxInfo ? pxInfo->m_uExecOutputCount : 1;
+		const u_int uOutputs = GetNodeExecOutputCount(xNodeDef, pxInfo);
 		const float fNodeHeight = fHEADER_HEIGHT + 14.0f + static_cast<float>(uOutputs > 0 ? uOutputs - 1 : 0) * fPIN_SPACING + 10.0f;
 
 		const ImVec2 xMin(xOrigin.x + xPos.x, xOrigin.y + xPos.y);
@@ -933,7 +988,7 @@ bool Zenith_GraphEditorPanel::Action_Connect(const char* szSrcTypeName, u_int uS
 	const Zenith_GraphNodeDef* pxSrcDef = pxDef->FindNodeDef(uSrcNodeID);
 	const Zenith_GraphNodeTypeInfo* pxSrcInfo = pxSrcDef
 		? Zenith_GraphNodeRegistry::Get().Find(pxSrcDef->m_strTypeName.c_str()) : nullptr;
-	const u_int uSrcOutputs = pxSrcInfo ? pxSrcInfo->m_uExecOutputCount : 1;
+	const u_int uSrcOutputs = pxSrcDef ? GetNodeExecOutputCount(*pxSrcDef, pxSrcInfo) : 1;
 	if (uSrcPin >= uSrcOutputs)
 	{
 		return false;
@@ -1025,6 +1080,13 @@ bool Zenith_GraphEditorPanel::Action_SetSelectedNodeParamInt(const char* szPrope
 	return SetSelectedParamThroughTable(szPropertyName, xValue, PROPERTY_TYPE_INT32);
 }
 
+bool Zenith_GraphEditorPanel::Action_SetSelectedNodeParamBool(const char* szPropertyName, bool bValue)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetBool(bValue);
+	return SetSelectedParamThroughTable(szPropertyName, xValue, PROPERTY_TYPE_BOOL);
+}
+
 bool Zenith_GraphEditorPanel::Action_AddVariable(const char* szName, const char* szTypeName, float fDefaultNumeric)
 {
 	// == the "Add Var" button handler (same name/type/default semantics).
@@ -1039,6 +1101,9 @@ bool Zenith_GraphEditorPanel::Action_AddVariable(const char* szName, const char*
 	else if (std::strcmp(szTypeName, "bool") == 0)    { xDefault.SetBool(fDefaultNumeric != 0.0f); }
 	else if (std::strcmp(szTypeName, "string") == 0)  { xDefault.SetString(std::string()); }
 	else if (std::strcmp(szTypeName, "vector3") == 0) { xDefault.SetVector3(Zenith_Maths::Vector3(0.0f)); }
+	else if (std::strcmp(szTypeName, "vector2") == 0) { xDefault.SetVector2(Zenith_Maths::Vector2(0.0f)); }
+	else if (std::strcmp(szTypeName, "vector4") == 0) { xDefault.SetVector4(Zenith_Maths::Vector4(0.0f)); }
+	else if (std::strcmp(szTypeName, "entity") == 0)  { xDefault.SetPackedEntityID(0); }
 	else { return false; }
 	pxDef->DeclareVariable(szName, xDefault);
 	g_xGraphEditor.m_bDirty = true;

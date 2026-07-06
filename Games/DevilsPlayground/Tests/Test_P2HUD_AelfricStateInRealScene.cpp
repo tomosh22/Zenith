@@ -12,7 +12,6 @@
 #include "Components/Priest_Component.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
-#include "AI/BehaviorTree/Zenith_Blackboard.h"
 
 #include <cstdio>
 
@@ -144,12 +143,12 @@ static bool Step_P2HUDAelfricRealScene(int iFrame)
 		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(g_xPriest);
 		if (xEnt.IsValid())
 		{
-			Zenith_AIAgentComponent* pxAgent = xEnt.TryGetComponent<Zenith_AIAgentComponent>();
-			if (pxAgent != nullptr)
+			Priest_Component* pxPriestC = xEnt.TryGetComponent<Priest_Component>();
+			if (pxPriestC != nullptr)
 			{
-				Zenith_Blackboard& xBB = pxAgent->GetBlackboard();
-				xBB.SetBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
-				xBB.SetEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL, INVALID_ENTITY_ID);
+				// W3: the priest's decision inputs live on its graph blackboard.
+				pxPriestC->WriteBBBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
+				pxPriestC->WriteBBEntity(DP_AI::BB_KEY_TARGET_WITH_DEVIL, INVALID_ENTITY_ID);
 			}
 		}
 		g_eCalmSnapshot = DPHUDController_Component::ComputeAelfricState();

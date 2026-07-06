@@ -24,17 +24,22 @@ A first-person terrain exploration experience demonstrating atmospheric renderin
 ```
 Games/Exploration/
   CLAUDE.md                          # This documentation
-  Exploration.cpp                    # Project entry points, resource initialization
+  Exploration.cpp                    # Project entry points, resource init, graph builders
   Components/
     Exploration_Config.h             # DataAsset for game configuration
-    Exploration_GameComponent.h      # Main coordinator component (uses modules below)
-    Exploration_PlayerController.h   # First-person movement and mouse-look
+    Exploration_GameComponent.h      # Main coordinator component; holds the Graph_* shims + Test_ surface
+    Exploration_GraphNodes.h         # Behaviour Graph node library (all 3 graphs) + Exploration_RegisterGraphNodes
+    Exploration_PlayerController.h   # First-person movement and mouse-look (a SYSTEM - stays C++)
     Exploration_TerrainExplorer.h    # Terrain streaming observer
-    Exploration_AtmosphereController.h # Day/night cycle + weather
+    Exploration_AtmosphereController.h # Day/night cycle + weather + sun/fog math (ApplyAtmosphere)
     Exploration_UIManager.h          # Minimal HUD
+  Tests/
+    Test_ExplorationCharacterization.cpp  # 7 automated chars (menu/escape/debug/movement/daynight+sun/weather/cross-scene)
   Assets/
     Scenes/MainMenu.zscen            # Serialized main-menu scene (build index 0)
     Scenes/Exploration.zscen         # Serialized gameplay scene (build index 1)
+    Graphs/                          # Boot-authored Behaviour Graphs (.bgraph):
+                                     #   Exploration_GameFlow, Exploration_PlayerActions, Exploration_Atmosphere
 ```
 
 ## Module Breakdown
@@ -97,6 +102,70 @@ Demonstrates:
 - Debug information toggle
 - UI anchoring (top-left positioning)
 - Dynamic text updates
+
+## Behaviour Graphs (game DECISION logic — 3 graphs)
+
+Exploration is a pure-atmosphere demo with very little gameplay logic. Its only genuine
+DECISIONS — the menu/play flow, the Tab debug-HUD toggle, the day/night time-advance, and
+the weather state machine — live in behaviour graphs; everything continuous (the FPS movement
+simulation in `Exploration_PlayerController::Update`, terrain height sampling, the sun/fog math
++ `ApplyToEngine` Flux uploads, the HUD text, the FPS counter) stays a C++ SYSTEM. The graphs
+are boot-authored via a fluent `Zenith_GraphBuilder` in `BuildGraph_Exploration*` functions
+(`AddStep_GraphBuild` in `Project_RegisterEditorAutomationSteps`; runtime docs in
+`Zenith/Scripting/CLAUDE.md`). Nodes live header-only in `Components/Exploration_GraphNodes.h`,
+registered via `Exploration_RegisterGraphNodes()` from `Project_RegisterGameComponents`.
+
+| Graph | Attached | Driven by | What moved |
+|---|---|---|---|
+| `Exploration_GameFlow.bgraph` | BOTH managers (MenuManager + GameManager) | order-60 input sources (`OnUIButtonClicked` / `OnKeyPressed` / `OnUpdate`) | Menu Play / Escape→menu / menu-focus DECISIONS. Play → `OnUIButtonClicked("MenuPlay")`→`LoadSceneByIndex(1)` (SINGLE = old `OnPlayClicked`); Escape → `ExplorationGetGameState`→`SwitchOnInt(gameState, 2)`→pin PLAYING→`ExplorationReturnToMenu`; focus → `OnUpdate`→`ExplorationFocusPlayButton`. Two states (MAIN_MENU=0, PLAYING=1); the MenuManager's gameState gates its Escape off. No pause, no reset. |
+| `Exploration_PlayerActions.bgraph` | GameManager | `OnKeyPressed(TAB)` @60 | Tab → `ExplorationToggleDebugHUD` (flips the `Exploration_UIManager` debug-HUD bool that `UpdateUI`@100 reads the same frame). GameManager-only (always PLAYING) preserves the old only-when-PLAYING guard. |
+| `Exploration_Atmosphere.bgraph` | GameManager | `"ExplorationAtmosphereTick"` (dt payload, fired inline where `AtmosphereController::Update` sat) | Day/night time-advance + weather FSM DECISIONS. Two `OnCustomEvent` chains in node-add order: `ExplorationAdvanceTime` (A: `timeOfDay += dt/duration`, wrap) THEN `ExplorationTickWeather` (B: `UpdateWeather` verbatim, mt19937 kept in the C++ shim). Then `OnUpdate` calls `ApplyAtmosphere(dt)` (C-I: sun/fog math + `ApplyToEngine`) directly — the systems shim, reading the just-advanced state (byte-identical A→B→C-I order). dt rides the payload (custom-event ctx dt is 0). |
+
+**6 game nodes** (`Exploration_GraphNodes.h`): `ExplorationGetGameState`, `ExplorationReturnToMenu`,
+`ExplorationFocusPlayButton` (GameFlow); `ExplorationToggleDebugHUD` (PlayerActions);
+`ExplorationAdvanceTime`, `ExplorationTickWeather` (Atmosphere). Each resolves the self component
+and calls a verbatim `Graph_*` shim on `Exploration_GameComponent`.
+
+### Shims + source of truth
+
+`m_eGameState` stays the per-instance source of truth (`ExplorationGetGameState` only mirrors it to
+the blackboard to gate the Escape chain). The decision bodies live verbatim in the `Graph_*` shims
+(`Graph_ReturnToMenu`/`FocusPlayButton`/`ToggleDebugHUD`/`AdvanceTime`/`TickWeather`).
+`AtmosphereController::Update` was split into `AdvanceTimeOfDay`[A] / `UpdateWeather`[B] /
+`ApplyAtmosphere`[C-I] (each a verbatim slice); the graph drives A+B, `OnUpdate` calls C-I directly.
+
+**Escape-return frame (fixed, byte-identical):** `ReturnToMenu` sets `m_eGameState = MAIN_MENU`
+(the graph runs it at order 60) so the systems-only `OnUpdate` switch (order 100) takes the no-op
+MAIN_MENU branch for the rest of that frame — faithfully reproducing the original C++ `ReturnToMenu();
+return;`, which skipped the remaining PLAYING systems. Without this, the deferred scene load would leave
+the state PLAYING and the @100 block would run one EXTRA atmosphere tick + `PlayerController::Update` on
+the doomed frame — both mutate NAMESPACE-STATIC state that persists across the SINGLE scene swap (the
+weather timer/transition/RNG schedule; and `s_bMouseCaptured` via the otherwise-dead Esc-mouse-release),
+a cross-scene-persistent divergence the adversarial review caught. Locked by `MouseCaptureAcrossEsc`.
+
+**Accepted divergences** (unobservable / precedented): two DISTINCT keys pressed on the exact same
+frame (e.g. Tab + Esc) both fire — the graph's independent order-60 `OnKeyPressed` sources vs the
+original's sequential in-block `if` checks — a humanly-unreachable input coincidence affecting only the
+cosmetic debug-HUD bool. Both `Reset()` functions and the in-controller Esc-mouse-release are DEAD CODE
+(never reached / never called) — preserved structurally, not wired; state persistence across menu↔play
+swaps is load-bearing for byte-identity.
+
+**Equivalence proof:** `Tests/Test_ExplorationCharacterization.cpp` — 8 tests written against the C++
+versions FIRST, all identical pre/post conversion (`_True` AND `_False`). Run (windowed; games hang at
+shutdown, so tally the per-test JSON):
+
+```
+exploration.exe --all-automated-tests --exit-after-frames 30000 --fixed-dt 0.01666 --skip-unit-tests --test-results-dir <dir>
+```
+
+Coverage: `MenuPlay` (Play → PLAYING), `ReturnToMenu` (Escape → MAIN_MENU), `DebugToggle` (Tab flips the
+debug-HUD bool + back), `PlayerMovement` (hold W → camera +Z + terrain-follow — the movement SYSTEM still
+runs), `DayNightAndSun` (time advances/freezes/wraps AND the sun/fog math matches the pure `Calculate*` of
+the set time-of-day — locks the A→B→ApplyAtmosphere read-after-write order), `Weather` (a forced transition
+advances + interpolates fog toward the new weather), `CrossSceneAtmos` (play→Esc→play: time-of-day resets
+via `Configure` but the weather timer PERSISTS), `MouseCaptureAcrossEsc` (the Esc-return frame skips the
+@100 PLAYING block, so the mouse-capture flag is unchanged — locks the review fix). The conversion
+touched ZERO engine files.
 
 ## Multi-Scene Architecture
 

@@ -23,9 +23,13 @@
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_BehaviourGraphAsset.h"
+#include "Scripting/Zenith_GraphBuilder.h"
+#include "EntityComponent/Zenith_GraphReload.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Maths/Zenith_Maths.h"
 #include "DataStream/Zenith_DataStream.h"
+#include <filesystem>
 
 bool Zenith_EditorAutomation::IsRunning()  { return Zenith_EditorAutomation::m_bRunning; }
 bool Zenith_EditorAutomation::IsComplete() { return Zenith_EditorAutomation::m_bComplete; }
@@ -543,6 +547,24 @@ void Zenith_EditorAutomation::AddStep_GraphSetNodeParamVec3(const char* szProper
 	xAction.m_afArgs[0] = fX;
 	xAction.m_afArgs[1] = fY;
 	xAction.m_afArgs[2] = fZ;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_GraphSetNodeParamBool(const char* szPropertyName, bool bValue)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRAPH_SET_NODE_PARAM_BOOL;
+	xAction.m_szArg1 = SafeStr(szPropertyName);
+	xAction.m_bArg = bValue;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_GraphBuild(const char* szAssetPath, void (*pfnBuild)(Zenith_GraphBuilder&))
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::GRAPH_BUILD;
+	xAction.m_szArg1 = SafeStr(szAssetPath);
+	xAction.m_pfnGraphBuild = pfnBuild;
 	m_axActions.PushBack(xAction);
 }
 
@@ -1816,10 +1838,35 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_FLOAT:  GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamFloat(xAction.m_szArg1.c_str(), xAction.m_afArgs[0]), "GraphSetNodeParamFloat", xAction.m_szArg1.c_str()); break;
 	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_STRING: GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamString(xAction.m_szArg1.c_str(), xAction.m_szArg2.c_str()), "GraphSetNodeParamString", xAction.m_szArg1.c_str()); break;
 	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_INT:    GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamInt(xAction.m_szArg1.c_str(), xAction.m_aiArgs[0]), "GraphSetNodeParamInt", xAction.m_szArg1.c_str()); break;
+	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_BOOL:   GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamBool(xAction.m_szArg1.c_str(), xAction.m_bArg), "GraphSetNodeParamBool", xAction.m_szArg1.c_str()); break;
 	case Zenith_EditorActionType::GRAPH_SET_NODE_PARAM_VEC3:   GraphActionChecked(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamVec3(xAction.m_szArg1.c_str(), xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]), "GraphSetNodeParamVec3", xAction.m_szArg1.c_str()); break;
 	case Zenith_EditorActionType::GRAPH_CONNECT:               GraphActionChecked(Zenith_GraphEditorPanel::Action_Connect(xAction.m_szArg1.c_str(), static_cast<u_int>(xAction.m_aiArgs[0]), static_cast<u_int>(xAction.m_afArgs[0]), xAction.m_szArg2.c_str(), static_cast<u_int>(xAction.m_aiArgs[1])), "GraphConnect", xAction.m_szArg1.c_str()); break;
 	case Zenith_EditorActionType::GRAPH_ADD_VARIABLE:          GraphActionChecked(Zenith_GraphEditorPanel::Action_AddVariable(xAction.m_szArg1.c_str(), xAction.m_szArg2.c_str(), xAction.m_afArgs[0]), "GraphAddVariable", xAction.m_szArg1.c_str()); break;
 	case Zenith_EditorActionType::GRAPH_SAVE:                  Zenith_GraphEditorPanel::Save(); break;
+	case Zenith_EditorActionType::GRAPH_BUILD:
+	{
+		// Programmatic bulk authoring: build the whole definition through the
+		// game's builder function, save through the asset registry, queue hot
+		// reload (which refreshes any registry-cached instance from the new
+		// disk bytes + re-instantiates live slots).
+		Zenith_BehaviourGraphAsset xAsset;
+		Zenith_GraphBuilder xBuilder(xAsset.GetDefinition());
+		if (xAction.m_pfnGraphBuild != nullptr)
+		{
+			xAction.m_pfnGraphBuild(xBuilder);
+		}
+		const bool bBuilt = xBuilder.Build();
+		GraphActionChecked(bBuilt && xAction.m_pfnGraphBuild != nullptr, "GraphBuild", xAction.m_szArg1.c_str());
+		if (bBuilt)
+		{
+			std::error_code xEC;
+			std::filesystem::create_directories(
+				std::filesystem::path(Zenith_AssetRegistry::ResolvePath(xAction.m_szArg1)).parent_path(), xEC);
+			GraphActionChecked(Zenith_AssetRegistry::Save(&xAsset, xAction.m_szArg1), "GraphBuildSave", xAction.m_szArg1.c_str());
+			Zenith_GraphReload::NotifyAssetChanged(xAction.m_szArg1.c_str());
+		}
+		break;
+	}
 	case Zenith_EditorActionType::GRAPH_CLOSE:                 Zenith_GraphEditorPanel::Close(); break;
 
 	//--------------------------------------------------------------------------

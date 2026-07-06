@@ -83,13 +83,8 @@ public:
 		if (pxCamera == nullptr)
 			return;
 
-		// Runtime toggle: press T to cycle the tennis camera (off -> court overlook
-		// -> follow near player -> follow far player -> off), so the autonomous
-		// match can be watched up close without relaunching with a flag.
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_T))
-		{
-			CycleTennisCameraMode();
-		}
+		// The T-key tennis-camera cycle moved to RenderTest_PlayerActions.bgraph
+		// (RTPlayerCycleTennisCam node) with the W3 graph conversion.
 
 		// --- Tennis spectator camera (capture aid) ---
 		// Fixed world-space vantage overlooking the floating tennis court so the
@@ -253,6 +248,38 @@ public:
 	}
 #endif
 
+	// Cycle: off -> court overlook -> follow near -> follow far -> off.
+	// Public since W3: invoked by the RTPlayerCycleTennisCam graph node (the
+	// T-key decision lives in RenderTest_PlayerActions.bgraph).
+	void CycleTennisCameraMode()
+	{
+		const char* szMode;
+		if (!RenderTest_GameplayState::s_bTennisSpectatorActive)
+		{
+			RenderTest_GameplayState::s_bTennisSpectatorActive = true;
+			RenderTest_GameplayState::s_bTennisFollowActive = false;
+			szMode = "court overlook";
+		}
+		else if (!RenderTest_GameplayState::s_bTennisFollowActive)
+		{
+			RenderTest_GameplayState::s_bTennisFollowActive = true;
+			RenderTest_GameplayState::s_iTennisFollowSide = 0;
+			szMode = "follow near player";
+		}
+		else if (RenderTest_GameplayState::s_iTennisFollowSide == 0)
+		{
+			RenderTest_GameplayState::s_iTennisFollowSide = 1;
+			szMode = "follow far player";
+		}
+		else
+		{
+			RenderTest_GameplayState::s_bTennisSpectatorActive = false;
+			RenderTest_GameplayState::s_bTennisFollowActive = false;
+			szMode = "off (player camera)";
+		}
+		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[Tennis] camera mode -> %s", szMode);
+	}
+
 private:
 	// Tennis follow-cam: place the camera in a close 3/4 view that tracks the
 	// chosen NPC so its strokes + arm/foot IK + racket read clearly. Returns false
@@ -291,36 +318,6 @@ private:
 		xCam.SetPitch(fPitch);
 		xCam.SetFOV(glm::radians(55.0f));   // tighter for the close framing
 		return true;
-	}
-
-	// Cycle: off -> court overlook -> follow near -> follow far -> off.
-	void CycleTennisCameraMode()
-	{
-		const char* szMode;
-		if (!RenderTest_GameplayState::s_bTennisSpectatorActive)
-		{
-			RenderTest_GameplayState::s_bTennisSpectatorActive = true;
-			RenderTest_GameplayState::s_bTennisFollowActive = false;
-			szMode = "court overlook";
-		}
-		else if (!RenderTest_GameplayState::s_bTennisFollowActive)
-		{
-			RenderTest_GameplayState::s_bTennisFollowActive = true;
-			RenderTest_GameplayState::s_iTennisFollowSide = 0;
-			szMode = "follow near player";
-		}
-		else if (RenderTest_GameplayState::s_iTennisFollowSide == 0)
-		{
-			RenderTest_GameplayState::s_iTennisFollowSide = 1;
-			szMode = "follow far player";
-		}
-		else
-		{
-			RenderTest_GameplayState::s_bTennisSpectatorActive = false;
-			RenderTest_GameplayState::s_bTennisFollowActive = false;
-			szMode = "off (player camera)";
-		}
-		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[Tennis] camera mode -> %s", szMode);
 	}
 
 	// Cursor capture policy:
