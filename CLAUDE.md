@@ -169,8 +169,14 @@ NO all-games solution:
 - `Games/<Name>/<name>_win64.sln` — one per game (+ `<name>_agde.sln` when `android:true`)
 - `Build/zenith_engine_win64.sln` — engine libs + Sentinels + tools + ZenithHub, **zero games**
 
-Generated `.sln` / generated `.cs` are gitignored. See **`Docs/GameProjects.md`** for
-the schema, validation rules, sln inventory, CI mapping, and troubleshooting.
+**Regenerate-first policy:** EVERYTHING Sharpmake emits is gitignored — all `.sln`,
+`.vcxproj`, `.vcxproj.filters`, `.vcxproj.user`, and the generated `.cs`. After a fresh
+clone, or a checkout/pull that touches any `.zproj` or `Sharpmake_*.cs`, run
+`Build\regen.ps1` (or `zenith regen`) before building — generated projects on disk are
+untracked and can go stale silently (`zenith regen --check` reports staleness). Test
+results, telemetry, and build logs are also never committed; runners write under
+`Build/artifacts/`. See **`Docs/GameProjects.md`** for the schema, validation rules,
+sln inventory, CI mapping, and troubleshooting.
 
 ### Build Configurations
 

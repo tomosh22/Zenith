@@ -1,7 +1,0 @@
-com.zenith.tilepuzzle.app-pngs-0 C:\dev\Zenith\Games\TilePuzzle\Android\app\build\generated\res\pngs\release
-com.zenith.tilepuzzle.app-resValues-1 C:\dev\Zenith\Games\TilePuzzle\Android\app\build\generated\res\resValues\release
-com.zenith.tilepuzzle.app-packageReleaseResources-2 C:\dev\Zenith\Games\TilePuzzle\Android\app\build\intermediates\incremental\release\packageReleaseResources\merged.dir
-com.zenith.tilepuzzle.app-packageReleaseResources-3 C:\dev\Zenith\Games\TilePuzzle\Android\app\build\intermediates\incremental\release\packageReleaseResources\stripped.dir
-com.zenith.tilepuzzle.app-merged_res-4 C:\dev\Zenith\Games\TilePuzzle\Android\app\build\intermediates\merged_res\release
-com.zenith.tilepuzzle.app-main-5 C:\dev\Zenith\Games\TilePuzzle\Android\app\src\main\res
-com.zenith.tilepuzzle.app-release-6 C:\dev\Zenith\Games\TilePuzzle\Android\app\src\release\res

@@ -151,7 +151,13 @@ This generates **per-game** solutions plus one **engine-only** solution (NO all-
 - `Games/<Name>/<name>_win64.sln` (+ `<name>_agde.sln` when `android:true`)
 - `Build/zenith_engine_win64.sln` — engine libs + Sentinels + tools + ZenithHub, zero games
 
-Generated `.sln`/`.cs` are gitignored. Full reference: **`Docs/GameProjects.md`**.
+**Regenerate-first policy:** ALL Sharpmake outputs (`.sln`, `.vcxproj`, `.filters`,
+`.user`, generated `.cs`) are gitignored — never commit them; run `Build\regen.ps1`
+after clone/branch switch. Full reference: **`Docs/GameProjects.md`**.
+
+**Artifact-root rule:** anything a runner/test/tool emits (test results, telemetry,
+logs, packages) goes under `Build/artifacts/…` — never a new ad-hoc `Build/<name>_results`
+dir, and never `git add` anything under an ignored path.
 
 ### Build Configurations
 

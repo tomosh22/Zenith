@@ -1,8 +1,0 @@
-{
-  "name": "Test_P1Cooldown_NotAffectedByDeath",
-  "passed": true,
-  "frames": 10,
-  "durationMs": 1626.711,
-  "failures": [],
-  "skipped": false
-}
