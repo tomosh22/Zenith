@@ -20,7 +20,7 @@
 [CmdletBinding()]
 param(
     [string]$ConfigName     = "Debug_False",
-    [string]$OutRoot        = "Build/dp_telemetry/seed_matrix_debug",
+    [string]$OutRoot        = "Build/artifacts/telemetry/seed_matrix_debug",
     [int]$ExitAfterFrames   = 8500,
     [switch]$Headless       = $true,
     [uint64[]]$Seeds        = @(0),

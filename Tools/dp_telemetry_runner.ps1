@@ -6,7 +6,7 @@
 #
 # Usage (from repo root):
 #   pwsh ./Tools/dp_telemetry_runner.ps1
-#   pwsh ./Tools/dp_telemetry_runner.ps1 -OutDir build/dp_telemetry
+#   pwsh ./Tools/dp_telemetry_runner.ps1 -OutDir Build/artifacts/telemetry
 #   pwsh ./Tools/dp_telemetry_runner.ps1 -Build       # build DP first
 #   pwsh ./Tools/dp_telemetry_runner.ps1 -SkipRun -OutDir my_dir
 #                                                       # just summarize existing files
@@ -31,7 +31,7 @@
 [CmdletBinding()]
 param(
     [string]$Exe       = "Games/DevilsPlayground/Build/output/win64/vulkan_vs2022_debug_win64_true/devilsplayground.exe",
-    [string]$OutDir    = "build/dp_telemetry",
+    [string]$OutDir    = "Build/artifacts/telemetry",
     [switch]$Headless  = $true,
     [switch]$Build     = $false,
     [switch]$SkipRun   = $false,

@@ -16,8 +16,8 @@ Tools/dp_seed_matrix_run.ps1 and emits a Markdown report covering:
   * Cross-seed insights (variance across procgen layouts).
 
 Usage:
-    python Tools/dp_seed_matrix_analyse.py [--root Build/dp_telemetry/seed_matrix]
-                                            [--out  Build/dp_telemetry/seed_matrix/REPORT.md]
+    python Tools/dp_seed_matrix_analyse.py [--root Build/artifacts/telemetry/seed_matrix]
+                                            [--out  Build/artifacts/telemetry/seed_matrix/REPORT.md]
 
 ASCII-only. Standard library only (json + pathlib + argparse).
 """
@@ -360,8 +360,8 @@ def render_md(stats_table, seeds, out_path: Path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", default="Build/dp_telemetry/seed_matrix")
-    ap.add_argument("--out",  default="Build/dp_telemetry/seed_matrix/REPORT.md")
+    ap.add_argument("--root", default="Build/artifacts/telemetry/seed_matrix")
+    ap.add_argument("--out",  default="Build/artifacts/telemetry/seed_matrix/REPORT.md")
     args = ap.parse_args()
 
     root = Path(args.root)

@@ -28,12 +28,12 @@
 #   pwsh ./Tools/check_acceptance_drift.ps1
 #   pwsh ./Tools/check_acceptance_drift.ps1 -SkipRun   # use existing JSONs
 #
-# Required dir: build/dp_test_results/ (run_dp_tests.ps1 default).
+# Required dir: Build/artifacts/test_results/devilsplayground/ (run_dp_tests.ps1 default).
 
 [CmdletBinding()]
 param(
     [string]$Exe         = "Games/DevilsPlayground/Build/output/win64/vs2022_debug_win64_true/devilsplayground.exe",
-    [string]$ResultsDir  = "build/dp_test_results",
+    [string]$ResultsDir  = "Build/artifacts/test_results/devilsplayground",
     [switch]$SkipRun
 )
 

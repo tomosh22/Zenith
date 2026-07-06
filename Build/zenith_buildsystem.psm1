@@ -645,6 +645,75 @@ function Test-ZenithRegenDrift {
     return [PSCustomObject]@{ InSync = ($reasons.Count -eq 0); Reasons = $reasons.ToArray() }
 }
 
+# --- Orphaned generated-artifact prune ----------------------------------------
+
+function Remove-ZenithOrphanGameArtifacts {
+    # Delete generated build artifacts for games that no longer have a
+    # descriptor, and stale agde artifacts for games that dropped android:true.
+    # Conservative by design: only *_win64.sln / *_agde.sln at the game root and
+    # *.vcxproj* under <game>/Build|build are touched -- NEVER sources, assets,
+    # or the directory itself. (Everything it deletes is gitignored/generated;
+    # regen recreates whatever is still wanted.) Returns the deleted paths.
+    [CmdletBinding()]
+    param(
+        [string]$RepoRoot,
+        [object[]]$Descriptors
+    )
+
+    if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
+    $gamesRoot = Join-Path $RepoRoot 'Games'
+    $removed = New-Object System.Collections.Generic.List[string]
+    if (-not (Test-Path -LiteralPath $gamesRoot)) { return $removed.ToArray() }
+
+    $known = @{}
+    $androidByName = @{}
+    foreach ($d in @($Descriptors)) {
+        if ($null -eq $d.Name) { continue }
+        $known[([string]$d.Name).ToUpperInvariant()] = $true
+        $androidByName[([string]$d.Name).ToUpperInvariant()] = [bool]$d.Android
+    }
+
+    function Remove-Artifact([string]$Path) {
+        if (Test-Path -LiteralPath $Path) {
+            Remove-Item -LiteralPath $Path -Force -Confirm:$false -ErrorAction SilentlyContinue
+            if (-not (Test-Path -LiteralPath $Path)) { $removed.Add($Path) }
+        }
+    }
+
+    foreach ($dir in (Get-ChildItem -LiteralPath $gamesRoot -Directory)) {
+        $upper = $dir.Name.ToUpperInvariant()
+        if (-not $known.ContainsKey($upper)) {
+            # Orphaned game dir (descriptor deleted, dir lingering -- e.g. a
+            # raced scaffold teardown): prune its generated artifacts only.
+            foreach ($sln in @(Get-ChildItem -Path (Join-Path $dir.FullName '*_win64.sln'), (Join-Path $dir.FullName '*_agde.sln') -File -ErrorAction SilentlyContinue)) {
+                Remove-Artifact $sln.FullName
+            }
+            foreach ($buildDirName in @('Build', 'build')) {
+                $bd = Join-Path $dir.FullName $buildDirName
+                foreach ($proj in @(Get-ChildItem -Path (Join-Path $bd '*.vcxproj*') -File -ErrorAction SilentlyContinue)) {
+                    Remove-Artifact $proj.FullName
+                }
+            }
+        }
+        elseif (-not $androidByName[$upper]) {
+            # Known game that is android:false -- prune stale agde leftovers.
+            $lower = $dir.Name.ToLowerInvariant()
+            Remove-Artifact (Join-Path $dir.FullName "${lower}_agde.sln")
+            foreach ($buildDirName in @('Build', 'build')) {
+                $bd = Join-Path $dir.FullName $buildDirName
+                foreach ($proj in @(Get-ChildItem -Path (Join-Path $bd "${lower}_agde.vcxproj*") -File -ErrorAction SilentlyContinue)) {
+                    Remove-Artifact $proj.FullName
+                }
+            }
+        }
+    }
+
+    foreach ($p in $removed) {
+        Write-Host "[regen] Pruned orphaned generated artifact: $p" -ForegroundColor Yellow
+    }
+    return $removed.ToArray()
+}
+
 # --- Worktree guard ----------------------------------------------------------
 
 function Test-ZenithInWorktree {
@@ -729,5 +798,6 @@ Export-ModuleMember -Function @(
     'Get-ZenithGameExePath',
     'Stop-ZenithBuildProcesses',
     'Repair-ZenithRuntimeDlls',
-    'Test-ZenithRegenDrift'
+    'Test-ZenithRegenDrift',
+    'Remove-ZenithOrphanGameArtifacts'
 )

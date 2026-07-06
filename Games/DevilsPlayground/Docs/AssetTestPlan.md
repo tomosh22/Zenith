@@ -818,7 +818,7 @@ A worked example of how Claude verifies a new asset without human intervention:
 
 1. **An artist commits** `dp_char_villager_devout.zmodel` and pushes to a feature branch.
 2. **CI runs** `Tools/run_dp_tests.ps1 -Filter Asset -Headless`.
-3. **The PR-gating batch** completes in ~1 minute. JSON results land in `build/dp_test_results/`.
+3. **The PR-gating batch** completes in ~1 minute. JSON results land in `Build/artifacts/test_results/devilsplayground/`.
 4. **Claude reads** `asset_summary.json`. Sees `Test_AssetSkel_VillagerCanonicalBones` failed: `missing bone 'LeftHand'`.
 5. **Claude opens** the artist's commit. Examines the `.zskel` via `ZenithTools.exe inspect`. Confirms `LeftHand` is exported as `L_Hand`.
 6. **Claude knows** (from the canonical bone-set spec in §2.2) the gameplay code searches for `LeftHand`. Posts a PR comment naming the issue: *"`LeftHand` bone is exported as `L_Hand`; gameplay code looks up `LeftHand`. Either rename in DCC or update the canonical bone-set spec."*

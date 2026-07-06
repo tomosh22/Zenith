@@ -114,7 +114,59 @@ try {
         Assert ($null -ne $mb -and (Test-Path $mb)) "msbuild resolved to a real path (got '$mb')"
     }
 
-    Write-Host "`n[4] clean / regen --check dispatcher exit codes" -ForegroundColor Cyan
+    Write-Host "`n[3b] Test-harness parsers (ZenithTestHarness.psm1)" -ForegroundColor Cyan
+    Import-Module (Join-Path $repoRoot 'Tools/ZenithCli/ZenithTestHarness.psm1') -Force
+
+    Invoke-Test "list parser: plain block" {
+        $lines = @('boot log', 'Registered automated tests:', '  Test_A', '  Test_B', 'trailing')
+        $t = @(ConvertFrom-ZenithTestListOutput -Lines $lines)
+        Assert ($t.Count -eq 2 -and $t[0] -eq 'Test_A' -and $t[1] -eq 'Test_B') "got [$($t -join ',')]"
+    }
+    Invoke-Test "list parser: ANSI colour codes stripped" {
+        $esc = [char]27
+        $lines = @("${esc}[32mRegistered automated tests:${esc}[0m", "  ${esc}[33mTest_C${esc}[0m")
+        $t = @(ConvertFrom-ZenithTestListOutput -Lines $lines)
+        Assert ($t.Count -eq 1 -and $t[0] -eq 'Test_C') "got [$($t -join ',')]"
+    }
+    Invoke-Test "list parser: non-indented line ends the block" {
+        $lines = @('Registered automated tests:', '  Test_A', 'Some log', '  NotATest')
+        $t = @(ConvertFrom-ZenithTestListOutput -Lines $lines)
+        Assert ($t.Count -eq 1 -and $t[0] -eq 'Test_A') "got [$($t -join ',')]"
+    }
+    Invoke-Test "list parser: empty input -> empty" {
+        $t = @(ConvertFrom-ZenithTestListOutput -Lines @())
+        Assert ($t.Count -eq 0) "expected empty, got [$($t -join ',')]"
+    }
+    Invoke-Test "tally: pass / fail / skipped / missing / unparseable" {
+        $dir = Join-Path $tmp 'tally'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Put $dir 'T_Pass.json' '{ "passed": true }'
+        Put $dir 'T_Fail.json' '{ "passed": false, "failures": ["x"], "frames": 5 }'
+        Put $dir 'T_Skip.json' '{ "passed": true, "skipped": true }'
+        Put $dir 'T_Bad.json' '{ not json'
+        $r = Read-ZenithTestResults -ResultsDir $dir -Tests @('T_Pass', 'T_Fail', 'T_Skip', 'T_Bad', 'T_Missing')
+        Assert ($r.Passed -eq 2) "passed count: got $($r.Passed)"
+        Assert (@($r.FailedNames).Count -eq 3) "failed count: got $(@($r.FailedNames).Count) [$($r.FailedNames -join ',')]"
+        $byName = @{}
+        foreach ($e in $r.Entries) { $byName[$e.Name] = $e }
+        Assert ($byName['T_Skip'].Skipped) "skip tag"
+        Assert ($byName['T_Missing'].Status -eq 'MISSING') "missing status"
+        Assert ($byName['T_Bad'].Status -eq 'UNPARSEABLE') "unparseable status"
+        Assert ($byName['T_Fail'].Detail -like 'failures=1*') "fail detail: got [$($byName['T_Fail'].Detail)]"
+    }
+    Invoke-Test "timings: reads durationMs, tolerates absent field" {
+        $dir = Join-Path $tmp 'timing'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Put $dir 'T_A.json' '{ "passed": true, "durationMs": 12.5, "frames": 3 }'
+        Put $dir 'T_B.json' '{ "passed": true }'
+        $t = @(Get-ZenithTestTimings -ResultsDir $dir -Tests @('T_A', 'T_B'))
+        Assert ($t.Count -eq 1 -and $t[0].DurationMs -eq 12.5) "got count=$($t.Count)"
+    }
+
+    Write-Host "`n[4] clean / regen --check / test dispatcher exit codes" -ForegroundColor Cyan
+    Invoke-Test "test without a target exits 1 (usage)" { Assert ((Invoke-CliCode @('test')) -eq 1) "test -> 1" }
+    Invoke-Test "test with unknown game exits 5 (not-found)" { Assert ((Invoke-CliCode @('test', 'NoSuchGameXYZ')) -eq 5) "test missing -> 5" }
+    Invoke-Test "test with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('test', 'Sokoban', '--bogus')) -eq 1) "test --bogus -> 1" }
     Invoke-Test "clean with unknown game exits 5 (not-found)" { Assert ((Invoke-CliCode @('clean', 'NoSuchGameXYZ')) -eq 5) "clean missing -> 5" }
     Invoke-Test "clean with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('clean', '--bogus')) -eq 1) "clean --bogus -> 1" }
     Invoke-Test "clean --processes-only --dry-run exits 0" { Assert ((Invoke-CliCode @('clean', '--processes-only', '--dry-run')) -eq 0) "clean dry-run -> 0" }
@@ -134,6 +186,9 @@ try {
     Invoke-Test "build --timeout parses (missing target still usage=1)" {
         Assert ((Invoke-CliCode @('build', '--timeout', '5')) -eq 1) "build --timeout no target -> 1"
     }
+    Invoke-Test "package without a name exits 1 (usage)" { Assert ((Invoke-CliCode @('package')) -eq 1) "package -> 1" }
+    Invoke-Test "package with unknown game exits 5 (not-found)" { Assert ((Invoke-CliCode @('package', 'NoSuchGameXYZ')) -eq 5) "package missing -> 5" }
+    Invoke-Test "package with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('package', 'Sokoban', '--bogus')) -eq 1) "package --bogus -> 1" }
 }
 finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

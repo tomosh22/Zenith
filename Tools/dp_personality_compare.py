@@ -2,7 +2,7 @@
 """dp_personality_compare.py -- cross-personality summary from a seed
 matrix run.
 
-Reads `Build/dp_telemetry/seed_matrix/seed_<seed>/<Personality>.events.csv`
+Reads `Build/artifacts/telemetry/seed_matrix/seed_<seed>/<Personality>.events.csv`
 files and pivots them into a per-personality summary table that focuses on
 the "did the bot actually win" question that the existing analyser
 (`dp_seed_matrix_analyse.py`) doesn't expose directly.
@@ -146,7 +146,7 @@ def compute_first_apprehend_t(events):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--matrix-root", type=Path,
-                   default=Path("Build/dp_telemetry/seed_matrix"))
+                   default=Path("Build/artifacts/telemetry/seed_matrix"))
     p.add_argument("--seeds", type=str, default=None,
                    help="Comma-separated seed list (default: auto-detect)")
     args = p.parse_args()

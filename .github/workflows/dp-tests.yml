@@ -75,6 +75,9 @@ jobs:
       VCPKG_DISABLE_METRICS: 1
       SLANG_VERSION: '2026.1'
       VULKAN_SDK_VERSION: '1.3.290.0'
+      # Single source for where the runner writes + the artifact uploads from
+      # (runner default is the same; pinned here so a future move is a 1-line edit).
+      DP_RESULTS_DIR: Build/artifacts/test_results/devilsplayground
 
     steps:
       - name: Checkout
@@ -264,7 +267,7 @@ jobs:
           # in its top-of-file usage comment that crash PS5.1 -- see
           # Questions.md Q-2026-05-12-005). windows-latest has pwsh
           # preinstalled at C:\Program Files\PowerShell\7\pwsh.exe.
-          & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File '.\Tools\run_dp_tests.ps1' -Headless
+          & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File '.\Tools\run_dp_tests.ps1' -Headless -ResultsDir $env:DP_RESULTS_DIR
           $testExit = $LASTEXITCODE
           Write-Host "run_dp_tests exit: $testExit"
           if ($testExit -ne 0) { exit $testExit }
@@ -274,5 +277,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dp-test-results
-          path: build/dp_test_results/
+          path: ${{ env.DP_RESULTS_DIR }}/
           if-no-files-found: warn

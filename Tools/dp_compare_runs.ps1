@@ -13,10 +13,10 @@
 [CmdletBinding()]
 param(
     [string[]]$Paths = @(
-        "build/dp_telemetry/personality_Casual.json",
-        "build/dp_telemetry/personality_Stealth.json",
-        "build/dp_telemetry/personality_Speedrunner.json",
-        "build/dp_telemetry/personality_Berserker.json"
+        "Build/artifacts/telemetry/personality_Casual.json",
+        "Build/artifacts/telemetry/personality_Stealth.json",
+        "Build/artifacts/telemetry/personality_Speedrunner.json",
+        "Build/artifacts/telemetry/personality_Berserker.json"
     ),
     [string[]]$Labels = @("Casual", "Stealth", "Speedrunner", "Berserker")
 )

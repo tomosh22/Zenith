@@ -5,7 +5,7 @@
 # Each (seed, personality) cell runs the DP exe once with
 # DP_PROCGEN_SEED set in the environment, then copies the resulting
 # .ztlm + .json + frames.csv + events.csv into
-#   Build/dp_telemetry/seed_matrix/seed_<seed>/<personality>.{ext}
+#   Build/artifacts/telemetry/seed_matrix/seed_<seed>/<personality>.{ext}
 #
 # Also generates per-cell PNGs via Tools/dp_telemetry_visualise.ps1.
 #
@@ -46,7 +46,7 @@ param(
     # available via `-ConfigName Debug_False` for debugging individual
     # cells (asserts + symbols).
     [string]$ConfigName    = "Release_False",
-    [string]$OutRoot       = "Build/dp_telemetry/seed_matrix",
+    [string]$OutRoot       = "Build/artifacts/telemetry/seed_matrix",
     [int]$ExitAfterFrames  = 12000,
     [switch]$Headless      = $true,
     [uint64[]]$Seeds       = @(0, 12345, 99999),

@@ -8,7 +8,7 @@
 #
 # Usage:
 #   pwsh ./Tools/dp_telemetry_visualise.ps1
-#   pwsh ./Tools/dp_telemetry_visualise.ps1 -JsonPath build/dp_telemetry/bot_playthrough.json
+#   pwsh ./Tools/dp_telemetry_visualise.ps1 -JsonPath Build/artifacts/telemetry/bot_playthrough.json
 #   pwsh ./Tools/dp_telemetry_visualise.ps1 -OutPath my.png -Width 2048 -Height 2048
 #
 # Output: PNG at <OutPath> (default: <JsonDir>/<JsonName>.png).
@@ -27,7 +27,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$JsonPath = "build/dp_telemetry/bot_playthrough.json",
+    [string]$JsonPath = "Build/artifacts/telemetry/bot_playthrough.json",
     [string]$OutPath  = "",
     [int]$Width       = 1024,
     [int]$Height      = 1024,

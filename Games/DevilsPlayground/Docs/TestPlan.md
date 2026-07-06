@@ -1170,13 +1170,13 @@ The remaining tests run **nightly** in a larger ~45-minute batch and on every re
 - name: Full batch
   run: pwsh.exe -File Tools/run_dp_tests.ps1 -Headless -AssertionsLog build/dp_assertions.log
 - name: Aggregate
-  run: pwsh.exe -File Tools/aggregate_dp_results.ps1 -ResultsDir build/dp_test_results -OutSummary build/dp_summary.json
+  run: pwsh.exe -File Tools/aggregate_dp_results.ps1 -ResultsDir Build/artifacts/test_results/devilsplayground -OutSummary build/dp_summary.json
 - name: Upload artifact
   uses: actions/upload-artifact@v4
   with:
     name: dp-nightly-results
     path: |
-      build/dp_test_results/
+      Build/artifacts/test_results/devilsplayground/
       build/dp_summary.json
       build/dp_assertions.log
 ```

@@ -100,6 +100,9 @@ foreach ($stale in @('zenith_win64.sln', 'zenith_agde.sln')) {
     }
 }
 
+# 7.5. Prune orphaned generated artifacts (deleted games / dropped android) ----
+Remove-ZenithOrphanGameArtifacts -RepoRoot $repoRoot -Descriptors $scan.Descriptors | Out-Null
+
 # 8. Print the generated .sln inventory ---------------------------------------
 Write-Host ""
 Write-Host "[regen] Generated solutions:" -ForegroundColor Green

@@ -434,6 +434,75 @@ try {
         Assert-Equal 1 $copied.Count "one DLL from sibling"
         Assert-True (Test-Path (Join-Path $exeDir 'assimp.dll')) "assimp.dll copied"
     }
+
+    # ========================================================================
+    Write-Host "`n[12] Orphan-artifact prune (Remove-ZenithOrphanGameArtifacts)" -ForegroundColor Cyan
+
+    Invoke-Test "orphan game dir loses slns + vcxprojs, keeps sources; live game untouched" {
+        $fakeRepo = Join-Path $script:TempRoot ("prune_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        $games = Join-Path $fakeRepo 'Games'
+        # Live game with a descriptor.
+        New-FixtureDescriptor -Root $games -Folder 'Live' -FileBase 'Live' -Json (Good-Json -Name 'Live') | Out-Null
+        New-Item -ItemType File -Force -Path (Join-Path $games 'Live/live_win64.sln') | Out-Null
+        # Orphan dir: no descriptor, generated artifacts + a source file.
+        $orphan = Join-Path $games 'Ghost'
+        New-Item -ItemType Directory -Force -Path (Join-Path $orphan 'Build') | Out-Null
+        New-Item -ItemType File -Force -Path (Join-Path $orphan 'ghost_win64.sln') | Out-Null
+        New-Item -ItemType File -Force -Path (Join-Path $orphan 'Build/ghost_win64.vcxproj') | Out-Null
+        New-Item -ItemType File -Force -Path (Join-Path $orphan 'Ghost.cpp') | Out-Null
+
+        $scan = Get-ZenithGameDescriptors -GamesRoot $games
+        # Ghost has no .zproj -> scan reports an error but still returns Live.
+        $removed = @(Remove-ZenithOrphanGameArtifacts -RepoRoot $fakeRepo -Descriptors $scan.Descriptors)
+        Assert-Equal 2 $removed.Count "two artifacts pruned. got: $($removed -join '; ')"
+        Assert-False (Test-Path (Join-Path $orphan 'ghost_win64.sln')) "orphan sln pruned"
+        Assert-False (Test-Path (Join-Path $orphan 'Build/ghost_win64.vcxproj')) "orphan vcxproj pruned"
+        Assert-True (Test-Path (Join-Path $orphan 'Ghost.cpp')) "sources NEVER pruned"
+        Assert-True (Test-Path (Join-Path $games 'Live/live_win64.sln')) "live game untouched"
+    }
+
+    Invoke-Test "android:false game loses stale agde artifacts, keeps win64 ones" {
+        $fakeRepo = Join-Path $script:TempRoot ("prune2_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        $games = Join-Path $fakeRepo 'Games'
+        New-FixtureDescriptor -Root $games -Folder 'Widget' -FileBase 'Widget' -Json (Good-Json -Name 'Widget') | Out-Null
+        $wdir = Join-Path $games 'Widget'
+        New-Item -ItemType Directory -Force -Path (Join-Path $wdir 'Build') | Out-Null
+        New-Item -ItemType File -Force -Path (Join-Path $wdir 'widget_win64.sln') | Out-Null
+        New-Item -ItemType File -Force -Path (Join-Path $wdir 'widget_agde.sln') | Out-Null
+        New-Item -ItemType File -Force -Path (Join-Path $wdir 'Build/widget_agde.vcxproj') | Out-Null
+
+        $scan = Get-ZenithGameDescriptors -GamesRoot $games
+        $removed = @(Remove-ZenithOrphanGameArtifacts -RepoRoot $fakeRepo -Descriptors $scan.Descriptors)
+        Assert-Equal 2 $removed.Count "agde sln + vcxproj pruned. got: $($removed -join '; ')"
+        Assert-True (Test-Path (Join-Path $wdir 'widget_win64.sln')) "win64 sln kept"
+        Assert-False (Test-Path (Join-Path $wdir 'widget_agde.sln')) "agde sln pruned"
+    }
+
+    # ========================================================================
+    Write-Host "`n[13] Tracking policy (regenerate-first invariants)" -ForegroundColor Cyan
+
+    Invoke-Test "no generated/transient files are git-tracked" {
+        Push-Location $repoRoot
+        try {
+            $bad = @(git ls-files -- "Build/*.vcxproj*" "Build/*.sln" "Games/*/build/*.vcxproj*" "Games/*/Build/*.vcxproj*" "Build/*.log" "Build/tmpclaude-*" "Build/dp_telemetry" "Build/citybuilder_test_results" "Build/artifacts" 2>$null)
+        }
+        finally { Pop-Location }
+        if ($bad.Count -gt 0) { throw ("tracked generated/transient files (policy violation): " + ($bad -join '; ')) }
+    }
+
+    Invoke-Test "hand-written build files are NOT gitignored" {
+        Push-Location $repoRoot
+        try {
+            $mustNotIgnore = @(
+                'Build/Sharpmake_Common.cs', 'Build/regen.ps1', 'Build/zenith_buildsystem.psm1',
+                'Build/zenith_config.psd1', 'Build/Templates/NewGame/template.json',
+                'Build/Tests/run_buildsystem_tests.ps1'
+            )
+            $ignored = @(git check-ignore @mustNotIgnore 2>$null)
+        }
+        finally { Pop-Location }
+        if ($ignored.Count -gt 0) { throw ("hand-written files are ignored (surgical-ignore violation): " + ($ignored -join '; ')) }
+    }
 }
 finally {
     Remove-Item -Recurse -Force -Path $script:TempRoot -ErrorAction SilentlyContinue
