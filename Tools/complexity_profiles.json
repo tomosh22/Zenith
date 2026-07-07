@@ -17,7 +17,8 @@
             "Build",
             ".git",
             ".claude",
-            ".codex_tmp"
+            ".codex_tmp",
+            "dist"
         ],
         "exclude_globs": [
             "**/*.Tests.inl"
@@ -155,7 +156,8 @@
             "Build",
             ".git",
             ".claude",
-            ".codex_tmp"
+            ".codex_tmp",
+            "dist"
         ],
         "exclude_globs": [],
         "ignore_macros": [
