@@ -8,7 +8,7 @@
 #    passing run, investigate; otherwise the loop is acceptably tuned."
 #
 # What this script does:
-#   1. Invokes run_dp_tests.ps1 -Headless -Filter on each of the 4
+#   1. Runs each of the 4 acceptance playthrough tests directly
 #      playthrough tests, producing per-test JSON results.
 #   2. Reads `frames` from each JSON.
 #   3. Compares against:
@@ -28,7 +28,7 @@
 #   pwsh ./Tools/check_acceptance_drift.ps1
 #   pwsh ./Tools/check_acceptance_drift.ps1 -SkipRun   # use existing JSONs
 #
-# Required dir: Build/artifacts/test_results/devilsplayground/ (run_dp_tests.ps1 default).
+# Required dir: Build/artifacts/test_results/devilsplayground/ (zenith test default).
 
 [CmdletBinding()]
 param(
@@ -61,7 +61,7 @@ if (-not $SkipRun) {
         New-Item -ItemType Directory -Force -Path $ResultsDir | Out-Null
     }
     # We invoke the engine directly per test instead of going through
-    # run_dp_tests.ps1, because the runner wipes the entire ResultsDir
+    # the shared test harness, because it wipes the entire ResultsDir
     # on each invocation -- running 4 filtered invocations sequentially
     # would leave only the last test's JSON. Direct invocation lets us
     # keep all 4 JSONs in the same directory.

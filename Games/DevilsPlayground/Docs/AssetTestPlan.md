@@ -58,7 +58,7 @@ The artistic / aesthetic surface is explicitly out of scope. **This plan keeps e
 [TestPlan.md](TestPlan.md) describes ~250 gameplay tests. This plan adds **~180 asset-validation tests** that run in the same harness. They share the same:
 
 - Test struct (`Zenith_AutomatedTest` with Setup/Step/Verify/MaxFrames).
-- Test runner (`Tools/run_dp_tests.ps1`).
+- Test runner (`zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)`).
 - JSON result format (Claude reads `<test>.json` to determine pass/fail).
 - Naming convention (`Test_<Phase><System>_<Scenario>`).
 
@@ -639,7 +639,7 @@ int RunAssetLinter(const char* szAssetPath, const char* szResultsPath)
 
 ## 4. The Full Asset Validator (CI)
 
-Wraps the full §2 test suite into the existing `Tools/run_dp_tests.ps1`. Two batches:
+Wraps the full §2 test suite into the existing `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)`. Two batches:
 
 - **PR-gating batch:** Manifest + loadability + schema. ~1 minute.
 - **Full asset validator (runs nightly):** All §2 tests including instantiation + substitution. ~5 minutes.
@@ -651,7 +651,7 @@ Wraps the full §2 test suite into the existing `Tools/run_dp_tests.ps1`. Two ba
 - name: Asset lint (every changed asset)
   run: ZenithTools.exe lint --batch --paths-from changed.txt --out lint.json
 - name: Asset manifest tests
-  run: pwsh.exe -File Tools/run_dp_tests.ps1 -Filter ^Test_Asset -Headless
+  run: pwsh.exe -File zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --filter ^Test_Asset --headless
 - name: Aggregate
   run: pwsh.exe -File Tools/aggregate_dp_results.ps1 -OutSummary asset_summary.json
 ```
@@ -707,7 +707,7 @@ Linter reports schema failures. Fix in Blender (wrong socket name? wrong axis up
 ### 5.5 Step 5 — Run the full test
 
 ```bash
-pwsh.exe -File Tools/run_dp_tests.ps1 -Filter BurialCoin -Headless
+pwsh.exe -File zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --filter BurialCoin --headless
 ```
 
 Test passes. Commit.
@@ -793,7 +793,7 @@ The asset test plan deploys in lockstep with the asset roll-out from [AssetManif
 | 14–16 | S2 env outsource delivery | Cross-DCC export-format sanity tests (UV flip, normal-map convention, tangent space). |
 | 17–18 | Final polish + LQA | Loc-string fit tests against final fonts. Edge case audio (clipping, loop seam) tests. |
 
-**Total asset tests at ship:** ~180 individual test cases covering ~2,400 assets. Asset linter runs as part of `Tools/run_dp_tests.ps1`, taking ~5 min nightly.
+**Total asset tests at ship:** ~180 individual test cases covering ~2,400 assets. Asset linter runs as part of `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)`, taking ~5 min nightly.
 
 ---
 
@@ -817,7 +817,7 @@ The pitfalls to avoid when authoring asset tests.
 A worked example of how Claude verifies a new asset without human intervention:
 
 1. **An artist commits** `dp_char_villager_devout.zmodel` and pushes to a feature branch.
-2. **CI runs** `Tools/run_dp_tests.ps1 -Filter Asset -Headless`.
+2. **CI runs** `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --filter Asset --headless`.
 3. **The PR-gating batch** completes in ~1 minute. JSON results land in `Build/artifacts/test_results/devilsplayground/`.
 4. **Claude reads** `asset_summary.json`. Sees `Test_AssetSkel_VillagerCanonicalBones` failed: `missing bone 'LeftHand'`.
 5. **Claude opens** the artist's commit. Examines the `.zskel` via `ZenithTools.exe inspect`. Confirms `LeftHand` is exported as `L_Hand`.

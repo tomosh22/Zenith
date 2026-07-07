@@ -478,7 +478,7 @@ function Invoke-ZenithTest {
 
     $target = $null; $filter = ''; $tier = $null; $config = $null
     $headless = $false; $perProcess = $false; $failFast = $false
-    $doBuild = $false; $resultsDir = $null
+    $doBuild = $false; $resultsDir = $null; $exitAfterFrames = 8500; $assertionsLog = ''
     for ($i = 0; $i -lt $CmdArgs.Count; $i++) {
         $a = $CmdArgs[$i]
         if ($a -eq '--filter') { $filter = $CmdArgs[++$i] }
@@ -489,11 +489,13 @@ function Invoke-ZenithTest {
         elseif ($a -eq '--fail-fast') { $failFast = $true }
         elseif ($a -eq '--build') { $doBuild = $true }
         elseif ($a -eq '--results-dir') { $resultsDir = $CmdArgs[++$i] }
+        elseif ($a -eq '--exit-after-frames') { $exitAfterFrames = [int]$CmdArgs[++$i] }
+        elseif ($a -eq '--assertions-log') { $assertionsLog = $CmdArgs[++$i] }
         elseif ($a -like '--*') { Write-CliError "unknown option '$a' for 'test'"; return $script:EXIT_USAGE }
         else { if ($null -eq $target) { $target = $a } else { Write-CliError "unexpected argument '$a'"; return $script:EXIT_USAGE } }
     }
     if ([string]::IsNullOrEmpty($target)) {
-        Write-CliError "usage: zenith test <Name|all> [--filter X] [--tier N] [--config C] [--headless] [--per-process] [--fail-fast] [--build] [--results-dir D]"
+        Write-CliError "usage: zenith test <Name|all> [--filter X] [--tier N] [--config C] [--headless] [--per-process] [--fail-fast] [--build] [--results-dir D] [--exit-after-frames N] [--assertions-log F]"
         return $script:EXIT_USAGE
     }
     if ([string]::IsNullOrEmpty($config)) { $config = Get-ZenithDefaultConfig }
@@ -509,6 +511,7 @@ function Invoke-ZenithTest {
             $r = Invoke-ZenithGameTests `
                 -Exe $exe.FullName -ResultsDir $dir -Filter $filter -Tier $tier `
                 -PerProcess:$perProcess -FailFast:$failFast -Headless:$headless `
+                -ExitAfterFrames $exitAfterFrames -AssertionsLog $assertionsLog `
                 -Tag "zenith test $Name"
         }
         catch {
@@ -645,14 +648,11 @@ $lower.exe --assets-root "%~dp0" %*
 Run via run.bat (it passes --assets-root so assets load from this folder
 instead of the build machine's source tree).
 
-Known limitations (paths still baked into the exe at build time):
-- Shader SOURCE lookup (SHADER_SOURCE_ROOT): windowed runs recompile shaders
-  at boot from the build machine's checkout path. Headless runs (--headless)
-  skip all GPU/shader work.
-- Game code that bakes GAME_ASSETS_DIR into string literals at compile time
-  (e.g. scene build-index registration) bypasses the asset registry and still
-  points at the build machine's tree. Registry-resolved assets (game:/engine:
-  prefixed paths, serializable assets, file watchers) all honor --assets-root.
+Known limitation: game code that bakes GAME_ASSETS_DIR into string literals at
+compile time (e.g. scene build-index registration) bypasses the asset registry
+and still points at the build machine's tree. Everything resolved at runtime --
+game:/engine: prefixed asset paths, serializable assets, file watchers, and the
+shader source root (runtime Slang compile + hot reload) -- honors --assets-root.
 "@
     [System.IO.File]::WriteAllText((Join-Path $out 'README.md'), $readme, (New-Object System.Text.UTF8Encoding($false)))
 

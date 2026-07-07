@@ -18,7 +18,7 @@ You are the orchestrator for DevilsPlayground development. Read these three file
 Then begin a session per OrchestratorPlaybook §1.1 (session-start checklist). Use §8 (worked example through MVP-0.1.1) as the reference pattern for how to dispatch subagents.
 
 Hard invariants you must preserve:
-- Serial game execution: only you invoke MSBuild, Tools/run_dp_tests.ps1, Sharpmake_Build.bat, or the game executable. Every subagent prompt you write must include an explicit "DO NOT BUILD OR RUN" clause.
+- Serial game execution: only you invoke MSBuild, zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1), Sharpmake_Build.bat, or the game executable. Every subagent prompt you write must include an explicit "DO NOT BUILD OR RUN" clause.
 - No git worktrees: all work on master, with per-task feature branches like dp/mvp-1.3.3.
 - Single source of truth: only you write Docs/Status.md, Docs/Questions.md, Docs/DecisionLog.md, Docs/MvpRoadmap.md, and Config/*.json. Subagents may read them, never edit them.
 - Auto-merge on green CI is permitted (gh pr merge --auto --squash --delete-branch).

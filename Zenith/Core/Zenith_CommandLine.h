@@ -72,13 +72,22 @@ namespace Zenith_CommandLine
     bool        IsShaderDebugO0();
 
     // Relocatable-package asset override: `--assets-root <path>`. The baked
-    // GAME_ASSETS_DIR / ENGINE_ASSETS_DIR defines are ABSOLUTE paths into the
-    // build machine's source tree, so a packaged exe cannot find assets on
-    // another machine. `zenith package` emits a run.bat that passes the
-    // package root here; Zenith_Engine::InitialiseAssets then resolves both
-    // asset dirs UNDER this root (see Zenith_AssetRegistry::ResolveAssetsDir)
-    // instead of the baked paths. Returns nullptr when absent (the default:
-    // baked paths, unchanged behaviour); the pointer is into argv
+    // GAME_ASSETS_DIR / ENGINE_ASSETS_DIR / SHADER_SOURCE_ROOT defines are
+    // ABSOLUTE paths into the build machine's source tree, so a packaged exe
+    // cannot find assets on another machine. `zenith package` emits a run.bat
+    // that passes the package root here. Returns nullptr when absent (the
+    // default: baked paths, unchanged behaviour); the pointer is into argv
     // (process-lifetime), mirroring GetScreenshotPath.
     const char* GetAssetsRoot();
+
+    // Pick the effective on-disk dir for a baked compile-time path given an
+    // optional override root. Pure: no override (null/empty) returns the baked
+    // dir UNCHANGED (including the deliberately-empty "" that FluxCompiler/
+    // hub/Android bake); otherwise returns "<override root>/<relative under
+    // root>" with trailing root separators trimmed (`run.bat` passes "%~dp0",
+    // which ends in a backslash). Lives HERE (Core, L0) because both the asset
+    // dirs (Zenith_Engine::InitialiseAssets) and the shader source root
+    // (Flux_SlangCompiler / hot reload) resolve through it -- Flux must not
+    // reach up into AssetHandling.
+    std::string ResolveUnderAssetsRoot(const std::string& strBakedDir, const char* szOverrideRoot, const std::string& strRelativeUnderRoot);
 }

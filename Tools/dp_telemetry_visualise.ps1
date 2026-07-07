@@ -23,7 +23,7 @@
 # marker labelled with the event's `name` field.
 #
 # ASCII-only script body so Windows PowerShell 5.1 + pwsh 7+ parse it
-# without UTF-8 mojibake. See run_dp_tests.ps1 preamble for the rationale.
+# without UTF-8 mojibake (Q-2026-05-12-005).
 
 [CmdletBinding()]
 param(

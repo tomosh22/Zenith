@@ -66,4 +66,4 @@ Direct `gh pr merge --squash` (no `--auto`) is rejected by the API if the requir
 
 [Q-2026-05-12-007](Questions.md) is the canonical record. Summary: free GitHub windows runners have no GPU; the DP engine calls `vkEnumeratePhysicalDevices` at boot and deadlocks if no devices are found; reactivation requires one of (a) paid GPU runner [vetoed], (b) Mesa lavapipe + engine code changes, (c) an engine `--no-graphics` boot mode, or (d) a self-hosted GPU runner. Until one of those lands, requiring `dp-tests` would block every PR.
 
-The autonomy loop accepts this gap: every PR auto-merges with build-only validation. Local `Tools/run_dp_tests.ps1` execution is the only test gate. Add a `dp-tests` requirement immediately when the gap closes.
+The autonomy loop accepts this gap: every PR auto-merges with build-only validation. Local `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)` execution is the only test gate. Add a `dp-tests` requirement immediately when the gap closes.

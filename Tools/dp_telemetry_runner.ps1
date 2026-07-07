@@ -25,8 +25,7 @@
 #   3  -- couldn't find the bot exe (build with -Build first).
 #
 # ASCII-only script body so Windows PowerShell 5.1 + pwsh 7+ parse it
-# without UTF-8 / CP1252 mojibake. See run_dp_tests.ps1's preamble for
-# the rationale (Q-2026-05-12-005).
+# without UTF-8 / CP1252 mojibake (Q-2026-05-12-005).
 
 [CmdletBinding()]
 param(
@@ -35,14 +34,13 @@ param(
     [switch]$Headless  = $true,
     [switch]$Build     = $false,
     [switch]$SkipRun   = $false,
-    # Bot needs more than the harness default 600-frame cap to walk
-    # the GameLevel map. Pre-possess + scene load = ~60 frames; pathing
+    # Bot needs more than the harness default frame cap to walk the
+    # GameLevel map. Pre-possess + scene load = ~60 frames; pathing
     # to 5 objectives + the pentagram via a multi-possession chain is
     # ~3-5 min of bot time at jog speed. 18300 frames = 5 min, matches
     # Test_DPHeuristicBotPlaythrough's kMaxFrames so the bot gets its
     # full budget when invoked through this runner.
     [int]$ExitAfterFrames = 18300,
-    [string]$RunnerScript = "Tools/run_dp_tests.ps1",
     # When -Visualise is set, post-process the captured telemetry into
     # a top-down PNG (Tools/dp_telemetry_visualise.ps1). Useful for
     # spotting "bot stood in a corner" failure modes that pass the
@@ -105,18 +103,13 @@ $srcJson = Join-Path $tempDir 'dp_bot_playthrough.json'
 $testExit = 0
 if (-not $SkipRun) {
     Write-Section "Running Test_DPHeuristicBotPlaythrough"
-    if (-not (Test-Path $RunnerScript)) {
-        Write-Error "runner script not found: $RunnerScript"
-        exit 1
-    }
-    $runnerArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass',
-        '-File', $RunnerScript,
-        '-Filter', 'Test_DPHeuristicBotPlaythrough',
-        '-ExitAfterFrames', $ExitAfterFrames)
-    if ($Headless) { $runnerArgs += '-Headless' }
-    & pwsh.exe @runnerArgs
+    $cliArgs = @('test', 'DevilsPlayground',
+        '--filter', 'Test_DPHeuristicBotPlaythrough',
+        '--exit-after-frames', $ExitAfterFrames)
+    if ($Headless) { $cliArgs += '--headless' }
+    & (Join-Path $repoRoot 'zenith.bat') @cliArgs
     $testExit = $LASTEXITCODE
-    Write-Host "run_dp_tests exit: $testExit"
+    Write-Host "zenith test exit: $testExit"
 }
 
 # ----------------------------------------------------------------------

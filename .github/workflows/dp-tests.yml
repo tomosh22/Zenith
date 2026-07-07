@@ -179,13 +179,12 @@ jobs:
       - name: Run DP tests
         shell: pwsh
         run: |
-          # pwsh 7+ handles UTF-8 cleanly (the runner script has em-dashes
-          # in its top-of-file usage comment that crash PS5.1 -- see
-          # Questions.md Q-2026-05-12-005). windows-latest has pwsh
-          # preinstalled at C:\Program Files\PowerShell\7\pwsh.exe.
-          & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File '.\Tools\run_dp_tests.ps1' -Headless -ResultsDir $env:DP_RESULTS_DIR
+          # zenith test batches every registered test in one headless process;
+          # the 9 graphics-mandatory tests (m_bRequiresGraphics) are skipped on
+          # the GPU-less runner.
+          & .\zenith.bat test DevilsPlayground --headless --results-dir $env:DP_RESULTS_DIR
           $testExit = $LASTEXITCODE
-          Write-Host "run_dp_tests exit: $testExit"
+          Write-Host "zenith test exit: $testExit"
           if ($testExit -ne 0) { exit $testExit }
 
       - name: Upload test result JSON artifact

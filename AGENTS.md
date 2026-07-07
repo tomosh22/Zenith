@@ -145,7 +145,7 @@ needs no Sharpmake C# edits. Regenerate all solutions:
 ```batch
 Build\regen.ps1
 ```
-(`zenith regen` / `Build\Sharpmake_Build.bat` / `run_sharpmake.ps1` forward here.)
+(`zenith regen` forwards here.)
 
 This generates **per-game** solutions plus one **engine-only** solution (NO all-games sln):
 - `Games/<Name>/<name>_win64.sln` (+ `<name>_agde.sln` when `android:true`)

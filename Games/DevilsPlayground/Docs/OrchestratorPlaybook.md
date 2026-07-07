@@ -13,7 +13,7 @@
 Every action in an orchestrated session must preserve these three properties. Violations break the user's stated constraints; do not break them.
 
 ### Invariant 1 — Serial game execution
-**At most one entity invokes `MSBuild` or `Tools/run_dp_tests.ps1` or runs the game executable at any time.**
+**At most one entity invokes `MSBuild` or `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)` or runs the game executable at any time.**
 
 The user explicitly forbade concurrent game execution as the basis for skipping git worktrees. The orchestrator is the **only** entity permitted to build or run. Subagents author files; the orchestrator builds.
 
@@ -127,7 +127,7 @@ Each role is a specific way to invoke the `Agent` tool. Pick the role that match
 **Mandatory prompt clauses:**
 
 - *"Files you may edit: [exhaustive list]."* — scope can include paths under `Games/DevilsPlayground/` and/or `Zenith/` (engine code is in-scope per 2026-05-12 user direction); be specific.
-- *"DO NOT run `MSBuild`, `Tools/run_dp_tests.ps1`, `Sharpmake_Build.bat`, or the game executable. The orchestrator handles all build/test/run operations."*
+- *"DO NOT run `MSBuild`, `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)`, `Sharpmake_Build.bat`, or the game executable. The orchestrator handles all build/test/run operations."*
 - *"DO NOT modify Docs/Status.md, Docs/MvpRoadmap.md, Docs/DecisionLog.md, Docs/Questions.md, or anything in `Config/`. The orchestrator manages these."*
 - *"Follow Zenith conventions: no std::function / std::vector / std::mutex. Use Zenith_Vector, Zenith_Mutex, function pointers. All .cpp files start with `#include \"Zenith.h\"`. Tests wrapped in `#ifdef ZENITH_INPUT_SIMULATOR`."*
 - *"For engine-code changes (paths under `Zenith/`): the orchestrator will spawn a Reviewer subagent (mandatory) and run a Combat smoke build before merging. Surface any cross-game concerns in your report."*
@@ -245,7 +245,7 @@ function Release-BuildLock {
 . C:\dev\Zenith\Tools\build_lock.ps1
 Acquire-BuildLock
 try {
-    # MSBuild / Tools/run_dp_tests.ps1 / Sharpmake / asset import / scene export
+    # MSBuild / zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) / Sharpmake / asset import / scene export
     # …
 } finally {
     Release-BuildLock
@@ -277,13 +277,13 @@ cd ..
 ### 4.3 Test
 
 ```powershell
-pwsh.exe -File Tools/run_dp_tests.ps1 -Headless
+pwsh.exe -File zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless
 ```
 
 Filter to the current task's tests during iteration:
 
 ```powershell
-pwsh.exe -File Tools/run_dp_tests.ps1 -Filter "Apprehend" -Headless
+pwsh.exe -File zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --filter "Apprehend" --headless
 ```
 
 ### 4.4 Release the lock
@@ -296,11 +296,11 @@ Stale-lock recovery is now built into `Acquire-BuildLock` (PID-liveness check ab
 
 ### 4.6 What else the lock must cover
 
-The lock protects more than `MSBuild` and `Tools/run_dp_tests.ps1`. Every operation that touches build output, generated source, or the game's runtime state needs it:
+The lock protects more than `MSBuild` and `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)`. Every operation that touches build output, generated source, or the game's runtime state needs it:
 
 - `MSBuild zenith_win64.sln ...`
 - `Sharpmake_Build.bat`
-- `Tools/run_dp_tests.ps1`
+- `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)`
 - `ZenithTools.exe import ...` (asset import — may regenerate scene files and headers)
 - `ZenithTools.exe lint ...` (asset linter; reads build outputs)
 - `devilsplayground.exe` (any direct run of the game)
@@ -422,7 +422,7 @@ When dispatching subagents for engine work, the file-scope clause in the prompt 
 **Engine-PR safeguards** (mandatory, not optional):
 
 1. **Reviewer subagent** dispatched per §5.4 — non-negotiable for engine PRs.
-2. **Full test suite** run after build (`run_dp_tests.ps1 -Headless`), not just filtered tests.
+2. **Full test suite** run after build (`zenith test --headless`), not just filtered tests.
 3. **Combat smoke build** added as a CI gate for engine-touching PRs: build the Combat game's project to confirm shared engine code didn't regress. The CI workflow at `.github/workflows/dp-pr.yml` should include this as a conditional step that runs when the PR touches `Zenith/` paths.
 4. **Design rationale logged** in `DecisionLog.md` before opening the PR for any net-new engine namespace or non-trivial algorithm.
 
@@ -573,7 +573,7 @@ Prompt:
 
 Files you may edit: ONLY Games/DevilsPlayground/Tests/Test_P1Tuning_LoadsAndValuesInBand.cpp (create new).
 
-DO NOT run MSBuild, Tools/run_dp_tests.ps1, Sharpmake_Build.bat, or
+DO NOT run MSBuild, zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1), Sharpmake_Build.bat, or
 the game executable. DO NOT edit Docs/* or Config/*. The orchestrator
 handles all build/test operations.
 
@@ -619,7 +619,7 @@ Files you may edit:
     DP_Tuning::Initialize() in InitializeResources hook;
     insert call to DP_Tuning::Shutdown() in CleanupResources)
 
-DO NOT run MSBuild, Tools/run_dp_tests.ps1, Sharpmake_Build.bat, or
+DO NOT run MSBuild, zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1), Sharpmake_Build.bat, or
 the game. DO NOT edit Docs/* or Config/*. The orchestrator handles
 all build/test operations.
 
@@ -660,8 +660,8 @@ std::function. Linear search is fine for our size (~80 keys).
 
 ```
 Orchestrator acquires lock. Sharpmake. MSBuild → success.
-Tools/run_dp_tests.ps1 -Filter Tuning -Headless → 1 test, pass.
-Tools/run_dp_tests.ps1 -Headless → 35/35 tests, all pass (the 34 existing
+zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --filter Tuning --headless → 1 test, pass.
+zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless → 35/35 tests, all pass (the 34 existing
 + the new Test_P1Tuning_LoadsAndValuesInBand).
 Release lock.
 ```
@@ -769,7 +769,7 @@ When the orchestrator winds down:
 | Mechanical fixups | Linter subagent |
 | Doc body changes (GDD, TestPlan, etc.) | Doc Maintainer subagent |
 | **Build (MSBuild)** | **Orchestrator only** |
-| **Run tests (run_dp_tests.ps1)** | **Orchestrator only** |
+| **Run tests (zenith test)** | **Orchestrator only** |
 | **Run the game (devilsplayground.exe)** | **Orchestrator only** |
 | Acquire / release build lock | Orchestrator |
 | Sharpmake regen after .cpp adds | Orchestrator |

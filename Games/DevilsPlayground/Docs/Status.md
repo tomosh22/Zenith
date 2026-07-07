@@ -114,7 +114,7 @@ The personality matrix is now a meaningful design-tuning instrument — the gap 
 **Direct-to-master with auto-merge on green CI.** Branch protection disabled per Tomos 2026-05-15. CI still runs on every push via the workflows:
 
 - `dp-build` -- DP project build, `vs2022_Debug_Win64_True`
-- `dp-tests` -- `Tools/run_dp_tests.ps1 -Headless`
+- `dp-tests` -- `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless`
 - `complexity-gate` -- automated code-complexity gate
 - `doc-lint` -- Markdown link / claim consistency checks
 
@@ -193,7 +193,7 @@ The 4 personality tests dominated the wall-clock back then (~75 s of the ~120 s 
 ## Notes for the next agent
 
 1. **Operating mode:** direct-to-master with auto-merge on green CI. Run the matrix script to validate balance changes, not just the test suite. The 8 personality tests are integration-grade — they catch class-of-bug that unit tests don't.
-2. **First action:** Verify baseline. `Tools/run_dp_tests.ps1 -Headless` against `master @ HEAD`. Expect a fully-green local run + matching latest-CI run; if the local run reports failures, cross-check `Build/artifacts/test_results/devilsplayground/*.json` against CI to distinguish a fresh-local issue (uncommitted working-tree changes / cache state) from a genuine regression.
+2. **First action:** Verify baseline. `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless` against `master @ HEAD`. Expect a fully-green local run + matching latest-CI run; if the local run reports failures, cross-check `Build/artifacts/test_results/devilsplayground/*.json` against CI to distinguish a fresh-local issue (uncommitted working-tree changes / cache state) from a genuine regression.
 3. **Hard invariants:** (a) commits keep the full suite green; (b) per-test `durationMs` mustn't regress > 20% without justification (`Tools/check_acceptance_drift.ps1`); (c) procgen output stays bit-deterministic — every shape-determining decision is integer math (the giant comment at the top of `DPProcLevel_Generator.cpp` is the contract).
 4. **Personality matrix as instrument:** when changing balance, run the 10-seed matrix and check the `Build/dp_telemetry/seed_matrix/REPORT.md` before / after. The matrix has caught: sprint balance dominating negative outcomes, bots getting stuck in narrow procgen doorways, Berserker being a cosmetic variant of Speedrunner, the bootstrap chain providing non-obvious value, etc.
 5. **Engine surface to be aware of:**

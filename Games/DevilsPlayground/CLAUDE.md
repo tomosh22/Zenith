@@ -182,7 +182,7 @@ to the **Zenith repo root**, not this game directory — run them from there.
 
 ```
 msbuild Games\DevilsPlayground\devilsplayground_win64.sln /t:DevilsPlayground /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
-powershell -NoProfile -File Tools/run_dp_tests.ps1 -Headless
+zenith test DevilsPlayground --headless
 ```
 
 Default mode is **batch** — every registered test runs in one process
@@ -305,7 +305,7 @@ Three guarded ports (each marked `SourceBugFixed:` in code):
    file-scope `ZENITH_REGISTER_COMPONENT(DPFoo_Component, "DPFoo",
    <next free order>)` (orders 100+ unique) plus the TOOLS
    editor-registry mirror in `Project_RegisterGameComponents()`.
-3. Run Sharpmake (`cmd /c '.\Sharpmake_Build.bat < nul'` from `Build/`).
+3. Regenerate solutions (`zenith regen`).
 4. Reference from scene authoring via `AddStep_AddComponent("DPFoo")`,
    or have `DPProcLevelBootstrap` spawn it at runtime from a procgen
    element type (call the component's `OnAwake()` explicitly after a

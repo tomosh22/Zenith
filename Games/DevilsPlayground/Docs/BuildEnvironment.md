@@ -80,18 +80,17 @@ This is the issue noted in `Games/DevilsPlayground/CLAUDE.md`: the automatic cop
 
 ```powershell
 cd C:\dev\Zenith
-.\Tools\run_dp_tests.ps1 -Headless
+.\Tools\zenith test --headless
 ```
 
 Expected: **133 `ZENITH_AUTOMATED_TEST_REGISTER` invocations across 113 .cpp files** at HEAD (verified 2026-05-27 via `grep -c ZENITH_AUTOMATED_TEST_REGISTER Games/DevilsPlayground/Tests/*.cpp`); some are `#ifdef ZENITH_INPUT_SIMULATOR`-gated, so the actual runtime test count depends on the build config. The runner exits 0 if all pass, 1 if any fail. Each per-test JSON now includes a `durationMs` field and the runner prints the slowest-10 after every batch. **Pass-rate caveat (2026-05-27):** see [Status.md](../../../Games/DevilsPlayground/Docs/Status.md) Tests line — a local headless run at HEAD with uncommitted working-tree changes reported failures + an apparent mid-batch hang; treat the canonical pass-rate as "see latest green CI" rather than a local-run snapshot until the root cause is investigated.
 
 Filter to a specific test during dev:
 
-```powershell
-.\Tools\run_dp_tests.ps1 -Filter "Possession" -Headless
+```zenith test DevilsPlayground --filter "Possession" --headless
 ```
 
-**Note:** the `-Tier`, `-FailFast`, `-AssertionsLog` flags referenced in `TestPlan.md` §7 are all live in `Tools/run_dp_tests.ps1` (shipped in MVP-0.0.4 PR #8, 2026-05-12).
+**Note:** the `-Tier`, `-FailFast`, `-AssertionsLog` flags referenced in `TestPlan.md` §7 are all live in `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)` (shipped in MVP-0.0.4 PR #8, 2026-05-12).
 
 ---
 

@@ -25,7 +25,7 @@
 #        a single grep-able line: "VIOLATION [check-id] path:line description").
 #
 # Written in PowerShell to match the existing Tools/ convention
-# (verify_build_env.ps1, run_dp_tests.ps1, agent_session_close.ps1)
+# (verify_build_env.ps1, ZenithTestHarness.psm1, agent_session_close.ps1)
 # rather than introduce a new Python dependency. ASCII-only body so
 # PS 5.1 (default CP1252 codepage) can read it without mojibake. See
 # Q-2026-05-12-005 for the parser-error history.

@@ -10,9 +10,12 @@ working on. Sharpmake (in-repo) is still the generator — CMake is not used.
 zenith new <Name>          # scaffold a game, regen, open its solution
 zenith build <Name>        # build the game (its per-game sln, /t:<Game>)
 zenith run   <Name>        # launch the newest built exe
+zenith test  <Name|all>    # run the game's automated tests (THE test entry point)
 zenith open  <Name>        # regen + open the game's solution in Visual Studio
 zenith list                # list games + built configs
-zenith regen               # regenerate every solution
+zenith regen [--check]     # regenerate every solution (--check: staleness report)
+zenith clean [<Name>]      # kill hanging build processes (+ wipe output/obj)
+zenith package <Name>      # stage a relocatable build into dist/
 zenith hub                 # launch the Unity-Hub-style GUI launcher
 zenith selftest            # run the PowerShell test suites
 ```
@@ -49,8 +52,7 @@ Gradle tree). The other 10 games are `android:true`.
 
 ## Generation — one command, one Sharpmake run
 
-`Build/regen.ps1` (canonical; `zenith regen`, `Build/Sharpmake_Build.bat`, and
-`Build/run_sharpmake.ps1` all forward to it) does, in order:
+`Build/regen.ps1` (canonical; `zenith regen` forwards to it) does, in order:
 
 1. **Refuse to run from a linked git worktree** (Sharpmake-in-worktree generates
    paths that resolve against the wrong tree).

@@ -7,7 +7,7 @@
 #   4. Build the /sources list from the Build/Sharpmake_*.cs glob (no stale
 #      hand-maintained lists).
 #   5. Run Sharpmake ONCE -> engine sln + all per-game slns in one snapshot.
-#   6. Fix up AGDE vcxproj (c++2a + UBSan) -- previously skipped by run_sharpmake.ps1.
+#   6. Fix up AGDE vcxproj (c++2a + UBSan).
 #   7. Delete the obsolete monolithic Build/zenith_win64.sln / zenith_agde.sln.
 #   8. Print the generated .sln inventory (consumed by the CLI + hub).
 #

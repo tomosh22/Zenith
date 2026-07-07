@@ -79,7 +79,7 @@ These three together turn rendering, audio, and persistence into in-process asse
 
 ### 0.6 Runner
 
-The existing `Tools/run_dp_tests.ps1` already handles discovery, batch run, and JSON aggregation. **Three additions are scheduled in Phase 0.0 (MVP-0.0.4)** before any Phase 1 test work begins — the runner currently supports only `-Headless`, `-PerProcess`, `-Filter`, `-ResultsDir`, `-ExitAfterFrames`, `-FixedDt`. Phase 1 then adds:
+The existing `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)` already handles discovery, batch run, and JSON aggregation. **Three additions are scheduled in Phase 0.0 (MVP-0.0.4)** before any Phase 1 test work begins — the runner currently supports only `-Headless`, `-PerProcess`, `-Filter`, `-ResultsDir`, `-ExitAfterFrames`, `-FixedDt`. Phase 1 then adds:
 
 1. `-Tier <0|1|2|3|4>` — filter tests by tier prefix.
 2. `-FailFast` — abort the batch on first failure (default off for nightly, on for PR checks).
@@ -1159,16 +1159,16 @@ The remaining tests run **nightly** in a larger ~45-minute batch and on every re
 - name: Build (tools, debug)
   run: cmd.exe /c "Build\\CleanBuild.bat Build\\zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount"
 - name: Sanity batch
-  run: pwsh.exe -File Tools/run_dp_tests.ps1 -Tier 0,1 -Headless -FailFast
+  run: pwsh.exe -File zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --tier 0,1 --headless --fail-fast
 - name: Golden playthrough
-  run: pwsh.exe -File Tools/run_dp_tests.ps1 -Filter Night1WinGolden -Headless
+  run: pwsh.exe -File zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --filter Night1WinGolden --headless
 ```
 
 ### 7.2 Nightly
 
 ```yaml
 - name: Full batch
-  run: pwsh.exe -File Tools/run_dp_tests.ps1 -Headless -AssertionsLog build/dp_assertions.log
+  run: pwsh.exe -File zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless --assertions-log build/dp_assertions.log
 - name: Aggregate
   run: pwsh.exe -File Tools/aggregate_dp_results.ps1 -ResultsDir Build/artifacts/test_results/devilsplayground -OutSummary build/dp_summary.json
 - name: Upload artifact
@@ -1205,7 +1205,7 @@ Claude Code reads the aggregate `dp_summary.json` produced by `aggregate_dp_resu
 
 Claude's verification loop:
 
-1. Run `Tools/run_dp_tests.ps1 -Headless -AssertionsLog ...`.
+1. Run `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless --assertions-log ...`.
 2. Read `build/dp_summary.json`.
 3. For each test, check `passed == true`. If false, parse `diagnostics` and the assertions log to determine root cause.
 4. Open the test source file, the implementation under test, and the diagnostic log to localise the bug.

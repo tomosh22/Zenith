@@ -10,7 +10,7 @@
 # WHY: the old whole-repo recurse descended into .claude/worktrees/, which holds
 # dozens of full-repo COPIES left by Claude Code workflow/agent runs -- each a
 # complete tree with its own *_agde.vcxproj -- so it walked dozens of nested
-# repos and made `Sharpmake_Build.bat` hang for many minutes to hours. The
+# repos and hung regeneration for many minutes to hours. The
 # targeted globs below are bounded to the real output dirs, so this stays fast no
 # matter what accumulates elsewhere in the tree.
 

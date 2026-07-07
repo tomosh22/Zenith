@@ -93,7 +93,7 @@ Per [AssetManifest.md §0.2](AssetManifest.md) — S0 sourced placeholders.
 
 ### 1.5 The MVP definition-of-done
 
-**Demo script:** an autonomous test agent (or any human) can run `Tools/run_dp_tests.ps1 -Tier 0,1 -Filter "Mvp" -Headless` and see **100% pass**, plus `Test_P4Playthrough_Night1WinGolden` finishes in under 9000 frames.
+**Demo script:** an autonomous test agent (or any human) can run `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --tier 0,1 --filter "Mvp" --headless` and see **100% pass**, plus `Test_P4Playthrough_Night1WinGolden` finishes in under 9000 frames.
 
 Plus: I can `git pull`, build, run, and personally complete the MVP sentence in <5 minutes.
 
@@ -193,7 +193,7 @@ If any of these creep into MVP-scope discussions during the next 4 months, **red
 
 The MVP is done when **all of these are true simultaneously**:
 
-1. ✅ `Tools/run_dp_tests.ps1 -Headless` reports 100% pass on the MVP test subset.
+1. ✅ `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless` reports 100% pass on the MVP test subset.
 2. ✅ `Test_P4Playthrough_Night1WinGolden` finishes a complete bot-driven win run in < 150 seconds @ fixed-dt 60 Hz.
 3. ✅ `Test_P4Playthrough_Night1LossByApprehend` and `Test_P4Playthrough_Night1LossByDawn` both pass.
 4. ✅ A human (the user) can build, run, and personally complete the MVP sentence in under 5 minutes of play.

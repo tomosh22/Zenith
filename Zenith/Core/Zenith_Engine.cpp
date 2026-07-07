@@ -498,11 +498,11 @@ void Zenith_Engine::InitialiseAssets()
 	// Game assets dir comes from the game project (each game defines
 	// GAME_ASSETS_DIR); both baked dirs are ABSOLUTE paths into the build
 	// machine's source tree, so a relocatable package overrides them with
-	// --assets-root <package root> (see Zenith_AssetRegistry::ResolveAssetsDir;
+	// --assets-root <package root> (Zenith_CommandLine::ResolveUnderAssetsRoot;
 	// no override = baked paths, unchanged behaviour).
 	extern const char* Project_GetName();
 	const char* szAssetsRoot = Zenith_CommandLine::GetAssetsRoot();
-	Zenith_AssetRegistry::SetGameAssetsDir(Zenith_AssetRegistry::ResolveAssetsDir(
+	Zenith_AssetRegistry::SetGameAssetsDir(Zenith_CommandLine::ResolveUnderAssetsRoot(
 		Project_GetGameAssetsDirectory(), szAssetsRoot,
 		std::string("Games/") + Project_GetName() + "/Assets/"));
 #ifdef ENGINE_ASSETS_DIR
@@ -510,7 +510,7 @@ void Zenith_Engine::InitialiseAssets()
 #else
 	const std::string strBakedEngineAssets = "./Zenith/Assets/";
 #endif
-	Zenith_AssetRegistry::SetEngineAssetsDir(Zenith_AssetRegistry::ResolveAssetsDir(
+	Zenith_AssetRegistry::SetEngineAssetsDir(Zenith_CommandLine::ResolveUnderAssetsRoot(
 		strBakedEngineAssets, szAssetsRoot, "Zenith/Assets/"));
 
 	// Engine owns the AssetRegistry instance. Allocate and

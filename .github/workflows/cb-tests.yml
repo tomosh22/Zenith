@@ -149,13 +149,12 @@ jobs:
       - name: Run CityBuilder tests
         shell: pwsh
         run: |
-          # pwsh 7+ handles UTF-8 cleanly. windows-latest has pwsh preinstalled
-          # at C:\Program Files\PowerShell\7\pwsh.exe. run_cb_tests.ps1 -Headless
-          # batches every registered test in one process and skips the graphics-
-          # mandatory terrain tests (m_bRequiresGraphics).
-          & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File '.\Tools\run_cb_tests.ps1' -Headless -ResultsDir $env:CB_RESULTS_DIR
+          # zenith test batches every registered test in one headless process;
+          # graphics-mandatory terrain tests (m_bRequiresGraphics) are skipped
+          # on the GPU-less runner.
+          & .\zenith.bat test CityBuilder --headless --results-dir $env:CB_RESULTS_DIR
           $testExit = $LASTEXITCODE
-          Write-Host "run_cb_tests exit: $testExit"
+          Write-Host "zenith test exit: $testExit"
           if ($testExit -ne 0) { exit $testExit }
 
       - name: Upload test result JSON artifact

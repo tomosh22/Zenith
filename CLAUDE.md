@@ -160,8 +160,7 @@ Regenerate every solution from the repo root (or `Build/`):
 ```batch
 Build\regen.ps1
 ```
-(`zenith regen` and the legacy `Build\Sharpmake_Build.bat` / `run_sharpmake.ps1`
-forward here.) regen.ps1 validates all descriptors, codegens
+(`zenith regen` forwards here.) regen.ps1 validates all descriptors, codegens
 `Build/Sharpmake_GameInstances.generated.cs`, runs Sharpmake once, and fixes up AGDE.
 
 This generates **per-game solutions** plus one **engine-only** solution — there is

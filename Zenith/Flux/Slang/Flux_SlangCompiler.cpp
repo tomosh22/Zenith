@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_CommandLine.h"   // --assets-root override for the shader source root
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_Types.h"
 #include "Flux/Flux_PersistentSetLayouts.h"   // Phase 5: persistent-set classification
@@ -787,7 +788,13 @@ static bool CreateSlangSession(const Flux_SlangProgramDesc& xDesc,
 	aszPaths.reserve(s_axSearchPaths.size() + 1);
 	for (const std::string& s : s_axSearchPaths) aszPaths.push_back(s.c_str());
 #ifdef SHADER_SOURCE_ROOT
-	aszPaths.push_back(SHADER_SOURCE_ROOT);
+	// Baked absolute build-machine path, overridable by --assets-root for
+	// relocatable packages (function-local static: resolved once, on the first
+	// session build -- after the command line is parsed; FluxCompiler never
+	// parses game args so it keeps the baked root).
+	static const std::string ls_strShaderRoot = Zenith_CommandLine::ResolveUnderAssetsRoot(
+		SHADER_SOURCE_ROOT, Zenith_CommandLine::GetAssetsRoot(), "Zenith/Flux/Shaders/");
+	aszPaths.push_back(ls_strShaderRoot.c_str());
 #endif
 
 	slang::SessionDesc xSessionDesc = {};

@@ -7,6 +7,7 @@
 #include "Flux/Slang/Flux_ShaderCatalog.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_FeatureRegistry.h"
+#include "Core/Zenith_CommandLine.h"   // --assets-root override for the shader source root
 #include "Core/Zenith_FileWatcher.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Flux/Flux_BackendTypes.h"
@@ -69,7 +70,10 @@ void Flux_ShaderHotReload::Initialise()
 {
 	if (s_bInitialised) return;
 
-	std::string strRoot(SHADER_SOURCE_ROOT);
+	// Baked absolute build-machine path, overridable by --assets-root so a
+	// relocated tools build watches the packaged shader tree.
+	std::string strRoot = Zenith_CommandLine::ResolveUnderAssetsRoot(
+		SHADER_SOURCE_ROOT, Zenith_CommandLine::GetAssetsRoot(), "Zenith/Flux/Shaders/");
 	// Non-capturing callback — all state it needs (the static registration
 	// list) lives in file-scope statics reached via the static OnFileChanged,
 	// so no context pointer is required. The captureless lambda decays to a

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Core/Zenith_CommandLine.h"   // --assets-root override for the shader source root
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Flux.h"
@@ -348,8 +349,13 @@ void Flux_RendererImpl::LateInitialise()
 	// SPIR-V toolchain; the D3D12 null backend loads pre-baked reflection only.
 	Flux_SlangCompiler::Initialise();
 	// Tell the Slang session where to resolve `import` / `loadModule` paths from
-	// (the shader source root) so runtime shader compilation finds the Common/* modules.
-	Flux_SlangCompiler::AddSearchPath(SHADER_SOURCE_ROOT);
+	// (the shader source root) so runtime shader compilation finds the Common/*
+	// modules. Baked SHADER_SOURCE_ROOT is an absolute build-machine path; a
+	// relocatable package overrides it with --assets-root (the packaged tree
+	// carries Zenith/Flux/Shaders at the same repo-relative spot).
+	const std::string strShaderRoot = Zenith_CommandLine::ResolveUnderAssetsRoot(
+		SHADER_SOURCE_ROOT, Zenith_CommandLine::GetAssetsRoot(), "Zenith/Flux/Shaders/");
+	Flux_SlangCompiler::AddSearchPath(strShaderRoot.c_str());
 #endif
 
 	xEngine.FluxSwapchain().Initialise();

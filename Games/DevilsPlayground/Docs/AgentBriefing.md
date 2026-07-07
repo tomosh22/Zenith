@@ -71,7 +71,7 @@ If you are reading this file as a *subagent* spawned by the orchestrator: stay h
 
 **Hard constraints (Invariants from [OrchestratorPlaybook.md](OrchestratorPlaybook.md) §0):**
 
-1. **Serial game execution.** Only the orchestrator invokes `MSBuild` / `Tools/run_dp_tests.ps1` / the game executable. Subagents never do.
+1. **Serial game execution.** Only the orchestrator invokes `MSBuild` / `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)` / the game executable. Subagents never do.
 2. **No git worktrees.** All work on the main repo's checkout at `C:\dev\Zenith\` on `master` (with per-task feature branches).
 3. **Single source of truth.** Only the orchestrator writes to `Docs/Status.md`, `Docs/Questions.md`, `Docs/DecisionLog.md`, `Docs/MvpRoadmap.md`, or `Config/*.json`.
 
@@ -109,7 +109,7 @@ For each sub-task:
 2. **Reference** the matching section in TestPlan.md, GDD, etc.
 3. **Write the test first** if the task is "Test_X" or has an implicit test. Confirm it fails by running it.
 4. **Implement** the smallest change that makes the new test pass.
-5. **Run the full test batch:** `pwsh.exe -File Tools/run_dp_tests.ps1 -Headless`. All must pass.
+5. **Run the full test batch:** `pwsh.exe -File zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless`. All must pass.
 6. **Commit** with a Conventional-Commits-style message: `feat(dp): MVP-1.3.1 — Test_P1Apprehend_PriestCatchesPlayer`.
 7. **Open PR.** Use `gh pr create`. PR title = commit subject. Body = brief rationale + "Closes MVP-1.3.1".
 8. **Auto-merge.** Set with `gh pr merge --auto --squash`. CI will merge when green.
@@ -204,7 +204,7 @@ Closes MVP-X.Y.Z (see [MvpRoadmap.md](MvpRoadmap.md)).
 
 ## Tests
 - Added: `Test_<Name>` ([why it proves the change](#))
-- All existing tests pass: `Tools/run_dp_tests.ps1 -Headless`
+- All existing tests pass: `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless`
 - New test runtime: <N> seconds at fixed-dt 60 Hz
 
 ## Decision log
@@ -226,7 +226,7 @@ PR titles use Conventional Commits: `feat(dp): MVP-X.Y.Z — short summary`. Typ
 **CI provider:** GitHub Actions. Workflows live in `.github/workflows/`. **Phase 0.0 of the MvpRoadmap authored them** (MVP-0.0.2 + MVP-0.0.3). Required checks for auto-merge (verified live via `gh api repos/.../branches/master/protection`):
 
 - `dp-build` — clean MSBuild of `vs2022_Debug_Win64_True` (MVP-0.0.2).
-- `dp-tests` — `Tools/run_dp_tests.ps1 -Headless` exit code 0 (MVP-0.0.3; re-added in PR #15 after PR #14 unblocked SET_MODEL_MATERIAL).
+- `dp-tests` — `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless` exit code 0 (MVP-0.0.3; re-added in PR #15 after PR #14 unblocked SET_MODEL_MATERIAL).
 - `complexity-gate` — Cyclomatic-complexity threshold.
 - `doc-lint` — runs `Tools/doc_lint.ps1` (MVP-0.3.2, PR #24); not blocking auto-merge but always required to pass.
 - `dp-asset-lint` — once MVP-3.5.1 lands, the asset linter pass.
@@ -239,7 +239,7 @@ gh pr merge --auto --squash --delete-branch
 
 (`--auto` queues; CI green triggers actual merge. `--squash` keeps history linear. `--delete-branch` cleans up.)
 
-**If GitHub is unavailable** (rare; offline mode): commit on local feature branch, run `Tools/run_dp_tests.ps1 -Headless` to verify, leave a note in `Docs/Status.md` describing the un-pushed branch. Do *not* merge to master locally — wait for connectivity.
+**If GitHub is unavailable** (rare; offline mode): commit on local feature branch, run `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless` to verify, leave a note in `Docs/Status.md` describing the un-pushed branch. Do *not* merge to master locally — wait for connectivity.
 
 **If a required check name changes:** update `.github/workflows/` AND this section in the same PR. Drift here is silent and blocks all future PRs.
 
@@ -280,13 +280,13 @@ Always run from `C:\dev\Zenith` in PowerShell:
 & 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe' Build\zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
 
 # Test (headless, fixed-dt)
-pwsh.exe -File Tools/run_dp_tests.ps1 -Headless
+pwsh.exe -File zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless
 
 # Test with filter (faster during dev)
-pwsh.exe -File Tools/run_dp_tests.ps1 -Filter "Apprehend" -Headless
+pwsh.exe -File zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --filter "Apprehend" --headless
 
 # Test single in per-process mode (for stubborn flakes)
-pwsh.exe -File Tools/run_dp_tests.ps1 -Filter "Apprehend_PriestCatches" -PerProcess -Headless
+pwsh.exe -File zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --filter "Apprehend_PriestCatches" --per-process --headless
 ```
 
 ### 4.4 Project hygiene
@@ -361,7 +361,7 @@ Read these before you touch code; they're permanent footguns:
 - **DevilsPlayground lives at `C:\dev\Zenith\Games\DevilsPlayground\` in the main repo.** Always work on `master` branch with per-task feature branches. If the harness places you in a `.claude/worktrees/<name>/` checkout, treat it as transient — the no-worktrees Invariant from OrchestratorPlaybook still holds; in particular don't commit Sharpmake-regenerated vcxprojs from inside a worktree (they bake the worktree's absolute path).
 - **`DP_Player::ResetForNewRun()` is the canonical per-run reset.** Used by `DPPauseMenuController::HandleRestart`/`HandleQuit` AND the harness between-tests hook. `ResetForTest` exists only as a backward-compat alias under `#ifdef ZENITH_INPUT_SIMULATOR`; prefer the new name.
 - **Perception system clamps hearing range at `min(emit_radius, agent_max_range)`.** A 200m emit doesn't reach a priest 100m away if the priest's `hearing_range_m` is 30m. For "map-wide" stimuli (BellSoul-class) use `DP_AI::NotifyAllPriestsOfInvestigatePos` to bypass the clamp via direct BB write.
-- **Run tests through `Tools/run_dp_tests.ps1`, not direct `devilsplayground.exe --automated-test`.** The runner adds `--skip-tool-exports --skip-unit-tests` which the engine's automated-test driver requires for reliable batched behaviour; the direct exe path skips them and tests can fail spuriously.
+- **Run tests through `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1)`, not direct `devilsplayground.exe --automated-test`.** The runner adds `--skip-tool-exports --skip-unit-tests` which the engine's automated-test driver requires for reliable batched behaviour; the direct exe path skips them and tests can fail spuriously.
 - **`Sharpmake_Build.bat` has a `pause` directive** that hangs non-interactively. Invoke `Sharpmake/Sharpmake.Application.exe` directly with the same `/sources(...)` args.
 - **Engine work is in-scope for autonomous agents** (per user direction 2026-05-12). Subagents may edit anywhere under `Zenith/` for tasks like MVP-0.4 (instrumentation hooks) and MVP-1.2 (navmesh generator). Engine PRs trigger mandatory Reviewer-subagent dispatch (OrchestratorPlaybook §5.4) and a Combat smoke build (catches cross-game regressions). Design rationale logged in `DecisionLog.md` before opening the PR for any net-new engine namespace.
 
@@ -459,7 +459,7 @@ If a merged PR causes regressions another session/agent surfaces:
 A 60-second self-review:
 
 1. ✅ Test exists for the change. Test fails on master, passes on this branch.
-2. ✅ `Tools/run_dp_tests.ps1 -Headless` shows 100% green locally.
+2. ✅ `zenith test DevilsPlayground (Tools/ZenithCli/ZenithTestHarness.psm1) --headless` shows 100% green locally.
 3. ✅ No new `std::function` / `std::vector` / `std::mutex`.
 4. ✅ New `.cpp` files start with `#include "Zenith.h"`.
 5. ✅ If you added a `.cpp`, you ran Sharpmake.

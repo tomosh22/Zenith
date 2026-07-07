@@ -51,11 +51,11 @@ registers the 3 game components, disables SS*/shadows/fog (keeps skybox + IBL), 
 ## Build + autonomous test gate
 
 ```
-cd Build && Sharpmake_Build.bat                        # regen after adding .cpp files
+zenith regen                                           # regen after adding .cpp files
 msbuild Games\CityBuilder\citybuilder_win64.sln /t:CityBuilder /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
-pwsh ./Tools/run_cb_tests.ps1 -Headless                # logic tests (CI-style)
-pwsh ./Tools/run_cb_tests.ps1 -Filter CB_HumanSession  # windowed full human playthrough
-pwsh ./Tools/run_cb_tests.ps1 -Filter CB_CityGrow      # windowed free-form render check
+zenith test CityBuilder --headless                     # logic tests (CI-style)
+zenith test CityBuilder --filter CB_HumanSession       # windowed full human playthrough
+zenith test CityBuilder --filter CB_CityGrow           # windowed free-form render check
 ```
 
 Gate = build-green + every test `passed:true`. Windowed tests are

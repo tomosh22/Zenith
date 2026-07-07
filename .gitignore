@@ -139,21 +139,14 @@ ZenithHub/output/
 /Build/artifacts/
 /dist/
 
-# --- Legacy runner output dirs + run residue (ignored until every caller
-# migrates to Build/artifacts/; baselines regenerate from known-good runs) ---
-/Build/dp_telemetry/
-/Build/dp_test_results*/
-/Build/cb_test_results*/
-/Build/citybuilder_test_results/
-/Build/dp_baseline_results/
-/Build/td_dp_results/
-/Build/dp_demo_package/
+# --- Run residue at the Build/ root (stray logs from ad-hoc redirects, temp
+# session markers, engine data drops). All sanctioned outputs live under
+# Build/artifacts/ above; these rules just keep accidents out of the index. ---
 /Build/*.log
 /Build/*.txt
 /Build/*.err
 /Build/*.dat
 /Build/tmpclaude-*
-/Build/dimlights_direct.json
 # Engine unit test writes this into the exe CWD (Zenith_UnitTests.Tests.inl).
 unit_test_scene.zscen
 # Local tool scratch dirs at repo root

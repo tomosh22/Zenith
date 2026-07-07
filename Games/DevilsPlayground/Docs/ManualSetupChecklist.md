@@ -37,7 +37,7 @@
   cmd /c '.\Sharpmake_Build.bat < nul'
   & 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe' zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
   cd ..
-  .\Tools\run_dp_tests.ps1 -Headless
+  .\Tools\zenith test --headless
   ```
   Result: the **133** `ZENITH_AUTOMATED_TEST_REGISTER` invocations are discovered + run (some `#ifdef ZENITH_INPUT_SIMULATOR`-gated; the actual runtime count depends on build config). What matters is **the build itself succeeds** so the orchestrator can run + extend it; pass-rate is tracked separately in [BuildEnvironment.md §5](BuildEnvironment.md#5-first-test-run) + [Status.md](Status.md).
 

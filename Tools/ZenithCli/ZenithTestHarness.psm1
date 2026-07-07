@@ -1,12 +1,11 @@
 # ZenithTestHarness.psm1
 # =============================================================================
-# ONE implementation of the Zenith automated-test protocol, shared by
-# `zenith test`, Tools/run_dp_tests.ps1, and Tools/run_cb_tests.ps1 (both now
-# thin forwarders). Owns: headless test discovery (+ ANSI strip), the engine
-# flag protocol (--all-automated-tests / --automated-test / --test-results[-dir]
-# / --skip-* / --headless), the pre-run JSON wipe, the runtime-DLL self-heal,
-# batch vs per-process mode selection, the per-test JSON tally, and the
-# slowest-tests timing report.
+# THE implementation of the Zenith automated-test protocol; `zenith test` is
+# its only entry point. Owns: headless test discovery (+ ANSI strip), the
+# engine flag protocol (--all-automated-tests / --automated-test /
+# --test-results[-dir] / --skip-* / --headless), the pre-run JSON wipe, the
+# runtime-DLL self-heal, batch vs per-process mode selection, the per-test
+# JSON tally, and the slowest-tests timing report.
 #
 # Mode selection (merged DP + CB semantics):
 #   per-process iff -PerProcess OR -FailFast OR -Filter is non-empty
@@ -162,7 +161,11 @@ function Invoke-ZenithGameTests {
         [switch]$PerProcess,
         [switch]$FailFast,
         [switch]$Headless,
-        [int]$ExitAfterFrames = 6000,
+        # Per-batch frame ceiling. 8500 covers the slowest known suite (DP's
+        # PersonalityPlaythrough_* run 6000-8000 frames each); per-test budgets
+        # are still governed by each test's own m_iMaxFrames, so this is a
+        # runaway backstop, not a target -- one value serves every game.
+        [int]$ExitAfterFrames = 8500,
         [double]$FixedDt = 0.01666,
         [switch]$NoSkipToolExports,
         [switch]$NoSkipUnitTests,
@@ -245,9 +248,11 @@ function Invoke-ZenithGameTests {
         ) + $commonFlags
 
         $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-        # Tee output for post-mortem on non-zero exits; direct console
-        # pass-through so CI surfaces engine assertions / crash output live.
-        & $Exe @runArgs 2>&1 | Tee-Object -Variable runOutput
+        # Tee output for post-mortem on non-zero exits; Out-Host streams it to
+        # the console live (CI surfaces engine assertions / crashes as they
+        # happen) AND keeps it off this function's pipeline -- without it, the
+        # whole engine log would leak into the caller's return value.
+        & $Exe @runArgs 2>&1 | Tee-Object -Variable runOutput | Out-Host
         $engineExit = $LASTEXITCODE
         $stopwatch.Stop()
         Write-Host "[$Tag] Batch run finished in $([int]$stopwatch.Elapsed.TotalSeconds)s (exit=$engineExit)" -ForegroundColor Cyan
