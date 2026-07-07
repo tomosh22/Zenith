@@ -34,6 +34,11 @@ on:
 permissions:
   contents: read
 
+# Superseded PR pushes cancel the in-flight run; master pushes always complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   scaffold-smoke:
     name: scaffold-smoke
@@ -51,66 +56,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Cache vcpkg installed/
-        uses: actions/cache@v4
+      - name: Provision Zenith toolchain (MSBuild + vcpkg + Vulkan + Slang)
+        uses: ./.github/actions/zenith-setup
         with:
-          path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-pkgs-scaffold-v1
-          restore-keys: |
-            vcpkg-x64-windows-pkgs-
-            vcpkg-x64-windows-
-
-      - name: Install vcpkg packages
-        shell: pwsh
-        run: |
-          $packages = @('assimp','curl','draco','kubazip','minizip','jhasse-poly2tri','pugixml','zlib')
-          & 'C:\vcpkg\vcpkg.exe' install @packages --triplet x64-windows --recurse
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          & 'C:\vcpkg\vcpkg.exe' integrate install
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      - name: Cache Vulkan SDK
-        id: cache-vulkan
-        uses: actions/cache@v4
-        with:
-          path: C:\VulkanSDK\${{ env.VULKAN_SDK_VERSION }}
-          key: vulkan-sdk-${{ env.VULKAN_SDK_VERSION }}-v1
-
-      - name: Install Vulkan SDK
-        if: steps.cache-vulkan.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $version = $env:VULKAN_SDK_VERSION
-          $url = "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe"
-          Invoke-WebRequest -Uri $url -OutFile vulkan-installer.exe -UseBasicParsing
-          $proc = Start-Process -FilePath .\vulkan-installer.exe `
-              -ArgumentList @("--root","C:\VulkanSDK\$version","--accept-licenses","--default-answer","--confirm-command","install") `
-              -Wait -PassThru
-          if ($proc.ExitCode -ne 0) { Write-Error "Vulkan SDK installer exited $($proc.ExitCode)"; exit 1 }
-
-      - name: Export Vulkan SDK env vars
-        shell: pwsh
-        run: |
-          $sdkRoot = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
-          echo "VULKAN_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "$sdkRoot\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-
-      - name: Download Slang runtime DLLs (v${{ env.SLANG_VERSION }})
-        shell: pwsh
-        run: |
-          $version = $env:SLANG_VERSION
-          $url = "https://github.com/shader-slang/slang/releases/download/v$version/slang-$version-windows-x86_64.zip"
-          $tmpDir = 'C:\tmp\slang-release'
-          New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
-          Invoke-WebRequest -Uri $url -OutFile "$tmpDir\slang.zip" -UseBasicParsing
-          Expand-Archive -Path "$tmpDir\slang.zip" -DestinationPath $tmpDir -Force
-          $slangBin = Get-ChildItem -Path $tmpDir -Directory -Filter 'bin' -Recurse | Select-Object -First 1
-          if (-not $slangBin) { Write-Error "No 'bin' dir in slang release zip"; exit 1 }
-          New-Item -ItemType Directory -Path 'Middleware\slang\bin' -Force | Out-Null
-          Copy-Item "$($slangBin.FullName)\*.dll" 'Middleware\slang\bin\' -Force
+          vulkan-sdk-version: ${{ env.VULKAN_SDK_VERSION }}
+          slang-version: ${{ env.SLANG_VERSION }}
 
       - name: Scaffold smoke (zenith new -> build -> boot -> teardown)
         shell: pwsh

@@ -1,0 +1,75 @@
+# run_unit_gate.ps1 -- boot a game exe headless and assert the engine
+# unit-test baseline. CI's dedicated unit gate (engine-gate.yml); mirrors the
+# tolerance logic of Tools/test_scaffold.ps1: a clean "<N> ran, <N> passed" OR
+# the single known layout-sensitive flake (GraphComponent::
+# RegistryWideNodeRoundTrip, task_726cc81d) as the SOLE failure.
+#
+# Usage:  pwsh ./Tools/run_unit_gate.ps1 -Exe <game exe> [-Baseline 1042]
+# Exit:   0 = baseline met, 1 = anything else (missing exe, timeout, failures).
+#
+# ASCII-only body; runs under Windows PowerShell 5.1 and pwsh 7.
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)][string]$Exe,
+    [int]$Baseline = 1042,
+    [int]$TimeoutSec = 180,
+    [string]$LogPath = ""
+)
+
+$ErrorActionPreference = 'Stop'
+
+if (-not (Test-Path $Exe)) {
+    Write-Error "[unit_gate] executable not found: $Exe"
+    exit 1
+}
+
+if ($LogPath -eq "") {
+    $root = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { Join-Path (Split-Path -Parent $PSScriptRoot) 'Build/artifacts' }
+    New-Item -ItemType Directory -Force -Path $root | Out-Null
+    $LogPath = Join-Path $root 'unit_gate_boot.log'
+}
+
+# Boot far enough for units-at-boot to complete, then exit. Games can hang at
+# shutdown (known), so a watchdog + kill guards the gate; the units line has
+# already been written by then.
+Write-Host "[unit_gate] Booting $Exe (baseline $Baseline, timeout ${TimeoutSec}s)..." -ForegroundColor Cyan
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = (Resolve-Path $Exe).Path
+$psi.Arguments = '--headless --exit-after-frames 120 --skip-tool-exports'
+$psi.WorkingDirectory = Split-Path (Resolve-Path $Exe).Path
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.UseShellExecute = $false
+$proc = [System.Diagnostics.Process]::Start($psi)
+$stdout = $proc.StandardOutput.ReadToEndAsync()
+$stderr = $proc.StandardError.ReadToEndAsync()
+if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
+    Write-Host "[unit_gate] timeout after ${TimeoutSec}s; killing (units line should already be logged)" -ForegroundColor Yellow
+    try { $proc.Kill() } catch { }
+}
+$outText = $stdout.Result + "`n" + $stderr.Result
+[System.IO.File]::WriteAllText($LogPath, $outText, (New-Object System.Text.UTF8Encoding($false)))
+
+$unitsLine = ($outText -split "`n" | Where-Object { $_ -match 'Unit tests complete' } | Select-Object -Last 1)
+if (-not $unitsLine) {
+    Write-Error "[unit_gate] no 'Unit tests complete' line in boot output (log: $LogPath)"
+    exit 1
+}
+Write-Host "[unit_gate] $($unitsLine.Trim())"
+
+$cleanPass = $unitsLine -match "$Baseline ran, $Baseline passed, 0 failed"
+$flakeCount = $Baseline - 1
+$knownFlake = ($unitsLine -match "$Baseline ran, $flakeCount passed, 1 failed") -and
+              ($outText -match 'FAILED\s+GraphComponent::RegistryWideNodeRoundTrip')
+
+if ($cleanPass) {
+    Write-Host "[unit_gate] PASS ($Baseline/$Baseline)" -ForegroundColor Green
+    exit 0
+}
+if ($knownFlake) {
+    Write-Host "[unit_gate] PASS with the known RegistryWideNodeRoundTrip flake (task_726cc81d) as sole failure" -ForegroundColor Yellow
+    exit 0
+}
+Write-Error "[unit_gate] baseline NOT met (wanted '$Baseline ran, $Baseline passed, 0 failed'; log: $LogPath)"
+exit 1

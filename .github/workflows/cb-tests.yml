@@ -31,6 +31,11 @@ on:
 permissions:
   contents: read
 
+# Superseded PR pushes cancel the in-flight run; master pushes always complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   cb-tests:
     name: cb-tests
@@ -51,100 +56,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Cache vcpkg installed/
-        uses: actions/cache@v4
+      - name: Provision Zenith toolchain (MSBuild + vcpkg + Vulkan + Slang)
+        uses: ./.github/actions/zenith-setup
         with:
-          path: C:\vcpkg\installed
-          key: vcpkg-x64-windows-pkgs-cbtests-v1
-          restore-keys: |
-            vcpkg-x64-windows-pkgs-
-            vcpkg-x64-windows-
-
-      - name: Install vcpkg packages
-        shell: pwsh
-        run: |
-          $packages = @(
-              'assimp',
-              'curl',
-              'draco',
-              'kubazip',
-              'minizip',
-              'jhasse-poly2tri',
-              'pugixml',
-              'zlib'
-          )
-          & 'C:\vcpkg\vcpkg.exe' install @packages --triplet x64-windows --recurse
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          & 'C:\vcpkg\vcpkg.exe' integrate install
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      - name: Cache Vulkan SDK
-        id: cache-vulkan
-        uses: actions/cache@v4
-        with:
-          path: C:\VulkanSDK\${{ env.VULKAN_SDK_VERSION }}
-          key: vulkan-sdk-${{ env.VULKAN_SDK_VERSION }}-v1
-
-      - name: Install Vulkan SDK
-        if: steps.cache-vulkan.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $version = $env:VULKAN_SDK_VERSION
-          $url = "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe"
-          Write-Host "Downloading Vulkan SDK $version from $url"
-          Invoke-WebRequest -Uri $url -OutFile vulkan-installer.exe -UseBasicParsing
-          Write-Host "Installing Vulkan SDK (silent)..."
-          $proc = Start-Process -FilePath .\vulkan-installer.exe `
-              -ArgumentList @(
-                  "--root", "C:\VulkanSDK\$version",
-                  "--accept-licenses",
-                  "--default-answer",
-                  "--confirm-command", "install"
-              ) `
-              -Wait -PassThru
-          if ($proc.ExitCode -ne 0) {
-              Write-Error "Vulkan SDK installer exited $($proc.ExitCode)"
-              exit 1
-          }
-          Write-Host "Vulkan SDK installed."
-
-      - name: Export Vulkan SDK env vars
-        shell: pwsh
-        run: |
-          $sdkRoot = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
-          echo "VULKAN_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "$sdkRoot\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-
-      - name: Download Slang runtime DLLs (v${{ env.SLANG_VERSION }})
-        shell: pwsh
-        run: |
-          $version = $env:SLANG_VERSION
-          $url = "https://github.com/shader-slang/slang/releases/download/v$version/slang-$version-windows-x86_64.zip"
-          $tmpDir = 'C:\tmp\slang-release'
-          $zipPath = "$tmpDir\slang.zip"
-          New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
-          Write-Host "Downloading $url"
-          Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing
-          Expand-Archive -Path $zipPath -DestinationPath $tmpDir -Force
-          # Slang release layout: top-level bin/ contains DLLs; the .slang
-          # standard module dir is bin/slang-standard-module-<ver>/ which is
-          # already tracked in repo.
-          $candidates = Get-ChildItem -Path $tmpDir -Directory -Filter 'bin' -Recurse
-          if (-not $candidates) {
-              Write-Error "No 'bin' directory in slang release zip; layout changed?"
-              Get-ChildItem $tmpDir -Recurse | Select-Object FullName | Out-Host
-              exit 1
-          }
-          $slangBin = $candidates | Select-Object -First 1
-          Write-Host "Slang release bin: $($slangBin.FullName)"
-          # Repo target dir already exists (tracked .slang files); add the DLLs.
-          New-Item -ItemType Directory -Path 'Middleware\slang\bin' -Force | Out-Null
-          Copy-Item "$($slangBin.FullName)\*.dll" 'Middleware\slang\bin\' -Force
-          Write-Host "Slang DLLs provisioned:"
-          Get-ChildItem 'Middleware\slang\bin\*.dll' | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,1)}} | Format-Table -AutoSize | Out-String | Write-Host
+          vulkan-sdk-version: ${{ env.VULKAN_SDK_VERSION }}
+          slang-version: ${{ env.SLANG_VERSION }}
 
       - name: Regenerate solution (Sharpmake)
         shell: pwsh

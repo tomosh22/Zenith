@@ -1,0 +1,155 @@
+# zenith-setup -- shared CI provisioning for every Zenith workflow that builds
+# the engine: MSBuild + vcpkg (ONE shared cache key across workflows) + Vulkan
+# SDK/loader + Slang release DLLs, with retried downloads.
+#
+# Replaces the ~100-line block previously copy-pasted across cb-tests,
+# dp-tests, shader-validation, and scaffold-smoke (which each kept an
+# identical vcpkg payload under a workflow-specific cache key -- 4x the cache
+# budget for one payload, and no retry on any download).
+#
+# vulkan-provision:
+#   full    -- LunarG SDK installer (default; behavior-identical to the old
+#              inline steps). Provides Bin\vulkan-1.dll for the DLL-copy steps
+#              and the PATH export fluxcompiler.exe resolves the loader from.
+#   runtime -- runtime-components zip only (~2 MB): extracts vulkan-1.dll into
+#              the same C:\VulkanSDK\<ver>\Bin layout so every downstream step
+#              works unchanged. Flip the callers to this after a green
+#              workflow_dispatch verification per workflow (the zip URL layout
+#              should be verified on that run -- LunarG naming has varied).
+#   none    -- skip Vulkan provisioning entirely (pure-static gates).
+name: zenith-setup
+description: MSBuild + vcpkg + Vulkan SDK/loader + Slang provisioning for Zenith CI
+
+inputs:
+  vulkan-sdk-version:
+    description: LunarG SDK version to provision
+    default: '1.3.290.0'
+  slang-version:
+    description: Slang release version (GitHub shader-slang/slang tag without the v)
+    default: '2026.1'
+  vulkan-provision:
+    description: 'full | runtime | none'
+    default: 'full'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Cache vcpkg installed/
+      uses: actions/cache@v4
+      with:
+        path: C:\vcpkg\installed
+        # ONE shared key for all workflows (identical payload); bump -vN when
+        # the package set below changes.
+        key: vcpkg-x64-windows-pkgs-shared-v2
+        restore-keys: |
+          vcpkg-x64-windows-pkgs-
+
+    - name: Install vcpkg packages (retried)
+      shell: pwsh
+      run: |
+        $packages = @('assimp', 'curl', 'draco', 'kubazip', 'minizip', 'jhasse-poly2tri', 'pugixml', 'zlib')
+        $ok = $false
+        foreach ($delay in @(0, 15, 60)) {
+            if ($delay -gt 0) { Write-Host "retrying vcpkg install in $delay s"; Start-Sleep -Seconds $delay }
+            & 'C:\vcpkg\vcpkg.exe' install @packages --triplet x64-windows --recurse
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Write-Host "vcpkg install failed (exit $LASTEXITCODE)"
+        }
+        if (-not $ok) { exit 1 }
+        & 'C:\vcpkg\vcpkg.exe' integrate install
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+
+    - name: Cache Vulkan SDK
+      if: inputs.vulkan-provision == 'full'
+      id: cache-vulkan
+      uses: actions/cache@v4
+      with:
+        path: C:\VulkanSDK\${{ inputs.vulkan-sdk-version }}
+        # Key unchanged from the old inline steps -> warm hit on day one.
+        key: vulkan-sdk-${{ inputs.vulkan-sdk-version }}-v1
+
+    - name: Install Vulkan SDK (full installer, retried download)
+      if: inputs.vulkan-provision == 'full' && steps.cache-vulkan.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $version = '${{ inputs.vulkan-sdk-version }}'
+        $url = "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe"
+        & "$env:GITHUB_ACTION_PATH\download_with_retry.ps1" -Uri $url -OutFile vulkan-installer.exe
+        Write-Host "Installing Vulkan SDK (silent)..."
+        $proc = Start-Process -FilePath .\vulkan-installer.exe `
+            -ArgumentList @('--root', "C:\VulkanSDK\$version", '--accept-licenses', '--default-answer', '--confirm-command', 'install') `
+            -Wait -PassThru
+        if ($proc.ExitCode -ne 0) { Write-Error "Vulkan SDK installer exited $($proc.ExitCode)"; exit 1 }
+
+    - name: Cache Vulkan runtime (loader only)
+      if: inputs.vulkan-provision == 'runtime'
+      id: cache-vulkan-rt
+      uses: actions/cache@v4
+      with:
+        path: C:\VulkanSDK\${{ inputs.vulkan-sdk-version }}
+        key: vulkan-runtime-${{ inputs.vulkan-sdk-version }}-v1
+
+    - name: Install Vulkan runtime components (loader only, retried download)
+      if: inputs.vulkan-provision == 'runtime' && steps.cache-vulkan-rt.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $version = '${{ inputs.vulkan-sdk-version }}'
+        $url = "https://sdk.lunarg.com/sdk/download/$version/windows/vulkan-runtime-components.zip"
+        $tmp = 'C:\tmp\vulkan-rt'
+        New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+        & "$env:GITHUB_ACTION_PATH\download_with_retry.ps1" -Uri $url -OutFile "$tmp\vulkan-rt.zip"
+        Expand-Archive -Path "$tmp\vulkan-rt.zip" -DestinationPath $tmp -Force
+        $dll = Get-ChildItem -Path $tmp -Filter 'vulkan-1.dll' -Recurse |
+            Where-Object { $_.FullName -match 'x64' -or $_.Directory.Name -eq 'vulkan-rt' } |
+            Select-Object -First 1
+        if (-not $dll) { $dll = Get-ChildItem -Path $tmp -Filter 'vulkan-1.dll' -Recurse | Select-Object -First 1 }
+        if (-not $dll) { Write-Error "vulkan-1.dll not found in runtime-components zip; layout changed?"; exit 1 }
+        # Mimic the full-SDK layout so downstream Copy-Item + PATH steps work as-is.
+        $bin = "C:\VulkanSDK\$version\Bin"
+        New-Item -ItemType Directory -Path $bin -Force | Out-Null
+        Copy-Item $dll.FullName "$bin\vulkan-1.dll" -Force
+
+    - name: Export Vulkan SDK env vars
+      if: inputs.vulkan-provision != 'none'
+      shell: pwsh
+      run: |
+        $sdkRoot = "C:\VulkanSDK\${{ inputs.vulkan-sdk-version }}"
+        echo "VULKAN_SDK=$sdkRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+        echo "$sdkRoot\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+    - name: Cache Slang release
+      id: cache-slang
+      uses: actions/cache@v4
+      with:
+        path: C:\tmp\slang-release
+        # NEW cache: the 105 MB zip was previously downloaded on every run of
+        # every workflow.
+        key: slang-release-${{ inputs.slang-version }}-v1
+
+    - name: Download Slang release (retried)
+      if: steps.cache-slang.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $version = '${{ inputs.slang-version }}'
+        $url = "https://github.com/shader-slang/slang/releases/download/v$version/slang-$version-windows-x86_64.zip"
+        $tmpDir = 'C:\tmp\slang-release'
+        New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+        & "$env:GITHUB_ACTION_PATH\download_with_retry.ps1" -Uri $url -OutFile "$tmpDir\slang.zip"
+        Expand-Archive -Path "$tmpDir\slang.zip" -DestinationPath $tmpDir -Force
+
+    - name: Provision Slang DLLs into Middleware\slang\bin
+      shell: pwsh
+      run: |
+        $candidates = Get-ChildItem -Path 'C:\tmp\slang-release' -Directory -Filter 'bin' -Recurse
+        if (-not $candidates) {
+            Write-Error "No 'bin' directory in slang release zip; layout changed?"
+            Get-ChildItem 'C:\tmp\slang-release' -Recurse | Select-Object FullName | Out-Host
+            exit 1
+        }
+        $slangBin = $candidates | Select-Object -First 1
+        New-Item -ItemType Directory -Path 'Middleware\slang\bin' -Force | Out-Null
+        Copy-Item "$($slangBin.FullName)\*.dll" 'Middleware\slang\bin\' -Force
+        Write-Host "Slang DLLs provisioned from $($slangBin.FullName)"

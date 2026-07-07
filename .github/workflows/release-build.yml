@@ -1,0 +1,83 @@
+# Nightly Release-config build proof -- NOT PR-blocking.
+#
+# Nothing else in CI compiles Release: the game gates build
+# Vulkan_vs2022_Debug_Win64_True (+ a D3D12 Debug _False link proof) and
+# shader-validation builds only FluxCompiler in Release. Release-only breaks
+# (NDEBUG paths, optimizer-surfaced warnings under /WX, assert-stripped
+# branches) are real but low-frequency, so a nightly catches them within 24h
+# at a fraction of the per-PR cost of a full second-config compile.
+#
+# Build-only (no execution): DevilsPlayground is the flagship game and pulls
+# the whole engine; the engine-only target is built first so a pure engine
+# break names itself.
+
+name: release-build
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner override.'
+        required: false
+        default: 'windows-latest'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-build:
+    name: release-build
+    runs-on: ${{ github.event.inputs.runner || 'windows-latest' }}
+    timeout-minutes: 75
+
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      VCPKG_DISABLE_METRICS: 1
+      SLANG_VERSION: '2026.1'
+      VULKAN_SDK_VERSION: '1.3.290.0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Provision Zenith toolchain (MSBuild + vcpkg + Vulkan + Slang)
+        uses: ./.github/actions/zenith-setup
+        with:
+          vulkan-sdk-version: ${{ env.VULKAN_SDK_VERSION }}
+          slang-version: ${{ env.SLANG_VERSION }}
+
+      - name: Regenerate solution (Sharpmake)
+        shell: pwsh
+        working-directory: Build
+        run: |
+          ./regen.ps1 -UseDotnet
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build engine (Vulkan_vs2022_Release_Win64_True)
+        shell: pwsh
+        run: |
+          msbuild Build\zenith_engine_win64.sln `
+              /t:Zenith `
+              /p:Configuration=Vulkan_vs2022_Release_Win64_True `
+              /p:Platform=x64 `
+              /p:WindowsTargetPlatformVersion=10.0 `
+              -maxCpuCount -nologo -clp:Summary -clp:ErrorsOnly
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build DevilsPlayground (Vulkan_vs2022_Release_Win64_True)
+        shell: pwsh
+        run: |
+          msbuild Games\DevilsPlayground\devilsplayground_win64.sln `
+              /t:DevilsPlayground `
+              /p:Configuration=Vulkan_vs2022_Release_Win64_True `
+              /p:Platform=x64 `
+              /p:WindowsTargetPlatformVersion=10.0 `
+              -maxCpuCount -nologo -clp:Summary -clp:ErrorsOnly
+          if ($LASTEXITCODE -ne 0) { exit 1 }
