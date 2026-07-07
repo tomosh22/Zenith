@@ -152,6 +152,22 @@ void Zenith_AssetRegistry::SetEngineAssetsDir(const std::string& strPath)
 	NormalizeAssetDirPath(s_strEngineAssetsDir);
 }
 
+std::string Zenith_AssetRegistry::ResolveAssetsDir(const std::string& strBakedDir, const char* szOverrideRoot, const std::string& strRelativeUnderRoot)
+{
+	if (szOverrideRoot == nullptr || szOverrideRoot[0] == '\0')
+	{
+		return strBakedDir;
+	}
+	std::string strRoot(szOverrideRoot);
+	// Trim a trailing separator off the root so the join never doubles up
+	// (`run.bat` passes "%~dp0", which ends in a backslash).
+	while (!strRoot.empty() && (strRoot.back() == '/' || strRoot.back() == '\\'))
+	{
+		strRoot.pop_back();
+	}
+	return strRoot + "/" + strRelativeUnderRoot;
+}
+
 std::string Zenith_AssetRegistry::ResolvePath(const std::string& strPrefixedPath)
 {
 	// Check for game: prefix

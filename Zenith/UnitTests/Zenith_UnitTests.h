@@ -708,6 +708,15 @@ public:
 	static void TestAssetRegistrySingleSlashStripsToEmpty();
 	static void TestAssetRegistryGameAndEngineDirsSeparate();
 
+	// Zenith_AssetRegistry::ResolveAssetsDir tests (the --assets-root
+	// relocatable-package override: baked-dir passthrough without an override,
+	// join + separator-trim with one).
+	static void TestAssetRegistryResolveAssetsDirNullOverride();
+	static void TestAssetRegistryResolveAssetsDirEmptyOverride();
+	static void TestAssetRegistryResolveAssetsDirJoinsUnderRoot();
+	static void TestAssetRegistryResolveAssetsDirTrimsRootSeparators();
+	static void TestAssetRegistryResolveAssetsDirEmptyBakedPassthrough();
+
 	// Flux_RootMotion::SamplePosition/Rotation Delta tests (verify the
 	// shared SampleRootMotionDeltas templated helper handles edge cases:
 	// empty list, single keyframe, between-frames lerp, identical-timestamp

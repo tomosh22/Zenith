@@ -70,4 +70,15 @@ namespace Zenith_CommandLine
     // debug info. Off by default because O0 changes float re-association (moves pixels),
     // so it is never the shipping/default path. (Flux Shader System Overhaul — Stage 1.)
     bool        IsShaderDebugO0();
+
+    // Relocatable-package asset override: `--assets-root <path>`. The baked
+    // GAME_ASSETS_DIR / ENGINE_ASSETS_DIR defines are ABSOLUTE paths into the
+    // build machine's source tree, so a packaged exe cannot find assets on
+    // another machine. `zenith package` emits a run.bat that passes the
+    // package root here; Zenith_Engine::InitialiseAssets then resolves both
+    // asset dirs UNDER this root (see Zenith_AssetRegistry::ResolveAssetsDir)
+    // instead of the baked paths. Returns nullptr when absent (the default:
+    // baked paths, unchanged behaviour); the pointer is into argv
+    // (process-lifetime), mirroring GetScreenshotPath.
+    const char* GetAssetsRoot();
 }

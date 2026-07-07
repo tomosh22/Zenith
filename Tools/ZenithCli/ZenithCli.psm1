@@ -466,6 +466,200 @@ function Invoke-ZenithRun {
     return $code
 }
 
+function Import-TestHarness {
+    $mod = Join-Path $PSScriptRoot 'ZenithTestHarness.psm1'
+    Import-Module $mod -Force -Global
+}
+
+function Invoke-ZenithTest {
+    param([string[]]$CmdArgs)
+    Import-BuildSystem
+    Import-TestHarness
+
+    $target = $null; $filter = ''; $tier = $null; $config = $null
+    $headless = $false; $perProcess = $false; $failFast = $false
+    $doBuild = $false; $resultsDir = $null
+    for ($i = 0; $i -lt $CmdArgs.Count; $i++) {
+        $a = $CmdArgs[$i]
+        if ($a -eq '--filter') { $filter = $CmdArgs[++$i] }
+        elseif ($a -eq '--tier') { $tier = [int]$CmdArgs[++$i] }
+        elseif ($a -eq '--config') { $config = $CmdArgs[++$i] }
+        elseif ($a -eq '--headless') { $headless = $true }
+        elseif ($a -eq '--per-process') { $perProcess = $true }
+        elseif ($a -eq '--fail-fast') { $failFast = $true }
+        elseif ($a -eq '--build') { $doBuild = $true }
+        elseif ($a -eq '--results-dir') { $resultsDir = $CmdArgs[++$i] }
+        elseif ($a -like '--*') { Write-CliError "unknown option '$a' for 'test'"; return $script:EXIT_USAGE }
+        else { if ($null -eq $target) { $target = $a } else { Write-CliError "unexpected argument '$a'"; return $script:EXIT_USAGE } }
+    }
+    if ([string]::IsNullOrEmpty($target)) {
+        Write-CliError "usage: zenith test <Name|all> [--filter X] [--tier N] [--config C] [--headless] [--per-process] [--fail-fast] [--build] [--results-dir D]"
+        return $script:EXIT_USAGE
+    }
+    if ([string]::IsNullOrEmpty($config)) { $config = Get-ZenithDefaultConfig }
+    $artifactsRoot = (Get-ZenithBuildConfigData).ArtifactsRoot
+
+    function Invoke-OneGameTests {
+        param([string]$Name)
+        $lower = $Name.ToLowerInvariant()
+        $dir = if ($resultsDir) { $resultsDir } else { Join-Path (Get-CliRepoRoot) "$artifactsRoot/test_results/$lower" }
+        $exe = Get-GameOutputExe -Name $Name -Config $config
+        if (-not $exe) { return [PSCustomObject]@{ Name = $Name; Outcome = 'NOT_BUILT'; Passed = 0; Failed = 0 } }
+        try {
+            $r = Invoke-ZenithGameTests `
+                -Exe $exe.FullName -ResultsDir $dir -Filter $filter -Tier $tier `
+                -PerProcess:$perProcess -FailFast:$failFast -Headless:$headless `
+                -Tag "zenith test $Name"
+        }
+        catch {
+            if ("$($_.Exception.Message)" -like 'no tests discovered*') {
+                return [PSCustomObject]@{ Name = $Name; Outcome = 'NO_TESTS'; Passed = 0; Failed = 0 }
+            }
+            Write-CliError "$($Name): $($_.Exception.Message)"
+            return [PSCustomObject]@{ Name = $Name; Outcome = 'ERROR'; Passed = 0; Failed = 1 }
+        }
+        $outcome = if ($r.Failed -gt 0) { 'FAIL' } else { 'PASS' }
+        return [PSCustomObject]@{ Name = $Name; Outcome = $outcome; Passed = $r.Passed; Failed = $r.Failed }
+    }
+
+    if ($target -ieq 'all') {
+        $scan = Get-ZenithGameDescriptors
+        $rows = @()
+        foreach ($d in ($scan.Descriptors | Sort-Object { $_.Name })) {
+            if ($doBuild) {
+                $rc = Invoke-ZenithBuild -CmdArgs @($d.Name, '--config', $config)
+                if ($rc -ne 0) { $rows += [PSCustomObject]@{ Name = $d.Name; Outcome = 'BUILD_FAIL'; Passed = 0; Failed = 1 }; continue }
+            }
+            $row = Invoke-OneGameTests -Name $d.Name
+            if ($row.Outcome -eq 'NOT_BUILT') { Write-Host "SKIP $($d.Name) (not built for $config)" -ForegroundColor DarkGray }
+            elseif ($row.Outcome -eq 'NO_TESTS') { Write-Host "SKIP $($d.Name) (no automated tests)" -ForegroundColor DarkGray }
+            $rows += $row
+        }
+        Write-Host ""
+        Write-Host ("{0,-18} {1,-10} {2,7} {3,7}" -f 'Game', 'Outcome', 'Passed', 'Failed') -ForegroundColor Cyan
+        foreach ($r in $rows) { Write-Host ("{0,-18} {1,-10} {2,7} {3,7}" -f $r.Name, $r.Outcome, $r.Passed, $r.Failed) }
+        $anyFail = @($rows | Where-Object { $_.Outcome -in @('FAIL', 'ERROR', 'BUILD_FAIL') }).Count -gt 0
+        if ($anyFail) { return $script:EXIT_BUILD }
+        return $script:EXIT_OK
+    }
+
+    $name = Resolve-ExistingGameName $target
+    if (-not $name) { Write-CliError "no such game '$target'"; return $script:EXIT_NOTFOUND }
+    if ($doBuild) {
+        $rc = Invoke-ZenithBuild -CmdArgs @($name, '--config', $config)
+        if ($rc -ne 0) { return $rc }
+    }
+    $row = Invoke-OneGameTests -Name $name
+    switch ($row.Outcome) {
+        'NOT_BUILT' { Write-CliError "no built exe for '$name' (config $config) -- build first ('zenith build $name' or --build)"; return $script:EXIT_NOTFOUND }
+        'NO_TESTS' { Write-CliError "'$name' reports zero registered automated tests"; return $script:EXIT_VALIDATION }
+        'ERROR' { return $script:EXIT_BUILD }
+        'FAIL' { return $script:EXIT_BUILD }
+        default { return $script:EXIT_OK }
+    }
+}
+
+function Invoke-ZenithPackage {
+    param([string[]]$CmdArgs)
+    Import-BuildSystem
+
+    $target = $null; $config = $null; $out = $null; $force = $false; $noShaders = $false
+    for ($i = 0; $i -lt $CmdArgs.Count; $i++) {
+        $a = $CmdArgs[$i]
+        if ($a -eq '--config') { $config = $CmdArgs[++$i] }
+        elseif ($a -eq '--out') { $out = $CmdArgs[++$i] }
+        elseif ($a -eq '--force') { $force = $true }
+        elseif ($a -eq '--no-shaders') { $noShaders = $true }
+        elseif ($a -like '--*') { Write-CliError "unknown option '$a' for 'package'"; return $script:EXIT_USAGE }
+        else { if ($null -eq $target) { $target = $a } else { Write-CliError "unexpected argument '$a'"; return $script:EXIT_USAGE } }
+    }
+    if ([string]::IsNullOrEmpty($target)) { Write-CliError "usage: zenith package <Name> [--config <C>] [--out <D>] [--force] [--no-shaders]"; return $script:EXIT_USAGE }
+    if ([string]::IsNullOrEmpty($config)) { $config = Get-ZenithDefaultConfig }
+
+    $name = Resolve-ExistingGameName $target
+    if (-not $name) { Write-CliError "no such game '$target'"; return $script:EXIT_NOTFOUND }
+    $lower = $name.ToLowerInvariant()
+    $repoRoot = Get-CliRepoRoot
+
+    $exe = Get-GameOutputExe -Name $name -Config $config
+    if (-not $exe) { Write-CliError "no built exe for '$name' (config $config) -- build first"; return $script:EXIT_NOTFOUND }
+    $exeDir = Split-Path $exe.FullName
+
+    # Heal the exe dir BEFORE copying so the package carries the full slang
+    # dependency tree + sibling DLLs (assimp etc.).
+    Repair-ZenithRuntimeDlls -ExeDir $exeDir | Out-Null
+
+    $leaf = ConvertTo-ZenithOutputDir -Config $config
+    if ([string]::IsNullOrEmpty($out)) { $out = Join-Path $repoRoot "dist/${name}_$leaf" }
+    if (Test-Path $out) {
+        if (-not $force) { Write-CliError "output dir already exists: $out (use --force to overwrite)"; return $script:EXIT_VALIDATION }
+        Remove-Item -Recurse -Force -Confirm:$false $out
+    }
+    New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+    Write-CliInfo "[package] $name ($config) -> $out"
+
+    # 1. Exe + every runtime DLL from the build output.
+    Copy-Item $exe.FullName -Destination $out
+    foreach ($dll in (Get-ChildItem (Join-Path $exeDir '*.dll') -File -ErrorAction SilentlyContinue)) {
+        Copy-Item $dll.FullName -Destination $out
+    }
+
+    # 2. Asset trees, laid out so `--assets-root <package root>` resolves them
+    # (Zenith_AssetRegistry::ResolveAssetsDir joins "Games/<Name>/Assets/" and
+    # "Zenith/Assets/" under the root).
+    $copies = @(
+        @{ From = "Games/$name/Assets"; To = "Games/$name/Assets" },
+        @{ From = 'Zenith/Assets'; To = 'Zenith/Assets' }
+    )
+    if (Test-Path (Join-Path $repoRoot "Games/$name/Config")) {
+        $copies += @{ From = "Games/$name/Config"; To = "Games/$name/Config" }
+    }
+    if (-not $noShaders) {
+        $copies += @{ From = 'Zenith/Flux/Shaders'; To = 'Zenith/Flux/Shaders' }
+    }
+    foreach ($c in $copies) {
+        $src = Join-Path $repoRoot $c.From
+        if (-not (Test-Path $src)) { Write-Host "  (skip, missing) $($c.From)" -ForegroundColor DarkGray; continue }
+        $dst = Join-Path $out $c.To
+        Write-Host "  $($c.From) -> $($c.To)" -ForegroundColor DarkGray
+        New-Item -ItemType Directory -Force -Path (Split-Path $dst -Parent) | Out-Null
+        Copy-Item -Recurse -Force $src $dst
+    }
+
+    # 3. run.bat: cd to the package root and pass it as --assets-root so the
+    # engine resolves assets from the package instead of the baked build-machine
+    # paths (Zenith_CommandLine::GetAssetsRoot -> ResolveAssetsDir).
+    $runBat = @"
+@echo off
+cd /d "%~dp0"
+$lower.exe --assets-root "%~dp0" %*
+"@
+    [System.IO.File]::WriteAllText((Join-Path $out 'run.bat'), $runBat, (New-Object System.Text.UTF8Encoding($false)))
+
+    # 4. README with the residual limitation.
+    $stamp = (Get-Date).ToString('yyyy-MM-dd')
+    $readme = @"
+# $name -- packaged build ($config, $stamp)
+
+Run via run.bat (it passes --assets-root so assets load from this folder
+instead of the build machine's source tree).
+
+Known limitations (paths still baked into the exe at build time):
+- Shader SOURCE lookup (SHADER_SOURCE_ROOT): windowed runs recompile shaders
+  at boot from the build machine's checkout path. Headless runs (--headless)
+  skip all GPU/shader work.
+- Game code that bakes GAME_ASSETS_DIR into string literals at compile time
+  (e.g. scene build-index registration) bypasses the asset registry and still
+  points at the build machine's tree. Registry-resolved assets (game:/engine:
+  prefixed paths, serializable assets, file watchers) all honor --assets-root.
+"@
+    [System.IO.File]::WriteAllText((Join-Path $out 'README.md'), $readme, (New-Object System.Text.UTF8Encoding($false)))
+
+    Write-Host "Packaged $name -> $out" -ForegroundColor Green
+    return $script:EXIT_OK
+}
+
 function Invoke-ZenithHub {
     param([string[]]$CmdArgs)
     Import-BuildSystem
@@ -521,7 +715,10 @@ Usage:
   zenith regen [--check]
   zenith build <Name|engine> [--config <C>] [--timeout <min>]
   zenith run <Name> [--config <C>] [--build] [-- <game args>]
+  zenith test <Name|all> [--filter X] [--tier N] [--config <C>] [--headless]
+              [--per-process] [--fail-fast] [--build] [--results-dir D]
   zenith clean [<Name>|engine|all] [--processes-only] [--dry-run]
+  zenith package <Name> [--config <C>] [--out <D>] [--force] [--no-shaders]
   zenith hub [--rebuild]
   zenith selftest
 
@@ -545,7 +742,9 @@ function Invoke-ZenithCli {
         '^regen$' { return (Invoke-ZenithRegenCmd -CmdArgs $rest) }
         '^build$' { return (Invoke-ZenithBuild -CmdArgs $rest) }
         '^run$' { return (Invoke-ZenithRun -CmdArgs $rest) }
+        '^test$' { return (Invoke-ZenithTest -CmdArgs $rest) }
         '^clean$' { return (Invoke-ZenithClean -CmdArgs $rest) }
+        '^package$' { return (Invoke-ZenithPackage -CmdArgs $rest) }
         '^hub$' { return (Invoke-ZenithHub -CmdArgs $rest) }
         '^selftest$' { return (Invoke-ZenithSelftest -CmdArgs $rest) }
         default { Write-CliError "unknown command '$cmd'"; Show-ZenithUsage; return $script:EXIT_USAGE }

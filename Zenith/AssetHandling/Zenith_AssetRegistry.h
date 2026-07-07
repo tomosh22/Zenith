@@ -87,6 +87,20 @@ public:
 	static std::string ResolvePath(const std::string& strPrefixedPath);
 
 	/**
+	 * Pick the effective assets dir given the compile-time baked path and an
+	 * optional runtime override root (--assets-root, for relocatable packages).
+	 * Pure function: no override (null/empty) returns the baked dir UNCHANGED
+	 * (including the deliberately-empty "" that FluxCompiler/hub/Android bake);
+	 * otherwise returns "<override root>/<relative under root>". Separators are
+	 * normalized by the SetGame/EngineAssetsDir the result feeds into.
+	 * @param strBakedDir           Compile-time GAME_ASSETS_DIR / ENGINE_ASSETS_DIR value
+	 * @param szOverrideRoot        Zenith_CommandLine::GetAssetsRoot() (may be null)
+	 * @param strRelativeUnderRoot  Layout under the package root (e.g. "Games/<Name>/Assets/")
+	 * @return The directory to hand to SetGameAssetsDir / SetEngineAssetsDir
+	 */
+	static std::string ResolveAssetsDir(const std::string& strBakedDir, const char* szOverrideRoot, const std::string& strRelativeUnderRoot);
+
+	/**
 	 * Convert an absolute path to a prefixed relative path
 	 * @param strAbsolutePath Absolute path on disk
 	 * @return Prefixed relative path (e.g., "game:Textures/tex.ztxtr"), or empty if not in known directories

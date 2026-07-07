@@ -494,14 +494,24 @@ void Zenith_Engine::InitialiseRuntimeServices()
 // Asset directories + registry, then tools-only asset exports.
 void Zenith_Engine::InitialiseAssets()
 {
-	// Set asset directories before registry initialization
-	// Game assets dir comes from the game project (each game defines GAME_ASSETS_DIR)
-	Zenith_AssetRegistry::SetGameAssetsDir(Project_GetGameAssetsDirectory());
+	// Set asset directories before registry initialization.
+	// Game assets dir comes from the game project (each game defines
+	// GAME_ASSETS_DIR); both baked dirs are ABSOLUTE paths into the build
+	// machine's source tree, so a relocatable package overrides them with
+	// --assets-root <package root> (see Zenith_AssetRegistry::ResolveAssetsDir;
+	// no override = baked paths, unchanged behaviour).
+	extern const char* Project_GetName();
+	const char* szAssetsRoot = Zenith_CommandLine::GetAssetsRoot();
+	Zenith_AssetRegistry::SetGameAssetsDir(Zenith_AssetRegistry::ResolveAssetsDir(
+		Project_GetGameAssetsDirectory(), szAssetsRoot,
+		std::string("Games/") + Project_GetName() + "/Assets/"));
 #ifdef ENGINE_ASSETS_DIR
-	Zenith_AssetRegistry::SetEngineAssetsDir(ENGINE_ASSETS_DIR);
+	const std::string strBakedEngineAssets = ENGINE_ASSETS_DIR;
 #else
-	Zenith_AssetRegistry::SetEngineAssetsDir("./Zenith/Assets/");
+	const std::string strBakedEngineAssets = "./Zenith/Assets/";
 #endif
+	Zenith_AssetRegistry::SetEngineAssetsDir(Zenith_AssetRegistry::ResolveAssetsDir(
+		strBakedEngineAssets, szAssetsRoot, "Zenith/Assets/"));
 
 	// Engine owns the AssetRegistry instance. Allocate and
 	// install the view-pointer BEFORE Zenith_AssetRegistry::Initialize()

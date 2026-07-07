@@ -211,8 +211,12 @@ that proves Flux is backend-neutral). The table shows the `Vulkan_` rows; the
 zenith new <Name>          REM scaffold a new game (regen + open its sln)
 zenith build Sokoban       REM msbuild the game's per-game sln (/t:<Game>)
 zenith run Sokoban         REM launch the newest built exe
+zenith test Sokoban        REM run the game's automated tests (or: zenith test all)
 zenith open Sokoban        REM regen + open the game's sln in Visual Studio
 zenith list                REM list games + built configs
+zenith clean Sokoban       REM kill hanging build processes + wipe output/obj
+zenith package Sokoban     REM stage a relocatable build into dist/ (run.bat --assets-root)
+zenith regen --check       REM report whether on-disk generated files are stale
 zenith hub                 REM launch the Unity-Hub-style GUI launcher
 ```
 

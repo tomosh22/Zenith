@@ -14,6 +14,7 @@ namespace
     bool        s_bShaderDebugO0    = false;
     const char* s_szScreenshotPath  = nullptr;
     u_int       s_uScreenshotFrame  = 120;
+    const char* s_szAssetsRoot      = nullptr;
 }
 
 namespace Zenith_CommandLine
@@ -29,6 +30,7 @@ namespace Zenith_CommandLine
         s_bShaderDebugO0    = false;
         s_szScreenshotPath  = nullptr;
         s_uScreenshotFrame  = 120;
+        s_szAssetsRoot      = nullptr;
 
         if (argv != nullptr)
         {
@@ -62,6 +64,10 @@ namespace Zenith_CommandLine
                 else if (std::strcmp(argv[i], "--shader-debug-o0") == 0)
                 {
                     s_bShaderDebugO0 = true;
+                }
+                else if (std::strcmp(argv[i], "--assets-root") == 0 && i + 1 < argc)
+                {
+                    s_szAssetsRoot = argv[++i];
                 }
             }
         }
@@ -105,5 +111,11 @@ namespace Zenith_CommandLine
     {
         if (!s_bParsed) return false;
         return s_bShaderDebugO0;
+    }
+
+    const char* GetAssetsRoot()
+    {
+        if (!s_bParsed) return nullptr;
+        return s_szAssetsRoot;
     }
 }
