@@ -10,10 +10,19 @@ struct HubGame
 	bool        bAndroid = false;
 	std::string strBuiltConfigs;   // comma-joined config dir names ("" if none built)
 	std::string strNewestBuild;    // "YYYY-MM-DD HH:MM" of the newest built exe ("" if none)
+	bool        bRunConfigBuilt = false; // true iff kRunConfigDirName's exe exists
 };
 
 namespace ZenithHub_GameScan
 {
+	// The single config the hub's Run button always launches (Release + tools,
+	// so a game that has never had its scene-baking *_True build still runs).
+	// kRunConfigName is the /p:Configuration= form passed to `zenith run --config`;
+	// kRunConfigDirName is Sharpmake's lowercased output-dir form, used to check
+	// whether that exact config's exe exists.
+	inline constexpr const char* kRunConfigName    = "Vulkan_vs2022_Release_Win64_True";
+	inline constexpr const char* kRunConfigDirName = "vulkan_vs2022_release_win64_true";
+
 	// Minimal fixed-buffer .zproj reader: pulls "name" + "android" out WITHOUT a
 	// full JSON parser (the C++ side never parses JSON structurally -- the SHA
 	// manifest guard is the correctness gate). Returns false on read error / no name.

@@ -111,7 +111,9 @@ void ZenithHub_GameScan::ScanGames(const std::string& strRepoRoot, std::vector<H
 				if (_stat64(xExe.string().c_str(), &xStat) == 0)
 				{
 					if (!xGame.strBuiltConfigs.empty()) { xGame.strBuiltConfigs += ", "; }
-					xGame.strBuiltConfigs += xCfg.path().filename().string();
+					const std::string strCfgDir = xCfg.path().filename().string();
+					xGame.strBuiltConfigs += strCfgDir;
+					if (strCfgDir == kRunConfigDirName) { xGame.bRunConfigBuilt = true; }
 					if (xStat.st_mtime > tNewest) { tNewest = xStat.st_mtime; }
 				}
 			}

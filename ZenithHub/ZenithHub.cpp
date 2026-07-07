@@ -282,10 +282,19 @@ static void DrawHubUI()
 				ZenithHub_Process::LaunchDetached(s_szRoot, L"open " + Widen(xGame.strName));
 			}
 			ImGui::SameLine();
-			ImGui::BeginDisabled(xGame.strBuiltConfigs.empty());
+			// Run always launches the Release+tools config (kRunConfigName) --
+			// a game that has never had its scene-baking *_True build in any
+			// other config still runs. Disabled until that EXACT config is built
+			// (a Debug-only build does not enable this button).
+			ImGui::BeginDisabled(!xGame.bRunConfigBuilt);
 			if (ImGui::SmallButton("Run"))
 			{
-				ZenithHub_Process::LaunchDetached(s_szRoot, L"run " + Widen(xGame.strName));
+				ZenithHub_Process::LaunchDetached(s_szRoot,
+					L"run " + Widen(xGame.strName) + L" --config " + Widen(ZenithHub_GameScan::kRunConfigName));
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Runs %s", ZenithHub_GameScan::kRunConfigName);
 			}
 			ImGui::EndDisabled();
 			ImGui::EndDisabled();
