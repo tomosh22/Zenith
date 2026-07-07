@@ -153,7 +153,8 @@ This generates **per-game** solutions plus one **engine-only** solution (NO all-
 
 **Regenerate-first policy:** ALL Sharpmake outputs (`.sln`, `.vcxproj`, `.filters`,
 `.user`, generated `.cs`) are gitignored — never commit them; run `Build\regen.ps1`
-after clone/branch switch. Full reference: **`Docs/GameProjects.md`**.
+after clone/branch switch. Full build-system reference: **`Docs/BuildSystem.md`**;
+descriptor schema: **`Docs/GameProjects.md`**.
 
 **Artifact-root rule:** anything a runner/test/tool emits (test results, telemetry,
 logs, packages) goes under `Build/artifacts/…` — never a new ad-hoc `Build/<name>_results`
@@ -163,14 +164,19 @@ dir, and never `git add` anything under an ignored path.
 
 Each project supports these configurations:
 
+Every win64 config is prefixed by the render backend (`Vulkan_` = the real
+renderer; `D3D12_` = the no-op null backend, a link-level neutrality proof).
+Output dirs are the LOWERCASED config name.
+
 | Configuration | Platform | Tools | Description |
 |--------------|----------|-------|-------------|
-| `vs2022_Debug_Win64_True` | Windows | Yes | Debug build with editor/tools |
-| `vs2022_Debug_Win64_False` | Windows | No | Debug build, runtime only |
-| `vs2022_Release_Win64_True` | Windows | Yes | Release build with editor/tools |
-| `vs2022_Release_Win64_False` | Windows | No | Release build, runtime only |
-| `arm64_v8a_vs2022_Debug_Agde_False` | Android | No | Android debug build |
-| `arm64_v8a_vs2022_Release_Agde_False` | Android | No | Android release build |
+| `Vulkan_vs2022_Debug_Win64_True` | Windows | Yes | Debug build with editor/tools |
+| `Vulkan_vs2022_Debug_Win64_False` | Windows | No | Debug build, runtime only |
+| `Vulkan_vs2022_Release_Win64_True` | Windows | Yes | Release build with editor/tools |
+| `Vulkan_vs2022_Release_Win64_False` | Windows | No | Release build, runtime only |
+| `D3D12_vs2022_Debug_Win64_False` | Windows | No | Null-backend link proof (+ _True / Release variants) |
+| `Vulkan_arm64_v8a_vs2022_Debug_Agde_False` | Android | No | Android debug build |
+| `Vulkan_arm64_v8a_vs2022_Release_Agde_False` | Android | No | Android release build |
 
 ### Projects
 
@@ -183,7 +189,7 @@ Each project supports these configurations:
 
 ### Building and Running
 
-**The `zenith` CLI (recommended):** `zenith build|run|open|new|list|hub <Name>`.
+**The `zenith` CLI (the ONLY entry points):** `zenith new|open|list|regen|build|run|test|clean|package|hub|selftest` — full reference `Docs/BuildSystem.md`.
 
 **Direct msbuild — always `/t:<Game>`, never the whole sln** (aux tools are
 pre-existing-red in `ToolsEnabled=True`):
@@ -276,5 +282,9 @@ Located in `Build/`:
 - `Sharpmake_Common.cs` - Base project class, platform configuration
 - `Sharpmake_Zenith.cs` - Zenith engine project
 - `Sharpmake_FluxCompiler.cs` - Shader compiler project
-- `Sharpmake_Games.cs` - Game project template
+- `Sharpmake_Games.cs` - Abstract `GameProject`/`GameSolution` bases (concrete per-game classes are codegen'd)
+- `Sharpmake_Solutions.cs` - `[Sharpmake.Main]` + SHA256 manifest guard + engine-only solution
+- `zenith_buildsystem.psm1` - descriptor/codegen/name rules + shared ops (single source of truth)
+- `zenith_config.psd1` - central config data (read via the psm1 accessors only)
+- `regen.ps1` - canonical regenerator (worktree-guard -> validate -> codegen -> Sharpmake -> AGDE fixup -> orphan prune)
 - `Sharpmake_ZenithTools.cs` - Asset tools project

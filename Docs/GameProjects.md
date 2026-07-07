@@ -4,6 +4,11 @@ Zenith games follow the Unity/Unreal model: create a game with **zero build-scri
 edits**, and open a solution containing **only the engine and the one game** you are
 working on. Sharpmake (in-repo) is still the generator — CMake is not used.
 
+> This document covers the **descriptor system** (schema, codegen, solutions,
+> templates, hub). The full build-system reference — CLI, configurations,
+> testing, packaging, CI, hygiene, troubleshooting — is
+> **[BuildSystem.md](BuildSystem.md)**.
+
 ## TL;DR
 
 ```
@@ -65,6 +70,9 @@ Gradle tree). The other 10 games are `android:true`.
    and **run Sharpmake once** → engine sln + all per-game slns in one consistent snapshot.
 5. Fix up AGDE vcxproj (`fix_agde_vcxproj.ps1` — c++ standard + UBSan).
 6. Delete the obsolete monolithic `zenith_win64.sln` / `zenith_agde.sln`.
+7. **Prune orphaned generated artifacts** (`Remove-ZenithOrphanGameArtifacts`):
+   slns/vcxprojs of game dirs whose descriptor is gone, and stale agde
+   artifacts of `android:false` games — never sources, never directories.
 
 `-UseDotnet` runs Sharpmake via `dotnet exec …Sharpmake.Application.dll` (CI uses this).
 
@@ -117,12 +125,19 @@ on-disk generated files are stale relative to the descriptors without regenerati
 
 ## CI
 
-Every workflow runs `pwsh Build/regen.ps1 -UseDotnet` first, then builds via `/t:`:
+Every build workflow runs `pwsh Build/regen.ps1 -UseDotnet` first, provisions
+the toolchain through the shared `.github/actions/zenith-setup` composite
+action (MSBuild + vcpkg + Vulkan + Slang, one shared cache set, retried
+downloads), then builds via `/t:`. Full CI reference incl. the static gates
+(complexity / layering / memory / doc-lint) and rollout state:
+[BuildSystem.md §8](BuildSystem.md).
 
-| Workflow | Regen + build |
-|----------|---------------|
-| `cb-tests.yml` | `msbuild Games\CityBuilder\citybuilder_win64.sln /t:CityBuilder` (Vulkan `_True` + D3D12 `_False`) |
-| `dp-tests.yml` | `msbuild Games\DevilsPlayground\devilsplayground_win64.sln /t:DevilsPlayground` (same) |
+| Workflow | Regen + build/test |
+|----------|--------------------|
+| `cb-tests.yml` | `msbuild Games\CityBuilder\citybuilder_win64.sln /t:CityBuilder` (Vulkan `_True` + D3D12 `_False`) + `zenith test CityBuilder --headless` (45) |
+| `dp-tests.yml` | `msbuild Games\DevilsPlayground\devilsplayground_win64.sln /t:DevilsPlayground` (same) + `zenith test DevilsPlayground --headless` (158) |
+| `engine-gate.yml` | Sentinels (`Vulkan_Debug_Win64_False`) built + executed; Sokoban unit gate (`Tools/run_unit_gate.ps1`) |
+| `release-build.yml` | nightly, build-only: engine + DP in `Vulkan_vs2022_Release_Win64_True` |
 | `shader-validation.yml` | `msbuild Build\zenith_engine_win64.sln /t:FluxCompiler` (first consumer + permanent gate of the engine sln) |
 | `scaffold-smoke.yml` | path-filtered; `Tools/test_scaffold.ps1` (`zenith new` → build → boot → teardown) |
 

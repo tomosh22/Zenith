@@ -150,6 +150,14 @@ public:
 
 The project uses [Sharpmake](https://github.com/ubisoft/Sharpmake) to generate Visual Studio solution files.
 
+> This section is the quick-start subset. The full reference — CLI commands +
+> exit codes, configurations/outputs/PCH structure, the test harness and
+> baselines, packaging (`--assets-root`), the CI matrix, hygiene and
+> troubleshooting, contributor invariants — is
+> **[Docs/BuildSystem.md](Docs/BuildSystem.md)**. The descriptor system
+> (`.zproj` schema, codegen, templates, hub) is
+> **[Docs/GameProjects.md](Docs/GameProjects.md)**.
+
 ### Generating Solution Files
 
 Games are **descriptor-driven**: each game has a `Games/<Name>/<Name>.zproj` (JSON —
@@ -300,8 +308,10 @@ Located in `Build/`:
 - `Sharpmake_Solutions.cs` - `[Sharpmake.Main]` + SHA256 manifest guard + engine-only `ZenithEngineSolution`
 - `Sharpmake_GameInstances.generated.cs` - **generated** per-game project/solution shells + manifest (gitignored)
 - `Sharpmake_ZenithHub.cs` - Unity-Hub-style launcher project (engine sln only)
-- `zenith_buildsystem.psm1` - descriptor scan / validate / codegen / name-validation module (single source of truth)
-- `regen.ps1` - canonical regenerator (worktree-guard -> validate -> codegen -> one Sharpmake run -> AGDE fixup)
+- `zenith_buildsystem.psm1` - descriptor scan / validate / codegen / name-validation + shared ops (config accessors, process sweep, DLL heal, drift check, orphan prune) — single source of truth
+- `zenith_config.psd1` - central config DATA (default/hub configs, CI-provisioned versions, artifact root); read via the psm1 accessors only
+- `regen.ps1` - canonical regenerator (worktree-guard -> validate -> codegen -> one Sharpmake run -> AGDE fixup -> orphan prune)
+- `fix_agde_vcxproj.ps1` - AGDE post-Sharpmake fixup (clang c++ standard token)
 - `Sharpmake_ZenithTools.cs` - Asset tools project
 - `Sharpmake_ZenithAI.cs` - AI module project
 - `Sharpmake_ZenithECS.cs` - ECS module project

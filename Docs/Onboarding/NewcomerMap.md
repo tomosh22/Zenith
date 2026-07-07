@@ -149,7 +149,7 @@ Things that have surprised people. If you hit one, this section saves you a debu
 | NavMesh winding order | Polygon winding direction is critical — wrong winding produces inverted normals and broken pathfinding. | `Zenith/AI/Navigation/Zenith_NavMeshGenerator.cpp` (per-phase comments) |
 | Vulkan platform names | `Flux_CommandBuffer`, `Flux_PlatformAPI` etc. are `using` aliases for `Zenith_Vulkan_*` types in [Zenith_PlatformGraphics_Include.h](../../Zenith/Vulkan/Zenith_PlatformGraphics_Include.h). IDE jump-to-definition leads to the alias, not the implementation. |
 | Prefab variants | A variant prefab inherits its base's components and applies its own property overrides on top. Cycles (A → B → A) are detected at variant creation. Nested property paths like `"Position.x"` are not yet supported (use whole-field overrides). | [Prefab/CLAUDE.md](../../Zenith/Prefab/CLAUDE.md) |
-| Build configurations | Only `*_True` (tools) configs are known good. `*_False` builds are broken at the time of writing — see project memory. | `Build/Sharpmake_*.cs` |
+| Build configurations | Both `*_True` (editor/tools) and `*_False` (runtime-only) configs are green and CI-gated. First build+run of a NEW game must be `*_True` to bake its boot-authored scene; thereafter `_False` loads it. Full reference: [Docs/BuildSystem.md](../BuildSystem.md). | `Build/Sharpmake_*.cs` |
 
 ---
 
