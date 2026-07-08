@@ -103,3 +103,12 @@
 *.glb     filter=lfs diff=lfs merge=lfs -text
 *.obj     filter=lfs diff=lfs merge=lfs -text
 *.blend   filter=lfs diff=lfs merge=lfs -text
+
+# --- Flux shader-compiler generated headers (shader-validation gate) ------------
+# The Generated/*.h are LF as FluxCompiler emits them, but `* text=auto` above lets
+# a fresh checkout on an autocrlf=true runner smudge them to CRLF; FluxCompiler then
+# rewrites them LF, so `git status` reports them spuriously "modified" and fails the
+# gate. Pin them to LF so the regenerated tree stays byte-clean on every checkout.
+# (The .spv themselves are Git-LFS tracked -- see *.spv above; that gate failure is
+# fixed by fetching LFS in the workflow checkout, not here.)
+Zenith/Flux/Shaders/Generated/*.h  text eol=lf

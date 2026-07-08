@@ -48,6 +48,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The .spv are Git-LFS tracked (.gitattributes). Without lfs:true the
+          # working tree holds LFS *pointers*; FluxCompiler then writes the real
+          # SPIR-V over them, so the final `git status` sees content-vs-pointer and
+          # reports all 108 .spv "modified" (the long-standing gate failure). Fetch
+          # LFS so the tree starts as real content and a byte-identical regen is clean.
+          lfs: true
 
       - name: Provision Zenith toolchain (MSBuild + vcpkg + Vulkan + Slang)
         uses: ./.github/actions/zenith-setup
