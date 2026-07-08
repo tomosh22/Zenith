@@ -15,9 +15,7 @@
 #include <cmath>
 #include <filesystem>
 
-// Game-project hook + tools export entry points (extern declarations, same
-// pattern as Zenith_TerrainComponent_Editor.cpp).
-extern const char* Project_GetGameAssetsDirectory();
+// Tools export entry point (extern declaration).
 extern void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir);
 
 //=============================================================================

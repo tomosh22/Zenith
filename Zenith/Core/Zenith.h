@@ -304,7 +304,10 @@ struct std::hash<Zenith_GUID>
 	}
 };
 
-extern const char* Project_GetGameAssetsDirectory();
+// Game-wiring contract (Project_* hooks) — one declaration site, pulled in via
+// the PCH so every .cpp sees the signatures. See the header for the lifecycle
+// contract (esp. the Project_Shutdown handle-Clear rule).
+#include "Core/Zenith_ProjectHooks.h"
 
 // Asset limits - now defined in ZenithConfig.h for central documentation
 // These macros maintain backward compatibility with existing code

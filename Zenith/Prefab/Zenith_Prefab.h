@@ -80,7 +80,7 @@ public:
 	/**
 	 * Check if this is a variant (has a base prefab)
 	 */
-	bool IsVariant() const { return m_xBasePrefab.IsSet(); }
+	bool IsVariant() const { return m_xBasePrefab.HasPath(); }
 
 	/**
 	 * Get the base prefab (for variants)

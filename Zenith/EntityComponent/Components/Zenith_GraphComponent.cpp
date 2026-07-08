@@ -66,7 +66,7 @@ Zenith_BehaviourGraph* Zenith_GraphComponent::InstantiateSlotGraph(Zenith_GraphS
 	static const bool ls_bAssetLinked = Zenith_BehaviourGraphAsset_ForceLink();
 	(void)ls_bAssetLinked;
 
-	Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::Get<Zenith_BehaviourGraphAsset>(xSlot.m_strGraphAssetPath);
+	Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::GetView<Zenith_BehaviourGraphAsset>(xSlot.m_strGraphAssetPath);
 	if (!pxAsset || !pxAsset->LoadedOk())
 	{
 		Zenith_Log(LOG_CATEGORY_ECS,
@@ -477,7 +477,7 @@ u_int Zenith_GraphComponent::ReloadSlotsForAsset(const char* szNormalizedPath)
 			continue;
 		}
 
-		Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::Get<Zenith_BehaviourGraphAsset>(xSlot.m_strGraphAssetPath);
+		Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::GetView<Zenith_BehaviourGraphAsset>(xSlot.m_strGraphAssetPath);
 		if (!pxAsset || !pxAsset->LoadedOk())
 		{
 			continue;	// keep the old instance - atomic failure

@@ -38,6 +38,7 @@ class Zenith_MeshAsset;
 class Zenith_SkeletonAsset;
 class Zenith_ModelAsset;
 class Zenith_Prefab;
+template<typename T> class Zenith_AssetHandle;
 
 // Forward declare .zdata loader (defined in .cpp, used by RegisterAssetType<T>)
 Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath);
@@ -125,30 +126,49 @@ public:
 	//--------------------------------------------------------------------------
 
 	/**
-	 * Get an asset by path, loading if necessary
-	 * Returns a raw pointer with NO AddRef applied — Zenith_AssetHandle does the
-	 * ref-counting; hold a handle if the asset must survive UnloadUnused().
-	 * @param strPath Path to the asset file (e.g., "game:Textures/diffuse.ztxtr")
+	 * Get a RAW, NON-owning view of an asset by path (loading if necessary).
+	 * Returns a bare pointer with NO AddRef — a transient view that MUST NOT outlive
+	 * an UnloadUnused()/scene transition. To keep an asset alive, use Acquire<T>()
+	 * (or hold a Zenith_AssetHandle) instead.
 	 * @return Pointer to the asset, or nullptr on failure
 	 */
 	template<typename T>
-	static T* Get(const std::string& strPath);
+	static T* GetView(const std::string& strPath);
 
 	/**
-	 * Create a new procedural asset
-	 * @return Pointer to the new asset with a generated path
+	 * Acquire an OWNING, ref-counted handle to an asset by path (loading if needed).
+	 * The AddRef happens under the registry lock (race-free) and the handle retains
+	 * the path. Defined in Zenith_AssetHandle.h (returns the handle by value).
 	 */
 	template<typename T>
-	static T* Create();
+	static Zenith_AssetHandle<T> Acquire(const std::string& strPath);
 
 	/**
-	 * Create a new procedural asset with a specific path
-	 * Useful for caching primitives by path (e.g., "procedural://unit_cube")
-	 * @param strPath The path to register the asset under
-	 * @return Pointer to the new asset
+	 * Create a new procedural asset, returning an OWNING handle (AddRef'd under the
+	 * registry lock — no 0-refcount window). The handle stores no path (procedural
+	 * assets are not path-serializable). Defined in Zenith_AssetHandle.h.
 	 */
 	template<typename T>
-	static T* Create(const std::string& strPath);
+	static Zenith_AssetHandle<T> Create();
+
+	/**
+	 * Get-or-create a procedural asset registered under a specific path (e.g.
+	 * "procedural://unit_cube"), returning an OWNING handle. ATOMIC: if the path is
+	 * already registered the existing asset is returned (AddRef'd) — the entry is
+	 * NEVER clobbered. The handle retains the path. Defined in Zenith_AssetHandle.h.
+	 */
+	template<typename T>
+	static Zenith_AssetHandle<T> Create(const std::string& strPath);
+
+	/**
+	 * Adopt a pre-built asset under a path, or return the existing one if the path is
+	 * already registered (deleting the pre-built asset on that lost-race path).
+	 * Atomic. Lets the procedural primitive creators build geometry OUTSIDE the
+	 * registry lock (no GPU work under lock) then publish it race-free. Takes
+	 * ownership of pxPrebuilt. Defined in Zenith_AssetHandle.h.
+	 */
+	template<typename T>
+	static Zenith_AssetHandle<T> AdoptOrGet(const std::string& strPath, T* pxPrebuilt);
 
 	/**
 	 * Check if an asset is loaded
@@ -313,6 +333,14 @@ private:
 	Zenith_Asset* GetInternal(Zenith_TypeIndex xType, const std::string& strPath);
 	Zenith_Asset* CreateInternal(Zenith_TypeIndex xType);
 	Zenith_Asset* CreateInternal(Zenith_TypeIndex xType, const std::string& strPath);
+	// Under-lock acquisition primitives: each AddRefs (or creates+AddRefs, or adopts)
+	// while holding m_xMutex, so a concurrent UnloadUnused cannot reclaim the asset
+	// between the lookup/creation and the AddRef. Return an already-AddRef'd asset (or
+	// null). GetOrCreate/AdoptOrGet are atomic and never clobber an existing entry.
+	Zenith_Asset* AcquireInternal(Zenith_TypeIndex xType, const std::string& strPath);
+	Zenith_Asset* CreateProceduralInternal(Zenith_TypeIndex xType);
+	Zenith_Asset* GetOrCreateInternal(Zenith_TypeIndex xType, const std::string& strPath);
+	Zenith_Asset* AdoptOrGetInternal(const std::string& strPath, Zenith_Asset* pxPrebuilt);
 	bool IsLoadedInternal(const std::string& strPath) const;
 	void ForceUnloadInternal(const std::string& strPath);
 	void UnloadUnusedInternal();
@@ -370,19 +398,10 @@ private:
 //--------------------------------------------------------------------------
 
 template<typename T>
-T* Zenith_AssetRegistry::Get(const std::string& strPath)
+T* Zenith_AssetRegistry::GetView(const std::string& strPath)
 {
 	return static_cast<T*>(s_pxInstance->GetInternal(Zenith_TypeIndex::Of<T>(), strPath));
 }
 
-template<typename T>
-T* Zenith_AssetRegistry::Create()
-{
-	return static_cast<T*>(s_pxInstance->CreateInternal(Zenith_TypeIndex::Of<T>()));
-}
-
-template<typename T>
-T* Zenith_AssetRegistry::Create(const std::string& strPath)
-{
-	return static_cast<T*>(s_pxInstance->CreateInternal(Zenith_TypeIndex::Of<T>(), strPath));
-}
+// Acquire / Create / AdoptOrGet return Zenith_AssetHandle<T> by value and are
+// therefore defined in Zenith_AssetHandle.h (where the handle type is complete).

@@ -812,7 +812,7 @@ ZENITH_TEST(Automation, GraphAuthoringSteps)
 	}
 
 	// The saved asset holds exactly what the steps authored.
-	Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::Get<Zenith_BehaviourGraphAsset>(szPATH);
+	Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::GetView<Zenith_BehaviourGraphAsset>(szPATH);
 	ZENITH_ASSERT_NOT_NULL(pxAsset, "Step-authored asset should load from the registry");
 	if (pxAsset)
 	{
@@ -2656,7 +2656,7 @@ ZENITH_TEST(Automation, CreatePrefabFromSelectedStep)
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(szSavePath),
 		"CreatePrefabFromSelected: save file should exist on disk");
 
-	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::Get<Zenith_Prefab>(szSavePath);
+	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::GetView<Zenith_Prefab>(szSavePath);
 	ZENITH_ASSERT_NOT_NULL(pxLoaded, "CreatePrefabFromSelected: registry should resolve saved prefab");
 	ZENITH_ASSERT_EQ(pxLoaded->GetName(), std::string("AutoPrefabName"),
 		"CreatePrefabFromSelected: prefab name should match step argument");
@@ -2686,7 +2686,7 @@ ZENITH_TEST(Automation, CreatePrefabVariantStep)
 		g_xEngine.EditorAutomation().ExecuteNextStep();
 	}
 
-	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::Get<Zenith_Prefab>(szVariantPath);
+	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::GetView<Zenith_Prefab>(szVariantPath);
 	ZENITH_ASSERT_NOT_NULL(pxVariant, "CreatePrefabVariant: variant should reload from disk");
 	ZENITH_ASSERT_TRUE(pxVariant->IsVariant(),
 		"CreatePrefabVariant: derived prefab should be marked as a variant");
@@ -2723,7 +2723,7 @@ ZENITH_TEST(Automation, AddPrefabVariantOverrideStep)
 		g_xEngine.EditorAutomation().ExecuteNextStep();
 	}
 
-	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::Get<Zenith_Prefab>(szVariantPath);
+	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::GetView<Zenith_Prefab>(szVariantPath);
 	ZENITH_ASSERT_NOT_NULL(pxVariant, "AddPrefabVariantOverride: variant should be loadable post-step");
 	ZENITH_ASSERT_EQ(pxVariant->GetOverrides().GetSize(), 1u,
 		"AddPrefabVariantOverride: should have exactly one override after the step");
@@ -3065,7 +3065,7 @@ ZENITH_TEST(Automation, OverrideAccumulatesAcrossSteps)
 		g_xEngine.EditorAutomation().ExecuteNextStep();
 	}
 
-	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::Get<Zenith_Prefab>(szVariantPath);
+	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::GetView<Zenith_Prefab>(szVariantPath);
 	ZENITH_ASSERT_NOT_NULL(pxVariant, "OverrideAccumulates: variant should reload from disk");
 	ZENITH_ASSERT_EQ(pxVariant->GetOverrides().GetSize(), 2u,
 		"OverrideAccumulates: two distinct overrides should both persist");
@@ -3102,7 +3102,7 @@ ZENITH_TEST(Automation, SamePropertyOverrideTwiceReplaces)
 		g_xEngine.EditorAutomation().ExecuteNextStep();
 	}
 
-	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::Get<Zenith_Prefab>(szVariantPath);
+	Zenith_Prefab* pxVariant = Zenith_AssetRegistry::GetView<Zenith_Prefab>(szVariantPath);
 	ZENITH_ASSERT_NOT_NULL(pxVariant, "SamePropertyReplaces: variant should reload");
 	ZENITH_ASSERT_EQ(pxVariant->GetOverrides().GetSize(), 1u,
 		"SamePropertyReplaces: same (component, property) should not duplicate");

@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "AssetHandling/Zenith_Image.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Collections/Zenith_Vector.h"
 #include "Maths/Zenith_Maths.h"
 #include "ZenithECS/Zenith_SceneData.h"
@@ -457,8 +458,9 @@ private:
 	Zenith_EntityID m_uTargetEntity = INVALID_ENTITY_ID;
 
 	// Brush-indicator decal texture, lazily resolved on first cursor draw
-	// (the file is regenerated at boot by RegenerateBrushTextures).
-	Zenith_TextureAsset* m_pxBrushIndicatorTexture = nullptr;
+	// (the file is regenerated at boot by RegenerateBrushTextures). Owning handle so
+	// the texture survives UnloadUnused while the editor holds it.
+	TextureHandle m_xBrushIndicatorTexture;
 	bool m_bBrushIndicatorLoadAttempted = false;
 
 	// TreePaint targets — EntityIDs only (revalidated every use, same contract

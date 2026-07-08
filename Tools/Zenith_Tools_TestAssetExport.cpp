@@ -2379,7 +2379,8 @@ void GenerateStickFigureTextures(const std::string& strDir)
 
 void GenerateStickFigureMaterial(const std::string& strDir)
 {
-	Zenith_MaterialAsset* pxBody = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	auto xhBody = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxBody = xhBody.GetDirect();
 	pxBody->SetName("StickFigureBody");
 	const std::string strBase = "engine:Meshes/StickFigure/";
 	pxBody->SetDiffuseTexture(TextureHandle(strBase + "StickFigure_Albedo" ZENITH_TEXTURE_EXT));
@@ -2413,7 +2414,8 @@ void GenerateStickFigureMaterial(const std::string& strDir)
 	// albedo atlas; a low base roughness + a sharp clear-coat lobe give a live,
 	// view-dependent cornea highlight from the sun + IBL instead of a flat painted
 	// catchlight. ---
-	Zenith_MaterialAsset* pxEye = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	auto xhEye = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxEye = xhEye.GetDirect();
 	pxEye->SetName("StickFigureEye");
 	pxEye->SetDiffuseTexture(TextureHandle(strBase + "StickFigure_Albedo" ZENITH_TEXTURE_EXT));
 	pxEye->SetRoughness(0.10f);             // wet glossy sphere (default-white RM * 0.10)
@@ -2430,7 +2432,8 @@ void GenerateStickFigureMaterial(const std::string& strDir)
 void ExportStickFigureModel(const std::string& strDir, const std::string& strSkelPath,
                             const std::string& strMeshAssetPath)
 {
-	Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+	auto xhModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+	Zenith_ModelAsset* pxModel = xhModel.GetDirect();
 	pxModel->SetName("StickFigure");
 	pxModel->SetSkeletonPath(strSkelPath);
 
@@ -4186,7 +4189,8 @@ void GenerateRenderTestAssets()
 
 	if (!std::filesystem::exists(strModelPath))
 	{
-		Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		auto xhModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		Zenith_ModelAsset* pxModel = xhModel.GetDirect();
 		pxModel->SetName("BulletSphere");
 		Zenith_Vector<std::string> xEmptyMaterials;
 		pxModel->AddMeshByPath(strMeshAssetPath, xEmptyMaterials);

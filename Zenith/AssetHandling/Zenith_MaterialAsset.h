@@ -47,8 +47,8 @@ struct Zenith_MaterialResolved
  *   Unlit -> shading model).
  *
  * Usage:
- *   auto* pMat = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>("game:Materials/mat.zmat");
- *   pMat->SetRoughness(0.2f);
+ *   MaterialHandle xMat = Zenith_AssetRegistry::Acquire<Zenith_MaterialAsset>("game:Materials/mat.zmat");
+ *   xMat.GetDirect()->SetRoughness(0.2f);
  *   pMat->SetTexture(MATERIAL_TEXTURE_BASE_COLOR, TextureHandle("game:Textures/albedo.ztxtr"));
  *
  *   // Instance workflow

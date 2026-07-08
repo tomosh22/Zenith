@@ -652,7 +652,8 @@ void GenerateLeafClusterTexture(const std::string& strDir)
 void GenerateTreeMaterials(const std::string& strDir)
 {
 	{
-		Zenith_MaterialAsset* pxBark = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		auto xhBark = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxBark = xhBark.GetDirect();
 		pxBark->SetName("TreeBark");
 		pxBark->SetDiffuseTexture(TextureHandle("engine:Meshes/ProceduralTree/Tree_Bark_Albedo" ZENITH_TEXTURE_EXT));
 		pxBark->SetNormalTexture(TextureHandle("engine:Meshes/ProceduralTree/Tree_Bark_Normal" ZENITH_TEXTURE_EXT));
@@ -661,7 +662,8 @@ void GenerateTreeMaterials(const std::string& strDir)
 		pxBark->SaveToFile(strDir + "Tree_Bark.zmtrl");
 	}
 	{
-		Zenith_MaterialAsset* pxLeaves = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		auto xhLeaves = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxLeaves = xhLeaves.GetDirect();
 		pxLeaves->SetName("TreeLeaves");
 		pxLeaves->SetDiffuseTexture(TextureHandle("engine:Meshes/ProceduralTree/Tree_Leaves_Albedo" ZENITH_TEXTURE_EXT));
 		pxLeaves->SetRoughness(0.78f);

@@ -317,7 +317,6 @@ void Zenith_Editor::ConfigureImGuiIniPath()
 	// IniFilename POINTER without copying — the buffer must outlive
 	// DestroyContext, hence the file-scope static.
 #ifdef ZENITH_WINDOWS
-	extern const char* Project_GetName();
 	static char s_acImGuiIniPath[ZENITH_MAX_PATH_LENGTH] = {};
 
 	char acLocalAppData[ZENITH_MAX_PATH_LENGTH] = {};

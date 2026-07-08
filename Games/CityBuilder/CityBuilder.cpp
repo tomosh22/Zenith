@@ -113,7 +113,7 @@ static void CB_InitTerrainResources()
 	}
 	for (int i = 0; i < 4; ++i)
 	{
-		g_axCBTerrainMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		g_axCBTerrainMaterials[i] = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		Zenith_MaterialAsset* pxMat = g_axCBTerrainMaterials[i].GetDirect();
 		pxMat->SetName(CB_TerrainMatName(i));
 		pxMat->SetDiffuseTexture          (TextureHandle(CB_TerrainTexPath(i, "_d")));

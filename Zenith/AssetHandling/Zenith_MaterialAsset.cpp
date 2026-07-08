@@ -472,7 +472,8 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetDefaultTextureForSlot(MaterialText
 void Zenith_MaterialAsset::InitializeDefaults()
 {
 	// Create default white texture (1x1 white pixel) — pinned via handle.
-	if (Zenith_TextureAsset* pxWhite = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+	auto xhWhite = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+	if (Zenith_TextureAsset* pxWhite = xhWhite.GetDirect())
 	{
 		uint32_t uWhite = 0xFFFFFFFF;
 		Flux_SurfaceInfo xInfo;
@@ -486,7 +487,8 @@ void Zenith_MaterialAsset::InitializeDefaults()
 	}
 
 	// Create default normal texture (1x1 flat normal: 0.5, 0.5, 1.0) — pinned.
-	if (Zenith_TextureAsset* pxNormal = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+	auto xhNormal = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+	if (Zenith_TextureAsset* pxNormal = xhNormal.GetDirect())
 	{
 		uint32_t uNormal = 0xFFFF8080; // RGBA: 0.5, 0.5, 1.0, 1.0 in 8-bit (128, 128, 255, 255)
 		Flux_SurfaceInfo xInfo;

@@ -362,7 +362,7 @@ const Zenith_Maths::Matrix4* Flux_AnimationController::GetSkinningMatrices() con
 Flux_AnimationClip* Flux_AnimationController::AddClipFromFile(const std::string& strPath)
 {
 	// Resolve through the registry first so we have a concrete pointer.
-	Zenith_AnimationAsset* pxAnimAsset = Zenith_AssetRegistry::Get<Zenith_AnimationAsset>(strPath);
+	Zenith_AnimationAsset* pxAnimAsset = Zenith_AssetRegistry::GetView<Zenith_AnimationAsset>(strPath);
 	Zenith_Assert(pxAnimAsset != nullptr, "Failed to load animation asset from: %s", strPath.c_str());
 
 	// Get the clip (asset retains ownership)

@@ -26,8 +26,8 @@ class Zenith_MaterialAsset;
  * a bundle that can be instantiated multiple times in the scene.
  *
  * Usage:
- *   // Load from registry
- *   Zenith_ModelAsset* pModel = Zenith_AssetRegistry::Get<Zenith_ModelAsset>("Assets/model.zmodel");
+ *   // Load an owning handle (GetView<T>() for a raw transient view)
+ *   ModelHandle xModel = Zenith_AssetRegistry::Acquire<Zenith_ModelAsset>("Assets/model.zmodel");
  *
  */
 class Zenith_ModelAsset : public Zenith_Asset

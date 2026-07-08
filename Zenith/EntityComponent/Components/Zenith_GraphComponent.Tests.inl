@@ -2669,7 +2669,8 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 		std::error_code xEC;
 		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Prefabs"), xEC);
 		Zenith_Entity xTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "SpawnTemplate");
-		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhPrefab = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxPrefab = xhPrefab.GetDirect();
 		pxPrefab->CreateFromEntity(xTemplate, "GraphSpawnFixture");
 		pxPrefab->SaveToFile(Zenith_AssetRegistry::ResolvePath(strPrefabPath));
 		xTemplate.Destroy();

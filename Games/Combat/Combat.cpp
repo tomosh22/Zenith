@@ -88,7 +88,7 @@ void Combat::TryInitializeStickFigureModel()
 		// Load the mesh geometry through registry
 		if (std::filesystem::exists(strStickFigureMeshGeomPath))
 		{
-			if (Zenith_MeshGeometryAsset* pxGeom = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>(strStickFigureMeshGeomPath))
+			if (Zenith_MeshGeometryAsset* pxGeom = Zenith_AssetRegistry::GetView<Zenith_MeshGeometryAsset>(strStickFigureMeshGeomPath))
 			{
 				Resources().m_xStickFigureGeometryAsset.Set(pxGeom);
 				Resources().m_pxStickFigureGeometry = pxGeom->GetGeometry();
@@ -103,7 +103,8 @@ void Combat::TryInitializeStickFigureModel()
 		Resources().m_strStickFigureModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MODEL_EXT;
 		if (!std::filesystem::exists(Resources().m_strStickFigureModelPath))
 		{
-			Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+			auto xhModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+			Zenith_ModelAsset* pxModel = xhModel.GetDirect();
 			pxModel->SetName("StickFigure");
 			pxModel->SetSkeletonPath(strStickFigureSkeletonPath);
 
@@ -239,7 +240,8 @@ static void InitializeCombatResources()
 
 	// Create capsule geometry (for characters) - custom size, tracked through registry
 	{
-		Zenith_MeshGeometryAsset* pxCapsuleAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		auto xhCapsuleAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		Zenith_MeshGeometryAsset* pxCapsuleAsset = xhCapsuleAsset.GetDirect();
 		Flux_MeshGeometry* pxCapsule = new Flux_MeshGeometry();
 		Flux_MeshGeometry::GenerateCapsule(*pxCapsule, 0.5f, 1.0f, 16, 16);
 		pxCapsuleAsset->SetGeometry(pxCapsule);
@@ -253,7 +255,7 @@ static void InitializeCombatResources()
 #endif
 
 	// Create cube geometry (for arena) - use registry's cached unit cube
-	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_xCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
 	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 #ifdef ZENITH_TOOLS
 	std::string strCubePath = strMeshDir + "/Cube" ZENITH_MESH_EXT;
@@ -263,7 +265,8 @@ static void InitializeCombatResources()
 
 	// Create cone geometry (for candles on walls) - custom size, tracked through registry
 	{
-		Zenith_MeshGeometryAsset* pxConeAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		auto xhConeAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		Zenith_MeshGeometryAsset* pxConeAsset = xhConeAsset.GetDirect();
 		Flux_MeshGeometry* pxCone = new Flux_MeshGeometry();
 		Flux_MeshGeometry::GenerateCone(*pxCone, 0.08f, 0.25f, 12);
 		pxConeAsset->SetGeometry(pxCone);
@@ -293,27 +296,27 @@ static void InitializeCombatResources()
 
 	// Create materials with texture paths (properly serializable)
 
-	Resources().m_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xPlayerMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xPlayerMaterial.GetDirect()->SetName("CombatPlayer");
 	Resources().m_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xPlayerTextureHandle);
 	Resources().m_xPlayerMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - player should be REFLECTED, not reflecting
 
-	Resources().m_xEnemyMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xEnemyMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xEnemyMaterial.GetDirect()->SetName("CombatEnemy");
 	Resources().m_xEnemyMaterial.GetDirect()->SetDiffuseTexture(xEnemyTextureHandle);
 	Resources().m_xEnemyMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - enemies should be REFLECTED, not reflecting
 
-	Resources().m_xArenaMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xArenaMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xArenaMaterial.GetDirect()->SetName("CombatArena");
 	Resources().m_xArenaMaterial.GetDirect()->SetDiffuseTexture(xArenaTextureHandle);
 	Resources().m_xArenaMaterial.GetDirect()->SetRoughness(0.15f);  // LOW roughness - floor IS the reflective surface
 
-	Resources().m_xWallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xWallMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xWallMaterial.GetDirect()->SetName("CombatWall");
 	Resources().m_xWallMaterial.GetDirect()->SetDiffuseTexture(xWallTextureHandle);
 	Resources().m_xWallMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - walls should be REFLECTED, not reflecting
 
-	Resources().m_xCandleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xCandleMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xCandleMaterial.GetDirect()->SetName("CombatCandle");
 	Resources().m_xCandleMaterial.GetDirect()->SetDiffuseTexture(xCandleTextureHandle);
 	Resources().m_xCandleMaterial.GetDirect()->SetRoughness(0.9f);  // HIGH roughness - candles should be REFLECTED, not reflecting
@@ -353,7 +356,8 @@ static void InitializeCombatResources()
 	// Player prefab
 	{
 		Zenith_Entity xPlayerTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "PlayerTemplate");
-		Zenith_Prefab* pxPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxPlayer = xhPlayer.GetDirect();
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
 		Resources().m_xPlayerPrefab.Set(pxPlayer);
 		xPlayerTemplate.Destroy();
@@ -366,7 +370,8 @@ static void InitializeCombatResources()
 	// (0.7 / 0.9 / 1.1) so the three enemy tiers visibly differ in size.
 	{
 		Zenith_Entity xEnemyTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "EnemyTemplate");
-		Zenith_Prefab* pxEnemy = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhEnemy = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxEnemy = xhEnemy.GetDirect();
 		pxEnemy->CreateFromEntity(xEnemyTemplate, "Enemy");
 		Resources().m_xEnemyPrefab.Set(pxEnemy);
 		xEnemyTemplate.Destroy();
@@ -376,13 +381,14 @@ static void InitializeCombatResources()
 		// the launch and effectively transient.
 		const std::string strBasePath = "EnemyBase.zpfb";
 		pxEnemy->SaveToFile(strBasePath);
-		Zenith_AssetRegistry::Get<Zenith_Prefab>(strBasePath);
+		Zenith_AssetRegistry::GetView<Zenith_Prefab>(strBasePath);
 
 		// Build the three Scale variants in memory.
 		PrefabHandle xBaseHandle(strBasePath);
 		for (u_int u = 0; u < uENEMY_VARIANT_COUNT; ++u)
 		{
-			Zenith_Prefab* pxVariant = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+			auto xhVariant = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+			Zenith_Prefab* pxVariant = xhVariant.GetDirect();
 			pxVariant->CreateAsVariant(xBaseHandle, g_aszEnemyVariantNames[u]);
 
 			Zenith_PropertyOverride xOv;
@@ -399,7 +405,8 @@ static void InitializeCombatResources()
 	// Arena prefab (for floor)
 	{
 		Zenith_Entity xArenaTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "ArenaTemplate");
-		Zenith_Prefab* pxArena = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhArena = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxArena = xhArena.GetDirect();
 		pxArena->CreateFromEntity(xArenaTemplate, "Arena");
 		Resources().m_xArenaPrefab.Set(pxArena);
 		xArenaTemplate.Destroy();
@@ -420,7 +427,8 @@ static void InitializeCombatResources()
 		xEmitter.SetConfig(Resources().m_pxFlameConfig);
 		xEmitter.SetEmitting(true);
 
-		Zenith_Prefab* pxWall = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhWall = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxWall = xhWall.GetDirect();
 		pxWall->CreateFromEntity(xWallTemplate, "ArenaWall");
 		Resources().m_xArenaWallPrefab.Set(pxWall);
 		xWallTemplate.Destroy();

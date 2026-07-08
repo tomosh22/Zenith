@@ -85,7 +85,8 @@ static bool Step_ShootAction(int /*iFrame*/)
 		Zenith_Entity xBulletTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "BulletTemplate");
 		xBulletTemplate.AddComponent<Zenith_ColliderComponent>()
 			.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
-		Zenith_Prefab* pxBulletPrefab = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhBulletPrefab = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxBulletPrefab = xhBulletPrefab.GetDirect();
 		pxBulletPrefab->CreateFromEntity(xBulletTemplate, "Bullet");
 		const std::string strBulletPath = GAME_ASSETS_DIR "Prefabs/TestShootBullet" ZENITH_PREFAB_EXT;
 		pxBulletPrefab->SaveToFile(strBulletPath);

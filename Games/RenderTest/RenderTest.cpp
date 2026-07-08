@@ -855,7 +855,8 @@ static void EnsureUnitCubeModelExists()
 
 	if (!std::filesystem::exists(strModelPath))
 	{
-		Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		auto xhModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		Zenith_ModelAsset* pxModel = xhModel.GetDirect();
 		pxModel->SetName("UnitCube");
 		Zenith_Vector<std::string> xEmptyMaterials;
 		pxModel->AddMeshByPath(strMeshAssetPath, xEmptyMaterials);
@@ -903,7 +904,8 @@ static void EnsureStickFigureModelExists()
 	// when the generator was skipped (--skip-tool-exports).
 	if (!std::filesystem::exists(strModelPath))
 	{
-		Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		auto xhModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		Zenith_ModelAsset* pxModel = xhModel.GetDirect();
 		pxModel->SetName("StickFigure");
 		pxModel->SetSkeletonPath(strSkeletonPath);
 
@@ -936,7 +938,7 @@ static void EnsureStickFigureModelExists()
 // the engine default. Emissive is left unset (default black).
 static void SetupPBRTerrainMaterial(MaterialHandle& xHandle, const std::string& strDisplayName, const std::string& strRelativeDir)
 {
-	xHandle.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	xHandle = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Zenith_MaterialAsset* pxMaterial = xHandle.GetDirect();
 	pxMaterial->SetName(strDisplayName);
 	pxMaterial->SetDiffuseTexture          (TextureHandle(strRelativeDir + "diffuse"   ZENITH_TEXTURE_EXT));
@@ -979,7 +981,7 @@ static void InitializeRenderTestResources()
 	const std::string strProceduralTexDir = std::string(GAME_ASSETS_DIR) + "Textures/";
 	std::filesystem::create_directories(strProceduralTexDir);
 
-	RenderTest::Resources().m_xCubeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	RenderTest::Resources().m_xCubeMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	RenderTest::Resources().m_xCubeMaterial.GetDirect()->SetName("RenderTestCubeMaterial");
 	RenderTest::Resources().m_xCubeMaterial.GetDirect()->SetDiffuseTexture(g_xEngine.FluxGraphics().m_xGridTexture);
 	// (The old flat-teal player material is gone — the StickFigure .zmodel now
@@ -1389,7 +1391,8 @@ static void GenerateRenderTestTestbedAssets()
 
 	const std::string& strMatPath = RenderTest_TestbedVtxColorMaterialPath();
 	std::filesystem::create_directories(std::filesystem::path(strMatPath).parent_path());
-	Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	auto xhMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMat = xhMat.GetDirect();
 	pxMat->SetName("RenderTest_TestbedVtxColor");
 	pxMat->SetBaseColor(Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
 	pxMat->SetRoughness(0.45f);

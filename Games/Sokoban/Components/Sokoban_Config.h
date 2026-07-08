@@ -16,12 +16,12 @@
  *
  * Usage:
  *   // In Sokoban_GameComponent::OnAwake():
- *   m_pxConfig = Zenith_AssetRegistry::Get<Sokoban_Config>("game:Config/SokobanConfig.zdata");
+ *   m_pxConfig = Zenith_AssetRegistry::GetView<Sokoban_Config>("game:Config/SokobanConfig.zdata");
  *
- *   // Or create programmatically:
- *   Sokoban_Config* pxConfig = Zenith_AssetRegistry::Create<Sokoban_Config>();
- *   pxConfig->m_uMinGridSize = 10;
- *   Zenith_AssetRegistry::Save(pxConfig, "game:Config/HardMode.zdata");
+ *   // Or create programmatically (Create<T>() returns an owning handle):
+ *   auto xConfig = Zenith_AssetRegistry::Create<Sokoban_Config>();
+ *   xConfig.GetDirect()->m_uMinGridSize = 10;
+ *   Zenith_AssetRegistry::Save(xConfig.GetDirect(), "game:Config/HardMode.zdata");
  */
 class Sokoban_Config : public Zenith_Asset
 {

@@ -288,7 +288,7 @@ namespace
 				}
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Get<Zenith_Prefab>(m_strPrefabPath);
+			Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::GetView<Zenith_Prefab>(m_strPrefabPath);
 			if (pxPrefab == nullptr)
 			{
 				return GRAPH_NODE_STATUS_FAILURE;

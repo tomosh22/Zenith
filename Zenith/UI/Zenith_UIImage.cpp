@@ -25,7 +25,7 @@ Zenith_UIImage::~Zenith_UIImage()
 Zenith_TextureAsset* Zenith_UIImage::GetTexture() const
 {
     if (!m_xTexture.GetPath().empty())
-        return Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xTexture.GetPath());
+        return m_xTexture.Resolve();
     return m_xTexture.GetDirect();
 }
 
@@ -37,12 +37,12 @@ void Zenith_UIImage::SetTexturePath(const std::string& strPath)
 
 void Zenith_UIImage::LoadTexture()
 {
-    if (!m_xTexture.IsSet())
+    if (!m_xTexture.HasPath())
     {
         return;
     }
 
-    Zenith_TextureAsset* pxTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xTexture.GetPath());
+    Zenith_TextureAsset* pxTexture = m_xTexture.Resolve();
 
     if (pxTexture)
     {
@@ -89,7 +89,7 @@ void Zenith_UIImage::Render(Zenith_UICanvas& xCanvas)
     // Render the image with bindless texture
     uint32_t uTextureID = 0;
     Zenith_TextureAsset* pxTexture = !m_xTexture.GetPath().empty()
-        ? Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xTexture.GetPath())
+        ? m_xTexture.Resolve()
         : m_xTexture.GetDirect();
     if (pxTexture && pxTexture->IsValid() && pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
     {

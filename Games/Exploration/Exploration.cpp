@@ -400,7 +400,7 @@ static void InitializeExplorationResources()
 
 	for (u_int u = 0; u < 4; u++)
 	{
-		Resources().m_axTerrainMaterials[u].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		Resources().m_axTerrainMaterials[u] = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		Resources().m_axTerrainMaterials[u].GetDirect()->SetName(aszDisplayNames[u]);
 		SetMaterialTexturePaths(Resources().m_axTerrainMaterials[u].GetDirect(), strTexturesDir, aszNames[u]);
 	}
@@ -534,7 +534,7 @@ static void CreateInstancedTrees(Zenith_SceneData* pxSceneData)
 	// Create tree material (green with some variation) - guard for replay
 	if (Resources().m_xTreeMaterial.GetDirect() == nullptr)
 	{
-		Resources().m_xTreeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		Resources().m_xTreeMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		Resources().m_xTreeMaterial.GetDirect()->SetName("TreeMaterial");
 		Resources().m_xTreeMaterial.GetDirect()->SetBaseColor(Zenith_Maths::Vector4(0.3f, 0.5f, 0.2f, 1.0f));
 	}

@@ -118,7 +118,8 @@ void Flux_GraphicsImpl::Initialise()
 	u_int8 aucWhiteBlankTexData[] = { 255,255,255,255 };
 
 	// Create white texture (pinned via handle so UnloadUnused never frees it)
-	if (Zenith_TextureAsset* pxWhite = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+	auto xhWhite = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+	if (Zenith_TextureAsset* pxWhite = xhWhite.GetDirect())
 	{
 		pxWhite->CreateFromData(aucWhiteBlankTexData, xTexInfo, false);
 		m_xWhiteTexture.Set(pxWhite);
@@ -127,7 +128,8 @@ void Flux_GraphicsImpl::Initialise()
 	u_int8 aucBlackBlankTexData[] = { 0,0,0,0 };
 
 	// Create black texture (pinned)
-	if (Zenith_TextureAsset* pxBlack = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+	auto xhBlack = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+	if (Zenith_TextureAsset* pxBlack = xhBlack.GetDirect())
 	{
 		pxBlack->CreateFromData(aucBlackBlankTexData, xTexInfo, false);
 		m_xBlackTexture.Set(pxBlack);
@@ -177,7 +179,8 @@ void Flux_GraphicsImpl::Initialise()
 
 	// Create blank material for use as fallback throughout the engine (pinned).
 	// Material will use blank white textures by default (GetXXXTexture returns blank if path not set).
-	if (Zenith_MaterialAsset* pxBlankMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>())
+	auto xhBlankMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	if (Zenith_MaterialAsset* pxBlankMat = xhBlankMat.GetDirect())
 	{
 		pxBlankMat->SetName("BlankMaterial");
 		m_xBlankMaterial.Set(pxBlankMat);

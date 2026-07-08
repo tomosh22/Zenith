@@ -13,12 +13,12 @@ class Zenith_DataStream;
  * Contains both the surface info and GPU resources (VRAM, SRV).
  *
  * Usage:
- *   // Load from file
- *   Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>("Assets/tex.ztxtr");
+ *   // Load an owning handle (survives UnloadUnused); GetView<T>() for a raw transient view
+ *   TextureHandle xTex = Zenith_AssetRegistry::Acquire<Zenith_TextureAsset>("Assets/tex.ztxtr");
  *
- *   // Create procedural
- *   Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
- *   pTex->CreateFromData(pData, xSurfaceInfo);
+ *   // Create procedural (Create<T>() returns an owning handle)
+ *   TextureHandle xTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+ *   xTex.GetDirect()->CreateFromData(pData, xSurfaceInfo);
  */
 class Zenith_TextureAsset : public Zenith_Asset
 {

@@ -583,6 +583,76 @@ Zenith_Asset* Zenith_AssetRegistry::CreateInternal(Zenith_TypeIndex xType, const
 	return pxAsset;
 }
 
+//------------------------------------------------------------------------------
+// Under-lock acquisition primitives (the race-free ownership path)
+//------------------------------------------------------------------------------
+// Each holds m_xMutex across BOTH the lookup/creation AND the AddRef, so a
+// concurrent UnloadUnused (which takes the same mutex) cannot delete a freshly
+// created/loaded 0-ref asset in the window before the caller pins it. The mutex is
+// recursive, so the nested GetInternal/CreateInternal locks re-enter harmlessly.
+
+Zenith_Asset* Zenith_AssetRegistry::AcquireInternal(Zenith_TypeIndex xType, const std::string& strPath)
+{
+	Zenith_ScopedMutexLock xLock(m_xMutex);
+	Zenith_Asset* pxAsset = GetInternal(xType, strPath);
+	if (pxAsset)
+	{
+		pxAsset->AddRef();
+	}
+	return pxAsset;
+}
+
+Zenith_Asset* Zenith_AssetRegistry::CreateProceduralInternal(Zenith_TypeIndex xType)
+{
+	Zenith_ScopedMutexLock xLock(m_xMutex);
+	Zenith_Asset* pxAsset = CreateInternal(xType);
+	if (pxAsset)
+	{
+		pxAsset->AddRef();
+	}
+	return pxAsset;
+}
+
+Zenith_Asset* Zenith_AssetRegistry::GetOrCreateInternal(Zenith_TypeIndex xType, const std::string& strPath)
+{
+	Zenith_ScopedMutexLock xLock(m_xMutex);
+	// Atomic get-or-create: return the existing entry (pinned) rather than
+	// overwriting it. The old Create<T>(path) clobbered unconditionally, leaking the
+	// previous asset and silently invalidating live references to it (the danger the
+	// DPMaterials::GetOrCreateColouredVariant comment worked around by hand).
+	if (Zenith_Asset** ppxAsset = m_xAssetsByPath.TryGet(strPath))
+	{
+		(*ppxAsset)->AddRef();
+		return *ppxAsset;
+	}
+	Zenith_Asset* pxAsset = CreateInternal(xType, strPath);
+	if (pxAsset)
+	{
+		pxAsset->AddRef();
+	}
+	return pxAsset;
+}
+
+Zenith_Asset* Zenith_AssetRegistry::AdoptOrGetInternal(const std::string& strPath, Zenith_Asset* pxPrebuilt)
+{
+	Zenith_ScopedMutexLock xLock(m_xMutex);
+	if (Zenith_Asset** ppxAsset = m_xAssetsByPath.TryGet(strPath))
+	{
+		// Lost the race — another thread registered this path first. Discard the
+		// asset we built out-of-lock and pin the winner.
+		delete pxPrebuilt;
+		(*ppxAsset)->AddRef();
+		return *ppxAsset;
+	}
+	// pxPrebuilt is fully built (its data populated before this call), so it becomes
+	// visible to other threads only now, already complete. The registry is a friend
+	// of Zenith_Asset, so it may set the cache-key path.
+	pxPrebuilt->m_strPath = strPath;
+	m_xAssetsByPath[strPath] = pxPrebuilt;
+	pxPrebuilt->AddRef();
+	return pxPrebuilt;
+}
+
 std::string Zenith_AssetRegistry::GenerateProceduralPath(const std::string& strPrefix)
 {
 	return "procedural://" + strPrefix + "_" + std::to_string(m_uNextProceduralId++);

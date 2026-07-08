@@ -308,8 +308,10 @@ ZENITH_TEST(MaterialAsset, ResolveOverlaysOnlyOverriddenParams)
 {
 	// Procedural parent/child via the registry so MaterialHandle can hold a
 	// direct pointer (Set()).
-	Zenith_MaterialAsset* pxParent = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
-	Zenith_MaterialAsset* pxChild = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	auto xhParent = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxParent = xhParent.GetDirect();
+	auto xhChild = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxChild = xhChild.GetDirect();
 	ZENITH_ASSERT_NOT_NULL(pxParent, "Registry must create the parent");
 	ZENITH_ASSERT_NOT_NULL(pxChild, "Registry must create the child");
 
@@ -363,9 +365,12 @@ ZENITH_TEST(MaterialAsset, ResolveOverlaysOnlyOverriddenParams)
 
 ZENITH_TEST(MaterialAsset, GrandparentChainResolves)
 {
-	Zenith_MaterialAsset* pxRoot = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
-	Zenith_MaterialAsset* pxMid = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
-	Zenith_MaterialAsset* pxLeaf = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	auto xhRoot = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxRoot = xhRoot.GetDirect();
+	auto xhMid = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMid = xhMid.GetDirect();
+	auto xhLeaf = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxLeaf = xhLeaf.GetDirect();
 
 	pxRoot->SetRoughness(0.8f);
 	pxRoot->SetMetallic(1.0f);
@@ -395,8 +400,10 @@ ZENITH_TEST(MaterialAsset, GrandparentChainResolves)
 
 ZENITH_TEST(MaterialAsset, ParentCycleRejected)
 {
-	Zenith_MaterialAsset* pxA = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
-	Zenith_MaterialAsset* pxB = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	auto xhA = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxA = xhA.GetDirect();
+	auto xhB = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxB = xhB.GetDirect();
 
 	ZENITH_ASSERT_FALSE(pxA->SetParent(MaterialHandle(pxA)), "Self-parenting must be rejected");
 

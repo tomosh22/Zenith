@@ -311,7 +311,7 @@ ZENITH_TEST(ProceduralTree, LeafMaterialIsAlphaMasked)
 {
 	// Load via the asset registry (the public path; LoadFromFile is private). The
 	// registry resolves the engine: prefix and caches.
-	Zenith_MaterialAsset* pxLeaves = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(
+	Zenith_MaterialAsset* pxLeaves = Zenith_AssetRegistry::GetView<Zenith_MaterialAsset>(
 		"engine:Meshes/ProceduralTree/Tree_Leaves.zmtrl");
 	ZENITH_ASSERT_NOT_NULL(pxLeaves, "Tree_Leaves.zmtrl must load (run a tools boot to (re)generate it)");
 	ZENITH_ASSERT_EQ(pxLeaves->GetBlendMode(), MATERIAL_BLEND_MASKED,

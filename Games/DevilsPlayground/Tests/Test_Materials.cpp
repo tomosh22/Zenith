@@ -79,13 +79,13 @@ static bool Step_Materials(int iFrame)
 		g_uRegisteredCount = DPMaterials::GetRegisteredMaterialCount();
 
 		// 2. Default material should always be present.
-		Zenith_MaterialAsset* pxDefault = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(
+		Zenith_MaterialAsset* pxDefault = Zenith_AssetRegistry::GetView<Zenith_MaterialAsset>(
 			"game:Materials/__DPDefault.zmtrl");
 		g_bDefaultPresent = (pxDefault != nullptr);
 
 		// 3. At least one expected material from the UE dump - pick a stable
 		//    one (the prototype-grid red, which has explicit SurfaceColor).
-		Zenith_MaterialAsset* pxRed = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(
+		Zenith_MaterialAsset* pxRed = Zenith_AssetRegistry::GetView<Zenith_MaterialAsset>(
 			"game:Materials/LevelPrototyping_Materials_PrototypeGrid_M_PrototypeGrid_Red.zmtrl");
 		g_bExpectedPresent = (pxRed != nullptr);
 

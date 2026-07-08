@@ -94,7 +94,7 @@ void Flux_ParticlesImpl::Initialise()
 	xVulkanMemory.InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), m_xInstanceBufferAdditive, false);
 
 	// Load default particle texture (pinned)
-	if (Zenith_TextureAsset* pxParticle = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Particles/particleSwirl" ZENITH_TEXTURE_EXT))
+	if (Zenith_TextureAsset* pxParticle = Zenith_AssetRegistry::GetView<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Particles/particleSwirl" ZENITH_TEXTURE_EXT))
 	{
 		m_xParticleTexture.Set(pxParticle);
 	}

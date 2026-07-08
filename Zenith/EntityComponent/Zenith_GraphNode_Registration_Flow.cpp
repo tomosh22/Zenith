@@ -576,7 +576,7 @@ namespace
 			{
 				return false;
 			}
-			Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::Get<Zenith_BehaviourGraphAsset>(m_strGraphAssetPath);
+			Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::GetView<Zenith_BehaviourGraphAsset>(m_strGraphAssetPath);
 			if (!pxAsset || !pxAsset->LoadedOk())
 			{
 				if (!m_bWarned)

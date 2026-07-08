@@ -194,7 +194,7 @@ static bool Verify_GraphEditorScreenshotTour()
 
 	// The unresolved node survived load AND the runtime reports it unresolved
 	// (the preservation contract the editor renders error-red).
-	Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::Get<Zenith_BehaviourGraphAsset>(szTOUR_ASSET_PATH);
+	Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::GetView<Zenith_BehaviourGraphAsset>(szTOUR_ASSET_PATH);
 	if (pxAsset == nullptr)
 	{
 		Zenith_Error(LOG_CATEGORY_CORE, "[GraphEditorScreenshotTour] asset missing from registry");

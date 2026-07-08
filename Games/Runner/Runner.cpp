@@ -319,7 +319,8 @@ static void InitializeRunnerResources()
 
 	// Create capsule geometry for character - custom size, tracked through registry
 	{
-		Zenith_MeshGeometryAsset* pxCapsuleAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		auto xhCapsuleAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		Zenith_MeshGeometryAsset* pxCapsuleAsset = xhCapsuleAsset.GetDirect();
 		Flux_MeshGeometry* pxCapsule = new Flux_MeshGeometry();
 		GenerateCapsule(*pxCapsule, 0.4f, 1.8f, 16, 12);
 		pxCapsuleAsset->SetGeometry(pxCapsule);
@@ -328,12 +329,13 @@ static void InitializeRunnerResources()
 	}
 
 	// Create cube geometry for obstacles and ground - use registry's cached unit cube
-	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_xCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
 	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 
 	// Create sphere geometry for collectibles and particles - custom size, tracked through registry
 	{
-		Zenith_MeshGeometryAsset* pxSphereAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		auto xhSphereAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		Zenith_MeshGeometryAsset* pxSphereAsset = xhSphereAsset.GetDirect();
 		Flux_MeshGeometry* pxSphere = new Flux_MeshGeometry();
 		GenerateUVSphere(*pxSphere, 0.5f, 16, 12);
 		pxSphereAsset->SetGeometry(pxSphere);
@@ -345,32 +347,32 @@ static void InitializeRunnerResources()
 	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
 	// Create materials with grid texture and BaseColor
-	Resources().m_xCharacterMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xCharacterMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xCharacterMaterial.GetDirect()->SetName("RunnerCharacter");
 	Resources().m_xCharacterMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xCharacterMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
 
-	Resources().m_xGroundMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xGroundMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xGroundMaterial.GetDirect()->SetName("RunnerGround");
 	Resources().m_xGroundMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xGroundMaterial.GetDirect()->SetBaseColor({ 102.f/255.f, 77.f/255.f, 51.f/255.f, 1.f });
 
-	Resources().m_xObstacleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xObstacleMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xObstacleMaterial.GetDirect()->SetName("RunnerObstacle");
 	Resources().m_xObstacleMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xObstacleMaterial.GetDirect()->SetBaseColor({ 204.f/255.f, 51.f/255.f, 51.f/255.f, 1.f });
 
-	Resources().m_xCollectibleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xCollectibleMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xCollectibleMaterial.GetDirect()->SetName("RunnerCollectible");
 	Resources().m_xCollectibleMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xCollectibleMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 215.f/255.f, 0.f/255.f, 1.f });
 
-	Resources().m_xDustMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xDustMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xDustMaterial.GetDirect()->SetName("RunnerDust");
 	Resources().m_xDustMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xDustMaterial.GetDirect()->SetBaseColor({ 180.f/255.f, 150.f/255.f, 100.f/255.f, 1.f });
 
-	Resources().m_xCollectParticleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xCollectParticleMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xCollectParticleMaterial.GetDirect()->SetName("RunnerCollectParticle");
 	Resources().m_xCollectParticleMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xCollectParticleMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 255.f/255.f, 150.f/255.f, 1.f });
@@ -384,7 +386,8 @@ static void InitializeRunnerResources()
 	// Character prefab
 	{
 		Zenith_Entity xCharTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "CharacterTemplate");
-		Zenith_Prefab* pxChar = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhChar = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxChar = xhChar.GetDirect();
 		pxChar->CreateFromEntity(xCharTemplate, "Runner");
 		Resources().m_xCharacterPrefab.Set(pxChar);
 		xCharTemplate.Destroy();
@@ -393,7 +396,8 @@ static void InitializeRunnerResources()
 	// Ground prefab
 	{
 		Zenith_Entity xGroundTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "GroundTemplate");
-		Zenith_Prefab* pxGround = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhGround = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxGround = xhGround.GetDirect();
 		pxGround->CreateFromEntity(xGroundTemplate, "Ground");
 		Resources().m_xGroundPrefab.Set(pxGround);
 		xGroundTemplate.Destroy();
@@ -402,7 +406,8 @@ static void InitializeRunnerResources()
 	// Obstacle prefab
 	{
 		Zenith_Entity xObstacleTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "ObstacleTemplate");
-		Zenith_Prefab* pxObstacle = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhObstacle = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxObstacle = xhObstacle.GetDirect();
 		pxObstacle->CreateFromEntity(xObstacleTemplate, "Obstacle");
 		Resources().m_xObstaclePrefab.Set(pxObstacle);
 		xObstacleTemplate.Destroy();
@@ -411,7 +416,8 @@ static void InitializeRunnerResources()
 	// Collectible prefab
 	{
 		Zenith_Entity xCollectibleTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "CollectibleTemplate");
-		Zenith_Prefab* pxCollectible = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhCollectible = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxCollectible = xhCollectible.GetDirect();
 		pxCollectible->CreateFromEntity(xCollectibleTemplate, "Collectible");
 		Resources().m_xCollectiblePrefab.Set(pxCollectible);
 		xCollectibleTemplate.Destroy();
@@ -420,7 +426,8 @@ static void InitializeRunnerResources()
 	// Particle prefab
 	{
 		Zenith_Entity xParticleTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "ParticleTemplate");
-		Zenith_Prefab* pxParticle = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhParticle = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxParticle = xhParticle.GetDirect();
 		pxParticle->CreateFromEntity(xParticleTemplate, "Particle");
 		Resources().m_xParticlePrefab.Set(pxParticle);
 		xParticleTemplate.Destroy();

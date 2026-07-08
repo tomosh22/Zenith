@@ -61,10 +61,10 @@ public:
 		}
 
 		// Unit cube geometry (owned by the asset handle) + a simple lit material.
-		m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+		m_xCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
 		Flux_MeshGeometry* pxGeometry = m_xCubeAsset.GetDirect()->GetGeometry();
 
-		m_xMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		m_xMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		m_xMaterial.GetDirect()->SetName("{{GAME_NAME}}Cube");
 		m_xMaterial.GetDirect()->SetBaseColor({ 0.30f, 0.60f, 0.90f, 1.0f });
 

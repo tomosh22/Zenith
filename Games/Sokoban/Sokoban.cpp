@@ -62,38 +62,38 @@ static void InitializeSokobanResources()
 
 	using namespace Sokoban;
 
-	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_xCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
 	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials.
 	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
-	Resources().m_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xFloorMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xFloorMaterial.GetDirect()->SetName("SokobanFloor");
 	Resources().m_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xFloorMaterial.GetDirect()->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
 
-	Resources().m_xWallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xWallMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xWallMaterial.GetDirect()->SetName("SokobanWall");
 	Resources().m_xWallMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xWallMaterial.GetDirect()->SetBaseColor({ 102.f/255.f, 64.f/255.f, 38.f/255.f, 1.f });
 
-	Resources().m_xBoxMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xBoxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xBoxMaterial.GetDirect()->SetName("SokobanBox");
 	Resources().m_xBoxMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xBoxMaterial.GetDirect()->SetBaseColor({ 204.f/255.f, 128.f/255.f, 51.f/255.f, 1.f });
 
-	Resources().m_xBoxOnTargetMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xBoxOnTargetMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xBoxOnTargetMaterial.GetDirect()->SetName("SokobanBoxOnTarget");
 	Resources().m_xBoxOnTargetMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xBoxOnTargetMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
-	Resources().m_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xPlayerMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xPlayerMaterial.GetDirect()->SetName("SokobanPlayer");
 	Resources().m_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xPlayerMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 102.f/255.f, 230.f/255.f, 1.f });
 
-	Resources().m_xTargetMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xTargetMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xTargetMaterial.GetDirect()->SetName("SokobanTarget");
 	Resources().m_xTargetMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xTargetMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 153.f/255.f, 51.f/255.f, 1.f });
@@ -111,7 +111,8 @@ static void InitializeSokobanResources()
 		Zenith_Entity xTileTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "TileTemplate");
 		// No ModelComponent - added by behaviour with appropriate material
 
-		Zenith_Prefab* pxTile = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhTile = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxTile = xhTile.GetDirect();
 		pxTile->CreateFromEntity(xTileTemplate, "Tile");
 		Resources().m_xTilePrefab.Set(pxTile);
 
@@ -123,7 +124,8 @@ static void InitializeSokobanResources()
 		Zenith_Entity xBoxTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "BoxTemplate");
 		// No ModelComponent - added by behaviour with appropriate material
 
-		Zenith_Prefab* pxBox = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhBox = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxBox = xhBox.GetDirect();
 		pxBox->CreateFromEntity(xBoxTemplate, "Box");
 		Resources().m_xBoxPrefab.Set(pxBox);
 
@@ -135,7 +137,8 @@ static void InitializeSokobanResources()
 		Zenith_Entity xPlayerTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "PlayerTemplate");
 		// No ModelComponent - added by behaviour with player material
 
-		Zenith_Prefab* pxPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxPlayer = xhPlayer.GetDirect();
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
 		Resources().m_xPlayerPrefab.Set(pxPlayer);
 

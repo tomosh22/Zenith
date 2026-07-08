@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Collections/Zenith_Vector.h"
 #include "Maths/Zenith_Maths.h"
 #include <string>
@@ -20,9 +21,9 @@ class Flux_MeshGeometry;
  *   Zenith_MeshGeometryAsset* pMesh = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>("game:Meshes/level.zmesh");
  *   Flux_MeshGeometry* pGeom = pMesh->GetGeometry();
  *
- *   // Create primitive (cached by type)
- *   Zenith_MeshGeometryAsset* pCube = Zenith_MeshGeometryAsset::CreateUnitCube();
- *   Zenith_MeshGeometryAsset* pSphere = Zenith_MeshGeometryAsset::CreateUnitSphere(16);
+ *   // Create primitive (cached by type; returns an owning handle)
+ *   MeshGeometryHandle xCube = Zenith_MeshGeometryAsset::CreateUnitCube();
+ *   MeshGeometryHandle xSphere = Zenith_MeshGeometryAsset::CreateUnitSphere(16);
  */
 class Zenith_MeshGeometryAsset : public Zenith_Asset
 {
@@ -75,50 +76,51 @@ public:
 	 * Create a fullscreen quad geometry (cached)
 	 * @return Registry-managed asset containing fullscreen quad
 	 */
-	static Zenith_MeshGeometryAsset* CreateFullscreenQuad();
+	static MeshGeometryHandle CreateFullscreenQuad();
 
 	/**
 	 * Create a unit cube geometry (cached)
 	 * @return Registry-managed asset containing unit cube
 	 */
-	static Zenith_MeshGeometryAsset* CreateUnitCube();
+	static MeshGeometryHandle CreateUnitCube();
 
 	/**
 	 * Create a unit sphere geometry (cached per segment count)
 	 * @param uSegments Number of latitude/longitude segments (default 16)
 	 * @return Registry-managed asset containing unit sphere
 	 */
-	static Zenith_MeshGeometryAsset* CreateUnitSphere(uint32_t uSegments = 16);
+	static MeshGeometryHandle CreateUnitSphere(uint32_t uSegments = 16);
 
 	/**
 	 * Create a unit capsule geometry (cached per segment count)
 	 * @param uSegments Number of segments (default 16)
 	 * @return Registry-managed asset containing unit capsule
 	 */
-	static Zenith_MeshGeometryAsset* CreateUnitCapsule(uint32_t uSegments = 16);
+	static MeshGeometryHandle CreateUnitCapsule(uint32_t uSegments = 16);
 
 	/**
 	 * Create a unit cylinder geometry (cached per segment count)
 	 * @param uSegments Number of segments (default 16)
 	 * @return Registry-managed asset containing unit cylinder
 	 */
-	static Zenith_MeshGeometryAsset* CreateUnitCylinder(uint32_t uSegments = 16);
+	static MeshGeometryHandle CreateUnitCylinder(uint32_t uSegments = 16);
 
 	/**
 	 * Create a unit cone geometry (cached per segment count)
 	 * @param uSegments Number of segments (default 16)
 	 * @return Registry-managed asset containing unit cone
 	 */
-	static Zenith_MeshGeometryAsset* CreateUnitCone(uint32_t uSegments = 16);
+	static MeshGeometryHandle CreateUnitCone(uint32_t uSegments = 16);
 
 	/**
 	 * Create a registry-managed asset from renderer-neutral CPU geometry
 	 * (positions + normals + indices). Builds the underlying Flux_MeshGeometry
 	 * on the asset side so callers (e.g. the physics mesh generator) never name a
 	 * renderer type. CPU-only — no GPU upload (collision/debug-draw read the CPU
-	 * arrays). Returns nullptr if the geometry is empty/degenerate.
+	 * arrays). Returns an empty MeshGeometryHandle (operator bool == false) if the
+	 * geometry is empty/degenerate.
 	 */
-	static Zenith_MeshGeometryAsset* CreateFromGeometryData(
+	static MeshGeometryHandle CreateFromGeometryData(
 		const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
 		const Zenith_Vector<Zenith_Maths::Vector3>& xNormals,
 		const Zenith_Vector<uint32_t>& xIndices);

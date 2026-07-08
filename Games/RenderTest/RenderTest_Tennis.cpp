@@ -406,7 +406,7 @@ namespace
 	Zenith_MaterialAsset* RT_NewMaterial(const char* szName)
 	{
 		MaterialHandle xHandle;
-		xHandle.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		xHandle = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		g_axMaterials.push_back(xHandle);
 		Zenith_MaterialAsset* pxMat = xHandle.GetDirect();
 		pxMat->SetName(szName);
@@ -427,7 +427,8 @@ namespace
 		pfnBuild(xMesh);
 		xMesh.Export(strMeshPath.c_str());
 
-		Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		auto xhModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		Zenith_ModelAsset* pxModel = xhModel.GetDirect();
 		pxModel->SetName(szModelName);
 		pxModel->AddMeshByPath(strMeshPath, xMaterialPaths);
 		pxModel->Export(strModelPath.c_str());

@@ -348,7 +348,8 @@ void RenderTest_ExportGunAssets(const char* szVtxColorMaterialPath)
 		// Bundle into a .zmodel referencing the shared vertex-colour material.
 		// Overwrite every tools run so geometry edits propagate (the
 		// EnsureStickFigureModelExists generation policy).
-		Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		auto xhModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		Zenith_ModelAsset* pxModel = xhModel.GetDirect();
 		char szName[64];
 		std::snprintf(szName, sizeof(szName), "RenderTest_Gun_%s", RT_GunTypeFileName(eType));
 		pxModel->SetName(szName);

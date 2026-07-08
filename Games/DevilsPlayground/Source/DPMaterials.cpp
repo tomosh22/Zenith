@@ -248,7 +248,8 @@ namespace
 
 		// If the same path was already registered (e.g. defaults seeded earlier),
 		// reuse the existing asset to keep the cache canonical.
-		Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(strRegPath);
+		auto xhMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(strRegPath);
+		Zenith_MaterialAsset* pxMat = xhMat.GetDirect();
 		if (!pxMat)
 		{
 			Zenith_Log(LOG_CATEGORY_ASSET, "DPMaterials: AssetRegistry::Create failed for %s",
@@ -316,8 +317,9 @@ namespace DPMaterials
 
 		// Build the canonical default material first so it has a stable handle
 		// for fallback callers.
-		s_pxDefaultMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(
+		auto xhDefault = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(
 			"game:Materials/__DPDefault.zmtrl");
+		s_pxDefaultMaterial = xhDefault.GetDirect();
 		if (s_pxDefaultMaterial)
 		{
 			s_pxDefaultMaterial->SetName("__DPDefault");
@@ -410,7 +412,8 @@ namespace DPMaterials
 		std::string strBaseName = pxBase->GetName();
 		std::string strRegPath = std::string("game:Materials/Possessed_") + strBaseName + ".zmtrl";
 
-		Zenith_MaterialAsset* pxTint = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(strRegPath);
+		auto xhTint = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(strRegPath);
+		Zenith_MaterialAsset* pxTint = xhTint.GetDirect();
 		if (!pxTint) return pxBase;
 
 		pxTint->SetName(std::string("Possessed_") + strBaseName);
@@ -468,12 +471,13 @@ namespace DPMaterials
 		// still pointing at it. Probe the registry first so repeated
 		// (base, label) lookups return the cached variant instead.
 		if (Zenith_MaterialAsset* pxExisting =
-			Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(strRegPath))
+			Zenith_AssetRegistry::GetView<Zenith_MaterialAsset>(strRegPath))
 		{
 			return pxExisting;
 		}
 
-		Zenith_MaterialAsset* pxTint = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(strRegPath);
+		auto xhTint = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(strRegPath);
+		Zenith_MaterialAsset* pxTint = xhTint.GetDirect();
 		if (!pxTint) return pxBase;
 
 		pxTint->SetName(std::string(szSafeLabel) + "_" + strBaseName);
@@ -524,12 +528,13 @@ namespace DPMaterials
 		// Probe before Create: Create overwrites the registry entry, leaking the
 		// previous pinned asset and invalidating model slots still pointing at it.
 		if (Zenith_MaterialAsset* pxExisting =
-			Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(strRegPath))
+			Zenith_AssetRegistry::GetView<Zenith_MaterialAsset>(strRegPath))
 		{
 			return pxExisting;
 		}
 
-		Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(strRegPath);
+		auto xhMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(strRegPath);
+		Zenith_MaterialAsset* pxMat = xhMat.GetDirect();
 		if (!pxMat) return s_pxDefaultMaterial;
 
 		pxMat->SetName(szSafeKey);

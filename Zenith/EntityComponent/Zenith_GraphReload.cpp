@@ -109,7 +109,7 @@ namespace
 
 	void ReloadAsset(const std::string& strNormalizedPath)
 	{
-		Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::Get<Zenith_BehaviourGraphAsset>(strNormalizedPath);
+		Zenith_BehaviourGraphAsset* pxAsset = Zenith_AssetRegistry::GetView<Zenith_BehaviourGraphAsset>(strNormalizedPath);
 		if (!pxAsset)
 		{
 			SetStatus("reload FAILED: '%s' could not be loaded", strNormalizedPath.c_str());

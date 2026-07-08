@@ -107,10 +107,10 @@ void Flux_MaterialPreviewController::EnsureMeshes()
 	// those buffers (procedural identity), so the unified path resolves them
 	// through the mesh-geometry registry like any snapshot mesh and the
 	// translucent path binds them directly.
-	m_axMeshes[MATERIAL_PREVIEW_MESH_SPHERE].Set(Zenith_MeshGeometryAsset::CreateUnitSphere(32));
-	m_axMeshes[MATERIAL_PREVIEW_MESH_CUBE].Set(Zenith_MeshGeometryAsset::CreateUnitCube());
-	m_axMeshes[MATERIAL_PREVIEW_MESH_PLANE].Set(Zenith_MeshGeometryAsset::CreateUnitCube());	// flattened via the model matrix
-	m_axMeshes[MATERIAL_PREVIEW_MESH_CYLINDER].Set(Zenith_MeshGeometryAsset::CreateUnitCylinder(32));
+	m_axMeshes[MATERIAL_PREVIEW_MESH_SPHERE] = Zenith_MeshGeometryAsset::CreateUnitSphere(32);
+	m_axMeshes[MATERIAL_PREVIEW_MESH_CUBE] = Zenith_MeshGeometryAsset::CreateUnitCube();
+	m_axMeshes[MATERIAL_PREVIEW_MESH_PLANE] = Zenith_MeshGeometryAsset::CreateUnitCube();	// flattened via the model matrix
+	m_axMeshes[MATERIAL_PREVIEW_MESH_CYLINDER] = Zenith_MeshGeometryAsset::CreateUnitCylinder(32);
 
 	for (u_int u = 0; u < MATERIAL_PREVIEW_MESH_COUNT; u++)
 	{

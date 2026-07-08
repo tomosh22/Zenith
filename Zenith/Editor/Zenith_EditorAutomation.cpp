@@ -2028,7 +2028,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		// Force-cache through the registry so subsequent steps that look the
 		// path up via PrefabHandle resolve cheaply (no disk re-read on every
 		// CreateAsVariant cycle check).
-		Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg2.c_str());
+		Zenith_AssetRegistry::GetView<Zenith_Prefab>(xAction.m_szArg2.c_str());
 		break;
 	}
 
@@ -2043,7 +2043,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		// can resolve it. The cycle detector deliberately does NOT trigger a
 		// disk load (see Zenith_Prefab::WouldFormVariantCycle) — we have to
 		// prime the registry here.
-		Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg2.c_str());
+		Zenith_AssetRegistry::GetView<Zenith_Prefab>(xAction.m_szArg2.c_str());
 
 		PrefabHandle xBaseHandle(xAction.m_szArg2.c_str());
 		Zenith_Prefab xVariant;
@@ -2054,7 +2054,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Assert(bSaved, "SaveToFile failed for variant '%s' at '%s'",
 			xAction.m_szArg1.c_str(), szSavePath);
 
-		Zenith_AssetRegistry::Get<Zenith_Prefab>(szSavePath);
+		Zenith_AssetRegistry::GetView<Zenith_Prefab>(szSavePath);
 		break;
 	}
 
@@ -2069,7 +2069,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		// is the same pointer the registry caches — adding an override mutates
 		// in-memory state, then SaveToFile rewrites the .zpfb. Callers that load
 		// the file again get the updated overrides.
-		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg1.c_str());
+		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::GetView<Zenith_Prefab>(xAction.m_szArg1.c_str());
 		Zenith_Assert(pxPrefab, "Could not load prefab '%s' for override", xAction.m_szArg1.c_str());
 
 		Zenith_PropertyOverride xOv;
@@ -2092,7 +2092,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
 		Zenith_Assert(pxSceneData, "Active scene data was null in INSTANTIATE_PREFAB");
 
-		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Get<Zenith_Prefab>(xAction.m_szArg1.c_str());
+		Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::GetView<Zenith_Prefab>(xAction.m_szArg1.c_str());
 		Zenith_Assert(pxPrefab, "Could not load prefab '%s' for instantiation", xAction.m_szArg1.c_str());
 
 		const char* szEntityName = xAction.m_szArg2.c_str();

@@ -405,7 +405,9 @@ public:
 		Flux_MeshGeometry::GenerateUnitCube(*s_pxBuildingCubeGeom);
 		s_pxBuildingCubeMesh = Flux_MeshInstance::CreateFromGeometry(s_pxBuildingCubeGeom);
 
-		s_pxBuildingMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		auto xhBuildingMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		s_pxBuildingMat = xhBuildingMat.GetDirect();
+		s_pxBuildingMat->AddRef();  // process-lifetime pin: this render singleton must survive UnloadUnused
 		s_pxBuildingMat->SetName("CBBuildingMaterial");
 		s_pxBuildingMat->SetBaseColor(Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));   // white → per-instance tint is the colour
 		s_pxBuildingMat->SetRoughness(0.65f);

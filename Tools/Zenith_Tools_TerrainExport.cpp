@@ -4,10 +4,6 @@
 #include "Flux/Flux_Enums.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-// Extern function that must be implemented by game projects - returns just the project name (e.g., "Test")
-// Paths are constructed using ZENITH_ROOT (defined by build system) + project name
-extern const char* Project_GetName();
-
 // Helper function to construct game assets path from project name
 static std::string GetGameAssetsDirectory()
 {

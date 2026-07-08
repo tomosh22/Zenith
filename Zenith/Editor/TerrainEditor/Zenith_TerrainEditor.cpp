@@ -25,8 +25,6 @@
 
 #include <filesystem>
 
-// Game-project hook (same extern the component editor uses).
-extern const char* Project_GetGameAssetsDirectory();
 // Tools heightmap loader (Tools/Zenith_Tools_TerrainExport.cpp).
 extern Zenith_Image Zenith_Tools_LoadHeightmapAuto(const std::string& strPath);
 
@@ -571,16 +569,16 @@ void Zenith_TerrainEditor::DrawBrushIndicatorDecal()
 	if (!m_bBrushIndicatorLoadAttempted)
 	{
 		m_bBrushIndicatorLoadAttempted = true;
-		m_pxBrushIndicatorTexture = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(
+		m_xBrushIndicatorTexture = Zenith_AssetRegistry::Acquire<Zenith_TextureAsset>(
 			ENGINE_ASSETS_DIR "Textures/Brushes/BrushIndicator" ZENITH_TEXTURE_EXT);
-		if (m_pxBrushIndicatorTexture == nullptr)
+		if (!m_xBrushIndicatorTexture.IsResolved())
 		{
 			Zenith_Warning(LOG_CATEGORY_EDITOR,
 				"[TerrainEditor] Brush indicator texture missing — falling back to the line-ring cursor");
 		}
 	}
 
-	if (m_pxBrushIndicatorTexture == nullptr)
+	if (!m_xBrushIndicatorTexture.IsResolved())
 	{
 		DrawBrushCursor();
 		return;
@@ -626,7 +624,7 @@ void Zenith_TerrainEditor::DrawBrushIndicatorDecal()
 		fRadius * 2.0f,              // SetEditorDecal takes the end-to-end diameter
 		fMaxH - fMinH,
 		Zenith_Maths::Vector4(xColour, 0.85f),
-		m_pxBrushIndicatorTexture);
+		m_xBrushIndicatorTexture.GetDirect());
 }
 
 void Zenith_TerrainEditor::DrawBrushCursor() const

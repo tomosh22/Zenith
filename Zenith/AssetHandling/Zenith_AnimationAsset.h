@@ -14,13 +14,13 @@ class Flux_AnimationClip;
  * animation clips in the engine.
  *
  * Usage:
- *   // Load from file
- *   Zenith_AnimationAsset* pAnim = Zenith_AssetRegistry::Get<Zenith_AnimationAsset>("game:Anims/walk.zanim");
- *   Flux_AnimationClip* pClip = pAnim->GetClip();
+ *   // Load an owning handle (GetView<T>() for a raw transient view)
+ *   AnimationHandle xAnim = Zenith_AssetRegistry::Acquire<Zenith_AnimationAsset>("game:Anims/walk.zanim");
+ *   Flux_AnimationClip* pClip = xAnim.GetDirect()->GetClip();
  *
- *   // Create procedural
- *   Zenith_AnimationAsset* pAnim = Zenith_AssetRegistry::Create<Zenith_AnimationAsset>();
- *   pAnim->SetClip(pMyProceduralClip);
+ *   // Create procedural (Create<T>() returns an owning handle)
+ *   AnimationHandle xAnim = Zenith_AssetRegistry::Create<Zenith_AnimationAsset>();
+ *   xAnim.GetDirect()->SetClip(pMyProceduralClip);
  */
 class Zenith_AnimationAsset : public Zenith_Asset
 {

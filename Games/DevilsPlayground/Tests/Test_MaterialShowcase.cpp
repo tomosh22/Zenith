@@ -65,7 +65,8 @@ namespace
 			for (u_int x = 0; x < uSize; x++)
 				fnGen(x, y, &xPixels[(static_cast<size_t>(y) * uSize + x) * 4]);
 
-		Zenith_TextureAsset* pxTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+		auto xhTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+		Zenith_TextureAsset* pxTex = xhTex.GetDirect();
 		Flux_SurfaceInfo xInfo;
 		xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
 		xInfo.m_eTextureType = TEXTURE_TYPE_2D;
@@ -144,9 +145,9 @@ static void Setup_MaterialShowcase()
 		p[3] = bOn ? 255 : 0;
 	}));
 
-	g_pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	g_pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>().GetDirect();
 	g_pxMat->SetName("ShowcaseMaterial");
-	g_pxParent = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	g_pxParent = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>().GetDirect();
 	g_pxParent->SetName("ShowcaseParent");
 	Zenith_MaterialParamTable::SetParamVector(g_pxParent->ModifyParams(), MATERIAL_PARAM_BASE_COLOR, Zenith_Maths::Vector4(0.85f, 0.08f, 0.06f, 1.0f));
 	Zenith_MaterialParamTable::SetParamFloat (g_pxParent->ModifyParams(), MATERIAL_PARAM_ROUGHNESS, 0.4f);

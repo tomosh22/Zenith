@@ -170,7 +170,7 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 	ClearModel();
 
 	// Load model asset via registry
-	Zenith_ModelAsset* pxAsset = Zenith_AssetRegistry::Get<Zenith_ModelAsset>(strLocalPath);
+	Zenith_ModelAsset* pxAsset = Zenith_AssetRegistry::GetView<Zenith_ModelAsset>(strLocalPath);
 	if (!pxAsset)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "Failed to load model asset from: %s", strLocalPath.c_str());
@@ -195,7 +195,7 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 	m_strModelPath = strLocalPath;
 
 	// Also populate handle if not already set
-	if (!m_xModel.IsSet())
+	if (!m_xModel.HasPath())
 	{
 		m_xModel.SetPath(strLocalPath);
 	}
@@ -342,7 +342,7 @@ void Zenith_ModelComponent::ReadModelInstanceWithMaterials(Zenith_DataStream& xS
 	m_xModel.ReadFromDataStream(xStream);
 
 	// Resolve GUID to path and load the model
-	if (m_xModel.IsSet())
+	if (m_xModel.HasPath())
 	{
 		m_strModelPath = m_xModel.GetPath();
 		if (!m_strModelPath.empty())
@@ -363,7 +363,8 @@ void Zenith_ModelComponent::ReadModelInstanceWithMaterials(Zenith_DataStream& xS
 
 	for (uint32_t u = 0; u < uNumMaterials; u++)
 	{
-		Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		auto xhMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMaterial = xhMaterial.GetDirect();
 		if (!pxMaterial)
 			continue;
 
@@ -527,9 +528,10 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 	// (the asset side owns the Flux_MeshGeometry construction), so Physics names no
 	// renderer / asset type.
 	Zenith_GeneratedPhysicsMesh xGenerated = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xViews, xConfig);
-	Zenith_MeshGeometryAsset* pxPhysicsAsset = xGenerated.IsValid()
+	MeshGeometryHandle xhPhysicsAsset = xGenerated.IsValid()
 		? Zenith_MeshGeometryAsset::CreateFromGeometryData(xGenerated.m_xPositions, xGenerated.m_xNormals, xGenerated.m_xIndices)
-		: nullptr;
+		: MeshGeometryHandle();
+	Zenith_MeshGeometryAsset* pxPhysicsAsset = xhPhysicsAsset.GetDirect();
 	if (pxPhysicsAsset)
 	{
 		m_xPhysicsMeshAsset.Set(pxPhysicsAsset);

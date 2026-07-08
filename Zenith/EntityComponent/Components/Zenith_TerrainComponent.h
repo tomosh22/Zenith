@@ -100,7 +100,7 @@ public:
 	MaterialHandle& GetMaterialHandle(u_int uIndex) { Zenith_Assert(uIndex < TERRAIN_MATERIAL_COUNT, "Invalid material index"); return m_axMaterials[uIndex]; }
 
 	// Splatmap texture (RGBA8, weights for 4 materials)
-	Zenith_TextureAsset* GetSplatmapTexture() const { return Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xSplatmap.GetPath()); }
+	Zenith_TextureAsset* GetSplatmapTexture() const { return m_xSplatmap.Resolve(); }
 	TextureHandle& GetSplatmapHandle() { return m_xSplatmap; }
 
 	// Backward compatibility wrappers

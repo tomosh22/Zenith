@@ -604,7 +604,7 @@ private:
 		// whole skeleton's root, which would look catastrophically broken.
 		Flux_BoneMask xMask;
 		const std::string strSkelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_SKELETON_EXT;
-		Zenith_SkeletonAsset* pxSkel = Zenith_AssetRegistry::Get<Zenith_SkeletonAsset>(strSkelPath);
+		Zenith_SkeletonAsset* pxSkel = Zenith_AssetRegistry::GetView<Zenith_SkeletonAsset>(strSkelPath);
 		if (pxSkel)
 		{
 			auto SetMaskBone = [&](const char* szName)

@@ -15,9 +15,9 @@ namespace
 	Zenith_Prefab* ResolvePrefabHandle(const PrefabHandle& xHandle)
 	{
 		if (xHandle.GetDirect() != nullptr) return xHandle.GetDirect();
-		if (xHandle.IsSet())
+		if (xHandle.HasPath())
 		{
-			return Zenith_AssetRegistry::Get<Zenith_Prefab>(xHandle.GetPath());
+			return Zenith_AssetRegistry::GetView<Zenith_Prefab>(xHandle.GetPath());
 		}
 		return nullptr;
 	}
@@ -29,9 +29,9 @@ namespace
 	Zenith_Prefab* TryGetLoadedPrefab(const PrefabHandle& xHandle)
 	{
 		if (xHandle.GetDirect() != nullptr) return xHandle.GetDirect();
-		if (xHandle.IsSet() && Zenith_AssetRegistry::IsLoaded(xHandle.GetPath()))
+		if (xHandle.HasPath() && Zenith_AssetRegistry::IsLoaded(xHandle.GetPath()))
 		{
-			return Zenith_AssetRegistry::Get<Zenith_Prefab>(xHandle.GetPath());
+			return Zenith_AssetRegistry::GetView<Zenith_Prefab>(xHandle.GetPath());
 		}
 		return nullptr;
 	}
@@ -123,7 +123,7 @@ bool Zenith_Prefab::CreateFromEntity(const Zenith_Entity& xEntity, const std::st
 
 bool Zenith_Prefab::CreateAsVariant(const PrefabHandle& xBasePrefab, const std::string& strVariantName)
 {
-	if (!xBasePrefab.IsSet())
+	if (!xBasePrefab.HasPath())
 	{
 		Zenith_Error(LOG_CATEGORY_PREFAB, "Cannot create variant without base prefab");
 		return false;
@@ -193,7 +193,7 @@ bool Zenith_Prefab::SaveToFile(const std::string& strFilePath) const
 	xOutput << m_strName;
 
 	// Write base prefab reference (for variants)
-	bool bIsVariant = m_xBasePrefab.IsSet();
+	bool bIsVariant = m_xBasePrefab.HasPath();
 	xOutput << bIsVariant;
 	if (bIsVariant)
 	{
@@ -359,7 +359,7 @@ Zenith_Entity Zenith_Prefab::InstantiateInternal(
 	}
 	axVisited.PushBack(this);
 
-	if (m_xBasePrefab.IsSet())
+	if (m_xBasePrefab.HasPath())
 	{
 		// Variant path: instantiate the base (which applies the caller transform
 		// at the leaf), then apply our overrides on top — so a per-property
@@ -431,7 +431,7 @@ bool Zenith_Prefab::ApplyToEntity(Zenith_Entity& xEntity) const
 
 	// For variants, apply the base prefab first then layer our overrides on top.
 	// Cycle protection is bounded by chain depth (see WouldFormVariantCycle).
-	if (m_xBasePrefab.IsSet())
+	if (m_xBasePrefab.HasPath())
 	{
 		Zenith_Prefab* pxBase = ResolvePrefabHandle(m_xBasePrefab);
 		if (pxBase == nullptr)

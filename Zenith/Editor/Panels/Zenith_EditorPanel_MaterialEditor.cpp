@@ -559,9 +559,10 @@ void Zenith_MaterialEditorPanel::Render()
 //=============================================================================
 bool Zenith_MaterialEditorPanel::Action_CreateMaterial(const char* szAssetPath)
 {
-	Zenith_MaterialAsset* pxMat = (szAssetPath && szAssetPath[0])
+	auto xhMat = (szAssetPath && szAssetPath[0])
 		? Zenith_AssetRegistry::Create<Zenith_MaterialAsset>(Zenith_AssetRegistry::NormalizeAssetPath(szAssetPath))
 		: Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MaterialAsset* pxMat = xhMat.GetDirect();
 	if (!pxMat) return false;
 	g_xEngine.Editor().SelectMaterial(pxMat);
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Created material: %s", pxMat->GetName().c_str());
@@ -571,7 +572,7 @@ bool Zenith_MaterialEditorPanel::Action_CreateMaterial(const char* szAssetPath)
 bool Zenith_MaterialEditorPanel::Action_OpenMaterial(const char* szAssetPath)
 {
 	if (!szAssetPath || !szAssetPath[0]) return false;
-	Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(szAssetPath);
+	Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::GetView<Zenith_MaterialAsset>(szAssetPath);
 	if (!pxMat) { Zenith_Error(LOG_CATEGORY_EDITOR, "[MaterialEditor] Failed to open: %s", szAssetPath); return false; }
 	g_xEngine.Editor().SelectMaterial(pxMat);
 	return true;

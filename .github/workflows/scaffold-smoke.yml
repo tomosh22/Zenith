@@ -7,7 +7,7 @@
 #
 # The gate is Tools/test_scaffold.ps1: `zenith new ScaffoldSmoke` -> per-game sln
 # exists -> builds Vulkan_vs2022_Debug_Win64_True -> boots headless with the
-# engine units baseline (1037) -> teardown removes Games/ScaffoldSmoke + regen ->
+# engine units baseline (1047) -> teardown removes Games/ScaffoldSmoke + regen ->
 # git status identical (scaffolding touched nothing outside Games/<Name>/).
 
 name: scaffold-smoke

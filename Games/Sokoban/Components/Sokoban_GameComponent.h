@@ -576,7 +576,8 @@ public:
 
 			auto ReadMaterial = [&xStream](MaterialHandle& xMat, const char* szName)
 			{
-				Zenith_MaterialAsset* pxLoaded = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+				auto xhLoaded = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+					Zenith_MaterialAsset* pxLoaded = xhLoaded.GetDirect();
 				pxLoaded->SetName(szName);
 				pxLoaded->ReadFromDataStream(xStream);
 				xMat.Set(pxLoaded);

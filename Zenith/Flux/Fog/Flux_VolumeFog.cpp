@@ -172,7 +172,8 @@ void Flux_VolumeFogImpl::GenerateNoiseTexture3D()
 	xSurfaceInfo.m_uNumLayers = 1;
 	xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
-	if (Zenith_TextureAsset* pxNoise3D = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+	auto xhNoise3D = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+	if (Zenith_TextureAsset* pxNoise3D = xhNoise3D.GetDirect())
 	{
 		pxNoise3D->CreateFromData(pData, xSurfaceInfo, false);
 		m_xNoiseTexture3D.Set(pxNoise3D);
@@ -254,7 +255,8 @@ void Flux_VolumeFogImpl::GenerateBlueNoiseTexture()
 	xSurfaceInfo.m_uNumLayers = 1;
 	xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
-	if (Zenith_TextureAsset* pxBlueNoise = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+	auto xhBlueNoise = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+	if (Zenith_TextureAsset* pxBlueNoise = xhBlueNoise.GetDirect())
 	{
 		pxBlueNoise->CreateFromData(pData, xSurfaceInfo, false);
 		m_xBlueNoiseTexture.Set(pxBlueNoise);

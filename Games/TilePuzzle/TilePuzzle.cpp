@@ -1164,7 +1164,8 @@ static void GenerateCatCafeFaceTextures(
 		DrawLine(136, 150, 198, 150, 255, 255, 255);
 		DrawLine(136, 153, 198, 161, 255, 255, 255);
 
-		Zenith_TextureAsset* pxFaceTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+		auto xhFaceTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+		Zenith_TextureAsset* pxFaceTex = xhFaceTex.GetDirect();
 		pxFaceTex->CreateFromData(pPixels, xSurfaceInfo);
 		pxFaceTex->MarkAsBindless();
 		Resources().m_axCatCafeFaceTextures[i].Set(pxFaceTex);
@@ -1219,12 +1220,12 @@ static void LoadProceduralAssets()
 	// SCENE_LOAD_SINGLE, e.g. transitioning into the pinball scene at level 10)
 	// leaves them alone. Storing the raw pointer would leave the asset at
 	// refcount 0 and crash later inside Pinball_GameComponent::CreateMaterials.
-	Resources().m_xPinballBallMaterial.Set(
-		Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_ball" ZENITH_MATERIAL_EXT));
-	Resources().m_xPinballPegMaterial.Set(
-		Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg" ZENITH_MATERIAL_EXT));
-	Resources().m_xPinballPegHitMaterial.Set(
-		Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg_hit" ZENITH_MATERIAL_EXT));
+	Resources().m_xPinballBallMaterial =
+		Zenith_AssetRegistry::Acquire<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_ball" ZENITH_MATERIAL_EXT);
+	Resources().m_xPinballPegMaterial =
+		Zenith_AssetRegistry::Acquire<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg" ZENITH_MATERIAL_EXT);
+	Resources().m_xPinballPegHitMaterial =
+		Zenith_AssetRegistry::Acquire<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg_hit" ZENITH_MATERIAL_EXT);
 
 	// Load pinball PBR textures
 	Resources().m_xPinballBumperDiffuseTex.SetPath(GAME_ASSETS_DIR "Textures/Pinball/bumper_diffuse" ZENITH_TEXTURE_EXT);
@@ -1248,10 +1249,10 @@ static void InitializeTilePuzzleResources()
 	using namespace TilePuzzle;
 
 	// Create geometry using registry's cached primitives
-	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_xCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
 	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 
-	Resources().m_xSphereAsset.Set(Zenith_MeshGeometryAsset::CreateUnitSphere(16));
+	Resources().m_xSphereAsset = Zenith_MeshGeometryAsset::CreateUnitSphere(16);
 	Resources().m_pxSphereGeometry = Resources().m_xSphereAsset.GetDirect()->GetGeometry();
 
 	// Generate cat head mesh
@@ -1356,14 +1357,14 @@ static void InitializeTilePuzzleResources()
 	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
 	// Create materials with loaded colors
-	Resources().m_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xFloorMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xFloorMaterial.GetDirect()->SetName("TilePuzzleFloor");
 	Resources().m_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xFloorMaterial.GetDirect()->SetBaseColor(xFloorColor);
 	Resources().m_xFloorMaterial.GetDirect()->SetRoughness(0.8f);
 	Resources().m_xFloorMaterial.GetDirect()->SetMetallic(0.0f);
 
-	Resources().m_xBlockerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xBlockerMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xBlockerMaterial.GetDirect()->SetName("TilePuzzleBlocker");
 	Resources().m_xBlockerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xBlockerMaterial.GetDirect()->SetBaseColor(xBlockerColor);
@@ -1378,7 +1379,7 @@ static void InitializeTilePuzzleResources()
 	{
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleShape%s", aszShapeColorNames[i]);
-		Resources().m_axShapeMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		Resources().m_axShapeMaterials[i] = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		Resources().m_axShapeMaterials[i].GetDirect()->SetName(szName);
 		Resources().m_axShapeMaterials[i].GetDirect()->SetDiffuseTexture(xGridTex);
 		Resources().m_axShapeMaterials[i].GetDirect()->SetBaseColor(axShapeColors[i]);
@@ -1391,7 +1392,7 @@ static void InitializeTilePuzzleResources()
 	{
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleCat%s", aszShapeColorNames[i]);
-		Resources().m_axCatMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		Resources().m_axCatMaterials[i] = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		Resources().m_axCatMaterials[i].GetDirect()->SetName(szName);
 		Resources().m_axCatMaterials[i].GetDirect()->SetDiffuseTexture(xGridTex);
 		Resources().m_axCatMaterials[i].GetDirect()->SetBaseColor(axShapeColors[i]);
@@ -1405,7 +1406,7 @@ static void InitializeTilePuzzleResources()
 	{
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleCatCafeDisplay%s", aszShapeColorNames[i]);
-		Resources().m_axCatCafeDisplayMaterials[i].Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		Resources().m_axCatCafeDisplayMaterials[i] = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		Resources().m_axCatCafeDisplayMaterials[i].GetDirect()->SetName(szName);
 		Resources().m_axCatCafeDisplayMaterials[i].GetDirect()->SetDiffuseTexture(Resources().m_axCatCafeFaceTextures[i]);
 		Resources().m_axCatCafeDisplayMaterials[i].GetDirect()->SetBaseColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
@@ -1429,7 +1430,8 @@ static void InitializeTilePuzzleResources()
 	// Cell prefab (floor tiles)
 	{
 		Zenith_Entity xCellTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "CellTemplate");
-		Zenith_Prefab* pxCell = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhCell = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxCell = xhCell.GetDirect();
 		pxCell->CreateFromEntity(xCellTemplate, "Cell");
 		Resources().m_xCellPrefab.Set(pxCell);
 		xCellTemplate.Destroy();
@@ -1438,7 +1440,8 @@ static void InitializeTilePuzzleResources()
 	// Shape cube prefab (for multi-cube shapes)
 	{
 		Zenith_Entity xShapeCubeTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "ShapeCubeTemplate");
-		Zenith_Prefab* pxShapeCube = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhShapeCube = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxShapeCube = xhShapeCube.GetDirect();
 		pxShapeCube->CreateFromEntity(xShapeCubeTemplate, "ShapeCube");
 		Resources().m_xShapeCubePrefab.Set(pxShapeCube);
 		xShapeCubeTemplate.Destroy();
@@ -1447,7 +1450,8 @@ static void InitializeTilePuzzleResources()
 	// Cat prefab (spheres)
 	{
 		Zenith_Entity xCatTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "CatTemplate");
-		Zenith_Prefab* pxCat = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhCat = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxCat = xhCat.GetDirect();
 		pxCat->CreateFromEntity(xCatTemplate, "Cat");
 		Resources().m_xCatPrefab.Set(pxCat);
 		xCatTemplate.Destroy();

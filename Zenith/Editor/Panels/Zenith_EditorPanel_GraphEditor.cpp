@@ -849,7 +849,7 @@ void Zenith_GraphEditorPanel::OpenAsset(const char* szAssetPath)
 
 	g_xGraphEditor.m_strAssetPath = Zenith_AssetRegistry::NormalizeAssetPath(szAssetPath);
 
-	Zenith_BehaviourGraphAsset* pxCached = Zenith_AssetRegistry::Get<Zenith_BehaviourGraphAsset>(g_xGraphEditor.m_strAssetPath);
+	Zenith_BehaviourGraphAsset* pxCached = Zenith_AssetRegistry::GetView<Zenith_BehaviourGraphAsset>(g_xGraphEditor.m_strAssetPath);
 	if (pxCached && pxCached->LoadedOk())
 	{
 		g_xGraphEditor.m_pxAsset = pxCached;
@@ -917,7 +917,7 @@ void Zenith_GraphEditorPanel::Save()
 	// definition from now on.
 	if (g_xGraphEditor.m_bOwnsAsset)
 	{
-		Zenith_BehaviourGraphAsset* pxCached = Zenith_AssetRegistry::Get<Zenith_BehaviourGraphAsset>(g_xGraphEditor.m_strAssetPath);
+		Zenith_BehaviourGraphAsset* pxCached = Zenith_AssetRegistry::GetView<Zenith_BehaviourGraphAsset>(g_xGraphEditor.m_strAssetPath);
 		if (pxCached && pxCached != g_xGraphEditor.m_pxAsset)
 		{
 			Zenith_DataStream xCopy;

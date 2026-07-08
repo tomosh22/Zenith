@@ -53,61 +53,61 @@ static void InitializeAIShowcaseResources()
 	using namespace AIShowcase;
 
 	// Create geometries using registry's cached primitives
-	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_xCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
 	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 
-	Resources().m_xSphereAsset.Set(Zenith_MeshGeometryAsset::CreateUnitSphere(16));
+	Resources().m_xSphereAsset = Zenith_MeshGeometryAsset::CreateUnitSphere(16);
 	Resources().m_pxSphereGeometry = Resources().m_xSphereAsset.GetDirect()->GetGeometry();
 
-	Resources().m_xCylinderAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCylinder(16));
+	Resources().m_xCylinderAsset = Zenith_MeshGeometryAsset::CreateUnitCylinder(16);
 	Resources().m_pxCylinderGeometry = Resources().m_xCylinderAsset.GetDirect()->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials.
 	const TextureHandle& xGridTex = g_xEngine.FluxGraphics().m_xGridTexture;
 
 	// Create materials with grid texture and BaseColor
-	Resources().m_xFloorMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xFloorMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xFloorMaterial.GetDirect()->SetName("AIShowcase_Floor");
 	Resources().m_xFloorMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xFloorMaterial.GetDirect()->SetBaseColor({ 64.f/255.f, 64.f/255.f, 64.f/255.f, 1.f });
 
-	Resources().m_xWallMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xWallMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xWallMaterial.GetDirect()->SetName("AIShowcase_Wall");
 	Resources().m_xWallMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xWallMaterial.GetDirect()->SetBaseColor({ 128.f/255.f, 96.f/255.f, 64.f/255.f, 1.f });
 
-	Resources().m_xObstacleMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xObstacleMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xObstacleMaterial.GetDirect()->SetName("AIShowcase_Obstacle");
 	Resources().m_xObstacleMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xObstacleMaterial.GetDirect()->SetBaseColor({ 96.f/255.f, 96.f/255.f, 96.f/255.f, 1.f });
 
-	Resources().m_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xPlayerMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xPlayerMaterial.GetDirect()->SetName("AIShowcase_Player");
 	Resources().m_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xPlayerMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
 
-	Resources().m_xEnemyMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xEnemyMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xEnemyMaterial.GetDirect()->SetName("AIShowcase_Enemy");
 	Resources().m_xEnemyMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xEnemyMaterial.GetDirect()->SetBaseColor({ 230.f/255.f, 77.f/255.f, 77.f/255.f, 1.f });
 
-	Resources().m_xLeaderMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xLeaderMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xLeaderMaterial.GetDirect()->SetName("AIShowcase_Leader");
 	Resources().m_xLeaderMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xLeaderMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
-	Resources().m_xFlankerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xFlankerMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xFlankerMaterial.GetDirect()->SetName("AIShowcase_Flanker");
 	Resources().m_xFlankerMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xFlankerMaterial.GetDirect()->SetBaseColor({ 255.f/255.f, 128.f/255.f, 0.f/255.f, 1.f });
 
 	// Cover/patrol point materials
-	Resources().m_xCoverPointMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xCoverPointMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xCoverPointMaterial.GetDirect()->SetName("AIShowcase_CoverPoint");
 	Resources().m_xCoverPointMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xCoverPointMaterial.GetDirect()->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
-	Resources().m_xPatrolPointMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xPatrolPointMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xPatrolPointMaterial.GetDirect()->SetName("AIShowcase_PatrolPoint");
 	Resources().m_xPatrolPointMaterial.GetDirect()->SetDiffuseTexture(xGridTex);
 	Resources().m_xPatrolPointMaterial.GetDirect()->SetBaseColor({ 153.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });

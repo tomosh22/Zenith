@@ -9,10 +9,6 @@
 // assimp provide it), so it now carries the explicit include.
 #include <filesystem>
 
-// Extern function that must be implemented by game projects - returns just the project name (e.g., "Test")
-// Paths are constructed using ZENITH_ROOT (defined by build system) + project name
-extern const char* Project_GetName();
-
 // Helper functions to construct asset paths from project name
 static std::string GetGameAssetsDirectory()
 {

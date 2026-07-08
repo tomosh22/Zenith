@@ -256,8 +256,10 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 			? ("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex))
 			: m_xParentEntity.GetName();
 
-		Zenith_MaterialAsset* pxMat0 = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
-		Zenith_MaterialAsset* pxMat1 = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		auto xhMat0 = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMat0 = xhMat0.GetDirect();
+		auto xhMat1 = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMat1 = xhMat1.GetDirect();
 		if (pxMat0) pxMat0->SetName(strEntityName + "_Terrain_Mat0");
 		if (pxMat1) pxMat1->SetName(strEntityName + "_Terrain_Mat1");
 		m_axMaterials[0].Set(pxMat0);
@@ -334,7 +336,8 @@ void Zenith_TerrainComponent::EnsureMaterialSlotsPopulated()
 	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 	{
 		if (m_axMaterials[u].GetDirect()) continue;
-		Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		auto xhMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMat = xhMat.GetDirect();
 		if (pxMat) pxMat->SetName(strEntityName + "_Terrain_Mat" + std::to_string(u));
 		m_axMaterials[u].Set(pxMat);
 	}
@@ -562,7 +565,7 @@ void Zenith_TerrainComponent::RenderSplatmapSlot()
 	if (!ImGui::TreeNode("Splatmap Texture"))
 		return;
 
-	if (Zenith_TextureAsset* pxSplatmap = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(m_xSplatmap.GetPath()))
+	if (Zenith_TextureAsset* pxSplatmap = m_xSplatmap.Resolve())
 	{
 		Flux_ImGuiTextureHandle xSplatmapHandle = g_xEngine.EditorMaterialUI().GetOrCreateTexturePreviewHandle(pxSplatmap);
 		if (xSplatmapHandle.IsValid())

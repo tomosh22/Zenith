@@ -97,10 +97,6 @@ extern void ExportDefaultFontAtlas();
 extern void GenerateTestAssets();
 #endif
 
-extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
-extern void Project_RegisterGameComponents();
-extern void Project_Shutdown();
-
 // Engine-side built-in component registrar (ECS leaf-extraction Phase 4). Defined
 // in EntityComponent/Zenith_ComponentMeta_Registration.cpp -- the single TU that
 // knows the concrete built-in component set. Forward-declared here (not via an
@@ -113,12 +109,6 @@ void Zenith_RegisterEngineComponents();
 // EntityComponent/Zenith_GraphNode_Registration.cpp; installed on the (leaf-clean)
 // Zenith_GraphNodeRegistry in Initialise, drained lazily on first registry use.
 void Zenith_RegisterEngineGraphNodes();
-
-#ifdef ZENITH_TOOLS
-extern void Project_InitializeResources();
-extern void Project_RegisterEditorAutomationSteps();
-#endif
-extern void Project_LoadInitialScene();
 
 // The single engine instance. constinit guarantees zero static-init
 // cost — every member of Zenith_Engine has a constant default
@@ -500,7 +490,6 @@ void Zenith_Engine::InitialiseAssets()
 	// machine's source tree, so a relocatable package overrides them with
 	// --assets-root <package root> (Zenith_CommandLine::ResolveUnderAssetsRoot;
 	// no override = baked paths, unchanged behaviour).
-	extern const char* Project_GetName();
 	const char* szAssetsRoot = Zenith_CommandLine::GetAssetsRoot();
 	Zenith_AssetRegistry::SetGameAssetsDir(Zenith_CommandLine::ResolveUnderAssetsRoot(
 		Project_GetGameAssetsDirectory(), szAssetsRoot,
@@ -692,7 +681,8 @@ void Zenith_Engine::InitialiseGPUAssets()
 		Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after g_xEngine.FluxRenderer().EarlyInitialise()
 
 		// Load cubemap texture (pinned)
-		if (Zenith_TextureAsset* pxCubemap = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+		auto xhCubemap = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+		if (Zenith_TextureAsset* pxCubemap = xhCubemap.GetDirect())
 		{
 			pxCubemap->LoadCubemapFromFiles(
 				ENGINE_ASSETS_DIR"Textures/Cubemap/px" ZENITH_TEXTURE_EXT,
@@ -706,7 +696,7 @@ void Zenith_Engine::InitialiseGPUAssets()
 		}
 
 		// Load water normal texture (pinned)
-		if (Zenith_TextureAsset* pxWaterNormal = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT))
+		if (Zenith_TextureAsset* pxWaterNormal = Zenith_AssetRegistry::GetView<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT))
 		{
 			g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWaterNormal);
 		}

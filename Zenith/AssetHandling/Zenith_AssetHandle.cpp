@@ -34,11 +34,13 @@ T* Zenith_AssetHandle<T>::Get() const
 		return nullptr;
 	}
 
-	m_pxCached = Zenith_AssetRegistry::Get<T>(m_strPath);
-	if (m_pxCached)
-	{
-		m_pxCached->AddRef();
-	}
+	// Load + AddRef happen UNDER the registry lock inside Acquire (race-free); steal
+	// that ref into our cache. The old GetView()+AddRef here AddRef'd OUTSIDE the
+	// lock, leaving a window where a concurrent UnloadUnused could delete the 0-ref
+	// asset between the load and the AddRef.
+	Zenith_AssetHandle<T> xAcquired = Zenith_AssetRegistry::Acquire<T>(m_strPath);
+	m_pxCached = xAcquired.m_pxCached;
+	xAcquired.m_pxCached = nullptr;  // transfer ownership; suppress xAcquired's Release
 	return m_pxCached;
 }
 

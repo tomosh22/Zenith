@@ -27,6 +27,11 @@ class Zenith_DataStream;
 // Zenith_Asset invariant the cast relies on is enforced by a static_assert in
 // Get() (Zenith_AssetHandle.cpp), checked at each explicit instantiation where T
 // is complete.
+
+// Tag type for the registry-only adopt-reference constructor: the reference was
+// already taken under the registry lock, so the handle stores it WITHOUT AddRef'ing.
+struct Zenith_AdoptAssetRef {};
+
 template<typename T>
 class Zenith_AssetHandle
 {
@@ -135,7 +140,7 @@ public:
 	/**
 	 * Get the directly stored pointer (for procedural assets set via Set()).
 	 * Returns nullptr for file-based handles that have not been loaded.
-	 * For file-based assets, use Resolve() (or Zenith_AssetRegistry::Get<T>(GetPath())) instead.
+	 * For file-based assets, use Resolve() (or Zenith_AssetRegistry::GetView<T>(GetPath()) for a raw view) instead.
 	 */
 	T* GetDirect() const { return m_pxCached; }
 
@@ -143,14 +148,15 @@ public:
 	 * Resolve the asset for this handle, loading from the registry on demand.
 	 *
 	 * - For file-based handles, returns the cached pointer if already loaded;
-	 *   otherwise calls Zenith_AssetRegistry::Get<T>(GetPath()), caches the
-	 *   result, and returns it.
+	 *   otherwise acquires it UNDER the registry lock (Acquire<T>, race-free) and
+	 *   caches the result. The AddRef happens while the lock is held, so a
+	 *   concurrent UnloadUnused can't reclaim the asset between load and AddRef.
 	 * - For procedural handles populated via Set(), returns the stored pointer.
 	 * - Returns nullptr if the path is empty AND no procedural pointer was set,
 	 *   or if the registry load fails.
 	 *
 	 * This is the default accessor for game/component code. Prefer it over the
-	 * two-step `Zenith_AssetRegistry::Get<T>(handle.GetPath())` pattern.
+	 * two-step `Zenith_AssetRegistry::GetView<T>(handle.GetPath())` pattern.
 	 */
 	T* Resolve() const { return Get(); }
 
@@ -166,18 +172,20 @@ public:
 	}
 
 	/**
-	 * Check if path is set (for serialization purposes)
-	 * Note: For procedural assets created via Set(), use operator bool() or IsLoaded() instead
+	 * True if this handle stores a (serializable) path.
+	 * Note: procedural assets set via Set() have NO path — use operator bool()
+	 * or IsResolved() for those. (Renamed from IsSet() for non-overlapping semantics.)
 	 */
-	bool IsSet() const
+	bool HasPath() const
 	{
 		return !m_strPath.empty();
 	}
 
 	/**
-	 * Check if the asset is currently loaded
+	 * True if the asset pointer is currently resolved/cached (loaded or Set()).
+	 * (Renamed from IsLoaded(); pairs with Resolve().)
 	 */
-	bool IsLoaded() const
+	bool IsResolved() const
 	{
 		return m_pxCached != nullptr;
 	}
@@ -277,6 +285,17 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
+	// Registry-only: adopt an already-AddRef'd pointer + retain the (normalized) path.
+	// The ref was taken while the registry held its lock (Acquire/Create/AdoptOrGet),
+	// so we do NOT AddRef again here — this is the race-free construction path.
+	Zenith_AssetHandle(const std::string& strPath, T* pxAdoptedRef, Zenith_AdoptAssetRef)
+		: m_strPath(Zenith_AssetRegistry::NormalizeAssetPath(strPath))
+		, m_pxCached(pxAdoptedRef)
+	{
+	}
+
+	friend class Zenith_AssetRegistry;
+
 	T* Get() const;  // Internal lazy-loading accessor — defined in Zenith_AssetHandle.cpp
 
 	std::string m_strPath;
@@ -299,3 +318,44 @@ using PrefabHandle = Zenith_AssetHandle<Zenith_Prefab>;
 
 // Get/WriteToDataStream/ReadFromDataStream are defined in Zenith_AssetHandle.cpp
 // and explicitly instantiated there for each asset type above.
+
+//--------------------------------------------------------------------------
+// Zenith_AssetRegistry handle-returning factories.
+// Defined here (not in Zenith_AssetRegistry.h) because they return a
+// Zenith_AssetHandle<T> BY VALUE, which needs the handle type complete — the
+// registry header only forward-declares it (the two headers form an include
+// cycle). Each routes through an under-lock internal primitive that AddRefs while
+// the registry mutex is held, then adopts that ref into the handle, closing the
+// load-then-AddRef race. Any TU that calls Create/Acquire/AdoptOrGet therefore
+// includes this header.
+//--------------------------------------------------------------------------
+
+template<typename T>
+Zenith_AssetHandle<T> Zenith_AssetRegistry::Acquire(const std::string& strPath)
+{
+	Zenith_Asset* pxAsset = s_pxInstance->AcquireInternal(Zenith_TypeIndex::Of<T>(), strPath);
+	return Zenith_AssetHandle<T>(strPath, static_cast<T*>(pxAsset), Zenith_AdoptAssetRef{});
+}
+
+template<typename T>
+Zenith_AssetHandle<T> Zenith_AssetRegistry::Create()
+{
+	Zenith_Asset* pxAsset = s_pxInstance->CreateProceduralInternal(Zenith_TypeIndex::Of<T>());
+	// Empty stored path: a no-arg procedural asset isn't path-serializable (matches
+	// the historical Set(ptr)); the asset still carries its generated procedural:// id.
+	return Zenith_AssetHandle<T>(std::string(), static_cast<T*>(pxAsset), Zenith_AdoptAssetRef{});
+}
+
+template<typename T>
+Zenith_AssetHandle<T> Zenith_AssetRegistry::Create(const std::string& strPath)
+{
+	Zenith_Asset* pxAsset = s_pxInstance->GetOrCreateInternal(Zenith_TypeIndex::Of<T>(), strPath);
+	return Zenith_AssetHandle<T>(strPath, static_cast<T*>(pxAsset), Zenith_AdoptAssetRef{});
+}
+
+template<typename T>
+Zenith_AssetHandle<T> Zenith_AssetRegistry::AdoptOrGet(const std::string& strPath, T* pxPrebuilt)
+{
+	Zenith_Asset* pxAsset = s_pxInstance->AdoptOrGetInternal(strPath, static_cast<Zenith_Asset*>(pxPrebuilt));
+	return Zenith_AssetHandle<T>(strPath, static_cast<T*>(pxAsset), Zenith_AdoptAssetRef{});
+}

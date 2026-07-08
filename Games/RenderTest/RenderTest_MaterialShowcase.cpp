@@ -219,7 +219,7 @@ namespace
 	Zenith_MaterialAsset* NewMat(const char* szName)
 	{
 		MaterialHandle xHandle;
-		xHandle.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+		xHandle = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		g_axMaterials.push_back(xHandle);
 		Zenith_MaterialAsset* m = xHandle.GetDirect();
 		m->SetName(szName);
@@ -249,7 +249,8 @@ namespace
 	{
 		Zenith_Vector<std::string> xMats;
 		xMats.PushBack(strMatPath);
-		Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		auto xhModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		Zenith_ModelAsset* pxModel = xhModel.GetDirect();
 		char szName[64];
 		std::snprintf(szName, sizeof(szName), "MatShowcase_Cell_%02d", iCell);
 		pxModel->SetName(szName);
@@ -308,7 +309,8 @@ namespace
 			{
 				Zenith_Vector<std::string> xMats;
 				xMats.PushBack(PlatformMaterialPath());
-				Zenith_ModelAsset* pxModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+				auto xhModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+				Zenith_ModelAsset* pxModel = xhModel.GetDirect();
 				pxModel->SetName("MatShowcase_Platform");
 				pxModel->AddMeshByPath(ShapeMeshPath(ShapeId::Cube), xMats);
 				pxModel->Export(PlatformModelPath().c_str());

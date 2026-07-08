@@ -54,7 +54,8 @@ const Flux_ShaderResourceView& Flux_TerrainImpl::GetFallbackSplatmapSRV()
 		xInfo.m_uNumLayers    = 1;
 		xInfo.m_uMemoryFlags  = 1u << MEMORY_FLAGS__SHADER_READ;
 
-		Zenith_TextureAsset* pxFallback = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+		auto xhFallback = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+		Zenith_TextureAsset* pxFallback = xhFallback.GetDirect();
 		Zenith_Assert(pxFallback != nullptr, "Failed to create terrain fallback splatmap texture asset");
 		pxFallback->CreateFromData(aucRGBA, xInfo, /*bCreateMips*/ false);
 		m_xFallbackSplatmap.Set(pxFallback);

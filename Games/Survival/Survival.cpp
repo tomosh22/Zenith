@@ -336,7 +336,7 @@ static void InitializeSurvivalResources()
 	std::filesystem::create_directories(strMeshDir);
 
 	// Create geometries using registry
-	Resources().m_xCubeAsset.Set(Zenith_MeshGeometryAsset::CreateUnitCube());
+	Resources().m_xCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
 	Resources().m_pxCubeGeometry = Resources().m_xCubeAsset.GetDirect()->GetGeometry();
 #ifdef ZENITH_TOOLS
 	std::string strCubePath = strMeshDir + "/Cube" ZENITH_MESH_EXT;
@@ -346,7 +346,8 @@ static void InitializeSurvivalResources()
 
 	// Custom sphere - tracked through registry
 	{
-		Zenith_MeshGeometryAsset* pxSphereAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		auto xhSphereAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		Zenith_MeshGeometryAsset* pxSphereAsset = xhSphereAsset.GetDirect();
 		Flux_MeshGeometry* pxSphere = new Flux_MeshGeometry();
 		GenerateUVSphere(*pxSphere, 0.5f, 16, 12);
 		pxSphereAsset->SetGeometry(pxSphere);
@@ -361,7 +362,8 @@ static void InitializeSurvivalResources()
 
 	// Custom capsule - tracked through registry
 	{
-		Zenith_MeshGeometryAsset* pxCapsuleAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		auto xhCapsuleAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+		Zenith_MeshGeometryAsset* pxCapsuleAsset = xhCapsuleAsset.GetDirect();
 		Flux_MeshGeometry* pxCapsule = new Flux_MeshGeometry();
 		GenerateCapsule(*pxCapsule, 0.3f, 1.6f, 12, 6);
 		pxCapsuleAsset->SetGeometry(pxCapsule);
@@ -389,31 +391,31 @@ static void InitializeSurvivalResources()
 
 	// Create materials with texture paths (properly serializable)
 
-	Resources().m_xPlayerMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xPlayerMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xPlayerMaterial.GetDirect()->SetName("SurvivalPlayer");
 	Resources().m_xPlayerMaterial.GetDirect()->SetDiffuseTexture(xPlayerTextureHandle);
 
-	Resources().m_xGroundMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xGroundMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xGroundMaterial.GetDirect()->SetName("SurvivalGround");
 	Resources().m_xGroundMaterial.GetDirect()->SetDiffuseTexture(xGroundTextureHandle);
 
-	Resources().m_xTreeMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xTreeMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xTreeMaterial.GetDirect()->SetName("SurvivalTree");
 	Resources().m_xTreeMaterial.GetDirect()->SetDiffuseTexture(xTreeTextureHandle);
 
-	Resources().m_xRockMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xRockMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xRockMaterial.GetDirect()->SetName("SurvivalRock");
 	Resources().m_xRockMaterial.GetDirect()->SetDiffuseTexture(xRockTextureHandle);
 
-	Resources().m_xBerryMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xBerryMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xBerryMaterial.GetDirect()->SetName("SurvivalBerry");
 	Resources().m_xBerryMaterial.GetDirect()->SetDiffuseTexture(xBerryTextureHandle);
 
-	Resources().m_xWoodMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xWoodMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xWoodMaterial.GetDirect()->SetName("SurvivalWood");
 	Resources().m_xWoodMaterial.GetDirect()->SetDiffuseTexture(xWoodTextureHandle);
 
-	Resources().m_xStoneMaterial.Set(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>());
+	Resources().m_xStoneMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 	Resources().m_xStoneMaterial.GetDirect()->SetName("SurvivalStone");
 	Resources().m_xStoneMaterial.GetDirect()->SetDiffuseTexture(xStoneTextureHandle);
 
@@ -426,7 +428,8 @@ static void InitializeSurvivalResources()
 	// Player prefab
 	{
 		Zenith_Entity xPlayerTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "PlayerTemplate");
-		Zenith_Prefab* pxPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhPlayer = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxPlayer = xhPlayer.GetDirect();
 		pxPlayer->CreateFromEntity(xPlayerTemplate, "Player");
 		Resources().m_xPlayerPrefab.Set(pxPlayer);
 		xPlayerTemplate.Destroy();
@@ -435,7 +438,8 @@ static void InitializeSurvivalResources()
 	// Tree prefab (resource node)
 	{
 		Zenith_Entity xTreeTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "TreeTemplate");
-		Zenith_Prefab* pxTree = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhTree = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxTree = xhTree.GetDirect();
 		pxTree->CreateFromEntity(xTreeTemplate, "Tree");
 		Resources().m_xTreePrefab.Set(pxTree);
 		xTreeTemplate.Destroy();
@@ -444,7 +448,8 @@ static void InitializeSurvivalResources()
 	// Rock prefab (resource node)
 	{
 		Zenith_Entity xRockTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "RockTemplate");
-		Zenith_Prefab* pxRock = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhRock = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxRock = xhRock.GetDirect();
 		pxRock->CreateFromEntity(xRockTemplate, "Rock");
 		Resources().m_xRockPrefab.Set(pxRock);
 		xRockTemplate.Destroy();
@@ -453,7 +458,8 @@ static void InitializeSurvivalResources()
 	// Berry bush prefab (resource node)
 	{
 		Zenith_Entity xBerryTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "BerryBushTemplate");
-		Zenith_Prefab* pxBerry = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhBerry = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxBerry = xhBerry.GetDirect();
 		pxBerry->CreateFromEntity(xBerryTemplate, "BerryBush");
 		Resources().m_xBerryBushPrefab.Set(pxBerry);
 		xBerryTemplate.Destroy();
@@ -462,7 +468,8 @@ static void InitializeSurvivalResources()
 	// Dropped item prefab
 	{
 		Zenith_Entity xDroppedItemTemplate = g_xEngine.Scenes().CreateEntity(pxSceneData, "DroppedItemTemplate");
-		Zenith_Prefab* pxDropped = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		auto xhDropped = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+		Zenith_Prefab* pxDropped = xhDropped.GetDirect();
 		pxDropped->CreateFromEntity(xDroppedItemTemplate, "DroppedItem");
 		Resources().m_xDroppedItemPrefab.Set(pxDropped);
 		xDroppedItemTemplate.Destroy();

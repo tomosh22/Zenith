@@ -451,108 +451,104 @@ Zenith_Status Zenith_MeshGeometryAsset::LoadFromFile(const std::string& strPath,
 // Static Primitive Creators
 //------------------------------------------------------------------------------
 
-Zenith_MeshGeometryAsset* Zenith_MeshGeometryAsset::CreateFullscreenQuad()
+MeshGeometryHandle Zenith_MeshGeometryAsset::CreateFullscreenQuad()
 {
 	static const std::string strPath = "procedural://fullscreen_quad";
 
-	// Check if already cached
-	Zenith_MeshGeometryAsset* pxExisting = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>(strPath);
-	if (pxExisting)
+	// Fast path: already cached → acquire an owning handle (atomic; can't false-hit).
+	if (MeshGeometryHandle xExisting = Zenith_AssetRegistry::Acquire<Zenith_MeshGeometryAsset>(strPath); xExisting.IsResolved())
 	{
-		return pxExisting;
+		return xExisting;
 	}
 
-	// Create new
-	Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>(strPath);
+	// Build the geometry into a detached asset OUTSIDE the registry lock (generation
+	// may touch the GPU), then publish it race-free via AdoptOrGet (inserts it if the
+	// path is still free, else discards it and returns the winner).
+	Zenith_MeshGeometryAsset* pxAsset = new Zenith_MeshGeometryAsset();
 	pxAsset->m_pxGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::GenerateFullscreenQuad(*pxAsset->m_pxGeometry);
-	return pxAsset;
+	return Zenith_AssetRegistry::AdoptOrGet<Zenith_MeshGeometryAsset>(strPath, pxAsset);
 }
 
-Zenith_MeshGeometryAsset* Zenith_MeshGeometryAsset::CreateUnitCube()
+MeshGeometryHandle Zenith_MeshGeometryAsset::CreateUnitCube()
 {
 	static const std::string strPath = "procedural://unit_cube";
 
-	Zenith_MeshGeometryAsset* pxExisting = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>(strPath);
-	if (pxExisting)
+	if (MeshGeometryHandle xExisting = Zenith_AssetRegistry::Acquire<Zenith_MeshGeometryAsset>(strPath); xExisting.IsResolved())
 	{
-		return pxExisting;
+		return xExisting;
 	}
 
-	Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>(strPath);
+	Zenith_MeshGeometryAsset* pxAsset = new Zenith_MeshGeometryAsset();
 	pxAsset->m_pxGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::GenerateUnitCube(*pxAsset->m_pxGeometry);
-	return pxAsset;
+	return Zenith_AssetRegistry::AdoptOrGet<Zenith_MeshGeometryAsset>(strPath, pxAsset);
 }
 
-Zenith_MeshGeometryAsset* Zenith_MeshGeometryAsset::CreateUnitSphere(uint32_t uSegments)
+MeshGeometryHandle Zenith_MeshGeometryAsset::CreateUnitSphere(uint32_t uSegments)
 {
 	std::string strPath = "procedural://unit_sphere_" + std::to_string(uSegments);
 
-	Zenith_MeshGeometryAsset* pxExisting = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>(strPath);
-	if (pxExisting)
+	if (MeshGeometryHandle xExisting = Zenith_AssetRegistry::Acquire<Zenith_MeshGeometryAsset>(strPath); xExisting.IsResolved())
 	{
-		return pxExisting;
+		return xExisting;
 	}
 
-	Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>(strPath);
+	Zenith_MeshGeometryAsset* pxAsset = new Zenith_MeshGeometryAsset();
 	pxAsset->m_pxGeometry = new Flux_MeshGeometry();
 	GenerateSphere(*pxAsset->m_pxGeometry, uSegments, uSegments * 2);
-	return pxAsset;
+	return Zenith_AssetRegistry::AdoptOrGet<Zenith_MeshGeometryAsset>(strPath, pxAsset);
 }
 
-Zenith_MeshGeometryAsset* Zenith_MeshGeometryAsset::CreateUnitCapsule(uint32_t uSegments)
+MeshGeometryHandle Zenith_MeshGeometryAsset::CreateUnitCapsule(uint32_t uSegments)
 {
 	std::string strPath = "procedural://unit_capsule_" + std::to_string(uSegments);
 
-	Zenith_MeshGeometryAsset* pxExisting = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>(strPath);
-	if (pxExisting)
+	if (MeshGeometryHandle xExisting = Zenith_AssetRegistry::Acquire<Zenith_MeshGeometryAsset>(strPath); xExisting.IsResolved())
 	{
-		return pxExisting;
+		return xExisting;
 	}
 
-	Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>(strPath);
+	Zenith_MeshGeometryAsset* pxAsset = new Zenith_MeshGeometryAsset();
 	pxAsset->m_pxGeometry = new Flux_MeshGeometry();
 	// Unit capsule: radius 0.25, height 0.5 (total height 1.0 including caps)
 	GenerateCapsule(*pxAsset->m_pxGeometry, 0.25f, 0.5f, uSegments, uSegments);
-	return pxAsset;
+	return Zenith_AssetRegistry::AdoptOrGet<Zenith_MeshGeometryAsset>(strPath, pxAsset);
 }
 
-Zenith_MeshGeometryAsset* Zenith_MeshGeometryAsset::CreateUnitCylinder(uint32_t uSegments)
+MeshGeometryHandle Zenith_MeshGeometryAsset::CreateUnitCylinder(uint32_t uSegments)
 {
 	std::string strPath = "procedural://unit_cylinder_" + std::to_string(uSegments);
 
-	Zenith_MeshGeometryAsset* pxExisting = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>(strPath);
-	if (pxExisting)
+	if (MeshGeometryHandle xExisting = Zenith_AssetRegistry::Acquire<Zenith_MeshGeometryAsset>(strPath); xExisting.IsResolved())
 	{
-		return pxExisting;
+		return xExisting;
 	}
 
-	Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>(strPath);
+	Zenith_MeshGeometryAsset* pxAsset = new Zenith_MeshGeometryAsset();
 	pxAsset->m_pxGeometry = new Flux_MeshGeometry();
 	// Unit cylinder: radius 0.5, height 1.0
 	GenerateCylinder(*pxAsset->m_pxGeometry, 0.5f, 1.0f, uSegments);
-	return pxAsset;
+	return Zenith_AssetRegistry::AdoptOrGet<Zenith_MeshGeometryAsset>(strPath, pxAsset);
 }
 
-Zenith_MeshGeometryAsset* Zenith_MeshGeometryAsset::CreateUnitCone(uint32_t uSegments)
+MeshGeometryHandle Zenith_MeshGeometryAsset::CreateUnitCone(uint32_t uSegments)
 {
 	std::string strPath = "procedural://unit_cone_" + std::to_string(uSegments);
 
-	Zenith_MeshGeometryAsset* pxExisting = Zenith_AssetRegistry::Get<Zenith_MeshGeometryAsset>(strPath);
-	if (pxExisting)
+	if (MeshGeometryHandle xExisting = Zenith_AssetRegistry::Acquire<Zenith_MeshGeometryAsset>(strPath); xExisting.IsResolved())
 	{
-		return pxExisting;
+		return xExisting;
 	}
 
-	Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>(strPath);
+	Zenith_MeshGeometryAsset* pxAsset = new Zenith_MeshGeometryAsset();
 	pxAsset->m_pxGeometry = new Flux_MeshGeometry();
 	// Unit cone: radius 0.5, height 1.0
 	GenerateCone(*pxAsset->m_pxGeometry, 0.5f, 1.0f, uSegments);
-	return pxAsset;
+	return Zenith_AssetRegistry::AdoptOrGet<Zenith_MeshGeometryAsset>(strPath, pxAsset);
 }
 
-Zenith_MeshGeometryAsset* Zenith_MeshGeometryAsset::CreateFromGeometryData(
+MeshGeometryHandle Zenith_MeshGeometryAsset::CreateFromGeometryData(
 	const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
 	const Zenith_Vector<Zenith_Maths::Vector3>& xNormals,
 	const Zenith_Vector<uint32_t>& xIndices)
@@ -561,7 +557,7 @@ Zenith_MeshGeometryAsset* Zenith_MeshGeometryAsset::CreateFromGeometryData(
 	const uint32_t uNumIndices = xIndices.GetSize();
 	if (uNumVerts == 0 || uNumIndices < 3)
 	{
-		return nullptr;
+		return MeshGeometryHandle();
 	}
 
 	// Build the CPU-side Flux_MeshGeometry. Buffers use Zenith_MemoryManagement so
@@ -589,7 +585,7 @@ Zenith_MeshGeometryAsset* Zenith_MeshGeometryAsset::CreateFromGeometryData(
 		pxGeom->m_puIndices[i] = xIndices.Get(i);
 	}
 
-	Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
-	pxAsset->SetGeometry(pxGeom);
-	return pxAsset;
+	MeshGeometryHandle xAsset = Zenith_AssetRegistry::Create<Zenith_MeshGeometryAsset>();
+	xAsset.GetDirect()->SetGeometry(pxGeom);
+	return xAsset;
 }

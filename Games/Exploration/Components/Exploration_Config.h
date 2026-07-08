@@ -5,9 +5,9 @@
  * Settings can be serialized to .zdata files for designer tweaking.
  *
  * Usage:
- *   Exploration_Config* pxConfig = Zenith_AssetRegistry::Get<Exploration_Config>("game:Config/path.zdata");
- *   // Or create programmatically:
- *   Exploration_Config* pxConfig = Zenith_AssetRegistry::Create<Exploration_Config>();
+ *   Exploration_Config* pxConfig = Zenith_AssetRegistry::GetView<Exploration_Config>("game:Config/path.zdata");
+ *   // Or create programmatically (Create<T>() returns an owning handle):
+ *   auto xConfig = Zenith_AssetRegistry::Create<Exploration_Config>();
  */
 
 #include "AssetHandling/Zenith_Asset.h"

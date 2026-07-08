@@ -69,11 +69,11 @@ namespace
 		// IsLoaded gate: avoid triggering a registry load that asserts on missing files.
 		if (Zenith_AssetRegistry::IsLoaded(szPath))
 		{
-			return Zenith_AssetRegistry::Get<Zenith_Prefab>(szPath);
+			return Zenith_AssetRegistry::GetView<Zenith_Prefab>(szPath);
 		}
 		// Path may be valid but unloaded; attempt the load. Worst case the
 		// registry will warn or fail silently — the user retries.
-		return Zenith_AssetRegistry::Get<Zenith_Prefab>(szPath);
+		return Zenith_AssetRegistry::GetView<Zenith_Prefab>(szPath);
 	}
 
 	void RenderHeaderHelp()
@@ -118,7 +118,8 @@ namespace
 			if (pxBase != nullptr)
 			{
 				PrefabHandle xHandle(s_acBasePath);
-				Zenith_Prefab* pxVariant = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+				auto xhVariant = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+				Zenith_Prefab* pxVariant = xhVariant.GetDirect();
 				if (pxVariant && pxVariant->CreateAsVariant(xHandle, s_acVariantName))
 				{
 					s_xAuthoringVariant.Set(pxVariant);

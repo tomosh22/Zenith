@@ -445,7 +445,8 @@ public:
 		for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 		{
 			Zenith_MaterialAsset* pxOriginal = m_axShapeMaterials[i].GetDirect();
-			Zenith_MaterialAsset* pxHighlighted = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+			auto xhHighlighted = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+			Zenith_MaterialAsset* pxHighlighted = xhHighlighted.GetDirect();
 
 			pxHighlighted->SetName(pxOriginal->GetName() + "_Highlighted");
 			pxHighlighted->SetBaseColor(pxOriginal->GetBaseColor());

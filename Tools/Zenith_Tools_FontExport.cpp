@@ -10,8 +10,6 @@
 
 #include <vector>
 
-extern const char* Project_GetName();
-
 // Atlas + bake parameters. Tuned for printable ASCII with a 4px MSDF range —
 // sharp at any render size via the shader's fwidth-based AA.
 //

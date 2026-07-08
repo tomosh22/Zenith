@@ -5,7 +5,7 @@
  * Walks the GAME_ASSETS_DIR/Materials .json files (UE parameter dumps), parses each,
  * builds a Zenith_MaterialAsset, and registers it under the path
  * `game:Materials/<stem>.zmtrl` so other code can resolve a material by name
- * via Zenith_AssetRegistry::Get<Zenith_MaterialAsset>(...).
+ * via Zenith_AssetRegistry::GetView<Zenith_MaterialAsset>(...).
  *
  * The JSON dumps look like:
  *

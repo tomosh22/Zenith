@@ -94,7 +94,8 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 	{
 		if (!m_axMaterials[u].GetDirect())
 		{
-			Zenith_MaterialAsset* pxBlank = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+			auto xhBlank = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+			Zenith_MaterialAsset* pxBlank = xhBlank.GetDirect();
 			if (pxBlank)
 			{
 				pxBlank->SetName("Terrain_Mat" + std::to_string(u));
@@ -318,7 +319,8 @@ void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) cons
 void Zenith_TerrainComponent::AssignTerrainMaterialSlot(u_int uSlot, const std::string& strEntityName, Zenith_DataStream& xStream)
 {
 	Zenith_Assert(uSlot < TERRAIN_MATERIAL_COUNT, "Terrain material slot %u out of range", uSlot);
-	if (Zenith_MaterialAsset* pxNewMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>())
+	auto xhNewMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	if (Zenith_MaterialAsset* pxNewMat = xhNewMat.GetDirect())
 	{
 		pxNewMat->SetName(strEntityName + "_Terrain_Mat" + std::to_string(uSlot));
 		m_axMaterials[uSlot].Set(pxNewMat);
@@ -379,7 +381,8 @@ void Zenith_TerrainComponent::BackfillMissingMaterialSlots(const std::string& st
 	{
 		if (!m_axMaterials[u].GetDirect())
 		{
-			if (Zenith_MaterialAsset* pxBlank = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>())
+			auto xhBlank = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+			if (Zenith_MaterialAsset* pxBlank = xhBlank.GetDirect())
 			{
 				pxBlank->SetName(strEntityName + "_Terrain_Mat" + std::to_string(u));
 				m_axMaterials[u].Set(pxBlank);

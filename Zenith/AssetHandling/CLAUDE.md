@@ -18,13 +18,17 @@ The **unified asset management system** for all asset types. This singleton prov
 
 ```cpp
 // Load asset from file (returns cached if already loaded)
-Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>("game:Textures/tex.ztxtr");
+// Owning handle — AddRef'd under the registry lock (race-free), survives UnloadUnused:
+TextureHandle xTex = Zenith_AssetRegistry::Acquire<Zenith_TextureAsset>("game:Textures/tex.ztxtr");
+// Raw, NON-owning transient view — must NOT outlive an UnloadUnused()/scene transition:
+Zenith_TextureAsset* pView = Zenith_AssetRegistry::GetView<Zenith_TextureAsset>("game:Textures/tex.ztxtr");
 
-// Create procedural asset (generates unique path like "procedural://texture_0")
-Zenith_TextureAsset* pProc = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+// Create procedural asset (generates unique path like "procedural://texture_0").
+// Create<T>() returns an OWNING Zenith_AssetHandle<T> (AddRef'd — there is no 0-refcount window):
+TextureHandle xProc = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
 
 // Cleanup unused assets
-Zenith_AssetRegistry::UnloadUnused();  // Free assets with ref count 0
+Zenith_AssetRegistry::UnloadUnused();  // Free assets no handle references (ref count 0)
 ```
 
 ### Initialization Order

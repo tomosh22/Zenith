@@ -16,8 +16,6 @@
 #include "Input/Zenith_InputSimulator.h"
 #endif
 
-extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
-
 // Phase 0: Zenith_Init / Zenith_Shutdown bodies moved into
 // Zenith_Engine::Initialise / Shutdown (see Zenith_Engine.cpp). These
 // stay as thin forwarders so every existing caller (Android_Main.cpp,

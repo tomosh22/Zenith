@@ -20,11 +20,11 @@ class Zenith_SkeletonAsset;
  * Flux_MeshGeometry, and Flux_MeshInstance.
  *
  * Usage:
- *   // Load from file
- *   Zenith_MeshAsset* pMesh = Zenith_AssetRegistry::Get<Zenith_MeshAsset>("Assets/mesh.zmesh");
+ *   // Load an owning handle (GetView<T>() for a raw transient view)
+ *   MeshHandle xMesh = Zenith_AssetRegistry::Acquire<Zenith_MeshAsset>("Assets/mesh.zmesh");
  *
  *   // Get GPU buffers for rendering (uploads if needed)
- *   pMesh->EnsureGPUBuffers();
+ *   xMesh.GetDirect()->EnsureGPUBuffers();
  *   const Flux_VertexBuffer& xVB = pMesh->GetVertexBuffer();
  */
 class Zenith_MeshAsset : public Zenith_Asset

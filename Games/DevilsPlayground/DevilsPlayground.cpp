@@ -146,7 +146,8 @@ namespace DevilsPlayground
 				xTemplate.AddComponent<Zenith_ColliderComponent>().AddCollider(eVolume, eBody);
 			}
 
-			Zenith_Prefab* pxPrefab = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+			auto xhPrefab = Zenith_AssetRegistry::Create<Zenith_Prefab>();
+				Zenith_Prefab* pxPrefab = xhPrefab.GetDirect();
 			pxPrefab->CreateFromEntity(xTemplate, szName);
 			xOut.Set(pxPrefab);
 

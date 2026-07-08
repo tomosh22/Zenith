@@ -178,7 +178,8 @@ Zenith_Status Zenith_FontAsset::LoadFromFile(const std::string& strPrefixedPath)
 	xSurfaceInfo.m_eTextureType  = TEXTURE_TYPE_2D;
 	xSurfaceInfo.m_uMemoryFlags  = 1 << MEMORY_FLAGS__SHADER_READ;
 
-	Zenith_TextureAsset* pxAtlas = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+	auto xhAtlas = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+	Zenith_TextureAsset* pxAtlas = xhAtlas.GetDirect();
 	if (!pxAtlas)
 	{
 		Zenith_Warning(LOG_CATEGORY_ASSET, "Zenith_FontAsset: failed to create procedural atlas");

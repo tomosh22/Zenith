@@ -1304,7 +1304,8 @@ namespace TilePuzzle_AssetGen
 
 		// Pinball ball: silver/chrome
 		{
-			Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+			auto xhMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+			Zenith_MaterialAsset* pxMat = xhMat.GetDirect();
 			pxMat->SetName("PinballBall");
 			pxMat->SetBaseColor(Zenith_Maths::Vector4(192.f / 255.f, 192.f / 255.f, 192.f / 255.f, 1.f));
 			pxMat->SetMetallic(0.9f);
@@ -1317,7 +1318,8 @@ namespace TilePuzzle_AssetGen
 
 		// Pinball peg: cyan matte
 		{
-			Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+			auto xhMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+			Zenith_MaterialAsset* pxMat = xhMat.GetDirect();
 			pxMat->SetName("PinballPeg");
 			pxMat->SetBaseColor(Zenith_Maths::Vector4(60.f / 255.f, 200.f / 255.f, 230.f / 255.f, 1.f));
 			pxMat->SetMetallic(0.0f);
@@ -1330,7 +1332,8 @@ namespace TilePuzzle_AssetGen
 
 		// Pinball peg hit: cyan with emissive flash
 		{
-			Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+			auto xhMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+			Zenith_MaterialAsset* pxMat = xhMat.GetDirect();
 			pxMat->SetName("PinballPegHit");
 			pxMat->SetBaseColor(Zenith_Maths::Vector4(60.f / 255.f, 200.f / 255.f, 230.f / 255.f, 1.f));
 			pxMat->SetMetallic(0.0f);

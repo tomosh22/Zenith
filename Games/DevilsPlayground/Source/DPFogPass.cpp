@@ -120,7 +120,8 @@ namespace
 		xInfo.m_uNumLayers   = 1;
 		xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
-		if (Zenith_TextureAsset* pxTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>())
+		auto xhTex = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+		if (Zenith_TextureAsset* pxTex = xhTex.GetDirect())
 		{
 			pxTex->CreateFromData(s_auMemoryStaging, xInfo, false);
 			s_xMemoryTexture.Set(pxTex);

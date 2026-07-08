@@ -10,9 +10,6 @@
 #include "Flux/Flux_BackendTypes.h"
 #include <string>
 
-// The game's asset dir hook (CityBuilder.cpp) — used to find the baked chunk meshes.
-extern const char* Project_GetGameAssetsDirectory();
-
 namespace
 {
 	using namespace Flux_TerrainConfig;

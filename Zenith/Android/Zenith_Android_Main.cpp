@@ -134,9 +134,6 @@ static int32_t OnInputEvent(android_app* pxApp, AInputEvent* pxEvent)
 	return 0; // Event not handled
 }
 
-extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
-extern const char* Project_GetGameAssetsDirectory();
-
 void android_main(android_app* pxApp)
 {
 	LOGI("android_main started");
