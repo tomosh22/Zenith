@@ -456,6 +456,21 @@ function Get-ZenithBuildConfigData {
     [CmdletBinding()]
     param([string]$Path)
 
+    # CI hardening: a nested Windows-PowerShell (powershell.exe, spawned by
+    # zenith.bat) that inherits a PSModulePath mangled by prior pwsh-run workflow
+    # steps can fail to auto-load Import-PowerShellDataFile
+    # (Microsoft.PowerShell.Utility), surfacing as a CommandNotFoundException here.
+    # Force-load the module before use; a no-op when the cmdlet already resolves.
+    # Prefer THIS host's copy ($PSHOME) so a shadowing path entry cannot win.
+    if (-not (Get-Command Import-PowerShellDataFile -ErrorAction SilentlyContinue)) {
+        $utilModulePath = Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility'
+        if (Test-Path -LiteralPath $utilModulePath) {
+            Import-Module $utilModulePath -ErrorAction Stop
+        } else {
+            Import-Module 'Microsoft.PowerShell.Utility' -ErrorAction Stop
+        }
+    }
+
     if (-not [string]::IsNullOrEmpty($Path)) {
         return (Import-PowerShellDataFile -LiteralPath $Path)
     }

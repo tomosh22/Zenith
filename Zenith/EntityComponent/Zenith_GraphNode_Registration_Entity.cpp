@@ -182,7 +182,8 @@ namespace
 			const float fRadiusSq = m_fRadius * m_fRadius;
 			const Zenith_EntityID xSelfID = xContext.m_xSelf.GetEntityID();
 
-			g_xEngine.Scenes().QueryAllScenes<Zenith_TransformComponent>()
+			Zenith_SceneSystem& xScenes = g_xEngine.Scenes();
+			xScenes.QueryAllScenes<Zenith_TransformComponent>()
 				.ForEach([&](Zenith_EntityID xID, Zenith_TransformComponent& xTransform)
 			{
 				if (xID == xSelfID)
@@ -198,7 +199,7 @@ namespace
 				}
 				if (pxFilterMeta != nullptr)
 				{
-					Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xID);
+					Zenith_Entity xEntity = xScenes.ResolveEntity(xID);
 					if (!xEntity.IsValid() || !pxFilterMeta->m_pfnHasComponent(xEntity))
 					{
 						return;
@@ -401,7 +402,8 @@ namespace
 			float fBestDistSq = fRadiusSq;
 			bool bFound = false;
 
-			g_xEngine.Scenes().QueryAllScenes<Zenith_TransformComponent>()
+			Zenith_SceneSystem& xScenes = g_xEngine.Scenes();
+			xScenes.QueryAllScenes<Zenith_TransformComponent>()
 				.ForEach([&](Zenith_EntityID xID, Zenith_TransformComponent& xTransform)
 			{
 				if (xID == xSelfID)
@@ -418,7 +420,7 @@ namespace
 				}
 				if (pxFilterMeta != nullptr)
 				{
-					Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xID);
+					Zenith_Entity xEntity = xScenes.ResolveEntity(xID);
 					if (!xEntity.IsValid() || !pxFilterMeta->m_pfnHasComponent(xEntity))
 					{
 						return;

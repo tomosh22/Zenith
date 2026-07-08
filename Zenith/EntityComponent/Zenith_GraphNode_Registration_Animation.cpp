@@ -7,7 +7,10 @@
 #include "EntityComponent/Components/Zenith_TweenComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Zenith_GraphNodeHelpers.h"
-#include "Flux/Particles/Flux_ParticleEmitterConfig.h"
+// Particle nodes assign named emitter configs via Zenith_ParticleEmitterComponent::
+// SetConfigByName (which owns the Flux_ParticleEmitterConfig::Find call in its .cpp,
+// the allow-listed EntityComponent->Flux bridge). Including the Flux config header
+// directly here would add a fresh EntityComponent->Flux edge the gate rejects.
 
 #include <cmath>
 
@@ -430,7 +433,7 @@ namespace
 			}
 			if (pxEmitter->GetConfig() == nullptr && !m_strConfigName.empty())
 			{
-				pxEmitter->SetConfig(Flux_ParticleEmitterConfig::Find(m_strConfigName));
+				pxEmitter->SetConfigByName(m_strConfigName);
 			}
 			if (pxEmitter->GetConfig() == nullptr)
 			{

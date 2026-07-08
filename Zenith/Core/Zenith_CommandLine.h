@@ -55,6 +55,14 @@ namespace Zenith_CommandLine
     // harnesses / smoke scripts that want the code-built default layout).
     bool IsImGuiIniDisabled();
 
+    // True iff `--skip-tool-exports` was on the command line. When set,
+    // Zenith_Engine::InitialiseAssets bypasses the boot-time tool asset exports
+    // (mesh/texture/font + GenerateTestAssets procedural StickFigure/Tree), so
+    // nothing is written to ENGINE_ASSETS_DIR this run. The single source of
+    // truth for the flag literal: both the engine (skips generation) and unit
+    // tests that verify generated-on-disk assets (skip themselves) read it here.
+    bool IsToolExportSkipped();
+
     // Screenshot capture: `--screenshot <path>` [`--screenshot-frame <N>`].
     // The render backend dumps the swapchain image to <path> (an uncompressed
     // 32-bit TGA) on the EndFrame whose FluxRenderer frame counter equals N,

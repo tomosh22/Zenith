@@ -525,7 +525,7 @@ void Zenith_Engine::InitialiseAssets()
 	Zenith_AssetRegistry::Initialize();
 
 #ifdef ZENITH_TOOLS
-	if (HasCommandLineFlag("--skip-tool-exports"))
+	if (Zenith_CommandLine::IsToolExportSkipped())
 	{
 		Zenith_Log(LOG_CATEGORY_CORE, "Tool asset exports skipped by --skip-tool-exports");
 	}

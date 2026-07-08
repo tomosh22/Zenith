@@ -366,13 +366,14 @@ namespace
 			if (m_bTeleport)
 			{
 				Zenith_ColliderComponent* pxCollider = xTarget.TryGetComponent<Zenith_ColliderComponent>();
-				if (pxCollider != nullptr && pxCollider->HasValidBody() && g_xEngine.Physics().HasActiveSimulation())
+				Zenith_Physics& xPhysics = g_xEngine.Physics();
+				if (pxCollider != nullptr && pxCollider->HasValidBody() && xPhysics.HasActiveSimulation())
 				{
 					const Zenith_PhysicsBodyID xBodyID = pxCollider->GetBodyID();
-					g_xEngine.Physics().SetLinearVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
-					g_xEngine.Physics().SetAngularVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
+					xPhysics.SetLinearVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
+					xPhysics.SetAngularVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
 					// Fires the pose-changed hook, committing the transform this frame.
-					g_xEngine.Physics().TeleportBody(xBodyID, xPosition);
+					xPhysics.TeleportBody(xBodyID, xPosition);
 					return GRAPH_NODE_STATUS_SUCCESS;
 				}
 			}

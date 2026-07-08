@@ -54,6 +54,17 @@ void Zenith_ParticleEmitterComponent::SetConfig(Flux_ParticleEmitterConfig* pxCo
 	}
 }
 
+bool Zenith_ParticleEmitterComponent::SetConfigByName(const std::string& strConfigName)
+{
+	Flux_ParticleEmitterConfig* pxConfig = Flux_ParticleEmitterConfig::Find(strConfigName);
+	if (pxConfig == nullptr)
+	{
+		return false;
+	}
+	SetConfig(pxConfig);
+	return true;
+}
+
 void Zenith_ParticleEmitterComponent::Emit(uint32_t uCount)
 {
 	if (m_pxConfig == nullptr)

@@ -214,14 +214,15 @@ void Zenith_GraphComponent::BroadcastCustomEvent(const char* szName, const Zenit
 	// Snapshot the receiving components first (the hardened-dispatch lesson:
 	// a fired chain may add/remove components mid-iteration).
 	Zenith_Vector<Zenith_EntityID> axReceivers;
-	g_xEngine.Scenes().QueryAllScenes<Zenith_GraphComponent>()
+	Zenith_SceneSystem& xScenes = g_xEngine.Scenes();
+	xScenes.QueryAllScenes<Zenith_GraphComponent>()
 		.ForEach([&axReceivers](Zenith_EntityID xID, Zenith_GraphComponent&)
 	{
 		axReceivers.PushBack(xID);
 	});
 	for (u_int u = 0; u < axReceivers.GetSize(); ++u)
 	{
-		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(axReceivers.Get(u));
+		Zenith_Entity xEntity = xScenes.ResolveEntity(axReceivers.Get(u));
 		if (!xEntity.IsValid())
 		{
 			continue;	// destroyed by an earlier receiver's chain

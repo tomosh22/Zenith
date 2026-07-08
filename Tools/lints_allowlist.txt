@@ -3,13 +3,16 @@
 # One wire key per line; '#'/blank lines ignored. A NEW key not listed here fails
 # the gate; a removed finding leaves a stale line (INFO only). Shrink, don't grow.
 pch:Zenith/Android/NativeGlue/android_native_app_glue.c
-pragma:Zenith/Core/Memory/Zenith_MemoryManagement_Disabled.h
-pragma:Zenith/Core/Memory/Zenith_MemoryManagement_Enabled.h
 static:Zenith/Android/Zenith_Android_Main.cpp => s_bAppActive
 static:Zenith/Android/Zenith_Android_Main.cpp => s_bDestroyRequested
 static:Zenith/Android/Zenith_Android_Main.cpp => s_bEngineInitialised
 static:Zenith/Android/Zenith_Android_Main.cpp => s_bWindowReady
 static:Zenith/Core/Memory/Zenith_MemoryManagement.cpp => g_bMemoryManagementInitialised
+static:Zenith/Core/Memory/Zenith_MemoryManagement.cpp => s_aulLiteCategoryBytes
+static:Zenith/Core/Memory/Zenith_MemoryManagement.cpp => s_aulLiteCategoryCount
+static:Zenith/Core/Memory/Zenith_MemoryManagement.cpp => s_ulLitePeakBytes
+static:Zenith/Core/Memory/Zenith_MemoryManagement.cpp => s_ulLiteTotalBytes
+static:Zenith/Core/Memory/Zenith_MemoryManagement.cpp => s_ulLiteTotalCount
 static:Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => s_bTerrainExportInProgress
 static:Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => s_strTerrainExportStatus
 static:Zenith/EntityComponent/Components/Zenith_TerrainComponent_Editor.cpp => s_szHeightmapPath

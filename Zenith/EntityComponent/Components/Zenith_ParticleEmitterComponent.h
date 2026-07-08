@@ -4,6 +4,7 @@
 #include "ZenithECS/Zenith_SceneData.h"  // Zenith_EntityID + entity/component templates (no longer transitive via the now-opaque Scene.h)
 #include "Core/Zenith_ParticleData.h"  // EC-side mirror of Flux_Particle (keeps this header Flux-free)
 #include <random>
+#include <string>
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -36,6 +37,13 @@ public:
 	// Set the emitter configuration (not owned, caller manages lifetime)
 	void SetConfig(Flux_ParticleEmitterConfig* pxConfig);
 	Flux_ParticleEmitterConfig* GetConfig() const { return m_pxConfig; }
+
+	// Look up a registered Flux_ParticleEmitterConfig BY NAME and apply it.
+	// Returns false (config left unchanged) if no config with that name exists.
+	// The Flux_ParticleEmitterConfig::Find dependency lives in the .cpp (the
+	// allow-listed EntityComponent->Flux bridge), so callers -- e.g. the graph-node
+	// registrars -- can assign a named config without including the Flux header.
+	bool SetConfigByName(const std::string& strConfigName);
 
 	//--- Emission Control ---//
 

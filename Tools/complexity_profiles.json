@@ -84,7 +84,8 @@
                 { "name": "AI", "layer": 2, "globs": ["Zenith/AI/**"], "public_headers": ["Zenith/AI/*.h", "Zenith/AI/Navigation/*.h", "Zenith/AI/BehaviorTree/*.h", "Zenith/AI/Perception/*.h", "Zenith/AI/Squad/*.h"], "leaf": true },
                 { "name": "Prefab", "layer": 2, "globs": ["Zenith/Prefab/**"] },
                 { "name": "UI", "layer": 3, "globs": ["Zenith/UI/**"] },
-                { "name": "Editor", "layer": 4, "globs": ["Zenith/Editor/**"] }
+                { "name": "Editor", "layer": 4, "globs": ["Zenith/Editor/**"] },
+                { "name": "ZenithHub", "layer": 4, "globs": ["ZenithHub/**"] }
             ],
             "rules": {
                 "forbid_up_edges": true,

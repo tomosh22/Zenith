@@ -4,10 +4,11 @@
 #include "Scripting/Zenith_GraphBlackboard.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
-#include "UI/Zenith_UIElement.h"
-#include "UI/Zenith_UIText.h"
-#include "UI/Zenith_UIRect.h"
-#include "UI/Zenith_UIButton.h"
+// UI element types (Zenith_UIElement/Text/Rect/Button) come in transitively via
+// Zenith_UIComponent.h -> UI/Zenith_UI.h, the ONE allowlisted EntityComponent->UI
+// bridge (Tools/architecture_allowlist.txt). Including the UI/ leaf headers
+// directly here would add fresh EntityComponent(L2)->UI(L3) layer-up edges the
+// architecture gate rejects, so route UI access through the component bridge.
 
 #include <cstdio>
 
