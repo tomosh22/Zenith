@@ -534,13 +534,24 @@ void ExportTexture(const std::filesystem::directory_entry& xFile)
 
 void ExportAllTextures()
 {
-	std::string strGameTexturesDir = GetGameAssetsDirectory() + "Textures";
-	for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(strGameTexturesDir))
+	// Asset dirs are gitignored (**/Assets/) and can be absent on a fresh checkout
+	// (CI). recursive_directory_iterator throws filesystem_error on a missing path
+	// -- unhandled, that crashes the boot (same class of failure as ExportAllMeshes
+	// hitting the engine-gate). Skip a directory that isn't present.
+	const std::string strGameTexturesDir = GetGameAssetsDirectory() + "Textures";
+	if (std::filesystem::exists(strGameTexturesDir))
 	{
-		ExportTexture(xFile);
+		for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(strGameTexturesDir))
+		{
+			ExportTexture(xFile);
+		}
 	}
-	for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(GetEngineAssetsDirectory()))
+	const std::string strEngineAssetsDir = GetEngineAssetsDirectory();
+	if (std::filesystem::exists(strEngineAssetsDir))
 	{
-		ExportTexture(xFile);
+		for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(strEngineAssetsDir))
+		{
+			ExportTexture(xFile);
+		}
 	}
 }

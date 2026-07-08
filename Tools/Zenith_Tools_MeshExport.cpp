@@ -870,63 +870,54 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 //------------------------------------------------------------------------------
 // Export all meshes from game assets directory
 //------------------------------------------------------------------------------
+// The game/engine asset dirs are gitignored (**/Assets/), so on a fresh checkout
+// -- notably CI -- they can be absent. std::filesystem::recursive_directory_iterator
+// THROWS filesystem_error when constructed on a missing path; that unhandled
+// exception crashed the engine-gate boot before any unit test ran ("Tool export:
+// meshes..." was the last log line). Skip cleanly when the directory isn't there;
+// the procedural GenerateTestAssets pass (which the asset-export unit tests depend
+// on) still runs.
+static void ExportMeshesInDirectory(const std::string& strDirectory)
+{
+	if (!std::filesystem::exists(strDirectory))
+	{
+		Zenith_Log(LOG_CATEGORY_TOOLS, "MESH_EXPORT: source dir absent, skipping: %s",
+			strDirectory.c_str());
+		return;
+	}
+
+	for (auto& xFile : std::filesystem::recursive_directory_iterator(strDirectory))
+	{
+		std::string strFilename = xFile.path().string();
+
+		// Avoid trying to export C++ IR files (.obj)
+		if (strFilename.find("Assets") == std::string::npos)
+		{
+			continue;
+		}
+
+		// Is this a gltf
+		if (strFilename.length() >= 5 && strFilename.substr(strFilename.length() - 5) == ".gltf")
+		{
+			Export(strFilename, ".gltf");
+		}
+
+		// Is this an fbx
+		if (strFilename.length() >= 4 && strFilename.substr(strFilename.length() - 4) == ".fbx")
+		{
+			Export(strFilename, ".fbx");
+		}
+
+		// Is this an obj
+		if (strFilename.length() >= 4 && strFilename.substr(strFilename.length() - 4) == ".obj")
+		{
+			Export(strFilename, ".obj");
+		}
+	}
+}
+
 void ExportAllMeshes()
 {
-	for (auto& xFile : std::filesystem::recursive_directory_iterator(GetGameAssetsDirectory()))
-	{
-		std::string strFilename = xFile.path().string();
-
-		// Avoid trying to export C++ IR files (.obj)
-		if (strFilename.find("Assets") == std::string::npos)
-		{
-			continue;
-		}
-
-		// Is this a gltf
-		if (strFilename.length() >= 5 && strFilename.substr(strFilename.length() - 5) == ".gltf")
-		{
-			Export(strFilename, ".gltf");
-		}
-
-		// Is this an fbx
-		if (strFilename.length() >= 4 && strFilename.substr(strFilename.length() - 4) == ".fbx")
-		{
-			Export(strFilename, ".fbx");
-		}
-
-		// Is this an obj
-		if (strFilename.length() >= 4 && strFilename.substr(strFilename.length() - 4) == ".obj")
-		{
-			Export(strFilename, ".obj");
-		}
-	}
-
-	for (auto& xFile : std::filesystem::recursive_directory_iterator(GetEngineAssetsDirectory()))
-	{
-		std::string strFilename = xFile.path().string();
-
-		// Avoid trying to export C++ IR files (.obj)
-		if (strFilename.find("Assets") == std::string::npos)
-		{
-			continue;
-		}
-
-		// Is this a gltf
-		if (strFilename.length() >= 5 && strFilename.substr(strFilename.length() - 5) == ".gltf")
-		{
-			Export(strFilename, ".gltf");
-		}
-
-		// Is this an fbx
-		if (strFilename.length() >= 4 && strFilename.substr(strFilename.length() - 4) == ".fbx")
-		{
-			Export(strFilename, ".fbx");
-		}
-
-		// Is this an obj
-		if (strFilename.length() >= 4 && strFilename.substr(strFilename.length() - 4) == ".obj")
-		{
-			Export(strFilename, ".obj");
-		}
-	}
+	ExportMeshesInDirectory(GetGameAssetsDirectory());
+	ExportMeshesInDirectory(GetEngineAssetsDirectory());
 }
