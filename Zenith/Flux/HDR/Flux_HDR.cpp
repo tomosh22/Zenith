@@ -461,7 +461,7 @@ static void ExecuteBloomThreshold(Flux_CommandBuffer* pxCommandList, void* pUser
 
 	namespace BT = Flux_Generated_HDR::BloomThreshold;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(BT::hg_xHDRTex, &g_xEngine.FluxGraphics().GetSceneColourForPostFX(uViewSlot).SRV());
+	xBinder.BindSRV(BT::hg_xHDRTex, &g_xEngine.FluxGraphics().GetSceneColourForPostFX(uViewSlot).SRV(), &g_xEngine.FluxGraphics().m_xClampSampler);
 	xBinder.BindDrawConstants(BT::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
@@ -494,7 +494,7 @@ static void ExecuteBloomDownsample(Flux_CommandBuffer* pxCommandList, void* pUse
 
 	namespace BD = Flux_Generated_HDR::BloomDownsample;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(BD::hg_xSourceTex, &xSource.SRV());
+	xBinder.BindSRV(BD::hg_xSourceTex, &xSource.SRV(), &g_xEngine.FluxGraphics().m_xClampSampler);
 	xBinder.BindDrawConstants(BD::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
@@ -526,7 +526,7 @@ static void ExecuteBloomUpsample(Flux_CommandBuffer* pxCommandList, void* pUserD
 
 	namespace BU = Flux_Generated_HDR::BloomUpsample;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(BU::hg_xSourceTex, &xHDR.GetBloomChainAttachment(uSourceMip, uViewSlot).SRV());
+	xBinder.BindSRV(BU::hg_xSourceTex, &xHDR.GetBloomChainAttachment(uSourceMip, uViewSlot).SRV(), &g_xEngine.FluxGraphics().m_xClampSampler);
 	xBinder.BindDrawConstants(BU::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
@@ -558,7 +558,7 @@ static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserDat
 		namespace TM = Flux_Generated_HDR::HDR_ToneMapping;
 		Flux_ShaderBinder xBinder(*pxCommandList);
 		xBinder.BindSRV(TM::hg_xHDRTex, &g_xEngine.FluxGraphics().GetSceneColourForPostFX().SRV());
-		xBinder.BindSRV(TM::hg_xBloomTex, &xHDR.GetBloomChainAttachment(0).SRV());
+		xBinder.BindSRV(TM::hg_xBloomTex, &xHDR.GetBloomChainAttachment(0).SRV(), &g_xEngine.FluxGraphics().m_xClampSampler);
 		// Slang reflection keys on the variable name (not the GLSL block
 		// name) — match the names declared in Flux_ToneMapping.slang.
 		xBinder.BindUAV_Buffer(TM::hg_auHistogram,   &xHDR.m_xHistogramBuffer.GetUAV());
