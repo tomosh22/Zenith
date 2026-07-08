@@ -33,10 +33,19 @@ if ($LogPath -eq "") {
 # Boot far enough for units-at-boot to complete, then exit. Games can hang at
 # shutdown (known), so a watchdog + kill guards the gate; the units line has
 # already been written by then.
+#
+# Deliberately NO --skip-tool-exports: the engine unit suite includes asset-export
+# tests (ProceduralTree::*, StickFigure*) that reload GenerateTestAssets output from
+# disk. Zenith/Assets/ is gitignored, so on a from-scratch CI checkout that output
+# only exists if this boot generates it; --skip-tool-exports left those tests loading
+# missing assets and wedging the units-at-boot gate. The exports are CPU-only and
+# headless-safe. This script is invoked ONLY by engine-gate.yml, so the change is
+# scoped here -- the game test gates (cb/dp-tests) keep --skip-tool-exports via their
+# own harness (they run --skip-unit-tests, so they need no generated engine assets).
 Write-Host "[unit_gate] Booting $Exe (baseline $Baseline, timeout ${TimeoutSec}s)..." -ForegroundColor Cyan
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = (Resolve-Path $Exe).Path
-$psi.Arguments = '--headless --exit-after-frames 120 --skip-tool-exports'
+$psi.Arguments = '--headless --exit-after-frames 120'
 $psi.WorkingDirectory = Split-Path (Resolve-Path $Exe).Path
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
@@ -58,37 +67,18 @@ if (-not $unitsLine) {
 }
 Write-Host "[unit_gate] $($unitsLine.Trim())"
 
-# Parse the tally: "<ran> ran, <passed> passed, <failed> failed[, <skipped> skipped]".
-# The suite ALWAYS reports ran==total-registered (skips do not decrement it); a test
-# that ZENITH_SKIPs moves from the passed bucket to the skipped bucket. Deliberate,
-# config-dependent skips are expected here -- e.g. TestProceduralTreeAssetExport skips
-# under --skip-tool-exports (this gate passes that flag; the procedural tree assets are
-# never generated in a from-scratch CI checkout) -- so a skip is never a failure.
-if ($unitsLine -notmatch '(\d+)\s+ran,\s+(\d+)\s+passed,\s+(\d+)\s+failed(?:,\s+(\d+)\s+skipped)?') {
-    Write-Error "[unit_gate] could not parse the tally from '$($unitsLine.Trim())' (log: $LogPath)"
-    exit 1
-}
-$ran     = [int]$Matches[1]
-$passed  = [int]$Matches[2]
-$failed  = [int]$Matches[3]
-$skipped = if ($Matches[4]) { [int]$Matches[4] } else { 0 }
-
-# The full registered suite must have run (guards against tests silently vanishing).
-$fullSuite = ($ran -eq $Baseline)
-$skipNote  = if ($skipped -gt 0) { " ($skipped skipped)" } else { "" }
-
-$cleanPass = $fullSuite -and ($failed -eq 0)
-# Sole tolerated failure: the known layout-sensitive flake (task_726cc81d).
-$knownFlake = $fullSuite -and ($failed -eq 1) -and
+$cleanPass = $unitsLine -match "$Baseline ran, $Baseline passed, 0 failed"
+$flakeCount = $Baseline - 1
+$knownFlake = ($unitsLine -match "$Baseline ran, $flakeCount passed, 1 failed") -and
               ($outText -match 'FAILED\s+GraphComponent::RegistryWideNodeRoundTrip')
 
 if ($cleanPass) {
-    Write-Host "[unit_gate] PASS ($passed/$Baseline passed, 0 failed$skipNote)" -ForegroundColor Green
+    Write-Host "[unit_gate] PASS ($Baseline/$Baseline)" -ForegroundColor Green
     exit 0
 }
 if ($knownFlake) {
-    Write-Host "[unit_gate] PASS with the known RegistryWideNodeRoundTrip flake (task_726cc81d) as sole failure$skipNote" -ForegroundColor Yellow
+    Write-Host "[unit_gate] PASS with the known RegistryWideNodeRoundTrip flake (task_726cc81d) as sole failure" -ForegroundColor Yellow
     exit 0
 }
-Write-Error "[unit_gate] baseline NOT met (wanted $Baseline ran, 0 failed [known flake tolerated]; got '$($unitsLine.Trim())'; log: $LogPath)"
+Write-Error "[unit_gate] baseline NOT met (wanted '$Baseline ran, $Baseline passed, 0 failed'; log: $LogPath)"
 exit 1

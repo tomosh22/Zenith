@@ -12,7 +12,6 @@ namespace
     bool        s_bAutomatedTestRun = false;
     bool        s_bNoImGuiIni       = false;
     bool        s_bShaderDebugO0    = false;
-    bool        s_bSkipToolExports  = false;
     const char* s_szScreenshotPath  = nullptr;
     u_int       s_uScreenshotFrame  = 120;
     const char* s_szAssetsRoot      = nullptr;
@@ -29,7 +28,6 @@ namespace Zenith_CommandLine
         s_bAutomatedTestRun = false;
         s_bNoImGuiIni       = false;
         s_bShaderDebugO0    = false;
-        s_bSkipToolExports  = false;
         s_szScreenshotPath  = nullptr;
         s_uScreenshotFrame  = 120;
         s_szAssetsRoot      = nullptr;
@@ -71,10 +69,6 @@ namespace Zenith_CommandLine
                 {
                     s_szAssetsRoot = argv[++i];
                 }
-                else if (std::strcmp(argv[i], "--skip-tool-exports") == 0)
-                {
-                    s_bSkipToolExports = true;
-                }
             }
         }
 
@@ -100,12 +94,6 @@ namespace Zenith_CommandLine
     {
         if (!s_bParsed) return false;
         return s_bNoImGuiIni;
-    }
-
-    bool IsToolExportSkipped()
-    {
-        if (!s_bParsed) return false;
-        return s_bSkipToolExports;
     }
 
     const char* GetScreenshotPath()
