@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include "Zenith_OS_Include.h"//for Zenith_Mutex
 
 using Zenith_ThreadFunction = void(*)(const void* pUserData);
 
