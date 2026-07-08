@@ -63,6 +63,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The engine unit gate runs the tool asset exports at boot:
+          # run_unit_gate.ps1 deliberately omits --skip-tool-exports so the
+          # asset-export unit tests (ProceduralTree::*, StickFigure*) find their
+          # generated assets. Those exports read the LFS-tracked SOURCE meshes +
+          # textures (*.fbx/*.png/*.tga/*.dds/... per .gitattributes). Without
+          # lfs:true actions/checkout leaves those as LFS pointer files, and the
+          # export crashes on boot (right after "AssetRegistry initialized",
+          # before any unit test). cb/dp-tests pass without LFS only because they
+          # run --skip-tool-exports. Same fix as shader-validation.yml.
+          lfs: true
 
       - name: Provision Zenith toolchain (MSBuild + vcpkg + Vulkan + Slang)
         uses: ./.github/actions/zenith-setup

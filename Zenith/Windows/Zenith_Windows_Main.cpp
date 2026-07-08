@@ -28,11 +28,17 @@ namespace
 	// hanging. Interactive dev runs keep the dialogs (they are useful there).
 	void HardenHeadlessFatalErrorHandling()
 	{
+#ifdef _DEBUG
+		// The debug-heap corrupted-block check + failed asserts (the modal-dialog
+		// sources) only exist in the debug CRT. In a release CRT _CrtSetReportMode /
+		// _CrtSetReportFile are no-op macros that ignore their arguments, so this
+		// loop would leave eReport unused (C4189 -> C2220 under /WX). Guard it.
 		for (int eReport : { _CRT_WARN, _CRT_ERROR, _CRT_ASSERT })
 		{
 			_CrtSetReportMode(eReport, _CRTDBG_MODE_FILE);
 			_CrtSetReportFile(eReport, _CRTDBG_FILE_STDERR);
 		}
+#endif
 		// abort() must not pop the "abnormal termination" dialog either.
 		_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 		// Suppress the OS-level WER / GPF / critical-error message boxes (e.g. an
