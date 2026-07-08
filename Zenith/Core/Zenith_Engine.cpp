@@ -531,11 +531,20 @@ void Zenith_Engine::InitialiseAssets()
 	}
 	else
 	{
+		// Per-step markers: this phase runs pre-Flux at boot and a failure here
+		// (e.g. the headless engine-gate) leaves the last marker as the last log
+		// line, pinpointing which export died. Pairs with the unbuffered stdout set
+		// in the headless main() so the marker actually reaches a captured pipe.
+		Zenith_Log(LOG_CATEGORY_CORE, "Tool export: meshes...");
 		ExportAllMeshes();
+		Zenith_Log(LOG_CATEGORY_CORE, "Tool export: textures...");
 		ExportAllTextures();
 		//ExportHeightmap();
+		Zenith_Log(LOG_CATEGORY_CORE, "Tool export: font atlas...");
 		ExportDefaultFontAtlas();  // Generate font atlas from TTF
+		Zenith_Log(LOG_CATEGORY_CORE, "Tool export: test assets...");
 		GenerateTestAssets();      // Generate procedural test assets (StickFigure, Tree)
+		Zenith_Log(LOG_CATEGORY_CORE, "Tool asset exports complete.");
 	}
 #endif
 }

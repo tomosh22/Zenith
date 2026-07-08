@@ -1,5 +1,6 @@
 #include "Zenith.h"
 
+#include <cstdio>    // setvbuf / stdout / stderr
 #include <cstring>
 #include <cstdlib>   // _set_abort_behavior
 #include <crtdbg.h>  // _CrtSetReportMode / _CrtSetReportFile
@@ -28,6 +29,15 @@ namespace
 	// hanging. Interactive dev runs keep the dialogs (they are useful there).
 	void HardenHeadlessFatalErrorHandling()
 	{
+		// Unbuffer stdout/stderr. Redirected to a pipe (CI captures both), the CRT
+		// defaults to FULL buffering, so on a crash the in-flight buffer is lost and
+		// the captured log stops at the last flush -- which is exactly why the
+		// engine-gate boot log ended at "AssetRegistry initialized" with the real
+		// crash (in the tool asset export phase that runs right after) invisible.
+		// Unbuffered => every line reaches the pipe immediately, so a headless crash
+		// is diagnosable from the captured log.
+		setvbuf(stdout, nullptr, _IONBF, 0);
+		setvbuf(stderr, nullptr, _IONBF, 0);
 #ifdef _DEBUG
 		// The debug-heap corrupted-block check + failed asserts (the modal-dialog
 		// sources) only exist in the debug CRT. In a release CRT _CrtSetReportMode /
