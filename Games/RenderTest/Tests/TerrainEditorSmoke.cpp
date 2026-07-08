@@ -43,11 +43,20 @@ namespace
 
 	float g_fHeightBeforeStroke = 0.0f;
 
-	// The sculpt site: chunk (6,6) centre — within HIGH-LOD streaming range of
-	// the spawn camera (~256,52,252) and clear of the gameplay plateau.
-	constexpr float fSCULPT_X = 400.0f;
-	constexpr float fSCULPT_Z = 400.0f;
-	constexpr u_int uSCULPT_CHUNK = (400 / 64) * 64 + (400 / 64);
+	// Campus recentred from the (256,256) corner to the terrain centre (2048,2048)
+	// — the sibling terrain tests (TerrainEditorShowcase, MaterialBattleTest) apply
+	// the same +fSHIFT, and this test was missed in that migration. Without the
+	// shift the sculpt site stays at the old (256-corner) layout ~2300m from the
+	// now-centred editor camera (2048,52,2044), i.e. permanently beyond the 1000m
+	// HIGH-LOD range, so the edited chunk never streams HIGH and the re-stream
+	// assertion below can never pass (nor does the frame-10 eviction have anything
+	// resident to evict). Shifted, the site sits ~230m from the camera: firmly in
+	// HIGH-LOD streaming range and in the active set, and stays as clear of the
+	// gameplay plateau as it was pre-recentre (same relative offset from origin).
+	constexpr float fSHIFT    = 1792.0f;
+	constexpr float fSCULPT_X = 400.0f + fSHIFT;	// 2192 -> chunk (34,34)
+	constexpr float fSCULPT_Z = 400.0f + fSHIFT;	// 2192
+	constexpr u_int uSCULPT_CHUNK = (u_int(fSCULPT_X) / 64) * 64 + (u_int(fSCULPT_Z) / 64);
 
 	void Setup_TerrainEditorSmoke()
 	{
@@ -87,7 +96,7 @@ namespace
 			// 2. Splat paint on the same site (layer 1 = rock).
 			xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::SplatPaint, fSCULPT_X, fSCULPT_Z, 60.0f, 1.0f, 1.0f);
 			const Zenith_Vector<u_int8>& xSplat = xEditor.GetSplatmap();
-			const u_int uTexel = ((400u / 2) * Zenith_TerrainEditor::uSPLATMAP_SIZE + (400u / 2)) * 4;
+			const u_int uTexel = ((u_int(fSCULPT_X) / 2) * Zenith_TerrainEditor::uSPLATMAP_SIZE + (u_int(fSCULPT_Z) / 2)) * 4;
 			const u_int uSum = xSplat.Get(uTexel) + xSplat.Get(uTexel + 1) + xSplat.Get(uTexel + 2) + xSplat.Get(uTexel + 3);
 			g_bSplatNormalized = (uSum == 255u) && (xSplat.Get(uTexel + 1) > 0);
 		}

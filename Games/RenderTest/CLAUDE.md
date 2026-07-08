@@ -109,9 +109,16 @@ of wall clock before the harness Setup fires); `--skip-tool-exports` needs one
 prior full tools run to have baked the testbed assets; if the exe dies with
 0xC0000135 recopy assimp DLLs from `Tools/Middleware/assimp/debug/bin` and
 slang DLLs from `Middleware/slang/bin`; `--exit-after-frames` REPLACES every
-test's maxFrames (don't pass it "for safety"); `TerrainEditorSmoke`'s
-re-stream failure is pre-existing (proven by A/B on 2026-07-05, tracked
-separately) and unrelated to the tennis conversion.
+test's maxFrames (don't pass it "for safety"). `TerrainEditorSmoke`'s
+long-standing "did not re-stream HIGH after eviction" failure was FIXED
+(2026-07-08): its sculpt site was a stale `(400,400)` left behind when the
+campus was recentred from the `(256,256)` corner to the terrain centre
+`(2048,2048)` — the site sat ~2300m from the now-centred editor camera
+`(2048,52,2044)`, beyond the 1000m HIGH-LOD range, so the edited chunk never
+streamed HIGH and the residency assert was unsatisfiable. The fix applies the
+same `+fSHIFT (1792)` the sibling terrain tests use. NOTE: windowed RenderTest
+boot needs the engine `Zenith/Assets/` textures (Cubemap/Fonts/Water/Particles)
+present — if absent the skybox cubemap yields an "Invalid SRV" boot abort.
 
 ## Tennis CLI
 
