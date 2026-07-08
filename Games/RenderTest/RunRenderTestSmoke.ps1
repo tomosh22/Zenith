@@ -49,7 +49,6 @@ if (-not (Test-Path $Exe)) {
 
 $OutputDir = Split-Path $Exe
 $SiblingRuntimeDirs = @(
-	(Join-Path $Root "Games\Exploration\build\output\win64\vs2022_debug_win64_true"),
 	(Join-Path $Root "FluxCompiler\output\win64\vs2022_debug_win64_true")
 )
 

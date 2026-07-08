@@ -7,11 +7,8 @@
 #      link with a hard unresolved external. Fixed + green as of 2026-07
 #      (the leaf seams are enumerated in Tests/Sentinel*/sentinel_platform.cpp).
 #   2. The engine unit-test suite at boot (dedicated gate; the game test
-#      workflows run with --skip-unit-tests). Sokoban carries the gate: its
+#      workflows run with --skip-unit-tests). Combat carries the gate: its
 #      Vulkan_Debug_True build also proves the engine lib transitively.
-#      (Games/Test would be cheaper but its units-at-boot segfaults -- a
-#      pre-existing, deterministic AV verified independent of 2026-07 changes;
-#      switch back once fixed.)
 #
 # Baseline lives in Tools/run_unit_gate.ps1 (-Baseline default); bump it there
 # AND in Tools/test_scaffold.ps1 together when adding engine unit tests.
@@ -113,11 +110,11 @@ jobs:
               Write-Host "$s OK"
           }
 
-      - name: Build Sokoban (Vulkan_Debug_True; engine lib transitively)
+      - name: Build Combat (Vulkan_Debug_True; engine lib transitively)
         shell: pwsh
         run: |
-          msbuild Games\Sokoban\sokoban_win64.sln `
-              /t:Sokoban `
+          msbuild Games\Combat\combat_win64.sln `
+              /t:Combat `
               /p:Configuration=Vulkan_vs2022_Debug_Win64_True `
               /p:Platform=x64 `
               /p:WindowsTargetPlatformVersion=10.0 `
@@ -127,7 +124,7 @@ jobs:
       - name: Copy runtime DLLs into exe output dir
         shell: pwsh
         run: |
-          $exeDir = 'Games\Sokoban\Build\output\win64\vulkan_vs2022_debug_win64_true'
+          $exeDir = 'Games\Combat\Build\output\win64\vulkan_vs2022_debug_win64_true'
           Copy-Item 'Middleware\slang\bin\*.dll' $exeDir -Force
           $vkLoader = Join-Path $env:VULKAN_SDK 'Bin\vulkan-1.dll'
           if (Test-Path $vkLoader) { Copy-Item $vkLoader $exeDir -Force }
@@ -136,7 +133,7 @@ jobs:
         shell: pwsh
         run: |
           & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File .\Tools\run_unit_gate.ps1 `
-              -Exe 'Games/Sokoban/Build/output/win64/vulkan_vs2022_debug_win64_true/sokoban.exe'
+              -Exe 'Games/Combat/Build/output/win64/vulkan_vs2022_debug_win64_true/combat.exe'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload boot log on failure

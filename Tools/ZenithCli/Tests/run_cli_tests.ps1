@@ -100,7 +100,7 @@ try {
     Invoke-Test "new without a name exits 1 (usage)" { Assert ((Invoke-CliCode @('new')) -eq 1) "new -> 1" }
     Invoke-Test "open without a name exits 1 (usage)" { Assert ((Invoke-CliCode @('open')) -eq 1) "open -> 1" }
     Invoke-Test "build without a target exits 1 (usage)" { Assert ((Invoke-CliCode @('build')) -eq 1) "build -> 1" }
-    Invoke-Test "new with an invalid name exits 2 (validation)" { Assert ((Invoke-CliCode @('new', 'sokoban')) -eq 2) "new lowercase -> 2" }
+    Invoke-Test "new with an invalid name exits 2 (validation)" { Assert ((Invoke-CliCode @('new', 'combat')) -eq 2) "new lowercase -> 2" }
     Invoke-Test "open a non-existent game exits 5 (not-found)" { Assert ((Invoke-CliCode @('open', 'NoSuchGameXYZ')) -eq 5) "open missing -> 5" }
     Invoke-Test "known flags parse (not rejected as unknown)" {
         # A valid name + a missing template => not-found (5). If --no-open/--template
@@ -166,14 +166,14 @@ try {
     Write-Host "`n[4] clean / regen --check / test dispatcher exit codes" -ForegroundColor Cyan
     Invoke-Test "test without a target exits 1 (usage)" { Assert ((Invoke-CliCode @('test')) -eq 1) "test -> 1" }
     Invoke-Test "test with unknown game exits 5 (not-found)" { Assert ((Invoke-CliCode @('test', 'NoSuchGameXYZ')) -eq 5) "test missing -> 5" }
-    Invoke-Test "test with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('test', 'Sokoban', '--bogus')) -eq 1) "test --bogus -> 1" }
+    Invoke-Test "test with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('test', 'Combat', '--bogus')) -eq 1) "test --bogus -> 1" }
     Invoke-Test "clean with unknown game exits 5 (not-found)" { Assert ((Invoke-CliCode @('clean', 'NoSuchGameXYZ')) -eq 5) "clean missing -> 5" }
     Invoke-Test "clean with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('clean', '--bogus')) -eq 1) "clean --bogus -> 1" }
     Invoke-Test "clean --processes-only --dry-run exits 0" { Assert ((Invoke-CliCode @('clean', '--processes-only', '--dry-run')) -eq 0) "clean dry-run -> 0" }
     Invoke-Test "clean <Game> --dry-run exits 0 and deletes nothing" {
-        $out = Join-Path $repoRoot 'Games/Sokoban/Build/output'
+        $out = Join-Path $repoRoot 'Games/Combat/Build/output'
         $existedBefore = Test-Path $out
-        Assert ((Invoke-CliCode @('clean', 'Sokoban', '--dry-run')) -eq 0) "clean dry-run -> 0"
+        Assert ((Invoke-CliCode @('clean', 'Combat', '--dry-run')) -eq 0) "clean dry-run -> 0"
         Assert ($existedBefore -eq (Test-Path $out)) "dry-run must not delete output dirs"
     }
     Invoke-Test "regen with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('regen', '--bogus')) -eq 1) "regen --bogus -> 1" }
@@ -188,7 +188,7 @@ try {
     }
     Invoke-Test "package without a name exits 1 (usage)" { Assert ((Invoke-CliCode @('package')) -eq 1) "package -> 1" }
     Invoke-Test "package with unknown game exits 5 (not-found)" { Assert ((Invoke-CliCode @('package', 'NoSuchGameXYZ')) -eq 5) "package missing -> 5" }
-    Invoke-Test "package with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('package', 'Sokoban', '--bogus')) -eq 1) "package --bogus -> 1" }
+    Invoke-Test "package with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('package', 'Combat', '--bogus')) -eq 1) "package --bogus -> 1" }
 }
 finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

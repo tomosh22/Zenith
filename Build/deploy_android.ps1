@@ -2,13 +2,12 @@
 # each game's Gradle jniLibs dir so Gradle can package them into the APK.
 # =============================================================================
 # Descriptor-driven: the game set is every Games/<Name>/<Name>.zproj with
-# android:true, so coverage stays in sync automatically (today: 10 games -- the
-# old hand-maintained list covered 8, this gains RenderTest + DevilsPlayground).
+# android:true, so coverage stays in sync automatically.
 #
 # Usage (from Build/ or anywhere):
 #   pwsh ./Build/deploy_android.ps1                 # all android games, debug
 #   pwsh ./Build/deploy_android.ps1 release         # all android games, release
-#   pwsh ./Build/deploy_android.ps1 debug Sokoban   # one game
+#   pwsh ./Build/deploy_android.ps1 debug Combat    # one game
 #
 # ASCII-only body; runs under Windows PowerShell 5.1 and pwsh 7.
 # =============================================================================

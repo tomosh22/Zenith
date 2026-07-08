@@ -171,7 +171,7 @@ In `Zenith_Core.cpp`:
 `Zenith_PerceptionSystem::Update()`, `Zenith_SquadManager::Update()`, and
 `Zenith_TacticalPointSystem::Update()` are NOT called by `Zenith_Core::Zenith_MainLoop`
 out of the box — each game ticks them from its own component, in a game-specific
-order relative to its per-agent AI step (e.g. `AIShowcase_GameComponent::UpdateAISystems`
+order relative to its per-agent AI step (e.g. a game's coordinator component
 ticks perception → squad → tactical-point BEFORE its enemy-AI loop, so agents act
 on fresh perception). That ordering is intentional and is why the engine does not
 tick them unconditionally — a newcomer must drive them (or opt in below) for

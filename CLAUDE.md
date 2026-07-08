@@ -209,28 +209,28 @@ that proves Flux is backend-neutral). The table shows the `Vulkan_` rows; the
 | Zenith | Core engine library | Static lib (.lib) |
 | FluxCompiler | Shader compiler utility (Windows only) | Executable (.exe) |
 | ZenithTools | Asset tools (Windows only) | Executable (.exe) |
-| Game projects | Sokoban, Combat, Marble, Exploration, Survival, TilePuzzle, AIShowcase, Runner, Test, RenderTest, CityBuilder (SimCity/C:S-style — see Games/CityBuilder/CLAUDE.md), DevilsPlayground | Executable (.exe) / Shared lib (.so) |
+| Game projects | Combat, TilePuzzle, RenderTest, CityBuilder (SimCity/C:S-style — see Games/CityBuilder/CLAUDE.md), DevilsPlayground | Executable (.exe) / Shared lib (.so) |
 
 ### Building and Running
 
 **The `zenith` CLI (recommended):**
 ```batch
 zenith new <Name>          REM scaffold a new game (regen + open its sln)
-zenith build Sokoban       REM msbuild the game's per-game sln (/t:<Game>)
-zenith run Sokoban         REM launch the newest built exe
-zenith test Sokoban        REM run the game's automated tests (or: zenith test all)
-zenith open Sokoban        REM regen + open the game's sln in Visual Studio
+zenith build Combat       REM msbuild the game's per-game sln (/t:<Game>)
+zenith run Combat         REM launch the newest built exe
+zenith test Combat        REM run the game's automated tests (or: zenith test all)
+zenith open Combat        REM regen + open the game's sln in Visual Studio
 zenith list                REM list games + built configs
-zenith clean Sokoban       REM kill hanging build processes + wipe output/obj
-zenith package Sokoban     REM stage a relocatable build into dist/ (run.bat --assets-root)
+zenith clean Combat       REM kill hanging build processes + wipe output/obj
+zenith package Combat     REM stage a relocatable build into dist/ (run.bat --assets-root)
 zenith regen --check       REM report whether on-disk generated files are stale
 zenith hub                 REM launch the Unity-Hub-style GUI launcher
 ```
 
 **Direct msbuild (per-game solution):**
 ```batch
-msbuild Games\Sokoban\sokoban_win64.sln /t:Sokoban /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
-Games\Sokoban\Build\output\win64\vulkan_vs2022_debug_win64_true\sokoban.exe
+msbuild Games\Combat\combat_win64.sln /t:Combat /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
+Games\Combat\Build\output\win64\vulkan_vs2022_debug_win64_true\combat.exe
 ```
 Always build with `/t:<Game>`, never the whole solution: the aux tools (FluxCompiler /
 font libs) present in the sln are pre-existing-red in `ToolsEnabled=True`.
@@ -267,7 +267,7 @@ Parallel builds (`-maxCpuCount`) or interrupted builds can leave compiler subpro
 
 ```batch
 zenith clean                  REM kill hanging cl/mspdbsrv/link/vctip/msbuild
-zenith clean Sokoban          REM ...and also wipe that game's output/ + obj/
+zenith clean Combat          REM ...and also wipe that game's output/ + obj/
 zenith clean engine           REM ...engine + hub intermediates
 zenith clean --processes-only REM just the process sweep
 ```

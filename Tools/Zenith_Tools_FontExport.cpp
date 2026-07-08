@@ -228,7 +228,7 @@ void Zenith_Tools_FontExport::ExportFromFile(const std::string& strTTFPath, cons
 	// fEmAdvance is the "cell width" the engine assumes for every char in
 	// layout / measurement calls. Historically hard-coded to 0.55 in
 	// Flux_TextImpl.h. Preserve that exact value so existing UI layouts
-	// (TilePuzzle tutorials, button widths, Sokoban HUD) don't overflow.
+	// (TilePuzzle tutorials, button widths, Combat HUD) don't overflow.
 	//
 	// We ALSO overwrite every glyph's per-glyph advance with the same value
 	// below, forcing monospace rendering at the legacy spacing — otherwise

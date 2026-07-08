@@ -42,7 +42,7 @@
 // Component registration (meta registry: serialization orders 100-102,
 // lifecycle hooks, scene save/load).
 //
-// File-scope static-init macros, matching the Sokoban/RenderTest precedent.
+// File-scope static-init macros, matching the RenderTest precedent.
 // The macros enqueue thunks at static init; Zenith_Engine::InitialiseECS's seal
 // (EnsureInitialized -> Finalize) drains them into the sorted dispatch/
 // serialization list. (Direct RegisterComponent calls from
@@ -686,7 +686,7 @@ static void BuildGraph_CombatEnemyBrain(Zenith_GraphBuilder& xBuilder)
 // menu/pause/reset input DECISIONS at order 60 (before CombatGame's systems at
 // order 100). s_eGameState stays the static source of truth; the P/R/Escape
 // chains read it via CombatGetGameState and dispatch by state with SwitchOnInt.
-// ACCEPTED divergence (AIShowcase-precedented, humanly unreachable): P/R/Escape
+// ACCEPTED divergence (humanly unreachable): P/R/Escape
 // are independent OnKeyPressed sources, so pressing two distinct keys on the
 // exact SAME frame lets both fire (the second re-reads the state the first set),
 // where the old if/else-if/return switch was mutually exclusive per frame.

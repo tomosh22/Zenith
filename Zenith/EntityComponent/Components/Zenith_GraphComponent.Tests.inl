@@ -839,7 +839,7 @@ ZENITH_TEST(GraphComponent, OnSceneLoadedFilterAndStash)
 
 ZENITH_TEST(GraphComponent, UnloadSceneMidUpdateIsSafe)
 {
-	// Regression (W2 Sokoban Esc-path UAF): a chain that synchronously unloads
+	// Regression (W2 Esc-path UAF): a chain that synchronously unloads
 	// a DIFFERENT scene mid-Zenith_SceneSystem::Update used to leave the freed
 	// SceneData in the update loop's pointer snapshot - the loop then updated
 	// freed memory (0xdd/0xfeeefeee Reserve assert). The snapshot is

@@ -5,7 +5,7 @@
 // ============================================================================
 // {{GAME_NAME}}_Boot_Test -- proves the scaffolded game boots its scene and
 // attaches its game component. A starting point: add your own characterization
-// tests here (see Games/Sokoban/Tests/Test_SokobanCharacterization.cpp).
+// tests here (see Games/Combat/Tests/Test_CombatCharacterization.cpp).
 // ============================================================================
 
 #include "Core/Zenith_AutomatedTest.h"

@@ -34,7 +34,7 @@ Each game is fully described by a small JSON file checked in at the game root:
 ```json
 {
     "schemaVersion": 1,
-    "name": "Sokoban",
+    "name": "Combat",
     "android": true,
     "extraDefines": [],
     "extraSharpmakeProjects": []
@@ -52,8 +52,8 @@ Each game is fully described by a small JSON file checked in at the game root:
 Unknown JSON keys are a **hard error** (a typo net — `andriod` or `extraDefine` must
 not silently no-op).
 
-**Android note:** `CityBuilder` and `Test` are `android:false` (they have no `Android/`
-Gradle tree). The other 10 games are `android:true`.
+**Android note:** `CityBuilder` is `android:false` (it has no `Android/`
+Gradle tree). The other 4 games are `android:true`.
 
 ## Generation — one command, one Sharpmake run
 
@@ -91,7 +91,7 @@ Sharpmake lowercases solution filenames.
 | Solution | Location | Contents |
 |----------|----------|----------|
 | `<name>_win64.sln` | `Games/<Name>/` | ZenithBase/ECS/Physics/AI + Zenith aggregate + FluxCompiler (Vulkan) + font libs (tools) + **the one game** + its `extraSharpmakeProjects`. No Sentinels, no other games. |
-| `<name>_agde.sln` | `Games/<Name>/` | Same, Android — only for `android:true` games (10 of 12). |
+| `<name>_agde.sln` | `Games/<Name>/` | Same, Android — only for `android:true` games (4 of 5). |
 | `zenith_engine_win64.sln` | `Build/` | Engine libs + Sentinels (`_False`) + FluxCompiler + font libs + **ZenithHub**. **Zero games, ever.** Engine CI gates + pure engine work. |
 
 The game **vcxproj** files stay under `Games/<Name>/Build/` (so output dirs and config
@@ -103,7 +103,7 @@ Config names (`Vulkan_vs2022_Debug_Win64_True` …) and output dirs
 ## Building — always `/t:<Game>`, never the whole sln
 
 ```
-msbuild Games\Sokoban\sokoban_win64.sln /t:Sokoban /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
+msbuild Games\Combat\combat_win64.sln /t:Combat /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
 msbuild Build\zenith_engine_win64.sln   /t:Zenith  /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
 ```
 
@@ -136,7 +136,7 @@ downloads), then builds via `/t:`. Full CI reference incl. the static gates
 |----------|--------------------|
 | `cb-tests.yml` | `msbuild Games\CityBuilder\citybuilder_win64.sln /t:CityBuilder` (Vulkan `_True` + D3D12 `_False`) + `zenith test CityBuilder --headless` (45) |
 | `dp-tests.yml` | `msbuild Games\DevilsPlayground\devilsplayground_win64.sln /t:DevilsPlayground` (same) + `zenith test DevilsPlayground --headless` (158) |
-| `engine-gate.yml` | Sentinels (`Vulkan_Debug_Win64_False`) built + executed; Sokoban unit gate (`Tools/run_unit_gate.ps1`) |
+| `engine-gate.yml` | Sentinels (`Vulkan_Debug_Win64_False`) built + executed; Combat unit gate (`Tools/run_unit_gate.ps1`) |
 | `release-build.yml` | nightly, build-only: engine + DP in `Vulkan_vs2022_Release_Win64_True` |
 | `shader-validation.yml` | `msbuild Build\zenith_engine_win64.sln /t:FluxCompiler` (first consumer + permanent gate of the engine sln) |
 | `scaffold-smoke.yml` | path-filtered; `Tools/test_scaffold.ps1` (`zenith new` → build → boot → teardown) |

@@ -115,16 +115,16 @@ int ZenithHub_SelfTest::Run(const char* szRepoRoot)
 	{
 		std::vector<HubGame> axGames;
 		ZenithHub_GameScan::ScanGames(strRoot, axGames);
-		Check(axGames.size() >= 10, "ScanGames found >= 10 games");
+		Check(axGames.size() >= 5, "ScanGames found >= 5 games");
 
-		bool bSokoban = false, bSokobanAndroid = false;
+		bool bCombat = false, bCombatAndroid = false;
 		bool bCityBuilder = false, bCityBuilderAndroid = true;
 		for (const HubGame& xGame : axGames)
 		{
-			if (xGame.strName == "Sokoban") { bSokoban = true; bSokobanAndroid = xGame.bAndroid; }
+			if (xGame.strName == "Combat") { bCombat = true; bCombatAndroid = xGame.bAndroid; }
 			if (xGame.strName == "CityBuilder") { bCityBuilder = true; bCityBuilderAndroid = xGame.bAndroid; }
 		}
-		Check(bSokoban && bSokobanAndroid, "Sokoban present, android:true");
+		Check(bCombat && bCombatAndroid, "Combat present, android:true");
 		Check(bCityBuilder && !bCityBuilderAndroid, "CityBuilder present, android:false");
 	}
 

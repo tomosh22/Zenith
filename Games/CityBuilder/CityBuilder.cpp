@@ -66,7 +66,7 @@ ZENITH_REGISTER_COMPONENT(CB_DayNightCycleComponent, "CBDayNight", 102u)
 // so roads and buildings sit on it. Four ground materials (grass / meadow /
 // dirt / pale grass) are blended by a smooth procedural splatmap so the ground
 // reads as natural terrain rather than a flat colour. The setup mirrors the
-// RenderTest / Exploration terrain pattern.
+// RenderTest terrain pattern.
 // ============================================================================
 
 namespace

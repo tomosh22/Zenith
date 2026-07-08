@@ -5,7 +5,7 @@ using System.IO;
 // =============================================================================
 // Game build-system base classes.
 //
-// The 12 concrete per-game project + solution classes are NO LONGER hand-written
+// The concrete per-game project + solution classes are NO LONGER hand-written
 // here. They are generated into Build/Sharpmake_GameInstances.generated.cs from
 // Games/<Name>/<Name>.zproj descriptors by Build/zenith_buildsystem.psm1
 // (Invoke-ZenithCodegen), which regen.ps1 runs before Sharpmake. Adding or
@@ -13,7 +13,7 @@ using System.IO;
 //
 // This file holds the two ABSTRACT bases the generated shells derive from:
 //   * GameProject  -- the game .exe/.so (was the old [Generate] GameProject with
-//                     a "Sokoban" default; now abstract, name/android supplied by
+//                     a hardcoded default; now abstract, name/android supplied by
 //                     the concrete subclass).
 //   * GameSolution -- the per-game .sln (engine + this one game + its extras).
 // =============================================================================

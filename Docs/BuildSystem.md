@@ -182,8 +182,7 @@ every JSON says passed — crash-mid-suite guard), and a slowest-tests report.
 `Tools/test_scaffold.ps1` (scaffold gate), both tolerating exactly one known
 layout-sensitive flake (`GraphComponent::RegistryWideNodeRoundTrip`). **When
 you add engine unit tests, bump the baseline in BOTH scripts in the same
-change.** Known issue: `Games/Test`'s exe segfaults during units-at-boot
-(pre-existing, tracked); Sokoban carries the CI unit gate until fixed.
+change.** Combat carries the CI unit gate (`engine-gate.yml`).
 
 **PowerShell selftests** (`zenith selftest`): dependency-free assert-runners
 covering name validation (shared vector file pinning PS↔C++ hub), the
@@ -226,7 +225,7 @@ build-index registration) bypasses runtime resolution and still points at the
 build machine. Fix is a per-game sweep to runtime-resolved paths — never a
 runtime alias/remap (§11).
 
-**Verification recipe:** package Sokoban, copy `dist/...` elsewhere, `run.bat`
+**Verification recipe:** package Combat, copy `dist/...` elsewhere, `run.bat`
 — windowed must render (shaders compile from the package tree); hide the
 package's `Zenith/Flux/Shaders` and it must FAIL compile against only the
 package path (proves no fallback to the baked path).
@@ -244,7 +243,7 @@ Concurrency groups cancel superseded PR runs (master pushes always complete).
 |----------|-------|
 | `cb-tests` | CityBuilder Vulkan `_True` build + D3D12 `_False` link proof + 45-test headless suite via `zenith test` |
 | `dp-tests` | Same shape for DevilsPlayground (158 tests) |
-| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Sokoban unit gate (`Tools/run_unit_gate.ps1`, 1042 baseline, known flake tolerated). Rollout: dispatch → burn-in → required |
+| `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`, 1042 baseline, known flake tolerated). Rollout: dispatch → burn-in → required |
 | `release-build` | NIGHTLY (not PR-blocking): engine + DP in `Vulkan_vs2022_Release_Win64_True`, build-only — the only Release compile in CI |
 | `shader-validation` | FluxCompiler (Release `_True`) catalog/parity/spine-lint + git-status drift gate on shader outputs |
 | `scaffold-smoke` | Path-filtered end-to-end `zenith new` → build → boot (units baseline) → teardown leaves git status identical |

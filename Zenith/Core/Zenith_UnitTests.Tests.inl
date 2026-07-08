@@ -15325,7 +15325,7 @@ void Zenith_UnitTests::TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget
 // allocates VRAM via Flux_RenderAttachmentBuilder which requires a live Vulkan
 // device. A full golden-path test with synthetic passes mirroring the real
 // pipeline needs a headless Vulkan init path; that is out of scope here. The
-// sample-game runs under sync validation (Sokoban + Combat + the other games)
+// sample-game runs under sync validation (Combat + the other games)
 // provide end-to-end correctness coverage for the compiled + executed graph.
 
 #include "Flux/RenderGraph/Flux_RenderGraph.h"

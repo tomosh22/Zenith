@@ -185,7 +185,7 @@ Output dirs are the LOWERCASED config name.
 | Zenith | Core engine library | Static lib (.lib) |
 | FluxCompiler | Shader compiler utility (Windows only) | Executable (.exe) |
 | ZenithTools | Asset tools (Windows only) | Executable (.exe) |
-| Game projects | Sokoban, Combat, Marble, Exploration, Survival, TilePuzzle, AIShowcase, Runner, Test | Executable (.exe) / Shared lib (.so) |
+| Game projects | Combat, TilePuzzle | Executable (.exe) / Shared lib (.so) |
 
 ### Building and Running
 
@@ -196,8 +196,8 @@ pre-existing-red in `ToolsEnabled=True`):
 ```batch
 REM win64 configs are prefixed by render backend: Vulkan_ (real) or D3D12_ (null
 REM backend; backend-neutrality proof). Output dir is the lowercased config name.
-msbuild Games\Sokoban\sokoban_win64.sln /t:Sokoban /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
-Games\Sokoban\Build\output\win64\vulkan_vs2022_debug_win64_true\sokoban.exe
+msbuild Games\Combat\combat_win64.sln /t:Combat /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
+Games\Combat\Build\output\win64\vulkan_vs2022_debug_win64_true\combat.exe
 ```
 Engine work: `msbuild Build\zenith_engine_win64.sln /t:Zenith` (or `/t:Sentinel*` /
 `/t:FluxCompiler` / `/t:ZenithHub`).
@@ -240,7 +240,7 @@ msbuild %*
 
 **Usage:**
 ```batch
-CleanBuild.bat Games\Sokoban\sokoban_win64.sln /t:Sokoban /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
+CleanBuild.bat Games\Combat\combat_win64.sln /t:Combat /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
 ```
 
 **Alternative - Manual Cleanup:**

@@ -3,7 +3,7 @@
 # Dependency-free assert-runner for Build/zenith_buildsystem.psm1 (no Pester).
 # Covers: name-syntax vectors (shared file), the descriptor validation matrix,
 # the codegen golden file + SHA wiring, the worktree guard, and a sanity pass
-# over the 12 real Games/*/*.zproj descriptors.
+# over the 5 real Games/*/*.zproj descriptors.
 #
 # Usage:  pwsh ./Build/Tests/run_buildsystem_tests.ps1
 # Exit:   0 = all green, 1 = one or more failures.
@@ -298,21 +298,20 @@ try {
 
     # ========================================================================
     Write-Host "`n[7] Real Games/*/*.zproj sanity" -ForegroundColor Cyan
-    Invoke-Test "all 12 real descriptors validate clean" {
+    Invoke-Test "all 5 real descriptors validate clean" {
         $scan = Get-ZenithGameDescriptors -GamesRoot (Join-Path $repoRoot 'Games')
         if ($scan.Errors.Count -gt 0) { throw ("real descriptor errors: " + ($scan.Errors -join '; ')) }
-        Assert-Equal 12 $scan.Descriptors.Count "expected 12 real descriptors"
+        Assert-Equal 5 $scan.Descriptors.Count "expected 5 real descriptors"
     }
-    Invoke-Test "android flags match reality (CityBuilder + Test are false)" {
+    Invoke-Test "android flags match reality (CityBuilder is false)" {
         $scan = Get-ZenithGameDescriptors -GamesRoot (Join-Path $repoRoot 'Games')
         $byName = @{}
         foreach ($d in $scan.Descriptors) { $byName[$d.Name] = $d }
         Assert-False $byName['CityBuilder'].Android "CityBuilder android:false"
-        Assert-False $byName['Test'].Android "Test android:false"
-        Assert-True $byName['Sokoban'].Android "Sokoban android:true"
+        Assert-True $byName['Combat'].Android "Combat android:true"
         Assert-True $byName['DevilsPlayground'].Android "DP android:true"
         $trueCount = @($scan.Descriptors | Where-Object { $_.Android }).Count
-        Assert-Equal 10 $trueCount "expected exactly 10 android:true games"
+        Assert-Equal 4 $trueCount "expected exactly 4 android:true games"
     }
     Invoke-Test "TilePuzzle carries its two offline-tool extra projects" {
         $scan = Get-ZenithGameDescriptors -GamesRoot (Join-Path $repoRoot 'Games')
@@ -337,9 +336,9 @@ try {
         Assert-Equal 'vulkan_vs2022_debug_win64_true' (ConvertTo-ZenithOutputDir -Config 'Vulkan_vs2022_Debug_Win64_True') "lowercase mapping"
     }
     Invoke-Test "Get-ZenithGameExePath composes the exact expected path" {
-        $p = Get-ZenithGameExePath -Name 'Sokoban' -Config 'Vulkan_vs2022_Debug_Win64_True' -RepoRoot 'C:\r'
+        $p = Get-ZenithGameExePath -Name 'Combat' -Config 'Vulkan_vs2022_Debug_Win64_True' -RepoRoot 'C:\r'
         $norm = $p.Replace('\', '/')
-        Assert-Equal 'C:/r/Games/Sokoban/Build/output/win64/vulkan_vs2022_debug_win64_true/sokoban.exe' $norm "exe path"
+        Assert-Equal 'C:/r/Games/Combat/Build/output/win64/vulkan_vs2022_debug_win64_true/combat.exe' $norm "exe path"
     }
 
     # ========================================================================

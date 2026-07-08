@@ -48,7 +48,7 @@ Five subsystems, easiest to hardest. Read each subsystem's CLAUDE.md first, then
 | 1 | [Input](../../Zenith/Input/CLAUDE.md) | Tiny static API. `IsKeyDown` / `WasKeyPressedThisFrame`. No hidden state beyond `BeginFrame()`. |
 | 2 | [DataStream](../../Zenith/DataStream/CLAUDE.md) | Cursor-based binary serialisation. Used everywhere, easy to grasp. |
 | 3 | [Collections](../../Zenith/Collections/CLAUDE.md) | `Zenith_Vector` / `Zenith_HashMap` / `Zenith_CircularQueue` / `Zenith_MemoryPool`. You'll see these in every subsystem. |
-| 4 | [Sokoban game](../../Games/Sokoban/CLAUDE.md) | A complete game in <1500 lines. Demonstrates project hooks, behaviours, scenes, prefabs. |
+| 4 | [Combat game](../../Games/Combat/CLAUDE.md) | A complete game demonstrating project hooks, behaviours, scenes, prefabs. |
 | 5 | [TaskSystem](../../Zenith/TaskSystem/CLAUDE.md) | Flat work-stealing pool. **Not a dependency graph** — see the header comment. |
 
 After those five, you'll be ready for the harder ones in any order:
@@ -126,7 +126,7 @@ If you want a starter task to get familiar with the build, these areas are well-
 - **DebugVariables/** — register a new debug toggle for an existing subsystem (great for learning where things live).
 - **DataStream/** — add a `<<` overload for a missing type.
 - **Collections/** — add a unit test for `Zenith_Vector` or `Zenith_CircularQueue`.
-- **Sokoban behaviours** — tweak gameplay; does not touch engine internals.
+- **Combat behaviours** — tweak gameplay; does not touch engine internals.
 - **Profiling indices** — add a `ZENITH_PROFILE_INDEX__*` to wrap an unprofiled hotspot.
 
 ---

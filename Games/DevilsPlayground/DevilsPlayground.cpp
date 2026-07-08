@@ -130,7 +130,7 @@ namespace DevilsPlayground
 		// optional collider, captured into a prefab. The template entity is
 		// destroyed immediately afterwards -- the prefab keeps the serialized
 		// data, and a baked collider gives the template a live Jolt body that
-		// must be torn down. Matches the Marble/Combat template pattern.
+		// must be torn down. Matches the Combat template pattern.
 		void CreateDPTemplate(PrefabHandle& xOut, const char* szName,
 			bool bWithCollider, CollisionVolumeType eVolume, RigidBodyType eBody)
 		{

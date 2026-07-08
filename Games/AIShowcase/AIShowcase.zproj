@@ -1,7 +1,0 @@
-{
-    "schemaVersion": 1,
-    "name": "AIShowcase",
-    "android": true,
-    "extraDefines": [],
-    "extraSharpmakeProjects": []
-}

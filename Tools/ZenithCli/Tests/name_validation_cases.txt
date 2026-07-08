@@ -12,8 +12,8 @@
 # because it depends on repo state.
 
 # --- Valid ---
-valid|Sokoban
-valid|Test
+valid|Combat
+valid|Widget
 valid|A
 valid|Game123
 valid|MyCoolGame
@@ -24,7 +24,7 @@ valid|Zebra
 valid|X0
 
 # --- Invalid: regex (case, leading char, illegal chars) ---
-invalid|sokoban
+invalid|combat
 invalid|9Lives
 invalid|My Game
 invalid|My-Game

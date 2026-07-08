@@ -6,8 +6,7 @@
  *
  * Lives in a header (not just DevilsPlayground.cpp) because several spawn sites
  * are header-only behaviours -- they need to see Resources() + the PrefabHandle
- * fields. Mirrors the resources-in-a-header pattern used by other games
- * (e.g. Runner_Behaviour.h's RunnerResources).
+ * fields. Mirrors the resources-in-a-header pattern used by other games.
  *
  * Each template bakes Transform + Model(cube) + its collider; the per-instance
  * transform is supplied at Instantiate() time, and scripts / per-instance config

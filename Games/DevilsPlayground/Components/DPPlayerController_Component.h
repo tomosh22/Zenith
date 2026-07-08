@@ -268,7 +268,7 @@ public:
 	void OnUpdate(const float fDt)
 	{
 		// Drive the perception system. The engine does NOT auto-tick it from
-		// the main loop (matches AIShowcase's pattern); a game-side controller
+		// the main loop; a game-side controller
 		// has to call Update once per frame so registered agents (priest)
 		// process sight/hearing/damage stimuli.
 		Zenith_PerceptionSystem::Update(fDt);

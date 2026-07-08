@@ -160,7 +160,7 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 
 #ifdef ZENITH_DEBUG
 	// One-shot proof the build ran on a real (non-empty) scene. Silent on empty snapshots
-	// (Sokoban/Marble/Survival render no model-component static meshes), fires once on the
+	// (some games render no model-component static meshes), fires once on the
 	// first populated scene. Verified on RenderTest: identical-mesh items de-dupe to one
 	// shared geometry + per-(cull,material) buckets — mesh sharing + indirect-draw batching.
 	static bool ls_bLoggedUnifiedScene = false;

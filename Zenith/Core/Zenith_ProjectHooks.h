@@ -5,7 +5,7 @@
 // =============================================================================
 //
 // Every game defines these free functions in its entry .cpp (e.g.
-// Games/Sokoban/Sokoban.cpp); the engine, editor, tools and platform mains
+// Games/Combat/Combat.cpp); the engine, editor, tools and platform mains
 // call them. This header is the ONE place they are declared — it replaces the
 // `extern` forward-declarations that used to be scattered across Zenith_Engine,
 // Zenith_Main, the editor, the terrain editor, the Android main and the asset

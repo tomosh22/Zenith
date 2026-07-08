@@ -24,8 +24,7 @@ namespace Zenith_AI
 	void Update(float fDt)
 	{
 		// Canonical order: perception feeds squad coordination, then tactical-point
-		// scoring (mirrors the long-standing game-side order in AIShowcase). Each
-		// manager profiles itself internally.
+		// scoring. Each manager profiles itself internally.
 		Zenith_PerceptionSystem::Update(fDt);
 		Zenith_SquadManager::Update(fDt);
 		Zenith_TacticalPointSystem::Update();

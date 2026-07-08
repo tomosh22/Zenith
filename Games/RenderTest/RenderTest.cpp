@@ -990,7 +990,7 @@ static void InitializeRenderTestResources()
 	EnsureUnitCubeModelExists();
 	EnsureStickFigureModelExists();
 
-	// --- Muzzle flash particle config (Sokoban pattern) ---
+	// --- Muzzle flash particle config ---
 	if (!RenderTest::Resources().m_pxMuzzleConfig)
 	{
 		RenderTest::Resources().m_pxMuzzleConfig = new Flux_ParticleEmitterConfig();
@@ -1317,9 +1317,8 @@ void Project_RegisterGameComponents()
 
 void Project_Shutdown()
 {
-	// Particle config registry borrows the pointer (Sokoban precedent at
-	// Sokoban.cpp:204). Unregister + delete + null so a subsequent Initialise
-	// rebuilds cleanly if the process were to keep running.
+	// Particle config registry borrows the pointer. Unregister + delete + null
+	// so a subsequent Initialise rebuilds cleanly if the process were to keep running.
 	if (RenderTest::Resources().m_pxMuzzleConfig)
 	{
 		Flux_ParticleEmitterConfig::Unregister("RenderTest_MuzzleFlash");

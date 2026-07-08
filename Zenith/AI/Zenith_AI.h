@@ -5,7 +5,7 @@
 //
 // By DEFAULT these managers are driven by GAME code: each game ticks them from
 // its own component in a game-specific order relative to its per-agent AI logic
-// (e.g. AIShowcase ticks perception/squad/tactical BEFORE its enemy-AI step, so
+// (e.g. a game ticks perception/squad/tactical BEFORE its enemy-AI step, so
 // the agents act on fresh perception). That ordering is intentional and is why
 // the engine does not tick them unconditionally.
 //

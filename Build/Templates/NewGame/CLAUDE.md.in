@@ -50,12 +50,12 @@ If a `_False` build shows an empty scene, run a `_True` build once to bake it.
   `OnUpdate`, `WriteToDataStream`/`ReadFromDataStream`) are concept-detected by
   the component-meta registry; there is no base class.
 * `{{GAME_NAME}}.cpp` -- the `Project_*` contract + the boot-authored scene.
-* For richer examples: `Games/Sokoban` (multi-scene + Behaviour Graphs),
-  `Games/Marble` (physics), `Games/RenderTest` (rendering showcase).
+* For richer examples: `Games/Combat` (multi-scene + Behaviour Graphs),
+  `Games/DevilsPlayground` (physics), `Games/RenderTest` (rendering showcase).
 
 ## Android
 
 This game is win64-only (`"android": false` in `{{GAME_NAME}}.zproj`). To add an
 Android build: copy an existing game's `Android/` Gradle tree (e.g.
-`Games/Sokoban/Android`), retarget its package/name, set `"android": true` in the
+`Games/Combat/Android`), retarget its package/name, set `"android": true` in the
 descriptor, and run `zenith regen`.

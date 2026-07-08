@@ -153,8 +153,7 @@ seeded from the declared variables.
 ## Porting C++ logic to graphs (the conversion playbook)
 
 Used for every shipped conversion (DP interactables + door, Combat attack +
-round flow, Marble level flow, Runner run flow, Test shoot, TilePuzzle pinball
-ball-lost flow):
+round flow, TilePuzzle pinball ball-lost flow):
 
 1. **Characterization tests first.** Write automated tests against the C++
    version through real input paths; run them green; they must pass unchanged
@@ -185,10 +184,6 @@ Each converted game keeps its custom nodes in one header, registered from
 |---|---|---|
 | DevilsPlayground | `Games/DevilsPlayground/Components/DP_GraphNodes.h` | `DP_RegisterGraphNodes` |
 | Combat | `Games/Combat/Components/Combat_GraphNodes.h` | `Combat_RegisterGraphNodes` |
-| Marble | `Games/Marble/Components/Marble_GraphNodes.h` | `Marble_RegisterGraphNodes` |
-| Runner | `Games/Runner/Components/Runner_GraphNodes.h` | `Runner_RegisterGraphNodes` |
-| Sokoban | `Games/Sokoban/Components/Sokoban_GraphNodes.h` | `Sokoban_RegisterGraphNodes` |
-| Test | `Games/Test/Components/Test_GraphNodes.h` | `Test_RegisterGraphNodes` |
 | TilePuzzle | `Games/TilePuzzle/Components/Pinball_GraphNodes.h` | `Pinball_RegisterGraphNodes` |
 
 See each game's CLAUDE.md for its node table and authored graphs.

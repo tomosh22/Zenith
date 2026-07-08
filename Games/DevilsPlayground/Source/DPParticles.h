@@ -10,7 +10,7 @@
 // the placeholder visual language gives zero feedback on whether the
 // craft / unlock / open actually succeeded.
 //
-// Architecture (modeled on Sokoban's dust trail):
+// Architecture:
 //
 //   1. Project_RegisterGameComponents / DevilsPlayground::InitializeResources
 //      calls DP_Particles::Initialize() once at boot. That registers eight

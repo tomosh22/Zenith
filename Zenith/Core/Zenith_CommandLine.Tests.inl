@@ -17,8 +17,8 @@
 ZENITH_TEST(CommandLine, ResolveUnderRootNullOverride) { Zenith_UnitTests::TestCommandLineResolveUnderRootNullOverride(); }
 void Zenith_UnitTests::TestCommandLineResolveUnderRootNullOverride()
 {
-	const std::string strResolved = Zenith_CommandLine::ResolveUnderAssetsRoot("C:/dev/Zenith/Games/Sokoban/Assets/", nullptr, "Games/Sokoban/Assets/");
-	ZENITH_ASSERT_EQ(strResolved, std::string("C:/dev/Zenith/Games/Sokoban/Assets/"),
+	const std::string strResolved = Zenith_CommandLine::ResolveUnderAssetsRoot("C:/dev/Zenith/Games/Combat/Assets/", nullptr, "Games/Combat/Assets/");
+	ZENITH_ASSERT_EQ(strResolved, std::string("C:/dev/Zenith/Games/Combat/Assets/"),
 		"null override must pass the baked dir through unchanged");
 }
 
@@ -33,8 +33,8 @@ void Zenith_UnitTests::TestCommandLineResolveUnderRootEmptyOverride()
 ZENITH_TEST(CommandLine, ResolveUnderRootJoinsUnderRoot) { Zenith_UnitTests::TestCommandLineResolveUnderRootJoinsUnderRoot(); }
 void Zenith_UnitTests::TestCommandLineResolveUnderRootJoinsUnderRoot()
 {
-	const std::string strResolved = Zenith_CommandLine::ResolveUnderAssetsRoot("C:/baked/Assets/", "D:/pkg", "Games/Sokoban/Assets/");
-	ZENITH_ASSERT_EQ(strResolved, std::string("D:/pkg/Games/Sokoban/Assets/"),
+	const std::string strResolved = Zenith_CommandLine::ResolveUnderAssetsRoot("C:/baked/Assets/", "D:/pkg", "Games/Combat/Assets/");
+	ZENITH_ASSERT_EQ(strResolved, std::string("D:/pkg/Games/Combat/Assets/"),
 		"override must resolve the relative layout under the package root");
 }
 

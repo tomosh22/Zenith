@@ -618,8 +618,7 @@ namespace DP_Particles
 		if (!g_bInitialized) return;
 
 		// Emitters live in the persistent scene so they survive
-		// scene-switches (which is the same pattern Sokoban uses).
-		// That way a between-tests scene reload doesn't strand the
+		// scene-switches. That way a between-tests scene reload doesn't strand the
 		// emitter entities on the unloaded gameplay scene.
 		Zenith_Scene xPersistent = g_xEngine.Scenes().GetPersistentScene();
 		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xPersistent);

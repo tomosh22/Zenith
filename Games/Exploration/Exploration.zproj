@@ -1,7 +1,0 @@
-{
-    "schemaVersion": 1,
-    "name": "Exploration",
-    "android": true,
-    "extraDefines": [],
-    "extraSharpmakeProjects": []
-}
