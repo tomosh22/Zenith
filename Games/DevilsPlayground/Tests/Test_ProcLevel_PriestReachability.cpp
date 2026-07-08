@@ -15,6 +15,8 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <string>
 
 // ============================================================================
 // Test_ProcLevel_PriestReachability
@@ -176,8 +178,25 @@ namespace
 	}
 }
 
+// A representative DP baked mesh asset. The DP asset tree is gitignored (generated
+// by the tool-export pass), so on a fresh checkout -- CI runs the batch with
+// --skip-tool-exports -- it is absent, the ProcLevel spawns without real geometry,
+// and the navmesh has nothing to validate. Presence of this file exactly tracks the
+// pass(local, assets present)/fail(CI, assets absent) split.
+static bool DP_BakedGeometryAssetsPresent()
+{
+	return std::filesystem::exists(
+		std::string(GAME_ASSETS_DIR) + "Meshes/LevelPrototyping_Meshes_SM_Cube.zmodel");
+}
+
 static void Setup_PriestReachability()
 {
+	if (!DP_BakedGeometryAssetsPresent())
+	{
+		Zenith_AutomatedTestRunner::RequestSkip(
+			"DP baked assets absent (fresh checkout / --skip-tool-exports); needs level geometry");
+		return;
+	}
 	g_iSeedIdx = -1;
 	g_iSettle = 0;
 	g_bLoadCommitted = false;

@@ -117,6 +117,15 @@ namespace Zenith_AutomatedTestRunner
 	void SetPendingExitCode(int iCode);
 	int  GetPendingExitCode();
 
+	// Runtime skip: a test's Setup calls this to skip itself when an environment
+	// prerequisite is missing (e.g. generated game assets absent on a fresh CI
+	// checkout, where the test would otherwise fail for lack of geometry rather
+	// than a real regression). The harness finalises it as SKIPPED at the next
+	// phase boundary -- same bucket as the graphics / manual-only skips (JSON
+	// skipped=true, counts as passed), just decided at runtime instead of from a
+	// struct flag. No-op if no test is currently mid-run.
+	void RequestSkip(const char* szReason);
+
 	// --list-automated-tests path
 	void PrintRegisteredTests();
 

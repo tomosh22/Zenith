@@ -152,6 +152,20 @@ int Zenith_AutomatedTestRunner::GetPendingExitCode()
 	return s_xRunner.m_iPendingExitCode;
 }
 
+void Zenith_AutomatedTestRunner::RequestSkip(const char* szReason)
+{
+	// Called from within a test's Setup. Sets the same skip flag the graphics /
+	// manual-only pre-Setup skips use; ResetSimulatorAndCallSetup honours it right
+	// after Setup returns (routing straight to VerifyAndExit), so it finalises as
+	// SKIPPED with the identical tally / JSON path.
+	const Zenith_AutomatedTest* pxTest = CurrentTest();
+	Zenith_Log(LOG_CATEGORY_UNITTEST,
+		"[AutomatedTest] %s: SKIPPED (%s)",
+		(pxTest != nullptr && pxTest->m_szName != nullptr) ? pxTest->m_szName : "(unknown)",
+		szReason != nullptr ? szReason : "runtime skip");
+	s_xRunner.m_bSkipCurrentTest = true;
+}
+
 void Zenith_AutomatedTestRunner::PrintRegisteredTests()
 {
 	std::printf("Registered automated tests:\n");
@@ -487,6 +501,16 @@ bool Zenith_AutomatedTestRunner::Tick()
 		if (pxTest != nullptr && pxTest->m_pfnSetup != nullptr)
 		{
 			pxTest->m_pfnSetup();
+		}
+		// Setup may call Zenith_AutomatedTestRunner::RequestSkip() when a runtime
+		// prerequisite is missing (e.g. generated game assets absent on a fresh CI
+		// checkout). Finalise as SKIPPED without stepping/verifying -- same path as
+		// the pre-Setup graphics / manual-only skips.
+		if (s_xRunner.m_bSkipCurrentTest)
+		{
+			s_xRunner.m_iStepFrame = 0;
+			s_xRunner.m_ePhase = HarnessPhase::VerifyAndExit;
+			return true;
 		}
 		s_xRunner.m_iStepFrame = 0;
 		s_xRunner.m_ePhase = HarnessPhase::Stepping;
