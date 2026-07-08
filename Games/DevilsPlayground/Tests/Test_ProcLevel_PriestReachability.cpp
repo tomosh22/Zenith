@@ -48,10 +48,17 @@ namespace
 		250000ull, 4276994270ull
 	};
 	constexpr int kSeedCount = static_cast<int>(sizeof(g_aulSeeds) / sizeof(g_aulSeeds[0]));
-	constexpr int kSettleFrames = 12; // scene load + awake/start waves + stitches
+	// Post-load settle only. The variable wait for the deferred SINGLE-load to
+	// commit is now handled by the seed-matched readiness gate in Step: a fixed
+	// countdown expired mid-load under batch timing and validated a half-built
+	// scene (partial navmesh -> phantom sealed doors). This small fixed tail runs
+	// AFTER the fresh bootstrap's OnAwake spawn wave, to let each DPDoor's OnStart
+	// portal-stitch run before the navmesh is generated in ValidateCurrentSeed.
+	constexpr int kPostLoadSettleFrames = 6;
 
 	int  g_iSeedIdx = -1;
 	int  g_iSettle = 0;
+	bool g_bLoadCommitted = false;
 	bool g_bReachFailed = false;
 	bool g_bReachDone = false;
 	char g_szReachWhy[256] = {};
@@ -67,7 +74,10 @@ namespace
 		// hook — an in-test seed swap needs the same explicit reset.
 		DP_AI::ResetLevelNavMesh();
 		g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
-		g_iSettle = kSettleFrames;
+		// The load is deferred; Step holds (seed-matched) for the fresh bootstrap
+		// to finish its OnAwake spawn wave before starting the post-load settle.
+		g_bLoadCommitted = false;
+		g_iSettle = 0;
 	}
 
 	bool ValidateCurrentSeed(int iIdx)
@@ -170,6 +180,7 @@ static void Setup_PriestReachability()
 {
 	g_iSeedIdx = -1;
 	g_iSettle = 0;
+	g_bLoadCommitted = false;
 	g_bReachFailed = false;
 	g_bReachDone = false;
 	g_szReachWhy[0] = '\0';
@@ -183,6 +194,29 @@ static bool Step_PriestReachability(int /*iFrame*/)
 	{
 		g_iSeedIdx = 0;
 		BeginSeed(g_iSeedIdx);
+		return true;
+	}
+
+	// Load-commit gate. Hold until the deferred SINGLE-load has swapped in THIS
+	// seed's freshly-generated scene: the bootstrap singleton must report the
+	// matching seed (a lingering old-seed bootstrap reports the previous value)
+	// AND have finished its OnAwake spawn wave (GetSpawnedPriest is set by the
+	// final spawn). Validating before this reads a half-built navmesh and invents
+	// sealed doors -- the batch-timing failure this test used to hit. Bounded by
+	// the test's maxFrames watchdog if the load never commits.
+	if (!g_bLoadCommitted)
+	{
+		DPProcLevelBootstrap_Component* pxBootstrap =
+			DPProcLevelBootstrap_Component::Instance();
+		const bool bFreshSceneReady = pxBootstrap != nullptr
+			&& pxBootstrap->GetSeed() == g_aulSeeds[g_iSeedIdx]
+			&& pxBootstrap->GetSpawnedPriest();
+		if (!bFreshSceneReady)
+		{
+			return true;
+		}
+		g_bLoadCommitted = true;
+		g_iSettle = kPostLoadSettleFrames;
 		return true;
 	}
 
@@ -228,7 +262,10 @@ static const Zenith_AutomatedTest g_xPriestReachabilityTest = {
 	&Setup_PriestReachability,
 	&Step_PriestReachability,
 	&Verify_PriestReachability,
-	/*maxFrames*/ 300
+	// 10 seeds x (deferred load-wait + post-load settle + validate). The load-wait
+	// is variable under batch timing, so keep a generous watchdog; a genuinely
+	// wedged load still fails out here rather than hanging.
+	/*maxFrames*/ 600
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPriestReachabilityTest);
 

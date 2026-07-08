@@ -170,6 +170,12 @@ namespace
 
 static void Setup_W3ApprehendStartsInRange()
 {
+	// Pin dt so the priest's per-frame awareness-gain + pursue movement are
+	// deterministic regardless of the preceding batch test's wall-clock dt. Without
+	// this the acquire never completes under batch timing (perceived=0) and the
+	// channel never starts -> 600-frame timeout. Released in Verify (no Teardown
+	// hook), matching Test_W3Villager_FootstepCadence + the personality tests.
+	Zenith_InputSimulator::SetFixedDt(1.0f / 60.0f);
 	g_iPhaseA = kA_Start;
 	g_xAPriest = INVALID_ENTITY_ID;
 	g_xAVillager = INVALID_ENTITY_ID;
@@ -293,6 +299,7 @@ static bool Step_W3ApprehendStartsInRange(int iFrame)
 
 static bool Verify_W3ApprehendStartsInRange()
 {
+	Zenith_InputSimulator::ClearFixedDt();  // always release the dt pin from Setup
 	if (!g_xAPriest.IsValid() || !g_xAVillager.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_AI, "W3ApprehendStart: priest/villager not found");
