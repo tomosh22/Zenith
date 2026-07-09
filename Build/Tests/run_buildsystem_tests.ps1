@@ -126,9 +126,16 @@ try {
         Assert-True ((@(Test-ZenithGameNameSyntax -Name $accented).Count) -gt 0) "non-ASCII should be invalid"
     }
     Invoke-Test "reserved prefixes and device names are rejected" {
-        Assert-True ((@(Test-ZenithGameNameSyntax -Name 'ZenithGame').Count) -gt 0) "Zenith* reserved"
-        Assert-True ((@(Test-ZenithGameNameSyntax -Name 'SentinelGame').Count) -gt 0) "Sentinel* reserved"
+        Assert-True ((@(Test-ZenithGameNameSyntax -Name 'ZenithGame').Count) -gt 0) "Zenith+capitalized word reserved"
+        Assert-True ((@(Test-ZenithGameNameSyntax -Name 'SentinelGame').Count) -gt 0) "Sentinel+capitalized word reserved"
+        Assert-True ((@(Test-ZenithGameNameSyntax -Name 'Zenith').Count) -gt 0) "bare Zenith reserved"
+        Assert-True ((@(Test-ZenithGameNameSyntax -Name 'Sentinel').Count) -gt 0) "bare Sentinel reserved"
+        Assert-True ((@(Test-ZenithGameNameSyntax -Name 'Zenith2').Count) -gt 0) "Zenith+digit reserved"
         Assert-True ((@(Test-ZenithGameNameSyntax -Name 'NUL').Count) -gt 0) "NUL device"
+    }
+    Invoke-Test "lowercase continuation of an engine prefix is a distinct word" {
+        Assert-Equal 0 (@(Test-ZenithGameNameSyntax -Name 'Zenithmon').Count) "Zenithmon should be valid"
+        Assert-Equal 0 (@(Test-ZenithGameNameSyntax -Name 'Sentinelle').Count) "Sentinelle should be valid"
     }
 
     # ========================================================================

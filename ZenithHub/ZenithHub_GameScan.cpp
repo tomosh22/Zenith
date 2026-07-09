@@ -158,9 +158,20 @@ bool ZenithHub_GameScan::ValidateName(const std::string& strName)
 	};
 	for (const char* szD : aszDevices) { if (strUpper == szD) { return false; } }
 
-	// Reserved engine prefixes.
-	if (strUpper.rfind("ZENITH", 0) == 0) { return false; }
-	if (strUpper.rfind("SENTINEL", 0) == 0) { return false; }
+	// Reserved engine namespace: "Zenith"/"Sentinel" alone or followed by a new
+	// PascalCase word (uppercase/digit) -- the shape of every engine project
+	// (ZenithECS, ZenithHub, SentinelAI). A lowercase continuation is a
+	// different word (e.g. "Zenithmon") and is allowed.
+	static const struct { const char* szUpper; size_t uLen; } s_axEnginePrefixes[] = {
+		{ "ZENITH", 6 }, { "SENTINEL", 8 }
+	};
+	for (const auto& xPrefix : s_axEnginePrefixes)
+	{
+		if (strUpper.compare(0, xPrefix.uLen, xPrefix.szUpper) != 0) { continue; }
+		if (strName.size() == xPrefix.uLen) { return false; }
+		const char cNext = strName[xPrefix.uLen];
+		if ((cNext >= 'A' && cNext <= 'Z') || (cNext >= '0' && cNext <= '9')) { return false; }
+	}
 
 	// Reserved project names.
 	static const char* aszReserved[] = {
