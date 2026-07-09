@@ -15,6 +15,41 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-016 -- Master branch protection CREATED with `zm-tests` as the sole machine-enforced required check
+
+- **Decision:** master had NO branch protection and no rulesets at all (the
+  repo's "required checks" had been purely conventional). On the user's
+  direction ("Add zm-tests yourself"), classic branch protection was created
+  via the API: required status checks `[zm-tests]`, `strict=false`,
+  `enforce_admins=false`, no required reviews.
+- **Why:** the S0 gate requires zm-tests to actually block merges;
+  `enforce_admins=false` preserves the owner's established direct-push
+  workflow (agents always land via PRs, so agents are always gated). Other
+  gates stay blocking-by-discipline because several are path-filtered and a
+  required check that never reports deadlocks a PR.
+- **Tests that lock it:** none (GitHub configuration); verified by
+  `gh api repos/tomosh22/Zenith/branches/master/protection`.
+- **Reversibility:** trivial (delete/edit the protection rule); recorded in
+  CIPolicy.md section 4 + ManualSetupChecklist.md.
+
+## 2026-07-10 -- ZM-D-015 -- Three pre-existing master-red CI gates fixed as a prerequisite PR rather than inherited red
+
+- **Decision:** engine-gate, layering-gate, and scaffold-smoke had been red on
+  master since 2026-07-07/08 (before Zenithmon existed). Rather than merging
+  S0 with inherited red checks, they were fixed in a dedicated PR (#144,
+  `0844689e`): unit baseline 1053->1068 single-sourced in
+  `Tools/run_unit_gate.ps1` (test_scaffold.ps1 reuses it), `Flux_HDR.cpp`
+  g_xEngine reaches reduced via the established local-hoist idiom (fixed, not
+  allow-listed), and regen.ps1 given a dotnet-exec fallback on the tracked
+  Sharpmake dll (+ scaffold-smoke got `lfs: true` and the standard
+  `/p:WindowsTargetPlatformVersion=10.0` build override).
+- **Why:** "nothing merges red" is only meaningful if master itself can go
+  green; every future Zenithmon stage PR needs a green baseline.
+- **Tests that lock it:** the gates themselves (all 9 checks green on #144;
+  all 10 green on the rebased #143); scaffold smoke 11/0 locally.
+- **Reversibility:** each fix is independent and small; the baseline bump is
+  a ratchet (future engine-test additions bump it again in ONE place).
+
 ## 2026-07-09 -- ZM-D-014 -- Engine name-validation narrowed to a PascalCase word boundary so 'Zenithmon' is a legal game name
 
 - **Decision:** `zenith new Zenithmon` was rejected by the blanket

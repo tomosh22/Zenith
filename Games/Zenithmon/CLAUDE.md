@@ -8,8 +8,10 @@ procedurally generated and baked by tools builds.
 > S0-S12 stage plan. `Docs/AgentBriefing.md` is the session onboarding guide;
 > `Docs/Scope.md` is the binding in/out list. Game code uses the `ZM_` prefix.
 
-Current stage: **S0** (skeleton + harness + CI + Docs). The game today is the
-scaffold placeholder: one lit cube bobbing under a title.
+Current stage: **S0 COMPLETE** (merged 2026-07-10; `zm-tests` is a required
+check). Next per `Docs/Roadmap.md`: S1 (data core) in parallel with S3 (first
+overworld). The game today is the scaffold placeholder: one lit cube bobbing
+under a title.
 
 ## File structure
 

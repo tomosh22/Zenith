@@ -12,7 +12,7 @@
 
 ---
 
-## S0 -- Skeleton, harness, CI, Docs (S-M) -- IN PROGRESS
+## S0 -- Skeleton, harness, CI, Docs (S-M) -- COMPLETE (2026-07-10)
 
 - [x] Scaffold via `zenith new Zenithmon` (`Zenithmon.zproj` + `Zenithmon.cpp` + game component + boot characterization test from `Build/Templates/NewGame`, then regen)
 - [x] Engine change: game-name validators (`Test-ZenithGameNameSyntax` in `Build/zenith_buildsystem.psm1` + `ZenithHub_GameScan::ValidateName`) narrowed from blanket `Zenith*`/`Sentinel*` prefixes to a PascalCase word boundary; shared pinned vectors (`Tools/ZenithCli/Tests/name_validation_cases.txt`) + buildsystem tests updated (suite 45 / 0)
@@ -22,10 +22,10 @@
 - [x] Between-tests hook + `Zenith_SaveData::Initialise("Zenithmon")` at boot (`Zenith_SaveData::ClearForTest` registered from S0)
 - [x] `.github/workflows/zm-tests.yml` (dp-tests clone: zenith-setup, regen -UseDotnet, Vulkan_True build, D3D12_False link proof, DLL copies, headless boot check, `zenith test Zenithmon --headless`, results artifact)
 - [x] `Docs/` seeded (Status / Roadmap / Questions / Shortfalls living docs + the reference docs per the plan's Docs table)
-- [ ] First PR from `zenithmon/s0-skeleton` opened and merged with `zm-tests` green
-- [ ] MANUAL (user): add `zm-tests` to required branch-protection checks (GitHub UI -- see Questions.md Q-2026-07-09-001, ManualSetupChecklist.md)
+- [x] First PR from `zenithmon/s0-skeleton` opened and merged with `zm-tests` green (PR #143, rebase-merged as `4c35f55d` + `4e57c680`, all 10 checks green; en route, PR #144 `0844689e` fixed the 3 PRE-EXISTING master-red gates: engine-gate baseline 1053->1068, layering-gate Flux_HDR hoists, scaffold-smoke regen dotnet-fallback + lfs + SDK override)
+- [x] `zm-tests` registered as a required branch-protection check (2026-07-10, user-directed via API -- master had NO protection at all, so classic protection was created: contexts `[zm-tests]`, strict=false, enforce_admins=false; see CIPolicy.md section 4)
 
-*Gate:* exe boots windowed + headless; `zenith test Zenithmon --headless` exits 0; **first PR through zm-tests green**. (Local build + headless suite already green as of 2026-07-09.)
+*Gate:* **MET 2026-07-10** -- exe boots windowed + headless; `zenith test Zenithmon --headless` exits 0; first PR through zm-tests green.
 
 ## S1 -- Data core (M) -- parallel with S3/S4
 
