@@ -10,6 +10,7 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
@@ -280,9 +281,13 @@ bool Zenith_SelectionSystem::TestEntityHit(Zenith_ModelComponent* pxModel,
 	Zenith_Maths::Matrix4 xTransformMatrix;
 	xTransform.BuildModelMatrix(xTransformMatrix);
 
-	// Triangle-level raycast if we have a physics mesh; otherwise fall back to
-	// the AABB hit we already computed.
-	Flux_MeshGeometry* pxPhysicsMesh = pxModel->GetPhysicsMesh();
+	// Triangle-level raycast if the entity's collider has a current physics mesh;
+	// otherwise fall back to the AABB hit we already computed.
+	const Flux_MeshGeometry* pxPhysicsMesh = nullptr;
+	if (Zenith_ColliderComponent* pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>())
+	{
+		pxPhysicsMesh = pxCollider->GetPhysicsMesh();
+	}
 	if (pxPhysicsMesh)
 	{
 		return RaycastPhysicsMesh(xRayOrigin, xRayDir, pxPhysicsMesh, xTransformMatrix, fOutDistance);
@@ -353,8 +358,13 @@ static void CalculateModelSpaceBounds(Zenith_ModelComponent& xModel,
 	xMinOut = Zenith_Maths::Vector3(std::numeric_limits<float>::max());
 	xMaxOut = Zenith_Maths::Vector3(std::numeric_limits<float>::lowest());
 
-	// Physics mesh is optimised for raycasting and provides better selection accuracy.
-	Flux_MeshGeometry* pxPhysicsMesh = xModel.GetPhysicsMesh();
+	// Physics mesh (owned by the entity's collider) is raycast-optimised and gives
+	// better selection accuracy; falls through to per-sub-mesh / procedural bounds if absent.
+	const Flux_MeshGeometry* pxPhysicsMesh = nullptr;
+	if (Zenith_ColliderComponent* pxCollider = xModel.GetParentEntity().TryGetComponent<Zenith_ColliderComponent>())
+	{
+		pxPhysicsMesh = pxCollider->GetPhysicsMesh();
+	}
 	if (pxPhysicsMesh && pxPhysicsMesh->m_pxPositions && pxPhysicsMesh->GetNumVerts() > 0)
 	{
 		const Zenith_Maths::Vector3* pPositions = pxPhysicsMesh->m_pxPositions;

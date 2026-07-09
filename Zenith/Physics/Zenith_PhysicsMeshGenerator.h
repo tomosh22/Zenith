@@ -74,9 +74,6 @@ struct PhysicsMeshConfig
 	// Maximum number of triangles allowed (cap for very complex models)
 	uint32_t m_uMaxTriangles = 10000;  // Very high limit to preserve detail
 
-	// Whether to generate physics mesh automatically on model load
-	bool m_bAutoGenerate = true;
-
 	// Debug rendering options
 	Zenith_Maths::Vector3 m_xDebugColor = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f); // Green by default
 };

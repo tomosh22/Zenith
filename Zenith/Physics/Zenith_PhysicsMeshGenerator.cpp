@@ -12,7 +12,6 @@ PhysicsMeshConfig g_xPhysicsMeshConfig = {
 	1.0f,                        // m_fSimplificationRatio: 1.0 = no simplification (exact match to render mesh)
 	100,                         // m_uMinTriangles
 	10000,                       // m_uMaxTriangles
-	true,                        // m_bAutoGenerate: Automatically generate physics meshes on load
 	Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)  // m_xDebugColor: Green
 };
 

@@ -64,13 +64,13 @@ try {
             if (-not $p.WaitForExit(180000)) { try { $p.Kill() } catch {} }
             $txt = Get-Content $bootOut -ErrorAction SilentlyContinue
             $unitsLine = "$(($txt | Select-String -Pattern 'Unit tests complete' | Select-Object -Last 1))"
-            $cleanPass = $unitsLine -match '1047 ran, 1047 passed, 0 failed'
+            $cleanPass = $unitsLine -match '1053 ran, 1053 passed, 0 failed'
             # RegistryWideNodeRoundTrip is a known layout-sensitive pre-existing flake
             # (task_726cc81d): the game's symbol layout can trip it. Tolerate it as
-            # the SOLE failure -- the engine still ran its full 1047-test suite.
-            $knownFlake = ($unitsLine -match '1047 ran, 1046 passed, 1 failed') -and
+            # the SOLE failure -- the engine still ran its full 1053-test suite.
+            $knownFlake = ($unitsLine -match '1053 ran, 1052 passed, 1 failed') -and
                 ($null -ne ($txt | Select-String -Pattern 'FAILED\s+GraphComponent::RegistryWideNodeRoundTrip'))
-            Check ($cleanPass -or $knownFlake) "units-at-boot: 1047 ran, 0 failed (or only the known RegistryWideNodeRoundTrip flake)"
+            Check ($cleanPass -or $knownFlake) "units-at-boot: 1053 ran, 0 failed (or only the known RegistryWideNodeRoundTrip flake)"
             if (-not ($cleanPass -or $knownFlake)) { Write-Host "    units line was: $unitsLine" -ForegroundColor Yellow }
         }
     }

@@ -7,6 +7,10 @@
 #include "ZenithECS/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 
 #include <Jolt/Jolt.h>
@@ -1212,6 +1216,158 @@ ZENITH_TEST(Physics, GravityOffThenImpulseLaunch)
 	StepPhysics(300);
 	Zenith_Maths::Vector3 xPosFallen = GetBodyPosition(xCollider);
 	ZENITH_ASSERT_LT(xPosFallen.y, 5.0f, "TestGravityOffThenImpulseLaunch: Ball should fall below Y=5 after gravity takes over (got %f)", xPosFallen.y);
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+//==============================================================================
+// Cat: ColliderComponent-owned physics collision mesh
+//
+// The collision mesh derived from a model's geometry is owned by
+// Zenith_ColliderComponent (moved off Zenith_ModelComponent). These cover the
+// ownership, the revision-gated freshness contract, the scale-reuse optimisation,
+// and the move-relocation transfer.
+//==============================================================================
+
+// Creates an entity with a Transform + a procedural (unit-cube) ModelComponent. The
+// out-handles keep the source geometry + material alive for the entity's lifetime —
+// AddMeshEntry does NOT take ownership of the geometry.
+static Zenith_Entity CreateCubeModelEntity(Zenith_SceneData* pxSceneData, const std::string& strName,
+	MeshGeometryHandle& xhCubeOut, MaterialHandle& xhMatOut)
+{
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, strName);
+	xhCubeOut = Zenith_MeshGeometryAsset::CreateUnitCube();
+	xhMatOut = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	xEntity.AddComponent<Zenith_ModelComponent>().AddMeshEntry(
+		*xhCubeOut.GetDirect()->GetGeometry(), *xhMatOut.GetDirect());
+	return xEntity;
+}
+
+ZENITH_TEST(Physics, ColliderModelMeshGeneratesPhysicsMesh)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_ColliderMeshGen", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	MeshGeometryHandle xhCube; MaterialHandle xhMat;
+	Zenith_Entity xEntity = CreateCubeModelEntity(pxSceneData, "MeshCollider", xhCube, xhMat);
+	Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
+	xCol.AddCollider(COLLISION_VOLUME_TYPE_MODEL_MESH, RIGIDBODY_TYPE_STATIC);
+
+	ZENITH_ASSERT_TRUE(xCol.HasPhysicsMesh(), "ColliderModelMeshGeneratesPhysicsMesh: MODEL_MESH collider should generate a physics mesh");
+	const Flux_MeshGeometry* pxMesh = xCol.GetPhysicsMesh();
+	ZENITH_ASSERT_TRUE(pxMesh != nullptr, "ColliderModelMeshGeneratesPhysicsMesh: GetPhysicsMesh returns geometry when current");
+	ZENITH_ASSERT_GT(pxMesh->GetNumVerts(), 2u, "ColliderModelMeshGeneratesPhysicsMesh: physics mesh has >= 3 verts");
+	ZENITH_ASSERT_TRUE(xCol.HasValidBody(), "ColliderModelMeshGeneratesPhysicsMesh: MODEL_MESH collider built a Jolt body");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+ZENITH_TEST(Physics, ColliderPhysicsMeshRevisionInvalidation)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_ColliderMeshRevision", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	MeshGeometryHandle xhCube; MaterialHandle xhMat;
+	Zenith_Entity xEntity = CreateCubeModelEntity(pxSceneData, "MeshCollider", xhCube, xhMat);
+	Zenith_ModelComponent& xModel = xEntity.GetComponent<Zenith_ModelComponent>();
+	Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
+	xCol.AddCollider(COLLISION_VOLUME_TYPE_MODEL_MESH, RIGIDBODY_TYPE_STATIC);
+
+	ZENITH_ASSERT_TRUE(xCol.HasPhysicsMesh(), "ColliderPhysicsMeshRevisionInvalidation: mesh generated");
+	const Flux_MeshGeometry* pxBefore = xCol.GetPhysicsMesh();
+	ZENITH_ASSERT_TRUE(pxBefore != nullptr, "ColliderPhysicsMeshRevisionInvalidation: GetPhysicsMesh non-null while current");
+
+	// Mutating the model geometry bumps its revision, which must IMMEDIATELY hide the
+	// now-stale cached collision mesh (selection / debug-draw must never see it).
+	xModel.AddMeshEntry(*xhCube.GetDirect()->GetGeometry(), *xhMat.GetDirect());
+	ZENITH_ASSERT_FALSE(xCol.HasPhysicsMesh(), "ColliderPhysicsMeshRevisionInvalidation: stale mesh hidden right after a geometry change");
+	ZENITH_ASSERT_TRUE(xCol.GetPhysicsMesh() == nullptr, "ColliderPhysicsMeshRevisionInvalidation: GetPhysicsMesh null while stale");
+
+	// RebuildCollider regenerates against the new geometry — a fresh mesh (new pointer).
+	xCol.RebuildCollider();
+	ZENITH_ASSERT_TRUE(xCol.HasPhysicsMesh(), "ColliderPhysicsMeshRevisionInvalidation: mesh regenerated after RebuildCollider");
+	const Flux_MeshGeometry* pxAfter = xCol.GetPhysicsMesh();
+	ZENITH_ASSERT_TRUE(pxAfter != nullptr && pxAfter != pxBefore, "ColliderPhysicsMeshRevisionInvalidation: regenerated mesh is a fresh asset");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+ZENITH_TEST(Physics, ColliderPhysicsMeshReusedOnScaleChange)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_ColliderMeshScale", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	MeshGeometryHandle xhCube; MaterialHandle xhMat;
+	Zenith_Entity xEntity = CreateCubeModelEntity(pxSceneData, "MeshCollider", xhCube, xhMat);
+	Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
+	xCol.AddCollider(COLLISION_VOLUME_TYPE_MODEL_MESH, RIGIDBODY_TYPE_STATIC);
+
+	const Flux_MeshGeometry* pxBefore = xCol.GetPhysicsMesh();
+	ZENITH_ASSERT_TRUE(pxBefore != nullptr, "ColliderPhysicsMeshReusedOnScaleChange: mesh generated");
+
+	// A scale change rebuilds the collider (re-bakes scale into the Jolt shape) but the
+	// model geometry is unchanged, so the cached (model-space, scale-independent)
+	// collision mesh is REUSED, not regenerated — same pointer.
+	xEntity.GetComponent<Zenith_TransformComponent>().SetScale(Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f));
+
+	const Flux_MeshGeometry* pxAfter = xCol.GetPhysicsMesh();
+	ZENITH_ASSERT_TRUE(pxAfter == pxBefore, "ColliderPhysicsMeshReusedOnScaleChange: scale change reuses the cached mesh (no regeneration)");
+	ZENITH_ASSERT_TRUE(xCol.HasValidBody(), "ColliderPhysicsMeshReusedOnScaleChange: collider still has a valid body after rescale");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+ZENITH_TEST(Physics, ColliderBoxHasNoPhysicsMesh)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_ColliderBoxNoMesh", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	MeshGeometryHandle xhCube; MaterialHandle xhMat;
+	Zenith_Entity xEntity = CreateCubeModelEntity(pxSceneData, "BoxCollider", xhCube, xhMat);
+	Zenith_ColliderComponent& xCol = xEntity.AddComponent<Zenith_ColliderComponent>();
+	xCol.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+
+	// A non-MODEL_MESH volume owns no collision mesh, even on a model-bearing entity.
+	ZENITH_ASSERT_FALSE(xCol.HasPhysicsMesh(), "ColliderBoxHasNoPhysicsMesh: box collider holds no physics mesh");
+	ZENITH_ASSERT_TRUE(xCol.GetPhysicsMesh() == nullptr, "ColliderBoxHasNoPhysicsMesh: GetPhysicsMesh null for a box collider");
+	ZENITH_ASSERT_TRUE(xCol.HasValidBody(), "ColliderBoxHasNoPhysicsMesh: box collider still built a body");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+ZENITH_TEST(Physics, ColliderPhysicsMeshSurvivesRelocation)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_ColliderMeshReloc", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	MeshGeometryHandle xhCubeA; MaterialHandle xhMatA;
+	Zenith_Entity xA = CreateCubeModelEntity(pxSceneData, "ColA", xhCubeA, xhMatA);
+	xA.AddComponent<Zenith_ColliderComponent>().AddCollider(COLLISION_VOLUME_TYPE_MODEL_MESH, RIGIDBODY_TYPE_STATIC);
+
+	MeshGeometryHandle xhCubeB; MaterialHandle xhMatB;
+	Zenith_Entity xB = CreateCubeModelEntity(pxSceneData, "ColB", xhCubeB, xhMatB);
+	{
+		Zenith_ColliderComponent& xColB = xB.AddComponent<Zenith_ColliderComponent>();
+		xColB.AddCollider(COLLISION_VOLUME_TYPE_MODEL_MESH, RIGIDBODY_TYPE_STATIC);
+		xColB.SetIncludeInNavMesh(false); // non-default flag; must survive relocation
+		ZENITH_ASSERT_TRUE(xColB.HasPhysicsMesh(), "ColliderPhysicsMeshSurvivesRelocation: B collider generated a physics mesh");
+	}
+
+	// Removing A's collider swap-and-pop move-constructs B's collider into A's freed
+	// slot. The moved collider must keep its physics-mesh handle + geometry revision (so
+	// HasPhysicsMesh stays true) AND its navmesh-exclude flag (the move-completeness fix).
+	xA.RemoveComponent<Zenith_ColliderComponent>();
+
+	Zenith_ColliderComponent& xColBMoved = xB.GetComponent<Zenith_ColliderComponent>();
+	ZENITH_ASSERT_TRUE(xColBMoved.HasPhysicsMesh(), "ColliderPhysicsMeshSurvivesRelocation: relocated collider keeps its physics mesh");
+	ZENITH_ASSERT_TRUE(xColBMoved.GetPhysicsMesh() != nullptr, "ColliderPhysicsMeshSurvivesRelocation: relocated physics mesh accessible");
+	ZENITH_ASSERT_FALSE(xColBMoved.GetIncludeInNavMesh(), "ColliderPhysicsMeshSurvivesRelocation: relocated collider keeps navmesh-exclude flag");
+	ZENITH_ASSERT_TRUE(xColBMoved.HasValidBody(), "ColliderPhysicsMeshSurvivesRelocation: relocated collider keeps a valid body");
 
 	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }

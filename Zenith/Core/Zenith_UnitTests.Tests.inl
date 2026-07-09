@@ -12,6 +12,8 @@
 #include "Collections/Zenith_HashSet.h"
 #include "Collections/Zenith_MemoryPool.h"
 #include "Flux/Flux_Types.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"  // v7->v8 serialization framing regression
+#include "ZenithECS/Zenith_ComponentMeta.h"
 #include "Flux/SceneGraph/Flux_RenderSceneSnapshot.h"  // Phase 2 snapshot tests
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -17766,4 +17768,109 @@ void Zenith_UnitTests::TestQueueFullSurfacesError(){
 	const u_int uRan = xData.m_uRunCount.load(std::memory_order_relaxed);
 	ZENITH_ASSERT_GT(uRan, 0u, "At least some submitted tasks should have executed");
 	ZENITH_ASSERT_LE(uRan, uNUM_TASKS, "Run count must never exceed the number of tasks submitted");
+}
+
+//==============================================================================
+// ModelComponent v7 -> v8 serialization framing regression
+//
+// v8 stopped writing (and reading) the trailing physics-debug-draw bool that v7
+// wrote (the collision mesh + its debug toggle moved to Zenith_ColliderComponent).
+// A v7 scene's Model blob still carries that extra byte; the per-component size
+// framing in Zenith_ComponentMeta.cpp must absorb it so the NEXT component reads
+// intact. A direct ModelComponent::ReadFromDataStream leaves the byte unread and
+// never exercises the framing, so this drives DeserializeEntityComponents with a
+// hand-framed 2-component stream and asserts the trailing canary survives.
+//==============================================================================
+
+// Trailing "canary" component: serializes one u32 magic so the test can hand-frame
+// its payload and confirm it deserializes intact after the preceding v7 Model blob.
+class Zenith_SerialCanaryComponent
+{
+public:
+	Zenith_SerialCanaryComponent(Zenith_Entity& xEntity) : m_xParentEntity(xEntity) {}
+	void WriteToDataStream(Zenith_DataStream& xStream) const { xStream << m_uMagic; }
+	void ReadFromDataStream(Zenith_DataStream& xStream) { xStream >> m_uMagic; }
+#ifdef ZENITH_TOOLS
+	void RenderPropertiesPanel() {}
+#endif
+	uint32_t m_uMagic = 0u;
+private:
+	Zenith_Entity m_xParentEntity;
+};
+ZENITH_REGISTER_COMPONENT(Zenith_SerialCanaryComponent, "SerialCanary", 201u)
+
+ZENITH_TEST(Serialization, ModelComponentV7DebugFlagFramingAbsorbed)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("SerialTest_ModelV7Framing", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+
+	// Hand-frame a size-prefixed 2-component stream exactly as SerializeEntityComponents
+	// does (Zenith_ComponentMeta.cpp): [count][ per comp: typeName, schemaVersion, size,
+	// payload ]. Component 1 is a *v7* Model payload (trailing physics-debug bool that v8
+	// drops); component 2 is the canary.
+	Zenith_DataStream xStream;
+
+	const u_int uNumComponents = 2u;
+	xStream << uNumComponents;
+
+	// -- Component 1: "Model" written in the v7 payload layout --
+	{
+		std::string strType = "Model";
+		xStream << strType;
+		const u_int uMetaSchema = 1u;
+		xStream << uMetaSchema;
+		const uint64_t ulSizePos = xStream.GetCursor();
+		u_int uSizePlaceholder = 0u;
+		xStream << uSizePlaceholder;
+		const uint64_t ulDataStart = xStream.GetCursor();
+		const uint32_t uModelV7 = 7u;                 // Model's own serialize version
+		xStream << uModelV7;
+		ModelHandle().WriteToDataStream(xStream);      // empty model handle
+		const uint32_t uNumMaterials = 0u;
+		xStream << uNumMaterials;
+		const bool bLegacyDebugDraw = true;            // the trailing v7 byte v8 no longer reads
+		xStream << bLegacyDebugDraw;
+		const uint64_t ulDataEnd = xStream.GetCursor();
+		const u_int uSize = static_cast<u_int>(ulDataEnd - ulDataStart);
+		xStream.SetCursor(ulSizePos);
+		xStream << uSize;
+		xStream.SetCursor(ulDataEnd);
+	}
+
+	// -- Component 2: "SerialCanary" with a known magic --
+	const uint32_t uCanaryMagic = 0xCAFEu;
+	{
+		std::string strType = "SerialCanary";
+		xStream << strType;
+		const u_int uMetaSchema = 1u;
+		xStream << uMetaSchema;
+		const uint64_t ulSizePos = xStream.GetCursor();
+		u_int uSizePlaceholder = 0u;
+		xStream << uSizePlaceholder;
+		const uint64_t ulDataStart = xStream.GetCursor();
+		xStream << uCanaryMagic;
+		const uint64_t ulDataEnd = xStream.GetCursor();
+		const u_int uSize = static_cast<u_int>(ulDataEnd - ulDataStart);
+		xStream.SetCursor(ulSizePos);
+		xStream << uSize;
+		xStream.SetCursor(ulDataEnd);
+	}
+
+	// Deserialize onto a bare entity (the registry adds each component by name).
+	xStream.SetCursor(0);
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntityBare(xTestScene, "V7FramingEntity");
+	Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEnt, xStream);
+
+	// The trailing canary must be intact — proving the extra v7 Model byte was absorbed
+	// by the per-component size framing (not consumed by the v8 Model reader).
+	ZENITH_ASSERT_TRUE(xEnt.HasComponent<Zenith_SerialCanaryComponent>(),
+		"ModelComponentV7DebugFlagFramingAbsorbed: canary component deserialized");
+	ZENITH_ASSERT_EQ(xEnt.GetComponent<Zenith_SerialCanaryComponent>().m_uMagic, uCanaryMagic,
+		"ModelComponentV7DebugFlagFramingAbsorbed: canary magic survived the preceding v7 Model blob");
+	// The v8 Model reader ignored the v7 debug byte and produced an empty (no-asset) model.
+	ZENITH_ASSERT_TRUE(xEnt.HasComponent<Zenith_ModelComponent>(),
+		"ModelComponentV7DebugFlagFramingAbsorbed: model component deserialized");
+	ZENITH_ASSERT_FALSE(xEnt.GetComponent<Zenith_ModelComponent>().HasModel(),
+		"ModelComponentV7DebugFlagFramingAbsorbed: empty v7 model handle yields no model instance");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }

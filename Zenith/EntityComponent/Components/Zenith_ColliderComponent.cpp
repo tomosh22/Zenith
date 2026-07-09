@@ -41,6 +41,10 @@ static Zenith_PhysicsBodyID FromJolt(JPH::BodyID xID)
 
 #include "Flux/Flux_ModelInstance.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
+// Physics collision-mesh ownership (moved here from Zenith_ModelComponent): the leaf
+// generator + the asset that wraps its renderer-neutral output into a Flux_MeshGeometry.
+#include "Physics/Zenith_PhysicsMeshGenerator.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 
 void Zenith_ColliderComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDescriptor>& axProperties)
 {
@@ -72,8 +76,14 @@ Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_ColliderComponent&& xO
 	, m_xBodyID(xOther.m_xBodyID)
 	, m_eVolumeType(xOther.m_eVolumeType)
 	, m_eRigidBodyType(xOther.m_eRigidBodyType)
+	, m_fExplicitCapsuleRadius(xOther.m_fExplicitCapsuleRadius)
+	, m_fExplicitCapsuleHalfHeight(xOther.m_fExplicitCapsuleHalfHeight)
+	, m_bUseExplicitCapsuleDimensions(xOther.m_bUseExplicitCapsuleDimensions)
 	, m_bDebugDrawPhysicsMesh(xOther.m_bDebugDrawPhysicsMesh)
+	, m_bIncludeInNavMesh(xOther.m_bIncludeInNavMesh)
 	, m_pxTerrainMeshData(xOther.m_pxTerrainMeshData)
+	, m_xPhysicsMeshAsset(std::move(xOther.m_xPhysicsMeshAsset))
+	, m_uPhysicsMeshGeometryRevision(xOther.m_uPhysicsMeshGeometryRevision)
 {
 	// Nullify source so its destructor doesn't destroy the physics body
 	xOther.m_pxRigidBody = nullptr;
@@ -100,14 +110,23 @@ Zenith_ColliderComponent& Zenith_ColliderComponent::operator=(Zenith_ColliderCom
 			delete m_pxTerrainMeshData;
 		}
 
-		// Take ownership from source
+		// Take ownership from source. The capsule dimensions and navmesh-include flag
+		// are transferred too — without them a component-pool relocation (swap-and-pop /
+		// Grow) would silently reset an explicit-capsule or navmesh-excluded collider to
+		// its defaults. m_xPhysicsMeshAsset's move-assign releases our old handle.
 		m_xParentEntity = xOther.m_xParentEntity;
 		m_pxRigidBody = xOther.m_pxRigidBody;
 		m_xBodyID = xOther.m_xBodyID;
 		m_eVolumeType = xOther.m_eVolumeType;
 		m_eRigidBodyType = xOther.m_eRigidBodyType;
+		m_fExplicitCapsuleRadius = xOther.m_fExplicitCapsuleRadius;
+		m_fExplicitCapsuleHalfHeight = xOther.m_fExplicitCapsuleHalfHeight;
+		m_bUseExplicitCapsuleDimensions = xOther.m_bUseExplicitCapsuleDimensions;
 		m_bDebugDrawPhysicsMesh = xOther.m_bDebugDrawPhysicsMesh;
+		m_bIncludeInNavMesh = xOther.m_bIncludeInNavMesh;
 		m_pxTerrainMeshData = xOther.m_pxTerrainMeshData;
+		m_xPhysicsMeshAsset = std::move(xOther.m_xPhysicsMeshAsset);
+		m_uPhysicsMeshGeometryRevision = xOther.m_uPhysicsMeshGeometryRevision;
 
 		// Nullify source
 		xOther.m_pxRigidBody = nullptr;
@@ -414,16 +433,12 @@ JPH::RefConst<JPH::Shape> Zenith_ColliderComponent::CreateTerrainShape()
 JPH::RefConst<JPH::Shape> Zenith_ColliderComponent::CreateConvexOrMeshShape(const Zenith_Maths::Vector3& xScale, RigidBodyType eRigidBodyType)
 {
 	Zenith_Assert(m_xParentEntity.HasComponent<Zenith_ModelComponent>(), "Can't have a model mesh collider without a model component");
-	Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
 	Zenith_TransformComponent& xTrans = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
 
-	if (!xModel.HasPhysicsMesh())
-	{
-		Zenith_Log(LOG_CATEGORY_PHYSICS, " Model does not have physics mesh, generating...");
-		xModel.GeneratePhysicsMesh();
-	}
+	// Build (or reuse, if the model geometry is unchanged) the collision mesh.
+	EnsurePhysicsMeshCurrent();
 
-	const Flux_MeshGeometry* pxPhysicsMesh = xModel.GetPhysicsMesh();
+	const Flux_MeshGeometry* pxPhysicsMesh = GetPhysicsMesh();
 	if (!pxPhysicsMesh || !pxPhysicsMesh->m_pxPositions || pxPhysicsMesh->GetNumVerts() < 3)
 	{
 		// Model has no usable physics mesh — fall back to a scaled box so the entity
@@ -521,6 +536,184 @@ JPH::RefConst<JPH::Shape> Zenith_ColliderComponent::CreateConvexOrMeshShape(cons
 	return CreateBoxShape(xScale);
 }
 
+namespace
+{
+	// Builds a throwaway Flux_MeshGeometry holding positions + indices copied from a
+	// Zenith_MeshAsset, for feeding the physics generator (which reads only positions /
+	// indices / counts). Caller owns the returned pointer and must delete it.
+	Flux_MeshGeometry* BuildTempGeometryFromAsset(const Zenith_MeshAsset* pxAsset)
+	{
+		if (!pxAsset)
+		{
+			return nullptr;
+		}
+
+		const uint32_t uNumVerts = pxAsset->GetNumVerts();
+		const uint32_t uNumIndices = pxAsset->GetNumIndices();
+		if (uNumVerts == 0 || uNumIndices == 0)
+		{
+			return nullptr;
+		}
+
+		Flux_MeshGeometry* pxGeom = new Flux_MeshGeometry();
+		pxGeom->m_uNumVerts = uNumVerts;
+		pxGeom->m_uNumIndices = uNumIndices;
+
+		pxGeom->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(
+			Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+		pxGeom->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(
+			Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
+
+		for (uint32_t v = 0; v < uNumVerts; v++)
+		{
+			pxGeom->m_pxPositions[v] = pxAsset->m_xPositions.Get(v);
+		}
+		for (uint32_t i = 0; i < uNumIndices; i++)
+		{
+			pxGeom->m_puIndices[i] = pxAsset->m_xIndices.Get(i);
+		}
+
+		return pxGeom;
+	}
+}
+
+//=============================================================================
+// Physics collision mesh (derived from the entity's Zenith_ModelComponent)
+//=============================================================================
+
+bool Zenith_ColliderComponent::HasPhysicsMesh() const
+{
+	if (m_xPhysicsMeshAsset.GetDirect() == nullptr)
+	{
+		return false;
+	}
+	// Only report the mesh while it matches the model's CURRENT geometry — a model
+	// mutation (LoadModel / AddMeshEntry / ClearModel) bumps the revision and hides the
+	// now-stale mesh until the next RebuildCollider regenerates it.
+	const Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+	return pxModel != nullptr && pxModel->GetGeometryRevision() == m_uPhysicsMeshGeometryRevision;
+}
+
+const Flux_MeshGeometry* Zenith_ColliderComponent::GetPhysicsMesh() const
+{
+	if (!HasPhysicsMesh())
+	{
+		return nullptr;
+	}
+	Zenith_MeshGeometryAsset* pxPhysics = m_xPhysicsMeshAsset.GetDirect();
+	return pxPhysics ? pxPhysics->GetGeometry() : nullptr;
+}
+
+void Zenith_ColliderComponent::ClearPhysicsMesh()
+{
+	// Drop the handle ref; the registry frees the asset when its refcount hits zero.
+	m_xPhysicsMeshAsset.Clear();
+	m_uPhysicsMeshGeometryRevision = 0;
+}
+
+void Zenith_ColliderComponent::EnsurePhysicsMeshCurrent()
+{
+	// Regenerate only when absent or stale (model geometry changed). An unchanged model
+	// reuses the cached mesh, so a scale-only RebuildCollider does not regenerate.
+	if (HasPhysicsMesh())
+	{
+		return;
+	}
+	// Preserve the pre-move quality: the ModelComponent path called GeneratePhysicsMesh(),
+	// whose default arg PHYSICS_MESH_QUALITY_MEDIUM OVERRODE the global config's HIGH. MEDIUM
+	// (decimated convex approximation) is what colliders were built from — cheaper for Jolt
+	// hull creation than HIGH (full geometry, up to the 10k-tri cap), which can slow complex
+	// dynamic bodies or trip the convex-hull path into a box fallback.
+	PhysicsMeshConfig xConfig = g_xPhysicsMeshConfig;
+	xConfig.m_eQuality = PHYSICS_MESH_QUALITY_MEDIUM;
+	GeneratePhysicsMeshWithConfig(xConfig);
+	if (const Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>())
+	{
+		m_uPhysicsMeshGeometryRevision = pxModel->GetGeometryRevision();
+	}
+}
+
+void Zenith_ColliderComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig)
+{
+	ClearPhysicsMesh();
+
+	Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+	if (pxModel == nullptr || pxModel->GetNumMeshes() == 0)
+	{
+		Zenith_Error(LOG_CATEGORY_PHYSICS, "Cannot generate physics mesh: no model instance");
+		return;
+	}
+
+	// The physics generator takes renderer-neutral views (positions + indices spans).
+	// Procedural meshes expose their geometry directly; asset-backed meshes get a
+	// throwaway Flux_MeshGeometry (owned here). Each view points into one of those.
+	Zenith_Vector<Zenith_PhysicsMeshView> xViews;
+	Zenith_Vector<Flux_MeshGeometry*> xTempGeometries;
+
+	const uint32_t uNumMeshes = pxModel->GetNumMeshes();
+	for (uint32_t uMesh = 0; uMesh < uNumMeshes; uMesh++)
+	{
+		Flux_MeshInstance* pxMeshInstance = pxModel->GetMeshInstance(uMesh);
+		if (!pxMeshInstance)
+		{
+			continue;
+		}
+
+		const Flux_MeshGeometry* pxGeometry = pxMeshInstance->GetProceduralGeometry();
+		if (!pxGeometry)
+		{
+			if (Flux_MeshGeometry* pxTemp = BuildTempGeometryFromAsset(pxMeshInstance->GetSourceAsset()))
+			{
+				xTempGeometries.PushBack(pxTemp);
+				pxGeometry = pxTemp;
+			}
+		}
+
+		if (pxGeometry)
+		{
+			Zenith_PhysicsMeshView xView;
+			xView.m_pxPositions = pxGeometry->m_pxPositions;
+			xView.m_uNumVerts = pxGeometry->GetNumVerts();
+			xView.m_puIndices = pxGeometry->m_puIndices;
+			xView.m_uNumIndices = pxGeometry->GetNumIndices();
+			xViews.PushBack(xView);
+		}
+	}
+
+	if (xViews.GetSize() == 0)
+	{
+		Zenith_Error(LOG_CATEGORY_PHYSICS, "Cannot generate physics mesh: no valid geometries");
+		// Nothing to clean up - xTempGeometries is empty in this branch.
+		return;
+	}
+
+	// The leaf generator returns renderer-neutral geometry; the asset side builds the
+	// Flux_MeshGeometry, so Physics names no renderer / asset type.
+	Zenith_GeneratedPhysicsMesh xGenerated = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xViews, xConfig);
+	MeshGeometryHandle xhPhysicsAsset = xGenerated.IsValid()
+		? Zenith_MeshGeometryAsset::CreateFromGeometryData(xGenerated.m_xPositions, xGenerated.m_xNormals, xGenerated.m_xIndices)
+		: MeshGeometryHandle();
+	Zenith_MeshGeometryAsset* pxPhysicsAsset = xhPhysicsAsset.GetDirect();
+	if (pxPhysicsAsset)
+	{
+		m_xPhysicsMeshAsset.Set(pxPhysicsAsset);
+		Flux_MeshGeometry* pxGeometry = pxPhysicsAsset->GetGeometry();
+		Zenith_Log(LOG_CATEGORY_PHYSICS, "Generated physics mesh for model: %u verts, %u tris",
+			pxGeometry->GetNumVerts(),
+			pxGeometry->GetNumIndices() / 3);
+	}
+	else
+	{
+		Zenith_Error(LOG_CATEGORY_PHYSICS, "Failed to generate physics mesh for model");
+	}
+
+	// Release throwaway geometries now that the generator has produced its output.
+	for (uint32_t u = 0; u < xTempGeometries.GetSize(); u++)
+	{
+		delete xTempGeometries.Get(u);
+	}
+}
+
 void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType)
 {
 	Zenith_Assert(m_xBodyID.IsInvalid(), "This ColliderComponent already has a collider");
@@ -528,6 +721,13 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 
 	m_eVolumeType = eVolumeType;
 	m_eRigidBodyType = eRigidBodyType;
+
+	// A non-mesh volume owns no collision mesh — drop any cached one so a MODEL_MESH ->
+	// primitive reconfigure doesn't retain stale/irrelevant geometry.
+	if (eVolumeType != COLLISION_VOLUME_TYPE_MODEL_MESH)
+	{
+		ClearPhysicsMesh();
+	}
 
 	const Zenith_Maths::Vector3 xScale = ClampScale(xTrans.m_xScale);
 
@@ -740,13 +940,7 @@ void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColo
 
 	case COLLISION_VOLUME_TYPE_MODEL_MESH:
 	{
-		Zenith_ModelComponent* pxModel = m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
-		if (pxModel == nullptr)
-		{
-			return;
-		}
-
-		const Flux_MeshGeometry* pxPhysicsMesh = pxModel->GetPhysicsMesh();
+		const Flux_MeshGeometry* pxPhysicsMesh = GetPhysicsMesh();
 		if (!pxPhysicsMesh)
 		{
 			return;

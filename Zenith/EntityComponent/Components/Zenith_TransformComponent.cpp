@@ -2,7 +2,6 @@
 #include "Core/Zenith_Engine.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "Physics/Zenith_Physics.h"
 // No Jolt headers: physics-body pose access goes through Zenith_Physics
@@ -13,8 +12,9 @@ void Zenith_TransformComponent::RegisterProperties(Zenith_Vector<Zenith_Property
 	// Use SETTER form — Transform's setters are STATEFUL:
 	//   - SetPosition / SetRotation mirror the pose onto the physics body (via
 	//     Zenith_Physics) when a ColliderComponent has a live body, keeping it in sync.
-	//   - SetScale regenerates the physics mesh and rebuilds the collider
-	//     when ModelComponent / ColliderComponent are present.
+	//   - SetScale rebuilds the collider (which re-bakes scale into the Jolt shape and
+	//     regenerates its derived collision mesh as needed) when a ColliderComponent
+	//     is present.
 	// A raw field write would leave physics + cached collider geometry pointing
 	// at the pre-override value, which is the bug code review caught.
 	ZENITH_REGISTER_COMPONENT_PROPERTY_SETTER(
@@ -162,16 +162,9 @@ void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3& xScale)
 
 	m_xScale = xScale;
 
-	// If entity has a model component, regenerate physics mesh with new baked scale
-	if (Zenith_ModelComponent* pxModel = m_xOwningEntity.TryGetComponent<Zenith_ModelComponent>())
-	{
-		if (pxModel->HasPhysicsMesh())
-		{
-			pxModel->GeneratePhysicsMesh();
-		}
-	}
-
-	// If entity has a collider component, rebuild it to reflect new scale
+	// If entity has a collider component, rebuild it to reflect the new scale. This
+	// re-bakes the scale into a MODEL_MESH collider's Jolt shape; the underlying
+	// (model-space, scale-independent) collision mesh is reused, not regenerated.
 	if (Zenith_ColliderComponent* pxCollider = m_xOwningEntity.TryGetComponent<Zenith_ColliderComponent>())
 	{
 		pxCollider->RebuildCollider();

@@ -1,6 +1,7 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics_Fwd.h"
+#include "AssetHandling/Zenith_AssetHandle.h"   // MeshGeometryHandle (owns the physics collision mesh)
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Reference.h>
 
@@ -14,6 +15,12 @@ namespace JPH
 	class Shape;
 	class BodyID;
 }
+
+// Physics collision-mesh types used only by-ref / by-ptr in this header; the full
+// definitions live in the .cpp (Flux/MeshGeometry/Flux_MeshGeometry.h and
+// Physics/Zenith_PhysicsMeshGenerator.h).
+class Flux_MeshGeometry;
+struct PhysicsMeshConfig;
 
 // Forward declarations for RegisterProperties (cycle-avoidance — see TransformComponent.h).
 template<typename T> class Zenith_Vector;
@@ -49,6 +56,16 @@ public:
 	RigidBodyType GetRigidBodyType() const { return m_eRigidBodyType; }
 	void SetDebugDrawPhysicsMesh(bool bEnable) { m_bDebugDrawPhysicsMesh = bEnable; }
 	bool GetDebugDrawPhysicsMesh() const { return m_bDebugDrawPhysicsMesh; }
+
+	// Collision mesh derived from the entity's Zenith_ModelComponent geometry. Built
+	// lazily at AddCollider/RebuildCollider time (MODEL_MESH volumes only), never
+	// serialized, and consumed by the MODEL_MESH shape builder, editor picking, and
+	// debug draw. Both accessors report ONLY revision-current geometry: if the model's
+	// geometry changed since the cached mesh was built (or there is no model), the mesh
+	// is treated as absent (HasPhysicsMesh() false / GetPhysicsMesh() null). It reappears
+	// after the next RebuildCollider(); the live Jolt body is left unchanged until then.
+	bool HasPhysicsMesh() const;
+	const Flux_MeshGeometry* GetPhysicsMesh() const;
 
 	// NavMesh-input flag: when false, Zenith_NavMeshGenerator skips this
 	// collider during geometry collection. The collider still participates
@@ -116,6 +133,15 @@ private:
 	JPH::RefConst<JPH::Shape> CreateTerrainShape();
 	JPH::RefConst<JPH::Shape> CreateConvexOrMeshShape(const Zenith_Maths::Vector3& xScale, RigidBodyType eRigidBodyType);
 
+	// Physics collision mesh (derived from the entity's Zenith_ModelComponent). Generated
+	// lazily and gated on the model's geometry revision, so an unchanged model reuses the
+	// cached mesh across a RebuildCollider (e.g. a scale change) instead of regenerating.
+	// EnsurePhysicsMeshCurrent is the single (re)generation entry point, called from
+	// CreateConvexOrMeshShape.
+	void EnsurePhysicsMeshCurrent();
+	void GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig);
+	void ClearPhysicsMesh();
+
 	Zenith_Entity m_xParentEntity;
 	JPH::Body* m_pxRigidBody = nullptr;
 	Zenith_PhysicsBodyID m_xBodyID;
@@ -142,5 +168,10 @@ private:
 		uint32_t m_uNumIndices = 0;
 	};
 	TerrainMeshData* m_pxTerrainMeshData = nullptr;
+
+	// Cached collision mesh + the model geometry revision it was built from. Runtime-only
+	// (never serialized); recreated lazily by EnsurePhysicsMeshCurrent.
+	MeshGeometryHandle m_xPhysicsMeshAsset;
+	uint32_t m_uPhysicsMeshGeometryRevision = 0;
 
 };

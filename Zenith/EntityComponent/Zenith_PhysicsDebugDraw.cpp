@@ -1,7 +1,6 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
 #include "EntityComponent/Zenith_PhysicsDebugDraw.h"
-#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"   // g_xPhysicsMeshConfig
 #include "ZenithECS/Zenith_Query.h"
@@ -47,22 +46,9 @@ void Zenith_PhysicsDebugDraw::QueueAll()
 {
 	// Iterate all loaded scenes (not just the active one) so props in additively-
 	// loaded scenes and characters in the persistent scene also surface their
-	// physics-mesh wireframes. Forwards to each component's debug-draw hook; the
-	// actual Flux line rendering happens in DrawMesh above.
-	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	g_xEngine.Scenes().QueryAllScenes<Zenith_ModelComponent>().ForEach(
-		[&xModels](Zenith_EntityID, Zenith_ModelComponent& xComp) { xModels.PushBack(&xComp); });
-
-	for (uint32_t i = 0; i < xModels.GetSize(); i++)
-	{
-		Zenith_ModelComponent* pxModel = xModels.Get(i);
-		if (!pxModel || !pxModel->GetDebugDrawPhysicsMesh())
-		{
-			continue;
-		}
-		pxModel->QueueDebugDrawPhysicsMesh(g_xPhysicsMeshConfig.m_xDebugColor);
-	}
-
+	// collider wireframes. Forwards to each collider's debug-draw hook; the actual
+	// Flux line rendering happens in DrawMesh above. (The model-derived collision mesh
+	// is owned by Zenith_ColliderComponent now, so a single collider pass covers it.)
 	Zenith_Vector<Zenith_ColliderComponent*> xColliders;
 	g_xEngine.Scenes().QueryAllScenes<Zenith_ColliderComponent>().ForEach(
 		[&xColliders](Zenith_EntityID, Zenith_ColliderComponent& xComp) { xColliders.PushBack(&xComp); });

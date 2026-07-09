@@ -1,11 +1,9 @@
 #pragma once
 #include "ZenithECS/Zenith_Entity.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
-#include "Physics/Zenith_PhysicsMeshGenerator.h"
 
 // Forward declarations for new asset/instance system
 class Zenith_ModelAsset;
-class Zenith_MeshGeometryAsset;
 class Flux_MeshGeometry;
 class Flux_ModelInstance;
 class Flux_MeshInstance;
@@ -15,17 +13,13 @@ class Flux_SkeletonInstance;
 template<typename T> class Zenith_Vector;
 struct Zenith_PropertyDescriptor;
 
-#ifdef ZENITH_TOOLS
-#include "imgui.h"
-#include "EntityComponent/Zenith_ComponentEditorRegistry.h"
-#include "Editor/Zenith_Editor_MaterialUI.h"
-#include <filesystem>
-// W5.2: the old #ifdef _WIN32 <windows.h>/<shlobj.h>/Shell32.lib block here was
-// vestigial (neither this header nor Zenith_ModelComponent.cpp references any
-// Win32/shell symbol) and dragged <windows.h> into every tools-build TU that
-// includes this widely-used component header. Removed.
-#endif
-
+// Owns a renderable Flux_ModelInstance and nothing else. The instance is populated
+// by one of two paths — LoadModel() (from a .zmodel asset) or AddMeshEntry()
+// (procedural geometry built at runtime) — and the component then exposes it plus a
+// few read-only rendering/skeleton queries used by the render snapshot fill, the
+// AnimatorComponent, and the AttachmentComponent. It is a render-instance owner: NOT
+// an asset loader (loading is one population path) and NOT a physics component (the
+// collision mesh derived from this geometry is owned by Zenith_ColliderComponent).
 class Zenith_ModelComponent
 {
 public:
@@ -146,68 +140,30 @@ public:
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 
-	//=========================================================================
-	// Physics Mesh
-	//=========================================================================
-
-	void GeneratePhysicsMesh(PhysicsMeshQuality eQuality = PHYSICS_MESH_QUALITY_MEDIUM);
-	void GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig);
-	Flux_MeshGeometry* GetPhysicsMesh() const;
-	bool HasPhysicsMesh() const { return m_xPhysicsMeshAsset.GetDirect() != nullptr; }
-	void SetDebugDrawPhysicsMesh(bool bEnable) { m_bDebugDrawPhysicsMesh = bEnable; }
-	bool GetDebugDrawPhysicsMesh() const { return m_bDebugDrawPhysicsMesh; }
-	void QueueDebugDrawPhysicsMesh(const Zenith_Maths::Vector3& xColor) const;
-	void ClearPhysicsMesh();
+	// Monotonic counter bumped whenever the model's geometry changes (LoadModel /
+	// ClearModel / AddMeshEntry). Zenith_ColliderComponent caches the collision mesh
+	// it derives from this geometry against this value, regenerating when it changes.
+	uint32_t GetGeometryRevision() const { return m_uGeometryRevision; }
 
 #ifdef ZENITH_TOOLS
-	//--------------------------------------------------------------------------
-	// Editor UI - Renders component properties in the Properties panel
-	//--------------------------------------------------------------------------
-
+	// Editor UI — renders this component's block in the Properties panel. The
+	// implementation and all its helpers live in Zenith_ModelComponent_Editor.cpp.
 	void RenderPropertiesPanel();
-
-private:
-	// Helper to load texture and assign to material slot (creates new material instance)
-	void AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, Zenith_EditorMaterialUI::TextureSlotType eSlot);
-
-	// Static thunk for Zenith_EditorMaterialUI::TextureAssignCallback (fn-ptr + void* context).
-	// Must be a STATIC MEMBER (not an anon-namespace free function) so it can reach the private
-	// AssignTextureToSlot above; &Zenith_ModelComponent::ModelTextureAssign_OnAssign is a plain
-	// function pointer compatible with the callback type. pContext is a ModelTextureAssignContext*.
-	static void ModelTextureAssign_OnAssign(void* pContext, const char* szFilePath);
-
-	// Per-section helpers that RenderPropertiesPanel dispatches to. Each owns
-	// one logical block of the properties panel (status, drop targets, material
-	// lists, etc.) so the top-level function stays a thin dispatcher.
-	void RenderModelStatusSection();
-	void RenderModelDropTargetSection();
-	void RenderManualLoadSection();
-	void RenderModelInstanceMaterialsSection();
-	void RenderMeshMaterialSlots(uint32_t uMeshIdx, Zenith_MaterialAsset& xMaterial);
-public:
 #endif
 
-//private:
+private:
 	Zenith_Entity m_xParentEntity;
 
-	//=========================================================================
-	// New Model Instance System
-	//=========================================================================
-
-	// Single model instance (replaces m_xMeshEntries for new system)
+	// Single owning model instance, populated by LoadModel (asset) or AddMeshEntry
+	// (procedural); null until one of those runs.
 	Flux_ModelInstance* m_pxModelInstance = nullptr;
 
-	// Path-based reference to the .zmodel asset (primary)
+	// Path-based reference to the .zmodel asset (primary) + its resolved path.
 	ModelHandle m_xModel;
-
-	// Path to the .zmodel file (cached from GUID resolution)
 	std::string m_strModelPath;
 
-	//=========================================================================
-	// Physics Mesh
-	//=========================================================================
-
-	MeshGeometryHandle m_xPhysicsMeshAsset;
-	bool m_bDebugDrawPhysicsMesh = false;
+	// Bumped on every geometry mutation (LoadModel / ClearModel / AddMeshEntry) so
+	// derived caches (Zenith_ColliderComponent's collision mesh) detect staleness.
+	uint32_t m_uGeometryRevision = 0;
 
 };

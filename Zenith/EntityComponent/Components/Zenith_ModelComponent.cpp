@@ -9,9 +9,6 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
-#include "AssetHandling/Zenith_MeshAsset.h"
-#include "AssetHandling/Zenith_MeshGeometryAsset.h"
-#include "EntityComponent/Zenith_PhysicsDebugDraw.h"
 // Wave 3: EC-side model render-gather (so the Flux mesh consumers drop their
 // Zenith_ModelComponent.h / Zenith_TransformComponent.h includes).
 #include "Core/Zenith_Engine.h"
@@ -55,10 +52,12 @@ void Zenith_ModelComponent::RegisterProperties(Zenith_Vector<Zenith_PropertyDesc
 // Version 5: Material overrides for model instance
 // Version 6: Removed legacy m_xMeshEntries path - single model-instance serialization
 // Version 7: Added model physics debug draw toggle
-static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION = 7;
+// Version 8: Physics collision mesh moved to Zenith_ColliderComponent — the v7 debug
+//            toggle is no longer written; a v7 payload's trailing byte is harmlessly
+//            absorbed by the per-component size framing (Zenith_ComponentMeta.cpp).
+static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION = 8;
 static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION_UNIFIED = 6;
 static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION_MATERIALS = 5;
-static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION_DEBUG_DRAW = 7;
 
 //=============================================================================
 // Destructor
@@ -67,9 +66,6 @@ Zenith_ModelComponent::~Zenith_ModelComponent()
 {
 	// Clean up model instance system
 	ClearModel();
-
-	// Clean up physics mesh if it was generated
-	ClearPhysicsMesh();
 }
 
 //=============================================================================
@@ -80,12 +76,10 @@ Zenith_ModelComponent::Zenith_ModelComponent(Zenith_ModelComponent&& xOther) noe
 	, m_pxModelInstance(xOther.m_pxModelInstance)
 	, m_xModel(std::move(xOther.m_xModel))
 	, m_strModelPath(std::move(xOther.m_strModelPath))
-	, m_xPhysicsMeshAsset(std::move(xOther.m_xPhysicsMeshAsset))
-	, m_bDebugDrawPhysicsMesh(xOther.m_bDebugDrawPhysicsMesh)
+	, m_uGeometryRevision(xOther.m_uGeometryRevision)
 {
 	// Nullify source pointers so its destructor doesn't delete our resources
 	xOther.m_pxModelInstance = nullptr;
-	xOther.m_bDebugDrawPhysicsMesh = false;
 }
 
 Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& xOther) noexcept
@@ -94,19 +88,18 @@ Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& 
 	{
 		// Release our existing resources
 		ClearModel();
-		ClearPhysicsMesh();
 
-		// Take ownership from source
+		// Take ownership from source. m_uGeometryRevision is carried over so a paired
+		// Zenith_ColliderComponent's cached collision-mesh revision stays valid across a
+		// component-pool relocation (a relocation does not change the geometry).
 		m_xParentEntity = xOther.m_xParentEntity;
 		m_pxModelInstance = xOther.m_pxModelInstance;
 		m_xModel = std::move(xOther.m_xModel);
 		m_strModelPath = std::move(xOther.m_strModelPath);
-		m_xPhysicsMeshAsset = std::move(xOther.m_xPhysicsMeshAsset);
-		m_bDebugDrawPhysicsMesh = xOther.m_bDebugDrawPhysicsMesh;
+		m_uGeometryRevision = xOther.m_uGeometryRevision;
 
 		// Nullify source pointers
 		xOther.m_pxModelInstance = nullptr;
-		xOther.m_bDebugDrawPhysicsMesh = false;
 	}
 	return *this;
 }
@@ -125,6 +118,10 @@ void Zenith_ModelComponent::AddMeshEntry(Flux_MeshGeometry& xGeometry, Zenith_Ma
 	{
 		m_pxModelInstance->AppendProceduralMesh(xGeometry, xMaterial);
 	}
+
+	// Geometry changed — bump the revision so a paired ColliderComponent regenerates
+	// its derived collision mesh on the next rebuild.
+	++m_uGeometryRevision;
 
 	// Phase 2: a renderable was created or its mesh set grew — bump the render-mutation
 	// epoch so the snapshot's copied diagnostics (mesh count) aren't read as current-but-stale.
@@ -219,11 +216,9 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 		}
 	}
 
-	// Generate physics mesh if auto-generation is enabled
-	if (g_xPhysicsMeshConfig.m_bAutoGenerate && m_pxModelInstance->GetNumMeshes() > 0)
-	{
-		GeneratePhysicsMesh();
-	}
+	// Geometry changed — bump the revision so a paired ColliderComponent regenerates
+	// its derived collision mesh on the next rebuild.
+	++m_uGeometryRevision;
 
 	// Phase 2: a new renderable now exists — bump the render-mutation epoch so the tools
 	// panel doesn't read a snapshot that predates it as "current".
@@ -235,6 +230,10 @@ void Zenith_ModelComponent::ClearModel()
 	// Delete model instance (handles cleanup of mesh instances, skeleton instance, etc.)
 	if (m_pxModelInstance)
 	{
+		// Geometry is going away — bump the revision so a paired ColliderComponent's
+		// cached collision mesh is treated as stale.
+		++m_uGeometryRevision;
+
 		// Phase 2: bump the render-mutation epoch BEFORE the free so the previous
 		// frame's snapshot (which may still reference this instance, and which the tools
 		// panel reads pre-rebuild) is marked stale before the pointer dangles. This is the
@@ -332,8 +331,6 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 			xEmptyMat.WriteToDataStream(xStream);
 		}
 	}
-
-	xStream << m_bDebugDrawPhysicsMesh;
 }
 
 void Zenith_ModelComponent::ReadModelInstanceWithMaterials(Zenith_DataStream& xStream, uint32_t uVersion)
@@ -378,17 +375,16 @@ void Zenith_ModelComponent::ReadModelInstanceWithMaterials(Zenith_DataStream& xS
 		}
 	}
 
-	if (uVersion >= MODEL_COMPONENT_SERIALIZE_VERSION_DEBUG_DRAW)
-	{
-		xStream >> m_bDebugDrawPhysicsMesh;
-	}
+	// v7 wrote a trailing physics-debug-draw bool here; v8 no longer reads it (the
+	// collision mesh + its debug toggle moved to Zenith_ColliderComponent). An old v7
+	// payload's extra byte is harmlessly absorbed by the per-component size framing
+	// (Zenith_ComponentMeta.cpp), so there is nothing to consume.
 }
 
 void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	ClearModel();
 	m_xModel.Clear();
-	m_bDebugDrawPhysicsMesh = false;
 
 	uint32_t uVersion;
 	xStream >> uVersion;
@@ -403,186 +399,6 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	}
 
 	ReadModelInstanceWithMaterials(xStream, uVersion);
-}
-
-//=============================================================================
-// Physics Mesh
-//=============================================================================
-
-void Zenith_ModelComponent::GeneratePhysicsMesh(PhysicsMeshQuality eQuality)
-{
-	PhysicsMeshConfig xConfig = g_xPhysicsMeshConfig;
-	xConfig.m_eQuality = eQuality;
-	GeneratePhysicsMeshWithConfig(xConfig);
-}
-
-namespace
-{
-	// Builds a throwaway Flux_MeshGeometry holding positions + indices copied
-	// from a Zenith_MeshAsset, for feeding the physics generator. The physics
-	// generator only reads m_pxPositions / m_puIndices / counts, so no other
-	// attributes need to be populated.
-	// Caller owns the returned pointer and must delete it.
-	Flux_MeshGeometry* BuildTempGeometryFromAsset(const Zenith_MeshAsset* pxAsset)
-	{
-		if (!pxAsset)
-		{
-			return nullptr;
-		}
-
-		const uint32_t uNumVerts = pxAsset->GetNumVerts();
-		const uint32_t uNumIndices = pxAsset->GetNumIndices();
-		if (uNumVerts == 0 || uNumIndices == 0)
-		{
-			return nullptr;
-		}
-
-		Flux_MeshGeometry* pxGeom = new Flux_MeshGeometry();
-		pxGeom->m_uNumVerts = uNumVerts;
-		pxGeom->m_uNumIndices = uNumIndices;
-
-		pxGeom->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(
-			Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-		pxGeom->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(
-			Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
-
-		for (uint32_t v = 0; v < uNumVerts; v++)
-		{
-			pxGeom->m_pxPositions[v] = pxAsset->m_xPositions.Get(v);
-		}
-		for (uint32_t i = 0; i < uNumIndices; i++)
-		{
-			pxGeom->m_puIndices[i] = pxAsset->m_xIndices.Get(i);
-		}
-
-		return pxGeom;
-	}
-}
-
-void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig)
-{
-	ClearPhysicsMesh();
-
-	if (!m_pxModelInstance || m_pxModelInstance->GetNumMeshes() == 0)
-	{
-		Zenith_Error(LOG_CATEGORY_PHYSICS, "Cannot generate physics mesh: no model instance");
-		return;
-	}
-
-	// Collect geometries from the model instance. Procedural meshes expose their
-	// source geometry directly; asset-backed meshes require a throwaway geometry
-	// populated from the mesh asset's positions/indices.
-	// The physics generator takes renderer-neutral views (positions + indices spans).
-	// Procedural meshes expose their geometry directly; asset-backed meshes get a
-	// throwaway Flux_MeshGeometry (owned here, in EntityComponent, where naming Flux
-	// is allowed). Each view points into one of those geometries for the call.
-	Zenith_Vector<Zenith_PhysicsMeshView> xViews;
-	Zenith_Vector<Flux_MeshGeometry*> xTempGeometries;
-
-	const uint32_t uNumMeshes = m_pxModelInstance->GetNumMeshes();
-	for (uint32_t uMesh = 0; uMesh < uNumMeshes; uMesh++)
-	{
-		Flux_MeshInstance* pxMeshInstance = m_pxModelInstance->GetMeshInstance(uMesh);
-		if (!pxMeshInstance)
-		{
-			continue;
-		}
-
-		const Flux_MeshGeometry* pxGeometry = pxMeshInstance->GetProceduralGeometry();
-		if (!pxGeometry)
-		{
-			if (Flux_MeshGeometry* pxTemp = BuildTempGeometryFromAsset(pxMeshInstance->GetSourceAsset()))
-			{
-				xTempGeometries.PushBack(pxTemp);
-				pxGeometry = pxTemp;
-			}
-		}
-
-		if (pxGeometry)
-		{
-			Zenith_PhysicsMeshView xView;
-			xView.m_pxPositions = pxGeometry->m_pxPositions;
-			xView.m_uNumVerts = pxGeometry->GetNumVerts();
-			xView.m_puIndices = pxGeometry->m_puIndices;
-			xView.m_uNumIndices = pxGeometry->GetNumIndices();
-			xViews.PushBack(xView);
-		}
-	}
-
-	if (xViews.GetSize() == 0)
-	{
-		Zenith_Error(LOG_CATEGORY_PHYSICS, "Cannot generate physics mesh: no valid geometries");
-		// Nothing to clean up - xTempGeometries is empty in this branch.
-		return;
-	}
-
-	if (Zenith_TransformComponent* pxTransform = m_xParentEntity.TryGetComponent<Zenith_TransformComponent>())
-	{
-		Zenith_Maths::Vector3 xScale;
-		pxTransform->GetScale(xScale);
-		Zenith_Log(LOG_CATEGORY_PHYSICS, "Generating physics mesh with entity scale (%.3f, %.3f, %.3f)",
-			xScale.x, xScale.y, xScale.z);
-	}
-
-	// The leaf generator returns renderer-neutral geometry; build the asset here
-	// (the asset side owns the Flux_MeshGeometry construction), so Physics names no
-	// renderer / asset type.
-	Zenith_GeneratedPhysicsMesh xGenerated = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xViews, xConfig);
-	MeshGeometryHandle xhPhysicsAsset = xGenerated.IsValid()
-		? Zenith_MeshGeometryAsset::CreateFromGeometryData(xGenerated.m_xPositions, xGenerated.m_xNormals, xGenerated.m_xIndices)
-		: MeshGeometryHandle();
-	Zenith_MeshGeometryAsset* pxPhysicsAsset = xhPhysicsAsset.GetDirect();
-	if (pxPhysicsAsset)
-	{
-		m_xPhysicsMeshAsset.Set(pxPhysicsAsset);
-		Flux_MeshGeometry* pxGeometry = pxPhysicsAsset->GetGeometry();
-		Zenith_Log(LOG_CATEGORY_PHYSICS, "Generated physics mesh for model: %u verts, %u tris",
-			pxGeometry->GetNumVerts(),
-			pxGeometry->GetNumIndices() / 3);
-
-		if (pxGeometry->GetNumVerts() > 0)
-		{
-			Zenith_Maths::Vector3& v0 = pxGeometry->m_pxPositions[0];
-			Zenith_Log(LOG_CATEGORY_PHYSICS, "First vertex in model space: (%.3f, %.3f, %.3f)",
-				v0.x, v0.y, v0.z);
-		}
-	}
-	else
-	{
-		Zenith_Error(LOG_CATEGORY_PHYSICS, "Failed to generate physics mesh for model");
-	}
-
-	// Release throwaway geometries now that the generator has produced its output.
-	for (uint32_t u = 0; u < xTempGeometries.GetSize(); u++)
-	{
-		delete xTempGeometries.Get(u);
-	}
-}
-
-void Zenith_ModelComponent::ClearPhysicsMesh()
-{
-	// Drop the handle ref; registry frees the asset when its refcount hits zero.
-	m_xPhysicsMeshAsset.Clear();
-}
-
-Flux_MeshGeometry* Zenith_ModelComponent::GetPhysicsMesh() const
-{
-	Zenith_MeshGeometryAsset* pxPhysics = m_xPhysicsMeshAsset.GetDirect();
-	return pxPhysics ? pxPhysics->GetGeometry() : nullptr;
-}
-
-void Zenith_ModelComponent::QueueDebugDrawPhysicsMesh(const Zenith_Maths::Vector3& xColor) const
-{
-	const Flux_MeshGeometry* pxPhysicsMesh = GetPhysicsMesh();
-	if (!pxPhysicsMesh)
-	{
-		return;
-	}
-
-	Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
-	Zenith_Maths::Matrix4 xModelMatrix;
-	xTransform.BuildModelMatrix(xModelMatrix);
-	Zenith_PhysicsDebugDraw::DrawMesh(pxPhysicsMesh, xModelMatrix, xColor);
 }
 
 // Editor code for RenderPropertiesPanel and AssignTextureToSlot
