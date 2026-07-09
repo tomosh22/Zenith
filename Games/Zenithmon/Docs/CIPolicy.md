@@ -1,0 +1,135 @@
+# Zenithmon -- CI Policy
+
+**Document purpose:** Records the CI gates that protect `master`, what the
+Zenithmon gate (`zm-tests`) runs, the branch-protection requirement, the
+runner constraints that shape the whole test strategy, and the escalation
+path when CI is red.
+
+**Companion docs:** ManualSetupChecklist.md (the manual required-check
+registration step), TestPlan.md (which tests run headless vs windowed),
+BuildEnvironment.md (the local mirror of the CI toolchain),
+AssetManifest.md (why the runner has no assets).
+
+**Status:** LIVING -- update whenever a gate is added/retired or branch
+protection changes.
+
+**Last updated:** 2026-07-09 (S0 -- zm-tests.yml written, first PR pending;
+required-check registration NOT yet done).
+
+---
+
+## 1. The Zenithmon gate: `zm-tests`
+
+`.github/workflows/zm-tests.yml` (a clone of the proven `dp-tests.yml`
+pattern), active from S0. Required check name: **`zm-tests`**.
+
+- **Triggers:** `pull_request` + `push` on master, plus `workflow_dispatch`
+  with a runner override input. 60-minute timeout.
+- **Concurrency:** superseded PR pushes cancel the in-flight run
+  (`cancel-in-progress` on pull_request only); master pushes always
+  complete.
+- **Steps:**
+  1. Checkout.
+  2. `./.github/actions/zenith-setup` -- provisions MSBuild, vcpkg,
+     Vulkan SDK **1.3.290.0**, Slang **2026.1**.
+  3. `Build/regen.ps1 -UseDotnet` (regenerate-first policy; generated files
+     are git-ignored so a fresh checkout has none).
+  4. Build `Games\Zenithmon\zenithmon_win64.sln /t:Zenithmon`
+     `Vulkan_vs2022_Debug_Win64_True`.
+  5. Build `D3D12_vs2022_Debug_Win64_False` -- the backend-neutrality
+     LINK proof (null backend; no rendering).
+  6. Copy runtime DLLs into the exe dir (full Slang tree +
+     vulkan-1.dll -- see BuildEnvironment.md section 5).
+  7. Headless boot check: `zenithmon.exe --list-automated-tests
+     --skip-tool-exports --skip-unit-tests --headless` must exit 0.
+  8. `zenith.bat test Zenithmon --headless --results-dir
+     Build/artifacts/test_results/zenithmon`.
+  9. Upload the per-test JSON as artifact **`zm-test-results`**
+     (`if: always()` -- results survive red runs).
+
+## 2. Runner constraints -- why headless pure-logic suites are the backbone
+
+Two hard facts about GitHub-hosted `windows-latest` runners shape
+everything:
+
+1. **No GPU / no Vulkan ICD.** The engine boots with `--headless`
+   (short-circuits Flux init so `vkEnumeratePhysicalDevices` never runs);
+   tests tagged `m_bRequiresGraphics=true` are skipped by the harness
+   (skip counts as pass). Windowed/graphics tests therefore run LOCALLY at
+   stage gates, never in CI.
+2. **No baked assets.** Everything under `Games/Zenithmon/Assets/` is
+   git-ignored (AssetManifest.md), so a fresh CI checkout has NO Assets/
+   directory. Every asset/scene-dependent automated test must exists-guard
+   and `RequestSkip` (the commit-`94813489` pattern).
+
+Consequence: **the CI backbone is the headless pure-logic suites** -- boot
+unit tests and, as stages land, battle engine / data-table / stats / AI /
+breeding / tower / save-schema / generator-determinism-in-memory /
+WorldSpec-integrity tests. These touch no disk assets and no GPU, so they
+run in FULL on every PR. This is a deliberate design constraint on all new
+tests, not an accident (see TestPlan.md).
+
+CI budget: the headless batch must stay in the minutes range (DP precedent:
+~2 min for ~140 tests); the slowest-10 report is reviewed at every stage
+gate.
+
+## 3. Pre-existing repo gates (`.github/workflows/`, verified 2026-07-09)
+
+| Workflow | Purpose |
+|---|---|
+| `dp-tests.yml` (`dp-tests`) | DevilsPlayground gate: Vulkan_True build + headless suite. The pattern zm-tests clones. |
+| `cb-tests.yml` (`cb-tests`) | CityBuilder gate: same pattern (build + headless suite + results artifact). |
+| `complexity.yml` (`complexity-gate`) | Engine-wide complexity-ceiling ratchet (analyze_code_complexity.py thresholds). |
+| `layering-gate.yml` (`layering-gate`) | Architecture ratchet: layer-DAG direction, ECS-leaf purity, encapsulation + convention lints. |
+| `memory-gate.yml` (`memory-gate`) | Memory-budget ratchet: committed baseline JSON validation, no build needed. |
+| `engine-gate.yml` (`engine-gate`) | Engine-only proofs: Sentinel leaf-purity links (SentinelECS/Physics/AI) + the engine unit-test suite at boot (game workflows run `--skip-unit-tests`; this gate owns them). |
+| `shader-validation.yml` (`shader-validation`) | Shader catalog validity + feature parity; fails if running FluxCompiler dirties the generated tree. |
+| `doc-lint.yml` (`doc-lint`) | Cross-document consistency lint (currently DP-scoped docs via Tools/doc_lint.ps1). |
+| `scaffold-smoke.yml` (`scaffold-smoke`) | Path-filtered proof that `zenith new` still produces a game that builds + boots; non-required burn-in. |
+| `release-build.yml` (`release-build`) | Nightly Release-config build proof; deliberately NOT PR-blocking. |
+
+The authoritative list of which checks are REQUIRED lives in GitHub branch
+protection (Settings -> Branches), not in this file; keep the table above in
+sync when gates change. `release-build` (nightly) and `scaffold-smoke`
+(burn-in) are documented as non-blocking by their own headers.
+
+## 4. Branch protection: adding `zm-tests` (MANUAL step, pending)
+
+GitHub only offers a check name in the required-checks picker after it has
+reported at least once, so the flow is:
+
+1. Open the first Zenithmon PR (S0 skeleton); let `zm-tests` run green.
+2. A human adds `zm-tests` to the master branch-protection required checks
+   via the GitHub web UI -- the exact click path is spelled out in
+   ManualSetupChecklist.md. **This cannot be done by an agent and is still
+   pending as of S0.**
+
+Until that box is ticked, zm-tests runs on every PR but does not BLOCK
+merges; treat it as blocking by discipline in the meantime.
+
+## 5. Merge policy
+
+- **Nothing merges red.** A PR with a failing required check (or a failing
+  zm-tests during the pre-registration window) does not merge, full stop.
+- Every stage-gate PR needs `zm-tests` green (see the per-stage gates in
+  Roadmap.md).
+- Artifacts: pull `zm-test-results` (per-test JSON, includes durations)
+  from the run page to diagnose failures without reproducing locally.
+
+## 6. Escalation path when CI is red
+
+1. **Fix forward ON the PR.** Push fixes to the same branch; the
+   concurrency group cancels the superseded run automatically. Never merge
+   around a red gate, never remove the check to unblock a PR.
+2. **Reproduce locally first:** `zenith test Zenithmon --headless` mirrors
+   the CI command exactly (BuildEnvironment.md section 4). If it is green
+   locally but red in CI, suspect the two runner constraints (section 2) --
+   an asset-dependent test missing its exists-guard/RequestSkip, or a
+   graphics dependency missing its `m_bRequiresGraphics` tag.
+3. **Get data, don't theorize:** pull the `zm-test-results` artifact and
+   the step logs (the boot-check step prints head+tail of engine output on
+   failure) before forming a theory.
+4. **If CI infrastructure itself is broken** (runner outage, zenith-setup
+   provisioning failure) -- not the code -- record it in Questions.md and
+   surface to the user; only a human with admin access can bypass branch
+   protection, and any such bypass gets a DecisionLog.md entry.
