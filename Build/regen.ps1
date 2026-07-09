@@ -73,8 +73,21 @@ try {
     }
     else {
         $exe = Join-Path $repoRoot 'Sharpmake\Sharpmake.Application.exe'
-        if (-not (Test-Path $exe)) { Fail "Sharpmake.Application.exe not found at $exe." 3 }
-        cmd /c "`"$exe`" $sourcesArg"
+        if (Test-Path $exe) {
+            cmd /c "`"$exe`" $sourcesArg"
+        }
+        else {
+            # No locally built Sharpmake.Application.exe (fresh clone / CI runner).
+            # Fall back to the TRACKED Sharpmake.Application.dll via dotnet -- the
+            # same engine -UseDotnet selects explicitly. This keeps `zenith new`
+            # and regen working on runners that never build the exe
+            # (scaffold-smoke was red on every CI run without this).
+            $dll = Join-Path $repoRoot 'Sharpmake\Sharpmake.Application.dll'
+            if (-not (Test-Path $dll)) { Fail "Sharpmake.Application.exe not found at $exe and no Sharpmake.Application.dll at $dll." 3 }
+            if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { Fail "Sharpmake.Application.exe not found at $exe and no 'dotnet' on PATH for the .dll fallback." 3 }
+            Write-Host "[regen] Sharpmake.Application.exe not found; falling back to 'dotnet exec Sharpmake.Application.dll'." -ForegroundColor DarkGray
+            cmd /c "dotnet exec `"$dll`" $sourcesArg"
+        }
     }
     $sharpmakeExit = $LASTEXITCODE
 }

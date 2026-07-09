@@ -11,7 +11,8 @@
 #      Vulkan_Debug_True build also proves the engine lib transitively.
 #
 # Baseline lives in Tools/run_unit_gate.ps1 (-Baseline default); bump it there
-# AND in Tools/test_scaffold.ps1 together when adding engine unit tests.
+# when adding engine unit tests (Tools/test_scaffold.ps1 reuses the same script,
+# so there is exactly one place to bump).
 #
 # Rollout: land with workflow_dispatch; enable pull_request/push after two
 # green dispatch runs; mark required after a week of burn-in.
