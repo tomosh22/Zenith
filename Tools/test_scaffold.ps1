@@ -46,7 +46,11 @@ try {
     Check ($null -ne $msbuild) "msbuild resolved"
     if ($msbuild -and (Test-Path $sln)) {
         Write-Host "[scaffold] building $Name (Vulkan_vs2022_Debug_Win64_True)..." -ForegroundColor Cyan
-        & $msbuild $sln /t:$Name /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64 /m /nologo /v:minimal | Out-Host
+        # /p:WindowsTargetPlatformVersion=10.0 resolves to the newest installed
+        # Windows SDK -- CI runners don't carry the exact SDK the generated
+        # vcxprojs pin (MSB8036). Same override every CI msbuild invocation uses
+        # (dp-tests / zm-tests / engine-gate).
+        & $msbuild $sln /t:$Name /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64 /p:WindowsTargetPlatformVersion=10.0 /m /nologo /v:minimal | Out-Host
         Check ($LASTEXITCODE -eq 0) "game builds _True"
 
         $exe = Join-Path $gameDir "Build/output/win64/vulkan_vs2022_debug_win64_true/$($Name.ToLowerInvariant()).exe"
