@@ -39,10 +39,17 @@ invalid|AUX
 invalid|COM1
 invalid|LPT9
 
-# --- Invalid: reserved engine prefixes (Zenith* / Sentinel*) ---
+# --- Invalid: reserved engine namespace (Zenith/Sentinel alone or + capitalized word) ---
 invalid|Zenith
 invalid|ZenithFoo
 invalid|SentinelX
+invalid|Sentinel
+invalid|Zenith2
+invalid|ZENITHMON
+
+# --- Valid: lowercase continuation of an engine prefix is a distinct word ---
+valid|Zenithmon
+valid|Sentinelle
 
 # --- Invalid: reserved project names ---
 invalid|FluxCompiler

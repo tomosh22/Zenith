@@ -42,7 +42,9 @@ $script:ZenithReservedDeviceNames = @(
 )
 
 # Exact engine/tool project names a game must not collide with (case-insensitive).
-# The Zenith* and Sentinel* prefixes are additionally reserved by pattern below.
+# 'Zenith'/'Sentinel' followed by a capitalized word (or alone) are additionally
+# reserved by pattern below -- the shape of every engine project. Lowercase
+# continuations (e.g. 'Zenithmon') are distinct words and allowed.
 $script:ZenithReservedProjectNames = @(
     'FluxCompiler', 'FreeType', 'Msdfgen', 'MsdfAtlasGen',
     'TilePuzzleLevelGen', 'TilePuzzleRegistryViewer', 'ZenithHub'
@@ -84,8 +86,14 @@ function Test-ZenithGameNameSyntax {
         $errs.Add("name '$Name' is a reserved Windows device name")
     }
 
-    if ($upper.StartsWith('ZENITH') -or $upper.StartsWith('SENTINEL')) {
-        $errs.Add("name '$Name' uses a reserved engine prefix (Zenith*/Sentinel*)")
+    foreach ($enginePrefix in @('ZENITH', 'SENTINEL')) {
+        if (-not $upper.StartsWith($enginePrefix)) { continue }
+        if ($Name.Length -eq $enginePrefix.Length) {
+            $errs.Add("name '$Name' is a reserved engine name")
+        }
+        elseif (([string]$Name[$enginePrefix.Length]) -cmatch '^[A-Z0-9]$') {
+            $errs.Add("name '$Name' uses a reserved engine prefix (Zenith/Sentinel + capitalized word)")
+        }
     }
 
     foreach ($reserved in $script:ZenithReservedProjectNames) {
