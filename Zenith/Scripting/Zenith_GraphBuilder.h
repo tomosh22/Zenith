@@ -52,6 +52,19 @@ public:
 	Zenith_GraphBuilder& ParamString(u_int uNodeID, const char* szProperty, const char* szValue);
 	Zenith_GraphBuilder& ParamVec3(u_int uNodeID, const char* szProperty, const Zenith_Maths::Vector3& xValue);
 
+	// Typed convenience over ParamInt for an int32-backed enum property (a
+	// compare/math op code, a game state, ...) - keeps the magic int out of the
+	// call site. Deliberately GENERIC: the builder names no specific op enum, so
+	// this header stays leaf-safe (op enums live in EntityComponent). The stored
+	// value is the enum's underlying int, so ParamEnum(uNode, p, eV) serializes
+	// byte-identically to ParamInt(uNode, p, (int32_t)eV).
+	template<typename TEnum>
+	Zenith_GraphBuilder& ParamEnum(u_int uNodeID, const char* szProperty, TEnum eValue)
+	{
+		static_assert(__is_enum(TEnum), "ParamEnum requires an enum type");
+		return ParamInt(uNodeID, szProperty, static_cast<int32_t>(eValue));
+	}
+
 	// Connects (uSrcNodeID, uSrcPin) -> uDstNodeID (exec input). One outgoing
 	// edge per (node, pin) - rejections latch the error flag.
 	Zenith_GraphBuilder& Edge(u_int uSrcNodeID, u_int uSrcPin, u_int uDstNodeID);

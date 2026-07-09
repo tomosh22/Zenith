@@ -12,6 +12,8 @@
 #include "Source/DPParticles.h"
 #include "Source/DPTutorial.h"
 #include "Scripting/Zenith_GraphBuilder.h"
+#include "EntityComponent/Zenith_GraphOps.h"
+#include "EntityComponent/Zenith_EngineGraphBuilder.h"
 #include "Source/DPResources.h"
 
 #include <cstdio>
@@ -1194,292 +1196,233 @@ namespace
 // components owned; DPGraphInteractable_Component / DPMenuRelay_Component fire
 // "Interact" / "MenuPlay" / "MenuQuit" custom events into them.
 // ============================================================================
+// ---- DP_Villager decisions, split (Phase 3) into per-concern sub-builders.
+// The four VillagerTick chains + the shared VillagerApplyDrain tail are
+// independent (shared blackboard vars, no shared node ids); called in the
+// original order they preserve node-creation + edge-add order -> byte-identical
+// authoring. Custom-event source chains run in NODE ORDER, reproducing the
+// retired OnUpdate's same-frame order: transitions -> movement booleans ->
+// life drain/Kill -> footsteps.
+
+static void BuildDPVillager_PossessionTransitions(Zenith_EngineGraphBuilder& xB)
+{
+	// T1: possession transitions (the retired OnUpdate switch).
+	Zenith_GraphChain xTick = xB.OnCustomEvent("VillagerTick", "dt");
+	const u_int uSwitch = xB.SwitchOnInt("state", 4);
+	xTick.Then(uSwitch);
+
+	// Idle + possessed -> Possessed (life bump to max).
+	const u_int uIdleGate = xB.Gate("possessedNow");
+	const u_int uToPossessed = xB.SetBlackboardInt("state", 1);
+	const u_int uBumpLife = xB.Node("MathBlackboardFloat");	// remainingLife = maxLife
+	xB.ParamString(uBumpLife, "m_strVar", "maxLife");
+	xB.ParamEnum(uBumpLife, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
+	xB.ParamFloat(uBumpLife, "m_fOperand", 0.0f);
+	xB.ParamString(uBumpLife, "m_strResultVar", "remainingLife");
+	xB.Edge(uSwitch, 0, uIdleGate);
+	xB.Chain(uIdleGate, uToPossessed).Chain(uToPossessed, uBumpLife);
+
+	// Possessed + un-possessed -> Fainted (arm faint timer LIVE from
+	// tuning, like the retired transition). Kill()'s burn-out path never
+	// reaches this: it writes state=Dead synchronously mid-tick, so the
+	// next tick dispatches the Dead pin instead (quirk preserved).
+	const u_int uBrUnpossess = xB.Branch("possessedNow");
+	const u_int uToFainted = xB.SetBlackboardInt("state", 2);
+	const u_int uArmFaint = xB.Node("DPReadTuningFloat");
+	xB.ParamString(uArmFaint, "m_strKey", "possession.voluntary_switch_faint_recovery_s");
+	xB.ParamString(uArmFaint, "m_strVar", "faintRecovery");
+	xB.Edge(uSwitch, 1, uBrUnpossess);
+	xB.Edge(uBrUnpossess, 1, uToFainted);	// false pin = un-possessed
+	xB.Chain(uToFainted, uArmFaint);
+
+	// Fainted: system-path wake bypass, else recovery countdown -> Idle.
+	const u_int uBrWake = xB.Branch("possessedNow");
+	xB.Edge(uSwitch, 2, uBrWake);
+	const u_int uWake = xB.SetBlackboardInt("state", 1);
+	const u_int uWakeLife = xB.Node("MathBlackboardFloat");	// remainingLife = maxLife
+	xB.ParamString(uWakeLife, "m_strVar", "maxLife");
+	xB.ParamEnum(uWakeLife, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
+	xB.ParamFloat(uWakeLife, "m_fOperand", 0.0f);
+	xB.ParamString(uWakeLife, "m_strResultVar", "remainingLife");
+	const u_int uWakeClear = xB.SetBlackboardFloat("faintRecovery", 0.0f);
+	xB.Edge(uBrWake, 0, uWake);
+	xB.Chain(uWake, uWakeLife).Chain(uWakeLife, uWakeClear);
+
+	const u_int uRecTick = xB.Node("MathBlackboardFloat");	// faintRecovery -= dt
+	xB.ParamString(uRecTick, "m_strVar", "faintRecovery");
+	xB.ParamEnum(uRecTick, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
+	xB.ParamString(uRecTick, "m_strOperandVar", "dt");
+	const u_int uRecDone = xB.CompareFloat("faintRecovery", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f, "faintExpired");
+	const u_int uRecGate = xB.Gate("faintExpired");
+	const u_int uRecClamp = xB.SetBlackboardFloat("faintRecovery", 0.0f);
+	const u_int uToIdle = xB.SetBlackboardInt("state", 0);
+	xB.Edge(uBrWake, 1, uRecTick);
+	xB.Chain(uRecTick, uRecDone).Chain(uRecDone, uRecGate)
+		.Chain(uRecGate, uRecClamp).Chain(uRecClamp, uToIdle);
+	// Dead (pin 3): terminal, unwired.
+}
+
+static void BuildDPVillager_MovementModes(Zenith_EngineGraphBuilder& xB)
+{
+	// T2: movement-mode booleans (sprint wins Shift+Ctrl ties).
+	Zenith_GraphChain xTick = xB.OnCustomEvent("VillagerTick", "dt");
+	// POST-transition possession fact. Also the shim's movement-systems
+	// gate: computed BEFORE the life-drain chain can Kill(), it matches
+	// the retired mid-OnUpdate m_bIsPossessed sync (movement still runs
+	// once on a burn-out death frame).
+	const u_int uIsPoss = xB.CompareInt("state", GRAPH_COMPARE_INT_OP_EQUAL, 1, "stateIsPossessed");
+	xTick.Then(uIsPoss);
+	const u_int uBrPoss = xB.Branch("stateIsPossessed");
+	xB.Chain(uIsPoss, uBrPoss);
+
+	const u_int uBrMoving = xB.Branch("moving");
+	xB.Edge(uBrPoss, 0, uBrMoving);
+
+	const u_int uBrSprint = xB.Branch("sprintHeld");
+	xB.Edge(uBrMoving, 0, uBrSprint);
+
+	const u_int uSprOn = xB.SetBlackboardBool("sprinting", true);
+	const u_int uSprQuietOff = xB.SetBlackboardBool("walkQuiet", false);
+	const u_int uPingSprint = xB.Node("DPVillagerTutorialPing");
+	xB.ParamInt(uPingSprint, "m_iKind", static_cast<int32_t>(DP_Tutorial::Kind::FirstSprintUse));
+	xB.Edge(uBrSprint, 0, uSprOn);
+	xB.Chain(uSprOn, uSprQuietOff).Chain(uSprQuietOff, uPingSprint);
+
+	const u_int uSprOff = xB.SetBlackboardBool("sprinting", false);
+	const u_int uBrQuiet = xB.Branch("quietHeld");
+	xB.Edge(uBrSprint, 1, uSprOff);
+	xB.Chain(uSprOff, uBrQuiet);
+	const u_int uQuietOn = xB.SetBlackboardBool("walkQuiet", true);
+	const u_int uPingQuiet = xB.Node("DPVillagerTutorialPing");
+	xB.ParamInt(uPingQuiet, "m_iKind", static_cast<int32_t>(DP_Tutorial::Kind::FirstWalkQuietUse));
+	xB.Edge(uBrQuiet, 0, uQuietOn);
+	xB.Chain(uQuietOn, uPingQuiet);
+	const u_int uQuietOff = xB.SetBlackboardBool("walkQuiet", false);
+	xB.Edge(uBrQuiet, 1, uQuietOff);
+
+	// Not moving / not possessed: both booleans off (two small tails -
+	// chains can't rejoin; each Branch false-path gets its own pair).
+	const u_int uIdleSprOff = xB.SetBlackboardBool("sprinting", false);
+	const u_int uIdleQuietOff = xB.SetBlackboardBool("walkQuiet", false);
+	xB.Edge(uBrMoving, 1, uIdleSprOff);
+	xB.Chain(uIdleSprOff, uIdleQuietOff);
+
+	const u_int uUnpossSprOff = xB.SetBlackboardBool("sprinting", false);
+	const u_int uUnpossQuietOff = xB.SetBlackboardBool("walkQuiet", false);
+	xB.Edge(uBrPoss, 1, uUnpossSprOff);
+	xB.Chain(uUnpossSprOff, uUnpossQuietOff);
+}
+
+static void BuildDPVillager_LifeDrain(Zenith_EngineGraphBuilder& xB)
+{
+	// T3: life drain -> Kill (MVP-1.7 sprint cost, MVP-1.3.5 death).
+	{
+		Zenith_GraphChain xTick = xB.OnCustomEvent("VillagerTick", "dt");
+		const u_int uGate = xB.Gate("stateIsPossessed");
+		xTick.Then(uGate);
+		const u_int uDrainBase = xB.Node("MathBlackboardFloat");	// drain = dt
+		xB.ParamString(uDrainBase, "m_strVar", "dt");
+		xB.ParamEnum(uDrainBase, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
+		xB.ParamFloat(uDrainBase, "m_fOperand", 0.0f);
+		xB.ParamString(uDrainBase, "m_strResultVar", "drain");
+		xB.Chain(uGate, uDrainBase);
+		const u_int uBrSprint = xB.Branch("sprinting");
+		xB.Chain(uDrainBase, uBrSprint);
+		// Sprinting: drain += sprintCostExtra * dt (the OnAwake-baked scale).
+		const u_int uExtra = xB.Node("MathBlackboardFloat");	// extra = dt * sprintCostExtra
+		xB.ParamString(uExtra, "m_strVar", "dt");
+		xB.ParamEnum(uExtra, "m_iOp", GRAPH_MATH_FLOAT_OP_MULTIPLY);
+		xB.ParamString(uExtra, "m_strOperandVar", "sprintCostExtra");
+		xB.ParamString(uExtra, "m_strResultVar", "extra");
+		const u_int uAddExtra = xB.Node("AddBlackboardFloat");
+		xB.ParamString(uAddExtra, "m_strVariable", "drain");
+		xB.ParamString(uAddExtra, "m_strDeltaVar", "extra");
+		const u_int uFireSprint = xB.FireCustomEvent("VillagerApplyDrain");	// chain-reuse: apply at self
+		xB.Edge(uBrSprint, 0, uExtra);
+		xB.Chain(uExtra, uAddExtra).Chain(uAddExtra, uFireSprint);
+		const u_int uFirePlain = xB.FireCustomEvent("VillagerApplyDrain");
+		xB.Edge(uBrSprint, 1, uFirePlain);
+	}
+	{
+		// Shared drain-apply tail (fired synchronously from T3's two paths).
+		Zenith_GraphChain xApplyTick = xB.OnCustomEvent("VillagerApplyDrain");
+		const u_int uApply = xB.Node("MathBlackboardFloat");	// remainingLife -= drain
+		xB.ParamString(uApply, "m_strVar", "remainingLife");
+		xB.ParamEnum(uApply, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
+		xB.ParamString(uApply, "m_strOperandVar", "drain");
+		const u_int uDepleted = xB.CompareFloat("remainingLife", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f, "lifeDepleted");
+		const u_int uGateDead = xB.Gate("lifeDepleted");
+		const u_int uKill = xB.Node("DPVillagerKill");
+		xApplyTick.Then(uApply).Then(uDepleted).Then(uGateDead).Then(uKill);
+	}
+}
+
+static void BuildDPVillager_Footsteps(Zenith_EngineGraphBuilder& xB)
+{
+	// T4: footstep cadence (MVP-1.7.5).
+	Zenith_GraphChain xTick = xB.OnCustomEvent("VillagerTick", "dt");
+	const u_int uGate = xB.Gate("stateIsPossessed");
+	xTick.Then(uGate);
+	const u_int uBrMoving = xB.Branch("moving");
+	xB.Chain(uGate, uBrMoving);
+	// Moving: countdown -= dt; on expiry reset to the interval + emit.
+	const u_int uCdTick = xB.Node("MathBlackboardFloat");
+	xB.ParamString(uCdTick, "m_strVar", "footstepCountdown");
+	xB.ParamEnum(uCdTick, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
+	xB.ParamString(uCdTick, "m_strOperandVar", "dt");
+	const u_int uDue = xB.CompareFloat("footstepCountdown", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f, "stepDue");
+	const u_int uGateDue = xB.Gate("stepDue");
+	const u_int uReset = xB.Node("MathBlackboardFloat");	// countdown = interval (exact reset, no overshoot carry)
+	xB.ParamString(uReset, "m_strVar", "footstepInterval");
+	xB.ParamEnum(uReset, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
+	xB.ParamFloat(uReset, "m_fOperand", 0.0f);
+	xB.ParamString(uReset, "m_strResultVar", "footstepCountdown");
+	const u_int uEmit = xB.Node("DPVillagerEmitFootstep");
+	xB.Edge(uBrMoving, 0, uCdTick);
+	xB.Chain(uCdTick, uDue).Chain(uDue, uGateDue)
+		.Chain(uGateDue, uReset).Chain(uReset, uEmit);
+	// Idle: hold at zero so the first step after movement is immediate.
+	const u_int uCdZero = xB.SetBlackboardFloat("footstepCountdown", 0.0f);
+	xB.Edge(uBrMoving, 1, uCdZero);
+}
+
 // BuildGraph_DPVillager - the W3 villager decisions graph (programmatic
 // builder, the W1+ authoring path). Driven by "VillagerTick" custom events
 // fired from DPVillager_Component::OnUpdate with dt as the payload (stashed
 // to "dt"); the shim stages possessedNow/moving/sprintHeld/quietHeld before
 // each fire and seeds maxLife + the cached movement tuning at OnAwake.
-// Custom-event source chains run in NODE ORDER - the four VillagerTick
-// chains reproduce the retired OnUpdate's same-frame decision order:
-// transitions -> movement-mode booleans -> life drain/Kill -> footsteps.
 static void BuildGraph_DPVillager(Zenith_GraphBuilder& xBuilder)
 {
+	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0; xF0.SetFloat(0.0f);
 	Zenith_PropertyValue xI0; xI0.SetInt32(0);
 	Zenith_PropertyValue xBF; xBF.SetBool(false);
 
 	// Lifecycle state (MVP-1.4.1-3) + decision outputs the shim/tests read.
-	xBuilder.Variable("state", xI0);				// DPVillagerState as int
-	xBuilder.Variable("remainingLife", xF0);
-	xBuilder.Variable("maxLife", xF0);
-	xBuilder.Variable("faintRecovery", xF0);
-	xBuilder.Variable("sprinting", xBF);
-	xBuilder.Variable("walkQuiet", xBF);
-	xBuilder.Variable("stateIsPossessed", xBF);
-	xBuilder.Variable("footstepCountdown", xF0);
+	xB.Variable("state", xI0);				// DPVillagerState as int
+	xB.Variable("remainingLife", xF0);
+	xB.Variable("maxLife", xF0);
+	xB.Variable("faintRecovery", xF0);
+	xB.Variable("sprinting", xBF);
+	xB.Variable("walkQuiet", xBF);
+	xB.Variable("stateIsPossessed", xBF);
+	xB.Variable("footstepCountdown", xF0);
 	// Per-frame staged facts (shim-written before each VillagerTick).
-	xBuilder.Variable("possessedNow", xBF);
-	xBuilder.Variable("moving", xBF);
-	xBuilder.Variable("sprintHeld", xBF);
-	xBuilder.Variable("quietHeld", xBF);
+	xB.Variable("possessedNow", xBF);
+	xB.Variable("moving", xBF);
+	xB.Variable("sprintHeld", xBF);
+	xB.Variable("quietHeld", xBF);
 	// OnAwake-seeded tuning mirror (sprint cost keeps the MetaSave bake).
-	xBuilder.Variable("sprintCostExtra", xF0);
-	xBuilder.Variable("footstepInterval", xF0);
-	xBuilder.Variable("footstepLoudness", xF0);
-	xBuilder.Variable("footstepRadius", xF0);
-	xBuilder.Variable("quietLoudnessMult", xF0);
+	xB.Variable("sprintCostExtra", xF0);
+	xB.Variable("footstepInterval", xF0);
+	xB.Variable("footstepLoudness", xF0);
+	xB.Variable("footstepRadius", xF0);
+	xB.Variable("quietLoudnessMult", xF0);
 
-	// ---- T1: possession transitions (the retired OnUpdate switch) ----------
-	{
-		const u_int uTick = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uTick, "m_strEventName", "VillagerTick");
-		xBuilder.ParamString(uTick, "m_strStorePayloadVar", "dt");
-		const u_int uSwitch = xBuilder.Node("SwitchOnInt");
-		xBuilder.ParamString(uSwitch, "m_strVar", "state");
-		xBuilder.ParamInt(uSwitch, "m_iCaseCount", 4);
-		xBuilder.Chain(uTick, uSwitch);
-
-		// Idle + possessed -> Possessed (life bump to max).
-		const u_int uIdleGate = xBuilder.Node("Gate");
-		xBuilder.ParamString(uIdleGate, "m_strOpenVar", "possessedNow");
-		const u_int uToPossessed = xBuilder.Node("SetBlackboardInt");
-		xBuilder.ParamString(uToPossessed, "m_strVariable", "state");
-		xBuilder.ParamInt(uToPossessed, "m_iValue", 1);
-		const u_int uBumpLife = xBuilder.Node("MathBlackboardFloat");	// remainingLife = maxLife
-		xBuilder.ParamString(uBumpLife, "m_strVar", "maxLife");
-		xBuilder.ParamInt(uBumpLife, "m_iOp", 0);
-		xBuilder.ParamFloat(uBumpLife, "m_fOperand", 0.0f);
-		xBuilder.ParamString(uBumpLife, "m_strResultVar", "remainingLife");
-		xBuilder.Edge(uSwitch, 0, uIdleGate);
-		xBuilder.Chain(uIdleGate, uToPossessed).Chain(uToPossessed, uBumpLife);
-
-		// Possessed + un-possessed -> Fainted (arm faint timer LIVE from
-		// tuning, like the retired transition). Kill()'s burn-out path never
-		// reaches this: it writes state=Dead synchronously mid-tick, so the
-		// next tick dispatches the Dead pin instead (quirk preserved).
-		const u_int uBrUnpossess = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrUnpossess, "m_strConditionVar", "possessedNow");
-		const u_int uToFainted = xBuilder.Node("SetBlackboardInt");
-		xBuilder.ParamString(uToFainted, "m_strVariable", "state");
-		xBuilder.ParamInt(uToFainted, "m_iValue", 2);
-		const u_int uArmFaint = xBuilder.Node("DPReadTuningFloat");
-		xBuilder.ParamString(uArmFaint, "m_strKey", "possession.voluntary_switch_faint_recovery_s");
-		xBuilder.ParamString(uArmFaint, "m_strVar", "faintRecovery");
-		xBuilder.Edge(uSwitch, 1, uBrUnpossess);
-		xBuilder.Edge(uBrUnpossess, 1, uToFainted);	// false pin = un-possessed
-		xBuilder.Chain(uToFainted, uArmFaint);
-
-		// Fainted: system-path wake bypass, else recovery countdown -> Idle.
-		const u_int uBrWake = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrWake, "m_strConditionVar", "possessedNow");
-		xBuilder.Edge(uSwitch, 2, uBrWake);
-		const u_int uWake = xBuilder.Node("SetBlackboardInt");
-		xBuilder.ParamString(uWake, "m_strVariable", "state");
-		xBuilder.ParamInt(uWake, "m_iValue", 1);
-		const u_int uWakeLife = xBuilder.Node("MathBlackboardFloat");	// remainingLife = maxLife
-		xBuilder.ParamString(uWakeLife, "m_strVar", "maxLife");
-		xBuilder.ParamInt(uWakeLife, "m_iOp", 0);
-		xBuilder.ParamFloat(uWakeLife, "m_fOperand", 0.0f);
-		xBuilder.ParamString(uWakeLife, "m_strResultVar", "remainingLife");
-		const u_int uWakeClear = xBuilder.Node("SetBlackboardFloat");
-		xBuilder.ParamString(uWakeClear, "m_strVariable", "faintRecovery");
-		xBuilder.ParamFloat(uWakeClear, "m_fValue", 0.0f);
-		xBuilder.Edge(uBrWake, 0, uWake);
-		xBuilder.Chain(uWake, uWakeLife).Chain(uWakeLife, uWakeClear);
-
-		const u_int uRecTick = xBuilder.Node("MathBlackboardFloat");	// faintRecovery -= dt
-		xBuilder.ParamString(uRecTick, "m_strVar", "faintRecovery");
-		xBuilder.ParamInt(uRecTick, "m_iOp", 0);
-		xBuilder.ParamString(uRecTick, "m_strOperandVar", "dt");
-		const u_int uRecDone = xBuilder.Node("CompareBlackboardFloat");
-		xBuilder.ParamString(uRecDone, "m_strVar", "faintRecovery");
-		xBuilder.ParamFloat(uRecDone, "m_fCompareTo", 0.0f);
-		xBuilder.ParamInt(uRecDone, "m_iOp", 1);	// <=
-		xBuilder.ParamString(uRecDone, "m_strResultVar", "faintExpired");
-		const u_int uRecGate = xBuilder.Node("Gate");
-		xBuilder.ParamString(uRecGate, "m_strOpenVar", "faintExpired");
-		const u_int uRecClamp = xBuilder.Node("SetBlackboardFloat");
-		xBuilder.ParamString(uRecClamp, "m_strVariable", "faintRecovery");
-		xBuilder.ParamFloat(uRecClamp, "m_fValue", 0.0f);
-		const u_int uToIdle = xBuilder.Node("SetBlackboardInt");
-		xBuilder.ParamString(uToIdle, "m_strVariable", "state");
-		xBuilder.ParamInt(uToIdle, "m_iValue", 0);
-		xBuilder.Edge(uBrWake, 1, uRecTick);
-		xBuilder.Chain(uRecTick, uRecDone).Chain(uRecDone, uRecGate)
-			.Chain(uRecGate, uRecClamp).Chain(uRecClamp, uToIdle);
-		// Dead (pin 3): terminal, unwired.
-	}
-
-	// ---- T2: movement-mode booleans (sprint wins Shift+Ctrl ties) ----------
-	{
-		const u_int uTick = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uTick, "m_strEventName", "VillagerTick");
-		xBuilder.ParamString(uTick, "m_strStorePayloadVar", "dt");
-		// POST-transition possession fact. Also the shim's movement-systems
-		// gate: computed BEFORE the life-drain chain can Kill(), it matches
-		// the retired mid-OnUpdate m_bIsPossessed sync (movement still runs
-		// once on a burn-out death frame).
-		const u_int uIsPoss = xBuilder.Node("CompareBlackboardInt");
-		xBuilder.ParamString(uIsPoss, "m_strVar", "state");
-		xBuilder.ParamInt(uIsPoss, "m_iCompareTo", 1);
-		xBuilder.ParamInt(uIsPoss, "m_iOp", 4);	// ==
-		xBuilder.ParamString(uIsPoss, "m_strResultVar", "stateIsPossessed");
-		xBuilder.Chain(uTick, uIsPoss);
-		const u_int uBrPoss = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrPoss, "m_strConditionVar", "stateIsPossessed");
-		xBuilder.Chain(uIsPoss, uBrPoss);
-
-		const u_int uBrMoving = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrMoving, "m_strConditionVar", "moving");
-		xBuilder.Edge(uBrPoss, 0, uBrMoving);
-
-		const u_int uBrSprint = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrSprint, "m_strConditionVar", "sprintHeld");
-		xBuilder.Edge(uBrMoving, 0, uBrSprint);
-
-		const u_int uSprOn = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uSprOn, "m_strVariable", "sprinting");
-		xBuilder.ParamBool(uSprOn, "m_bValue", true);
-		const u_int uSprQuietOff = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uSprQuietOff, "m_strVariable", "walkQuiet");
-		xBuilder.ParamBool(uSprQuietOff, "m_bValue", false);
-		const u_int uPingSprint = xBuilder.Node("DPVillagerTutorialPing");
-		xBuilder.ParamInt(uPingSprint, "m_iKind", static_cast<int32_t>(DP_Tutorial::Kind::FirstSprintUse));
-		xBuilder.Edge(uBrSprint, 0, uSprOn);
-		xBuilder.Chain(uSprOn, uSprQuietOff).Chain(uSprQuietOff, uPingSprint);
-
-		const u_int uSprOff = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uSprOff, "m_strVariable", "sprinting");
-		xBuilder.ParamBool(uSprOff, "m_bValue", false);
-		const u_int uBrQuiet = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrQuiet, "m_strConditionVar", "quietHeld");
-		xBuilder.Edge(uBrSprint, 1, uSprOff);
-		xBuilder.Chain(uSprOff, uBrQuiet);
-		const u_int uQuietOn = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uQuietOn, "m_strVariable", "walkQuiet");
-		xBuilder.ParamBool(uQuietOn, "m_bValue", true);
-		const u_int uPingQuiet = xBuilder.Node("DPVillagerTutorialPing");
-		xBuilder.ParamInt(uPingQuiet, "m_iKind", static_cast<int32_t>(DP_Tutorial::Kind::FirstWalkQuietUse));
-		xBuilder.Edge(uBrQuiet, 0, uQuietOn);
-		xBuilder.Chain(uQuietOn, uPingQuiet);
-		const u_int uQuietOff = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uQuietOff, "m_strVariable", "walkQuiet");
-		xBuilder.ParamBool(uQuietOff, "m_bValue", false);
-		xBuilder.Edge(uBrQuiet, 1, uQuietOff);
-
-		// Not moving / not possessed: both booleans off (two small tails -
-		// chains can't rejoin; each Branch false-path gets its own pair).
-		const u_int uIdleSprOff = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uIdleSprOff, "m_strVariable", "sprinting");
-		xBuilder.ParamBool(uIdleSprOff, "m_bValue", false);
-		const u_int uIdleQuietOff = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uIdleQuietOff, "m_strVariable", "walkQuiet");
-		xBuilder.ParamBool(uIdleQuietOff, "m_bValue", false);
-		xBuilder.Edge(uBrMoving, 1, uIdleSprOff);
-		xBuilder.Chain(uIdleSprOff, uIdleQuietOff);
-
-		const u_int uUnpossSprOff = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uUnpossSprOff, "m_strVariable", "sprinting");
-		xBuilder.ParamBool(uUnpossSprOff, "m_bValue", false);
-		const u_int uUnpossQuietOff = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uUnpossQuietOff, "m_strVariable", "walkQuiet");
-		xBuilder.ParamBool(uUnpossQuietOff, "m_bValue", false);
-		xBuilder.Edge(uBrPoss, 1, uUnpossSprOff);
-		xBuilder.Chain(uUnpossSprOff, uUnpossQuietOff);
-	}
-
-	// ---- T3: life drain -> Kill (MVP-1.7 sprint cost, MVP-1.3.5 death) -----
-	{
-		const u_int uTick = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uTick, "m_strEventName", "VillagerTick");
-		xBuilder.ParamString(uTick, "m_strStorePayloadVar", "dt");
-		const u_int uGate = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGate, "m_strOpenVar", "stateIsPossessed");
-		xBuilder.Chain(uTick, uGate);
-		const u_int uDrainBase = xBuilder.Node("MathBlackboardFloat");	// drain = dt
-		xBuilder.ParamString(uDrainBase, "m_strVar", "dt");
-		xBuilder.ParamInt(uDrainBase, "m_iOp", 0);
-		xBuilder.ParamFloat(uDrainBase, "m_fOperand", 0.0f);
-		xBuilder.ParamString(uDrainBase, "m_strResultVar", "drain");
-		xBuilder.Chain(uGate, uDrainBase);
-		const u_int uBrSprint = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrSprint, "m_strConditionVar", "sprinting");
-		xBuilder.Chain(uDrainBase, uBrSprint);
-		// Sprinting: drain += sprintCostExtra * dt (the OnAwake-baked scale).
-		const u_int uExtra = xBuilder.Node("MathBlackboardFloat");	// extra = dt * sprintCostExtra
-		xBuilder.ParamString(uExtra, "m_strVar", "dt");
-		xBuilder.ParamInt(uExtra, "m_iOp", 1);
-		xBuilder.ParamString(uExtra, "m_strOperandVar", "sprintCostExtra");
-		xBuilder.ParamString(uExtra, "m_strResultVar", "extra");
-		const u_int uAddExtra = xBuilder.Node("AddBlackboardFloat");
-		xBuilder.ParamString(uAddExtra, "m_strVariable", "drain");
-		xBuilder.ParamString(uAddExtra, "m_strDeltaVar", "extra");
-		const u_int uFireSprint = xBuilder.Node("FireCustomEvent");	// chain-reuse: apply at self
-		xBuilder.ParamString(uFireSprint, "m_strEventName", "VillagerApplyDrain");
-		xBuilder.Edge(uBrSprint, 0, uExtra);
-		xBuilder.Chain(uExtra, uAddExtra).Chain(uAddExtra, uFireSprint);
-		const u_int uFirePlain = xBuilder.Node("FireCustomEvent");
-		xBuilder.ParamString(uFirePlain, "m_strEventName", "VillagerApplyDrain");
-		xBuilder.Edge(uBrSprint, 1, uFirePlain);
-	}
-	{
-		// Shared drain-apply tail (fired synchronously from T3's two paths).
-		const u_int uApplyTick = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uApplyTick, "m_strEventName", "VillagerApplyDrain");
-		const u_int uApply = xBuilder.Node("MathBlackboardFloat");	// remainingLife -= drain
-		xBuilder.ParamString(uApply, "m_strVar", "remainingLife");
-		xBuilder.ParamInt(uApply, "m_iOp", 0);
-		xBuilder.ParamString(uApply, "m_strOperandVar", "drain");
-		const u_int uDepleted = xBuilder.Node("CompareBlackboardFloat");
-		xBuilder.ParamString(uDepleted, "m_strVar", "remainingLife");
-		xBuilder.ParamFloat(uDepleted, "m_fCompareTo", 0.0f);
-		xBuilder.ParamInt(uDepleted, "m_iOp", 1);	// <=
-		xBuilder.ParamString(uDepleted, "m_strResultVar", "lifeDepleted");
-		const u_int uGateDead = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGateDead, "m_strOpenVar", "lifeDepleted");
-		const u_int uKill = xBuilder.Node("DPVillagerKill");
-		xBuilder.Chain(uApplyTick, uApply).Chain(uApply, uDepleted)
-			.Chain(uDepleted, uGateDead).Chain(uGateDead, uKill);
-	}
-
-	// ---- T4: footstep cadence (MVP-1.7.5) ----------------------------------
-	{
-		const u_int uTick = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uTick, "m_strEventName", "VillagerTick");
-		xBuilder.ParamString(uTick, "m_strStorePayloadVar", "dt");
-		const u_int uGate = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGate, "m_strOpenVar", "stateIsPossessed");
-		xBuilder.Chain(uTick, uGate);
-		const u_int uBrMoving = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrMoving, "m_strConditionVar", "moving");
-		xBuilder.Chain(uGate, uBrMoving);
-		// Moving: countdown -= dt; on expiry reset to the interval + emit.
-		const u_int uCdTick = xBuilder.Node("MathBlackboardFloat");
-		xBuilder.ParamString(uCdTick, "m_strVar", "footstepCountdown");
-		xBuilder.ParamInt(uCdTick, "m_iOp", 0);
-		xBuilder.ParamString(uCdTick, "m_strOperandVar", "dt");
-		const u_int uDue = xBuilder.Node("CompareBlackboardFloat");
-		xBuilder.ParamString(uDue, "m_strVar", "footstepCountdown");
-		xBuilder.ParamFloat(uDue, "m_fCompareTo", 0.0f);
-		xBuilder.ParamInt(uDue, "m_iOp", 1);	// <=
-		xBuilder.ParamString(uDue, "m_strResultVar", "stepDue");
-		const u_int uGateDue = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGateDue, "m_strOpenVar", "stepDue");
-		const u_int uReset = xBuilder.Node("MathBlackboardFloat");	// countdown = interval (exact reset, no overshoot carry)
-		xBuilder.ParamString(uReset, "m_strVar", "footstepInterval");
-		xBuilder.ParamInt(uReset, "m_iOp", 0);
-		xBuilder.ParamFloat(uReset, "m_fOperand", 0.0f);
-		xBuilder.ParamString(uReset, "m_strResultVar", "footstepCountdown");
-		const u_int uEmit = xBuilder.Node("DPVillagerEmitFootstep");
-		xBuilder.Edge(uBrMoving, 0, uCdTick);
-		xBuilder.Chain(uCdTick, uDue).Chain(uDue, uGateDue)
-			.Chain(uGateDue, uReset).Chain(uReset, uEmit);
-		// Idle: hold at zero so the first step after movement is immediate.
-		const u_int uCdZero = xBuilder.Node("SetBlackboardFloat");
-		xBuilder.ParamString(uCdZero, "m_strVariable", "footstepCountdown");
-		xBuilder.ParamFloat(uCdZero, "m_fValue", 0.0f);
-		xBuilder.Edge(uBrMoving, 1, uCdZero);
-	}
+	BuildDPVillager_PossessionTransitions(xB);
+	BuildDPVillager_MovementModes(xB);
+	BuildDPVillager_LifeDrain(xB);
+	BuildDPVillager_Footsteps(xB);
 }
 
 // BuildGraph_DPForge - forge craft decisions (W3). Driven by "Interact"
@@ -1491,14 +1434,14 @@ static void BuildGraph_DPForge(Zenith_GraphBuilder& xBuilder)
 	Zenith_PropertyValue xInput; xInput.SetInt32((int32_t)DP_ItemTag::Iron);
 	Zenith_PropertyValue xOutput; xOutput.SetInt32((int32_t)DP_ItemTag::Key);
 	Zenith_PropertyValue xZero; xZero.SetInt32(0);
-	xBuilder.Variable("recipeInput", xInput);
-	xBuilder.Variable("recipeOutput", xOutput);
-	xBuilder.Variable("craftCount", xZero);
+	Zenith_EngineGraphBuilder xB(xBuilder);
+	xB.Variable("recipeInput", xInput);
+	xB.Variable("recipeOutput", xOutput);
+	xB.Variable("craftCount", xZero);
 
-	const u_int uInteract = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uInteract, "m_strEventName", "Interact");
-	const u_int uCraft = xBuilder.Node("DPForgeCraft");
-	xBuilder.Chain(uInteract, uCraft);
+	Zenith_GraphChain xInteract = xB.OnCustomEvent("Interact");
+	const u_int uCraft = xB.Node("DPForgeCraft");
+	xInteract.Then(uCraft);
 }
 
 // BuildGraph_DPPlayerControl - input-dispatch decisions (W3). The controller
@@ -1507,26 +1450,23 @@ static void BuildGraph_DPForge(Zenith_GraphBuilder& xBuilder)
 // drop, like the old HandleClickToPossess -> HandleDropItem sequence).
 static void BuildGraph_DPPlayerControl(Zenith_GraphBuilder& xBuilder)
 {
+	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xFalse; xFalse.SetBool(false);
-	xBuilder.Variable("clickPressed", xFalse);
-	xBuilder.Variable("dropPressed", xFalse);
+	xB.Variable("clickPressed", xFalse);
+	xB.Variable("dropPressed", xFalse);
 
 	{
-		const u_int uTick = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uTick, "m_strEventName", "PlayerTick");
-		const u_int uGate = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGate, "m_strOpenVar", "clickPressed");
-		const u_int uPick = xBuilder.Node("DPPickVillagerUnderCursor");
-		const u_int uPossess = xBuilder.Node("DPTryPossess");
-		xBuilder.Chain(uTick, uGate).Chain(uGate, uPick).Chain(uPick, uPossess);
+		Zenith_GraphChain xTick = xB.OnCustomEvent("PlayerTick");
+		const u_int uGate = xB.Gate("clickPressed");
+		const u_int uPick = xB.Node("DPPickVillagerUnderCursor");
+		const u_int uPossess = xB.Node("DPTryPossess");
+		xTick.Then(uGate).Then(uPick).Then(uPossess);
 	}
 	{
-		const u_int uTick = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uTick, "m_strEventName", "PlayerTick");
-		const u_int uGate = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGate, "m_strOpenVar", "dropPressed");
-		const u_int uDrop = xBuilder.Node("DPDropHeldItem");
-		xBuilder.Chain(uTick, uGate).Chain(uGate, uDrop);
+		Zenith_GraphChain xTick = xB.OnCustomEvent("PlayerTick");
+		const u_int uGate = xB.Gate("dropPressed");
+		const u_int uDrop = xB.Node("DPDropHeldItem");
+		xTick.Then(uGate).Then(uDrop);
 	}
 }
 
@@ -1539,247 +1479,198 @@ static void BuildGraph_DPPlayerControl(Zenith_GraphBuilder& xBuilder)
 // fall-throughs, since exec chains cannot rejoin.
 static void BuildGraph_DPPauseMenu(Zenith_GraphBuilder& xBuilder)
 {
+	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xFalse; xFalse.SetBool(false);
-	xBuilder.Variable("shown", xFalse);
-	xBuilder.Variable("runOver", xFalse);
-	xBuilder.Variable("escPressed", xFalse);
-	xBuilder.Variable("rPressed", xFalse);
-	xBuilder.Variable("qPressed", xFalse);
+	xB.Variable("shown", xFalse);
+	xB.Variable("runOver", xFalse);
+	xB.Variable("escPressed", xFalse);
+	xB.Variable("rPressed", xFalse);
+	xB.Variable("qPressed", xFalse);
 
 	// C1: route by (shown || runOver).
 	{
-		const u_int uTick = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uTick, "m_strEventName", "PauseKeys");
-		const u_int uBrShown = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrShown, "m_strConditionVar", "shown");
-		xBuilder.Chain(uTick, uBrShown);
-		const u_int uFireRQ1 = xBuilder.Node("FireCustomEvent");
-		xBuilder.ParamString(uFireRQ1, "m_strEventName", "PauseRQ");
-		xBuilder.Edge(uBrShown, 0, uFireRQ1);
-		const u_int uBrOver = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrOver, "m_strConditionVar", "runOver");
-		xBuilder.Edge(uBrShown, 1, uBrOver);
-		const u_int uFireRQ2 = xBuilder.Node("FireCustomEvent");
-		xBuilder.ParamString(uFireRQ2, "m_strEventName", "PauseRQ");
-		xBuilder.Edge(uBrOver, 0, uFireRQ2);
-		const u_int uFireEsc1 = xBuilder.Node("FireCustomEvent");
-		xBuilder.ParamString(uFireEsc1, "m_strEventName", "PauseEsc");
-		xBuilder.Edge(uBrOver, 1, uFireEsc1);
+		Zenith_GraphChain xTick = xB.OnCustomEvent("PauseKeys");
+		const u_int uBrShown = xB.Branch("shown");
+		xTick.Then(uBrShown);
+		const u_int uFireRQ1 = xB.FireCustomEvent("PauseRQ");
+		xB.Edge(uBrShown, 0, uFireRQ1);
+		const u_int uBrOver = xB.Branch("runOver");
+		xB.Edge(uBrShown, 1, uBrOver);
+		const u_int uFireRQ2 = xB.FireCustomEvent("PauseRQ");
+		xB.Edge(uBrOver, 0, uFireRQ2);
+		const u_int uFireEsc1 = xB.FireCustomEvent("PauseEsc");
+		xB.Edge(uBrOver, 1, uFireEsc1);
 	}
 
 	// C2: R before Q; neither pressed falls through to the Esc block
 	// (the retired code only early-returned when a shortcut actually fired).
 	{
-		const u_int uRQ = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uRQ, "m_strEventName", "PauseRQ");
-		const u_int uBrR = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrR, "m_strConditionVar", "rPressed");
-		xBuilder.Chain(uRQ, uBrR);
-		const u_int uRestart = xBuilder.Node("DPPauseRestart");
-		xBuilder.Edge(uBrR, 0, uRestart);	// chain ends: the early return
-		const u_int uBrQ = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrQ, "m_strConditionVar", "qPressed");
-		xBuilder.Edge(uBrR, 1, uBrQ);
-		const u_int uQuit = xBuilder.Node("DPPauseQuit");
-		xBuilder.Edge(uBrQ, 0, uQuit);		// chain ends: the early return
-		const u_int uFireEsc2 = xBuilder.Node("FireCustomEvent");
-		xBuilder.ParamString(uFireEsc2, "m_strEventName", "PauseEsc");
-		xBuilder.Edge(uBrQ, 1, uFireEsc2);
+		Zenith_GraphChain xRQ = xB.OnCustomEvent("PauseRQ");
+		const u_int uBrR = xB.Branch("rPressed");
+		xRQ.Then(uBrR);
+		const u_int uRestart = xB.Node("DPPauseRestart");
+		xB.Edge(uBrR, 0, uRestart);	// chain ends: the early return
+		const u_int uBrQ = xB.Branch("qPressed");
+		xB.Edge(uBrR, 1, uBrQ);
+		const u_int uQuit = xB.Node("DPPauseQuit");
+		xB.Edge(uBrQ, 0, uQuit);		// chain ends: the early return
+		const u_int uFireEsc2 = xB.FireCustomEvent("PauseEsc");
+		xB.Edge(uBrQ, 1, uFireEsc2);
 	}
 
 	// C3: the Esc toggle. Overlay-missing quirk gated by DPPauseCanToggle;
 	// flip "shown" FIRST, then apply (visibility + scene pause + event).
 	{
-		const u_int uEsc = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uEsc, "m_strEventName", "PauseEsc");
-		const u_int uGate = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGate, "m_strOpenVar", "escPressed");
-		const u_int uCan = xBuilder.Node("DPPauseCanToggle");
-		const u_int uBrFlip = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrFlip, "m_strConditionVar", "shown");
-		xBuilder.Chain(uEsc, uGate).Chain(uGate, uCan).Chain(uCan, uBrFlip);
-		const u_int uHide = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uHide, "m_strVariable", "shown");
-		xBuilder.ParamBool(uHide, "m_bValue", false);
-		const u_int uApplyHide = xBuilder.Node("DPPauseApplyToggle");
-		xBuilder.Edge(uBrFlip, 0, uHide);
-		xBuilder.Chain(uHide, uApplyHide);
-		const u_int uShow = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uShow, "m_strVariable", "shown");
-		xBuilder.ParamBool(uShow, "m_bValue", true);
-		const u_int uApplyShow = xBuilder.Node("DPPauseApplyToggle");
-		xBuilder.Edge(uBrFlip, 1, uShow);
-		xBuilder.Chain(uShow, uApplyShow);
+		Zenith_GraphChain xEsc = xB.OnCustomEvent("PauseEsc");
+		const u_int uGate = xB.Gate("escPressed");
+		const u_int uCan = xB.Node("DPPauseCanToggle");
+		const u_int uBrFlip = xB.Branch("shown");
+		xEsc.Then(uGate).Then(uCan).Then(uBrFlip);
+		const u_int uHide = xB.SetBlackboardBool("shown", false);
+		const u_int uApplyHide = xB.Node("DPPauseApplyToggle");
+		xB.Edge(uBrFlip, 0, uHide);
+		xB.Chain(uHide, uApplyHide);
+		const u_int uShow = xB.SetBlackboardBool("shown", true);
+		const u_int uApplyShow = xB.Node("DPPauseApplyToggle");
+		xB.Edge(uBrFlip, 1, uShow);
+		xB.Chain(uShow, uApplyShow);
 	}
+}
+
+// ---- DP_Item pickup decision, split (Phase 3) into per-stage sub-builders.
+// Each stage is self-contained (they hand off via ItemGate2/ItemGate3/
+// ItemCommit custom events, sharing no node ids); called in original order
+// they preserve node-creation + edge-add order -> byte-identical authoring.
+
+static void BuildDPItem_Evaporate(Zenith_EngineGraphBuilder& xB)
+{
+	// T1: evaporate countdown (BEFORE the cooldown - the timer ticks
+	// through the cooldown window; only the zero-crossing branch returns).
+	Zenith_GraphChain xTick = xB.OnCustomEvent("ItemTick", "dt");
+	const u_int uArmed = xB.CompareFloat("evaporateRemaining", GRAPH_COMPARE_FLOAT_OP_GREATER, 0.0f, "evapArmed");
+	const u_int uBrArmed = xB.Branch("evapArmed");
+	xTick.Then(uArmed).Then(uBrArmed);
+	const u_int uTickDown = xB.Node("MathBlackboardFloat");
+	xB.ParamString(uTickDown, "m_strVar", "evaporateRemaining");
+	xB.ParamEnum(uTickDown, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
+	xB.ParamString(uTickDown, "m_strOperandVar", "dt");
+	const u_int uDone = xB.CompareFloat("evaporateRemaining", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f, "evapDone");
+	const u_int uBrDone = xB.Branch("evapDone");
+	xB.Edge(uBrArmed, 0, uTickDown);
+	xB.Chain(uTickDown, uDone).Chain(uDone, uBrDone);
+	const u_int uClamp = xB.SetBlackboardFloat("evaporateRemaining", 0.0f);
+	const u_int uEvaporate = xB.Node("DPItemEvaporate");
+	xB.Edge(uBrDone, 0, uClamp);
+	xB.Chain(uClamp, uEvaporate);	// chain ends: the retired `return`
+	const u_int uNext1 = xB.FireCustomEvent("ItemGate2");
+	xB.Edge(uBrDone, 1, uNext1);
+	const u_int uNext2 = xB.FireCustomEvent("ItemGate2");
+	xB.Edge(uBrArmed, 1, uNext2);
+}
+
+static void BuildDPItem_Cooldown(Zenith_EngineGraphBuilder& xB)
+{
+	// T2: post-drop cooldown - while armed it decrements, clamps and
+	// RETURNS (blocks all pickup logic that frame).
+	Zenith_GraphChain xGate2 = xB.OnCustomEvent("ItemGate2");
+	const u_int uArmed = xB.CompareFloat("postDropCooldown", GRAPH_COMPARE_FLOAT_OP_GREATER, 0.0f, "cdArmed");
+	const u_int uBrArmed = xB.Branch("cdArmed");
+	xGate2.Then(uArmed).Then(uBrArmed);
+	const u_int uTickDown = xB.Node("MathBlackboardFloat");
+	xB.ParamString(uTickDown, "m_strVar", "postDropCooldown");
+	xB.ParamEnum(uTickDown, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
+	xB.ParamString(uTickDown, "m_strOperandVar", "dt");
+	const u_int uUnder = xB.CompareFloat("postDropCooldown", GRAPH_COMPARE_FLOAT_OP_LESS, 0.0f, "cdUnder");
+	const u_int uGateUnder = xB.Gate("cdUnder");
+	const u_int uClamp = xB.SetBlackboardFloat("postDropCooldown", 0.0f);
+	xB.Edge(uBrArmed, 0, uTickDown);
+	xB.Chain(uTickDown, uUnder).Chain(uUnder, uGateUnder).Chain(uGateUnder, uClamp);
+	const u_int uNext = xB.FireCustomEvent("ItemGate3");
+	xB.Edge(uBrArmed, 1, uNext);
+}
+
+static void BuildDPItem_GatesChannel(Zenith_EngineGraphBuilder& xB)
+{
+	// T3: possessed/held/range/child gates + the reagent channel state
+	// machine. Out-of-range simply ends the chain - the channel state is
+	// left FROZEN, not reset (the pause-not-reset quirk).
+	Zenith_GraphChain xGate3 = xB.OnCustomEvent("ItemGate3");
+	const u_int uPossessed = xB.Gate("possessedValid");
+	const u_int uEmpty = xB.Gate("handsEmpty");
+	const u_int uRange = xB.Gate("inRange");
+	const u_int uChild = xB.Node("DPItemChildRefusal");
+	xGate3.Then(uPossessed).Then(uEmpty).Then(uRange).Then(uChild);
+	const u_int uHasChannel = xB.CompareFloat("channelDuration", GRAPH_COMPARE_FLOAT_OP_GREATER, 0.0f, "hasChannel");
+	const u_int uBrChannel = xB.Branch("hasChannel");
+	xB.Chain(uChild, uHasChannel).Chain(uHasChannel, uBrChannel);
+	// No channel (tools/objectives): commit immediately.
+	const u_int uCommitNow = xB.FireCustomEvent("ItemCommit");
+	xB.Edge(uBrChannel, 1, uCommitNow);
+	// Channel: same-villager continuity by index+generation.
+	const u_int uSame = xB.Node("CompareBlackboardEntity");
+	xB.ParamString(uSame, "m_strVarA", "channelVillager");
+	xB.ParamString(uSame, "m_strVarB", "possessedVillager");
+	xB.ParamEnum(uSame, "m_iOp", GRAPH_ENTITY_COMPARE_OP_EQUAL);
+	xB.ParamString(uSame, "m_strResultVar", "sameVillager");
+	const u_int uBrSame = xB.Branch("sameVillager");
+	xB.Edge(uBrChannel, 0, uSame);
+	xB.Chain(uSame, uBrSame);
+	// Different (or no) channeler: fresh arm; the arming frame is free.
+	const u_int uArm = xB.Node("DPItemArmChannel");
+	xB.Edge(uBrSame, 1, uArm);
+	// Same villager: tick down; complete falls through to the commit.
+	const u_int uTickDown = xB.Node("MathBlackboardFloat");
+	xB.ParamString(uTickDown, "m_strVar", "channelRemaining");
+	xB.ParamEnum(uTickDown, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
+	xB.ParamString(uTickDown, "m_strOperandVar", "dt");
+	const u_int uStill = xB.CompareFloat("channelRemaining", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f, "channelDone");
+	const u_int uGateDone = xB.Gate("channelDone");
+	const u_int uCommitChan = xB.FireCustomEvent("ItemCommit");
+	xB.Edge(uBrSame, 0, uTickDown);
+	xB.Chain(uTickDown, uStill).Chain(uStill, uGateDone).Chain(uGateDone, uCommitChan);
+}
+
+static void BuildDPItem_Commit(Zenith_EngineGraphBuilder& xB)
+{
+	// T4: commit + BellSoul special (guarded inside the node).
+	Zenith_GraphChain xCommit = xB.OnCustomEvent("ItemCommit");
+	const u_int uPickup = xB.Node("DPItemCommitPickup");
+	const u_int uBell = xB.Node("DPItemRingBell");
+	xCommit.Then(uPickup).Then(uBell);
 }
 
 // BuildGraph_DPItem - the item pickup decision chain (W3). The DPItemBase
 // shim stages possessedValid/handsEmpty/inRange/possessedVillager + the
 // reagent config mirror, and fires "ItemTick" (dt payload). The retired
 // OnUpdate's early-return structure maps to chain-reuse events: a chain that
-// ENDS is a `return`; falling through fires the next stage at self.
+// ENDS is a `return`; falling through fires the next stage at self. Stages
+// split into BuildDPItem_* sub-builders, called in node-creation order.
 static void BuildGraph_DPItem(Zenith_GraphBuilder& xBuilder)
 {
+	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0; xF0.SetFloat(0.0f);
 	Zenith_PropertyValue xI0; xI0.SetInt32(0);
 	Zenith_PropertyValue xBF; xBF.SetBool(false);
 	Zenith_PropertyValue xSE; xSE.SetString("");
 	// Mutable countdown state.
-	xBuilder.Variable("postDropCooldown", xF0);
-	xBuilder.Variable("channelRemaining", xF0);
-	xBuilder.Variable("evaporateRemaining", xF0);
+	xB.Variable("postDropCooldown", xF0);
+	xB.Variable("channelRemaining", xF0);
+	xB.Variable("evaporateRemaining", xF0);
 	// Config mirror (shim-written at reagent resolve).
-	xBuilder.Variable("channelDuration", xF0);
-	xBuilder.Variable("tag", xI0);
-	xBuilder.Variable("specialBehaviour", xSE);
+	xB.Variable("channelDuration", xF0);
+	xB.Variable("tag", xI0);
+	xB.Variable("specialBehaviour", xSE);
 	Zenith_PropertyValue xNoEntity; xNoEntity.SetPackedEntityID(0);
-	xBuilder.Variable("channelVillager", xNoEntity);
+	xB.Variable("channelVillager", xNoEntity);
 	// Per-frame staged facts.
-	xBuilder.Variable("possessedValid", xBF);
-	xBuilder.Variable("handsEmpty", xBF);
-	xBuilder.Variable("inRange", xBF);
+	xB.Variable("possessedValid", xBF);
+	xB.Variable("handsEmpty", xBF);
+	xB.Variable("inRange", xBF);
 
-	// T1: evaporate countdown (BEFORE the cooldown - the timer ticks
-	// through the cooldown window; only the zero-crossing branch returns).
-	{
-		const u_int uTick = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uTick, "m_strEventName", "ItemTick");
-		xBuilder.ParamString(uTick, "m_strStorePayloadVar", "dt");
-		const u_int uArmed = xBuilder.Node("CompareBlackboardFloat");
-		xBuilder.ParamString(uArmed, "m_strVar", "evaporateRemaining");
-		xBuilder.ParamFloat(uArmed, "m_fCompareTo", 0.0f);
-		xBuilder.ParamInt(uArmed, "m_iOp", 2);	// >
-		xBuilder.ParamString(uArmed, "m_strResultVar", "evapArmed");
-		const u_int uBrArmed = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrArmed, "m_strConditionVar", "evapArmed");
-		xBuilder.Chain(uTick, uArmed).Chain(uArmed, uBrArmed);
-		const u_int uTickDown = xBuilder.Node("MathBlackboardFloat");
-		xBuilder.ParamString(uTickDown, "m_strVar", "evaporateRemaining");
-		xBuilder.ParamInt(uTickDown, "m_iOp", 0);
-		xBuilder.ParamString(uTickDown, "m_strOperandVar", "dt");
-		const u_int uDone = xBuilder.Node("CompareBlackboardFloat");
-		xBuilder.ParamString(uDone, "m_strVar", "evaporateRemaining");
-		xBuilder.ParamFloat(uDone, "m_fCompareTo", 0.0f);
-		xBuilder.ParamInt(uDone, "m_iOp", 1);	// <=
-		xBuilder.ParamString(uDone, "m_strResultVar", "evapDone");
-		const u_int uBrDone = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrDone, "m_strConditionVar", "evapDone");
-		xBuilder.Edge(uBrArmed, 0, uTickDown);
-		xBuilder.Chain(uTickDown, uDone).Chain(uDone, uBrDone);
-		const u_int uClamp = xBuilder.Node("SetBlackboardFloat");
-		xBuilder.ParamString(uClamp, "m_strVariable", "evaporateRemaining");
-		xBuilder.ParamFloat(uClamp, "m_fValue", 0.0f);
-		const u_int uEvaporate = xBuilder.Node("DPItemEvaporate");
-		xBuilder.Edge(uBrDone, 0, uClamp);
-		xBuilder.Chain(uClamp, uEvaporate);	// chain ends: the retired `return`
-		const u_int uNext1 = xBuilder.Node("FireCustomEvent");
-		xBuilder.ParamString(uNext1, "m_strEventName", "ItemGate2");
-		xBuilder.Edge(uBrDone, 1, uNext1);
-		const u_int uNext2 = xBuilder.Node("FireCustomEvent");
-		xBuilder.ParamString(uNext2, "m_strEventName", "ItemGate2");
-		xBuilder.Edge(uBrArmed, 1, uNext2);
-	}
-
-	// T2: post-drop cooldown - while armed it decrements, clamps and
-	// RETURNS (blocks all pickup logic that frame).
-	{
-		const u_int uGate2 = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uGate2, "m_strEventName", "ItemGate2");
-		const u_int uArmed = xBuilder.Node("CompareBlackboardFloat");
-		xBuilder.ParamString(uArmed, "m_strVar", "postDropCooldown");
-		xBuilder.ParamFloat(uArmed, "m_fCompareTo", 0.0f);
-		xBuilder.ParamInt(uArmed, "m_iOp", 2);	// >
-		xBuilder.ParamString(uArmed, "m_strResultVar", "cdArmed");
-		const u_int uBrArmed = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrArmed, "m_strConditionVar", "cdArmed");
-		xBuilder.Chain(uGate2, uArmed).Chain(uArmed, uBrArmed);
-		const u_int uTickDown = xBuilder.Node("MathBlackboardFloat");
-		xBuilder.ParamString(uTickDown, "m_strVar", "postDropCooldown");
-		xBuilder.ParamInt(uTickDown, "m_iOp", 0);
-		xBuilder.ParamString(uTickDown, "m_strOperandVar", "dt");
-		const u_int uUnder = xBuilder.Node("CompareBlackboardFloat");
-		xBuilder.ParamString(uUnder, "m_strVar", "postDropCooldown");
-		xBuilder.ParamFloat(uUnder, "m_fCompareTo", 0.0f);
-		xBuilder.ParamInt(uUnder, "m_iOp", 0);	// <
-		xBuilder.ParamString(uUnder, "m_strResultVar", "cdUnder");
-		const u_int uGateUnder = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGateUnder, "m_strOpenVar", "cdUnder");
-		const u_int uClamp = xBuilder.Node("SetBlackboardFloat");
-		xBuilder.ParamString(uClamp, "m_strVariable", "postDropCooldown");
-		xBuilder.ParamFloat(uClamp, "m_fValue", 0.0f);
-		xBuilder.Edge(uBrArmed, 0, uTickDown);
-		xBuilder.Chain(uTickDown, uUnder).Chain(uUnder, uGateUnder).Chain(uGateUnder, uClamp);
-		const u_int uNext = xBuilder.Node("FireCustomEvent");
-		xBuilder.ParamString(uNext, "m_strEventName", "ItemGate3");
-		xBuilder.Edge(uBrArmed, 1, uNext);
-	}
-
-	// T3: possessed/held/range/child gates + the reagent channel state
-	// machine. Out-of-range simply ends the chain - the channel state is
-	// left FROZEN, not reset (the pause-not-reset quirk).
-	{
-		const u_int uGate3 = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uGate3, "m_strEventName", "ItemGate3");
-		const u_int uPossessed = xBuilder.Node("Gate");
-		xBuilder.ParamString(uPossessed, "m_strOpenVar", "possessedValid");
-		const u_int uEmpty = xBuilder.Node("Gate");
-		xBuilder.ParamString(uEmpty, "m_strOpenVar", "handsEmpty");
-		const u_int uRange = xBuilder.Node("Gate");
-		xBuilder.ParamString(uRange, "m_strOpenVar", "inRange");
-		const u_int uChild = xBuilder.Node("DPItemChildRefusal");
-		xBuilder.Chain(uGate3, uPossessed).Chain(uPossessed, uEmpty)
-			.Chain(uEmpty, uRange).Chain(uRange, uChild);
-		const u_int uHasChannel = xBuilder.Node("CompareBlackboardFloat");
-		xBuilder.ParamString(uHasChannel, "m_strVar", "channelDuration");
-		xBuilder.ParamFloat(uHasChannel, "m_fCompareTo", 0.0f);
-		xBuilder.ParamInt(uHasChannel, "m_iOp", 2);	// >
-		xBuilder.ParamString(uHasChannel, "m_strResultVar", "hasChannel");
-		const u_int uBrChannel = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrChannel, "m_strConditionVar", "hasChannel");
-		xBuilder.Chain(uChild, uHasChannel).Chain(uHasChannel, uBrChannel);
-		// No channel (tools/objectives): commit immediately.
-		const u_int uCommitNow = xBuilder.Node("FireCustomEvent");
-		xBuilder.ParamString(uCommitNow, "m_strEventName", "ItemCommit");
-		xBuilder.Edge(uBrChannel, 1, uCommitNow);
-		// Channel: same-villager continuity by index+generation.
-		const u_int uSame = xBuilder.Node("CompareBlackboardEntity");
-		xBuilder.ParamString(uSame, "m_strVarA", "channelVillager");
-		xBuilder.ParamString(uSame, "m_strVarB", "possessedVillager");
-		xBuilder.ParamInt(uSame, "m_iOp", 0);	// ==
-		xBuilder.ParamString(uSame, "m_strResultVar", "sameVillager");
-		const u_int uBrSame = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrSame, "m_strConditionVar", "sameVillager");
-		xBuilder.Edge(uBrChannel, 0, uSame);
-		xBuilder.Chain(uSame, uBrSame);
-		// Different (or no) channeler: fresh arm; the arming frame is free.
-		const u_int uArm = xBuilder.Node("DPItemArmChannel");
-		xBuilder.Edge(uBrSame, 1, uArm);
-		// Same villager: tick down; complete falls through to the commit.
-		const u_int uTickDown = xBuilder.Node("MathBlackboardFloat");
-		xBuilder.ParamString(uTickDown, "m_strVar", "channelRemaining");
-		xBuilder.ParamInt(uTickDown, "m_iOp", 0);
-		xBuilder.ParamString(uTickDown, "m_strOperandVar", "dt");
-		const u_int uStill = xBuilder.Node("CompareBlackboardFloat");
-		xBuilder.ParamString(uStill, "m_strVar", "channelRemaining");
-		xBuilder.ParamFloat(uStill, "m_fCompareTo", 0.0f);
-		xBuilder.ParamInt(uStill, "m_iOp", 1);	// <=
-		xBuilder.ParamString(uStill, "m_strResultVar", "channelDone");
-		const u_int uGateDone = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGateDone, "m_strOpenVar", "channelDone");
-		const u_int uCommitChan = xBuilder.Node("FireCustomEvent");
-		xBuilder.ParamString(uCommitChan, "m_strEventName", "ItemCommit");
-		xBuilder.Edge(uBrSame, 0, uTickDown);
-		xBuilder.Chain(uTickDown, uStill).Chain(uStill, uGateDone).Chain(uGateDone, uCommitChan);
-	}
-
-	// T4: commit + BellSoul special (guarded inside the node).
-	{
-		const u_int uCommit = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uCommit, "m_strEventName", "ItemCommit");
-		const u_int uPickup = xBuilder.Node("DPItemCommitPickup");
-		const u_int uBell = xBuilder.Node("DPItemRingBell");
-		xBuilder.Chain(uCommit, uPickup).Chain(uPickup, uBell);
-	}
+	BuildDPItem_Evaporate(xB);
+	BuildDPItem_Cooldown(xB);
+	BuildDPItem_GatesChannel(xB);
+	BuildDPItem_Commit(xB);
 }
 
 // BuildGraph_DPPriest - the priest decision body (W3, risk R3): a REACTIVE
@@ -1794,82 +1685,77 @@ static void BuildGraph_DPItem(Zenith_GraphBuilder& xBuilder)
 // decisions on fresh bridge data with dt 0).
 static void BuildGraph_DPPriest(Zenith_GraphBuilder& xBuilder)
 {
+	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0; xF0.SetFloat(0.0f);
 	Zenith_PropertyValue xBF; xBF.SetBool(false);
 	Zenith_PropertyValue xV0; xV0.SetVector3(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	Zenith_PropertyValue xNoEntity; xNoEntity.SetPackedEntityID(INVALID_ENTITY_ID.GetPacked());
 	Zenith_PropertyValue xRadius; xRadius.SetFloat(15.0f);
-	xBuilder.Variable(DP_AI::BB_KEY_TARGET_WITH_DEVIL, xNoEntity);
-	xBuilder.Variable(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, xBF);
-	xBuilder.Variable(DP_AI::BB_KEY_INVESTIGATE_POS, xV0);
-	xBuilder.Variable(DP_AI::BB_KEY_PATROL_TARGET, xV0);
-	xBuilder.Variable(DP_AI::BB_KEY_SUSPICION_RADIUS, xRadius);
-	xBuilder.Variable(DP_AI::BB_KEY_HIGH_SCENT_TARGET, xNoEntity);
+	xB.Variable(DP_AI::BB_KEY_TARGET_WITH_DEVIL, xNoEntity);
+	xB.Variable(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, xBF);
+	xB.Variable(DP_AI::BB_KEY_INVESTIGATE_POS, xV0);
+	xB.Variable(DP_AI::BB_KEY_PATROL_TARGET, xV0);
+	xB.Variable(DP_AI::BB_KEY_SUSPICION_RADIUS, xRadius);
+	xB.Variable(DP_AI::BB_KEY_HIGH_SCENT_TARGET, xNoEntity);
 
-	const u_int uTick = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uTick, "m_strEventName", "PriestTick");
-	xBuilder.ParamString(uTick, "m_strStorePayloadVar", "dt");
-	const u_int uSelector = xBuilder.Node("Selector");
-	xBuilder.ParamInt(uSelector, "m_iBranchCount", 4);
+	Zenith_GraphChain xTick = xB.OnCustomEvent("PriestTick", "dt");
+	const u_int uSelector = xB.Node("Selector");
+	xB.ParamInt(uSelector, "m_iBranchCount", 4);
 	// BT-parity preemption: the four branches drive ONE shared nav agent, so
 	// a preemption abort (NavMoveTo::OnAbort -> Stop) would clobber the
 	// preempting branch's SetDestination (the abort runs AFTER the new pin
 	// executed) and ping-pong the selector. The retired BT never aborted
 	// preempted branches either (composite OnAbort was a no-op) - stale
 	// branch state resuming later is the DOCUMENTED old behaviour.
-	xBuilder.ParamBool(uSelector, "m_bAbortPreempted", false);
-	xBuilder.Chain(uTick, uSelector);
+	xB.ParamBool(uSelector, "m_bAbortPreempted", false);
+	xTick.Then(uSelector);
 
 	// Pin 0 - apprehend: the channel node self-gates on target validity +
 	// XZ range (its FAILURE falls the Selector through to pursue).
-	const u_int uApprehend = xBuilder.Node("DPPriestApprehendChannel");
-	xBuilder.Edge(uSelector, 0, uApprehend);
+	const u_int uApprehend = xB.Node("DPPriestApprehendChannel");
+	xB.Edge(uSelector, 0, uApprehend);
 
 	// Pin 1 - pursue: HasTarget gate + the BT MoveToEntity parity mover
 	// (acceptance 1.5 FULL 3D, repath 0.4s, live target var).
-	const u_int uHasTarget = xBuilder.Node("QueryEntityValid");
-	xBuilder.ParamString(uHasTarget, "m_strEntityVar", DP_AI::BB_KEY_TARGET_WITH_DEVIL);
-	xBuilder.ParamString(uHasTarget, "m_strResultVar", "hasDevilTarget");
-	const u_int uGateTarget = xBuilder.Node("Gate");
-	xBuilder.ParamString(uGateTarget, "m_strOpenVar", "hasDevilTarget");
-	const u_int uPursue = xBuilder.Node("NavMoveTo");
-	xBuilder.ParamString(uPursue, "m_strDestinationVar", DP_AI::BB_KEY_TARGET_WITH_DEVIL);
-	xBuilder.ParamFloat(uPursue, "m_fAcceptanceRadius", 1.5f);
-	xBuilder.ParamFloat(uPursue, "m_fRepathInterval", 0.4f);
-	xBuilder.ParamBool(uPursue, "m_bXZDistance", false);
-	xBuilder.Edge(uSelector, 1, uHasTarget);
-	xBuilder.Chain(uHasTarget, uGateTarget).Chain(uGateTarget, uPursue);
+	const u_int uHasTarget = xB.Node("QueryEntityValid");
+	xB.ParamString(uHasTarget, "m_strEntityVar", DP_AI::BB_KEY_TARGET_WITH_DEVIL);
+	xB.ParamString(uHasTarget, "m_strResultVar", "hasDevilTarget");
+	const u_int uGateTarget = xB.Gate("hasDevilTarget");
+	const u_int uPursue = xB.Node("NavMoveTo");
+	xB.ParamString(uPursue, "m_strDestinationVar", DP_AI::BB_KEY_TARGET_WITH_DEVIL);
+	xB.ParamFloat(uPursue, "m_fAcceptanceRadius", 1.5f);
+	xB.ParamFloat(uPursue, "m_fRepathInterval", 0.4f);
+	xB.ParamBool(uPursue, "m_bXZDistance", false);
+	xB.Edge(uSelector, 1, uHasTarget);
+	xB.Chain(uHasTarget, uGateTarget).Chain(uGateTarget, uPursue);
 
 	// Pin 2 - investigate: walk to the heard position, linger 2s, clear the
 	// flag (the bridge re-arms it while the heard sound stays fresh).
-	const u_int uGateInvestigate = xBuilder.Node("Gate");
-	xBuilder.ParamString(uGateInvestigate, "m_strOpenVar", DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
-	const u_int uWalkNoise = xBuilder.Node("NavMoveTo");
-	xBuilder.ParamString(uWalkNoise, "m_strDestinationVar", DP_AI::BB_KEY_INVESTIGATE_POS);
-	xBuilder.ParamFloat(uWalkNoise, "m_fAcceptanceRadius", 1.0f);
-	xBuilder.ParamFloat(uWalkNoise, "m_fRepathInterval", 60.0f);	// single-shot walk (BT MoveTo never repathed)
-	xBuilder.ParamBool(uWalkNoise, "m_bXZDistance", false);
-	const u_int uLinger = xBuilder.Node("Wait");
-	xBuilder.ParamFloat(uLinger, "m_fSeconds", 2.0f);
-	const u_int uClearInvestigate = xBuilder.Node("SetBlackboardBool");
-	xBuilder.ParamString(uClearInvestigate, "m_strVariable", DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
-	xBuilder.ParamBool(uClearInvestigate, "m_bValue", false);
-	xBuilder.Edge(uSelector, 2, uGateInvestigate);
-	xBuilder.Chain(uGateInvestigate, uWalkNoise).Chain(uWalkNoise, uLinger)
+	const u_int uGateInvestigate = xB.Gate(DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
+	const u_int uWalkNoise = xB.Node("NavMoveTo");
+	xB.ParamString(uWalkNoise, "m_strDestinationVar", DP_AI::BB_KEY_INVESTIGATE_POS);
+	xB.ParamFloat(uWalkNoise, "m_fAcceptanceRadius", 1.0f);
+	xB.ParamFloat(uWalkNoise, "m_fRepathInterval", 60.0f);	// single-shot walk (BT MoveTo never repathed)
+	xB.ParamBool(uWalkNoise, "m_bXZDistance", false);
+	const u_int uLinger = xB.Node("Wait");
+	xB.ParamFloat(uLinger, "m_fSeconds", 2.0f);
+	const u_int uClearInvestigate = xB.SetBlackboardBool(DP_AI::BB_KEY_HAS_INVESTIGATE_POS, false);
+	xB.Edge(uSelector, 2, uGateInvestigate);
+	xB.Chain(uGateInvestigate, uWalkNoise).Chain(uWalkNoise, uLinger)
 		.Chain(uLinger, uClearInvestigate);
 
 	// Pin 3 - patrol: pick (scent-biased, 1-in-5 patrol-node cadence), walk,
 	// pause 1s.
-	const u_int uPick = xBuilder.Node("DPPriestPickPatrolTarget");
-	const u_int uWalkPatrol = xBuilder.Node("NavMoveTo");
-	xBuilder.ParamString(uWalkPatrol, "m_strDestinationVar", DP_AI::BB_KEY_PATROL_TARGET);
-	xBuilder.ParamFloat(uWalkPatrol, "m_fAcceptanceRadius", 1.0f);
-	xBuilder.ParamFloat(uWalkPatrol, "m_fRepathInterval", 60.0f);
-	xBuilder.ParamBool(uWalkPatrol, "m_bXZDistance", false);
-	const u_int uPause = xBuilder.Node("Wait");
-	xBuilder.ParamFloat(uPause, "m_fSeconds", 1.0f);
-	xBuilder.Edge(uSelector, 3, uPick);
-	xBuilder.Chain(uPick, uWalkPatrol).Chain(uWalkPatrol, uPause);
+	const u_int uPick = xB.Node("DPPriestPickPatrolTarget");
+	const u_int uWalkPatrol = xB.Node("NavMoveTo");
+	xB.ParamString(uWalkPatrol, "m_strDestinationVar", DP_AI::BB_KEY_PATROL_TARGET);
+	xB.ParamFloat(uWalkPatrol, "m_fAcceptanceRadius", 1.0f);
+	xB.ParamFloat(uWalkPatrol, "m_fRepathInterval", 60.0f);
+	xB.ParamBool(uWalkPatrol, "m_bXZDistance", false);
+	const u_int uPause = xB.Node("Wait");
+	xB.ParamFloat(uPause, "m_fSeconds", 1.0f);
+	xB.Edge(uSelector, 3, uPick);
+	xB.Chain(uPick, uWalkPatrol).Chain(uWalkPatrol, uPause);
 }
 
 // ---- The 6 wave-1/2 graphs, re-authored decomposed through the builder ----
@@ -1881,156 +1767,138 @@ static void BuildGraph_DPPriest(Zenith_GraphBuilder& xBuilder)
 
 static void BuildGraph_DPMainMenu(Zenith_GraphBuilder& xBuilder)
 {
+	Zenith_EngineGraphBuilder xB(xBuilder);
 	{
-		const u_int uPlay = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uPlay, "m_strEventName", "MenuPlay");
-		const u_int uLoad = xBuilder.Node("LoadSceneByIndex");
-		xBuilder.ParamInt(uLoad, "m_iSceneIndex", 1);
-		xBuilder.Chain(uPlay, uLoad);
+		Zenith_GraphChain xPlay = xB.OnCustomEvent("MenuPlay");
+		const u_int uLoad = xB.Node("LoadSceneByIndex");
+		xB.ParamInt(uLoad, "m_iSceneIndex", 1);
+		xPlay.Then(uLoad);
 	}
 	{
-		const u_int uQuit = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uQuit, "m_strEventName", "MenuQuit");
-		const u_int uRequest = xBuilder.Node("DPRequestQuit");
-		xBuilder.Chain(uQuit, uRequest);
+		Zenith_GraphChain xQuit = xB.OnCustomEvent("MenuQuit");
+		const u_int uRequest = xB.Node("DPRequestQuit");
+		xQuit.Then(uRequest);
 	}
 	{
 		// Metagame v1: Liminal (hermit shrines) entry — third menu button.
-		const u_int uLiminal = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uLiminal, "m_strEventName", "MenuLiminal");
-		const u_int uLoad = xBuilder.Node("LoadSceneByIndex");
-		xBuilder.ParamInt(uLoad, "m_iSceneIndex", 2);
-		xBuilder.Chain(uLiminal, uLoad);
+		Zenith_GraphChain xLiminal = xB.OnCustomEvent("MenuLiminal");
+		const u_int uLoad = xB.Node("LoadSceneByIndex");
+		xB.ParamInt(uLoad, "m_iSceneIndex", 2);
+		xLiminal.Then(uLoad);
 	}
 }
 
 static void BuildGraph_DPPentagram(Zenith_GraphBuilder& xBuilder)
 {
-	const u_int uStart = xBuilder.Node("OnStart");
-	const u_int uReset = xBuilder.Node("DPResetWinState");
-	xBuilder.Chain(uStart, uReset);
+	Zenith_EngineGraphBuilder xB(xBuilder);
+	Zenith_GraphChain xStart = xB.OnStart();
+	const u_int uReset = xB.Node("DPResetWinState");
+	xStart.Then(uReset);
 
 	// The deposit chain preserves the retired ordering invariants: gates
 	// first (zero side effects on refusal), NOTIFY before consume (victory
 	// can fire while the villager still holds the item), the placed event
 	// strictly after the item destroy.
-	const u_int uInteract = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uInteract, "m_strEventName", "Interact");
-	const u_int uRead = xBuilder.Node("DPReadHeldObjective");
-	const u_int uCheck = xBuilder.Node("DPWinCheckAlreadyCollected");
-	const u_int uNotify = xBuilder.Node("DPWinNotifyCollected");
-	const u_int uConsume = xBuilder.Node("DPConsumeHeldItem");
-	const u_int uPlaced = xBuilder.Node("DPDispatchObjectivePlaced");
-	xBuilder.Chain(uInteract, uRead).Chain(uRead, uCheck).Chain(uCheck, uNotify)
-		.Chain(uNotify, uConsume).Chain(uConsume, uPlaced);
+	Zenith_GraphChain xInteract = xB.OnCustomEvent("Interact");
+	const u_int uRead = xB.Node("DPReadHeldObjective");
+	const u_int uCheck = xB.Node("DPWinCheckAlreadyCollected");
+	const u_int uNotify = xB.Node("DPWinNotifyCollected");
+	const u_int uConsume = xB.Node("DPConsumeHeldItem");
+	const u_int uPlaced = xB.Node("DPDispatchObjectivePlaced");
+	xInteract.Then(uRead).Then(uCheck).Then(uNotify).Then(uConsume).Then(uPlaced);
 }
 
 static void BuildGraph_DPChest(Zenith_GraphBuilder& xBuilder)
 {
+	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0; xF0.SetFloat(0.0f);
 	Zenith_PropertyValue xBF; xBF.SetBool(false);
-	xBuilder.Variable("isOpen", xBF);
-	xBuilder.Variable("openT", xF0);
+	xB.Variable("isOpen", xBF);
+	xB.Variable("openT", xF0);
 
 	// Interact: already-open presses do nothing (unwired true pin); the
 	// chest opens even on an invalid payload (quirk preserved - no gate).
 	{
-		const u_int uInteract = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uInteract, "m_strEventName", "Interact");
-		const u_int uBrOpen = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrOpen, "m_strConditionVar", "isOpen");
-		xBuilder.Chain(uInteract, uBrOpen);
-		const u_int uOpen = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uOpen, "m_strVariable", "isOpen");
-		xBuilder.ParamBool(uOpen, "m_bValue", true);
-		const u_int uEvent = xBuilder.Node("DPDispatchChestOpened");
-		xBuilder.Edge(uBrOpen, 1, uOpen);
-		xBuilder.Chain(uOpen, uEvent);
+		Zenith_GraphChain xInteract = xB.OnCustomEvent("Interact");
+		const u_int uBrOpen = xB.Branch("isOpen");
+		xInteract.Then(uBrOpen);
+		const u_int uOpen = xB.SetBlackboardBool("isOpen", true);
+		const u_int uEvent = xB.Node("DPDispatchChestOpened");
+		xB.Edge(uBrOpen, 1, uOpen);
+		xB.Chain(uOpen, uEvent);
 	}
 
 	// Per-frame lid progress: openT += dt / duration, clamped to 1, duration
 	// read LIVE via the tuning stage node (the retired per-Execute read).
 	{
-		const u_int uUpdate = xBuilder.Node("OnUpdate");
-		const u_int uGateOpen = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGateOpen, "m_strOpenVar", "isOpen");
-		xBuilder.Chain(uUpdate, uGateOpen);
-		const u_int uLidDone = xBuilder.Node("CompareBlackboardFloat");
-		xBuilder.ParamString(uLidDone, "m_strVar", "openT");
-		xBuilder.ParamFloat(uLidDone, "m_fCompareTo", 1.0f);
-		xBuilder.ParamInt(uLidDone, "m_iOp", 3);	// >=
-		xBuilder.ParamString(uLidDone, "m_strResultVar", "lidDone");
-		const u_int uBrDone = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrDone, "m_strConditionVar", "lidDone");
-		xBuilder.Chain(uGateOpen, uLidDone).Chain(uLidDone, uBrDone);
-		const u_int uDuration = xBuilder.Node("DPReadTuningFloat");
-		xBuilder.ParamString(uDuration, "m_strKey", "interactables.chest_open_duration_s");
-		xBuilder.ParamString(uDuration, "m_strVar", "lidDuration");
-		const u_int uStepReset = xBuilder.Node("SetBlackboardFloat");
-		xBuilder.ParamString(uStepReset, "m_strVariable", "lidStep");
-		xBuilder.ParamFloat(uStepReset, "m_fValue", 0.0f);
-		const u_int uStepDt = xBuilder.Node("AddBlackboardFloat");	// lidStep = dt
-		xBuilder.ParamString(uStepDt, "m_strVariable", "lidStep");
-		xBuilder.ParamFloat(uStepDt, "m_fDelta", 1.0f);
-		xBuilder.ParamBool(uStepDt, "m_bScaleByDt", true);
-		const u_int uStepDiv = xBuilder.Node("MathBlackboardFloat");	// lidStep /= duration
-		xBuilder.ParamString(uStepDiv, "m_strVar", "lidStep");
-		xBuilder.ParamInt(uStepDiv, "m_iOp", 2);
-		xBuilder.ParamString(uStepDiv, "m_strOperandVar", "lidDuration");
-		const u_int uAdvance = xBuilder.Node("AddBlackboardFloat");	// openT += lidStep
-		xBuilder.ParamString(uAdvance, "m_strVariable", "openT");
-		xBuilder.ParamString(uAdvance, "m_strDeltaVar", "lidStep");
-		const u_int uClamp = xBuilder.Node("MathBlackboardFloat");	// openT = min(openT, 1)
-		xBuilder.ParamString(uClamp, "m_strVar", "openT");
-		xBuilder.ParamInt(uClamp, "m_iOp", 4);
-		xBuilder.ParamFloat(uClamp, "m_fOperand", 1.0f);
-		xBuilder.Edge(uBrDone, 1, uDuration);
-		xBuilder.Chain(uDuration, uStepReset).Chain(uStepReset, uStepDt)
+		Zenith_GraphChain xUpdate = xB.OnUpdate();
+		const u_int uGateOpen = xB.Gate("isOpen");
+		xUpdate.Then(uGateOpen);
+		const u_int uLidDone = xB.CompareFloat("openT", GRAPH_COMPARE_FLOAT_OP_GREATER_EQUAL, 1.0f, "lidDone");
+		const u_int uBrDone = xB.Branch("lidDone");
+		xB.Chain(uGateOpen, uLidDone).Chain(uLidDone, uBrDone);
+		const u_int uDuration = xB.Node("DPReadTuningFloat");
+		xB.ParamString(uDuration, "m_strKey", "interactables.chest_open_duration_s");
+		xB.ParamString(uDuration, "m_strVar", "lidDuration");
+		const u_int uStepReset = xB.SetBlackboardFloat("lidStep", 0.0f);
+		const u_int uStepDt = xB.Node("AddBlackboardFloat");	// lidStep = dt
+		xB.ParamString(uStepDt, "m_strVariable", "lidStep");
+		xB.ParamFloat(uStepDt, "m_fDelta", 1.0f);
+		xB.ParamBool(uStepDt, "m_bScaleByDt", true);
+		const u_int uStepDiv = xB.Node("MathBlackboardFloat");	// lidStep /= duration
+		xB.ParamString(uStepDiv, "m_strVar", "lidStep");
+		xB.ParamEnum(uStepDiv, "m_iOp", GRAPH_MATH_FLOAT_OP_DIVIDE);
+		xB.ParamString(uStepDiv, "m_strOperandVar", "lidDuration");
+		const u_int uAdvance = xB.Node("AddBlackboardFloat");	// openT += lidStep
+		xB.ParamString(uAdvance, "m_strVariable", "openT");
+		xB.ParamString(uAdvance, "m_strDeltaVar", "lidStep");
+		const u_int uClamp = xB.Node("MathBlackboardFloat");	// openT = min(openT, 1)
+		xB.ParamString(uClamp, "m_strVar", "openT");
+		xB.ParamEnum(uClamp, "m_iOp", GRAPH_MATH_FLOAT_OP_MIN);
+		xB.ParamFloat(uClamp, "m_fOperand", 1.0f);
+		xB.Edge(uBrDone, 1, uDuration);
+		xB.Chain(uDuration, uStepReset).Chain(uStepReset, uStepDt)
 			.Chain(uStepDt, uStepDiv).Chain(uStepDiv, uAdvance).Chain(uAdvance, uClamp);
 	}
 }
 
 static void BuildGraph_DPNoiseMachine(Zenith_GraphBuilder& xBuilder)
 {
-	const u_int uInteract = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uInteract, "m_strEventName", "Interact");
-	const u_int uNoise = xBuilder.Node("DPEmitNoise");
-	xBuilder.Chain(uInteract, uNoise);
+	Zenith_EngineGraphBuilder xB(xBuilder);
+	Zenith_GraphChain xInteract = xB.OnCustomEvent("Interact");
+	const u_int uNoise = xB.Node("DPEmitNoise");
+	xInteract.Then(uNoise);
 }
 
 static void BuildGraph_DPDoubleDoor(Zenith_GraphBuilder& xBuilder)
 {
+	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0; xF0.SetFloat(0.0f);
 	Zenith_PropertyValue xBF; xBF.SetBool(false);
-	xBuilder.Variable("isOpen", xBF);
-	xBuilder.Variable("openT", xF0);
+	xB.Variable("isOpen", xBF);
+	xB.Variable("openT", xF0);
 
 	// Interact: open-guard -> villager-valid gate -> key consume (hard-coded
 	// Key, the retired semantics) -> flag -> event.
 	{
-		const u_int uInteract = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uInteract, "m_strEventName", "Interact");
-		const u_int uBrOpen = xBuilder.Node("Branch");
-		xBuilder.ParamString(uBrOpen, "m_strConditionVar", "isOpen");
-		xBuilder.Chain(uInteract, uBrOpen);
-		const u_int uValid = xBuilder.Node("QueryEntityValid");
-		xBuilder.ParamString(uValid, "m_strEntityVar", "payload");
-		xBuilder.ParamString(uValid, "m_strResultVar", "payloadValid");
-		const u_int uGateValid = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGateValid, "m_strOpenVar", "payloadValid");
-		const u_int uKey = xBuilder.Node("DPConsumeKeyForUnlock");
-		const u_int uOpen = xBuilder.Node("SetBlackboardBool");
-		xBuilder.ParamString(uOpen, "m_strVariable", "isOpen");
-		xBuilder.ParamBool(uOpen, "m_bValue", true);
-		const u_int uEvent = xBuilder.Node("DPDispatchDoorOpened");
-		xBuilder.Edge(uBrOpen, 1, uValid);
-		xBuilder.Chain(uValid, uGateValid).Chain(uGateValid, uKey)
+		Zenith_GraphChain xInteract = xB.OnCustomEvent("Interact");
+		const u_int uBrOpen = xB.Branch("isOpen");
+		xInteract.Then(uBrOpen);
+		const u_int uValid = xB.Node("QueryEntityValid");
+		xB.ParamString(uValid, "m_strEntityVar", "payload");
+		xB.ParamString(uValid, "m_strResultVar", "payloadValid");
+		const u_int uGateValid = xB.Gate("payloadValid");
+		const u_int uKey = xB.Node("DPConsumeKeyForUnlock");
+		const u_int uOpen = xB.SetBlackboardBool("isOpen", true);
+		const u_int uEvent = xB.Node("DPDispatchDoorOpened");
+		xB.Edge(uBrOpen, 1, uValid);
+		xB.Chain(uValid, uGateValid).Chain(uGateValid, uKey)
 			.Chain(uKey, uOpen).Chain(uOpen, uEvent);
 	}
 	{
-		const u_int uUpdate = xBuilder.Node("OnUpdate");
-		const u_int uLeaves = xBuilder.Node("DPAnimateDoorLeaves");
-		xBuilder.Chain(uUpdate, uLeaves);
+		Zenith_GraphChain xUpdate = xB.OnUpdate();
+		const u_int uLeaves = xB.Node("DPAnimateDoorLeaves");
+		xUpdate.Then(uLeaves);
 	}
 }
 
@@ -2043,53 +1911,46 @@ static void BuildGraph_DPDoor(Zenith_GraphBuilder& xBuilder)
 	// DPDoorStateChanged (it reads GetAnim() off this blackboard); state
 	// change before noise before event dispatch. Opening/Closing pins are
 	// unwired - mid-animation F-presses are ignored.
+	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0; xF0.SetFloat(0.0f);
 	Zenith_PropertyValue xI0; xI0.SetInt32(0);
-	xBuilder.Variable("anim", xI0);
-	xBuilder.Variable("openT", xF0);
-	xBuilder.Variable("requiredKey", xI0);
+	xB.Variable("anim", xI0);
+	xB.Variable("openT", xF0);
+	xB.Variable("requiredKey", xI0);
 
 	{
-		const u_int uInteract = xBuilder.Node("OnCustomEvent");
-		xBuilder.ParamString(uInteract, "m_strEventName", "Interact");
-		const u_int uValid = xBuilder.Node("QueryEntityValid");
-		xBuilder.ParamString(uValid, "m_strEntityVar", "payload");
-		xBuilder.ParamString(uValid, "m_strResultVar", "payloadValid");
-		const u_int uGateValid = xBuilder.Node("Gate");
-		xBuilder.ParamString(uGateValid, "m_strOpenVar", "payloadValid");
-		const u_int uSwitch = xBuilder.Node("SwitchOnInt");
-		xBuilder.ParamString(uSwitch, "m_strVar", "anim");
-		xBuilder.ParamInt(uSwitch, "m_iCaseCount", 4);
-		xBuilder.Chain(uInteract, uValid).Chain(uValid, uGateValid).Chain(uGateValid, uSwitch);
+		Zenith_GraphChain xInteract = xB.OnCustomEvent("Interact");
+		const u_int uValid = xB.Node("QueryEntityValid");
+		xB.ParamString(uValid, "m_strEntityVar", "payload");
+		xB.ParamString(uValid, "m_strResultVar", "payloadValid");
+		const u_int uGateValid = xB.Gate("payloadValid");
+		const u_int uSwitch = xB.SwitchOnInt("anim", 4);
+		xInteract.Then(uValid).Then(uGateValid).Then(uSwitch);
 
 		// Closed -> Opening.
-		const u_int uCheckKey = xBuilder.Node("DPDoorCheckKey");
-		const u_int uToOpening = xBuilder.Node("SetBlackboardInt");
-		xBuilder.ParamString(uToOpening, "m_strVariable", "anim");
-		xBuilder.ParamInt(uToOpening, "m_iValue", 1);
-		const u_int uSyncOpen = xBuilder.Node("DPDoorStateChanged");
-		const u_int uNoiseOpen = xBuilder.Node("DPDoorEmitNoise");
-		const u_int uEventOpen = xBuilder.Node("DPDispatchDoorOpened");
-		xBuilder.Edge(uSwitch, 0, uCheckKey);
-		xBuilder.Chain(uCheckKey, uToOpening).Chain(uToOpening, uSyncOpen)
+		const u_int uCheckKey = xB.Node("DPDoorCheckKey");
+		const u_int uToOpening = xB.SetBlackboardInt("anim", 1);
+		const u_int uSyncOpen = xB.Node("DPDoorStateChanged");
+		const u_int uNoiseOpen = xB.Node("DPDoorEmitNoise");
+		const u_int uEventOpen = xB.Node("DPDispatchDoorOpened");
+		xB.Edge(uSwitch, 0, uCheckKey);
+		xB.Chain(uCheckKey, uToOpening).Chain(uToOpening, uSyncOpen)
 			.Chain(uSyncOpen, uNoiseOpen).Chain(uNoiseOpen, uEventOpen);
 
 		// Open -> Closing (with the pentagram close-deferral).
-		const u_int uDeferral = xBuilder.Node("DPDoorPentagramDeferral");
-		const u_int uToClosing = xBuilder.Node("SetBlackboardInt");
-		xBuilder.ParamString(uToClosing, "m_strVariable", "anim");
-		xBuilder.ParamInt(uToClosing, "m_iValue", 3);
-		const u_int uSyncClose = xBuilder.Node("DPDoorStateChanged");
-		const u_int uNoiseClose = xBuilder.Node("DPDoorEmitNoise");
-		const u_int uEventClose = xBuilder.Node("DPDispatchDoorClosed");
-		xBuilder.Edge(uSwitch, 2, uDeferral);
-		xBuilder.Chain(uDeferral, uToClosing).Chain(uToClosing, uSyncClose)
+		const u_int uDeferral = xB.Node("DPDoorPentagramDeferral");
+		const u_int uToClosing = xB.SetBlackboardInt("anim", 3);
+		const u_int uSyncClose = xB.Node("DPDoorStateChanged");
+		const u_int uNoiseClose = xB.Node("DPDoorEmitNoise");
+		const u_int uEventClose = xB.Node("DPDispatchDoorClosed");
+		xB.Edge(uSwitch, 2, uDeferral);
+		xB.Chain(uDeferral, uToClosing).Chain(uToClosing, uSyncClose)
 			.Chain(uSyncClose, uNoiseClose).Chain(uNoiseClose, uEventClose);
 	}
 	{
-		const u_int uUpdate = xBuilder.Node("OnUpdate");
-		const u_int uAdvance = xBuilder.Node("DPDoorAdvanceAnim");
-		xBuilder.Chain(uUpdate, uAdvance);
+		Zenith_GraphChain xUpdate = xB.OnUpdate();
+		const u_int uAdvance = xB.Node("DPDoorAdvanceAnim");
+		xUpdate.Then(uAdvance);
 	}
 }
 

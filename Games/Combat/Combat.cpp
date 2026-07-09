@@ -7,6 +7,8 @@
 #include "Combat/Components/Combat_GraphNodes.h"
 #include "Combat/Components/Combat_Config.h"
 #include "Scripting/Zenith_GraphBuilder.h"
+#include "EntityComponent/Zenith_GraphOps.h"
+#include "EntityComponent/Zenith_EngineGraphBuilder.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
@@ -519,43 +521,29 @@ void Project_InitializeResources()
 // read it.
 static void BuildGraph_CombatPlayerAttack(Zenith_GraphBuilder& xBuilder)
 {
+	Zenith_EngineGraphBuilder xB(xBuilder);
+
 	// Guard 1: query attack state, then activate the hitbox on attack start.
-	const u_int uEvt1 = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uEvt1, "m_strEventName", "AttackTick");
-	const u_int uQuery = xBuilder.Node("CombatQueryAttackState");
-	const u_int uBranchStart = xBuilder.Node("Branch");
-	xBuilder.ParamString(uBranchStart, "m_strConditionVar", "attackJustStarted");
-	const u_int uActivate = xBuilder.Node("CombatActivateHitbox");
-	xBuilder.Chain(uEvt1, uQuery).Chain(uQuery, uBranchStart);
-	xBuilder.Edge(uBranchStart, 0, uActivate);
+	Zenith_GraphChain xEvt1 = xB.OnCustomEvent("AttackTick");
+	const u_int uQuery = xB.Node("CombatQueryAttackState");
+	const u_int uBranchStart = xB.Branch("attackJustStarted");
+	const u_int uActivate = xB.Node("CombatActivateHitbox");
+	xEvt1.Then(uQuery).Then(uBranchStart).ThenPin(0, uActivate);
 
 	// Guard 2: on the attack hit-frame, register hits; push combo on a landed hit.
-	const u_int uEvt2 = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uEvt2, "m_strEventName", "AttackTick");
-	const u_int uBranchHit = xBuilder.Node("Branch");
-	xBuilder.ParamString(uBranchHit, "m_strConditionVar", "hitFrameReady");
-	const u_int uRegister = xBuilder.Node("CombatRegisterHits");
-	const u_int uCmpHits = xBuilder.Node("CompareBlackboardInt");
-	xBuilder.ParamString(uCmpHits, "m_strVar", "uHits");
-	xBuilder.ParamInt(uCmpHits, "m_iOp", 2); // 2 = greater
-	xBuilder.ParamInt(uCmpHits, "m_iCompareTo", 0);
-	xBuilder.ParamString(uCmpHits, "m_strResultVar", "uHitsPositive");
-	const u_int uBranchHits = xBuilder.Node("Branch");
-	xBuilder.ParamString(uBranchHits, "m_strConditionVar", "uHitsPositive");
-	const u_int uNotify = xBuilder.Node("CombatNotifyComboHit");
-	xBuilder.Chain(uEvt2, uBranchHit);
-	xBuilder.Edge(uBranchHit, 0, uRegister);
-	xBuilder.Chain(uRegister, uCmpHits).Chain(uCmpHits, uBranchHits);
-	xBuilder.Edge(uBranchHits, 0, uNotify);
+	Zenith_GraphChain xEvt2 = xB.OnCustomEvent("AttackTick");
+	const u_int uBranchHit = xB.Branch("hitFrameReady");
+	const u_int uRegister = xB.Node("CombatRegisterHits");
+	const u_int uCmpHits = xB.CompareInt("uHits", GRAPH_COMPARE_INT_OP_GREATER, 0, "uHitsPositive");
+	const u_int uBranchHits = xB.Branch("uHitsPositive");
+	const u_int uNotify = xB.Node("CombatNotifyComboHit");
+	xEvt2.Then(uBranchHit).ThenPin(0, uRegister).Then(uCmpHits).Then(uBranchHits).ThenPin(0, uNotify);
 
 	// Guard 3: deactivate the hitbox when no longer attacking (false pin).
-	const u_int uEvt3 = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uEvt3, "m_strEventName", "AttackTick");
-	const u_int uBranchAtk = xBuilder.Node("Branch");
-	xBuilder.ParamString(uBranchAtk, "m_strConditionVar", "isAttacking");
-	const u_int uDeactivate = xBuilder.Node("CombatDeactivateHitbox");
-	xBuilder.Chain(uEvt3, uBranchAtk);
-	xBuilder.Edge(uBranchAtk, 1, uDeactivate);
+	Zenith_GraphChain xEvt3 = xB.OnCustomEvent("AttackTick");
+	const u_int uBranchAtk = xB.Branch("isAttacking");
+	const u_int uDeactivate = xB.Node("CombatDeactivateHitbox");
+	xEvt3.Then(uBranchAtk).ThenPin(1, uDeactivate);
 }
 
 // Combat_RoundFlow.bgraph - combo-timer tick (kept as one node; dt rides the
@@ -564,38 +552,31 @@ static void BuildGraph_CombatPlayerAttack(Zenith_GraphBuilder& xBuilder)
 // preserving the old VICTORY-before-GAME_OVER, both-independent evaluation.
 static void BuildGraph_CombatRoundFlow(Zenith_GraphBuilder& xBuilder)
 {
+	Zenith_EngineGraphBuilder xB(xBuilder);
+
 	// Chain 1: combo-timer tick, count living enemies, VICTORY if all dead and
 	// at least one enemy was registered.
-	const u_int uEvt1 = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uEvt1, "m_strEventName", "RoundTick");
-	const u_int uTick = xBuilder.Node("CombatTickComboTimer");
-	xBuilder.ParamString(uTick, "m_strDtVar", "payload");
-	const u_int uCount = xBuilder.Node("CombatCountAliveEnemies");
-	const u_int uCmpZero = xBuilder.Node("CompareBlackboardInt");
-	xBuilder.ParamString(uCmpZero, "m_strVar", "aliveCount");
-	xBuilder.ParamInt(uCmpZero, "m_iOp", 4); // 4 = equal
-	xBuilder.ParamInt(uCmpZero, "m_iCompareTo", 0);
-	xBuilder.ParamString(uCmpZero, "m_strResultVar", "aliveIsZero");
-	const u_int uBranchZero = xBuilder.Node("Branch");
-	xBuilder.ParamString(uBranchZero, "m_strConditionVar", "aliveIsZero");
-	const u_int uBranchHas = xBuilder.Node("Branch");
-	xBuilder.ParamString(uBranchHas, "m_strConditionVar", "hasEnemies");
-	const u_int uWin = xBuilder.Node("CombatSetGameState");
-	xBuilder.ParamInt(uWin, "m_iState", static_cast<int32_t>(Combat_GameState::VICTORY));
-	xBuilder.Chain(uEvt1, uTick).Chain(uTick, uCount).Chain(uCount, uCmpZero).Chain(uCmpZero, uBranchZero);
-	xBuilder.Edge(uBranchZero, 0, uBranchHas);
-	xBuilder.Edge(uBranchHas, 0, uWin);
+	const u_int uEvt1 = xB.OnCustomEvent("RoundTick");
+	const u_int uTick = xB.Node("CombatTickComboTimer");
+	xB.ParamString(uTick, "m_strDtVar", "payload");
+	const u_int uCount = xB.Node("CombatCountAliveEnemies");
+	const u_int uCmpZero = xB.CompareInt("aliveCount", GRAPH_COMPARE_INT_OP_EQUAL, 0, "aliveIsZero");
+	const u_int uBranchZero = xB.Branch("aliveIsZero");
+	const u_int uBranchHas = xB.Branch("hasEnemies");
+	const u_int uWin = xB.Node("CombatSetGameState");
+	xB.ParamEnum(uWin, "m_iState", Combat_GameState::VICTORY);
+	xB.Chain(uEvt1, uTick).Chain(uTick, uCount).Chain(uCount, uCmpZero).Chain(uCmpZero, uBranchZero);
+	xB.Edge(uBranchZero, 0, uBranchHas);
+	xB.Edge(uBranchHas, 0, uWin);
 
 	// Chain 2: GAME_OVER if the player is dead (runs after chain 1 in node order).
-	const u_int uEvt2 = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uEvt2, "m_strEventName", "RoundTick");
-	const u_int uCheckDead = xBuilder.Node("CombatCheckPlayerDead");
-	const u_int uBranchDead = xBuilder.Node("Branch");
-	xBuilder.ParamString(uBranchDead, "m_strConditionVar", "playerDead");
-	const u_int uLose = xBuilder.Node("CombatSetGameState");
-	xBuilder.ParamInt(uLose, "m_iState", static_cast<int32_t>(Combat_GameState::GAME_OVER));
-	xBuilder.Chain(uEvt2, uCheckDead).Chain(uCheckDead, uBranchDead);
-	xBuilder.Edge(uBranchDead, 0, uLose);
+	const u_int uEvt2 = xB.OnCustomEvent("RoundTick");
+	const u_int uCheckDead = xB.Node("CombatCheckPlayerDead");
+	const u_int uBranchDead = xB.Branch("playerDead");
+	const u_int uLose = xB.Node("CombatSetGameState");
+	xB.ParamEnum(uLose, "m_iState", Combat_GameState::GAME_OVER);
+	xB.Chain(uEvt2, uCheckDead).Chain(uCheckDead, uBranchDead);
+	xB.Edge(uBranchDead, 0, uLose);
 }
 
 // Combat_PlayerState.bgraph - attached alongside Combat_PlayerAttack on the
@@ -609,16 +590,13 @@ static void BuildGraph_CombatPlayerState(Zenith_GraphBuilder& xBuilder)
 	Zenith_PropertyValue xVal;
 	xVal.SetInt32(static_cast<int32_t>(Combat_PlayerState::IDLE));
 	xBuilder.Variable("playerState", xVal);
+	Zenith_EngineGraphBuilder xB(xBuilder);
 
 	// Chain 1: pre-tick + StateMachine dispatch.
-	const u_int uTick = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uTick, "m_strEventName", "PlayerTick");
-	const u_int uPre = xBuilder.Node("CombatPlayerPreTick");
-	const u_int uSM = xBuilder.Node("StateMachine");
-	xBuilder.ParamString(uSM, "m_strStateVar", "playerState");
-	xBuilder.ParamInt(uSM, "m_iStateCount", 9);
-	xBuilder.ParamString(uSM, "m_strStateNames", "Idle,Walking,LightAttack1,LightAttack2,LightAttack3,HeavyAttack,Dodging,HitStun,Dead");
-	xBuilder.Chain(uTick, uPre).Chain(uPre, uSM);
+	Zenith_GraphChain xTick = xB.OnCustomEvent("PlayerTick");
+	const u_int uPre = xB.Node("CombatPlayerPreTick");
+	const u_int uSM = xB.StateMachine("playerState", 9, "Idle,Walking,LightAttack1,LightAttack2,LightAttack3,HeavyAttack,Dodging,HitStun,Dead");
+	xTick.Then(uPre).Then(uSM);
 
 	const u_int uIdle = xBuilder.Node("CombatPlayerMovementTick");
 	const u_int uWalk = xBuilder.Node("CombatPlayerMovementTick");
@@ -639,10 +617,9 @@ static void BuildGraph_CombatPlayerState(Zenith_GraphBuilder& xBuilder)
 	// pin 8 (DEAD) intentionally unwired - no-op, matching the old switch.
 
 	// Chain 2: post-tick (recompute state-changed) after the handler ran.
-	const u_int uTick2 = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uTick2, "m_strEventName", "PlayerTick");
-	const u_int uPost = xBuilder.Node("CombatPlayerPostTick");
-	xBuilder.Chain(uTick2, uPost);
+	Zenith_GraphChain xTick2 = xB.OnCustomEvent("PlayerTick");
+	const u_int uPost = xB.Node("CombatPlayerPostTick");
+	xTick2.Then(uPost);
 }
 
 // Combat_EnemyBrain.bgraph - runtime-attached per enemy. The deleted
@@ -654,32 +631,101 @@ static void BuildGraph_CombatEnemyBrain(Zenith_GraphBuilder& xBuilder)
 	Zenith_PropertyValue xVal;
 	xVal.SetInt32(static_cast<int32_t>(Combat_EnemyState::IDLE));
 	xBuilder.Variable("enemyState", xVal);
+	Zenith_EngineGraphBuilder xB(xBuilder);
 
 	// Chain 1: pre-tick + StateMachine dispatch.
-	const u_int uTick = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uTick, "m_strEventName", "EnemyBrainTick");
-	const u_int uPre = xBuilder.Node("CombatEnemyPreTick");
-	const u_int uSM = xBuilder.Node("StateMachine");
-	xBuilder.ParamString(uSM, "m_strStateVar", "enemyState");
-	xBuilder.ParamInt(uSM, "m_iStateCount", 5);
-	xBuilder.ParamString(uSM, "m_strStateNames", "Idle,Chasing,Attacking,HitStun,Dead");
+	Zenith_GraphChain xTick = xB.OnCustomEvent("EnemyBrainTick");
+	const u_int uPre = xB.Node("CombatEnemyPreTick");
+	const u_int uSM = xB.StateMachine("enemyState", 5, "Idle,Chasing,Attacking,HitStun,Dead");
 	// No m_strEventPrefix: the old switch fired no enter/exit events.
-	const u_int uIdle = xBuilder.Node("CombatEnemyIdleTick");
-	const u_int uChase = xBuilder.Node("CombatEnemyChaseTick");
-	const u_int uAttack = xBuilder.Node("CombatEnemyAttackTick");
-	const u_int uHitStun = xBuilder.Node("CombatEnemyHitStunTick");
-	xBuilder.Chain(uTick, uPre).Chain(uPre, uSM);
-	xBuilder.Edge(uSM, 0, uIdle);    // IDLE
-	xBuilder.Edge(uSM, 1, uChase);   // CHASING
-	xBuilder.Edge(uSM, 2, uAttack);  // ATTACKING
-	xBuilder.Edge(uSM, 3, uHitStun); // HIT_STUN
+	const u_int uIdle = xB.Node("CombatEnemyIdleTick");
+	const u_int uChase = xB.Node("CombatEnemyChaseTick");
+	const u_int uAttack = xB.Node("CombatEnemyAttackTick");
+	const u_int uHitStun = xB.Node("CombatEnemyHitStunTick");
+	xTick.Then(uPre).Then(uSM);
+	xB.Edge(uSM, 0, uIdle);    // IDLE
+	xB.Edge(uSM, 1, uChase);   // CHASING
+	xB.Edge(uSM, 2, uAttack);  // ATTACKING
+	xB.Edge(uSM, 3, uHitStun); // HIT_STUN
 	// pin 4 (DEAD) intentionally unwired - no-op, matching the old switch.
 
 	// Chain 2: post-tick (anim + IK) after the handler ran.
-	const u_int uTick2 = xBuilder.Node("OnCustomEvent");
-	xBuilder.ParamString(uTick2, "m_strEventName", "EnemyBrainTick");
-	const u_int uPost = xBuilder.Node("CombatEnemyPostTick");
-	xBuilder.Chain(uTick2, uPost);
+	Zenith_GraphChain xTick2 = xB.OnCustomEvent("EnemyBrainTick");
+	const u_int uPost = xB.Node("CombatEnemyPostTick");
+	xTick2.Then(uPost);
+}
+
+// ---- Combat_GameFlow, split (Phase 3) into per-input-source sub-builders.
+// Each source (menu Play/focus, P, R, Escape) authors an independent chain
+// sharing only the gameState variable; called in original order they preserve
+// node-creation + edge-add order -> byte-identical authoring.
+
+static void BuildCombatGameFlow_MenuInput(Zenith_EngineGraphBuilder& xB)
+{
+	// Menu Play button -> load the arena (SINGLE mode = old OnPlayClicked).
+	const u_int uPlay = xB.Node("OnUIButtonClicked");
+	xB.ParamString(uPlay, "m_strButton", "MenuPlay");
+	const u_int uLoad = xB.Node("LoadSceneByIndex");
+	xB.ParamInt(uLoad, "m_iSceneIndex", 1);
+	xB.Chain(uPlay, uLoad);
+
+	// Menu focus (single button; the node no-ops in the arena).
+	const u_int uFocusTick = xB.OnUpdate();
+	const u_int uFocus = xB.Node("CombatFocusPlayButton");
+	xB.Chain(uFocusTick, uFocus);
+}
+
+static void BuildCombatGameFlow_PauseResume(Zenith_EngineGraphBuilder& xB)
+{
+	// P: pause (from PLAYING) / resume (from PAUSED).
+	const u_int uOnP = xB.OnKeyPressed(ZENITH_KEY_P);
+	const u_int uGetP = xB.Node("CombatGetGameState");
+	const u_int uSwP = xB.SwitchOnInt("gameState", 5);
+	xB.Chain(uOnP, uGetP).Chain(uGetP, uSwP);
+	const u_int uPause = xB.Node("CombatSetScenePaused");
+	xB.ParamBool(uPause, "m_bPaused", true);
+	const u_int uToPaused = xB.Node("CombatSetGameState");
+	xB.ParamEnum(uToPaused, "m_iState", Combat_GameState::PAUSED);
+	xB.Edge(uSwP, static_cast<u_int>(Combat_GameState::PLAYING), uPause);
+	xB.Chain(uPause, uToPaused);
+	const u_int uUnpause = xB.Node("CombatSetScenePaused");
+	xB.ParamBool(uUnpause, "m_bPaused", false);
+	const u_int uToPlaying = xB.Node("CombatSetGameState");
+	xB.ParamEnum(uToPlaying, "m_iState", Combat_GameState::PLAYING);
+	xB.Edge(uSwP, static_cast<u_int>(Combat_GameState::PAUSED), uUnpause);
+	xB.Chain(uUnpause, uToPlaying);
+}
+
+static void BuildCombatGameFlow_Restart(Zenith_EngineGraphBuilder& xB)
+{
+	// R: restart (from PLAYING / VICTORY / GAME_OVER). Per-pin node instances.
+	const u_int uOnR = xB.OnKeyPressed(ZENITH_KEY_R);
+	const u_int uGetR = xB.Node("CombatGetGameState");
+	const u_int uSwR = xB.SwitchOnInt("gameState", 5);
+	xB.Chain(uOnR, uGetR).Chain(uGetR, uSwR);
+	const u_int uResetP = xB.Node("CombatResetGame");
+	xB.Edge(uSwR, static_cast<u_int>(Combat_GameState::PLAYING), uResetP);
+	const u_int uResetV = xB.Node("CombatResetGame");
+	xB.Edge(uSwR, static_cast<u_int>(Combat_GameState::VICTORY), uResetV);
+	const u_int uResetG = xB.Node("CombatResetGame");
+	xB.Edge(uSwR, static_cast<u_int>(Combat_GameState::GAME_OVER), uResetG);
+}
+
+static void BuildCombatGameFlow_ReturnToMenu(Zenith_EngineGraphBuilder& xB)
+{
+	// Escape: return to menu (from PLAYING / PAUSED / VICTORY / GAME_OVER).
+	const u_int uOnEsc = xB.OnKeyPressed(ZENITH_KEY_ESCAPE);
+	const u_int uGetE = xB.Node("CombatGetGameState");
+	const u_int uSwE = xB.SwitchOnInt("gameState", 5);
+	xB.Chain(uOnEsc, uGetE).Chain(uGetE, uSwE);
+	const u_int uMenuPl = xB.Node("CombatReturnToMenu");
+	xB.Edge(uSwE, static_cast<u_int>(Combat_GameState::PLAYING), uMenuPl);
+	const u_int uMenuPa = xB.Node("CombatReturnToMenu");
+	xB.Edge(uSwE, static_cast<u_int>(Combat_GameState::PAUSED), uMenuPa);
+	const u_int uMenuV = xB.Node("CombatReturnToMenu");
+	xB.Edge(uSwE, static_cast<u_int>(Combat_GameState::VICTORY), uMenuV);
+	const u_int uMenuG = xB.Node("CombatReturnToMenu");
+	xB.Edge(uSwE, static_cast<u_int>(Combat_GameState::GAME_OVER), uMenuG);
 }
 
 // Combat_GameFlow.bgraph - attached to both GameManagers. Handles the
@@ -695,71 +741,12 @@ static void BuildGraph_CombatGameFlow(Zenith_GraphBuilder& xBuilder)
 	Zenith_PropertyValue xVal;
 	xVal.SetInt32(static_cast<int32_t>(Combat_GameState::MAIN_MENU));
 	xBuilder.Variable("gameState", xVal);
+	Zenith_EngineGraphBuilder xB(xBuilder);
 
-	// Menu Play button -> load the arena (SINGLE mode = old OnPlayClicked).
-	const u_int uPlay = xBuilder.Node("OnUIButtonClicked");
-	xBuilder.ParamString(uPlay, "m_strButton", "MenuPlay");
-	const u_int uLoad = xBuilder.Node("LoadSceneByIndex");
-	xBuilder.ParamInt(uLoad, "m_iSceneIndex", 1);
-	xBuilder.Chain(uPlay, uLoad);
-
-	// Menu focus (single button; the node no-ops in the arena).
-	const u_int uFocusTick = xBuilder.Node("OnUpdate");
-	const u_int uFocus = xBuilder.Node("CombatFocusPlayButton");
-	xBuilder.Chain(uFocusTick, uFocus);
-
-	// P: pause (from PLAYING) / resume (from PAUSED).
-	const u_int uOnP = xBuilder.Node("OnKeyPressed");
-	xBuilder.ParamInt(uOnP, "m_iKeyCode", ZENITH_KEY_P);
-	const u_int uGetP = xBuilder.Node("CombatGetGameState");
-	const u_int uSwP = xBuilder.Node("SwitchOnInt");
-	xBuilder.ParamString(uSwP, "m_strVar", "gameState");
-	xBuilder.ParamInt(uSwP, "m_iCaseCount", 5);
-	xBuilder.Chain(uOnP, uGetP).Chain(uGetP, uSwP);
-	const u_int uPause = xBuilder.Node("CombatSetScenePaused");
-	xBuilder.ParamBool(uPause, "m_bPaused", true);
-	const u_int uToPaused = xBuilder.Node("CombatSetGameState");
-	xBuilder.ParamInt(uToPaused, "m_iState", static_cast<int32_t>(Combat_GameState::PAUSED));
-	xBuilder.Edge(uSwP, static_cast<u_int>(Combat_GameState::PLAYING), uPause);
-	xBuilder.Chain(uPause, uToPaused);
-	const u_int uUnpause = xBuilder.Node("CombatSetScenePaused");
-	xBuilder.ParamBool(uUnpause, "m_bPaused", false);
-	const u_int uToPlaying = xBuilder.Node("CombatSetGameState");
-	xBuilder.ParamInt(uToPlaying, "m_iState", static_cast<int32_t>(Combat_GameState::PLAYING));
-	xBuilder.Edge(uSwP, static_cast<u_int>(Combat_GameState::PAUSED), uUnpause);
-	xBuilder.Chain(uUnpause, uToPlaying);
-
-	// R: restart (from PLAYING / VICTORY / GAME_OVER). Per-pin node instances.
-	const u_int uOnR = xBuilder.Node("OnKeyPressed");
-	xBuilder.ParamInt(uOnR, "m_iKeyCode", ZENITH_KEY_R);
-	const u_int uGetR = xBuilder.Node("CombatGetGameState");
-	const u_int uSwR = xBuilder.Node("SwitchOnInt");
-	xBuilder.ParamString(uSwR, "m_strVar", "gameState");
-	xBuilder.ParamInt(uSwR, "m_iCaseCount", 5);
-	xBuilder.Chain(uOnR, uGetR).Chain(uGetR, uSwR);
-	const u_int uResetP = xBuilder.Node("CombatResetGame");
-	xBuilder.Edge(uSwR, static_cast<u_int>(Combat_GameState::PLAYING), uResetP);
-	const u_int uResetV = xBuilder.Node("CombatResetGame");
-	xBuilder.Edge(uSwR, static_cast<u_int>(Combat_GameState::VICTORY), uResetV);
-	const u_int uResetG = xBuilder.Node("CombatResetGame");
-	xBuilder.Edge(uSwR, static_cast<u_int>(Combat_GameState::GAME_OVER), uResetG);
-
-	// Escape: return to menu (from PLAYING / PAUSED / VICTORY / GAME_OVER).
-	const u_int uOnEsc = xBuilder.Node("OnKeyPressed");
-	xBuilder.ParamInt(uOnEsc, "m_iKeyCode", ZENITH_KEY_ESCAPE);
-	const u_int uGetE = xBuilder.Node("CombatGetGameState");
-	const u_int uSwE = xBuilder.Node("SwitchOnInt");
-	xBuilder.ParamString(uSwE, "m_strVar", "gameState");
-	xBuilder.ParamInt(uSwE, "m_iCaseCount", 5);
-	xBuilder.Chain(uOnEsc, uGetE).Chain(uGetE, uSwE);
-	const u_int uMenuPl = xBuilder.Node("CombatReturnToMenu");
-	xBuilder.Edge(uSwE, static_cast<u_int>(Combat_GameState::PLAYING), uMenuPl);
-	const u_int uMenuPa = xBuilder.Node("CombatReturnToMenu");
-	xBuilder.Edge(uSwE, static_cast<u_int>(Combat_GameState::PAUSED), uMenuPa);
-	const u_int uMenuV = xBuilder.Node("CombatReturnToMenu");
-	xBuilder.Edge(uSwE, static_cast<u_int>(Combat_GameState::VICTORY), uMenuV);
-	const u_int uMenuG = xBuilder.Node("CombatReturnToMenu");
-	xBuilder.Edge(uSwE, static_cast<u_int>(Combat_GameState::GAME_OVER), uMenuG);
+	BuildCombatGameFlow_MenuInput(xB);
+	BuildCombatGameFlow_PauseResume(xB);
+	BuildCombatGameFlow_Restart(xB);
+	BuildCombatGameFlow_ReturnToMenu(xB);
 }
 
 void Project_RegisterEditorAutomationSteps()

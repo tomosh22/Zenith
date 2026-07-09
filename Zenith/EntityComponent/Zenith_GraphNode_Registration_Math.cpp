@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Scripting/Zenith_GraphNodeRegistry.h"
 #include "Scripting/Zenith_GraphBlackboard.h"
+#include "EntityComponent/Zenith_GraphOps.h"
 
 #include <cmath>
 
@@ -138,17 +139,20 @@ namespace
 		{
 			const u_int64 ulA = xContext.m_pxBlackboard->GetPackedEntityID(m_strVarA, 0);
 			const u_int64 ulB = xContext.m_pxBlackboard->GetPackedEntityID(m_strVarB, 0);
+			// Ternary, not a defaulting switch: any op other than NOT_EQUAL means
+			// EQUAL (preserves the original out-of-range behaviour).
 			Zenith_PropertyValue xResult;
-			xResult.SetBool(m_iOp == 1 ? (ulA != ulB) : (ulA == ulB));
+			xResult.SetBool(static_cast<Zenith_GraphEntityCompareOp>(m_iOp) == GRAPH_ENTITY_COMPARE_OP_NOT_EQUAL
+				? (ulA != ulB) : (ulA == ulB));
 			xContext.m_pxBlackboard->SetValue(m_strResultVar, xResult);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "CompareBlackboardEntity"; }
 	};
 
-	// Float arithmetic on a blackboard var. Op: 0 = sub, 1 = mul, 2 = div,
-	// 3 = mod, 4 = min, 5 = max, 6 = abs, 7 = sin, 8 = cos (6-8 unary).
-	// Operand from const or var; result to m_strResultVar ("" = in place).
+	// Float arithmetic on a blackboard var. m_iOp is a Zenith_GraphMathFloatOp
+	// (ABS/SIN/COS are unary - operand ignored). Operand from const or var;
+	// result to m_strResultVar ("" = in place).
 	// Division/modulo by zero = FAILURE (fail loudly, not NaN-quietly).
 	class Zenith_GraphNode_MathBlackboardFloat : public Zenith_GraphNode
 	{
@@ -167,23 +171,23 @@ namespace
 			const float fOperand = m_strOperandVar.empty()
 				? m_fOperand : xContext.m_pxBlackboard->GetFloat(m_strOperandVar, m_fOperand);
 			float fResult = 0.0f;
-			switch (m_iOp)
+			switch (static_cast<Zenith_GraphMathFloatOp>(m_iOp))
 			{
-			case 0: fResult = fValue - fOperand; break;
-			case 1: fResult = fValue * fOperand; break;
-			case 2:
+			case GRAPH_MATH_FLOAT_OP_SUBTRACT: fResult = fValue - fOperand; break;
+			case GRAPH_MATH_FLOAT_OP_MULTIPLY: fResult = fValue * fOperand; break;
+			case GRAPH_MATH_FLOAT_OP_DIVIDE:
 				if (fOperand == 0.0f) { return GRAPH_NODE_STATUS_FAILURE; }
 				fResult = fValue / fOperand;
 				break;
-			case 3:
+			case GRAPH_MATH_FLOAT_OP_MODULO:
 				if (fOperand == 0.0f) { return GRAPH_NODE_STATUS_FAILURE; }
 				fResult = std::fmod(fValue, fOperand);
 				break;
-			case 4: fResult = fValue < fOperand ? fValue : fOperand; break;
-			case 5: fResult = fValue > fOperand ? fValue : fOperand; break;
-			case 6: fResult = std::fabs(fValue); break;
-			case 7: fResult = std::sin(fValue); break;
-			case 8: fResult = std::cos(fValue); break;
+			case GRAPH_MATH_FLOAT_OP_MIN: fResult = fValue < fOperand ? fValue : fOperand; break;
+			case GRAPH_MATH_FLOAT_OP_MAX: fResult = fValue > fOperand ? fValue : fOperand; break;
+			case GRAPH_MATH_FLOAT_OP_ABS: fResult = std::fabs(fValue); break;
+			case GRAPH_MATH_FLOAT_OP_SIN: fResult = std::sin(fValue); break;
+			case GRAPH_MATH_FLOAT_OP_COS: fResult = std::cos(fValue); break;
 			default: return GRAPH_NODE_STATUS_FAILURE;
 			}
 			Zenith_PropertyValue xResult;
@@ -482,3 +486,5 @@ void Zenith_RegisterEngineGraphNodes_Math()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_RandomFloat>("RandomFloat", GRAPH_EVENT_NONE, 1, false, "Maths");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_RandomInt>("RandomInt", GRAPH_EVENT_NONE, 1, false, "Maths");
 }
+
+#include "EntityComponent/Zenith_GraphNode_Registration_Math.Tests.inl"

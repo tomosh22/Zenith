@@ -9,6 +9,7 @@
 
 #include "Core/Zenith_TestFramework.h"
 #include "Scripting/Zenith_GraphBuilder.h"
+#include "Scripting/Zenith_GraphChain.h"
 
 #ifdef ZENITH_TESTING
 
@@ -346,6 +347,99 @@ ZENITH_TEST(BehaviourGraph, DefinitionSerializationRoundTrip)
 	Zenith_GraphContext xContext = MakeTestContext(xGraph);
 	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
 	ZENITH_ASSERT_EQ(xGraph.GetBlackboard().GetInt32("roundtrip"), 1);
+}
+
+// ParamEnum is pure sugar over ParamInt(static_cast<int32_t>) - authoring a node
+// with an enum value must serialize BYTE-IDENTICALLY to the int literal. Uses a
+// LOCAL throwaway enum on purpose: the Scripting leaf must never name an engine
+// op enum (those live in EntityComponent).
+ZENITH_TEST(GraphBuilder, ParamEnumSerializesIdenticallyToParamInt)
+{
+	EnsureTestNodesRegistered();
+	enum LocalTestOp : int32_t { LOCAL_TEST_OP_TWO = 2 };
+
+	Zenith_GraphDefinition xDefEnum;
+	{
+		Zenith_GraphBuilder xBuilder(xDefEnum);
+		const u_int uNode = xBuilder.Node("Test_Counter");
+		xBuilder.ParamEnum(uNode, "m_iReturnStatus", LOCAL_TEST_OP_TWO);
+		ZENITH_ASSERT_TRUE(xBuilder.Build());
+	}
+
+	Zenith_GraphDefinition xDefInt;
+	{
+		Zenith_GraphBuilder xBuilder(xDefInt);
+		const u_int uNode = xBuilder.Node("Test_Counter");
+		xBuilder.ParamInt(uNode, "m_iReturnStatus", 2);
+		ZENITH_ASSERT_TRUE(xBuilder.Build());
+	}
+
+	Zenith_DataStream xStreamEnum;
+	Zenith_DataStream xStreamInt;
+	xDefEnum.WriteToDataStream(xStreamEnum);
+	xDefInt.WriteToDataStream(xStreamInt);
+
+	const uint64_t ulSize = xStreamEnum.GetCursor();
+	ZENITH_ASSERT_EQ(ulSize, xStreamInt.GetCursor());
+	const u_int8* pEnum = static_cast<const u_int8*>(xStreamEnum.GetData());
+	const u_int8* pInt = static_cast<const u_int8*>(xStreamInt.GetData());
+	bool bIdentical = true;
+	for (uint64_t u = 0; u < ulSize; ++u)
+	{
+		if (pEnum[u] != pInt[u]) { bIdentical = false; break; }
+	}
+	ZENITH_ASSERT_TRUE(bIdentical);
+}
+
+// Zenith_GraphChain.Then() must be exactly Chain(); .ThenPin() exactly Edge();
+// and operator u_int() the anchor id. Proven by building the same wiring two ways
+// (fluent vs raw) and asserting byte-identical serialization, plus a direct
+// conversion check. Scratch nodes only - the handle is leaf-generic.
+ZENITH_TEST(GraphChain, ThenAndThenPinMatchChainAndEdge)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xFluent;
+	{
+		Zenith_GraphBuilder xBuilder(xFluent);
+		const u_int uA = xBuilder.Node("Test_OnUpdate");
+		const u_int uB = xBuilder.Node("Test_Branch");
+		const u_int uC = xBuilder.Node("Test_Counter");
+		const u_int uD = xBuilder.Node("Test_Counter");
+		Zenith_GraphChain xChain(xBuilder, uA);
+		ZENITH_ASSERT_EQ(static_cast<u_int>(xChain), uA);	// operator u_int == anchor
+		xChain.Then(uB).ThenPin(1, uC);						// Chain(uA,uB) then Edge(uB,1,uC)
+		xBuilder.Edge(uB, 0, uD);
+		ZENITH_ASSERT_TRUE(xBuilder.Build());
+	}
+
+	Zenith_GraphDefinition xRaw;
+	{
+		Zenith_GraphBuilder xBuilder(xRaw);
+		const u_int uA = xBuilder.Node("Test_OnUpdate");
+		const u_int uB = xBuilder.Node("Test_Branch");
+		const u_int uC = xBuilder.Node("Test_Counter");
+		const u_int uD = xBuilder.Node("Test_Counter");
+		xBuilder.Chain(uA, uB);
+		xBuilder.Edge(uB, 1, uC);
+		xBuilder.Edge(uB, 0, uD);
+		ZENITH_ASSERT_TRUE(xBuilder.Build());
+	}
+
+	Zenith_DataStream xStreamFluent;
+	Zenith_DataStream xStreamRaw;
+	xFluent.WriteToDataStream(xStreamFluent);
+	xRaw.WriteToDataStream(xStreamRaw);
+	const uint64_t ulSize = xStreamFluent.GetCursor();
+	ZENITH_ASSERT_EQ(ulSize, xStreamRaw.GetCursor());
+	const u_int8* pF = static_cast<const u_int8*>(xStreamFluent.GetData());
+	const u_int8* pR = static_cast<const u_int8*>(xStreamRaw.GetData());
+	bool bIdentical = true;
+	for (uint64_t u = 0; u < ulSize; ++u)
+	{
+		if (pF[u] != pR[u]) { bIdentical = false; break; }
+	}
+	ZENITH_ASSERT_TRUE(bIdentical);
 }
 
 ZENITH_TEST(BehaviourGraph, UnresolvedNodePreservedAndFailsChainGracefully)

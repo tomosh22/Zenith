@@ -56,6 +56,8 @@
 #include "RenderTest/Components/RenderTest_TennisAgentComponent.h"
 #include "RenderTest/Components/RenderTest_GraphNodes.h"
 #include "Scripting/Zenith_GraphBuilder.h"
+#include "EntityComponent/Zenith_GraphOps.h"
+#include "EntityComponent/Zenith_EngineGraphBuilder.h"
 
 // FPS gun pickup/drop testbed (guns lying on the spawn platform; player picks
 // them up, shoots, drops; arm IK keeps the hands on the gun). Header included so
@@ -1552,18 +1554,92 @@ static void RenderTest_ApplyTestbedEntityConfig()
 // AddStep_GraphBuild before the scene authoring references them).
 // ============================================================================
 
+// ---- Tennis NPC brain, split (Phase 3) into tick-spine + serve/rally/recover.
+// The tick spine returns the 3-pin Selector anchor; each pin sub-builder wires
+// its branch off that id. Called in the original order they preserve node-
+// creation + edge-add order -> byte-identical authoring (the RNG-cadence
+// contract pinned by RT_TennisDeterminismDigest depends on exactly this).
+
+// Returns the 3-pin Selector anchor. Accumulate dt -> fire at >=0.08 ->
+// reset-to-zero (remainder discarded, matching the AIAgent; the engine Timer's
+// subtractive carry would drift the cadence). RTTennisTickGate mirrors
+// `if (!m_bEnabled) return;` - freeze (not reset) while the referee has the
+// agent parked. One ON_UPDATE dispatch/frame = at most one tick/frame.
+static u_int BuildTennisBrain_TickSpine(Zenith_EngineGraphBuilder& xB)
+{
+	Zenith_GraphChain xUpdate = xB.OnUpdate();
+	const u_int uGateEnabled = xB.Node("RTTennisTickGate");
+	const u_int uAccum = xB.Node("AddBlackboardFloat");
+	xB.ParamString(uAccum, "m_strVariable", "tickAccum");
+	xB.ParamBool(uAccum, "m_bScaleByDt", true);
+	const u_int uDue = xB.CompareFloat("tickAccum", GRAPH_COMPARE_FLOAT_OP_GREATER_EQUAL, 0.08f, "tickDue");
+	const u_int uGateDue = xB.Gate("tickDue");
+	const u_int uReset = xB.Node("SetBlackboardFloat");	// reset-to-zero (m_fValue left at default 0)
+	xB.ParamString(uReset, "m_strVariable", "tickAccum");
+	const u_int uSelector = xB.Node("Selector");
+	xB.ParamInt(uSelector, "m_iBranchCount", 3);
+	// Defaults kept (reactive, abort-preempted): no chain in this graph ever
+	// suspends (the tree had NO RUNNING leaves), so neither flag can engage.
+	xUpdate.Then(uGateEnabled).Then(uAccum).Then(uDue).Then(uGateDue).Then(uReset).Then(uSelector);
+	return uSelector;
+}
+
+// Pin 0 - serve: phase==SERVING && IsServer && ServeBallParked (the retired
+// IsMyServeAndBallParked condition, decomposed to engine gates) -> decide ->
+// position -> arm. (uPhaseServe leaves m_iOp at its EQUAL default - kept raw.)
+static void BuildTennisBrain_Serve(Zenith_EngineGraphBuilder& xB, u_int uSelector)
+{
+	using namespace RenderTest_TennisBB;
+	const u_int uPhaseServe = xB.Node("CompareBlackboardInt");
+	xB.ParamString(uPhaseServe, "m_strVar", k_szPhase);
+	xB.ParamInt(uPhaseServe, "m_iCompareTo", static_cast<int32_t>(RenderTest_Tennis::POINT_PHASE_SERVING));
+	xB.ParamString(uPhaseServe, "m_strResultVar", "phaseIsServing");
+	const u_int uGateServing = xB.Gate("phaseIsServing");
+	const u_int uGateServer = xB.Gate(k_szIsServer);
+	const u_int uGateParked = xB.Gate(k_szServeBallParked);
+	const u_int uDecideServe = xB.Node("RTTennisDecideServe");
+	const u_int uPositionServe = xB.Node("RTTennisPositionForServe");
+	const u_int uArmServe = xB.Node("RTTennisArmServe");
+	xB.Edge(uSelector, 0, uPhaseServe);
+	xB.Chain(uPhaseServe, uGateServing).Chain(uGateServing, uGateServer)
+		.Chain(uGateServer, uGateParked).Chain(uGateParked, uDecideServe)
+		.Chain(uDecideServe, uPositionServe).Chain(uPositionServe, uArmServe);
+}
+
+// Pin 1 - rally: phase==LIVE && IsMyBall (the retired BallIsMine's pure gates)
+// -> aware+reachable (its systems half) -> move -> decide -> arm. (uPhaseLive
+// leaves m_iOp at its EQUAL default - kept raw.)
+static void BuildTennisBrain_Rally(Zenith_EngineGraphBuilder& xB, u_int uSelector)
+{
+	using namespace RenderTest_TennisBB;
+	const u_int uPhaseLive = xB.Node("CompareBlackboardInt");
+	xB.ParamString(uPhaseLive, "m_strVar", k_szPhase);
+	xB.ParamInt(uPhaseLive, "m_iCompareTo", static_cast<int32_t>(RenderTest_Tennis::POINT_PHASE_LIVE));
+	xB.ParamString(uPhaseLive, "m_strResultVar", "phaseIsLive");
+	const u_int uGateLive = xB.Gate("phaseIsLive");
+	const u_int uGateMyBall = xB.Gate(k_szIsMyBall);
+	const u_int uReachable = xB.Node("RTTennisBallReachable");
+	const u_int uMove = xB.Node("RTTennisMoveToIntercept");
+	const u_int uDecideShot = xB.Node("RTTennisDecideShot");
+	const u_int uArmSwing = xB.Node("RTTennisArmSwing");
+	xB.Edge(uSelector, 1, uPhaseLive);
+	xB.Chain(uPhaseLive, uGateLive).Chain(uGateLive, uGateMyBall)
+		.Chain(uGateMyBall, uReachable).Chain(uReachable, uMove)
+		.Chain(uMove, uDecideShot).Chain(uDecideShot, uArmSwing);
+}
+
+// Pin 2 - recover fallback (always succeeds).
+static void BuildTennisBrain_Recover(Zenith_EngineGraphBuilder& xB, u_int uSelector)
+{
+	const u_int uRecover = xB.Node("RTTennisRecoverToReady");
+	xB.Edge(uSelector, 2, uRecover);
+}
+
 // The tennis NPC brain: the retired BT (root Selector over serve / rally /
 // recover, NO RUNNING leaves) as a fully reactive graph. Driven by the
 // engine ON_UPDATE dispatch at component order 60 through an authored tick
 // accumulator that reproduces the retired AIAgent 0.08 s interval semantics
-// EXACTLY (RNG-cadence contract, pinned by RT_TennisDeterminismDigest):
-//   - RTTennisTickGate mirrors `if (!m_bEnabled) return;` - no accumulation
-//     while the referee has the agent parked (freeze, not reset);
-//   - AddBlackboardFloat(dt) then CompareBlackboardFloat(>= 0.08) then
-//     SetBlackboardFloat(0) is accumulate -> fire -> RESET-TO-ZERO (the
-//     remainder is discarded, exactly like the AIAgent; the engine Timer
-//     node's subtractive carry would drift the cadence);
-//   - one ON_UPDATE dispatch per frame = at most one tick per frame.
+// EXACTLY (RNG-cadence contract, pinned by RT_TennisDeterminismDigest).
 // The BT tick ran at order 90 BEFORE the same AIAgent update's nav step, so
 // a tick at order 60 sees identical inputs (ball physics pre-stepped, BB +
 // awareness from last frame's referee OnLateUpdate) and its SetDestination
@@ -1571,95 +1647,34 @@ static void RenderTest_ApplyTestbedEntityConfig()
 static void BuildGraph_RenderTestTennisBrain(Zenith_GraphBuilder& xBuilder)
 {
 	using namespace RenderTest_TennisBB;
+	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0;    xF0.SetFloat(0.0f);
 	Zenith_PropertyValue xI0;    xI0.SetInt32(0);
 	Zenith_PropertyValue xBF;    xBF.SetBool(false);
 	Zenith_PropertyValue xBT;    xBT.SetBool(true);
 	Zenith_PropertyValue xV0;    xV0.SetVector3(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
-	xBuilder.Variable("tickAccum", xF0);
-	xBuilder.Variable("tickDue", xBF);
-	xBuilder.Variable("phaseIsServing", xBF);
-	xBuilder.Variable("phaseIsLive", xBF);
-	xBuilder.Variable(k_szPhase, xI0);           // POINT_PHASE_WARMUP
-	xBuilder.Variable(k_szBallEpoch, xI0);
-	xBuilder.Variable(k_szMySide, xI0);
-	xBuilder.Variable(k_szMyPoints, xI0);
-	xBuilder.Variable(k_szOppPoints, xI0);
-	xBuilder.Variable(k_szIsServer, xBF);
-	xBuilder.Variable(k_szServeFromDeuce, xBT);
-	xBuilder.Variable(k_szIsSecondServe, xBF);
-	xBuilder.Variable(k_szIsMyBall, xBF);
-	xBuilder.Variable(k_szServeBallParked, xBF);
-	xBuilder.Variable(k_szBallSpin, xV0);
+	xB.Variable("tickAccum", xF0);
+	xB.Variable("tickDue", xBF);
+	xB.Variable("phaseIsServing", xBF);
+	xB.Variable("phaseIsLive", xBF);
+	xB.Variable(k_szPhase, xI0);           // POINT_PHASE_WARMUP
+	xB.Variable(k_szBallEpoch, xI0);
+	xB.Variable(k_szMySide, xI0);
+	xB.Variable(k_szMyPoints, xI0);
+	xB.Variable(k_szOppPoints, xI0);
+	xB.Variable(k_szIsServer, xBF);
+	xB.Variable(k_szServeFromDeuce, xBT);
+	xB.Variable(k_szIsSecondServe, xBF);
+	xB.Variable(k_szIsMyBall, xBF);
+	xB.Variable(k_szServeBallParked, xBF);
+	xB.Variable(k_szBallSpin, xV0);
 	// BallEntity/OppEntity are runtime handles seeded by the brain shim's
 	// OnStart (SeedGraphBlackboard) - deliberately NOT declared here.
 
-	// Tick spine.
-	const u_int uUpdate = xBuilder.Node("OnUpdate");
-	const u_int uGateEnabled = xBuilder.Node("RTTennisTickGate");
-	const u_int uAccum = xBuilder.Node("AddBlackboardFloat");
-	xBuilder.ParamString(uAccum, "m_strVariable", "tickAccum");
-	xBuilder.ParamBool(uAccum, "m_bScaleByDt", true);
-	const u_int uDue = xBuilder.Node("CompareBlackboardFloat");
-	xBuilder.ParamString(uDue, "m_strVar", "tickAccum");
-	xBuilder.ParamFloat(uDue, "m_fCompareTo", 0.08f);
-	xBuilder.ParamInt(uDue, "m_iOp", 3);   // greaterEqual
-	xBuilder.ParamString(uDue, "m_strResultVar", "tickDue");
-	const u_int uGateDue = xBuilder.Node("Gate");
-	xBuilder.ParamString(uGateDue, "m_strOpenVar", "tickDue");
-	const u_int uReset = xBuilder.Node("SetBlackboardFloat");
-	xBuilder.ParamString(uReset, "m_strVariable", "tickAccum");
-	const u_int uSelector = xBuilder.Node("Selector");
-	xBuilder.ParamInt(uSelector, "m_iBranchCount", 3);
-	// Defaults kept (reactive, abort-preempted): no chain in this graph ever
-	// suspends (the tree had NO RUNNING leaves), so neither flag can engage.
-	xBuilder.Chain(uUpdate, uGateEnabled).Chain(uGateEnabled, uAccum)
-		.Chain(uAccum, uDue).Chain(uDue, uGateDue).Chain(uGateDue, uReset)
-		.Chain(uReset, uSelector);
-
-	// Pin 0 - serve: phase==SERVING && IsServer && ServeBallParked (the
-	// retired IsMyServeAndBallParked condition, decomposed to engine gates)
-	// -> decide -> position -> arm.
-	const u_int uPhaseServe = xBuilder.Node("CompareBlackboardInt");
-	xBuilder.ParamString(uPhaseServe, "m_strVar", k_szPhase);
-	xBuilder.ParamInt(uPhaseServe, "m_iCompareTo", static_cast<int32_t>(RenderTest_Tennis::POINT_PHASE_SERVING));
-	xBuilder.ParamString(uPhaseServe, "m_strResultVar", "phaseIsServing");
-	const u_int uGateServing = xBuilder.Node("Gate");
-	xBuilder.ParamString(uGateServing, "m_strOpenVar", "phaseIsServing");
-	const u_int uGateServer = xBuilder.Node("Gate");
-	xBuilder.ParamString(uGateServer, "m_strOpenVar", k_szIsServer);
-	const u_int uGateParked = xBuilder.Node("Gate");
-	xBuilder.ParamString(uGateParked, "m_strOpenVar", k_szServeBallParked);
-	const u_int uDecideServe = xBuilder.Node("RTTennisDecideServe");
-	const u_int uPositionServe = xBuilder.Node("RTTennisPositionForServe");
-	const u_int uArmServe = xBuilder.Node("RTTennisArmServe");
-	xBuilder.Edge(uSelector, 0, uPhaseServe);
-	xBuilder.Chain(uPhaseServe, uGateServing).Chain(uGateServing, uGateServer)
-		.Chain(uGateServer, uGateParked).Chain(uGateParked, uDecideServe)
-		.Chain(uDecideServe, uPositionServe).Chain(uPositionServe, uArmServe);
-
-	// Pin 1 - rally: phase==LIVE && IsMyBall (the retired BallIsMine's pure
-	// gates) -> aware+reachable (its systems half) -> move -> decide -> arm.
-	const u_int uPhaseLive = xBuilder.Node("CompareBlackboardInt");
-	xBuilder.ParamString(uPhaseLive, "m_strVar", k_szPhase);
-	xBuilder.ParamInt(uPhaseLive, "m_iCompareTo", static_cast<int32_t>(RenderTest_Tennis::POINT_PHASE_LIVE));
-	xBuilder.ParamString(uPhaseLive, "m_strResultVar", "phaseIsLive");
-	const u_int uGateLive = xBuilder.Node("Gate");
-	xBuilder.ParamString(uGateLive, "m_strOpenVar", "phaseIsLive");
-	const u_int uGateMyBall = xBuilder.Node("Gate");
-	xBuilder.ParamString(uGateMyBall, "m_strOpenVar", k_szIsMyBall);
-	const u_int uReachable = xBuilder.Node("RTTennisBallReachable");
-	const u_int uMove = xBuilder.Node("RTTennisMoveToIntercept");
-	const u_int uDecideShot = xBuilder.Node("RTTennisDecideShot");
-	const u_int uArmSwing = xBuilder.Node("RTTennisArmSwing");
-	xBuilder.Edge(uSelector, 1, uPhaseLive);
-	xBuilder.Chain(uPhaseLive, uGateLive).Chain(uGateLive, uGateMyBall)
-		.Chain(uGateMyBall, uReachable).Chain(uReachable, uMove)
-		.Chain(uMove, uDecideShot).Chain(uDecideShot, uArmSwing);
-
-	// Pin 2 - recover fallback (always succeeds).
-	const u_int uRecover = xBuilder.Node("RTTennisRecoverToReady");
-	xBuilder.Edge(uSelector, 2, uRecover);
+	const u_int uSelector = BuildTennisBrain_TickSpine(xB);
+	BuildTennisBrain_Serve(xB, uSelector);
+	BuildTennisBrain_Rally(xB, uSelector);
+	BuildTennisBrain_Recover(xB, uSelector);
 }
 
 // The slim player-actions graph: the discrete key/button PRESS decisions.
@@ -1667,26 +1682,25 @@ static void BuildGraph_RenderTestTennisBrain(Zenith_GraphBuilder& xBuilder)
 // all systems stay C++ in RenderTest_PlayerComponent / FollowCamera.
 static void BuildGraph_RenderTestPlayerActions(Zenith_GraphBuilder& xBuilder)
 {
-	const u_int uKeyE = xBuilder.Node("OnKeyPressed");
-	xBuilder.ParamInt(uKeyE, "m_iKeyCode", ZENITH_KEY_E);
-	const u_int uInteract = xBuilder.Node("RTPlayerInteractGun");
-	xBuilder.Chain(uKeyE, uInteract);
+	Zenith_EngineGraphBuilder xB(xBuilder);
 
-	const u_int uKeyR = xBuilder.Node("OnKeyPressed");
-	xBuilder.ParamInt(uKeyR, "m_iKeyCode", ZENITH_KEY_R);
-	const u_int uReload = xBuilder.Node("RTPlayerTryReload");
-	xBuilder.Chain(uKeyR, uReload);
+	Zenith_GraphChain xKeyE = xB.OnKeyPressed(ZENITH_KEY_E);
+	const u_int uInteract = xB.Node("RTPlayerInteractGun");
+	xKeyE.Then(uInteract);
 
-	const u_int uFireBtn = xBuilder.Node("OnMouseButton");
+	Zenith_GraphChain xKeyR = xB.OnKeyPressed(ZENITH_KEY_R);
+	const u_int uReload = xB.Node("RTPlayerTryReload");
+	xKeyR.Then(uReload);
+
+	const u_int uFireBtn = xB.Node("OnMouseButton");
 	// Defaults: LEFT button, mode 0 = pressed edge - exactly the retired
 	// WasKeyPressedThisFrame(LMB) poll.
-	const u_int uFire = xBuilder.Node("RTPlayerTryFire");
-	xBuilder.Chain(uFireBtn, uFire);
+	const u_int uFire = xB.Node("RTPlayerTryFire");
+	xB.Chain(uFireBtn, uFire);
 
-	const u_int uKeyT = xBuilder.Node("OnKeyPressed");
-	xBuilder.ParamInt(uKeyT, "m_iKeyCode", ZENITH_KEY_T);
-	const u_int uCycleCam = xBuilder.Node("RTPlayerCycleTennisCam");
-	xBuilder.Chain(uKeyT, uCycleCam);
+	Zenith_GraphChain xKeyT = xB.OnKeyPressed(ZENITH_KEY_T);
+	const u_int uCycleCam = xB.Node("RTPlayerCycleTennisCam");
+	xKeyT.Then(uCycleCam);
 }
 
 void Project_RegisterEditorAutomationSteps()

@@ -2,6 +2,7 @@
 #include "Scripting/Zenith_GraphNodeRegistry.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"
+#include "EntityComponent/Zenith_GraphOps.h"
 #include "Core/Zenith_Engine.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
@@ -139,8 +140,7 @@ namespace
 
 	// Compares a blackboard float against a constant (or another variable when
 	// m_strCompareVar is set) and writes the boolean result to a blackboard
-	// variable - Branch consumes it.
-	// Op: 0 = less, 1 = lessEqual, 2 = greater, 3 = greaterEqual, 4 = equal.
+	// variable - Branch consumes it. m_iOp is a Zenith_GraphCompareFloatOp.
 	class Zenith_GraphNode_CompareBlackboardFloat : public Zenith_GraphNode
 	{
 	public:
@@ -158,13 +158,13 @@ namespace
 			const float fCompareTo = m_strCompareVar.empty()
 				? m_fCompareTo : xContext.m_pxBlackboard->GetFloat(m_strCompareVar, m_fCompareTo);
 			bool bResult = false;
-			switch (m_iOp)
+			switch (static_cast<Zenith_GraphCompareFloatOp>(m_iOp))
 			{
-			case 0: bResult = fValue <  fCompareTo; break;
-			case 1: bResult = fValue <= fCompareTo; break;
-			case 2: bResult = fValue >  fCompareTo; break;
-			case 3: bResult = fValue >= fCompareTo; break;
-			case 4: bResult = fValue == fCompareTo; break;
+			case GRAPH_COMPARE_FLOAT_OP_LESS:          bResult = fValue <  fCompareTo; break;
+			case GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL:    bResult = fValue <= fCompareTo; break;
+			case GRAPH_COMPARE_FLOAT_OP_GREATER:       bResult = fValue >  fCompareTo; break;
+			case GRAPH_COMPARE_FLOAT_OP_GREATER_EQUAL: bResult = fValue >= fCompareTo; break;
+			case GRAPH_COMPARE_FLOAT_OP_EQUAL:         bResult = fValue == fCompareTo; break;
 			default: return GRAPH_NODE_STATUS_FAILURE;
 			}
 			Zenith_PropertyValue xResult;
@@ -423,8 +423,7 @@ namespace
 
 	// Integer sibling of CompareBlackboardFloat. Compares a blackboard int32
 	// against a constant, or against another variable when m_strCompareVar is
-	// set. Op: 0 = less, 1 = lessEqual, 2 = greater, 3 = greaterEqual,
-	// 4 = equal, 5 = notEqual.
+	// set. m_iOp is a Zenith_GraphCompareIntOp (adds NOT_EQUAL over the float node).
 	class Zenith_GraphNode_CompareBlackboardInt : public Zenith_GraphNode
 	{
 	public:
@@ -442,14 +441,14 @@ namespace
 			const int32_t iCompareTo = m_strCompareVar.empty()
 				? m_iCompareTo : xContext.m_pxBlackboard->GetInt32(m_strCompareVar, m_iCompareTo);
 			bool bResult = false;
-			switch (m_iOp)
+			switch (static_cast<Zenith_GraphCompareIntOp>(m_iOp))
 			{
-			case 0: bResult = iValue <  iCompareTo; break;
-			case 1: bResult = iValue <= iCompareTo; break;
-			case 2: bResult = iValue >  iCompareTo; break;
-			case 3: bResult = iValue >= iCompareTo; break;
-			case 4: bResult = iValue == iCompareTo; break;
-			case 5: bResult = iValue != iCompareTo; break;
+			case GRAPH_COMPARE_INT_OP_LESS:          bResult = iValue <  iCompareTo; break;
+			case GRAPH_COMPARE_INT_OP_LESS_EQUAL:    bResult = iValue <= iCompareTo; break;
+			case GRAPH_COMPARE_INT_OP_GREATER:       bResult = iValue >  iCompareTo; break;
+			case GRAPH_COMPARE_INT_OP_GREATER_EQUAL: bResult = iValue >= iCompareTo; break;
+			case GRAPH_COMPARE_INT_OP_EQUAL:         bResult = iValue == iCompareTo; break;
+			case GRAPH_COMPARE_INT_OP_NOT_EQUAL:     bResult = iValue != iCompareTo; break;
 			default: return GRAPH_NODE_STATUS_FAILURE;
 			}
 			Zenith_PropertyValue xResult;
@@ -769,3 +768,5 @@ void Zenith_RegisterEngineGraphNodes()
 	Zenith_RegisterEngineGraphNodes_Flow();
 	Zenith_RegisterEngineGraphNodes_AI();
 }
+
+#include "EntityComponent/Zenith_GraphNode_Registration.Tests.inl"
