@@ -56,22 +56,16 @@ try {
             Get-ChildItem (Join-Path $repoRoot 'Middleware/slang/bin/*.dll') -ErrorAction SilentlyContinue | ForEach-Object {
                 $d = Join-Path $dir $_.Name; if (-not (Test-Path $d)) { Copy-Item $_.FullName $d -Force }
             }
-            $bootOut = Join-Path $scratch "scaffold_boot_$Name.txt"
-            # Boot with unit tests ENABLED (the smoke's assertion). Bounded because
-            # games can hang at shutdown teardown (a known pre-existing behavior).
-            $p = Start-Process -FilePath $exe -ArgumentList @('--headless', '--exit-after-frames', '120', '--skip-tool-exports') `
-                -PassThru -NoNewWindow -RedirectStandardOutput $bootOut -RedirectStandardError "$bootOut.err"
-            if (-not $p.WaitForExit(180000)) { try { $p.Kill() } catch {} }
-            $txt = Get-Content $bootOut -ErrorAction SilentlyContinue
-            $unitsLine = "$(($txt | Select-String -Pattern 'Unit tests complete' | Select-Object -Last 1))"
-            $cleanPass = $unitsLine -match '1053 ran, 1053 passed, 0 failed'
-            # RegistryWideNodeRoundTrip is a known layout-sensitive pre-existing flake
-            # (task_726cc81d): the game's symbol layout can trip it. Tolerate it as
-            # the SOLE failure -- the engine still ran its full 1053-test suite.
-            $knownFlake = ($unitsLine -match '1053 ran, 1052 passed, 1 failed') -and
-                ($null -ne ($txt | Select-String -Pattern 'FAILED\s+GraphComponent::RegistryWideNodeRoundTrip'))
-            Check ($cleanPass -or $knownFlake) "units-at-boot: 1053 ran, 0 failed (or only the known RegistryWideNodeRoundTrip flake)"
-            if (-not ($cleanPass -or $knownFlake)) { Write-Host "    units line was: $unitsLine" -ForegroundColor Yellow }
+            # Boot with unit tests ENABLED (the smoke's assertion) via the canonical
+            # unit gate, so the engine baseline lives in ONE place
+            # (Tools/run_unit_gate.ps1 -Baseline default -- the same script
+            # engine-gate.yml runs). run_unit_gate deliberately keeps tool exports
+            # ON so the asset-export unit tests find their generated assets
+            # (see its header; the old inline boot here used --skip-tool-exports,
+            # which wedges on a from-scratch checkout with no generated assets).
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'Tools/run_unit_gate.ps1') `
+                -Exe $exe -LogPath (Join-Path $scratch "scaffold_boot_$Name.log")
+            Check ($LASTEXITCODE -eq 0) "units-at-boot baseline met (run_unit_gate.ps1)"
         }
     }
 }

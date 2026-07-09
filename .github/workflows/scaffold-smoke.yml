@@ -7,8 +7,9 @@
 #
 # The gate is Tools/test_scaffold.ps1: `zenith new ScaffoldSmoke` -> per-game sln
 # exists -> builds Vulkan_vs2022_Debug_Win64_True -> boots headless with the
-# engine units baseline (1047) -> teardown removes Games/ScaffoldSmoke + regen ->
-# git status identical (scaffolding touched nothing outside Games/<Name>/).
+# engine units baseline (Tools/run_unit_gate.ps1 -Baseline default) -> teardown
+# removes Games/ScaffoldSmoke + regen -> git status identical (scaffolding
+# touched nothing outside Games/<Name>/).
 
 name: scaffold-smoke
 
@@ -55,6 +56,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The units-at-boot gate (run_unit_gate.ps1, via test_scaffold.ps1) runs
+          # the tool asset exports, which read the LFS-tracked source meshes +
+          # textures -- same requirement as engine-gate.yml.
+          lfs: true
 
       - name: Provision Zenith toolchain (MSBuild + vcpkg + Vulkan + Slang)
         uses: ./.github/actions/zenith-setup

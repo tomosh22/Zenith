@@ -443,6 +443,7 @@ static void ExecuteBloomThreshold(Flux_CommandBuffer* pxCommandList, void* pUser
 	// Non-capturing graph trampoline: recover this subsystem instance, then
 	// route reach-ins through it and its injected member pointers.
 	Flux_HDRImpl& xHDR = g_xEngine.HDR();
+	Flux_GraphicsImpl& xFluxGraphics = g_xEngine.FluxGraphics();
 
 	// The pass's declared view slot selects this view's bloom chain + HDR scene
 	// target (slot 0 = main/swapchain, preview = 512² → 256² base). Texel sizes
@@ -456,12 +457,12 @@ static void ExecuteBloomThreshold(Flux_CommandBuffer* pxCommandList, void* pUser
 	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / xBloom0.m_xSurfaceInfo.m_uWidth, 1.0f / xBloom0.m_xSurfaceInfo.m_uHeight);
 
 	pxCommandList->SetPipeline(&xHDR.m_xBloomThresholdPipeline);
-	pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xFluxGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xFluxGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	namespace BT = Flux_Generated_HDR::BloomThreshold;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(BT::hg_xHDRTex, &g_xEngine.FluxGraphics().GetSceneColourForPostFX(uViewSlot).SRV(), &g_xEngine.FluxGraphics().m_xClampSampler);
+	xBinder.BindSRV(BT::hg_xHDRTex, &xFluxGraphics.GetSceneColourForPostFX(uViewSlot).SRV(), &xFluxGraphics.m_xClampSampler);
 	xBinder.BindDrawConstants(BT::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
@@ -474,6 +475,7 @@ static void ExecuteBloomDownsample(Flux_CommandBuffer* pxCommandList, void* pUse
 	// Non-capturing graph trampoline: recover this subsystem instance, then
 	// route reach-ins through it and its injected member pointers.
 	Flux_HDRImpl& xHDR = g_xEngine.HDR();
+	Flux_GraphicsImpl& xFluxGraphics = g_xEngine.FluxGraphics();
 
 	// UserData carries the MIP only; the view comes from the recording pass's
 	// declared slot (mirrors the HiZ per-view conversion).
@@ -489,12 +491,12 @@ static void ExecuteBloomDownsample(Flux_CommandBuffer* pxCommandList, void* pUse
 	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / xSource.m_xSurfaceInfo.m_uWidth, 1.0f / xSource.m_xSurfaceInfo.m_uHeight);
 
 	pxCommandList->SetPipeline(&xHDR.m_xBloomDownsamplePipeline);
-	pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xFluxGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xFluxGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	namespace BD = Flux_Generated_HDR::BloomDownsample;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(BD::hg_xSourceTex, &xSource.SRV(), &g_xEngine.FluxGraphics().m_xClampSampler);
+	xBinder.BindSRV(BD::hg_xSourceTex, &xSource.SRV(), &xFluxGraphics.m_xClampSampler);
 	xBinder.BindDrawConstants(BD::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
@@ -509,6 +511,7 @@ static void ExecuteBloomUpsample(Flux_CommandBuffer* pxCommandList, void* pUserD
 	// Non-capturing graph trampoline: recover this subsystem instance, then
 	// route reach-ins through it and its injected member pointers.
 	Flux_HDRImpl& xHDR = g_xEngine.HDR();
+	Flux_GraphicsImpl& xFluxGraphics = g_xEngine.FluxGraphics();
 
 	// UserData carries the upsample step only; the view comes from the recording
 	// pass's declared slot (mirrors the HiZ per-view conversion).
@@ -521,12 +524,12 @@ static void ExecuteBloomUpsample(Flux_CommandBuffer* pxCommandList, void* pUserD
 	xBloomConsts.m_xTexelSize = Zenith_Maths::Vector2(1.0f / xTarget.m_xSurfaceInfo.m_uWidth, 1.0f / xTarget.m_xSurfaceInfo.m_uHeight);
 
 	pxCommandList->SetPipeline(&xHDR.m_xBloomUpsamplePipeline);
-	pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xFluxGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xFluxGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	namespace BU = Flux_Generated_HDR::BloomUpsample;
 	Flux_ShaderBinder xBinder(*pxCommandList);
-	xBinder.BindSRV(BU::hg_xSourceTex, &xHDR.GetBloomChainAttachment(uSourceMip, uViewSlot).SRV(), &g_xEngine.FluxGraphics().m_xClampSampler);
+	xBinder.BindSRV(BU::hg_xSourceTex, &xHDR.GetBloomChainAttachment(uSourceMip, uViewSlot).SRV(), &xFluxGraphics.m_xClampSampler);
 	xBinder.BindDrawConstants(BU::hBloomConstants, &xBloomConsts, sizeof(BloomConstants));
 
 	pxCommandList->DrawIndexed(6);
@@ -539,6 +542,7 @@ static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserDat
 	// Non-capturing graph trampoline: recover this subsystem instance, then
 	// route reach-ins through it and its injected member pointers.
 	Flux_HDRImpl& xHDR = g_xEngine.HDR();
+	Flux_GraphicsImpl& xFluxGraphics = g_xEngine.FluxGraphics();
 
 	ToneMappingConstants xConsts;
 	xConsts.m_fExposure = xHDR.m_fExposure;
@@ -551,14 +555,14 @@ static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserDat
 	xConsts.m_uPad1 = 0;
 
 	pxCommandList->SetPipeline(&xHDR.m_xToneMappingPipeline);
-	pxCommandList->SetVertexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetVertexBuffer());
-	pxCommandList->SetIndexBuffer(g_xEngine.FluxGraphics().m_xQuadMesh.GetIndexBuffer());
+	pxCommandList->SetVertexBuffer(xFluxGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xFluxGraphics.m_xQuadMesh.GetIndexBuffer());
 
 	{
 		namespace TM = Flux_Generated_HDR::HDR_ToneMapping;
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindSRV(TM::hg_xHDRTex, &g_xEngine.FluxGraphics().GetSceneColourForPostFX().SRV());
-		xBinder.BindSRV(TM::hg_xBloomTex, &xHDR.GetBloomChainAttachment(0).SRV(), &g_xEngine.FluxGraphics().m_xClampSampler);
+		xBinder.BindSRV(TM::hg_xHDRTex, &xFluxGraphics.GetSceneColourForPostFX().SRV());
+		xBinder.BindSRV(TM::hg_xBloomTex, &xHDR.GetBloomChainAttachment(0).SRV(), &xFluxGraphics.m_xClampSampler);
 		// Slang reflection keys on the variable name (not the GLSL block
 		// name) — match the names declared in Flux_ToneMapping.slang.
 		xBinder.BindUAV_Buffer(TM::hg_auHistogram,   &xHDR.m_xHistogramBuffer.GetUAV());
