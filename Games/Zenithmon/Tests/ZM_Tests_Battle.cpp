@@ -22,6 +22,7 @@
 
 #include "Core/Zenith_TestFramework.h"
 #include "Zenithmon/Source/Battle/ZM_BattleEngine.h"
+#include "Zenithmon/Source/Battle/ZM_MoveExecutor.h"
 #include "Zenithmon/Source/Battle/ZM_BattleMonster.h"
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
@@ -947,4 +948,247 @@ ZENITH_TEST(ZM_Battle, Fuzz_Smoke_50Battles_Invariants)
 		ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEngine.GetEvents(), xEngine, "fuzz"),
 			"battle %u produced a malformed event stream", uBattle);
 	}
+}
+
+// ============================================================================
+// S2 box-2 SC1 -- the ZM_MoveExecutor seam. These exercise ZM_MoveExecutor /
+// ZM_MoveContext directly (a bare state + a context view), separate from the
+// full engine turn loop. SC1 is a byte-identical extraction, so the box-1
+// goldens above are untouched; these lock the seam's behaviour in isolation.
+// ============================================================================
+namespace
+{
+	// Populate a bare 1v1 state (both parties slot 0, seeded RNG) for driving the
+	// executor without the engine. Out-param avoids relying on ZM_BattleState copy.
+	void BuildBattleState(ZM_BattleState& xState, const ZM_BattleMonsterSpec& xPlayerSpec,
+		const ZM_BattleMonsterSpec& xEnemySpec, u_int64 ulSeed, u_int64 ulSeq = 54ull)
+	{
+		ZM_BattleSide& xPlayer = xState.Side(ZM_SIDE_PLAYER);
+		ZM_BattleSide& xEnemy  = xState.Side(ZM_SIDE_ENEMY);
+		xPlayer.m_xParty.Clear();
+		xEnemy.m_xParty.Clear();
+		xPlayer.m_xParty.PushBack(ZM_BuildBattleMonster(xPlayerSpec));
+		xEnemy.m_xParty.PushBack(ZM_BuildBattleMonster(xEnemySpec));
+		xPlayer.m_uActiveSlot = 0u;
+		xEnemy.m_uActiveSlot  = 0u;
+		xState.m_xField = ZM_FieldState();
+		xState.m_xRNG.Seed(ulSeed, ulSeq);
+	}
+
+	// A move context viewing xState + xEvents, attacker eAtk using move slot uSlot.
+	ZM_MoveContext MakeCtx(ZM_BattleState& xState, Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_SIDE eAtk, u_int uSlot)
+	{
+		ZM_MoveContext xCtx;
+		xCtx.m_pxState   = &xState;
+		xCtx.m_pxEvents  = &xEvents;
+		xCtx.m_eAtk      = eAtk;
+		xCtx.m_eDef      = (eAtk == ZM_SIDE_PLAYER) ? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
+		xCtx.m_uMoveSlot = uSlot;
+		return xCtx;
+	}
+}
+
+// ============================================================================
+// SC1.1 Executor_RoutesNoneThroughDamagingHit -- a damaging effect-NONE move via
+//   ZM_MoveExecutor::Execute emits the same MOVE_USED + DAMAGE_DEALT group the
+//   engine produces (matches golden events [4]/[5]: seed 0x1234, Nibbin Rambash
+//   vs Strayling -> non-crit roll 88 -> 10 dmg, Strayling 32 -> 22 HP remaining).
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Executor_RoutesNoneThroughDamagingHit)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeScenarioNibbin(), MakeScenarioStrayling(), 0x1234ull, 54ull);
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	// Neutral, non-crit, no faint -> exactly MOVE_USED then DAMAGE_DEALT.
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 2u, "NONE move should emit MOVE_USED + DAMAGE_DEALT");
+	if (xEvents.GetSize() == 2u)
+	{
+		const ZM_BattleEvent xUsed = ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER, 0u, ZM_MOVE_RAMBASH);
+		const ZM_BattleEvent xDmg  = ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_ENEMY, 0u,
+			ZM_MOVE_NONE, ZM_SPECIES_NONE, 10, 22);
+		char acE[192];
+		char acA[192];
+		ZM_BattleEventToString(xUsed, acE, sizeof(acE));
+		ZM_BattleEventToString(xEvents.Get(0), acA, sizeof(acA));
+		ZENITH_ASSERT_TRUE(xEvents.Get(0) == xUsed, "event[0] exp=%s act=%s", acE, acA);
+		ZM_BattleEventToString(xDmg, acE, sizeof(acE));
+		ZM_BattleEventToString(xEvents.Get(1), acA, sizeof(acA));
+		ZENITH_ASSERT_TRUE(xEvents.Get(1) == xDmg, "event[1] exp=%s act=%s", acE, acA);
+	}
+}
+
+// ============================================================================
+// SC1.2 Executor_ApplyDamagingHit_MatchesCalcDmg -- the emitted DAMAGE_DEALT and
+//   the returned damage both equal a direct ZM_CalcDamage over the same inputs
+//   (crit/roll re-derived from a mirror RNG on the same seed/stream).
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Executor_ApplyDamagingHit_MatchesCalcDmg)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeScenarioNibbin(), MakeScenarioStrayling(), 0x1234ull, 54ull);
+
+	// Mirror ApplyDamagingHit's draw order (crit Chance(1,24), then roll 85..100).
+	ZM_BattleRNG xMirror(0x1234ull, 54ull);
+	const bool  bCrit = xMirror.Chance(1u, 24u);
+	const u_int uRoll = xMirror.RandRange(85u, 100u);
+
+	// Rebuild the damage inputs exactly as ApplyDamagingHit does (stage 0 identity).
+	const ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+	const ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+	const ZM_MoveData& xMove = ZM_GetMoveData(xAtk.m_axMoves[0].m_eMove);
+	const bool bPhysical = (xMove.m_eCategory == ZM_MOVE_CATEGORY_PHYSICAL);
+	const ZM_SpeciesData& xAtkSpecies = ZM_GetSpeciesData(xAtk.m_eSpecies);
+	const ZM_SpeciesData& xDefSpecies = ZM_GetSpeciesData(xDef.m_eSpecies);
+
+	ZM_DamageInput xIn;
+	xIn.uLevel  = xAtk.m_uLevel;
+	xIn.uPower  = xMove.m_uPower;
+	xIn.uAttack = ZM_ApplyStatStage(
+		bPhysical ? xAtk.m_auMaxStat[ZM_STAT_ATTACK] : xAtk.m_auMaxStat[ZM_STAT_SPATTACK],
+		bPhysical ? xAtk.m_aiStage[ZM_BATTLE_STAT_ATTACK] : xAtk.m_aiStage[ZM_BATTLE_STAT_SPATTACK]);
+	xIn.uDefense = ZM_ApplyStatStage(
+		bPhysical ? xDef.m_auMaxStat[ZM_STAT_DEFENSE] : xDef.m_auMaxStat[ZM_STAT_SPDEFENSE],
+		bPhysical ? xDef.m_aiStage[ZM_BATTLE_STAT_DEFENSE] : xDef.m_aiStage[ZM_BATTLE_STAT_SPDEFENSE]);
+	xIn.bStab = (xMove.m_eType == xAtkSpecies.m_aeTypes[0] || xMove.m_eType == xAtkSpecies.m_aeTypes[1]);
+	xIn.uEffectivenessPercent = ZM_EffectivenessPercent(xMove.m_eType, xDefSpecies.m_aeTypes[0], xDefSpecies.m_aeTypes[1]);
+	xIn.bCrit = bCrit;
+	xIn.uRandomPercent = uRoll;
+	const u_int uExpectedDmg = ZM_CalcDamage(xIn);
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	const u_int uReturned = ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+
+	ZENITH_ASSERT_EQ(uReturned, uExpectedDmg, "ApplyDamagingHit return != direct ZM_CalcDamage");
+
+	bool bFound = false;
+	for (u_int i = 0; i < xEvents.GetSize(); ++i)
+	{
+		if (xEvents.Get(i).m_eKind == ZM_BATTLE_EVENT_DAMAGE_DEALT)
+		{
+			ZENITH_ASSERT_EQ((u_int)xEvents.Get(i).m_iAmount, uExpectedDmg, "emitted DAMAGE_DEALT amount != direct ZM_CalcDamage");
+			bFound = true;
+			break;
+		}
+	}
+	ZENITH_ASSERT_TRUE(bFound, "ApplyDamagingHit emitted no DAMAGE_DEALT");
+}
+
+// ============================================================================
+// SC1.3 Executor_MaybeFaint_EmitsFaintAtZero -- MaybeFaint emits exactly one
+//   FAINT(side=Def) when the defender's active HP is 0, and nothing when HP > 0.
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Executor_MaybeFaint_EmitsFaintAtZero)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeScenarioNibbin(), MakeScenarioStrayling(), 0x1ull, 54ull);
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+
+	// HP > 0 -> no FAINT.
+	xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 5u;
+	xCtx.MaybeFaint(ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 0u, "MaybeFaint must not emit while HP > 0");
+
+	// HP == 0 -> exactly one FAINT(enemy, slot 0).
+	xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 0u;
+	xCtx.MaybeFaint(ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 1u, "MaybeFaint must emit exactly one FAINT at 0 HP");
+	if (xEvents.GetSize() == 1u)
+	{
+		ZENITH_ASSERT_TRUE(xEvents.Get(0) == ZM_MakeEvent(ZM_BATTLE_EVENT_FAINT, ZM_SIDE_ENEMY, 0u),
+			"FAINT should target the defender side/slot");
+	}
+}
+
+// ============================================================================
+// SC1.4 Executor_Context_AccessorsResolve -- Atk/Def/AtkSide/DefSide/Move/RNG
+//   resolve to the right monster/side/move/rng for both attacker roles.
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Executor_Context_AccessorsResolve)
+{
+	ZM_BattleState xState;
+	// Distinct moves per side so Move() is unambiguous by attacker role.
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 10u, ZM_MOVE_RAMBASH),
+		MakeSpec(ZM_SPECIES_STRAYLING, 10u, ZM_MOVE_QUICKJAB), 0x99ull, 54ull);
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+
+	// Player attacks: Atk == Nibbin, Def == Strayling, sides map straight, move Rambash.
+	ZM_MoveContext xP = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZENITH_ASSERT_EQ((u_int)xP.Atk().m_eSpecies, (u_int)ZM_SPECIES_NIBBIN);
+	ZENITH_ASSERT_EQ((u_int)xP.Def().m_eSpecies, (u_int)ZM_SPECIES_STRAYLING);
+	ZENITH_ASSERT_TRUE(&xP.AtkSide() == &xState.Side(ZM_SIDE_PLAYER), "AtkSide should be the player side");
+	ZENITH_ASSERT_TRUE(&xP.DefSide() == &xState.Side(ZM_SIDE_ENEMY), "DefSide should be the enemy side");
+	ZENITH_ASSERT_EQ((u_int)xP.Move().m_eId, (u_int)ZM_MOVE_RAMBASH);
+	ZENITH_ASSERT_TRUE(&xP.RNG() == &xState.m_xRNG, "RNG should alias the state RNG");
+
+	// Enemy attacks: roles swap; move Quickjab.
+	ZM_MoveContext xE = MakeCtx(xState, xEvents, ZM_SIDE_ENEMY, 0u);
+	ZENITH_ASSERT_EQ((u_int)xE.Atk().m_eSpecies, (u_int)ZM_SPECIES_STRAYLING);
+	ZENITH_ASSERT_EQ((u_int)xE.Def().m_eSpecies, (u_int)ZM_SPECIES_NIBBIN);
+	ZENITH_ASSERT_TRUE(&xE.AtkSide() == &xState.Side(ZM_SIDE_ENEMY), "AtkSide should be the enemy side");
+	ZENITH_ASSERT_TRUE(&xE.DefSide() == &xState.Side(ZM_SIDE_PLAYER), "DefSide should be the player side");
+	ZENITH_ASSERT_EQ((u_int)xE.Move().m_eId, (u_int)ZM_MOVE_QUICKJAB);
+	ZENITH_ASSERT_TRUE(&xE.RNG() == &xState.m_xRNG, "RNG should alias the state RNG");
+}
+
+// ============================================================================
+// SC1.5 Executor_AccuracyStageZeroIsIdentity -- with acc/eva stages both 0 the
+//   folded accuracy math is identity: the stage-0 executor hits/misses on exactly
+//   the same RandBelow(100) boundary as the raw base-accuracy check. Proven on a
+//   move that can miss (Torrent Cannon, acc 80), for both a hit seed and a miss
+//   seed, using a mirror RNG (same seed/stream) to predict the base decision.
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Executor_AccuracyStageZeroIsIdentity)
+{
+	const ZM_MOVE_ID eMove = ZM_MOVE_TORRENTCANNON;   // damaging, effect NONE, accuracy 80
+	const u_int uAcc = ZM_GetMoveData(eMove).m_uAccuracy;
+	ZENITH_ASSERT_TRUE(uAcc != uZM_MOVE_ACCURACY_ALWAYS_HITS && uAcc < 100u, "test needs a move that can miss");
+
+	// The fold at net stage 0 is the identity.
+	ZENITH_ASSERT_EQ(ZM_ApplyStatStage(uAcc, 0), uAcc);
+
+	// Attacker holds the can-miss move; bulky defender so a connecting hit never
+	// faints -- the accuracy check is then the sole possible MOVE_MISSED source.
+	const ZM_BattleMonsterSpec xPlayer = MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, eMove,           200u, 40u,  40u, 40u,  40u, 100u);
+	const ZM_BattleMonsterSpec xEnemy  = MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH, 240u, 40u, 200u, 40u, 200u,  10u);
+
+	bool bTestedHit  = false;
+	bool bTestedMiss = false;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 256ull && !(bTestedHit && bTestedMiss); ++ulSeed)
+	{
+		// Mirror draws the executor's FIRST draw (RandBelow(100)) to predict the
+		// base-accuracy decision on this seed/stream.
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		const bool bBaseMiss = (xMirror.RandBelow(100u) >= uAcc);
+		if (bBaseMiss ? bTestedMiss : bTestedHit) { continue; }   // one of each is enough
+
+		ZM_BattleState xState;
+		BuildBattleState(xState, xPlayer, xEnemy, ulSeed, 54ull);
+		// Precondition of the identity: attacker accuracy + defender evasion stages 0.
+		ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ACCURACY], 0);
+		ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_EVASION], 0);
+
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+
+		bool bExecMiss = false;
+		for (u_int i = 0; i < xEvents.GetSize(); ++i)
+		{
+			if (xEvents.Get(i).m_eKind == ZM_BATTLE_EVENT_MOVE_MISSED) { bExecMiss = true; break; }
+		}
+		ZENITH_ASSERT_TRUE(bExecMiss == bBaseMiss, "stage-0 executor accuracy decision must equal the base-accuracy check");
+
+		if (bBaseMiss) { bTestedMiss = true; } else { bTestedHit = true; }
+	}
+	ZENITH_ASSERT_TRUE(bTestedHit,  "no HIT seed found -- hit path not exercised");
+	ZENITH_ASSERT_TRUE(bTestedMiss, "no MISS seed found -- miss path not exercised");
 }

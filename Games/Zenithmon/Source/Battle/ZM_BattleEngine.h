@@ -49,8 +49,7 @@ private:
 	// seams -- each phase is a hook point:
 	void ResolvePreMovePhase();     // box 1: EMPTY (run/item/switch -> box 2)
 	void ResolveMovePhase();        // order by priority -> eff speed -> RNG tie-break; execute
-	void ExecuteMove(ZM_SIDE eAtk); // THE executor seam: box 1 = damaging path; box 2 = ZM_MoveExecutor
+	void ExecuteMove(ZM_SIDE eAtk); // THE executor seam: fainted-actor guard, then delegates to ZM_MoveExecutor via a ZM_MoveContext view
 	void ResolveEndOfTurnPhase();   // box 1: emit TURN_END only. box 2/3: status/weather/leech ticks
-	bool CheckFaintAndMaybeEnd(ZM_SIDE eDefender); // emit FAINT; report whether that side is wiped
 	void Emit(const ZM_BattleEvent& x) { m_xEvents.PushBack(x); }
 };

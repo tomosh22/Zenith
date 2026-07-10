@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Zenithmon/Source/Battle/ZM_BattleEngine.h"
+#include "Zenithmon/Source/Battle/ZM_MoveExecutor.h"
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
@@ -154,104 +155,26 @@ void ZM_BattleEngine::ResolveMovePhase()
 void ZM_BattleEngine::ExecuteMove(ZM_SIDE eAtk)
 {
 	const ZM_SIDE eDef = (eAtk == ZM_SIDE_PLAYER) ? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
-	ZM_BattleSide& xAtkSide = m_xState.Side(eAtk);
-	ZM_BattleSide& xDefSide = m_xState.Side(eDef);
-	ZM_BattleMonster& xAtk = xAtkSide.Active();
-	ZM_BattleMonster& xDef = xDefSide.Active();
 
-	if (xAtk.IsFainted())
+	if (m_xState.Side(eAtk).Active().IsFainted())
 	{
 		return;   // a fainted actor never acts
 	}
 
-	const u_int uSlot = m_axPending[eAtk].m_uMoveSlot;
-	ZM_MoveSlot& xMoveSlot = xAtk.m_axMoves[uSlot];
-	const ZM_MoveData& xMove = ZM_GetMoveData(xMoveSlot.m_eMove);
-
-	// Spend PP + announce (box 1 always has PP; NO_PP is box 2).
-	--xMoveSlot.m_uCurPP;
-	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, eAtk, xAtkSide.m_uActiveSlot, (u_int)xMove.m_eId));
-
-	// (1) ACCURACY draw -- only if the move CAN miss (sure-hit short-circuit).
-	if (xMove.m_uAccuracy != uZM_MOVE_ACCURACY_ALWAYS_HITS && xMove.m_uAccuracy < 100u)
-	{
-		if (m_xState.m_xRNG.RandBelow(100u) >= xMove.m_uAccuracy)
-		{
-			Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_MISSED, eAtk, xAtkSide.m_uActiveSlot, (u_int)xMove.m_eId));
-			return;
-		}
-	}
-
-	// Effectiveness is deterministic (no RNG) -- resolve immunity BEFORE a crit draw.
-	const ZM_SpeciesData& xDefSpecies = ZM_GetSpeciesData(xDef.m_eSpecies);
-	const u_int uEffPct = ZM_EffectivenessPercent(xMove.m_eType, xDefSpecies.m_aeTypes[0], xDefSpecies.m_aeTypes[1]);
-	if (uEffPct == 0u)
-	{
-		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_IMMUNE, eDef, xDefSide.m_uActiveSlot));
-		return;
-	}
-
-	// (2) CRIT draw -- guaranteed (no draw) at critStage>=2; else 1/24.
-	const bool bCrit = (xMove.m_uCritStage >= 2u) ? true : m_xState.m_xRNG.Chance(1u, 24u);
-	// (3) DAMAGE ROLL draw -- 85..100 inclusive.
-	const u_int uRoll = m_xState.m_xRNG.RandRange(85u, 100u);
-
-	const bool bPhysical = (xMove.m_eCategory == ZM_MOVE_CATEGORY_PHYSICAL);
-	const ZM_SpeciesData& xAtkSpecies = ZM_GetSpeciesData(xAtk.m_eSpecies);
-
-	ZM_DamageInput xIn;
-	xIn.uLevel  = xAtk.m_uLevel;
-	xIn.uPower  = xMove.m_uPower;
-	xIn.uAttack = ZM_ApplyStatStage(
-		bPhysical ? xAtk.m_auMaxStat[ZM_STAT_ATTACK] : xAtk.m_auMaxStat[ZM_STAT_SPATTACK],
-		bPhysical ? xAtk.m_aiStage[ZM_BATTLE_STAT_ATTACK] : xAtk.m_aiStage[ZM_BATTLE_STAT_SPATTACK]);
-	xIn.uDefense = ZM_ApplyStatStage(
-		bPhysical ? xDef.m_auMaxStat[ZM_STAT_DEFENSE] : xDef.m_auMaxStat[ZM_STAT_SPDEFENSE],
-		bPhysical ? xDef.m_aiStage[ZM_BATTLE_STAT_DEFENSE] : xDef.m_aiStage[ZM_BATTLE_STAT_SPDEFENSE]);
-	xIn.bStab = (xMove.m_eType == xAtkSpecies.m_aeTypes[0] || xMove.m_eType == xAtkSpecies.m_aeTypes[1]);
-	xIn.uEffectivenessPercent = uEffPct;
-	xIn.bCrit = bCrit;
-	xIn.uRandomPercent = uRoll;
-	// box-2/3 seams keep their identity defaults (weather 1/1, no burn, no screen).
-
-	const u_int uDmg = ZM_CalcDamage(xIn);
-
-	if (bCrit)
-	{
-		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_CRIT, eDef, xDefSide.m_uActiveSlot));
-	}
-	if (uEffPct > 100u)
-	{
-		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_SUPER_EFFECTIVE, eDef, xDefSide.m_uActiveSlot,
-			ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uEffPct));
-	}
-	else if (uEffPct < 100u)
-	{
-		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_NOT_EFFECTIVE, eDef, xDefSide.m_uActiveSlot,
-			ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uEffPct));
-	}
-
-	xDef.m_uCurHP = (uDmg >= xDef.m_uCurHP) ? 0u : (xDef.m_uCurHP - uDmg);
-	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, eDef, xDefSide.m_uActiveSlot,
-		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uDmg, (int)xDef.m_uCurHP));
-
-	if (xDef.m_uCurHP == 0u)
-	{
-		CheckFaintAndMaybeEnd(eDef);   // emits FAINT; battle-over decided in ResolveTurn
-	}
+	// The engine keeps owning the state / event sink / RNG; the context is a thin
+	// view. ZM_MoveExecutor runs the whole post-guard body (PP, MOVE_USED, accuracy,
+	// immunity, effect switch -> damaging hit + faint) with identical draw + emit order.
+	ZM_MoveContext xCtx;
+	xCtx.m_pxState   = &m_xState;
+	xCtx.m_pxEvents  = &m_xEvents;
+	xCtx.m_eAtk      = eAtk;
+	xCtx.m_eDef      = eDef;
+	xCtx.m_uMoveSlot = m_axPending[eAtk].m_uMoveSlot;
+	ZM_MoveExecutor::Execute(xCtx);
 }
 
 void ZM_BattleEngine::ResolveEndOfTurnPhase()
 {
 	const int iTurn = (int)m_xState.m_xField.m_uTurnCounter;
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, iTurn));
-}
-
-bool ZM_BattleEngine::CheckFaintAndMaybeEnd(ZM_SIDE eDefender)
-{
-	ZM_BattleSide& xDefSide = m_xState.Side(eDefender);
-	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_FAINT, eDefender, xDefSide.m_uActiveSlot));
-	// box 1 is 1v1: the side is now wiped, so ResolveTurn's post-phase check ends
-	// the battle. box 2 seam: if the side has reserves, request a forced switch here.
-	return !xDefSide.HasUnfainted();
 }

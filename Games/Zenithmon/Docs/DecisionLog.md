@@ -15,6 +15,94 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-11 -- ZM-D-033 -- S2 box-2 execution plan: 6 ordered sub-commits + the LOCKED augmented RNG draw order (PHASE G/M/E)
+
+- **Decision:** box 2 (ZM_MoveExecutor + full DamageCalc/CatchCalc/StatusLogic,
+  the bulk of S2's ~370 tests) is decomposed into **6 independently-shippable
+  sub-commits**, executed in order, each keeping the box-1 goldens BYTE-IDENTICAL
+  (every new gate/draw is conditional on state box 1 never sets -- status-free,
+  stage-0, volatile-mask 0 -- and every new `ZM_BATTLE_EVENT` kind is append-only).
+  Synthesized from a 2-planner design workflow; full plan archived this session in
+  scratchpad `S2_Box2_Plan.md` (ephemeral -- the load-bearing contract is captured
+  here). Sub-commit order (each builds + passes + commits alone):
+  - **SC1** Executor seam (PURE refactor): move `ExecuteMove`'s body into
+    `ZM_MoveExecutor::Execute` / `ApplyDamagingHit` over a `ZM_MoveContext`; switch
+    has only `NONE` + `default`; box-1 27-event golden byte-identical. New files
+    `Source/Battle/ZM_MoveExecutor.{h,cpp}`. No new events.
+  - **SC2** Stat-stage effects (all LOWER_*/RAISE_* + accuracy/evasion) + STATUS-
+    category vs damaging-secondary dispatch. Lights `STAT_STAGE_CHANGED`,
+    `MOVE_FAILED`.
+  - **SC3** Delivery variants (MULTI_HIT/DOUBLE_HIT/RECOIL/DRAIN/HEAL_HALF/
+    FIXED_LEVEL/HALVE_HP/OHKO) + field/screen/hazard SETTERS (state-only) + screen
+    damage reduction (`bScreen`). Lights `MULTI_HIT/RECOIL/DRAIN/HEAL`.
+  - **SC4** `ZM_StatusLogic` majors (6) + burn damage reduction (`bBurnedPhysical`)
+    + paralysis speed x1/4. New files `ZM_StatusLogic.{h,cpp}`. Appends `m_iTag`
+    to `ZM_BattleEvent` (Q1). Lights `STATUS_APPLIED/DAMAGE/CURED`.
+  - **SC5** Volatiles (all 10) + SWAGGER + FORCE_SWITCH + a `DoSwitch` primitive.
+    Lights `FLINCH/VOLATILE_APPLIED/VOLATILE_ENDED`.
+  - **SC6** Pre-move actions (SWITCH/ITEM/RUN in `ResolvePreMovePhase`) +
+    `ZM_CatchCalc` (Gen-III/IV 4-shake) + promote the smoke to the **2000-battle
+    fuzz soak**. New files `ZM_CatchCalc.{h,cpp}`. Lights `CATCH_SHAKE/CATCH_RESULT/
+    FLEE/FLEE_FAILED`.
+- **LOCKED augmented RNG draw order (the master contract -- every box-2 golden is
+  defined by it; the offline oracle mirrors it exactly).** Attacker fully resolves
+  before defender; the pre-phase `RandBelow(2)` speed tie-break (only on exact
+  effective-speed tie) is unchanged. Draws are pulled ONLY when the guard holds, so
+  box-1 (status-free, stage-0) pulls EXACTLY box-1's draws:
+  - **PHASE G (pre-move gates, BEFORE PP/MOVE_USED; first trigger cancels, spending
+    NO PP + emitting NO MOVE_USED -- Q3):** G1 RECHARGE (0 draws) -> G2 FREEZE
+    (`RandBelow(100)<20` thaw) -> G3 SLEEP (counter, 0 draws) -> G4 FLINCH (0 draws)
+    -> G5 CONFUSE (counter; `RandBelow(100)<33` -> self-hit = 40-power typeless
+    PHYSICAL drawing its own `RandRange(85,100)`) -> G6 PARALYSIS (`RandBelow(100)<25`
+    full-para).
+  - **PHASE M:** M0 TAUNT-blocks-STATUS-category -> M1 spend PP + emit `MOVE_USED`
+    -> M2 PROTECT intercept -> M3 SEMI_INVULN-target-vanished -> M4 two-turn
+    charge/semi-invuln turn-1 set -> M5 ACCURACY (only if the move can miss; effAcc
+    via acc/eva stages) -> M6 IMMUNITY (damaging/fixed/ohko only).
+  - **PHASE E:** single-hit damaging = crit `RandBelow(24)` (skip if critStage>=2)
+    -> roll `RandRange(85,100)` -> `ApplyDamagingHit` (sets `bBurnedPhysical`/
+    `bScreen` at the call site) -> recoil/drain self-effect appended AFTER -> E3
+    secondary proc `RandBelow(100)<chance` (chance>=100 no draw); apply-time
+    duration draws SLEEP `RandRange(1,3)`, CONFUSE `RandRange(1,4)`, TRAP
+    `RandRange(4,5)`, TOXIC counter=1. MULTI_HIT = hit-count `RandBelow(8)` ->
+    {2,2,2,3,3,3,4,5} then per-hit (crit,roll). DOUBLE_HIT fixed 2. FIXED_LEVEL/
+    HALVE_HP/OHKO no crit/roll. STATUS-category primary no crit/roll.
+- **Weather line (box-2 vs box-3 rule):** box 2 SETS weather/screen/hazard field
+  state + applies the ability-independent burn (`bBurnedPhysical`) and screen
+  (`bScreen`, crit bypasses) damage reductions, but emits NO weather/screen event
+  and does NOT count down. Box 3 owns the weather DAMAGE multiplier
+  (`uWeatherNum/Den`), the end-of-turn weather chip, the weather/screen countdown +
+  expiry, and ALL of `WEATHER_CHANGED/WEATHER_DAMAGE/SCREEN_SET/SCREEN_EXPIRED/
+  ABILITY_TRIGGER`. End-of-turn global order reserves the weather-chip slot FIRST:
+  `[weather chip (box 3, absent in box-2 tests) -> per side player-then-enemy in
+  speed order: major chip -> leech-seed -> trap chip -> volatile-counter expiries
+  -> TURN_END]`. Box-2 full-stream goldens use battles with NO weather set.
+- **Ratified open questions + constants (internal engine choices within locked
+  scope, like box-1's rounding/crit sub-decisions):**
+  1. **Q1:** append `int m_iTag = 0` to `ZM_BattleEvent` (+ a trailing defaulted
+     `ZM_MakeEvent` param) as the `STATUS_DAMAGE` source-status discriminator
+     (ZM-D-009 append pattern; box-1 goldens stay equal). Lands in SC4.
+  2. **Q2:** catch base rate derived from `ZM_RARITY` (COMMON 190 / UNCOMMON 120 /
+     RARE 45 / LEGENDARY 3) via `ZM_BaseCatchRate` (NO new S1 data column);
+     Gen-IV status bonuses (sleep/freeze 2.5x, para/poison/toxic/burn 1.5x).
+  3. **Q3:** an action-time gate cancel spends NO PP and emits NO `MOVE_USED`.
+  - **Constants:** percentage gates `RandBelow(100)<t` (thaw 20, full-para 25,
+    confusion self-hit 33); multi-hit `RandBelow(8)`->{2,2,2,3,3,3,4,5}; durations
+    sleep 1-3 (REST=2), confuse 1-4, trap 4-5, taunt 3, lock-in 2-3; chips burn/
+    poison/leech/trap 1/8, toxic n/16; paralysis speed x1/4; crit unchanged 1/24 x1.5.
+- **Why:** every box-2 golden event stream is defined by the exact draw order;
+  locking it ONCE here prevents drift across the ~275 box-2 tests and lets each
+  sub-commit's Python oracle reproduce streams independently before the engine is
+  trusted. The ordering ships each dependency before its consumer (statuses before
+  the effects that inflict them; burn WITH its damage-halving; pre-move actions +
+  the soak last, once the full effect surface exists so the soak terminates).
+- **Tests that lock it:** `ZM_Tests_Battle.cpp` box-2 additions per sub-commit +
+  the box-1 golden re-run (`Scenario_NibbinVsStrayling_ExactStream`), which MUST
+  stay byte-identical through every sub-commit; the 2000-battle soak at SC6.
+- **Reversibility:** moderate. The draw order + the `m_iTag` append define all
+  box-2 goldens (expensive to change); sub-commit boundaries are independent, so a
+  later sub-commit can be re-planned without disturbing landed ones.
+
 ## 2026-07-10 -- ZM-D-032 -- S2 battle-engine keystone architecture (box 1): ZM_BattleState / ZM_BattleEngine / flat ZM_BattleEvent stream / ZM_BattleMonster
 
 - **Decision:** the S2 battle engine is built as box 1 of ~6, establishing the
