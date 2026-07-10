@@ -13,8 +13,7 @@ AssetManifest.md (why the runner has no assets).
 **Status:** LIVING -- update whenever a gate is added/retired or branch
 protection changes.
 
-**Last updated:** 2026-07-09 (S0 -- zm-tests.yml written, first PR pending;
-required-check registration NOT yet done).
+**Last updated:** 2026-07-10 (S0 closed -- zm-tests green on PRs #143/#144 and registered as a required branch-protection check; see section 4).
 
 ---
 
@@ -93,19 +92,28 @@ protection (Settings -> Branches), not in this file; keep the table above in
 sync when gates change. `release-build` (nightly) and `scaffold-smoke`
 (burn-in) are documented as non-blocking by their own headers.
 
-## 4. Branch protection: adding `zm-tests` (MANUAL step, pending)
+## 4. Branch protection: `zm-tests` required (ACTIVE since 2026-07-10)
 
-GitHub only offers a check name in the required-checks picker after it has
-reported at least once, so the flow is:
+Master branch protection now exists and requires `zm-tests`. History + the
+exact shape (because it differs from the original plan in two ways):
 
-1. Open the first Zenithmon PR (S0 skeleton); let `zm-tests` run green.
-2. A human adds `zm-tests` to the master branch-protection required checks
-   via the GitHub web UI -- the exact click path is spelled out in
-   ManualSetupChecklist.md. **This cannot be done by an agent and is still
-   pending as of S0.**
+1. The first Zenithmon PR (#143, S0 skeleton) put a green `zm-tests` run on
+   record; the follow-up CI-fix PR (#144) made the whole gate set green.
+2. Master had **no branch protection and no rulesets at all** -- the
+   "required checks" discipline had been purely conventional. Classic branch
+   protection was CREATED (user-directed, via `gh api PUT
+   .../branches/master/protection`): required status checks `[zm-tests]`
+   with `strict=false`, `enforce_admins=false`, no required reviews.
 
-Until that box is ticked, zm-tests runs on every PR but does not BLOCK
-merges; treat it as blocking by discipline in the meantime.
+Consequences of that shape:
+- `zm-tests` BLOCKS every non-admin merge into master.
+- `enforce_admins=false` means the repo owner's direct pushes bypass the
+  check -- deliberate, matching the established direct-push workflow. Agent
+  work always lands via PRs, so agents are always gated.
+- Only `zm-tests` is machine-enforced; the other gates in section 3 remain
+  blocking BY DISCIPLINE (nothing merges red, section 5). Add them to the
+  protection contexts only deliberately -- several are path-filtered and a
+  required check that never reports deadlocks the PR.
 
 ## 5. Merge policy
 

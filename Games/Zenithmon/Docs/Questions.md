@@ -10,20 +10,6 @@
 
 ## Open
 
-### [OPEN] Q-2026-07-09-001 -- Branch protection for `zm-tests` requires a manual GitHub-UI step
-
-**Question:** when will `zm-tests` be registered as a REQUIRED status check on master?
-
-**Context:** `.github/workflows/zm-tests.yml` is written and runs on every PR/push from S0, but adding it to the required-checks list is a manual GitHub-UI step only the user can perform (tracked in ManualSetupChecklist.md; policy in CIPolicy.md). Until it is flipped, a red `zm-tests` run does not technically block a merge.
-
-**Best-guess action taken:** proceeding without it. The workflow still runs on every PR; agents treat a red `zm-tests` as a hard merge blocker by convention and note the CI result in the PR body. The S0 gate item stays unticked in Roadmap.md until the user flips it.
-
-**Cost if wrong:** moderate. A regression could auto-merge on a red run that an agent failed to notice; the next session would inherit a broken master. Bounded by the convention above and by every session starting with a baseline `zenith test Zenithmon --headless` run.
-
-**Status:** asked 2026-07-09. Acting on best guess.
-
----
-
 ### [OPEN] Q-2026-07-09-002 -- Terrain bake time for ~25 terrains is an unmeasured estimate
 
 **Question:** is the ~25-terrain plan (one terrain set per outdoor scene via engine change E1) affordable in bake time and file volume, or should routes share terrain sheets?
@@ -54,4 +40,13 @@
 
 ## Resolved
 
-(none yet)
+### [RESOLVED] Q-2026-07-09-001 -- Branch protection for `zm-tests`
+
+**Resolution (2026-07-10):** the user directed the agent to do it ("Add
+zm-tests yourself"). Discovery: master had NO branch protection and no
+rulesets at all -- the required-checks discipline had been purely
+conventional. Classic branch protection was created via
+`gh api PUT .../branches/master/protection` with required contexts
+`[zm-tests]`, `strict=false`, `enforce_admins=false` (owner direct pushes
+bypass; agent PRs are always gated). Full shape + consequences: CIPolicy.md
+section 4; checklist item ticked in ManualSetupChecklist.md.

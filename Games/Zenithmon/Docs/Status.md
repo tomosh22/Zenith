@@ -1,38 +1,35 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-09 -- S0 skeleton complete on branch `zenithmon/s0-skeleton`; first PR about to open.
+**Last updated:** 2026-07-10 -- **S0 COMPLETE and merged to master; gate met.**
 
 **Read this first each session.** This file is REPLACED at every session end. [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the honest gap audit.
 
 ## Build
 
-GREEN. `Vulkan_vs2022_Debug_Win64_True` builds clean via `zenith build Zenithmon` (per-game sln `Games/Zenithmon/zenithmon_win64.sln`, always `/t:Zenithmon` -- never whole-sln).
+GREEN on master. `Vulkan_vs2022_Debug_Win64_True` + `D3D12_vs2022_Debug_Win64_False` (link proof) both clean via `zenith build Zenithmon` (per-game sln, always `/t:Zenithmon` -- never whole-sln).
 
 ## Tests
 
-- Unit: **2 / 2 passed** (`Tests/ZM_Tests_Boot.cpp`, `ZENITH_TEST` boot suite).
-- Automated: **1 / 1 passed** (`ZM_Boot_Test` in `Tests/ZM_AutoTests_Boot.cpp`); `zenith test Zenithmon --headless` exits 0.
-- Runner is the unified `zenith test <Game>` harness (`Tools/ZenithCli/ZenithCli.psm1` -> `ZenithTestHarness.psm1`; flags `--filter/--headless/--results-dir/--config/--per-process/--fail-fast`; exit codes 0 OK / 1 usage / 2 validation / 3 generation / 4 build-or-test / 5 not-found). The old per-game `Tools/run_*_tests.ps1` scripts were DELETED at commit `c29e28f8` -- never reference them as current.
+- Unit: **2 / 2 ZM tests passed** inside the 1070-test boot suite (0 failed).
+- Automated: **1 / 1 passed** (`ZM_Boot_Test`); `zenith test Zenithmon --headless` exits 0; windowed `--filter ZM_Boot_Test` run also green.
+- CI: **zm-tests green on every run so far** and now a REQUIRED branch-protection check (CIPolicy.md section 4).
+
+## What landed (S0, merged 2026-07-10)
+
+- **PR #143** (rebase-merged as `4c35f55d` + `4e57c680`): name-validator PascalCase-word-boundary narrowing (unblocks the name "Zenithmon"); the game skeleton (ZM_ conventions, boot-authored FrontEnd.zscen at build index 0, SaveData init + between-tests hook, hello unit/automated tests); `.github/workflows/zm-tests.yml`; this 17-file Docs base incl. the full GDD.
+- **PR #144** (`0844689e`, squash): fixed the 3 PRE-EXISTING master-red gates -- engine-gate (unit baseline 1053->1068, single-sourced in `Tools/run_unit_gate.ps1`; `test_scaffold.ps1` now reuses it), layering-gate (`Flux_HDR.cpp` g_xEngine 45->~35 via local hoists), scaffold-smoke (regen.ps1 dotnet-fallback when `Sharpmake.Application.exe` is absent + `lfs: true` checkout + `/p:WindowsTargetPlatformVersion=10.0` on the smoke build -- its first green EVER).
+- **Branch protection created** (user-directed): master requires `zm-tests`; `enforce_admins=false`. ManualSetupChecklist.md is now fully ticked.
 
 ## Current task
 
-**S0 PR.** Open the first PR from `zenithmon/s0-skeleton`, watch `zm-tests` go green, merge. The S0 gate (see [Roadmap.md](Roadmap.md)) also requires the manual branch-protection step below.
-
-## Last completed (this session, 2026-07-09)
-
-1. **Scaffold:** `zenith new Zenithmon` (`Zenithmon.zproj` + `Zenithmon.cpp` `Project_*` entry points + regen; per-game sln generated).
-2. **Engine change (name validators):** the blanket `Zenith*`/`Sentinel*` reserved-prefix rule rejected the name "Zenithmon". Both validators -- PS `Test-ZenithGameNameSyntax` in `Build/zenith_buildsystem.psm1` and C++ `ZenithHub_GameScan::ValidateName` -- were narrowed to a PascalCase word boundary: reject `Zenith`/`Sentinel` alone or followed by an uppercase letter/digit; a lowercase continuation (e.g. `Zenithmon`) is a distinct word and valid. Shared pinned vectors in `Tools/ZenithCli/Tests/name_validation_cases.txt` + buildsystem tests updated; suite 45 passed / 0 failed.
-3. **ZM_ conventions applied:** `ZM_GameComponent` (registered `"ZM_Game"`, serialization order 100, S0 placeholder bobbing cube); boot-authored `FrontEnd.zscen` at build index 0 (camera + "Zenithmon" title text + game component; authored by tools builds, git-ignored).
-4. **Persistence from day one:** `Zenith_SaveData::Initialise("Zenithmon")` at boot + between-tests hook registered (`Zenith_SaveData::ClearForTest`).
-5. **Tests:** 2 boot unit tests (`ZM_Tests_Boot.cpp`) + 1 automated boot test (`ZM_AutoTests_Boot.cpp`), both green locally.
-6. **CI:** `.github/workflows/zm-tests.yml` written (clone of `dp-tests.yml`): `zenith-setup` action (Vulkan SDK 1.3.290.0, Slang 2026.1) -> `Build/regen.ps1 -UseDotnet` -> `Vulkan_vs2022_Debug_Win64_True` build -> `D3D12_vs2022_Debug_Win64_False` backend-neutrality link proof -> DLL copies -> headless boot check -> `zenith.bat test Zenithmon --headless --results-dir Build/artifacts/test_results/zenithmon` -> artifact `zm-test-results`.
-7. **Docs:** `Games/Zenithmon/Docs/` knowledge base seeded (this file + siblings).
+None in flight. **Next up per [Roadmap.md](Roadmap.md): two parallel tracks open** --
+1. **S1 data core** (pure headless C++, `Source/Data/`: ZM_Types/TypeChart/SpeciesData/MoveData/ItemData/AbilityData stubs/NatureData/StatCalc/BattleRNG + WorldSpec skeleton + DataRegistry; gate ~90 unit tests). No engine changes; safe to run fully parallel.
+2. **S3 first overworld** (starts with engine changes E1 terrain-set paths + E2 rect export, each with unit tests + RenderTest boot regression).
+S2 (battle engine) follows S1; S4 (asset generators) can run alongside.
 
 ## Notes for the next agent
 
-- **Branch:** `zenithmon/s0-skeleton`. If its PR has merged, branch fresh off master for the next stage.
-- **MANUAL STEP PENDING:** registering `zm-tests` as a required branch-protection check is a GitHub-UI step only the user can do (see Questions.md Q-2026-07-09-001 and ManualSetupChecklist.md). Until it is flipped, treat a red `zm-tests` run as a hard merge blocker by convention.
-- **Next after S0:** two parallel tracks open up -- **S1 data core** (pure headless C++, `Source/Data/`) and **S3 first overworld** (starts with engine changes E1 terrain-set paths + E2 rect export). S2 follows S1; S4 can run alongside. MSBuild dispatch is SERIAL (mspdbsrv constraint) -- parallelism is code-authoring, not builds.
-- **Hard rules (locked, see Scope.md):** game-code prefix `ZM_`; ~150 original species / original names everywhere (zero Nintendo IP -- mainline MECHANICS only); no audio (engine has none); no networking/multiplayer/trading; no Dynamax-analog; battle format singles only; game data tables are compiled C arrays, not disk assets; baked assets are git-ignored.
-- **CI/assets gotcha:** baked assets (incl. `FrontEnd.zscen`) are git-ignored, so a fresh CI checkout has NO `Assets/` -- every asset/scene-dependent automated test must exists-guard + `RequestSkip` (the CI-fix pattern from commit `94813489`).
-- **Session discipline:** replace this file at session end; tick Roadmap.md checkboxes only when the PR is merged AND CI is green; log decisions in DecisionLog.md; log blockers in Questions.md and proceed on best guess.
+- Branch fresh off master (`git pull` first; master tip after S0 = `4e57c680`).
+- **Gotchas from S0 (all verified):** bare `game.exe --exit-after-frames N` NEVER exits (per-test override only -- use `zenith test --filter` or `--list-automated-tests`); `gh run rerun` re-uses the run's ORIGINAL merge commit (rebase+push to re-evaluate a PR against new master); in sandboxed agent sessions use `pwsh -File Tools\zenith.ps1 ...` / `pwsh -File Build\regen.ps1` (the 5.1 `zenith.bat` shim hits a Get-FileHash resolution quirk there; CI + user machines unaffected).
+- **Hard rules (locked, see Scope.md):** `ZM_` prefix; ~150 original species / original names (zero Nintendo IP); no audio; no networking/trading; no Dynamax-analog; singles only; game data = compiled C arrays; baked assets git-ignored (asset-dependent tests exists-guard + RequestSkip).
+- **Session discipline:** replace this file at session end; tick Roadmap.md boxes only when the PR is merged AND CI green; DecisionLog.md is append-only; serial MSBuild dispatch (never build in parallel agents).
