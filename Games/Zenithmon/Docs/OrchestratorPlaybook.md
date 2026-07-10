@@ -377,3 +377,38 @@ integrate, gate, commit.
 When the session is trivial (typo, one-line fix), skip the subagent machinery
 and work solo -- the invariants still hold (you are then both roles, and you
 still build serially, on the main checkout, with the docs updated).
+
+## The lifecycle loop (unattended operation)
+
+StartPrompts.md prompt 0 turns this playbook into an unattended driver: each
+firing is ONE idempotent iteration (derive state from Status.md + git; resume
+in-flight work, else take the next Roadmap task; land it through PR -> CI ->
+merge -> docs). The invariants above hold unchanged inside the loop -- the
+iteration IS the orchestrator.
+
+Loop-specific rules:
+
+1. **Idempotence over memory.** A firing may crash or be interrupted at any
+   point; the next firing must reconstruct from Status.md, the Roadmap, and
+   git state alone. That is why Status.md is refreshed at every iteration end
+   and why branches are named `zenithmon/s<stage>-<slug>` (discoverable).
+2. **Hard-stop at visual gates** (user's standing order, 2026-07-10): when the
+   next item is a stage's visual check (incl. S4 gallery, S8 go/no-go), run the
+   automated gate items, capture screenshot evidence, set `GATE-WAIT: S<n>` in
+   Status.md, and end. Every subsequent firing reports "waiting" and does
+   nothing until the user's sign-off (StartPrompts prompt 4) lands in
+   DecisionLog.md. The loop never signs its own gates.
+3. **Merge authorization is carried by the prompt.** The user issues it by
+   starting the loop; it covers merging the loop's OWN green PRs only. Anything
+   else outward-facing (branch-protection changes, deleting others' branches,
+   force-pushing shared refs) still stops for the user.
+4. **Fix-forward budget:** 3 attempts on a red gate, then park it in
+   Questions.md + Status.md and end the iteration. A parked blocker is a
+   better outcome than a thrashing loop.
+5. **Process hygiene:** each iteration sweeps stray zenithmon.exe processes
+   (Get-Process zenithmon) before ending -- orphaned editor instances from
+   crashed runs otherwise accumulate and lock build outputs.
+6. **Budget sanity:** one Roadmap task per iteration is the healthy cadence;
+   chain a second small task only when the first merged green with budget to
+   spare. Content-wave stages (S9/S10) fan out subagents per region for
+   AUTHORING only -- builds remain serial on the orchestrator.

@@ -6,7 +6,10 @@ procedurally generated and baked by tools builds.
 
 > **Read `Docs/Status.md` first each session**, then `Docs/Roadmap.md` for the
 > S0-S12 stage plan. `Docs/AgentBriefing.md` is the session onboarding guide;
+> `Docs/MasterPlan.md` is the full approved program plan behind the Roadmap;
 > `Docs/Scope.md` is the binding in/out list. Game code uses the `ZM_` prefix.
+> Unattended development runs on `Docs/StartPrompts.md` prompt 0 (the
+> lifecycle loop).
 
 Current stage: **S0 COMPLETE** (merged 2026-07-10; `zm-tests` is a required
 check). Next per `Docs/Roadmap.md`: S1 (data core) in parallel with S3 (first
