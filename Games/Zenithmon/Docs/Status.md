@@ -1,42 +1,33 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-10 -- **S0 COMPLETE and merged to master; gate met.**
+**Last updated:** 2026-07-10 -- **S1 started: type chart landed; ZM_* unit tests now gate in CI.**
 
-**Read this first each session.** This file is REPLACED at every session end. [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the honest gap audit.
+**Read this first each session.** Replaced at every session end. [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the honest gap audit.
 
 ## Build
 
-GREEN on master. `Vulkan_vs2022_Debug_Win64_True` + `D3D12_vs2022_Debug_Win64_False` (link proof) both clean via `zenith build Zenithmon` (per-game sln, always `/t:Zenithmon` -- never whole-sln).
+GREEN. `Vulkan_vs2022_Debug_Win64_True` clean via `zenith build Zenithmon` (per-game sln, `/t:Zenithmon`). D3D12_False link proof runs in CI.
 
 ## Tests
 
-- Unit: **2 / 2 ZM tests passed** inside the 1070-test boot suite (0 failed).
-- Automated: **1 / 1 passed** (`ZM_Boot_Test`); `zenith test Zenithmon --headless` exits 0; windowed `--filter ZM_Boot_Test` run also green.
-- CI: **zm-tests green on every run so far** and now a REQUIRED branch-protection check (CIPolicy.md section 4).
+- Unit (T0, category `ZM_Data`): **1079 ran, 1078 passed, 0 failed, 1 skipped** at boot (the 1 skip is the pre-existing quarantined engine `RegistryWideNodeRoundTrip`). +9 over the S0 baseline = the new type-chart suite.
+- Automated (P1): **1 / 1 passed** (`ZM_Boot_Test`); `zenith test Zenithmon --headless` exits 0.
+- **CI now runs the unit suite** (this iteration's fix, ZM-D-019): `zm-tests.yml` boots `zenithmon.exe` via `Tools/run_unit_gate.ps1 -Baseline 1079`. Before this, BOTH `zenith test` and the zm-tests steps passed `--skip-unit-tests`, so no ZM unit test ran in CI.
 
-## What landed (S0, merged 2026-07-10)
+## What landed (this iteration -- PR #147)
 
-- **PR #143** (rebase-merged as `4c35f55d` + `4e57c680`): name-validator PascalCase-word-boundary narrowing (unblocks the name "Zenithmon"); the game skeleton (ZM_ conventions, boot-authored FrontEnd.zscen at build index 0, SaveData init + between-tests hook, hello unit/automated tests); `.github/workflows/zm-tests.yml`; this 17-file Docs base incl. the full GDD.
-- **PR #144** (`0844689e`, squash): fixed the 3 PRE-EXISTING master-red gates -- engine-gate (unit baseline 1053->1068, single-sourced in `Tools/run_unit_gate.ps1`; `test_scaffold.ps1` now reuses it), layering-gate (`Flux_HDR.cpp` g_xEngine 45->~35 via local hoists), scaffold-smoke (regen.ps1 dotnet-fallback when `Sharpmake.Application.exe` is absent + `lfs: true` checkout + `/p:WindowsTargetPlatformVersion=10.0` on the smoke build -- its first green EVER).
-- **Branch protection created** (user-directed): master requires `zm-tests`; `enforce_admins=false`. ManualSetupChecklist.md is now fully ticked.
+- **S1 first Roadmap task:** `Source/Data/ZM_Types.h` (`enum ZM_TYPE : u_int`, 18 GDD types, `ZM_TypeToString`) + `ZM_TypeChart` (const 18x18 effectiveness table + `GetEffectiveness` + `GetDualTypeEffectiveness`) + 9 `Tests/ZM_Tests_Data.cpp` cases (golden-matrix two-place lock, GDD design-intent spot checks, dual-type products, ToString). DecisionLog ZM-D-018.
+- **CI unit-test gate** wired into `zm-tests.yml` (DecisionLog ZM-D-019) so the S1/S2 unit backbone actually runs on every PR. Docs updated: CIPolicy §1/§6, TestPlan §4, Questions Q-2026-07-10-004.
 
 ## Current task
 
-None in flight. **Next up per [Roadmap.md](Roadmap.md): two parallel tracks open** --
-1. **S1 data core** (pure headless C++, `Source/Data/`: ZM_Types/TypeChart/SpeciesData/MoveData/ItemData/AbilityData stubs/NatureData/StatCalc/BattleRNG + WorldSpec skeleton + DataRegistry; gate ~90 unit tests). No engine changes; safe to run fully parallel.
-2. **S3 first overworld** (starts with engine changes E1 terrain-set paths + E2 rect export, each with unit tests + RenderTest boot regression).
-S2 (battle engine) follows S1; S4 (asset generators) can run alongside.
+None in flight (once PR #147 merges). **Next per [Roadmap.md](Roadmap.md): S1 second box -- `ZM_SpeciesData` (~150 species: archetype + evo stage + size class + family seed + stats/learnsets).** Then MoveData / ItemData / AbilityData+NatureData / StatCalc+BattleRNG / WorldSpec skeleton / DataRegistry. S3 (overworld, engine E1/E2) is the parallel track.
 
 ## Notes for the next agent
 
-- **The project now runs on the lifecycle loop:** StartPrompts.md prompt 0 is
-  one idempotent iteration (resume in-flight work or take the next Roadmap
-  task; PR -> CI -> merge -> docs; hard-stop at visual gates with a GATE-WAIT
-  marker here). MasterPlan.md is the full approved plan behind the Roadmap;
-  Tools\zenith_gh.ps1 wraps gh with self-bootstrapping auth; the checked-in
-  .claude/settings.json allowlists the routine commands. See AgentBriefing.md
-  section 9 for the verified bootstrap gotchas.
-- Branch fresh off master (`git pull` first; master tip after S0 = `4e57c680`).
-- **Gotchas from S0 (all verified):** bare `game.exe --exit-after-frames N` NEVER exits (per-test override only -- use `zenith test --filter` or `--list-automated-tests`); `gh run rerun` re-uses the run's ORIGINAL merge commit (rebase+push to re-evaluate a PR against new master); in sandboxed agent sessions use `pwsh -File Tools\zenith.ps1 ...` / `pwsh -File Build\regen.ps1` (the 5.1 `zenith.bat` shim hits a Get-FileHash resolution quirk there; CI + user machines unaffected).
-- **Hard rules (locked, see Scope.md):** `ZM_` prefix; ~150 original species / original names (zero Nintendo IP); no audio; no networking/trading; no Dynamax-analog; singles only; game data = compiled C arrays; baked assets git-ignored (asset-dependent tests exists-guard + RequestSkip).
-- **Session discipline:** replace this file at session end; tick Roadmap.md boxes only when the PR is merged AND CI green; DecisionLog.md is append-only; serial MSBuild dispatch (never build in parallel agents).
+- **NEW: every PR that adds/removes `ZM_*` unit tests must bump `-Baseline` in `.github/workflows/zm-tests.yml`** (currently 1079). An engine PR that changes the engine unit count also bumps it. This is the ratchet that makes unit tests gate; forget it and zm-tests reddens with a count mismatch (that's the point).
+- **Verify unit tests via a boot, not `zenith test`** (which skips them): `Tools/run_unit_gate.ps1 -Exe <zenithmon.exe> -Baseline <N>` or `zenithmon.exe --list-automated-tests --headless` (no `--skip-unit-tests`). See Q-2026-07-10-004.
+- New game code lives under `Source/Data/`; Sharpmake globs the whole game tree, so `Build\regen.ps1` after adding files (done this PR).
+- Branch fresh off master (`git pull` first; master tip after this = the #147 squash).
+- **Hard rules (Scope.md):** `ZM_` prefix; original names / zero Nintendo IP; data = compiled C arrays; no audio/networking/Dynamax; singles only; baked assets git-ignored.
+- Session discipline: replace this file at session end; tick Roadmap boxes only when merged + green; DecisionLog append-only; serial MSBuild.

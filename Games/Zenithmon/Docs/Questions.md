@@ -36,6 +36,32 @@
 
 **Status:** asked 2026-07-09. Verified or falsified at the S5 screenshot gate (see Roadmap.md).
 
+### [OPEN] Q-2026-07-10-004 -- Unit-test verification gap in `zenith test` + baseline-ratchet churn
+
+**Question:** `zenith test Zenithmon --headless` (the loop's verify command) passes
+`--skip-unit-tests`, so it does NOT run the `ZM_*` unit suite -- only the new CI
+boot step (ZM-D-019) and a direct exe boot do. Should the CLI grow a
+`zenith test --unit-tests` flag (or run units by default for a single game), and
+should the CI unit gate keep the exact-count baseline or switch to a failures-only
+check?
+
+**Context:** found while landing S1's first unit tests. The exact-count baseline
+(1079) couples zm-tests to the engine unit count -- an unrelated engine PR that
+changes that count reddens zm-tests until the baseline is bumped. A failures-only
+check (assert the "Unit tests complete" line shows 0 failed, ignore the count)
+avoids the coupling but no longer catches a silently-vanishing `ZM_` test.
+
+**Best-guess action taken:** kept the exact-baseline ratchet (matches engine-gate,
+strongest guarantee) and verify unit tests locally via a direct exe boot
+(`--list-automated-tests --headless` without `--skip-unit-tests`, or
+`Tools/run_unit_gate.ps1`) until a CLI flag lands. Bump rule documented in
+CIPolicy.md section 1.
+
+**Cost of getting it wrong:** low. Both are small, localized changes; the ratchet's
+only symptom is an occasional one-line baseline bump caught immediately by red CI.
+
+**Status:** asked 2026-07-10; acting on best guess.
+
 ---
 
 ## Resolved

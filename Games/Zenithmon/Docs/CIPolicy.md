@@ -13,7 +13,7 @@ AssetManifest.md (why the runner has no assets).
 **Status:** LIVING -- update whenever a gate is added/retired or branch
 protection changes.
 
-**Last updated:** 2026-07-10 (S0 closed -- zm-tests green on PRs #143/#144 and registered as a required branch-protection check; see section 4).
+**Last updated:** 2026-07-10 (S1 start -- added the boot unit-test gate step (section 1 step 8) so Zenithmon `ZM_*` unit tests actually run in CI; see DecisionLog ZM-D-019).
 
 ---
 
@@ -41,10 +41,23 @@ pattern), active from S0. Required check name: **`zm-tests`**.
      vulkan-1.dll -- see BuildEnvironment.md section 5).
   7. Headless boot check: `zenithmon.exe --list-automated-tests
      --skip-tool-exports --skip-unit-tests --headless` must exit 0.
-  8. `zenith.bat test Zenithmon --headless --results-dir
-     Build/artifacts/test_results/zenithmon`.
-  9. Upload the per-test JSON as artifact **`zm-test-results`**
+  8. **Boot unit tests** (`Tools/run_unit_gate.ps1 -Exe <zenithmon.exe>
+     -Baseline N`): boots headless with tool-exports ON, runs the ZENITH_TEST
+     suite (engine units + Zenithmon `ZM_*` cases), and fails on any failure or a
+     count != baseline. Steps 7 and 9 both pass `--skip-unit-tests`, so this is
+     the ONLY step that runs the unit suite -- the S1+ data-core gate backbone.
+  9. `zenith.bat test Zenithmon --headless --results-dir
+     Build/artifacts/test_results/zenithmon` (the automated/P1 suite).
+  10. Upload the per-test JSON as artifact **`zm-test-results`**
      (`if: always()` -- results survive red runs).
+
+**Unit-test baseline ratchet:** step 8's `-Baseline` is the exact registered
+unit-test count of `zenithmon.exe` (engine units + `ZM_*` cases; currently
+**1079**, of which 1 is the quarantined `RegistryWideNodeRoundTrip` skip). Every
+PR that changes the `ZM_*` count -- and any engine PR that changes the engine
+unit count -- bumps this number in `zm-tests.yml` in the same PR. This mirrors
+engine-gate's discipline and guards against unit tests silently vanishing; the
+coupling-vs-simplicity trade-off is Questions.md Q-2026-07-10-004.
 
 ## 2. Runner constraints -- why headless pure-logic suites are the backbone
 
@@ -129,11 +142,14 @@ Consequences of that shape:
 1. **Fix forward ON the PR.** Push fixes to the same branch; the
    concurrency group cancels the superseded run automatically. Never merge
    around a red gate, never remove the check to unblock a PR.
-2. **Reproduce locally first:** `zenith test Zenithmon --headless` mirrors
-   the CI command exactly (BuildEnvironment.md section 4). If it is green
-   locally but red in CI, suspect the two runner constraints (section 2) --
-   an asset-dependent test missing its exists-guard/RequestSkip, or a
-   graphics dependency missing its `m_bRequiresGraphics` tag.
+2. **Reproduce locally first:** `zenith test Zenithmon --headless` mirrors the
+   CI automated/P1 step (BuildEnvironment.md section 4). For a red UNIT test,
+   reproduce the boot gate instead -- `Tools/run_unit_gate.ps1 -Exe
+   <zenithmon.exe> -Baseline <N>`, or boot `zenithmon.exe --list-automated-tests
+   --headless` WITHOUT `--skip-unit-tests` -- because `zenith test` skips unit
+   tests. If green locally but red in CI, suspect the two runner constraints
+   (section 2) -- an asset-dependent test missing its exists-guard/RequestSkip,
+   or a graphics dependency missing its `m_bRequiresGraphics` tag.
 3. **Get data, don't theorize:** pull the `zm-test-results` artifact and
    the step logs (the boot-check step prints head+tail of engine output on
    failure) before forming a theory.
