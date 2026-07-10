@@ -15,6 +15,35 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-024 -- ZM_ItemData ships as data + schema only (90 items over a 34-kind effect enum); the bag/battle logic is S2/S5
+
+- **Decision:** the ~80-item Roadmap box lands as a compiled `const ZM_ItemData`
+  table (90 items) plus its schema -- `ZM_ITEM_ID` (90, save-stable), a 9-value
+  `ZM_ITEM_CATEGORY` (ball / medicine / battle / held / berry / evo / TM / key /
+  field), and a 34-kind `ZM_ITEM_EFFECT` executor tag. Each row carries category,
+  buy + sell price, effect kind + a kind-specific param, a consumable flag, and
+  (for TMs) a taught `ZM_MOVE_ID`. Rows are INERT: the bag/use/held-hook/catch
+  logic that interprets `ZM_ITEM_EFFECT` is S2 (held items, catch math) / S5 (bag
+  UI), mirroring the MoveData boundary (ZM-D-022). The 25 TMs each reference a
+  real move; **this is the TM/tutor learnset seam** the learnset box deferred
+  (ZM-D-023). Original names; no Nintendo IP.
+- **Why:** items are battle-core scope (Scope.md); catching (S2/S5), the mart
+  (S6), held items in battle (S2), and TM teaching all reference this table, so it
+  must exist before them. Splitting data from the ~34-arm item executor keeps this
+  a reviewable data drop. The effect enum is sized so each future per-effect
+  handler has a data subject (a tested coverage invariant).
+- **Tests that lock it:** `Tests/ZM_Tests_Items.cpp` (category `ZM_Data`, 11
+  cases) -- index self-consistency (count == 90), unique names, valid
+  category/effect enums, price sanity (sell <= buy) + key-item contract
+  (priceless + effectless), consumable-flag-matches-category, TM-teaches-a-real-
+  move (and only TMs teach), ball-only CATCH with multiplier >= 1.0x, stat/type
+  param ranges, every effect kind used, every category populated, accessor +
+  ToString contracts. The roster was validated offline before building. Boot suite
+  1130 ran / 0 failed; zm-tests baseline bumped 1119 -> 1130.
+- **Reversibility:** easy -- additive `Source/Data/` files; `ZM_ITEM_ID` order is
+  append-only (save-stable). Per-item tuning (prices, effect params) is
+  git-history, not decisions.
+
 ## 2026-07-10 -- ZM-D-023 -- Species learnsets are systematically DERIVED (placeholder), completing the ZM_SpeciesData box
 
 - **Decision:** per-species level-up learnsets are computed by

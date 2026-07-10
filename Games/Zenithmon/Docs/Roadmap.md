@@ -32,7 +32,7 @@
 - [x] `ZM_Types.h` + `ZM_TypeChart` (18 types) -- 18-type `enum ZM_TYPE` + golden-locked 18x18 chart + dual-type product; 9 `ZM_Data` unit tests (PR #147). Also wired the boot unit suite into CI (ZM-D-019).
 - [x] `ZM_SpeciesData` (152 species: archetype + evo stage + size class + family seed + stats + learnsets) -- structural roster (id/name/types/archetype/evo/family/rarity + derived size/seed; PR #148 ZM-D-020) + derived base stats (PR #149 ZM-D-021) + derived level-up learnsets (`ZM_Learnsets.h`, `ZM_GetSpeciesLearnset`; PR #151 ZM-D-023). 24 `ZM_Data` tests (16 species + 8 learnset). Base stats + learnsets are systematic placeholders for the S11 balance pass; TM/tutor learnsets come with `ZM_ItemData`.
 - [x] `ZM_MoveData` (218 moves as table rows over a 57-kind `ZM_MOVE_EFFECT` enum) -- data + schema only (`ZM_MOVE_ID`/`ZM_MOVE_CATEGORY`/`ZM_MOVE_TARGET`/`ZM_MOVE_EFFECT` + per-row power/acc/PP/priority/crit/contact/effect+chance+magnitude); 16 `ZM_Data` tests incl. every-effect-kind-used coverage lock (PR #150, ZM-D-022). The `ZM_MoveExecutor` that interprets the effect enum is S2.
-- [ ] `ZM_ItemData` (~80 + TMs)
+- [x] `ZM_ItemData` (90 items + 25 TMs) -- compiled `ZM_ItemData` table over a 9-value `ZM_ITEM_CATEGORY` (ball/medicine/battle/held/berry/evo/TM/key/field) + 34-kind `ZM_ITEM_EFFECT`; per-row buy/sell/effect+param/consumable/taught-move; TMs reference real `ZM_MOVE_ID`s. Data + schema only (bag/battle executor is S2/S5). 11 `ZM_Data` tests incl. every-effect-kind coverage (PR #152, ZM-D-024).
 - [ ] `ZM_AbilityData` stubs (~50, fn-pointer hook structs) + `ZM_NatureData` (25)
 - [ ] `ZM_StatCalc` (pure formulas) + `ZM_BattleRNG` (PCG32)
 - [ ] `ZM_WorldSpec` skeleton (the keystone declarative world table)
