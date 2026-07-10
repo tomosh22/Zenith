@@ -53,7 +53,7 @@ pattern), active from S0. Required check name: **`zm-tests`**.
 
 **Unit-test baseline ratchet:** step 8's `-Baseline` is the exact registered
 unit-test count of `zenithmon.exe` (engine units + `ZM_*` cases; currently
-**1079**, of which 1 is the quarantined `RegistryWideNodeRoundTrip` skip). Every
+**1090**, of which 1 is the quarantined `RegistryWideNodeRoundTrip` skip). Every
 PR that changes the `ZM_*` count -- and any engine PR that changes the engine
 unit count -- bumps this number in `zm-tests.yml` in the same PR. This mirrors
 engine-gate's discipline and guards against unit tests silently vanishing; the
