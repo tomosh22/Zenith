@@ -7,9 +7,9 @@
 //
 // This is the STRUCTURAL roster: id / name / type(s) / archetype / evolution /
 // family / rarity for all 152 species from Docs/GameDesignDocument.md section 5.
-// Base stats and learnsets are deferred to follow-up increments on the same
-// Roadmap box (stats are a design pass; learnsets need ZM_MoveData) -- see
-// DecisionLog ZM-D-020.
+// Base stats come from ZM_GetSpeciesBaseStats (ZM-D-021, derived); level-up
+// learnsets from ZM_GetSpeciesLearnset in ZM_Learnsets.h (ZM-D-023, derived).
+// See DecisionLog ZM-D-020 for the roster-first decomposition of this box.
 //
 // Data is a compiled const C array (DecisionLog ZM-D-009): zero file I/O in
 // headless tests. The ZM_SPECIES_ID order is the dex order and is save-stable
@@ -295,8 +295,8 @@ struct ZM_BaseStats
 	u_int m_au[ZM_STAT_COUNT];
 };
 
-// One dex row. Learnsets are added by a later increment on this box (they need
-// ZM_MoveData); base stats are provided by ZM_GetSpeciesBaseStats below.
+// One dex row. Base stats come from ZM_GetSpeciesBaseStats below; level-up
+// learnsets from ZM_GetSpeciesLearnset (ZM_Learnsets.h).
 struct ZM_SpeciesData
 {
 	ZM_SPECIES_ID	m_eId;
