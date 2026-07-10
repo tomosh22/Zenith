@@ -4,9 +4,9 @@
 
 **Scope note (2026-07-09, S0):** at S0 essentially EVERYTHING is a gap -- the project is a booting skeleton. This doc is deliberately structured per major system with a one-line current-state each, so later sessions UPDATE lines in place rather than restructure. When a stage lands, replace that system's status line and add a dated note; do not reorder sections.
 
-**Verdict at a glance:**
-- **What works today:** boot skeleton only -- exe boots windowed + headless, FrontEnd scene (title text + placeholder bobbing cube), `Zenith_SaveData` initialised, test harness wired (unit 2/2, automated 1/1), CI workflow written. Approximately 0% of the shipping game.
-- **What's designed but unbuilt:** everything in the plan -- see [Roadmap.md](Roadmap.md) for the S1-S12 sequence and gates.
+**Verdict at a glance (updated 2026-07-10, S1 complete):**
+- **What works today:** boot skeleton + the **complete S1 data core** (§1.1) -- 18-type chart, 152-species dex, 218 moves, 90 items, 50 abilities, 25 natures, stat formulas + PCG32 RNG, WorldSpec skeleton, DataRegistry; 102 `ZM_Data` unit tests green. Still no gameplay: the data is inert until the S2 battle engine + S3 overworld consume it.
+- **What's designed but unbuilt:** the battle engine (S2) and everything downstream -- see [Roadmap.md](Roadmap.md) for the S2-S12 sequence and gates.
 - **Locked cuts (not gaps -- see Scope.md):** no audio (engine has none), no networking/multiplayer/trading, no Dynamax-analog, battle format singles only, documented volatile-status cuts (Substitute/Encore/Transform/weight moves).
 
 ---
@@ -15,8 +15,8 @@
 
 ### 1.1 Data core
 
-**Status: not started -- lands at S1.**
-No `Source/Data/` yet: no type chart (18 types), no species (~150), moves (~220), items, abilities (~50), natures (25), no `ZM_StatCalc`/`ZM_BattleRNG`, no `ZM_DataRegistry` validation, and -- most load-bearing -- no `ZM_WorldSpec` (the keystone declarative world table everything else walks). Data will be compiled `const` C arrays, not disk assets.
+**Status: COMPLETE (S1, 2026-07-10).**
+`Source/Data/` holds the full data core as compiled `const` C arrays: the 18-type chart (golden-locked), the 152-species dex (roster + DERIVED base stats + DERIVED level-up learnsets), 218 moves over a 57-kind `ZM_MOVE_EFFECT` enum, 90 items over a 34-kind `ZM_ITEM_EFFECT` enum (incl. 25 TMs -> real moves), 50 abilities (roster + `ZM_ABILITY_HOOK` surface bitmask), 25 natures (exact 5x5 grid), `ZM_StatCalc` (Gen-III+ integer formulas) + `ZM_BattleRNG` (PCG32, deterministic), `ZM_WorldSpec` (schema + 8-scene proving set), and `ZM_DataRegistry` (name->ID lookups + cross-table enforcer). 102 `ZM_Data` unit tests, all green. **Gaps carried FORWARD (by design, tracked):** the move/item effect enums + ability hooks are INERT data -- their executors are S2 (ZM-D-022/024/026); base stats + learnsets are systematic placeholders for the S11 balance pass (ZM-D-021/023); `ZM_WorldSpec` is a skeleton -- the full ~40-scene world is appended at S9/S10 (ZM-D-029).
 
 ### 1.2 Battle engine
 

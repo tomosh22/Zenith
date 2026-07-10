@@ -36,9 +36,9 @@
 - [x] `ZM_AbilityData` stubs (50 abilities: id/name/description + `ZM_ABILITY_HOOK` surface bitmask; fn-pointer hook bodies deferred to S2, ZM-D-026) + `ZM_NatureData` (25: exact 5x5 raised/lowered grid + `ZM_GetNatureStatPercent`, ZM-D-025). 12 `ZM_Data` tests (PR #153).
 - [x] `ZM_StatCalc` (Gen-III+ integer stat formulas: HP + other-five with nature %, all integer-exact) + `ZM_BattleRNG` (PCG32 seeded RNG: Next/RandBelow/RandRange/Chance, deterministic). 10 `ZM_Data` tests incl. stat golden vectors + a golden PCG32 stream (PR #154, ZM-D-027).
 - [x] `ZM_WorldSpec` skeleton (the keystone declarative world table) -- schema (`ZM_SCENE_ID`/`ZM_SCENE_KIND`/`ZM_SceneConnection`/`ZM_EncounterSlot`/`ZM_WorldSpec` row: name/build-index/kind/terrain/connections+spawn-tags/encounters) + an 8-scene proving set (FrontEnd/Battle/Dawnmere/Route1/Thornacre/2 interiors/Gym1). 11 `ZM_Data` referential-integrity tests (warps + spawn tags + encounters resolve, reachable from FrontEnd). Full world appended at S9/S10 (PR #156, ZM-D-029).
-- [ ] `ZM_DataRegistry` (name->ID indices + validation); `ZM_Tests_Data` schema-enforcer suite
+- [x] `ZM_DataRegistry` (name->ID lookups for species/move/item/ability/nature/scene, NONE on miss) + `ZM_Tests_DataRegistry` cross-table schema enforcer (name round-trips + every evolution/TM/encounter/learnset ref resolves). Closes S1 (PR #157, ZM-D-030).
 
-*Gate:* ~90 unit tests (chart matrix vs golden, stat/exp formula vectors, registry integrity).
+*Gate:* ~90 unit tests (chart matrix vs golden, stat/exp formula vectors, registry integrity). **MET 2026-07-10** -- 102 `ZM_*` `ZM_Data` unit tests (boot suite 1172 ran / 0 failed); no visual check for S1, so the loop proceeds to S2.
 
 ## S2 -- Battle engine headless (L) -- parallel with S3/S4, after S1
 
