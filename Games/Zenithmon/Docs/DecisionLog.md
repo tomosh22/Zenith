@@ -15,6 +15,53 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-019 -- Zenithmon boot unit tests are gated in CI via a run_unit_gate.ps1 boot step (ratcheted baseline)
+
+- **Decision:** `zm-tests.yml` gains a step that boots `zenithmon.exe` headless
+  through the shared `Tools/run_unit_gate.ps1` (`-Baseline 1079`) to run the boot
+  ZENITH_TEST suite (engine units + Zenithmon `ZM_*` cases) and fail on any
+  failure. The baseline is an exact-count ratchet (like engine-gate): each PR that
+  changes the `ZM_*` unit count -- or an engine PR that changes the engine unit
+  count -- bumps the number in the same PR.
+- **Why:** discovered while landing S1 -- both `zenith test` (harness default) and
+  the two prior zm-tests steps pass `--skip-unit-tests`, so Zenithmon's unit tests
+  (the S1/S2 gate backbone, ~460 cases at end state) NEVER ran in CI. The plan
+  designates the boot unit suite as the CI backbone; DP/CB never hit this because
+  they carry almost no game-side unit tests. `run_unit_gate.ps1` is the proven
+  engine-gate pattern (tool-exports ON so asset-export units work; watchdog-kills
+  the known tools-build idle after the units line is logged).
+- **Tests that lock it:** the step itself (red on any unit failure or count !=
+  baseline); validated locally = "1079 ran, 1078 passed, 0 failed, 1 skipped" (the
+  1 skip is the pre-existing quarantined `GraphComponent::RegistryWideNodeRoundTrip`).
+- **Reversibility:** easy -- delete the step. The baseline's coupling to the
+  engine unit count is the known maintenance cost (CIPolicy.md section 1); a
+  follow-up may switch to a failures-only check if the ratchet churns
+  (Questions.md Q-2026-07-10-004).
+
+## 2026-07-10 -- ZM-D-018 -- Type system: save-stable ZM_TYPE enum + golden-locked 18x18 chart with a dual-type product API
+
+- **Decision:** the 18 types are one `enum ZM_TYPE : u_int` (`Source/Data/ZM_Types.h`)
+  in the GDD-section-6 order, which is simultaneously the dex/UI order and the
+  row/column order of the chart; the range is append-only (save-stable). The
+  effectiveness matrix is a `const` 18x18 float table (`ZM_TypeChart.cpp`) of
+  {0, 0.5, 1, 2}, mapping the standard 18-type relationships onto the original
+  names. Lookups are a stateless namespace `ZM_TypeChart`:
+  `GetEffectiveness(atk, def)` + `GetDualTypeEffectiveness(atk, def1, def2)`, where
+  `def2 == ZM_TYPE_NONE` (== `ZM_TYPE_COUNT`) collapses to the single lookup and a
+  duplicated slot is never squared.
+- **Why:** types are consumed by species/moves/damage from S1 on; a save-stable
+  enum + a compiled table keeps zero file I/O in headless tests (ZM-D-009) and
+  makes the chart diffable. The dual-type product belongs with the chart (4x /
+  0.25x / 0x matchups) and is testable before species exist.
+- **Tests that lock it:** `Tests/ZM_Tests_Data.cpp` -- `TypeChart_MatchesGolden`
+  (an independent golden 18x18 compiled into the TU: the two-place-change lock,
+  TestPlan 5.1), `TypeChart_AllCellsLegal`, `TypeChart_ImmunityCountIsEight`, the
+  GDD design-intent spot checks (`StarterTriangle`, `SecondTriangleAndGhostNormal`,
+  `DrakeChecks`, `ImmunitiesAndIronWall`), `TypeChart_DualTypeProducts`,
+  `Types_ToStringContract`.
+- **Reversibility:** easy -- additive `Source/Data/` files, no engine change;
+  reordering/renaming types is a save-migration concern only after content ships.
+
 ## 2026-07-10 -- ZM-D-017 -- Docs/ becomes a self-sufficient autonomy hub: MasterPlan committed, lifecycle-loop prompt, hard-stop visual gates, permission allowlist
 
 - **Decision (user-directed):** the Docs directory must carry the whole

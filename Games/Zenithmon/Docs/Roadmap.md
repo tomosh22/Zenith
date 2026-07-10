@@ -29,7 +29,7 @@
 
 ## S1 -- Data core (M) -- parallel with S3/S4
 
-- [ ] `ZM_Types.h` + `ZM_TypeChart` (18 types)
+- [x] `ZM_Types.h` + `ZM_TypeChart` (18 types) -- 18-type `enum ZM_TYPE` + golden-locked 18x18 chart + dual-type product; 9 `ZM_Data` unit tests (PR #147). Also wired the boot unit suite into CI (ZM-D-019).
 - [ ] `ZM_SpeciesData` (~150 species: archetype + evo stage + size class + family seed + stats/learnsets)
 - [ ] `ZM_MoveData` (~220 moves as table rows over a ~60-kind `ZM_MOVE_EFFECT` enum)
 - [ ] `ZM_ItemData` (~80 + TMs)

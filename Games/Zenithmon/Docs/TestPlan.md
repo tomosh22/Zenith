@@ -169,9 +169,11 @@ since S0. Steps: checkout -> `zenith-setup` action (Vulkan SDK 1.3.290.0,
 Slang 2026.1) -> `Build/regen.ps1 -UseDotnet` -> build
 `Vulkan_vs2022_Debug_Win64_True` (`/t:Zenithmon`) -> build
 `D3D12_vs2022_Debug_Win64_False` (backend-neutrality link proof) -> DLL copies
--> headless boot check -> `zenith.bat test Zenithmon --headless --results-dir
-Build/artifacts/test_results/zenithmon` -> upload artifact `zm-test-results`
-(`if: always()`).
+-> headless boot check -> **boot unit-test gate** (`Tools/run_unit_gate.ps1` --
+the ONLY CI step that runs the ZENITH_TEST T0 suite, since `zenith test` and the
+boot check both pass `--skip-unit-tests`) -> `zenith.bat test Zenithmon
+--headless --results-dir Build/artifacts/test_results/zenithmon` (the P1
+automated suite) -> upload artifact `zm-test-results` (`if: always()`).
 
 The CI runner is GPU-less and asset-less (assets are git-ignored), so the CI
 backbone is exactly the T0 suites plus the headless-safe P1 tests; everything
