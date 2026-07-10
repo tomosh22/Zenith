@@ -15,6 +15,35 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-027 -- ZM_StatCalc (Gen-III+ integer formulas) + ZM_BattleRNG (PCG32) are the sanctioned math + randomness
+
+- **Decision:** two pure-logic modules close most of the S1 formula surface.
+  `ZM_StatCalc` (`Source/Data/ZM_StatCalc.{h,cpp}`) is the Gen-III+ integer stat
+  formula -- `HP = ((2*base+IV+EV/4)*level)/100 + level + 10`; the other five =
+  `(((2*base+IV+EV/4)*level)/100 + 5) * naturePercent/100`, truncating divisions,
+  nature multiplier applied last via `ZM_GetNatureStatPercent` (ZM-D-025). No
+  floating point. `ZM_BattleRNG` (`Source/Data/ZM_BattleRNG.h`, header-only) is a
+  PCG32 generator (64-bit state, 32-bit output): `Next` / unbiased `RandBelow` /
+  `RandRange` / `Chance` / `ChancePercent`, deterministic from a seed. It is the
+  ONLY sanctioned randomness in game logic (never rand()/std::random).
+- **Why:** the battle engine (S2) is seeded and must replay bit-for-bit, so both
+  the stat math and the RNG must be integer-exact and reproducible. Landing them
+  in S1 (with golden vectors) gives S2 a locked, tested foundation. PCG32 is small,
+  fast, statistically strong, and trivially reproducible -- the standard choice for
+  a deterministic game RNG. Default-constructed RNGs are fixed-seeded so an
+  unseeded instance is never a hidden nondeterminism source.
+- **Tests that lock it:** `Tests/ZM_Tests_StatCalc.cpp` (4) -- HP + other-stat
+  golden vectors across level/IV/EV/nature, nature dispatch (HP nature-independent;
+  raise/lower/unaffected stats), monotonicity. `Tests/ZM_Tests_BattleRNG.cpp` (6)
+  -- **a golden 8-value stream pinning the exact PCG32 algorithm**, same-seed
+  determinism, distinct-seed divergence, RandBelow/RandRange bounds, and the
+  Chance/ChancePercent contract + ~50% frequency. All expected values were
+  precomputed in a scratchpad model and matched on the first build. Boot suite
+  1152 ran / 0 failed; baseline bumped 1142 -> 1152.
+- **Reversibility:** easy -- additive `Source/Data/` files, no other module
+  depends on them yet. The PCG32 constants + seeding sequence are load-bearing
+  (the golden stream pins them); changing them is a deliberate golden-vector edit.
+
 ## 2026-07-10 -- ZM-D-026 -- ZM_AbilityData ships roster + metadata + a declared HOOK-SURFACE bitmask; fn-pointer hook bodies are S2
 
 - **Decision:** the ~50-ability Roadmap sub-box lands as a compiled `const
