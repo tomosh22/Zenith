@@ -291,3 +291,87 @@ u_int ZM_GetSpeciesFamilySeed(ZM_SPECIES_ID eId)
 	const u_int uFamilyId = ZM_GetSpeciesData(eId).m_uFamilyId;
 	return uFamilyId * 2654435761u;
 }
+
+namespace
+{
+	// Per-archetype base-stat profile (a stage-1 baseline, each row sums ~300):
+	// HP, ATK, DEF, SPATK, SPDEF, SPEED. Encodes each body plan's identity --
+	// AVIAN/INSECTOID fast+frail, BLOB bulky+slow, BIPED bruiser, FLOATER special.
+	const u_int s_aauArchetypeProfile[ZM_ARCHETYPE_COUNT][ZM_STAT_COUNT] =
+	{
+		/* QUADRUPED        */ { 55, 55, 50, 45, 45, 50 },
+		/* BIPED            */ { 55, 65, 60, 40, 45, 35 },
+		/* AVIAN            */ { 45, 50, 40, 45, 40, 80 },
+		/* SERPENT          */ { 60, 65, 50, 50, 45, 30 },
+		/* AQUATIC          */ { 60, 45, 50, 55, 55, 35 },
+		/* INSECTOID        */ { 45, 55, 40, 45, 40, 75 },
+		/* BLOB             */ { 70, 45, 70, 40, 55, 20 },
+		/* FLOATER_PLANTOID */ { 50, 35, 45, 65, 60, 45 },
+	};
+
+	// Growth from evolution stage. A single-stage species (base that is also its
+	// own final) reads as fully-evolved, so standalone rares/legendaries are
+	// strong rather than stage-1 weak.
+	float StageFactor(const ZM_SpeciesData& x)
+	{
+		const bool bSingleStage = (x.m_uEvoStage == 1 && x.m_eEvolvesTo == ZM_SPECIES_NONE);
+		if (bSingleStage)
+		{
+			return (x.m_eRarity == ZM_RARITY_LEGENDARY) ? 1.85f : 1.70f;
+		}
+		switch (x.m_uEvoStage)
+		{
+		case 1:  return 1.00f;
+		case 2:  return 1.35f;
+		default: return 1.70f;
+		}
+	}
+
+	float RarityFactor(ZM_RARITY eRarity)
+	{
+		switch (eRarity)
+		{
+		case ZM_RARITY_COMMON:    return 0.92f;
+		case ZM_RARITY_RARE:      return 1.10f;
+		case ZM_RARITY_LEGENDARY: return 1.10f;   // legendaries also get the single-stage StageFactor
+		default:                  return 1.00f;   // UNCOMMON
+		}
+	}
+}
+
+ZM_BaseStats ZM_GetSpeciesBaseStats(ZM_SPECIES_ID eId)
+{
+	const ZM_SpeciesData& xData = ZM_GetSpeciesData(eId);
+	const float fScale = StageFactor(xData) * RarityFactor(xData.m_eRarity);
+
+	// Per-family emphasis: bump one stat, dock another, chosen deterministically
+	// from the family seed and shared by all stages of the family. Because these
+	// multipliers are constant within a family, every stat still scales purely
+	// with the stage factor -- so no stat ever shrinks on evolution.
+	const u_int uSeed = ZM_GetSpeciesFamilySeed(eId);
+	const u_int uEmphasis = uSeed % ZM_STAT_COUNT;
+	u_int uDock = (uSeed / ZM_STAT_COUNT) % ZM_STAT_COUNT;
+	if (uDock == uEmphasis) { uDock = (uDock + 1) % ZM_STAT_COUNT; }
+
+	ZM_BaseStats xOut = {};
+	for (u_int i = 0; i < ZM_STAT_COUNT; ++i)
+	{
+		float fFamily = 1.0f;
+		if (i == uEmphasis)  { fFamily = 1.15f; }
+		else if (i == uDock) { fFamily = 0.85f; }
+
+		int iVal = (int)((float)s_aauArchetypeProfile[xData.m_eArchetype][i] * fScale * fFamily + 0.5f);
+		if (iVal < 1)   { iVal = 1; }
+		if (iVal > 255) { iVal = 255; }
+		xOut.m_au[i] = (u_int)iVal;
+	}
+	return xOut;
+}
+
+u_int ZM_GetSpeciesBaseStatTotal(ZM_SPECIES_ID eId)
+{
+	const ZM_BaseStats xStats = ZM_GetSpeciesBaseStats(eId);
+	u_int uSum = 0;
+	for (u_int i = 0; i < ZM_STAT_COUNT; ++i) { uSum += xStats.m_au[i]; }
+	return uSum;
+}

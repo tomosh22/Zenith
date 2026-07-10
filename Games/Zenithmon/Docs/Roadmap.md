@@ -30,7 +30,7 @@
 ## S1 -- Data core (M) -- parallel with S3/S4
 
 - [x] `ZM_Types.h` + `ZM_TypeChart` (18 types) -- 18-type `enum ZM_TYPE` + golden-locked 18x18 chart + dual-type product; 9 `ZM_Data` unit tests (PR #147). Also wired the boot unit suite into CI (ZM-D-019).
-- [~] `ZM_SpeciesData` (~150 species: archetype + evo stage + size class + family seed + stats/learnsets) -- **structural roster SHIPPED** (152 species: id/name/types/archetype/evo/family/rarity + derived size/seed; 11 `ZM_Data` integrity tests; PR #148, ZM-D-020). REMAINING on this box: per-species base stats + learnsets (learnsets need `ZM_MoveData`).
+- [~] `ZM_SpeciesData` (~150 species: archetype + evo stage + size class + family seed + stats/learnsets) -- **structural roster + base stats SHIPPED** (152 species: id/name/types/archetype/evo/family/rarity + derived size/seed + derived base stats; 16 `ZM_Data` tests; PRs #148 ZM-D-020, #149 ZM-D-021). REMAINING: **learnsets ONLY**, which are blocked on `ZM_MoveData` -- do that box first, then return here to add learnsets.
 - [ ] `ZM_MoveData` (~220 moves as table rows over a ~60-kind `ZM_MOVE_EFFECT` enum)
 - [ ] `ZM_ItemData` (~80 + TMs)
 - [ ] `ZM_AbilityData` stubs (~50, fn-pointer hook structs) + `ZM_NatureData` (25)

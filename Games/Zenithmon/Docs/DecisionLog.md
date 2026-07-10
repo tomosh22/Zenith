@@ -15,6 +15,29 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-021 -- Species base stats are systematically DERIVED (placeholder), not hand-tuned
+
+- **Decision:** `ZM_GetSpeciesBaseStats(id)` computes the six base stats from a
+  per-archetype stat profile (8 body-plan rows summing ~300) scaled by an
+  evolution-stage factor (single-stage finals read as fully evolved) and a rarity
+  factor, then a deterministic per-family emphasis/dock drawn from the family seed
+  (bump one stat, dock another). Stats are NOT stored per-row and are NOT
+  balance-tuned. Added the `ZM_STAT` enum + `ZM_BaseStats` struct.
+- **Why:** hand-authoring 152 x 6 balanced stats in one commit is huge and
+  error-prone, and balance is explicitly an S11 concern (headless AI-vs-AI). A
+  systematic, deterministic derivation unblocks S2 (scripted battles need fixed
+  base stats) and differentiates species by archetype AND family. It is trivially
+  superseded by a stored per-species table in a later balance pass -- the accessor
+  signature is the stable seam.
+- **Tests that lock it:** `Tests/ZM_Tests_Species.cpp` `BaseStats_*` (5) --
+  in-range [1,255]; totals banded by evolution role (stage-1 base 250-360,
+  single-stage >=480, legendary >=560, global 250-700); every stat non-decreasing
+  + BST strictly increasing along an evolution chain; archetype shapes (AVIAN
+  faster than BLOB, BLOB bulkier than AVIAN, BIPED hits harder than FLOATER);
+  family variety (>=60 distinct stat blocks). Boot suite 1095 ran / 0 failed.
+- **Reversibility:** easy -- replace the accessor body with a stored table; no
+  caller sees a difference.
+
 ## 2026-07-10 -- ZM-D-020 -- ZM_SpeciesData decomposed: structural roster first (152 species), base stats + learnsets deferred
 
 - **Decision:** the ~150-species SpeciesData Roadmap box is split across

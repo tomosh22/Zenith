@@ -274,7 +274,29 @@ enum ZM_SPECIES_ID : u_int
 	ZM_SPECIES_NONE = ZM_SPECIES_COUNT   // "no species" sentinel (e.g. final-stage evolves-to)
 };
 
-// One dex row. Base stats + learnsets are added by later increments on this box.
+// The six battle stats, in canonical order (index into ZM_BaseStats::m_au).
+enum ZM_STAT : u_int
+{
+	ZM_STAT_HP,
+	ZM_STAT_ATTACK,
+	ZM_STAT_DEFENSE,
+	ZM_STAT_SPATTACK,
+	ZM_STAT_SPDEFENSE,
+	ZM_STAT_SPEED,
+
+	ZM_STAT_COUNT
+};
+
+// A species' six base stats -- the per-species constants the Gen-III stat
+// formula scales by level / IV / EV / nature (that formula lands with
+// ZM_StatCalc). Values are systematically derived (ZM-D-021), not hand-tuned.
+struct ZM_BaseStats
+{
+	u_int m_au[ZM_STAT_COUNT];
+};
+
+// One dex row. Learnsets are added by a later increment on this box (they need
+// ZM_MoveData); base stats are provided by ZM_GetSpeciesBaseStats below.
 struct ZM_SpeciesData
 {
 	ZM_SPECIES_ID	m_eId;
@@ -297,3 +319,11 @@ const char*				ZM_GetSpeciesName(ZM_SPECIES_ID eId);
 // shared by all stages of a family (S4 ZM_CreatureGen input).
 ZM_SIZE_CLASS			ZM_GetSpeciesSizeClass(ZM_SPECIES_ID eId);
 u_int					ZM_GetSpeciesFamilySeed(ZM_SPECIES_ID eId);
+
+// Systematically-derived base stats (ZM-D-021): a per-archetype stat profile
+// scaled by evolution stage + rarity, with a deterministic per-family emphasis
+// from the family seed. Deterministic, and every stat is non-decreasing along an
+// evolution chain; intended to be superseded by hand-tuned per-species values in
+// a later balance pass.
+ZM_BaseStats			ZM_GetSpeciesBaseStats(ZM_SPECIES_ID eId);
+u_int					ZM_GetSpeciesBaseStatTotal(ZM_SPECIES_ID eId);   // sum of the six

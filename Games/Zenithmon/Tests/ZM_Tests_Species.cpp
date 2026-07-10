@@ -296,3 +296,116 @@ ZENITH_TEST(ZM_Data, Species_SizeClassNonDecreasing)
 			"%s shrinks on evolution", x.m_szName);
 	}
 }
+
+// -- Derived base stats (ZM-D-021) --
+
+// Every base stat is a sane positive value.
+ZENITH_TEST(ZM_Data, BaseStats_InRange)
+{
+	for (u_int i = 0; i < ZM_SPECIES_COUNT; ++i)
+	{
+		const ZM_BaseStats x = ZM_GetSpeciesBaseStats((ZM_SPECIES_ID)i);
+		for (u_int s = 0; s < ZM_STAT_COUNT; ++s)
+		{
+			ZENITH_ASSERT_TRUE(x.m_au[s] >= 1 && x.m_au[s] <= 255,
+				"%s stat %u out of range (%u)", Sp(i).m_szName, s, x.m_au[s]);
+		}
+	}
+}
+
+// Base-stat totals land in the expected bands for their evolution role.
+ZENITH_TEST(ZM_Data, BaseStats_TotalsInBand)
+{
+	for (u_int i = 0; i < ZM_SPECIES_COUNT; ++i)
+	{
+		const ZM_SpeciesData& x = Sp(i);
+		const u_int uBst = ZM_GetSpeciesBaseStatTotal(x.m_eId);
+		ZENITH_ASSERT_TRUE(uBst >= 250 && uBst <= 700,
+			"%s BST %u outside the global band", x.m_szName, uBst);
+
+		const bool bSingleStage = (x.m_uEvoStage == 1 && x.m_eEvolvesTo == ZM_SPECIES_NONE);
+		if (x.m_eRarity == ZM_RARITY_LEGENDARY)
+		{
+			ZENITH_ASSERT_TRUE(uBst >= 560, "%s (legendary) BST %u too low", x.m_szName, uBst);
+		}
+		else if (bSingleStage)
+		{
+			ZENITH_ASSERT_TRUE(uBst >= 480, "%s (single-stage) BST %u too low", x.m_szName, uBst);
+		}
+		else if (x.m_uEvoStage == 1)
+		{
+			ZENITH_ASSERT_TRUE(uBst >= 250 && uBst <= 360,
+				"%s (stage-1 base) BST %u outside the base band", x.m_szName, uBst);
+		}
+	}
+}
+
+// No stat shrinks on evolution and the total strictly grows.
+ZENITH_TEST(ZM_Data, BaseStats_MonotonicAlongEvolution)
+{
+	for (u_int i = 0; i < ZM_SPECIES_COUNT; ++i)
+	{
+		const ZM_SpeciesData& x = Sp(i);
+		if (x.m_eEvolvesTo == ZM_SPECIES_NONE) { continue; }
+		const ZM_BaseStats xHere = ZM_GetSpeciesBaseStats(x.m_eId);
+		const ZM_BaseStats xNext = ZM_GetSpeciesBaseStats(x.m_eEvolvesTo);
+		for (u_int s = 0; s < ZM_STAT_COUNT; ++s)
+		{
+			ZENITH_ASSERT_GE(xNext.m_au[s], xHere.m_au[s],
+				"%s stat %u shrinks on evolution", x.m_szName, s);
+		}
+		ZENITH_ASSERT_GT(ZM_GetSpeciesBaseStatTotal(x.m_eEvolvesTo),
+			ZM_GetSpeciesBaseStatTotal(x.m_eId),
+			"%s BST does not grow on evolution", x.m_szName);
+	}
+}
+
+// Archetype identity shows through in the averages (fast fliers, bulky blobs,
+// hard-hitting bipeds).
+ZENITH_TEST(ZM_Data, BaseStats_ArchetypeShapes)
+{
+	u_int auSpeedSum[ZM_ARCHETYPE_COUNT] = {};
+	u_int auHpDefSum[ZM_ARCHETYPE_COUNT] = {};
+	u_int auAtkSum[ZM_ARCHETYPE_COUNT] = {};
+	u_int auN[ZM_ARCHETYPE_COUNT] = {};
+	for (u_int i = 0; i < ZM_SPECIES_COUNT; ++i)
+	{
+		const ZM_SpeciesData& x = Sp(i);
+		const ZM_BaseStats b = ZM_GetSpeciesBaseStats(x.m_eId);
+		auSpeedSum[x.m_eArchetype] += b.m_au[ZM_STAT_SPEED];
+		auHpDefSum[x.m_eArchetype] += b.m_au[ZM_STAT_HP] + b.m_au[ZM_STAT_DEFENSE];
+		auAtkSum[x.m_eArchetype]   += b.m_au[ZM_STAT_ATTACK];
+		auN[x.m_eArchetype]++;
+	}
+	// Averages (guard: each archetype has members, verified by structural tests).
+	const u_int uAvgSpeedAvian = auSpeedSum[ZM_ARCHETYPE_AVIAN] / auN[ZM_ARCHETYPE_AVIAN];
+	const u_int uAvgSpeedBlob  = auSpeedSum[ZM_ARCHETYPE_BLOB]  / auN[ZM_ARCHETYPE_BLOB];
+	const u_int uAvgBulkBlob   = auHpDefSum[ZM_ARCHETYPE_BLOB]  / auN[ZM_ARCHETYPE_BLOB];
+	const u_int uAvgBulkAvian  = auHpDefSum[ZM_ARCHETYPE_AVIAN] / auN[ZM_ARCHETYPE_AVIAN];
+	const u_int uAvgAtkBiped   = auAtkSum[ZM_ARCHETYPE_BIPED]   / auN[ZM_ARCHETYPE_BIPED];
+	const u_int uAvgAtkFloater = auAtkSum[ZM_ARCHETYPE_FLOATER_PLANTOID] / auN[ZM_ARCHETYPE_FLOATER_PLANTOID];
+
+	ZENITH_ASSERT_GT(uAvgSpeedAvian, uAvgSpeedBlob, "AVIAN should be faster than BLOB");
+	ZENITH_ASSERT_GT(uAvgBulkBlob, uAvgBulkAvian, "BLOB should be bulkier than AVIAN");
+	ZENITH_ASSERT_GT(uAvgAtkBiped, uAvgAtkFloater, "BIPED should hit harder than FLOATER");
+}
+
+// The per-family emphasis produces genuine variety, not one stat block repeated.
+ZENITH_TEST(ZM_Data, BaseStats_FamilyVariety)
+{
+	u_int uDistinct = 0;
+	for (u_int i = 0; i < ZM_SPECIES_COUNT; ++i)
+	{
+		const ZM_BaseStats bi = ZM_GetSpeciesBaseStats((ZM_SPECIES_ID)i);
+		bool bSeen = false;
+		for (u_int j = 0; j < i && !bSeen; ++j)
+		{
+			const ZM_BaseStats bj = ZM_GetSpeciesBaseStats((ZM_SPECIES_ID)j);
+			bool bEqual = true;
+			for (u_int s = 0; s < ZM_STAT_COUNT; ++s) { if (bi.m_au[s] != bj.m_au[s]) { bEqual = false; break; } }
+			if (bEqual) { bSeen = true; }
+		}
+		if (!bSeen) { uDistinct++; }
+	}
+	ZENITH_ASSERT_GE(uDistinct, 60u, "base-stat derivation collapses too many species (%u distinct)", uDistinct);
+}
