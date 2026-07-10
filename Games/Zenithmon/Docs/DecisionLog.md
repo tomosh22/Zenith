@@ -15,6 +15,52 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-026 -- ZM_AbilityData ships roster + metadata + a declared HOOK-SURFACE bitmask; fn-pointer hook bodies are S2
+
+- **Decision:** the ~50-ability Roadmap sub-box lands as a compiled `const
+  ZM_AbilityData` table (50 rows: id / name / description / `m_uHookMask`) plus an
+  `ZM_ABILITY_HOOK` enum of 11 hook points as bit flags (SWITCH_IN / MODIFY_STAT /
+  MODIFY_DAMAGE_DEALT / MODIFY_DAMAGE_TAKEN / STATUS_TRY / CONTACT / TURN_END /
+  FAINT / ACCURACY / WEATHER / TYPE_IMMUNITY). Each ability declares WHICH hooks it
+  will implement via the bitmask; the actual per-hook fn-pointer struct + bodies
+  are deferred to S2. `ZM_AbilityHasHook(id, hook)` queries the surface.
+- **Why:** the plan calls abilities "fn-pointer hook structs", but the hook
+  signatures need the battle-state types (`ZM_BattleState`/`ZM_BattleEvent`) that
+  do not exist until S2 -- wiring speculative signatures now would only churn
+  (repo mandate: no legacy/compat). The bitmask is the non-speculative S1 slice:
+  it fixes the roster + names + descriptions + each ability's hook surface (what
+  the S2 executor must wire), is fully testable today, and references no
+  not-yet-existing types. Mirrors the "data now, executor later" pattern used for
+  moves (ZM-D-022) and items (ZM-D-024).
+- **Tests that lock it:** `Tests/ZM_Tests_Abilities.cpp` (category `ZM_Data`, 6
+  cases) -- index self-consistency (count == 50), unique names, non-empty
+  descriptions, masks non-zero with no stray bits, **every hook bit used by >= 1
+  ability**, and `ZM_AbilityHasHook` agreeing with the raw mask + name accessor.
+  Boot suite 1142 ran / 0 failed.
+- **Reversibility:** easy -- additive `Source/Data/` files; `ZM_ABILITY_ID` order
+  is append-only. S2 grows the row with the fn-pointer struct (or a parallel hook
+  table) keyed by id; the mask stays as the coverage/declaration record.
+
+## 2026-07-10 -- ZM-D-025 -- ZM_NatureData is the exact 25-nature 5x5 grid (real table, not derived)
+
+- **Decision:** the 25 natures land as a compiled `const ZM_NatureData` table
+  (id / name / raised stat / lowered stat) that is exactly the 5x5 grid of
+  (raised, lowered) pairs over the five non-HP stats (ATTACK / DEFENSE / SPATTACK /
+  SPDEFENSE / SPEED); the five diagonal entries (raised == lowered) are the neutral
+  natures. `ZM_GetNatureStatPercent(nature, stat)` returns the integer multiplier
+  110 / 90 / 100 that `ZM_StatCalc` applies as `(stat * percent) / 100`.
+- **Why:** natures are a small, exact, closed set (unlike the derived base-stat /
+  learnset placeholders) -- 25 rows, one per stat pairing -- so a real hand-authored
+  table is correct and final, not a placeholder. The percent helper keeps the
+  x11/10 and x9/10 nature maths integer-exact and in one place for the S1 stat
+  formula (box 6).
+- **Tests that lock it:** `Tests/ZM_Tests_Natures.cpp` (category `ZM_Data`, 6
+  cases) -- index self-consistency, unique names, raised/lowered always non-HP,
+  **every (raised, lowered) pair present exactly once + exactly 5 neutral**, the
+  110/90/100 percent contract (incl. HP always 100), and the name accessor.
+- **Reversibility:** trivial -- additive `Source/Data/` files; names are flavour,
+  the pairing is fixed by the mechanic.
+
 ## 2026-07-10 -- ZM-D-024 -- ZM_ItemData ships as data + schema only (90 items over a 34-kind effect enum); the bag/battle logic is S2/S5
 
 - **Decision:** the ~80-item Roadmap box lands as a compiled `const ZM_ItemData`
