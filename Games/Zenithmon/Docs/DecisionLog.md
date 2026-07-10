@@ -15,6 +15,32 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-028 -- Loop policy: local gate is the quality bar; auto-merge on zm-tests green; do NOT wait on / idle-watch CI
+
+- **Decision (user-directed):** the autonomous loop must not sit blocking on CI.
+  The authoritative verification of new behaviour is the LOCAL gate run before
+  pushing -- `zenith build Zenithmon` + the boot unit gate
+  (`Tools/run_unit_gate.ps1 -Exe <exe> -Baseline N`, which runs the ZM_* unit
+  tests that `zenith test` skips) + `zenith test Zenithmon --headless`. After
+  opening the PR the loop enables GitHub auto-merge
+  (`zenith_gh.ps1 pr merge <n> --auto --squash --delete-branch`), which lands the
+  PR unattended the moment the sole required check `zm-tests` passes; it does NOT
+  idle-watch checks, wait for the slower discipline gates (dp-tests/cb-tests/
+  engine-gate/...), or launch a blocking `pr checks --watch`. The CI window is
+  spent designing/prototyping the next task instead.
+- **Why:** the full CI suite is ~25-30 min (dp-tests is the long pole) and was
+  re-confirming behaviour the local gate already proves -- pure latency. `zm-tests`
+  (~11 min) is the only machine-required check, so auto-merge on it is the fastest
+  compliant path. `--admin`/bypass merges are BLOCKED by the harness permission
+  classifier (verified 2026-07-10), so "nothing merges red" still holds -- zm-tests
+  must actually go green; auto-merge just removes the human/agent wait.
+- **Tests that lock it:** none executable; the contract is the updated
+  StartPrompts.md (prompt 0 EXECUTION/PR+MERGE, prompts 1/2, Notes) + this entry.
+  The local-gate discipline is enforced by the per-PR unit-gate + headless runs.
+- **Reversibility:** trivial -- edit StartPrompts.md. Note this supersedes the
+  prior "watch checks ... merge once ALL checks are green" wording in prompt 0
+  (which implied waiting for the full suite).
+
 ## 2026-07-10 -- ZM-D-027 -- ZM_StatCalc (Gen-III+ integer formulas) + ZM_BattleRNG (PCG32) are the sanctioned math + randomness
 
 - **Decision:** two pure-logic modules close most of the S1 formula surface.
