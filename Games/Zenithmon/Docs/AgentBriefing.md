@@ -38,8 +38,11 @@ Plus, always:
 
 - **Ship Nintendo IP.** ~150 original species, original names everywhere
   (species/moves/abilities/towns). Mainline *mechanics* only.
-- **Merge red.** Every change lands as a PR on a feature branch; the `zm-tests`
-  CI check must be green.
+- **Create a branch, PR, or worktree.** ALL work is committed DIRECTLY to
+  `master` and pushed (user policy ZM-D-031); `git checkout -b`, `gh pr create`,
+  and git worktrees are forbidden. The LOCAL gate (build + boot unit gate +
+  headless) is the authority -- run it green before every `git push origin
+  master`. `zm-tests` runs post-push as a backstop; fix forward on red.
 - **Build the whole solution.** Always `/t:Zenithmon` (or `zenith build Zenithmon`).
   The aux tools in the sln are pre-existing-red in ToolsEnabled configs.
 - **Run Sharpmake / `zenith regen` in a git worktree.** Generated vcxprojs bake
@@ -118,12 +121,11 @@ Plus, always:
 ### 2.1 Start
 
 ```
-1. cd C:\dev\Zenith; git checkout master; git pull
+1. cd C:\dev\Zenith; git checkout master; git pull   (ALL work happens on master -- ZM-D-031; NEVER branch/PR/worktree)
 2. Read Docs/Status.md (the "Current task" line)
 3. Read Docs/Questions.md (skim for open items the user may have answered)
 4. Open Docs/Roadmap.md, find the first un-checked task in the current stage
-5. git checkout -b zenithmon/s<stage>-<slug>     (e.g. zenithmon/s1-type-chart)
-6. If any .zproj or Sharpmake_*.cs changed since your last checkout: Build\regen.ps1
+5. If any .zproj or Sharpmake_*.cs changed since your last pull: Build\regen.ps1
 ```
 
 ### 2.2 Execute a task
@@ -134,18 +136,22 @@ Plus, always:
 2. **Write the tests first** (or alongside). The TestPlan entry for the system
    defines what must exist. Confirm new tests fail before the implementation.
 3. **Implement** the smallest change that makes them pass.
-4. **Run the gate:** `zenith build Zenithmon` then
+4. **Run the LOCAL gate (the authority):** `zenith build Zenithmon`, then the
+   boot unit gate (`pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe <exe>
+   -Baseline N` -- runs the ZM_* unit tests `zenith test` skips) and
    `zenith test Zenithmon --headless` -- all green.
-5. **Update the docs in the same PR:** tick the [Roadmap.md](Roadmap.md) box,
+5. **Update the docs in the same commit:** tick the [Roadmap.md](Roadmap.md) box,
    append to [DecisionLog.md](DecisionLog.md) if you decided anything
    non-trivial, refresh [Status.md](Status.md) at session end. Stage gates
    additionally require [Shortfalls.md](Shortfalls.md) + any affected format
    docs ([SaveFormat.md](SaveFormat.md), [AssetManifest.md](AssetManifest.md),
-   [TestPlan.md](TestPlan.md)) updated in the same PR.
+   [TestPlan.md](TestPlan.md)) updated in the same commit.
 6. **Commit** Conventional-Commits style: `feat(zm): S1 - type chart table + matrix tests`.
    Types: `feat`, `fix`, `test`, `chore`, `docs`, `refactor`.
-7. **Open the PR** (`gh pr create`), auto-merge on green
-   (`gh pr merge --auto --squash --delete-branch`). Nothing merges red.
+7. **Push DIRECTLY to master** (`git push origin master`) -- NO branch, NO PR
+   (ZM-D-031). The local gate above is the pre-push authority; `zm-tests` runs
+   post-push as a backstop -- fix forward on red (never revert shipped history,
+   force-push master, or `gh run rerun`).
 
 ### 2.3 End
 
@@ -284,21 +290,23 @@ Examples: `m_uSpeciesID`, `pxMonster`, `fDeltaTime`, `strName`, `eStatusKind`.
 ### 4.1 TDD is non-negotiable
 
 Tests specified in [TestPlan.md](TestPlan.md) **land WITH the system they test,
-in the same PR**. No human reviews mid-session; the suite is the quality
+in the same commit**. No human reviews mid-session; the suite is the quality
 contract. For every functional change: the test exists, fails before the
-change, passes after, and the rest of the suite stays green. A PR that changes
-behaviour without changing a test is self-rejected.
+change, passes after, and the rest of the suite stays green. A commit that
+changes behaviour without changing a test is self-rejected.
 
-### 4.2 PRs and branches
+### 4.2 Master-only workflow (no branches, no PRs -- ZM-D-031)
 
-- Work lands as PRs from feature branches `zenithmon/s<stage>-<slug>`
-  (the S0 branch is `zenithmon/s0-skeleton`). One PR per Roadmap task where
-  practical.
-- **Nothing merges red.** Required CI check: `zm-tests` (see
-  [CIPolicy.md](CIPolicy.md); its branch-protection registration is a manual
-  step tracked in [ManualSetupChecklist.md](ManualSetupChecklist.md)).
-- Auto-merge on green is permitted: `gh pr merge --auto --squash --delete-branch`.
-- Never force-push master; never bypass hooks.
+- **All work is committed DIRECTLY to `master` and pushed** with
+  `git push origin master`. Feature branches, pull requests, and git worktrees
+  are FORBIDDEN (`git checkout -b`, `gh pr create`, worktrees). One commit per
+  Roadmap task where practical.
+- **The LOCAL gate is the pre-push authority** (build + boot unit gate +
+  `zenith test --headless`, all green). `zm-tests` runs post-push on master as a
+  BACKSTOP only (see [CIPolicy.md](CIPolicy.md)); you do not wait on it.
+- **On a red post-push CI run: FIX FORWARD** with another direct commit to
+  master. Never `git revert` shipped history, never `git push --force` master,
+  never `gh run rerun`, never bypass hooks.
 
 ### 4.3 Stage gates
 

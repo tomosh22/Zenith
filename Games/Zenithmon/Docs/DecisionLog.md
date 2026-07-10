@@ -15,6 +15,39 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-031 -- Master-only workflow: all work committed DIRECTLY to master; no branches, no PRs, no worktrees
+
+- **Decision (user-directed):** all Zenithmon work is committed DIRECTLY to the
+  `master` branch and pushed with `git push origin master`. Feature branches,
+  pull requests, and git worktrees are no longer created -- `git checkout -b`,
+  `gh pr create`, and worktree creation are forbidden for this project. This
+  supersedes the branch + PR + auto-merge flow of ZM-D-028 (which itself
+  superseded "wait for all checks green"). The authoritative gate is the LOCAL
+  verification run before every push (`zenith build` + the boot unit gate
+  `run_unit_gate.ps1` at the exact baseline + `zenith test --headless`); the
+  `zm-tests` CI workflow still runs post-push on master (`push: [master]`
+  trigger) as a BACKSTOP only. On a red post-push run, fix forward with another
+  direct commit to master (never revert shipped history, force-push master, or
+  `gh run rerun`).
+- **Why:** the user's explicit direction. It removes all PR/branch/merge
+  latency and the stacked-PR conflict hazard (squash-merging a parent orphaned
+  its stacked child at the top of the append-only DecisionLog -- see the #156/#157
+  conflict resolution 2026-07-10). Direct-to-master is viable here because the
+  repo owner's credential can push to master (branch protection was created with
+  `enforce_admins=false` precisely to preserve the owner's direct-push workflow,
+  ZM-D-016), and the local gate is a full build + the same unit + headless suites
+  CI would run. Trade-off accepted by the user: no pre-merge CI gate and no PR
+  review; the local gate is the sole pre-push authority, so it MUST be run green
+  before every push.
+- **Tests that lock it:** none executable; the contract is the rewritten
+  StartPrompts.md (prompt 0 WORKING MODEL + ITERATION PROTOCOL + COMMIT+PUSH,
+  prompts 1-4, Notes), the updated AgentBriefing.md workflow sections, the
+  Status.md working-model note, and this entry. The local-gate discipline is
+  enforced per-commit by the build + unit-gate + headless runs.
+- **Reversibility:** trivial to revert the policy (re-enable branches/PRs by
+  editing StartPrompts.md + AgentBriefing.md), but commits already landed on
+  master stay on master.
+
 ## 2026-07-10 -- ZM-D-030 -- ZM_DataRegistry (name->ID lookups + cross-table enforcer) closes S1
 
 - **Decision:** `ZM_DataRegistry` (`Source/Data/ZM_DataRegistry.{h,cpp}`) adds

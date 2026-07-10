@@ -4,9 +4,9 @@
 
 **Read this first each session.** Replaced every session end. [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the gap audit.
 
-## CI / merge policy (2026-07-10, ZM-D-028)
+## Working model -- MASTER-ONLY, no branches/PRs (2026-07-10, ZM-D-031)
 
-**Do NOT wait on / idle-watch CI.** The full LOCAL gate is the quality bar: `zenith build` + boot unit gate (`Tools/run_unit_gate.ps1 -Exe <exe> -Baseline N`, runs the ZM_* unit tests `zenith test` skips) + `zenith test --headless`, all green before push. After opening a PR, enable auto-merge (`zenith_gh.ps1 pr merge <n> --auto --squash --delete-branch`) -- lands when required `zm-tests` passes; `--admin`/bypass is blocked. Fill the CI window designing/prototyping the next task. See StartPrompts.md.
+**All work is committed DIRECTLY to `master` and pushed** (`git push origin master`). NEVER create a feature branch, pull request, or git worktree (`git checkout -b` / `gh pr create` / worktrees are forbidden; supersedes the ZM-D-028 auto-merge flow). The **LOCAL gate is the pre-push authority**: `zenith build` + boot unit gate (`Tools/run_unit_gate.ps1 -Exe <exe> -Baseline N`, runs the ZM_* unit tests `zenith test` skips) + `zenith test --headless`, ALL green before you push. The `zm-tests` CI runs post-push on master as a **backstop only**; on red, FIX FORWARD with another direct commit (never revert shipped history, force-push master, or `gh run rerun`). See StartPrompts.md.
 
 ## Build / Tests
 
