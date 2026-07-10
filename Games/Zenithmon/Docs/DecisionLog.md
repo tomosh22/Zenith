@@ -15,6 +15,34 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-020 -- ZM_SpeciesData decomposed: structural roster first (152 species), base stats + learnsets deferred
+
+- **Decision:** the ~150-species SpeciesData Roadmap box is split across
+  increments on the same box. Increment 1 (this PR): the `ZM_SpeciesData` schema
+  + supporting enums (`ZM_ARCHETYPE`/`ZM_RARITY`/`ZM_SIZE_CLASS`/`ZM_SPECIES_ID`)
+  + the full 152-species STRUCTURAL roster (id / name / type(s) / archetype /
+  evo-stage / evolves-to / family / rarity) transcribed from GDD section 5, with
+  size class + family seed as rule-derived accessors. DEFERRED to later
+  increments on this box: per-species base stats (a design pass) and learnsets
+  (need `ZM_MoveData`, box 3). The Roadmap box stays a WIP (`[~]`).
+- **Why:** 152 species with hand-designed base stats + every field in one commit
+  is a large, error-prone, hard-to-review PR; a structural-roster-first split is
+  standard practice for big data tables and is dependency-correct (learnsets
+  reference moves that do not exist yet). The roster is the foundation that
+  MoveData learnsets, WorldSpec encounters, DataRegistry, and S4 asset gen all
+  reference.
+- **Tests that lock it:** `Tests/ZM_Tests_Species.cpp` (category `ZM_Data`) -- 11
+  integrity tests: count==152 + index self-consistency, unique names, valid
+  types, evolution-graph shape (stage+1, same family/archetype/rarity, no
+  self-loop), families well-formed (linear chains, one species per stage),
+  family-size distribution (40/13/6 vs GDD), base/final/legendary counts,
+  archetype-family spread (18/6/7/4/6/7/5/6), every-type-on-two-families,
+  family-seed consistency+uniqueness, size-class monotonicity. Boot suite 1090
+  ran / 0 failed.
+- **Reversibility:** easy -- additive `Source/Data/` files; the struct grows
+  (base-stats + learnset fields) in follow-up increments; the `ZM_SPECIES_ID`
+  order is save-stable (append-only).
+
 ## 2026-07-10 -- ZM-D-019 -- Zenithmon boot unit tests are gated in CI via a run_unit_gate.ps1 boot step (ratcheted baseline)
 
 - **Decision:** `zm-tests.yml` gains a step that boots `zenithmon.exe` headless
