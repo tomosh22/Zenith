@@ -516,3 +516,43 @@ You finish a session well when:
   5 minutes.
 
 If any of these are false, finish them before you stop.
+
+## 9. Session bootstrap mechanics (verified gotchas -- survive Status.md replacement)
+
+These are permanent operational facts, each paid for once. Do not re-discover
+them.
+
+- **The program plan lives in the repo:** [MasterPlan.md](MasterPlan.md) is the
+  user-approved plan (engine-fact survey, per-stage detail, rationale, risks).
+  Roadmap.md supersedes its stage/status wording; MasterPlan supplies the WHY.
+- **gh auth:** sandboxed sessions have no `gh auth login`, but the GitHub
+  credential lives in the git credential manager. Call gh through
+  `pwsh -NoProfile -File Tools\zenith_gh.ps1 <gh args...>` -- it derives
+  GH_TOKEN via `git credential fill` when needed and forwards verbatim. (Raw
+  inline bootstrap makes compound commands that permission allow-rules cannot
+  prefix-match; the wrapper exists precisely for that.)
+- **Shell forms:** in sandboxed agent sessions `zenith.bat` (the PowerShell 5.1
+  shim) can fail on a Get-FileHash resolution quirk. Use the pwsh forms:
+  `pwsh -NoProfile -File Tools\zenith.ps1 <cmd>` and
+  `pwsh -NoProfile -File Build\regen.ps1`. CI and interactive user machines are
+  unaffected either way.
+- **PR re-evaluation:** `gh run rerun` re-uses the run's ORIGINAL merge commit
+  -- it never picks up new master. To re-evaluate a PR against updated master,
+  rebase the branch onto origin/master and push (checks re-run on the fresh
+  merge ref).
+- **Never launch a game exe bare with `--exit-after-frames N`:** that flag is a
+  per-TEST max-frames override, consumed only while an automated test runs; a
+  bare tools build idles in the editor FOREVER (orphaned processes). Boot
+  checks go through `zenith test Zenithmon --filter <Test>` (harness-managed
+  exit) or `--list-automated-tests` (exits by itself), or pair the flag with
+  `--automated-test <name>`. Sweep strays with `Get-Process zenithmon`.
+- **Windowed screenshot evidence** (visual gates): run the game windowed via a
+  harness-managed `--filter` test or `zenith run`, then capture with the
+  SetWindowPos + CopyFromScreen recipe (see the RenderTest capture notes
+  referenced from MasterPlan.md's verification section). Store captures under
+  `Build/artifacts/` (never committed) and record paths in Status.md.
+- **Unattended permission surface:** the checked-in `.claude/settings.json`
+  allowlists git, gh pr/run, the zenith/regen/gate/scaffold script entry
+  points, and msbuild, so loop iterations do not stall on prompts (approved
+  2026-07-10, DecisionLog ZM-D-017). If you add a new routinely-used command,
+  extend that allowlist in the same PR that introduces the command.

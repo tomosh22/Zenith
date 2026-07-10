@@ -15,6 +15,32 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-017 -- Docs/ becomes a self-sufficient autonomy hub: MasterPlan committed, lifecycle-loop prompt, hard-stop visual gates, permission allowlist
+
+- **Decision (user-directed):** the Docs directory must carry the whole
+  project lifecycle with the only human inputs being (a) pasting/looping a
+  StartPrompts.md prompt and (b) visual-gate sign-offs. Changes: the approved
+  program plan is committed as MasterPlan.md (it previously lived only in a
+  machine-local `~/.claude/plans/` file) and referenced from every start
+  prompt; StartPrompts.md gains prompt 0 (idempotent lifecycle-loop iteration,
+  carries the user's standing merge-on-green authorization for the loop's own
+  PRs) and prompt 4 (gate sign-off); `Tools/zenith_gh.ps1` wraps gh with
+  self-bootstrapping auth; a checked-in `.claude/settings.json` allowlists the
+  loop's build/test/git/gh commands (exact rules user-approved).
+- **Gate policy (user's explicit choice):** the loop HARD-STOPS at every
+  stage's visual check (incl. S4 gallery, S8 go/no-go) -- automated gate items
+  run, screenshot evidence is captured, Status.md gets a `GATE-WAIT: S<n>`
+  marker, and nothing proceeds until the user's prompt-4 sign-off lands in
+  this log. The loop never signs its own gates.
+- **Why:** S0 proved the failure modes: the plan file was unversioned and
+  machine-local; gh had no session auth; permission prompts and the
+  self-merge guard stall unattended runs; `gh run rerun` cannot re-evaluate
+  against new master.
+- **Tests that lock it:** none executable; the contract is the prompts +
+  allowlist themselves (version-controlled) and this entry.
+- **Reversibility:** trivial -- edit StartPrompts.md / delete the allowlist;
+  gate policy can be relaxed by a new user decision here.
+
 ## 2026-07-10 -- ZM-D-016 -- Master branch protection CREATED with `zm-tests` as the sole machine-enforced required check
 
 - **Decision:** master had NO branch protection and no rulesets at all (the

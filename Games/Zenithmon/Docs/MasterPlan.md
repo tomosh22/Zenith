@@ -1,0 +1,222 @@
+# Zenithmon -- Master Plan (the approved program plan)
+
+> **Provenance:** this is the user-approved implementation plan produced and
+> verified on 2026-07-09 (drift-checked against engine HEAD `32cb5f82`; origin
+> file: `~/.claude/plans/zenithmon-pok-mon-nested-puddle.md`). It is committed
+> here so every agent on any machine has the full program context -- the
+> engine-fact survey, per-stage detail, design rationale, and risk register
+> that the working docs distill.
+>
+> **Precedence:** [Roadmap.md](Roadmap.md) tracks live execution state and
+> supersedes this file's stage/status wording; [Scope.md](Scope.md) is the
+> binding in/out gate; [DecisionLog.md](DecisionLog.md) records deviations.
+> Engine file:line citations below were verified 2026-07-09 and drift with the
+> engine -- re-verify before acting on them (the E1-E5 rows especially).
+> Treat this file as READ-ONLY history; corrections happen in the living docs.
+
+---
+# Zenithmon — Pokémon SwSh-class monster-collecting RPG on Zenith
+
+## Context
+
+New game project `Games/Zenithmon` alongside DevilsPlayground, CityBuilder and RenderTest: a fully feature-complete, AAA-quality Pokémon Sword/Shield-style game built entirely on Zenith systems. The world is split into towns/cities/routes as separate Zenith scenes; outdoor scenes use `Zenith_TerrainComponent`; the tall-grass encounter mechanic is driven by the Flux grass system; encounters/trainer battles load a dedicated battle scene with classic turn-based combat; full storyline from home village → professor → starter → 8 gyms → League → post-game. **All assets procedurally/mathematically generated and baked to disk in ZENITH_TOOLS builds** (terrain, creature meshes/textures/animations, human NPCs, buildings — no audio; engine has no audio system). Extensive testing in the DP/CityBuilder style incl. a full playthrough test. Engine-level changes allowed where Zenith is missing/incomplete/buggy.
+
+This plan is the product of multiple prior iteration rounds with the user; scope and design decisions below are **locked**. A fresh verification pass against HEAD `32cb5f82` (2026-07-09) re-checked all load-bearing engine claims — drift notes are in the final section.
+
+## Locked scope (user decisions, 2026-07-03)
+
+- **Dex:** ~150 original species (original names — no Nintendo IP), 18 types, 3-stage evolution lines, rarity tiers.
+- **World:** classic 8-gym structure — home village, ~10 towns/cities, ~12–15 routes, Victory Road, League. No open Wild Area.
+- **Battle core (always in):** type chart, moves/PP/accuracy/crits, physical/special split, stat stages, status conditions, catching, switching, items, exp/levels, evolution, trainer AI.
+- **Battle/progression extras:** abilities, natures, IVs/EVs, weather + terrain battle effects, breeding/eggs/daycare. **No Dynamax-style gimmick.**
+- **Post-game:** Champion rematch + Battle Tower (endless streak, rental teams, escalating AI).
+- No audio. No networking/multiplayer/trading.
+
+## Verified codebase facts (reuse points)
+
+**New-game scaffolding** — descriptor-driven: `Games/Zenithmon/Zenithmon.zproj` + `zenith new Zenithmon` scaffold + `Build\regen.ps1` (concrete Sharpmake classes are code-generated; no C# edits); per-game sln `Games/Zenithmon/zenithmon_win64.sln`. Game provides the `Project_*` hooks declared in `Zenith_ProjectHooks.h`: `Project_GetName / Project_GetGameAssetsDirectory / Project_SetGraphicsOptions / Project_RegisterGameComponents / Project_Shutdown / Project_InitializeResources[TOOLS] / Project_RegisterEditorAutomationSteps[TOOLS] / Project_LoadInitialScene`. Components register via static-init `ZENITH_REGISTER_COMPONENT(Type, "Name", order≥100)`. Assets must be baked in `Project_InitializeResources` BEFORE automation steps reference them. Asset handles (post-`0d5353b1` ownership API: `Acquire`/`Create`/`AdoptOrGet` owning handles, `GetView` non-owning) must be cleared in `Project_Shutdown`.
+
+**Scenes** — multi-scene: `LoadScene/LoadSceneByIndex(SCENE_LOAD_SINGLE|ADDITIVE|ADDITIVE_WITHOUT_LOADING)`, `RegisterSceneBuildIndex`, `SetActiveScene`, `UnloadScene`, `SetScenePaused` (skips Update for that scene), `entity.MoveToScene()` (root only), `DontDestroyOnLoad()` → persistent scene; EntityID (index+generation) stable across moves; loads are synchronous, re-entrant loads defer safely. `.zscen` v7. SINGLE load resets render systems + physics then deserializes. DP pattern: build indices 0=FrontEnd, 1=ProcLevel, 2=Liminal hub; pause-menu entity persists via `DontDestroyOnLoad`. Persistence: `Zenith_SaveData::Initialise/Save/Load[Ex]` (CRC32, versioned, `%APPDATA%/Zenith/<Game>/<slot>.zsave`).
+
+**Terrain** — fixed 64×64 chunks × 64 m = 4096 m per terrain ([Flux_TerrainConfig.h](Zenith/Flux/Terrain/Flux_TerrainConfig.h) compile-time constants). Baked assets: `Height.ztxtr` (R32F), `Splatmap_RGBA.ztxtr` (4-material palette), optional `GrassDensity.ztxtr`, `Render_X_Y.zmesh`/`Render_LOW_X_Y.zmesh`/`Physics_X_Y.zmesh`. Authored/baked via `AddStep_TerrainResetSession/GenerateProcedural(seed,…)/BrushStroke/Erode/AutoSplatRule/RunAutoSplat/SetTreeBrush/SaveTextures/ExportChunks` (RenderTest seed 1337 is the template; regen guarded by file-existence check). Height queries = physics raycast vs combined physics mesh. **ENGINE GAP: terrain asset dir is hard-coded to `<gameassets>/Terrain/` — 5 sites in [Zenith_TerrainComponent.cpp](Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp) (lines 540/592/598/712/753; physics-mesh loading did NOT move in `7fd3cc42`, still `LoadCombinedPhysicsGeometry` :687-775) + 1 in [Flux_TerrainStreamingManager.cpp:692](Zenith/Flux/Terrain/Flux_TerrainStreamingManager.cpp:692) (LOD_HIGH stream-in) ⇒ one terrain per game. Zenithmon needs one per outdoor scene → per-component serialized asset-subdirectory (engine change E1).** Missing-chunk tolerance already exists component-side: non-anchor chunks skip-with-warning; anchor chunk (0,0) hard-required (`m_bTerrainGeometryUnusable`).
+
+**Grass (tall-grass mechanic)** — `g_xEngine.Grass()` ([Flux_GrassImpl.h](Zenith/Flux/Vegetation/Flux_GrassImpl.h)): `GenerateFromTerrain(mesh)` places blades where splat lerp < 0.5, scaled by painted density map; `SetDensityMap(data,w,h,worldSize)` (copied) + **`SampleDensityMap(x,z)` — bilinear CPU query, exactly what gameplay needs for "is player in tall grass"** (careful: returns 1.0 when no map set). `m_axChunks`/`m_axAllInstances` public for tests; `HasDensityMap()` already exists (Flux_GrassImpl.h:101). Grass is a single global feature and its state **persists across SINGLE scene loads today**: `ResetRenderSystems` (Zenith_Engine.cpp:617) never calls `Grass().Reset()`, and `Reset()` clears only chunks/counters — instances, generated/uploaded flags, and the density map survive → engine change E5. Regenerate on each outdoor scene load.
+
+**Procedural asset authoring** — meshes: `Zenith_MeshAsset` `AddVertex/AddTriangle/AddSubmesh/SetVertexSkinning/GenerateNormals/GenerateTangents/ComputeBounds/Export(.zmesh)` + `GenerateUnitSphere/Cube/Cylinder/Cone/Capsule`; skeletons: `Zenith_SkeletonAsset::AddBone(name,parent,TRS…)`, `ComputeBindPoseMatrices`, `Export(.zskel)` (100-bone max, 4 influences/vertex); animations: build `Flux_AnimationClip` procedurally → `Export(.zanim)`; textures: `Zenith_Tools_TextureExport::ExportFromData[Compressed]` (.ztxtr v2, BC1/3/5); materials `.zmtrl` v5 `SaveToFile`; model bundles `Zenith_ModelAsset::AddMeshByPath+SetSkeletonPath+Export(.zmodel)`. **[Tools/Zenith_Tools_TestAssetExport.cpp](Tools/Zenith_Tools_TestAssetExport.cpp) (~4k lines) generates the whole StickFigure human — lofted skinned mesh + skeleton + 13 exported .zanim clips — the master reference for creature/NPC generators.** Buildings: CityBuilder pattern (generated static meshes + .zmodel + OBB colliders). Path prefixes `game:`/`engine:`. CCW winding.
+
+**Animation runtime** — `Zenith_AnimatorComponent` → `Flux_AnimationController` layers → state machine (`AddState`, `CrossFade`, params e.g. Speed/IsSprinting), `AddClipFromFile`, IK chains (LeftLeg/RightLeg foot-plant), auto-discovers skeleton OnStart.
+
+**Testing** — `Zenith_AutomatedTest {Setup,Step(frame),Verify,maxFrames,m_bRequiresGraphics,m_bManualOnly}` + `ZENITH_AUTOMATED_TEST_REGISTER` ([Zenith_AutomatedTest.h](Zenith/Core/Zenith_AutomatedTest.h) — incl. `RequestSkip(szReason)` :127 + `RegisterBetweenTestsHook` :142); runner = the unified **`zenith test <Game>`** harness ([ZenithCli.psm1](Tools/ZenithCli/ZenithCli.psm1) `Invoke-ZenithTest` → `ZenithTestHarness.psm1`; flags `--filter/--headless/--results-dir/--config/--per-process/--fail-fast`; JSON per test; exit codes 0 OK / 1 usage / 2 validation / 3 generation / 4 build / 5 not-found). The old per-game `Tools/run_*_tests.ps1` scripts were DELETED at `c29e28f8` — no `run_zm_tests.ps1` will be created. DP ≈140 tests ≈2 min headless batch. **CB_HumanSession.cpp = the full-playthrough template: ~2,600-frame (~43 s) windowed test driving the game purely through `Zenith_InputSimulator` state-setters via a flat action script with PROBE snapshots + Verify asserts, fixed dt 1/60.** Step is inside the main loop ⇒ ONLY state-setters (`SimulateMousePosition/ButtonDown/Up/KeyPress/SetKeyHeld/Wheel`); `StepFrame`/`SimulateMouseClick` deadlock (vkWaitForFences). Between-tests hook resets game globals; scene 0 reloads between tests. Unit tests: `ZENITH_TEST(cat,name)` under `ZENITH_TESTING` — test .cpp files must be linked into the game exe (MSVC dead-strip). Headless skips Flux ⇒ graphics tests must set `m_bRequiresGraphics=true`. Asset-dependent tests must exists-guard + `RequestSkip` (CI-fix pattern, commit `94813489`).
+
+**Gameplay support inventory** — UI framework is rich (Canvas/Rect/Text/Image/Button/Toggle/Overlay/ScrollView/LayoutGroup/Style, focus navigation, reference resolution, serialization) but has NO dialogue-box / menu-stack / grid-inventory widgets (game or engine additions needed). Input is raw key/button queries (DP wraps in `DPInputActions.h`; no engine action-mapping). Third-person camera is game-side (`DPOrbitCamera_Component` reference). No character controller (proper approach = Jolt body + velocity). Behaviour Graphs production-ready (per-game custom node registration via a `<Game>_RegisterGraphNodes()` hook — see `Combat_RegisterGraphNodes` in [Combat_GraphNodes.h](Games/Combat/Components/Combat_GraphNodes.h); note Combat's nodes are real-time action ticks + game-state/scene-flow glue (`CombatNode_SetGameState/SetScenePaused/ReturnToMenu`) — there is **no in-repo turn-based reference**; authoring surface post-`32cb5f82` = the fluent `Zenith_GraphBuilder` DSL ([Zenith_GraphBuilder.h](Zenith/Scripting/Zenith_GraphBuilder.h): `Variable/Node/Param*/Edge/Chain/Build`) driven through `AddStep_GraphBuild("game:Graphs/X.bgraph", &BuildGraph_X)` — Combat.cpp:763-776 is the template). NavMesh (gen from colliders, `.znavmesh`, agents, `GetRandomReachablePointInRadius`), perception, squad AI all present. Event dispatcher: `Subscribe/SubscribeScoped` + game-defined event structs. No built-in turn-based combat / dialogue / inventory / quest systems — all game-side.
+
+## Key design decisions (locked)
+
+- **Prefix `ZM_`** for all game code (mirrors `DP_`/`CB_`); `Zenithmon.cpp` entry point.
+- **Logic placement rule:** pure headless C++ classes for everything rule-based (battle engine, stats, data tables, party/boxes/bag/dex, story flags, save schema, encounter rolls, trainer AI, breeding, Battle Tower) — these carry the bulk of the mandated unit tests and run with `--headless`. ECS components only for things touching transforms/physics/camera/input/scene lifetime. Behaviour graphs only for glue (menu flow, NPC scripted events, cutscene beats). The battle turn loop is **NOT** a graph — a seeded, deterministic C++ state machine; `ZM_BattleDirector`'s presentation sequencing is designed fresh (no in-repo turn-based reference exists).
+- **Game data = compiled `const` C-array tables** in `Source/Data/*.cpp` (species/moves/items/abilities/natures/type chart/encounters/trainers/dex text). Compile-time validated, diffable, zero file I/O in headless tests. The "assets baked to disk" mandate covers meshes/textures/anims — data tables are code. A `ZM_Tests_Data` validation suite is the schema enforcer.
+- **Battle format: singles only** (doubles ≈ 2× targeting/AI/UI complexity for marginal value; struct layout doesn't preclude it later).
+- **Overworld ↔ battle = ADDITIVE battle scene at world offset (0, −2000, 0)** + `SetScenePaused(overworld, true)` + camera/HUD switch + `UnloadScene(battle)` on exit. A SINGLE reload would reset render systems + physics and re-stream terrain twice per encounter — seconds of hitch at Pokémon encounter frequency, disqualifying. The offset puts the arena outside grass LOD rings (200 m max) and terrain high-LOD streaming (1000 m); arena has an enclosing backdrop dome (per-biome dressing swapped at runtime from ~6 baked prop sets — ONE battle scene, not N). Documented fallback if visual isolation fails: SINGLE + world-state snapshot.
+- **Door/route-edge transitions = SINGLE loads with spawn tags.** `ZM_WarpTrigger_Component {targetBuildIndex, spawnTag}` → fade → load; `ZM_GameStateManager` (persistent, `DontDestroyOnLoad`) respawns player + follow camera at the tagged `ZM_SpawnPoint` (one-time placement at load ≠ gameplay teleportation; player/camera are NOT persistent entities because SINGLE loads reset physics and would orphan a persistent Jolt body).
+- **`ZM_WorldSpec` is the keystone**: one declarative compiled table describing the whole world — scenes (name, build index, kind, terrain-set, encounter table + rate), connections/spawn tags, trainers, shops, gyms, story beats. Tools code walks it to author terrains/scenes/graphs via `AddStep_*`; runtime walks it for warps/encounters/gating; unit tests enforce referential integrity (every warp target + spawn tag + species + trainer resolves). ~40 scenes without 40 bespoke authoring functions.
+- **Tall grass**: `ZM_TallGrassSystem` loads the baked `GrassDensity.ztxtr` per outdoor scene, feeds `g_xEngine.Grass().SetDensityMap(...)` for rendering, but keeps its **own CPU copy** for gameplay sampling (sidesteps the SampleDensityMap-returns-1.0-with-no-map trap). Player XZ quantized to 1 m tiles; on each tile transition where density ≥ 0.5, roll per-route encounter rate → `ZM_OnWildEncounter` event → battle transition. Grass cleared (`SetDensityMap(nullptr,…)`) when entering interiors/battle.
+- **Baked assets are git-ignored** (repo norm: RenderTest's Assets/ has zero committed files) — regenerated by tools builds with per-family manifest guards (generator-version stamp + file-existence, hardened RenderTest pattern).
+- **Original names everywhere** (species/moves/abilities/towns) — mainline *mechanics*, zero Nintendo IP.
+
+## Engine-level changes (all additive + back-compatible, each with unit tests + RenderTest regression check)
+
+| # | Change | Why | Size |
+|---|--------|-----|------|
+| **E1** | `Zenith_TerrainComponent`: serialized **terrain-set name** (default `""` = legacy `Terrain/` paths) replacing all 6 hard-coded path sites — 5 in [Zenith_TerrainComponent.cpp](Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp) (540/592/598/712/753) + the same prefix at [Flux_TerrainStreamingManager.cpp:692](Zenith/Flux/Terrain/Flux_TerrainStreamingManager.cpp:692) (LOD_HIGH stream-in); matching bake-target on `Zenith_TerrainEditor` + new `AddStep_TerrainSetAssetSet(szSet)` | Confirmed gap: exactly ONE terrain per game today; Zenithmon needs ~25 (`Terrain/Route01/`, `Terrain/HomeVillage/`, …) | S–M |
+| **E2** | `AddStep_TerrainExportChunksRect(minX,minY,maxX,maxY)`; missing-chunk tolerance (skip-with-warning non-anchor, hard-fail on absent anchor (0,0)) **already exists component-side at HEAD** — remaining work = the rect export step + verify/add the same tolerance on the `Flux_TerrainStreamingManager` stream-in path | Full 64×64 grid ≈ 12k files & minutes–hours per terrain × 25 scenes ≈ 300k files. Rect export (routes ~16×24 chunks, towns ~16×16) → ~25k files, 20–40 min cold bake. Per-component grid-size change rejected (compile-time constants pervade streaming/grass) | S–M |
+| **E3** | `Zenith_UIText` **typewriter reveal** (visible-glyph-count property) | Every dialogue line + battle text; belongs in the widget | XS |
+| **E4** | `Zenith_UIGridLayoutGroup` (fixed columns/cell size) | Bag/box/dex grids; existing LayoutGroup is h/v only | S |
+| **E5** | Grass singleton hygiene: wire `Grass().Reset()` into `ResetRenderSystems` (Zenith_Engine.cpp:617 — currently omitted) + extend `Reset()` to also clear `m_axAllInstances`, `m_bInstancesGenerated`/`m_bInstancesUploaded`, and the density map. (`HasDensityMap()` already exists — Flux_GrassImpl.h:101 — no new API needed) | Verified: grass state fully persists across SINGLE loads today — leakage would put tall grass inside gyms | XS–S |
+
+## Project skeleton
+
+```
+Games/Zenithmon/
+  Zenithmon.cpp                       # Project_* entry points, component registration,
+                                      # between-tests hook, SaveData init
+  Source/
+    ZM_InputActions.h                 # raw-key wrapper (DPInputActions pattern): Move/Confirm/Cancel/Menu/Run
+    Data/    ZM_Types.h  ZM_TypeChart  ZM_SpeciesData(150)  ZM_MoveData(~220)  ZM_ItemData(~80+TMs)
+             ZM_AbilityData(~50, fn-pointer hook structs)  ZM_NatureData(25)  ZM_EncounterData
+             ZM_TrainerData  ZM_DexText  ZM_DataRegistry(name→ID indices + validation)
+             ZM_WorldSpec              # THE world table (scenes/connections/trainers/shops/story)
+    Monster/ ZM_Monster (instance: IVs/EVs/nature/ability/status/moves/friendship/egg; serialization)
+             ZM_StatCalc (pure formulas)  ZM_Party  ZM_Boxes  ZM_Bag  ZM_Dex
+    Battle/  ZM_BattleRNG(PCG32)  ZM_BattleState  ZM_BattleEngine  ZM_MoveExecutor
+             ZM_DamageCalc  ZM_CatchCalc  ZM_StatusLogic  ZM_BattleEvents  ZM_ExpAndLevel
+    AI/      ZM_BattleAI (RANDOM/GREEDY/SMART/CHAMPION tiers, pure fn of state+rng)
+    Breeding/ ZM_Breeding  ZM_Daycare        Tower/ ZM_BattleTower
+    Core/    ZM_GameState  ZM_StoryFlags  ZM_SaveSchema  ZM_BattleContext  ZM_TallGrassSystem
+  Components/  ZM_GameStateManager  ZM_PlayerController  ZM_FollowCamera  ZM_Interactable
+               ZM_NpcWalker  ZM_WarpTrigger  ZM_SpawnPoint  ZM_EncounterZone
+               ZM_BattleDirector (event-stream interpreter)  ZM_BattleStage (biome dressing)
+  UI/      ZM_UI_DialogueBox  ZM_UI_MenuStack  ZM_UI_BattleHUD  ZM_UI_Party  ZM_UI_Bag
+           ZM_UI_Dex  ZM_UI_Box  ZM_UI_Shop
+  Tools/   (#ifdef ZENITH_TOOLS)  ZM_GenCommon(seeded RNG+loft toolkit)  ZM_TextureSynth
+           ZM_CreatureGen(+_Archetypes.inl)  ZM_CreatureAnimGen  ZM_HumanGen  ZM_BuildingGen
+           ZM_PropGen  ZM_TerrainAuthoring  ZM_SceneAuthoring  ZM_GraphAuthoring  ZM_BakeManifest
+  Tests/   ZM_Tests_*.cpp (unit)  ZM_AutoTests_*.cpp (automated)   # linked into the exe (dead-strip rule)
+  Assets/  (baked output, git-ignored)
+  Zenithmon.zproj                    # game descriptor — NO Sharpmake C# edits (descriptor-driven build)
+  Docs/                              # cross-session knowledge base (see Docs section)
+.github/workflows/zm-tests.yml       # CI gate (clone of dp-tests.yml; tests run via `zenith test Zenithmon`)
+```
+
+Scaffolding: `zenith new Zenithmon` creates the `.zproj` + template files and regens; thereafter `Build\regen.ps1` after any file additions (everything Sharpmake emits is git-ignored). Build via `zenith build Zenithmon` (per-game sln `Games/Zenithmon/zenithmon_win64.sln`, `/t:Zenithmon` only — never whole-sln); run via `zenith run`, test via `zenith test Zenithmon`.
+
+## Core systems (condensed; full detail in design docs at S0)
+
+**Battle engine** — headless, synchronous, seeded. `Begin(config,seed)` → `SubmitAction` both sides → `ResolveTurn()` → append-only `ZM_BattleEvent` stream (the single source of truth for both tests AND presentation; engine never formats strings or touches UI). Standard mainline formulas: Gen-III+ stats (integer math incl. nature ×11/10, ×9/10), Gen-V damage (STAB/type-eff/crit 1/24/roll 85–100/burn/weather/screens), Gen-III/IV catch (4 shake checks), 4 exp-curve families. Turn order: run/item/switch → moves by priority bracket then effective speed, rng tie-break. Status: major SLEEP/POISON/TOXIC/BURN/PARALYSIS/FREEZE (persist on `ZM_Monster`) + volatile CONFUSED/FLINCH/LEECH_SEED/PROTECT/CHARGE/SEMI_INVULN/RECHARGE/LOCK/TRAP/TAUNT (explicit cuts documented: Substitute/Encore/Transform/weight moves). ~60-kind `ZM_MOVE_EFFECT` enum + one executor switch keeps 220 moves as table rows. Abilities = struct of fn-pointers per hook (OnSwitchIn/OnModifyStat/OnModifyDamage/OnStatusTry/OnContact/OnTurnEnd/OnFaint/OnAccuracy/…), ~50 shipped. Weather rain/sun/sand/snow with chip + ability interactions. Exp/EV/level-up/move-learn mid-battle; evolution checked post-battle (pure `Evolve()`; cutscene is presentation). Teach-move flow shared by ~25 TM items + 4 move tutors. Trainer AI tiers: RANDOM → GREEDY (expected damage × accuracy) → SMART (KO detection, status/setup valuation, switching, healing items) → CHAMPION (2-ply minimax). Breeding: egg groups, mother's base evo, 3-IV inheritance (5 w/ destiny-knot item), everstone nature lock, egg steps + hatch. Battle Tower: level-50 clamp (`ZM_BattleConfig` override), rental/opponent generation scaling with streak, AI tier escalation, boss every 7th, streak in save.
+
+**Battle presentation** — `ZM_BattleDirector` owns the engine + an event cursor; state machine IDLE_AWAIT_INPUT → PLAYING_EVENTS (each event maps to a timed op: lunge anim, HP-bar tween, ball arc + shakes, faint fall, typewriter text). `zm_instant_battles` DebugVariable skips timing for tests. Battle UI composed from Zenith UI + E3/E4: action menu, move menu (PP/type chips), party strip, bag, HP/exp panels, text log.
+
+**Overworld** — `ZM_PlayerController` (Jolt capsule, velocity-driven camera-relative movement, walk/run, slope/step via raycasts, drives animator Speed param); `ZM_FollowCamera` (SwSh-style pitched follow with spring + collision pushback, modeled on DPOrbitCamera); interaction raycast → `ZM_Interactable` → graph `FireCustomEvent("Interact")`; NPC wanderers/trainers via `ZM_NpcWalker` (navmesh) — trainer sight = simple forward cone + occlusion raycast (not the perception subsystem), on spot: freeze input, approach via navmesh, dialogue → battle. Save: `Zenith_SaveData::Initialise("Zenithmon")`, slots Save0–2 + Auto; per-module versioned Read/Write (party, boxes 16×30, dex seen/caught bits, story-flag bitset, badges, bag, money, daycare/egg, tower streak, position/scene/spawn tag, options); menu-save anywhere + autosave at milestones; migration tests with canned old-version blobs.
+
+**Asset generation (Tools/)** — all deterministic (seeds from IDs/names only), all under manifest guards:
+- *Creatures*: 8 archetypes (QUADRUPED/BIPED/AVIAN/SERPENT/AQUATIC/INSECTOID/BLOB/FLOATER-PLANTOID), each one builder producing mesh+skeleton together via the StickFigure loft technique (rings along bone chains, ≤2-bone bind per ring, fixed per-archetype bone topology ≤30 bones so clips transfer). Species recipe = archetype + evo stage + size class + family seed in `ZM_SpeciesData`; derived params (proportions, appendages, horns/ears/tails/wings, eye decal, palette from type identity, pattern stripes/spots/gradient/belly via `ZM_TextureSynth` → BC1 512²). Evolution lines share archetype+family seed (+1 elaboration tier per stage). Shiny = hue-rotated albedo + child material, same mesh. 6 clips per archetype template (Idle/Walk/Attack/Special/Hit/Faint), instantiated + exported **per species** (~900 .zanim). Per species baked: .zmesh/.zskel/6×.zanim/.ztxtr(+shiny)/.zmtrl(+shiny)/.zmodel(+shiny) + flat dex-icon .ztxtr. All 150 eagerly baked ≈ 2–4 min. ~7–8.5k lines — the single biggest work item.
+- *Humans*: generalized StickFigure loft (height/build/skin/hair/outfit params + attachment meshes); ONE shared skeleton + ONE shared 9-clip set; ~35 models (player m/f, professor, mom, rival, 8 gym leaders, E4+champion, ~10 trainer classes, 6 townsfolk).
+- *Buildings/props*: parametric shells (footprint/roof/facade texture w/ baked window+door decals): 4 house styles ×3 palettes, home, lab, 8 themed gyms, Care Center/Trade Post, League, Tower (~30 models); ~25 props (fences/signs/lamps/bridges/ledge lips/cave rocks/interior furniture). Box colliders authored at scene time (2–3 per building leaving door gaps).
+- *Terrain per outdoor scene* (~25): recipe per scene in `ZM_TerrainAuthoring` — ResetSession → SetAssetSet → GenerateProcedural(sceneSeed) → route-corridor Flatten dabs along authored polyline (ledges = adjacent flatten heights, water = below-plane + water quad) → town pads at building footprints → Erode → AutoSplat ×4 + dirt-path splat along polyline → GrassDensity brush patches beside (never on) the path = encounter fields → TreeBrush edges → SaveTextures + ExportChunksRect.
+- *Scenes* (~40: ~25 outdoor + ~14 interiors + battle + FrontEnd): authored from `ZM_WorldSpec` through shared `AddStep_*` helpers (buildings, NPCs + graphs, gates, spawn points, camera, UI canvas) → SaveScene. Build indices: 0 FrontEnd, 1 Battle, 2–12 towns, 20–34 routes + Victory Road, 40+ interiors, 95 Tower.
+- Full cold bake ≈ 30–50 min; warm boot with valid stamps ≈ seconds; byte-identical re-bake is a tested invariant.
+
+## CI gate — `zm-tests` (required PR check, modeled on [dp-tests.yml](.github/workflows/dp-tests.yml))
+
+New `.github/workflows/zm-tests.yml`, active from S0, required check on master alongside the existing gates:
+- **Triggers:** `pull_request` + `push` on master, `workflow_dispatch` with runner override; concurrency-cancel superseded PR runs; 60-min timeout.
+- **Steps (dp-tests clone):** checkout → `./.github/actions/zenith-setup` (MSBuild/vcpkg/Vulkan SDK 1.3.290.0/Slang 2026.1) → `Build/regen.ps1 -UseDotnet` → build `Games\Zenithmon\zenithmon_win64.sln /t:Zenithmon` `Vulkan_vs2022_Debug_Win64_True` → build `D3D12_vs2022_Debug_Win64_False` (backend-neutrality link proof) → copy Slang + vulkan-1 DLLs → headless boot check (`--list-automated-tests --headless`) → `zenith.bat test Zenithmon --headless --results-dir Build/artifacts/test_results/zenithmon` → upload JSON artifacts (`if: always()`).
+- **GPU-less + assets-absent runner constraints (established DP patterns):** graphics tests (`m_bRequiresGraphics=true`) auto-skip headless; **baked assets are git-ignored so a fresh CI checkout has NO `Assets/`** — every asset/scene-dependent automated test must exists-guard and `RequestSkip` (the CI-fix pattern from commit `94813489`). The CI backbone is therefore the pure-logic headless suites (boot unit tests: battle/data/stats/AI/breeding/tower/save/generator-determinism-in-memory + WorldSpec integrity) which never touch disk assets — these run in FULL on every PR. Windowed + asset-dependent tests run locally at stage gates.
+- **CI budget:** headless batch must stay ≈ minutes (DP ≈ 2 min for ~140); slowest-10 report watched at every gate.
+- Branch protection: add `zm-tests` to required checks (documented in `Docs/CIPolicy.md`; manual GitHub-UI step on the setup checklist).
+
+## Docs directory — `Games/Zenithmon/Docs/` (cross-session knowledge base, DP model)
+
+Seeded at S0, maintained as a session discipline. Modeled file-for-file on `Games/DevilsPlayground/Docs/`:
+
+| Doc | Kind | Content |
+|---|---|---|
+| `Status.md` | living, replaced each session end, **read first each session** | build health, test pass-rate, current task, last completed, notes for next agent |
+| `Roadmap.md` | living checklist | the S0–S12 stage plan with per-stage task checkboxes, WIP→✅ as PRs land — source of truth for "what's next" |
+| `DecisionLog.md` | append-only, newest-first | every non-trivial decision: what/why/tests-that-lock-it/reversibility |
+| `Questions.md` | living | blockers logged with best-guess action + cost-if-wrong; agent proceeds, user resolves in batch |
+| `Shortfalls.md` | living | honest gap audit vs the GDD — the most-accurate-current-state doc |
+| `AgentBriefing.md` | living reference | session onboarding: conventions, TDD + PR workflow, build/test commands, operating rules, worked example |
+| `GameDesignDocument.md` | reference, updated per phase | pillars, world/story (region map, towns/routes/gyms table), the 150-species dex families + type identities, characters, battle mechanics spec, progression curve |
+| `Scope.md` | binding scope gate | the locked in/out list (what ships, what's explicitly cut — Dynamax, doubles, Substitute/Encore, multiplayer) |
+| `TestPlan.md` | reference | test tiers + naming, harness conventions (state-setters only, fixed dt, between-tests hook, RequestSkip-when-assets-absent), per-system test specs + counts |
+| `SaveFormat.md` | reference | versioned save schema (header/party/boxes/dex/flags/bag/daycare/tower), migration policy, sanity caps |
+| `AssetManifest.md` | reference | generated-asset catalogue: per-species file set, humans, buildings/props, per-scene terrain sets; bake budgets + manifest-stamp scheme; generator parameter conventions |
+| `BuildEnvironment.md` | reference | setup, pinned versions, first build, DLL notes, triage checklist |
+| `CIPolicy.md` | living | required checks (`zm-tests` + repo-wide gates), branch protection, auto-merge interaction |
+| `Glossary.md` | reference | game terms (dex, tall grass, whiteout, streak…) + engine terms (terrain set, WorldSpec, event stream…) |
+| `ManualSetupChecklist.md` | one-time gate | human pre-flight: environment, branch protection for zm-tests, Actions enabled |
+| `StartPrompts.md` | reference | copy-paste session-start prompts (fresh start + continue-from-checkpoint) |
+| `OrchestratorPlaybook.md` | reference | multi-agent session operating manual (serial builds, no worktrees, single-source-of-truth docs — DP invariants carried over) |
+
+Maintenance rules (DP governance): orchestrator/main session owns the living docs; `Status.md` updated at every session end; `DecisionLog.md` append-only; a stage gate isn't passed until `Roadmap.md`, `Shortfalls.md`, and any affected format docs are updated in the same PR.
+
+## Stages (each gate = build green + unit tests + `zenith test Zenithmon --headless` green + stage-scoped windowed `--filter` runs + **CI `zm-tests` green** + listed visual check + Docs updated)
+
+**S0 — Skeleton, harness, CI, Docs (S–M).** `zenith new Zenithmon` (scaffolds `Zenithmon.zproj` + `Zenithmon.cpp` + `Components/Zenithmon_GameComponent.h` + `Tests/Zenithmon_BootCharacterization.cpp` from `Build/Templates/NewGame`, then regens), flesh out `Zenithmon.cpp` entry points, empty FrontEnd scene via automation, hello unit+automated tests on the unified `zenith test` harness, between-tests hook, **`.github/workflows/zm-tests.yml` (dp-tests clone) + branch-protection required check**, **`Docs/` seeded** (Status/Roadmap/DecisionLog/Questions/AgentBriefing/GDD/Scope/TestPlan/BuildEnvironment/CIPolicy/Glossary/ManualSetupChecklist/StartPrompts skeletons; GDD + Scope + TestPlan fleshed out from this plan). *Gate:* exe boots windowed + headless; `zenith test Zenithmon --headless` exits 0; **first PR through zm-tests green**.
+
+**S1 — Data core (M).** `ZM_Types/TypeChart/SpeciesData/MoveData/ItemData/AbilityData(stubs)/NatureData/Stats/Rng` + `ZM_WorldSpec` skeleton + `ZM_DataRegistry` validation. *Gate:* ~90 unit tests (chart matrix vs golden, stat/exp formula vectors, registry integrity). ‖ parallel with S3/S4.
+
+**S2 — Battle engine headless (L).** Engine/executor/damage/catch/status/abilities/exp/AI/events; then breeding + tower logic. *Gate:* ~370 unit tests incl. scripted seeded scenario battles w/ exact expected event streams + 2,000-battle fuzz soak (termination < 500 turns, HP/PP/boost invariants). ‖ parallel with S3/S4.
+
+**S3 — First overworld (L).** Engine E1+E2 first, then: Home Village terrain baked via recipe, grass regenerated OnAwake, `ZM_PlayerController`+`ZM_FollowCamera`+`ZM_InputActions`, persistent `ZM_GameStateManager` + spawn-tag respawn, player home interior + warp round trip. *Gate:* E1/E2 unit tests + RenderTest still boots green (terrain regression); windowed automated test walks the village + door round trip via input-simulator state-setters; visual check terrain/grass/camera.
+
+**S4 — Asset generators (L).** `ZM_CreatureGen` (all 8 archetypes + textures + anims), `ZM_HumanGen`, `ZM_BuildingGen/PropGen`, `ZM_BakeManifest`. *Gate:* generator unit tests (determinism = same-seed byte-identical; winding/bounds/weights-sum/bone-caps; shiny differs; clip channels match skeleton); windowed gallery scene showing every species animating (batched species smoke tests); visual sign-off on a sampled dozen.
+
+**S5 — Battle integration slice (L).** Battle scene (index 1, −2000 m offset, dome + platforms), `ZM_EncounterZone`/`ZM_TallGrassSystem` + E5, additive load/pause/camera/HUD switch round trip, `ZM_BattleDirector` + `ZM_UI_BattleHUD` + E3 typewriter, catch/exp/faint/whiteout applied to GameState. *Gate:* windowed tests — walk grass until encounter (rigged RNG), win via scripted input, assert exp + exact overworld resume; catch test; screenshot check for overworld bleed-through at offset.
+
+**S6 — Dialogue, menus, NPCs, shops (M).** `ZM_UI_DialogueBox/MenuStack/Party/Bag/Dex/Shop` + E4, `ZM_Interactable` + NPC graphs via `ZM_GraphAuthoring`, `ZM_NpcWalker`, Care Center heal, mart buy/sell. *Gate:* UI-state unit tests + automated: talk/buy/heal/open-every-menu via focus navigation.
+
+**S7 — Save/load, story flags, trainer battles (M).** Full `ZM_SaveSchema` round trip + canned-blob migration tests; story-flag gating (roadblocks, NPC lines); trainer sight-cone → forced battle → defeat flags + prize money; rival battle 1. *Gate:* automated save → quit-to-FrontEnd → continue restores position/party/flags exactly.
+
+**S8 — Vertical slice ✂ go/no-go (M).** Intro → lab → starter choice → Route 1 (encounters/trainers/items) → town 2 → Gym 1 (layout puzzle-lite + leader + badge + teach-move reward). *Gate:* `ZM_AutoTests_Slice` mini-playthrough (CB_HumanSession-style flat Act script + PROBEs, ~4–6k frames, windowed) new-game → Badge 1; manual visual playthrough sign-off. **Checkpoint before content scale-up.**
+
+**S9 — World buildout A (XL).** Towns 3–6, Routes 2–8, Gyms 2–4, interiors, encounter tables, field evolution/stones, TM items, daycare/breeding/eggs (step counting on the manager), weather zones (WorldSpec-driven, feeds battle modifiers). Content = WorldSpec rows + recipes, not bespoke code. *Gate:* per-region automated traversal tests (every warp edge walked, one scripted battle per route); bake-determinism check (re-run tools boot → zero diffs).
+
+**S10 — World buildout B (XL).** Towns 7–11, Routes 9–15, Gyms 5–8, Victory Road, League (4 Elite rooms + Champion), full rival arc, badge-gate audit. *Gate:* traversal tests for all remaining scenes; automated Elite-4 gauntlet with overleveled scripted team.
+
+**S11 — Post-game (M).** Champion rematch row, Battle Tower (interior scene + streak/rental logic + AI escalation), balance pass driven by headless AI-vs-AI simulation stats. *Gate:* headless 100-streak simulation invariants; automated 7-battle tower run.
+
+**S12 — Full playthrough & hardening (L).** (a) Per-chapter segment tests in the batch suite; (b) **`ZM_AutoTests_Playthrough`: full new-game → Champion scripted run** (CB_HumanSession pattern + `zm_instant_battles`, `m_bManualOnly` like DP personality bots, run explicitly at this gate); perf pass (grass counts vs 2M cap, load times, suite runtime ≤ budget), save-migration audit, fix backlog. *Gate:* full suite green + playthrough bot completes + budgets met.
+
+**Critical path:** S0 → S3 → S5 → S8 → S9 → S10 → S12. **Parallel:** S1+S2 (pure logic) alongside S3+S4; S6 alongside late S5; S11 alongside late S10. Sequential MSBuild dispatch (known mspdbsrv constraint) — parallelism is code-authoring, not builds.
+
+## Verification
+
+- **Per stage:** `zenith build Zenithmon` (= `msbuild Games\Zenithmon\zenithmon_win64.sln /t:Zenithmon /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64`) → boot check ("Unit tests complete", 0 failed) → `zenith test Zenithmon --headless` (batch) → windowed graphics tests (`zenith test Zenithmon --filter <Test>` per stage) → stage visual check via the screenshot capture recipe (SetWindowPos + CopyFromScreen).
+- **Per PR (CI):** `zm-tests` required check — regen + Vulkan_True build + D3D12_False link proof + headless `zenith test Zenithmon` (full unit suite + headless automated tests; asset-dependent tests RequestSkip on the asset-less runner) + results artifact. Work lands as PRs; nothing merges red.
+- **Per session:** `Docs/Status.md` refreshed; `Roadmap.md` checkboxes updated; decisions appended to `DecisionLog.md`.
+- **Engine changes:** each lands with unit tests + RenderTest boot regression (E1/E2 default-path untouched) + DP/CB suites stay green (engine-wide safety).
+- **End state:** ~500+ headless unit tests (≈370 battle/data + generators + save + world integrity), ~60–100 automated tests (scene traversals, battle smokes, UI flows, segment playthroughs) in ≈ minutes headless batch + bounded windowed set, 1 slice playthrough + 1 full playthrough bot, bake determinism check.
+- 4-config matrix check at major gates (Debug/Release × True/False; D3D12_False link check) per repo norm.
+
+## Risks & mitigations (top)
+
+1. **Terrain bake time/file volume (~25 terrains).** E2 rect export; measure with 3 scenes at S3 before committing; fallback = multiple routes share one terrain sheet.
+2. **Encounter transition hitch.** Additive battle design (no terrain reload); cache creature model handles across battles; S5 gate asserts round-trip frame budget.
+3. **Battle-scene render bleed at offset.** Outside grass/terrain LOD radii + enclosing dome; S5 screenshot gate; contingency = per-scene render visibility toggle (engine, only if needed).
+4. **Global grass singleton leakage.** E5 reset + per-scene regeneration + per-scene instance-count assertions at S9/S10 gates.
+5. **Test-suite runtime blowup.** Battle correctness = headless unit tests; windowed tests short + scene-scoped; long playthroughs `m_bManualOnly`; slowest-10 report + hard budget each gate.
+6. **Save-schema churn across stages.** Versioned per-module Read/Write from S7; schema change ⇒ version bump + canned-blob migration test in the same commit (gate rule).
+7. **Content volume (~40 scenes).** Everything flows from `ZM_WorldSpec` + shared authoring helpers; WorldSpec integrity tests catch dangling references pre-bake; traversal tests catch runtime breakage.
+8. **Creature generator underestimation (~7–8.5k lines).** Treated as its own L stage (S4) with a gallery gate; archetype count can flex 8→6 without touching the dex data model.
+
+## Drift check vs HEAD `32cb5f82` (2026-07-09) — verified, corrections already applied above
+
+1. **Test runners deleted.** `Tools/run_dp_tests.ps1` / `run_cb_tests.ps1` were removed at `c29e28f8` in favor of the unified harness: `zenith test <Game>` → [ZenithCli.psm1](Tools/ZenithCli/ZenithCli.psm1) `Invoke-ZenithTest` → `ZenithTestHarness.psm1` (`Invoke-ZenithGameTests`). Flags `--filter/--headless/--results-dir/--config/--per-process/--fail-fast`; exit codes 0 OK / 1 usage / 2 validation / 3 generation / 4 build / 5 not-found. **No `run_zm_tests.ps1` is created; every gate uses `zenith test Zenithmon`.** (Also invalidates older memory notes citing run_dp_tests.ps1.)
+2. **No Combat turn-flow nodes.** `CombatNode_ProcessRound/PlayerTurn` don't exist; Combat's graph nodes are real-time action ticks. Only the registration pattern (`Combat_RegisterGraphNodes`, [Combat_GraphNodes.h:643](Games/Combat/Components/Combat_GraphNodes.h:643)) and the state/scene-flow glue nodes carry over. ZM battle presentation is designed fresh.
+3. **Graph authoring surface** = fluent `Zenith_GraphBuilder` DSL ([Zenith_GraphBuilder.h](Zenith/Scripting/Zenith_GraphBuilder.h): `Variable/Node/Param*/Edge/Chain/Build`) invoked via `AddStep_GraphBuild("game:Graphs/X.bgraph", &BuildGraph_X)` (Combat.cpp:763-776 is the template). `ZM_GraphAuthoring` builds on this.
+4. **Terrain path sites** = 5 in Zenith_TerrainComponent.cpp (540/592/598/712/753; physics-mesh loading did NOT move in `7fd3cc42` — still `LoadCombinedPhysicsGeometry` :687-775) + 1 in Flux_TerrainStreamingManager.cpp:692. E1 covers all 6.
+5. **Missing-chunk tolerance already exists** component-side (non-anchor chunks skip-with-warning at ~:615-620 render / ~:760-766 physics; absent anchor (0,0) sets `m_bTerrainGeometryUnusable` at ~:549). E2 shrinks to rect-export + streaming-path tolerance check.
+6. **`HasDensityMap()` already exists** (Flux_GrassImpl.h:101). The real E5 gap is confirmed: `ResetRenderSystems` (Zenith_Engine.cpp:617) never calls `Grass().Reset()`, and `Reset()` clears only chunks/counters — `m_axAllInstances`, generated/uploaded flags, and the density map persist across SINGLE loads.
+7. **CB_HumanSession.cpp** is ~2,600 frames (~43 s at fixed dt 1/60), not 4,000 — pattern otherwise as described (flat `Act` script, `EProbe` snapshots, InputSimulator state-setters, 4,213 lines).
+8. **Confirmed intact:** all 8 `Project_*` hooks ([Zenith_ProjectHooks.h](Zenith/Core/Zenith_ProjectHooks.h) — note it lives in `Zenith/Core/`); `zenith new` scaffold (expands `Build/Templates/NewGame`: `.cpp`/`.zproj`/`Components/<Name>_GameComponent.h`/`Tests/<Name>_BootCharacterization.cpp`); asset API `Acquire/Create/AdoptOrGet` owning + `GetView` non-owning ([Zenith_AssetRegistry.h](Zenith/AssetHandling/Zenith_AssetRegistry.h)); `.zproj` schema + validation; dp-tests.yml pipeline + `zenith-setup` action (Vulkan SDK 1.3.290.0, Slang 2026.1); `Zenith_SaveData` incl. `LoadEx` status codes (SUCCESS/FILE_NOT_FOUND/BAD_MAGIC/VERSION_MISMATCH/CORRUPT_DATA); full scene-management API incl. `SetScenePaused` + `DontDestroyOnLoad` + SINGLE-resets/ADDITIVE-doesn't; grass API semantics (SetDensityMap copies; SampleDensityMap bilinear, 1.0-when-no-map); terrain 64×64 chunks × 64 m + 1000 m high-LOD + grass rings 20/50/100/200 m; all mesh/skeleton/anim/texture/material/model export APIs (Zenith_Tools_TestAssetExport.cpp = 4,213 lines, 51-bone StickFigure, 13 clips; `MAX_BONES=100`, 4 influences/vertex); UI inventory (no grid layout, no typewriter — E3/E4 stand); `ZENITH_TEST` macro (Zenith_TestFramework.h:283) and `SimulateMouseButtonDown/Up` (Zenith_InputSimulator.h:30-31); `RequestSkip` + `RegisterBetweenTestsHook` (Zenith_AutomatedTest.h:127/:142); animation runtime + FLUX_MAX_BONES=100.

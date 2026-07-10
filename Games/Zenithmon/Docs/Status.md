@@ -29,6 +29,13 @@ S2 (battle engine) follows S1; S4 (asset generators) can run alongside.
 
 ## Notes for the next agent
 
+- **The project now runs on the lifecycle loop:** StartPrompts.md prompt 0 is
+  one idempotent iteration (resume in-flight work or take the next Roadmap
+  task; PR -> CI -> merge -> docs; hard-stop at visual gates with a GATE-WAIT
+  marker here). MasterPlan.md is the full approved plan behind the Roadmap;
+  Tools\zenith_gh.ps1 wraps gh with self-bootstrapping auth; the checked-in
+  .claude/settings.json allowlists the routine commands. See AgentBriefing.md
+  section 9 for the verified bootstrap gotchas.
 - Branch fresh off master (`git pull` first; master tip after S0 = `4e57c680`).
 - **Gotchas from S0 (all verified):** bare `game.exe --exit-after-frames N` NEVER exits (per-test override only -- use `zenith test --filter` or `--list-automated-tests`); `gh run rerun` re-uses the run's ORIGINAL merge commit (rebase+push to re-evaluate a PR against new master); in sandboxed agent sessions use `pwsh -File Tools\zenith.ps1 ...` / `pwsh -File Build\regen.ps1` (the 5.1 `zenith.bat` shim hits a Get-FileHash resolution quirk there; CI + user machines unaffected).
 - **Hard rules (locked, see Scope.md):** `ZM_` prefix; ~150 original species / original names (zero Nintendo IP); no audio; no networking/trading; no Dynamax-analog; singles only; game data = compiled C arrays; baked assets git-ignored (asset-dependent tests exists-guard + RequestSkip).

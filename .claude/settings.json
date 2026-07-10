@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "PowerShell(git *)",
+      "Bash(gh pr *)",
+      "Bash(gh run *)",
+      "PowerShell(gh pr *)",
+      "PowerShell(gh run *)",
+      "Bash(pwsh -NoProfile -File Tools/zenith.ps1*)",
+      "Bash(pwsh -NoProfile -File Tools/zenith_gh.ps1*)",
+      "Bash(pwsh -NoProfile -File Build/regen.ps1*)",
+      "PowerShell(pwsh -NoProfile -File Tools\\zenith.ps1*)",
+      "PowerShell(pwsh -NoProfile -File Tools\\zenith_gh.ps1*)",
+      "PowerShell(pwsh -NoProfile -File Build\\regen.ps1*)",
+      "PowerShell(pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1*)",
+      "PowerShell(pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\test_scaffold.ps1*)",
+      "PowerShell(.\\zenith.bat *)",
+      "Bash(./zenith.bat *)",
+      "PowerShell(msbuild *)",
+      "PowerShell(& \"C:\\Program Files\\Microsoft Visual Studio\\18\\Insiders\\MSBuild\\Current\\Bin\\MSBuild.exe\" *)",
+      "PowerShell(Get-Process*)"
+    ]
+  }
+}
