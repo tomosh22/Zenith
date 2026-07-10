@@ -15,6 +15,73 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-032 -- S2 battle-engine keystone architecture (box 1): ZM_BattleState / ZM_BattleEngine / flat ZM_BattleEvent stream / ZM_BattleMonster
+
+- **Decision:** the S2 battle engine is built as box 1 of ~6, establishing the
+  type architecture the other five boxes extend without reshaping. Chosen shape
+  (synthesized from a 3-architect design panel, spec archived in the session
+  scratchpad `S2_Box1_Design.md`):
+  - **`ZM_BattleMonster`** = the mutable in-battle instance (deep-owned BY VALUE
+    inside the battle; the bare name `ZM_Monster` is reserved for a future
+    persistent party type). Built by `ZM_BuildBattleMonster(ZM_BattleMonsterSpec)`;
+    the spec carries IV/EV/nature/moves/ability **plus an optional base-stat
+    override** so goldens are pencil-verifiable and survive the ZM-D-021 base-stat
+    re-tune.
+  - **`ZM_BattleState`** = `m_axSides[2]` (each a `ZM_BattleSide` with a
+    `Zenith_Vector<ZM_BattleMonster>` party + active slot + reserved
+    screens/hazards) + `ZM_FieldState` (weather reserved, turn counter) + the
+    **`ZM_BattleRNG` living IN state** (so snapshot/clone/replay is one object).
+    The append-only event stream lives in the **engine** (output, not state).
+  - **`ZM_BattleEvent`** = a flat 7-scalar-field POD (`kind,side,slot,moveId,
+    speciesId,iAmount,iAux`) with a defaulted `operator==`, built through a shared
+    `ZM_MakeEvent` factory used by both the engine AND the golden vectors. Later
+    boxes only APPEND event kinds and APPEND fields (default 0), so box-1 golden
+    streams never shift (ZM-D-009 append-only discipline). Effectiveness is
+    emitted as SEPARATE `SUPER_EFFECTIVE`/`NOT_EFFECTIVE`/`IMMUNE` events; neutral
+    is silent.
+  - **`ZM_BattleEngine`** = `Begin(config, playerSpecs,n, enemySpecs,n, seed, seq)`
+    -> `SubmitAction(side, action)` -> `ResolveTurn()`; `IsOver()`/`GetWinnerSide()`
+    /`GetEvents()`/`GetState()`. Box 1 executes MOVE actions only; SWITCH/ITEM/RUN,
+    the ~60-effect `ZM_MoveExecutor`, statuses, abilities, weather, exp/AI/tower are
+    later-box seams left as empty phase hooks (`ResolvePreMovePhase`,
+    `ExecuteMove`, `ResolveEndOfTurnPhase`).
+  - **Box 1 ships a REAL minimal Gen-V `ZM_CalcDamage`** (pure function, RNG drawn
+    by the engine and passed in) so box 1 is end-to-end testable to a faint; the
+    full effect executor stays in box 2.
+- **Ratified sub-decisions (the design panel's 3 open questions, all internal
+  engine choices within locked scope -- no user decision required):**
+  1. **Rounding = pure integer floor** at every `x3/2` and `xpercent` step (matches
+     the S1 `ZM_StatCalc` idiom; simplest to mirror in the offline Python oracle).
+     NOT Gen-V round-half-down. Locked before the first scenario golden is committed.
+  2. **Crit = 1/24 rate, x1.5 multiplier** -- honoring the GDD 7.1 explicit numbers
+     over canonical Gen-V (x2, level-table rate). The GDD wins on conflict.
+  3. **Draw discipline:** no accuracy draw when effective accuracy >= 100 (sure-hit
+     short-circuit); no crit draw at critStage >= 2; per-move draw order
+     `accuracy(if it can miss) -> crit RandBelow(24) -> roll RandRange(85,100)`,
+     attacker-then-defender, one `RandBelow(2)` tie-break only on exact
+     effective-speed ties. Modifier order `base -> weather -> crit -> random ->
+     STAB -> type -> burn -> screen`.
+- **Why:** every one of S2's ~370 later unit tests asserts against the
+  `ZM_BattleEvent` stream, so the event shape + the deterministic draw order are
+  the load-bearing contract -- getting them wrong churns the whole suite. A flat
+  append-only POD + a shared factory makes later boxes additive; deep-owned
+  monsters make a battle a pure function of `(specs, config, seed)` (bit-exact
+  replay, clone-for-AI lookahead, save-mid-battle). Verified against the shipped S1
+  data layer before authoring: Nibbin + Strayling are both mono-NORMAL, Rambash is
+  NORMAL/PHYSICAL power 45 / acc 100, `ZM_NATURE_FERAL`/`ZM_ITEM_NONE`/
+  `ZM_ABILITY_NONE` all exist, `ZM_TypeChart::GetDualTypeEffectiveness` returns the
+  exact float product.
+- **Tests that lock it:** `ZM_Tests_Battle.cpp` (category `ZM_Battle`) --
+  `Scenario_NibbinVsStrayling_ExactStream` (the characterization bedrock: full
+  event stream vs an offline PCG32+stat+damage Python oracle validated against the
+  S1 golden vectors), `Damage_GenVGoldenVectors`, `Effectiveness_PercentMapping`,
+  `TurnOrder_SpeedPriorityTie`, `Engine_BeginEmitsHeader`, and
+  `Fuzz_Smoke_50Battles_Invariants` (scaffold for the S2 2000-battle soak).
+- **Reversibility:** moderate. The event-field set and draw order are the
+  expensive-to-change parts (they define every golden); the type/file layout and
+  the minimal damage path are localised to `Source/Battle/`. Reserved event kinds
+  and the `x3/2` seam fields mean box 2-6 attach without touching box-1 goldens.
+
 ## 2026-07-10 -- ZM-D-031 -- Master-only workflow: all work committed DIRECTLY to master; no branches, no PRs, no worktrees
 
 - **Decision (user-directed):** all Zenithmon work is committed DIRECTLY to the

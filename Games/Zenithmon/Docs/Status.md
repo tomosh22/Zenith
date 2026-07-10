@@ -1,37 +1,33 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-10 -- **S1 DATA CORE COMPLETE (all 8 boxes). Next stage: S2 battle engine.**
+**Last updated:** 2026-07-10 -- **S2 BOX 1 COMPLETE (battle-engine keystone). Next: S2 box 2 -- ZM_MoveExecutor + full DamageCalc/CatchCalc/StatusLogic.**
 
 **Read this first each session.** Replaced every session end. [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the gap audit.
 
 ## Working model -- MASTER-ONLY, no branches/PRs (2026-07-10, ZM-D-031)
 
-**All work is committed DIRECTLY to `master` and pushed** (`git push origin master`). NEVER create a feature branch, pull request, or git worktree (`git checkout -b` / `gh pr create` / worktrees are forbidden; supersedes the ZM-D-028 auto-merge flow). The **LOCAL gate is the pre-push authority**: `zenith build` + boot unit gate (`Tools/run_unit_gate.ps1 -Exe <exe> -Baseline N`, runs the ZM_* unit tests `zenith test` skips) + `zenith test --headless`, ALL green before you push. The `zm-tests` CI runs post-push on master as a **backstop only**; on red, FIX FORWARD with another direct commit (never revert shipped history, force-push master, or `gh run rerun`). See StartPrompts.md.
+**All work is committed DIRECTLY to `master` and pushed** (`git push origin master`). NEVER create a feature branch, pull request, or git worktree. The **LOCAL gate is the pre-push authority**: `zenith build` + boot unit gate (`Tools/run_unit_gate.ps1 -Exe <exe> -Baseline N`, runs the ZM_* unit tests `zenith test` skips) + `zenith test --headless`, ALL green before you push. `zm-tests` CI runs post-push as a backstop only; on red, FIX FORWARD (never revert shipped history, force-push, or `gh run rerun`). See StartPrompts.md.
 
 ## Build / Tests
 
 - Build GREEN (`Vulkan_vs2022_Debug_Win64_True`). D3D12_False link proof in CI.
-- Unit (T0, `ZM_Data`): **1172 ran, 1171 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). = **102 `ZM_*`** (9 type + 24 species + 16 move + 11 item + 6 nature + 6 ability + 4 statcalc + 6 rng + 11 worldspec + 9 registry) + 1068 engine + 2 boot.
-- Automated (P1): 1/1 (`ZM_Boot_Test`); `zenith test Zenithmon --headless` exits 0. **Baseline 1172** in `zm-tests.yml`.
+- Unit (T0): **1186 ran, 1185 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). = 102 `ZM_Data` + **14 `ZM_Battle`** (box 1) + 1068 engine + 2 boot. **Baseline 1186** in `zm-tests.yml` (bumped from 1172 this session).
+- Automated (P1): 1/1 (`ZM_Boot_Test`); `zenith test Zenithmon --headless` exits 0.
 
-## What landed -- S1 COMPLETE (all in `Source/Data/`)
+## What landed this session -- S2 box 1 (the battle-engine keystone)
 
-types (#147) / species roster+stats+learnsets (#148/#149/#151) / moves (#150) / items (#152) / abilities+natures (#153) / StatCalc+RNG (#154) / CI-policy docs (#155) / WorldSpec skeleton (#156) / **DataRegistry (#157, this session, closes S1)**. S1 gate MET (102 ZM_Data tests vs ~90 target; no visual check).
-
-**In flight (auto-merging, stacked in order):** #155 (policy) -> #156 (worldspec) -> #157 (dataregistry). All locally gated green; auto-merge lands each when its `zm-tests` passes.
+`Source/Battle/`: `ZM_BattleTypes.h` (SIDE/status/volatile/stat/weather/screen enums + `ZM_BattleAction` + `ZM_BattleConfig`) / `ZM_BattleMonster.{h,cpp}` (`ZM_BattleMonster` + `ZM_BattleMonsterSpec` w/ base-stat override + `ZM_BuildBattleMonster`) / `ZM_BattleEvent.h` (flat 7-field POD + `ZM_MakeEvent` + full kind enum incl. reserved) / `ZM_DamageCalc.{h,cpp}` (real minimal Gen-V pipeline + `ZM_ApplyStatStage` + `ZM_EffectivenessPercent`) / `ZM_BattleState.{h,cpp}` (sides+field+RNG) / `ZM_BattleEngine.{h,cpp}` (Begin/SubmitAction/ResolveTurn turn loop). `Tests/ZM_Tests_Battle.cpp` (14 `ZM_Battle` tests). Arch decision = **ZM-D-032**. Design doc archived in session scratchpad `S2_Box1_Design.md`; offline oracle `scratchpad/zm_battle_ref.py` (PCG32+stat+damage, validated vs S1 goldens) derived the scenario golden.
 
 ## Current task
 
-None. **Next Roadmap task: S2 box 1 -- `ZM_BattleState` + `ZM_BattleEngine`** (the battle engine, a NEW STAGE). S2 is the biggest suite (~370 unit tests), all headless + seeded (uses `ZM_BattleRNG`). First box: `ZM_BattleState` (teams / active monster / field state) + `ZM_BattleEngine` (`Begin(config,seed)` -> `SubmitAction` -> `ResolveTurn()` emitting an append-only `ZM_BattleEvent` stream; NO UI/string formatting in the engine -- ZM-D-010). Then `ZM_MoveExecutor` (one switch over `ZM_MOVE_EFFECT`, now that the data exists), `ZM_DamageCalc`/`ZM_CatchCalc`/`ZM_StatusLogic`, abilities (wire the `ZM_ABILITY_HOOK` bodies), weather, exp/level/evolution, AI tiers, breeding, tower. See Roadmap S2 + MasterPlan.
-- **S2 has NO visual gate** (headless battle logic), so the loop keeps running through S2 autonomously. First visual gate is **S3** (overworld terrain/grass/camera).
+None -- box 1 is committed + pushed. **Next Roadmap task: S2 box 2 -- `ZM_MoveExecutor`** (one switch over the ~60-kind `ZM_MOVE_EFFECT` enum) + EXTEND `ZM_DamageCalc` (burn/weather/screen inputs are already seamed into `ZM_DamageInput`) + `ZM_CatchCalc` + `ZM_StatusLogic` (major + volatile). Box 2 replaces the body of `ExecuteMove` with the effect switch and lights up the reserved event kinds (NO_PP, MOVE_FAILED, STATUS_*, STAT_STAGE_CHANGED, VOLATILE_*, HEAL/DRAIN/RECOIL/MULTI_HIT). **S2 has NO visual gate**, so the loop runs autonomously through S2.
 
 ## Notes for the next agent
 
-- **This is the S1->S2 boundary.** The whole S1 data core (Source/Data/ZM_*.{h,cpp}) is the foundation S2 consumes: `ZM_SpeciesData`+`ZM_StatCalc`+natures/IVs/EVs build a monster's stats; `ZM_MoveData`+`ZM_MOVE_EFFECT` drive `ZM_MoveExecutor`; `ZM_AbilityData` hook bitmask tells you which hooks to wire; `ZM_BattleRNG` is the seeded RNG; `ZM_ItemData` for held items/catch. **Data now HAS its executor (S2).**
-- **BUMP THE zm-tests BASELINE** in the SAME PR whenever ZM_* unit tests change. Currently **1172**.
-- **S2 build tips:** the battle engine is pure headless C++ (ZM-D-010), emits `ZM_BattleEvent` (append-only), deterministic from seed -> scripted seeded scenarios assert EXACT event streams (characterization bedrock) + a 2000-battle fuzz soak (termination <500 turns, HP/PP/boost invariants). Prototype expected event streams offline (like the stat/PCG32 golden vectors) before building.
-- **S1 patterns to reuse:** big tables + golden vectors prototyped/validated in scratchpad Python before building; derived placeholders vs exact tables; every effect kind/hook coverage-locked. `ZM_STAT` in `ZM_SpeciesData.h`.
-- **Working-dir gotcha:** Bash + PowerShell SHARE a cwd -- `Set-Location C:\dev\Zenith` before regen/build. Tracked `Tools/**/__pycache__/*.pyc` drift on build -- `git checkout --` them; never stage.
-- Editing existing files needs NO regen; only NEW files do (`Build\regen.ps1`). Branch fresh off master.
+- **LOCKED contracts box 2 must NOT break (ZM-D-032):** the `ZM_BattleEvent` POD field set + emit order per hit (`MOVE_USED -> {MISSED | IMMUNE | ([CRIT][SUPER|NOT] DAMAGE_DEALT [FAINT])}`, neutral silent), and the RNG draw order (`accuracy-if-can-miss -> crit RandBelow(24) -> roll RandRange(85,100)`, attacker-then-defender, one `RandBelow(2)` tie-break only on exact effective-speed tie). Later boxes APPEND event kinds/fields (default 0) so box-1 goldens never shift. Secondary-effect procs draw AFTER the damage roll (append, never interleave).
+- **`DAMAGE_DEALT.m_iAmount` is RAW rolled damage (pre-clamp), NOT HP lost** -- box 4 exp/UI must read `m_iAux` (remaining HP) to compute HP lost. Comment fixed in `ZM_BattleEvent.h`.
+- **Golden-vector discipline (reuse for box 2):** prototype expected event streams in a scratchpad Python oracle validated against S1 golden vectors BEFORE trusting the engine; the 2000-battle fuzz soak (real target) lands with box-2 move variety (box 1 shipped a 50-battle 1v1 smoke scaffold + `ZM_ValidateEventStream`).
+- **Orchestration that worked (this session):** design via a 3-architect Workflow panel -> synthesize; parallel Implementer (Source/Battle) + Test Author (tests + oracle) with the design's section-2 header sketches as the NORMATIVE api so they converge without naming drift; orchestrator owns regen/build/test/oracle-run/reviewer/commit. `Zenith_Vector` has `.Get(idx)` (NO `operator[]`).
+- **BUMP the zm-tests baseline** in the SAME commit whenever ZM_* unit tests change (now 1186).
+- **Working-dir gotcha:** Bash + PowerShell SHARE a cwd -- run regen/build from `C:\dev\Zenith`. Editing existing files needs NO regen; only NEW files do (`Build\regen.ps1`).
 - **Hard rules (Scope.md):** `ZM_` prefix; original names / zero Nintendo IP; data = compiled C arrays; no audio/networking/Dynamax; singles only; baked assets git-ignored. Scope changes need a user DecisionLog entry FIRST.
-- Session discipline: replace this file each session end; tick Roadmap boxes only when merged + green; DecisionLog append-only; serial MSBuild; auto-merge (don't wait on CI).

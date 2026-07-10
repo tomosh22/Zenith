@@ -42,8 +42,8 @@
 
 ## S2 -- Battle engine headless (L) -- parallel with S3/S4, after S1
 
-- [ ] `ZM_BattleState` + `ZM_BattleEngine` (Begin(config,seed) -> SubmitAction -> ResolveTurn; append-only `ZM_BattleEvent` stream, no UI/string formatting in the engine)
-- [ ] `ZM_MoveExecutor` (one executor switch over the effect enum) + `ZM_DamageCalc` + `ZM_CatchCalc` + `ZM_StatusLogic` (major + volatile statuses; documented cuts stay cut)
+- [x] `ZM_BattleState` + `ZM_BattleEngine` (Begin(config,seed) -> SubmitAction -> ResolveTurn; append-only `ZM_BattleEvent` stream, no UI/string formatting in the engine) -- **box 1 (keystone)**: `Source/Battle/` (ZM_BattleTypes/BattleMonster/BattleEvent/DamageCalc/BattleState/BattleEngine) + 14 `ZM_Battle` unit tests incl. an offline-oracle-derived exact-event-stream characterization test + 50-battle fuzz-invariant smoke. Ships a REAL minimal Gen-V `ZM_DamageCalc` (plain damaging moves) so box 1 is end-to-end testable to a faint; 3-architect design panel + reviewer pass. Arch = ZM-D-032.
+- [ ] `ZM_MoveExecutor` (one executor switch over the effect enum) + `ZM_DamageCalc` (EXTEND the box-1 minimal `ZM_CalcDamage`: burn/weather/screen inputs already seamed in) + `ZM_CatchCalc` + `ZM_StatusLogic` (major + volatile statuses; documented cuts stay cut)
 - [ ] Abilities via per-hook fn-pointer structs (~50 shipped) + weather (rain/sun/sand/snow)
 - [ ] `ZM_ExpAndLevel` (4 exp-curve families, EVs, level-up/move-learn mid-battle; post-battle evolution via pure `Evolve()`)
 - [ ] `ZM_BattleAI` tiers RANDOM / GREEDY / SMART / CHAMPION (pure fn of state+rng)
