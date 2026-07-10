@@ -15,6 +15,34 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-023 -- Species learnsets are systematically DERIVED (placeholder), completing the ZM_SpeciesData box
+
+- **Decision:** per-species level-up learnsets are computed by
+  `ZM_GetSpeciesLearnset(id)` (`Source/Data/ZM_Learnsets.{h,cpp}`), not stored:
+  it partitions the move table into the species' STAB / secondary-type / universal
+  NORMAL damaging buckets + a shared status bucket, sorts the damaging buckets by
+  effective power (fixed-damage moves read as high power so they land late),
+  teaches a same-type damaging move at level 1, then round-robins damaging moves
+  with a capped minority of status moves, spreading levels 1..~50 and sizing the
+  list by evolution stage (12 / 14 / 16; single-stage finals 16). Returned by
+  value as a fixed-capacity `ZM_Learnset` (max 16). This ticks the `ZM_SpeciesData`
+  Roadmap box `[x]` (roster ZM-D-020 + base stats ZM-D-021 + learnsets here).
+- **Why:** identical reasoning to base stats (ZM-D-021) -- real movepools are an
+  S11 balance concern, and hand-authoring ~150 arbitrary placeholder movepools in
+  one commit buys nothing over a deterministic, type-appropriate,
+  referentially-valid derivation that unblocks S2 (which builds a monster's
+  moveset from species + level). The accessor signature is the stable seam for a
+  stored table later. TM/tutor compatibility is deferred to `ZM_ItemData`.
+- **Tests that lock it:** `Tests/ZM_Tests_Learnsets.cpp` (category `ZM_Data`, 8
+  cases) -- count bounded [4,16] + every entry a real move, level-ordered +
+  in-range + something learnable by L5, type-appropriate (own type(s) or NORMAL),
+  has a STAB move + an early damaging move, no duplicate moves, status a minority,
+  deterministic, and learnset size non-decreasing along an evolution chain. The
+  derivation was pre-validated across all 152 species offline before building.
+  Boot suite 1119 ran / 0 failed; zm-tests baseline bumped 1111 -> 1119.
+- **Reversibility:** easy -- replace the accessor body with a stored per-species
+  table; no caller sees a difference. Additive `Source/Data/` files.
+
 ## 2026-07-10 -- ZM-D-022 -- ZM_MoveData ships as data + schema only (218 moves over a 57-kind effect enum); the executor is S2
 
 - **Decision:** the ~220-move Roadmap box lands as a compiled `const ZM_MoveData`
