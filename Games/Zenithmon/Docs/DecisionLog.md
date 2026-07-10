@@ -15,6 +15,29 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-030 -- ZM_DataRegistry (name->ID lookups + cross-table enforcer) closes S1
+
+- **Decision:** `ZM_DataRegistry` (`Source/Data/ZM_DataRegistry.{h,cpp}`) adds
+  reverse name->ID lookups for every S1 table -- `ZM_FindSpeciesByName` /
+  `...Move` / `...Item` / `...Ability` / `...Nature` / `...Scene` -- each an exact
+  case-sensitive scan returning the id or that table's NONE sentinel (NONE for
+  null/empty too). Linear scan (tables are <= ~220 rows; a hash index is a
+  trivial later swap behind the same signatures). This is the last S1 box; the
+  accompanying `ZM_Tests_DataRegistry` suite is the cross-table schema enforcer.
+- **Why:** the reverse lookups are needed by save/load (names <-> ids across
+  versions), WorldSpec/scene authoring, and debug/console tooling; and S1 needs a
+  single place that asserts the tables are MUTUALLY consistent (per-table suites
+  each check their own table, but nothing checked the references BETWEEN tables).
+- **Tests that lock it:** `Tests/ZM_Tests_DataRegistry.cpp` (category `ZM_Data`, 9
+  cases) -- name round-trip for all six tables (`Find(GetName(id)) == id`),
+  unknown/null/empty -> NONE, and the cross-table resolves: every species
+  evolution target, every TM's taught move, every WorldSpec encounter species, and
+  every derived learnset move resolve to real rows. Boot suite 1172 ran / 0 failed;
+  baseline bumped 1163 -> 1172. **S1 gate MET** (102 `ZM_*` unit tests vs the ~90
+  target; no visual check for S1).
+- **Reversibility:** easy -- additive `Source/Data/` files; swapping the linear
+  scans for a hash index is behind the stable Find signatures.
+
 ## 2026-07-10 -- ZM-D-029 -- ZM_WorldSpec ships as SCHEMA + an 8-scene proving set; the full world is appended at S9/S10
 
 - **Decision:** the keystone world table (ZM-D-005) lands its SCHEMA plus a small
