@@ -15,6 +15,38 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-029 -- ZM_WorldSpec ships as SCHEMA + an 8-scene proving set; the full world is appended at S9/S10
+
+- **Decision:** the keystone world table (ZM-D-005) lands its SCHEMA plus a small
+  proving set, not the full world. `ZM_WorldSpec` (`Source/Data/ZM_WorldSpec.{h,
+  cpp}`): one row per scene -- id / name / build index / `ZM_SCENE_KIND` (9 kinds:
+  frontend/town/route/interior/gym/battle/tower/league/victory_road) / terrain set
+  / warp connections (`ZM_SceneConnection` = target scene + spawn tag) / offered
+  spawn tags / encounter table (`ZM_EncounterSlot` = species + level band +
+  weight). Per-scene connection/tag/encounter arrays are static, referenced by
+  pointer + count. The 8 proving scenes (FrontEnd 0, Battle 1, Dawnmere, Route 1,
+  Thornacre, Player's Home, Aster's Lab, Gym 1) exercise every column. Accessors:
+  `ZM_GetWorldSpec` / `ZM_GetSceneName` / `ZM_FindSceneByBuildIndex` /
+  `ZM_SceneKindToString`. The full ~40-scene world is authored at S9/S10 by
+  APPENDING rows (`ZM_SCENE_ID` is save-stable, append-only).
+- **Why:** everything from S3 on (warps, encounters, gating, terrain authoring)
+  flows through this table, so the schema + a referential-integrity test suite
+  must exist first -- it is the enforcer that keeps ~40 scenes honest before any
+  are baked. Shipping only the schema + proving set keeps S1 headless-data-only
+  while locking the structure S3+ builds against.
+- **Tests that lock it:** `Tests/ZM_Tests_WorldSpec.cpp` (category `ZM_Data`, 11
+  cases) -- index self-consistency, unique names, unique build indices anchored
+  (FrontEnd 0 / Battle 1), valid kinds, terrain-by-kind (outdoor has terrain,
+  indoor does not), spawn tags non-empty + unique per scene, **every connection
+  resolves to a real target + a spawn tag that target offers**, encounters
+  route-only with real species + valid level bands + positive weight, **every
+  non-Battle scene reachable from FrontEnd**, build-index round-trip, accessor +
+  ToString. The graph was pre-validated offline before building. Boot suite 1163
+  ran / 0 failed; baseline bumped 1152 -> 1163.
+- **Reversibility:** easy -- additive `Source/Data/` files; the world grows by
+  appending rows. Build-index assignments are cheap to change until S3 warps start
+  referencing them through this table.
+
 ## 2026-07-10 -- ZM-D-028 -- Loop policy: local gate is the quality bar; auto-merge on zm-tests green; do NOT wait on / idle-watch CI
 
 - **Decision (user-directed):** the autonomous loop must not sit blocking on CI.
