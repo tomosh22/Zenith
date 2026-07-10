@@ -31,7 +31,7 @@
 
 - [x] `ZM_Types.h` + `ZM_TypeChart` (18 types) -- 18-type `enum ZM_TYPE` + golden-locked 18x18 chart + dual-type product; 9 `ZM_Data` unit tests (PR #147). Also wired the boot unit suite into CI (ZM-D-019).
 - [~] `ZM_SpeciesData` (~150 species: archetype + evo stage + size class + family seed + stats/learnsets) -- **structural roster + base stats SHIPPED** (152 species: id/name/types/archetype/evo/family/rarity + derived size/seed + derived base stats; 16 `ZM_Data` tests; PRs #148 ZM-D-020, #149 ZM-D-021). REMAINING: **learnsets ONLY**, which are blocked on `ZM_MoveData` -- do that box first, then return here to add learnsets.
-- [ ] `ZM_MoveData` (~220 moves as table rows over a ~60-kind `ZM_MOVE_EFFECT` enum)
+- [x] `ZM_MoveData` (218 moves as table rows over a 57-kind `ZM_MOVE_EFFECT` enum) -- data + schema only (`ZM_MOVE_ID`/`ZM_MOVE_CATEGORY`/`ZM_MOVE_TARGET`/`ZM_MOVE_EFFECT` + per-row power/acc/PP/priority/crit/contact/effect+chance+magnitude); 16 `ZM_Data` tests incl. every-effect-kind-used coverage lock (PR #150, ZM-D-022). The `ZM_MoveExecutor` that interprets the effect enum is S2.
 - [ ] `ZM_ItemData` (~80 + TMs)
 - [ ] `ZM_AbilityData` stubs (~50, fn-pointer hook structs) + `ZM_NatureData` (25)
 - [ ] `ZM_StatCalc` (pure formulas) + `ZM_BattleRNG` (PCG32)

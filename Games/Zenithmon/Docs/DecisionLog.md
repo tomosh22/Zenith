@@ -15,6 +15,40 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-10 -- ZM-D-022 -- ZM_MoveData ships as data + schema only (218 moves over a 57-kind effect enum); the executor is S2
+
+- **Decision:** the ~220-move Roadmap box lands as a compiled `const ZM_MoveData`
+  table (218 rows) plus its schema -- `ZM_MOVE_ID` (218 + save-stable
+  `ZM_MOVE_COUNT`/`ZM_MOVE_NONE`), `ZM_MOVE_CATEGORY` (physical/special/status),
+  `ZM_MOVE_TARGET` (opponent/self/field), and `ZM_MOVE_EFFECT` (57 executor tags).
+  Each row carries type, category, power, accuracy, PP, priority, crit stage,
+  contact, effect kind + proc chance + a kind-specific magnitude, and target. The
+  rows are INERT: no behaviour, no damage/status pipeline -- the single
+  `ZM_MoveExecutor` switch that interprets `ZM_MOVE_EFFECT` is deferred to S2
+  (ZM-D-010). Original names throughout; the GDD-7.2 cuts (Substitute / Encore /
+  Transform / weight moves) have no enum value.
+- **Why:** moves are the dependency the species learnsets (the remaining
+  `ZM_SpeciesData` sub-box) and the whole S2 battle engine reference, so the table
+  must exist before either. Splitting data from the executor mirrors the
+  battle-engine boundary already set in ZM-D-010 and keeps this PR a reviewable
+  data drop rather than data + a 57-arm interpreter. The effect enum is sized so
+  every S2 per-effect scenario (TestPlan 5.2) has a data subject; a tested
+  coverage invariant guarantees no effect kind is dead.
+- **Tests that lock it:** `Tests/ZM_Tests_Moves.cpp` (category `ZM_Data`, 16
+  cases) -- index self-consistency (row i.m_eId == i, count == 218), unique
+  non-empty names, valid type/category/target/effect enums, power<->category rule
+  (status + fixed-damage powerless; else power in [10,250]), accuracy in [0,100]
+  with own-side moves always-hit, PP/priority/crit ranges, effect-chance
+  bi-conditional (chance 0 iff effect NONE) + status-moves-always-act, target
+  derivable from category+effect, stat-magnitude [1,3], **every effect kind used
+  >= 1**, every type has a move, category spread, priority/crit presence,
+  accessor + ToString contracts. Boot suite 1111 ran / 0 failed; zm-tests baseline
+  bumped 1095 -> 1111 in the same PR.
+- **Reversibility:** easy -- additive `Source/Data/` files; the `ZM_MOVE_ID` order
+  is append-only (save-stable). Per-move tuning values are git-history, not
+  decisions; the struct may gain fields (e.g. contact already present) as S2
+  needs them.
+
 ## 2026-07-10 -- ZM-D-021 -- Species base stats are systematically DERIVED (placeholder), not hand-tuned
 
 - **Decision:** `ZM_GetSpeciesBaseStats(id)` computes the six base stats from a
