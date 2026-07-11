@@ -3,9 +3,11 @@
 #include "Zenithmon/Source/Battle/ZM_BattleEngine.h"
 #include "Zenithmon/Source/Battle/ZM_MoveExecutor.h"
 #include "Zenithmon/Source/Battle/ZM_StatusLogic.h"
+#include "Zenithmon/Source/Battle/ZM_CatchCalc.h"
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
+#include "Zenithmon/Source/Data/ZM_ItemData.h"
 
 // ============================================================================
 // Box-1 turn loop. Draw discipline (locked): per move, accuracy (only if the
@@ -13,6 +15,10 @@
 // move on exact-equal effective speed. Emit order per connecting hit (locked):
 // MOVE_USED -> { MISS | IMMUNE | ([CRIT] [SUPER|NOT] DAMAGE_DEALT [FAINT]) }.
 // ============================================================================
+
+// Effective speed (stat-stage fold + paralysis 1/4 cut); defined below, forward-
+// declared so the SC6 pre-move handlers (which precede it) can use it for flee odds.
+static u_int g_EffectiveSpeed(const ZM_BattleMonster& xMon);
 
 void ZM_BattleEngine::Begin(const ZM_BattleConfig& xConfig,
 	const ZM_BattleMonsterSpec* paxPlayer, u_int uPlayerCount,
@@ -27,6 +33,8 @@ void ZM_BattleEngine::Begin(const ZM_BattleConfig& xConfig,
 	m_eWinner = ZM_SIDE_COUNT;
 	m_abSubmitted[ZM_SIDE_PLAYER] = false;
 	m_abSubmitted[ZM_SIDE_ENEMY]  = false;
+	m_auFleeAttempts[ZM_SIDE_PLAYER] = 0u;
+	m_auFleeAttempts[ZM_SIDE_ENEMY]  = 0u;
 
 	ZM_BattleSide& xPlayer = m_xState.Side(ZM_SIDE_PLAYER);
 	ZM_BattleSide& xEnemy  = m_xState.Side(ZM_SIDE_ENEMY);
@@ -59,7 +67,6 @@ void ZM_BattleEngine::SubmitAction(ZM_SIDE eSide, const ZM_BattleAction& xAction
 {
 	Zenith_Assert(!m_bOver, "SubmitAction: battle is already over");
 	Zenith_Assert(eSide == ZM_SIDE_PLAYER || eSide == ZM_SIDE_ENEMY, "SubmitAction: invalid side");
-	Zenith_Assert(xAction.m_eKind == ZM_ACTION_MOVE, "SubmitAction: box 1 only supports MOVE actions");
 
 	const ZM_BattleMonster& xActive = m_xState.Side(eSide).Active();
 	Zenith_Assert(!xActive.IsFainted(), "SubmitAction: active monster is fainted");
@@ -68,24 +75,57 @@ void ZM_BattleEngine::SubmitAction(ZM_SIDE eSide, const ZM_BattleAction& xAction
 	Zenith_Assert(!(bCharged && bLocked),
 		"SubmitAction: active monster cannot be CHARGE and LOCK simultaneously");
 
-	ZM_BattleAction xResolved = xAction;
-	if (bCharged)
+	if (xAction.m_eKind == ZM_ACTION_MOVE)
 	{
-		xResolved.m_uMoveSlot = xActive.m_uChargeMoveSlot;
+		ZM_BattleAction xResolved = xAction;
+		if (bCharged)
+		{
+			xResolved.m_uMoveSlot = xActive.m_uChargeMoveSlot;
+		}
+		else if (bLocked)
+		{
+			xResolved.m_uMoveSlot = xActive.m_uLockMoveSlot;
+		}
+		Zenith_Assert(xResolved.m_uMoveSlot < uZM_MAX_MOVES,
+			"SubmitAction: move slot %u out of range", xResolved.m_uMoveSlot);
+
+		const ZM_MoveSlot& xSlot = xActive.m_axMoves[xResolved.m_uMoveSlot];
+		Zenith_Assert(xSlot.m_eMove != ZM_MOVE_NONE, "SubmitAction: move slot %u is empty", xResolved.m_uMoveSlot);
+		Zenith_Assert(xSlot.m_uCurPP > 0u || bCharged,
+			"SubmitAction: move slot %u has no PP", xResolved.m_uMoveSlot);
+
+		m_axPending[eSide]   = xResolved;
+		m_abSubmitted[eSide] = true;
+		return;
 	}
-	else if (bLocked)
+
+	// SC6 pre-move actions. A charged / locked active is committed to its stored move
+	// (mainline: cannot switch / run mid-charge or mid-lock), so a non-MOVE action is
+	// illegal for it; the caller must submit legal actions.
+	Zenith_Assert(!bCharged && !bLocked,
+		"SubmitAction: a charged/locked active must use its committed move, not a pre-move action");
+
+	switch (xAction.m_eKind)
 	{
-		xResolved.m_uMoveSlot = xActive.m_uLockMoveSlot;
+	case ZM_ACTION_SWITCH:
+		Zenith_Assert(xAction.m_uSwitchSlot < m_xState.Side(eSide).m_xParty.GetSize(),
+			"SubmitAction: switch slot %u out of party range", xAction.m_uSwitchSlot);
+		break;
+	case ZM_ACTION_ITEM:
+		Zenith_Assert(m_xConfig.m_bCanCatch, "SubmitAction: ITEM (catch) requires a wild-catch config");
+		Zenith_Assert(xAction.m_eItem < ZM_ITEM_COUNT
+			&& ZM_GetItemData(xAction.m_eItem).m_eCategory == ZM_ITEM_CATEGORY_BALL,
+			"SubmitAction: the SC6 ITEM action only supports ball items");
+		break;
+	case ZM_ACTION_RUN:
+		Zenith_Assert(m_xConfig.m_bCanFlee, "SubmitAction: RUN requires a wild-flee config");
+		break;
+	default:
+		Zenith_Assert(false, "SubmitAction: unsupported action kind");
+		break;
 	}
-	Zenith_Assert(xResolved.m_uMoveSlot < uZM_MAX_MOVES,
-		"SubmitAction: move slot %u out of range", xResolved.m_uMoveSlot);
 
-	const ZM_MoveSlot& xSlot = xActive.m_axMoves[xResolved.m_uMoveSlot];
-	Zenith_Assert(xSlot.m_eMove != ZM_MOVE_NONE, "SubmitAction: move slot %u is empty", xResolved.m_uMoveSlot);
-	Zenith_Assert(xSlot.m_uCurPP > 0u || bCharged,
-		"SubmitAction: move slot %u has no PP", xResolved.m_uMoveSlot);
-
-	m_axPending[eSide]   = xResolved;
+	m_axPending[eSide]   = xAction;
 	m_abSubmitted[eSide] = true;
 }
 
@@ -102,20 +142,34 @@ void ZM_BattleEngine::ResolveTurn()
 	const int iTurn = (int)m_xState.m_xField.m_uTurnCounter;
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_BEGIN, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, iTurn));
 
-	ResolvePreMovePhase();     // no-op until SC6 voluntary switch/item/run actions
-	ResolveMovePhase();
-	ResolveEndOfTurnPhase();   // box 1: emit TURN_END
+	// PHASE order (ZM-D-033): pre-move run/item/switch resolve BEFORE any move. A
+	// successful flee or capture ends the battle here, so the move + end-of-turn
+	// phases are skipped and the turn is closed directly (TURN_END -> BATTLE_END).
+	// When both sides submit MOVE, pre-move is inert and this is the box-1 flow.
+	ResolvePreMovePhase();
 
-	// battle-over check AFTER end-of-turn (box 2 status/weather can KO here too).
-	if (!m_xState.Side(ZM_SIDE_PLAYER).HasUnfainted() || !m_xState.Side(ZM_SIDE_ENEMY).HasUnfainted())
+	if (m_bOver)
 	{
-		m_bOver = true;
-		const bool bPlayerAlive = m_xState.Side(ZM_SIDE_PLAYER).HasUnfainted();
-		const bool bEnemyAlive  = m_xState.Side(ZM_SIDE_ENEMY).HasUnfainted();
-		m_eWinner = (bPlayerAlive && !bEnemyAlive) ? ZM_SIDE_PLAYER
-		          : ((bEnemyAlive && !bPlayerAlive) ? ZM_SIDE_ENEMY : ZM_SIDE_COUNT);
+		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, iTurn));
 		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE,
 			(int)m_eWinner, 0));
+	}
+	else
+	{
+		ResolveMovePhase();
+		ResolveEndOfTurnPhase();   // box 1: emit TURN_END
+
+		// battle-over check AFTER end-of-turn (box 2 status/weather can KO here too).
+		if (!m_xState.Side(ZM_SIDE_PLAYER).HasUnfainted() || !m_xState.Side(ZM_SIDE_ENEMY).HasUnfainted())
+		{
+			m_bOver = true;
+			const bool bPlayerAlive = m_xState.Side(ZM_SIDE_PLAYER).HasUnfainted();
+			const bool bEnemyAlive  = m_xState.Side(ZM_SIDE_ENEMY).HasUnfainted();
+			m_eWinner = (bPlayerAlive && !bEnemyAlive) ? ZM_SIDE_PLAYER
+			          : ((bEnemyAlive && !bPlayerAlive) ? ZM_SIDE_ENEMY : ZM_SIDE_COUNT);
+			Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE,
+				(int)m_eWinner, 0));
+		}
 	}
 
 	m_abSubmitted[ZM_SIDE_PLAYER] = false;
@@ -124,7 +178,107 @@ void ZM_BattleEngine::ResolveTurn()
 
 void ZM_BattleEngine::ResolvePreMovePhase()
 {
-	// Run / item / voluntary-switch actions arrive in SC6.
+	// SC6 (ZM-D-035): voluntary SWITCH / ITEM(catch) / RUN resolve here, BEFORE any
+	// move, in fixed PLAYER-then-ENEMY order (the EOT side-order convention). A
+	// catch / flee sets m_bOver, so the loop stops the second side's pre-move action.
+	// MOVE / NONE actions are left for the move phase, so a both-MOVE turn is a no-op
+	// here (no draws, no events, no state change) and the box-1 goldens are unmoved.
+	for (u_int uSideIdx = 0u; uSideIdx < (u_int)ZM_SIDE_COUNT; ++uSideIdx)
+	{
+		if (m_bOver)
+		{
+			return;
+		}
+		const ZM_SIDE eSide = (ZM_SIDE)uSideIdx;
+		const ZM_BattleAction& xAction = m_axPending[eSide];
+		switch (xAction.m_eKind)
+		{
+		case ZM_ACTION_SWITCH: DoVoluntarySwitch(eSide, xAction.m_uSwitchSlot); break;
+		case ZM_ACTION_ITEM:   DoItemAction(eSide, xAction.m_eItem);            break;
+		case ZM_ACTION_RUN:    DoRunAction(eSide);                              break;
+		default: break;   // MOVE / NONE -> handled in ResolveMovePhase
+		}
+	}
+}
+
+// A voluntary switch-out. A TRAPPED active cannot leave (MOVE_FAILED(TRAPPED)); an
+// otherwise-illegal destination (fainted / current / out of range) reports
+// MOVE_FAILED(NO_SWITCH_TARGET). On success DoSwitch emits SWITCH_IN and resets the
+// outgoing monster's battle-local transients. Either way the switching side does not
+// move this turn.
+void ZM_BattleEngine::DoVoluntarySwitch(ZM_SIDE eSide, u_int uTargetSlot)
+{
+	ZM_BattleSide& xSide = m_xState.Side(eSide);
+	const ZM_BattleMonster& xActive = xSide.Active();
+	if ((xActive.m_uVolatileMask & (u_int)ZM_VOLATILE_TRAP) != 0u)
+	{
+		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, eSide, xSide.m_uActiveSlot,
+			ZM_MOVE_NONE, (u_int)xActive.m_eSpecies, 0, (int)ZM_MOVE_FAIL_TRAPPED));
+		return;
+	}
+	if (!DoSwitch(eSide, uTargetSlot))
+	{
+		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, eSide, xSide.m_uActiveSlot,
+			ZM_MOVE_NONE, (u_int)xActive.m_eSpecies, 0, (int)ZM_MOVE_FAIL_NO_SWITCH_TARGET));
+	}
+}
+
+// A ball item == a capture attempt on the OPPOSING active (wild only). Emits one
+// CATCH_SHAKE per successful wobble (m_iAmount = shake index 1..4, m_iTag = ball id)
+// then CATCH_RESULT (m_iAmount = caught 1/0, m_iAux = shake count, m_iTag = ball id).
+// A capture ends the battle with the catching side as winner; the actual party-add is
+// box 4/5. The event side/slot are the caught target's.
+void ZM_BattleEngine::DoItemAction(ZM_SIDE eSide, ZM_ITEM_ID eItem)
+{
+	Zenith_Assert(m_xConfig.m_bCanCatch, "DoItemAction: catching requires a wild-catch config");
+	const ZM_SIDE eTgt = (eSide == ZM_SIDE_PLAYER) ? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
+	ZM_BattleSide& xTgtSide = m_xState.Side(eTgt);
+	const ZM_BattleMonster& xTarget = xTgtSide.Active();
+
+	const ZM_CatchResult xResult = ZM_CatchCalc::Roll(xTarget, eItem, m_xState.m_xRNG);
+	for (u_int k = 0u; k < xResult.m_uShakes; ++k)
+	{
+		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_CATCH_SHAKE, eTgt, xTgtSide.m_uActiveSlot,
+			ZM_MOVE_NONE, (u_int)xTarget.m_eSpecies, (int)(k + 1u), 0, (int)eItem));
+	}
+	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_CATCH_RESULT, eTgt, xTgtSide.m_uActiveSlot,
+		ZM_MOVE_NONE, (u_int)xTarget.m_eSpecies, xResult.m_bCaught ? 1 : 0,
+		(int)xResult.m_uShakes, (int)eItem));
+
+	if (xResult.m_bCaught)
+	{
+		m_bOver = true;
+		m_eWinner = eSide;   // the catching side wins the wild battle
+	}
+}
+
+// A run attempt (wild only). Guaranteed when the runner's effective speed >= the
+// opponent's (no draw); otherwise ZM_RollFlee draws one RandBelow(256). A success
+// emits FLEE and ends the battle with no winner (COUNT); a failure emits FLEE_FAILED
+// and the turn continues (the runner forfeits its move). The attempt counter ramps
+// the odds across repeated tries in the same battle.
+void ZM_BattleEngine::DoRunAction(ZM_SIDE eSide)
+{
+	Zenith_Assert(m_xConfig.m_bCanFlee, "DoRunAction: fleeing requires a wild-flee config");
+	const ZM_SIDE eOpp = (eSide == ZM_SIDE_PLAYER) ? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
+	const u_int uSelfSpeed = g_EffectiveSpeed(m_xState.Side(eSide).Active());
+	const u_int uOppSpeed  = g_EffectiveSpeed(m_xState.Side(eOpp).Active());
+	++m_auFleeAttempts[eSide];
+
+	const bool bFled = ZM_RollFlee(uSelfSpeed, uOppSpeed, m_auFleeAttempts[eSide], m_xState.m_xRNG);
+	const ZM_BattleSide& xSide = m_xState.Side(eSide);
+	const u_int uSlot = xSide.m_uActiveSlot;
+	const u_int uSpecies = (u_int)xSide.Active().m_eSpecies;
+	if (bFled)
+	{
+		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_FLEE, eSide, uSlot, ZM_MOVE_NONE, uSpecies));
+		m_bOver = true;
+		m_eWinner = ZM_SIDE_COUNT;   // a flee has no winner (battle abandoned)
+	}
+	else
+	{
+		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_FLEE_FAILED, eSide, uSlot, ZM_MOVE_NONE, uSpecies));
+	}
 }
 
 // Effective speed for turn ordering: the SPEED stat after its stat-stage multiplier,
@@ -143,8 +297,26 @@ static u_int g_EffectiveSpeed(const ZM_BattleMonster& xMon)
 
 void ZM_BattleEngine::ResolveMovePhase()
 {
-	// Both actions are MOVE in box 1. Compute all ordering inputs BEFORE any
-	// ExecuteMove mutates the parties.
+	// Only MOVE-action sides fight this phase; a side that switched / used an item /
+	// failed to flee already spent its turn in the pre-move phase.
+	const bool bPlayerMoves = (m_axPending[ZM_SIDE_PLAYER].m_eKind == ZM_ACTION_MOVE);
+	const bool bEnemyMoves  = (m_axPending[ZM_SIDE_ENEMY].m_eKind == ZM_ACTION_MOVE);
+
+	// Exactly one mover: no ordering decision, so NO speed tie-break draw. The mover
+	// strikes the current opposing active (possibly just switched in); ExecuteMove
+	// self-guards a fainted actor.
+	if (bPlayerMoves != bEnemyMoves)
+	{
+		ExecuteMove(bPlayerMoves ? ZM_SIDE_PLAYER : ZM_SIDE_ENEMY);
+		return;
+	}
+	if (!bPlayerMoves)   // neither side moves (both took pre-move actions)
+	{
+		return;
+	}
+
+	// Both actions are MOVE (the box-1 path -- byte-identical ordering + draws).
+	// Compute all ordering inputs BEFORE any ExecuteMove mutates the parties.
 	const ZM_BattleMonster& xPlayer = m_xState.Side(ZM_SIDE_PLAYER).Active();
 	const ZM_BattleMonster& xEnemy  = m_xState.Side(ZM_SIDE_ENEMY).Active();
 

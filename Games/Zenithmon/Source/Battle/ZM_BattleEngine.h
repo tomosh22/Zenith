@@ -21,8 +21,10 @@ public:
 	           const ZM_BattleMonsterSpec* paxEnemy,  u_int uEnemyCount,
 	           u_int64 ulSeed, u_int64 ulSeq = 54ull);
 
-	// Record a side's action for the pending turn. Asserts legality (box 1: kind==MOVE,
-	// slot in range, PP>0, active not fainted). Overwrites a prior submit for that side.
+	// Record a side's action for the pending turn. Asserts legality: MOVE (slot in
+	// range, PP>0, active not fainted) or, from SC6, a pre-move SWITCH / ITEM (ball,
+	// wild only) / RUN (wild only) on a non-charged/locked active. Overwrites a prior
+	// submit for that side.
 	void SubmitAction(ZM_SIDE eSide, const ZM_BattleAction& xAction);
 
 	// Both sides must have submitted. Resolves the whole turn, appending events. No-op once over.
@@ -49,11 +51,18 @@ private:
 	ZM_BattleConfig               m_xConfig;
 	bool                          m_bOver   = false;
 	ZM_SIDE                       m_eWinner = ZM_SIDE_COUNT;
+	u_int                         m_auFleeAttempts[ZM_SIDE_COUNT] = { 0u, 0u };   // SC6 wild-run counters
 
 	// seams -- each phase is a hook point:
-	void ResolvePreMovePhase();     // EMPTY until SC6 run/item/voluntary-switch actions
-	void ResolveMovePhase();        // order by priority -> eff speed -> RNG tie-break; execute
+	void ResolvePreMovePhase();     // SC6: voluntary SWITCH/ITEM(catch)/RUN; may set m_bOver (flee/catch)
+	void ResolveMovePhase();        // order MOVE-action sides by priority -> eff speed -> RNG tie-break; execute
 	ZM_SIDE ExecuteMove(ZM_SIDE eAtk); // returns the side force-switched, or COUNT
 	void ResolveEndOfTurnPhase();   // box 1: emit TURN_END only. box 2/3: status/weather/leech ticks
 	void Emit(const ZM_BattleEvent& x) { m_xEvents.PushBack(x); }
+
+	// SC6 pre-move action handlers (fixed PLAYER-then-ENEMY order). A catch/flee sets
+	// m_bOver + m_eWinner; the engine closes the turn (TURN_END + BATTLE_END).
+	void DoVoluntarySwitch(ZM_SIDE eSide, u_int uTargetSlot);
+	void DoItemAction(ZM_SIDE eSide, ZM_ITEM_ID eItem);   // ball == capture attempt on the opponent
+	void DoRunAction(ZM_SIDE eSide);
 };

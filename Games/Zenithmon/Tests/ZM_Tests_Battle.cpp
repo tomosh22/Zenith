@@ -24,6 +24,7 @@
 #include "Zenithmon/Source/Battle/ZM_BattleEngine.h"
 #include "Zenithmon/Source/Battle/ZM_MoveExecutor.h"
 #include "Zenithmon/Source/Battle/ZM_StatusLogic.h"
+#include "Zenithmon/Source/Battle/ZM_CatchCalc.h"
 #include "Zenithmon/Source/Battle/ZM_BattleMonster.h"
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
@@ -73,6 +74,10 @@ namespace
 		case ZM_BATTLE_EVENT_DRAIN:            return "DRAIN";
 		case ZM_BATTLE_EVENT_RECOIL:           return "RECOIL";
 		case ZM_BATTLE_EVENT_MULTI_HIT:        return "MULTI_HIT";
+		case ZM_BATTLE_EVENT_CATCH_SHAKE:      return "CATCH_SHAKE";
+		case ZM_BATTLE_EVENT_CATCH_RESULT:     return "CATCH_RESULT";
+		case ZM_BATTLE_EVENT_FLEE:             return "FLEE";
+		case ZM_BATTLE_EVENT_FLEE_FAILED:      return "FLEE_FAILED";
 		default:                              return "?";
 		}
 	}
@@ -203,7 +208,9 @@ namespace
 				eKind == ZM_BATTLE_EVENT_VOLATILE_APPLIED || eKind == ZM_BATTLE_EVENT_VOLATILE_ENDED ||
 				eKind == ZM_BATTLE_EVENT_FLINCH      || eKind == ZM_BATTLE_EVENT_HEAL          ||
 				eKind == ZM_BATTLE_EVENT_DRAIN       || eKind == ZM_BATTLE_EVENT_RECOIL        ||
-				eKind == ZM_BATTLE_EVENT_MULTI_HIT;
+				eKind == ZM_BATTLE_EVENT_MULTI_HIT   ||
+				eKind == ZM_BATTLE_EVENT_CATCH_SHAKE || eKind == ZM_BATTLE_EVENT_CATCH_RESULT  ||
+				eKind == ZM_BATTLE_EVENT_FLEE        || eKind == ZM_BATTLE_EVENT_FLEE_FAILED;
 
 			// Rule 4: side/slot bounds + move id validity for every subject event.
 			if (bSubjectEvent)
@@ -308,6 +315,18 @@ namespace
 				aabFainted[x.m_uSide][x.m_uSlot] = true;
 				break;
 			}
+
+			// Rule 9 (SC6): CATCH_SHAKE index in [1,4]; CATCH_RESULT amount in {0,1}
+			// with a shake count in [0,4]; FLEE/FLEE_FAILED carry no damage. These
+			// only appear inside a turn (rule 3 already forbids them outside one).
+			case ZM_BATTLE_EVENT_CATCH_SHAKE:
+				if (x.m_iAmount < 1 || x.m_iAmount > 4) { ZM_VALIDATE_FAIL(i, "rule9: CATCH_SHAKE index not in [1,4]"); }
+				break;
+
+			case ZM_BATTLE_EVENT_CATCH_RESULT:
+				if (x.m_iAmount != 0 && x.m_iAmount != 1) { ZM_VALIDATE_FAIL(i, "rule9: CATCH_RESULT amount not in {0,1}"); }
+				if (x.m_iAux < 0 || x.m_iAux > 4)         { ZM_VALIDATE_FAIL(i, "rule9: CATCH_RESULT shake count not in [0,4]"); }
+				break;
 
 			default:
 				break;
@@ -894,12 +913,17 @@ ZENITH_TEST(ZM_Battle, Scenario_Immune_EmitsImmune)
 }
 
 // ============================================================================
-// 14. Fuzz_Smoke_50Battles_Invariants -- 50 seeded 1v1 battles (mono-type
-//     species, damaging FIRE move -> never immune -> guaranteed termination),
-//     each capped at 500 turns; per battle assert termination and, throughout,
-//     HP/PP/stage bounds, no fainted actor acts, and full stream well-formedness.
+// 14. Fuzz_Soak_2000Battles_Invariants -- the S2 battle-engine soak (TestPlan
+//     5.2). 2000 seeded 1v1 battles (mono-type species, glass-cannon FIRE move ->
+//     never immune -> guaranteed KO termination), each capped at 500 turns. Half
+//     are WILD, where the player periodically attempts a catch (incl. the
+//     guaranteed PRIMEORB) or a run, so the SC6 pre-move path is exercised across
+//     the fuzz. Per battle assert termination and, throughout, HP/PP/stage bounds,
+//     no fainted actor acts, and full stream well-formedness. Voluntary switching
+//     is covered by the scripted Engine_Switch_* tests -- box 2 has no forced
+//     replacement on faint, which a 1v1 soak deliberately sidesteps.
 // ============================================================================
-ZENITH_TEST(ZM_Battle, Fuzz_Smoke_50Battles_Invariants)
+ZENITH_TEST(ZM_Battle, Fuzz_Soak_2000Battles_Invariants)
 {
 	// A spread of MONO-type species (types[1] == NONE) for effectiveness variety.
 	static const ZM_SPECIES_ID aeMono[] = {
@@ -910,9 +934,9 @@ ZENITH_TEST(ZM_Battle, Fuzz_Smoke_50Battles_Invariants)
 		ZM_SPECIES_TRANCET,  ZM_SPECIES_OOZEL,     ZM_SPECIES_BURRIT,   ZM_SPECIES_WYRMLING,
 	};
 	const u_int uMonoCount = sizeof(aeMono) / sizeof(aeMono[0]);
-	const ZM_BattleConfig xCfg = MakeTrainerConfig();
+	static const ZM_ITEM_ID aeBalls[] = { ZM_ITEM_CATCHORB, ZM_ITEM_GREATORB, ZM_ITEM_ULTRAORB, ZM_ITEM_PRIMEORB };
 
-	for (u_int uBattle = 0; uBattle < 50u; ++uBattle)
+	for (u_int uBattle = 0; uBattle < 2000u; ++uBattle)
 	{
 		// Deterministic per-battle selection RNG (independent of the engine RNG).
 		ZM_BattleRNG xSel(0x5EED0000ull + uBattle, 54ull);
@@ -922,10 +946,15 @@ ZENITH_TEST(ZM_Battle, Fuzz_Smoke_50Battles_Invariants)
 		const u_int uEnemyLvl  = 10u + xSel.RandBelow(21u);
 		const u_int uPlayerSpe = 40u + xSel.RandBelow(60u);   // varied speed (incl. ties)
 		const u_int uEnemySpe  = 40u + xSel.RandBelow(60u);
+		const bool  bWild      = (uBattle & 1u) != 0u;         // half wild, half trainer
+
+		ZM_BattleConfig xCfg;
+		xCfg.m_bIsWild = bWild; xCfg.m_bCanCatch = bWild; xCfg.m_bCanFlee = bWild; xCfg.m_uLevelCap = 0u;
 
 		// Glass-cannon SPECIAL profile: high SpA, low HP/SpDef -> fast KO, well
 		// within PP. Flarelash (FIRE special, acc 100, no secondary) never hits an
-		// immunity, so both sides always deal >=1 damage -> battle must terminate.
+		// immunity, so the enemy (which always attacks) always deals >=1 damage ->
+		// the battle must terminate even if the player only catches / runs.
 		ZM_BattleMonsterSpec axPlayer[1] = { MakeSpecOverride(ePlayer, uPlayerLvl, ZM_MOVE_FLARELASH, 25u, 40u, 40u, 130u, 30u, uPlayerSpe) };
 		ZM_BattleMonsterSpec axEnemy[1]  = { MakeSpecOverride(eEnemy,  uEnemyLvl,  ZM_MOVE_FLARELASH, 25u, 40u, 40u, 130u, 30u, uEnemySpe) };
 		// Fill all 4 slots with the same move so slot-cycling never runs a slot dry.
@@ -942,13 +971,34 @@ ZENITH_TEST(ZM_Battle, Fuzz_Smoke_50Battles_Invariants)
 		while (!xEngine.IsOver() && uTurns < 500u)
 		{
 			const u_int uSlot = uTurns % uZM_MAX_MOVES;
-			// Defensive: never submit into a spent slot (would trip SubmitAction's
-			// PP assert). With the glass-cannon this can't happen (<=2 turns), but
-			// if it ever did, break and let the IsOver assert flag it cleanly.
 			const ZM_BattleMonster& xActP = xEngine.GetState().Side(ZM_SIDE_PLAYER).m_xParty.Get(0);
 			const ZM_BattleMonster& xActE = xEngine.GetState().Side(ZM_SIDE_ENEMY).m_xParty.Get(0);
-			if (xActP.m_axMoves[uSlot].m_uCurPP == 0u || xActE.m_axMoves[uSlot].m_uCurPP == 0u) { break; }
-			xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(uSlot));
+			// The enemy always attacks; never submit into a spent slot (glass-cannon
+			// KOs long before PP runs out, but guard defensively).
+			if (xActE.m_axMoves[uSlot].m_uCurPP == 0u) { break; }
+
+			// Player: mostly MOVE; in a wild battle, occasionally catch (random ball,
+			// incl. the guaranteed PRIMEORB) or run -> exercises SC6 in the fuzz.
+			ZM_BattleAction xPlayerAction = MoveAction(uSlot);
+			bool bPlayerMoves = true;
+			if (bWild)
+			{
+				const u_int uPick = xSel.RandBelow(10u);
+				if (uPick == 0u)
+				{
+					xPlayerAction.m_eKind = ZM_ACTION_ITEM;
+					xPlayerAction.m_eItem = aeBalls[xSel.RandBelow(4u)];
+					bPlayerMoves = false;
+				}
+				else if (uPick == 1u)
+				{
+					xPlayerAction.m_eKind = ZM_ACTION_RUN;
+					bPlayerMoves = false;
+				}
+			}
+			if (bPlayerMoves && xActP.m_axMoves[uSlot].m_uCurPP == 0u) { break; }
+
+			xEngine.SubmitAction(ZM_SIDE_PLAYER, xPlayerAction);
 			xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(uSlot));
 			xEngine.ResolveTurn();
 			++uTurns;
@@ -972,7 +1022,7 @@ ZENITH_TEST(ZM_Battle, Fuzz_Smoke_50Battles_Invariants)
 
 		ZENITH_ASSERT_LT(uTurns, 500u, "battle %u did not terminate in < 500 turns", uBattle);
 		ZENITH_ASSERT_TRUE(xEngine.IsOver(), "battle %u not over after loop", uBattle);
-		ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEngine.GetEvents(), xEngine, "fuzz"),
+		ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEngine.GetEvents(), xEngine, "soak"),
 			"battle %u produced a malformed event stream", uBattle);
 	}
 }
@@ -6313,4 +6363,410 @@ ZENITH_TEST(ZM_Battle, VolatileFree_SC5AddsNoEventsDrawsOrState)
 	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_uVolatileMask, (u_int)ZM_VOLATILE_NONE);
 	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_uVolatileMask, (u_int)ZM_VOLATILE_NONE);
 	ZM_SC5AssertRNGCursor(xState, xMirror, "volatile-free old path consumes the exact SC1 crit/roll stream");
+}
+
+// ============================================================================
+// S2 box-2 SC6 -- ZM_CatchCalc (Gen-III/IV four-shake capture + flee odds) and
+// the engine pre-move SWITCH / ITEM(catch) / RUN actions (DecisionLog ZM-D-033
+// SC6 + ZM-D-035). Expected catch 'a'/'b' values and per-seed shake/flee outcomes
+// are derived by the offline oracle scratchpad/zm_catch_ref.py (an independent
+// PCG32 + integer-math reimplementation), not echoed from the engine. Guaranteed
+// captures / guaranteed flees draw nothing, so their outcomes are seed-independent.
+// ============================================================================
+namespace
+{
+	ZM_BattleConfig SC6_WildConfig()
+	{
+		ZM_BattleConfig xCfg;
+		xCfg.m_bIsWild = true; xCfg.m_bCanCatch = true; xCfg.m_bCanFlee = true; xCfg.m_uLevelCap = 0u;
+		return xCfg;
+	}
+	ZM_BattleAction SC6_Switch(u_int uSlot) { ZM_BattleAction x; x.m_eKind = ZM_ACTION_SWITCH; x.m_uSwitchSlot = uSlot; return x; }
+	ZM_BattleAction SC6_Item(ZM_ITEM_ID eItem) { ZM_BattleAction x; x.m_eKind = ZM_ACTION_ITEM; x.m_eItem = eItem; return x; }
+	ZM_BattleAction SC6_Run() { ZM_BattleAction x; x.m_eKind = ZM_ACTION_RUN; return x; }
+
+	u_int SC6_Count(const Zenith_Vector<ZM_BattleEvent>& xEv, ZM_BATTLE_EVENT eKind)
+	{
+		u_int uN = 0u;
+		for (u_int i = 0; i < xEv.GetSize(); ++i) { if (xEv.Get(i).m_eKind == eKind) { ++uN; } }
+		return uN;
+	}
+	u_int SC6_FirstIndex(const Zenith_Vector<ZM_BattleEvent>& xEv, ZM_BATTLE_EVENT eKind)
+	{
+		for (u_int i = 0; i < xEv.GetSize(); ++i) { if (xEv.Get(i).m_eKind == eKind) { return i; } }
+		return xEv.GetSize();
+	}
+	const ZM_BattleEvent* SC6_Find(const Zenith_Vector<ZM_BattleEvent>& xEv, ZM_BATTLE_EVENT eKind)
+	{
+		const u_int uIdx = SC6_FirstIndex(xEv, eKind);
+		return (uIdx < xEv.GetSize()) ? &xEv.Get(uIdx) : nullptr;
+	}
+}
+
+// --- ZM_CatchCalc pure math (independent of RNG / the engine) ----------------
+ZENITH_TEST(ZM_Battle, CatchCalc_BaseCatchRate_Rarities)
+{
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::BaseCatchRate(ZM_RARITY_COMMON),    190u, "COMMON base rate");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::BaseCatchRate(ZM_RARITY_UNCOMMON),  120u, "UNCOMMON base rate");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::BaseCatchRate(ZM_RARITY_RARE),       45u, "RARE base rate");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::BaseCatchRate(ZM_RARITY_LEGENDARY),   3u, "LEGENDARY base rate");
+}
+
+ZENITH_TEST(ZM_Battle, CatchCalc_StatusModifier_Multipliers)
+{
+	u_int uNum = 0u, uDen = 0u;
+	ZM_CatchCalc::StatusModifier(ZM_MAJOR_STATUS_NONE, uNum, uDen);
+	ZENITH_ASSERT_TRUE(uNum == 1u && uDen == 1u, "NONE -> x1");
+	ZM_CatchCalc::StatusModifier(ZM_MAJOR_STATUS_SLEEP, uNum, uDen);
+	ZENITH_ASSERT_TRUE(uNum == 5u && uDen == 2u, "SLEEP -> x5/2");
+	ZM_CatchCalc::StatusModifier(ZM_MAJOR_STATUS_FREEZE, uNum, uDen);
+	ZENITH_ASSERT_TRUE(uNum == 5u && uDen == 2u, "FREEZE -> x5/2");
+	ZM_CatchCalc::StatusModifier(ZM_MAJOR_STATUS_PARALYSIS, uNum, uDen);
+	ZENITH_ASSERT_TRUE(uNum == 3u && uDen == 2u, "PARALYSIS -> x3/2");
+	ZM_CatchCalc::StatusModifier(ZM_MAJOR_STATUS_POISON, uNum, uDen);
+	ZENITH_ASSERT_TRUE(uNum == 3u && uDen == 2u, "POISON -> x3/2");
+	ZM_CatchCalc::StatusModifier(ZM_MAJOR_STATUS_TOXIC, uNum, uDen);
+	ZENITH_ASSERT_TRUE(uNum == 3u && uDen == 2u, "TOXIC -> x3/2");
+	ZM_CatchCalc::StatusModifier(ZM_MAJOR_STATUS_BURN, uNum, uDen);
+	ZENITH_ASSERT_TRUE(uNum == 3u && uDen == 2u, "BURN -> x3/2");
+}
+
+ZENITH_TEST(ZM_Battle, CatchCalc_BallCatchParam_And_Guaranteed)
+{
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::BallCatchParam(ZM_ITEM_CATCHORB), 10u, "Catch Orb x10");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::BallCatchParam(ZM_ITEM_GREATORB), 15u, "Great Orb x15");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::BallCatchParam(ZM_ITEM_ULTRAORB), 20u, "Ultra Orb x20");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::BallCatchParam(ZM_ITEM_PRIMEORB), 255u, "Prime Orb sentinel 255");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::BallCatchParam(ZM_ITEM_SALVE), 0u, "non-ball -> 0");
+	ZENITH_ASSERT_TRUE(ZM_CatchCalc::IsGuaranteedBall(ZM_ITEM_PRIMEORB), "Prime Orb is guaranteed");
+	ZENITH_ASSERT_TRUE(!ZM_CatchCalc::IsGuaranteedBall(ZM_ITEM_CATCHORB), "Catch Orb is not guaranteed");
+	ZENITH_ASSERT_TRUE(!ZM_CatchCalc::IsGuaranteedBall(ZM_ITEM_ULTRAORB), "Ultra Orb is not guaranteed");
+}
+
+ZENITH_TEST(ZM_Battle, CatchCalc_ModifiedCatchValue_Vectors)
+{
+	// Oracle-derived a (zm_catch_ref.py). maxHP 100 throughout.
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ModifiedCatchValue(100u, 100u, 190u, 10u, 1u, 1u),  63u, "COMMON full CATCHORB -> 63");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ModifiedCatchValue(100u,   1u, 190u, 10u, 1u, 1u), 188u, "COMMON 1HP CATCHORB -> 188");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ModifiedCatchValue(100u,   1u, 190u, 20u, 1u, 1u), 377u, "COMMON 1HP ULTRAORB -> 377");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ModifiedCatchValue(100u,   1u, 190u, 10u, 5u, 2u), 470u, "COMMON 1HP CATCHORB asleep -> 470");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ModifiedCatchValue(100u, 100u,   3u, 10u, 1u, 1u),   1u, "LEGENDARY full CATCHORB -> 1");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ModifiedCatchValue(100u,  50u, 120u, 15u, 1u, 1u), 120u, "UNCOMMON half GREATORB -> 120");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ModifiedCatchValue(0u,     0u, 190u, 10u, 1u, 1u),   1u, "maxHP 0 guarded to 1");
+}
+
+ZENITH_TEST(ZM_Battle, CatchCalc_ShakeProbability_Vectors)
+{
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ShakeProbability(63u),  47661u, "b(a=63)");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ShakeProbability(188u), 61680u, "b(a=188)");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ShakeProbability(1u),   16643u, "b(a=1)");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ShakeProbability(120u), 55187u, "b(a=120)");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ShakeProbability(255u), 65536u, "a>=255 -> sentinel");
+	ZENITH_ASSERT_EQ(ZM_CatchCalc::ShakeProbability(500u), 65536u, "a>>255 -> sentinel");
+}
+
+// --- ZM_CatchCalc::Roll (rigged seeds; oracle-derived outcomes) --------------
+ZENITH_TEST(ZM_Battle, CatchCalc_Roll_NonGuaranteedCaught)
+{
+	// COMMON species, base HP 25 @ L50 -> maxHP 100; curHP 1 -> a=188, b=61680.
+	// Seed(2,54): four shakes all pass (oracle) -> caught.
+	ZM_BattleMonster xMon = ZM_BuildBattleMonster(
+		MakeSpecOverride(ZM_SPECIES_NIBBIN, 50u, ZM_MOVE_RAMBASH, 25u, 40u, 40u, 40u, 40u, 40u));
+	xMon.m_uCurHP = 1u;
+	ZM_BattleRNG xRng(2ull, 54ull);
+	const ZM_CatchResult xRes = ZM_CatchCalc::Roll(xMon, ZM_ITEM_CATCHORB, xRng);
+	ZENITH_ASSERT_EQ(xRes.m_uCatchValueA, 188u, "a == 188 (maxHP 100, curHP 1, COMMON, CATCHORB)");
+	ZENITH_ASSERT_TRUE(xRes.m_bCaught, "seed 2 -> caught");
+	ZENITH_ASSERT_EQ(xRes.m_uShakes, 4u, "caught == 4 shakes");
+}
+
+ZENITH_TEST(ZM_Battle, CatchCalc_Roll_NonGuaranteedEscaped)
+{
+	// Same a=188/b=61680 target; Seed(5,54)'s first draw (62793) >= b -> 0 shakes.
+	ZM_BattleMonster xMon = ZM_BuildBattleMonster(
+		MakeSpecOverride(ZM_SPECIES_NIBBIN, 50u, ZM_MOVE_RAMBASH, 25u, 40u, 40u, 40u, 40u, 40u));
+	xMon.m_uCurHP = 1u;
+	ZM_BattleRNG xRng(5ull, 54ull);
+	const ZM_CatchResult xRes = ZM_CatchCalc::Roll(xMon, ZM_ITEM_CATCHORB, xRng);
+	ZENITH_ASSERT_EQ(xRes.m_uCatchValueA, 188u, "a == 188");
+	ZENITH_ASSERT_TRUE(!xRes.m_bCaught, "seed 5 -> escaped");
+	ZENITH_ASSERT_EQ(xRes.m_uShakes, 0u, "escaped on the first shake");
+}
+
+ZENITH_TEST(ZM_Battle, CatchCalc_Roll_GuaranteedByValue)
+{
+	// ULTRAORB on a 1-HP COMMON -> a=377 >= 255 -> guaranteed, no draws.
+	ZM_BattleMonster xMon = ZM_BuildBattleMonster(
+		MakeSpecOverride(ZM_SPECIES_NIBBIN, 50u, ZM_MOVE_RAMBASH, 25u, 40u, 40u, 40u, 40u, 40u));
+	xMon.m_uCurHP = 1u;
+	ZM_BattleRNG xRng(999ull, 54ull);   // seed irrelevant: no draws
+	const ZM_CatchResult xRes = ZM_CatchCalc::Roll(xMon, ZM_ITEM_ULTRAORB, xRng);
+	ZENITH_ASSERT_EQ(xRes.m_uCatchValueA, 377u, "a == 377");
+	ZENITH_ASSERT_TRUE(xRes.m_bCaught, "a>=255 -> caught");
+	ZENITH_ASSERT_EQ(xRes.m_uShakes, 4u, "guaranteed -> 4 shakes shown");
+}
+
+ZENITH_TEST(ZM_Battle, CatchCalc_Roll_GuaranteedByBall)
+{
+	// PRIMEORB (param 255) -> guaranteed regardless of HP / rarity, no draws.
+	ZM_BattleMonster xMon = ZM_BuildBattleMonster(MakeSpec(ZM_SPECIES_ZENARIS, 50u, ZM_MOVE_RAMBASH));
+	ZM_BattleRNG xRng(1ull, 54ull);
+	const ZM_CatchResult xRes = ZM_CatchCalc::Roll(xMon, ZM_ITEM_PRIMEORB, xRng);
+	ZENITH_ASSERT_EQ(xRes.m_uCatchValueA, 255u, "guaranteed ball reports a==255");
+	ZENITH_ASSERT_TRUE(xRes.m_bCaught, "PRIMEORB -> caught");
+	ZENITH_ASSERT_EQ(xRes.m_uShakes, 4u, "4 shakes");
+}
+
+ZENITH_TEST(ZM_Battle, CatchCalc_Roll_LegendaryFullHpEscapes)
+{
+	// Full-HP LEGENDARY with a basic ball -> a=1, b=16643. Seed(1,54) first draw
+	// (56745) >= b -> escape on shake 1 (oracle).
+	ZM_BattleMonster xMon = ZM_BuildBattleMonster(MakeSpec(ZM_SPECIES_ZENARIS, 50u, ZM_MOVE_RAMBASH));
+	ZM_BattleRNG xRng(1ull, 54ull);
+	const ZM_CatchResult xRes = ZM_CatchCalc::Roll(xMon, ZM_ITEM_CATCHORB, xRng);
+	ZENITH_ASSERT_EQ(xRes.m_uCatchValueA, 1u, "full-HP legendary -> a==1");
+	ZENITH_ASSERT_TRUE(!xRes.m_bCaught, "seed 1 -> escaped");
+	ZENITH_ASSERT_EQ(xRes.m_uShakes, 0u, "escaped on the first shake");
+}
+
+// --- flee odds (pure) --------------------------------------------------------
+ZENITH_TEST(ZM_Battle, FleeOdds_Vectors)
+{
+	ZENITH_ASSERT_TRUE(ZM_ComputeFleeOdds(100u, 10u, 1u).m_bGuaranteed, "faster -> guaranteed");
+	ZENITH_ASSERT_TRUE(ZM_ComputeFleeOdds(50u, 50u, 1u).m_bGuaranteed, "equal speed -> guaranteed");
+	const ZM_FleeOdds x1 = ZM_ComputeFleeOdds(10u, 100u, 1u);
+	ZENITH_ASSERT_TRUE(!x1.m_bGuaranteed, "slower -> not guaranteed");
+	ZENITH_ASSERT_EQ(x1.m_uThreshold, 42u, "f(10,100,1) == 42");
+	ZENITH_ASSERT_EQ(ZM_ComputeFleeOdds(10u, 100u, 2u).m_uThreshold, 72u, "f ramps +30 per attempt");
+	ZENITH_ASSERT_EQ(ZM_ComputeFleeOdds(30u, 60u, 1u).m_uThreshold, 94u, "f(30,60,1) == 94");
+}
+
+ZENITH_TEST(ZM_Battle, RollFlee_GuaranteedAndComputed)
+{
+	ZM_BattleRNG xRngA(123ull, 54ull);
+	ZENITH_ASSERT_TRUE(ZM_RollFlee(100u, 10u, 1u, xRngA), "faster always flees (no draw)");
+	// Seed(15,54) first %256 = 246; f(slow,fast,1) <= 157 -> 246 >= f -> fails.
+	ZM_BattleRNG xRngB(15ull, 54ull);
+	ZENITH_ASSERT_TRUE(!ZM_RollFlee(10u, 100u, 1u, xRngB), "seed 15 -> flee fails");
+	// Seed(4,54) first %256 = 127; f(10,100,4)=132 -> 127 < 132 -> flees.
+	ZM_BattleRNG xRngC(4ull, 54ull);
+	ZENITH_ASSERT_TRUE(ZM_RollFlee(10u, 100u, 4u, xRngC), "seed 4, attempt 4 -> flee succeeds");
+}
+
+// --- engine pre-move ITEM (catch) --------------------------------------------
+ZENITH_TEST(ZM_Battle, Engine_Catch_GuaranteedBall_EndsBattle)
+{
+	ZM_BattleMonsterSpec axP[1] = { MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_RAMBASH) };
+	ZM_BattleMonsterSpec axE[1] = { MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH) };
+	ZM_BattleEngine xEng;
+	xEng.Begin(SC6_WildConfig(), axP, 1u, axE, 1u, 0x1234ull, 54ull);
+	xEng.SubmitAction(ZM_SIDE_PLAYER, SC6_Item(ZM_ITEM_PRIMEORB));
+	xEng.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xEng.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEv = xEng.GetEvents();
+	ZENITH_ASSERT_TRUE(xEng.IsOver(), "guaranteed catch ends the battle");
+	ZENITH_ASSERT_EQ((u_int)xEng.GetWinnerSide(), (u_int)ZM_SIDE_PLAYER, "catcher wins");
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_CATCH_SHAKE), 4u, "guaranteed catch shows 4 shakes");
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_MOVE_USED), 0u, "catch ends before any move");
+	const ZM_BattleEvent* pRes = SC6_Find(xEv, ZM_BATTLE_EVENT_CATCH_RESULT);
+	ZENITH_ASSERT_TRUE(pRes != nullptr, "CATCH_RESULT emitted");
+	ZENITH_ASSERT_EQ(pRes->m_uSide, (u_int)ZM_SIDE_ENEMY, "target side is the enemy");
+	ZENITH_ASSERT_EQ(pRes->m_iAmount, 1, "caught");
+	ZENITH_ASSERT_EQ(pRes->m_iAux, 4, "shake count 4");
+	ZENITH_ASSERT_EQ(pRes->m_iTag, (int)ZM_ITEM_PRIMEORB, "ball id carried in tag");
+	const ZM_BattleEvent& xLast = xEv.Get(xEv.GetSize() - 1u);
+	ZENITH_ASSERT_EQ((u_int)xLast.m_eKind, (u_int)ZM_BATTLE_EVENT_BATTLE_END, "ends with BATTLE_END");
+	ZENITH_ASSERT_EQ(xLast.m_iAmount, (int)ZM_SIDE_PLAYER, "winner == player");
+	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEv, xEng, "catch_guaranteed"), "well-formed");
+}
+
+ZENITH_TEST(ZM_Battle, Engine_Catch_NonGuaranteed_FourShakes)
+{
+	// Enemy base HP 25 @ L50 -> maxHP 100; curHP rigged to 1 -> a=188. Seed 2 -> caught.
+	ZM_BattleMonsterSpec axP[1] = { MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH) };
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN, 50u, ZM_MOVE_RAMBASH, 25u, 40u, 40u, 40u, 40u, 40u) };
+	ZM_BattleEngine xEng;
+	xEng.Begin(SC6_WildConfig(), axP, 1u, axE, 1u, 2ull, 54ull);
+	xEng.GetStateMutable().Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 1u;
+	xEng.SubmitAction(ZM_SIDE_PLAYER, SC6_Item(ZM_ITEM_CATCHORB));
+	xEng.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xEng.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEv = xEng.GetEvents();
+	ZENITH_ASSERT_TRUE(xEng.IsOver(), "non-guaranteed 4-shake catch ends the battle");
+	ZENITH_ASSERT_EQ((u_int)xEng.GetWinnerSide(), (u_int)ZM_SIDE_PLAYER, "catcher wins");
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_CATCH_SHAKE), 4u, "four wobbles");
+	const ZM_BattleEvent* pRes = SC6_Find(xEv, ZM_BATTLE_EVENT_CATCH_RESULT);
+	ZENITH_ASSERT_TRUE(pRes != nullptr && pRes->m_iAmount == 1 && pRes->m_iAux == 4, "caught in 4 shakes");
+	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEv, xEng, "catch_4shake"), "well-formed");
+}
+
+ZENITH_TEST(ZM_Battle, Engine_Catch_Escape_TurnContinues)
+{
+	// Full-HP LEGENDARY enemy + CATCHORB -> a=1. Seed 1 -> escape 0 shakes; the wild
+	// enemy (low level, weak) then attacks the bulky player, which survives.
+	ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN, 30u, ZM_MOVE_RAMBASH, 250u, 40u, 250u, 40u, 250u, 100u) };
+	ZM_BattleMonsterSpec axE[1] = { MakeSpec(ZM_SPECIES_ZENARIS, 15u, ZM_MOVE_RAMBASH) };
+	ZM_BattleEngine xEng;
+	xEng.Begin(SC6_WildConfig(), axP, 1u, axE, 1u, 1ull, 54ull);
+	xEng.SubmitAction(ZM_SIDE_PLAYER, SC6_Item(ZM_ITEM_CATCHORB));
+	xEng.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xEng.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEv = xEng.GetEvents();
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_CATCH_SHAKE), 0u, "0 shakes on escape");
+	const ZM_BattleEvent* pRes = SC6_Find(xEv, ZM_BATTLE_EVENT_CATCH_RESULT);
+	ZENITH_ASSERT_TRUE(pRes != nullptr && pRes->m_iAmount == 0 && pRes->m_iAux == 0, "escaped, 0 shakes");
+	// The turn continued: the wild enemy took its move AFTER the failed catch.
+	const u_int uResIdx = SC6_FirstIndex(xEv, ZM_BATTLE_EVENT_CATCH_RESULT);
+	const u_int uMoveIdx = SC6_FirstIndex(xEv, ZM_BATTLE_EVENT_MOVE_USED);
+	ZENITH_ASSERT_TRUE(uMoveIdx < xEv.GetSize() && uMoveIdx > uResIdx, "enemy moved after the failed catch");
+	ZENITH_ASSERT_TRUE(!xEng.IsOver(), "battle continues after a failed catch");
+	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEv, xEng, "catch_escape"), "well-formed");
+}
+
+// --- engine pre-move RUN -----------------------------------------------------
+ZENITH_TEST(ZM_Battle, Engine_Run_Guaranteed_EndsBattle)
+{
+	// Fast player vs slow enemy -> guaranteed flee (no draw).
+	ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN, 30u, ZM_MOVE_RAMBASH, 60u, 40u, 40u, 40u, 40u, 200u) };
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 30u, ZM_MOVE_RAMBASH, 60u, 40u, 40u, 40u, 40u, 10u) };
+	ZM_BattleEngine xEng;
+	xEng.Begin(SC6_WildConfig(), axP, 1u, axE, 1u, 0x777ull, 54ull);
+	xEng.SubmitAction(ZM_SIDE_PLAYER, SC6_Run());
+	xEng.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xEng.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEv = xEng.GetEvents();
+	ZENITH_ASSERT_TRUE(xEng.IsOver(), "guaranteed flee ends the battle");
+	ZENITH_ASSERT_EQ((u_int)xEng.GetWinnerSide(), (u_int)ZM_SIDE_COUNT, "flee has no winner");
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_FLEE), 1u, "one FLEE event");
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_MOVE_USED), 0u, "flee ends before the enemy moves");
+	const ZM_BattleEvent* pFlee = SC6_Find(xEv, ZM_BATTLE_EVENT_FLEE);
+	ZENITH_ASSERT_TRUE(pFlee != nullptr && pFlee->m_uSide == (u_int)ZM_SIDE_PLAYER, "player fled");
+	const ZM_BattleEvent& xLast = xEv.Get(xEv.GetSize() - 1u);
+	ZENITH_ASSERT_EQ((u_int)xLast.m_eKind, (u_int)ZM_BATTLE_EVENT_BATTLE_END, "ends with BATTLE_END");
+	ZENITH_ASSERT_EQ(xLast.m_iAmount, (int)ZM_SIDE_COUNT, "winner == none");
+	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEv, xEng, "flee_guaranteed"), "well-formed");
+}
+
+ZENITH_TEST(ZM_Battle, Engine_Run_Failed_TurnContinues)
+{
+	// Slow, bulky player vs fast weak enemy. Seed 15's first %256 (246) exceeds any
+	// attempt-1 threshold (<=157) -> FLEE_FAILED; the enemy then attacks + player lives.
+	ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN, 30u, ZM_MOVE_RAMBASH, 250u, 40u, 250u, 40u, 250u, 10u) };
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 15u, ZM_MOVE_RAMBASH, 40u, 40u, 40u, 40u, 40u, 200u) };
+	ZM_BattleEngine xEng;
+	xEng.Begin(SC6_WildConfig(), axP, 1u, axE, 1u, 15ull, 54ull);
+	xEng.SubmitAction(ZM_SIDE_PLAYER, SC6_Run());
+	xEng.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xEng.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEv = xEng.GetEvents();
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_FLEE), 0u, "no successful FLEE");
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_FLEE_FAILED), 1u, "one FLEE_FAILED");
+	const u_int uFailIdx = SC6_FirstIndex(xEv, ZM_BATTLE_EVENT_FLEE_FAILED);
+	const u_int uMoveIdx = SC6_FirstIndex(xEv, ZM_BATTLE_EVENT_MOVE_USED);
+	ZENITH_ASSERT_TRUE(uMoveIdx < xEv.GetSize() && uMoveIdx > uFailIdx, "enemy moved after the failed run");
+	ZENITH_ASSERT_TRUE(!xEng.IsOver(), "battle continues after a failed run");
+	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEv, xEng, "flee_failed"), "well-formed");
+}
+
+// --- engine pre-move SWITCH --------------------------------------------------
+ZENITH_TEST(ZM_Battle, Engine_Switch_Voluntary_BringsInBenchMon)
+{
+	ZM_BattleMonsterSpec axP[2] = {
+		MakeSpecOverride(ZM_SPECIES_NIBBIN,    30u, ZM_MOVE_RAMBASH, 60u, 40u, 40u, 40u, 40u, 100u),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 30u, ZM_MOVE_RAMBASH, 250u, 40u, 250u, 40u, 250u, 100u),
+	};
+	ZM_BattleMonsterSpec axE[1] = { MakeSpec(ZM_SPECIES_WISPET, 15u, ZM_MOVE_RAMBASH) };
+	ZM_BattleEngine xEng;
+	xEng.Begin(MakeTrainerConfig(), axP, 2u, axE, 1u, 0x2468ull, 54ull);
+	xEng.SubmitAction(ZM_SIDE_PLAYER, SC6_Switch(1u));
+	xEng.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xEng.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEv = xEng.GetEvents();
+	ZENITH_ASSERT_EQ(xEng.GetState().Side(ZM_SIDE_PLAYER).m_uActiveSlot, 1u, "active is now slot 1");
+	// 2 initial SWITCH_INs at Begin + 1 for the voluntary switch.
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_SWITCH_IN), 3u, "one voluntary SWITCH_IN");
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_MOVE_FAILED), 0u, "a legal switch does not fail");
+	// The switched-in mon is the enemy's move target -> enemy MOVE_USED after the switch.
+	ZENITH_ASSERT_TRUE(SC6_Count(xEv, ZM_BATTLE_EVENT_MOVE_USED) >= 1u, "enemy took its move");
+	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEv, xEng, "switch_ok"), "well-formed");
+}
+
+ZENITH_TEST(ZM_Battle, Engine_Switch_Trapped_Fails)
+{
+	ZM_BattleMonsterSpec axP[2] = {
+		MakeSpecOverride(ZM_SPECIES_NIBBIN,    30u, ZM_MOVE_RAMBASH, 250u, 40u, 250u, 40u, 250u, 100u),
+		MakeSpec(ZM_SPECIES_STRAYLING, 30u, ZM_MOVE_RAMBASH),
+	};
+	ZM_BattleMonsterSpec axE[1] = { MakeSpec(ZM_SPECIES_WISPET, 15u, ZM_MOVE_RAMBASH) };
+	ZM_BattleEngine xEng;
+	xEng.Begin(MakeTrainerConfig(), axP, 2u, axE, 1u, 0x2468ull, 54ull);
+	// A valid TRAP state carries both the bit and a live counter (as ApplyVolatile sets).
+	xEng.GetStateMutable().Side(ZM_SIDE_PLAYER).Active().m_uVolatileMask |= (u_int)ZM_VOLATILE_TRAP;
+	xEng.GetStateMutable().Side(ZM_SIDE_PLAYER).Active().m_uTrapTurns = 3u;
+	xEng.SubmitAction(ZM_SIDE_PLAYER, SC6_Switch(1u));
+	xEng.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xEng.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEv = xEng.GetEvents();
+	ZENITH_ASSERT_EQ(xEng.GetState().Side(ZM_SIDE_PLAYER).m_uActiveSlot, 0u, "trapped -> no switch");
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_SWITCH_IN), 2u, "no extra SWITCH_IN");
+	const ZM_BattleEvent* pFail = SC6_Find(xEv, ZM_BATTLE_EVENT_MOVE_FAILED);
+	ZENITH_ASSERT_TRUE(pFail != nullptr && pFail->m_iAux == (int)ZM_MOVE_FAIL_TRAPPED, "MOVE_FAILED(TRAPPED)");
+	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEv, xEng, "switch_trapped"), "well-formed");
+}
+
+ZENITH_TEST(ZM_Battle, Engine_Switch_InvalidTarget_Fails)
+{
+	ZM_BattleMonsterSpec axP[2] = {
+		MakeSpecOverride(ZM_SPECIES_NIBBIN,    30u, ZM_MOVE_RAMBASH, 250u, 40u, 250u, 40u, 250u, 100u),
+		MakeSpec(ZM_SPECIES_STRAYLING, 30u, ZM_MOVE_RAMBASH),
+	};
+	ZM_BattleMonsterSpec axE[1] = { MakeSpec(ZM_SPECIES_WISPET, 15u, ZM_MOVE_RAMBASH) };
+	ZM_BattleEngine xEng;
+	xEng.Begin(MakeTrainerConfig(), axP, 2u, axE, 1u, 0x2468ull, 54ull);
+	xEng.GetStateMutable().Side(ZM_SIDE_PLAYER).m_xParty.Get(1u).m_uCurHP = 0u;   // bench slot fainted
+	xEng.SubmitAction(ZM_SIDE_PLAYER, SC6_Switch(1u));
+	xEng.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xEng.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEv = xEng.GetEvents();
+	ZENITH_ASSERT_EQ(xEng.GetState().Side(ZM_SIDE_PLAYER).m_uActiveSlot, 0u, "fainted target -> no switch");
+	ZENITH_ASSERT_EQ(SC6_Count(xEv, ZM_BATTLE_EVENT_SWITCH_IN), 2u, "no extra SWITCH_IN");
+	const ZM_BattleEvent* pFail = SC6_Find(xEv, ZM_BATTLE_EVENT_MOVE_FAILED);
+	ZENITH_ASSERT_TRUE(pFail != nullptr && pFail->m_iAux == (int)ZM_MOVE_FAIL_NO_SWITCH_TARGET, "MOVE_FAILED(NO_SWITCH_TARGET)");
+	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEv, xEng, "switch_invalid"), "well-formed");
+}
+
+// --- byte-identity: a both-MOVE turn is unaffected by config / the pre-move phase
+ZENITH_TEST(ZM_Battle, Engine_MoveOnly_WildConfigMatchesTrainer)
+{
+	ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_RAMBASH, 200u, 60u, 60u, 40u, 60u, 100u) };
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH, 200u, 60u, 60u, 40u, 60u, 100u) };
+
+	ZM_BattleEngine xTrainer;
+	xTrainer.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xABCDull, 54ull);
+	xTrainer.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xTrainer.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xTrainer.ResolveTurn();
+
+	ZM_BattleEngine xWild;
+	xWild.Begin(SC6_WildConfig(), axP, 1u, axE, 1u, 0xABCDull, 54ull);
+	xWild.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xWild.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xWild.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xT = xTrainer.GetEvents();
+	const Zenith_Vector<ZM_BattleEvent>& xW = xWild.GetEvents();
+	bool bEqual = (xT.GetSize() == xW.GetSize());
+	for (u_int i = 0; bEqual && i < xT.GetSize(); ++i) { bEqual = (xT.Get(i) == xW.Get(i)); }
+	if (!bEqual) { ZM_LogTwoStreams(xT, xW); }
+	ZENITH_ASSERT_TRUE(bEqual, "a both-MOVE turn is byte-identical regardless of wild/trainer config");
+	ZENITH_ASSERT_EQ(SC6_Count(xW, ZM_BATTLE_EVENT_CATCH_SHAKE), 0u, "no catch events in a move-only turn");
+	ZENITH_ASSERT_EQ(SC6_Count(xW, ZM_BATTLE_EVENT_FLEE), 0u, "no flee events in a move-only turn");
 }

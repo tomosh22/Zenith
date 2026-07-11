@@ -1,6 +1,6 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-11 -- **S2 box-2 SC5 (all 10 volatiles + Endure + SWAGGER + FORCE_SWITCH + engine-owned DoSwitch) COMPLETE and GREEN. Box 2 is 6 ordered sub-commits (ZM-D-033/034); SC1-SC5 done, next: SC6 (`ZM_CatchCalc` + voluntary SWITCH/ITEM/RUN + 2,000-battle soak).**
+**Last updated:** 2026-07-11 -- **S2 box 2 COMPLETE (all 6 sub-commits SC1-SC6). SC6 adds `ZM_CatchCalc` (Gen-III/IV four-shake capture + wild flee odds) and the engine pre-move SWITCH/ITEM(catch)/RUN actions, and promotes the smoke to the 2,000-battle soak. Next: S2 box 3 (abilities via per-hook fn-pointer structs + weather rain/sun/sand/snow).**
 
 **Read this first each session.** Replaced every session end. [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the gap audit.
 
@@ -10,25 +10,25 @@
 
 ## Build / Tests
 
-- Regen check GREEN (generated project state current after the SC5 source/test edits).
+- Regen check GREEN (new `Source/Battle/ZM_CatchCalc.{h,cpp}` are in the solution).
 - Build GREEN (`Vulkan_vs2022_Debug_Win64_True`).
-- Unit (T0): **1379 ran, 1378 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). = 102 `ZM_Data` + **207 `ZM_Battle`** (14 box-1 + 5 SC1 + 43 SC2 + 45 SC3 + 48 SC4 + 52 SC5) + 1068 engine + 2 boot. **Baseline 1379** in `zm-tests.yml`.
+- Unit (T0): **1400 ran, 1399 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). = 102 `ZM_Data` + **228 `ZM_Battle`** (14 box-1 + 5 SC1 + 43 SC2 + 45 SC3 + 48 SC4 + 52 SC5 + 21 SC6) + 1068 engine + 2 boot. **Baseline 1400** in `zm-tests.yml`.
 - Automated (P1): 1/1 (`ZM_Boot_Test`); `zenith test Zenithmon --headless` exits 0.
 
-## What landed this session -- S2 box-2 SC5
+## What landed this session -- S2 box-2 SC6 (box 2 complete)
 
-`ZM_StatusLogic` now owns the complete ten-bit volatile lifecycle and the locked G1/G4/G5 gates; `ZM_MoveExecutor` dispatches volatile primaries/secondaries, Endure, Swagger, forced switching, charge/semi-invulnerable/recharge/lock-in state, and the M0/M2/M3/M4 intercepts. `ZM_BattleMonster` carries the independent volatile counters/metadata and separate one-turn Endure flag. `ZM_BattleEngine::DoSwitch` validates the destination, silently clears outgoing battle-local state while preserving HP/PP/major status, emits `SWITCH_IN`, and is shared by forced switching now and voluntary switching in SC6. End-of-turn processing is fixed PLAYER-then-ENEMY, with per-side major chip -> Leech Seed -> Trap -> cleanup. The 52 SC5 tests lock the event encodings, durations, guarded draw order, gate/intercept precedence, exact streams, switching reset, forced-switch queued-action skip, and volatile-free compatibility. Decision = **ZM-D-034**.
+First landed the previously-uncommitted SC5 (all 10 volatiles + Endure/Swagger/forced-switch + `DoSwitch`) that a prior session authored but never committed -- verified its gate green and pushed it as `34adcb62`. Then SC6: `ZM_CatchCalc` (new files) implements the Gen-III/IV four-shake capture (rarity base rate + Gen-IV status bonus + ball param, integer-exact, PRIMEORB = guaranteed sentinel) and the paired wild-flee odds. `ZM_BattleEngine::ResolvePreMovePhase` now resolves voluntary SWITCH / ITEM(catch) / RUN before any move, in fixed PLAYER-then-ENEMY order; a capture/flee ends the battle (winner = catcher / none) by closing the turn directly, a trapped or illegal switch reports `MOVE_FAILED`, and the move phase draws its speed tie-break only when both sides submit MOVE (so move-only turns stay byte-identical). The 50-battle smoke is promoted to the deterministic **2,000-battle soak** (half wild, periodic catch/run). 21 SC6 tests + the soak, all derived against an independent PCG32 oracle. Decision = **ZM-D-035**.
 
 ## Current task
 
-**Next: SC6, the final box-2 sub-commit.** Add `ZM_CatchCalc` (exact Gen-III/IV four-shake calculation with the ZM-D-033 rarity/status modifiers), implement voluntary SWITCH/ITEM/RUN in `ResolvePreMovePhase` with Trap restrictions and guarded RNG/event semantics, and replace/promote the 50-battle smoke target with the deterministic 2,000-battle soak (termination `< 500` turns plus HP/PP/stage/event invariants). Keep every move-only golden byte-identical. The Roadmap box-2 checkbox remains open until SC6 is complete and green. **S2 has no visual gate**, so work may continue autonomously.
+**S2 box 2 is DONE.** Next per [Roadmap.md](Roadmap.md) S2: **box 3 -- abilities via per-hook fn-pointer structs (~50 shipped) + weather (rain/sun/sand/snow)**. Box 3 owns the weather DAMAGE multiplier, the end-of-turn weather chip, weather/screen countdown + expiry, and the `WEATHER_*`/`SCREEN_*`/`ABILITY_TRIGGER` events (all reserved + declared; box 2 only SET field/screen state). **S2 has no visual gate**, so work continues autonomously.
 
 ## Notes for the next agent
 
-- **LOCKED contracts box 2 must NOT break (ZM-D-032):** the `ZM_BattleEvent` POD field set + emit order per hit (`MOVE_USED -> {MISSED | IMMUNE | ([CRIT][SUPER|NOT] DAMAGE_DEALT [FAINT])}`, neutral silent), and the RNG draw order (`accuracy-if-can-miss -> crit RandBelow(24) -> roll RandRange(85,100)`, attacker-then-defender, one `RandBelow(2)` tie-break only on exact effective-speed tie). Later boxes APPEND event kinds/fields (default 0) so box-1 goldens never shift. Secondary-effect procs draw AFTER the damage roll (append, never interleave).
-- **`DAMAGE_DEALT.m_iAmount` is RAW rolled damage (pre-clamp), NOT HP lost** -- box 4 exp/UI must read `m_iAux` (remaining HP) to compute HP lost. Comment fixed in `ZM_BattleEvent.h`.
-- **Golden-vector discipline (reuse for box 2):** prototype expected event streams in a scratchpad Python oracle validated against S1 golden vectors BEFORE trusting the engine; the 2000-battle fuzz soak (real target) lands with box-2 move variety (box 1 shipped a 50-battle 1v1 smoke scaffold + `ZM_ValidateEventStream`).
-- **Orchestration that worked (this session):** design via a 3-architect Workflow panel -> synthesize; parallel Implementer (Source/Battle) + Test Author (tests + oracle) with the design's section-2 header sketches as the NORMATIVE api so they converge without naming drift; orchestrator owns regen/build/test/oracle-run/reviewer/commit. `Zenith_Vector` has `.Get(idx)` (NO `operator[]`).
-- **BUMP the zm-tests baseline** in the SAME commit whenever ZM_* unit tests change (now 1379).
+- **DLL-heal gotcha (paid for this session):** Zenithmon's FIRST build in a given config leaves the middleware DLLs (`assimp-vc143-mtd`, `zlibd1`, `minizip`, `pugixml`, `poly2tri`) absent, so the exe dies at load with `STATUS_DLL_NOT_FOUND` (exit `0xC0000135`, EMPTY boot log) and `run_unit_gate.ps1` reports "no 'Unit tests complete' line". Fix: `Import-Module Build\zenith_buildsystem.psm1; Repair-ZenithRuntimeDlls -ExeDir <outdir>` (copies from `Middleware/slang/bin` + sibling game outputs). `zenith test` heals automatically; the bare unit gate does NOT.
+- **Invalid-volatile-state gotcha:** setting a volatile BIT in a test without its counter (e.g. `ZM_VOLATILE_TRAP` without `m_uTrapTurns`) trips a production `Zenith_Assert` at end-of-turn that ABORTS the whole unit boot (no "Unit tests complete" line -> looks like the DLL crash). Set the bit AND its counter together.
+- **Catch/flee determinism:** offline oracle `scratchpad/zm_catch_ref.py` (independent PCG32 + integer math) derives every expected `a`/`b`/shake/flee value. `RandBelow(65536) == Next() % 65536` (rejection threshold is 0); guaranteed catch/flee draw NOTHING; the catch is the FIRST gameplay draw after `Begin` (Begin seeds but never draws).
+- **BUMP the zm-tests baseline** in the SAME commit whenever ZM_* unit tests change (now **1400**).
+- **Box-2 LOCKED contracts (ZM-D-032/033/034/035):** the `ZM_BattleEvent` POD + per-hit emit order, the augmented RNG draw order (PHASE G/M/E), the catch/flee formulas + guaranteed-ball sentinel, the pre-move PLAYER-then-ENEMY side order, and the catch/flee winner semantics + CATCH/FLEE event encodings. Later boxes APPEND event kinds/fields (default 0) so box-1..2 goldens never shift.
 - **Working-dir gotcha:** Bash + PowerShell SHARE a cwd -- run regen/build from `C:\dev\Zenith`. Editing existing files needs NO regen; only NEW files do (`Build\regen.ps1`).
 - **Hard rules (Scope.md):** `ZM_` prefix; original names / zero Nintendo IP; data = compiled C arrays; no audio/networking/Dynamax; singles only; baked assets git-ignored. Scope changes need a user DecisionLog entry FIRST.

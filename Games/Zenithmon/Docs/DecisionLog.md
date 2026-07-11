@@ -15,6 +15,67 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-11 -- ZM-D-035 -- S2 box-2 SC6: capture / flee math + pre-move SWITCH/ITEM/RUN (box 2 COMPLETE)
+
+- **Decision:** SC6 is the final box-2 sub-commit (ZM-D-033). It adds `ZM_CatchCalc`
+  (new `Source/Battle/ZM_CatchCalc.{h,cpp}`) and the engine's pre-move
+  SWITCH / ITEM(catch) / RUN actions in `ResolvePreMovePhase`, and promotes the box-1
+  50-battle smoke to the **deterministic 2,000-battle soak**. Every move-only turn
+  stays BYTE-IDENTICAL: the pre-move phase is inert unless a side submits a non-MOVE
+  action, and the move phase only draws the speed tie-break when BOTH sides submit
+  MOVE (the box-1 path is unchanged). Box 2 is now complete.
+- **Capture math (LOCKED; integer, no floating point -- an internal choice within the
+  ZM-D-033 Q2 contract, like box-1's rounding sub-decisions):** base rate from
+  `ZM_RARITY` (COMMON 190 / UNCOMMON 120 / RARE 45 / LEGENDARY 3, via
+  `ZM_CatchCalc::BaseCatchRate` -- NO new S1 column). Ball bonus = the item row's
+  catch param x10 (`ZM_ItemData`); PRIMEORB's param 255 is the guaranteed-capture
+  sentinel (master-ball analog). Status bonus (Gen-IV, Q2): sleep/freeze x5/2,
+  paralysis/poison/toxic/burn x3/2, none x1. Modified value
+  `a = (3*maxHP - 2*curHP) * rate * ballX10 / (3*maxHP*10)`, then `a = a*num/den`
+  (min 1). `a >= 255` (or a guaranteed ball) captures with ZERO draws. Otherwise the
+  Gen-III/IV integer shake gate `b = 1048560 / isqrt(isqrt(16711680 / a))` gates four
+  `RandBelow(65536) < b` checks, stopping at the first failure; four passes == caught.
+  Conditional ball bonuses (net/dusk/quick) are DEFERRED (Shortfalls.md 1.2).
+- **Flee math (LOCKED):** `selfSpeed >= oppSpeed` (or opp 0) is a guaranteed escape,
+  no draw; otherwise `f = (selfSpeed*128 / oppSpeed + 30*attempt) mod 256` gates one
+  `RandBelow(256) < f` check. `attempt` is 1-based and ramps across repeated runs.
+  Effective speed is the same stat-stage/paralysis fold used for turn order.
+- **Pre-move phase contract (ZM-D-035):** pre-move actions resolve BEFORE any move in
+  fixed **PLAYER-then-ENEMY** order (the EOT side-order convention). A successful
+  capture ends the battle with the CATCHING side as winner; a successful flee ends it
+  with NO winner (`ZM_SIDE_COUNT`). Either closes the turn directly: `TURN_END` then
+  `BATTLE_END` (skipping the move + end-of-turn phases), so the turn stays balanced.
+  A voluntary SWITCH reuses the SC5 `DoSwitch` primitive; a TRAPPED active reports
+  `MOVE_FAILED(TRAPPED)` and an otherwise-illegal destination reports
+  `MOVE_FAILED(NO_SWITCH_TARGET)` -- either way that side does not move. When exactly
+  one side submits MOVE, the move phase runs only that mover with NO tie-break draw.
+- **Event encodings (append-only; box-1 goldens unchanged):** `CATCH_SHAKE`
+  (m_iAmount = shake index 1..4, m_iTag = ball id) once per wobble; `CATCH_RESULT`
+  (m_iAmount = caught 1/0, m_iAux = shake count, m_iTag = ball id); `FLEE` /
+  `FLEE_FAILED` (side = the runner). `ZM_MOVE_FAIL_TRAPPED` appended to
+  `ZM_MOVE_FAIL_REASON`. ITEM in SC6 supports ball items only (medicine/battle items
+  are box 5); ITEM/RUN require a wild config.
+- **Why:** turn order puts run/item/switch before moves (GDD), so the pre-move seam is
+  the correct attachment point; gating every new draw on non-MOVE actions keeps the
+  ~200 box-1/SC1-SC5 goldens byte-identical while lighting the CATCH/FLEE event kinds.
+  Pure integer catch/flee math keeps deterministic replay; the offline oracle
+  (`scratchpad/zm_catch_ref.py`, an independent PCG32 reimplementation) derived every
+  expected `a`/`b`/shake/flee value so the tests are not engine echoes.
+- **Tests that lock it:** 21 SC6 `ZM_Battle` cases -- catch base rate / status
+  multipliers / ball param+guaranteed / modified-value + shake-probability vectors;
+  Roll (non-guaranteed caught+escaped, guaranteed-by-value, guaranteed-by-ball,
+  legendary-full-HP escape); flee odds + roll (guaranteed + computed both ways); engine
+  catch (guaranteed ends battle, non-guaranteed 4-shake, escape continues the turn);
+  engine run (guaranteed + failed); engine switch (voluntary, trapped, invalid target);
+  and the move-only wild==trainer byte-identity check. Plus the promoted
+  `Fuzz_Soak_2000Battles_Invariants` (2000 seeded battles, half wild with periodic
+  catch/run; termination < 500 turns + HP/PP/stage/stream invariants). Boot unit gate
+  1400 ran / 0 failed (baseline 1379 -> 1400).
+- **Reversibility:** moderate. Localized to `Source/Battle/` (+ the two new files),
+  but the catch/flee formulas, the guaranteed-ball sentinel, the pre-move side order,
+  the catch/flee winner semantics, and the CATCH/FLEE event encodings now define
+  deterministic replay goldens -- change them only with a new decision + updated oracle.
+
 ## 2026-07-11 -- ZM-D-034 -- S2 box-2 SC5 volatile, Endure, and switch contract
 
 - **Decision:** SC5 completes the GDD's exact ten battle-local volatile bits in

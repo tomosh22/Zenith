@@ -65,6 +65,8 @@ enum ZM_MOVE_FAIL_REASON : u_int
 	ZM_MOVE_FAIL_SEMI_INVULNERABLE,
 	ZM_MOVE_FAIL_VOLATILE_BLOCKED,
 	ZM_MOVE_FAIL_NO_SWITCH_TARGET,
+	// SC6: a voluntary pre-move switch was rejected because the active is TRAPPED.
+	ZM_MOVE_FAIL_TRAPPED,
 };
 
 // STATUS_DAMAGE's SC4 major-status tags occupy the small positive enum domain.
