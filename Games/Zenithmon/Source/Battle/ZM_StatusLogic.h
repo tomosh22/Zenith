@@ -64,6 +64,14 @@ namespace ZM_StatusLogic
 	// TOXIC = 1, no draw; others 0), emits STATUS_APPLIED (iAux = ZM_MAJOR_STATUS), and
 	// returns true. On block returns false and emits NOTHING (the caller decides whether
 	// a primary announces MOVE_FAILED(STATUS_BLOCKED); a damaging secondary is silent).
+	//
+	// The state+events overload is the core: SC4 ability bodies (e.g. contact procs)
+	// status the attacker from a ZM_AbilityContext without a ZM_MoveContext. It also
+	// hosts the SC4 STATUS_TRY veto -- after CanApplyMajor, a target's pfnPreventMajor
+	// may block the status, emitting ONE ABILITY_TRIGGER (m_iAmount = blocked status)
+	// and applying nothing (no apply-time draw). The ZM_MoveContext overload forwards.
+	bool ApplyMajor(ZM_BattleState& xState, Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_SIDE eTgt, ZM_MAJOR_STATUS eStatus);
 	bool ApplyMajor(ZM_MoveContext& xCtx, ZM_SIDE eTgt, ZM_MAJOR_STATUS eStatus);
 
 	// Clear side eTgt's active monster's major (STATUS_CURED, iAux = the cured status).

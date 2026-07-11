@@ -15,6 +15,64 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-11 -- ZM-D-041 -- S2 box-3 SC4: contact / status-try / stat-veto / accuracy abilities (15 rows)
+
+- **Decision:** SC4 installs the next **15** ability rows as live hook
+  function-pointers, reusing the SC2/SC3 `ZM_AbilityHooks` / `ZM_AbilityContext`
+  / 50-row table. Rows and slots:
+  - **CONTACT (`pfnOnContact`, rows 7-10):** STATICVEIL 30% -> paralyze attacker,
+    CINDERSKIN 30% -> burn, BARBSKIN 30% -> poison, THORNMAIL -> chip attacker
+    **maxHP/8** (min 1, NO RNG draw).
+  - **STATUS_TRY (`pfnPreventMajor` / `pfnPreventVolatile`, rows 28-33):** WAKEFUL
+    (SLEEP), PUREBLOOD (POISON+TOXIC), THAWHEART (FREEZE), LIMBERLITHE (PARALYSIS),
+    COLDBLOOD (BURN), OWNPACE (CONFUSED volatile).
+  - **stat-drop-veto (`pfnPreventStatDrop`, rows 25/48/26):** IRONWILL + GUARDIAN
+    veto ANY foe-sourced stat DROP; KEENEYE vetoes ONLY a foe ACCURACY drop.
+  - **ACCURACY (`pfnBypassAccuracy`, rows 27/49):** DEADAIM always auto-hits;
+    TRUESHOT auto-hits only when weather != NONE.
+  The three FAINT-branch abilities (BLOODRUSH 34, LASTSPITE 35, AFTERSHOCK 36)
+  are deferred to **SC5** (spec check corrected an earlier assumption that put them
+  in SC4).
+- **Seams:** a new **E4 `g_ApplyContactReactions`** in `ZM_MoveExecutor::Execute`
+  (fires once per move, only for a contact move that connected, skips if the
+  attacker is already fainted [R-C2], dispatches only the DEFENDER's `pfnOnContact`
+  -- the attacker-side `pfnOnDealtFaint` is SC5); an **M5 accuracy-bypass wrapper**
+  around the existing accuracy check (the pre-existing draw is only WRAPPED, not
+  reordered, so a NONE actor's `<100`-acc draw is byte-identical and the
+  `>=100`/ALWAYS_HITS short-circuit is untouched); a new **state+events `ApplyMajor`
+  overload** in `ZM_StatusLogic.{h,cpp}` (parallel to SC2's `ApplyStatChange`
+  overload) so contact abilities status the attacker from an ability context. The
+  stat-drop veto seam was already live (SC2) -- SC4 only adds the three predicate bodies.
+- **R-S1 -- refinement of ZM-D-036 §4.5 (orchestrator ruling):** the STATUS_TRY
+  veto+emit lives **inside** `ApplyMajor` / `ApplyVolatile`, with
+  `CanApplyMajor` / `CanApplyVolatile` kept **pure** -- NOT in the predicates as
+  §4.5 read literally. Rationale: `CanApplyVolatile` is ALSO the secondary-effect
+  preflight in `g_ApplyDamagingSecondary`, so a predicate-level veto would suppress
+  an OWNPACE holder's confuse-proc RNG draw, breaking the locked roll-then-veto
+  order and the NONE-ability goldens. The chosen placement is behavior-equivalent
+  to §4.5's intent (Resolution 4) and mirrors the SC2 `ApplyStatChange` seam.
+- **R-C1 (event encoding):** Thornmail reuses `ABILITY_TRIGGER`'s free fields
+  (`m_iAmount` = chip, `m_iAux` = attacker new HP, `m_iTag` = THORNMAIL) + a trailing
+  `FAINT` iff lethal -- no new event kind. A STATUS_TRY block emits `ABILITY_TRIGGER`
+  (blocked-status ordinal in `m_iAmount`) and NO `STATUS_APPLIED`; a stat-drop veto
+  emits `ABILITY_TRIGGER` with `m_iAmount=0`; an accuracy bypass emits NOTHING
+  (observable only as auto-hit).
+- **Contracts preserved:** zero-perturbation for NONE actors -- RNG sequence and
+  events byte-identical, so the ~260 box-1/SC1-SC4 goldens stay green; each contact
+  proc is exactly one `RandBelow(100) < 30` per contact hit for a LIVE proc ability;
+  `ZM_BattleEvent` POD stays append-only; RNG draw order + EoT order untouched.
+  Independently adversarially reviewed: no production/test defects, zero-perturbation
+  audit PASS, no false-confidence tests, coverage gates correct.
+- **Tests-that-lock-it:** **15** behavioral battle tests (paired identical-seed
+  positive+control, stochastic seeds picked by a PCG32 oracle, `0xB32A`-`0xB365`)
+  plus the two coverage-invariant gates advanced SC3 -> SC4 (all 15 slots realize
+  their declared masks; `pfnOnTurnEnd` / `pfnOnDealtFaint` and BLOODRUSH/LASTSPITE/
+  AFTERSHOCK stay asserted null for SC5). Boot baseline **1476 -> 1491** (bumped in
+  `.github/workflows/zm-tests.yml` this commit).
+- **Reversibility:** additive. The Roadmap S2 box-3 line stays UNCHECKED until SC5
+  installs the turn-end / faint / quickdraw abilities and adds the all-50
+  complete-realization gate; SC4 only APPENDS so earlier goldens never shift.
+
 ## 2026-07-11 -- ZM-D-040 -- S2 box-3 SC3: damage / stat / type-interaction abilities (20 rows)
 
 - **Decision:** SC3 installs the next **20** ability rows as live hook

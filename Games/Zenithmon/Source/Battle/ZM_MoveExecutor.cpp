@@ -829,6 +829,36 @@ static void g_EstablishPostHitVolatile(ZM_MoveContext& xCtx)
 	}
 }
 
+// PHASE E4 (post-secondary contact reactions). Runs ONCE at the end of a
+// connecting damaging move that made contact, dispatching the DEFENDER's
+// pfnOnContact (Staticveil/Cinderskin/Barbskin 30% proc onto the attacker;
+// Thornmail's deterministic maxHP/8 chip). Reached only from Execute's damaging
+// paths, which already returned early on miss (M5) / immunity (M6), so no
+// "hit landed" flag is needed. A STATUS-category / non-contact move is skipped
+// (guard), and a NONE-ability defender pulls ZERO draws here (pfn null), so
+// box-1/SC1-SC3 goldens stay byte-identical. An attacker already KO'd (e.g. by
+// recoil) escapes contact reactions (R-C2). SC5 adds the attacker's
+// pfnOnDealtFaint dispatch + Lastspite/Aftershock bodies after this point.
+static void g_ApplyContactReactions(ZM_MoveContext& xCtx)
+{
+	const ZM_MoveData& xMove = xCtx.Move();
+	if (xMove.m_eCategory == ZM_MOVE_CATEGORY_STATUS || !xMove.m_bMakesContact)
+	{
+		return;
+	}
+	if (xCtx.Atk().IsFainted())
+	{
+		return;   // attacker KO'd by recoil escapes contact reactions (R-C2)
+	}
+	ZM_BattleMonster& xDef = xCtx.Def();
+	const ZM_AbilityHooks* pxDefHooks = ZM_GetAbilityHooks(xDef.m_eAbility);
+	if (pxDefHooks != nullptr && pxDefHooks->pfnOnContact != nullptr)
+	{
+		ZM_AbilityContext xDefCtx = g_MakeAbilityContext(xCtx, xCtx.m_eDef);
+		pxDefHooks->pfnOnContact(xDefCtx, xDef.IsFainted());
+	}
+}
+
 // ---- The executor ----------------------------------------------------------
 ZM_MoveResult ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 {
@@ -946,19 +976,35 @@ ZM_MoveResult ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	// the box-1 goldens are unchanged.
 	if (xMove.m_uAccuracy != uZM_MOVE_ACCURACY_ALWAYS_HITS && xMove.m_uAccuracy < 100u)
 	{
-		// Fold acc/eva stages, but CLAMP the net stage delta to [iZM_MIN_STAGE,
-		// iZM_MAX_STAGE] first: the raw difference ranges [-12,+12], yet a stat stage
-		// only ever multiplies within its +/-6 envelope. At stage 0 (box 1) and for
-		// |delta| <= 6 (every existing test) the clamp is identity, so no golden moves.
-		int iAccStage = xAtk.m_aiStage[ZM_BATTLE_STAT_ACCURACY] - xCtx.Def().m_aiStage[ZM_BATTLE_STAT_EVASION];
-		if (iAccStage > iZM_MAX_STAGE) { iAccStage = iZM_MAX_STAGE; }
-		if (iAccStage < iZM_MIN_STAGE) { iAccStage = iZM_MIN_STAGE; }
-		const u_int uEffAcc = ZM_ApplyStatStage(xMove.m_uAccuracy, iAccStage);
-		if (xCtx.RNG().RandBelow(100u) >= uEffAcc)
+		// SC4: an attacker ability (Deadaim always; Trueshot while weather != NONE)
+		// may grant auto-hit, SKIPPING the accuracy draw entirely (emits nothing). A
+		// NONE-ability attacker has a null pfn -> bBypass false -> the RandBelow(100)
+		// draw runs exactly as before, so box-1/SC1-SC3 goldens stay byte-identical.
+		// A >=100-acc / ALWAYS_HITS move never reaches here (outer guard), so the pfn
+		// is not even called for a sure-hit move.
+		const ZM_AbilityHooks* pxAtkHooks = ZM_GetAbilityHooks(xAtk.m_eAbility);
+		bool bBypass = false;
+		if (pxAtkHooks != nullptr && pxAtkHooks->pfnBypassAccuracy != nullptr)
 		{
-			xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_MISSED, xCtx.m_eAtk, xAtkSide.m_uActiveSlot, (u_int)xMove.m_eId));
-			g_FinishLockedUse(xCtx, bWasLocked);
-			return xResult;
+			const ZM_AbilityContext xAtkCtx = g_MakeAbilityContext(xCtx, xCtx.m_eAtk);
+			bBypass = pxAtkHooks->pfnBypassAccuracy(xAtkCtx);
+		}
+		if (!bBypass)
+		{
+			// Fold acc/eva stages, but CLAMP the net stage delta to [iZM_MIN_STAGE,
+			// iZM_MAX_STAGE] first: the raw difference ranges [-12,+12], yet a stat stage
+			// only ever multiplies within its +/-6 envelope. At stage 0 (box 1) and for
+			// |delta| <= 6 (every existing test) the clamp is identity, so no golden moves.
+			int iAccStage = xAtk.m_aiStage[ZM_BATTLE_STAT_ACCURACY] - xCtx.Def().m_aiStage[ZM_BATTLE_STAT_EVASION];
+			if (iAccStage > iZM_MAX_STAGE) { iAccStage = iZM_MAX_STAGE; }
+			if (iAccStage < iZM_MIN_STAGE) { iAccStage = iZM_MIN_STAGE; }
+			const u_int uEffAcc = ZM_ApplyStatStage(xMove.m_uAccuracy, iAccStage);
+			if (xCtx.RNG().RandBelow(100u) >= uEffAcc)
+			{
+				xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_MISSED, xCtx.m_eAtk, xAtkSide.m_uActiveSlot, (u_int)xMove.m_eId));
+				g_FinishLockedUse(xCtx, bWasLocked);
+				return xResult;
+			}
 		}
 	}
 
@@ -1023,6 +1069,7 @@ ZM_MoveResult ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	if (g_IsDeliveryEffect(xMove.m_eEffect))
 	{
 		g_ApplyDelivery(xCtx);
+		g_ApplyContactReactions(xCtx);   // E4: once per move (multi/double-hit safe)
 		g_FinishLockedUse(xCtx, bWasLocked);
 		return xResult;
 	}
@@ -1034,6 +1081,7 @@ ZM_MoveResult ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	// E3: SECONDARY stat proc -- only for a damaging move carrying a stat effect, and
 	// only if the target survived. NONE-effect moves take no draw here (box-1 path).
 	xResult = g_ApplyDamagingSecondary(xCtx);
+	g_ApplyContactReactions(xCtx);   // E4: strictly after E3, once per move
 	g_FinishLockedUse(xCtx, bWasLocked);
 	return xResult;
 }

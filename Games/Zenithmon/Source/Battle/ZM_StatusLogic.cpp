@@ -97,9 +97,10 @@ bool ZM_StatusLogic::CanApplyMajor(const ZM_BattleMonster& xMon, ZM_MAJOR_STATUS
 	}
 }
 
-bool ZM_StatusLogic::ApplyMajor(ZM_MoveContext& xCtx, ZM_SIDE eTgt, ZM_MAJOR_STATUS eStatus)
+bool ZM_StatusLogic::ApplyMajor(ZM_BattleState& xState,
+	Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_SIDE eTgt, ZM_MAJOR_STATUS eStatus)
 {
-	ZM_BattleSide&    xTgtSide = xCtx.m_pxState->Side(eTgt);
+	ZM_BattleSide&    xTgtSide = xState.Side(eTgt);
 	ZM_BattleMonster& xTgt     = xTgtSide.Active();
 
 	if (!CanApplyMajor(xTgt, eStatus))
@@ -107,10 +108,25 @@ bool ZM_StatusLogic::ApplyMajor(ZM_MoveContext& xCtx, ZM_SIDE eTgt, ZM_MAJOR_STA
 		return false;   // blocked -- caller announces MOVE_FAILED for a primary; silent for a secondary
 	}
 
+	// SC4 STATUS_TRY: an ability may block this major AFTER the type/duplicate gate
+	// (so a type-immune/duplicate block stays SILENT -- it fails CanApplyMajor first).
+	// On an ability block emit ONE ABILITY_TRIGGER (m_iAmount = blocked status ordinal,
+	// m_iTag = ability), apply nothing, and pull NO apply-time draw (a Wakeful-blocked
+	// SLEEP never draws the RandRange(1,3) duration). NONE-ability targets skip this.
+	const ZM_AbilityHooks* pxHooks = ZM_GetAbilityHooks(xTgt.m_eAbility);
+	if (pxHooks != nullptr && pxHooks->pfnPreventMajor != nullptr
+		&& pxHooks->pfnPreventMajor(eStatus))
+	{
+		xEvents.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_ABILITY_TRIGGER, eTgt,
+			xTgtSide.m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)eStatus, 0,
+			(int)xTgt.m_eAbility));
+		return false;
+	}
+
 	xTgt.m_eStatus = eStatus;
 	if (eStatus == ZM_MAJOR_STATUS_SLEEP)
 	{
-		xTgt.m_uStatusCounter = xCtx.RNG().RandRange(1u, 3u);   // the ONLY apply-time draw
+		xTgt.m_uStatusCounter = xState.m_xRNG.RandRange(1u, 3u);   // the ONLY apply-time draw
 	}
 	else if (eStatus == ZM_MAJOR_STATUS_TOXIC)
 	{
@@ -121,9 +137,14 @@ bool ZM_StatusLogic::ApplyMajor(ZM_MoveContext& xCtx, ZM_SIDE eTgt, ZM_MAJOR_STA
 		xTgt.m_uStatusCounter = 0u;
 	}
 
-	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_STATUS_APPLIED, eTgt, xTgtSide.m_uActiveSlot,
+	xEvents.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_STATUS_APPLIED, eTgt, xTgtSide.m_uActiveSlot,
 		ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)eStatus));
 	return true;
+}
+
+bool ZM_StatusLogic::ApplyMajor(ZM_MoveContext& xCtx, ZM_SIDE eTgt, ZM_MAJOR_STATUS eStatus)
+{
+	return ApplyMajor(*xCtx.m_pxState, *xCtx.m_pxEvents, eTgt, eStatus);
 }
 
 bool ZM_StatusLogic::CureMajor(ZM_MoveContext& xCtx, ZM_SIDE eTgt)
@@ -184,6 +205,21 @@ bool ZM_StatusLogic::ApplyVolatile(ZM_MoveContext& xCtx, ZM_SIDE eTgt,
 	ZM_BattleMonster& xMon = xSide.Active();
 	if (!CanApplyVolatile(xMon, eVolatile))
 	{
+		return false;
+	}
+
+	// SC4 STATUS_TRY: an ability (Ownpace -> CONFUSED) may block this volatile AFTER
+	// the duplicate/type gate. CanApplyVolatile stays PURE (the g_ApplyDamagingSecondary
+	// preflight still lets a secondary-confuse proc DRAW), so the roll-then-veto order
+	// holds: emit ONE ABILITY_TRIGGER (m_iAmount = blocked volatile bit), apply nothing,
+	// pull NO duration draw. NONE-ability targets skip this branch (byte-identical).
+	const ZM_AbilityHooks* pxHooks = ZM_GetAbilityHooks(xMon.m_eAbility);
+	if (pxHooks != nullptr && pxHooks->pfnPreventVolatile != nullptr
+		&& pxHooks->pfnPreventVolatile(eVolatile))
+	{
+		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_ABILITY_TRIGGER, eTgt,
+			xSide.m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)eVolatile, 0,
+			(int)xMon.m_eAbility));
 		return false;
 	}
 

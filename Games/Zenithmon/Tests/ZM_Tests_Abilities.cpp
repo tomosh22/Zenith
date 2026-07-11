@@ -95,6 +95,66 @@ namespace
 			|| eId == ZM_ABILITY_GRAZER;
 	}
 
+	// SC4 installs 15 abilities across five pfn slots: four CONTACT reactions, the
+	// three stat-drop vetoes (MODIFY_STAT/ACCURACY), the six STATUS_TRY blocks
+	// (major + Ownpace's volatile), and the two ACCURACY bypasses. BLOODRUSH/
+	// LASTSPITE/AFTERSHOCK and the box-3 remainder stay uninstalled until SC5.
+	bool ZM_IsSC4Ability(ZM_ABILITY_ID eId)
+	{
+		switch (eId)
+		{
+		case ZM_ABILITY_STATICVEIL:
+		case ZM_ABILITY_CINDERSKIN:
+		case ZM_ABILITY_BARBSKIN:
+		case ZM_ABILITY_THORNMAIL:
+		case ZM_ABILITY_IRONWILL:
+		case ZM_ABILITY_KEENEYE:
+		case ZM_ABILITY_DEADAIM:
+		case ZM_ABILITY_WAKEFUL:
+		case ZM_ABILITY_PUREBLOOD:
+		case ZM_ABILITY_THAWHEART:
+		case ZM_ABILITY_LIMBERLITHE:
+		case ZM_ABILITY_OWNPACE:
+		case ZM_ABILITY_COLDBLOOD:
+		case ZM_ABILITY_GUARDIAN:
+		case ZM_ABILITY_TRUESHOT:
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	// pfn <-> ability-set maps for the SC4 installation frontier (spec 4). CONTACT
+	// is the four skin abilities ONLY (NOT LASTSPITE/AFTERSHOCK, still SC5).
+	bool ZM_IsSC4ContactAbility(ZM_ABILITY_ID eId)
+	{
+		return eId == ZM_ABILITY_STATICVEIL || eId == ZM_ABILITY_CINDERSKIN
+			|| eId == ZM_ABILITY_BARBSKIN || eId == ZM_ABILITY_THORNMAIL;
+	}
+
+	bool ZM_IsSC4PreventStatDropAbility(ZM_ABILITY_ID eId)
+	{
+		return eId == ZM_ABILITY_IRONWILL || eId == ZM_ABILITY_KEENEYE
+			|| eId == ZM_ABILITY_GUARDIAN;
+	}
+
+	bool ZM_IsSC4PreventMajorAbility(ZM_ABILITY_ID eId)
+	{
+		return eId == ZM_ABILITY_WAKEFUL || eId == ZM_ABILITY_PUREBLOOD
+			|| eId == ZM_ABILITY_THAWHEART || eId == ZM_ABILITY_LIMBERLITHE
+			|| eId == ZM_ABILITY_COLDBLOOD;
+	}
+
+	bool ZM_IsSC4PreventVolatileAbility(ZM_ABILITY_ID eId)
+	{
+		return eId == ZM_ABILITY_OWNPACE;
+	}
+
+	bool ZM_IsSC4BypassAccuracyAbility(ZM_ABILITY_ID eId)
+	{
+		return eId == ZM_ABILITY_DEADAIM || eId == ZM_ABILITY_TRUESHOT;
+	}
+
 	u_int ZM_LiveHookRealizationMask(const ZM_AbilityHooks& xHooks, u_int uDeclaredMask)
 	{
 		u_int uMask = 0u;
@@ -245,16 +305,17 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableTwelveSlotsAndSentinelContract)
 	ZENITH_ASSERT_TRUE(ZM_GetAbilityHooks((ZM_ABILITY_ID)(ZM_ABILITY_COUNT + 1u)) == nullptr);
 }
 
-// Incremental through-SC3 invariant: the six SC2 and twenty SC3 abilities
-// completely realize their declared masks through a live pfn and/or one of the
-// explicitly documented engine-side mechanisms. Later-SC pfn rows may still be
-// null; the all-50 complete-realization gate belongs to SC5.
-ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC3InstalledRowsRealizeDeclaredMasks)
+// Incremental through-SC4 invariant: the six SC2, twenty SC3, and fifteen SC4
+// abilities completely realize their declared masks through a live pfn and/or one
+// of the explicitly documented engine-side mechanisms (e.g. Trueshot's WEATHER).
+// Later-SC pfn rows may still be null; the all-50 complete-realization gate
+// belongs to SC5.
+ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC4InstalledRowsRealizeDeclaredMasks)
 {
 	for (u_int i = 0u; i < ZM_ABILITY_COUNT; ++i)
 	{
 		const ZM_ABILITY_ID eId = (ZM_ABILITY_ID)i;
-		if (!ZM_IsSC2SwitchInAbility(eId) && !ZM_IsSC3Ability(eId))
+		if (!ZM_IsSC2SwitchInAbility(eId) && !ZM_IsSC3Ability(eId) && !ZM_IsSC4Ability(eId))
 		{
 			continue;
 		}
@@ -268,7 +329,7 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC3InstalledRowsRealizeDeclaredMa
 		const u_int uRealized = ZM_LiveHookRealizationMask(*pxHooks, uDeclared)
 			| ZM_EngineSideRealizationMask(eId, uDeclared);
 		ZENITH_ASSERT_EQ(uDeclared & ~uRealized, 0u,
-			"through-SC3 ability %s has an unrealized declared bit", Ab(i).m_szName);
+			"through-SC4 ability %s has an unrealized declared bit", Ab(i).m_szName);
 	}
 }
 
@@ -347,7 +408,7 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableEngineSideRealizationsAreExplicit)
 	}
 }
 
-ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC3SlotsMatchRosterExactly)
+ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC4SlotsMatchRosterExactly)
 {
 	for (u_int i = 0u; i < ZM_ABILITY_COUNT; ++i)
 	{
@@ -357,24 +418,31 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC3SlotsMatchRosterExactly)
 		if (pxHooks != nullptr)
 		{
 			ZENITH_ASSERT_EQ(pxHooks->pfnOnSwitchIn != nullptr, ZM_IsSC2SwitchInAbility(eId),
-				"%s has the wrong through-SC3 SWITCH_IN installation state", Ab(i).m_szName);
+				"%s has the wrong through-SC4 SWITCH_IN installation state", Ab(i).m_szName);
 			ZENITH_ASSERT_EQ(pxHooks->pfnModifyStat != nullptr, ZM_IsSC3ModifyStatAbility(eId),
-				"%s has the wrong through-SC3 MODIFY_STAT installation state", Ab(i).m_szName);
+				"%s has the wrong through-SC4 MODIFY_STAT installation state", Ab(i).m_szName);
 			ZENITH_ASSERT_EQ(pxHooks->pfnModifyDamageDealt != nullptr, ZM_IsSC3DamageDealtAbility(eId),
-				"%s has the wrong through-SC3 MODIFY_DAMAGE_DEALT installation state", Ab(i).m_szName);
+				"%s has the wrong through-SC4 MODIFY_DAMAGE_DEALT installation state", Ab(i).m_szName);
 			ZENITH_ASSERT_EQ(pxHooks->pfnModifyDamageTaken != nullptr, ZM_IsSC3DamageTakenAbility(eId),
-				"%s has the wrong through-SC3 MODIFY_DAMAGE_TAKEN installation state", Ab(i).m_szName);
+				"%s has the wrong through-SC4 MODIFY_DAMAGE_TAKEN installation state", Ab(i).m_szName);
 			ZENITH_ASSERT_EQ(pxHooks->pfnTypeInteraction != nullptr, ZM_IsSC3TypeInteractionAbility(eId),
-				"%s has the wrong through-SC3 TYPE_IMMUNITY installation state", Ab(i).m_szName);
+				"%s has the wrong through-SC4 TYPE_IMMUNITY installation state", Ab(i).m_szName);
 
-			// SC4/SC5 slots must not be populated early merely to satisfy coverage.
-			ZENITH_ASSERT_TRUE(pxHooks->pfnPreventStatDrop == nullptr);
-			ZENITH_ASSERT_TRUE(pxHooks->pfnPreventMajor == nullptr);
-			ZENITH_ASSERT_TRUE(pxHooks->pfnPreventVolatile == nullptr);
-			ZENITH_ASSERT_TRUE(pxHooks->pfnOnContact == nullptr);
+			// SC4 frontier: the five new pfn slots match their exact ability sets.
+			ZENITH_ASSERT_EQ(pxHooks->pfnOnContact != nullptr, ZM_IsSC4ContactAbility(eId),
+				"%s has the wrong through-SC4 CONTACT installation state", Ab(i).m_szName);
+			ZENITH_ASSERT_EQ(pxHooks->pfnPreventStatDrop != nullptr, ZM_IsSC4PreventStatDropAbility(eId),
+				"%s has the wrong through-SC4 stat-drop-veto installation state", Ab(i).m_szName);
+			ZENITH_ASSERT_EQ(pxHooks->pfnPreventMajor != nullptr, ZM_IsSC4PreventMajorAbility(eId),
+				"%s has the wrong through-SC4 STATUS_TRY(major) installation state", Ab(i).m_szName);
+			ZENITH_ASSERT_EQ(pxHooks->pfnPreventVolatile != nullptr, ZM_IsSC4PreventVolatileAbility(eId),
+				"%s has the wrong through-SC4 STATUS_TRY(volatile) installation state", Ab(i).m_szName);
+			ZENITH_ASSERT_EQ(pxHooks->pfnBypassAccuracy != nullptr, ZM_IsSC4BypassAccuracyAbility(eId),
+				"%s has the wrong through-SC4 ACCURACY-bypass installation state", Ab(i).m_szName);
+
+			// SC5 slots must not be populated early merely to satisfy coverage.
 			ZENITH_ASSERT_TRUE(pxHooks->pfnOnTurnEnd == nullptr);
 			ZENITH_ASSERT_TRUE(pxHooks->pfnOnDealtFaint == nullptr);
-			ZENITH_ASSERT_TRUE(pxHooks->pfnBypassAccuracy == nullptr);
 		}
 	}
 }

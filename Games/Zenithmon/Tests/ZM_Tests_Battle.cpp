@@ -8525,3 +8525,571 @@ ZENITH_TEST(ZM_Battle, Box3SC3_Downdraft_HalvesSkyDamageTaken)
 		ZM_MOVE_RAMBASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
 		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE, 0xB329ull);
 }
+
+// ============================================================================
+// ===== BOX 3 SC4: STATUS_TRY / CONTACT / STAT-DROP-VETO / ACCURACY ABILITIES =====
+//
+// Black-box behavioral tests over the SC4 seams: PHASE-E4 contact reactions
+// (30%-proc + Thornmail chip), the ApplyStatChange stat-drop veto, the ApplyMajor
+// /ApplyVolatile STATUS_TRY veto, and the M5 accuracy bypass. Each test pairs a
+// POSITIVE case (ability fires -> exact effect + event) with a CONTROL (ability
+// off / wrong condition -> no delta, no trigger, RNG unperturbed). Every seed
+// with a stochastic requirement (proc fires / accuracy miss) was chosen by an
+// independent PCG32 oracle (scratchpad/sc4_seed_oracle.py), never by echoing the
+// engine. Seed sequence continues from SC3 at 0xB32A.
+//
+// Event-field contract asserted here (must match the Implementer's emissions):
+//   * contact 30%-proc (Staticveil/Cinderskin/Barbskin): one generic
+//     ABILITY_TRIGGER on the DEFENDER (m_iAmount=m_iAux=0, m_iTag=ability) then a
+//     STATUS_APPLIED on the ATTACKER; exactly one extra RandBelow(100) drawn.
+//   * Thornmail: one ABILITY_TRIGGER on the DEFENDER, m_iAmount=maxHP/8 (min 1),
+//     m_iAux=attacker new HP, m_iTag=THORNMAIL; +FAINT on a lethal chip; NO draw.
+//   * stat-drop veto (Ironwill/Guardian/Keeneye): one ABILITY_TRIGGER on the
+//     target (m_iAmount=m_iAux=0), no STAT_STAGE_CHANGED.
+//   * STATUS_TRY veto (Wakeful/Pureblood/Thawheart/Limberlithe/Coldblood/Ownpace):
+//     one ABILITY_TRIGGER on the target, m_iAmount=blocked status/volatile ordinal,
+//     m_iAux=0; no STATUS_APPLIED/VOLATILE_APPLIED; no apply-time draw.
+//   * accuracy bypass (Deadaim/Trueshot): the move HITS where a NONE control
+//     misses; the hook emits NOTHING.
+// ============================================================================
+namespace
+{
+	// Run ZM_MoveExecutor::Execute for the PLAYER's slot-0 move into an ENEMY
+	// holding eDefAbility. Attacker species is a parameter so the contact-proc
+	// tests can drive a type-immune (FIRE) attacker; its ability is always NONE.
+	void ZM_Box3SC4RunPlayerMove(ZM_BattleState& xState,
+		Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_MOVE_ID eMove,
+		ZM_SPECIES_ID eAtkSpecies, ZM_ABILITY_ID eDefAbility, u_int64 ulSeed)
+	{
+		BuildBattleState(xState,
+			ZM_Box3SC3Spec(eAtkSpecies, eMove, ZM_ABILITY_NONE),
+			ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, eDefAbility),
+			ulSeed, 54ull);
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+	}
+
+	// Assert the event stream carries EXACTLY ONE ABILITY_TRIGGER with the given
+	// owner/amount/aux/tag (and slot 0, no move/species). Unlike
+	// ZM_Box3SC3AssertExactTriggers this checks a NON-zero m_iAmount/m_iAux, so it
+	// fits Thornmail (chip/HP) and the STATUS_TRY vetoes (blocked ordinal).
+	void ZM_Box3SC4AssertOneTrigger(const Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_ABILITY_ID eAbility, ZM_SIDE eOwner, int iAmount, int iAux)
+	{
+		ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 1u);
+		const ZM_BattleEvent* pxTrigger = ZM_Box3SC3FindKind(xEvents,
+			ZM_BATTLE_EVENT_ABILITY_TRIGGER);
+		ZENITH_ASSERT_NOT_NULL(pxTrigger);
+		if (pxTrigger != nullptr)
+		{
+			const ZM_BattleEvent xExpected = ZM_MakeEvent(ZM_BATTLE_EVENT_ABILITY_TRIGGER,
+				(u_int)eOwner, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, iAmount, iAux,
+				(int)eAbility);
+			ZENITH_ASSERT_TRUE(*pxTrigger == xExpected,
+				"SC4 %s ABILITY_TRIGGER payload mismatch", ZM_GetAbilityName(eAbility));
+		}
+	}
+
+	// Shared 30%-proc contact-status asserter (Staticveil/Cinderskin/Barbskin).
+	// ulProcSeed makes the E4 RandBelow(100) < 30 fire; ulNoProcSeed makes it fail.
+	void ZM_Box3SC4AssertContactStatus(ZM_ABILITY_ID eAbility, ZM_MAJOR_STATUS eMajor,
+		u_int64 ulProcSeed, u_int64 ulNoProcSeed)
+	{
+		// POSITIVE: proc fires -> attacker gains eMajor; one ABILITY_TRIGGER on the
+		// defender (generic payload) precedes the attacker's STATUS_APPLIED.
+		ZM_BattleState xProcState;
+		Zenith_Vector<ZM_BattleEvent> xProcEvents;
+		ZM_Box3SC4RunPlayerMove(xProcState, xProcEvents, ZM_MOVE_RAMBASH,
+			ZM_SPECIES_NIBBIN, eAbility, ulProcSeed);
+		ZM_Box3SC3AssertExactTriggers(xProcEvents, eAbility, ZM_SIDE_ENEMY, 1u, 1u);
+		ZENITH_ASSERT_EQ((u_int)xProcState.Side(ZM_SIDE_PLAYER).Active().m_eStatus,
+			(u_int)eMajor);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xProcEvents, ZM_BATTLE_EVENT_STATUS_APPLIED), 1u);
+		const ZM_BattleEvent* pxApplied = ZM_Box3SC3FindKind(xProcEvents,
+			ZM_BATTLE_EVENT_STATUS_APPLIED);
+		ZENITH_ASSERT_NOT_NULL(pxApplied);
+		if (pxApplied != nullptr)
+		{
+			ZENITH_ASSERT_EQ(pxApplied->m_uSide, (u_int)ZM_SIDE_PLAYER);
+			ZENITH_ASSERT_EQ(pxApplied->m_iAux, (int)eMajor);
+		}
+		const int iTrigger = ZM_Box3SC3FindTriggerIndex(xProcEvents, eAbility,
+			ZM_SIDE_ENEMY);
+		int iApplied = -1;
+		for (u_int i = 0u; i < xProcEvents.GetSize(); ++i)
+		{
+			if (xProcEvents.Get(i).m_eKind == ZM_BATTLE_EVENT_STATUS_APPLIED)
+			{
+				iApplied = (int)i;
+				break;
+			}
+		}
+		ZENITH_ASSERT_GE(iTrigger, 0);
+		ZENITH_ASSERT_GT(iApplied, iTrigger, "ability announce precedes the applied status");
+
+		// ZERO-PERTURBATION: a NONE defender at the SAME seed pulls the identical
+		// crit/roll but NO E4 proc. Advancing the NONE cursor by exactly one
+		// RandBelow(100) must reproduce the ability defender's post-move cursor --
+		// proving the contact defender pulls exactly one extra draw, and only it.
+		ZM_BattleState xNoneState;
+		Zenith_Vector<ZM_BattleEvent> xNoneEvents;
+		ZM_Box3SC4RunPlayerMove(xNoneState, xNoneEvents, ZM_MOVE_RAMBASH,
+			ZM_SPECIES_NIBBIN, ZM_ABILITY_NONE, ulProcSeed);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xNoneEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+		ZENITH_ASSERT_EQ((u_int)xNoneState.Side(ZM_SIDE_PLAYER).Active().m_eStatus,
+			(u_int)ZM_MAJOR_STATUS_NONE);
+		ZM_BattleRNG xProbe = xNoneState.m_xRNG;
+		xProbe.RandBelow(100u);
+		ZENITH_ASSERT_EQ(xProbe.Next(), xProcState.m_xRNG.Next(),
+			"contact-proc defender pulls exactly one extra RandBelow(100) vs a NONE defender");
+
+		// CONTROL: no-proc seed -> the draw is taken but fails; no trigger, no status.
+		ZM_BattleState xNoProcState;
+		Zenith_Vector<ZM_BattleEvent> xNoProcEvents;
+		ZM_Box3SC4RunPlayerMove(xNoProcState, xNoProcEvents, ZM_MOVE_RAMBASH,
+			ZM_SPECIES_NIBBIN, eAbility, ulNoProcSeed);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xNoProcEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+		ZENITH_ASSERT_EQ((u_int)xNoProcState.Side(ZM_SIDE_PLAYER).Active().m_eStatus,
+			(u_int)ZM_MAJOR_STATUS_NONE);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xNoProcEvents, ZM_BATTLE_EVENT_STATUS_APPLIED), 0u);
+	}
+
+	// A non-contact damaging move (TIDECRASH) into the ability defender skips E4
+	// entirely: no ABILITY_TRIGGER, attacker unchanged, RNG identical to a NONE run.
+	void ZM_Box3SC4AssertNonContactSkipsE4(ZM_ABILITY_ID eAbility, u_int64 ulSeed)
+	{
+		ZM_BattleState xAbState;
+		Zenith_Vector<ZM_BattleEvent> xAbEvents;
+		ZM_Box3SC4RunPlayerMove(xAbState, xAbEvents, ZM_MOVE_TIDECRASH,
+			ZM_SPECIES_NIBBIN, eAbility, ulSeed);
+		const u_int uAtkHP = xAbState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP;
+
+		ZM_BattleState xNoneState;
+		Zenith_Vector<ZM_BattleEvent> xNoneEvents;
+		ZM_Box3SC4RunPlayerMove(xNoneState, xNoneEvents, ZM_MOVE_TIDECRASH,
+			ZM_SPECIES_NIBBIN, ZM_ABILITY_NONE, ulSeed);
+
+		ZENITH_ASSERT_EQ(ZM_CountKind(xAbEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+		ZENITH_ASSERT_EQ((u_int)xAbState.Side(ZM_SIDE_PLAYER).Active().m_eStatus,
+			(u_int)ZM_MAJOR_STATUS_NONE);
+		ZENITH_ASSERT_EQ(xAbState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP, uAtkHP);
+		ZENITH_ASSERT_EQ(xAbState.m_xRNG.Next(), xNoneState.m_xRNG.Next(),
+			"a non-contact move draws no E4 proc; RNG identical to a NONE defender");
+	}
+
+	// Stat-drop veto asserter. The player uses eMove (a foe-targeting stat drop)
+	// into a defender with eAbility; bExpectVeto selects the veto or pass contract.
+	void ZM_Box3SC4AssertStatDropVeto(ZM_ABILITY_ID eAbility, ZM_MOVE_ID eMove,
+		ZM_BATTLE_STAT eStat, bool bExpectVeto, u_int64 ulSeed)
+	{
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_Box3SC4RunPlayerMove(xState, xEvents, eMove, ZM_SPECIES_NIBBIN, eAbility, ulSeed);
+		const int iStage = xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[eStat];
+		if (bExpectVeto)
+		{
+			ZM_Box3SC3AssertExactTriggers(xEvents, eAbility, ZM_SIDE_ENEMY, 1u, 1u);
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), 0u);
+			ZENITH_ASSERT_EQ(iStage, 0);
+		}
+		else
+		{
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), 1u);
+			ZENITH_ASSERT_EQ(iStage, -1);
+		}
+	}
+
+	// STATUS_TRY (major) veto asserter using the direct state+events ApplyMajor
+	// overload (avoids move-accuracy noise; works for FREEZE, which has no move).
+	// eMajor is blocked by eAbility; ePassMajor is a major it lets through.
+	void ZM_Box3SC4AssertMajorBlocked(ZM_ABILITY_ID eAbility, ZM_MAJOR_STATUS eMajor,
+		ZM_MAJOR_STATUS ePassMajor, u_int64 ulSeed)
+	{
+		// POSITIVE: the ability blocks eMajor -> false + one ABILITY_TRIGGER carrying
+		// the blocked ordinal; nothing applied; no apply-time draw.
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		BuildBattleState(xState,
+			ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+			ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, eAbility),
+			ulSeed, 54ull);
+		const bool bBlocked = ZM_StatusLogic::ApplyMajor(xState, xEvents, ZM_SIDE_ENEMY, eMajor);
+		ZENITH_ASSERT_FALSE(bBlocked);
+		ZM_Box3SC4AssertOneTrigger(xEvents, eAbility, ZM_SIDE_ENEMY, (int)eMajor, 0);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_STATUS_APPLIED), 0u);
+		ZENITH_ASSERT_EQ((u_int)xState.Side(ZM_SIDE_ENEMY).Active().m_eStatus,
+			(u_int)ZM_MAJOR_STATUS_NONE);
+
+		// CONTROL: NONE defender -> the same major applies (one STATUS_APPLIED, no
+		// trigger). Built fresh so it is a true identical-seed twin of the positive.
+		ZM_BattleState xNoneState;
+		Zenith_Vector<ZM_BattleEvent> xNoneEvents;
+		BuildBattleState(xNoneState,
+			ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+			ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+			ulSeed, 54ull);
+		const bool bApplied = ZM_StatusLogic::ApplyMajor(xNoneState, xNoneEvents,
+			ZM_SIDE_ENEMY, eMajor);
+		ZENITH_ASSERT_TRUE(bApplied);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xNoneEvents, ZM_BATTLE_EVENT_STATUS_APPLIED), 1u);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xNoneEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+		ZENITH_ASSERT_EQ((u_int)xNoneState.Side(ZM_SIDE_ENEMY).Active().m_eStatus,
+			(u_int)eMajor);
+
+		// CROSS-CHECK: the ability lets a DIFFERENT major (ePassMajor) through.
+		ZM_BattleState xPassState;
+		Zenith_Vector<ZM_BattleEvent> xPassEvents;
+		BuildBattleState(xPassState,
+			ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+			ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, eAbility),
+			ulSeed, 54ull);
+		const bool bPass = ZM_StatusLogic::ApplyMajor(xPassState, xPassEvents,
+			ZM_SIDE_ENEMY, ePassMajor);
+		ZENITH_ASSERT_TRUE(bPass);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xPassEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+		ZENITH_ASSERT_EQ((u_int)xPassState.Side(ZM_SIDE_ENEMY).Active().m_eStatus,
+			(u_int)ePassMajor);
+	}
+
+	// Accuracy-bypass asserter: with weather eWeather set, an eAbility attacker
+	// using a <100-acc move (STORMCELL) at a seed where a NONE control MISSES
+	// auto-hits (DAMAGE_DEALT, no MOVE_MISSED). The hook emits nothing.
+	void ZM_Box3SC4AssertAutoHit(ZM_ABILITY_ID eAbility, ZM_WEATHER eWeather,
+		bool bExpectBypass, u_int64 ulMissSeed)
+	{
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		BuildBattleState(xState,
+			ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_STORMCELL, eAbility),
+			ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+			ulMissSeed, 54ull);
+		xState.m_xField.m_eWeather = eWeather;
+		xState.m_xField.m_uWeatherTurns = eWeather == ZM_WEATHER_NONE ? 0u : 5u;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		if (bExpectBypass)
+		{
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED), 0u);
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), 1u);
+		}
+		else
+		{
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED), 1u);
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), 0u);
+		}
+		// No-emit invariant: the bypass hook never emits an ABILITY_TRIGGER.
+		ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+	}
+}
+
+// --- CONTACT 30%-proc statuses (Staticveil / Cinderskin / Barbskin) ---------
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Staticveil_ParalyzesAttackerOnContact)
+{
+	ZM_Box3SC4AssertContactStatus(ZM_ABILITY_STATICVEIL, ZM_MAJOR_STATUS_PARALYSIS,
+		0xB32Aull, 0xB32Bull);
+	ZM_Box3SC4AssertNonContactSkipsE4(ZM_ABILITY_STATICVEIL, 0xB32Cull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Cinderskin_BurnsAttackerOnContact)
+{
+	ZM_Box3SC4AssertContactStatus(ZM_ABILITY_CINDERSKIN, ZM_MAJOR_STATUS_BURN,
+		0xB32Full, 0xB331ull);
+	ZM_Box3SC4AssertNonContactSkipsE4(ZM_ABILITY_CINDERSKIN, 0xB332ull);
+
+	// PROC-INTO-IMMUNE: a FIRE attacker (Kindlet) is immune to the applied BURN.
+	// The proc still succeeds (ABILITY_TRIGGER fires) but STATUS_APPLIED is
+	// suppressed and the attacker stays unstatused -- roll-then-block.
+	ZM_BattleState xImmState;
+	Zenith_Vector<ZM_BattleEvent> xImmEvents;
+	ZM_Box3SC4RunPlayerMove(xImmState, xImmEvents, ZM_MOVE_RAMBASH,
+		ZM_SPECIES_KINDLET, ZM_ABILITY_CINDERSKIN, 0xB330ull);
+	ZM_Box3SC3AssertExactTriggers(xImmEvents, ZM_ABILITY_CINDERSKIN, ZM_SIDE_ENEMY, 1u, 1u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xImmEvents, ZM_BATTLE_EVENT_STATUS_APPLIED), 0u);
+	ZENITH_ASSERT_EQ((u_int)xImmState.Side(ZM_SIDE_PLAYER).Active().m_eStatus,
+		(u_int)ZM_MAJOR_STATUS_NONE);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Barbskin_PoisonsAttackerOnContact)
+{
+	ZM_Box3SC4AssertContactStatus(ZM_ABILITY_BARBSKIN, ZM_MAJOR_STATUS_POISON,
+		0xB334ull, 0xB335ull);
+	ZM_Box3SC4AssertNonContactSkipsE4(ZM_ABILITY_BARBSKIN, 0xB338ull);
+}
+
+// --- CONTACT deterministic chip (Thornmail) ---------------------------------
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Thornmail_ChipsAttackerOnContactWithNoDraw)
+{
+	const u_int64 ulSeed = 0xB339ull;
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	BuildBattleState(xState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_THORNMAIL),
+		ulSeed, 54ull);
+	ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+	const u_int uMaxHP = xAtk.m_auMaxStat[ZM_STAT_HP];
+	const u_int uHPBefore = xAtk.m_uCurHP;
+	u_int uChip = uMaxHP / 8u;
+	if (uChip == 0u) { uChip = 1u; }
+	const u_int uNewHP = (uChip >= uHPBefore) ? 0u : (uHPBefore - uChip);
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	ZM_Box3SC4AssertOneTrigger(xEvents, ZM_ABILITY_THORNMAIL, ZM_SIDE_ENEMY,
+		(int)uChip, (int)uNewHP);
+	ZENITH_ASSERT_EQ(xAtk.m_uCurHP, uNewHP);
+	ZENITH_ASSERT_GT(uHPBefore, uNewHP);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_FAINT), 0u);
+
+	// NO DRAW: a NONE-defender run at the same seed has the identical RNG cursor.
+	ZM_BattleState xNoneState;
+	Zenith_Vector<ZM_BattleEvent> xNoneEvents;
+	BuildBattleState(xNoneState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ulSeed, 54ull);
+	ZM_MoveContext xNoneCtx = MakeCtx(xNoneState, xNoneEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xNoneCtx);
+	ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xNoneState.m_xRNG.Next(),
+		"Thornmail draws nothing beyond the move's own crit/roll");
+
+	// LETHAL CHIP: a low-HP attacker is downed by the chip -> new HP 0 + FAINT.
+	ZM_BattleState xLethalState;
+	Zenith_Vector<ZM_BattleEvent> xLethalEvents;
+	BuildBattleState(xLethalState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_THORNMAIL),
+		0xB33Aull, 54ull);
+	ZM_BattleMonster& xLethalAtk = xLethalState.Side(ZM_SIDE_PLAYER).Active();
+	const u_int uLethalChip = xLethalAtk.m_auMaxStat[ZM_STAT_HP] / 8u;
+	xLethalAtk.m_uCurHP = 1u;   // chip (maxHP/8 >= 1) is lethal
+	ZM_MoveContext xLethalCtx = MakeCtx(xLethalState, xLethalEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xLethalCtx);
+	ZENITH_ASSERT_EQ(xLethalAtk.m_uCurHP, 0u);
+	ZM_Box3SC4AssertOneTrigger(xLethalEvents, ZM_ABILITY_THORNMAIL, ZM_SIDE_ENEMY,
+		(int)uLethalChip, 0);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xLethalEvents, ZM_BATTLE_EVENT_FAINT), 1u);
+	const ZM_BattleEvent* pxFaint = ZM_Box3SC3FindKind(xLethalEvents,
+		ZM_BATTLE_EVENT_FAINT);
+	ZENITH_ASSERT_NOT_NULL(pxFaint);
+	if (pxFaint != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxFaint->m_uSide, (u_int)ZM_SIDE_PLAYER);
+	}
+
+	ZM_Box3SC4AssertNonContactSkipsE4(ZM_ABILITY_THORNMAIL, 0xB33Bull);
+}
+
+// --- stat-drop veto (Ironwill / Keeneye / Guardian) -------------------------
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Ironwill_VetoesFoeStatDrop)
+{
+	// Warcry (foe LOWER_ATTACK) is vetoed; a NONE control lands the drop.
+	ZM_Box3SC4AssertStatDropVeto(ZM_ABILITY_IRONWILL, ZM_MOVE_WARCRY,
+		ZM_BATTLE_STAT_ATTACK, true, 0xB33Cull);
+	ZM_Box3SC4AssertStatDropVeto(ZM_ABILITY_NONE, ZM_MOVE_WARCRY,
+		ZM_BATTLE_STAT_ATTACK, false, 0xB33Dull);
+
+	// SELF-drop is NOT vetoed: bFromFoe=false skips the seam entirely.
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	BuildBattleState(xState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_IRONWILL),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		0xB33Eull, 54ull);
+	const bool bApplied = ZM_StatusLogic::ApplyStatChange(xState, xEvents,
+		ZM_SIDE_PLAYER, ZM_BATTLE_STAT_ATTACK, -1, /*bPrimary*/ true, /*bFromFoe*/ false);
+	ZENITH_ASSERT_TRUE(bApplied);
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], -1);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), 1u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+
+	// DEFERRED SC2 CASE: a DAUNTINGROAR lead vs an IRONWILL holder -> the foe-ATTACK
+	// drop is vetoed. Two triggers (IRONWILL veto on the enemy + DAUNTINGROAR's own
+	// unconditional announce on the player), no stage change.
+	ZM_BattleMonsterSpec axP[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, ZM_ABILITY_DAUNTINGROAR, 100u) };
+	ZM_BattleMonsterSpec axE[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_IRONWILL, 60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xB34Bull, 54ull);
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], 0);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_ABILITY_TRIGGER), 2u);
+	ZENITH_ASSERT_GE(ZM_Box3SC3FindTriggerIndex(xEngine.GetEvents(), ZM_ABILITY_IRONWILL,
+		ZM_SIDE_ENEMY), 0);
+	ZENITH_ASSERT_GE(ZM_Box3SC3FindTriggerIndex(xEngine.GetEvents(), ZM_ABILITY_DAUNTINGROAR,
+		ZM_SIDE_PLAYER), 0);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Keeneye_VetoesOnlyAccuracyDrop)
+{
+	// Grit Cloud (foe LOWER_ACCURACY) is vetoed; Warcry (foe LOWER_ATTACK) lands.
+	ZM_Box3SC4AssertStatDropVeto(ZM_ABILITY_KEENEYE, ZM_MOVE_GRITCLOUD,
+		ZM_BATTLE_STAT_ACCURACY, true, 0xB33Full);
+	ZM_Box3SC4AssertStatDropVeto(ZM_ABILITY_KEENEYE, ZM_MOVE_WARCRY,
+		ZM_BATTLE_STAT_ATTACK, false, 0xB340ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Guardian_VetoesFoeStatDrop)
+{
+	ZM_Box3SC4AssertStatDropVeto(ZM_ABILITY_GUARDIAN, ZM_MOVE_WARCRY,
+		ZM_BATTLE_STAT_ATTACK, true, 0xB349ull);
+	ZM_Box3SC4AssertStatDropVeto(ZM_ABILITY_NONE, ZM_MOVE_WARCRY,
+		ZM_BATTLE_STAT_ATTACK, false, 0xB34Aull);
+}
+
+// --- accuracy bypass (Deadaim / Trueshot) -----------------------------------
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Deadaim_AutoHitsAndSkipsAccuracyDraw)
+{
+	// Oracle seed 0xB364: the STORMCELL accuracy RandBelow(100) == 79 (>= acc 70),
+	// so a NONE attacker MISSES. Deadaim auto-hits at that same seed.
+	const u_int64 ulMissSeed = 0xB364ull;
+	ZM_Box3SC4AssertAutoHit(ZM_ABILITY_NONE, ZM_WEATHER_NONE, false, ulMissSeed);
+	ZM_Box3SC4AssertAutoHit(ZM_ABILITY_DEADAIM, ZM_WEATHER_NONE, true, ulMissSeed);
+
+	// >=100-acc SHORT-CIRCUIT: on a 100-acc move (Rambash) the outer accuracy guard
+	// is false, so the bypass pfn is never called and the RNG stream is identical to
+	// a NONE attacker's -- proving no perturbation of the sure-hit path.
+	const u_int64 ulRamSeed = 0xB341ull;
+	ZM_BattleState xAimRam;
+	Zenith_Vector<ZM_BattleEvent> xAimRamEvents;
+	BuildBattleState(xAimRam,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_DEADAIM),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ulRamSeed, 54ull);
+	ZM_MoveContext xAimRamCtx = MakeCtx(xAimRam, xAimRamEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xAimRamCtx);
+
+	ZM_BattleState xNoneRam;
+	Zenith_Vector<ZM_BattleEvent> xNoneRamEvents;
+	BuildBattleState(xNoneRam,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ulRamSeed, 54ull);
+	ZM_MoveContext xNoneRamCtx = MakeCtx(xNoneRam, xNoneRamEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xNoneRamCtx);
+
+	ZENITH_ASSERT_EQ(xAimRam.m_xRNG.Next(), xNoneRam.m_xRNG.Next(),
+		"a >=100-acc move never reaches the bypass check -> no RNG perturbation");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xAimRamEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Trueshot_BypassesAccuracyOnlyInWeather)
+{
+	// Oracle seed 0xB365: the STORMCELL accuracy RandBelow(100) == 78 (>= acc 70),
+	// so a non-bypassing attacker MISSES. Clear weather -> Trueshot does NOT bypass
+	// (misses); RAIN -> Trueshot bypasses (auto-hit).
+	const u_int64 ulMissSeed = 0xB365ull;
+	ZM_Box3SC4AssertAutoHit(ZM_ABILITY_TRUESHOT, ZM_WEATHER_NONE, false, ulMissSeed);
+	ZM_Box3SC4AssertAutoHit(ZM_ABILITY_TRUESHOT, ZM_WEATHER_RAIN, true, ulMissSeed);
+}
+
+// --- STATUS_TRY blocks (Wakeful / Pureblood / Thawheart / Limberlithe /
+//     Coldblood / Ownpace) -----------------------------------------------------
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Wakeful_BlocksSleep)
+{
+	const u_int64 ulSeed = 0xB342ull;
+	ZM_Box3SC4AssertMajorBlocked(ZM_ABILITY_WAKEFUL, ZM_MAJOR_STATUS_SLEEP,
+		ZM_MAJOR_STATUS_BURN, ulSeed);
+
+	// A blocked SLEEP pulls NO apply-time RandRange(1,3): the applier vetoes before
+	// the duration draw, so the RNG cursor is unmoved from a fresh seed.
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	BuildBattleState(xState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_WAKEFUL),
+		ulSeed, 54ull);
+	ZM_StatusLogic::ApplyMajor(xState, xEvents, ZM_SIDE_ENEMY, ZM_MAJOR_STATUS_SLEEP);
+	ZM_BattleRNG xFresh(ulSeed, 54ull);
+	ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xFresh.Next(),
+		"a Wakeful-blocked SLEEP draws no duration RNG");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Pureblood_BlocksPoisonAndToxic)
+{
+	ZM_Box3SC4AssertMajorBlocked(ZM_ABILITY_PUREBLOOD, ZM_MAJOR_STATUS_POISON,
+		ZM_MAJOR_STATUS_BURN, 0xB343ull);
+	ZM_Box3SC4AssertMajorBlocked(ZM_ABILITY_PUREBLOOD, ZM_MAJOR_STATUS_TOXIC,
+		ZM_MAJOR_STATUS_BURN, 0xB344ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Thawheart_BlocksFreeze)
+{
+	ZM_Box3SC4AssertMajorBlocked(ZM_ABILITY_THAWHEART, ZM_MAJOR_STATUS_FREEZE,
+		ZM_MAJOR_STATUS_BURN, 0xB345ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Limberlithe_BlocksParalysis)
+{
+	ZM_Box3SC4AssertMajorBlocked(ZM_ABILITY_LIMBERLITHE, ZM_MAJOR_STATUS_PARALYSIS,
+		ZM_MAJOR_STATUS_BURN, 0xB346ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Coldblood_BlocksBurn)
+{
+	ZM_Box3SC4AssertMajorBlocked(ZM_ABILITY_COLDBLOOD, ZM_MAJOR_STATUS_BURN,
+		ZM_MAJOR_STATUS_PARALYSIS, 0xB348ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC4_Ownpace_BlocksConfusion)
+{
+	const u_int64 ulSeed = 0xB347ull;
+	// POSITIVE: CONFUSED blocked -> false + one ABILITY_TRIGGER carrying the volatile
+	// bit; no VOLATILE_APPLIED, mask bit clear, and NO duration RandRange(1,4).
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	BuildBattleState(xState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_OWNPACE),
+		ulSeed, 54ull);
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	const bool bBlocked = ZM_StatusLogic::ApplyVolatile(xCtx, ZM_SIDE_ENEMY,
+		ZM_VOLATILE_CONFUSED);
+	ZENITH_ASSERT_FALSE(bBlocked);
+	ZM_Box3SC4AssertOneTrigger(xEvents, ZM_ABILITY_OWNPACE, ZM_SIDE_ENEMY,
+		(int)ZM_VOLATILE_CONFUSED, 0);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED), 0u);
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_uVolatileMask
+		& (u_int)ZM_VOLATILE_CONFUSED, 0u);
+	ZM_BattleRNG xFresh(ulSeed, 54ull);
+	ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xFresh.Next(),
+		"a blocked CONFUSE draws no duration RNG");
+
+	// CONTROL: NONE defender -> CONFUSE applies (VOLATILE_APPLIED, no trigger).
+	ZM_BattleState xNoneState;
+	Zenith_Vector<ZM_BattleEvent> xNoneEvents;
+	BuildBattleState(xNoneState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ulSeed, 54ull);
+	ZM_MoveContext xNoneCtx = MakeCtx(xNoneState, xNoneEvents, ZM_SIDE_PLAYER, 0u);
+	const bool bApplied = ZM_StatusLogic::ApplyVolatile(xNoneCtx, ZM_SIDE_ENEMY,
+		ZM_VOLATILE_CONFUSED);
+	ZENITH_ASSERT_TRUE(bApplied);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNoneEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED), 1u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNoneEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+	ZENITH_ASSERT_NE(xNoneState.Side(ZM_SIDE_ENEMY).Active().m_uVolatileMask
+		& (u_int)ZM_VOLATILE_CONFUSED, 0u);
+
+	// CROSS-CHECK: Ownpace lets a non-CONFUSE volatile (FLINCH) through.
+	ZM_BattleState xFlinchState;
+	Zenith_Vector<ZM_BattleEvent> xFlinchEvents;
+	BuildBattleState(xFlinchState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_OWNPACE),
+		ulSeed, 54ull);
+	ZM_MoveContext xFlinchCtx = MakeCtx(xFlinchState, xFlinchEvents, ZM_SIDE_PLAYER, 0u);
+	const bool bFlinch = ZM_StatusLogic::ApplyVolatile(xFlinchCtx, ZM_SIDE_ENEMY,
+		ZM_VOLATILE_FLINCH);
+	ZENITH_ASSERT_TRUE(bFlinch);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xFlinchEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+	ZENITH_ASSERT_NE(xFlinchState.Side(ZM_SIDE_ENEMY).Active().m_uVolatileMask
+		& (u_int)ZM_VOLATILE_FLINCH, 0u);
+}

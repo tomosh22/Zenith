@@ -280,6 +280,132 @@ namespace
 		return uDamage / 2u;
 	}
 
+	// ---- SC4 CONTACT reactions (rows 7-10) -- pfnOnContact -------------------
+	// xCtx.m_eSelf = the CONTACTED defender (ability owner); xCtx.m_eOther = the
+	// ATTACKER. bSelfFainted is IGNORED by every SC4 body (it exists for SC5's
+	// Lastspite/Aftershock). Dispatched from ZM_MoveExecutor's PHASE E4 seam ONLY
+	// for a connecting contact move, so no "did it hit" gate is needed here.
+
+	// Shared 30%-proc status applier (Staticveil/Cinderskin/Barbskin): exactly ONE
+	// RandBelow(100) draw, threshold < 30. On success announce FIRST (generic
+	// ABILITY_TRIGGER, m_iAmount=0, owner=defender) THEN status the attacker via the
+	// state+events ApplyMajor -- which may itself block silently on a type-immune
+	// attacker (ABILITY_TRIGGER still fired, STATUS_APPLIED suppressed). On failure:
+	// no announce, no status, no further draw.
+	void g_ContactStatusProc(ZM_AbilityContext& xCtx, ZM_MAJOR_STATUS eMajor)
+	{
+		if (xCtx.RNG().RandBelow(100u) >= 30u)
+		{
+			return;   // proc FAILED: no effect
+		}
+		g_EmitAbilityTrigger(xCtx);
+		ZM_StatusLogic::ApplyMajor(*xCtx.m_pxState, *xCtx.m_pxEvents,
+			xCtx.m_eOther, eMajor);
+	}
+
+	void g_StaticveilOnContact(ZM_AbilityContext& xCtx, bool)
+	{
+		g_ContactStatusProc(xCtx, ZM_MAJOR_STATUS_PARALYSIS);
+	}
+
+	void g_CinderskinOnContact(ZM_AbilityContext& xCtx, bool)
+	{
+		g_ContactStatusProc(xCtx, ZM_MAJOR_STATUS_BURN);
+	}
+
+	void g_BarbskinOnContact(ZM_AbilityContext& xCtx, bool)
+	{
+		g_ContactStatusProc(xCtx, ZM_MAJOR_STATUS_POISON);
+	}
+
+	// Thornmail: NO draw. Chip the attacker for maxHP/8 (min 1, underflow-clamped),
+	// then emit ABILITY_TRIGGER carrying the chip in m_iAmount and the attacker's new
+	// HP in m_iAux (owner = defender/self, m_iTag = THORNMAIL), mirroring DAMAGE_DEALT's
+	// (amount, remaining-HP) convention (R-C1). A lethal chip appends a FAINT on the
+	// attacker.
+	void g_ThornmailOnContact(ZM_AbilityContext& xCtx, bool)
+	{
+		ZM_BattleMonster& xAtk = xCtx.OtherMon();
+		u_int uChip = xAtk.m_auMaxStat[ZM_STAT_HP] / 8u;
+		if (uChip == 0u) { uChip = 1u; }
+		const u_int uNewHP = (uChip >= xAtk.m_uCurHP) ? 0u : (xAtk.m_uCurHP - uChip);
+		xAtk.m_uCurHP = uNewHP;
+		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_ABILITY_TRIGGER, xCtx.m_eSelf,
+			xCtx.SelfSide().m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE,
+			(int)uChip, (int)uNewHP, (int)xCtx.SelfMon().m_eAbility));
+		if (uNewHP == 0u)
+		{
+			xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_FAINT, xCtx.m_eOther,
+				xCtx.OtherSide().m_uActiveSlot));
+		}
+	}
+
+	// ---- SC4 stat-drop veto (rows 25/26/48) -- pfnPreventStatDrop -----------
+	// Pure predicates: no RNG, no emit. The ABILITY_TRIGGER emit + "apply nothing"
+	// is owned by ZM_StatusLogic::ApplyStatChange's already-live seam (gated on
+	// iDelta<0 && bFromFoe). Ironwill/Guardian veto ANY foe drop; Keeneye only ACCURACY.
+	bool g_IronwillPreventStatDrop(const ZM_AbilityContext&, ZM_BATTLE_STAT)
+	{
+		return true;
+	}
+
+	bool g_GuardianPreventStatDrop(const ZM_AbilityContext&, ZM_BATTLE_STAT)
+	{
+		return true;
+	}
+
+	bool g_KeeneyePreventStatDrop(const ZM_AbilityContext&, ZM_BATTLE_STAT eStat)
+	{
+		return eStat == ZM_BATTLE_STAT_ACCURACY;
+	}
+
+	// ---- SC4 STATUS_TRY predicates (rows 28-33) -- pfnPreventMajor/Volatile --
+	// Pure status->bool predicates (NO context, NO emit). The block + ABILITY_TRIGGER
+	// is owned by ApplyMajor/ApplyVolatile.
+	bool g_WakefulPreventMajor(ZM_MAJOR_STATUS e)
+	{
+		return e == ZM_MAJOR_STATUS_SLEEP;
+	}
+
+	bool g_PurebloodPreventMajor(ZM_MAJOR_STATUS e)
+	{
+		return e == ZM_MAJOR_STATUS_POISON || e == ZM_MAJOR_STATUS_TOXIC;
+	}
+
+	bool g_ThawheartPreventMajor(ZM_MAJOR_STATUS e)
+	{
+		return e == ZM_MAJOR_STATUS_FREEZE;
+	}
+
+	bool g_LimberlithePreventMajor(ZM_MAJOR_STATUS e)
+	{
+		return e == ZM_MAJOR_STATUS_PARALYSIS;
+	}
+
+	bool g_ColdbloodPreventMajor(ZM_MAJOR_STATUS e)
+	{
+		return e == ZM_MAJOR_STATUS_BURN;
+	}
+
+	bool g_OwnpacePreventVolatile(ZM_VOLATILE e)
+	{
+		return e == ZM_VOLATILE_CONFUSED;
+	}
+
+	// ---- SC4 ACCURACY bypass (rows 27/49) -- pfnBypassAccuracy --------------
+	// Pure "auto-hit?" predicates: NO RNG, NO emit. Observability is the move HITTING
+	// where the control would miss (the design intentionally omits an event). Deadaim
+	// always; Trueshot only while weather != NONE.
+	bool g_DeadaimBypassAccuracy(const ZM_AbilityContext&)
+	{
+		return true;
+	}
+
+	bool g_TrueshotBypassAccuracy(const ZM_AbilityContext& xCtx)
+	{
+		return xCtx.m_pxState->m_xField.m_eWeather != ZM_WEATHER_NONE;
+	}
+
 	ZM_AbilityHooks g_MakeSwitchInHooks(void (*pfnOnSwitchIn)(ZM_AbilityContext&))
 	{
 		ZM_AbilityHooks xHooks;
@@ -327,6 +453,43 @@ namespace
 		return xHooks;
 	}
 
+	ZM_AbilityHooks g_MakeContactHooks(void (*pfnOnContact)(ZM_AbilityContext&, bool))
+	{
+		ZM_AbilityHooks xHooks;
+		xHooks.pfnOnContact = pfnOnContact;
+		return xHooks;
+	}
+
+	ZM_AbilityHooks g_MakePreventStatDropHooks(bool (*pfnPreventStatDrop)(
+		const ZM_AbilityContext&, ZM_BATTLE_STAT))
+	{
+		ZM_AbilityHooks xHooks;
+		xHooks.pfnPreventStatDrop = pfnPreventStatDrop;
+		return xHooks;
+	}
+
+	ZM_AbilityHooks g_MakePreventMajorHooks(bool (*pfnPreventMajor)(ZM_MAJOR_STATUS))
+	{
+		ZM_AbilityHooks xHooks;
+		xHooks.pfnPreventMajor = pfnPreventMajor;
+		return xHooks;
+	}
+
+	ZM_AbilityHooks g_MakePreventVolatileHooks(bool (*pfnPreventVolatile)(ZM_VOLATILE))
+	{
+		ZM_AbilityHooks xHooks;
+		xHooks.pfnPreventVolatile = pfnPreventVolatile;
+		return xHooks;
+	}
+
+	ZM_AbilityHooks g_MakeBypassAccuracyHooks(bool (*pfnBypassAccuracy)(
+		const ZM_AbilityContext&))
+	{
+		ZM_AbilityHooks xHooks;
+		xHooks.pfnBypassAccuracy = pfnBypassAccuracy;
+		return xHooks;
+	}
+
 	// One row per stable ZM_ABILITY_ID. SC2/SC3 install only their implemented
 	// slots; SC4-SC5 retain their planned null slots until their ordered slices.
 	const ZM_AbilityHooks s_axAbilityHooks[ZM_ABILITY_COUNT] =
@@ -338,10 +501,10 @@ namespace
 		g_MakeSwitchInHooks(&g_DauntingRoarOnSwitchIn),         //  4 DAUNTINGROAR
 		g_MakeTypeInteractionHooks(&g_SkywardGraceTypeInteraction), //  5 SKYWARDGRACE
 		g_MakeDamageTakenHooks(&g_BedrockDamageTaken),          //  6 BEDROCK
-		{},                                                     //  7 STATICVEIL
-		{},                                                     //  8 CINDERSKIN
-		{},                                                     //  9 BARBSKIN
-		{},                                                     // 10 THORNMAIL
+		g_MakeContactHooks(&g_StaticveilOnContact),             //  7 STATICVEIL
+		g_MakeContactHooks(&g_CinderskinOnContact),             //  8 CINDERSKIN
+		g_MakeContactHooks(&g_BarbskinOnContact),               //  9 BARBSKIN
+		g_MakeContactHooks(&g_ThornmailOnContact),              // 10 THORNMAIL
 		g_MakeModifyStatHooks(&g_SunchaserModifyStat),          // 11 SUNCHASER
 		g_MakeModifyStatHooks(&g_StreamlineModifyStat),         // 12 STREAMLINE
 		g_MakeModifyStatHooks(&g_GritstrideModifyStat),         // 13 GRITSTRIDE
@@ -356,15 +519,15 @@ namespace
 		g_MakeTypeInteractionHooks(&g_DynamoTypeInteraction),   // 22 DYNAMO
 		g_MakeCinderdrinkHooks(),                               // 23 CINDERDRINK
 		g_MakeTypeInteractionHooks(&g_GrazerTypeInteraction),   // 24 GRAZER
-		{},                                                     // 25 IRONWILL
-		{},                                                     // 26 KEENEYE
-		{},                                                     // 27 DEADAIM
-		{},                                                     // 28 WAKEFUL
-		{},                                                     // 29 PUREBLOOD
-		{},                                                     // 30 THAWHEART
-		{},                                                     // 31 LIMBERLITHE
-		{},                                                     // 32 OWNPACE
-		{},                                                     // 33 COLDBLOOD
+		g_MakePreventStatDropHooks(&g_IronwillPreventStatDrop), // 25 IRONWILL
+		g_MakePreventStatDropHooks(&g_KeeneyePreventStatDrop),  // 26 KEENEYE
+		g_MakeBypassAccuracyHooks(&g_DeadaimBypassAccuracy),    // 27 DEADAIM
+		g_MakePreventMajorHooks(&g_WakefulPreventMajor),        // 28 WAKEFUL
+		g_MakePreventMajorHooks(&g_PurebloodPreventMajor),      // 29 PUREBLOOD
+		g_MakePreventMajorHooks(&g_ThawheartPreventMajor),      // 30 THAWHEART
+		g_MakePreventMajorHooks(&g_LimberlithePreventMajor),    // 31 LIMBERLITHE
+		g_MakePreventVolatileHooks(&g_OwnpacePreventVolatile),  // 32 OWNPACE
+		g_MakePreventMajorHooks(&g_ColdbloodPreventMajor),      // 33 COLDBLOOD
 		{},                                                     // 34 BLOODRUSH
 		{},                                                     // 35 LASTSPITE
 		{},                                                     // 36 AFTERSHOCK
@@ -379,8 +542,8 @@ namespace
 		{},                                                     // 45 ROOTFEED
 		{},                                                     // 46 QUICKDRAW (engine-side realization)
 		g_MakeSwitchInHooks(&g_PressureAuraOnSwitchIn),         // 47 PRESSUREAURA
-		{},                                                     // 48 GUARDIAN
-		{},                                                     // 49 TRUESHOT
+		g_MakePreventStatDropHooks(&g_GuardianPreventStatDrop), // 48 GUARDIAN
+		g_MakeBypassAccuracyHooks(&g_TrueshotBypassAccuracy),   // 49 TRUESHOT
 	};
 }
 
