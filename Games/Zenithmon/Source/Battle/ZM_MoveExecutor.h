@@ -4,16 +4,24 @@
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"
 
 // ============================================================================
-// ZM_MoveExecutor -- the move-execution seam (S2 box 2, SC1; DecisionLog ZM-D-033).
+// ZM_MoveExecutor -- the move-execution seam (S2 box 2, SC1+SC2; DecisionLog ZM-D-033).
 // The engine hands each acting side to ZM_MoveExecutor::Execute via a thin
 // ZM_MoveContext VIEW onto the engine-owned state + event sink (the engine keeps
-// owning m_xState / m_xEvents / the RNG). SC1 is a byte-identical extraction of
-// ExecuteMove's post-fainted-guard body: PP spend, MOVE_USED, accuracy (with the
-// acc/eva stat-stage fold that is identity at stage 0), immunity short-circuit,
-// then the single damaging emit-group. ZM_MoveExecutor::ApplyDamagingHit is the
-// ONE damage-draw site (crit -> roll -> [CRIT][SUPER|NOT] DAMAGE_DEALT [FAINT]).
-// Box 1 only has damaging NONE moves, so the effect switch routes NONE + default
-// through ApplyDamagingHit; the ~60-effect body arrives on this seam in SC2+.
+// owning m_xState / m_xEvents / the RNG). Execute runs the post-fainted-guard body:
+// PP spend, MOVE_USED, accuracy (with the acc/eva stat-stage fold that is identity
+// at stage 0), then the category dispatch.
+//
+// Dispatch (SC2): Move().m_eCategory decides PRIMARY vs SECONDARY. A STATUS-category
+// move applies its effect DIRECTLY (chance 100, no crit/roll/immunity/proc draws).
+// A damaging move (PHYSICAL/SPECIAL) resolves immunity, runs ApplyDamagingHit (the
+// single crit/roll/DAMAGE_DEALT/FAINT emit-group), THEN, if it carries a stat
+// secondary and the target survived, draws the E3 secondary proc and applies the
+// stat change. NONE-effect damaging moves take the box-1 path unchanged.
+//
+// ApplyDamagingHit is the ONE damage-draw site. Its crit rate keys off the MOVE's
+// m_uCritStage (>= 2 == guaranteed, no draw) and the attacker's accumulated
+// m_iCritStage (RAISE_CRIT): 0 -> 1/24, 1 -> 1/8, 2 -> 1/2, >= 3 -> always. At crit
+// stage 0 it is exactly Chance(1,24), so box-1 goldens stay byte-identical.
 // The executor emits NO strings (ZM-D-010): behaviour IS the event stream.
 // ============================================================================
 
@@ -42,14 +50,17 @@ struct ZM_MoveContext
 
 namespace ZM_MoveExecutor
 {
-	// Execute one move: PP spend, MOVE_USED, accuracy, immunity, effect switch
-	// (box 1: NONE + default -> ApplyDamagingHit). Assumes the attacker is not
-	// fainted (the engine guards that before building the context).
+	// Execute one move: PP spend, MOVE_USED, accuracy, then the category dispatch
+	// (STATUS-category primary effect | damaging hit + optional stat secondary).
+	// Assumes the attacker is not fainted (the engine guards that before building
+	// the context).
 	void Execute(ZM_MoveContext& xCtx);
 
-	// The single damaging emit-group / damage-draw site: crit (RandBelow(24) unless
-	// critStage>=2) -> roll (RandRange(85,100)) -> [CRIT][SUPER|NOT] DAMAGE_DEALT
-	// [FAINT]. Returns the raw damage rolled (pre-HP-clamp). Precondition: the
-	// defender is not type-immune (Execute resolves immunity first).
+	// The single damaging emit-group / damage-draw site: crit -> roll
+	// (RandRange(85,100)) -> [CRIT][SUPER|NOT] DAMAGE_DEALT [FAINT]. The crit draw is
+	// skipped (guaranteed) when the move's m_uCritStage >= 2 or the attacker's
+	// m_iCritStage >= 3; otherwise it is Chance(1,24)/(1,8)/(1,2) by crit stage
+	// 0/1/2. Returns the raw damage rolled (pre-HP-clamp). Precondition: the defender
+	// is not type-immune (Execute resolves immunity first).
 	u_int ApplyDamagingHit(ZM_MoveContext& xCtx);
 }

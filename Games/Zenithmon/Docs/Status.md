@@ -1,6 +1,6 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-11 -- **S2 box-2 SC1 (executor seam) COMPLETE. Box 2 is 6 ordered sub-commits (ZM-D-033); SC1 done, next: SC2 (stat-stage effects + STATUS-category dispatch).**
+**Last updated:** 2026-07-11 -- **S2 box-2 SC2 (stat-stage effects) COMPLETE. Box 2 is 6 ordered sub-commits (ZM-D-033); SC1+SC2 done, next: SC3 (delivery variants + field/screen setters + screen damage reduction).**
 
 **Read this first each session.** Replaced every session end. [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the gap audit.
 
@@ -11,7 +11,7 @@
 ## Build / Tests
 
 - Build GREEN (`Vulkan_vs2022_Debug_Win64_True`). D3D12_False link proof in CI.
-- Unit (T0): **1191 ran, 1190 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). = 102 `ZM_Data` + **19 `ZM_Battle`** (14 box-1 + 5 box-2 SC1) + 1068 engine + 2 boot. **Baseline 1191** in `zm-tests.yml`.
+- Unit (T0): **1234 ran, 1233 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). = 102 `ZM_Data` + **62 `ZM_Battle`** (14 box-1 + 5 SC1 + 43 SC2) + 1068 engine + 2 boot. **Baseline 1234** in `zm-tests.yml`.
 - Automated (P1): 1/1 (`ZM_Boot_Test`); `zenith test Zenithmon --headless` exits 0.
 
 ## What landed this session -- S2 box 1 (the battle-engine keystone)
@@ -20,7 +20,7 @@
 
 ## Current task
 
-None -- SC1 committed + pushed. **Box 2 = 6 ordered sub-commits (full plan + LOCKED draw order in DecisionLog ZM-D-033).** Done: **SC1** (executor seam -- `ZM_MoveExecutor`/`ZM_MoveContext` extracted from `ExecuteMove`, byte-identical; effect switch is `NONE + default -> ApplyDamagingHit` only). **Next: SC2** -- stat-stage effects (all LOWER_*/RAISE_* + accuracy/evasion) + STATUS-category-vs-damaging-secondary dispatch; lights `STAT_STAGE_CHANGED` + `MOVE_FAILED`. Then SC3 (delivery/field/screen) -> SC4 (status majors + burn/para, appends `m_iTag`) -> SC5 (volatiles + switch) -> SC6 (pre-move actions + `ZM_CatchCalc` + the 2000-battle soak). **S2 has NO visual gate**, so the loop runs autonomously through S2.
+None -- SC2 committed + pushed. **Box 2 = 6 ordered sub-commits (full plan + LOCKED draw order in DecisionLog ZM-D-033).** Done: **SC1** (executor seam) + **SC2** (all stat-stage effects LOWER_*/RAISE_* incl. multi-stat + RAISE_CRIT counter, accuracy/evasion stages, STATUS-category-vs-damaging-secondary dispatch; lights `STAT_STAGE_CHANGED` + `MOVE_FAILED(STAT_MAXED)`; reviewer-fixed RAISE_CRIT magnitude + multi-stat MOVE_FAILED semantics + acc/eva clamp). **Next: SC3** -- delivery variants (MULTI_HIT/DOUBLE_HIT/RECOIL/DRAIN/HEAL_HALF/FIXED_LEVEL/HALVE_HP/OHKO) + field/screen/hazard SETTERS (state-only, NO event -- box 3 owns weather/screen events) + `bScreen` damage reduction; lights `MULTI_HIT/RECOIL/DRAIN/HEAL`. Then SC4 (status majors + burn/para, appends `m_iTag` to ZM_BattleEvent) -> SC5 (volatiles + switch) -> SC6 (pre-move actions + `ZM_CatchCalc` + the 2000-battle soak). Two tracked mechanics deferrals in Shortfalls.md 1.2 (high-crit flag fold; self-buff-secondary KO edge). **S2 has NO visual gate**, so the loop runs autonomously through S2.
 
 ## Notes for the next agent
 

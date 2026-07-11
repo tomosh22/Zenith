@@ -56,6 +56,7 @@ struct ZM_BattleMonster
 	u_int           m_uVolatileMask  = ZM_VOLATILE_NONE;  // box 2
 	ZM_MoveSlot     m_axMoves[uZM_MAX_MOVES];
 	int             m_aiStage[ZM_BATTLE_STAT_COUNT] = {}; // each in [-6,+6]; box 1 all 0
+	int             m_iCritStage = 0;                      // RAISE_CRIT counter (box 2 SC2); box 1 always 0
 
 	bool IsFainted() const { return m_uCurHP == 0u; }     // derived, never stored (no desync)
 };

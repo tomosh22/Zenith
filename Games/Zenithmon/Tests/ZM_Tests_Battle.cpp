@@ -1192,3 +1192,1018 @@ ZENITH_TEST(ZM_Battle, Executor_AccuracyStageZeroIsIdentity)
 	ZENITH_ASSERT_TRUE(bTestedHit,  "no HIT seed found -- hit path not exercised");
 	ZENITH_ASSERT_TRUE(bTestedMiss, "no MISS seed found -- miss path not exercised");
 }
+
+// ============================================================================
+// S2 box-2 SC2 -- stat-stage effects + STATUS-category dispatch (DecisionLog
+// ZM-D-033 PHASE M/E). Each golden/number is cross-checked by the offline oracle
+// (scratchpad/zm_battle_ref.py), whose box-1 27-event stream re-derives byte-
+// identical after the SC2 augmented-draw-order port (the oracle's own gate).
+//
+// SHARED EVENT CONTRACT (the executor emits these exact encodings):
+//  * STAT_STAGE_CHANGED: m_uSide/m_uSlot = the TARGET; m_iAmount = signed stage
+//    delta actually applied (new-old); m_iAux = (int) the ZM_BATTLE_STAT.
+//  * MOVE_FAILED: m_iAux = a ZM_MOVE_FAIL_REASON (SC2 uses ZM_MOVE_FAIL_STAT_MAXED).
+//  * A STATUS-category primary applies the stat effect with NO crit/roll/proc
+//    draw (after PP + MOVE_USED, + accuracy iff the move can miss). A damaging
+//    move's stat SECONDARY runs ApplyDamagingHit, then draws RandBelow(100) <
+//    m_uEffectChance (chance>=100 => no draw) to gate the effect.
+// ============================================================================
+namespace
+{
+	// First event of a given kind, or nullptr.
+	const ZM_BattleEvent* ZM_FindKind(const Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_BATTLE_EVENT eKind)
+	{
+		for (u_int i = 0; i < xEvents.GetSize(); ++i)
+		{
+			if (xEvents.Get(i).m_eKind == eKind) { return &xEvents.Get(i); }
+		}
+		return nullptr;
+	}
+
+	bool ZM_HasKind(const Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_BATTLE_EVENT eKind)
+	{
+		return ZM_FindKind(xEvents, eKind) != nullptr;
+	}
+
+	// Find a STAT_STAGE_CHANGED for (side, battle-stat). Returns the applied delta.
+	bool ZM_FindStageChange(const Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_SIDE eSide,
+		ZM_BATTLE_STAT eStat, int& iAmountOut)
+	{
+		for (u_int i = 0; i < xEvents.GetSize(); ++i)
+		{
+			const ZM_BattleEvent& x = xEvents.Get(i);
+			if (x.m_eKind == ZM_BATTLE_EVENT_STAT_STAGE_CHANGED &&
+				x.m_uSide == (u_int)eSide && (u_int)x.m_iAux == (u_int)eStat)
+			{
+				iAmountOut = x.m_iAmount;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Count STAT_STAGE_CHANGED events targeting a side (order-independent checks).
+	u_int ZM_CountStageChanges(const Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_SIDE eSide)
+	{
+		u_int uCount = 0u;
+		for (u_int i = 0; i < xEvents.GetSize(); ++i)
+		{
+			const ZM_BattleEvent& x = xEvents.Get(i);
+			if (x.m_eKind == ZM_BATTLE_EVENT_STAT_STAGE_CHANGED && x.m_uSide == (u_int)eSide) { ++uCount; }
+		}
+		return uCount;
+	}
+
+	// Execute one move (slot 0) from the player over a bare 1v1 state (no engine
+	// turn loop): isolates the executor's effect dispatch. State + events are the
+	// caller's so post-conditions (stages/HP/RNG) can be inspected.
+	void ZM_RunPlayerMove(const ZM_BattleMonsterSpec& xPlayer, const ZM_BattleMonsterSpec& xEnemy,
+		u_int64 ulSeed, ZM_BattleState& xStateOut, Zenith_Vector<ZM_BattleEvent>& xEventsOut)
+	{
+		BuildBattleState(xStateOut, xPlayer, xEnemy, ulSeed, 54ull);
+		ZM_MoveContext xCtx = MakeCtx(xStateOut, xEventsOut, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+	}
+
+	// Exact element-by-element stream compare (dumps both on drift).
+	void ZM_AssertStreamEquals(const Zenith_Vector<ZM_BattleEvent>& xExpected,
+		const Zenith_Vector<ZM_BattleEvent>& xActual, const char* szLabel)
+	{
+		bool bMatch = (xExpected.GetSize() == xActual.GetSize());
+		const u_int uMin = (xExpected.GetSize() < xActual.GetSize()) ? xExpected.GetSize() : xActual.GetSize();
+		for (u_int i = 0; i < uMin; ++i)
+		{
+			if (!(xExpected.Get(i) == xActual.Get(i))) { bMatch = false; }
+		}
+		if (!bMatch) { ZM_LogTwoStreams(xExpected, xActual); }
+		ZENITH_ASSERT_EQ(xActual.GetSize(), xExpected.GetSize(), "%s: stream length mismatch", szLabel);
+		for (u_int i = 0; i < uMin; ++i)
+		{
+			char acE[192];
+			char acA[192];
+			ZM_BattleEventToString(xExpected.Get(i), acE, sizeof(acE));
+			ZM_BattleEventToString(xActual.Get(i), acA, sizeof(acA));
+			ZENITH_ASSERT_TRUE(xExpected.Get(i) == xActual.Get(i), "%s event[%u] exp=%s act=%s", szLabel, i, acE, acA);
+		}
+	}
+
+	// One apply-check for a single-stat STATUS move: execute it, assert the target
+	// stage moved by the signed magnitude and STAT_STAGE_CHANGED carried that delta.
+	// iSign = -1 for a LOWER row (target = enemy) / +1 for a RAISE row (target = self).
+	void ZM_CheckSingleStatApply(ZM_MOVE_ID eMove, ZM_BATTLE_STAT eStat, int iSign, ZM_SIDE eTargetSide)
+	{
+		const int iMag = ZM_GetMoveData(eMove).m_iEffectMagnitude;   // stage count (1..3)
+		const int iExpected = iSign * iMag;
+
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, eMove),
+			MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
+
+		int iAmount = 0;
+		const bool bFound = ZM_FindStageChange(xEvents, eTargetSide, eStat, iAmount);
+		ZENITH_ASSERT_TRUE(bFound, "move %u should emit STAT_STAGE_CHANGED for stat %u", (u_int)eMove, (u_int)eStat);
+		ZENITH_ASSERT_EQ(iAmount, iExpected, "STAT_STAGE_CHANGED delta must equal sign*magnitude");
+		ZENITH_ASSERT_EQ(xState.Side(eTargetSide).Active().m_aiStage[eStat], iExpected, "resulting stage != sign*magnitude");
+		// Exactly one stat changed on the target for a single-stat move.
+		ZENITH_ASSERT_EQ(ZM_CountStageChanges(xEvents, eTargetSide), 1u, "single-stat move changed more than one stat");
+	}
+}
+
+// ---- Per-stat apply: the 7 LOWER_* kinds (target = enemy) --------------------
+ZENITH_TEST(ZM_Battle, Stat_LowerAttack_Warcry)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_WARCRY, ZM_BATTLE_STAT_ATTACK, -1, ZM_SIDE_ENEMY);
+}
+ZENITH_TEST(ZM_Battle, Stat_LowerSpAttack_IonVeil)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_IONVEIL, ZM_BATTLE_STAT_SPATTACK, -1, ZM_SIDE_ENEMY);
+}
+ZENITH_TEST(ZM_Battle, Stat_LowerSpDefense_DreadGaze)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_DREADGAZE, ZM_BATTLE_STAT_SPDEFENSE, -1, ZM_SIDE_ENEMY);
+}
+ZENITH_TEST(ZM_Battle, Stat_LowerSpeed_CowerGlare)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_COWERGLARE, ZM_BATTLE_STAT_SPEED, -1, ZM_SIDE_ENEMY);
+}
+ZENITH_TEST(ZM_Battle, Stat_LowerAccuracy_Ashveil)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_ASHVEIL, ZM_BATTLE_STAT_ACCURACY, -1, ZM_SIDE_ENEMY);
+}
+ZENITH_TEST(ZM_Battle, Stat_LowerEvasion_Clearvision)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_CLEARVISION, ZM_BATTLE_STAT_EVASION, -1, ZM_SIDE_ENEMY);
+}
+
+// LOWER_DEFENSE has NO STATUS-category carrier in the move table, so its only
+// vehicle is a damaging move's chance-100 secondary (Close Bout). A chance>=100
+// secondary applies unconditionally after the hit; a very bulky defender survives
+// so the drop is observable.
+ZENITH_TEST(ZM_Battle, Stat_LowerDefense_CloseBout)
+{
+	const ZM_BattleMonsterSpec xPlayer = MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_CLOSEBOUT, 80u, 40u,  40u, 40u,  40u, 60u);
+	const ZM_BattleMonsterSpec xEnemy  = MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH,  250u, 40u, 250u, 40u, 250u, 10u);
+
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(xPlayer, xEnemy, 0x1234ull, xState, xEvents);
+
+	ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "defender must survive to observe the secondary");
+	const int iMag = ZM_GetMoveData(ZM_MOVE_CLOSEBOUT).m_iEffectMagnitude;
+	int iAmount = 0;
+	const bool bFound = ZM_FindStageChange(xEvents, ZM_SIDE_ENEMY, ZM_BATTLE_STAT_DEFENSE, iAmount);
+	ZENITH_ASSERT_TRUE(bFound, "Close Bout's chance-100 secondary should lower enemy DEFENSE");
+	ZENITH_ASSERT_EQ(iAmount, -iMag);
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_DEFENSE], -iMag);
+	// The damaging hit landed first: DAMAGE_DEALT precedes STAT_STAGE_CHANGED.
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), "Close Bout is a damaging move");
+}
+
+// ---- Per-stat apply: single-stat RAISE_* kinds (target = self) ---------------
+ZENITH_TEST(ZM_Battle, Stat_RaiseAttack_Whetclaw)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_WHETCLAW, ZM_BATTLE_STAT_ATTACK, +1, ZM_SIDE_PLAYER);
+}
+ZENITH_TEST(ZM_Battle, Stat_RaiseDefense_FirmUp)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_FIRMUP, ZM_BATTLE_STAT_DEFENSE, +1, ZM_SIDE_PLAYER);
+}
+ZENITH_TEST(ZM_Battle, Stat_RaiseSpAttack_KindleUp)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_KINDLEUP, ZM_BATTLE_STAT_SPATTACK, +1, ZM_SIDE_PLAYER);
+}
+ZENITH_TEST(ZM_Battle, Stat_RaiseSpDefense_MistVeil)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_MISTVEIL, ZM_BATTLE_STAT_SPDEFENSE, +1, ZM_SIDE_PLAYER);
+}
+ZENITH_TEST(ZM_Battle, Stat_RaiseSpeed_Quicken)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_QUICKEN, ZM_BATTLE_STAT_SPEED, +1, ZM_SIDE_PLAYER);
+}
+ZENITH_TEST(ZM_Battle, Stat_RaiseEvasion_Foresight)
+{
+	ZM_CheckSingleStatApply(ZM_MOVE_FORESIGHT, ZM_BATTLE_STAT_EVASION, +1, ZM_SIDE_PLAYER);
+}
+
+// ---- Multi-stat RAISE_* + RAISE_ALL (target = self) --------------------------
+// Emits one STAT_STAGE_CHANGED per stat. Assertions are order-INDEPENDENT (final
+// stages + one change per listed stat) so the executor's chosen emit order is
+// a free implementation detail; the oracle derives ZM_BATTLE_STAT enum order.
+namespace
+{
+	void ZM_CheckMultiStatRaise(ZM_MOVE_ID eMove, const ZM_BATTLE_STAT* peStats, u_int uStatCount)
+	{
+		const int iMag = ZM_GetMoveData(eMove).m_iEffectMagnitude;
+
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, eMove),
+			MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
+
+		// Exactly one STAT_STAGE_CHANGED per listed stat, each +magnitude; every
+		// other battle-stat slot on the user stays 0.
+		ZENITH_ASSERT_EQ(ZM_CountStageChanges(xEvents, ZM_SIDE_PLAYER), uStatCount, "wrong number of stat changes");
+		for (u_int uStat = 0; uStat < (u_int)ZM_BATTLE_STAT_COUNT; ++uStat)
+		{
+			bool bListed = false;
+			for (u_int j = 0; j < uStatCount; ++j) { if ((u_int)peStats[j] == uStat) { bListed = true; } }
+			int iAmount = 0;
+			const bool bChanged = ZM_FindStageChange(xEvents, ZM_SIDE_PLAYER, (ZM_BATTLE_STAT)uStat, iAmount);
+			if (bListed)
+			{
+				ZENITH_ASSERT_TRUE(bChanged, "listed stat %u should change", uStat);
+				ZENITH_ASSERT_EQ(iAmount, iMag, "listed stat delta != magnitude");
+				ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[uStat], iMag);
+			}
+			else
+			{
+				ZENITH_ASSERT_FALSE(bChanged, "unlisted stat %u must not change", uStat);
+				ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[uStat], 0, "unlisted stat %u nonzero", uStat);
+			}
+		}
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Stat_RaiseAttackSpeed_Wyrmdance)
+{
+	const ZM_BATTLE_STAT aeStats[] = { ZM_BATTLE_STAT_ATTACK, ZM_BATTLE_STAT_SPEED };
+	ZM_CheckMultiStatRaise(ZM_MOVE_WYRMDANCE, aeStats, 2u);
+}
+ZENITH_TEST(ZM_Battle, Stat_RaiseAttackDefense_BulkStance)
+{
+	const ZM_BATTLE_STAT aeStats[] = { ZM_BATTLE_STAT_ATTACK, ZM_BATTLE_STAT_DEFENSE };
+	ZM_CheckMultiStatRaise(ZM_MOVE_BULKSTANCE, aeStats, 2u);
+}
+ZENITH_TEST(ZM_Battle, Stat_RaiseSpatkSpdef_SereneMind)
+{
+	const ZM_BATTLE_STAT aeStats[] = { ZM_BATTLE_STAT_SPATTACK, ZM_BATTLE_STAT_SPDEFENSE };
+	ZM_CheckMultiStatRaise(ZM_MOVE_SERENEMIND, aeStats, 2u);
+}
+ZENITH_TEST(ZM_Battle, Stat_RaiseDefSpdef_Bastion)
+{
+	const ZM_BATTLE_STAT aeStats[] = { ZM_BATTLE_STAT_DEFENSE, ZM_BATTLE_STAT_SPDEFENSE };
+	ZM_CheckMultiStatRaise(ZM_MOVE_BASTION, aeStats, 2u);
+}
+ZENITH_TEST(ZM_Battle, Stat_RaiseAll_RallyCry)
+{
+	// RAISE_ALL == the 5 battle stats (NOT accuracy/evasion).
+	const ZM_BATTLE_STAT aeStats[] = {
+		ZM_BATTLE_STAT_ATTACK, ZM_BATTLE_STAT_DEFENSE, ZM_BATTLE_STAT_SPATTACK,
+		ZM_BATTLE_STAT_SPDEFENSE, ZM_BATTLE_STAT_SPEED };
+	ZM_CheckMultiStatRaise(ZM_MOVE_RALLYCRY, aeStats, 5u);
+}
+
+// ============================================================================
+// Clamp to [-6,+6]: a fully-maxed stat -> MOVE_FAILED(STAT_MAXED), stage frozen.
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Stat_RaiseClampsAtPlus6)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_WHETCLAW),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+
+	// Raise ATTACK repeatedly until pinned at +6 (magnitude-agnostic).
+	int iGuard = 0;
+	while (xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK] < iZM_MAX_STAGE && iGuard < 12)
+	{
+		Zenith_Vector<ZM_BattleEvent> xStep;
+		ZM_MoveContext xCtx = MakeCtx(xState, xStep, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		++iGuard;
+	}
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], iZM_MAX_STAGE, "should reach +6");
+
+	// One more use at +6: MOVE_FAILED(STAT_MAXED), no STAT_STAGE_CHANGED, stage held.
+	Zenith_Vector<ZM_BattleEvent> xMaxed;
+	ZM_MoveContext xCtx = MakeCtx(xState, xMaxed, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	const ZM_BattleEvent* pxFail = ZM_FindKind(xMaxed, ZM_BATTLE_EVENT_MOVE_FAILED);
+	ZENITH_ASSERT_NOT_NULL(pxFail, "a maxed raise must emit MOVE_FAILED");
+	if (pxFail != nullptr)
+	{
+		ZENITH_ASSERT_EQ((u_int)pxFail->m_iAux, (u_int)ZM_MOVE_FAIL_STAT_MAXED, "MOVE_FAILED reason must be STAT_MAXED");
+	}
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xMaxed, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), "no STAT_STAGE_CHANGED when already maxed");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], iZM_MAX_STAGE, "stage must stay +6");
+}
+
+ZENITH_TEST(ZM_Battle, Stat_LowerClampsAtMinus6)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_COWERGLARE),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+
+	// Cower Glare lowers enemy SPEED; drive it to -6 (magnitude-agnostic).
+	int iGuard = 0;
+	while (xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_SPEED] > iZM_MIN_STAGE && iGuard < 12)
+	{
+		Zenith_Vector<ZM_BattleEvent> xStep;
+		ZM_MoveContext xCtx = MakeCtx(xState, xStep, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		++iGuard;
+	}
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_SPEED], iZM_MIN_STAGE, "should reach -6");
+
+	Zenith_Vector<ZM_BattleEvent> xMaxed;
+	ZM_MoveContext xCtx = MakeCtx(xState, xMaxed, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	const ZM_BattleEvent* pxFail = ZM_FindKind(xMaxed, ZM_BATTLE_EVENT_MOVE_FAILED);
+	ZENITH_ASSERT_NOT_NULL(pxFail, "a bottomed-out lower must emit MOVE_FAILED");
+	if (pxFail != nullptr)
+	{
+		ZENITH_ASSERT_EQ((u_int)pxFail->m_iAux, (u_int)ZM_MOVE_FAIL_STAT_MAXED, "MOVE_FAILED reason must be STAT_MAXED");
+	}
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xMaxed, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), "no STAT_STAGE_CHANGED when already at -6");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_SPEED], iZM_MIN_STAGE, "stage must stay -6");
+}
+
+// STAT_STAGE_CHANGED m_iAmount is the delta ACTUALLY applied (new-old), so a
+// partial clamp reports the truncated delta, not the nominal magnitude.
+ZENITH_TEST(ZM_Battle, Stat_PartialClampDeltaApplied)
+{
+	ZM_BattleState xState;
+	// Frostward is a mag-2 RAISE_DEFENSE (self). Pre-rig DEFENSE to +5 so a +2 use
+	// can only apply +1 before pinning at +6.
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_FROSTWARD),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+	ZENITH_ASSERT_EQ(ZM_GetMoveData(ZM_MOVE_FROSTWARD).m_iEffectMagnitude, 2, "test needs a mag-2 raise");
+	xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_DEFENSE] = 5;
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	int iAmount = 0;
+	const bool bFound = ZM_FindStageChange(xEvents, ZM_SIDE_PLAYER, ZM_BATTLE_STAT_DEFENSE, iAmount);
+	ZENITH_ASSERT_TRUE(bFound, "a partial raise still emits STAT_STAGE_CHANGED");
+	ZENITH_ASSERT_EQ(iAmount, 1, "applied delta at +5 with a +2 raise must be +1");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_DEFENSE], iZM_MAX_STAGE);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED), "a partial (nonzero) raise must not fail");
+}
+
+// ============================================================================
+// Target side: a RAISE hits SELF (attacker); a LOWER hits the OPPONENT.
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Stat_RaiseTargetsSelfNotOpponent)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_WHETCLAW),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
+
+	const ZM_BattleEvent* pxChange = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED);
+	ZENITH_ASSERT_NOT_NULL(pxChange, "Whetclaw should raise a stat");
+	if (pxChange != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxChange->m_uSide, (u_int)ZM_SIDE_PLAYER, "a self-raise targets the attacker");
+		ZENITH_ASSERT_EQ(pxChange->m_uSlot, 0u);
+	}
+	// The opponent's stages are untouched.
+	for (u_int i = 0; i < (u_int)ZM_BATTLE_STAT_COUNT; ++i)
+	{
+		ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[i], 0, "opponent stage %u changed by a self-raise", i);
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Stat_LowerTargetsOpponentNotSelf)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_WARCRY),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
+
+	const ZM_BattleEvent* pxChange = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED);
+	ZENITH_ASSERT_NOT_NULL(pxChange, "Warcry should lower a stat");
+	if (pxChange != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxChange->m_uSide, (u_int)ZM_SIDE_ENEMY, "an opponent-lower targets the defender");
+	}
+	for (u_int i = 0; i < (u_int)ZM_BATTLE_STAT_COUNT; ++i)
+	{
+		ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[i], 0, "attacker stage %u changed by an opponent-lower", i);
+	}
+}
+
+// The full STAT_STAGE_CHANGED encoding: side/slot = target, amount = delta, aux =
+// (int) the ZM_BATTLE_STAT. Pinned on Warcry (LOWER_ATTACK, mag 1) into a stage-0
+// enemy so amount == -1 and aux == ATTACK.
+ZENITH_TEST(ZM_Battle, StatStageChanged_EncodingFields)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_WARCRY),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
+
+	const ZM_BattleEvent* pxChange = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED);
+	ZENITH_ASSERT_NOT_NULL(pxChange, "expected a STAT_STAGE_CHANGED");
+	if (pxChange != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxChange->m_uSide, (u_int)ZM_SIDE_ENEMY, "side = target");
+		ZENITH_ASSERT_EQ(pxChange->m_uSlot, 0u, "slot = target active slot");
+		ZENITH_ASSERT_EQ(pxChange->m_iAmount, -1, "amount = signed delta applied");
+		ZENITH_ASSERT_EQ((u_int)pxChange->m_iAux, (u_int)ZM_BATTLE_STAT_ATTACK, "aux = (int) the ZM_BATTLE_STAT");
+	}
+}
+
+// A maxed STATUS primary still spends the turn: MOVE_USED is emitted BEFORE the
+// MOVE_FAILED (the fail is discovered during effect application, after M1).
+ZENITH_TEST(ZM_Battle, MoveFailed_MaxedEmitsMoveUsedThenFailed)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_WHETCLAW),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+	// Pre-pin ATTACK at +6 so the very next use fails.
+	xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK] = iZM_MAX_STAGE;
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	// Find MOVE_USED and MOVE_FAILED indices; MOVE_USED must come first.
+	int iUsed = -1;
+	int iFail = -1;
+	for (u_int i = 0; i < xEvents.GetSize(); ++i)
+	{
+		if (xEvents.Get(i).m_eKind == ZM_BATTLE_EVENT_MOVE_USED && iUsed < 0)   { iUsed = (int)i; }
+		if (xEvents.Get(i).m_eKind == ZM_BATTLE_EVENT_MOVE_FAILED && iFail < 0) { iFail = (int)i; }
+	}
+	ZENITH_ASSERT_TRUE(iUsed >= 0, "a failed status move still announces MOVE_USED");
+	ZENITH_ASSERT_TRUE(iFail >= 0, "expected MOVE_FAILED");
+	ZENITH_ASSERT_TRUE(iUsed < iFail, "MOVE_USED must precede MOVE_FAILED");
+}
+
+// ============================================================================
+// STATUS-category primary draws NO crit/roll/proc RNG. After executing one, the
+// state RNG is byte-identical to a fresh mirror on the same seed (0 draws), so
+// the next output matches. Whetclaw is ALWAYS_HITS (no accuracy draw either);
+// Warcry is acc 100 -> effAcc 100 -> also no accuracy draw.
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Status_PrimaryConsumesNoCritRollDraw)
+{
+	const u_int64 ulSeed = 0xABCDEFull;
+
+	{
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_WHETCLAW),
+			MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), ulSeed, xState, xEvents);
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), "Whetclaw should still apply");
+		ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xMirror.Next(), "Whetclaw (STATUS primary) must consume 0 RNG draws");
+	}
+	{
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_WARCRY),
+			MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), ulSeed, xState, xEvents);
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xMirror.Next(), "Warcry (acc-100 STATUS primary) must consume 0 RNG draws");
+	}
+}
+
+// A STATUS move that CAN miss (Shiver Cry, acc 95) applies nothing on a missed
+// accuracy roll: MOVE_MISSED, no STAT_STAGE_CHANGED, target stage untouched.
+ZENITH_TEST(ZM_Battle, Status_CanMissMoveAppliesNothingOnMiss)
+{
+	const ZM_MOVE_ID eMove = ZM_MOVE_SHIVERCRY;                 // STATUS, LOWER_SPATTACK, acc 95
+	const u_int uAcc = ZM_GetMoveData(eMove).m_uAccuracy;
+	ZENITH_ASSERT_TRUE(uAcc != uZM_MOVE_ACCURACY_ALWAYS_HITS && uAcc < 100u, "test needs a can-miss status move");
+
+	bool bTested = false;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 512ull && !bTested; ++ulSeed)
+	{
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		if (xMirror.RandBelow(100u) < uAcc) { continue; }       // want a MISS seed
+
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, eMove),
+			MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), ulSeed, xState, xEvents);
+
+		ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED), "expected a MOVE_MISSED on the rigged miss seed");
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), "a missed status move applies no stage change");
+		ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_SPATTACK], 0, "target SpAtk must be untouched on a miss");
+		bTested = true;
+	}
+	ZENITH_ASSERT_TRUE(bTested, "no miss seed found for the can-miss status move");
+}
+
+// ============================================================================
+// Accuracy/evasion stage fold: effAcc = base acc folded by (attacker ACCURACY
+// stage - defender EVASION stage) via ZM_ApplyStatStage; a draw is pulled only
+// when effAcc < 100. Driven on Torrent Cannon (acc 80, effect NONE).
+// ============================================================================
+namespace
+{
+	// Build the acc-fold fixture: attacker holds the can-miss move; a very bulky
+	// defender so a connecting hit never faints (so MOVE_MISSED is the only miss
+	// signal). Rig acc/eva stages via the out params after building.
+	ZM_BattleMonsterSpec ZM_AccAttacker(ZM_MOVE_ID eMove)
+	{
+		return MakeSpecOverride(ZM_SPECIES_NIBBIN, 20u, eMove, 200u, 40u, 40u, 40u, 40u, 100u);
+	}
+	ZM_BattleMonsterSpec ZM_AccDefender()
+	{
+		return MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH, 250u, 40u, 250u, 40u, 250u, 10u);
+	}
+
+	// Execute Torrent Cannon on a fresh state with rigged acc/eva stages; return
+	// whether MOVE_MISSED was emitted.
+	bool ZM_ExecMiss(u_int64 ulSeed, int iAtkAccStage, int iDefEvaStage)
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, ZM_AccAttacker(ZM_MOVE_TORRENTCANNON), ZM_AccDefender(), ulSeed, 54ull);
+		xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ACCURACY] = iAtkAccStage;
+		xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_EVASION]  = iDefEvaStage;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		return ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED);
+	}
+}
+
+// +1 accuracy on an 80-acc move -> effAcc 120 -> no draw -> a base-miss becomes a
+// hit.
+ZENITH_TEST(ZM_Battle, Accuracy_StageRaisesHitRate)
+{
+	const u_int uAcc = ZM_GetMoveData(ZM_MOVE_TORRENTCANNON).m_uAccuracy;   // 80
+	bool bTested = false;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 512ull && !bTested; ++ulSeed)
+	{
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		if (xMirror.RandBelow(100u) < uAcc) { continue; }     // need a base-MISS seed (V >= 80)
+		ZENITH_ASSERT_TRUE(ZM_ExecMiss(ulSeed, 0, 0),  "base (stage 0) should MISS on this seed");
+		ZENITH_ASSERT_FALSE(ZM_ExecMiss(ulSeed, +1, 0), "+1 accuracy (effAcc>=100, no draw) should convert to a HIT");
+		bTested = true;
+	}
+	ZENITH_ASSERT_TRUE(bTested, "no base-miss seed found");
+}
+
+// -2 accuracy on an 80-acc move -> effAcc 40 -> a base-hit becomes a miss.
+ZENITH_TEST(ZM_Battle, Accuracy_StageLowersHitRate)
+{
+	const u_int uAcc = ZM_GetMoveData(ZM_MOVE_TORRENTCANNON).m_uAccuracy;   // 80
+	bool bTested = false;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 512ull && !bTested; ++ulSeed)
+	{
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		const u_int uV = xMirror.RandBelow(100u);
+		if (!(uV >= 40u && uV < uAcc)) { continue; }          // base hit (V<80) but effAcc-40 miss (V>=40)
+		ZENITH_ASSERT_FALSE(ZM_ExecMiss(ulSeed, 0, 0),  "base (stage 0) should HIT on this seed");
+		ZENITH_ASSERT_TRUE(ZM_ExecMiss(ulSeed, -2, 0), "-2 accuracy (effAcc 40) should MISS");
+		bTested = true;
+	}
+	ZENITH_ASSERT_TRUE(bTested, "no straddling seed found");
+}
+
+// +2 defender evasion on an 80-acc move -> effAcc 40 -> a base-hit becomes a miss.
+ZENITH_TEST(ZM_Battle, Evasion_StageLowersHitRate)
+{
+	const u_int uAcc = ZM_GetMoveData(ZM_MOVE_TORRENTCANNON).m_uAccuracy;   // 80
+	bool bTested = false;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 512ull && !bTested; ++ulSeed)
+	{
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		const u_int uV = xMirror.RandBelow(100u);
+		if (!(uV >= 40u && uV < uAcc)) { continue; }
+		ZENITH_ASSERT_FALSE(ZM_ExecMiss(ulSeed, 0, 0),  "base (stage 0) should HIT on this seed");
+		ZENITH_ASSERT_TRUE(ZM_ExecMiss(ulSeed, 0, +2), "+2 evasion (effAcc 40) should MISS");
+		bTested = true;
+	}
+	ZENITH_ASSERT_TRUE(bTested, "no straddling seed found");
+}
+
+// Equal attacker-accuracy and defender-evasion stages net to zero: the fold is
+// identity, so the hit/miss decision matches stage 0 on every seed (hit + miss).
+ZENITH_TEST(ZM_Battle, AccEva_EqualStagesNetZeroIdentity)
+{
+	bool bSawHit = false;
+	bool bSawMiss = false;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 40ull; ++ulSeed)
+	{
+		const bool bBase = ZM_ExecMiss(ulSeed, 0, 0);
+		const bool bNet0 = ZM_ExecMiss(ulSeed, +2, +2);
+		ZENITH_ASSERT_TRUE(bBase == bNet0, "net-zero acc/eva must match the stage-0 decision (seed %llu)", (unsigned long long)ulSeed);
+		if (bBase) { bSawMiss = true; } else { bSawHit = true; }
+	}
+	ZENITH_ASSERT_TRUE(bSawHit,  "expected at least one HIT across the seed sweep");
+	ZENITH_ASSERT_TRUE(bSawMiss, "expected at least one MISS across the seed sweep");
+}
+
+// ============================================================================
+// Damaging-move stat SECONDARY: ApplyDamagingHit runs first, then a proc draw
+// (RandBelow(100) < chance) gates the stat effect. Saltspray (WATER special,
+// acc 100, chance 20, LOWER_SPDEFENSE) into a bulky NORMAL defender (WATER is
+// neutral, survives) -> draw order is crit, roll, proc.
+// ============================================================================
+namespace
+{
+	ZM_BattleMonsterSpec ZM_ProcAttacker()
+	{
+		return MakeSpecOverride(ZM_SPECIES_NIBBIN, 25u, ZM_MOVE_SALTSPRAY, 60u, 40u, 40u, 60u, 40u, 100u);
+	}
+	ZM_BattleMonsterSpec ZM_ProcDefender()
+	{
+		return MakeSpecOverride(ZM_SPECIES_STRAYLING, 25u, ZM_MOVE_RAMBASH, 250u, 40u, 250u, 40u, 250u, 10u);
+	}
+
+	// Mirror the executor's draw stream for a single-hit damaging + secondary move:
+	// crit (Chance 1/24), roll (RandRange 85..100), then the proc gate.
+	bool ZM_PredictProc(u_int64 ulSeed, u_int uChance)
+	{
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		xMirror.Chance(1u, 24u);          // crit
+		xMirror.RandRange(85u, 100u);     // roll
+		return xMirror.RandBelow(100u) < uChance;
+	}
+}
+
+// A rigged seed that FORCES the proc -> DAMAGE_DEALT then the stat drop.
+ZENITH_TEST(ZM_Battle, Secondary_ProcForced_AppliesStatDrop)
+{
+	const u_int uChance = ZM_GetMoveData(ZM_MOVE_SALTSPRAY).m_uEffectChance;   // 20
+	const int   iMag    = ZM_GetMoveData(ZM_MOVE_SALTSPRAY).m_iEffectMagnitude;
+	bool bTested = false;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 512ull && !bTested; ++ulSeed)
+	{
+		if (!ZM_PredictProc(ulSeed, uChance)) { continue; }
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunPlayerMove(ZM_ProcAttacker(), ZM_ProcDefender(), ulSeed, xState, xEvents);
+
+		ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "defender must survive so the secondary can proc");
+		int iAmount = 0;
+		const bool bFound = ZM_FindStageChange(xEvents, ZM_SIDE_ENEMY, ZM_BATTLE_STAT_SPDEFENSE, iAmount);
+		ZENITH_ASSERT_TRUE(bFound, "a forced proc must lower enemy SpDefense");
+		ZENITH_ASSERT_EQ(iAmount, -iMag);
+		// The damaging hit precedes the secondary.
+		ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), "expected a damaging hit");
+		bTested = true;
+	}
+	ZENITH_ASSERT_TRUE(bTested, "no proc-forcing seed found");
+}
+
+// A rigged seed where the proc does NOT fire -> DAMAGE_DEALT only, no stat drop.
+ZENITH_TEST(ZM_Battle, Secondary_ProcSuppressed_NoStatDrop)
+{
+	const u_int uChance = ZM_GetMoveData(ZM_MOVE_SALTSPRAY).m_uEffectChance;
+	bool bTested = false;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 512ull && !bTested; ++ulSeed)
+	{
+		if (ZM_PredictProc(ulSeed, uChance)) { continue; }
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunPlayerMove(ZM_ProcAttacker(), ZM_ProcDefender(), ulSeed, xState, xEvents);
+
+		ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), "expected a damaging hit");
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), "a suppressed proc applies no stage change");
+		ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_SPDEFENSE], 0);
+		bTested = true;
+	}
+	ZENITH_ASSERT_TRUE(bTested, "no proc-suppressing seed found");
+}
+
+// The proc draw is pulled AFTER crit + roll (chance<100): exactly three RandBelow
+// calls (crit, roll, proc) are consumed, in that order, so the post-move RNG
+// matches a mirror that drew the same three. Also confirms proc == prediction.
+ZENITH_TEST(ZM_Battle, Secondary_DrawOrderCritRollProc)
+{
+	const u_int uChance = ZM_GetMoveData(ZM_MOVE_SALTSPRAY).m_uEffectChance;
+	const u_int64 ulSeed = 0x1234ull;
+
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(ZM_ProcAttacker(), ZM_ProcDefender(), ulSeed, xState, xEvents);
+	ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "defender must survive so the proc draw is pulled");
+
+	// Mirror the same three draws; the RNG cursors must then coincide.
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	xMirror.Chance(1u, 24u);
+	xMirror.RandRange(85u, 100u);
+	const bool bPredictProc = (xMirror.RandBelow(100u) < uChance);
+	ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xMirror.Next(),
+		"exactly {crit, roll, proc} must be consumed, in order");
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED) == bPredictProc,
+		"observed proc must match the mirrored prediction");
+}
+
+// A chance>=100 secondary applies UNCONDITIONALLY with NO proc draw: only crit +
+// roll are consumed (two draws), and the stat drop still lands. Close Bout is a
+// chance-100 LOWER_DEFENSE physical.
+ZENITH_TEST(ZM_Battle, Secondary_Chance100AppliesWithoutProcDraw)
+{
+	ZENITH_ASSERT_GE(ZM_GetMoveData(ZM_MOVE_CLOSEBOUT).m_uEffectChance, 100u, "test needs a chance>=100 secondary");
+	const u_int64 ulSeed = 0x1234ull;
+
+	const ZM_BattleMonsterSpec xPlayer = MakeSpecOverride(ZM_SPECIES_NIBBIN,    25u, ZM_MOVE_CLOSEBOUT, 80u, 40u,  40u, 40u,  40u, 100u);
+	const ZM_BattleMonsterSpec xEnemy  = MakeSpecOverride(ZM_SPECIES_STRAYLING, 25u, ZM_MOVE_RAMBASH,  250u, 40u, 250u, 40u, 250u,  10u);
+
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(xPlayer, xEnemy, ulSeed, xState, xEvents);
+	ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "defender must survive");
+
+	// Only crit + roll are drawn (no proc draw) -> mirror those two, cursors coincide.
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	xMirror.Chance(1u, 24u);
+	xMirror.RandRange(85u, 100u);
+	ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xMirror.Next(), "a chance-100 secondary pulls NO proc draw");
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), "a chance-100 secondary always applies");
+}
+
+// A seed sweep over the proc gate: for every seed the observed stat-drop presence
+// must equal the mirror's prediction (a mini-fuzz of the E3 draw), covering both
+// procced and non-procced outcomes.
+ZENITH_TEST(ZM_Battle, Secondary_ProcMatchesMirrorAcrossSeeds)
+{
+	const u_int uChance = ZM_GetMoveData(ZM_MOVE_SALTSPRAY).m_uEffectChance;
+	bool bSawProc = false;
+	bool bSawNoProc = false;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 120ull; ++ulSeed)
+	{
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunPlayerMove(ZM_ProcAttacker(), ZM_ProcDefender(), ulSeed, xState, xEvents);
+		if (xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP == 0u) { continue; }   // (never, but guard)
+
+		const bool bPredict = ZM_PredictProc(ulSeed, uChance);
+		const bool bObserved = ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED);
+		ZENITH_ASSERT_TRUE(bObserved == bPredict, "proc/no-proc must match the mirror (seed %llu)", (unsigned long long)ulSeed);
+		if (bPredict) { bSawProc = true; } else { bSawNoProc = true; }
+	}
+	ZENITH_ASSERT_TRUE(bSawProc,   "sweep saw no proc");
+	ZENITH_ASSERT_TRUE(bSawNoProc, "sweep saw no non-proc");
+}
+
+// Stat stages feed the damage path: with the SAME seed (identical crit/roll), a
+// -1 attacker ATTACK stage lowers ApplyDamagingHit's output vs stage 0, and a +2
+// stage raises it. Uses the executor's single damaging-hit site directly.
+ZENITH_TEST(ZM_Battle, Stat_StageChangeFeedsDamage)
+{
+	const u_int64 ulSeed = 0x1234ull;
+	const ZM_BattleMonsterSpec xPlayer = MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_RAMBASH, 60u, 200u, 40u, 40u, 40u, 100u);
+	const ZM_BattleMonsterSpec xEnemy  = MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH, 250u, 40u, 120u, 40u, 120u, 10u);
+
+	u_int uBase = 0u;
+	u_int uLowered = 0u;
+	u_int uRaised = 0u;
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, xPlayer, xEnemy, ulSeed, 54ull);
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		uBase = ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+	}
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, xPlayer, xEnemy, ulSeed, 54ull);
+		xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK] = -1;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		uLowered = ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+	}
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, xPlayer, xEnemy, ulSeed, 54ull);
+		xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK] = +2;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		uRaised = ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+	}
+	ZENITH_ASSERT_LT(uLowered, uBase, "a -1 ATTACK stage must reduce damage");
+	ZENITH_ASSERT_GT(uRaised,  uBase, "a +2 ATTACK stage must increase damage");
+}
+
+// ============================================================================
+// SC2 FIRST GOLDEN -- Scenario_LowerAttack_ExactStream. A STATUS LOWER_ATTACK
+// (Warcry, mag 1) from a fast, bulky Nibbin into a stage-0 Strayling, then the
+// enemy's Rambash reply (which already sees ATTACK at -1). Single turn, exact
+// 9-event stream, derived by the offline oracle (seed 0x1234). The enemy's
+// DAMAGE_DEALT amount (3) reflects the -1 ATTACK stage (stat stages feed damage).
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Scenario_LowerAttack_ExactStream)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN,    10u, ZM_MOVE_WARCRY,  200u, 10u, 200u, 10u, 200u, 200u) };
+	ZM_BattleMonsterSpec axEnemy[1]  = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 10u, ZM_MOVE_RAMBASH,  45u, 60u,  40u, 35u,  40u,  55u) };
+
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, 0x1234ull, 54ull);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	// Single non-terminal turn: player is fast + bulky, so it survives and the
+	// battle is not over (no BATTLE_END).
+	ZENITH_ASSERT_FALSE(xEngine.IsOver(), "single-turn golden must not end the battle");
+
+	// --- offline-derived golden stream (9 events) ---
+	Zenith_Vector<ZM_BattleEvent> xExpected;
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_BEGIN));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_PLAYER, 0, ZM_MOVE_NONE, ZM_SPECIES_NIBBIN));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_ENEMY, 0, ZM_MOVE_NONE, ZM_SPECIES_STRAYLING));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_BEGIN, ZM_SIDE_COUNT, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 1));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER, 0, ZM_MOVE_WARCRY));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_STAT_STAGE_CHANGED, ZM_SIDE_ENEMY, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, -1, (int)ZM_BATTLE_STAT_ATTACK));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_ENEMY, 0, ZM_MOVE_RAMBASH));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_PLAYER, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 3, 60));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 1));
+
+	ZM_AssertStreamEquals(xExpected, xEngine.GetEvents(), "lowerAttack");
+
+	// Corroborating post-conditions.
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], -1, "enemy ATTACK should be -1 after Warcry");
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().m_uCurHP, 60u, "player should be at 60 HP (63 - 3)");
+	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEngine.GetEvents(), xEngine, "lowerAttack"));
+}
+
+// ============================================================================
+// SC2 REVIEW-FIX coverage (3 untested paths the reviewer flagged):
+//  1. RAISE_CRIT honors the row magnitude (Killer Focus mag 2), capped at 3.
+//  2. A multi-stat STATUS primary caps each stat SILENTLY; it emits ONE whole-move
+//     MOVE_FAILED only when NOTHING moved -- never a "failed AND changed" stream.
+//  3. The acc/eva stage delta is clamped to [-6,+6] before the accuracy fold.
+// Each fix is on a path the 38 prior SC2 tests never reach (crit stage untouched,
+// multi-stat starts at stage 0, |delta| <= 2), so all existing goldens are stable.
+// ============================================================================
+namespace
+{
+	// Count events of a given kind (whole-stream, order-independent).
+	u_int ZM_CountKind(const Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_BATTLE_EVENT eKind)
+	{
+		u_int uCount = 0u;
+		for (u_int i = 0; i < xEvents.GetSize(); ++i)
+		{
+			if (xEvents.Get(i).m_eKind == eKind) { ++uCount; }
+		}
+		return uCount;
+	}
+}
+
+// Fix 1. RAISE_CRIT adds the row magnitude to m_iCritStage (Killer Focus = +2), NOT a
+// flat +1, capped at 3. A second use caps. No STAT_STAGE_CHANGED / MOVE_FAILED and no
+// accuracy/crit/roll draw: the always-hits STATUS primary's stream is just [MOVE_USED].
+ZENITH_TEST(ZM_Battle, RaiseCrit_HonorsMagnitude)
+{
+	// Killer Focus is the sole RAISE_CRIT row: STATUS, always-hits, magnitude 2.
+	ZENITH_ASSERT_EQ((u_int)ZM_GetMoveData(ZM_MOVE_KILLERFOCUS).m_eEffect, (u_int)ZM_MOVE_EFFECT_RAISE_CRIT);
+	ZENITH_ASSERT_EQ(ZM_GetMoveData(ZM_MOVE_KILLERFOCUS).m_iEffectMagnitude, 2, "test needs the mag-2 RAISE_CRIT row");
+
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_KILLERFOCUS),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_iCritStage, 0, "crit stage starts at 0");
+
+	// First use: crit stage 0 -> 2 (honors magnitude 2). Stream = MOVE_USED only.
+	Zenith_Vector<ZM_BattleEvent> xFirst;
+	{
+		ZM_MoveContext xCtx = MakeCtx(xState, xFirst, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+	}
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_iCritStage, 2, "mag-2 RAISE_CRIT must raise the crit stage to 2, not 1");
+	ZENITH_ASSERT_EQ(xFirst.GetSize(), 1u, "a RAISE_CRIT primary emits only MOVE_USED");
+	if (xFirst.GetSize() == 1u)
+	{
+		ZENITH_ASSERT_TRUE(xFirst.Get(0) == ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER, 0u, ZM_MOVE_KILLERFOCUS),
+			"the only event is MOVE_USED(Killer Focus)");
+	}
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xFirst, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), "RAISE_CRIT emits no STAT_STAGE_CHANGED");
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xFirst, ZM_BATTLE_EVENT_MOVE_FAILED), "RAISE_CRIT emits no MOVE_FAILED");
+
+	// Second use: 2 + 2 = 4 -> capped at 3. Still MOVE_USED only.
+	Zenith_Vector<ZM_BattleEvent> xSecond;
+	{
+		ZM_MoveContext xCtx = MakeCtx(xState, xSecond, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+	}
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_iCritStage, 3, "a second mag-2 RAISE_CRIT caps the crit stage at 3");
+	ZENITH_ASSERT_EQ(xSecond.GetSize(), 1u, "a capped RAISE_CRIT primary still emits only MOVE_USED");
+}
+
+// Fix 1 (rate). At m_iCritStage == 2 the crit rate is 1/2 == Chance(1,2) == RandBelow(2):
+// a seed whose first RandBelow(2)==0 crits, ==1 does not. Proven both directions on
+// ApplyDamagingHit directly (Rambash's own crit stage 0, so the attacker counter
+// decides), with a mirror RNG confirming exactly {crit=Chance(1,2), roll} are drawn.
+ZENITH_TEST(ZM_Battle, RaiseCrit_Stage2AlwaysCritsRiggedElseHalf)
+{
+	const ZM_BattleMonsterSpec xPlayer = MakeSpecOverride(ZM_SPECIES_NIBBIN,    25u, ZM_MOVE_RAMBASH,  60u, 40u,  40u, 40u,  40u, 100u);
+	const ZM_BattleMonsterSpec xEnemy  = MakeSpecOverride(ZM_SPECIES_STRAYLING, 25u, ZM_MOVE_RAMBASH, 250u, 40u, 250u, 40u, 250u,  10u);
+
+	bool bSawCrit = false;
+	bool bSawNoCrit = false;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 64ull && !(bSawCrit && bSawNoCrit); ++ulSeed)
+	{
+		// Mirror the stage-2 draw stream: crit = Chance(1,2), then roll = RandRange(85,100).
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		const bool bPredictCrit = xMirror.Chance(1u, 2u);
+		xMirror.RandRange(85u, 100u);
+
+		ZM_BattleState xState;
+		BuildBattleState(xState, xPlayer, xEnemy, ulSeed, 54ull);
+		xState.Side(ZM_SIDE_PLAYER).Active().m_iCritStage = 2;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+
+		ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "defender must survive so the stream stays clean");
+		// The crit decision matches Chance(1,2)...
+		ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_CRIT) == bPredictCrit,
+			"stage-2 crit must equal Chance(1,2) (seed %llu)", (unsigned long long)ulSeed);
+		// ...and exactly {crit, roll} are consumed -- proving the crit draw is RandBelow(2).
+		ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xMirror.Next(), "stage-2 crit consumes exactly {Chance(1,2), roll}");
+
+		if (bPredictCrit) { bSawCrit = true; } else { bSawNoCrit = true; }
+	}
+	ZENITH_ASSERT_TRUE(bSawCrit,   "no seed produced a stage-2 crit (rate should be ~1/2)");
+	ZENITH_ASSERT_TRUE(bSawNoCrit, "no seed produced a stage-2 non-crit (rate should be ~1/2)");
+}
+
+// Fix 2 (partial cap). Bulk Stance = RAISE_ATTACK_DEFENSE (STATUS multi-stat, mag 1,
+// self). Pre-pin ATTACK at +6: the other stat (DEFENSE) still changes, the capped
+// ATTACK is SILENT, and NO MOVE_FAILED is emitted (no "failed AND changed" stream).
+ZENITH_TEST(ZM_Battle, MultiStatPrimary_PartialCapNoMoveFailed)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetMoveData(ZM_MOVE_BULKSTANCE).m_eEffect, (u_int)ZM_MOVE_EFFECT_RAISE_ATTACK_DEFENSE);
+
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_BULKSTANCE),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+	xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK] = iZM_MAX_STAGE;
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	// The uncapped DEFENSE moved by the +1 magnitude.
+	int iAmount = 0;
+	const bool bDefChanged = ZM_FindStageChange(xEvents, ZM_SIDE_PLAYER, ZM_BATTLE_STAT_DEFENSE, iAmount);
+	ZENITH_ASSERT_TRUE(bDefChanged, "the uncapped DEFENSE stat must still change");
+	ZENITH_ASSERT_EQ(iAmount, 1, "DEFENSE moves by the +1 magnitude");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_DEFENSE], 1);
+	// The capped ATTACK is SILENT and held at +6.
+	int iAtk = 0;
+	ZENITH_ASSERT_FALSE(ZM_FindStageChange(xEvents, ZM_SIDE_PLAYER, ZM_BATTLE_STAT_ATTACK, iAtk), "a per-stat cap must be silent");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], iZM_MAX_STAGE, "ATTACK stays pinned at +6");
+	// Exactly one stat change, and crucially NO contradictory MOVE_FAILED.
+	ZENITH_ASSERT_EQ(ZM_CountStageChanges(xEvents, ZM_SIDE_PLAYER), 1u, "only the uncapped stat changes");
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED), "a partial multi-stat cap must NOT emit MOVE_FAILED");
+}
+
+// Fix 2 (all capped). Bulk Stance with BOTH ATTACK and DEFENSE pre-pinned at +6 ->
+// nothing can move -> exactly ONE whole-move MOVE_FAILED(STAT_MAXED) and no
+// STAT_STAGE_CHANGED (not one MOVE_FAILED per capped stat).
+ZENITH_TEST(ZM_Battle, MultiStatPrimary_AllCappedEmitsOneMoveFailed)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_BULKSTANCE),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+	xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK]  = iZM_MAX_STAGE;
+	xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_DEFENSE] = iZM_MAX_STAGE;
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), "an all-capped multi-stat raise changes nothing");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED), 1u, "exactly ONE whole-move MOVE_FAILED when every stat is capped");
+	const ZM_BattleEvent* pxFail = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED);
+	ZENITH_ASSERT_NOT_NULL(pxFail, "expected the whole-move MOVE_FAILED");
+	if (pxFail != nullptr)
+	{
+		ZENITH_ASSERT_EQ((u_int)pxFail->m_iAux, (u_int)ZM_MOVE_FAIL_STAT_MAXED, "reason = STAT_MAXED");
+		ZENITH_ASSERT_EQ(pxFail->m_uSide, (u_int)ZM_SIDE_PLAYER, "the whole-move failure is announced on the user (self) side");
+	}
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK],  iZM_MAX_STAGE, "ATTACK held at +6");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_DEFENSE], iZM_MAX_STAGE, "DEFENSE held at +6");
+}
+
+// Fix 3 (acc/eva clamp). Rig attacker ACCURACY -3 and defender EVASION +6 -> raw delta
+// -9, which MUST clamp to -6 before the fold. Torrent Cannon (base acc 80): the clamped
+// effAcc is 20, whereas the raw -9 fold would give 14. On a boundary seed whose accuracy
+// draw V lands in [14,20) the clamped fold HITS but the unclamped one would MISS -- so a
+// HIT proves the delta was clamped to -6, not passed through at -9.
+ZENITH_TEST(ZM_Battle, AccuracyStageDeltaClampedAtSix)
+{
+	const u_int uAcc = ZM_GetMoveData(ZM_MOVE_TORRENTCANNON).m_uAccuracy;   // 80
+	const u_int uEffClamped   = ZM_ApplyStatStage(uAcc, iZM_MIN_STAGE);     // fold at -6 -> 20
+	const u_int uEffUnclamped = ZM_ApplyStatStage(uAcc, -9);                // raw -9 fold  -> 14
+	ZENITH_ASSERT_LT(uEffUnclamped, uEffClamped, "fixture must make the clamp observable");
+
+	bool bTested = false;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 4096ull && !bTested; ++ulSeed)
+	{
+		// The executor's FIRST draw is RandBelow(100) (base acc 80 < 100). Find a seed
+		// whose V straddles the two effAccs: HIT under clamped 20, MISS under raw 14.
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		const u_int uV = xMirror.RandBelow(100u);
+		if (!(uV >= uEffUnclamped && uV < uEffClamped)) { continue; }
+
+		ZENITH_ASSERT_FALSE(ZM_ExecMiss(ulSeed, -3, +6),
+			"a -9 raw delta must clamp to -6 (effAcc %u -> HIT), not use the raw -9 (effAcc %u -> MISS)",
+			uEffClamped, uEffUnclamped);
+		bTested = true;
+	}
+	ZENITH_ASSERT_TRUE(bTested, "no boundary seed found in [effUnclamped, effClamped)");
+}

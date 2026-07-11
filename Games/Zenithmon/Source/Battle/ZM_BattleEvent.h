@@ -41,6 +41,17 @@ enum ZM_BATTLE_EVENT : u_int
 	ZM_BATTLE_EVENT_COUNT
 };
 
+// Why a ZM_BATTLE_EVENT_MOVE_FAILED fired -- carried in the event's m_iAux. Append-
+// only (save-stable ordinals); SC2 lights only STAT_MAXED (a stat-change that hit
+// the +/-6 cap). The later boxes append their own reasons as the gate/intercept
+// framework arrives (the listed names are the reserved SC4+/SC5 set, not yet lit).
+enum ZM_MOVE_FAIL_REASON : u_int
+{
+	ZM_MOVE_FAIL_STAT_MAXED,   // SC2: a stat-stage change was already at the cap
+	// SC4+/SC5 (appended when lit): FROZEN, ASLEEP, FULLY_PARALYZED, TAUNTED,
+	// PROTECTED, STATUS_BLOCKED, OHKO_FAILED, RECHARGE ...
+};
+
 struct ZM_BattleEvent
 {
 	ZM_BATTLE_EVENT m_eKind      = ZM_BATTLE_EVENT_COUNT;

@@ -59,6 +59,7 @@ ZM_BattleMonster ZM_BuildBattleMonster(const ZM_BattleMonsterSpec& xSpec)
 		}
 	}
 
-	// status NONE, counters 0, mask 0, stages 0 all come from the struct defaults.
+	// status NONE, counters 0, mask 0, stages 0, crit stage 0 all come from the
+	// struct defaults (xMon was default-constructed above).
 	return xMon;
 }

@@ -20,8 +20,11 @@
 
 ### 1.2 Battle engine
 
-**Status: not started -- lands at S2 (logic), S11 (tower balance).**
-No battle state machine, executor, damage/catch/status logic, abilities, exp/level/evolution, trainer AI tiers, breeding, or Battle Tower logic. All of it is headless, seeded, deterministic C++ emitting an append-only `ZM_BattleEvent` stream; there is no in-repo turn-based reference to lean on, so this is designed fresh.
+**Status: IN PROGRESS -- S2 box 1 + box-2 SC1/SC2 landed (2026-07-11); S11 tower balance later.**
+Shipped in `Source/Battle/` (headless, seeded, deterministic, append-only `ZM_BattleEvent` stream; ZM-D-032/033): the **box-1 keystone** (ZM_BattleState/BattleMonster/BattleEvent/BattleEngine turn loop + a real minimal Gen-V ZM_DamageCalc + ZM_MoveExecutor seam) and **box-2 SC1** (executor refactor) + **SC2** (all stat-stage effects + STATUS-category dispatch + accuracy/evasion stages). `ZM_Battle` unit tests green (scenario goldens vs an offline PCG32 oracle + a fuzz smoke). **Still unbuilt (box-2 SC3-SC6 + boxes 3+):** delivery variants (multi-hit/recoil/drain/fixed/ohko), field/screen/hazard, the 6 major + 10 volatile statuses (ZM_StatusLogic), ZM_CatchCalc, pre-move actions (switch/item/run), the 2000-battle soak; then abilities + weather modifiers (box 3), exp/level/evolution (box 4), ZM_BattleAI tiers (box 5), breeding + Battle Tower (box 6).
+**Tracked deferrals (mechanics gaps, faithfully noted -- not bugs):**
+- **High-crit MOVE flag under-applied:** a move's inherent `m_uCritStage==1` (high-crit) still crits at box-1's 1/24, not 1/8 -- it is NOT folded into the `RAISE_CRIT` `m_iCritStage` counter (`{0->1/24,1->1/8,2->1/2,>=3->always}`). Deferred because the two scales differ (move `2`=guaranteed vs counter `2`=1/2) so a correct fold is a scale-reconciliation decision; land it when high-crit/RAISE_CRIT moves get real battle coverage. Golden-invisible today (every tested move is `m_uCritStage 0`).
+- **Self-targeting damaging-secondary dropped on a KO:** the one self-buff secondary (Primeval Might, `RAISE_ALL` chance-10) gates its E3 proc on the DEFENDER being alive (per ZM-D-033), so a KO drops the user's self-boost. Contract-consistent (no golden desync) but debatable vs mainline; revisit when self-target secondaries get coverage.
 
 ### 1.3 Overworld
 
