@@ -1,19 +1,30 @@
 #include "Zenith.h"
 
 #include "Zenithmon/Source/Battle/ZM_MoveExecutor.h"
+#include "Zenithmon/Source/Battle/ZM_StatusLogic.h"
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
 
 // ============================================================================
-// ZM_MoveExecutor -- SC1 seam + SC2 stat-stage effects & category dispatch.
-// Draw discipline (locked): per move -- accuracy (only if the move can miss) ->
-// [STATUS-category primary: apply effect, no further draws] OR [damaging: immunity
-// short-circuit -> crit -> damage-roll -> E3 secondary proc]. Emit order per
-// connecting damaging hit: MOVE_USED -> { MISS | IMMUNE | ([CRIT] [SUPER|NOT]
-// DAMAGE_DEALT [FAINT]) [STAT_STAGE_CHANGED] }. The acc/eva stat-stage fold reduces
-// to the base-accuracy check at stage 0 (box 1 is always stage 0), and the E3
-// secondary proc draws NOTHING for a NONE-effect move, so box-1 goldens never move.
+// ZM_MoveExecutor -- SC1 seam + SC2 stat-stage effects + SC3 delivery/field +
+// SC4 major-status infliction & burn-damage reduction. Category dispatch.
+// Draw discipline (locked): PHASE G pre-move gates (ZM_StatusLogic::PreMoveGate --
+// freeze/sleep/para; ZERO draws for a status-free attacker) -> accuracy (only if the
+// move can miss) -> [STATUS-category primary: apply effect, no further draws] OR
+// [damaging: immunity short-circuit -> crit -> damage-roll -> E3 secondary proc].
+// Emit order per connecting damaging hit: MOVE_USED -> { MISS | IMMUNE | ([CRIT]
+// [SUPER|NOT] DAMAGE_DEALT [FAINT]) [STAT_STAGE_CHANGED | STATUS_APPLIED] }. The
+// acc/eva stat-stage fold reduces to the base-accuracy check at stage 0 (box 1 is
+// always stage 0), and the E3 secondary proc + PHASE G gates draw NOTHING for a
+// NONE-effect status-free move, so box-1 / SC1-SC3 goldens never move.
+//
+// SC4: a status-inflicting effect (BURN/FREEZE/PARALYZE/POISON/TOXIC/SLEEP) applies
+// via ZM_StatusLogic -- as a STATUS-category PRIMARY on the opponent (g_ApplyStatus-
+// InflictionPrimary; a block emits MOVE_FAILED(STATUS_BLOCKED)) or as a damaging-move
+// SECONDARY through the E3 proc slot (silent on block). REST/CURE_STATUS/HEAL_BELL are
+// self/party maintenance primaries. A BURNED attacker's physical hit halves post-type
+// damage via xIn.bBurnedPhysical set at the ApplyDamagingHit call site.
 //
 // SC2 dispatch: Move().m_eCategory picks PRIMARY (STATUS-category, chance 100, no
 // crit/roll/immunity/proc draws) vs SECONDARY (damaging move: ApplyDamagingHit
@@ -304,10 +315,96 @@ static void g_ApplyHealHalf(ZM_MoveContext& xCtx)
 		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uHeal, (int)xAtk.m_uCurHP));
 }
 
+// ---- SC4 major-status infliction / cure (STATUS-category primaries) ---------
+
+// Map a status-inflicting move effect to its major status; ZM_MAJOR_STATUS_COUNT
+// for a non-status-inflicting effect (so callers can test membership + route).
+static ZM_MAJOR_STATUS g_MajorStatusForEffect(ZM_MOVE_EFFECT eEffect)
+{
+	switch (eEffect)
+	{
+	case ZM_MOVE_EFFECT_BURN:     return ZM_MAJOR_STATUS_BURN;
+	case ZM_MOVE_EFFECT_FREEZE:   return ZM_MAJOR_STATUS_FREEZE;
+	case ZM_MOVE_EFFECT_PARALYZE: return ZM_MAJOR_STATUS_PARALYSIS;
+	case ZM_MOVE_EFFECT_POISON:   return ZM_MAJOR_STATUS_POISON;
+	case ZM_MOVE_EFFECT_TOXIC:    return ZM_MAJOR_STATUS_TOXIC;
+	case ZM_MOVE_EFFECT_SLEEP:    return ZM_MAJOR_STATUS_SLEEP;
+	default:                      return ZM_MAJOR_STATUS_COUNT;
+	}
+}
+
+// A STATUS-category PRIMARY that inflicts a major status on the OPPONENT (chance
+// 100, no crit/roll). On a block (type-immune / already statused) the primary
+// announces MOVE_FAILED(STATUS_BLOCKED) on the target -- a damaging secondary, by
+// contrast, is silent (g_ApplyDamagingSecondary). SLEEP's duration draw
+// (RandRange(1,3)) is pulled inside ApplyMajor, so a can-miss status move that
+// connects draws accuracy THEN the duration; a blocked one draws neither here.
+static void g_ApplyStatusInflictionPrimary(ZM_MoveContext& xCtx, ZM_MAJOR_STATUS eMajor)
+{
+	if (!ZM_StatusLogic::ApplyMajor(xCtx, xCtx.m_eDef, eMajor))
+	{
+		ZM_BattleSide& xDefSide = xCtx.DefSide();
+		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, xCtx.m_eDef, xDefSide.m_uActiveSlot,
+			ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)ZM_MOVE_FAIL_STATUS_BLOCKED));
+	}
+}
+
+// REST: SELF full-heal (emit HEAL) then a FORCED sleep with counter = 2 (the fixed
+// REST duration -- NO draw, ZM-D-033), OVERRIDING any current major (so REST is not
+// gated by CanApplyMajor's "already statused" rule -- it replaces the status with
+// sleep). Emits HEAL(amount healed, new HP == maxHP) then STATUS_APPLIED(SLEEP);
+// HEAL(0, maxHP) at full HP (mirrors HEAL_HALF's "heal-for-0 still emits HEAL").
+static void g_ApplyRest(ZM_MoveContext& xCtx)
+{
+	ZM_BattleMonster& xAtk     = xCtx.Atk();
+	ZM_BattleSide&    xAtkSide = xCtx.AtkSide();
+	const u_int uMaxHP   = xAtk.m_auMaxStat[ZM_STAT_HP];
+	const u_int uMissing = uMaxHP - xAtk.m_uCurHP;   // curHP <= maxHP invariant: no underflow
+	xAtk.m_uCurHP = uMaxHP;
+	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_HEAL, xCtx.m_eAtk, xAtkSide.m_uActiveSlot,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uMissing, (int)uMaxHP));
+
+	xAtk.m_eStatus        = ZM_MAJOR_STATUS_SLEEP;
+	xAtk.m_uStatusCounter = 2u;
+	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_STATUS_APPLIED, xCtx.m_eAtk, xAtkSide.m_uActiveSlot,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)ZM_MAJOR_STATUS_SLEEP));
+}
+
+// CURE_STATUS: clear the USER's major (STATUS_CURED). A user with no major is a
+// clean no-op (MOVE_USED only, no STATUS_CURED / MOVE_FAILED).
+static void g_ApplyCureStatus(ZM_MoveContext& xCtx)
+{
+	ZM_StatusLogic::CureMajor(xCtx, xCtx.m_eAtk);
+}
+
+// HEAL_BELL: cure the major of EVERY monster on the USER's side (whole party incl.
+// bench), each emitting its own STATUS_CURED with m_uSlot = that party index, in
+// slot order (deterministic). Statusless members are skipped silently. (Cannot route
+// through CureMajor, which only touches the active slot.)
+static void g_ApplyHealBell(ZM_MoveContext& xCtx)
+{
+	ZM_BattleSide& xSide  = xCtx.AtkSide();
+	const u_int    uCount = xSide.m_xParty.GetSize();
+	for (u_int u = 0u; u < uCount; ++u)
+	{
+		ZM_BattleMonster& xMon = xSide.m_xParty.Get(u);
+		if (xMon.m_eStatus != ZM_MAJOR_STATUS_NONE)
+		{
+			const ZM_MAJOR_STATUS eOld = xMon.m_eStatus;
+			xMon.m_eStatus        = ZM_MAJOR_STATUS_NONE;
+			xMon.m_uStatusCounter = 0u;
+			xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_STATUS_CURED, xCtx.m_eAtk, u,
+				ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)eOld));
+		}
+	}
+}
+
 // STATUS-category PRIMARY: the effect IS the point of the move (chance 100). SC2
 // lights the stat-stage kinds; SC3 adds the field/side setters (state-only) and the
-// HEAL_HALF self-heal. Other STATUS-category effects (status / volatile / cure) light
-// up in later sub-commits and are a MOVE_USED-only no-op for now.
+// HEAL_HALF self-heal; SC4 adds the major-status infliction (BURN/FREEZE/PARALYZE/
+// POISON/TOXIC/SLEEP) and the cure/maintenance moves (REST/CURE_STATUS/HEAL_BELL).
+// Other STATUS-category effects (volatiles) light up in SC5 and are a MOVE_USED-only
+// no-op for now.
 static void g_ApplyStatusCategoryPrimary(ZM_MoveContext& xCtx)
 {
 	const ZM_MoveData& xMove = xCtx.Move();
@@ -326,18 +423,41 @@ static void g_ApplyStatusCategoryPrimary(ZM_MoveContext& xCtx)
 		g_ApplyHealHalf(xCtx);
 		return;
 	}
+
+	// SC4: major-status-inflicting status moves (target the opponent).
+	const ZM_MAJOR_STATUS eMajor = g_MajorStatusForEffect(xMove.m_eEffect);
+	if (eMajor != ZM_MAJOR_STATUS_COUNT)
+	{
+		g_ApplyStatusInflictionPrimary(xCtx, eMajor);
+		return;
+	}
+
+	// SC4: cure / self-maintenance status moves (target self / own party).
+	switch (xMove.m_eEffect)
+	{
+	case ZM_MOVE_EFFECT_REST:        g_ApplyRest(xCtx);       return;
+	case ZM_MOVE_EFFECT_CURE_STATUS: g_ApplyCureStatus(xCtx); return;
+	case ZM_MOVE_EFFECT_HEAL_BELL:   g_ApplyHealBell(xCtx);   return;
+	default: break;
+	}
 }
 
-// E3 SECONDARY proc for a DAMAGING move that carries a stat effect. Draws NOTHING for
-// NONE or a not-yet-lit (status/volatile) secondary, so box-1 NONE moves stay
-// byte-identical. Requires the damaged target (defender) to have survived the hit.
-// Proc gate: m_uEffectChance >= 100 is unconditional (no draw); else one RandBelow(100).
+// E3 SECONDARY proc for a DAMAGING move that carries a stat (SC2) or major-status
+// (SC4) effect. Draws NOTHING for NONE or a not-yet-lit (volatile) secondary, so
+// box-1 NONE moves stay byte-identical. Requires the damaged target (defender) to
+// have survived the hit. Proc gate: m_uEffectChance >= 100 is unconditional (no
+// draw); else one RandBelow(100). On a status proc, ApplyMajor may draw the SLEEP
+// duration (RandRange(1,3)) at apply time; a blocked status (type-immune / already
+// statused) is SILENT (no MOVE_FAILED for a secondary).
 static void g_ApplyDamagingSecondary(ZM_MoveContext& xCtx)
 {
-	const ZM_MoveData& xMove = xCtx.Move();
-	if (!g_IsStatEffect(xMove.m_eEffect))
+	const ZM_MoveData&    xMove  = xCtx.Move();
+	const bool            bStat  = g_IsStatEffect(xMove.m_eEffect);
+	const ZM_MAJOR_STATUS eMajor = g_MajorStatusForEffect(xMove.m_eEffect);
+	const bool            bMajor = (eMajor != ZM_MAJOR_STATUS_COUNT);
+	if (!bStat && !bMajor)
 	{
-		return;   // NONE / non-stat secondary: no proc draw (byte-identical box 1)
+		return;   // NONE / not-yet-lit secondary: no proc draw (byte-identical box 1)
 	}
 	if (xCtx.Def().m_uCurHP == 0u)
 	{
@@ -350,7 +470,14 @@ static void g_ApplyDamagingSecondary(ZM_MoveContext& xCtx)
 			return;   // proc failed
 		}
 	}
-	g_ApplyStatEffect(xCtx, xMove.m_eEffect, xMove.m_iEffectMagnitude, /*bPrimary*/ false);
+	if (bStat)
+	{
+		g_ApplyStatEffect(xCtx, xMove.m_eEffect, xMove.m_iEffectMagnitude, /*bPrimary*/ false);
+	}
+	else   // bMajor
+	{
+		ZM_StatusLogic::ApplyMajor(xCtx, xCtx.m_eDef, eMajor);
+	}
 }
 
 // ---- SC3 damage-delivery variants ------------------------------------------
@@ -523,6 +650,15 @@ static void g_ApplyDelivery(ZM_MoveContext& xCtx)
 // ---- The executor ----------------------------------------------------------
 void ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 {
+	// PHASE G: pre-move gates (SC4 majors -- freeze/sleep/paralysis; SC5 volatiles --
+	// recharge/flinch/confuse). Runs BEFORE PP / MOVE_USED, so a cancel spends NO PP
+	// and emits NO MOVE_USED (ZM-D-033 Q3). A status-free attacker pulls ZERO draws
+	// here, so box-1 / SC1-SC3 goldens stay byte-identical.
+	if (ZM_StatusLogic::PreMoveGate(xCtx) == ZM_GATE_CANCELLED)
+	{
+		return;
+	}
+
 	ZM_BattleMonster& xAtk     = xCtx.Atk();
 	ZM_BattleSide&    xAtkSide = xCtx.AtkSide();
 	const ZM_MoveData& xMove   = xCtx.Move();
@@ -662,6 +798,10 @@ u_int ZM_MoveExecutor::ApplyDamagingHit(ZM_MoveContext& xCtx)
 	// byte-identical. The weather (1/1) and burn seams keep their box-1 identity defaults.
 	const ZM_SCREEN eScreen = bPhysical ? ZM_SCREEN_PHYSICAL : ZM_SCREEN_SPECIAL;
 	xIn.bScreen = (xDefSide.m_auScreenTurns[eScreen] > 0u) && !bCrit;
+	// bBurnedPhysical (SC4): a physical move from a BURNED attacker halves post-type
+	// damage (ability-independent, ZM-D-033). box-1/SC1-3 attackers are status-free
+	// (m_eStatus NONE), so this stays false and their goldens are byte-identical.
+	xIn.bBurnedPhysical = bPhysical && (xAtk.m_eStatus == ZM_MAJOR_STATUS_BURN);
 
 	const u_int uDmg = ZM_CalcDamage(xIn);
 

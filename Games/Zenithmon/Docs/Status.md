@@ -1,6 +1,6 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-11 -- **S2 box-2 SC3 (delivery variants + field/screen) COMPLETE. Box 2 is 6 ordered sub-commits (ZM-D-033); SC1-SC3 done, next: SC4 (ZM_StatusLogic majors + burn/paralysis).**
+**Last updated:** 2026-07-11 -- **S2 box-2 SC4 (ZM_StatusLogic majors) COMPLETE. Box 2 is 6 ordered sub-commits (ZM-D-033); SC1-SC4 done, next: SC5 (volatiles + SWAGGER + FORCE_SWITCH + DoSwitch primitive).**
 
 **Read this first each session.** Replaced every session end. [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the gap audit.
 
@@ -11,7 +11,7 @@
 ## Build / Tests
 
 - Build GREEN (`Vulkan_vs2022_Debug_Win64_True`). D3D12_False link proof in CI.
-- Unit (T0): **1279 ran, 1278 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). = 102 `ZM_Data` + **107 `ZM_Battle`** (14 box-1 + 5 SC1 + 43 SC2 + 45 SC3) + 1068 engine + 2 boot. **Baseline 1279** in `zm-tests.yml`.
+- Unit (T0): **1327 ran, 1326 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). = 102 `ZM_Data` + **155 `ZM_Battle`** (14 box-1 + 5 SC1 + 43 SC2 + 45 SC3 + 48 SC4) + 1068 engine + 2 boot. **Baseline 1327** in `zm-tests.yml`.
 - Automated (P1): 1/1 (`ZM_Boot_Test`); `zenith test Zenithmon --headless` exits 0.
 
 ## What landed this session -- S2 box 1 (the battle-engine keystone)
@@ -20,7 +20,7 @@
 
 ## Current task
 
-None -- SC3 committed + pushed. **Box 2 = 6 ordered sub-commits (full plan + LOCKED draw order in DecisionLog ZM-D-033).** Done: **SC1** (executor seam) + **SC2** (stat-stage effects + STATUS-category dispatch) + **SC3** (delivery variants MULTI_HIT/DOUBLE_HIT/RECOIL/DRAIN/HEAL_HALF/FIXED_LEVEL/HALVE_HP/OHKO + field/screen/hazard SETTERS state-only + `bScreen` reduction; lit `MULTI_HIT`[side=ATTACKER]/`RECOIL`/`DRAIN`/`HEAL` + `MOVE_FAILED(OHKO_FAILED)`; reviewer clean). **Next: SC4** -- `ZM_StatusLogic` majors (6: burn/freeze/paralyze/poison/toxic/sleep apply/block/gate/turn-end/cure) + REST/CURE_STATUS/HEAL_BELL + activate `bBurnedPhysical` (halve physical) + paralysis speed x1/4; APPENDS `int m_iTag=0` to `ZM_BattleEvent` (Q1, STATUS_DAMAGE source) + trailing `ZM_MakeEvent` param -- keep box-1 goldens equal; lights `STATUS_APPLIED/STATUS_DAMAGE/STATUS_CURED` + MOVE_FAILED reasons FROZEN/ASLEEP/FULLY_PARALYZED/STATUS_BLOCKED. New files `ZM_StatusLogic.{h,cpp}`. Then SC5 (volatiles + switch) -> SC6 (pre-move actions + `ZM_CatchCalc` + the 2000-battle soak). **Event side convention (pinned):** MULTI_HIT/RECOIL/DRAIN/HEAL = ATTACKER side; DAMAGE_DEALT/CRIT/SUPER/NOT/IMMUNE/FAINT/STATUS_* = the affected mon (usually DEFENDER). **SC3 unpinned-but-correct edges** (verify at the SC6 soak): recoil self-KO, HEAL-at-full->HEAL(0), mid-run multi-hit faint/screen. Two mechanics deferrals in Shortfalls.md 1.2. **S2 has NO visual gate**, so the loop runs autonomously through S2.
+None -- SC4 committed + pushed. **Box 2 = 6 ordered sub-commits (full plan + LOCKED draw order in DecisionLog ZM-D-033).** Done: **SC1** (executor seam) + **SC2** (stat-stage effects + STATUS-category dispatch) + **SC3** (delivery variants + field/screen/hazard state-only + `bScreen`) + **SC4** (`ZM_StatusLogic` 6 majors: apply/block/PHASE-G-gate/turn-end-chip/cure + REST/CURE_STATUS/HEAL_BELL + `bBurnedPhysical` halve-physical + paralysis speed/4; appended `int m_iTag=0` to `ZM_BattleEvent` for STATUS_DAMAGE source [Q1]; lit `STATUS_APPLIED/STATUS_DAMAGE/STATUS_CURED` + MOVE_FAILED FROZEN/ASLEEP/FULLY_PARALYZED/STATUS_BLOCKED; reviewer clean). **Next: SC5** -- volatiles (all 10: CONFUSE/FLINCH/LEECH_SEED/TRAP/TAUNT/PROTECT/ENDURE/CHARGE_TURN/SEMI_INVULN/RECHARGE/LOCK_IN) via the SC4 gate framework's reserved G1/G4/G5 slots + end-of-turn leech/trap ticks + SWAGGER + FORCE_SWITCH + a `DoSwitch` primitive (emit SWITCH_IN, clear outgoing volatiles+stages+counters, keep major); lights `FLINCH/VOLATILE_APPLIED/VOLATILE_ENDED`. Then SC6 (pre-move actions SWITCH/ITEM/RUN + `ZM_CatchCalc` + the 2000-battle soak). **Pinned conventions:** event sides -- MULTI_HIT/RECOIL/DRAIN/HEAL=ATTACKER, DAMAGE_DEALT/CRIT/eff/FAINT/STATUS_*=affected mon; end-of-turn chip order = **fixed player-then-enemy** (NOT speed-ordered -- resolves ZM-D-033 3b wording); sleep=decrement-then-check, toxic=use-then-increment (locked by SC4 tests). **Deferred to SC6:** an `IsFainted` assert in `ZM_StatusLogic::ApplyMajor` (safe until switching lands); both-sides-chip ordering + REST-while-statused coverage; SC3 recoil-self-KO/HEAL-at-full/mid-run edges. Two mechanics deferrals in Shortfalls.md 1.2. **S2 has NO visual gate**, so the loop runs autonomously through S2.
 
 ## Notes for the next agent
 

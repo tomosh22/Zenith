@@ -44,14 +44,20 @@ enum ZM_BATTLE_EVENT : u_int
 // Why a ZM_BATTLE_EVENT_MOVE_FAILED fired -- carried in the event's m_iAux. Append-
 // only (save-stable ordinals); SC2 lights STAT_MAXED (a stat-change that hit the
 // +/-6 cap), SC3 appends OHKO_FAILED (a one-hit-KO move used against a higher-level
-// target). The later boxes append their own reasons as the gate/intercept framework
-// arrives (the listed names are the reserved SC4+/SC5 set, not yet lit).
+// target), SC4 appends the major-status set (FROZEN / ASLEEP / FULLY_PARALYZED from
+// a PHASE-G gate cancel, STATUS_BLOCKED from a blocked primary status move). SC5
+// appends its volatile/intercept reasons as that framework arrives.
 enum ZM_MOVE_FAIL_REASON : u_int
 {
-	ZM_MOVE_FAIL_STAT_MAXED,    // SC2: a stat-stage change was already at the cap
-	ZM_MOVE_FAIL_OHKO_FAILED,   // SC3: OHKO move vs a defender of higher level
-	// SC4+/SC5 (appended when lit): FROZEN, ASLEEP, FULLY_PARALYZED, TAUNTED,
-	// PROTECTED, STATUS_BLOCKED, RECHARGE ...
+	ZM_MOVE_FAIL_STAT_MAXED,        // SC2: a stat-stage change was already at the cap
+	ZM_MOVE_FAIL_OHKO_FAILED,       // SC3: OHKO move vs a defender of higher level
+	// SC4 majors -- a PHASE-G pre-move gate cancelled the move, or a primary status
+	// move was blocked. Append-only (save-stable ordinals); order is the SC4 lit set.
+	ZM_MOVE_FAIL_FROZEN,            // SC4: frozen and did not thaw this turn
+	ZM_MOVE_FAIL_ASLEEP,            // SC4: asleep and did not wake this turn
+	ZM_MOVE_FAIL_FULLY_PARALYZED,   // SC4: fully paralyzed this turn
+	ZM_MOVE_FAIL_STATUS_BLOCKED,    // SC4: a primary status move failed (type-immune / already statused)
+	// SC5 (appended when lit): TAUNTED, PROTECTED, RECHARGE, FLINCHED ...
 };
 
 struct ZM_BattleEvent
@@ -63,6 +69,7 @@ struct ZM_BattleEvent
 	u_int           m_uSpeciesId = ZM_SPECIES_NONE;  // SWITCH_IN readability + doubles-forward
 	int             m_iAmount    = 0;                // damage / effPercent / winner side
 	int             m_iAux       = 0;                // remaining HP / turn number
+	int             m_iTag       = 0;                // SC4: STATUS_DAMAGE source status (which major/volatile chipped)
 	// APPEND future fields HERE (default 0). Box-1 goldens compare equal regardless.
 	bool operator==(const ZM_BattleEvent&) const = default;   // trivially value-comparable
 };
@@ -71,9 +78,10 @@ struct ZM_BattleEvent
 // default-0 fields always compare equal on both sides.
 inline ZM_BattleEvent ZM_MakeEvent(ZM_BATTLE_EVENT eKind, u_int uSide = ZM_SIDE_COUNT,
 	u_int uSlot = 0u, u_int uMoveId = ZM_MOVE_NONE, u_int uSpeciesId = ZM_SPECIES_NONE,
-	int iAmount = 0, int iAux = 0)
+	int iAmount = 0, int iAux = 0, int iTag = 0)
 {
 	ZM_BattleEvent x; x.m_eKind = eKind; x.m_uSide = uSide; x.m_uSlot = uSlot;
 	x.m_uMoveId = uMoveId; x.m_uSpeciesId = uSpeciesId; x.m_iAmount = iAmount; x.m_iAux = iAux;
+	x.m_iTag = iTag;
 	return x;
 }

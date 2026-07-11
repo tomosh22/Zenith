@@ -2980,3 +2980,903 @@ ZENITH_TEST(ZM_Battle, Hazard_Caltrops_EmitsOnlyMoveUsed)
 	ZENITH_ASSERT_EQ(xEvents.GetSize(), 1u, "a hazard setter emits only MOVE_USED");
 	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).m_uHazardSpikeLayers, 1u, "one layer is laid on the opponent's side");
 }
+
+// ============================================================================
+// S2 box-2 SC4 -- ZM_StatusLogic majors (6) + burn/paralysis + the m_iTag POD
+// append (DecisionLog ZM-D-033; box-2 plan section 3a). Every golden/number is
+// cross-checked by the offline oracle (scratchpad/zm_battle_ref.py), whose box-1
+// 27-event stream re-derives byte-identical WITH the appended 8th tag field == 0.
+//
+// SHARED EVENT ENCODINGS (the executor + ZM_StatusLogic emit these exactly):
+//  * STATUS_APPLIED: m_uSide/m_uSlot = TARGET;  m_iAux = (int)ZM_MAJOR_STATUS applied.
+//  * STATUS_DAMAGE:  m_uSide/m_uSlot = VICTIM;   m_iAmount = chip; m_iAux = HP
+//                    remaining; **m_iTag = (int)source ZM_MAJOR_STATUS** (8th field).
+//  * STATUS_CURED:   m_uSide/m_uSlot = TARGET;   m_iAux = (int)status cured.
+//  * MOVE_FAILED reasons (m_iAux): ZM_MOVE_FAIL_FROZEN / ASLEEP / FULLY_PARALYZED
+//    / STATUS_BLOCKED (appended after OHKO_FAILED).
+//  * Q3: an action-time gate cancel (freeze/sleep/full-para) spends NO PP and emits
+//    NO MOVE_USED -- a frozen mon's turn stream is just [MOVE_FAILED(FROZEN)].
+// ============================================================================
+namespace
+{
+	// Rig the player-active major status on a bare 1v1 state, then execute the
+	// player's slot-0 move DIRECTLY (no engine turn loop) -- for chips/gates that
+	// live in the engine, use ZM_BeginWithPlayerStatus below instead.
+
+	// Execute a can-miss STATUS-category primary as a SURE HIT: boost the user's
+	// ACCURACY stage to +6 so effAcc >= 100 (no accuracy draw, deterministic hit),
+	// optionally pre-set the enemy's major status (already-statused block), then run
+	// slot 0. Non-sleep statuses draw NOTHING here, so the stream is exactly
+	// [MOVE_USED, STATUS_APPLIED] (apply) or [MOVE_USED, MOVE_FAILED] (blocked).
+	void ZM_RunStatusPrimary(const ZM_BattleMonsterSpec& xPlayer, const ZM_BattleMonsterSpec& xEnemy,
+		u_int64 ulSeed, ZM_MAJOR_STATUS eEnemyPreStatus, ZM_BattleState& xStateOut,
+		Zenith_Vector<ZM_BattleEvent>& xEventsOut)
+	{
+		BuildBattleState(xStateOut, xPlayer, xEnemy, ulSeed, 54ull);
+		xStateOut.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ACCURACY] = iZM_MAX_STAGE;
+		if (eEnemyPreStatus != ZM_MAJOR_STATUS_NONE)
+		{
+			xStateOut.Side(ZM_SIDE_ENEMY).Active().m_eStatus = eEnemyPreStatus;
+		}
+		ZM_MoveContext xCtx = MakeCtx(xStateOut, xEventsOut, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+	}
+
+	// A STATUS-category primary that APPLIES a major -> exactly [MOVE_USED(move),
+	// STATUS_APPLIED(enemy, status)]; enemy holds the status; no MOVE_FAILED.
+	void ZM_CheckStatusPrimaryApply(ZM_MOVE_ID eMove, ZM_SPECIES_ID eEnemySpecies, ZM_MAJOR_STATUS eStatus)
+	{
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunStatusPrimary(MakeSpec(ZM_SPECIES_NIBBIN, 20u, eMove),
+			MakeSpec(eEnemySpecies, 20u, ZM_MOVE_RAMBASH), 0x1234ull, ZM_MAJOR_STATUS_NONE, xState, xEvents);
+
+		ZENITH_ASSERT_EQ((u_int)xState.Side(ZM_SIDE_ENEMY).Active().m_eStatus, (u_int)eStatus, "enemy should hold the applied status");
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED), "a successful apply emits no MOVE_FAILED");
+		const ZM_BattleEvent* pxApplied = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_STATUS_APPLIED);
+		ZENITH_ASSERT_NOT_NULL(pxApplied, "a status primary that lands emits STATUS_APPLIED");
+		if (pxApplied != nullptr)
+		{
+			ZENITH_ASSERT_EQ(pxApplied->m_uSide, (u_int)ZM_SIDE_ENEMY, "STATUS_APPLIED targets the enemy (the TARGET)");
+			ZENITH_ASSERT_EQ(pxApplied->m_uSlot, 0u, "STATUS_APPLIED slot == target active slot");
+			ZENITH_ASSERT_EQ((u_int)pxApplied->m_iAux, (u_int)eStatus, "STATUS_APPLIED m_iAux == (int)applied status");
+			ZENITH_ASSERT_EQ(pxApplied->m_iTag, 0, "STATUS_APPLIED leaves the appended m_iTag at 0");
+		}
+	}
+
+	// A STATUS-category primary that is BLOCKED (type-immune OR already-statused) ->
+	// MOVE_FAILED(STATUS_BLOCKED), no STATUS_APPLIED, enemy status unchanged.
+	void ZM_CheckStatusPrimaryBlocked(ZM_MOVE_ID eMove, ZM_SPECIES_ID eEnemySpecies,
+		ZM_MAJOR_STATUS eEnemyPreStatus)
+	{
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunStatusPrimary(MakeSpec(ZM_SPECIES_NIBBIN, 20u, eMove),
+			MakeSpec(eEnemySpecies, 20u, ZM_MOVE_RAMBASH), 0x1234ull, eEnemyPreStatus, xState, xEvents);
+
+		ZENITH_ASSERT_EQ((u_int)xState.Side(ZM_SIDE_ENEMY).Active().m_eStatus, (u_int)eEnemyPreStatus, "a blocked apply must leave the enemy's status unchanged");
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STATUS_APPLIED), "a blocked primary emits no STATUS_APPLIED");
+		const ZM_BattleEvent* pxFail = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED);
+		ZENITH_ASSERT_NOT_NULL(pxFail, "a blocked status PRIMARY emits MOVE_FAILED(STATUS_BLOCKED)");
+		if (pxFail != nullptr)
+		{
+			ZENITH_ASSERT_EQ((u_int)pxFail->m_iAux, (u_int)ZM_MOVE_FAIL_STATUS_BLOCKED, "MOVE_FAILED reason == STATUS_BLOCKED");
+		}
+	}
+
+	// Begin a 1v1 battle and rig the player-active major status + counter BEFORE
+	// resolving -- the box-1-safe way to reach the engine's action-time gate + the
+	// end-of-turn chip (both live in the engine, not the isolated executor).
+	void ZM_BeginWithPlayerStatus(ZM_BattleEngine& xEngine, const ZM_BattleMonsterSpec& xPlayer,
+		const ZM_BattleMonsterSpec& xEnemy, u_int64 ulSeed, ZM_MAJOR_STATUS eStatus, u_int uCounter)
+	{
+		ZM_BattleMonsterSpec axP[1] = { xPlayer };
+		ZM_BattleMonsterSpec axE[1] = { xEnemy };
+		xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, ulSeed, 54ull);
+		ZM_BattleMonster& xMon = xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
+		xMon.m_eStatus = eStatus;
+		xMon.m_uStatusCounter = uCounter;
+	}
+
+	// Does any MOVE_USED for the given side appear in the stream?
+	bool ZM_HasMoveUsedForSide(const Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_SIDE eSide)
+	{
+		for (u_int i = 0; i < xEvents.GetSize(); ++i)
+		{
+			const ZM_BattleEvent& x = xEvents.Get(i);
+			if (x.m_eKind == ZM_BATTLE_EVENT_MOVE_USED && x.m_uSide == (u_int)eSide) { return true; }
+		}
+		return false;
+	}
+
+	// First MOVE_FAILED for a side (or nullptr).
+	const ZM_BattleEvent* ZM_FindMoveFailedForSide(const Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_SIDE eSide)
+	{
+		for (u_int i = 0; i < xEvents.GetSize(); ++i)
+		{
+			const ZM_BattleEvent& x = xEvents.Get(i);
+			if (x.m_eKind == ZM_BATTLE_EVENT_MOVE_FAILED && x.m_uSide == (u_int)eSide) { return &xEvents.Get(i); }
+		}
+		return nullptr;
+	}
+
+	// A very fast Rambash player (acts first even under the paralysis 1/4 cut) vs a
+	// bulky enemy holding a self-move (Whetclaw) so the enemy never damages the
+	// player -- used to isolate the player's action-time gate.
+	ZM_BattleMonsterSpec ZM_GateFastPlayer(ZM_MOVE_ID eMove)
+	{
+		return MakeSpecOverride(ZM_SPECIES_NIBBIN, 50u, eMove, 200u, 40u, 200u, 40u, 200u, 200u);
+	}
+	ZM_BattleMonsterSpec ZM_GateBulkyEnemy()
+	{
+		return MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_WHETCLAW, 250u, 10u, 250u, 10u, 250u, 10u);
+	}
+}
+
+// ---- APPLY: a primary STATUS move (or freeze secondary) -> STATUS_APPLIED ------
+ZENITH_TEST(ZM_Battle, Burn_Apply_Hexflame)
+{
+	ZM_CheckStatusPrimaryApply(ZM_MOVE_HEXFLAME, ZM_SPECIES_STRAYLING, ZM_MAJOR_STATUS_BURN);
+}
+ZENITH_TEST(ZM_Battle, Paralyze_Apply_StaticSnare)
+{
+	ZM_CheckStatusPrimaryApply(ZM_MOVE_STATICSNARE, ZM_SPECIES_STRAYLING, ZM_MAJOR_STATUS_PARALYSIS);
+}
+ZENITH_TEST(ZM_Battle, Poison_Apply_VenomCoat)
+{
+	ZM_CheckStatusPrimaryApply(ZM_MOVE_VENOMCOAT, ZM_SPECIES_STRAYLING, ZM_MAJOR_STATUS_POISON);
+}
+ZENITH_TEST(ZM_Battle, Toxic_Apply_Blightdose)
+{
+	ZM_CheckStatusPrimaryApply(ZM_MOVE_BLIGHTDOSE, ZM_SPECIES_STRAYLING, ZM_MAJOR_STATUS_TOXIC);
+}
+ZENITH_TEST(ZM_Battle, Sleep_Apply_Lullaby)
+{
+	ZM_CheckStatusPrimaryApply(ZM_MOVE_LULLABY, ZM_SPECIES_STRAYLING, ZM_MAJOR_STATUS_SLEEP);
+}
+
+// TOXIC apply seeds the ramp counter at 1 (no draw); SLEEP apply draws a duration
+// RandRange(1,3) -> counter in [1,3]. (The oracle confirms these apply-time draws.)
+ZENITH_TEST(ZM_Battle, Toxic_Apply_CounterStartsAtOne)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunStatusPrimary(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_BLIGHTDOSE),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, ZM_MAJOR_STATUS_NONE, xState, xEvents);
+	const ZM_BattleMonster& xEnemy = xState.Side(ZM_SIDE_ENEMY).Active();
+	ZENITH_ASSERT_EQ((u_int)xEnemy.m_eStatus, (u_int)ZM_MAJOR_STATUS_TOXIC);
+	ZENITH_ASSERT_EQ(xEnemy.m_uStatusCounter, 1u, "toxic ramp counter starts at 1");
+}
+ZENITH_TEST(ZM_Battle, Sleep_Apply_DrawsDurationInRange)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunStatusPrimary(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_LULLABY),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, ZM_MAJOR_STATUS_NONE, xState, xEvents);
+	const ZM_BattleMonster& xEnemy = xState.Side(ZM_SIDE_ENEMY).Active();
+	ZENITH_ASSERT_EQ((u_int)xEnemy.m_eStatus, (u_int)ZM_MAJOR_STATUS_SLEEP);
+	ZENITH_ASSERT_GE(xEnemy.m_uStatusCounter, 1u, "sleep duration >= 1");
+	ZENITH_ASSERT_LE(xEnemy.m_uStatusCounter, 3u, "sleep duration <= 3 (RandRange(1,3))");
+}
+
+// FREEZE has NO status-category carrier: its apply vehicle is a damaging FREEZE
+// secondary (Frostnip, chance 10). Seed 15 forces the proc (oracle-derived); a
+// bulky non-ICE defender survives so the freeze is observable.
+ZENITH_TEST(ZM_Battle, Freeze_Apply_FrostnipSecondary)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_FROSTNIP, 80u, 40u, 40u, 10u,  40u, 60u),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH,  250u, 10u, 40u, 10u, 250u, 10u), 15ull, xState, xEvents);
+
+	ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "defender must survive to observe the freeze");
+	ZENITH_ASSERT_EQ((u_int)xState.Side(ZM_SIDE_ENEMY).Active().m_eStatus, (u_int)ZM_MAJOR_STATUS_FREEZE, "the freeze secondary should proc + apply at seed 15");
+	const ZM_BattleEvent* pxApplied = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_STATUS_APPLIED);
+	ZENITH_ASSERT_NOT_NULL(pxApplied, "a landing freeze secondary emits STATUS_APPLIED");
+	if (pxApplied != nullptr) { ZENITH_ASSERT_EQ((u_int)pxApplied->m_iAux, (u_int)ZM_MAJOR_STATUS_FREEZE); }
+	// The secondary runs AFTER the damaging hit.
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), "Frostnip is a damaging move");
+}
+
+// A BURN secondary on a damaging fire move lands too (Emberclaw into a non-FIRE
+// target, seed 15 forces the proc).
+ZENITH_TEST(ZM_Battle, Burn_Apply_EmberclawSecondary)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_EMBERCLAW, 80u, 30u,  40u, 40u, 40u, 60u),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH,  250u, 10u, 250u, 10u, 40u, 10u), 15ull, xState, xEvents);
+	ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "defender must survive to observe the burn");
+	ZENITH_ASSERT_EQ((u_int)xState.Side(ZM_SIDE_ENEMY).Active().m_eStatus, (u_int)ZM_MAJOR_STATUS_BURN);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STATUS_APPLIED));
+}
+
+// ---- BLOCK: type-immune (primary MOVE_FAILED(STATUS_BLOCKED)) ------------------
+// BURN blocked on FIRE, POISON/TOXIC blocked on VENOM|IRON, FREEZE blocked on ICE.
+ZENITH_TEST(ZM_Battle, Burn_BlockedOnFire_Primary)
+{
+	ZM_CheckStatusPrimaryBlocked(ZM_MOVE_HEXFLAME, ZM_SPECIES_KINDLET, ZM_MAJOR_STATUS_NONE);
+}
+ZENITH_TEST(ZM_Battle, Poison_BlockedOnVenom_Primary)
+{
+	ZM_CheckStatusPrimaryBlocked(ZM_MOVE_VENOMCOAT, ZM_SPECIES_OOZEL, ZM_MAJOR_STATUS_NONE);
+}
+ZENITH_TEST(ZM_Battle, Poison_BlockedOnIron_Primary)
+{
+	ZM_CheckStatusPrimaryBlocked(ZM_MOVE_VENOMCOAT, ZM_SPECIES_SLAGLET, ZM_MAJOR_STATUS_NONE);
+}
+ZENITH_TEST(ZM_Battle, Toxic_BlockedOnVenom_Primary)
+{
+	ZM_CheckStatusPrimaryBlocked(ZM_MOVE_BLIGHTDOSE, ZM_SPECIES_OOZEL, ZM_MAJOR_STATUS_NONE);
+}
+
+// ---- BLOCK: type-immune SECONDARY is SILENT (no MOVE_FAILED, no STATUS_APPLIED) -
+// Paired with the *_Apply_*Secondary tests above: SAME move + SAME seed 15 (which
+// forces the proc); into an IMMUNE-typed target the proc'd status is blocked and
+// the move stays SILENT -- it still deals its (reduced) damage.
+ZENITH_TEST(ZM_Battle, Burn_SecondarySilentOnFire)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpecOverride(ZM_SPECIES_NIBBIN,   20u, ZM_MOVE_EMBERCLAW, 80u, 30u,  40u, 40u, 40u, 60u),
+		MakeSpecOverride(ZM_SPECIES_KINDLET, 20u, ZM_MOVE_RAMBASH,  250u, 10u, 250u, 10u, 40u, 10u), 15ull, xState, xEvents);
+	ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "the FIRE defender must survive");
+	ZENITH_ASSERT_EQ((u_int)xState.Side(ZM_SIDE_ENEMY).Active().m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "burn is blocked on a FIRE target");
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STATUS_APPLIED), "a blocked secondary is silent");
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED), "a blocked SECONDARY emits no MOVE_FAILED");
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), "the move still connects (FIRE vs FIRE = 0.5x, not immune)");
+}
+ZENITH_TEST(ZM_Battle, Freeze_SecondarySilentOnIce)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpecOverride(ZM_SPECIES_NIBBIN,   20u, ZM_MOVE_FROSTNIP, 80u, 40u, 40u, 10u,  40u, 60u),
+		MakeSpecOverride(ZM_SPECIES_FRISKET, 20u, ZM_MOVE_RAMBASH, 250u, 10u, 40u, 10u, 250u, 10u), 15ull, xState, xEvents);
+	ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "the ICE defender must survive");
+	ZENITH_ASSERT_EQ((u_int)xState.Side(ZM_SIDE_ENEMY).Active().m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "freeze is blocked on an ICE target");
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STATUS_APPLIED), "a blocked secondary is silent");
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED), "a blocked SECONDARY emits no MOVE_FAILED");
+}
+
+// ---- No type block for SLEEP / PARALYSIS (they apply to any type) --------------
+ZENITH_TEST(ZM_Battle, Paralyze_NotTypeBlocked)
+{
+	ZM_CheckStatusPrimaryApply(ZM_MOVE_STATICSNARE, ZM_SPECIES_SPARKIT, ZM_MAJOR_STATUS_PARALYSIS);
+}
+ZENITH_TEST(ZM_Battle, Sleep_NotTypeBlocked)
+{
+	ZM_CheckStatusPrimaryApply(ZM_MOVE_LULLABY, ZM_SPECIES_SPARKIT, ZM_MAJOR_STATUS_SLEEP);
+}
+
+// ---- BLOCK: already-statused (any existing major blocks a new one) -------------
+// Enemy is a plain NORMAL (no type immunity), pre-loaded with a DIFFERENT major.
+ZENITH_TEST(ZM_Battle, Burn_BlockedWhenAlreadyStatused)
+{
+	ZM_CheckStatusPrimaryBlocked(ZM_MOVE_HEXFLAME, ZM_SPECIES_STRAYLING, ZM_MAJOR_STATUS_PARALYSIS);
+}
+ZENITH_TEST(ZM_Battle, Paralyze_BlockedWhenAlreadyStatused)
+{
+	ZM_CheckStatusPrimaryBlocked(ZM_MOVE_STATICSNARE, ZM_SPECIES_STRAYLING, ZM_MAJOR_STATUS_BURN);
+}
+ZENITH_TEST(ZM_Battle, Poison_BlockedWhenAlreadyStatused)
+{
+	ZM_CheckStatusPrimaryBlocked(ZM_MOVE_VENOMCOAT, ZM_SPECIES_STRAYLING, ZM_MAJOR_STATUS_SLEEP);
+}
+ZENITH_TEST(ZM_Battle, Toxic_BlockedWhenAlreadyStatused)
+{
+	ZM_CheckStatusPrimaryBlocked(ZM_MOVE_BLIGHTDOSE, ZM_SPECIES_STRAYLING, ZM_MAJOR_STATUS_BURN);
+}
+ZENITH_TEST(ZM_Battle, Sleep_BlockedWhenAlreadyStatused)
+{
+	ZM_CheckStatusPrimaryBlocked(ZM_MOVE_LULLABY, ZM_SPECIES_STRAYLING, ZM_MAJOR_STATUS_POISON);
+}
+
+// ============================================================================
+// ACTION-TIME GATES (freeze/sleep/paralysis) -- run in the engine BEFORE PP +
+// MOVE_USED. A cancel spends NO PP and emits NO MOVE_USED (Q3). Gate rolls:
+// FREEZE thaw RandBelow(100)<20; PARALYSIS full-para RandBelow(100)<25 (both the
+// FIRST RNG pull, so seed_low=2 -> v=4 fires, seed_high=1 -> v=77 does not --
+// oracle-derived). SLEEP is counter-driven (0 draws): decrement-then-check.
+// ============================================================================
+
+// FROZEN + stays frozen (seed_high=1): stream is just [MOVE_FAILED(FROZEN)] for
+// the player -- NO MOVE_USED, PP untouched, still frozen (Q3).
+ZENITH_TEST(ZM_Battle, Freeze_Gate_StaysFrozen_NoMoveUsed)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_GateFastPlayer(ZM_MOVE_RAMBASH), ZM_GateBulkyEnemy(),
+		1ull, ZM_MAJOR_STATUS_FREEZE, 0u);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	ZENITH_ASSERT_FALSE(ZM_HasMoveUsedForSide(xEvents, ZM_SIDE_PLAYER), "Q3: a frozen (stay) turn emits NO MOVE_USED for the player");
+	const ZM_BattleEvent* pxFail = ZM_FindMoveFailedForSide(xEvents, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxFail, "a stay-frozen turn emits MOVE_FAILED(FROZEN)");
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ((u_int)pxFail->m_iAux, (u_int)ZM_MOVE_FAIL_FROZEN, "reason == FROZEN"); }
+	const ZM_BattleMonster& xPlayer = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_EQ((u_int)xPlayer.m_eStatus, (u_int)ZM_MAJOR_STATUS_FREEZE, "still frozen after a stay");
+	ZENITH_ASSERT_EQ(xPlayer.m_axMoves[0].m_uCurPP, xPlayer.m_axMoves[0].m_uMaxPP, "Q3: a gate cancel spends NO PP");
+}
+
+// FROZEN + thaws (seed_low=2, v=4<20): STATUS_CURED(FREEZE), then the mon acts
+// (MOVE_USED present), status cleared, PP spent.
+ZENITH_TEST(ZM_Battle, Freeze_Gate_ThawsAndActs)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_GateFastPlayer(ZM_MOVE_RAMBASH), ZM_GateBulkyEnemy(),
+		2ull, ZM_MAJOR_STATUS_FREEZE, 0u);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	const ZM_BattleEvent* pxCured = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_STATUS_CURED);
+	ZENITH_ASSERT_NOT_NULL(pxCured, "a thaw emits STATUS_CURED(FREEZE)");
+	if (pxCured != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxCured->m_uSide, (u_int)ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_EQ((u_int)pxCured->m_iAux, (u_int)ZM_MAJOR_STATUS_FREEZE, "cured status == FREEZE");
+	}
+	ZENITH_ASSERT_TRUE(ZM_HasMoveUsedForSide(xEvents, ZM_SIDE_PLAYER), "a thawed mon proceeds to use its move");
+	const ZM_BattleMonster& xPlayer = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_EQ((u_int)xPlayer.m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "thaw clears freeze");
+	ZENITH_ASSERT_EQ(xPlayer.m_axMoves[0].m_uCurPP, xPlayer.m_axMoves[0].m_uMaxPP - 1u, "a mon that acts spends 1 PP");
+}
+
+// ASLEEP + stays asleep (counter 2 -> decrement to 1 > 0): MOVE_FAILED(ASLEEP),
+// no MOVE_USED, PP untouched, counter now 1.
+ZENITH_TEST(ZM_Battle, Sleep_Gate_StaysAsleep_CounterDecrements)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_GateFastPlayer(ZM_MOVE_RAMBASH), ZM_GateBulkyEnemy(),
+		1ull, ZM_MAJOR_STATUS_SLEEP, 2u);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	ZENITH_ASSERT_FALSE(ZM_HasMoveUsedForSide(xEvents, ZM_SIDE_PLAYER), "Q3: an asleep turn emits NO MOVE_USED");
+	const ZM_BattleEvent* pxFail = ZM_FindMoveFailedForSide(xEvents, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxFail, "a stay-asleep turn emits MOVE_FAILED(ASLEEP)");
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ((u_int)pxFail->m_iAux, (u_int)ZM_MOVE_FAIL_ASLEEP, "reason == ASLEEP"); }
+	const ZM_BattleMonster& xPlayer = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_EQ((u_int)xPlayer.m_eStatus, (u_int)ZM_MAJOR_STATUS_SLEEP, "still asleep");
+	ZENITH_ASSERT_EQ(xPlayer.m_uStatusCounter, 1u, "decrement-then-check: 2 -> 1");
+	ZENITH_ASSERT_EQ(xPlayer.m_axMoves[0].m_uCurPP, xPlayer.m_axMoves[0].m_uMaxPP, "Q3: no PP spent");
+}
+
+// ASLEEP + wakes (counter 1 -> decrement to 0): STATUS_CURED(SLEEP) + acts.
+ZENITH_TEST(ZM_Battle, Sleep_Gate_WakesOnCounterZero)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_GateFastPlayer(ZM_MOVE_RAMBASH), ZM_GateBulkyEnemy(),
+		1ull, ZM_MAJOR_STATUS_SLEEP, 1u);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	const ZM_BattleEvent* pxCured = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_STATUS_CURED);
+	ZENITH_ASSERT_NOT_NULL(pxCured, "waking emits STATUS_CURED(SLEEP)");
+	if (pxCured != nullptr) { ZENITH_ASSERT_EQ((u_int)pxCured->m_iAux, (u_int)ZM_MAJOR_STATUS_SLEEP); }
+	ZENITH_ASSERT_TRUE(ZM_HasMoveUsedForSide(xEvents, ZM_SIDE_PLAYER), "a woken mon proceeds to use its move");
+	ZENITH_ASSERT_EQ((u_int)xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "wake clears sleep");
+}
+
+// PARALYSIS + fully paralyzed (seed_low=2, v=4<25): MOVE_FAILED(FULLY_PARALYZED),
+// no MOVE_USED, PP untouched. Player is fast enough to act first even at 1/4 speed.
+ZENITH_TEST(ZM_Battle, Paralysis_Gate_FullyParalyzed_NoMoveUsed)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_GateFastPlayer(ZM_MOVE_RAMBASH), ZM_GateBulkyEnemy(),
+		2ull, ZM_MAJOR_STATUS_PARALYSIS, 0u);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	ZENITH_ASSERT_FALSE(ZM_HasMoveUsedForSide(xEvents, ZM_SIDE_PLAYER), "Q3: a full-para turn emits NO MOVE_USED");
+	const ZM_BattleEvent* pxFail = ZM_FindMoveFailedForSide(xEvents, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxFail, "a full-para turn emits MOVE_FAILED(FULLY_PARALYZED)");
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ((u_int)pxFail->m_iAux, (u_int)ZM_MOVE_FAIL_FULLY_PARALYZED, "reason == FULLY_PARALYZED"); }
+	const ZM_BattleMonster& xPlayer = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_EQ((u_int)xPlayer.m_eStatus, (u_int)ZM_MAJOR_STATUS_PARALYSIS, "paralysis persists (permanent until cured)");
+	ZENITH_ASSERT_EQ(xPlayer.m_axMoves[0].m_uCurPP, xPlayer.m_axMoves[0].m_uMaxPP, "Q3: no PP spent");
+}
+
+// PARALYSIS + acts (seed_high=1, v=77>=25): MOVE_USED present, no MOVE_FAILED, PP spent.
+ZENITH_TEST(ZM_Battle, Paralysis_Gate_ActsWhenNotFullyParalyzed)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_GateFastPlayer(ZM_MOVE_RAMBASH), ZM_GateBulkyEnemy(),
+		1ull, ZM_MAJOR_STATUS_PARALYSIS, 0u);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	ZENITH_ASSERT_TRUE(ZM_HasMoveUsedForSide(xEvents, ZM_SIDE_PLAYER), "a paralyzed mon that passes the gate still acts");
+	ZENITH_ASSERT_NULL(ZM_FindMoveFailedForSide(xEvents, ZM_SIDE_PLAYER), "no MOVE_FAILED when the para roll passes");
+	const ZM_BattleMonster& xPlayer = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_EQ(xPlayer.m_axMoves[0].m_uCurPP, xPlayer.m_axMoves[0].m_uMaxPP - 1u, "a mon that acts spends 1 PP");
+}
+
+// ============================================================================
+// END-OF-TURN CHIPS (POISON/BURN=maxHP/8, TOXIC ramp=maxHP*n/16). Chip target =
+// the player; both mons hold a SELF-move (Whetclaw) so the player takes NO move
+// damage and remaining HP == maxHP - accumulated chips. Nibbin base HP 100 @L30
+// -> maxHP 109 (oracle): burn/poison chip 13 (rem 96); toxic ramp 6/13/20.
+// ============================================================================
+namespace
+{
+	ZM_BattleMonsterSpec ZM_ChipPlayer()   { return MakeSpecOverride(ZM_SPECIES_NIBBIN,    30u, ZM_MOVE_WHETCLAW, 100u, 40u, 40u, 40u, 40u, 60u); }
+	ZM_BattleMonsterSpec ZM_ChipEnemy()    { return MakeSpecOverride(ZM_SPECIES_STRAYLING, 30u, ZM_MOVE_WHETCLAW, 100u, 40u, 40u, 40u, 40u, 40u); }
+
+	// First player-side STATUS_DAMAGE in the stream (or nullptr).
+	const ZM_BattleEvent* ZM_FindStatusDamageForSide(const Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_SIDE eSide)
+	{
+		for (u_int i = 0; i < xEvents.GetSize(); ++i)
+		{
+			const ZM_BattleEvent& x = xEvents.Get(i);
+			if (x.m_eKind == ZM_BATTLE_EVENT_STATUS_DAMAGE && x.m_uSide == (u_int)eSide) { return &xEvents.Get(i); }
+		}
+		return nullptr;
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Burn_TurnEndChip_MaxHpOverEight)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_ChipPlayer(), ZM_ChipEnemy(), 0x1234ull, ZM_MAJOR_STATUS_BURN, 0u);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	const ZM_BattleEvent* pxChip = ZM_FindStatusDamageForSide(xEngine.GetEvents(), ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxChip, "a burned mon takes an end-of-turn STATUS_DAMAGE chip");
+	if (pxChip != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxChip->m_iAmount, 13, "burn chip == maxHP/8 == 109/8 == 13");
+		ZENITH_ASSERT_EQ(pxChip->m_iAux, 96, "remaining HP == 109 - 13");
+		ZENITH_ASSERT_EQ(pxChip->m_iTag, (int)ZM_MAJOR_STATUS_BURN, "STATUS_DAMAGE m_iTag (8th field) == source status BURN");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Poison_TurnEndChip_MaxHpOverEight)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_ChipPlayer(), ZM_ChipEnemy(), 0x1234ull, ZM_MAJOR_STATUS_POISON, 0u);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	const ZM_BattleEvent* pxChip = ZM_FindStatusDamageForSide(xEngine.GetEvents(), ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxChip, "a poisoned mon takes an end-of-turn STATUS_DAMAGE chip");
+	if (pxChip != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxChip->m_iAmount, 13, "poison chip == maxHP/8 == 13");
+		ZENITH_ASSERT_EQ(pxChip->m_iAux, 96, "remaining HP == 96");
+		ZENITH_ASSERT_EQ(pxChip->m_iTag, (int)ZM_MAJOR_STATUS_POISON, "m_iTag == POISON");
+	}
+}
+
+// TOXIC ramp over 3 turns: maxHP*1/16, *2/16, *3/16 -> 6, 13, 20 (Nibbin maxHP 109).
+ZENITH_TEST(ZM_Battle, Toxic_TurnEndChip_RampsOverThreeTurns)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_ChipPlayer(), ZM_ChipEnemy(), 0x1234ull, ZM_MAJOR_STATUS_TOXIC, 1u);
+
+	const int aiExpectChip[3] = { 6, 13, 20 };
+	const int aiExpectRem[3]  = { 103, 90, 70 };
+	u_int uSeen = 0u;
+	for (u_int uTurn = 0; uTurn < 3u; ++uTurn)
+	{
+		const u_int uBefore = xEngine.GetEventCount();
+		xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+		xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+		xEngine.ResolveTurn();
+
+		// The STATUS_DAMAGE appended THIS turn (scan only the new tail).
+		const ZM_BattleEvent* pxChip = nullptr;
+		for (u_int i = uBefore; i < xEngine.GetEventCount(); ++i)
+		{
+			const ZM_BattleEvent& x = xEngine.GetEvent(i);
+			if (x.m_eKind == ZM_BATTLE_EVENT_STATUS_DAMAGE && x.m_uSide == (u_int)ZM_SIDE_PLAYER) { pxChip = &xEngine.GetEvent(i); }
+		}
+		ZENITH_ASSERT_NOT_NULL(pxChip, "toxic chips every turn");
+		if (pxChip != nullptr)
+		{
+			ZENITH_ASSERT_EQ(pxChip->m_iAmount, aiExpectChip[uTurn], "toxic ramp chip turn %u", uTurn + 1u);
+			ZENITH_ASSERT_EQ(pxChip->m_iAux, aiExpectRem[uTurn], "toxic remaining HP turn %u", uTurn + 1u);
+			ZENITH_ASSERT_EQ(pxChip->m_iTag, (int)ZM_MAJOR_STATUS_TOXIC, "m_iTag == TOXIC");
+			++uSeen;
+		}
+	}
+	ZENITH_ASSERT_EQ(uSeen, 3u, "three toxic chips over three turns");
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().m_uStatusCounter, 4u, "ramp counter 1->4 after three chips");
+}
+
+// FREEZE / SLEEP / PARALYSIS never chip at end of turn.
+ZENITH_TEST(ZM_Battle, Freeze_NoTurnEndChip)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_ChipPlayer(), ZM_ChipEnemy(), 0x1234ull, ZM_MAJOR_STATUS_FREEZE, 0u);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_STATUS_DAMAGE), 0u, "freeze does not chip");
+}
+ZENITH_TEST(ZM_Battle, Sleep_NoTurnEndChip)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_ChipPlayer(), ZM_ChipEnemy(), 0x1234ull, ZM_MAJOR_STATUS_SLEEP, 5u);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_STATUS_DAMAGE), 0u, "sleep does not chip");
+}
+ZENITH_TEST(ZM_Battle, Paralysis_NoTurnEndChip)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_ChipPlayer(), ZM_ChipEnemy(), 0x1234ull, ZM_MAJOR_STATUS_PARALYSIS, 0u);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_STATUS_DAMAGE), 0u, "paralysis does not chip");
+}
+
+// ============================================================================
+// CURE paths -- CURE_STATUS (self) / HEAL_BELL (party-wide) / REST.
+// ============================================================================
+namespace
+{
+	// Rig the player's major status on a bare state, then execute the player's
+	// self-targeted cure move (acc 0 -> always hits, no accuracy draw).
+	void ZM_CheckCureStatus(ZM_MAJOR_STATUS ePreStatus)
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_SHAKEOFF),
+			MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+		xState.Side(ZM_SIDE_PLAYER).Active().m_eStatus = ePreStatus;
+
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+
+		ZENITH_ASSERT_EQ((u_int)xState.Side(ZM_SIDE_PLAYER).Active().m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "CURE_STATUS clears the user's major");
+		const ZM_BattleEvent* pxCured = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_STATUS_CURED);
+		ZENITH_ASSERT_NOT_NULL(pxCured, "CURE_STATUS emits STATUS_CURED");
+		if (pxCured != nullptr)
+		{
+			ZENITH_ASSERT_EQ(pxCured->m_uSide, (u_int)ZM_SIDE_PLAYER, "STATUS_CURED targets the user");
+			ZENITH_ASSERT_EQ((u_int)pxCured->m_iAux, (u_int)ePreStatus, "STATUS_CURED m_iAux == the cured status");
+		}
+	}
+}
+
+ZENITH_TEST(ZM_Battle, CureStatus_ShakeOff_CuresBurn)
+{
+	ZM_CheckCureStatus(ZM_MAJOR_STATUS_BURN);
+}
+ZENITH_TEST(ZM_Battle, CureStatus_ShakeOff_CuresParalysis)
+{
+	ZM_CheckCureStatus(ZM_MAJOR_STATUS_PARALYSIS);
+}
+
+// HEAL_BELL (Chime Cure) cures the WHOLE party -- build a 2-mon player party, both
+// statused, execute Chime Cure -> both cleared.
+ZENITH_TEST(ZM_Battle, HealBell_ChimeCure_CuresWholeParty)
+{
+	ZM_BattleState xState;
+	ZM_BattleSide& xPlayer = xState.Side(ZM_SIDE_PLAYER);
+	ZM_BattleSide& xEnemy  = xState.Side(ZM_SIDE_ENEMY);
+	xPlayer.m_xParty.Clear();
+	xEnemy.m_xParty.Clear();
+	xPlayer.m_xParty.PushBack(ZM_BuildBattleMonster(MakeSpec(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_CHIMECURE)));
+	xPlayer.m_xParty.PushBack(ZM_BuildBattleMonster(MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH)));
+	xEnemy.m_xParty.PushBack(ZM_BuildBattleMonster(MakeSpec(ZM_SPECIES_STRAYLING,  20u, ZM_MOVE_RAMBASH)));
+	xPlayer.m_uActiveSlot = 0u;
+	xEnemy.m_uActiveSlot  = 0u;
+	xState.m_xField = ZM_FieldState();
+	xState.m_xRNG.Seed(0x1234ull, 54ull);
+	xPlayer.m_xParty.Get(0).m_eStatus = ZM_MAJOR_STATUS_BURN;
+	xPlayer.m_xParty.Get(1).m_eStatus = ZM_MAJOR_STATUS_POISON;
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	// The party-wide proof is that the RESERVE member's state goes NONE too.
+	ZENITH_ASSERT_EQ((u_int)xPlayer.m_xParty.Get(0).m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "HEAL_BELL cures the active party member");
+	ZENITH_ASSERT_EQ((u_int)xPlayer.m_xParty.Get(1).m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "HEAL_BELL cures the RESERVE party member (party-wide)");
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STATUS_CURED), "HEAL_BELL emits STATUS_CURED");
+}
+
+// REST: full heal + self-SLEEP counter 2 (fixed, no duration draw). Tested on a
+// non-statused, damaged mon so there is no prior-status cure to reason about.
+ZENITH_TEST(ZM_Battle, Rest_SlumberHeal_FullHealAndSelfSleep)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeSpecOverride(ZM_SPECIES_NIBBIN, 30u, ZM_MOVE_SLUMBERHEAL, 100u, 40u, 40u, 40u, 40u, 60u),
+		MakeSpec(ZM_SPECIES_STRAYLING, 30u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+	ZM_BattleMonster& xPlayer = xState.Side(ZM_SIDE_PLAYER).Active();
+	const u_int uMaxHP = xPlayer.m_auMaxStat[ZM_STAT_HP];
+	xPlayer.m_uCurHP = uMaxHP / 2u;   // damaged
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	ZENITH_ASSERT_EQ(xPlayer.m_uCurHP, uMaxHP, "REST heals to full HP");
+	ZENITH_ASSERT_EQ((u_int)xPlayer.m_eStatus, (u_int)ZM_MAJOR_STATUS_SLEEP, "REST self-inflicts SLEEP");
+	ZENITH_ASSERT_EQ(xPlayer.m_uStatusCounter, 2u, "REST sets the sleep counter to 2");
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_HEAL), "REST emits a HEAL");
+	const ZM_BattleEvent* pxApplied = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_STATUS_APPLIED);
+	ZENITH_ASSERT_NOT_NULL(pxApplied, "REST emits STATUS_APPLIED(SLEEP)");
+	if (pxApplied != nullptr) { ZENITH_ASSERT_EQ((u_int)pxApplied->m_iAux, (u_int)ZM_MAJOR_STATUS_SLEEP); }
+}
+
+// ============================================================================
+// BURN damage reduction (bBurnedPhysical) + PARALYSIS speed cut, isolated.
+// ============================================================================
+namespace
+{
+	// One ApplyDamagingHit at ulSeed with the attacker optionally BURNED; returns
+	// the raw damage. Same seed -> identical crit/roll, so burned == floor(unburned/2).
+	u_int ZM_ApplyHitBurned(ZM_MOVE_ID eMove, u_int64 ulSeed, bool bBurned)
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState,
+			MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, eMove,            200u, 60u, 40u, 60u, 40u, 100u),
+			MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH,  250u, 10u, 40u, 10u, 40u,  10u), ulSeed, 54ull);
+		if (bBurned) { xState.Side(ZM_SIDE_PLAYER).Active().m_eStatus = ZM_MAJOR_STATUS_BURN; }
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		return ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+	}
+}
+
+// A burned attacker's PHYSICAL hit is halved (seed 1 non-crit, oracle: 18 -> 9).
+ZENITH_TEST(ZM_Battle, BurnDamage_HalvesPhysical_SameSeed)
+{
+	const u_int uUnburned = ZM_ApplyHitBurned(ZM_MOVE_RAMBASH, 1ull, false);
+	const u_int uBurned   = ZM_ApplyHitBurned(ZM_MOVE_RAMBASH, 1ull, true);
+	ZENITH_ASSERT_GE(uUnburned, 2u, "need >= 2 base damage to observe halving");
+	ZENITH_ASSERT_EQ(uBurned, uUnburned / 2u, "a burned physical hit deals floor(unburned/2)");
+}
+
+// A burned attacker's SPECIAL hit is UNAFFECTED (bBurnedPhysical is physical-only).
+ZENITH_TEST(ZM_Battle, BurnDamage_SpecialUnaffected)
+{
+	const u_int uUnburned = ZM_ApplyHitBurned(ZM_MOVE_FLARELASH, 1ull, false);
+	const u_int uBurned   = ZM_ApplyHitBurned(ZM_MOVE_FLARELASH, 1ull, true);
+	ZENITH_ASSERT_GE(uUnburned, 2u, "sanity: non-trivial special damage");
+	ZENITH_ASSERT_EQ(uBurned, uUnburned, "burn does NOT reduce a special hit");
+}
+
+// Paralysis' 1/4 effective-speed cut flips turn order: a mon that is faster when
+// healthy moves SECOND once paralyzed. Player speed stat ~80, enemy ~50: 80 > 50
+// (player first) but 80/4 = 20 < 50 (enemy first). Observed via the first MOVE_USED.
+ZENITH_TEST(ZM_Battle, ParalysisSpeed_QuarterCutFlipsTurnOrder)
+{
+	const ZM_BattleMonsterSpec xPlayer = MakeSpecOverride(ZM_SPECIES_NIBBIN,    50u, ZM_MOVE_RAMBASH, 250u, 10u, 250u, 10u, 250u, 60u);
+	const ZM_BattleMonsterSpec xEnemy  = MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_RAMBASH, 250u, 10u, 250u, 10u, 250u, 30u);
+
+	// Control: healthy player is faster -> acts first.
+	{
+		ZM_BattleMonsterSpec axP[1] = { xPlayer };
+		ZM_BattleMonsterSpec axE[1] = { xEnemy };
+		ZM_BattleEngine xEngine;
+		xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 1ull, 54ull);
+		xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+		xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+		xEngine.ResolveTurn();
+		ZENITH_ASSERT_EQ(FirstActorSide(xEngine), (u_int)ZM_SIDE_PLAYER, "healthy: faster player acts first");
+	}
+	// Paralyzed: player's effective speed is quartered -> enemy acts first.
+	{
+		ZM_BattleEngine xEngine;
+		ZM_BeginWithPlayerStatus(xEngine, xPlayer, xEnemy, 1ull, ZM_MAJOR_STATUS_PARALYSIS, 0u);
+		xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+		xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+		xEngine.ResolveTurn();
+		ZENITH_ASSERT_EQ(FirstActorSide(xEngine), (u_int)ZM_SIDE_ENEMY, "paralyzed: the 1/4 speed cut makes the enemy act first");
+	}
+}
+
+// ============================================================================
+// The m_iTag POD append + a status-free regression guard.
+// ============================================================================
+
+// m_iTag is the appended 8th field: it defaults 0 (so 7-arg box-1 events still
+// compare equal), a trailing ZM_MakeEvent arg sets it, and it participates in ==.
+ZENITH_TEST(ZM_Battle, Event_TagFieldAppendedDefaultsZero)
+{
+	static_assert(std::is_trivially_copyable_v<ZM_BattleEvent>, "ZM_BattleEvent stays trivially copyable after the m_iTag append");
+
+	// A default-built event and a box-1-style 7-arg event both leave m_iTag 0.
+	const ZM_BattleEvent xDef = ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_BEGIN);
+	ZENITH_ASSERT_EQ(xDef.m_iTag, 0, "m_iTag defaults to 0");
+	const ZM_BattleEvent x7 = ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 10, 22);
+	const ZM_BattleEvent x8 = ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 10, 22, 0);
+	ZENITH_ASSERT_TRUE(x7 == x8, "a 7-arg event equals the same event with an explicit tag 0 (box-1 goldens stay equal)");
+
+	// A STATUS_DAMAGE carries the source status in the 8th arg; tag participates in ==.
+	const ZM_BattleEvent xTagged = ZM_MakeEvent(ZM_BATTLE_EVENT_STATUS_DAMAGE, ZM_SIDE_ENEMY, 0u,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, 10, 59, (int)ZM_MAJOR_STATUS_BURN);
+	ZENITH_ASSERT_EQ(xTagged.m_iTag, (int)ZM_MAJOR_STATUS_BURN, "the trailing arg sets m_iTag");
+	{ ZM_BattleEvent x = xTagged; x.m_iTag = 0; ZENITH_ASSERT_FALSE(x == xTagged, "m_iTag differences break equality"); }
+}
+
+// A status-free control battle is byte-identical to box 1: no STATUS_* events ever
+// fire and EVERY event leaves the appended m_iTag at 0 (the append is transparent).
+ZENITH_TEST(ZM_Battle, StatusFree_NoStatusEventsAndTagZero)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = { MakeScenarioNibbin() };
+	ZM_BattleMonsterSpec axEnemy[1]  = { MakeScenarioStrayling() };
+
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, 0x1234ull, 54ull);
+	u_int uGuard = 0u;
+	while (!xEngine.IsOver() && uGuard < 500u)
+	{
+		xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+		xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+		xEngine.ResolveTurn();
+		++uGuard;
+	}
+	ZENITH_ASSERT_TRUE(xEngine.IsOver(), "the status-free control battle terminates");
+
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_STATUS_APPLIED), 0u, "no STATUS_APPLIED in a status-free battle");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_STATUS_DAMAGE), 0u, "no STATUS_DAMAGE in a status-free battle");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_STATUS_CURED), 0u, "no STATUS_CURED in a status-free battle");
+	for (u_int i = 0; i < xEvents.GetSize(); ++i)
+	{
+		ZENITH_ASSERT_EQ(xEvents.Get(i).m_iTag, 0, "every status-free event leaves m_iTag at 0 (box-1 goldens unshifted)");
+	}
+}
+
+// ============================================================================
+// A few extra coverage tests (mini-goldens + multi-turn + no-op edges).
+// ============================================================================
+
+// A non-sleep STATUS primary that lands is EXACTLY [MOVE_USED, STATUS_APPLIED]:
+// accuracy is boosted so it never draws, and burn/para/poison/toxic draw nothing
+// at apply time. (SLEEP is excluded here -- it also draws a duration.)
+ZENITH_TEST(ZM_Battle, Burn_Apply_Hexflame_ExactTwoEventStream)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunStatusPrimary(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_HEXFLAME),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, ZM_MAJOR_STATUS_NONE, xState, xEvents);
+
+	Zenith_Vector<ZM_BattleEvent> xExpected;
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER, 0u, ZM_MOVE_HEXFLAME));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_STATUS_APPLIED, ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)ZM_MAJOR_STATUS_BURN));
+	ZM_AssertStreamEquals(xExpected, xEvents, "burnApplyExact");
+}
+
+// A damaging status secondary runs AFTER the hit: DAMAGE_DEALT precedes STATUS_APPLIED.
+ZENITH_TEST(ZM_Battle, Secondary_StatusAppliedAfterDamage)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_EMBERCLAW, 80u, 30u,  40u, 40u, 40u, 60u),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH,  250u, 10u, 250u, 10u, 40u, 10u), 15ull, xState, xEvents);
+
+	int iDmg = -1;
+	int iApplied = -1;
+	for (u_int i = 0; i < xEvents.GetSize(); ++i)
+	{
+		if (xEvents.Get(i).m_eKind == ZM_BATTLE_EVENT_DAMAGE_DEALT && iDmg < 0)         { iDmg = (int)i; }
+		if (xEvents.Get(i).m_eKind == ZM_BATTLE_EVENT_STATUS_APPLIED && iApplied < 0)   { iApplied = (int)i; }
+	}
+	ZENITH_ASSERT_GE(iDmg, 0, "the secondary carrier deals damage");
+	ZENITH_ASSERT_GE(iApplied, 0, "the burn secondary applied at seed 15");
+	ZENITH_ASSERT_LT(iDmg, iApplied, "DAMAGE_DEALT must precede the STATUS_APPLIED secondary");
+}
+
+// SLEEP over three turns from counter 3: asleep (turns 1,2), wakes on turn 3.
+ZENITH_TEST(ZM_Battle, Sleep_Gate_ThreeTurnWake)
+{
+	ZM_BattleEngine xEngine;
+	ZM_BeginWithPlayerStatus(xEngine, ZM_GateFastPlayer(ZM_MOVE_RAMBASH), ZM_GateBulkyEnemy(),
+		1ull, ZM_MAJOR_STATUS_SLEEP, 3u);
+
+	// Turns 1 & 2: still asleep (MOVE_FAILED(ASLEEP), no player MOVE_USED).
+	for (u_int uTurn = 0; uTurn < 2u; ++uTurn)
+	{
+		const u_int uBefore = xEngine.GetEventCount();
+		xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+		xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+		xEngine.ResolveTurn();
+		bool bFailed = false;
+		bool bPlayerMoved = false;
+		for (u_int i = uBefore; i < xEngine.GetEventCount(); ++i)
+		{
+			const ZM_BattleEvent& x = xEngine.GetEvent(i);
+			if (x.m_eKind == ZM_BATTLE_EVENT_MOVE_FAILED && x.m_uSide == (u_int)ZM_SIDE_PLAYER && (u_int)x.m_iAux == (u_int)ZM_MOVE_FAIL_ASLEEP) { bFailed = true; }
+			if (x.m_eKind == ZM_BATTLE_EVENT_MOVE_USED && x.m_uSide == (u_int)ZM_SIDE_PLAYER) { bPlayerMoved = true; }
+		}
+		ZENITH_ASSERT_TRUE(bFailed, "asleep on turn %u", uTurn + 1u);
+		ZENITH_ASSERT_FALSE(bPlayerMoved, "no MOVE_USED while asleep on turn %u", uTurn + 1u);
+	}
+	// Turn 3: wakes and acts.
+	{
+		const u_int uBefore = xEngine.GetEventCount();
+		xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+		xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+		xEngine.ResolveTurn();
+		bool bCured = false;
+		bool bPlayerMoved = false;
+		for (u_int i = uBefore; i < xEngine.GetEventCount(); ++i)
+		{
+			const ZM_BattleEvent& x = xEngine.GetEvent(i);
+			if (x.m_eKind == ZM_BATTLE_EVENT_STATUS_CURED && x.m_uSide == (u_int)ZM_SIDE_PLAYER) { bCured = true; }
+			if (x.m_eKind == ZM_BATTLE_EVENT_MOVE_USED && x.m_uSide == (u_int)ZM_SIDE_PLAYER)    { bPlayerMoved = true; }
+		}
+		ZENITH_ASSERT_TRUE(bCured, "STATUS_CURED(SLEEP) on the waking turn");
+		ZENITH_ASSERT_TRUE(bPlayerMoved, "acts on the waking turn");
+	}
+	ZENITH_ASSERT_EQ((u_int)xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "awake after three turns");
+}
+
+// CURE_STATUS on a HEALTHY mon is a no-op: status stays NONE, no STATUS_CURED.
+ZENITH_TEST(ZM_Battle, CureStatus_ShakeOff_NoOpWhenHealthy)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_SHAKEOFF),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
+	ZENITH_ASSERT_EQ((u_int)xState.Side(ZM_SIDE_PLAYER).Active().m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STATUS_CURED), "curing a healthy mon emits no STATUS_CURED");
+}
+
+// ============================================================================
+// SC4 FIRST GOLDEN -- Scenario_BurnSecondaryThenChip_ExactStream. A FIRE PHYSICAL
+// move with a burn secondary (Emberclaw, rigged to proc at seed 0x1234) from a
+// fast Kindlet into a bulky NORMAL Strayling, then Strayling's Rambash reply
+// (halved -- the enemy is now BURNED), then the enemy's end-of-turn burn chip.
+// Exact 11-event stream, derived by the offline oracle. Enemy maxHP 84 -> chip 10.
+// The whole stream carries m_iTag 0 EXCEPT the STATUS_DAMAGE, whose 8th field is
+// (int)ZM_MAJOR_STATUS_BURN.
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Scenario_BurnSecondaryThenChip_ExactStream)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = { MakeSpecOverride(ZM_SPECIES_KINDLET,   20u, ZM_MOVE_EMBERCLAW, 50u, 55u, 45u, 60u, 50u, 90u) };
+	ZM_BattleMonsterSpec axEnemy[1]  = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH,  120u, 40u, 90u, 35u, 60u, 40u) };
+
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, 0x1234ull, 54ull);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	ZENITH_ASSERT_FALSE(xEngine.IsOver(), "single-turn burn golden must not end the battle");
+
+	// --- offline-derived golden stream (11 events, seed 0x1234) ---
+	Zenith_Vector<ZM_BattleEvent> xExpected;
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_BEGIN));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_PLAYER, 0, ZM_MOVE_NONE, ZM_SPECIES_KINDLET));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_ENEMY, 0, ZM_MOVE_NONE, ZM_SPECIES_STRAYLING));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_BEGIN, ZM_SIDE_COUNT, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 1));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER, 0, ZM_MOVE_EMBERCLAW));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_ENEMY, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 15, 69));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_STATUS_APPLIED, ZM_SIDE_ENEMY, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)ZM_MAJOR_STATUS_BURN));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_ENEMY, 0, ZM_MOVE_RAMBASH));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_PLAYER, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 6, 50));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_STATUS_DAMAGE, ZM_SIDE_ENEMY, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 10, 59, (int)ZM_MAJOR_STATUS_BURN));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 1));
+
+	ZM_AssertStreamEquals(xExpected, xEngine.GetEvents(), "burnSecondaryThenChip");
+
+	// Corroborating post-conditions: enemy is BURNED and took the chip; the enemy's
+	// own physical reply was HALVED by its fresh burn (bBurnedPhysical, 6 HP off 56).
+	ZENITH_ASSERT_EQ((u_int)xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_eStatus, (u_int)ZM_MAJOR_STATUS_BURN, "enemy ends the turn burned");
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 59u, "enemy HP 84 -> 69 (Emberclaw) -> 59 (burn chip)");
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().m_uCurHP, 50u, "player HP 56 -> 50 (halved burned Rambash)");
+	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEngine.GetEvents(), xEngine, "burnSecondaryThenChip"));
+}

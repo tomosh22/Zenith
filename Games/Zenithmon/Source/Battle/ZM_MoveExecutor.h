@@ -26,6 +26,16 @@
 // activates bScreen at the call site (a non-crit hit into an active matching screen
 // halves post-type damage; crit bypasses).
 //
+// Dispatch (SC4): a status-inflicting kind (BURN/FREEZE/PARALYZE/POISON/TOXIC/SLEEP)
+// routes to ZM_StatusLogic -- as a STATUS-category PRIMARY on the opponent (a block
+// emits MOVE_FAILED(STATUS_BLOCKED)) or as a damaging-move SECONDARY via the E3 proc
+// slot (silent on block). REST/CURE_STATUS/HEAL_BELL are self/party maintenance
+// primaries. Execute now opens with the PHASE-G pre-move gate (ZM_StatusLogic::
+// PreMoveGate), BEFORE PP/MOVE_USED -- a cancel (freeze/sleep/full-para) spends no PP
+// and emits no MOVE_USED. A BURNED attacker's physical hit halves post-type damage
+// (xIn.bBurnedPhysical, set at the ApplyDamagingHit call site). All of these are
+// no-ops for a status-free monster, so box-1 / SC1-SC3 goldens stay byte-identical.
+//
 // ApplyDamagingHit is the ONE damage-draw site. Its crit rate keys off the MOVE's
 // m_uCritStage (>= 2 == guaranteed, no draw) and the attacker's accumulated
 // m_iCritStage (RAISE_CRIT): 0 -> 1/24, 1 -> 1/8, 2 -> 1/2, >= 3 -> always. At crit

@@ -2,6 +2,7 @@
 
 #include "Zenithmon/Source/Battle/ZM_BattleEngine.h"
 #include "Zenithmon/Source/Battle/ZM_MoveExecutor.h"
+#include "Zenithmon/Source/Battle/ZM_StatusLogic.h"
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
@@ -110,6 +111,20 @@ void ZM_BattleEngine::ResolvePreMovePhase()
 	// box 1: no-op. Run / item / switch actions arrive in box 2.
 }
 
+// Effective speed for turn ordering: the SPEED stat after its stat-stage multiplier,
+// then a 1/4 integer cut if the monster is PARALYZED (SC4; ZM-D-033; NO draw). A
+// status-free, stage-0 monster is unchanged, so box-1 / SC1-SC3 turn ordering is
+// byte-identical.
+static u_int g_EffectiveSpeed(const ZM_BattleMonster& xMon)
+{
+	u_int uSpeed = ZM_ApplyStatStage(xMon.m_auMaxStat[ZM_STAT_SPEED], xMon.m_aiStage[ZM_BATTLE_STAT_SPEED]);
+	if (xMon.m_eStatus == ZM_MAJOR_STATUS_PARALYSIS)
+	{
+		uSpeed /= 4u;
+	}
+	return uSpeed;
+}
+
 void ZM_BattleEngine::ResolveMovePhase()
 {
 	// Both actions are MOVE in box 1. Compute all ordering inputs BEFORE any
@@ -129,10 +144,8 @@ void ZM_BattleEngine::ResolveMovePhase()
 	}
 	else
 	{
-		const u_int uPlayerSpeed = ZM_ApplyStatStage(xPlayer.m_auMaxStat[ZM_STAT_SPEED],
-			xPlayer.m_aiStage[ZM_BATTLE_STAT_SPEED]);
-		const u_int uEnemySpeed  = ZM_ApplyStatStage(xEnemy.m_auMaxStat[ZM_STAT_SPEED],
-			xEnemy.m_aiStage[ZM_BATTLE_STAT_SPEED]);
+		const u_int uPlayerSpeed = g_EffectiveSpeed(xPlayer);
+		const u_int uEnemySpeed  = g_EffectiveSpeed(xEnemy);
 		if (uPlayerSpeed != uEnemySpeed)
 		{
 			eFirst = (uPlayerSpeed > uEnemySpeed) ? ZM_SIDE_PLAYER : ZM_SIDE_ENEMY;
@@ -175,6 +188,15 @@ void ZM_BattleEngine::ExecuteMove(ZM_SIDE eAtk)
 
 void ZM_BattleEngine::ResolveEndOfTurnPhase()
 {
+	// END-OF-TURN GLOBAL ORDER (ZM-D-033): the box-3 weather-chip slot is reserved
+	// FIRST here (absent in box-2 tests -- no code yet). Then the per-side status ticks
+	// in the LOCKED side order PLAYER-then-ENEMY. SC4 does the major chip (poison/toxic/
+	// burn); leech-seed / trap / volatile-counter expiries append into this per-side
+	// order in SC5. A status-free side's EndOfTurn emits nothing, so box-1 / SC1-SC3
+	// end-of-turn streams (just TURN_END) stay byte-identical.
+	ZM_StatusLogic::EndOfTurn(m_xState, m_xEvents, ZM_SIDE_PLAYER);
+	ZM_StatusLogic::EndOfTurn(m_xState, m_xEvents, ZM_SIDE_ENEMY);
+
 	const int iTurn = (int)m_xState.m_xField.m_uTurnCounter;
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, iTurn));
 }
