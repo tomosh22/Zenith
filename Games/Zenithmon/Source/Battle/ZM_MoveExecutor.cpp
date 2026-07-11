@@ -233,15 +233,98 @@ static void g_ApplyStatEffect(ZM_MoveContext& xCtx, ZM_MOVE_EFFECT eEffect, int 
 	}
 }
 
+// ---- SC3 field / side setters (STATUS-category primary; STATE-ONLY, no event) ---
+
+// True iff eEffect is one of the SC3 field/side setters (weather / screen / hazard).
+static bool g_IsFieldEffect(ZM_MOVE_EFFECT eEffect)
+{
+	switch (eEffect)
+	{
+	case ZM_MOVE_EFFECT_WEATHER_RAIN:
+	case ZM_MOVE_EFFECT_WEATHER_SUN:
+	case ZM_MOVE_EFFECT_WEATHER_SAND:
+	case ZM_MOVE_EFFECT_WEATHER_SNOW:
+	case ZM_MOVE_EFFECT_SCREEN_PHYSICAL:
+	case ZM_MOVE_EFFECT_SCREEN_SPECIAL:
+	case ZM_MOVE_EFFECT_HAZARD_SPIKES:
+		return true;
+	default:
+		return false;
+	}
+}
+
+// Apply a field/side setter. STATE-ONLY: box 2 SETS the field/side condition but
+// emits NO event and does NOT count down -- box 3 owns WEATHER_CHANGED/SCREEN_SET/
+// SCREEN_EXPIRED, the countdown/expiry, and the weather DAMAGE multiplier (ZM-D-033
+// weather line). The ability-independent screen reduction rides bScreen in
+// ApplyDamagingHit, so a screen set here is immediately observable via halved damage.
+//   WEATHER_* : field m_eWeather + m_uWeatherTurns = 5.
+//   SCREEN_*  : the ATTACKER's side m_auScreenTurns[matching] = 5 (protects the user's side).
+//   HAZARD_SPIKES : the DEFENDER side m_uHazardSpikeLayers ++, capped at 3.
+static void g_ApplyField(ZM_MoveContext& xCtx)
+{
+	ZM_FieldState& xField = xCtx.m_pxState->m_xField;
+	switch (xCtx.Move().m_eEffect)
+	{
+	case ZM_MOVE_EFFECT_WEATHER_RAIN: xField.m_eWeather = ZM_WEATHER_RAIN; xField.m_uWeatherTurns = 5u; break;
+	case ZM_MOVE_EFFECT_WEATHER_SUN:  xField.m_eWeather = ZM_WEATHER_SUN;  xField.m_uWeatherTurns = 5u; break;
+	case ZM_MOVE_EFFECT_WEATHER_SAND: xField.m_eWeather = ZM_WEATHER_SAND; xField.m_uWeatherTurns = 5u; break;
+	case ZM_MOVE_EFFECT_WEATHER_SNOW: xField.m_eWeather = ZM_WEATHER_SNOW; xField.m_uWeatherTurns = 5u; break;
+
+	case ZM_MOVE_EFFECT_SCREEN_PHYSICAL: xCtx.AtkSide().m_auScreenTurns[ZM_SCREEN_PHYSICAL] = 5u; break;
+	case ZM_MOVE_EFFECT_SCREEN_SPECIAL:  xCtx.AtkSide().m_auScreenTurns[ZM_SCREEN_SPECIAL]  = 5u; break;
+
+	case ZM_MOVE_EFFECT_HAZARD_SPIKES:
+	{
+		ZM_BattleSide& xDefSide = xCtx.DefSide();
+		if (xDefSide.m_uHazardSpikeLayers < 3u) { ++xDefSide.m_uHazardSpikeLayers; }
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+// HEAL_HALF: a STATUS-category SELF-heal primary (no crit/roll/proc draw). Heals the
+// attacker by floor(maxHP * mag / 100), capped to the missing HP, and ALWAYS emits
+// HEAL (m_iAmount = the ACTUAL amount added, m_iAux = attacker new HP) -- even a
+// heal-for-0 at full HP emits HEAL(0, maxHP) rather than a MOVE_FAILED. (This is the
+// self-heal STATUS event kind; DRAIN's damaging self-heal keeps the separate DRAIN
+// kind.) m_iEffectMagnitude is read as a percent for HEAL_HALF (ZM_MoveData).
+static void g_ApplyHealHalf(ZM_MoveContext& xCtx)
+{
+	ZM_BattleMonster& xAtk     = xCtx.Atk();
+	ZM_BattleSide&    xAtkSide = xCtx.AtkSide();
+	const u_int uMaxHP   = xAtk.m_auMaxStat[ZM_STAT_HP];
+	const u_int uMissing = uMaxHP - xAtk.m_uCurHP;          // curHP <= maxHP invariant: no underflow
+	u_int uHeal = (uMaxHP * (u_int)xCtx.Move().m_iEffectMagnitude) / 100u;
+	if (uHeal > uMissing) { uHeal = uMissing; }
+	xAtk.m_uCurHP += uHeal;
+	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_HEAL, xCtx.m_eAtk, xAtkSide.m_uActiveSlot,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uHeal, (int)xAtk.m_uCurHP));
+}
+
 // STATUS-category PRIMARY: the effect IS the point of the move (chance 100). SC2
-// lights only the stat-stage kinds here; other STATUS-category effects (status /
-// volatile / heal / field) light up in SC3+ and are a MOVE_USED-only no-op for now.
+// lights the stat-stage kinds; SC3 adds the field/side setters (state-only) and the
+// HEAL_HALF self-heal. Other STATUS-category effects (status / volatile / cure) light
+// up in later sub-commits and are a MOVE_USED-only no-op for now.
 static void g_ApplyStatusCategoryPrimary(ZM_MoveContext& xCtx)
 {
 	const ZM_MoveData& xMove = xCtx.Move();
 	if (g_IsStatEffect(xMove.m_eEffect))
 	{
 		g_ApplyStatEffect(xCtx, xMove.m_eEffect, xMove.m_iEffectMagnitude, /*bPrimary*/ true);
+		return;
+	}
+	if (g_IsFieldEffect(xMove.m_eEffect))
+	{
+		g_ApplyField(xCtx);
+		return;
+	}
+	if (xMove.m_eEffect == ZM_MOVE_EFFECT_HEAL_HALF)
+	{
+		g_ApplyHealHalf(xCtx);
+		return;
 	}
 }
 
@@ -270,6 +353,173 @@ static void g_ApplyDamagingSecondary(ZM_MoveContext& xCtx)
 	g_ApplyStatEffect(xCtx, xMove.m_eEffect, xMove.m_iEffectMagnitude, /*bPrimary*/ false);
 }
 
+// ---- SC3 damage-delivery variants ------------------------------------------
+// Every one of these is a DAMAGING move (PHYSICAL/SPECIAL): Execute has already
+// spent PP + emitted MOVE_USED, passed accuracy, and resolved M6 immunity, so a
+// delivery helper is reached ONLY for a non-immune damaging delivery kind. Each
+// per-hit damage still funnels through ApplyDamagingHit (the ONE crit/roll/
+// effectiveness/DAMAGE_DEALT/FAINT emit-group) so the emit order can never drift.
+// Box-1 + SC2 moves are all NONE/stat kinds, so g_IsDeliveryEffect is false for
+// them and these paths are unreachable -- the box-1/SC2 goldens stay byte-identical.
+
+// True iff eEffect is one of the SC3 delivery kinds (damaging; routed to
+// g_ApplyDelivery). The two-turn / recharge / lock kinds in the ZM_MoveData
+// "delivery variants" block (CHARGE_TURN/SEMI_INVULN/RECHARGE/LOCK_IN) are SC5
+// volatiles, NOT SC3, and are deliberately excluded here.
+static bool g_IsDeliveryEffect(ZM_MOVE_EFFECT eEffect)
+{
+	switch (eEffect)
+	{
+	case ZM_MOVE_EFFECT_MULTI_HIT:
+	case ZM_MOVE_EFFECT_DOUBLE_HIT:
+	case ZM_MOVE_EFFECT_RECOIL:
+	case ZM_MOVE_EFFECT_DRAIN:
+	case ZM_MOVE_EFFECT_FIXED_LEVEL:
+	case ZM_MOVE_EFFECT_HALVE_HP:
+	case ZM_MOVE_EFFECT_OHKO:
+		return true;
+	default:
+		return false;
+	}
+}
+
+// Apply a fixed, unavoidable amount of damage to the defender with NO crit/roll
+// draws and NO CRIT/SUPER/NOT effectiveness events (FIXED_LEVEL / HALVE_HP / OHKO):
+// immunity was already gated in Execute's M6, so the number lands verbatim. Emits
+// DAMAGE_DEALT (m_iAmount=dmg, m_iAux=remaining HP) [+ FAINT].
+static void g_ApplyFixedDamage(ZM_MoveContext& xCtx, u_int uDmg)
+{
+	ZM_BattleMonster& xDef     = xCtx.Def();
+	ZM_BattleSide&    xDefSide = xCtx.DefSide();
+	xDef.m_uCurHP = (uDmg >= xDef.m_uCurHP) ? 0u : (xDef.m_uCurHP - uDmg);
+	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, xCtx.m_eDef, xDefSide.m_uActiveSlot,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uDmg, (int)xDef.m_uCurHP));
+	xCtx.MaybeFaint(xCtx.m_eDef);
+}
+
+// MULTI_HIT: E0 hit-count draw RandBelow(8) -> {2,2,2,3,3,3,4,5} (3/8,3/8,1/8,1/8),
+// then per-hit ApplyDamagingHit (crit -> roll -> emit-group), breaking on faint.
+// Emits MULTI_HIT (m_iAmount = number of hits landed) on the ATTACKER, then the E3
+// secondary once after the last hit.
+static void g_ApplyMultiHit(ZM_MoveContext& xCtx)
+{
+	const u_int auHitCount[8] = { 2u, 2u, 2u, 3u, 3u, 3u, 4u, 5u };
+	const u_int uPlanned = auHitCount[xCtx.RNG().RandBelow(8u)];
+
+	u_int uLanded = 0u;
+	for (u_int i = 0u; i < uPlanned; ++i)
+	{
+		ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+		++uLanded;
+		if (xCtx.Def().m_uCurHP == 0u) { break; }   // stop when the target faints
+	}
+
+	ZM_BattleSide& xAtkSide = xCtx.AtkSide();
+	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MULTI_HIT, xCtx.m_eAtk, xAtkSide.m_uActiveSlot,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uLanded));
+
+	g_ApplyDamagingSecondary(xCtx);
+}
+
+// DOUBLE_HIT: exactly 2 hits, NO count draw; per-hit ApplyDamagingHit, breaking on
+// faint (so a KO on hit 1 never re-draws / re-FAINTs a dead target). Emits MULTI_HIT
+// with the landed count (2 when the target survives hit 1 -- the normal case; 1 if
+// hit 1 KOs), then the E3 secondary once.
+static void g_ApplyDoubleHit(ZM_MoveContext& xCtx)
+{
+	u_int uLanded = 0u;
+	for (u_int i = 0u; i < 2u; ++i)
+	{
+		ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+		++uLanded;
+		if (xCtx.Def().m_uCurHP == 0u) { break; }
+	}
+
+	ZM_BattleSide& xAtkSide = xCtx.AtkSide();
+	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MULTI_HIT, xCtx.m_eAtk, xAtkSide.m_uActiveSlot,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uLanded));
+
+	g_ApplyDamagingSecondary(xCtx);
+}
+
+// RECOIL: one ApplyDamagingHit, then the attacker takes floor(dmgDealt * mag / 100)
+// self-damage (appended AFTER the damage group). Emits RECOIL (m_iAmount = computed
+// recoil [RAW, pre-HP-clamp, mirroring DAMAGE_DEALT], m_iAux = attacker HP after
+// clamp) on the ATTACKER, then MaybeFaint(attacker), then the E3 secondary.
+static void g_ApplyRecoil(ZM_MoveContext& xCtx)
+{
+	const u_int uDmg = ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+
+	ZM_BattleMonster& xAtk     = xCtx.Atk();
+	ZM_BattleSide&    xAtkSide = xCtx.AtkSide();
+	const u_int uRecoil = (uDmg * (u_int)xCtx.Move().m_iEffectMagnitude) / 100u;
+	xAtk.m_uCurHP = (uRecoil >= xAtk.m_uCurHP) ? 0u : (xAtk.m_uCurHP - uRecoil);
+
+	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_RECOIL, xCtx.m_eAtk, xAtkSide.m_uActiveSlot,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uRecoil, (int)xAtk.m_uCurHP));
+	xCtx.MaybeFaint(xCtx.m_eAtk);
+
+	g_ApplyDamagingSecondary(xCtx);
+}
+
+// DRAIN: one ApplyDamagingHit, then the attacker heals floor(dmgDealt * mag / 100),
+// clamped to maxHP (appended AFTER the damage group). Emits DRAIN (m_iAmount =
+// computed heal [RAW, mirroring RECOIL], m_iAux = attacker HP after the max-HP clamp)
+// on the ATTACKER, then the E3 secondary. (DRAIN's self-heal uses the DRAIN event
+// kind, NOT HEAL; HEAL is reserved for the self-heal STATUS moves in a later commit.)
+static void g_ApplyDrain(ZM_MoveContext& xCtx)
+{
+	const u_int uDmg = ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+
+	ZM_BattleMonster& xAtk     = xCtx.Atk();
+	ZM_BattleSide&    xAtkSide = xCtx.AtkSide();
+	const u_int uHeal  = (uDmg * (u_int)xCtx.Move().m_iEffectMagnitude) / 100u;
+	const u_int uMaxHP = xAtk.m_auMaxStat[ZM_STAT_HP];
+	u_int uNewHP = xAtk.m_uCurHP + uHeal;
+	if (uNewHP > uMaxHP) { uNewHP = uMaxHP; }
+	xAtk.m_uCurHP = uNewHP;
+
+	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_DRAIN, xCtx.m_eAtk, xAtkSide.m_uActiveSlot,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uHeal, (int)uNewHP));
+
+	g_ApplyDamagingSecondary(xCtx);
+}
+
+// Route a delivery-effect kind to its handler. FIXED_LEVEL = attacker level;
+// HALVE_HP = floor(defender curHP / 2), min 1 while the target is alive; OHKO =
+// defender curHP (a full KO -- the OHKO level guard already ran in Execute). All
+// three take NO crit/roll draws (g_ApplyFixedDamage).
+static void g_ApplyDelivery(ZM_MoveContext& xCtx)
+{
+	switch (xCtx.Move().m_eEffect)
+	{
+	case ZM_MOVE_EFFECT_MULTI_HIT:  g_ApplyMultiHit(xCtx);  break;
+	case ZM_MOVE_EFFECT_DOUBLE_HIT: g_ApplyDoubleHit(xCtx); break;
+	case ZM_MOVE_EFFECT_RECOIL:     g_ApplyRecoil(xCtx);    break;
+	case ZM_MOVE_EFFECT_DRAIN:      g_ApplyDrain(xCtx);     break;
+
+	case ZM_MOVE_EFFECT_FIXED_LEVEL:
+		g_ApplyFixedDamage(xCtx, xCtx.Atk().m_uLevel);
+		break;
+
+	case ZM_MOVE_EFFECT_HALVE_HP:
+	{
+		const u_int uCur = xCtx.Def().m_uCurHP;
+		u_int uDmg = uCur / 2u;
+		if (uDmg == 0u && uCur > 0u) { uDmg = 1u; }   // at least 1 while the target lives
+		g_ApplyFixedDamage(xCtx, uDmg);
+		break;
+	}
+
+	case ZM_MOVE_EFFECT_OHKO:
+		g_ApplyFixedDamage(xCtx, xCtx.Def().m_uCurHP);   // full KO
+		break;
+
+	default:
+		break;
+	}
+}
+
 // ---- The executor ----------------------------------------------------------
 void ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 {
@@ -282,6 +532,20 @@ void ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	// M1: spend PP + announce (box 1 always has PP; NO_PP is a later box).
 	--xMoveSlot.m_uCurPP;
 	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, xCtx.m_eAtk, xAtkSide.m_uActiveSlot, (u_int)xMove.m_eId));
+
+	// OHKO level guard -- runs BEFORE M5 accuracy and draws NOTHING: a one-hit-KO move
+	// fails outright against a higher-level target (defender level > attacker level).
+	// PP is already spent + MOVE_USED emitted (the move was announced, then failed).
+	// MOVE_FAILED is attributed to the DEFENDER (the OHKO's target and the locus of the
+	// failure), matching SC2's MOVE_FAILED-on-the-effect-target convention. Box 1/SC2
+	// carry no OHKO move, so this guard never fires for them.
+	if (xMove.m_eEffect == ZM_MOVE_EFFECT_OHKO && xCtx.Def().m_uLevel > xAtk.m_uLevel)
+	{
+		ZM_BattleSide& xDefSideOhko = xCtx.DefSide();
+		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, xCtx.m_eDef, xDefSideOhko.m_uActiveSlot,
+			ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)ZM_MOVE_FAIL_OHKO_FAILED));
+		return;
+	}
 
 	// M5: ACCURACY draw -- only if the move CAN miss (sure-hit short-circuit). Applies
 	// to STATUS-category and damaging moves alike. effAcc folds the acc/eva stat stages
@@ -322,6 +586,16 @@ void ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	if (uEffPct == 0u)
 	{
 		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_IMMUNE, xCtx.m_eDef, xDefSide.m_uActiveSlot));
+		return;
+	}
+
+	// PHASE E: delivery dispatch. A delivery-effect damaging kind (multi/double/recoil/
+	// drain/fixed/halve/ohko) routes through g_ApplyDelivery -- which still funnels every
+	// hit through ApplyDamagingHit. Box-1/SC2 moves are NONE/stat kinds, so this is
+	// skipped for them and they take the standard single-hit path below (byte-identical).
+	if (g_IsDeliveryEffect(xMove.m_eEffect))
+	{
+		g_ApplyDelivery(xCtx);
 		return;
 	}
 
@@ -381,7 +655,13 @@ u_int ZM_MoveExecutor::ApplyDamagingHit(ZM_MoveContext& xCtx)
 	xIn.uEffectivenessPercent = uEffPct;
 	xIn.bCrit = bCrit;
 	xIn.uRandomPercent = uRoll;
-	// box-2/3 seams keep their identity defaults (weather 1/1, no burn, no screen).
+	// bScreen (SC3): a NON-crit hit into an active MATCHING screen on the defender's
+	// side (ZM_SCREEN_PHYSICAL for a physical move, ZM_SCREEN_SPECIAL for a special one)
+	// halves post-type damage; a crit BYPASSES screens (canonical). box-1/SC2 never set
+	// a screen (m_auScreenTurns all 0), so bScreen stays false and their goldens are
+	// byte-identical. The weather (1/1) and burn seams keep their box-1 identity defaults.
+	const ZM_SCREEN eScreen = bPhysical ? ZM_SCREEN_PHYSICAL : ZM_SCREEN_SPECIAL;
+	xIn.bScreen = (xDefSide.m_auScreenTurns[eScreen] > 0u) && !bCrit;
 
 	const u_int uDmg = ZM_CalcDamage(xIn);
 

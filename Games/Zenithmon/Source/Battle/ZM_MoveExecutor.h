@@ -4,12 +4,12 @@
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"
 
 // ============================================================================
-// ZM_MoveExecutor -- the move-execution seam (S2 box 2, SC1+SC2; DecisionLog ZM-D-033).
+// ZM_MoveExecutor -- the move-execution seam (S2 box 2, SC1-SC3; DecisionLog ZM-D-033).
 // The engine hands each acting side to ZM_MoveExecutor::Execute via a thin
 // ZM_MoveContext VIEW onto the engine-owned state + event sink (the engine keeps
 // owning m_xState / m_xEvents / the RNG). Execute runs the post-fainted-guard body:
-// PP spend, MOVE_USED, accuracy (with the acc/eva stat-stage fold that is identity
-// at stage 0), then the category dispatch.
+// PP spend, MOVE_USED, the OHKO level guard, accuracy (with the acc/eva stat-stage
+// fold that is identity at stage 0), then the category dispatch.
 //
 // Dispatch (SC2): Move().m_eCategory decides PRIMARY vs SECONDARY. A STATUS-category
 // move applies its effect DIRECTLY (chance 100, no crit/roll/immunity/proc draws).
@@ -17,6 +17,14 @@
 // single crit/roll/DAMAGE_DEALT/FAINT emit-group), THEN, if it carries a stat
 // secondary and the target survived, draws the E3 secondary proc and applies the
 // stat change. NONE-effect damaging moves take the box-1 path unchanged.
+//
+// Dispatch (SC3): delivery-effect damaging kinds (MULTI_HIT / DOUBLE_HIT / RECOIL /
+// DRAIN / FIXED_LEVEL / HALVE_HP / OHKO) route through g_ApplyDelivery -- every hit
+// still funnels through ApplyDamagingHit (the ONE crit/roll site). Field/screen/
+// hazard STATUS-category setters (WEATHER_* / SCREEN_* / HAZARD_SPIKES) write side/
+// field state ONLY (no event, no countdown -- box 3 owns those). ApplyDamagingHit
+// activates bScreen at the call site (a non-crit hit into an active matching screen
+// halves post-type damage; crit bypasses).
 //
 // ApplyDamagingHit is the ONE damage-draw site. Its crit rate keys off the MOVE's
 // m_uCritStage (>= 2 == guaranteed, no draw) and the attacker's accumulated

@@ -2207,3 +2207,776 @@ ZENITH_TEST(ZM_Battle, AccuracyStageDeltaClampedAtSix)
 	}
 	ZENITH_ASSERT_TRUE(bTested, "no boundary seed found in [effUnclamped, effClamped)");
 }
+
+// ============================================================================
+// S2 box-2 SC3 -- delivery variants (MULTI_HIT/DOUBLE_HIT/RECOIL/DRAIN/HEAL_HALF/
+// FIXED_LEVEL/HALVE_HP/OHKO) + field/screen/hazard SETTERS (state-only, NO event)
+// + the bScreen damage reduction (DecisionLog ZM-D-033). Each golden/number is
+// cross-checked by the offline oracle (scratchpad/zm_battle_ref.py), whose box-1
+// 27-event stream re-derives byte-identical after the SC3 execute_move dispatch
+// (the oracle's own gate).
+//
+// SHARED EVENT CONTRACT (the encodings these tests assert; the orchestrator
+// reconciles any that the built engine disagrees with):
+//  * MULTI_HIT:  side/slot = the ATTACKER (a summary of the attacker's move, like
+//    MOVE_USED/RECOIL/DRAIN -- DAMAGE_DEALT already carries the defender); m_iAmount
+//    = hits LANDED. It trails the per-hit DAMAGE_DEALT run (one MULTI_HIT after the
+//    last hit); the hit-run stops early on a faint (m_iAmount then < rolled count).
+//  * RECOIL:     side/slot = the ATTACKER; m_iAmount = floor(dmgDealt*mag/100);
+//    m_iAux = attacker remaining HP after the recoil.
+//  * DRAIN:      side/slot = the ATTACKER; m_iAmount = floor(dmgDealt*mag/100)
+//    healed; m_iAux = attacker new HP. (Assumed event kind == DRAIN for the drain
+//    heal -- see the SC3 report note; the orchestrator reconciles vs HEAL.)
+//  * HEAL:       side/slot = the USER; m_iAmount = floor(maxHP*mag/100); m_iAux =
+//    new HP.
+//  * FIXED_LEVEL dmg == attacker level; HALVE_HP dmg == floor(defCurHP/2) (min 1);
+//    OHKO dmg == defender current HP, or MOVE_FAILED(ZM_MOVE_FAIL_OHKO_FAILED) if
+//    defender level > attacker level. All THREE draw NO crit/roll.
+//  * WEATHER_*/SCREEN_*/HAZARD_SPIKES are STATE-ONLY: asserted via GetState()
+//    (m_xField.m_eWeather / side.m_auScreenTurns[..]==5 / m_uHazardSpikeLayers),
+//    they emit NO event, and screens/hazards land on the USER / OPPONENT side
+//    respectively. Screen reduction is asserted via a HALVED DAMAGE_DEALT.
+//
+// Discipline (ZM-D-033): the ONE full-stream golden here uses a battle with NO
+// weather/screen set (box 3 will add weather/screen events + countdown and must
+// not shift these box-2 goldens).
+// ============================================================================
+namespace
+{
+	// SC3 stream rule: a MULTI_HIT event's m_iAmount must equal the number of
+	// DAMAGE_DEALT events in the contiguous hit-run immediately before it (CRIT/
+	// SUPER/NOT may interleave; the run is bounded by the opening MOVE_USED).
+	bool ZM_MultiHitAmountMatchesRun(const Zenith_Vector<ZM_BattleEvent>& xEvents)
+	{
+		for (u_int i = 0; i < xEvents.GetSize(); ++i)
+		{
+			if (xEvents.Get(i).m_eKind != ZM_BATTLE_EVENT_MULTI_HIT) { continue; }
+			u_int uRun = 0u;
+			for (int j = (int)i - 1; j >= 0; --j)
+			{
+				const ZM_BATTLE_EVENT e = xEvents.Get((u_int)j).m_eKind;
+				if (e == ZM_BATTLE_EVENT_MOVE_USED) { break; }
+				if (e == ZM_BATTLE_EVENT_DAMAGE_DEALT) { ++uRun; }
+			}
+			if ((int)uRun != xEvents.Get(i).m_iAmount) { return false; }
+		}
+		return true;
+	}
+
+	// Fast Nibbin holding a multi-hit move with LOW ATK/SpA (weak hits) + a very
+	// bulky defender that survives a full 5-hit run -- so hits-landed == rolled
+	// count and the DAMAGE_DEALT run is unbroken (count-distribution fixtures).
+	ZM_BattleMonsterSpec ZM_MultiHitAttacker(ZM_MOVE_ID eMove)
+	{
+		return MakeSpecOverride(ZM_SPECIES_NIBBIN, 10u, eMove, 200u, 30u, 200u, 30u, 200u, 200u);
+	}
+	ZM_BattleMonsterSpec ZM_MultiHitBulkyDefender()
+	{
+		return MakeSpecOverride(ZM_SPECIES_STRAYLING, 10u, ZM_MOVE_RAMBASH, 250u, 10u, 250u, 10u, 250u, 10u);
+	}
+
+	// Execute an acc-100 multi-hit move over a bulky defender at ulSeed (so the
+	// FIRST draw is the RandBelow(8) count); assert the DAMAGE_DEALT run + the
+	// MULTI_HIT amount both equal uHits, and the amount matches the run.
+	void ZM_CheckMultiHitCount(ZM_MOVE_ID eMove, u_int64 ulSeed, u_int uHits)
+	{
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunPlayerMove(ZM_MultiHitAttacker(eMove), ZM_MultiHitBulkyDefender(), ulSeed, xState, xEvents);
+		ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "bulky defender must survive the full hit run");
+		ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), uHits, "DAMAGE_DEALT run != expected hits");
+		const ZM_BattleEvent* pxMH = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_MULTI_HIT);
+		ZENITH_ASSERT_NOT_NULL(pxMH, "a multi-hit move emits a MULTI_HIT event");
+		// (The MULTI_HIT side=ATTACKER encoding is pinned once, in the golden below.)
+		if (pxMH != nullptr) { ZENITH_ASSERT_EQ((u_int)pxMH->m_iAmount, uHits, "MULTI_HIT amount != expected hits"); }
+		ZENITH_ASSERT_TRUE(ZM_MultiHitAmountMatchesRun(xEvents), "MULTI_HIT amount must equal the preceding DAMAGE_DEALT run");
+	}
+}
+
+// ============================================================================
+// SC3 FIRST GOLDEN -- Scenario_MultiHitTwoHits_ExactStream. THORNVOLLEY (GRASS
+// PHYSICAL power25 acc100 MULTI_HIT, no STAB vs a NORMAL target) from a fast,
+// bulky Nibbin that rolls a 2-hit count, then Strayling's Rambash reply. Single
+// non-terminal turn, exact 11-event stream, derived by the offline oracle at
+// seed 0x1 -- the ONLY full-stream SC3 golden, and it sets NO weather/screen.
+// Stream: [..., MOVE_USED, DAMAGE_DEALT, DAMAGE_DEALT, MULTI_HIT(2), ...].
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Scenario_MultiHitTwoHits_ExactStream)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN,    10u, ZM_MOVE_THORNVOLLEY, 200u, 30u, 200u, 10u, 200u, 200u) };
+	ZM_BattleMonsterSpec axEnemy[1]  = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 10u, ZM_MOVE_RAMBASH,     200u, 10u,  40u, 10u,  40u,  55u) };
+
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, 0x1ull, 54ull);
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	ZENITH_ASSERT_FALSE(xEngine.IsOver(), "single-turn multi-hit golden must not end the battle");
+
+	// --- offline-derived golden stream (11 events, seed 0x1) ---
+	Zenith_Vector<ZM_BattleEvent> xExpected;
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_BEGIN));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_PLAYER, 0, ZM_MOVE_NONE, ZM_SPECIES_NIBBIN));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_ENEMY, 0, ZM_MOVE_NONE, ZM_SPECIES_STRAYLING));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_BEGIN, ZM_SIDE_COUNT, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 1));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER, 0, ZM_MOVE_THORNVOLLEY));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_ENEMY, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 4, 59));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_ENEMY, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 3, 56));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MULTI_HIT, ZM_SIDE_PLAYER, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 2));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_ENEMY, 0, ZM_MOVE_RAMBASH));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_PLAYER, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 3, 60));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 1));
+
+	ZM_AssertStreamEquals(xExpected, xEngine.GetEvents(), "multiHitTwoHits");
+	ZENITH_ASSERT_TRUE(ZM_MultiHitAmountMatchesRun(xEngine.GetEvents()), "MULTI_HIT amount must equal the two-hit DAMAGE_DEALT run");
+	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEngine.GetEvents(), xEngine, "multiHitTwoHits"));
+}
+
+// ---- MULTI_HIT count distribution across all 8 RandBelow(8) draw values -------
+// Each rigged seed makes THORNVOLLEY's FIRST draw (the count) hit a fixed value;
+// the mapping {0,1,2->2; 3,4,5->3; 6->4; 7->5} is asserted via the hit count.
+ZENITH_TEST(ZM_Battle, MultiHit_Draw0_TwoHits)   { ZM_CheckMultiHitCount(ZM_MOVE_THORNVOLLEY, 6ull,  2u); }
+ZENITH_TEST(ZM_Battle, MultiHit_Draw1_TwoHits)   { ZM_CheckMultiHitCount(ZM_MOVE_THORNVOLLEY, 1ull,  2u); }
+ZENITH_TEST(ZM_Battle, MultiHit_Draw2_TwoHits)   { ZM_CheckMultiHitCount(ZM_MOVE_THORNVOLLEY, 14ull, 2u); }
+ZENITH_TEST(ZM_Battle, MultiHit_Draw3_ThreeHits) { ZM_CheckMultiHitCount(ZM_MOVE_THORNVOLLEY, 7ull,  3u); }
+ZENITH_TEST(ZM_Battle, MultiHit_Draw4_ThreeHits) { ZM_CheckMultiHitCount(ZM_MOVE_THORNVOLLEY, 2ull,  3u); }
+ZENITH_TEST(ZM_Battle, MultiHit_Draw5_ThreeHits) { ZM_CheckMultiHitCount(ZM_MOVE_THORNVOLLEY, 3ull,  3u); }
+ZENITH_TEST(ZM_Battle, MultiHit_Draw6_FourHits)  { ZM_CheckMultiHitCount(ZM_MOVE_THORNVOLLEY, 15ull, 4u); }
+ZENITH_TEST(ZM_Battle, MultiHit_Draw7_FiveHits)  { ZM_CheckMultiHitCount(ZM_MOVE_THORNVOLLEY, 4ull,  5u); }
+
+// A SPECIAL multi-hit move (Sleet Volley, ICE) uses the same count machinery.
+ZENITH_TEST(ZM_Battle, MultiHit_SleetVolley_SpecialVariety)
+{
+	ZM_CheckMultiHitCount(ZM_MOVE_SLEETVOLLEY, 15ull, 4u);   // draw 6 -> 4 hits
+}
+
+// The hit-run stops on a faint: seed 4 rolls a 5-hit count, but a 1-HP defender
+// faints on the first hit -> exactly one DAMAGE_DEALT, one FAINT, MULTI_HIT(1).
+ZENITH_TEST(ZM_Battle, MultiHit_BreaksOnFaint)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_MultiHitAttacker(ZM_MOVE_THORNVOLLEY), ZM_MultiHitBulkyDefender(), 4ull, 54ull);
+	xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 1u;   // dies on the first hit
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	// The rolled count was 5 (seed 4), but the run broke on the faint after hit 1.
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), 1u, "break-on-faint: only the killing hit lands");
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_FAINT), "the defender faints");
+	const ZM_BattleEvent* pxMH = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_MULTI_HIT);
+	ZENITH_ASSERT_NOT_NULL(pxMH, "a MULTI_HIT still reports the hits landed");
+	if (pxMH != nullptr) { ZENITH_ASSERT_EQ((u_int)pxMH->m_iAmount, 1u, "MULTI_HIT amount == hits landed (1), not the rolled 5"); }
+	ZENITH_ASSERT_TRUE(ZM_MultiHitAmountMatchesRun(xEvents), "MULTI_HIT amount must equal the (single) DAMAGE_DEALT run");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "defender is fainted");
+}
+
+// The MULTI_HIT event sits immediately after the last DAMAGE_DEALT of the run and
+// carries the run length (seed 7 -> 3-hit count).
+ZENITH_TEST(ZM_Battle, MultiHit_AmountMatchesRunOrder)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(ZM_MultiHitAttacker(ZM_MOVE_THORNVOLLEY), ZM_MultiHitBulkyDefender(), 7ull, xState, xEvents);
+
+	// Locate the MULTI_HIT and the last DAMAGE_DEALT before it.
+	int iMH = -1;
+	for (u_int i = 0; i < xEvents.GetSize(); ++i)
+	{
+		if (xEvents.Get(i).m_eKind == ZM_BATTLE_EVENT_MULTI_HIT) { iMH = (int)i; break; }
+	}
+	ZENITH_ASSERT_TRUE(iMH > 0, "MULTI_HIT must exist and follow the hit run");
+	if (iMH > 0)
+	{
+		ZENITH_ASSERT_EQ((u_int)xEvents.Get((u_int)iMH - 1u).m_eKind, (u_int)ZM_BATTLE_EVENT_DAMAGE_DEALT, "MULTI_HIT immediately follows the last hit");
+		ZENITH_ASSERT_EQ((u_int)xEvents.Get((u_int)iMH).m_iAmount, ZM_CountKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), "MULTI_HIT amount == DAMAGE_DEALT count");
+		ZENITH_ASSERT_EQ((u_int)xEvents.Get((u_int)iMH).m_iAmount, 3u, "seed 7 rolls a 3-hit count");
+	}
+}
+
+// ============================================================================
+// DOUBLE_HIT -- fixed 2 hits, NO count draw. Onetwo (BRAWL) into a mono-FIRE
+// defender (BRAWL neutral -> no SUPER noise) so the stream is a clean 2-hit run.
+// ============================================================================
+namespace
+{
+	ZM_BattleMonsterSpec ZM_DoubleHitAttacker(ZM_MOVE_ID eMove)
+	{
+		return MakeSpecOverride(ZM_SPECIES_NIBBIN, 10u, eMove, 200u, 30u, 200u, 30u, 200u, 200u);
+	}
+	ZM_BattleMonsterSpec ZM_DoubleHitBulkyFire()   // Kindlet is mono-FIRE
+	{
+		return MakeSpecOverride(ZM_SPECIES_KINDLET, 10u, ZM_MOVE_RAMBASH, 250u, 10u, 250u, 10u, 250u, 10u);
+	}
+}
+
+ZENITH_TEST(ZM_Battle, DoubleHit_OneTwo_FixedTwoHits)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetMoveData(ZM_MOVE_ONETWO).m_eEffect, (u_int)ZM_MOVE_EFFECT_DOUBLE_HIT);
+
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(ZM_DoubleHitAttacker(ZM_MOVE_ONETWO), ZM_DoubleHitBulkyFire(), 0x1234ull, xState, xEvents);
+
+	ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "bulky defender must survive both hits");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), 2u, "double-hit lands exactly two hits");
+	const ZM_BattleEvent* pxMH = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_MULTI_HIT);
+	ZENITH_ASSERT_NOT_NULL(pxMH, "double-hit emits a MULTI_HIT event");
+	if (pxMH != nullptr) { ZENITH_ASSERT_EQ((u_int)pxMH->m_iAmount, 2u, "double-hit MULTI_HIT amount is 2"); }
+	ZENITH_ASSERT_TRUE(ZM_MultiHitAmountMatchesRun(xEvents), "MULTI_HIT amount must equal the two-hit run");
+}
+
+// Proves DOUBLE_HIT pulls NO count draw: the ONLY draws are (crit, roll) x2. A
+// mirror RNG that draws exactly that must then coincide with the state RNG.
+ZENITH_TEST(ZM_Battle, DoubleHit_NoCountDraw)
+{
+	const u_int64 ulSeed = 0x1234ull;
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(ZM_DoubleHitAttacker(ZM_MOVE_ONETWO), ZM_DoubleHitBulkyFire(), ulSeed, xState, xEvents);
+	ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "both hits must land (survivor) so all 4 draws are pulled");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), 2u, "two hits");
+
+	// Onetwo is acc 100 (no accuracy draw); a count draw would desynchronize this.
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	xMirror.Chance(1u, 24u);       xMirror.RandRange(85u, 100u);   // hit 1: crit, roll
+	xMirror.Chance(1u, 24u);       xMirror.RandRange(85u, 100u);   // hit 2: crit, roll
+	ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xMirror.Next(), "double-hit consumes exactly {crit,roll}x2 -- no RandBelow(8) count draw");
+}
+
+// A second DOUBLE_HIT move (Twin Fang, DRAKE, acc 95). Seed 1 lands the accuracy
+// roll; the fixed two hits still land.
+ZENITH_TEST(ZM_Battle, DoubleHit_TwinFang_Variety)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetMoveData(ZM_MOVE_TWINFANG).m_eEffect, (u_int)ZM_MOVE_EFFECT_DOUBLE_HIT);
+
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	// Strayling is mono-NORMAL; DRAKE is neutral vs NORMAL.
+	ZM_RunPlayerMove(ZM_DoubleHitAttacker(ZM_MOVE_TWINFANG), ZM_MultiHitBulkyDefender(), 1ull, xState, xEvents);
+
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED), "seed 1 must connect (acc 95)");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), 2u, "twin fang lands two hits");
+	const ZM_BattleEvent* pxMH = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_MULTI_HIT);
+	ZENITH_ASSERT_NOT_NULL(pxMH, "twin fang emits MULTI_HIT");
+	if (pxMH != nullptr) { ZENITH_ASSERT_EQ((u_int)pxMH->m_iAmount, 2u, "twin fang MULTI_HIT amount is 2"); }
+}
+
+// ============================================================================
+// RECOIL -- self-damage = floor(dmgDealt*mag/100); RECOIL(amount, aux=atkHP).
+// Bulky defender survives so DAMAGE_DEALT (raw) == HP lost == the recoil base.
+// ============================================================================
+namespace
+{
+	void ZM_CheckRecoil(ZM_MOVE_ID eMove, u_int uExpectMag, u_int64 ulSeed)
+	{
+		const int iMag = ZM_GetMoveData(eMove).m_iEffectMagnitude;
+		ZENITH_ASSERT_EQ((u_int)iMag, uExpectMag, "recoil fixture: unexpected magnitude for move %u", (u_int)eMove);
+
+		ZM_BattleState xState;
+		BuildBattleState(xState,
+			MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, eMove,           100u, 60u,  40u, 60u,  40u, 100u),
+			MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH, 250u, 10u, 250u, 10u, 250u,  10u), ulSeed, 54ull);
+		const u_int uAtkMax = xState.Side(ZM_SIDE_PLAYER).Active().m_auMaxStat[ZM_STAT_HP];
+
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+
+		ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "defender must survive so recoil keys off the actual damage");
+		const ZM_BattleEvent* pxDmg = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT);
+		const ZM_BattleEvent* pxRec = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_RECOIL);
+		ZENITH_ASSERT_NOT_NULL(pxDmg, "a recoil move deals damage");
+		ZENITH_ASSERT_NOT_NULL(pxRec, "a recoil move emits RECOIL");
+		if (pxDmg != nullptr && pxRec != nullptr)
+		{
+			const int iRecoil = (pxDmg->m_iAmount * iMag) / 100;
+			ZENITH_ASSERT_EQ(pxRec->m_iAmount, iRecoil, "RECOIL amount != floor(dmg*mag/100)");
+			ZENITH_ASSERT_EQ(pxRec->m_uSide, (u_int)ZM_SIDE_PLAYER, "RECOIL is on the attacker");
+			ZENITH_ASSERT_EQ((u_int)pxRec->m_iAux, uAtkMax - (u_int)iRecoil, "RECOIL aux != attacker remaining HP");
+			ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP, uAtkMax - (u_int)iRecoil, "attacker HP not reduced by recoil");
+		}
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Recoil_RecklessRush_Mag33)
+{
+	ZM_CheckRecoil(ZM_MOVE_RECKLESSRUSH, 33u, 0x1234ull);   // NORMAL, STAB
+}
+ZENITH_TEST(ZM_Battle, Recoil_Galvano_Mag25)
+{
+	ZM_CheckRecoil(ZM_MOVE_GALVANORUSH, 25u, 0x1234ull);    // ELECTRIC, no STAB
+}
+ZENITH_TEST(ZM_Battle, Recoil_BraveBeak_Mag33)
+{
+	ZM_CheckRecoil(ZM_MOVE_BRAVEBEAK, 33u, 0x1234ull);      // SKY, acc 100
+}
+
+// ============================================================================
+// DRAIN -- heal = floor(dmgDealt*mag/100); DRAIN(amount, aux=atk new HP). The
+// attacker is pre-damaged so the heal is observable and uncapped.
+// ============================================================================
+namespace
+{
+	void ZM_CheckDrain(ZM_MOVE_ID eMove, u_int64 ulSeed)
+	{
+		const int iMag = ZM_GetMoveData(eMove).m_iEffectMagnitude;
+		ZM_BattleState xState;
+		BuildBattleState(xState,
+			MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, eMove,           200u, 60u,  40u, 90u,  40u, 100u),
+			MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH, 250u, 10u, 250u, 10u, 250u,  10u), ulSeed, 54ull);
+		const u_int uAtkMax = xState.Side(ZM_SIDE_PLAYER).Active().m_auMaxStat[ZM_STAT_HP];
+		const u_int uPre = 5u;   // pre-damaged, well below max
+		xState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP = uPre;
+
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+
+		ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "defender must survive so drain keys off the actual damage");
+		const ZM_BattleEvent* pxDmg = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT);
+		const ZM_BattleEvent* pxDrain = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_DRAIN);
+		ZENITH_ASSERT_NOT_NULL(pxDmg, "a drain move deals damage");
+		ZENITH_ASSERT_NOT_NULL(pxDrain, "a drain move emits DRAIN");
+		if (pxDmg != nullptr && pxDrain != nullptr)
+		{
+			const u_int uHeal = ((u_int)pxDmg->m_iAmount * (u_int)iMag) / 100u;
+			ZENITH_ASSERT_GT(uHeal, 0u, "drain fixture must produce a nonzero heal");
+			const u_int uNew = (uPre + uHeal > uAtkMax) ? uAtkMax : (uPre + uHeal);
+			ZENITH_ASSERT_EQ(pxDrain->m_uSide, (u_int)ZM_SIDE_PLAYER, "DRAIN is on the attacker");
+			ZENITH_ASSERT_EQ((u_int)pxDrain->m_iAmount, uHeal, "DRAIN amount != floor(dmg*mag/100)");
+			ZENITH_ASSERT_EQ((u_int)pxDrain->m_iAux, uNew, "DRAIN aux != attacker new HP");
+			ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP, uNew, "attacker HP not increased by drain");
+		}
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Drain_Sapdraw_Special)
+{
+	ZM_CheckDrain(ZM_MOVE_SAPDRAW, 0x1234ull);    // GRASS SPECIAL, mag 50
+}
+ZENITH_TEST(ZM_Battle, Drain_LeechBite_Physical)
+{
+	ZM_CheckDrain(ZM_MOVE_LEECHBITE, 0x1234ull);  // VENOM PHYSICAL, mag 50
+}
+ZENITH_TEST(ZM_Battle, Drain_VeinTap_Variety)
+{
+	ZM_CheckDrain(ZM_MOVE_VEINTAP, 0x1234ull);    // SWARM PHYSICAL, mag 50
+}
+
+// Drain heal caps at max HP: at max-1 HP a positive heal leaves exactly max.
+ZENITH_TEST(ZM_Battle, Drain_CappedAtMax)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState,
+		MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_SAPDRAW, 200u, 60u,  40u, 90u,  40u, 100u),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH, 250u, 10u, 250u, 10u, 250u,  10u), 0x1234ull, 54ull);
+	const u_int uAtkMax = xState.Side(ZM_SIDE_PLAYER).Active().m_auMaxStat[ZM_STAT_HP];
+	xState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP = uAtkMax - 1u;   // one below full
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	const ZM_BattleEvent* pxDrain = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_DRAIN);
+	ZENITH_ASSERT_NOT_NULL(pxDrain, "a drain move emits DRAIN even when it overheals");
+	if (pxDrain != nullptr) { ZENITH_ASSERT_EQ((u_int)pxDrain->m_iAux, uAtkMax, "DRAIN aux caps at max HP"); }
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP, uAtkMax, "attacker HP caps at max");
+}
+
+// ============================================================================
+// HEAL_HALF -- a STATUS self-heal: HEAL(amount=floor(maxHP*mag/100), aux=new HP),
+// 0 RNG draws. The user is pre-damaged so the heal is observable and uncapped.
+// ============================================================================
+ZENITH_TEST(ZM_Battle, HealHalf_Repose)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_REPOSE),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+	const int iMag = ZM_GetMoveData(ZM_MOVE_REPOSE).m_iEffectMagnitude;   // 50
+	const u_int uMax = xState.Side(ZM_SIDE_PLAYER).Active().m_auMaxStat[ZM_STAT_HP];
+	xState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP = 1u;
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	const u_int uHeal = (uMax * (u_int)iMag) / 100u;
+	const u_int uNew = (1u + uHeal > uMax) ? uMax : (1u + uHeal);
+	const ZM_BattleEvent* pxHeal = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_HEAL);
+	ZENITH_ASSERT_NOT_NULL(pxHeal, "Repose emits HEAL");
+	if (pxHeal != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxHeal->m_uSide, (u_int)ZM_SIDE_PLAYER, "HEAL is on the user");
+		ZENITH_ASSERT_EQ((u_int)pxHeal->m_iAmount, uHeal, "HEAL amount != floor(maxHP*mag/100)");
+		ZENITH_ASSERT_EQ((u_int)pxHeal->m_iAux, uNew, "HEAL aux != new HP");
+	}
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP, uNew, "user HP not healed");
+}
+
+ZENITH_TEST(ZM_Battle, HealHalf_CappedAtMax)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_REPOSE),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+	const u_int uMax = xState.Side(ZM_SIDE_PLAYER).Active().m_auMaxStat[ZM_STAT_HP];
+	xState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP = uMax - 1u;
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	const ZM_BattleEvent* pxHeal = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_HEAL);
+	ZENITH_ASSERT_NOT_NULL(pxHeal, "Repose emits HEAL even when it overheals");
+	if (pxHeal != nullptr) { ZENITH_ASSERT_EQ((u_int)pxHeal->m_iAux, uMax, "HEAL aux caps at max HP"); }
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP, uMax, "user HP caps at max");
+}
+
+// ============================================================================
+// FIXED_LEVEL -- dmg == attacker level, NO crit/roll/effectiveness. The defender
+// must not be type-immune (Mindshear is MIND vs NORMAL; Nightbrand is PHANTOM,
+// which is immune to NORMAL, so it targets a mono-FIRE Kindlet).
+// ============================================================================
+namespace
+{
+	void ZM_CheckFixedLevel(ZM_MOVE_ID eMove, ZM_SPECIES_ID eDefSpecies, u_int uLevel, u_int64 ulSeed)
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState,
+			MakeSpec(ZM_SPECIES_NIBBIN, uLevel, eMove),
+			MakeSpecOverride(eDefSpecies, uLevel, ZM_MOVE_RAMBASH, 200u, 10u, 200u, 10u, 200u, 10u), ulSeed, 54ull);
+
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+
+		const ZM_BattleEvent* pxDmg = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT);
+		ZENITH_ASSERT_NOT_NULL(pxDmg, "fixed-level deals damage");
+		if (pxDmg != nullptr)
+		{
+			ZENITH_ASSERT_EQ((u_int)pxDmg->m_iAmount, uLevel, "fixed-level damage != attacker level");
+			ZENITH_ASSERT_EQ(pxDmg->m_uSide, (u_int)ZM_SIDE_ENEMY, "fixed-level hits the defender");
+		}
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_CRIT), "fixed damage never crits");
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_SUPER_EFFECTIVE), "fixed damage has no effectiveness");
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_NOT_EFFECTIVE), "fixed damage has no effectiveness");
+		ZENITH_ASSERT_GT(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u, "level-worth of fixed damage leaves the bulky defender alive");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, FixedLevel_Mindshear_DamageEqualsLevel)
+{
+	ZM_CheckFixedLevel(ZM_MOVE_MINDSHEAR, ZM_SPECIES_STRAYLING, 20u, 0x1234ull);   // MIND vs NORMAL
+}
+ZENITH_TEST(ZM_Battle, FixedLevel_NightBrand_DamageEqualsLevel)
+{
+	ZM_CheckFixedLevel(ZM_MOVE_NIGHTBRAND, ZM_SPECIES_KINDLET, 25u, 0x1234ull);    // PHANTOM vs FIRE
+}
+
+// Fixed-level (acc 100) pulls NO RNG draw at all: the state RNG is byte-identical
+// to a fresh mirror on the same seed.
+ZENITH_TEST(ZM_Battle, FixedLevel_NoCritRollDraw)
+{
+	const u_int64 ulSeed = 0x1234ull;
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_MINDSHEAR),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH, 200u, 10u, 200u, 10u, 200u, 10u), ulSeed, 54ull);
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xMirror.Next(), "fixed-level (acc 100) consumes 0 RNG draws");
+}
+
+// ============================================================================
+// HALVE_HP -- dmg == floor(defCurHP/2) (min 1), NO crit. Gnashdown is acc 90, so
+// seed 1 is used (it lands the accuracy roll).
+// ============================================================================
+ZENITH_TEST(ZM_Battle, HalveHP_Gnashdown_HalvesDefenderHP)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState,
+		MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_GNASHDOWN, 60u, 60u,  40u, 40u,  40u, 100u),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH,  200u, 10u, 200u, 10u, 200u,  10u), 1ull, 54ull);
+	const u_int uDefCur = xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP;
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED), "seed 1 must connect (acc 90)");
+	const ZM_BattleEvent* pxDmg = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT);
+	ZENITH_ASSERT_NOT_NULL(pxDmg, "halve-hp deals damage");
+	if (pxDmg != nullptr)
+	{
+		const u_int uExpect = (uDefCur / 2u < 1u) ? 1u : (uDefCur / 2u);
+		ZENITH_ASSERT_EQ((u_int)pxDmg->m_iAmount, uExpect, "halve-hp damage != floor(defHP/2) (min 1)");
+		ZENITH_ASSERT_EQ((u_int)pxDmg->m_iAux, uDefCur - uExpect, "halve-hp leaves ceil(defHP/2)");
+	}
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_CRIT), "halve-hp never crits");
+}
+
+// The min-1 floor: at 1 HP, floor(1/2)=0 clamps up to 1 -> the defender faints.
+ZENITH_TEST(ZM_Battle, HalveHP_MinOne)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState,
+		MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_GNASHDOWN, 60u, 60u,  40u, 40u,  40u, 100u),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH,  200u, 10u, 200u, 10u, 200u,  10u), 1ull, 54ull);
+	xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 1u;
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED), "seed 1 must connect (acc 90)");
+	const ZM_BattleEvent* pxDmg = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT);
+	ZENITH_ASSERT_NOT_NULL(pxDmg, "halve-hp deals damage");
+	if (pxDmg != nullptr) { ZENITH_ASSERT_EQ((u_int)pxDmg->m_iAmount, 1u, "halve-hp of 1 HP clamps up to 1"); }
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_FAINT), "the 1-HP defender faints");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u);
+}
+
+// ============================================================================
+// OHKO -- dmg == defender current HP (full KO), or MOVE_FAILED when the defender
+// out-levels the attacker. Fissure Crack is acc 30; seed 2 lands the roll.
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Ohko_FullKO)
+{
+	// Attacker L30 >= defender L20 -> succeeds.
+	ZM_BattleState xState;
+	BuildBattleState(xState,
+		MakeSpecOverride(ZM_SPECIES_NIBBIN,    30u, ZM_MOVE_FISSURECRACK, 200u, 60u,  40u, 40u,  40u, 100u),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH,      200u, 10u, 200u, 10u, 200u,  10u), 2ull, 54ull);
+	const u_int uDefCur = xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP;
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED), "seed 2 must connect (acc 30)");
+	const ZM_BattleEvent* pxDmg = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT);
+	ZENITH_ASSERT_NOT_NULL(pxDmg, "ohko deals damage on a hit");
+	if (pxDmg != nullptr)
+	{
+		ZENITH_ASSERT_EQ((u_int)pxDmg->m_iAmount, uDefCur, "ohko damage != defender current HP");
+		ZENITH_ASSERT_EQ((u_int)pxDmg->m_iAux, 0u, "ohko leaves 0 HP");
+	}
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_FAINT), "ohko faints the defender");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 0u);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_CRIT), "ohko never crits");
+}
+
+// OHKO into a HIGHER-level target fails with MOVE_FAILED(OHKO_FAILED); no damage.
+// (ZM_MOVE_FAIL_OHKO_FAILED is appended to ZM_MOVE_FAIL_REASON by the SC3
+// implementer -- see the SC3 report note.)
+ZENITH_TEST(ZM_Battle, Ohko_FailsVsHigherLevel)
+{
+	// Attacker L20 < defender L30 -> fails. Seed 2 connects the accuracy roll, so
+	// the failure is the level check (not a miss), whatever the check order.
+	ZM_BattleState xState;
+	BuildBattleState(xState,
+		MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_FISSURECRACK, 200u, 60u,  40u, 40u,  40u, 100u),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 30u, ZM_MOVE_RAMBASH,      200u, 10u, 200u, 10u, 200u,  10u), 2ull, 54ull);
+	const u_int uDefFull = xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP;
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+
+	const ZM_BattleEvent* pxFail = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED);
+	ZENITH_ASSERT_NOT_NULL(pxFail, "OHKO into a higher-level target must MOVE_FAILED");
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ((u_int)pxFail->m_iAux, (u_int)ZM_MOVE_FAIL_OHKO_FAILED, "MOVE_FAILED reason must be OHKO_FAILED"); }
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), "a failed OHKO deals no damage");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, uDefFull, "the target's HP is untouched");
+}
+
+// OHKO draws only its accuracy roll (acc 30) -- NO crit/roll. After a connecting
+// hit the state RNG matches a mirror that drew exactly one RandBelow(100).
+ZENITH_TEST(ZM_Battle, Ohko_NoCritRollDraw)
+{
+	const u_int64 ulSeed = 2ull;
+	ZM_BattleState xState;
+	BuildBattleState(xState,
+		MakeSpecOverride(ZM_SPECIES_NIBBIN,    30u, ZM_MOVE_FISSURECRACK, 200u, 60u,  40u, 40u,  40u, 100u),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH,      200u, 10u, 200u, 10u, 200u,  10u), ulSeed, 54ull);
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED), "seed 2 must connect (acc 30)");
+
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	xMirror.RandBelow(100u);   // the sole accuracy draw
+	ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xMirror.Next(), "OHKO consumes only its accuracy draw -- no crit/roll");
+}
+
+// ============================================================================
+// WEATHER setters -- STATE-ONLY (m_xField.m_eWeather), NO event, 0 RNG draws.
+// ============================================================================
+namespace
+{
+	void ZM_CheckWeatherSetter(ZM_MOVE_ID eMove, ZM_WEATHER eExpected)
+	{
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, eMove),
+			MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
+		ZENITH_ASSERT_EQ((u_int)xState.m_xField.m_eWeather, (u_int)eExpected, "weather field not set");
+		ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_WEATHER_CHANGED), 0u, "box-2 weather setter emits NO event");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Weather_Sunflare_SetsSun)   { ZM_CheckWeatherSetter(ZM_MOVE_SUNFLARE, ZM_WEATHER_SUN); }
+ZENITH_TEST(ZM_Battle, Weather_Raincall_SetsRain)  { ZM_CheckWeatherSetter(ZM_MOVE_RAINCALL, ZM_WEATHER_RAIN); }
+ZENITH_TEST(ZM_Battle, Weather_Sandstir_SetsSand)  { ZM_CheckWeatherSetter(ZM_MOVE_SANDSTIR, ZM_WEATHER_SAND); }
+ZENITH_TEST(ZM_Battle, Weather_Snowveil_SetsSnow)  { ZM_CheckWeatherSetter(ZM_MOVE_SNOWVEIL, ZM_WEATHER_SNOW); }
+
+// The whole stream of a weather setter is just [MOVE_USED] -- no weather event.
+ZENITH_TEST(ZM_Battle, Weather_SetterEmitsOnlyMoveUsed)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_SUNFLARE),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 1u, "a weather setter emits only MOVE_USED");
+	if (xEvents.GetSize() == 1u)
+	{
+		ZENITH_ASSERT_TRUE(xEvents.Get(0) == ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER, 0u, ZM_MOVE_SUNFLARE),
+			"the only event is MOVE_USED(Sunflare)");
+	}
+	ZENITH_ASSERT_EQ((u_int)xState.m_xField.m_eWeather, (u_int)ZM_WEATHER_SUN);
+}
+
+// A later weather setter OVERWRITES the field weather (Sun -> Rain).
+ZENITH_TEST(ZM_Battle, Weather_OverwritesPrevious)
+{
+	ZM_BattleMonsterSpec xAtk = MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_SUNFLARE);
+	xAtk.m_aeMoves[1] = ZM_MOVE_RAINCALL;
+	ZM_BattleState xState;
+	BuildBattleState(xState, xAtk, MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+
+	{ Zenith_Vector<ZM_BattleEvent> xE; ZM_MoveContext xC = MakeCtx(xState, xE, ZM_SIDE_PLAYER, 0u); ZM_MoveExecutor::Execute(xC); }
+	ZENITH_ASSERT_EQ((u_int)xState.m_xField.m_eWeather, (u_int)ZM_WEATHER_SUN, "Sunflare sets Sun");
+	{ Zenith_Vector<ZM_BattleEvent> xE; ZM_MoveContext xC = MakeCtx(xState, xE, ZM_SIDE_PLAYER, 1u); ZM_MoveExecutor::Execute(xC); }
+	ZENITH_ASSERT_EQ((u_int)xState.m_xField.m_eWeather, (u_int)ZM_WEATHER_RAIN, "Raincall overwrites Sun with Rain");
+}
+
+// ============================================================================
+// SCREEN setters -- land on the USER's side, STATE-ONLY (m_auScreenTurns==5), no
+// event.
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Screen_AegisWall_SetsPhysicalOnUserSide)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_AEGISWALL),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
+
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 5u, "physical screen set to 5 on the user side");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_SPECIAL], 0u, "special screen untouched");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 0u, "the opponent's side is unaffected");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_SCREEN_SET), 0u, "box-2 screen setter emits NO event");
+}
+
+ZENITH_TEST(ZM_Battle, Screen_LumenWall_SetsSpecialOnUserSide)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_LUMENWALL),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
+
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_SPECIAL], 5u, "special screen set to 5 on the user side");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 0u, "physical screen untouched");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_SCREEN_SET), 0u, "box-2 screen setter emits NO event");
+}
+
+// ============================================================================
+// SCREEN damage reduction (bScreen) -- asserted via a HALVED DAMAGE_DEALT, never
+// an event. Compared with/without the screen at the SAME seed (identical crit/
+// roll). Rambash (physical) into the enemy's physical screen. Non-crit seed 1
+// halves; crit seed 19 bypasses; a wrong-type (special) screen does nothing.
+// ============================================================================
+namespace
+{
+	// Run one ApplyDamagingHit of Rambash (player, physical) into a bulky enemy,
+	// optionally with a screen active on the enemy side; return the raw damage and
+	// (via out-param) whether the hit crit.
+	u_int ZM_ApplyHitWithScreen(u_int64 ulSeed, int iScreenSlot, bool* pbCritOut)
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState,
+			MakeSpecOverride(ZM_SPECIES_NIBBIN,    20u, ZM_MOVE_RAMBASH, 200u, 60u, 40u, 40u, 40u, 100u),
+			MakeSpecOverride(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH, 250u, 10u, 40u, 10u, 40u,  10u), ulSeed, 54ull);
+		if (iScreenSlot >= 0) { xState.Side(ZM_SIDE_ENEMY).m_auScreenTurns[iScreenSlot] = 5u; }
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		const u_int uDmg = ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+		if (pbCritOut != nullptr) { *pbCritOut = ZM_HasKind(xEvents, ZM_BATTLE_EVENT_CRIT); }
+		return uDmg;
+	}
+}
+
+// Non-crit seed 1: a matching physical screen halves the physical hit.
+ZENITH_TEST(ZM_Battle, Screen_HalvesMatchingPhysicalDamage)
+{
+	bool bCritOff = true;
+	const u_int uOff = ZM_ApplyHitWithScreen(1ull, -1, &bCritOff);
+	const u_int uOn  = ZM_ApplyHitWithScreen(1ull, (int)ZM_SCREEN_PHYSICAL, nullptr);
+	ZENITH_ASSERT_FALSE(bCritOff, "seed 1's first draw must be a non-crit for the halving to apply");
+	ZENITH_ASSERT_GE(uOff, 2u, "need >= 2 base damage to observe halving");
+	ZENITH_ASSERT_EQ(uOn, uOff / 2u, "a matching physical screen halves a non-crit physical hit");
+}
+
+// Crit seed 19: a crit BYPASSES the screen (screen-on == screen-off == crit dmg).
+ZENITH_TEST(ZM_Battle, Screen_CritBypasses)
+{
+	bool bCritOff = false;
+	const u_int uOff = ZM_ApplyHitWithScreen(19ull, -1, &bCritOff);
+	const u_int uOn  = ZM_ApplyHitWithScreen(19ull, (int)ZM_SCREEN_PHYSICAL, nullptr);
+	ZENITH_ASSERT_TRUE(bCritOff, "seed 19's first draw must be a crit for this test");
+	ZENITH_ASSERT_EQ(uOn, uOff, "a crit bypasses the physical screen (crit-through-screen == crit-no-screen)");
+}
+
+// Isolation: a SPECIAL screen does not reduce a PHYSICAL hit (non-crit seed 1).
+ZENITH_TEST(ZM_Battle, Screen_WrongTypeDoesNotHalve)
+{
+	const u_int uOff = ZM_ApplyHitWithScreen(1ull, -1, nullptr);
+	const u_int uOn  = ZM_ApplyHitWithScreen(1ull, (int)ZM_SCREEN_SPECIAL, nullptr);
+	ZENITH_ASSERT_EQ(uOn, uOff, "a special screen must NOT reduce a physical hit");
+}
+
+// ============================================================================
+// HAZARD spikes -- land on the OPPONENT's side, cap at 3 layers, emit NO event.
+// ============================================================================
+ZENITH_TEST(ZM_Battle, Hazard_Caltrops_LayersCapAtThree)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_CALTROPS),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+
+	const u_int auExpect[5] = { 1u, 2u, 3u, 3u, 3u };
+	for (u_int i = 0; i < 5u; ++i)
+	{
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).m_uHazardSpikeLayers, auExpect[i], "hazard layer count wrong after use %u", i + 1u);
+	}
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).m_uHazardSpikeLayers, 0u, "the user's own side gets no spikes");
+}
+
+// A hazard setter is state-only: its whole stream is just [MOVE_USED].
+ZENITH_TEST(ZM_Battle, Hazard_Caltrops_EmitsOnlyMoveUsed)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_CALTROPS),
+		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 1u, "a hazard setter emits only MOVE_USED");
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).m_uHazardSpikeLayers, 1u, "one layer is laid on the opponent's side");
+}
