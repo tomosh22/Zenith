@@ -7838,3 +7838,690 @@ ZENITH_TEST(ZM_Battle, Box3SC2_Begin_NonSwitchInAbilitiesRemainSilent)
 	ZENITH_ASSERT_EQ((u_int)xEngine.GetState().m_xField.m_eWeather, (u_int)ZM_WEATHER_NONE);
 	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], 0);
 }
+
+// ============================================================================
+// ===== BOX 3 SC3: DAMAGE / STAT / TYPE-INTERACTION ABILITIES =====
+//
+// These are black-box tests over the SC2 hook ABI. Expected values come from
+// paired NONE controls, the established pure ZM_CalcDamage seam, and explicit
+// integer floors -- never by calling a production ability hook as the oracle.
+// Every stochastic case mirrors only the locked battle RNG phase contract.
+// ============================================================================
+namespace
+{
+	enum ZM_BOX3_SC3_HP_MODE : u_int
+	{
+		ZM_BOX3_SC3_HP_FULL,
+		ZM_BOX3_SC3_HP_PINCH_EQUAL,
+		ZM_BOX3_SC3_HP_PINCH_ONE_ABOVE,
+	};
+
+	enum ZM_BOX3_SC3_HEAL_MODE : u_int
+	{
+		ZM_BOX3_SC3_HEAL_FULL,
+		ZM_BOX3_SC3_HEAL_QUARTER,
+		ZM_BOX3_SC3_HEAL_CAPPED_TWO,
+		ZM_BOX3_SC3_HEAL_MIN_ONE,
+	};
+
+	ZM_BattleMonsterSpec ZM_Box3SC3Spec(ZM_SPECIES_ID eSpecies, ZM_MOVE_ID eMove,
+		ZM_ABILITY_ID eAbility, u_int uHP = 600u, u_int uAttack = 120u,
+		u_int uDefense = 100u, u_int uSpAttack = 120u, u_int uSpDefense = 100u,
+		u_int uSpeed = 80u, u_int uLevel = 50u)
+	{
+		ZM_BattleMonsterSpec xSpec = MakeSpecOverride(eSpecies, uLevel, eMove,
+			uHP, uAttack, uDefense, uSpAttack, uSpDefense, uSpeed);
+		xSpec.m_eAbility = eAbility;
+		return xSpec;
+	}
+
+	const ZM_BattleEvent* ZM_Box3SC3FindKind(const Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_BATTLE_EVENT eKind, u_int uOccurrence = 0u)
+	{
+		u_int uSeen = 0u;
+		for (u_int i = 0u; i < xEvents.GetSize(); ++i)
+		{
+			if (xEvents.Get(i).m_eKind == eKind)
+			{
+				if (uSeen == uOccurrence) { return &xEvents.Get(i); }
+				++uSeen;
+			}
+		}
+		return nullptr;
+	}
+
+	int ZM_Box3SC3FindTriggerIndex(const Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_ABILITY_ID eAbility, ZM_SIDE eOwner, u_int uOccurrence = 0u)
+	{
+		u_int uSeen = 0u;
+		for (u_int i = 0u; i < xEvents.GetSize(); ++i)
+		{
+			const ZM_BattleEvent& xEvent = xEvents.Get(i);
+			if (xEvent.m_eKind == ZM_BATTLE_EVENT_ABILITY_TRIGGER
+				&& xEvent.m_iTag == (int)eAbility && xEvent.m_uSide == (u_int)eOwner)
+			{
+				if (uSeen == uOccurrence) { return (int)i; }
+				++uSeen;
+			}
+		}
+		return -1;
+	}
+
+	void ZM_Box3SC3AssertExactTriggers(const Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_ABILITY_ID eAbility, ZM_SIDE eOwner, u_int uExpectedForAbility,
+		u_int uExpectedTotal)
+	{
+		u_int uMatches = 0u;
+		u_int uTotal = 0u;
+		const ZM_BattleEvent xExpected = ZM_MakeEvent(ZM_BATTLE_EVENT_ABILITY_TRIGGER,
+			eOwner, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 0, (int)eAbility);
+		for (u_int i = 0u; i < xEvents.GetSize(); ++i)
+		{
+			const ZM_BattleEvent& xEvent = xEvents.Get(i);
+			if (xEvent.m_eKind != ZM_BATTLE_EVENT_ABILITY_TRIGGER) { continue; }
+			++uTotal;
+			if (xEvent.m_iTag == (int)eAbility && xEvent.m_uSide == (u_int)eOwner)
+			{
+				++uMatches;
+				ZENITH_ASSERT_TRUE(xEvent == xExpected,
+					"SC3 ABILITY_TRIGGER payload must be owner/slot, amount=aux=0, tag=ability");
+			}
+		}
+		ZENITH_ASSERT_EQ(uMatches, uExpectedForAbility,
+			"wrong trigger count for %s", ZM_GetAbilityName(eAbility));
+		ZENITH_ASSERT_EQ(uTotal, uExpectedTotal, "wrong total ABILITY_TRIGGER count");
+	}
+
+	u_int ZM_Box3SC3RunDirectHit(ZM_ABILITY_ID eAtkAbility, ZM_ABILITY_ID eDefAbility,
+		ZM_MOVE_ID eMove, ZM_SPECIES_ID eAtkSpecies, ZM_SPECIES_ID eDefSpecies,
+		ZM_BOX3_SC3_HP_MODE eHPMode, ZM_MAJOR_STATUS eStatus, ZM_WEATHER eWeather,
+		u_int64 ulSeed, ZM_BattleState& xState, Zenith_Vector<ZM_BattleEvent>& xEvents)
+	{
+		BuildBattleState(xState,
+			ZM_Box3SC3Spec(eAtkSpecies, eMove, eAtkAbility),
+			ZM_Box3SC3Spec(eDefSpecies, ZM_MOVE_RAMBASH, eDefAbility), ulSeed, 54ull);
+		ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		if (eHPMode != ZM_BOX3_SC3_HP_FULL)
+		{
+			ZENITH_ASSERT_EQ(xAtk.m_auMaxStat[ZM_STAT_HP] % 3u, 0u,
+				"SC3 pinch fixture requires a max HP divisible by three");
+			xAtk.m_uCurHP = xAtk.m_auMaxStat[ZM_STAT_HP] / 3u;
+			if (eHPMode == ZM_BOX3_SC3_HP_PINCH_ONE_ABOVE) { ++xAtk.m_uCurHP; }
+		}
+		xAtk.m_eStatus = eStatus;
+		xState.m_xField.m_eWeather = eWeather;
+		xState.m_xField.m_uWeatherTurns = eWeather == ZM_WEATHER_NONE ? 0u : 5u;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		return ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+	}
+
+	void ZM_Box3SC3AssertMultiplier(ZM_ABILITY_ID eAtkAbility, ZM_ABILITY_ID eDefAbility,
+		ZM_MOVE_ID eMove, ZM_SPECIES_ID eAtkSpecies, ZM_SPECIES_ID eDefSpecies,
+		ZM_BOX3_SC3_HP_MODE eHPMode, ZM_MAJOR_STATUS eStatus, ZM_WEATHER eWeather,
+		u_int uNum, u_int uDen, u_int64 ulSeed)
+	{
+		ZM_BattleState xControlState;
+		Zenith_Vector<ZM_BattleEvent> xControlEvents;
+		const u_int uControl = ZM_Box3SC3RunDirectHit(ZM_ABILITY_NONE, ZM_ABILITY_NONE,
+			eMove, eAtkSpecies, eDefSpecies, eHPMode, eStatus, eWeather, ulSeed,
+			xControlState, xControlEvents);
+
+		ZM_BattleState xAbilityState;
+		Zenith_Vector<ZM_BattleEvent> xAbilityEvents;
+		const u_int uActual = ZM_Box3SC3RunDirectHit(eAtkAbility, eDefAbility,
+			eMove, eAtkSpecies, eDefSpecies, eHPMode, eStatus, eWeather, ulSeed,
+			xAbilityState, xAbilityEvents);
+
+		u_int uExpected = (uControl * uNum) / uDen;
+		if (uControl > 0u && uExpected == 0u) { uExpected = 1u; }
+		ZENITH_ASSERT_EQ(uActual, uExpected, "SC3 multiplier must floor exactly once");
+		const ZM_BattleEvent* pxDamage = ZM_Box3SC3FindKind(xAbilityEvents,
+			ZM_BATTLE_EVENT_DAMAGE_DEALT);
+		ZENITH_ASSERT_NOT_NULL(pxDamage);
+		if (pxDamage != nullptr)
+		{
+			ZENITH_ASSERT_EQ(pxDamage->m_iAmount, (int)uExpected);
+			ZENITH_ASSERT_EQ(pxDamage->m_iAux,
+				(int)xAbilityState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP);
+		}
+		ZENITH_ASSERT_EQ(ZM_CountKind(xControlEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+		const ZM_ABILITY_ID eAbility = eAtkAbility != ZM_ABILITY_NONE
+			? eAtkAbility : eDefAbility;
+		const ZM_SIDE eOwner = eAtkAbility != ZM_ABILITY_NONE
+			? ZM_SIDE_PLAYER : ZM_SIDE_ENEMY;
+		ZM_Box3SC3AssertExactTriggers(xAbilityEvents, eAbility, eOwner, 1u, 1u);
+		ZENITH_ASSERT_EQ(xAbilityState.m_xRNG.Next(), xControlState.m_xRNG.Next(),
+			"SC3 multiplier hooks add no RNG draw");
+	}
+
+	void ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_ID eAtkAbility,
+		ZM_ABILITY_ID eDefAbility, ZM_MOVE_ID eMove, ZM_SPECIES_ID eAtkSpecies,
+		ZM_SPECIES_ID eDefSpecies, ZM_BOX3_SC3_HP_MODE eHPMode,
+		ZM_MAJOR_STATUS eStatus, ZM_WEATHER eWeather, u_int64 ulSeed)
+	{
+		ZM_BattleState xControlState;
+		Zenith_Vector<ZM_BattleEvent> xControlEvents;
+		const u_int uControl = ZM_Box3SC3RunDirectHit(ZM_ABILITY_NONE, ZM_ABILITY_NONE,
+			eMove, eAtkSpecies, eDefSpecies, eHPMode, eStatus, eWeather, ulSeed,
+			xControlState, xControlEvents);
+		ZM_BattleState xAbilityState;
+		Zenith_Vector<ZM_BattleEvent> xAbilityEvents;
+		const u_int uActual = ZM_Box3SC3RunDirectHit(eAtkAbility, eDefAbility,
+			eMove, eAtkSpecies, eDefSpecies, eHPMode, eStatus, eWeather, ulSeed,
+			xAbilityState, xAbilityEvents);
+		ZENITH_ASSERT_EQ(uActual, uControl, "inactive SC3 hook changed damage");
+		ZENITH_ASSERT_EQ(xAbilityState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP,
+			xControlState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xAbilityEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+		ZENITH_ASSERT_EQ(xAbilityState.m_xRNG.Next(), xControlState.m_xRNG.Next(),
+			"inactive SC3 hook changed RNG cursor");
+	}
+
+	void ZM_Box3SC3AssertTypePasses(ZM_ABILITY_ID eDefAbility, ZM_MOVE_ID eMove,
+		u_int64 ulSeed)
+	{
+		ZM_BattleState xControlState;
+		Zenith_Vector<ZM_BattleEvent> xControlEvents;
+		BuildBattleState(xControlState,
+			ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, eMove, ZM_ABILITY_NONE),
+			ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+			ulSeed, 54ull);
+		ZM_MoveContext xControlCtx = MakeCtx(xControlState, xControlEvents,
+			ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xControlCtx);
+
+		ZM_BattleState xAbilityState;
+		Zenith_Vector<ZM_BattleEvent> xAbilityEvents;
+		BuildBattleState(xAbilityState,
+			ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, eMove, ZM_ABILITY_NONE),
+			ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, eDefAbility),
+			ulSeed, 54ull);
+		ZM_MoveContext xAbilityCtx = MakeCtx(xAbilityState, xAbilityEvents,
+			ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xAbilityCtx);
+
+		const ZM_BattleEvent* pxControlDamage = ZM_Box3SC3FindKind(xControlEvents,
+			ZM_BATTLE_EVENT_DAMAGE_DEALT);
+		const ZM_BattleEvent* pxAbilityDamage = ZM_Box3SC3FindKind(xAbilityEvents,
+			ZM_BATTLE_EVENT_DAMAGE_DEALT);
+		ZENITH_ASSERT_NOT_NULL(pxControlDamage);
+		ZENITH_ASSERT_NOT_NULL(pxAbilityDamage);
+		if (pxControlDamage != nullptr && pxAbilityDamage != nullptr)
+		{
+			ZENITH_ASSERT_EQ(pxAbilityDamage->m_iAmount, pxControlDamage->m_iAmount);
+			ZENITH_ASSERT_EQ(pxAbilityDamage->m_iAux, pxControlDamage->m_iAux);
+		}
+		ZENITH_ASSERT_EQ(ZM_CountKind(xAbilityEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+		ZENITH_ASSERT_EQ(xAbilityState.m_xRNG.Next(), xControlState.m_xRNG.Next());
+	}
+
+	void ZM_Box3SC3AssertAbsorb(ZM_ABILITY_ID eAbility, ZM_MOVE_ID eMove,
+		ZM_BOX3_SC3_HEAL_MODE eHealMode, u_int64 ulSeed)
+	{
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		BuildBattleState(xState,
+			ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, eMove, ZM_ABILITY_NONE),
+			ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, eAbility),
+			ulSeed, 54ull);
+		ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+		if (eHealMode == ZM_BOX3_SC3_HEAL_MIN_ONE)
+		{
+			xDef.m_auMaxStat[ZM_STAT_HP] = 3u;
+			xDef.m_uCurHP = 1u;
+		}
+		else if (eHealMode == ZM_BOX3_SC3_HEAL_QUARTER)
+		{
+			xDef.m_uCurHP = xDef.m_auMaxStat[ZM_STAT_HP] / 2u;
+		}
+		else if (eHealMode == ZM_BOX3_SC3_HEAL_CAPPED_TWO)
+		{
+			ZENITH_ASSERT_GT(xDef.m_auMaxStat[ZM_STAT_HP], 2u);
+			xDef.m_uCurHP = xDef.m_auMaxStat[ZM_STAT_HP] - 2u;
+		}
+		const u_int uOldHP = xDef.m_uCurHP;
+		const u_int uMaxHP = xDef.m_auMaxStat[ZM_STAT_HP];
+		u_int uScheduled = uMaxHP / 4u;
+		if (uScheduled == 0u) { uScheduled = 1u; }
+		const u_int uMissing = uMaxHP - uOldHP;
+		const u_int uActual = uScheduled < uMissing ? uScheduled : uMissing;
+
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZM_Box3SC3AssertExactTriggers(xEvents, eAbility, ZM_SIDE_ENEMY, 1u, 1u);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), 0u);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_CRIT), 0u);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_IMMUNE), 0u,
+			"absorb ends the move without the ordinary IMMUNE presentation event");
+		ZENITH_ASSERT_EQ(xDef.m_uCurHP, uOldHP + uActual);
+		if (uActual == 0u)
+		{
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_HEAL), 0u,
+				"full-HP absorb must not emit a zero HEAL");
+		}
+		else
+		{
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_HEAL), 1u);
+			const ZM_BattleEvent* pxHeal = ZM_Box3SC3FindKind(xEvents,
+				ZM_BATTLE_EVENT_HEAL);
+			ZENITH_ASSERT_NOT_NULL(pxHeal);
+			if (pxHeal != nullptr)
+			{
+				const ZM_BattleEvent xExpected = ZM_MakeEvent(ZM_BATTLE_EVENT_HEAL,
+					ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE,
+					(int)uActual, (int)(uOldHP + uActual));
+				ZENITH_ASSERT_TRUE(*pxHeal == xExpected,
+					"absorb HEAL must encode actual amount and new HP");
+			}
+			const int iTrigger = ZM_Box3SC3FindTriggerIndex(xEvents, eAbility,
+				ZM_SIDE_ENEMY);
+			int iHeal = -1;
+			for (u_int i = 0u; i < xEvents.GetSize(); ++i)
+			{
+				if (xEvents.Get(i).m_eKind == ZM_BATTLE_EVENT_HEAL) { iHeal = (int)i; break; }
+			}
+			ZENITH_ASSERT_GE(iTrigger, 0);
+			ZENITH_ASSERT_GT(iHeal, iTrigger, "ABILITY_TRIGGER precedes absorb HEAL");
+		}
+		ZM_BattleRNG xFresh(ulSeed, 54ull);
+		ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xFresh.Next(),
+			"sure-hit absorb skips E crit/roll draws");
+	}
+
+	void ZM_Box3SC3AssertSpeedCase(ZM_ABILITY_ID eAbility, ZM_WEATHER eWeather,
+		bool bExpectedFire, u_int64 ulSeed)
+	{
+		ZM_BattleMonsterSpec axPlayer[1] = {
+			ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, eAbility,
+				300u, 80u, 100u, 80u, 100u, 60u) };
+		ZM_BattleMonsterSpec axEnemy[1] = {
+			ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE,
+				300u, 80u, 100u, 80u, 100u, 100u) };
+		ZM_BattleEngine xEngine;
+		xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, ulSeed, 54ull);
+		xEngine.GetStateMutable().m_xField.m_eWeather = eWeather;
+		xEngine.GetStateMutable().m_xField.m_uWeatherTurns =
+			eWeather == ZM_WEATHER_NONE ? 0u : 5u;
+		xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+		xEngine.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+		xEngine.ResolveTurn();
+		ZENITH_ASSERT_EQ(FirstActorSide(xEngine), bExpectedFire
+			? (u_int)ZM_SIDE_PLAYER : (u_int)ZM_SIDE_ENEMY);
+		if (bExpectedFire)
+		{
+			ZM_Box3SC3AssertExactTriggers(xEngine.GetEvents(), eAbility,
+				ZM_SIDE_PLAYER, 1u, 1u);
+		}
+		else
+		{
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(),
+				ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+		}
+		ZM_BattleRNG xFresh(ulSeed, 54ull);
+		ZENITH_ASSERT_EQ(xEngine.GetStateMutable().m_xRNG.Next(), xFresh.Next(),
+			"weather speed hooks and unequal move order draw no RNG");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_VerdantSurge_FiresAtInclusivePinch)
+{
+	ZM_Box3SC3AssertMultiplier(ZM_ABILITY_VERDANTSURGE, ZM_ABILITY_NONE,
+		ZM_MOVE_SEEDSHOT, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_PINCH_EQUAL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		3u, 2u, 0xB300ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_VerdantSurge_DoesNotFireOneHPAbovePinch)
+{
+	ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_VERDANTSURGE, ZM_ABILITY_NONE,
+		ZM_MOVE_SEEDSHOT, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_PINCH_ONE_ABOVE, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		0xB301ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_EmberSurge_FiresForFireAtPinch)
+{
+	ZM_Box3SC3AssertMultiplier(ZM_ABILITY_EMBERSURGE, ZM_ABILITY_NONE,
+		ZM_MOVE_FLARELASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_PINCH_EQUAL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		3u, 2u, 0xB302ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_EmberSurge_DoesNotFireForWater)
+{
+	ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_EMBERSURGE, ZM_ABILITY_NONE,
+		ZM_MOVE_TIDECRASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_PINCH_EQUAL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		0xB303ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_TidalSurge_FiresForWaterAtPinch)
+{
+	ZM_Box3SC3AssertMultiplier(ZM_ABILITY_TIDALSURGE, ZM_ABILITY_NONE,
+		ZM_MOVE_TIDECRASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_PINCH_EQUAL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		3u, 2u, 0xB304ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_TidalSurge_DoesNotFireForFire)
+{
+	ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_TIDALSURGE, ZM_ABILITY_NONE,
+		ZM_MOVE_FLARELASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_PINCH_EQUAL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		0xB305ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_HiveSurge_FiresForSwarmAtPinch)
+{
+	ZM_Box3SC3AssertMultiplier(ZM_ABILITY_HIVESURGE, ZM_ABILITY_NONE,
+		ZM_MOVE_POLLENBURST, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_PINCH_EQUAL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		3u, 2u, 0xB306ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_HiveSurge_DoesNotFireForNormal)
+{
+	ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_HIVESURGE, ZM_ABILITY_NONE,
+		ZM_MOVE_RAMBASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_PINCH_EQUAL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		0xB307ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_SkywardGrace_FiresForEarthAndSkipsEDraws)
+{
+	const u_int64 ulSeed = 0xB308ull;
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	BuildBattleState(xState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_CLODTHROW, ZM_ABILITY_NONE),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH,
+			ZM_ABILITY_SKYWARDGRACE), ulSeed, 54ull);
+	const u_int uOldHP = xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZM_Box3SC3AssertExactTriggers(xEvents, ZM_ABILITY_SKYWARDGRACE,
+		ZM_SIDE_ENEMY, 1u, 1u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_IMMUNE), 1u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), 0u);
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP, uOldHP);
+	const int iTrigger = ZM_Box3SC3FindTriggerIndex(xEvents,
+		ZM_ABILITY_SKYWARDGRACE, ZM_SIDE_ENEMY);
+	int iImmune = -1;
+	for (u_int i = 0u; i < xEvents.GetSize(); ++i)
+	{
+		if (xEvents.Get(i).m_eKind == ZM_BATTLE_EVENT_IMMUNE) { iImmune = (int)i; break; }
+	}
+	ZENITH_ASSERT_GE(iTrigger, 0);
+	ZENITH_ASSERT_GT(iImmune, iTrigger, "ability announcement precedes ordinary IMMUNE");
+	ZM_BattleRNG xFresh(ulSeed, 54ull);
+	ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xFresh.Next(),
+		"sure-hit Skyward Grace immunity skips crit/roll");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_SkywardGrace_DoesNotFireForNormal)
+{
+	ZM_Box3SC3AssertTypePasses(ZM_ABILITY_SKYWARDGRACE, ZM_MOVE_RAMBASH,
+		0xB309ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_Bedrock_FiresAtFullHPBeforeEndureClamp)
+{
+	const u_int64 ulSeed = 0xB30Aull;
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	BuildBattleState(xState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BRUTESLAM, ZM_ABILITY_NONE,
+			600u, 999u, 100u, 999u, 100u, 80u, 100u),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH,
+			ZM_ABILITY_BEDROCK, 10u, 10u, 1u, 10u, 1u, 40u, 1u), ulSeed, 54ull);
+	ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+	const u_int uFullHP = xDef.m_uCurHP;
+	xDef.m_bEndureThisTurn = true;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	const u_int uDamage = ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+	ZENITH_ASSERT_EQ(uDamage, uFullHP - 1u,
+		"Bedrock feeds the existing Endure/clamp seam with a nonlethal amount");
+	ZENITH_ASSERT_EQ(xDef.m_uCurHP, 1u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT), 1u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_FAINT), 0u);
+	ZM_Box3SC3AssertExactTriggers(xEvents, ZM_ABILITY_BEDROCK,
+		ZM_SIDE_ENEMY, 1u, 1u);
+	const ZM_BattleEvent* pxDamage = ZM_Box3SC3FindKind(xEvents,
+		ZM_BATTLE_EVENT_DAMAGE_DEALT);
+	if (pxDamage != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxDamage->m_iAmount, (int)(uFullHP - 1u));
+		ZENITH_ASSERT_EQ(pxDamage->m_iAux, 1);
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_Bedrock_DoesNotFireBelowFullHP)
+{
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	BuildBattleState(xState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BRUTESLAM, ZM_ABILITY_NONE,
+			600u, 999u, 100u, 999u, 100u, 80u, 100u),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH,
+			ZM_ABILITY_BEDROCK, 10u, 10u, 1u, 10u, 1u, 40u, 1u), 0xB30Bull, 54ull);
+	ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+	--xDef.m_uCurHP;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+	ZENITH_ASSERT_EQ(xDef.m_uCurHP, 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_FAINT), 1u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_Sunchaser_FiresOnlyInSunAndChangesOrder)
+{
+	ZM_Box3SC3AssertSpeedCase(ZM_ABILITY_SUNCHASER, ZM_WEATHER_SUN, true,
+		0xB30Cull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_Sunchaser_DoesNotFireWithoutSun)
+{
+	ZM_Box3SC3AssertSpeedCase(ZM_ABILITY_SUNCHASER, ZM_WEATHER_NONE, false,
+		0xB30Dull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_Streamline_FiresOnlyInRainAndChangesOrder)
+{
+	ZM_Box3SC3AssertSpeedCase(ZM_ABILITY_STREAMLINE, ZM_WEATHER_RAIN, true,
+		0xB30Eull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_Streamline_DoesNotFireWithoutRain)
+{
+	ZM_Box3SC3AssertSpeedCase(ZM_ABILITY_STREAMLINE, ZM_WEATHER_NONE, false,
+		0xB30Full);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_Gritstride_FiresOnlyInSandAndChangesOrder)
+{
+	ZM_Box3SC3AssertSpeedCase(ZM_ABILITY_GRITSTRIDE, ZM_WEATHER_SAND, true,
+		0xB310ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_Gritstride_DoesNotFireWithoutSand)
+{
+	ZM_Box3SC3AssertSpeedCase(ZM_ABILITY_GRITSTRIDE, ZM_WEATHER_NONE, false,
+		0xB311ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_Rimestride_FiresOnlyInSnowAndChangesOrder)
+{
+	ZM_Box3SC3AssertSpeedCase(ZM_ABILITY_RIMESTRIDE, ZM_WEATHER_SNOW, true,
+		0xB312ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC3_Rimestride_DoesNotFireWithoutSnow)
+{
+	ZM_Box3SC3AssertSpeedCase(ZM_ABILITY_RIMESTRIDE, ZM_WEATHER_NONE, false,
+		0xB313ull);
+}
+
+// FERVOR (modify-stat): a MAJOR-status attacker's ATTACK stat feeds ZM_CalcDamage
+// at x3/2. Because the hook scales the stat INPUT (not the final integer), the
+// exact factor is pinned by an ability-free twin whose ATTACK is set directly to
+// the boosted value -- ZM_ApplyStatStage(x,0) == x, so the two hits must match.
+ZENITH_TEST(ZM_Battle, Box3SC3_Fervor_BoostsAttackByHalfWhenStatused)
+{
+	const u_int64 ulSeed = 0xB314ull;
+
+	// FERVOR run: a POISON-afflicted physical attacker keeps its real ATTACK stat;
+	// only BURN touches the damage seam, so POISON isolates the ability cleanly.
+	ZM_BattleState xFervorState;
+	Zenith_Vector<ZM_BattleEvent> xFervorEvents;
+	BuildBattleState(xFervorState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_FERVOR),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ulSeed, 54ull);
+	ZM_BattleMonster& xFervorAtk = xFervorState.Side(ZM_SIDE_PLAYER).Active();
+	xFervorAtk.m_eStatus = ZM_MAJOR_STATUS_POISON;
+	const u_int uAttack = xFervorAtk.m_auMaxStat[ZM_STAT_ATTACK];
+	ZM_MoveContext xFervorCtx = MakeCtx(xFervorState, xFervorEvents, ZM_SIDE_PLAYER, 0u);
+	const u_int uActual = ZM_MoveExecutor::ApplyDamagingHit(xFervorCtx);
+
+	// Control: an UNSTATUSED, ability-free twin whose ATTACK stat is set directly to
+	// the FERVOR-boosted value. FERVOR feeds the identical stat INPUT, so the two
+	// hits are byte-identical -- pinning the exact x3/2 factor with no re-derivation.
+	ZM_BattleState xControlState;
+	Zenith_Vector<ZM_BattleEvent> xControlEvents;
+	BuildBattleState(xControlState,
+		ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+		ulSeed, 54ull);
+	ZM_BattleMonster& xControlAtk = xControlState.Side(ZM_SIDE_PLAYER).Active();
+	xControlAtk.m_auMaxStat[ZM_STAT_ATTACK] = (uAttack * 3u) / 2u;
+	ZM_MoveContext xControlCtx = MakeCtx(xControlState, xControlEvents, ZM_SIDE_PLAYER, 0u);
+	const u_int uControl = ZM_MoveExecutor::ApplyDamagingHit(xControlCtx);
+
+	ZENITH_ASSERT_GT(uActual, 0u);
+	ZENITH_ASSERT_EQ(uActual, uControl,
+		"Fervor's x3/2 ATTACK input must equal an explicitly 3/2-boosted ATTACK stat");
+	ZM_Box3SC3AssertExactTriggers(xFervorEvents, ZM_ABILITY_FERVOR,
+		ZM_SIDE_PLAYER, 1u, 1u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xControlEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+	ZENITH_ASSERT_EQ(xFervorState.m_xRNG.Next(), xControlState.m_xRNG.Next(),
+		"Fervor's modify-stat hook draws no RNG");
+
+	// CONTROL: with NO major status the hook is inert -- a paired NONE-vs-FERVOR
+	// identical-seed run shows no damage delta, no trigger, no RNG perturbation.
+	ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_FERVOR, ZM_ABILITY_NONE,
+		ZM_MOVE_RAMBASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE, 0xB315ull);
+}
+
+// BLUBBER (damage-taken): FIRE and ICE incoming damage is halved on the final
+// integer. A NORMAL hit is neither type, so the hook is inert.
+ZENITH_TEST(ZM_Battle, Box3SC3_Blubber_HalvesFireAndIceDamageTaken)
+{
+	ZM_Box3SC3AssertMultiplier(ZM_ABILITY_NONE, ZM_ABILITY_BLUBBER,
+		ZM_MOVE_FLARELASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		1u, 2u, 0xB316ull);
+	ZM_Box3SC3AssertMultiplier(ZM_ABILITY_NONE, ZM_ABILITY_BLUBBER,
+		ZM_MOVE_GLACIERCRASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		1u, 2u, 0xB317ull);
+	ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_NONE, ZM_ABILITY_BLUBBER,
+		ZM_MOVE_RAMBASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE, 0xB318ull);
+}
+
+// AQUIFER (type-interaction): a WATER hit is nullified and heals 1/4 max HP. A
+// NORMAL move is not WATER, so it passes through for ordinary damage.
+ZENITH_TEST(ZM_Battle, Box3SC3_Aquifer_AbsorbsWaterAndHealsQuarter)
+{
+	ZM_Box3SC3AssertAbsorb(ZM_ABILITY_AQUIFER, ZM_MOVE_TIDECRASH,
+		ZM_BOX3_SC3_HEAL_QUARTER, 0xB319ull);
+	ZM_Box3SC3AssertTypePasses(ZM_ABILITY_AQUIFER, ZM_MOVE_RAMBASH, 0xB31Aull);
+}
+
+// DYNAMO (type-interaction): an ELECTRIC hit is nullified and heals 1/4 max HP. A
+// NORMAL move is not ELECTRIC, so it passes through for ordinary damage.
+ZENITH_TEST(ZM_Battle, Box3SC3_Dynamo_AbsorbsElectricAndHealsQuarter)
+{
+	ZM_Box3SC3AssertAbsorb(ZM_ABILITY_DYNAMO, ZM_MOVE_SPARKDART,
+		ZM_BOX3_SC3_HEAL_QUARTER, 0xB31Bull);
+	ZM_Box3SC3AssertTypePasses(ZM_ABILITY_DYNAMO, ZM_MOVE_RAMBASH, 0xB31Cull);
+}
+
+// CINDERDRINK: both hooks. As DEFENDER a FIRE hit is absorbed + heals 1/4 max HP;
+// as ATTACKER its own FIRE damage dealt is multiplied x3/2 (no HP gate). A
+// non-fire attack neither absorbs nor boosts.
+ZENITH_TEST(ZM_Battle, Box3SC3_Cinderdrink_AbsorbsFireAndBoostsOwnFire)
+{
+	ZM_Box3SC3AssertAbsorb(ZM_ABILITY_CINDERDRINK, ZM_MOVE_FLARELASH,
+		ZM_BOX3_SC3_HEAL_QUARTER, 0xB31Dull);
+	ZM_Box3SC3AssertMultiplier(ZM_ABILITY_CINDERDRINK, ZM_ABILITY_NONE,
+		ZM_MOVE_FLARELASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		3u, 2u, 0xB31Eull);
+	ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_CINDERDRINK, ZM_ABILITY_NONE,
+		ZM_MOVE_RAMBASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE, 0xB31Full);
+}
+
+// GRAZER (type-interaction): a GRASS hit is nullified and heals 1/4 max HP. A
+// NORMAL move is not GRASS, so it passes through for ordinary damage.
+ZENITH_TEST(ZM_Battle, Box3SC3_Grazer_AbsorbsGrassAndHealsQuarter)
+{
+	ZM_Box3SC3AssertAbsorb(ZM_ABILITY_GRAZER, ZM_MOVE_SEEDSHOT,
+		ZM_BOX3_SC3_HEAL_QUARTER, 0xB320ull);
+	ZM_Box3SC3AssertTypePasses(ZM_ABILITY_GRAZER, ZM_MOVE_RAMBASH, 0xB321ull);
+}
+
+// SOLIDCORE (damage-taken): super-effective damage (uEffPct > 100) is trimmed
+// x3/4. BRAWL is 2x vs NORMAL (Strayling); a NEUTRAL NORMAL-vs-NORMAL hit
+// (uEffPct == 100) fails the gate and is not reduced.
+ZENITH_TEST(ZM_Battle, Box3SC3_Solidcore_ReducesSuperEffectiveDamage)
+{
+	ZM_Box3SC3AssertMultiplier(ZM_ABILITY_NONE, ZM_ABILITY_SOLIDCORE,
+		ZM_MOVE_JABCROSS, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		3u, 4u, 0xB322ull);
+	ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_NONE, ZM_ABILITY_SOLIDCORE,
+		ZM_MOVE_RAMBASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE, 0xB323ull);
+}
+
+// HEAVYPLATE (damage-taken): a PHYSICAL hit is trimmed x2/3. A SPECIAL move
+// bypasses the physical-only gate.
+ZENITH_TEST(ZM_Battle, Box3SC3_Heavyplate_ReducesPhysicalDamage)
+{
+	ZM_Box3SC3AssertMultiplier(ZM_ABILITY_NONE, ZM_ABILITY_HEAVYPLATE,
+		ZM_MOVE_RAMBASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		2u, 3u, 0xB324ull);
+	ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_NONE, ZM_ABILITY_HEAVYPLATE,
+		ZM_MOVE_SEEDSHOT, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE, 0xB325ull);
+}
+
+// GOSSAMER (damage-taken): a SPECIAL hit is trimmed x2/3. A PHYSICAL move
+// bypasses the special-only gate.
+ZENITH_TEST(ZM_Battle, Box3SC3_Gossamer_ReducesSpecialDamage)
+{
+	ZM_Box3SC3AssertMultiplier(ZM_ABILITY_NONE, ZM_ABILITY_GOSSAMER,
+		ZM_MOVE_SEEDSHOT, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		2u, 3u, 0xB326ull);
+	ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_NONE, ZM_ABILITY_GOSSAMER,
+		ZM_MOVE_RAMBASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE, 0xB327ull);
+}
+
+// DOWNDRAFT (damage-taken): a SKY hit is halved on the final integer. A NORMAL
+// move is not SKY, so the hook is inert.
+ZENITH_TEST(ZM_Battle, Box3SC3_Downdraft_HalvesSkyDamageTaken)
+{
+	ZM_Box3SC3AssertMultiplier(ZM_ABILITY_NONE, ZM_ABILITY_DOWNDRAFT,
+		ZM_MOVE_ZEPHYRBLADE, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE,
+		1u, 2u, 0xB328ull);
+	ZM_Box3SC3AssertNoDamageHook(ZM_ABILITY_NONE, ZM_ABILITY_DOWNDRAFT,
+		ZM_MOVE_RAMBASH, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING,
+		ZM_BOX3_SC3_HP_FULL, ZM_MAJOR_STATUS_NONE, ZM_WEATHER_NONE, 0xB329ull);
+}

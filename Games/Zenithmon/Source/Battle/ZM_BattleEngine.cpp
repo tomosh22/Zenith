@@ -305,10 +305,9 @@ void ZM_BattleEngine::DoRunAction(ZM_SIDE eSide)
 	}
 }
 
-// Effective speed for turn ordering: the SPEED stat after its stat-stage multiplier,
-// then a 1/4 integer cut if the monster is PARALYZED (SC4; ZM-D-033; NO draw). A
-// status-free, stage-0 monster is unchanged, so box-1 / SC1-SC3 turn ordering is
-// byte-identical.
+// Base effective speed shared by turn ordering and flee: the SPEED stat after its
+// stat-stage multiplier, then a 1/4 integer cut if the monster is PARALYZED
+// (SC4; ZM-D-033; NO draw).
 static u_int g_EffectiveSpeed(const ZM_BattleMonster& xMon)
 {
 	u_int uSpeed = ZM_ApplyStatStage(xMon.m_auMaxStat[ZM_STAT_SPEED], xMon.m_aiStage[ZM_BATTLE_STAT_SPEED]);
@@ -317,6 +316,28 @@ static u_int g_EffectiveSpeed(const ZM_BattleMonster& xMon)
 		uSpeed /= 4u;
 	}
 	return uSpeed;
+}
+
+// Weather speed abilities are deliberately move-order-only. Flee continues to
+// call g_EffectiveSpeed directly, preserving its existing odds and draw stream.
+static u_int g_EffectiveSpeedForMoveOrder(ZM_BattleState& xState,
+	Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_SIDE eSide)
+{
+	const ZM_BattleMonster& xMon = xState.Side(eSide).Active();
+	u_int uSpeed = g_EffectiveSpeed(xMon);
+	const ZM_AbilityHooks* pxHooks = ZM_GetAbilityHooks(xMon.m_eAbility);
+	if (pxHooks == nullptr || pxHooks->pfnModifyStat == nullptr)
+	{
+		return uSpeed;
+	}
+
+	ZM_AbilityContext xCtx;
+	xCtx.m_pxState = &xState;
+	xCtx.m_pxEvents = &xEvents;
+	xCtx.m_eSelf = eSide;
+	xCtx.m_eOther = (eSide == ZM_SIDE_PLAYER)
+		? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
+	return pxHooks->pfnModifyStat(xCtx, ZM_BATTLE_STAT_SPEED, uSpeed);
 }
 
 void ZM_BattleEngine::ResolveMovePhase()
@@ -356,8 +377,11 @@ void ZM_BattleEngine::ResolveMovePhase()
 	}
 	else
 	{
-		const u_int uPlayerSpeed = g_EffectiveSpeed(xPlayer);
-		const u_int uEnemySpeed  = g_EffectiveSpeed(xEnemy);
+		// Fixed PLAYER-then-ENEMY evaluation order keeps ability events stable.
+		const u_int uPlayerSpeed = g_EffectiveSpeedForMoveOrder(
+			m_xState, m_xEvents, ZM_SIDE_PLAYER);
+		const u_int uEnemySpeed = g_EffectiveSpeedForMoveOrder(
+			m_xState, m_xEvents, ZM_SIDE_ENEMY);
 		if (uPlayerSpeed != uEnemySpeed)
 		{
 			eFirst = (uPlayerSpeed > uEnemySpeed) ? ZM_SIDE_PLAYER : ZM_SIDE_ENEMY;

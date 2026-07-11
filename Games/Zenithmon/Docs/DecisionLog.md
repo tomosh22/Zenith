@@ -15,6 +15,49 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-11 -- ZM-D-040 -- S2 box-3 SC3: damage / stat / type-interaction abilities (20 rows)
+
+- **Decision:** SC3 installs the next **20** ability rows as live hook
+  function-pointers, reusing the SC2 `ZM_AbilityHooks` aggregate / `ZM_AbilityContext`
+  / 50-row table unchanged. Rows and the hook slot each realizes:
+  VERDANTSURGE / EMBERSURGE / TIDALSURGE / HIVESURGE -> `pfnModifyDamageDealt`
+  (own STAB-type move **x3/2** at **<=1/3 HP**, type-gated); SKYWARDGRACE /
+  AQUIFER / DYNAMO / GRAZER -> `pfnTypeInteraction` (return 1 = immune,
+  2 = absorb + heal **maxHP/4**); CINDERDRINK -> BOTH `pfnTypeInteraction`
+  (fire absorb-heal) AND `pfnModifyDamageDealt` (own FIRE **x3/2**, no HP gate);
+  BEDROCK / BLUBBER / SOLIDCORE / HEAVYPLATE / GOSSAMER / DOWNDRAFT ->
+  `pfnModifyDamageTaken` reducers (SOLIDCORE x3/4 on super-effective;
+  HEAVYPLATE/GOSSAMER x2/3 on PHYSICAL/SPECIAL; BLUBBER x1/2 FIRE|ICE;
+  DOWNDRAFT x1/2 SKY; BEDROCK per its SC-earlier body); SUNCHASER / STREAMLINE /
+  GRITSTRIDE / RIMESTRIDE / FERVOR -> `pfnModifyStat` (weather/status-gated stat
+  boosts; FERVOR = ATTACK x3/2 while statused).
+- **Seam placement (ZM-D-036):** ability damage mods apply AFTER `ZM_CalcDamage`
+  (crit/effectiveness/weather/screen/burn already baked in), dealt-then-taken,
+  with a `>=1` floor so a resist ability never zeroes a nonzero hit.
+  `pfnTypeInteraction` resolves on the DEFENDER before the chart-immunity gate
+  and before any crit/roll draw. The move-order speed seam
+  (`g_EffectiveSpeedForMoveOrder`) affects the equal-priority ORDER branch ONLY;
+  `DoRunAction`/flee keeps raw `g_EffectiveSpeed` (ZM-D-036(c)).
+- **Contracts preserved:** no hook draws RNG -> a NONE-ability actor's stream is
+  byte-identical; `ZM_BattleEvent` POD, RNG draw order, and EoT order are
+  untouched (append-only discipline holds). The 4 weather-speed abilities realize
+  their WEATHER bit engine-side (weather read inside the modify-stat body), not as
+  a pfn (matches ZM-D-036(a)).
+- **Tests-that-lock-it:** SC3 adds **30** `ZM_*` unit tests (boot baseline
+  **1446 -> 1476**, bumped in `.github/workflows/zm-tests.yml` this commit) --
+  the SC3 mask-realization + installation-state invariants (all 20 masks fully
+  realized; every live slot maps to a declared bit) plus **20** behavioral
+  battle tests, each a paired identical-seed positive+control (ability on vs off /
+  wrong type -> exact delta, correct trigger count, RNG unperturbed). FERVOR is
+  pinned by stat-INPUT equivalence (a x3/2-boosted twin), not formula
+  re-derivation; the four absorb abilities drive the `ZM_Box3SC3AssertAbsorb`
+  helper (previously dead scaffold, now wired -- no dead SC3 scaffolding remains).
+  Reviewed by two independent read-only passes: production 20/20 correct with no
+  bugs; the missing-behavioral-test gap was caught and closed before landing.
+- **Reversibility:** additive. The Roadmap S2 box-3 line stays UNCHECKED until
+  SC5 installs the remaining ability rows and adds the all-50 complete-realization
+  check; earlier goldens never shift because SC3 only APPENDS.
+
 ## 2026-07-11 -- ZM-D-039 -- S2 box-3 SC2: ability-hook infrastructure + SWITCH_IN abilities
 
 - **Decision:** The executable ability surface is a plain-function-pointer

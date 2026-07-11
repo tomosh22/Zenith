@@ -37,6 +37,64 @@ namespace
 		}
 	}
 
+	bool ZM_IsSC3Ability(ZM_ABILITY_ID eId)
+	{
+		switch (eId)
+		{
+		case ZM_ABILITY_VERDANTSURGE:
+		case ZM_ABILITY_EMBERSURGE:
+		case ZM_ABILITY_TIDALSURGE:
+		case ZM_ABILITY_HIVESURGE:
+		case ZM_ABILITY_SKYWARDGRACE:
+		case ZM_ABILITY_BEDROCK:
+		case ZM_ABILITY_SUNCHASER:
+		case ZM_ABILITY_STREAMLINE:
+		case ZM_ABILITY_GRITSTRIDE:
+		case ZM_ABILITY_RIMESTRIDE:
+		case ZM_ABILITY_FERVOR:
+		case ZM_ABILITY_BLUBBER:
+		case ZM_ABILITY_AQUIFER:
+		case ZM_ABILITY_DYNAMO:
+		case ZM_ABILITY_CINDERDRINK:
+		case ZM_ABILITY_GRAZER:
+		case ZM_ABILITY_SOLIDCORE:
+		case ZM_ABILITY_HEAVYPLATE:
+		case ZM_ABILITY_GOSSAMER:
+		case ZM_ABILITY_DOWNDRAFT:
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	bool ZM_IsSC3ModifyStatAbility(ZM_ABILITY_ID eId)
+	{
+		return eId == ZM_ABILITY_SUNCHASER || eId == ZM_ABILITY_STREAMLINE
+			|| eId == ZM_ABILITY_GRITSTRIDE || eId == ZM_ABILITY_RIMESTRIDE
+			|| eId == ZM_ABILITY_FERVOR;
+	}
+
+	bool ZM_IsSC3DamageDealtAbility(ZM_ABILITY_ID eId)
+	{
+		return eId == ZM_ABILITY_VERDANTSURGE || eId == ZM_ABILITY_EMBERSURGE
+			|| eId == ZM_ABILITY_TIDALSURGE || eId == ZM_ABILITY_HIVESURGE
+			|| eId == ZM_ABILITY_CINDERDRINK;
+	}
+
+	bool ZM_IsSC3DamageTakenAbility(ZM_ABILITY_ID eId)
+	{
+		return eId == ZM_ABILITY_BEDROCK || eId == ZM_ABILITY_BLUBBER
+			|| eId == ZM_ABILITY_SOLIDCORE || eId == ZM_ABILITY_HEAVYPLATE
+			|| eId == ZM_ABILITY_GOSSAMER || eId == ZM_ABILITY_DOWNDRAFT;
+	}
+
+	bool ZM_IsSC3TypeInteractionAbility(ZM_ABILITY_ID eId)
+	{
+		return eId == ZM_ABILITY_SKYWARDGRACE || eId == ZM_ABILITY_AQUIFER
+			|| eId == ZM_ABILITY_DYNAMO || eId == ZM_ABILITY_CINDERDRINK
+			|| eId == ZM_ABILITY_GRAZER;
+	}
+
 	u_int ZM_LiveHookRealizationMask(const ZM_AbilityHooks& xHooks, u_int uDeclaredMask)
 	{
 		u_int uMask = 0u;
@@ -187,16 +245,16 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableTwelveSlotsAndSentinelContract)
 	ZENITH_ASSERT_TRUE(ZM_GetAbilityHooks((ZM_ABILITY_ID)(ZM_ABILITY_COUNT + 1u)) == nullptr);
 }
 
-// Incremental SC2 invariant: the six abilities installed in this sub-commit
+// Incremental through-SC3 invariant: the six SC2 and twenty SC3 abilities
 // completely realize their declared masks through a live pfn and/or one of the
 // explicitly documented engine-side mechanisms. Later-SC pfn rows may still be
 // null; the all-50 complete-realization gate belongs to SC5.
-ZENITH_TEST(ZM_Data, Abilities_HookTableSC2InstalledRowsRealizeDeclaredMasks)
+ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC3InstalledRowsRealizeDeclaredMasks)
 {
 	for (u_int i = 0u; i < ZM_ABILITY_COUNT; ++i)
 	{
 		const ZM_ABILITY_ID eId = (ZM_ABILITY_ID)i;
-		if (!ZM_IsSC2SwitchInAbility(eId))
+		if (!ZM_IsSC2SwitchInAbility(eId) && !ZM_IsSC3Ability(eId))
 		{
 			continue;
 		}
@@ -210,7 +268,7 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableSC2InstalledRowsRealizeDeclaredMasks)
 		const u_int uRealized = ZM_LiveHookRealizationMask(*pxHooks, uDeclared)
 			| ZM_EngineSideRealizationMask(eId, uDeclared);
 		ZENITH_ASSERT_EQ(uDeclared & ~uRealized, 0u,
-			"SC2 ability %s has an unrealized declared bit", Ab(i).m_szName);
+			"through-SC3 ability %s has an unrealized declared bit", Ab(i).m_szName);
 	}
 }
 
@@ -289,7 +347,7 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableEngineSideRealizationsAreExplicit)
 	}
 }
 
-ZENITH_TEST(ZM_Data, Abilities_HookTableSC2SwitchInRowsMatchRosterExactly)
+ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC3SlotsMatchRosterExactly)
 {
 	for (u_int i = 0u; i < ZM_ABILITY_COUNT; ++i)
 	{
@@ -299,7 +357,24 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableSC2SwitchInRowsMatchRosterExactly)
 		if (pxHooks != nullptr)
 		{
 			ZENITH_ASSERT_EQ(pxHooks->pfnOnSwitchIn != nullptr, ZM_IsSC2SwitchInAbility(eId),
-				"%s has the wrong SC2 SWITCH_IN installation state", Ab(i).m_szName);
+				"%s has the wrong through-SC3 SWITCH_IN installation state", Ab(i).m_szName);
+			ZENITH_ASSERT_EQ(pxHooks->pfnModifyStat != nullptr, ZM_IsSC3ModifyStatAbility(eId),
+				"%s has the wrong through-SC3 MODIFY_STAT installation state", Ab(i).m_szName);
+			ZENITH_ASSERT_EQ(pxHooks->pfnModifyDamageDealt != nullptr, ZM_IsSC3DamageDealtAbility(eId),
+				"%s has the wrong through-SC3 MODIFY_DAMAGE_DEALT installation state", Ab(i).m_szName);
+			ZENITH_ASSERT_EQ(pxHooks->pfnModifyDamageTaken != nullptr, ZM_IsSC3DamageTakenAbility(eId),
+				"%s has the wrong through-SC3 MODIFY_DAMAGE_TAKEN installation state", Ab(i).m_szName);
+			ZENITH_ASSERT_EQ(pxHooks->pfnTypeInteraction != nullptr, ZM_IsSC3TypeInteractionAbility(eId),
+				"%s has the wrong through-SC3 TYPE_IMMUNITY installation state", Ab(i).m_szName);
+
+			// SC4/SC5 slots must not be populated early merely to satisfy coverage.
+			ZENITH_ASSERT_TRUE(pxHooks->pfnPreventStatDrop == nullptr);
+			ZENITH_ASSERT_TRUE(pxHooks->pfnPreventMajor == nullptr);
+			ZENITH_ASSERT_TRUE(pxHooks->pfnPreventVolatile == nullptr);
+			ZENITH_ASSERT_TRUE(pxHooks->pfnOnContact == nullptr);
+			ZENITH_ASSERT_TRUE(pxHooks->pfnOnTurnEnd == nullptr);
+			ZENITH_ASSERT_TRUE(pxHooks->pfnOnDealtFaint == nullptr);
+			ZENITH_ASSERT_TRUE(pxHooks->pfnBypassAccuracy == nullptr);
 		}
 	}
 }

@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Zenithmon/Source/Battle/ZM_MoveExecutor.h"
+#include "Zenithmon/Source/Battle/ZM_AbilityHooks.h"
 #include "Zenithmon/Source/Battle/ZM_StatusLogic.h"
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
@@ -65,6 +66,18 @@ void ZM_MoveContext::MaybeFaint(ZM_SIDE eSide)
 	{
 		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_FAINT, eSide, xSide.m_uActiveSlot));
 	}
+}
+
+static ZM_AbilityContext g_MakeAbilityContext(ZM_MoveContext& xCtx,
+	ZM_SIDE eSelf)
+{
+	ZM_AbilityContext xAbilityCtx;
+	xAbilityCtx.m_pxState = xCtx.m_pxState;
+	xAbilityCtx.m_pxEvents = xCtx.m_pxEvents;
+	xAbilityCtx.m_eSelf = eSelf;
+	xAbilityCtx.m_eOther = (eSelf == ZM_SIDE_PLAYER)
+		? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
+	return xAbilityCtx;
 }
 
 // ---- SC2 stat-stage helpers (file-local; the executor's grouped effect body) ---
@@ -958,12 +971,44 @@ ZM_MoveResult ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 		return xResult;
 	}
 
-	// Damaging move (PHYSICAL/SPECIAL). M6: effectiveness is deterministic (no RNG) --
-	// resolve immunity BEFORE any crit draw.
+	// Damaging move (PHYSICAL/SPECIAL). M6: ability type interactions precede the
+	// ordinary chart-immunity gate and every E-phase draw.
 	ZM_BattleMonster&     xDef        = xCtx.Def();
 	ZM_BattleSide&        xDefSide    = xCtx.DefSide();
 	const ZM_SpeciesData& xDefSpecies = ZM_GetSpeciesData(xDef.m_eSpecies);
 	const u_int uEffPct = ZM_EffectivenessPercent(xMove.m_eType, xDefSpecies.m_aeTypes[0], xDefSpecies.m_aeTypes[1]);
+	const ZM_AbilityHooks* pxDefHooks = ZM_GetAbilityHooks(xDef.m_eAbility);
+	if (pxDefHooks != nullptr && pxDefHooks->pfnTypeInteraction != nullptr)
+	{
+		const ZM_AbilityContext xDefAbilityCtx =
+			g_MakeAbilityContext(xCtx, xCtx.m_eDef);
+		const int iInteraction = pxDefHooks->pfnTypeInteraction(
+			xDefAbilityCtx, xMove.m_eType);
+		if (iInteraction == 1)
+		{
+			xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_IMMUNE,
+				xCtx.m_eDef, xDefSide.m_uActiveSlot));
+			g_FinishLockedUse(xCtx, bWasLocked);
+			return xResult;
+		}
+		if (iInteraction == 2)
+		{
+			const u_int uMaxHP = xDef.m_auMaxStat[ZM_STAT_HP];
+			if (xDef.m_uCurHP < uMaxHP)
+			{
+				u_int uHeal = uMaxHP / 4u;
+				if (uHeal == 0u) { uHeal = 1u; }
+				const u_int uMissingHP = uMaxHP - xDef.m_uCurHP;
+				if (uHeal > uMissingHP) { uHeal = uMissingHP; }
+				xDef.m_uCurHP += uHeal;
+				xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_HEAL,
+					xCtx.m_eDef, xDefSide.m_uActiveSlot, ZM_MOVE_NONE,
+					ZM_SPECIES_NONE, (int)uHeal, (int)xDef.m_uCurHP));
+			}
+			g_FinishLockedUse(xCtx, bWasLocked);
+			return xResult;
+		}
+	}
 	if (uEffPct == 0u)
 	{
 		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_IMMUNE, xCtx.m_eDef, xDefSide.m_uActiveSlot));
@@ -1027,6 +1072,12 @@ u_int ZM_MoveExecutor::ApplyDamagingHit(ZM_MoveContext& xCtx)
 
 	const bool bPhysical = (xMove.m_eCategory == ZM_MOVE_CATEGORY_PHYSICAL);
 	const ZM_SpeciesData& xAtkSpecies = ZM_GetSpeciesData(xAtk.m_eSpecies);
+	const ZM_AbilityContext xAtkAbilityCtx =
+		g_MakeAbilityContext(xCtx, xCtx.m_eAtk);
+	const ZM_AbilityContext xDefAbilityCtx =
+		g_MakeAbilityContext(xCtx, xCtx.m_eDef);
+	const ZM_AbilityHooks* pxAtkHooks = ZM_GetAbilityHooks(xAtk.m_eAbility);
+	const ZM_AbilityHooks* pxDefHooks = ZM_GetAbilityHooks(xDef.m_eAbility);
 
 	ZM_DamageInput xIn;
 	xIn.uLevel  = xAtk.m_uLevel;
@@ -1034,6 +1085,13 @@ u_int ZM_MoveExecutor::ApplyDamagingHit(ZM_MoveContext& xCtx)
 	xIn.uAttack = ZM_ApplyStatStage(
 		bPhysical ? xAtk.m_auMaxStat[ZM_STAT_ATTACK] : xAtk.m_auMaxStat[ZM_STAT_SPATTACK],
 		bPhysical ? xAtk.m_aiStage[ZM_BATTLE_STAT_ATTACK] : xAtk.m_aiStage[ZM_BATTLE_STAT_SPATTACK]);
+	if (pxAtkHooks != nullptr && pxAtkHooks->pfnModifyStat != nullptr)
+	{
+		const ZM_BATTLE_STAT eAttackStat = bPhysical
+			? ZM_BATTLE_STAT_ATTACK : ZM_BATTLE_STAT_SPATTACK;
+		xIn.uAttack = pxAtkHooks->pfnModifyStat(
+			xAtkAbilityCtx, eAttackStat, xIn.uAttack);
+	}
 	xIn.uDefense = ZM_ApplyStatStage(
 		bPhysical ? xDef.m_auMaxStat[ZM_STAT_DEFENSE] : xDef.m_auMaxStat[ZM_STAT_SPDEFENSE],
 		bPhysical ? xDef.m_aiStage[ZM_BATTLE_STAT_DEFENSE] : xDef.m_aiStage[ZM_BATTLE_STAT_SPDEFENSE]);
@@ -1068,7 +1126,22 @@ u_int ZM_MoveExecutor::ApplyDamagingHit(ZM_MoveContext& xCtx)
 		else if (xMove.m_eType == ZM_TYPE_FIRE)  { xIn.uWeatherNum = 3u; xIn.uWeatherDen = 2u; }
 	}
 
-	const u_int uDmg = ZM_CalcDamage(xIn);
+	const u_int uBaseDamage = ZM_CalcDamage(xIn);
+	u_int uDamage = uBaseDamage;
+	if (pxAtkHooks != nullptr && pxAtkHooks->pfnModifyDamageDealt != nullptr)
+	{
+		uDamage = pxAtkHooks->pfnModifyDamageDealt(
+			xAtkAbilityCtx, xMove, uDamage);
+	}
+	if (pxDefHooks != nullptr && pxDefHooks->pfnModifyDamageTaken != nullptr)
+	{
+		uDamage = pxDefHooks->pfnModifyDamageTaken(
+			xDefAbilityCtx, xMove, uEffPct, uDamage);
+	}
+	if (uEffPct != 0u && uBaseDamage >= 1u && uDamage < 1u)
+	{
+		uDamage = 1u;
+	}
 
 	if (bCrit)
 	{
@@ -1086,13 +1159,13 @@ u_int ZM_MoveExecutor::ApplyDamagingHit(ZM_MoveContext& xCtx)
 	}
 
 	const bool bEndured = xDef.m_bEndureThisTurn && xDef.m_uCurHP > 0u
-		&& uDmg >= xDef.m_uCurHP;
+		&& uDamage >= xDef.m_uCurHP;
 	xDef.m_uCurHP = bEndured ? 1u
-		: ((uDmg >= xDef.m_uCurHP) ? 0u : (xDef.m_uCurHP - uDmg));
+		: ((uDamage >= xDef.m_uCurHP) ? 0u : (xDef.m_uCurHP - uDamage));
 	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, xCtx.m_eDef, xDefSide.m_uActiveSlot,
-		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uDmg, (int)xDef.m_uCurHP));
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uDamage, (int)xDef.m_uCurHP));
 
 	xCtx.MaybeFaint(xCtx.m_eDef);   // emits FAINT iff HP hit 0; battle-over decided in ResolveTurn
 
-	return uDmg;
+	return uDamage;
 }
