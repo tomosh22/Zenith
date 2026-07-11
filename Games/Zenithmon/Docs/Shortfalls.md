@@ -69,7 +69,7 @@ Current automated coverage is exactly one boot test. No traversal tests, battle 
 
 ---
 
-## 2. Known engine gaps being tracked (E1-E5)
+## 2. Known engine gaps being tracked (E1-E6)
 
 All additive + back-compatible; each lands with unit tests + a RenderTest boot regression check. Sizes and rationale from the approved plan.
 
@@ -80,12 +80,13 @@ All additive + back-compatible; each lands with unit tests + a RenderTest boot r
 | E3 | `Zenith_UIText` has no typewriter reveal (visible-glyph-count property) | Every dialogue line and battle-text line needs it; belongs in the widget, not per-game hacks | S5 |
 | E4 | No `Zenith_UIGridLayoutGroup` (existing LayoutGroup is horizontal/vertical only) | Bag / box / dex grids are core UI surfaces | S6 |
 | E5 | Grass singleton state persists across SINGLE scene loads (`ResetRenderSystems` never calls `Grass().Reset()`, and `Reset()` leaves instances/flags/density map intact) | Leakage would put tall grass inside gyms and interiors; fix = wire Reset into ResetRenderSystems + widen Reset | S5 |
+| E6 | **DEFERRED, post-Zenithmon TODO.** Terrain world-space extent is a global compile-time constant (`Flux_TerrainConfig::CHUNK_GRID_SIZE`/`CHUNK_SIZE_WORLD`/`TERRAIN_SIZE`, `Flux_TerrainConfig.h:27-36`) -- every terrain is a fixed 4096x4096 m grid; density is likewise a fixed constant (`fLowLODDensity`, `Zenith_TerrainComponent.cpp:493`), not a per-instance field. E2's rect export only crops that same fixed grid, it does not resize it, so a tiny route and a large city are forced to the same world-space size today. Fix requires the grid constants to become per-instance serialized fields + dynamic GPU/CPU buffers in the streaming manager + a decoupled density field -- explicitly out of scope for Zenithmon per the E2 rationale ("compile-time constants pervade streaming/grass"). **Keep in mind on every terrain-touching task through the rest of development -- do not build content-side workarounds assuming this changes mid-project.** Revisit as a dedicated engine initiative after Zenithmon ships. | Post-S12 |
 
 ---
 
 ## 3. Cross-cutting risks (tracked, not yet biting)
 
-- **Terrain bake time / file volume** -- measured at S3 before scale-up; fallback = shared terrain sheets (Questions.md Q-2026-07-09-002).
+- **Terrain bake time / file volume** -- measured at S3 before scale-up; one terrain set per outdoor scene/route is a hard requirement (user directive 2026-07-11); fallback if too slow = optimize the bake pipeline, not shared terrain sheets (Questions.md Q-2026-07-09-002).
 - **Encounter-transition hitch** -- additive battle design avoids terrain reload; S5 gate asserts the round-trip frame budget.
 - **Battle-scene render bleed at offset** -- S5 screenshot gate; fallback SINGLE + snapshot (Questions.md Q-2026-07-09-003).
 - **Test-suite runtime blowup** -- battle correctness stays headless; long playthroughs are `m_bManualOnly`; slowest-10 report + hard budget at every gate.

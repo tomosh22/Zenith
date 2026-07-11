@@ -12,13 +12,13 @@
 
 ### [OPEN] Q-2026-07-09-002 -- Terrain bake time for ~25 terrains is an unmeasured estimate
 
-**Question:** is the ~25-terrain plan (one terrain set per outdoor scene via engine change E1) affordable in bake time and file volume, or should routes share terrain sheets?
+**Question:** is the ~25-terrain plan (one terrain set per outdoor scene via engine change E1) affordable in bake time and file volume?
 
 **Context:** plan risk #1. A full 64x64 chunk export is ~12k files and minutes-to-hours PER terrain; E2's rect export (routes ~16x24 chunks, towns ~16x16) shrinks the projection to ~25k files total and an estimated 20-40 min cold bake -- but that number is a paper estimate, not a measurement.
 
-**Best-guess action taken:** commit to nothing until measured. S3 includes an explicit task: bake 3 real scenes (Home Village + 2 more recipes) and extrapolate before authoring the remaining ~22 terrain recipes. Documented fallback: multiple routes share one terrain sheet (fewer terrain sets, same scene count).
+**Best-guess action taken:** commit to nothing until measured. S3 includes an explicit task: bake 3 real scenes (Home Village + 2 more recipes) and extrapolate before authoring the remaining ~22 terrain recipes. **One terrain set per outdoor scene/route is a hard requirement, not negotiable** (user directive 2026-07-11) -- shared terrain sheets across routes are OUT OF SCOPE as a fallback. If measurement shows bakes are too slow, the fallback is to optimize the bake pipeline itself (parallelize chunk export across cores/processes, cache/incrementalize unchanged chunks, profile and cut the actual hot path) rather than reduce terrain-set count.
 
-**Cost if wrong:** low-to-moderate if measured at S3 as planned (recipes are cheap to re-point at shared sheets); HIGH if ignored until S9/S10 (a 25x slow bake would poison every tools boot and CI-adjacent workflow during the content stages).
+**Cost if wrong:** low-to-moderate if measured at S3 as planned (an optimization pass is scoped work, not a redesign); HIGH if ignored until S9/S10 (a 25x slow bake would poison every tools boot and CI-adjacent workflow during the content stages).
 
 **Status:** asked 2026-07-09. Measurement lands at S3 (see Roadmap.md).
 

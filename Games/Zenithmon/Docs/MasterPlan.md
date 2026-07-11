@@ -72,6 +72,7 @@ This plan is the product of multiple prior iteration rounds with the user; scope
 | **E3** | `Zenith_UIText` **typewriter reveal** (visible-glyph-count property) | Every dialogue line + battle text; belongs in the widget | XS |
 | **E4** | `Zenith_UIGridLayoutGroup` (fixed columns/cell size) | Bag/box/dex grids; existing LayoutGroup is h/v only | S |
 | **E5** | Grass singleton hygiene: wire `Grass().Reset()` into `ResetRenderSystems` (Zenith_Engine.cpp:617 — currently omitted) + extend `Reset()` to also clear `m_axAllInstances`, `m_bInstancesGenerated`/`m_bInstancesUploaded`, and the density map. (`HasDensityMap()` already exists — Flux_GrassImpl.h:101 — no new API needed) | Verified: grass state fully persists across SINGLE loads today — leakage would put tall grass inside gyms | XS–S |
+| **E6** | **DEFERRED — post-Zenithmon.** Per-instance configurable terrain world-space extent, decoupled from a per-instance (but still constant across instances) vertex density. Today `Flux_TerrainConfig::CHUNK_GRID_SIZE`/`CHUNK_SIZE_WORLD`/`TOTAL_CHUNKS`/`TERRAIN_SIZE` are `static constexpr` globals (`Flux_TerrainConfig.h:27-36`) — every terrain is a fixed 4096×4096 m grid at a fixed density (`Zenith_TerrainComponent.cpp:493` `fLowLODDensity`); there is no serialized extent or density field on `Zenith_TerrainComponent`. E2's rect export only crops that same fixed grid — it does not resize it. Fixing this needs the grid constants to become per-instance serialized fields, dynamic (not fixed-size) GPU/CPU buffers in `Flux_TerrainStreamingManager`, a decoupled density field, and parametrized streaming-radius/culling/grass math — all explicitly rejected as in-scope for Zenithmon (E2 row: "compile-time constants pervade streaming/grass") because of the blast radius. Tracked so a tiny route and a large city stop being forced to the same world-space size; revisit as a dedicated engine initiative once Zenithmon ships. **Keep in mind on every terrain-touching task in the meantime — do not build content-side workarounds that assume this will change mid-project.** | L–XL (deferred) |
 
 ## Project skeleton
 
@@ -201,7 +202,7 @@ Maintenance rules (DP governance): orchestrator/main session owns the living doc
 
 ## Risks & mitigations (top)
 
-1. **Terrain bake time/file volume (~25 terrains).** E2 rect export; measure with 3 scenes at S3 before committing; fallback = multiple routes share one terrain sheet.
+1. **Terrain bake time/file volume (~25 terrains).** E2 rect export; measure with 3 scenes at S3 before committing. One terrain set per outdoor scene/route is a hard requirement (user directive 2026-07-11) -- shared terrain sheets are NOT an acceptable fallback; if bakes are too slow, fallback = optimize the bake pipeline (parallel chunk export, incremental/cached bakes, profile-guided fixes).
 2. **Encounter transition hitch.** Additive battle design (no terrain reload); cache creature model handles across battles; S5 gate asserts round-trip frame budget.
 3. **Battle-scene render bleed at offset.** Outside grass/terrain LOD radii + enclosing dome; S5 screenshot gate; contingency = per-scene render visibility toggle (engine, only if needed).
 4. **Global grass singleton leakage.** E5 reset + per-scene regeneration + per-scene instance-count assertions at S9/S10 gates.

@@ -215,8 +215,11 @@ This is the hardened RenderTest pattern; exact stamp file format TBD at S4.
 | Warm boot (all stamps valid) | seconds |
 
 Terrain bake time is the top-ranked project risk: measured with 3 scenes at
-S3 before committing to all ~25 (fallback: multiple routes share one
-terrain sheet).
+S3 before committing to all ~25. One terrain set per outdoor scene/route is
+a hard requirement (user directive 2026-07-11) -- shared terrain sheets are
+NOT an acceptable fallback. If bakes are too slow, the fallback is to
+optimize the bake pipeline (parallel chunk export, incremental/cached
+bakes, profile-guided fixes) rather than reduce terrain-set count.
 
 ### 6.4 CI interaction
 

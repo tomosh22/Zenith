@@ -15,6 +15,68 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-11 -- ZM-D-038 -- Terrain fixed-size/fixed-density limitation accepted as deferred engine TODO (E6)
+
+- **Decision:** Zenith's terrain system cannot currently give different terrain instances
+  different world-space extents while holding triangle density (metres/vertex) constant --
+  `Flux_TerrainConfig::CHUNK_GRID_SIZE`/`CHUNK_SIZE_WORLD`/`TERRAIN_SIZE` are global
+  `static constexpr` values (`Flux_TerrainConfig.h:27-36`), so every terrain is a fixed
+  4096x4096 m grid, and density (`fLowLODDensity`, `Zenith_TerrainComponent.cpp:493`) is
+  likewise a fixed global, not a per-instance field. E2's rect export only crops that same
+  fixed grid (a bake-time/file-count optimization), it does not resize it. This was
+  investigated on request (a route and a city should be different world-space sizes at the
+  same density) and confirmed as a real gap, already implicitly acknowledged in the E2
+  rationale ("compile-time constants pervade streaming/grass") but not previously called
+  out as its own tracked item.
+  User has **accepted the Zenithmon plan as-is with this limitation** (routes and the
+  city will all bake at the same fixed 4096x4096 grid/density for now) rather than block
+  or descope S3+ on it. Logged as **Shortfalls.md E6 / MasterPlan.md engine-changes E6**:
+  DEFERRED, revisit as a dedicated engine initiative after Zenithmon ships.
+- **Why:** fixing this properly (per-instance serialized grid/density fields, dynamically
+  sized streaming-manager GPU/CPU buffers, parametrized culling/streaming-radius/grass math)
+  is a materially larger engine change than anything else in scope for Zenithmon, and
+  Zenithmon does not strictly need it to ship (every outdoor scene can still be its own
+  terrain SET per E1 -- it's the per-set world-space size/density that's inflexible).
+- **How to apply going forward:** every terrain-touching task for the rest of Zenithmon
+  development (S3 first-overworld, S9/S10 world buildout, any terrain-authoring or
+  streaming work) must treat the 4096x4096 fixed grid/density as a hard current constraint
+  -- do NOT author content or write game-side code that assumes per-scene size/density will
+  become configurable mid-project, and do not build a content-side workaround that
+  papers over it (e.g. do not silently scale down non-terrain content to fake a smaller
+  world, do not hand-roll a second grid system in game code). If a route's designed
+  world-space size doesn't fit the fixed grid, that's a WorldSpec/authoring-scale decision
+  to route through Questions.md, not a silent workaround.
+- **Tests that lock it:** none (this is a documented limitation, not a coded rule) --
+  E1/E2's existing unit tests + RenderTest boot regression remain the only terrain-system
+  coverage until E6 is picked up.
+- **Reversibility:** N/A (acceptance of a known limitation, not an implementation). E6
+  itself, when eventually done, is additive per the standard engine-change convention.
+
+---
+
+## 2026-07-11 -- ZM-D-037 -- Terrain bake-time fallback: optimize the pipeline, not shared terrain sheets
+
+- **Decision:** One terrain set per outdoor scene/route is a **hard requirement**, not
+  negotiable against bake time. The previously documented fallback for Q-2026-07-09-002
+  ("multiple routes share one terrain sheet" if the S3 bake-time measurement comes back too
+  slow) is **retracted**. If the S3 measurement (bake 3 real scenes, extrapolate to ~25)
+  shows bakes are too slow, the fallback is instead to **optimize the terrain bake
+  pipeline** -- e.g. parallelize chunk export across cores/processes, incrementalize/cache
+  unchanged chunks so re-bakes aren't full cold bakes, profile the actual hot path and cut
+  it -- not to reduce the terrain-set count below one-per-scene.
+- **Why:** shared terrain sheets across routes/scenes is a visible content compromise (reused
+  ground geometry/texturing across supposedly distinct locations) that the user considers
+  unacceptable for a ~25-outdoor-scene RPG; user directive overrides the prior cost-driven
+  fallback plan.
+- **Tests that lock it:** none yet -- S3's terrain-bake measurement task (Roadmap.md) must
+  report against this constraint; if bakes measure too slow, the S3 follow-up is a bake-
+  pipeline optimization pass, not a terrain-set reduction.
+- **Reversibility:** high -- no implementation has happened yet under the old fallback;
+  this is a plan correction ahead of S3, recorded in Questions.md Q-2026-07-09-002,
+  MasterPlan.md risk #1, Shortfalls.md, and AssetManifest.md section 6.3.
+
+---
+
 ## 2026-07-11 -- ZM-D-036 -- S2 box-3 execution plan (abilities + weather) + SC1 weather core
 
 - **Decision:** Box 3 ("Abilities via per-hook fn-pointer structs (~50) + weather
