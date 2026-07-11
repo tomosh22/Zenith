@@ -25,8 +25,9 @@ two spots where reality differs from the original expectation).
 | [x] | **GitHub Actions enabled** on the repo. The pre-existing gates (dp-tests, cb-tests, complexity-gate, layering-gate, memory-gate, engine-gate, shader-validation, doc-lint -- see CIPolicy.md section 3) should already be running on PRs, which proves this. | Repo -> Actions tab shows recent workflow runs; or Settings -> Actions -> General -> "Allow all actions" | Claude session / 2026-07-10 (all gates ran on PRs #143/#144) |
 | [x] | **Add `zm-tests` to master branch-protection required checks** -- AFTER the first green zm-tests run. NOTE (2026-07-10): master had NO branch protection and no rulesets at all, so classic protection was CREATED via the API (user-directed): required contexts `[zm-tests]`, `strict=false`, `enforce_admins=false` (owner direct pushes bypass -- the repo's established workflow). | `gh api repos/tomosh22/Zenith/branches/master/protection` lists `zm-tests` under required_status_checks.contexts | Claude session (user-directed) / 2026-07-10 |
 
-Ordering note: item 2 is deliberately AFTER the first PR -- setting a
-required check before the check name exists deadlocks all merges.
+Historical ordering note: item 2 was deliberately completed after the first
+green PR run -- setting a required check before the check name existed would
+have deadlocked non-admin merges.
 
 ## B. Local development environment (per BuildEnvironment.md section 1)
 
@@ -48,7 +49,9 @@ required check before the check name exists deadlocks all merges.
 
 ## After all boxes ticked
 
-The project is fully unblocked: PRs are gated by zm-tests (section A), and
-any local session can build, bake, run, and test (sections B + C). Items NOT
-on this list -- branch creation, Sharpmake regen, building, testing, PR
-creation -- are all automatic parts of the normal session workflow.
+The project is fully unblocked: master protection records `zm-tests` as a
+required check (section A), and any local session can build, bake, run, and
+test (sections B + C). Under ZM-D-031, agents work directly on `master` and
+never create branches, PRs, or worktrees; Sharpmake regen, building, testing,
+the authoritative local gate, and the direct-master commit/push are automatic
+parts of the normal session workflow.

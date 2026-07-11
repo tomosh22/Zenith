@@ -57,8 +57,24 @@ enum ZM_MOVE_FAIL_REASON : u_int
 	ZM_MOVE_FAIL_ASLEEP,            // SC4: asleep and did not wake this turn
 	ZM_MOVE_FAIL_FULLY_PARALYZED,   // SC4: fully paralyzed this turn
 	ZM_MOVE_FAIL_STATUS_BLOCKED,    // SC4: a primary status move failed (type-immune / already statused)
-	// SC5 (appended when lit): TAUNTED, PROTECTED, RECHARGE, FLINCHED ...
+	// SC5 volatile/intercept failures. FLINCH has its own dedicated event.
+	ZM_MOVE_FAIL_RECHARGE,
+	ZM_MOVE_FAIL_CONFUSED,
+	ZM_MOVE_FAIL_TAUNTED,
+	ZM_MOVE_FAIL_PROTECTED,
+	ZM_MOVE_FAIL_SEMI_INVULNERABLE,
+	ZM_MOVE_FAIL_VOLATILE_BLOCKED,
+	ZM_MOVE_FAIL_NO_SWITCH_TARGET,
 };
+
+// STATUS_DAMAGE's SC4 major-status tags occupy the small positive enum domain.
+// Volatile damage uses a disjoint packed domain so a bit value can never be
+// mistaken for a major-status ordinal. Ordinary events retain tag 0.
+static const int iZM_STATUS_DAMAGE_TAG_VOLATILE_BASE = 0x10000;
+inline int ZM_VolatileDamageTag(ZM_VOLATILE eVolatile)
+{
+	return iZM_STATUS_DAMAGE_TAG_VOLATILE_BASE | (int)eVolatile;
+}
 
 struct ZM_BattleEvent
 {
@@ -69,7 +85,7 @@ struct ZM_BattleEvent
 	u_int           m_uSpeciesId = ZM_SPECIES_NONE;  // SWITCH_IN readability + doubles-forward
 	int             m_iAmount    = 0;                // damage / effPercent / winner side
 	int             m_iAux       = 0;                // remaining HP / turn number
-	int             m_iTag       = 0;                // SC4: STATUS_DAMAGE source status (which major/volatile chipped)
+	int             m_iTag       = 0;                // STATUS_DAMAGE source / VOLATILE_APPLIED source-side metadata
 	// APPEND future fields HERE (default 0). Box-1 goldens compare equal regardless.
 	bool operator==(const ZM_BattleEvent&) const = default;   // trivially value-comparable
 };

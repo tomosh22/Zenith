@@ -37,6 +37,10 @@ public:
 	const ZM_BattleState& GetState()               const { return m_xState; }
 	ZM_BattleState&       GetStateMutable()              { return m_xState; }   // tests rig HP/stages pre-turn
 
+	// Shared switch primitive (SC5 forced switch; SC6 voluntary switch reuses it).
+	// Invalid/current/fainted destinations return false and emit nothing.
+	bool DoSwitch(ZM_SIDE eSide, u_int uTargetSlot);
+
 private:
 	ZM_BattleState                m_xState;
 	Zenith_Vector<ZM_BattleEvent> m_xEvents;                 // append-only output
@@ -47,9 +51,9 @@ private:
 	ZM_SIDE                       m_eWinner = ZM_SIDE_COUNT;
 
 	// seams -- each phase is a hook point:
-	void ResolvePreMovePhase();     // box 1: EMPTY (run/item/switch -> box 2)
+	void ResolvePreMovePhase();     // EMPTY until SC6 run/item/voluntary-switch actions
 	void ResolveMovePhase();        // order by priority -> eff speed -> RNG tie-break; execute
-	void ExecuteMove(ZM_SIDE eAtk); // THE executor seam: fainted-actor guard, then delegates to ZM_MoveExecutor via a ZM_MoveContext view
+	ZM_SIDE ExecuteMove(ZM_SIDE eAtk); // returns the side force-switched, or COUNT
 	void ResolveEndOfTurnPhase();   // box 1: emit TURN_END only. box 2/3: status/weather/leech ticks
 	void Emit(const ZM_BattleEvent& x) { m_xEvents.PushBack(x); }
 };

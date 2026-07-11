@@ -23,6 +23,7 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Zenithmon/Source/Battle/ZM_BattleEngine.h"
 #include "Zenithmon/Source/Battle/ZM_MoveExecutor.h"
+#include "Zenithmon/Source/Battle/ZM_StatusLogic.h"
 #include "Zenithmon/Source/Battle/ZM_BattleMonster.h"
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
@@ -59,16 +60,30 @@ namespace
 		case ZM_BATTLE_EVENT_DAMAGE_DEALT:    return "DAMAGE_DEALT";
 		case ZM_BATTLE_EVENT_FAINT:           return "FAINT";
 		case ZM_BATTLE_EVENT_BATTLE_END:      return "BATTLE_END";
+		case ZM_BATTLE_EVENT_NO_PP:            return "NO_PP";
+		case ZM_BATTLE_EVENT_MOVE_FAILED:      return "MOVE_FAILED";
+		case ZM_BATTLE_EVENT_STATUS_APPLIED:   return "STATUS_APPLIED";
+		case ZM_BATTLE_EVENT_STATUS_DAMAGE:    return "STATUS_DAMAGE";
+		case ZM_BATTLE_EVENT_STATUS_CURED:     return "STATUS_CURED";
+		case ZM_BATTLE_EVENT_STAT_STAGE_CHANGED:return "STAT_STAGE_CHANGED";
+		case ZM_BATTLE_EVENT_VOLATILE_APPLIED: return "VOLATILE_APPLIED";
+		case ZM_BATTLE_EVENT_VOLATILE_ENDED:   return "VOLATILE_ENDED";
+		case ZM_BATTLE_EVENT_FLINCH:           return "FLINCH";
+		case ZM_BATTLE_EVENT_HEAL:             return "HEAL";
+		case ZM_BATTLE_EVENT_DRAIN:            return "DRAIN";
+		case ZM_BATTLE_EVENT_RECOIL:           return "RECOIL";
+		case ZM_BATTLE_EVENT_MULTI_HIT:        return "MULTI_HIT";
 		default:                              return "?";
 		}
 	}
 
-	// Compact one-line stringification of a ZM_BattleEvent (all 7 scalar fields).
+	// Compact one-line stringification of a ZM_BattleEvent (all 8 scalar fields).
 	void ZM_BattleEventToString(const ZM_BattleEvent& xEvent, char* acOut, size_t uSize)
 	{
-		snprintf(acOut, uSize, "[%s side=%u slot=%u move=%u species=%u amt=%d aux=%d]",
+		snprintf(acOut, uSize, "[%s side=%u slot=%u move=%u species=%u amt=%d aux=%d tag=%d]",
 			ZM_EventKindName(xEvent.m_eKind), xEvent.m_uSide, xEvent.m_uSlot,
-			xEvent.m_uMoveId, xEvent.m_uSpeciesId, xEvent.m_iAmount, xEvent.m_iAux);
+			xEvent.m_uMoveId, xEvent.m_uSpeciesId, xEvent.m_iAmount, xEvent.m_iAux,
+			xEvent.m_iTag);
 	}
 
 	// Log two event streams element-by-element (used on any scenario mismatch).
@@ -181,7 +196,14 @@ namespace
 				eKind == ZM_BATTLE_EVENT_MOVE_MISSED || eKind == ZM_BATTLE_EVENT_CRIT         ||
 				eKind == ZM_BATTLE_EVENT_SUPER_EFFECTIVE || eKind == ZM_BATTLE_EVENT_NOT_EFFECTIVE ||
 				eKind == ZM_BATTLE_EVENT_IMMUNE      || eKind == ZM_BATTLE_EVENT_DAMAGE_DEALT ||
-				eKind == ZM_BATTLE_EVENT_FAINT;
+				eKind == ZM_BATTLE_EVENT_FAINT       || eKind == ZM_BATTLE_EVENT_NO_PP         ||
+				eKind == ZM_BATTLE_EVENT_MOVE_FAILED || eKind == ZM_BATTLE_EVENT_STATUS_APPLIED ||
+				eKind == ZM_BATTLE_EVENT_STATUS_DAMAGE || eKind == ZM_BATTLE_EVENT_STATUS_CURED ||
+				eKind == ZM_BATTLE_EVENT_STAT_STAGE_CHANGED ||
+				eKind == ZM_BATTLE_EVENT_VOLATILE_APPLIED || eKind == ZM_BATTLE_EVENT_VOLATILE_ENDED ||
+				eKind == ZM_BATTLE_EVENT_FLINCH      || eKind == ZM_BATTLE_EVENT_HEAL          ||
+				eKind == ZM_BATTLE_EVENT_DRAIN       || eKind == ZM_BATTLE_EVENT_RECOIL        ||
+				eKind == ZM_BATTLE_EVENT_MULTI_HIT;
 
 			// Rule 4: side/slot bounds + move id validity for every subject event.
 			if (bSubjectEvent)
@@ -205,9 +227,10 @@ namespace
 				break;
 
 			case ZM_BATTLE_EVENT_DAMAGE_DEALT:
+			case ZM_BATTLE_EVENT_STATUS_DAMAGE:
 			{
-				// Rule 5: amount >= 0 and remaining HP in [0, maxHP].
-				if (x.m_iAmount < 0) { ZM_VALIDATE_FAIL(i, "rule5: DAMAGE_DEALT amount < 0"); }
+				// Rule 5: direct/status damage amount >= 0 and remaining HP in [0, maxHP].
+				if (x.m_iAmount < 0) { ZM_VALIDATE_FAIL(i, "rule5: damage amount < 0"); }
 				const u_int uMaxHP = xState.Side((ZM_SIDE)x.m_uSide).m_xParty.Get(x.m_uSlot).m_auMaxStat[ZM_STAT_HP];
 				if (x.m_iAux < 0 || (u_int)x.m_iAux > uMaxHP)
 				{
@@ -271,13 +294,17 @@ namespace
 
 			case ZM_BATTLE_EVENT_FAINT:
 			{
-				// Rule 7: at most once per (side,slot); preceded by DAMAGE_DEALT (iAux==0) same monster.
+				// Rule 7: at most once per (side,slot); preceded by direct/status/recoil
+				// damage with remaining HP 0 for the same monster. Leech Seed's optional
+				// DRAIN follows the FAINT, so STATUS_DAMAGE remains immediately prior.
 				if (aabFainted[x.m_uSide][x.m_uSlot]) { ZM_VALIDATE_FAIL(i, "rule7: duplicate FAINT for the same monster"); }
 				if (i == 0u) { ZM_VALIDATE_FAIL(i, "rule7: FAINT with no preceding DAMAGE_DEALT"); }
 				const ZM_BattleEvent& p = xEvents.Get(i - 1u);
-				const bool bPrevOk = p.m_eKind == ZM_BATTLE_EVENT_DAMAGE_DEALT &&
+				const bool bDamageKind = p.m_eKind == ZM_BATTLE_EVENT_DAMAGE_DEALT ||
+					p.m_eKind == ZM_BATTLE_EVENT_STATUS_DAMAGE || p.m_eKind == ZM_BATTLE_EVENT_RECOIL;
+				const bool bPrevOk = bDamageKind &&
 				                     p.m_uSide == x.m_uSide && p.m_uSlot == x.m_uSlot && p.m_iAux == 0;
-				if (!bPrevOk) { ZM_VALIDATE_FAIL(i, "rule7: FAINT not preceded by same-monster DAMAGE_DEALT(remaining==0)"); }
+				if (!bPrevOk) { ZM_VALIDATE_FAIL(i, "rule7: FAINT not preceded by same-monster damage(remaining==0)"); }
 				aabFainted[x.m_uSide][x.m_uSlot] = true;
 				break;
 			}
@@ -3879,4 +3906,2411 @@ ZENITH_TEST(ZM_Battle, Scenario_BurnSecondaryThenChip_ExactStream)
 	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_uCurHP, 59u, "enemy HP 84 -> 69 (Emberclaw) -> 59 (burn chip)");
 	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().m_uCurHP, 50u, "player HP 56 -> 50 (halved burned Rambash)");
 	ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEngine.GetEvents(), xEngine, "burnSecondaryThenChip"));
+}
+
+// ============================================================================
+// S2 box-2 SC5 -- the ten battle-local volatiles, Endure, Swagger, forced
+// switching, and the fully locked G1-G6 / M0-M6 ordering contract. These tests
+// intentionally arrive RED before the SC5 implementation. Event encodings,
+// guarded draws, and switch-reset semantics are the binding synthesis contract.
+// ============================================================================
+namespace
+{
+	int ZM_SC5FindEvent(const Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_BATTLE_EVENT eKind, ZM_SIDE eSide = ZM_SIDE_COUNT, u_int uStart = 0u)
+	{
+		for (u_int u = uStart; u < xEvents.GetSize(); ++u)
+		{
+			const ZM_BattleEvent& xEvent = xEvents.Get(u);
+			if (xEvent.m_eKind == eKind &&
+				(eSide == ZM_SIDE_COUNT || xEvent.m_uSide == (u_int)eSide))
+			{
+				return (int)u;
+			}
+		}
+		return -1;
+	}
+
+	const ZM_BattleEvent* ZM_SC5FindEventPtr(const Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_BATTLE_EVENT eKind, ZM_SIDE eSide = ZM_SIDE_COUNT, u_int uStart = 0u)
+	{
+		const int iIndex = ZM_SC5FindEvent(xEvents, eKind, eSide, uStart);
+		return iIndex >= 0 ? &xEvents.Get((u_int)iIndex) : nullptr;
+	}
+
+	u_int ZM_SC5CountForSide(const Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_BATTLE_EVENT eKind, ZM_SIDE eSide)
+	{
+		u_int uCount = 0u;
+		for (u_int u = 0u; u < xEvents.GetSize(); ++u)
+		{
+			const ZM_BattleEvent& xEvent = xEvents.Get(u);
+			if (xEvent.m_eKind == eKind && xEvent.m_uSide == (u_int)eSide)
+			{
+				++uCount;
+			}
+		}
+		return uCount;
+	}
+
+	bool ZM_SC5HasVolatile(const ZM_BattleMonster& xMon, ZM_VOLATILE eVolatile)
+	{
+		return (xMon.m_uVolatileMask & (u_int)eVolatile) != 0u;
+	}
+
+	void ZM_SC5RigVolatile(ZM_BattleMonster& xMon, ZM_VOLATILE eVolatile,
+		u_int uTurns = 0u, ZM_SIDE eLeechSource = ZM_SIDE_COUNT)
+	{
+		xMon.m_uVolatileMask |= (u_int)eVolatile;
+		switch (eVolatile)
+		{
+		case ZM_VOLATILE_CONFUSED:   xMon.m_uConfuseTurns = uTurns; break;
+		case ZM_VOLATILE_TRAP:       xMon.m_uTrapTurns = uTurns; break;
+		case ZM_VOLATILE_TAUNT:      xMon.m_uTauntTurns = uTurns; break;
+		case ZM_VOLATILE_LOCK:       xMon.m_uLockTurns = uTurns; break;
+		case ZM_VOLATILE_LEECH_SEED: xMon.m_eLeechSourceSide = eLeechSource; break;
+		default: break;
+		}
+	}
+
+	ZM_BattleMonsterSpec ZM_SC5Spec(ZM_SPECIES_ID eSpecies, ZM_MOVE_ID eMove0,
+		ZM_MOVE_ID eMove1 = ZM_MOVE_NONE, u_int uSpeedBase = 60u, u_int uHPBase = 120u)
+	{
+		ZM_BattleMonsterSpec xSpec = MakeSpecOverride(eSpecies, 50u, eMove0,
+			uHPBase, 60u, 80u, 60u, 80u, uSpeedBase);
+		xSpec.m_aeMoves[1] = eMove1;
+		return xSpec;
+	}
+
+	void ZM_SC5ResolveMoveTurn(ZM_BattleEngine& xEngine, u_int uPlayerSlot = 0u,
+		u_int uEnemySlot = 0u)
+	{
+		xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(uPlayerSlot));
+		xEngine.SubmitAction(ZM_SIDE_ENEMY, MoveAction(uEnemySlot));
+		xEngine.ResolveTurn();
+	}
+
+	void ZM_SC5AssertRNGCursor(ZM_BattleState& xState, ZM_BattleRNG& xMirror,
+		const char* szReason)
+	{
+		ZENITH_ASSERT_EQ(xState.m_xRNG.Next(), xMirror.Next(), "%s", szReason);
+	}
+
+	u_int ZM_SC5ExpectedConfusionDamage(const ZM_BattleMonster& xMon, u_int uRoll)
+	{
+		ZM_DamageInput xIn;
+		xIn.uLevel = xMon.m_uLevel;
+		xIn.uPower = 40u;
+		xIn.uAttack = ZM_ApplyStatStage(xMon.m_auMaxStat[ZM_STAT_ATTACK],
+			xMon.m_aiStage[ZM_BATTLE_STAT_ATTACK]);
+		xIn.uDefense = ZM_ApplyStatStage(xMon.m_auMaxStat[ZM_STAT_DEFENSE],
+			xMon.m_aiStage[ZM_BATTLE_STAT_DEFENSE]);
+		xIn.bStab = false;
+		xIn.uEffectivenessPercent = 100u;
+		xIn.bCrit = false;
+		xIn.uRandomPercent = uRoll;
+		xIn.bBurnedPhysical = xMon.m_eStatus == ZM_MAJOR_STATUS_BURN;
+		return ZM_CalcDamage(xIn);
+	}
+
+	u_int64 ZM_SC5FindSecondarySeed(ZM_MOVE_ID eMove, bool bWantProc)
+	{
+		const u_int uChance = ZM_GetMoveData(eMove).m_uEffectChance;
+		for (u_int64 ulSeed = 1ull; ulSeed <= 4096ull; ++ulSeed)
+		{
+			ZM_BattleRNG xMirror(ulSeed, 54ull);
+			xMirror.Chance(1u, 24u);
+			xMirror.RandRange(85u, 100u);
+			const bool bProc = xMirror.RandBelow(100u) < uChance;
+			if (bProc == bWantProc) { return ulSeed; }
+		}
+		return 0ull;
+	}
+
+	u_int64 ZM_SC5FindGateSeed(bool bWantBelow33)
+	{
+		for (u_int64 ulSeed = 1ull; ulSeed <= 4096ull; ++ulSeed)
+		{
+			ZM_BattleRNG xMirror(ulSeed, 54ull);
+			const bool bBelow = xMirror.RandBelow(100u) < 33u;
+			if (bBelow == bWantBelow33) { return ulSeed; }
+		}
+		return 0ull;
+	}
+
+	void ZM_SC5AssertAppliedEncoding(const ZM_BattleEvent& xEvent, ZM_SIDE eSide,
+		ZM_VOLATILE eVolatile, u_int uDuration, int iTag = 0)
+	{
+		ZENITH_ASSERT_EQ((u_int)xEvent.m_eKind, (u_int)ZM_BATTLE_EVENT_VOLATILE_APPLIED);
+		ZENITH_ASSERT_EQ(xEvent.m_uSide, (u_int)eSide);
+		ZENITH_ASSERT_EQ(xEvent.m_uSlot, 0u);
+		ZENITH_ASSERT_EQ(xEvent.m_iAmount, (int)uDuration);
+		ZENITH_ASSERT_EQ(xEvent.m_iAux, (int)eVolatile);
+		ZENITH_ASSERT_EQ(xEvent.m_iTag, iTag);
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Volatile_DefaultStateIsClear)
+{
+	const ZM_BattleMonster xMon = ZM_BuildBattleMonster(ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH));
+	ZENITH_ASSERT_EQ(xMon.m_uVolatileMask, (u_int)ZM_VOLATILE_NONE);
+	ZENITH_ASSERT_EQ(xMon.m_uConfuseTurns, 0u);
+	ZENITH_ASSERT_EQ(xMon.m_uTrapTurns, 0u);
+	ZENITH_ASSERT_EQ(xMon.m_uTauntTurns, 0u);
+	ZENITH_ASSERT_EQ(xMon.m_uLockTurns, 0u);
+	ZENITH_ASSERT_EQ(xMon.m_uChargeMoveSlot, uZM_MAX_MOVES);
+	ZENITH_ASSERT_EQ(xMon.m_uLockMoveSlot, uZM_MAX_MOVES);
+	ZENITH_ASSERT_EQ((u_int)xMon.m_eLeechSourceSide, (u_int)ZM_SIDE_COUNT);
+	ZENITH_ASSERT_FALSE(xMon.m_bEndureThisTurn);
+}
+
+ZENITH_TEST(ZM_Battle, Volatile_AppliedAndEndedEventEncodingFields)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BEWILDER),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_BattleRNG xMirror(0x1234ull, 54ull);
+	const u_int uDuration = xMirror.RandRange(1u, 4u);
+	ZENITH_ASSERT_TRUE(ZM_StatusLogic::ApplyVolatile(xCtx, ZM_SIDE_ENEMY, ZM_VOLATILE_CONFUSED));
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 1u);
+	if (xEvents.GetSize() == 1u)
+	{
+		ZM_SC5AssertAppliedEncoding(xEvents.Get(0), ZM_SIDE_ENEMY, ZM_VOLATILE_CONFUSED, uDuration);
+	}
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_uConfuseTurns, uDuration);
+	ZM_SC5AssertRNGCursor(xState, xMirror, "confusion apply consumes exactly its duration draw");
+	ZENITH_ASSERT_TRUE(ZM_StatusLogic::EndVolatile(xState, xEvents, ZM_SIDE_ENEMY, ZM_VOLATILE_CONFUSED));
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 2u);
+	if (xEvents.GetSize() == 2u)
+	{
+		const ZM_BattleEvent& xEnd = xEvents.Get(1);
+		ZENITH_ASSERT_EQ((u_int)xEnd.m_eKind, (u_int)ZM_BATTLE_EVENT_VOLATILE_ENDED);
+		ZENITH_ASSERT_EQ(xEnd.m_uSide, (u_int)ZM_SIDE_ENEMY);
+		ZENITH_ASSERT_EQ(xEnd.m_iAmount, 0);
+		ZENITH_ASSERT_EQ(xEnd.m_iAux, (int)ZM_VOLATILE_CONFUSED);
+		ZENITH_ASSERT_EQ(xEnd.m_iTag, 0);
+	}
+	ZENITH_ASSERT_FALSE(ZM_StatusLogic::EndVolatile(xState, xEvents, ZM_SIDE_ENEMY, ZM_VOLATILE_CONFUSED));
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 2u, "ending an absent volatile is idempotent and silent");
+}
+
+ZENITH_TEST(ZM_Battle, Volatile_CountersAreIndependentFromMajorStatusCounter)
+{
+	ZM_BattleMonster xMon = ZM_BuildBattleMonster(ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH));
+	xMon.m_eStatus = ZM_MAJOR_STATUS_TOXIC;
+	xMon.m_uStatusCounter = 7u;
+	ZM_SC5RigVolatile(xMon, ZM_VOLATILE_CONFUSED, 4u);
+	ZM_SC5RigVolatile(xMon, ZM_VOLATILE_TRAP, 5u);
+	ZM_SC5RigVolatile(xMon, ZM_VOLATILE_TAUNT, 3u);
+	ZM_SC5RigVolatile(xMon, ZM_VOLATILE_LOCK, 2u);
+	ZENITH_ASSERT_EQ(xMon.m_uStatusCounter, 7u);
+	ZENITH_ASSERT_EQ(xMon.m_uConfuseTurns, 4u);
+	ZENITH_ASSERT_EQ(xMon.m_uTrapTurns, 5u);
+	ZENITH_ASSERT_EQ(xMon.m_uTauntTurns, 3u);
+	ZENITH_ASSERT_EQ(xMon.m_uLockTurns, 2u);
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xMon, ZM_VOLATILE_CONFUSED));
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xMon, ZM_VOLATILE_TRAP));
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xMon, ZM_VOLATILE_TAUNT));
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xMon, ZM_VOLATILE_LOCK));
+}
+
+ZENITH_TEST(ZM_Battle, Volatile_DamageTagsUseDisjointDomain)
+{
+	ZENITH_ASSERT_EQ(ZM_VolatileDamageTag(ZM_VOLATILE_LEECH_SEED),
+		iZM_STATUS_DAMAGE_TAG_VOLATILE_BASE | (int)ZM_VOLATILE_LEECH_SEED);
+	ZENITH_ASSERT_EQ(ZM_VolatileDamageTag(ZM_VOLATILE_TRAP),
+		iZM_STATUS_DAMAGE_TAG_VOLATILE_BASE | (int)ZM_VOLATILE_TRAP);
+	ZENITH_ASSERT_TRUE(ZM_VolatileDamageTag(ZM_VOLATILE_LEECH_SEED) != (int)ZM_MAJOR_STATUS_BURN,
+		"volatile Leech tag must not collide with the existing positive major tags");
+	ZENITH_ASSERT_TRUE(ZM_VolatileDamageTag(ZM_VOLATILE_TRAP) != (int)ZM_MAJOR_STATUS_TOXIC,
+		"volatile Trap tag must not collide with a major tag");
+}
+
+ZENITH_TEST(ZM_Battle, Confuse_PrimaryBewilder_AppliesDurationAndExactDraw)
+{
+	const u_int64 ulSeed = 0x1234ull;
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BEWILDER),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), ulSeed, xState, xEvents);
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	const u_int uDuration = xMirror.RandRange(1u, 4u);
+	const ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xDef, ZM_VOLATILE_CONFUSED));
+	ZENITH_ASSERT_EQ(xDef.m_uConfuseTurns, uDuration);
+	const ZM_BattleEvent* pxApplied = ZM_SC5FindEventPtr(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_NOT_NULL(pxApplied);
+	if (pxApplied != nullptr) { ZM_SC5AssertAppliedEncoding(*pxApplied, ZM_SIDE_ENEMY, ZM_VOLATILE_CONFUSED, uDuration); }
+	ZM_SC5AssertRNGCursor(xState, xMirror, "Bewilder draws only the successful confusion duration");
+}
+
+ZENITH_TEST(ZM_Battle, Confuse_PrimaryAlreadyConfused_BlockedNoDurationDraw)
+{
+	const u_int64 ulSeed = 0x1234ull;
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BEWILDER),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), ulSeed, 54ull);
+	ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+	ZM_SC5RigVolatile(xDef, ZM_VOLATILE_CONFUSED, 2u);
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	const u_int uPP = xCtx.Atk().m_axMoves[0].m_uCurPP;
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_EQ(xCtx.Atk().m_axMoves[0].m_uCurPP, uPP - 1u);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_USED));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED));
+	const ZM_BattleEvent* pxFail = ZM_SC5FindEventPtr(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_NOT_NULL(pxFail);
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ(pxFail->m_iAux, (int)ZM_MOVE_FAIL_VOLATILE_BLOCKED); }
+	ZENITH_ASSERT_EQ(xDef.m_uConfuseTurns, 2u, "blocked confusion does not refresh duration");
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	ZM_SC5AssertRNGCursor(xState, xMirror, "blocked confusion consumes no duration draw");
+}
+
+ZENITH_TEST(ZM_Battle, Confuse_SecondaryProcAndSuppressionFollowExactDrawStream)
+{
+	for (u_int uCase = 0u; uCase < 2u; ++uCase)
+	{
+		const bool bWantProc = uCase == 0u;
+		const u_int64 ulSeed = ZM_SC5FindSecondarySeed(ZM_MOVE_DAZZLEPULSE, bWantProc);
+		ZENITH_ASSERT_GT(ulSeed, 0ull);
+		ZM_BattleState xState;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_RunPlayerMove(ZM_SC5Spec(ZM_SPECIES_FAYLING, ZM_MOVE_DAZZLEPULSE, ZM_MOVE_NONE, 120u),
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_MOVE_NONE, 10u, 250u),
+			ulSeed, xState, xEvents);
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		xMirror.Chance(1u, 24u);
+		xMirror.RandRange(85u, 100u);
+		const bool bProc = xMirror.RandBelow(100u) < ZM_GetMoveData(ZM_MOVE_DAZZLEPULSE).m_uEffectChance;
+		ZENITH_ASSERT_TRUE(bProc == bWantProc);
+		if (bProc)
+		{
+			const u_int uDuration = xMirror.RandRange(1u, 4u);
+			ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_CONFUSED));
+			ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_uConfuseTurns, uDuration);
+			ZENITH_ASSERT_LT(ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT),
+				ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED));
+		}
+		else
+		{
+			ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_CONFUSED));
+			ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED));
+		}
+		ZM_SC5AssertRNGCursor(xState, xMirror, "confusion secondary draws crit, roll, proc, then guarded duration");
+	}
+
+	// An already-confused target suppresses the entire damaging-secondary branch:
+	// the connected hit draws only crit+roll, with no proc gate or duration draw.
+	const u_int64 ulBlockedSeed = 0x1234ull;
+	ZM_BattleState xBlockedState;
+	BuildBattleState(xBlockedState,
+		ZM_SC5Spec(ZM_SPECIES_FAYLING, ZM_MOVE_DAZZLEPULSE, ZM_MOVE_NONE, 120u),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_MOVE_NONE, 10u, 250u),
+		ulBlockedSeed, 54ull);
+	ZM_BattleMonster& xBlockedTarget = xBlockedState.Side(ZM_SIDE_ENEMY).Active();
+	ZM_SC5RigVolatile(xBlockedTarget, ZM_VOLATILE_CONFUSED, 3u);
+	Zenith_Vector<ZM_BattleEvent> xBlockedEvents;
+	ZM_MoveContext xBlockedCtx = MakeCtx(xBlockedState, xBlockedEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_BattleRNG xBlockedMirror(ulBlockedSeed, 54ull);
+	xBlockedMirror.Chance(1u, 24u);
+	xBlockedMirror.RandRange(85u, 100u);
+	ZM_MoveExecutor::Execute(xBlockedCtx);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xBlockedEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xBlockedEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xBlockedEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xBlockedEvents, ZM_BATTLE_EVENT_MOVE_FAILED));
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xBlockedTarget, ZM_VOLATILE_CONFUSED));
+	ZENITH_ASSERT_EQ(xBlockedTarget.m_uConfuseTurns, 3u,
+		"an existing confusion is neither refreshed nor decremented by the incoming secondary");
+	ZM_SC5AssertRNGCursor(xBlockedState, xBlockedMirror,
+		"blocked confusion secondary consumes only ordinary crit+roll draws");
+}
+
+ZENITH_TEST(ZM_Battle, Confuse_GateSelfHit_NoPPNoMoveUsed_ExactDamageAndCursor)
+{
+	const u_int64 ulSeed = ZM_SC5FindGateSeed(true);
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), ulSeed, 54ull);
+	ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+	ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_CONFUSED, 2u);
+	xAtk.m_aiStage[ZM_BATTLE_STAT_ATTACK] = 2;
+	xAtk.m_aiStage[ZM_BATTLE_STAT_DEFENSE] = -1;
+	const u_int uPP = xAtk.m_axMoves[0].m_uCurPP;
+	const u_int uBeforeHP = xAtk.m_uCurHP;
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	ZENITH_ASSERT_LT(xMirror.RandBelow(100u), 33u);
+	const u_int uRoll = xMirror.RandRange(85u, 100u);
+	const u_int uExpected = ZM_SC5ExpectedConfusionDamage(xAtk, uRoll);
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_EQ(xAtk.m_axMoves[0].m_uCurPP, uPP, "G5 cancellation spends no PP");
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_USED));
+	ZENITH_ASSERT_EQ(xAtk.m_uConfuseTurns, 1u, "one attempted G5 action consumes one turn");
+	const ZM_BattleEvent* pxFail = ZM_SC5FindEventPtr(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_PLAYER);
+	const ZM_BattleEvent* pxDmg = ZM_SC5FindEventPtr(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxFail);
+	ZENITH_ASSERT_NOT_NULL(pxDmg);
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ(pxFail->m_iAux, (int)ZM_MOVE_FAIL_CONFUSED); }
+	if (pxDmg != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxDmg->m_iAmount, (int)uExpected);
+		ZENITH_ASSERT_EQ(pxDmg->m_iAux, (int)(uExpected >= uBeforeHP ? 0u : uBeforeHP - uExpected));
+		ZENITH_ASSERT_EQ(pxDmg->m_iTag, ZM_VolatileDamageTag(ZM_VOLATILE_CONFUSED));
+	}
+	ZENITH_ASSERT_LT(ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED),
+		ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT));
+	ZM_SC5AssertRNGCursor(xState, xMirror, "self-hit consumes exactly confuse gate + damage roll");
+}
+
+ZENITH_TEST(ZM_Battle, Confuse_GatePass_ActsThenExpiresOnce)
+{
+	const u_int64 ulSeed = ZM_SC5FindGateSeed(false);
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW, ZM_MOVE_NONE, 10u, 250u), ulSeed, 54ull);
+	ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+	ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_CONFUSED, 1u);
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	ZENITH_ASSERT_GE(xMirror.RandBelow(100u), 33u);
+	xMirror.Chance(1u, 24u);
+	xMirror.RandRange(85u, 100u);
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_USED));
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xAtk, ZM_VOLATILE_CONFUSED));
+	ZENITH_ASSERT_EQ(xAtk.m_uConfuseTurns, 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED), 1u);
+	const int iEnded = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED,
+		ZM_SIDE_PLAYER);
+	const int iUsed = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_MOVE_USED,
+		ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_GE(iEnded, 0);
+	ZENITH_ASSERT_GE(iUsed, 0);
+	ZENITH_ASSERT_LT(iEnded, iUsed,
+		"G5 expiry clears confusion and emits ENDED before the move reaches M1");
+	if (iEnded >= 0)
+	{
+		const ZM_BattleEvent& xEnded = xEvents.Get((u_int)iEnded);
+		ZENITH_ASSERT_EQ(xEnded.m_iAmount, 0);
+		ZENITH_ASSERT_EQ(xEnded.m_iAux, (int)ZM_VOLATILE_CONFUSED);
+		ZENITH_ASSERT_EQ(xEnded.m_iTag, 0);
+	}
+	ZM_SC5AssertRNGCursor(xState, xMirror, "confusion pass precedes the ordinary crit/roll stream");
+}
+
+ZENITH_TEST(ZM_Battle, Confuse_BurnHalvesSelfHitAndCanFaint)
+{
+	const u_int64 ulSeed = ZM_SC5FindGateSeed(true);
+	u_int auDamage[2] = {};
+	for (u_int uCase = 0u; uCase < 2u; ++uCase)
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), ulSeed, 54ull);
+		ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_CONFUSED, 2u);
+		if (uCase == 1u) { xAtk.m_eStatus = ZM_MAJOR_STATUS_BURN; }
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		const ZM_BattleEvent* pxDmg = ZM_SC5FindEventPtr(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_NOT_NULL(pxDmg);
+		if (pxDmg != nullptr) { auDamage[uCase] = (u_int)pxDmg->m_iAmount; }
+	}
+	ZENITH_ASSERT_EQ(auDamage[1], auDamage[0] / 2u, "burn halves the typeless physical confusion self-hit");
+
+	ZM_BattleState xKOState;
+	BuildBattleState(xKOState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), ulSeed, 54ull);
+	ZM_BattleMonster& xKOAtk = xKOState.Side(ZM_SIDE_PLAYER).Active();
+	ZM_SC5RigVolatile(xKOAtk, ZM_VOLATILE_CONFUSED, 1u);
+	xKOAtk.m_uCurHP = 1u;
+	Zenith_Vector<ZM_BattleEvent> xKOEvents;
+	ZM_MoveContext xKOCtx = MakeCtx(xKOState, xKOEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xKOCtx);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xKOEvents, ZM_BATTLE_EVENT_FAINT), 1u);
+	const int iFail = ZM_SC5FindEvent(xKOEvents, ZM_BATTLE_EVENT_MOVE_FAILED,
+		ZM_SIDE_PLAYER);
+	const int iDamage = ZM_SC5FindEvent(xKOEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT,
+		ZM_SIDE_PLAYER);
+	const int iFaint = ZM_SC5FindEvent(xKOEvents, ZM_BATTLE_EVENT_FAINT,
+		ZM_SIDE_PLAYER);
+	const int iEnded = ZM_SC5FindEvent(xKOEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED,
+		ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_GE(iFail, 0);
+	ZENITH_ASSERT_GE(iDamage, 0);
+	ZENITH_ASSERT_GE(iFaint, 0);
+	ZENITH_ASSERT_GE(iEnded, 0);
+	ZENITH_ASSERT_LT(iFail, iDamage);
+	ZENITH_ASSERT_LT(iDamage, iFaint);
+	ZENITH_ASSERT_LT(iFaint, iEnded,
+		"an expiring self-hit announces damage/faint before clearing confusion");
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xKOAtk, ZM_VOLATILE_CONFUSED));
+	ZENITH_ASSERT_EQ(xKOAtk.m_uConfuseTurns, 0u);
+	if (iEnded >= 0)
+	{
+		ZENITH_ASSERT_EQ(xKOEvents.Get((u_int)iEnded).m_iAux,
+			(int)ZM_VOLATILE_CONFUSED);
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Flinch_SecondaryProcTimingAndGateCancellation)
+{
+	const u_int64 ulSeed = ZM_SC5FindSecondarySeed(ZM_MOVE_SKULLKNOCK, true);
+	ZM_BattleMonsterSpec axPlayer[1] = { ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_SKULLKNOCK, ZM_MOVE_NONE, 120u) };
+	ZM_BattleMonsterSpec axEnemy[1] = { ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_MOVE_NONE, 10u, 250u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, ulSeed, 54ull);
+	const u_int uEnemyPP = xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_axMoves[0].m_uCurPP;
+	ZM_SC5ResolveMoveTurn(xEngine);
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED));
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_FLINCH, ZM_SIDE_ENEMY), 1u);
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_ENEMY), 0u,
+		"FLINCH is the sole G4 cancellation event");
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_ENEMY), 0u);
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_axMoves[0].m_uCurPP, uEnemyPP);
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_FLINCH));
+	ZENITH_ASSERT_LT(ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_FLINCH, ZM_SIDE_ENEMY),
+		ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED, ZM_SIDE_ENEMY));
+}
+
+ZENITH_TEST(ZM_Battle, Flinch_SlowerCarrierExpiresAndNeverStealsNextTurn)
+{
+	// The faster enemy consumes crit+roll before the slower carrier's
+	// crit+roll+secondary stream, so search the real full-turn draw prefix.
+	u_int64 ulSeed = 0ull;
+	for (u_int64 ulTry = 1ull; ulTry <= 4096ull; ++ulTry)
+	{
+		ZM_BattleRNG xMirror(ulTry, 54ull);
+		xMirror.Chance(1u, 24u);       // faster enemy crit
+		xMirror.RandRange(85u, 100u);  // faster enemy damage roll
+		xMirror.Chance(1u, 24u);       // slower Skull Knock crit
+		xMirror.RandRange(85u, 100u);  // slower Skull Knock damage roll
+		if (xMirror.RandBelow(100u) < ZM_GetMoveData(ZM_MOVE_SKULLKNOCK).m_uEffectChance)
+		{
+			ulSeed = ulTry;
+			break;
+		}
+	}
+	ZENITH_ASSERT_GT(ulSeed, 0ull);
+	ZM_BattleRNG xTurnMirror(ulSeed, 54ull);
+	xTurnMirror.Chance(1u, 24u);
+	xTurnMirror.RandRange(85u, 100u);
+	xTurnMirror.Chance(1u, 24u);
+	xTurnMirror.RandRange(85u, 100u);
+	ZENITH_ASSERT_LT(xTurnMirror.RandBelow(100u),
+		ZM_GetMoveData(ZM_MOVE_SKULLKNOCK).m_uEffectChance,
+		"the selected full-turn seed deterministically procs the slower carrier's Flinch");
+	ZM_BattleMonsterSpec axPlayer[1] = { ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_SKULLKNOCK, ZM_MOVE_NONE, 10u, 250u) };
+	ZM_BattleMonsterSpec axEnemy[1] = { ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_MOVE_NONE, 120u, 250u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, ulSeed, 54ull);
+	ZM_SC5ResolveMoveTurn(xEngine);
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	ZENITH_ASSERT_TRUE(ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_ENEMY) >= 1u,
+		"the faster target already acted before the slow flinch carrier");
+	const int iPlayerHit = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_ENEMY);
+	const int iApplied = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED, ZM_SIDE_ENEMY);
+	const int iEnded = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED,
+		ZM_SIDE_ENEMY), 1u);
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED,
+		ZM_SIDE_ENEMY), 1u);
+	ZENITH_ASSERT_GE(iPlayerHit, 0);
+	ZENITH_ASSERT_GE(iApplied, 0);
+	ZENITH_ASSERT_GE(iEnded, 0);
+	ZENITH_ASSERT_LT(iPlayerHit, iApplied);
+	ZENITH_ASSERT_LT(iApplied, iEnded, "late Flinch applies after the hit, then expires at that EOT");
+	if (iApplied >= 0)
+	{
+		ZM_SC5AssertAppliedEncoding(xEvents.Get((u_int)iApplied), ZM_SIDE_ENEMY,
+			ZM_VOLATILE_FLINCH, 0u);
+	}
+	if (iEnded >= 0)
+	{
+		const ZM_BattleEvent& xEnded = xEvents.Get((u_int)iEnded);
+		ZENITH_ASSERT_EQ(xEnded.m_iAmount, 0);
+		ZENITH_ASSERT_EQ(xEnded.m_iAux, (int)ZM_VOLATILE_FLINCH);
+		ZENITH_ASSERT_EQ(xEnded.m_iTag, 0);
+	}
+	ZM_SC5AssertRNGCursor(xEngine.GetStateMutable(), xTurnMirror,
+		"the slower-carrier turn consumes the exact two-hit plus proc stream");
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_FLINCH, ZM_SIDE_ENEMY), 0u,
+		"a target that already acted never reaches a same-turn G4");
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_FLINCH));
+	const u_int uBeforeEvents = xEngine.GetEventCount();
+	const u_int uBefore = ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_ENEMY);
+	const u_int uBeforeFlinch = ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_FLINCH, ZM_SIDE_ENEMY);
+	ZM_SC5ResolveMoveTurn(xEngine);
+	ZENITH_ASSERT_GT(ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_ENEMY), uBefore,
+		"a late flinch must not carry into the next turn");
+	ZENITH_ASSERT_GE(ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_ENEMY, uBeforeEvents), 0);
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_FLINCH, ZM_SIDE_ENEMY), uBeforeFlinch,
+		"the next turn has no stale G4 cancellation");
+}
+
+ZENITH_TEST(ZM_Battle, Flinch_GateUsesDedicatedEventsAndNoRNG)
+{
+	const u_int64 ulSeed = 0x1234ull;
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), ulSeed, 54ull);
+	ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+	ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_FLINCH);
+	const u_int uPP = xAtk.m_axMoves[0].m_uCurPP;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_EQ(xAtk.m_axMoves[0].m_uCurPP, uPP);
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 2u);
+	if (xEvents.GetSize() == 2u)
+	{
+		ZENITH_ASSERT_EQ((u_int)xEvents.Get(0).m_eKind, (u_int)ZM_BATTLE_EVENT_FLINCH);
+		ZENITH_ASSERT_EQ((u_int)xEvents.Get(1).m_eKind, (u_int)ZM_BATTLE_EVENT_VOLATILE_ENDED);
+		ZENITH_ASSERT_EQ(xEvents.Get(1).m_iAux, (int)ZM_VOLATILE_FLINCH);
+	}
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_USED));
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	ZM_SC5AssertRNGCursor(xState, xMirror, "G4 flinch consumes no RNG");
+}
+
+ZENITH_TEST(ZM_Battle, Scenario_FastFlinchCancelsReply_ExactStream)
+{
+	// Independent pencil/oracle fixture: level-50 neutral stats from base 1 give
+	// Atk=Def=21 and HP=76. Seed 0x1234 is non-crit, roll 88, proc<30:
+	// floor(((22*70*21/21)/50+2)*88/100) = 28 raw damage.
+	ZM_BattleMonsterSpec axPlayer[1] = {
+		MakeSpecOverride(ZM_SPECIES_KINDLET, 50u, ZM_MOVE_SKULLKNOCK, 1u, 1u, 1u, 1u, 1u, 100u) };
+	ZM_BattleMonsterSpec axEnemy[1] = {
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_WHETCLAW, 1u, 1u, 1u, 1u, 1u, 1u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, 0x1234ull, 54ull);
+	ZM_SC5ResolveMoveTurn(xEngine);
+	Zenith_Vector<ZM_BattleEvent> xExpected;
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_BEGIN));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_PLAYER, 0u, ZM_MOVE_NONE, ZM_SPECIES_KINDLET));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_STRAYLING));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_BEGIN, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 1));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER, 0u, ZM_MOVE_SKULLKNOCK));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 28, 48));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_VOLATILE_APPLIED, ZM_SIDE_ENEMY, 0u,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)ZM_VOLATILE_FLINCH));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_FLINCH, ZM_SIDE_ENEMY, 0u));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_VOLATILE_ENDED, ZM_SIDE_ENEMY, 0u,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)ZM_VOLATILE_FLINCH));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 1));
+	ZM_AssertStreamEquals(xExpected, xEngine.GetEvents(), "fastFlinchCancelsReply");
+}
+
+ZENITH_TEST(ZM_Battle, LeechSeed_ApplyDuplicateGrassBlockAndSourceEncoding)
+{
+	const u_int64 ulSeed = 0x1234ull;
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_SEEDLEECH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), ulSeed, 54ull);
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZENITH_ASSERT_TRUE(ZM_StatusLogic::CanApplyVolatile(xCtx.Def(), ZM_VOLATILE_LEECH_SEED));
+	ZENITH_ASSERT_TRUE(ZM_StatusLogic::ApplyVolatile(xCtx, ZM_SIDE_ENEMY,
+		ZM_VOLATILE_LEECH_SEED, ZM_SIDE_PLAYER));
+	const ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xDef, ZM_VOLATILE_LEECH_SEED));
+	ZENITH_ASSERT_EQ((u_int)xDef.m_eLeechSourceSide, (u_int)ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 1u);
+	if (xEvents.GetSize() == 1u)
+	{
+		ZM_SC5AssertAppliedEncoding(xEvents.Get(0), ZM_SIDE_ENEMY, ZM_VOLATILE_LEECH_SEED,
+			0u, (int)ZM_SIDE_PLAYER + 1);
+	}
+	ZENITH_ASSERT_FALSE(ZM_StatusLogic::CanApplyVolatile(xDef, ZM_VOLATILE_LEECH_SEED));
+	ZENITH_ASSERT_FALSE(ZM_StatusLogic::ApplyVolatile(xCtx, ZM_SIDE_ENEMY,
+		ZM_VOLATILE_LEECH_SEED, ZM_SIDE_PLAYER));
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 1u, "duplicate seed application is silent in the centralized helper");
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	ZM_SC5AssertRNGCursor(xState, xMirror, "Leech Seed apply/block consumes no RNG");
+
+	ZM_BattleState xGrassState;
+	BuildBattleState(xGrassState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_SEEDLEECH),
+		ZM_SC5Spec(ZM_SPECIES_FERNFAWN, ZM_MOVE_RAMBASH), ulSeed, 54ull);
+	ZENITH_ASSERT_FALSE(ZM_StatusLogic::CanApplyVolatile(
+		xGrassState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_LEECH_SEED),
+		"GRASS targets are immune to Leech Seed");
+}
+
+ZENITH_TEST(ZM_Battle, LeechSeed_PrimaryMissAndBlockEvents)
+{
+	// Find a seed whose first draw misses Seed Leech's 90 accuracy.
+	u_int64 ulMissSeed = 0ull;
+	for (u_int64 ulSeed = 1ull; ulSeed <= 4096ull; ++ulSeed)
+	{
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		if (xMirror.RandBelow(100u) >= 90u) { ulMissSeed = ulSeed; break; }
+	}
+	ZENITH_ASSERT_GT(ulMissSeed, 0ull);
+	ZM_BattleState xMissState;
+	Zenith_Vector<ZM_BattleEvent> xMissEvents;
+	ZM_RunPlayerMove(ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_SEEDLEECH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), ulMissSeed, xMissState, xMissEvents);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xMissEvents, ZM_BATTLE_EVENT_MOVE_MISSED));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xMissEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED));
+	ZM_BattleRNG xMissMirror(ulMissSeed, 54ull);
+	xMissMirror.RandBelow(100u);
+	ZM_SC5AssertRNGCursor(xMissState, xMissMirror, "a Leech Seed miss consumes accuracy only");
+
+	// Boost accuracy so the GRASS block itself is isolated and deterministic.
+	ZM_BattleState xBlockState;
+	BuildBattleState(xBlockState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_SEEDLEECH),
+		ZM_SC5Spec(ZM_SPECIES_FERNFAWN, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	xBlockState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ACCURACY] = iZM_MAX_STAGE;
+	Zenith_Vector<ZM_BattleEvent> xBlockEvents;
+	ZM_MoveContext xBlockCtx = MakeCtx(xBlockState, xBlockEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xBlockCtx);
+	const ZM_BattleEvent* pxFail = ZM_SC5FindEventPtr(xBlockEvents,
+		ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_NOT_NULL(pxFail);
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ(pxFail->m_iAux, (int)ZM_MOVE_FAIL_VOLATILE_BLOCKED); }
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xBlockEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED));
+}
+
+ZENITH_TEST(ZM_Battle, LeechSeed_EOT_ChipDrainCapAndSourceSwitchRedirect)
+{
+	ZM_BattleMonsterSpec axPlayer[2] = {
+		ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_RAMBASH) };
+	ZM_BattleMonsterSpec axEnemy[1] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 2u, axEnemy, 1u, 1ull, 54ull);
+	ZM_BattleState& xState = xEngine.GetStateMutable();
+	ZM_BattleSide& xPlayer = xState.Side(ZM_SIDE_PLAYER);
+	ZM_BattleSide& xEnemy = xState.Side(ZM_SIDE_ENEMY);
+	ZM_BattleMonster& xVictim = xEnemy.Active();
+	ZM_SC5RigVolatile(xVictim, ZM_VOLATILE_LEECH_SEED, 0u, ZM_SIDE_PLAYER);
+	const u_int uScheduled = xVictim.m_auMaxStat[ZM_STAT_HP] / 8u > 0u
+		? xVictim.m_auMaxStat[ZM_STAT_HP] / 8u : 1u;
+	xVictim.m_uCurHP = uScheduled - 1u;
+	xPlayer.m_xParty.Get(0).m_uCurHP = 1u;
+	xPlayer.m_xParty.Get(1).m_uCurHP = xPlayer.m_xParty.Get(1).m_auMaxStat[ZM_STAT_HP] - 2u;
+	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_PLAYER, 1u));
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_StatusLogic::EndOfTurn(xState, xEvents, ZM_SIDE_ENEMY);
+	const ZM_BattleEvent* pxDamage = ZM_SC5FindEventPtr(xEvents, ZM_BATTLE_EVENT_STATUS_DAMAGE, ZM_SIDE_ENEMY);
+	const ZM_BattleEvent* pxDrain = ZM_SC5FindEventPtr(xEvents, ZM_BATTLE_EVENT_DRAIN, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxDamage);
+	ZENITH_ASSERT_NOT_NULL(pxDrain);
+	if (pxDamage != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxDamage->m_iAmount, (int)uScheduled, "Leech reports raw scheduled chip");
+		ZENITH_ASSERT_EQ(pxDamage->m_iAux, 0);
+		ZENITH_ASSERT_EQ(pxDamage->m_iTag, ZM_VolatileDamageTag(ZM_VOLATILE_LEECH_SEED));
+	}
+	if (pxDrain != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxDrain->m_uSlot, 1u, "source switching redirects healing to the new active");
+		ZENITH_ASSERT_EQ(pxDrain->m_iAmount, 2, "DRAIN amount is actual restored HP, capped by missing HP");
+		ZENITH_ASSERT_EQ(pxDrain->m_iAux,
+			(int)xPlayer.m_xParty.Get(1).m_auMaxStat[ZM_STAT_HP]);
+	}
+	ZENITH_ASSERT_LT(ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_STATUS_DAMAGE),
+		ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_FAINT));
+	ZENITH_ASSERT_LT(ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_FAINT),
+		ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_DRAIN));
+
+	// A living full-HP source still reports a zero-amount DRAIN; a source side
+	// with no living active still takes the victim chip but emits no DRAIN.
+	ZM_BattleState xFullState;
+	BuildBattleState(xFullState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_SC5RigVolatile(xFullState.Side(ZM_SIDE_ENEMY).Active(),
+		ZM_VOLATILE_LEECH_SEED, 0u, ZM_SIDE_PLAYER);
+	Zenith_Vector<ZM_BattleEvent> xFullEvents;
+	ZM_StatusLogic::EndOfTurn(xFullState, xFullEvents, ZM_SIDE_ENEMY);
+	const ZM_BattleEvent* pxFullDrain = ZM_SC5FindEventPtr(xFullEvents,
+		ZM_BATTLE_EVENT_DRAIN, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxFullDrain);
+	if (pxFullDrain != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxFullDrain->m_iAmount, 0);
+		ZENITH_ASSERT_EQ(pxFullDrain->m_iAux,
+			(int)xFullState.Side(ZM_SIDE_PLAYER).Active().m_auMaxStat[ZM_STAT_HP]);
+	}
+
+	ZM_BattleState xNoSourceState;
+	BuildBattleState(xNoSourceState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	xNoSourceState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP = 0u;
+	ZM_SC5RigVolatile(xNoSourceState.Side(ZM_SIDE_ENEMY).Active(),
+		ZM_VOLATILE_LEECH_SEED, 0u, ZM_SIDE_PLAYER);
+	Zenith_Vector<ZM_BattleEvent> xNoSourceEvents;
+	ZM_StatusLogic::EndOfTurn(xNoSourceState, xNoSourceEvents, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xNoSourceEvents, ZM_BATTLE_EVENT_STATUS_DAMAGE));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xNoSourceEvents, ZM_BATTLE_EVENT_DRAIN));
+}
+
+ZENITH_TEST(ZM_Battle, LeechSeed_DoSwitchClearsWithoutEndedEvent)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = { ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH) };
+	ZM_BattleMonsterSpec axEnemy[2] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_RAMBASH) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 2u, 1ull, 54ull);
+	ZM_BattleMonster& xOutgoing = xEngine.GetStateMutable().Side(ZM_SIDE_ENEMY).Active();
+	ZM_SC5RigVolatile(xOutgoing, ZM_VOLATILE_LEECH_SEED, 0u, ZM_SIDE_PLAYER);
+	const u_int uBefore = xEngine.GetEventCount();
+	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_ENEMY, 1u));
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xOutgoing, ZM_VOLATILE_LEECH_SEED));
+	ZENITH_ASSERT_EQ((u_int)xOutgoing.m_eLeechSourceSide, (u_int)ZM_SIDE_COUNT);
+	for (u_int u = uBefore; u < xEngine.GetEventCount(); ++u)
+	{
+		ZENITH_ASSERT_TRUE(xEngine.GetEvent(u).m_eKind != ZM_BATTLE_EVENT_VOLATILE_ENDED,
+			"switch cleanup is silent; SWITCH_IN is the only switch event");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Trap_DamagingCarrier_DrawOrderApplyAndDuplicateBlock)
+{
+	// Find a base-accuracy hit seed for Maelstrom Coil (85).
+	u_int64 ulSeed = 0ull;
+	for (u_int64 ulTry = 1ull; ulTry <= 4096ull; ++ulTry)
+	{
+		ZM_BattleRNG xMirror(ulTry, 54ull);
+		if (xMirror.RandBelow(100u) < 85u) { ulSeed = ulTry; break; }
+	}
+	ZENITH_ASSERT_GT(ulSeed, 0ull);
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(ZM_SC5Spec(ZM_SPECIES_FINLET, ZM_MOVE_MAELSTROMCOIL, ZM_MOVE_NONE, 120u),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_MOVE_NONE, 10u, 250u),
+		ulSeed, xState, xEvents);
+	ZM_BattleRNG xMirror(ulSeed, 54ull);
+	xMirror.RandBelow(100u);          // M5 accuracy
+	xMirror.Chance(1u, 24u);         // crit
+	xMirror.RandRange(85u, 100u);    // damage roll
+	const u_int uDuration = xMirror.RandRange(4u, 5u);
+	const ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xDef, ZM_VOLATILE_TRAP));
+	ZENITH_ASSERT_EQ(xDef.m_uTrapTurns, uDuration);
+	const ZM_BattleEvent* pxApplied = ZM_SC5FindEventPtr(xEvents,
+		ZM_BATTLE_EVENT_VOLATILE_APPLIED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_NOT_NULL(pxApplied);
+	if (pxApplied != nullptr) { ZM_SC5AssertAppliedEncoding(*pxApplied, ZM_SIDE_ENEMY, ZM_VOLATILE_TRAP, uDuration); }
+	ZM_SC5AssertRNGCursor(xState, xMirror, "Trap draws accuracy, crit, roll, then guarded duration");
+
+	// Central duplicate application is silent and does not refresh/draw.
+	Zenith_Vector<ZM_BattleEvent> xDuplicateEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xDuplicateEvents, ZM_SIDE_PLAYER, 0u);
+	ZENITH_ASSERT_FALSE(ZM_StatusLogic::ApplyVolatile(xCtx, ZM_SIDE_ENEMY, ZM_VOLATILE_TRAP));
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_uTrapTurns, uDuration);
+	ZENITH_ASSERT_EQ(xDuplicateEvents.GetSize(), 0u);
+	ZM_SC5AssertRNGCursor(xState, xMirror, "duplicate Trap consumes no duration draw");
+}
+
+ZENITH_TEST(ZM_Battle, Trap_MissAndFaintedTargetDoNotApplyOrDrawDuration)
+{
+	u_int64 ulMissSeed = 0ull;
+	for (u_int64 ulTry = 1ull; ulTry <= 4096ull; ++ulTry)
+	{
+		ZM_BattleRNG xMirror(ulTry, 54ull);
+		if (xMirror.RandBelow(100u) >= 85u) { ulMissSeed = ulTry; break; }
+	}
+	ZM_BattleState xMissState;
+	Zenith_Vector<ZM_BattleEvent> xMissEvents;
+	ZM_RunPlayerMove(ZM_SC5Spec(ZM_SPECIES_FINLET, ZM_MOVE_MAELSTROMCOIL),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), ulMissSeed, xMissState, xMissEvents);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xMissEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED));
+	ZM_BattleRNG xMissMirror(ulMissSeed, 54ull);
+	xMissMirror.RandBelow(100u);
+	ZM_SC5AssertRNGCursor(xMissState, xMissMirror, "missed Trap carrier draws accuracy only");
+
+	ZM_BattleState xKOState;
+	BuildBattleState(xKOState, ZM_SC5Spec(ZM_SPECIES_FINLET, ZM_MOVE_MAELSTROMCOIL),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	xKOState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 1u;
+	xKOState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ACCURACY] = iZM_MAX_STAGE;
+	Zenith_Vector<ZM_BattleEvent> xKOEvents;
+	ZM_MoveContext xKOCtx = MakeCtx(xKOState, xKOEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_BattleRNG xKOMirror(1ull, 54ull);
+	const u_int uKOAccuracy = ZM_ApplyStatStage(
+		ZM_GetMoveData(ZM_MOVE_MAELSTROMCOIL).m_uAccuracy, iZM_MAX_STAGE);
+	ZENITH_ASSERT_LT(xKOMirror.RandBelow(100u), uKOAccuracy,
+		"the mirrored +6-accuracy Trap carrier draw must connect before testing KO suppression");
+	xKOMirror.Chance(1u, 24u);
+	xKOMirror.RandRange(85u, 100u);
+	ZM_MoveExecutor::Execute(xKOCtx);
+	ZENITH_ASSERT_TRUE(xKOState.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xKOEvents, ZM_BATTLE_EVENT_MOVE_MISSED));
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xKOEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xKOEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED));
+	ZM_SC5AssertRNGCursor(xKOState, xKOMirror, "a KO carrier does not draw/apply Trap duration");
+}
+
+ZENITH_TEST(ZM_Battle, Trap_EOT_TicksApplicationTurnExpiresAndFaintsOnce)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_BattleMonster& xVictim = xState.Side(ZM_SIDE_ENEMY).Active();
+	ZM_SC5RigVolatile(xVictim, ZM_VOLATILE_TRAP, 1u);
+	const u_int uScheduled = xVictim.m_auMaxStat[ZM_STAT_HP] / 8u > 0u
+		? xVictim.m_auMaxStat[ZM_STAT_HP] / 8u : 1u;
+	xVictim.m_uCurHP = uScheduled + 1u;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_StatusLogic::EndOfTurn(xState, xEvents, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_EQ(xVictim.m_uCurHP, 1u);
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xVictim, ZM_VOLATILE_TRAP));
+	const ZM_BattleEvent* pxDamage = ZM_SC5FindEventPtr(xEvents, ZM_BATTLE_EVENT_STATUS_DAMAGE);
+	const ZM_BattleEvent* pxEnd = ZM_SC5FindEventPtr(xEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED);
+	ZENITH_ASSERT_NOT_NULL(pxDamage);
+	ZENITH_ASSERT_NOT_NULL(pxEnd);
+	if (pxDamage != nullptr) { ZENITH_ASSERT_EQ(pxDamage->m_iTag, ZM_VolatileDamageTag(ZM_VOLATILE_TRAP)); }
+	ZENITH_ASSERT_LT(ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_STATUS_DAMAGE),
+		ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED));
+
+	ZM_BattleState xKOState;
+	BuildBattleState(xKOState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_BattleMonster& xKOVictim = xKOState.Side(ZM_SIDE_ENEMY).Active();
+	ZM_SC5RigVolatile(xKOVictim, ZM_VOLATILE_TRAP, 3u);
+	xKOVictim.m_uCurHP = 1u;
+	Zenith_Vector<ZM_BattleEvent> xKOEvents;
+	ZM_StatusLogic::EndOfTurn(xKOState, xKOEvents, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xKOEvents, ZM_BATTLE_EVENT_FAINT), 1u);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xKOEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED),
+		"a KO stops later per-side volatile cleanup events");
+}
+
+ZENITH_TEST(ZM_Battle, Scenario_LeechTrapEOT_ExactStream)
+{
+	// Independent arithmetic golden: max HP 76, victim 30 HP, source 70/76.
+	// Leech schedules 9 -> victim 21, restores 6 to cap; Trap schedules 9 -> 12,
+	// then its final counter expires.
+	ZM_BattleState xState;
+	BuildBattleState(xState,
+		MakeSpecOverride(ZM_SPECIES_KINDLET, 50u, ZM_MOVE_RAMBASH, 1u, 1u, 1u, 1u, 1u, 2u),
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_RAMBASH, 1u, 1u, 1u, 1u, 1u, 1u),
+		1ull, 54ull);
+	ZM_BattleMonster& xSource = xState.Side(ZM_SIDE_PLAYER).Active();
+	ZM_BattleMonster& xVictim = xState.Side(ZM_SIDE_ENEMY).Active();
+	xSource.m_uCurHP = 70u;
+	xVictim.m_uCurHP = 30u;
+	ZM_SC5RigVolatile(xVictim, ZM_VOLATILE_LEECH_SEED, 0u, ZM_SIDE_PLAYER);
+	ZM_SC5RigVolatile(xVictim, ZM_VOLATILE_TRAP, 1u);
+	Zenith_Vector<ZM_BattleEvent> xActual;
+	ZM_StatusLogic::EndOfTurn(xState, xActual, ZM_SIDE_ENEMY);
+	Zenith_Vector<ZM_BattleEvent> xExpected;
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_STATUS_DAMAGE, ZM_SIDE_ENEMY, 0u,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, 9, 21, ZM_VolatileDamageTag(ZM_VOLATILE_LEECH_SEED)));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_DRAIN, ZM_SIDE_PLAYER, 0u,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, 6, 76));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_STATUS_DAMAGE, ZM_SIDE_ENEMY, 0u,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, 9, 12, ZM_VolatileDamageTag(ZM_VOLATILE_TRAP)));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_VOLATILE_ENDED, ZM_SIDE_ENEMY, 0u,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)ZM_VOLATILE_TRAP));
+	ZM_AssertStreamEquals(xExpected, xActual, "leechTrapEOT");
+}
+
+ZENITH_TEST(ZM_Battle, Taunt_ApplyM0BlockDamageBypassAndExpiry)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_GOAD),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	Zenith_Vector<ZM_BattleEvent> xApplyEvents;
+	ZM_MoveContext xApplyCtx = MakeCtx(xState, xApplyEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xApplyCtx);
+	ZM_BattleMonster& xTaunted = xState.Side(ZM_SIDE_ENEMY).Active();
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xTaunted, ZM_VOLATILE_TAUNT));
+	ZENITH_ASSERT_EQ(xTaunted.m_uTauntTurns, 3u);
+	const ZM_BattleEvent* pxApplied = ZM_SC5FindEventPtr(xApplyEvents,
+		ZM_BATTLE_EVENT_VOLATILE_APPLIED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_NOT_NULL(pxApplied);
+	if (pxApplied != nullptr) { ZM_SC5AssertAppliedEncoding(*pxApplied, ZM_SIDE_ENEMY, ZM_VOLATILE_TAUNT, 3u); }
+
+	// M0 blocks the status slot before PP/MOVE_USED and consumes no RNG.
+	Zenith_Vector<ZM_BattleEvent> xBlockEvents;
+	ZM_MoveContext xBlockCtx = MakeCtx(xState, xBlockEvents, ZM_SIDE_ENEMY, 0u);
+	const u_int uStatusPP = xTaunted.m_axMoves[0].m_uCurPP;
+	ZM_BattleRNG xMirror = xState.m_xRNG;
+	ZM_MoveExecutor::Execute(xBlockCtx);
+	ZENITH_ASSERT_EQ(xTaunted.m_axMoves[0].m_uCurPP, uStatusPP);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xBlockEvents, ZM_BATTLE_EVENT_MOVE_USED));
+	const ZM_BattleEvent* pxFail = ZM_SC5FindEventPtr(xBlockEvents,
+		ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_NOT_NULL(pxFail);
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ(pxFail->m_iAux, (int)ZM_MOVE_FAIL_TAUNTED); }
+	ZM_SC5AssertRNGCursor(xState, xMirror, "M0 Taunt consumes no RNG");
+
+	// A damaging slot bypasses M0 and spends PP/acts.
+	Zenith_Vector<ZM_BattleEvent> xDamageEvents;
+	ZM_MoveContext xDamageCtx = MakeCtx(xState, xDamageEvents, ZM_SIDE_ENEMY, 1u);
+	const u_int uDamagePP = xTaunted.m_axMoves[1].m_uCurPP;
+	ZM_MoveExecutor::Execute(xDamageCtx);
+	ZENITH_ASSERT_EQ(xTaunted.m_axMoves[1].m_uCurPP, uDamagePP - 1u);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xDamageEvents, ZM_BATTLE_EVENT_MOVE_USED));
+
+	// Application-turn EOT decrements 3->2; two more EOT passes expire exactly once.
+	Zenith_Vector<ZM_BattleEvent> xEOT;
+	ZM_StatusLogic::EndOfTurn(xState, xEOT, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_EQ(xTaunted.m_uTauntTurns, 2u);
+	ZM_StatusLogic::EndOfTurn(xState, xEOT, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_EQ(xTaunted.m_uTauntTurns, 1u);
+	ZM_StatusLogic::EndOfTurn(xState, xEOT, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xTaunted, ZM_VOLATILE_TAUNT));
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEOT, ZM_BATTLE_EVENT_VOLATILE_ENDED), 1u);
+}
+
+ZENITH_TEST(ZM_Battle, Protect_M2InterceptsOpponentMovesBeforeAllDraws)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = {
+		ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BULWARK, ZM_MOVE_NONE, 10u, 250u) };
+	ZM_BattleMonsterSpec axEnemy[1] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_TORRENTCANNON, ZM_MOVE_NONE, 120u, 250u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, 0x1234ull, 54ull);
+	const u_int uEnemyPP = xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_axMoves[0].m_uCurPP;
+	ZM_BattleRNG xMirror(0x1234ull, 54ull);
+	ZM_SC5ResolveMoveTurn(xEngine);
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED));
+	const ZM_BattleEvent* pxFail = ZM_SC5FindEventPtr(xEvents,
+		ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxFail);
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ(pxFail->m_iAux, (int)ZM_MOVE_FAIL_PROTECTED); }
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_axMoves[0].m_uCurPP, uEnemyPP - 1u);
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEvents, ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_ENEMY), 1u);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT));
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xEngine.GetState().Side(ZM_SIDE_PLAYER).Active(), ZM_VOLATILE_PROTECT));
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED), 1u,
+		"Protect expires at the same turn EOT");
+
+	// Consecutive uses refresh normally: there is no repeat-use decay or RNG.
+	const u_int uSecondStart = xEngine.GetEventCount();
+	ZM_SC5ResolveMoveTurn(xEngine);
+	const ZM_BattleEvent* pxSecondFail = ZM_SC5FindEventPtr(xEvents,
+		ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_PLAYER, uSecondStart);
+	ZENITH_ASSERT_NOT_NULL(pxSecondFail);
+	if (pxSecondFail != nullptr) { ZENITH_ASSERT_EQ(pxSecondFail->m_iAux, (int)ZM_MOVE_FAIL_PROTECTED); }
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED), 2u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED), 2u);
+	ZM_BattleState& xMutable = xEngine.GetStateMutable();
+	ZM_SC5AssertRNGCursor(xMutable, xMirror,
+		"M2 Protect and consecutive refreshes consume no accuracy/crit/repeat-use draws");
+
+	// Protect is the sole refreshable volatile. Two central applications in the
+	// same turn each announce APPLIED, with no intermediate end, failure, or draw.
+	ZM_BattleState xRefreshState;
+	BuildBattleState(xRefreshState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BULWARK),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	Zenith_Vector<ZM_BattleEvent> xRefreshEvents;
+	ZM_MoveContext xRefreshCtx = MakeCtx(xRefreshState, xRefreshEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_BattleRNG xRefreshMirror(1ull, 54ull);
+	ZENITH_ASSERT_TRUE(ZM_StatusLogic::ApplyVolatile(
+		xRefreshCtx, ZM_SIDE_PLAYER, ZM_VOLATILE_PROTECT));
+	ZENITH_ASSERT_TRUE(ZM_StatusLogic::ApplyVolatile(
+		xRefreshCtx, ZM_SIDE_PLAYER, ZM_VOLATILE_PROTECT));
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(
+		xRefreshState.Side(ZM_SIDE_PLAYER).Active(), ZM_VOLATILE_PROTECT));
+	ZENITH_ASSERT_EQ(xRefreshEvents.GetSize(), 2u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xRefreshEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED), 2u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xRefreshEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xRefreshEvents, ZM_BATTLE_EVENT_MOVE_FAILED), 0u);
+	if (xRefreshEvents.GetSize() == 2u)
+	{
+		ZM_SC5AssertAppliedEncoding(xRefreshEvents.Get(0u), ZM_SIDE_PLAYER,
+			ZM_VOLATILE_PROTECT, 0u);
+		ZM_SC5AssertAppliedEncoding(xRefreshEvents.Get(1u), ZM_SIDE_PLAYER,
+			ZM_VOLATILE_PROTECT, 0u);
+	}
+	ZM_SC5AssertRNGCursor(xRefreshState, xRefreshMirror,
+		"same-turn Protect refresh emits twice without a draw");
+
+	ZM_StatusLogic::EndOfTurn(xRefreshState, xRefreshEvents, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(
+		xRefreshState.Side(ZM_SIDE_PLAYER).Active(), ZM_VOLATILE_PROTECT));
+	ZENITH_ASSERT_EQ(xRefreshEvents.GetSize(), 3u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xRefreshEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED), 2u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xRefreshEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED), 1u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xRefreshEvents, ZM_BATTLE_EVENT_MOVE_FAILED), 0u);
+	if (xRefreshEvents.GetSize() == 3u)
+	{
+		const ZM_BattleEvent& xEnded = xRefreshEvents.Get(2u);
+		ZENITH_ASSERT_EQ((u_int)xEnded.m_eKind,
+			(u_int)ZM_BATTLE_EVENT_VOLATILE_ENDED);
+		ZENITH_ASSERT_EQ(xEnded.m_uSide, (u_int)ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_EQ(xEnded.m_iAux, (int)ZM_VOLATILE_PROTECT);
+		ZENITH_ASSERT_EQ(xEnded.m_iTag, 0);
+	}
+	ZM_SC5AssertRNGCursor(xRefreshState, xRefreshMirror,
+		"Protect's single EOT expiry also consumes no draw");
+}
+
+ZENITH_TEST(ZM_Battle, Protect_OnlyInterceptsOpponentTargetAndPreventsMultiHitCountDraw)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_WHETCLAW),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_SC5RigVolatile(xState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_PROTECT);
+	Zenith_Vector<ZM_BattleEvent> xSelfEvents;
+	ZM_MoveContext xSelfCtx = MakeCtx(xState, xSelfEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xSelfCtx);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xSelfEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED),
+		"a self-target status move bypasses the opponent's Protect");
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xSelfEvents, ZM_BATTLE_EVENT_MOVE_FAILED));
+
+	// An opponent-target STATUS move is intercepted at M2 after PP/MOVE_USED but
+	// before both its M5 accuracy draw and its sleep-duration draw.
+	ZM_BattleState xStatusState;
+	BuildBattleState(xStatusState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_DROWSESPORE),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_SC5RigVolatile(xStatusState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_PROTECT);
+	const u_int uStatusPP = xStatusState.Side(ZM_SIDE_PLAYER).Active().m_axMoves[0].m_uCurPP;
+	Zenith_Vector<ZM_BattleEvent> xStatusEvents;
+	ZM_MoveContext xStatusCtx = MakeCtx(xStatusState, xStatusEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xStatusCtx);
+	ZENITH_ASSERT_EQ(xStatusState.Side(ZM_SIDE_PLAYER).Active().m_axMoves[0].m_uCurPP, uStatusPP - 1u);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xStatusEvents, ZM_BATTLE_EVENT_MOVE_USED));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xStatusEvents, ZM_BATTLE_EVENT_MOVE_MISSED));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xStatusEvents, ZM_BATTLE_EVENT_STATUS_APPLIED));
+	ZENITH_ASSERT_EQ((u_int)xStatusState.Side(ZM_SIDE_ENEMY).Active().m_eStatus,
+		(u_int)ZM_MAJOR_STATUS_NONE);
+	const ZM_BattleEvent* pxStatusFail = ZM_SC5FindEventPtr(xStatusEvents,
+		ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_NOT_NULL(pxStatusFail);
+	if (pxStatusFail != nullptr) { ZENITH_ASSERT_EQ(pxStatusFail->m_iAux, (int)ZM_MOVE_FAIL_PROTECTED); }
+	ZM_BattleRNG xStatusMirror(1ull, 54ull);
+	ZM_SC5AssertRNGCursor(xStatusState, xStatusMirror,
+		"Protect intercepts opponent STATUS before accuracy and status-duration draws");
+
+	// FIELD-target STATUS bypasses the opponent's Protect just like SELF target.
+	ZM_BattleState xFieldState;
+	BuildBattleState(xFieldState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAINCALL),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_SC5RigVolatile(xFieldState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_PROTECT);
+	Zenith_Vector<ZM_BattleEvent> xFieldEvents;
+	ZM_MoveContext xFieldCtx = MakeCtx(xFieldState, xFieldEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xFieldCtx);
+	ZENITH_ASSERT_EQ((u_int)xFieldState.m_xField.m_eWeather, (u_int)ZM_WEATHER_RAIN);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xFieldEvents, ZM_BATTLE_EVENT_MOVE_FAILED));
+
+	ZM_BattleState xMultiState;
+	BuildBattleState(xMultiState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_THORNVOLLEY),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_SC5RigVolatile(xMultiState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_PROTECT);
+	Zenith_Vector<ZM_BattleEvent> xMultiEvents;
+	ZM_MoveContext xMultiCtx = MakeCtx(xMultiState, xMultiEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_BattleRNG xMirror(1ull, 54ull);
+	ZM_MoveExecutor::Execute(xMultiCtx);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xMultiEvents, ZM_BATTLE_EVENT_MULTI_HIT));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xMultiEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT));
+	ZM_SC5AssertRNGCursor(xMultiState, xMirror, "Protect intercepts before MULTI_HIT count/crit/roll");
+}
+
+ZENITH_TEST(ZM_Battle, Endure_IsSeparateSilentGuardAndClearsAtEOT)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = {
+		ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BRACE, ZM_MOVE_NONE, 10u, 50u) };
+	ZM_BattleMonsterSpec axEnemy[1] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_COMETDASH, ZM_MOVE_NONE, 120u, 250u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, 1ull, 54ull);
+	xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active().m_uCurHP = 1u;
+	ZM_SC5ResolveMoveTurn(xEngine);
+	const ZM_BattleMonster& xPlayer = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_EQ(xPlayer.m_uCurHP, 1u);
+	ZENITH_ASSERT_FALSE(xPlayer.m_bEndureThisTurn, "Endure clears silently at EOT");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_VOLATILE_APPLIED), 0u,
+		"Endure is not an 11th volatile");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_VOLATILE_ENDED), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_FAINT), 0u);
+	const ZM_BattleEvent* pxDamage = ZM_SC5FindEventPtr(xEngine.GetEvents(),
+		ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxDamage);
+	if (pxDamage != nullptr)
+	{
+		ZENITH_ASSERT_GT(pxDamage->m_iAmount, 1, "raw lethal damage remains reported");
+		ZENITH_ASSERT_EQ(pxDamage->m_iAux, 1, "Endure clamps remaining HP to one");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Endure_ClampsMultiHitFixedAndOHKOButNotSelfOrEOTDamage)
+{
+	const ZM_MOVE_ID aeDirectMoves[] = { ZM_MOVE_THORNVOLLEY, ZM_MOVE_MINDSHEAR, ZM_MOVE_FISSURECRACK };
+	const u_int64 aulConnectingSeeds[] = { 2ull, 2ull, 1ull };
+	for (u_int u = 0u; u < 3u; ++u)
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, aeDirectMoves[u]),
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), aulConnectingSeeds[u], 54ull);
+		if (aeDirectMoves[u] == ZM_MOVE_FISSURECRACK)
+		{
+			// The shared +6 stat-stage fold is x4: base 30 becomes 120. M5 still
+			// consumes its draw because the move's base accuracy is below 100.
+			xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ACCURACY] = iZM_MAX_STAGE;
+			const u_int uOHKOAccuracy = ZM_ApplyStatStage(
+				ZM_GetMoveData(ZM_MOVE_FISSURECRACK).m_uAccuracy, iZM_MAX_STAGE);
+			ZENITH_ASSERT_EQ(uOHKOAccuracy, 120u);
+			ZM_BattleRNG xHitMirror(aulConnectingSeeds[u], 54ull);
+			ZENITH_ASSERT_LT(xHitMirror.RandBelow(100u), uOHKOAccuracy,
+				"the mirrored boosted OHKO accuracy draw must connect");
+		}
+		ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+		xDef.m_uCurHP = 1u;
+		xDef.m_bEndureThisTurn = true;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_USED));
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED));
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_FAILED));
+		u_int uDamageCount = 0u;
+		for (u_int uEvent = 0u; uEvent < xEvents.GetSize(); ++uEvent)
+		{
+			const ZM_BattleEvent& xEvent = xEvents.Get(uEvent);
+			if (xEvent.m_eKind != ZM_BATTLE_EVENT_DAMAGE_DEALT) { continue; }
+			++uDamageCount;
+			ZENITH_ASSERT_GT(xEvent.m_iAmount, 0,
+				"every connected direct delivery reports positive raw damage");
+			ZENITH_ASSERT_EQ(xEvent.m_iAux, 1,
+				"Endure reports one remaining HP for every delivered hit");
+			if (aeDirectMoves[u] == ZM_MOVE_MINDSHEAR)
+			{
+				ZENITH_ASSERT_EQ(xEvent.m_iAmount,
+					(int)xState.Side(ZM_SIDE_PLAYER).Active().m_uLevel,
+					"FIXED_LEVEL retains its exact raw damage under Endure");
+			}
+			else if (aeDirectMoves[u] == ZM_MOVE_FISSURECRACK)
+			{
+				ZENITH_ASSERT_EQ(xEvent.m_iAmount, 1,
+					"OHKO reports the defender's pre-hit HP as raw damage");
+			}
+		}
+		ZENITH_ASSERT_GT(uDamageCount, 0u, "direct Endure fixture must connect and deal damage");
+		if (aeDirectMoves[u] == ZM_MOVE_THORNVOLLEY)
+		{
+			const ZM_BattleEvent* pxMulti = ZM_SC5FindEventPtr(xEvents,
+				ZM_BATTLE_EVENT_MULTI_HIT, ZM_SIDE_PLAYER);
+			ZENITH_ASSERT_NOT_NULL(pxMulti);
+			if (pxMulti != nullptr)
+			{
+				ZENITH_ASSERT_EQ(pxMulti->m_iAmount, (int)uDamageCount,
+					"MULTI_HIT landed count matches the Endure-clamped damage groups");
+			}
+		}
+		else
+		{
+			ZENITH_ASSERT_EQ(uDamageCount, 1u,
+				"fixed and OHKO delivery each emit exactly one damage group");
+		}
+		ZENITH_ASSERT_EQ(xDef.m_uCurHP, 1u, "Endure clamps every direct move-delivery kind");
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_FAINT));
+	}
+
+	// Confusion self-hit is explicitly outside Endure.
+	const u_int64 ulSelfSeed = ZM_SC5FindGateSeed(true);
+	ZM_BattleState xSelfState;
+	BuildBattleState(xSelfState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), ulSelfSeed, 54ull);
+	ZM_BattleMonster& xSelf = xSelfState.Side(ZM_SIDE_PLAYER).Active();
+	xSelf.m_uCurHP = 1u;
+	xSelf.m_bEndureThisTurn = true;
+	ZM_SC5RigVolatile(xSelf, ZM_VOLATILE_CONFUSED, 2u);
+	Zenith_Vector<ZM_BattleEvent> xSelfEvents;
+	ZM_MoveContext xSelfCtx = MakeCtx(xSelfState, xSelfEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xSelfCtx);
+	ZENITH_ASSERT_TRUE(xSelf.IsFainted());
+
+	// Recoil is self-inflicted after a connected hit and is likewise outside Endure.
+	ZM_BattleState xRecoilState;
+	BuildBattleState(xRecoilState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RECKLESSRUSH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_MOVE_NONE, 60u, 300u), 1ull, 54ull);
+	ZM_BattleMonster& xRecoilUser = xRecoilState.Side(ZM_SIDE_PLAYER).Active();
+	xRecoilUser.m_uCurHP = 1u;
+	xRecoilUser.m_bEndureThisTurn = true;
+	Zenith_Vector<ZM_BattleEvent> xRecoilEvents;
+	ZM_MoveContext xRecoilCtx = MakeCtx(xRecoilState, xRecoilEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xRecoilCtx);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xRecoilEvents, ZM_BATTLE_EVENT_RECOIL));
+	ZENITH_ASSERT_TRUE(xRecoilUser.IsFainted(), "Endure never clamps recoil");
+
+	// Major/EOT chip is also outside Endure.
+	ZM_BattleState xEOTState;
+	BuildBattleState(xEOTState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_BattleMonster& xEOT = xEOTState.Side(ZM_SIDE_PLAYER).Active();
+	xEOT.m_uCurHP = 1u;
+	xEOT.m_bEndureThisTurn = true;
+	xEOT.m_eStatus = ZM_MAJOR_STATUS_POISON;
+	Zenith_Vector<ZM_BattleEvent> xEOTEvents;
+	ZM_StatusLogic::EndOfTurn(xEOTState, xEOTEvents, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_TRUE(xEOT.IsFainted());
+}
+
+ZENITH_TEST(ZM_Battle, Charge_FirstTurnNoAccuracy_ReleaseForcedNoSecondPP)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = {
+		ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_HEATSHIMMER, ZM_MOVE_RAMBASH, 120u, 250u) };
+	ZM_BattleMonsterSpec axEnemy[1] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW, ZM_MOVE_NONE, 10u, 250u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, 0x1234ull, 54ull);
+	const u_int uStartPP = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().m_axMoves[0].m_uCurPP;
+	ZM_SC5ResolveMoveTurn(xEngine, 0u, 0u);
+	ZM_BattleMonster& xPlayer = xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xPlayer, ZM_VOLATILE_CHARGE));
+	ZENITH_ASSERT_EQ(xPlayer.m_uChargeMoveSlot, 0u);
+	ZENITH_ASSERT_EQ(xPlayer.m_axMoves[0].m_uCurPP, uStartPP - 1u);
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEngine.GetEvents(), ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_ENEMY), 0u,
+		"charge turn returns before accuracy/crit/damage");
+	const ZM_BattleEvent* pxApply = ZM_SC5FindEventPtr(xEngine.GetEvents(),
+		ZM_BATTLE_EVENT_VOLATILE_APPLIED, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxApply);
+	if (pxApply != nullptr) { ZM_SC5AssertAppliedEncoding(*pxApply, ZM_SIDE_PLAYER, ZM_VOLATILE_CHARGE, 0u); }
+
+	// A pending release is legal at 0 PP, forces stored slot 0 over submitted slot 1,
+	// announces the move again, but does not spend PP a second time.
+	xPlayer.m_axMoves[0].m_uCurPP = 0u;
+	const u_int uBeforeEvents = xEngine.GetEventCount();
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u);
+	ZENITH_ASSERT_EQ(xPlayer.m_axMoves[0].m_uCurPP, 0u);
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEngine.GetEvents(), ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER), 2u);
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xPlayer, ZM_VOLATILE_CHARGE));
+	ZENITH_ASSERT_EQ(xPlayer.m_uChargeMoveSlot, uZM_MAX_MOVES);
+	const int iUsed = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_MOVE_USED,
+		ZM_SIDE_PLAYER, uBeforeEvents);
+	const int iEnd = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_VOLATILE_ENDED,
+		ZM_SIDE_PLAYER, uBeforeEvents);
+	const int iDamage = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_DAMAGE_DEALT,
+		ZM_SIDE_ENEMY, uBeforeEvents);
+	ZENITH_ASSERT_GE(iUsed, 0);
+	ZENITH_ASSERT_GE(iEnd, 0);
+	ZENITH_ASSERT_GE(iDamage, 0);
+	ZENITH_ASSERT_LT(iUsed, iEnd);
+	ZENITH_ASSERT_LT(iEnd, iDamage, "release clears/ends charge after MOVE_USED but before hit resolution");
+
+	// A release intercepted at M2 is still consumed: MOVE_USED, then clear/end,
+	// then PROTECTED, with neither second PP nor any hit draw.
+	ZM_BattleState xProtectedState;
+	BuildBattleState(xProtectedState, ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_HEATSHIMMER),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_BattleMonster& xProtectedUser = xProtectedState.Side(ZM_SIDE_PLAYER).Active();
+	ZM_SC5RigVolatile(xProtectedUser, ZM_VOLATILE_CHARGE);
+	xProtectedUser.m_uChargeMoveSlot = 0u;
+	ZM_SC5RigVolatile(xProtectedState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_PROTECT);
+	const u_int uProtectedPP = xProtectedUser.m_axMoves[0].m_uCurPP;
+	Zenith_Vector<ZM_BattleEvent> xProtectedEvents;
+	ZM_MoveContext xProtectedCtx = MakeCtx(xProtectedState, xProtectedEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xProtectedCtx);
+	const int iProtectedUsed = ZM_SC5FindEvent(xProtectedEvents, ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER);
+	const int iProtectedEnd = ZM_SC5FindEvent(xProtectedEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED, ZM_SIDE_PLAYER);
+	const int iProtectedFail = ZM_SC5FindEvent(xProtectedEvents, ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_GE(iProtectedUsed, 0);
+	ZENITH_ASSERT_GE(iProtectedEnd, 0);
+	ZENITH_ASSERT_GE(iProtectedFail, 0);
+	ZENITH_ASSERT_LT(iProtectedUsed, iProtectedEnd);
+	ZENITH_ASSERT_LT(iProtectedEnd, iProtectedFail);
+	if (iProtectedFail >= 0)
+	{
+		ZENITH_ASSERT_EQ(xProtectedEvents.Get((u_int)iProtectedFail).m_iAux, (int)ZM_MOVE_FAIL_PROTECTED);
+	}
+	ZENITH_ASSERT_EQ(xProtectedUser.m_axMoves[0].m_uCurPP, uProtectedPP);
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xProtectedUser, ZM_VOLATILE_CHARGE));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xProtectedEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT));
+	ZM_BattleRNG xProtectedMirror(1ull, 54ull);
+	ZM_SC5AssertRNGCursor(xProtectedState, xProtectedMirror, "protected release consumes no hit draw");
+}
+
+ZENITH_TEST(ZM_Battle, Charge_GateCancellationClearsChargeAndSemiAfterFailure)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_UNDERDELVE),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), 1ull, 54ull);
+	ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+	ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_CHARGE);
+	ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_SEMI_INVULN);
+	xAtk.m_uChargeMoveSlot = 0u;
+	xAtk.m_eStatus = ZM_MAJOR_STATUS_SLEEP;
+	xAtk.m_uStatusCounter = 2u;
+	const u_int uPP = xAtk.m_axMoves[0].m_uCurPP;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_EQ(xAtk.m_axMoves[0].m_uCurPP, uPP);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_USED));
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xAtk, ZM_VOLATILE_CHARGE));
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xAtk, ZM_VOLATILE_SEMI_INVULN));
+	ZENITH_ASSERT_EQ(xAtk.m_uChargeMoveSlot, uZM_MAX_MOVES);
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 3u,
+		"G cancellation emits exactly failure, SEMI ended, then CHARGE ended");
+	if (xEvents.GetSize() == 3u)
+	{
+		const ZM_BattleEvent& xFail = xEvents.Get(0u);
+		const ZM_BattleEvent& xSemiEnd = xEvents.Get(1u);
+		const ZM_BattleEvent& xChargeEnd = xEvents.Get(2u);
+		ZENITH_ASSERT_EQ((u_int)xFail.m_eKind, (u_int)ZM_BATTLE_EVENT_MOVE_FAILED);
+		ZENITH_ASSERT_EQ(xFail.m_uSide, (u_int)ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_EQ(xFail.m_iAux, (int)ZM_MOVE_FAIL_ASLEEP);
+		ZENITH_ASSERT_EQ((u_int)xSemiEnd.m_eKind, (u_int)ZM_BATTLE_EVENT_VOLATILE_ENDED);
+		ZENITH_ASSERT_EQ(xSemiEnd.m_uSide, (u_int)ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_EQ(xSemiEnd.m_iAmount, 0);
+		ZENITH_ASSERT_EQ(xSemiEnd.m_iAux, (int)ZM_VOLATILE_SEMI_INVULN);
+		ZENITH_ASSERT_EQ(xSemiEnd.m_iTag, 0);
+		ZENITH_ASSERT_EQ((u_int)xChargeEnd.m_eKind, (u_int)ZM_BATTLE_EVENT_VOLATILE_ENDED);
+		ZENITH_ASSERT_EQ(xChargeEnd.m_uSide, (u_int)ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_EQ(xChargeEnd.m_iAmount, 0);
+		ZENITH_ASSERT_EQ(xChargeEnd.m_iAux, (int)ZM_VOLATILE_CHARGE);
+		ZENITH_ASSERT_EQ(xChargeEnd.m_iTag, 0);
+	}
+}
+
+ZENITH_TEST(ZM_Battle, SemiInvuln_SlowerEntryThenM3InterceptAndRelease)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = {
+		ZM_SC5Spec(ZM_SPECIES_BURRIT, ZM_MOVE_UNDERDELVE, ZM_MOVE_NONE, 10u, 250u) };
+	ZM_BattleMonsterSpec axEnemy[1] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_TORRENTCANNON, ZM_MOVE_NONE, 120u, 250u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, 1ull, 54ull);
+	ZM_BattleRNG xMirror(1ull, 54ull);
+	// Turn 1: faster enemy can hit before the slower user becomes semi-invulnerable.
+	xMirror.RandBelow(100u);          // Torrent Cannon accuracy
+	xMirror.Chance(1u, 24u);
+	xMirror.RandRange(85u, 100u);
+	ZM_SC5ResolveMoveTurn(xEngine);
+	ZM_BattleMonster& xPlayer = xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xPlayer, ZM_VOLATILE_CHARGE));
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xPlayer, ZM_VOLATILE_SEMI_INVULN));
+	ZENITH_ASSERT_TRUE(ZM_SC5CountForSide(xEngine.GetEvents(), ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_PLAYER) >= 1u);
+	// EOT must not count down charge/semi.
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xPlayer, ZM_VOLATILE_SEMI_INVULN));
+
+	const u_int uBefore = xEngine.GetEventCount();
+	const u_int uEnemyPP = xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_axMoves[0].m_uCurPP;
+	ZM_SC5ResolveMoveTurn(xEngine);
+	// Turn 2: faster enemy announces/spends, but M3 sees vanished target before accuracy.
+	const ZM_BattleEvent* pxFail = ZM_SC5FindEventPtr(xEngine.GetEvents(),
+		ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_PLAYER, uBefore);
+	ZENITH_ASSERT_NOT_NULL(pxFail);
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ(pxFail->m_iAux, (int)ZM_MOVE_FAIL_SEMI_INVULNERABLE); }
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_axMoves[0].m_uCurPP, uEnemyPP - 1u);
+	// Player then releases: no second PP, ends both states before its normal hit draws.
+	xMirror.Chance(1u, 24u);
+	xMirror.RandRange(85u, 100u);
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xPlayer, ZM_VOLATILE_CHARGE));
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xPlayer, ZM_VOLATILE_SEMI_INVULN));
+	ZM_SC5AssertRNGCursor(xEngine.GetStateMutable(), xMirror,
+		"semi intercept adds no draw; release consumes only its crit/roll");
+}
+
+ZENITH_TEST(ZM_Battle, Protect_M2PrecedesSemiInvulnerableM3)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), 1ull, 54ull);
+	ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+	ZM_SC5RigVolatile(xDef, ZM_VOLATILE_PROTECT);
+	ZM_SC5RigVolatile(xDef, ZM_VOLATILE_SEMI_INVULN);
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	const ZM_BattleEvent* pxFail = ZM_SC5FindEventPtr(xEvents,
+		ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_NOT_NULL(pxFail);
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ(pxFail->m_iAux, (int)ZM_MOVE_FAIL_PROTECTED); }
+	ZM_BattleRNG xMirror(1ull, 54ull);
+	ZM_SC5AssertRNGCursor(xState, xMirror, "M2 Protect cancels before M3 and all hit draws");
+}
+
+ZENITH_TEST(ZM_Battle, Recharge_EstablishesOnConnectingHitAndKOOnly)
+{
+	const u_int64 ulSeed = 1ull; // known 90-accuracy hit in the existing SC3 fixtures
+	for (u_int uCase = 0u; uCase < 2u; ++uCase)
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_TITANBEAM),
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_MOVE_NONE, 10u, 250u),
+			ulSeed, 54ull);
+		if (uCase == 1u) { xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 1u; }
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xState.Side(ZM_SIDE_PLAYER).Active(), ZM_VOLATILE_RECHARGE));
+		const int iDamage = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT);
+		const int iApply = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED, ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_GE(iDamage, 0);
+		ZENITH_ASSERT_GE(iApply, 0);
+		ZENITH_ASSERT_LT(iDamage, iApply);
+	}
+
+	// Protect is a failed connection, so it never establishes recharge and pulls no hit draws.
+	ZM_BattleState xProtectState;
+	BuildBattleState(xProtectState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_TITANBEAM),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), ulSeed, 54ull);
+	ZM_SC5RigVolatile(xProtectState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_PROTECT);
+	Zenith_Vector<ZM_BattleEvent> xProtectEvents;
+	ZM_MoveContext xProtectCtx = MakeCtx(xProtectState, xProtectEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xProtectCtx);
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xProtectState.Side(ZM_SIDE_PLAYER).Active(), ZM_VOLATILE_RECHARGE));
+	ZM_BattleRNG xProtectMirror(ulSeed, 54ull);
+	ZM_SC5AssertRNGCursor(xProtectState, xProtectMirror, "protected recharge move establishes nothing and draws nothing");
+
+	// Miss and type immunity are the other non-connections and likewise never
+	// establish Recharge or consume post-accuracy hit draws.
+	u_int64 ulMissSeed = 0ull;
+	for (u_int64 ulTry = 1ull; ulTry <= 4096ull; ++ulTry)
+	{
+		ZM_BattleRNG xTry(ulTry, 54ull);
+		if (xTry.RandBelow(100u) >= 90u) { ulMissSeed = ulTry; break; }
+	}
+	ZENITH_ASSERT_GT(ulMissSeed, 0ull);
+	ZM_BattleState xMissState;
+	BuildBattleState(xMissState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_TITANBEAM),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), ulMissSeed, 54ull);
+	Zenith_Vector<ZM_BattleEvent> xMissEvents;
+	ZM_MoveContext xMissCtx = MakeCtx(xMissState, xMissEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xMissCtx);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xMissEvents, ZM_BATTLE_EVENT_MOVE_MISSED));
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xMissState.Side(ZM_SIDE_PLAYER).Active(), ZM_VOLATILE_RECHARGE));
+	ZM_BattleRNG xMissMirror(ulMissSeed, 54ull);
+	ZENITH_ASSERT_GE(xMissMirror.RandBelow(100u),
+		ZM_GetMoveData(ZM_MOVE_TITANBEAM).m_uAccuracy,
+		"the mirrored Recharge fixture draw is deterministically a miss");
+	ZM_SC5AssertRNGCursor(xMissState, xMissMirror, "missed recharge move consumes accuracy only");
+
+	ZM_BattleState xImmuneState;
+	BuildBattleState(xImmuneState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_TITANBEAM),
+		ZM_SC5Spec(ZM_SPECIES_WISPET, ZM_MOVE_HEXBOLT), ulSeed, 54ull);
+	Zenith_Vector<ZM_BattleEvent> xImmuneEvents;
+	ZM_MoveContext xImmuneCtx = MakeCtx(xImmuneState, xImmuneEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xImmuneCtx);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xImmuneEvents, ZM_BATTLE_EVENT_IMMUNE));
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xImmuneState.Side(ZM_SIDE_PLAYER).Active(), ZM_VOLATILE_RECHARGE));
+	ZM_BattleRNG xImmuneMirror(ulSeed, 54ull);
+	xImmuneMirror.RandBelow(100u);
+	ZM_SC5AssertRNGCursor(xImmuneState, xImmuneMirror, "immune recharge move consumes accuracy only");
+}
+
+ZENITH_TEST(ZM_Battle, Recharge_G1CancelsEndsBeforeFreezeWithoutDraw)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), 1ull, 54ull);
+	ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+	ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_RECHARGE);
+	xAtk.m_eStatus = ZM_MAJOR_STATUS_FREEZE;
+	const u_int uPP = xAtk.m_axMoves[0].m_uCurPP;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_EQ(xAtk.m_axMoves[0].m_uCurPP, uPP);
+	ZENITH_ASSERT_EQ((u_int)xAtk.m_eStatus, (u_int)ZM_MAJOR_STATUS_FREEZE,
+		"G1 prevents G2 mutation/draw");
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xAtk, ZM_VOLATILE_RECHARGE));
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 2u);
+	if (xEvents.GetSize() == 2u)
+	{
+		ZENITH_ASSERT_EQ((u_int)xEvents.Get(0).m_eKind, (u_int)ZM_BATTLE_EVENT_MOVE_FAILED);
+		ZENITH_ASSERT_EQ(xEvents.Get(0).m_iAux, (int)ZM_MOVE_FAIL_RECHARGE);
+		ZENITH_ASSERT_EQ((u_int)xEvents.Get(1).m_eKind, (u_int)ZM_BATTLE_EVENT_VOLATILE_ENDED);
+		ZENITH_ASSERT_EQ(xEvents.Get(1).m_iAux, (int)ZM_VOLATILE_RECHARGE);
+	}
+	ZM_BattleRNG xMirror(1ull, 54ull);
+	ZM_SC5AssertRNGCursor(xState, xMirror, "G1 Recharge consumes no draw and stops G2");
+}
+
+ZENITH_TEST(ZM_Battle, LockIn_EstablishesIncludingKOWithGuardedDuration)
+{
+	const u_int64 ulSeed = 0x1234ull;
+	for (u_int uCase = 0u; uCase < 2u; ++uCase)
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BERSERKSPIN),
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_MOVE_NONE, 10u, 300u),
+			ulSeed, 54ull);
+		if (uCase == 1u) { xState.Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 1u; }
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		xMirror.Chance(1u, 24u);
+		xMirror.RandRange(85u, 100u);
+		const u_int uTotalUses = xMirror.RandRange(2u, 3u);
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		const ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xAtk, ZM_VOLATILE_LOCK));
+		ZENITH_ASSERT_EQ(xAtk.m_uLockTurns, uTotalUses - 1u,
+			"establishment counts use one and stores only future uses");
+		ZENITH_ASSERT_EQ(xAtk.m_uLockMoveSlot, 0u);
+		const ZM_BattleEvent* pxApply = ZM_SC5FindEventPtr(xEvents,
+			ZM_BATTLE_EVENT_VOLATILE_APPLIED, ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_NOT_NULL(pxApply);
+		if (pxApply != nullptr) { ZM_SC5AssertAppliedEncoding(*pxApply, ZM_SIDE_PLAYER, ZM_VOLATILE_LOCK, uTotalUses); }
+		ZM_SC5AssertRNGCursor(xState, xMirror, "Lock draws duration only after its connecting hit");
+	}
+
+	// A 100-accuracy LOCK_IN move stopped by M6 immunity neither establishes
+	// lock nor draws crit, roll, or duration.
+	ZM_BattleState xImmuneState;
+	BuildBattleState(xImmuneState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BERSERKSPIN),
+		ZM_SC5Spec(ZM_SPECIES_WISPET, ZM_MOVE_HEXBOLT), ulSeed, 54ull);
+	Zenith_Vector<ZM_BattleEvent> xImmuneEvents;
+	ZM_MoveContext xImmuneCtx = MakeCtx(xImmuneState, xImmuneEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xImmuneCtx);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xImmuneEvents, ZM_BATTLE_EVENT_IMMUNE));
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xImmuneState.Side(ZM_SIDE_PLAYER).Active(), ZM_VOLATILE_LOCK));
+	ZM_BattleRNG xImmuneMirror(ulSeed, 54ull);
+	ZM_SC5AssertRNGCursor(xImmuneState, xImmuneMirror, "immune LOCK_IN consumes no guarded draws");
+
+	// M2 Protect is another non-connection: a LOCK_IN move spends PP/announces,
+	// but establishes no lock and never reaches crit, roll, or duration draws.
+	ZM_BattleState xProtectState;
+	BuildBattleState(xProtectState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BERSERKSPIN),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), ulSeed, 54ull);
+	ZM_SC5RigVolatile(xProtectState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_PROTECT);
+	Zenith_Vector<ZM_BattleEvent> xProtectEvents;
+	ZM_MoveContext xProtectCtx = MakeCtx(xProtectState, xProtectEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xProtectCtx);
+	const ZM_BattleMonster& xProtectUser = xProtectState.Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xProtectUser, ZM_VOLATILE_LOCK));
+	ZENITH_ASSERT_EQ(xProtectUser.m_uLockTurns, 0u);
+	ZENITH_ASSERT_EQ(xProtectUser.m_uLockMoveSlot, uZM_MAX_MOVES);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xProtectEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED));
+	ZENITH_ASSERT_EQ(xProtectEvents.GetSize(), 2u,
+		"protected LOCK_IN emits only MOVE_USED then PROTECTED");
+	if (xProtectEvents.GetSize() == 2u)
+	{
+		ZENITH_ASSERT_EQ((u_int)xProtectEvents.Get(0u).m_eKind,
+			(u_int)ZM_BATTLE_EVENT_MOVE_USED);
+		ZENITH_ASSERT_EQ((u_int)xProtectEvents.Get(1u).m_eKind,
+			(u_int)ZM_BATTLE_EVENT_MOVE_FAILED);
+		ZENITH_ASSERT_EQ(xProtectEvents.Get(1u).m_iAux, (int)ZM_MOVE_FAIL_PROTECTED);
+	}
+	ZM_BattleRNG xProtectMirror(ulSeed, 54ull);
+	ZM_SC5AssertRNGCursor(xProtectState, xProtectMirror,
+		"protected LOCK_IN establishes nothing and draws no duration");
+}
+
+ZENITH_TEST(ZM_Battle, LockIn_ForcesStoredSlotConsumesUsesAndEndsAtZeroPP)
+{
+	u_int64 ulSeed = 0ull;
+	for (u_int64 ulTry = 1ull; ulTry <= 4096ull; ++ulTry)
+	{
+		ZM_BattleRNG xMirror(ulTry, 54ull);
+		xMirror.Chance(1u, 24u);
+		xMirror.RandRange(85u, 100u);
+		if (xMirror.RandRange(2u, 3u) == 3u)
+		{
+			ulSeed = ulTry;
+			break;
+		}
+	}
+	ZENITH_ASSERT_GT(ulSeed, 0ull, "fixture requires two future locked uses");
+	ZM_BattleMonsterSpec axPlayer[1] = {
+		ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BERSERKSPIN, ZM_MOVE_RAMBASH, 120u, 300u) };
+	ZM_BattleMonsterSpec axEnemy[1] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW, ZM_MOVE_NONE, 10u, 400u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, ulSeed, 54ull);
+	ZM_SC5ResolveMoveTurn(xEngine, 0u, 0u);
+	ZM_BattleMonster& xPlayer = xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xPlayer, ZM_VOLATILE_LOCK));
+	ZENITH_ASSERT_EQ(xPlayer.m_uLockTurns, 2u, "three total uses store exactly two future uses");
+	const u_int uRambashPP = xPlayer.m_axMoves[1].m_uCurPP;
+	xPlayer.m_axMoves[0].m_uCurPP = 1u;
+	xPlayer.m_iCritStage = 3;
+	const u_int uBeforeUsed = ZM_SC5CountForSide(xEngine.GetEvents(), ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER);
+	const u_int uBeforeEvents = xEngine.GetEventCount();
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u);
+	ZENITH_ASSERT_EQ(xEngine.GetEventCount(), uBeforeEvents + 8u,
+		"the zero-PP lock lifecycle has one exact, non-conditional turn stream");
+	if (xEngine.GetEventCount() == uBeforeEvents + 8u)
+	{
+		const ZM_BattleEvent& xTurnBegin = xEngine.GetEvent(uBeforeEvents + 0u);
+		const ZM_BattleEvent& xForcedUse = xEngine.GetEvent(uBeforeEvents + 1u);
+		const ZM_BattleEvent& xCrit = xEngine.GetEvent(uBeforeEvents + 2u);
+		const ZM_BattleEvent& xDamage = xEngine.GetEvent(uBeforeEvents + 3u);
+		const ZM_BattleEvent& xLockEnd = xEngine.GetEvent(uBeforeEvents + 4u);
+		const ZM_BattleEvent& xEnemyUse = xEngine.GetEvent(uBeforeEvents + 5u);
+		const ZM_BattleEvent& xEnemyStage = xEngine.GetEvent(uBeforeEvents + 6u);
+		const ZM_BattleEvent& xTurnEnd = xEngine.GetEvent(uBeforeEvents + 7u);
+		ZENITH_ASSERT_EQ((u_int)xTurnBegin.m_eKind, (u_int)ZM_BATTLE_EVENT_TURN_BEGIN);
+		ZENITH_ASSERT_EQ((u_int)xForcedUse.m_eKind, (u_int)ZM_BATTLE_EVENT_MOVE_USED);
+		ZENITH_ASSERT_EQ(xForcedUse.m_uSide, (u_int)ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_EQ(xForcedUse.m_uMoveId, (u_int)ZM_MOVE_BERSERKSPIN);
+		ZENITH_ASSERT_EQ((u_int)xCrit.m_eKind, (u_int)ZM_BATTLE_EVENT_CRIT);
+		ZENITH_ASSERT_EQ((u_int)xDamage.m_eKind, (u_int)ZM_BATTLE_EVENT_DAMAGE_DEALT);
+		ZENITH_ASSERT_EQ((u_int)xLockEnd.m_eKind, (u_int)ZM_BATTLE_EVENT_VOLATILE_ENDED);
+		ZENITH_ASSERT_EQ(xLockEnd.m_uSide, (u_int)ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_EQ(xLockEnd.m_iAux, (int)ZM_VOLATILE_LOCK);
+		ZENITH_ASSERT_EQ((u_int)xEnemyUse.m_eKind, (u_int)ZM_BATTLE_EVENT_MOVE_USED);
+		ZENITH_ASSERT_EQ(xEnemyUse.m_uSide, (u_int)ZM_SIDE_ENEMY);
+		ZENITH_ASSERT_EQ((u_int)xEnemyStage.m_eKind,
+			(u_int)ZM_BATTLE_EVENT_STAT_STAGE_CHANGED);
+		ZENITH_ASSERT_EQ((u_int)xTurnEnd.m_eKind, (u_int)ZM_BATTLE_EVENT_TURN_END);
+	}
+	ZENITH_ASSERT_EQ(xPlayer.m_axMoves[1].m_uCurPP, uRambashPP, "submitted other slot is ignored while locked");
+	ZENITH_ASSERT_EQ(xPlayer.m_axMoves[0].m_uCurPP, 0u, "the forced stored-slot use spends its final PP");
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEngine.GetEvents(), ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER), uBeforeUsed + 1u);
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xPlayer, ZM_VOLATILE_LOCK));
+	ZENITH_ASSERT_EQ(xPlayer.m_uLockTurns, 0u);
+	ZENITH_ASSERT_EQ(xPlayer.m_uLockMoveSlot, uZM_MAX_MOVES);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_NO_PP));
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_VOLATILE_ENDED), 1u);
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xPlayer, ZM_VOLATILE_CONFUSED),
+		"lock expiry never adds post-lock confusion");
+	for (u_int u = uBeforeEvents; u < xEngine.GetEventCount(); ++u)
+	{
+		const ZM_BattleEvent& xEvent = xEngine.GetEvent(u);
+		ZENITH_ASSERT_FALSE(xEvent.m_eKind == ZM_BATTLE_EVENT_VOLATILE_APPLIED &&
+			xEvent.m_iAux == (int)ZM_VOLATILE_CONFUSED,
+			"lock expiry emits no confusion application");
+	}
+
+	// Natural counter expiry is independent of PP exhaustion. Pin a two-use
+	// duration (the establishing hit plus one future forced stored-slot use).
+	u_int64 ulNaturalSeed = 0ull;
+	for (u_int64 ulTry = 1ull; ulTry <= 4096ull; ++ulTry)
+	{
+		ZM_BattleRNG xNaturalTry(ulTry, 54ull);
+		xNaturalTry.Chance(1u, 24u);
+		xNaturalTry.RandRange(85u, 100u);
+		if (xNaturalTry.RandRange(2u, 3u) == 2u)
+		{
+			ulNaturalSeed = ulTry;
+			break;
+		}
+	}
+	ZENITH_ASSERT_GT(ulNaturalSeed, 0ull,
+		"fixture requires exactly one future locked use");
+	ZM_BattleMonsterSpec axNaturalPlayer[1] = {
+		ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BERSERKSPIN,
+			ZM_MOVE_RAMBASH, 120u, 300u) };
+	ZM_BattleMonsterSpec axNaturalEnemy[1] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW,
+			ZM_MOVE_NONE, 10u, 800u) };
+	ZM_BattleEngine xNaturalEngine;
+	xNaturalEngine.Begin(MakeTrainerConfig(), axNaturalPlayer, 1u,
+		axNaturalEnemy, 1u, ulNaturalSeed, 54ull);
+	ZM_SC5ResolveMoveTurn(xNaturalEngine, 0u, 0u);
+	ZM_BattleMonster& xNaturalPlayer =
+		xNaturalEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xNaturalPlayer, ZM_VOLATILE_LOCK));
+	ZENITH_ASSERT_EQ(xNaturalPlayer.m_uLockTurns, 1u);
+	ZENITH_ASSERT_EQ(xNaturalPlayer.m_uLockMoveSlot, 0u);
+	const ZM_BattleEvent* pxNaturalApply = ZM_SC5FindEventPtr(
+		xNaturalEngine.GetEvents(), ZM_BATTLE_EVENT_VOLATILE_APPLIED, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxNaturalApply);
+	if (pxNaturalApply != nullptr)
+	{
+		ZM_SC5AssertAppliedEncoding(*pxNaturalApply, ZM_SIDE_PLAYER,
+			ZM_VOLATILE_LOCK, 2u);
+	}
+
+	const u_int uNaturalLockPP = xNaturalPlayer.m_axMoves[0].m_uCurPP;
+	const u_int uNaturalOtherPP = xNaturalPlayer.m_axMoves[1].m_uCurPP;
+	const u_int uNaturalStart = xNaturalEngine.GetEventCount();
+	const u_int uNaturalUses = ZM_SC5CountForSide(xNaturalEngine.GetEvents(),
+		ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER);
+	const u_int uNaturalEnds = ZM_CountKind(xNaturalEngine.GetEvents(),
+		ZM_BATTLE_EVENT_VOLATILE_ENDED);
+	ZENITH_ASSERT_EQ(uNaturalEnds, 0u);
+	ZENITH_ASSERT_GT(uNaturalLockPP, 1u,
+		"natural expiry fixture must retain PP after its final forced use");
+	ZM_SC5ResolveMoveTurn(xNaturalEngine, 1u, 0u);
+	ZENITH_ASSERT_EQ(xNaturalPlayer.m_axMoves[0].m_uCurPP, uNaturalLockPP - 1u);
+	ZENITH_ASSERT_GT(xNaturalPlayer.m_axMoves[0].m_uCurPP, 0u);
+	ZENITH_ASSERT_EQ(xNaturalPlayer.m_axMoves[1].m_uCurPP, uNaturalOtherPP,
+		"the submitted alternate slot is ignored for the one future locked use");
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xNaturalEngine.GetEvents(),
+		ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER), uNaturalUses + 1u);
+	const ZM_BattleEvent* pxNaturalUse = ZM_SC5FindEventPtr(
+		xNaturalEngine.GetEvents(), ZM_BATTLE_EVENT_MOVE_USED,
+		ZM_SIDE_PLAYER, uNaturalStart);
+	ZENITH_ASSERT_NOT_NULL(pxNaturalUse);
+	if (pxNaturalUse != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxNaturalUse->m_uMoveId, (u_int)ZM_MOVE_BERSERKSPIN);
+	}
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xNaturalPlayer, ZM_VOLATILE_LOCK));
+	ZENITH_ASSERT_EQ(xNaturalPlayer.m_uLockTurns, 0u);
+	ZENITH_ASSERT_EQ(xNaturalPlayer.m_uLockMoveSlot, uZM_MAX_MOVES);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xNaturalEngine.GetEvents(), ZM_BATTLE_EVENT_NO_PP));
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNaturalEngine.GetEvents(),
+		ZM_BATTLE_EVENT_VOLATILE_ENDED), 1u);
+	const ZM_BattleEvent* pxNaturalEnd = ZM_SC5FindEventPtr(
+		xNaturalEngine.GetEvents(), ZM_BATTLE_EVENT_VOLATILE_ENDED,
+		ZM_SIDE_PLAYER, uNaturalStart);
+	ZENITH_ASSERT_NOT_NULL(pxNaturalEnd);
+	if (pxNaturalEnd != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxNaturalEnd->m_iAux, (int)ZM_VOLATILE_LOCK);
+	}
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xNaturalPlayer, ZM_VOLATILE_CONFUSED));
+	for (u_int u = uNaturalStart; u < xNaturalEngine.GetEventCount(); ++u)
+	{
+		const ZM_BattleEvent& xEvent = xNaturalEngine.GetEvent(u);
+		ZENITH_ASSERT_FALSE(xEvent.m_eKind == ZM_BATTLE_EVENT_VOLATILE_APPLIED &&
+			xEvent.m_iAux == (int)ZM_VOLATILE_CONFUSED,
+			"natural lock expiry emits no post-lock confusion");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, LockIn_GateCancellationConsumesNoUseOrPP)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BERSERKSPIN),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), 1ull, 54ull);
+	ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+	ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_LOCK, 2u);
+	xAtk.m_uLockMoveSlot = 0u;
+	ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_FLINCH);
+	const u_int uPP = xAtk.m_axMoves[0].m_uCurPP;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_EQ(xAtk.m_axMoves[0].m_uCurPP, uPP);
+	ZENITH_ASSERT_EQ(xAtk.m_uLockTurns, 2u);
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xAtk, ZM_VOLATILE_LOCK));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_USED));
+}
+
+ZENITH_TEST(ZM_Battle, Swagger_HitOrdersStageBeforeNewConfusionAndExactDraws)
+{
+	// Bravado accuracy 85, then no stat draw, then guarded confusion duration.
+	const u_int uAccuracy = ZM_GetMoveData(ZM_MOVE_BRAVADO).m_uAccuracy;
+	u_int64 ulHitSeed = 0ull;
+	for (u_int64 ulTry = 1ull; ulTry <= 4096ull; ++ulTry)
+	{
+		ZM_BattleRNG xMirror(ulTry, 54ull);
+		if (xMirror.RandBelow(100u) < uAccuracy) { ulHitSeed = ulTry; break; }
+	}
+	ZENITH_ASSERT_GT(ulHitSeed, 0ull);
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BRAVADO),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), ulHitSeed, xState, xEvents);
+	ZM_BattleRNG xMirror(ulHitSeed, 54ull);
+	ZENITH_ASSERT_LT(xMirror.RandBelow(100u), uAccuracy,
+		"the mirrored Swagger hit fixture must connect");
+	const u_int uDuration = xMirror.RandRange(1u, 4u);
+	const ZM_BattleMonster& xTarget = xState.Side(ZM_SIDE_ENEMY).Active();
+	ZENITH_ASSERT_EQ(xTarget.m_aiStage[ZM_BATTLE_STAT_ATTACK], 2);
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xTarget, ZM_VOLATILE_CONFUSED));
+	ZENITH_ASSERT_EQ(xTarget.m_uConfuseTurns, uDuration);
+	const int iStage = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED, ZM_SIDE_ENEMY);
+	const int iApply = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_GE(iStage, 0);
+	ZENITH_ASSERT_GE(iApply, 0);
+	ZENITH_ASSERT_LT(iStage, iApply);
+	ZM_SC5AssertRNGCursor(xState, xMirror, "Swagger draws accuracy then new-confusion duration only");
+}
+
+ZENITH_TEST(ZM_Battle, Swagger_ComponentSuccessAndBothBlockedRules)
+{
+	const u_int uBoostedAccuracy = ZM_ApplyStatStage(
+		ZM_GetMoveData(ZM_MOVE_BRAVADO).m_uAccuracy, iZM_MAX_STAGE);
+	// Attack maxed, confusion new: confusion succeeds; no STAT_MAXED failure.
+	ZM_BattleState xConfuseState;
+	BuildBattleState(xConfuseState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BRAVADO),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	xConfuseState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ACCURACY] = iZM_MAX_STAGE;
+	xConfuseState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK] = iZM_MAX_STAGE;
+	Zenith_Vector<ZM_BattleEvent> xConfuseEvents;
+	ZM_MoveContext xConfuseCtx = MakeCtx(xConfuseState, xConfuseEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_BattleRNG xConfuseMirror(1ull, 54ull);
+	ZENITH_ASSERT_LT(xConfuseMirror.RandBelow(100u), uBoostedAccuracy,
+		"the mirrored +6-accuracy Swagger draw must connect");
+	const u_int uConfuseDuration = xConfuseMirror.RandRange(1u, 4u);
+	ZM_MoveExecutor::Execute(xConfuseCtx);
+	ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xConfuseState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_CONFUSED));
+	ZENITH_ASSERT_EQ(xConfuseState.Side(ZM_SIDE_ENEMY).Active().m_uConfuseTurns, uConfuseDuration);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xConfuseEvents, ZM_BATTLE_EVENT_MOVE_FAILED));
+	ZM_SC5AssertRNGCursor(xConfuseState, xConfuseMirror,
+		"+6-accuracy Swagger still draws accuracy, then new-confusion duration");
+
+	// Confusion already present, attack can rise: stat succeeds, duration not refreshed/drawn.
+	ZM_BattleState xRaiseState;
+	BuildBattleState(xRaiseState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BRAVADO),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	xRaiseState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ACCURACY] = iZM_MAX_STAGE;
+	ZM_BattleMonster& xRaiseTarget = xRaiseState.Side(ZM_SIDE_ENEMY).Active();
+	ZM_SC5RigVolatile(xRaiseTarget, ZM_VOLATILE_CONFUSED, 3u);
+	Zenith_Vector<ZM_BattleEvent> xRaiseEvents;
+	ZM_MoveContext xRaiseCtx = MakeCtx(xRaiseState, xRaiseEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_BattleRNG xRaiseMirror(1ull, 54ull);
+	ZENITH_ASSERT_LT(xRaiseMirror.RandBelow(100u), uBoostedAccuracy,
+		"the already-confused Swagger fixture must still connect");
+	ZM_MoveExecutor::Execute(xRaiseCtx);
+	ZENITH_ASSERT_EQ(xRaiseTarget.m_aiStage[ZM_BATTLE_STAT_ATTACK], 2);
+	ZENITH_ASSERT_EQ(xRaiseTarget.m_uConfuseTurns, 3u);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xRaiseEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED));
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xRaiseEvents, ZM_BATTLE_EVENT_MOVE_FAILED));
+	ZM_SC5AssertRNGCursor(xRaiseState, xRaiseMirror,
+		"already-confused +6-accuracy Swagger draws accuracy but no duration");
+
+	// Both components blocked: exactly one target-locus VOLATILE_BLOCKED.
+	ZM_BattleState xBlockedState;
+	BuildBattleState(xBlockedState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BRAVADO),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	xBlockedState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ACCURACY] = iZM_MAX_STAGE;
+	ZM_BattleMonster& xBlocked = xBlockedState.Side(ZM_SIDE_ENEMY).Active();
+	xBlocked.m_aiStage[ZM_BATTLE_STAT_ATTACK] = iZM_MAX_STAGE;
+	ZM_SC5RigVolatile(xBlocked, ZM_VOLATILE_CONFUSED, 2u);
+	Zenith_Vector<ZM_BattleEvent> xBlockedEvents;
+	ZM_MoveContext xBlockedCtx = MakeCtx(xBlockedState, xBlockedEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_BattleRNG xBlockedMirror(1ull, 54ull);
+	ZENITH_ASSERT_LT(xBlockedMirror.RandBelow(100u), uBoostedAccuracy,
+		"the both-blocked Swagger fixture must first connect");
+	ZM_MoveExecutor::Execute(xBlockedCtx);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xBlockedEvents, ZM_BATTLE_EVENT_MOVE_FAILED), 1u);
+	const ZM_BattleEvent* pxFail = ZM_SC5FindEventPtr(xBlockedEvents,
+		ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_NOT_NULL(pxFail);
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ(pxFail->m_iAux, (int)ZM_MOVE_FAIL_VOLATILE_BLOCKED); }
+	ZM_SC5AssertRNGCursor(xBlockedState, xBlockedMirror,
+		"both-blocked +6-accuracy Swagger draws accuracy only");
+}
+
+ZENITH_TEST(ZM_Battle, Swagger_MissAppliesNothingAndDrawsAccuracyOnly)
+{
+	const u_int uAccuracy = ZM_GetMoveData(ZM_MOVE_BRAVADO).m_uAccuracy;
+	u_int64 ulMissSeed = 0ull;
+	for (u_int64 ulTry = 1ull; ulTry <= 4096ull; ++ulTry)
+	{
+		ZM_BattleRNG xMirror(ulTry, 54ull);
+		if (xMirror.RandBelow(100u) >= uAccuracy) { ulMissSeed = ulTry; break; }
+	}
+	ZENITH_ASSERT_GT(ulMissSeed, 0ull);
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_RunPlayerMove(ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BRAVADO),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), ulMissSeed, xState, xEvents);
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], 0);
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_CONFUSED));
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_MISSED));
+	ZM_BattleRNG xMirror(ulMissSeed, 54ull);
+	ZENITH_ASSERT_GE(xMirror.RandBelow(100u), uAccuracy,
+		"the mirrored Swagger miss fixture must miss");
+	ZM_SC5AssertRNGCursor(xState, xMirror, "missed Swagger draws accuracy only");
+}
+
+ZENITH_TEST(ZM_Battle, DoSwitch_ValidAndInvalidDestinationContract)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = { ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH) };
+	ZM_BattleMonsterSpec axEnemy[3] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_FERNFAWN, ZM_MOVE_RAMBASH) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 3u, 1ull, 54ull);
+	const u_int uHeaderCount = xEngine.GetEventCount();
+	ZENITH_ASSERT_FALSE(xEngine.DoSwitch(ZM_SIDE_COUNT, 0u),
+		"the first invalid-side enum boundary is rejected before Side() indexing");
+	ZENITH_ASSERT_FALSE(xEngine.DoSwitch(ZM_SIDE_ENEMY, 0u), "current slot is invalid");
+	ZENITH_ASSERT_FALSE(xEngine.DoSwitch(ZM_SIDE_ENEMY, 3u), "out-of-range slot is invalid");
+	xEngine.GetStateMutable().Side(ZM_SIDE_ENEMY).m_xParty.Get(1).m_uCurHP = 0u;
+	ZENITH_ASSERT_FALSE(xEngine.DoSwitch(ZM_SIDE_ENEMY, 1u), "fainted destination is invalid");
+	ZENITH_ASSERT_EQ(xEngine.GetEventCount(), uHeaderCount, "invalid switches emit nothing");
+	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_ENEMY, 2u));
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 2u);
+	ZENITH_ASSERT_EQ(xEngine.GetEventCount(), uHeaderCount + 1u);
+	const ZM_BattleEvent& xSwitch = xEngine.GetEvent(uHeaderCount);
+	ZENITH_ASSERT_EQ((u_int)xSwitch.m_eKind, (u_int)ZM_BATTLE_EVENT_SWITCH_IN);
+	ZENITH_ASSERT_EQ(xSwitch.m_uSide, (u_int)ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_EQ(xSwitch.m_uSlot, 2u);
+	ZENITH_ASSERT_EQ(xSwitch.m_uSpeciesId, (u_int)ZM_SPECIES_FERNFAWN);
+}
+
+ZENITH_TEST(ZM_Battle, DoSwitch_ResetOutgoingTransientsPreservePersistentState)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = { ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH) };
+	ZM_BattleMonsterSpec axEnemy[2] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_RAMBASH) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 2u, 1ull, 54ull);
+	ZM_BattleSide& xSide = xEngine.GetStateMutable().Side(ZM_SIDE_ENEMY);
+	ZM_BattleMonster& xOutgoing = xSide.Active();
+	const ZM_SPECIES_ID eSpecies = xOutgoing.m_eSpecies;
+	const ZM_ABILITY_ID eAbility = xOutgoing.m_eAbility;
+	const u_int uHP = xOutgoing.m_uCurHP - 1u;
+	xOutgoing.m_uCurHP = uHP;
+	xOutgoing.m_eStatus = ZM_MAJOR_STATUS_TOXIC;
+	xOutgoing.m_uStatusCounter = 7u;
+	const u_int uPP = --xOutgoing.m_axMoves[0].m_uCurPP;
+	xOutgoing.m_uVolatileMask = (u_int)ZM_VOLATILE_CONFUSED | (u_int)ZM_VOLATILE_FLINCH |
+		(u_int)ZM_VOLATILE_LEECH_SEED | (u_int)ZM_VOLATILE_PROTECT | (u_int)ZM_VOLATILE_CHARGE |
+		(u_int)ZM_VOLATILE_SEMI_INVULN | (u_int)ZM_VOLATILE_RECHARGE | (u_int)ZM_VOLATILE_LOCK |
+		(u_int)ZM_VOLATILE_TRAP | (u_int)ZM_VOLATILE_TAUNT;
+	xOutgoing.m_uConfuseTurns = 4u;
+	xOutgoing.m_uTrapTurns = 5u;
+	xOutgoing.m_uTauntTurns = 3u;
+	xOutgoing.m_uLockTurns = 2u;
+	xOutgoing.m_uChargeMoveSlot = 0u;
+	xOutgoing.m_uLockMoveSlot = 0u;
+	xOutgoing.m_eLeechSourceSide = ZM_SIDE_PLAYER;
+	xOutgoing.m_bEndureThisTurn = true;
+	for (u_int u = 0u; u < ZM_BATTLE_STAT_COUNT; ++u) { xOutgoing.m_aiStage[u] = (u & 1u) ? -3 : 4; }
+	xOutgoing.m_iCritStage = 3;
+	ZM_BattleMonster& xIncoming = xSide.m_xParty.Get(1);
+	xIncoming.m_eStatus = ZM_MAJOR_STATUS_BURN;
+	xIncoming.m_uStatusCounter = 9u;
+	xIncoming.m_uCurHP -= 2u;
+	const u_int uIncomingHP = xIncoming.m_uCurHP;
+	const u_int uBefore = xEngine.GetEventCount();
+	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_ENEMY, 1u));
+	ZENITH_ASSERT_EQ(xOutgoing.m_uVolatileMask, (u_int)ZM_VOLATILE_NONE);
+	ZENITH_ASSERT_EQ(xOutgoing.m_uConfuseTurns, 0u);
+	ZENITH_ASSERT_EQ(xOutgoing.m_uTrapTurns, 0u);
+	ZENITH_ASSERT_EQ(xOutgoing.m_uTauntTurns, 0u);
+	ZENITH_ASSERT_EQ(xOutgoing.m_uLockTurns, 0u);
+	ZENITH_ASSERT_EQ(xOutgoing.m_uChargeMoveSlot, uZM_MAX_MOVES);
+	ZENITH_ASSERT_EQ(xOutgoing.m_uLockMoveSlot, uZM_MAX_MOVES);
+	ZENITH_ASSERT_EQ((u_int)xOutgoing.m_eLeechSourceSide, (u_int)ZM_SIDE_COUNT);
+	ZENITH_ASSERT_FALSE(xOutgoing.m_bEndureThisTurn);
+	for (u_int u = 0u; u < ZM_BATTLE_STAT_COUNT; ++u) { ZENITH_ASSERT_EQ(xOutgoing.m_aiStage[u], 0); }
+	ZENITH_ASSERT_EQ(xOutgoing.m_iCritStage, 0);
+	ZENITH_ASSERT_EQ((u_int)xOutgoing.m_eStatus, (u_int)ZM_MAJOR_STATUS_TOXIC);
+	ZENITH_ASSERT_EQ(xOutgoing.m_uStatusCounter, 7u);
+	ZENITH_ASSERT_EQ(xOutgoing.m_uCurHP, uHP);
+	ZENITH_ASSERT_EQ(xOutgoing.m_axMoves[0].m_uCurPP, uPP);
+	ZENITH_ASSERT_EQ((u_int)xOutgoing.m_eSpecies, (u_int)eSpecies);
+	ZENITH_ASSERT_EQ((u_int)xOutgoing.m_eAbility, (u_int)eAbility);
+	ZENITH_ASSERT_EQ((u_int)xIncoming.m_eStatus, (u_int)ZM_MAJOR_STATUS_BURN);
+	ZENITH_ASSERT_EQ(xIncoming.m_uStatusCounter, 9u);
+	ZENITH_ASSERT_EQ(xIncoming.m_uCurHP, uIncomingHP);
+	ZENITH_ASSERT_EQ(xEngine.GetEventCount(), uBefore + 1u, "switch cleanup emits only SWITCH_IN");
+}
+
+ZENITH_TEST(ZM_Battle, ForceSwitch_PrimaryLowestEligibleNoTargetAndNoRNG)
+{
+	ZM_BattleMonsterSpec axPlayer[1] = {
+		ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BELLOW, ZM_MOVE_NONE, 10u, 250u) };
+	ZM_BattleMonsterSpec axEnemy[3] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW, ZM_MOVE_NONE, 120u, 250u),
+		ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_FERNFAWN, ZM_MOVE_RAMBASH) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 3u, 1ull, 54ull);
+	ZM_BattleRNG xMirror(1ull, 54ull);
+	ZM_SC5ResolveMoveTurn(xEngine);
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 1u,
+		"FORCE_SWITCH chooses lowest-index eligible bench");
+	ZM_SC5AssertRNGCursor(xEngine.GetStateMutable(), xMirror, "self setup + deterministic forced switch consume no RNG");
+
+	ZM_BattleMonsterSpec axSoloEnemy[1] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW, ZM_MOVE_NONE, 120u, 250u) };
+	ZM_BattleEngine xNoTarget;
+	xNoTarget.Begin(MakeTrainerConfig(), axPlayer, 1u, axSoloEnemy, 1u, 1ull, 54ull);
+	ZM_SC5ResolveMoveTurn(xNoTarget);
+	const ZM_BattleEvent* pxFail = ZM_SC5FindEventPtr(xNoTarget.GetEvents(),
+		ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_NOT_NULL(pxFail);
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ(pxFail->m_iAux, (int)ZM_MOVE_FAIL_NO_SWITCH_TARGET); }
+}
+
+ZENITH_TEST(ZM_Battle, ForceSwitch_DamagingCarrierDamageThenSwitchButNotOnKO)
+{
+	const u_int64 ulSeed = 1ull;
+	for (u_int uCase = 0u; uCase < 2u; ++uCase)
+	{
+		ZM_BattleMonsterSpec axPlayer[1] = {
+			ZM_SC5Spec(ZM_SPECIES_FINLET, ZM_MOVE_UNDERTOW, ZM_MOVE_NONE, 10u, 250u) };
+		ZM_BattleMonsterSpec axEnemy[2] = {
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW, ZM_MOVE_NONE, 120u, 300u),
+			ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_RAMBASH) };
+		ZM_BattleEngine xEngine;
+		xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 2u, ulSeed, 54ull);
+		if (uCase == 1u) { xEngine.GetStateMutable().Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 1u; }
+		ZM_SC5RigVolatile(xEngine.GetStateMutable().Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_TRAP, 5u);
+		ZM_SC5ResolveMoveTurn(xEngine);
+		const int iDamage = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_DAMAGE_DEALT, ZM_SIDE_ENEMY);
+		const int iSwitch = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_ENEMY, 3u);
+		ZENITH_ASSERT_GE(iDamage, 0);
+		if (uCase == 0u)
+		{
+			ZENITH_ASSERT_GE(iSwitch, 0);
+			ZENITH_ASSERT_LT(iDamage, iSwitch);
+			ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 1u);
+		}
+		else
+		{
+			ZENITH_ASSERT_TRUE(iSwitch < 0, "damaging FORCE_SWITCH never switches a KO target");
+			ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 0u);
+		}
+	}
+
+	// Unavailable damaging secondary phasing is silent: damage remains, there is
+	// no NO_SWITCH_TARGET failure, and the only SWITCH_INs are Begin's headers.
+	ZM_BattleMonsterSpec axSoloPlayer[1] = {
+		ZM_SC5Spec(ZM_SPECIES_FINLET, ZM_MOVE_UNDERTOW, ZM_MOVE_NONE, 120u, 250u) };
+	ZM_BattleMonsterSpec axSoloEnemy[1] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW, ZM_MOVE_NONE, 10u, 300u) };
+	ZM_BattleEngine xSolo;
+	xSolo.Begin(MakeTrainerConfig(), axSoloPlayer, 1u, axSoloEnemy, 1u, ulSeed, 54ull);
+	ZM_BattleRNG xSoloMirror(ulSeed, 54ull);
+	xSoloMirror.Chance(1u, 24u);
+	xSoloMirror.RandRange(85u, 100u);
+	ZM_SC5ResolveMoveTurn(xSolo);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xSolo.GetEvents(), ZM_BATTLE_EVENT_DAMAGE_DEALT));
+	ZENITH_ASSERT_EQ(ZM_CountKind(xSolo.GetEvents(), ZM_BATTLE_EVENT_SWITCH_IN), 2u);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xSolo.GetEvents(), ZM_BATTLE_EVENT_MOVE_FAILED));
+	ZENITH_ASSERT_EQ(xSolo.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 0u);
+	ZM_SC5AssertRNGCursor(xSolo.GetStateMutable(), xSoloMirror,
+		"no-bench damaging FORCE_SWITCH consumes only ordinary crit+roll draws");
+}
+
+ZENITH_TEST(ZM_Battle, ForceSwitch_FirstMoverSkipsQueuedOldMonsterAction)
+{
+	// Equal -6 FORCE_SWITCH priorities; faster player forces enemy before its queued
+	// Bellow. The incoming slot must not execute the outgoing slot's queued action.
+	ZM_BattleMonsterSpec axPlayer[2] = {
+		ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_BELLOW, ZM_MOVE_NONE, 120u, 250u),
+		ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_RAMBASH) };
+	ZM_BattleMonsterSpec axEnemy[2] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_BELLOW, ZM_MOVE_NONE, 10u, 250u),
+		ZM_SC5Spec(ZM_SPECIES_FERNFAWN, ZM_MOVE_RAMBASH) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 2u, axEnemy, 2u, 1ull, 54ull);
+	ZM_SC5ResolveMoveTurn(xEngine);
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 1u);
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEngine.GetEvents(), ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_ENEMY), 0u,
+		"the queued old-mon action is skipped after first mover force-switches eSecond");
+}
+
+ZENITH_TEST(ZM_Battle, EOT_FixedSideAndPerSideOrderWithCleanup)
+{
+	// Exercise the complete engine path first. Enemy is faster and therefore acts
+	// first, but ResolveTurn's EOT phase must still tick PLAYER before ENEMY.
+	ZM_BattleMonsterSpec axPlayer[1] = {
+		ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_WHETCLAW, ZM_MOVE_NONE, 10u, 250u) };
+	ZM_BattleMonsterSpec axEnemy[1] = {
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW, ZM_MOVE_NONE, 120u, 250u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, 1ull, 54ull);
+	xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active().m_eStatus = ZM_MAJOR_STATUS_POISON;
+	xEngine.GetStateMutable().Side(ZM_SIDE_ENEMY).Active().m_eStatus = ZM_MAJOR_STATUS_POISON;
+	const u_int uTurnStart = xEngine.GetEventCount();
+	ZM_SC5ResolveMoveTurn(xEngine);
+	const Zenith_Vector<ZM_BattleEvent>& xTurnEvents = xEngine.GetEvents();
+	const int iEnemyMove = ZM_SC5FindEvent(xTurnEvents, ZM_BATTLE_EVENT_MOVE_USED,
+		ZM_SIDE_ENEMY, uTurnStart);
+	const int iPlayerMove = ZM_SC5FindEvent(xTurnEvents, ZM_BATTLE_EVENT_MOVE_USED,
+		ZM_SIDE_PLAYER, uTurnStart);
+	const int iPlayerEOT = ZM_SC5FindEvent(xTurnEvents, ZM_BATTLE_EVENT_STATUS_DAMAGE,
+		ZM_SIDE_PLAYER, uTurnStart);
+	const int iEnemyEOT = ZM_SC5FindEvent(xTurnEvents, ZM_BATTLE_EVENT_STATUS_DAMAGE,
+		ZM_SIDE_ENEMY, uTurnStart);
+	const int iTurnEnd = ZM_SC5FindEvent(xTurnEvents, ZM_BATTLE_EVENT_TURN_END,
+		ZM_SIDE_COUNT, uTurnStart);
+	ZENITH_ASSERT_GE(iEnemyMove, 0);
+	ZENITH_ASSERT_GE(iPlayerMove, 0);
+	ZENITH_ASSERT_GE(iPlayerEOT, 0);
+	ZENITH_ASSERT_GE(iEnemyEOT, 0);
+	ZENITH_ASSERT_GE(iTurnEnd, 0);
+	ZENITH_ASSERT_LT(iEnemyMove, iPlayerMove, "fixture proves ENEMY was the faster mover");
+	ZENITH_ASSERT_LT(iPlayerMove, iPlayerEOT);
+	ZENITH_ASSERT_LT(iPlayerEOT, iEnemyEOT,
+		"ResolveTurn fixes EOT side order to PLAYER then ENEMY independent of move order");
+	ZENITH_ASSERT_LT(iEnemyEOT, iTurnEnd);
+
+	// Exercise the per-side EOT sub-order and cleanup slots directly.
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_MOVE_NONE, 10u, 250u),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_MOVE_NONE, 120u, 250u), 1ull, 54ull);
+	for (u_int uSide = 0u; uSide < ZM_SIDE_COUNT; ++uSide)
+	{
+		ZM_BattleMonster& xMon = xState.Side((ZM_SIDE)uSide).Active();
+		xMon.m_eStatus = ZM_MAJOR_STATUS_POISON;
+		ZM_SC5RigVolatile(xMon, ZM_VOLATILE_LEECH_SEED, 0u,
+			uSide == ZM_SIDE_PLAYER ? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER);
+		ZM_SC5RigVolatile(xMon, ZM_VOLATILE_TRAP, 2u);
+		ZM_SC5RigVolatile(xMon, ZM_VOLATILE_FLINCH);
+		ZM_SC5RigVolatile(xMon, ZM_VOLATILE_PROTECT);
+		ZM_SC5RigVolatile(xMon, ZM_VOLATILE_TAUNT, 1u);
+	}
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_StatusLogic::EndOfTurn(xState, xEvents, ZM_SIDE_PLAYER);
+	ZM_StatusLogic::EndOfTurn(xState, xEvents, ZM_SIDE_ENEMY);
+	const int iPlayerFirst = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_STATUS_DAMAGE, ZM_SIDE_PLAYER);
+	const int iEnemyFirst = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_STATUS_DAMAGE, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_GE(iPlayerFirst, 0);
+	ZENITH_ASSERT_GE(iEnemyFirst, 0);
+	ZENITH_ASSERT_LT(iPlayerFirst, iEnemyFirst, "EOT is fixed PLAYER then ENEMY, not speed ordered");
+
+	// For player: major, leech, trap, then cleanup FLINCH->PROTECT->TAUNT.
+	int iMajor = -1;
+	int iLeech = -1;
+	int iTrap = -1;
+	int iFlinchEnd = -1;
+	int iProtectEnd = -1;
+	int iTauntEnd = -1;
+	for (u_int u = 0u; u < xEvents.GetSize(); ++u)
+	{
+		const ZM_BattleEvent& xEvent = xEvents.Get(u);
+		if (xEvent.m_uSide != (u_int)ZM_SIDE_PLAYER) { continue; }
+		if (xEvent.m_eKind == ZM_BATTLE_EVENT_STATUS_DAMAGE)
+		{
+			if (xEvent.m_iTag == (int)ZM_MAJOR_STATUS_POISON) { iMajor = (int)u; }
+			else if (xEvent.m_iTag == ZM_VolatileDamageTag(ZM_VOLATILE_LEECH_SEED)) { iLeech = (int)u; }
+			else if (xEvent.m_iTag == ZM_VolatileDamageTag(ZM_VOLATILE_TRAP)) { iTrap = (int)u; }
+		}
+		else if (xEvent.m_eKind == ZM_BATTLE_EVENT_VOLATILE_ENDED)
+		{
+			if (xEvent.m_iAux == (int)ZM_VOLATILE_FLINCH) { iFlinchEnd = (int)u; }
+			else if (xEvent.m_iAux == (int)ZM_VOLATILE_PROTECT) { iProtectEnd = (int)u; }
+			else if (xEvent.m_iAux == (int)ZM_VOLATILE_TAUNT) { iTauntEnd = (int)u; }
+		}
+	}
+	ZENITH_ASSERT_LT(iMajor, iLeech);
+	ZENITH_ASSERT_LT(iLeech, iTrap);
+	ZENITH_ASSERT_LT(iTrap, iFlinchEnd);
+	ZENITH_ASSERT_LT(iFlinchEnd, iProtectEnd);
+	ZENITH_ASSERT_LT(iProtectEnd, iTauntEnd);
+}
+
+ZENITH_TEST(ZM_Battle, EOT_KOSkipsLaterChipsButClearsOneTurnState)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_BattleMonster& xMon = xState.Side(ZM_SIDE_PLAYER).Active();
+	xMon.m_uCurHP = 1u;
+	xMon.m_eStatus = ZM_MAJOR_STATUS_POISON;
+	ZM_SC5RigVolatile(xMon, ZM_VOLATILE_LEECH_SEED, 0u, ZM_SIDE_ENEMY);
+	ZM_SC5RigVolatile(xMon, ZM_VOLATILE_TRAP, 2u);
+	ZM_SC5RigVolatile(xMon, ZM_VOLATILE_FLINCH);
+	ZM_SC5RigVolatile(xMon, ZM_VOLATILE_PROTECT);
+	xMon.m_bEndureThisTurn = true;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_StatusLogic::EndOfTurn(xState, xEvents, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_TRUE(xMon.IsFainted());
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_STATUS_DAMAGE), 1u,
+		"major KO skips Leech and Trap chips");
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xMon, ZM_VOLATILE_FLINCH));
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xMon, ZM_VOLATILE_PROTECT));
+	ZENITH_ASSERT_FALSE(xMon.m_bEndureThisTurn, "KO still clears one-turn silent state");
+}
+
+ZENITH_TEST(ZM_Battle, GateOrder_G2G3G4G5G6FirstCancelStopsLaterStateAndDraws)
+{
+	// G2 freeze cancel before flinch/confusion. Seed 1 is the SC4 stay-frozen seed.
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), 1ull, 54ull);
+		ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		xAtk.m_eStatus = ZM_MAJOR_STATUS_FREEZE;
+		ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_FLINCH);
+		ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_CONFUSED, 3u);
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xAtk, ZM_VOLATILE_FLINCH));
+		ZENITH_ASSERT_EQ(xAtk.m_uConfuseTurns, 3u);
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_FLINCH));
+		ZM_BattleRNG xMirror(1ull, 54ull);
+		xMirror.RandBelow(100u);
+		ZM_SC5AssertRNGCursor(xState, xMirror, "G2 cancel stops G4/G5");
+	}
+	// G3 sleep cancel before flinch/confusion.
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), 1ull, 54ull);
+		ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		xAtk.m_eStatus = ZM_MAJOR_STATUS_SLEEP;
+		xAtk.m_uStatusCounter = 2u;
+		ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_FLINCH);
+		ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_CONFUSED, 3u);
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZENITH_ASSERT_EQ(xAtk.m_uStatusCounter, 1u);
+		ZENITH_ASSERT_TRUE(ZM_SC5HasVolatile(xAtk, ZM_VOLATILE_FLINCH));
+		ZENITH_ASSERT_EQ(xAtk.m_uConfuseTurns, 3u);
+		ZM_BattleRNG xMirror(1ull, 54ull);
+		ZM_SC5AssertRNGCursor(xState, xMirror, "G3 cancel draws nothing and stops G4/G5");
+	}
+	// G4 flinch before G5 confusion and G6 paralysis.
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), 1ull, 54ull);
+		ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		xAtk.m_eStatus = ZM_MAJOR_STATUS_PARALYSIS;
+		ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_FLINCH);
+		ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_CONFUSED, 3u);
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZENITH_ASSERT_EQ(xAtk.m_uConfuseTurns, 3u);
+		ZM_BattleRNG xMirror(1ull, 54ull);
+		ZM_SC5AssertRNGCursor(xState, xMirror, "G4 stops G5/G6 with zero draws");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, GateOrder_ThawWakeContinueToFlinch)
+{
+	// SC4 seed 2 thaws. The later G4 must then consume/cancel.
+	for (u_int uCase = 0u; uCase < 2u; ++uCase)
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), 2ull, 54ull);
+		ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		if (uCase == 0u) { xAtk.m_eStatus = ZM_MAJOR_STATUS_FREEZE; }
+		else { xAtk.m_eStatus = ZM_MAJOR_STATUS_SLEEP; xAtk.m_uStatusCounter = 1u; }
+		ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_FLINCH);
+		const u_int uPP = xAtk.m_axMoves[0].m_uCurPP;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZENITH_ASSERT_EQ((u_int)xAtk.m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE);
+		ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_STATUS_CURED));
+		ZENITH_ASSERT_TRUE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_FLINCH));
+		ZENITH_ASSERT_FALSE(ZM_HasKind(xEvents, ZM_BATTLE_EVENT_MOVE_USED));
+		ZENITH_ASSERT_EQ(xAtk.m_axMoves[0].m_uCurPP, uPP);
+	}
+}
+
+ZENITH_TEST(ZM_Battle, GateOrder_G5BeforeG6_SelfHitStopsOrPassDrawsParalysis)
+{
+	// Self-hit: G6 must not draw.
+	{
+		const u_int64 ulSeed = ZM_SC5FindGateSeed(true);
+		ZM_BattleState xState;
+		BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), ulSeed, 54ull);
+		ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		xAtk.m_eStatus = ZM_MAJOR_STATUS_PARALYSIS;
+		ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_CONFUSED, 2u);
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		xMirror.RandBelow(100u);
+		xMirror.RandRange(85u, 100u);
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZM_SC5AssertRNGCursor(xState, xMirror, "G5 self-hit stops before G6");
+	}
+	// Find a seed where confusion passes, then paralysis cancels: exactly two gate draws.
+	{
+		u_int64 ulSeed = 0ull;
+		for (u_int64 ulTry = 1ull; ulTry <= 4096ull; ++ulTry)
+		{
+			ZM_BattleRNG xMirror(ulTry, 54ull);
+			if (xMirror.RandBelow(100u) >= 33u && xMirror.RandBelow(100u) < 25u)
+			{
+				ulSeed = ulTry;
+				break;
+			}
+		}
+		ZM_BattleState xState;
+		BuildBattleState(xState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+			ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_WHETCLAW), ulSeed, 54ull);
+		ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		xAtk.m_eStatus = ZM_MAJOR_STATUS_PARALYSIS;
+		ZM_SC5RigVolatile(xAtk, ZM_VOLATILE_CONFUSED, 2u);
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		const ZM_BattleEvent* pxFail = ZM_SC5FindEventPtr(xEvents,
+			ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_NOT_NULL(pxFail);
+		if (pxFail != nullptr) { ZENITH_ASSERT_EQ(pxFail->m_iAux, (int)ZM_MOVE_FAIL_FULLY_PARALYZED); }
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		xMirror.RandBelow(100u);
+		xMirror.RandBelow(100u);
+		ZM_SC5AssertRNGCursor(xState, xMirror, "G5 pass then G6 consumes exactly two gate draws");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, MoveOrder_GCancellationThenM0TauntAndM3BeforeM4)
+{
+	// G4 cancels before M0 can inspect Taunt.
+	ZM_BattleState xGateState;
+	BuildBattleState(xGateState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_WHETCLAW),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_BattleMonster& xGateAtk = xGateState.Side(ZM_SIDE_PLAYER).Active();
+	ZM_SC5RigVolatile(xGateAtk, ZM_VOLATILE_FLINCH);
+	ZM_SC5RigVolatile(xGateAtk, ZM_VOLATILE_TAUNT, 3u);
+	Zenith_Vector<ZM_BattleEvent> xGateEvents;
+	ZM_MoveContext xGateCtx = MakeCtx(xGateState, xGateEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xGateCtx);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xGateEvents, ZM_BATTLE_EVENT_FLINCH));
+	ZENITH_ASSERT_EQ(xGateAtk.m_uTauntTurns, 3u);
+	ZENITH_ASSERT_FALSE(ZM_HasKind(xGateEvents, ZM_BATTLE_EVENT_MOVE_FAILED));
+
+	// M3 target vanished cancels before the attacker's first-turn charge M4.
+	ZM_BattleState xMState;
+	BuildBattleState(xMState, ZM_SC5Spec(ZM_SPECIES_KINDLET, ZM_MOVE_HEATSHIMMER),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	ZM_SC5RigVolatile(xMState.Side(ZM_SIDE_ENEMY).Active(), ZM_VOLATILE_SEMI_INVULN);
+	Zenith_Vector<ZM_BattleEvent> xMEvents;
+	ZM_MoveContext xMCtx = MakeCtx(xMState, xMEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xMCtx);
+	const ZM_BattleEvent* pxFail = ZM_SC5FindEventPtr(xMEvents,
+		ZM_BATTLE_EVENT_MOVE_FAILED, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_NOT_NULL(pxFail);
+	if (pxFail != nullptr) { ZENITH_ASSERT_EQ(pxFail->m_iAux, (int)ZM_MOVE_FAIL_SEMI_INVULNERABLE); }
+	ZENITH_ASSERT_FALSE(ZM_SC5HasVolatile(xMState.Side(ZM_SIDE_PLAYER).Active(), ZM_VOLATILE_CHARGE));
+	ZM_BattleRNG xMirror(1ull, 54ull);
+	ZM_SC5AssertRNGCursor(xMState, xMirror, "M3 cancels before M4 and M5");
+}
+
+ZENITH_TEST(ZM_Battle, MoveOrder_M4ChargeBeforeM5AccuracyAndM5BeforeM6Immunity)
+{
+	// Highstoop can miss (95), but first-turn semi/charge returns at M4 without draw.
+	ZM_BattleState xChargeState;
+	BuildBattleState(xChargeState, ZM_SC5Spec(ZM_SPECIES_SQUALLET, ZM_MOVE_HIGHSTOOP),
+		ZM_SC5Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH), 1ull, 54ull);
+	Zenith_Vector<ZM_BattleEvent> xChargeEvents;
+	ZM_MoveContext xChargeCtx = MakeCtx(xChargeState, xChargeEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xChargeCtx);
+	ZM_BattleRNG xChargeMirror(1ull, 54ull);
+	ZM_SC5AssertRNGCursor(xChargeState, xChargeMirror, "M4 first turn precedes M5 accuracy");
+
+	// Gnash Down can miss (90) and NORMAL is immune into PHANTOM. A connecting
+	// seed consumes accuracy, then M6 emits IMMUNE with no crit/effect draws.
+	u_int64 ulHitSeed = 0ull;
+	for (u_int64 ulTry = 1ull; ulTry <= 4096ull; ++ulTry)
+	{
+		ZM_BattleRNG xMirror(ulTry, 54ull);
+		if (xMirror.RandBelow(100u) < 90u) { ulHitSeed = ulTry; break; }
+	}
+	ZM_BattleState xImmuneState;
+	BuildBattleState(xImmuneState, ZM_SC5Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_GNASHDOWN),
+		ZM_SC5Spec(ZM_SPECIES_WISPET, ZM_MOVE_HEXBOLT), ulHitSeed, 54ull);
+	Zenith_Vector<ZM_BattleEvent> xImmuneEvents;
+	ZM_MoveContext xImmuneCtx = MakeCtx(xImmuneState, xImmuneEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xImmuneCtx);
+	ZENITH_ASSERT_TRUE(ZM_HasKind(xImmuneEvents, ZM_BATTLE_EVENT_IMMUNE));
+	ZM_BattleRNG xImmuneMirror(ulHitSeed, 54ull);
+	xImmuneMirror.RandBelow(100u);
+	ZM_SC5AssertRNGCursor(xImmuneState, xImmuneMirror, "M5 accuracy precedes M6 immunity; M6 stops later draws");
+}
+
+ZENITH_TEST(ZM_Battle, VolatileFree_SC5AddsNoEventsDrawsOrState)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState, MakeScenarioNibbin(), MakeScenarioStrayling(), 0x1234ull, 54ull);
+	ZM_BattleRNG xMirror(0x1234ull, 54ull);
+	xMirror.Chance(1u, 24u);
+	xMirror.RandRange(85u, 100u);
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_VOLATILE_APPLIED), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_VOLATILE_ENDED), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_FLINCH), 0u);
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_uVolatileMask, (u_int)ZM_VOLATILE_NONE);
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_uVolatileMask, (u_int)ZM_VOLATILE_NONE);
+	ZM_SC5AssertRNGCursor(xState, xMirror, "volatile-free old path consumes the exact SC1 crit/roll stream");
 }

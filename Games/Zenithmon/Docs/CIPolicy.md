@@ -13,7 +13,8 @@ AssetManifest.md (why the runner has no assets).
 **Status:** LIVING -- update whenever a gate is added/retired or branch
 protection changes.
 
-**Last updated:** 2026-07-10 (S1 start -- added the boot unit-test gate step (section 1 step 8) so Zenithmon `ZM_*` unit tests actually run in CI; see DecisionLog ZM-D-019).
+**Last updated:** 2026-07-11 (S2 SC5 -- unit baseline 1379 and
+direct-master policy reconciliation).
 
 ---
 
@@ -53,10 +54,10 @@ pattern), active from S0. Required check name: **`zm-tests`**.
 
 **Unit-test baseline ratchet:** step 8's `-Baseline` is the exact registered
 unit-test count of `zenithmon.exe` (engine units + `ZM_*` cases; currently
-**1095**, of which 1 is the quarantined `RegistryWideNodeRoundTrip` skip). Every
-PR that changes the `ZM_*` count -- and any engine PR that changes the engine
-unit count -- bumps this number in `zm-tests.yml` in the same PR. This mirrors
-engine-gate's discipline and guards against unit tests silently vanishing; the
+**1379**, of which 1 is the quarantined `RegistryWideNodeRoundTrip` skip). Every
+commit that changes the `ZM_*` count -- and any engine change that changes the
+engine unit count -- bumps this number in `zm-tests.yml` in the same commit.
+This mirrors engine-gate's discipline and guards against unit tests silently vanishing; the
 coupling-vs-simplicity trade-off is Questions.md Q-2026-07-10-004.
 
 ## 2. Runner constraints -- why headless pure-logic suites are the backbone
@@ -78,8 +79,8 @@ Consequence: **the CI backbone is the headless pure-logic suites** -- boot
 unit tests and, as stages land, battle engine / data-table / stats / AI /
 breeding / tower / save-schema / generator-determinism-in-memory /
 WorldSpec-integrity tests. These touch no disk assets and no GPU, so they
-run in FULL on every PR. This is a deliberate design constraint on all new
-tests, not an accident (see TestPlan.md).
+run in FULL on every `zm-tests` invocation. This is a deliberate design
+constraint on all new tests, not an accident (see TestPlan.md).
 
 CI budget: the headless batch must stay in the minutes range (DP precedent:
 ~2 min for ~140 tests); the slowest-10 report is reviewed at every stage
@@ -121,27 +122,34 @@ exact shape (because it differs from the original plan in two ways):
 Consequences of that shape:
 - `zm-tests` BLOCKS every non-admin merge into master.
 - `enforce_admins=false` means the repo owner's direct pushes bypass the
-  check -- deliberate, matching the established direct-push workflow. Agent
-  work always lands via PRs, so agents are always gated.
+  check -- deliberate, matching the established direct-push workflow. Under
+  ZM-D-031, agent work also lands by direct push: the full local gate is the
+  pre-push authority and `zm-tests` is a post-push backstop.
 - Only `zm-tests` is machine-enforced; the other gates in section 3 remain
-  blocking BY DISCIPLINE (nothing merges red, section 5). Add them to the
-  protection contexts only deliberately -- several are path-filtered and a
-  required check that never reports deadlocks the PR.
+  enforced BY LOCAL DISCIPLINE where relevant; a red post-push run is fixed
+  forward (section 5). Add other checks to the protection contexts only
+  deliberately -- several are path-filtered and a required check that never
+  reports deadlocks non-admin merges.
 
-## 5. Merge policy
+## 5. Direct-master landing policy (ZM-D-031)
 
-- **Nothing merges red.** A PR with a failing required check (or a failing
-  zm-tests during the pre-registration window) does not merge, full stop.
-- Every stage-gate PR needs `zm-tests` green (see the per-stage gates in
-  Roadmap.md).
+- **The full local gate must be green before every commit and direct push to
+  `master`.** It is the authoritative quality bar: build, exact-baseline boot
+  unit gate, headless suite, and the task/stage-scoped windowed checks.
+- Do not create a branch or PR, and do not wait for CI. The master push starts
+  `zm-tests` as a backstop; if it reports red, fix forward with another direct
+  commit (never revert shipped history, force-push master, or rerun the old
+  workflow execution).
 - Artifacts: pull `zm-test-results` (per-test JSON, includes durations)
   from the run page to diagnose failures without reproducing locally.
 
 ## 6. Escalation path when CI is red
 
-1. **Fix forward ON the PR.** Push fixes to the same branch; the
-   concurrency group cancels the superseded run automatically. Never merge
-   around a red gate, never remove the check to unblock a PR.
+1. **Fix forward on `master`.** Reproduce locally, then make a new direct
+   commit and push; never revert shipped history, force-push master, use
+   `gh run rerun`, or remove the check. After three failed fix-forward attempts
+   on the same failure, record the blocker in Questions.md, refresh Status.md,
+   and stop that iteration.
 2. **Reproduce locally first:** `zenith test Zenithmon --headless` mirrors the
    CI automated/P1 step (BuildEnvironment.md section 4). For a red UNIT test,
    reproduce the boot gate instead -- `Tools/run_unit_gate.ps1 -Exe
@@ -155,5 +163,5 @@ Consequences of that shape:
    failure) before forming a theory.
 4. **If CI infrastructure itself is broken** (runner outage, zenith-setup
    provisioning failure) -- not the code -- record it in Questions.md and
-   surface to the user; only a human with admin access can bypass branch
-   protection, and any such bypass gets a DecisionLog.md entry.
+   surface it to the user. Do not rerun the old execution or alter branch
+   protection; any user-directed protection change gets a DecisionLog.md entry.

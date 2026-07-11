@@ -4,7 +4,7 @@
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"
 
 // ============================================================================
-// ZM_MoveExecutor -- the move-execution seam (S2 box 2, SC1-SC3; DecisionLog ZM-D-033).
+// ZM_MoveExecutor -- the move-execution seam (S2 box 2, SC1-SC5; DecisionLog ZM-D-033).
 // The engine hands each acting side to ZM_MoveExecutor::Execute via a thin
 // ZM_MoveContext VIEW onto the engine-owned state + event sink (the engine keeps
 // owning m_xState / m_xEvents / the RNG). Execute runs the post-fainted-guard body:
@@ -36,6 +36,11 @@
 // (xIn.bBurnedPhysical, set at the ApplyDamagingHit call site). All of these are
 // no-ops for a status-free monster, so box-1 / SC1-SC3 goldens stay byte-identical.
 //
+// Dispatch (SC5): the ten battle-local volatile bits, the separate Endure guard,
+// Swagger, charge/recharge/lock delivery, and deterministic forced switching fill
+// the reserved G1/G4/G5 and M0/M2/M3/M4 slots. Every duration/proc draw is guarded;
+// forced switching is returned as a request for the engine-owned DoSwitch primitive.
+//
 // ApplyDamagingHit is the ONE damage-draw site. Its crit rate keys off the MOVE's
 // m_uCritStage (>= 2 == guaranteed, no draw) and the attacker's accumulated
 // m_iCritStage (RAISE_CRIT): 0 -> 1/24, 1 -> 1/8, 2 -> 1/2, >= 3 -> always. At crit
@@ -44,6 +49,14 @@
 // ============================================================================
 
 struct ZM_MoveData;   // full definition pulled in the .cpp (accuracy/power/type rows)
+
+// A move may request one deterministic forced switch. The executor selects the
+// lowest eligible bench slot but the engine owns the actual switch + event.
+struct ZM_MoveResult
+{
+	ZM_SIDE m_eForcedSwitchSide = ZM_SIDE_COUNT;
+	u_int   m_uForcedSwitchSlot = uZM_MAX_PARTY_SIZE;
+};
 
 // A thin view onto the engine's state + event sink for one move execution. Holds
 // no storage of its own beyond the target coordinates; every accessor resolves
@@ -72,7 +85,7 @@ namespace ZM_MoveExecutor
 	// (STATUS-category primary effect | damaging hit + optional stat secondary).
 	// Assumes the attacker is not fainted (the engine guards that before building
 	// the context).
-	void Execute(ZM_MoveContext& xCtx);
+	ZM_MoveResult Execute(ZM_MoveContext& xCtx);
 
 	// The single damaging emit-group / damage-draw site: crit -> roll
 	// (RandRange(85,100)) -> [CRIT][SUPER|NOT] DAMAGE_DEALT [FAINT]. The crit draw is

@@ -1,6 +1,6 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-11 -- **S2 box-2 SC4 (ZM_StatusLogic majors) COMPLETE. Box 2 is 6 ordered sub-commits (ZM-D-033); SC1-SC4 done, next: SC5 (volatiles + SWAGGER + FORCE_SWITCH + DoSwitch primitive).**
+**Last updated:** 2026-07-11 -- **S2 box-2 SC5 (all 10 volatiles + Endure + SWAGGER + FORCE_SWITCH + engine-owned DoSwitch) COMPLETE and GREEN. Box 2 is 6 ordered sub-commits (ZM-D-033/034); SC1-SC5 done, next: SC6 (`ZM_CatchCalc` + voluntary SWITCH/ITEM/RUN + 2,000-battle soak).**
 
 **Read this first each session.** Replaced every session end. [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the gap audit.
 
@@ -10,17 +10,18 @@
 
 ## Build / Tests
 
-- Build GREEN (`Vulkan_vs2022_Debug_Win64_True`). D3D12_False link proof in CI.
-- Unit (T0): **1327 ran, 1326 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). = 102 `ZM_Data` + **155 `ZM_Battle`** (14 box-1 + 5 SC1 + 43 SC2 + 45 SC3 + 48 SC4) + 1068 engine + 2 boot. **Baseline 1327** in `zm-tests.yml`.
+- Regen check GREEN (generated project state current after the SC5 source/test edits).
+- Build GREEN (`Vulkan_vs2022_Debug_Win64_True`).
+- Unit (T0): **1379 ran, 1378 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). = 102 `ZM_Data` + **207 `ZM_Battle`** (14 box-1 + 5 SC1 + 43 SC2 + 45 SC3 + 48 SC4 + 52 SC5) + 1068 engine + 2 boot. **Baseline 1379** in `zm-tests.yml`.
 - Automated (P1): 1/1 (`ZM_Boot_Test`); `zenith test Zenithmon --headless` exits 0.
 
-## What landed this session -- S2 box 1 (the battle-engine keystone)
+## What landed this session -- S2 box-2 SC5
 
-`Source/Battle/`: `ZM_BattleTypes.h` (SIDE/status/volatile/stat/weather/screen enums + `ZM_BattleAction` + `ZM_BattleConfig`) / `ZM_BattleMonster.{h,cpp}` (`ZM_BattleMonster` + `ZM_BattleMonsterSpec` w/ base-stat override + `ZM_BuildBattleMonster`) / `ZM_BattleEvent.h` (flat 7-field POD + `ZM_MakeEvent` + full kind enum incl. reserved) / `ZM_DamageCalc.{h,cpp}` (real minimal Gen-V pipeline + `ZM_ApplyStatStage` + `ZM_EffectivenessPercent`) / `ZM_BattleState.{h,cpp}` (sides+field+RNG) / `ZM_BattleEngine.{h,cpp}` (Begin/SubmitAction/ResolveTurn turn loop). `Tests/ZM_Tests_Battle.cpp` (14 `ZM_Battle` tests). Arch decision = **ZM-D-032**. Design doc archived in session scratchpad `S2_Box1_Design.md`; offline oracle `scratchpad/zm_battle_ref.py` (PCG32+stat+damage, validated vs S1 goldens) derived the scenario golden.
+`ZM_StatusLogic` now owns the complete ten-bit volatile lifecycle and the locked G1/G4/G5 gates; `ZM_MoveExecutor` dispatches volatile primaries/secondaries, Endure, Swagger, forced switching, charge/semi-invulnerable/recharge/lock-in state, and the M0/M2/M3/M4 intercepts. `ZM_BattleMonster` carries the independent volatile counters/metadata and separate one-turn Endure flag. `ZM_BattleEngine::DoSwitch` validates the destination, silently clears outgoing battle-local state while preserving HP/PP/major status, emits `SWITCH_IN`, and is shared by forced switching now and voluntary switching in SC6. End-of-turn processing is fixed PLAYER-then-ENEMY, with per-side major chip -> Leech Seed -> Trap -> cleanup. The 52 SC5 tests lock the event encodings, durations, guarded draw order, gate/intercept precedence, exact streams, switching reset, forced-switch queued-action skip, and volatile-free compatibility. Decision = **ZM-D-034**.
 
 ## Current task
 
-None -- SC4 committed + pushed; tree CLEAN. **PARKED 2026-07-11: SC5 authoring was dispatched but both authoring subagents died on an API session limit (resets ~5:50am Europe/London) before writing any files -- no partial work on disk, master green at SC4. Resume SC5 FRESH next firing (it is fully specified below + in ZM-D-033 + plan S2_Box2_Plan.md).** **Box 2 = 6 ordered sub-commits (full plan + LOCKED draw order in DecisionLog ZM-D-033).** Done: **SC1** (executor seam) + **SC2** (stat-stage effects + STATUS-category dispatch) + **SC3** (delivery variants + field/screen/hazard state-only + `bScreen`) + **SC4** (`ZM_StatusLogic` 6 majors: apply/block/PHASE-G-gate/turn-end-chip/cure + REST/CURE_STATUS/HEAL_BELL + `bBurnedPhysical` halve-physical + paralysis speed/4; appended `int m_iTag=0` to `ZM_BattleEvent` for STATUS_DAMAGE source [Q1]; lit `STATUS_APPLIED/STATUS_DAMAGE/STATUS_CURED` + MOVE_FAILED FROZEN/ASLEEP/FULLY_PARALYZED/STATUS_BLOCKED; reviewer clean). **Next: SC5** -- volatiles (all 10: CONFUSE/FLINCH/LEECH_SEED/TRAP/TAUNT/PROTECT/ENDURE/CHARGE_TURN/SEMI_INVULN/RECHARGE/LOCK_IN) via the SC4 gate framework's reserved G1/G4/G5 slots + end-of-turn leech/trap ticks + SWAGGER + FORCE_SWITCH + a `DoSwitch` primitive (emit SWITCH_IN, clear outgoing volatiles+stages+counters, keep major); lights `FLINCH/VOLATILE_APPLIED/VOLATILE_ENDED`. Then SC6 (pre-move actions SWITCH/ITEM/RUN + `ZM_CatchCalc` + the 2000-battle soak). **Pinned conventions:** event sides -- MULTI_HIT/RECOIL/DRAIN/HEAL=ATTACKER, DAMAGE_DEALT/CRIT/eff/FAINT/STATUS_*=affected mon; end-of-turn chip order = **fixed player-then-enemy** (NOT speed-ordered -- resolves ZM-D-033 3b wording); sleep=decrement-then-check, toxic=use-then-increment (locked by SC4 tests). **Deferred to SC6:** an `IsFainted` assert in `ZM_StatusLogic::ApplyMajor` (safe until switching lands); both-sides-chip ordering + REST-while-statused coverage; SC3 recoil-self-KO/HEAL-at-full/mid-run edges. Two mechanics deferrals in Shortfalls.md 1.2. **S2 has NO visual gate**, so the loop runs autonomously through S2.
+**Next: SC6, the final box-2 sub-commit.** Add `ZM_CatchCalc` (exact Gen-III/IV four-shake calculation with the ZM-D-033 rarity/status modifiers), implement voluntary SWITCH/ITEM/RUN in `ResolvePreMovePhase` with Trap restrictions and guarded RNG/event semantics, and replace/promote the 50-battle smoke target with the deterministic 2,000-battle soak (termination `< 500` turns plus HP/PP/stage/event invariants). Keep every move-only golden byte-identical. The Roadmap box-2 checkbox remains open until SC6 is complete and green. **S2 has no visual gate**, so work may continue autonomously.
 
 ## Notes for the next agent
 
@@ -28,6 +29,6 @@ None -- SC4 committed + pushed; tree CLEAN. **PARKED 2026-07-11: SC5 authoring w
 - **`DAMAGE_DEALT.m_iAmount` is RAW rolled damage (pre-clamp), NOT HP lost** -- box 4 exp/UI must read `m_iAux` (remaining HP) to compute HP lost. Comment fixed in `ZM_BattleEvent.h`.
 - **Golden-vector discipline (reuse for box 2):** prototype expected event streams in a scratchpad Python oracle validated against S1 golden vectors BEFORE trusting the engine; the 2000-battle fuzz soak (real target) lands with box-2 move variety (box 1 shipped a 50-battle 1v1 smoke scaffold + `ZM_ValidateEventStream`).
 - **Orchestration that worked (this session):** design via a 3-architect Workflow panel -> synthesize; parallel Implementer (Source/Battle) + Test Author (tests + oracle) with the design's section-2 header sketches as the NORMATIVE api so they converge without naming drift; orchestrator owns regen/build/test/oracle-run/reviewer/commit. `Zenith_Vector` has `.Get(idx)` (NO `operator[]`).
-- **BUMP the zm-tests baseline** in the SAME commit whenever ZM_* unit tests change (now 1186).
+- **BUMP the zm-tests baseline** in the SAME commit whenever ZM_* unit tests change (now 1379).
 - **Working-dir gotcha:** Bash + PowerShell SHARE a cwd -- run regen/build from `C:\dev\Zenith`. Editing existing files needs NO regen; only NEW files do (`Build\regen.ps1`).
 - **Hard rules (Scope.md):** `ZM_` prefix; original names / zero Nintendo IP; data = compiled C arrays; no audio/networking/Dynamax; singles only; baked assets git-ignored. Scope changes need a user DecisionLog entry FIRST.

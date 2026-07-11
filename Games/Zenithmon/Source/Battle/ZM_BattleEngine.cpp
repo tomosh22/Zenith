@@ -60,16 +60,32 @@ void ZM_BattleEngine::SubmitAction(ZM_SIDE eSide, const ZM_BattleAction& xAction
 	Zenith_Assert(!m_bOver, "SubmitAction: battle is already over");
 	Zenith_Assert(eSide == ZM_SIDE_PLAYER || eSide == ZM_SIDE_ENEMY, "SubmitAction: invalid side");
 	Zenith_Assert(xAction.m_eKind == ZM_ACTION_MOVE, "SubmitAction: box 1 only supports MOVE actions");
-	Zenith_Assert(xAction.m_uMoveSlot < uZM_MAX_MOVES, "SubmitAction: move slot %u out of range", xAction.m_uMoveSlot);
 
 	const ZM_BattleMonster& xActive = m_xState.Side(eSide).Active();
 	Zenith_Assert(!xActive.IsFainted(), "SubmitAction: active monster is fainted");
+	const bool bCharged = (xActive.m_uVolatileMask & (u_int)ZM_VOLATILE_CHARGE) != 0u;
+	const bool bLocked = (xActive.m_uVolatileMask & (u_int)ZM_VOLATILE_LOCK) != 0u;
+	Zenith_Assert(!(bCharged && bLocked),
+		"SubmitAction: active monster cannot be CHARGE and LOCK simultaneously");
 
-	const ZM_MoveSlot& xSlot = xActive.m_axMoves[xAction.m_uMoveSlot];
-	Zenith_Assert(xSlot.m_eMove != ZM_MOVE_NONE, "SubmitAction: move slot %u is empty", xAction.m_uMoveSlot);
-	Zenith_Assert(xSlot.m_uCurPP > 0u, "SubmitAction: move slot %u has no PP", xAction.m_uMoveSlot);
+	ZM_BattleAction xResolved = xAction;
+	if (bCharged)
+	{
+		xResolved.m_uMoveSlot = xActive.m_uChargeMoveSlot;
+	}
+	else if (bLocked)
+	{
+		xResolved.m_uMoveSlot = xActive.m_uLockMoveSlot;
+	}
+	Zenith_Assert(xResolved.m_uMoveSlot < uZM_MAX_MOVES,
+		"SubmitAction: move slot %u out of range", xResolved.m_uMoveSlot);
 
-	m_axPending[eSide]   = xAction;
+	const ZM_MoveSlot& xSlot = xActive.m_axMoves[xResolved.m_uMoveSlot];
+	Zenith_Assert(xSlot.m_eMove != ZM_MOVE_NONE, "SubmitAction: move slot %u is empty", xResolved.m_uMoveSlot);
+	Zenith_Assert(xSlot.m_uCurPP > 0u || bCharged,
+		"SubmitAction: move slot %u has no PP", xResolved.m_uMoveSlot);
+
+	m_axPending[eSide]   = xResolved;
 	m_abSubmitted[eSide] = true;
 }
 
@@ -86,7 +102,7 @@ void ZM_BattleEngine::ResolveTurn()
 	const int iTurn = (int)m_xState.m_xField.m_uTurnCounter;
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_BEGIN, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, iTurn));
 
-	ResolvePreMovePhase();     // box 1: no-op (run/item/switch deferred to box 2)
+	ResolvePreMovePhase();     // no-op until SC6 voluntary switch/item/run actions
 	ResolveMovePhase();
 	ResolveEndOfTurnPhase();   // box 1: emit TURN_END
 
@@ -108,7 +124,7 @@ void ZM_BattleEngine::ResolveTurn()
 
 void ZM_BattleEngine::ResolvePreMovePhase()
 {
-	// box 1: no-op. Run / item / switch actions arrive in box 2.
+	// Run / item / voluntary-switch actions arrive in SC6.
 }
 
 // Effective speed for turn ordering: the SPEED stat after its stat-stage multiplier,
@@ -158,20 +174,21 @@ void ZM_BattleEngine::ResolveMovePhase()
 	}
 	const ZM_SIDE eSecond = (eFirst == ZM_SIDE_PLAYER) ? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
 
-	ExecuteMove(eFirst);
-	if (!m_bOver && !m_xState.Side(eSecond).Active().IsFainted())
+	const ZM_SIDE eForcedSide = ExecuteMove(eFirst);
+	if (!m_bOver && eForcedSide != eSecond
+		&& !m_xState.Side(eSecond).Active().IsFainted())
 	{
 		ExecuteMove(eSecond);
 	}
 }
 
-void ZM_BattleEngine::ExecuteMove(ZM_SIDE eAtk)
+ZM_SIDE ZM_BattleEngine::ExecuteMove(ZM_SIDE eAtk)
 {
 	const ZM_SIDE eDef = (eAtk == ZM_SIDE_PLAYER) ? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
 
 	if (m_xState.Side(eAtk).Active().IsFainted())
 	{
-		return;   // a fainted actor never acts
+		return ZM_SIDE_COUNT;   // a fainted actor never acts
 	}
 
 	// The engine keeps owning the state / event sink / RNG; the context is a thin
@@ -183,7 +200,32 @@ void ZM_BattleEngine::ExecuteMove(ZM_SIDE eAtk)
 	xCtx.m_eAtk      = eAtk;
 	xCtx.m_eDef      = eDef;
 	xCtx.m_uMoveSlot = m_axPending[eAtk].m_uMoveSlot;
-	ZM_MoveExecutor::Execute(xCtx);
+	const ZM_MoveResult xResult = ZM_MoveExecutor::Execute(xCtx);
+	if (xResult.m_eForcedSwitchSide < ZM_SIDE_COUNT
+		&& DoSwitch(xResult.m_eForcedSwitchSide, xResult.m_uForcedSwitchSlot))
+	{
+		return xResult.m_eForcedSwitchSide;
+	}
+	return ZM_SIDE_COUNT;
+}
+
+bool ZM_BattleEngine::DoSwitch(ZM_SIDE eSide, u_int uTargetSlot)
+{
+	if (eSide >= ZM_SIDE_COUNT)
+	{
+		return false;
+	}
+	ZM_BattleSide& xSide = m_xState.Side(eSide);
+	if (!xSide.CanSwitchTo(uTargetSlot))
+	{
+		return false;
+	}
+
+	ZM_StatusLogic::ResetSwitchTransients(xSide.Active());
+	xSide.m_uActiveSlot = uTargetSlot;
+	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, eSide, uTargetSlot,
+		ZM_MOVE_NONE, (u_int)xSide.Active().m_eSpecies));
+	return true;
 }
 
 void ZM_BattleEngine::ResolveEndOfTurnPhase()

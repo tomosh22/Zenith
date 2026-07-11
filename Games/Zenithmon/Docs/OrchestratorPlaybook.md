@@ -41,10 +41,11 @@ Mechanically enforced by:
 - If a build wedges anyway: `zenith clean Zenithmon` kills hung
   cl.exe/mspdbsrv/link processes and wipes output/obj.
 
-### Invariant 2 -- No git worktrees
+### Invariant 2 -- Master only; no branches, PRs, or git worktrees
 
-**All work happens on the main checkout at `C:\dev\Zenith`, on per-task
-feature branches (`zenithmon/s<stage>-<slug>`).**
+**All work happens on the main checkout at `C:\dev\Zenith`, directly on
+`master`. Feature branches, pull requests, and git worktrees are forbidden
+(ZM-D-031).**
 
 Sharpmake bakes the cwd's absolute path into generated vcxprojs
 (`GAME_ASSETS_DIR`, `SHADER_SOURCE_ROOT`, post-build copy steps), so a regen
@@ -96,22 +97,24 @@ never as the load-bearing task definition.
    between sessions.
 4. Read the current stage in [Roadmap.md](Roadmap.md); pick the first
    un-checked task (or trust Status.md's current task if one is in flight).
-5. `git status` -- confirm a clean tree; investigate if dirty.
-   `git checkout master && git pull`, then branch `zenithmon/s<stage>-<slug>`.
+5. `git status` -- investigate any dirty or unpushed work before starting
+   something new. `git checkout master && git pull`; remain on `master` for the
+   whole task (ZM-D-031).
 6. If any `.zproj` / `Sharpmake_*.cs` changed since the last regen:
    `Build\regen.ps1`.
 
 ### 1.2 The orchestrator's mental model
 
 You are a tech lead. You do not write all the code yourself; you scope tasks
-for subagents, integrate their work, run the build/test gate, open the PR,
-and keep the docs truthful.
+for subagents, integrate their work, run the build/test gate, commit and push
+directly to `master`, and keep the docs truthful.
 
 - Read enough to understand the task; do not over-research.
 - Brief subagents tightly, with an explicit *files-you-may-edit* list.
 - Build and test yourself; subagents return code, not results.
 - Write the living docs yourself; subagents return content, not commits.
-- Open PRs yourself; subagents never invoke `gh`.
+- Own the direct-master commit/push; subagents never branch, commit, push, or
+  invoke `gh`.
 
 ---
 
@@ -124,7 +127,7 @@ PLAN            (Planner subagent if multi-file / unclear shape)
      |
 RESEARCH        (Explore subagent if the codebase question is multi-step)
      |
-AUTHOR TESTS    (Test Author subagent -- TestPlan.md specs, same PR as the system)
+AUTHOR TESTS    (Test Author subagent -- TestPlan.md specs, same commit as the system)
      |
 AUTHOR CODE     (Implementer subagent)
      |
@@ -133,15 +136,17 @@ ORCHESTRATOR:   zenith regen (if files added) -> zenith build Zenithmon
      |
 REVIEW          (Reviewer subagent for logic/engine changes)
      |
-ORCHESTRATOR:   commit, push, gh pr create, auto-merge on green
-     |
 ORCHESTRATOR:   update Status.md / DecisionLog.md / tick Roadmap.md
+     |
+ORCHESTRATOR:   commit + push directly to master (local gate is authority)
+     |
+CI BACKSTOP:    zm-tests runs post-push; fix forward with a direct commit if red
 ```
 
 The orchestrator is in the loop at every step; subagents fill specific boxes.
-Tests and implementation land in the same PR -- test-first discipline lives
+Tests and implementation land in the same commit -- test-first discipline lives
 *within* the session (author test, watch it fail, implement, watch it pass),
-not across PR boundaries.
+not across commit boundaries.
 
 ---
 
@@ -196,7 +201,7 @@ just cite the section.
 ### 3.5 Reviewer (`general-purpose`, prompt-enforced read-only)
 
 "You are reviewing, not implementing. Do not edit any files. Do not build or
-run." Paste the diff into the prompt. Mandatory for PRs that change game
+run." Paste the diff into the prompt. Mandatory for changes that affect game
 logic and for **every** engine (`Zenith/`) change. Checks: tests match the
 change, conventions (3.x clauses), no scope creep vs [Scope.md](Scope.md),
 no baked assets staged, no obvious bugs.
@@ -238,7 +243,7 @@ Gate discipline:
   link proof, the stage's windowed `--filter` list, and the visual check --
   see [Roadmap.md](Roadmap.md) per stage.
 - **Engine changes**: unit tests for the new surface + RenderTest boot
-  regression + DP and CityBuilder suites green before the PR.
+  regression + DP and CityBuilder suites green before the direct-master commit.
 - One orchestrated session per machine at a time. There is no cross-session
   build lock; do not start a second building session.
 
@@ -254,7 +259,7 @@ Gate discipline:
 4. Implementer subagent authors the code.
 5. Orchestrator builds + runs the full gate.
 6. Reviewer subagent for logic/engine changes.
-7. Orchestrator commits, PRs, updates docs.
+7. Orchestrator updates docs, commits, and pushes directly to `master`.
 
 ### 5.2 Plan-first (multi-file / unclear shape)
 
@@ -271,7 +276,7 @@ Default to 1-2 background subagents; when in doubt, sequential.
 
 ### 5.4 Review-loop (engine + high-stakes changes)
 
-5.1 to green, then a mandatory Reviewer pass, then fix-or-commit. Engine PRs
+5.1 to green, then a mandatory Reviewer pass, then fix-or-commit. Engine changes
 never skip this.
 
 ### 5.5 Content waves (S9/S10 world buildout)
@@ -327,7 +332,7 @@ integrate, gate, commit.
   either fabricated it or violated Invariant 1. Re-brief; the clause is the
   first paragraph of every prompt.
 - **Trusting "builds clean".** The commit that follows an unverified claim is
-  the one CI bounces -- or worse, the one auto-merge lands red-adjacent.
+  the one the post-push CI backstop bounces.
   Always rebuild yourself.
 - **Doc-pointer prompts.** "Implement encounter rolls per the plan" produces
   a subagent that invents its own plan. Paste the formula, the rates table,
@@ -347,11 +352,11 @@ integrate, gate, commit.
 
 ## 8. End of Session
 
-1. All branches pushed or cleaned up; no orphaned local WIP.
+1. `master` is clean and pushed; no orphaned local WIP.
 2. [Status.md](Status.md) reflects the next session's true starting state.
 3. [Questions.md](Questions.md) items addressed or updated.
 4. [DecisionLog.md](DecisionLog.md) has an entry per non-trivial decision.
-5. Roadmap checkboxes match merged reality.
+5. Roadmap checkboxes match landed reality.
 6. Print a one-paragraph user-facing summary.
 
 ---
@@ -371,7 +376,7 @@ integrate, gate, commit.
 | **msbuild / game executable** | **Orchestrator only** |
 | Splice shared-table rows (ZM_WorldSpec) | Orchestrator |
 | Write Status / Roadmap / DecisionLog / Questions / Shortfalls | Orchestrator |
-| gh pr create / merge | Orchestrator |
+| Direct-master commit / push | Orchestrator |
 | git worktrees | Nobody |
 
 When the session is trivial (typo, one-line fix), skip the subagent machinery
@@ -382,33 +387,37 @@ still build serially, on the main checkout, with the docs updated).
 
 StartPrompts.md prompt 0 turns this playbook into an unattended driver: each
 firing is ONE idempotent iteration (derive state from Status.md + git; resume
-in-flight work, else take the next Roadmap task; land it through PR -> CI ->
-merge -> docs). The invariants above hold unchanged inside the loop -- the
-iteration IS the orchestrator.
+in-flight work, else take the next Roadmap task; pass the local gate, update
+docs, then commit + push directly to master). The post-push CI run is a
+backstop. The invariants above hold unchanged inside the loop -- the iteration
+IS the orchestrator.
 
 Loop-specific rules:
 
 1. **Idempotence over memory.** A firing may crash or be interrupted at any
    point; the next firing must reconstruct from Status.md, the Roadmap, and
    git state alone. That is why Status.md is refreshed at every iteration end
-   and why branches are named `zenithmon/s<stage>-<slug>` (discoverable).
+   and why every in-flight state is recorded there rather than hidden on a
+   feature branch.
 2. **Hard-stop at visual gates** (user's standing order, 2026-07-10): when the
    next item is a stage's visual check (incl. S4 gallery, S8 go/no-go), run the
    automated gate items, capture screenshot evidence, set `GATE-WAIT: S<n>` in
    Status.md, and end. Every subsequent firing reports "waiting" and does
    nothing until the user's sign-off (StartPrompts prompt 4) lands in
    DecisionLog.md. The loop never signs its own gates.
-3. **Merge authorization is carried by the prompt.** The user issues it by
-   starting the loop; it covers merging the loop's OWN green PRs only. Anything
-   else outward-facing (branch-protection changes, deleting others' branches,
+3. **Direct-push authorization is carried by the prompt.** The user issues it
+   by starting the loop; once the local gate is green it covers committing and
+   pushing the loop's own change directly to `master` (ZM-D-031). Anything else
+   outward-facing (branch-protection changes, deleting others' branches,
    force-pushing shared refs) still stops for the user.
-4. **Fix-forward budget:** 3 attempts on a red gate, then park it in
+4. **Fix-forward budget:** 3 attempts on the same red local gate or post-push
+   CI failure, then park it in
    Questions.md + Status.md and end the iteration. A parked blocker is a
    better outcome than a thrashing loop.
 5. **Process hygiene:** each iteration sweeps stray zenithmon.exe processes
    (Get-Process zenithmon) before ending -- orphaned editor instances from
    crashed runs otherwise accumulate and lock build outputs.
 6. **Budget sanity:** one Roadmap task per iteration is the healthy cadence;
-   chain a second small task only when the first merged green with budget to
+   chain a second small task only when the first landed locally green with budget to
    spare. Content-wave stages (S9/S10) fan out subagents per region for
    AUTHORING only -- builds remain serial on the orchestrator.

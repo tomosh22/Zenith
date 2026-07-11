@@ -53,7 +53,7 @@ Plus, always:
   dispatch (this is about parallel *agents*/processes; a single build using
   `-maxCpuCount` is fine).
 - **Skip the test-first step.** Tests specified in [TestPlan.md](TestPlan.md)
-  land WITH the system, in the same PR.
+  land WITH the system, in the same commit.
 
 ---
 
@@ -72,7 +72,8 @@ Plus, always:
   mandate covers meshes/textures/anims/terrains/scenes only.
 - **All art is procedurally generated** by `#ifdef ZENITH_TOOLS` code and baked
   to `Assets/` (git-ignored), under manifest guards so warm boots skip the bake.
-- **Status (2026-07-09, S0, branch `zenithmon/s0-skeleton`):** project scaffolded
+- **Historical S0 snapshot (2026-07-09, branch
+  `zenithmon/s0-skeleton`):** project scaffolded
   via `zenith new Zenithmon`; `ZM_GameComponent` (registered `"ZM_Game"`,
   serialization order 100) bobs a placeholder cube under a "Zenithmon" title in
   the boot-authored `FrontEnd.zscen` (build index 0); 2 boot unit tests
@@ -80,9 +81,11 @@ Plus, always:
   `Tests/ZM_AutoTests_Boot.cpp`); `Zenith_SaveData::Initialise("Zenithmon")` +
   `ClearForTest` between-tests hook wired from S0; `Vulkan_vs2022_Debug_Win64_True`
   build green; `zenith test Zenithmon --headless` = 1 passed / 0 failed;
-  `.github/workflows/zm-tests.yml` written. Registering `zm-tests` as a required
-  branch-protection check is a **pending manual GitHub-UI step** -- see
-  [ManualSetupChecklist.md](ManualSetupChecklist.md).
+  `.github/workflows/zm-tests.yml` written. At that snapshot, registering
+  `zm-tests` as a required branch-protection check was still pending; it was
+  completed on 2026-07-10 (see
+  [ManualSetupChecklist.md](ManualSetupChecklist.md)). Current project state is
+  maintained exclusively in [Status.md](Status.md).
 - **S0 engine change worth knowing:** the game-name validators
   (`Test-ZenithGameNameSyntax` in `Build/zenith_buildsystem.psm1` and the C++
   `ZenithHub_GameScan::ValidateName`) previously reserved the blanket
@@ -176,7 +179,7 @@ Plus, always:
 <Roadmap item in flight>
 
 ## Last completed
-<Roadmap item + PR link>
+<Roadmap item + commit hash>
 
 ## Notes for next agent
 <anything not obvious from the diff; empty if nothing>
@@ -312,20 +315,22 @@ changes behaviour without changing a test is self-rejected.
 
 Each Roadmap stage ends with a gate. A gate = build green + unit tests green +
 `zenith test Zenithmon --headless` green + the stage-scoped windowed
-`--filter` runs + CI `zm-tests` green + the stage's listed visual check +
-**docs updated**. The 4-config matrix (see 5.2) runs at major gates. A stage
+`--filter` runs + the stage's listed visual check + **docs updated**. The
+4-config matrix (see 5.2) runs at major gates. The local gate is authoritative;
+`zm-tests` runs after the direct-master push as a backstop and any later red run
+is fixed forward. A stage
 gate is not passed until [Roadmap.md](Roadmap.md), [Shortfalls.md](Shortfalls.md),
-and any affected format docs are updated **in the same PR**.
+and any affected format docs are updated **in the same commit**.
 
 ### 4.4 Docs discipline
 
 - [Status.md](Status.md): refreshed every session end (replace, don't append).
 - [DecisionLog.md](DecisionLog.md): append-only, newest-first.
-- [Roadmap.md](Roadmap.md): checkboxes ticked as PRs land.
+- [Roadmap.md](Roadmap.md): checkboxes ticked as commits land.
 - [Shortfalls.md](Shortfalls.md) + format docs: at stage gates.
-- Docs update lands **in the same PR** that changes the behavior it describes.
+- Docs update lands **in the same commit** that changes the behavior it describes.
 
-### 4.5 PR pre-flight checklist
+### 4.5 Direct-master pre-push checklist
 
 1. Tests land with the system; failed before, pass after.
 2. `zenith test Zenithmon --headless` fully green locally.
@@ -419,7 +424,7 @@ build fails with "cannot access file", run `zenith clean Zenithmon`.
 
 Sharpmake bakes the cwd's absolute path into generated vcxprojs
 (`GAME_ASSETS_DIR`, `SHADER_SOURCE_ROOT`, post-build copies). All work happens
-on the main checkout at `C:\dev\Zenith` on feature branches. If the harness
+on the main checkout at `C:\dev\Zenith`, directly on `master`. If the harness
 drops you in `.claude/worktrees/<name>/`, treat it as a transient sandbox and
 never regen or commit generated output from there.
 
@@ -507,8 +512,8 @@ Adding `ZM_WarpTrigger_Component` (or any component), end to end:
 7. **Gate** -- `zenith build Zenithmon`, then
    `zenith test Zenithmon --headless` (all green), plus a `--filter` windowed
    run if the new test needs graphics.
-8. **Land** -- PR with the component + test + docs updates together; tick the
-   Roadmap box.
+8. **Land** -- include the component + test + docs updates in one commit, then
+   push it directly to `master`; tick the Roadmap box.
 
 ---
 
@@ -517,7 +522,8 @@ Adding `ZM_WarpTrigger_Component` (or any component), end to end:
 You finish a session well when:
 
 - The current Roadmap task is one box closer to ticked.
-- CI (`zm-tests`) is green on the merged PR.
+- The authoritative local gate was green before the direct-master push;
+  `zm-tests` is the post-push backstop and any red run is fixed forward.
 - [Status.md](Status.md), [DecisionLog.md](DecisionLog.md),
   [Questions.md](Questions.md) reflect reality.
 - The next agent, reading [Status.md](Status.md) cold, can resume in under
@@ -544,10 +550,9 @@ them.
   `pwsh -NoProfile -File Tools\zenith.ps1 <cmd>` and
   `pwsh -NoProfile -File Build\regen.ps1`. CI and interactive user machines are
   unaffected either way.
-- **PR re-evaluation:** `gh run rerun` re-uses the run's ORIGINAL merge commit
-  -- it never picks up new master. To re-evaluate a PR against updated master,
-  rebase the branch onto origin/master and push (checks re-run on the fresh
-  merge ref).
+- **Post-push CI re-evaluation:** never use `gh run rerun`. A red `zm-tests`
+  run is corrected by a new direct commit to `master`; that push produces a
+  fresh run for the new commit (ZM-D-031).
 - **Never launch a game exe bare with `--exit-after-frames N`:** that flag is a
   per-TEST max-frames override, consumed only while an automated test runs; a
   bare tools build idles in the editor FOREVER (orphaned processes). Boot
@@ -560,7 +565,9 @@ them.
   referenced from MasterPlan.md's verification section). Store captures under
   `Build/artifacts/` (never committed) and record paths in Status.md.
 - **Unattended permission surface:** the checked-in `.claude/settings.json`
-  allowlists git, gh pr/run, the zenith/regen/gate/scaffold script entry
-  points, and msbuild, so loop iterations do not stall on prompts (approved
-  2026-07-10, DecisionLog ZM-D-017). If you add a new routinely-used command,
-  extend that allowlist in the same PR that introduces the command.
+  allowlists git, GitHub inspection, the zenith/regen/gate/scaffold script
+  entry points, and msbuild, so loop iterations do not stall on prompts
+  (approved 2026-07-10, DecisionLog ZM-D-017). Some legacy `gh pr` permission
+  entries remain, but permission is not authorization: ZM-D-031 forbids agents
+  from creating PRs. If you add a new routinely-used command, extend that
+  allowlist in the same commit that introduces the command.

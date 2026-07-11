@@ -54,6 +54,14 @@ struct ZM_BattleMonster
 	ZM_MAJOR_STATUS m_eStatus  = ZM_MAJOR_STATUS_NONE;   // box 2
 	u_int           m_uStatusCounter = 0u;               // sleep turns / toxic ramp (box 2)
 	u_int           m_uVolatileMask  = ZM_VOLATILE_NONE;  // box 2
+	u_int           m_uConfuseTurns = 0u;
+	u_int           m_uTrapTurns = 0u;
+	u_int           m_uTauntTurns = 0u;
+	u_int           m_uLockTurns = 0u;                    // future forced uses remaining
+	u_int           m_uChargeMoveSlot = uZM_MAX_MOVES;    // uZM_MAX_MOVES == no charged move
+	u_int           m_uLockMoveSlot = uZM_MAX_MOVES;      // uZM_MAX_MOVES == no locked move
+	ZM_SIDE         m_eLeechSourceSide = ZM_SIDE_COUNT;   // source side, so switching redirects healing
+	bool            m_bEndureThisTurn = false;            // one-turn guard; deliberately not a volatile bit
 	ZM_MoveSlot     m_axMoves[uZM_MAX_MOVES];
 	int             m_aiStage[ZM_BATTLE_STAT_COUNT] = {}; // each in [-6,+6]; box 1 all 0
 	int             m_iCritStage = 0;                      // RAISE_CRIT counter (box 2 SC2); box 1 always 0

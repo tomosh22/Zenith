@@ -8,7 +8,7 @@
 
 // ============================================================================
 // ZM_MoveExecutor -- SC1 seam + SC2 stat-stage effects + SC3 delivery/field +
-// SC4 major-status infliction & burn-damage reduction. Category dispatch.
+// SC4 major statuses + SC5 volatiles/Endure/forced switching. Category dispatch.
 // Draw discipline (locked): PHASE G pre-move gates (ZM_StatusLogic::PreMoveGate --
 // freeze/sleep/para; ZERO draws for a status-free attacker) -> accuracy (only if the
 // move can miss) -> [STATUS-category primary: apply effect, no further draws] OR
@@ -333,6 +333,58 @@ static ZM_MAJOR_STATUS g_MajorStatusForEffect(ZM_MOVE_EFFECT eEffect)
 	}
 }
 
+static ZM_VOLATILE g_VolatileForEffect(ZM_MOVE_EFFECT eEffect)
+{
+	switch (eEffect)
+	{
+	case ZM_MOVE_EFFECT_CONFUSE:    return ZM_VOLATILE_CONFUSED;
+	case ZM_MOVE_EFFECT_FLINCH:     return ZM_VOLATILE_FLINCH;
+	case ZM_MOVE_EFFECT_LEECH_SEED: return ZM_VOLATILE_LEECH_SEED;
+	case ZM_MOVE_EFFECT_TRAP:       return ZM_VOLATILE_TRAP;
+	case ZM_MOVE_EFFECT_TAUNT:      return ZM_VOLATILE_TAUNT;
+	case ZM_MOVE_EFFECT_PROTECT:    return ZM_VOLATILE_PROTECT;
+	default:                        return ZM_VOLATILE_NONE;
+	}
+}
+
+static void g_EmitVolatileBlocked(ZM_MoveContext& xCtx, ZM_SIDE eTarget)
+{
+	ZM_BattleSide& xSide = xCtx.m_pxState->Side(eTarget);
+	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, eTarget,
+		xSide.m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0,
+		(int)ZM_MOVE_FAIL_VOLATILE_BLOCKED));
+}
+
+static ZM_MoveResult g_ForceSwitchResult(ZM_MoveContext& xCtx, bool bPrimary)
+{
+	ZM_MoveResult xResult;
+	const u_int uTarget = xCtx.DefSide().FindLowestSwitchTarget();
+	if (uTarget < uZM_MAX_PARTY_SIZE)
+	{
+		xResult.m_eForcedSwitchSide = xCtx.m_eDef;
+		xResult.m_uForcedSwitchSlot = uTarget;
+	}
+	else if (bPrimary)
+	{
+		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, xCtx.m_eDef,
+			xCtx.DefSide().m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0,
+			(int)ZM_MOVE_FAIL_NO_SWITCH_TARGET));
+	}
+	return xResult;
+}
+
+static void g_ApplySwagger(ZM_MoveContext& xCtx)
+{
+	const bool bRaised = g_ApplyStatChange(xCtx, xCtx.m_eDef,
+		ZM_BATTLE_STAT_ATTACK, xCtx.Move().m_iEffectMagnitude, false);
+	const bool bConfused = ZM_StatusLogic::ApplyVolatile(xCtx, xCtx.m_eDef,
+		ZM_VOLATILE_CONFUSED);
+	if (!bRaised && !bConfused)
+	{
+		g_EmitVolatileBlocked(xCtx, xCtx.m_eDef);
+	}
+}
+
 // A STATUS-category PRIMARY that inflicts a major status on the OPPONENT (chance
 // 100, no crit/roll). On a block (type-immune / already statused) the primary
 // announces MOVE_FAILED(STATUS_BLOCKED) on the target -- a damaging secondary, by
@@ -403,25 +455,25 @@ static void g_ApplyHealBell(ZM_MoveContext& xCtx)
 // lights the stat-stage kinds; SC3 adds the field/side setters (state-only) and the
 // HEAL_HALF self-heal; SC4 adds the major-status infliction (BURN/FREEZE/PARALYZE/
 // POISON/TOXIC/SLEEP) and the cure/maintenance moves (REST/CURE_STATUS/HEAL_BELL).
-// Other STATUS-category effects (volatiles) light up in SC5 and are a MOVE_USED-only
-// no-op for now.
-static void g_ApplyStatusCategoryPrimary(ZM_MoveContext& xCtx)
+// SC5 adds the battle-local volatile, Endure, Swagger, and forced-switch primaries.
+static ZM_MoveResult g_ApplyStatusCategoryPrimary(ZM_MoveContext& xCtx)
 {
+	ZM_MoveResult xResult;
 	const ZM_MoveData& xMove = xCtx.Move();
 	if (g_IsStatEffect(xMove.m_eEffect))
 	{
 		g_ApplyStatEffect(xCtx, xMove.m_eEffect, xMove.m_iEffectMagnitude, /*bPrimary*/ true);
-		return;
+		return xResult;
 	}
 	if (g_IsFieldEffect(xMove.m_eEffect))
 	{
 		g_ApplyField(xCtx);
-		return;
+		return xResult;
 	}
 	if (xMove.m_eEffect == ZM_MOVE_EFFECT_HEAL_HALF)
 	{
 		g_ApplyHealHalf(xCtx);
-		return;
+		return xResult;
 	}
 
 	// SC4: major-status-inflicting status moves (target the opponent).
@@ -429,55 +481,122 @@ static void g_ApplyStatusCategoryPrimary(ZM_MoveContext& xCtx)
 	if (eMajor != ZM_MAJOR_STATUS_COUNT)
 	{
 		g_ApplyStatusInflictionPrimary(xCtx, eMajor);
-		return;
+		return xResult;
+	}
+
+	// SC5: battle-local primary effects.
+	const ZM_VOLATILE eVolatile = g_VolatileForEffect(xMove.m_eEffect);
+	if (eVolatile != ZM_VOLATILE_NONE)
+	{
+		const ZM_SIDE eTarget = eVolatile == ZM_VOLATILE_PROTECT
+			? xCtx.m_eAtk : xCtx.m_eDef;
+		const ZM_SIDE eSource = eVolatile == ZM_VOLATILE_LEECH_SEED
+			? xCtx.m_eAtk : ZM_SIDE_COUNT;
+		if (!ZM_StatusLogic::ApplyVolatile(xCtx, eTarget, eVolatile, eSource))
+		{
+			g_EmitVolatileBlocked(xCtx, eTarget);
+		}
+		return xResult;
+	}
+	if (xMove.m_eEffect == ZM_MOVE_EFFECT_ENDURE)
+	{
+		xCtx.Atk().m_bEndureThisTurn = true;
+		return xResult;
+	}
+	if (xMove.m_eEffect == ZM_MOVE_EFFECT_SWAGGER)
+	{
+		g_ApplySwagger(xCtx);
+		return xResult;
+	}
+	if (xMove.m_eEffect == ZM_MOVE_EFFECT_FORCE_SWITCH)
+	{
+		return g_ForceSwitchResult(xCtx, true);
 	}
 
 	// SC4: cure / self-maintenance status moves (target self / own party).
 	switch (xMove.m_eEffect)
 	{
-	case ZM_MOVE_EFFECT_REST:        g_ApplyRest(xCtx);       return;
-	case ZM_MOVE_EFFECT_CURE_STATUS: g_ApplyCureStatus(xCtx); return;
-	case ZM_MOVE_EFFECT_HEAL_BELL:   g_ApplyHealBell(xCtx);   return;
+	case ZM_MOVE_EFFECT_REST:        g_ApplyRest(xCtx);       return xResult;
+	case ZM_MOVE_EFFECT_CURE_STATUS: g_ApplyCureStatus(xCtx); return xResult;
+	case ZM_MOVE_EFFECT_HEAL_BELL:   g_ApplyHealBell(xCtx);   return xResult;
 	default: break;
 	}
+	return xResult;
 }
 
-// E3 SECONDARY proc for a DAMAGING move that carries a stat (SC2) or major-status
-// (SC4) effect. Draws NOTHING for NONE or a not-yet-lit (volatile) secondary, so
+// E3 SECONDARY proc for a DAMAGING move that carries a stat (SC2), major status
+// (SC4), volatile, or forced-switch effect (SC5). Draws NOTHING for NONE, so
 // box-1 NONE moves stay byte-identical. Requires the damaged target (defender) to
-// have survived the hit. Proc gate: m_uEffectChance >= 100 is unconditional (no
-// draw); else one RandBelow(100). On a status proc, ApplyMajor may draw the SLEEP
-// duration (RandRange(1,3)) at apply time; a blocked status (type-immune / already
-// statused) is SILENT (no MOVE_FAILED for a secondary).
-static void g_ApplyDamagingSecondary(ZM_MoveContext& xCtx)
+// have survived the hit. SC5 volatile/forced-switch eligibility is preflighted
+// before the proc gate, so an unavailable SC5 secondary draws nothing. Proc gate:
+// m_uEffectChance >= 100 is unconditional (no draw); else one RandBelow(100). On a
+// status proc, ApplyMajor may draw the SLEEP duration (RandRange(1,3)) at apply time;
+// a blocked status (type-immune / already statused) is SILENT (no MOVE_FAILED for a
+// secondary). SC2 stat and SC4 major eligibility remains post-proc by contract.
+static ZM_MoveResult g_ApplyDamagingSecondary(ZM_MoveContext& xCtx)
 {
+	ZM_MoveResult xResult;
 	const ZM_MoveData&    xMove  = xCtx.Move();
 	const bool            bStat  = g_IsStatEffect(xMove.m_eEffect);
 	const ZM_MAJOR_STATUS eMajor = g_MajorStatusForEffect(xMove.m_eEffect);
 	const bool            bMajor = (eMajor != ZM_MAJOR_STATUS_COUNT);
-	if (!bStat && !bMajor)
+	const ZM_VOLATILE     eVolatile = g_VolatileForEffect(xMove.m_eEffect);
+	const bool            bVolatile = eVolatile != ZM_VOLATILE_NONE;
+	const bool            bForceSwitch = xMove.m_eEffect == ZM_MOVE_EFFECT_FORCE_SWITCH;
+	if (!bStat && !bMajor && !bVolatile && !bForceSwitch)
 	{
-		return;   // NONE / not-yet-lit secondary: no proc draw (byte-identical box 1)
+		return xResult;   // NONE: no proc draw (byte-identical box 1)
 	}
 	if (xCtx.Def().m_uCurHP == 0u)
 	{
-		return;   // a fainted target takes no secondary (E3 requires target alive)
+		return xResult;   // a fainted target takes no secondary (E3 requires target alive)
+	}
+
+	// SC5-only eligibility preflight. Duplicates/type-blocked volatiles and a
+	// force-switch target with no eligible bench slot suppress the proc draw. Keep
+	// SC2 stat and SC4 major secondaries on their established draw path.
+	u_int uForcedSwitchSlot = uZM_MAX_PARTY_SIZE;
+	if (bVolatile && !ZM_StatusLogic::CanApplyVolatile(xCtx.Def(), eVolatile))
+	{
+		return xResult;
+	}
+	if (bForceSwitch)
+	{
+		uForcedSwitchSlot = xCtx.DefSide().FindLowestSwitchTarget();
+		if (uForcedSwitchSlot >= uZM_MAX_PARTY_SIZE)
+		{
+			return xResult;
+		}
 	}
 	if (xMove.m_uEffectChance < 100u)
 	{
 		if (xCtx.RNG().RandBelow(100u) >= xMove.m_uEffectChance)
 		{
-			return;   // proc failed
+			return xResult;   // proc failed
 		}
 	}
 	if (bStat)
 	{
 		g_ApplyStatEffect(xCtx, xMove.m_eEffect, xMove.m_iEffectMagnitude, /*bPrimary*/ false);
 	}
-	else   // bMajor
+	else
 	{
-		ZM_StatusLogic::ApplyMajor(xCtx, xCtx.m_eDef, eMajor);
+		if (bMajor)
+		{
+			ZM_StatusLogic::ApplyMajor(xCtx, xCtx.m_eDef, eMajor);
+		}
+		else if (bVolatile)
+		{
+			ZM_StatusLogic::ApplyVolatile(xCtx, xCtx.m_eDef, eVolatile,
+				eVolatile == ZM_VOLATILE_LEECH_SEED ? xCtx.m_eAtk : ZM_SIDE_COUNT);
+		}
+		else
+		{
+			xResult.m_eForcedSwitchSide = xCtx.m_eDef;
+			xResult.m_uForcedSwitchSlot = uForcedSwitchSlot;
+		}
 	}
+	return xResult;
 }
 
 // ---- SC3 damage-delivery variants ------------------------------------------
@@ -518,7 +637,10 @@ static void g_ApplyFixedDamage(ZM_MoveContext& xCtx, u_int uDmg)
 {
 	ZM_BattleMonster& xDef     = xCtx.Def();
 	ZM_BattleSide&    xDefSide = xCtx.DefSide();
-	xDef.m_uCurHP = (uDmg >= xDef.m_uCurHP) ? 0u : (xDef.m_uCurHP - uDmg);
+	const bool bEndured = xDef.m_bEndureThisTurn && xDef.m_uCurHP > 0u
+		&& uDmg >= xDef.m_uCurHP;
+	xDef.m_uCurHP = bEndured ? 1u
+		: ((uDmg >= xDef.m_uCurHP) ? 0u : (xDef.m_uCurHP - uDmg));
 	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, xCtx.m_eDef, xDefSide.m_uActiveSlot,
 		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uDmg, (int)xDef.m_uCurHP));
 	xCtx.MaybeFaint(xCtx.m_eDef);
@@ -647,16 +769,65 @@ static void g_ApplyDelivery(ZM_MoveContext& xCtx)
 	}
 }
 
-// ---- The executor ----------------------------------------------------------
-void ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
+static bool g_HasVolatile(const ZM_BattleMonster& xMon, ZM_VOLATILE eVolatile)
 {
+	return (xMon.m_uVolatileMask & (u_int)eVolatile) != 0u;
+}
+
+// A LOCK duration counts executed uses which reached M1. G-gate cancellations
+// never call this helper. It runs once after every post-M1 outcome, including a
+// miss/intercept/immunity, and ends early when the stored slot reaches zero PP.
+static void g_FinishLockedUse(ZM_MoveContext& xCtx, bool bWasLocked)
+{
+	ZM_BattleMonster& xAtk = xCtx.Atk();
+	if (!bWasLocked || !g_HasVolatile(xAtk, ZM_VOLATILE_LOCK))
+	{
+		return;
+	}
+	if (xAtk.m_uLockTurns > 0u)
+	{
+		--xAtk.m_uLockTurns;
+	}
+	if (xAtk.m_uLockTurns == 0u || xAtk.m_axMoves[xCtx.m_uMoveSlot].m_uCurPP == 0u)
+	{
+		ZM_StatusLogic::EndVolatile(*xCtx.m_pxState, *xCtx.m_pxEvents,
+			xCtx.m_eAtk, ZM_VOLATILE_LOCK);
+	}
+}
+
+static void g_EstablishPostHitVolatile(ZM_MoveContext& xCtx)
+{
+	ZM_BattleMonster& xAtk = xCtx.Atk();
+	if (xCtx.Move().m_eEffect == ZM_MOVE_EFFECT_RECHARGE)
+	{
+		ZM_StatusLogic::ApplyVolatile(xCtx, xCtx.m_eAtk, ZM_VOLATILE_RECHARGE);
+	}
+	else if (xCtx.Move().m_eEffect == ZM_MOVE_EFFECT_LOCK_IN
+		&& !g_HasVolatile(xAtk, ZM_VOLATILE_LOCK))
+	{
+		if (ZM_StatusLogic::ApplyVolatile(xCtx, xCtx.m_eAtk, ZM_VOLATILE_LOCK))
+		{
+			xAtk.m_uLockMoveSlot = xCtx.m_uMoveSlot;
+			if (xAtk.m_axMoves[xCtx.m_uMoveSlot].m_uCurPP == 0u)
+			{
+				ZM_StatusLogic::EndVolatile(*xCtx.m_pxState, *xCtx.m_pxEvents,
+					xCtx.m_eAtk, ZM_VOLATILE_LOCK);
+			}
+		}
+	}
+}
+
+// ---- The executor ----------------------------------------------------------
+ZM_MoveResult ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
+{
+	ZM_MoveResult xResult;
 	// PHASE G: pre-move gates (SC4 majors -- freeze/sleep/paralysis; SC5 volatiles --
 	// recharge/flinch/confuse). Runs BEFORE PP / MOVE_USED, so a cancel spends NO PP
 	// and emits NO MOVE_USED (ZM-D-033 Q3). A status-free attacker pulls ZERO draws
 	// here, so box-1 / SC1-SC3 goldens stay byte-identical.
 	if (ZM_StatusLogic::PreMoveGate(xCtx) == ZM_GATE_CANCELLED)
 	{
-		return;
+		return xResult;
 	}
 
 	ZM_BattleMonster& xAtk     = xCtx.Atk();
@@ -664,10 +835,79 @@ void ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	const ZM_MoveData& xMove   = xCtx.Move();
 
 	ZM_MoveSlot& xMoveSlot = xAtk.m_axMoves[xCtx.m_uMoveSlot];
+	const bool bWasLocked = g_HasVolatile(xAtk, ZM_VOLATILE_LOCK);
+	const bool bChargeRelease = g_HasVolatile(xAtk, ZM_VOLATILE_CHARGE)
+		&& xAtk.m_uChargeMoveSlot == xCtx.m_uMoveSlot;
 
-	// M1: spend PP + announce (box 1 always has PP; NO_PP is a later box).
-	--xMoveSlot.m_uCurPP;
+	// M0: Taunt blocks STATUS-category actions before PP/MOVE_USED and draws nothing.
+	if (g_HasVolatile(xAtk, ZM_VOLATILE_TAUNT)
+		&& xMove.m_eCategory == ZM_MOVE_CATEGORY_STATUS)
+	{
+		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, xCtx.m_eAtk,
+			xAtkSide.m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0,
+			(int)ZM_MOVE_FAIL_TAUNTED));
+		return xResult;
+	}
+
+	// M1: ordinary/locked/first-charge use spends PP. A charged release paid on
+	// turn one, so it announces the move a second time without a second PP.
+	if (!bChargeRelease)
+	{
+		Zenith_Assert(xMoveSlot.m_uCurPP > 0u,
+			"MoveExecutor: move slot %u has no PP", xCtx.m_uMoveSlot);
+		--xMoveSlot.m_uCurPP;
+	}
 	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, xCtx.m_eAtk, xAtkSide.m_uActiveSlot, (u_int)xMove.m_eId));
+
+	// A release consumes both charge states immediately after MOVE_USED, before
+	// Protect/Semi intercepts. The stored move row/slot references remain valid.
+	if (bChargeRelease)
+	{
+		ZM_StatusLogic::EndVolatile(*xCtx.m_pxState, *xCtx.m_pxEvents,
+			xCtx.m_eAtk, ZM_VOLATILE_SEMI_INVULN);
+		ZM_StatusLogic::EndVolatile(*xCtx.m_pxState, *xCtx.m_pxEvents,
+			xCtx.m_eAtk, ZM_VOLATILE_CHARGE);
+	}
+
+	// M2: Protect intercepts only opponent-targeting moves.
+	if (xMove.m_eTarget == ZM_MOVE_TARGET_OPPONENT
+		&& g_HasVolatile(xCtx.Def(), ZM_VOLATILE_PROTECT))
+	{
+		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, xCtx.m_eDef,
+			xCtx.DefSide().m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0,
+			(int)ZM_MOVE_FAIL_PROTECTED));
+		g_FinishLockedUse(xCtx, bWasLocked);
+		return xResult;
+	}
+
+	// M3: a semi-invulnerable opponent has vanished before any hit draw.
+	if (xMove.m_eTarget == ZM_MOVE_TARGET_OPPONENT
+		&& g_HasVolatile(xCtx.Def(), ZM_VOLATILE_SEMI_INVULN))
+	{
+		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, xCtx.m_eDef,
+			xCtx.DefSide().m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0,
+			(int)ZM_MOVE_FAIL_SEMI_INVULNERABLE));
+		g_FinishLockedUse(xCtx, bWasLocked);
+		return xResult;
+	}
+
+	// M4: first turn of a two-turn move sets charge state and returns before
+	// accuracy. SEMI_INVULN carries both bits; neither counts down at EOT.
+	if (!bChargeRelease && (xMove.m_eEffect == ZM_MOVE_EFFECT_CHARGE_TURN
+		|| xMove.m_eEffect == ZM_MOVE_EFFECT_SEMI_INVULN))
+	{
+		if (ZM_StatusLogic::ApplyVolatile(xCtx, xCtx.m_eAtk, ZM_VOLATILE_CHARGE))
+		{
+			xAtk.m_uChargeMoveSlot = xCtx.m_uMoveSlot;
+		}
+		if (xMove.m_eEffect == ZM_MOVE_EFFECT_SEMI_INVULN)
+		{
+			ZM_StatusLogic::ApplyVolatile(xCtx, xCtx.m_eAtk,
+				ZM_VOLATILE_SEMI_INVULN);
+		}
+		g_FinishLockedUse(xCtx, bWasLocked);
+		return xResult;
+	}
 
 	// OHKO level guard -- runs BEFORE M5 accuracy and draws NOTHING: a one-hit-KO move
 	// fails outright against a higher-level target (defender level > attacker level).
@@ -680,7 +920,8 @@ void ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 		ZM_BattleSide& xDefSideOhko = xCtx.DefSide();
 		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, xCtx.m_eDef, xDefSideOhko.m_uActiveSlot,
 			ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)ZM_MOVE_FAIL_OHKO_FAILED));
-		return;
+		g_FinishLockedUse(xCtx, bWasLocked);
+		return xResult;
 	}
 
 	// M5: ACCURACY draw -- only if the move CAN miss (sure-hit short-circuit). Applies
@@ -701,7 +942,8 @@ void ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 		if (xCtx.RNG().RandBelow(100u) >= uEffAcc)
 		{
 			xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_MISSED, xCtx.m_eAtk, xAtkSide.m_uActiveSlot, (u_int)xMove.m_eId));
-			return;
+			g_FinishLockedUse(xCtx, bWasLocked);
+			return xResult;
 		}
 	}
 
@@ -709,8 +951,9 @@ void ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	// draws. Apply it directly (chance is effectively 100) and return.
 	if (xMove.m_eCategory == ZM_MOVE_CATEGORY_STATUS)
 	{
-		g_ApplyStatusCategoryPrimary(xCtx);
-		return;
+		xResult = g_ApplyStatusCategoryPrimary(xCtx);
+		g_FinishLockedUse(xCtx, bWasLocked);
+		return xResult;
 	}
 
 	// Damaging move (PHYSICAL/SPECIAL). M6: effectiveness is deterministic (no RNG) --
@@ -722,7 +965,8 @@ void ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	if (uEffPct == 0u)
 	{
 		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_IMMUNE, xCtx.m_eDef, xDefSide.m_uActiveSlot));
-		return;
+		g_FinishLockedUse(xCtx, bWasLocked);
+		return xResult;
 	}
 
 	// PHASE E: delivery dispatch. A delivery-effect damaging kind (multi/double/recoil/
@@ -732,15 +976,19 @@ void ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	if (g_IsDeliveryEffect(xMove.m_eEffect))
 	{
 		g_ApplyDelivery(xCtx);
-		return;
+		g_FinishLockedUse(xCtx, bWasLocked);
+		return xResult;
 	}
 
 	// E1/E2: the single damaging emit-group (crit -> roll -> DAMAGE_DEALT -> FAINT).
 	ApplyDamagingHit(xCtx);
+	g_EstablishPostHitVolatile(xCtx);
 
 	// E3: SECONDARY stat proc -- only for a damaging move carrying a stat effect, and
 	// only if the target survived. NONE-effect moves take no draw here (box-1 path).
-	g_ApplyDamagingSecondary(xCtx);
+	xResult = g_ApplyDamagingSecondary(xCtx);
+	g_FinishLockedUse(xCtx, bWasLocked);
+	return xResult;
 }
 
 u_int ZM_MoveExecutor::ApplyDamagingHit(ZM_MoveContext& xCtx)
@@ -820,7 +1068,10 @@ u_int ZM_MoveExecutor::ApplyDamagingHit(ZM_MoveContext& xCtx)
 			ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uEffPct));
 	}
 
-	xDef.m_uCurHP = (uDmg >= xDef.m_uCurHP) ? 0u : (xDef.m_uCurHP - uDmg);
+	const bool bEndured = xDef.m_bEndureThisTurn && xDef.m_uCurHP > 0u
+		&& uDmg >= xDef.m_uCurHP;
+	xDef.m_uCurHP = bEndured ? 1u
+		: ((uDmg >= xDef.m_uCurHP) ? 0u : (xDef.m_uCurHP - uDmg));
 	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_DAMAGE_DEALT, xCtx.m_eDef, xDefSide.m_uActiveSlot,
 		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uDmg, (int)xDef.m_uCurHP));
 

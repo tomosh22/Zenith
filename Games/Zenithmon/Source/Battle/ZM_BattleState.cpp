@@ -14,3 +14,21 @@ bool ZM_BattleSide::HasUnfainted() const
 	}
 	return false;
 }
+
+bool ZM_BattleSide::CanSwitchTo(u_int uSlot) const
+{
+	return uSlot < m_xParty.GetSize() && uSlot != m_uActiveSlot
+		&& !m_xParty.Get(uSlot).IsFainted();
+}
+
+u_int ZM_BattleSide::FindLowestSwitchTarget() const
+{
+	for (u_int u = 0u; u < m_xParty.GetSize(); ++u)
+	{
+		if (CanSwitchTo(u))
+		{
+			return u;
+		}
+	}
+	return uZM_MAX_PARTY_SIZE;
+}

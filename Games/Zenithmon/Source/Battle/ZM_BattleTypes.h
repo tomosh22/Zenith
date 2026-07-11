@@ -27,6 +27,8 @@ enum ZM_MAJOR_STATUS : u_int
 };
 
 // Battle-local volatiles bitmask (box 2 sets; box 1 mask == 0 -- reserved).
+// This is the exact ten-bit GDD set. ENDURE is a separate one-turn bool on the
+// battle monster and must never become an eleventh bit (append-only ordinals).
 enum ZM_VOLATILE : u_int
 {
 	ZM_VOLATILE_NONE       = 0u,        ZM_VOLATILE_CONFUSED   = 1u<<0,

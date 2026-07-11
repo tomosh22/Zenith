@@ -15,6 +15,98 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-11 -- ZM-D-034 -- S2 box-2 SC5 volatile, Endure, and switch contract
+
+- **Decision:** SC5 completes the GDD's exact ten battle-local volatile bits in
+  `ZM_BattleMonster::m_uVolatileMask`: `CONFUSED`, `FLINCH`, `LEECH_SEED`,
+  `PROTECT`, `CHARGE`, `SEMI_INVULN`, `RECHARGE`, `LOCK`, `TRAP`, and `TAUNT`.
+  `ENDURE` is deliberately **not** an eleventh volatile: it is the separate
+  one-turn `m_bEndureThisTurn` flag. `ZM_StatusLogic` owns apply/end/reset,
+  counters, metadata, PHASE-G gates, and end-of-turn processing; the executor
+  owns effect routing and M-phase intercepts. Every application emits
+  `VOLATILE_APPLIED` (`m_iAmount=duration`, `m_iAux=volatile bit`), every explicit
+  expiry emits `VOLATILE_ENDED` (`m_iAux=volatile bit`), and FLINCH cancellation
+  additionally has its dedicated `FLINCH` event.
+- **Duration/counter contract:** counters are independent of the major-status
+  counter. CONFUSED draws `RandRange(1,4)` on a successful new application and
+  counts G5 action attempts (decrement after the pass/self-hit result, then end at
+  zero). TRAP draws `RandRange(4,5)`, chips on every EOT including its application
+  turn, and decrements only after a surviving tick. TAUNT is 3 EOTs, no draw.
+  LOCK_IN draws 2-3 total executed uses: its establishing hit is use one, so the
+  stored remaining counter starts at `duration-1`; each later use that reaches M1
+  consumes one even if it then misses/is intercepted/is immune, while a PHASE-G
+  cancellation consumes neither PP nor a locked use; zero PP ends the lock early.
+  RECHARGE is one G1-cancelled action. FLINCH and PROTECT end at EOT (a repeated
+  Protect refreshes and re-emits APPLIED without an intermediate ENDED); Endure
+  clears silently at EOT. CHARGE/SEMI_INVULN do not count down at EOT: turn one
+  spends PP + emits MOVE_USED then stores the slot; the forced release emits
+  MOVE_USED without a second PP and clears both bits before M2/M3 intercepts. A
+  cancelling G gate clears a pending charge/semi-invulnerable pair.
+- **Gate/intercept + RNG contract:** the ZM-D-033 order is now fully live:
+  `G1 RECHARGE -> G2 FREEZE -> G3 SLEEP -> G4 FLINCH -> G5 CONFUSE -> G6
+  PARALYSIS`, first cancellation wins, before PP/MOVE_USED. G1/G4 draw nothing.
+  G5 draws `RandBelow(100)<33` once per confused action; self-hit then draws only
+  `RandRange(85,100)` and applies 40-power typeless physical damage (no accuracy,
+  crit, STAB, type, weather, or screen; burn still halves it), tagged as volatile
+  damage and able to faint the user. M0 TAUNT blocks STATUS moves before PP;
+  M2 PROTECT intercepts opponent-target moves; M3 SEMI_INVULN intercepts the same;
+  M4 establishes two-turn state before accuracy. Duplicate/type-blocked volatile
+  secondaries and FORCE_SWITCH with no target are preflighted **before** the E3
+  proc gate, so they draw nothing; chance >=100 draws nothing; a fainted defender
+  receives no secondary. A volatile-free battle therefore adds zero draws, events,
+  or state changes and preserves the box-1 goldens.
+- **Individual mechanics:** Leech Seed rejects GRASS, stores its source side, and
+  persists until switch; Protect targets self; Endure clamps otherwise-lethal
+  direct move damage (ordinary, multi-hit, fixed, half-HP, OHKO) to 1 HP but does
+  not protect from recoil/confusion/EOT damage. Swagger applies the Attack stage
+  change first and then CONFUSED; either component may succeed independently, and
+  MOVE_FAILED is emitted only when both are blocked. RECHARGE/LOCK establish only
+  after a connecting standard damaging hit (a KO still counts); charge and
+  semi-invulnerability use the submitted stored move slot.
+- **End-of-turn + tag contract:** the box-3 weather slot remains reserved first;
+  box 2 then processes sides in fixed **PLAYER-then-ENEMY order (not speed order)**.
+  Each side runs `major chip -> Leech Seed -> Trap -> cleanup/expiry`; after both
+  sides, the engine emits `TURN_END`. Leech/Trap are max-HP/8, minimum 1. A major-status KO suppresses
+  later chip sources for that side but cleanup still runs; a Trap KO emits no later
+  expiry. Leech heals the source side's current living active by actual HP restored,
+  so a source switch redirects the drain. Damage-event `m_iTag` uses a major-status
+  ordinal on `STATUS_DAMAGE` for major chip and the disjoint
+  `0x10000 | volatileBit` domain on CONFUSED `DAMAGE_DEALT` and Leech/Trap
+  `STATUS_DAMAGE`. `VOLATILE_APPLIED.m_iTag` is `sourceSide+1` for Leech
+  Seed (zero for every other volatile), avoiding PLAYER's numeric-zero ambiguity.
+- **Switch/forced-switch contract:** `ZM_MoveResult` carries a requested forced
+  side/slot from the executor to the engine. A primary FORCE_SWITCH chooses the
+  lowest eligible non-active living slot or emits `MOVE_FAILED(NO_SWITCH_TARGET)`;
+  a damaging secondary applies only after damage, never on KO, and silently skips
+  both proc draw and switch when no eligible slot exists. Engine-owned
+  `ZM_BattleEngine::DoSwitch` validates side/destination, silently clears the
+  outgoing monster's volatiles/counters/charge+lock slots/leech source, all stages,
+  crit stage, and Endure, while preserving HP, PP, major status, and its major
+  counter; it then changes the active slot and emits `SWITCH_IN`. If the first
+  mover force-switches the side queued second, that old monster's queued action is
+  skipped. SC6 voluntary switching reuses this primitive; it does not duplicate
+  reset semantics.
+- **Why:** the ten effects share ordering, duration, event, and switch-reset
+  invariants, so implementing them as isolated move arms would drift deterministic
+  replay and leak state across switches. Centralized lifecycle ownership plus an
+  engine-owned switch primitive keeps every draw conditional, makes event streams
+  presentation-complete, and gives SC6 one safe attachment point for voluntary
+  switching and Trap restrictions.
+- **Tests that lock it:** 52 SC5 cases in `ZM_Tests_Battle.cpp` cover default
+  state/event encodings and tag domains; every apply/block/duration/draw path;
+  confusion self-hit/pass/burn/faint; flinch timing; Leech/Trap EOT + exact stream;
+  Taunt/Protect/Endure; charge/semi/recharge/lock; Swagger; DoSwitch reset;
+  primary/damaging forced switch + queued-action skip; fixed side/EOT order; full
+  G/M precedence; and `VolatileFree_SC5AddsNoEventsDrawsOrState`. The box-1 exact
+  stream remains unchanged. Verified gate: regen check green,
+  `Vulkan_vs2022_Debug_Win64_True` build green, **1379 ran / 1378 passed / 0 failed
+  / 1 skipped**, and headless automated suite **1/1**.
+- **Reversibility:** moderate. The implementation is localized to
+  `Source/Battle/`, but the bit values, event encodings/tags, duration semantics,
+  guarded draw order, EOT order, and switch-reset behavior now define deterministic
+  replay goldens and downstream presentation. Change them only with a new decision
+  plus updated oracle/event-stream tests.
+
 ## 2026-07-11 -- ZM-D-033 -- S2 box-2 execution plan: 6 ordered sub-commits + the LOCKED augmented RNG draw order (PHASE G/M/E)
 
 - **Decision:** box 2 (ZM_MoveExecutor + full DamageCalc/CatchCalc/StatusLogic,

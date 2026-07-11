@@ -23,6 +23,8 @@ struct ZM_BattleSide
 	ZM_BattleMonster&       Active()       { return m_xParty.Get(m_uActiveSlot); }
 	const ZM_BattleMonster& Active() const { return m_xParty.Get(m_uActiveSlot); }
 	bool HasUnfainted() const;   // index-based loop, no STL iterators
+	bool CanSwitchTo(u_int uSlot) const;
+	u_int FindLowestSwitchTarget() const;   // uZM_MAX_PARTY_SIZE == none
 };
 
 struct ZM_FieldState

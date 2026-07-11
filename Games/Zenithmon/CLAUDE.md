@@ -11,10 +11,11 @@ procedurally generated and baked by tools builds.
 > Unattended development runs on `Docs/StartPrompts.md` prompt 0 (the
 > lifecycle loop).
 
-Current stage: **S0 COMPLETE** (merged 2026-07-10; `zm-tests` is a required
-check). Next per `Docs/Roadmap.md`: S1 (data core) in parallel with S3 (first
-overworld). The game today is the scaffold placeholder: one lit cube bobbing
-under a title.
+Current stage, verified test baseline, and in-flight work live in
+`Docs/Status.md`; do not duplicate that fast-moving state here. Operating
+policy is ZM-D-031: work directly on `master`, never create a branch, PR, or
+worktree, and treat the full local gate as the authority before commit/push.
+`zm-tests` runs after the push as a backstop.
 
 ## File structure
 
@@ -23,9 +24,11 @@ Games/Zenithmon/
   Zenithmon.zproj                # Build descriptor (name, android flag, extras)
   Zenithmon.cpp                  # Project_* entry points, component registration,
                                  #   SaveData init, between-tests hook
-  Components/ZM_GameComponent.h  # S0 placeholder component (spawns + bobs a cube)
-  Tests/ZM_Tests_Boot.cpp        # Hello unit tests (boot-time ZENITH_TEST)
-  Tests/ZM_AutoTests_Boot.cpp    # ZM_Boot_Test (FrontEnd scene + component resolve)
+  Components/                    # ECS-facing game components
+  Source/Battle/                 # Headless deterministic battle engine
+  Source/Data/                   # Compiled const gameplay tables + pure formulas
+  Tests/ZM_Tests_*.cpp           # Boot, data, stats, battle, and integrity units
+  Tests/ZM_AutoTests_*.cpp       # Harness-managed automated/windowed tests
   Assets/Scenes/                 # FrontEnd.zscen is BOOT-AUTHORED (see below); all
                                  #   baked assets are git-ignored
   Docs/                          # Cross-session knowledge base (Status/Roadmap/GDD/...)
