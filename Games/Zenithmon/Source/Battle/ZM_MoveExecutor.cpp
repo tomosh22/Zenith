@@ -855,7 +855,31 @@ static void g_ApplyContactReactions(ZM_MoveContext& xCtx)
 	if (pxDefHooks != nullptr && pxDefHooks->pfnOnContact != nullptr)
 	{
 		ZM_AbilityContext xDefCtx = g_MakeAbilityContext(xCtx, xCtx.m_eDef);
+		xDefCtx.m_uOtherMoveSlot = xCtx.m_uMoveSlot;   // SC5: attacker's used-move slot (Lastspite)
 		pxDefHooks->pfnOnContact(xDefCtx, xDef.IsFainted());
+	}
+}
+
+// PHASE E4b: the ATTACKER's dealt-faint reaction (Bloodrush). Fires when the
+// holder's DAMAGING move downed the defender AND the holder is still alive.
+// RULING (1): NOT contact-gated -- it realizes the FAINT-on-KO mask for ANY
+// damaging move (contact or non-contact), so it lives OUTSIDE g_ApplyContactReactions
+// and is called at both damaging sites right after it. The alive-guard suppresses
+// Bloodrush when a recoil hit (g_ApplyRecoil, which runs before E4) or an Aftershock
+// counter-chip (E4a contact reactions, which run before E4b) KO'd the attacker first.
+// A NONE-ability attacker pulls zero draws/events here (pfn null), so box-1/SC1-SC4
+// goldens stay byte-identical. Runs ONCE per move after the last hit (R-C5).
+static void g_ApplyDealtFaintReaction(ZM_MoveContext& xCtx)
+{
+	if (!xCtx.Def().IsFainted() || xCtx.Atk().IsFainted())
+	{
+		return;
+	}
+	const ZM_AbilityHooks* pxAtkHooks = ZM_GetAbilityHooks(xCtx.Atk().m_eAbility);
+	if (pxAtkHooks != nullptr && pxAtkHooks->pfnOnDealtFaint != nullptr)
+	{
+		ZM_AbilityContext xAtkCtx = g_MakeAbilityContext(xCtx, xCtx.m_eAtk);
+		pxAtkHooks->pfnOnDealtFaint(xAtkCtx);
 	}
 }
 
@@ -1069,7 +1093,8 @@ ZM_MoveResult ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	if (g_IsDeliveryEffect(xMove.m_eEffect))
 	{
 		g_ApplyDelivery(xCtx);
-		g_ApplyContactReactions(xCtx);   // E4: once per move (multi/double-hit safe)
+		g_ApplyContactReactions(xCtx);      // E4a: once per move (multi/double-hit safe)
+		g_ApplyDealtFaintReaction(xCtx);    // E4b: attacker KO reaction (Bloodrush)
 		g_FinishLockedUse(xCtx, bWasLocked);
 		return xResult;
 	}
@@ -1081,7 +1106,8 @@ ZM_MoveResult ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	// E3: SECONDARY stat proc -- only for a damaging move carrying a stat effect, and
 	// only if the target survived. NONE-effect moves take no draw here (box-1 path).
 	xResult = g_ApplyDamagingSecondary(xCtx);
-	g_ApplyContactReactions(xCtx);   // E4: strictly after E3, once per move
+	g_ApplyContactReactions(xCtx);      // E4a: strictly after E3, once per move
+	g_ApplyDealtFaintReaction(xCtx);    // E4b: attacker KO reaction (Bloodrush)
 	g_FinishLockedUse(xCtx, bWasLocked);
 	return xResult;
 }

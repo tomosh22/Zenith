@@ -155,6 +155,51 @@ namespace
 		return eId == ZM_ABILITY_DEADAIM || eId == ZM_ABILITY_TRUESHOT;
 	}
 
+	// SC5 closes the roster with the last nine rows across three new pfn slots:
+	// pfnOnTurnEnd (the five TURN_END self-heals), pfnOnDealtFaint (Bloodrush), and
+	// two more pfnOnContact bodies (Lastspite/Aftershock's bSelfFainted branch).
+	// Quickdraw stays engine-side only (its row remains all-null pfn).
+	bool ZM_IsSC5Ability(ZM_ABILITY_ID eId)
+	{
+		switch (eId)
+		{
+		case ZM_ABILITY_BLOODRUSH:   case ZM_ABILITY_LASTSPITE: case ZM_ABILITY_AFTERSHOCK:
+		case ZM_ABILITY_RAINBASK:    case ZM_ABILITY_SUNBASK:   case ZM_ABILITY_ICEBOUND:
+		case ZM_ABILITY_TOXICTHRIVE: case ZM_ABILITY_ROOTFEED:  case ZM_ABILITY_QUICKDRAW:
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	// The five TURN_END self-heal rows (pfnOnTurnEnd). Rainbask/Sunbask/Icebound also
+	// read WEATHER engine-side; Toxicthrive/Rootfeed are pure TURN_END.
+	bool ZM_IsSC5TurnEndAbility(ZM_ABILITY_ID eId)
+	{
+		return eId == ZM_ABILITY_RAINBASK || eId == ZM_ABILITY_SUNBASK
+			|| eId == ZM_ABILITY_ICEBOUND || eId == ZM_ABILITY_TOXICTHRIVE
+			|| eId == ZM_ABILITY_ROOTFEED;
+	}
+
+	// The pfnOnContact slot is now the four SC4 skins PLUS Lastspite/Aftershock.
+	bool ZM_IsContactSlotAbility(ZM_ABILITY_ID eId)
+	{
+		return ZM_IsSC4ContactAbility(eId)
+			|| eId == ZM_ABILITY_LASTSPITE || eId == ZM_ABILITY_AFTERSHOCK;
+	}
+
+	// True iff EVERY one of the twelve executable pfn slots on a row is null. After
+	// SC5 exactly one real row (Quickdraw, engine-side only) is all-null.
+	bool ZM_AllPfnSlotsNull(const ZM_AbilityHooks& xHooks)
+	{
+		return xHooks.pfnOnSwitchIn == nullptr && xHooks.pfnModifyStat == nullptr
+			&& xHooks.pfnPreventStatDrop == nullptr && xHooks.pfnModifyDamageDealt == nullptr
+			&& xHooks.pfnModifyDamageTaken == nullptr && xHooks.pfnPreventMajor == nullptr
+			&& xHooks.pfnPreventVolatile == nullptr && xHooks.pfnOnContact == nullptr
+			&& xHooks.pfnOnTurnEnd == nullptr && xHooks.pfnOnDealtFaint == nullptr
+			&& xHooks.pfnBypassAccuracy == nullptr && xHooks.pfnTypeInteraction == nullptr;
+	}
+
 	u_int ZM_LiveHookRealizationMask(const ZM_AbilityHooks& xHooks, u_int uDeclaredMask)
 	{
 		u_int uMask = 0u;
@@ -305,20 +350,16 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableTwelveSlotsAndSentinelContract)
 	ZENITH_ASSERT_TRUE(ZM_GetAbilityHooks((ZM_ABILITY_ID)(ZM_ABILITY_COUNT + 1u)) == nullptr);
 }
 
-// Incremental through-SC4 invariant: the six SC2, twenty SC3, and fifteen SC4
-// abilities completely realize their declared masks through a live pfn and/or one
-// of the explicitly documented engine-side mechanisms (e.g. Trueshot's WEATHER).
-// Later-SC pfn rows may still be null; the all-50 complete-realization gate
-// belongs to SC5.
-ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC4InstalledRowsRealizeDeclaredMasks)
+// SC5 closing gate: EVERY one of the 50 rows now completely realizes its declared
+// mask through a live pfn and/or one of the explicitly documented engine-side
+// mechanisms (Trueshot/Rainbask WEATHER; Quickdraw/Bloodrush MODIFY_STAT). The
+// SC-membership guard is gone -- the frontier has reached all 50, so no row may
+// leave a declared bit unrealized. This is THE complete-realization gate.
+ZENITH_TEST(ZM_Data, Abilities_HookTableAll50RowsRealizeDeclaredMasks)
 {
 	for (u_int i = 0u; i < ZM_ABILITY_COUNT; ++i)
 	{
 		const ZM_ABILITY_ID eId = (ZM_ABILITY_ID)i;
-		if (!ZM_IsSC2SwitchInAbility(eId) && !ZM_IsSC3Ability(eId) && !ZM_IsSC4Ability(eId))
-		{
-			continue;
-		}
 		const ZM_AbilityHooks* pxHooks = ZM_GetAbilityHooks(eId);
 		ZENITH_ASSERT_NOT_NULL(pxHooks);
 		if (pxHooks == nullptr)
@@ -329,7 +370,7 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC4InstalledRowsRealizeDeclaredMa
 		const u_int uRealized = ZM_LiveHookRealizationMask(*pxHooks, uDeclared)
 			| ZM_EngineSideRealizationMask(eId, uDeclared);
 		ZENITH_ASSERT_EQ(uDeclared & ~uRealized, 0u,
-			"through-SC4 ability %s has an unrealized declared bit", Ab(i).m_szName);
+			"ability %s has an unrealized declared bit after SC5", Ab(i).m_szName);
 	}
 }
 
@@ -408,7 +449,7 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableEngineSideRealizationsAreExplicit)
 	}
 }
 
-ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC4SlotsMatchRosterExactly)
+ZENITH_TEST(ZM_Data, Abilities_HookTableAll50SlotsMatchRosterExactly)
 {
 	for (u_int i = 0u; i < ZM_ABILITY_COUNT; ++i)
 	{
@@ -428,21 +469,58 @@ ZENITH_TEST(ZM_Data, Abilities_HookTableThroughSC4SlotsMatchRosterExactly)
 			ZENITH_ASSERT_EQ(pxHooks->pfnTypeInteraction != nullptr, ZM_IsSC3TypeInteractionAbility(eId),
 				"%s has the wrong through-SC4 TYPE_IMMUNITY installation state", Ab(i).m_szName);
 
-			// SC4 frontier: the five new pfn slots match their exact ability sets.
-			ZENITH_ASSERT_EQ(pxHooks->pfnOnContact != nullptr, ZM_IsSC4ContactAbility(eId),
-				"%s has the wrong through-SC4 CONTACT installation state", Ab(i).m_szName);
+			// CONTACT is now the four SC4 skins PLUS the SC5 Lastspite/Aftershock bodies.
+			ZENITH_ASSERT_EQ(pxHooks->pfnOnContact != nullptr, ZM_IsContactSlotAbility(eId),
+				"%s has the wrong CONTACT installation state", Ab(i).m_szName);
 			ZENITH_ASSERT_EQ(pxHooks->pfnPreventStatDrop != nullptr, ZM_IsSC4PreventStatDropAbility(eId),
-				"%s has the wrong through-SC4 stat-drop-veto installation state", Ab(i).m_szName);
+				"%s has the wrong stat-drop-veto installation state", Ab(i).m_szName);
 			ZENITH_ASSERT_EQ(pxHooks->pfnPreventMajor != nullptr, ZM_IsSC4PreventMajorAbility(eId),
-				"%s has the wrong through-SC4 STATUS_TRY(major) installation state", Ab(i).m_szName);
+				"%s has the wrong STATUS_TRY(major) installation state", Ab(i).m_szName);
 			ZENITH_ASSERT_EQ(pxHooks->pfnPreventVolatile != nullptr, ZM_IsSC4PreventVolatileAbility(eId),
-				"%s has the wrong through-SC4 STATUS_TRY(volatile) installation state", Ab(i).m_szName);
+				"%s has the wrong STATUS_TRY(volatile) installation state", Ab(i).m_szName);
 			ZENITH_ASSERT_EQ(pxHooks->pfnBypassAccuracy != nullptr, ZM_IsSC4BypassAccuracyAbility(eId),
-				"%s has the wrong through-SC4 ACCURACY-bypass installation state", Ab(i).m_szName);
+				"%s has the wrong ACCURACY-bypass installation state", Ab(i).m_szName);
 
-			// SC5 slots must not be populated early merely to satisfy coverage.
-			ZENITH_ASSERT_TRUE(pxHooks->pfnOnTurnEnd == nullptr);
-			ZENITH_ASSERT_TRUE(pxHooks->pfnOnDealtFaint == nullptr);
+			// SC5 slots are now INSTALLED, pinned to their exact ability sets: the five
+			// TURN_END self-heals and Bloodrush's dealt-faint. Every executable slot is
+			// thus accounted for, and Quickdraw remains the sole all-null-pfn row (its
+			// pfnModifyStat is covered null by the ZM_IsSC3ModifyStatAbility assertion above).
+			ZENITH_ASSERT_EQ(pxHooks->pfnOnTurnEnd != nullptr, ZM_IsSC5TurnEndAbility(eId),
+				"%s has the wrong TURN_END installation state", Ab(i).m_szName);
+			ZENITH_ASSERT_EQ(pxHooks->pfnOnDealtFaint != nullptr, eId == ZM_ABILITY_BLOODRUSH,
+				"%s has the wrong FAINT(dealt) installation state", Ab(i).m_szName);
 		}
 	}
+}
+
+// The SC5 closing partition + no-null-executable-slot gate. The four SC installation
+// sets (SC2 switch-in 6, SC3 20, SC4 15, SC5 9) partition all 50 rows exactly once,
+// and after SC5 every real row carries at least one live pfn EXCEPT Quickdraw, which
+// is the sole all-null-pfn row (its MODIFY_STAT bit is realized engine-side). This is
+// the "zero uninstalled executable slots remain" wall.
+ZENITH_TEST(ZM_Data, Abilities_HookTableAll50InstalledAndOnlyQuickdrawIsAllNull)
+{
+	u_int uAllNullCount = 0u;
+	for (u_int i = 0u; i < ZM_ABILITY_COUNT; ++i)
+	{
+		const ZM_ABILITY_ID eId = (ZM_ABILITY_ID)i;
+
+		// Every row belongs to exactly one SC installation set (6 + 20 + 15 + 9 == 50).
+		const u_int uMemberships =
+			(ZM_IsSC2SwitchInAbility(eId) ? 1u : 0u) + (ZM_IsSC3Ability(eId) ? 1u : 0u)
+			+ (ZM_IsSC4Ability(eId) ? 1u : 0u) + (ZM_IsSC5Ability(eId) ? 1u : 0u);
+		ZENITH_ASSERT_EQ(uMemberships, 1u,
+			"%s must belong to exactly one SC installation set", Ab(i).m_szName);
+
+		const ZM_AbilityHooks* pxHooks = ZM_GetAbilityHooks(eId);
+		ZENITH_ASSERT_NOT_NULL(pxHooks);
+		if (pxHooks == nullptr) { continue; }
+
+		const bool bAllNull = ZM_AllPfnSlotsNull(*pxHooks);
+		if (bAllNull) { ++uAllNullCount; }
+		// Quickdraw is the ONLY row permitted to leave every executable slot null.
+		ZENITH_ASSERT_EQ(bAllNull, eId == ZM_ABILITY_QUICKDRAW,
+			"%s: only Quickdraw may be all-null-pfn after SC5", Ab(i).m_szName);
+	}
+	ZENITH_ASSERT_EQ(uAllNullCount, 1u, "exactly one row (Quickdraw) is all-null-pfn after SC5");
 }

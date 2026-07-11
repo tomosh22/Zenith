@@ -9093,3 +9093,782 @@ ZENITH_TEST(ZM_Battle, Box3SC4_Ownpace_BlocksConfusion)
 	ZENITH_ASSERT_NE(xFlinchState.Side(ZM_SIDE_ENEMY).Active().m_uVolatileMask
 		& (u_int)ZM_VOLATILE_FLINCH, 0u);
 }
+
+// ============================================================================
+// ===== BOX 3 SC5 (FINAL slice): TURN_END heals / FAINT-branch / QUICKDRAW =====
+//
+// Black-box behavioral tests over the last nine ability rows and the new SC5
+// dispatch seams: EoT step-6 self-heals (Rainbask/Sunbask/Icebound/Toxicthrive/
+// Rootfeed), the E4b attacker dealt-faint reaction (Bloodrush), the E4a contact
+// bSelfFainted bodies (Lastspite PP-sap, Aftershock maxHP/4 chip), and the
+// engine-side Quickdraw move-order proc. Each ability pairs a POSITIVE case
+// (fires -> exact effect + events) with a CONTROL (ability off / wrong condition
+// -> no delta, no trigger). Seeds continue from SC4 at 0xB366; the two stochastic
+// Quickdraw seeds are chosen by an independent PCG32 mirror of the (first) turn
+// draw, never by echoing the engine.
+//
+// Orchestrator rulings applied:
+//   (1) BLOODRUSH fires on ANY damaging KO (contact OR non-contact) -- the
+//       non-contact KO is a POSITIVE test here, not a no-fire control.
+//   (2) QUICKDRAW emits ABILITY_TRIGGER on a successful proc.
+//   (3) LASTSPITE reads ZM_AbilityContext::m_uOtherMoveSlot (the attacker's used-
+//       move slot) to zero the attacker's PP -- asserted via the observable PP.
+//
+// Event-field contract asserted here (must match the Implementer's emissions):
+//   * TURN_END heal: ABILITY_TRIGGER (owner side/slot, amount=aux=0, tag=ability)
+//     IMMEDIATELY followed by HEAL(m_iAmount = maxHP/16 [maxHP/8 Toxicthrive],
+//     min 1, capped to missing; m_iAux = new HP); the pair sits before TURN_END.
+//     A full-HP holder no-ops with NO event.
+//   * BLOODRUSH: FAINT(defender) then STAT_STAGE_CHANGED(+1 ATTACK, holder) then
+//     ABILITY_TRIGGER(holder, amount=aux=0, tag=BLOODRUSH); at +6 the stage change
+//     is suppressed but the trigger still fires.
+//   * LASTSPITE: attacker used-move m_uCurPP == 0; one ABILITY_TRIGGER(owner=
+//     LASTSPITE side, amount=aux=0, tag=LASTSPITE) after the KO.
+//   * AFTERSHOCK: ABILITY_TRIGGER(m_iAmount = maxHP/4 chip, m_iAux = attacker new
+//     HP, tag=AFTERSHOCK); +FAINT(attacker) on a lethal chip.
+//   * QUICKDRAW: ABILITY_TRIGGER(owner side/slot, amount=aux=0, tag=QUICKDRAW)
+//     before the first MOVE_USED; holder moves first despite lower speed.
+// ============================================================================
+namespace
+{
+	// Drive one MISTVEIL-vs-MISTVEIL engine turn (self SpD buff -> always hits, no
+	// damage, NO RNG draw) with the PLAYER holding eAbility at curHP = maxHP/2 under
+	// (eWeather, eStatus). Speeds differ (100 vs 60) so there is no tie-break draw.
+	// The LOCKED end-of-turn order runs the SAND/SNOW weather chip (step 1) BEFORE the
+	// step-6 ability heal, so a non-immune holder under a chipping weather loses maxHP/8
+	// first and then heals against the reduced HP. This helper folds that chip in: it
+	// mirrors the engine's immunity rule (SAND: EARTH/STONE/IRON; SNOW: ICE) and the
+	// g_AbilityTurnEndHeal clamp exactly, so it stays correct for any species/maxHP.
+	// On bExpectFire the holder ends at curHP - chip + heal (heal = maxHP/uDivisor, min 1,
+	// capped to the post-chip missing HP) and the stream carries ABILITY_TRIGGER
+	// immediately before HEAL(heal, newHP), located after any WEATHER_DAMAGE chip and
+	// before TURN_END. On !bExpectFire the holder ends at curHP - chip with no HEAL /
+	// trigger (RAIN/SUN/NONE callers never chip, so that reduces to the unchanged HP).
+	void ZM_Box3SC5AssertHeal(ZM_ABILITY_ID eAbility, u_int uDivisor, ZM_WEATHER eWeather,
+		ZM_MAJOR_STATUS eStatus, bool bExpectFire, u_int64 ulSeed)
+	{
+		ZM_BattleEngine xEngine;
+		ZM_BattleMonsterSpec axP[1] = { ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL,
+			eAbility, 600u, 120u, 100u, 120u, 100u, 100u) };
+		ZM_BattleMonsterSpec axE[1] = { ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL,
+			ZM_ABILITY_NONE, 600u, 120u, 100u, 120u, 100u, 60u) };
+		xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, ulSeed, 54ull);
+		ZM_BattleState& xState = xEngine.GetStateMutable();
+		ZM_BattleMonster& xMon = xState.Side(ZM_SIDE_PLAYER).Active();
+		const u_int uMaxHP = xMon.m_auMaxStat[ZM_STAT_HP];
+		const u_int uCurBefore = uMaxHP / 2u;
+		xMon.m_uCurHP = uCurBefore;
+		xMon.m_eStatus = eStatus;
+		xState.m_xField.m_eWeather = eWeather;
+		xState.m_xField.m_uWeatherTurns = (eWeather == ZM_WEATHER_NONE) ? 0u : 5u;
+
+		ZM_SC5ResolveMoveTurn(xEngine);
+
+		const ZM_BattleMonster& xAfter = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active();
+
+		// EoT step 1 (ZM_BattleEngine::ResolveWeatherEndOfTurn) chips every non-immune
+		// active for maxHP/8 (min 1) under SAND/SNOW BEFORE the step-6 ability heal, so the
+		// holder's post-turn HP and the HEAL event's m_iAux fold that chip in. Mirror the
+		// engine's immunity rule exactly (SAND: EARTH/STONE/IRON; SNOW: ICE) via the same
+		// ZM_BattleMonsterHasType the engine uses, so this is correct for any species/maxHP
+		// (not a number that only happens to work for NIBBIN). RAIN/SUN/NONE never chip.
+		u_int uChip = 0u;
+		if (eWeather == ZM_WEATHER_SAND || eWeather == ZM_WEATHER_SNOW)
+		{
+			const bool bChipImmune = (eWeather == ZM_WEATHER_SAND)
+				? (ZM_BattleMonsterHasType(xAfter, ZM_TYPE_EARTH)
+					|| ZM_BattleMonsterHasType(xAfter, ZM_TYPE_STONE)
+					|| ZM_BattleMonsterHasType(xAfter, ZM_TYPE_IRON))
+				: ZM_BattleMonsterHasType(xAfter, ZM_TYPE_ICE);
+			if (!bChipImmune)
+			{
+				uChip = uMaxHP / 8u;
+				if (uChip == 0u) { uChip = 1u; }
+			}
+		}
+		const u_int uCurAfterChip = (uChip >= uCurBefore) ? 0u : (uCurBefore - uChip);
+
+		if (bExpectFire)
+		{
+			// Heal amount mirrors g_AbilityTurnEndHeal's clamp against the POST-CHIP HP: the
+			// heal is maxHP/uDivisor (min 1), capped to the missing HP after the chip. At
+			// curHP = maxHP/2 the missing HP dwarfs a /16 (or /8) heal, so the cap is inert,
+			// but computing it here keeps the helper correct if a future caller heals a
+			// nearly-full or heavily-chipped holder.
+			u_int uHeal = uMaxHP / uDivisor;
+			if (uHeal == 0u) { uHeal = 1u; }
+			const u_int uMissing = uMaxHP - uCurAfterChip;   // holder is below full after the chip
+			if (uHeal > uMissing) { uHeal = uMissing; }
+			const u_int uNewHP = uCurAfterChip + uHeal;
+			ZENITH_ASSERT_EQ(xAfter.m_uCurHP, uNewHP, "SC5 %s post-chip heal HP", ZM_GetAbilityName(eAbility));
+			ZM_Box3SC3AssertExactTriggers(xEngine.GetEvents(), eAbility, ZM_SIDE_PLAYER, 1u, 1u);
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_HEAL), 1u);
+			const ZM_BattleEvent* pxHeal = ZM_Box3SC3FindKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_HEAL);
+			ZENITH_ASSERT_NOT_NULL(pxHeal);
+			if (pxHeal != nullptr)
+			{
+				const ZM_BattleEvent xExpected = ZM_MakeEvent(ZM_BATTLE_EVENT_HEAL, ZM_SIDE_PLAYER,
+					0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uHeal, (int)uNewHP);
+				ZENITH_ASSERT_TRUE(*pxHeal == xExpected, "SC5 %s HEAL payload", ZM_GetAbilityName(eAbility));
+			}
+			const int iTrig = ZM_Box3SC3FindTriggerIndex(xEngine.GetEvents(), eAbility, ZM_SIDE_PLAYER);
+			const int iHeal = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_HEAL, ZM_SIDE_PLAYER);
+			const int iTurnEnd = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_TURN_END);
+			ZENITH_ASSERT_GE(iTrig, 0);
+			ZENITH_ASSERT_EQ(iHeal, iTrig + 1, "SC5 heal: ABILITY_TRIGGER immediately precedes HEAL");
+			ZENITH_ASSERT_GT(iTurnEnd, iHeal, "SC5 heal pair resolves before TURN_END");
+
+			// Prove the chip-then-heal ORDERING rather than silently absorbing the chip into
+			// the numbers: a chipping weather must emit exactly one WEATHER_DAMAGE for the
+			// holder and it must resolve before the ability-heal pair. RAIN/SUN/NONE emit none.
+			const int iWeatherDmg = ZM_SC5FindEvent(xEngine.GetEvents(),
+				ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER);
+			if (uChip > 0u)
+			{
+				ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEngine.GetEvents(),
+					ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER), 1u,
+					"SC5 %s: weather chip fires before the ability heal", ZM_GetAbilityName(eAbility));
+				ZENITH_ASSERT_GE(iWeatherDmg, 0);
+				ZENITH_ASSERT_LT(iWeatherDmg, iHeal,
+					"SC5 heal: weather chip resolves before the ability heal");
+			}
+			else
+			{
+				ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEngine.GetEvents(),
+					ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER), 0u,
+					"SC5 %s: no weather chip under RAIN/SUN/NONE", ZM_GetAbilityName(eAbility));
+			}
+		}
+		else
+		{
+			ZENITH_ASSERT_EQ(xAfter.m_uCurHP, uCurAfterChip,
+				"SC5 %s must not heal on the wrong condition", ZM_GetAbilityName(eAbility));
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_HEAL), 0u);
+			ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+		}
+	}
+
+	// Run ZM_MoveExecutor::Execute for a PLAYER attacker holding eAtkAbility using eMove
+	// into an ENEMY (NONE) defender. uDefHP / uAtkHP override curHP when non-zero (0 ==
+	// leave at built full HP); iAtkStage seeds the attacker's ATTACK stage (for the cap
+	// edge). Drives Bloodrush's E4b dealt-faint reaction.
+	void ZM_Box3SC5RunBloodrush(ZM_BattleState& xState, Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_ABILITY_ID eAtkAbility, ZM_MOVE_ID eMove, u_int uDefHP, u_int uAtkHP, int iAtkStage,
+		u_int64 ulSeed)
+	{
+		BuildBattleState(xState,
+			ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, eMove, eAtkAbility),
+			ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE),
+			ulSeed, 54ull);
+		ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+		if (uDefHP != 0u) { xDef.m_uCurHP = uDefHP; }
+		if (uAtkHP != 0u) { xAtk.m_uCurHP = uAtkHP; }
+		xAtk.m_aiStage[ZM_BATTLE_STAT_ATTACK] = iAtkStage;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+	}
+
+	// Run ZM_MoveExecutor::Execute for a PLAYER attacker (NONE) using eMove into an ENEMY
+	// DEFENDER holding eDefAbility. uDefHP / uAtkHP override curHP when non-zero. Drives
+	// the E4a bSelfFainted contact bodies (Lastspite / Aftershock).
+	void ZM_Box3SC5RunAttackInto(ZM_BattleState& xState, Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_MOVE_ID eMove, ZM_ABILITY_ID eDefAbility, u_int uDefHP, u_int uAtkHP, u_int64 ulSeed)
+	{
+		BuildBattleState(xState,
+			ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, eMove, ZM_ABILITY_NONE),
+			ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, eDefAbility),
+			ulSeed, 54ull);
+		ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+		if (uDefHP != 0u) { xDef.m_uCurHP = uDefHP; }
+		if (uAtkHP != 0u) { xAtk.m_uCurHP = uAtkHP; }
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+	}
+
+	// A both-move Rambash engine (priority 0 each) where the PLAYER (holding
+	// ePlayerAbility) is SLOWER (speed 60) than the ENEMY (holding eEnemyAbility,
+	// speed 100). Without a Quickdraw proc the ENEMY moves first; a proc gives the
+	// PLAYER +1 move-order priority so it strikes first.
+	void ZM_Box3SC5BuildQuickdrawEngine(ZM_BattleEngine& xEngine, ZM_ABILITY_ID ePlayerAbility,
+		ZM_ABILITY_ID eEnemyAbility, u_int64 ulSeed)
+	{
+		ZM_BattleMonsterSpec axP[1] = { ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH,
+			ePlayerAbility, 600u, 120u, 100u, 120u, 100u, 60u) };
+		ZM_BattleMonsterSpec axE[1] = { ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH,
+			eEnemyAbility, 600u, 120u, 100u, 120u, 100u, 100u) };
+		xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, ulSeed, 54ull);
+	}
+
+	// Independent PCG32 oracle: the Quickdraw proc is the FIRST RNG draw of a both-move
+	// turn (pre-move phase pulls nothing), so a fresh mirror's single RandBelow(100)
+	// predicts a PLAYER-QUICKDRAW proc exactly. Returns a seed matching bWantProc.
+	u_int64 ZM_Box3SC5FindQuickdrawSeed(bool bWantProc)
+	{
+		for (u_int64 ulSeed = 1ull; ulSeed <= 65536ull; ++ulSeed)
+		{
+			ZM_BattleRNG xMirror(ulSeed, 54ull);
+			const bool bProc = xMirror.RandBelow(100u) < 30u;
+			if (bProc == bWantProc) { return ulSeed; }
+		}
+		return 0ull;
+	}
+
+	// Both sides hold Quickdraw: the PLAYER draw is first, the ENEMY draw second (fixed
+	// PLAYER-then-ENEMY order). Returns a seed matching the requested (player, enemy) proc.
+	u_int64 ZM_Box3SC5FindQuickdrawPair(bool bWantPlayerProc, bool bWantEnemyProc)
+	{
+		for (u_int64 ulSeed = 1ull; ulSeed <= 65536ull; ++ulSeed)
+		{
+			ZM_BattleRNG xMirror(ulSeed, 54ull);
+			const bool bP = xMirror.RandBelow(100u) < 30u;
+			const bool bE = xMirror.RandBelow(100u) < 30u;
+			if (bP == bWantPlayerProc && bE == bWantEnemyProc) { return ulSeed; }
+		}
+		return 0ull;
+	}
+}
+
+// --- TURN_END self-heals (Rainbask / Sunbask / Icebound / Rootfeed) ---------
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Rainbask_HealsSixteenthInRain)
+{
+	ZM_Box3SC5AssertHeal(ZM_ABILITY_RAINBASK, 16u, ZM_WEATHER_RAIN, ZM_MAJOR_STATUS_NONE, true, 0xB366ull);
+	// Wrong weather (SUN) -> no heal; also NONE weather -> no heal.
+	ZM_Box3SC5AssertHeal(ZM_ABILITY_RAINBASK, 16u, ZM_WEATHER_SUN, ZM_MAJOR_STATUS_NONE, false, 0xB367ull);
+	ZM_Box3SC5AssertHeal(ZM_ABILITY_RAINBASK, 16u, ZM_WEATHER_NONE, ZM_MAJOR_STATUS_NONE, false, 0xB368ull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Sunbask_HealsSixteenthInSun)
+{
+	ZM_Box3SC5AssertHeal(ZM_ABILITY_SUNBASK, 16u, ZM_WEATHER_SUN, ZM_MAJOR_STATUS_NONE, true, 0xB369ull);
+	ZM_Box3SC5AssertHeal(ZM_ABILITY_SUNBASK, 16u, ZM_WEATHER_RAIN, ZM_MAJOR_STATUS_NONE, false, 0xB36Aull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Icebound_HealsSixteenthInSnow)
+{
+	ZM_Box3SC5AssertHeal(ZM_ABILITY_ICEBOUND, 16u, ZM_WEATHER_SNOW, ZM_MAJOR_STATUS_NONE, true, 0xB36Bull);
+	ZM_Box3SC5AssertHeal(ZM_ABILITY_ICEBOUND, 16u, ZM_WEATHER_RAIN, ZM_MAJOR_STATUS_NONE, false, 0xB36Cull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Rootfeed_HealsSixteenthUnconditionally)
+{
+	// Fires under any weather/status; verify under NONE weather (the pure TURN_END path).
+	ZM_Box3SC5AssertHeal(ZM_ABILITY_ROOTFEED, 16u, ZM_WEATHER_NONE, ZM_MAJOR_STATUS_NONE, true, 0xB36Dull);
+	// And under a wrong-for-others weather (SAND) it still heals -- Rootfeed reads no condition.
+	ZM_Box3SC5AssertHeal(ZM_ABILITY_ROOTFEED, 16u, ZM_WEATHER_SUN, ZM_MAJOR_STATUS_NONE, true, 0xB36Eull);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Toxicthrive_HealsEighthAndSkipsPoisonChip)
+{
+	// Basic: POISON fires (heal maxHP/8); NONE-status control does not.
+	ZM_Box3SC5AssertHeal(ZM_ABILITY_TOXICTHRIVE, 8u, ZM_WEATHER_NONE, ZM_MAJOR_STATUS_POISON, true, 0xB36Full);
+	ZM_Box3SC5AssertHeal(ZM_ABILITY_TOXICTHRIVE, 8u, ZM_WEATHER_NONE, ZM_MAJOR_STATUS_NONE, false, 0xB370ull);
+
+	// Net-heal + chip-skip: a POISON'd TOXICTHRIVE holder takes NO status chip and ends
+	// the turn with MORE HP; a POISON'd NONE holder (same fixture) takes the chip and loses HP.
+	ZM_BattleEngine xThrive;
+	ZM_BattleMonsterSpec axP[1] = { ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL,
+		ZM_ABILITY_TOXICTHRIVE, 600u, 120u, 100u, 120u, 100u, 100u) };
+	ZM_BattleMonsterSpec axE[1] = { ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL,
+		ZM_ABILITY_NONE, 600u, 120u, 100u, 120u, 100u, 60u) };
+	xThrive.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xB371ull, 54ull);
+	ZM_BattleMonster& xTMon = xThrive.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
+	xTMon.m_eStatus = ZM_MAJOR_STATUS_POISON;
+	const u_int uTBefore = xTMon.m_auMaxStat[ZM_STAT_HP] / 2u;
+	xTMon.m_uCurHP = uTBefore;
+	ZM_SC5ResolveMoveTurn(xThrive);
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xThrive.GetEvents(), ZM_BATTLE_EVENT_STATUS_DAMAGE, ZM_SIDE_PLAYER),
+		0u, "TOXICTHRIVE's poison chip is skipped");
+	ZENITH_ASSERT_GT(xThrive.GetState().Side(ZM_SIDE_PLAYER).Active().m_uCurHP, uTBefore,
+		"TOXICTHRIVE nets a heal while poisoned");
+
+	ZM_BattleEngine xNone;
+	axP[0].m_eAbility = ZM_ABILITY_NONE;
+	xNone.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xB372ull, 54ull);
+	ZM_BattleMonster& xNMon = xNone.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
+	xNMon.m_eStatus = ZM_MAJOR_STATUS_POISON;
+	const u_int uNBefore = xNMon.m_auMaxStat[ZM_STAT_HP] / 2u;
+	xNMon.m_uCurHP = uNBefore;
+	ZM_SC5ResolveMoveTurn(xNone);
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xNone.GetEvents(), ZM_BATTLE_EVENT_STATUS_DAMAGE, ZM_SIDE_PLAYER),
+		1u, "a POISON'd NONE holder takes the chip");
+	ZENITH_ASSERT_LT(xNone.GetState().Side(ZM_SIDE_PLAYER).Active().m_uCurHP, uNBefore,
+		"a POISON'd NONE holder loses HP to poison");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNone.GetEvents(), ZM_BATTLE_EVENT_HEAL), 0u);
+}
+
+// --- TURN_END heal edges: full-HP no-op, min-1, cap-to-missing --------------
+
+ZENITH_TEST(ZM_Battle, Box3SC5_TurnEndHeal_FullHPHolderNoOps)
+{
+	// A ROOTFEED (unconditional) holder at FULL HP heals nothing -> no HEAL, no trigger.
+	ZM_BattleEngine xEngine;
+	ZM_BattleMonsterSpec axP[1] = { ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL,
+		ZM_ABILITY_ROOTFEED, 600u, 120u, 100u, 120u, 100u, 100u) };
+	ZM_BattleMonsterSpec axE[1] = { ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL,
+		ZM_ABILITY_NONE, 600u, 120u, 100u, 120u, 100u, 60u) };
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xB373ull, 54ull);   // holder left at full HP
+	ZM_SC5ResolveMoveTurn(xEngine);
+	const ZM_BattleMonster& xMon = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active();
+	ZENITH_ASSERT_EQ(xMon.m_uCurHP, xMon.m_auMaxStat[ZM_STAT_HP]);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_HEAL), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC5_TurnEndHeal_MinOneAndCapToMissing)
+{
+	// MIN-ONE: a tiny maxHP makes maxHP/16 == 0, so the heal clamps up to +1.
+	ZM_BattleEngine xMinOne;
+	ZM_BattleMonsterSpec axP[1] = { ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL,
+		ZM_ABILITY_ROOTFEED, 600u, 120u, 100u, 120u, 100u, 100u) };
+	ZM_BattleMonsterSpec axE[1] = { ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL,
+		ZM_ABILITY_NONE, 600u, 120u, 100u, 120u, 100u, 60u) };
+	xMinOne.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xB374ull, 54ull);
+	ZM_BattleMonster& xMinMon = xMinOne.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
+	xMinMon.m_auMaxStat[ZM_STAT_HP] = 3u;   // 3/16 == 0 -> heal clamps to 1
+	xMinMon.m_uCurHP = 1u;
+	ZM_SC5ResolveMoveTurn(xMinOne);
+	ZENITH_ASSERT_EQ(xMinOne.GetState().Side(ZM_SIDE_PLAYER).Active().m_uCurHP, 2u);
+	const ZM_BattleEvent* pxMinHeal = ZM_Box3SC3FindKind(xMinOne.GetEvents(), ZM_BATTLE_EVENT_HEAL);
+	ZENITH_ASSERT_NOT_NULL(pxMinHeal);
+	if (pxMinHeal != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxMinHeal->m_iAmount, 1, "tiny-maxHP heal clamps to +1");
+		ZENITH_ASSERT_EQ(pxMinHeal->m_iAux, 2, "new HP after the min-1 heal");
+	}
+
+	// CAP-TO-MISSING: at maxHP-1 the full maxHP/16 (>= 2) clamps down to the 1 missing HP.
+	ZM_BattleEngine xCap;
+	xCap.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xB375ull, 54ull);
+	ZM_BattleMonster& xCapMon = xCap.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
+	const u_int uCapMax = xCapMon.m_auMaxStat[ZM_STAT_HP];
+	ZENITH_ASSERT_GT(uCapMax / 16u, 1u, "fixture needs maxHP/16 >= 2 so the clamp is observable");
+	xCapMon.m_uCurHP = uCapMax - 1u;
+	ZM_SC5ResolveMoveTurn(xCap);
+	ZENITH_ASSERT_EQ(xCap.GetState().Side(ZM_SIDE_PLAYER).Active().m_uCurHP, uCapMax);
+	const ZM_BattleEvent* pxCapHeal = ZM_Box3SC3FindKind(xCap.GetEvents(), ZM_BATTLE_EVENT_HEAL);
+	ZENITH_ASSERT_NOT_NULL(pxCapHeal);
+	if (pxCapHeal != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxCapHeal->m_iAmount, 1, "heal clamps to the 1 missing HP");
+		ZENITH_ASSERT_EQ(pxCapHeal->m_iAux, (int)uCapMax, "new HP is exactly maxHP");
+	}
+}
+
+// --- Fainted-guard (Resolution 2): a chip-KO'd active is never healed/revived --
+
+ZENITH_TEST(ZM_Battle, Box3SC5_TurnEndHeal_FaintedByWeatherChipIsNotRevived)
+{
+	// The SC1 weather chip runs FIRST (before the step-6 heal pass), so a ROOTFEED holder
+	// KO'd by the SAND chip is fainted when the heal dispatch reaches it -> the fainted-
+	// guard skips it: WEATHER_DAMAGE + FAINT, but NO HEAL / ABILITY_TRIGGER.
+	ZM_BattleMonsterSpec axP[1] = { ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL,
+		ZM_ABILITY_ROOTFEED, 600u, 120u, 100u, 120u, 100u, 100u) };
+	ZM_BattleMonsterSpec axE[1] = { ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL,
+		ZM_ABILITY_NONE, 600u, 120u, 100u, 120u, 100u, 60u) };
+
+	ZM_BattleEngine xKO;
+	xKO.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xB376ull, 54ull);
+	ZM_BattleState& xKOState = xKO.GetStateMutable();
+	xKOState.m_xField.m_eWeather = ZM_WEATHER_SAND;
+	xKOState.m_xField.m_uWeatherTurns = 5u;
+	xKOState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP = 1u;   // the SAND chip (maxHP/8 >= 1) KOs it
+	ZM_SC5ResolveMoveTurn(xKO);
+	ZENITH_ASSERT_TRUE(xKO.GetState().Side(ZM_SIDE_PLAYER).Active().IsFainted());
+	ZENITH_ASSERT_GE(ZM_SC5FindEvent(xKO.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER), 0);
+	ZENITH_ASSERT_GE(ZM_SC5FindEvent(xKO.GetEvents(), ZM_BATTLE_EVENT_FAINT, ZM_SIDE_PLAYER), 0);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xKO.GetEvents(), ZM_BATTLE_EVENT_HEAL), 0u, "a chip-fainted active is not revived");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xKO.GetEvents(), ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+
+	// CONTROL: a ROOTFEED holder that SURVIVES the same SAND chip DOES heal at EoT.
+	ZM_BattleEngine xSurvive;
+	xSurvive.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xB377ull, 54ull);
+	ZM_BattleState& xSurvState = xSurvive.GetStateMutable();
+	xSurvState.m_xField.m_eWeather = ZM_WEATHER_SAND;
+	xSurvState.m_xField.m_uWeatherTurns = 5u;
+	ZM_BattleMonster& xSurvMon = xSurvState.Side(ZM_SIDE_PLAYER).Active();
+	xSurvMon.m_uCurHP = xSurvMon.m_auMaxStat[ZM_STAT_HP] / 2u;   // survives the chip
+	ZM_SC5ResolveMoveTurn(xSurvive);
+	ZENITH_ASSERT_FALSE(xSurvive.GetState().Side(ZM_SIDE_PLAYER).Active().IsFainted());
+	ZENITH_ASSERT_EQ(ZM_CountKind(xSurvive.GetEvents(), ZM_BATTLE_EVENT_HEAL), 1u, "a survivor heals at EoT");
+	ZM_Box3SC3AssertExactTriggers(xSurvive.GetEvents(), ZM_ABILITY_ROOTFEED, ZM_SIDE_PLAYER, 1u, 1u);
+}
+
+// --- BLOODRUSH (row 34): +1 ATTACK on a damaging KO (contact OR non-contact) ---
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Bloodrush_RaisesAttackOnAnyDamagingKO)
+{
+	// POSITIVE contact KO: Rambash downs the foe -> FAINT, then STAT_STAGE_CHANGED(+1 ATK),
+	// then ABILITY_TRIGGER(BLOODRUSH, PLAYER); holder's ATTACK stage == +1.
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_Box3SC5RunBloodrush(xState, xEvents, ZM_ABILITY_BLOODRUSH, ZM_MOVE_RAMBASH, 1u, 0u, 0, 0xB378ull);
+	ZENITH_ASSERT_TRUE(xState.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_FAINT), 1u);
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], 1);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), 1u);
+	ZM_Box3SC3AssertExactTriggers(xEvents, ZM_ABILITY_BLOODRUSH, ZM_SIDE_PLAYER, 1u, 1u);
+	const int iFaint = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_FAINT, ZM_SIDE_ENEMY);
+	const int iStat = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED, ZM_SIDE_PLAYER);
+	const int iTrig = ZM_Box3SC3FindTriggerIndex(xEvents, ZM_ABILITY_BLOODRUSH, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_LT(iFaint, iStat, "the KO precedes the ATTACK raise");
+	ZENITH_ASSERT_LT(iStat, iTrig, "the ATTACK raise precedes the announce");
+
+	// POSITIVE non-contact KO (ruling 1): a Tidecrash (non-contact special) that downs the
+	// foe STILL fires Bloodrush -- the dealt-faint dispatch is NOT contact-gated.
+	ZM_BattleState xNC;
+	Zenith_Vector<ZM_BattleEvent> xNCEvents;
+	ZM_Box3SC5RunBloodrush(xNC, xNCEvents, ZM_ABILITY_BLOODRUSH, ZM_MOVE_TIDECRASH, 1u, 0u, 0, 0xB379ull);
+	ZENITH_ASSERT_TRUE(xNC.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	ZENITH_ASSERT_EQ(xNC.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], 1);
+	ZM_Box3SC3AssertExactTriggers(xNCEvents, ZM_ABILITY_BLOODRUSH, ZM_SIDE_PLAYER, 1u, 1u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Bloodrush_DoesNotFireWithoutAKObyLivingHolder)
+{
+	// CONTROL no-KO: Rambash damages but does not down a full-HP foe -> no fire.
+	ZM_BattleState xNoKO;
+	Zenith_Vector<ZM_BattleEvent> xNoKOEvents;
+	ZM_Box3SC5RunBloodrush(xNoKO, xNoKOEvents, ZM_ABILITY_BLOODRUSH, ZM_MOVE_RAMBASH, 0u, 0u, 0, 0xB37Aull);
+	ZENITH_ASSERT_FALSE(xNoKO.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	ZENITH_ASSERT_EQ(xNoKO.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], 0);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNoKOEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNoKOEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+
+	// CONTROL NONE holder: a KO by a NONE attacker never raises ATTACK.
+	ZM_BattleState xNone;
+	Zenith_Vector<ZM_BattleEvent> xNoneEvents;
+	ZM_Box3SC5RunBloodrush(xNone, xNoneEvents, ZM_ABILITY_NONE, ZM_MOVE_RAMBASH, 1u, 0u, 0, 0xB37Bull);
+	ZENITH_ASSERT_TRUE(xNone.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	ZENITH_ASSERT_EQ(xNone.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], 0);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNoneEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+
+	// CONTROL recoil self-KO: a Reckless Rush that downs the foe AND recoil-KOs the holder
+	// fails the alive-guard -> no fire (both faint; no ATTACK raise).
+	ZM_BattleState xRecoil;
+	Zenith_Vector<ZM_BattleEvent> xRecoilEvents;
+	ZM_Box3SC5RunBloodrush(xRecoil, xRecoilEvents, ZM_ABILITY_BLOODRUSH, ZM_MOVE_RECKLESSRUSH, 1u, 1u, 0, 0xB37Cull);
+	ZENITH_ASSERT_TRUE(xRecoil.Side(ZM_SIDE_PLAYER).Active().IsFainted());
+	ZENITH_ASSERT_TRUE(xRecoil.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	ZENITH_ASSERT_EQ(ZM_CountKind(xRecoilEvents, ZM_BATTLE_EVENT_FAINT), 2u);
+	ZENITH_ASSERT_EQ(xRecoil.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], 0);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xRecoilEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Bloodrush_AtSixStageCapAnnouncesWithoutStageChange)
+{
+	// A holder already at +6 ATTACK that downs a foe: ApplyStatChange is a no-op at the cap
+	// (no STAT_STAGE_CHANGED), but the ABILITY_TRIGGER still fires (matches Daunting Roar).
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_Box3SC5RunBloodrush(xState, xEvents, ZM_ABILITY_BLOODRUSH, ZM_MOVE_RAMBASH, 1u, 0u, iZM_MAX_STAGE, 0xB37Dull);
+	ZENITH_ASSERT_TRUE(xState.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], iZM_MAX_STAGE);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_STAT_STAGE_CHANGED), 0u);
+	ZM_Box3SC3AssertExactTriggers(xEvents, ZM_ABILITY_BLOODRUSH, ZM_SIDE_PLAYER, 1u, 1u);
+}
+
+// --- LASTSPITE (row 35): zero the attacker's used-move PP on a contact KO ------
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Lastspite_SapsAttackerPPOnContactKO)
+{
+	// POSITIVE: the LASTSPITE holder (defender) is KO'd by a contact Rambash -> the
+	// attacker's used move slot PP is zeroed; one ABILITY_TRIGGER(LASTSPITE, ENEMY) after the KO.
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_Box3SC5RunAttackInto(xState, xEvents, ZM_MOVE_RAMBASH, ZM_ABILITY_LASTSPITE, 1u, 0u, 0xB37Eull);
+	ZENITH_ASSERT_TRUE(xState.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).Active().m_axMoves[0].m_uCurPP, 0u);
+	ZM_Box3SC3AssertExactTriggers(xEvents, ZM_ABILITY_LASTSPITE, ZM_SIDE_ENEMY, 1u, 1u);
+	const int iFaint = ZM_SC5FindEvent(xEvents, ZM_BATTLE_EVENT_FAINT, ZM_SIDE_ENEMY);
+	const int iTrig = ZM_Box3SC3FindTriggerIndex(xEvents, ZM_ABILITY_LASTSPITE, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_GE(iFaint, 0);
+	ZENITH_ASSERT_LT(iFaint, iTrig, "LASTSPITE announces after the KO");
+
+	// CONTROL non-lethal contact: no KO -> no PP drain (single decrement), no trigger.
+	ZM_BattleState xNL;
+	Zenith_Vector<ZM_BattleEvent> xNLEvents;
+	ZM_Box3SC5RunAttackInto(xNL, xNLEvents, ZM_MOVE_RAMBASH, ZM_ABILITY_LASTSPITE, 0u, 0u, 0xB37Full);
+	ZENITH_ASSERT_FALSE(xNL.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	const ZM_MoveSlot& xNLSlot = xNL.Side(ZM_SIDE_PLAYER).Active().m_axMoves[0];
+	ZENITH_ASSERT_EQ(xNLSlot.m_uCurPP, xNLSlot.m_uMaxPP - 1u, "no PP drain on a non-lethal contact");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNLEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+
+	// CONTROL non-contact KO: Tidecrash downs the holder but the E4 seam is skipped -> no drain.
+	ZM_BattleState xNC;
+	Zenith_Vector<ZM_BattleEvent> xNCEvents;
+	ZM_Box3SC5RunAttackInto(xNC, xNCEvents, ZM_MOVE_TIDECRASH, ZM_ABILITY_LASTSPITE, 1u, 0u, 0xB380ull);
+	ZENITH_ASSERT_TRUE(xNC.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	const ZM_MoveSlot& xNCSlot = xNC.Side(ZM_SIDE_PLAYER).Active().m_axMoves[0];
+	ZENITH_ASSERT_EQ(xNCSlot.m_uCurPP, xNCSlot.m_uMaxPP - 1u, "no PP drain on a non-contact KO");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNCEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+
+	// CONTROL attacker recoil-KO: the attacker is KO'd by recoil first -> R-C2 skips the
+	// contact seam -> no PP drain, no trigger (a dead attacker is not punished).
+	ZM_BattleState xRC;
+	Zenith_Vector<ZM_BattleEvent> xRCEvents;
+	ZM_Box3SC5RunAttackInto(xRC, xRCEvents, ZM_MOVE_RECKLESSRUSH, ZM_ABILITY_LASTSPITE, 1u, 1u, 0xB381ull);
+	ZENITH_ASSERT_TRUE(xRC.Side(ZM_SIDE_PLAYER).Active().IsFainted());
+	const ZM_MoveSlot& xRCSlot = xRC.Side(ZM_SIDE_PLAYER).Active().m_axMoves[0];
+	ZENITH_ASSERT_EQ(xRCSlot.m_uCurPP, xRCSlot.m_uMaxPP - 1u, "no PP drain when the attacker is recoil-KO'd");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xRCEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+}
+
+// --- AFTERSHOCK (row 36): chip the attacker maxHP/4 on a contact KO -----------
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Aftershock_ChipsAttackerOnContactKO)
+{
+	// POSITIVE: the AFTERSHOCK holder (defender) is KO'd by a contact Rambash -> the
+	// attacker loses maxHP/4; ABILITY_TRIGGER carries the chip + attacker new HP; only the
+	// defender faints (the attacker was at full HP).
+	ZM_BattleState xState;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_Box3SC5RunAttackInto(xState, xEvents, ZM_MOVE_RAMBASH, ZM_ABILITY_AFTERSHOCK, 1u, 0u, 0xB382ull);
+	ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+	const u_int uMaxHP = xAtk.m_auMaxStat[ZM_STAT_HP];
+	u_int uChip = uMaxHP / 4u;
+	if (uChip == 0u) { uChip = 1u; }
+	const u_int uNewHP = uMaxHP - uChip;   // attacker was at full HP, took no other damage
+	ZENITH_ASSERT_TRUE(xState.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	ZENITH_ASSERT_EQ(xAtk.m_uCurHP, uNewHP);
+	ZM_Box3SC4AssertOneTrigger(xEvents, ZM_ABILITY_AFTERSHOCK, ZM_SIDE_ENEMY, (int)uChip, (int)uNewHP);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_FAINT), 1u, "only the defender faints");
+
+	// POSITIVE lethal chip: an attacker at 1 HP is downed by the maxHP/4 chip -> new HP 0
+	// with an appended FAINT on the attacker (both sides faint).
+	ZM_BattleState xLethal;
+	Zenith_Vector<ZM_BattleEvent> xLethalEvents;
+	ZM_Box3SC5RunAttackInto(xLethal, xLethalEvents, ZM_MOVE_RAMBASH, ZM_ABILITY_AFTERSHOCK, 1u, 1u, 0xB383ull);
+	ZM_BattleMonster& xLAtk = xLethal.Side(ZM_SIDE_PLAYER).Active();
+	u_int uLChip = xLAtk.m_auMaxStat[ZM_STAT_HP] / 4u;
+	if (uLChip == 0u) { uLChip = 1u; }
+	ZENITH_ASSERT_EQ(xLAtk.m_uCurHP, 0u);
+	ZM_Box3SC4AssertOneTrigger(xLethalEvents, ZM_ABILITY_AFTERSHOCK, ZM_SIDE_ENEMY, (int)uLChip, 0);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xLethalEvents, ZM_BATTLE_EVENT_FAINT), 2u, "both defender and attacker faint");
+	ZENITH_ASSERT_GE(ZM_SC5FindEvent(xLethalEvents, ZM_BATTLE_EVENT_FAINT, ZM_SIDE_PLAYER), 0);
+
+	// CONTROL non-lethal contact: no KO -> no chip, no trigger; attacker HP unchanged.
+	ZM_BattleState xNL;
+	Zenith_Vector<ZM_BattleEvent> xNLEvents;
+	ZM_Box3SC5RunAttackInto(xNL, xNLEvents, ZM_MOVE_RAMBASH, ZM_ABILITY_AFTERSHOCK, 0u, 0u, 0xB384ull);
+	ZENITH_ASSERT_FALSE(xNL.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	ZENITH_ASSERT_EQ(xNL.Side(ZM_SIDE_PLAYER).Active().m_uCurHP,
+		xNL.Side(ZM_SIDE_PLAYER).Active().m_auMaxStat[ZM_STAT_HP], "no chip on a non-lethal contact");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNLEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+
+	// CONTROL non-contact KO: Tidecrash downs the holder but the E4 seam is skipped -> no chip.
+	ZM_BattleState xNC;
+	Zenith_Vector<ZM_BattleEvent> xNCEvents;
+	ZM_Box3SC5RunAttackInto(xNC, xNCEvents, ZM_MOVE_TIDECRASH, ZM_ABILITY_AFTERSHOCK, 1u, 0u, 0xB385ull);
+	ZENITH_ASSERT_TRUE(xNC.Side(ZM_SIDE_ENEMY).Active().IsFainted());
+	ZENITH_ASSERT_EQ(xNC.Side(ZM_SIDE_PLAYER).Active().m_uCurHP,
+		xNC.Side(ZM_SIDE_PLAYER).Active().m_auMaxStat[ZM_STAT_HP], "no chip on a non-contact KO");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNCEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+
+	// CONTROL attacker recoil-KO: the attacker dies to recoil first -> R-C2 skips the seam.
+	ZM_BattleState xRC;
+	Zenith_Vector<ZM_BattleEvent> xRCEvents;
+	ZM_Box3SC5RunAttackInto(xRC, xRCEvents, ZM_MOVE_RECKLESSRUSH, ZM_ABILITY_AFTERSHOCK, 1u, 1u, 0xB386ull);
+	ZENITH_ASSERT_TRUE(xRC.Side(ZM_SIDE_PLAYER).Active().IsFainted());
+	ZENITH_ASSERT_EQ(ZM_CountKind(xRCEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+}
+
+// --- QUICKDRAW (row 46): engine-side 30% move-order priority proc -------------
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Quickdraw_ProcMovesHolderFirstAndAnnounces)
+{
+	// POSITIVE (proc seed): the slower PLAYER holder gains +1 move-order priority and acts
+	// first; ABILITY_TRIGGER(QUICKDRAW, PLAYER) precedes the first MOVE_USED.
+	const u_int64 ulProc = ZM_Box3SC5FindQuickdrawSeed(true);
+	ZENITH_ASSERT_NE(ulProc, 0ull, "no Quickdraw proc seed found in range");
+	ZM_BattleEngine xProc;
+	ZM_Box3SC5BuildQuickdrawEngine(xProc, ZM_ABILITY_QUICKDRAW, ZM_ABILITY_NONE, ulProc);
+	ZM_SC5ResolveMoveTurn(xProc);
+	ZENITH_ASSERT_EQ(FirstActorSide(xProc), (u_int)ZM_SIDE_PLAYER, "the proc'd holder strikes first");
+	ZM_Box3SC3AssertExactTriggers(xProc.GetEvents(), ZM_ABILITY_QUICKDRAW, ZM_SIDE_PLAYER, 1u, 1u);
+	const int iTrig = ZM_Box3SC3FindTriggerIndex(xProc.GetEvents(), ZM_ABILITY_QUICKDRAW, ZM_SIDE_PLAYER);
+	const int iFirstMove = ZM_SC5FindEvent(xProc.GetEvents(), ZM_BATTLE_EVENT_MOVE_USED);
+	ZENITH_ASSERT_GE(iTrig, 0);
+	ZENITH_ASSERT_LT(iTrig, iFirstMove, "the QUICKDRAW announce precedes the first move");
+
+	// NEGATIVE (no-proc seed): normal speed order (the faster ENEMY first); no trigger.
+	const u_int64 ulNoProc = ZM_Box3SC5FindQuickdrawSeed(false);
+	ZENITH_ASSERT_NE(ulNoProc, 0ull, "no Quickdraw no-proc seed found in range");
+	ZM_BattleEngine xNoProc;
+	ZM_Box3SC5BuildQuickdrawEngine(xNoProc, ZM_ABILITY_QUICKDRAW, ZM_ABILITY_NONE, ulNoProc);
+	ZM_SC5ResolveMoveTurn(xNoProc);
+	ZENITH_ASSERT_EQ(FirstActorSide(xNoProc), (u_int)ZM_SIDE_ENEMY, "no proc -> the faster foe moves first");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xNoProc.GetEvents(), ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Quickdraw_BothHoldersFixedPlayerThenEnemyOrder)
+{
+	// Both sides hold QUICKDRAW; a seed where PLAYER procs and ENEMY does not (fixed
+	// PLAYER-then-ENEMY draw order): only ONE ABILITY_TRIGGER (PLAYER), and the PLAYER
+	// (proc'd, +1 priority) strikes first.
+	const u_int64 ulPair = ZM_Box3SC5FindQuickdrawPair(true, false);
+	ZENITH_ASSERT_NE(ulPair, 0ull, "no player-proc / enemy-no-proc seed found in range");
+	ZM_BattleEngine xEngine;
+	ZM_Box3SC5BuildQuickdrawEngine(xEngine, ZM_ABILITY_QUICKDRAW, ZM_ABILITY_QUICKDRAW, ulPair);
+	ZM_SC5ResolveMoveTurn(xEngine);
+	ZENITH_ASSERT_EQ(FirstActorSide(xEngine), (u_int)ZM_SIDE_PLAYER);
+	ZM_Box3SC3AssertExactTriggers(xEngine.GetEvents(), ZM_ABILITY_QUICKDRAW, ZM_SIDE_PLAYER, 1u, 1u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC5_Quickdraw_FleeIsUnaffected)
+{
+	// QUICKDRAW touches only ResolveMovePhase, never DoRunAction: a QUICKDRAW holder's RUN
+	// turn draws and emits identically to a NONE holder's (same flee sequence, no trigger).
+	ZM_BattleConfig xCfg;
+	xCfg.m_bIsWild = true; xCfg.m_bCanCatch = true; xCfg.m_bCanFlee = true; xCfg.m_uLevelCap = 0u;
+	const u_int64 ulSeed = 0xB387ull;
+	ZM_BattleMonsterSpec axP[1] = { ZM_Box3SC3Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH,
+		ZM_ABILITY_QUICKDRAW, 600u, 120u, 100u, 120u, 100u, 60u) };
+	ZM_BattleMonsterSpec axE[1] = { ZM_Box3SC3Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH,
+		ZM_ABILITY_NONE, 600u, 120u, 100u, 120u, 100u, 100u) };
+	ZM_BattleAction xRun;
+	xRun.m_eKind = ZM_ACTION_RUN;
+
+	ZM_BattleEngine xQD;
+	xQD.Begin(xCfg, axP, 1u, axE, 1u, ulSeed, 54ull);
+	xQD.SubmitAction(ZM_SIDE_PLAYER, xRun);
+	xQD.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xQD.ResolveTurn();
+
+	ZM_BattleEngine xNone;
+	axP[0].m_eAbility = ZM_ABILITY_NONE;
+	xNone.Begin(xCfg, axP, 1u, axE, 1u, ulSeed, 54ull);
+	xNone.SubmitAction(ZM_SIDE_PLAYER, xRun);
+	xNone.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xNone.ResolveTurn();
+
+	ZENITH_ASSERT_EQ(ZM_CountKind(xQD.GetEvents(), ZM_BATTLE_EVENT_FLEE),
+		ZM_CountKind(xNone.GetEvents(), ZM_BATTLE_EVENT_FLEE), "identical FLEE outcome");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xQD.GetEvents(), ZM_BATTLE_EVENT_FLEE_FAILED),
+		ZM_CountKind(xNone.GetEvents(), ZM_BATTLE_EVENT_FLEE_FAILED), "identical FLEE_FAILED outcome");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xQD.GetEvents(), ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u,
+		"QUICKDRAW does not proc on a RUN turn");
+	ZENITH_ASSERT_EQ(xQD.GetStateMutable().m_xRNG.Next(), xNone.GetStateMutable().m_xRNG.Next(),
+		"a QUICKDRAW holder's RUN turn draws identically to a NONE holder");
+}
+
+// --- Zero-perturbation invariant + ability fuzz soak ------------------------
+
+ZENITH_TEST(ZM_Battle, Box3SC5_NoneAbility_WeatherNone_ZeroDrawsZeroEvents)
+{
+	// The regression wall: a multi-turn NONE-ability, weather-NONE battle (both Mist Veil,
+	// different speeds -> no tie-break draw) exercises the move phase + every EoT step
+	// including the new step-6 ability pass and the QUICKDRAW gate -- all of which must
+	// draw / emit NOTHING for NONE actors. Both sides use a STATUS move, so no damage and
+	// no KO occur here; this is deliberately a zero-perturbation check, NOT coverage of the
+	// E4b dealt-faint seam (that NONE-safety is proven by the BLOODRUSH NONE control and the
+	// damaging goldens). Three turns keep the SpD buff below its +6 cap (every use
+	// succeeds), so the whole battle pulls ZERO RNG.
+	const u_int64 ulSeed = 0xB388ull;
+	ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN, 50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u, 100u) };
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u, 60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, ulSeed, 54ull);
+	for (u_int t = 0u; t < 3u; ++t) { ZM_SC5ResolveMoveTurn(xEngine); }
+
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_HEAL), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_CHANGED), 0u);
+
+	ZM_BattleRNG xFresh(ulSeed, 54ull);
+	ZENITH_ASSERT_EQ(xEngine.GetStateMutable().m_xRNG.Next(), xFresh.Next(),
+		"a NONE-ability, weather-NONE multi-turn battle adds no RNG draw across SC5's new seams");
+}
+
+ZENITH_TEST(ZM_Battle, Fuzz_Soak_2000Battles_AbilityWeather_Invariants)
+{
+	// The SC5 ability soak (kept ALONGSIDE the NONE-ability soak, which stays a byte-
+	// identical regression wall). 2000 seeded 1v1 trainer battles assign a spread of SC5
+	// / weather-caller abilities across both actives via an independent selection RNG, so
+	// EoT heals, the QUICKDRAW proc, and Bloodrush's dealt-faint reaction are all fuzzed.
+	// The glass-cannon FIRE profile (non-contact Flarelash) guarantees KO termination; the
+	// heals (maxHP/16) are negligible against it. Weather is limited to the non-chipping
+	// RAIN/SUN callers so no weather-chip KO arises (the WEATHER_DAMAGE->FAINT sequence is
+	// covered by the SC1 tests and is outside this stream-validation invariant). Asserts the
+	// SAME invariants as the NONE soak: termination < 500, HP/PP/stage bounds, no fainted
+	// actor acts, well-formed event stream. (Ability RNG divergence is fine -- ZM-D-036.)
+	static const ZM_SPECIES_ID aeMono[] = {
+		ZM_SPECIES_NIBBIN,   ZM_SPECIES_STRAYLING, ZM_SPECIES_FINLET,   ZM_SPECIES_MINNET,
+		ZM_SPECIES_FERNFAWN, ZM_SPECIES_THICKETBUCK, ZM_SPECIES_SPARKIT, ZM_SPECIES_FRISKET,
+		ZM_SPECIES_SCRAPLING,ZM_SPECIES_RUBBLET,   ZM_SPECIES_WISPET,   ZM_SPECIES_SHADELET,
+		ZM_SPECIES_TRANCET,  ZM_SPECIES_OOZEL,     ZM_SPECIES_BURRIT,   ZM_SPECIES_WYRMLING,
+	};
+	const u_int uMonoCount = sizeof(aeMono) / sizeof(aeMono[0]);
+	// Non-chipping weather callers + the SC5 rows + some NONE. No SAND/SNOW caller so the
+	// stream stays inside the validator's damage-kind vocabulary.
+	static const ZM_ABILITY_ID aeAbilities[] = {
+		ZM_ABILITY_NONE,       ZM_ABILITY_NONE,       ZM_ABILITY_RAINCALLER, ZM_ABILITY_SUNCALLER,
+		ZM_ABILITY_RAINBASK,   ZM_ABILITY_SUNBASK,    ZM_ABILITY_ICEBOUND,   ZM_ABILITY_TOXICTHRIVE,
+		ZM_ABILITY_ROOTFEED,   ZM_ABILITY_BLOODRUSH,  ZM_ABILITY_LASTSPITE,  ZM_ABILITY_AFTERSHOCK,
+		ZM_ABILITY_QUICKDRAW,
+	};
+	const u_int uAbilityCount = sizeof(aeAbilities) / sizeof(aeAbilities[0]);
+
+	for (u_int uBattle = 0; uBattle < 2000u; ++uBattle)
+	{
+		ZM_BattleRNG xSel(0x5EE5A000ull + uBattle, 54ull);
+		const ZM_SPECIES_ID ePlayer = aeMono[xSel.RandBelow(uMonoCount)];
+		const ZM_SPECIES_ID eEnemy  = aeMono[xSel.RandBelow(uMonoCount)];
+		const u_int uPlayerLvl = 10u + xSel.RandBelow(21u);
+		const u_int uEnemyLvl  = 10u + xSel.RandBelow(21u);
+		const u_int uPlayerSpe = 40u + xSel.RandBelow(60u);
+		const u_int uEnemySpe  = 40u + xSel.RandBelow(60u);
+		const ZM_ABILITY_ID ePlayerAbility = aeAbilities[xSel.RandBelow(uAbilityCount)];
+		const ZM_ABILITY_ID eEnemyAbility  = aeAbilities[xSel.RandBelow(uAbilityCount)];
+
+		ZM_BattleMonsterSpec axPlayer[1] = { MakeSpecOverride(ePlayer, uPlayerLvl, ZM_MOVE_FLARELASH, 25u, 40u, 40u, 130u, 30u, uPlayerSpe) };
+		ZM_BattleMonsterSpec axEnemy[1]  = { MakeSpecOverride(eEnemy,  uEnemyLvl,  ZM_MOVE_FLARELASH, 25u, 40u, 40u, 130u, 30u, uEnemySpe) };
+		axPlayer[0].m_eAbility = ePlayerAbility;
+		axEnemy[0].m_eAbility  = eEnemyAbility;
+		for (u_int s = 1; s < uZM_MAX_MOVES; ++s)
+		{
+			axPlayer[0].m_aeMoves[s] = ZM_MOVE_FLARELASH;
+			axEnemy[0].m_aeMoves[s]  = ZM_MOVE_FLARELASH;
+		}
+
+		ZM_BattleEngine xEngine;
+		xEngine.Begin(MakeTrainerConfig(), axPlayer, 1u, axEnemy, 1u, 0xB1000000ull + uBattle * 0x9E3779B1ull, 54ull);
+
+		u_int uTurns = 0u;
+		while (!xEngine.IsOver() && uTurns < 500u)
+		{
+			const u_int uSlot = uTurns % uZM_MAX_MOVES;
+			const ZM_BattleMonster& xActP = xEngine.GetState().Side(ZM_SIDE_PLAYER).m_xParty.Get(0);
+			const ZM_BattleMonster& xActE = xEngine.GetState().Side(ZM_SIDE_ENEMY).m_xParty.Get(0);
+			if (xActP.m_axMoves[uSlot].m_uCurPP == 0u || xActE.m_axMoves[uSlot].m_uCurPP == 0u) { break; }
+
+			xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(uSlot));
+			xEngine.SubmitAction(ZM_SIDE_ENEMY,  MoveAction(uSlot));
+			xEngine.ResolveTurn();
+			++uTurns;
+
+			for (u_int uSide = 0; uSide < (u_int)ZM_SIDE_COUNT; ++uSide)
+			{
+				const ZM_BattleMonster& xMon = xEngine.GetState().Side((ZM_SIDE)uSide).m_xParty.Get(0);
+				ZENITH_ASSERT_LE(xMon.m_uCurHP, xMon.m_auMaxStat[ZM_STAT_HP], "battle %u: HP > max", uBattle);
+				for (u_int m = 0; m < uZM_MAX_MOVES; ++m)
+				{
+					ZENITH_ASSERT_LE(xMon.m_axMoves[m].m_uCurPP, xMon.m_axMoves[m].m_uMaxPP, "battle %u: PP > max", uBattle);
+				}
+				for (u_int st = 0; st < ZM_BATTLE_STAT_COUNT; ++st)
+				{
+					ZENITH_ASSERT_GE(xMon.m_aiStage[st], iZM_MIN_STAGE, "battle %u: stage < -6", uBattle);
+					ZENITH_ASSERT_LE(xMon.m_aiStage[st], iZM_MAX_STAGE, "battle %u: stage > +6", uBattle);
+				}
+			}
+		}
+
+		ZENITH_ASSERT_LT(uTurns, 500u, "ability battle %u did not terminate in < 500 turns", uBattle);
+		ZENITH_ASSERT_TRUE(xEngine.IsOver(), "ability battle %u not over after loop", uBattle);
+		ZENITH_ASSERT_TRUE(ZM_ValidateEventStream(xEngine.GetEvents(), xEngine, "abilitySoak"),
+			"ability battle %u produced a malformed event stream", uBattle);
+	}
+}

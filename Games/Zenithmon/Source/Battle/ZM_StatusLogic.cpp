@@ -456,8 +456,17 @@ void ZM_StatusLogic::EndOfTurn(ZM_BattleState& xState, Zenith_Vector<ZM_BattleEv
 
 	// 1. Major chip (SC4 behavior, now without an early return so later volatile
 	// stages and one-turn cleanup can run).
+	// SC5 (ZM-D-036): a TOXICTHRIVE holder's POISON/TOXIC chip is SKIPPED here -- its
+	// net recovery comes from the EoT-ability heal (step 6). This is ABILITY-GATED, so
+	// every non-TOXICTHRIVE mon (incl. NONE) is byte-identical; BURN is untouched (a mon
+	// holds one major at a time). The skipped chip body also holds the TOXIC ramp
+	// (++m_uStatusCounter), so a thriving holder's toxic counter does NOT advance --
+	// consistent (it takes no toxic damage) and intended (ZM-D-036 R5).
 	const ZM_MAJOR_STATUS eStatus = xMon.m_eStatus;
-	if (!xMon.IsFainted() && (eStatus == ZM_MAJOR_STATUS_POISON
+	const bool bToxicthriveSkip =
+		(eStatus == ZM_MAJOR_STATUS_POISON || eStatus == ZM_MAJOR_STATUS_TOXIC)
+		&& xMon.m_eAbility == ZM_ABILITY_TOXICTHRIVE;
+	if (!xMon.IsFainted() && !bToxicthriveSkip && (eStatus == ZM_MAJOR_STATUS_POISON
 		|| eStatus == ZM_MAJOR_STATUS_TOXIC || eStatus == ZM_MAJOR_STATUS_BURN))
 	{
 		const u_int uMaxHP = xMon.m_auMaxStat[ZM_STAT_HP];

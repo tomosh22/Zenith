@@ -10,6 +10,20 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-12-001 -- ZM_ValidateEventStream rule 7 rejects WEATHER_DAMAGE->FAINT and ability-chip->FAINT
+
+**Question:** should the `ZM_ValidateEventStream` test helper's rule 7 (a FAINT must be preceded by a recognized damage-source event) be widened to also accept `WEATHER_DAMAGE` and `ABILITY_TRIGGER` (ability chip) as valid pre-FAINT sources, alongside the current DAMAGE_DEALT / STATUS_DAMAGE / RECOIL?
+
+**Context:** surfaced during S2 box-3 SC5 (ZM-D-042). Rule 7 only accepts DAMAGE_DEALT/STATUS_DAMAGE/RECOIL before a FAINT, so a legitimate full-battle stream where a mon is KO'd by a **weather chip** (`WEATHER_DAMAGE`->`FAINT`) or by an **AFTERSHOCK/THORNMAIL contact chip** (`ABILITY_TRIGGER`->`FAINT`) would fail validation. This is a PRE-EXISTING gap (the weather chip and Thornmail predate SC5), not introduced here. SC5's tests worked around it: the AFTERSHOCK lethal-chip case is routed through the executor unvalidated (the same approach SC4's Thornmail lethal test used), and the 2,000-battle ability soak excludes SAND/SNOW callers + uses a non-contact finisher so validation stays green.
+
+**Best-guess action taken:** left the helper as-is and worked around it for SC5 -- there is no production or golden-stream risk (the abilities are correct and separately tested). The fix is a small, isolated widening of rule 7, best done as its own commit so the diff is one helper wide; flagged here rather than bundled into the SC5 commit.
+
+**Cost if wrong:** low. The gap only limits which battles can be fed through the optional stream validator in tests; it does not affect production behavior or any shipped golden. If left unfixed, future full-battle tests involving weather-chip or ability-chip KOs must remember to bypass the validator (a latent footgun), but nothing breaks silently.
+
+**Status:** asked 2026-07-12. Non-blocking; a good small standalone task before the content-heavy stages.
+
+---
+
 ### [OPEN] Q-2026-07-09-002 -- Terrain bake time for ~25 terrains is an unmeasured estimate
 
 **Question:** is the ~25-terrain plan (one terrain set per outdoor scene via engine change E1) affordable in bake time and file volume?

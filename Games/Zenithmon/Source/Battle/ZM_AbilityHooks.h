@@ -21,6 +21,11 @@ struct ZM_AbilityContext
 	Zenith_Vector<ZM_BattleEvent>*	m_pxEvents = nullptr;
 	ZM_SIDE					m_eSelf    = ZM_SIDE_COUNT;
 	ZM_SIDE					m_eOther   = ZM_SIDE_COUNT;
+	// Attacker's used-move slot. Defaulted at every dispatch site; set ONLY at the
+	// E4 contact seam so Lastspite can sap the KO'ing attacker's used move. This is a
+	// transient stack view, NOT the serialized ZM_BattleEvent POD, so the addition is
+	// save-format-neutral and does not change sizeof(ZM_AbilityHooks).
+	u_int					m_uOtherMoveSlot = uZM_MAX_MOVES;
 
 	ZM_BattleMonster& SelfMon() const { return m_pxState->Side(m_eSelf).Active(); }
 	ZM_BattleMonster& OtherMon() const { return m_pxState->Side(m_eOther).Active(); }

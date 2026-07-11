@@ -406,6 +406,117 @@ namespace
 		return xCtx.m_pxState->m_xField.m_eWeather != ZM_WEATHER_NONE;
 	}
 
+	// ---- SC5 TURN_END self-heals (rows 41-45) -- pfnOnTurnEnd -----------------
+	// Shared body: heal SelfMon by maxHP/uDivisor (min 1), capped to missing HP.
+	// Event order mirrors the SC3 absorb-heal convention (ABILITY_TRIGGER first,
+	// then HEAL with m_iAmount = amount healed, m_iAux = new HP). A full-HP holder
+	// no-ops with NO event (proves both "fires" and "does-not-fire"). NO RNG. The
+	// EoT dispatch fainted-guard guarantees SelfMon is not fainted here.
+	void g_AbilityTurnEndHeal(ZM_AbilityContext& xCtx, u_int uDivisor)
+	{
+		ZM_BattleMonster& xMon = xCtx.SelfMon();
+		const u_int uMaxHP = xMon.m_auMaxStat[ZM_STAT_HP];
+		if (xMon.m_uCurHP >= uMaxHP)
+		{
+			return;   // already full: no heal, no event
+		}
+		u_int uHeal = uMaxHP / uDivisor;
+		if (uHeal == 0u) { uHeal = 1u; }
+		const u_int uMissing = uMaxHP - xMon.m_uCurHP;
+		if (uHeal > uMissing) { uHeal = uMissing; }
+		xMon.m_uCurHP += uHeal;
+		g_EmitAbilityTrigger(xCtx);
+		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_HEAL, xCtx.m_eSelf,
+			xCtx.SelfSide().m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE,
+			(int)uHeal, (int)xMon.m_uCurHP));
+	}
+
+	// Weather read is the engine-side WEATHER-bit realization (no dedicated pfn).
+	void g_RainbaskOnTurnEnd(ZM_AbilityContext& xCtx)
+	{
+		if (xCtx.m_pxState->m_xField.m_eWeather != ZM_WEATHER_RAIN) { return; }
+		g_AbilityTurnEndHeal(xCtx, 16u);
+	}
+
+	void g_SunbaskOnTurnEnd(ZM_AbilityContext& xCtx)
+	{
+		if (xCtx.m_pxState->m_xField.m_eWeather != ZM_WEATHER_SUN) { return; }
+		g_AbilityTurnEndHeal(xCtx, 16u);
+	}
+
+	void g_IceboundOnTurnEnd(ZM_AbilityContext& xCtx)
+	{
+		if (xCtx.m_pxState->m_xField.m_eWeather != ZM_WEATHER_SNOW) { return; }
+		g_AbilityTurnEndHeal(xCtx, 16u);
+	}
+
+	// Toxicthrive: heal maxHP/8 while POISON/TOXIC. The poison chip for this holder
+	// is SKIPPED in ZM_StatusLogic::EndOfTurn, so the net effect is a heal, not chip.
+	void g_ToxicthriveOnTurnEnd(ZM_AbilityContext& xCtx)
+	{
+		const ZM_MAJOR_STATUS eStatus = xCtx.SelfMon().m_eStatus;
+		if (eStatus != ZM_MAJOR_STATUS_POISON && eStatus != ZM_MAJOR_STATUS_TOXIC) { return; }
+		g_AbilityTurnEndHeal(xCtx, 8u);
+	}
+
+	// Rootfeed: unconditional EoT heal maxHP/16.
+	void g_RootfeedOnTurnEnd(ZM_AbilityContext& xCtx)
+	{
+		g_AbilityTurnEndHeal(xCtx, 16u);
+	}
+
+	// ---- SC5 FAINT branch ----------------------------------------------------
+	// Bloodrush (row 34) -- pfnOnDealtFaint: on downing a foe with its move, raise
+	// own ATTACK +1. Mirrors DauntingRoar's order: ApplyStatChange first (emits
+	// STAT_STAGE_CHANGED on success), then ABILITY_TRIGGER. bFromFoe = false (a
+	// self-raise is never vetoed). At the +6 cap ApplyStatChange emits nothing but
+	// ABILITY_TRIGGER still fires. The MODIFY_STAT bit is realized by this call
+	// (engine-side), so pfnModifyStat stays null on the row.
+	void g_BloodrushOnDealtFaint(ZM_AbilityContext& xCtx)
+	{
+		ZM_StatusLogic::ApplyStatChange(*xCtx.m_pxState, *xCtx.m_pxEvents,
+			xCtx.m_eSelf, ZM_BATTLE_STAT_ATTACK, +1, /*bPrimary*/ false, /*bFromFoe*/ false);
+		g_EmitAbilityTrigger(xCtx);
+	}
+
+	// Lastspite (row 35) -- pfnOnContact bSelfFainted branch: when KO'd by a contact
+	// hit, set the attacker's used-move PP to 0. m_eSelf = the contacted holder (KO'd);
+	// m_eOther = the attacker; m_uOtherMoveSlot = the attacker's used-move slot (set at
+	// the E4 contact seam). A non-lethal contact (!bSelfFainted) is a clean no-op. The
+	// PP change is observable via the attacker's m_axMoves[slot].m_uCurPP == 0; no
+	// dedicated PP event exists, so ABILITY_TRIGGER is the only emit.
+	void g_LastspiteOnContact(ZM_AbilityContext& xCtx, bool bSelfFainted)
+	{
+		if (!bSelfFainted) { return; }
+		Zenith_Assert(xCtx.m_uOtherMoveSlot < uZM_MAX_MOVES,
+			"Lastspite: attacker used-move slot not populated at E4 dispatch");
+		xCtx.OtherMon().m_axMoves[xCtx.m_uOtherMoveSlot].m_uCurPP = 0u;
+		g_EmitAbilityTrigger(xCtx);
+	}
+
+	// Aftershock (row 36) -- pfnOnContact bSelfFainted branch: when KO'd by a contact
+	// hit, chip the attacker maxHP/4 (min 1, underflow-clamped). Structurally identical
+	// to Thornmail with /4 and the bSelfFainted guard: ABILITY_TRIGGER carries the chip
+	// in m_iAmount and the attacker's new HP in m_iAux (DAMAGE_DEALT-style convention);
+	// a lethal chip appends FAINT on the attacker.
+	void g_AftershockOnContact(ZM_AbilityContext& xCtx, bool bSelfFainted)
+	{
+		if (!bSelfFainted) { return; }
+		ZM_BattleMonster& xAtk = xCtx.OtherMon();
+		u_int uChip = xAtk.m_auMaxStat[ZM_STAT_HP] / 4u;
+		if (uChip == 0u) { uChip = 1u; }
+		const u_int uNewHP = (uChip >= xAtk.m_uCurHP) ? 0u : (xAtk.m_uCurHP - uChip);
+		xAtk.m_uCurHP = uNewHP;
+		xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_ABILITY_TRIGGER, xCtx.m_eSelf,
+			xCtx.SelfSide().m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE,
+			(int)uChip, (int)uNewHP, (int)xCtx.SelfMon().m_eAbility));
+		if (uNewHP == 0u)
+		{
+			xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_FAINT, xCtx.m_eOther,
+				xCtx.OtherSide().m_uActiveSlot));
+		}
+	}
+
 	ZM_AbilityHooks g_MakeSwitchInHooks(void (*pfnOnSwitchIn)(ZM_AbilityContext&))
 	{
 		ZM_AbilityHooks xHooks;
@@ -490,6 +601,20 @@ namespace
 		return xHooks;
 	}
 
+	ZM_AbilityHooks g_MakeTurnEndHooks(void (*pfnOnTurnEnd)(ZM_AbilityContext&))
+	{
+		ZM_AbilityHooks xHooks;
+		xHooks.pfnOnTurnEnd = pfnOnTurnEnd;
+		return xHooks;
+	}
+
+	ZM_AbilityHooks g_MakeDealtFaintHooks(void (*pfnOnDealtFaint)(ZM_AbilityContext&))
+	{
+		ZM_AbilityHooks xHooks;
+		xHooks.pfnOnDealtFaint = pfnOnDealtFaint;
+		return xHooks;
+	}
+
 	// One row per stable ZM_ABILITY_ID. SC2/SC3 install only their implemented
 	// slots; SC4-SC5 retain their planned null slots until their ordered slices.
 	const ZM_AbilityHooks s_axAbilityHooks[ZM_ABILITY_COUNT] =
@@ -528,18 +653,18 @@ namespace
 		g_MakePreventMajorHooks(&g_LimberlithePreventMajor),    // 31 LIMBERLITHE
 		g_MakePreventVolatileHooks(&g_OwnpacePreventVolatile),  // 32 OWNPACE
 		g_MakePreventMajorHooks(&g_ColdbloodPreventMajor),      // 33 COLDBLOOD
-		{},                                                     // 34 BLOODRUSH
-		{},                                                     // 35 LASTSPITE
-		{},                                                     // 36 AFTERSHOCK
+		g_MakeDealtFaintHooks(&g_BloodrushOnDealtFaint),        // 34 BLOODRUSH
+		g_MakeContactHooks(&g_LastspiteOnContact),              // 35 LASTSPITE
+		g_MakeContactHooks(&g_AftershockOnContact),             // 36 AFTERSHOCK
 		g_MakeDamageTakenHooks(&g_SolidcoreDamageTaken),        // 37 SOLIDCORE
 		g_MakeDamageTakenHooks(&g_HeavyplateDamageTaken),       // 38 HEAVYPLATE
 		g_MakeDamageTakenHooks(&g_GossamerDamageTaken),         // 39 GOSSAMER
 		g_MakeDamageTakenHooks(&g_DowndraftDamageTaken),        // 40 DOWNDRAFT
-		{},                                                     // 41 RAINBASK
-		{},                                                     // 42 SUNBASK
-		{},                                                     // 43 ICEBOUND
-		{},                                                     // 44 TOXICTHRIVE
-		{},                                                     // 45 ROOTFEED
+		g_MakeTurnEndHooks(&g_RainbaskOnTurnEnd),               // 41 RAINBASK
+		g_MakeTurnEndHooks(&g_SunbaskOnTurnEnd),                // 42 SUNBASK
+		g_MakeTurnEndHooks(&g_IceboundOnTurnEnd),               // 43 ICEBOUND
+		g_MakeTurnEndHooks(&g_ToxicthriveOnTurnEnd),            // 44 TOXICTHRIVE
+		g_MakeTurnEndHooks(&g_RootfeedOnTurnEnd),               // 45 ROOTFEED
 		{},                                                     // 46 QUICKDRAW (engine-side realization)
 		g_MakeSwitchInHooks(&g_PressureAuraOnSwitchIn),         // 47 PRESSUREAURA
 		g_MakePreventStatDropHooks(&g_GuardianPreventStatDrop), // 48 GUARDIAN

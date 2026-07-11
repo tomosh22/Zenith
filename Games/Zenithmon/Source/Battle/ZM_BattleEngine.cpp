@@ -42,6 +42,39 @@ static void g_DispatchSwitchInAbility(ZM_BattleState& xState,
 	pxHooks->pfnOnSwitchIn(xCtx);
 }
 
+// SC5 end-of-turn ability heals (LOCKED EoT step 6): dispatched AFTER both sides'
+// status ticks and BEFORE the TURN_END emit, in fixed PLAYER-then-ENEMY order. A
+// fainted active is SKIPPED (Resolution 2: a mon KO'd earlier this turn is never
+// healed/revived) -- it draws/emits nothing. Zero RNG draws, and a NONE-ability /
+// no-TURN_END-hook active emits nothing, so a weather-NONE box-1/SC1-SC4 turn stays
+// byte-identical. Mirrors the free-function dispatch of g_DispatchSwitchInAbility:
+// no engine member state is needed since the ability context emits through the
+// passed event sink.
+static void g_DispatchTurnEndAbilities(ZM_BattleState& xState,
+	Zenith_Vector<ZM_BattleEvent>& xEvents)
+{
+	for (u_int uSideIdx = 0u; uSideIdx < (u_int)ZM_SIDE_COUNT; ++uSideIdx)
+	{
+		const ZM_SIDE eSide = (ZM_SIDE)uSideIdx;
+		ZM_BattleMonster& xMon = xState.Side(eSide).Active();
+		if (xMon.IsFainted())
+		{
+			continue;   // Resolution 2 fainted-guard: no heal on a fainted active
+		}
+		const ZM_AbilityHooks* pxHooks = ZM_GetAbilityHooks(xMon.m_eAbility);
+		if (pxHooks == nullptr || pxHooks->pfnOnTurnEnd == nullptr)
+		{
+			continue;
+		}
+		ZM_AbilityContext xCtx;
+		xCtx.m_pxState  = &xState;
+		xCtx.m_pxEvents = &xEvents;
+		xCtx.m_eSelf    = eSide;
+		xCtx.m_eOther   = (eSide == ZM_SIDE_PLAYER) ? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
+		pxHooks->pfnOnTurnEnd(xCtx);
+	}
+}
+
 void ZM_BattleEngine::Begin(const ZM_BattleConfig& xConfig,
 	const ZM_BattleMonsterSpec* paxPlayer, u_int uPlayerCount,
 	const ZM_BattleMonsterSpec* paxEnemy, u_int uEnemyCount,
@@ -367,8 +400,31 @@ void ZM_BattleEngine::ResolveMovePhase()
 
 	const ZM_MOVE_ID ePlayerMove = xPlayer.m_axMoves[m_axPending[ZM_SIDE_PLAYER].m_uMoveSlot].m_eMove;
 	const ZM_MOVE_ID eEnemyMove  = xEnemy.m_axMoves[m_axPending[ZM_SIDE_ENEMY].m_uMoveSlot].m_eMove;
-	const int iPlayerPriority = ZM_GetMoveData(ePlayerMove).m_iPriority;
-	const int iEnemyPriority  = ZM_GetMoveData(eEnemyMove).m_iPriority;
+	int iPlayerPriority = ZM_GetMoveData(ePlayerMove).m_iPriority;
+	int iEnemyPriority  = ZM_GetMoveData(eEnemyMove).m_iPriority;
+
+	// SC5 QUICKDRAW (ZM-D-036): a holder draws one RandBelow(100); on < 30 it gains
+	// +1 move-order priority this turn and announces ABILITY_TRIGGER (RULING (2):
+	// proc is observable). The draw is taken ONLY when a QUICKDRAW holder is in the
+	// both-move branch, in fixed PLAYER-then-ENEMY order, so a NONE-ability turn keeps
+	// the single RandBelow(2) tie-break exactly (byte-identical). This changes move
+	// ORDER only; flee stays on the raw-speed DoRunAction path and is untouched.
+	if (xPlayer.m_eAbility == ZM_ABILITY_QUICKDRAW
+		&& m_xState.m_xRNG.RandBelow(100u) < 30u)
+	{
+		++iPlayerPriority;
+		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_ABILITY_TRIGGER, ZM_SIDE_PLAYER,
+			m_xState.Side(ZM_SIDE_PLAYER).m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE,
+			0, 0, (int)ZM_ABILITY_QUICKDRAW));
+	}
+	if (xEnemy.m_eAbility == ZM_ABILITY_QUICKDRAW
+		&& m_xState.m_xRNG.RandBelow(100u) < 30u)
+	{
+		++iEnemyPriority;
+		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_ABILITY_TRIGGER, ZM_SIDE_ENEMY,
+			m_xState.Side(ZM_SIDE_ENEMY).m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE,
+			0, 0, (int)ZM_ABILITY_QUICKDRAW));
+	}
 
 	ZM_SIDE eFirst;
 	if (iPlayerPriority != iEnemyPriority)
@@ -461,6 +517,7 @@ void ZM_BattleEngine::ResolveEndOfTurnPhase()
 	ResolveScreenEndOfTurn();
 	ZM_StatusLogic::EndOfTurn(m_xState, m_xEvents, ZM_SIDE_PLAYER);
 	ZM_StatusLogic::EndOfTurn(m_xState, m_xEvents, ZM_SIDE_ENEMY);
+	g_DispatchTurnEndAbilities(m_xState, m_xEvents);   // SC5 step 6 (before TURN_END)
 
 	const int iTurn = (int)m_xState.m_xField.m_uTurnCounter;
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, iTurn));

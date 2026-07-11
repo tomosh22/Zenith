@@ -15,6 +15,61 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-12 -- ZM-D-042 -- S2 box-3 SC5: turn-end / faint / quickdraw abilities + all-50 gate (BOX 3 COMPLETE)
+
+- **Decision:** SC5 is the FINAL box-3 slice -- it installs the last **9** ability
+  rows (34, 35, 36, 41-46), closing all 50. Roster + slots:
+  - **TURN_END heals (`pfnOnTurnEnd`):** RAINBASK(41)/SUNBASK(42)/ICEBOUND(43) heal
+    maxHP/16 in RAIN/SUN/SNOW; ROOTFEED(45) unconditional maxHP/16; TOXICTHRIVE(44)
+    maxHP/8 while POISON/TOXIC AND its poison chip is skipped.
+  - **FAINT branch:** BLOODRUSH(34) `pfnOnDealtFaint` -> own ATTACK +1 on downing a
+    foe; LASTSPITE(35) `pfnOnContact` bSelfFainted -> attacker used-move PP->0;
+    AFTERSHOCK(36) `pfnOnContact` bSelfFainted -> chip attacker maxHP/4 [+FAINT].
+  - **QUICKDRAW(46):** engine-side 30% -> +1 move-order priority; row stays `{}`
+    (MODIFY_STAT realized engine-side -- the sole all-null-pfn row by design).
+- **Orchestrator rulings (resolved the spec's flagged ambiguities):** (1) **BLOODRUSH
+  fires on ANY damaging KO** by the holder's move (contact OR non-contact), not
+  contact-only -- matches the FAINT-mask semantics + GDD "downs a foe"; guarded on
+  (defender fainted this hit) AND (attacker still alive) so recoil/counter self-KOs
+  don't trigger it. (2) **QUICKDRAW emits `ABILITY_TRIGGER` on a successful proc**
+  (consistency + testability; the draw is gated on a live holder so NONE goldens are
+  unperturbed). (3) A non-serialized **`m_uOtherMoveSlot`** field was added to
+  `ZM_AbilityContext` (a view field, NOT the event POD -> save format unaffected) so
+  LASTSPITE can identify the attacker's used move.
+- **Seams:** a file-local `g_DispatchTurnEndAbilities` free fn (behavior-equivalent to
+  a member method; keeps `ZM_BattleEngine.h` out of scope) dispatched at **EoT step 6**
+  -- AFTER both PLAYER-then-ENEMY status ticks, BEFORE the final `TURN_END`, skipping
+  fainted actives, zero RNG; the QUICKDRAW proc in `ResolveMovePhase` (gated on a live
+  holder, PLAYER-then-ENEMY, move-ORDER only -- flee/`g_EffectiveSpeed` untouched); a
+  new `g_ApplyDealtFaintReaction` after both contact sites in `ZM_MoveExecutor`; and an
+  ability-gated TOXICTHRIVE poison-chip skip in `ZM_StatusLogic::EndOfTurn` (TOXIC ramp
+  counter frozen while thriving).
+- **Heal + weather-chip encoding:** each heal emits `ABILITY_TRIGGER` then `HEAL`
+  (`m_iAmount`=heal, `m_iAux`=new HP); a full-HP holder emits nothing; heal is min 1,
+  capped to missing HP. The LOCKED EoT order means a SAND/SNOW chip (maxHP/8 for a
+  non-immune active; SNOW-immune = ICE) lands FIRST, then the heal -- so an ICEBOUND
+  holder in SNOW nets `-maxHP/8 + maxHP/16`; the heal test now models and asserts that
+  chip-then-heal ordering (a review-caught test-fixture bug that assumed heal-only was
+  fixed before landing; production was correct).
+- **Contracts preserved:** zero-perturbation for NONE actors -- the ~260 box-1/SC1-SC4
+  goldens stay byte-identical (confirmed at the gate); `ZM_BattleEvent` POD append-only
+  (no new kind/field -- reuses HEAL/ABILITY_TRIGGER/STAT_STAGE_CHANGED/FAINT); RNG draw
+  order + EoT order unchanged. Independently adversarially reviewed: production correct
+  across all 9 abilities + all 4 new seams, zero-perturbation audit PASS, the all-50
+  gate genuinely proves realization (not vacuous), no false-confidence tests.
+- **Tests-that-lock-it:** **19** net-new unit tests (boot baseline **1491 -> 1510**,
+  bumped in `.github/workflows/zm-tests.yml`) -- 18 behavioral (per-ability
+  positive+control incl. full-HP/min-1/cap-to-missing heal edges, the fainted-active
+  guard, TOXICTHRIVE net-heal + chip-skip, BLOODRUSH contact AND non-contact KO + the
+  +6 cap + recoil-self-KO guard, LASTSPITE/AFTERSHOCK bSelfFainted, QUICKDRAW
+  proc/order/flee-unaffected, a NONE-actor zero-draws/zero-events invariant, and a
+  2,000-battle ability+weather soak) + the **all-50 realization gate** (3 coverage
+  tests: every row realizes its declared mask, the 6+20+15+9 SC sets partition all 50
+  exactly once, and QUICKDRAW is the SOLE all-null-pfn row).
+- **BOX 3 COMPLETE.** All 50 ability rows shipped across SC1-SC5; the Roadmap S2 box-3
+  line is ticked. Reversibility: additive -- SC5 only APPENDED, so earlier goldens
+  never shifted.
+
 ## 2026-07-11 -- ZM-D-041 -- S2 box-3 SC4: contact / status-try / stat-veto / accuracy abilities (15 rows)
 
 - **Decision:** SC4 installs the next **15** ability rows as live hook
