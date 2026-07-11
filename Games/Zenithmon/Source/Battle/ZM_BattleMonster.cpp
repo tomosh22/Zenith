@@ -63,3 +63,12 @@ ZM_BattleMonster ZM_BuildBattleMonster(const ZM_BattleMonsterSpec& xSpec)
 	// struct defaults (xMon was default-constructed above).
 	return xMon;
 }
+
+// True iff the monster's species carries eType in either type slot. Mirrors the
+// ZM_StatusLogic file-static type read exactly; a ZM_TYPE_NONE second slot never
+// equals a real type, so the equality check ignores empty slots on its own.
+bool ZM_BattleMonsterHasType(const ZM_BattleMonster& xMon, ZM_TYPE eType)
+{
+	const ZM_SpeciesData& xSpecies = ZM_GetSpeciesData(xMon.m_eSpecies);
+	return xSpecies.m_aeTypes[0] == eType || xSpecies.m_aeTypes[1] == eType;
+}

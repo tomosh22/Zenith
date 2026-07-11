@@ -402,15 +402,100 @@ bool ZM_BattleEngine::DoSwitch(ZM_SIDE eSide, u_int uTargetSlot)
 
 void ZM_BattleEngine::ResolveEndOfTurnPhase()
 {
-	// END-OF-TURN GLOBAL ORDER (ZM-D-033): the box-3 weather-chip slot is reserved
-	// FIRST here (absent in box-2 tests -- no code yet). Then the per-side status ticks
-	// in the LOCKED side order PLAYER-then-ENEMY. SC4 does the major chip (poison/toxic/
-	// burn); leech-seed / trap / volatile-counter expiries append into this per-side
-	// order in SC5. A status-free side's EndOfTurn emits nothing, so box-1 / SC1-SC3
-	// end-of-turn streams (just TURN_END) stay byte-identical.
+	// END-OF-TURN GLOBAL ORDER (ZM-D-033): box-3 weather (SAND/SNOW chip then the
+	// weather countdown) runs FIRST, then the screen countdown, THEN the per-side status
+	// ticks in the LOCKED side order PLAYER-then-ENEMY, then TURN_END. SC4 does the major
+	// chip (poison/toxic/burn); leech-seed / trap / volatile-counter expiries append into
+	// the per-side EndOfTurn. A weather-NONE, screen-free, status-free turn adds no events
+	// here, so box-1 / SC1-SC3 end-of-turn streams (just TURN_END) stay byte-identical.
+	ResolveWeatherEndOfTurn();
+	ResolveScreenEndOfTurn();
 	ZM_StatusLogic::EndOfTurn(m_xState, m_xEvents, ZM_SIDE_PLAYER);
 	ZM_StatusLogic::EndOfTurn(m_xState, m_xEvents, ZM_SIDE_ENEMY);
 
 	const int iTurn = (int)m_xState.m_xField.m_uTurnCounter;
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, iTurn));
+}
+
+// SC1 weather end-of-turn: the reserved-FIRST EOT slot. (1) SAND/SNOW deal a residual
+// chip -- PLAYER-active then ENEMY-active, skipping a fainted active and any type-immune
+// mon (SAND: EARTH/STONE/IRON; SNOW: ICE); RAIN/SUN never chip. Chip = maxHP/8 (min 1),
+// underflow-clamped like the status chip; a chip to 0 emits FAINT (side, active slot)
+// as the status path does. (2) The weather clock then ticks; on reaching 0 the weather
+// clears and WEATHER_CHANGED-to-NONE fires. NO RNG draws (deterministic), so a NONE-
+// weather turn adds nothing and the box-2 EOT streams stay byte-identical.
+void ZM_BattleEngine::ResolveWeatherEndOfTurn()
+{
+	ZM_FieldState& xField = m_xState.m_xField;
+	const ZM_WEATHER eWeather = xField.m_eWeather;
+
+	if (eWeather == ZM_WEATHER_SAND || eWeather == ZM_WEATHER_SNOW)
+	{
+		for (u_int uSideIdx = 0u; uSideIdx < (u_int)ZM_SIDE_COUNT; ++uSideIdx)
+		{
+			const ZM_SIDE eSide = (ZM_SIDE)uSideIdx;
+			ZM_BattleSide&    xSide = m_xState.Side(eSide);
+			ZM_BattleMonster& xMon  = xSide.Active();
+			if (xMon.IsFainted())
+			{
+				continue;
+			}
+			const bool bImmune = (eWeather == ZM_WEATHER_SAND)
+				? (ZM_BattleMonsterHasType(xMon, ZM_TYPE_EARTH)
+					|| ZM_BattleMonsterHasType(xMon, ZM_TYPE_STONE)
+					|| ZM_BattleMonsterHasType(xMon, ZM_TYPE_IRON))
+				: ZM_BattleMonsterHasType(xMon, ZM_TYPE_ICE);
+			if (bImmune)
+			{
+				continue;
+			}
+			u_int uDmg = xMon.m_auMaxStat[ZM_STAT_HP] / 8u;
+			if (uDmg == 0u) { uDmg = 1u; }
+			xMon.m_uCurHP = uDmg >= xMon.m_uCurHP ? 0u : xMon.m_uCurHP - uDmg;
+			Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_WEATHER_DAMAGE, eSide, xSide.m_uActiveSlot,
+				ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)uDmg, (int)xMon.m_uCurHP, (int)eWeather));
+			if (xMon.IsFainted())
+			{
+				Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_FAINT, eSide, xSide.m_uActiveSlot));
+			}
+		}
+	}
+
+	if (eWeather != ZM_WEATHER_NONE && xField.m_uWeatherTurns > 0u)
+	{
+		--xField.m_uWeatherTurns;
+		if (xField.m_uWeatherTurns == 0u)
+		{
+			xField.m_eWeather = ZM_WEATHER_NONE;
+			Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_WEATHER_CHANGED, ZM_SIDE_COUNT, 0u,
+				ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)ZM_WEATHER_NONE, 0, (int)eWeather));
+		}
+	}
+}
+
+// SC1 screen end-of-turn countdown: PLAYER then ENEMY, PHYSICAL then SPECIAL. A non-zero
+// slot ticks; on reaching 0 it announces SCREEN_EXPIRED (owner side, active slot,
+// m_iAmount = screen). VEIL has no setter so it never ticks. box 1/2 set no screens, so
+// this adds no events and their EOT streams stay byte-identical.
+void ZM_BattleEngine::ResolveScreenEndOfTurn()
+{
+	const ZM_SCREEN aeScreens[2] = { ZM_SCREEN_PHYSICAL, ZM_SCREEN_SPECIAL };
+	for (u_int uSideIdx = 0u; uSideIdx < (u_int)ZM_SIDE_COUNT; ++uSideIdx)
+	{
+		const ZM_SIDE  eSide = (ZM_SIDE)uSideIdx;
+		ZM_BattleSide& xSide = m_xState.Side(eSide);
+		for (u_int i = 0u; i < 2u; ++i)
+		{
+			const ZM_SCREEN eScreen = aeScreens[i];
+			if (xSide.m_auScreenTurns[eScreen] > 0u)
+			{
+				--xSide.m_auScreenTurns[eScreen];
+				if (xSide.m_auScreenTurns[eScreen] == 0u)
+				{
+					Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_SCREEN_EXPIRED, eSide, xSide.m_uActiveSlot,
+						ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)eScreen, 0, 0));
+				}
+			}
+		}
+	}
 }

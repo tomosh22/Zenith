@@ -15,6 +15,67 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-11 -- ZM-D-036 -- S2 box-3 execution plan (abilities + weather) + SC1 weather core
+
+- **Decision:** Box 3 ("Abilities via per-hook fn-pointer structs (~50) + weather
+  rain/sun/sand/snow") ships as **5 ordered sub-commits**, mirroring how box 2 (ZM-D-033)
+  landed: **SC1** weather core (this commit); **SC2** ability hook infra + SWITCH_IN
+  abilities; **SC3** damage-dealt/taken + modify-stat + type-immunity abilities; **SC4**
+  status-try + contact + stat-veto + accuracy abilities; **SC5** turn-end + faint + quickdraw
+  + fuzz soak. Abilities are a `const` fn-pointer hook table keyed by `ZM_ABILITY_ID`
+  (repo mandate: `std::function` -> plain fn pointers), dispatched at documented turn-loop
+  seams; the `ZM_AbilityData.m_uHookMask` (ZM-D-026) stays the coverage/declaration record.
+- **Keystone determinism invariant (holds for all of box 3):** a `ZM_ABILITY_NONE`,
+  weather-`NONE`, status-free actor pulls **ZERO** new RNG draws and emits **ZERO** new
+  events, so box-1/2 goldens and the 2,000-battle soak stay byte-identical. New draws are
+  added only at documented points and only when the relevant ability/weather is present.
+  The `ZM_BattleEvent` POD is append-only: the 5 box-3 ordinals 26-30
+  (`ABILITY_TRIGGER`/`WEATHER_CHANGED`/`WEATHER_DAMAGE`/`SCREEN_SET`/`SCREEN_EXPIRED`) were
+  already reserved -- box 3 lights them, adds no ordinal and **no new field** (all payloads
+  fit the existing 8 scalars). Ability damage multipliers apply **outside** the pure
+  `ZM_CalcDamage` (post-calc in `ApplyDamagingHit`), so its isolated pure-fn goldens never move.
+- **Box-3-wide design rulings (from the 3-survey / synth / adversarial-critique design panel;
+  full design archived by the session):** (a) the ability-hook **coverage invariant** is
+  "every set `ZM_ABILITY_HOOK` bit is *realized* by an enumerated mechanism -- a live pfn
+  slot OR a documented engine-side handler", NOT "every bit has a backing pfn" (subsumes the
+  weather-bit condition + the QUICKDRAW/DAUNTINGROAR/BLOODRUSH engine-side realizations);
+  (b) STATUS_TRY abilities **emit `ABILITY_TRIGGER` on a successful block** (SC4); (c) flee
+  (`DoRunAction`) keeps the un-ability-modified speed -- ability speed mods apply only to
+  move-order resolution (SC3); (d) the confusion-self-hit `ZM_CalcDamage` stays un-weathered
+  (typeless; avoids a box-2 golden shift).
+- **SC1 (this commit) implements weather core, no abilities:** the weather **damage
+  multiplier** via the existing `uWeatherNum/uWeatherDen` seam in `ApplyDamagingHit` (RAIN:
+  WATER x3/2, FIRE x1/2; SUN: FIRE x3/2, WATER x1/2; SAND/SNOW/NONE = 1/1); the **end-of-turn
+  weather chip** (new `ResolveWeatherEndOfTurn`, resolved FIRST in `ResolveEndOfTurnPhase`
+  before the status ticks) -- SAND/SNOW only, `maxHP/8` min 1, PLAYER-active then ENEMY-active,
+  SAND immune = EARTH/STONE/IRON, SNOW immune = ICE, underflow-clamped, `WEATHER_DAMAGE`
+  [+ `FAINT`]; **weather + screen countdown/expiry** (`ResolveWeatherEndOfTurn` +
+  new `ResolveScreenEndOfTurn`) with `WEATHER_CHANGED`/`SCREEN_EXPIRED`; **`WEATHER_CHANGED` /
+  `SCREEN_SET` emission** in `g_ApplyField` (move setters now announce; overwrite re-announces);
+  and a new shared free fn `ZM_BattleMonsterHasType` (promotes the file-static `g_HasType`
+  logic). Event encodings per the design's section 2.6 (e.g. `WEATHER_CHANGED{m_uSide=ZM_SIDE_COUNT,
+  m_iAmount=newWeather, m_iAux=turns, m_iTag=prevWeather}`). Zero new RNG draws; `ZM_DamageCalc`
+  untouched.
+- **Sanctioned golden churn:** exactly 4 box-2 tests that asserted box-3 events are NOT
+  emitted / a MOVE_USED-only stream were tightened (`ZM_CheckWeatherSetter`,
+  `Weather_SetterEmitsOnlyMoveUsed` -> `...MoveUsedThenWeatherChanged`, the two `Screen_*Wall_Sets*`);
+  every other box-1/2 golden stays byte-identical (verified: 0 failed).
+- **Why fn-pointers + post-calc ability mults + append-only events:** preserves the locked
+  box-1/2 goldens and the deterministic RNG draw order (ZM-D-032/033) while giving each of the
+  50 declared abilities a real body; keeps `ZM_CalcDamage` a pure, independently-golden fn.
+- **Tests that lock it:** the `Box3SC1_*` block in `Tests/ZM_Tests_Battle.cpp` (28 cases:
+  pure-seam + end-to-end weather multiplier vectors; SAND/SNOW chip incl. immunity, min-1
+  clamp, chip-KO `FAINT` + underflow branch, skip-fainted-active, PLAYER-then-ENEMY order,
+  chip-before-status ordering; weather + physical/special screen countdown/expiry with full
+  event encodings; overwrite re-announce; and the
+  `Box3SC1_WeatherFree_ScreenFree_AddsNoEventsDrawsOrState` zero-draws/zero-events regression
+  wall). Boot unit gate **1400 -> 1428** (bumped in `.github/workflows/zm-tests.yml` this
+  commit). Independent test/impl authoring (blind parallel authors) + a 2-lens adversarial
+  review (impl-correctness + test-tautology) gated the commit.
+- **Reversibility:** moderate. Weather logic is localized to `ResolveWeather/ScreenEndOfTurn`
+  + the `ApplyDamagingHit` seam + `g_ApplyField`; the shared `ZM_BattleMonsterHasType` is
+  additive. Reverting SC1 alone would re-inert weather but leave the reserved event ordinals.
+
 ## 2026-07-11 -- ZM-D-035 -- S2 box-2 SC6: capture / flee math + pre-move SWITCH/ITEM/RUN (box 2 COMPLETE)
 
 - **Decision:** SC6 is the final box-2 sub-commit (ZM-D-033). It adds `ZM_CatchCalc`

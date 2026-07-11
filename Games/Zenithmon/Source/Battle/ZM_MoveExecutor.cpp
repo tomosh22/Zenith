@@ -264,26 +264,52 @@ static bool g_IsFieldEffect(ZM_MOVE_EFFECT eEffect)
 	}
 }
 
-// Apply a field/side setter. STATE-ONLY: box 2 SETS the field/side condition but
-// emits NO event and does NOT count down -- box 3 owns WEATHER_CHANGED/SCREEN_SET/
-// SCREEN_EXPIRED, the countdown/expiry, and the weather DAMAGE multiplier (ZM-D-033
-// weather line). The ability-independent screen reduction rides bScreen in
-// ApplyDamagingHit, so a screen set here is immediately observable via halved damage.
-//   WEATHER_* : field m_eWeather + m_uWeatherTurns = 5.
-//   SCREEN_*  : the ATTACKER's side m_auScreenTurns[matching] = 5 (protects the user's side).
-//   HAZARD_SPIKES : the DEFENDER side m_uHazardSpikeLayers ++, capped at 3.
-static void g_ApplyField(ZM_MoveContext& xCtx)
+// Set the field weather + reset its 5-turn clock, announcing WEATHER_CHANGED (SC1).
+// The PREVIOUS weather is captured first and carried in m_iTag, so an overwrite (a new
+// setter replacing a live weather) re-announces cleanly. box 3 owns the EOT countdown/
+// expiry; this is the SET half. Encoding: side COUNT, slot 0, m_iAmount = new weather,
+// m_iAux = turns (5), m_iTag = previous weather.
+static void g_SetWeather(ZM_MoveContext& xCtx, ZM_WEATHER eNew)
 {
 	ZM_FieldState& xField = xCtx.m_pxState->m_xField;
+	const ZM_WEATHER ePrev = xField.m_eWeather;
+	xField.m_eWeather      = eNew;
+	xField.m_uWeatherTurns = 5u;
+	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_WEATHER_CHANGED, ZM_SIDE_COUNT, 0u,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)eNew, (int)xField.m_uWeatherTurns, (int)ePrev));
+}
+
+// Set a screen on the ATTACKER's side to 5 turns, announcing SCREEN_SET on that side's
+// active (SC1). box 3 owns the EOT countdown/expiry. Encoding: owner side, active slot,
+// m_iAmount = screen, m_iAux = turns (5), m_iTag = 0.
+static void g_SetScreen(ZM_MoveContext& xCtx, ZM_SCREEN eScreen)
+{
+	ZM_BattleSide& xAtkSide = xCtx.AtkSide();
+	xAtkSide.m_auScreenTurns[eScreen] = 5u;
+	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_SCREEN_SET, xCtx.m_eAtk, xAtkSide.m_uActiveSlot,
+		ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)eScreen, (int)xAtkSide.m_auScreenTurns[eScreen], 0));
+}
+
+// Apply a field/side setter. SC1 wires the weather/screen SET events (WEATHER_CHANGED/
+// SCREEN_SET) + overwrite/re-announce semantics; box 3 owns the EOT countdown/expiry
+// and the weather DAMAGE multiplier (ZM-D-033 weather line). The ability-independent
+// screen reduction rides bScreen in ApplyDamagingHit, so a screen set here is
+// immediately observable via halved damage.
+//   WEATHER_* : field m_eWeather + m_uWeatherTurns = 5, then WEATHER_CHANGED.
+//   SCREEN_*  : the ATTACKER's side m_auScreenTurns[matching] = 5 (protects the user's
+//               side), then SCREEN_SET.
+//   HAZARD_SPIKES : the DEFENDER side m_uHazardSpikeLayers ++, capped at 3 (no event).
+static void g_ApplyField(ZM_MoveContext& xCtx)
+{
 	switch (xCtx.Move().m_eEffect)
 	{
-	case ZM_MOVE_EFFECT_WEATHER_RAIN: xField.m_eWeather = ZM_WEATHER_RAIN; xField.m_uWeatherTurns = 5u; break;
-	case ZM_MOVE_EFFECT_WEATHER_SUN:  xField.m_eWeather = ZM_WEATHER_SUN;  xField.m_uWeatherTurns = 5u; break;
-	case ZM_MOVE_EFFECT_WEATHER_SAND: xField.m_eWeather = ZM_WEATHER_SAND; xField.m_uWeatherTurns = 5u; break;
-	case ZM_MOVE_EFFECT_WEATHER_SNOW: xField.m_eWeather = ZM_WEATHER_SNOW; xField.m_uWeatherTurns = 5u; break;
+	case ZM_MOVE_EFFECT_WEATHER_RAIN: g_SetWeather(xCtx, ZM_WEATHER_RAIN); break;
+	case ZM_MOVE_EFFECT_WEATHER_SUN:  g_SetWeather(xCtx, ZM_WEATHER_SUN);  break;
+	case ZM_MOVE_EFFECT_WEATHER_SAND: g_SetWeather(xCtx, ZM_WEATHER_SAND); break;
+	case ZM_MOVE_EFFECT_WEATHER_SNOW: g_SetWeather(xCtx, ZM_WEATHER_SNOW); break;
 
-	case ZM_MOVE_EFFECT_SCREEN_PHYSICAL: xCtx.AtkSide().m_auScreenTurns[ZM_SCREEN_PHYSICAL] = 5u; break;
-	case ZM_MOVE_EFFECT_SCREEN_SPECIAL:  xCtx.AtkSide().m_auScreenTurns[ZM_SCREEN_SPECIAL]  = 5u; break;
+	case ZM_MOVE_EFFECT_SCREEN_PHYSICAL: g_SetScreen(xCtx, ZM_SCREEN_PHYSICAL); break;
+	case ZM_MOVE_EFFECT_SCREEN_SPECIAL:  g_SetScreen(xCtx, ZM_SCREEN_SPECIAL);  break;
 
 	case ZM_MOVE_EFFECT_HAZARD_SPIKES:
 	{
@@ -1050,6 +1076,21 @@ u_int ZM_MoveExecutor::ApplyDamagingHit(ZM_MoveContext& xCtx)
 	// damage (ability-independent, ZM-D-033). box-1/SC1-3 attackers are status-free
 	// (m_eStatus NONE), so this stays false and their goldens are byte-identical.
 	xIn.bBurnedPhysical = bPhysical && (xAtk.m_eStatus == ZM_MAJOR_STATUS_BURN);
+	// uWeatherNum/uWeatherDen (SC1): RAIN boosts WATER x3/2 + damps FIRE x1/2; SUN the
+	// reverse; SAND/SNOW/NONE leave the 1/1 identity, as does any non-WATER/FIRE move.
+	// ZM_CalcDamage applies this at its step-2 weather modifier. box-1/SC2 weather is
+	// NONE, so num/den stay 1/1 and the existing damage goldens are byte-identical.
+	const ZM_WEATHER eWeather = xCtx.m_pxState->m_xField.m_eWeather;
+	if (eWeather == ZM_WEATHER_RAIN)
+	{
+		if      (xMove.m_eType == ZM_TYPE_WATER) { xIn.uWeatherNum = 3u; xIn.uWeatherDen = 2u; }
+		else if (xMove.m_eType == ZM_TYPE_FIRE)  { xIn.uWeatherNum = 1u; xIn.uWeatherDen = 2u; }
+	}
+	else if (eWeather == ZM_WEATHER_SUN)
+	{
+		if      (xMove.m_eType == ZM_TYPE_WATER) { xIn.uWeatherNum = 1u; xIn.uWeatherDen = 2u; }
+		else if (xMove.m_eType == ZM_TYPE_FIRE)  { xIn.uWeatherNum = 3u; xIn.uWeatherDen = 2u; }
+	}
 
 	const u_int uDmg = ZM_CalcDamage(xIn);
 

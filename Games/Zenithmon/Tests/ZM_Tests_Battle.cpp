@@ -2893,7 +2893,8 @@ ZENITH_TEST(ZM_Battle, Ohko_NoCritRollDraw)
 }
 
 // ============================================================================
-// WEATHER setters -- STATE-ONLY (m_xField.m_eWeather), NO event, 0 RNG draws.
+// WEATHER setters -- S2 box-3 SC1 ARMS 5 turns and emits WEATHER_CHANGED (still 0
+// RNG draws). (Was box-2 STATE-ONLY / no event; the SC1 churn flips those asserts.)
 // ============================================================================
 namespace
 {
@@ -2904,7 +2905,19 @@ namespace
 		ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, eMove),
 			MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
 		ZENITH_ASSERT_EQ((u_int)xState.m_xField.m_eWeather, (u_int)eExpected, "weather field not set");
-		ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_WEATHER_CHANGED), 0u, "box-2 weather setter emits NO event");
+		// S2 box-3 SC1: a weather setter ARMS 5 turns and emits WEATHER_CHANGED
+		// (new = eExpected, turns = 5, prev = NONE). The executor does not run the
+		// end-of-turn decrement, so the freshly-armed counter reads 5 here.
+		ZENITH_ASSERT_EQ(xState.m_xField.m_uWeatherTurns, 5u, "SC1: a setter arms 5 turns");
+		ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_WEATHER_CHANGED), 1u, "SC1: a weather setter emits WEATHER_CHANGED");
+		const ZM_BattleEvent* pxWC = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_WEATHER_CHANGED);
+		if (pxWC != nullptr)
+		{
+			ZENITH_ASSERT_EQ(pxWC->m_uSide, (u_int)ZM_SIDE_COUNT, "WEATHER_CHANGED is a field event (side n/a)");
+			ZENITH_ASSERT_EQ(pxWC->m_iAmount, (int)eExpected, "WEATHER_CHANGED amount is the new weather");
+			ZENITH_ASSERT_EQ(pxWC->m_iAux, 5, "WEATHER_CHANGED aux is the armed turn count");
+			ZENITH_ASSERT_EQ(pxWC->m_iTag, (int)ZM_WEATHER_NONE, "WEATHER_CHANGED tag is the previous weather (NONE)");
+		}
 	}
 }
 
@@ -2913,18 +2926,23 @@ ZENITH_TEST(ZM_Battle, Weather_Raincall_SetsRain)  { ZM_CheckWeatherSetter(ZM_MO
 ZENITH_TEST(ZM_Battle, Weather_Sandstir_SetsSand)  { ZM_CheckWeatherSetter(ZM_MOVE_SANDSTIR, ZM_WEATHER_SAND); }
 ZENITH_TEST(ZM_Battle, Weather_Snowveil_SetsSnow)  { ZM_CheckWeatherSetter(ZM_MOVE_SNOWVEIL, ZM_WEATHER_SNOW); }
 
-// The whole stream of a weather setter is just [MOVE_USED] -- no weather event.
-ZENITH_TEST(ZM_Battle, Weather_SetterEmitsOnlyMoveUsed)
+// S2 box-3 SC1: a weather setter's whole stream is [MOVE_USED, WEATHER_CHANGED] -- it
+// arms 5 turns and announces the new weather. (Renamed from Weather_SetterEmitsOnlyMoveUsed.)
+ZENITH_TEST(ZM_Battle, Weather_SetterEmitsMoveUsedThenWeatherChanged)
 {
 	ZM_BattleState xState;
 	Zenith_Vector<ZM_BattleEvent> xEvents;
 	ZM_RunPlayerMove(MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_SUNFLARE),
 		MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, xState, xEvents);
-	ZENITH_ASSERT_EQ(xEvents.GetSize(), 1u, "a weather setter emits only MOVE_USED");
-	if (xEvents.GetSize() == 1u)
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 2u, "a weather setter emits MOVE_USED then WEATHER_CHANGED");
+	if (xEvents.GetSize() == 2u)
 	{
 		ZENITH_ASSERT_TRUE(xEvents.Get(0) == ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, ZM_SIDE_PLAYER, 0u, ZM_MOVE_SUNFLARE),
-			"the only event is MOVE_USED(Sunflare)");
+			"event[0] is MOVE_USED(Sunflare)");
+		const ZM_BattleEvent xWeatherChanged = ZM_MakeEvent(ZM_BATTLE_EVENT_WEATHER_CHANGED, ZM_SIDE_COUNT, 0u,
+			ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)ZM_WEATHER_SUN, 5, (int)ZM_WEATHER_NONE);
+		ZENITH_ASSERT_TRUE(xEvents.Get(1) == xWeatherChanged,
+			"event[1] is WEATHER_CHANGED(new=SUN, turns=5, prev=NONE)");
 	}
 	ZENITH_ASSERT_EQ((u_int)xState.m_xField.m_eWeather, (u_int)ZM_WEATHER_SUN);
 }
@@ -2944,8 +2962,8 @@ ZENITH_TEST(ZM_Battle, Weather_OverwritesPrevious)
 }
 
 // ============================================================================
-// SCREEN setters -- land on the USER's side, STATE-ONLY (m_auScreenTurns==5), no
-// event.
+// SCREEN setters -- land on the USER's side (m_auScreenTurns==5); S2 box-3 SC1
+// now emits SCREEN_SET. (Was box-2 STATE-ONLY / no event; the SC1 churn flips it.)
 // ============================================================================
 ZENITH_TEST(ZM_Battle, Screen_AegisWall_SetsPhysicalOnUserSide)
 {
@@ -2957,7 +2975,17 @@ ZENITH_TEST(ZM_Battle, Screen_AegisWall_SetsPhysicalOnUserSide)
 	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 5u, "physical screen set to 5 on the user side");
 	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_SPECIAL], 0u, "special screen untouched");
 	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 0u, "the opponent's side is unaffected");
-	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_SCREEN_SET), 0u, "box-2 screen setter emits NO event");
+	// S2 box-3 SC1: a screen setter emits SCREEN_SET (owner side, screen kind, 5 turns).
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_SCREEN_SET), 1u, "SC1: a screen setter emits SCREEN_SET");
+	const ZM_BattleEvent* pxSet = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_SCREEN_SET);
+	if (pxSet != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxSet->m_uSide, (u_int)ZM_SIDE_PLAYER, "SCREEN_SET lands on the user side");
+		ZENITH_ASSERT_EQ(pxSet->m_uSlot, 0u);
+		ZENITH_ASSERT_EQ(pxSet->m_iAmount, (int)ZM_SCREEN_PHYSICAL, "Aegis Wall sets the physical screen");
+		ZENITH_ASSERT_EQ(pxSet->m_iAux, 5, "a screen arms 5 turns");
+		ZENITH_ASSERT_EQ(pxSet->m_iTag, 0);
+	}
 }
 
 ZENITH_TEST(ZM_Battle, Screen_LumenWall_SetsSpecialOnUserSide)
@@ -2969,7 +2997,17 @@ ZENITH_TEST(ZM_Battle, Screen_LumenWall_SetsSpecialOnUserSide)
 
 	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_SPECIAL], 5u, "special screen set to 5 on the user side");
 	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 0u, "physical screen untouched");
-	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_SCREEN_SET), 0u, "box-2 screen setter emits NO event");
+	// S2 box-3 SC1: a screen setter emits SCREEN_SET (owner side, screen kind, 5 turns).
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_SCREEN_SET), 1u, "SC1: a screen setter emits SCREEN_SET");
+	const ZM_BattleEvent* pxSet = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_SCREEN_SET);
+	if (pxSet != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxSet->m_uSide, (u_int)ZM_SIDE_PLAYER, "SCREEN_SET lands on the user side");
+		ZENITH_ASSERT_EQ(pxSet->m_uSlot, 0u);
+		ZENITH_ASSERT_EQ(pxSet->m_iAmount, (int)ZM_SCREEN_SPECIAL, "Lumen Wall sets the special screen");
+		ZENITH_ASSERT_EQ(pxSet->m_iAux, 5, "a screen arms 5 turns");
+		ZENITH_ASSERT_EQ(pxSet->m_iTag, 0);
+	}
 }
 
 // ============================================================================
@@ -6769,4 +6807,646 @@ ZENITH_TEST(ZM_Battle, Engine_MoveOnly_WildConfigMatchesTrainer)
 	ZENITH_ASSERT_TRUE(bEqual, "a both-MOVE turn is byte-identical regardless of wild/trainer config");
 	ZENITH_ASSERT_EQ(SC6_Count(xW, ZM_BATTLE_EVENT_CATCH_SHAKE), 0u, "no catch events in a move-only turn");
 	ZENITH_ASSERT_EQ(SC6_Count(xW, ZM_BATTLE_EVENT_FLEE), 0u, "no flee events in a move-only turn");
+}
+
+// ============================================================================
+// ===== BOX 3 SC1: WEATHER =====
+//
+// S2 box-3 SC1 -- the weather core, authored as the INDEPENDENT oracle for the
+// parallel weather source. Every expected number is derived from the DOCUMENTED
+// spec (never from engine output):
+//
+//   * Damage multiplier (ZM_CalcDamage step 2 via uWeatherNum/uWeatherDen; pipeline
+//     base -> weather -> crit -> random -> STAB -> type -> burn -> screen):
+//       RAIN: WATER 3/2, FIRE 1/2, else 1/1.   SUN: WATER 1/2, FIRE 3/2, else 1/1.
+//       SAND / SNOW / NONE: 1/1 for every type.  (weather x type -> num/den is the
+//       ENGINE's job; the pure-seam tests feed ZM_CalcDamage the num/den directly.)
+//   * End-of-turn chip (resolved FIRST, before status ticks; per side PLAYER-active
+//     then ENEMY-active; skip fainted): SAND unless EARTH/STONE/IRON, SNOW unless ICE.
+//     chip = max(1, maxHP/8). RAIN / SUN never chip.
+//   * Countdown: setter arms (weather, 5); each EOT decrements; at 0 -> NONE +
+//     WEATHER_CHANGED(new=NONE). Screens arm 5 and expire -> SCREEN_EXPIRED.
+//   * Event encodings (spec table): WEATHER_DAMAGE {side=victim, slot, amount=chip,
+//     aux=remaining HP, tag=weather}; WEATHER_CHANGED {side=COUNT, amount=newWeather,
+//     aux=turns (0 on expiry), tag=prevWeather}; SCREEN_EXPIRED {side=owner, slot,
+//     amount=screen, aux=0, tag=0}.
+//
+// ASSUMPTION resolved from the spec ("First end-of-turn decrement brings it 5->4"):
+// the SETTER turn's own EOT performs the first decrement, so a setter used on turn T
+// clears at the EOT of turn T+4 (5 active turns). If the implementer skips the set-turn
+// decrement these countdown goldens will drift by one turn -- flag for reconciliation.
+// ============================================================================
+namespace
+{
+	// ZM_CalcDamage over explicit weather num/den (pure-seam: proves the weather step).
+	u_int ZM_Box3CalcWeatherSeam(u_int uLevel, u_int uPower, u_int uAttack, u_int uDefense,
+		bool bStab, u_int uEffPercent, bool bCrit, u_int uRoll, u_int uWNum, u_int uWDen)
+	{
+		ZM_DamageInput xIn;
+		xIn.uLevel = uLevel;
+		xIn.uPower = uPower;
+		xIn.uAttack = uAttack;
+		xIn.uDefense = uDefense;
+		xIn.bStab = bStab;
+		xIn.uEffectivenessPercent = uEffPercent;
+		xIn.bCrit = bCrit;
+		xIn.uRandomPercent = uRoll;
+		xIn.uWeatherNum = uWNum;
+		xIn.uWeatherDen = uWDen;
+		return ZM_CalcDamage(xIn);
+	}
+
+	// End-to-end: run one ApplyDamagingHit of eMove (player, slot 0) under eWeather into
+	// a bulky NORMAL defender, and assert both the returned damage AND the emitted
+	// DAMAGE_DEALT equal the DOCUMENTED pipeline (weather step = uWNum/uWDen), re-derived
+	// from the actual monster stats + a mirror RNG (crit Chance(1,24) -> roll 85..100).
+	// Attacker is NORMAL so a WATER/FIRE move never gets STAB (weather is the sole delta).
+	// Returns the actual damage so callers can also assert the direction vs the NONE case.
+	u_int ZM_Box3WeatherHit(ZM_MOVE_ID eMove, ZM_WEATHER eWeather, u_int uWNum, u_int uWDen, u_int64 ulSeed)
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState,
+			MakeSpecOverride(ZM_SPECIES_NIBBIN,    50u, eMove,           200u, 120u, 60u, 120u, 60u, 100u),
+			MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_RAMBASH, 250u,  10u, 60u,  10u, 60u,  10u),
+			ulSeed, 54ull);
+		xState.m_xField.m_eWeather = eWeather;
+		xState.m_xField.m_uWeatherTurns = 5u;
+
+		ZM_BattleRNG xMirror(ulSeed, 54ull);
+		const bool  bCrit = xMirror.Chance(1u, 24u);
+		const u_int uRoll = xMirror.RandRange(85u, 100u);
+
+		const ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_PLAYER).Active();
+		const ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_ENEMY).Active();
+		const ZM_MoveData& xMove = ZM_GetMoveData(eMove);
+		const bool bPhysical = (xMove.m_eCategory == ZM_MOVE_CATEGORY_PHYSICAL);
+		const ZM_SpeciesData& xAtkSpecies = ZM_GetSpeciesData(xAtk.m_eSpecies);
+		const ZM_SpeciesData& xDefSpecies = ZM_GetSpeciesData(xDef.m_eSpecies);
+
+		ZM_DamageInput xIn;
+		xIn.uLevel = xAtk.m_uLevel;
+		xIn.uPower = xMove.m_uPower;
+		xIn.uAttack = ZM_ApplyStatStage(
+			bPhysical ? xAtk.m_auMaxStat[ZM_STAT_ATTACK] : xAtk.m_auMaxStat[ZM_STAT_SPATTACK],
+			bPhysical ? xAtk.m_aiStage[ZM_BATTLE_STAT_ATTACK] : xAtk.m_aiStage[ZM_BATTLE_STAT_SPATTACK]);
+		xIn.uDefense = ZM_ApplyStatStage(
+			bPhysical ? xDef.m_auMaxStat[ZM_STAT_DEFENSE] : xDef.m_auMaxStat[ZM_STAT_SPDEFENSE],
+			bPhysical ? xDef.m_aiStage[ZM_BATTLE_STAT_DEFENSE] : xDef.m_aiStage[ZM_BATTLE_STAT_SPDEFENSE]);
+		xIn.bStab = (xMove.m_eType == xAtkSpecies.m_aeTypes[0] || xMove.m_eType == xAtkSpecies.m_aeTypes[1]);
+		xIn.uEffectivenessPercent = ZM_EffectivenessPercent(xMove.m_eType, xDefSpecies.m_aeTypes[0], xDefSpecies.m_aeTypes[1]);
+		xIn.bCrit = bCrit;
+		xIn.uRandomPercent = uRoll;
+		xIn.uWeatherNum = uWNum;
+		xIn.uWeatherDen = uWDen;
+		const u_int uExpected = ZM_CalcDamage(xIn);
+
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		const u_int uActual = ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+		ZENITH_ASSERT_EQ(uActual, uExpected, "ApplyDamagingHit under weather != documented pipeline (weather %u/%u)", uWNum, uWDen);
+		const ZM_BattleEvent* pxDmg = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_DAMAGE_DEALT);
+		ZENITH_ASSERT_NOT_NULL(pxDmg);
+		if (pxDmg != nullptr) { ZENITH_ASSERT_EQ((u_int)pxDmg->m_iAmount, uExpected, "emitted DAMAGE_DEALT != documented pipeline"); }
+		return uActual;
+	}
+
+	// Begin a 1v1, force eWeather = (weather, 5), then resolve ONE harmless turn where
+	// both actives use Mist Veil (a self SpD raise: always hits, status-free, deals no
+	// HP damage) so the chip target is at FULL HP when the end-of-turn chip lands.
+	void ZM_Box3RunWeatherChipTurn(ZM_BattleEngine& xEngine, ZM_SPECIES_ID ePlayer,
+		ZM_SPECIES_ID eEnemy, ZM_WEATHER eWeather)
+	{
+		ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ePlayer, 50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u, 100u) };
+		ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(eEnemy,  50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u,  60u) };
+		xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0x1234ull, 54ull);
+		xEngine.GetStateMutable().m_xField.m_eWeather = eWeather;
+		xEngine.GetStateMutable().m_xField.m_uWeatherTurns = 5u;
+		ZM_SC5ResolveMoveTurn(xEngine);   // both submit slot 0 (Mist Veil)
+	}
+
+	// Assert the player-active (a NORMAL, non-immune mon) took the full weather chip and
+	// the enemy-active (an immune-typed mon) took nothing, under eWeather this turn.
+	void ZM_Box3AssertPlayerChipsEnemyImmune(ZM_BattleEngine& xEngine, ZM_WEATHER eWeather)
+	{
+		const ZM_BattleMonster& xPlayer = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active();
+		const ZM_BattleMonster& xEnemy  = xEngine.GetState().Side(ZM_SIDE_ENEMY).Active();
+
+		const u_int uMax  = xPlayer.m_auMaxStat[ZM_STAT_HP];
+		const u_int uChip = (uMax / 8u > 0u) ? (uMax / 8u) : 1u;   // documented max(1, maxHP/8)
+		ZENITH_ASSERT_EQ(xPlayer.m_uCurHP, uMax - uChip, "a non-immune active loses max(1,maxHP/8)");
+
+		const ZM_BattleEvent* pxWD = ZM_SC5FindEventPtr(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER);
+		ZENITH_ASSERT_NOT_NULL(pxWD);
+		if (pxWD != nullptr)
+		{
+			ZENITH_ASSERT_EQ(pxWD->m_uSlot, 0u);
+			ZENITH_ASSERT_EQ(pxWD->m_iAmount, (int)uChip, "WEATHER_DAMAGE amount == chip");
+			ZENITH_ASSERT_EQ(pxWD->m_iAux, (int)(uMax - uChip), "WEATHER_DAMAGE aux == remaining HP");
+			ZENITH_ASSERT_EQ(pxWD->m_iTag, (int)eWeather, "WEATHER_DAMAGE tag == weather");
+		}
+
+		ZENITH_ASSERT_EQ(xEnemy.m_uCurHP, xEnemy.m_auMaxStat[ZM_STAT_HP], "the immune-typed active loses no HP");
+		ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_ENEMY), 0u,
+			"no WEATHER_DAMAGE for the immune enemy");
+	}
+
+	// Begin the screen-countdown fixture: player has Aegis Wall (slot 0, arms the physical
+	// screen) then Mist Veil (slot 1, harmless filler); enemy has Mist Veil (slot 0) then
+	// Rambash (slot 1, the physical probe used AFTER expiry). Weather stays NONE.
+	void ZM_Box3BuildScreenEngine(ZM_BattleEngine& xEngine)
+	{
+		ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN,    50u, ZM_MOVE_AEGISWALL, 120u, 60u, 60u, 60u, 60u, 100u) };
+		axP[0].m_aeMoves[1] = ZM_MOVE_MISTVEIL;
+		ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_MISTVEIL,  120u, 60u, 60u, 60u, 60u,  60u) };
+		axE[0].m_aeMoves[1] = ZM_MOVE_RAMBASH;
+		xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0x1234ull, 54ull);
+	}
+}
+
+// ---- 1. Pure-seam damage multiplier (ZM_CalcDamage, explicit weather num/den) --------
+// Fixed non-weather inputs (level 50, power 100, atk/def 100, no STAB/crit, roll 100,
+// eff 100) give base 46; the only non-identity multiply is the weather step.
+
+ZENITH_TEST(ZM_Battle, Box3SC1_PureSeam_RainWaterMultipliesByThreeHalves)
+{
+	// RAIN x WATER -> 3/2: floor(46*3/2) = 69, vs the 1/1 baseline 46.
+	ZENITH_ASSERT_EQ(ZM_Box3CalcWeatherSeam(50u, 100u, 100u, 100u, false, 100u, false, 100u, 1u, 1u), 46u);
+	ZENITH_ASSERT_EQ(ZM_Box3CalcWeatherSeam(50u, 100u, 100u, 100u, false, 100u, false, 100u, 3u, 2u), 69u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_PureSeam_RainFireHalves)
+{
+	// RAIN x FIRE -> 1/2: floor(46/2) = 23.
+	ZENITH_ASSERT_EQ(ZM_Box3CalcWeatherSeam(50u, 100u, 100u, 100u, false, 100u, false, 100u, 1u, 2u), 23u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_PureSeam_SunFireMultipliesByThreeHalves)
+{
+	// SUN x FIRE -> 3/2 (same multiplier as rain-water): 69.
+	ZENITH_ASSERT_EQ(ZM_Box3CalcWeatherSeam(50u, 100u, 100u, 100u, false, 100u, false, 100u, 3u, 2u), 69u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_PureSeam_SunWaterHalves)
+{
+	// SUN x WATER -> 1/2 (same multiplier as rain-fire): 23.
+	ZENITH_ASSERT_EQ(ZM_Box3CalcWeatherSeam(50u, 100u, 100u, 100u, false, 100u, false, 100u, 1u, 2u), 23u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_PureSeam_NonWaterFireUnaffected)
+{
+	// A non-water/fire move (any weather) -> 1/1 identity: 46 == the no-weather baseline.
+	const u_int uBaseline = ZM_Box3CalcWeatherSeam(50u, 100u, 100u, 100u, false, 100u, false, 100u, 1u, 1u);
+	ZENITH_ASSERT_EQ(uBaseline, 46u);
+	ZENITH_ASSERT_EQ(ZM_Box3CalcWeatherSeam(50u, 100u, 100u, 100u, false, 100u, false, 100u, 1u, 1u), uBaseline);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_PureSeam_WeatherStepFloors)
+{
+	// Odd base 47 (power 103) proves the FLOOR is at the weather step: 3/2 -> floor(70.5)
+	// = 70 (not 71), 1/2 -> floor(23.5) = 23. Every later step is identity here.
+	ZENITH_ASSERT_EQ(ZM_Box3CalcWeatherSeam(50u, 103u, 100u, 100u, false, 100u, false, 100u, 1u, 1u), 47u);
+	ZENITH_ASSERT_EQ(ZM_Box3CalcWeatherSeam(50u, 103u, 100u, 100u, false, 100u, false, 100u, 3u, 2u), 70u);
+	ZENITH_ASSERT_EQ(ZM_Box3CalcWeatherSeam(50u, 103u, 100u, 100u, false, 100u, false, 100u, 1u, 2u), 23u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_PureSeam_WeatherNeverBreaksMinOneOrImmunity)
+{
+	// A halving weather cannot push a non-immune hit below the min-1 floor (this is the
+	// Damage_GenVGoldenVectors min-1 vector with weather 1/2 layered on): still 1.
+	ZENITH_ASSERT_EQ(ZM_Box3CalcWeatherSeam(1u, 10u, 5u, 255u, false, 25u, false, 85u, 1u, 2u), 1u);
+	// ...and an immune hit (eff 0) stays exactly 0 even with a boosting 3/2 weather.
+	ZENITH_ASSERT_EQ(ZM_Box3CalcWeatherSeam(50u, 100u, 100u, 100u, false, 0u, false, 100u, 3u, 2u), 0u);
+}
+
+// ---- 2. End-to-end damage through the executor (ApplyDamagingHit under weather) ------
+// Seed 1's first crit draw is a non-crit (per the box-2 Screen_HalvesMatchingPhysicalDamage
+// golden), so the weather multiplier is the sole, cleanly-observable difference vs NONE.
+
+ZENITH_TEST(ZM_Battle, Box3SC1_EndToEnd_RainBoostsWaterMove)
+{
+	const u_int uNone = ZM_Box3WeatherHit(ZM_MOVE_TIDECRASH, ZM_WEATHER_NONE, 1u, 1u, 1ull);
+	const u_int uRain = ZM_Box3WeatherHit(ZM_MOVE_TIDECRASH, ZM_WEATHER_RAIN, 3u, 2u, 1ull);
+	ZENITH_ASSERT_GE(uNone, 2u, "need a healthy hit so 3/2 is observable");
+	ZENITH_ASSERT_GT(uRain, uNone, "rain boosts a water move (3/2), NONE matches the box-2 baseline");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_EndToEnd_RainWeakensFireMove)
+{
+	const u_int uNone = ZM_Box3WeatherHit(ZM_MOVE_FLARELASH, ZM_WEATHER_NONE, 1u, 1u, 1ull);
+	const u_int uRain = ZM_Box3WeatherHit(ZM_MOVE_FLARELASH, ZM_WEATHER_RAIN, 1u, 2u, 1ull);
+	ZENITH_ASSERT_GE(uNone, 2u, "need a healthy hit so 1/2 is observable");
+	ZENITH_ASSERT_LT(uRain, uNone, "rain halves a fire move (1/2)");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_EndToEnd_SunBoostsFireMove)
+{
+	const u_int uNone = ZM_Box3WeatherHit(ZM_MOVE_FLARELASH, ZM_WEATHER_NONE, 1u, 1u, 1ull);
+	const u_int uSun  = ZM_Box3WeatherHit(ZM_MOVE_FLARELASH, ZM_WEATHER_SUN,  3u, 2u, 1ull);
+	ZENITH_ASSERT_GE(uNone, 2u, "need a healthy hit so 3/2 is observable");
+	ZENITH_ASSERT_GT(uSun, uNone, "sun boosts a fire move (3/2)");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_EndToEnd_SunWeakensWaterMove)
+{
+	const u_int uNone = ZM_Box3WeatherHit(ZM_MOVE_TIDECRASH, ZM_WEATHER_NONE, 1u, 1u, 1ull);
+	const u_int uSun  = ZM_Box3WeatherHit(ZM_MOVE_TIDECRASH, ZM_WEATHER_SUN,  1u, 2u, 1ull);
+	ZENITH_ASSERT_GE(uNone, 2u, "need a healthy hit so 1/2 is observable");
+	ZENITH_ASSERT_LT(uSun, uNone, "sun halves a water move (1/2)");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_EndToEnd_SandLeavesWaterMoveNeutral)
+{
+	// SAND applies no type multiplier: a water move deals identical damage to NONE.
+	const u_int uNone = ZM_Box3WeatherHit(ZM_MOVE_TIDECRASH, ZM_WEATHER_NONE, 1u, 1u, 1ull);
+	const u_int uSand = ZM_Box3WeatherHit(ZM_MOVE_TIDECRASH, ZM_WEATHER_SAND, 1u, 1u, 1ull);
+	ZENITH_ASSERT_EQ(uSand, uNone, "sand does not scale a water move");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_EndToEnd_RainLeavesNormalMoveNeutral)
+{
+	// A NORMAL move under RAIN is unaffected (1/1) -- equals the NONE baseline.
+	const u_int uNone = ZM_Box3WeatherHit(ZM_MOVE_RAMBASH, ZM_WEATHER_NONE, 1u, 1u, 1ull);
+	const u_int uRain = ZM_Box3WeatherHit(ZM_MOVE_RAMBASH, ZM_WEATHER_RAIN, 1u, 1u, 1ull);
+	ZENITH_ASSERT_EQ(uRain, uNone, "rain does not scale a non-water/fire move");
+}
+
+// ---- 3/4. End-of-turn SAND / SNOW chip (engine turn; type-gated; encoded event) ------
+
+ZENITH_TEST(ZM_Battle, Box3SC1_Sand_NonImmuneChipsAndImmuneTypesTakeNothing)
+{
+	// NIBBIN (NORMAL) chips; RUBBLET (STONE) / BURRIT (EARTH) / SLAGLET (IRON) are immune.
+	const ZM_SPECIES_ID aeImmune[3] = { ZM_SPECIES_RUBBLET, ZM_SPECIES_BURRIT, ZM_SPECIES_SLAGLET };
+	for (u_int u = 0u; u < 3u; ++u)
+	{
+		ZM_BattleEngine xEngine;
+		ZM_Box3RunWeatherChipTurn(xEngine, ZM_SPECIES_NIBBIN, aeImmune[u], ZM_WEATHER_SAND);
+		ZM_Box3AssertPlayerChipsEnemyImmune(xEngine, ZM_WEATHER_SAND);
+		const ZM_BattleMonster& xEnemy = xEngine.GetState().Side(ZM_SIDE_ENEMY).Active();
+		ZENITH_ASSERT_TRUE(ZM_BattleMonsterHasType(xEnemy, ZM_TYPE_EARTH)
+			|| ZM_BattleMonsterHasType(xEnemy, ZM_TYPE_STONE)
+			|| ZM_BattleMonsterHasType(xEnemy, ZM_TYPE_IRON), "immune fixture carries EARTH/STONE/IRON");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_Sand_ChipClampsToMinimumOne)
+{
+	ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN,    50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u, 100u) };
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u,  60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0x1234ull, 54ull);
+	xEngine.GetStateMutable().m_xField.m_eWeather = ZM_WEATHER_SAND;
+	xEngine.GetStateMutable().m_xField.m_uWeatherTurns = 5u;
+	// Rig a tiny max HP so maxHP/8 == 0 -> the documented min-1 clamp is the chip.
+	ZM_BattleMonster& xPlayer = xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
+	xPlayer.m_auMaxStat[ZM_STAT_HP] = 4u;
+	xPlayer.m_uCurHP = 4u;
+	ZM_SC5ResolveMoveTurn(xEngine);
+
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().m_uCurHP, 3u, "max(1, 4/8)=1 chip -> 4-1=3");
+	const ZM_BattleEvent* pxWD = ZM_SC5FindEventPtr(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxWD);
+	if (pxWD != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxWD->m_iAmount, 1, "the clamped chip is exactly 1");
+		ZENITH_ASSERT_EQ(pxWD->m_iAux, 3, "remaining HP is 3");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_Sand_ChipsBothActivesPlayerThenEnemy)
+{
+	// Two NORMAL actives both chip, in PLAYER-active-then-ENEMY-active order.
+	ZM_BattleEngine xEngine;
+	ZM_Box3RunWeatherChipTurn(xEngine, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING, ZM_WEATHER_SAND);
+	const int iPlayer = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER);
+	const int iEnemy  = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_ENEMY);
+	ZENITH_ASSERT_GE(iPlayer, 0, "the player-active (NORMAL) chips");
+	ZENITH_ASSERT_GE(iEnemy, 0, "the enemy-active (NORMAL) chips");
+	ZENITH_ASSERT_LT(iPlayer, iEnemy, "sand chips PLAYER-active before ENEMY-active");
+
+	const ZM_BattleMonster& xP = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active();
+	const ZM_BattleMonster& xE = xEngine.GetState().Side(ZM_SIDE_ENEMY).Active();
+	ZENITH_ASSERT_LT(xP.m_uCurHP, xP.m_auMaxStat[ZM_STAT_HP], "player chipped");
+	ZENITH_ASSERT_LT(xE.m_uCurHP, xE.m_auMaxStat[ZM_STAT_HP], "enemy chipped");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_Snow_NonIceChipsAndIceTypesTakeNothing)
+{
+	// NIBBIN (NORMAL) chips; FRISKET (ICE) / FLOELET (WATER+ICE) / CHILLSHADE (ICE+PHANTOM)
+	// are all immune -- ICE in EITHER slot spares the mon.
+	const ZM_SPECIES_ID aeImmune[3] = { ZM_SPECIES_FRISKET, ZM_SPECIES_FLOELET, ZM_SPECIES_CHILLSHADE };
+	for (u_int u = 0u; u < 3u; ++u)
+	{
+		ZM_BattleEngine xEngine;
+		ZM_Box3RunWeatherChipTurn(xEngine, ZM_SPECIES_NIBBIN, aeImmune[u], ZM_WEATHER_SNOW);
+		ZM_Box3AssertPlayerChipsEnemyImmune(xEngine, ZM_WEATHER_SNOW);
+		ZENITH_ASSERT_TRUE(ZM_BattleMonsterHasType(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active(), ZM_TYPE_ICE),
+			"immune fixture carries ICE");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_RainAndSunDoNotChip)
+{
+	// Only SAND / SNOW chip -- RAIN and SUN leave every active at full HP.
+	const ZM_WEATHER aeNonChip[2] = { ZM_WEATHER_RAIN, ZM_WEATHER_SUN };
+	for (u_int u = 0u; u < 2u; ++u)
+	{
+		ZM_BattleEngine xEngine;
+		ZM_Box3RunWeatherChipTurn(xEngine, ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING, aeNonChip[u]);
+		ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE), 0u, "rain/sun never chip");
+		const ZM_BattleMonster& xP = xEngine.GetState().Side(ZM_SIDE_PLAYER).Active();
+		ZENITH_ASSERT_EQ(xP.m_uCurHP, xP.m_auMaxStat[ZM_STAT_HP], "no chip under rain/sun");
+	}
+}
+
+// ---- 5. Chip resolves BEFORE the status tick (WEATHER_DAMAGE precedes STATUS_DAMAGE) --
+ZENITH_TEST(ZM_Battle, Box3SC1_Chip_ResolvesBeforeStatusTick)
+{
+	ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN,    50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u, 100u) };
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u,  60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0x1234ull, 54ull);
+	xEngine.GetStateMutable().m_xField.m_eWeather = ZM_WEATHER_SAND;
+	xEngine.GetStateMutable().m_xField.m_uWeatherTurns = 5u;
+	xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active().m_eStatus = ZM_MAJOR_STATUS_BURN;   // NIBBIN is NORMAL -> burnable
+	ZM_SC5ResolveMoveTurn(xEngine);
+
+	const int iWeather = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER);
+	const int iStatus  = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_STATUS_DAMAGE,  ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_GE(iWeather, 0, "a burned NORMAL active under sand takes the sand chip");
+	ZENITH_ASSERT_GE(iStatus, 0, "...and then the burn chip");
+	ZENITH_ASSERT_LT(iWeather, iStatus, "the weather chip resolves BEFORE the burn status tick");
+	const ZM_BattleEvent* pxStatus = ZM_SC5FindEventPtr(xEngine.GetEvents(), ZM_BATTLE_EVENT_STATUS_DAMAGE, ZM_SIDE_PLAYER);
+	if (pxStatus != nullptr) { ZENITH_ASSERT_EQ(pxStatus->m_iTag, (int)ZM_MAJOR_STATUS_BURN, "the status chip is the burn"); }
+}
+
+// ---- 6. Weather countdown + expiry (setter arms 5; decrements each EOT; clears at 0) --
+ZENITH_TEST(ZM_Battle, Box3SC1_Weather_CountsDownAndExpiresWithEncoding)
+{
+	ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN,    50u, ZM_MOVE_SUNFLARE, 120u, 60u, 80u, 60u, 80u, 100u) };
+	axP[0].m_aeMoves[1] = ZM_MOVE_MISTVEIL;   // harmless filler after the setter turn
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u,  60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0x1234ull, 54ull);
+
+	ZM_SC5ResolveMoveTurn(xEngine, 0u, 0u);   // Sunflare arms (SUN, 5); EOT decrements 5->4
+	ZENITH_ASSERT_EQ((u_int)xEngine.GetState().m_xField.m_eWeather, (u_int)ZM_WEATHER_SUN);
+	ZENITH_ASSERT_EQ(xEngine.GetState().m_xField.m_uWeatherTurns, 4u, "set 5, first EOT decrement -> 4");
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u); ZENITH_ASSERT_EQ(xEngine.GetState().m_xField.m_uWeatherTurns, 3u);
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u); ZENITH_ASSERT_EQ(xEngine.GetState().m_xField.m_uWeatherTurns, 2u);
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u); ZENITH_ASSERT_EQ(xEngine.GetState().m_xField.m_uWeatherTurns, 1u);
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u);   // 1->0: clears to NONE
+	ZENITH_ASSERT_EQ((u_int)xEngine.GetState().m_xField.m_eWeather, (u_int)ZM_WEATHER_NONE, "cleared at 0");
+	ZENITH_ASSERT_EQ(xEngine.GetState().m_xField.m_uWeatherTurns, 0u);
+
+	// Exactly two WEATHER_CHANGED: the Sunflare set + the expiry clear.
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_CHANGED), 2u, "one set + one expiry");
+	const ZM_BattleEvent* pxExpire = nullptr;
+	for (u_int u = 0u; u < xEngine.GetEventCount(); ++u)
+	{
+		const ZM_BattleEvent& x = xEngine.GetEvent(u);
+		if (x.m_eKind == ZM_BATTLE_EVENT_WEATHER_CHANGED && x.m_iAmount == (int)ZM_WEATHER_NONE) { pxExpire = &xEngine.GetEvent(u); }
+	}
+	ZENITH_ASSERT_NOT_NULL(pxExpire);
+	if (pxExpire != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxExpire->m_uSide, (u_int)ZM_SIDE_COUNT, "field event: side n/a");
+		ZENITH_ASSERT_EQ(pxExpire->m_iAmount, (int)ZM_WEATHER_NONE, "new weather is NONE");
+		ZENITH_ASSERT_EQ(pxExpire->m_iAux, 0, "turns 0 on expiry");
+		ZENITH_ASSERT_EQ(pxExpire->m_iTag, (int)ZM_WEATHER_SUN, "prev weather was SUN");
+	}
+}
+
+// ---- 7. Screen countdown + expiry, and that an expired screen no longer halves -------
+ZENITH_TEST(ZM_Battle, Box3SC1_Screen_CountsDownAndExpiresWithEncoding)
+{
+	ZM_BattleEngine xEngine;
+	ZM_Box3BuildScreenEngine(xEngine);
+
+	ZM_SC5ResolveMoveTurn(xEngine, 0u, 0u);   // Aegis Wall arms (physical, 5); EOT decrements 5->4
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 4u, "set 5, first EOT decrement -> 4");
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u); ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 3u);
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u); ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 2u);
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u); ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 1u);
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u);   // 1->0: expiry
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 0u, "expired to 0");
+
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_SCREEN_EXPIRED), 1u, "exactly one expiry");
+	const ZM_BattleEvent* pxExp = ZM_SC5FindEventPtr(xEngine.GetEvents(), ZM_BATTLE_EVENT_SCREEN_EXPIRED, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxExp);
+	if (pxExp != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxExp->m_uSlot, 0u);
+		ZENITH_ASSERT_EQ(pxExp->m_iAmount, (int)ZM_SCREEN_PHYSICAL, "the expired screen is the physical one");
+		ZENITH_ASSERT_EQ(pxExp->m_iAux, 0);
+		ZENITH_ASSERT_EQ(pxExp->m_iTag, 0);
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC1_Screen_ExpiredScreenNoLongerHalves)
+{
+	ZM_BattleEngine xEngine;
+	ZM_Box3BuildScreenEngine(xEngine);
+	for (u_int u = 0u; u < 5u; ++u) { ZM_SC5ResolveMoveTurn(xEngine, u == 0u ? 0u : 1u, 0u); }   // arm turn 1, age to expiry
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 0u, "screen expired");
+
+	// Controlled non-crit probe: reseed to (1,54) (seed 1's first crit draw is a non-crit,
+	// per the box-2 Screen_HalvesMatchingPhysicalDamage golden), then fire the enemy's
+	// physical Rambash (slot 1) into the player. An EXPIRED (0-turn) screen must NOT halve.
+	ZM_BattleState& xState = xEngine.GetStateMutable();
+	xState.m_xRNG.Seed(1ull, 54ull);
+	ZM_BattleRNG xMirror(1ull, 54ull);
+	const bool  bCrit = xMirror.Chance(1u, 24u);
+	const u_int uRoll = xMirror.RandRange(85u, 100u);
+	ZENITH_ASSERT_FALSE(bCrit, "the reseeded probe must be a non-crit so the screen is damage-relevant");
+
+	const ZM_BattleMonster& xAtk = xState.Side(ZM_SIDE_ENEMY).Active();
+	const ZM_BattleMonster& xDef = xState.Side(ZM_SIDE_PLAYER).Active();
+	const ZM_MoveData& xMove = ZM_GetMoveData(ZM_MOVE_RAMBASH);
+	const ZM_SpeciesData& xAtkSpecies = ZM_GetSpeciesData(xAtk.m_eSpecies);
+	const ZM_SpeciesData& xDefSpecies = ZM_GetSpeciesData(xDef.m_eSpecies);
+	ZM_DamageInput xIn;
+	xIn.uLevel = xAtk.m_uLevel;
+	xIn.uPower = xMove.m_uPower;
+	xIn.uAttack = ZM_ApplyStatStage(xAtk.m_auMaxStat[ZM_STAT_ATTACK], xAtk.m_aiStage[ZM_BATTLE_STAT_ATTACK]);
+	xIn.uDefense = ZM_ApplyStatStage(xDef.m_auMaxStat[ZM_STAT_DEFENSE], xDef.m_aiStage[ZM_BATTLE_STAT_DEFENSE]);
+	xIn.bStab = (xMove.m_eType == xAtkSpecies.m_aeTypes[0] || xMove.m_eType == xAtkSpecies.m_aeTypes[1]);
+	xIn.uEffectivenessPercent = ZM_EffectivenessPercent(xMove.m_eType, xDefSpecies.m_aeTypes[0], xDefSpecies.m_aeTypes[1]);
+	xIn.bCrit = bCrit;
+	xIn.uRandomPercent = uRoll;
+	xIn.bScreen = false;
+	const u_int uNoHalve = ZM_CalcDamage(xIn);
+	xIn.bScreen = true;
+	const u_int uWouldHalve = ZM_CalcDamage(xIn);
+
+	Zenith_Vector<ZM_BattleEvent> xProbe;
+	ZM_MoveContext xCtx = MakeCtx(xState, xProbe, ZM_SIDE_ENEMY, 1u);
+	const u_int uActual = ZM_MoveExecutor::ApplyDamagingHit(xCtx);
+	ZENITH_ASSERT_GE(uNoHalve, 2u, "need >= 2 damage so halving would be observable");
+	ZENITH_ASSERT_EQ(uActual, uNoHalve, "an EXPIRED screen deals FULL (unhalved) physical damage");
+	ZENITH_ASSERT_TRUE(uActual != uWouldHalve, "the expired screen did not halve (differs from the would-be halved value)");
+}
+
+// ---- 8. INVARIANT / regression wall: a weather-NONE, screen-free turn is inert --------
+ZENITH_TEST(ZM_Battle, Box3SC1_WeatherFree_ScreenFree_AddsNoEventsDrawsOrState)
+{
+	const u_int64 ulSeed = 0xB33Full;
+	// Both actives use Mist Veil (self SpD raise: always hits, status-free, deals no HP
+	// damage, draws NO RNG) at DIFFERENT speeds (100 vs 60) so there is no speed tie-break
+	// draw. NONE-ability team. The whole move+EOT turn must therefore draw ZERO RNG.
+	ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN,    50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u, 100u) };
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u,  60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, ulSeed, 54ull);
+	ZM_SC5ResolveMoveTurn(xEngine);
+
+	// No box-3 events on a weather-NONE / screen-free turn.
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_CHANGED), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_SCREEN_SET), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_SCREEN_EXPIRED), 0u);
+
+	// Field + both sides' screens remain pristine.
+	ZENITH_ASSERT_EQ((u_int)xEngine.GetState().m_xField.m_eWeather, (u_int)ZM_WEATHER_NONE);
+	ZENITH_ASSERT_EQ(xEngine.GetState().m_xField.m_uWeatherTurns, 0u);
+	for (u_int uSide = 0u; uSide < (u_int)ZM_SIDE_COUNT; ++uSide)
+	{
+		for (u_int uScr = 0u; uScr < (u_int)ZM_SCREEN_COUNT; ++uScr)
+		{
+			ZENITH_ASSERT_EQ(xEngine.GetState().Side((ZM_SIDE)uSide).m_auScreenTurns[uScr], 0u, "no screen touched");
+		}
+	}
+
+	// The turn drew ZERO RNG, so the state cursor equals a FRESH mirror at the same seed:
+	// the box-3 weather/screen end-of-turn machinery adds no draw on a NONE turn (byte-
+	// identical to box-2).
+	ZM_BattleRNG xFresh(ulSeed, 54ull);
+	ZENITH_ASSERT_EQ(xEngine.GetStateMutable().m_xRNG.Next(), xFresh.Next(),
+		"a weather-NONE / screen-free turn advances the RNG identically to box-2 (adds no draws)");
+}
+
+// ---- 9. Review-flagged coverage gaps (real behavior branches; expected values still
+//         derived from the formula / runtime maxHP, never echoed from the engine) -------
+
+// GAP 1: a weather chip that KOs. The chip reports the RAW pre-clamp amount (maxHP/8,
+// which overshoots the 1 HP remaining, mirroring the DAMAGE_DEALT/STATUS_DAMAGE convention),
+// remaining HP clamps to 0, and a FAINT follows.
+ZENITH_TEST(ZM_Battle, Box3SC1_Sand_ChipKOsAndEmitsFaint)
+{
+	ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN,    50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u, 100u) };
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u,  60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0x1234ull, 54ull);
+	xEngine.GetStateMutable().m_xField.m_eWeather = ZM_WEATHER_SAND;
+	xEngine.GetStateMutable().m_xField.m_uWeatherTurns = 5u;
+
+	// Normal maxHP (so the raw chip maxHP/8 > 1) but only 1 HP remaining -> the chip KOs and
+	// the reported amount overshoots the clamped remaining HP.
+	ZM_BattleMonster& xPlayer = xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
+	const u_int uMax  = xPlayer.m_auMaxStat[ZM_STAT_HP];
+	const u_int uChip = (uMax / 8u > 0u) ? (uMax / 8u) : 1u;
+	ZENITH_ASSERT_GT(uChip, 1u, "fixture needs a raw chip > 1 to exercise the overshoot");
+	xPlayer.m_uCurHP = 1u;
+	ZM_SC5ResolveMoveTurn(xEngine);
+
+	ZENITH_ASSERT_TRUE(xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().IsFainted(), "a chip through 1 HP KOs");
+	const int iWeather = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER);
+	const int iFaint   = ZM_SC5FindEvent(xEngine.GetEvents(), ZM_BATTLE_EVENT_FAINT,          ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_GE(iWeather, 0, "the chip fires");
+	ZENITH_ASSERT_GE(iFaint, 0, "the KO emits FAINT");
+	ZENITH_ASSERT_LT(iWeather, iFaint, "WEATHER_DAMAGE precedes the FAINT it caused");
+	const ZM_BattleEvent* pxWD = ZM_SC5FindEventPtr(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER);
+	if (pxWD != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxWD->m_iAmount, (int)uChip, "reports the RAW chip (maxHP/8), overshooting the 1 HP remaining");
+		ZENITH_ASSERT_EQ(pxWD->m_iAux, 0, "remaining HP clamps to 0");
+		ZENITH_ASSERT_EQ(pxWD->m_iTag, (int)ZM_WEATHER_SAND);
+	}
+}
+
+// GAP 2: overwriting an ACTIVE weather re-announces WEATHER_CHANGED, with prev = the
+// non-NONE weather it replaced.
+ZENITH_TEST(ZM_Battle, Box3SC1_Weather_OverwriteReAnnounces)
+{
+	ZM_BattleMonsterSpec xAtk = MakeSpec(ZM_SPECIES_NIBBIN, 20u, ZM_MOVE_SUNFLARE);
+	xAtk.m_aeMoves[1] = ZM_MOVE_RAINCALL;
+	ZM_BattleState xState;
+	BuildBattleState(xState, xAtk, MakeSpec(ZM_SPECIES_STRAYLING, 20u, ZM_MOVE_RAMBASH), 0x1234ull, 54ull);
+
+	{ Zenith_Vector<ZM_BattleEvent> xE; ZM_MoveContext xC = MakeCtx(xState, xE, ZM_SIDE_PLAYER, 0u); ZM_MoveExecutor::Execute(xC); }
+	ZENITH_ASSERT_EQ((u_int)xState.m_xField.m_eWeather, (u_int)ZM_WEATHER_SUN, "Sunflare sets Sun");
+
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 1u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_EQ((u_int)xState.m_xField.m_eWeather, (u_int)ZM_WEATHER_RAIN, "Raincall overwrites to Rain");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_WEATHER_CHANGED), 1u, "the overwrite re-announces");
+	const ZM_BattleEvent* pxWC = ZM_FindKind(xEvents, ZM_BATTLE_EVENT_WEATHER_CHANGED);
+	if (pxWC != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxWC->m_uSide, (u_int)ZM_SIDE_COUNT);
+		ZENITH_ASSERT_EQ(pxWC->m_iAmount, (int)ZM_WEATHER_RAIN, "new weather is RAIN");
+		ZENITH_ASSERT_EQ(pxWC->m_iAux, 5, "re-arms 5 turns");
+		ZENITH_ASSERT_EQ(pxWC->m_iTag, (int)ZM_WEATHER_SUN, "prev weather is the non-NONE SUN");
+	}
+}
+
+// GAP 3: the SPECIAL screen slot counts down + expires independently (a bug that only
+// ticks the physical slot would slip past the physical-only countdown test).
+ZENITH_TEST(ZM_Battle, Box3SC1_SpecialScreen_CountsDownAndExpires)
+{
+	ZM_BattleMonsterSpec axP[1] = { MakeSpecOverride(ZM_SPECIES_NIBBIN,    50u, ZM_MOVE_LUMENWALL, 120u, 60u, 60u, 60u, 60u, 100u) };
+	axP[0].m_aeMoves[1] = ZM_MOVE_MISTVEIL;
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_MISTVEIL, 120u, 60u, 60u, 60u, 60u,  60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0x1234ull, 54ull);
+
+	ZM_SC5ResolveMoveTurn(xEngine, 0u, 0u);   // Lumen Wall arms (special, 5); EOT decrements 5->4
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_SPECIAL], 4u, "set 5, first EOT decrement -> 4");
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_PHYSICAL], 0u, "the physical slot is untouched");
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u); ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_SPECIAL], 3u);
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u); ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_SPECIAL], 2u);
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u); ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_SPECIAL], 1u);
+	ZM_SC5ResolveMoveTurn(xEngine, 1u, 0u);   // 1->0: expiry
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_auScreenTurns[ZM_SCREEN_SPECIAL], 0u, "expired to 0");
+
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_SCREEN_EXPIRED), 1u, "exactly one expiry");
+	const ZM_BattleEvent* pxExp = ZM_SC5FindEventPtr(xEngine.GetEvents(), ZM_BATTLE_EVENT_SCREEN_EXPIRED, ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_NOT_NULL(pxExp);
+	if (pxExp != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxExp->m_uSlot, 0u);
+		ZENITH_ASSERT_EQ(pxExp->m_iAmount, (int)ZM_SCREEN_SPECIAL, "the expired screen is the special one");
+		ZENITH_ASSERT_EQ(pxExp->m_iAux, 0);
+		ZENITH_ASSERT_EQ(pxExp->m_iTag, 0);
+	}
+}
+
+// GAP 4: SNOW (like SAND / NONE) applies no type multiplier -- a water move is unchanged.
+ZENITH_TEST(ZM_Battle, Box3SC1_EndToEnd_SnowLeavesWaterMoveNeutral)
+{
+	const u_int uNone = ZM_Box3WeatherHit(ZM_MOVE_TIDECRASH, ZM_WEATHER_NONE, 1u, 1u, 1ull);
+	const u_int uSnow = ZM_Box3WeatherHit(ZM_MOVE_TIDECRASH, ZM_WEATHER_SNOW, 1u, 1u, 1ull);
+	ZENITH_ASSERT_EQ(uSnow, uNone, "snow does not scale a water move");
+}
+
+// GAP 5: the chip loop skips an already-fainted active. The player active is KO'd in the
+// move phase (2-mon party keeps the battle alive); the engine runs NO replacement between
+// the move phase and end-of-turn, so the fainted mon is still the active when the chip runs.
+ZENITH_TEST(ZM_Battle, Box3SC1_Sand_SkipsFaintedActive)
+{
+	ZM_BattleMonsterSpec axP[2] = {
+		MakeSpecOverride(ZM_SPECIES_NIBBIN,    50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u,  10u),   // slow active, KO'd this turn
+		MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_MISTVEIL, 120u, 60u, 80u, 60u, 80u,  60u) };  // bench (keeps the battle live)
+	ZM_BattleMonsterSpec axE[1] = { MakeSpecOverride(ZM_SPECIES_STRAYLING, 50u, ZM_MOVE_RAMBASH, 120u, 200u, 80u, 60u, 80u, 200u) };  // fast, strong
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 2u, axE, 1u, 0x1234ull, 54ull);
+	xEngine.GetStateMutable().m_xField.m_eWeather = ZM_WEATHER_SAND;
+	xEngine.GetStateMutable().m_xField.m_uWeatherTurns = 5u;
+	xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active().m_uCurHP = 1u;   // enemy Rambash (acc 100) KOs it in the move phase
+	ZM_SC5ResolveMoveTurn(xEngine);
+
+	ZENITH_ASSERT_TRUE(xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().IsFainted(), "player active was KO'd this turn");
+	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER), 0u,
+		"the fainted active takes no sand chip (skipped)");
+	ZENITH_ASSERT_NOT_NULL(ZM_SC5FindEventPtr(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_ENEMY));   // the living enemy still chips
 }

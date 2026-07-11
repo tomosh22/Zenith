@@ -58,6 +58,8 @@ private:
 	void ResolveMovePhase();        // order MOVE-action sides by priority -> eff speed -> RNG tie-break; execute
 	ZM_SIDE ExecuteMove(ZM_SIDE eAtk); // returns the side force-switched, or COUNT
 	void ResolveEndOfTurnPhase();   // box 1: emit TURN_END only. box 2/3: status/weather/leech ticks
+	void ResolveWeatherEndOfTurn(); // SC1: SAND/SNOW chip (PLAYER then ENEMY) + weather countdown/expiry
+	void ResolveScreenEndOfTurn();  // SC1: screen countdown/expiry (PLAYER then ENEMY, PHYS then SPEC)
 	void Emit(const ZM_BattleEvent& x) { m_xEvents.PushBack(x); }
 
 	// SC6 pre-move action handlers (fixed PLAYER-then-ENEMY order). A catch/flee sets

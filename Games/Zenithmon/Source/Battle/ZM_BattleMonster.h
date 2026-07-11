@@ -71,3 +71,9 @@ struct ZM_BattleMonster
 
 // Construct from species+level; overridable via the spec. Asserts level in [1,100].
 ZM_BattleMonster ZM_BuildBattleMonster(const ZM_BattleMonsterSpec& xSpec);
+
+// True iff the monster's species carries eType in either type slot. A ZM_TYPE_NONE
+// second slot never matches a real elemental type, so single-type species are handled
+// naturally. Shared helper used by the SC1 weather chip's type immunity (SAND: EARTH/
+// STONE/IRON; SNOW: ICE); mirrors the file-static type read in ZM_StatusLogic.
+bool ZM_BattleMonsterHasType(const ZM_BattleMonster& xMon, ZM_TYPE eType);
