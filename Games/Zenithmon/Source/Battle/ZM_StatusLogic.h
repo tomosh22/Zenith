@@ -47,6 +47,13 @@ namespace ZM_StatusLogic
 	// The first cancelling gate stops every later gate.
 	ZM_GATE_RESULT PreMoveGate(ZM_MoveContext& xCtx);
 
+	// Shared stat-stage mutation used by moves and ability hooks. Clamps to
+	// [-6,+6], emits the actual applied delta, and reports STAT_MAXED for a
+	// capped primary. bFromFoe arms the box-3 ability-veto seam; a successful
+	// veto emits ABILITY_TRIGGER and applies no stage change.
+	bool ApplyStatChange(ZM_BattleState& xState, Zenith_Vector<ZM_BattleEvent>& xEvents,
+		ZM_SIDE eTgt, ZM_BATTLE_STAT eStat, int iDelta, bool bPrimary, bool bFromFoe);
+
 	// Block rule: fails if the monster ALREADY holds any major, or is type-immune to
 	// this one -- BURN blocked on FIRE, FREEZE blocked on ICE, POISON/TOXIC blocked on
 	// VENOM or IRON; SLEEP / PARALYSIS have NO type block in box 2.

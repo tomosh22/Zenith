@@ -25,6 +25,7 @@
 #include "Zenithmon/Source/Battle/ZM_MoveExecutor.h"
 #include "Zenithmon/Source/Battle/ZM_StatusLogic.h"
 #include "Zenithmon/Source/Battle/ZM_CatchCalc.h"
+#include "Zenithmon/Source/Battle/ZM_AbilityHooks.h"
 #include "Zenithmon/Source/Battle/ZM_BattleMonster.h"
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
@@ -74,6 +75,11 @@ namespace
 		case ZM_BATTLE_EVENT_DRAIN:            return "DRAIN";
 		case ZM_BATTLE_EVENT_RECOIL:           return "RECOIL";
 		case ZM_BATTLE_EVENT_MULTI_HIT:        return "MULTI_HIT";
+		case ZM_BATTLE_EVENT_ABILITY_TRIGGER:   return "ABILITY_TRIGGER";
+		case ZM_BATTLE_EVENT_WEATHER_CHANGED:   return "WEATHER_CHANGED";
+		case ZM_BATTLE_EVENT_WEATHER_DAMAGE:    return "WEATHER_DAMAGE";
+		case ZM_BATTLE_EVENT_SCREEN_SET:        return "SCREEN_SET";
+		case ZM_BATTLE_EVENT_SCREEN_EXPIRED:    return "SCREEN_EXPIRED";
 		case ZM_BATTLE_EVENT_CATCH_SHAKE:      return "CATCH_SHAKE";
 		case ZM_BATTLE_EVENT_CATCH_RESULT:     return "CATCH_RESULT";
 		case ZM_BATTLE_EVENT_FLEE:             return "FLEE";
@@ -7449,4 +7455,386 @@ ZENITH_TEST(ZM_Battle, Box3SC1_Sand_SkipsFaintedActive)
 	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER), 0u,
 		"the fainted active takes no sand chip (skipped)");
 	ZENITH_ASSERT_NOT_NULL(ZM_SC5FindEventPtr(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_ENEMY));   // the living enemy still chips
+}
+
+// ============================================================================
+// ===== BOX 3 SC2: ABILITY HOOK INFRA + SWITCH_IN ABILITIES =====
+//
+// Independent behavioral contract for the first ability slice. The six live
+// abilities are the four weather callers, Daunting Roar, and Pressure Aura.
+// SWITCH_IN dispatch happens immediately after the corresponding SWITCH_IN
+// event in both Begin (PLAYER lead, then ENEMY lead) and DoSwitch. No ability in
+// this slice draws RNG. Identical caller weather is a strict no-op: no timer
+// refresh, WEATHER_CHANGED, or ABILITY_TRIGGER.
+// ============================================================================
+namespace
+{
+	ZM_BattleMonsterSpec ZM_Box3SC2Spec(ZM_SPECIES_ID eSpecies, ZM_MOVE_ID eMove,
+		ZM_ABILITY_ID eAbility, u_int uSpeed = 60u)
+	{
+		ZM_BattleMonsterSpec xSpec = MakeSpecOverride(eSpecies, 50u, eMove,
+			120u, 60u, 80u, 60u, 80u, uSpeed);
+		xSpec.m_eAbility = eAbility;
+		return xSpec;
+	}
+
+	void ZM_Box3SC2AssertAbilityTrigger(const ZM_BattleEvent& xEvent,
+		ZM_SIDE eOwner, u_int uSlot, ZM_ABILITY_ID eAbility)
+	{
+		const ZM_BattleEvent xExpected = ZM_MakeEvent(ZM_BATTLE_EVENT_ABILITY_TRIGGER,
+			eOwner, uSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 0, (int)eAbility);
+		ZENITH_ASSERT_TRUE(xEvent == xExpected,
+			"ABILITY_TRIGGER must carry owner side/slot, zero detail, and the ability id tag");
+	}
+
+	void ZM_Box3SC2AssertWeatherChanged(const ZM_BattleEvent& xEvent,
+		ZM_WEATHER eNew, u_int uTurns, ZM_WEATHER ePrevious)
+	{
+		const ZM_BattleEvent xExpected = ZM_MakeEvent(ZM_BATTLE_EVENT_WEATHER_CHANGED,
+			ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE,
+			(int)eNew, (int)uTurns, (int)ePrevious);
+		ZENITH_ASSERT_TRUE(xEvent == xExpected,
+			"WEATHER_CHANGED must carry new weather, duration, and previous weather");
+	}
+}
+
+// All four caller bodies are independently installed, set exactly five turns,
+// and announce WEATHER_CHANGED before their generic ABILITY_TRIGGER.
+ZENITH_TEST(ZM_Battle, Box3SC2_Begin_AllWeatherCallersSetFiveTurnsAndExactEvents)
+{
+	const ZM_ABILITY_ID aeAbilities[] = {
+		ZM_ABILITY_RAINCALLER, ZM_ABILITY_SUNCALLER,
+		ZM_ABILITY_SANDCALLER, ZM_ABILITY_SNOWCALLER,
+	};
+	const ZM_WEATHER aeWeather[] = {
+		ZM_WEATHER_RAIN, ZM_WEATHER_SUN, ZM_WEATHER_SAND, ZM_WEATHER_SNOW,
+	};
+	for (u_int i = 0u; i < sizeof(aeAbilities) / sizeof(aeAbilities[0]); ++i)
+	{
+		ZM_BattleMonsterSpec axP[1] = {
+			ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, aeAbilities[i], 100u) };
+		ZM_BattleMonsterSpec axE[1] = {
+			ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 60u) };
+		ZM_BattleEngine xEngine;
+		xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xA200ull + i, 54ull);
+
+		ZENITH_ASSERT_EQ((u_int)xEngine.GetState().m_xField.m_eWeather, (u_int)aeWeather[i]);
+		ZENITH_ASSERT_EQ(xEngine.GetState().m_xField.m_uWeatherTurns, 5u);
+		const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+		ZENITH_ASSERT_EQ(xEvents.GetSize(), 5u, "caller Begin stream is header + switch/effect + enemy switch");
+		if (xEvents.GetSize() == 5u)
+		{
+			ZENITH_ASSERT_TRUE(xEvents.Get(0u) == ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_BEGIN));
+			ZENITH_ASSERT_TRUE(xEvents.Get(1u) == ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+				ZM_SIDE_PLAYER, 0u, ZM_MOVE_NONE, ZM_SPECIES_NIBBIN));
+			ZM_Box3SC2AssertWeatherChanged(xEvents.Get(2u), aeWeather[i], 5u, ZM_WEATHER_NONE);
+			ZM_Box3SC2AssertAbilityTrigger(xEvents.Get(3u), ZM_SIDE_PLAYER, 0u, aeAbilities[i]);
+			ZENITH_ASSERT_TRUE(xEvents.Get(4u) == ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+				ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_STRAYLING));
+		}
+	}
+}
+
+// Begin dispatch is explicitly PLAYER then ENEMY. Therefore the enemy caller
+// overwrites the player's weather and its WEATHER_CHANGED tag records RAIN.
+ZENITH_TEST(ZM_Battle, Box3SC2_Begin_EnemyCallerOverwritesPlayerCallerInLeadOrder)
+{
+	ZM_BattleMonsterSpec axP[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, ZM_ABILITY_RAINCALLER, 100u) };
+	ZM_BattleMonsterSpec axE[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_SUNCALLER, 60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xA211ull, 54ull);
+
+	ZENITH_ASSERT_EQ((u_int)xEngine.GetState().m_xField.m_eWeather, (u_int)ZM_WEATHER_SUN);
+	ZENITH_ASSERT_EQ(xEngine.GetState().m_xField.m_uWeatherTurns, 5u);
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 7u);
+	if (xEvents.GetSize() == 7u)
+	{
+		ZENITH_ASSERT_EQ((u_int)xEvents.Get(1u).m_eKind, (u_int)ZM_BATTLE_EVENT_SWITCH_IN);
+		ZM_Box3SC2AssertWeatherChanged(xEvents.Get(2u), ZM_WEATHER_RAIN, 5u, ZM_WEATHER_NONE);
+		ZM_Box3SC2AssertAbilityTrigger(xEvents.Get(3u), ZM_SIDE_PLAYER, 0u, ZM_ABILITY_RAINCALLER);
+		ZENITH_ASSERT_TRUE(xEvents.Get(4u) == ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+			ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_STRAYLING));
+		ZM_Box3SC2AssertWeatherChanged(xEvents.Get(5u), ZM_WEATHER_SUN, 5u, ZM_WEATHER_RAIN);
+		ZM_Box3SC2AssertAbilityTrigger(xEvents.Get(6u), ZM_SIDE_ENEMY, 0u, ZM_ABILITY_SUNCALLER);
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC2_DoSwitch_IdenticalWeatherCallerDoesNotRefreshOrAnnounce)
+{
+	ZM_BattleMonsterSpec axP[2] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 100u),
+		ZM_Box3SC2Spec(ZM_SPECIES_KINDLET, ZM_MOVE_MISTVEIL, ZM_ABILITY_RAINCALLER, 80u),
+	};
+	ZM_BattleMonsterSpec axE[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 2u, axE, 1u, 0xA212ull, 54ull);
+	xEngine.GetStateMutable().m_xField.m_eWeather = ZM_WEATHER_RAIN;
+	xEngine.GetStateMutable().m_xField.m_uWeatherTurns = 2u;
+	const u_int uBefore = xEngine.GetEventCount();
+
+	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_PLAYER, 1u));
+	ZENITH_ASSERT_EQ(xEngine.GetEventCount(), uBefore + 1u,
+		"identical caller emits only the incoming SWITCH_IN");
+	ZENITH_ASSERT_EQ((u_int)xEngine.GetState().m_xField.m_eWeather, (u_int)ZM_WEATHER_RAIN);
+	ZENITH_ASSERT_EQ(xEngine.GetState().m_xField.m_uWeatherTurns, 2u,
+		"identical caller must not refresh the live timer to five");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_CHANGED), 0u);
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+	ZENITH_ASSERT_TRUE(xEngine.GetEvent(uBefore) == ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+		ZM_SIDE_PLAYER, 1u, ZM_MOVE_NONE, ZM_SPECIES_KINDLET));
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC2_DoSwitch_WeatherCallerDispatchesImmediatelyAfterSwitchIn)
+{
+	ZM_BattleMonsterSpec axP[2] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 100u),
+		ZM_Box3SC2Spec(ZM_SPECIES_KINDLET, ZM_MOVE_MISTVEIL, ZM_ABILITY_SANDCALLER, 80u),
+	};
+	ZM_BattleMonsterSpec axE[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 2u, axE, 1u, 0xA213ull, 54ull);
+	const u_int uBefore = xEngine.GetEventCount();
+
+	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_PLAYER, 1u));
+	ZENITH_ASSERT_EQ(xEngine.GetEventCount(), uBefore + 3u);
+	ZENITH_ASSERT_TRUE(xEngine.GetEvent(uBefore) == ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+		ZM_SIDE_PLAYER, 1u, ZM_MOVE_NONE, ZM_SPECIES_KINDLET));
+	ZM_Box3SC2AssertWeatherChanged(xEngine.GetEvent(uBefore + 1u),
+		ZM_WEATHER_SAND, 5u, ZM_WEATHER_NONE);
+	ZM_Box3SC2AssertAbilityTrigger(xEngine.GetEvent(uBefore + 2u),
+		ZM_SIDE_PLAYER, 1u, ZM_ABILITY_SANDCALLER);
+	ZENITH_ASSERT_EQ((u_int)xEngine.GetState().m_xField.m_eWeather, (u_int)ZM_WEATHER_SAND);
+	ZENITH_ASSERT_EQ(xEngine.GetState().m_xField.m_uWeatherTurns, 5u);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC2_Begin_DauntingRoarDropsFoeAttackBeforeEnemySwitchEvent)
+{
+	ZM_BattleMonsterSpec axP[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, ZM_ABILITY_DAUNTINGROAR, 100u) };
+	ZM_BattleMonsterSpec axE[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xA214ull, 54ull);
+
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], -1);
+	const Zenith_Vector<ZM_BattleEvent>& xEvents = xEngine.GetEvents();
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 5u);
+	if (xEvents.GetSize() == 5u)
+	{
+		ZENITH_ASSERT_TRUE(xEvents.Get(1u) == ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+			ZM_SIDE_PLAYER, 0u, ZM_MOVE_NONE, ZM_SPECIES_NIBBIN));
+		ZENITH_ASSERT_TRUE(xEvents.Get(2u) == ZM_MakeEvent(ZM_BATTLE_EVENT_STAT_STAGE_CHANGED,
+			ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, -1, (int)ZM_BATTLE_STAT_ATTACK));
+		ZM_Box3SC2AssertAbilityTrigger(xEvents.Get(3u),
+			ZM_SIDE_PLAYER, 0u, ZM_ABILITY_DAUNTINGROAR);
+		ZENITH_ASSERT_TRUE(xEvents.Get(4u) == ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+			ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_STRAYLING));
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC2_DoSwitch_DauntingRoarDropsFoeAndPreservesHookOrder)
+{
+	ZM_BattleMonsterSpec axP[2] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 100u),
+		ZM_Box3SC2Spec(ZM_SPECIES_KINDLET, ZM_MOVE_MISTVEIL, ZM_ABILITY_DAUNTINGROAR, 80u),
+	};
+	ZM_BattleMonsterSpec axE[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 2u, axE, 1u, 0xA215ull, 54ull);
+	const u_int uBefore = xEngine.GetEventCount();
+
+	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_PLAYER, 1u));
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], -1);
+	ZENITH_ASSERT_EQ(xEngine.GetEventCount(), uBefore + 3u);
+	ZENITH_ASSERT_TRUE(xEngine.GetEvent(uBefore) == ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+		ZM_SIDE_PLAYER, 1u, ZM_MOVE_NONE, ZM_SPECIES_KINDLET));
+	ZENITH_ASSERT_TRUE(xEngine.GetEvent(uBefore + 1u) == ZM_MakeEvent(ZM_BATTLE_EVENT_STAT_STAGE_CHANGED,
+		ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, -1, (int)ZM_BATTLE_STAT_ATTACK));
+	ZM_Box3SC2AssertAbilityTrigger(xEngine.GetEvent(uBefore + 2u),
+		ZM_SIDE_PLAYER, 1u, ZM_ABILITY_DAUNTINGROAR);
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC2_SharedApplyStatChangePreservesClampAndEncodingForNoneAbility)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState,
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 100u),
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 60u),
+		0xA216ull, 54ull);
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	const bool bChanged = ZM_StatusLogic::ApplyStatChange(xState, xEvents,
+		ZM_SIDE_ENEMY, ZM_BATTLE_STAT_ATTACK, -8, false, true);
+
+	ZENITH_ASSERT_TRUE(bChanged);
+	ZENITH_ASSERT_EQ(xState.Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], -6,
+		"shared stat core clamps to the existing -6 floor");
+	ZENITH_ASSERT_EQ(xEvents.GetSize(), 1u);
+	if (xEvents.GetSize() == 1u)
+	{
+		ZENITH_ASSERT_TRUE(xEvents.Get(0u) == ZM_MakeEvent(ZM_BATTLE_EVENT_STAT_STAGE_CHANGED,
+			ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, -6, (int)ZM_BATTLE_STAT_ATTACK));
+	}
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEvents, ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u,
+		"NONE ability never vetoes or announces a stat drop");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC2_Begin_PressureAuraAnnouncesAfterItsSwitchIn)
+{
+	ZM_BattleMonsterSpec axP[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, ZM_ABILITY_PRESSUREAURA, 100u) };
+	ZM_BattleMonsterSpec axE[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xA217ull, 54ull);
+
+	ZENITH_ASSERT_EQ(xEngine.GetEventCount(), 4u);
+	if (xEngine.GetEventCount() == 4u)
+	{
+		ZENITH_ASSERT_TRUE(xEngine.GetEvent(1u) == ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+			ZM_SIDE_PLAYER, 0u, ZM_MOVE_NONE, ZM_SPECIES_NIBBIN));
+		ZM_Box3SC2AssertAbilityTrigger(xEngine.GetEvent(2u),
+			ZM_SIDE_PLAYER, 0u, ZM_ABILITY_PRESSUREAURA);
+		ZENITH_ASSERT_TRUE(xEngine.GetEvent(3u) == ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+			ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_STRAYLING));
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC2_PressureAura_OpposingMoveSpendsTwoPP)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState,
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE, 100u),
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_PRESSUREAURA, 60u),
+		0xA218ull, 54ull);
+	ZM_BattleMonster& xAttacker = xState.Side(ZM_SIDE_PLAYER).Active();
+	const u_int uBefore = xAttacker.m_axMoves[0].m_uCurPP;
+	ZENITH_ASSERT_GE(uBefore, 2u);
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_EQ(xAttacker.m_axMoves[0].m_uCurPP, uBefore - 2u,
+		"an opposing-target move into Pressure Aura spends two PP");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC2_PressureAura_OneRemainingPPClampsAtZero)
+{
+	ZM_BattleState xState;
+	BuildBattleState(xState,
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE, 100u),
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_PRESSUREAURA, 60u),
+		0xA219ull, 54ull);
+	ZM_BattleMonster& xAttacker = xState.Side(ZM_SIDE_PLAYER).Active();
+	xAttacker.m_axMoves[0].m_uCurPP = 1u;
+	Zenith_Vector<ZM_BattleEvent> xEvents;
+	ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+	ZM_MoveExecutor::Execute(xCtx);
+	ZENITH_ASSERT_EQ(xAttacker.m_axMoves[0].m_uCurPP, 0u,
+		"the two-PP tax clamps instead of unsigned-underflowing");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC2_PressureAura_NonMatchingTargetsAndNoneDefenderSpendOnePP)
+{
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState,
+			ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 100u),
+			ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_PRESSUREAURA, 60u),
+			0xA21Aull, 54ull);
+		ZM_BattleMonster& xAttacker = xState.Side(ZM_SIDE_PLAYER).Active();
+		const u_int uBefore = xAttacker.m_axMoves[0].m_uCurPP;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZENITH_ASSERT_EQ(xAttacker.m_axMoves[0].m_uCurPP, uBefore - 1u,
+			"Pressure Aura never taxes a self-target move");
+	}
+
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState,
+			ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_SUNFLARE, ZM_ABILITY_NONE, 100u),
+			ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_RAMBASH, ZM_ABILITY_PRESSUREAURA, 60u),
+			0xA21A01ull, 54ull);
+		ZM_BattleMonster& xAttacker = xState.Side(ZM_SIDE_PLAYER).Active();
+		const u_int uBefore = xAttacker.m_axMoves[0].m_uCurPP;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZENITH_ASSERT_EQ(xAttacker.m_axMoves[0].m_uCurPP, uBefore - 1u,
+			"Pressure Aura never taxes a field-target move");
+	}
+
+	{
+		ZM_BattleState xState;
+		BuildBattleState(xState,
+			ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, ZM_ABILITY_NONE, 100u),
+			ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 60u),
+			0xA21A02ull, 54ull);
+		ZM_BattleMonster& xAttacker = xState.Side(ZM_SIDE_PLAYER).Active();
+		const u_int uBefore = xAttacker.m_axMoves[0].m_uCurPP;
+		Zenith_Vector<ZM_BattleEvent> xEvents;
+		ZM_MoveContext xCtx = MakeCtx(xState, xEvents, ZM_SIDE_PLAYER, 0u);
+		ZM_MoveExecutor::Execute(xCtx);
+		ZENITH_ASSERT_EQ(xAttacker.m_axMoves[0].m_uCurPP, uBefore - 1u,
+			"an opposing-target move costs one PP when the defender has no Pressure Aura");
+	}
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC2_NoneAbility_FullTurnAddsNoEventsOrRNGDraws)
+{
+	const u_int64 ulSeed = 0xA21Bull;
+	ZM_BattleMonsterSpec axP[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 100u) };
+	ZM_BattleMonsterSpec axE[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_NONE, 60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, ulSeed, 54ull);
+	ZM_SC5ResolveMoveTurn(xEngine);
+
+	Zenith_Vector<ZM_BattleEvent> xExpected;
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_BEGIN));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+		ZM_SIDE_PLAYER, 0u, ZM_MOVE_NONE, ZM_SPECIES_NIBBIN));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN,
+		ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_STRAYLING));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_BEGIN,
+		ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 1));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED,
+		ZM_SIDE_PLAYER, 0u, ZM_MOVE_MISTVEIL));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_STAT_STAGE_CHANGED,
+		ZM_SIDE_PLAYER, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 2, (int)ZM_BATTLE_STAT_SPDEFENSE));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED,
+		ZM_SIDE_ENEMY, 0u, ZM_MOVE_MISTVEIL));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_STAT_STAGE_CHANGED,
+		ZM_SIDE_ENEMY, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 2, (int)ZM_BATTLE_STAT_SPDEFENSE));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END,
+		ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 1));
+	ZM_AssertStreamEquals(xExpected, xEngine.GetEvents(), "box3SC2NoneAbilityExactStream");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+
+	ZM_BattleRNG xFresh(ulSeed, 54ull);
+	ZENITH_ASSERT_EQ(xEngine.GetStateMutable().m_xRNG.Next(), xFresh.Next(),
+		"NONE abilities add zero switch-in or turn RNG draws");
+}
+
+ZENITH_TEST(ZM_Battle, Box3SC2_Begin_NonSwitchInAbilitiesRemainSilent)
+{
+	ZM_BattleMonsterSpec axP[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_NIBBIN, ZM_MOVE_MISTVEIL, ZM_ABILITY_VERDANTSURGE, 100u) };
+	ZM_BattleMonsterSpec axE[1] = {
+		ZM_Box3SC2Spec(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL, ZM_ABILITY_BLUBBER, 60u) };
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axP, 1u, axE, 1u, 0xA21Cull, 54ull);
+
+	ZENITH_ASSERT_EQ(xEngine.GetEventCount(), 3u,
+		"non-SWITCH_IN hook rows do not fire merely because Begin sees an ability");
+	ZENITH_ASSERT_EQ(ZM_CountKind(xEngine.GetEvents(), ZM_BATTLE_EVENT_ABILITY_TRIGGER), 0u);
+	ZENITH_ASSERT_EQ((u_int)xEngine.GetState().m_xField.m_eWeather, (u_int)ZM_WEATHER_NONE);
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().m_aiStage[ZM_BATTLE_STAT_ATTACK], 0);
 }

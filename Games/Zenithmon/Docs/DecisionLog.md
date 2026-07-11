@@ -15,6 +15,65 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-11 -- ZM-D-039 -- S2 box-3 SC2: ability-hook infrastructure + SWITCH_IN abilities
+
+- **Decision:** The executable ability surface is a plain-function-pointer
+  `ZM_AbilityHooks` aggregate with **12 slots over the existing 11
+  `ZM_ABILITY_HOOK` bits**, plus a compiled `const` **50-row** table keyed by the
+  stable `ZM_ABILITY_ID`. `ZM_AbilityContext` is a non-owning view of the
+  engine-owned battle state, append-only event sink, owner side, and opposing
+  side. `ZM_GetAbilityHooks` returns the stable row for every real id and safely
+  returns `nullptr` for `ZM_ABILITY_NONE` or any out-of-range id; callers never
+  feed the sentinel into the asserting metadata accessor. SC2 installs only the
+  six SWITCH_IN rows (DAUNTINGROAR, the four `*CALLER`s, and PRESSUREAURA); the
+  remaining slots stay null until their ordered SC3-SC5 implementations.
+- **Switch-in contract:** ability dispatch runs immediately **after** the
+  corresponding `SWITCH_IN` event. `Begin` resolves PLAYER lead + hook, then
+  ENEMY lead + hook; `DoSwitch` uses the same post-event dispatch. RAINCALLER,
+  SUNCALLER, SANDCALLER, and SNOWCALLER set their weather for exactly five
+  turns, emit `WEATHER_CHANGED` then `ABILITY_TRIGGER`, and treat an already-
+  identical weather as a strict no-op (no refresh and no events). Later
+  switch-ins overwrite a different weather and preserve the previous-weather
+  event tag.
+- **Daunting Roar / Pressure Aura contract:** Daunting Roar lowers the opposing
+  active's ATTACK through the promoted shared
+  `ZM_StatusLogic::ApplyStatChange` clamp/event seam, then announces its
+  `ABILITY_TRIGGER`; the `bFromFoe` parameter reserves the SC4 stat-drop-veto
+  hook without changing NONE-ability behavior. A move targeting the opposing
+  PRESSUREAURA holder costs **2 PP**, clamped at zero. SELF and FIELD targets,
+  and opponent-target moves against a NONE-ability defender, continue to cost
+  exactly 1 PP. Pressure Aura announces on switch-in rather than adding a
+  per-move event.
+- **Determinism + staged coverage:** SC2 adds **zero RNG draws**. A NONE ability
+  still adds zero events, draws, or state changes, and the pre-box-3 stream is
+  byte-identical. Coverage is deliberately staged: every currently installed
+  row must realize each declared bit via a live pfn or the explicit engine-side
+  exception table, every live pfn must have a declared bit, the exact 12-ability
+  WEATHER whitelist rejects unrelated declarations, and no fake future hook is
+  installed merely to satisfy coverage. SC3 and SC4 extend the installed set;
+  the all-50 complete-realization gate belongs to SC5.
+- **Why:** the table preserves the repo's no-`std::function` rule, stable data ids,
+  append-only event protocol, and deterministic NONE path while giving later
+  ability slices one typed dispatch surface. Centralizing stat mutation avoids
+  duplicating clamp/event semantics between moves and switch-in hooks.
+- **Tests that lock it:** **18 new unit cases** (5 `ZM_Data`, 13 `ZM_Battle`)
+  cover the 12-slot/sentinel table contract, staged and converse realization
+  rules, the explicit engine-side rosters, all four weather callers, Begin and
+  DoSwitch ordering, overwrite and identical-weather anti-refresh, Daunting
+  Roar + shared clamp/event encoding, Pressure Aura's 2-PP path + zero clamp and
+  its SELF/FIELD/NONE-defender 1-PP negatives, non-SWITCH_IN silence, and the
+  exact NONE event/RNG stream. Local evidence: Vulkan tools build GREEN; boot
+  unit gate **1446 registered = 1445 passed / 0 failed / 1 skipped**; headless
+  automated boot **1/1**; implementation/test reviews GREEN after both
+  SHOULD-FIX test gaps were closed.
+- **Reversibility:** high and localized. Remove the new hook table/context,
+  switch-in dispatch, Pressure Aura M1 predicate, shared stat wrapper, and SC2
+  tests/baseline to return to the SC1 weather-only state. The shared stat helper
+  is additive and may be retained independently; no save schema, event ordinal,
+  data-table id, or RNG phase changed.
+
+---
+
 ## 2026-07-11 -- ZM-D-038 -- Terrain fixed-size/fixed-density limitation accepted as deferred engine TODO (E6)
 
 - **Decision:** Zenith's terrain system cannot currently give different terrain instances

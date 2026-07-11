@@ -3,6 +3,7 @@
 #include "Zenithmon/Source/Battle/ZM_StatusLogic.h"
 #include "Zenithmon/Source/Battle/ZM_MoveExecutor.h"   // ZM_MoveContext full definition
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
+#include "Zenithmon/Source/Battle/ZM_AbilityHooks.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"       // ZM_GetSpeciesData -> defender types
 
 // ============================================================================
@@ -24,6 +25,58 @@ static bool g_HasType(const ZM_BattleMonster& xMon, ZM_TYPE eType)
 static bool g_HasVolatile(const ZM_BattleMonster& xMon, ZM_VOLATILE eVolatile)
 {
 	return (xMon.m_uVolatileMask & (u_int)eVolatile) != 0u;
+}
+
+bool ZM_StatusLogic::ApplyStatChange(ZM_BattleState& xState,
+	Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_SIDE eTgt, ZM_BATTLE_STAT eStat,
+	int iDelta, bool bPrimary, bool bFromFoe)
+{
+	ZM_BattleSide&    xTgtSide = xState.Side(eTgt);
+	ZM_BattleMonster& xTgt     = xTgtSide.Active();
+
+	// The hook slot is introduced in SC2 so later ability bodies can veto at the
+	// one mutation seam. Until SC4 populates those slots this branch is inert.
+	if (iDelta < 0 && bFromFoe)
+	{
+		const ZM_AbilityHooks* pxHooks = ZM_GetAbilityHooks(xTgt.m_eAbility);
+		if (pxHooks != nullptr && pxHooks->pfnPreventStatDrop != nullptr)
+		{
+			ZM_AbilityContext xAbilityCtx;
+			xAbilityCtx.m_pxState = &xState;
+			xAbilityCtx.m_pxEvents = &xEvents;
+			xAbilityCtx.m_eSelf = eTgt;
+			xAbilityCtx.m_eOther = eTgt == ZM_SIDE_PLAYER ? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
+			if (pxHooks->pfnPreventStatDrop(xAbilityCtx, eStat))
+			{
+				xEvents.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_ABILITY_TRIGGER, eTgt,
+					xTgtSide.m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 0,
+					(int)xTgt.m_eAbility));
+				return false;
+			}
+		}
+	}
+
+	const int iOld = xTgt.m_aiStage[eStat];
+	int iNew = iOld + iDelta;
+	if (iNew > iZM_MAX_STAGE) { iNew = iZM_MAX_STAGE; }
+	if (iNew < iZM_MIN_STAGE) { iNew = iZM_MIN_STAGE; }
+
+	if (iNew == iOld)
+	{
+		if (bPrimary)
+		{
+			xEvents.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, eTgt,
+				xTgtSide.m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0,
+				(int)ZM_MOVE_FAIL_STAT_MAXED));
+		}
+		return false;
+	}
+
+	xTgt.m_aiStage[eStat] = iNew;
+	xEvents.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_STAT_STAGE_CHANGED, eTgt,
+		xTgtSide.m_uActiveSlot, ZM_MOVE_NONE, ZM_SPECIES_NONE, iNew - iOld,
+		(int)eStat));
+	return true;
 }
 
 bool ZM_StatusLogic::CanApplyMajor(const ZM_BattleMonster& xMon, ZM_MAJOR_STATUS eStatus)

@@ -3,6 +3,7 @@
 #include "Zenithmon/Source/Battle/ZM_BattleEngine.h"
 #include "Zenithmon/Source/Battle/ZM_MoveExecutor.h"
 #include "Zenithmon/Source/Battle/ZM_StatusLogic.h"
+#include "Zenithmon/Source/Battle/ZM_AbilityHooks.h"
 #include "Zenithmon/Source/Battle/ZM_CatchCalc.h"
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
@@ -19,6 +20,27 @@
 // Effective speed (stat-stage fold + paralysis 1/4 cut); defined below, forward-
 // declared so the SC6 pre-move handlers (which precede it) can use it for flee odds.
 static u_int g_EffectiveSpeed(const ZM_BattleMonster& xMon);
+
+// Dispatch immediately after the incoming monster's SWITCH_IN event. A null
+// row/slot is deliberately inert, preserving every NONE-ability stream and RNG
+// cursor. Initial leads and later switches share this exact path.
+static void g_DispatchSwitchInAbility(ZM_BattleState& xState,
+	Zenith_Vector<ZM_BattleEvent>& xEvents, ZM_SIDE eSelf)
+{
+	ZM_BattleMonster& xMon = xState.Side(eSelf).Active();
+	const ZM_AbilityHooks* pxHooks = ZM_GetAbilityHooks(xMon.m_eAbility);
+	if (pxHooks == nullptr || pxHooks->pfnOnSwitchIn == nullptr)
+	{
+		return;
+	}
+
+	ZM_AbilityContext xCtx;
+	xCtx.m_pxState = &xState;
+	xCtx.m_pxEvents = &xEvents;
+	xCtx.m_eSelf = eSelf;
+	xCtx.m_eOther = eSelf == ZM_SIDE_PLAYER ? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
+	pxHooks->pfnOnSwitchIn(xCtx);
+}
 
 void ZM_BattleEngine::Begin(const ZM_BattleConfig& xConfig,
 	const ZM_BattleMonsterSpec* paxPlayer, u_int uPlayerCount,
@@ -59,8 +81,10 @@ void ZM_BattleEngine::Begin(const ZM_BattleConfig& xConfig,
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_BEGIN));
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_PLAYER, xPlayer.m_uActiveSlot,
 		ZM_MOVE_NONE, (u_int)xPlayer.Active().m_eSpecies));
+	g_DispatchSwitchInAbility(m_xState, m_xEvents, ZM_SIDE_PLAYER);
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_ENEMY, xEnemy.m_uActiveSlot,
 		ZM_MOVE_NONE, (u_int)xEnemy.Active().m_eSpecies));
+	g_DispatchSwitchInAbility(m_xState, m_xEvents, ZM_SIDE_ENEMY);
 }
 
 void ZM_BattleEngine::SubmitAction(ZM_SIDE eSide, const ZM_BattleAction& xAction)
@@ -397,6 +421,7 @@ bool ZM_BattleEngine::DoSwitch(ZM_SIDE eSide, u_int uTargetSlot)
 	xSide.m_uActiveSlot = uTargetSlot;
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, eSide, uTargetSlot,
 		ZM_MOVE_NONE, (u_int)xSide.Active().m_eSpecies));
+	g_DispatchSwitchInAbility(m_xState, m_xEvents, eSide);
 	return true;
 }
 

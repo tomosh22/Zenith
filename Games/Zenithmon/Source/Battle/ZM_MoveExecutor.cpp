@@ -5,6 +5,7 @@
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
+#include "Zenithmon/Source/Data/ZM_AbilityData.h"
 
 // ============================================================================
 // ZM_MoveExecutor -- SC1 seam + SC2 stat-stage effects + SC3 delivery/field +
@@ -99,42 +100,14 @@ static bool g_IsStatEffect(ZM_MOVE_EFFECT eEffect)
 	}
 }
 
-// Apply ONE stat-stage delta to a target and emit. Clamp to [iZM_MIN_STAGE,
-// iZM_MAX_STAGE]. Returns whether the stage actually moved (so a multi-stat caller
-// can count changes and decide a single whole-move failure). If the stage is already
-// at the cap in the requested direction (new == old): a single-stat STATUS-category
-// PRIMARY emits MOVE_FAILED(STAT_MAXED) on the TARGET (the mon whose stage is capped);
-// a damaging SECONDARY -- and any per-stat cap of a MULTI-stat effect (passed
-// bPrimary=false) -- is silent. Otherwise set the stage and emit STAT_STAGE_CHANGED
-// with m_iAmount = the ACTUAL signed delta applied (new-old, may be smaller than
-// iDelta near the cap) and m_iAux = the stat.
+// Thin move-context wrapper around the shared clamp+emit+ability-veto seam. Existing
+// move behavior is unchanged; bFromFoe is true only when the move targets the other
+// side, while self-inflicted drops remain unvetoed.
 static bool g_ApplyStatChange(ZM_MoveContext& xCtx, ZM_SIDE eTgt, ZM_BATTLE_STAT eStat,
 	int iDelta, bool bPrimary)
 {
-	ZM_BattleSide&    xTgtSide = xCtx.m_pxState->Side(eTgt);
-	ZM_BattleMonster& xTgt     = xTgtSide.Active();
-
-	const int iOld = xTgt.m_aiStage[eStat];
-	int iNew = iOld + iDelta;
-	if (iNew > iZM_MAX_STAGE) { iNew = iZM_MAX_STAGE; }
-	if (iNew < iZM_MIN_STAGE) { iNew = iZM_MIN_STAGE; }
-
-	if (iNew == iOld)
-	{
-		// Already capped in the requested direction: a single-stat primary announces
-		// the failure; a secondary proc / multi-stat per-stat cap is silent.
-		if (bPrimary)
-		{
-			xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_FAILED, eTgt, xTgtSide.m_uActiveSlot,
-				ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, (int)ZM_MOVE_FAIL_STAT_MAXED));
-		}
-		return false;
-	}
-
-	xTgt.m_aiStage[eStat] = iNew;
-	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_STAT_STAGE_CHANGED, eTgt, xTgtSide.m_uActiveSlot,
-		ZM_MOVE_NONE, ZM_SPECIES_NONE, iNew - iOld, (int)eStat));
-	return true;
+	return ZM_StatusLogic::ApplyStatChange(*xCtx.m_pxState, *xCtx.m_pxEvents,
+		eTgt, eStat, iDelta, bPrimary, eTgt != xCtx.m_eAtk);
 }
 
 // Apply a MULTI-stat self-RAISE (RAISE_ATTACK_SPEED / RAISE_ALL / ...): raise each
@@ -881,7 +854,10 @@ ZM_MoveResult ZM_MoveExecutor::Execute(ZM_MoveContext& xCtx)
 	{
 		Zenith_Assert(xMoveSlot.m_uCurPP > 0u,
 			"MoveExecutor: move slot %u has no PP", xCtx.m_uMoveSlot);
-		--xMoveSlot.m_uCurPP;
+		const u_int uPPCost = xMove.m_eTarget == ZM_MOVE_TARGET_OPPONENT
+			&& xCtx.Def().m_eAbility == ZM_ABILITY_PRESSUREAURA ? 2u : 1u;
+		xMoveSlot.m_uCurPP = xMoveSlot.m_uCurPP > uPPCost
+			? xMoveSlot.m_uCurPP - uPPCost : 0u;
 	}
 	xCtx.Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_MOVE_USED, xCtx.m_eAtk, xAtkSide.m_uActiveSlot, (u_int)xMove.m_eId));
 
