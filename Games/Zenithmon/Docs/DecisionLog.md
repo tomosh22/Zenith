@@ -15,6 +15,52 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-12 -- ZM-D-049 -- Breeding SC-B: real egg groups + GLOOPET Ditto-analog + gendered compatibility
+
+- **Decision:** part of the feature-complete-breeding expansion (ZM-D-048).
+  Replaces the archetype-as-egg-group proxy with a real DERIVED egg-group
+  taxonomy, adds a Ditto-analog, and makes breeding compatibility gender-aware.
+- **Egg groups (DERIVED, no stored column):** `ZM_GetSpeciesEggGroups(id)` ->
+  `ZM_EggGroups{ m_uCount, m_aeGroups[2] }` over `ZM_EGG_GROUP` (FIELD / HUMANOID /
+  FLYING / DRAGON / WATER / BUG / AMORPHOUS / PLANT / MINERAL / FAIRY / NO_EGGS /
+  UNIVERSAL). Legendary -> {NO_EGGS}. Else primary from archetype (QUADRUPED->FIELD,
+  BIPED->HUMANOID, AVIAN->FLYING, SERPENT->DRAGON, AQUATIC->WATER, INSECTOID->BUG,
+  BLOB->AMORPHOUS, FLOATER_PLANTOID->PLANT); secondary from the FIRST type slot that
+  maps (GRASS->PLANT, DRAKE->DRAGON, FEY->FAIRY, PHANTOM->AMORPHOUS, WATER->WATER,
+  STONE/IRON/EARTH->MINERAL, SKY->FLYING), added only if != primary -- if the first
+  mapping slot equals the primary the species stays single-group (slot 1 is not then
+  consulted).
+- **Ditto-analog:** GLOOPET (F40, BLOB, NORMAL, COMMON, GENDERLESS) is the UNIVERSAL
+  breeder via `ZM_IsUniversalBreeder`. It breeds with ANY non-legendary partner
+  ignoring gender + egg group; the offspring follows the non-universal parent's line.
+  Two universals, or universal + legendary, are incompatible.
+- **Compatibility (gender-aware):** `ZM_AreSpeciesCompatible(a,b)` (species-level):
+  not legendary, not both-universal, one-universal OR share an egg group.
+  `ZM_AreCompatible(specA,specB)` (spec-level): species-compatible AND (universal OR
+  exactly one MALE + one FEMALE). A GENDERLESS non-universal parent is never
+  compatible (only a universal breeder can breed with a genderless species).
+  `ZM_DaycarePairCompatible` is now gender-aware (delegates to `ZM_AreCompatible`).
+- **Offspring parent role:** `ZM_GenerateEgg(A,B,...)` derives the mother =
+  non-universal partner (if one side is universal) else the FEMALE parent; the mother
+  supplies the base-evo offspring species, the copied ability, and the `RandBelow(2)
+  ==0` IV source. RNG draw order/bounds are UNCHANGED (IV -> nature -> gender); only
+  which parent each draw reads changes, so IV/nature goldens stay byte-identical
+  wherever the female parent is the previous mother. A precondition assert fires on an
+  invalid pair. Legacy `ZM_GetBreedingGroup` deleted (no-legacy mandate).
+- **Tests:** 22 new `ZM_Data` tests (egg-group derivation incl. the primary-blocks-
+  secondary single-group case, universal breeder, species + gendered compatibility,
+  offspring parent role, daycare) + 24 existing breeding tests re-baselined to
+  gendered/GLOOPET fixtures. The re-baseline is LEGITIMATE (verified by review): the
+  female parent is set to the previous mother, so IV/nature golden VALUES are
+  byte-identical AND still match the unchanged independent offline oracle -- only the
+  parent-declaration lines changed. The genderless-blob test was rebuilt as
+  GLOOPET x blob. Adversarial review: SAFE-TO-COMMIT (2 low findings closed pre-commit:
+  a PUFFSEED single-group coverage assert + a stale-comment reword). Boot unit baseline
+  1676 -> 1698.
+- **Reversibility:** additive; the egg-group mapping + the GLOOPET designation are
+  data-derivation choices, S11-tunable. SC-C (egg moves + ability/hidden-ability
+  inheritance + hatch-cycle data) completes the feature.
+
 ## 2026-07-12 -- ZM-D-048 -- Feature-complete breeding + gender (user-directed; fulfilling the mainline breeding scope). SC-A gender foundation.
 
 - **Decision (user, 2026-07-12):** breeding is completed to the FULL mainline

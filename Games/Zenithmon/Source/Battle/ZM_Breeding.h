@@ -11,11 +11,14 @@
 // a fixed RNG stream reproduces every roll bit-for-bit. No globals, no UI, no
 // overworld. RNG is the ONLY randomness source (never rand()/std::random).
 //
-// Derived rulings (see spec sections 5-8): egg groups are still proxied by
-// ZM_ARCHETYPE and compatibility is NOT yet gendered ("mother" = the first
-// parameter by convention) -- both land in box-6 SC-B. The egg's gender IS rolled
-// from the OFFSPRING species' ratio (SC-A, ZM_RollGender). Ability = copied from the
-// mother; egg moves = the base-evo level-1 learnset; Masuda / shiny = cut.
+// Box-6 SC-B upgrades: egg groups are a REAL derived taxonomy (ZM_GetSpeciesEggGroups,
+// no longer the ZM_ARCHETYPE proxy); compatibility is GENDERED (one MALE + one FEMALE)
+// with a Ditto-analog UNIVERSAL breeder (GLOOPET) that ignores gender + egg group;
+// and ZM_GenerateEgg derives parent ROLES internally -- the "mother" (egg species +
+// inherited line) is the FEMALE parent, or the NON-universal parent when the universal
+// breeder is involved. The egg's gender is rolled from the OFFSPRING species' ratio
+// (SC-A, ZM_RollGender). Ability = copied from the mother; egg moves = the base-evo
+// level-1 learnset; Masuda / shiny = cut.
 // ============================================================================
 
 // --- tunable constants (spec sections 7-8) ---
@@ -39,24 +42,29 @@ struct ZM_BreedingParams
 // Pure, no RNG, bounds-asserted.
 ZM_SPECIES_ID ZM_GetBaseEvolution(ZM_SPECIES_ID eSpecies);
 
-// The breeding-group proxy for a species (its ZM_ARCHETYPE). Same value == same
-// group. Documented reduced stand-in for a real egg-group column.
-ZM_ARCHETYPE  ZM_GetBreedingGroup(ZM_SPECIES_ID eSpecies);
-
-// True iff the two species can produce an egg: BOTH breedable (rarity != LEGENDARY)
-// AND sharing a breeding group. Symmetric. Pure, no RNG. (Same-slot identity is a
-// daycare concern, not checked here.)
+// True iff the two species CAN form a breeding pair ignoring gender (box-6 SC-B;
+// used where the parents' genders are unknown). BOTH must be non-legendary AND either
+// share >= 1 egg group (ZM_GetSpeciesEggGroups) OR exactly one side is the universal
+// breeder. Two universal breeders (or universal + legendary) are incompatible.
+// Symmetric. Pure, no RNG. (Same-slot identity is a daycare concern, not checked here.)
 bool          ZM_AreSpeciesCompatible(ZM_SPECIES_ID eA, ZM_SPECIES_ID eB);
 
-// Convenience overload on the parent specs (reads each spec's m_eSpecies).
+// The real, GENDER-AWARE breeding gate on two parent specs (box-6 SC-B): the species
+// are ZM_AreSpeciesCompatible AND either one side is the universal breeder (which
+// ignores gender) OR the two carry OPPOSITE binary genders (one MALE + one FEMALE). A
+// GENDERLESS non-universal parent can breed ONLY with the universal breeder. Symmetric,
+// no RNG.
 bool          ZM_AreCompatible(const ZM_BattleMonsterSpec& xParentA,
                                const ZM_BattleMonsterSpec& xParentB);
 
-// Produce the egg. PRECONDITION: ZM_AreCompatible(xMother, xFather) is true
-// (asserted). xMother (the FIRST parameter) is the species source. Deterministic
-// function of the two parents + xRng + xParams; draw order pinned in spec section 7.
-// Returns a level-1 ZM_BattleMonsterSpec ready for ZM_BuildBattleMonster.
-ZM_BattleMonsterSpec ZM_GenerateEgg(const ZM_BattleMonsterSpec& xMother,
-                                    const ZM_BattleMonsterSpec& xFather,
+// Produce the egg. PRECONDITION: ZM_AreCompatible(xParentA, xParentB) is true
+// (asserted). Parent ROLES are derived internally (box-6 SC-B): the "mother" -- the
+// egg's species (base evolution) plus its inherited ability -- is the FEMALE parent,
+// or the NON-universal parent when the universal breeder is involved; the other parent
+// is the "father". Callers may pass the two parents in EITHER order. Deterministic
+// function of the parents + xRng + xParams; the RNG draw order is pinned (IV -> nature
+// -> gender) and unchanged by role selection. Returns a level-1 ZM_BattleMonsterSpec.
+ZM_BattleMonsterSpec ZM_GenerateEgg(const ZM_BattleMonsterSpec& xParentA,
+                                    const ZM_BattleMonsterSpec& xParentB,
                                     ZM_BattleRNG& xRng,
                                     const ZM_BreedingParams& xParams = ZM_BreedingParams{});

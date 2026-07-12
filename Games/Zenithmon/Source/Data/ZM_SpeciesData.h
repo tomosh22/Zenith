@@ -97,6 +97,32 @@ enum ZM_GENDER_RATIO : u_int
 // without a RandBelow(8) draw.
 static const u_int uZM_GENDER_RATIO_NO_ROLL = ~0u;
 
+// The breeding taxonomy that gates egg compatibility (box-6 SC-B). A species carries
+// 1-2 groups, DERIVED from its archetype (primary) + a type slot (secondary) by
+// ZM_GetSpeciesEggGroups -- the dex ROW stays untouched (mirrors the ZM-D-021/023
+// derived-accessor precedent). NO_EGGS marks the legendaries (they never breed).
+// UNIVERSAL is reserved for the Ditto-analog shapeshifter, whose universality is
+// expressed through the ZM_IsUniversalBreeder predicate -- it is NOT returned by
+// ZM_GetSpeciesEggGroups. APPEND-only + save-stable; ZM_EGG_GROUP_COUNT is the
+// sentinel, never a stored value.
+enum ZM_EGG_GROUP : u_int
+{
+	ZM_EGG_GROUP_FIELD,
+	ZM_EGG_GROUP_HUMANOID,
+	ZM_EGG_GROUP_FLYING,
+	ZM_EGG_GROUP_DRAGON,
+	ZM_EGG_GROUP_WATER,
+	ZM_EGG_GROUP_BUG,
+	ZM_EGG_GROUP_AMORPHOUS,
+	ZM_EGG_GROUP_PLANT,
+	ZM_EGG_GROUP_MINERAL,
+	ZM_EGG_GROUP_FAIRY,
+	ZM_EGG_GROUP_NO_EGGS,
+	ZM_EGG_GROUP_UNIVERSAL,
+
+	ZM_EGG_GROUP_COUNT
+};
+
 // Every species, in dex order: family F01..F56 (each family's stages in order),
 // then the three legendaries. IDs are contiguous 0..ZM_SPECIES_COUNT-1.
 enum ZM_SPECIES_ID : u_int
@@ -379,6 +405,30 @@ ZM_GENDER_RATIO			ZM_GetSpeciesGenderRatio(ZM_SPECIES_ID eId);
 // ratio (so a fixed-gender species never perturbs the pinned RNG stream). The sole
 // gender randomness source; deterministic in xRng.
 ZM_GENDER				ZM_RollGender(ZM_SPECIES_ID eId, ZM_BattleRNG& xRng);
+
+// A species' egg-group membership (box-6 SC-B): 1 or 2 groups. m_aeGroups[0] is the
+// archetype-derived primary; a distinct type-derived secondary occupies [1] when
+// present. Legendaries read m_uCount == 1 with m_aeGroups[0] == ZM_EGG_GROUP_NO_EGGS.
+struct ZM_EggGroups
+{
+	u_int        m_uCount;          // 1 or 2
+	ZM_EGG_GROUP m_aeGroups[2];
+};
+
+// Systematically-derived egg group(s) (box-6 SC-B, mirrors the ZM-D-021/023 derived-
+// accessor precedent -- the dex ROW is untouched). LEGENDARY -> { NO_EGGS }. Otherwise
+// the primary comes from the archetype (QUADRUPED->FIELD, BIPED->HUMANOID, AVIAN->
+// FLYING, SERPENT->DRAGON, AQUATIC->WATER, INSECTOID->BUG, BLOB->AMORPHOUS,
+// FLOATER_PLANTOID->PLANT) and an optional distinct secondary from the FIRST mapping
+// type slot (GRASS->PLANT, DRAKE->DRAGON, FEY->FAIRY, PHANTOM->AMORPHOUS, WATER->WATER,
+// STONE|IRON|EARTH->MINERAL, SKY->FLYING). Deterministic, no RNG.
+ZM_EggGroups			ZM_GetSpeciesEggGroups(ZM_SPECIES_ID eId);
+
+// True for the Ditto-analog universal breeder (box-6 SC-B): GLOOPET (F40, the amiable
+// ooze). A universal breeder pairs with ANY breedable non-legendary partner, ignoring
+// gender AND egg group; two universal breeders (or universal + legendary) are
+// incompatible. Exactly one species qualifies; its evolution GLUTTONUB does not. Pure.
+bool					ZM_IsUniversalBreeder(ZM_SPECIES_ID eId);
 
 // Systematically-derived base stats (ZM-D-021): a per-archetype stat profile
 // scaled by evolution stage + rarity, with a deterministic per-family emphasis

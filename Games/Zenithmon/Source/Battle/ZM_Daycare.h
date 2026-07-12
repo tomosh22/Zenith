@@ -22,8 +22,9 @@ struct ZM_DaycareSlot
 	ZM_BattleMonsterSpec m_xMonster  = {};   // deposited seed; level/exp mutate on step
 };
 
-// Slot 0 is the "mother" (species source) by deposit-order convention (gender is
-// not modelled -- spec section 6).
+// Deposit order carries NO breeding role (box-6 SC-B): ZM_GenerateEgg derives the
+// mother/father from gender + the universal breeder, so either slot may hold either
+// role. A pair breeds only when ZM_AreCompatible (gender-aware) accepts the two.
 struct ZM_DaycareState
 {
 	ZM_DaycareSlot m_axSlots[uZM_DAYCARE_CAPACITY];
@@ -47,14 +48,17 @@ bool  ZM_DaycareWithdraw(ZM_DaycareState& xState, u_int uSlot, ZM_BattleMonsterS
 // where m_bEggAvailable becomes true). No RNG.
 void  ZM_DaycareStep(ZM_DaycareState& xState, u_int uSteps);
 
-// True iff both slots are occupied AND their species are compatible.
+// True iff both slots are occupied AND the deposited pair is breeding-compatible via
+// the gender-aware ZM_AreCompatible (box-6 SC-B: shared egg group / universal breeder
+// AND a valid gender pairing).
 bool  ZM_DaycarePairCompatible(const ZM_DaycareState& xState);
 
 // Number of occupied slots [0,2].
 u_int ZM_DaycareOccupancy(const ZM_DaycareState& xState);
 
-// If an egg is available, generate it (mother = slot 0, father = slot 1) into
-// xEggOut, RESET the counter/flag, and return true. Otherwise return false (xEggOut
-// untouched). Consumes xRng exactly as ZM_GenerateEgg does.
+// If an egg is available, generate it from the two deposited parents into xEggOut,
+// RESET the counter/flag, and return true. Otherwise return false (xEggOut untouched).
+// ZM_GenerateEgg derives the mother/father roles internally, so slot order is
+// irrelevant. Consumes xRng exactly as ZM_GenerateEgg does.
 bool  ZM_DaycareCollectEgg(ZM_DaycareState& xState, ZM_BattleRNG& xRng,
                            const ZM_BreedingParams& xParams, ZM_BattleMonsterSpec& xEggOut);

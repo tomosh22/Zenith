@@ -145,9 +145,11 @@ bool ZM_DaycareCollectEgg(ZM_DaycareState& xState, ZM_BattleRNG& xRng,
 	{
 		return false;
 	}
-	// Mother = slot 0, father = slot 1 (deposit-order convention). The availability
-	// flag is only ever set for a compatible pair, so ZM_GenerateEgg's precondition
-	// holds. Parents remain deposited (collecting an egg does not remove them).
+	// Forward both parents; ZM_GenerateEgg derives the mother/father roles from gender
+	// + the universal breeder (box-6 SC-B), so slot order does not matter. The
+	// availability flag is only ever set for a compatible pair, so ZM_GenerateEgg's
+	// precondition holds. Parents remain deposited (collecting an egg does not remove
+	// them).
 	xEggOut = ZM_GenerateEgg(xState.m_axSlots[0].m_xMonster,
 		xState.m_axSlots[1].m_xMonster, xRng, xParams);
 	xState.m_uEggStepCounter = 0u;

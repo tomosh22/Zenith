@@ -6,12 +6,14 @@
 #include "Zenithmon/Source/Data/ZM_MoveData.h"      // ZM_MOVE_NONE
 
 // ============================================================================
-// ZM_Breeding implementation (S2 box 6 SC1 + SC-A gender). Pure, seeded, headless.
-// Base-evo derivation and compatibility are RNG-free; ZM_GenerateEgg draws from the
-// one sanctioned ZM_BattleRNG in the EXACT order pinned by the spec (section 8):
-// IVs (pick-K-distinct then fill six) -> nature -> gender (offspring ratio) ->
-// ability/moves/EVs (no RNG). The gender draw is APPENDED after IV+nature so their
-// goldens never move. See the header banner for the reduced-mechanic rulings.
+// ZM_Breeding implementation (S2 box 6 SC1 + SC-A gender + SC-B egg groups/roles).
+// Pure, seeded, headless. Base-evo derivation, egg-group/gendered compatibility and
+// parent-role selection are RNG-free; ZM_GenerateEgg draws from the one sanctioned
+// ZM_BattleRNG in the EXACT order pinned by the spec (section 8): IVs (pick-K-distinct
+// then fill six) -> nature -> gender (offspring ratio) -> ability/moves/EVs (no RNG).
+// SC-B changes only WHICH parent each draw reads from (the FEMALE / non-universal side
+// is the "mother"), never the draw ORDER, so every IV/nature draw is byte-identical.
+// See the header banner for the reduced-mechanic rulings.
 // ============================================================================
 
 // The egg's fresh-IV cap is the [0,31] IV band (spec section 7 pins RandBelow(32)).
@@ -49,11 +51,24 @@ ZM_SPECIES_ID ZM_GetBaseEvolution(ZM_SPECIES_ID eSpecies)
 	return eCur;   // defensive: cycle guard tripped (unreachable for linear chains)
 }
 
-ZM_ARCHETYPE ZM_GetBreedingGroup(ZM_SPECIES_ID eSpecies)
+namespace
 {
-	Zenith_Assert(eSpecies < ZM_SPECIES_COUNT,
-		"ZM_GetBreedingGroup: species %u out of range", (u_int)eSpecies);
-	return ZM_GetSpeciesData(eSpecies).m_eArchetype;
+	// True iff the two egg-group lists share at least one real breeding group.
+	// NO_EGGS never matches (it marks the non-breeding legendaries) -- a defensive
+	// guard, since legendaries are already rejected before this is reached.
+	bool EggGroupsShare(const ZM_EggGroups& xA, const ZM_EggGroups& xB)
+	{
+		for (u_int a = 0u; a < xA.m_uCount; ++a)
+		{
+			if (xA.m_aeGroups[a] == ZM_EGG_GROUP_NO_EGGS) { continue; }
+			for (u_int b = 0u; b < xB.m_uCount; ++b)
+			{
+				if (xB.m_aeGroups[b] == ZM_EGG_GROUP_NO_EGGS) { continue; }
+				if (xA.m_aeGroups[a] == xB.m_aeGroups[b]) { return true; }
+			}
+		}
+		return false;
+	}
 }
 
 bool ZM_AreSpeciesCompatible(ZM_SPECIES_ID eA, ZM_SPECIES_ID eB)
@@ -63,27 +78,84 @@ bool ZM_AreSpeciesCompatible(ZM_SPECIES_ID eA, ZM_SPECIES_ID eB)
 	Zenith_Assert(eB < ZM_SPECIES_COUNT,
 		"ZM_AreSpeciesCompatible: species B %u out of range", (u_int)eB);
 
+	// Legendaries never breed (they carry the NO_EGGS group).
 	if (ZM_GetSpeciesData(eA).m_eRarity == ZM_RARITY_LEGENDARY) { return false; }
 	if (ZM_GetSpeciesData(eB).m_eRarity == ZM_RARITY_LEGENDARY) { return false; }
-	return ZM_GetBreedingGroup(eA) == ZM_GetBreedingGroup(eB);
+
+	// The universal breeder pairs with any breedable partner -- EXCEPT another universal
+	// breeder (two shapeshifters cannot seed a line). This path ignores egg groups.
+	const bool bAUniversal = ZM_IsUniversalBreeder(eA);
+	const bool bBUniversal = ZM_IsUniversalBreeder(eB);
+	if (bAUniversal && bBUniversal) { return false; }
+	if (bAUniversal || bBUniversal) { return true; }
+
+	// Otherwise: both non-universal -> a shared egg group is required.
+	return EggGroupsShare(ZM_GetSpeciesEggGroups(eA), ZM_GetSpeciesEggGroups(eB));
 }
 
 bool ZM_AreCompatible(const ZM_BattleMonsterSpec& xParentA, const ZM_BattleMonsterSpec& xParentB)
 {
-	return ZM_AreSpeciesCompatible(xParentA.m_eSpecies, xParentB.m_eSpecies);
+	// Species-level gate first (non-legendary + shared group / universal breeder).
+	if (!ZM_AreSpeciesCompatible(xParentA.m_eSpecies, xParentB.m_eSpecies))
+	{
+		return false;
+	}
+
+	// The universal breeder ignores gender: its partner is already a breedable, non-
+	// legendary, non-universal species by the species-level check above.
+	if (ZM_IsUniversalBreeder(xParentA.m_eSpecies) ||
+		ZM_IsUniversalBreeder(xParentB.m_eSpecies))
+	{
+		return true;
+	}
+
+	// Otherwise a valid pair is exactly one MALE + one FEMALE. A GENDERLESS parent on
+	// either side (non-universal) is never a valid pairing.
+	const bool bAMale   = (xParentA.m_eGender == ZM_GENDER_MALE);
+	const bool bAFemale = (xParentA.m_eGender == ZM_GENDER_FEMALE);
+	const bool bBMale   = (xParentB.m_eGender == ZM_GENDER_MALE);
+	const bool bBFemale = (xParentB.m_eGender == ZM_GENDER_FEMALE);
+	return (bAMale && bBFemale) || (bAFemale && bBMale);
 }
 
-ZM_BattleMonsterSpec ZM_GenerateEgg(const ZM_BattleMonsterSpec& xMother,
-	const ZM_BattleMonsterSpec& xFather, ZM_BattleRNG& xRng, const ZM_BreedingParams& xParams)
+ZM_BattleMonsterSpec ZM_GenerateEgg(const ZM_BattleMonsterSpec& xParentA,
+	const ZM_BattleMonsterSpec& xParentB, ZM_BattleRNG& xRng, const ZM_BreedingParams& xParams)
 {
-	Zenith_Assert(ZM_AreCompatible(xMother, xFather),
+	Zenith_Assert(ZM_AreCompatible(xParentA, xParentB),
 		"ZM_GenerateEgg: parents (species %u, %u) are not breeding-compatible",
-		(u_int)xMother.m_eSpecies, (u_int)xFather.m_eSpecies);
+		(u_int)xParentA.m_eSpecies, (u_int)xParentB.m_eSpecies);
+
+	// --- Parent ROLES (box-6 SC-B, NO RNG). The "mother" is the egg's species +
+	// inherited-line/ability source: the FEMALE parent, or the NON-universal parent
+	// when the universal breeder is involved. Role selection happens BEFORE any draw,
+	// so the pinned draw order (IV -> nature -> gender) is untouched -- only WHICH
+	// parent each draw reads from can change. ---
+	const ZM_BattleMonsterSpec* pxMother = &xParentA;
+	const ZM_BattleMonsterSpec* pxFather = &xParentB;
+	if (ZM_IsUniversalBreeder(xParentA.m_eSpecies))
+	{
+		// A is the shapeshifter -> B (the non-universal parent) seeds the line.
+		pxMother = &xParentB;
+		pxFather = &xParentA;
+	}
+	else if (ZM_IsUniversalBreeder(xParentB.m_eSpecies))
+	{
+		// B is the shapeshifter -> A seeds the line (the default, made explicit).
+		pxMother = &xParentA;
+		pxFather = &xParentB;
+	}
+	else if (xParentA.m_eGender != ZM_GENDER_FEMALE)
+	{
+		// Non-universal pair -> the FEMALE parent is the mother. The precondition
+		// guarantees exactly one FEMALE, so A-not-FEMALE means B is that female mother.
+		pxMother = &xParentB;
+		pxFather = &xParentA;
+	}
 
 	ZM_BattleMonsterSpec xEgg = {};
 
 	// --- Step A: species = mother's base evolution (NO RNG) ---
-	xEgg.m_eSpecies = ZM_GetBaseEvolution(xMother.m_eSpecies);
+	xEgg.m_eSpecies = ZM_GetBaseEvolution(pxMother->m_eSpecies);
 
 	// --- Step B: IV inheritance (RNG). K = 5 with the Heirloom Knot, else 3. ---
 	const u_int uInheritCount = xParams.m_bHeirloomKnot
@@ -111,7 +183,7 @@ ZM_BattleMonsterSpec ZM_GenerateEgg(const ZM_BattleMonsterSpec& xMother,
 		if (abInherit[i])
 		{
 			const u_int uParent = xRng.RandBelow(2u);
-			xEgg.m_auIV[i] = (uParent == 0u) ? xMother.m_auIV[i] : xFather.m_auIV[i];
+			xEgg.m_auIV[i] = (uParent == 0u) ? pxMother->m_auIV[i] : pxFather->m_auIV[i];
 		}
 		else
 		{
@@ -136,7 +208,7 @@ ZM_BattleMonsterSpec ZM_GenerateEgg(const ZM_BattleMonsterSpec& xMother,
 	xEgg.m_eGender = ZM_RollGender(xEgg.m_eSpecies, xRng);
 
 	// --- Step E: ability copied from the mother (NO RNG; hidden abilities cut) ---
-	xEgg.m_eAbility = xMother.m_eAbility;
+	xEgg.m_eAbility = pxMother->m_eAbility;
 
 	// --- Step F: moves = base-evo level-1 learnset, first uZM_MAX_MOVES (NO RNG) ---
 	for (u_int i = 0u; i < uZM_MAX_MOVES; ++i)

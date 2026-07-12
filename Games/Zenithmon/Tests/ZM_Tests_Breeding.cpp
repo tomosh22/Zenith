@@ -65,6 +65,19 @@ namespace
 		return MakeSpec(eSpecies, aIV, uLevel, eNature, eAbility);
 	}
 
+	// Return a copy of xSpec with an explicit gender (box-6 SC-B). The gender-aware
+	// ZM_AreCompatible / ZM_GenerateEgg now REQUIRE a valid pair -- one MALE + one
+	// FEMALE, or the universal breeder (GLOOPET) with any non-universal partner. A
+	// default spec is GENDERLESS, so every breeding fixture must set genders. Applied
+	// consistently so the intended dam stays the FEMALE / non-universal parent, which
+	// keeps each mother-sourced golden (offspring species, ability, inherited IVs)
+	// byte-identical to the pre-SC-B value.
+	ZM_BattleMonsterSpec WithGender(ZM_BattleMonsterSpec xSpec, ZM_GENDER eGender)
+	{
+		xSpec.m_eGender = eGender;
+		return xSpec;
+	}
+
 	// ---- offline inheritance oracle (spec section 13) ----------------------
 	// A faithful, INDEPENDENT re-implementation of the pinned ZM_GenerateEgg draw
 	// order. Run it on an RNG seeded identically to the one handed to the real
@@ -228,9 +241,10 @@ ZENITH_TEST(ZM_Data, Breeding_Compat_SameSpeciesTrue)
 {
 	ZENITH_ASSERT_TRUE(ZM_AreSpeciesCompatible(ZM_SPECIES_FERNFAWN, ZM_SPECIES_FERNFAWN),
 		"same species should be compatible");
-	const ZM_BattleMonsterSpec xA = MakeSpecUniform(ZM_SPECIES_FERNFAWN, 31u);
-	const ZM_BattleMonsterSpec xB = MakeSpecUniform(ZM_SPECIES_FERNFAWN, 15u);
-	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xA, xB), "spec overload same species");
+	// SC-B: the spec overload now needs a valid gender pairing (one MALE + one FEMALE).
+	const ZM_BattleMonsterSpec xA = WithGender(MakeSpecUniform(ZM_SPECIES_FERNFAWN, 31u), ZM_GENDER_MALE);
+	const ZM_BattleMonsterSpec xB = WithGender(MakeSpecUniform(ZM_SPECIES_FERNFAWN, 15u), ZM_GENDER_FEMALE);
+	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xA, xB), "spec overload same species, opposite gender");
 }
 
 // Two different families sharing an archetype (both QUADRUPED) are compatible.
@@ -246,7 +260,9 @@ ZENITH_TEST(ZM_Data, Breeding_Compat_SameArchetypeDifferentFamilyTrue)
 		"same-archetype different-family should be compatible");
 }
 
-// Different archetypes never share a breeding group.
+// FERNFAWN and PIPWIT have DISJOINT egg-group lists ({FIELD,PLANT} vs {FLYING}), so they
+// cannot breed. (SC-B: different archetypes CAN share a type-derived secondary group -- e.g.
+// a GRASS quadruped and a GRASS plantoid both reach PLANT; this pair simply doesn't overlap.)
 ZENITH_TEST(ZM_Data, Breeding_Compat_DifferentArchetypeFalse)
 {
 	// Premise: FERNFAWN QUADRUPED vs PIPWIT AVIAN, neither legendary.
@@ -296,25 +312,27 @@ ZENITH_TEST(ZM_Data, Breeding_Compat_SymmetricOverSample)
 // C. Offspring species + egg shell (ZM_Data)
 // ############################################################################
 
-// Egg species is the MOTHER's base evolution (param 0), not the father's.
+// Egg species is the MOTHER's base evolution, i.e. the FEMALE parent's (SC-B), not the
+// father's. The dam is set FEMALE so the mother role -- and thus FERNFAWN -- is pinned.
 ZENITH_TEST(ZM_Data, Breeding_Egg_SpeciesIsMotherBaseEvo)
 {
-	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u);   // QUADRUPED stage 3
-	const ZM_BattleMonsterSpec xFather = MakeSpecUniform(ZM_SPECIES_NIBBIN, 20u);       // QUADRUPED
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u), ZM_GENDER_FEMALE);   // QUADRUPED stage 3
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 20u), ZM_GENDER_MALE);         // QUADRUPED
 	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xMother, xFather), "fixture pair must be compatible");
 	ZM_BattleRNG xRng(0x1111ull);
 	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
 	ZENITH_ASSERT_EQ((u_int)xEgg.m_eSpecies, (u_int)ZM_SPECIES_FERNFAWN);
 }
 
-// Swapping the father among compatible species leaves the egg species unchanged.
+// Swapping the (MALE) father among compatible species leaves the egg species unchanged:
+// it follows the FEMALE mother (SYLVASTAG -> FERNFAWN).
 ZENITH_TEST(ZM_Data, Breeding_Egg_SpeciesIgnoresFather)
 {
-	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u), ZM_GENDER_FEMALE);
 	const ZM_SPECIES_ID aeFathers[] = { ZM_SPECIES_NIBBIN, ZM_SPECIES_FERNFAWN, ZM_SPECIES_HOARDEL };
 	for (u_int f = 0; f < (u_int)(sizeof(aeFathers) / sizeof(aeFathers[0])); ++f)
 	{
-		const ZM_BattleMonsterSpec xFather = MakeSpecUniform(aeFathers[f], 20u);
+		const ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(aeFathers[f], 20u), ZM_GENDER_MALE);
 		ZENITH_ASSERT_TRUE(ZM_AreCompatible(xMother, xFather), "father %u must be compatible", f);
 		ZM_BattleRNG xRng(0x2222ull);
 		const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
@@ -326,8 +344,8 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_SpeciesIgnoresFather)
 // Egg hatches at level 1 with zero EVs, and building it yields the L1 exp floor.
 ZENITH_TEST(ZM_Data, Breeding_Egg_HatchLevelOneEVsZeroExpFloor)
 {
-	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_THICKETBUCK, 20u);
-	const ZM_BattleMonsterSpec xFather = MakeSpecUniform(ZM_SPECIES_NIBBIN, 20u);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_THICKETBUCK, 20u), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 20u), ZM_GENDER_MALE);
 	ZM_BattleRNG xRng(0x3333ull);
 	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
 
@@ -346,8 +364,8 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_HatchLevelOneEVsZeroExpFloor)
 // Egg knows the base-evo species' level-1 learnset moves (first <=4), rest NONE.
 ZENITH_TEST(ZM_Data, Breeding_Egg_KnowsBaseEvoLevelOneMoves)
 {
-	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u);
-	const ZM_BattleMonsterSpec xFather = MakeSpecUniform(ZM_SPECIES_NIBBIN, 20u);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 20u), ZM_GENDER_MALE);
 	ZM_BattleRNG xRng(0x4444ull);
 	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
 
@@ -380,9 +398,9 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_Deterministic_SameSeedIdentical)
 {
 	const u_int aMotherIV[ZM_STAT_COUNT] = { 0u, 6u, 12u, 18u, 24u, 31u };
 	const u_int aFatherIV[ZM_STAT_COUNT] = { 31u, 25u, 19u, 13u, 7u, 1u };
-	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV, 40u,
-		ZM_NATURE_BRUTISH, ZM_ABILITY_STREAMLINE);
-	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV, 40u);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV, 40u,
+		ZM_NATURE_BRUTISH, ZM_ABILITY_STREAMLINE), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV, 40u), ZM_GENDER_MALE);
 
 	ZM_BattleRNG xRngA(0xCAFEull);
 	ZM_BattleRNG xRngB(0xCAFEull);
@@ -396,8 +414,8 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_Golden_Seed1)
 {
 	const u_int aMotherIV[ZM_STAT_COUNT] = { 0u, 6u, 12u, 18u, 24u, 31u };
 	const u_int aFatherIV[ZM_STAT_COUNT] = { 31u, 25u, 19u, 13u, 7u, 1u };
-	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV);
-	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
 
 	ZM_BattleRNG xRng(0xA1ull);
 	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
@@ -416,8 +434,8 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_Golden_Seed2_Control)
 {
 	const u_int aMotherIV[ZM_STAT_COUNT] = { 0u, 6u, 12u, 18u, 24u, 31u };
 	const u_int aFatherIV[ZM_STAT_COUNT] = { 31u, 25u, 19u, 13u, 7u, 1u };
-	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV);
-	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
 
 	ZM_BattleRNG xRng2(0xF00DBEEFull);
 	const ZM_BattleMonsterSpec xEgg2 = ZM_GenerateEgg(xMother, xFather, xRng2);
@@ -439,8 +457,8 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_InheritedIVsComeFromAParent)
 {
 	const u_int aMotherIV[ZM_STAT_COUNT] = { 10u, 10u, 10u, 10u, 10u, 10u };
 	const u_int aFatherIV[ZM_STAT_COUNT] = { 20u, 20u, 20u, 20u, 20u, 20u };
-	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV);
-	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
 
 	ZM_BattleRNG xRng(0x0D15EA5Eull);
 	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
@@ -468,8 +486,8 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_HeirloomKnotInheritsFiveIVs_Golden)
 {
 	const u_int aMotherIV[ZM_STAT_COUNT] = { 10u, 10u, 10u, 10u, 10u, 10u };
 	const u_int aFatherIV[ZM_STAT_COUNT] = { 20u, 20u, 20u, 20u, 20u, 20u };
-	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV);
-	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
 
 	ZM_BreedingParams xParams;
 	xParams.m_bHeirloomKnot = true;
@@ -495,8 +513,8 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_HeirloomKnotDiffersFromDefault)
 {
 	const u_int aMotherIV[ZM_STAT_COUNT] = { 5u, 5u, 5u, 5u, 5u, 5u };
 	const u_int aFatherIV[ZM_STAT_COUNT] = { 25u, 25u, 25u, 25u, 25u, 25u };
-	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV);
-	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
 
 	ZM_BreedingParams xKnot;
 	xKnot.m_bHeirloomKnot = true;
@@ -518,8 +536,8 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_NatureRandomWithoutEverstone_Golden)
 {
 	const u_int aMotherIV[ZM_STAT_COUNT] = { 1u, 2u, 3u, 4u, 5u, 6u };
 	const u_int aFatherIV[ZM_STAT_COUNT] = { 6u, 5u, 4u, 3u, 2u, 1u };
-	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV);
-	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
 
 	ZM_BattleRNG xRng(0x5151ull);
 	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
@@ -538,8 +556,8 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_NatureRandomWithoutEverstone_Golden)
 // The everstone locks the egg nature for every seed.
 ZENITH_TEST(ZM_Data, Breeding_Egg_EverstoneLocksNature)
 {
-	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 15u);
-	const ZM_BattleMonsterSpec xFather = MakeSpecUniform(ZM_SPECIES_NIBBIN, 15u);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 15u), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 15u), ZM_GENDER_MALE);
 
 	ZM_BreedingParams xParams;
 	xParams.m_eEverstoneNature = ZM_NATURE_ARCANE;
@@ -559,8 +577,8 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_EverstoneDoesNotShiftIVs)
 {
 	const u_int aMotherIV[ZM_STAT_COUNT] = { 3u, 9u, 15u, 21u, 27u, 30u };
 	const u_int aFatherIV[ZM_STAT_COUNT] = { 30u, 27u, 21u, 15u, 9u, 3u };
-	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV);
-	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
 
 	ZM_BreedingParams xLocked;
 	xLocked.m_eEverstoneNature = ZM_NATURE_ARCANE;
@@ -578,13 +596,13 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_EverstoneDoesNotShiftIVs)
 	ZENITH_ASSERT_EQ((u_int)xEggLocked.m_eNature, (u_int)ZM_NATURE_ARCANE);
 }
 
-// Ability is copied from the mother; the father's ability is ignored.
+// Ability is copied from the mother (the FEMALE parent, SC-B); the father's is ignored.
 ZENITH_TEST(ZM_Data, Breeding_Egg_InheritsMotherAbility)
 {
-	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u, 20u,
-		ZM_NATURE_FERAL, ZM_ABILITY_STREAMLINE);
-	const ZM_BattleMonsterSpec xFather = MakeSpecUniform(ZM_SPECIES_NIBBIN, 20u, 20u,
-		ZM_NATURE_FERAL, ZM_ABILITY_BEDROCK);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u, 20u,
+		ZM_NATURE_FERAL, ZM_ABILITY_STREAMLINE), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 20u, 20u,
+		ZM_NATURE_FERAL, ZM_ABILITY_BEDROCK), ZM_GENDER_MALE);
 	ZM_BattleRNG xRng(0x6060ull);
 	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
 	ZENITH_ASSERT_EQ((u_int)xEgg.m_eAbility, (u_int)ZM_ABILITY_STREAMLINE, "egg copies mother's ability");
@@ -594,8 +612,8 @@ ZENITH_TEST(ZM_Data, Breeding_Egg_InheritsMotherAbility)
 // level 1). Documents the ZM_GenerateEgg contract on valid input.
 ZENITH_TEST(ZM_Data, Breeding_Egg_CompatiblePairGeneratesValidEgg)
 {
-	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_WARDHUND, 22u);   // QUADRUPED 2-stage final
-	const ZM_BattleMonsterSpec xFather = MakeSpecUniform(ZM_SPECIES_STRAYLING, 22u);   // QUADRUPED base
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_WARDHUND, 22u), ZM_GENDER_FEMALE);   // QUADRUPED 2-stage final
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(ZM_SPECIES_STRAYLING, 22u), ZM_GENDER_MALE);   // QUADRUPED base
 	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xMother, xFather), "precondition: compatible pair");
 	ZM_BattleRNG xRng(0x7070ull);
 	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
@@ -695,8 +713,8 @@ ZENITH_TEST(ZM_Data, Daycare_StepCapsAtLevel100)
 ZENITH_TEST(ZM_Data, Daycare_EggAvailableAtThreshold)
 {
 	ZM_DaycareState xState;
-	ZM_DaycareDeposit(xState, MakeSpecUniform(ZM_SPECIES_FERNFAWN, 31u, 10u));   // slot 0 mother
-	ZM_DaycareDeposit(xState, MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u, 10u));      // slot 1 father
+	ZM_DaycareDeposit(xState, WithGender(MakeSpecUniform(ZM_SPECIES_FERNFAWN, 31u, 10u), ZM_GENDER_FEMALE));   // slot 0 mother
+	ZM_DaycareDeposit(xState, WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u, 10u), ZM_GENDER_MALE));         // slot 1 father
 	ZENITH_ASSERT_TRUE(ZM_DaycarePairCompatible(xState), "fixture pair must be compatible");
 
 	ZM_DaycareStep(xState, uZM_DAYCARE_EGG_STEP_THRESHOLD - 1u);   // 255
@@ -711,11 +729,12 @@ ZENITH_TEST(ZM_Data, Daycare_EggAvailableAtThreshold)
 // No egg accrues for an incompatible pair, nor for a single occupant.
 ZENITH_TEST(ZM_Data, Daycare_NoEggIncompatiblePairOrSingle)
 {
-	// Incompatible pair (QUADRUPED + AVIAN).
+	// Incompatible pair by SPECIES (QUADRUPED FIELD/PLANT + AVIAN FLYING -> disjoint egg
+	// groups). Opposite genders isolate the species mismatch as the sole reason (SC-B).
 	ZM_DaycareState xIncompat;
-	ZM_DaycareDeposit(xIncompat, MakeSpecUniform(ZM_SPECIES_FERNFAWN, 31u, 10u));
-	ZM_DaycareDeposit(xIncompat, MakeSpecUniform(ZM_SPECIES_PIPWIT, 31u, 10u));
-	ZENITH_ASSERT_FALSE(ZM_DaycarePairCompatible(xIncompat), "premise: incompatible pair");
+	ZM_DaycareDeposit(xIncompat, WithGender(MakeSpecUniform(ZM_SPECIES_FERNFAWN, 31u, 10u), ZM_GENDER_FEMALE));
+	ZM_DaycareDeposit(xIncompat, WithGender(MakeSpecUniform(ZM_SPECIES_PIPWIT, 31u, 10u), ZM_GENDER_MALE));
+	ZENITH_ASSERT_FALSE(ZM_DaycarePairCompatible(xIncompat), "premise: incompatible pair (disjoint egg groups)");
 	ZM_DaycareStep(xIncompat, 500u);
 	ZENITH_ASSERT_EQ(xIncompat.m_uEggStepCounter, 0u, "incompatible pair accrues nothing");
 	ZENITH_ASSERT_FALSE(xIncompat.m_bEggAvailable);
@@ -733,8 +752,8 @@ ZENITH_TEST(ZM_Data, Daycare_NoEggIncompatiblePairOrSingle)
 ZENITH_TEST(ZM_Data, Daycare_CollectEggResetsAndReturnsOffspring)
 {
 	ZM_DaycareState xState;
-	ZM_DaycareDeposit(xState, MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u, 30u));   // mother, base = FERNFAWN
-	ZM_DaycareDeposit(xState, MakeSpecUniform(ZM_SPECIES_NIBBIN, 25u, 30u));       // father
+	ZM_DaycareDeposit(xState, WithGender(MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u, 30u), ZM_GENDER_FEMALE));   // mother, base = FERNFAWN
+	ZM_DaycareDeposit(xState, WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 25u, 30u), ZM_GENDER_MALE));         // father
 	ZM_DaycareStep(xState, uZM_DAYCARE_EGG_STEP_THRESHOLD);
 	ZENITH_ASSERT_TRUE(xState.m_bEggAvailable, "egg should be available after threshold");
 
@@ -763,8 +782,8 @@ ZENITH_TEST(ZM_Data, Daycare_CollectEggResetsAndReturnsOffspring)
 ZENITH_TEST(ZM_Data, Daycare_WithdrawResetsEggProgress)
 {
 	ZM_DaycareState xState;
-	ZM_DaycareDeposit(xState, MakeSpecUniform(ZM_SPECIES_FERNFAWN, 31u, 10u));
-	ZM_DaycareDeposit(xState, MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u, 10u));
+	ZM_DaycareDeposit(xState, WithGender(MakeSpecUniform(ZM_SPECIES_FERNFAWN, 31u, 10u), ZM_GENDER_FEMALE));
+	ZM_DaycareDeposit(xState, WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u, 10u), ZM_GENDER_MALE));
 	ZM_DaycareStep(xState, uZM_DAYCARE_EGG_STEP_THRESHOLD);
 	ZENITH_ASSERT_TRUE(xState.m_bEggAvailable, "precondition: egg available");
 
@@ -992,8 +1011,8 @@ ZENITH_TEST(ZM_Data, Breeding_Gender_EggGenderMatchesRollGenderAtPosition)
 {
 	const u_int aMotherIV[ZM_STAT_COUNT] = { 2u, 8u, 14u, 20u, 26u, 30u };
 	const u_int aFatherIV[ZM_STAT_COUNT] = { 30u, 26u, 20u, 14u, 8u, 2u };
-	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV);   // base = FERNFAWN
-	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV), ZM_GENDER_FEMALE);   // base = FERNFAWN
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
 	const ZM_SPECIES_ID eOffspring = ZM_GetBaseEvolution(ZM_SPECIES_SYLVASTAG);
 	ZENITH_ASSERT_EQ((u_int)eOffspring, (u_int)ZM_SPECIES_FERNFAWN, "premise: offspring is FERNFAWN (MALE_7_1)");
 
@@ -1023,12 +1042,14 @@ ZENITH_TEST(ZM_Data, Breeding_Gender_EggGenderMatchesRollGenderAtPosition)
 }
 
 // A genderless-offspring egg (BLOB base evo) skips the gender draw and is always
-// GENDERLESS, regardless of seed.
+// GENDERLESS, regardless of seed. SC-B: two genderless non-universal blobs are no longer
+// a legal pair, so the fixture is GLOOPET (universal breeder) x a BLOB -- the non-universal
+// blob (RUBBLET) seeds the line, giving a genderless offspring.
 ZENITH_TEST(ZM_Data, Breeding_Gender_EggGenderlessOffspringAlwaysGenderless)
 {
-	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_RUBBLET, 20u);   // BLOB, base = RUBBLET
-	const ZM_BattleMonsterSpec xFather = MakeSpecUniform(ZM_SPECIES_SLAGLET, 20u);   // BLOB
-	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xMother, xFather), "premise: two blobs are compatible");
+	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_GLOOPET, 20u);   // universal breeder (genderless)
+	const ZM_BattleMonsterSpec xFather = MakeSpecUniform(ZM_SPECIES_RUBBLET, 20u);   // BLOB, base = RUBBLET
+	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xMother, xFather), "premise: GLOOPET x blob is compatible");
 	const ZM_SPECIES_ID eOffspring = ZM_GetBaseEvolution(ZM_SPECIES_RUBBLET);
 	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(eOffspring), (u_int)ZM_GENDER_RATIO_GENDERLESS,
 		"premise: offspring ratio is GENDERLESS");
@@ -1050,8 +1071,8 @@ ZENITH_TEST(ZM_Data, Breeding_Gender_AppendedDrawDoesNotPerturbIVNature)
 {
 	const u_int aMotherIV[ZM_STAT_COUNT] = { 0u, 6u, 12u, 18u, 24u, 31u };
 	const u_int aFatherIV[ZM_STAT_COUNT] = { 31u, 25u, 19u, 13u, 7u, 1u };
-	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV);
-	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
 
 	ZM_BattleRNG xRng(0xA1ull);   // matches the seed 1 golden
 	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
@@ -1089,8 +1110,8 @@ ZENITH_TEST(ZM_Data, Breeding_Gender_SpecDefaultsGenderlessAndBuildCopies)
 // the egg's rolled gender.
 ZENITH_TEST(ZM_Data, Breeding_Gender_EggBuiltMonsterCarriesEggGender)
 {
-	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u);
-	const ZM_BattleMonsterSpec xFather = MakeSpecUniform(ZM_SPECIES_NIBBIN, 20u);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 20u), ZM_GENDER_MALE);
 	const u_int64 aulSeeds[] = { 0x1ull, 0x2ull, 0x2222ull, 0x9E3779B1ull, 0xF00Dull };
 	for (u_int s = 0; s < (u_int)(sizeof(aulSeeds) / sizeof(aulSeeds[0])); ++s)
 	{
@@ -1102,4 +1123,355 @@ ZENITH_TEST(ZM_Data, Breeding_Gender_EggBuiltMonsterCarriesEggGender)
 		const ZM_BattleMonster xBuilt = ZM_BuildBattleMonster(xEgg);
 		ZENITH_ASSERT_EQ((u_int)xBuilt.m_eGender, (u_int)xEgg.m_eGender, "built mon carries egg gender (seed %u)", s);
 	}
+}
+
+// ############################################################################
+// H. Egg groups + gendered / universal compatibility + offspring roles
+//    (box-6 SC-B) (ZM_Data)
+//
+// Real egg-group taxonomy (ZM_GetSpeciesEggGroups: archetype primary + one type-
+// derived secondary), the GLOOPET Ditto-analog (ZM_IsUniversalBreeder), the
+// gender-aware breeding gate (ZM_AreCompatible: opposite binary genders OR the
+// universal breeder), and parent-role-driven offspring (mother = FEMALE / non-
+// universal parent). Values are pinned as literals so a gutted impl fails; every
+// derivation premise (archetype / type / rarity / family) is asserted via
+// ZM_GetSpeciesData so a data re-tag is caught loudly. Deterministic + hermetic.
+// ############################################################################
+
+// --- H.1 Egg-group derivation --------------------------------------------------
+
+// A NORMAL-type quadruped derives a SINGLE FIELD group (its type contributes no
+// distinct secondary).
+ZENITH_TEST(ZM_Data, Breeding_EggGroup_SingleGroupField)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_NIBBIN).m_eArchetype, (u_int)ZM_ARCHETYPE_QUADRUPED,
+		"premise: NIBBIN is QUADRUPED");
+	const ZM_EggGroups xGroups = ZM_GetSpeciesEggGroups(ZM_SPECIES_NIBBIN);
+	ZENITH_ASSERT_EQ(xGroups.m_uCount, 1u, "NIBBIN single group");
+	ZENITH_ASSERT_EQ((u_int)xGroups.m_aeGroups[0], (u_int)ZM_EGG_GROUP_FIELD, "NIBBIN primary FIELD");
+}
+
+// A GRASS quadruped derives TWO groups: archetype FIELD + type-secondary PLANT.
+ZENITH_TEST(ZM_Data, Breeding_EggGroup_TwoGroupArchetypePlusTypeSecondary)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_FERNFAWN).m_eArchetype, (u_int)ZM_ARCHETYPE_QUADRUPED,
+		"premise: FERNFAWN is QUADRUPED");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_FERNFAWN).m_aeTypes[0], (u_int)ZM_TYPE_GRASS,
+		"premise: FERNFAWN primary type GRASS");
+	const ZM_EggGroups xGroups = ZM_GetSpeciesEggGroups(ZM_SPECIES_FERNFAWN);
+	ZENITH_ASSERT_EQ(xGroups.m_uCount, 2u, "FERNFAWN two groups");
+	ZENITH_ASSERT_EQ((u_int)xGroups.m_aeGroups[0], (u_int)ZM_EGG_GROUP_FIELD,  "primary FIELD");
+	ZENITH_ASSERT_EQ((u_int)xGroups.m_aeGroups[1], (u_int)ZM_EGG_GROUP_PLANT,  "secondary PLANT");
+}
+
+// A STONE blob derives TWO groups: archetype AMORPHOUS + type-secondary MINERAL.
+ZENITH_TEST(ZM_Data, Breeding_EggGroup_TwoGroupBlobMineral)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_RUBBLET).m_eArchetype, (u_int)ZM_ARCHETYPE_BLOB,
+		"premise: RUBBLET is BLOB");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_RUBBLET).m_aeTypes[0], (u_int)ZM_TYPE_STONE,
+		"premise: RUBBLET primary type STONE");
+	const ZM_EggGroups xGroups = ZM_GetSpeciesEggGroups(ZM_SPECIES_RUBBLET);
+	ZENITH_ASSERT_EQ(xGroups.m_uCount, 2u, "RUBBLET two groups");
+	ZENITH_ASSERT_EQ((u_int)xGroups.m_aeGroups[0], (u_int)ZM_EGG_GROUP_AMORPHOUS, "primary AMORPHOUS");
+	ZENITH_ASSERT_EQ((u_int)xGroups.m_aeGroups[1], (u_int)ZM_EGG_GROUP_MINERAL,   "secondary MINERAL");
+}
+
+// A type whose secondary maps ONTO the archetype primary adds no distinct group:
+// PIPWIT is AVIAN (primary FLYING) + SKY (also FLYING) -> single FLYING group.
+ZENITH_TEST(ZM_Data, Breeding_EggGroup_TypeSecondaryMapsToPrimarySingle)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_PIPWIT).m_eArchetype, (u_int)ZM_ARCHETYPE_AVIAN,
+		"premise: PIPWIT is AVIAN");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_PIPWIT).m_aeTypes[1], (u_int)ZM_TYPE_SKY,
+		"premise: PIPWIT carries SKY");
+	const ZM_EggGroups xGroups = ZM_GetSpeciesEggGroups(ZM_SPECIES_PIPWIT);
+	ZENITH_ASSERT_EQ(xGroups.m_uCount, 1u, "SKY collapses onto FLYING -> single group");
+	ZENITH_ASSERT_EQ((u_int)xGroups.m_aeGroups[0], (u_int)ZM_EGG_GROUP_FLYING, "PIPWIT FLYING");
+}
+
+// The break-after-first-matching-type-slot branch: when slot-0's type maps ONTO the
+// archetype primary, the scan STOPS and slot-1 is never consulted -- so a would-be second
+// group is blocked. PUFFSEED is FLOATER_PLANTOID (primary PLANT) with types {GRASS, SKY}:
+// GRASS (slot 0) maps to PLANT == primary, so SKY (slot 1, which maps to the DIFFERENT
+// group FLYING) is never read -> a SINGLE {PLANT} group. Distinct from the PIPWIT case
+// above (there slot 0 doesn't match at all): guards against a break->continue regression
+// that would wrongly append FLYING and make the count 2.
+ZENITH_TEST(ZM_Data, Breeding_EggGroup_PrimaryTypeSlotBlocksSecondary)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_PUFFSEED).m_eArchetype, (u_int)ZM_ARCHETYPE_FLOATER_PLANTOID,
+		"premise: PUFFSEED is FLOATER_PLANTOID (primary PLANT)");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_PUFFSEED).m_aeTypes[0], (u_int)ZM_TYPE_GRASS,
+		"premise: PUFFSEED slot-0 type GRASS (maps to PLANT == primary)");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_PUFFSEED).m_aeTypes[1], (u_int)ZM_TYPE_SKY,
+		"premise: PUFFSEED slot-1 type SKY (would map to FLYING if consulted)");
+	const ZM_EggGroups xGroups = ZM_GetSpeciesEggGroups(ZM_SPECIES_PUFFSEED);
+	ZENITH_ASSERT_EQ(xGroups.m_uCount, 1u, "slot-0 primary match blocks slot-1 -> single group");
+	ZENITH_ASSERT_EQ((u_int)xGroups.m_aeGroups[0], (u_int)ZM_EGG_GROUP_PLANT, "PUFFSEED single PLANT group");
+}
+
+// The universal breeder still reads a concrete egg group (single AMORPHOUS); its
+// universality lives in ZM_IsUniversalBreeder, NOT in a UNIVERSAL group value.
+ZENITH_TEST(ZM_Data, Breeding_EggGroup_UniversalBreederAmorphousSingle)
+{
+	const ZM_EggGroups xGroups = ZM_GetSpeciesEggGroups(ZM_SPECIES_GLOOPET);
+	ZENITH_ASSERT_EQ(xGroups.m_uCount, 1u, "GLOOPET single group");
+	ZENITH_ASSERT_EQ((u_int)xGroups.m_aeGroups[0], (u_int)ZM_EGG_GROUP_AMORPHOUS, "GLOOPET AMORPHOUS");
+	ZENITH_ASSERT_NE((u_int)xGroups.m_aeGroups[0], (u_int)ZM_EGG_GROUP_UNIVERSAL,
+		"UNIVERSAL is never returned by ZM_GetSpeciesEggGroups");
+}
+
+// Every legendary derives the single sentinel NO_EGGS group (they never breed).
+ZENITH_TEST(ZM_Data, Breeding_EggGroup_LegendaryNoEggs)
+{
+	const ZM_SPECIES_ID aeLegendary[] = { ZM_SPECIES_ZENARIS, ZM_SPECIES_NADIRATH, ZM_SPECIES_EQUINARA };
+	for (u_int i = 0; i < (u_int)(sizeof(aeLegendary) / sizeof(aeLegendary[0])); ++i)
+	{
+		ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(aeLegendary[i]).m_eRarity, (u_int)ZM_RARITY_LEGENDARY,
+			"premise: legendary %u", i);
+		const ZM_EggGroups xGroups = ZM_GetSpeciesEggGroups(aeLegendary[i]);
+		ZENITH_ASSERT_EQ(xGroups.m_uCount, 1u, "legendary single group (%u)", i);
+		ZENITH_ASSERT_EQ((u_int)xGroups.m_aeGroups[0], (u_int)ZM_EGG_GROUP_NO_EGGS, "legendary NO_EGGS (%u)", i);
+	}
+}
+
+// --- H.2 Universal breeder + species-level compatibility -----------------------
+
+// Exactly one species is the universal breeder: GLOOPET. Its evolution and other
+// species (blobs, legendaries) are not.
+ZENITH_TEST(ZM_Data, Breeding_Universal_OnlyGloopetIsUniversal)
+{
+	ZENITH_ASSERT_TRUE(ZM_IsUniversalBreeder(ZM_SPECIES_GLOOPET), "GLOOPET is the universal breeder");
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesData(ZM_SPECIES_GLUTTONUB).m_uFamilyId,
+		ZM_GetSpeciesData(ZM_SPECIES_GLOOPET).m_uFamilyId, "premise: GLUTTONUB is GLOOPET's line");
+	ZENITH_ASSERT_FALSE(ZM_IsUniversalBreeder(ZM_SPECIES_GLUTTONUB), "GLOOPET's evolution is not universal");
+	ZENITH_ASSERT_FALSE(ZM_IsUniversalBreeder(ZM_SPECIES_NIBBIN),    "an ordinary species is not universal");
+	ZENITH_ASSERT_FALSE(ZM_IsUniversalBreeder(ZM_SPECIES_RUBBLET),   "another blob is not universal");
+	ZENITH_ASSERT_FALSE(ZM_IsUniversalBreeder(ZM_SPECIES_ZENARIS),   "a legendary is not universal");
+}
+
+// Two distinct families that share an egg group are species-compatible.
+ZENITH_TEST(ZM_Data, Breeding_SpeciesCompat_SameGroupDifferentFamilyTrue)
+{
+	ZENITH_ASSERT_NE(ZM_GetSpeciesData(ZM_SPECIES_NIBBIN).m_uFamilyId,
+		ZM_GetSpeciesData(ZM_SPECIES_STRAYLING).m_uFamilyId, "premise: different families");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesEggGroups(ZM_SPECIES_NIBBIN).m_aeGroups[0],   (u_int)ZM_EGG_GROUP_FIELD,
+		"premise: NIBBIN FIELD");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesEggGroups(ZM_SPECIES_STRAYLING).m_aeGroups[0], (u_int)ZM_EGG_GROUP_FIELD,
+		"premise: STRAYLING FIELD");
+	ZENITH_ASSERT_TRUE(ZM_AreSpeciesCompatible(ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING),
+		"shared FIELD across families -> compatible");
+}
+
+// Species whose egg-group lists are disjoint are incompatible.
+ZENITH_TEST(ZM_Data, Breeding_SpeciesCompat_DisjointGroupsFalse)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesEggGroups(ZM_SPECIES_NIBBIN).m_aeGroups[0], (u_int)ZM_EGG_GROUP_FIELD,
+		"premise: NIBBIN FIELD");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesEggGroups(ZM_SPECIES_PIPWIT).m_aeGroups[0], (u_int)ZM_EGG_GROUP_FLYING,
+		"premise: PIPWIT FLYING");
+	ZENITH_ASSERT_FALSE(ZM_AreSpeciesCompatible(ZM_SPECIES_NIBBIN, ZM_SPECIES_PIPWIT),
+		"disjoint egg groups -> incompatible");
+}
+
+// A shared type-derived SECONDARY bridges DIFFERENT archetypes: a FIELD/PLANT
+// quadruped and a PLANT plantoid breed (impossible under the old archetype proxy).
+ZENITH_TEST(ZM_Data, Breeding_SpeciesCompat_CrossArchetypeSharedSecondaryTrue)
+{
+	ZENITH_ASSERT_NE((u_int)ZM_GetSpeciesData(ZM_SPECIES_FERNFAWN).m_eArchetype,
+		(u_int)ZM_GetSpeciesData(ZM_SPECIES_PUFFSEED).m_eArchetype, "premise: different archetypes");
+	const ZM_EggGroups xF = ZM_GetSpeciesEggGroups(ZM_SPECIES_FERNFAWN);
+	const ZM_EggGroups xP = ZM_GetSpeciesEggGroups(ZM_SPECIES_PUFFSEED);
+	ZENITH_ASSERT_EQ(xF.m_uCount, 2u, "premise: FERNFAWN two groups");
+	ZENITH_ASSERT_EQ((u_int)xF.m_aeGroups[1], (u_int)ZM_EGG_GROUP_PLANT, "premise: FERNFAWN secondary PLANT");
+	ZENITH_ASSERT_EQ((u_int)xP.m_aeGroups[0], (u_int)ZM_EGG_GROUP_PLANT, "premise: PUFFSEED primary PLANT");
+	ZENITH_ASSERT_TRUE(ZM_AreSpeciesCompatible(ZM_SPECIES_FERNFAWN, ZM_SPECIES_PUFFSEED),
+		"cross-archetype shared PLANT -> compatible");
+}
+
+// The universal breeder's species-level paths: one-universal true, two-universal
+// false, universal + legendary false.
+ZENITH_TEST(ZM_Data, Breeding_SpeciesCompat_UniversalAndLegendaryPaths)
+{
+	ZENITH_ASSERT_TRUE(ZM_AreSpeciesCompatible(ZM_SPECIES_GLOOPET, ZM_SPECIES_NIBBIN),
+		"one universal -> compatible");
+	ZENITH_ASSERT_TRUE(ZM_AreSpeciesCompatible(ZM_SPECIES_PIPWIT, ZM_SPECIES_GLOOPET),
+		"one universal -> compatible (even across disjoint groups, symmetric)");
+	ZENITH_ASSERT_FALSE(ZM_AreSpeciesCompatible(ZM_SPECIES_GLOOPET, ZM_SPECIES_GLOOPET),
+		"two universal breeders -> incompatible");
+	ZENITH_ASSERT_FALSE(ZM_AreSpeciesCompatible(ZM_SPECIES_GLOOPET, ZM_SPECIES_ZENARIS),
+		"universal + legendary -> incompatible");
+}
+
+// --- H.3 Gender-aware compatibility (ZM_AreCompatible) --------------------------
+
+// One MALE + one FEMALE that share an egg group is a valid pair; symmetric.
+ZENITH_TEST(ZM_Data, Breeding_GenderedCompat_OppositeGenderSameGroupTrue)
+{
+	const ZM_BattleMonsterSpec xMale   = WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u), ZM_GENDER_MALE);
+	const ZM_BattleMonsterSpec xFemale = WithGender(MakeSpecUniform(ZM_SPECIES_STRAYLING, 31u), ZM_GENDER_FEMALE);
+	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xMale, xFemale), "M + F sharing FIELD -> compatible");
+	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xFemale, xMale), "compatibility is symmetric");
+}
+
+// Same-gender parents that share an egg group are NOT a valid pair.
+ZENITH_TEST(ZM_Data, Breeding_GenderedCompat_SameGenderSameGroupFalse)
+{
+	ZENITH_ASSERT_TRUE(ZM_AreSpeciesCompatible(ZM_SPECIES_NIBBIN, ZM_SPECIES_STRAYLING),
+		"premise: species share FIELD");
+	const ZM_BattleMonsterSpec xMaleA = WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u), ZM_GENDER_MALE);
+	const ZM_BattleMonsterSpec xMaleB = WithGender(MakeSpecUniform(ZM_SPECIES_STRAYLING, 31u), ZM_GENDER_MALE);
+	ZENITH_ASSERT_FALSE(ZM_AreCompatible(xMaleA, xMaleB), "two males -> incompatible");
+	const ZM_BattleMonsterSpec xFemaleA = WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFemaleB = WithGender(MakeSpecUniform(ZM_SPECIES_STRAYLING, 31u), ZM_GENDER_FEMALE);
+	ZENITH_ASSERT_FALSE(ZM_AreCompatible(xFemaleA, xFemaleB), "two females -> incompatible");
+}
+
+// A GENDERLESS non-universal pair never breeds -- even when species-compatible.
+ZENITH_TEST(ZM_Data, Breeding_GenderedCompat_GenderlessNonUniversalFalse)
+{
+	ZENITH_ASSERT_TRUE(ZM_AreSpeciesCompatible(ZM_SPECIES_RUBBLET, ZM_SPECIES_SLAGLET),
+		"premise: blobs share AMORPHOUS at the species level");
+	const ZM_BattleMonsterSpec xA = WithGender(MakeSpecUniform(ZM_SPECIES_RUBBLET, 31u), ZM_GENDER_GENDERLESS);
+	const ZM_BattleMonsterSpec xB = WithGender(MakeSpecUniform(ZM_SPECIES_SLAGLET, 31u), ZM_GENDER_GENDERLESS);
+	ZENITH_ASSERT_FALSE(ZM_AreCompatible(xA, xB), "genderless non-universal pair -> incompatible");
+}
+
+// The universal breeder ignores gender: compatible with a non-legendary partner of
+// ANY gender (both slot orders), but never with a legendary.
+ZENITH_TEST(ZM_Data, Breeding_GenderedCompat_UniversalIgnoresGender)
+{
+	const ZM_BattleMonsterSpec xGloopet = MakeSpecUniform(ZM_SPECIES_GLOOPET, 31u);   // genderless
+	const ZM_GENDER aeGenders[] = { ZM_GENDER_MALE, ZM_GENDER_FEMALE, ZM_GENDER_GENDERLESS };
+	for (u_int g = 0; g < (u_int)(sizeof(aeGenders) / sizeof(aeGenders[0])); ++g)
+	{
+		const ZM_BattleMonsterSpec xPartner = WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u), aeGenders[g]);
+		ZENITH_ASSERT_TRUE(ZM_AreCompatible(xGloopet, xPartner), "GLOOPET + any-gender partner (%u)", g);
+		ZENITH_ASSERT_TRUE(ZM_AreCompatible(xPartner, xGloopet), "symmetric (%u)", g);
+	}
+	const ZM_BattleMonsterSpec xLegend = MakeSpecUniform(ZM_SPECIES_ZENARIS, 31u);
+	ZENITH_ASSERT_FALSE(ZM_AreCompatible(xGloopet, xLegend), "GLOOPET + legendary -> incompatible");
+}
+
+// --- H.4 Parent-role-driven offspring ------------------------------------------
+
+// Offspring species = the FEMALE parent's base evolution; swapping which parent is
+// female flips the offspring. Expectations come from ZM_GetBaseEvolution, not from
+// re-running ZM_GenerateEgg.
+ZENITH_TEST(ZM_Data, Breeding_Offspring_SpeciesIsFemaleBaseEvo)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetBaseEvolution(ZM_SPECIES_SYLVASTAG), (u_int)ZM_SPECIES_FERNFAWN, "premise SYLVASTAG->FERNFAWN");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetBaseEvolution(ZM_SPECIES_GRAINMAW),  (u_int)ZM_SPECIES_NIBBIN,   "premise GRAINMAW->NIBBIN");
+
+	// SYLVASTAG female -> FERNFAWN.
+	{
+		const ZM_BattleMonsterSpec xSyl = WithGender(MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u), ZM_GENDER_FEMALE);
+		const ZM_BattleMonsterSpec xGrn = WithGender(MakeSpecUniform(ZM_SPECIES_GRAINMAW, 20u), ZM_GENDER_MALE);
+		ZENITH_ASSERT_TRUE(ZM_AreCompatible(xSyl, xGrn), "pair compatible");
+		ZM_BattleRNG xRng(0x5B10ull);
+		const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xSyl, xGrn, xRng);
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_eSpecies, (u_int)ZM_SPECIES_FERNFAWN, "female SYLVASTAG -> FERNFAWN");
+	}
+	// Swap the genders -> GRAINMAW is now the mother -> NIBBIN.
+	{
+		const ZM_BattleMonsterSpec xSyl = WithGender(MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u), ZM_GENDER_MALE);
+		const ZM_BattleMonsterSpec xGrn = WithGender(MakeSpecUniform(ZM_SPECIES_GRAINMAW, 20u), ZM_GENDER_FEMALE);
+		ZENITH_ASSERT_TRUE(ZM_AreCompatible(xSyl, xGrn), "swapped pair compatible");
+		ZM_BattleRNG xRng(0x5B10ull);
+		const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xSyl, xGrn, xRng);
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_eSpecies, (u_int)ZM_SPECIES_NIBBIN, "female GRAINMAW -> NIBBIN");
+	}
+}
+
+// With the universal breeder involved, the NON-universal parent seeds the line,
+// regardless of slot order.
+ZENITH_TEST(ZM_Data, Breeding_Offspring_UniversalPartnerSeedsLine)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetBaseEvolution(ZM_SPECIES_THICKETBUCK), (u_int)ZM_SPECIES_FERNFAWN, "premise");
+	const ZM_BattleMonsterSpec xGloopet = MakeSpecUniform(ZM_SPECIES_GLOOPET, 20u);
+	const ZM_BattleMonsterSpec xBuck    = WithGender(MakeSpecUniform(ZM_SPECIES_THICKETBUCK, 20u), ZM_GENDER_FEMALE);
+
+	ZM_BattleRNG xRngA(0x60D5ull);
+	const ZM_BattleMonsterSpec xEggA = ZM_GenerateEgg(xGloopet, xBuck, xRngA);   // universal in slot 0
+	ZENITH_ASSERT_EQ((u_int)xEggA.m_eSpecies, (u_int)ZM_SPECIES_FERNFAWN, "GLOOPET first -> FERNFAWN");
+
+	ZM_BattleRNG xRngB(0x60D5ull);
+	const ZM_BattleMonsterSpec xEggB = ZM_GenerateEgg(xBuck, xGloopet, xRngB);   // universal in slot 1
+	ZENITH_ASSERT_EQ((u_int)xEggB.m_eSpecies, (u_int)ZM_SPECIES_FERNFAWN, "GLOOPET second -> FERNFAWN");
+}
+
+// The egg's ability comes from the NON-universal mother, not from GLOOPET.
+ZENITH_TEST(ZM_Data, Breeding_Offspring_AbilityFromNonUniversalMother)
+{
+	const ZM_BattleMonsterSpec xGloopet = MakeSpecUniform(ZM_SPECIES_GLOOPET, 20u, 20u,
+		ZM_NATURE_FERAL, ZM_ABILITY_BEDROCK);
+	const ZM_BattleMonsterSpec xSyl = WithGender(MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u, 20u,
+		ZM_NATURE_FERAL, ZM_ABILITY_STREAMLINE), ZM_GENDER_FEMALE);
+	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xGloopet, xSyl), "GLOOPET x SYLVASTAG compatible");
+	ZM_BattleRNG xRng(0xAB111ull);
+	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xGloopet, xSyl, xRng);
+	ZENITH_ASSERT_EQ((u_int)xEgg.m_eSpecies, (u_int)ZM_SPECIES_FERNFAWN,     "offspring = base of SYLVASTAG");
+	ZENITH_ASSERT_EQ((u_int)xEgg.m_eAbility, (u_int)ZM_ABILITY_STREAMLINE,   "ability from non-universal mother");
+	ZENITH_ASSERT_NE((u_int)xEgg.m_eAbility, (u_int)ZM_ABILITY_BEDROCK,      "not GLOOPET's ability");
+}
+
+// --- H.5 Daycare compatibility (box-6 SC-B) ------------------------------------
+
+// A compatible opposite-gender pair accrues to the threshold and yields an egg of
+// the FEMALE parent's base evolution.
+ZENITH_TEST(ZM_Data, Daycare_SCB_OppositeGenderPairReachesEgg)
+{
+	ZM_DaycareState xState;
+	ZM_DaycareDeposit(xState, WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u, 20u), ZM_GENDER_MALE));
+	ZM_DaycareDeposit(xState, WithGender(MakeSpecUniform(ZM_SPECIES_STRAYLING, 31u, 20u), ZM_GENDER_FEMALE));
+	ZENITH_ASSERT_TRUE(ZM_DaycarePairCompatible(xState), "opposite-gender shared-group pair is compatible");
+
+	ZM_DaycareStep(xState, uZM_DAYCARE_EGG_STEP_THRESHOLD);
+	ZENITH_ASSERT_TRUE(xState.m_bEggAvailable, "egg available at threshold");
+
+	ZM_BattleRNG xRng(0xDACEull);
+	ZM_BattleMonsterSpec xEgg;
+	ZENITH_ASSERT_TRUE(ZM_DaycareCollectEgg(xState, xRng, ZM_BreedingParams{}, xEgg), "collect succeeds");
+	ZENITH_ASSERT_EQ((u_int)xEgg.m_eSpecies, (u_int)ZM_SPECIES_STRAYLING, "offspring = female STRAYLING base evo");
+	ZENITH_ASSERT_EQ(xState.m_uEggStepCounter, 0u, "counter reset after collect");
+}
+
+// Same-gender and genderless-non-universal daycare pairs never accrue an egg.
+ZENITH_TEST(ZM_Data, Daycare_SCB_SameGenderOrGenderlessNeverEgg)
+{
+	// Two males sharing FIELD: incompatible, nothing accrues.
+	ZM_DaycareState xSame;
+	ZM_DaycareDeposit(xSame, WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u, 20u), ZM_GENDER_MALE));
+	ZM_DaycareDeposit(xSame, WithGender(MakeSpecUniform(ZM_SPECIES_STRAYLING, 31u, 20u), ZM_GENDER_MALE));
+	ZENITH_ASSERT_FALSE(ZM_DaycarePairCompatible(xSame), "two males -> incompatible");
+	ZM_DaycareStep(xSame, 500u);
+	ZENITH_ASSERT_EQ(xSame.m_uEggStepCounter, 0u, "same-gender pair accrues nothing");
+	ZENITH_ASSERT_FALSE(xSame.m_bEggAvailable);
+
+	// Two genderless non-universal blobs: also incompatible.
+	ZM_DaycareState xNeuter;
+	ZM_DaycareDeposit(xNeuter, MakeSpecUniform(ZM_SPECIES_RUBBLET, 31u, 20u));   // BLOB, genderless
+	ZM_DaycareDeposit(xNeuter, MakeSpecUniform(ZM_SPECIES_SLAGLET, 31u, 20u));   // BLOB, genderless
+	ZENITH_ASSERT_FALSE(ZM_DaycarePairCompatible(xNeuter), "genderless non-universal pair -> incompatible");
+	ZM_DaycareStep(xNeuter, 500u);
+	ZENITH_ASSERT_EQ(xNeuter.m_uEggStepCounter, 0u, "genderless pair accrues nothing");
+	ZENITH_ASSERT_FALSE(xNeuter.m_bEggAvailable);
+}
+
+// A GLOOPET pairing (universal + genderless blob's cousin) breeds through the
+// daycare; the offspring follows the non-universal partner.
+ZENITH_TEST(ZM_Data, Daycare_SCB_UniversalPairingWorks)
+{
+	ZM_DaycareState xState;
+	ZM_DaycareDeposit(xState, MakeSpecUniform(ZM_SPECIES_GLOOPET, 31u, 20u));                              // slot 0 universal
+	ZM_DaycareDeposit(xState, WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u, 20u), ZM_GENDER_MALE));   // slot 1
+	ZENITH_ASSERT_TRUE(ZM_DaycarePairCompatible(xState), "universal pairing is compatible");
+
+	ZM_DaycareStep(xState, uZM_DAYCARE_EGG_STEP_THRESHOLD);
+	ZENITH_ASSERT_TRUE(xState.m_bEggAvailable, "egg available at threshold");
+
+	ZM_BattleRNG xRng(0x9111ull);
+	ZM_BattleMonsterSpec xEgg;
+	ZENITH_ASSERT_TRUE(ZM_DaycareCollectEgg(xState, xRng, ZM_BreedingParams{}, xEgg), "collect succeeds");
+	ZENITH_ASSERT_EQ((u_int)xEgg.m_eSpecies, (u_int)ZM_SPECIES_NIBBIN, "offspring = non-universal partner base evo");
 }

@@ -363,6 +363,95 @@ ZM_GENDER ZM_RollGender(ZM_SPECIES_ID eId, ZM_BattleRNG& xRng)
 
 namespace
 {
+	// Archetype -> primary egg group (box-6 SC-B): every body plan maps to exactly one
+	// group, so all species of an archetype share a primary (a superset of the old
+	// archetype-proxy compatibility).
+	ZM_EGG_GROUP PrimaryEggGroupForArchetype(ZM_ARCHETYPE eArchetype)
+	{
+		switch (eArchetype)
+		{
+		case ZM_ARCHETYPE_QUADRUPED:        return ZM_EGG_GROUP_FIELD;
+		case ZM_ARCHETYPE_BIPED:            return ZM_EGG_GROUP_HUMANOID;
+		case ZM_ARCHETYPE_AVIAN:            return ZM_EGG_GROUP_FLYING;
+		case ZM_ARCHETYPE_SERPENT:          return ZM_EGG_GROUP_DRAGON;
+		case ZM_ARCHETYPE_AQUATIC:          return ZM_EGG_GROUP_WATER;
+		case ZM_ARCHETYPE_INSECTOID:        return ZM_EGG_GROUP_BUG;
+		case ZM_ARCHETYPE_BLOB:             return ZM_EGG_GROUP_AMORPHOUS;
+		case ZM_ARCHETYPE_FLOATER_PLANTOID: return ZM_EGG_GROUP_PLANT;
+		default:                            return ZM_EGG_GROUP_FIELD;   // unreachable
+		}
+	}
+
+	// One type slot -> the secondary egg group it contributes, or ZM_EGG_GROUP_COUNT
+	// if the type contributes none. A type slot "matches" iff this returns != COUNT
+	// (ZM_TYPE_NONE never matches). A shared secondary across DIFFERENT archetypes is
+	// what enables cross-archetype breeding (e.g. GRASS quadruped + GRASS plantoid
+	// both reach PLANT).
+	ZM_EGG_GROUP SecondaryEggGroupForType(ZM_TYPE eType)
+	{
+		switch (eType)
+		{
+		case ZM_TYPE_GRASS:   return ZM_EGG_GROUP_PLANT;
+		case ZM_TYPE_DRAKE:   return ZM_EGG_GROUP_DRAGON;
+		case ZM_TYPE_FEY:     return ZM_EGG_GROUP_FAIRY;
+		case ZM_TYPE_PHANTOM: return ZM_EGG_GROUP_AMORPHOUS;
+		case ZM_TYPE_WATER:   return ZM_EGG_GROUP_WATER;
+		case ZM_TYPE_STONE:
+		case ZM_TYPE_IRON:
+		case ZM_TYPE_EARTH:   return ZM_EGG_GROUP_MINERAL;
+		case ZM_TYPE_SKY:     return ZM_EGG_GROUP_FLYING;
+		default:              return ZM_EGG_GROUP_COUNT;   // no secondary contribution
+		}
+	}
+}
+
+ZM_EggGroups ZM_GetSpeciesEggGroups(ZM_SPECIES_ID eId)
+{
+	const ZM_SpeciesData& xData = ZM_GetSpeciesData(eId);
+
+	ZM_EggGroups xOut = {};
+
+	// Legendaries never breed: a single NO_EGGS group.
+	if (xData.m_eRarity == ZM_RARITY_LEGENDARY)
+	{
+		xOut.m_uCount      = 1u;
+		xOut.m_aeGroups[0] = ZM_EGG_GROUP_NO_EGGS;
+		return xOut;
+	}
+
+	// Primary from the body plan.
+	const ZM_EGG_GROUP ePrimary = PrimaryEggGroupForArchetype(xData.m_eArchetype);
+	xOut.m_uCount      = 1u;
+	xOut.m_aeGroups[0] = ePrimary;
+
+	// Secondary from the FIRST type slot that maps to a group (slot 0 then slot 1);
+	// added only if it differs from the primary. Only that first matching slot is
+	// consulted -- if it maps back onto the primary, the species stays single-group.
+	for (u_int i = 0u; i < 2u; ++i)
+	{
+		const ZM_EGG_GROUP eSecondary = SecondaryEggGroupForType(xData.m_aeTypes[i]);
+		if (eSecondary != ZM_EGG_GROUP_COUNT)
+		{
+			if (eSecondary != ePrimary)
+			{
+				xOut.m_aeGroups[1] = eSecondary;
+				xOut.m_uCount      = 2u;
+			}
+			break;   // only the first matching type slot contributes
+		}
+	}
+	return xOut;
+}
+
+bool ZM_IsUniversalBreeder(ZM_SPECIES_ID eId)
+{
+	// The Ditto-analog: GLOOPET, the amiable shapeshifting ooze (box-6 SC-B). Exactly
+	// one species carries universal breeding; its evolution GLUTTONUB does not.
+	return eId == ZM_SPECIES_GLOOPET;
+}
+
+namespace
+{
 	// Per-archetype base-stat profile (a stage-1 baseline, each row sums ~300):
 	// HP, ATK, DEF, SPATK, SPDEF, SPEED. Encodes each body plan's identity --
 	// AVIAN/INSECTOID fast+frail, BLOB bulky+slow, BIPED bruiser, FLOATER special.
