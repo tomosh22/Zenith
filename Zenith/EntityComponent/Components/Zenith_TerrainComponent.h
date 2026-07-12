@@ -3,6 +3,7 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include <string>
 
 // Forward declarations only — this header includes NO Flux header (Wave-18
 // ownership-relocation). The Flux GPU state (unified vertex/index buffers,
@@ -60,9 +61,13 @@ public:
 	Zenith_TerrainComponent& operator=(const Zenith_TerrainComponent&) = delete;
 
 private:
+	friend class Zenith_UnitTests;
+	friend class Zenith_TerrainEditor;
+
 	static uint32_t s_uInstanceCount;
 	static void IncrementInstanceCount();
 	static void DecrementInstanceCount();
+	void ReadSerializedFields(Zenith_DataStream& xStream);
 
 public:
 	// Buffer accessors forward into the owning Flux_TerrainStreamingState.
@@ -102,6 +107,12 @@ public:
 	// Splatmap texture (RGBA8, weights for 4 materials)
 	Zenith_TextureAsset* GetSplatmapTexture() const { return m_xSplatmap.Resolve(); }
 	TextureHandle& GetSplatmapHandle() { return m_xSplatmap; }
+
+	static bool IsValidTerrainAssetSetName(const std::string& strSet);
+	static bool TryResolveTerrainAssetDirectory(const std::string& strSet, std::string& strDirectoryOut);
+	bool SetTerrainAssetSet(const std::string& strSet);
+	const std::string& GetTerrainAssetSet() const;
+	std::string GetTerrainAssetDirectory() const;
 
 	// Backward compatibility wrappers
 	Zenith_MaterialAsset* GetMaterial0() const { return m_axMaterials[0].GetDirect(); }
@@ -234,12 +245,15 @@ public:
 #ifdef ZENITH_TOOLS
 	// Editor UI — main entry point; section helpers below.
 	void RenderPropertiesPanel();
+	bool IsTerrainInitializedForEditor() const;
+	static bool TryResolveValidatedTerrainAssetDirectory(const std::string& strAssetSet,
+		std::string& strDirectoryOut);
 
 	// End-to-end regeneration from an in-memory heightfield (the terrain
 	// editor's bake): cleanup -> delete terrain files -> ExportHeightmapFromMat
 	// -> reload physics -> re-init render. Same sequence as the panel's
 	// Regenerate button with the in-memory image as the export source.
-	void RegenerateFromHeightfield(const Zenith_Image& xHeightfield);
+	bool RegenerateFromHeightfield(const Zenith_Image& xHeightfield);
 
 private:
 	void RenderTerrainCreationSection();
@@ -251,18 +265,34 @@ private:
 
 	// Cleanup helper used by Regenerate to tear down prior GPU / physics / buffer state
 	// before re-exporting. Split out because the 5-step sequence is easy to get wrong.
-	void CleanupPriorGenerationForRegenerate();
+	bool CleanupPriorGenerationForRegenerate(const std::string& strValidatedDirectory);
+	// Purely non-destructive canonical target check. Kept private so production
+	// uses the project-root resolver above; Zenith_UnitTests friendship may pass
+	// an isolated Build/artifacts root/target to exercise junction rejection.
+	static bool ValidateTerrainAssetSetTarget(const std::string& strAssetSet,
+		const std::string& strTerrainRoot, const std::string& strResolvedTarget);
+	// Production wrapper re-resolves + canonicalizes the target below the game
+	// Terrain root before entering the destructive core. Zenith_UnitTests
+	// friendship reaches only the core for a Build/artifacts sandbox seam.
+	static bool DeleteExistingTerrainFilesForAssetSet(const std::string& strAssetSet,
+		const std::string& strResolvedDirectory);
+	static bool DeleteExistingTerrainFilesInDirectory(const std::string& strDirectory);
 
 	// End-to-end regeneration pipeline triggered by the editor's "Regenerate
 	// Terrain" button. Owns the cleanup → delete-files → export → reload-physics
 	// → re-init-render sequence and updates s_strTerrainExportStatus throughout.
-	void RunTerrainRegeneration(const std::string& strOutputDir);
+	bool RunTerrainRegeneration(const std::string& strOutputDir);
 	// Shared regeneration body. Non-null pxHeightfield exports from the
 	// in-memory image; null falls back to the panel's heightmap path field.
-	void RunTerrainRegenerationInternal(const std::string& strOutputDir, const Zenith_Image* pxHeightfield);
+	bool RunTerrainRegenerationInternal(const std::string& strOutputDir, const Zenith_Image* pxHeightfield);
+	bool RunTerrainRegenerationInternalForTerrainRoot(const std::string& strTerrainRoot,
+		const std::string& strOutputDir, const Zenith_Image* pxHeightfield);
 	// Allocate fresh material asset into any empty slot in m_axMaterials, named
 	// after the owning entity. Called pre-render-init during regeneration.
 	void EnsureMaterialSlotsPopulated();
 #endif
 
+private:
+	// Kept private so every mutation passes through the validating setter.
+	std::string m_strTerrainAssetSet;
 };

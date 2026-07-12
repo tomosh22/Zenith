@@ -135,10 +135,34 @@ Exact directory layout and file-naming scheme under `Assets/`: TBD at S4
 
 ## 4. Terrain sets (one per outdoor scene, ~25 sets)
 
-Requires engine changes **E1** (per-component serialized terrain-set name
-replacing the hard-coded `Terrain/` path) and **E2** (rect chunk export) --
-both land at the start of S3. Each outdoor scene owns a set under
-`Assets/Terrain/<SetName>/` (e.g. `Terrain/Route01/`, `Terrain/HomeVillage/`).
+Engine change **E1 is shipped**: every `Zenith_TerrainComponent` owns a
+serialized terrain-set name and all runtime streaming/physics/render paths
+resolve through it. **E2** (rect chunk export) remains the next engine task.
+Each outdoor scene owns a set under `Assets/Terrain/<SetName>/` (e.g.
+`Terrain/Route01/`, `Terrain/HomeVillage/`).
+
+The set name is either empty, meaning the backward-compatible legacy
+`Assets/Terrain/` root, or matches
+`[A-Za-z0-9][A-Za-z0-9_-]{0,63}` exactly. Named sets resolve only to that
+single direct child below `Assets/Terrain/`; separators, dots, whitespace,
+absolute paths, drive/UNC prefixes, control/non-ASCII bytes and names longer
+than 64 bytes are rejected transactionally. Terrain-component serialization
+v4 appends the set name after the complete v3 payload. Readers of v1-v3, and
+v4 payloads containing an invalid set, safely select the empty legacy set.
+
+The terrain editor stages `SetAssetSet` without retargeting an initialized
+live component. `BakeFull` validates and writes the staged textures, then
+commits that same set immediately before synchronous mesh cleanup/export and
+physics/render regeneration; failed bakes retain dirty session state. Named
+sets co-locate textures and meshes in their set directory, while the empty
+legacy set preserves the historical split (`Textures/Terrain/` for textures,
+`Terrain/` for meshes). Cleanup is non-recursive and removes only direct
+generated `.zmesh` files after canonical containment checks.
+
+Authoring automation uses `AddStep_TerrainSetAssetSet(szSet)`. Its queued
+action owns the argument bytes and validates/preflights before staging. It
+stamps an uninitialized selected component so a following scene save persists
+the set; initialized components may only change sets through `BakeFull`.
 
 ### 4.1 Per-set file set
 

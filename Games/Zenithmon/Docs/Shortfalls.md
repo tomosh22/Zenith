@@ -4,9 +4,9 @@
 
 **Scope note (2026-07-09, S0):** at S0 essentially EVERYTHING is a gap -- the project is a booting skeleton. This doc is deliberately structured per major system with a one-line current-state each, so later sessions UPDATE lines in place rather than restructure. When a stage lands, replace that system's status line and add a dated note; do not reorder sections.
 
-**Verdict at a glance (updated 2026-07-12, S2 COMPLETE -- stage gate PASSED, ZM-D-047):**
-- **What works today:** boot skeleton + the complete S1 data core and a deterministic headless battle engine through **box 6 (all S2 battle logic)**: full move/status/catch/switch execution; all 50 abilities + weather; modern party-share EXP, EV caps/yields, current EXP, mid-battle level/stat/move learning, terminal level-evolution queuing; a pure four-tier opponent AI (`ZM_BattleAI`: RANDOM/GREEDY/SMART/CHAMPION); deterministic breeding + daycare (`ZM_Breeding` / `ZM_Daycare`); and Battle Tower logic (`ZM_BattleTower`: L50 clamp, streak/AI escalation, procedural opponent teams). **Feature-complete breeding + gender is DONE** (user-directed, ZM-D-048/049/050): gender + ratios, real egg groups, the GLOOPET Ditto-analog, gendered compatibility, IV/nature/ability + hidden-ability + egg-move inheritance, and derived hatch cycles all shipped across SC-A/B/C (+55 breeding tests net). Shiny/Masuda deferred to S5+. Current game-unit inventory is **264 `ZM_Data` + 384 `ZM_Battle` + 2 `ZM_Boot`**; full boot gate **1718 ran / 1717 passed / 0 failed / 1 skipped**. There is still no integrated playable loop: S3/S5 remain.
-- **What's designed but unbuilt:** everything from **S3 onward** -- the first overworld (engine E1/E2 terrain changes + terrain bakes + player controller/camera/warp), asset generators (S4), overworld<->battle integration + UI (S5/S6), save schema (S7), and all world/story content (S8-S12). The S2 stage gate PASSED 2026-07-12 (ZM-D-047: 4-config matrix + D3D12 all build; unit suite 1663/0-failed) -- the deterministic headless battle system is feature-complete; what remains battle-adjacent is S5 *integration* (transition/HUD), not the engine itself. See [Roadmap.md](Roadmap.md).
+**Verdict at a glance (updated 2026-07-12, S3 E1 COMPLETE, ZM-D-051):**
+- **What works today:** boot skeleton + the complete S1 data core and deterministic headless battle engine, including feature-complete breeding/gender and Battle Tower logic. S3 E1 now supplies backward-compatible, serialized, strictly contained per-terrain asset sets across runtime streaming and staged editor/automation bakes (ZM-D-051). Current game-unit inventory remains **264 `ZM_Data` + 384 `ZM_Battle` + 2 `ZM_Boot`**; the full boot gate, including seven new engine tests, is **1725 ran / 1724 passed / 0 failed / 1 skipped**. There is still no integrated playable loop: the rest of S3/S5 remains.
+- **What's designed but unbuilt:** S3 E2 rect-bounded export, terrain bakes, player/controller/camera/warp; asset generators (S4); overworld<->battle integration + UI (S5/S6); save schema (S7); and all world/story content (S8-S12). See [Roadmap.md](Roadmap.md).
 - **Locked cuts (not gaps -- see Scope.md):** no audio (engine has none), no networking/multiplayer/trading, no Dynamax-analog, battle format singles only, documented volatile-status cuts (Substitute/Encore/Transform/weight moves).
 
 ---
@@ -29,8 +29,8 @@
 
 ### 1.3 Overworld
 
-**Status: not started -- lands at S3 (first scene), scaled at S9/S10.**
-No player controller (engine has no character controller -- proper approach is a Jolt capsule + velocity), no follow camera, no input-action wrapper, no warp/spawn-tag system, no persistent `ZM_GameStateManager`, no terrain baked. Blocked first on engine changes E1+E2 (see section 2).
+**Status: S3 active; engine E1 complete, first playable scene not yet built.**
+Per-scene terrain-set isolation and safe editor bake targeting now exist (ZM-D-051). No player controller (engine has no character controller -- proper approach is a Jolt capsule + velocity), follow camera, input-action wrapper, warp/spawn-tag system, persistent `ZM_GameStateManager`, or baked terrain exists yet. The next blocker is engine E2 rect-bounded export (see section 2).
 
 ### 1.4 Asset generators
 
@@ -75,7 +75,7 @@ All additive + back-compatible; each lands with unit tests + a RenderTest boot r
 
 | # | Gap | Why it blocks Zenithmon | Lands at |
 |---|-----|------------------------|----------|
-| E1 | Terrain asset dir is hard-coded to `<gameassets>/Terrain/` at 6 sites (5 in `Zenith_TerrainComponent.cpp`, 1 in `Flux_TerrainStreamingManager.cpp`) = exactly ONE terrain per game today | Zenithmon needs ~25 terrain sets (one per outdoor scene); fix = serialized terrain-set name, default "" keeps legacy paths | S3 |
+| E1 | **RESOLVED 2026-07-12 (ZM-D-051):** serialized strict terrain-set name, empty exact legacy layout, all runtime/editor/automation paths routed, safe staged bake cleanup, v1-v4 compatibility | Zenithmon can isolate one terrain asset family per outdoor scene without regressing existing games | S3 |
 | E2 | No rect-bounded chunk export; a full 64x64 grid is ~12k files and minutes-hours per terrain (x25 = ~300k files) | `AddStep_TerrainExportChunksRect` + streaming-path missing-chunk tolerance makes ~25 terrains plausible (~25k files); bake time still to be MEASURED (Questions.md Q-2026-07-09-002) | S3 |
 | E3 | `Zenith_UIText` has no typewriter reveal (visible-glyph-count property) | Every dialogue line and battle-text line needs it; belongs in the widget, not per-game hacks | S5 |
 | E4 | No `Zenith_UIGridLayoutGroup` (existing LayoutGroup is horizontal/vertical only) | Bag / box / dex grids are core UI surfaces | S6 |

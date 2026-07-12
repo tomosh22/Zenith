@@ -614,6 +614,11 @@ void Zenith_EditorAutomation::AddStep_SetTerrainSplatmapPath(const char* szPath)
 
 // -- Terrain-Editor Authoring --
 
+void Zenith_EditorAutomation::AddStep_TerrainSetAssetSet(const char* szSet)
+{
+	Push(m_axActions, ActionType::TERRAIN_EDITOR_SET_ASSET_SET, szSet);
+}
+
 void Zenith_EditorAutomation::AddStep_TerrainResetSession()
 {
 	Zenith_EditorAction xAction;
@@ -809,6 +814,59 @@ void Zenith_EditorAutomation::AddStep_Custom(void (*pfnFunc)())
 static void ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction)
 {
 	Zenith_TerrainEditor& xTerrainEditor = g_xEngine.TerrainEditor();
+	if (xAction.m_eType == Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET)
+	{
+		// Validate and preflight every selected-component constraint BEFORE
+		// changing the editor's staged target. A refused retarget is transactional:
+		// neither the editor nor the live component observes the candidate.
+		std::string strResolvedCandidateDirectory;
+		const bool bValidCandidate = Zenith_TerrainComponent::TryResolveTerrainAssetDirectory(
+			xAction.m_szArg1, strResolvedCandidateDirectory);
+		if (!bValidCandidate)
+		{
+			// Route through the staging API only to expose its validation/status
+			// error; invalid input is guaranteed to preserve the current stage.
+			xTerrainEditor.SetAssetSet(xAction.m_szArg1);
+			Zenith_Assert(false, "TERRAIN_EDITOR_SET_ASSET_SET rejected invalid set '%s'",
+				xAction.m_szArg1.c_str());
+			return;
+		}
+
+		Zenith_Entity* pxSelected = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_TerrainComponent* pxSelectedTerrain = pxSelected
+			? pxSelected->TryGetComponent<Zenith_TerrainComponent>()
+			: nullptr;
+		if (pxSelectedTerrain != nullptr)
+		{
+			if (pxSelectedTerrain->IsTerrainInitializedForEditor() &&
+				pxSelectedTerrain->GetTerrainAssetSet() != xAction.m_szArg1)
+			{
+				Zenith_Assert(false,
+					"TERRAIN_EDITOR_SET_ASSET_SET cannot retarget an initialized terrain; use TerrainEditor::BakeFull");
+				return;
+			}
+		}
+
+		const bool bStaged = xTerrainEditor.SetAssetSet(xAction.m_szArg1);
+		Zenith_Assert(bStaged, "Validated terrain asset set unexpectedly failed to stage");
+		if (!bStaged)
+		{
+			return;
+		}
+
+		if (pxSelectedTerrain != nullptr && !pxSelectedTerrain->IsTerrainInitializedForEditor())
+		{
+			// A fresh component has no live buffers to invalidate. Stamp the
+			// validated set so a following SaveScene persists the authoring target.
+			const bool bStamped = pxSelectedTerrain->SetTerrainAssetSet(xAction.m_szArg1);
+			Zenith_Assert(bStamped,
+				"TERRAIN_EDITOR_SET_ASSET_SET failed to stamp validated set on fresh terrain");
+			if (!bStamped)
+			{
+				return;
+			}
+		}
+	}
 	if (!xTerrainEditor.IsActive())
 	{
 		xTerrainEditor.OpenStandalone();
@@ -816,6 +874,9 @@ static void ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction)
 
 	switch (xAction.m_eType)
 	{
+	case Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET:
+		break;
+
 	case Zenith_EditorActionType::TERRAIN_EDITOR_RESET:
 		xTerrainEditor.ResetImagesToDefaults();
 		break;
@@ -1603,7 +1664,7 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 {
 	// Terrain-editor authoring actions have their own executor (see above).
-	if (xAction.m_eType >= Zenith_EditorActionType::TERRAIN_EDITOR_RESET &&
+	if (xAction.m_eType >= Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET &&
 		xAction.m_eType <= Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS)
 	{
 		ExecuteTerrainEditorAction(xAction);

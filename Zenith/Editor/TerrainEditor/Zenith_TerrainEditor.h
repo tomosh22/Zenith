@@ -175,9 +175,9 @@ public:
 	// Session lifecycle
 	//--------------------------------------------------------------------------
 
-	// Open an editing session on a terrain entity: seeds the CPU images from
-	// the saved textures in the game assets dir (unless the in-memory session
-	// already has unbaked edits for this target) and registers the stream-in
+	// Open an editing session on a terrain entity: copies the component's
+	// persisted asset set, resets all CPU images to clean defaults, overlays
+	// the saved textures that exist for that set, and registers the stream-in
 	// vertex hook on the component's streaming state.
 	void Open(Zenith_EntityID uTerrainEntity);
 
@@ -187,8 +187,8 @@ public:
 	void OpenStandalone();
 
 	// Clear the hook and force-evict session-dirty chunks so visuals revert
-	// to the baked data. CPU images + session-dirty bits are retained so a
-	// reopen resumes the unbaked session.
+	// to the baked data. CPU images remain in memory, but Open always reseeds
+	// them from clean defaults + the persisted set.
 	void Close();
 
 	bool IsActive() const { return m_bActive; }
@@ -220,6 +220,16 @@ public:
 	// Edit-mode arm/disarm (panel toggle). Open() arms it.
 	bool IsEditModeEnabled() const { return m_bEditModeEnabled; }
 	void SetEditModeEnabled(bool bEnabled) { m_bEditModeEnabled = bEnabled; }
+
+	// Asset-set bake target. The empty set preserves RenderTest and existing
+	// games' split legacy layout (meshes in Terrain/, textures in
+	// Textures/Terrain/). Named sets keep all terrain assets together below
+	// Terrain/<Set>/.
+	bool SetAssetSet(const std::string& strSet);
+	const std::string& GetAssetSet() const;
+	std::string GetMeshAssetDirectory() const;
+	std::string GetTextureAssetDirectory() const;
+	const std::string& GetAssetSetValidationError() const { return m_strAssetSetValidationError; }
 
 	//--------------------------------------------------------------------------
 	// Scriptable editing API — the ImGui panel and editor automation share
@@ -285,8 +295,8 @@ public:
 	//--------------------------------------------------------------------------
 
 	// Write Height.ztxtr (R32) / Splatmap_RGBA.ztxtr (RGBA8) /
-	// GrassDensity.ztxtr (R32) into <GAME_ASSETS>/Textures/Terrain/.
-	void SaveTextures();
+	// GrassDensity.ztxtr (R32) into GetTextureAssetDirectory().
+	bool SaveTextures();
 
 	// Regenerate the brush-indicator decal texture into
 	// <ENGINE_ASSETS>/Textures/Brushes/. A generated artifact (gitignored) —
@@ -294,8 +304,8 @@ public:
 	// the file on disk always matches the current generator.
 	static void RegenerateBrushTextures();
 
-	// Component-less chunk-mesh export from the live heightfield
-	// (ExportHeightmapFromMat into <GAME_ASSETS>/Terrain/). Automation path.
+	// Component-less chunk-mesh export from the live heightfield into
+	// GetMeshAssetDirectory(). Automation path.
 	void BakeMeshes();
 
 	// Full bake on the target component: SaveTextures -> Regenerate pattern
@@ -394,6 +404,7 @@ private:
 	void ClearHook();
 
 	void EnsureImagesAllocated();
+	void FillImagesWithDefaults();  // no dirty/undo side effects
 	void LoadImagesFromAssets();   // seed from saved textures (or defaults)
 
 	void ProcessPendingEvictions();  // <= MAX_EVICTIONS_PER_FRAME per frame
@@ -447,6 +458,11 @@ private:
 	// Grass rebuild (stroke end / bake) — Zenith_TerrainEditor_Bake.cpp
 	//--------------------------------------------------------------------------
 	void RebuildGrass();
+	bool ResolveValidatedTargetForTerrainRoot(const std::string& strTerrainRoot,
+		std::string& strDirectoryOut) const;
+	bool SaveTexturesForTerrainRoot(const std::string& strTerrainRoot);
+	void BakeMeshesForTerrainRoot(const std::string& strTerrainRoot);
+	bool BakeFullForTerrainRoot(const std::string& strTerrainRoot);
 
 	//--------------------------------------------------------------------------
 	// Data
@@ -456,6 +472,8 @@ private:
 	bool m_bConsumedViewportInput = false;
 	bool m_bSessionDirty = false;          // any unbaked edit this session
 	Zenith_EntityID m_uTargetEntity = INVALID_ENTITY_ID;
+	std::string m_strAssetSet;
+	std::string m_strAssetSetValidationError;
 
 	// Brush-indicator decal texture, lazily resolved on first cursor draw
 	// (the file is regenerated at boot by RegenerateBrushTextures). Owning handle so
@@ -526,6 +544,7 @@ private:
 	u_int m_uErosionThermalRowsTotal = 0;
 
 	friend class Zenith_UndoCommand_TerrainEdit;
+	friend class Zenith_UnitTests;
 };
 
 #endif // ZENITH_TOOLS

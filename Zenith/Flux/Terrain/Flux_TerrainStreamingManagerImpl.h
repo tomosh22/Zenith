@@ -9,6 +9,7 @@
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include <cstdint>
 #include <atomic>
+#include <string>
 
 // Use unified terrain configuration
 using namespace Flux_TerrainConfig;
@@ -105,6 +106,7 @@ struct Flux_TerrainStreamingStats
 // ========== Per-Terrain Streaming State ==========
 struct Flux_TerrainStreamingState
 {
+	std::string                 m_strTerrainAssetDirectory;
 	Flux_TerrainBufferAllocator m_xVertexAllocator;
 	Flux_TerrainBufferAllocator m_xIndexAllocator;
 	Flux_TerrainChunkResidency  m_axChunkResidency[TOTAL_CHUNKS];

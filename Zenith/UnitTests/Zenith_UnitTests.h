@@ -3,6 +3,8 @@
 #include "UnitTests/Zenith_AITests.h"
 
 class Zenith_SceneData;
+class Zenith_DataStream;
+class Zenith_TerrainComponent;
 struct Zenith_EntityID;
 
 class Zenith_UnitTests
@@ -20,6 +22,17 @@ public:
 	// through this forwarder so camera-dependent nodes get success-path
 	// coverage. Defined in Zenith_GraphComponent.Tests.inl.
 	static void SetMainCameraForTest(Zenith_SceneData* pxSceneData, Zenith_EntityID xEntity);
+
+	// Test seam: terrain component deserialization normally continues straight
+	// into physics/render asset loading. Serialization tests only need the real
+	// version-dispatched field parser; routing through this friend-gated helper
+	// keeps them independent of whichever game's baked Terrain/ files happen to
+	// exist. Defined in Zenith_UnitTests.Tests.inl.
+	static void ReadTerrainComponentFieldsForTest(Zenith_TerrainComponent& xComponent, Zenith_DataStream& xStream);
+	// Test seam over the production terrain-regeneration cleanup helper. The
+	// caller supplies a Build/artifacts sandbox; defined beside the helper in
+	// Zenith_TerrainComponent_Editor.cpp so the test exercises the real code.
+	static void DeleteExistingTerrainFilesForTest(const std::string& strOutputDir);
 
 public:
 	static void TestDataStream();
@@ -528,6 +541,13 @@ public:
 	// Scene Management tests moved to Zenith_SceneTests.h/.cpp
 
 	// Terrain streaming tests
+	static void TestTerrainAssetSetDefaultUsesLegacyMeshDirectory();
+	static void TestTerrainAssetSetNamedDirectoryPropagatesToStreaming();
+	static void TestTerrainAssetSetIsolatedAcrossComponentsAndMove();
+	static void TestTerrainAssetSetSerializationRoundTrip();
+	static void TestTerrainAssetSetLegacyV3DefaultsEmpty();
+	static void TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirectories();
+	static void TestEditorAutomationTerrainAssetSetActionOwnsArgument();
 	static void TestChunkDistanceSymmetry();
 	static void TestChunkDistanceZero();
 	// Per-component streaming-state isolation. Each Zenith_TerrainComponent

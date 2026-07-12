@@ -26,6 +26,31 @@ namespace
 	static_assert(IM_ARRAYSIZE(aszFalloffNames) == static_cast<int>(Zenith_TerrainBrushFalloff::Count),
 		"Falloff name table out of sync with Zenith_TerrainBrushFalloff");
 
+	char s_szAssetSetDraft[128] = {};
+	std::string s_strObservedStagedSet;
+	Zenith_EntityID s_uObservedTarget = INVALID_ENTITY_ID;
+	bool s_bObservedSessionActive = false;
+	bool s_bObservedStandalone = false;
+	bool s_bHasObservedSession = false;
+
+	void RefreshAssetSetDraftForSession(const Zenith_TerrainEditor& xEditor)
+	{
+		const bool bSessionChanged = !s_bHasObservedSession ||
+			s_uObservedTarget != xEditor.GetTargetEntity() ||
+			s_bObservedSessionActive != xEditor.IsActive() ||
+			s_bObservedStandalone != xEditor.IsStandalone();
+		if (bSessionChanged || s_strObservedStagedSet != xEditor.GetAssetSet())
+		{
+			strncpy_s(s_szAssetSetDraft, sizeof(s_szAssetSetDraft),
+				xEditor.GetAssetSet().c_str(), _TRUNCATE);
+			s_strObservedStagedSet = xEditor.GetAssetSet();
+		}
+		s_uObservedTarget = xEditor.GetTargetEntity();
+		s_bObservedSessionActive = xEditor.IsActive();
+		s_bObservedStandalone = xEditor.IsStandalone();
+		s_bHasObservedSession = true;
+	}
+
 	// Resolve the session target for material-slot labels. Returns nullptr in
 	// standalone / unresolved sessions.
 	Zenith_TerrainComponent* ResolveTarget(const Zenith_TerrainEditor& xEditor)
@@ -292,6 +317,32 @@ namespace
 	void RenderPersistenceSection(Zenith_TerrainEditor& xEditor)
 	{
 		ImGui::Separator();
+		ImGui::TextUnformatted("Bake Target");
+		RefreshAssetSetDraftForSession(xEditor);
+		ImGui::InputText("Terrain Set Draft", s_szAssetSetDraft, sizeof(s_szAssetSetDraft));
+		if (ImGui::Button("Apply Staged Target"))
+		{
+			if (xEditor.SetAssetSet(s_szAssetSetDraft))
+			{
+				s_strObservedStagedSet = xEditor.GetAssetSet();
+			}
+		}
+		ImGui::Text("Staged Set: %s", xEditor.GetAssetSet().empty() ? "(legacy)" : xEditor.GetAssetSet().c_str());
+		ImGui::TextDisabled("The live component changes only when Full Bake begins regeneration.");
+		if (!xEditor.GetAssetSetValidationError().empty())
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.2f, 1.0f), "%s",
+				xEditor.GetAssetSetValidationError().c_str());
+		}
+		if (xEditor.GetAssetSet().empty())
+		{
+			ImGui::TextDisabled("Empty uses the legacy shared terrain paths");
+		}
+		const std::string strMeshOutputDir = xEditor.GetMeshAssetDirectory();
+		const std::string strTextureOutputDir = xEditor.GetTextureAssetDirectory();
+		ImGui::TextWrapped("Mesh Output: %s", strMeshOutputDir.c_str());
+		ImGui::TextWrapped("Texture Output: %s", strTextureOutputDir.c_str());
+
 		if (xEditor.HasUnbakedChanges())
 		{
 			ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Unbaked changes (distant LOD + physics are stale until bake)");
@@ -330,6 +381,7 @@ void Zenith_EditorPanelTerrainEditor::Render(Zenith_TerrainEditor& xEditor, bool
 		ImGui::End();
 		return;
 	}
+	RefreshAssetSetDraftForSession(xEditor);
 
 	if (!xEditor.IsActive() || xEditor.IsStandalone())
 	{
@@ -347,6 +399,7 @@ void Zenith_EditorPanelTerrainEditor::Render(Zenith_TerrainEditor& xEditor, bool
 	if (ImGui::Button("Close Session"))
 	{
 		xEditor.Close();
+		RefreshAssetSetDraftForSession(xEditor);
 		ImGui::End();
 		return;
 	}

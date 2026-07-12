@@ -55,7 +55,7 @@
 
 ## S3 -- First overworld (L) -- critical path
 
-- [ ] Engine E1: serialized terrain-set name on `Zenith_TerrainComponent` (default "" = legacy `Terrain/`) replacing all 6 hard-coded path sites + `AddStep_TerrainSetAssetSet` + bake-target on the terrain editor (unit tests + RenderTest regression)
+- [x] Engine E1: serialized terrain-set name on `Zenith_TerrainComponent` (default "" = legacy `Terrain/`) replaces all 6 hard-coded path sites; strict contained paths, `AddStep_TerrainSetAssetSet`, staged editor bake-target, backward-compatible v1-v4 serialization, 7 engine tests, and RenderTest/CityBuilder/DevilsPlayground regressions are green (2026-07-12, ZM-D-051)
 - [ ] Engine E2: `AddStep_TerrainExportChunksRect(minX,minY,maxX,maxY)` + verify/add missing-chunk tolerance on the `Flux_TerrainStreamingManager` stream-in path
 - [ ] Home Village terrain baked via `ZM_TerrainAuthoring` recipe; grass regenerated OnAwake
 - [ ] Measure terrain bake time with 3 real scenes BEFORE committing to ~25 terrains (Questions.md Q-2026-07-09-002)

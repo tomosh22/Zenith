@@ -15,6 +15,10 @@
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include <filesystem>
 
+#ifdef ZENITH_TESTING
+#include "UnitTests/Zenith_UnitTests.h"
+#endif
+
 // Windows file dialog support
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -139,14 +143,13 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 	// Sculpting / painting lives in the dedicated terrain editor. Routed
 	// through Zenith_Editor (not the terrain-editor header) — this TU sits in
 	// the EntityComponent layer, which may not include Editor/TerrainEditor.
-	if (bTerrainInitialized)
+	// Keep this available for fresh components: the dedicated editor is where
+	// the first validated, staged asset set is chosen before BakeFull commits it.
+	if (ImGui::Button("Open Terrain Editor", ImVec2(200, 28)))
 	{
-		if (ImGui::Button("Open Terrain Editor", ImVec2(200, 28)))
-		{
-			g_xEngine.Editor().OpenTerrainEditor(m_xParentEntity.GetEntityID());
-		}
-		ImGui::Separator();
+		g_xEngine.Editor().OpenTerrainEditor(m_xParentEntity.GetEntityID());
 	}
+	ImGui::Separator();
 
 	if (!bTerrainInitialized)
 	{
@@ -169,48 +172,10 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 	RenderSplatmapSlot();
 }
 
-//-----------------------------------------------------------------------------
-// Load every per-chunk Physics_x_y mesh from strOutputDir and merge them into
-// xPhysicsGeometry (which already holds chunk 0,0). Pre-allocates the combined
-// buffers before walking the chunk grid.
-//-----------------------------------------------------------------------------
-static void CombinePhysicsChunksFromDisk(const std::string& strOutputDir, Flux_MeshGeometry& xPhysicsGeometry)
+bool Zenith_TerrainComponent::IsTerrainInitializedForEditor() const
 {
-	const u_int64 ulTotalVertexDataSize = xPhysicsGeometry.GetVertexDataSize() * TOTAL_CHUNKS;
-	const u_int64 ulTotalIndexDataSize = xPhysicsGeometry.GetIndexDataSize() * TOTAL_CHUNKS;
-	const u_int64 ulTotalPositionDataSize = xPhysicsGeometry.GetNumVerts() * sizeof(Zenith_Maths::Vector3) * TOTAL_CHUNKS;
-
-	xPhysicsGeometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pVertexData, ulTotalVertexDataSize));
-	xPhysicsGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;
-
-	xPhysicsGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_puIndices, ulTotalIndexDataSize));
-	xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
-
-	xPhysicsGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pxPositions, ulTotalPositionDataSize));
-	xPhysicsGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;
-
-	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
-	{
-		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
-		{
-			if (x == 0 && y == 0) continue;
-
-			std::string strPhysicsPath = strOutputDir + "Physics_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
-			Flux_MeshGeometry xTerrainPhysicsMesh;
-			Flux_MeshGeometry::LoadFromFile(
-				strPhysicsPath.c_str(),
-				xTerrainPhysicsMesh,
-				1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
-
-			if (xTerrainPhysicsMesh.GetNumVerts() > 0)
-			{
-				Flux_MeshGeometry::Combine(xPhysicsGeometry, xTerrainPhysicsMesh);
-			}
-		}
-	}
-
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Physics mesh combined: %u vertices, %u indices",
-		xPhysicsGeometry.GetNumVerts(), xPhysicsGeometry.GetNumIndices());
+	return m_pxStreamingState != nullptr &&
+		m_pxStreamingState->m_ulUnifiedVertexBufferSize > 0;
 }
 
 //-----------------------------------------------------------------------------
@@ -229,7 +194,7 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 
 	ImGui::Separator();
 
-	const std::string strOutputDir = std::string(Project_GetGameAssetsDirectory()) + "Terrain/";
+	const std::string strOutputDir = GetTerrainAssetDirectory();
 	ImGui::Text("Output Directory: %s", strOutputDir.c_str());
 
 	const bool bCanCreate = strlen(s_szHeightmapPath) > 0 && !s_bTerrainExportInProgress;
@@ -239,14 +204,24 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 
 	if (ImGui::Button("Create Terrain", ImVec2(200, 30)))
 	{
+		[&]()
+		{
+		std::string strValidatedOutputDir;
+		if (!TryResolveValidatedTerrainAssetDirectory(m_strTerrainAssetSet, strValidatedOutputDir) ||
+			strValidatedOutputDir != strOutputDir)
+		{
+			s_strTerrainExportStatus = "Terrain creation refused an unsafe asset-set target.";
+			return;
+		}
 		s_bTerrainExportInProgress = true;
 		s_strTerrainExportStatus = "Exporting terrain meshes...";
 
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Starting terrain export...");
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strOutputDir.c_str());
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strValidatedOutputDir.c_str());
 
-		ExportHeightmapFromPaths(s_szHeightmapPath, strOutputDir);
+		std::filesystem::create_directories(strValidatedOutputDir);
+		ExportHeightmapFromPaths(s_szHeightmapPath, strValidatedOutputDir);
 
 		s_strTerrainExportStatus = "Export complete. Initializing terrain...";
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Export complete. Initializing terrain...");
@@ -265,29 +240,22 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 		m_axMaterials[0].Set(pxMat0);
 		m_axMaterials[1].Set(pxMat1);
 
-		// Load physics geometry (same as constructor/deserialization) by combining
-		// every per-chunk physics mesh into one geometry object.
-		if (m_pxPhysicsGeometry == nullptr)
-		{
-			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Loading and combining all physics chunks...");
-
-			m_pxPhysicsGeometry = new Flux_MeshGeometry();
-			Flux_MeshGeometry::LoadFromFile(
-				(strOutputDir + "Physics_0_0" ZENITH_MESH_EXT).c_str(),
-				*m_pxPhysicsGeometry,
-				1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
-
-			if (m_pxPhysicsGeometry->GetNumVerts() > 0)
-			{
-				CombinePhysicsChunksFromDisk(strOutputDir, *m_pxPhysicsGeometry);
-			}
-		}
-
+		EnsureMaterialSlotsPopulated();
 		InitializeRenderResources();
+		LoadCombinedPhysicsGeometry();
 
 		s_bTerrainExportInProgress = false;
-		s_strTerrainExportStatus = "Terrain created successfully!";
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain creation complete!");
+		if (IsTerrainInitializedForEditor() && HasPhysicsGeometry() && !m_bTerrainGeometryUnusable)
+		{
+			s_strTerrainExportStatus = "Terrain created successfully!";
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain creation complete!");
+		}
+		else
+		{
+			s_strTerrainExportStatus = "Terrain creation failed to initialize render/physics state.";
+			Zenith_Warning(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain creation did not produce complete live state");
+		}
+		}();
 	}
 
 	if (!bCanCreate)
@@ -302,28 +270,121 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 // physics / buffer state via CleanupPriorGenerationForRegenerate() before
 // re-running the export.
 //-----------------------------------------------------------------------------
-// Delete every regular file under strOutputDir. Errors are warned, not
-// fatal — partial cleanup is recoverable since the next ExportHeightmapFromPaths
-// will overwrite anything that survives.
-static void DeleteExistingTerrainFiles(const std::string& strOutputDir)
+bool Zenith_TerrainComponent::ValidateTerrainAssetSetTarget(const std::string& strAssetSet,
+	const std::string& strTerrainRoot, const std::string& strResolvedTarget)
 {
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Deleting existing terrain files in %s", strOutputDir.c_str());
+	if (!IsValidTerrainAssetSetName(strAssetSet))
+	{
+		return false;
+	}
+
+	std::error_code xError;
+	const std::filesystem::path xCanonicalRoot = std::filesystem::weakly_canonical(
+		std::filesystem::path(strTerrainRoot), xError);
+	if (xError)
+	{
+		return false;
+	}
+	const std::filesystem::path xCanonicalTarget = std::filesystem::weakly_canonical(
+		std::filesystem::path(strResolvedTarget), xError);
+	if (xError)
+	{
+		return false;
+	}
+
+	// Require a component-wise root prefix. Named sets must add exactly their
+	// validated component below the canonical root; legacy empty mode is the
+	// root itself. Equality with the lexical expected target also rejects an
+	// existing junction/symlink that canonicalizes into a sibling directory.
+	auto xRootPart = xCanonicalRoot.begin();
+	auto xTargetPart = xCanonicalTarget.begin();
+	for (; xRootPart != xCanonicalRoot.end(); ++xRootPart, ++xTargetPart)
+	{
+		if (xTargetPart == xCanonicalTarget.end() || *xRootPart != *xTargetPart)
+		{
+			return false;
+		}
+	}
+	const std::filesystem::path xExpectedCanonicalTarget = strAssetSet.empty()
+		? xCanonicalRoot
+		: (xCanonicalRoot / strAssetSet).lexically_normal();
+	if (xCanonicalTarget != xExpectedCanonicalTarget ||
+		(!strAssetSet.empty() && xTargetPart == xCanonicalTarget.end()))
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool Zenith_TerrainComponent::TryResolveValidatedTerrainAssetDirectory(
+	const std::string& strAssetSet, std::string& strDirectoryOut)
+{
+	strDirectoryOut.clear();
+	std::string strResolvedDirectory;
+	if (!TryResolveTerrainAssetDirectory(strAssetSet, strResolvedDirectory))
+	{
+		return false;
+	}
+	const std::string strTerrainRoot =
+		(std::filesystem::path(Project_GetGameAssetsDirectory()) / "Terrain").string();
+	if (!ValidateTerrainAssetSetTarget(strAssetSet, strTerrainRoot, strResolvedDirectory))
+	{
+		return false;
+	}
+	strDirectoryOut = std::move(strResolvedDirectory);
+	return true;
+}
+
+// Production cleanup wrapper re-runs the non-destructive canonical check
+// immediately before deletion as defense in depth against target replacement.
+bool Zenith_TerrainComponent::DeleteExistingTerrainFilesForAssetSet(
+	const std::string& strAssetSet, const std::string& strResolvedDirectory)
+{
+	std::string strValidatedDirectory;
+	if (!TryResolveValidatedTerrainAssetDirectory(strAssetSet, strValidatedDirectory) ||
+		strValidatedDirectory != strResolvedDirectory)
+	{
+		return false;
+	}
+	return DeleteExistingTerrainFilesInDirectory(strValidatedDirectory);
+}
+
+// Private non-recursive core. Named sets also keep Height/Splatmap/GrassDensity
+// textures here, so only direct generated .zmesh files are removed. Production
+// reaches this only through the canonical wrapper; the friend test seam may use
+// an arbitrary Build/artifacts sandbox.
+bool Zenith_TerrainComponent::DeleteExistingTerrainFilesInDirectory(const std::string& strDirectory)
+{
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Deleting existing terrain meshes in %s", strDirectory.c_str());
 	try
 	{
-		if (std::filesystem::exists(strOutputDir))
+		if (std::filesystem::exists(strDirectory))
 		{
-			for (const auto& entry : std::filesystem::directory_iterator(strOutputDir))
+			for (const auto& entry : std::filesystem::directory_iterator(strDirectory))
 			{
-				if (entry.is_regular_file()) std::filesystem::remove(entry.path());
+				if (entry.is_regular_file() && entry.path().extension().string() == ZENITH_MESH_EXT)
+				{
+					std::filesystem::remove(entry.path());
+				}
 			}
-			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Deleted existing terrain files");
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Deleted existing terrain meshes");
 		}
+		return true;
 	}
 	catch (const std::exception& e)
 	{
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Warning: Failed to delete some terrain files: %s", e.what());
+		return false;
 	}
 }
+
+#ifdef ZENITH_TESTING
+void Zenith_UnitTests::DeleteExistingTerrainFilesForTest(const std::string& strOutputDir)
+{
+	Zenith_TerrainComponent::DeleteExistingTerrainFilesInDirectory(strOutputDir);
+}
+#endif
 
 // Allocate a fresh material asset into any empty slot, named after the
 // owning entity. Called between physics-geometry load and render-init so
@@ -346,55 +407,107 @@ void Zenith_TerrainComponent::EnsureMaterialSlotsPopulated()
 // End-to-end execution of the Regenerate button: cleanup → delete files →
 // export → reload physics → re-init render. Each step updates the export
 // status string so the editor footer reflects progress.
-void Zenith_TerrainComponent::RunTerrainRegeneration(const std::string& strOutputDir)
+bool Zenith_TerrainComponent::RunTerrainRegeneration(const std::string& strOutputDir)
 {
-	RunTerrainRegenerationInternal(strOutputDir, nullptr);
+	return RunTerrainRegenerationInternal(strOutputDir, nullptr);
 }
 
 // Terrain-editor bake entry point: identical pipeline, but the export source
 // is the editor's live in-memory heightfield instead of a heightmap file.
-void Zenith_TerrainComponent::RegenerateFromHeightfield(const Zenith_Image& xHeightfield)
+bool Zenith_TerrainComponent::RegenerateFromHeightfield(const Zenith_Image& xHeightfield)
 {
-	const std::string strOutputDir = std::string(Project_GetGameAssetsDirectory()) + "Terrain/";
-	RunTerrainRegenerationInternal(strOutputDir, &xHeightfield);
+	const std::string strOutputDir = GetTerrainAssetDirectory();
+	return RunTerrainRegenerationInternal(strOutputDir, &xHeightfield);
 }
 
-void Zenith_TerrainComponent::RunTerrainRegenerationInternal(const std::string& strOutputDir, const Zenith_Image* pxHeightfield)
+bool Zenith_TerrainComponent::RunTerrainRegenerationInternal(const std::string& strOutputDir, const Zenith_Image* pxHeightfield)
 {
+	const std::string strTerrainRoot =
+		(std::filesystem::path(Project_GetGameAssetsDirectory()) / "Terrain").string();
+	return RunTerrainRegenerationInternalForTerrainRoot(
+		strTerrainRoot, strOutputDir, pxHeightfield);
+}
+
+bool Zenith_TerrainComponent::RunTerrainRegenerationInternalForTerrainRoot(
+	const std::string& strTerrainRoot, const std::string& strOutputDir,
+	const Zenith_Image* pxHeightfield)
+{
+	// Shared production/test operation gate. Canonical rejection is the first
+	// action and therefore precedes progress, cleanup, deletion, export, and all
+	// render/physics teardown.
+	if (!ValidateTerrainAssetSetTarget(m_strTerrainAssetSet, strTerrainRoot, strOutputDir))
+	{
+		s_strTerrainExportStatus = "Terrain regeneration refused an unvalidated output directory.";
+		Zenith_Warning(LOG_CATEGORY_TERRAIN,
+			"[TerrainComponent] Refusing terrain regeneration outside the validated component asset set");
+		return false;
+	}
+	const std::string& strValidatedDirectory = strOutputDir;
+
 	s_bTerrainExportInProgress = true;
 	s_strTerrainExportStatus = "Cleaning up existing terrain...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Starting terrain regeneration...");
 
-	CleanupPriorGenerationForRegenerate();
+	if (!CleanupPriorGenerationForRegenerate(strValidatedDirectory))
+	{
+		s_bTerrainExportInProgress = false;
+		s_strTerrainExportStatus = "Terrain regeneration refused unsafe cleanup target.";
+		return false;
+	}
 
-	s_strTerrainExportStatus = "Deleting existing terrain files...";
-	DeleteExistingTerrainFiles(strOutputDir);
+	s_strTerrainExportStatus = "Deleting existing terrain meshes...";
+	if (!DeleteExistingTerrainFilesForAssetSet(m_strTerrainAssetSet, strValidatedDirectory))
+	{
+		s_bTerrainExportInProgress = false;
+		s_strTerrainExportStatus = "Terrain regeneration failed while cleaning existing meshes.";
+		return false;
+	}
+	std::error_code xDirectoryError;
+	std::filesystem::create_directories(strValidatedDirectory, xDirectoryError);
+	if (xDirectoryError)
+	{
+		s_bTerrainExportInProgress = false;
+		s_strTerrainExportStatus = "Terrain regeneration could not create its validated output directory.";
+		return false;
+	}
 
 	s_strTerrainExportStatus = "Exporting new terrain meshes...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Exporting new terrain...");
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strOutputDir.c_str());
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strValidatedDirectory.c_str());
 	if (pxHeightfield != nullptr)
 	{
-		ExportHeightmapFromMat(*pxHeightfield, strOutputDir);
+		ExportHeightmapFromMat(*pxHeightfield, strValidatedDirectory);
 	}
 	else
 	{
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
-		ExportHeightmapFromPaths(s_szHeightmapPath, strOutputDir);
+		ExportHeightmapFromPaths(s_szHeightmapPath, strValidatedDirectory);
 	}
-
-	s_strTerrainExportStatus = "Loading physics geometry...";
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Loading new physics geometry...");
-	LoadCombinedPhysicsGeometry();
 
 	s_strTerrainExportStatus = "Initializing render resources...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Reinitializing render resources...");
 	EnsureMaterialSlotsPopulated();
 	InitializeRenderResources();
 
+	s_strTerrainExportStatus = "Loading physics geometry...";
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Loading new physics geometry...");
+	LoadCombinedPhysicsGeometry();
+
 	s_bTerrainExportInProgress = false;
-	s_strTerrainExportStatus = "Terrain regenerated successfully!";
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain regeneration complete!");
+	const bool bInitialized = IsTerrainInitializedForEditor() &&
+		HasPhysicsGeometry() && !m_bTerrainGeometryUnusable;
+	if (bInitialized)
+	{
+		s_strTerrainExportStatus = "Terrain regenerated successfully!";
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain regeneration complete!");
+	}
+	else
+	{
+		s_strTerrainExportStatus = "Terrain regeneration failed to initialize complete render/physics state.";
+		Zenith_Warning(LOG_CATEGORY_TERRAIN,
+			"[TerrainComponent] Terrain regeneration did not produce complete live state");
+	}
+	return bInitialized;
 }
 
 void Zenith_TerrainComponent::RenderTerrainRegenerationSection()
@@ -410,7 +523,7 @@ void Zenith_TerrainComponent::RenderTerrainRegenerationSection()
 
 	ImGui::Separator();
 
-	const std::string strOutputDir = std::string(Project_GetGameAssetsDirectory()) + "Terrain/";
+	const std::string strOutputDir = GetTerrainAssetDirectory();
 	ImGui::Text("Output Directory: %s", strOutputDir.c_str());
 
 	const bool bCanRegenerate = strlen(s_szHeightmapPath) > 0 && !s_bTerrainExportInProgress;
@@ -431,8 +544,17 @@ void Zenith_TerrainComponent::RenderTerrainRegenerationSection()
 // Teardown sequence used by the Regenerate button. The order matters:
 // culling resources -> streaming manager -> unified buffers -> physics geometry.
 // Keeping this together makes the contract visible to readers.
-void Zenith_TerrainComponent::CleanupPriorGenerationForRegenerate()
+bool Zenith_TerrainComponent::CleanupPriorGenerationForRegenerate(const std::string& strValidatedDirectory)
 {
+	std::string strRevalidatedDirectory;
+	if (!TryResolveValidatedTerrainAssetDirectory(m_strTerrainAssetSet, strRevalidatedDirectory) ||
+		strRevalidatedDirectory != strValidatedDirectory)
+	{
+		Zenith_Warning(LOG_CATEGORY_TERRAIN,
+			"[TerrainComponent] Refusing live-resource teardown for unsafe terrain target");
+		return false;
+	}
+
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing culling resources...");
 	DestroyCullingResources();
 
@@ -455,6 +577,7 @@ void Zenith_TerrainComponent::CleanupPriorGenerationForRegenerate()
 		delete m_pxPhysicsGeometry;
 		m_pxPhysicsGeometry = nullptr;
 	}
+	return true;
 }
 
 void Zenith_TerrainComponent::RenderTerrainStatisticsSection()

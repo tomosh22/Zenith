@@ -26,7 +26,7 @@ namespace
 		Flux_TerrainChunkResidency& xRes = xState.m_axChunkResidency[uIdx];
 		if (xRes.m_aeStates[uLOD] != Flux_TerrainLODResidencyState::RESIDENT) { return; }
 
-		std::string strPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_"
+		std::string strPath = xState.m_strTerrainAssetDirectory + "Render_"
 		                    + (bLowPrefix ? "LOW_" : "") + std::to_string(uCX) + "_" + std::to_string(uCZ) + ZENITH_MESH_EXT;
 		Flux_MeshGeometry xMesh;
 		Flux_MeshGeometry::LoadFromFile(strPath.c_str(), xMesh, 0, false);
@@ -64,7 +64,7 @@ namespace
 		Flux_TerrainChunkResidency& xRes = xState.m_axChunkResidency[uIdx];
 		if (xRes.m_aeStates[uLOD] != Flux_TerrainLODResidencyState::RESIDENT) { return; }
 
-		std::string strPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_"
+		std::string strPath = xState.m_strTerrainAssetDirectory + "Render_"
 		                    + (bLowPrefix ? "LOW_" : "") + std::to_string(uCX) + "_" + std::to_string(uCZ) + ZENITH_MESH_EXT;
 		Flux_MeshGeometry xMesh;
 		Flux_MeshGeometry::LoadFromFile(strPath.c_str(), xMesh, 0, false);

@@ -155,10 +155,11 @@ registered test in one process -- minutes instead of tens of minutes -- which
 is why conventions C3/C4 (state hygiene) are load-bearing. Per-process is the
 fallback when chasing a suspected cross-test leak.
 
-Unit tests are not invoked by the harness per se: they run inside EVERY boot
-of the exe (including each harness launch) before the scene loads. A red unit
-test therefore fails every automated-test run too. The boot log line "Unit
-tests complete" with a zero failure count is the T0 pass signal.
+Unit tests run before scene load on an ordinary game boot, but `zenith test`
+deliberately launches the game with `--skip-unit-tests`; the harness does not
+exercise T0. The dedicated `Tools/run_unit_gate.ps1` boot is therefore the T0
+gate. It asserts the exact registered count as well as zero failures from the
+"Unit tests complete" log line.
 
 ---
 
@@ -262,11 +263,27 @@ biggest suite; all headless, all seeded (C8).
 
 ### 5.3 S3 -- first overworld
 
-- **E1/E2 engine unit tests** (terrain-set path resolution incl. default ""
-  legacy path; rect export bounds; missing-chunk tolerance on the streaming
-  path) -- these live engine-side with the engine change, per repo rule.
-- **Engine regression:** RenderTest still boots green (terrain default path
-  untouched).
+- **E1 engine unit tests (SHIPPED -- exactly seven):**
+
+  | Test | Contract covered |
+  |---|---|
+  | `Terrain::AssetSetDefaultUsesLegacyMeshDirectory` | Empty-set legacy path, strict name grammar and boundary cases, path containment, transactional rejection |
+  | `Terrain::AssetSetNamedDirectoryPropagatesToStreaming` | Named direct-child resolution and propagation into streaming state |
+  | `Terrain::AssetSetIsolatedAcrossComponentsAndMove` | Per-component isolation plus move construction/assignment authority |
+  | `Terrain::AssetSetSerializationRoundTrip` | Exact v4 append-after-v3 layout, named round trip, invalid-v4 safe fallback |
+  | `Terrain::AssetSetLegacyV3DefaultsEmpty` | Exact v1/v2/v3 reads default to the empty legacy set without over-consuming framed data |
+  | `Terrain::EditorAssetSetResolvesLegacyAndNamedBakeDirectories` | Legacy/named mesh and texture targets, safe mesh-only cleanup, missing-map defaults, dirty-session resume and target reset |
+  | `Terrain::EditorAutomationTerrainAssetSetActionOwnsArgument` | Owned automation argument, executed set action, fresh-component stamping and scene serialization |
+
+  All seven are engine-side `ZENITH_TEST` cases and are count-ratcheted into
+  both the shared engine unit gate (**1075** registered) and Zenithmon's CI
+  boot unit gate (**1725** registered). The latter expects 1724 passed,
+  0 failed and the one quarantined skip.
+- **E2 engine unit tests (planned):** rect-export bounds and missing-chunk
+  tolerance on the streaming path; these land engine-side with E2.
+- **Engine regression:** the empty asset set still resolves the unchanged
+  legacy `Terrain/` layout; RenderTest boot and terrain-editor smoke remain
+  the local regression oracle.
 - **P1 `ZM_VillageWalk_Test` (windowed):** walk Home Village via input
   state-setters, enter the player home, warp round trip back out; asserts
   player position, active scene index, spawn-tag placement.

@@ -1,8 +1,8 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-12 -- **S2 box 6 is COMPLETE (SC1 + SC2), committed, and pushed to master. ALL S2 battle-logic boxes (1-6) are now done.** SC2 shipped `ZM_BattleTower`: pure, deterministic Battle-Tower LOGIC (level-50 clamp via `ZM_BuildBattleMonster`; streak->AI-tier escalation consuming `ZM_AI_TIER` with a one-tier boss bump; procedural-by-seed 3-mon opponent teams; win/loss streak settlement; `ZM_MakeTowerBattleConfig`). The tower PRODUCES setup + settles a streak; a caller runs the battle. Contract: **ZM-D-046**. The **S2 STAGE GATE is now PASSED** (ZM-D-047): the full 4-config Vulkan matrix + the `D3D12_vs2022_Debug_Win64_False` null-backend link proof all build green, and the boot unit gate is 1663 ran / 0 failed (incl. the box-1 scenario-stream characterizations + the box-2 2,000-battle soak). **S2 IS COMPLETE** -- the deterministic headless battle system is feature-done. **SINCE THEN:** the user directed **feature-complete breeding + gender**, now DELIVERED across SC-A (gender, ZM-D-048) + SC-B (egg groups / GLOOPET Ditto / gendered compat, ZM-D-049) + SC-C (egg moves / ability + hidden-ability inheritance / hatch cycles, ZM-D-050). **Breeding is FEATURE-COMPLETE, committed, and pushed** (boot baseline 1663 -> 1718; +55 breeding tests net). **CURRENT TASK is now S3 -- first overworld.**
+**Last updated:** 2026-07-12 -- **S3 Engine E1 is COMPLETE locally and fully gated; this change is being committed and pushed directly to master.** `Zenith_TerrainComponent` now owns a serialized, strictly validated terrain-set name (v4; empty keeps the exact legacy layout), all six engine path consumers and the affected CityBuilder state consumers use the resolved directory, and the editor/automation support staged safe-target bakes (ZM-D-051). The complete five-leg build matrix is green; the boot gate is **1725 ran / 1724 passed / 0 failed / 1 skipped**; Zenithmon, CityBuilder, DevilsPlayground, and both RenderTest windowed regressions pass. **CURRENT TASK after this commit is S3 Engine E2 -- rect-bounded chunk export and missing-chunk stream tolerance.**
 
-**Read this first each session.** [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the gap audit. Box 6 SC2's tower contract is **ZM-D-046**; SC1 breeding is ZM-D-045; box 5 AI is ZM-D-044.
+**Read this first each session.** [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the gap audit. E1's terrain-set contract is **ZM-D-051**.
 
 ## Working model -- MASTER-ONLY, no branches/PRs (2026-07-10, ZM-D-031)
 
@@ -10,50 +10,48 @@
 
 ## Orchestrated-session model (this session)
 
-Development is running under [OrchestratorPlaybook.md](OrchestratorPlaybook.md): the primary Claude instance is the ORCHESTRATOR -- it dispatches subagents for spec-extraction / code / test / review authoring but **owns ALL builds/tests/runs itself** (subagents never build; their "it compiles" claims are worthless), and it **alone writes the living docs** and owns the direct-master commit/push. Boxes 4, 5, and 6 (SC1 + SC2) all landed this way in one orchestrated run. Per-box pattern that keeps working: (1) a spec-extraction subagent reads the seams + design docs and writes a complete self-contained `<box>_spec.md` to the orchestrator's scratchpad, returning a tight digest; (2) an Implementer and a Test Author author in PARALLEL on DISJOINT files from that one spec (the pinned public API + an offline oracle keep the parallel seam consistent); (3) an adversarial Reviewer traces the diff; (4) the orchestrator builds, runs the unit gate + headless, applies doc updates, commits + pushes. Invariant 4 keeps earning its keep this run: a test-TU arity typo (SC1) and an engine-smoke force-switch assert (SC2) both slipped past subagents (they can't build) and were caught at the orchestrator's build/gate, then cleared with scoped fix-rounds. Keep the review + the orchestrator-owned gate.
+Development is running under [OrchestratorPlaybook.md](OrchestratorPlaybook.md): the primary instance orchestrates spec extraction, implementation, tests, and adversarial review through subagents, while it alone owns builds/tests/runs, living docs, and the direct-master commit/push. E1 used separate planner, runtime, editor, test-author, fix-planner, and reviewer roles; implementation and tests were then integrated and gated serially.
 
 ## Build / Tests (all GREEN this iteration)
 
-- Regen GREEN (required for two new production files `ZM_BattleTower.{h,cpp}` + one new test TU `ZM_Tests_BattleTower.cpp`).
-- Build GREEN (`Vulkan_vs2022_Debug_Win64_True`).
-- Unit boot gate: **1663 ran, 1662 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). Box 6 SC2 added **25** tests (23 `ZM_Data` + 2 `ZM_Battle`); workflow baseline bumped **1638 -> 1663**.
-- Automated P1: **1/1** (`ZM_Boot_Test`); `zenith test Zenithmon --headless` exits 0.
-- No windowed or visual check applies to this headless box.
-- **S2 stage-gate matrix (this session):** the full 4-config Vulkan matrix (`Vulkan_vs2022_{Debug,Release}_Win64_{True,False}`) + the `D3D12_vs2022_Debug_Win64_False` null-backend link proof ALL build green. S2 gate PASSED (ZM-D-047); no visual check applies to the S2 gate.
-- Adversarial review GREEN (SAFE-TO-COMMIT): team-gen draw order matches an INDEPENDENT §7 oracle; streak/tier one-tier boss bump + band boundaries verified; L50-clamp stat parity via the build oracle; distinct-species loop proven terminating (43 COMMON >> 3). One non-blocking header-comment inaccuracy (the AI tier is bounded but NOT globally monotonic) was corrected before commit.
+- No regeneration was required: E1 adds no source files.
+- Build matrix GREEN: all four Vulkan Debug/Release x Tools true/false configurations plus `D3D12_vs2022_Debug_Win64_False`.
+- Unit boot gate: **1725 ran, 1724 passed, 0 failed, 1 skipped** (the skip is the pre-existing quarantined engine `RegistryWideNodeRoundTrip`). E1 adds exactly **7** engine tests; Zenithmon workflow baseline 1718 -> 1725 and engine default baseline 1068 -> 1075.
+- Zenithmon automated P1 GREEN: **1/1** (`zenith test Zenithmon --headless`).
+- Engine blast-radius gates GREEN: CityBuilder **45/45**, DevilsPlayground **158 tests**, and RenderTest windowed `EngineBootShutdownSmoke` + `TerrainEditorSmoke`.
+- Adversarial review GREEN after fixes for dirty-session resume, transactional automation rejection, UI draft scoping, and canonical symlink/junction-safe cleanup.
 
-## Completed locally this iteration -- S2 box 6 SC2 (`ZM_BattleTower`)
+## Completed locally this iteration -- S3 Engine E1 (terrain asset sets)
 
-`Source/Battle/ZM_BattleTower.{h,cpp}` supplies pure, deterministic, headless tower logic: `ZM_ClampSpecToTowerLevel`/`ZM_ClampPartyToTowerLevel` (L50 clamp reusing `ZM_BuildBattleMonster`), `ZM_TowerBaseTierForStreak`/`ZM_TowerAITierForStreak` (streak bands 7/21/35 + one-tier boss bump on `ZM_AI_TIER`), `ZM_TowerIsBossBattle`/`ZM_TowerMaxRarityForStreak`/`ZM_TowerBattleSeed`, `ZM_GenerateTowerTeam` (procedural-by-seed distinct non-legendary 3-mon teams under a rising rarity ceiling), `ZM_TowerAdvance` (win/loss streak + best high-water), and `ZM_MakeTowerBattleConfig`. It makes NO engine calls itself. Full contract + locked draw order: ZM-D-046. Defaulted tuning + a future-integration note: Q-2026-07-12-005.
+`Zenith_TerrainComponent` serialization v4 appends a strict terrain-set name: empty keeps legacy `Terrain/`; named sets resolve beneath `Terrain/<Set>/`. Runtime rendering, collision, regeneration, low/high-LOD streaming, editor baking, and CityBuilder state consumers use the resolved directory. The editor stages target changes and commits only at successful full-bake start, resumes same-target dirty sessions, and constrains destructive cleanup to canonical direct `.zmesh` children. `AddStep_TerrainSetAssetSet` safely owns, validates, preflights, and persists its argument. Full contract: ZM-D-051.
 
 ## Current task
 
-**Feature-complete breeding + gender is COMPLETE (ZM-D-048 gender + ZM-D-049 egg-groups/Ditto/compat + ZM-D-050 egg-moves/abilities/hatch) -- all committed + pushed; +55 breeding tests net; boot baseline 1663 -> 1718. Shiny/Masuda remain deferred to S5+.**
+**Next unchecked Roadmap task: S3 Engine E2 -- `AddStep_TerrainExportChunksRect(minX,minY,maxX,maxY)` plus verified missing-chunk tolerance in `Flux_TerrainStreamingManager`. E1 is complete under ZM-D-051.**
 
 - **S7 forward note (ZM-D-048/050):** when party/daycare save-load lands at S7, its serializer MUST include `m_eGender`; the SC-B/SC-C additions are all DERIVED accessors (no new stored fields to serialize). Nothing serializes these structs today -> no current regression.
 
 ---
 
-**After the breeding expansion, the next STAGE is S3 -- First overworld (critical path).** S3 is a DIFFERENT class of work from the headless battle logic of S1/S2 -- read MasterPlan.md for the E1/E2 detail + the terrain-bake risk analysis BEFORE starting. The S3 task order (first-unchecked-first):
-1. **Engine E1** -- serialized terrain-set name on `Zenith_TerrainComponent` (default "" = legacy `Terrain/`) replacing all 6 hard-coded path sites + `AddStep_TerrainSetAssetSet` + editor bake-target.
-2. **Engine E2** -- `AddStep_TerrainExportChunksRect(minX,minY,maxX,maxY)` + missing-chunk stream tolerance on `Flux_TerrainStreamingManager`.
-3. Home Village terrain baked via a `ZM_TerrainAuthoring` recipe; grass regenerated OnAwake.
-4. **Measure terrain bake time** with 3 real scenes BEFORE committing to ~25 terrains (Q-2026-07-09-002).
-5. `ZM_PlayerController` (Jolt capsule) + `ZM_FollowCamera` + `ZM_InputActions`.
-6. Persistent `ZM_GameStateManager` + `ZM_WarpTrigger`/`ZM_SpawnPoint` spawn-tag respawn.
-7. Player home interior + door warp round trip (SINGLE loads + fade).
+**S3 -- First overworld (critical path) is active.** Read MasterPlan.md for the E2 detail and terrain-bake risk analysis. Remaining task order (first-unchecked-first):
+1. **Engine E2** -- `AddStep_TerrainExportChunksRect(minX,minY,maxX,maxY)` + missing-chunk stream tolerance on `Flux_TerrainStreamingManager`.
+2. Home Village terrain baked via a `ZM_TerrainAuthoring` recipe; grass regenerated OnAwake.
+3. **Measure terrain bake time** with 3 real scenes BEFORE committing to ~25 terrains (Q-2026-07-09-002).
+4. `ZM_PlayerController` (Jolt capsule) + `ZM_FollowCamera` + `ZM_InputActions`.
+5. Persistent `ZM_GameStateManager` + `ZM_WarpTrigger`/`ZM_SpawnPoint` spawn-tag respawn.
+6. Player home interior + door warp round trip (SINGLE loads + fade).
 
-TWO THINGS CHANGE at S3 (heads-up for the next iteration):
-- **E1/E2 are ENGINE changes** (they touch `Zenith/` terrain/streaming code) -- per OrchestratorPlaybook.md section 4 they need engine unit tests for the new surface + a RenderTest boot regression check + the DP and CityBuilder suites green BEFORE the direct-master commit, not just the Zenithmon gate. Wider blast radius than any S1/S2 box.
+Two standing S3 constraints:
+- **E2 is an ENGINE change** -- per OrchestratorPlaybook.md section 4 it needs engine unit tests, RenderTest regressions, and the DP/CityBuilder suites green before the direct-master commit, not only the Zenithmon gate.
 - **The S3 gate HAS a visual check** ("windowed automated test walks the village + door round trip; visual check terrain/grass/camera"). The user's standing hard-stop-at-visual-gates order RESUMES: the S3-gate iteration captures windowed screenshot evidence, writes `GATE-WAIT: S3 visual sign-off` into this file with the evidence paths, commits + pushes the docs, and ENDS for the user's sign-off (StartPrompts.md prompt 4). It does NOT self-sign a visual gate.
 
 ## Notes for the next agent
 
 - **Box 6 is DONE + PUSHED (both SCs):** ZM-D-045 (breeding/daycare) + ZM-D-046 (Battle Tower logic). All S2 battle-logic boxes 1-6 complete. `ZM_BattleTower` is the first real consumer of box-5 `ZM_AI_TIER`/`ZM_ChooseAction`.
 - **Future-integration note (Q-2026-07-12-005):** `ZM_ChooseAction` returns a MOVE for a FAINTED active (it enumerates the fainted active's moves). When the S5+ battle integration wires the enemy side to the AI, the caller must submit the forced SWITCH itself on a faint (or box 5's chooser should later special-case a fainted active). The box-6 tower engine smokes side-step this with a controlled 1v1. NOT a bug today (the tower never runs battles).
-- **Open rulings awaiting user ratification (all best-guessed + proceeded, all additive):** Q-2026-07-12-005 (tower tuning + fainted-active note), Q-2026-07-12-004 (reduced breeding model: no gender/egg-groups/egg-moves; adding them is a Scope.md data-model EXPANSION), Q-2026-07-12-003 (AI file location + no-Struggle + tunable thresholds), Q-2026-07-12-002 (exp/level move-overflow + evolution triggers). Plus Q-2026-07-12-001 (a `ZM_ValidateEventStream` rule-7 test-helper widening -- a good small standalone commit before the content stages).
+- **Open rulings awaiting user ratification (all best-guessed + proceeded, all additive):** Q-2026-07-12-005 (tower tuning + fainted-active note), Q-2026-07-12-003 (AI file location + no-Struggle + tunable thresholds), and Q-2026-07-12-002 (exp/level move-overflow + evolution triggers). Q-2026-07-12-004 was resolved by the user-directed feature-complete breeding expansion. Plus Q-2026-07-12-001 (a `ZM_ValidateEventStream` rule-7 test-helper widening).
 - **Test-coverage gate is a hard merge bar (user mandate):** every new system/method gets dedicated behavioral tests; for stochastic logic, paired identical-seed positive+control PLUS an INDEPENDENT offline oracle where goldens matter (the box-6 breeding + tower team-gen oracles are the model). The adversarial review catches false-confidence tests -- keep it.
-- **BUMP the zm-tests baseline** in the SAME commit whenever `ZM_*` unit tests change (now **1663**, in `.github/workflows/zm-tests.yml`; exact-match gate).
+- **BUMP the zm-tests baseline** in the SAME commit whenever boot unit tests change (now **1725**, in `.github/workflows/zm-tests.yml`; exact-match gate). Engine-test additions also bump the shared engine default (now **1075** in `Tools/run_unit_gate.ps1`).
 - **DLL-heal gotcha:** Zenithmon's FIRST build/run in a fresh config (or fresh session) leaves middleware DLLs absent -> exe dies at load (exit `0xC0000135`, empty boot log, no "Unit tests complete" line). `zenith test` heals automatically; the BARE unit gate does NOT. Fix: run `zenith test ... --headless` once first (it heals), OR `Import-Module <ABSOLUTE>\Build\zenith_buildsystem.psm1; Repair-ZenithRuntimeDlls -ExeDir <outdir>` (a bare relative `Build\...` module path fails to resolve).
 - **Unit-gate timeout is normal:** the gate boots the exe, logs "Unit tests complete: N ran...", then watchdog-kills the windowed idle after 180s. `PASS`/exit 0 with the units line present = green; the "timeout after 180s; killing" line is expected. If the units line is ABSENT, a production `Zenith_Assert` aborted the boot (read `Build/artifacts/unit_gate_boot.log` -- e.g. SC2's "SubmitAction: active monster is fainted" was a test driving the engine past a faint).
 - **Invalid-volatile-state gotcha:** setting a volatile BIT without its counter trips a production `Zenith_Assert` at end-of-turn that ABORTS the whole unit boot. Set the bit AND its counter together.

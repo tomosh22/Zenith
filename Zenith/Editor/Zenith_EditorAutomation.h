@@ -220,6 +220,7 @@ enum class Zenith_EditorActionType
 	// (component-less) session on demand, so they can run BEFORE any terrain
 	// entity exists and are headless-safe. NOTE: this block must stay
 	// CONTIGUOUS (ExecuteAction routes the whole range to a sub-executor).
+	TERRAIN_EDITOR_SET_ASSET_SET,
 	TERRAIN_EDITOR_RESET,
 	TERRAIN_EDITOR_GENERATE_PROCEDURAL,
 	TERRAIN_EDITOR_BRUSH_STROKE,
@@ -588,6 +589,12 @@ void AddStep_SetTerrainSplatmapPath(const char* szPath);
 	// exists; they touch only CPU images + disk (headless-safe). Determinism:
 	// fixed seeds + integer-hash noise => byte-identical outputs per run.
 	//--------------------------------------------------------------------------
+	// Select the validated terrain set used by subsequent texture/chunk
+	// persistence. The queued action owns a copy of szSet; empty selects legacy.
+	// A selected fresh Terrain component is stamped for a following SaveScene;
+	// an initialized component with a different set must use BakeFull instead.
+void AddStep_TerrainSetAssetSet(const char* szSet);
+
 	// Reset the session's CPU maps to defaults. From-scratch recipes run this
 	// FIRST so regeneration is byte-identical even when a previous bake's
 	// textures exist on disk (the session seeds from them on open).
@@ -623,11 +630,12 @@ void AddStep_TerrainErode(int iHydraulicDroplets, int iThermalIterations, int iS
 void AddStep_TerrainSetTreeBrush(int iTreesPerDab, float fScaleMin, float fScaleMax,
 	float fSpacing, float fMaxSlopeDeg, int iSeed);
 
-	// Persist Height/Splatmap_RGBA/GrassDensity .ztxtr to the game assets dir.
+	// Persist Height/Splatmap_RGBA/GrassDensity .ztxtr to the selected terrain
+	// set (or the legacy Textures/Terrain/ path when the set is empty).
 void AddStep_TerrainSaveTextures();
 
 	// Export every terrain chunk mesh from the live heightfield
-	// (ExportHeightmapFromMat into <GAME_ASSETS>/Terrain/). Takes minutes.
+	// into the selected terrain set. Takes minutes.
 void AddStep_TerrainExportChunks();
 
 	//--------------------------------------------------------------------------

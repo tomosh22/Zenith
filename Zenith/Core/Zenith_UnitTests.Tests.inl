@@ -7,6 +7,7 @@
 // pin. A future refactor may replace the friend declarations with a
 // test-only `*_Internal.h` header if the coupling starts to leak, but until
 // the interface grows the friend declarations are the cheapest option.
+#include <chrono>
 #include <thread>   // Phase 1 transform-cache worker-contract test spawns a non-main thread
 #include "Collections/Zenith_CircularQueue.h"
 #include "Collections/Zenith_HashSet.h"
@@ -86,6 +87,9 @@
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_GizmosImpl.h"
+#include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
+#include "Editor/Zenith_EditorAutomation.h"
+#include "Editor/Zenith_Editor.h"
 #endif
 
 ZENITH_TEST(Core, DataStream) { Zenith_UnitTests::TestDataStream(); }
@@ -14264,6 +14268,597 @@ void Zenith_UnitTests::TestPriorityInsertionEmpty(){
 // Zenith_UnitTests is friended into Flux_TerrainStreamingManager so the
 // state-taking private helpers (GetChunkCenter, GetChunkDistanceSq) are
 // callable here.
+
+namespace
+{
+	// Write exactly the pre-E1 fields for the requested terrain component
+	// version. Passing 4 writes the complete v3 prefix; the caller appends the
+	// new v4 asset-set string itself.
+	void WriteTerrainSerializedPrefix(Zenith_DataStream& xStream, uint32_t uVersion)
+	{
+		xStream << uVersion;
+		std::string strEmptyPath;
+		xStream << strEmptyPath;
+		if (uVersion >= 3u)
+		{
+			for (u_int u = 0; u < Zenith_TerrainComponent::TERRAIN_MATERIAL_COUNT; u++)
+			{
+				Zenith_MaterialAsset xEmptyMaterial;
+				xEmptyMaterial.WriteToDataStream(xStream);
+			}
+			xStream << strEmptyPath;
+		}
+		else if (uVersion >= 2u)
+		{
+			for (u_int u = 0; u < 2u; u++)
+			{
+				Zenith_MaterialAsset xEmptyMaterial;
+				xEmptyMaterial.WriteToDataStream(xStream);
+			}
+		}
+		else
+		{
+			const float afLegacyColours[8] = { 0.1f, 0.2f, 0.3f, 1.0f, 0.7f, 0.6f, 0.5f, 1.0f };
+			for (float fColour : afLegacyColours)
+			{
+				xStream << fColour;
+			}
+		}
+	}
+
+	std::filesystem::path TerrainDirectoryPath(const std::string& strDirectory)
+	{
+		std::string strTrimmed = strDirectory;
+		while (!strTrimmed.empty() && (strTrimmed.back() == '/' || strTrimmed.back() == '\\'))
+		{
+			strTrimmed.pop_back();
+		}
+		return std::filesystem::path(strTrimmed).lexically_normal();
+	}
+
+#ifdef ZENITH_TOOLS
+	bool WriteTerrainTestMarker(const std::filesystem::path& xPath)
+	{
+		std::ofstream xFile(xPath, std::ios::binary | std::ios::trunc);
+		xFile.put('X');
+		return xFile.good();
+	}
+
+	void AssertTerrainEditorMapsAreDefaults(const Zenith_TerrainEditor& xEditor)
+	{
+		ZENITH_ASSERT_EQ(xEditor.GetHeightfield().GetWidth(), Zenith_TerrainEditor::uHEIGHTFIELD_SIZE, "Default heightfield width must match the terrain editor contract");
+		ZENITH_ASSERT_EQ(xEditor.GetHeightfield().GetHeight(), Zenith_TerrainEditor::uHEIGHTFIELD_SIZE, "Default heightfield height must match the terrain editor contract");
+		ZENITH_ASSERT_EQ_FLOAT(xEditor.GetHeightfield().At(0, 0), 0.0f, 0.0001f, "Missing Height must start flat at zero");
+		ZENITH_ASSERT_EQ_FLOAT(xEditor.GetHeightfield().At(Zenith_TerrainEditor::uHEIGHTFIELD_SIZE - 1u, Zenith_TerrainEditor::uHEIGHTFIELD_SIZE - 1u), 0.0f, 0.0001f, "Missing Height must stay flat through the final texel");
+
+		const Zenith_Vector<u_int8>& xSplat = xEditor.GetSplatmap();
+		const u_int uExpectedSplatBytes = Zenith_TerrainEditor::uSPLATMAP_SIZE * Zenith_TerrainEditor::uSPLATMAP_SIZE * 4u;
+		ZENITH_ASSERT_EQ(xSplat.GetSize(), uExpectedSplatBytes, "Default splatmap byte count must match RGBA8 dimensions");
+		ZENITH_ASSERT_EQ(static_cast<u_int>(xSplat.Get(0)), 255u, "Missing splatmap must default to full layer-0 weight");
+		ZENITH_ASSERT_EQ(static_cast<u_int>(xSplat.Get(1)), 0u, "Missing splatmap layer 1 must default to zero");
+		ZENITH_ASSERT_EQ(static_cast<u_int>(xSplat.Get(uExpectedSplatBytes - 4u)), 255u, "The final missing splat texel must also default to layer 0");
+
+		ZENITH_ASSERT_EQ(xEditor.GetGrassDensity().GetWidth(), Zenith_TerrainEditor::uGRASS_DENSITY_SIZE, "Default grass map width must match the editor contract");
+		ZENITH_ASSERT_EQ_FLOAT(xEditor.GetGrassDensity().At(0, 0), 0.0f, 0.0001f, "Missing GrassDensity must default to zero");
+		ZENITH_ASSERT_EQ_FLOAT(xEditor.GetGrassDensity().At(Zenith_TerrainEditor::uGRASS_DENSITY_SIZE - 1u, Zenith_TerrainEditor::uGRASS_DENSITY_SIZE - 1u), 0.0f, 0.0001f, "Missing GrassDensity must stay zero through the final texel");
+	}
+#endif
+}
+
+// Terrain-component deserialization immediately proceeds into physics and
+// render setup. Route serialization tests through the component's production
+// field parser so they exercise the real version dispatch while remaining
+// independent of baked files under the host game's legacy Terrain/ directory.
+void Zenith_UnitTests::ReadTerrainComponentFieldsForTest(Zenith_TerrainComponent& xComponent, Zenith_DataStream& xStream)
+{
+	xComponent.ReadSerializedFields(xStream);
+}
+
+ZENITH_TEST(Terrain, AssetSetDefaultUsesLegacyMeshDirectory) { Zenith_UnitTests::TestTerrainAssetSetDefaultUsesLegacyMeshDirectory(); }
+
+void Zenith_UnitTests::TestTerrainAssetSetDefaultUsesLegacyMeshDirectory()
+{
+	const std::string strMaxValid = std::string("A") + std::string(63u, '_');
+	const std::string astrValid[] = { "", "A", "A_b-9", strMaxValid };
+	const std::string strTerrainRoot = std::string(Project_GetGameAssetsDirectory()) + "Terrain/";
+	const std::filesystem::path xTerrainRoot = TerrainDirectoryPath(strTerrainRoot);
+	for (const std::string& strSet : astrValid)
+	{
+		ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::IsValidTerrainAssetSetName(strSet), "Valid terrain-set grammar vector was rejected: '%s'", strSet.c_str());
+		std::string strResolved;
+		ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::TryResolveTerrainAssetDirectory(strSet, strResolved), "Valid terrain-set directory failed to resolve: '%s'", strSet.c_str());
+		const std::string strExpected = strTerrainRoot + (strSet.empty() ? "" : strSet + "/");
+		ZENITH_ASSERT_EQ(strResolved, strExpected, "Valid terrain-set resolution must be canonical and deterministic");
+		if (!strSet.empty())
+		{
+			const std::filesystem::path xResolved = TerrainDirectoryPath(strResolved);
+			ZENITH_ASSERT_NE(xResolved.generic_string(), xTerrainRoot.generic_string(), "A named set must resolve to a strict child, never the Terrain root itself");
+			ZENITH_ASSERT_EQ(xResolved.parent_path().generic_string(), xTerrainRoot.generic_string(), "A named set must remain a direct canonical child of the Terrain root");
+		}
+	}
+
+	const std::string astrInvalid[] = {
+		std::string(65u, 'A'), "_Leading", "-Leading", ".", "..", "A.B",
+		"A/B", "A\\B", "A:B", "A B", "A\tB", "/Rooted", "C:\\Rooted",
+		"\\\\Server\\Share", std::string("A") + static_cast<char>(0x1f),
+		std::string("A\0B", 3u), std::string("A") + static_cast<char>(0x80)
+	};
+	for (const std::string& strSet : astrInvalid)
+	{
+		ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::IsValidTerrainAssetSetName(strSet), "Invalid terrain-set grammar vector was accepted");
+		std::string strResolved = "unchanged-sentinel";
+		ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryResolveTerrainAssetDirectory(strSet, strResolved), "Invalid terrain-set name must not produce a directory");
+	}
+
+	Zenith_TempScene xScene("TerrainAssetSetDefault");
+	Zenith_Entity xEntity = xScene.CreateEntity("TerrainAssetSetDefaultEntity");
+	Zenith_TerrainComponent xTerrain(xEntity);
+	ZENITH_ASSERT_TRUE(xTerrain.GetTerrainAssetSet().empty(), "A new terrain component must default to the empty legacy asset set");
+	ZENITH_ASSERT_EQ(xTerrain.GetTerrainAssetDirectory(), strTerrainRoot, "The empty terrain set must resolve to the legacy Terrain/ directory");
+	ZENITH_ASSERT_NOT_NULL(xTerrain.m_pxStreamingState, "A new terrain component must own a streaming state");
+	ZENITH_ASSERT_EQ(xTerrain.m_pxStreamingState->m_strTerrainAssetDirectory, strTerrainRoot, "The streaming state must begin at the same legacy directory");
+
+	ZENITH_ASSERT_TRUE(xTerrain.SetTerrainAssetSet("HomeVillage"), "A valid named set must be accepted before transactional-rejection checks");
+	const std::string strComponentBefore = xTerrain.GetTerrainAssetSet();
+	const std::string strDirectoryBefore = xTerrain.GetTerrainAssetDirectory();
+	const std::string strStateBefore = xTerrain.m_pxStreamingState->m_strTerrainAssetDirectory;
+	for (const std::string& strInvalid : astrInvalid)
+	{
+		ZENITH_ASSERT_FALSE(xTerrain.SetTerrainAssetSet(strInvalid), "SetTerrainAssetSet must reject every invalid grammar vector");
+		ZENITH_ASSERT_EQ(xTerrain.GetTerrainAssetSet(), strComponentBefore, "An invalid setter call must preserve the component value transactionally");
+		ZENITH_ASSERT_EQ(xTerrain.GetTerrainAssetDirectory(), strDirectoryBefore, "An invalid setter call must preserve the resolved component directory");
+		ZENITH_ASSERT_EQ(xTerrain.m_pxStreamingState->m_strTerrainAssetDirectory, strStateBefore, "An invalid setter call must preserve the authoritative streaming-state directory");
+	}
+}
+
+ZENITH_TEST(Terrain, AssetSetNamedDirectoryPropagatesToStreaming) { Zenith_UnitTests::TestTerrainAssetSetNamedDirectoryPropagatesToStreaming(); }
+
+void Zenith_UnitTests::TestTerrainAssetSetNamedDirectoryPropagatesToStreaming()
+{
+	Zenith_TempScene xScene("TerrainAssetSetNamed");
+	Zenith_Entity xEntity = xScene.CreateEntity("TerrainAssetSetNamedEntity");
+	Zenith_TerrainComponent xTerrain(xEntity);
+	const std::string strMaxValid = std::string("Z") + std::string(63u, '-');
+	const std::string astrSets[] = { "A", "HomeVillage_01-Test", strMaxValid };
+
+	for (const std::string& strSet : astrSets)
+	{
+		ZENITH_ASSERT_TRUE(xTerrain.SetTerrainAssetSet(strSet), "Boundary-valid terrain set must be accepted");
+		const std::string strExpectedDirectory = std::string(Project_GetGameAssetsDirectory()) + "Terrain/" + strSet + "/";
+		std::string strResolved;
+		ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::TryResolveTerrainAssetDirectory(strSet, strResolved), "Boundary-valid terrain set must resolve");
+		ZENITH_ASSERT_EQ(strResolved, strExpectedDirectory, "Static resolver must return the exact named directory");
+		ZENITH_ASSERT_EQ(xTerrain.GetTerrainAssetSet(), strSet, "The component must retain the exact boundary-valid set");
+		ZENITH_ASSERT_EQ(xTerrain.GetTerrainAssetDirectory(), strExpectedDirectory, "The component must resolve the exact boundary-valid directory");
+		ZENITH_ASSERT_EQ(xTerrain.m_pxStreamingState->m_strTerrainAssetDirectory, strExpectedDirectory, "Every successful set must propagate immediately to this terrain's streaming state");
+	}
+}
+
+ZENITH_TEST(Terrain, AssetSetIsolatedAcrossComponentsAndMove) { Zenith_UnitTests::TestTerrainAssetSetIsolatedAcrossComponentsAndMove(); }
+
+void Zenith_UnitTests::TestTerrainAssetSetIsolatedAcrossComponentsAndMove()
+{
+	Zenith_TempScene xScene("TerrainAssetSetMove");
+	Zenith_Entity xEntityA = xScene.CreateEntity("TerrainAssetSetMoveA");
+	Zenith_Entity xEntityB = xScene.CreateEntity("TerrainAssetSetMoveB");
+	Zenith_Entity xEntityDest = xScene.CreateEntity("TerrainAssetSetMoveDest");
+	Zenith_TerrainComponent xSourceA(xEntityA);
+	Zenith_TerrainComponent xSourceB(xEntityB);
+	ZENITH_ASSERT_TRUE(xSourceA.SetTerrainAssetSet("HomeVillage"), "Component A setup must succeed");
+	ZENITH_ASSERT_TRUE(xSourceB.SetTerrainAssetSet("Route01"), "Component B setup must succeed");
+
+	const std::string strHomeDirectory = std::string(Project_GetGameAssetsDirectory()) + "Terrain/HomeVillage/";
+	const std::string strRouteDirectory = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Route01/";
+	Flux_TerrainStreamingState* pxStateA = xSourceA.m_pxStreamingState;
+	Flux_TerrainStreamingState* pxStateB = xSourceB.m_pxStreamingState;
+	ZENITH_ASSERT_NE(pxStateA, pxStateB, "Distinct terrain components must own distinct streaming states");
+
+	Zenith_TerrainComponent xMoved(std::move(xSourceA));
+	ZENITH_ASSERT_EQ(xMoved.m_pxStreamingState, pxStateA, "Move construction must transfer the authoritative state object");
+	ZENITH_ASSERT_TRUE(xSourceA.m_pxStreamingState == nullptr, "Move construction must neutralize the source state pointer");
+	ZENITH_ASSERT_EQ(xMoved.GetTerrainAssetSet(), std::string("HomeVillage"), "Move construction must preserve the source set");
+	ZENITH_ASSERT_EQ(xMoved.GetTerrainAssetDirectory(), strHomeDirectory, "Move construction must preserve the resolved path");
+	ZENITH_ASSERT_EQ(xMoved.m_pxStreamingState->m_strTerrainAssetDirectory, xMoved.GetTerrainAssetDirectory(), "The moved-to component and its authoritative state must agree");
+
+	Zenith_TerrainComponent xMoveAssigned(xEntityDest);
+	ZENITH_ASSERT_TRUE(xMoveAssigned.SetTerrainAssetSet("DestinationBeforeMove"), "Move destination setup must succeed");
+	xMoveAssigned = std::move(xSourceB);
+	ZENITH_ASSERT_EQ(xMoveAssigned.m_pxStreamingState, pxStateB, "Move assignment must transfer the source's authoritative state object");
+	ZENITH_ASSERT_TRUE(xSourceB.m_pxStreamingState == nullptr, "Move assignment must neutralize the source state pointer");
+	ZENITH_ASSERT_EQ(xMoveAssigned.GetTerrainAssetSet(), std::string("Route01"), "Move assignment must preserve the source set");
+	ZENITH_ASSERT_EQ(xMoveAssigned.GetTerrainAssetDirectory(), strRouteDirectory, "Move assignment must preserve the source path");
+	ZENITH_ASSERT_EQ(xMoveAssigned.m_pxStreamingState->m_strTerrainAssetDirectory, xMoveAssigned.GetTerrainAssetDirectory(), "The move-assigned component and its authoritative state must agree");
+	ZENITH_ASSERT_EQ(xMoved.m_pxStreamingState->m_strTerrainAssetDirectory, strHomeDirectory, "Moving B must not contaminate A's state");
+
+	ZENITH_ASSERT_TRUE(xMoved.SetTerrainAssetSet("MovedCtorAuthority"), "Moved-to constructor object must remain settable");
+	ZENITH_ASSERT_TRUE(xMoveAssigned.SetTerrainAssetSet("MovedAssignAuthority"), "Move-assigned object must remain settable");
+	ZENITH_ASSERT_EQ(xMoved.m_pxStreamingState->m_strTerrainAssetDirectory, xMoved.GetTerrainAssetDirectory(), "Post-move setter must update the constructor-moved authoritative state");
+	ZENITH_ASSERT_EQ(xMoveAssigned.m_pxStreamingState->m_strTerrainAssetDirectory, xMoveAssigned.GetTerrainAssetDirectory(), "Post-move setter must update the assignment-moved authoritative state");
+	ZENITH_ASSERT_NE(xMoved.GetTerrainAssetDirectory(), xMoveAssigned.GetTerrainAssetDirectory(), "Post-move components must remain isolated");
+}
+
+ZENITH_TEST(Terrain, AssetSetSerializationRoundTrip) { Zenith_UnitTests::TestTerrainAssetSetSerializationRoundTrip(); }
+
+void Zenith_UnitTests::TestTerrainAssetSetSerializationRoundTrip()
+{
+	Zenith_TempScene xScene("TerrainAssetSetRoundTrip");
+	Zenith_Entity xSourceEntity = xScene.CreateEntity("TerrainAssetSetRoundTripSource");
+	Zenith_Entity xRestoredEntity = xScene.CreateEntity("TerrainAssetSetRoundTripRestored");
+	Zenith_Entity xInvalidEntity = xScene.CreateEntity("TerrainAssetSetRoundTripInvalid");
+	Zenith_TerrainComponent xSource(xSourceEntity);
+	Zenith_TerrainComponent xRestored(xRestoredEntity);
+	Zenith_TerrainComponent xInvalidRestored(xInvalidEntity);
+	ZENITH_ASSERT_TRUE(xSource.SetTerrainAssetSet("HomeVillage"), "Round-trip source set must be valid");
+
+	Zenith_DataStream xV4Stream;
+	xSource.WriteToDataStream(xV4Stream);
+	const uint64_t ulV4Size = xV4Stream.GetCursor();
+	xV4Stream.SetCursor(0);
+	uint32_t uVersion = 0u;
+	xV4Stream >> uVersion;
+	ZENITH_ASSERT_EQ(uVersion, 4u, "Terrain writer must emit component serialization version 4 exactly");
+
+	Zenith_DataStream xExpectedV3Prefix;
+	WriteTerrainSerializedPrefix(xExpectedV3Prefix, 3u);
+	const uint64_t ulExpectedV3Size = xExpectedV3Prefix.GetCursor();
+	ZENITH_ASSERT_EQ(ulV4Size, ulExpectedV3Size + sizeof(u_int) + std::string("HomeVillage").size(), "v4 must append exactly one serialized set string to the complete v3 payload");
+	ZENITH_ASSERT_TRUE(memcmp(static_cast<const u_int8*>(xV4Stream.GetData()) + sizeof(uint32_t), static_cast<const u_int8*>(xExpectedV3Prefix.GetData()) + sizeof(uint32_t), static_cast<size_t>(ulExpectedV3Size - sizeof(uint32_t))) == 0, "Every pre-E1 field after the version must remain byte-identical to the old v3 sequence");
+
+	// Independently parse the prefix in its historical order and prove the new
+	// set begins exactly where the old v3 payload ended.
+	std::string strPhysicsPath;
+	xV4Stream >> strPhysicsPath;
+	for (u_int u = 0; u < Zenith_TerrainComponent::TERRAIN_MATERIAL_COUNT; u++)
+	{
+		Zenith_MaterialAsset xMaterial;
+		xMaterial.ReadFromDataStream(xV4Stream);
+	}
+	std::string strSplatmapPath;
+	xV4Stream >> strSplatmapPath;
+	ZENITH_ASSERT_EQ(xV4Stream.GetCursor(), ulExpectedV3Size, "The v4 prefix must consume exactly the historical v3 byte count");
+	std::string strSerializedSet;
+	xV4Stream >> strSerializedSet;
+	ZENITH_ASSERT_EQ(strSerializedSet, std::string("HomeVillage"), "The appended v4 field must contain the named set");
+	ZENITH_ASSERT_EQ(xV4Stream.GetCursor(), ulV4Size, "The v4 reader must consume exactly the bytes written");
+
+	xV4Stream.SetCursor(0);
+	ReadTerrainComponentFieldsForTest(xRestored, xV4Stream);
+	const std::string strNamedDirectory = std::string(Project_GetGameAssetsDirectory()) + "Terrain/HomeVillage/";
+	ZENITH_ASSERT_EQ(xRestored.GetTerrainAssetSet(), std::string("HomeVillage"), "The production v4 parser must round-trip the named set");
+	ZENITH_ASSERT_EQ(xRestored.m_pxStreamingState->m_strTerrainAssetDirectory, strNamedDirectory, "The round-tripped set must synchronize the streaming state");
+
+	Zenith_DataStream xInvalidV4;
+	WriteTerrainSerializedPrefix(xInvalidV4, 4u);
+	xInvalidV4 << std::string("../Escape");
+	const uint64_t ulInvalidPayloadEnd = xInvalidV4.GetCursor();
+	const uint32_t uSentinel = 0xE104BADu;
+	xInvalidV4 << uSentinel;
+	ZENITH_ASSERT_TRUE(xInvalidRestored.SetTerrainAssetSet("StaleBeforeInvalidRead"), "Invalid-read destination setup must succeed");
+	xInvalidV4.SetCursor(0);
+	ReadTerrainComponentFieldsForTest(xInvalidRestored, xInvalidV4);
+	ZENITH_ASSERT_TRUE(xInvalidRestored.GetTerrainAssetSet().empty(), "An invalid serialized v4 name must fall back to the empty legacy set");
+	ZENITH_ASSERT_EQ(xInvalidRestored.GetTerrainAssetDirectory(), std::string(Project_GetGameAssetsDirectory()) + "Terrain/", "Invalid v4 fallback must resolve to legacy Terrain/");
+	ZENITH_ASSERT_EQ(xInvalidV4.GetCursor(), ulInvalidPayloadEnd, "Invalid v4 parsing must still consume the rejected set field exactly");
+	uint32_t uReadSentinel = 0u;
+	xInvalidV4 >> uReadSentinel;
+	ZENITH_ASSERT_EQ(uReadSentinel, uSentinel, "Invalid v4 parsing must leave trailing framed data intact");
+}
+
+ZENITH_TEST(Terrain, AssetSetLegacyV3DefaultsEmpty) { Zenith_UnitTests::TestTerrainAssetSetLegacyV3DefaultsEmpty(); }
+
+void Zenith_UnitTests::TestTerrainAssetSetLegacyV3DefaultsEmpty()
+{
+	Zenith_TempScene xScene("TerrainAssetSetLegacyVersions");
+	const std::string strLegacyDirectory = std::string(Project_GetGameAssetsDirectory()) + "Terrain/";
+	for (uint32_t uVersion = 1u; uVersion <= 3u; uVersion++)
+	{
+		Zenith_DataStream xStream;
+		WriteTerrainSerializedPrefix(xStream, uVersion);
+		const uint64_t ulPayloadEnd = xStream.GetCursor();
+		const uint32_t uSentinel = 0xE100000u + uVersion;
+		xStream << uSentinel;
+
+		const std::string strEntityName = "TerrainAssetSetLegacyV" + std::to_string(uVersion);
+		Zenith_Entity xEntity = xScene.CreateEntity(strEntityName.c_str());
+		Zenith_TerrainComponent xRestored(xEntity);
+		ZENITH_ASSERT_TRUE(xRestored.SetTerrainAssetSet("StaleValue"), "Legacy-read destination setup must succeed");
+		xStream.SetCursor(0);
+		ReadTerrainComponentFieldsForTest(xRestored, xStream);
+
+		ZENITH_ASSERT_TRUE(xRestored.GetTerrainAssetSet().empty(), "Every valid v1-v3 payload must explicitly default the v4 set to empty");
+		ZENITH_ASSERT_EQ(xRestored.GetTerrainAssetDirectory(), strLegacyDirectory, "Every valid v1-v3 payload must retain the legacy directory");
+		ZENITH_ASSERT_EQ(xRestored.m_pxStreamingState->m_strTerrainAssetDirectory, strLegacyDirectory, "Every legacy default must synchronize the per-terrain streaming state");
+		ZENITH_ASSERT_EQ(xStream.GetCursor(), ulPayloadEnd, "Legacy parser must consume exactly its version-specific payload");
+		uint32_t uReadSentinel = 0u;
+		xStream >> uReadSentinel;
+		ZENITH_ASSERT_EQ(uReadSentinel, uSentinel, "Legacy parser must leave the trailing sentinel intact");
+	}
+}
+
+#ifdef ZENITH_TOOLS
+
+ZENITH_TEST(TerrainEditor, AssetSetResolvesLegacyAndNamedBakeDirectories) { Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirectories(); }
+
+void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirectories()
+{
+	Zenith_TerrainEditor xPathEditor;
+	const std::string strGameAssets = Project_GetGameAssetsDirectory();
+	xPathEditor.SetAssetSet("");
+	ZENITH_ASSERT_EQ(xPathEditor.GetMeshAssetDirectory(), strGameAssets + "Terrain/", "Empty editor set must preserve the legacy mesh directory");
+	ZENITH_ASSERT_EQ(xPathEditor.GetTextureAssetDirectory(), strGameAssets + "Textures/Terrain/", "Empty editor set must preserve the legacy texture directory");
+	xPathEditor.SetAssetSet("HomeVillage");
+	const std::string strHomeDirectory = strGameAssets + "Terrain/HomeVillage/";
+	ZENITH_ASSERT_EQ(xPathEditor.GetMeshAssetDirectory(), strHomeDirectory, "Named editor mesh target must be Terrain/<set>/");
+	ZENITH_ASSERT_EQ(xPathEditor.GetTextureAssetDirectory(), strHomeDirectory, "Named editor texture target must be colocated with its meshes");
+
+	// Exercise the real non-recursive cleanup in an isolated artifact sandbox.
+	const auto ulUnique = static_cast<unsigned long long>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+	const std::filesystem::path xSandbox = std::filesystem::path(ZENITH_ROOT) / "Build" / "artifacts" / ("terrain_asset_set_cleanup_" + std::to_string(ulUnique));
+	const std::filesystem::path xNested = xSandbox / "NestedSibling";
+	std::filesystem::create_directories(xNested);
+	const std::filesystem::path xRenderMesh = xSandbox / "Render_0_0.zmesh";
+	const std::filesystem::path xPhysicsMesh = xSandbox / "Physics_0_0.zmesh";
+	const std::filesystem::path xTexture = xSandbox / "Height.ztxtr";
+	const std::filesystem::path xNotes = xSandbox / "notes.txt";
+	const std::filesystem::path xNestedMesh = xNested / "Render_1_1.zmesh";
+	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xRenderMesh), "Cleanup sandbox render mesh must be created");
+	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xPhysicsMesh), "Cleanup sandbox physics mesh must be created");
+	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xTexture), "Cleanup sandbox texture must be created");
+	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xNotes), "Cleanup sandbox sibling file must be created");
+	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xNestedMesh), "Cleanup sandbox nested mesh must be created");
+	DeleteExistingTerrainFilesForTest(xSandbox.generic_string());
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xRenderMesh), "Cleanup must delete direct render .zmesh files");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xPhysicsMesh), "Cleanup must delete direct physics .zmesh files");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(xTexture), "Cleanup must preserve colocated terrain textures");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(xNotes), "Cleanup must preserve non-mesh sibling files");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(xNestedMesh), "Cleanup must be non-recursive and preserve nested sibling-set meshes");
+	std::string strRejectedDirectory;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryResolveTerrainAssetDirectory("../NestedSibling", strRejectedDirectory), "An invalid traversal set must be rejected before it can produce a cleanup target");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(xNestedMesh), "Rejected traversal input must not reach or alter the nested sibling set");
+
+	// A valid lexical set name is not sufficient when the directory itself is a
+	// reparse redirect. Prefer a directory symlink (the standard-library Windows
+	// equivalent; it may require Developer Mode/admin). The successful-link path
+	// drives the REAL shared BakeFull operation with an injected sandbox root;
+	// privilege-denied hosts retain the pure canonical-validator fallback.
+	const std::filesystem::path xPreflightRoot = xSandbox / "PreflightTerrain";
+	const std::filesystem::path xOutsideTarget = xSandbox / "OutsideTarget";
+	const std::filesystem::path xSiblingSet = xPreflightRoot / "SiblingSet";
+	const std::filesystem::path xLinkedSet = xPreflightRoot / "LinkedSet";
+	std::filesystem::create_directories(xPreflightRoot);
+	std::filesystem::create_directories(xOutsideTarget);
+	std::filesystem::create_directories(xSiblingSet);
+	const std::filesystem::path xOutsideSentinel = xOutsideTarget / "OutsideSentinel.zmesh";
+	const std::filesystem::path xSiblingSentinel = xSiblingSet / "SiblingSentinel.zmesh";
+	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xOutsideSentinel), "Outside-target sentinel must be created before preflight");
+	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xSiblingSentinel), "Sibling-set sentinel must be created before preflight");
+
+	std::error_code xLinkError;
+	std::filesystem::create_directory_symlink(xOutsideTarget, xLinkedSet, xLinkError);
+	const bool bLinkCreated = !xLinkError && std::filesystem::is_symlink(std::filesystem::symlink_status(xLinkedSet));
+	const std::string strStagedSetBeforePreflight = xPathEditor.GetAssetSet();
+	{
+		Zenith_TempScene xPreflightScene("TerrainAssetSetPreflightState");
+		Zenith_Entity xPreflightEntity = xPreflightScene.CreateEntity("TerrainAssetSetPreflightStateEntity");
+		Zenith_TerrainComponent& xPreflightComponent = xPreflightEntity.AddComponent<Zenith_TerrainComponent>();
+		ZENITH_ASSERT_TRUE(xPreflightComponent.SetTerrainAssetSet("HomeVillage"), "Preflight component-state sentinel setup must succeed");
+		Zenith_TerrainEditor xPreflightEditor;
+		xPreflightEditor.Open(xPreflightEntity.GetEntityID());
+		ZENITH_ASSERT_TRUE(xPreflightEditor.SetAssetSet("LinkedSet"), "Valid lexical set must stage before canonical preflight");
+		xPreflightEditor.ResetImagesToDefaults();
+		ZENITH_ASSERT_TRUE(xPreflightEditor.HasUnbakedChanges(), "Preflight test must begin with dirty edits whose completion state can be observed");
+		const std::string strComponentSetBeforePreflight = xPreflightComponent.GetTerrainAssetSet();
+		const std::string strComponentDirectoryBeforePreflight = xPreflightComponent.GetTerrainAssetDirectory();
+		const std::string strStreamingDirectoryBeforePreflight = xPreflightComponent.m_pxStreamingState->m_strTerrainAssetDirectory;
+		Flux_TerrainStreamingState* pxStreamingStateBeforePreflight = xPreflightComponent.m_pxStreamingState;
+		const uint64_t ulVertexSizeSentinel = 0x12345678ull;
+		const uint64_t ulIndexSizeSentinel = 0x87654321ull;
+		xPreflightComponent.m_pxStreamingState->m_ulUnifiedVertexBufferSize = ulVertexSizeSentinel;
+		xPreflightComponent.m_pxStreamingState->m_ulUnifiedIndexBufferSize = ulIndexSizeSentinel;
+
+		if (bLinkCreated)
+		{
+			ZENITH_ASSERT_FALSE(xPreflightEditor.BakeFullForTerrainRoot(xPreflightRoot.string()),
+				"Shared BakeFull operation must reject a validly named set whose canonical link escapes the injected Terrain root");
+		}
+		else
+		{
+			ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::ValidateTerrainAssetSetTarget(
+				"LinkedSet", xPreflightRoot.string(), xOutsideTarget.string()),
+				"Privilege-denied fallback must still reject the outside canonical target");
+		}
+
+		ZENITH_ASSERT_EQ(xPreflightEditor.GetAssetSet(), std::string("LinkedSet"), "Rejected BakeFull preflight must preserve the editor's staged set");
+		ZENITH_ASSERT_TRUE(xPreflightEditor.HasUnbakedChanges(), "Rejected BakeFull preflight must not report/clear bake completion progress");
+		ZENITH_ASSERT_EQ(xPreflightComponent.GetTerrainAssetSet(), strComponentSetBeforePreflight, "Rejected BakeFull preflight must occur before component commit");
+		ZENITH_ASSERT_EQ(xPreflightComponent.GetTerrainAssetDirectory(), strComponentDirectoryBeforePreflight, "Rejected BakeFull preflight must preserve the component's resolved directory");
+		ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState, pxStreamingStateBeforePreflight, "Rejected BakeFull preflight must occur before live-state replacement/teardown");
+		ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_strTerrainAssetDirectory, strStreamingDirectoryBeforePreflight, "Rejected BakeFull preflight must preserve streaming state");
+		ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_ulUnifiedVertexBufferSize, ulVertexSizeSentinel, "Rejected BakeFull preflight must occur before vertex-buffer teardown");
+		ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_ulUnifiedIndexBufferSize, ulIndexSizeSentinel, "Rejected BakeFull preflight must occur before index-buffer teardown");
+		ZENITH_ASSERT_FALSE(std::filesystem::exists(xOutsideTarget / "Height.ztxtr"), "Rejected BakeFull preflight must occur before Height writes");
+		ZENITH_ASSERT_FALSE(std::filesystem::exists(xOutsideTarget / "Splatmap_RGBA.ztxtr"), "Rejected BakeFull preflight must occur before Splatmap writes");
+		ZENITH_ASSERT_FALSE(std::filesystem::exists(xOutsideTarget / "GrassDensity.ztxtr"), "Rejected BakeFull preflight must occur before GrassDensity writes");
+
+		if (bLinkCreated)
+		{
+			// Drive the component's shared regeneration operation too. Stamp the
+			// matching valid lexical name first so rejection can only be caused by
+			// the link's canonical escape, not an assetSet/target-name mismatch.
+			ZENITH_ASSERT_TRUE(xPreflightComponent.SetTerrainAssetSet("LinkedSet"), "Component regeneration preflight setup must accept the valid lexical set");
+			const std::string strComponentSetBeforeRegeneration = xPreflightComponent.GetTerrainAssetSet();
+			const std::string strStreamingDirectoryBeforeRegeneration = xPreflightComponent.m_pxStreamingState->m_strTerrainAssetDirectory;
+			xPreflightComponent.m_pxStreamingState->m_ulUnifiedVertexBufferSize = ulVertexSizeSentinel;
+			xPreflightComponent.m_pxStreamingState->m_ulUnifiedIndexBufferSize = ulIndexSizeSentinel;
+			ZENITH_ASSERT_FALSE(xPreflightComponent.RunTerrainRegenerationInternalForTerrainRoot(
+				xPreflightRoot.string(), xLinkedSet.string(), nullptr),
+				"Shared component regeneration operation must reject the canonical link escape before progress/cleanup/export");
+			ZENITH_ASSERT_EQ(xPreflightComponent.GetTerrainAssetSet(), strComponentSetBeforeRegeneration, "Rejected component regeneration preflight must preserve the component set");
+			ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_strTerrainAssetDirectory, strStreamingDirectoryBeforeRegeneration, "Rejected component regeneration preflight must preserve streaming state");
+			ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_ulUnifiedVertexBufferSize, ulVertexSizeSentinel, "Rejected component regeneration preflight must occur before vertex-buffer teardown");
+			ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_ulUnifiedIndexBufferSize, ulIndexSizeSentinel, "Rejected component regeneration preflight must occur before index-buffer teardown");
+			ZENITH_ASSERT_TRUE(std::filesystem::exists(xOutsideSentinel), "Rejected component regeneration preflight must occur before cleanup deletion");
+		}
+		xPreflightEditor.Close();
+	}
+	ZENITH_ASSERT_EQ(xPathEditor.GetAssetSet(), strStagedSetBeforePreflight, "Rejected preflight must not mutate the editor's staged set");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(xOutsideSentinel), "Rejected preflight must not delete or overwrite outside assets");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(xSiblingSentinel), "Rejected preflight must not delete or overwrite sibling-set assets");
+	ZENITH_ASSERT_EQ(std::filesystem::file_size(xOutsideSentinel), 1ull, "Outside sentinel bytes must remain unchanged after rejection");
+	ZENITH_ASSERT_EQ(std::filesystem::file_size(xSiblingSentinel), 1ull, "Sibling sentinel bytes must remain unchanged after rejection");
+
+	std::filesystem::remove(xTexture);
+	std::filesystem::remove(xNotes);
+	std::filesystem::remove(xNestedMesh);
+	std::filesystem::remove(xNested);
+	if (bLinkCreated)
+	{
+		std::filesystem::remove(xLinkedSet);
+	}
+	std::filesystem::remove(xOutsideSentinel);
+	std::filesystem::remove(xSiblingSentinel);
+	std::filesystem::remove(xOutsideTarget);
+	std::filesystem::remove(xSiblingSet);
+	std::filesystem::remove(xPreflightRoot);
+	std::filesystem::remove(xSandbox);
+
+	// Open two default-constructed (render-uninitialized) terrain components on
+	// distinct missing sets. Closing/reopening the SAME target must resume its
+	// dirty CPU session; changing to a DIFFERENT target must discard those pixels
+	// and seed all three maps from defaults when the new set has no files.
+	Zenith_TempScene xScene("TerrainEditorAssetSetStage");
+	Zenith_Entity xEntityA = xScene.CreateEntity("TerrainEditorAssetSetStageA");
+	Zenith_Entity xEntityB = xScene.CreateEntity("TerrainEditorAssetSetStageB");
+	xEntityA.AddComponent<Zenith_TerrainComponent>();
+	xEntityB.AddComponent<Zenith_TerrainComponent>();
+	Zenith_TerrainComponent& xTerrainA = xEntityA.GetComponent<Zenith_TerrainComponent>();
+	Zenith_TerrainComponent& xTerrainB = xEntityB.GetComponent<Zenith_TerrainComponent>();
+	ZENITH_ASSERT_TRUE(xTerrainA.SetTerrainAssetSet("UnitTestMissingAssetsA"), "Missing-set A setup must be valid");
+	ZENITH_ASSERT_TRUE(xTerrainB.SetTerrainAssetSet("UnitTestMissingAssetsB"), "Missing-set B setup must be valid");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xTerrainA.GetTerrainAssetDirectory()), "The default-load test requires its deliberately unique set A to be missing");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xTerrainB.GetTerrainAssetDirectory()), "The default-load test requires its deliberately unique set B to be missing");
+
+	Zenith_TerrainEditor xEditor;
+	xEditor.Open(xEntityA.GetEntityID());
+	AssertTerrainEditorMapsAreDefaults(xEditor);
+	xEditor.ResetImagesToDefaults();
+	xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::Raise, 128.0f, 128.0f, 8.0f, 1.0f, 0.0f);
+	xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::SplatPaint, 128.0f, 128.0f, 8.0f, 1.0f, 2.0f);
+	xEditor.ApplyBrushDab(Zenith_TerrainBrushTool::GrassDensity, 128.0f, 128.0f, 8.0f, 1.0f, 0.65f);
+	ZENITH_ASSERT_TRUE(xEditor.HasUnbakedChanges(), "Public terrain edits must mark the attached session dirty");
+	const float fDirtyHeight = xEditor.SampleHeightWorld(128.0f, 128.0f);
+	const u_int uSplatSample = (64u * Zenith_TerrainEditor::uSPLATMAP_SIZE + 64u) * 4u + 2u;
+	const u_int8 uDirtySplat = xEditor.GetSplatmap().Get(uSplatSample);
+	const float fDirtyGrass = xEditor.GetGrassDensity().At(32u, 32u);
+	ZENITH_ASSERT_GT(fDirtyHeight, 0.0f, "Distinctive dirty height sample must differ from the missing-file default");
+	ZENITH_ASSERT_GT(static_cast<u_int>(uDirtySplat), 0u, "Distinctive dirty splat sample must differ from the missing-file default");
+	ZENITH_ASSERT_GT(fDirtyGrass, 0.0f, "Distinctive dirty grass sample must differ from the missing-file default");
+
+	xEditor.Close();
+	xEditor.Open(xEntityA.GetEntityID());
+	ZENITH_ASSERT_TRUE(xEditor.HasUnbakedChanges(), "Reopening the same target must preserve its unbaked-session dirty state");
+	ZENITH_ASSERT_EQ_FLOAT(xEditor.SampleHeightWorld(128.0f, 128.0f), fDirtyHeight, 0.0001f, "Same-target resume must preserve the distinctive height sample");
+	ZENITH_ASSERT_EQ(static_cast<u_int>(xEditor.GetSplatmap().Get(uSplatSample)), static_cast<u_int>(uDirtySplat), "Same-target resume must preserve the distinctive splat sample");
+	ZENITH_ASSERT_EQ_FLOAT(xEditor.GetGrassDensity().At(32u, 32u), fDirtyGrass, 0.0001f, "Same-target resume must preserve the distinctive grass sample");
+	xEditor.Close();
+
+	xEditor.Open(xEntityB.GetEntityID());
+	AssertTerrainEditorMapsAreDefaults(xEditor);
+	ZENITH_ASSERT_FALSE(xEditor.HasUnbakedChanges(), "Opening a different missing-set target must start a clean session");
+
+	const std::string strComponentSetBeforeStage = xTerrainB.GetTerrainAssetSet();
+	const std::string strStateDirectoryBeforeStage = xTerrainB.m_pxStreamingState->m_strTerrainAssetDirectory;
+	xEditor.SetAssetSet("HomeVillage");
+	ZENITH_ASSERT_EQ(xEditor.GetAssetSet(), std::string("HomeVillage"), "Editor SetAssetSet must stage the requested bake target");
+	ZENITH_ASSERT_EQ(xTerrainB.GetTerrainAssetSet(), strComponentSetBeforeStage, "Staging an editor set must not mutate the attached serialized component before bake/explicit automation stamp");
+	ZENITH_ASSERT_EQ(xTerrainB.m_pxStreamingState->m_strTerrainAssetDirectory, strStateDirectoryBeforeStage, "Staging an editor set must not mutate the attached streaming state");
+	ZENITH_ASSERT_EQ(xEditor.GetMeshAssetDirectory(), strHomeDirectory, "The staged set must drive the editor mesh bake target");
+	ZENITH_ASSERT_EQ(xEditor.GetTextureAssetDirectory(), strHomeDirectory, "The staged set must drive the editor texture bake target");
+	xEditor.Close();
+}
+
+ZENITH_TEST(EditorAutomation, TerrainAssetSetActionOwnsArgument) { Zenith_UnitTests::TestEditorAutomationTerrainAssetSetActionOwnsArgument(); }
+
+void Zenith_UnitTests::TestEditorAutomationTerrainAssetSetActionOwnsArgument()
+{
+	Zenith_Editor& xGlobalEditor = g_xEngine.Editor();
+	Zenith_TerrainEditor& xGlobalTerrainEditor = g_xEngine.TerrainEditor();
+	const Zenith_Scene xPreviousActiveScene = g_xEngine.Scenes().GetActiveScene();
+	const Zenith_EntityID xPreviousSelection = xGlobalEditor.GetSelectedEntityID();
+	const bool bTerrainEditorWasActive = xGlobalTerrainEditor.IsActive();
+	const bool bTerrainEditorWasStandalone = xGlobalTerrainEditor.IsStandalone();
+	const Zenith_EntityID xPreviousTerrainTarget = xGlobalTerrainEditor.GetTargetEntity();
+	const std::string strPreviousTerrainSet = xGlobalTerrainEditor.GetAssetSet();
+	if (bTerrainEditorWasActive)
+	{
+		xGlobalTerrainEditor.Close();
+	}
+	xGlobalEditor.ClearSelection();
+
+	{
+		Zenith_TempScene xScene("EditorAutomationTerrainAssetSet");
+		Zenith_Entity xEntity = xScene.CreateEntity("EditorAutomationTerrainAssetSetEntity");
+		Zenith_TerrainComponent& xTerrain = xEntity.AddComponent<Zenith_TerrainComponent>();
+		xGlobalEditor.SelectEntity(xEntity.GetEntityID());
+
+		Zenith_EditorAutomation xAutomation;
+		{
+			std::string strCallerOwnedSet = "HomeVillage";
+			xAutomation.AddStep_TerrainSetAssetSet(strCallerOwnedSet.c_str());
+			strCallerOwnedSet.assign("CallerStorageWasMutated");
+		}
+		ZENITH_ASSERT_EQ(xAutomation.m_axActions.GetSize(), 1u, "AddStep_TerrainSetAssetSet must enqueue exactly one action");
+		const Zenith_EditorAction& xQueuedAction = xAutomation.m_axActions.Get(0);
+		ZENITH_ASSERT_EQ(xQueuedAction.m_eType, Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET, "The queued action must use the terrain asset-set enum");
+		ZENITH_ASSERT_EQ(xQueuedAction.m_szArg1, std::string("HomeVillage"), "The queued action must own its argument after caller mutation/destruction");
+
+		xAutomation.Begin();
+		xAutomation.ExecuteNextStep();
+		ZENITH_ASSERT_TRUE(xAutomation.IsComplete(), "The single terrain asset-set action must complete through the public executor");
+		ZENITH_ASSERT_EQ(xGlobalTerrainEditor.GetAssetSet(), std::string("HomeVillage"), "Automation must stage the selected set in the terrain editor");
+		ZENITH_ASSERT_EQ(xTerrain.GetTerrainAssetSet(), std::string("HomeVillage"), "Automation must explicitly stamp the selected default-constructed Terrain component");
+		const std::string strExpectedDirectory = std::string(Project_GetGameAssetsDirectory()) + "Terrain/HomeVillage/";
+		ZENITH_ASSERT_EQ(xTerrain.m_pxStreamingState->m_strTerrainAssetDirectory, strExpectedDirectory, "Automation's component stamp must synchronize its streaming state");
+
+		Zenith_DataStream xStream;
+		xTerrain.WriteToDataStream(xStream);
+		xStream.SetCursor(0);
+		uint32_t uVersion = 0u;
+		xStream >> uVersion;
+		ZENITH_ASSERT_EQ(uVersion, 4u, "The automation-stamped component must serialize as terrain version 4");
+		xStream.SetCursor(0);
+		Zenith_Entity xRestoredEntity = xScene.CreateEntity("EditorAutomationTerrainAssetSetRestored");
+		Zenith_TerrainComponent xRestored(xRestoredEntity);
+		ReadTerrainComponentFieldsForTest(xRestored, xStream);
+		ZENITH_ASSERT_EQ(xRestored.GetTerrainAssetSet(), std::string("HomeVillage"), "The automation-stamped set must survive v4 serialization");
+
+		xGlobalTerrainEditor.Close();
+		xGlobalEditor.ClearSelection();
+	}
+
+	if (xPreviousActiveScene.IsValid())
+	{
+		g_xEngine.Scenes().SetActiveScene(xPreviousActiveScene);
+	}
+	xGlobalTerrainEditor.SetAssetSet(strPreviousTerrainSet);
+	if (bTerrainEditorWasActive)
+	{
+		if (bTerrainEditorWasStandalone)
+		{
+			xGlobalTerrainEditor.OpenStandalone();
+		}
+		else if (g_xEngine.Scenes().ResolveEntity(xPreviousTerrainTarget).IsValid())
+		{
+			xGlobalTerrainEditor.Open(xPreviousTerrainTarget);
+		}
+	}
+	if (g_xEngine.Scenes().ResolveEntity(xPreviousSelection).IsValid())
+	{
+		xGlobalEditor.SelectEntity(xPreviousSelection);
+	}
+}
+
+#endif // ZENITH_TOOLS
 
 ZENITH_TEST(Terrain, ChunkDistanceSymmetry) { Zenith_UnitTests::TestChunkDistanceSymmetry(); }
 

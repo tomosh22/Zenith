@@ -689,7 +689,7 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
 
 	// Build mesh file path - HIGH LOD uses Render_X_Y.zmesh
-	std::string strChunkPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_" + std::to_string(uChunkX) + "_" + std::to_string(uChunkY) + ZENITH_MESH_EXT;
+	std::string strChunkPath = xState.m_strTerrainAssetDirectory + "Render_" + std::to_string(uChunkX) + "_" + std::to_string(uChunkY) + ZENITH_MESH_EXT;
 
 	// Check if file exists
 	std::ifstream lodFile(strChunkPath);

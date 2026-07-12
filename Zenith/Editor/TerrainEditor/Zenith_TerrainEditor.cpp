@@ -65,15 +65,91 @@ static uint32_t PackSNORM10_10_10_2(float fX, float fY, float fZ, float fW)
 // Session lifecycle
 //-----------------------------------------------------------------------------
 
+bool Zenith_TerrainEditor::SetAssetSet(const std::string& strSet)
+{
+	std::string strResolvedDirectory;
+	if (!Zenith_TerrainComponent::TryResolveTerrainAssetDirectory(strSet, strResolvedDirectory))
+	{
+		m_strAssetSetValidationError =
+			"Invalid terrain set. Use 1-64 ASCII letters, digits, '_' or '-' (or empty for legacy).";
+		m_strStatus = m_strAssetSetValidationError;
+		return false;
+	}
+
+	// This is deliberately staging-only. An attached live component remains on
+	// its persisted set until BakeFull reaches its synchronous commit boundary.
+	m_strAssetSet = strSet;
+	m_strAssetSetValidationError.clear();
+	m_strStatus = m_strAssetSet.empty()
+		? "Legacy terrain bake target staged"
+		: "Terrain bake target staged: " + m_strAssetSet;
+	return true;
+}
+
+const std::string& Zenith_TerrainEditor::GetAssetSet() const
+{
+	return m_strAssetSet;
+}
+
+std::string Zenith_TerrainEditor::GetMeshAssetDirectory() const
+{
+	std::string strDirectory;
+	if (!Zenith_TerrainComponent::TryResolveTerrainAssetDirectory(m_strAssetSet, strDirectory))
+	{
+		Zenith_Assert(false, "Terrain editor stored an invalid staged asset set");
+		Zenith_TerrainComponent::TryResolveTerrainAssetDirectory("", strDirectory);
+	}
+	return strDirectory;
+}
+
+std::string Zenith_TerrainEditor::GetTextureAssetDirectory() const
+{
+	if (!m_strAssetSet.empty())
+	{
+		return GetMeshAssetDirectory();
+	}
+	return std::string(Project_GetGameAssetsDirectory()) + "Textures/Terrain/";
+}
+
 void Zenith_TerrainEditor::Open(Zenith_EntityID uTerrainEntity)
 {
-	const bool bSameTarget = (m_uTargetEntity == uTerrainEntity);
-	if (m_bSessionDirty && !bSameTarget && m_uTargetEntity != INVALID_ENTITY_ID)
+	const bool bResumeDirtySession =
+		m_uTargetEntity == uTerrainEntity && m_bSessionDirty;
+	if (bResumeDirtySession)
 	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Discarding unbaked session for previous terrain target");
-		m_bSessionDirty = false;
-		memset(m_aulSessionDirtyBits, 0, sizeof(m_aulSessionDirtyBits));
-		memset(m_aulPendingEvictBits, 0, sizeof(m_aulPendingEvictBits));
+		// Close deliberately keeps the CPU maps, masks, staged set, and undo
+		// commands. Reopening the same target re-pins the hook and streams every
+		// dirty chunk through it so those exact edits become visible again.
+		m_bActive = true;
+		m_bEditModeEnabled = true;
+		Zenith_TerrainComponent* pxTerrain = ResolveTargetComponent();
+		Zenith_Assert(pxTerrain != nullptr, "Terrain editor resume target has no TerrainComponent");
+		if (pxTerrain == nullptr)
+		{
+			return;
+		}
+		RegisterHook();
+		ForceEvictSessionDirtyChunks();
+		Zenith_Log(LOG_CATEGORY_EDITOR,
+			"[TerrainEditor] Dirty session resumed (entity %u)", uTerrainEntity.m_uIndex);
+		return;
+	}
+
+	// A different target (or a clean reopen) gets a clean persisted-state load.
+	// Tear down the prior attached hook before changing the target ID; dirty
+	// visuals are reverted before their CPU maps/masks are discarded below.
+	if (m_bActive && m_uTargetEntity != INVALID_ENTITY_ID)
+	{
+		ClearHook();
+		if (m_bSessionDirty)
+		{
+			ForceEvictSessionDirtyChunks();
+		}
+	}
+	if (m_bSessionDirty)
+	{
+		Zenith_Log(LOG_CATEGORY_EDITOR,
+			"[TerrainEditor] Discarding unbaked session while opening a different target");
 	}
 
 	m_uTargetEntity = uTerrainEntity;
@@ -81,21 +157,37 @@ void Zenith_TerrainEditor::Open(Zenith_EntityID uTerrainEntity)
 	m_bEditModeEnabled = true;
 	m_strStatus.clear();
 
-	EnsureImagesAllocated();
-	if (!m_bSessionDirty)
+	// The component is the persisted authority for an attached session. Copy
+	// its set before loading so Height/Splatmap/GrassDensity all seed from the
+	// same directory the runtime mesh streamer uses.
+	Zenith_TerrainComponent* pxTerrain = ResolveTargetComponent();
+	Zenith_Assert(pxTerrain != nullptr, "Terrain editor target has no TerrainComponent");
+	if (pxTerrain != nullptr)
 	{
-		LoadImagesFromAssets();
+		m_strAssetSet = pxTerrain->GetTerrainAssetSet();
+		std::string strValidatedDirectory;
+		const bool bValidPersistedSet = Zenith_TerrainComponent::TryResolveTerrainAssetDirectory(
+			m_strAssetSet, strValidatedDirectory);
+		Zenith_Assert(bValidPersistedSet, "Terrain component exposed an invalid persisted asset set");
+		if (!bValidPersistedSet)
+		{
+			m_strAssetSet.clear();
+		}
 	}
+	m_strAssetSetValidationError.clear();
+
+	// Undo snapshots and dirty masks refer to the previous CPU image contents.
+	// Clear them before reseeding defaults and overlaying this set's files.
+	g_xEngine.UndoSystem().Clear();
+	m_bSessionDirty = false;
+	m_bSplatGPUDirty = false;
+	m_bGrassDirty = false;
+	m_bErosionRunning = false;
+	memset(m_aulSessionDirtyBits, 0, sizeof(m_aulSessionDirtyBits));
+	memset(m_aulPendingEvictBits, 0, sizeof(m_aulPendingEvictBits));
+	LoadImagesFromAssets();
 
 	RegisterHook();
-
-	// Resuming a dirty session: force the edited chunks through the streaming
-	// path so the unbaked edits reappear (the freshly-registered hook re-shapes
-	// them on reload).
-	if (m_bSessionDirty)
-	{
-		ForceEvictSessionDirtyChunks();
-	}
 
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Session opened (entity %u, sessionDirty=%d)",
 		uTerrainEntity.m_uIndex, m_bSessionDirty ? 1 : 0);
@@ -237,6 +329,27 @@ void Zenith_TerrainEditor::EnsureImagesAllocated()
 	}
 }
 
+void Zenith_TerrainEditor::FillImagesWithDefaults()
+{
+	EnsureImagesAllocated();
+
+	memset(m_xHeightfield.Row(0), 0,
+		static_cast<size_t>(uHEIGHTFIELD_SIZE) * uHEIGHTFIELD_SIZE * sizeof(float));
+
+	u_int8* pSplat = m_xSplatmap.GetDataPointer();
+	const u_int uSplatTexels = uSPLATMAP_SIZE * uSPLATMAP_SIZE;
+	for (u_int u = 0; u < uSplatTexels; u++)
+	{
+		pSplat[u * 4 + 0] = 255;
+		pSplat[u * 4 + 1] = 0;
+		pSplat[u * 4 + 2] = 0;
+		pSplat[u * 4 + 3] = 0;
+	}
+
+	memset(m_xGrassDensity.Row(0), 0,
+		static_cast<size_t>(uGRASS_DENSITY_SIZE) * uGRASS_DENSITY_SIZE * sizeof(float));
+}
+
 // Read a .ztxtr (DataStream layout: i32 w, i32 h, i32 depth, TextureFormat,
 // u64 size, pixels). Returns false when missing or mismatched.
 static bool LoadZtxtrRaw(const std::string& strPath, int32_t iExpectWidth, int32_t iExpectHeight,
@@ -275,7 +388,11 @@ static bool LoadZtxtrRaw(const std::string& strPath, int32_t iExpectWidth, int32
 
 void Zenith_TerrainEditor::LoadImagesFromAssets()
 {
-	const std::string strTexDir = std::string(Project_GetGameAssetsDirectory()) + "Textures/Terrain/";
+	// Every load starts clean. Missing or malformed files therefore retain the
+	// map's documented default instead of leaking pixels from a prior set.
+	FillImagesWithDefaults();
+
+	const std::string strTexDir = GetTextureAssetDirectory();
 
 	// Heightfield <- Height.ztxtr (R32, 4096^2) via the same loader the export
 	// pipeline uses (handles R32/R16/RGBA8 + PNG fallbacks).
@@ -1268,26 +1385,9 @@ void Zenith_TerrainEditor::EndStroke()
 
 void Zenith_TerrainEditor::ResetImagesToDefaults()
 {
-	EnsureImagesAllocated();
-
 	// Undo commands hold region snapshots of these maps — invalid after reset.
 	g_xEngine.UndoSystem().Clear();
-
-	float* pfHeights = m_xHeightfield.Row(0);
-	memset(pfHeights, 0, static_cast<size_t>(uHEIGHTFIELD_SIZE) * uHEIGHTFIELD_SIZE * sizeof(float));
-
-	u_int8* pSplat = m_xSplatmap.GetDataPointer();
-	const u_int uSplatTexels = uSPLATMAP_SIZE * uSPLATMAP_SIZE;
-	for (u_int u = 0; u < uSplatTexels; u++)
-	{
-		pSplat[u * 4 + 0] = 255;
-		pSplat[u * 4 + 1] = 0;
-		pSplat[u * 4 + 2] = 0;
-		pSplat[u * 4 + 3] = 0;
-	}
-
-	float* pfGrass = m_xGrassDensity.Row(0);
-	memset(pfGrass, 0, static_cast<size_t>(uGRASS_DENSITY_SIZE) * uGRASS_DENSITY_SIZE * sizeof(float));
+	FillImagesWithDefaults();
 
 	MarkHeightRegionDirty(0.0f, 0.0f,
 		static_cast<float>(uHEIGHTFIELD_SIZE - 1), static_cast<float>(uHEIGHTFIELD_SIZE - 1));

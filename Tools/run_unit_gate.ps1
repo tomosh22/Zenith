@@ -4,7 +4,7 @@
 # the single known layout-sensitive flake (GraphComponent::
 # RegistryWideNodeRoundTrip, task_726cc81d) as the SOLE failure.
 #
-# Usage:  pwsh ./Tools/run_unit_gate.ps1 -Exe <game exe> [-Baseline 1068]
+# Usage:  pwsh ./Tools/run_unit_gate.ps1 -Exe <game exe> [-Baseline 1075]
 # Exit:   0 = baseline met, 1 = anything else (missing exe, timeout, failures).
 #
 # ASCII-only body; runs under Windows PowerShell 5.1 and pwsh 7.
@@ -12,7 +12,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Exe,
-    [int]$Baseline = 1068,
+    [int]$Baseline = 1075,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )
@@ -72,7 +72,7 @@ Write-Host "[unit_gate] $($unitsLine.Trim())"
 # passed bucket to the skipped bucket, never off the ran count). Deliberate skips
 # are expected and are never a failure: RegistryWideNodeRoundTrip is quarantined
 # (task_726cc81d intermittent heap corruption), so a clean boot is
-# "1068 ran, 1067 passed, 0 failed, 1 skipped".
+# "1075 ran, 1074 passed, 0 failed, 1 skipped".
 if ($unitsLine -notmatch '(\d+)\s+ran,\s+(\d+)\s+passed,\s+(\d+)\s+failed(?:,\s+(\d+)\s+skipped)?') {
     Write-Error "[unit_gate] could not parse the tally from '$($unitsLine.Trim())' (log: $LogPath)"
     exit 1

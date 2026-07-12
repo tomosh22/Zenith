@@ -13,6 +13,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_Query.h"
+#include <filesystem>
 #include <fstream>
 
 // The Flux GPU state these methods operate on now lives on the owning
@@ -72,6 +73,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_Entity& xEntity)
 	// inside Flux_TerrainStreamingState.
 	m_pxStreamingState = new Flux_TerrainStreamingState();
 	m_pxStreamingState->Initialize();
+	m_pxStreamingState->m_strTerrainAssetDirectory = GetTerrainAssetDirectory();
 }
 
 Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial0, Zenith_MaterialAsset& xMaterial1, Zenith_Entity& xEntity)
@@ -84,6 +86,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 	// the culling-init flag now live on (and default-init inside) the state.
 	m_pxStreamingState = new Flux_TerrainStreamingState();
 	m_pxStreamingState->Initialize();
+	m_pxStreamingState->m_strTerrainAssetDirectory = GetTerrainAssetDirectory();
 
 	// Store material handles (auto ref-counting)
 	m_axMaterials[0].Set(&xMaterial0);
@@ -180,10 +183,13 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_TerrainComponent&& xOthe
 	, m_pxPhysicsGeometry(xOther.m_pxPhysicsGeometry)
 	, m_bTerrainGeometryUnusable(xOther.m_bTerrainGeometryUnusable)
 	, m_pxStreamingState(xOther.m_pxStreamingState)
+	, m_strTerrainAssetSet(std::move(xOther.m_strTerrainAssetSet))
 {
 	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 		m_axMaterials[u] = std::move(xOther.m_axMaterials[u]);
 	m_xSplatmap = std::move(xOther.m_xSplatmap);
+	// The source's already-synchronized state is stolen with its validated set,
+	// so its cached directory remains component-local and unchanged.
 
 	// Wave 3: the old "repoint m_pxStreamingState->m_pxOwner = this" is gone — the
 	// Flux state no longer stores a Zenith_TerrainComponent back-pointer (it was never
@@ -225,9 +231,12 @@ Zenith_TerrainComponent& Zenith_TerrainComponent::operator=(Zenith_TerrainCompon
 	m_pxPhysicsGeometry        = xOther.m_pxPhysicsGeometry;
 	m_bTerrainGeometryUnusable = xOther.m_bTerrainGeometryUnusable;
 	m_pxStreamingState         = xOther.m_pxStreamingState;
+	m_strTerrainAssetSet       = std::move(xOther.m_strTerrainAssetSet);
 	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 		m_axMaterials[u] = std::move(xOther.m_axMaterials[u]);
 	m_xSplatmap = std::move(xOther.m_xSplatmap);
+	// The state and validated set move as one ownership unit; no global path is
+	// consulted and no other component's cached directory is touched.
 
 	// Wave 3: no m_pxOwner back-pointer to repoint (see the move-ctor note).
 
@@ -282,14 +291,125 @@ Flux_ReadWriteBuffer& Zenith_TerrainComponent::GetLODLevelBuffer()
 	return m_pxStreamingState->m_xLODLevelBuffer;
 }
 
+bool Zenith_TerrainComponent::IsValidTerrainAssetSetName(const std::string& strSet)
+{
+	if (strSet.empty())
+	{
+		return true;
+	}
+	if (strSet.size() > 64)
+	{
+		return false;
+	}
+
+	const auto IsASCIIAlphaNumeric = [](char cCharacter)
+	{
+		return (cCharacter >= 'A' && cCharacter <= 'Z') ||
+			(cCharacter >= 'a' && cCharacter <= 'z') ||
+			(cCharacter >= '0' && cCharacter <= '9');
+	};
+
+	if (!IsASCIIAlphaNumeric(strSet[0]))
+	{
+		return false;
+	}
+	for (size_t uIndex = 1; uIndex < strSet.size(); uIndex++)
+	{
+		const char cCharacter = strSet[uIndex];
+		if (!IsASCIIAlphaNumeric(cCharacter) && cCharacter != '_' && cCharacter != '-')
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool Zenith_TerrainComponent::TryResolveTerrainAssetDirectory(const std::string& strSet, std::string& strDirectoryOut)
+{
+	strDirectoryOut.clear();
+	if (!IsValidTerrainAssetSetName(strSet))
+	{
+		return false;
+	}
+
+	const std::string strLegacyDirectory = std::string(Project_GetGameAssetsDirectory()) + "Terrain/";
+	if (strSet.empty())
+	{
+		strDirectoryOut = strLegacyDirectory;
+		return true;
+	}
+
+	const std::filesystem::path xTerrainRoot =
+		(std::filesystem::path(Project_GetGameAssetsDirectory()) / "Terrain").lexically_normal();
+	const std::filesystem::path xResolvedDirectory = (xTerrainRoot / strSet).lexically_normal();
+
+	// Compare path components, not string prefixes (Terrain2 is not beneath
+	// Terrain). A named set must add at least one component below the root.
+	auto xRootComponent = xTerrainRoot.begin();
+	auto xResolvedComponent = xResolvedDirectory.begin();
+	for (; xRootComponent != xTerrainRoot.end(); ++xRootComponent, ++xResolvedComponent)
+	{
+		if (xResolvedComponent == xResolvedDirectory.end() || *xRootComponent != *xResolvedComponent)
+		{
+			return false;
+		}
+	}
+	if (xResolvedComponent == xResolvedDirectory.end())
+	{
+		return false;
+	}
+
+	strDirectoryOut = xResolvedDirectory.generic_string();
+	while (!strDirectoryOut.empty() && strDirectoryOut.back() == '/')
+	{
+		strDirectoryOut.pop_back();
+	}
+	strDirectoryOut += '/';
+	return true;
+}
+
+bool Zenith_TerrainComponent::SetTerrainAssetSet(const std::string& strSet)
+{
+	std::string strResolvedDirectory;
+	if (!TryResolveTerrainAssetDirectory(strSet, strResolvedDirectory))
+	{
+		return false;
+	}
+
+	m_strTerrainAssetSet = strSet;
+	if (m_pxStreamingState)
+	{
+		m_pxStreamingState->m_strTerrainAssetDirectory = std::move(strResolvedDirectory);
+	}
+	return true;
+}
+
+const std::string& Zenith_TerrainComponent::GetTerrainAssetSet() const
+{
+	return m_strTerrainAssetSet;
+}
+
+std::string Zenith_TerrainComponent::GetTerrainAssetDirectory() const
+{
+	std::string strDirectory;
+	if (!TryResolveTerrainAssetDirectory(m_strTerrainAssetSet, strDirectory))
+	{
+		// Stored values can only arrive through the validating setter. Preserve a
+		// safe legacy fallback even if memory corruption violates that invariant.
+		strDirectory = std::string(Project_GetGameAssetsDirectory()) + "Terrain/";
+		Zenith_Assert(false, "Zenith_TerrainComponent stored an invalid terrain asset-set name");
+	}
+	return strDirectory;
+}
+
 void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	// Serialization version
-	uint32_t uVersion = 3;
+	uint32_t uVersion = 4;
 	xStream << uVersion;
 
-	// NOTE: Terrain component uses hardcoded paths for physics geometry during construction
-	// We serialize the source paths for reference, but reconstruction is handled by the constructor
+	// Serialize the combined physics source path for reference; reconstruction
+	// resolves per-chunk files from this component's terrain asset directory.
 	std::string strPhysicsGeometryPath = m_pxPhysicsGeometry ? Zenith_AssetRegistry::NormalizeAssetPath(m_pxPhysicsGeometry->m_strSourcePath) : "";
 	xStream << strPhysicsGeometryPath;
 
@@ -311,6 +431,9 @@ void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) cons
 	// Splatmap path
 	std::string strSplatmapPath = Zenith_AssetRegistry::NormalizeAssetPath(m_xSplatmap.GetPath());
 	xStream << strSplatmapPath;
+
+	// Version 4: append the terrain asset-set name after the complete v3 payload.
+	xStream << m_strTerrainAssetSet;
 }
 
 // ReadFromDataStream helpers — keep the top-level function focused on the
@@ -391,6 +514,42 @@ void Zenith_TerrainComponent::BackfillMissingMaterialSlots(const std::string& st
 	}
 }
 
+void Zenith_TerrainComponent::ReadSerializedFields(Zenith_DataStream& xStream)
+{
+	// Deserialization always begins from the safe legacy set. A rejected v4
+	// candidate therefore cannot preserve a stale destination value.
+	SetTerrainAssetSet("");
+
+	uint32_t uVersion;
+	xStream >> uVersion;
+
+	std::string strPhysicsGeometryPath;
+	xStream >> strPhysicsGeometryPath;  // Read-through; actual chunks loaded below.
+
+	const std::string strEntityName = m_xParentEntity.GetName().empty()
+		? ("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex))
+		: m_xParentEntity.GetName();
+
+	if      (uVersion >= 3) ReadMaterialsV3(strEntityName, xStream);
+	else if (uVersion >= 2) ReadMaterialsV2(strEntityName, xStream);
+	else                    ReadMaterialsV1Legacy(xStream);
+
+	// Version 4 appends the set after the complete v3 payload. Versions 1-3
+	// retain the explicit empty default installed at parser entry.
+	if (uVersion >= 4)
+	{
+		std::string strTerrainAssetSet;
+		xStream >> strTerrainAssetSet;
+		if (!SetTerrainAssetSet(strTerrainAssetSet))
+		{
+			Zenith_Warning(LOG_CATEGORY_TERRAIN,
+				"Terrain deserialization rejected an invalid terrain asset-set name; using legacy Terrain/.");
+		}
+	}
+
+	BackfillMissingMaterialSlots(strEntityName);
+}
+
 void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	// Streaming manager may have been shut down after the previous terrain
@@ -402,23 +561,10 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		xTerrainStreaming.Initialize();
 	}
 
-	uint32_t uVersion;
-	xStream >> uVersion;
-
-	std::string strPhysicsGeometryPath;
-	xStream >> strPhysicsGeometryPath;  // Read-through; actual chunks loaded below.
-
+	// Parse and synchronize the terrain set before either loader resolves a
+	// component-relative chunk path.
+	ReadSerializedFields(xStream);
 	LoadCombinedPhysicsGeometry();
-
-	const std::string strEntityName = m_xParentEntity.GetName().empty()
-		? ("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex))
-		: m_xParentEntity.GetName();
-
-	if      (uVersion >= 3) ReadMaterialsV3(strEntityName, xStream);
-	else if (uVersion >= 2) ReadMaterialsV2(strEntityName, xStream);
-	else                    ReadMaterialsV1Legacy(xStream);
-
-	BackfillMissingMaterialSlots(strEntityName);
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Initializing render resources...");
 	InitializeRenderResources();
@@ -429,6 +575,10 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 void Zenith_TerrainComponent::InitializeRenderResources()
 {
+	// Reassert the component-owned directory at each initialization attempt so
+	// streaming always consumes this terrain's current serialized set.
+	m_pxStreamingState->m_strTerrainAssetDirectory = GetTerrainAssetDirectory();
+
 	// Reset the unusable flag at the start of each load attempt so the
 	// editor's regenerate/retry path can recover after the missing chunk
 	// files are produced. Without this, a stale "unusable" set by a
@@ -529,6 +679,7 @@ void Zenith_TerrainComponent::CalculateLowLODBufferSizes(uint32_t& uTotalVertsOu
 void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, uint32_t uTotalIndices, Flux_TerrainChunkInitData* pxChunkInitData, Flux_MeshGeometry*& pxLowLODGeometryOut)
 {
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading LOW LOD meshes for all %u chunks...", TOTAL_CHUNKS);
+	const std::string strTerrainAssetDirectory = GetTerrainAssetDirectory();
 
 	// Load chunk (0,0) first — its buffer layout sets the global vertex
 	// stride, so without it the rest of the geometry pipeline can't size
@@ -537,7 +688,7 @@ void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, u
 	// buffer or registering with the streaming manager.
 	pxLowLODGeometryOut = new Flux_MeshGeometry();
 	Flux_MeshGeometry::LoadFromFile(
-		(std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_LOW_0_0" ZENITH_MESH_EXT).c_str(), *pxLowLODGeometryOut,
+		(strTerrainAssetDirectory + "Render_LOW_0_0" ZENITH_MESH_EXT).c_str(), *pxLowLODGeometryOut,
 		1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
 	Flux_MeshGeometry& xLowLODGeometry = *pxLowLODGeometryOut;
 
@@ -589,13 +740,13 @@ void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, u
 			if (x == 0 && y == 0)
 				continue;
 
-			std::string strChunkPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_LOW_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
+			std::string strChunkPath = strTerrainAssetDirectory + "Render_LOW_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 
 			std::ifstream lodFile(strChunkPath);
 			if (!lodFile.good())
 			{
 				Zenith_Log(LOG_CATEGORY_TERRAIN, "WARNING: LOW LOD not found for chunk (%u,%u), using HIGH as fallback", x, y);
-				strChunkPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
+				strChunkPath = strTerrainAssetDirectory + "Render_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 			}
 
 			Flux_MeshGeometry xChunkMesh;
@@ -703,13 +854,14 @@ void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
 	}
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading and combining all physics chunks...");
+	const std::string strTerrainAssetDirectory = GetTerrainAssetDirectory();
 
 	// Load chunk (0,0) — its layout sizes the pre-allocated combined buffer.
 	// If this load fails we can't usefully size or combine anything else;
 	// drop the half-built geometry and bail.
 	m_pxPhysicsGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::LoadFromFile(
-		(std::string(Project_GetGameAssetsDirectory()) + "Terrain/Physics_0_0" ZENITH_MESH_EXT).c_str(),
+		(strTerrainAssetDirectory + "Physics_0_0" ZENITH_MESH_EXT).c_str(),
 		*m_pxPhysicsGeometry,
 		1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
 
@@ -750,7 +902,7 @@ void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
 		{
 			if (x == 0 && y == 0) continue;  // Already loaded
 
-			std::string strPhysicsPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Physics_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
+			std::string strPhysicsPath = strTerrainAssetDirectory + "Physics_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 			Flux_MeshGeometry xTerrainPhysicsMesh;
 			Flux_MeshGeometry::LoadFromFile(
 				strPhysicsPath.c_str(),

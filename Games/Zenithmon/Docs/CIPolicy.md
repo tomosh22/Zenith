@@ -13,7 +13,7 @@ AssetManifest.md (why the runner has no assets).
 **Status:** LIVING -- update whenever a gate is added/retired or branch
 protection changes.
 
-**Last updated:** 2026-07-12 (S2 box-4 checkpoint -- unit baseline 1577).
+**Last updated:** 2026-07-12 (S3 engine E1 -- unit baseline 1725).
 
 ---
 
@@ -53,7 +53,7 @@ pattern), active from S0. Required check name: **`zm-tests`**.
 
 **Unit-test baseline ratchet:** step 8's `-Baseline` is the exact registered
 unit-test count of `zenithmon.exe` (engine units + `ZM_*` cases; currently
-**1577**: 1576 passed, 0 failed, and 1 quarantined
+**1725**: 1724 passed, 0 failed, and 1 quarantined
 `RegistryWideNodeRoundTrip` skip). Every
 commit that changes the `ZM_*` count -- and any engine change that changes the
 engine unit count -- bumps this number in `zm-tests.yml` in the same commit.

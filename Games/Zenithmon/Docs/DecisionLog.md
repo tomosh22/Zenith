@@ -15,6 +15,46 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-12 -- ZM-D-051 -- Engine E1: serialized, contained per-terrain asset sets with staged editor bakes
+
+- **Decision:** `Zenith_TerrainComponent` serialization v4 appends a terrain-set
+  name. The empty name is the exact backward-compatible legacy layout
+  (`<game-assets>/Terrain/`, with legacy textures under `Textures/Terrain/`);
+  a named set resolves to `<game-assets>/Terrain/<Set>/` and co-locates its
+  textures and chunk meshes there. Valid names use the ASCII grammar
+  `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Resolution requires strict component-wise
+  containment, and invalid serialized v4 names fall back safely to legacy.
+  All terrain load, collision, low/high-LOD streaming, regeneration, and the two
+  CityBuilder state consumers now use the resolved per-component directory.
+- **Editor/tool contract:** the terrain editor owns a staged asset-set value;
+  changing it never live-reroutes initialized terrain. A successful full bake
+  commits that value immediately before synchronous regeneration. Clean/different
+  targets reload persisted data, while reopening the same dirty target resumes
+  its CPU maps and undo state. Production cleanup canonicalizes root and target,
+  refuses symlink/junction escape, is non-recursive, and removes only direct
+  `.zmesh` files. `AddStep_TerrainSetAssetSet` copies its argument, validates and
+  preflights the selected component transactionally, and stamps a fresh selected
+  Terrain component so a later scene save persists the choice.
+- **Why:** Zenithmon requires one isolated terrain asset family per outdoor scene,
+  while existing games and v1-v3 scenes must retain byte-compatible legacy path
+  semantics. Staging prevents an editor draft from invalidating live render or
+  physics resources; strict path/canonical checks make the destructive bake step
+  safe at its filesystem boundary.
+- **Tests that lock it:** exactly seven new engine unit tests cover grammar and
+  transactional setters; path boundaries and state propagation; move isolation;
+  v4 prefix/round-trip/invalid fallback; exact v1-v3 compatibility; editor
+  staging, cleanup isolation, default reload, and dirty-session resume; and
+  automation argument ownership/action execution/component serialization. Full
+  boot gate is **1725 ran / 1724 passed / 0 failed / 1 skipped** (Zenithmon
+  baseline 1718 -> 1725; engine default 1068 -> 1075). The four Vulkan
+  Debug/Release x Tools true/false builds and D3D12 Debug Tools=false link proof
+  pass. `zenith test` passes for Zenithmon (1/1), CityBuilder (45/45), and
+  DevilsPlayground (158 tests); RenderTest windowed `EngineBootShutdownSmoke` and
+  `TerrainEditorSmoke` both pass.
+- **Reversibility:** additive for existing content: empty/v1-v3 assets remain on
+  the legacy layout. Removing named sets later would require retaining the v4
+  reader or migrating every scene that stores a non-empty set.
+
 ## 2026-07-12 -- ZM-D-050 -- Breeding SC-C: egg moves + ability/hidden-ability inheritance + hatch cycles (FEATURE-COMPLETE BREEDING)
 
 - **Decision:** the final sub-commit of the feature-complete-breeding expansion
