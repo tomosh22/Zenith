@@ -11,10 +11,11 @@
 // a fixed RNG stream reproduces every roll bit-for-bit. No globals, no UI, no
 // overworld. RNG is the ONLY randomness source (never rand()/std::random).
 //
-// Reduced/derived rulings (see spec sections 5-7 + Documented Cuts): egg groups
-// are proxied by ZM_ARCHETYPE; gender is NOT modelled ("mother" = the first
-// parameter by convention); ability = copied from the mother; egg moves = the
-// base-evo level-1 learnset; hidden abilities / Ditto / Masuda / shiny = cut.
+// Derived rulings (see spec sections 5-8): egg groups are still proxied by
+// ZM_ARCHETYPE and compatibility is NOT yet gendered ("mother" = the first
+// parameter by convention) -- both land in box-6 SC-B. The egg's gender IS rolled
+// from the OFFSPRING species' ratio (SC-A, ZM_RollGender). Ability = copied from the
+// mother; egg moves = the base-evo level-1 learnset; Masuda / shiny = cut.
 // ============================================================================
 
 // --- tunable constants (spec sections 7-8) ---

@@ -12,7 +12,9 @@
 // tower setup (clamped L50 specs + AI tier + config) and SETTLES a streak; it
 // never runs a battle. RNG enters ONLY ZM_GenerateTowerTeam (a caller-owned
 // ZM_BattleRNG&, never the battle RNG), which draws in the EXACT order pinned by
-// the spec (section 7): per slot -> species (rejection until distinct) -> nature.
+// the spec: per slot -> species (rejection until distinct) -> nature; THEN a second
+// pass rolls each slot's gender (box-6 SC-A) -- appended after every species+nature
+// draw so those goldens are unchanged.
 // The L50 clamp mutates only the authoring SPEC (level = 50, exp = UNSPECIFIED),
 // so the locked ZM_BuildBattleMonster recompute path is reused verbatim -- a mon
 // over 50 clamps down, one under 50 scales up, and the built mon starts full HP.
@@ -191,6 +193,16 @@ void ZM_GenerateTowerTeam(u_int uStreak, ZM_BattleRNG& xRng,
 		xSpec.m_uCurExp           = uZM_EXP_UNSPECIFIED;
 		g_FillTowerMoves(eSpecies, xSpec.m_aeMoves);
 		paxOut[s] = xSpec;
+	}
+
+	// --- Gender pass (box-6 SC-A). APPENDED after EVERY species+nature draw above --
+	// a second loop over the finished slots -- so the existing per-slot species/nature
+	// draws keep their exact RNG-stream positions and the tower team-gen goldens are
+	// byte-identical. Each slot's gender rolls from its own species' ratio; a
+	// fixed-ratio (genderless / single-gender) species draws nothing. ---
+	for (u_int s = 0u; s < uCount; ++s)
+	{
+		paxOut[s].m_eGender = ZM_RollGender(paxOut[s].m_eSpecies, xRng);
 	}
 }
 

@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
+#include "Zenithmon/Source/Data/ZM_BattleRNG.h"   // ZM_BattleRNG (ZM_RollGender draws)
 
 // ============================================================================
 // ZM_SpeciesData -- the 152-species dex table (structural roster), transcribed
@@ -290,6 +291,74 @@ u_int ZM_GetSpeciesFamilySeed(ZM_SPECIES_ID eId)
 	// id gives a well-spread, deterministic, per-family-unique generator seed.
 	const u_int uFamilyId = ZM_GetSpeciesData(eId).m_uFamilyId;
 	return uFamilyId * 2654435761u;
+}
+
+namespace
+{
+	// Gender rolls draw one unbiased value in [0,8): the mainline /8 sex threshold.
+	static const u_int uZM_GENDER_ROLL_DENOM = 8u;
+}
+
+u_int ZM_GenderRatioFemaleThresholdOutOf8(ZM_GENDER_RATIO eRatio)
+{
+	// /8 female-outcome counts: MALE_7_1 = 1 female of 8, ..., FEMALE_7_1 = 7 of 8.
+	switch (eRatio)
+	{
+	case ZM_GENDER_RATIO_MALE_7_1:   return 1u;
+	case ZM_GENDER_RATIO_MALE_3_1:   return 2u;
+	case ZM_GENDER_RATIO_EVEN:       return 4u;
+	case ZM_GENDER_RATIO_FEMALE_3_1: return 6u;
+	case ZM_GENDER_RATIO_FEMALE_7_1: return 7u;
+	default:
+		// GENDERLESS / MALE_ONLY / FEMALE_ONLY: resolved with no /8 draw.
+		return uZM_GENDER_RATIO_NO_ROLL;
+	}
+}
+
+ZM_GENDER_RATIO ZM_GetSpeciesGenderRatio(ZM_SPECIES_ID eId)
+{
+	const ZM_SpeciesData& xData = ZM_GetSpeciesData(eId);
+
+	// Legendaries and the inorganic BLOB body plan have no sex (they breed only via
+	// the universal breeder, box-6 SC-B). Order matters: the body-plan test precedes
+	// the RARE test, so a hypothetical rare blob still reads GENDERLESS.
+	if (xData.m_eRarity == ZM_RARITY_LEGENDARY)  { return ZM_GENDER_RATIO_GENDERLESS; }
+	if (xData.m_eArchetype == ZM_ARCHETYPE_BLOB) { return ZM_GENDER_RATIO_GENDERLESS; }
+
+	// Starters + pseudo-legendary lines (all RARE) follow the mainline 7:1-male
+	// starter convention.
+	if (xData.m_eRarity == ZM_RARITY_RARE) { return ZM_GENDER_RATIO_MALE_7_1; }
+
+	// Every other organic COMMON/UNCOMMON species: a deterministic family-seed spread.
+	// A different seed slice than the base-stat emphasis (>> 3) decorrelates the two;
+	// EVEN is the plurality (two of the four buckets).
+	const u_int uSeed = ZM_GetSpeciesFamilySeed(eId);
+	switch ((uSeed >> 3) % 4u)
+	{
+	case 2u:  return ZM_GENDER_RATIO_MALE_3_1;
+	case 3u:  return ZM_GENDER_RATIO_FEMALE_3_1;
+	default:  return ZM_GENDER_RATIO_EVEN;   // buckets 0 and 1
+	}
+}
+
+ZM_GENDER ZM_RollGender(ZM_SPECIES_ID eId, ZM_BattleRNG& xRng)
+{
+	const ZM_GENDER_RATIO eRatio = ZM_GetSpeciesGenderRatio(eId);
+
+	// Fixed ratios resolve with NO draw, so a fixed-gender species never perturbs the
+	// pinned RNG stream.
+	switch (eRatio)
+	{
+	case ZM_GENDER_RATIO_GENDERLESS:  return ZM_GENDER_GENDERLESS;
+	case ZM_GENDER_RATIO_MALE_ONLY:   return ZM_GENDER_MALE;
+	case ZM_GENDER_RATIO_FEMALE_ONLY: return ZM_GENDER_FEMALE;
+	default: break;
+	}
+
+	// Graded ratio: one RandBelow(8) vs the female threshold.
+	const u_int uFemaleThreshold = ZM_GenderRatioFemaleThresholdOutOf8(eRatio);
+	const u_int uDraw            = xRng.RandBelow(uZM_GENDER_ROLL_DENOM);
+	return (uDraw < uFemaleThreshold) ? ZM_GENDER_FEMALE : ZM_GENDER_MALE;
 }
 
 namespace

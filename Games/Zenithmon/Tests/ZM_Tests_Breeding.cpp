@@ -125,6 +125,7 @@ namespace
 		ZENITH_ASSERT_EQ(xA.m_uLevel, xB.m_uLevel, "%s level", szLabel);
 		ZENITH_ASSERT_EQ((u_int)xA.m_eNature, (u_int)xB.m_eNature, "%s nature", szLabel);
 		ZENITH_ASSERT_EQ((u_int)xA.m_eAbility, (u_int)xB.m_eAbility, "%s ability", szLabel);
+		ZENITH_ASSERT_EQ((u_int)xA.m_eGender, (u_int)xB.m_eGender, "%s gender", szLabel);   // box-6 SC-A
 		ZENITH_ASSERT_EQ(xA.m_uCurExp, xB.m_uCurExp, "%s curexp", szLabel);
 		for (u_int i = 0; i < ZM_STAT_COUNT; ++i)
 		{
@@ -776,4 +777,329 @@ ZENITH_TEST(ZM_Data, Daycare_WithdrawResetsEggProgress)
 	ZM_BattleMonsterSpec xEgg;
 	ZENITH_ASSERT_FALSE(ZM_DaycareCollectEgg(xState, xRng, ZM_BreedingParams{}, xEgg),
 		"collect should fail after a parent leaves");
+}
+
+// ############################################################################
+// G. Gender foundation (box-6 SC-A) (ZM_Data)
+//
+// Covers the derived per-species sex distribution (ZM_GetSpeciesGenderRatio),
+// the /8 female-threshold table, the seeded ZM_RollGender (fixed = no draw,
+// graded = one RandBelow(8)), and the egg's APPENDED gender draw (IV -> nature
+// -> gender). Ratio/threshold values are pinned as literals so a gutted impl
+// fails; every derivation premise (rarity / archetype / familyId) is asserted
+// via ZM_GetSpeciesData so a data re-tag can't silently invalidate a case.
+// ############################################################################
+
+// Legendary and BLOB-archetype species derive GENDERLESS; the body-plan test
+// precedes the rarity test, so an UNCOMMON blob is still GENDERLESS.
+ZENITH_TEST(ZM_Data, Breeding_Gender_RatioGenderlessForLegendaryAndBlob)
+{
+	// Legendary -> GENDERLESS.
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_ZENARIS).m_eRarity, (u_int)ZM_RARITY_LEGENDARY,
+		"premise: ZENARIS legendary");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(ZM_SPECIES_ZENARIS), (u_int)ZM_GENDER_RATIO_GENDERLESS);
+
+	// COMMON BLOB -> GENDERLESS.
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_RUBBLET).m_eArchetype, (u_int)ZM_ARCHETYPE_BLOB,
+		"premise: RUBBLET blob");
+	ZENITH_ASSERT_NE((u_int)ZM_GetSpeciesData(ZM_SPECIES_RUBBLET).m_eRarity, (u_int)ZM_RARITY_LEGENDARY);
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(ZM_SPECIES_RUBBLET), (u_int)ZM_GENDER_RATIO_GENDERLESS);
+
+	// UNCOMMON BLOB -> still GENDERLESS (archetype dominates rarity).
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_SLAGLET).m_eArchetype, (u_int)ZM_ARCHETYPE_BLOB);
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_SLAGLET).m_eRarity, (u_int)ZM_RARITY_UNCOMMON);
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(ZM_SPECIES_SLAGLET), (u_int)ZM_GENDER_RATIO_GENDERLESS);
+}
+
+// RARE (non-blob) lines -- starters + pseudo-legendaries -- follow the 7:1-male
+// starter convention.
+ZENITH_TEST(ZM_Data, Breeding_Gender_RatioMale71ForRareLines)
+{
+	const ZM_SPECIES_ID aeRare[] = {
+		ZM_SPECIES_FERNFAWN,   // F01 starter
+		ZM_SPECIES_KINDLET,    // F02 starter
+		ZM_SPECIES_FINLET,     // F03 starter
+		ZM_SPECIES_WYRMLING,   // F17 pseudo-legendary
+	};
+	for (u_int i = 0; i < (u_int)(sizeof(aeRare) / sizeof(aeRare[0])); ++i)
+	{
+		ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(aeRare[i]).m_eRarity, (u_int)ZM_RARITY_RARE,
+			"premise: species %u is RARE", i);
+		ZENITH_ASSERT_NE((u_int)ZM_GetSpeciesData(aeRare[i]).m_eArchetype, (u_int)ZM_ARCHETYPE_BLOB,
+			"premise: species %u is not a blob", i);
+		ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(aeRare[i]), (u_int)ZM_GENDER_RATIO_MALE_7_1,
+			"RARE line %u should be MALE_7_1", i);
+	}
+}
+
+// Ordinary (COMMON/UNCOMMON, non-blob) species take the deterministic family-seed
+// spread over MALE_3_1 / FEMALE_3_1 / EVEN. The exact ratios were computed offline
+// from familyId * 2654435761: F04 bucket 0 -> EVEN, F05 bucket 2 -> MALE_3_1,
+// F09 bucket 3 -> FEMALE_3_1. familyId is pinned so a re-tag is caught loudly.
+ZENITH_TEST(ZM_Data, Breeding_Gender_RatioOrdinaryFamilySeedSpread)
+{
+	// NIBBIN F05 -> MALE_3_1.
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesData(ZM_SPECIES_NIBBIN).m_uFamilyId, 5u, "premise: NIBBIN family 5");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_NIBBIN).m_eRarity, (u_int)ZM_RARITY_COMMON);
+	ZENITH_ASSERT_NE((u_int)ZM_GetSpeciesData(ZM_SPECIES_NIBBIN).m_eArchetype, (u_int)ZM_ARCHETYPE_BLOB);
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(ZM_SPECIES_NIBBIN), (u_int)ZM_GENDER_RATIO_MALE_3_1);
+
+	// PIPWIT F04 -> EVEN.
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesData(ZM_SPECIES_PIPWIT).m_uFamilyId, 4u, "premise: PIPWIT family 4");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_PIPWIT).m_eRarity, (u_int)ZM_RARITY_COMMON);
+	ZENITH_ASSERT_NE((u_int)ZM_GetSpeciesData(ZM_SPECIES_PIPWIT).m_eArchetype, (u_int)ZM_ARCHETYPE_BLOB);
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(ZM_SPECIES_PIPWIT), (u_int)ZM_GENDER_RATIO_EVEN);
+
+	// SPARKIT F09 -> FEMALE_3_1.
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesData(ZM_SPECIES_SPARKIT).m_uFamilyId, 9u, "premise: SPARKIT family 9");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_SPARKIT).m_eRarity, (u_int)ZM_RARITY_UNCOMMON);
+	ZENITH_ASSERT_NE((u_int)ZM_GetSpeciesData(ZM_SPECIES_SPARKIT).m_eArchetype, (u_int)ZM_ARCHETYPE_BLOB);
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(ZM_SPECIES_SPARKIT), (u_int)ZM_GENDER_RATIO_FEMALE_3_1);
+}
+
+// The /8 female-threshold table: graded ratios return 1/2/4/6/7; the three fixed
+// ratios return the NO_ROLL sentinel (they resolve with no draw).
+ZENITH_TEST(ZM_Data, Breeding_Gender_ThresholdTableOutOf8)
+{
+	ZENITH_ASSERT_EQ(ZM_GenderRatioFemaleThresholdOutOf8(ZM_GENDER_RATIO_MALE_7_1),   1u);
+	ZENITH_ASSERT_EQ(ZM_GenderRatioFemaleThresholdOutOf8(ZM_GENDER_RATIO_MALE_3_1),   2u);
+	ZENITH_ASSERT_EQ(ZM_GenderRatioFemaleThresholdOutOf8(ZM_GENDER_RATIO_EVEN),       4u);
+	ZENITH_ASSERT_EQ(ZM_GenderRatioFemaleThresholdOutOf8(ZM_GENDER_RATIO_FEMALE_3_1), 6u);
+	ZENITH_ASSERT_EQ(ZM_GenderRatioFemaleThresholdOutOf8(ZM_GENDER_RATIO_FEMALE_7_1), 7u);
+	// Fixed ratios: no /8 threshold.
+	ZENITH_ASSERT_EQ(ZM_GenderRatioFemaleThresholdOutOf8(ZM_GENDER_RATIO_GENDERLESS),  uZM_GENDER_RATIO_NO_ROLL);
+	ZENITH_ASSERT_EQ(ZM_GenderRatioFemaleThresholdOutOf8(ZM_GENDER_RATIO_MALE_ONLY),   uZM_GENDER_RATIO_NO_ROLL);
+	ZENITH_ASSERT_EQ(ZM_GenderRatioFemaleThresholdOutOf8(ZM_GENDER_RATIO_FEMALE_ONLY), uZM_GENDER_RATIO_NO_ROLL);
+}
+
+// A GENDERLESS-ratio species ALWAYS returns GENDERLESS and consumes ZERO draws (an
+// untouched RNG at the same seed stays lock-step); a graded species consumes EXACTLY
+// one RandBelow(8) draw.
+ZENITH_TEST(ZM_Data, Breeding_Gender_RollGenderlessNeverDrawsNorVaries)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(ZM_SPECIES_ZENARIS), (u_int)ZM_GENDER_RATIO_GENDERLESS,
+		"premise: legendary is GENDERLESS-ratio");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(ZM_SPECIES_RUBBLET), (u_int)ZM_GENDER_RATIO_GENDERLESS,
+		"premise: blob is GENDERLESS-ratio");
+
+	const u_int64 aulSeeds[] = { 0x1ull, 0x2ull, 0xDEADull, 0xC0FFEEull, 0x9E3779B1ull };
+	for (u_int s = 0; s < (u_int)(sizeof(aulSeeds) / sizeof(aulSeeds[0])); ++s)
+	{
+		// Always GENDERLESS (legendary AND blob), any seed.
+		ZM_BattleRNG xAny(aulSeeds[s]);
+		ZENITH_ASSERT_EQ((u_int)ZM_RollGender(ZM_SPECIES_ZENARIS, xAny), (u_int)ZM_GENDER_GENDERLESS,
+			"legendary always genderless (seed %u)", s);
+		ZENITH_ASSERT_EQ((u_int)ZM_RollGender(ZM_SPECIES_RUBBLET, xAny), (u_int)ZM_GENDER_GENDERLESS,
+			"blob always genderless (seed %u)", s);
+
+		// Zero draws: the rolled RNG stays in lock-step with an untouched one.
+		ZM_BattleRNG xRolled(aulSeeds[s]);
+		ZM_BattleRNG xRef(aulSeeds[s]);
+		ZM_RollGender(ZM_SPECIES_ZENARIS, xRolled);   // must not advance the stream
+		for (u_int k = 0; k < 4u; ++k)
+		{
+			ZENITH_ASSERT_EQ(xRolled.RandBelow(64u), xRef.RandBelow(64u),
+				"genderless roll perturbed the stream (seed %u, k %u)", s, k);
+		}
+	}
+
+	// Contrast: a graded roll consumes EXACTLY one RandBelow(8) draw.
+	ZM_BattleRNG xGraded(0x5150ull);
+	ZM_BattleRNG xManual(0x5150ull);
+	ZM_RollGender(ZM_SPECIES_FERNFAWN, xGraded);   // MALE_7_1 -> one draw
+	xManual.RandBelow(8u);                          // manually consume one
+	for (u_int k = 0; k < 4u; ++k)
+	{
+		ZENITH_ASSERT_EQ(xGraded.RandBelow(32u), xManual.RandBelow(32u),
+			"graded roll must consume exactly one draw (k %u)", k);
+	}
+}
+
+// Same seed -> same gender, across several graded species (which never yield GENDERLESS).
+ZENITH_TEST(ZM_Data, Breeding_Gender_RollDeterministicSameSeed)
+{
+	const ZM_SPECIES_ID aeSpecies[] = {
+		ZM_SPECIES_FERNFAWN,   // MALE_7_1
+		ZM_SPECIES_PIPWIT,     // EVEN
+		ZM_SPECIES_SPARKIT,    // FEMALE_3_1
+		ZM_SPECIES_NIBBIN,     // MALE_3_1
+	};
+	const u_int64 aulSeeds[] = { 0x11ull, 0x2222ull, 0x333333ull, 0xABCDEF01ull };
+	for (u_int sp = 0; sp < (u_int)(sizeof(aeSpecies) / sizeof(aeSpecies[0])); ++sp)
+	{
+		for (u_int s = 0; s < (u_int)(sizeof(aulSeeds) / sizeof(aulSeeds[0])); ++s)
+		{
+			ZM_BattleRNG xA(aulSeeds[s]);
+			ZM_BattleRNG xB(aulSeeds[s]);
+			const ZM_GENDER eA = ZM_RollGender(aeSpecies[sp], xA);
+			const ZM_GENDER eB = ZM_RollGender(aeSpecies[sp], xB);
+			ZENITH_ASSERT_EQ((u_int)eA, (u_int)eB, "same seed same gender (sp %u seed %u)", sp, s);
+			ZENITH_ASSERT_NE((u_int)eA, (u_int)ZM_GENDER_GENDERLESS,
+				"graded species never genderless (sp %u seed %u)", sp, s);
+		}
+	}
+}
+
+// MALE_7_1 (female threshold 1) rolls FEMALE in ~1/8 of a large single-stream sample;
+// assert the count within a wide +-40% band [600,1400] of N/8 == 1000 across N == 8000.
+ZENITH_TEST(ZM_Data, Breeding_Gender_RollMale71DistributionAboutOneEighth)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(ZM_SPECIES_FERNFAWN), (u_int)ZM_GENDER_RATIO_MALE_7_1,
+		"premise: FERNFAWN is MALE_7_1");
+
+	const u_int uN = 8000u;
+	ZM_BattleRNG xRng(0x7E571357ull);   // one long stream -> uniform RandBelow(8)
+	u_int uFemale = 0u;
+	u_int uMale   = 0u;
+	for (u_int i = 0; i < uN; ++i)
+	{
+		const ZM_GENDER e = ZM_RollGender(ZM_SPECIES_FERNFAWN, xRng);
+		if (e == ZM_GENDER_FEMALE)    { ++uFemale; }
+		else if (e == ZM_GENDER_MALE) { ++uMale; }
+	}
+	ZENITH_ASSERT_EQ(uFemale + uMale, uN, "every graded roll is male or female");
+	ZENITH_ASSERT_GE(uFemale, 600u,  "MALE_7_1 female count too low (got %u)", uFemale);
+	ZENITH_ASSERT_LE(uFemale, 1400u, "MALE_7_1 female count too high (got %u)", uFemale);
+	ZENITH_ASSERT_GT(uMale, uFemale, "MALE_7_1 must be male-majority");
+}
+
+// EVEN (female threshold 4) rolls FEMALE ~half the time; assert within [3200,4800] of
+// N/2 == 4000 across N == 8000.
+ZENITH_TEST(ZM_Data, Breeding_Gender_RollEvenDistributionAboutHalf)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(ZM_SPECIES_PIPWIT), (u_int)ZM_GENDER_RATIO_EVEN,
+		"premise: PIPWIT is EVEN");
+
+	const u_int uN = 8000u;
+	ZM_BattleRNG xRng(0xE5E5E5E5ull);
+	u_int uFemale = 0u;
+	u_int uMale   = 0u;
+	for (u_int i = 0; i < uN; ++i)
+	{
+		const ZM_GENDER e = ZM_RollGender(ZM_SPECIES_PIPWIT, xRng);
+		if (e == ZM_GENDER_FEMALE)    { ++uFemale; }
+		else if (e == ZM_GENDER_MALE) { ++uMale; }
+	}
+	ZENITH_ASSERT_EQ(uFemale + uMale, uN, "every EVEN roll is male or female");
+	ZENITH_ASSERT_GE(uFemale, 3200u, "EVEN female count too low (got %u)", uFemale);
+	ZENITH_ASSERT_LE(uFemale, 4800u, "EVEN female count too high (got %u)", uFemale);
+}
+
+// The egg's gender equals ZM_RollGender(offspring) taken at the SAME RNG position
+// (AFTER the IV + nature draws). The expected is derived by replaying the local oracle
+// (IV -> nature, advancing the RNG) then rolling gender -- never by calling ZM_GenerateEgg.
+ZENITH_TEST(ZM_Data, Breeding_Gender_EggGenderMatchesRollGenderAtPosition)
+{
+	const u_int aMotherIV[ZM_STAT_COUNT] = { 2u, 8u, 14u, 20u, 26u, 30u };
+	const u_int aFatherIV[ZM_STAT_COUNT] = { 30u, 26u, 20u, 14u, 8u, 2u };
+	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV);   // base = FERNFAWN
+	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV);
+	const ZM_SPECIES_ID eOffspring = ZM_GetBaseEvolution(ZM_SPECIES_SYLVASTAG);
+	ZENITH_ASSERT_EQ((u_int)eOffspring, (u_int)ZM_SPECIES_FERNFAWN, "premise: offspring is FERNFAWN (MALE_7_1)");
+
+	u_int uFemale = 0u;
+	u_int uMale   = 0u;
+	const u_int uN = 256u;
+	for (u_int i = 0; i < uN; ++i)
+	{
+		const u_int64 ulSeed = (u_int64)(i + 1u) * 0x9E3779B97F4A7C15ull;
+
+		ZM_BattleRNG xRng(ulSeed);
+		const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
+
+		// Oracle: replay IV + nature (advances the RNG), then roll gender at that position.
+		ZM_BattleRNG xRngO(ulSeed);
+		OracleGenerate(aMotherIV, aFatherIV, false, ZM_NATURE_COUNT, xRngO);
+		const ZM_GENDER eExpected = ZM_RollGender(eOffspring, xRngO);
+
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_eGender, (u_int)eExpected, "egg gender vs positioned roll (i %u)", i);
+		ZENITH_ASSERT_NE((u_int)xEgg.m_eGender, (u_int)ZM_GENDER_GENDERLESS,
+			"graded offspring egg is gendered (i %u)", i);
+		if (xEgg.m_eGender == ZM_GENDER_FEMALE) { ++uFemale; } else { ++uMale; }
+	}
+	// Over 256 seeds both sexes must appear (~1/8 female), proving the draw is live.
+	ZENITH_ASSERT_GT(uFemale, 0u, "expected at least one female across seeds");
+	ZENITH_ASSERT_GT(uMale,   0u, "expected at least one male across seeds");
+}
+
+// A genderless-offspring egg (BLOB base evo) skips the gender draw and is always
+// GENDERLESS, regardless of seed.
+ZENITH_TEST(ZM_Data, Breeding_Gender_EggGenderlessOffspringAlwaysGenderless)
+{
+	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_RUBBLET, 20u);   // BLOB, base = RUBBLET
+	const ZM_BattleMonsterSpec xFather = MakeSpecUniform(ZM_SPECIES_SLAGLET, 20u);   // BLOB
+	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xMother, xFather), "premise: two blobs are compatible");
+	const ZM_SPECIES_ID eOffspring = ZM_GetBaseEvolution(ZM_SPECIES_RUBBLET);
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesGenderRatio(eOffspring), (u_int)ZM_GENDER_RATIO_GENDERLESS,
+		"premise: offspring ratio is GENDERLESS");
+
+	const u_int64 aulSeeds[] = { 0x1ull, 0x99ull, 0xBEEFull, 0x12345678ull, 0xFEEDFACEull };
+	for (u_int s = 0; s < (u_int)(sizeof(aulSeeds) / sizeof(aulSeeds[0])); ++s)
+	{
+		ZM_BattleRNG xRng(aulSeeds[s]);
+		const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_eSpecies, (u_int)ZM_SPECIES_RUBBLET, "offspring species (seed %u)", s);
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_eGender, (u_int)ZM_GENDER_GENDERLESS, "genderless egg (seed %u)", s);
+	}
+}
+
+// REGRESSION GUARD: appending the gender draw does NOT perturb the IV/nature goldens.
+// Same seed + IVs as Breeding_Egg_Golden_Seed1; IV + nature still match the pre-gender
+// oracle, and gender is the roll taken at the post-nature position.
+ZENITH_TEST(ZM_Data, Breeding_Gender_AppendedDrawDoesNotPerturbIVNature)
+{
+	const u_int aMotherIV[ZM_STAT_COUNT] = { 0u, 6u, 12u, 18u, 24u, 31u };
+	const u_int aFatherIV[ZM_STAT_COUNT] = { 31u, 25u, 19u, 13u, 7u, 1u };
+	const ZM_BattleMonsterSpec xMother = MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV);
+	const ZM_BattleMonsterSpec xFather = MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV);
+
+	ZM_BattleRNG xRng(0xA1ull);   // matches the seed 1 golden
+	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
+
+	ZM_BattleRNG xRngO(0xA1ull);
+	const OracleEgg xOracle = OracleGenerate(aMotherIV, aFatherIV, false, ZM_NATURE_COUNT, xRngO);
+	// IV + nature byte-identical to the pre-gender oracle: the appended draw perturbed nothing.
+	AssertEggMatchesOracle(xEgg, xOracle, "regression");
+	// Gender = ZM_RollGender at the SAME post-nature RNG position.
+	const ZM_GENDER eGender = ZM_RollGender(ZM_SPECIES_FERNFAWN, xRngO);
+	ZENITH_ASSERT_EQ((u_int)xEgg.m_eGender, (u_int)eGender, "egg gender = positioned roll");
+	ZENITH_ASSERT_NE((u_int)xEgg.m_eGender, (u_int)ZM_GENDER_GENDERLESS, "FERNFAWN egg is gendered");
+}
+
+// A spec that never sets gender defaults GENDERLESS (keeps every pre-SC-A golden
+// byte-safe), and ZM_BuildBattleMonster copies gender verbatim onto the battle monster.
+ZENITH_TEST(ZM_Data, Breeding_Gender_SpecDefaultsGenderlessAndBuildCopies)
+{
+	const ZM_BattleMonsterSpec xDefault;
+	ZENITH_ASSERT_EQ((u_int)xDefault.m_eGender, (u_int)ZM_GENDER_GENDERLESS, "spec default gender GENDERLESS");
+
+	// An unset-gender spec builds a GENDERLESS monster.
+	const ZM_BattleMonster xBuiltDefault = ZM_BuildBattleMonster(MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u, 50u));
+	ZENITH_ASSERT_EQ((u_int)xBuiltDefault.m_eGender, (u_int)ZM_GENDER_GENDERLESS, "unset spec builds GENDERLESS mon");
+
+	// Build copies an explicit gender verbatim.
+	ZM_BattleMonsterSpec xSpec = MakeSpecUniform(ZM_SPECIES_NIBBIN, 31u, 50u);
+	xSpec.m_eGender = ZM_GENDER_FEMALE;
+	ZENITH_ASSERT_EQ((u_int)ZM_BuildBattleMonster(xSpec).m_eGender, (u_int)ZM_GENDER_FEMALE, "build copies FEMALE");
+	xSpec.m_eGender = ZM_GENDER_MALE;
+	ZENITH_ASSERT_EQ((u_int)ZM_BuildBattleMonster(xSpec).m_eGender, (u_int)ZM_GENDER_MALE, "build copies MALE");
+}
+
+// End-to-end: a gendered egg (offspring FERNFAWN) built into a battle monster carries
+// the egg's rolled gender.
+ZENITH_TEST(ZM_Data, Breeding_Gender_EggBuiltMonsterCarriesEggGender)
+{
+	const ZM_BattleMonsterSpec xMother = MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 20u);
+	const ZM_BattleMonsterSpec xFather = MakeSpecUniform(ZM_SPECIES_NIBBIN, 20u);
+	const u_int64 aulSeeds[] = { 0x1ull, 0x2ull, 0x2222ull, 0x9E3779B1ull, 0xF00Dull };
+	for (u_int s = 0; s < (u_int)(sizeof(aulSeeds) / sizeof(aulSeeds[0])); ++s)
+	{
+		ZM_BattleRNG xRng(aulSeeds[s]);
+		const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_eSpecies, (u_int)ZM_SPECIES_FERNFAWN, "offspring FERNFAWN (seed %u)", s);
+		ZENITH_ASSERT_NE((u_int)xEgg.m_eGender, (u_int)ZM_GENDER_GENDERLESS, "gendered egg (seed %u)", s);
+
+		const ZM_BattleMonster xBuilt = ZM_BuildBattleMonster(xEgg);
+		ZENITH_ASSERT_EQ((u_int)xBuilt.m_eGender, (u_int)xEgg.m_eGender, "built mon carries egg gender (seed %u)", s);
+	}
 }

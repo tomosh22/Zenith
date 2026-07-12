@@ -43,6 +43,11 @@ struct ZM_BattleMonsterSpec
 	// APPENDED for aggregate-initializer compatibility. A specified value is
 	// clamped into this level's cumulative-exp band; UNSPECIFIED derives the floor.
 	u_int         m_uCurExp = uZM_EXP_UNSPECIFIED;
+	// APPENDED (box-6 SC-A gender foundation). Neutral GENDERLESS default -- like
+	// m_eNature=FERAL / m_eAbility=NONE -- so every existing spec that never sets
+	// gender keeps current behaviour; gender has no battle effect yet. Wild-gen +
+	// breeding egg-gen override it via ZM_RollGender.
+	ZM_GENDER     m_eGender = ZM_GENDER_GENDERLESS;
 };
 
 struct ZM_BattleMonster
@@ -81,6 +86,9 @@ struct ZM_BattleMonster
 	bool            m_bDefeatCredited = false;             // this mon's faint already awarded exactly once
 	bool            m_bLevelledThisBattle = false;         // terminal evolution settlement input
 	bool            m_bEvolutionQueued = false;             // terminal queue dedupe; cleared by ZM_Evolve
+	// box-6 SC-A gender -- APPENDED (POD stays append-only). Copied verbatim from the
+	// spec at build; inert in battle (no event, no stat effect), so goldens are byte-safe.
+	ZM_GENDER       m_eGender = ZM_GENDER_GENDERLESS;
 
 	bool IsFainted() const { return m_uCurHP == 0u; }     // derived, never stored (no desync)
 };

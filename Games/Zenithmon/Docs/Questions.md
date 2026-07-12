@@ -27,7 +27,9 @@
 
 ---
 
-### [OPEN] Q-2026-07-12-004 -- ZM_Breeding: reduced model on the shipped data (no gender / egg groups / egg moves)
+### [RESOLVED] Q-2026-07-12-004 -- ZM_Breeding: reduced model on the shipped data (no gender / egg groups / egg moves)
+
+**Resolution (2026-07-12, ZM-D-048):** the user directed FULL mainline breeding + gender. The reductions are removed (they under-delivered against Scope.md Section 1's "breeding/eggs/daycare" + "mainline mechanics only"). Now implementing across SC-A (gender foundation, LANDED) / SC-B (egg groups + GLOOPET Ditto + gendered compatibility) / SC-C (egg moves + ability/hidden-ability inheritance + hatch-cycle data). Confirmed boundary decisions: Ditto=GLOOPET; hidden abilities IN; shiny/Masuda deferred to S5+; hatch-cycle data now (step-driving at S9). See ZM-D-048.
 
 **Question:** ratify (or override) the reduced breeding model implemented for S2 box-6 SC1. The species table ships with NO egg-group, gender, hatch-cycle, egg-move, or species->ability data; adding any of those is a data-model EXPANSION (the scope-change direction), so I built breeding on the data that exists and flagged the reductions rather than expanding the model unilaterally.
 

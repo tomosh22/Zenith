@@ -2,6 +2,10 @@
 
 #include "Zenithmon/Source/Data/ZM_Types.h"
 
+// Forward declaration: ZM_RollGender takes the seeded RNG by reference only, so this
+// pure data header stays free of the RNG header (ZM_SpeciesData.cpp includes it).
+class ZM_BattleRNG;
+
 // ============================================================================
 // ZM_SpeciesData -- the species dex table (S1 data core).
 //
@@ -55,6 +59,43 @@ enum ZM_SIZE_CLASS : u_int
 
 	ZM_SIZE_COUNT
 };
+
+// The three sexes a monster can carry (box-6 SC-A). GENDERLESS covers legendaries
+// and the inorganic BLOB body plan, which reproduce only via the universal breeder
+// (box-6 SC-B). APPEND-only + save-stable; ZM_GENDER_COUNT is the sentinel, never a
+// stored value.
+enum ZM_GENDER : u_int
+{
+	ZM_GENDER_MALE,
+	ZM_GENDER_FEMALE,
+	ZM_GENDER_GENDERLESS,
+
+	ZM_GENDER_COUNT
+};
+
+// Per-species sex distribution (box-6 SC-A). The three FIXED ratios (GENDERLESS /
+// MALE_ONLY / FEMALE_ONLY) resolve with NO RNG draw; the five GRADED ratios roll one
+// RandBelow(8) against a female threshold (see ZM_GenderRatioFemaleThresholdOutOf8).
+// APPEND-only + save-stable; the SC-A derivation only emits a subset (GENDERLESS,
+// MALE_7_1, EVEN, MALE_3_1, FEMALE_3_1) -- the rest are reserved for later tuning.
+enum ZM_GENDER_RATIO : u_int
+{
+	ZM_GENDER_RATIO_GENDERLESS,
+	ZM_GENDER_RATIO_MALE_ONLY,
+	ZM_GENDER_RATIO_FEMALE_ONLY,
+	ZM_GENDER_RATIO_MALE_7_1,
+	ZM_GENDER_RATIO_MALE_3_1,
+	ZM_GENDER_RATIO_EVEN,
+	ZM_GENDER_RATIO_FEMALE_3_1,
+	ZM_GENDER_RATIO_FEMALE_7_1,
+
+	ZM_GENDER_RATIO_COUNT
+};
+
+// Sentinel returned by ZM_GenderRatioFemaleThresholdOutOf8 for the three fixed
+// ratios: they carry no /8 female threshold because ZM_RollGender resolves them
+// without a RandBelow(8) draw.
+static const u_int uZM_GENDER_RATIO_NO_ROLL = ~0u;
 
 // Every species, in dex order: family F01..F56 (each family's stages in order),
 // then the three legendaries. IDs are contiguous 0..ZM_SPECIES_COUNT-1.
@@ -319,6 +360,25 @@ const char*				ZM_GetSpeciesName(ZM_SPECIES_ID eId);
 // shared by all stages of a family (S4 ZM_CreatureGen input).
 ZM_SIZE_CLASS			ZM_GetSpeciesSizeClass(ZM_SPECIES_ID eId);
 u_int					ZM_GetSpeciesFamilySeed(ZM_SPECIES_ID eId);
+
+// The /8 female threshold for a graded ratio (box-6 SC-A): ZM_RollGender returns
+// FEMALE when RandBelow(8) < threshold, else MALE. The three fixed ratios
+// (GENDERLESS / MALE_ONLY / FEMALE_ONLY) return uZM_GENDER_RATIO_NO_ROLL -- they
+// never roll. Pure, no RNG.
+u_int					ZM_GenderRatioFemaleThresholdOutOf8(ZM_GENDER_RATIO eRatio);
+
+// Systematically-derived per-species sex distribution (box-6 SC-A, mirrors the
+// ZM-D-021/023 derived-accessor precedent -- the dex ROW is untouched): LEGENDARY
+// and the inorganic BLOB body plan are GENDERLESS; RARE (starters + pseudo-legendary
+// lines) are 7:1 male; every other organic species takes a deterministic family-seed
+// spread over EVEN / 3:1-male / 3:1-female. Deterministic, no RNG.
+ZM_GENDER_RATIO			ZM_GetSpeciesGenderRatio(ZM_SPECIES_ID eId);
+
+// Roll a concrete gender for a freshly-created monster of eId (wild-gen, breeding
+// egg-gen). One RandBelow(8) vs the ratio's female threshold, or NO draw for a fixed
+// ratio (so a fixed-gender species never perturbs the pinned RNG stream). The sole
+// gender randomness source; deterministic in xRng.
+ZM_GENDER				ZM_RollGender(ZM_SPECIES_ID eId, ZM_BattleRNG& xRng);
 
 // Systematically-derived base stats (ZM-D-021): a per-archetype stat profile
 // scaled by evolution stage + rarity, with a deterministic per-family emphasis

@@ -26,7 +26,10 @@ assets are procedurally generated and baked to disk by tools builds.
   physical/special split, stat stages, status conditions, catching, switching,
   items, exp/levels, evolution, trainer AI.
 - **Battle/progression extras:** abilities, natures, IVs/EVs, weather + terrain
-  battle effects, breeding/eggs/daycare. No Dynamax-style gimmick.
+  battle effects, breeding/eggs/daycare -- **full mainline breeding** (gender +
+  gender ratios, real egg groups, a Ditto-analog [GLOOPET], egg moves, and ability
+  + hidden-ability inheritance; see ZM-D-048). Shiny variants + the Masuda method
+  are DEFERRED to S5+ presentation (cosmetic; not cut). No Dynamax-style gimmick.
 - **Post-game:** Champion rematch + Battle Tower (endless streak, rental teams,
   escalating AI).
 - No audio. No networking/multiplayer/trading.

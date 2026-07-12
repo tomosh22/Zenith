@@ -6,11 +6,12 @@
 #include "Zenithmon/Source/Data/ZM_MoveData.h"      // ZM_MOVE_NONE
 
 // ============================================================================
-// ZM_Breeding implementation (S2 box 6 SC1). Pure, seeded, headless. Base-evo
-// derivation and compatibility are RNG-free; ZM_GenerateEgg draws from the one
-// sanctioned ZM_BattleRNG in the EXACT order pinned by the spec (section 7):
-// IVs (pick-K-distinct then fill six) -> nature -> ability/moves/EVs (no RNG).
-// See the header banner for the reduced-mechanic rulings.
+// ZM_Breeding implementation (S2 box 6 SC1 + SC-A gender). Pure, seeded, headless.
+// Base-evo derivation and compatibility are RNG-free; ZM_GenerateEgg draws from the
+// one sanctioned ZM_BattleRNG in the EXACT order pinned by the spec (section 8):
+// IVs (pick-K-distinct then fill six) -> nature -> gender (offspring ratio) ->
+// ability/moves/EVs (no RNG). The gender draw is APPENDED after IV+nature so their
+// goldens never move. See the header banner for the reduced-mechanic rulings.
 // ============================================================================
 
 // The egg's fresh-IV cap is the [0,31] IV band (spec section 7 pins RandBelow(32)).
@@ -128,10 +129,16 @@ ZM_BattleMonsterSpec ZM_GenerateEgg(const ZM_BattleMonsterSpec& xMother,
 		xEgg.m_eNature = (ZM_NATURE)xRng.RandBelow((u_int)ZM_NATURE_COUNT);   // 0..24
 	}
 
-	// --- Step D: ability copied from the mother (NO RNG; hidden abilities cut) ---
+	// --- Step D: gender rolled from the OFFSPRING species' ratio (box-6 SC-A). This
+	// draw is APPENDED after the IV + nature draws, so every existing IV/nature golden
+	// is byte-identical; a fixed-ratio (genderless / single-gender) offspring draws
+	// nothing. This is the LAST RNG draw -- steps E/F/G below are RNG-free. ---
+	xEgg.m_eGender = ZM_RollGender(xEgg.m_eSpecies, xRng);
+
+	// --- Step E: ability copied from the mother (NO RNG; hidden abilities cut) ---
 	xEgg.m_eAbility = xMother.m_eAbility;
 
-	// --- Step E: moves = base-evo level-1 learnset, first uZM_MAX_MOVES (NO RNG) ---
+	// --- Step F: moves = base-evo level-1 learnset, first uZM_MAX_MOVES (NO RNG) ---
 	for (u_int i = 0u; i < uZM_MAX_MOVES; ++i)
 	{
 		xEgg.m_aeMoves[i] = ZM_MOVE_NONE;
@@ -146,7 +153,7 @@ ZM_BattleMonsterSpec ZM_GenerateEgg(const ZM_BattleMonsterSpec& xMother,
 		}
 	}
 
-	// --- Step F: remaining fields (NO RNG). Level 1, zero EVs, exp -> L1 floor. ---
+	// --- Step G: remaining fields (NO RNG). Level 1, zero EVs, exp -> L1 floor. ---
 	xEgg.m_uLevel = uZM_EGG_HATCH_LEVEL;
 	for (u_int i = 0u; i < ZM_STAT_COUNT; ++i)
 	{

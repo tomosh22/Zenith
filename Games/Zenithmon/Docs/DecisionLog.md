@@ -15,6 +15,56 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-12 -- ZM-D-048 -- Feature-complete breeding + gender (user-directed; fulfilling the mainline breeding scope). SC-A gender foundation.
+
+- **Decision (user, 2026-07-12):** breeding is completed to the FULL mainline
+  feature set. This is NOT a scope widening -- Scope.md Section 1 already locks in
+  "breeding/eggs/daycare" under "mainline MECHANICS only"; the box-6 SC1 model
+  (ZM-D-045) was a documented REDUCTION (Q-2026-07-12-004) that under-delivered
+  against that scope. The user directed full gender + feature-complete breeding, so
+  the reductions are removed. **Resolves Q-2026-07-12-004.**
+- **Confirmed boundary decisions (user, 2026-07-12):** (a) Ditto-analog = designate
+  the existing genderless species **GLOOPET** as a UNIVERSAL breeder (breeds with
+  anything; offspring follows the non-Ditto parent) -- no roster change; (b) hidden
+  abilities = ADD a derived second (hidden) ability slot + inheritance (also gives
+  wild mons a real derived ability for the first time); (c) shiny + Masuda method =
+  DEFERRED to S5+ (cosmetic/display, no headless-battle effect; a clean append when
+  the dex/UI exists) -- deferred, not cut; (d) egg hatch cycles = add a DERIVED
+  hatch-cycle accessor/data now; the overworld step-driving to actually hatch lands
+  at S9.
+- **Delivery:** three test-first sub-commits on top of box-6 SC1 -- SC-A gender
+  foundation (this entry), SC-B (real egg groups + GLOOPET Ditto + gendered
+  compatibility + offspring = female/non-Ditto parent), SC-C (egg moves +
+  ability/hidden-ability inheritance + the derived hatch-cycle accessor). All
+  additive: new per-species data are DERIVED accessors (the 152 species const rows
+  stay untouched), and new RNG draws APPEND after existing ones, so no existing
+  golden shifts.
+- **SC-A gender-foundation contract:** `enum ZM_GENDER { MALE, FEMALE, GENDERLESS }`
+  + `enum ZM_GENDER_RATIO` (8 buckets) in `ZM_SpeciesData.h`; `m_eGender` appended
+  LAST on `ZM_BattleMonsterSpec` + `ZM_BattleMonster` (default GENDERLESS,
+  POD-append-safe). DERIVED accessors: `ZM_GetSpeciesGenderRatio` (LEGENDARY /
+  BLOB-archetype -> GENDERLESS; RARE -> 7:1 male; else `(familySeed>>3)%4` spread
+  over EVEN / 3:1M / 3:1F), `ZM_GenderRatioFemaleThresholdOutOf8` (7:1M->1, 3:1M->2,
+  EVEN->4, 3:1F->6, 7:1F->7; fixed ratios -> NO_ROLL sentinel), `ZM_RollGender`
+  (fixed ratios draw nothing; graded do one `RandBelow(8)`, female iff draw <
+  threshold). `ZM_GenerateEgg` rolls the egg gender from the OFFSPRING ratio as the
+  LAST rng draw (order IVs -> nature -> gender) so IV/nature goldens stay
+  byte-identical; `ZM_GenerateTowerTeam` rolls gender in a SECOND pass so tower
+  species/nature goldens stay byte-identical. `ZM_BuildBattleMonster` stays pure and
+  copies gender. (Only GENDERLESS/MALE_7_1/EVEN/MALE_3_1/FEMALE_3_1 are reachable
+  from the current 152 species; the other ratio buckets are intentional headroom.)
+- **Tests:** 13 `ZM_Data` gender tests in `ZM_Tests_Breeding.cpp` (ratio derivation
+  with premises self-guarded via `ZM_GetSpeciesData`, the threshold table, roll
+  determinism + zero/one-draw lock-step + distribution bands, egg gender via an
+  INDEPENDENT oracle, and a non-perturbation regression guard re-asserting the
+  pre-gender IV/nature goldens). Adversarial review: SAFE-TO-COMMIT. Boot unit
+  baseline 1663 -> 1676.
+- **S7 forward note:** when party/daycare save-load is added at S7, the serializer
+  MUST include `m_eGender` (nothing serializes these structs today -> no current
+  regression).
+- **Reversibility:** additive; the derivation rules + the hidden-ability inheritance
+  rate + the ratio thresholds are S11-tunable. SC-B + SC-C complete the feature.
+
 ## 2026-07-12 -- ZM-D-047 -- S2 stage gate PASSED (all battle logic complete)
 
 - **Decision:** the S2 stage gate is PASSED; S2 -- the complete deterministic

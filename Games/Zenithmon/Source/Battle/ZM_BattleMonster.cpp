@@ -16,6 +16,7 @@ ZM_BattleMonster ZM_BuildBattleMonster(const ZM_BattleMonsterSpec& xSpec)
 	xMon.m_uLevel   = xSpec.m_uLevel;
 	xMon.m_eNature  = xSpec.m_eNature;
 	xMon.m_eAbility = xSpec.m_eAbility;
+	xMon.m_eGender  = xSpec.m_eGender;   // box-6 SC-A: copied verbatim (build stays pure)
 
 	// Base stats: the golden hook overrides the ZM-D-021-derived table so a
 	// pencil-verifiable golden survives a later base-stat re-tune.
