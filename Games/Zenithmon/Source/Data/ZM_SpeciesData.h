@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Zenithmon/Source/Data/ZM_Types.h"
+#include "Zenithmon/Source/Data/ZM_AbilityData.h"   // ZM_ABILITY_ID (ZM_SpeciesAbilities, box-6 SC-C)
+#include "Zenithmon/Source/Data/ZM_MoveData.h"       // ZM_MOVE_ID (ZM_EggMoves, box-6 SC-C)
 
 // Forward declaration: ZM_RollGender takes the seeded RNG by reference only, so this
 // pure data header stays free of the RNG header (ZM_SpeciesData.cpp includes it).
@@ -429,6 +431,49 @@ ZM_EggGroups			ZM_GetSpeciesEggGroups(ZM_SPECIES_ID eId);
 // gender AND egg group; two universal breeders (or universal + legendary) are
 // incompatible. Exactly one species qualifies; its evolution GLUTTONUB does not. Pure.
 bool					ZM_IsUniversalBreeder(ZM_SPECIES_ID eId);
+
+// A species' two ability slots (box-6 SC-C): a regular ability and a DISTINCT hidden
+// ability. Both are DERIVED from the species' type(s) + family seed (mirrors the
+// ZM-D-021/023 derived-accessor precedent -- no stored ability column, the dex ROW is
+// untouched). This is the source of truth for hidden-ability inheritance in breeding:
+// a monster that CARRIES its species' hidden ability can pass a hidden offspring.
+struct ZM_SpeciesAbilities
+{
+	ZM_ABILITY_ID m_eRegular;
+	ZM_ABILITY_ID m_eHidden;   // always != m_eRegular
+};
+
+// Systematically-derived { regular, hidden } ability pair for a species (box-6 SC-C):
+// the regular ability is the family-seed pick from the PRIMARY type's candidate pool; the
+// hidden is picked (by a different seed slice) from the SECONDARY type's pool, or from an
+// archetype pool for single-typed species. Both are real ZM_ABILITY_IDs and are forced
+// DISTINCT (m_eHidden != m_eRegular). Deterministic, no RNG.
+ZM_SpeciesAbilities		ZM_GetSpeciesAbilities(ZM_SPECIES_ID eId);
+
+// Upper bound on a species' derived egg-move list (sizes the return struct).
+static const u_int uZM_MAX_EGG_MOVES = 6u;
+
+// A species' derived egg-move list (box-6 SC-C): up to uZM_MAX_EGG_MOVES moves, all real
+// ZM_MOVE_IDs, ordered by move-table index.
+struct ZM_EggMoves
+{
+	u_int      m_uCount;
+	ZM_MOVE_ID m_aeMoves[uZM_MAX_EGG_MOVES];
+};
+
+// Systematically-derived egg moves for a species (box-6 SC-C, mirrors the ZM-D-021/023
+// derived-accessor precedent). Models the egg-group cohort's reachable moves as the moves
+// of the species' OWN type(s) that it does NOT learn by level-up (ZM_GetSpeciesLearnset),
+// taken in move-table order and capped at uZM_MAX_EGG_MOVES. Legendaries return an empty
+// list. The result is disjoint from the species' level-up learnset by construction.
+// Deterministic, no RNG; breeding inherits these when a parent already knows the move.
+ZM_EggMoves				ZM_GetSpeciesEggMoves(ZM_SPECIES_ID eId);
+
+// Systematically-derived steps-to-hatch proxy for a species (box-6 SC-C, DATA ONLY -- the
+// overworld step-driving that will consume it is deferred to S9). Derived from rarity
+// (rarer lines incubate longer) plus a size nudge (bulkier body plans a little longer), so
+// it is deterministic and higher for rare/legendary lines. No RNG.
+u_int					ZM_GetSpeciesHatchCycles(ZM_SPECIES_ID eId);
 
 // Systematically-derived base stats (ZM-D-021): a per-archetype stat profile
 // scaled by evolution stage + rarity, with a deterministic per-family emphasis

@@ -6,13 +6,16 @@
 #include "Zenithmon/Source/Data/ZM_MoveData.h"      // ZM_MOVE_NONE
 
 // ============================================================================
-// ZM_Breeding implementation (S2 box 6 SC1 + SC-A gender + SC-B egg groups/roles).
-// Pure, seeded, headless. Base-evo derivation, egg-group/gendered compatibility and
-// parent-role selection are RNG-free; ZM_GenerateEgg draws from the one sanctioned
-// ZM_BattleRNG in the EXACT order pinned by the spec (section 8): IVs (pick-K-distinct
-// then fill six) -> nature -> gender (offspring ratio) -> ability/moves/EVs (no RNG).
-// SC-B changes only WHICH parent each draw reads from (the FEMALE / non-universal side
-// is the "mother"), never the draw ORDER, so every IV/nature draw is byte-identical.
+// ZM_Breeding implementation (S2 box 6 SC1 + SC-A gender + SC-B egg groups/roles +
+// SC-C egg moves / hidden abilities). Pure, seeded, headless. Base-evo derivation,
+// egg-group/gendered compatibility and parent-role selection are RNG-free; ZM_GenerateEgg
+// draws from the one sanctioned ZM_BattleRNG in the EXACT order pinned by the spec
+// (section 8): IVs (pick-K-distinct then fill six) -> nature -> gender (offspring ratio)
+// -> conditional hidden-ability. The SC-C hidden-ability draw is CONDITIONAL (fires only
+// when the mother carries her hidden ability) and APPENDED last, so it never perturbs the
+// IV/nature/gender stream for a fixture whose mother carries her regular ability. Egg-move
+// inheritance + role/species selection are RNG-free. SC-B changes only WHICH parent each
+// draw reads from (the FEMALE / non-universal side is the "mother"), never the draw ORDER.
 // See the header banner for the reduced-mechanic rulings.
 // ============================================================================
 
@@ -204,13 +207,31 @@ ZM_BattleMonsterSpec ZM_GenerateEgg(const ZM_BattleMonsterSpec& xParentA,
 	// --- Step D: gender rolled from the OFFSPRING species' ratio (box-6 SC-A). This
 	// draw is APPENDED after the IV + nature draws, so every existing IV/nature golden
 	// is byte-identical; a fixed-ratio (genderless / single-gender) offspring draws
-	// nothing. This is the LAST RNG draw -- steps E/F/G below are RNG-free. ---
+	// nothing. The only draw that can follow is the CONDITIONAL hidden-ability roll
+	// (step E), which fires only when the mother carries her hidden ability. ---
 	xEgg.m_eGender = ZM_RollGender(xEgg.m_eSpecies, xRng);
 
-	// --- Step E: ability copied from the mother (NO RNG; hidden abilities cut) ---
-	xEgg.m_eAbility = pxMother->m_eAbility;
+	// --- Step E: ability inheritance (box-6 SC-C). Default = the MOTHER's ability
+	// (unchanged from SC-B). HIDDEN-ability rule: if the mother CARRIES her species'
+	// hidden ability, the offspring inherits the OFFSPRING species' hidden ability with a
+	// Chance(uZM_BREED_HIDDEN_INHERIT_PCT, 100) draw, else its regular ability. This
+	// CONDITIONAL draw is APPENDED after the gender roll -- so when the mother carries her
+	// REGULAR ability (every existing fixture) it does NOT fire, and the IV/nature/gender
+	// stream AND the copied ability stay byte-identical. Draw order: IV -> nature ->
+	// gender -> [conditional hidden]. ---
+	const ZM_SpeciesAbilities xMotherAbilities = ZM_GetSpeciesAbilities(pxMother->m_eSpecies);
+	if (pxMother->m_eAbility == xMotherAbilities.m_eHidden)
+	{
+		const ZM_SpeciesAbilities xEggAbilities = ZM_GetSpeciesAbilities(xEgg.m_eSpecies);
+		xEgg.m_eAbility = xRng.Chance(uZM_BREED_HIDDEN_INHERIT_PCT, 100u)
+			? xEggAbilities.m_eHidden : xEggAbilities.m_eRegular;
+	}
+	else
+	{
+		xEgg.m_eAbility = pxMother->m_eAbility;
+	}
 
-	// --- Step F: moves = base-evo level-1 learnset, first uZM_MAX_MOVES (NO RNG) ---
+	// --- Step F1: moves = base-evo level-1 learnset, first uZM_MAX_MOVES (NO RNG) ---
 	for (u_int i = 0u; i < uZM_MAX_MOVES; ++i)
 	{
 		xEgg.m_aeMoves[i] = ZM_MOVE_NONE;
@@ -223,6 +244,46 @@ ZM_BattleMonsterSpec ZM_GenerateEgg(const ZM_BattleMonsterSpec& xParentA,
 		{
 			xEgg.m_aeMoves[uMoveSlot++] = xLearnset.m_axMoves[k].m_eMove;
 		}
+	}
+
+	// --- Step F2: egg-move inheritance (box-6 SC-C, NO RNG). For each of the OFFSPRING
+	// species' derived egg moves in list order, if EITHER parent currently knows it, drop
+	// it into the FIRST empty move slot -- never evicting an existing move and stopping at
+	// the 4-move cap. Egg moves are disjoint from the offspring's level-up learnset (which
+	// filled the L1 slots), so no duplication is possible. RNG-free, so it never perturbs
+	// the pinned draw order (an empty-moveset parent inherits nothing, keeping every
+	// existing egg-move golden byte-identical). ---
+	const ZM_EggMoves xEggMoves = ZM_GetSpeciesEggMoves(xEgg.m_eSpecies);
+	for (u_int e = 0u; e < xEggMoves.m_uCount; ++e)
+	{
+		// First empty slot; stop entirely once the egg is full (4-move cap, no eviction).
+		u_int uEmpty = uZM_MAX_MOVES;
+		for (u_int s = 0u; s < uZM_MAX_MOVES; ++s)
+		{
+			if (xEgg.m_aeMoves[s] == ZM_MOVE_NONE) { uEmpty = s; break; }
+		}
+		if (uEmpty == uZM_MAX_MOVES)
+		{
+			break;
+		}
+
+		const ZM_MOVE_ID eMove = xEggMoves.m_aeMoves[e];
+
+		// Inherit only a move a parent actually knows.
+		bool bParentKnows = false;
+		for (u_int p = 0u; p < uZM_MAX_MOVES && !bParentKnows; ++p)
+		{
+			if (pxMother->m_aeMoves[p] == eMove || pxFather->m_aeMoves[p] == eMove)
+			{
+				bParentKnows = true;
+			}
+		}
+		if (!bParentKnows)
+		{
+			continue;
+		}
+
+		xEgg.m_aeMoves[uEmpty] = eMove;
 	}
 
 	// --- Step G: remaining fields (NO RNG). Level 1, zero EVs, exp -> L1 floor. ---

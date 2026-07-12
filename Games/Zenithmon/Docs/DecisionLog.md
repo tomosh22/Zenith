@@ -15,6 +15,50 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-12 -- ZM-D-050 -- Breeding SC-C: egg moves + ability/hidden-ability inheritance + hatch cycles (FEATURE-COMPLETE BREEDING)
+
+- **Decision:** the final sub-commit of the feature-complete-breeding expansion
+  (ZM-D-048). Adds derived species abilities {regular, hidden}, egg moves, and a
+  hatch-cycle accessor, and wires ability/hidden-ability + egg-move inheritance into
+  `ZM_GenerateEgg`. **Breeding is now FEATURE-COMPLETE** (mainline mechanics: gender +
+  ratios, real egg groups, GLOOPET Ditto-analog, gendered compatibility, IV
+  [Heirloom Knot] + nature [Stasis Stone] inheritance, ability + hidden-ability
+  inheritance, egg moves, hatch cycles). Cosmetic shiny/Masuda remains DEFERRED to
+  S5+ (ZM-D-048).
+- **Derived accessors (no stored columns):** `ZM_GetSpeciesAbilities(id)` ->
+  `{m_eRegular, m_eHidden}` (distinct; regular from the types[0] ability pool at
+  `familySeed%count`, hidden from the types[1]-or-archetype pool at
+  `(familySeed>>5)%count`, distinctness fixup). `ZM_GetSpeciesEggMoves(id)` -> up to 6
+  own-type moves not in the species' level-up learnset (legendary empty), id order.
+  `ZM_GetSpeciesHatchCycles(id)` -> rarity base {10/15/25/40} + size class (0..4);
+  data-only (overworld step-driving deferred to S9).
+- **Inheritance in ZM_GenerateEgg:** (ability) if the mother carries HER species'
+  hidden ability, the offspring gets its own species' hidden ability with probability
+  `uZM_BREED_HIDDEN_INHERIT_PCT` (60%, a `Chance(60,100)` draw) else its regular;
+  otherwise the offspring copies the mother's ability with NO draw. This hidden draw
+  is APPENDED AFTER the gender draw (order IV -> nature -> gender -> [conditional
+  hidden]) and fires ONLY for a hidden-carrying mother, so every pre-existing fixture
+  (mother with a non-hidden ability + empty movesets) is byte-identical. (egg moves,
+  RNG-FREE) after the base-evo L1 learnset fills the slots, each offspring egg move
+  that EITHER parent knows fills the first empty slot, 4-cap, no eviction.
+- **Notes:** the ability-derivation accessor is ALSO usable to give wild/tower mons a
+  real ability (they currently use `ABILITY_NONE`) -- NOT retrofitted here to keep
+  SC-C breeding-scoped; a small optional follow-up. Egg-move derivation uses "own-type
+  moves minus level-up learnset" as a tractable, deterministic realization of
+  "egg-group cohort minus learnset" (documented; a cohort shares the species' types).
+- **Tests:** 20 new `ZM_Data` tests (ability derivation distinct/exact; ability
+  inheritance regular-copy zero-draw lock-step + hidden ~60% over a fixed seed list +
+  golden-seed IV/nature/gender non-perturbation; egg-move derivation
+  disjoint-from-learnset + exact; egg-move inheritance placement/control/4-cap/RNG-free;
+  hatch cycles). 0 existing tests edited (purely additive). Adversarial review:
+  SAFE-TO-COMMIT (2 non-blocking notes: a loose hidden-rate distribution band on an
+  otherwise well-covered mechanism, and exact-ability tests that pin the derivation
+  mechanism not the pool contents -- both acceptable). Boot unit baseline 1698 -> 1718.
+- **Reversibility:** additive; the ability pools, egg-move derivation, hidden-inherit
+  rate (60%), and hatch-cycle formula are S11-tunable. **FEATURE-COMPLETE BREEDING is
+  DONE:** ZM-D-045 (reduced) -> ZM-D-048 (gender) -> ZM-D-049 (egg groups / Ditto /
+  gendered compat) -> ZM-D-050 (egg moves / abilities / hatch).
+
 ## 2026-07-12 -- ZM-D-049 -- Breeding SC-B: real egg groups + GLOOPET Ditto-analog + gendered compatibility
 
 - **Decision:** part of the feature-complete-breeding expansion (ZM-D-048).

@@ -1475,3 +1475,658 @@ ZENITH_TEST(ZM_Data, Daycare_SCB_UniversalPairingWorks)
 	ZENITH_ASSERT_TRUE(ZM_DaycareCollectEgg(xState, xRng, ZM_BreedingParams{}, xEgg), "collect succeeds");
 	ZENITH_ASSERT_EQ((u_int)xEgg.m_eSpecies, (u_int)ZM_SPECIES_NIBBIN, "offspring = non-universal partner base evo");
 }
+
+// ############################################################################
+// I. Egg moves + ability / hidden-ability inheritance + hatch cycles
+//    (box-6 SC-C) (ZM_Data)
+//
+// Derived { regular, hidden } ability pair (ZM_GetSpeciesAbilities: primary-type
+// pool for regular, secondary-type OR archetype-fallback pool for hidden, forced
+// distinct), the CONDITIONAL hidden-ability inheritance draw in ZM_GenerateEgg
+// (fires only when the mother carries her species' hidden ability; Chance(60,100),
+// appended AFTER the gender roll), the derived egg-move list (ZM_GetSpeciesEggMoves:
+// own-type moves absent from the level-up learnset, table order, cap 6), the RNG-free
+// egg-move inheritance (first empty slot after the L1 learnset, 4-cap, no eviction),
+// and the derived hatch-cycle accessor (rarity base + size nudge).
+//
+// Exact values are pinned two ways so a gutted impl fails: (a) exact ability ids
+// computed from the shipped derivation (family seed via ZM_GetSpeciesFamilySeed +
+// the transcribed candidate pools, index math done by the compiler); (b) exact egg
+// lists via an INDEPENDENT oracle (OracleEggMoves) that never calls the function
+// under test. Every derivation premise (types / archetype / rarity / family / size)
+// is asserted via ZM_GetSpeciesData so a data re-tag is caught loudly. The ability-
+// inheritance goldens are derived by replaying the pinned draw order (IV -> nature ->
+// gender -> conditional hidden) on an independent RNG, NEVER by calling ZM_GenerateEgg.
+// Deterministic + hermetic. Purely ADDITIVE: existing fixtures have empty movesets
+// (egg-move inheritance never fires) and regular mother abilities (hidden draw never
+// fires), so every pre-SC-C golden stays byte-identical.
+// ############################################################################
+
+namespace
+{
+	// True iff eAbility appears in the first uCount entries of aePool.
+	bool AbilityInPool(ZM_ABILITY_ID eAbility, const ZM_ABILITY_ID* aePool, u_int uCount)
+	{
+		for (u_int i = 0; i < uCount; ++i)
+		{
+			if (aePool[i] == eAbility) { return true; }
+		}
+		return false;
+	}
+
+	// Independent re-implementation of ZM_GetSpeciesEggMoves (box-6 SC-C): the species'
+	// own-type moves NOT in its level-up learnset, in move-table order, capped at 6.
+	// Uses only the production SUB-accessors (learnset / move table) -- never the function
+	// under test -- so production == this pins the exact derived list against a gutted impl.
+	ZM_EggMoves OracleEggMoves(ZM_SPECIES_ID eId)
+	{
+		ZM_EggMoves xOut = {};
+		const ZM_SpeciesData& xData = ZM_GetSpeciesData(eId);
+		if (xData.m_eRarity == ZM_RARITY_LEGENDARY) { return xOut; }
+
+		const ZM_Learnset xLs = ZM_GetSpeciesLearnset(eId);
+		const ZM_TYPE eT1 = xData.m_aeTypes[0];
+		const ZM_TYPE eT2 = xData.m_aeTypes[1];
+		const u_int uMoveCount = ZM_GetMoveCount();
+		for (u_int i = 0; i < uMoveCount && xOut.m_uCount < uZM_MAX_EGG_MOVES; ++i)
+		{
+			const ZM_MOVE_ID   eMove = (ZM_MOVE_ID)i;
+			const ZM_MoveData& xMove = ZM_GetMoveData(eMove);
+			const bool bTypeMatch = (xMove.m_eType == eT1) ||
+				(eT2 != ZM_TYPE_NONE && xMove.m_eType == eT2);
+			if (!bTypeMatch) { continue; }
+
+			bool bInLearnset = false;
+			for (u_int k = 0; k < xLs.m_uCount; ++k)
+			{
+				if (xLs.m_axMoves[k].m_eMove == eMove) { bInLearnset = true; break; }
+			}
+			if (bInLearnset) { continue; }
+
+			xOut.m_aeMoves[xOut.m_uCount++] = eMove;
+		}
+		return xOut;
+	}
+
+	// The offspring ability a HIDDEN-carrying mother yields, derived by replaying the pinned
+	// draw order (IV -> nature -> gender -> hidden Chance) on an independent RNG -- mirrors
+	// ZM_GenerateEgg step E for the mother-carries-hidden case. Never calls ZM_GenerateEgg.
+	ZM_ABILITY_ID OracleDrawnAbility(const u_int (&aMotherIV)[ZM_STAT_COUNT],
+		const u_int (&aFatherIV)[ZM_STAT_COUNT], ZM_SPECIES_ID eOffspring, u_int64 ulSeed)
+	{
+		ZM_BattleRNG xRngO(ulSeed);
+		OracleGenerate(aMotherIV, aFatherIV, false, ZM_NATURE_COUNT, xRngO);   // IV -> nature
+		ZM_RollGender(eOffspring, xRngO);                                       // gender
+		const ZM_SpeciesAbilities xAb = ZM_GetSpeciesAbilities(eOffspring);
+		return xRngO.Chance(uZM_BREED_HIDDEN_INHERIT_PCT, 100u) ? xAb.m_eHidden : xAb.m_eRegular;
+	}
+
+	// The base-evo level-1 learnset fill (ZM_GenerateEgg step F1) for a species: the first
+	// uZM_MAX_MOVES learnset moves at level <= the egg hatch level. Returns the count filled.
+	u_int ComputeLevelOneFill(ZM_SPECIES_ID eSpecies, ZM_MOVE_ID (&aeOut)[uZM_MAX_MOVES])
+	{
+		for (u_int i = 0; i < uZM_MAX_MOVES; ++i) { aeOut[i] = ZM_MOVE_NONE; }
+		const ZM_Learnset xLs = ZM_GetSpeciesLearnset(eSpecies);
+		u_int uFilled = 0u;
+		for (u_int k = 0; k < xLs.m_uCount && uFilled < uZM_MAX_MOVES; ++k)
+		{
+			if (xLs.m_axMoves[k].m_uLevel <= uZM_EGG_HATCH_LEVEL)
+			{
+				aeOut[uFilled++] = xLs.m_axMoves[k].m_eMove;
+			}
+		}
+		return uFilled;
+	}
+}
+
+// --- I.1 ZM_GetSpeciesAbilities derivation --------------------------------------
+
+// Every species derives a valid, DISTINCT { regular, hidden } pair (the forced-distinct
+// invariant across the whole roster). Catches a gutted impl returning equal / out-of-range.
+ZENITH_TEST(ZM_Data, Breeding_Abilities_AllSpeciesRegularDistinctInRange)
+{
+	const u_int uCount = ZM_GetSpeciesCount();
+	for (u_int s = 0; s < uCount; ++s)
+	{
+		const ZM_SPECIES_ID eId = (ZM_SPECIES_ID)s;
+		const ZM_SpeciesAbilities xAb = ZM_GetSpeciesAbilities(eId);
+		ZENITH_ASSERT_LT((u_int)xAb.m_eRegular, (u_int)ZM_ABILITY_COUNT, "%s regular in range", ZM_GetSpeciesName(eId));
+		ZENITH_ASSERT_LT((u_int)xAb.m_eHidden,  (u_int)ZM_ABILITY_COUNT, "%s hidden in range",  ZM_GetSpeciesName(eId));
+		ZENITH_ASSERT_NE((u_int)xAb.m_eRegular, (u_int)xAb.m_eHidden, "%s regular/hidden must differ", ZM_GetSpeciesName(eId));
+	}
+}
+
+// SINGLE-type species: regular from the primary TYPE pool, hidden from the ARCHETYPE
+// fallback pool. NIBBIN (NORMAL, QUADRUPED, family 5). The two pools are disjoint, so no
+// distinctness fixup applies and the raw picks are the final ids. Expected ids are computed
+// from the shipped derivation (family seed + transcribed pools), so a gutted impl fails.
+ZENITH_TEST(ZM_Data, Breeding_Abilities_SingleTypeArchetypeHidden_Exact)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_NIBBIN).m_aeTypes[0], (u_int)ZM_TYPE_NORMAL, "premise types[0] NORMAL");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_NIBBIN).m_aeTypes[1], (u_int)ZM_TYPE_NONE, "premise single-type");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_NIBBIN).m_eArchetype, (u_int)ZM_ARCHETYPE_QUADRUPED, "premise QUADRUPED");
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesData(ZM_SPECIES_NIBBIN).m_uFamilyId, 5u, "premise family 5");
+
+	const u_int uSeed = ZM_GetSpeciesFamilySeed(ZM_SPECIES_NIBBIN);
+	const ZM_ABILITY_ID aeNormal[3] = { ZM_ABILITY_QUICKDRAW, ZM_ABILITY_GUARDIAN, ZM_ABILITY_WAKEFUL };
+	const ZM_ABILITY_ID aeQuad[2]   = { ZM_ABILITY_DAUNTINGROAR, ZM_ABILITY_GRAZER };
+	const ZM_ABILITY_ID eExpReg = aeNormal[uSeed % 3u];
+	const ZM_ABILITY_ID eExpHid = aeQuad[(uSeed >> 5u) % 2u];
+
+	const ZM_SpeciesAbilities xAb = ZM_GetSpeciesAbilities(ZM_SPECIES_NIBBIN);
+	ZENITH_ASSERT_EQ((u_int)xAb.m_eRegular, (u_int)eExpReg, "NIBBIN regular = NORMAL pool pick");
+	ZENITH_ASSERT_EQ((u_int)xAb.m_eHidden,  (u_int)eExpHid, "NIBBIN hidden = QUADRUPED archetype pick");
+	ZENITH_ASSERT_NE((u_int)xAb.m_eRegular, (u_int)xAb.m_eHidden, "NIBBIN slots distinct");
+}
+
+// DUAL-type species: hidden from the SECONDARY type pool (not the archetype fallback).
+// SYLVASTAG (GRASS/EARTH, family 1); GRASS and EARTH pools are disjoint -> no fixup.
+ZENITH_TEST(ZM_Data, Breeding_Abilities_DualTypeSecondaryHidden_Exact)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_SYLVASTAG).m_aeTypes[0], (u_int)ZM_TYPE_GRASS, "premise types[0] GRASS");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_SYLVASTAG).m_aeTypes[1], (u_int)ZM_TYPE_EARTH, "premise types[1] EARTH");
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesData(ZM_SPECIES_SYLVASTAG).m_uFamilyId, 1u, "premise family 1");
+
+	const u_int uSeed = ZM_GetSpeciesFamilySeed(ZM_SPECIES_SYLVASTAG);
+	const ZM_ABILITY_ID aeGrass[4] = { ZM_ABILITY_VERDANTSURGE, ZM_ABILITY_GRAZER, ZM_ABILITY_ROOTFEED, ZM_ABILITY_THORNMAIL };
+	const ZM_ABILITY_ID aeEarth[4] = { ZM_ABILITY_GRITSTRIDE, ZM_ABILITY_SANDCALLER, ZM_ABILITY_BEDROCK, ZM_ABILITY_DOWNDRAFT };
+	const ZM_ABILITY_ID eExpReg = aeGrass[uSeed % 4u];
+	const ZM_ABILITY_ID eExpHid = aeEarth[(uSeed >> 5u) % 4u];
+
+	const ZM_SpeciesAbilities xAb = ZM_GetSpeciesAbilities(ZM_SPECIES_SYLVASTAG);
+	ZENITH_ASSERT_EQ((u_int)xAb.m_eRegular, (u_int)eExpReg, "SYLVASTAG regular = GRASS pool pick");
+	ZENITH_ASSERT_EQ((u_int)xAb.m_eHidden,  (u_int)eExpHid, "SYLVASTAG hidden = EARTH pool pick");
+	ZENITH_ASSERT_NE((u_int)xAb.m_eRegular, (u_int)xAb.m_eHidden, "SYLVASTAG slots distinct");
+}
+
+// A second dual-type pin from a different family: PYROCLAST (FIRE/STONE, family 2); FIRE and
+// STONE pools are disjoint -> no fixup.
+ZENITH_TEST(ZM_Data, Breeding_Abilities_DualTypeSecondaryHidden_ExactPyroclast)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_PYROCLAST).m_aeTypes[0], (u_int)ZM_TYPE_FIRE, "premise types[0] FIRE");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_PYROCLAST).m_aeTypes[1], (u_int)ZM_TYPE_STONE, "premise types[1] STONE");
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesData(ZM_SPECIES_PYROCLAST).m_uFamilyId, 2u, "premise family 2");
+
+	const u_int uSeed = ZM_GetSpeciesFamilySeed(ZM_SPECIES_PYROCLAST);
+	const ZM_ABILITY_ID aeFire[4]  = { ZM_ABILITY_EMBERSURGE, ZM_ABILITY_CINDERSKIN, ZM_ABILITY_SUNCHASER, ZM_ABILITY_CINDERDRINK };
+	const ZM_ABILITY_ID aeStone[4] = { ZM_ABILITY_BEDROCK, ZM_ABILITY_AFTERSHOCK, ZM_ABILITY_SOLIDCORE, ZM_ABILITY_HEAVYPLATE };
+	const ZM_ABILITY_ID eExpReg = aeFire[uSeed % 4u];
+	const ZM_ABILITY_ID eExpHid = aeStone[(uSeed >> 5u) % 4u];
+
+	const ZM_SpeciesAbilities xAb = ZM_GetSpeciesAbilities(ZM_SPECIES_PYROCLAST);
+	ZENITH_ASSERT_EQ((u_int)xAb.m_eRegular, (u_int)eExpReg, "PYROCLAST regular = FIRE pool pick");
+	ZENITH_ASSERT_EQ((u_int)xAb.m_eHidden,  (u_int)eExpHid, "PYROCLAST hidden = STONE pool pick");
+	ZENITH_ASSERT_NE((u_int)xAb.m_eRegular, (u_int)xAb.m_eHidden, "PYROCLAST slots distinct");
+}
+
+// Pool SOURCE guard: the regular comes from the PRIMARY-type pool for both single- and
+// dual-typed species; the hidden comes from the ARCHETYPE fallback pool for a single-type
+// species and from the SECONDARY-type pool for a dual-type one.
+ZENITH_TEST(ZM_Data, Breeding_Abilities_RegularPrimaryHiddenPoolSource)
+{
+	// Single-type NIBBIN: regular in the NORMAL pool, hidden in the QUADRUPED archetype pool.
+	const ZM_ABILITY_ID aeNormal[3] = { ZM_ABILITY_QUICKDRAW, ZM_ABILITY_GUARDIAN, ZM_ABILITY_WAKEFUL };
+	const ZM_ABILITY_ID aeQuad[2]   = { ZM_ABILITY_DAUNTINGROAR, ZM_ABILITY_GRAZER };
+	const ZM_SpeciesAbilities xNib = ZM_GetSpeciesAbilities(ZM_SPECIES_NIBBIN);
+	ZENITH_ASSERT_TRUE(AbilityInPool(xNib.m_eRegular, aeNormal, 3u), "NIBBIN regular from NORMAL pool");
+	ZENITH_ASSERT_TRUE(AbilityInPool(xNib.m_eHidden,  aeQuad, 2u),   "NIBBIN hidden from QUADRUPED archetype pool");
+
+	// Dual-type SYLVASTAG: regular in the GRASS (primary) pool, hidden in the EARTH (secondary
+	// type) pool -- NOT the archetype fallback.
+	const ZM_ABILITY_ID aeGrass[4] = { ZM_ABILITY_VERDANTSURGE, ZM_ABILITY_GRAZER, ZM_ABILITY_ROOTFEED, ZM_ABILITY_THORNMAIL };
+	const ZM_ABILITY_ID aeEarth[4] = { ZM_ABILITY_GRITSTRIDE, ZM_ABILITY_SANDCALLER, ZM_ABILITY_BEDROCK, ZM_ABILITY_DOWNDRAFT };
+	const ZM_SpeciesAbilities xSyl = ZM_GetSpeciesAbilities(ZM_SPECIES_SYLVASTAG);
+	ZENITH_ASSERT_TRUE(AbilityInPool(xSyl.m_eRegular, aeGrass, 4u), "SYLVASTAG regular from GRASS pool");
+	ZENITH_ASSERT_TRUE(AbilityInPool(xSyl.m_eHidden,  aeEarth, 4u), "SYLVASTAG hidden from EARTH pool");
+}
+
+// --- I.2 Ability inheritance (ZM_GenerateEgg step E) ----------------------------
+
+// Mother carrying her REGULAR ability -> offspring COPIES it verbatim with ZERO extra draws:
+// an oracle stopping after the gender roll sits at the same RNG position (lock-step).
+ZENITH_TEST(ZM_Data, Breeding_AbilityInherit_MotherRegularCopiedNoExtraDraw)
+{
+	const u_int aMotherIV[ZM_STAT_COUNT] = { 0u, 6u, 12u, 18u, 24u, 31u };
+	const u_int aFatherIV[ZM_STAT_COUNT] = { 31u, 25u, 19u, 13u, 7u, 1u };
+	const ZM_SpeciesAbilities xMotherAb = ZM_GetSpeciesAbilities(ZM_SPECIES_SYLVASTAG);
+	ZENITH_ASSERT_NE((u_int)xMotherAb.m_eRegular, (u_int)xMotherAb.m_eHidden, "premise: mother abilities distinct");
+
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV, 40u,
+		ZM_NATURE_BRUTISH, xMotherAb.m_eRegular), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
+	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xMother, xFather), "premise: compatible pair");
+
+	ZM_BattleRNG xRng(0xA11CE0ull);
+	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
+	ZENITH_ASSERT_EQ((u_int)xEgg.m_eSpecies, (u_int)ZM_SPECIES_FERNFAWN, "offspring FERNFAWN");
+	ZENITH_ASSERT_EQ((u_int)xEgg.m_eAbility, (u_int)xMotherAb.m_eRegular, "offspring copies mother's regular ability");
+
+	// Lock-step: replay IV -> nature -> gender on an independent RNG; the two streams must
+	// stay aligned, proving ZM_GenerateEgg consumed NO appended hidden-ability draw.
+	ZM_BattleRNG xRngO(0xA11CE0ull);
+	OracleGenerate(aMotherIV, aFatherIV, false, ZM_NATURE_COUNT, xRngO);   // IV -> nature
+	ZM_RollGender(ZM_SPECIES_FERNFAWN, xRngO);                             // gender
+	for (u_int k = 0; k < 6u; ++k)
+	{
+		ZENITH_ASSERT_EQ(xRng.RandBelow(997u), xRngO.RandBelow(997u),
+			"regular-ability breed took an extra draw (k %u)", k);
+	}
+}
+
+// Mother carrying her HIDDEN ability -> the offspring's ability is DRAWN: over a fixed seed
+// list it is the offspring's hidden ~60% and regular ~40% (wide deterministic band), each
+// seed matches the independent Chance oracle, and it is always one of the OFFSPRING species'
+// two abilities.
+ZENITH_TEST(ZM_Data, Breeding_AbilityInherit_MotherHiddenDrawsAboutSixtyPct)
+{
+	const u_int aMotherIV[ZM_STAT_COUNT] = { 4u, 4u, 4u, 4u, 4u, 4u };
+	const u_int aFatherIV[ZM_STAT_COUNT] = { 24u, 24u, 24u, 24u, 24u, 24u };
+	const ZM_SPECIES_ID eOffspring = ZM_GetBaseEvolution(ZM_SPECIES_SYLVASTAG);   // FERNFAWN
+	ZENITH_ASSERT_EQ((u_int)eOffspring, (u_int)ZM_SPECIES_FERNFAWN, "premise: offspring FERNFAWN");
+
+	const ZM_SpeciesAbilities xMotherAb = ZM_GetSpeciesAbilities(ZM_SPECIES_SYLVASTAG);
+	const ZM_SpeciesAbilities xEggAb    = ZM_GetSpeciesAbilities(eOffspring);
+	ZENITH_ASSERT_NE((u_int)xEggAb.m_eRegular, (u_int)xEggAb.m_eHidden, "premise: offspring abilities distinct");
+
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV, 40u,
+		ZM_NATURE_FERAL, xMotherAb.m_eHidden), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
+
+	const u_int uN = 256u;
+	u_int uHidden = 0u;
+	u_int uRegular = 0u;
+	for (u_int i = 0; i < uN; ++i)
+	{
+		const u_int64 ulSeed = (u_int64)(i + 1u) * 0x9E3779B97F4A7C15ull;
+		ZM_BattleRNG xRng(ulSeed);
+		const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
+
+		const ZM_ABILITY_ID eExpected = OracleDrawnAbility(aMotherIV, aFatherIV, eOffspring, ulSeed);
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_eAbility, (u_int)eExpected, "drawn ability vs oracle (i %u)", i);
+		ZENITH_ASSERT_TRUE(xEgg.m_eAbility == xEggAb.m_eHidden || xEgg.m_eAbility == xEggAb.m_eRegular,
+			"offspring ability must be its own regular/hidden (i %u)", i);
+		if (xEgg.m_eAbility == xEggAb.m_eHidden) { ++uHidden; } else { ++uRegular; }
+	}
+	ZENITH_ASSERT_EQ(uHidden + uRegular, uN, "every draw resolves to a concrete ability");
+	// ~60% hidden across 256 draws -> a wide deterministic band around 153.6.
+	ZENITH_ASSERT_GE(uHidden, 110u, "hidden share too low (got %u)", uHidden);
+	ZENITH_ASSERT_LE(uHidden, 200u, "hidden share too high (got %u)", uHidden);
+	ZENITH_ASSERT_GT(uHidden, uRegular, "hidden must be the majority at 60 percent");
+}
+
+// The hidden-ability draw is reproducible: same seed -> same drawn ability.
+ZENITH_TEST(ZM_Data, Breeding_AbilityInherit_MotherHiddenReproducibleSameSeed)
+{
+	const ZM_SpeciesAbilities xMotherAb = ZM_GetSpeciesAbilities(ZM_SPECIES_SYLVASTAG);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_SYLVASTAG, 18u, 40u,
+		ZM_NATURE_FERAL, xMotherAb.m_eHidden), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(ZM_SPECIES_NIBBIN, 18u), ZM_GENDER_MALE);
+
+	const u_int64 aulSeeds[] = { 0x1ull, 0x2222ull, 0xC0FFEEull, 0x9E3779B1ull };
+	for (u_int s = 0; s < (u_int)(sizeof(aulSeeds) / sizeof(aulSeeds[0])); ++s)
+	{
+		ZM_BattleRNG xRngA(aulSeeds[s]);
+		ZM_BattleRNG xRngB(aulSeeds[s]);
+		const ZM_BattleMonsterSpec xEggA = ZM_GenerateEgg(xMother, xFather, xRngA);
+		const ZM_BattleMonsterSpec xEggB = ZM_GenerateEgg(xMother, xFather, xRngB);
+		ZENITH_ASSERT_EQ((u_int)xEggA.m_eAbility, (u_int)xEggB.m_eAbility, "same seed same drawn ability (s %u)", s);
+	}
+}
+
+// PAIRED positive/control: at a shared golden seed, a regular-ability mother (no draw) and a
+// hidden-ability mother (draw fires) produce byte-identical IV / nature / gender -- so the
+// hidden Chance draw is APPENDED after the gender roll and perturbs nothing earlier.
+ZENITH_TEST(ZM_Data, Breeding_AbilityInherit_HiddenDrawAppendedAfterGenderPaired)
+{
+	const u_int aMotherIV[ZM_STAT_COUNT] = { 0u, 6u, 12u, 18u, 24u, 31u };
+	const u_int aFatherIV[ZM_STAT_COUNT] = { 31u, 25u, 19u, 13u, 7u, 1u };
+	const ZM_SpeciesAbilities xMotherAb = ZM_GetSpeciesAbilities(ZM_SPECIES_SYLVASTAG);
+	const ZM_SPECIES_ID eOffspring = ZM_SPECIES_FERNFAWN;
+
+	const ZM_BattleMonsterSpec xFather = WithGender(MakeSpec(ZM_SPECIES_NIBBIN, aFatherIV), ZM_GENDER_MALE);
+	const ZM_BattleMonsterSpec xMotherReg = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV, 40u,
+		ZM_NATURE_BRUTISH, xMotherAb.m_eRegular), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xMotherHid = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aMotherIV, 40u,
+		ZM_NATURE_BRUTISH, xMotherAb.m_eHidden), ZM_GENDER_FEMALE);
+
+	// Same seed for both: the ONLY difference is whether step E's Chance draw fires.
+	ZM_BattleRNG xRngReg(0xA1ull);
+	ZM_BattleRNG xRngHid(0xA1ull);
+	const ZM_BattleMonsterSpec xEggReg = ZM_GenerateEgg(xMotherReg, xFather, xRngReg);
+	const ZM_BattleMonsterSpec xEggHid = ZM_GenerateEgg(xMotherHid, xFather, xRngHid);
+
+	for (u_int i = 0; i < ZM_STAT_COUNT; ++i)
+	{
+		ZENITH_ASSERT_EQ(xEggReg.m_auIV[i], xEggHid.m_auIV[i], "hidden draw perturbed IV %u", i);
+	}
+	ZENITH_ASSERT_EQ((u_int)xEggReg.m_eNature, (u_int)xEggHid.m_eNature, "hidden draw perturbed nature");
+	ZENITH_ASSERT_EQ((u_int)xEggReg.m_eGender, (u_int)xEggHid.m_eGender, "hidden draw perturbed gender");
+
+	// IV + nature are still byte-identical to the pre-ability oracle (same seed as Golden_Seed1).
+	ZM_BattleRNG xRngO(0xA1ull);
+	const OracleEgg xOracle = OracleGenerate(aMotherIV, aFatherIV, false, ZM_NATURE_COUNT, xRngO);
+	AssertEggMatchesOracle(xEggReg, xOracle, "paired-reg");
+
+	// Regular mother -> verbatim copy; hidden mother -> the positioned Chance result.
+	ZENITH_ASSERT_EQ((u_int)xEggReg.m_eAbility, (u_int)xMotherAb.m_eRegular, "regular copied verbatim");
+	ZM_RollGender(eOffspring, xRngO);   // advance the oracle RNG past gender to the hidden-draw position
+	const ZM_SpeciesAbilities xEggAb = ZM_GetSpeciesAbilities(eOffspring);
+	const ZM_ABILITY_ID eExpectedHid = xRngO.Chance(uZM_BREED_HIDDEN_INHERIT_PCT, 100u)
+		? xEggAb.m_eHidden : xEggAb.m_eRegular;
+	ZENITH_ASSERT_EQ((u_int)xEggHid.m_eAbility, (u_int)eExpectedHid, "hidden-mother egg = positioned Chance result");
+}
+
+// SC-B role interaction: with the universal breeder (GLOOPET) as the FATHER role, the non-
+// universal SYLVASTAG mother's hidden ability still drives the draw; the offspring gets ITS
+// OWN species' regular/hidden -- never the universal parent's ability.
+ZENITH_TEST(ZM_Data, Breeding_AbilityInherit_UniversalNonUniversalMotherHiddenDraws)
+{
+	const u_int aIV[ZM_STAT_COUNT] = { 12u, 12u, 12u, 12u, 12u, 12u };
+	const ZM_SpeciesAbilities xMotherAb = ZM_GetSpeciesAbilities(ZM_SPECIES_SYLVASTAG);
+	const ZM_SPECIES_ID eOffspring = ZM_GetBaseEvolution(ZM_SPECIES_SYLVASTAG);   // FERNFAWN
+	const ZM_SpeciesAbilities xEggAb = ZM_GetSpeciesAbilities(eOffspring);
+
+	const ZM_BattleMonsterSpec xGloopet = MakeSpecUniform(ZM_SPECIES_GLOOPET, 12u, 20u,
+		ZM_NATURE_FERAL, ZM_ABILITY_BEDROCK);
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpec(ZM_SPECIES_SYLVASTAG, aIV, 30u,
+		ZM_NATURE_FERAL, xMotherAb.m_eHidden), ZM_GENDER_FEMALE);
+	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xGloopet, xMother), "premise: GLOOPET x SYLVASTAG compatible");
+
+	u_int uHidden = 0u, uRegular = 0u;
+	const u_int uN = 64u;
+	for (u_int i = 0; i < uN; ++i)
+	{
+		const u_int64 ulSeed = (u_int64)(i + 1u) * 0xD1B54A32D192ED03ull;
+		ZM_BattleRNG xRng(ulSeed);
+		const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xGloopet, xMother, xRng);   // GLOOPET in slot 0
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_eSpecies, (u_int)ZM_SPECIES_FERNFAWN, "offspring = SYLVASTAG base evo");
+
+		const ZM_ABILITY_ID eExpected = OracleDrawnAbility(aIV, aIV, eOffspring, ulSeed);
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_eAbility, (u_int)eExpected, "universal-pairing drawn ability vs oracle (i %u)", i);
+		ZENITH_ASSERT_NE((u_int)xEgg.m_eAbility, (u_int)ZM_ABILITY_BEDROCK, "ability never from the universal breeder");
+		if (xEgg.m_eAbility == xEggAb.m_eHidden) { ++uHidden; } else { ++uRegular; }
+	}
+	ZENITH_ASSERT_GT(uHidden, 0u, "expected some hidden draws through the universal-role path");
+	ZENITH_ASSERT_GT(uRegular, 0u, "expected some regular draws through the universal-role path");
+}
+
+// --- I.3 ZM_GetSpeciesEggMoves derivation ---------------------------------------
+
+// Every returned egg move is DISJOINT from the species' own level-up learnset.
+ZENITH_TEST(ZM_Data, Breeding_EggMoves_DisjointFromLearnset)
+{
+	const ZM_SPECIES_ID aeSample[] = {
+		ZM_SPECIES_NIBBIN, ZM_SPECIES_FERNFAWN, ZM_SPECIES_SYLVASTAG,
+		ZM_SPECIES_KINDLET, ZM_SPECIES_PIPWIT, ZM_SPECIES_WYRMLING,
+	};
+	for (u_int s = 0; s < (u_int)(sizeof(aeSample) / sizeof(aeSample[0])); ++s)
+	{
+		const ZM_SPECIES_ID eId = aeSample[s];
+		const ZM_EggMoves xEgg = ZM_GetSpeciesEggMoves(eId);
+		const ZM_Learnset  xLs  = ZM_GetSpeciesLearnset(eId);
+		for (u_int e = 0; e < xEgg.m_uCount; ++e)
+		{
+			for (u_int k = 0; k < xLs.m_uCount; ++k)
+			{
+				ZENITH_ASSERT_NE((u_int)xEgg.m_aeMoves[e], (u_int)xLs.m_axMoves[k].m_eMove,
+					"egg move must not be in the level-up learnset (%s move %u)", ZM_GetSpeciesName(eId), e);
+			}
+		}
+	}
+}
+
+// Every returned egg move is of one of the species' OWN type slots.
+ZENITH_TEST(ZM_Data, Breeding_EggMoves_AllMovesAreOwnType)
+{
+	const ZM_SPECIES_ID aeSample[] = {
+		ZM_SPECIES_NIBBIN, ZM_SPECIES_FERNFAWN, ZM_SPECIES_SYLVASTAG,
+		ZM_SPECIES_KINDLET, ZM_SPECIES_FINLET, ZM_SPECIES_WYRMLING,
+	};
+	for (u_int s = 0; s < (u_int)(sizeof(aeSample) / sizeof(aeSample[0])); ++s)
+	{
+		const ZM_SPECIES_ID eId = aeSample[s];
+		const ZM_SpeciesData& xData = ZM_GetSpeciesData(eId);
+		const ZM_EggMoves xEgg = ZM_GetSpeciesEggMoves(eId);
+		for (u_int e = 0; e < xEgg.m_uCount; ++e)
+		{
+			const ZM_TYPE eMoveType = ZM_GetMoveData(xEgg.m_aeMoves[e]).m_eType;
+			const bool bOwnType = (eMoveType == xData.m_aeTypes[0]) ||
+				(xData.m_aeTypes[1] != ZM_TYPE_NONE && eMoveType == xData.m_aeTypes[1]);
+			ZENITH_ASSERT_TRUE(bOwnType, "egg move must be of the species' own type(s) (%s move %u)",
+				ZM_GetSpeciesName(eId), e);
+		}
+	}
+}
+
+// Legendaries return an empty egg-move list; no species exceeds the cap of 6.
+ZENITH_TEST(ZM_Data, Breeding_EggMoves_LegendaryEmptyAndCappedAtSix)
+{
+	const ZM_SPECIES_ID aeLegendary[] = { ZM_SPECIES_ZENARIS, ZM_SPECIES_NADIRATH, ZM_SPECIES_EQUINARA };
+	for (u_int i = 0; i < (u_int)(sizeof(aeLegendary) / sizeof(aeLegendary[0])); ++i)
+	{
+		ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(aeLegendary[i]).m_eRarity, (u_int)ZM_RARITY_LEGENDARY,
+			"premise: legendary %u", i);
+		ZENITH_ASSERT_EQ(ZM_GetSpeciesEggMoves(aeLegendary[i]).m_uCount, 0u, "legendary has no egg moves (%u)", i);
+	}
+	const u_int uCount = ZM_GetSpeciesCount();
+	for (u_int s = 0; s < uCount; ++s)
+	{
+		ZENITH_ASSERT_LE(ZM_GetSpeciesEggMoves((ZM_SPECIES_ID)s).m_uCount, uZM_MAX_EGG_MOVES,
+			"%s egg-move count exceeds the cap", ZM_GetSpeciesName((ZM_SPECIES_ID)s));
+	}
+}
+
+// Exact derived egg-move list matches an INDEPENDENT oracle (own-type minus learnset, table
+// order, cap 6) that never calls the function under test -- pins the list against a gutted impl.
+ZENITH_TEST(ZM_Data, Breeding_EggMoves_ExactListMatchesOracle)
+{
+	const ZM_SPECIES_ID aeSample[] = { ZM_SPECIES_NIBBIN, ZM_SPECIES_FERNFAWN };
+	for (u_int s = 0; s < (u_int)(sizeof(aeSample) / sizeof(aeSample[0])); ++s)
+	{
+		const ZM_SPECIES_ID eId = aeSample[s];
+		const ZM_EggMoves xProd   = ZM_GetSpeciesEggMoves(eId);
+		const ZM_EggMoves xOracle = OracleEggMoves(eId);
+		ZENITH_ASSERT_GT(xProd.m_uCount, 0u, "premise: %s has derived egg moves", ZM_GetSpeciesName(eId));
+		ZENITH_ASSERT_EQ(xProd.m_uCount, xOracle.m_uCount, "%s egg-move count vs oracle", ZM_GetSpeciesName(eId));
+		for (u_int e = 0; e < xOracle.m_uCount; ++e)
+		{
+			ZENITH_ASSERT_EQ((u_int)xProd.m_aeMoves[e], (u_int)xOracle.m_aeMoves[e],
+				"%s egg move %u vs oracle", ZM_GetSpeciesName(eId), e);
+		}
+	}
+}
+
+// --- I.4 Egg-move inheritance (ZM_GenerateEgg step F2) --------------------------
+
+// A parent that knows an offspring egg move passes it into the FIRST empty slot after the
+// base-evo level-1 learnset. offspring = NIBBIN (mother GRAINMAW), a NORMAL line with a full
+// egg-move pool.
+ZENITH_TEST(ZM_Data, Breeding_EggMoveInherit_ParentEggMovePlacedAfterLevelOne)
+{
+	const ZM_SPECIES_ID eOffspring = ZM_GetBaseEvolution(ZM_SPECIES_GRAINMAW);   // NIBBIN
+	ZENITH_ASSERT_EQ((u_int)eOffspring, (u_int)ZM_SPECIES_NIBBIN, "premise: offspring NIBBIN");
+
+	ZM_MOVE_ID aeL1[uZM_MAX_MOVES];
+	const u_int uL1 = ComputeLevelOneFill(eOffspring, aeL1);
+	ZENITH_ASSERT_GE(uL1, 1u, "premise: at least one L1 move");
+	ZENITH_ASSERT_LT(uL1, uZM_MAX_MOVES, "premise: room for an inherited egg move");
+
+	const ZM_EggMoves xEggMoves = ZM_GetSpeciesEggMoves(eOffspring);
+	ZENITH_ASSERT_GE(xEggMoves.m_uCount, 1u, "premise: offspring has egg moves");
+	const ZM_MOVE_ID eInherit = xEggMoves.m_aeMoves[0];
+
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_GRAINMAW, 20u), ZM_GENDER_FEMALE);
+	ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(ZM_SPECIES_STRAYLING, 20u), ZM_GENDER_MALE);
+	xFather.m_aeMoves[0] = eInherit;   // the FATHER knows an offspring egg move
+	ZENITH_ASSERT_TRUE(ZM_AreCompatible(xMother, xFather), "premise: compatible pair");
+
+	ZM_BattleRNG xRng(0xE66A0ull);
+	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
+
+	for (u_int i = 0; i < uL1; ++i)
+	{
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_aeMoves[i], (u_int)aeL1[i], "L1 move slot %u", i);
+	}
+	ZENITH_ASSERT_EQ((u_int)xEgg.m_aeMoves[uL1], (u_int)eInherit, "inherited egg move in first empty slot");
+	for (u_int i = uL1 + 1u; i < uZM_MAX_MOVES; ++i)
+	{
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_aeMoves[i], (u_int)ZM_MOVE_NONE, "trailing slot %u empty", i);
+	}
+}
+
+// CONTROL: a parent move that is NOT one of the offspring's derived egg moves (a FIRE move vs
+// NIBBIN's NORMAL egg pool) is never inherited -- only the L1 learnset fills.
+ZENITH_TEST(ZM_Data, Breeding_EggMoveInherit_NonEggMoveNotInherited)
+{
+	const ZM_SPECIES_ID eOffspring = ZM_GetBaseEvolution(ZM_SPECIES_GRAINMAW);   // NIBBIN
+	ZM_MOVE_ID aeL1[uZM_MAX_MOVES];
+	const u_int uL1 = ComputeLevelOneFill(eOffspring, aeL1);
+
+	const ZM_MOVE_ID eNonEgg = ZM_MOVE_CINDERSPIT;   // FIRE, never a NIBBIN egg move
+	const ZM_EggMoves xEggMoves = ZM_GetSpeciesEggMoves(eOffspring);
+	for (u_int e = 0; e < xEggMoves.m_uCount; ++e)
+	{
+		ZENITH_ASSERT_NE((u_int)xEggMoves.m_aeMoves[e], (u_int)eNonEgg, "premise: control move is not an egg move");
+	}
+
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_GRAINMAW, 20u), ZM_GENDER_FEMALE);
+	ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(ZM_SPECIES_STRAYLING, 20u), ZM_GENDER_MALE);
+	xFather.m_aeMoves[0] = eNonEgg;
+
+	ZM_BattleRNG xRng(0xC077011ull);
+	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
+
+	for (u_int i = 0; i < uL1; ++i)
+	{
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_aeMoves[i], (u_int)aeL1[i], "L1 move slot %u", i);
+	}
+	for (u_int i = uL1; i < uZM_MAX_MOVES; ++i)
+	{
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_aeMoves[i], (u_int)ZM_MOVE_NONE, "no inheritance -> slot %u empty", i);
+	}
+}
+
+// The 4-move cap is HARD and eviction-free: give the father one more inheritable egg move than
+// fits; the overflow move is DROPPED, never displacing an L1 or earlier egg move.
+ZENITH_TEST(ZM_Data, Breeding_EggMoveInherit_FourMoveCapNoEviction)
+{
+	const ZM_SPECIES_ID eOffspring = ZM_GetBaseEvolution(ZM_SPECIES_GRAINMAW);   // NIBBIN
+	ZM_MOVE_ID aeL1[uZM_MAX_MOVES];
+	const u_int uL1 = ComputeLevelOneFill(eOffspring, aeL1);
+	ZENITH_ASSERT_GE(uL1, 1u, "premise: at least one L1 move");
+	const u_int uFree = uZM_MAX_MOVES - uL1;   // empty slots after the L1 fill
+	ZENITH_ASSERT_GE(uFree, 1u, "premise: some room after L1");
+
+	const ZM_EggMoves xEggMoves = ZM_GetSpeciesEggMoves(eOffspring);
+	ZENITH_ASSERT_GT(xEggMoves.m_uCount, uFree, "premise: more inheritable egg moves than empty slots");
+
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_GRAINMAW, 20u), ZM_GENDER_FEMALE);
+	ZM_BattleMonsterSpec xFather = WithGender(MakeSpecUniform(ZM_SPECIES_STRAYLING, 20u), ZM_GENDER_MALE);
+	for (u_int j = 0; j <= uFree; ++j)   // uFree+1 distinct egg moves -> one more than fits
+	{
+		xFather.m_aeMoves[j] = xEggMoves.m_aeMoves[j];
+	}
+
+	ZM_BattleRNG xRng(0xCA9111ull);
+	const ZM_BattleMonsterSpec xEgg = ZM_GenerateEgg(xMother, xFather, xRng);
+
+	for (u_int i = 0; i < uL1; ++i)
+	{
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_aeMoves[i], (u_int)aeL1[i], "L1 slot %u preserved", i);
+	}
+	for (u_int j = 0; j < uFree; ++j)
+	{
+		ZENITH_ASSERT_EQ((u_int)xEgg.m_aeMoves[uL1 + j], (u_int)xEggMoves.m_aeMoves[j], "inherited egg move slot %u", uL1 + j);
+	}
+	for (u_int i = 0; i < uZM_MAX_MOVES; ++i)
+	{
+		ZENITH_ASSERT_NE((u_int)xEgg.m_aeMoves[i], (u_int)ZM_MOVE_NONE, "all four slots filled (slot %u)", i);
+	}
+	bool bDropped = true;
+	for (u_int i = 0; i < uZM_MAX_MOVES; ++i)
+	{
+		if (xEgg.m_aeMoves[i] == xEggMoves.m_aeMoves[uFree]) { bDropped = false; }
+	}
+	ZENITH_ASSERT_TRUE(bDropped, "the overflow egg move must be dropped, not evict an existing move");
+}
+
+// Egg-move inheritance is RNG-FREE: at a fixed seed, an empty-moveset father and a father who
+// knows an egg move yield byte-identical IV / nature / gender -- only the move slots differ.
+ZENITH_TEST(ZM_Data, Breeding_EggMoveInherit_RngFreeDoesNotPerturbStream)
+{
+	const ZM_SPECIES_ID eOffspring = ZM_GetBaseEvolution(ZM_SPECIES_GRAINMAW);   // NIBBIN
+	ZM_MOVE_ID aeL1[uZM_MAX_MOVES];
+	const u_int uL1 = ComputeLevelOneFill(eOffspring, aeL1);
+	ZENITH_ASSERT_LT(uL1, uZM_MAX_MOVES, "premise: room for an inherited move");
+	const ZM_EggMoves xEggMoves = ZM_GetSpeciesEggMoves(eOffspring);
+	ZENITH_ASSERT_GE(xEggMoves.m_uCount, 1u, "premise: offspring has egg moves");
+	const ZM_MOVE_ID eInherit = xEggMoves.m_aeMoves[0];
+
+	const ZM_BattleMonsterSpec xMother = WithGender(MakeSpecUniform(ZM_SPECIES_GRAINMAW, 20u), ZM_GENDER_FEMALE);
+	const ZM_BattleMonsterSpec xFatherEmpty = WithGender(MakeSpecUniform(ZM_SPECIES_STRAYLING, 20u), ZM_GENDER_MALE);
+	ZM_BattleMonsterSpec xFatherMoves = xFatherEmpty;
+	xFatherMoves.m_aeMoves[0] = eInherit;
+
+	ZM_BattleRNG xRngA(0x5AFE01ull);
+	ZM_BattleRNG xRngB(0x5AFE01ull);
+	const ZM_BattleMonsterSpec xEggNone = ZM_GenerateEgg(xMother, xFatherEmpty, xRngA);
+	const ZM_BattleMonsterSpec xEggMove = ZM_GenerateEgg(xMother, xFatherMoves, xRngB);
+
+	for (u_int i = 0; i < ZM_STAT_COUNT; ++i)
+	{
+		ZENITH_ASSERT_EQ(xEggNone.m_auIV[i], xEggMove.m_auIV[i], "egg-move inheritance perturbed IV %u", i);
+	}
+	ZENITH_ASSERT_EQ((u_int)xEggNone.m_eNature, (u_int)xEggMove.m_eNature, "perturbed nature");
+	ZENITH_ASSERT_EQ((u_int)xEggNone.m_eGender, (u_int)xEggMove.m_eGender, "perturbed gender");
+	ZENITH_ASSERT_EQ((u_int)xEggNone.m_aeMoves[uL1], (u_int)ZM_MOVE_NONE, "empty-parent egg has no inherited move");
+	ZENITH_ASSERT_EQ((u_int)xEggMove.m_aeMoves[uL1], (u_int)eInherit, "move-parent egg gains the inherited move");
+}
+
+// --- I.5 ZM_GetSpeciesHatchCycles derivation ------------------------------------
+
+// Exact hatch cycles per rarity base (COMMON 10 / UNCOMMON 15 / RARE 25 / LEGENDARY 40) plus
+// the size-class nudge; every size premise is pinned via ZM_GetSpeciesSizeClass.
+ZENITH_TEST(ZM_Data, Breeding_HatchCycles_PerRarityExactWithSizeNudge)
+{
+	// COMMON: NIBBIN (QUADRUPED stage 1) is SMALL(1) -> 10 + 1 == 11.
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_NIBBIN).m_eRarity, (u_int)ZM_RARITY_COMMON, "premise NIBBIN COMMON");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesSizeClass(ZM_SPECIES_NIBBIN), (u_int)ZM_SIZE_SMALL, "premise NIBBIN SMALL");
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesHatchCycles(ZM_SPECIES_NIBBIN), 10u + (u_int)ZM_SIZE_SMALL, "NIBBIN hatch = 10 + size");
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesHatchCycles(ZM_SPECIES_NIBBIN), 11u, "NIBBIN hatch == 11");
+
+	// UNCOMMON: SPARKIT (QUADRUPED stage 1) SMALL(1) -> 15 + 1 == 16.
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_SPARKIT).m_eRarity, (u_int)ZM_RARITY_UNCOMMON, "premise SPARKIT UNCOMMON");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesSizeClass(ZM_SPECIES_SPARKIT), (u_int)ZM_SIZE_SMALL, "premise SPARKIT SMALL");
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesHatchCycles(ZM_SPECIES_SPARKIT), 15u + (u_int)ZM_SIZE_SMALL, "SPARKIT hatch = 15 + size");
+
+	// RARE: WYRMLING (SERPENT stage 1, +1 bulk nudge) is MEDIUM(2) -> 25 + 2 == 27.
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_WYRMLING).m_eRarity, (u_int)ZM_RARITY_RARE, "premise WYRMLING RARE");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesSizeClass(ZM_SPECIES_WYRMLING), (u_int)ZM_SIZE_MEDIUM, "premise WYRMLING MEDIUM");
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesHatchCycles(ZM_SPECIES_WYRMLING), 25u + (u_int)ZM_SIZE_MEDIUM, "WYRMLING hatch = 25 + size");
+
+	// LEGENDARY: ZENARIS always looms HUGE(4) -> 40 + 4 == 44.
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesData(ZM_SPECIES_ZENARIS).m_eRarity, (u_int)ZM_RARITY_LEGENDARY, "premise ZENARIS LEGENDARY");
+	ZENITH_ASSERT_EQ((u_int)ZM_GetSpeciesSizeClass(ZM_SPECIES_ZENARIS), (u_int)ZM_SIZE_HUGE, "premise ZENARIS HUGE");
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesHatchCycles(ZM_SPECIES_ZENARIS), 40u + (u_int)ZM_SIZE_HUGE, "ZENARIS hatch = 40 + size");
+	ZENITH_ASSERT_EQ(ZM_GetSpeciesHatchCycles(ZM_SPECIES_ZENARIS), 44u, "ZENARIS hatch == 44");
+}
+
+// Legendaries incubate longest: each is 44, and every non-legendary hatches strictly faster
+// (max non-legendary is RARE 25 + HUGE 4 == 29 < 44).
+ZENITH_TEST(ZM_Data, Breeding_HatchCycles_LegendariesHighest)
+{
+	const ZM_SPECIES_ID aeLegendary[] = { ZM_SPECIES_ZENARIS, ZM_SPECIES_NADIRATH, ZM_SPECIES_EQUINARA };
+	for (u_int i = 0; i < (u_int)(sizeof(aeLegendary) / sizeof(aeLegendary[0])); ++i)
+	{
+		ZENITH_ASSERT_EQ(ZM_GetSpeciesHatchCycles(aeLegendary[i]), 44u, "legendary hatch == 40 + HUGE (%u)", i);
+	}
+	const u_int uLegendaryCycles = ZM_GetSpeciesHatchCycles(ZM_SPECIES_ZENARIS);
+	const u_int uCount = ZM_GetSpeciesCount();
+	for (u_int s = 0; s < uCount; ++s)
+	{
+		const ZM_SPECIES_ID eId = (ZM_SPECIES_ID)s;
+		if (ZM_GetSpeciesData(eId).m_eRarity == ZM_RARITY_LEGENDARY) { continue; }
+		ZENITH_ASSERT_LT(ZM_GetSpeciesHatchCycles(eId), uLegendaryCycles,
+			"%s must hatch faster than a legendary", ZM_GetSpeciesName(eId));
+	}
+}

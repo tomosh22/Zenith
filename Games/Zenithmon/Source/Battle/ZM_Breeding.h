@@ -17,14 +17,24 @@
 // and ZM_GenerateEgg derives parent ROLES internally -- the "mother" (egg species +
 // inherited line) is the FEMALE parent, or the NON-universal parent when the universal
 // breeder is involved. The egg's gender is rolled from the OFFSPRING species' ratio
-// (SC-A, ZM_RollGender). Ability = copied from the mother; egg moves = the base-evo
-// level-1 learnset; Masuda / shiny = cut.
+// (SC-A, ZM_RollGender).
+//
+// Box-6 SC-C upgrades (this file): ABILITY inheritance defaults to the mother's ability,
+// but if the mother CARRIES her species' hidden ability (ZM_GetSpeciesAbilities), the
+// offspring inherits its own species' hidden ability with a Chance(60,100) draw, else
+// the regular ability -- a CONDITIONAL draw appended LAST in the pinned order. EGG-MOVE
+// inheritance (RNG-free) fills any empty move slot after the base-evo L1 learnset with
+// the OFFSPRING species' derived egg moves (ZM_GetSpeciesEggMoves) that a parent already
+// knows, up to the 4-move cap. Masuda / shiny = cut.
 // ============================================================================
 
 // --- tunable constants (spec sections 7-8) ---
-static const u_int uZM_BREED_IV_INHERIT_BASE = 3u;   // IVs inherited from parents (default)
-static const u_int uZM_BREED_IV_INHERIT_KNOT = 5u;   // ... with the Heirloom Knot
-static const u_int uZM_EGG_HATCH_LEVEL       = 1u;   // eggs are produced at level 1
+static const u_int uZM_BREED_IV_INHERIT_BASE  = 3u;   // IVs inherited from parents (default)
+static const u_int uZM_BREED_IV_INHERIT_KNOT  = 5u;   // ... with the Heirloom Knot
+static const u_int uZM_EGG_HATCH_LEVEL        = 1u;   // eggs are produced at level 1
+// Hidden-ability inheritance chance (box-6 SC-C): when the mother carries her hidden
+// ability, the offspring inherits the hidden (else regular) with this percent (Gen VI+).
+static const u_int uZM_BREED_HIDDEN_INHERIT_PCT = 60u;
 
 // Optional per-breed modifiers. The two GDD breeding items are modelled as
 // explicit pure-function inputs (ZM_BattleMonster carries no held-item slot).
@@ -63,7 +73,8 @@ bool          ZM_AreCompatible(const ZM_BattleMonsterSpec& xParentA,
 // or the NON-universal parent when the universal breeder is involved; the other parent
 // is the "father". Callers may pass the two parents in EITHER order. Deterministic
 // function of the parents + xRng + xParams; the RNG draw order is pinned (IV -> nature
-// -> gender) and unchanged by role selection. Returns a level-1 ZM_BattleMonsterSpec.
+// -> gender -> conditional hidden-ability) and unchanged by role selection. Returns a
+// level-1 ZM_BattleMonsterSpec.
 ZM_BattleMonsterSpec ZM_GenerateEgg(const ZM_BattleMonsterSpec& xParentA,
                                     const ZM_BattleMonsterSpec& xParentB,
                                     ZM_BattleRNG& xRng,

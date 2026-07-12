@@ -1,6 +1,9 @@
 #include "Zenith.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
 #include "Zenithmon/Source/Data/ZM_BattleRNG.h"   // ZM_BattleRNG (ZM_RollGender draws)
+#include "Zenithmon/Source/Data/ZM_Learnsets.h"   // ZM_GetSpeciesLearnset (ZM_GetSpeciesEggMoves)
+#include "Zenithmon/Source/Data/ZM_MoveData.h"     // ZM_GetMoveData / ZM_GetMoveCount (egg moves)
+#include "Zenithmon/Source/Data/ZM_AbilityData.h"  // ZM_ABILITY_ID / ZM_ABILITY_COUNT (abilities)
 
 // ============================================================================
 // ZM_SpeciesData -- the 152-species dex table (structural roster), transcribed
@@ -448,6 +451,173 @@ bool ZM_IsUniversalBreeder(ZM_SPECIES_ID eId)
 	// The Ditto-analog: GLOOPET, the amiable shapeshifting ooze (box-6 SC-B). Exactly
 	// one species carries universal breeding; its evolution GLUTTONUB does not.
 	return eId == ZM_SPECIES_GLOOPET;
+}
+
+namespace
+{
+	// A small candidate ability pool (box-6 SC-C). Up to four thematically-fitting
+	// abilities per key; ZM_GetSpeciesAbilities indexes into one by the family seed.
+	// (m_ae entries past m_uCount are zero-initialised and never read.)
+	struct ZM_AbilityPool
+	{
+		u_int         m_uCount;
+		ZM_ABILITY_ID m_ae[4];
+	};
+
+	// Per-type candidate pool -- the flavour anchor for each element. Every entry is a
+	// real ZM_ABILITY_ID; the PRIMARY type supplies the regular ability, a SECONDARY type
+	// the hidden one. ZM_TYPE_NONE never reaches here (the caller guards it).
+	ZM_AbilityPool TypeAbilityPool(ZM_TYPE eType)
+	{
+		switch (eType)
+		{
+		case ZM_TYPE_NORMAL:   return { 3u, { ZM_ABILITY_QUICKDRAW,   ZM_ABILITY_GUARDIAN,   ZM_ABILITY_WAKEFUL } };
+		case ZM_TYPE_FIRE:     return { 4u, { ZM_ABILITY_EMBERSURGE,  ZM_ABILITY_CINDERSKIN, ZM_ABILITY_SUNCHASER,  ZM_ABILITY_CINDERDRINK } };
+		case ZM_TYPE_WATER:    return { 4u, { ZM_ABILITY_TIDALSURGE,  ZM_ABILITY_STREAMLINE, ZM_ABILITY_AQUIFER,    ZM_ABILITY_RAINBASK } };
+		case ZM_TYPE_GRASS:    return { 4u, { ZM_ABILITY_VERDANTSURGE,ZM_ABILITY_GRAZER,     ZM_ABILITY_ROOTFEED,   ZM_ABILITY_THORNMAIL } };
+		case ZM_TYPE_ELECTRIC: return { 3u, { ZM_ABILITY_STATICVEIL,  ZM_ABILITY_DYNAMO,     ZM_ABILITY_TRUESHOT } };
+		case ZM_TYPE_ICE:      return { 4u, { ZM_ABILITY_RIMESTRIDE,  ZM_ABILITY_ICEBOUND,   ZM_ABILITY_THAWHEART,  ZM_ABILITY_BLUBBER } };
+		case ZM_TYPE_BRAWL:    return { 3u, { ZM_ABILITY_BLOODRUSH,   ZM_ABILITY_QUICKDRAW,  ZM_ABILITY_FERVOR } };
+		case ZM_TYPE_VENOM:    return { 3u, { ZM_ABILITY_BARBSKIN,    ZM_ABILITY_TOXICTHRIVE,ZM_ABILITY_PUREBLOOD } };
+		case ZM_TYPE_EARTH:    return { 4u, { ZM_ABILITY_GRITSTRIDE,  ZM_ABILITY_SANDCALLER, ZM_ABILITY_BEDROCK,    ZM_ABILITY_DOWNDRAFT } };
+		case ZM_TYPE_SKY:      return { 3u, { ZM_ABILITY_SKYWARDGRACE, ZM_ABILITY_DOWNDRAFT, ZM_ABILITY_TRUESHOT } };
+		case ZM_TYPE_MIND:     return { 3u, { ZM_ABILITY_OWNPACE,     ZM_ABILITY_PRESSUREAURA,ZM_ABILITY_GOSSAMER } };
+		case ZM_TYPE_SWARM:    return { 3u, { ZM_ABILITY_HIVESURGE,   ZM_ABILITY_BARBSKIN,   ZM_ABILITY_GOSSAMER } };
+		case ZM_TYPE_STONE:    return { 4u, { ZM_ABILITY_BEDROCK,     ZM_ABILITY_AFTERSHOCK, ZM_ABILITY_SOLIDCORE,  ZM_ABILITY_HEAVYPLATE } };
+		case ZM_TYPE_PHANTOM:  return { 2u, { ZM_ABILITY_LASTSPITE,   ZM_ABILITY_PRESSUREAURA } };
+		case ZM_TYPE_DRAKE:    return { 3u, { ZM_ABILITY_FERVOR,      ZM_ABILITY_IRONWILL,   ZM_ABILITY_PRESSUREAURA } };
+		case ZM_TYPE_UMBRAL:   return { 3u, { ZM_ABILITY_BLOODRUSH,   ZM_ABILITY_KEENEYE,    ZM_ABILITY_PRESSUREAURA } };
+		case ZM_TYPE_IRON:     return { 4u, { ZM_ABILITY_IRONWILL,    ZM_ABILITY_HEAVYPLATE, ZM_ABILITY_SOLIDCORE,  ZM_ABILITY_AFTERSHOCK } };
+		case ZM_TYPE_FEY:      return { 3u, { ZM_ABILITY_GUARDIAN,    ZM_ABILITY_GOSSAMER,   ZM_ABILITY_THAWHEART } };
+		default:               return { 2u, { ZM_ABILITY_ROOTFEED,    ZM_ABILITY_GUARDIAN } };   // unreachable
+		}
+	}
+
+	// Per-archetype fallback pool -- the hidden slot for a SINGLE-typed species (no
+	// secondary type to draw from). Keyed by body plan so single-type families still get
+	// a distinct, plausible hidden ability.
+	ZM_AbilityPool ArchetypeAbilityPool(ZM_ARCHETYPE eArchetype)
+	{
+		switch (eArchetype)
+		{
+		case ZM_ARCHETYPE_QUADRUPED:        return { 2u, { ZM_ABILITY_DAUNTINGROAR, ZM_ABILITY_GRAZER } };
+		case ZM_ARCHETYPE_BIPED:            return { 2u, { ZM_ABILITY_FERVOR,       ZM_ABILITY_BLOODRUSH } };
+		case ZM_ARCHETYPE_AVIAN:            return { 2u, { ZM_ABILITY_KEENEYE,      ZM_ABILITY_DOWNDRAFT } };
+		case ZM_ARCHETYPE_SERPENT:          return { 2u, { ZM_ABILITY_IRONWILL,     ZM_ABILITY_FERVOR } };
+		case ZM_ARCHETYPE_AQUATIC:          return { 2u, { ZM_ABILITY_BLUBBER,      ZM_ABILITY_RAINBASK } };
+		case ZM_ARCHETYPE_INSECTOID:        return { 2u, { ZM_ABILITY_GOSSAMER,     ZM_ABILITY_BARBSKIN } };
+		case ZM_ARCHETYPE_BLOB:             return { 2u, { ZM_ABILITY_HEAVYPLATE,   ZM_ABILITY_SOLIDCORE } };
+		case ZM_ARCHETYPE_FLOATER_PLANTOID: return { 2u, { ZM_ABILITY_ROOTFEED,     ZM_ABILITY_GUARDIAN } };
+		default:                            return { 2u, { ZM_ABILITY_ROOTFEED,     ZM_ABILITY_GUARDIAN } };   // unreachable
+		}
+	}
+}
+
+ZM_SpeciesAbilities ZM_GetSpeciesAbilities(ZM_SPECIES_ID eId)
+{
+	const ZM_SpeciesData& xData = ZM_GetSpeciesData(eId);
+	const u_int uSeed = ZM_GetSpeciesFamilySeed(eId);
+
+	// Regular: the family-seed pick from the PRIMARY type's pool.
+	const ZM_AbilityPool xPrimary = TypeAbilityPool(xData.m_aeTypes[0]);
+	const ZM_ABILITY_ID  eRegular = xPrimary.m_ae[uSeed % xPrimary.m_uCount];
+
+	// Hidden: from the SECONDARY type's pool, or an archetype pool when single-typed. A
+	// different seed slice (>> 5) decorrelates it from the regular pick.
+	const ZM_AbilityPool xHiddenPool = (xData.m_aeTypes[1] != ZM_TYPE_NONE)
+		? TypeAbilityPool(xData.m_aeTypes[1])
+		: ArchetypeAbilityPool(xData.m_eArchetype);
+	const u_int   uHiddenIdx = (uSeed >> 5) % xHiddenPool.m_uCount;
+	ZM_ABILITY_ID eHidden    = xHiddenPool.m_ae[uHiddenIdx];
+
+	// Force the two slots DISTINCT: step through the hidden pool for a different entry;
+	// if the whole pool collapses onto the regular ability, take the next ability id
+	// (guaranteed valid and distinct since ZM_ABILITY_COUNT > 1).
+	if (eHidden == eRegular)
+	{
+		for (u_int uStep = 1u; uStep < xHiddenPool.m_uCount; ++uStep)
+		{
+			const ZM_ABILITY_ID eCand = xHiddenPool.m_ae[(uHiddenIdx + uStep) % xHiddenPool.m_uCount];
+			if (eCand != eRegular) { eHidden = eCand; break; }
+		}
+	}
+	if (eHidden == eRegular)
+	{
+		eHidden = (ZM_ABILITY_ID)((eRegular + 1u) % ZM_ABILITY_COUNT);
+	}
+
+	ZM_SpeciesAbilities xOut = {};
+	xOut.m_eRegular = eRegular;
+	xOut.m_eHidden  = eHidden;
+	return xOut;
+}
+
+ZM_EggMoves ZM_GetSpeciesEggMoves(ZM_SPECIES_ID eId)
+{
+	const ZM_SpeciesData& xData = ZM_GetSpeciesData(eId);
+
+	ZM_EggMoves xOut = {};
+
+	// Legendaries never breed -> no egg moves.
+	if (xData.m_eRarity == ZM_RARITY_LEGENDARY)
+	{
+		return xOut;
+	}
+
+	// The species' own level-up learnset is the EXCLUSION set: egg moves are the cohort-
+	// reachable moves it does NOT learn itself.
+	const ZM_Learnset xLearnset = ZM_GetSpeciesLearnset(eId);
+
+	const ZM_TYPE eT1 = xData.m_aeTypes[0];
+	const ZM_TYPE eT2 = xData.m_aeTypes[1];
+	const u_int   uMoveCount = ZM_GetMoveCount();
+	for (u_int i = 0u; i < uMoveCount && xOut.m_uCount < uZM_MAX_EGG_MOVES; ++i)
+	{
+		const ZM_MOVE_ID   eMove = (ZM_MOVE_ID)i;
+		const ZM_MoveData& xMove = ZM_GetMoveData(eMove);
+
+		// Type-appropriate: a move of one of the species' own type slots.
+		const bool bTypeMatch = (xMove.m_eType == eT1) ||
+			(eT2 != ZM_TYPE_NONE && xMove.m_eType == eT2);
+		if (!bTypeMatch)
+		{
+			continue;
+		}
+
+		// Exclude anything already in the species' level-up learnset.
+		bool bInLearnset = false;
+		for (u_int k = 0u; k < xLearnset.m_uCount; ++k)
+		{
+			if (xLearnset.m_axMoves[k].m_eMove == eMove) { bInLearnset = true; break; }
+		}
+		if (bInLearnset)
+		{
+			continue;
+		}
+
+		xOut.m_aeMoves[xOut.m_uCount++] = eMove;
+	}
+	return xOut;
+}
+
+u_int ZM_GetSpeciesHatchCycles(ZM_SPECIES_ID eId)
+{
+	const ZM_SpeciesData& xData = ZM_GetSpeciesData(eId);
+
+	// Base incubation from rarity: rarer lines hatch slower (mainline convention).
+	u_int uCycles;
+	switch (xData.m_eRarity)
+	{
+	case ZM_RARITY_COMMON:    uCycles = 10u; break;
+	case ZM_RARITY_UNCOMMON:  uCycles = 15u; break;
+	case ZM_RARITY_RARE:      uCycles = 25u; break;
+	case ZM_RARITY_LEGENDARY: uCycles = 40u; break;
+	default:                  uCycles = 10u; break;
+	}
+
+	// Bulkier body plans add a few cycles (size folds in evo stage + archetype).
+	uCycles += (u_int)ZM_GetSpeciesSizeClass(eId);   // + 0..4
+	return uCycles;
 }
 
 namespace
