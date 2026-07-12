@@ -15,6 +15,63 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-12 -- ZM-D-046 -- S2 box-6 SC2: `ZM_BattleTower` logic (BOX 6 COMPLETE)
+
+- **Decision:** `ZM_BattleTower` ships as pure, deterministic, headless LOGIC in
+  `Source/Battle/ZM_BattleTower.{h,cpp}` -- no globals/statics-with-state, no UI,
+  and it makes NO engine calls itself. It PRODUCES clamped teams + an AI tier + a
+  battle config and SETTLES a streak from a bool result; a CALLER drives the
+  actual battle via `ZM_BattleEngine` + `ZM_ChooseAction`. This keeps the tower a
+  pure logic layer, fully testable without a live battle.
+- **Level-50 clamp:** `ZM_ClampSpecToTowerLevel` copies the spec, sets `m_uLevel
+  = 50` + `m_uCurExp = UNSPECIFIED`, and preserves species/IVs/EVs/nature/ability/
+  moves/override verbatim; the six stats recompute via the locked
+  `ZM_BuildBattleMonster` path (>50 clamps down, <50 scales up, full-HP start).
+  The original spec is never built, so an out-of-range input level cannot trip the
+  build's [1,100] assert. `ZM_ClampPartyToTowerLevel` maps element-wise.
+- **Streak -> difficulty:** `ZM_TowerBaseTierForStreak` = [0,7) RANDOM / [7,21)
+  GREEDY / [21,35) SMART / [35,inf) CHAMPION (monotonic). Boss = `(streak+1) % 7
+  == 0`. `ZM_TowerAITierForStreak` = base tier + ONE step on a boss, capped at
+  CHAMPION (never COUNT/NONE). NOTE: the bumped AI tier is NOT globally monotonic
+  -- it dips to the base tier after each interior boss (streak 13 -> SMART, 14 ->
+  GREEDY); the header documents this. This RESOLVES an internal inconsistency in
+  the spec's §5 "worked values" (which implied a two-tier jump) -- the code + tests
+  use the ONE-tier rule (streak 20 -> SMART). Rarity ceiling rises COMMON ->
+  UNCOMMON (>=7) -> RARE (>=21); never LEGENDARY.
+- **Team gen (deterministic, LOCKED draw order):** eligible = dex in ascending id
+  with `rarity != LEGENDARY && rarity <= ceiling`; per output slot (default 3):
+  (A) species via `RandBelow(eligibleCount)` rejected until distinct from earlier
+  slots, (B) one `RandBelow(ZM_NATURE_COUNT)` nature after the species; IVs 31,
+  EVs 0, ability NONE, moves = up-to-four highest-level learnset entries at level
+  <= 50. Per-battle seed = `run.m_ulSeed + 0x9E3779B97F4A7C15 * (streak+1)`. (43
+  non-legendary COMMON species >> team size 3, and an `eligible >= count` assert
+  guards it, so the distinct-pick loop always terminates.)
+- **Advance/config:** `ZM_TowerAdvance` -- win increments current + raises the
+  best-streak high-water; loss resets current to 0 (best preserved); returns the
+  new current. `ZM_MakeTowerBattleConfig` -- level cap 50, trainer=true,
+  wild/catch/flee=false, awardExp=false.
+- **First consumer of ZM-D-044:** the tower is the first real consumer of
+  `ZM_AI_TIER` / `ZM_ChooseAction`. FUTURE-INTEGRATION NOTE: `ZM_ChooseAction`
+  returns a MOVE for a FAINTED active (it enumerates the fainted active's moves),
+  so an S5+ battle-integration caller must submit the forced SWITCH itself on a
+  faint rather than delegate that turn to the chooser (or box 5's chooser should
+  later special-case a fainted active). The box-6 engine smokes side-step this by
+  running a controlled 1v1 (the battle ends on the first KO). Flagged
+  Q-2026-07-12-005. No production bug today (the tower never runs battles).
+- **Tests that lock it:** 25 tests in `Tests/ZM_Tests_BattleTower.cpp` -- 23
+  `ZM_Data` (L50-clamp stat-parity via the build oracle, streak/boss/tier band
+  boundaries + one-tier bump, rarity bands, team-gen goldens via an INDEPENDENT
+  §7 oracle + legality, advance win/loss/best, config fields) + 2 `ZM_Battle`
+  engine round-trip smokes (a real 1v1 tower battle to termination, no exp
+  awarded). Adversarial review: SAFE-TO-COMMIT (one non-blocking header-comment
+  inaccuracy fixed -- the AI tier is bounded but not monotonic). Boot unit baseline
+  1638 -> 1663 (`zm-tests.yml`).
+- **Reversibility:** additive + standalone; all numeric knobs (7/21/35 tier
+  thresholds, team size 3, rarity bands, the exp-off + NONE-ability team defaults)
+  are S11-tunable named constants with zero API/golden impact if retuned. **BOX 6
+  COMPLETE** (SC1 breeding/daycare = ZM-D-045 + SC2 tower = ZM-D-046). All S2
+  battle-logic boxes (1-6) are now done; next is the S2 automated stage gate.
+
 ## 2026-07-12 -- ZM-D-045 -- S2 box-6 SC1: `ZM_Breeding` + `ZM_Daycare` (reduced deterministic breeding on the shipped data)
 
 - **Decision:** `ZM_Breeding` + `ZM_Daycare` ship as pure, deterministic, headless

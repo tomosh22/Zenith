@@ -10,6 +10,23 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-12-005 -- ZM_BattleTower: defaulted tuning + a future-integration note
+
+**Question:** ratify (or override) the defaulted rulings for the S2 box-6 SC2 `ZM_BattleTower` logic. Battle Tower LOGIC is a Roadmap box-6 item (in-scope); all of these are additive/retunable, so I proceeded rather than halting.
+
+**Best-guess actions taken:**
+1. **Numeric tuning = S11-tunable defaults** (the GDD fixes only "boss every 7th"): tier bands at streak 7/21/35 (RANDOM->GREEDY->SMART->CHAMPION), one-tier boss bump, team size 3, rarity ceiling bands COMMON / UNCOMMON(>=7) / RARE(>=21). Cost-if-wrong: retune named constants, zero API/golden impact.
+2. **Tower battles award no EXP** (`ZM_MakeTowerBattleConfig` sets `awardExp=false`) and generated opponents use ability NONE (the reduced data has no per-species ability). Cost-if-wrong: low/additive.
+3. **Procedural-by-seed opponent teams from the existing dex** (no bespoke tower species table) -- a ~150-row tower pool is S11 content, not box-6 logic. Cost-if-wrong: low; a data table can later replace the procedural path behind the same `ZM_GenerateTowerTeam` signature.
+
+**Related future-integration note (tracked, not itself a question):** `ZM_ChooseAction` (box 5) returns a MOVE for a FAINTED active (it enumerates the fainted active's moves), so when the S5+ battle integration wires the enemy side to the AI it must submit the forced SWITCH itself on a faint rather than delegating that turn to `ZM_ChooseAction` (or box 5's chooser should later special-case a fainted active). The box-6 tower engine smokes side-step this with a controlled 1v1. No production bug today (the tower is a pure logic layer that never runs battles).
+
+**Cost if wrong:** LOW across all -- each is additive/retunable.
+
+**Status:** asked 2026-07-12. Implementation + full local gate complete (ZM-D-046). OPEN for user override.
+
+---
+
 ### [OPEN] Q-2026-07-12-004 -- ZM_Breeding: reduced model on the shipped data (no gender / egg groups / egg moves)
 
 **Question:** ratify (or override) the reduced breeding model implemented for S2 box-6 SC1. The species table ships with NO egg-group, gender, hatch-cycle, egg-move, or species->ability data; adding any of those is a data-model EXPANSION (the scope-change direction), so I built breeding on the data that exists and flagged the reductions rather than expanding the model unilaterally.
