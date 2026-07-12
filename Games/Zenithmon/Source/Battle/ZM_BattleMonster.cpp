@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Zenithmon/Source/Battle/ZM_BattleMonster.h"
+#include "Zenithmon/Source/Battle/ZM_ExpAndLevel.h"   // ZM_ExpForLevel, ZM_GetSpeciesGrowthRate (box 4 build fields)
 #include "Zenithmon/Source/Data/ZM_StatCalc.h"   // ZM_CalcStat, IV/EV/level caps
 
 // Derive an in-battle monster instance from its authoring spec. Pure integer
@@ -32,15 +33,37 @@ ZM_BattleMonster ZM_BuildBattleMonster(const ZM_BattleMonsterSpec& xSpec)
 	{
 		u_int uIV = xSpec.m_auIV[u];
 		if (uIV > uZM_MAX_IV) uIV = uZM_MAX_IV;
-		u_int uEV = xSpec.m_auEV[u];
-		if (uEV > uZM_MAX_EV_PER_STAT) uEV = uZM_MAX_EV_PER_STAT;
-
 		xMon.m_auIV[u] = uIV;
-		xMon.m_auEV[u] = uEV;
-		xMon.m_auMaxStat[u] = ZM_CalcStat((ZM_STAT)u, xBase.m_au[u], uIV, uEV, xSpec.m_uLevel, xSpec.m_eNature);
+		xMon.m_auEV[u] = xSpec.m_auEV[u];
+	}
+	// Canonical HP/Atk/Def/SpA/SpD/Spe order decides which hostile excess is
+	// retained: per-stat 252 first, then the total-510 room is consumed left-to-right.
+	ZM_NormalizeEVs(xMon.m_auEV);
+	for (u_int u = 0; u < ZM_STAT_COUNT; ++u)
+	{
+		xMon.m_auMaxStat[u] = ZM_CalcStat((ZM_STAT)u, xBase.m_au[u],
+			xMon.m_auIV[u], xMon.m_auEV[u], xSpec.m_uLevel, xSpec.m_eNature);
 	}
 
 	xMon.m_uCurHP = xMon.m_auMaxStat[ZM_STAT_HP];
+
+	// Box 4: stash the resolved base stats (the level-up recompute source, override-
+	// aware) and normalize an explicitly supplied cumulative-exp value into the
+	// declared level's band. Legacy callers omit it and receive the curve floor.
+	xMon.m_xBaseStats = xBase;
+	const ZM_GROWTH_RATE eRate = ZM_GetSpeciesGrowthRate(xSpec.m_eSpecies);
+	const u_int uFloorExp = ZM_ExpForLevel(eRate, xSpec.m_uLevel);
+	xMon.m_uCurExp = uFloorExp;
+	if (xSpec.m_uCurExp != uZM_EXP_UNSPECIFIED && xSpec.m_uLevel < uZM_MAX_LEVEL)
+	{
+		const u_int uNextExp = ZM_ExpForLevel(eRate, xSpec.m_uLevel + 1u);
+		const u_int uBandMax = uNextExp > uFloorExp ? uNextExp - 1u : uFloorExp;
+		xMon.m_uCurExp = xSpec.m_uCurExp < uFloorExp ? uFloorExp : xSpec.m_uCurExp;
+		if (xMon.m_uCurExp > uBandMax)
+		{
+			xMon.m_uCurExp = uBandMax;
+		}
+	}
 
 	for (u_int u = 0; u < uZM_MAX_MOVES; ++u)
 	{

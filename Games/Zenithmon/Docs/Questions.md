@@ -10,6 +10,22 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-12-002 -- ZM_ExpAndLevel: two sequencing rulings (move-overflow + evolution triggers)
+
+**Question:** ratify (or override) two implementation rulings made for the S2 `ZM_ExpAndLevel` box, both of which I judged to be IN-SCOPE sequencing (not scope changes) based on Scope.md + the GDD + the Roadmap stage plan, and therefore proceeded on rather than halting the autonomous loop.
+
+**Context:** the spec-extraction pass flagged these as "may need the user." I checked the binding docs: Scope.md lists "exp/levels, evolution" as IN and "no networking/multiplayer/trading" (so trade-evolution is already OUT); the GDD specifies "level-up move learning mid-battle" and lists evolution *lines* (F17/F23/...) but specifies NO trigger method (no level-N/stone/friendship detail); items -- hence stone evolution -- are Roadmap-S9; the battle engine is headless with no UI until S5/S6.
+
+**Best-guess action taken:**
+1. **4-move overflow = SKIP.** On a mid-battle level-up that would teach a 5th move, the new move is NOT learned (a `MOVE_LEARNED` event fires only when a move is actually added). The interactive "replace which move?" choice is inherently a UI feature -> deferred to S5/S6. I did NOT reserve a `MOVE_LEARN_PENDING` event now (the `ZM_BattleEvent` POD is append-only, so S5/S6 can add it when the UI needs it -- YAGNI).
+2. **Evolution = LEVEL-trigger only this box.** Stage-1 -> stage-2 eligibility is derived at L16 and stage-2 -> stage-3 at L36. The engine emits one terminal `EVOLUTION_QUEUED` edge only for a monster that levelled during the battle; pure `ZM_Evolve()` performs the later mutation. Item/stone evolution -> deferred to S9. Trade evolution -> OUT (Scope.md: no trading). Friendship -> not modeled. **No generic trigger-type field or evolution-ref schema was added in box 4**; S9 will add its concrete item-trigger data/API additively when that contract is implemented.
+
+**Cost if wrong:** LOW-to-MODERATE. The architecture is localized and later trigger paths remain additive, but changing move-overflow behavior or reserving a pending event requires updating the dedicated box-4 tests and affected exact-stream goldens.
+
+**Status:** asked 2026-07-12. The implementation and full local gate are complete under the best-guess rulings; the final contract is recorded in ZM-D-043 in this change. The question remains OPEN for user override; either alternative remains additive.
+
+---
+
 ### [OPEN] Q-2026-07-12-001 -- ZM_ValidateEventStream rule 7 rejects WEATHER_DAMAGE->FAINT and ability-chip->FAINT
 
 **Question:** should the `ZM_ValidateEventStream` test helper's rule 7 (a FAINT must be preceded by a recognized damage-source event) be widened to also accept `WEATHER_DAMAGE` and `ABILITY_TRIGGER` (ability chip) as valid pre-FAINT sources, alongside the current DAMAGE_DEALT / STATUS_DAMAGE / RECOIL?

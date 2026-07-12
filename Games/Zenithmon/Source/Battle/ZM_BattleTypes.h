@@ -69,5 +69,10 @@ struct ZM_BattleConfig
 	bool  m_bCanCatch = false;
 	bool  m_bCanFlee  = false;
 	u_int m_uLevelCap = 0u;   // 0 == none; box 6 Battle Tower sets 50
+	// box 4 (exp/level/evolution). Both default so every existing config leaves exp
+	// OFF -> the engine exp path is inert and the box-1..3 goldens stay byte-identical.
+	bool  m_bAwardExp        = false;   // gates ALL progression tracking/mutation/events (zero-perturbation)
+	bool  m_bIsTrainerBattle = false;   // gross exp x1.5 when true
+	u_int m_uExpAwardSideMask = 1u << (u_int)ZM_SIDE_PLAYER; // enabled normal use progresses player only
 	// reserved (box 5): ZM_AI_TIER m_aeSideAI[ZM_SIDE_COUNT] = { NONE, NONE };
 };

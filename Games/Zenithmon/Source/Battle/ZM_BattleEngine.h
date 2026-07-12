@@ -60,6 +60,10 @@ private:
 	void ResolveEndOfTurnPhase();   // box 1: emit TURN_END only. box 2/3: status/weather/leech ticks
 	void ResolveWeatherEndOfTurn(); // SC1: SAND/SNOW chip (PLAYER then ENEMY) + weather countdown/expiry
 	void ResolveScreenEndOfTurn();  // SC1: screen countdown/expiry (PLAYER then ENEMY, PHYS then SPEC)
+	void MarkCurrentParticipants(); // box 4: per-opponent opposing-active ledger; strict no-op when awards are off
+	bool AwardsExpToSide(ZM_SIDE eSide) const;
+	void AwardExpForNewFaints();    // box 4: scan every party member and credit each new faint exactly once
+	void QueueTerminalEvolutions(); // box 4: immediately-before-BATTLE_END settlement only
 	void Emit(const ZM_BattleEvent& x) { m_xEvents.PushBack(x); }
 
 	// SC6 pre-move action handlers (fixed PLAYER-then-ENEMY order). A catch/flee sets

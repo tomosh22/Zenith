@@ -15,6 +15,72 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-12 -- ZM-D-043 -- S2 box-4: modern party-share EXP / EV / level / move-learn / terminal evolution (BOX 4 COMPLETE)
+
+- **Decision:** `ZM_ExpAndLevel` ships as deterministic, integer-only progression in
+  `Source/Battle/ZM_ExpAndLevel.{h,cpp}`, integrated behind default-false
+  `ZM_BattleConfig::m_bAwardExp`. The award-off path changes no progression or
+  participation state, draws no RNG, and emits none of `EXP_GAINED`, `LEVEL_UP`,
+  `MOVE_LEARNED`, or `EVOLUTION_QUEUED`; legacy streams and subsequent RNG output
+  remain byte-identical.
+- **Curve + derived-data contract:** FAST=`4L^3/5`, MEDIUM_FAST=`L^3`,
+  MEDIUM_SLOW=`6L^3/5 - 15L^2 + 100L - 140` clamped non-negative, and
+  SLOW=`5L^3/4`; every curve has L1=0 and caps at L100. Growth derives from rarity
+  (COMMON/UNCOMMON/RARE/LEGENDARY -> FAST/MEDIUM_FAST/MEDIUM_SLOW/SLOW). Base EXP
+  yield is `max(1, BST*2/5)`. EV yield targets the species' highest base stat
+  (ties use the lowest `ZM_STAT` index) for 1/2/3 points by evolution stage.
+  Level evolution derives as stage-1 -> stage-2 at L16, stage-2 -> stage-3 at L36,
+  final -> none. These remain S11-tunable accessors, not new species-table columns.
+- **Award + modern party-share contract:** gross wild EXP is
+  `max(1, floor(baseYield*defeatedLevel/7))`; trainer battles apply
+  `floor(gross*3/2)` after the `/7` division. Each defeated opponent keeps its own
+  bitset of opposing slots that were active against it. Every living participant
+  receives an independent full gross award; every living nonparticipant receives
+  `max(1, floor(gross/2))`. There is no shared pool or remainder. Fainted
+  recipients receive neither EXP nor EV. Award order is participants by ascending
+  slot, then nonparticipants by ascending slot. The side mask defaults to
+  player-only but can explicitly enable another side.
+- **EV contract:** every living recipient receives the defeated species' full EV
+  yield even when its EXP share is half. EVs normalize deterministically in
+  HP/Atk/Def/SpA/SpD/Spe order, with 252 per-stat and 510 total caps. EV mutation
+  happens before EXP/level stat recomputation; a level-capped recipient still gains
+  EVs when no EXP can be credited.
+- **Current EXP + level contract:** `ZM_BattleMonsterSpec::m_uCurExp` uses an
+  explicit UNSPECIFIED sentinel. Omitted input derives the declared level's curve
+  floor; supplied values clamp into that level's cumulative-EXP band. Awards clamp
+  to the configured cap (`0` = natural L100), emit the credited amount and new
+  cumulative total, process every crossed level, recompute all six stats from the
+  override-aware base stats, and preserve missing HP instead of fully healing.
+- **Move-learning ruling:** each crossed level processes its learnset entries. A
+  new move fills the first empty slot with full table PP and emits `MOVE_LEARNED`;
+  already-known moves are silent. If all four slots are full, the move is skipped
+  with no replacement, pending-choice state, or event. Interactive replacement is
+  S5/S6 presentation work.
+- **Evolution ruling:** box 4 supports level-trigger evolution only. A monster that
+  levelled during battle queues at most one immediate evolution edge during terminal
+  settlement, after `TURN_END` and directly before `BATTLE_END`; species never
+  mutates mid-battle. Pure `ZM_Evolve()` applies one eligible edge, reloads target
+  base stats, recomputes stats, preserves missing HP, and clears transient queue and
+  levelled flags. Item/stone evolution is deferred to S9; trade evolution is out of
+  scope; friendship evolution is unspecified. No generic trigger schema is reserved.
+- **Faint/event ordering:** direct/recoil/contact-result faints are swept after the
+  move phase; weather/status/volatile/ability-chip faints are swept after end-of-turn
+  damage and abilities but before `TURN_END`. Per-defeated-monster credit state makes
+  both sweeps exactly-once. Existing event ordinals and the event POD are unchanged.
+- **Tests-that-lock-it:** **67** new tests (**45 `ZM_Data` + 22 `ZM_Battle`**) cover
+  literal curve vectors/inverses, hostile bounds, derived accessors, wild/trainer
+  awards, EV caps/normalization, current-EXP bands, single/multi-level restats and HP
+  carry, move learning, pure one-edge evolution, exact direct and EOT faint streams,
+  per-opponent ledgers, recipient order, fainted recipients, EV-before-restat and
+  EV-at-cap, reserve move use, ledger reset, terminal evolution/requeue, exactly-once
+  credit, and award-off stream/state/RNG identity. Local evidence: regen GREEN;
+  Vulkan Debug Tools=True build GREEN; boot baseline **1510 -> 1577** = **1577 ran /
+  1576 passed / 0 failed / 1 skipped**; headless automated suite **1/1**; adversarial
+  production and test re-reviews GREEN.
+- **Reversibility:** additive but golden-sensitive. The default-false gate keeps
+  removal localized, but curve formulas, sharing semantics, recipient/event order,
+  and payloads now define deterministic goldens and require a new decision if changed.
+
 ## 2026-07-12 -- ZM-D-042 -- S2 box-3 SC5: turn-end / faint / quickdraw abilities + all-50 gate (BOX 3 COMPLETE)
 
 - **Decision:** SC5 is the FINAL box-3 slice -- it installs the last **9** ability

@@ -22,6 +22,10 @@ struct ZM_MoveSlot
 	u_int      m_uMaxPP = 0u;
 };
 
+// Appended spec input sentinel: zero is valid cumulative exp at level 1, so an
+// omitted value must use the explicit all-bits-set UINT_MAX-style marker.
+static const u_int uZM_EXP_UNSPECIFIED = ~0u;
+
 // The serializable authoring seed. Tests, box-4 party->battle, box-6 breeding all
 // produce one of these. Everything overridable so a golden fixes every input.
 struct ZM_BattleMonsterSpec
@@ -36,6 +40,9 @@ struct ZM_BattleMonsterSpec
 	// --- TEST/GOLDEN HOOK ---
 	bool          m_bOverrideBaseStats = false;      // if true, use m_xBaseStatsOverride not the
 	ZM_BaseStats  m_xBaseStatsOverride  = {};        // ZM-D-021-derived table -> golden survives re-tune
+	// APPENDED for aggregate-initializer compatibility. A specified value is
+	// clamped into this level's cumulative-exp band; UNSPECIFIED derives the floor.
+	u_int         m_uCurExp = uZM_EXP_UNSPECIFIED;
 };
 
 struct ZM_BattleMonster
@@ -65,6 +72,15 @@ struct ZM_BattleMonster
 	ZM_MoveSlot     m_axMoves[uZM_MAX_MOVES];
 	int             m_aiStage[ZM_BATTLE_STAT_COUNT] = {}; // each in [-6,+6]; box 1 all 0
 	int             m_iCritStage = 0;                      // RAISE_CRIT counter (box 2 SC2); box 1 always 0
+	// box 4 (exp/level/evolution) -- APPENDED (POD stays append-only). Goldens
+	// compare the EVENT stream, not this struct, so appending is byte-safe.
+	u_int           m_uCurExp = 0u;                        // total accumulated exp (ZM_ApplyExpGain mutates)
+	ZM_BaseStats    m_xBaseStats = {};                     // resolved at build (override OR table) -- level-up recompute source
+	// Battle-only progression ledger. Never serialized; Begin rebuilds every mon.
+	u_int           m_uParticipantMask = 0u;               // opposing party slots active while this mon was active
+	bool            m_bDefeatCredited = false;             // this mon's faint already awarded exactly once
+	bool            m_bLevelledThisBattle = false;         // terminal evolution settlement input
+	bool            m_bEvolutionQueued = false;             // terminal queue dedupe; cleared by ZM_Evolve
 
 	bool IsFainted() const { return m_uCurHP == 0u; }     // derived, never stored (no desync)
 };

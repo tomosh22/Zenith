@@ -6,6 +6,7 @@
 #include "Zenithmon/Source/Battle/ZM_AbilityHooks.h"
 #include "Zenithmon/Source/Battle/ZM_CatchCalc.h"
 #include "Zenithmon/Source/Battle/ZM_DamageCalc.h"
+#include "Zenithmon/Source/Battle/ZM_ExpAndLevel.h"
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
 #include "Zenithmon/Source/Data/ZM_ItemData.h"
@@ -118,6 +119,7 @@ void ZM_BattleEngine::Begin(const ZM_BattleConfig& xConfig,
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_ENEMY, xEnemy.m_uActiveSlot,
 		ZM_MOVE_NONE, (u_int)xEnemy.Active().m_eSpecies));
 	g_DispatchSwitchInAbility(m_xState, m_xEvents, ZM_SIDE_ENEMY);
+	MarkCurrentParticipants();   // initial matchup; strict no-op for legacy award-off configs
 }
 
 void ZM_BattleEngine::SubmitAction(ZM_SIDE eSide, const ZM_BattleAction& xAction)
@@ -208,12 +210,14 @@ void ZM_BattleEngine::ResolveTurn()
 	if (m_bOver)
 	{
 		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, iTurn));
+		QueueTerminalEvolutions();
 		Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE,
 			(int)m_eWinner, 0));
 	}
 	else
 	{
 		ResolveMovePhase();
+		AwardExpForNewFaints();    // box 4: move-KO exp appends right after the move phase's FAINT
 		ResolveEndOfTurnPhase();   // box 1: emit TURN_END
 
 		// battle-over check AFTER end-of-turn (box 2 status/weather can KO here too).
@@ -224,6 +228,7 @@ void ZM_BattleEngine::ResolveTurn()
 			const bool bEnemyAlive  = m_xState.Side(ZM_SIDE_ENEMY).HasUnfainted();
 			m_eWinner = (bPlayerAlive && !bEnemyAlive) ? ZM_SIDE_PLAYER
 			          : ((bEnemyAlive && !bPlayerAlive) ? ZM_SIDE_ENEMY : ZM_SIDE_COUNT);
+			QueueTerminalEvolutions();
 			Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE,
 				(int)m_eWinner, 0));
 		}
@@ -502,6 +507,7 @@ bool ZM_BattleEngine::DoSwitch(ZM_SIDE eSide, u_int uTargetSlot)
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, eSide, uTargetSlot,
 		ZM_MOVE_NONE, (u_int)xSide.Active().m_eSpecies));
 	g_DispatchSwitchInAbility(m_xState, m_xEvents, eSide);
+	MarkCurrentParticipants();
 	return true;
 }
 
@@ -518,6 +524,7 @@ void ZM_BattleEngine::ResolveEndOfTurnPhase()
 	ZM_StatusLogic::EndOfTurn(m_xState, m_xEvents, ZM_SIDE_PLAYER);
 	ZM_StatusLogic::EndOfTurn(m_xState, m_xEvents, ZM_SIDE_ENEMY);
 	g_DispatchTurnEndAbilities(m_xState, m_xEvents);   // SC5 step 6 (before TURN_END)
+	AwardExpForNewFaints();   // box 4: weather/status-chip-KO exp appends before the turn closes
 
 	const int iTurn = (int)m_xState.m_xField.m_uTurnCounter;
 	Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, iTurn));
@@ -575,6 +582,139 @@ void ZM_BattleEngine::ResolveWeatherEndOfTurn()
 			xField.m_eWeather = ZM_WEATHER_NONE;
 			Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_WEATHER_CHANGED, ZM_SIDE_COUNT, 0u,
 				ZM_MOVE_NONE, ZM_SPECIES_NONE, (int)ZM_WEATHER_NONE, 0, (int)eWeather));
+		}
+	}
+}
+
+bool ZM_BattleEngine::AwardsExpToSide(ZM_SIDE eSide) const
+{
+	return m_xConfig.m_bAwardExp && eSide < ZM_SIDE_COUNT
+		&& (m_xConfig.m_uExpAwardSideMask & (1u << (u_int)eSide)) != 0u;
+}
+
+// Each opponent owns the bitset of opposing party slots that were active while it
+// was active. Re-evaluating after every successful switch naturally covers either
+// side switching and bitwise OR makes repeated switches idempotent.
+void ZM_BattleEngine::MarkCurrentParticipants()
+{
+	if (!m_xConfig.m_bAwardExp)
+	{
+		return;
+	}
+	for (u_int uRecipientSide = 0u; uRecipientSide < (u_int)ZM_SIDE_COUNT; ++uRecipientSide)
+	{
+		const ZM_SIDE eRecipientSide = (ZM_SIDE)uRecipientSide;
+		if (!AwardsExpToSide(eRecipientSide))
+		{
+			continue;
+		}
+		const ZM_SIDE eOpponentSide = eRecipientSide == ZM_SIDE_PLAYER
+			? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
+		const u_int uRecipientSlot = m_xState.Side(eRecipientSide).m_uActiveSlot;
+		if (uRecipientSlot < 32u)
+		{
+			m_xState.Side(eOpponentSide).Active().m_uParticipantMask |= 1u << uRecipientSlot;
+		}
+	}
+}
+
+// Box 4 award sweep. Both existing call sites scan every monster on both sides;
+// the defeated monster's credit bit makes the operation exactly-once across move
+// and EOT sources. Configured recipient sides alone progress. For one defeated
+// opponent, living participants each receive the independent full gross award,
+// followed by living nonparticipants each receiving max(1,gross/2). Nobody shares
+// a pool or remainder. Full EV yield precedes each recipient's EXP/stat mutation.
+void ZM_BattleEngine::AwardExpForNewFaints()
+{
+	if (!m_xConfig.m_bAwardExp)
+	{
+		return;   // ZERO-PERTURBATION EARLY-OUT: no draws, no state change, no events
+	}
+
+	for (u_int uFaintedSide = 0u; uFaintedSide < (u_int)ZM_SIDE_COUNT; ++uFaintedSide)
+	{
+		const ZM_SIDE eFaintedSide = (ZM_SIDE)uFaintedSide;
+		ZM_BattleSide& xDefeatedSide = m_xState.Side(eFaintedSide);
+		for (u_int uDefeatedSlot = 0u; uDefeatedSlot < xDefeatedSide.m_xParty.GetSize(); ++uDefeatedSlot)
+		{
+			ZM_BattleMonster& xDefeated = xDefeatedSide.m_xParty.Get(uDefeatedSlot);
+			if (!xDefeated.IsFainted() || xDefeated.m_bDefeatCredited)
+			{
+				continue;
+			}
+			xDefeated.m_bDefeatCredited = true;   // even when no recipient is eligible
+
+			const ZM_SIDE eRecipientSide = eFaintedSide == ZM_SIDE_PLAYER
+				? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
+			if (!AwardsExpToSide(eRecipientSide))
+			{
+				continue;
+			}
+			ZM_BattleSide& xRecipientSide = m_xState.Side(eRecipientSide);
+			const u_int uGross = ZM_CalcExpGain(xDefeated.m_eSpecies,
+				xDefeated.m_uLevel, m_xConfig.m_bIsTrainerBattle);
+			const u_int uHalf = (uGross / 2u) > 0u ? (uGross / 2u) : 1u;
+			const u_int uCap = m_xConfig.m_uLevelCap > 0u
+				? m_xConfig.m_uLevelCap : uZM_MAX_LEVEL;
+			const ZM_BaseStats xYield = ZM_GetSpeciesEVYield(xDefeated.m_eSpecies);
+
+			for (u_int uGroup = 0u; uGroup < 2u; ++uGroup)
+			{
+				const bool bParticipantGroup = uGroup == 0u;
+				for (u_int uRecipientSlot = 0u;
+					uRecipientSlot < xRecipientSide.m_xParty.GetSize(); ++uRecipientSlot)
+				{
+					ZM_BattleMonster& xRecipient = xRecipientSide.m_xParty.Get(uRecipientSlot);
+					if (xRecipient.IsFainted())
+					{
+						continue;
+					}
+					const bool bParticipated = uRecipientSlot < 32u
+						&& (xDefeated.m_uParticipantMask & (1u << uRecipientSlot)) != 0u;
+					if (bParticipated != bParticipantGroup)
+					{
+						continue;
+					}
+					ZM_AddEVYield(xRecipient.m_auEV, xYield);
+					ZM_ApplyExpGain(xRecipient, bParticipated ? uGross : uHalf,
+						m_xEvents, eRecipientSide, uRecipientSlot, uCap);
+				}
+			}
+		}
+	}
+}
+
+// Evolution remains a terminal level-trigger only. All EXP/LEVEL/MOVE events are
+// already complete; this is called directly before each terminal BATTLE_END.
+void ZM_BattleEngine::QueueTerminalEvolutions()
+{
+	if (!m_xConfig.m_bAwardExp)
+	{
+		return;
+	}
+	for (u_int uSide = 0u; uSide < (u_int)ZM_SIDE_COUNT; ++uSide)
+	{
+		const ZM_SIDE eSide = (ZM_SIDE)uSide;
+		if (!AwardsExpToSide(eSide))
+		{
+			continue;
+		}
+		ZM_BattleSide& xSide = m_xState.Side(eSide);
+		for (u_int uSlot = 0u; uSlot < xSide.m_xParty.GetSize(); ++uSlot)
+		{
+			ZM_BattleMonster& xMon = xSide.m_xParty.Get(uSlot);
+			if (!xMon.m_bLevelledThisBattle || xMon.m_bEvolutionQueued)
+			{
+				continue;
+			}
+			const ZM_SPECIES_ID eTarget = ZM_CheckEvolveEligible(xMon);
+			if (eTarget == ZM_SPECIES_NONE)
+			{
+				continue;
+			}
+			xMon.m_bEvolutionQueued = true;
+			Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_EVOLUTION_QUEUED, eSide, uSlot,
+				ZM_MOVE_NONE, (u_int)eTarget, (int)xMon.m_uLevel, 0));
 		}
 	}
 }
