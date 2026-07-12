@@ -1,6 +1,6 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-12 -- **S2 box 6 is COMPLETE (SC1 + SC2), committed, and pushed to master. ALL S2 battle-logic boxes (1-6) are now done.** SC2 shipped `ZM_BattleTower`: pure, deterministic Battle-Tower LOGIC (level-50 clamp via `ZM_BuildBattleMonster`; streak->AI-tier escalation consuming `ZM_AI_TIER` with a one-tier boss bump; procedural-by-seed 3-mon opponent teams; win/loss streak settlement; `ZM_MakeTowerBattleConfig`). The tower PRODUCES setup + settles a streak; a caller runs the battle. Contract: **ZM-D-046**. Next: **the S2 automated stage gate** (the scenario-battle + 2,000-battle fuzz-soak verification pass), then S3.
+**Last updated:** 2026-07-12 -- **S2 box 6 is COMPLETE (SC1 + SC2), committed, and pushed to master. ALL S2 battle-logic boxes (1-6) are now done.** SC2 shipped `ZM_BattleTower`: pure, deterministic Battle-Tower LOGIC (level-50 clamp via `ZM_BuildBattleMonster`; streak->AI-tier escalation consuming `ZM_AI_TIER` with a one-tier boss bump; procedural-by-seed 3-mon opponent teams; win/loss streak settlement; `ZM_MakeTowerBattleConfig`). The tower PRODUCES setup + settles a streak; a caller runs the battle. Contract: **ZM-D-046**. The **S2 STAGE GATE is now PASSED** (ZM-D-047): the full 4-config Vulkan matrix + the `D3D12_vs2022_Debug_Win64_False` null-backend link proof all build green, and the boot unit gate is 1663 ran / 0 failed (incl. the box-1 scenario-stream characterizations + the box-2 2,000-battle soak). **S2 IS COMPLETE** -- the deterministic headless battle system is feature-done. Next: **S3 (first overworld)** -- a DIFFERENT class of work (engine E1/E2 terrain changes + terrain bakes + player/camera/warp + a VISUAL gate).
 
 **Read this first each session.** [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open decisions; [Shortfalls.md](Shortfalls.md) is the gap audit. Box 6 SC2's tower contract is **ZM-D-046**; SC1 breeding is ZM-D-045; box 5 AI is ZM-D-044.
 
@@ -19,6 +19,7 @@ Development is running under [OrchestratorPlaybook.md](OrchestratorPlaybook.md):
 - Unit boot gate: **1663 ran, 1662 passed, 0 failed, 1 skipped** (skip = pre-existing quarantined engine `RegistryWideNodeRoundTrip`). Box 6 SC2 added **25** tests (23 `ZM_Data` + 2 `ZM_Battle`); workflow baseline bumped **1638 -> 1663**.
 - Automated P1: **1/1** (`ZM_Boot_Test`); `zenith test Zenithmon --headless` exits 0.
 - No windowed or visual check applies to this headless box.
+- **S2 stage-gate matrix (this session):** the full 4-config Vulkan matrix (`Vulkan_vs2022_{Debug,Release}_Win64_{True,False}`) + the `D3D12_vs2022_Debug_Win64_False` null-backend link proof ALL build green. S2 gate PASSED (ZM-D-047); no visual check applies to the S2 gate.
 - Adversarial review GREEN (SAFE-TO-COMMIT): team-gen draw order matches an INDEPENDENT §7 oracle; streak/tier one-tier boss bump + band boundaries verified; L50-clamp stat parity via the build oracle; distinct-species loop proven terminating (43 COMMON >> 3). One non-blocking header-comment inaccuracy (the AI tier is bounded but NOT globally monotonic) was corrected before commit.
 
 ## Completed locally this iteration -- S2 box 6 SC2 (`ZM_BattleTower`)
@@ -27,9 +28,18 @@ Development is running under [OrchestratorPlaybook.md](OrchestratorPlaybook.md):
 
 ## Current task
 
-**Next per [Roadmap.md](Roadmap.md) S2: the S2 automated STAGE GATE.** The Roadmap S2 gate line reads: "~370 unit tests incl. scripted seeded scenario battles with exact expected event streams + 2,000-battle fuzz soak (termination < 500 turns, HP/PP/boost invariants)." Battle suite is now 384 `ZM_Battle` tests (the ~370 target is met); a 2,000-battle soak already exists from box 2 (ZM-D-035). The gate task: run the full 4-config matrix (Vulkan Debug/Release x True/False) + the `D3D12_vs2022_Debug_Win64_False` null-backend link proof, the full headless batch + boot unit gate, confirm the fuzz-soak + scenario-stream tests are green, capture the slowest-10 vs the TestPlan suite-runtime budget, then refresh Shortfalls + append a gate-results entry to DecisionLog. **Roadmap S2 lists NO windowed or visual check, so NO `GATE-WAIT` is expected** -- the S2 gate is fully automated; run it and, if green, tick the S2 gate and proceed to S3. (Use StartPrompts.md prompt 3's checklist as the gate script, minus the visual-check hard-stop, which does not apply to S2.)
+**S2 is COMPLETE (stage gate PASSED, ZM-D-047). Next per [Roadmap.md](Roadmap.md): S3 -- First overworld (critical path).** S3 is a DIFFERENT class of work from the headless battle logic of S1/S2 -- read MasterPlan.md for the E1/E2 detail + the terrain-bake risk analysis BEFORE starting. The S3 task order (first-unchecked-first):
+1. **Engine E1** -- serialized terrain-set name on `Zenith_TerrainComponent` (default "" = legacy `Terrain/`) replacing all 6 hard-coded path sites + `AddStep_TerrainSetAssetSet` + editor bake-target.
+2. **Engine E2** -- `AddStep_TerrainExportChunksRect(minX,minY,maxX,maxY)` + missing-chunk stream tolerance on `Flux_TerrainStreamingManager`.
+3. Home Village terrain baked via a `ZM_TerrainAuthoring` recipe; grass regenerated OnAwake.
+4. **Measure terrain bake time** with 3 real scenes BEFORE committing to ~25 terrains (Q-2026-07-09-002).
+5. `ZM_PlayerController` (Jolt capsule) + `ZM_FollowCamera` + `ZM_InputActions`.
+6. Persistent `ZM_GameStateManager` + `ZM_WarpTrigger`/`ZM_SpawnPoint` spawn-tag respawn.
+7. Player home interior + door warp round trip (SINGLE loads + fade).
 
-After the S2 gate: **S3** (first overworld scene + engine changes E1/E2 terrain-dir + rect chunk export; bake-time measurement per Q-2026-07-09-002) -- consult Roadmap.md + MasterPlan.md. S3 is where the terrain/asset-bake and visual gates begin, so GATE-WAIT hard-stops resume there.
+TWO THINGS CHANGE at S3 (heads-up for the next iteration):
+- **E1/E2 are ENGINE changes** (they touch `Zenith/` terrain/streaming code) -- per OrchestratorPlaybook.md section 4 they need engine unit tests for the new surface + a RenderTest boot regression check + the DP and CityBuilder suites green BEFORE the direct-master commit, not just the Zenithmon gate. Wider blast radius than any S1/S2 box.
+- **The S3 gate HAS a visual check** ("windowed automated test walks the village + door round trip; visual check terrain/grass/camera"). The user's standing hard-stop-at-visual-gates order RESUMES: the S3-gate iteration captures windowed screenshot evidence, writes `GATE-WAIT: S3 visual sign-off` into this file with the evidence paths, commits + pushes the docs, and ENDS for the user's sign-off (StartPrompts.md prompt 4). It does NOT self-sign a visual gate.
 
 ## Notes for the next agent
 

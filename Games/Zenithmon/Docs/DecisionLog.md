@@ -15,6 +15,33 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-12 -- ZM-D-047 -- S2 stage gate PASSED (all battle logic complete)
+
+- **Decision:** the S2 stage gate is PASSED; S2 -- the complete deterministic
+  headless battle system -- is DONE. All six S2 boxes landed (ZM-D-032..046):
+  battle engine + append-only event stream (box 1), move/status/catch/switch
+  executor (box 2), 50 abilities + weather (box 3), exp/EV/level/evolution
+  (box 4), four-tier `ZM_BattleAI` (box 5), breeding/daycare + Battle Tower
+  logic (box 6).
+- **Gate evidence (2026-07-12, this session):**
+  - Boot unit gate: **1663 ran / 1662 passed / 0 failed / 1 skipped** (the skip is
+    the pre-existing quarantined engine `RegistryWideNodeRoundTrip`). The suite
+    includes the box-1 offline-oracle exact-event-stream scenario
+    characterizations and the box-2 2,000-battle fuzz soak (termination < 500
+    turns + HP/PP/boost invariants). Game-unit inventory: **209 `ZM_Data` + 384
+    `ZM_Battle` + 2 `ZM_Boot`**; the Roadmap "~370 unit tests" target is exceeded.
+  - Automated headless batch: `zenith test Zenithmon --headless` = 1/1
+    (`ZM_Boot_Test`), exit 0.
+  - Build matrix: the full 4-config Vulkan matrix
+    (`Vulkan_vs2022_{Debug,Release}_Win64_{True,False}`) + the
+    `D3D12_vs2022_Debug_Win64_False` null-backend link proof ALL build green.
+  - No windowed or visual check is defined for the S2 gate, so no GATE-WAIT
+    applies -- the S2 gate is fully automated and self-signed.
+- **Reversibility:** n/a (a gate-results record). Next stage **S3** (first
+  overworld) begins the engine-change (E1/E2 terrain) + terrain-bake +
+  VISUAL-gate phase -- the user's standing hard-stop-at-visual-gates order
+  resumes at the S3 gate.
+
 ## 2026-07-12 -- ZM-D-046 -- S2 box-6 SC2: `ZM_BattleTower` logic (BOX 6 COMPLETE)
 
 - **Decision:** `ZM_BattleTower` ships as pure, deterministic, headless LOGIC in
