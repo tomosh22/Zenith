@@ -28,6 +28,8 @@
 class Flux_ParticleEmitterConfig;
 class Zenith_MaterialAsset;
 class Flux_MeshGeometry;
+class Zenith_TerrainEditor;
+class Zenith_UnitTests;
 
 //-----------------------------------------------------------------------------
 // Action Types
@@ -231,6 +233,7 @@ enum class Zenith_EditorActionType
 	TERRAIN_EDITOR_SET_TREE_BRUSH,
 	TERRAIN_EDITOR_SAVE_TEXTURES,
 	TERRAIN_EDITOR_EXPORT_CHUNKS,
+	TERRAIN_EDITOR_EXPORT_CHUNKS_RECT,
 
 	// Prefab variant authoring (Phase 3 of the readability plan).
 	// CREATE_PREFAB_FROM_SELECTED captures the currently-selected entity into a
@@ -278,7 +281,8 @@ struct Zenith_EditorAction
 	// Up to 10 floats: most steps use <=4; INSTANTIATE_PREFAB packs a full
 	// transform here as pos[0..2], quat[3..6] (wxyz), scale[7..9].
 	float m_afArgs[10] = {};
-	int m_aiArgs[2] = {};
+	// Up to four signed integers; bounded terrain export owns all four bounds.
+	int m_aiArgs[4] = {};
 	bool m_bArg = false;
 	void* m_pArg = nullptr;   // Type determined by m_eType (e.g. Flux_ParticleEmitterConfig*, Flux_MeshGeometry*)
 	void* m_pArg2 = nullptr;  // Type determined by m_eType (e.g. Zenith_MaterialAsset*)
@@ -638,6 +642,11 @@ void AddStep_TerrainSaveTextures();
 	// into the selected terrain set. Takes minutes.
 void AddStep_TerrainExportChunks();
 
+	// Export only the inclusive chunk rectangle. Bounds are validated when the
+	// action executes, before a standalone editor session is opened. Every valid
+	// rectangle includes the hard-required anchor chunk (0, 0).
+void AddStep_TerrainExportChunksRect(int iMinX, int iMinY, int iMaxX, int iMaxY);
+
 	//--------------------------------------------------------------------------
 	// Prefab Variant Step Helpers
 	//
@@ -711,6 +720,12 @@ public:
 	bool                               m_bComplete      = false;
 
 private:
+	friend class Zenith_UnitTests;
+	// Narrow injected seam for rect-export preflight. It traverses the same
+	// contiguous range router and executor as production, but stops immediately
+	// before the expensive physical export.
+	static bool TryPreflightTerrainExportChunksRectAction(
+		const Zenith_EditorAction& xAction, Zenith_TerrainEditor& xTerrainEditor);
 	void ExecuteAction(const Zenith_EditorAction& xAction);
 };
 

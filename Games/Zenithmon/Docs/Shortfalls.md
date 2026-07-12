@@ -4,9 +4,9 @@
 
 **Scope note (2026-07-09, S0):** at S0 essentially EVERYTHING is a gap -- the project is a booting skeleton. This doc is deliberately structured per major system with a one-line current-state each, so later sessions UPDATE lines in place rather than restructure. When a stage lands, replace that system's status line and add a dated note; do not reorder sections.
 
-**Verdict at a glance (updated 2026-07-12, S3 E1 COMPLETE, ZM-D-051):**
-- **What works today:** boot skeleton + the complete S1 data core and deterministic headless battle engine, including feature-complete breeding/gender and Battle Tower logic. S3 E1 now supplies backward-compatible, serialized, strictly contained per-terrain asset sets across runtime streaming and staged editor/automation bakes (ZM-D-051). Current game-unit inventory remains **264 `ZM_Data` + 384 `ZM_Battle` + 2 `ZM_Boot`**; the full boot gate, including seven new engine tests, is **1725 ran / 1724 passed / 0 failed / 1 skipped**. There is still no integrated playable loop: the rest of S3/S5 remains.
-- **What's designed but unbuilt:** S3 E2 rect-bounded export, terrain bakes, player/controller/camera/warp; asset generators (S4); overworld<->battle integration + UI (S5/S6); save schema (S7); and all world/story content (S8-S12). See [Roadmap.md](Roadmap.md).
+**Verdict at a glance (updated 2026-07-13, S3 E1/E2 COMPLETE, ZM-D-051/052):**
+- **What works today:** boot skeleton + the complete S1 data core and deterministic headless battle engine, including feature-complete breeding/gender and Battle Tower logic. S3 E1/E2 supply backward-compatible isolated terrain sets, safe staged/rectangular authoring, and terminal sparse-HIGH streaming (ZM-D-051/052). Current game-unit inventory remains **264 `ZM_Data` + 384 `ZM_Battle` + 2 `ZM_Boot`**; the full boot gate, including ten E1/E2 engine tests, is **1728 ran / 1727 passed / 0 failed / 1 skipped**. There is still no integrated playable loop: the rest of S3/S5 remains.
+- **What's designed but unbuilt:** S3 terrain recipes/bakes, player/controller/camera/warp; asset generators (S4); overworld<->battle integration + UI (S5/S6); save schema (S7); and all world/story content (S8-S12). See [Roadmap.md](Roadmap.md).
 - **Locked cuts (not gaps -- see Scope.md):** no audio (engine has none), no networking/multiplayer/trading, no Dynamax-analog, battle format singles only, documented volatile-status cuts (Substitute/Encore/Transform/weight moves).
 
 ---
@@ -29,8 +29,8 @@
 
 ### 1.3 Overworld
 
-**Status: S3 active; engine E1 complete, first playable scene not yet built.**
-Per-scene terrain-set isolation and safe editor bake targeting now exist (ZM-D-051). No player controller (engine has no character controller -- proper approach is a Jolt capsule + velocity), follow camera, input-action wrapper, warp/spawn-tag system, persistent `ZM_GameStateManager`, or baked terrain exists yet. The next blocker is engine E2 rect-bounded export (see section 2).
+**Status: S3 active; engine E1/E2 complete, first playable scene not yet built.**
+Per-scene terrain isolation, safe staged targeting, bounded export, and sparse streaming now exist (ZM-D-051/052). No player controller (engine has no character controller -- proper approach is a Jolt capsule + velocity), follow camera, input-action wrapper, warp/spawn-tag system, persistent `ZM_GameStateManager`, or baked terrain exists yet. The next task is the Home Village terrain authoring recipe.
 
 ### 1.4 Asset generators
 
@@ -76,7 +76,7 @@ All additive + back-compatible; each lands with unit tests + a RenderTest boot r
 | # | Gap | Why it blocks Zenithmon | Lands at |
 |---|-----|------------------------|----------|
 | E1 | **RESOLVED 2026-07-12 (ZM-D-051):** serialized strict terrain-set name, empty exact legacy layout, all runtime/editor/automation paths routed, safe staged bake cleanup, v1-v4 compatibility | Zenithmon can isolate one terrain asset family per outdoor scene without regressing existing games | S3 |
-| E2 | No rect-bounded chunk export; a full 64x64 grid is ~12k files and minutes-hours per terrain (x25 = ~300k files) | `AddStep_TerrainExportChunksRect` + streaming-path missing-chunk tolerance makes ~25 terrains plausible (~25k files); bake time still to be MEASURED (Questions.md Q-2026-07-09-002) | S3 |
+| E2 | **RESOLVED 2026-07-13 (ZM-D-052):** inclusive anchor-containing bounded export, safe stale-mesh cleanup, and terminal/bounded missing-or-invalid HIGH streaming | Makes one cropped asset family per outdoor scene plausible; bake time/file volume still must be MEASURED with three real scenes (Q-2026-07-09-002) | S3 |
 | E3 | `Zenith_UIText` has no typewriter reveal (visible-glyph-count property) | Every dialogue line and battle-text line needs it; belongs in the widget, not per-game hacks | S5 |
 | E4 | No `Zenith_UIGridLayoutGroup` (existing LayoutGroup is horizontal/vertical only) | Bag / box / dex grids are core UI surfaces | S6 |
 | E5 | Grass singleton state persists across SINGLE scene loads (`ResetRenderSystems` never calls `Grass().Reset()`, and `Reset()` leaves instances/flags/density map intact) | Leakage would put tall grass inside gyms and interiors; fix = wire Reset into ResetRenderSystems + widen Reset | S5 |

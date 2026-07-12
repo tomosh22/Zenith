@@ -135,9 +135,9 @@ Exact directory layout and file-naming scheme under `Assets/`: TBD at S4
 
 ## 4. Terrain sets (one per outdoor scene, ~25 sets)
 
-Engine change **E1 is shipped**: every `Zenith_TerrainComponent` owns a
-serialized terrain-set name and all runtime streaming/physics/render paths
-resolve through it. **E2** (rect chunk export) remains the next engine task.
+Engine changes **E1 and E2 are shipped**: every `Zenith_TerrainComponent`
+owns a serialized terrain-set name and all runtime streaming/physics/render
+paths resolve through it; authoring can export only a validated chunk rect.
 Each outdoor scene owns a set under `Assets/Terrain/<SetName>/` (e.g.
 `Terrain/Route01/`, `Terrain/HomeVillage/`).
 
@@ -157,12 +157,18 @@ physics/render regeneration; failed bakes retain dirty session state. Named
 sets co-locate textures and meshes in their set directory, while the empty
 legacy set preserves the historical split (`Textures/Terrain/` for textures,
 `Terrain/` for meshes). Cleanup is non-recursive and removes only direct
-generated `.zmesh` files after canonical containment checks.
+generated `.zmesh` files after canonical containment checks. Rect-export
+validation and target resolution happen before cleanup, directory creation,
+editor-map allocation, or component/streaming mutation, so invalid requests
+are transactional.
 
 Authoring automation uses `AddStep_TerrainSetAssetSet(szSet)`. Its queued
 action owns the argument bytes and validates/preflights before staging. It
 stamps an uninitialized selected component so a following scene save persists
 the set; initialized components may only change sets through `BakeFull`.
+`AddStep_TerrainExportChunksRect(minX,minY,maxX,maxY)` queues the bounded
+mesh export with all four signed coordinates preserved and validated before a
+standalone editor session can open.
 
 ### 4.1 Per-set file set
 
@@ -171,15 +177,30 @@ the set; initialized components may only change sets through `BakeFull`.
 | Height.ztxtr | R32F | |
 | Splatmap_RGBA.ztxtr | RGBA | 4-material palette |
 | GrassDensity.ztxtr | | doubles as the gameplay tall-grass encounter map (ZM_TallGrassSystem keeps its own CPU copy) |
-| Render_X_Y.zmesh | per exported chunk | |
-| Render_LOW_X_Y.zmesh | per exported chunk | |
-| Physics_X_Y.zmesh | per exported chunk | |
+| Render_X_Y.zmesh | exactly 1 per exported chunk | HIGH render source; a missing/invalid sparse source becomes `SOURCE_UNAVAILABLE` at runtime |
+| Render_LOW_X_Y.zmesh | exactly 1 per exported chunk | LOW render source |
+| Physics_X_Y.zmesh | exactly 1 per exported chunk | physics source |
 
-**Rect export only (E2):** the engine grid is a fixed 64x64 chunk sheet; a
-full export is ~12k files per terrain. We export only the authored rect
-(routes ~16x24 chunks, towns ~16x16) -> ~25k files across all ~25 sets.
-Non-anchor missing chunks skip-with-warning; the anchor chunk (0,0) is
-hard-required and must always be inside the export rect.
+**Rect export only (E2):** bounds are inclusive, non-normalizing, and must
+satisfy `0 <= min <= max < 64` on both axes while containing the hard-required
+anchor chunk `(0,0)`. An accepted rectangle of width `W` and height `H` writes
+exactly `3 * W * H` direct `.zmesh` files with their absolute fixed-grid
+coordinates; the complete 64x64 sheet is exactly 12,288 files. This crops the
+existing fixed 4096x4096 m grid for bake/file-count purposes and does **not**
+resize it; per-instance extent remains deferred E6 work. Routes target about
+16x24 chunks and towns about 16x16, yielding about 25k files across all ~25
+sets.
+
+Component initialization still hard-requires the anchor and skips other
+missing render/physics chunks with warnings. Dynamic HIGH streaming uses a
+bounded parser for the shared canonical 28-byte terrain vertex layout and
+fixed HIGH counts. A missing, truncated, malformed, wrong-layout, or
+out-of-range-index HIGH file causes no allocation or eviction: the chunk keeps
+LOW residency and is marked `SOURCE_UNAVAILABLE`. Classification warns once,
+is not retried on later frames, and is reset by terrain teardown/regeneration.
+Source probing is capped at 32 attempts per frame independently of the
+existing eight successful uploads, preventing sparse holes from starving a
+later valid chunk.
 
 ### 4.2 Authoring recipe (per scene, in ZM_TerrainAuthoring)
 

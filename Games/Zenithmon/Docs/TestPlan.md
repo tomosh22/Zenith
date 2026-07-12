@@ -276,11 +276,26 @@ biggest suite; all headless, all seeded (C8).
   | `Terrain::EditorAutomationTerrainAssetSetActionOwnsArgument` | Owned automation argument, executed set action, fresh-component stamping and scene serialization |
 
   All seven are engine-side `ZENITH_TEST` cases and are count-ratcheted into
-  both the shared engine unit gate (**1075** registered) and Zenithmon's CI
-  boot unit gate (**1725** registered). The latter expects 1724 passed,
+  both the shared engine unit gate (**1078** registered) and Zenithmon's CI
+  boot unit gate (**1728** registered). The latter expects 1727 passed,
   0 failed and the one quarantined skip.
-- **E2 engine unit tests (planned):** rect-export bounds and missing-chunk
-  tolerance on the streaming path; these land engine-side with E2.
+- **E2 engine unit tests (SHIPPED -- exactly three):**
+
+  | Test | Contract covered |
+  |---|---|
+  | `TerrainEditor::ChunkExportRectUsesInclusiveBounds` | Transactional inclusive bounds `0 <= min <= max < 64` containing anchor `(0,0)`; compact fixed-grid coordinate enumeration; exact `3 * area` file count; signed automation payload/routing; invalid preflight has no editor, component, directory, cleanup, or streaming-state side effects |
+  | `Terrain::StreamingMissingHighLODSourceDoesNotEvictOrAllocate` | Missing or malformed HIGH source is parsed through the bounded canonical terrain-mesh reader, returns without assertion/allocation/eviction, and preserves LOW residency, allocators, stats, and dirty state |
+  | `Terrain::StreamingUnavailableHighLODDoesNotRetryOrStarve` | Missing HIGH sources become terminal `SOURCE_UNAVAILABLE`; the 32-probe source budget is independent of the eight-upload budget, retries are suppressed, and a later valid candidate is not starved |
+
+  Rect export is a crop of the fixed 64x64 grid, not a resize (E6 remains
+  deferred). The production editor path validates the rectangle before any
+  mutation, resolves a canonical contained target, removes only direct
+  generated `.zmesh` children, then writes exactly the HIGH, LOW and physics
+  file for every selected chunk. Streaming warns once when classifying a
+  missing/invalid HIGH source; terrain teardown/regeneration resets the
+  terminal state so a newly baked source can be tried again. The three E2
+  cases raise the shared engine baseline 1075 -> 1078 and Zenithmon's exact
+  boot baseline 1725 -> 1728.
 - **Engine regression:** the empty asset set still resolves the unchanged
   legacy `Terrain/` layout; RenderTest boot and terrain-editor smoke remain
   the local regression oracle.

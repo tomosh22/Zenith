@@ -3,6 +3,7 @@
 #include <string>
 
 #include "AssetHandling/Zenith_Image.h"
+#include "Flux/Terrain/Flux_TerrainExportRect.h"
 
 /**
  * Export terrain meshes from heightmap.
@@ -29,6 +30,14 @@ void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::st
  * @param strOutputDir  Full path to output directory (must end with '/' or '\')
  */
 void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir);
+
+/**
+ * Export HIGH, LOW and physics meshes for only the chunks inside xRect.
+ * Chunk filenames retain their absolute coordinates in the fixed 64x64 grid.
+ * Returns false without exporting when the image or rectangle is invalid.
+ */
+bool ExportHeightmapFromMatRect(const Zenith_Image& xHeightmap,
+	const std::string& strOutputDir, const Flux_TerrainExportRect& xRect);
 
 /**
  * Export terrain meshes using default hardcoded paths.

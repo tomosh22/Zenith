@@ -17,6 +17,8 @@
 
 // Tools export entry point (extern declaration).
 extern void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir);
+extern bool ExportHeightmapFromMatRect(const Zenith_Image& xHeightmap,
+	const std::string& strOutputDir, const Flux_TerrainExportRect& xRect);
 
 //=============================================================================
 // Persistence: texture save (.ztxtr to the game assets dir), chunk-mesh bake,
@@ -211,6 +213,75 @@ void Zenith_TerrainEditor::BakeMeshesForTerrainRoot(const std::string& strTerrai
 
 	m_strStatus = "Terrain chunk meshes exported";
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Chunk-mesh export complete");
+}
+
+bool Zenith_TerrainEditor::BakeMeshesRect(const Flux_TerrainExportRect& xRect)
+{
+	return BakeMeshesRectForTerrainRoot(xRect, GetProjectTerrainRoot());
+}
+
+bool Zenith_TerrainEditor::BakeMeshesRectForTerrainRoot(
+	const Flux_TerrainExportRect& xRect, const std::string& strTerrainRoot)
+{
+	// Rect validation is deliberately first: a bad automation payload must not
+	// allocate editor maps, resolve/create directories, or delete prior meshes.
+	if (!xRect.IsValid())
+	{
+		m_strStatus = "Cannot export meshes: invalid terrain chunk rectangle.";
+		return false;
+	}
+
+	std::string strOutputDir;
+	if (!ResolveValidatedTargetForTerrainRoot(strTerrainRoot, strOutputDir))
+	{
+		m_strStatus = "Cannot export meshes: the staged terrain target is unsafe.";
+		return false;
+	}
+
+	// The public production path revalidates against the project root directly
+	// before deletion. The alternate-root branch is reachable only through the
+	// private Zenith_UnitTests friend seam and has already passed the same E1
+	// canonical containment check above.
+	const std::string strProjectTerrainRoot = GetProjectTerrainRoot();
+	const bool bProductionRoot = std::filesystem::path(strTerrainRoot).lexically_normal() ==
+		std::filesystem::path(strProjectTerrainRoot).lexically_normal();
+	const bool bCleaned = bProductionRoot
+		? Zenith_TerrainComponent::DeleteExistingTerrainFilesForAssetSet(m_strAssetSet, strOutputDir)
+		: Zenith_TerrainComponent::DeleteExistingTerrainFilesInDirectory(strOutputDir);
+	if (!bCleaned)
+	{
+		m_strStatus = "Cannot export meshes: failed to clean the validated output directory.";
+		return false;
+	}
+
+	std::error_code xDirectoryError;
+	std::filesystem::create_directories(strOutputDir, xDirectoryError);
+	if (xDirectoryError)
+	{
+		m_strStatus = "Cannot export meshes: failed to create validated output directory.";
+		return false;
+	}
+
+	EnsureImagesAllocated();
+	const u_int uChunkCount = static_cast<u_int>(xRect.ChunkCount());
+	const u_int uFileCount = uChunkCount * 3;
+	m_strStatus = "Exporting bounded terrain chunk meshes (this takes a while)...";
+	Zenith_Log(LOG_CATEGORY_EDITOR,
+		"[TerrainEditor] Exporting bounds [%d,%d]-[%d,%d]: %u chunks / %u files to %s",
+		xRect.GetMinX(), xRect.GetMinY(), xRect.GetMaxX(), xRect.GetMaxY(),
+		uChunkCount, uFileCount, strOutputDir.c_str());
+
+	if (!ExportHeightmapFromMatRect(m_xHeightfield, strOutputDir, xRect))
+	{
+		m_strStatus = "Bounded terrain chunk-mesh export failed.";
+		return false;
+	}
+
+	m_strStatus = "Bounded terrain chunk meshes exported";
+	Zenith_Log(LOG_CATEGORY_EDITOR,
+		"[TerrainEditor] Bounded chunk-mesh export complete: %u chunks / %u files",
+		uChunkCount, uFileCount);
+	return true;
 }
 
 void Zenith_TerrainEditor::BakeFull()

@@ -78,6 +78,7 @@
 
 // Terrain streaming (for chunk distance tests)
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
+#include "Flux/Terrain/Flux_TerrainVertexLayout.h"
 
 // Slang reflection schema + codegen. Both headers are platform-neutral
 // (Slang DLL access is gated inside the .cpp via ZENITH_WINDOWS), so the
@@ -14271,6 +14272,67 @@ void Zenith_UnitTests::TestPriorityInsertionEmpty(){
 
 namespace
 {
+	struct TerrainArtifactDirectoryGuard
+	{
+		explicit TerrainArtifactDirectoryGuard(std::filesystem::path xDirectory)
+			: m_xDirectory(std::move(xDirectory))
+		{
+		}
+
+		~TerrainArtifactDirectoryGuard()
+		{
+			std::error_code xError;
+			std::filesystem::remove_all(m_xDirectory, xError);
+		}
+
+		std::filesystem::path m_xDirectory;
+	};
+
+	struct TerrainBoolRestoreGuard
+	{
+		explicit TerrainBoolRestoreGuard(bool& bValue)
+			: m_bValue(bValue)
+			, m_bPreviousValue(bValue)
+		{
+		}
+
+		~TerrainBoolRestoreGuard()
+		{
+			m_bValue = m_bPreviousValue;
+		}
+
+		bool& m_bValue;
+		bool m_bPreviousValue;
+	};
+
+	struct TerrainStreamScript
+	{
+		uint32_t m_uValidChunkIndex = UINT32_MAX;
+		uint32_t m_uTotalCalls = 0u;
+		uint32_t m_auCalls[Flux_TerrainConfig::TOTAL_CHUNKS] = {};
+	};
+
+	Flux_TerrainStreamInResult RunTerrainStreamScript(void* pUserData,
+		Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, uint32_t uLODLevel)
+	{
+		TerrainStreamScript& xScript = *static_cast<TerrainStreamScript*>(pUserData);
+		xScript.m_uTotalCalls++;
+		xScript.m_auCalls[uChunkIndex]++;
+		if (uChunkIndex != xScript.m_uValidChunkIndex)
+		{
+			return Flux_TerrainStreamInResult::MissingOrInvalidSource;
+		}
+
+		Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
+		ZENITH_ASSERT_EQ(uLODLevel, static_cast<uint32_t>(LOD_HIGH), "The scripted stream callback must only receive HIGH requests");
+		xResidency.m_aeStates[LOD_HIGH] = Flux_TerrainLODResidencyState::RESIDENT;
+		xResidency.m_axAllocations[LOD_HIGH].m_uVertexOffset = 41u;
+		xResidency.m_axAllocations[LOD_HIGH].m_uVertexCount = 17u;
+		xResidency.m_axAllocations[LOD_HIGH].m_uIndexOffset = 83u;
+		xResidency.m_axAllocations[LOD_HIGH].m_uIndexCount = 33u;
+		return Flux_TerrainStreamInResult::Success;
+	}
+
 	// Write exactly the pre-E1 fields for the requested terrain component
 	// version. Passing 4 writes the complete v3 prefix; the caller appends the
 	// new v4 asset-set string itself.
@@ -14858,7 +14920,410 @@ void Zenith_UnitTests::TestEditorAutomationTerrainAssetSetActionOwnsArgument()
 	}
 }
 
+ZENITH_TEST(TerrainEditor, ChunkExportRectUsesInclusiveBounds) { Zenith_UnitTests::TestTerrainEditorChunkExportRectUsesInclusiveBounds(); }
+
+void Zenith_UnitTests::TestTerrainEditorChunkExportRectUsesInclusiveBounds()
+{
+	Flux_TerrainExportRect x16By16;
+	ZENITH_ASSERT_TRUE(Flux_TerrainExportRect::TryCreate(0, 0, 15, 15, x16By16), "Inclusive 0..15 bounds must form a valid 16x16 export");
+	ZENITH_ASSERT_TRUE(x16By16.IsValid(), "A successfully-created export rect must report valid");
+	ZENITH_ASSERT_EQ(x16By16.Width(), 16u, "Inclusive 0..15 X bounds must have width 16");
+	ZENITH_ASSERT_EQ(x16By16.Height(), 16u, "Inclusive 0..15 Y bounds must have height 16");
+	ZENITH_ASSERT_EQ(x16By16.ChunkCount(), 256u, "A 16x16 rect must export 256 chunks");
+	ZENITH_ASSERT_EQ(x16By16.ChunkCount() * 3u, 768u, "A 16x16 rect must produce three files per chunk");
+
+	Flux_TerrainExportRect x16By24;
+	ZENITH_ASSERT_TRUE(Flux_TerrainExportRect::TryCreate(0, 0, 15, 23, x16By24), "Inclusive 0..15 by 0..23 bounds must form a valid 16x24 export");
+	ZENITH_ASSERT_EQ(x16By24.Width(), 16u, "The route-sized rect must have width 16");
+	ZENITH_ASSERT_EQ(x16By24.Height(), 24u, "The route-sized rect must have height 24");
+	ZENITH_ASSERT_EQ(x16By24.ChunkCount(), 384u, "A 16x24 rect must export 384 chunks");
+	ZENITH_ASSERT_EQ(x16By24.ChunkCount() * 3u, 1152u, "A 16x24 rect must produce 1152 files");
+
+	uint32_t uChunkX = UINT32_MAX;
+	uint32_t uChunkY = UINT32_MAX;
+	ZENITH_ASSERT_TRUE(x16By24.TryGetChunkCoords(0u, uChunkX, uChunkY), "The first compact ordinal must map successfully");
+	ZENITH_ASSERT_EQ(uChunkX, 0u, "The first compact ordinal must map to min X");
+	ZENITH_ASSERT_EQ(uChunkY, 0u, "The first compact ordinal must map to min Y");
+	ZENITH_ASSERT_TRUE(x16By24.TryGetChunkCoords(15u, uChunkX, uChunkY), "The final ordinal in row zero must map successfully");
+	ZENITH_ASSERT_EQ(uChunkX, 15u, "Ordinal 15 must be the final X in row zero");
+	ZENITH_ASSERT_EQ(uChunkY, 0u, "Ordinal 15 must remain in row zero");
+	ZENITH_ASSERT_TRUE(x16By24.TryGetChunkCoords(16u, uChunkX, uChunkY), "The first ordinal in row one must map successfully");
+	ZENITH_ASSERT_EQ(uChunkX, 0u, "The row boundary must wrap X to min X");
+	ZENITH_ASSERT_EQ(uChunkY, 1u, "The row boundary must advance Y exactly once");
+	ZENITH_ASSERT_TRUE(x16By24.TryGetChunkCoords(383u, uChunkX, uChunkY), "The final compact ordinal must map successfully");
+	ZENITH_ASSERT_EQ(uChunkX, 15u, "The final compact ordinal must map to max X");
+	ZENITH_ASSERT_EQ(uChunkY, 23u, "The final compact ordinal must map to max Y");
+
+	Flux_TerrainExportRect xFull;
+	ZENITH_ASSERT_TRUE(Flux_TerrainExportRect::TryCreate(0, 0, 63, 63, xFull), "The inclusive full-grid bounds must be valid");
+	ZENITH_ASSERT_EQ(xFull.ChunkCount(), 4096u, "The full 64x64 grid must contain 4096 chunks");
+	ZENITH_ASSERT_EQ(xFull.ChunkCount() * 3u, 12288u, "The full grid must produce 12288 mesh files");
+	ZENITH_ASSERT_TRUE(xFull.TryGetChunkCoords(4095u, uChunkX, uChunkY), "The final full-grid ordinal must map successfully");
+	ZENITH_ASSERT_EQ(uChunkX, 63u, "The final full-grid ordinal must map to chunk X 63");
+	ZENITH_ASSERT_EQ(uChunkY, 63u, "The final full-grid ordinal must map to chunk Y 63");
+
+	const int32_t aaiInvalidBounds[][4] = {
+		{ -1, 0, 15, 23 },
+		{ 0, -1, 15, 23 },
+		{ 0, 0, -1, 23 },
+		{ 0, 0, 15, -1 },
+		{ 0, 0, 64, 23 },
+		{ 0, 0, 15, 64 },
+		{ 1, 0, 15, 23 },
+		{ 0, 1, 15, 23 }
+	};
+	for (const auto& aiBounds : aaiInvalidBounds)
+	{
+		ZENITH_ASSERT_FALSE(Flux_TerrainExportRect::TryCreate(
+			aiBounds[0], aiBounds[1], aiBounds[2], aiBounds[3], x16By16),
+			"Negative, reversed, out-of-grid, and anchor-excluding bounds must be rejected");
+		ZENITH_ASSERT_EQ(x16By16.GetMinX(), 0, "Rejected TryCreate must preserve the prior min X transactionally");
+		ZENITH_ASSERT_EQ(x16By16.GetMinY(), 0, "Rejected TryCreate must preserve the prior min Y transactionally");
+		ZENITH_ASSERT_EQ(x16By16.GetMaxX(), 15, "Rejected TryCreate must preserve the prior max X transactionally");
+		ZENITH_ASSERT_EQ(x16By16.GetMaxY(), 15, "Rejected TryCreate must preserve the prior max Y transactionally");
+	}
+
+	uChunkX = 0xA11CEu;
+	uChunkY = 0xB00B5u;
+	ZENITH_ASSERT_FALSE(x16By24.TryGetChunkCoords(x16By24.ChunkCount(), uChunkX, uChunkY), "An ordinal at ChunkCount must be rejected");
+	ZENITH_ASSERT_EQ(uChunkX, 0xA11CEu, "Rejected ordinal mapping must preserve X transactionally");
+	ZENITH_ASSERT_EQ(uChunkY, 0xB00B5u, "Rejected ordinal mapping must preserve Y transactionally");
+	Flux_TerrainExportRect xInvalidRect;
+	ZENITH_ASSERT_FALSE(xInvalidRect.TryGetChunkCoords(0u, uChunkX, uChunkY), "A default-invalid rect must not map ordinals");
+	ZENITH_ASSERT_EQ(uChunkX, 0xA11CEu, "Default-invalid mapping must preserve X transactionally");
+	ZENITH_ASSERT_EQ(uChunkY, 0xB00B5u, "Default-invalid mapping must preserve Y transactionally");
+
+	Zenith_EditorAutomation xAutomation;
+	xAutomation.AddStep_TerrainExportChunksRect(-7, -5, 63, 62);
+	ZENITH_ASSERT_EQ(xAutomation.m_axActions.GetSize(), 1u, "The rect-export helper must enqueue exactly one action");
+	const Zenith_EditorAction& xRectAction = xAutomation.m_axActions.Get(0);
+	ZENITH_ASSERT_EQ(xRectAction.m_eType, Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS_RECT, "The rect-export helper must use its dedicated automation enum");
+	ZENITH_ASSERT_EQ(xRectAction.m_aiArgs[0], -7, "Automation must preserve signed min X");
+	ZENITH_ASSERT_EQ(xRectAction.m_aiArgs[1], -5, "Automation must preserve signed min Y");
+	ZENITH_ASSERT_EQ(xRectAction.m_aiArgs[2], 63, "Automation must preserve signed max X");
+	ZENITH_ASSERT_EQ(xRectAction.m_aiArgs[3], 62, "Automation must preserve signed max Y");
+
+	Zenith_TerrainEditor& xGlobalTerrainEditor = g_xEngine.TerrainEditor();
+	const bool bGlobalActiveBeforeRoute = xGlobalTerrainEditor.IsActive();
+	const bool bGlobalStandaloneBeforeRoute = xGlobalTerrainEditor.IsStandalone();
+	const bool bGlobalDirtyBeforeRoute = xGlobalTerrainEditor.HasUnbakedChanges();
+	const Zenith_EntityID uGlobalTargetBeforeRoute = xGlobalTerrainEditor.GetTargetEntity();
+	const std::string strGlobalSetBeforeRoute = xGlobalTerrainEditor.GetAssetSet();
+	Zenith_TerrainEditor xRoutedEditor;
+	ZENITH_ASSERT_FALSE(Zenith_EditorAutomation::TryPreflightTerrainExportChunksRectAction(xRectAction, xRoutedEditor),
+		"The production-shared automation router must reject invalid signed rect bounds");
+	ZENITH_ASSERT_FALSE(xRoutedEditor.IsActive(), "Invalid routed rect preflight must return before OpenStandalone");
+	ZENITH_ASSERT_EQ(xGlobalTerrainEditor.IsActive(), bGlobalActiveBeforeRoute, "Injected invalid rect routing must preserve the global terrain-editor active state");
+	ZENITH_ASSERT_EQ(xGlobalTerrainEditor.IsStandalone(), bGlobalStandaloneBeforeRoute, "Injected invalid rect routing must preserve the global terrain-editor session kind");
+	ZENITH_ASSERT_EQ(xGlobalTerrainEditor.HasUnbakedChanges(), bGlobalDirtyBeforeRoute, "Injected invalid rect routing must preserve global terrain-editor dirty state");
+	ZENITH_ASSERT_EQ(xGlobalTerrainEditor.GetTargetEntity(), uGlobalTargetBeforeRoute, "Injected invalid rect routing must preserve the global terrain target");
+	ZENITH_ASSERT_EQ(xGlobalTerrainEditor.GetAssetSet(), strGlobalSetBeforeRoute, "Injected invalid rect routing must preserve the global staged set");
+
+	Zenith_EditorAutomation xValidAutomation;
+	xValidAutomation.AddStep_TerrainExportChunksRect(0, 0, 15, 23);
+	const Zenith_EditorAction& xValidRectAction = xValidAutomation.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(Zenith_EditorAutomation::TryPreflightTerrainExportChunksRectAction(xValidRectAction, xRoutedEditor),
+		"A valid rect must traverse the production terrain-action range router and executor");
+	ZENITH_ASSERT_TRUE(xRoutedEditor.IsActive(), "Valid routed rect preflight must reach OpenStandalone");
+	ZENITH_ASSERT_TRUE(xRoutedEditor.IsStandalone(), "Valid routed rect preflight must open only the injected standalone editor");
+	ZENITH_ASSERT_EQ(xGlobalTerrainEditor.IsActive(), bGlobalActiveBeforeRoute, "Injected valid rect routing must preserve the global terrain-editor active state");
+	ZENITH_ASSERT_EQ(xGlobalTerrainEditor.IsStandalone(), bGlobalStandaloneBeforeRoute, "Injected valid rect routing must preserve the global terrain-editor session kind");
+	ZENITH_ASSERT_EQ(xGlobalTerrainEditor.HasUnbakedChanges(), bGlobalDirtyBeforeRoute, "Injected valid rect routing must preserve global terrain-editor dirty state");
+	ZENITH_ASSERT_EQ(xGlobalTerrainEditor.GetTargetEntity(), uGlobalTargetBeforeRoute, "Injected valid rect routing must preserve the global terrain target");
+	ZENITH_ASSERT_EQ(xGlobalTerrainEditor.GetAssetSet(), strGlobalSetBeforeRoute, "Injected valid rect routing must preserve the global staged set");
+	xRoutedEditor.Close();
+
+	const auto ulUnique = static_cast<unsigned long long>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+	TerrainArtifactDirectoryGuard xArtifacts(std::filesystem::path(ZENITH_ROOT) / "Build" / "artifacts" /
+		("terrain_rect_preflight_" + std::to_string(ulUnique)));
+	const std::filesystem::path xTerrainRoot = xArtifacts.m_xDirectory / "Terrain";
+	const std::filesystem::path xSiblingDirectory = xTerrainRoot / "SiblingSet";
+	const std::filesystem::path xSiblingSentinel = xSiblingDirectory / "Preserve.zmesh";
+	const std::filesystem::path xStagedTarget = xTerrainRoot / "RectPreflightTarget";
+	std::filesystem::create_directories(xSiblingDirectory);
+	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xSiblingSentinel), "The invalid-preflight sibling sentinel must be created");
+
+	Zenith_TempScene xScene("TerrainRectInvalidPreflight");
+	Zenith_Entity xEntity = xScene.CreateEntity("TerrainRectInvalidPreflightEntity");
+	Zenith_TerrainComponent& xTerrain = xEntity.AddComponent<Zenith_TerrainComponent>();
+	ZENITH_ASSERT_TRUE(xTerrain.SetTerrainAssetSet("RectComponentBefore"), "The component-state sentinel set must be valid");
+	Zenith_TerrainEditor xEditor;
+	xEditor.Open(xEntity.GetEntityID());
+	ZENITH_ASSERT_TRUE(xEditor.SetAssetSet("RectPreflightTarget"), "The editor draft target must stage before invalid preflight");
+	xEditor.ResetImagesToDefaults();
+	const bool bActiveBefore = xEditor.IsActive();
+	const bool bStandaloneBefore = xEditor.IsStandalone();
+	const bool bDirtyBefore = xEditor.HasUnbakedChanges();
+	const Zenith_EntityID uTargetBefore = xEditor.GetTargetEntity();
+	const std::string strStagedSetBefore = xEditor.GetAssetSet();
+	const std::string strComponentSetBefore = xTerrain.GetTerrainAssetSet();
+	const std::string strComponentDirectoryBefore = xTerrain.GetTerrainAssetDirectory();
+	const std::string strStreamingDirectoryBefore = xTerrain.m_pxStreamingState->m_strTerrainAssetDirectory;
+	Flux_TerrainStreamingState* pxStreamingStateBefore = xTerrain.m_pxStreamingState;
+
+	ZENITH_ASSERT_FALSE(xEditor.BakeMeshesRectForTerrainRoot(xInvalidRect, xTerrainRoot.string()), "An invalid rect must fail before standalone-open, cleanup, directory creation, component mutation, or export");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(xSiblingSentinel), "Invalid rect preflight must preserve sibling mesh sentinels");
+	ZENITH_ASSERT_EQ(std::filesystem::file_size(xSiblingSentinel), 1ull, "Invalid rect preflight must preserve sibling sentinel bytes");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xStagedTarget), "Invalid rect preflight must not create the staged output directory");
+	ZENITH_ASSERT_EQ(xEditor.IsActive(), bActiveBefore, "Invalid rect preflight must preserve active-session state");
+	ZENITH_ASSERT_EQ(xEditor.IsStandalone(), bStandaloneBefore, "Invalid rect preflight must not convert an attached session to standalone");
+	ZENITH_ASSERT_EQ(xEditor.HasUnbakedChanges(), bDirtyBefore, "Invalid rect preflight must preserve dirty-session state");
+	ZENITH_ASSERT_EQ(xEditor.GetTargetEntity(), uTargetBefore, "Invalid rect preflight must preserve the attached target");
+	ZENITH_ASSERT_EQ(xEditor.GetAssetSet(), strStagedSetBefore, "Invalid rect preflight must preserve the staged set");
+	ZENITH_ASSERT_EQ(xTerrain.GetTerrainAssetSet(), strComponentSetBefore, "Invalid rect preflight must preserve the serialized component set");
+	ZENITH_ASSERT_EQ(xTerrain.GetTerrainAssetDirectory(), strComponentDirectoryBefore, "Invalid rect preflight must preserve the component directory");
+	ZENITH_ASSERT_EQ(xTerrain.m_pxStreamingState, pxStreamingStateBefore, "Invalid rect preflight must not replace or tear down streaming state");
+	ZENITH_ASSERT_EQ(xTerrain.m_pxStreamingState->m_strTerrainAssetDirectory, strStreamingDirectoryBefore, "Invalid rect preflight must preserve the streaming directory");
+	xEditor.Close();
+}
+
 #endif // ZENITH_TOOLS
+
+ZENITH_TEST(Terrain, StreamingMissingHighLODSourceDoesNotEvictOrAllocate) { Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAllocate(); }
+
+void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAllocate()
+{
+	const auto ulUnique = static_cast<unsigned long long>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+	// Project_GetGameAssetsDirectory is configuration-neutral and absolute in
+	// every game build. Walk Assets -> game -> Games -> repository root, then
+	// keep the fixture under the repository's standard Build/artifacts root.
+	const std::filesystem::path xRepositoryRoot = TerrainDirectoryPath(Project_GetGameAssetsDirectory())
+		.parent_path().parent_path().parent_path();
+	const std::filesystem::path xArtifactsRoot = std::filesystem::absolute(
+		xRepositoryRoot / "Build" / "artifacts").lexically_normal();
+	TerrainArtifactDirectoryGuard xArtifacts(xArtifactsRoot /
+		("terrain_missing_high_lod_" + std::to_string(ulUnique)));
+	std::filesystem::create_directories(xArtifacts.m_xDirectory);
+
+	Flux_TerrainStreamingState xState;
+	Flux_TerrainStreamingManagerImpl& xStreamingManager = g_xEngine.TerrainStreaming();
+	TerrainBoolRestoreGuard xManagerInitializedRestore(xStreamingManager.m_bInitialized);
+	xStreamingManager.m_bInitialized = true;
+	xState.m_bRegistered = true;
+	xState.m_strTerrainAssetDirectory = xArtifacts.m_xDirectory.generic_string() + "/";
+	xState.m_xVertexAllocator.Initialize(16u, "MissingHighLODVertexTest");
+	xState.m_xIndexAllocator.Initialize(16u, "MissingHighLODIndexTest");
+	xState.m_uCachedHighLODVertexCount = 8u;
+	xState.m_uCachedHighLODIndexCount = 8u;
+	xState.m_uVertexStride = Flux_TerrainVertexLayout::uVERTEX_STRIDE;
+	xState.m_xLastCameraPos = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+
+	const uint32_t uResidentChunk = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(63u, 63u);
+	const uint32_t uTargetChunk = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(0u, 0u);
+	const uint32_t uResidentVertexOffset = xState.m_xVertexAllocator.Allocate(12u);
+	const uint32_t uResidentIndexOffset = xState.m_xIndexAllocator.Allocate(12u);
+	ZENITH_ASSERT_EQ(uResidentVertexOffset, 0u, "The tight vertex allocator must seed one resident allocation at offset zero");
+	ZENITH_ASSERT_EQ(uResidentIndexOffset, 0u, "The tight index allocator must seed one resident allocation at offset zero");
+	Flux_TerrainChunkResidency& xResident = xState.m_axChunkResidency[uResidentChunk];
+	xResident.m_aeStates[LOD_HIGH] = Flux_TerrainLODResidencyState::RESIDENT;
+	xResident.m_axAllocations[LOD_HIGH].m_uVertexOffset = uResidentVertexOffset;
+	xResident.m_axAllocations[LOD_HIGH].m_uVertexCount = 12u;
+	xResident.m_axAllocations[LOD_HIGH].m_uIndexOffset = uResidentIndexOffset;
+	xResident.m_axAllocations[LOD_HIGH].m_uIndexCount = 12u;
+	xState.m_axChunkAABBs[uResidentChunk] = Zenith_AABB(
+		Zenith_Maths::Vector3(100000.0f, 0.0f, 100000.0f),
+		Zenith_Maths::Vector3(100064.0f, 64.0f, 100064.0f));
+
+	Flux_TerrainChunkResidency& xTarget = xState.m_axChunkResidency[uTargetChunk];
+	xTarget.m_aeStates[LOD_LOW] = Flux_TerrainLODResidencyState::RESIDENT;
+	xTarget.m_axAllocations[LOD_LOW].m_uVertexOffset = 123u;
+	xTarget.m_axAllocations[LOD_LOW].m_uVertexCount = 4u;
+	xTarget.m_axAllocations[LOD_LOW].m_uIndexOffset = 456u;
+	xTarget.m_axAllocations[LOD_LOW].m_uIndexCount = 6u;
+	xState.m_bChunkDataDirty.store(false, std::memory_order_release);
+
+	const uint32_t uVertexFreeBefore = xState.m_xVertexAllocator.GetUnusedSpace();
+	const uint32_t uIndexFreeBefore = xState.m_xIndexAllocator.GetUnusedSpace();
+	const Flux_TerrainLODAllocation xResidentAllocationBefore = xResident.m_axAllocations[LOD_HIGH];
+	const Flux_TerrainLODAllocation xTargetLowAllocationBefore = xTarget.m_axAllocations[LOD_LOW];
+	const Flux_TerrainStreamInResult eResult = Flux_TerrainStreamingManagerImpl::StreamInLOD(xState, uTargetChunk, LOD_HIGH);
+
+	ZENITH_ASSERT_EQ(eResult, Flux_TerrainStreamInResult::MissingOrInvalidSource, "A guaranteed-missing HIGH mesh must report MissingOrInvalidSource rather than allocation failure");
+	ZENITH_ASSERT_EQ(xState.m_xVertexAllocator.GetUnusedSpace(), uVertexFreeBefore, "A missing source must not allocate or evict vertex space");
+	ZENITH_ASSERT_EQ(xState.m_xIndexAllocator.GetUnusedSpace(), uIndexFreeBefore, "A missing source must not allocate or evict index space");
+	ZENITH_ASSERT_EQ(xResident.m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::RESIDENT, "A missing target must not evict another HIGH resident");
+	ZENITH_ASSERT_EQ(xResident.m_axAllocations[LOD_HIGH].m_uVertexOffset, xResidentAllocationBefore.m_uVertexOffset, "A missing target must preserve the resident vertex offset");
+	ZENITH_ASSERT_EQ(xResident.m_axAllocations[LOD_HIGH].m_uVertexCount, xResidentAllocationBefore.m_uVertexCount, "A missing target must preserve the resident vertex count");
+	ZENITH_ASSERT_EQ(xResident.m_axAllocations[LOD_HIGH].m_uIndexOffset, xResidentAllocationBefore.m_uIndexOffset, "A missing target must preserve the resident index offset");
+	ZENITH_ASSERT_EQ(xResident.m_axAllocations[LOD_HIGH].m_uIndexCount, xResidentAllocationBefore.m_uIndexCount, "A missing target must preserve the resident index count");
+	ZENITH_ASSERT_EQ(xTarget.m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::NOT_LOADED, "Direct missing-source stream-in must leave the target unallocated for the request loop to classify");
+	ZENITH_ASSERT_EQ(xTarget.m_axAllocations[LOD_HIGH].m_uVertexOffset, 0u, "A missing target must retain zero HIGH vertex offset");
+	ZENITH_ASSERT_EQ(xTarget.m_axAllocations[LOD_HIGH].m_uVertexCount, 0u, "A missing target must retain zero HIGH vertex count");
+	ZENITH_ASSERT_EQ(xTarget.m_axAllocations[LOD_HIGH].m_uIndexOffset, 0u, "A missing target must retain zero HIGH index offset");
+	ZENITH_ASSERT_EQ(xTarget.m_axAllocations[LOD_HIGH].m_uIndexCount, 0u, "A missing target must retain zero HIGH index count");
+	ZENITH_ASSERT_EQ(xTarget.m_aeStates[LOD_LOW], Flux_TerrainLODResidencyState::RESIDENT, "A failed HIGH request must preserve LOW residency");
+	ZENITH_ASSERT_EQ(xTarget.m_axAllocations[LOD_LOW].m_uVertexOffset, xTargetLowAllocationBefore.m_uVertexOffset, "A failed HIGH request must preserve LOW vertex allocation");
+	ZENITH_ASSERT_EQ(xTarget.m_axAllocations[LOD_LOW].m_uIndexOffset, xTargetLowAllocationBefore.m_uIndexOffset, "A failed HIGH request must preserve LOW index allocation");
+	ZENITH_ASSERT_FALSE(xState.m_bChunkDataDirty.load(std::memory_order_acquire), "A missing source with no residency change must leave chunk data clean");
+	ZENITH_ASSERT_EQ(xState.m_xStats.m_uStreamsThisFrame, 0u, "A missing source must not increment successful-stream stats");
+	ZENITH_ASSERT_EQ(xState.m_xStats.m_uEvictionsThisFrame, 0u, "A missing source must not increment eviction stats");
+
+	// A present but incompatible source must take the same non-asserting,
+	// side-effect-free result path. This fixture is otherwise a complete HIGH
+	// terrain .zmesh in the exact Flux_MeshGeometry::Export field order. Its sole
+	// defect is swapping FLOAT3/FLOAT2 while preserving the canonical 28-byte
+	// total stride, so rejection is specifically layout validation rather than
+	// an EOF, count, payload, or index failure.
+	Flux_BufferLayout xIncompatibleLayout;
+	xIncompatibleLayout.GetElements().PushBack(Flux_BufferElement(SHADER_DATA_TYPE_FLOAT2));
+	xIncompatibleLayout.GetElements().PushBack(Flux_BufferElement(SHADER_DATA_TYPE_FLOAT3));
+	for (uint32_t u = 2u; u < Flux_TerrainVertexLayout::uELEMENT_COUNT; u++)
+	{
+		xIncompatibleLayout.GetElements().PushBack(
+			Flux_BufferElement(Flux_TerrainVertexLayout::axELEMENTS[u].m_eType));
+	}
+	xIncompatibleLayout.CalculateOffsetsAndStrides();
+	ZENITH_ASSERT_EQ(xIncompatibleLayout.GetElements().GetSize(), Flux_TerrainVertexLayout::uELEMENT_COUNT, "The incompatible fixture must retain the canonical element count");
+	ZENITH_ASSERT_EQ(xIncompatibleLayout.GetStride(), Flux_TerrainVertexLayout::uVERTEX_STRIDE, "The incompatible fixture must retain the canonical total stride");
+
+	const uint32_t uCanonicalVertexCount = Flux_TerrainVertexLayout::uHIGH_CHUNK_VERTEX_COUNT;
+	const uint32_t uCanonicalIndexCount = Flux_TerrainVertexLayout::uHIGH_CHUNK_INDEX_COUNT;
+	std::vector<u_int8> auVertexPayload(
+		static_cast<size_t>(uCanonicalVertexCount) * Flux_TerrainVertexLayout::uVERTEX_STRIDE, 0u);
+	std::vector<uint32_t> auIndexPayload(uCanonicalIndexCount, 0u);
+	std::vector<Zenith_Maths::Vector3> axPositionPayload(uCanonicalVertexCount, Zenith_Maths::Vector3(0.0f));
+	Zenith_HashMap<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>> xEmptyBoneMap;
+	const Zenith_Maths::Vector4 xMaterialColor(1.0f);
+	const bool bPresent = true;
+	const bool bAbsent = false;
+
+	Zenith_DataStream xIncompatibleMesh;
+	xIncompatibleMesh << xIncompatibleLayout.GetElements();
+	xIncompatibleMesh << uCanonicalVertexCount;
+	xIncompatibleMesh << uCanonicalIndexCount;
+	xIncompatibleMesh << uint32_t(0u); // bone count
+	xEmptyBoneMap.WriteToDataStream(xIncompatibleMesh);
+	xIncompatibleMesh << xMaterialColor;
+	xIncompatibleMesh << bPresent;
+	xIncompatibleMesh.WriteData(auVertexPayload.data(), auVertexPayload.size());
+	xIncompatibleMesh << bPresent;
+	xIncompatibleMesh.WriteData(auIndexPayload.data(), auIndexPayload.size() * sizeof(uint32_t));
+	// Seven optional attribute sections in Export order. Include a complete
+	// positions payload, then explicit absent flags for the remaining optional
+	// normals/tangents/bitangents/colours/bone-ID/bone-weight streams.
+	xIncompatibleMesh << bPresent;
+	xIncompatibleMesh.WriteData(axPositionPayload.data(), axPositionPayload.size() * sizeof(Zenith_Maths::Vector3));
+	for (uint32_t u = 0u; u < 6u; u++)
+	{
+		xIncompatibleMesh << bAbsent;
+	}
+	const uint64_t ulCompleteFixtureSize = xIncompatibleMesh.GetCursor();
+	const std::filesystem::path xIncompatiblePath = xArtifacts.m_xDirectory / "Render_0_0.zmesh";
+	xIncompatibleMesh.WriteToFile(xIncompatiblePath.string().c_str());
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(xIncompatiblePath), "The incompatible HIGH source fixture must exist on disk");
+	ZENITH_ASSERT_EQ(std::filesystem::file_size(xIncompatiblePath), ulCompleteFixtureSize, "The incompatible fixture must reach disk without truncation");
+
+	const Flux_TerrainStreamInResult eIncompatibleResult = Flux_TerrainStreamingManagerImpl::StreamInLOD(xState, uTargetChunk, LOD_HIGH);
+	ZENITH_ASSERT_EQ(eIncompatibleResult, Flux_TerrainStreamInResult::MissingOrInvalidSource, "A present mesh with an incompatible terrain layout must report MissingOrInvalidSource without asserting");
+	ZENITH_ASSERT_EQ(xState.m_xVertexAllocator.GetUnusedSpace(), uVertexFreeBefore, "An incompatible source must not allocate or evict vertex space");
+	ZENITH_ASSERT_EQ(xState.m_xIndexAllocator.GetUnusedSpace(), uIndexFreeBefore, "An incompatible source must not allocate or evict index space");
+	ZENITH_ASSERT_EQ(xResident.m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::RESIDENT, "An incompatible target must not evict another HIGH resident");
+	ZENITH_ASSERT_EQ(xResident.m_axAllocations[LOD_HIGH].m_uVertexOffset, xResidentAllocationBefore.m_uVertexOffset, "An incompatible target must preserve the resident vertex offset");
+	ZENITH_ASSERT_EQ(xResident.m_axAllocations[LOD_HIGH].m_uVertexCount, xResidentAllocationBefore.m_uVertexCount, "An incompatible target must preserve the resident vertex count");
+	ZENITH_ASSERT_EQ(xResident.m_axAllocations[LOD_HIGH].m_uIndexOffset, xResidentAllocationBefore.m_uIndexOffset, "An incompatible target must preserve the resident index offset");
+	ZENITH_ASSERT_EQ(xResident.m_axAllocations[LOD_HIGH].m_uIndexCount, xResidentAllocationBefore.m_uIndexCount, "An incompatible target must preserve the resident index count");
+	ZENITH_ASSERT_EQ(xTarget.m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::NOT_LOADED, "Direct incompatible-source stream-in must leave the target unallocated for request-loop classification");
+	ZENITH_ASSERT_EQ(xTarget.m_axAllocations[LOD_HIGH].m_uVertexCount, 0u, "An incompatible target must retain zero HIGH vertex allocation");
+	ZENITH_ASSERT_EQ(xTarget.m_axAllocations[LOD_HIGH].m_uIndexCount, 0u, "An incompatible target must retain zero HIGH index allocation");
+	ZENITH_ASSERT_EQ(xTarget.m_aeStates[LOD_LOW], Flux_TerrainLODResidencyState::RESIDENT, "An incompatible HIGH request must preserve LOW residency");
+	ZENITH_ASSERT_EQ(xTarget.m_axAllocations[LOD_LOW].m_uVertexOffset, xTargetLowAllocationBefore.m_uVertexOffset, "An incompatible HIGH request must preserve LOW vertex allocation");
+	ZENITH_ASSERT_EQ(xTarget.m_axAllocations[LOD_LOW].m_uIndexOffset, xTargetLowAllocationBefore.m_uIndexOffset, "An incompatible HIGH request must preserve LOW index allocation");
+	ZENITH_ASSERT_FALSE(xState.m_bChunkDataDirty.load(std::memory_order_acquire), "An incompatible source with no residency change must leave chunk data clean");
+	ZENITH_ASSERT_EQ(xState.m_xStats.m_uStreamsThisFrame, 0u, "An incompatible source must not increment successful-stream stats");
+	ZENITH_ASSERT_EQ(xState.m_xStats.m_uEvictionsThisFrame, 0u, "An incompatible source must not increment eviction stats");
+}
+
+ZENITH_TEST(Terrain, StreamingUnavailableHighLODDoesNotRetryOrStarve) { Zenith_UnitTests::TestTerrainStreamingUnavailableHighLODDoesNotRetryOrStarve(); }
+
+void Zenith_UnitTests::TestTerrainStreamingUnavailableHighLODDoesNotRetryOrStarve()
+{
+	Flux_TerrainStreamingState xState;
+	const Zenith_Maths::Vector3 xCameraPos(32.0f, 32.0f, 32.0f);
+	constexpr uint32_t uMissingCount = 32u;
+	constexpr uint32_t uValidOrdinal = uMissingCount;
+	const uint32_t uValidChunkIndex = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(0u, uValidOrdinal);
+	TerrainStreamScript xScript;
+	xScript.m_uValidChunkIndex = uValidChunkIndex;
+
+	for (uint32_t uOrdinal = 0u; uOrdinal <= uValidOrdinal; uOrdinal++)
+	{
+		const uint32_t uChunkIndex = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(0u, uOrdinal);
+		xState.m_xActiveChunkIndices.PushBack(uChunkIndex);
+		xState.m_axChunkAABBs[uChunkIndex] = Zenith_AABB(
+			Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+			Zenith_Maths::Vector3(64.0f, 64.0f, 64.0f));
+		Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
+		xResidency.m_aeStates[LOD_LOW] = Flux_TerrainLODResidencyState::RESIDENT;
+		xResidency.m_axAllocations[LOD_LOW].m_uVertexOffset = 1000u + uOrdinal * 4u;
+		xResidency.m_axAllocations[LOD_LOW].m_uVertexCount = 4u;
+		xResidency.m_axAllocations[LOD_LOW].m_uIndexOffset = 2000u + uOrdinal * 6u;
+		xResidency.m_axAllocations[LOD_LOW].m_uIndexCount = 6u;
+	}
+	xState.m_bChunkDataDirty.store(false, std::memory_order_release);
+
+	Flux_TerrainStreamingManagerImpl::StreamingFrameDiagnostics xFrame1;
+	xState.m_xStats.m_uStreamsThisFrame = 0u;
+	Flux_TerrainStreamingManagerImpl::RequestNearbyHighLODCore(
+		xState, xCameraPos, xFrame1, RunTerrainStreamScript, &xScript);
+	ZENITH_ASSERT_EQ(xFrame1.m_uActiveCount, 33u, "Frame one must inspect the full synthetic active list");
+	ZENITH_ASSERT_EQ(xFrame1.m_uStreamAttempts, 32u, "Frame one must consume the dedicated 32-source probe cap");
+	ZENITH_ASSERT_EQ(xFrame1.m_uMissingSourceCount, 32u, "Frame one must classify exactly 32 missing sources terminally");
+	ZENITH_ASSERT_EQ(xFrame1.m_uStreamSuccesses, 0u, "The valid 33rd chunk must remain behind the frame-one source cap");
+	ZENITH_ASSERT_EQ(xFrame1.m_uAllocationFailureCount, 0u, "Missing sources must not masquerade as allocator failure");
+	ZENITH_ASSERT_EQ(xScript.m_uTotalCalls, 32u, "Frame one must invoke the callback once per missing candidate");
+	ZENITH_ASSERT_EQ(xScript.m_auCalls[uValidChunkIndex], 0u, "Frame one must stop before probing the valid 33rd candidate");
+	ZENITH_ASSERT_FALSE(xState.m_bChunkDataDirty.load(std::memory_order_acquire), "Terminal missing-source classification alone must not dirty chunk GPU data");
+	ZENITH_ASSERT_EQ(xState.m_xStats.m_uStreamsThisFrame, 0u, "Frame one must report no successful streams");
+
+	for (uint32_t uOrdinal = 0u; uOrdinal < uMissingCount; uOrdinal++)
+	{
+		const uint32_t uChunkIndex = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(0u, uOrdinal);
+		const Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
+		ZENITH_ASSERT_EQ(xResidency.m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::SOURCE_UNAVAILABLE, "Each frame-one missing source must become terminal");
+		ZENITH_ASSERT_EQ(xScript.m_auCalls[uChunkIndex], 1u, "Each missing source must be probed exactly once");
+		ZENITH_ASSERT_EQ(xResidency.m_axAllocations[LOD_HIGH].m_uVertexCount, 0u, "Missing HIGH classification must not allocate vertices");
+		ZENITH_ASSERT_EQ(xResidency.m_axAllocations[LOD_HIGH].m_uIndexCount, 0u, "Missing HIGH classification must not allocate indices");
+		ZENITH_ASSERT_EQ(xResidency.m_aeStates[LOD_LOW], Flux_TerrainLODResidencyState::RESIDENT, "Missing HIGH classification must preserve LOW residency");
+		ZENITH_ASSERT_EQ(xResidency.m_axAllocations[LOD_LOW].m_uVertexOffset, 1000u + uOrdinal * 4u, "Missing HIGH classification must preserve LOW vertex allocation");
+		ZENITH_ASSERT_EQ(xResidency.m_axAllocations[LOD_LOW].m_uIndexOffset, 2000u + uOrdinal * 6u, "Missing HIGH classification must preserve LOW index allocation");
+	}
+
+	Flux_TerrainStreamingManagerImpl::StreamingFrameDiagnostics xFrame2;
+	xState.m_xStats.m_uStreamsThisFrame = 0u;
+	Flux_TerrainStreamingManagerImpl::RequestNearbyHighLODCore(
+		xState, xCameraPos, xFrame2, RunTerrainStreamScript, &xScript);
+	ZENITH_ASSERT_EQ(xFrame2.m_uStreamAttempts, 1u, "Frame two must skip all terminal missing chunks without spending attempts");
+	ZENITH_ASSERT_EQ(xFrame2.m_uMissingSourceCount, 0u, "Frame two must not re-probe or reclassify missing chunks");
+	ZENITH_ASSERT_EQ(xFrame2.m_uStreamSuccesses, 1u, "Skipping terminal chunks must let the valid 33rd candidate stream");
+	ZENITH_ASSERT_EQ(xScript.m_uTotalCalls, 33u, "Frame two must add only the single valid callback");
+	ZENITH_ASSERT_EQ(xScript.m_auCalls[uValidChunkIndex], 1u, "The valid candidate must be called exactly once");
+	const Flux_TerrainChunkResidency& xValidResidency = xState.m_axChunkResidency[uValidChunkIndex];
+	ZENITH_ASSERT_EQ(xValidResidency.m_aeStates[LOD_HIGH], Flux_TerrainLODResidencyState::RESIDENT, "The valid candidate must become HIGH resident");
+	ZENITH_ASSERT_EQ(xValidResidency.m_axAllocations[LOD_HIGH].m_uVertexCount, 17u, "The successful callback's HIGH vertex allocation must survive");
+	ZENITH_ASSERT_EQ(xValidResidency.m_axAllocations[LOD_HIGH].m_uIndexCount, 33u, "The successful callback's HIGH index allocation must survive");
+	ZENITH_ASSERT_EQ(xValidResidency.m_aeStates[LOD_LOW], Flux_TerrainLODResidencyState::RESIDENT, "Successful HIGH streaming must preserve LOW residency");
+	ZENITH_ASSERT_TRUE(xState.m_bChunkDataDirty.load(std::memory_order_acquire), "A successful HIGH stream must dirty chunk GPU data");
+	ZENITH_ASSERT_EQ(xState.m_xStats.m_uStreamsThisFrame, 1u, "Frame-two stats must count only the real successful stream");
+
+	xState.m_bChunkDataDirty.store(false, std::memory_order_release);
+	xState.m_xStats.m_uStreamsThisFrame = 0u;
+	Flux_TerrainStreamingManagerImpl::StreamingFrameDiagnostics xFrame3;
+	Flux_TerrainStreamingManagerImpl::RequestNearbyHighLODCore(
+		xState, xCameraPos, xFrame3, RunTerrainStreamScript, &xScript);
+	ZENITH_ASSERT_EQ(xFrame3.m_uStreamAttempts, 0u, "Frame three must spend no attempts on terminal or resident chunks");
+	ZENITH_ASSERT_EQ(xFrame3.m_uMissingSourceCount, 0u, "Frame three must perform no missing-source retries");
+	ZENITH_ASSERT_EQ(xFrame3.m_uStreamSuccesses, 0u, "Frame three must not re-stream the resident valid chunk");
+	ZENITH_ASSERT_EQ(xFrame3.m_uAlreadyResidentHighCount, 1u, "Frame three must recognize the one successful HIGH resident");
+	ZENITH_ASSERT_EQ(xScript.m_uTotalCalls, 33u, "Frame three must invoke no callbacks");
+	ZENITH_ASSERT_FALSE(xState.m_bChunkDataDirty.load(std::memory_order_acquire), "A no-op frame must leave chunk GPU data clean");
+	ZENITH_ASSERT_EQ(xState.m_xStats.m_uStreamsThisFrame, 0u, "A no-op frame must report zero successful streams");
+
+	for (uint32_t uOrdinal = 0u; uOrdinal < uMissingCount; uOrdinal++)
+	{
+		const uint32_t uChunkIndex = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(0u, uOrdinal);
+		ZENITH_ASSERT_EQ(xScript.m_auCalls[uChunkIndex], 1u, "Every terminal missing chunk must remain at exactly one callback after three frames");
+	}
+}
 
 ZENITH_TEST(Terrain, ChunkDistanceSymmetry) { Zenith_UnitTests::TestChunkDistanceSymmetry(); }
 

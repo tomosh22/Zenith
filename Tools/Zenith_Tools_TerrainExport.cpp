@@ -1,7 +1,8 @@
 #include "Zenith.h"
+#include "Zenith_Tools_TerrainExport.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Flux/Terrain/Flux_TerrainVertexLayout.h"
 #include "DataStream/Zenith_DataStream.h"
-#include "Flux/Flux_Enums.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
 // Helper function to construct game assets path from project name
@@ -72,14 +73,18 @@ static uint32_t PackSNORM10_10_10_2(float fX, float fY, float fZ, float fW)
 // vertex is acceptable.
 static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 {
-	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
-	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT2 });
-	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_SNORM10_10_10_2 });
-	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_SNORM10_10_10_2 });
+	for (uint32_t uElement = 0; uElement < Flux_TerrainVertexLayout::uELEMENT_COUNT; uElement++)
+	{
+		xMesh.m_xBufferLayout.GetElements().PushBack(
+			{ Flux_TerrainVertexLayout::axELEMENTS[uElement].m_eType });
+	}
 	xMesh.m_xBufferLayout.CalculateOffsetsAndStrides();
 
-	const uint32_t uStride = xMesh.m_xBufferLayout.GetStride();
-	Zenith_Assert(uStride == 28, "Terrain vertex stride should be 28 bytes (FLOAT2 UV)");
+	const uint32_t uCalculatedStride = xMesh.m_xBufferLayout.GetStride();
+	Zenith_Assert(uCalculatedStride == Flux_TerrainVertexLayout::uVERTEX_STRIDE,
+		"Terrain exporter layout must match the canonical HIGH terrain vertex stride");
+	(void)uCalculatedStride;
+	const uint32_t uStride = Flux_TerrainVertexLayout::uVERTEX_STRIDE;
 
 	xMesh.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * uStride));
 
@@ -93,14 +98,14 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 		pPos[0] = xMesh.m_pxPositions[i].x;
 		pPos[1] = xMesh.m_pxPositions[i].y;
 		pPos[2] = xMesh.m_pxPositions[i].z;
-		uOffset += 12;
+		uOffset += Flux_TerrainVertexLayout::axELEMENTS[0].m_uSize;
 
 		// UV: float2 (8 bytes) — full 32-bit precision so heightmap-pixel-scale
 		// UVs don't collapse on the upper half of the terrain.
 		float* pUV = reinterpret_cast<float*>(pVertex + uOffset);
 		pUV[0] = xMesh.m_pxUVs[i].x;
 		pUV[1] = xMesh.m_pxUVs[i].y;
-		uOffset += 8;
+		uOffset += Flux_TerrainVertexLayout::axELEMENTS[1].m_uSize;
 
 		// Normal: SNORM10:10:10:2 (4 bytes), w=0
 		uint32_t* pNormal = reinterpret_cast<uint32_t*>(pVertex + uOffset);
@@ -110,7 +115,7 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 			xMesh.m_pxNormals[i].z,
 			0.0f
 		);
-		uOffset += 4;
+		uOffset += Flux_TerrainVertexLayout::axELEMENTS[2].m_uSize;
 
 		// Tangent + BitangentSign: SNORM10:10:10:2 (4 bytes)
 		float fBitangentSign = glm::dot(
@@ -364,11 +369,49 @@ struct ChunkExportData
 	u_int uNumSplitsX;
 	u_int uNumSplitsZ;
 	u_int uTotalChunks;
+	Flux_TerrainExportRect xRect;
+	bool bUseRect;
 	float fDensity;
 	u_int uImageWidth;
 	std::string strOutputDir;
 	std::string strName;
 };
+
+static void ResolveChunkExportCoordinates(const ChunkExportData& xData,
+	u_int uChunkOrdinal, u_int& uChunkXOut, u_int& uChunkZOut)
+{
+	if (!xData.bUseRect)
+	{
+		uChunkXOut = uChunkOrdinal % xData.uNumSplitsX;
+		uChunkZOut = uChunkOrdinal / xData.uNumSplitsX;
+		return;
+	}
+
+	uint32_t uAbsoluteX = 0;
+	uint32_t uAbsoluteZ = 0;
+	const bool bMapped = xData.xRect.TryGetChunkCoords(
+		static_cast<uint32_t>(uChunkOrdinal), uAbsoluteX, uAbsoluteZ);
+	Zenith_Assert(bMapped, "Invalid compact terrain export ordinal");
+	if (bMapped)
+	{
+		uChunkXOut = static_cast<u_int>(uAbsoluteX);
+		uChunkZOut = static_cast<u_int>(uAbsoluteZ);
+	}
+}
+
+static void ValidateHighChunkCounts(float fDensity, const Flux_MeshGeometry& xMesh)
+{
+	if (fDensity != 1.0f)
+	{
+		return;
+	}
+
+	Zenith_Assert(xMesh.m_uNumVerts == Flux_TerrainVertexLayout::uHIGH_CHUNK_VERTEX_COUNT,
+		"HIGH terrain exporter vertex count must match the canonical terrain contract");
+	Zenith_Assert(xMesh.m_uNumIndices == Flux_TerrainVertexLayout::uHIGH_CHUNK_INDEX_COUNT,
+		"HIGH terrain exporter index count must match the canonical terrain contract");
+	(void)xMesh;
+}
 
 static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
 {
@@ -386,12 +429,14 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 
 	for (u_int uChunkIndex = uStartChunk; uChunkIndex < uEndChunk; uChunkIndex++)
 	{
-	const u_int x = uChunkIndex % uNumSplitsX;
-	const u_int z = uChunkIndex / uNumSplitsX;
+	u_int x = 0;
+	u_int z = 0;
+	ResolveChunkExportCoordinates(*pxData, uChunkIndex, x, z);
 
 	Flux_MeshGeometry xSubMesh;
 	xSubMesh.m_uNumVerts = static_cast<u_int>((TERRAIN_SIZE * fDensity + 1) * (TERRAIN_SIZE * fDensity + 1));
 	xSubMesh.m_uNumIndices = static_cast<u_int>((((TERRAIN_SIZE * fDensity + 1)) - 1) * (((TERRAIN_SIZE * fDensity + 1)) - 1) * 6);
+	ValidateHighChunkCounts(fDensity, xSubMesh);
 	xSubMesh.m_pxPositions = static_cast<glm::highp_vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::highp_vec3)));
 	xSubMesh.m_pxUVs = static_cast<glm::vec2*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec2)));
 	xSubMesh.m_pxNormals = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec3)));
@@ -637,7 +682,9 @@ static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvo
 	} // end for uChunkIndex
 }
 
-void ExportMesh(u_int uDensityDivisor, std::string strName, const Zenith_Image& xHeightmap, const std::string& strOutputDir)
+static bool ExportMeshInternal(u_int uDensityDivisor, const std::string& strName,
+	const Zenith_Image& xHeightmap, const std::string& strOutputDir,
+	const Flux_TerrainExportRect* pxRect)
 {
 	Zenith_Assert((uDensityDivisor & (uDensityDivisor-1)) == 0, "Density divisor must be a power of 2");
 
@@ -653,17 +700,33 @@ void ExportMesh(u_int uDensityDivisor, std::string strName, const Zenith_Image& 
 
 	u_int uNumSplitsX = uImageWidth / TERRAIN_SIZE;
 	u_int uNumSplitsZ = uImageHeight / TERRAIN_SIZE;
+	if (pxRect != nullptr && (!pxRect->IsValid() ||
+		static_cast<u_int>(pxRect->GetMaxX()) >= uNumSplitsX ||
+		static_cast<u_int>(pxRect->GetMaxY()) >= uNumSplitsZ))
+	{
+		Zenith_Warning(LOG_CATEGORY_TOOLS,
+			"Terrain export rectangle exceeds the heightmap chunk grid (%ux%u)",
+			uNumSplitsX, uNumSplitsZ);
+		return false;
+	}
 
 	Flux_MeshGeometry xFullMesh;
 	GenerateFullTerrain(xHeightmap, xFullMesh, uDensityDivisor);
 
-	u_int uTotalChunks = uNumSplitsX * uNumSplitsZ;
+	u_int uTotalChunks = pxRect != nullptr
+		? static_cast<u_int>(pxRect->ChunkCount())
+		: uNumSplitsX * uNumSplitsZ;
 
 	ChunkExportData xChunkData;
 	xChunkData.pxFullMesh = &xFullMesh;
 	xChunkData.uNumSplitsX = uNumSplitsX;
 	xChunkData.uNumSplitsZ = uNumSplitsZ;
 	xChunkData.uTotalChunks = uTotalChunks;
+	xChunkData.bUseRect = pxRect != nullptr;
+	if (pxRect != nullptr)
+	{
+		xChunkData.xRect = *pxRect;
+	}
 	xChunkData.fDensity = fDensity;
 	xChunkData.uImageWidth = uImageWidth;
 	xChunkData.strOutputDir = strOutputDir;
@@ -673,6 +736,13 @@ void ExportMesh(u_int uDensityDivisor, std::string strName, const Zenith_Image& 
 	Zenith_DataParallelTask xChunkTask(ZENITH_PROFILE_ZONE("Flux Terrain"), ExportChunkBatch, &xChunkData, uNumInvocations, true);
 	g_xEngine.Tasks().SubmitDataParallelTask(&xChunkTask);
 	xChunkTask.WaitUntilComplete();
+	return true;
+}
+
+void ExportMesh(u_int uDensityDivisor, std::string strName,
+	const Zenith_Image& xHeightmap, const std::string& strOutputDir)
+{
+	(void)ExportMeshInternal(uDensityDivisor, strName, xHeightmap, strOutputDir, nullptr);
 }
 
 static void ExportHeightmapInternal(const Zenith_Image& xHeightmap, const std::string& strOutputDir)
@@ -687,6 +757,21 @@ static void ExportHeightmapInternal(const Zenith_Image& xHeightmap, const std::s
 
 	// Export physics mesh (density divisor 8)
 	ExportMesh(8, "Physics", xHeightmap, strOutputDir);
+}
+
+static bool ExportHeightmapRectInternal(const Zenith_Image& xHeightmap,
+	const std::string& strOutputDir, const Flux_TerrainExportRect& xRect)
+{
+	if (xHeightmap.IsEmpty() || !xRect.IsValid())
+	{
+		Zenith_Warning(LOG_CATEGORY_TOOLS,
+			"Rect terrain export requires a valid heightmap and export rectangle");
+		return false;
+	}
+
+	return ExportMeshInternal(1, "Render", xHeightmap, strOutputDir, &xRect) &&
+		ExportMeshInternal(4, "Render_LOW", xHeightmap, strOutputDir, &xRect) &&
+		ExportMeshInternal(8, "Physics", xHeightmap, strOutputDir, &xRect);
 }
 
 void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir)
@@ -705,6 +790,19 @@ void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& s
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromMat: Output=%s", strOutputDir.c_str());
 	ExportHeightmapInternal(xHeightmap, strOutputDir);
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromMat: Export complete");
+}
+
+bool ExportHeightmapFromMatRect(const Zenith_Image& xHeightmap,
+	const std::string& strOutputDir, const Flux_TerrainExportRect& xRect)
+{
+	Zenith_Log(LOG_CATEGORY_TOOLS,
+		"ExportHeightmapFromMatRect: Output=%s Bounds=[%d,%d]-[%d,%d] Chunks=%u Files=%u",
+		strOutputDir.c_str(), xRect.GetMinX(), xRect.GetMinY(),
+		xRect.GetMaxX(), xRect.GetMaxY(), xRect.ChunkCount(), xRect.ChunkCount() * 3);
+	const bool bExported = ExportHeightmapRectInternal(xHeightmap, strOutputDir, xRect);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromMatRect: Export %s",
+		bExported ? "complete" : "failed");
+	return bExported;
 }
 
 void ExportHeightmap()

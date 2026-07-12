@@ -15,6 +15,48 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-13 -- ZM-D-052 -- Engine E2: bounded terrain export and terminal sparse-HIGH streaming
+
+- **Decision:** `AddStep_TerrainExportChunksRect(minX,minY,maxX,maxY)` exports
+  inclusive chunk coordinates. Bounds are accepted only when
+  `0 <= min <= max < 64` on both axes and the rectangle contains the required
+  `(0,0)` LOW/physics anchor; invalid input is rejected without clamping,
+  swapping, opening a standalone editor, cleanup, or output. A successful
+  operation removes direct `.zmesh` files once from the E1-canonical target and
+  writes exactly `Render`, `Render_LOW`, and `Physics` for each requested
+  coordinate (`3 * area` files), preserving textures, unrelated files, nested
+  directories, and sibling terrain sets. It crops files only: the fixed 4096 m
+  terrain grid/density remain the deferred E6 limitation.
+- **Shared format contract:** `Flux_TerrainExportRect` is the single signed,
+  transactional bounds/enumeration contract used by tools, editor, and tests.
+  `Flux_TerrainVertexLayout` is the single HIGH chunk element order/size/stride
+  contract used by exporter and streaming reader; canonical HIGH chunks are
+  exactly 4,225 vertices and 24,576 indices at a 28-byte stride.
+- **Sparse-stream contract:** missing, truncated, malformed, wrong-layout, or
+  incompatible HIGH sources are validated by a bounded non-asserting reader
+  before any eviction, allocation, residency, dirty-state, or stats mutation.
+  The first failure warns and latches `SOURCE_UNAVAILABLE`; later frames skip it
+  without consuming the 32-source-probe budget. Successful uploads remain capped
+  at 8 per frame. Terrain registration/regeneration resets the latch so a new bake
+  retries, and existing LOW fallback/legacy behavior is unchanged.
+- **Why:** full 64x64 bakes produce roughly 12k files per terrain and make the
+  required one-set-per-outdoor-scene plan impractical. Rectangular file crops make
+  S3 authoring measurable while terminal sparse streaming prevents expected holes
+  from evicting valid data, thrashing disk, or starving valid chunks behind the
+  frame attempt budget.
+- **Tests that lock it:** exactly three engine tests cover inclusive counts and
+  enumeration, invalid transactionality, four-argument automation and production
+  routing; missing/wrong-layout source mutation/allocator safety; and the
+  32-missing-then-valid terminal skip/no-retry schedule. Full boot gate is
+  **1728 ran / 1727 passed / 0 failed / 1 skipped** (Zenithmon 1725 -> 1728;
+  engine default 1075 -> 1078). Regeneration, all four Vulkan Debug/Release x
+  Tools true/false builds, the D3D12 Debug Tools=false link proof, Zenithmon 1/1,
+  CityBuilder 45/45, DevilsPlayground 158 tests, and RenderTest windowed
+  `EngineBootShutdownSmoke` + `TerrainEditorSmoke` all pass.
+- **Reversibility:** additive for authoring: the old full-grid APIs remain intact.
+  Rect-authored terrain sets depend on sparse-stream tolerance, so removing it
+  would require rebaking every set full-grid.
+
 ## 2026-07-12 -- ZM-D-051 -- Engine E1: serialized, contained per-terrain asset sets with staged editor bakes
 
 - **Decision:** `Zenith_TerrainComponent` serialization v4 appends a terrain-set

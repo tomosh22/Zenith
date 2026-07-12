@@ -6,6 +6,7 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Collections/Zenith_Vector.h"
 #include "Maths/Zenith_Maths.h"
+#include "Flux/Terrain/Flux_TerrainExportRect.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include <string>
 
@@ -307,6 +308,9 @@ public:
 	// Component-less chunk-mesh export from the live heightfield into
 	// GetMeshAssetDirectory(). Automation path.
 	void BakeMeshes();
+	// Bounded variant used by terrain recipes. Validates and cleans the staged
+	// target, then synchronously exports only xRect without touching live state.
+	bool BakeMeshesRect(const Flux_TerrainExportRect& xRect);
 
 	// Full bake on the target component: SaveTextures -> Regenerate pattern
 	// (cleanup / delete files / export / physics reload / render re-init) ->
@@ -462,6 +466,8 @@ private:
 		std::string& strDirectoryOut) const;
 	bool SaveTexturesForTerrainRoot(const std::string& strTerrainRoot);
 	void BakeMeshesForTerrainRoot(const std::string& strTerrainRoot);
+	bool BakeMeshesRectForTerrainRoot(const Flux_TerrainExportRect& xRect,
+		const std::string& strTerrainRoot);
 	bool BakeFullForTerrainRoot(const std::string& strTerrainRoot);
 
 	//--------------------------------------------------------------------------

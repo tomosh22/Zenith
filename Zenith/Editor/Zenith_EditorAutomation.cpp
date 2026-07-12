@@ -726,6 +726,18 @@ void Zenith_EditorAutomation::AddStep_TerrainExportChunks()
 	m_axActions.PushBack(xAction);
 }
 
+void Zenith_EditorAutomation::AddStep_TerrainExportChunksRect(
+	int iMinX, int iMinY, int iMaxX, int iMaxY)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::TERRAIN_EDITOR_EXPORT_CHUNKS_RECT;
+	xAction.m_aiArgs[0] = iMinX;
+	xAction.m_aiArgs[1] = iMinY;
+	xAction.m_aiArgs[2] = iMaxX;
+	xAction.m_aiArgs[3] = iMaxY;
+	m_axActions.PushBack(xAction);
+}
+
 // -- Prefab Variant Authoring --
 
 void Zenith_EditorAutomation::AddStep_CreatePrefabFromSelected(const char* szPrefabName, const char* szSavePath)
@@ -811,9 +823,51 @@ void Zenith_EditorAutomation::AddStep_Custom(void (*pfnFunc)())
 // ExecuteAction: they share standalone-session bootstrapping and would push
 // the main switch over the complexity gate. Relies on the TERRAIN_EDITOR_*
 // enum values being contiguous (they are declared as one block).
-static void ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction)
+enum class TerrainRectExecutionMode
 {
-	Zenith_TerrainEditor& xTerrainEditor = g_xEngine.TerrainEditor();
+	Production,
+	PreflightOnly
+};
+
+static bool TryCreateTerrainExportRectFromAction(const Zenith_EditorAction& xAction,
+	TerrainRectExecutionMode eRectMode, Flux_TerrainExportRect& xRectOut)
+{
+	const bool bValidRect = Flux_TerrainExportRect::TryCreate(
+		static_cast<int32_t>(xAction.m_aiArgs[0]),
+		static_cast<int32_t>(xAction.m_aiArgs[1]),
+		static_cast<int32_t>(xAction.m_aiArgs[2]),
+		static_cast<int32_t>(xAction.m_aiArgs[3]), xRectOut);
+	if (!bValidRect && eRectMode == TerrainRectExecutionMode::Production)
+	{
+		Zenith_Assert(false,
+			"TERRAIN_EDITOR_EXPORT_CHUNKS_RECT rejected bounds [%d,%d]-[%d,%d]",
+			xAction.m_aiArgs[0], xAction.m_aiArgs[1],
+			xAction.m_aiArgs[2], xAction.m_aiArgs[3]);
+	}
+	return bValidRect;
+}
+
+static bool ExecuteTerrainRectExport(const Zenith_EditorAction& xAction,
+	Zenith_TerrainEditor& xTerrainEditor, const Flux_TerrainExportRect& xRect,
+	TerrainRectExecutionMode eRectMode)
+{
+	if (eRectMode == TerrainRectExecutionMode::PreflightOnly)
+	{
+		return true;
+	}
+
+	const bool bExported = xTerrainEditor.BakeMeshesRect(xRect);
+	Zenith_Assert(bExported,
+		"TERRAIN_EDITOR_EXPORT_CHUNKS_RECT failed for bounds [%d,%d]-[%d,%d]",
+		xAction.m_aiArgs[0], xAction.m_aiArgs[1],
+		xAction.m_aiArgs[2], xAction.m_aiArgs[3]);
+	return bExported;
+}
+
+static bool ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction,
+	Zenith_TerrainEditor& xTerrainEditor, TerrainRectExecutionMode eRectMode)
+{
+	Flux_TerrainExportRect xExportRect;
 	if (xAction.m_eType == Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET)
 	{
 		// Validate and preflight every selected-component constraint BEFORE
@@ -829,7 +883,7 @@ static void ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction)
 			xTerrainEditor.SetAssetSet(xAction.m_szArg1);
 			Zenith_Assert(false, "TERRAIN_EDITOR_SET_ASSET_SET rejected invalid set '%s'",
 				xAction.m_szArg1.c_str());
-			return;
+			return false;
 		}
 
 		Zenith_Entity* pxSelected = g_xEngine.Editor().GetSelectedEntity();
@@ -843,7 +897,7 @@ static void ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction)
 			{
 				Zenith_Assert(false,
 					"TERRAIN_EDITOR_SET_ASSET_SET cannot retarget an initialized terrain; use TerrainEditor::BakeFull");
-				return;
+				return false;
 			}
 		}
 
@@ -851,7 +905,7 @@ static void ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction)
 		Zenith_Assert(bStaged, "Validated terrain asset set unexpectedly failed to stage");
 		if (!bStaged)
 		{
-			return;
+			return false;
 		}
 
 		if (pxSelectedTerrain != nullptr && !pxSelectedTerrain->IsTerrainInitializedForEditor())
@@ -863,9 +917,16 @@ static void ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction)
 				"TERRAIN_EDITOR_SET_ASSET_SET failed to stamp validated set on fresh terrain");
 			if (!bStamped)
 			{
-				return;
+				return false;
 			}
 		}
+	}
+	// Validate the exact signed payload before OpenStandalone can allocate or
+	// load any editor state. Rejected bounds therefore have no side effects.
+	if (xAction.m_eType == Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS_RECT &&
+		!TryCreateTerrainExportRectFromAction(xAction, eRectMode, xExportRect))
+	{
+		return false;
 	}
 	if (!xTerrainEditor.IsActive())
 	{
@@ -949,10 +1010,28 @@ static void ExecuteTerrainEditorAction(const Zenith_EditorAction& xAction)
 		xTerrainEditor.BakeMeshes();
 		break;
 
+	case Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS_RECT:
+		return ExecuteTerrainRectExport(xAction, xTerrainEditor, xExportRect, eRectMode);
+
 	default:
 		Zenith_Assert(false, "Non-terrain action routed to ExecuteTerrainEditorAction");
 		break;
 	}
+	return true;
+}
+
+static bool TryRouteTerrainEditorAction(const Zenith_EditorAction& xAction,
+	Zenith_TerrainEditor& xTerrainEditor, TerrainRectExecutionMode eRectMode,
+	bool& bSucceededOut)
+{
+	if (xAction.m_eType < Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET ||
+		xAction.m_eType > Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS_RECT)
+	{
+		return false;
+	}
+
+	bSucceededOut = ExecuteTerrainEditorAction(xAction, xTerrainEditor, eRectMode);
+	return true;
 }
 
 namespace
@@ -1661,13 +1740,27 @@ static void ExecuteUIAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+bool Zenith_EditorAutomation::TryPreflightTerrainExportChunksRectAction(
+	const Zenith_EditorAction& xAction, Zenith_TerrainEditor& xTerrainEditor)
+{
+	if (xAction.m_eType != Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS_RECT)
+	{
+		return false;
+	}
+
+	bool bSucceeded = false;
+	return TryRouteTerrainEditorAction(xAction, xTerrainEditor,
+		TerrainRectExecutionMode::PreflightOnly, bSucceeded) && bSucceeded;
+}
+
 void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 {
 	// Terrain-editor authoring actions have their own executor (see above).
-	if (xAction.m_eType >= Zenith_EditorActionType::TERRAIN_EDITOR_SET_ASSET_SET &&
-		xAction.m_eType <= Zenith_EditorActionType::TERRAIN_EDITOR_EXPORT_CHUNKS)
+	bool bTerrainActionSucceeded = false;
+	if (TryRouteTerrainEditorAction(xAction, g_xEngine.TerrainEditor(),
+		TerrainRectExecutionMode::Production, bTerrainActionSucceeded))
 	{
-		ExecuteTerrainEditorAction(xAction);
+		(void)bTerrainActionSucceeded;
 		return;
 	}
 

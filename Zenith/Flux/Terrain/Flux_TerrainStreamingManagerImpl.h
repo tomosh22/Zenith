@@ -23,7 +23,8 @@ class FrameContext;
 enum class Flux_TerrainLODResidencyState : uint8_t
 {
 	NOT_LOADED = 0,
-	RESIDENT
+	RESIDENT,
+	SOURCE_UNAVAILABLE
 };
 
 // ========== LOD Allocation Info ==========
@@ -313,10 +314,19 @@ public:
 		uint32_t m_uHighResidentCount = 0;
 	};
 
+	// Disk/source probes have their own budget. Upload successes remain capped
+	// independently by MAX_UPLOADS_PER_FRAME.
+	static constexpr uint32_t uMAX_SOURCE_ATTEMPTS_PER_FRAME = 32;
+
+	using StreamInLODCallback = Flux_TerrainStreamInResult (*)(void* pUserData, Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, uint32_t uLODLevel);
+
 	static float GetChunkDistanceSq(const Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, const Zenith_Maths::Vector3& xWorldPos);
 	static bool TryAllocateStreamingSpace(Flux_TerrainStreamingState& xState, uint32_t uNumVerts, uint32_t uNumIndices, const Zenith_Maths::Vector3& xCameraPos, StreamingAllocation& xAllocOut);
 	static void UpdateStreamingStats(Flux_TerrainStreamingState& xState);
 	static void RequestNearbyHighLOD(Flux_TerrainStreamingState& xState, const Zenith_Maths::Vector3& xCameraPos, StreamingFrameDiagnostics& xDiagnostics);
+	static void RequestNearbyHighLODCore(Flux_TerrainStreamingState& xState, const Zenith_Maths::Vector3& xCameraPos, StreamingFrameDiagnostics& xDiagnostics, StreamInLODCallback pfnStreamInLOD, void* pUserData);
+	static void RequestNearbyHighLODCore(Flux_TerrainStreamingState& xState, const Zenith_Vector<uint32_t>& xDesiredHighChunkIndices, StreamingFrameDiagnostics& xDiagnostics, StreamInLODCallback pfnStreamInLOD, void* pUserData);
+	static Flux_TerrainStreamInResult StreamInLODCallback_Default(void* pUserData, Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, uint32_t uLODLevel);
 	static void EvictDistantHighLOD(Flux_TerrainStreamingState& xState, const Zenith_Maths::Vector3& xCameraPos);
 	static Flux_TerrainStreamInResult StreamInLOD(Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, uint32_t uLODLevel);
 	static void EvictLOD(Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, uint32_t uLODLevel);

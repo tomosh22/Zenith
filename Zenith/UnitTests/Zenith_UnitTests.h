@@ -548,6 +548,9 @@ public:
 	static void TestTerrainAssetSetLegacyV3DefaultsEmpty();
 	static void TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirectories();
 	static void TestEditorAutomationTerrainAssetSetActionOwnsArgument();
+	static void TestTerrainEditorChunkExportRectUsesInclusiveBounds();
+	static void TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAllocate();
+	static void TestTerrainStreamingUnavailableHighLODDoesNotRetryOrStarve();
 	static void TestChunkDistanceSymmetry();
 	static void TestChunkDistanceZero();
 	// Per-component streaming-state isolation. Each Zenith_TerrainComponent

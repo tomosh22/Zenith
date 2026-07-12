@@ -2,6 +2,7 @@
 #include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
+#include "Flux/Terrain/Flux_TerrainVertexLayout.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/Terrain.h" // typed binding handles
@@ -12,11 +13,193 @@
 #include "Maths/Zenith_FrustumCulling.h"
 #include <algorithm>
 #include <fstream>
+#include <limits>
+#include <type_traits>
+#include <vector>
 
 using namespace Flux_TerrainConfig;
 
 // ========== Debug Logging ==========
 DEBUGVAR bool dbg_bLogTerrainStreaming = false;
+
+namespace
+{
+	static_assert(Flux_TerrainVertexLayout::uHIGH_CHUNK_VERTEX_COUNT <= STREAMING_VERTEX_BUFFER_SIZE / Flux_TerrainVertexLayout::uVERTEX_STRIDE,
+		"A canonical HIGH terrain chunk must fit in the streaming vertex buffer");
+	static_assert(Flux_TerrainVertexLayout::uHIGH_CHUNK_INDEX_COUNT <= STREAMING_INDEX_BUFFER_SIZE / sizeof(uint32_t),
+		"A canonical HIGH terrain chunk must fit in the streaming index buffer");
+
+	struct TerrainMeshSourceData
+	{
+		std::vector<u_int8> m_auVertexData;
+		std::vector<uint32_t> m_auIndices;
+		uint32_t m_uNumVerts = 0;
+		uint32_t m_uNumIndices = 0;
+	};
+
+	class TerrainMeshFileReader
+	{
+	public:
+		explicit TerrainMeshFileReader(const char* szPath)
+			: m_xFile(szPath, std::ios::binary | std::ios::ate)
+		{
+			if (!m_xFile.good())
+				return;
+
+			const std::streamoff iSize = static_cast<std::streamoff>(m_xFile.tellg());
+			if (iSize <= 0)
+				return;
+
+			m_ulRemaining = static_cast<uint64_t>(iSize);
+			m_xFile.seekg(0, std::ios::beg);
+			m_bValid = m_xFile.good();
+		}
+
+		template<typename T>
+		bool Read(T& xValue)
+		{
+			static_assert(std::is_trivially_copyable_v<T>);
+			return ReadBytes(&xValue, sizeof(T));
+		}
+
+		bool ReadBytes(void* pData, uint64_t ulSize)
+		{
+			if (!m_bValid || pData == nullptr || ulSize > m_ulRemaining ||
+				ulSize > static_cast<uint64_t>((std::numeric_limits<std::streamsize>::max)()))
+			{
+				return false;
+			}
+
+			m_xFile.read(static_cast<char*>(pData), static_cast<std::streamsize>(ulSize));
+			if (!m_xFile || static_cast<uint64_t>(m_xFile.gcount()) != ulSize)
+			{
+				m_bValid = false;
+				return false;
+			}
+
+			m_ulRemaining -= ulSize;
+			return true;
+		}
+
+		bool Skip(uint64_t ulSize)
+		{
+			if (!m_bValid || ulSize > m_ulRemaining ||
+				ulSize > static_cast<uint64_t>((std::numeric_limits<std::streamoff>::max)()))
+			{
+				return false;
+			}
+
+			m_xFile.seekg(static_cast<std::streamoff>(ulSize), std::ios::cur);
+			if (!m_xFile)
+			{
+				m_bValid = false;
+				return false;
+			}
+
+			m_ulRemaining -= ulSize;
+			return true;
+		}
+
+		bool HasRemaining(uint64_t ulSize) const
+		{
+			return m_bValid && ulSize <= m_ulRemaining;
+		}
+
+		bool ReadAttribute(uint64_t ulDataSize, void* pData = nullptr)
+		{
+			static_assert(sizeof(bool) == sizeof(uint8_t), "The .zmesh attribute flag format requires one-byte bools");
+			uint8_t uPresent = 0;
+			if (!Read(uPresent) || uPresent > 1u)
+				return false;
+			if (uPresent == 0u)
+				return pData == nullptr;
+			return pData != nullptr ? ReadBytes(pData, ulDataSize) : Skip(ulDataSize);
+		}
+
+	private:
+		std::ifstream m_xFile;
+		uint64_t m_ulRemaining = 0;
+		bool m_bValid = false;
+	};
+
+	bool TryLoadTerrainMeshSource(const char* szPath, uint32_t uExpectedVertexStride, TerrainMeshSourceData& xDataOut)
+	{
+		TerrainMeshFileReader xReader(szPath);
+
+		// Terrain bakes have one canonical layout. Validate the serialized
+		// element descriptors directly so corrupt data never reaches the
+		// assertion-based general mesh loader and same-size, wrong-order layouts
+		// cannot be uploaded into the unified terrain buffer.
+		uint32_t uNumElements = 0;
+		if (!xReader.Read(uNumElements) || uNumElements != Flux_TerrainVertexLayout::uELEMENT_COUNT ||
+			uExpectedVertexStride != Flux_TerrainVertexLayout::uVERTEX_STRIDE)
+		{
+			return false;
+		}
+
+		uint32_t uExpectedOffset = 0;
+		for (uint32_t u = 0; u < uNumElements; ++u)
+		{
+			Flux_BufferElement xElement;
+			const Flux_TerrainVertexLayout::Element& xExpected = Flux_TerrainVertexLayout::axELEMENTS[u];
+			if (!xReader.Read(xElement) || xElement.m_eType != xExpected.m_eType ||
+				xElement.m_uSize != xExpected.m_uSize || xElement.m_uOffset != uExpectedOffset)
+			{
+				return false;
+			}
+			uExpectedOffset += xElement.m_uSize;
+		}
+
+		uint32_t uNumBones = 0;
+		uint32_t uBoneMapCount = 0;
+		if (!xReader.Read(xDataOut.m_uNumVerts) || !xReader.Read(xDataOut.m_uNumIndices) ||
+			!xReader.Read(uNumBones) || !xReader.Read(uBoneMapCount) ||
+			xDataOut.m_uNumVerts != Flux_TerrainVertexLayout::uHIGH_CHUNK_VERTEX_COUNT ||
+			xDataOut.m_uNumIndices != Flux_TerrainVertexLayout::uHIGH_CHUNK_INDEX_COUNT ||
+			uNumBones != 0u || uBoneMapCount != 0u)
+		{
+			return false;
+		}
+
+		u_int8 auMaterialColor[sizeof(Zenith_Maths::Vector4)];
+		if (!xReader.ReadBytes(auMaterialColor, sizeof(auMaterialColor)))
+			return false;
+
+		const uint64_t ulVertexDataSize = static_cast<uint64_t>(xDataOut.m_uNumVerts) * Flux_TerrainVertexLayout::uVERTEX_STRIDE;
+		const uint64_t ulIndexDataSize = static_cast<uint64_t>(xDataOut.m_uNumIndices) * sizeof(uint32_t);
+		// Both required payload flags plus the seven optional attribute flags
+		// must exist. Check this lower bound before allocating from file counts,
+		// so a tiny truncated file cannot provoke a large temporary allocation.
+		static constexpr uint64_t ulATTRIBUTE_FLAG_COUNT = 9u;
+		if (!xReader.HasRemaining(ulVertexDataSize + ulIndexDataSize + ulATTRIBUTE_FLAG_COUNT))
+			return false;
+
+		xDataOut.m_auVertexData.resize(static_cast<size_t>(ulVertexDataSize));
+		xDataOut.m_auIndices.resize(xDataOut.m_uNumIndices);
+		if (!xReader.ReadAttribute(ulVertexDataSize, xDataOut.m_auVertexData.data()) ||
+			!xReader.ReadAttribute(ulIndexDataSize, xDataOut.m_auIndices.data()))
+		{
+			return false;
+		}
+
+		for (uint32_t uIndex : xDataOut.m_auIndices)
+		{
+			if (uIndex >= xDataOut.m_uNumVerts)
+				return false;
+		}
+
+		const uint64_t ulVector3DataSize = static_cast<uint64_t>(xDataOut.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
+		const uint64_t ulVector4DataSize = static_cast<uint64_t>(xDataOut.m_uNumVerts) * sizeof(Zenith_Maths::Vector4);
+		const uint64_t ulBoneAttributeSize = static_cast<uint64_t>(xDataOut.m_uNumVerts) * MAX_BONES_PER_VERTEX * sizeof(uint32_t);
+		return xReader.ReadAttribute(ulVector3DataSize) && // positions
+			xReader.ReadAttribute(ulVector3DataSize) &&      // normals
+			xReader.ReadAttribute(ulVector3DataSize) &&      // tangents
+			xReader.ReadAttribute(ulVector3DataSize) &&      // bitangents
+			xReader.ReadAttribute(ulVector4DataSize) &&      // colours
+			xReader.ReadAttribute(ulBoneAttributeSize) &&    // bone IDs
+			xReader.ReadAttribute(ulBoneAttributeSize);      // bone weights
+	}
+}
 
 // ========== Static Member Definitions ==========
 
@@ -405,31 +588,60 @@ Zenith_TerrainChunkData* Flux_TerrainStreamingManagerImpl::GetCachedChunkDataBuf
 	return pxState->m_pxCachedChunkData;
 }
 
-// For each active chunk: determine desired LOD; if HIGH-LOD is wanted but not
-// resident, stream it in. Bound by MAX_UPLOADS_PER_FRAME and a 2× attempt cap
-// (the latter prevents excessive disk I/O when many chunks need loading).
-// MissingOrInvalidSource is non-fatal — the loop skips that chunk and
-// continues. Only a real AllocationFailure (allocator full even after
-// eviction) stops the loop for the frame.
 void Flux_TerrainStreamingManagerImpl::RequestNearbyHighLOD(Flux_TerrainStreamingState& xState, const Zenith_Maths::Vector3& xCameraPos, StreamingFrameDiagnostics& xDiagnostics)
 {
+	xDiagnostics.m_uActiveCount = static_cast<uint32_t>(xState.m_xActiveChunkIndices.GetSize());
+
+	Zenith_Vector<uint32_t> xDesiredHighChunkIndices;
+	xDesiredHighChunkIndices.Reserve(xState.m_xActiveChunkIndices.GetSize());
+	for (uint32_t uActiveIdx = 0; uActiveIdx < xState.m_xActiveChunkIndices.GetSize(); ++uActiveIdx)
+	{
+		const uint32_t uChunkIndex = xState.m_xActiveChunkIndices.Get(uActiveIdx);
+		const float fDistanceSq = GetChunkDistanceSq(xState, uChunkIndex, xCameraPos);
+		if (CalculateDesiredLOD(fDistanceSq) == LOD_HIGH)
+			xDesiredHighChunkIndices.PushBack(uChunkIndex);
+	}
+
+	RequestNearbyHighLODCore(xState, xDesiredHighChunkIndices, xDiagnostics, StreamInLODCallback_Default, nullptr);
+}
+
+Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLODCallback_Default(void*, Flux_TerrainStreamingState& xState, uint32_t uChunkIndex, uint32_t uLODLevel)
+{
+	return StreamInLOD(xState, uChunkIndex, uLODLevel);
+}
+
+// The callback seam treats the state's active indices as already-selected HIGH
+// candidates. Production performs the distance/LOD selection above and routes
+// the resulting list through the same request-loop core.
+void Flux_TerrainStreamingManagerImpl::RequestNearbyHighLODCore(Flux_TerrainStreamingState& xState, const Zenith_Maths::Vector3&, StreamingFrameDiagnostics& xDiagnostics, StreamInLODCallback pfnStreamInLOD, void* pUserData)
+{
+	xDiagnostics.m_uActiveCount = static_cast<uint32_t>(xState.m_xActiveChunkIndices.GetSize());
+	RequestNearbyHighLODCore(xState, xState.m_xActiveChunkIndices, xDiagnostics, pfnStreamInLOD, pUserData);
+}
+
+// For each desired-HIGH candidate, stream it if it is not already resident.
+// Uploads are bound by MAX_UPLOADS_PER_FRAME; source
+// probes have a separate cap so terminal missing sources can be classified in
+// a bounded batch without reducing the upload budget.
+// A missing/invalid source becomes terminal until the terrain is registered
+// again, so subsequent frames skip it without spending the attempt budget.
+// Only a real AllocationFailure (allocator full even after eviction) stops the
+// loop for the frame.
+void Flux_TerrainStreamingManagerImpl::RequestNearbyHighLODCore(Flux_TerrainStreamingState& xState, const Zenith_Vector<uint32_t>& xDesiredHighChunkIndices, StreamingFrameDiagnostics& xDiagnostics, StreamInLODCallback pfnStreamInLOD, void* pUserData)
+{
+	Zenith_Assert(pfnStreamInLOD != nullptr, "RequestNearbyHighLODCore requires a stream-in callback");
+
 	uint32_t uStreamsThisFrame        = 0;
 	uint32_t uStreamAttemptsThisFrame = 0;
 	bool     bAllocationFailed        = false;
 
-	xDiagnostics.m_uActiveCount = static_cast<uint32_t>(xState.m_xActiveChunkIndices.GetSize());
-
-	for (uint32_t uActiveIdx = 0; uActiveIdx < xState.m_xActiveChunkIndices.GetSize(); ++uActiveIdx)
+	for (uint32_t uCandidateIdx = 0; uCandidateIdx < xDesiredHighChunkIndices.GetSize(); ++uCandidateIdx)
 	{
 		if (uStreamsThisFrame >= MAX_UPLOADS_PER_FRAME || bAllocationFailed) break;
-		if (uStreamAttemptsThisFrame >= MAX_UPLOADS_PER_FRAME * 2) break;
+		if (uStreamAttemptsThisFrame >= uMAX_SOURCE_ATTEMPTS_PER_FRAME) break;
 
-		const uint32_t uChunkIndex = xState.m_xActiveChunkIndices.Get(uActiveIdx);
-		const float    fDistanceSq = GetChunkDistanceSq(xState, uChunkIndex, xCameraPos);
-		const uint32_t uDesiredLOD = CalculateDesiredLOD(fDistanceSq);
+		const uint32_t uChunkIndex = xDesiredHighChunkIndices.Get(uCandidateIdx);
 		Flux_TerrainChunkResidency& xResidency = xState.m_axChunkResidency[uChunkIndex];
-
-		if (uDesiredLOD != LOD_HIGH) continue;
 
 		xDiagnostics.m_uDesiredHighCount++;
 		if (xResidency.m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::RESIDENT)
@@ -437,10 +649,12 @@ void Flux_TerrainStreamingManagerImpl::RequestNearbyHighLOD(Flux_TerrainStreamin
 			xDiagnostics.m_uAlreadyResidentHighCount++;
 			continue;
 		}
+		if (xResidency.m_aeStates[LOD_HIGH] == Flux_TerrainLODResidencyState::SOURCE_UNAVAILABLE)
+			continue;
 
 		uStreamAttemptsThisFrame++;
 		xDiagnostics.m_uStreamAttempts++;
-		const Flux_TerrainStreamInResult eRes = StreamInLOD(xState, uChunkIndex, LOD_HIGH);
+		const Flux_TerrainStreamInResult eRes = pfnStreamInLOD(pUserData, xState, uChunkIndex, LOD_HIGH);
 		if (eRes == Flux_TerrainStreamInResult::Success)
 		{
 			uStreamsThisFrame++;
@@ -458,17 +672,13 @@ void Flux_TerrainStreamingManagerImpl::RequestNearbyHighLOD(Flux_TerrainStreamin
 		else if (eRes == Flux_TerrainStreamInResult::MissingOrInvalidSource)
 		{
 			xDiagnostics.m_uMissingSourceCount++;
-			// Skip this chunk and keep going. Don't increment uStreamsThisFrame
-			// (no GPU upload happened) and don't flip bAllocationFailed (the
-			// allocator is fine; the source is just missing/invalid). The
-			// uStreamAttemptsThisFrame cap above still guards against
-			// pathological "every chunk missing" disk-thrash.
-			if (dbg_bLogTerrainStreaming)
-			{
-				uint32_t uChunkX, uChunkY;
-				ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
-				Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Skipped chunk (%u,%u) HIGH — source missing or invalid", uChunkX, uChunkY);
-			}
+			xResidency.m_aeStates[LOD_HIGH] = Flux_TerrainLODResidencyState::SOURCE_UNAVAILABLE;
+
+			uint32_t uChunkX, uChunkY;
+			ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
+			Zenith_Warning(LOG_CATEGORY_TERRAIN,
+				"[Terrain] Chunk (%u,%u) HIGH source is missing or invalid; suppressing retries until terrain regeneration",
+				uChunkX, uChunkY);
 		}
 		else  // AllocationFailure
 		{
@@ -651,7 +861,7 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	// Static method (no `this`): recover the singletons once here — these are
 	// the legitimate single re-entry points for a method that can't hold the
 	// injected member pointers, exactly like a render-graph trampoline.
-	auto& xSelf        = g_xEngine.TerrainStreaming();
+	auto& xSelf = g_xEngine.TerrainStreaming();
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
 
 	if (!xSelf.m_bInitialized || !xState.m_bRegistered)
@@ -662,14 +872,23 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	if (uLODLevel != LOD_HIGH)
 		return Flux_TerrainStreamInResult::AllocationFailure;
 
-	// Pre-check: if we know the typical chunk size, check whether there's
-	// enough space before doing expensive disk I/O. All HIGH LOD chunks are
-	// roughly the same size, so the cached count is a good predictor.
-	// Previously this returned failure outright when the allocator was tight;
-	// now it routes through EvictToMakeSpace first and only refuses if even
-	// eviction can't free enough space — matches the eviction-aware retry in
-	// TryAllocateStreamingSpace and avoids dropping chunks the allocator
-	// could have made room for.
+	uint32_t uChunkX, uChunkY;
+	ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
+
+	// Build mesh file path - HIGH LOD uses Render_X_Y.zmesh
+	std::string strChunkPath = xState.m_strTerrainAssetDirectory + "Render_" + std::to_string(uChunkX) + "_" + std::to_string(uChunkY) + ZENITH_MESH_EXT;
+
+	TerrainMeshSourceData xChunkMesh;
+	if (!TryLoadTerrainMeshSource(strChunkPath.c_str(), xState.m_uVertexStride, xChunkMesh))
+		return Flux_TerrainStreamInResult::MissingOrInvalidSource;
+
+	const uint32_t uNumVerts   = xChunkMesh.m_uNumVerts;
+	const uint32_t uNumIndices = xChunkMesh.m_uNumIndices;
+
+	// Do not evict resident chunks or mutate either allocator until the source
+	// for this request has been opened, loaded and validated. A missing bake
+	// must be observationally side-effect free apart from terminal
+	// SOURCE_UNAVAILABLE classification in the request loop.
 	if (xState.m_uCachedHighLODVertexCount > 0 && xState.m_uCachedHighLODIndexCount > 0)
 	{
 		if (xState.m_xVertexAllocator.GetUnusedSpace() < xState.m_uCachedHighLODVertexCount ||
@@ -684,26 +903,6 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 			}
 		}
 	}
-
-	uint32_t uChunkX, uChunkY;
-	ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
-
-	// Build mesh file path - HIGH LOD uses Render_X_Y.zmesh
-	std::string strChunkPath = xState.m_strTerrainAssetDirectory + "Render_" + std::to_string(uChunkX) + "_" + std::to_string(uChunkY) + ZENITH_MESH_EXT;
-
-	// Check if file exists
-	std::ifstream lodFile(strChunkPath);
-	if (!lodFile.good())
-		return Flux_TerrainStreamInResult::MissingOrInvalidSource;
-
-	// Load mesh to get size requirements, false so we don't upload to GPU
-	Flux_MeshGeometry xChunkMesh;
-	Flux_MeshGeometry::LoadFromFile(strChunkPath.c_str(), xChunkMesh, 0, false);
-	if (xChunkMesh.GetNumVerts() == 0)
-		return Flux_TerrainStreamInResult::MissingOrInvalidSource;
-
-	const uint32_t uNumVerts   = xChunkMesh.GetNumVerts();
-	const uint32_t uNumIndices = xChunkMesh.GetNumIndices();
 
 	// Cache the chunk size for future pre-checks (all chunks are roughly the same size)
 	if (xState.m_uCachedHighLODVertexCount == 0)
@@ -739,20 +938,20 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	if (xState.m_pfnChunkVertexHook != nullptr)
 	{
 		xState.m_pfnChunkVertexHook(xState.m_pChunkVertexHookUser, uChunkX, uChunkY,
-			xChunkMesh.m_pVertexData, uNumVerts, uVertexStride);
+			xChunkMesh.m_auVertexData.data(), uNumVerts, uVertexStride);
 	}
 
 	// Upload to GPU
 	xVulkanMemory.UploadBufferDataAtOffset(
 		xState.m_xUnifiedVertexBuffer.GetBuffer().m_xVRAMHandle,
-		xChunkMesh.m_pVertexData,
+		xChunkMesh.m_auVertexData.data(),
 		ulVertexDataSize,
 		ulVertexOffsetBytes
 	);
 
 	xVulkanMemory.UploadBufferDataAtOffset(
 		xState.m_xUnifiedIndexBuffer.GetBuffer().m_xVRAMHandle,
-		xChunkMesh.m_puIndices,
+		xChunkMesh.m_auIndices.data(),
 		ulIndexDataSize,
 		ulIndexOffsetBytes
 	);
@@ -765,7 +964,6 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	xResidency.m_axAllocations[uLODLevel].m_uIndexCount   = uNumIndices;
 	xResidency.m_aeStates[uLODLevel] = Flux_TerrainLODResidencyState::RESIDENT;
 
-	// xChunkMesh automatically destroyed when going out of scope
 	return Flux_TerrainStreamInResult::Success;
 }
 
