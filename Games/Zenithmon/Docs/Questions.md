@@ -10,6 +10,21 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-12-004 -- ZM_Breeding: reduced model on the shipped data (no gender / egg groups / egg moves)
+
+**Question:** ratify (or override) the reduced breeding model implemented for S2 box-6 SC1. The species table ships with NO egg-group, gender, hatch-cycle, egg-move, or species->ability data; adding any of those is a data-model EXPANSION (the scope-change direction), so I built breeding on the data that exists and flagged the reductions rather than expanding the model unilaterally.
+
+**Best-guess actions taken (faithful reductions, each additive later):**
+1. **No gender.** The GDD implies "opposite sexes" but no gender field exists on the species or monster. I use a "first parent = mother" convention for offspring species + ability, with compatibility = shared archetype (the egg-group proxy) + both non-legendary. Cost-if-wrong: additive -- a gender field + species ratio + a gender check in `ZM_AreSpeciesCompatible` can be added later without touching the egg-gen math.
+2. **Archetype = egg-group proxy** (no real egg-group taxonomy exists). Cost-if-wrong: low; swapping to a real egg-group column is a localized change in `ZM_GetBreedingGroup`.
+3. **No egg moves / no hidden abilities / no Ditto-analog / no Masuda-shiny.** Egg moves = the base-evo level-1 learnset; ability = mother's. Cost-if-wrong: low/additive when the data gains egg-move rows / a second ability slot.
+
+**Cost if wrong:** LOW across all -- each reduction is additive when the underlying data model grows; no golden or contract depends on their ABSENCE.
+
+**Status:** asked 2026-07-12. Implementation + full local gate complete under these rulings (ZM-D-045). OPEN for user override. NOTE: adding gender / real egg groups is a Scope.md data-model expansion -- if the user wants it, it should land as its own scoped item with a DecisionLog entry first.
+
+---
+
 ### [OPEN] Q-2026-07-12-003 -- ZM_BattleAI: three in-scope rulings (file location, no-Struggle, tunable thresholds)
 
 **Question:** ratify (or override) three implementation rulings made for the S2 `ZM_BattleAI` box, all judged IN-SCOPE (not scope changes), so I proceeded rather than halting the autonomous loop.

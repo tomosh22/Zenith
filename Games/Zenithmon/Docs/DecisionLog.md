@@ -15,6 +15,61 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-12 -- ZM-D-045 -- S2 box-6 SC1: `ZM_Breeding` + `ZM_Daycare` (reduced deterministic breeding on the shipped data)
+
+- **Decision:** `ZM_Breeding` + `ZM_Daycare` ship as pure, deterministic, headless
+  free functions in `Source/Battle/ZM_Breeding.{h,cpp}` + `ZM_Daycare.{h,cpp}` --
+  no globals/statics-with-state, no UI, no overworld dependency (that integration
+  is later). All stochastic behavior flows through a caller-supplied
+  `ZM_BattleRNG`; the daycare step/egg model is fully RNG-free.
+- **Reduced model on shipped data (no new columns):** the species table carries
+  NO egg-group, gender, hatch-cycle, egg-move, or species->ability data. So the
+  **archetype** field is the egg-group proxy; there is **no gender** (first parent
+  = "mother" by convention); ability is copied from the mother; egg moves = the
+  base-evolution's level-1 learnset. Faithful reductions, not cuts of in-scope
+  features -- logged Q-2026-07-12-004; each is additive if the data model later
+  grows the field (adding gender/egg-groups is a Scope.md data-model expansion).
+- **Compatibility:** both parents non-legendary AND sharing an archetype.
+- **Offspring species:** the base (lowest) evolution of the MOTHER, derived by a
+  roster-bounded backward scan over the shipped forward `m_eEvolvesTo` chain (no
+  new pre-evo column; terminates on any cyclic/malformed table). Sentinel-safe:
+  `ZM_SPECIES_NONE == ZM_SPECIES_COUNT`, so an index-0 predecessor is not mistaken
+  for "not found."
+- **Inheritance (LOCKED RNG draw order -- goldens depend on it):** (A) species
+  (no draw); (B) IVs -- K = Heirloom-Knot?5:3; phase 1 picks K distinct stat
+  indices via `RandBelow(6)` (reject dups); phase 2 iterates stats 0..5, each
+  inherited stat draws `RandBelow(2)` for the parent, each fresh stat draws
+  `RandBelow(32)`; (C) nature -- Stasis-Stone (everstone) locked value with NO
+  draw, else `RandBelow(25)`, ALWAYS AFTER the IV rolls so the everstone can't
+  shift IVs; (D) ability = mother's; (E) moves = base-evo L1 learnset; (F) level
+  1, EVs 0, `m_uCurExp = uZM_EXP_UNSPECIFIED`. `ZM_ITEM_HEIRLOOMKNOT` /
+  `ZM_ITEM_STASISSTONE` are the destiny-knot / everstone analogs (already in
+  `ZM_ItemData`), passed via `ZM_BreedingParams`.
+- **Daycare:** capacity 2; `Deposit` fills the first free slot (returns the index,
+  or capacity when full) and normalizes an UNSPECIFIED exp to the level floor;
+  `Step` gives each occupied slot 1 exp/step (level via `ZM_LevelForExp`, capped
+  L100, 64-bit intermediate -- no wrap) and advances the egg counter by the step
+  count ONLY for a compatible occupied pair, saturating at the 256-step threshold
+  where `bEggAvailable` flips true (deterministic, no RNG); `Withdraw` returns the
+  leveled spec, clears the slot, resets egg progress; `CollectEgg` calls
+  `ZM_GenerateEgg` and resets the counter/flag, leaving parents deposited.
+- **Tests that lock it:** 33 `ZM_Data` behavioral tests in
+  `Tests/ZM_Tests_Breeding.cpp` -- base-evo derivation (+ an all-species
+  terminates-at-stage-1 invariant), compatibility (premises self-guarded via
+  `ZM_GetSpeciesData`), exact IV/nature goldens from an INDEPENDENT offline PCG32
+  oracle (proving draw order: same-seed identity, knot 5-vs-3, everstone-does-not-
+  shift-IVs), mother-ability / base-evo-learnset, and the daycare
+  deposit/step/level/255-vs-256-egg-boundary/withdraw/collect model. Adversarial
+  review: SAFE-TO-COMMIT (independent oracle guards draw order; base-evo sentinel
+  + daycare saturation verified). Minor non-blocking coverage note: no test steps
+  a compatible pair strictly PAST 256 in one call (the `>=` branch is covered by
+  exact-256 steps; impl saturates correctly). Boot unit baseline 1605 -> 1638
+  (`zm-tests.yml`).
+- **Reversibility:** additive + standalone; the reduced-data rulings (gender, egg
+  groups, egg moves, hidden abilities) are all additive if the data model grows;
+  thresholds (256 steps, K=3/5) are named constants. SC2 (`ZM_BattleTower`, which
+  consumes `ZM_BattleAI`) completes box 6. No golden/locked-contract impact.
+
 ## 2026-07-12 -- ZM-D-044 -- S2 box-5: `ZM_BattleAI` four-tier pure chooser (BOX 5 COMPLETE)
 
 - **Decision:** `ZM_BattleAI` ships as a pure, side-effect-free action chooser in
