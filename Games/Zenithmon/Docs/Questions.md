@@ -10,6 +10,21 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-12-003 -- ZM_BattleAI: three in-scope rulings (file location, no-Struggle, tunable thresholds)
+
+**Question:** ratify (or override) three implementation rulings made for the S2 `ZM_BattleAI` box, all judged IN-SCOPE (not scope changes), so I proceeded rather than halting the autonomous loop.
+
+**Best-guess actions taken:**
+1. **File location = `Source/Battle/`** (with the nine sibling battle systems), NOT MasterPlan's `Source/AI/`. No `Source/AI/` directory exists and one file does not justify creating one. Cost-if-wrong: trivial -- relocating one `.h`/`.cpp` + one include line is a mechanical additive change.
+2. **No Struggle fallback.** `ZM_ChooseAction` assumes >=1 legal action (a move with PP, or a switch). When every move is out of PP and no switch exists there is no "Struggle" action -- a PRE-EXISTING engine gap (the executor has no Struggle either). Cost-if-wrong: low; adding Struggle is additive when the engine gains it, and no test/golden depends on its absence.
+3. **SMART thresholds + the GREEDY/CHAMPION rolls are fixed constants** (heal < 50% HP; hopeless = `effIn>=200 && effOut<=100`; KO uses guaranteed roll 85; expected damage uses roll 92). These are balance knobs, flagged S11-tunable. Cost-if-wrong: low; they are named constants, retunable without structural change.
+
+**Cost if wrong:** LOW across all three -- each is localized + additive.
+
+**Status:** asked 2026-07-12. Implementation + full local gate complete under these rulings (ZM-D-044). OPEN for user override; all three remain additive.
+
+---
+
 ### [OPEN] Q-2026-07-12-002 -- ZM_ExpAndLevel: two sequencing rulings (move-overflow + evolution triggers)
 
 **Question:** ratify (or override) two implementation rulings made for the S2 `ZM_ExpAndLevel` box, both of which I judged to be IN-SCOPE sequencing (not scope changes) based on Scope.md + the GDD + the Roadmap stage plan, and therefore proceeded on rather than halting the autonomous loop.

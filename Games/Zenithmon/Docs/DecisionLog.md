@@ -15,6 +15,59 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-12 -- ZM-D-044 -- S2 box-5: `ZM_BattleAI` four-tier pure chooser (BOX 5 COMPLETE)
+
+- **Decision:** `ZM_BattleAI` ships as a pure, side-effect-free action chooser in
+  `Source/Battle/ZM_BattleAI.{h,cpp}`: `ZM_BattleAction ZM_ChooseAction(const
+  ZM_BattleState& xState, ZM_SIDE eSide, ZM_AI_TIER eTier, ZM_BattleRNG& xAIRng)`.
+  It reads `xState` through `const&`, takes its OWN caller-supplied `xAIRng`
+  (distinct from `xState.m_xRNG`), never calls Submit/Resolve/DoSwitch/
+  MoveExecutor, emits no events, mutates no state, and never advances the battle
+  RNG. Only the RANDOM tier draws (from `xAIRng`). => choosing an action perturbs
+  nothing; all box-1..4 golden streams + subsequent RNG output stay byte-identical.
+  The chooser is standalone this box; wiring the engine to call it for the
+  opponent side lands when battle integration needs it (S5+).
+- **`ZM_AI_TIER` enum** (RANDOM/GREEDY/SMART/CHAMPION + COUNT, NONE=COUNT
+  sentinels) is defined in `ZM_BattleAI.h`; the locked `ZM_BattleTypes.h` is NOT
+  edited (its reserved comment stays a comment).
+- **Legal-action set (deterministic order):** each move slot with PP>0, then
+  SWITCH to each living non-active bench member. No ITEM/RUN. Assumes >=1 legal
+  action (no Struggle fallback -- pre-existing engine gap, tracked Q-2026-07-12-003).
+- **Tier contracts:** RANDOM = uniform over the ordered legal set via
+  `xAIRng.RandBelow(n)`. GREEDY = argmax of deterministic `damage(roll=92,
+  no-crit, STAB + type-effectiveness) x hit%`, tie-break lowest slot; status /
+  zero-power / immune moves score 0; switches only when no legal MOVE exists.
+  SMART = fixed cascade: (1) guaranteed KO -- a sure-hit (ALWAYS_HITS or base
+  acc>=100) damaging move whose worst-case `roll=85` damage >= target curHP,
+  best GREEDY score wins; (2) hopeless switch when `effIn>=200 && effOut<=100`,
+  to the switchable bench member with the strictly-smallest incoming
+  effectiveness; (3) heal when `curHP*2 < maxHP` and a HEAL_HALF/REST move has
+  PP; (4) else GREEDY. CHAMPION = deterministic 2-ply on scalar HP (no
+  `ZM_BattleState` clone): model the opponent's single GREEDY reply once, then
+  per candidate own move resolve order by priority bracket then effective speed
+  (SPEED stage-scaled, /4 if paralyzed -- mirrors `ZM_BattleEngine`), exact
+  speed-tie modeled opponent-first (conservative); apply deterministic mean
+  damage to two scalars (a KO suppresses the reply); score
+  `V = (oppFaint?+100000:0) - (meFaint?+100000:0) + hpMe - hpOpp`; pick max V,
+  tie-break GREEDY score then lowest slot. Beats the naive greedy line in the
+  priority-trap (slower AI, both moves KO, only the +priority move wins).
+- **File-location deviation:** placed under `Source/Battle/` (co-located with the
+  nine sibling battle systems), NOT MasterPlan's `Source/AI/` -- no `Source/AI/`
+  dir exists and one file does not justify one; trivial + additive to relocate.
+  Logged Q-2026-07-12-003.
+- **Tests that lock it:** 28 `ZM_Battle` behavioral tests in
+  `Tests/ZM_Tests_BattleAI.cpp` (4 RANDOM, 6 GREEDY, 8 SMART, 6 CHAMPION, 4
+  API/contract), each pinning a specific action with oracle-computed construction
+  preconditions (from the real `ZM_CalcDamage`/`ZM_EffectivenessPercent`/
+  `ZM_ApplyStatStage`). Includes a non-perturbation guard (snapshots the battle
+  RNG by value, asserts 8 identical post-call draws), a CHAMPION reply-model
+  discrimination test (3-way opponent-move separation so a slot-0 / max-power
+  reply model fails), and a CHAMPION exact-speed-tie test. Adversarial review:
+  SAFE-TO-COMMIT. Boot unit baseline 1577 -> 1605 (`zm-tests.yml`).
+- **Reversibility:** additive + standalone; the SMART thresholds and the GREEDY
+  roll are S11-tunable named constants; the engine-integration call site is a
+  later separate change. No golden or locked-contract impact.
+
 ## 2026-07-12 -- ZM-D-043 -- S2 box-4: modern party-share EXP / EV / level / move-learn / terminal evolution (BOX 4 COMPLETE)
 
 - **Decision:** `ZM_ExpAndLevel` ships as deterministic, integer-only progression in
