@@ -40,6 +40,18 @@ Test hygiene: `Zenith_SaveData::ClearForTest` is registered as a
 between-tests hook from S0, so save writes in one batched test can never leak
 into the next (TestPlan.md convention C3).
 
+### S3 runtime traversal streams are not this save schema
+
+As of ZM-D-056, `ZM_GameStateManager`, `ZM_SpawnPoint`, and `ZM_WarpTrigger`
+have fixed version-1 **ECS scene-component** streams. They persist authored
+component configuration in `.zscen` data: the manager writes only its version,
+the spawn point writes its fixed 32-byte tag, and the trigger writes its target
+build index plus fixed 32-byte tag. Live transition state (queued/waiting state,
+source/destination Player IDs, latch state, and issued-load count) is never
+serialized. The manager's `DontDestroyOnLoad` lifetime is runtime scene
+persistence, not durable player-save persistence. None of this implements or
+versions `ZM_SaveSchema`; the first game-save schema remains S7.
+
 ## Payload structure
 
 The game payload is an inner header followed by an ordered sequence of
@@ -184,7 +196,7 @@ are a version bump.
 | Field | Proposed type | Notes |
 |---|---|---|
 | `sceneBuildIndex` | uint32 | Must be a scene registered in `ZM_WorldSpec` (checked on read) |
-| `spawnTag` | char[32] | ASCII, NUL-padded; must resolve in the target scene's WorldSpec row |
+| `spawnTag` | char[32] | Same runtime grammar as `ZM_SpawnPoint`: 1-31 printable ASCII bytes (`0x20..0x7E`), NUL-padded; must resolve in the target scene's WorldSpec row |
 | `position` | float x3 | Player world position |
 | `yaw` | float | Player facing |
 

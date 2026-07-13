@@ -94,23 +94,26 @@ Plus, always:
   lowercase continuations like `Zenithmon` are distinct words and valid). The
   shared pinned vectors live in `Tools/ZenithCli/Tests/name_validation_cases.txt`;
   the buildsystem suite passed 45 / 0 after the change.
-- **Current S3 landmark (2026-07-13, ZM-D-055):** `ZM_InputActions` plus the
-  order-102 `ZM_PlayerController` and order-103 `ZM_FollowCamera` are shipped.
-  Dawnmere owns a scale-derived dynamic capsule at `(512,26.9,480)` and a
-  fixed-yaw spring/collision camera. Walk/run retain 4/7 m/s horizontal-world
-  speed; invalid/nonpositive dt is a true no-op; grounded walkable downhill
-  adhesion changes velocity only while preserving stronger falls and positive
-  step-assist rises. Slopes through 45 degrees are inclusive. Camera target
-  caching is generation-safe and rejects a still-live ID moved out of the
-  camera's scene.
-  Twenty T0 tests bring the boot gate to **1757 ran / 1756 passed / 0 failed /
-  1 skipped**. Of four automated tests, Boot + the asset-free controller
-  harness pass headless while Grass + Dawnmere player/camera skip for graphics;
-  their verified windowed runs are 11 frames / 1924.3 ms and 117 frames /
-  4990.3 ms respectively. The next task is persistent `ZM_GameStateManager` +
-  `ZM_SpawnPoint`/`ZM_WarpTrigger`, then PlayerHome/door round trip. Do not stop
-  for the human S3 visual gate until both land and the full S3 automated gate
-  is green.
+- **Current S3 landmark (2026-07-13, ZM-D-056):** the input/controller/camera
+  pair (orders 102/103) is joined by order-104 `ZM_GameStateManager`, order-105
+  `ZM_SpawnPoint`, and order-106 `ZM_WarpTrigger`. FrontEnd authors the
+  manager-only persistent `ZM_GameStateRoot`; its generation-bearing singleton
+  retires duplicates and owns deferred `QUEUED -> WAITING_FOR_SCENE ->
+  WAITING_FOR_SPAWN` SINGLE transitions. Requests validate WorldSpec build/tag
+  pairs and freeze source/replacement Players, with a sole playerless build-0
+  exception for the direct FrontEnd request. Tags are 1-31 printable ASCII
+  bytes. Dawnmere's `TownCenterSpawn` marks feet at `(512,25.98577,480)`; the
+  scale-derived Player centre is `(512,26.88577,480)`. Placement teleports once,
+  zeros linear/angular motion, resets/enables the controller, and returns to
+  idle. Trigger sensors latch only the unique valid active-scene dynamic-capsule
+  Player by full generation-bearing ID.
+  Twelve new T0 tests bring the boot gate to **1769 ran / 1768 passed / 0
+  failed / 1 skipped**. Of five automated tests, Boot + ControllerHarness pass
+  headless while Warp/Grass/Dawnmere skip for graphics; verified windowed runs
+  are respectively **4 / 885.7 ms**, **11 / 1927.5 ms**, and **117 / 5043.5
+  ms**. The next task is PlayerHome build 40 + a live Dawnmere round trip and
+  fade. Do not stop for the human S3 visual gate until that box and the full S3
+  automated gate are green.
 
 ### Document map
 
@@ -237,7 +240,9 @@ classes `ZM_BattleEngine`, data tables `ZM_SpeciesData`, unit-test TUs
 `ZM_OnWildEncounter`, debug variables `zm_*` (e.g. `zm_instant_battles`).
 Component serialization orders: ZM components claim **100+** and remain unique:
 `ZM_GameComponent` = 100, `ZM_TerrainGrass` = 101,
-`ZM_PlayerController` = 102, `ZM_FollowCamera` = 103; **next free is 104**.
+`ZM_PlayerController` = 102, `ZM_FollowCamera` = 103,
+`ZM_GameStateManager` = 104, `ZM_SpawnPoint` = 105, and `ZM_WarpTrigger` =
+106; **next free is 107**.
 
 ### 3.2 Engine naming conventions (mandatory)
 
@@ -494,39 +499,42 @@ Flux entirely, so graphics-dependent tests must set `m_bRequiresGraphics = true`
 
 ---
 
-## 7. Worked Example -- Adding a ZM Component + Its Test
+## 7. Worked Example -- Shipped ZM Component Registration Pattern
 
-Adding `ZM_WarpTrigger_Component` (or any component), end to end:
+The shipped `ZM_WarpTrigger` shows the end-to-end pattern for any future
+component:
 
-1. **Header in `Components/`** -- `Components/ZM_WarpTrigger_Component.h`,
-   `#pragma once`, class `ZM_WarpTrigger_Component` with a `Zenith_Entity&`
+1. **Header in `Components/`** -- `Components/ZM_WarpTrigger.h`,
+   `#pragma once`, class `ZM_WarpTrigger` with a `Zenith_Entity&`
    constructor storing `m_xParentEntity`. Lifecycle hooks (`OnAwake`, `OnStart`,
    `OnUpdate`) are concept-detected by the component-meta registry -- there is
    no base class. Implement the component contract: `WriteToDataStream` /
    `ReadFromDataStream`, plus `RenderPropertiesPanel` under `#ifdef ZENITH_TOOLS`.
-2. **Register in `Zenithmon.cpp`** -- `#include` the header and add a
-   file-scope `ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger_Component, "ZM_WarpTrigger", 104u)`
-   next to the existing registrations (**next free order at this writing**; ZM claims 100+, unique per
-   component). The macro must be static-init in an always-linked TU --
+2. **Register in `Zenithmon.cpp`** -- `#include` the header and add the
+   file-scope `ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger, "ZM_WarpTrigger", 106u)`
+   next to the existing registrations (106 is this component's locked order;
+   the next free order is 107). The macro must be static-init in an always-linked TU --
    `Zenithmon.cpp` defines the `Project_*` entry points, so it is safe. Do NOT
    call it from `Project_RegisterGameComponents` (the meta registry is sealed
    before that hook runs).
 3. **Editor-registry mirror** -- in `Project_RegisterGameComponents()` under
    `#ifdef ZENITH_TOOLS`:
-   `Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_WarpTrigger_Component>("ZM_WarpTrigger");`
+   `Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_WarpTrigger>("ZM_WarpTrigger");`
    (this populates the editor's Add Component menu).
 4. **Regen** -- `zenith regen` (new file => solution regeneration; generated
    output stays untracked).
-5. **Test TU in `Tests/`** -- unit tests in `Tests/ZM_Tests_WarpTrigger.cpp`
-   using `ZENITH_TEST(ZM_WarpTrigger, <Name>)` for pure logic, and/or an
-   automated test in `Tests/ZM_AutoTests_WarpTrigger.cpp` wrapped in
+5. **Test TU in `Tests/`** -- the shipped traversal units live in
+   `Tests/ZM_Tests_WorldTraversal.cpp` under `ZENITH_TEST(ZM_WorldTraversal,
+   <Name>)`; `Tests/ZM_AutoTests_WorldTraversal.cpp` is wrapped in
    `#ifdef ZENITH_INPUT_SIMULATOR` with `static const Zenith_AutomatedTest` +
    `ZENITH_AUTOMATED_TEST_REGISTER` (Setup/Step/Verify + maxFrames; see
    `Tests/ZM_AutoTests_Boot.cpp` for the exact shape). Update
    [TestPlan.md](TestPlan.md) if the test spec is new.
 6. **Wire into a scene** -- via automation authoring
    (`AddStep_AddComponent("ZM_WarpTrigger")` in the scene recipe), then run a
-   `*_True` build once to re-bake the affected `.zscen`.
+   `*_True` build once to re-bake the affected `.zscen`. The component and its
+   tests exist now; the first live trigger entities intentionally wait for the
+   PlayerHome/door-round-trip box.
 7. **Gate** -- `zenith build Zenithmon`, then
    `zenith test Zenithmon --headless` (all green), plus a `--filter` windowed
    run if the new test needs graphics.

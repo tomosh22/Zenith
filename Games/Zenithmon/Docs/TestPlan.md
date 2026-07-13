@@ -65,7 +65,8 @@ Unit-test categories planned per stage: `ZM_Boot` (S0, shipped), `ZM_Data` /
 `ZM_Stats` / `ZM_World` (S1), `ZM_Battle` / `ZM_AI` / `ZM_Breeding` /
 `ZM_Tower` (S2), `ZM_TerrainAuthoring` / `ZM_TerrainRecipeSet` / `ZM_Grass` /
 `ZM_OverworldInput` / `ZM_OverworldController` / `ZM_OverworldPhysics` /
-`ZM_OverworldCamera` / `ZM_OverworldECS` (S3, shipped), `ZM_Gen` (S4),
+`ZM_OverworldCamera` / `ZM_OverworldECS` / `ZM_WorldTraversal` (S3,
+shipped), `ZM_Gen` (S4),
 `ZM_Encounter` (S5), `ZM_UI` (S6), `ZM_Save` (S7). New systems get a new
 category, never a grab-bag.
 
@@ -280,7 +281,7 @@ biggest suite; all headless, all seeded (C8).
 
   All seven are engine-side `ZENITH_TEST` cases and are count-ratcheted into
   both the shared engine unit gate (**1078** registered) and Zenithmon's CI
-  boot unit gate (**1757** registered). The latter expects 1756 passed,
+  boot unit gate (**1769** registered). The latter expects 1768 passed,
   0 failed and the one quarantined skip.
 - **E2 engine unit tests (SHIPPED -- exactly three):**
 
@@ -301,7 +302,8 @@ biggest suite; all headless, all seeded (C8).
   Zenithmon's exact boot baseline 1725 -> 1728; Dawnmere's four game units
   then raised only the Zenithmon baseline to 1732, and the five measurement-
   registry units below raised it to 1737; the 20 overworld input/controller/
-  physics/camera/ECS units below raise it to the current **1757**.
+  physics/camera/ECS units below raised it by 20; the 12 traversal units below
+  raise it to the current **1769**.
 - **Dawnmere terrain/grass unit tests (SHIPPED -- exactly four):**
 
   | Test | Contract covered |
@@ -378,6 +380,20 @@ biggest suite; all headless, all seeded (C8).
   The fixed-yaw follow camera uses a critical spring and collision arm, and
   resolves `Player` through a generation-bearing `EntityID` in its own scene,
   rejecting a cached target whose still-live ID has moved to another scene.
+- **Traversal-infrastructure unit tests (SHIPPED -- exactly 12):** all live in
+  `Tests/ZM_Tests_WorldTraversal.cpp` under `ZM_WorldTraversal`:
+
+  | Count | Exact cases / locked contract |
+  |---:|---|
+  | 4 | `ManagerSingletonLookupRejectsMissingAndDuplicates`, `ManagerRequestValidationIsTransactional`, `ManagerStateMachineDefersSingleLoadOneTick`, `ManagerPersistenceKeepsEntityIDAcrossSceneGeneration`: unique generation-bearing singleton, duplicate retirement, WorldSpec validation, FrontEnd build-0 playerless exception, immediate source freeze, exactly-one deferred SINGLE request, explicit waiting states, and persistent full-ID identity across scene-slot reuse |
+  | 3 | `SpawnPointTagValidationBoundaries`, `SpawnPointLookupRequiresUniqueSameSceneMatch`, `SpawnPointSerializationVersionRoundTripAndLegacyFallback`: 1-31 printable ASCII bytes in a fixed 32-byte buffer, exact-case unique same-scene lookup, duplicate/missing failure, and fixed v1 scene-component stream |
+  | 3 | `WarpTriggerConfigurationAndVersionRoundTrip`, `WarpTriggerFiltersSensorOtherBodyAndNonPlayer`, `WarpTriggerLatchRequestsExactlyOnceAndResetsForNextOverlap`: validated fixed v1 stream, sensor reassertion, real sensor pass-through, only the unique active-scene valid dynamic-capsule Player accepted, one request per overlap, and latch reset only for the exact full generation-bearing ID after the manager is reset |
+  | 2 | `PlacementUsesMarkerFeetPlusScaledCapsuleHalfExtentAndZeroesMotion`, `WarpResolutionFreezesThenResetsOnMissingDuplicateAndGenerationChange`: feet-marker centre derivation, one-time teleport, zero linear/angular velocity, reset-enable-idle completion, destination `OnStart` freeze, missing/duplicate marker hold, and entity/scene generation changes without stale-ID acceptance |
+
+  The manager-only FrontEnd `ZM_GameStateRoot` is the sole persistent entity;
+  scene-owned Player/camera are replaced by SINGLE loads. Traversal component
+  streams are v1 authoring data only: runtime transition state is intentionally
+  absent and this does not implement the S7 `ZM_SaveSchema`.
 - **P1 `ZM_ControllerHarness_Test` (SHIPPED, headless-safe):** builds an
   asset-free isolated floor/player/camera fixture, settles the dynamic capsule,
   drives 60-frame walk and run phases through input state-setters, verifies
@@ -386,35 +402,44 @@ biggest suite; all headless, all seeded (C8).
   pass on the headless runner.
 - **P1 `ZM_DawnmerePlayerCamera_Test` (SHIPPED, windowed):** graphics-required
   and exists-guarded for the ignored Dawnmere scene/terrain family. It verifies
-  the authored Player near centre `(512,26.9,480)`, grounded movement on the
+  the authored Player near centre `(512,26.88577,480)`, grounded movement on the
   real baked surface, camera FOV/arm/acquisition, grass readiness, a SINGLE
   Dawnmere reload with new entity generations and same-scene reacquisition,
   resumed movement, and FrontEnd teardown. Verified locally in **117 frames /
-  4990.3 ms**.
+  5043.5 ms**.
 - **P1 `ZM_GrassRegeneration_Test` (SHIPPED, windowed):** exists-guards the
   ignored Dawnmere scene/terrain family and is tagged graphics-required. It
   loads Dawnmere, verifies the CPU/Flux 1024-square density-map contract and
   density scale 0.15, observes exactly **200,159 blades from 5,133 terrain
   triangles**, reloads the same scene and requires the identical count with no
   accumulation, then returns to FrontEnd and requires the Flux density map and
-  visible grass chunks to be clear. Verified locally in **11 frames / 1924.3
+  visible grass chunks to be clear. Verified locally in **11 frames / 1927.5
   ms**.
-- **Automated registry/headless result:** all **4** P1 tests register. Headless
+- **P1 `ZM_WarpInfrastructure_Test` (SHIPPED, windowed):** graphics-required
+  and exists-guarded. It starts playerless in FrontEnd build 0, requests
+  `(2,"TownCenter")` directly through the persistent manager, observes the
+  deferred SINGLE transition, then proves the replacement destination Player
+  stayed frozen through `OnStart`, arrived at exact centre
+  `(512,26.88577,480)`, had zero linear/angular velocity, was reset-enabled,
+  and left the same generation-bearing manager idle. Verified locally in **4
+  frames / 885.7 ms**. This is infrastructure coverage, not a live trigger or
+  PlayerHome/fade round trip.
+- **Automated registry/headless result:** all **5** P1 tests register. Headless
   passes `ZM_Boot_Test` and `ZM_ControllerHarness_Test`; graphics-required
-  `ZM_GrassRegeneration_Test` and `ZM_DawnmerePlayerCamera_Test` skip as
-  designed.
-- **Current regression evidence:** the full boot gate is **1757 ran / 1756
+  `ZM_WarpInfrastructure_Test`, `ZM_GrassRegeneration_Test`, and
+  `ZM_DawnmerePlayerCamera_Test` skip as designed.
+- **Current regression evidence:** the full boot gate is **1769 ran / 1768
   passed / 0 failed / 1 skipped**; all four Vulkan Debug/Release x Tools
   true/false configurations plus D3D12 Debug Tools=false build green;
   CityBuilder is **45/45**, DevilsPlayground is **158/158**, and RenderTest
   windowed `EngineBootShutdownSmoke` + `TerrainEditorSmoke` are green. The
   empty asset set still resolves the unchanged legacy `Terrain/` layout.
-- **Planned S3 round-trip P1 (windowed):** after persistent
-  `ZM_GameStateManager` + `ZM_SpawnPoint`/`ZM_WarpTrigger` and PlayerHome land,
-  walk Dawnmere via input state-setters, enter the home, and warp back out;
+- **Planned S3 round-trip P1 (windowed):** after PlayerHome build 40, fade, and
+  live Dawnmere/home triggers land, walk Dawnmere via input state-setters,
+  enter the home, and warp back out;
   assert active scene index, spawn-tag placement, persistent state, fade and
   camera recovery. The hard human visual gate waits for this automated gate;
-  it does not interrupt the intermediate persistence task.
+  it does not interrupt the PlayerHome/fade implementation.
 - Stage-gate manual visual check: terrain/grass/camera.
 
 ### 5.4 S4 -- asset generators

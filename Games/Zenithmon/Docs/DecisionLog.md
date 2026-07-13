@@ -15,6 +15,70 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-13 -- ZM-D-056 -- Persistent spawn-tag traversal uses a manager-only root and generation-exact scene entities
+
+- **Decision / ownership:** register `ZM_GameStateManager`, `ZM_SpawnPoint`, and
+  `ZM_WarpTrigger` at unique serialization orders **104 / 105 / 106**.
+  FrontEnd authors a non-transient, manager-only `ZM_GameStateRoot`; the
+  authoritative manager calls `DontDestroyOnLoad` on that root. Player and
+  camera remain destination-scene-owned and are replaced by SINGLE loads. The
+  singleton stores a generation-bearing `Zenith_EntityID`, rejects missing or
+  ambiguous lookup, and retires a duplicate manager in `OnStart` while
+  preserving the live authority.
+- **Transition contract:** a request must be idle and resolve an exact WorldSpec
+  target-build/spawn-tag pair. Its source must contain exactly one valid
+  active-scene dynamic-capsule Player, except for the deliberate playerless
+  **FrontEnd build-index-0 direct-request** path used before a Player exists.
+  Acceptance freezes the source immediately and records its full ID. The state
+  machine advances `QUEUED -> WAITING_FOR_SCENE -> WAITING_FOR_SPAWN`, issuing
+  exactly one `SCENE_LOAD_SINGLE` on the next manager update. A replacement
+  Player freezes itself from `ZM_PlayerController::OnStart` while any transition
+  is active, so component order cannot leak an input frame before placement.
+- **Spawn / motion contract:** a tag is 1-31 printable ASCII bytes
+  (`0x20..0x7E`) in a NUL-padded 32-byte buffer and lookup requires exactly one
+  exact-case marker in the loaded destination scene. A marker transform denotes
+  **feet**. Dawnmere authors `TownCenterSpawn` at
+  **(512,25.98577,480)**; the Player's scale-derived 0.9 m capsule half-extent
+  yields centre **(512,26.88577,480)**. Resolution performs the allowed one-time
+  body teleport, zeros linear and angular velocity, resets controller runtime
+  state, enables movement, and returns the manager to idle. Missing/duplicate
+  markers, invalid bodies, or scene-generation changes remain frozen and
+  waiting rather than placing ambiguously.
+- **Trigger contract:** `ZM_WarpTrigger::OnStart` reasserts its collider as a
+  sensor. Collision entry is accepted only when the other entity's full ID is
+  the unique valid active-scene dynamic-capsule Player; additive-scene,
+  duplicate, malformed, bodyless, foreign-body, and slot-reused candidates
+  fail closed. A successful overlap latches exactly once; only collision exit
+  by that exact generation-bearing ID clears it.
+- **Serialization boundary:** all three components have fixed v1 **scene
+  component** streams. The manager stream is version-only; spawn/trigger streams
+  persist authored tags and target build data. Queued/waiting transition state,
+  frozen IDs, load counts, and trigger latches are runtime-only. This is not the
+  durable S7 `ZM_SaveSchema` and does not ship player save/load.
+- **Tests that lock it:** exactly **12** `ZM_WorldTraversal` T0 tests cover the
+  singleton/state machine, transactionality, tag/stream boundaries, real sensor
+  pass-through, reset/re-entry latch behavior, feet-derived placement, motion
+  reset, destination `OnStart` freeze, duplicate retirement, and scene/entity
+  slot-reuse generations. The boot gate is **1769 ran / 1768 passed / 0 failed /
+  1 skipped**. All **5** P1 tests register: headless Boot + ControllerHarness
+  pass while Warp/Grass/Dawnmere skip for graphics. Windowed evidence is
+  `ZM_WarpInfrastructure_Test` **4 frames / 885.7 ms**,
+  `ZM_GrassRegeneration_Test` **11 / 1927.5 ms**, and
+  `ZM_DawnmerePlayerCamera_Test` **117 / 5043.5 ms**. All four Vulkan
+  Debug/Release x Tools true/false builds plus the D3D12 Debug Tools=false link
+  proof are green.
+- **Boundary / next:** the current P1 makes a direct FrontEnd manager request;
+  there is no fade, PlayerHome/build-40 scene, or authored live trigger yet.
+  PlayerHome plus the Dawnmere round trip/fade is the next Roadmap box. The hard
+  human visual gate waits until that box and the full S3 automated gate are
+  complete, so this milestone is not a stop point.
+- **Why / reversibility:** keeping only the manager persistent avoids carrying a
+  Jolt body or camera through SINGLE scene teardown. Exact generation checks and
+  fail-closed uniqueness prevent stale pool slots or additive content from
+  triggering/placing the wrong Player. Orders, streams, and authoring data are
+  now compatibility contracts; trigger geometry, fade presentation, and future
+  WorldSpec edges remain additive behind the same manager API.
+
 ## 2026-07-13 -- ZM-D-055 -- Scene-owned velocity controller and fixed follow camera make Dawnmere traversable
 
 - **Decision:** complete the S3 input/controller/camera Roadmap box with three

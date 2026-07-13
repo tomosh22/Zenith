@@ -4,8 +4,11 @@
 #include "SaveData/Zenith_SaveData.h"
 #include "Zenithmon/Components/ZM_GameComponent.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
+#include "Zenithmon/Components/ZM_GameStateManager.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
+#include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
+#include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
@@ -17,6 +20,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Core/Zenith_CommandLine.h"
+#include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
@@ -41,11 +45,31 @@ ZENITH_REGISTER_COMPONENT(ZM_GameComponent, "ZM_Game", 100u)
 ZENITH_REGISTER_COMPONENT(ZM_TerrainGrass, "ZM_TerrainGrass", 101u)
 ZENITH_REGISTER_COMPONENT(ZM_PlayerController, "ZM_PlayerController", 102u)
 ZENITH_REGISTER_COMPONENT(ZM_FollowCamera, "ZM_FollowCamera", 103u)
+ZENITH_REGISTER_COMPONENT(ZM_GameStateManager, "ZM_GameStateManager", 104u)
+ZENITH_REGISTER_COMPONENT(ZM_SpawnPoint, "ZM_SpawnPoint", 105u)
+ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger, "ZM_WarpTrigger", 106u)
 
 #ifdef ZENITH_TOOLS
 namespace
 {
 	MaterialHandle g_axDawnmereTerrainMaterials[4];
+
+	void ZM_ConfigureTownCenterSpawnPoint()
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		ZM_SpawnPoint* pxSpawnPoint = pxSelectedEntity != nullptr
+			? pxSelectedEntity->TryGetComponent<ZM_SpawnPoint>()
+			: nullptr;
+		Zenith_Assert(pxSpawnPoint != nullptr,
+			"TownCenter authoring requires the selected ZM_SpawnPoint");
+		if (pxSpawnPoint == nullptr)
+		{
+			return;
+		}
+
+		const bool bTagSet = pxSpawnPoint->SetTag("TownCenter");
+		Zenith_Assert(bTagSet, "TownCenter is not a valid spawn tag");
+	}
 
 	const char* ZM_TerrainBakeQueueResultToString(
 		ZM_TERRAIN_BAKE_QUEUE_RESULT eResult)
@@ -107,6 +131,9 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_TerrainGrass>("ZM_TerrainGrass");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_PlayerController>("ZM_PlayerController");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_FollowCamera>("ZM_FollowCamera");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_GameStateManager>("ZM_GameStateManager");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_SpawnPoint>("ZM_SpawnPoint");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_WarpTrigger>("ZM_WarpTrigger");
 #endif
 
 	// Save/load persistence root: %APPDATA%/Zenith/Zenithmon/. The versioned
@@ -121,6 +148,7 @@ void Project_RegisterGameComponents()
 	// this hook current as systems land (the DP hook is the reference).
 	Zenith_AutomatedTestRunner::RegisterBetweenTestsHook([]()
 	{
+		ZM_GameStateManager::ResetRuntimeStateForTests();
 		Zenith_SaveData::ClearForTest();
 	});
 #endif
@@ -174,6 +202,10 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
 
 	xAuto.AddStep_CreateScene("FrontEnd");
+	xAuto.AddStep_CreateEntity("ZM_GameStateRoot");
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_AddComponent("ZM_GameStateManager");
+
 	xAuto.AddStep_CreateEntity("GameManager");
 	xAuto.AddStep_AddCamera();
 	xAuto.AddStep_SetCameraPosition(0.f, 3.f, 6.f);
@@ -296,6 +328,13 @@ void Project_RegisterEditorAutomationSteps()
 		const ZM_TerrainPreviewCameraSpec& xCamera = xRecipe.m_xPreviewCamera;
 		const std::string strSplatmapPath = std::string("game:Terrain/") +
 			xRecipe.m_pxWorldSpec->m_szTerrainSet + "/Splatmap_RGBA" ZENITH_TEXTURE_EXT;
+		const Zenith_Maths::Vector3 xTownCenterFeet(512.0f, 25.98577f, 480.0f);
+		const Zenith_Maths::Vector3 xPlayerScale(0.8f, 1.8f, 0.8f);
+		const float fPlayerCapsuleHalfExtent =
+			ZM_PlayerController::CalculateCapsuleHalfExtent(xPlayerScale);
+		const Zenith_Maths::Vector3 xPlayerCenter =
+			xTownCenterFeet + Zenith_Maths::Vector3(
+				0.0f, fPlayerCapsuleHalfExtent, 0.0f);
 
 		xAuto.AddStep_CreateScene("Dawnmere");
 		xAuto.AddStep_CreateEntity("DawnmereTerrain");
@@ -311,15 +350,25 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
 		xAuto.AddStep_AddComponent("ZM_TerrainGrass");
 
+		// Spawn markers are feet/surface anchors. Runtime warps and this authored
+		// preview placement share the controller's scale-derived capsule extent.
+		xAuto.AddStep_CreateEntity("TownCenterSpawn");
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xTownCenterFeet.x, xTownCenterFeet.y, xTownCenterFeet.z);
+		xAuto.AddStep_AddComponent("ZM_SpawnPoint");
+		xAuto.AddStep_Custom(&ZM_ConfigureTownCenterSpawnPoint);
+
 		// The player and camera are Dawnmere-owned. SINGLE scene loads therefore
 		// replace both entities instead of carrying movement/camera state between
-		// scenes. The baked physics surface at TownCenter is approximately Y=25.99;
-		// the 0.9 m capsule half-extent therefore needs a Y=26.9 centre so the
-		// controller begins above the real terrain and can ground on its first probe.
+		// scenes. TownCenter is the exact sampled terrain surface; adding the
+		// scale-derived 0.9 m capsule half-extent produces the authored centre.
 		xAuto.AddStep_CreateEntity("Player");
 		xAuto.AddStep_SetEntityTransient(false);
-		xAuto.AddStep_SetTransformPosition(512.0f, 26.9f, 480.0f);
-		xAuto.AddStep_SetTransformScale(0.8f, 1.8f, 0.8f);
+		xAuto.AddStep_SetTransformPosition(
+			xPlayerCenter.x, xPlayerCenter.y, xPlayerCenter.z);
+		xAuto.AddStep_SetTransformScale(
+			xPlayerScale.x, xPlayerScale.y, xPlayerScale.z);
 		xAuto.AddStep_AddCollider();
 		xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
 		xAuto.AddStep_AddComponent("ZM_PlayerController");

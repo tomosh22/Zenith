@@ -1,6 +1,8 @@
 #include "Zenith.h"
 
 #include "Zenithmon/Components/ZM_PlayerController.h"
+
+#include "Zenithmon/Components/ZM_GameStateManager.h"
 #include "Zenithmon/Source/ZM_InputActions.h"
 
 #include "Core/Zenith_Engine.h"
@@ -33,6 +35,10 @@ void ZM_PlayerController::OnStart()
 {
 	ResetRuntimeState();
 	EnsureAndConfigureBody();
+	if (ZM_GameStateManager::ShouldFreezePlayerOnStart())
+	{
+		SetMovementEnabled(false);
+	}
 }
 
 void ZM_PlayerController::OnUpdate(float fDeltaTime)
@@ -48,9 +54,16 @@ void ZM_PlayerController::OnUpdate(float fDeltaTime)
 		return;
 	}
 
-	m_xMoveDirection = Zenith_Maths::Vector3(0.0f);
-	m_fRequestedSpeed = 0.0f;
-	m_bGrounded = false;
+	ResetMovementObservables();
+	if (!m_bMovementEnabled)
+	{
+		// Transition freezes stop only the gameplay-owned horizontal motor.
+		// Preserve the body's vertical velocity and leave gravity enabled so a
+		// freeze cannot suspend the capsule in mid-air or erase a fall.
+		StopHorizontalMotion();
+		DriveAnimatorSpeed();
+		return;
+	}
 
 	if (!m_xParentEntity.IsValid()
 		|| !m_xParentEntity.HasComponent<Zenith_TransformComponent>())
@@ -144,8 +157,17 @@ void ZM_PlayerController::OnUpdate(float fDeltaTime)
 
 void ZM_PlayerController::OnDisable()
 {
-	StopHorizontalMotion();
 	ResetRuntimeState();
+}
+
+void ZM_PlayerController::SetMovementEnabled(bool bEnabled)
+{
+	m_bMovementEnabled = bEnabled;
+	ResetMovementObservables();
+	if (!m_bMovementEnabled)
+	{
+		StopHorizontalMotion();
+	}
 	DriveAnimatorSpeed();
 }
 
@@ -166,6 +188,7 @@ void ZM_PlayerController::ReadFromDataStream(Zenith_DataStream& xStream)
 void ZM_PlayerController::RenderPropertiesPanel()
 {
 	ImGui::Text("Velocity-driven capsule controller");
+	ImGui::Text("Movement enabled: %s", m_bMovementEnabled ? "true" : "false");
 	ImGui::Text("Grounded: %s", m_bGrounded ? "true" : "false");
 	ImGui::Text("Requested speed: %.2f m/s", m_fRequestedSpeed);
 	ImGui::Text("Walk / run: %.1f / %.1f m/s", fWALK_SPEED, fRUN_SPEED);
@@ -346,7 +369,30 @@ float ZM_PlayerController::CalculateStepAssistVelocity(
 	return glm::max(fCurrentVerticalVelocity, fBoundedAssist);
 }
 
+float ZM_PlayerController::CalculateCapsuleHalfExtent(
+	const Zenith_Maths::Vector3& xScale)
+{
+	Zenith_Maths::Vector3 xClampedScale = xScale;
+	xClampedScale.x = glm::max(xClampedScale.x, fCOLLIDER_MIN_SCALE);
+	xClampedScale.y = glm::max(xClampedScale.y, fCOLLIDER_MIN_SCALE);
+	xClampedScale.z = glm::max(xClampedScale.z, fCOLLIDER_MIN_SCALE);
+
+	const float fRadius = glm::max(xClampedScale.x, xClampedScale.z) * 0.5f;
+	const float fHalfCylinder = glm::max(
+		fCOLLIDER_MIN_SCALE,
+		xClampedScale.y * 0.5f - fRadius);
+	return fRadius + fHalfCylinder;
+}
+
 void ZM_PlayerController::ResetRuntimeState()
+{
+	m_bMovementEnabled = true;
+	ResetMovementObservables();
+	StopHorizontalMotion();
+	DriveAnimatorSpeed();
+}
+
+void ZM_PlayerController::ResetMovementObservables()
 {
 	m_xMoveDirection = Zenith_Maths::Vector3(0.0f);
 	m_fRequestedSpeed = 0.0f;
@@ -607,13 +653,5 @@ float ZM_PlayerController::GetCapsuleHalfExtent() const
 {
 	Zenith_Maths::Vector3 xScale;
 	m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
-	xScale.x = glm::max(xScale.x, fCOLLIDER_MIN_SCALE);
-	xScale.y = glm::max(xScale.y, fCOLLIDER_MIN_SCALE);
-	xScale.z = glm::max(xScale.z, fCOLLIDER_MIN_SCALE);
-
-	const float fRadius = glm::max(xScale.x, xScale.z) * 0.5f;
-	const float fHalfCylinder = glm::max(
-		fCOLLIDER_MIN_SCALE,
-		xScale.y * 0.5f - fRadius);
-	return fRadius + fHalfCylinder;
+	return CalculateCapsuleHalfExtent(xScale);
 }

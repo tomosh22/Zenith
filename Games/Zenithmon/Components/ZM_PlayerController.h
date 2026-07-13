@@ -30,6 +30,9 @@ public:
 	void OnStart();
 	void OnUpdate(float fDeltaTime);
 	void OnDisable();
+	void SetMovementEnabled(bool bEnabled);
+	bool IsMovementEnabled() const { return m_bMovementEnabled; }
+	void ResetRuntimeState();
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
@@ -66,6 +69,8 @@ public:
 		float fCurrentVerticalVelocity,
 		float fRise,
 		float fDeltaTime);
+	static float CalculateCapsuleHalfExtent(
+		const Zenith_Maths::Vector3& xScale);
 
 	float GetRequestedSpeed() const { return m_fRequestedSpeed; }
 	bool IsGrounded() const { return m_bGrounded; }
@@ -81,7 +86,7 @@ private:
 	static constexpr float fTURN_SPEED = 12.0f;
 	static constexpr float fEPSILON = 0.00001f;
 
-	void ResetRuntimeState();
+	void ResetMovementObservables();
 	void EnsureAndConfigureBody();
 	void StopHorizontalMotion();
 	void DriveAnimatorSpeed() const;
@@ -102,4 +107,5 @@ private:
 	Zenith_Maths::Vector3 m_xMoveDirection = Zenith_Maths::Vector3(0.0f);
 	float m_fRequestedSpeed = 0.0f;
 	bool m_bGrounded = false;
+	bool m_bMovementEnabled = true;
 };
