@@ -15,6 +15,56 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-13 -- ZM-D-053 -- Dawnmere deterministic terrain bake and scene-owned grass regeneration
+
+- **Decision:** the S3 Home Village is the `Dawnmere` terrain set and scene. Its
+  immutable `ZM_TerrainAuthoring` recipe derives seed `0x7BF32CA4` from the
+  WorldSpec terrain-set name, authors within world coordinates `0..1024`, and
+  exports inclusive chunks `(0,0)..(15,15)`. The bounded family is exactly 256
+  `Render`, 256 `Render_LOW`, and 256 `Physics` meshes plus `Height.ztxtr`,
+  `Splatmap_RGBA.ztxtr`, and `GrassDensity.ztxtr`.
+- **Bake/warm contract:** a cold or forced boot invalidates the old completion
+  state before queueing the deterministic recipe. Its terminal action requires
+  all 771 non-empty outputs, writes a 12-byte little-endian marker (`ZMTR`,
+  version 1, required-output count 771) to a temporary file, and atomically
+  renames it to `ZM_TerrainRecipe.manifest`. The completed terrain family is
+  therefore 772 files including the marker. Scene authoring waits until a later
+  warm boot, which requires both the valid marker and every required output,
+  then writes the ignored `Assets/Scenes/Dawnmere.zscen`. The observed cold bake
+  was **63.671 s** and the observed warm graphics boot was **14.614 s**. This is
+  one data point only; the Roadmap's three-real-scene bake-time measurement and
+  extrapolation remain the next task.
+- **Grass contract:** `ZM_TerrainGrass` is serialized on the Dawnmere terrain
+  entity. OnAwake it owns and validates the exact 1024x1024 CPU density map;
+  headless boots stop there without touching Flux. Graphics boots wait a bounded
+  300 frames for terrain physics, reset prior grass state, apply density scale
+  0.15, and generate from the terrain physics geometry. OnDestroy clears both
+  the Flux instances and density map. The first load and same-process reload each
+  regenerated and uploaded exactly **200,159 blades from 5,133 triangles** with
+  no accumulation, and returning to FrontEnd left no Dawnmere grass. Trees are
+  deliberately absent from this first terrain deliverable.
+- **Why:** this is the first real consumer of E1/E2 and proves that a deterministic
+  per-scene cropped terrain family can be baked, warm-gated, loaded, reloaded, and
+  cleaned without committing generated assets or leaking renderer-owned grass.
+  Deferring scene authoring to the warm boot prevents a partial cold bake from
+  being serialized as a valid world scene.
+- **Tests that lock it:** three `ZM_TerrainAuthoring` units lock recipe identity,
+  bounds/order/determinism, output enumeration, marker contents, missing-output
+  invalidation, and containment; one `ZM_Grass` unit locks density decoding,
+  sampling, path construction, and failure clearing. The windowed
+  `ZM_GrassRegeneration_Test` locks the first-load/reload counts and FrontEnd
+  cleanup. Full boot gate is **1732 ran / 1731 passed / 0 failed / 1 skipped**;
+  all four Vulkan Debug/Release x Tools true/false builds plus the D3D12 Debug
+  Tools=false link proof pass. Zenithmon headless reports **2/2** (the graphics
+  grass test is skipped as designed), CityBuilder is **45/45**,
+  DevilsPlayground is **158/158**, and RenderTest windowed
+  `EngineBootShutdownSmoke` + `TerrainEditorSmoke` both pass.
+- **Reversibility:** recipe tuning is localized but requires a generator-version
+  bump/rebake once downstream placement depends on it. The marker format is
+  versioned and can evolve; old or incomplete markers already force a cold bake.
+  Removing the scene-owned grass lifecycle would require a replacement that
+  preserves headless safety, reload determinism, and teardown cleanup.
+
 ## 2026-07-13 -- ZM-D-052 -- Engine E2: bounded terrain export and terminal sparse-HIGH streaming
 
 - **Decision:** `AddStep_TerrainExportChunksRect(minX,minY,maxX,maxY)` exports

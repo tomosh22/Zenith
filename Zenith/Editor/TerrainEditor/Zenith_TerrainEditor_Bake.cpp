@@ -48,28 +48,6 @@ namespace
 	}
 }
 
-bool Zenith_TerrainEditor::ResolveValidatedTargetForTerrainRoot(
-	const std::string& strTerrainRoot, std::string& strDirectoryOut) const
-{
-	const std::filesystem::path xRoot(strTerrainRoot);
-	const std::filesystem::path xTarget = m_strAssetSet.empty()
-		? xRoot
-		: xRoot / m_strAssetSet;
-	strDirectoryOut = xTarget.generic_string();
-	while (!strDirectoryOut.empty() && strDirectoryOut.back() == '/')
-	{
-		strDirectoryOut.pop_back();
-	}
-	strDirectoryOut += '/';
-	if (!Zenith_TerrainComponent::ValidateTerrainAssetSetTarget(
-		m_strAssetSet, strTerrainRoot, strDirectoryOut))
-	{
-		strDirectoryOut.clear();
-		return false;
-	}
-	return true;
-}
-
 void Zenith_TerrainEditor::RegenerateBrushTextures()
 {
 	// Brush indicator mask, sampled by the decal Apply shader's textured-
@@ -135,51 +113,48 @@ bool Zenith_TerrainEditor::SaveTextures()
 
 bool Zenith_TerrainEditor::SaveTexturesForTerrainRoot(const std::string& strTerrainRoot)
 {
-	EnsureImagesAllocated();
-
-	std::string strValidatedMeshDirectory;
-	if (!ResolveValidatedTargetForTerrainRoot(strTerrainRoot, strValidatedMeshDirectory))
+	bool bLeaseEntered = false;
+	const bool bSucceeded = Zenith_TerrainComponent::WithPreparedTerrainTextureDirectory(
+		m_strAssetSet, strTerrainRoot,
+		[&](const std::string& strTextureDirectory)
+		{
+			bLeaseEntered = true;
+			return SaveTexturesToPreparedDirectory(strTextureDirectory);
+		});
+	if (!bLeaseEntered)
 	{
-		m_strAssetSetValidationError = "Cannot save textures: the staged terrain set is invalid.";
+		m_strAssetSetValidationError =
+			"Cannot save textures: the staged terrain texture target is unsafe.";
 		m_strStatus = m_strAssetSetValidationError;
-		return false;
 	}
+	return bSucceeded;
+}
 
-	const std::string strTexDir = m_strAssetSet.empty()
-		? (std::filesystem::path(strTerrainRoot).parent_path() / "Textures" / "Terrain").generic_string() + "/"
-		: strValidatedMeshDirectory;
-	if (!m_strAssetSet.empty() && strTexDir != strValidatedMeshDirectory)
-	{
-		m_strStatus = "Cannot save textures: resolved target diverged from its validated terrain set.";
-		return false;
-	}
-	std::error_code xDirectoryError;
-	std::filesystem::create_directories(strTexDir, xDirectoryError);
-	if (xDirectoryError)
-	{
-		m_strStatus = "Failed to create terrain texture directory: " + xDirectoryError.message();
-		return false;
-	}
-
+bool Zenith_TerrainEditor::SaveTexturesToPreparedDirectory(
+	const std::string& strTextureDirectory)
+{
+	EnsureImagesAllocated();
 	m_strStatus = "Saving terrain textures...";
 
-	WriteZtxtr(strTexDir + "Height" + ZENITH_TEXTURE_EXT,
+	WriteZtxtr(strTextureDirectory + "Height" + ZENITH_TEXTURE_EXT,
 		static_cast<int32_t>(uHEIGHTFIELD_SIZE), static_cast<int32_t>(uHEIGHTFIELD_SIZE),
 		TEXTURE_FORMAT_R32_SFLOAT, m_xHeightfield.Row(0),
 		static_cast<size_t>(uHEIGHTFIELD_SIZE) * uHEIGHTFIELD_SIZE * sizeof(float));
 
-	WriteZtxtr(strTexDir + "Splatmap_RGBA" + ZENITH_TEXTURE_EXT,
+	WriteZtxtr(strTextureDirectory + "Splatmap_RGBA" + ZENITH_TEXTURE_EXT,
 		static_cast<int32_t>(uSPLATMAP_SIZE), static_cast<int32_t>(uSPLATMAP_SIZE),
 		TEXTURE_FORMAT_RGBA8_UNORM, m_xSplatmap.GetDataPointer(),
 		static_cast<size_t>(uSPLATMAP_SIZE) * uSPLATMAP_SIZE * 4);
 
-	WriteZtxtr(strTexDir + "GrassDensity" + ZENITH_TEXTURE_EXT,
+	WriteZtxtr(strTextureDirectory + "GrassDensity" + ZENITH_TEXTURE_EXT,
 		static_cast<int32_t>(uGRASS_DENSITY_SIZE), static_cast<int32_t>(uGRASS_DENSITY_SIZE),
 		TEXTURE_FORMAT_R32_SFLOAT, m_xGrassDensity.Row(0),
 		static_cast<size_t>(uGRASS_DENSITY_SIZE) * uGRASS_DENSITY_SIZE * sizeof(float));
 
-	m_strStatus = "Terrain textures saved to " + strTexDir;
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Saved Height/Splatmap_RGBA/GrassDensity to %s", strTexDir.c_str());
+	m_strStatus = "Terrain textures saved to " + strTextureDirectory;
+	Zenith_Log(LOG_CATEGORY_EDITOR,
+		"[TerrainEditor] Saved Height/Splatmap_RGBA/GrassDensity to %s",
+		strTextureDirectory.c_str());
 	return true;
 }
 
@@ -190,26 +165,30 @@ void Zenith_TerrainEditor::BakeMeshes()
 
 void Zenith_TerrainEditor::BakeMeshesForTerrainRoot(const std::string& strTerrainRoot)
 {
-	EnsureImagesAllocated();
-
-	std::string strOutputDir;
-	if (!ResolveValidatedTargetForTerrainRoot(strTerrainRoot, strOutputDir))
+	bool bLeaseEntered = false;
+	if (!Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
+		m_strAssetSet, strTerrainRoot,
+		[&](const std::string& strMeshDirectory)
+		{
+			bLeaseEntered = true;
+			BakeMeshesToPreparedDirectory(strMeshDirectory);
+			return true;
+		}) && !bLeaseEntered)
 	{
 		m_strStatus = "Cannot export meshes: the staged terrain target is unsafe.";
-		return;
 	}
-	std::error_code xDirectoryError;
-	std::filesystem::create_directories(strOutputDir, xDirectoryError);
-	if (xDirectoryError)
-	{
-		m_strStatus = "Cannot export meshes: failed to create validated output directory.";
-		return;
-	}
+}
+
+void Zenith_TerrainEditor::BakeMeshesToPreparedDirectory(
+	const std::string& strMeshDirectory)
+{
+	EnsureImagesAllocated();
 
 	m_strStatus = "Exporting terrain chunk meshes (this takes a while)...";
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Exporting chunk meshes to %s", strOutputDir.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR,
+		"[TerrainEditor] Exporting chunk meshes to %s", strMeshDirectory.c_str());
 
-	ExportHeightmapFromMat(m_xHeightfield, strOutputDir);
+	ExportHeightmapFromMat(m_xHeightfield, strMeshDirectory);
 
 	m_strStatus = "Terrain chunk meshes exported";
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Chunk-mesh export complete");
@@ -231,57 +210,44 @@ bool Zenith_TerrainEditor::BakeMeshesRectForTerrainRoot(
 		return false;
 	}
 
-	std::string strOutputDir;
-	if (!ResolveValidatedTargetForTerrainRoot(strTerrainRoot, strOutputDir))
+	bool bLeaseEntered = false;
+	const bool bSucceeded = Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
+		m_strAssetSet, strTerrainRoot,
+		[&](const std::string& strOutputDir)
+		{
+			bLeaseEntered = true;
+			if (!Zenith_TerrainComponent::DeleteExistingTerrainFilesInDirectory(strOutputDir))
+			{
+				m_strStatus = "Cannot export meshes: failed to clean the validated output directory.";
+				return false;
+			}
+
+			EnsureImagesAllocated();
+			const u_int uChunkCount = static_cast<u_int>(xRect.ChunkCount());
+			const u_int uFileCount = uChunkCount * 3;
+			m_strStatus = "Exporting bounded terrain chunk meshes (this takes a while)...";
+			Zenith_Log(LOG_CATEGORY_EDITOR,
+				"[TerrainEditor] Exporting bounds [%d,%d]-[%d,%d]: %u chunks / %u files to %s",
+				xRect.GetMinX(), xRect.GetMinY(), xRect.GetMaxX(), xRect.GetMaxY(),
+				uChunkCount, uFileCount, strOutputDir.c_str());
+
+			if (!ExportHeightmapFromMatRect(m_xHeightfield, strOutputDir, xRect))
+			{
+				m_strStatus = "Bounded terrain chunk-mesh export failed.";
+				return false;
+			}
+
+			m_strStatus = "Bounded terrain chunk meshes exported";
+			Zenith_Log(LOG_CATEGORY_EDITOR,
+				"[TerrainEditor] Bounded chunk-mesh export complete: %u chunks / %u files",
+				uChunkCount, uFileCount);
+			return true;
+		});
+	if (!bLeaseEntered)
 	{
 		m_strStatus = "Cannot export meshes: the staged terrain target is unsafe.";
-		return false;
 	}
-
-	// The public production path revalidates against the project root directly
-	// before deletion. The alternate-root branch is reachable only through the
-	// private Zenith_UnitTests friend seam and has already passed the same E1
-	// canonical containment check above.
-	const std::string strProjectTerrainRoot = GetProjectTerrainRoot();
-	const bool bProductionRoot = std::filesystem::path(strTerrainRoot).lexically_normal() ==
-		std::filesystem::path(strProjectTerrainRoot).lexically_normal();
-	const bool bCleaned = bProductionRoot
-		? Zenith_TerrainComponent::DeleteExistingTerrainFilesForAssetSet(m_strAssetSet, strOutputDir)
-		: Zenith_TerrainComponent::DeleteExistingTerrainFilesInDirectory(strOutputDir);
-	if (!bCleaned)
-	{
-		m_strStatus = "Cannot export meshes: failed to clean the validated output directory.";
-		return false;
-	}
-
-	std::error_code xDirectoryError;
-	std::filesystem::create_directories(strOutputDir, xDirectoryError);
-	if (xDirectoryError)
-	{
-		m_strStatus = "Cannot export meshes: failed to create validated output directory.";
-		return false;
-	}
-
-	EnsureImagesAllocated();
-	const u_int uChunkCount = static_cast<u_int>(xRect.ChunkCount());
-	const u_int uFileCount = uChunkCount * 3;
-	m_strStatus = "Exporting bounded terrain chunk meshes (this takes a while)...";
-	Zenith_Log(LOG_CATEGORY_EDITOR,
-		"[TerrainEditor] Exporting bounds [%d,%d]-[%d,%d]: %u chunks / %u files to %s",
-		xRect.GetMinX(), xRect.GetMinY(), xRect.GetMaxX(), xRect.GetMaxY(),
-		uChunkCount, uFileCount, strOutputDir.c_str());
-
-	if (!ExportHeightmapFromMatRect(m_xHeightfield, strOutputDir, xRect))
-	{
-		m_strStatus = "Bounded terrain chunk-mesh export failed.";
-		return false;
-	}
-
-	m_strStatus = "Bounded terrain chunk meshes exported";
-	Zenith_Log(LOG_CATEGORY_EDITOR,
-		"[TerrainEditor] Bounded chunk-mesh export complete: %u chunks / %u files",
-		uChunkCount, uFileCount);
-	return true;
+	return bSucceeded;
 }
 
 void Zenith_TerrainEditor::BakeFull()
@@ -291,72 +257,73 @@ void Zenith_TerrainEditor::BakeFull()
 
 bool Zenith_TerrainEditor::BakeFullForTerrainRoot(const std::string& strTerrainRoot)
 {
-	// This is the shared production/test operation gate: canonical rejection is
-	// the first action, before texture/mesh writes, component commit, progress,
-	// or live regeneration/teardown.
-	std::string strValidatedMeshDirectory;
-	if (!ResolveValidatedTargetForTerrainRoot(strTerrainRoot, strValidatedMeshDirectory))
-	{
-		m_strStatus = "Terrain bake refused an unsafe canonical target.";
-		return false;
-	}
-
-	Zenith_TerrainComponent* pxTerrain = ResolveTargetComponent();
-	if (pxTerrain == nullptr)
-	{
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] BakeFull: no terrain target - saving textures + meshes only");
-		if (SaveTexturesForTerrainRoot(strTerrainRoot))
+	// Keep both actual destinations leased for the entire synchronous bake. For
+	// named sets these are two compatible leases on the same directory; legacy
+	// mode additionally secures the Assets/Textures/Terrain sibling.
+	bool bMeshLeaseEntered = false;
+	bool bTextureLeaseEntered = false;
+	const bool bSucceeded = Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
+		m_strAssetSet, strTerrainRoot,
+		[&](const std::string& strMeshDirectory)
 		{
-			BakeMeshesForTerrainRoot(strTerrainRoot);
-			return true;
-		}
-		return false;
-	}
+			bMeshLeaseEntered = true;
+			return Zenith_TerrainComponent::WithPreparedTerrainTextureDirectory(
+				m_strAssetSet, strTerrainRoot,
+				[&](const std::string& strTextureDirectory)
+				{
+					bTextureLeaseEntered = true;
+					Zenith_TerrainComponent* pxTerrain = ResolveTargetComponent();
+					if (pxTerrain == nullptr)
+					{
+						Zenith_Log(LOG_CATEGORY_EDITOR,
+							"[TerrainEditor] BakeFull: no terrain target - saving textures + meshes only");
+						if (!SaveTexturesToPreparedDirectory(strTextureDirectory))
+						{
+							return false;
+						}
+						BakeMeshesToPreparedDirectory(strMeshDirectory);
+						return true;
+					}
 
-	if (!SaveTexturesForTerrainRoot(strTerrainRoot))
+					if (!SaveTexturesToPreparedDirectory(strTextureDirectory))
+					{
+						return false;
+					}
+
+					m_strStatus = "Baking terrain (cleanup / export / physics / render re-init)...";
+
+					// Commit only after staged textures are safely written. Component
+					// regeneration acquires its own compatible lease while these outer
+					// handles keep the editor's targets pinned for the full bake.
+					if (!pxTerrain->SetTerrainAssetSet(m_strAssetSet))
+					{
+						m_strStatus = "Terrain bake failed to commit the validated staged set.";
+						return false;
+					}
+					if (!pxTerrain->RegenerateFromHeightfield(m_xHeightfield))
+					{
+						m_strStatus = "Terrain bake failed while reinitializing render/physics state; edits remain dirty.";
+						return false;
+					}
+
+					// Only a complete synchronous reinitialization makes the live
+					// heightfield identical to the baked bytes.
+					memset(m_aulSessionDirtyBits, 0, sizeof(m_aulSessionDirtyBits));
+					memset(m_aulPendingEvictBits, 0, sizeof(m_aulPendingEvictBits));
+					m_bSessionDirty = false;
+					RegisterHook();
+					RebuildGrass();
+
+					m_strStatus = "Terrain bake complete";
+					Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Full bake complete");
+					return true;
+				});
+		});
+	if (!bMeshLeaseEntered || !bTextureLeaseEntered)
 	{
-		return false;
+		m_strStatus = "Terrain bake refused an unsafe handle-bound asset target.";
 	}
-
-	m_strStatus = "Baking terrain (cleanup / export / physics / render re-init)...";
-
-	// Commit only after staged textures are safely written. The following call
-	// is synchronous and derives cleanup/export paths from this same committed
-	// set, preventing mixed old-live/new-bake state.
-	std::string strCommitDirectory;
-	if (!ResolveValidatedTargetForTerrainRoot(strTerrainRoot, strCommitDirectory) ||
-		strCommitDirectory != strValidatedMeshDirectory)
-	{
-		m_strStatus = "Terrain bake refused an unsafe target before component commit.";
-		return false;
-	}
-	if (!pxTerrain->SetTerrainAssetSet(m_strAssetSet))
-	{
-		m_strStatus = "Terrain bake failed to commit the validated staged set.";
-		return false;
-	}
-	const bool bRegenerated = pxTerrain->RegenerateFromHeightfield(m_xHeightfield);
-	if (!bRegenerated)
-	{
-		m_strStatus = "Terrain bake failed while reinitializing render/physics state; edits remain dirty.";
-		return false;
-	}
-
-	// Only a complete synchronous reinitialization makes the live heightfield
-	// identical to the baked bytes. Dirty state must survive every failure path.
-	memset(m_aulSessionDirtyBits, 0, sizeof(m_aulSessionDirtyBits));
-	memset(m_aulPendingEvictBits, 0, sizeof(m_aulPendingEvictBits));
-	m_bSessionDirty = false;
-
-	// The streaming-state object survives the regenerate (only its buffers are
-	// recreated), but re-pin the hook defensively.
-	RegisterHook();
-
-	RebuildGrass();
-
-	m_strStatus = "Terrain bake complete";
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Full bake complete");
-	return true;
+	return bSucceeded;
 }
 
 void Zenith_TerrainEditor::RebuildGrass()

@@ -462,8 +462,8 @@ private:
 	// Grass rebuild (stroke end / bake) — Zenith_TerrainEditor_Bake.cpp
 	//--------------------------------------------------------------------------
 	void RebuildGrass();
-	bool ResolveValidatedTargetForTerrainRoot(const std::string& strTerrainRoot,
-		std::string& strDirectoryOut) const;
+	bool SaveTexturesToPreparedDirectory(const std::string& strTextureDirectory);
+	void BakeMeshesToPreparedDirectory(const std::string& strMeshDirectory);
 	bool SaveTexturesForTerrainRoot(const std::string& strTerrainRoot);
 	void BakeMeshesForTerrainRoot(const std::string& strTerrainRoot);
 	bool BakeMeshesRectForTerrainRoot(const Flux_TerrainExportRect& xRect,

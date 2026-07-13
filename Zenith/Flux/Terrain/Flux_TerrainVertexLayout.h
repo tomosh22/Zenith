@@ -42,9 +42,31 @@ namespace Flux_TerrainVertexLayout
 		"Terrain vertex element 3 must remain packed tangent/sign");
 	static_assert(uVERTEX_STRIDE == 28u, "Terrain vertex layout must retain its locked 28-byte stride");
 
-	inline constexpr uint32_t uHIGH_CHUNK_VERTICES_PER_EDGE = 65u;
-	inline constexpr uint32_t uHIGH_CHUNK_VERTEX_COUNT = uHIGH_CHUNK_VERTICES_PER_EDGE * uHIGH_CHUNK_VERTICES_PER_EDGE;
-	inline constexpr uint32_t uHIGH_CHUNK_INDEX_COUNT = (uHIGH_CHUNK_VERTICES_PER_EDGE - 1u) * (uHIGH_CHUNK_VERTICES_PER_EDGE - 1u) * 6u;
+	inline constexpr uint32_t uCHUNK_QUADS_PER_EDGE = 64u;
+
+	constexpr uint32_t CalculateChunkVertexCount(uint32_t uDensityDivisor)
+	{
+		const uint32_t uQuadsPerEdge = uCHUNK_QUADS_PER_EDGE / uDensityDivisor;
+		return (uQuadsPerEdge + 1u) * (uQuadsPerEdge + 1u);
+	}
+
+	constexpr uint32_t CalculateChunkIndexCount(uint32_t uDensityDivisor)
+	{
+		const uint32_t uQuadsPerEdge = uCHUNK_QUADS_PER_EDGE / uDensityDivisor;
+		return uQuadsPerEdge * uQuadsPerEdge * 6u;
+	}
+
+	inline constexpr uint32_t uHIGH_CHUNK_VERTICES_PER_EDGE = uCHUNK_QUADS_PER_EDGE + 1u;
+	inline constexpr uint32_t uHIGH_CHUNK_VERTEX_COUNT = CalculateChunkVertexCount(1u);
+	inline constexpr uint32_t uHIGH_CHUNK_INDEX_COUNT = CalculateChunkIndexCount(1u);
+	inline constexpr uint32_t uLOW_CHUNK_VERTEX_COUNT = CalculateChunkVertexCount(4u);
+	inline constexpr uint32_t uLOW_CHUNK_INDEX_COUNT = CalculateChunkIndexCount(4u);
+	inline constexpr uint32_t uPHYSICS_CHUNK_VERTEX_COUNT = CalculateChunkVertexCount(8u);
+	inline constexpr uint32_t uPHYSICS_CHUNK_INDEX_COUNT = CalculateChunkIndexCount(8u);
 	static_assert(uHIGH_CHUNK_VERTEX_COUNT == 4225u, "HIGH terrain chunks must retain 65x65 vertices");
 	static_assert(uHIGH_CHUNK_INDEX_COUNT == 24576u, "HIGH terrain chunks must retain 64x64 quads at six indices per quad");
+	static_assert(uLOW_CHUNK_VERTEX_COUNT == 289u && uLOW_CHUNK_INDEX_COUNT == 1536u,
+		"LOW terrain chunks must retain their density-divisor-4 topology");
+	static_assert(uPHYSICS_CHUNK_VERTEX_COUNT == 81u && uPHYSICS_CHUNK_INDEX_COUNT == 384u,
+		"Physics terrain chunks must retain their density-divisor-8 topology");
 }

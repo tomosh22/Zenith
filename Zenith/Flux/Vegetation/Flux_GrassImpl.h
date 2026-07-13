@@ -71,6 +71,7 @@ public:
 	void BuildPipelines();
 	void Shutdown();
 	void Reset();
+	void ClearSceneData();
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
@@ -88,6 +89,10 @@ public:
 
 	u_int GetVisibleBladeCount() const                                   { return m_uVisibleBladeCount; }
 	u_int GetActiveChunkCount() const                                    { return m_uActiveChunkCount; }
+	u_int GetChunkCount() const                                          { return static_cast<u_int>(m_axChunks.GetSize()); }
+	u_int GetGeneratedInstanceCount() const                              { return static_cast<u_int>(m_axAllInstances.GetSize()); }
+	bool HasGeneratedInstances() const                                   { return m_bInstancesGenerated; }
+	bool HasUploadedInstances() const                                    { return m_bInstancesUploaded; }
 	float GetBufferUsageMB() const;
 
 	void GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh);

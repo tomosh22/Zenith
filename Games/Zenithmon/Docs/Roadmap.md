@@ -57,7 +57,7 @@
 
 - [x] Engine E1: serialized terrain-set name on `Zenith_TerrainComponent` (default "" = legacy `Terrain/`) replaces all 6 hard-coded path sites; strict contained paths, `AddStep_TerrainSetAssetSet`, staged editor bake-target, backward-compatible v1-v4 serialization, 7 engine tests, and RenderTest/CityBuilder/DevilsPlayground regressions are green (2026-07-12, ZM-D-051)
 - [x] Engine E2: inclusive anchor-containing `AddStep_TerrainExportChunksRect(minX,minY,maxX,maxY)` with transactional stale-mesh cleanup, shared terrain chunk layout, and terminal/tolerant missing-HIGH streaming (3 engine tests + full engine regression matrix green; 2026-07-13, ZM-D-052)
-- [ ] Home Village terrain baked via `ZM_TerrainAuthoring` recipe; grass regenerated OnAwake
+- [x] Home Village (`Dawnmere`) terrain baked via deterministic `ZM_TerrainAuthoring` recipe (seed `0x7BF32CA4`, world `0..1024`, 16x16 chunks); warm scene boot regenerates/uploads exactly 200,159 grass blades from 5,133 terrain triangles on both first load and reload; 772-file terrain family + `Dawnmere.zscen` remain git-ignored; no trees in this first terrain deliverable (2026-07-13, ZM-D-053)
 - [ ] Measure terrain bake time with 3 real scenes BEFORE committing to ~25 terrains (Questions.md Q-2026-07-09-002)
 - [ ] `ZM_PlayerController` (Jolt capsule, velocity-driven) + `ZM_FollowCamera` + `ZM_InputActions`
 - [ ] Persistent `ZM_GameStateManager` (`DontDestroyOnLoad`) + `ZM_WarpTrigger`/`ZM_SpawnPoint` spawn-tag respawn

@@ -91,6 +91,10 @@
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
+#ifdef ZENITH_WINDOWS
+#include "Core/Zenith_Win32.h"
+#include <winioctl.h>
+#endif
 #endif
 
 ZENITH_TEST(Core, DataStream) { Zenith_UnitTests::TestDataStream(); }
@@ -14386,6 +14390,98 @@ namespace
 		return xFile.good();
 	}
 
+#ifdef ZENITH_WINDOWS
+	struct TerrainTestJunctionBuffer
+	{
+		DWORD m_uReparseTag;
+		WORD m_uReparseDataLength;
+		WORD m_uReserved;
+		WORD m_uSubstituteNameOffset;
+		WORD m_uSubstituteNameLength;
+		WORD m_uPrintNameOffset;
+		WORD m_uPrintNameLength;
+		WCHAR m_awcPaths[(MAXIMUM_REPARSE_DATA_BUFFER_SIZE - 16) / sizeof(WCHAR)];
+	};
+	static_assert(offsetof(TerrainTestJunctionBuffer, m_awcPaths) == 16);
+
+	bool TrySetTerrainTestDirectoryJunction(const std::filesystem::path& xLink,
+		const std::filesystem::path& xTarget, DWORD* puOpenErrorOut = nullptr)
+	{
+		if (puOpenErrorOut != nullptr)
+		{
+			*puOpenErrorOut = ERROR_SUCCESS;
+		}
+		std::error_code xError;
+		const std::filesystem::path xAbsoluteTarget =
+			std::filesystem::absolute(xTarget, xError).lexically_normal();
+		if (xError || !std::filesystem::is_directory(xAbsoluteTarget, xError) || xError)
+		{
+			return false;
+		}
+
+		const std::wstring strSubstitute = L"\\??\\" + xAbsoluteTarget.wstring();
+		const std::wstring strPrint = xAbsoluteTarget.wstring();
+		const size_t ulSubstituteBytes = strSubstitute.size() * sizeof(WCHAR);
+		const size_t ulPrintBytes = strPrint.size() * sizeof(WCHAR);
+		const size_t ulPathBytes = ulSubstituteBytes + sizeof(WCHAR) +
+			ulPrintBytes + sizeof(WCHAR);
+		const size_t ulInputBytes = offsetof(TerrainTestJunctionBuffer, m_awcPaths) + ulPathBytes;
+		if (ulInputBytes > MAXIMUM_REPARSE_DATA_BUFFER_SIZE ||
+			ulInputBytes - 8 > static_cast<size_t>(UINT16_MAX))
+		{
+			return false;
+		}
+
+		TerrainTestJunctionBuffer xBuffer = {};
+		xBuffer.m_uReparseTag = IO_REPARSE_TAG_MOUNT_POINT;
+		xBuffer.m_uReparseDataLength = static_cast<WORD>(ulInputBytes - 8);
+		xBuffer.m_uSubstituteNameOffset = 0;
+		xBuffer.m_uSubstituteNameLength = static_cast<WORD>(ulSubstituteBytes);
+		xBuffer.m_uPrintNameOffset = static_cast<WORD>(ulSubstituteBytes + sizeof(WCHAR));
+		xBuffer.m_uPrintNameLength = static_cast<WORD>(ulPrintBytes);
+		memcpy(xBuffer.m_awcPaths, strSubstitute.c_str(), ulSubstituteBytes + sizeof(WCHAR));
+		memcpy(reinterpret_cast<u_int8*>(xBuffer.m_awcPaths) + xBuffer.m_uPrintNameOffset,
+			strPrint.c_str(), ulPrintBytes + sizeof(WCHAR));
+
+		// Share read access so a failure while a production lease is active is
+		// caused by the lease denying this GENERIC_WRITE request, not by this test
+		// handle denying the lease's read-attribute access.
+		HANDLE hLink = CreateFileW(xLink.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+			nullptr, OPEN_EXISTING,
+			FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+		if (hLink == INVALID_HANDLE_VALUE)
+		{
+			if (puOpenErrorOut != nullptr)
+			{
+				*puOpenErrorOut = GetLastError();
+			}
+			return false;
+		}
+		DWORD uBytesReturned = 0;
+		const bool bCreated = DeviceIoControl(hLink, FSCTL_SET_REPARSE_POINT,
+			&xBuffer, static_cast<DWORD>(ulInputBytes), nullptr, 0,
+			&uBytesReturned, nullptr) != FALSE;
+		CloseHandle(hLink);
+		return bCreated;
+	}
+
+	bool CreateTerrainTestDirectoryJunction(const std::filesystem::path& xLink,
+		const std::filesystem::path& xTarget)
+	{
+		std::error_code xError;
+		if (!std::filesystem::create_directory(xLink, xError) || xError)
+		{
+			return false;
+		}
+		if (TrySetTerrainTestDirectoryJunction(xLink, xTarget))
+		{
+			return true;
+		}
+		std::filesystem::remove(xLink, xError);
+		return false;
+	}
+#endif
+
 	void AssertTerrainEditorMapsAreDefaults(const Zenith_TerrainEditor& xEditor)
 	{
 		ZENITH_ASSERT_EQ(xEditor.GetHeightfield().GetWidth(), Zenith_TerrainEditor::uHEIGHTFIELD_SIZE, "Default heightfield width must match the terrain editor contract");
@@ -14658,6 +14754,124 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 	const std::filesystem::path xSandbox = std::filesystem::path(ZENITH_ROOT) / "Build" / "artifacts" / ("terrain_asset_set_cleanup_" + std::to_string(ulUnique));
 	const std::filesystem::path xNested = xSandbox / "NestedSibling";
 	std::filesystem::create_directories(xNested);
+
+	// A fresh checkout has no tracked Assets directory. Exercise the editor's real
+	// preparation gate from the existing game directory and prove every ignored
+	// child is established as one checked, leased segment.
+	const std::filesystem::path xFirstUseGameRoot = xSandbox / "FirstUseGame";
+	const std::filesystem::path xFirstUseAssets = xFirstUseGameRoot / "Assets";
+	const std::filesystem::path xFirstUseRoot = xFirstUseAssets / "Terrain";
+	const std::filesystem::path xFirstUseTarget = xFirstUseRoot / "FirstUseSet";
+	const std::filesystem::path xLeaseMutationOutside = xSandbox / "LeaseMutationOutside";
+	const std::filesystem::path xLeaseMutationSentinel =
+		xLeaseMutationOutside / "OutsideSentinel.zmesh";
+	std::filesystem::create_directories(xFirstUseGameRoot);
+	std::filesystem::create_directories(xLeaseMutationOutside);
+	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xLeaseMutationSentinel),
+		"Lease-lifetime outside sentinel must be created before preflight");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xFirstUseAssets),
+		"First-use preflight requires a missing Assets parent");
+	ZENITH_ASSERT_TRUE(xPathEditor.SetAssetSet("FirstUseSet"), "First-use named terrain set must stage successfully");
+	std::string strFirstUseDirectory;
+	const bool bFirstUsePrepared = Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
+		"FirstUseSet", xFirstUseRoot.string(),
+		[&](const std::string& strPreparedDirectory)
+		{
+			strFirstUseDirectory = strPreparedDirectory;
+#ifdef ZENITH_WINDOWS
+			DWORD uMutationOpenError = ERROR_SUCCESS;
+			ZENITH_ASSERT_FALSE(TrySetTerrainTestDirectoryJunction(
+				xFirstUseTarget, xLeaseMutationOutside, &uMutationOpenError),
+				"A held target lease must deny GENERIC_WRITE/reparse mutation for the full callback lifetime");
+			ZENITH_ASSERT_EQ(uMutationOpenError, static_cast<DWORD>(ERROR_SHARING_VIOLATION),
+				"The reparse attack must fail at its competing GENERIC_WRITE open because the held target participates in read-share accounting");
+#endif
+			return true;
+		});
+	ZENITH_ASSERT_TRUE(bFirstUsePrepared,
+		"A first named terrain set must safely create its missing Assets, Terrain, and target directories");
+	ZENITH_ASSERT_EQ(strFirstUseDirectory, xFirstUseTarget.generic_string() + "/", "First-use preparation must resolve the named target");
+	ZENITH_ASSERT_TRUE(std::filesystem::is_directory(xFirstUseAssets), "First-use preparation must create the Assets parent");
+	ZENITH_ASSERT_TRUE(std::filesystem::is_directory(xFirstUseRoot), "First-use preparation must create the Terrain root");
+	ZENITH_ASSERT_TRUE(std::filesystem::is_directory(xFirstUseTarget), "First-use preparation must create the named target");
+	ZENITH_ASSERT_TRUE(std::filesystem::exists(xLeaseMutationSentinel),
+		"Denied in-callback reparse mutation must preserve the outside sentinel");
+	ZENITH_ASSERT_EQ(std::filesystem::file_size(xLeaseMutationSentinel), 1ull,
+		"Denied in-callback reparse mutation must preserve outside sentinel bytes");
+	ZENITH_ASSERT_TRUE(xPathEditor.SetAssetSet("HomeVillage"), "Path editor must restore the named-set test state");
+	std::filesystem::remove(xFirstUseTarget);
+	std::filesystem::remove(xFirstUseRoot);
+	std::filesystem::remove(xFirstUseAssets);
+	std::filesystem::remove(xFirstUseGameRoot);
+	std::filesystem::remove(xLeaseMutationSentinel);
+	std::filesystem::remove(xLeaseMutationOutside);
+
+	// A failed callback may remove only the empty directories created by this
+	// lease. The pre-existing game anchor must survive the rollback.
+	const std::filesystem::path xRollbackGameRoot = xSandbox / "RollbackGame";
+	const std::filesystem::path xRollbackAssets = xRollbackGameRoot / "Assets";
+	const std::filesystem::path xRollbackTerrain = xRollbackAssets / "Terrain";
+	std::filesystem::create_directories(xRollbackGameRoot);
+	bool bRollbackCallbackEntered = false;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
+		"RollbackSet", xRollbackTerrain.string(),
+		[&](const std::string&)
+		{
+			bRollbackCallbackEntered = true;
+			return false;
+		}), "A failed prepared-directory operation must report failure");
+	ZENITH_ASSERT_TRUE(bRollbackCallbackEntered,
+		"Rollback coverage requires preparation to succeed before callback failure");
+	ZENITH_ASSERT_TRUE(std::filesystem::is_directory(xRollbackGameRoot),
+		"Lease rollback must preserve the pre-existing game anchor");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xRollbackAssets),
+		"Lease rollback must remove only its empty Assets/Terrain/target chain");
+	std::filesystem::remove(xRollbackGameRoot);
+
+#ifdef ZENITH_WINDOWS
+	// A pre-existing junction at the would-be Assets segment must be rejected
+	// before Terrain creation or callback entry, preserving the outside target.
+	const std::filesystem::path xAssetsJunctionGameRoot = xSandbox / "AssetsJunctionGame";
+	const std::filesystem::path xAssetsJunction = xAssetsJunctionGameRoot / "Assets";
+	const std::filesystem::path xAssetsJunctionTerrain = xAssetsJunction / "Terrain";
+	const std::filesystem::path xAssetsJunctionOutside = xSandbox / "AssetsJunctionOutside";
+	const std::filesystem::path xAssetsJunctionSentinel =
+		xAssetsJunctionOutside / "OutsideSentinel.zmesh";
+	std::filesystem::create_directories(xAssetsJunctionGameRoot);
+	std::filesystem::create_directories(xAssetsJunctionOutside);
+	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xAssetsJunctionSentinel),
+		"Assets-junction outside sentinel must be created before preflight");
+	ZENITH_ASSERT_TRUE(CreateTerrainTestDirectoryJunction(
+		xAssetsJunction, xAssetsJunctionOutside),
+		"Assets junction setup must succeed without symlink privilege");
+	bool bAssetsJunctionCallbackEntered = false;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
+		"RejectedSet", xAssetsJunctionTerrain.string(),
+		[&](const std::string&)
+		{
+			bAssetsJunctionCallbackEntered = true;
+			return true;
+		}), "A reparse redirect at the Assets segment must be rejected");
+	ZENITH_ASSERT_FALSE(bAssetsJunctionCallbackEntered,
+		"Assets-junction rejection must precede callback entry");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xAssetsJunctionOutside / "Terrain"),
+		"Assets-junction rejection must not create Terrain in the outside target");
+	std::error_code xAssetsJunctionError;
+	const uintmax_t ulAssetsJunctionSentinelSize =
+		std::filesystem::file_size(xAssetsJunctionSentinel, xAssetsJunctionError);
+	ZENITH_ASSERT_FALSE(static_cast<bool>(xAssetsJunctionError),
+		"Assets-junction outside sentinel must remain readable after rejection");
+	if (!xAssetsJunctionError)
+	{
+		ZENITH_ASSERT_EQ(ulAssetsJunctionSentinelSize, 1ull,
+			"Assets-junction rejection must preserve outside sentinel bytes");
+	}
+	std::filesystem::remove(xAssetsJunction);
+	std::filesystem::remove(xAssetsJunctionSentinel);
+	std::filesystem::remove(xAssetsJunctionOutside);
+	std::filesystem::remove(xAssetsJunctionGameRoot);
+#endif
+
 	const std::filesystem::path xRenderMesh = xSandbox / "Render_0_0.zmesh";
 	const std::filesystem::path xPhysicsMesh = xSandbox / "Physics_0_0.zmesh";
 	const std::filesystem::path xTexture = xSandbox / "Height.ztxtr";
@@ -14679,10 +14893,8 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 	ZENITH_ASSERT_TRUE(std::filesystem::exists(xNestedMesh), "Rejected traversal input must not reach or alter the nested sibling set");
 
 	// A valid lexical set name is not sufficient when the directory itself is a
-	// reparse redirect. Prefer a directory symlink (the standard-library Windows
-	// equivalent; it may require Developer Mode/admin). The successful-link path
-	// drives the REAL shared BakeFull operation with an injected sandbox root;
-	// privilege-denied hosts retain the pure canonical-validator fallback.
+	// reparse redirect. Windows uses an ordinary directory junction created via
+	// FSCTL_SET_REPARSE_POINT, which requires no symlink privilege/Developer Mode.
 	const std::filesystem::path xPreflightRoot = xSandbox / "PreflightTerrain";
 	const std::filesystem::path xOutsideTarget = xSandbox / "OutsideTarget";
 	const std::filesystem::path xSiblingSet = xPreflightRoot / "SiblingSet";
@@ -14695,9 +14907,48 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xOutsideSentinel), "Outside-target sentinel must be created before preflight");
 	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xSiblingSentinel), "Sibling-set sentinel must be created before preflight");
 
+#ifdef ZENITH_WINDOWS
+	ZENITH_ASSERT_TRUE(CreateTerrainTestDirectoryJunction(xLinkedSet, xOutsideTarget),
+		"Named-target junction setup must succeed without symlink privilege");
+#else
 	std::error_code xLinkError;
 	std::filesystem::create_directory_symlink(xOutsideTarget, xLinkedSet, xLinkError);
-	const bool bLinkCreated = !xLinkError && std::filesystem::is_symlink(std::filesystem::symlink_status(xLinkedSet));
+	ZENITH_ASSERT_FALSE(static_cast<bool>(xLinkError), "Named-target symlink setup must succeed");
+#endif
+
+	// Empty-set texture saves use a different sibling path and must independently
+	// reject a junction at Assets/Textures/Terrain.
+	const std::filesystem::path xLegacyAssets = xSandbox / "LegacyAssets";
+	const std::filesystem::path xLegacyTextures = xLegacyAssets / "Textures";
+	const std::filesystem::path xLegacyTextureTarget = xLegacyTextures / "Terrain";
+	const std::filesystem::path xLegacyOutside = xSandbox / "LegacyOutside";
+	const std::filesystem::path xLegacyOutsideSentinel = xLegacyOutside / "OutsideSentinel.zmesh";
+	std::filesystem::create_directories(xLegacyTextures);
+	std::filesystem::create_directories(xLegacyOutside);
+	ZENITH_ASSERT_TRUE(WriteTerrainTestMarker(xLegacyOutsideSentinel),
+		"Legacy-texture outside sentinel must be created before preflight");
+#ifdef ZENITH_WINDOWS
+	ZENITH_ASSERT_TRUE(CreateTerrainTestDirectoryJunction(xLegacyTextureTarget, xLegacyOutside),
+		"Legacy texture-target junction setup must succeed without symlink privilege");
+#else
+	xLinkError.clear();
+	std::filesystem::create_directory_symlink(xLegacyOutside, xLegacyTextureTarget, xLinkError);
+	ZENITH_ASSERT_FALSE(static_cast<bool>(xLinkError), "Legacy texture-target symlink setup must succeed");
+#endif
+	Zenith_TerrainEditor xLegacyTextureEditor;
+	ZENITH_ASSERT_TRUE(xLegacyTextureEditor.SetAssetSet(""), "Legacy empty terrain set must stage successfully");
+	ZENITH_ASSERT_FALSE(xLegacyTextureEditor.SaveTexturesForTerrainRoot(
+		(xLegacyAssets / "Terrain").string()),
+		"Legacy texture save must reject an Assets/Textures/Terrain junction before writes");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xLegacyOutside / "Height.ztxtr"),
+		"Rejected legacy texture target must receive no Height write");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xLegacyOutside / "Splatmap_RGBA.ztxtr"),
+		"Rejected legacy texture target must receive no Splatmap write");
+	ZENITH_ASSERT_FALSE(std::filesystem::exists(xLegacyOutside / "GrassDensity.ztxtr"),
+		"Rejected legacy texture target must receive no GrassDensity write");
+	ZENITH_ASSERT_EQ(std::filesystem::file_size(xLegacyOutsideSentinel), 1ull,
+		"Rejected legacy texture target must preserve outside sentinel bytes");
+
 	const std::string strStagedSetBeforePreflight = xPathEditor.GetAssetSet();
 	{
 		Zenith_TempScene xPreflightScene("TerrainAssetSetPreflightState");
@@ -14718,17 +14969,8 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 		xPreflightComponent.m_pxStreamingState->m_ulUnifiedVertexBufferSize = ulVertexSizeSentinel;
 		xPreflightComponent.m_pxStreamingState->m_ulUnifiedIndexBufferSize = ulIndexSizeSentinel;
 
-		if (bLinkCreated)
-		{
-			ZENITH_ASSERT_FALSE(xPreflightEditor.BakeFullForTerrainRoot(xPreflightRoot.string()),
-				"Shared BakeFull operation must reject a validly named set whose canonical link escapes the injected Terrain root");
-		}
-		else
-		{
-			ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::ValidateTerrainAssetSetTarget(
-				"LinkedSet", xPreflightRoot.string(), xOutsideTarget.string()),
-				"Privilege-denied fallback must still reject the outside canonical target");
-		}
+		ZENITH_ASSERT_FALSE(xPreflightEditor.BakeFullForTerrainRoot(xPreflightRoot.string()),
+			"Shared BakeFull operation must reject a validly named set whose junction escapes the injected Terrain root");
 
 		ZENITH_ASSERT_EQ(xPreflightEditor.GetAssetSet(), std::string("LinkedSet"), "Rejected BakeFull preflight must preserve the editor's staged set");
 		ZENITH_ASSERT_TRUE(xPreflightEditor.HasUnbakedChanges(), "Rejected BakeFull preflight must not report/clear bake completion progress");
@@ -14742,25 +14984,22 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 		ZENITH_ASSERT_FALSE(std::filesystem::exists(xOutsideTarget / "Splatmap_RGBA.ztxtr"), "Rejected BakeFull preflight must occur before Splatmap writes");
 		ZENITH_ASSERT_FALSE(std::filesystem::exists(xOutsideTarget / "GrassDensity.ztxtr"), "Rejected BakeFull preflight must occur before GrassDensity writes");
 
-		if (bLinkCreated)
-		{
-			// Drive the component's shared regeneration operation too. Stamp the
-			// matching valid lexical name first so rejection can only be caused by
-			// the link's canonical escape, not an assetSet/target-name mismatch.
-			ZENITH_ASSERT_TRUE(xPreflightComponent.SetTerrainAssetSet("LinkedSet"), "Component regeneration preflight setup must accept the valid lexical set");
-			const std::string strComponentSetBeforeRegeneration = xPreflightComponent.GetTerrainAssetSet();
-			const std::string strStreamingDirectoryBeforeRegeneration = xPreflightComponent.m_pxStreamingState->m_strTerrainAssetDirectory;
-			xPreflightComponent.m_pxStreamingState->m_ulUnifiedVertexBufferSize = ulVertexSizeSentinel;
-			xPreflightComponent.m_pxStreamingState->m_ulUnifiedIndexBufferSize = ulIndexSizeSentinel;
-			ZENITH_ASSERT_FALSE(xPreflightComponent.RunTerrainRegenerationInternalForTerrainRoot(
-				xPreflightRoot.string(), xLinkedSet.string(), nullptr),
-				"Shared component regeneration operation must reject the canonical link escape before progress/cleanup/export");
-			ZENITH_ASSERT_EQ(xPreflightComponent.GetTerrainAssetSet(), strComponentSetBeforeRegeneration, "Rejected component regeneration preflight must preserve the component set");
-			ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_strTerrainAssetDirectory, strStreamingDirectoryBeforeRegeneration, "Rejected component regeneration preflight must preserve streaming state");
-			ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_ulUnifiedVertexBufferSize, ulVertexSizeSentinel, "Rejected component regeneration preflight must occur before vertex-buffer teardown");
-			ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_ulUnifiedIndexBufferSize, ulIndexSizeSentinel, "Rejected component regeneration preflight must occur before index-buffer teardown");
-			ZENITH_ASSERT_TRUE(std::filesystem::exists(xOutsideSentinel), "Rejected component regeneration preflight must occur before cleanup deletion");
-		}
+		// Drive the component's shared regeneration operation too. Stamp the
+		// matching valid lexical name first so rejection can only be caused by
+		// the junction escape, not an assetSet/target-name mismatch.
+		ZENITH_ASSERT_TRUE(xPreflightComponent.SetTerrainAssetSet("LinkedSet"), "Component regeneration preflight setup must accept the valid lexical set");
+		const std::string strComponentSetBeforeRegeneration = xPreflightComponent.GetTerrainAssetSet();
+		const std::string strStreamingDirectoryBeforeRegeneration = xPreflightComponent.m_pxStreamingState->m_strTerrainAssetDirectory;
+		xPreflightComponent.m_pxStreamingState->m_ulUnifiedVertexBufferSize = ulVertexSizeSentinel;
+		xPreflightComponent.m_pxStreamingState->m_ulUnifiedIndexBufferSize = ulIndexSizeSentinel;
+		ZENITH_ASSERT_FALSE(xPreflightComponent.RunTerrainRegenerationInternalForTerrainRoot(
+			xPreflightRoot.string(), xLinkedSet.string(), nullptr),
+			"Shared component regeneration operation must reject the junction escape before progress/cleanup/export");
+		ZENITH_ASSERT_EQ(xPreflightComponent.GetTerrainAssetSet(), strComponentSetBeforeRegeneration, "Rejected component regeneration preflight must preserve the component set");
+		ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_strTerrainAssetDirectory, strStreamingDirectoryBeforeRegeneration, "Rejected component regeneration preflight must preserve streaming state");
+		ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_ulUnifiedVertexBufferSize, ulVertexSizeSentinel, "Rejected component regeneration preflight must occur before vertex-buffer teardown");
+		ZENITH_ASSERT_EQ(xPreflightComponent.m_pxStreamingState->m_ulUnifiedIndexBufferSize, ulIndexSizeSentinel, "Rejected component regeneration preflight must occur before index-buffer teardown");
+		ZENITH_ASSERT_TRUE(std::filesystem::exists(xOutsideSentinel), "Rejected component regeneration preflight must occur before cleanup deletion");
 		xPreflightEditor.Close();
 	}
 	ZENITH_ASSERT_EQ(xPathEditor.GetAssetSet(), strStagedSetBeforePreflight, "Rejected preflight must not mutate the editor's staged set");
@@ -14773,10 +15012,12 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 	std::filesystem::remove(xNotes);
 	std::filesystem::remove(xNestedMesh);
 	std::filesystem::remove(xNested);
-	if (bLinkCreated)
-	{
-		std::filesystem::remove(xLinkedSet);
-	}
+	std::filesystem::remove(xLinkedSet);
+	std::filesystem::remove(xLegacyTextureTarget);
+	std::filesystem::remove(xLegacyOutsideSentinel);
+	std::filesystem::remove(xLegacyOutside);
+	std::filesystem::remove(xLegacyTextures);
+	std::filesystem::remove(xLegacyAssets);
 	std::filesystem::remove(xOutsideSentinel);
 	std::filesystem::remove(xSiblingSentinel);
 	std::filesystem::remove(xOutsideTarget);
@@ -15231,6 +15472,448 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	ZENITH_ASSERT_FALSE(xState.m_bChunkDataDirty.load(std::memory_order_acquire), "An incompatible source with no residency change must leave chunk data clean");
 	ZENITH_ASSERT_EQ(xState.m_xStats.m_uStreamsThisFrame, 0u, "An incompatible source must not increment successful-stream stats");
 	ZENITH_ASSERT_EQ(xState.m_xStats.m_uEvictionsThisFrame, 0u, "An incompatible source must not increment eviction stats");
+
+	// LOW and physics startup use the same bounded source gate before entering
+	// Flux_MeshGeometry's assertion-based loader. Keep this coverage in the
+	// existing E2 registration: valid anchors remain authoritative, while a
+	// missing/truncated non-anchor is rejected as zero geometry without ever
+	// reaching the asserting path.
+	auto WriteCanonicalTerrainSource = [&](const std::filesystem::path& xPath,
+		uint32_t uVertexCount, uint32_t uIndexCount, bool bIncludeNormals,
+		uint32_t uFixtureMutation)
+	{
+		Flux_BufferLayout xLayout;
+		for (uint32_t u = 0u; u < Flux_TerrainVertexLayout::uELEMENT_COUNT; u++)
+		{
+			xLayout.GetElements().PushBack(Flux_BufferElement(Flux_TerrainVertexLayout::axELEMENTS[u].m_eType));
+		}
+		xLayout.CalculateOffsetsAndStrides();
+
+		const uint32_t uVerticesPerEdge = static_cast<uint32_t>(std::sqrt(static_cast<double>(uVertexCount)));
+		ZENITH_ASSERT_EQ(uVerticesPerEdge * uVerticesPerEdge, uVertexCount,
+			"A canonical terrain fixture must have a square vertex grid");
+		ZENITH_ASSERT_EQ((uVerticesPerEdge - 1u) * (uVerticesPerEdge - 1u) * 6u,
+			uIndexCount, "A canonical terrain fixture must have exactly two triangles per grid cell");
+
+		std::vector<u_int8> auVertices(
+			static_cast<size_t>(uVertexCount) * Flux_TerrainVertexLayout::uVERTEX_STRIDE, 0u);
+		std::vector<uint32_t> auIndices;
+		auIndices.reserve(uIndexCount);
+		std::vector<Zenith_Maths::Vector3> axPositions(uVertexCount);
+		std::vector<Zenith_Maths::Vector3> axNormals(uVertexCount, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		Zenith_HashMap<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>> xBoneMap;
+		const uint32_t uQuadsPerEdge = uVerticesPerEdge - 1u;
+		const uint32_t uInteriorVertexCount = uQuadsPerEdge * uQuadsPerEdge;
+		const uint32_t uRightEdgeStart = uInteriorVertexCount;
+		const uint32_t uTopEdgeStart = uRightEdgeStart + uQuadsPerEdge;
+		auto WriteVertex = [&](uint32_t uVertex, uint32_t uX, uint32_t uZ)
+		{
+			const Zenith_Maths::Vector3 xPosition(
+				static_cast<float>(uX), 0.25f * static_cast<float>((uX + uZ) % 3u),
+				static_cast<float>(uZ));
+			axPositions[uVertex] = xPosition;
+			const float afPackedPositionAndUV[5] = {
+				xPosition.x, xPosition.y, xPosition.z,
+				static_cast<float>(uX), static_cast<float>(uZ)
+			};
+			std::memcpy(auVertices.data() +
+				static_cast<size_t>(uVertex) * Flux_TerrainVertexLayout::uVERTEX_STRIDE,
+				afPackedPositionAndUV, sizeof(afPackedPositionAndUV));
+		};
+		// Match ExportChunkBatch exactly: N x N interior vertices first, then
+		// the positive-X edge, positive-Z edge, and final shared corner.
+		for (uint32_t uZ = 0u; uZ < uQuadsPerEdge; ++uZ)
+		{
+			for (uint32_t uX = 0u; uX < uQuadsPerEdge; ++uX)
+			{
+				WriteVertex(uZ * uQuadsPerEdge + uX, uX, uZ);
+			}
+			WriteVertex(uRightEdgeStart + uZ, uQuadsPerEdge, uZ);
+		}
+		for (uint32_t uX = 0u; uX < uQuadsPerEdge; ++uX)
+		{
+			WriteVertex(uTopEdgeStart + uX, uX, uQuadsPerEdge);
+		}
+		WriteVertex(uVertexCount - 1u, uQuadsPerEdge, uQuadsPerEdge);
+
+		// Interior cells use a-c. The separately appended positive edges use
+		// the exporter's stitched opposite diagonal while retaining winding.
+		for (uint32_t uZ = 0u; uZ + 1u < uQuadsPerEdge; ++uZ)
+		{
+			for (uint32_t uX = 0u; uX + 1u < uQuadsPerEdge; ++uX)
+			{
+				const uint32_t uA = uZ * uQuadsPerEdge + uX;
+				const uint32_t uB = uA + 1u;
+				const uint32_t uD = uA + uQuadsPerEdge;
+				const uint32_t uC = uD + 1u;
+				auIndices.push_back(uA);
+				auIndices.push_back(uC);
+				auIndices.push_back(uB);
+				auIndices.push_back(uC);
+				auIndices.push_back(uA);
+				auIndices.push_back(uD);
+			}
+		}
+		for (uint32_t uZ = 0u; uZ + 1u < uQuadsPerEdge; ++uZ)
+		{
+			const uint32_t uA = (uZ + 1u) * uQuadsPerEdge + (uQuadsPerEdge - 1u);
+			const uint32_t uC = uRightEdgeStart + uZ;
+			const uint32_t uB = uZ * uQuadsPerEdge + (uQuadsPerEdge - 1u);
+			const uint32_t uD = uRightEdgeStart + uZ + 1u;
+			auIndices.insert(auIndices.end(), { uA, uC, uB, uC, uA, uD });
+		}
+		for (uint32_t uX = 0u; uX + 1u < uQuadsPerEdge; ++uX)
+		{
+			const uint32_t uC = (uQuadsPerEdge - 1u) * uQuadsPerEdge + uX + 1u;
+			const uint32_t uA = uTopEdgeStart + uX;
+			const uint32_t uB = (uQuadsPerEdge - 1u) * uQuadsPerEdge + uX;
+			const uint32_t uD = uTopEdgeStart + uX + 1u;
+			auIndices.insert(auIndices.end(), { uA, uC, uB, uC, uA, uD });
+		}
+		const uint32_t uCornerA = uRightEdgeStart + uQuadsPerEdge - 1u;
+		const uint32_t uCornerC = uTopEdgeStart + uQuadsPerEdge - 1u;
+		const uint32_t uCornerB = uVertexCount - 1u;
+		const uint32_t uCornerD = uInteriorVertexCount - 1u;
+		auIndices.insert(auIndices.end(),
+			{ uCornerA, uCornerC, uCornerB, uCornerC, uCornerA, uCornerD });
+		ZENITH_ASSERT_EQ(auIndices.size(), static_cast<size_t>(uIndexCount),
+			"The exporter-shaped fixture must fill every declared index");
+		if (uFixtureMutation == 1u)
+		{
+			// Use the stitched-edge diagonal in the first interior cell.
+			auIndices[0] = 0u;
+			auIndices[1] = uQuadsPerEdge;
+			auIndices[2] = 1u;
+			auIndices[3] = 1u;
+			auIndices[4] = uQuadsPerEdge;
+			auIndices[5] = uQuadsPerEdge + 1u;
+		}
+		else if (uFixtureMutation == 2u)
+		{
+			// Reverse one canonical triangle's winding.
+			std::swap(auIndices[1], auIndices[2]);
+		}
+		else if (uFixtureMutation == 3u)
+		{
+			axPositions[0].x = (std::numeric_limits<float>::quiet_NaN)();
+			std::memcpy(auVertices.data(), &axPositions[0].x, sizeof(float));
+		}
+		else if (uFixtureMutation == 4u)
+		{
+			axNormals[0] = Zenith_Maths::Vector3(0.0f);
+		}
+
+		Zenith_DataStream xMesh;
+		xMesh << xLayout.GetElements();
+		xMesh << uVertexCount;
+		xMesh << uIndexCount;
+		xMesh << uint32_t(0u);
+		xBoneMap.WriteToDataStream(xMesh);
+		xMesh << Zenith_Maths::Vector4(1.0f);
+		xMesh << bPresent;
+		xMesh.WriteData(auVertices.data(), auVertices.size());
+		xMesh << bPresent;
+		xMesh.WriteData(auIndices.data(), auIndices.size() * sizeof(uint32_t));
+		xMesh << bPresent;
+		xMesh.WriteData(axPositions.data(), axPositions.size() * sizeof(Zenith_Maths::Vector3));
+		xMesh << bIncludeNormals;
+		if (bIncludeNormals)
+		{
+			xMesh.WriteData(axNormals.data(), axNormals.size() * sizeof(Zenith_Maths::Vector3));
+		}
+		for (uint32_t u = 0u; u < 5u; u++)
+		{
+			xMesh << bAbsent;
+		}
+		xMesh.WriteToFile(xPath.string().c_str());
+	};
+
+	const std::filesystem::path xLowAnchorPath = xArtifacts.m_xDirectory / "Render_LOW_0_0.zmesh";
+	WriteCanonicalTerrainSource(xLowAnchorPath,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, 0u);
+	Flux_MeshGeometry xLowAnchor;
+	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xLowAnchorPath.string(),
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xLowAnchor),
+		"A canonical LOW (0,0) authority must remain loadable without a GPU upload");
+	ZENITH_ASSERT_EQ(xLowAnchor.GetNumVerts(), Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		"The LOW authority must retain the exporter topology");
+	Flux_MeshGeometry xMissingLowAuthority;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
+		(xArtifacts.m_xDirectory / "MissingAuthority" / "Render_LOW_0_0.zmesh").string(),
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xMissingLowAuthority),
+		"A missing LOW (0,0) authority must fail validation so runtime marks render geometry unusable");
+
+	const std::filesystem::path xPhysicsAnchorPath = xArtifacts.m_xDirectory / "Physics_0_0.zmesh";
+	WriteCanonicalTerrainSource(xPhysicsAnchorPath,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 0u);
+	Flux_MeshGeometry xPhysicsAnchor;
+	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPhysicsAnchorPath.string(),
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xPhysicsAnchor),
+		"A canonical physics (0,0) authority with normals must remain loadable without a GPU upload");
+	Flux_MeshGeometry xMissingPhysicsAuthority;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
+		(xArtifacts.m_xDirectory / "MissingAuthority" / "Physics_0_0.zmesh").string(),
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xMissingPhysicsAuthority),
+		"A missing physics (0,0) authority must fail validation so runtime produces no physics body");
+
+	Flux_MeshGeometry xMissingLow;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
+		(xArtifacts.m_xDirectory / "Render_LOW_0_1.zmesh").string(),
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xMissingLow),
+		"A missing non-anchor LOW source must be rejected nonassertingly as zero geometry");
+	ZENITH_ASSERT_EQ(xMissingLow.GetNumVerts(), 0u,
+		"A missing non-anchor LOW source must not partially populate geometry");
+
+	const std::filesystem::path xCorruptPhysicsPath = xArtifacts.m_xDirectory / "Physics_0_1.zmesh";
+	Zenith_DataStream xTruncatedPhysics;
+	xTruncatedPhysics << uint32_t(Flux_TerrainVertexLayout::uELEMENT_COUNT);
+	xTruncatedPhysics.WriteToFile(xCorruptPhysicsPath.string().c_str());
+	Flux_MeshGeometry xCorruptPhysics;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xCorruptPhysicsPath.string(),
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xCorruptPhysics),
+		"A truncated non-anchor physics source must be rejected before the assertion-based loader");
+	ZENITH_ASSERT_EQ(xCorruptPhysics.GetNumVerts(), 0u,
+		"A corrupt non-anchor physics source must not partially populate geometry");
+
+	const std::filesystem::path xPhysicsWithoutNormalsPath = xArtifacts.m_xDirectory / "Physics_0_2.zmesh";
+	WriteCanonicalTerrainSource(xPhysicsWithoutNormalsPath,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, false, 0u);
+	Flux_MeshGeometry xPhysicsWithoutNormals;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPhysicsWithoutNormalsPath.string(),
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xPhysicsWithoutNormals),
+		"A physics source without the required normal stream must contribute no physics geometry");
+
+	const std::filesystem::path xAlternateDiagonalPath =
+		xArtifacts.m_xDirectory / "Render_LOW_AlternateDiagonal.zmesh";
+	WriteCanonicalTerrainSource(xAlternateDiagonalPath,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, 1u);
+	Flux_MeshGeometry xAlternateDiagonal;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
+		xAlternateDiagonalPath.string(), Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xAlternateDiagonal),
+		"A regular grid using the non-exporter diagonal must fail exact terrain-topology validation");
+
+	const std::filesystem::path xReversedWindingPath =
+		xArtifacts.m_xDirectory / "Render_LOW_ReversedWinding.zmesh";
+	WriteCanonicalTerrainSource(xReversedWindingPath,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, 2u);
+	Flux_MeshGeometry xReversedWinding;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
+		xReversedWindingPath.string(), Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xReversedWinding),
+		"A single reversed terrain triangle must fail canonical winding validation");
+
+	const std::filesystem::path xNonFinitePath =
+		xArtifacts.m_xDirectory / "Render_LOW_NonFinite.zmesh";
+	WriteCanonicalTerrainSource(xNonFinitePath,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, 3u);
+	Flux_MeshGeometry xNonFinite;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
+		xNonFinitePath.string(), Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xNonFinite),
+		"A non-finite terrain position must fail before geometry allocation");
+
+	const std::filesystem::path xDegenerateNormalPath =
+		xArtifacts.m_xDirectory / "Physics_DegenerateNormal.zmesh";
+	WriteCanonicalTerrainSource(xDegenerateNormalPath,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 4u);
+	Flux_MeshGeometry xDegenerateNormal;
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
+		xDegenerateNormalPath.string(), Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xDegenerateNormal),
+		"A required zero-length physics normal must fail validation");
+
+	// Exercise the production-shared sparse combination core with real bounded
+	// .zmesh snapshots. This pins anchor authority, compact offsets, missing
+	// chunk cleanup, capped diagnostic sampling, and the original dense-grid
+	// behavior without registering another unit-test baseline entry.
+	const std::filesystem::path xSparseDirectory = xArtifacts.m_xDirectory / "SparseGrid";
+	std::filesystem::create_directories(xSparseDirectory);
+	auto WriteLowChunk = [&](uint32_t uX, uint32_t uY)
+	{
+		WriteCanonicalTerrainSource(xSparseDirectory /
+			("Render_LOW_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zmesh"),
+			Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+			Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, 0u);
+	};
+	WriteLowChunk(0u, 0u);
+	WriteLowChunk(1u, 0u);
+	WriteLowChunk(3u, 3u);
+
+	struct SparseGridLoadContext
+	{
+		std::filesystem::path m_xDirectory;
+	};
+	SparseGridLoadContext xSparseContext{ xSparseDirectory };
+	auto LoadLowChunk = [](void* pContext, uint32_t uX, uint32_t uY,
+		Flux_MeshGeometry& xGeometryOut) -> bool
+	{
+		const SparseGridLoadContext& xContext =
+			*static_cast<const SparseGridLoadContext*>(pContext);
+		const std::filesystem::path xPath = xContext.m_xDirectory /
+			("Render_LOW_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zmesh");
+		return Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPath.string(),
+			Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+			Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xGeometryOut);
+	};
+
+	std::vector<Flux_TerrainChunkInitData> axSparseInit(Flux_TerrainConfig::TOTAL_CHUNKS);
+	for (uint32_t uX = 0u; uX < 4u; ++uX)
+	{
+		for (uint32_t uY = 0u; uY < 4u; ++uY)
+		{
+			Flux_TerrainChunkInitData& xStale =
+				axSparseInit[Flux_TerrainConfig::ChunkCoordsToIndex(uX, uY)];
+			xStale.m_uVertexCount = 0xBADu;
+			xStale.m_uIndexCount = 0xF00Du;
+		}
+	}
+	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xSparseDiagnostics;
+	Flux_MeshGeometry* pxSparseCombined = nullptr;
+	const uint32_t uSparseGridSize = 4u;
+	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
+		uSparseGridSize,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * uSparseGridSize * uSparseGridSize,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * uSparseGridSize * uSparseGridSize,
+		LoadLowChunk, &xSparseContext, axSparseInit.data(), pxSparseCombined,
+		xSparseDiagnostics), "A valid (0,0) anchor must allow sparse non-anchor LOW loading");
+	ZENITH_ASSERT_NOT_NULL(pxSparseCombined, "Successful sparse combination must return owned geometry");
+	ZENITH_ASSERT_TRUE(xSparseDiagnostics.m_bAnchorLoaded,
+		"Sparse diagnostics must identify the canonical anchor as loaded");
+	ZENITH_ASSERT_EQ(xSparseDiagnostics.m_uSkippedCount, 13u,
+		"A 4x4 grid with three sources must count all 13 missing non-anchor chunks");
+	ZENITH_ASSERT_EQ(xSparseDiagnostics.m_uSampleCount,
+		Zenith_TerrainComponent::uMAX_SPARSE_WARNING_SAMPLES,
+		"Sparse warning coordinates must cap at the production diagnostic limit");
+	ZENITH_ASSERT_EQ(xSparseDiagnostics.m_auSampleX[0], 0u,
+		"The first bounded warning sample must retain deterministic X order");
+	ZENITH_ASSERT_EQ(xSparseDiagnostics.m_auSampleY[0], 1u,
+		"The first bounded warning sample must be the first missing coordinate");
+	ZENITH_ASSERT_EQ(xSparseDiagnostics.m_auSampleX[
+		Zenith_TerrainComponent::uMAX_SPARSE_WARNING_SAMPLES - 1u], 2u,
+		"The final retained sample must stop at the cap rather than overwrite earlier coordinates");
+	ZENITH_ASSERT_EQ(xSparseDiagnostics.m_auSampleY[
+		Zenith_TerrainComponent::uMAX_SPARSE_WARNING_SAMPLES - 1u], 1u,
+		"The capped warning sample order must match the production X/Y traversal");
+	ZENITH_ASSERT_EQ(pxSparseCombined->GetNumVerts(),
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * 3u,
+		"Sparse combination must compact only present chunk vertices");
+	ZENITH_ASSERT_EQ(pxSparseCombined->GetNumIndices(),
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * 3u,
+		"Sparse combination must compact only present chunk indices");
+	ZENITH_ASSERT_EQ(pxSparseCombined->GetIndexData()[
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT],
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		"The second retained chunk's first index must be offset by the first chunk's compact vertex count");
+	const uint32_t uAnchorInit = Flux_TerrainConfig::ChunkCoordsToIndex(0u, 0u);
+	const uint32_t uPresentInit = Flux_TerrainConfig::ChunkCoordsToIndex(1u, 0u);
+	const uint32_t uMissingInit = Flux_TerrainConfig::ChunkCoordsToIndex(0u, 1u);
+	ZENITH_ASSERT_EQ(axSparseInit[uAnchorInit].m_uVertexCount,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		"Anchor init data must retain its validated vertex count");
+	ZENITH_ASSERT_EQ(axSparseInit[uPresentInit].m_uIndexCount,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT,
+		"Present non-anchor init data must retain its validated index count");
+	ZENITH_ASSERT_EQ(axSparseInit[uMissingInit].m_uVertexCount, 0u,
+		"Missing chunk init data must remain clean/zero rather than alias a compact predecessor");
+	ZENITH_ASSERT_EQ(axSparseInit[uMissingInit].m_uIndexCount, 0u,
+		"Missing chunk init indices must remain clean/zero");
+	delete pxSparseCombined;
+	pxSparseCombined = nullptr;
+
+	SparseGridLoadContext xMissingAnchorContext{ xSparseDirectory / "NoAnchor" };
+	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xMissingAnchorDiagnostics;
+	Flux_MeshGeometry* pxMissingAnchorCombined = reinterpret_cast<Flux_MeshGeometry*>(1);
+	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
+		2u, Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * 4u,
+		LoadLowChunk, &xMissingAnchorContext, nullptr, pxMissingAnchorCombined,
+		xMissingAnchorDiagnostics), "A missing (0,0) source must reject the complete grid transaction");
+	ZENITH_ASSERT_NULL(pxMissingAnchorCombined,
+		"Anchor rejection must clean the allocated combined-geometry shell");
+	ZENITH_ASSERT_FALSE(xMissingAnchorDiagnostics.m_bAnchorLoaded,
+		"Rejected anchor diagnostics must not claim authority was loaded");
+	ZENITH_ASSERT_EQ(xMissingAnchorDiagnostics.m_uSkippedCount, 0u,
+		"Anchor failure must stop before classifying non-anchor sparse skips");
+
+	// Add the remaining 2x2 files and pin dense legacy behavior: no warnings,
+	// no seam over-allocation, and the same shared core as the sparse case.
+	WriteLowChunk(0u, 1u);
+	WriteLowChunk(1u, 1u);
+	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xDenseDiagnostics;
+	Flux_MeshGeometry* pxDenseCombined = nullptr;
+	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
+		2u, Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * 4u,
+		LoadLowChunk, &xSparseContext, nullptr, pxDenseCombined, xDenseDiagnostics),
+		"A complete dense 2x2 grid must retain legacy startup behavior through the shared core");
+	ZENITH_ASSERT_EQ(xDenseDiagnostics.m_uSkippedCount, 0u,
+		"Dense legacy combination must emit no sparse diagnostics");
+	ZENITH_ASSERT_EQ(pxDenseCombined->GetNumVerts(),
+		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
+		"Dense compact combination must contain exactly four canonical chunks without seam padding");
+	ZENITH_ASSERT_EQ(pxDenseCombined->GetNumIndices(),
+		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * 4u,
+		"Dense compact combination must retain exact exporter index counts");
+	delete pxDenseCombined;
+
+	const std::filesystem::path xSparsePhysicsDirectory =
+		xArtifacts.m_xDirectory / "SparsePhysicsGrid";
+	std::filesystem::create_directories(xSparsePhysicsDirectory);
+	for (const std::pair<uint32_t, uint32_t>& xCoords :
+		{ std::pair<uint32_t, uint32_t>(0u, 0u), std::pair<uint32_t, uint32_t>(1u, 1u) })
+	{
+		WriteCanonicalTerrainSource(xSparsePhysicsDirectory /
+			("Physics_" + std::to_string(xCoords.first) + "_" +
+				std::to_string(xCoords.second) + ".zmesh"),
+			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 0u);
+	}
+	SparseGridLoadContext xSparsePhysicsContext{ xSparsePhysicsDirectory };
+	auto LoadPhysicsChunk = [](void* pContext, uint32_t uX, uint32_t uY,
+		Flux_MeshGeometry& xGeometryOut) -> bool
+	{
+		const SparseGridLoadContext& xContext =
+			*static_cast<const SparseGridLoadContext*>(pContext);
+		const std::filesystem::path xPath = xContext.m_xDirectory /
+			("Physics_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zmesh");
+		return Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPath.string(),
+			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xGeometryOut);
+	};
+	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xPhysicsDiagnostics;
+	Flux_MeshGeometry* pxPhysicsCombined = nullptr;
+	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
+		2u, Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT * 4u,
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT * 4u,
+		LoadPhysicsChunk, &xSparsePhysicsContext, nullptr, pxPhysicsCombined,
+		xPhysicsDiagnostics),
+		"Sparse physics combination must use the same non-asserting shared core");
+	ZENITH_ASSERT_EQ(xPhysicsDiagnostics.m_uSkippedCount, 2u,
+		"A 2x2 physics grid with anchor and diagonal source must skip two non-anchors");
+	ZENITH_ASSERT_EQ(pxPhysicsCombined->GetNumVerts(),
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT * 2u,
+		"Sparse physics vertices must compact exactly the retained sources");
+	ZENITH_ASSERT_NOT_NULL(pxPhysicsCombined->m_pxNormals,
+		"Combined physics geometry must retain the required normal stream");
+	ZENITH_ASSERT_TRUE(pxPhysicsCombined->m_pxNormals[
+		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT].y > 0.99f,
+		"The appended physics chunk normal stream must use the compact vertex offset");
+	delete pxPhysicsCombined;
 }
 
 ZENITH_TEST(Terrain, StreamingUnavailableHighLODDoesNotRetryOrStarve) { Zenith_UnitTests::TestTerrainStreamingUnavailableHighLODDoesNotRetryOrStarve(); }

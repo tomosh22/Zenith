@@ -13,8 +13,8 @@ Scope.md (what is cut), TestPlan.md (determinism + generator test specs),
 BuildEnvironment.md (the tools build that runs the bake), CIPolicy.md
 (why CI never sees these files), Roadmap.md (S3/S4 stage gates).
 
-**Last updated:** 2026-07-09 (S0 -- seeded from the approved plan; no
-generator exists yet).
+**Last updated:** 2026-07-13 (S3 -- first generated terrain family and
+scene shipped locally under ZM-D-053; all outputs remain git-ignored).
 
 ---
 
@@ -27,9 +27,8 @@ builds. Nothing under `Games/Zenithmon/Assets/` is ever committed** -- the
 directory is git-ignored (repo norm, same as RenderTest/DP/CityBuilder).
 A fresh checkout has NO assets; a `Vulkan_vs2022_Debug_Win64_True` build+run
 regenerates them. There is no artist, no outsourcing, no import pipeline --
-the "asset team" is `Games/Zenithmon/Tools/` (`ZM_CreatureGen`, `ZM_HumanGen`,
-`ZM_BuildingGen`, `ZM_PropGen`, `ZM_TerrainAuthoring`, `ZM_TextureSynth`,
-`ZM_BakeManifest`).
+the "asset team" is generator/authoring code (`Games/Zenithmon/Tools/` for
+the S4 families and `Source/World/ZM_TerrainAuthoring` for S3 terrain).
 
 ### 0.2 Headline counts
 
@@ -40,7 +39,7 @@ the "asset team" is `Games/Zenithmon/Tools/` (`ZM_CreatureGen`, `ZM_HumanGen`,
 | Human models | ~35 .zmodel on ONE shared skeleton + ONE shared 9-clip set | ZM_HumanGen | S4 |
 | Building models | ~30 .zmodel | ZM_BuildingGen | S4 |
 | Props | ~25 models (incl. ~6 battle-dome biome dressing sets) | ZM_PropGen | S4 |
-| Terrain sets | 1 per outdoor scene, ~25 sets | ZM_TerrainAuthoring (needs engine E1 + E2) | S3 (first set) -> S9/S10 (all) |
+| Terrain sets | 1 per outdoor scene, ~25 sets | ZM_TerrainAuthoring (engine E1 + E2 shipped) | S3 (Dawnmere first set complete) -> S9/S10 (all) |
 | Scenes | ~40 .zscen (boot-authored via AddStep_*) | ZM_SceneAuthoring from ZM_WorldSpec | S0 (FrontEnd) onward |
 | Behaviour graphs | .bgraph glue graphs (menu/NPC/cutscene) | ZM_GraphAuthoring (Zenith_GraphBuilder DSL) | S6 onward |
 
@@ -139,7 +138,7 @@ Engine changes **E1 and E2 are shipped**: every `Zenith_TerrainComponent`
 owns a serialized terrain-set name and all runtime streaming/physics/render
 paths resolve through it; authoring can export only a validated chunk rect.
 Each outdoor scene owns a set under `Assets/Terrain/<SetName>/` (e.g.
-`Terrain/Route01/`, `Terrain/HomeVillage/`).
+`Terrain/Dawnmere/`, `Terrain/Route01/`).
 
 The set name is either empty, meaning the backward-compatible legacy
 `Assets/Terrain/` root, or matches
@@ -176,10 +175,11 @@ standalone editor session can open.
 |---|---|---|
 | Height.ztxtr | R32F | |
 | Splatmap_RGBA.ztxtr | RGBA | 4-material palette |
-| GrassDensity.ztxtr | | doubles as the gameplay tall-grass encounter map (ZM_TallGrassSystem keeps its own CPU copy) |
+| GrassDensity.ztxtr | R32F | doubles as the gameplay tall-grass encounter map (ZM_TallGrassSystem keeps its own CPU copy) |
 | Render_X_Y.zmesh | exactly 1 per exported chunk | HIGH render source; a missing/invalid sparse source becomes `SOURCE_UNAVAILABLE` at runtime |
 | Render_LOW_X_Y.zmesh | exactly 1 per exported chunk | LOW render source |
 | Physics_X_Y.zmesh | exactly 1 per exported chunk | physics source |
+| ZM_TerrainRecipe.manifest | 12-byte binary marker | terrain-family warm gate: ASCII `ZMTR`, little-endian version, little-endian required-output count; published atomically only after every required output validates |
 
 **Rect export only (E2):** bounds are inclusive, non-normalizing, and must
 satisfy `0 <= min <= max < 64` on both axes while containing the hard-required
@@ -207,9 +207,33 @@ later valid chunk.
 ResetSession -> SetAssetSet -> GenerateProcedural(sceneSeed) -> route-corridor
 flatten dabs along the authored polyline -> town pads at building footprints
 -> Erode -> AutoSplat x4 + dirt-path splat -> GrassDensity brush patches
-beside (never on) the path -> TreeBrush edges -> SaveTextures +
-ExportChunksRect. Recipes are driven from ZM_WorldSpec rows, not bespoke
-per-scene code.
+beside (never on) the path -> checked terminal SaveTextures +
+ExportChunksRect + manifest publication. Recipes are driven from ZM_WorldSpec
+rows. Tree placement is a future content pass; the first Dawnmere terrain
+deliverable intentionally contains no trees.
+
+### 4.3 First shipped terrain family: Dawnmere (Home Village)
+
+- **Identity:** WorldSpec terrain set `Dawnmere`; FNV-1a seed `0x7BF32CA4`;
+  authored coordinates `0..1024`; inclusive export rectangle `(0,0)..(15,15)`.
+- **Exact ignored family:** 256 `Render`, 256 `Render_LOW`, and 256 `Physics`
+  meshes; `Height.ztxtr`, `Splatmap_RGBA.ztxtr`, and
+  `GrassDensity.ztxtr`; one `ZM_TerrainRecipe.manifest`. That is **771
+  required outputs + the marker = 772 files** under
+  `Assets/Terrain/Dawnmere/`.
+- **Atomic warm gate:** the marker is exactly 12 bytes: `ZMTR`, version 1,
+  required-output count 771. A cold/forced run removes stale completion state;
+  finalization writes a temporary marker and atomically renames it only after
+  all 771 files exist and are non-empty. A warm run revalidates the marker and
+  every output before authoring `Assets/Scenes/Dawnmere.zscen`.
+- **Observed local timings:** cold bake **63.671 s**; warm graphics boot
+  **14.614 s**. Dawnmere is only sample 1/3 of the Roadmap bake-time study;
+  these numbers do not complete or extrapolate that task.
+- **Grass:** the scene-owned `ZM_TerrainGrass` loads the 1024x1024 CPU density
+  map on Awake, does not touch Flux headless, and regenerates from terrain
+  physics on a graphics boot. First load and reload each generated/uploaded
+  exactly **200,159 blades from 5,133 triangles**, then FrontEnd teardown
+  cleared all Dawnmere grass state.
 
 ---
 
@@ -219,7 +243,9 @@ per-scene code.
 40+ interiors, 95 Tower) authored from ZM_WorldSpec via shared AddStep_*
 helpers, plus .bgraph glue graphs via ZM_GraphAuthoring. These follow the
 same rule as everything else under Assets/: regenerated by tools builds,
-never committed. As of S0 only FrontEnd.zscen (build index 0) exists.
+never committed. FrontEnd.zscen (build index 0) and the warm-authored
+Dawnmere.zscen (build index 2) now exist locally; Dawnmere remains a terrain
+preview, not a playable or connected world scene.
 
 ---
 
@@ -236,7 +262,9 @@ each terrain set) by a manifest stamp recording:
 
 Stamp valid + all files present -> family skipped (warm boot). Stamp missing,
 version-mismatched, or any file absent -> the whole family regenerates.
-This is the hardened RenderTest pattern; exact stamp file format TBD at S4.
+This is the hardened RenderTest pattern. Dawnmere locks the terrain-family
+format now (`ZMTR`, v1, count 771 in a 12-byte atomic marker; section 4.3);
+the non-terrain S4 family marker format remains TBD until those generators land.
 
 ### 6.2 Determinism invariant (tested)
 
@@ -258,9 +286,12 @@ This is the hardened RenderTest pattern; exact stamp file format TBD at S4.
 | Full cold bake (everything absent) | 30-50 min (terrain dominates) |
 | Creature family alone | ~2-4 min |
 | Warm boot (all stamps valid) | seconds |
+| Dawnmere 16x16 terrain cold bake (observed sample 1/3) | 63.671 s |
+| Dawnmere warm graphics boot (observed) | 14.614 s |
 
-Terrain bake time is the top-ranked project risk: measured with 3 scenes at
-S3 before committing to all ~25. One terrain set per outdoor scene/route is
+Terrain bake time is the top-ranked project risk: Dawnmere is the first
+measured scene, but 2 more real recipes and the 3-scene extrapolation remain
+the next S3 task before committing to all ~25. One terrain set per outdoor scene/route is
 a hard requirement (user directive 2026-07-11) -- shared terrain sheets are
 NOT an acceptable fallback. If bakes are too slow, the fallback is to
 optimize the bake pipeline (parallel chunk export, incremental/cached

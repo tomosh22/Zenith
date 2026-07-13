@@ -277,7 +277,7 @@ biggest suite; all headless, all seeded (C8).
 
   All seven are engine-side `ZENITH_TEST` cases and are count-ratcheted into
   both the shared engine unit gate (**1078** registered) and Zenithmon's CI
-  boot unit gate (**1728** registered). The latter expects 1727 passed,
+  boot unit gate (**1732** registered). The latter expects 1731 passed,
   0 failed and the one quarantined skip.
 - **E2 engine unit tests (SHIPPED -- exactly three):**
 
@@ -294,12 +294,40 @@ biggest suite; all headless, all seeded (C8).
   file for every selected chunk. Streaming warns once when classifying a
   missing/invalid HIGH source; terrain teardown/regeneration resets the
   terminal state so a newly baked source can be tried again. The three E2
-  cases raise the shared engine baseline 1075 -> 1078 and Zenithmon's exact
-  boot baseline 1725 -> 1728.
-- **Engine regression:** the empty asset set still resolves the unchanged
-  legacy `Terrain/` layout; RenderTest boot and terrain-editor smoke remain
-  the local regression oracle.
-- **P1 `ZM_VillageWalk_Test` (windowed):** walk Home Village via input
+  cases historically raised the shared engine baseline 1075 -> 1078 and
+  Zenithmon's exact boot baseline 1725 -> 1728; Dawnmere's four game units
+  subsequently raise only the Zenithmon baseline to 1732.
+- **Dawnmere terrain/grass unit tests (SHIPPED -- exactly four):**
+
+  | Test | Contract covered |
+  |---|---|
+  | `ZM_TerrainAuthoring::DawnmereRecipeIdentityAndBounds` | WorldSpec identity; stable seed `0x7BF32CA4`; authored world `0..1024`; inclusive 16x16 export; contained paths/pads/landforms/material/camera bounds |
+  | `ZM_TerrainAuthoring::DawnmereRecipePlanIsDeterministicAndContained` | Byte-stable ordered reset/set/procedural/landform/flatten/erosion/splat/grass/terminal plan; no out-of-world dab; grass erase remains terminal density phase |
+  | `ZM_TerrainAuthoring::DawnmereManifestRequiresEveryOutput` | Exact 256-each `Render`/`Render_LOW`/`Physics` + 3-texture enumeration; all 771 required non-empty files; 12-byte `ZMTR` v1/count-771 marker; every missing output and wrong marker field invalidates warm state; prepared-path containment |
+  | `ZM_Grass::GrassDensityMapValidatesAndSamples` | Canonical named-set density path; exact 1024x1024 `R32_SFLOAT` decode; clamped 4096 m world sampling; malformed input clears state |
+
+  A cold/forced bake publishes the marker only after all 771 outputs validate,
+  making the ignored terrain family exactly **772 files** including the marker;
+  scene authoring is deferred until a valid warm boot and writes ignored
+  `Dawnmere.zscen`. The observed cold bake is **63.671 s** and observed warm
+  graphics boot is **14.614 s**. This is only sample 1/3 for the separate
+  Roadmap bake-time measurement; that task is not complete. No trees are
+  generated or tested in this first terrain deliverable.
+- **P1 `ZM_GrassRegeneration_Test` (SHIPPED, windowed):** exists-guards the
+  ignored Dawnmere scene/terrain family and is tagged graphics-required. It
+  loads Dawnmere, verifies the CPU/Flux 1024-square density-map contract and
+  density scale 0.15, observes exactly **200,159 blades from 5,133 terrain
+  triangles**, reloads the same scene and requires the identical count with no
+  accumulation, then returns to FrontEnd and requires the Flux density map and
+  visible grass chunks to be clear. Headless Zenithmon reports **2/2** outcomes:
+  `ZM_Boot_Test` passes and this graphics test skips as designed.
+- **Current regression evidence:** the full boot gate is **1732 ran / 1731
+  passed / 0 failed / 1 skipped**; all four Vulkan Debug/Release x Tools
+  true/false configurations plus D3D12 Debug Tools=false build green;
+  CityBuilder is **45/45**, DevilsPlayground is **158/158**, and RenderTest
+  windowed `EngineBootShutdownSmoke` + `TerrainEditorSmoke` are green. The
+  empty asset set still resolves the unchanged legacy `Terrain/` layout.
+- **Planned P1 `ZM_VillageWalk_Test` (windowed):** walk Home Village via input
   state-setters, enter the player home, warp round trip back out; asserts
   player position, active scene index, spawn-tag placement.
 - Stage-gate manual visual check: terrain/grass/camera.

@@ -3,6 +3,7 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include <functional>
 #include <string>
 
 // Forward declarations only — this header includes NO Flux header (Wave-18
@@ -68,6 +69,36 @@ private:
 	static void IncrementInstanceCount();
 	static void DecrementInstanceCount();
 	void ReadSerializedFields(Zenith_DataStream& xStream);
+	static bool TryLoadTerrainChunkSource(const std::string& strPath, uint32_t uExpectedVertexCount,
+		uint32_t uExpectedIndexCount, bool bRequireNormals, Flux_MeshGeometry& xGeometryOut);
+
+	static constexpr uint32_t uMAX_SPARSE_WARNING_SAMPLES = 8u;
+	struct TerrainSparseLoadDiagnostics
+	{
+		bool m_bAnchorLoaded = false;
+		uint32_t m_uSkippedCount = 0;
+		uint32_t m_uSampleCount = 0;
+		uint32_t m_auSampleX[uMAX_SPARSE_WARNING_SAMPLES] = {};
+		uint32_t m_auSampleY[uMAX_SPARSE_WARNING_SAMPLES] = {};
+	};
+	using TerrainChunkLoadCallback = bool(*)(void*, uint32_t, uint32_t, Flux_MeshGeometry&);
+	static bool CombineTerrainChunkGridCore(uint32_t uGridSize,
+		uint32_t uTotalVerts, uint32_t uTotalIndices,
+		TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
+		Flux_TerrainChunkInitData* pxChunkInitData,
+		Flux_MeshGeometry*& pxCombinedGeometryOut,
+		TerrainSparseLoadDiagnostics& xDiagnosticsOut);
+	bool LoadAndCombineLowLODChunksCore(uint32_t uGridSize,
+		uint32_t uTotalVerts, uint32_t uTotalIndices,
+		TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
+		Flux_TerrainChunkInitData* pxChunkInitData,
+		Flux_MeshGeometry*& pxLowLODGeometryOut,
+		TerrainSparseLoadDiagnostics& xDiagnosticsOut);
+	bool LoadCombinedPhysicsGeometryCore(uint32_t uGridSize,
+		TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
+		TerrainSparseLoadDiagnostics& xDiagnosticsOut);
+	static void LogSparseLoadDiagnostics(const char* szSourceKind,
+		const TerrainSparseLoadDiagnostics& xDiagnostics);
 
 public:
 	// Buffer accessors forward into the owning Flux_TerrainStreamingState.
@@ -246,8 +277,23 @@ public:
 	// Editor UI — main entry point; section helpers below.
 	void RenderPropertiesPanel();
 	bool IsTerrainInitializedForEditor() const;
-	static bool TryResolveValidatedTerrainAssetDirectory(const std::string& strAssetSet,
-		std::string& strDirectoryOut);
+	using TerrainDirectoryOperation = std::function<bool(const std::string&)>;
+	// Opens a handle-bound lease on the existing game directory, its Assets child,
+	// the Terrain root, and selected target for the complete synchronous operation.
+	// Missing ignored directories are created one checked segment at a time;
+	// handles deny delete sharing so none can be replaced during the callback.
+	static bool WithPreparedTerrainAssetDirectory(const std::string& strAssetSet,
+		const std::string& strTerrainRoot, const TerrainDirectoryOperation& xOperation);
+	// Atomically renames one simple child filename to another while the same
+	// handle-bound target lease remains active. This is the publication primitive
+	// for completion markers whose final rename must not relax directory sharing.
+	static bool RenamePreparedTerrainAssetFileAtomically(const std::string& strAssetSet,
+		const std::string& strTerrainRoot, const std::string& strSourceFilename,
+		const std::string& strDestinationFilename);
+	// Empty-set textures use the legacy Assets/Textures/Terrain sibling and need
+	// their own lease. Named textures delegate to the named Terrain target above.
+	static bool WithPreparedTerrainTextureDirectory(const std::string& strAssetSet,
+		const std::string& strTerrainRoot, const TerrainDirectoryOperation& xOperation);
 
 	// End-to-end regeneration from an in-memory heightfield (the terrain
 	// editor's bake): cleanup -> delete terrain files -> ExportHeightmapFromMat
@@ -263,17 +309,17 @@ private:
 	void RenderMaterialPalette();
 	void RenderSplatmapSlot();
 
-	// Cleanup helper used by Regenerate to tear down prior GPU / physics / buffer state
-	// before re-exporting. Split out because the 5-step sequence is easy to get wrong.
-	bool CleanupPriorGenerationForRegenerate(const std::string& strValidatedDirectory);
+	// Cleanup helper used only inside a held terrain-directory lease. Split out
+	// because the 5-step sequence is easy to get wrong.
+	void CleanupPriorGenerationForRegenerate();
 	// Purely non-destructive canonical target check. Kept private so production
 	// uses the project-root resolver above; Zenith_UnitTests friendship may pass
 	// an isolated Build/artifacts root/target to exercise junction rejection.
 	static bool ValidateTerrainAssetSetTarget(const std::string& strAssetSet,
 		const std::string& strTerrainRoot, const std::string& strResolvedTarget);
-	// Production wrapper re-resolves + canonicalizes the target below the game
-	// Terrain root before entering the destructive core. Zenith_UnitTests
-	// friendship reaches only the core for a Build/artifacts sandbox seam.
+	// Production wrapper holds a handle-bound directory lease for the complete
+	// deletion. Zenith_UnitTests friendship reaches only the core for an isolated
+	// Build/artifacts sandbox seam.
 	static bool DeleteExistingTerrainFilesForAssetSet(const std::string& strAssetSet,
 		const std::string& strResolvedDirectory);
 	static bool DeleteExistingTerrainFilesInDirectory(const std::string& strDirectory);

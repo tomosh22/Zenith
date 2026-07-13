@@ -148,6 +148,20 @@ void Flux_GrassImpl::Reset()
 	m_uActiveChunkCount = 0;
 }
 
+void Flux_GrassImpl::ClearSceneData()
+{
+	// The instance buffer is engine-owned and remains allocated until Shutdown.
+	// Invalidating the upload flag prevents stale bytes from being drawn while
+	// scene-owned CPU generation state and the copied density map are discarded.
+	m_axChunks.Clear();
+	m_axAllInstances.Clear();
+	m_bInstancesGenerated = false;
+	m_bInstancesUploaded = false;
+	m_uVisibleBladeCount = 0;
+	m_uActiveChunkCount = 0;
+	SetDensityMap(nullptr, 0, 0, 0.0f);
+}
+
 void Flux_GrassImpl::CreateBuffers()
 {
 	// Create instance buffer for grass blade data

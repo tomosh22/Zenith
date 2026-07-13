@@ -7,14 +7,21 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
+#include "Flux/Terrain/Flux_TerrainVertexLayout.h"
 #include "Maths/Zenith_FrustumCulling.h"
 // Wave 3 PART B: terrain render-record gather (so Flux_Terrain drops Zenith_TerrainComponent.h).
 #include "Core/Zenith_Engine.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_Query.h"
+#include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
+#include <type_traits>
+#include <vector>
 
 // The Flux GPU state these methods operate on now lives on the owning
 // Flux_TerrainStreamingState (Wave-18 relocation). Accessing
@@ -35,6 +42,399 @@
 
 // Static instance counter for terrain components - used to manage streaming manager lifecycle
 uint32_t Zenith_TerrainComponent::s_uInstanceCount = 0;
+
+namespace
+{
+	struct TerrainChunkSourceSnapshot
+	{
+		std::vector<u_int8> m_auVertexData;
+		std::vector<uint32_t> m_auIndices;
+		std::vector<Zenith_Maths::Vector3> m_axPositions;
+		std::vector<Zenith_Maths::Vector3> m_axNormals;
+		Zenith_Maths::Vector4 m_xMaterialColor = Zenith_Maths::Vector4(1.0f);
+		uint32_t m_uVertexCount = 0;
+		uint32_t m_uIndexCount = 0;
+	};
+
+	class TerrainComponentMeshReader
+	{
+	public:
+		explicit TerrainComponentMeshReader(const char* szPath)
+			: m_xFile(szPath, std::ios::binary | std::ios::ate)
+		{
+			if (!m_xFile.good())
+				return;
+			const std::streamoff iSize = static_cast<std::streamoff>(m_xFile.tellg());
+			if (iSize <= 0)
+				return;
+			m_ulRemaining = static_cast<uint64_t>(iSize);
+			m_xFile.seekg(0, std::ios::beg);
+			m_bValid = m_xFile.good();
+		}
+
+		template<typename T>
+		bool Read(T& xValue)
+		{
+			static_assert(std::is_trivially_copyable_v<T>);
+			return ReadBytes(&xValue, sizeof(T));
+		}
+
+		bool ReadBytes(void* pData, uint64_t ulSize)
+		{
+			if (!m_bValid || pData == nullptr || ulSize > m_ulRemaining ||
+				ulSize > static_cast<uint64_t>((std::numeric_limits<std::streamsize>::max)()))
+			{
+				return false;
+			}
+			m_xFile.read(static_cast<char*>(pData), static_cast<std::streamsize>(ulSize));
+			if (!m_xFile || static_cast<uint64_t>(m_xFile.gcount()) != ulSize)
+			{
+				m_bValid = false;
+				return false;
+			}
+			m_ulRemaining -= ulSize;
+			return true;
+		}
+
+		bool Skip(uint64_t ulSize)
+		{
+			if (!m_bValid || ulSize > m_ulRemaining ||
+				ulSize > static_cast<uint64_t>((std::numeric_limits<std::streamoff>::max)()))
+			{
+				return false;
+			}
+			m_xFile.seekg(static_cast<std::streamoff>(ulSize), std::ios::cur);
+			if (!m_xFile)
+			{
+				m_bValid = false;
+				return false;
+			}
+			m_ulRemaining -= ulSize;
+			return true;
+		}
+
+		bool HasRemaining(uint64_t ulSize) const
+		{
+			return m_bValid && ulSize <= m_ulRemaining;
+		}
+
+		bool ReadAttribute(uint64_t ulDataSize, bool bRequired, void* pData = nullptr,
+			bool* pbPresentOut = nullptr)
+		{
+			static_assert(sizeof(bool) == sizeof(uint8_t), "The .zmesh attribute flag format requires one-byte bools");
+			uint8_t uPresent = 0;
+			if (!Read(uPresent) || uPresent > 1u)
+				return false;
+			if (pbPresentOut != nullptr)
+				*pbPresentOut = uPresent != 0u;
+			if (uPresent == 0u)
+				return !bRequired;
+			return pData != nullptr ? ReadBytes(pData, ulDataSize) : Skip(ulDataSize);
+		}
+
+		bool IsAtEnd() const { return m_bValid && m_ulRemaining == 0u; }
+
+	private:
+		std::ifstream m_xFile;
+		uint64_t m_ulRemaining = 0;
+		bool m_bValid = false;
+	};
+
+	bool ValidateTerrainGridTopology(const TerrainChunkSourceSnapshot& xSnapshot, bool bRequireNormals)
+	{
+		uint32_t uVerticesPerEdge = 1u;
+		while (static_cast<uint64_t>(uVerticesPerEdge) * uVerticesPerEdge < xSnapshot.m_uVertexCount)
+			uVerticesPerEdge++;
+		if (uVerticesPerEdge < 2u || uVerticesPerEdge * uVerticesPerEdge != xSnapshot.m_uVertexCount)
+			return false;
+
+		const uint32_t uQuadsPerEdge = uVerticesPerEdge - 1u;
+		if (xSnapshot.m_uIndexCount != uQuadsPerEdge * uQuadsPerEdge * 6u ||
+			xSnapshot.m_axPositions.size() != xSnapshot.m_uVertexCount ||
+			xSnapshot.m_auVertexData.size() != static_cast<size_t>(xSnapshot.m_uVertexCount) * Flux_TerrainVertexLayout::uVERTEX_STRIDE ||
+			(bRequireNormals && xSnapshot.m_axNormals.size() != xSnapshot.m_uVertexCount))
+		{
+			return false;
+		}
+
+		float fMinX = (std::numeric_limits<float>::max)();
+		float fMaxX = (std::numeric_limits<float>::lowest)();
+		float fMinZ = (std::numeric_limits<float>::max)();
+		float fMaxZ = (std::numeric_limits<float>::lowest)();
+		for (const Zenith_Maths::Vector3& xPosition : xSnapshot.m_axPositions)
+		{
+			if (!std::isfinite(xPosition.x) || !std::isfinite(xPosition.y) || !std::isfinite(xPosition.z))
+				return false;
+			fMinX = std::min(fMinX, xPosition.x);
+			fMaxX = std::max(fMaxX, xPosition.x);
+			fMinZ = std::min(fMinZ, xPosition.z);
+			fMaxZ = std::max(fMaxZ, xPosition.z);
+		}
+
+		const float fSpacingX = (fMaxX - fMinX) / static_cast<float>(uQuadsPerEdge);
+		const float fSpacingZ = (fMaxZ - fMinZ) / static_cast<float>(uQuadsPerEdge);
+		if (!std::isfinite(fSpacingX) || !std::isfinite(fSpacingZ) || fSpacingX <= 1.0e-6f || fSpacingZ <= 1.0e-6f)
+			return false;
+
+		static constexpr float fGRID_EPSILON = 1.0e-3f;
+		std::vector<uint32_t> auVertexGridX(xSnapshot.m_uVertexCount);
+		std::vector<uint32_t> auVertexGridZ(xSnapshot.m_uVertexCount);
+		std::vector<int32_t> aiGridOwners(xSnapshot.m_uVertexCount, -1);
+		for (uint32_t u = 0u; u < xSnapshot.m_uVertexCount; ++u)
+		{
+			const Zenith_Maths::Vector3& xPosition = xSnapshot.m_axPositions[u];
+			const float fGridX = (xPosition.x - fMinX) / fSpacingX;
+			const float fGridZ = (xPosition.z - fMinZ) / fSpacingZ;
+			const int32_t iGridX = static_cast<int32_t>(std::round(fGridX));
+			const int32_t iGridZ = static_cast<int32_t>(std::round(fGridZ));
+			if (iGridX < 0 || iGridZ < 0 || iGridX >= static_cast<int32_t>(uVerticesPerEdge) ||
+				iGridZ >= static_cast<int32_t>(uVerticesPerEdge) ||
+				std::fabs(xPosition.x - (fMinX + iGridX * fSpacingX)) > fGRID_EPSILON ||
+				std::fabs(xPosition.z - (fMinZ + iGridZ * fSpacingZ)) > fGRID_EPSILON)
+			{
+				return false;
+			}
+
+			const uint32_t uSlot = static_cast<uint32_t>(iGridZ) * uVerticesPerEdge + static_cast<uint32_t>(iGridX);
+			if (aiGridOwners[uSlot] != -1)
+				return false;
+			aiGridOwners[uSlot] = static_cast<int32_t>(u);
+			auVertexGridX[u] = static_cast<uint32_t>(iGridX);
+			auVertexGridZ[u] = static_cast<uint32_t>(iGridZ);
+
+			float afVertexPositionAndUV[5];
+			std::memcpy(afVertexPositionAndUV,
+				xSnapshot.m_auVertexData.data() + static_cast<size_t>(u) * Flux_TerrainVertexLayout::uVERTEX_STRIDE,
+				sizeof(afVertexPositionAndUV));
+			for (float fValue : afVertexPositionAndUV)
+			{
+				if (!std::isfinite(fValue))
+					return false;
+			}
+			if (std::fabs(afVertexPositionAndUV[0] - xPosition.x) > fGRID_EPSILON ||
+				std::fabs(afVertexPositionAndUV[1] - xPosition.y) > fGRID_EPSILON ||
+				std::fabs(afVertexPositionAndUV[2] - xPosition.z) > fGRID_EPSILON)
+			{
+				return false;
+			}
+		}
+
+		if (!xSnapshot.m_axNormals.empty())
+		{
+			if (xSnapshot.m_axNormals.size() != xSnapshot.m_uVertexCount)
+				return false;
+			for (const Zenith_Maths::Vector3& xNormal : xSnapshot.m_axNormals)
+			{
+				const float fLengthSq = xNormal.x * xNormal.x + xNormal.y * xNormal.y + xNormal.z * xNormal.z;
+				if (!std::isfinite(xNormal.x) || !std::isfinite(xNormal.y) || !std::isfinite(xNormal.z) ||
+					!std::isfinite(fLengthSq) || fLengthSq <= 1.0e-6f)
+				{
+					return false;
+				}
+			}
+		}
+
+		const uint32_t uCellCount = uQuadsPerEdge * uQuadsPerEdge;
+		std::vector<uint8_t> auTriangleCounts(uCellCount, 0u);
+		std::vector<uint8_t> auFirstMasks(uCellCount, 0u);
+		std::vector<uint8_t> auSecondMasks(uCellCount, 0u);
+		for (uint32_t uTriangle = 0u; uTriangle < xSnapshot.m_uIndexCount; uTriangle += 3u)
+		{
+			const uint32_t uA = xSnapshot.m_auIndices[uTriangle];
+			const uint32_t uB = xSnapshot.m_auIndices[uTriangle + 1u];
+			const uint32_t uC = xSnapshot.m_auIndices[uTriangle + 2u];
+			if (uA >= xSnapshot.m_uVertexCount || uB >= xSnapshot.m_uVertexCount || uC >= xSnapshot.m_uVertexCount ||
+				uA == uB || uA == uC || uB == uC)
+			{
+				return false;
+			}
+
+			const uint32_t uMinGridX = std::min({ auVertexGridX[uA], auVertexGridX[uB], auVertexGridX[uC] });
+			const uint32_t uMaxGridX = std::max({ auVertexGridX[uA], auVertexGridX[uB], auVertexGridX[uC] });
+			const uint32_t uMinGridZ = std::min({ auVertexGridZ[uA], auVertexGridZ[uB], auVertexGridZ[uC] });
+			const uint32_t uMaxGridZ = std::max({ auVertexGridZ[uA], auVertexGridZ[uB], auVertexGridZ[uC] });
+			if (uMaxGridX != uMinGridX + 1u || uMaxGridZ != uMinGridZ + 1u)
+				return false;
+
+			const Zenith_Maths::Vector3& xA = xSnapshot.m_axPositions[uA];
+			const Zenith_Maths::Vector3& xB = xSnapshot.m_axPositions[uB];
+			const Zenith_Maths::Vector3& xC = xSnapshot.m_axPositions[uC];
+			const float fProjectedTwiceArea = (xB.x - xA.x) * (xC.z - xA.z) - (xB.z - xA.z) * (xC.x - xA.x);
+			// The terrain exporter emits clockwise XZ winding (a,c,b / c,a,d).
+			// Reject a reversed or degenerate triangle rather than accepting a
+			// topologically complete grid whose physics/render faces disagree.
+			if (!std::isfinite(fProjectedTwiceArea) || fProjectedTwiceArea >= -1.0e-6f)
+				return false;
+
+			auto CornerBit = [&](uint32_t uVertexIndex) -> uint8_t
+			{
+				const uint32_t uLocalX = auVertexGridX[uVertexIndex] - uMinGridX;
+				const uint32_t uLocalZ = auVertexGridZ[uVertexIndex] - uMinGridZ;
+				return static_cast<uint8_t>(1u << (uLocalZ * 2u + uLocalX));
+			};
+			const uint8_t uMask = static_cast<uint8_t>(CornerBit(uA) | CornerBit(uB) | CornerBit(uC));
+			// ExportChunkBatch writes the N x N interior first, then stitches the
+			// positive-X and positive-Z edge vertices. Interior cells use the
+			// a-c split (0xB/0xD); either stitched positive edge uses the opposite
+			// diagonal (0x7/0xE). Both retain the same clockwise winding.
+			const bool bPositiveEdgeCell =
+				uMinGridX + 1u == uQuadsPerEdge ||
+				uMinGridZ + 1u == uQuadsPerEdge;
+			const bool bExpectedTriangleMask = bPositiveEdgeCell
+				? (uMask == 0x7u || uMask == 0xEu)
+				: (uMask == 0xBu || uMask == 0xDu);
+			if (!bExpectedTriangleMask)
+				return false;
+
+			const uint32_t uCell = uMinGridZ * uQuadsPerEdge + uMinGridX;
+			if (auTriangleCounts[uCell] == 0u)
+				auFirstMasks[uCell] = uMask;
+			else if (auTriangleCounts[uCell] == 1u)
+				auSecondMasks[uCell] = uMask;
+			else
+				return false;
+			auTriangleCounts[uCell]++;
+		}
+
+		for (uint32_t uCell = 0u; uCell < uCellCount; ++uCell)
+		{
+			if (auTriangleCounts[uCell] != 2u)
+				return false;
+			const uint8_t uMissingA = static_cast<uint8_t>((~auFirstMasks[uCell]) & 0xFu);
+			const uint8_t uMissingB = static_cast<uint8_t>((~auSecondMasks[uCell]) & 0xFu);
+			const uint32_t uCellX = uCell % uQuadsPerEdge;
+			const uint32_t uCellZ = uCell / uQuadsPerEdge;
+			const bool bPositiveEdgeCell =
+				uCellX + 1u == uQuadsPerEdge ||
+				uCellZ + 1u == uQuadsPerEdge;
+			const bool bExpectedDiagonal = bPositiveEdgeCell
+				? ((uMissingA == 0x8u && uMissingB == 0x1u) ||
+					(uMissingA == 0x1u && uMissingB == 0x8u))
+				: ((uMissingA == 0x4u && uMissingB == 0x2u) ||
+					(uMissingA == 0x2u && uMissingB == 0x4u));
+			if (!bExpectedDiagonal)
+				return false;
+		}
+		return true;
+	}
+
+	bool TryReadTerrainChunkSnapshot(const std::string& strPath, uint32_t uExpectedVertexCount,
+		uint32_t uExpectedIndexCount, bool bRequireNormals, TerrainChunkSourceSnapshot& xSnapshotOut)
+	{
+		TerrainComponentMeshReader xReader(strPath.c_str());
+		uint32_t uElementCount = 0;
+		if (!xReader.Read(uElementCount) || uElementCount != Flux_TerrainVertexLayout::uELEMENT_COUNT)
+			return false;
+
+		uint32_t uExpectedOffset = 0;
+		for (uint32_t u = 0; u < uElementCount; ++u)
+		{
+			Flux_BufferElement xElement;
+			const Flux_TerrainVertexLayout::Element& xExpected = Flux_TerrainVertexLayout::axELEMENTS[u];
+			if (!xReader.Read(xElement) || xElement.m_eType != xExpected.m_eType ||
+				xElement.m_uSize != xExpected.m_uSize || xElement.m_uOffset != uExpectedOffset)
+			{
+				return false;
+			}
+			uExpectedOffset += xElement.m_uSize;
+		}
+
+		uint32_t uBoneCount = 0;
+		uint32_t uBoneMapCount = 0;
+		if (!xReader.Read(xSnapshotOut.m_uVertexCount) || !xReader.Read(xSnapshotOut.m_uIndexCount) ||
+			!xReader.Read(uBoneCount) || !xReader.Read(uBoneMapCount) ||
+			xSnapshotOut.m_uVertexCount != uExpectedVertexCount || xSnapshotOut.m_uIndexCount != uExpectedIndexCount ||
+			uBoneCount != 0u || uBoneMapCount != 0u)
+		{
+			return false;
+		}
+
+		if (!xReader.Read(xSnapshotOut.m_xMaterialColor))
+			return false;
+
+		const uint64_t ulVertexDataSize = static_cast<uint64_t>(xSnapshotOut.m_uVertexCount) * Flux_TerrainVertexLayout::uVERTEX_STRIDE;
+		const uint64_t ulIndexDataSize = static_cast<uint64_t>(xSnapshotOut.m_uIndexCount) * sizeof(uint32_t);
+		static constexpr uint64_t ulATTRIBUTE_FLAG_COUNT = 9u;
+		if (!xReader.HasRemaining(ulVertexDataSize + ulIndexDataSize + ulATTRIBUTE_FLAG_COUNT))
+			return false;
+
+		xSnapshotOut.m_auVertexData.resize(static_cast<size_t>(ulVertexDataSize));
+		xSnapshotOut.m_auIndices.resize(xSnapshotOut.m_uIndexCount);
+		xSnapshotOut.m_axPositions.resize(xSnapshotOut.m_uVertexCount);
+		xSnapshotOut.m_axNormals.resize(xSnapshotOut.m_uVertexCount);
+		if (!xReader.ReadAttribute(ulVertexDataSize, true, xSnapshotOut.m_auVertexData.data()))
+			return false;
+		if (!xReader.ReadAttribute(ulIndexDataSize, true, xSnapshotOut.m_auIndices.data()))
+			return false;
+
+		const uint64_t ulVector3DataSize = static_cast<uint64_t>(xSnapshotOut.m_uVertexCount) * sizeof(Zenith_Maths::Vector3);
+		const uint64_t ulVector4DataSize = static_cast<uint64_t>(xSnapshotOut.m_uVertexCount) * sizeof(Zenith_Maths::Vector4);
+		const uint64_t ulBoneAttributeSize = static_cast<uint64_t>(xSnapshotOut.m_uVertexCount) * MAX_BONES_PER_VERTEX * sizeof(uint32_t);
+		bool bNormalsPresent = false;
+		const bool bDecoded = xReader.ReadAttribute(ulVector3DataSize, true, xSnapshotOut.m_axPositions.data()) &&
+			xReader.ReadAttribute(ulVector3DataSize, bRequireNormals, xSnapshotOut.m_axNormals.data(), &bNormalsPresent) &&
+			xReader.ReadAttribute(ulVector3DataSize, false) &&           // tangents
+			xReader.ReadAttribute(ulVector3DataSize, false) &&           // bitangents
+			xReader.ReadAttribute(ulVector4DataSize, false) &&           // colours
+			xReader.ReadAttribute(ulBoneAttributeSize, false) &&         // bone IDs
+			xReader.ReadAttribute(ulBoneAttributeSize, false) &&         // bone weights
+			xReader.IsAtEnd();
+		if (!bDecoded)
+			return false;
+		if (!bNormalsPresent)
+			xSnapshotOut.m_axNormals.clear();
+		return ValidateTerrainGridTopology(xSnapshotOut, bRequireNormals);
+	}
+}
+
+bool Zenith_TerrainComponent::TryLoadTerrainChunkSource(const std::string& strPath,
+	uint32_t uExpectedVertexCount, uint32_t uExpectedIndexCount, bool bRequireNormals,
+	Flux_MeshGeometry& xGeometryOut)
+{
+	TerrainChunkSourceSnapshot xSnapshot;
+	if (!TryReadTerrainChunkSnapshot(strPath, uExpectedVertexCount, uExpectedIndexCount, bRequireNormals, xSnapshot))
+		return false;
+
+	const uint64_t ulVertexDataSize = xSnapshot.m_auVertexData.size();
+	const uint64_t ulIndexDataSize = static_cast<uint64_t>(xSnapshot.m_uIndexCount) * sizeof(uint32_t);
+	const uint64_t ulPositionDataSize = static_cast<uint64_t>(xSnapshot.m_uVertexCount) * sizeof(Zenith_Maths::Vector3);
+	u_int8* pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(ulVertexDataSize));
+	Flux_MeshGeometry::IndexType* puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(ulIndexDataSize));
+	Zenith_Maths::Vector3* pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(ulPositionDataSize));
+	Zenith_Maths::Vector3* pxNormals = bRequireNormals
+		? static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(ulPositionDataSize)) : nullptr;
+	if (pVertexData == nullptr || puIndices == nullptr || pxPositions == nullptr || (bRequireNormals && pxNormals == nullptr))
+	{
+		if (pVertexData != nullptr) Zenith_MemoryManagement::Deallocate(pVertexData);
+		if (puIndices != nullptr) Zenith_MemoryManagement::Deallocate(puIndices);
+		if (pxPositions != nullptr) Zenith_MemoryManagement::Deallocate(pxPositions);
+		if (pxNormals != nullptr) Zenith_MemoryManagement::Deallocate(pxNormals);
+		return false;
+	}
+
+	std::memcpy(pVertexData, xSnapshot.m_auVertexData.data(), static_cast<size_t>(ulVertexDataSize));
+	std::memcpy(puIndices, xSnapshot.m_auIndices.data(), static_cast<size_t>(ulIndexDataSize));
+	std::memcpy(pxPositions, xSnapshot.m_axPositions.data(), static_cast<size_t>(ulPositionDataSize));
+	if (bRequireNormals)
+		std::memcpy(pxNormals, xSnapshot.m_axNormals.data(), static_cast<size_t>(ulPositionDataSize));
+
+	for (uint32_t u = 0u; u < Flux_TerrainVertexLayout::uELEMENT_COUNT; ++u)
+		xGeometryOut.m_xBufferLayout.GetElements().PushBack(Flux_BufferElement(Flux_TerrainVertexLayout::axELEMENTS[u].m_eType));
+	xGeometryOut.m_xBufferLayout.CalculateOffsetsAndStrides();
+	xGeometryOut.m_uNumVerts = xSnapshot.m_uVertexCount;
+	xGeometryOut.m_uNumIndices = xSnapshot.m_uIndexCount;
+	xGeometryOut.m_uNumBones = 0u;
+	xGeometryOut.m_pVertexData = pVertexData;
+	xGeometryOut.m_puIndices = puIndices;
+	xGeometryOut.m_pxPositions = pxPositions;
+	xGeometryOut.m_pxNormals = pxNormals;
+	xGeometryOut.m_xMaterialColor = xSnapshot.m_xMaterialColor;
+	xGeometryOut.m_strSourcePath = strPath;
+	xGeometryOut.m_ulReservedVertexDataSize = ulVertexDataSize;
+	xGeometryOut.m_ulReservedIndexDataSize = ulIndexDataSize;
+	xGeometryOut.m_ulReservedPositionDataSize = ulPositionDataSize;
+	return true;
+}
 
 void Zenith_TerrainComponent::IncrementInstanceCount()
 {
@@ -620,6 +1020,11 @@ void Zenith_TerrainComponent::InitializeRenderResources()
 	{
 		delete pxLowLODGeometry;
 		delete[] pxChunkInitData;
+		// Deserialization loads physics before render resources. If the LOW
+		// authority is then found missing/invalid, discard that already-built
+		// body so the anchor contract is independent of construction order.
+		delete m_pxPhysicsGeometry;
+		m_pxPhysicsGeometry = nullptr;
 		Zenith_Error(LOG_CATEGORY_TERRAIN,
 			"Zenith_TerrainComponent::InitializeRenderResources - skipping unified-buffer / streaming / culling init because terrain geometry is unusable");
 		return;
@@ -640,158 +1045,235 @@ void Zenith_TerrainComponent::InitializeRenderResources()
 
 void Zenith_TerrainComponent::CalculateLowLODBufferSizes(uint32_t& uTotalVertsOut, uint32_t& uTotalIndicesOut) const
 {
-	const float fLowLODDensity = 0.25f;  // 64x64 -> 16x16 vertices per chunk for LOW LOD
-	uTotalVertsOut = 0;
-	uTotalIndicesOut = 0;
+	// Each exporter output is a self-contained 16x16-quad LOW chunk. The
+	// previous seam allowance over-reserved every interior chunk even though
+	// no extra seam geometry exists in the serialized source.
+	uTotalVertsOut = Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * TOTAL_CHUNKS;
+	uTotalIndicesOut = Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * TOTAL_CHUNKS;
+}
 
-	for (uint32_t z = 0; z < CHUNK_GRID_SIZE; ++z)
+void Zenith_TerrainComponent::LogSparseLoadDiagnostics(const char* szSourceKind,
+	const TerrainSparseLoadDiagnostics& xDiagnostics)
+{
+	if (xDiagnostics.m_uSkippedCount == 0u)
+		return;
+	Zenith_Warning(LOG_CATEGORY_TERRAIN,
+		"Terrain sparse %s load skipped %u missing/invalid non-anchor chunk(s); logging %u sample coordinate(s).",
+		szSourceKind, xDiagnostics.m_uSkippedCount, xDiagnostics.m_uSampleCount);
+	for (uint32_t u = 0u; u < xDiagnostics.m_uSampleCount; ++u)
 	{
-		for (uint32_t x = 0; x < CHUNK_GRID_SIZE; ++x)
+		Zenith_Warning(LOG_CATEGORY_TERRAIN, "Terrain sparse %s sample: (%u,%u)",
+			szSourceKind, xDiagnostics.m_auSampleX[u], xDiagnostics.m_auSampleY[u]);
+	}
+}
+
+bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSize,
+	uint32_t uTotalVerts, uint32_t uTotalIndices,
+	TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
+	Flux_TerrainChunkInitData* pxChunkInitData,
+	Flux_MeshGeometry*& pxCombinedGeometryOut,
+	TerrainSparseLoadDiagnostics& xDiagnosticsOut)
+{
+	xDiagnosticsOut = {};
+	pxCombinedGeometryOut = nullptr;
+	if (uGridSize == 0u || uGridSize > CHUNK_GRID_SIZE || pfnLoadChunk == nullptr)
+		return false;
+	if (pxChunkInitData != nullptr)
+	{
+		// A retry may reuse caller-owned init storage. Clear every coordinate in
+		// the requested grid before loading so a now-missing sparse chunk cannot
+		// retain stale counts/AABB from an earlier complete bake.
+		for (uint32_t uX = 0u; uX < uGridSize; ++uX)
 		{
-			const bool hasRightEdge = (x < CHUNK_GRID_SIZE - 1);
-			const bool hasTopEdge = (z < CHUNK_GRID_SIZE - 1);
-
-			uint32_t verts = (uint32_t)((CHUNK_SIZE_WORLD * fLowLODDensity + 1) * (CHUNK_SIZE_WORLD * fLowLODDensity + 1));
-			uint32_t indices = (uint32_t)((CHUNK_SIZE_WORLD * fLowLODDensity) * (CHUNK_SIZE_WORLD * fLowLODDensity) * 6);
-
-			if (hasRightEdge)
+			for (uint32_t uY = 0u; uY < uGridSize; ++uY)
 			{
-				verts += (uint32_t)(CHUNK_SIZE_WORLD * fLowLODDensity);
-				indices += (uint32_t)((CHUNK_SIZE_WORLD * fLowLODDensity - 1) * 6);
+				pxChunkInitData[Flux_TerrainConfig::ChunkCoordsToIndex(uX, uY)] = {};
 			}
-			if (hasTopEdge)
-			{
-				verts += (uint32_t)(CHUNK_SIZE_WORLD * fLowLODDensity);
-				indices += (uint32_t)((CHUNK_SIZE_WORLD * fLowLODDensity - 1) * 6);
-			}
-			if (hasRightEdge && hasTopEdge)
-			{
-				verts += 1;
-				indices += 6;
-			}
-
-			uTotalVertsOut += verts;
-			uTotalIndicesOut += indices;
 		}
 	}
+
+	pxCombinedGeometryOut = new Flux_MeshGeometry();
+	if (!pfnLoadChunk(pLoadContext, 0u, 0u, *pxCombinedGeometryOut))
+	{
+		delete pxCombinedGeometryOut;
+		pxCombinedGeometryOut = nullptr;
+		return false;
+	}
+	xDiagnosticsOut.m_bAnchorLoaded = true;
+	Flux_MeshGeometry& xCombinedGeometry = *pxCombinedGeometryOut;
+	if (uTotalVerts < xCombinedGeometry.GetNumVerts() || uTotalIndices < xCombinedGeometry.GetNumIndices())
+	{
+		delete pxCombinedGeometryOut;
+		pxCombinedGeometryOut = nullptr;
+		return false;
+	}
+
+	if (pxChunkInitData != nullptr)
+	{
+		const uint32_t uAnchorIndex = Flux_TerrainConfig::ChunkCoordsToIndex(0u, 0u);
+		pxChunkInitData[uAnchorIndex].m_uVertexCount = xCombinedGeometry.GetNumVerts();
+		pxChunkInitData[uAnchorIndex].m_uIndexCount = xCombinedGeometry.GetNumIndices();
+		pxChunkInitData[uAnchorIndex].m_xAABB = Zenith_FrustumCulling::GenerateAABBFromVertices(
+			xCombinedGeometry.m_pxPositions, xCombinedGeometry.GetNumVerts());
+	}
+
+	const uint64_t ulVertexDataSize = static_cast<uint64_t>(uTotalVerts) * xCombinedGeometry.GetBufferLayout().GetStride();
+	const uint64_t ulIndexDataSize = static_cast<uint64_t>(uTotalIndices) * sizeof(Flux_MeshGeometry::IndexType);
+	const uint64_t ulPositionDataSize = static_cast<uint64_t>(uTotalVerts) * sizeof(Zenith_Maths::Vector3);
+	u_int8* pExpandedVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(
+		xCombinedGeometry.m_pVertexData, ulVertexDataSize));
+	if (pExpandedVertexData == nullptr)
+	{
+		delete pxCombinedGeometryOut;
+		pxCombinedGeometryOut = nullptr;
+		return false;
+	}
+	xCombinedGeometry.m_pVertexData = pExpandedVertexData;
+	Flux_MeshGeometry::IndexType* puExpandedIndices =
+		static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(
+			xCombinedGeometry.m_puIndices, ulIndexDataSize));
+	if (puExpandedIndices == nullptr)
+	{
+		delete pxCombinedGeometryOut;
+		pxCombinedGeometryOut = nullptr;
+		return false;
+	}
+	xCombinedGeometry.m_puIndices = puExpandedIndices;
+	Zenith_Maths::Vector3* pxExpandedPositions =
+		static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(
+			xCombinedGeometry.m_pxPositions, ulPositionDataSize));
+	if (pxExpandedPositions == nullptr)
+	{
+		delete pxCombinedGeometryOut;
+		pxCombinedGeometryOut = nullptr;
+		return false;
+	}
+	xCombinedGeometry.m_pxPositions = pxExpandedPositions;
+	xCombinedGeometry.m_ulReservedVertexDataSize = ulVertexDataSize;
+	xCombinedGeometry.m_ulReservedIndexDataSize = ulIndexDataSize;
+	xCombinedGeometry.m_ulReservedPositionDataSize = ulPositionDataSize;
+
+	auto RecordSkippedChunk = [&](uint32_t uX, uint32_t uY)
+	{
+		xDiagnosticsOut.m_uSkippedCount++;
+		if (xDiagnosticsOut.m_uSampleCount < uMAX_SPARSE_WARNING_SAMPLES)
+		{
+			xDiagnosticsOut.m_auSampleX[xDiagnosticsOut.m_uSampleCount] = uX;
+			xDiagnosticsOut.m_auSampleY[xDiagnosticsOut.m_uSampleCount] = uY;
+			xDiagnosticsOut.m_uSampleCount++;
+		}
+	};
+
+	for (uint32_t uX = 0u; uX < uGridSize; ++uX)
+	{
+		for (uint32_t uY = 0u; uY < uGridSize; ++uY)
+		{
+			if (uX == 0u && uY == 0u)
+				continue;
+			Flux_MeshGeometry xChunkGeometry;
+			if (!pfnLoadChunk(pLoadContext, uX, uY, xChunkGeometry))
+			{
+				RecordSkippedChunk(uX, uY);
+				continue;
+			}
+
+			const uint32_t uChunkIndex = Flux_TerrainConfig::ChunkCoordsToIndex(uX, uY);
+			if (pxChunkInitData != nullptr)
+			{
+				pxChunkInitData[uChunkIndex].m_uVertexCount = xChunkGeometry.GetNumVerts();
+				pxChunkInitData[uChunkIndex].m_uIndexCount = xChunkGeometry.GetNumIndices();
+				pxChunkInitData[uChunkIndex].m_xAABB = Zenith_FrustumCulling::GenerateAABBFromVertices(
+					xChunkGeometry.m_pxPositions, xChunkGeometry.GetNumVerts());
+			}
+
+			const uint32_t uPreviousVertexCount = xCombinedGeometry.GetNumVerts();
+			const uint32_t uPreviousIndexCount = xCombinedGeometry.GetNumIndices();
+			Flux_MeshGeometry::Combine(xCombinedGeometry, xChunkGeometry);
+			if (xCombinedGeometry.GetNumVerts() != uPreviousVertexCount + xChunkGeometry.GetNumVerts() ||
+				xCombinedGeometry.GetNumIndices() != uPreviousIndexCount + xChunkGeometry.GetNumIndices())
+			{
+				delete pxCombinedGeometryOut;
+				pxCombinedGeometryOut = nullptr;
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+bool Zenith_TerrainComponent::LoadAndCombineLowLODChunksCore(uint32_t uGridSize,
+	uint32_t uTotalVerts, uint32_t uTotalIndices,
+	TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
+	Flux_TerrainChunkInitData* pxChunkInitData,
+	Flux_MeshGeometry*& pxLowLODGeometryOut,
+	TerrainSparseLoadDiagnostics& xDiagnosticsOut)
+{
+	const bool bCombined = CombineTerrainChunkGridCore(uGridSize, uTotalVerts, uTotalIndices,
+		pfnLoadChunk, pLoadContext, pxChunkInitData, pxLowLODGeometryOut, xDiagnosticsOut);
+	if (!bCombined)
+	{
+		m_bTerrainGeometryUnusable = true;
+		delete m_pxPhysicsGeometry;
+		m_pxPhysicsGeometry = nullptr;
+		return false;
+	}
+	m_bTerrainGeometryUnusable = false;
+	m_pxStreamingState->m_uVertexStride = pxLowLODGeometryOut->GetBufferLayout().GetStride();
+	m_pxStreamingState->m_uLowLODVertexCount = pxLowLODGeometryOut->GetNumVerts();
+	m_pxStreamingState->m_uLowLODIndexCount = pxLowLODGeometryOut->GetNumIndices();
+	return true;
+}
+
+bool Zenith_TerrainComponent::LoadCombinedPhysicsGeometryCore(uint32_t uGridSize,
+	TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
+	TerrainSparseLoadDiagnostics& xDiagnosticsOut)
+{
+	if (m_bTerrainGeometryUnusable)
+		return false;
+	if (m_pxPhysicsGeometry != nullptr)
+		return true;
+	const uint32_t uTotalVerts = Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT * uGridSize * uGridSize;
+	const uint32_t uTotalIndices = Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT * uGridSize * uGridSize;
+	const bool bCombined = CombineTerrainChunkGridCore(uGridSize, uTotalVerts, uTotalIndices,
+		pfnLoadChunk, pLoadContext, nullptr, m_pxPhysicsGeometry, xDiagnosticsOut);
+	if (!bCombined)
+	{
+		delete m_pxPhysicsGeometry;
+		m_pxPhysicsGeometry = nullptr;
+	}
+	return bCombined;
 }
 
 void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, uint32_t uTotalIndices, Flux_TerrainChunkInitData* pxChunkInitData, Flux_MeshGeometry*& pxLowLODGeometryOut)
 {
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading LOW LOD meshes for all %u chunks...", TOTAL_CHUNKS);
-	const std::string strTerrainAssetDirectory = GetTerrainAssetDirectory();
+	struct DirectoryLoadContext
+	{
+		std::string m_strDirectory;
+	};
+	DirectoryLoadContext xContext{ GetTerrainAssetDirectory() };
+	auto LoadChunk = [](void* pContext, uint32_t uX, uint32_t uY, Flux_MeshGeometry& xGeometryOut) -> bool
+	{
+		const DirectoryLoadContext& xLoadContext = *static_cast<const DirectoryLoadContext*>(pContext);
+		const std::string strPath = xLoadContext.m_strDirectory + "Render_LOW_" +
+			std::to_string(uX) + "_" + std::to_string(uY) + ZENITH_MESH_EXT;
+		return TryLoadTerrainChunkSource(strPath,
+			Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+			Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xGeometryOut);
+	};
 
-	// Load chunk (0,0) first — its buffer layout sets the global vertex
-	// stride, so without it the rest of the geometry pipeline can't size
-	// itself. Any failure here flips the unusable flag and the caller
-	// (InitializeRenderResources) bails out before allocating the unified
-	// buffer or registering with the streaming manager.
-	pxLowLODGeometryOut = new Flux_MeshGeometry();
-	Flux_MeshGeometry::LoadFromFile(
-		(strTerrainAssetDirectory + "Render_LOW_0_0" ZENITH_MESH_EXT).c_str(), *pxLowLODGeometryOut,
-		1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
-	Flux_MeshGeometry& xLowLODGeometry = *pxLowLODGeometryOut;
-
-	if (xLowLODGeometry.GetNumVerts() == 0)
+	TerrainSparseLoadDiagnostics xDiagnostics;
+	if (!LoadAndCombineLowLODChunksCore(CHUNK_GRID_SIZE, uTotalVerts, uTotalIndices,
+		LoadChunk, &xContext, pxChunkInitData, pxLowLODGeometryOut, xDiagnostics))
 	{
 		Zenith_Error(LOG_CATEGORY_TERRAIN,
-			"Terrain LOW LOD chunk (0,0) failed to load (Render_LOW_0_0%s missing or empty). Marking terrain geometry unusable; this terrain will not render and will not produce a physics body.",
+			"Terrain LOW LOD chunk (0,0) failed validation (Render_LOW_0_0%s missing or invalid). Marking terrain geometry unusable; this terrain will not render and will not produce a physics body.",
 			ZENITH_MESH_EXT);
-		m_bTerrainGeometryUnusable = true;
-		// pxChunkInitData entries stay at their default-initialised zero
-		// counts / default AABB. No further work to do — caller will bail.
 		return;
 	}
-
-	m_pxStreamingState->m_uVertexStride = xLowLODGeometry.GetBufferLayout().GetStride();
-
-	// Collect init data for chunk (0,0)
-	{
-		const uint32_t uChunkIndex = Flux_TerrainConfig::ChunkCoordsToIndex(0, 0);
-		pxChunkInitData[uChunkIndex].m_uVertexCount = xLowLODGeometry.GetNumVerts();
-		pxChunkInitData[uChunkIndex].m_uIndexCount = xLowLODGeometry.GetNumIndices();
-		if (xLowLODGeometry.m_pxPositions)
-		{
-			pxChunkInitData[uChunkIndex].m_xAABB = Zenith_FrustumCulling::GenerateAABBFromVertices(
-				xLowLODGeometry.m_pxPositions, xLowLODGeometry.GetNumVerts());
-		}
-	}
-
-	const uint64_t ulLowLODVertexDataSize = static_cast<uint64_t>(uTotalVerts) * m_pxStreamingState->m_uVertexStride;
-	const uint64_t ulLowLODIndexDataSize = static_cast<uint64_t>(uTotalIndices) * sizeof(Flux_MeshGeometry::IndexType);
-	const uint64_t ulLowLODPositionDataSize = static_cast<uint64_t>(uTotalVerts) * sizeof(Zenith_Maths::Vector3);
-
-	xLowLODGeometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xLowLODGeometry.m_pVertexData, ulLowLODVertexDataSize));
-	xLowLODGeometry.m_ulReservedVertexDataSize = ulLowLODVertexDataSize;
-
-	xLowLODGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xLowLODGeometry.m_puIndices, ulLowLODIndexDataSize));
-	xLowLODGeometry.m_ulReservedIndexDataSize = ulLowLODIndexDataSize;
-
-	if (xLowLODGeometry.m_pxPositions)
-	{
-		xLowLODGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xLowLODGeometry.m_pxPositions, ulLowLODPositionDataSize));
-		xLowLODGeometry.m_ulReservedPositionDataSize = ulLowLODPositionDataSize;
-	}
-
-	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; ++x)
-	{
-		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; ++y)
-		{
-			if (x == 0 && y == 0)
-				continue;
-
-			std::string strChunkPath = strTerrainAssetDirectory + "Render_LOW_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
-
-			std::ifstream lodFile(strChunkPath);
-			if (!lodFile.good())
-			{
-				Zenith_Log(LOG_CATEGORY_TERRAIN, "WARNING: LOW LOD not found for chunk (%u,%u), using HIGH as fallback", x, y);
-				strChunkPath = strTerrainAssetDirectory + "Render_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
-			}
-
-			Flux_MeshGeometry xChunkMesh;
-			Flux_MeshGeometry::LoadFromFile(strChunkPath.c_str(), xChunkMesh,
-				1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
-
-			const uint32_t uChunkIndex = Flux_TerrainConfig::ChunkCoordsToIndex(x, y);
-
-			// A failed load (file missing, parse error, empty mesh) leaves
-			// xChunkMesh at zero verts. Log the warning and skip Combine —
-			// the init data entry stays at its default-initialised zero
-			// counts + default AABB so the GPU compute shader's
-			// "indexCount == 0 → return" early-out renders the chunk as
-			// nothing, and the streaming offset bookkeeping stays consistent
-			// (this chunk simply contributes no vertices/indices to the
-			// combined LOW LOD buffer).
-			if (xChunkMesh.GetNumVerts() == 0)
-			{
-				Zenith_Warning(LOG_CATEGORY_TERRAIN,
-					"Terrain LOW LOD chunk (%u,%u) source mesh missing or empty — chunk will render empty.", x, y);
-				continue;
-			}
-
-			pxChunkInitData[uChunkIndex].m_uVertexCount = xChunkMesh.GetNumVerts();
-			pxChunkInitData[uChunkIndex].m_uIndexCount = xChunkMesh.GetNumIndices();
-			if (xChunkMesh.m_pxPositions)
-			{
-				pxChunkInitData[uChunkIndex].m_xAABB = Zenith_FrustumCulling::GenerateAABBFromVertices(
-					xChunkMesh.m_pxPositions, xChunkMesh.GetNumVerts());
-			}
-
-			Flux_MeshGeometry::Combine(xLowLODGeometry, xChunkMesh);
-
-			if ((x * CHUNK_GRID_SIZE + y) % 512 == 0)
-			{
-				Zenith_Log(LOG_CATEGORY_TERRAIN, "Combined LOW LOD chunk (%u,%u)", x, y);
-			}
-		}
-	}
-
+	LogSparseLoadDiagnostics("LOW LOD", xDiagnostics);
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "LOW LOD mesh combination complete: %u vertices, %u indices",
-		xLowLODGeometry.GetNumVerts(), xLowLODGeometry.GetNumIndices());
-
-	m_pxStreamingState->m_uLowLODVertexCount = xLowLODGeometry.GetNumVerts();
-	m_pxStreamingState->m_uLowLODIndexCount = xLowLODGeometry.GetNumIndices();
+		pxLowLODGeometryOut->GetNumVerts(), pxLowLODGeometryOut->GetNumIndices());
 }
 
 void Zenith_TerrainComponent::InitializeUnifiedBuffers(const Flux_MeshGeometry& xLowLODGeometry)
@@ -854,76 +1336,32 @@ void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
 	}
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading and combining all physics chunks...");
-	const std::string strTerrainAssetDirectory = GetTerrainAssetDirectory();
+	struct DirectoryLoadContext
+	{
+		std::string m_strDirectory;
+	};
+	DirectoryLoadContext xContext{ GetTerrainAssetDirectory() };
+	auto LoadChunk = [](void* pContext, uint32_t uX, uint32_t uY, Flux_MeshGeometry& xGeometryOut) -> bool
+	{
+		const DirectoryLoadContext& xLoadContext = *static_cast<const DirectoryLoadContext*>(pContext);
+		const std::string strPath = xLoadContext.m_strDirectory + "Physics_" +
+			std::to_string(uX) + "_" + std::to_string(uY) + ZENITH_MESH_EXT;
+		return TryLoadTerrainChunkSource(strPath,
+			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xGeometryOut);
+	};
 
-	// Load chunk (0,0) — its layout sizes the pre-allocated combined buffer.
-	// If this load fails we can't usefully size or combine anything else;
-	// drop the half-built geometry and bail.
-	m_pxPhysicsGeometry = new Flux_MeshGeometry();
-	Flux_MeshGeometry::LoadFromFile(
-		(strTerrainAssetDirectory + "Physics_0_0" ZENITH_MESH_EXT).c_str(),
-		*m_pxPhysicsGeometry,
-		1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
-
-	if (m_pxPhysicsGeometry->GetNumVerts() == 0)
+	TerrainSparseLoadDiagnostics xDiagnostics;
+	if (!LoadCombinedPhysicsGeometryCore(CHUNK_GRID_SIZE, LoadChunk, &xContext, xDiagnostics))
 	{
 		Zenith_Error(LOG_CATEGORY_TERRAIN,
-			"Terrain physics chunk (0,0) failed to load (Physics_0_0%s missing or empty). Terrain will have no physics body.",
+			"Terrain physics chunk (0,0) failed validation (Physics_0_0%s missing or invalid). Terrain will have no physics body.",
 			ZENITH_MESH_EXT);
-		delete m_pxPhysicsGeometry;
-		m_pxPhysicsGeometry = nullptr;
 		return;
 	}
-
-	Flux_MeshGeometry& xPhysicsGeometry = *m_pxPhysicsGeometry;
-
-	// Pre-allocate for all chunks
-	const u_int64 ulTotalVertexDataSize = xPhysicsGeometry.GetVertexDataSize() * TOTAL_CHUNKS;
-	const u_int64 ulTotalIndexDataSize = xPhysicsGeometry.GetIndexDataSize() * TOTAL_CHUNKS;
-	const u_int64 ulTotalPositionDataSize = xPhysicsGeometry.GetNumVerts() * sizeof(Zenith_Maths::Vector3) * TOTAL_CHUNKS;
-
-	xPhysicsGeometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pVertexData, ulTotalVertexDataSize));
-	xPhysicsGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;
-
-	xPhysicsGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_puIndices, ulTotalIndexDataSize));
-	xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
-
-	xPhysicsGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pxPositions, ulTotalPositionDataSize));
-	xPhysicsGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;
-
-	// Combine remaining physics chunks. A failed per-chunk load is non-fatal:
-	// we skip it (don't Combine) so the resulting mesh is missing that
-	// region but stays watertight elsewhere. Substituting degenerate
-	// triangles for missing regions risks tripping Jolt's mesh validation.
-	uint32_t uSkippedChunks = 0;
-	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
-	{
-		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
-		{
-			if (x == 0 && y == 0) continue;  // Already loaded
-
-			std::string strPhysicsPath = strTerrainAssetDirectory + "Physics_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
-			Flux_MeshGeometry xTerrainPhysicsMesh;
-			Flux_MeshGeometry::LoadFromFile(
-				strPhysicsPath.c_str(),
-				xTerrainPhysicsMesh,
-				1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
-
-			if (xTerrainPhysicsMesh.GetNumVerts() == 0)
-			{
-				Zenith_Warning(LOG_CATEGORY_TERRAIN,
-					"Terrain physics chunk (%u,%u) source mesh missing or empty — region skipped from combined physics body.", x, y);
-				uSkippedChunks++;
-				continue;
-			}
-
-			Flux_MeshGeometry::Combine(xPhysicsGeometry, xTerrainPhysicsMesh);
-			// xTerrainPhysicsMesh automatically destroyed when going out of scope
-		}
-	}
-
+	LogSparseLoadDiagnostics("physics", xDiagnostics);
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Physics mesh combined: %u vertices, %u indices (%u chunk(s) skipped)",
-		xPhysicsGeometry.GetNumVerts(), xPhysicsGeometry.GetNumIndices(), uSkippedChunks);
+		m_pxPhysicsGeometry->GetNumVerts(), m_pxPhysicsGeometry->GetNumIndices(), xDiagnostics.m_uSkippedCount);
 }
 
 // ========== GPU-Driven Culling Implementation ==========

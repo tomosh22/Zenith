@@ -113,6 +113,11 @@ public:
 
 	friend class Zenith_ColliderComponent;
 	friend class Zenith_PhysicsMeshGenerator;
+	// Terrain's bounded .zmesh decoder constructs retained CPU geometry from
+	// one already-validated file snapshot. Friendship keeps the general mesh
+	// loader API unchanged while avoiding a second pathname open through its
+	// assertion-based DataStream path.
+	friend class Zenith_TerrainComponent;
 	void GenerateLayoutAndVertexData();
 	// Upload this geometry's current vertex/index data to GPU buffers. Single
 	// upload path shared by every generator + LoadFromFile (keeps the g_xEngine
