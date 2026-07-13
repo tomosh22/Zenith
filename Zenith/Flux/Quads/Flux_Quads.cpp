@@ -13,6 +13,8 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
+#include <algorithm>
+
 // Phase 7b: state on Flux_QuadsImpl held by Zenith_Engine.
 //
 // Cross-subsystem deps (FluxGraphics + VulkanMemory) are reached via g_xEngine
@@ -73,7 +75,65 @@ void Flux_QuadsImpl::Shutdown()
 
 void Flux_QuadsImpl::UploadInstanceData()
 {
+	SortQueuedQuadsForUpload();
 	g_xEngine.FluxMemory().UploadBufferData(m_xInstanceBuffer.GetBuffer().m_xVRAMHandle, m_axQuadsToRender, sizeof(Quad) * m_uQuadRenderIndex);
+}
+
+void Flux_QuadsImpl::SortQueuedQuadsForUpload()
+{
+	if (m_uQuadRenderIndex < 2u)
+	{
+		return;
+	}
+
+	bool bNeedsSort = false;
+	for (uint32_t u = 1u; u < m_uQuadRenderIndex; ++u)
+	{
+		if (m_aiQuadSortOrders[u - 1u] > m_aiQuadSortOrders[u])
+		{
+			bNeedsSort = true;
+			break;
+		}
+	}
+	if (!bNeedsSort)
+	{
+		return;
+	}
+
+	// Quads arrive from every loaded scene/canvas. Sorting this shared queue is
+	// what makes UI element sort order global instead of canvas-local. The
+	// submission index is an explicit tie-breaker so equal-order quads preserve
+	// their historical submission order.
+	struct QueuedQuad
+	{
+		Quad m_xQuad;
+		int m_iSortOrder;
+		uint32_t m_uSubmissionIndex;
+	};
+
+	QueuedQuad axQueued[FLUX_MAX_QUADS_PER_FRAME];
+	for (uint32_t u = 0u; u < m_uQuadRenderIndex; ++u)
+	{
+		axQueued[u].m_xQuad = m_axQuadsToRender[u];
+		axQueued[u].m_iSortOrder = m_aiQuadSortOrders[u];
+		axQueued[u].m_uSubmissionIndex = u;
+	}
+
+	std::sort(axQueued, axQueued + m_uQuadRenderIndex,
+		[](const QueuedQuad& xA, const QueuedQuad& xB)
+		{
+			if (xA.m_iSortOrder != xB.m_iSortOrder)
+			{
+				return xA.m_iSortOrder < xB.m_iSortOrder;
+			}
+			return xA.m_uSubmissionIndex < xB.m_uSubmissionIndex;
+		});
+
+	for (uint32_t u = 0u; u < m_uQuadRenderIndex; ++u)
+	{
+		m_axQuadsToRender[u] = axQueued[u].m_xQuad;
+		m_aiQuadSortOrders[u] = axQueued[u].m_iSortOrder;
+	}
 }
 
 void Flux_QuadsImpl::Render(void*)
@@ -116,6 +176,7 @@ static void ExecuteQuads(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	pxCommandList->DrawIndexed(6, xQuads.m_uQuadRenderIndex);
 
 	xQuads.m_uQuadRenderIndex = 0;
+	xQuads.m_bCapacityWarningIssued = false;
 }
 
 void Flux_QuadsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -124,12 +185,27 @@ void Flux_QuadsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Writes(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }
 
-void Flux_QuadsImpl::UploadQuad(const Quad& xQuad)
+void Flux_QuadsImpl::UploadQuad(const Quad& xQuad, int iSortOrder)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bQuadsEnabled)
 	{
 		return;
 	}
+	if (m_uQuadRenderIndex >= FLUX_MAX_QUADS_PER_FRAME)
+	{
+		// Drop newest: already-queued overlays (including full-screen fades)
+		// remain intact and no fixed-capacity storage is overrun.
+		if (!m_bCapacityWarningIssued)
+		{
+			Zenith_Warning(LOG_CATEGORY_RENDERER,
+				"Flux_Quads capacity (%u) exceeded; dropping new quads",
+				static_cast<u_int>(FLUX_MAX_QUADS_PER_FRAME));
+			m_bCapacityWarningIssued = true;
+		}
+		return;
+	}
 
-	m_axQuadsToRender[m_uQuadRenderIndex++] = xQuad;
+	m_axQuadsToRender[m_uQuadRenderIndex] = xQuad;
+	m_aiQuadSortOrders[m_uQuadRenderIndex] = iSortOrder;
+	++m_uQuadRenderIndex;
 }

@@ -57,10 +57,15 @@ public:
 	void Reset();
 	void Render(void*);
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+	// The graph registers this exact callback; keeping it addressable also lets
+	// headless tests cover early-out frame boundaries without fabricating targets.
+	static void ExecuteRenderGraphPass(
+		Flux_CommandBuffer* pxCommandList, void* pUserData);
 	uint32_t UploadChars();
 
 	void SetOverlayClipRect(const Zenith_Maths::Vector4& xRect, int iSortOrder);
 	void ClearOverlayClipRect();
+	void DiscardPendingFrame();
 
 	// Accessor for the active font asset. Returns the handle (which Resolves on first
 	// use) so callers can grab metrics or null-check. Used by

@@ -23,9 +23,12 @@ for future stages describe intent -- cross-check against
 
 Every test in this plan satisfies:
 
-1. **Deterministic.** Fixed dt 1/60 for anything input- or time-driven; every
-   RNG consumer takes an explicit seed (see convention C8). Same build + same
-   seed = same result, every run.
+1. **Deterministic.** Input/time-driven tests set an explicit fixed dt (1/60 by
+   default); every RNG consumer takes an explicit seed (see convention C8).
+   Same build + same seed = same result, every run. The S3 full door round trip
+   deliberately uses a fixed 1/30 presentation dt while retaining the engine's
+   normal fixed physics substeps, keeping the multi-scene route bounded without
+   making collision integration frame-sized.
 2. **Bounded.** Automated tests declare `m_iMaxFrames`; Step returns false on
    completion. The harness never blocks indefinitely.
 3. **Self-cleaning.** Entity-owned state cleans itself when scene 0 reloads
@@ -81,9 +84,13 @@ Each rule with its one-line why. Violations are review blockers.
   / `SimulateKeyPress` / `SetKeyHeld` / `SimulateMouseWheel`).
   *Why:* Step runs inside the main loop; anything that re-enters the loop
   (`StepFrame`, `SimulateMouseClick`) deadlocks in `vkWaitForFences`.
-- **C2 -- Fixed dt 1/60 for input-driven tests.**
+- **C2 -- Input-driven tests set an explicit fixed dt (1/60 by default).** A
+  different fixed presentation rate must be named and justified by the test;
+  `ZM_PlayerHomeRoundTrip_Test` uses 1/30 while normal physics substeps remain
+  enabled.
   *Why:* frame counts convert to seconds deterministically, so timing asserts
-  are exact instead of flaky.
+  are exact instead of flaky; long routes need not trade determinism for an
+  excessive presentation-frame budget.
 - **C3 -- Every ownerless global gets a reset in the between-tests hook**
   (registered in `Zenithmon.cpp` via
   `Zenith_AutomatedTestRunner::RegisterBetweenTestsHook`; currently
@@ -281,7 +288,7 @@ biggest suite; all headless, all seeded (C8).
 
   All seven are engine-side `ZENITH_TEST` cases and are count-ratcheted into
   both the shared engine unit gate (**1078** registered) and Zenithmon's CI
-  boot unit gate (**1769** registered). The latter expects 1768 passed,
+  boot unit gate (**1773** registered). The latter expects 1772 passed,
   0 failed and the one quarantined skip.
 - **E2 engine unit tests (SHIPPED -- exactly three):**
 
@@ -302,8 +309,9 @@ biggest suite; all headless, all seeded (C8).
   Zenithmon's exact boot baseline 1725 -> 1728; Dawnmere's four game units
   then raised only the Zenithmon baseline to 1732, and the five measurement-
   registry units below raised it to 1737; the 20 overworld input/controller/
-  physics/camera/ECS units below raised it by 20; the 12 traversal units below
-  raise it to the current **1769**.
+  physics/camera/ECS units below raised it by 20; the first 12 traversal units
+  raised it to 1769, and the four fade/round-trip units below raise it to the
+  current **1773**.
 - **Dawnmere terrain/grass unit tests (SHIPPED -- exactly four):**
 
   | Test | Contract covered |
@@ -380,7 +388,7 @@ biggest suite; all headless, all seeded (C8).
   The fixed-yaw follow camera uses a critical spring and collision arm, and
   resolves `Player` through a generation-bearing `EntityID` in its own scene,
   rejecting a cached target whose still-live ID has moved to another scene.
-- **Traversal-infrastructure unit tests (SHIPPED -- exactly 12):** all live in
+- **Traversal/fade unit tests (SHIPPED -- exactly 16):** all live in
   `Tests/ZM_Tests_WorldTraversal.cpp` under `ZM_WorldTraversal`:
 
   | Count | Exact cases / locked contract |
@@ -389,6 +397,10 @@ biggest suite; all headless, all seeded (C8).
   | 3 | `SpawnPointTagValidationBoundaries`, `SpawnPointLookupRequiresUniqueSameSceneMatch`, `SpawnPointSerializationVersionRoundTripAndLegacyFallback`: 1-31 printable ASCII bytes in a fixed 32-byte buffer, exact-case unique same-scene lookup, duplicate/missing failure, and fixed v1 scene-component stream |
   | 3 | `WarpTriggerConfigurationAndVersionRoundTrip`, `WarpTriggerFiltersSensorOtherBodyAndNonPlayer`, `WarpTriggerLatchRequestsExactlyOnceAndResetsForNextOverlap`: validated fixed v1 stream, sensor reassertion, real sensor pass-through, only the unique active-scene valid dynamic-capsule Player accepted, one request per overlap, and latch reset only for the exact full generation-bearing ID after the manager is reset |
   | 2 | `PlacementUsesMarkerFeetPlusScaledCapsuleHalfExtentAndZeroesMotion`, `WarpResolutionFreezesThenResetsOnMissingDuplicateAndGenerationChange`: feet-marker centre derivation, one-time teleport, zero linear/angular velocity, reset-enable-idle completion, destination `OnStart` freeze, missing/duplicate marker hold, and entity/scene generation changes without stale-ID acceptance |
+  | 1 | `FadeAdvanceClampsInvalidDtAndRuntimeReset`: 0.20 s alpha policy, invalid/nonpositive-dt no-op, persistent `WarpFade` authoring/reload reassertion and reset; plus the production global quad queue's ascending cross-canvas sort, stable equal-key order, actual `Zenith_UICanvas` sort-key forwarding, 1024-quad drop-newest capacity guard, highest-sort text-overlay clip arbitration, complete pending-queue + bg/fg/total-counter + clip drain across legacy/render-graph Text disabled/reset paths, and clean re-enable; also proves `Flux_ModelInstance` material-handle retain/release and registry reclamation after procedural empty-model `Zenith_ModelComponent` deserialization, plus direct zero-duration UIOverlay Show/Hide synchronous opacity/visibility/interaction behavior |
+  | 1 | `FadeOutBlocksSingleLoadUntilOpaqueAndIssuesExactlyOnce`: the source freezes immediately, no SINGLE request issues below alpha 1, a 0.25 s one-tick opacity crossing renders the real manager canvas inside the load callback and requires an actual sort-10000 alpha-1 fade quad before permission, and opaque waiting updates cannot issue twice |
+  | 1 | `PlacementAndCameraReadinessStayLockedBeforeFadeIn`: placement/motion reset occurs behind black; missing, unstarted, duplicate, non-main, or wrong-target cameras hold opacity/input; exactly one main Camera + `ZM_FollowCamera` targeting the replacement generation begins fade-in |
+  | 1 | `FadeInUnlocksAndRuntimeStateIsNotSerializedWithMissingDependenciesSafe`: camera/readiness loss returns to opaque lock, a missing exact overlay fails closed, input unlocks only at alpha 0, and v1 component serialization still omits all live fade/transition state |
 
   The manager-only FrontEnd `ZM_GameStateRoot` is the sole persistent entity;
   scene-owned Player/camera are replaced by SINGLE loads. Traversal component
@@ -405,42 +417,71 @@ biggest suite; all headless, all seeded (C8).
   the authored Player near centre `(512,26.88577,480)`, grounded movement on the
   real baked surface, camera FOV/arm/acquisition, grass readiness, a SINGLE
   Dawnmere reload with new entity generations and same-scene reacquisition,
-  resumed movement, and FrontEnd teardown. Verified locally in **117 frames /
-  5043.5 ms**.
+  resumed movement, and FrontEnd teardown. Final S3 gate: **117 frames /
+  6212.128 ms** (**18.712 s** process wall).
 - **P1 `ZM_GrassRegeneration_Test` (SHIPPED, windowed):** exists-guards the
   ignored Dawnmere scene/terrain family and is tagged graphics-required. It
   loads Dawnmere, verifies the CPU/Flux 1024-square density-map contract and
   density scale 0.15, observes exactly **200,159 blades from 5,133 terrain
   triangles**, reloads the same scene and requires the identical count with no
   accumulation, then returns to FrontEnd and requires the Flux density map and
-  visible grass chunks to be clear. Verified locally in **11 frames / 1927.5
-  ms**.
+  visible grass chunks to be clear. Final S3 gate: **11 frames / 2579.674
+  ms** (**15.125 s** process wall).
 - **P1 `ZM_WarpInfrastructure_Test` (SHIPPED, windowed):** graphics-required
   and exists-guarded. It starts playerless in FrontEnd build 0, requests
-  `(2,"TownCenter")` directly through the persistent manager, observes the
-  deferred SINGLE transition, then proves the replacement destination Player
-  stayed frozen through `OnStart`, arrived at exact centre
+  `(2,"TownCenter")` directly through the persistent manager, proves the
+  SINGLE request remains blocked until the 0.20 s fade reaches full opacity,
+  then proves the replacement destination Player stayed frozen through
+  placement/camera readiness, arrived at exact centre
   `(512,26.88577,480)`, had zero linear/angular velocity, was reset-enabled,
-  and left the same generation-bearing manager idle. Verified locally in **4
-  frames / 885.7 ms**. This is infrastructure coverage, not a live trigger or
-  PlayerHome/fade round trip.
-- **Automated registry/headless result:** all **5** P1 tests register. Headless
+  and left the same generation-bearing manager idle after fade-in. This remains
+  the focused infrastructure case; the live trigger route is covered by the
+  next test.
+  Final S3 gate: **29 frames / 2008.714 ms** (**14.869 s** process wall); the
+  synchronous overlay handoff removes the former extra UI-update frame.
+- **P1 `ZM_PlayerHomeRoundTrip_Test` (SHIPPED, windowed):** graphics-required,
+  max 1,800 frames, and exists-guarded for FrontEnd/Dawnmere/PlayerHome plus the
+  ignored terrain family. At fixed 1/30 presentation dt it bootstraps through
+  the manager, drives the real Dawnmere capsule with input state-setters to the
+  authored `HomeDoorTrigger`, SINGLE-loads build 40 at `Door`, drives through
+  `PlayerHomeExitTrigger`, and returns to Dawnmere at `FromHome`. Every leg
+  proves collision latch, fade-out/opaque-load/camera-barrier/fade-in ordering,
+  exact scene/entity generation replacement, spawn feet/centre placement,
+  zero controller/body motion before unlock, persistent manager identity,
+  terrain/grass absence inside, and grass/camera recovery outside. Final terrain
+  contact settlement permits only 5 cm downward Y while XZ remain exact. Final
+  S3 gate: **673 frames / 14662.601 ms** (**27.514 s** process wall).
+- **Automated registry/headless result:** all **6** P1 tests register. Headless
   passes `ZM_Boot_Test` and `ZM_ControllerHarness_Test`; graphics-required
   `ZM_WarpInfrastructure_Test`, `ZM_GrassRegeneration_Test`, and
-  `ZM_DawnmerePlayerCamera_Test` skip as designed.
-- **Current regression evidence:** the full boot gate is **1769 ran / 1768
-  passed / 0 failed / 1 skipped**; all four Vulkan Debug/Release x Tools
-  true/false configurations plus D3D12 Debug Tools=false build green;
-  CityBuilder is **45/45**, DevilsPlayground is **158/158**, and RenderTest
-  windowed `EngineBootShutdownSmoke` + `TerrainEditorSmoke` are green. The
-  empty asset set still resolves the unchanged legacy `Terrain/` layout.
-- **Planned S3 round-trip P1 (windowed):** after PlayerHome build 40, fade, and
-  live Dawnmere/home triggers land, walk Dawnmere via input state-setters,
-  enter the home, and warp back out;
-  assert active scene index, spawn-tag placement, persistent state, fade and
-  camera recovery. The hard human visual gate waits for this automated gate;
-  it does not interrupt the PlayerHome/fade implementation.
-- Stage-gate manual visual check: terrain/grass/camera.
+  `ZM_DawnmerePlayerCamera_Test`, and `ZM_PlayerHomeRoundTrip_Test` skip as
+  designed: **2 semantic passes + exactly 4 graphics-required skips**. The
+  definitive headless batch ran **6/6 in 1.590 s** wall: Boot **1 frame / 0.018
+  ms** and ControllerHarness **142 / 25.100 ms** passed semantically.
+- **Definitive post-overlay-hitch regression evidence:** the full boot gate is
+  **1773 ran / 1772 passed / 0 failed / 1 skipped**, with **180.640 s** helper
+  wall under the canonical watchdog. The major gate builds all four Vulkan
+  Debug/Release x Tools true/false configurations plus D3D12 Debug Tools=false:
+  regen **2.401 s**, then Vulkan Debug true, Debug false, Release true, Release
+  false, and D3D12 Debug false build walls of **11.225 / 11.755 / 11.213 /
+  11.031 / 7.656 s** respectively. Because the fade/lifecycle fix is
+  engine-global,
+  RenderTest rebuilt in **6.192 s**;
+  `EngineBootShutdownSmoke` passed **1 / 28.606 ms** (**40.622 s** wall) and
+  `TerrainEditorSmoke` **151 / 5291.193 ms** (**46.025 s** wall). The ignored
+  `Build/artifacts/zenithmon/s3/final/post_overlay_hitch_fix/` root contains **12
+  parsed JSON / 12 passed / 0 failed**, exactly four being graphics-required
+  headless skips. Direct instantaneous-overlay Show/Hide and
+  real-quad-before-load assertions extend existing T0 cases, so baselines remain
+  **1773 units / 16 `ZM_WorldTraversal` / 6 P1**.
+- Stage-gate manual visual check: terrain/grass/camera and the PlayerHome
+  blockout, using the ignored captures under
+  `Build/artifacts/zenithmon/s3/visual/`. Capture
+  `capture_final_posthitch_20260713_183717` passed the definitive binary's round
+  trip in **673 frames / 14619.2 ms** with exit 0 and produced three valid,
+  ignored, inspected 1280x720 PNGs whose SHA-256 values are recorded in
+  Status.md and AssetManifest.md. The automated gate is green; human visual
+  acceptance remains deliberately unchecked.
 
 ### 5.4 S4 -- asset generators
 

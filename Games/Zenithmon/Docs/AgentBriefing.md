@@ -94,26 +94,32 @@ Plus, always:
   lowercase continuations like `Zenithmon` are distinct words and valid). The
   shared pinned vectors live in `Tools/ZenithCli/Tests/name_validation_cases.txt`;
   the buildsystem suite passed 45 / 0 after the change.
-- **Current S3 landmark (2026-07-13, ZM-D-056):** the input/controller/camera
-  pair (orders 102/103) is joined by order-104 `ZM_GameStateManager`, order-105
-  `ZM_SpawnPoint`, and order-106 `ZM_WarpTrigger`. FrontEnd authors the
-  manager-only persistent `ZM_GameStateRoot`; its generation-bearing singleton
-  retires duplicates and owns deferred `QUEUED -> WAITING_FOR_SCENE ->
-  WAITING_FOR_SPAWN` SINGLE transitions. Requests validate WorldSpec build/tag
-  pairs and freeze source/replacement Players, with a sole playerless build-0
-  exception for the direct FrontEnd request. Tags are 1-31 printable ASCII
-  bytes. Dawnmere's `TownCenterSpawn` marks feet at `(512,25.98577,480)`; the
-  scale-derived Player centre is `(512,26.88577,480)`. Placement teleports once,
-  zeros linear/angular motion, resets/enables the controller, and returns to
-  idle. Trigger sensors latch only the unique valid active-scene dynamic-capsule
-  Player by full generation-bearing ID.
-  Twelve new T0 tests bring the boot gate to **1769 ran / 1768 passed / 0
-  failed / 1 skipped**. Of five automated tests, Boot + ControllerHarness pass
-  headless while Warp/Grass/Dawnmere skip for graphics; verified windowed runs
-  are respectively **4 / 885.7 ms**, **11 / 1927.5 ms**, and **117 / 5043.5
-  ms**. The next task is PlayerHome build 40 + a live Dawnmere round trip and
-  fade. Do not stop for the human S3 visual gate until that box and the full S3
-  automated gate are green.
+- **Current S3 landmark (2026-07-13, ZM-D-057):** the first-overworld
+  automated implementation and definitive post-overlay-hitch authority gate,
+  including the final audited lifecycle fixes, are complete; only the human
+  visual gate remains. The existing
+  input/controller/camera and manager/spawn/trigger orders 102-106 now drive a
+  real Dawnmere -> PlayerHome(build 40) -> Dawnmere route through the authored
+  `Door` and `FromHome` feet tags. The manager's persistent `WarpFade` overlay
+  fades out and in over **0.20 s** each way, does not issue SINGLE below opacity,
+  and keeps input locked until the replacement generation has been placed and
+  exactly one active-scene main `ZM_FollowCamera` targets it. A missing overlay,
+  ambiguous Player/camera, wrong scene generation, or readiness loss fails
+  closed at opaque black with input frozen. Engine UI quad sort keys are now
+  global across canvases, and overlay text clipping chooses the highest sort
+  key, so the persistent root's order-10000 fade remains above later active-
+  scene HUD canvases even though the persistent scene is visited first.
+  `ZM_GreyboxVisual` owns component order **107** for the replaceable home-shell
+  blocks; **next free is 108**. The ratcheted contract is **1773** boot units
+  (1772 pass / 0 fail / the existing 1 skip) and **6** P1 registrations:
+  Boot + ControllerHarness pass headless, while Warp/Grass/Dawnmere/PlayerHome
+  skip for graphics. The definitive **12 parsed / 12 passed / 0 failed** JSON
+  set lives under the ignored
+  `Build/artifacts/zenithmon/s3/final/post_overlay_hitch_fix/` root; exact
+  timings live in Status.md and ZM-D-057.
+  Do not tick the S3 visual gate or begin S4/S5 until the user reviews the
+  ignored captures under `Build/artifacts/zenithmon/s3/visual/` and supplies a
+  verdict.
 
 ### Document map
 
@@ -242,7 +248,8 @@ Component serialization orders: ZM components claim **100+** and remain unique:
 `ZM_GameComponent` = 100, `ZM_TerrainGrass` = 101,
 `ZM_PlayerController` = 102, `ZM_FollowCamera` = 103,
 `ZM_GameStateManager` = 104, `ZM_SpawnPoint` = 105, and `ZM_WarpTrigger` =
-106; **next free is 107**.
+106, and the replaceable blockout renderer `ZM_GreyboxVisual` = 107;
+**next free is 108**.
 
 ### 3.2 Engine naming conventions (mandatory)
 
@@ -513,7 +520,8 @@ component:
 2. **Register in `Zenithmon.cpp`** -- `#include` the header and add the
    file-scope `ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger, "ZM_WarpTrigger", 106u)`
    next to the existing registrations (106 is this component's locked order;
-   the next free order is 107). The macro must be static-init in an always-linked TU --
+   order 107 is now `ZM_GreyboxVisual`, so the next free order is 108). The
+   macro must be static-init in an always-linked TU --
    `Zenithmon.cpp` defines the `Project_*` entry points, so it is safe. Do NOT
    call it from `Project_RegisterGameComponents` (the meta registry is sealed
    before that hook runs).
@@ -532,9 +540,8 @@ component:
    [TestPlan.md](TestPlan.md) if the test spec is new.
 6. **Wire into a scene** -- via automation authoring
    (`AddStep_AddComponent("ZM_WarpTrigger")` in the scene recipe), then run a
-   `*_True` build once to re-bake the affected `.zscen`. The component and its
-   tests exist now; the first live trigger entities intentionally wait for the
-   PlayerHome/door-round-trip box.
+   `*_True` build once to re-bake the affected `.zscen`. Dawnmere and PlayerHome
+   now contain the first live trigger pair; future edges follow the same pattern.
 7. **Gate** -- `zenith build Zenithmon`, then
    `zenith test Zenithmon --headless` (all green), plus a `--filter` windowed
    run if the new test needs graphics.

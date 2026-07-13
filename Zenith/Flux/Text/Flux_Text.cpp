@@ -18,7 +18,7 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 // Cross-subsystem deps (FluxGraphics + VulkanMemory) are reached via g_xEngine
-// at point of use. The non-capturing ExecuteText / hot-reload fn-pointer
+// at point of use. The non-capturing ExecuteRenderGraphPass / hot-reload fn-pointer
 // trampolines below re-enter via g_xEngine.Text() to recover the singleton
 // instance. The Flux::Flux_TextQueue statics + the FontHandle asset are not
 // g_xEngine subsystems.
@@ -85,7 +85,7 @@ void Flux_TextImpl::Initialise()
 
 void Flux_TextImpl::Reset()
 {
-	Flux::Flux_TextQueue::ClearPending();
+	DiscardPendingFrame();
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_TextImpl::Reset() - Cleared pending text entries");
 }
 
@@ -102,6 +102,15 @@ void Flux_TextImpl::Shutdown()
 
 void Flux_TextImpl::SetOverlayClipRect(const Zenith_Maths::Vector4& xRect, int iSortOrder)
 {
+	// Canvases are collected in scene-slot order, which is unrelated to their
+	// global UI sort order. Keep the topmost overlay's clip for this frame so a
+	// later-rendered lower overlay cannot expose background text above it.
+	// Equal-order overlays retain the historical last-writer-wins behaviour.
+	if (this->m_bOverlayClipActive
+		&& iSortOrder < this->m_iOverlayClipSortOrder)
+	{
+		return;
+	}
 	this->m_bOverlayClipActive = true;
 	this->m_xOverlayClipRect = xRect;
 	this->m_iOverlayClipSortOrder = iSortOrder;
@@ -111,6 +120,15 @@ void Flux_TextImpl::ClearOverlayClipRect()
 {
 	this->m_bOverlayClipActive = false;
 	this->m_xOverlayClipRect = {-1.f, -1.f, -1.f, -1.f};
+}
+
+void Flux_TextImpl::DiscardPendingFrame()
+{
+	Flux::Flux_TextQueue::ClearPending();
+	this->m_uBgCharCount = 0;
+	this->m_uFgCharCount = 0;
+	this->m_uTotalCharCount = 0;
+	ClearOverlayClipRect();
 }
 
 // Per-glyph emission. For each char in the text:
@@ -255,17 +273,24 @@ void Flux_TextImpl::Render(void*)
 {
 	if (!Zenith_GraphicsOptions::Get().m_bTextEnabled)
 	{
+		DiscardPendingFrame();
 		return;
 	}
 
 	UploadChars();
 }
 
-static void ExecuteText(Flux_CommandBuffer* pxCommandList, void* pUserData)
+void Flux_TextImpl::ExecuteRenderGraphPass(
+	Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
+	Flux_TextImpl& xText = g_xEngine.Text();
 	if (!Zenith_GraphicsOptions::Get().m_bTextEnabled)
 	{
+		// Submissions, draw counts, and overlay clips are all frame-local. The
+		// pass still records while text is disabled, so consume the complete frame
+		// boundary instead of replaying stale text when the option is re-enabled.
+		xText.DiscardPendingFrame();
 		return;
 	}
 
@@ -273,8 +298,6 @@ static void ExecuteText(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	// capture, so it re-enters via g_xEngine.Text() to reach the singleton
 	// instance; FluxGraphics is reached via g_xEngine at point of use
 	// (mirrors ExecuteQuads).
-	Flux_TextImpl& xText = g_xEngine.Text();
-
 	const uint32_t uNumChars = xText.UploadChars();
 	if (uNumChars == 0)
 	{
@@ -353,6 +376,6 @@ static void ExecuteText(Flux_CommandBuffer* pxCommandList, void* pUserData)
 
 void Flux_TextImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	xGraph.AddPass("Text", ExecuteText)
+	xGraph.AddPass("Text", ExecuteRenderGraphPass)
 		.Writes(g_xEngine.FluxGraphics().GetFinalRenderTarget(), RESOURCE_ACCESS_WRITE_RTV);
 }

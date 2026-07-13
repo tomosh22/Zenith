@@ -4,13 +4,16 @@
 #include "ZenithECS/Zenith_Entity.h"
 
 class Zenith_DataStream;
+class ZM_PlayerController;
 
 enum ZM_WARP_TRANSITION_STATE : u_int
 {
 	ZM_WARP_TRANSITION_IDLE,
 	ZM_WARP_TRANSITION_QUEUED,
 	ZM_WARP_TRANSITION_WAITING_FOR_SCENE,
-	ZM_WARP_TRANSITION_WAITING_FOR_SPAWN
+	ZM_WARP_TRANSITION_WAITING_FOR_SPAWN,
+	ZM_WARP_TRANSITION_WAITING_FOR_CAMERA,
+	ZM_WARP_TRANSITION_FADING_IN
 };
 
 class ZM_GameStateManager
@@ -21,6 +24,8 @@ public:
 	static constexpr u_int uSERIALIZATION_VERSION = 1u;
 	static constexpr u_int uINVALID_BUILD_INDEX = 0xFFFFFFFFu;
 	static constexpr u_int uTAG_CAPACITY = 32u;
+	static constexpr float fFADE_DURATION_SECONDS = 0.20f;
+	static constexpr const char* szFADE_ELEMENT_NAME = "WarpFade";
 
 	ZM_GameStateManager() = delete;
 	explicit ZM_GameStateManager(Zenith_Entity& xParentEntity);
@@ -55,6 +60,12 @@ public:
 	static Zenith_Maths::Vector3 CalculateSpawnCenter(
 		const Zenith_Maths::Vector3& xMarkerFeetPosition,
 		const Zenith_Maths::Vector3& xPlayerScale);
+	// Deterministic, headless-safe fade policy. Invalid/nonpositive delta time
+	// leaves the clamped current alpha unchanged.
+	static float AdvanceFadeAlpha(
+		float fCurrentAlpha,
+		float fTargetAlpha,
+		float fDeltaTime);
 
 	// The test reset preserves a still-live authoritative singleton EntityID.
 	// It clears only session transition state and any injected load callback.
@@ -66,6 +77,8 @@ public:
 	const char* GetTargetSpawnTag() const { return m_szTargetSpawnTag; }
 	Zenith_EntityID GetFrozenPlayerEntityID() const { return m_xFrozenPlayerEntityID; }
 	u_int GetIssuedLoadRequestCount() const { return m_uIssuedLoadRequestCount; }
+	float GetFadeAlpha() const { return m_fFadeAlpha; }
+	bool IsFadeVisible() const { return m_fFadeAlpha > 0.0f; }
 	bool IsAuthoritativeSingleton() const;
 
 private:
@@ -74,6 +87,12 @@ private:
 	void IssueSingleLoad();
 	void PollForTargetScene();
 	void PollForSpawnAndPlacePlayer();
+	void PollForCameraAndBeginFadeIn();
+	void AdvanceFadeIn(float fDeltaTime);
+	bool ApplyFadeVisual();
+	bool IsTargetSceneActive() const;
+	bool TryResolveFrozenTargetPlayer(ZM_PlayerController*& pxControllerOut) const;
+	static bool HasUniqueReadyFollowCamera(Zenith_EntityID xPlayerEntityID);
 	static bool FindUniquePlayerInScene(
 		Zenith_EntityID& xPlayerEntityIDOut,
 		Zenith_Maths::Vector3& xPlayerScaleOut);
@@ -86,5 +105,6 @@ private:
 	ZM_WARP_TRANSITION_STATE m_eTransitionState = ZM_WARP_TRANSITION_IDLE;
 	u_int m_uTargetBuildIndex = uINVALID_BUILD_INDEX;
 	u_int m_uIssuedLoadRequestCount = 0u;
+	float m_fFadeAlpha = 0.0f;
 	char m_szTargetSpawnTag[uTAG_CAPACITY] = {};
 };

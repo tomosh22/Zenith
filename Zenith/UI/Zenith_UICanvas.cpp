@@ -413,7 +413,7 @@ void Zenith_UICanvas::SubmitQuad(const Zenith_Maths::Vector4& xBounds, const Zen
     Zenith_Maths::Vector2 xSizePixels = { fWidth, fHeight };
 
     Flux_QuadsImpl::Quad xQuad(xPositionSize, xColor, uTextureID, xUVMultAdd, fCornerRadius, xSizePixels, xGradientColor);
-    g_xEngine.Quads().UploadQuad(xQuad);
+    g_xEngine.Quads().UploadQuad(xQuad, m_iCurrentSortOrder);
 }
 
 void Zenith_UICanvas::SubmitQuadWithUV(const Zenith_Maths::Vector4& xBounds, const Zenith_Maths::Vector4& xColor, uint32_t uTextureID, const Zenith_Maths::Vector2& xUVMin, const Zenith_Maths::Vector2& xUVMax)
@@ -439,7 +439,7 @@ void Zenith_UICanvas::SubmitQuadWithUV(const Zenith_Maths::Vector4& xBounds, con
     Zenith_Maths::Vector2 xUVMultAdd = { fUVMult, fUVAdd };
 
     Flux_QuadsImpl::Quad xQuad(xPositionSize, xColor, uTextureID, xUVMultAdd);
-    g_xEngine.Quads().UploadQuad(xQuad);
+    g_xEngine.Quads().UploadQuad(xQuad, m_iCurrentSortOrder);
 }
 
 void Zenith_UICanvas::SubmitText(const std::string& strText, const Zenith_Maths::Vector2& xPosition, float fSize, const Zenith_Maths::Vector4& xColor)

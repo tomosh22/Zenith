@@ -367,10 +367,12 @@ void Zenith_ModelComponent::ReadModelInstanceWithMaterials(Zenith_DataStream& xS
 
 		pxMaterial->SetName("LoadedMaterial");
 		pxMaterial->ReadFromDataStream(xStream);
-		pxMaterial->AddRef();  // Add reference for this component's usage
 
 		if (m_pxModelInstance && u < m_pxModelInstance->GetNumMaterials())
 		{
+			// SetMaterial stores an owning handle. The temporary registry handle
+			// keeps the material alive through deserialization, then the model
+			// instance takes the sole retained reference when this scope exits.
 			m_pxModelInstance->SetMaterial(u, pxMaterial);
 		}
 	}

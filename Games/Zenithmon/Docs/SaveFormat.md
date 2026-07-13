@@ -42,15 +42,19 @@ into the next (TestPlan.md convention C3).
 
 ### S3 runtime traversal streams are not this save schema
 
-As of ZM-D-056, `ZM_GameStateManager`, `ZM_SpawnPoint`, and `ZM_WarpTrigger`
+As of ZM-D-056/057, `ZM_GameStateManager`, `ZM_SpawnPoint`, and `ZM_WarpTrigger`
 have fixed version-1 **ECS scene-component** streams. They persist authored
 component configuration in `.zscen` data: the manager writes only its version,
 the spawn point writes its fixed 32-byte tag, and the trigger writes its target
 build index plus fixed 32-byte tag. Live transition state (queued/waiting state,
-source/destination Player IDs, latch state, and issued-load count) is never
-serialized. The manager's `DontDestroyOnLoad` lifetime is runtime scene
-persistence, not durable player-save persistence. None of this implements or
-versions `ZM_SaveSchema`; the first game-save schema remains S7.
+source/destination Player IDs, latch state, issued-load count, fade alpha,
+camera-readiness/fade-in phase, and overlay visibility) is never serialized.
+Deserializing/reusing the manager resets those fields instead of resuming a
+half-transition. The `WarpFade` UIOverlay itself is ordinary scene authoring on
+the persistent root, not player progress. The manager's `DontDestroyOnLoad`
+lifetime is runtime scene persistence, not durable player-save persistence.
+None of this implements or versions `ZM_SaveSchema`; the first game-save schema
+remains S7.
 
 ## Payload structure
 

@@ -152,7 +152,7 @@ public:
 	 * Override material at the specified index
 	 * Useful for runtime material changes like procedural/colored materials
 	 * @param uIndex Material index (0 to GetNumMaterials()-1)
-	 * @param pxMaterial Material to set (not owned by model instance)
+	 * @param pxMaterial Material retained by the model instance's owning handle
 	 */
 	void SetMaterial(uint32_t uIndex, Zenith_MaterialAsset* pxMaterial);
 

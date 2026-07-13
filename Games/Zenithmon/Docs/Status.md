@@ -1,38 +1,45 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-13 -- **S3 traversal-infrastructure milestone COMPLETE and fully gated locally (ZM-D-056).** Persistent manager, spawn-point, and warp-trigger infrastructure now resolves a direct FrontEnd -> Dawnmere `TownCenter` request deterministically. **CURRENT TASK: PlayerHome (build index 40) + Dawnmere door round trip using SINGLE loads + fade.** The hard human visual gate occurs only after that box and the full S3 automated gate are complete; do not stop now.
+**Last updated:** 2026-07-13 -- **S3 automated implementation and the definitive post-overlay-hitch local authority gate are COMPLETE (ZM-D-057); human visual acceptance is the only remaining S3 item.** PlayerHome build 40, both live door triggers, deterministic 0.20 s fade, opaque generation-exact camera barrier, global cross-canvas UI ordering, procedural material ownership, complete disabled-text frame draining, and synchronous zero-duration overlay opacity are green. Do not tick S3 complete or begin S4/S5 until the user reviews the ignored captures.
 
-**Read this first each session.** [Roadmap.md](Roadmap.md) is the source of truth for what's next; [Questions.md](Questions.md) holds open rulings; [Shortfalls.md](Shortfalls.md) is the current gap audit. Terrain contracts are ZM-D-051..054; controller/camera/input is ZM-D-055; traversal infrastructure and exact spawn semantics are ZM-D-056.
+**Read this first each session.** [Roadmap.md](Roadmap.md) is the task source; [Questions.md](Questions.md) holds open rulings; [Shortfalls.md](Shortfalls.md) is the gap audit. Terrain contracts are ZM-D-051..054, controller/camera ZM-D-055, traversal infrastructure ZM-D-056, and the PlayerHome/fade/global-UI milestone ZM-D-057.
 
 ## Working model -- MASTER-ONLY, no branches/PRs (ZM-D-031)
 
-All work is committed directly to `master` and pushed. Never create a feature branch, PR, or worktree. Before every push, the orchestrator runs the local authority gate: build, exact-baseline boot units, headless automated suite, and task-scoped windowed tests. `zm-tests` is the post-push backstop; fix forward on red.
+All work is committed directly to `master` and pushed. Never create a feature branch, PR, or worktree. The local build/unit/headless/windowed gate is authoritative; `zm-tests` is the post-push backstop and red is fixed forward.
 
-## Build / tests -- all green
+## Definitive post-overlay-hitch automated gate -- all green
 
-- Five win64 configurations: all four Vulkan Debug/Release x Tools true/false builds plus `D3D12_vs2022_Debug_Win64_False` are green.
-- Boot unit gate: **1769 ran / 1768 passed / 0 failed / 1 skipped** (the existing quarantined `RegistryWideNodeRoundTrip`). This milestone adds exactly **12** `ZM_WorldTraversal` T0 tests for singleton/state-machine, tag/stream, marker-placement, trigger/sensor/latch, active-scene identity, and scene/entity-generation adversarial contracts.
-- Automated registry: **5 tests**. Headless passes `ZM_Boot_Test` and the asset-free `ZM_ControllerHarness_Test`; graphics-required `ZM_WarpInfrastructure_Test`, `ZM_GrassRegeneration_Test`, and `ZM_DawnmerePlayerCamera_Test` skip as designed.
-- Windowed `ZM_WarpInfrastructure_Test`: **4 frames / 885.7 ms**, proving direct playerless FrontEnd build-0 request, deferred SINGLE load, persistent manager identity, destination freeze, exact `TownCenter` placement, motion reset, and return to idle.
-- Windowed `ZM_GrassRegeneration_Test`: **11 frames / 1927.5 ms**, retaining the exact **200,159 blades / 5,133 terrain triangles** load-reload contract.
-- Windowed `ZM_DawnmerePlayerCamera_Test`: **117 frames / 5043.5 ms**, covering real Dawnmere movement, fixed follow, SINGLE reload with generation-safe reacquisition, grass readiness, and FrontEnd teardown.
+- Regeneration: **2.401 s**.
+- Five win64 builds: Vulkan Debug Tools=true **11.225 s**, Debug Tools=false **11.755 s**, Release Tools=true **11.213 s**, Release Tools=false **11.031 s**, and D3D12 Debug Tools=false **7.656 s**.
+- Boot units: **1773 ran / 1772 passed / 0 failed / 1 skipped** (the existing quarantined `RegistryWideNodeRoundTrip`), with **180.640 s** helper wall under the canonical watchdog. `ZM_WorldTraversal` remains **16** cases; current game-unit inventory is **695** and the workflow baseline is **1773**.
+- Headless registry: **6/6 harness entries**, **1.590 s** process wall, semantically **2 real passes + exactly 4 graphics-required skips**. `ZM_ControllerHarness_Test` passed **142 frames / 25.100 ms**; `ZM_Boot_Test` passed **1 / 0.018 ms**.
+- Windowed: `ZM_WarpInfrastructure_Test` **29 / 2008.714 ms** (**14.869 s** wall), one frame shorter because instantaneous overlay opacity no longer waits for a UI update; `ZM_GrassRegeneration_Test` **11 / 2579.674 ms** (**15.125 s** wall); `ZM_DawnmerePlayerCamera_Test` **117 / 6212.128 ms** (**18.712 s** wall); real input-driven `ZM_PlayerHomeRoundTrip_Test` **673 / 14662.601 ms** (**27.514 s** wall).
+- RenderTest rebuilt in **6.192 s**; `EngineBootShutdownSmoke` passed **1 / 28.606 ms** (**40.622 s** wall) and `TerrainEditorSmoke` **151 / 5291.193 ms** (**46.025 s** wall).
+- Machine-readable results are ignored under `C:\dev\Zenith\Build\artifacts\zenithmon\s3\final\post_overlay_hitch_fix\`: **12 parsed JSON / 12 passed / 0 failed**, comprising six headless, four windowed, and two RenderTest results, with exactly the four expected headless graphics skips.
 
-## Last completed -- persistent traversal infrastructure
+## What landed in the S3 gate candidate
 
-- Component orders are `ZM_GameStateManager` **104**, `ZM_SpawnPoint` **105**, and `ZM_WarpTrigger` **106**. FrontEnd authors the manager-only `ZM_GameStateRoot`; the authoritative manager moves that entity to the persistent scene, stores a generation-bearing singleton ID, and retires duplicates.
-- Warp acceptance validates the WorldSpec build/tag and requires the unique valid active-scene dynamic-capsule Player, except for the deliberate playerless FrontEnd build-index-0 direct-request path. Acceptance freezes the source immediately; `ZM_PlayerController::OnStart` freezes a replacement while any transition is active. `QUEUED -> WAITING_FOR_SCENE -> WAITING_FOR_SPAWN` updates defer and issue exactly one SINGLE load.
-- Spawn tags are 1-31 printable ASCII bytes in a fixed 32-byte buffer. A `ZM_SpawnPoint` transform denotes **feet**: authored `TownCenterSpawn` is **(512, 25.98577, 480)** and the scale-derived Player centre is **(512, 26.88577, 480)**. Resolution teleports the physics body once, zeros linear/angular velocity, resets controller runtime state, enables movement, and returns the manager to idle.
-- `ZM_WarpTrigger` reasserts a sensor collider and latches only the unique generation-exact active-scene valid dynamic-capsule Player; foreign/additive-scene, duplicate, malformed, bodyless, and slot-reused identities fail closed. The latch clears only on exit by that exact full entity ID. The v1 component streams serialize scene authoring only; live transition state is deliberately absent and is **not** the S7 `ZM_SaveSchema`.
+- FrontEnd's persistent `ZM_GameStateRoot` now owns exact full-screen black order-10000 `WarpFade`. Input freezes on accepted traversal, SINGLE cannot issue below alpha 1, placement and motion reset occur behind black, exactly one active-scene main follow camera must target the replacement Player generation, and input unlocks only at alpha 0. Missing/ambiguous scene, Player, camera, or overlay dependencies fail closed opaque and frozen. Live fade state remains absent from the v1 component stream.
+- Dawnmere authors a greybox home shell, `FromHome` feet marker **(384,26.590313,482)**, and live `HomeDoorTrigger -> (40,"Door")`. PlayerHome build 40 authors a collidable greybox interior, `Door` feet marker **(0,0,3.5)**, scene-owned Player/main camera, and live `PlayerHomeExitTrigger -> (2,"FromHome")`. Order **107** is `ZM_GreyboxVisual`; next free is **108**.
+- UI quad sort is now global across canvases: stable ascending shared-queue upload, raw callers at order 0, and drop-newest with one warning when the 1,024-quad capacity is exceeded. Text overlay clipping retains the highest sort order for the frame and clears even across disabled-text pass boundaries. This keeps the persistent fade above later active-scene canvases.
+- `Flux_TextImpl::DiscardPendingFrame` now owns every disabled/reset frame boundary in both legacy and render-graph paths, draining the pending queue, background/foreground/total counters, and overlay clip together. A clean re-enable cannot replay stale text or inherit stale clipping.
+- `Flux_ModelInstance::SetMaterial` retains overrides with its owning handle, so `Zenith_ModelComponent` deserialization no longer adds a second manual reference. Procedural empty-model greybox records release their temporary decoded materials for registry reclamation across Dawnmere/PlayerHome reloads.
+- `Zenith_UIOverlay` with zero/negative duration now makes `Show()` synchronously snap its current dim alpha to the configured dim alpha, including repair when already showing. `Hide()` synchronously clears current alpha/visibility and restores sibling interaction; positive-duration animation is unchanged. A hitch-sized manager update can therefore render actual black before it requests SINGLE rather than waiting for a later UI update.
+- Four new T0 cases lock fade progression/load gating, placement/camera readiness, fail-closed dependency loss, runtime-state omission, production UICanvas forwarding/global queue order/capacity, text-clip arbitration, disabled/reset Text drain + clean re-enable, material retain/release + transient registry reclamation, direct instantaneous-overlay Show/Hide, and a **0.25 s** one-tick fade crossing whose load callback renders the real manager canvas and requires an actual sort-10000 alpha-1 quad before permission. These final lifecycle assertions extend existing cases; they add no registrations. The new P1 drives both real trigger overlaps via input, proves `Door` and `FromHome` placement, three scene generations, zero motion before unlock, no interior grass, and exterior grass/camera recovery.
 
-## Current task and remaining S3 order
+## Human visual evidence -- ignored, never stage
 
-1. Author PlayerHome at build index **40** plus live Dawnmere/home `ZM_WarpTrigger` entities.
-2. Add fade and a real door round-trip P1, asserting both spawn-tag arrivals and camera/controller recovery.
-3. Complete the S3 automated gate and capture visual evidence. Only then write `GATE-WAIT: S3 visual sign-off`, commit/push the evidence docs, and stop for human review.
+Capture `capture_final_posthitch_20260713_183717` used the definitive binary;
+its `ZM_PlayerHomeRoundTrip_Test` passed **673 frames / 14619.2 ms** with exit
+0. All three ignored PNGs are valid **1280x720** files and
+were inspected for capture integrity; that inspection is not the user's visual
+acceptance:
 
-## Notes for the next agent
+- `C:\dev\Zenith\Build\artifacts\zenithmon\s3\visual\01_dawnmere_exterior_terrain_grass_camera.png` -- SHA-256 `9FEFA6E1B20CB9F1647F19A0416FCD6A80ACA653EB6EEEFE6A86DD722790A1DF`
+- `C:\dev\Zenith\Build\artifacts\zenithmon\s3\visual\02_playerhome_interior.png` -- SHA-256 `13104E86246748BF58AF200DFAC213C2A6B6595A81086E30346B75857280B90E`
+- `C:\dev\Zenith\Build\artifacts\zenithmon\s3\visual\03_dawnmere_return_camera_reacquired.png` -- SHA-256 `B0D49B1CE41ACB98AA184E55ECB1531D34DC76009C3BED0CBD67CCD61C3B4B41`
 
-- The current P1 calls the manager directly from playerless FrontEnd; no PlayerHome, fade, build-40 scene, or authored live warp trigger exists yet. Do not mistake component/serialization tests for the pending real trigger route.
-- Baked terrain/scenes remain ignored; new terrain work keeps the named-set, bounded-export, atomic-marker and fixed registry contracts.
-- `m_eGender` must enter the future S7 party/daycare serializer.
-- For S5 AI integration, a fainted active still requires the caller to submit the forced switch.
+Review those three captures for Dawnmere terrain/grass/camera, the deliberately replaceable PlayerHome interior blockout, and the generation-reacquired return view. If approved, use StartPrompts.md prompt 4 to append the user verdict, tick the S3 visual-gate box, clear this marker, commit/push the docs, and only then resume the lifecycle loop. If rejected, record the requested rework and keep S3 active.
+
+GATE-WAIT: S3 visual sign-off

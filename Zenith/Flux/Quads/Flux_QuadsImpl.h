@@ -57,7 +57,10 @@ public:
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
-	void UploadQuad(const Quad& xQuad);
+	// Sort order is global across UI canvases. Raw/non-UI callers keep the
+	// historical order-0 behaviour by omitting the second argument.
+	void UploadQuad(const Quad& xQuad, int iSortOrder = 0);
+	void SortQueuedQuadsForUpload();
 	void UploadInstanceData();
 
 	Flux_Shader              m_xShader;
@@ -65,5 +68,7 @@ public:
 	Flux_DynamicVertexBuffer m_xInstanceBuffer;
 
 	Quad                     m_axQuadsToRender[FLUX_MAX_QUADS_PER_FRAME];
+	int                      m_aiQuadSortOrders[FLUX_MAX_QUADS_PER_FRAME] = {};
 	uint32_t                 m_uQuadRenderIndex = 0;
+	bool                     m_bCapacityWarningIssued = false;
 };

@@ -152,8 +152,10 @@ first -- baked assets are git-ignored, so CI runners have no `Assets/`
 
 **Spawn tag.** Named `ZM_SpawnPoint` marker in a scene. A `ZM_WarpTrigger`
 carries a target build index + spawn tag; after the SINGLE load,
-`ZM_GameStateManager` places player + camera at the tagged point (DecisionLog
-ZM-D-006).
+`ZM_GameStateManager` treats the marker as Player feet, places and zeroes the
+replacement scene-owned Player, then holds the screen opaque until the
+replacement scene-owned main follow camera targets that exact generation
+(DecisionLog ZM-D-006/056/057).
 
 **Terrain set.** Per-component serialized asset-subdirectory name for terrain
 (engine change E1), e.g. `Terrain/Route01/` -- lifts the one-terrain-per-game
@@ -163,6 +165,13 @@ limit so each outdoor scene gets its own baked terrain.
 ending `_True`, e.g. `Vulkan_vs2022_Debug_Win64_True`): includes editor
 automation, asset baking, and scene authoring. `_False` runtime builds load
 pre-baked assets only.
+
+**Warp fade.** The exact persistent-root `WarpFade` UIOverlay used for SINGLE
+door/route transitions. The game manager advances its alpha over 0.20 s,
+blocks the load until opaque, holds input through placement/camera readiness,
+and unlocks only after fade-in reaches transparent. It is globally ordered at
+sort 10000 across canvases and fails closed if the dependency disappears
+(DecisionLog ZM-D-057).
 
 **WorldSpec.** `ZM_WorldSpec`, the keystone compiled table describing the whole
 world (scenes, connections/spawn tags, encounter tables, trainers, shops, gyms,

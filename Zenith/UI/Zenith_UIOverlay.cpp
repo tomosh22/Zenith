@@ -35,6 +35,10 @@ void Zenith_UIOverlay::Show()
 	// If already fully showing and visible, nothing to do
 	if (m_bShowing && m_bVisible && !m_bHiding)
 	{
+		if (m_fFadeDuration <= 0.0f)
+		{
+			m_fCurrentDimAlpha = m_xDimColor.w;
+		}
 		Zenith_Log(LOG_CATEGORY_UI, "UIOverlay::Show() '%s' - already showing, skipping", m_strName.c_str());
 		return;
 	}
@@ -44,7 +48,9 @@ void Zenith_UIOverlay::Show()
 	m_bShowing = true;
 	m_bHiding = false;
 	m_bVisible = true;
-	m_fCurrentDimAlpha = 0.0f;
+	m_fCurrentDimAlpha = m_fFadeDuration <= 0.0f
+		? m_xDimColor.w
+		: 0.0f;
 
 	SetSiblingInteractable(false);
 }
@@ -53,6 +59,16 @@ void Zenith_UIOverlay::Hide()
 {
 	if (!m_bShowing)
 		return;
+
+	if (m_fFadeDuration <= 0.0f)
+	{
+		m_bShowing = false;
+		m_bHiding = false;
+		m_bVisible = false;
+		m_fCurrentDimAlpha = 0.0f;
+		SetSiblingInteractable(true);
+		return;
+	}
 
 	m_bHiding = true;
 }

@@ -1,6 +1,11 @@
 #include "Zenith.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
+#include "DataStream/Zenith_DataStream.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "SaveData/Zenith_SaveData.h"
 #include "Zenithmon/Components/ZM_GameComponent.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
@@ -17,8 +22,6 @@
 #endif
 
 #ifdef ZENITH_TOOLS
-#include "AssetHandling/Zenith_AssetRegistry.h"
-#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Core/Zenith_CommandLine.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorAutomation.h"
@@ -30,6 +33,87 @@
 #include <filesystem>
 #include <string>
 #endif
+
+// Asset-free blockout visual used by the authored S3 interiors and doorway.
+// The scene persists this marker while each runtime scene generation rebuilds
+// a unit-cube model on its owning entity. Replacing the marker with final art
+// later does not affect collision or traversal authoring.
+class ZM_GreyboxVisual
+{
+public:
+	ZM_GreyboxVisual() = delete;
+	explicit ZM_GreyboxVisual(Zenith_Entity& xParentEntity)
+		: m_xParentEntity(xParentEntity)
+	{
+	}
+
+	ZM_GreyboxVisual(const ZM_GreyboxVisual&) = delete;
+	ZM_GreyboxVisual& operator=(const ZM_GreyboxVisual&) = delete;
+	ZM_GreyboxVisual(ZM_GreyboxVisual&&) noexcept = default;
+	ZM_GreyboxVisual& operator=(ZM_GreyboxVisual&&) noexcept = default;
+
+	void OnStart()
+	{
+		if (m_bInitialised || !m_xParentEntity.IsValid())
+		{
+			return;
+		}
+
+		m_xCubeGeometry = Zenith_MeshGeometryAsset::CreateUnitCube();
+		m_xMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MeshGeometryAsset* pxGeometryAsset = m_xCubeGeometry.GetDirect();
+		Zenith_MaterialAsset* pxMaterial = m_xMaterial.GetDirect();
+		if (pxGeometryAsset == nullptr || pxMaterial == nullptr)
+		{
+			return;
+		}
+
+		pxMaterial->SetName("ZM_Greybox");
+		pxMaterial->SetBaseColor({ 0.52f, 0.55f, 0.60f, 1.0f });
+		pxMaterial->SetRoughness(0.90f);
+		pxMaterial->SetMetallic(0.0f);
+
+		Zenith_ModelComponent* pxModel =
+			m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr)
+		{
+			pxModel = &m_xParentEntity.AddComponent<Zenith_ModelComponent>();
+		}
+		Flux_MeshGeometry* pxGeometry = pxGeometryAsset->GetGeometry();
+		if (pxGeometry == nullptr)
+		{
+			return;
+		}
+		pxModel->AddMeshEntry(*pxGeometry, *pxMaterial);
+		m_bInitialised = true;
+	}
+
+	void WriteToDataStream(Zenith_DataStream& xStream) const
+	{
+		xStream << 1u;
+	}
+
+	void ReadFromDataStream(Zenith_DataStream& xStream)
+	{
+		u_int uVersion = 0u;
+		xStream >> uVersion;
+		(void)uVersion;
+		m_bInitialised = false;
+	}
+
+#ifdef ZENITH_TOOLS
+	void RenderPropertiesPanel()
+	{
+		ImGui::TextUnformatted("Replaceable S3 greybox unit cube");
+	}
+#endif
+
+private:
+	Zenith_Entity m_xParentEntity;
+	MeshGeometryHandle m_xCubeGeometry;
+	MaterialHandle m_xMaterial;
+	bool m_bInitialised = false;
+};
 
 // ============================================================================
 // Zenithmon -- Pokemon-style monster-collecting RPG (see Docs/ for the GDD,
@@ -48,27 +132,117 @@ ZENITH_REGISTER_COMPONENT(ZM_FollowCamera, "ZM_FollowCamera", 103u)
 ZENITH_REGISTER_COMPONENT(ZM_GameStateManager, "ZM_GameStateManager", 104u)
 ZENITH_REGISTER_COMPONENT(ZM_SpawnPoint, "ZM_SpawnPoint", 105u)
 ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger, "ZM_WarpTrigger", 106u)
+ZENITH_REGISTER_COMPONENT(ZM_GreyboxVisual, "ZM_GreyboxVisual", 107u)
 
 #ifdef ZENITH_TOOLS
 namespace
 {
 	MaterialHandle g_axDawnmereTerrainMaterials[4];
 
-	void ZM_ConfigureTownCenterSpawnPoint()
+	void ZM_ConfigureWarpFade()
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_UIComponent* pxUI = pxSelectedEntity != nullptr
+			? pxSelectedEntity->TryGetComponent<Zenith_UIComponent>()
+			: nullptr;
+		Zenith_Assert(pxUI != nullptr,
+			"WarpFade authoring requires the selected root UI component");
+		if (pxUI == nullptr)
+		{
+			return;
+		}
+
+		Zenith_UI::Zenith_UIElement* pxFade = pxUI->FindElement("WarpFade");
+		Zenith_Assert(pxFade != nullptr
+			&& pxFade->GetType() == Zenith_UI::UIElementType::Overlay,
+			"WarpFade must be an Overlay on ZM_GameStateRoot");
+		if (pxFade == nullptr
+			|| pxFade->GetType() != Zenith_UI::UIElementType::Overlay)
+		{
+			return;
+		}
+
+		Zenith_UI::Zenith_UIOverlay* pxFadeOverlay =
+			static_cast<Zenith_UI::Zenith_UIOverlay*>(pxFade);
+		pxFadeOverlay->SetContentSize(0.0f, 0.0f);
+		pxFadeOverlay->SetAnchorAndPivot(
+			Zenith_UI::AnchorPreset::StretchAll);
+		pxFadeOverlay->SetSortOrder(10000);
+		pxFadeOverlay->SetDimColor({ 0.0f, 0.0f, 0.0f, 1.0f });
+		pxFadeOverlay->SetFadeDuration(0.0f);
+		pxFadeOverlay->SetGroupAlpha(0.0f);
+		pxFadeOverlay->SetVisible(false);
+	}
+
+	bool ZM_SetSelectedSpawnPointTag(const char* szTag)
 	{
 		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
 		ZM_SpawnPoint* pxSpawnPoint = pxSelectedEntity != nullptr
 			? pxSelectedEntity->TryGetComponent<ZM_SpawnPoint>()
 			: nullptr;
 		Zenith_Assert(pxSpawnPoint != nullptr,
-			"TownCenter authoring requires the selected ZM_SpawnPoint");
-		if (pxSpawnPoint == nullptr)
-		{
-			return;
-		}
+			"Spawn authoring requires the selected ZM_SpawnPoint");
+		return pxSpawnPoint != nullptr && pxSpawnPoint->SetTag(szTag);
+	}
 
-		const bool bTagSet = pxSpawnPoint->SetTag("TownCenter");
+	bool ZM_ConfigureSelectedWarpTrigger(
+		u_int uTargetBuildIndex, const char* szSpawnTag)
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		ZM_WarpTrigger* pxWarpTrigger = pxSelectedEntity != nullptr
+			? pxSelectedEntity->TryGetComponent<ZM_WarpTrigger>()
+			: nullptr;
+		Zenith_Assert(pxWarpTrigger != nullptr,
+			"Warp authoring requires the selected ZM_WarpTrigger");
+		return pxWarpTrigger != nullptr
+			&& pxWarpTrigger->Configure(uTargetBuildIndex, szSpawnTag);
+	}
+
+	void ZM_ConfigureTownCenterSpawnPoint()
+	{
+		const bool bTagSet = ZM_SetSelectedSpawnPointTag("TownCenter");
 		Zenith_Assert(bTagSet, "TownCenter is not a valid spawn tag");
+	}
+
+	void ZM_ConfigureDoorSpawnPoint()
+	{
+		Zenith_Assert(ZM_SetSelectedSpawnPointTag("Door"),
+			"Door is not a valid spawn tag");
+	}
+
+	void ZM_ConfigureFromHomeSpawnPoint()
+	{
+		Zenith_Assert(ZM_SetSelectedSpawnPointTag("FromHome"),
+			"FromHome is not a valid spawn tag");
+	}
+
+	void ZM_ConfigurePlayerHomeExitTrigger()
+	{
+		Zenith_Assert(ZM_ConfigureSelectedWarpTrigger(2u, "FromHome"),
+			"PlayerHome exit warp configuration is invalid");
+	}
+
+	void ZM_ConfigureHomeDoorTrigger()
+	{
+		Zenith_Assert(ZM_ConfigureSelectedWarpTrigger(40u, "Door"),
+			"Dawnmere Home doorway warp configuration is invalid");
+	}
+
+	void ZM_QueueGreyboxBlock(
+		Zenith_EditorAutomation& xAuto,
+		const char* szName,
+		const Zenith_Maths::Vector3& xPosition,
+		const Zenith_Maths::Vector3& xScale)
+	{
+		xAuto.AddStep_CreateEntity(szName);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(
+			xPosition.x, xPosition.y, xPosition.z);
+		xAuto.AddStep_SetTransformScale(xScale.x, xScale.y, xScale.z);
+		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
 	}
 
 	const char* ZM_TerrainBakeQueueResultToString(
@@ -134,6 +308,7 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_GameStateManager>("ZM_GameStateManager");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_SpawnPoint>("ZM_SpawnPoint");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_WarpTrigger>("ZM_WarpTrigger");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_GreyboxVisual>("ZM_GreyboxVisual");
 #endif
 
 	// Save/load persistence root: %APPDATA%/Zenith/Zenithmon/. The versioned
@@ -204,6 +379,9 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreateScene("FrontEnd");
 	xAuto.AddStep_CreateEntity("ZM_GameStateRoot");
 	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_AddUI();
+	xAuto.AddStep_CreateUIOverlay("WarpFade");
+	xAuto.AddStep_Custom(&ZM_ConfigureWarpFade);
 	xAuto.AddStep_AddComponent("ZM_GameStateManager");
 
 	xAuto.AddStep_CreateEntity("GameManager");
@@ -222,9 +400,68 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT);
 	xAuto.AddStep_UnloadScene();
 
-	// Terrain rendering requires a graphics device. Headless runs retain the
-	// FrontEnd logic scene above but neither mutate terrain assets nor author a
-	// scene containing Terrain/Flux components.
+	// PlayerHome is a terrain-independent interior and is authored on every
+	// tools boot, including headless/cold terrain runs. All shell pieces carry
+	// a replaceable procedural greybox visual and their own static collider.
+	xAuto.AddStep_CreateScene("PlayerHome");
+	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeFloor",
+		{ 0.0f, -0.25f, 0.0f }, { 16.0f, 0.5f, 12.0f });
+	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeBackWall",
+		{ 0.0f, 1.5f, -6.0f }, { 16.0f, 3.0f, 0.5f });
+	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeLeftWall",
+		{ -8.0f, 1.5f, 0.0f }, { 0.5f, 3.0f, 12.0f });
+	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeRightWall",
+		{ 8.0f, 1.5f, 0.0f }, { 0.5f, 3.0f, 12.0f });
+	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeFrontLeft",
+		{ -5.0f, 1.5f, 6.0f }, { 6.0f, 3.0f, 0.5f });
+	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeFrontRight",
+		{ 5.0f, 1.5f, 6.0f }, { 6.0f, 3.0f, 0.5f });
+	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeLintel",
+		{ 0.0f, 2.75f, 6.0f }, { 4.0f, 0.5f, 0.5f });
+
+	xAuto.AddStep_CreateEntity("DoorSpawn");
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_SetTransformPosition(0.0f, 0.0f, 3.5f);
+	xAuto.AddStep_AddComponent("ZM_SpawnPoint");
+	xAuto.AddStep_Custom(&ZM_ConfigureDoorSpawnPoint);
+
+	xAuto.AddStep_CreateEntity("Player");
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_SetTransformPosition(0.0f, 0.9f, 3.5f);
+	xAuto.AddStep_SetTransformScale(0.8f, 1.8f, 0.8f);
+	xAuto.AddStep_AddCollider();
+	xAuto.AddStep_AddColliderShape(
+		COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+	xAuto.AddStep_AddComponent("ZM_PlayerController");
+
+	xAuto.AddStep_CreateEntity("PlayerHomeCamera");
+	xAuto.AddStep_AddCamera();
+	xAuto.AddStep_SetCameraPosition(0.0f, 3.0f, -2.0f);
+	xAuto.AddStep_SetCameraYaw(0.0f);
+	xAuto.AddStep_SetCameraPitch(0.0f);
+	xAuto.AddStep_SetCameraFOV(glm::radians(65.0f));
+	xAuto.AddStep_SetCameraNear(0.1f);
+	xAuto.AddStep_SetCameraFar(100.0f);
+	xAuto.AddStep_AddComponent("ZM_FollowCamera");
+	xAuto.AddStep_SetAsMainCamera();
+
+	xAuto.AddStep_CreateEntity("PlayerHomeExitTrigger");
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_SetTransformPosition(0.0f, 1.0f, 5.2f);
+	xAuto.AddStep_SetTransformScale(3.0f, 2.0f, 1.2f);
+	xAuto.AddStep_AddCollider();
+	xAuto.AddStep_AddColliderShape(
+		COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+	xAuto.AddStep_AddComponent("ZM_WarpTrigger");
+	xAuto.AddStep_Custom(&ZM_ConfigurePlayerHomeExitTrigger);
+
+	xAuto.AddStep_SaveScene(
+		GAME_ASSETS_DIR "Scenes/PlayerHome" ZENITH_SCENE_EXT);
+	xAuto.AddStep_UnloadScene();
+
+	// Terrain rendering requires a graphics device. Headless runs still author
+	// the FrontEnd and terrain-independent PlayerHome scenes above, but neither
+	// mutate terrain assets nor author the Dawnmere Terrain/Flux scene.
 	const bool bHeadless = Zenith_CommandLine::IsHeadless();
 	ZM_TerrainBakeBatchPlan xTerrainBatch;
 	if (bHeadless)
@@ -373,6 +610,34 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
 		xAuto.AddStep_AddComponent("ZM_PlayerController");
 
+		// Replaceable outdoor Home blockout. The shell's front face meets the
+		// sampled doorway at z=476; the sensor sits in front of that solid face
+		// so a returning player overlaps it before physical contact.
+		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeShell",
+			{ 384.0f, 27.440985f, 456.0f }, { 16.0f, 6.0f, 40.0f });
+		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeDoorLeft",
+			{ 382.0f, 27.661484f, 476.0f }, { 1.0f, 3.0f, 0.5f });
+		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeDoorRight",
+			{ 386.0f, 27.661484f, 476.0f }, { 1.0f, 3.0f, 0.5f });
+		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeDoorLintel",
+			{ 384.0f, 29.411484f, 476.0f }, { 5.0f, 0.5f, 0.5f });
+
+		xAuto.AddStep_CreateEntity("FromHomeSpawn");
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(384.0f, 26.590313f, 482.0f);
+		xAuto.AddStep_AddComponent("ZM_SpawnPoint");
+		xAuto.AddStep_Custom(&ZM_ConfigureFromHomeSpawnPoint);
+
+		xAuto.AddStep_CreateEntity("HomeDoorTrigger");
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(384.0f, 27.161484f, 476.0f);
+		xAuto.AddStep_SetTransformScale(3.0f, 2.0f, 2.0f);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
+		xAuto.AddStep_Custom(&ZM_ConfigureHomeDoorTrigger);
+
 		xAuto.AddStep_CreateEntity("DawnmerePreviewCamera");
 		xAuto.AddStep_AddCamera();
 		xAuto.AddStep_SetCameraPosition(xCamera.m_xPosition.m_fX, xCamera.m_xPosition.m_fY, xCamera.m_xPosition.m_fZ);
@@ -395,5 +660,6 @@ void Project_LoadInitialScene()
 {
 	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT);
 	g_xEngine.Scenes().RegisterSceneBuildIndex(2, GAME_ASSETS_DIR "Scenes/Dawnmere" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(40, GAME_ASSETS_DIR "Scenes/PlayerHome" ZENITH_SCENE_EXT);
 	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

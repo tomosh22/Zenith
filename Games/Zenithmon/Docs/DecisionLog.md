@@ -15,6 +15,125 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-13 -- ZM-D-057 -- PlayerHome round trip uses an opaque camera barrier and globally ordered persistent fade
+
+- **Scene/content decision:** build index **40** is now the always-authored,
+  terrain-independent `PlayerHome` interior. Its collidable procedural greybox
+  shell, scene-owned Player/main follow camera, `Door` feet marker at
+  `(0,0,3.5)`, and live `PlayerHomeExitTrigger -> (2,"FromHome")` are the first
+  real interior route. Dawnmere adds a replaceable greybox home shell, the
+  `FromHome` feet marker at `(384,26.590313,482)`, and live
+  `HomeDoorTrigger -> (40,"Door")`. `ZM_GreyboxVisual` claims serialization
+  order **107** (next free 108) and reconstructs a unit-cube model/material per
+  runtime scene generation; it is deliberately replaceable S3 blockout, not a
+  new baked-asset family or final S4 art.
+- **Fade/readiness decision:** the persistent `ZM_GameStateRoot` owns one exact
+  full-screen black `WarpFade` UIOverlay at sort order **10000**. The manager,
+  not the widget, advances alpha over **0.20 s** each way. Accepted input freezes
+  immediately; `QUEUED` cannot issue its one SINGLE load below alpha 1. After
+  the replacement Player is placed and both body velocities/controller intent
+  are zeroed, the manager remains opaque through `WAITING_FOR_CAMERA`. Fade-in
+  begins only when exactly one active-scene `ZM_FollowCamera` entity also owns a
+  Camera component, targets that exact Player generation, and is the active
+  scene's main camera. Input unlocks only at alpha 0. Losing the scene, Player,
+  camera readiness, or exact overlay during the transition returns to or stays
+  opaque with all active Players frozen. This makes fade a fail-closed traversal
+  safety boundary, not decoration.
+- **Engine UI-order decision:** element sort order is global across loaded
+  canvases for quad rendering. `Zenith_UICanvas` forwards its current element
+  key into the shared Flux quad queue; upload preparation stable-sorts ascending
+  by key, with submission index as the equal-key tie-break. Raw/non-UI callers
+  retain key 0. The fixed **1,024-quad** queue drops the newest excess quad and
+  warns once per frame, preserving already-queued overlays without overflow.
+  Flux Text retains the highest-sort active overlay clip across canvas
+  collection (equal keys remain last-writer-wins). `DiscardPendingFrame` is the
+  single disabled/reset boundary for both the legacy and render-graph Text
+  paths: it drains the pending queue, background/foreground/total counters, and
+  overlay clip together, so re-enabling Text cannot replay stale submissions or
+  inherit an old clip. This closes the cross-scene case where the persistent
+  canvas is visited before a later active-scene HUD that would otherwise draw
+  over or replace the fade's text clip.
+- **Engine asset-lifecycle decision:** `Flux_ModelInstance::SetMaterial` retains
+  material overrides through its owning `MaterialHandle`; callers do not add a
+  second manual reference. `Zenith_ModelComponent` v8 deserialization therefore
+  keeps each decoded material alive with its temporary registry handle only
+  until a model instance accepts ownership. A procedural empty-model record has
+  no receiving instance, so the temporary material becomes reclaimable instead
+  of leaking one reference on every Dawnmere/PlayerHome greybox reload.
+- **Engine instantaneous-overlay decision:** for a zero/negative fade duration,
+  `Zenith_UIOverlay::Show` synchronously snaps current dim alpha to configured
+  dim alpha, including an already-showing repair, while `Hide` synchronously
+  clears current alpha/visibility and restores sibling interaction.
+  Positive-duration animation is unchanged. This makes the rendered overlay's
+  opacity agree with manager alpha during the same hitch-sized update instead
+  of requiring a later UI update before black is actually submitted.
+- **Automation decision:** `ZM_PlayerHomeRoundTrip_Test` drives real controller
+  input at a deterministic **1/30 presentation dt** while the engine retains its
+  ordinary fixed physics substeps. It performs FrontEnd -> Dawnmere bootstrap,
+  runs to and collides with the Dawnmere door, enters build 40 at `Door`, runs to
+  and collides with the exit, and returns to `FromHome`. Each leg asserts
+  fade-out/opaque-load/camera-barrier/fade-in ordering, exactly one load, scene
+  and entity generation replacement, persistent manager identity, exact XZ and
+  spawn-centre placement, zero motion/intent before unlock, no terrain grass in
+  the interior, and grass/camera recovery outside. The final physics-contact
+  settlement permits at most 5 cm downward Y while XZ stays exact.
+- **Tests that lock it:** four new `ZM_WorldTraversal` T0 cases bring that
+  category to **16**. `FadeAdvanceClampsInvalidDtAndRuntimeReset` also exercises
+  the production global queue sort, equal-key stability, actual UICanvas key
+  forwarding, capacity guard, text-clip arbitration, complete disabled/reset
+  queue/counter/clip drain in both Text paths, clean re-enable, owning material
+  retain/release, transient-material registry reclamation after procedural
+  empty-model deserialization, and direct zero-duration overlay Show/Hide. The
+  opaque-before-load case now crosses the full 0.20 s fade in one **0.25 s**
+  manager tick, renders the real manager canvas inside the load callback, and
+  requires an actually submitted sort-10000 alpha-1 quad before load permission.
+  The other cases lock unique exact-camera readiness, fail-closed dependency
+  loss, alpha-zero unlock, and runtime-state serialization omission. These
+  lifecycle assertions extend existing cases rather than adding registrations;
+  the category remains **16** and the P1 registry remains **6**.
+- **Definitive post-overlay-hitch automated gate (local authority):** regen
+  **2.401 s**. All five win64 targets are green: Vulkan Debug Tools=true
+  **11.225 s**, Debug Tools=false **11.755 s**, Release Tools=true **11.213 s**,
+  Release Tools=false **11.031 s**, and D3D12 Debug Tools=false **7.656 s**.
+  Boot units are **1773 ran / 1772 passed / 0 failed / 1 skipped**, with
+  **180.640 s** helper wall under the canonical watchdog; the workflow baseline
+  is 1773, `ZM_WorldTraversal` is 16, and the P1 registry is 6. Headless ran all
+  **6/6** in **1.590 s** wall: two semantic passes (`ControllerHarness` **142
+  frames / 25.100 ms**, Boot **1 / 0.018 ms**) plus exactly four
+  graphics-required skips. Windowed: `ZM_WarpInfrastructure_Test` **29 /
+  2008.714 ms** (**14.869 s** wall; one frame removed by synchronous opacity),
+  `ZM_GrassRegeneration_Test` **11 / 2579.674 ms** (**15.125 s** wall),
+  `ZM_DawnmerePlayerCamera_Test` **117 / 6212.128 ms** (**18.712 s** wall), and
+  `ZM_PlayerHomeRoundTrip_Test` **673 / 14662.601 ms** (**27.514 s** wall).
+  RenderTest rebuilt in **6.192 s**; `EngineBootShutdownSmoke` passed **1 /
+  28.606 ms** (**40.622 s** wall) and `TerrainEditorSmoke` **151 / 5291.193
+  ms** (**46.025 s** wall). The ignored
+  `Build/artifacts/zenithmon/s3/final/post_overlay_hitch_fix/` root contains **12
+  parsed JSON / 12 passed / 0 failed**, with exactly the four expected headless
+  graphics skips. The instantaneous Show/Hide and real-quad assertions add no
+  registrations or baseline drift.
+- **Visual-gate boundary:** stable ignored evidence is
+  `Build/artifacts/zenithmon/s3/visual/01_dawnmere_exterior_terrain_grass_camera.png`,
+  `02_playerhome_interior.png`, and
+  `03_dawnmere_return_camera_reacquired.png`. Provenance is capture
+  `capture_final_posthitch_20260713_183717` from the definitive binary: the
+  round-trip test passed **673 frames / 14619.2 ms** with exit 0, and all three
+  ignored/inspected PNGs are valid **1280x720**. Their respective SHA-256
+  values are
+  `9FEFA6E1B20CB9F1647F19A0416FCD6A80ACA653EB6EEEFE6A86DD722790A1DF`,
+  `13104E86246748BF58AF200DFAC213C2A6B6595A81086E30346B75857280B90E`, and
+  `B0D49B1CE41ACB98AA184E55ECB1531D34DC76009C3BED0CBD67CCD61C3B4B41`.
+  The automated gate is green, but the stage remains **NOT COMPLETE** until the
+  user reviews those captures and a separate sign-off decision is appended.
+  S4/S5 do not begin while the
+  `GATE-WAIT: S3 visual sign-off` marker remains.
+- **Reversibility:** the build-40 scene, greybox visuals, trigger geometry, and
+  0.20 s timing are localized/additive. Build index, spawn tags, component order,
+  and v1 scene streams are compatibility contracts. Global quad/text ordering is
+  engine-wide but preserves raw key-0 and equal-key historical order; reverting
+  it would reintroduce the persistent-cross-canvas occlusion bug and requires a
+  different global overlay compositor first.
+
 ## 2026-07-13 -- ZM-D-056 -- Persistent spawn-tag traversal uses a manager-only root and generation-exact scene entities
 
 - **Decision / ownership:** register `ZM_GameStateManager`, `ZM_SpawnPoint`, and

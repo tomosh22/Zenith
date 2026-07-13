@@ -13,7 +13,7 @@ AssetManifest.md (why the runner has no assets).
 **Status:** LIVING -- update whenever a gate is added/retired or branch
 protection changes.
 
-**Last updated:** 2026-07-13 (S3 traversal-infrastructure milestone -- unit baseline 1769, ZM-D-056).
+**Last updated:** 2026-07-13 (S3 PlayerHome/fade milestone -- unit baseline 1773, ZM-D-057).
 
 ---
 
@@ -53,7 +53,7 @@ pattern), active from S0. Required check name: **`zm-tests`**.
 
 **Unit-test baseline ratchet:** step 8's `-Baseline` is the exact registered
 unit-test count of `zenithmon.exe` (engine units + `ZM_*` cases; currently
-**1769**: 1768 passed, 0 failed, and 1 quarantined
+**1773**: 1772 passed, 0 failed, and 1 quarantined
 `RegistryWideNodeRoundTrip` skip). Every
 commit that changes the `ZM_*` count -- and any engine change that changes the
 engine unit count -- bumps this number in `zm-tests.yml` in the same commit.
@@ -82,17 +82,27 @@ WorldSpec-integrity tests. These touch no disk assets and no GPU, so they
 run in FULL on every `zm-tests` invocation. This is a deliberate design
 constraint on all new tests, not an accident (see TestPlan.md).
 
-The current automated registry contains five P1 tests. On the asset-less,
+The current automated registry contains six P1 tests. On the asset-less,
 GPU-less runner, `ZM_Boot_Test` and the asset-free
 `ZM_ControllerHarness_Test` execute and pass; graphics-required
 `ZM_WarpInfrastructure_Test`, `ZM_GrassRegeneration_Test`, and
-`ZM_DawnmerePlayerCamera_Test` report skips by design. The three scene tests
-also exists-guard their ignored inputs where applicable. Locally, all three
-graphics tests are mandatory stage-scoped evidence: traversal infrastructure
-completed in **4 frames / 885.7 ms**, grass lifecycle in **11 frames / 1927.5
-ms**, and Dawnmere player/camera in **117 frames / 5043.5 ms**. The four Vulkan
-Debug/Release x Tools true/false configurations and the D3D12 Debug Tools=false
-link proof are green for this milestone.
+`ZM_DawnmerePlayerCamera_Test`, and `ZM_PlayerHomeRoundTrip_Test` report skips
+by design. The four scene tests also exists-guard their ignored inputs where
+applicable. The definitive post-overlay-hitch headless registry ran **6/6 in
+1.590 s** wall: ControllerHarness **142 frames / 25.100 ms**, Boot **1 / 0.018 ms**,
+and exactly four graphics-required skips. Windowed evidence is Warp **29 /
+2008.714 ms** (**14.869 s** wall; **29 frames** after the synchronous opacity
+fix), Grass **11 / 2579.674 ms** (**15.125 s**), Camera **117 / 6212.128 ms**
+(**18.712 s**), and the real input-driven Dawnmere -> PlayerHome -> Dawnmere
+route **673 / 14662.601 ms** (**27.514 s**). The major-gate build matrix is
+green for all four Vulkan Debug/Release x Tools true/false configurations plus
+the D3D12 Debug Tools=false link proof. The engine-global UI/lifecycle changes
+additionally passed a **6.192 s** RenderTest rebuild:
+`EngineBootShutdownSmoke` **1 / 28.606 ms** (**40.622 s** wall) and
+`TerrainEditorSmoke` **151 / 5291.193 ms** (**46.025 s** wall). The ignored
+`Build/artifacts/zenithmon/s3/final/post_overlay_hitch_fix/` authority root
+contains **12 parsed JSON / 12 passed / 0 failed** for the unchanged **1773-unit
+/ 6-P1** contract.
 
 CI budget: the headless batch must stay in the minutes range (DP precedent:
 ~2 min for ~140 tests); the slowest-10 report is reviewed at every stage
