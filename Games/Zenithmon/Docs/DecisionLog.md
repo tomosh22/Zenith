@@ -15,6 +15,72 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-13 -- ZM-D-054 -- Three-recipe terrain measurement validates the cropped per-scene plan
+
+- **Decision:** close Roadmap's three-real-scene terrain-bake measurement and
+  Q-2026-07-09-002. The fixed-order measurement registry contains the real
+  WorldSpec terrain recipes Dawnmere (town, 16x16 / 256 chunks), Thornacre
+  (town, 16x16 / 256 chunks), and Route1 (route, 16x24 / 384 chunks). Each has
+  its own stable seed, authored plan, isolated asset-set name, exact output
+  enumeration, atomic warm marker, and selected-force CLI path. These recipes
+  continue the one-terrain-set-per-outdoor-scene requirement; no shared terrain
+  sheet or bake-pipeline optimization is needed before the next S3 task.
+- **Measured evidence:** calibrated direct process walls under the same harness
+  were **59.035 s / 69.979 s / 80.804 s** for Dawnmere / Thornacre / Route1;
+  the production recipe timers, which begin before reset and complete in the
+  terminal action, reported **42.588 s / 53.657 s / 64.541 s**. Their families
+  contain **256 / 256 / 384 chunks**, **772 / 772 /
+  1,156 files**, and **204,684,116 / 204,684,116 / 262,985,940 bytes**. The
+  three-sample total is **896 chunks, 2,700 files, and 672,354,172 bytes**.
+  A separate all-warm same-harness boot took **16.874 s**, validated every
+  family, and queued zero terrain recipes. ZM-D-053's original standalone
+  Dawnmere observation (**63.671 s** cold, **14.614 s** warm graphics) remains
+  historical evidence; 59.035 s is the later calibrated rerun, not a rewrite.
+- **Projection:** a town wall mean of 64.507 s and Route1's 80.804 s give the
+  11-town + 14-route planning model **24,676 files / 5,933,328,436 bytes**
+  (5.933 GB / 5.526 GiB), a conservative repeated-process **30m 40.833s**, and
+  a one-boot/net estimate of **23m 55.857s** after subtracting the shared
+  16.874-second warm baseline per sample and adding it once. Scaling the
+  internal timers and adding one baseline cross-checks at **24m 09.796s**. The
+  GDD's exact 11-town + 15-route sensitivity is **25,832 files /
+  6,196,314,376 bytes** (6.196 GB / 5.771 GiB), **32m 01.637s** repeated,
+  **24m 59.787s** one-boot/net, and **25m 14.337s** by internal-timer
+  cross-check.
+- **Why:** both conservative terrain projections fall within the existing
+  30-50 minute full-cold planning range, the net estimates are about 24-25
+  minutes, and file volume matches the prior ~25k estimate. This resolves the
+  risk sufficiently to continue S3. It does **not** prove the eventual
+  all-assets cold bake: that 30-50 minute target includes the unbuilt S4 asset
+  families, there is no explicit byte cap, and "seconds" warm is qualitative
+  rather than a numeric SLA. The model has two towns but only one route, assumes
+  later recipes stay in the 16x16 / 16x24 crop classes, and is a planning bound
+  rather than a statistical confidence bound. The `~25` planning count and
+  GDD's exact 26 outdoor scenes therefore remain explicit primary/sensitivity
+  cases. Thornacre and Route1 have measured terrain families only: this decision
+  adds no playable scenes, world connectivity, trees, or dressed content.
+- **Tests that lock it:** five new `ZM_TerrainRecipeSet` units lock the exact
+  three-row WorldSpec registry/order, distinct documented plans, deterministic
+  contained plans ending with grass erase, unique contained output sets plus
+  pure AUTO/FORCE_ALL/FORCE_SELECTED queue policy, and per-recipe marker counts
+  with missing/empty-output invalidation. Regeneration, the default build, all
+  four Vulkan Debug/Release x Tools true/false configurations, and D3D12 Debug
+  Tools=false are green. The boot gate is **1737 ran / 1736 passed / 0 failed /
+  1 skipped**; Zenithmon headless is **2/2** without terrain mutation. Each
+  selected cold bake exited 0 and published its validated marker; the all-warm
+  boot queued zero terrain recipes. The windowed grass regression still observes
+  exactly **200,159 blades from 5,133 triangles** on both Dawnmere loads.
+- **Reversibility:** the registry and projection assumptions are additive and
+  can be extended or remeasured when later representative recipes exist.
+  Recipe tuning may update measured estimates and requires either a forced bake
+  or a manifest-version bump when the required-output count is unchanged; only
+  a count change invalidates the existing marker automatically. Baked terrain
+  remains ignored.
+  If the eventual all-assets bake breaches budget, ZM-D-037 still requires an
+  optimization pass (parallel/cached/profile-guided export), never shared
+  terrain sets.
+
+---
+
 ## 2026-07-13 -- ZM-D-053 -- Dawnmere deterministic terrain bake and scene-owned grass regeneration
 
 - **Decision:** the S3 Home Village is the `Dawnmere` terrain set and scene. Its

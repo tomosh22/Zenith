@@ -21,8 +21,8 @@
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
 
-#include <cstdlib>
-#include <cstring>
+#include <filesystem>
+#include <string>
 #endif
 
 // ============================================================================
@@ -43,16 +43,17 @@ namespace
 {
 	MaterialHandle g_axDawnmereTerrainMaterials[4];
 
-	bool ZM_HasCommandLineFlag(const char* szFlag)
+	const char* ZM_TerrainBakeQueueResultToString(
+		ZM_TERRAIN_BAKE_QUEUE_RESULT eResult)
 	{
-		for (int i = 1; i < __argc; ++i)
+		switch (eResult)
 		{
-			if (std::strcmp(__argv[i], szFlag) == 0)
-			{
-				return true;
-			}
+		case ZM_TERRAIN_BAKE_HEADLESS: return "HEADLESS";
+		case ZM_TERRAIN_BAKE_WARM: return "WARM";
+		case ZM_TERRAIN_BAKE_QUEUED: return "QUEUED";
+		case ZM_TERRAIN_BAKE_PREPARE_FAILED: return "PREPARE_FAILED";
+		default: return "INVALID";
 		}
-		return false;
 	}
 
 	void ZM_InitializeDawnmereTerrainMaterials()
@@ -146,6 +147,24 @@ void Project_InitializeResources()
 // build+run must be a *_True config to bake FrontEnd.zscen.
 void Project_RegisterEditorAutomationSteps()
 {
+	ZM_TerrainBakeSelection xTerrainSelection;
+	if (!ZM_ParseTerrainBakeSelection(__argc, __argv, xTerrainSelection))
+	{
+		const bool bHasErrorArgument = xTerrainSelection.m_iErrorArgument >= 0 &&
+			xTerrainSelection.m_iErrorArgument < __argc && __argv != nullptr &&
+			__argv[xTerrainSelection.m_iErrorArgument] != nullptr;
+		Zenith_Error(LOG_CATEGORY_TERRAIN,
+			"[ZM Terrain] Selector rejected: result=%s, argvIndex=%d, argument='%s'; no automation queued",
+			ZM_TerrainBakeSelectionParseResultToString(
+				xTerrainSelection.m_eParseResult),
+			xTerrainSelection.m_iErrorArgument,
+			bHasErrorArgument ? __argv[xTerrainSelection.m_iErrorArgument] : "<null>");
+		Zenith_Assert(false,
+			"Invalid Zenithmon terrain-bake selector at argv index %d",
+			xTerrainSelection.m_iErrorArgument);
+		return;
+	}
+
 	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
 
 	xAuto.AddStep_CreateScene("FrontEnd");
@@ -169,21 +188,103 @@ void Project_RegisterEditorAutomationSteps()
 	// FrontEnd logic scene above but neither mutate terrain assets nor author a
 	// scene containing Terrain/Flux components.
 	const bool bHeadless = Zenith_CommandLine::IsHeadless();
-	ZM_TERRAIN_BAKE_QUEUE_RESULT eBakeResult = ZM_TERRAIN_BAKE_HEADLESS;
-	if (!bHeadless)
+	ZM_TerrainBakeBatchPlan xTerrainBatch;
+	if (bHeadless)
 	{
-		const bool bForceTerrainBake = ZM_HasCommandLineFlag(szZM_FORCE_TERRAIN_BAKE_FLAG);
-		eBakeResult = ZM_QueueDawnmereTerrainBake(xAuto, bHeadless, bForceTerrainBake);
+		xTerrainBatch = ZM_BuildTerrainBakeBatchPlan(
+			xTerrainSelection, true, 0u);
+		Zenith_Log(LOG_CATEGORY_TERRAIN,
+			"[ZM Terrain] Batch result: mode=%s, result=HEADLESS, probes=0, warmMask=0x0, queueMask=0x0, queued=0, sceneAuthoring=DEFERRED",
+			ZM_TerrainBakeSelectionModeToString(xTerrainSelection.m_eMode));
 	}
-	if (eBakeResult == ZM_TERRAIN_BAKE_PREPARE_FAILED)
+	else
 	{
-		Zenith_Assert(false,
-			"Dawnmere terrain bake preparation failed; suppressing scene authoring for this boot");
+		u_int uWarmRecipeMask = 0u;
+		const u_int uRecipeCount = ZM_GetTerrainAuthoringRecipeCount();
+		for (u_int i = 0; i < uRecipeCount; ++i)
+		{
+			const ZM_TerrainAuthoringRecipe& xRecipe =
+				ZM_GetTerrainAuthoringRecipe(i);
+			const bool bWarm = ZM_IsTerrainBakeWarm(
+				xRecipe, std::filesystem::path(GAME_ASSETS_DIR));
+			if (bWarm)
+			{
+				uWarmRecipeMask |= 1u << i;
+			}
+			Zenith_Log(LOG_CATEGORY_TERRAIN,
+				"[ZM Terrain] Batch probe: index=%u, set='%s', warm=%s",
+				i, xRecipe.m_pxWorldSpec->m_szTerrainSet,
+				bWarm ? "true" : "false");
+		}
+
+		xTerrainBatch = ZM_BuildTerrainBakeBatchPlan(
+			xTerrainSelection, false, uWarmRecipeMask);
+		u_int uQueuedRecipeCount = 0u;
+		for (u_int i = 0; i < uRecipeCount; ++i)
+		{
+			const ZM_TerrainAuthoringRecipe& xRecipe =
+				ZM_GetTerrainAuthoringRecipe(i);
+			const u_int uRecipeBit = 1u << i;
+			const bool bQueue =
+				(xTerrainBatch.m_uQueueRecipeMask & uRecipeBit) != 0u;
+			const bool bWarm = (uWarmRecipeMask & uRecipeBit) != 0u;
+			const char* szDecision = bQueue ? "QUEUE" :
+				(bWarm ? "SKIP_WARM" : "SKIP_FILTERED");
+			Zenith_Log(LOG_CATEGORY_TERRAIN,
+				"[ZM Terrain] Batch decision: index=%u, set='%s', action=%s",
+				i, xRecipe.m_pxWorldSpec->m_szTerrainSet, szDecision);
+			if (!bQueue)
+			{
+				continue;
+			}
+
+			const bool bForce = xTerrainSelection.m_eMode !=
+				ZM_TERRAIN_BAKE_SELECTION_AUTO_MISSING;
+			const ZM_TERRAIN_BAKE_QUEUE_RESULT eQueueResult =
+				ZM_QueueTerrainBake(xAuto, xRecipe, false, bForce);
+			Zenith_Log(LOG_CATEGORY_TERRAIN,
+				"[ZM Terrain] Batch queue: index=%u, set='%s', result=%s",
+				i, xRecipe.m_pxWorldSpec->m_szTerrainSet,
+				ZM_TerrainBakeQueueResultToString(eQueueResult));
+			if (eQueueResult == ZM_TERRAIN_BAKE_QUEUED)
+			{
+				++uQueuedRecipeCount;
+				continue;
+			}
+			if (eQueueResult == ZM_TERRAIN_BAKE_WARM && !bForce)
+			{
+				// A cold-to-warm race is harmless, but the immutable pre-scan
+				// plan still defers scene authoring until the next boot.
+				continue;
+			}
+
+			// Preparation may fail after earlier recipes appended actions.
+			// Reset makes this boot all-or-nothing: no partial batch executes.
+			xAuto.Reset();
+			Zenith_Error(LOG_CATEGORY_TERRAIN,
+				"[ZM Terrain] Batch aborted: index=%u, set='%s', result=%s; automation reset",
+				i, xRecipe.m_pxWorldSpec->m_szTerrainSet,
+				ZM_TerrainBakeQueueResultToString(eQueueResult));
+			Zenith_Assert(false,
+				"Terrain bake batch preparation failed for %s",
+				xRecipe.m_pxWorldSpec->m_szTerrainSet);
+			return;
+		}
+
+		Zenith_Log(LOG_CATEGORY_TERRAIN,
+			"[ZM Terrain] Batch result: mode=%s, result=%s, probes=%u, warmMask=0x%X, queueMask=0x%X, queued=%u, sceneAuthoring=%s",
+			ZM_TerrainBakeSelectionModeToString(xTerrainSelection.m_eMode),
+			xTerrainBatch.m_uQueueRecipeMask == 0u ? "NO_QUEUE" : "QUEUED",
+			uRecipeCount, xTerrainBatch.m_uWarmRecipeMask,
+			xTerrainBatch.m_uQueueRecipeMask, uQueuedRecipeCount,
+			xTerrainBatch.m_bAuthorDawnmereScene ?
+				"AUTHOR_DAWNMERE" : "DEFERRED");
 	}
 
-	// A queued cold/forced bake completes this boot. Author the scene only on a
-	// later windowed boot that observes the finalized manifest as warm.
-	if (eBakeResult == ZM_TERRAIN_BAKE_WARM)
+	// A queued cold/forced batch completes this boot. Author Dawnmere only when
+	// the windowed pre-scan found every registered terrain warm and queued none.
+	// Thornacre and Route1 remain measurement-only recipes in this milestone.
+	if (xTerrainBatch.m_bAuthorDawnmereScene)
 	{
 		const ZM_TerrainAuthoringRecipe& xRecipe = ZM_GetDawnmereTerrainRecipe();
 		const ZM_TerrainPreviewCameraSpec& xCamera = xRecipe.m_xPreviewCamera;

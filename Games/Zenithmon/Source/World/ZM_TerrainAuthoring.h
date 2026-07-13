@@ -130,8 +130,21 @@ struct ZM_TerrainAuthoringRecipe
 {
 	const ZM_WorldSpec* m_pxWorldSpec;
 	u_int m_uSeed;
-	float m_fWorldMin;
-	float m_fWorldMax;
+	// Exported authoring bounds are rectangular. The anonymous aliases retain
+	// source compatibility with Dawnmere's original square-only contract while
+	// making X/Z containment explicit for route recipes.
+	union
+	{
+		float m_fWorldMinX;
+		float m_fWorldMin;
+	};
+	union
+	{
+		float m_fWorldMaxX;
+		float m_fWorldMax;
+	};
+	float m_fWorldMinZ;
+	float m_fWorldMaxZ;
 	ZM_TerrainExportRect m_xExportRect;
 	float m_fTargetHeight;
 	ZM_TerrainProceduralSpec m_xProcedural;
@@ -207,13 +220,72 @@ enum ZM_TERRAIN_BAKE_QUEUE_RESULT : u_int
 	ZM_TERRAIN_BAKE_PREPARE_FAILED,
 };
 
+enum ZM_TERRAIN_BAKE_SELECTION_MODE : u_int
+{
+	ZM_TERRAIN_BAKE_SELECTION_AUTO_MISSING,
+	ZM_TERRAIN_BAKE_SELECTION_FORCE_ALL,
+	ZM_TERRAIN_BAKE_SELECTION_FORCE_SELECTED,
+};
+
+enum ZM_TERRAIN_BAKE_SELECTION_PARSE_RESULT : u_int
+{
+	ZM_TERRAIN_BAKE_SELECTION_PARSE_OK,
+	ZM_TERRAIN_BAKE_SELECTION_PARSE_MALFORMED,
+	ZM_TERRAIN_BAKE_SELECTION_PARSE_UNKNOWN_SET,
+	ZM_TERRAIN_BAKE_SELECTION_PARSE_DUPLICATE,
+	ZM_TERRAIN_BAKE_SELECTION_PARSE_CONFLICT,
+};
+
+struct ZM_TerrainBakeSelection
+{
+	ZM_TERRAIN_BAKE_SELECTION_MODE m_eMode =
+		ZM_TERRAIN_BAKE_SELECTION_AUTO_MISSING;
+	u_int m_uSelectedRecipeMask = 0u;
+	int m_iErrorArgument = -1;
+	ZM_TERRAIN_BAKE_SELECTION_PARSE_RESULT m_eParseResult =
+		ZM_TERRAIN_BAKE_SELECTION_PARSE_OK;
+};
+
+struct ZM_TerrainBakeBatchPlan
+{
+	u_int m_uWarmRecipeMask = 0u;
+	u_int m_uQueueRecipeMask = 0u;
+	bool m_bAllWarm = false;
+	bool m_bAuthorDawnmereScene = false;
+};
+
 constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 1u;
+constexpr u_int uZM_TERRAIN_RECIPE_COUNT = 3u;
 constexpr u_int uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT = 771u;
+constexpr u_int uZM_THORNACRE_REQUIRED_OUTPUT_COUNT = 771u;
+constexpr u_int uZM_ROUTE1_REQUIRED_OUTPUT_COUNT = 1155u;
 constexpr u_int uZM_TERRAIN_MANIFEST_SIZE = 12u;
 constexpr const char* szZM_FORCE_TERRAIN_BAKE_FLAG = "--zm-force-terrain-bake";
 
 u_int ZM_Fnv1a32(const char* szText);
+u_int ZM_GetTerrainAuthoringRecipeCount();
+const ZM_TerrainAuthoringRecipe& ZM_GetTerrainAuthoringRecipe(u_int uIndex);
+const ZM_TerrainAuthoringRecipe* ZM_FindTerrainAuthoringRecipe(ZM_SCENE_ID eSceneId);
 const ZM_TerrainAuthoringRecipe& ZM_GetDawnmereTerrainRecipe();
+const ZM_TerrainAuthoringRecipe& ZM_GetThornacreTerrainRecipe();
+const ZM_TerrainAuthoringRecipe& ZM_GetRoute1TerrainRecipe();
+
+// Parse the repeatable terrain-bake selector without inspecting or mutating
+// terrain state. An absent flag selects missing recipes; the bare flag forces
+// all recipes; '=Set' arguments select exactly those case-sensitive sets.
+// Invalid input stops at and records the first offending argv index.
+bool ZM_ParseTerrainBakeSelection(int iArgumentCount,
+	const char* const* pszArguments, ZM_TerrainBakeSelection& xSelectionOut);
+const char* ZM_TerrainBakeSelectionModeToString(
+	ZM_TERRAIN_BAKE_SELECTION_MODE eMode);
+const char* ZM_TerrainBakeSelectionParseResultToString(
+	ZM_TERRAIN_BAKE_SELECTION_PARSE_RESULT eResult);
+
+// Pure batch policy. The caller supplies the complete pre-scan warm mask;
+// headless callers receive an empty plan and must not perform that scan.
+ZM_TerrainBakeBatchPlan ZM_BuildTerrainBakeBatchPlan(
+	const ZM_TerrainBakeSelection& xSelection, bool bHeadless,
+	u_int uWarmRecipeMask);
 
 // Build the complete ordered recipe plan used by editor automation. Repeated
 // calls are byte-for-byte field deterministic; no values depend on clocks or
@@ -225,6 +297,7 @@ void ZM_BuildTerrainAuthoringPlan(const ZM_TerrainAuthoringRecipe& xRecipe,
 // exist and be non-empty before a bake can be marked warm.
 void ZM_EnumerateRequiredTerrainOutputs(const ZM_TerrainAuthoringRecipe& xRecipe,
 	Zenith_Vector<std::string>& xOutputsOut);
+u_int ZM_GetTerrainRequiredOutputCount(const ZM_TerrainAuthoringRecipe& xRecipe);
 std::string ZM_GetTerrainManifestRelativePath(const ZM_TerrainAuthoringRecipe& xRecipe);
 std::string ZM_GetTerrainGrassAssetPath(const ZM_TerrainAuthoringRecipe& xRecipe);
 
@@ -238,8 +311,8 @@ bool ZM_IsTerrainBakeWarm(const ZM_TerrainAuthoringRecipe& xRecipe,
 #ifdef ZENITH_TOOLS
 // Prepare removes stale marker/temp files and all three old textures before
 // any forced or incomplete regeneration. A failure queues no work. Finalize
-// verifies all 771 outputs, writes a 12-byte temp marker, then atomically
-// renames it as the final bake write.
+// verifies the recipe-specific output family, writes its required count into a
+// 12-byte temp marker, then atomically renames it as the final bake write.
 bool ZM_PrepareTerrainBake(const ZM_TerrainAuthoringRecipe& xRecipe,
 	const std::filesystem::path& xGameAssetsRoot);
 bool ZM_FinalizeTerrainBake(const ZM_TerrainAuthoringRecipe& xRecipe,
@@ -248,7 +321,13 @@ bool ZM_FinalizeTerrainBake(const ZM_TerrainAuthoringRecipe& xRecipe,
 class Zenith_EditorAutomation;
 
 // Queue the complete terrain-only recipe. QUEUED means this boot must stop
-// after the bake; the next WARM boot may author Dawnmere's scene.
+// after the bake; the next WARM boot may author its scene. Only immutable
+// registry recipes are accepted; callbacks are fixed per recipe and retain no
+// mutable queued recipe pointer.
+ZM_TERRAIN_BAKE_QUEUE_RESULT ZM_QueueTerrainBake(Zenith_EditorAutomation& xAutomation,
+	const ZM_TerrainAuthoringRecipe& xRecipe, bool bHeadless, bool bForce);
+
+// Compatibility wrapper for the first shipped terrain consumer.
 ZM_TERRAIN_BAKE_QUEUE_RESULT ZM_QueueDawnmereTerrainBake(Zenith_EditorAutomation& xAutomation,
 	bool bHeadless, bool bForce);
 #endif

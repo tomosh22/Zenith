@@ -89,20 +89,6 @@
 
 ---
 
-### [OPEN] Q-2026-07-09-002 -- Terrain bake time for ~25 terrains is an unmeasured estimate
-
-**Question:** is the ~25-terrain plan (one terrain set per outdoor scene via engine change E1) affordable in bake time and file volume?
-
-**Context:** plan risk #1. A full 64x64 chunk export is ~12k files and minutes-to-hours PER terrain; E2's rect export (routes ~16x24 chunks, towns ~16x16) shrinks the projection to ~25k files total and an estimated 20-40 min cold bake. Dawnmere now supplies the first real measurement: its 16x16, 772-file terrain family cold-baked in **63.671 s** (warm graphics boot **14.614 s**). One town is not the required three-scene sample, so the project-wide estimate remains unvalidated.
-
-**Best-guess action taken:** keep the measurement task open. Bake 2 more real scene recipes, then extrapolate all 3 results before authoring the remaining ~22 terrain recipes. **One terrain set per outdoor scene/route is a hard requirement, not negotiable** (user directive 2026-07-11) -- shared terrain sheets across routes are OUT OF SCOPE as a fallback. If measurement shows bakes are too slow, the fallback is to optimize the bake pipeline itself (parallelize chunk export across cores/processes, cache/incrementalize unchanged chunks, profile and cut the actual hot path) rather than reduce terrain-set count.
-
-**Cost if wrong:** low-to-moderate if measured at S3 as planned (an optimization pass is scoped work, not a redesign); HIGH if ignored until S9/S10 (a 25x slow bake would poison every tools boot and CI-adjacent workflow during the content stages).
-
-**Status:** asked 2026-07-09. IN PROGRESS at S3: Dawnmere is sample 1/3; the Roadmap measurement remains the next task.
-
----
-
 ### [OPEN] Q-2026-07-09-003 -- Battle-scene visual isolation at the (0,-2000,0) offset is asserted, not yet proven
 
 **Question:** does the additive battle scene at world offset (0,-2000,0) actually render with zero overworld bleed-through?
@@ -155,3 +141,54 @@ conventional. Classic branch protection was created via
 `[zm-tests]`, `strict=false`, `enforce_admins=false` (owner direct pushes
 bypass; agent PRs are always gated). Full shape + consequences: CIPolicy.md
 section 4; checklist item ticked in ManualSetupChecklist.md.
+
+---
+
+### [RESOLVED] Q-2026-07-09-002 -- Terrain bake time for ~25 terrains is an unmeasured estimate
+
+**Resolution (2026-07-13, ZM-D-054):** the three-real-recipe study is complete
+and supports continuing with one terrain set per outdoor scene/route. Calibrated
+same-harness cold wall times were Dawnmere **59.035 s**, Thornacre **69.979 s**,
+and Route1 **80.804 s**; their internal recipe timers were **42.588 s**,
+**53.657 s**, and **64.541 s**. The all-warm baseline was **16.874 s** and
+queued zero terrain recipes. The measured families total 896 chunks, **2,700 files**,
+and **672,354,172 bytes**.
+
+The 11-town + 14-route planning model projects **24,676 terrain-family files /
+5,933,328,436 bytes** (5.933 GB / 5.526 GiB), a conservative repeated-process
+wall of **30m 40.833s**, and a one-boot/net estimate of **23m 55.857s**. The
+GDD's exact 11-town + 15-route outdoor count is retained as a sensitivity:
+**25,832 files / 6,196,314,376 bytes** (6.196 GB / 5.771 GiB), **32m 01.637s**
+repeated and **24m 59.787s** net. Both conservative terrain projections sit
+within the documented 30-50 minute full-cold range, so no bake-pipeline
+optimization is required before the next S3 task.
+
+**Question:** is the ~25-terrain plan (one terrain set per outdoor scene via
+engine change E1) affordable in bake time and file volume?
+
+**Original context/action:** a full 64x64 chunk export is ~12k files and
+minutes-to-hours per terrain. E2's rect export (routes ~16x24, towns ~16x16)
+was expected to reduce this to ~25k files and 20-40 minutes. Dawnmere's first
+standalone bake measured **63.671 s** with a **14.614 s** warm graphics boot;
+that historical ZM-D-053 observation remains valid and is distinct from the
+calibrated 59.035-second same-harness rerun above. The chosen action was to
+measure two more real recipes before scale-up. One set per outdoor scene/route
+remains mandatory; if later full-project measurements are too slow, optimize
+the pipeline rather than share terrain sets.
+
+**Acceptance cautions:** the 30-50 minute budget is for the eventual
+**all-assets** cold bake, not terrain alone; the other asset generators remain
+unmeasured. There is no explicit byte-volume cap, and "seconds" for warm boot
+is qualitative rather than a numeric SLA. The conservative repeated-process
+figure is a planning bound, not a statistical confidence bound: the sample has
+two towns but only one route and assumes later recipes use the same 16x16 /
+16x24 crop classes. The `~25` plan and GDD's exact 26 outdoor scenes are both
+shown above rather than silently choosing one.
+
+**Cost if wrong:** low-to-moderate while the remaining recipes are still
+unbuilt; remeasure representative recipes and optimize the bake hot path if
+future content or the full all-assets bake exceeds budget. Shared terrain
+sheets remain out of scope.
+
+**Status:** RESOLVED 2026-07-13 by the completed three-recipe measurement and
+projection (ZM-D-054).

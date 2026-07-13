@@ -63,8 +63,9 @@ There is no audio in the engine, so nothing audio-shaped exists to test.
 
 Unit-test categories planned per stage: `ZM_Boot` (S0, shipped), `ZM_Data` /
 `ZM_Stats` / `ZM_World` (S1), `ZM_Battle` / `ZM_AI` / `ZM_Breeding` /
-`ZM_Tower` (S2), `ZM_Gen` (S4), `ZM_Grass` / `ZM_Encounter` (S5), `ZM_UI`
-(S6), `ZM_Save` (S7). New systems get a new category, never a grab-bag.
+`ZM_Tower` (S2), `ZM_TerrainAuthoring` / `ZM_TerrainRecipeSet` / `ZM_Grass`
+(S3, shipped), `ZM_Gen` (S4), `ZM_Encounter` (S5), `ZM_UI` (S6), `ZM_Save`
+(S7). New systems get a new category, never a grab-bag.
 
 ---
 
@@ -277,7 +278,7 @@ biggest suite; all headless, all seeded (C8).
 
   All seven are engine-side `ZENITH_TEST` cases and are count-ratcheted into
   both the shared engine unit gate (**1078** registered) and Zenithmon's CI
-  boot unit gate (**1732** registered). The latter expects 1731 passed,
+  boot unit gate (**1737** registered). The latter expects 1736 passed,
   0 failed and the one quarantined skip.
 - **E2 engine unit tests (SHIPPED -- exactly three):**
 
@@ -296,7 +297,8 @@ biggest suite; all headless, all seeded (C8).
   terminal state so a newly baked source can be tried again. The three E2
   cases historically raised the shared engine baseline 1075 -> 1078 and
   Zenithmon's exact boot baseline 1725 -> 1728; Dawnmere's four game units
-  subsequently raise only the Zenithmon baseline to 1732.
+  then raised only the Zenithmon baseline to 1732, and the five measurement-
+  registry units below raise it to 1737.
 - **Dawnmere terrain/grass unit tests (SHIPPED -- exactly four):**
 
   | Test | Contract covered |
@@ -309,10 +311,49 @@ biggest suite; all headless, all seeded (C8).
   A cold/forced bake publishes the marker only after all 771 outputs validate,
   making the ignored terrain family exactly **772 files** including the marker;
   scene authoring is deferred until a valid warm boot and writes ignored
-  `Dawnmere.zscen`. The observed cold bake is **63.671 s** and observed warm
-  graphics boot is **14.614 s**. This is only sample 1/3 for the separate
-  Roadmap bake-time measurement; that task is not complete. No trees are
-  generated or tested in this first terrain deliverable.
+  `Dawnmere.zscen`. ZM-D-053's historical first observations remain **63.671 s**
+  cold and **14.614 s** warm graphics. The calibrated three-recipe study later
+  reran Dawnmere under a common harness at **59.035 s**; it does not rewrite
+  that original result. No trees are generated or tested in this deliverable.
+- **Three-recipe measurement unit tests (SHIPPED -- exactly five):**
+
+  | Test | Contract covered |
+  |---|---|
+  | `ZM_TerrainRecipeSet::RegistryHasExactlyThreeWorldSpecRecipesInFixedOrder` | Exact Dawnmere/Thornacre/Route1 registry count and WorldSpec order; town/route kinds, build indices, asset-set names, stable seeds, crop classes, required-output counts |
+  | `ZM_TerrainRecipeSet::RecipesCarryDistinctDocumentedOutdoorPlans` | Distinct town/route authored geometry, paths, pads, material/auto-splat rules, grass fields, landmarks, and cameras remain real recipe content rather than cloned measurement fixtures |
+  | `ZM_TerrainRecipeSet::PlansAreDeterministicContainedAndEndWithGrassErase` | Rebuilt plans compare exactly; every operation stays inside its authored world; density-path erase remains before the checked terminal bake |
+  | `ZM_TerrainRecipeSet::OutputsAreUniqueSetContainedAndQueuePolicyIsPure` | Every output is unique and contained; AUTO_MISSING, FORCE_ALL, and exact-case FORCE_SELECTED parsing/selection are pure; invalid and duplicate selector forms fail closed |
+  | `ZM_TerrainRecipeSet::ManifestsEncodePerRecipeCountsAndInvalidateMissingOrEmptyOutputs` | Town markers encode count 771, Route1 encodes 1,155; all required files must be non-empty; missing/empty output and malformed marker invalidate warm state |
+
+- **Three-recipe measurement commands/evidence (2026-07-13, ZM-D-054):**
+  run the default Tools-enabled Vulkan executable serially and record process
+  wall time around each direct boot. The calibrated invocations were equivalent
+  to the following PowerShell command shapes (without `--skip-tool-exports`, so
+  every wall includes the same normal boot/export overhead):
+
+  ```powershell
+  $exe = 'Games/Zenithmon/Build/output/win64/vulkan_vs2022_debug_win64_true/zenithmon.exe'
+  & $exe --zm-force-terrain-bake=Dawnmere --skip-unit-tests *> Build/artifacts/terrain_measure_dawnmere.log
+  & $exe --zm-force-terrain-bake=Thornacre --skip-unit-tests *> Build/artifacts/terrain_measure_thornacre.log
+  & $exe --zm-force-terrain-bake=Route1 --skip-unit-tests *> Build/artifacts/terrain_measure_route1.log
+  & $exe --skip-unit-tests *> Build/artifacts/terrain_measure_all_warm.log
+  ```
+
+  | Set/run | Process wall | Production recipe timer | Chunks | Family files | Family bytes | Result |
+  |---|---:|---:|---:|---:|---:|---|
+  | Dawnmere selected cold | **59.035 s** | **42.588 s** | 256 | 772 | 204,684,116 | exit 0; validated marker |
+  | Thornacre selected cold | **69.979 s** | **53.657 s** | 256 | 772 | 204,684,116 | exit 0; validated marker |
+  | Route1 selected cold | **80.804 s** | **64.541 s** | 384 | 1,156 | 262,985,940 | exit 0; validated marker |
+  | All warm | **16.874 s** | n/a | 896 total | 2,700 total | 672,354,172 total | exit 0; warm mask `0x7`, queue mask `0x0` |
+
+  The 11-town + 14-route planning model projects **24,676 files /
+  5,933,328,436 bytes**, conservative repeated-process **30m 40.833s**, and
+  one-boot/net **23m 55.857s**. The GDD 11-town + 15-route sensitivity projects
+  **25,832 files / 6,196,314,376 bytes**, **32m 01.637s** repeated and **24m
+  59.787s** net. The 30-50 minute target is eventual **all-assets** cold time,
+  not a terrain-only acceptance ceiling; no byte cap exists, warm "seconds" is
+  qualitative, and one measured route does not create a statistical upper
+  bound. Thornacre/Route1 have no authored playable scenes or trees.
 - **P1 `ZM_GrassRegeneration_Test` (SHIPPED, windowed):** exists-guards the
   ignored Dawnmere scene/terrain family and is tagged graphics-required. It
   loads Dawnmere, verifies the CPU/Flux 1024-square density-map contract and
@@ -321,7 +362,7 @@ biggest suite; all headless, all seeded (C8).
   accumulation, then returns to FrontEnd and requires the Flux density map and
   visible grass chunks to be clear. Headless Zenithmon reports **2/2** outcomes:
   `ZM_Boot_Test` passes and this graphics test skips as designed.
-- **Current regression evidence:** the full boot gate is **1732 ran / 1731
+- **Current regression evidence:** the full boot gate is **1737 ran / 1736
   passed / 0 failed / 1 skipped**; all four Vulkan Debug/Release x Tools
   true/false configurations plus D3D12 Debug Tools=false build green;
   CityBuilder is **45/45**, DevilsPlayground is **158/158**, and RenderTest

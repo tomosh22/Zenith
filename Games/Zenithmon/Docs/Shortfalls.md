@@ -4,9 +4,9 @@
 
 **Scope note (2026-07-09, S0):** at S0 essentially EVERYTHING is a gap -- the project is a booting skeleton. This doc is deliberately structured per major system with a one-line current-state each, so later sessions UPDATE lines in place rather than restructure. When a stage lands, replace that system's status line and add a dated note; do not reorder sections.
 
-**Verdict at a glance (updated 2026-07-13, first S3 terrain scene COMPLETE, ZM-D-053):**
-- **What works today:** boot skeleton + the complete S1 data core and deterministic headless battle engine, including feature-complete breeding/gender and Battle Tower logic. S3 E1/E2 supply backward-compatible isolated terrain sets, safe staged/rectangular authoring, and terminal sparse-HIGH streaming (ZM-D-051/052). Dawnmere is the first real outdoor consumer: an ignored deterministic 16x16 terrain family and ignored preview scene load/reload with scene-owned grass regeneration (ZM-D-053). Current game-unit inventory is **264 `ZM_Data` + 384 `ZM_Battle` + 2 `ZM_Boot` + 3 `ZM_TerrainAuthoring` + 1 `ZM_Grass`**; the full boot gate is **1732 ran / 1731 passed / 0 failed / 1 skipped**. There is still no integrated playable loop: the rest of S3/S5 remains.
-- **What's designed but unbuilt:** the remaining S3 three-scene bake measurement (Dawnmere is only sample 1/3), player/controller/camera/warp, and the remaining outdoor terrain recipes; asset generators (S4); overworld<->battle integration + UI (S5/S6); save schema (S7); and broader world/story content and connectivity (S8-S12). See [Roadmap.md](Roadmap.md).
+**Verdict at a glance (updated 2026-07-13, S3 three-recipe terrain measurement COMPLETE, ZM-D-054):**
+- **What works today:** boot skeleton + the complete S1 data core and deterministic headless battle engine, including feature-complete breeding/gender and Battle Tower logic. S3 E1/E2 supply backward-compatible isolated terrain sets, safe staged/rectangular authoring, and terminal sparse-HIGH streaming (ZM-D-051/052). Dawnmere remains the first real preview-scene consumer with scene-owned grass (ZM-D-053); the completed measurement registry adds distinct deterministic Thornacre and Route1 terrain recipes/families and closes the bake-risk question (ZM-D-054). Current game-unit inventory is **264 `ZM_Data` + 384 `ZM_Battle` + 2 `ZM_Boot` + 3 `ZM_TerrainAuthoring` + 5 `ZM_TerrainRecipeSet` + 1 `ZM_Grass`**; the full boot gate is **1737 ran / 1736 passed / 0 failed / 1 skipped**. There is still no integrated playable loop: the rest of S3/S5 remains.
+- **What's designed but unbuilt:** player/controller/camera/warp, the remaining outdoor terrain recipes and all playable Thornacre/Route1 scene content; asset generators (S4); overworld<->battle integration + UI (S5/S6); save schema (S7); and broader world/story content and connectivity (S8-S12). The eventual all-assets cold bake remains unmeasured. See [Roadmap.md](Roadmap.md).
 - **Locked cuts (not gaps -- see Scope.md):** no audio (engine has none), no networking/multiplayer/trading, no Dynamax-analog, battle format singles only, documented volatile-status cuts (Substitute/Encore/Transform/weight moves).
 
 ---
@@ -29,13 +29,13 @@
 
 ### 1.3 Overworld
 
-**Status: S3 active; the first outdoor terrain scene exists, but it is not a playable or connected overworld yet (ZM-D-053).**
-Per-scene terrain isolation, safe staged targeting, bounded export, and sparse streaming exist (ZM-D-051/052). Dawnmere now has a workspace-local ignored 772-file terrain family plus `Dawnmere.zscen`; its deterministic recipe spans world `0..1024`, exports 16x16 chunks, and regenerates grass on load/reload. It intentionally has no trees. There is still no player controller (the engine has no character controller -- proper approach is a Jolt capsule + velocity), follow camera, input-action wrapper, warp/spawn-tag system, persistent `ZM_GameStateManager`, building/prop dressing, or world connectivity. The next task is the still-open three-real-scene bake-time measurement, not a claim that terrain scale-up is proven.
+**Status: S3 active; three real terrain recipes are measured, but only Dawnmere has a preview scene and none forms a playable or connected overworld yet (ZM-D-053/054).**
+Per-scene terrain isolation, safe staged targeting, bounded export, and sparse streaming exist (ZM-D-051/052). The ignored Dawnmere/Thornacre/Route1 terrain families total 896 chunks, 2,700 files, and 672,354,172 bytes; calibrated walls are 59.035 / 69.979 / 80.804 seconds, with an all-warm 16.874-second zero-terrain-recipe queue. Dawnmere alone has `Dawnmere.zscen` and its existing grass regeneration. Thornacre and Route1 are measurement terrain families only: there are no corresponding authored playable scenes, trees, buildings/props, NPCs, traversal, or connectivity. There is still no player controller (the engine has no character controller -- proper approach is a Jolt capsule + velocity), follow camera, input-action wrapper, warp/spawn-tag system, persistent `ZM_GameStateManager`, building/prop dressing, or world connectivity. The next task is `ZM_PlayerController` + `ZM_FollowCamera` + `ZM_InputActions`.
 
 ### 1.4 Asset generators
 
 **Status: not started -- lands at S4.**
-No creature/human/building/prop generators, no texture synth, no bake manifest. The creature generator (8 archetypes, mesh+skeleton+6 clips+textures per species, shiny variants, ~7-8.5k lines) is the single biggest work item in the project. Master reference: the StickFigure pipeline in `Tools/Zenith_Tools_TestAssetExport.cpp`.
+No creature/human/building/prop generators, no texture synth, and no non-terrain family bake manifest. The creature generator (8 archetypes, mesh+skeleton+6 clips+textures per species, shiny variants, ~7-8.5k lines) is the single biggest work item in the project. Because those families do not exist, the documented 30-50 minute **all-assets** cold-bake budget is still unmeasured even though the terrain component now has a three-recipe projection. Master reference: the StickFigure pipeline in `Tools/Zenith_Tools_TestAssetExport.cpp`.
 
 ### 1.5 Battle integration (overworld <-> battle)
 
@@ -55,7 +55,7 @@ No dialogue box, menu stack, battle HUD, party/bag/dex/box/shop screens. The eng
 ### 1.8 Story / world content
 
 **Status: broader gameplay/world connectivity not started -- slice at S8, buildout at S9/S10.**
-Dawnmere's generated terrain preview now exists alongside FrontEnd, but it is not a connected or playable town: there are no routes, gyms, interiors, NPCs, trainers, story flags, badges, rival arc, League, warps, or spawn-tag traversal. The remaining ~38 scene/content families still depend on shared WorldSpec-driven authoring plus the unfinished S3 controller/connectivity work.
+Dawnmere's generated terrain preview now exists alongside FrontEnd, but it is not a connected or playable town. Thornacre and Route1 now have measured ignored terrain families, **not** scene/content implementations. There are no routes, gyms, interiors, NPCs, trainers, story flags, badges, rival arc, League, warps, or spawn-tag traversal. The remaining ~38 scene/content families still depend on shared WorldSpec-driven authoring plus the unfinished S3 controller/connectivity work.
 
 ### 1.9 Post-game
 
@@ -76,7 +76,7 @@ All additive + back-compatible; each lands with unit tests + a RenderTest boot r
 | # | Gap | Why it blocks Zenithmon | Lands at |
 |---|-----|------------------------|----------|
 | E1 | **RESOLVED 2026-07-12 (ZM-D-051):** serialized strict terrain-set name, empty exact legacy layout, all runtime/editor/automation paths routed, safe staged bake cleanup, v1-v4 compatibility | Zenithmon can isolate one terrain asset family per outdoor scene without regressing existing games | S3 |
-| E2 | **RESOLVED 2026-07-13 (ZM-D-052):** inclusive anchor-containing bounded export, safe stale-mesh cleanup, and terminal/bounded missing-or-invalid HIGH streaming | Makes one cropped asset family per outdoor scene plausible; bake time/file volume still must be MEASURED with three real scenes (Q-2026-07-09-002) | S3 |
+| E2 | **RESOLVED 2026-07-13 (ZM-D-052):** inclusive anchor-containing bounded export, safe stale-mesh cleanup, and terminal/bounded missing-or-invalid HIGH streaming | Makes one cropped asset family per outdoor scene plausible; ZM-D-054 subsequently completed the three-real-recipe bake/file measurement and resolved Q-2026-07-09-002 | S3 |
 | E3 | `Zenith_UIText` has no typewriter reveal (visible-glyph-count property) | Every dialogue line and battle-text line needs it; belongs in the widget, not per-game hacks | S5 |
 | E4 | No `Zenith_UIGridLayoutGroup` (existing LayoutGroup is horizontal/vertical only) | Bag / box / dex grids are core UI surfaces | S6 |
 | E5 | Grass singleton state persists across SINGLE scene loads (`ResetRenderSystems` never calls `Grass().Reset()`, and `Reset()` leaves instances/flags/density map intact) | Leakage would put tall grass inside gyms and interiors; fix = wire Reset into ResetRenderSystems + widen Reset | S5 |
@@ -86,7 +86,7 @@ All additive + back-compatible; each lands with unit tests + a RenderTest boot r
 
 ## 3. Cross-cutting risks (tracked, not yet biting)
 
-- **Terrain bake time / file volume** -- Dawnmere's 16x16 family is the first measured sample (**63.671 s** cold, 772 files), but the required three-real-scene measurement remains open before scale-up. One terrain set per outdoor scene/route is a hard requirement (user directive 2026-07-11); fallback if too slow = optimize the bake pipeline, not shared terrain sheets (Questions.md Q-2026-07-09-002).
+- **Terrain bake time / file volume -- MEASUREMENT COMPLETE (ZM-D-054):** calibrated Dawnmere/Thornacre/Route1 walls are **59.035 / 69.979 / 80.804 s** for 772 / 772 / 1,156 files. The 25-set planning model projects 24,676 files / 5.933 GB and 30m 40.833s repeated or 23m 55.857s one-boot/net; the exact-GDD 26-set sensitivity is 25,832 files / 6.196 GB and 32m 01.637s / 24m 59.787s. This closes Q-2026-07-09-002 without triggering optimization, but the full all-assets bake is still unmeasured, no byte ceiling exists, warm "seconds" is qualitative, and only one route was sampled. One set per outdoor scene remains mandatory; optimize the pipeline rather than share sets if later evidence breaches budget.
 - **Encounter-transition hitch** -- additive battle design avoids terrain reload; S5 gate asserts the round-trip frame budget.
 - **Battle-scene render bleed at offset** -- S5 screenshot gate; fallback SINGLE + snapshot (Questions.md Q-2026-07-09-003).
 - **Test-suite runtime blowup** -- battle correctness stays headless; long playthroughs are `m_bManualOnly`; slowest-10 report + hard budget at every gate.

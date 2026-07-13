@@ -39,7 +39,7 @@ the S4 families and `Source/World/ZM_TerrainAuthoring` for S3 terrain).
 | Human models | ~35 .zmodel on ONE shared skeleton + ONE shared 9-clip set | ZM_HumanGen | S4 |
 | Building models | ~30 .zmodel | ZM_BuildingGen | S4 |
 | Props | ~25 models (incl. ~6 battle-dome biome dressing sets) | ZM_PropGen | S4 |
-| Terrain sets | 1 per outdoor scene, ~25 sets | ZM_TerrainAuthoring (engine E1 + E2 shipped) | S3 (Dawnmere first set complete) -> S9/S10 (all) |
+| Terrain sets | 1 per outdoor scene, ~25 sets | ZM_TerrainAuthoring (engine E1 + E2 shipped) | S3 (three measurement terrain families complete; only Dawnmere has a preview scene) -> S9/S10 (all) |
 | Scenes | ~40 .zscen (boot-authored via AddStep_*) | ZM_SceneAuthoring from ZM_WorldSpec | S0 (FrontEnd) onward |
 | Behaviour graphs | .bgraph glue graphs (menu/NPC/cutscene) | ZM_GraphAuthoring (Zenith_GraphBuilder DSL) | S6 onward |
 
@@ -187,9 +187,10 @@ anchor chunk `(0,0)`. An accepted rectangle of width `W` and height `H` writes
 exactly `3 * W * H` direct `.zmesh` files with their absolute fixed-grid
 coordinates; the complete 64x64 sheet is exactly 12,288 files. This crops the
 existing fixed 4096x4096 m grid for bake/file-count purposes and does **not**
-resize it; per-instance extent remains deferred E6 work. Routes target about
-16x24 chunks and towns about 16x16, yielding about 25k files across all ~25
-sets.
+resize it; per-instance extent remains deferred E6 work. The measured crop
+classes are routes at 16x24 chunks and towns at 16x16. Eleven towns plus 14
+routes project to 24,676 terrain-family files; the GDD's exact 15-route count
+projects to 25,832.
 
 Component initialization still hard-requires the anchor and skips other
 missing render/physics chunks with warnings. Dynamic HIGH streaming uses a
@@ -209,10 +210,12 @@ flatten dabs along the authored polyline -> town pads at building footprints
 -> Erode -> AutoSplat x4 + dirt-path splat -> GrassDensity brush patches
 beside (never on) the path -> checked terminal SaveTextures +
 ExportChunksRect + manifest publication. Recipes are driven from ZM_WorldSpec
-rows. Tree placement is a future content pass; the first Dawnmere terrain
-deliverable intentionally contains no trees.
+rows. Tree placement is a future content pass; the three S3 measurement
+recipes intentionally contain no trees. Only Dawnmere currently warm-authors
+a preview scene; Thornacre and Route1 are terrain measurements, not playable
+or dressed scenes.
 
-### 4.3 First shipped terrain family: Dawnmere (Home Village)
+### 4.3 Measured terrain families
 
 - **Identity:** WorldSpec terrain set `Dawnmere`; FNV-1a seed `0x7BF32CA4`;
   authored coordinates `0..1024`; inclusive export rectangle `(0,0)..(15,15)`.
@@ -226,14 +229,32 @@ deliverable intentionally contains no trees.
   finalization writes a temporary marker and atomically renames it only after
   all 771 files exist and are non-empty. A warm run revalidates the marker and
   every output before authoring `Assets/Scenes/Dawnmere.zscen`.
-- **Observed local timings:** cold bake **63.671 s**; warm graphics boot
-  **14.614 s**. Dawnmere is only sample 1/3 of the Roadmap bake-time study;
-  these numbers do not complete or extrapolate that task.
+- **Historical first-bake timings:** the original ZM-D-053 standalone cold
+  bake was **63.671 s** and its warm graphics boot was **14.614 s**. The later
+  calibrated study reran Dawnmere under the same harness as the other two
+  recipes and measured **59.035 s**; the two observations are deliberately
+  distinguished rather than rewriting the first result.
 - **Grass:** the scene-owned `ZM_TerrainGrass` loads the 1024x1024 CPU density
   map on Awake, does not touch Flux headless, and regenerates from terrain
   physics on a graphics boot. First load and reload each generated/uploaded
   exactly **200,159 blades from 5,133 triangles**, then FrontEnd teardown
   cleared all Dawnmere grass state.
+
+The complete ZM-D-054 measurement registry is workspace-local and ignored:
+
+| Terrain set | Kind / crop | Chunks | Required outputs + marker | Family bytes | Calibrated process wall | Internal recipe timer |
+|---|---|---:|---:|---:|---:|---:|
+| `Dawnmere` | Town, 16x16 | 256 | 771 + 1 = **772 files** | **204,684,116** | **59.035 s** | **42.588 s** |
+| `Thornacre` | Town, 16x16 | 256 | 771 + 1 = **772 files** | **204,684,116** | **69.979 s** | **53.657 s** |
+| `Route1` | Route, 16x24 | 384 | 1,155 + 1 = **1,156 files** | **262,985,940** | **80.804 s** | **64.541 s** |
+| **Measured total** | | **896** | **2,700 files** | **672,354,172** | | |
+
+Each row is one isolated ignored directory under `Assets/Terrain/<set>/`.
+The family count is `3 * chunks + 3 textures + 1 marker`; it excludes scene
+files. All three selected bakes exited 0, validated every required non-empty
+output, and published their marker last. An all-warm same-harness boot took
+**16.874 s**, reported all three families warm, and queued zero terrain
+recipes.
 
 ---
 
@@ -245,7 +266,9 @@ helpers, plus .bgraph glue graphs via ZM_GraphAuthoring. These follow the
 same rule as everything else under Assets/: regenerated by tools builds,
 never committed. FrontEnd.zscen (build index 0) and the warm-authored
 Dawnmere.zscen (build index 2) now exist locally; Dawnmere remains a terrain
-preview, not a playable or connected world scene.
+preview, not a playable or connected world scene. The measured Thornacre and
+Route1 terrain families do **not** imply that their scenes, trees, dressing,
+traversal, or gameplay content exist.
 
 ---
 
@@ -262,8 +285,9 @@ each terrain set) by a manifest stamp recording:
 
 Stamp valid + all files present -> family skipped (warm boot). Stamp missing,
 version-mismatched, or any file absent -> the whole family regenerates.
-This is the hardened RenderTest pattern. Dawnmere locks the terrain-family
-format now (`ZMTR`, v1, count 771 in a 12-byte atomic marker; section 4.3);
+This is the hardened RenderTest pattern. The three measured families lock the
+terrain-family format now (`ZMTR`, v1, count 771 for each 256-chunk town and
+count 1,155 for the 384-chunk route in a 12-byte atomic marker; section 4.3);
 the non-terrain S4 family marker format remains TBD until those generators land.
 
 ### 6.2 Determinism invariant (tested)
@@ -286,16 +310,30 @@ the non-terrain S4 family marker format remains TBD until those generators land.
 | Full cold bake (everything absent) | 30-50 min (terrain dominates) |
 | Creature family alone | ~2-4 min |
 | Warm boot (all stamps valid) | seconds |
-| Dawnmere 16x16 terrain cold bake (observed sample 1/3) | 63.671 s |
-| Dawnmere warm graphics boot (observed) | 14.614 s |
+| Dawnmere first standalone cold / warm graphics observations (ZM-D-053) | 63.671 s / 14.614 s |
+| Calibrated selected cold walls: Dawnmere / Thornacre / Route1 | 59.035 s / 69.979 s / 80.804 s |
+| Internal recipe timers: Dawnmere / Thornacre / Route1 | 42.588 s / 53.657 s / 64.541 s |
+| All three terrain stamps valid, same-harness warm boot | 16.874 s; zero terrain recipes queued |
 
-Terrain bake time is the top-ranked project risk: Dawnmere is the first
-measured scene, but 2 more real recipes and the 3-scene extrapolation remain
-the next S3 task before committing to all ~25. One terrain set per outdoor scene/route is
-a hard requirement (user directive 2026-07-11) -- shared terrain sheets are
-NOT an acceptable fallback. If bakes are too slow, the fallback is to
-optimize the bake pipeline (parallel chunk export, incremental/cached
-bakes, profile-guided fixes) rather than reduce terrain-set count.
+The three-real-recipe measurement is complete (ZM-D-054). Using the two-town
+wall mean and Route1, the 11-town + 14-route planning model projects **24,676
+files / 5,933,328,436 bytes** (5.933 GB / 5.526 GiB), a deliberately
+conservative repeated-process **30m 40.833s**, and a one-boot/net **23m
+55.857s**. The GDD's exact 11-town + 15-route sensitivity projects **25,832
+files / 6,196,314,376 bytes** (6.196 GB / 5.771 GiB), **32m 01.637s** repeated
+and **24m 59.787s** net. The net model subtracts the shared 16.874-second warm
+baseline from each calibrated wall, scales the terrain work, then adds the
+baseline once.
+
+This closes the terrain measurement risk enough to continue S3, but it is not
+a completed full-project bake benchmark: the 30-50 minute target includes all
+assets, the other generators are unbuilt, there is no explicit byte cap, and
+"seconds" warm is qualitative. The sample has two towns and one route, and the
+projection assumes later 16x16 / 16x24 crop classes; it is not a statistical
+confidence bound. The `~25` planning case and exact 26-outdoor GDD sensitivity
+therefore remain explicit. One terrain set per outdoor scene/route remains a
+hard requirement; if future full-bake evidence is too slow, optimize the
+pipeline rather than share terrain sets.
 
 ### 6.4 CI interaction
 
