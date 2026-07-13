@@ -19,6 +19,7 @@ namespace
 	enum class GrassTestPhase
 	{
 		FirstLoad,
+		SpawnVisible,
 		Reload,
 		FrontEnd,
 		Done,
@@ -124,9 +125,9 @@ namespace
 			FailGrassTest("Flux grass density-map world size is not 4096");
 			return false;
 		}
-		if (std::fabs(xComponent.GetAppliedDensityScale() - 0.15f) > 0.0001f)
+		if (std::fabs(xComponent.GetAppliedDensityScale() - 0.70f) > 0.0001f)
 		{
-			FailGrassTest("Dawnmere generation did not apply density scale 0.15");
+			FailGrassTest("Dawnmere generation did not apply density scale 0.70");
 			return false;
 		}
 		uBladeCountOut = xComponent.GetGeneratedBladeCount();
@@ -212,9 +213,32 @@ static bool Step_ZMGrassRegeneration(int)
 			return false;
 		}
 
-		g_eGrassPhase = GrassTestPhase::Reload;
+		// Proven generated + uploaded; prove grass is DRAWN from the authored
+		// spawn camera before the reload path (closes the generated-but-invisible
+		// gap where a blade-count check passed while zero blades reached screen).
+		g_eGrassPhase = GrassTestPhase::SpawnVisible;
 		g_iGrassPhaseFrames = 0;
-		g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
+		return true;
+	}
+
+	case GrassTestPhase::SpawnVisible:
+	{
+		// ExecuteRender recomputes the visible blade count during Render, one
+		// frame behind this Update-phase Step, so allow a bounded settle window
+		// for the follow camera to frame the surrounding lawn.
+		if (g_xEngine.Grass().GetVisibleBladeCount() > 0)
+		{
+			g_eGrassPhase = GrassTestPhase::Reload;
+			g_iGrassPhaseFrames = 0;
+			g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
+			return true;
+		}
+		if (g_iGrassPhaseFrames > 60)
+		{
+			FailGrassTest(
+				"Dawnmere grass generated + uploaded but zero blades were visible from the spawn camera");
+			return false;
+		}
 		return true;
 	}
 

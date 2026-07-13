@@ -86,6 +86,13 @@ namespace
 		{ { 700.0f, 810.0f }, 90.0f, 0.70f },
 		{ { 260.0f, 430.0f }, 80.0f, 0.45f },
 		{ { 780.0f, 500.0f }, 80.0f, 0.45f },
+		// Central town lawn so grass surrounds the TownCenter spawn (512,480) and
+		// the returning-Home marker; the Plaza/Home pads and the paths erase their
+		// paved footprints in the later grass-erase phase, leaving lawn between
+		// the walkways. Without this the player stood in a grass-free hole and the
+		// exterior view showed only distant peripheral grass.
+		{ { 512.0f, 470.0f }, 150.0f, 0.60f },
+		{ { 512.0f, 610.0f }, 130.0f, 0.55f },
 	};
 
 	const ZM_TerrainLandmarkSpec s_axDawnmereLandmarks[] =

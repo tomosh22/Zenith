@@ -15,6 +15,50 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-13 -- ZM-D-058 -- Dawnmere grass made visible: per-region grass chunks + central town lawn
+
+- **Trigger:** the S3 human visual review REJECTED the Dawnmere exterior -- no
+  visible grass. Runtime instrumentation (not theory) showed grass generated
+  200,159 blades and uploaded, but only ~720 were drawn from the town-center
+  spawn.
+- **Root cause (two compounding):** (1) `Flux_GrassImpl::GenerateFromTerrain`
+  built a SINGLE terrain-spanning chunk; `UpdateVisibleChunks` picked one LOD for
+  it from the camera->AABB-centroid distance (~150 m) -> the whole map rendered
+  at LOD3 (~12.5%). (2) All six Dawnmere grass dabs were peripheral, so the spawn
+  sat in a grass-free hole (nearest grass ~150 m away).
+- **Engine decision (shared Flux change):** partition generated blades into a
+  world-space chunk GRID (`GrassConfig::fCHUNK_SIZE` = 64 m) -- counting-sort the
+  instance array contiguous per cell, shuffle within a cell (so LOD reduction
+  samples the whole cell), and give each chunk exact bounds. `ExecuteRender` now
+  issues one instanced `DrawIndexed` per visible chunk with `firstInstance` = the
+  chunk's base offset; `Flux_Grass.slang` `vsMain` gains `SV_StartInstanceLocation`
+  and indexes `InstanceBuffer[SV_InstanceID + startInstance]` (SV_InstanceID does
+  not include firstInstance -- mirrors `Flux_Terrain_ToGBuffer`). Grass near the
+  camera now renders at LOD0; distant regions LOD-down / cull independently.
+- **Game decision:** two central town-lawn grass dabs (centres (512,470) r150 and
+  (512,610) r130) so grass surrounds the `TownCenter` spawn; the plaza/home pads
+  and paths still erase their paved footprints in the grass-erase phase.
+  `fGRASS_DENSITY_SCALE` 0.15 -> 0.70. Dawnmere grass is DECORATIVE only -- the
+  `ZM_TerrainGrass` component is the rendering bridge; tall-grass encounter
+  gameplay is S5's `ZM_TallGrassSystem`/`ZM_EncounterZone` and is ROUTE-only.
+- **Why:** a Pokemon starting town reads as grassy; the single-chunk LOD was a
+  latent renderer bug (any camera far from a big terrain's grass centroid loses
+  all grass) that also benefits RenderTest.
+- **Tests that lock it:** new `SpawnVisible` phase in `ZM_GrassRegeneration_Test`
+  asserts `GetVisibleBladeCount() > 0` from the spawn camera (the old test proved
+  generate+upload but never on-screen visibility -- the exact gap the human eye
+  caught). Golden terrain-recipe assertions in `ZM_Tests_TerrainAuthoring`
+  updated for the two new dabs (grass dab count 6->8, plan size 1022->1024,
+  GRASS_FILL phase 6->8). Dawnmere now bakes/uploads 573,693 blades / 8,098
+  triangles. Re-gated all-green (5-config builds, boot units 1772/0, 6/6
+  automated, RenderTest `TerrainEditorSmoke`). Grass `.spv` regenerated via
+  FluxCompiler (git-LFS + shader-validation).
+- **Reversibility:** high -- density scale and dabs are recipe data; the chunk
+  grid is a self-contained rewrite of `GenerateFromTerrain`/`ExecuteRender`.
+- **Status:** APPROVED by the user 2026-07-13 ("those three screenshots look
+  fine") -- the S3 visual gate is SIGNED OFF on the fresh `new_01/02/03` set;
+  committed to master.
+
 ## 2026-07-13 -- ZM-D-057 -- PlayerHome round trip uses an opaque camera barrier and globally ordered persistent fade
 
 - **Scene/content decision:** build index **40** is now the always-authored,

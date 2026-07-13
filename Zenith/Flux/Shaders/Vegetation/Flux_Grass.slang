@@ -105,11 +105,17 @@ float2 CalculateWind(float2 xWorldPos, float fTime, float2 xWindDir, float fStre
 }
 
 [shader("vertex")]
-VsOut vsMain(VsIn input, uint instanceId : SV_InstanceID)
+VsOut vsMain(VsIn input, uint instanceId : SV_InstanceID, uint startInstance : SV_StartInstanceLocation)
 {
 	VsOut o;
 
-	GrassBladeInstance xInstance = g_xPassSet.InstanceBuffer[instanceId];
+	// Grass issues one instanced draw per visible chunk with firstInstance set to
+	// that chunk's base offset in the shared instance buffer. SV_InstanceID is only
+	// the within-draw index (0..count-1) and does NOT include firstInstance, so add
+	// SV_StartInstanceLocation to recover the global blade index (mirrors
+	// Flux_Terrain_ToGBuffer's per-chunk addressing).
+	uint uGlobalInstance = instanceId + startInstance;
+	GrassBladeInstance xInstance = g_xPassSet.InstanceBuffer[uGlobalInstance];
 
 	// Local-space blade: scale × bend along height² × Y-axis rotation.
 	float3 xLocalPos = input.a_xPosition;
@@ -156,7 +162,7 @@ VsOut vsMain(VsIn input, uint instanceId : SV_InstanceID)
 	o.normal     = xNormal;
 	o.uv         = input.a_xUV;
 	o.colour     = float4(xColorTint.rgb, fFade);
-	o.instanceId = instanceId;
+	o.instanceId = uGlobalInstance;
 	o.position   = mul(GetViewProjMat(), float4(xWorldPos, 1.0));
 	return o;
 }

@@ -2,6 +2,8 @@
 
 **Last updated:** 2026-07-13 -- **S3 automated implementation and the definitive post-overlay-hitch local authority gate are COMPLETE (ZM-D-057); human visual acceptance is the only remaining S3 item.** PlayerHome build 40, both live door triggers, deterministic 0.20 s fade, opaque generation-exact camera barrier, global cross-canvas UI ordering, procedural material ownership, complete disabled-text frame draining, and synchronous zero-duration overlay opacity are green. Do not tick S3 complete or begin S4/S5 until the user reviews the ignored captures.
 
+**★ Grass-render rework (2026-07-13, first visual review REJECTED Dawnmere grass):** the reviewer saw no grass in the Dawnmere exterior. Root cause (confirmed with runtime instrumentation, not theory): grass generated + uploaded fine but `Flux_GrassImpl` built a single terrain-spanning chunk whose LOD was picked from the camera->AABB-centroid distance (~150 m), forcing the WHOLE map to LOD3 (~12.5%), while the town-center spawn sat in a grass-free hole (all dabs were peripheral). Fix: (1) engine -- partition blades into a per-region chunk grid (`GrassConfig::fCHUNK_SIZE`), draw one instanced call per visible chunk with `firstInstance` = the chunk offset, and add `SV_StartInstanceLocation` to `Flux_Grass.slang` so the shader recovers the global blade index (shared engine change; RenderTest `TerrainEditorSmoke` re-verified); (2) game -- two central town-lawn grass dabs so grass surrounds the spawn (paths/pads still erase walkways) + `fGRASS_DENSITY_SCALE` 0.15->0.70; (3) test gap -- `ZM_GrassRegeneration_Test` asserted generate+upload but never on-screen visibility, so a new `SpawnVisible` phase now asserts `GetVisibleBladeCount() > 0` from the spawn camera. Dawnmere now bakes/uploads **573,693** blades from **8,098** triangles. Re-gated ALL-GREEN (5-config builds, boot units 1773 ran / 1772 passed / 0 failed, 6/6 automated incl. the new visible-blade assertion, RenderTest regression). Fresh captures produced and **APPROVED by the user 2026-07-13 -- the S3 visual gate is SIGNED OFF; S3 is COMPLETE and S4/S5 are unblocked.**
+
 **Read this first each session.** [Roadmap.md](Roadmap.md) is the task source; [Questions.md](Questions.md) holds open rulings; [Shortfalls.md](Shortfalls.md) is the gap audit. Terrain contracts are ZM-D-051..054, controller/camera ZM-D-055, traversal infrastructure ZM-D-056, and the PlayerHome/fade/global-UI milestone ZM-D-057.
 
 ## Working model -- MASTER-ONLY, no branches/PRs (ZM-D-031)
@@ -30,16 +32,22 @@ All work is committed directly to `master` and pushed. Never create a feature br
 
 ## Human visual evidence -- ignored, never stage
 
-Capture `capture_final_posthitch_20260713_183717` used the definitive binary;
-its `ZM_PlayerHomeRoundTrip_Test` passed **673 frames / 14619.2 ms** with exit
-0. All three ignored PNGs are valid **1280x720** files and
-were inspected for capture integrity; that inspection is not the user's visual
-acceptance:
+The original captures (`01`/`02`/`03`, SHA-256 `9FEF...`/`1310...`/`B0D4...`)
+were **REJECTED**: the reviewer confirmed no visible grass in the two Dawnmere
+exterior views (`01` initial, `03` return). `02` (PlayerHome interior) was
+accepted and is unchanged by the grass fix. After the grass-render rework above
+(re-gated all-green), the fresh set was captured from a clean
+`ZM_PlayerHomeRoundTrip_Test` run (passed 673 frames). These supersede the
+rejected captures and are the evidence for the pending sign-off (valid
+**1280x720**; captured, not yet visually accepted by the user):
 
-- `C:\dev\Zenith\Build\artifacts\zenithmon\s3\visual\01_dawnmere_exterior_terrain_grass_camera.png` -- SHA-256 `9FEFA6E1B20CB9F1647F19A0416FCD6A80ACA653EB6EEEFE6A86DD722790A1DF`
-- `C:\dev\Zenith\Build\artifacts\zenithmon\s3\visual\02_playerhome_interior.png` -- SHA-256 `13104E86246748BF58AF200DFAC213C2A6B6595A81086E30346B75857280B90E`
-- `C:\dev\Zenith\Build\artifacts\zenithmon\s3\visual\03_dawnmere_return_camera_reacquired.png` -- SHA-256 `B0D49B1CE41ACB98AA184E55ECB1531D34DC76009C3BED0CBD67CCD61C3B4B41`
+- `C:\dev\Zenith\Build\artifacts\zenithmon\s3\visual\new_01_dawnmere_exterior_terrain_grass_camera.png` -- SHA-256 `00F64EC2A7F694BBC81B502DEF3865BBAB87831022B57A1DED7B25F6FFDBBCFD` -- Dawnmere town-center exterior, now a green grass lawn flanking the dirt route path.
+- `C:\dev\Zenith\Build\artifacts\zenithmon\s3\visual\new_02_playerhome_interior.png` -- SHA-256 `5C19AE979731FB5DD8DD9FC76A886311272F9451323A737B5D5606D258BFD4D7` -- PlayerHome greybox interior (unchanged).
+- `C:\dev\Zenith\Build\artifacts\zenithmon\s3\visual\new_03_dawnmere_return_camera_reacquired.png` -- SHA-256 `6319D30320D00AEAF917048B65D326FDF3126B89E415AEC97A10A35D663EE38E` -- Dawnmere return (FromHome spawn), grass lawn + generation-reacquired camera.
 
-Review those three captures for Dawnmere terrain/grass/camera, the deliberately replaceable PlayerHome interior blockout, and the generation-reacquired return view. If approved, use StartPrompts.md prompt 4 to append the user verdict, tick the S3 visual-gate box, clear this marker, commit/push the docs, and only then resume the lifecycle loop. If rejected, record the requested rework and keep S3 active.
+The user reviewed the fresh three on 2026-07-13 and accepted them ("those three
+screenshots look fine"). The S3 visual gate is **SIGNED OFF**; the grass-render
+rework (ZM-D-058) and this milestone are committed to master. S3 is COMPLETE --
+S4/S5 are unblocked.
 
-GATE-WAIT: S3 visual sign-off
+S3 visual sign-off: **APPROVED 2026-07-13** (fresh `new_01`/`new_02`/`new_03` set). Gate cleared.

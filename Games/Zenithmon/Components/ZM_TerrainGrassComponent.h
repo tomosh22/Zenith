@@ -39,7 +39,11 @@ public:
 
 private:
 	static constexpr uint32_t uGRASS_RETRY_FRAME_CAP = 300;
-	static constexpr float fGRASS_DENSITY_SCALE = 0.15f;
+	// Blades/m² multiplier at generation (× GrassConfig::uBLADES_PER_SQM = 50).
+	// 0.70 → ~35 blades/m² in fully-painted lawn; with the per-region chunk LOD in
+	// Flux_Grass, grass near the camera now renders at LOD0 (full density) rather
+	// than the whole terrain collapsing to one distant LOD.
+	static constexpr float fGRASS_DENSITY_SCALE = 0.70f;
 
 	bool TryApplyToReadyTerrain();
 	void WarnTerminalOnce(const char* szMessage);

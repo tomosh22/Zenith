@@ -273,10 +273,15 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipeIdentityAndBounds)
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxAutoSplat[0].m_fWeight, 1.25f, fEPSILON);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxAutoSplat[3].m_fJitter, 0.25f, fEPSILON);
 
-	ZENITH_ASSERT_EQ(xRecipe.m_uGrassDabCount, 6u);
+	ZENITH_ASSERT_EQ(xRecipe.m_uGrassDabCount, 8u);
 	AssertPoint2(xRecipe.m_pxGrassDabs[0].m_xCentre, 315.0f, 650.0f);
 	AssertPoint2(xRecipe.m_pxGrassDabs[5].m_xCentre, 780.0f, 500.0f);
+	// Central town-lawn dabs so grass surrounds the TownCenter spawn (paths/pads
+	// erase their paved footprints in the later grass-erase phase).
+	AssertPoint2(xRecipe.m_pxGrassDabs[6].m_xCentre, 512.0f, 470.0f);
+	AssertPoint2(xRecipe.m_pxGrassDabs[7].m_xCentre, 512.0f, 610.0f);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxGrassDabs[1].m_fTargetDensity, 0.70f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxGrassDabs[6].m_fTargetDensity, 0.60f, fEPSILON);
 
 	ZENITH_ASSERT_EQ(xRecipe.m_uLandmarkCount, 10u);
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxLandmarks[0].m_szName, "TownCenter");
@@ -312,7 +317,7 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipePlanIsDeterministicAndContained)
 	ZM_BuildTerrainAuthoringPlan(xRecipe, xPlanA);
 	ZM_BuildTerrainAuthoringPlan(xRecipe, xPlanB);
 
-	ZENITH_ASSERT_EQ(xPlanA.GetSize(), 1022u);
+	ZENITH_ASSERT_EQ(xPlanA.GetSize(), 1024u);
 	ZENITH_ASSERT_EQ(xPlanA.GetSize(), xPlanB.GetSize());
 	for (u_int i = 0; i < xPlanA.GetSize(); ++i)
 	{
@@ -393,7 +398,7 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipePlanIsDeterministicAndContained)
 	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_FLATTEN_PRE_EROSION], 97u);
 	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_FLATTEN_POST_EROSION], 97u);
 	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_DIRT], 672u);
-	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_GRASS_FILL], 6u);
+	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_GRASS_FILL], 8u);
 	ZENITH_ASSERT_EQ(auPhaseCounts[ZM_TERRAIN_PHASE_GRASS_ERASE], 136u);
 	ZENITH_ASSERT_TRUE(uErosionIndex > 2u + 4u);
 	ZENITH_ASSERT_EQ((u_int)xPlanA.Get(uLastDensityIndex + 1u).m_eType,

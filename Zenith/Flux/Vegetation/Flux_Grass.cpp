@@ -81,6 +81,7 @@ void Flux_GrassImpl::CreateGrassBladeMesh()
 }
 
 static void ExecuteRender(Flux_CommandBuffer* pxCmdList, void* pUserData);
+static u_int Flux_Grass_InstanceCountForLOD(u_int uTotal, u_int uLOD);
 
 void Flux_GrassImpl::BuildPipelines()
 {
@@ -254,8 +255,24 @@ static void ExecuteRender(Flux_CommandBuffer* pxCmdList, void*)
 		xBinder.BindUAV_Buffer(GR::hInstanceBuffer, &xGrass.m_xInstanceBuffer.GetUAV());
 	}
 
-	// Draw instanced grass (6 indices per blade, xGrass.m_uVisibleBladeCount instances)
-	pxCmdList->DrawIndexed(6, xGrass.m_uVisibleBladeCount);
+	// One instanced draw per visible chunk. firstInstance = the chunk's base offset
+	// in the shared instance buffer; the shader adds SV_StartInstanceLocation to
+	// recover the global blade index. Each chunk draws the first
+	// InstanceCountForLOD(...) of its (per-chunk shuffled) blades for distance LOD.
+	for (u_int i = 0; i < xGrass.m_axChunks.GetSize(); ++i)
+	{
+		const GrassChunk& xChunk = xGrass.m_axChunks.Get(i);
+		if (!xChunk.m_bVisible || xChunk.m_uInstanceCount == 0)
+		{
+			continue;
+		}
+		const u_int uDrawCount = Flux_Grass_InstanceCountForLOD(xChunk.m_uInstanceCount, xChunk.m_uLOD);
+		if (uDrawCount == 0)
+		{
+			continue;
+		}
+		pxCmdList->DrawIndexed(6, uDrawCount, 0, 0, xChunk.m_uInstanceOffset);
+	}
 }
 
 void Flux_GrassImpl::GenerateGrassForChunk(GrassChunk& xChunk, const Zenith_Maths::Vector3& xCenter)
@@ -498,6 +515,119 @@ static bool GenerateBladesForTriangle(
 	return true;
 }
 
+// Partition generated blades into a world-space grid of grass chunks. The
+// instance vector is reordered in place so each chunk's blades are contiguous
+// (each chunk is drawn with firstInstance = its offset); within a chunk the
+// blades are shuffled so LOD reduction (drawing the first N) samples the whole
+// cell rather than a corner. Exact per-chunk bounds drive the distance +
+// frustum culling in UpdateVisibleChunks, so grass near the camera renders at
+// LOD0 while distant regions LOD-down or cull independently.
+static void PartitionInstancesIntoChunks(
+	Zenith_Vector<GrassBladeInstance>& xInstances,
+	Zenith_Vector<GrassChunk>& xChunksOut,
+	float fChunkSize,
+	std::mt19937& xRng)
+{
+	xChunksOut.Clear();
+	const u_int uCount = static_cast<u_int>(xInstances.GetSize());
+	if (uCount == 0)
+	{
+		return;
+	}
+
+	Zenith_Maths::Vector3 xMinBounds(FLT_MAX);
+	Zenith_Maths::Vector3 xMaxBounds(-FLT_MAX);
+	for (u_int i = 0; i < uCount; ++i)
+	{
+		const Zenith_Maths::Vector3& xPos = xInstances.Get(i).m_xPosition;
+		xMinBounds = glm::min(xMinBounds, xPos);
+		xMaxBounds = glm::max(xMaxBounds, xPos);
+	}
+
+	const float fInvChunk = 1.0f / fChunkSize;
+	const u_int uGridW = static_cast<u_int>((xMaxBounds.x - xMinBounds.x) * fInvChunk) + 1u;
+	const u_int uGridH = static_cast<u_int>((xMaxBounds.z - xMinBounds.z) * fInvChunk) + 1u;
+	const u_int uCellCount = uGridW * uGridH;
+
+	auto CellOf = [&](const GrassBladeInstance& xInst) -> u_int
+	{
+		u_int uX = static_cast<u_int>((xInst.m_xPosition.x - xMinBounds.x) * fInvChunk);
+		u_int uZ = static_cast<u_int>((xInst.m_xPosition.z - xMinBounds.z) * fInvChunk);
+		uX = std::min(uX, uGridW - 1u);
+		uZ = std::min(uZ, uGridH - 1u);
+		return uZ * uGridW + uX;
+	};
+
+	// Counting sort by cell → contiguous per-cell ranges (offset + count).
+	Zenith_Vector<u_int> auCellCounts;
+	auCellCounts.Resize(uCellCount, 0u);
+	for (u_int i = 0; i < uCount; ++i)
+	{
+		auCellCounts.Get(CellOf(xInstances.Get(i)))++;
+	}
+
+	Zenith_Vector<u_int> auCellOffsets;
+	auCellOffsets.Resize(uCellCount, 0u);
+	u_int uRunningOffset = 0;
+	for (u_int c = 0; c < uCellCount; ++c)
+	{
+		auCellOffsets.Get(c) = uRunningOffset;
+		uRunningOffset += auCellCounts.Get(c);
+	}
+
+	Zenith_Vector<GrassBladeInstance> xSorted;
+	xSorted.Resize(uCount);
+	Zenith_Vector<u_int> auCursor;
+	auCursor.Resize(uCellCount, 0u);
+	for (u_int c = 0; c < uCellCount; ++c)
+	{
+		auCursor.Get(c) = auCellOffsets.Get(c);
+	}
+	for (u_int i = 0; i < uCount; ++i)
+	{
+		const GrassBladeInstance& xInst = xInstances.Get(i);
+		xSorted.Get(auCursor.Get(CellOf(xInst))++) = xInst;
+	}
+	for (u_int i = 0; i < uCount; ++i)
+	{
+		xInstances.Get(i) = xSorted.Get(i);
+	}
+
+	// One chunk per non-empty cell: shuffle within its range, compute exact bounds.
+	for (u_int c = 0; c < uCellCount; ++c)
+	{
+		const u_int uCellBlades = auCellCounts.Get(c);
+		if (uCellBlades == 0)
+		{
+			continue;
+		}
+		const u_int uOffset = auCellOffsets.Get(c);
+
+		std::shuffle(
+			xInstances.GetDataPointer() + uOffset,
+			xInstances.GetDataPointer() + uOffset + uCellBlades,
+			xRng);
+
+		Zenith_Maths::Vector3 xCellMin(FLT_MAX);
+		Zenith_Maths::Vector3 xCellMax(-FLT_MAX);
+		for (u_int i = 0; i < uCellBlades; ++i)
+		{
+			const Zenith_Maths::Vector3& xPos = xInstances.Get(uOffset + i).m_xPosition;
+			xCellMin = glm::min(xCellMin, xPos);
+			xCellMax = glm::max(xCellMax, xPos);
+		}
+
+		GrassChunk xChunk;
+		xChunk.m_xCenter = (xCellMin + xCellMax) * 0.5f;
+		xChunk.m_fRadius = glm::length(xCellMax - xCellMin) * 0.5f;
+		xChunk.m_uInstanceOffset = uOffset;
+		xChunk.m_uInstanceCount = uCellBlades;
+		xChunk.m_uLOD = 0;
+		xChunk.m_bVisible = true;
+		xChunksOut.PushBack(xChunk);
+	}
+}
+
 void Flux_GrassImpl::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 {
 	// Validate terrain mesh has required data
@@ -592,37 +722,14 @@ void Flux_GrassImpl::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Generated %u blades from %u triangles",
 		uTotalBladesGenerated, uTotalTrianglesProcessed);
 
-	// Shuffle so LOD reduction (draw first N/4) spreads across the terrain
-	// instead of clustering into a corner.
-	if (m_axAllInstances.GetSize() > 1)
-	{
-		std::shuffle(m_axAllInstances.GetDataPointer(),
-			m_axAllInstances.GetDataPointer() + m_axAllInstances.GetSize(),
-			xRng.xRng);
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Shuffled instances for even LOD distribution");
-	}
+	// Subdivide the blades into a world-space chunk grid so culling + LOD are
+	// per-region. (A single terrain-spanning chunk forced the entire map to one
+	// LOD picked from its distant centroid, so grass near the camera was wrongly
+	// thinned to LOD3 or vanished entirely.)
+	PartitionInstancesIntoChunks(m_axAllInstances, m_axChunks, GrassConfig::fCHUNK_SIZE, xRng.xRng);
 
-	// Single chunk spanning every instance (future: subdivide for culling).
-	if (m_axAllInstances.GetSize() > 0)
-	{
-		Zenith_Maths::Vector3 xMinBounds(FLT_MAX);
-		Zenith_Maths::Vector3 xMaxBounds(-FLT_MAX);
-		for (u_int i = 0; i < m_axAllInstances.GetSize(); ++i)
-		{
-			const Zenith_Maths::Vector3& xPos = m_axAllInstances.Get(i).m_xPosition;
-			xMinBounds = glm::min(xMinBounds, xPos);
-			xMaxBounds = glm::max(xMaxBounds, xPos);
-		}
-
-		GrassChunk xChunk;
-		xChunk.m_xCenter = (xMinBounds + xMaxBounds) * 0.5f;
-		xChunk.m_fRadius = glm::length(xMaxBounds - xMinBounds) * 0.5f;
-		xChunk.m_uInstanceOffset = 0;
-		xChunk.m_uInstanceCount = static_cast<u_int>(m_axAllInstances.GetSize());
-		xChunk.m_uLOD = 0;
-		xChunk.m_bVisible = true;
-		m_axChunks.PushBack(xChunk);
-	}
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Grass: Partitioned %u blades into %u chunks",
+		m_axAllInstances.GetSize(), m_axChunks.GetSize());
 
 	UploadInstanceData();
 	UpdateVisibleChunks();
