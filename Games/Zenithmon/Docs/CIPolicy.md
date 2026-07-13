@@ -13,7 +13,7 @@ AssetManifest.md (why the runner has no assets).
 **Status:** LIVING -- update whenever a gate is added/retired or branch
 protection changes.
 
-**Last updated:** 2026-07-13 (S3 three-recipe terrain measurement -- unit baseline 1737).
+**Last updated:** 2026-07-13 (S3 input/controller/camera milestone -- unit baseline 1757).
 
 ---
 
@@ -53,7 +53,7 @@ pattern), active from S0. Required check name: **`zm-tests`**.
 
 **Unit-test baseline ratchet:** step 8's `-Baseline` is the exact registered
 unit-test count of `zenithmon.exe` (engine units + `ZM_*` cases; currently
-**1737**: 1736 passed, 0 failed, and 1 quarantined
+**1757**: 1756 passed, 0 failed, and 1 quarantined
 `RegistryWideNodeRoundTrip` skip). Every
 commit that changes the `ZM_*` count -- and any engine change that changes the
 engine unit count -- bumps this number in `zm-tests.yml` in the same commit.
@@ -81,6 +81,15 @@ breeding / tower / save-schema / generator-determinism-in-memory /
 WorldSpec-integrity tests. These touch no disk assets and no GPU, so they
 run in FULL on every `zm-tests` invocation. This is a deliberate design
 constraint on all new tests, not an accident (see TestPlan.md).
+
+The current automated registry contains four P1 tests. On the asset-less,
+GPU-less runner, `ZM_Boot_Test` and the asset-free
+`ZM_ControllerHarness_Test` execute and pass; graphics-required
+`ZM_GrassRegeneration_Test` and `ZM_DawnmerePlayerCamera_Test` report skips by
+design. The latter also exists-guards its ignored Dawnmere scene and terrain
+family. Locally, the two graphics tests remain mandatory stage-scoped evidence:
+the verified player/camera run completed in 117 frames / 4990.3 ms and the
+grass lifecycle run completed in 11 frames / 1924.3 ms.
 
 CI budget: the headless batch must stay in the minutes range (DP precedent:
 ~2 min for ~140 tests); the slowest-10 report is reviewed at every stage

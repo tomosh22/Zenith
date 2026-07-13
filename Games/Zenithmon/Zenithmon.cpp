@@ -3,6 +3,8 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "SaveData/Zenith_SaveData.h"
 #include "Zenithmon/Components/ZM_GameComponent.h"
+#include "Zenithmon/Components/ZM_FollowCamera.h"
+#include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -37,6 +39,8 @@
 // ============================================================================
 ZENITH_REGISTER_COMPONENT(ZM_GameComponent, "ZM_Game", 100u)
 ZENITH_REGISTER_COMPONENT(ZM_TerrainGrass, "ZM_TerrainGrass", 101u)
+ZENITH_REGISTER_COMPONENT(ZM_PlayerController, "ZM_PlayerController", 102u)
+ZENITH_REGISTER_COMPONENT(ZM_FollowCamera, "ZM_FollowCamera", 103u)
 
 #ifdef ZENITH_TOOLS
 namespace
@@ -101,6 +105,8 @@ void Project_RegisterGameComponents()
 #ifdef ZENITH_TOOLS
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_GameComponent>("ZM_Game");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_TerrainGrass>("ZM_TerrainGrass");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_PlayerController>("ZM_PlayerController");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_FollowCamera>("ZM_FollowCamera");
 #endif
 
 	// Save/load persistence root: %APPDATA%/Zenith/Zenithmon/. The versioned
@@ -305,14 +311,28 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
 		xAuto.AddStep_AddComponent("ZM_TerrainGrass");
 
+		// The player and camera are Dawnmere-owned. SINGLE scene loads therefore
+		// replace both entities instead of carrying movement/camera state between
+		// scenes. The baked physics surface at TownCenter is approximately Y=25.99;
+		// the 0.9 m capsule half-extent therefore needs a Y=26.9 centre so the
+		// controller begins above the real terrain and can ground on its first probe.
+		xAuto.AddStep_CreateEntity("Player");
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(512.0f, 26.9f, 480.0f);
+		xAuto.AddStep_SetTransformScale(0.8f, 1.8f, 0.8f);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+		xAuto.AddStep_AddComponent("ZM_PlayerController");
+
 		xAuto.AddStep_CreateEntity("DawnmerePreviewCamera");
 		xAuto.AddStep_AddCamera();
 		xAuto.AddStep_SetCameraPosition(xCamera.m_xPosition.m_fX, xCamera.m_xPosition.m_fY, xCamera.m_xPosition.m_fZ);
-		xAuto.AddStep_SetCameraYaw(xCamera.m_fYaw);
+		xAuto.AddStep_SetCameraYaw(0.0f);
 		xAuto.AddStep_SetCameraPitch(xCamera.m_fPitch);
 		xAuto.AddStep_SetCameraFOV(glm::radians(xCamera.m_fFovDegrees));
 		xAuto.AddStep_SetCameraNear(xCamera.m_fNearPlane);
 		xAuto.AddStep_SetCameraFar(xCamera.m_fFarPlane);
+		xAuto.AddStep_AddComponent("ZM_FollowCamera");
 		xAuto.AddStep_SetAsMainCamera();
 		xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Dawnmere" ZENITH_SCENE_EXT);
 		xAuto.AddStep_UnloadScene();

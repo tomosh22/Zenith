@@ -15,6 +15,68 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-13 -- ZM-D-055 -- Scene-owned velocity controller and fixed follow camera make Dawnmere traversable
+
+- **Decision:** complete the S3 input/controller/camera Roadmap box with three
+  game-local seams. `ZM_InputActions` is a stateless layer over raw Zenith keys:
+  WASD and arrows resolve movement axes (opposites cancel), Enter/Space confirm,
+  Escape/Backspace cancel, M/Tab menu, and either Shift runs. The controller,
+  not the input reader, normalizes camera-relative diagonal movement. This keeps
+  today's fixed mapping replaceable when rebinding eventually lands.
+- **Player body and movement contract:** `ZM_PlayerController` is serialization
+  order **102** and owns an upright dynamic generic Jolt capsule derived from
+  the authored transform scale **(0.8,1.8,0.8)**. It drives camera-relative
+  **horizontal-world speed** at **4 m/s walk / 7 m/s run**,
+  rotates the visual transform toward travel, and writes an optional animator
+  `Speed` parameter. Invalid or nonpositive dt is a true no-op for controller
+  state, animation, body velocity and facing. Slopes through **45 degrees** are
+  accepted and steeper-surface uphill drive is blocked. On a grounded walkable
+  downslope, only the tangent-required downward velocity is added for adhesion;
+  a stronger fall or positive step-assist rise is preserved. Step
+  assist requires a lower obstruction, clear upper probe and walkable landing
+  no more than **0.40 m** above ground, then applies one bounded upward-velocity
+  assist. Gameplay motion never teleports the body with `SetPosition`.
+- **Camera contract:** `ZM_FollowCamera` is serialization order **103** on the
+  scene-owned main-camera entity. It captures the authored yaw (Dawnmere uses
+  yaw 0), looks back to a player pivot, and follows through an omega-8 critically
+  damped spring with a 5.5 m arm, 3.0 m camera height, 0.6 m pivot height and
+  65-degree FOV. Physics collision clamps the arm with 0.2 m padding and a 1.0 m
+  minimum before it springs back outward. It caches only the generation-bearing
+  Player `EntityID`, validates both its generation and owning scene every late
+  update, rejects a still-live cached target moved to another scene, and
+  reacquires by the scene-local `Player` name after SINGLE reload; neither
+  Player nor camera persists across that reload.
+- **Dawnmere centre ruling and diagnosis:** author the Player centre at
+  **(512,26.9,480)**. The baked terrain physics sample at the exact XZ is
+  **Y=25.98577**, not the nominal Y=24 landmark value. With a **0.9 m** capsule
+  half-extent, the original Y=24.9 centre began below the baked surface, so the
+  1.05 m downward ground probe could never classify ground. At Y=26.9 the feet
+  begin near Y=26.0 and the surface is about 0.914 m below centre, inside the
+  probe. This is a deterministic generator-authored preview placement only;
+  `ZM_SpawnPoint`/`ZM_WarpTrigger` will own semantic arrival tags next.
+- **Tests that lock it:** exactly **20** new T0 tests in
+  `ZM_Tests_Overworld.cpp`: **5 input / 4 controller / 5 live physics / 4 camera
+  / 2 ECS-serialization**. The boot gate is **1757 ran / 1756 passed / 0 failed
+  / 1 skipped**. The automated registry is now four: Boot and the asset-free
+  `ZM_ControllerHarness_Test` pass headless; graphics-required Grass and the
+  asset-guarded `ZM_DawnmerePlayerCamera_Test` skip headless as designed. The
+  player/camera windowed integration passed in **117 frames / 4990.3 ms** and
+  the focused grass lifecycle passed in **11 frames / 1924.3 ms**. All four
+  Vulkan Debug/Release x Tools true/false builds and the D3D12 Debug Tools=false
+  link proof are green.
+- **Stage sequencing:** the next box is persistent `ZM_GameStateManager` plus
+  `ZM_SpawnPoint`/`ZM_WarpTrigger`; PlayerHome and the door round trip follow.
+  The human S3 visual gate is deliberately deferred until both are complete and
+  the full S3 automated walk/door round-trip gate is green.
+- **Reversibility:** all three seams are game-local and additive; both ECS
+  components have version-1-empty serialized payloads. Speeds, camera geometry/spring values,
+  step bounds and the generator-authored centre are isolated constants or
+  authoring values. Rebinding can replace the action readers without changing
+  controller policy. Persistence/warp work can replace the preview centre with
+  spawn-tag placement without changing the body or camera contracts.
+
+---
+
 ## 2026-07-13 -- ZM-D-054 -- Three-recipe terrain measurement validates the cropped per-scene plan
 
 - **Decision:** close Roadmap's three-real-scene terrain-bake measurement and

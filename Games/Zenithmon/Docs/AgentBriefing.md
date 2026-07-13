@@ -94,6 +94,23 @@ Plus, always:
   lowercase continuations like `Zenithmon` are distinct words and valid). The
   shared pinned vectors live in `Tools/ZenithCli/Tests/name_validation_cases.txt`;
   the buildsystem suite passed 45 / 0 after the change.
+- **Current S3 landmark (2026-07-13, ZM-D-055):** `ZM_InputActions` plus the
+  order-102 `ZM_PlayerController` and order-103 `ZM_FollowCamera` are shipped.
+  Dawnmere owns a scale-derived dynamic capsule at `(512,26.9,480)` and a
+  fixed-yaw spring/collision camera. Walk/run retain 4/7 m/s horizontal-world
+  speed; invalid/nonpositive dt is a true no-op; grounded walkable downhill
+  adhesion changes velocity only while preserving stronger falls and positive
+  step-assist rises. Slopes through 45 degrees are inclusive. Camera target
+  caching is generation-safe and rejects a still-live ID moved out of the
+  camera's scene.
+  Twenty T0 tests bring the boot gate to **1757 ran / 1756 passed / 0 failed /
+  1 skipped**. Of four automated tests, Boot + the asset-free controller
+  harness pass headless while Grass + Dawnmere player/camera skip for graphics;
+  their verified windowed runs are 11 frames / 1924.3 ms and 117 frames /
+  4990.3 ms respectively. The next task is persistent `ZM_GameStateManager` +
+  `ZM_SpawnPoint`/`ZM_WarpTrigger`, then PlayerHome/door round trip. Do not stop
+  for the human S3 visual gate until both land and the full S3 automated gate
+  is green.
 
 ### Document map
 
@@ -218,8 +235,9 @@ Plus, always:
 classes `ZM_BattleEngine`, data tables `ZM_SpeciesData`, unit-test TUs
 `Tests/ZM_Tests_*.cpp`, automated-test TUs `Tests/ZM_AutoTests_*.cpp`, events
 `ZM_OnWildEncounter`, debug variables `zm_*` (e.g. `zm_instant_battles`).
-Component serialization orders: ZM components claim **100+** (unique;
-`ZM_GameComponent` holds 100 -- next free is 101).
+Component serialization orders: ZM components claim **100+** and remain unique:
+`ZM_GameComponent` = 100, `ZM_TerrainGrass` = 101,
+`ZM_PlayerController` = 102, `ZM_FollowCamera` = 103; **next free is 104**.
 
 ### 3.2 Engine naming conventions (mandatory)
 
@@ -487,8 +505,8 @@ Adding `ZM_WarpTrigger_Component` (or any component), end to end:
    no base class. Implement the component contract: `WriteToDataStream` /
    `ReadFromDataStream`, plus `RenderPropertiesPanel` under `#ifdef ZENITH_TOOLS`.
 2. **Register in `Zenithmon.cpp`** -- `#include` the header and add a
-   file-scope `ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger_Component, "ZM_WarpTrigger", 101u)`
-   next to the existing one (**next free order**; ZM claims 100+, unique per
+   file-scope `ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger_Component, "ZM_WarpTrigger", 104u)`
+   next to the existing registrations (**next free order at this writing**; ZM claims 100+, unique per
    component). The macro must be static-init in an always-linked TU --
    `Zenithmon.cpp` defines the `Project_*` entry points, so it is safe. Do NOT
    call it from `Project_RegisterGameComponents` (the meta registry is sealed
