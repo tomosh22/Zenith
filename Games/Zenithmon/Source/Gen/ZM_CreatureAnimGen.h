@@ -86,13 +86,13 @@ bool        ZM_CreatureClipLooping(ZM_ANIM_CLIP eClip);
 typedef void (*ZM_ArchetypeAnimFn)(ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);
 
 void ZM_BuildAnim_Quadruped      (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC1
-void ZM_BuildAnim_Biped          (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // later
-void ZM_BuildAnim_Avian          (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // later
-void ZM_BuildAnim_Serpent        (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // later
-void ZM_BuildAnim_Aquatic        (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // later
-void ZM_BuildAnim_Insectoid      (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // later
-void ZM_BuildAnim_Blob           (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // later
-void ZM_BuildAnim_FloaterPlantoid(ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // later
+void ZM_BuildAnim_Biped          (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC2
+void ZM_BuildAnim_Avian          (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC2
+void ZM_BuildAnim_Serpent        (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC3
+void ZM_BuildAnim_Aquatic        (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC3
+void ZM_BuildAnim_Insectoid      (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC4
+void ZM_BuildAnim_Blob           (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC4
+void ZM_BuildAnim_FloaterPlantoid(ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC5
 
 // Explicit archetype -> builder mapping. SC1 returns the Quadruped builder for
 // ZM_ARCHETYPE_QUADRUPED and nullptr for every other archetype (and the
