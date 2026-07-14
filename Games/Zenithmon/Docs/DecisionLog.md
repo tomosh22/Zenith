@@ -15,6 +15,16 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-14 -- ZM-D-063 -- S4 ZM_CreatureGen SC4: INSECTOID + BLOB archetype builders
+
+- **Trigger:** next SC of ZM_CreatureGen after SC3. Two archetypes -- the bone-count EXTREMES -- authored in parallel by disjoint subagents; the orchestrator wired the dispatch switch, gated serially, ran a reviewer.
+- **Decision:** SC4 adds the INSECTOID and BLOB builders + per-archetype tests, wired into the explicit ZM_GetArchetypeBuilder switch (no header edit). INSECTOID (the HIGH-limb extreme): a fixed 19-bone bug -- Spine00..03 segmented thorax/abdomen [root], Head, SIX 2-bone legs via ZM_AppendLimb (LegL0/L1/L2/R0/R1/R2 -- exactly 6 '...Up' roots, parented to thorax/mid/rear spine), and 2 antennae via ZM_AppendHorn -- comfortably <=30 (asserted in-builder). BLOB (the LOW-bone extreme): a fixed 4-bone gelatinous body -- a 3-node ZM_AppendSpineTube driving m_fBellyRound (-> ZM_LoftRing m_fSuperEllipse) for a soft box-rounded silhouette + a single crown Nub via ZM_AppendHorn, no limbs. Both draw all rng up-front (MESH then SKELETON) via ZM_MakeGenRNG (the 6-leg + antenna loops REUSE pre-drawn values -- no per-iteration draws), scale by m_fSizeScale, keep topology IDENTICAL across evo stages (elaboration scales sizes only), and never finalise/bake.
+- **Reviewer:** no blockers/majors/minors -- 3 cosmetic nits only (NOT fixed: a comment conflating m_fBellyRound/m_fSuperEllipse [code correct]; two slightly-loose test-subset comments; a guarded auSpine[uSpineCount-3] latent-underflow that mirrors the Quadruped idiom and cannot trigger given the >=4-segment assert). Determinism, the INSECTOID bone budget (19, asserted <=30, exactly 6 leg roots, valid parenting), BLOB [2,4] bones + the real m_fBellyRound field, foundation-fidelity, conventions, and scope ALL verified clean.
+- **Tests-that-lock-it:** boot unit gate **1836 -> 1842** (0 failed; baseline bumped in .github/workflows/zm-tests.yml too). The universal 12-invariant harness now also runs over the INSECTOID + BLOB species; each archetype adds a structural bone assert (INSECTOID: single Spine root + Head + EXACTLY 6 leg '...Up' roots + antennae + <=30 total; BLOB: single root + total bones in [2,4] + zero limb bones). `zenith test Zenithmon --headless` 6/0. No stale-test churn.
+- **Reversibility:** High. New per-archetype code under Source/Gen/ + Tests/; the only shared-file touch is the 2 switch cases. No baked assets. Golden pins per builder documented in each .cpp; a change bumps uZM_CREATUREGEN_VERSION.
+
+---
+
 ## 2026-07-14 -- ZM-D-062 -- S4 ZM_CreatureGen SC3: SERPENT + AQUATIC archetype builders
 
 - **Trigger:** next SC of ZM_CreatureGen after SC2. Two archetypes authored in parallel by disjoint subagents against the frozen seam; the orchestrator wired the dispatch switch, gated serially, and ran a reviewer.

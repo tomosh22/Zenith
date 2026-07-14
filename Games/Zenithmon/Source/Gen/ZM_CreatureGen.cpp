@@ -178,9 +178,9 @@ ZM_ArchetypeBuilderFn ZM_GetArchetypeBuilder(ZM_ARCHETYPE eArchetype)
 	case ZM_ARCHETYPE_AVIAN:            return &ZM_BuildArchetype_Avian;       // SC2
 	case ZM_ARCHETYPE_SERPENT:          return &ZM_BuildArchetype_Serpent;     // SC3
 	case ZM_ARCHETYPE_AQUATIC:          return &ZM_BuildArchetype_Aquatic;     // SC3
-	// Remaining archetypes land in later SCs (SC4 INSECTOID+BLOB, SC5 FLOATER_PLANTOID).
-	case ZM_ARCHETYPE_INSECTOID:
-	case ZM_ARCHETYPE_BLOB:
+	case ZM_ARCHETYPE_INSECTOID:        return &ZM_BuildArchetype_Insectoid;   // SC4
+	case ZM_ARCHETYPE_BLOB:             return &ZM_BuildArchetype_Blob;        // SC4
+	// Remaining archetype lands in SC5 (FLOATER_PLANTOID).
 	case ZM_ARCHETYPE_FLOATER_PLANTOID:
 	default:                            return nullptr;
 	}

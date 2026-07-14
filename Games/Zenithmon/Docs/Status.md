@@ -1,17 +1,17 @@
 # Zenithmon Status
 
 **Last updated:** 2026-07-14
-**Stage:** S4 (Asset generators) -- in progress. `ZM_GenCommon`/`ZM_TextureSynth` foundation (ZM-D-059) + `ZM_CreatureGen` **SC1** (QUADRUPED, ZM-D-060) + **SC2** (BIPED + AVIAN, ZM-D-061) + **SC3** (SERPENT + AQUATIC, ZM-D-062) COMPLETE -- 5 of 8 archetypes wired. S1/S2/S3 COMPLETE (S3 visual gate SIGNED OFF 2026-07-13).
+**Stage:** S4 (Asset generators) -- in progress. `ZM_GenCommon`/`ZM_TextureSynth` foundation (ZM-D-059) + `ZM_CreatureGen` **SC1** (QUADRUPED, ZM-D-060) + **SC2** (BIPED + AVIAN, ZM-D-061) + **SC3** (SERPENT + AQUATIC, ZM-D-062) + **SC4** (INSECTOID + BLOB, ZM-D-063) COMPLETE -- 7 of 8 archetypes wired. S1/S2/S3 COMPLETE (S3 visual gate SIGNED OFF 2026-07-13).
 **Build:** passing -- Vulkan_vs2022_Debug_Win64_True green.
-**Tests:** boot unit gate **1836 ran / 1835 passed / 0 failed / 1 skipped** (baseline bumped 1830 -> 1836, in `.github/workflows/zm-tests.yml` too); `zenith test Zenithmon --headless` **6 passed / 0 failed**.
+**Tests:** boot unit gate **1842 ran / 1841 passed / 0 failed / 1 skipped** (baseline bumped 1836 -> 1842, in `.github/workflows/zm-tests.yml` too); `zenith test Zenithmon --headless` **6 passed / 0 failed**.
 
 ## Current task
 
-`ZM_CreatureGen` archetype waves against the FROZEN `Source/Gen/ZM_CreatureGen.h` seam. 5 of 8 builders wired (QUADRUPED, BIPED, AVIAN, SERPENT, AQUATIC). **Next unchecked: SC4 -- INSECTOID + BLOB builders** (`ZM_CreatureArchetype_Insectoid.cpp` + `_Blob.cpp` + per-archetype tests), authored disjointly against the frozen header + `ZM_CreatureArchetypeCommon.{h,cpp}` kit. INSECTOID is the highest-limb-count archetype (segmented thorax/abdomen + 6 legs + antennae -- closest to the 30-bone cap, watch it); BLOB is the low-bone extreme (2-4 bones, super-ellipse body). Then SC5 (FLOATER-PLANTOID + all-152 coverage gate + `.zmtrl`/`.zmodel` bundle bake + the windowed species-gallery visual gate). The S4 GATE ends with that gallery check -- a HARD-STOP for user sign-off (do NOT tick S4 without it).
+`ZM_CreatureGen` archetype waves against the FROZEN `Source/Gen/ZM_CreatureGen.h` seam. 7 of 8 builders wired (QUADRUPED, BIPED, AVIAN, SERPENT, AQUATIC, INSECTOID, BLOB). **Next unchecked: SC5 -- the FINAL archetype + the S4 GATE.** SC5 is multi-part: (1) author `ZM_CreatureArchetype_FloaterPlantoid.cpp` + `Tests/ZM_Tests_CreatureArchetype_FloaterPlantoid.cpp` (a floating body + radial petals/tendrils, NO ground legs, off-origin no-foot layout -- may need a local helper like AVIAN/AQUATIC) and wire the last switch case; (2) with all 8 wired, ADD the all-152 coverage gate to `ZM_Tests_CreatureGen.cpp` (assert every ZM_SPECIES_ID is buildable = no NONE archetypes escape) + a tools-gated bake smoke; (3) complete the SC5-DEFERRED `.zmtrl` (normal + shiny child material) + `.zmodel` bundle writes in `ZM_BakeCreature` (currently a `// SC5:` TODO) -- confirm the Zenith_MaterialAsset / .zmodel author API first; (4) run the windowed species-gallery visual check (a scene showing a sampled dozen species animating -- AgentBriefing.md has the windowed-capture recipe), capture screenshot evidence under `Build/artifacts/zenithmon/s4/visual/`, write a `GATE-WAIT: S4 visual sign-off` marker into this file with the evidence paths, append the automated gate results to DecisionLog.md, commit + push, and **STOP** for user sign-off. Do NOT tick S4 or start S5 without the sign-off (StartPrompts.md prompt 4).
 
 ## Last completed
 
-**S4 `ZM_CreatureGen` SC3** (this commit, ZM-D-062): the SERPENT (12-bone limbless) + AQUATIC (8-bone, local `ZM_AquaticAppendFin` helper) archetype builders + per-archetype tests, wired into the explicit `ZM_GetArchetypeBuilder` switch. +6 `ZM_Gen` units (1830 -> 1836). Reviewer: no blockers/majors/minors -- fully clean. No stale-test churn (the SC-agnostic dispatch test absorbed the new archetypes).
+**S4 `ZM_CreatureGen` SC4** (this commit, ZM-D-063): the INSECTOID (19-bone; 6 legs + antennae -- the HIGH-bone extreme) + BLOB (4-bone super-ellipse body -- the LOW-bone extreme) archetype builders + per-archetype tests, wired into the explicit `ZM_GetArchetypeBuilder` switch. +6 `ZM_Gen` units (1836 -> 1842). Reviewer: no blockers/majors/minors (3 cosmetic nits, not fixed). No stale-test churn.
 
 ## Notes for next agent
 
