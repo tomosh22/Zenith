@@ -241,6 +241,29 @@ ZENITH_TEST(ZM_Gen, CreatureGen_ArchetypeDispatch)
 }
 
 // ############################################################################
+// SC5 -- all-152 coverage gate (all 8 archetypes wired => every species buildable)
+// ############################################################################
+
+// With all 8 archetype builders wired (SC5a), EVERY ZM_SPECIES_ID must resolve to
+// a non-null builder -- this proves the ZM_GetArchetypeBuilder switch covers every
+// ZM_ARCHETYPE value and no species is left un-buildable (before SC5a this would
+// fail on the FLOATER_PLANTOID species).
+ZENITH_TEST(ZM_Gen, CreatureGen_AllSpeciesBuildable)
+{
+	u_int uBuildable = 0u;
+	for (u_int id = 0; id < (u_int)ZM_SPECIES_COUNT; ++id)
+	{
+		const ZM_SPECIES_ID eId = (ZM_SPECIES_ID)id;
+		ZENITH_ASSERT_TRUE(HasBuilder(eId),
+			"species %u (archetype %u) has no wired builder", id,
+			(u_int)ZM_GetSpeciesData(eId).m_eArchetype);
+		if (HasBuilder(eId)) { ++uBuildable; }
+	}
+	ZENITH_ASSERT_EQ(uBuildable, (u_int)ZM_SPECIES_COUNT,
+		"not all species are buildable -- an archetype is unwired");
+}
+
+// ############################################################################
 // SC1 core -- recipe resolution purity + domain-seed isolation (assertion 2)
 // ############################################################################
 

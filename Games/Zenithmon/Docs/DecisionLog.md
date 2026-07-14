@@ -15,6 +15,17 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-14 -- ZM-D-064 -- S4 ZM_CreatureGen SC5a: FLOATER-PLANTOID builder + all-152 coverage gate (all 8 archetypes wired)
+
+- **Trigger:** the FINAL archetype builder + the "coverage complete" milestone. Authored by one subagent against the frozen seam; the orchestrator wired the last switch case, added the all-152 gate, gated serially, ran a reviewer.
+- **Decision:** SC5a adds the FLOATER-PLANTOID builder + per-archetype test, wires the last ZM_GetArchetypeBuilder case, and adds CreatureGen_AllSpeciesBuildable to the shared harness. FLOATER-PLANTOID: a fixed 10-bone floating creature -- a 3-node bulb body (Spine00..02 [root], centred above the ground so it FLOATS), a Head crown, and 6 RADIAL round tendrils (Tendril0..5) via a builder-local ZM_FloaterAppendTendril helper (modeled on ZM_AvianAppendWing). ROUND (Rx==Rz) tendrils were chosen over flat petals because the loft rings are axis-aligned and cannot rotate -- a round section is rotation-invariant so the 6-fold radial symmetry reads cleanly; the 6 angles are FIXED constants k*(2pi/6), never rng. NO legs. The floating invariant (mesh min-Y bound > 0) is structural and reviewer-verified analytically (lowest tendril tip ~0.215*fS). With all 8 archetypes wired, CreatureGen_AllSpeciesBuildable asserts EVERY of the 152 species resolves to a non-null builder -- proving the switch covers every ZM_ARCHETYPE and the generic 12-invariant harness now runs over the FULL dex.
+- **Reviewer:** no blockers/majors -- determinism, the floating invariant (traced), the local tendril helper (real signatures, no dangling pointer, no flat-washer), foundation-fidelity, the all-152 gate + dispatch, conventions, and scope ALL clean. A few PRE-EXISTING stale doc-comments ("SC1 wires ONLY QUADRUPED" in ZM_CreatureGen.h / ZM_Tests_CreatureGen.cpp / the ZM_BakeAllCreatures skip note) are now inaccurate -- cosmetic, deferred to SC5b/SC5c which edit those files anyway (no behavior impact; the code paths are SC-agnostic).
+- **Tests-that-lock-it:** boot unit gate **1842 -> 1846** (0 failed; baseline bumped in .github/workflows/zm-tests.yml too; +3 FLOATER-PLANTOID tests + 1 all-152 gate). The generic 12-invariant harness now covers ALL 152 species. `zenith test Zenithmon --headless` 6/0. No stale-test churn.
+- **Milestone:** creature MESH + skeleton + albedo/shiny/dex-icon generation is now FEATURE-COMPLETE IN-MEMORY for the full dex. Remaining S4: SC5b = the deferred .zmtrl/.zmodel bundle bake in ZM_BakeCreature (needed to make baked creatures scene-loadable); SC5c = bake-all + the windowed species-gallery visual gate (the S4 GATE hard-stop for user sign-off).
+- **Reversibility:** High. New per-archetype code + 1 switch case + 1 test; no baked assets. Golden pins per builder documented in the .cpp; a change bumps uZM_CREATUREGEN_VERSION.
+
+---
+
 ## 2026-07-14 -- ZM-D-063 -- S4 ZM_CreatureGen SC4: INSECTOID + BLOB archetype builders
 
 - **Trigger:** next SC of ZM_CreatureGen after SC3. Two archetypes -- the bone-count EXTREMES -- authored in parallel by disjoint subagents; the orchestrator wired the dispatch switch, gated serially, ran a reviewer.
