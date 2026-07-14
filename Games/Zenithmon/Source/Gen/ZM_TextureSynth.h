@@ -22,7 +22,8 @@
 #include "Collections/Zenith_Vector.h"
 
 // ZM_BakeManifest (a later box) stamps this; bump when synthesis changes.
-constexpr u_int uZM_TEXTURESYNTH_VERSION       = 1u;
+// v2 (SC5d): creature-albedo palette-saturation boost (punchier type colours).
+constexpr u_int uZM_TEXTURESYNTH_VERSION       = 2u;
 constexpr u_int uZM_CREATURE_ALBEDO_RESOLUTION = 512u;   // BC1 512x512 (AssetManifest 1.2)
 
 // ---------------------------------------------------------------------------
@@ -139,6 +140,14 @@ ZM_GenImage ZM_SynthNormalFromHeight(const ZM_GenImage& xHeightSrc, float fStren
 // ZM_GenDeriveSeed(..., ZM_GEN_DOMAIN_ALBEDO)). Same recipe+seed => byte-
 // identical texels.
 // ---------------------------------------------------------------------------
+// SC5d palette-saturation boost: ZM_SynthCreatureAlbedo multiplies each RESOLVED
+// palette colour's HSV saturation by this factor (hue + value preserved, saturation
+// clamped to [0,1]) so every creature reads with a clearly-saturated type colour
+// instead of the earlier soft/pastel look. Creature-scoped -- the raw
+// ZM_SynthTypePalette / ZM_SynthBlendPalette tables are untouched. Tunable; a fixed
+// factor keeps generation deterministic (1.0 == the pre-SC5d look).
+constexpr float fZM_CREATURE_ALBEDO_SATURATION_BOOST = 1.6f;
+
 struct ZM_CreatureTexRecipe
 {
 	ZM_TYPE          m_ePrimaryType   = ZM_TYPE_NORMAL;

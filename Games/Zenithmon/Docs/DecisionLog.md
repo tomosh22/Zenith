@@ -15,6 +15,17 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-14 -- ZM-D-067 -- S4 ZM_CreatureGen VISUAL GATE SIGNED OFF (user APPROVED; reflective floor + punchier colours delivered)
+
+- **Verdict:** the user reviewed the S4 species-gallery evidence and APPROVED the creature generator, with two showcase/art enhancements requested at the gate and delivered: (1) a smooth metallic reflective SHOWCASE FLOOR under the creatures (commit 3dcfcf74 -- a 60x60 metallic slab + SSR + tilted cameras, so the creatures mirror on the floor); (2) PUNCHIER creature COLOURS (this commit). With both delivered + all automated items green, the **S4 `ZM_CreatureGen` visual gate is PASSED**; the loop resumes at `ZM_CreatureAnimGen`.
+- **Punchier-colours change:** a creature-scoped, deterministic HSV saturation boost -- `fZM_CREATURE_ALBEDO_SATURATION_BOOST = 1.6f` (+60%) applied via a new `SaturateColour` helper (RGB->HSV, x S, clamp, ->RGB; HUE + VALUE preserved) to the RESOLVED palette (m_xBase/m_xAccent/m_xBelly) inside `ZM_SynthCreatureAlbedo`. The raw `ZM_SynthTypePalette`/`ZM_SynthBlendPalette` tables are UNTOUCHED, so non-creature palette users + the palette-table unit tests are unaffected; shiny (hue-rotate) + dex icon (downsample) inherit it automatically. Measured: mean creature-pixel saturation ~0.036 -> ~0.09-0.11 (~2.7x); ~11-15% of subject pixels now clearly coloured (was ~0%). The factor is a named constant -- further art direction is a one-number tune + re-bake.
+- **Determinism preserved; NO golden re-baseline needed:** the boost is a fixed deterministic transform (same id -> same bytes). Every affected test is same-seed-determinism / property / structural and stays green; no test pins a fixed albedo/shiny/icon RGB or content-hash literal that the change alters (the one packed-byte golden comes from an explicit fill, not the palette). Boot unit gate held at **1847 ran / 0 failed**.
+- **Version stamps bumped (stale bakes self-invalidate):** `uZM_CREATUREGEN_VERSION` 1 -> 2 + `uZM_TEXTURESYNTH_VERSION` 1 -> 2. The gallery re-bakes its dozen at setup; a full re-bake at the eventual `ZM_BakeManifest` box picks up the rest.
+- **Gate automated results (all green):** 4-config Vulkan matrix (Debug/Release x True/False) + D3D12_False null-backend link proof build; unit gate 1847/0; headless 6/0; windowed `ZM_CreatureGallery_Test` PASSED. Final evidence (reflective floor + punchier colours): `Build/artifacts/zenithmon/s4/visual/gallery_0{1,2,3}.tga`/`.png`.
+- **Result:** S4 `ZM_CreatureGen` COMPLETE + gate-signed (all 8 archetypes, 152 species, 9-file scene-loadable bundles, ~1847 units). Roadmap `ZM_CreatureGen` box ticked `[x]`; Status GATE-WAIT cleared.
+
+---
+
 ## 2026-07-14 -- ZM-D-066 -- S4 ZM_CreatureGen SC5c: species-gallery visual gate (GATE-WAIT for sign-off)
 
 - **Trigger:** the final S4 deliverable -- the windowed species-gallery visual gate, ZM_CreatureGen's stage-gate visual check. Authored by a subagent (windowed gallery test), iterated by the orchestrator to a gate-ready render, gated serially, format docs refreshed.

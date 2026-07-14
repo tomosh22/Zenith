@@ -33,7 +33,8 @@
 
 // ZM_BakeManifest (a later box) stamps this; bump it whenever this module's
 // generation algorithms change so stale bakes self-invalidate.
-constexpr u_int uZM_CREATUREGEN_VERSION      = 1u;
+// v2 (SC5d): creature-albedo palette-saturation boost re-tints every baked albedo.
+constexpr u_int uZM_CREATUREGEN_VERSION      = 2u;
 
 // Flat dex/party/box icon resolution (AssetManifest 1.2). BC1 128x128.
 constexpr u_int uZM_CREATURE_ICON_RESOLUTION = 128u;

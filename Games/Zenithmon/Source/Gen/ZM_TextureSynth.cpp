@@ -117,6 +117,17 @@ namespace
 		return Vector3(fR + fM, fG + fM, fB + fM);
 	}
 
+	// Boost a linear-RGB colour's HSV saturation by fFactor, preserving hue + value
+	// (saturation clamped to [0,1]); a pure, stable RGB<->HSV round trip. This is the
+	// SC5d creature-albedo saturation lever (soft palettes -> punchy type colour). A
+	// pure achromatic (S==0) colour has no hue to saturate and rounds back unchanged.
+	Vector3 SaturateColour(const Vector3& xRGB, float fFactor)
+	{
+		Vector3 xHSV = RGBToHSV(xRGB);
+		xHSV.y = Clamp01(xHSV.y * fFactor);
+		return HSVToRGB(xHSV);
+	}
+
 	// The 18 elemental palettes, indexed by ZM_TYPE (0..ZM_TYPE_COUNT-1). All
 	// components are in-gamut [0,1]; the primaries are deliberately distinct so
 	// the "not all equal" palette-coverage test holds.
@@ -576,9 +587,17 @@ ZM_GenImage ZM_SynthNormalFromHeight(const ZM_GenImage& xHeightSrc, float fStren
 // stream and any recipe is a pure function of (recipe, seed).
 ZM_GenImage ZM_SynthCreatureAlbedo(const ZM_CreatureTexRecipe& xRecipe, ZM_GenRNG& xRng)
 {
-	const ZM_TypePalette xPalette = (xRecipe.m_eSecondaryType == ZM_TYPE_NONE)
+	ZM_TypePalette xPalette = (xRecipe.m_eSecondaryType == ZM_TYPE_NONE)
 		? ZM_SynthTypePalette(xRecipe.m_ePrimaryType)
 		: ZM_SynthBlendPalette(xRecipe.m_ePrimaryType, xRecipe.m_eSecondaryType);
+
+	// SC5d: boost the RESOLVED palette's saturation so the creature reads with a
+	// clearly-saturated type colour (hue + value preserved). Applied here only, so
+	// the ZM_SynthTypePalette / ZM_SynthBlendPalette tables (and their unit tests)
+	// stay untouched; deterministic (a fixed factor, no new entropy).
+	xPalette.m_xBase   = SaturateColour(xPalette.m_xBase,   fZM_CREATURE_ALBEDO_SATURATION_BOOST);
+	xPalette.m_xAccent = SaturateColour(xPalette.m_xAccent, fZM_CREATURE_ALBEDO_SATURATION_BOOST);
+	xPalette.m_xBelly  = SaturateColour(xPalette.m_xBelly,  fZM_CREATURE_ALBEDO_SATURATION_BOOST);
 
 	ZM_GenImage xImg(xRecipe.m_uWidth, xRecipe.m_uHeight);
 
