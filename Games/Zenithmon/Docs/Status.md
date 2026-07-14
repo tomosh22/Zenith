@@ -9,7 +9,7 @@
 
 **GATE-WAIT: S4 visual sign-off.** ZM_CreatureGen is fully implemented and every automated S4-gate item is green (matrix + unit + headless + the windowed gallery). The autonomous loop is PARKED here awaiting the human's visual sign-off (StartPrompts.md prompt 4). Do NOT proceed past this gate, tick S4, or start ZM_CreatureAnimGen without the sign-off.
 
-**Visual evidence** -- windowed `ZM_CreatureGallery_Test` renders a diverse dozen (>=1 per archetype + Zenithrax shown SHINY) as a 4x3 grid on a neutral backdrop, 3 angles:
+**Visual evidence** -- windowed `ZM_CreatureGallery_Test` renders a diverse dozen (>=1 per archetype + Zenithrax shown SHINY) as a 4x3 grid on a smooth METALLIC REFLECTIVE floor (SSR on -- per user gate feedback, so the creatures mirror on the floor) over a neutral backdrop, 3 angles:
 - `Build/artifacts/zenithmon/s4/visual/gallery_01.tga` (+ `.png`) -- front elevated
 - `Build/artifacts/zenithmon/s4/visual/gallery_02.tga` (+ `.png`) -- left 3/4
 - `Build/artifacts/zenithmon/s4/visual/gallery_03.tga` (+ `.png`) -- right 3/4

@@ -2,6 +2,9 @@
 
 #ifdef ZENITH_INPUT_SIMULATOR
 
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
@@ -94,12 +97,14 @@ namespace
 	// creature occupies a meaningful, identifiable area of the frame.
 	constexpr float fZM_GALLERY_NORM_SCALE = 2.3f;
 
-	// Grid centre + the three capture viewpoints (all on the +Z front side), pulled
-	// back and raised so all 12 fill the frame as distinct models.
-	const Zenith_Maths::Vector3 g_xGridCentre(0.0f, 1.6f, 0.0f);
-	const Zenith_Maths::Vector3 g_xViewFront (0.0f, 11.0f, 30.0f);
-	const Zenith_Maths::Vector3 g_xViewLeft  (-25.0f, 9.5f, 22.0f);
-	const Zenith_Maths::Vector3 g_xViewRight ( 25.0f, 9.5f, 22.0f);
+	// Aim BELOW the grid centre (toward the floor at y=0) and RAISE the cameras so
+	// each of the three +Z-front views tilts DOWN -- the reflective floor + the
+	// creatures' reflections fill the lower frame while all 12 stay clearly visible
+	// above them.
+	const Zenith_Maths::Vector3 g_xViewAim  (0.0f, 0.8f, 0.0f);
+	const Zenith_Maths::Vector3 g_xViewFront(0.0f, 12.5f, 31.0f);
+	const Zenith_Maths::Vector3 g_xViewLeft (-26.0f, 11.0f, 23.0f);
+	const Zenith_Maths::Vector3 g_xViewRight( 26.0f, 11.0f, 23.0f);
 
 	// ---- Test state ----
 	bool        g_bGalleryActive     = false;   // scene was built (Setup got past the skip)
@@ -110,6 +115,11 @@ namespace
 	std::string g_astrShotPath[3];
 	Zenith_Scene g_xGalleryPreviousScene;
 	Zenith_Scene g_xGalleryScene;
+
+	// Procedural floor prop resources (kept alive for the component's lifetime, as
+	// AddMeshEntry does not take ownership); released in cleanup.
+	MeshGeometryHandle g_xFloorGeometry;
+	MaterialHandle     g_xFloorMaterial;
 
 	// ---- Scoped graphics-option overrides for a clean, colour-true gallery ----
 	// Saved on apply, restored on cleanup. Rationale for each override:
@@ -125,6 +135,11 @@ namespace
 	//                    instead of the still-loaded FrontEnd's bright atmosphere.
 	//  * text/quads OFF -> hides the still-loaded FrontEnd "Zenithmon" title overlay
 	//                    (UI renders across ALL loaded scenes).
+	//  * SSR ON       -> screen-space reflections, so the smooth metallic floor
+	//                    mirrors the creatures. On by default, but forced + saved
+	//                    here so the gate never depends on ambient config. Its
+	//                    companions m_bHiZEnabled + m_bSSRRoughnessBlurEnabled are
+	//                    also on by default and left untouched.
 	// IBL ambient (the same global irradiance the material preview uses) stays ON,
 	// so shadowed faces are filled rather than pure black.
 	struct GalleryGraphicsSave
@@ -135,6 +150,7 @@ namespace
 		bool m_bSkybox       = true;
 		bool m_bText         = true;
 		bool m_bQuads        = true;
+		bool m_bSSR          = true;
 		Zenith_Maths::Vector3 m_xSkyColour = Zenith_Maths::Vector3(0.0f);
 	};
 	GalleryGraphicsSave g_xGraphicsSave;
@@ -147,6 +163,7 @@ namespace
 		g_xGraphicsSave.m_bSkybox       = xOpts.m_bSkyboxEnabled;
 		g_xGraphicsSave.m_bText         = xOpts.m_bTextEnabled;
 		g_xGraphicsSave.m_bQuads        = xOpts.m_bQuadsEnabled;
+		g_xGraphicsSave.m_bSSR          = xOpts.m_bSSREnabled;
 		g_xGraphicsSave.m_xSkyColour    = xOpts.m_xSkyboxColour;
 		g_xGraphicsSave.m_bSaved        = true;
 
@@ -155,6 +172,7 @@ namespace
 		xOpts.m_bSkyboxEnabled          = false;
 		xOpts.m_bTextEnabled            = false;
 		xOpts.m_bQuadsEnabled           = false;
+		xOpts.m_bSSREnabled             = true;    // mirror the creatures in the floor
 		xOpts.m_xSkyboxColour           = Zenith_Maths::Vector3(0.06f, 0.06f, 0.07f);
 	}
 
@@ -170,6 +188,7 @@ namespace
 		xOpts.m_bSkyboxEnabled          = g_xGraphicsSave.m_bSkybox;
 		xOpts.m_bTextEnabled            = g_xGraphicsSave.m_bText;
 		xOpts.m_bQuadsEnabled           = g_xGraphicsSave.m_bQuads;
+		xOpts.m_bSSREnabled             = g_xGraphicsSave.m_bSSR;
 		xOpts.m_xSkyboxColour           = g_xGraphicsSave.m_xSkyColour;
 		g_xGraphicsSave.m_bSaved        = false;
 	}
@@ -251,7 +270,10 @@ namespace
 		g_xEngine.Scenes().QueryActiveScene<Zenith_ModelComponent>().ForEach(
 			[&uCount](Zenith_EntityID, Zenith_ModelComponent& xModel)
 			{
-				if (xModel.HasModel() && xModel.GetNumMeshes() > 0u)
+				// Count only .zmodel-LOADED creatures (non-empty model path); the
+				// procedural AddMeshEntry floor has an empty path and is excluded.
+				if (xModel.HasModel() && xModel.GetNumMeshes() > 0u
+					&& !xModel.GetModelPath().empty())
 				{
 					++uCount;
 				}
@@ -317,6 +339,8 @@ namespace
 			g_xEngine.Scenes().UnloadSceneForced(g_xGalleryScene);
 			g_xGalleryScene = Zenith_Scene();
 		}
+		g_xFloorGeometry = MeshGeometryHandle();
+		g_xFloorMaterial = MaterialHandle();
 		g_bGalleryActive = false;
 	}
 
@@ -440,8 +464,40 @@ static void Setup_ZMGallery()
 	xCameraComponent.SetFOV(glm::radians(55.0f));
 	xCameraComponent.SetNearPlane(0.1f);
 	xCameraComponent.SetFarPlane(500.0f);
-	AimCameraAt(xCameraComponent, g_xViewFront, g_xGridCentre);
+	AimCameraAt(xCameraComponent, g_xViewFront, g_xViewAim);
 	Zenith_UnitTests::SetMainCameraForTest(pxSceneData, xCamera.GetEntityID());
+
+	// Large smooth METALLIC floor slab at the creatures' feet (top face at y=0), so
+	// SSR mirrors all 12 creatures below them. Built from the shared unit-cube
+	// geometry scaled into a thin 60x60 slab + an in-memory dark-metal material and
+	// attached via AddMeshEntry -- the same asset-free prop pattern as
+	// ZM_GreyboxVisual (no .zmodel/.zmtrl disk bake for a one-off test prop). A
+	// metallic surface reflects its environment tinted by base colour, so the dark
+	// grey keeps the reflections contrasty rather than blown out.
+	g_xFloorGeometry = Zenith_MeshGeometryAsset::CreateUnitCube();
+	g_xFloorMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+	Zenith_MeshGeometryAsset* pxFloorGeometryAsset = g_xFloorGeometry.GetDirect();
+	Zenith_MaterialAsset* pxFloorMaterial = g_xFloorMaterial.GetDirect();
+	Flux_MeshGeometry* pxFloorGeometry =
+		(pxFloorGeometryAsset != nullptr) ? pxFloorGeometryAsset->GetGeometry() : nullptr;
+	if (pxFloorMaterial != nullptr && pxFloorGeometry != nullptr)
+	{
+		pxFloorMaterial->SetName("ZM_GalleryFloor");
+		pxFloorMaterial->SetBaseColor({ 0.30f, 0.30f, 0.33f, 1.0f });   // dark neutral metal tint
+		pxFloorMaterial->SetRoughness(0.06f);                            // smooth -> sharp mirror
+		pxFloorMaterial->SetMetallic(1.0f);                              // full metallic reflectance
+
+		Zenith_Entity xFloor = g_xEngine.Scenes().CreateEntity(pxSceneData, "GalleryFloor");
+		Zenith_TransformComponent& xFloorTransform =
+			xFloor.GetComponent<Zenith_TransformComponent>();
+		// Unit cube is centred, so a 0.2-thick slab centred at y=-0.1 puts its top
+		// face exactly at y=0 (the grounded creatures' feet); 60x60 in X/Z reaches
+		// well beyond the grid so every creature's reflection lands on it.
+		xFloorTransform.SetPosition({ 0.0f, -0.10f, 0.0f });
+		xFloorTransform.SetScale({ 60.0f, 0.20f, 60.0f });
+		Zenith_ModelComponent& xFloorModel = xFloor.AddComponent<Zenith_ModelComponent>();
+		xFloorModel.AddMeshEntry(*pxFloorGeometry, *pxFloorMaterial);
+	}
 
 	// The dozen baked creatures, in a readable 4x3 grid, each facing the camera.
 	for (u_int i = 0; i < uZM_GALLERY_COUNT && !g_bGalleryFailed; ++i)
@@ -480,11 +536,11 @@ static bool Step_ZMGallery(int iFrame)
 	// matrix is rendered before the swapchain consumes the dump.
 	switch (iFrame)
 	{
-	case 60:  AimCameraAt(*pxCamera, g_xViewFront, g_xGridCentre); break;
+	case 60:  AimCameraAt(*pxCamera, g_xViewFront, g_xViewAim); break;
 	case 66:  RequestShot(0); break;   // front elevated
-	case 78:  AimCameraAt(*pxCamera, g_xViewLeft, g_xGridCentre);  break;
+	case 78:  AimCameraAt(*pxCamera, g_xViewLeft, g_xViewAim);  break;
 	case 84:  RequestShot(1); break;   // left 3/4
-	case 96:  AimCameraAt(*pxCamera, g_xViewRight, g_xGridCentre); break;
+	case 96:  AimCameraAt(*pxCamera, g_xViewRight, g_xViewAim); break;
 	case 102: RequestShot(2); break;   // right 3/4
 	case 250: return false;            // hold ~150 frames for an external capture, then end
 	default:  break;
