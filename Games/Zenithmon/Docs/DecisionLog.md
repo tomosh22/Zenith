@@ -15,6 +15,17 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-14 -- ZM-D-066 -- S4 ZM_CreatureGen SC5c: species-gallery visual gate (GATE-WAIT for sign-off)
+
+- **Trigger:** the final S4 deliverable -- the windowed species-gallery visual gate, ZM_CreatureGen's stage-gate visual check. Authored by a subagent (windowed gallery test), iterated by the orchestrator to a gate-ready render, gated serially, format docs refreshed.
+- **Decision:** SC5c adds Tests/ZM_AutoTests_Gallery.cpp -- a windowed ZENITH_AUTOMATED_TEST_REGISTER test (ZM_CreatureGallery_Test, m_bRequiresGraphics=true so it auto-skips headless) that bakes a diverse sampled dozen (>=1 per archetype + Zenithrax shown SHINY), places their baked .zmodel models in a framed 4x3 grid, and dumps 3 TGAs (front + left/right 3/4) to Build/artifacts/zenithmon/s4/visual/ via Flux_Screenshot::RequestDump. Look tuned via Zenith_GraphicsOptions saved-in-Setup/restored-in-cleanup: bloom OFF, auto-exposure OFF (fixed exposure 1.0), key/fill directional lights at O(1) lux (anchored on Flux_MaterialPreview's sun=3.0), a neutral studio backdrop (skybox off), and FrontEnd UI (title/quads) suppressed to kill scene bleed. The test hard-asserts all 12 models render + all 3 TGAs land.
+- **Automated S4 gate -- ALL GREEN:** the 4-config Vulkan matrix (Debug/Release x True/False) + the D3D12_vs2022_Debug_Win64_False null-backend link proof all build; boot unit gate 1847 ran / 0 failed; `zenith test Zenithmon --headless` 6/0 (gallery skips headless); windowed ZM_CreatureGallery_Test PASSED (3 TGAs captured). The format-doc debt deferred since ZM-D-059 is refreshed in this commit (TestPlan ZM_Gen creature group, AssetManifest creature-bundle catalogue, Shortfalls verdict).
+- **Visual read (orchestrator, pre-sign-off):** all 12 baked creatures load + render as distinct, correctly-proportioned models across all 8 archetypes, each with working eyes + a type-palette colour + the shiny variant, on a clean background. Flagged to the user: the palette reads SOFT/PASTEL (low saturation) -- a punchier look is an available follow-up (dim the gallery further / IBL-diffuse off, or raise ZM_SynthCreatureAlbedo saturation for the baked assets = a generator-version bump). Iterated the gallery lighting 3x to get from an initial overexposed white bloom (auto-exposure lifting mid albedos into AgX's desaturate-toward-white zone) to the calibrated fixed-exposure render.
+- **GATE-WAIT SET; STOPPED for user sign-off (hard-stop policy).** This entry records the automated gate PASS + the evidence; the human's APPROVE/REJECT verdict lands as a SEPARATE later DecisionLog entry via StartPrompts prompt 4. The loop is parked (Status.md GATE-WAIT marker) and every firing reports "waiting" until then. Do NOT tick the S4 ZM_CreatureGen Roadmap line without the sign-off.
+- **Reversibility:** High for the gallery test (a windowed evidence artifact; deletable). The gate VERDICT is the user's; if REJECTED the rework (palette / per-species) is additive/retunable.
+
+---
+
 ## 2026-07-14 -- ZM-D-065 -- S4 ZM_CreatureGen SC5b: .zmtrl + .zmodel bundle bake (creatures now scene-loadable)
 
 - **Trigger:** the SC5-deferred bundle bake -- ZM_BakeCreature baked mesh+skeleton+textures but stubbed the material/model writes (that author API was unsurveyed at design time). Flow: read-only survey subagent -> implementer -> orchestrator gate (incl. the D3D12_False link proof) -> reviewer.

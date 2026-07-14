@@ -13,9 +13,10 @@ Scope.md (what is cut), TestPlan.md (determinism + generator test specs),
 BuildEnvironment.md (the tools build that runs the bake), CIPolicy.md
 (why CI never sees these files), Roadmap.md (S3/S4 stage gates).
 
-**Last updated:** 2026-07-13 (S3 -- FrontEnd/Dawnmere/PlayerHome now carry the
-verified fade + live door round trip under ZM-D-057; all scene/terrain outputs
-and visual-gate captures remain git-ignored).
+**Last updated:** 2026-07-14 (S4 -- `ZM_CreatureGen` COMPLETE (ZM-D-060..065):
+all 8 archetype builders wired, all 152 species bake the final 9-file bundle;
+section 1.2 now records the locked on-disk layout. All baked outputs remain
+git-ignored.).
 
 ---
 
@@ -35,8 +36,8 @@ the S4 families and `Source/World/ZM_TerrainAuthoring` for S3 terrain).
 
 | Family | Count | Generator | Lands at |
 |---|---|---|---|
-| Creature species file sets | ~150 species x 15 files (see 1.2) | ZM_CreatureGen (+ ZM_CreatureAnimGen, ZM_TextureSynth) | S4 |
-| Creature animation clips | ~900 .zanim (6 per species) | ZM_CreatureAnimGen | S4 |
+| Creature species file sets | 152 species x 9 files = 1,368 (see 1.2) | ZM_CreatureGen + ZM_TextureSynth (SHIPPED) | S4 |
+| Creature animation clips | ~900 .zanim (6 per species) -- SEPARATE later box, NOT in the 9-file bundle | ZM_CreatureAnimGen (not yet built) | S4 |
 | Human models | ~35 .zmodel on ONE shared skeleton + ONE shared 9-clip set | ZM_HumanGen | S4 |
 | Building models | ~30 .zmodel | ZM_BuildingGen | S4 |
 | Props | ~25 models (incl. ~6 battle-dome biome dressing sets) | ZM_PropGen | S4 |
@@ -61,8 +62,8 @@ the S4 families and `Source/World/ZM_TerrainAuthoring` for S3 terrain).
 |---|---|---|
 | Skeleton bone count | engine max 100; creature archetypes cap at <= 30 | fixed per-archetype bone topology so clips transfer within an archetype |
 | Bone influences per vertex | <= 4 (loft technique uses <= 2 per ring) | |
-| Texture format | .ztxtr v2; creature albedo BC1 512x512; terrain Height R32F | |
-| Materials | .zmtrl v5 | shiny variants are child materials over the same mesh |
+| Texture format | .ztxtr v2; creature albedo + shiny BC1 512x512, dex icon BC1 128x128; terrain Height R32F | |
+| Materials | .zmtrl v5 | creature shiny is an INDEPENDENT material over the same mesh (its own _shiny.ztxtr), NOT a child of the base (ZM-D-065) |
 | Scenes | .zscen v7 | |
 | Winding | CCW, cross(C-A, B-A) faces outward | generator unit tests assert winding |
 | Terrain grid | fixed 64x64 chunks x 64 m (compile-time) | rect export (E2) is how we avoid 12k files per terrain |
@@ -70,39 +71,60 @@ the S4 families and `Source/World/ZM_TerrainAuthoring` for S3 terrain).
 
 ---
 
-## 1. Creatures (~150 species)
+## 1. Creatures (152 species)
 
-### 1.1 Generation model (S4)
+### 1.1 Generation model (S4 -- SHIPPED, ZM-D-060..065)
 
 Eight archetypes (QUADRUPED / BIPED / AVIAN / SERPENT / AQUATIC / INSECTOID /
-BLOB / FLOATER-PLANTOID), each a single builder producing mesh + skeleton
+BLOB / FLOATER-PLANTOID), **all 8 builders now wired**, each a single builder
+producing mesh + skeleton
 together via the StickFigure loft technique (rings along bone chains; master
 reference: `Tools/Zenith_Tools_TestAssetExport.cpp`). A species recipe in
 `ZM_SpeciesData` = archetype + evo stage + size class + family seed; derived
 parameters (proportions, appendages, horns/ears/tails/wings, eye decal,
 palette from type identity, pattern via ZM_TextureSynth). Evolution lines
 share archetype + family seed, +1 elaboration tier per stage. Shiny =
-hue-rotated albedo + child material, same mesh. Archetype count may flex
-8 -> 6 without touching the dex data model (accepted risk mitigation).
+hue-rotated albedo + an INDEPENDENT material, same mesh (ZM-D-065). The
+8 -> 6 archetype-flex risk is now closed: all 8 archetypes shipped and every
+one of the 152 species builds a valid creature (`CreatureGen_AllSpeciesBuildable`).
 
-### 1.2 Per-species file set (THE contract -- 15 files per species)
+### 1.2 Per-species file set (THE contract -- 9 files per species)
 
-| File | Count per species | Notes |
+**ZM_CreatureGen bundle (SHIPPED, ZM-D-065 -- 9 files per species).**
+`ZM_BakeCreature` (TOOLS-only) writes all nine under `game:Creatures/<Name>/`:
+
+| File | Count per species | Format / notes |
 |---|---|---|
-| .zmesh | 1 | lofted skinned mesh |
-| .zskel | 1 | <= 30 bones, fixed per-archetype topology |
-| .zanim | 6 | Idle / Walk / Attack / Special / Hit / Faint -- archetype clip templates instantiated + exported PER SPECIES |
-| .ztxtr (albedo) | 2 | normal + shiny (hue-rotated), BC1 512x512 |
-| .ztxtr (dex icon) | 1 | flat icon for dex/party/box UI |
-| .zmtrl | 2 | normal + shiny (child material) |
-| .zmodel | 2 | normal + shiny bundles |
+| `<Name>.zmesh` | 1 | lofted skinned mesh, <= 30 bones (`uZM_GEN_CREATURE_BONE_CAP`) |
+| `<Name>.zskel` | 1 | fixed per-archetype topology, single-rooted |
+| `<Name>_albedo.ztxtr` | 1 | base albedo, BC1 512x512 |
+| `<Name>_shiny.ztxtr` | 1 | hue-rotated shiny albedo (band [80,280) deg), BC1 512x512 |
+| `<Name>_icon.ztxtr` | 1 | flat dex/party/box icon, BC1 128x128 |
+| `<Name>.zmtrl` | 1 | base material, .zmtrl v5 |
+| `<Name>_shiny.zmtrl` | 1 | shiny material, .zmtrl v5 -- an INDEPENDENT material over the same mesh (its own `_shiny.ztxtr`), NOT a child of the base (ZM-D-065) |
+| `<Name>.zmodel` | 1 | base bundle (mesh + skeleton + material), .zmodel v2 |
+| `<Name>_shiny.zmodel` | 1 | shiny bundle (same mesh + skeleton, shiny material), .zmodel v2 |
 
-Totals: ~2,250 files, of which ~900 .zanim. All ~150 species are **eagerly
-baked** (no lazy per-encounter generation); measured budget ~2-4 min for the
-full creature family.
+**On-disk layout (now final -- was TBD).** One directory per species; the
+canonical asset ref is `game:Creatures/<SpeciesName>/<SpeciesName><suffix>.<ext>`
+(`ZM_CreatureAssetPath`), and the tools bake mirrors it as the filesystem path
+under `GAME_ASSETS_DIR` (`ZM_CreatureFsPath`). Every ref EMBEDDED in a baked
+asset (albedo/shiny texture, mesh, skeleton, material) is a `game:` ref; only the
+write targets are filesystem paths. All **152** species are **eagerly baked** (no
+lazy per-encounter generation): the bundle family is **152 x 9 = 1,368 files**.
+Measured budget ~2-4 min for the full creature family.
 
-Exact directory layout and file-naming scheme under `Assets/`: TBD at S4
-(fixed by the first ZM_CreatureGen PR; will be recorded here).
+**Determinism / version stamp.** Every output byte is a pure function of the
+species id (section 6.2); the generator version is `uZM_CREATUREGEN_VERSION`
+(currently **1**), golden-pinned -- a change to the generation algorithm bumps it
+and forces a cold family re-bake. Locked by the `ZM_Gen` creature units
+([TestPlan.md](TestPlan.md) 5.4).
+
+**Animation clips are a SEPARATE later box.** The ~6 per-species `.zanim`
+(Idle / Walk / Attack / Special / Hit / Faint) are produced by
+`ZM_CreatureAnimGen` (not yet built) and are **NOT part of the 9-file
+ZM_CreatureGen bundle**. When that box lands, per-species clips (~900 total) join
+the creature family here.
 
 ---
 
@@ -328,8 +350,11 @@ Stamp valid + all files present -> family skipped (warm boot). Stamp missing,
 version-mismatched, or any file absent -> the whole family regenerates.
 This is the hardened RenderTest pattern. The three measured families lock the
 terrain-family format now (`ZMTR`, v1, count 771 for each 256-chunk town and
-count 1,155 for the 384-chunk route in a 12-byte atomic marker; section 4.3);
-the non-terrain S4 family marker format remains TBD until those generators land.
+count 1,155 for the 384-chunk route in a 12-byte atomic marker; section 4.3).
+The creature generator already stamps its generation version via
+`uZM_CREATUREGEN_VERSION` (currently 1; section 1.2), but the full per-family
+`ZM_BakeManifest` marker (version + file-existence gate) is itself a later S4 box;
+the human/building/prop marker formats remain TBD until those generators land.
 
 ### 6.2 Determinism invariant (tested)
 

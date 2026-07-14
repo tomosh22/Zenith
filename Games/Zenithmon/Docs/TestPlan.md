@@ -485,19 +485,110 @@ biggest suite; all headless, all seeded (C8).
 
 ### 5.4 S4 -- asset generators
 
-Category `ZM_Gen` (headless, in-memory -- no disk dependency, CI-safe):
+Category `ZM_Gen` (headless, in-memory -- no disk dependency, CI-safe). The S4
+foundation (`ZM_GenCommon` + `ZM_TextureSynth`, ZM-D-059) shipped **31** `ZM_Gen`
+units (boot gate 1773 -> 1804); the creature generator below adds **43** more
+(1804 -> 1847). The whole `ZM_Gen` T0 category is now **74** units, one of which
+(the bake smoke) is `ZENITH_TOOLS`-only, so `_False`/Android configs register it
+as an empty TU.
 
-- **Same-seed determinism:** generating any species/human/building twice from
-  the same seed is byte-identical (mesh buffers, texture texels, clip data).
-- **Structural validity:** winding (CCW), bounds non-degenerate, skinning
-  weights sum to 1 within tolerance, bone counts within caps (<= 30 creature,
-  <= 100 engine max), clip channel sets match the archetype skeleton exactly.
-- **Shiny differs:** shiny texture differs from base while mesh/skeleton are
-  identical.
-- **P1 gallery smokes (windowed, asset-dependent -> C6):** batched
-  species-gallery scenes showing every species animating; asserts model +
-  animator resolve and pose advances. Visual sign-off on a sampled dozen at
-  the gate.
+#### ZM_Gen -- creature generator (SHIPPED)
+
+`ZM_CreatureGen` (ZM-D-060..065) turns any `ZM_SPECIES_ID` into a deterministic
+bundle (skinned mesh + skeleton + BC1 albedo + hue-rotated shiny + flat dex
+icon); a tools build additionally bakes the 9-file per-species bundle
+([AssetManifest.md](AssetManifest.md) 1.2). **All 8 archetype builders are wired,
+so every one of the 152 species builds a valid creature and a complete bundle.**
+Determinism is golden-pinned (`uZM_CREATUREGEN_VERSION` = 1). All units are
+pure/headless (the `.zmesh`/`.ztxtr` bake bridges are compiled out) unless marked:
+
+- **Generic 12-invariant harness** (`Tests/ZM_Tests_CreatureGen.cpp`, 18 units):
+  a contract-driven harness authored against the frozen seam (never a specific
+  archetype `.cpp`) that loops every species with a wired builder -- now all 152
+  -- and asserts the twelve universal creature invariants:
+  1. same-seed determinism -- `ZM_CreatureBuildEqual` + equal
+     `ZM_CreatureContentHash` + `ZM_CreatureMeshEqual` (curated subset, for cost);
+  2. per-domain seed isolation -- each `m_aulDomainSeed[d]` == the frozen
+     `ZM_GenDeriveSeed(...)`, pairwise-distinct (all 152);
+  3. outward winding (CCW, `cross(C-A, B-A)` faces outward);
+  4. non-degenerate bounds inside a sane world box;
+  5. skin weights sum to 1;
+  6. <= 2 non-zero bone influences per vertex;
+  7. bone caps -- <= 30 (`uZM_GEN_CREATURE_BONE_CAP`) AND <= 100 (engine max);
+  8. in-range bone indices + a well-formed single-root, parent-before-child,
+     name-resolvable skeleton;
+  9. shiny differs from base albedo at matching dims over a single shared mesh;
+  10. dex icon non-empty, 128^2, >= 2 distinct texels;
+  11. seed/evo sensitivity -- two distinct species differ; stage-1 != stage-3;
+  12. skeleton topology IDENTICAL across evo stages (equal bone count + equal
+      per-index names, over every multi-stage buildable family -- the index-keyed
+      clip-transfer precondition).
+
+  Plus the SC1-core cases: recipe-resolution purity, pure+total archetype
+  dispatch (`CreatureGen_ArchetypeDispatch`), and the shared
+  `ZM_CreatureArchetypeCommon` kit-helper units (spine tube / limb / tail / horn
+  / ellipsoid head). The cheap mesh-only structural pass (3-8) runs over EVERY
+  buildable species; the heavy full-bundle passes (1, 9-12) reuse a single build
+  over a curated representative subset for cost.
+
+- **All-152 coverage gate** (`CreatureGen_AllSpeciesBuildable`): asserts EVERY
+  `ZM_SPECIES_ID` resolves to a non-null builder -- proving the
+  `ZM_GetArchetypeBuilder` switch covers every `ZM_ARCHETYPE` and no species is
+  left un-buildable (this would have failed on FLOATER_PLANTOID before SC5a).
+
+- **Per-archetype structural tests**
+  (`Tests/ZM_Tests_CreatureArchetype_<Name>.cpp`, one file per archetype, 3 units
+  each = **24**): each runs the universal mesh contract + the `ZM_ValidateCreature`
+  rollup + same-seed determinism over its own species set, plus an
+  `ExpectedBoneSet` assert locking that archetype's bone topology:
+
+  | Archetype | Bones | Locked structural shape (`ExpectedBoneSet`) |
+  |---|---:|---|
+  | QUADRUPED | 18 | single Spine root, >= 4 leg `...Up` roots, a Tail, a Head |
+  | BIPED | 14 | Spine root chain -> Head, ArmL/R + LegL/R Up/Lo, dorsal Crest |
+  | AVIAN | 13 | Spine root -> Head/Beak, WingL/R, LegL/R Up/Lo, Tail |
+  | SERPENT | 12 | single Spine root + Spine/Tail chain + Head; ZERO limb `...Up` bones |
+  | AQUATIC | 8 | Spine root -> Head, dorsal + 2 pectoral + caudal fin bones |
+  | INSECTOID | 19 | single Spine root + Head + EXACTLY 6 leg `...Up` roots + antennae, <= 30 |
+  | BLOB | 4 | single root, total bones in [2,4], zero limb bones |
+  | FLOATER_PLANTOID | 10 | Spine root (floating) + Head + 6 radial Tendrils; mesh min-Y > 0 |
+
+- **Golden-locks** (`Tests/ZM_Tests_CreatureGen.cpp`, pure, compiled in ALL
+  configs): the size-class scale curve (TINY .45 / SMALL .70 / MEDIUM 1.00 /
+  LARGE 1.50 / HUGE 2.20, strictly increasing), the asset-path ref scheme
+  (`game:Creatures/<Name>/<Name><suffix>.<ext>` + too-small-cap -> false
+  truncation), the `ZM_FormatBoneName` zero-padded 2-digit suffix, and the shiny
+  hue band [80, 280) degrees. A change to any of these forces a
+  `uZM_CREATUREGEN_VERSION` bump + a cold family re-bake.
+
+- **Bake smoke** (`Tests/ZM_Tests_CreatureBake.cpp`, `ZENITH_TOOLS`-only, 1
+  unit): `CreatureBake_BundleFilesLand` bakes FERNFAWN via `ZM_BakeCreature` and
+  asserts all NINE bundle files land on disk non-empty (mesh, skeleton, albedo,
+  shiny, icon, base + shiny `.zmtrl`, base + shiny `.zmodel`); `ZENITH_SKIP`s if
+  the bake environment is unavailable. The full byte-identical re-bake invariant
+  is deferred to the later `ZM_BakeManifest` box. In `_False`/Android configs the
+  whole TU is empty (the header no-op returns false), so it does not register.
+
+- **P1 species-gallery visual gate** (`Tests/ZM_AutoTests_Gallery.cpp`,
+  `ZM_CreatureGallery_Test`, windowed): **the S4 visual-gate artifact.** It bakes
+  a diverse sampled dozen (>= 1 per archetype; Zenithrax shown SHINY), places
+  their `.zmodel` models in a 4x3 grid under a framed camera + key/fill lights,
+  and dumps three swapchain TGAs to `Build/artifacts/zenithmon/s4/visual/` for the
+  human sign-off. It is also a real regression test: it asserts all twelve
+  `.zmodel` bundles loaded into renderable instances and that every capture file
+  was written. `m_bRequiresGraphics = true` + asset-guarded (`RequestSkip` when
+  the git-ignored `Assets/Creatures` tree is absent), so it skips the headless CI
+  batch (C5/C6) and runs only on a windowed `_True` build. This registers as a new
+  P1 automated test on top of the six S3 left.
+
+Boot unit-gate baseline after the S4 creature work: **1847** (was 1773 at the S3
+gate; `.github/workflows/zm-tests.yml` runs `run_unit_gate.ps1 -Baseline 1847`).
+
+**Not-yet-built S4 families** (`ZM_CreatureAnimGen`, `ZM_HumanGen`,
+`ZM_BuildingGen`, `ZM_PropGen`) get their own `ZM_Gen` units as they land; the
+invariants above (same-seed determinism, structural validity, shiny-differs) are
+the shared template. Creature animation clips (`.zanim`) are a separate
+`ZM_CreatureAnimGen` box and are NOT part of the current 9-file creature bundle.
 
 ### 5.5 S5 -- battle integration slice
 
