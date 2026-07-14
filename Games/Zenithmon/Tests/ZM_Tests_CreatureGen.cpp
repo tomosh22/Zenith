@@ -6,9 +6,9 @@
 // This is the GENERIC, contract-driven creature harness: it authors against the
 // frozen seam (Games/Zenithmon/Source/Gen/ZM_CreatureGen.h +
 // ZM_CreatureArchetypeCommon.h), NEVER against a specific archetype .cpp. It
-// loops every ZM_SPECIES_ID whose ZM_GetArchetypeBuilder is non-null (SC1 wires
-// ONLY QUADRUPED; every other archetype returns nullptr, so those species are
-// SKIPPED and coverage auto-grows as later SCs land their builders), and asserts
+// loops every ZM_SPECIES_ID whose ZM_GetArchetypeBuilder is non-null (the wired
+// archetype set grows per SC; un-wired archetypes return nullptr, so those species
+// are SKIPPED and coverage auto-grows as later SCs land their builders), and asserts
 // the 12 UNIVERSAL creature invariants plus the SC1-core cases:
 //   (1)  same-seed determinism      -- ZM_CreatureBuildEqual + equal ZM_CreatureContentHash
 //   (2)  domain-seed isolation      -- recipe.m_aulDomainSeed[d] == ZM_GenDeriveSeed(...)
@@ -197,32 +197,39 @@ namespace
 // SC1 core -- archetype dispatch
 // ############################################################################
 
-// SC1 wires exactly one archetype builder: QUADRUPED resolves to a non-null
-// function pointer; the other 7 archetypes resolve to nullptr (their builders land
-// in later SCs). The generic harness relies on this to skip un-authored archetypes.
+// The dispatch is the "routes / does not route" contract. QUADRUPED (the SC1
+// reference archetype) is ALWAYS wired; the wired set GROWS per SC as builders
+// land, so this test asserts SC-agnostic invariants rather than a fixed un-wired
+// list: dispatch is pure + total, QUADRUPED routes, the out-of-range sentinel
+// does not, and at least one archetype + one species are buildable (the generic
+// harness proves each wired archetype actually builds a valid creature).
 //
 // NOTE (reconciliation): the frozen ZM_BuildCreature returns void and
 // ZM_BuildCreatureMesh asserts a NON-NULL builder, so invoking ZM_BuildCreature on
 // a nullptr-builder species would trip an assert -- it is intentionally never
-// called here. The dispatch pointer IS the testable "routes / does not route"
-// contract; the harness gates every build on HasBuilder.
+// called here. The harness gates every build on HasBuilder.
 ZENITH_TEST(ZM_Gen, CreatureGen_ArchetypeDispatch)
 {
 	// (Function pointers are compared to nullptr directly -- ZENITH_ASSERT_NULL would
 	// reinterpret_cast a function pointer to a data pointer, which MSVC rejects/warns.)
 	ZENITH_ASSERT_TRUE(ZM_GetArchetypeBuilder(ZM_ARCHETYPE_QUADRUPED) != nullptr,
-		"QUADRUPED must route to a non-null builder in SC1");
+		"QUADRUPED (the reference archetype) must always route to a non-null builder");
 
-	const ZM_ARCHETYPE aeOther[] =
+	// Dispatch must be PURE (same pointer on repeat) and TOTAL over every archetype
+	// value. The un-wired set shrinks per SC, so assert the shape, not a fixed list.
+	u_int uWired = 0u;
+	for (u_int a = 0; a < (u_int)ZM_ARCHETYPE_COUNT; ++a)
 	{
-		ZM_ARCHETYPE_BIPED, ZM_ARCHETYPE_AVIAN, ZM_ARCHETYPE_SERPENT, ZM_ARCHETYPE_AQUATIC,
-		ZM_ARCHETYPE_INSECTOID, ZM_ARCHETYPE_BLOB, ZM_ARCHETYPE_FLOATER_PLANTOID,
-	};
-	for (u_int i = 0; i < (u_int)(sizeof(aeOther) / sizeof(aeOther[0])); ++i)
-	{
-		ZENITH_ASSERT_TRUE(ZM_GetArchetypeBuilder(aeOther[i]) == nullptr,
-			"archetype %u must be un-wired (nullptr) in SC1", (u_int)aeOther[i]);
+		const ZM_ArchetypeBuilderFn pfn0 = ZM_GetArchetypeBuilder((ZM_ARCHETYPE)a);
+		const ZM_ArchetypeBuilderFn pfn1 = ZM_GetArchetypeBuilder((ZM_ARCHETYPE)a);
+		ZENITH_ASSERT_TRUE(pfn0 == pfn1, "ZM_GetArchetypeBuilder must be pure for archetype %u", a);
+		if (pfn0 != nullptr) { ++uWired; }
 	}
+	ZENITH_ASSERT_GT(uWired, 0u, "at least one archetype builder must be wired");
+
+	// The out-of-range sentinel exercises the switch's default arm -> nullptr.
+	ZENITH_ASSERT_TRUE(ZM_GetArchetypeBuilder(ZM_ARCHETYPE_COUNT) == nullptr,
+		"the out-of-range archetype sentinel must not route to a builder");
 
 	// At least one species in the roster must be buildable, or the harness is vacuous.
 	u_int uBuildable = 0u;

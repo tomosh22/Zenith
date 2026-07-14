@@ -155,7 +155,7 @@ jobs:
           # registered count ran with 0 failed. Bump -Baseline when the ZM_* (or
           # engine) unit-test count changes -- see Docs/CIPolicy.md.
           $exe = 'Games\Zenithmon\Build\output\win64\vulkan_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 1824
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 1830
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

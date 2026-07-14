@@ -173,10 +173,10 @@ ZM_ArchetypeBuilderFn ZM_GetArchetypeBuilder(ZM_ARCHETYPE eArchetype)
 {
 	switch (eArchetype)
 	{
-	case ZM_ARCHETYPE_QUADRUPED:        return &ZM_BuildArchetype_Quadruped;
-	// SC1 wires only QUADRUPED; the remaining seven builders land in later SCs.
-	case ZM_ARCHETYPE_BIPED:
-	case ZM_ARCHETYPE_AVIAN:
+	case ZM_ARCHETYPE_QUADRUPED:        return &ZM_BuildArchetype_Quadruped;   // SC1
+	case ZM_ARCHETYPE_BIPED:            return &ZM_BuildArchetype_Biped;       // SC2
+	case ZM_ARCHETYPE_AVIAN:            return &ZM_BuildArchetype_Avian;       // SC2
+	// Remaining archetypes land in later SCs (SC3 SERPENT+AQUATIC, SC4 INSECTOID+BLOB, SC5 FLOATER_PLANTOID).
 	case ZM_ARCHETYPE_SERPENT:
 	case ZM_ARCHETYPE_AQUATIC:
 	case ZM_ARCHETYPE_INSECTOID:
@@ -195,7 +195,7 @@ void ZM_BuildCreatureMesh(const ZM_CreatureRecipe& xRecipe, ZM_GenMesh& xMesh)
 
 	const ZM_ArchetypeBuilderFn pfnBuilder = ZM_GetArchetypeBuilder(xRecipe.m_eArchetype);
 	Zenith_Assert(pfnBuilder != nullptr,
-		"ZM_BuildCreatureMesh: no archetype builder wired for archetype %u (SC1 = QUADRUPED only)",
+		"ZM_BuildCreatureMesh: no archetype builder wired for archetype %u yet",
 		static_cast<u_int>(xRecipe.m_eArchetype));
 	if (pfnBuilder == nullptr)
 	{

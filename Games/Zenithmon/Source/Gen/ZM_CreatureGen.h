@@ -90,8 +90,19 @@ float ZM_CreatureShinyAngle(const ZM_CreatureRecipe& xRecipe);
 // ---------------------------------------------------------------------------
 typedef void (*ZM_ArchetypeBuilderFn)(ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);
 
-// The single authored quadruped builder (defined in ZM_CreatureArchetype_Quadruped.cpp).
-void ZM_BuildArchetype_Quadruped(ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);
+// The 8 archetype builders (each defined ALONE in ZM_CreatureArchetype_<Name>.cpp
+// as it lands). Declared together so the ZM_GetArchetypeBuilder switch can take
+// each one's address; an un-authored builder is merely a declaration (never
+// referenced until its switch case + .cpp land, so no link error). This block is
+// the ONE sanctioned append to the frozen seam, finalised at SC2.
+void ZM_BuildArchetype_Quadruped      (ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);   // SC1
+void ZM_BuildArchetype_Biped          (ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);   // SC2
+void ZM_BuildArchetype_Avian          (ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);   // SC2
+void ZM_BuildArchetype_Serpent        (ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);   // SC3
+void ZM_BuildArchetype_Aquatic        (ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);   // SC3
+void ZM_BuildArchetype_Insectoid      (ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);   // SC4
+void ZM_BuildArchetype_Blob           (ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);   // SC4
+void ZM_BuildArchetype_FloaterPlantoid(ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);   // SC5
 
 // Explicit archetype -> builder mapping. SC1 wires ONLY QUADRUPED; every other
 // archetype returns nullptr until its builder lands.
