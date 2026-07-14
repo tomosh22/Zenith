@@ -15,6 +15,15 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-14 -- ZM-D-070 -- S4 ZM_CreatureAnimGen SC3: Serpent + Aquatic builders (limbless)
+
+- **Decision:** SC3 adds the SERPENT and AQUATIC clip builders (both LIMBLESS) mirroring the SC1/SC2 pattern, wired into `ZM_GetArchetypeAnimBuilder` (5 of 8 archetypes now animate; INSECTOID/BLOB/FLOATER-PLANTOID still nullptr). Frozen bone sets (verbatim): SERPENT 12 = `Spine00-05, Head, Tail00-02, HornL, HornR`; AQUATIC 8 = `Spine00-02, Head, FinDorsal, FinPecL, FinPecR, FinCaudal`. New motion idiom: a per-vertebra PHASE-OFFSET travelling lateral undulation (`sin(2*pi*f*t + phase)` per spine/tail bone, phase lagging head->tail) composed entirely from the existing `ZM_AnimAddRotCurve` kit -- NO new kit primitive. SERPENT Special flares `HornL/HornR` (its signature; Attack never keys horns); AQUATIC Special flares pectoral fins + dorsal sail and never keys `FinCaudal` (the lock separating it from the Attack ram).
+- **Why:** limbless archetypes drive spine-undulation / fin sweeps instead of leg gait; the phase-offset undulation still closes the loop (a phase shift inside a full 2*pi sine keeps fn(0)==fn(1)), so Idle/Walk remain pop-free.
+- **Tests that lock it:** new `ZENITH_TEST(ZM_Gen, SerpentAnim_ExpectedChannels)` (multiple spine channels undulate in Walk/Idle; head-strike in Attack; Horn-flare in Special) + `AquaticAnim_ExpectedChannels` (caudal fin in Walk/Idle; pectoral in Special; no-caudal negative lock on Special) + the archetype-generalized generic harness now auto-covering SERPENT/AQUATIC (byte-identity, determinism, one-shot-neutral, faint-clamp incl. the bone-name-agnostic path). Boot unit gate **1861 ran / 1860 passed / 0 failed / 1 skipped** (was 1859; +2); headless 7/0; Vulkan Debug True green. Reviewer pass: clean.
+- **Reversibility:** easy -- additive per-archetype files + two dispatch cases. Remaining: SC4 Insectoid+Blob, SC5 FloaterPlantoid + all-8 totality gate, SC6 bundle-bake wiring (ticks the Roadmap box), SC7 optional windowed gate.
+
+---
+
 ## 2026-07-14 -- ZM-D-069 -- S4 ZM_CreatureAnimGen SC2: Biped + Avian builders + generic harness generalized
 
 - **Decision:** SC2 adds the BIPED and AVIAN clip builders by mirroring the SC1 QUADRUPED exemplar (pure `f(archetype,clip-id)`, rotation-only, fixed channel-insert order, looping clips key0==keyN, one-shot clips end ~identity except Faint which holds its collapsed pose) and wires both into `ZM_GetArchetypeAnimBuilder` (BIPED->ZM_BuildAnim_Biped, AVIAN->ZM_BuildAnim_Avian; the other 5 archetypes stay nullptr). Frozen bone sets used (verbatim from the archetype sources): BIPED 14 = `Spine00-03, Head, ArmLUp/ArmLLo, ArmRUp/ArmRLo, LegLUp/LegLLo, LegRUp/LegRLo, Crest`; AVIAN 13 = `Spine00-02, Head, Beak, WingL, WingR, LegLUp/LegLLo, LegRUp/LegRLo, Tail00, Tail01`. Distinctive signatures: Biped `Crest` keyed ONLY in Special; Avian `Beak` keyed ONLY in Attack; wings take opposite RotZ signs for a symmetric flap/flare.

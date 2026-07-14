@@ -98,6 +98,8 @@ ZM_ArchetypeAnimFn ZM_GetArchetypeAnimBuilder(ZM_ARCHETYPE eArchetype)
 	case ZM_ARCHETYPE_QUADRUPED: return &ZM_BuildAnim_Quadruped;   // SC1
 	case ZM_ARCHETYPE_BIPED:     return &ZM_BuildAnim_Biped;       // SC2
 	case ZM_ARCHETYPE_AVIAN:     return &ZM_BuildAnim_Avian;       // SC2
+	case ZM_ARCHETYPE_SERPENT:   return &ZM_BuildAnim_Serpent;     // SC3
+	case ZM_ARCHETYPE_AQUATIC:   return &ZM_BuildAnim_Aquatic;     // SC3
 	default:                     return nullptr;                   // later builders claim their case as they land
 	}
 }
