@@ -92,12 +92,12 @@ void ZM_BuildAnim_Serpent        (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);
 void ZM_BuildAnim_Aquatic        (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC3
 void ZM_BuildAnim_Insectoid      (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC4
 void ZM_BuildAnim_Blob           (ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC4
-void ZM_BuildAnim_FloaterPlantoid(ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC5
+void ZM_BuildAnim_FloaterPlantoid(ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut);   // SC5 (landed -- dispatch now total)
 
-// Explicit archetype -> builder mapping. SC1 returns the Quadruped builder for
-// ZM_ARCHETYPE_QUADRUPED and nullptr for every other archetype (and the
-// out-of-range ZM_ARCHETYPE_COUNT sentinel), so downstream harness coverage
-// auto-grows as each later builder lands and claims its case.
+// Explicit archetype -> builder mapping: returns the clip-authoring builder for the
+// given archetype. Every archetype in [0, ZM_ARCHETYPE_COUNT) is wired as of SC5, so
+// this is TOTAL -- it returns a non-null builder for every real archetype; only the
+// out-of-range ZM_ARCHETYPE_COUNT sentinel (and any future archetype) returns nullptr.
 ZM_ArchetypeAnimFn ZM_GetArchetypeAnimBuilder(ZM_ARCHETYPE eArchetype);
 
 // ---------------------------------------------------------------------------

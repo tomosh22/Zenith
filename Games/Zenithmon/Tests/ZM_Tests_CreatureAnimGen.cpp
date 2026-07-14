@@ -602,3 +602,26 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_OneShotClipsEndNeutral)
 		}
 	}
 }
+
+// ############################################################################
+// (10) TOTALITY GATE: the anim-builder dispatch is TOTAL -- EVERY archetype in
+//      [0, ZM_ARCHETYPE_COUNT) has a wired (non-null) anim builder. As of SC5 the
+//      last archetype (FLOATER_PLANTOID) is wired, so ZM_GetArchetypeAnimBuilder
+//      never returns nullptr for a real archetype. This is the twin of
+//      ZM_CreatureGen's ArchetypeDispatch/AllSpeciesBuildable totality gate: it
+//      forbids a future archetype being added to the enum without also wiring its
+//      anim builder (which would silently skip that body plan in every
+//      HasAnimBuilder-gated generic test above). Fn-ptr nullness is checked with
+//      `!= nullptr` (never ZENITH_ASSERT_NULL -- MSVC rejects the fnptr->void* cast).
+// ############################################################################
+
+ZENITH_TEST(ZM_Gen, CreatureAnimGen_AllArchetypesHaveAnimBuilder)
+{
+	for (u_int a = 0; a < (u_int)ZM_ARCHETYPE_COUNT; ++a)
+	{
+		const ZM_ARCHETYPE eArch = (ZM_ARCHETYPE)a;
+		const ZM_ArchetypeAnimFn pxFn = ZM_GetArchetypeAnimBuilder(eArch);
+		ZENITH_ASSERT_TRUE(pxFn != nullptr,
+			"archetype %u has no wired anim builder (dispatch is not total)", a);
+	}
+}

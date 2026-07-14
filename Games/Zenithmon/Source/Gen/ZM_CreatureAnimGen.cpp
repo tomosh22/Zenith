@@ -87,23 +87,24 @@ bool ZM_CreatureClipLooping(ZM_ANIM_CLIP eClip)
 
 // ============================================================================
 // Archetype builder dispatch. SC1: Quadruped; SC2 adds Biped + Avian; SC3 adds
-// Serpent + Aquatic; SC4 adds Insectoid + Blob -- 7 of the 8 archetypes are now
-// wired (only FloaterPlantoid remains, landing in SC5). Every still-un-authored
-// archetype (and the out-of-range sentinel) returns nullptr, so those builders'
-// bodies are never referenced (their addresses are not taken here).
+// Serpent + Aquatic; SC4 adds Insectoid + Blob; SC5 adds FloaterPlantoid -- ALL 8
+// archetypes are now wired, so the dispatch is TOTAL: every archetype in
+// [0, ZM_ARCHETYPE_COUNT) returns a non-null builder. Only the out-of-range
+// ZM_ARCHETYPE_COUNT sentinel (and any future archetype) falls through to nullptr.
 // ============================================================================
 ZM_ArchetypeAnimFn ZM_GetArchetypeAnimBuilder(ZM_ARCHETYPE eArchetype)
 {
 	switch (eArchetype)
 	{
-	case ZM_ARCHETYPE_QUADRUPED: return &ZM_BuildAnim_Quadruped;   // SC1
-	case ZM_ARCHETYPE_BIPED:     return &ZM_BuildAnim_Biped;       // SC2
-	case ZM_ARCHETYPE_AVIAN:     return &ZM_BuildAnim_Avian;       // SC2
-	case ZM_ARCHETYPE_SERPENT:   return &ZM_BuildAnim_Serpent;     // SC3
-	case ZM_ARCHETYPE_AQUATIC:   return &ZM_BuildAnim_Aquatic;     // SC3
-	case ZM_ARCHETYPE_INSECTOID: return &ZM_BuildAnim_Insectoid;   // SC4
-	case ZM_ARCHETYPE_BLOB:      return &ZM_BuildAnim_Blob;        // SC4
-	default:                     return nullptr;                   // FloaterPlantoid claims its case in SC5
+	case ZM_ARCHETYPE_QUADRUPED:        return &ZM_BuildAnim_Quadruped;       // SC1
+	case ZM_ARCHETYPE_BIPED:            return &ZM_BuildAnim_Biped;           // SC2
+	case ZM_ARCHETYPE_AVIAN:            return &ZM_BuildAnim_Avian;           // SC2
+	case ZM_ARCHETYPE_SERPENT:          return &ZM_BuildAnim_Serpent;         // SC3
+	case ZM_ARCHETYPE_AQUATIC:          return &ZM_BuildAnim_Aquatic;         // SC3
+	case ZM_ARCHETYPE_INSECTOID:        return &ZM_BuildAnim_Insectoid;       // SC4
+	case ZM_ARCHETYPE_BLOB:             return &ZM_BuildAnim_Blob;            // SC4
+	case ZM_ARCHETYPE_FLOATER_PLANTOID: return &ZM_BuildAnim_FloaterPlantoid; // SC5 -- dispatch now TOTAL
+	default:                            return nullptr;                       // out-of-range sentinel only
 	}
 }
 
