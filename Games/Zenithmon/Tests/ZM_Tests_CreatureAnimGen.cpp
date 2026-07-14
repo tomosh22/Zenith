@@ -103,10 +103,50 @@ namespace
 		return fabsf(xA.w * xB.w + xA.x * xB.x + xA.y * xB.y + xA.z * xB.z);
 	}
 
-	// Build the SC1 reference (QUADRUPED) clip for a clip-id into a fresh clip.
+	// Build the QUADRUPED reference clip for a clip-id into a fresh clip (used by
+	// the metadata-golden test, whose stamp check is archetype-independent).
 	void BuildQuadClip(ZM_ANIM_CLIP eClip, Flux_AnimationClip& xOut)
 	{
 		ZM_BuildCreatureClip(ZM_ARCHETYPE_QUADRUPED, eClip, xOut);
+	}
+
+	// Enumerate the archetypes that have a wired anim builder into aeOut (capacity
+	// uCap), returning the count. Iterates [0, ZM_ARCHETYPE_COUNT) so coverage
+	// AUTO-GROWS as later SCs wire more archetype builders (SC1 Quadruped; SC2
+	// + Biped + Avian; SC3-SC5 the rest). The generic byte-identity / determinism /
+	// distinctness / loop-wrap / faint-clamp / end-neutral gates below all iterate
+	// this set, so every wired archetype is exercised without touching this harness.
+	u_int WiredAnimArchetypes(ZM_ARCHETYPE* aeOut, u_int uCap)
+	{
+		u_int uCount = 0u;
+		for (u_int a = 0; a < (u_int)ZM_ARCHETYPE_COUNT; ++a)
+		{
+			const ZM_ARCHETYPE eArch = (ZM_ARCHETYPE)a;
+			if (ZM_GetArchetypeAnimBuilder(eArch) != nullptr)
+			{
+				if (uCount < uCap) { aeOut[uCount] = eArch; }
+				++uCount;
+			}
+		}
+		return uCount;
+	}
+
+	// Find up to two DISTINCT species whose body plan is eArch (both are anim-
+	// buildable, since eArch is a wired archetype). Writes them into eOutA / eOutB
+	// and returns how many were found (0, 1, or 2). Species order follows the
+	// ZM_SPECIES_ID enum, so the pick is deterministic.
+	u_int FindTwoSpeciesOfArchetype(ZM_ARCHETYPE eArch, ZM_SPECIES_ID& eOutA, ZM_SPECIES_ID& eOutB)
+	{
+		u_int uFound = 0u;
+		for (u_int id = 0; id < (u_int)ZM_SPECIES_COUNT; ++id)
+		{
+			const ZM_SPECIES_ID eId = (ZM_SPECIES_ID)id;
+			if (ZM_GetSpeciesData(eId).m_eArchetype != eArch) { continue; }
+			if (!HasAnimBuilder(eId)) { continue; }   // defensive; always true for a wired archetype
+			if (uFound == 0u) { eOutA = eId; uFound = 1u; }
+			else              { eOutB = eId; uFound = 2u; break; }
+		}
+		return uFound;
 	}
 }
 
@@ -252,38 +292,42 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_ClipMetadataGolden)
 
 ZENITH_TEST(ZM_Gen, CreatureAnimGen_SameArchetypeByteIdentical)
 {
-	// Find the first TWO distinct QUADRUPED species that are anim-buildable.
-	ZM_SPECIES_ID eA = ZM_SPECIES_FERNFAWN;   // placeholder until found
-	ZM_SPECIES_ID eB = ZM_SPECIES_FERNFAWN;
-	bool bFoundA = false;
-	bool bFoundB = false;
-	for (u_int id = 0; id < (u_int)ZM_SPECIES_COUNT; ++id)
+	ZM_ARCHETYPE aeArch[ZM_ARCHETYPE_COUNT];
+	const u_int uArch = WiredAnimArchetypes(aeArch, (u_int)ZM_ARCHETYPE_COUNT);
+	ZENITH_ASSERT_GT(uArch, 0u, "no wired anim archetypes (harness would be vacuous)");
+
+	// For EVERY wired archetype: two DISTINCT species must produce byte-identical
+	// clips (a clip is pure f(archetype, clip)). An archetype with only a single
+	// species is skipped, but at least one archetype must have been compared.
+	u_int uTestedArch = 0u;
+	for (u_int ia = 0; ia < uArch; ++ia)
 	{
-		const ZM_SPECIES_ID eId = (ZM_SPECIES_ID)id;
-		if (ZM_GetSpeciesData(eId).m_eArchetype != ZM_ARCHETYPE_QUADRUPED) { continue; }
-		if (!HasAnimBuilder(eId)) { continue; }
-		if (!bFoundA) { eA = eId; bFoundA = true; }
-		else          { eB = eId; bFoundB = true; break; }
+		const ZM_ARCHETYPE eArch = aeArch[ia];
+
+		ZM_SPECIES_ID eA = (ZM_SPECIES_ID)0;   // placeholders; only read when uFound == 2
+		ZM_SPECIES_ID eB = (ZM_SPECIES_ID)0;
+		if (FindTwoSpeciesOfArchetype(eArch, eA, eB) < 2u) { continue; }
+		++uTestedArch;
+
+		const ZM_ARCHETYPE eArchA = ZM_GetSpeciesData(eA).m_eArchetype;
+		const ZM_ARCHETYPE eArchB = ZM_GetSpeciesData(eB).m_eArchetype;
+
+		for (u_int c = 0; c < (u_int)ZM_ANIM_CLIP_COUNT; ++c)
+		{
+			const ZM_ANIM_CLIP eClip = (ZM_ANIM_CLIP)c;
+			Flux_AnimationClip xClipA;
+			Flux_AnimationClip xClipB;
+			ZM_BuildCreatureClip(eArchA, eClip, xClipA);
+			ZM_BuildCreatureClip(eArchB, eClip, xClipB);
+
+			ZENITH_ASSERT_TRUE(ZM_CreatureClipBytesEqual(xClipA, xClipB),
+				"clip %u differs byte-wise across two species of archetype %u (clip is not pure f(archetype,clip))", c, (u_int)eArch);
+			ZENITH_ASSERT_EQ(ZM_CreatureClipContentHash(xClipA), ZM_CreatureClipContentHash(xClipB),
+				"clip %u content hash differs across two species of archetype %u", c, (u_int)eArch);
+		}
 	}
-	ZENITH_ASSERT_TRUE(bFoundA, "no quadruped anim-buildable species found (harness would be vacuous)");
-	ZENITH_ASSERT_TRUE(bFoundB, "no SECOND distinct quadruped anim-buildable species found");
-
-	const ZM_ARCHETYPE eArchA = ZM_GetSpeciesData(eA).m_eArchetype;
-	const ZM_ARCHETYPE eArchB = ZM_GetSpeciesData(eB).m_eArchetype;
-
-	for (u_int c = 0; c < (u_int)ZM_ANIM_CLIP_COUNT; ++c)
-	{
-		const ZM_ANIM_CLIP eClip = (ZM_ANIM_CLIP)c;
-		Flux_AnimationClip xClipA;
-		Flux_AnimationClip xClipB;
-		ZM_BuildCreatureClip(eArchA, eClip, xClipA);
-		ZM_BuildCreatureClip(eArchB, eClip, xClipB);
-
-		ZENITH_ASSERT_TRUE(ZM_CreatureClipBytesEqual(xClipA, xClipB),
-			"clip %u differs byte-wise across two quadruped species (clip is not pure f(archetype,clip))", c);
-		ZENITH_ASSERT_EQ(ZM_CreatureClipContentHash(xClipA), ZM_CreatureClipContentHash(xClipB),
-			"clip %u content hash differs across two quadruped species", c);
-	}
+	ZENITH_ASSERT_GT(uTestedArch, 0u,
+		"no wired archetype had two distinct species to compare (harness would be vacuous)");
 }
 
 // ############################################################################
@@ -293,18 +337,26 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_SameArchetypeByteIdentical)
 
 ZENITH_TEST(ZM_Gen, CreatureAnimGen_SameInputsDeterminism)
 {
-	for (u_int c = 0; c < (u_int)ZM_ANIM_CLIP_COUNT; ++c)
-	{
-		const ZM_ANIM_CLIP eClip = (ZM_ANIM_CLIP)c;
-		Flux_AnimationClip xClip1;
-		Flux_AnimationClip xClip2;
-		BuildQuadClip(eClip, xClip1);
-		BuildQuadClip(eClip, xClip2);
+	ZM_ARCHETYPE aeArch[ZM_ARCHETYPE_COUNT];
+	const u_int uArch = WiredAnimArchetypes(aeArch, (u_int)ZM_ARCHETYPE_COUNT);
+	ZENITH_ASSERT_GT(uArch, 0u, "no wired anim archetypes (harness would be vacuous)");
 
-		ZENITH_ASSERT_TRUE(ZM_CreatureClipBytesEqual(xClip1, xClip2),
-			"quadruped clip %u not byte-identical on a repeat build (non-determinism)", c);
-		ZENITH_ASSERT_EQ(ZM_CreatureClipContentHash(xClip1), ZM_CreatureClipContentHash(xClip2),
-			"quadruped clip %u content hash diverged on a repeat build", c);
+	for (u_int ia = 0; ia < uArch; ++ia)
+	{
+		const ZM_ARCHETYPE eArch = aeArch[ia];
+		for (u_int c = 0; c < (u_int)ZM_ANIM_CLIP_COUNT; ++c)
+		{
+			const ZM_ANIM_CLIP eClip = (ZM_ANIM_CLIP)c;
+			Flux_AnimationClip xClip1;
+			Flux_AnimationClip xClip2;
+			ZM_BuildCreatureClip(eArch, eClip, xClip1);
+			ZM_BuildCreatureClip(eArch, eClip, xClip2);
+
+			ZENITH_ASSERT_TRUE(ZM_CreatureClipBytesEqual(xClip1, xClip2),
+				"archetype %u clip %u not byte-identical on a repeat build (non-determinism)", (u_int)eArch, c);
+			ZENITH_ASSERT_EQ(ZM_CreatureClipContentHash(xClip1), ZM_CreatureClipContentHash(xClip2),
+				"archetype %u clip %u content hash diverged on a repeat build", (u_int)eArch, c);
+		}
 	}
 }
 
@@ -315,30 +367,39 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_SameInputsDeterminism)
 
 ZENITH_TEST(ZM_Gen, CreatureAnimGen_ClipsDistinct)
 {
-	Flux_AnimationClip xIdle;
-	Flux_AnimationClip xWalk;
-	Flux_AnimationClip xAttack;
-	Flux_AnimationClip xSpecial;
-	Flux_AnimationClip xHit;
-	Flux_AnimationClip xFaint;
-	BuildQuadClip(ZM_ANIM_CLIP_IDLE,    xIdle);
-	BuildQuadClip(ZM_ANIM_CLIP_WALK,    xWalk);
-	BuildQuadClip(ZM_ANIM_CLIP_ATTACK,  xAttack);
-	BuildQuadClip(ZM_ANIM_CLIP_SPECIAL, xSpecial);
-	BuildQuadClip(ZM_ANIM_CLIP_HIT,     xHit);
-	BuildQuadClip(ZM_ANIM_CLIP_FAINT,   xFaint);
+	ZM_ARCHETYPE aeArch[ZM_ARCHETYPE_COUNT];
+	const u_int uArch = WiredAnimArchetypes(aeArch, (u_int)ZM_ARCHETYPE_COUNT);
+	ZENITH_ASSERT_GT(uArch, 0u, "no wired anim archetypes (harness would be vacuous)");
 
-	const u_int uIdle    = ZM_CreatureClipContentHash(xIdle);
-	const u_int uWalk    = ZM_CreatureClipContentHash(xWalk);
-	const u_int uAttack  = ZM_CreatureClipContentHash(xAttack);
-	const u_int uSpecial = ZM_CreatureClipContentHash(xSpecial);
-	const u_int uHit     = ZM_CreatureClipContentHash(xHit);
-	const u_int uFaint   = ZM_CreatureClipContentHash(xFaint);
+	for (u_int ia = 0; ia < uArch; ++ia)
+	{
+		const ZM_ARCHETYPE eArch = aeArch[ia];
 
-	ZENITH_ASSERT_NE(uIdle,   uWalk,    "Idle and Walk clips share a content hash (motion collision)");
-	ZENITH_ASSERT_NE(uAttack, uSpecial, "Attack and Special clips share a content hash");
-	ZENITH_ASSERT_NE(uAttack, uHit,     "Attack and Hit clips share a content hash");
-	ZENITH_ASSERT_NE(uHit,    uFaint,   "Hit and Faint clips share a content hash");
+		Flux_AnimationClip xIdle;
+		Flux_AnimationClip xWalk;
+		Flux_AnimationClip xAttack;
+		Flux_AnimationClip xSpecial;
+		Flux_AnimationClip xHit;
+		Flux_AnimationClip xFaint;
+		ZM_BuildCreatureClip(eArch, ZM_ANIM_CLIP_IDLE,    xIdle);
+		ZM_BuildCreatureClip(eArch, ZM_ANIM_CLIP_WALK,    xWalk);
+		ZM_BuildCreatureClip(eArch, ZM_ANIM_CLIP_ATTACK,  xAttack);
+		ZM_BuildCreatureClip(eArch, ZM_ANIM_CLIP_SPECIAL, xSpecial);
+		ZM_BuildCreatureClip(eArch, ZM_ANIM_CLIP_HIT,     xHit);
+		ZM_BuildCreatureClip(eArch, ZM_ANIM_CLIP_FAINT,   xFaint);
+
+		const u_int uIdle    = ZM_CreatureClipContentHash(xIdle);
+		const u_int uWalk    = ZM_CreatureClipContentHash(xWalk);
+		const u_int uAttack  = ZM_CreatureClipContentHash(xAttack);
+		const u_int uSpecial = ZM_CreatureClipContentHash(xSpecial);
+		const u_int uHit     = ZM_CreatureClipContentHash(xHit);
+		const u_int uFaint   = ZM_CreatureClipContentHash(xFaint);
+
+		ZENITH_ASSERT_NE(uIdle,   uWalk,    "archetype %u: Idle and Walk clips share a content hash (motion collision)", (u_int)eArch);
+		ZENITH_ASSERT_NE(uAttack, uSpecial, "archetype %u: Attack and Special clips share a content hash", (u_int)eArch);
+		ZENITH_ASSERT_NE(uAttack, uHit,     "archetype %u: Attack and Hit clips share a content hash", (u_int)eArch);
+		ZENITH_ASSERT_NE(uHit,    uFaint,   "archetype %u: Hit and Faint clips share a content hash", (u_int)eArch);
+	}
 }
 
 // ############################################################################
@@ -349,52 +410,61 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_ClipsDistinct)
 
 ZENITH_TEST(ZM_Gen, CreatureAnimGen_LoopingClipsWrapCleanly)
 {
-	const ZM_ANIM_CLIP aeLooping[2] = { ZM_ANIM_CLIP_IDLE, ZM_ANIM_CLIP_WALK };
-	for (u_int i = 0; i < 2u; ++i)
+	ZM_ARCHETYPE aeArch[ZM_ARCHETYPE_COUNT];
+	const u_int uArch = WiredAnimArchetypes(aeArch, (u_int)ZM_ARCHETYPE_COUNT);
+	ZENITH_ASSERT_GT(uArch, 0u, "no wired anim archetypes (harness would be vacuous)");
+
+	for (u_int ia = 0; ia < uArch; ++ia)
 	{
-		const ZM_ANIM_CLIP eClip = aeLooping[i];
-		Flux_AnimationClip xClip;
-		BuildQuadClip(eClip, xClip);
+		const ZM_ARCHETYPE eArch = aeArch[ia];
 
-		ZENITH_ASSERT_TRUE(xClip.IsLooping(), "clip %u must be looping", (u_int)eClip);
-		const float fDurTicks = xClip.GetDurationInTicks();
-
-		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = xClip.GetBoneChannels();
-		ZENITH_ASSERT_GT(xChannels.GetSize(), 0u, "looping clip %u has no channels", (u_int)eClip);
-
-		Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
-		for (; !xIt.Done(); xIt.Next())
+		const ZM_ANIM_CLIP aeLooping[2] = { ZM_ANIM_CLIP_IDLE, ZM_ANIM_CLIP_WALK };
+		for (u_int i = 0; i < 2u; ++i)
 		{
-			const Flux_BoneChannel& xChannel = xIt.GetValue();
-			const char* szBone = xChannel.GetBoneName().c_str();
-			const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys = xChannel.GetRotationKeyframes();
-			ZENITH_ASSERT_GE(xKeys.GetSize(), 2u,
-				"looping clip %u channel '%s' needs >= 2 keys to close", (u_int)eClip, szBone);
+			const ZM_ANIM_CLIP eClip = aeLooping[i];
+			Flux_AnimationClip xClip;
+			ZM_BuildCreatureClip(eArch, eClip, xClip);
 
-			// SortKeyframes puts the earliest tick first and the latest last.
-			const float fFirstTick = xKeys.GetFront().second;
-			const float fLastTick  = xKeys.GetBack().second;
-			ZENITH_ASSERT_LE(fabsf(fFirstTick - 0.0f), fTICK_TOL,
-				"looping clip %u channel '%s' has no key at t=0", (u_int)eClip, szBone);
-			ZENITH_ASSERT_LE(fabsf(fLastTick - fDurTicks), fTICK_TOL,
-				"looping clip %u channel '%s' has no key at t=durationTicks", (u_int)eClip, szBone);
+			ZENITH_ASSERT_TRUE(xClip.IsLooping(), "archetype %u clip %u must be looping", (u_int)eArch, (u_int)eClip);
+			const float fDurTicks = xClip.GetDurationInTicks();
 
-			// Loop closes: rot(t=0) ~= rot(t=durationTicks) per channel (|dot| ~ 1).
-			const Zenith_Maths::Quat& xR0 = xKeys.GetFront().first;
-			const Zenith_Maths::Quat& xRN = xKeys.GetBack().first;
-			ZENITH_ASSERT_GE(QuatAbsDot(xR0, xRN), fDOT_CLOSE,
-				"looping clip %u channel '%s' does not close (t=0 rot != t=end rot)", (u_int)eClip, szBone);
+			const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = xClip.GetBoneChannels();
+			ZENITH_ASSERT_GT(xChannels.GetSize(), 0u, "archetype %u looping clip %u has no channels", (u_int)eArch, (u_int)eClip);
+
+			Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
+			for (; !xIt.Done(); xIt.Next())
+			{
+				const Flux_BoneChannel& xChannel = xIt.GetValue();
+				const char* szBone = xChannel.GetBoneName().c_str();
+				const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys = xChannel.GetRotationKeyframes();
+				ZENITH_ASSERT_GE(xKeys.GetSize(), 2u,
+					"archetype %u looping clip %u channel '%s' needs >= 2 keys to close", (u_int)eArch, (u_int)eClip, szBone);
+
+				// SortKeyframes puts the earliest tick first and the latest last.
+				const float fFirstTick = xKeys.GetFront().second;
+				const float fLastTick  = xKeys.GetBack().second;
+				ZENITH_ASSERT_LE(fabsf(fFirstTick - 0.0f), fTICK_TOL,
+					"archetype %u looping clip %u channel '%s' has no key at t=0", (u_int)eArch, (u_int)eClip, szBone);
+				ZENITH_ASSERT_LE(fabsf(fLastTick - fDurTicks), fTICK_TOL,
+					"archetype %u looping clip %u channel '%s' has no key at t=durationTicks", (u_int)eArch, (u_int)eClip, szBone);
+
+				// Loop closes: rot(t=0) ~= rot(t=durationTicks) per channel (|dot| ~ 1).
+				const Zenith_Maths::Quat& xR0 = xKeys.GetFront().first;
+				const Zenith_Maths::Quat& xRN = xKeys.GetBack().first;
+				ZENITH_ASSERT_GE(QuatAbsDot(xR0, xRN), fDOT_CLOSE,
+					"archetype %u looping clip %u channel '%s' does not close (t=0 rot != t=end rot)", (u_int)eArch, (u_int)eClip, szBone);
+			}
 		}
-	}
 
-	// The one-shot action clips must NOT loop (their clip-end clamp holds neutral/KO).
-	const ZM_ANIM_CLIP aeOneShot[4] =
-		{ ZM_ANIM_CLIP_ATTACK, ZM_ANIM_CLIP_SPECIAL, ZM_ANIM_CLIP_HIT, ZM_ANIM_CLIP_FAINT };
-	for (u_int i = 0; i < 4u; ++i)
-	{
-		Flux_AnimationClip xClip;
-		BuildQuadClip(aeOneShot[i], xClip);
-		ZENITH_ASSERT_FALSE(xClip.IsLooping(), "one-shot clip %u must not loop", (u_int)aeOneShot[i]);
+		// The one-shot action clips must NOT loop (their clip-end clamp holds neutral/KO).
+		const ZM_ANIM_CLIP aeOneShot[4] =
+			{ ZM_ANIM_CLIP_ATTACK, ZM_ANIM_CLIP_SPECIAL, ZM_ANIM_CLIP_HIT, ZM_ANIM_CLIP_FAINT };
+		for (u_int i = 0; i < 4u; ++i)
+		{
+			Flux_AnimationClip xClip;
+			ZM_BuildCreatureClip(eArch, aeOneShot[i], xClip);
+			ZENITH_ASSERT_FALSE(xClip.IsLooping(), "archetype %u one-shot clip %u must not loop", (u_int)eArch, (u_int)aeOneShot[i]);
+		}
 	}
 }
 
@@ -405,32 +475,53 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_LoopingClipsWrapCleanly)
 
 ZENITH_TEST(ZM_Gen, CreatureAnimGen_FaintSettlesAndClamps)
 {
-	Flux_AnimationClip xClip;
-	BuildQuadClip(ZM_ANIM_CLIP_FAINT, xClip);
-	ZENITH_ASSERT_FALSE(xClip.IsLooping(), "Faint must be a one-shot (non-looping)");
+	ZM_ARCHETYPE aeArch[ZM_ARCHETYPE_COUNT];
+	const u_int uArch = WiredAnimArchetypes(aeArch, (u_int)ZM_ARCHETYPE_COUNT);
+	ZENITH_ASSERT_GT(uArch, 0u, "no wired anim archetypes (harness would be vacuous)");
 
-	// Spine01 is a confirmed FAINT-animated bone (the spine folds forward-down).
-	ZENITH_ASSERT_TRUE(xClip.HasBoneChannel("Spine01"), "Faint must animate Spine01");
-	const Flux_BoneChannel* pxChannel = xClip.GetBoneChannel("Spine01");
-	ZENITH_ASSERT_TRUE(pxChannel != nullptr, "Faint Spine01 channel must resolve");
-	if (pxChannel == nullptr) { return; }
+	for (u_int ia = 0; ia < uArch; ++ia)
+	{
+		const ZM_ARCHETYPE eArch = aeArch[ia];
 
-	const float fDurTicks = xClip.GetDurationInTicks();
-	const Zenith_Maths::Quat xAt0   = pxChannel->SampleRotation(0.0f);
-	const Zenith_Maths::Quat xAtMid = pxChannel->SampleRotation(fDurTicks * 0.5f);
-	const Zenith_Maths::Quat xAtEnd = pxChannel->SampleRotation(fDurTicks);
-	const Zenith_Maths::Quat xPast  = pxChannel->SampleRotation(fDurTicks * 2.0f);
+		Flux_AnimationClip xClip;
+		ZM_BuildCreatureClip(eArch, ZM_ANIM_CLIP_FAINT, xClip);
+		ZENITH_ASSERT_FALSE(xClip.IsLooping(), "archetype %u Faint must be a one-shot (non-looping)", (u_int)eArch);
 
-	ZENITH_ASSERT_TRUE(QuatFinite(xAt0) && QuatFinite(xAtMid) && QuatFinite(xAtEnd) && QuatFinite(xPast),
-		"Faint Spine01 samples must all be finite");
+		const float fDurTicks = xClip.GetDurationInTicks();
+		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = xClip.GetBoneChannels();
+		ZENITH_ASSERT_GT(xChannels.GetSize(), 0u, "archetype %u Faint has no channels", (u_int)eArch);
 
-	// Clamp-not-extrapolate: sampling past the end holds the settled KO pose.
-	ZENITH_ASSERT_GE(QuatAbsDot(xPast, xAtEnd), fDOT_CLOSE,
-		"Faint does not clamp past the end (KO pose should hold, not extrapolate)");
+		// Archetype-agnostic (no hardcoded bone name): EVERY channel must clamp past
+		// the end (KO pose holds, not extrapolate), and AT LEAST ONE channel's final
+		// pose must genuinely differ from t=0 (a real collapse, not a no-op).
+		u_int uExamined  = 0u;
+		u_int uCollapsed = 0u;
+		Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
+		for (; !xIt.Done(); xIt.Next())
+		{
+			const Flux_BoneChannel& xChannel = xIt.GetValue();
+			const char* szBone = xChannel.GetBoneName().c_str();
 
-	// The KO pose is a genuine collapse: the final pose differs from bind (t=0).
-	ZENITH_ASSERT_LE(QuatAbsDot(xAtEnd, xAt0), fDOT_DIFFER,
-		"Faint final pose ~= t=0 pose (the creature did not visibly collapse)");
+			const Zenith_Maths::Quat xAt0   = xChannel.SampleRotation(0.0f);
+			const Zenith_Maths::Quat xAtMid = xChannel.SampleRotation(fDurTicks * 0.5f);
+			const Zenith_Maths::Quat xAtEnd = xChannel.SampleRotation(fDurTicks);
+			const Zenith_Maths::Quat xPast  = xChannel.SampleRotation(fDurTicks * 2.0f);
+
+			ZENITH_ASSERT_TRUE(QuatFinite(xAt0) && QuatFinite(xAtMid) && QuatFinite(xAtEnd) && QuatFinite(xPast),
+				"archetype %u Faint channel '%s' samples must all be finite", (u_int)eArch, szBone);
+
+			// Clamp-not-extrapolate: sampling past the end holds the settled KO pose.
+			ZENITH_ASSERT_GE(QuatAbsDot(xPast, xAtEnd), fDOT_CLOSE,
+				"archetype %u Faint channel '%s' does not clamp past the end (KO pose should hold, not extrapolate)", (u_int)eArch, szBone);
+
+			// Count channels whose final pose genuinely differs from bind (t=0).
+			if (QuatAbsDot(xAtEnd, xAt0) <= fDOT_DIFFER) { ++uCollapsed; }
+			++uExamined;
+		}
+		ZENITH_ASSERT_GT(uExamined, 0u, "archetype %u Faint examined no channels", (u_int)eArch);
+		ZENITH_ASSERT_GT(uCollapsed, 0u,
+			"archetype %u Faint final pose ~= t=0 pose on every channel (the creature did not visibly collapse)", (u_int)eArch);
+	}
 }
 
 // ############################################################################
@@ -445,60 +536,69 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_OneShotClipsEndNeutral)
 {
 	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
 
-	// Attack / Special / Hit: EVERY channel returns to ~identity at the clip end.
-	const ZM_ANIM_CLIP aeAction[3] =
-		{ ZM_ANIM_CLIP_ATTACK, ZM_ANIM_CLIP_SPECIAL, ZM_ANIM_CLIP_HIT };
-	for (u_int i = 0; i < 3u; ++i)
+	ZM_ARCHETYPE aeArch[ZM_ARCHETYPE_COUNT];
+	const u_int uArch = WiredAnimArchetypes(aeArch, (u_int)ZM_ARCHETYPE_COUNT);
+	ZENITH_ASSERT_GT(uArch, 0u, "no wired anim archetypes (harness would be vacuous)");
+
+	for (u_int ia = 0; ia < uArch; ++ia)
 	{
-		const ZM_ANIM_CLIP eClip = aeAction[i];
-		Flux_AnimationClip xClip;
-		BuildQuadClip(eClip, xClip);
+		const ZM_ARCHETYPE eArch = aeArch[ia];
 
-		const float fDurTicks = xClip.GetDurationInTicks();
-		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = xClip.GetBoneChannels();
-		ZENITH_ASSERT_GT(xChannels.GetSize(), 0u, "action clip %u has no channels", (u_int)eClip);
-
-		u_int uExamined = 0u;
-		Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
-		for (; !xIt.Done(); xIt.Next())
+		// Attack / Special / Hit: EVERY channel returns to ~identity at the clip end.
+		const ZM_ANIM_CLIP aeAction[3] =
+			{ ZM_ANIM_CLIP_ATTACK, ZM_ANIM_CLIP_SPECIAL, ZM_ANIM_CLIP_HIT };
+		for (u_int i = 0; i < 3u; ++i)
 		{
-			const Flux_BoneChannel& xChannel = xIt.GetValue();
-			const char* szBone = xChannel.GetBoneName().c_str();
-			const Zenith_Maths::Quat xEnd = xChannel.SampleRotation(fDurTicks);
-			ZENITH_ASSERT_TRUE(QuatFinite(xEnd),
-				"action clip %u channel '%s' end sample not finite", (u_int)eClip, szBone);
-			ZENITH_ASSERT_GE(QuatAbsDot(xEnd, xIdentity), fDOT_CLOSE,
-				"action clip %u channel '%s' does NOT end at ~identity (clip-end clamp would not hold neutral)",
-				(u_int)eClip, szBone);
-			++uExamined;
+			const ZM_ANIM_CLIP eClip = aeAction[i];
+			Flux_AnimationClip xClip;
+			ZM_BuildCreatureClip(eArch, eClip, xClip);
+
+			const float fDurTicks = xClip.GetDurationInTicks();
+			const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = xClip.GetBoneChannels();
+			ZENITH_ASSERT_GT(xChannels.GetSize(), 0u, "archetype %u action clip %u has no channels", (u_int)eArch, (u_int)eClip);
+
+			u_int uExamined = 0u;
+			Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
+			for (; !xIt.Done(); xIt.Next())
+			{
+				const Flux_BoneChannel& xChannel = xIt.GetValue();
+				const char* szBone = xChannel.GetBoneName().c_str();
+				const Zenith_Maths::Quat xEnd = xChannel.SampleRotation(fDurTicks);
+				ZENITH_ASSERT_TRUE(QuatFinite(xEnd),
+					"archetype %u action clip %u channel '%s' end sample not finite", (u_int)eArch, (u_int)eClip, szBone);
+				ZENITH_ASSERT_GE(QuatAbsDot(xEnd, xIdentity), fDOT_CLOSE,
+					"archetype %u action clip %u channel '%s' does NOT end at ~identity (clip-end clamp would not hold neutral)",
+					(u_int)eArch, (u_int)eClip, szBone);
+				++uExamined;
+			}
+			ZENITH_ASSERT_GT(uExamined, 0u,
+				"archetype %u action clip %u examined no channels (end-neutral gate would be vacuous)", (u_int)eArch, (u_int)eClip);
 		}
-		ZENITH_ASSERT_GT(uExamined, 0u,
-			"action clip %u examined no channels (end-neutral gate would be vacuous)", (u_int)eClip);
-	}
 
-	// CONTRAST: Faint holds a collapsed pose -- at least one channel is NOT ~identity
-	// at the end. This proves the end-neutral property above is a real property of the
-	// action clips, not a trivial truth of every one-shot clip.
-	{
-		Flux_AnimationClip xFaint;
-		BuildQuadClip(ZM_ANIM_CLIP_FAINT, xFaint);
-
-		const float fDurTicks = xFaint.GetDurationInTicks();
-		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = xFaint.GetBoneChannels();
-		ZENITH_ASSERT_GT(xChannels.GetSize(), 0u, "Faint has no channels");
-
-		u_int uExamined  = 0u;
-		u_int uCollapsed = 0u;
-		Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
-		for (; !xIt.Done(); xIt.Next())
+		// CONTRAST: Faint holds a collapsed pose -- at least one channel is NOT
+		// ~identity at the end. This proves the end-neutral property above is a real
+		// property of the action clips, not a trivial truth of every one-shot clip.
 		{
-			const Flux_BoneChannel& xChannel = xIt.GetValue();
-			const Zenith_Maths::Quat xEnd = xChannel.SampleRotation(fDurTicks);
-			if (QuatAbsDot(xEnd, xIdentity) <= fDOT_DIFFER) { ++uCollapsed; }
-			++uExamined;
+			Flux_AnimationClip xFaint;
+			ZM_BuildCreatureClip(eArch, ZM_ANIM_CLIP_FAINT, xFaint);
+
+			const float fDurTicks = xFaint.GetDurationInTicks();
+			const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels = xFaint.GetBoneChannels();
+			ZENITH_ASSERT_GT(xChannels.GetSize(), 0u, "archetype %u Faint has no channels", (u_int)eArch);
+
+			u_int uExamined  = 0u;
+			u_int uCollapsed = 0u;
+			Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
+			for (; !xIt.Done(); xIt.Next())
+			{
+				const Flux_BoneChannel& xChannel = xIt.GetValue();
+				const Zenith_Maths::Quat xEnd = xChannel.SampleRotation(fDurTicks);
+				if (QuatAbsDot(xEnd, xIdentity) <= fDOT_DIFFER) { ++uCollapsed; }
+				++uExamined;
+			}
+			ZENITH_ASSERT_GT(uExamined, 0u, "archetype %u Faint examined no channels (contrast would be vacuous)", (u_int)eArch);
+			ZENITH_ASSERT_GT(uCollapsed, 0u,
+				"archetype %u Faint ends at ~identity on every channel (end-neutral would be trivially true, not specific to action clips)", (u_int)eArch);
 		}
-		ZENITH_ASSERT_GT(uExamined, 0u, "Faint examined no channels (contrast would be vacuous)");
-		ZENITH_ASSERT_GT(uCollapsed, 0u,
-			"Faint ends at ~identity on every channel (end-neutral would be trivially true, not specific to action clips)");
 	}
 }

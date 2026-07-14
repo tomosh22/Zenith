@@ -86,15 +86,18 @@ bool ZM_CreatureClipLooping(ZM_ANIM_CLIP eClip)
 }
 
 // ============================================================================
-// Archetype builder dispatch. SC1: Quadruped only; every other archetype (and
-// the out-of-range sentinel) returns nullptr, so the un-authored builders' bodies
-// are never referenced (their addresses are not taken here).
+// Archetype builder dispatch. SC1: Quadruped; SC2 adds Biped + Avian. Every
+// still-un-authored archetype (and the out-of-range sentinel) returns nullptr, so
+// those builders' bodies are never referenced (their addresses are not taken
+// here).
 // ============================================================================
 ZM_ArchetypeAnimFn ZM_GetArchetypeAnimBuilder(ZM_ARCHETYPE eArchetype)
 {
 	switch (eArchetype)
 	{
 	case ZM_ARCHETYPE_QUADRUPED: return &ZM_BuildAnim_Quadruped;   // SC1
+	case ZM_ARCHETYPE_BIPED:     return &ZM_BuildAnim_Biped;       // SC2
+	case ZM_ARCHETYPE_AVIAN:     return &ZM_BuildAnim_Avian;       // SC2
 	default:                     return nullptr;                   // later builders claim their case as they land
 	}
 }
