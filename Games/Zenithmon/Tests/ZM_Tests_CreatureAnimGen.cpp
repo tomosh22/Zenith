@@ -1,16 +1,17 @@
 #include "Zenith.h"
 
 // ============================================================================
-// ZM_Tests_CreatureAnimGen -- S4 SC1 unit gate for ZM_CreatureAnimGen (suite
-// ZM_Gen).
+// ZM_Tests_CreatureAnimGen -- S4 unit gate for ZM_CreatureAnimGen (suite ZM_Gen).
+// Born in SC1 (QUADRUPED); as of SC5 the anim dispatch is TOTAL, so this generic
+// harness now covers all 8 archetypes.
 //
 // This is the GENERIC, contract-driven creature-ANIMATION harness: it authors
 // against the frozen seam (Games/Zenithmon/Source/Gen/ZM_CreatureAnimGen.h),
 // NEVER against a specific archetype builder .cpp. It loops every ZM_SPECIES_ID
-// whose ZM_GetArchetypeAnimBuilder is non-null (SC1: QUADRUPED only; the wired
-// archetype set GROWS per SC, so un-wired archetypes are SKIPPED and coverage
-// auto-grows as later SCs land their anim builders), and proves the load-bearing
-// S4 clip invariants:
+// whose ZM_GetArchetypeAnimBuilder is non-null; as of SC5 the dispatch is TOTAL --
+// all 8 archetypes are wired, so the harness exercises the COMPLETE wired set (the
+// non-null guard below is now defensive future-proofing, not a real skip), and
+// proves the load-bearing S4 clip invariants:
 //   (1) every channel binds to a real skeleton bone (no dead channels) + every
 //       authored quat is finite and ~unit-length      -- ChannelsMatchSkeleton
 //   (2) the whole ZM_ValidateCreatureClip contract holds -- ValidationPasses
@@ -71,9 +72,9 @@ namespace
 		{ ZM_ANIM_CLIP_FAINT,   "Faint",   1.2f, false },
 	};
 
-	// True when the species' body plan has a wired ANIM builder (SC1: QUADRUPED
-	// only). The generic harness SKIPS every species whose anim builder is nullptr,
-	// so coverage GROWS automatically as later archetype anim builders land.
+	// True when the species' body plan has a wired ANIM builder. As of SC5 every
+	// archetype is wired, so this is true for all species (the harness's nullptr
+	// guard is kept as defensive future-proofing, not an active skip).
 	bool HasAnimBuilder(ZM_SPECIES_ID eId)
 	{
 		return ZM_GetArchetypeAnimBuilder(ZM_GetSpeciesData(eId).m_eArchetype) != nullptr;
@@ -111,11 +112,10 @@ namespace
 	}
 
 	// Enumerate the archetypes that have a wired anim builder into aeOut (capacity
-	// uCap), returning the count. Iterates [0, ZM_ARCHETYPE_COUNT) so coverage
-	// AUTO-GROWS as later SCs wire more archetype builders (SC1 Quadruped; SC2
-	// + Biped + Avian; SC3-SC5 the rest). The generic byte-identity / determinism /
-	// distinctness / loop-wrap / faint-clamp / end-neutral gates below all iterate
-	// this set, so every wired archetype is exercised without touching this harness.
+	// uCap), returning the count. Iterates [0, ZM_ARCHETYPE_COUNT); as of SC5 all 8
+	// archetypes are wired, so this returns the COMPLETE archetype set. The generic
+	// byte-identity / determinism / distinctness / loop-wrap / faint-clamp /
+	// end-neutral gates below all iterate this set, so every archetype is exercised.
 	u_int WiredAnimArchetypes(ZM_ARCHETYPE* aeOut, u_int uCap)
 	{
 		u_int uCount = 0u;
@@ -161,7 +161,7 @@ ZENITH_TEST(ZM_Gen, CreatureAnimGen_ChannelsMatchSkeleton)
 	for (u_int id = 0; id < (u_int)ZM_SPECIES_COUNT; ++id)
 	{
 		const ZM_SPECIES_ID eId = (ZM_SPECIES_ID)id;
-		if (!HasAnimBuilder(eId) || !HasMeshBuilder(eId)) { continue; }   // skip un-authored archetypes
+		if (!HasAnimBuilder(eId) || !HasMeshBuilder(eId)) { continue; }   // defensive guard (all 8 archetypes wired -- never skips)
 		++uTested;
 
 		// Build the species' skeleton mesh ONCE, reuse across all 6 clips.

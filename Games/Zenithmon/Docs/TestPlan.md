@@ -488,18 +488,20 @@ biggest suite; all headless, all seeded (C8).
 Category `ZM_Gen` (headless, in-memory -- no disk dependency, CI-safe). The S4
 foundation (`ZM_GenCommon` + `ZM_TextureSynth`, ZM-D-059) shipped **31** `ZM_Gen`
 units (boot gate 1773 -> 1804); the creature generator below adds **43** more
-(1804 -> 1847). The whole `ZM_Gen` T0 category is now **74** units, one of which
-(the bake smoke) is `ZENITH_TOOLS`-only, so `_False`/Android configs register it
-as an empty TU.
+(1804 -> 1847), and the creature-animation generator below adds **19** more
+(1847 -> 1866). The whole `ZM_Gen` T0 category is now **93** units, two of which
+(the two bake smokes) are `ZENITH_TOOLS`-only, so `_False`/Android configs
+register them as empty TUs.
 
 #### ZM_Gen -- creature generator (SHIPPED)
 
 `ZM_CreatureGen` (ZM-D-060..065) turns any `ZM_SPECIES_ID` into a deterministic
 bundle (skinned mesh + skeleton + BC1 albedo + hue-rotated shiny + flat dex
-icon); a tools build additionally bakes the 9-file per-species bundle
-([AssetManifest.md](AssetManifest.md) 1.2). **All 8 archetype builders are wired,
-so every one of the 152 species builds a valid creature and a complete bundle.**
-Determinism is golden-pinned (`uZM_CREATUREGEN_VERSION` = 1). All units are
+icon); a tools build additionally bakes the full 15-file per-species bundle --
+the 9-file core plus the 6 `.zanim` clips added by `ZM_CreatureAnimGen`
+([AssetManifest.md](AssetManifest.md) 1.2). **All 8 archetype builders are
+wired, so every one of the 152 species builds a valid creature and a complete
+bundle.** Determinism is golden-pinned (`uZM_CREATUREGEN_VERSION` = 3). All units are
 pure/headless (the `.zmesh`/`.ztxtr` bake bridges are compiled out) unless marked:
 
 - **Generic 12-invariant harness** (`Tests/ZM_Tests_CreatureGen.cpp`, 18 units):
@@ -563,8 +565,10 @@ pure/headless (the `.zmesh`/`.ztxtr` bake bridges are compiled out) unless marke
 
 - **Bake smoke** (`Tests/ZM_Tests_CreatureBake.cpp`, `ZENITH_TOOLS`-only, 1
   unit): `CreatureBake_BundleFilesLand` bakes FERNFAWN via `ZM_BakeCreature` and
-  asserts all NINE bundle files land on disk non-empty (mesh, skeleton, albedo,
-  shiny, icon, base + shiny `.zmtrl`, base + shiny `.zmodel`); `ZENITH_SKIP`s if
+  asserts all FIFTEEN bundle files land on disk non-empty -- the 9-file core
+  (mesh, skeleton, albedo, shiny, icon, base + shiny `.zmtrl`, base + shiny
+  `.zmodel`) plus the 6 `.zanim` clips, since the loop now covers all 15 asset
+  kinds (`ZM_CREATURE_ASSET_KIND_COUNT`); `ZENITH_SKIP`s if
   the bake environment is unavailable. The full byte-identical re-bake invariant
   is deferred to the later `ZM_BakeManifest` box. In `_False`/Android configs the
   whole TU is empty (the header no-op returns false), so it does not register.
@@ -581,14 +585,47 @@ pure/headless (the `.zmesh`/`.ztxtr` bake bridges are compiled out) unless marke
   batch (C5/C6) and runs only on a windowed `_True` build. This registers as a new
   P1 automated test on top of the six S3 left.
 
-Boot unit-gate baseline after the S4 creature work: **1847** (was 1773 at the S3
-gate; `.github/workflows/zm-tests.yml` runs `run_unit_gate.ps1 -Baseline 1847`).
+#### ZM_Gen -- creature-animation generator (SHIPPED)
 
-**Not-yet-built S4 families** (`ZM_CreatureAnimGen`, `ZM_HumanGen`,
-`ZM_BuildingGen`, `ZM_PropGen`) get their own `ZM_Gen` units as they land; the
-invariants above (same-seed determinism, structural validity, shiny-differs) are
-the shared template. Creature animation clips (`.zanim`) are a separate
-`ZM_CreatureAnimGen` box and are NOT part of the current 9-file creature bundle.
+`ZM_CreatureAnimGen` (SC1..SC6) authors 6 rotation-only clips per archetype
+(Idle / Walk / Attack / Special / Hit / Faint) against the frozen creature
+skeletons -- 24 ticks/sec, pure `f(archetype, clip-id)`, so a clip is
+byte-identical across every species of an archetype -- and (SC6) bakes them to
+disk as `.zanim` inside each species' bundle, with each `.zmodel` self-listing
+its 6 clips via `AddAnimationPath` in IDLE..FAINT order
+([AssetManifest.md](AssetManifest.md) 1.2). It ships **19** `ZM_Gen` units
+(boot gate 1847 -> 1866):
+
+- **Generic all-config units** (`Tests/ZM_Tests_CreatureAnimGen.cpp`, 10 units,
+  compiled in ALL configs): `ChannelsMatchSkeleton` (clip bone channels match the
+  archetype skeleton), `ValidationPasses`, `ClipMetadataGolden` (clip
+  count/order/tick-rate golden-pinned), `SameArchetypeByteIdentical` (every
+  species of an archetype yields byte-identical clips), `SameInputsDeterminism`,
+  `ClipsDistinct` (the 6 clips differ from one another), `LoopingClipsWrapCleanly`
+  (Idle/Walk loop seamlessly), `FaintSettlesAndClamps`, `OneShotClipsEndNeutral`
+  (Attack/Special/Hit end on the neutral pose), and `AllArchetypesHaveAnimBuilder`
+  (every `ZM_ARCHETYPE` resolves to an anim builder).
+
+- **Per-archetype structural units**
+  (`Tests/ZM_Tests_CreatureAnimArchetype_<Quadruped|Biped|Avian|Serpent|Aquatic|Insectoid|Blob|FloaterPlantoid>.cpp`,
+  one file per archetype, 1 unit each = **8**): each
+  `<Archetype>Anim_ExpectedChannels` locks that archetype's animated bone-channel
+  set.
+
+- **Bake smoke** (`Tests/ZM_Tests_CreatureAnimBake.cpp`, `ZENITH_TOOLS`-only, 1
+  unit): `CreatureAnimBake_ClipsLandAndModelReferences` bakes FERNFAWN and asserts
+  the 6 `.zanim` land on disk non-empty and the baked `.zmodel` self-lists all 6
+  refs in IDLE..FAINT order; `ZENITH_SKIP`s when the bake environment is
+  unavailable. In `_False`/Android configs the whole TU is empty, so it does not
+  register.
+
+Boot unit-gate baseline after the S4 creature + creature-animation work:
+**1866** (was 1773 at the S3 gate, 1847 after the creature generator;
+`.github/workflows/zm-tests.yml` runs `run_unit_gate.ps1 -Baseline 1866`).
+
+**Not-yet-built S4 families** (`ZM_HumanGen`, `ZM_BuildingGen`, `ZM_PropGen`)
+get their own `ZM_Gen` units as they land; the invariants above (same-seed
+determinism, structural validity, shiny-differs) are the shared template.
 
 ### 5.5 S5 -- battle integration slice
 

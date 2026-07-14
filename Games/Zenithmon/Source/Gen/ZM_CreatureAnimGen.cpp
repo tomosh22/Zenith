@@ -5,10 +5,11 @@
 // for the pure-function + rotation-only + byte-identity contract. This TU owns:
 // the golden clip metadata table, the archetype builder dispatch, the pure
 // driver, the byte-identity + content-hash machinery, the clip validation, and
-// (tools only) the disk-bake stub (a later sub-commit wires the real bundle bake).
+// (tools only) the disk bake that writes each species' 6 clips to their .zanim files.
 // ============================================================================
 
 #include "Zenithmon/Source/Gen/ZM_CreatureAnimGen.h"
+#include "Zenithmon/Source/Gen/ZM_CreatureGen.h"      // ZM_CreatureAssetPath + ZM_CREATURE_ASSET_ANIM_* kinds (tools bake)
 
 #include <cstring>   // memcmp
 #include <cstdio>    // snprintf
@@ -250,20 +251,65 @@ ZM_CreatureClipValidation ZM_ValidateCreatureClip(const Flux_AnimationClip& xCli
 }
 
 // ============================================================================
-// Disk bake (TOOLS ONLY) -- SC1 stub. The real .zanim bundle bake (asset-kind
-// enum + per-species file paths) lands in a later sub-commit.
+// Disk bake (TOOLS ONLY) -- SC6. Authors each of the species' 6 clips (pure
+// f(archetype, clip)) and Export()s them under the per-species asset scheme.
+// This wires into ZM_CreatureGen's ZM_BakeCreature (called AFTER its mesh bake
+// created the species folder, since Flux_AnimationClip::Export makes NO dirs) and
+// the .zmodel self-lists these same refs. Mirrors ZM_BakeCreature's exists()-based
+// IO signalling (Export is void, so exists() is the real success signal).
 // ============================================================================
 #ifdef ZENITH_TOOLS
-bool ZM_BakeCreatureClips(ZM_SPECIES_ID /*eId*/)
+
+#include "AssetHandling/Zenith_AssetRegistry.h"   // ResolvePath: "game:" ref -> absolute FS path
+#include <filesystem>
+#include <string>
+
+bool ZM_BakeCreatureClips(ZM_SPECIES_ID eId)
 {
-	// SC6: real bundle bake wires here (author each of the 6 clips for the species'
-	// archetype and Export() them under the per-species asset path scheme).
-	return false;
+	// The clip set is a pure function of the species' body plan.
+	const ZM_ARCHETYPE eArch = ZM_GetSpeciesData(eId).m_eArchetype;
+	if (ZM_GetArchetypeAnimBuilder(eArch) == nullptr)
+	{
+		return false;   // no wired anim builder (all 8 are wired as of SC5 -- defensive guard)
+	}
+
+	bool bOk = true;
+	std::error_code xEc;
+	for (u_int c = 0; c < (u_int)ZM_ANIM_CLIP_COUNT; ++c)
+	{
+		const ZM_ANIM_CLIP eClip = (ZM_ANIM_CLIP)c;
+
+		Flux_AnimationClip xClip;
+		ZM_BuildCreatureClip(eArch, eClip, xClip);
+
+		// ZM_CreatureAssetPath is the SINGLE source of truth for the per-clip filename
+		// (the "game:" ref); resolve it to the absolute FS path whose folder the mesh
+		// bake already created. (ZM_CreatureFsPath is file-local to ZM_CreatureGen.cpp,
+		// so this resolves the same GAME_ASSETS_DIR location via the registry instead.)
+		char acRef[512];
+		if (!ZM_CreatureAssetPath(eId, (ZM_CREATURE_ASSET_KIND)(ZM_CREATURE_ASSET_ANIM_IDLE + c), acRef, sizeof(acRef)))
+		{
+			return false;   // ref overflowed the buffer; do not bake a partial clip set
+		}
+		const std::string strFs = Zenith_AssetRegistry::ResolvePath(std::string(acRef));
+
+		xClip.Export(strFs);   // void; WriteToFile under the hood (creates no directories)
+
+		bOk &= std::filesystem::exists(std::filesystem::path(strFs), xEc);
+	}
+	return bOk;
 }
 
 bool ZM_BakeAllCreatureClips()
 {
-	// SC6: real bundle bake wires here.
-	return false;
+	bool bOk = true;
+	const u_int uCount = ZM_GetSpeciesCount();
+	for (u_int u = 0; u < uCount; ++u)
+	{
+		// Skip none -- every species has a wired anim builder (SC5); ZM_BakeCreatureClips
+		// guards defensively. Structurally mirrors ZM_BakeAllCreatures.
+		bOk &= ZM_BakeCreatureClips((ZM_SPECIES_ID)u);
+	}
+	return bOk;
 }
 #endif   // ZENITH_TOOLS

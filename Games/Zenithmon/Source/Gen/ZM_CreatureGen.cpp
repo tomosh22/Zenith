@@ -11,6 +11,7 @@
 
 #include "Zenithmon/Source/Gen/ZM_CreatureGen.h"
 #include "Zenithmon/Source/Gen/ZM_CreatureArchetypeCommon.h"   // ZM_SizeClassScale
+#include "Zenithmon/Source/Gen/ZM_CreatureAnimGen.h"           // ZM_ANIM_CLIP_COUNT, ZM_BakeCreatureClips
 
 #include <cstdio>    // snprintf
 #include <cstring>   // memcmp
@@ -102,6 +103,13 @@ namespace
 		case ZM_CREATURE_ASSET_MATERIAL_SHINY: return "%s_shiny.zmtrl";
 		case ZM_CREATURE_ASSET_MODEL:          return "%s.zmodel";
 		case ZM_CREATURE_ASSET_MODEL_SHINY:    return "%s_shiny.zmodel";
+		// SC6 procedural clips -- suffixes MUST match ZM_CreatureClipName (Idle..Faint).
+		case ZM_CREATURE_ASSET_ANIM_IDLE:      return "%s_Idle.zanim";
+		case ZM_CREATURE_ASSET_ANIM_WALK:      return "%s_Walk.zanim";
+		case ZM_CREATURE_ASSET_ANIM_ATTACK:    return "%s_Attack.zanim";
+		case ZM_CREATURE_ASSET_ANIM_SPECIAL:   return "%s_Special.zanim";
+		case ZM_CREATURE_ASSET_ANIM_HIT:       return "%s_Hit.zanim";
+		case ZM_CREATURE_ASSET_ANIM_FAINT:     return "%s_Faint.zanim";
 		default:
 			Zenith_Assert(false, "ZM_CreatureBasenameFmt: bad kind %u", (u_int)eKind);
 			return "%s.bin";
@@ -506,6 +514,10 @@ bool ZM_BakeCreature(ZM_SPECIES_ID eId)
 	bOk &= ZM_SynthBakeAlbedoBC1(xCreature.m_xShiny,  acShinyFs);
 	bOk &= ZM_SynthBakeIconBC1(xCreature.m_xIcon,     acIconFs);
 
+	// SC6: the 6 procedural clips (.zanim). Runs AFTER the mesh bake created this
+	// species' folder (Flux_AnimationClip::Export creates NO directories).
+	bOk &= ZM_BakeCreatureClips(eId);
+
 	// SC5b: write the .zmtrl (base + shiny) and .zmodel (base + shiny) bundles. The
 	// mesh/skeleton/texture bakes above already ran create_directories for this
 	// species' folder, and neither SaveToFile nor Export creates directories, so
@@ -575,6 +587,14 @@ bool ZM_BakeCreature(ZM_SPECIES_ID eId)
 		Zenith_ModelAsset* pxModel = xModel.GetDirect();
 		pxModel->SetName(strName);
 		pxModel->SetSkeletonPath(std::string(acSkelRef));
+		// SC6: self-list the 6 procedural clips (IDLE..FAINT) so this .zmodel resolves
+		// its own animation set. The .zanim files were baked by ZM_BakeCreatureClips above.
+		for (u_int c = 0; c < ZM_ANIM_CLIP_COUNT; ++c)
+		{
+			char acClipRef[512];
+			ZM_CreatureAssetPath(eId, (ZM_CREATURE_ASSET_KIND)(ZM_CREATURE_ASSET_ANIM_IDLE + c), acClipRef, sizeof(acClipRef));
+			pxModel->AddAnimationPath(std::string(acClipRef));
+		}
 		Zenith_Vector<std::string> xMats;
 		xMats.PushBack(std::string(acMatRef));
 		pxModel->AddMeshByPath(std::string(acMeshRef), xMats);
@@ -587,6 +607,15 @@ bool ZM_BakeCreature(ZM_SPECIES_ID eId)
 		Zenith_ModelAsset* pxModelShiny = xModelShiny.GetDirect();
 		pxModelShiny->SetName(strName + "_shiny");
 		pxModelShiny->SetSkeletonPath(std::string(acSkelRef));
+		// SC6: the shiny model shares the SAME skeleton + clip set (clips are pure
+		// f(archetype, clip), independent of the shiny albedo), so it self-lists the
+		// identical 6 .zanim refs as the base model.
+		for (u_int c = 0; c < ZM_ANIM_CLIP_COUNT; ++c)
+		{
+			char acClipRef[512];
+			ZM_CreatureAssetPath(eId, (ZM_CREATURE_ASSET_KIND)(ZM_CREATURE_ASSET_ANIM_IDLE + c), acClipRef, sizeof(acClipRef));
+			pxModelShiny->AddAnimationPath(std::string(acClipRef));
+		}
 		Zenith_Vector<std::string> xMatsShiny;
 		xMatsShiny.PushBack(std::string(acMatShinyRef));
 		pxModelShiny->AddMeshByPath(std::string(acMeshRef), xMatsShiny);

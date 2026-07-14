@@ -4,18 +4,18 @@
 // ZM_Tests_CreatureBake -- S4 SC5b tools-gated smoke test for the creature disk
 // bake (suite ZM_Gen). Unlike the pure/headless ZM_Tests_CreatureGen gate, this
 // exercises the ZENITH_TOOLS-only ZM_BakeCreature: it bakes ONE creature and
-// proves the on-disk bundle write path lands ALL NINE artifacts (mesh, skeleton,
-// albedo, shiny, icon, base material, shiny material, base model, shiny model).
+// proves the on-disk bundle write path lands ALL FIFTEEN artifacts (the 9
+// mesh/skeleton/albedo/shiny/icon/material/model files + the 6 procedural .zanim clips).
 //
 // The whole file body is guarded by ZENITH_TOOLS: ZM_BakeCreature only exists in
 // _True configs (the _False header no-op returns false), so a _False / Android
 // build sees an EMPTY translation unit here and links clean.
 //
 // SCOPE: one QUADRUPED species only (fast -- a bundle bake synthesises a 512^2
-// albedo + shiny + a 128^2 icon and writes nine files). The FULL byte-identical
+// albedo + shiny + a 128^2 icon and writes fifteen files). The FULL byte-identical
 // re-bake invariant (bake twice -> identical file bytes) is deferred to the later
 // ZM_BakeManifest box (Roadmap S4); this smoke only proves the bundle-write path
-// produces all nine files, non-empty.
+// produces all fifteen files, non-empty.
 // ============================================================================
 
 #ifdef ZENITH_TOOLS
@@ -28,7 +28,7 @@
 #include <filesystem>
 #include <string>
 
-// Bake a single creature bundle and assert every one of the nine bundle files
+// Bake a single creature bundle and assert every one of the fifteen bundle files
 // landed on disk and is non-empty. If the bake environment is unavailable (e.g.
 // GAME_ASSETS_DIR is not writable), ZM_BakeCreature returns false and the test
 // SKIPS rather than fails -- an absent bake environment is not a code defect.
@@ -47,9 +47,9 @@ ZENITH_TEST(ZM_Gen, CreatureBake_BundleFilesLand)
 		ZENITH_SKIP("ZM_BakeCreature failed -- bake environment unavailable (GAME_ASSETS_DIR not writable?)");
 	}
 
-	// Every kind in [MESH .. MODEL_SHINY] must have landed a non-empty file. The
-	// enum's first ZM_CREATURE_ASSET_KIND_COUNT values are exactly the nine bundle
-	// artifacts, so this loop covers all nine.
+	// Every kind in [MESH .. ANIM_FAINT] must have landed a non-empty file. The
+	// enum's ZM_CREATURE_ASSET_KIND_COUNT values are exactly the fifteen bundle
+	// artifacts (9 mesh/material/model/icon + 6 .zanim clips), so this loop covers all fifteen.
 	for (u_int k = 0; k < static_cast<u_int>(ZM_CREATURE_ASSET_KIND_COUNT); ++k)
 	{
 		const ZM_CREATURE_ASSET_KIND eKind = static_cast<ZM_CREATURE_ASSET_KIND>(k);

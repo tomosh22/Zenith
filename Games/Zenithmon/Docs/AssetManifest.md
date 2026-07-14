@@ -13,10 +13,11 @@ Scope.md (what is cut), TestPlan.md (determinism + generator test specs),
 BuildEnvironment.md (the tools build that runs the bake), CIPolicy.md
 (why CI never sees these files), Roadmap.md (S3/S4 stage gates).
 
-**Last updated:** 2026-07-14 (S4 -- `ZM_CreatureGen` COMPLETE (ZM-D-060..065):
-all 8 archetype builders wired, all 152 species bake the final 9-file bundle;
-section 1.2 now records the locked on-disk layout. All baked outputs remain
-git-ignored.).
+**Last updated:** 2026-07-14 (S4 -- `ZM_CreatureAnimGen` COMPLETE (SC1..SC6):
+6 rotation-only clips per archetype (Idle/Walk/Attack/Special/Hit/Faint), baked
+as `.zanim` into each species' bundle, so the per-species set is now 15 files
+(section 1.2) and `uZM_CREATUREGEN_VERSION` bumped to 3. All baked outputs
+remain git-ignored.).
 
 ---
 
@@ -36,8 +37,8 @@ the S4 families and `Source/World/ZM_TerrainAuthoring` for S3 terrain).
 
 | Family | Count | Generator | Lands at |
 |---|---|---|---|
-| Creature species file sets | 152 species x 9 files = 1,368 (see 1.2) | ZM_CreatureGen + ZM_TextureSynth (SHIPPED) | S4 |
-| Creature animation clips | ~900 .zanim (6 per species) -- SEPARATE later box, NOT in the 9-file bundle | ZM_CreatureAnimGen (not yet built) | S4 |
+| Creature species file sets | 152 species x 15 files = 2,280 (see 1.2) | ZM_CreatureGen + ZM_TextureSynth (SHIPPED) | S4 |
+| Creature animation clips | 152 species x 6 = 912 .zanim | ZM_CreatureAnimGen (SHIPPED, baked into each species' bundle) | S4 |
 | Human models | ~35 .zmodel on ONE shared skeleton + ONE shared 9-clip set | ZM_HumanGen | S4 |
 | Building models | ~30 .zmodel | ZM_BuildingGen | S4 |
 | Props | ~25 models (incl. ~6 battle-dome biome dressing sets) | ZM_PropGen | S4 |
@@ -88,10 +89,12 @@ hue-rotated albedo + an INDEPENDENT material, same mesh (ZM-D-065). The
 8 -> 6 archetype-flex risk is now closed: all 8 archetypes shipped and every
 one of the 152 species builds a valid creature (`CreatureGen_AllSpeciesBuildable`).
 
-### 1.2 Per-species file set (THE contract -- 9 files per species)
+### 1.2 Per-species file set (THE contract -- 15 files per species)
 
-**ZM_CreatureGen bundle (SHIPPED, ZM-D-065 -- 9 files per species).**
-`ZM_BakeCreature` (TOOLS-only) writes all nine under `game:Creatures/<Name>/`:
+**ZM_CreatureGen bundle (SHIPPED, ZM-D-065 -- 15 files per species).**
+`ZM_BakeCreature` (TOOLS-only) writes all fifteen under `game:Creatures/<Name>/`
+-- the 9-file mesh/skeleton/material/model/icon core, plus the 6 per-species
+`.zanim` baked by `ZM_BakeCreatureClips` (SC6):
 
 | File | Count per species | Format / notes |
 |---|---|---|
@@ -102,8 +105,14 @@ one of the 152 species builds a valid creature (`CreatureGen_AllSpeciesBuildable
 | `<Name>_icon.ztxtr` | 1 | flat dex/party/box icon, BC1 128x128 |
 | `<Name>.zmtrl` | 1 | base material, .zmtrl v5 |
 | `<Name>_shiny.zmtrl` | 1 | shiny material, .zmtrl v5 -- an INDEPENDENT material over the same mesh (its own `_shiny.ztxtr`), NOT a child of the base (ZM-D-065) |
-| `<Name>.zmodel` | 1 | base bundle (mesh + skeleton + material), .zmodel v2 |
-| `<Name>_shiny.zmodel` | 1 | shiny bundle (same mesh + skeleton, shiny material), .zmodel v2 |
+| `<Name>.zmodel` | 1 | base bundle (mesh + skeleton + material), .zmodel v2 -- self-lists all 6 clips below via `AddAnimationPath` (IDLE..FAINT order) |
+| `<Name>_shiny.zmodel` | 1 | shiny bundle (same mesh + skeleton, shiny material), .zmodel v2 -- self-lists the same 6 clips |
+| `<Name>_Idle.zanim` | 1 | Idle clip -- rotation-only, 24 ticks/sec, looping |
+| `<Name>_Walk.zanim` | 1 | Walk clip -- rotation-only, 24 ticks/sec, looping |
+| `<Name>_Attack.zanim` | 1 | Attack clip -- rotation-only, 24 ticks/sec, one-shot ends neutral |
+| `<Name>_Special.zanim` | 1 | Special clip -- rotation-only, 24 ticks/sec, one-shot ends neutral |
+| `<Name>_Hit.zanim` | 1 | Hit clip -- rotation-only, 24 ticks/sec, one-shot ends neutral |
+| `<Name>_Faint.zanim` | 1 | Faint clip -- rotation-only, 24 ticks/sec, settles and clamps |
 
 **On-disk layout (now final -- was TBD).** One directory per species; the
 canonical asset ref is `game:Creatures/<SpeciesName>/<SpeciesName><suffix>.<ext>`
@@ -111,20 +120,24 @@ canonical asset ref is `game:Creatures/<SpeciesName>/<SpeciesName><suffix>.<ext>
 under `GAME_ASSETS_DIR` (`ZM_CreatureFsPath`). Every ref EMBEDDED in a baked
 asset (albedo/shiny texture, mesh, skeleton, material) is a `game:` ref; only the
 write targets are filesystem paths. All **152** species are **eagerly baked** (no
-lazy per-encounter generation): the bundle family is **152 x 9 = 1,368 files**.
+lazy per-encounter generation): the bundle family is **152 x 15 = 2,280 files**.
 Measured budget ~2-4 min for the full creature family.
 
 **Determinism / version stamp.** Every output byte is a pure function of the
 species id (section 6.2); the generator version is `uZM_CREATUREGEN_VERSION`
-(currently **1**), golden-pinned -- a change to the generation algorithm bumps it
-and forces a cold family re-bake. Locked by the `ZM_Gen` creature units
-([TestPlan.md](TestPlan.md) 5.4).
+(currently **3** -- SC6 bumped it because each baked `.zmodel` now carries 6
+`AddAnimationPath` entries, so pre-anim bakes self-invalidate), golden-pinned --
+a change to the generation algorithm bumps it and forces a cold family re-bake.
+Locked by the `ZM_Gen` creature units ([TestPlan.md](TestPlan.md) 5.4).
 
-**Animation clips are a SEPARATE later box.** The ~6 per-species `.zanim`
-(Idle / Walk / Attack / Special / Hit / Faint) are produced by
-`ZM_CreatureAnimGen` (not yet built) and are **NOT part of the 9-file
-ZM_CreatureGen bundle**. When that box lands, per-species clips (~900 total) join
-the creature family here.
+**Animation clips (SHIPPED).** The 6 per-species `.zanim`
+(Idle / Walk / Attack / Special / Hit / Faint) are baked by
+`ZM_BakeCreatureClips` inside `ZM_BakeCreature` (after the mesh/texture bakes
+create the species folder), and both `.zmodel` bundles (base + shiny) self-list
+them via `AddAnimationPath` in IDLE..FAINT order. Clips are pure
+`f(archetype, clip-id)` rotation-only at 24 ticks/sec, so a clip is
+byte-identical across every species of an archetype. They are part of the
+15-file per-species bundle above (**152 x 6 = 912** `.zanim` across the family).
 
 ---
 
@@ -352,7 +365,7 @@ This is the hardened RenderTest pattern. The three measured families lock the
 terrain-family format now (`ZMTR`, v1, count 771 for each 256-chunk town and
 count 1,155 for the 384-chunk route in a 12-byte atomic marker; section 4.3).
 The creature generator already stamps its generation version via
-`uZM_CREATUREGEN_VERSION` (currently 1; section 1.2), but the full per-family
+`uZM_CREATUREGEN_VERSION` (currently 3; section 1.2), but the full per-family
 `ZM_BakeManifest` marker (version + file-existence gate) is itself a later S4 box;
 the human/building/prop marker formats remain TBD until those generators land.
 

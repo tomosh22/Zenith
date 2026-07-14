@@ -34,7 +34,10 @@
 // ZM_BakeManifest (a later box) stamps this; bump it whenever this module's
 // generation algorithms change so stale bakes self-invalidate.
 // v2 (SC5d): creature-albedo palette-saturation boost re-tints every baked albedo.
-constexpr u_int uZM_CREATUREGEN_VERSION      = 2u;
+// v3 (SC6):  the baked .zmodel now self-lists 6 AddAnimationPath entries (the
+//            procedural clip set), so existing v2 bakes are stale and must
+//            self-invalidate to pick up the animation refs.
+constexpr u_int uZM_CREATUREGEN_VERSION      = 3u;
 
 // Flat dex/party/box icon resolution (AssetManifest 1.2). BC1 128x128.
 constexpr u_int uZM_CREATURE_ICON_RESOLUTION = 128u;
@@ -216,6 +219,16 @@ enum ZM_CREATURE_ASSET_KIND : u_int
 	ZM_CREATURE_ASSET_MATERIAL_SHINY,  // <Name>_shiny.zmtrl  (SC5)
 	ZM_CREATURE_ASSET_MODEL,           // <Name>.zmodel       (SC5)
 	ZM_CREATURE_ASSET_MODEL_SHINY,     // <Name>_shiny.zmodel (SC5)
+
+	// The 6 procedural clips (SC6), in ZM_ANIM_CLIP order (IDLE..FAINT). Kept
+	// CONTIGUOUS and last so (ZM_CREATURE_ASSET_KIND)(ZM_CREATURE_ASSET_ANIM_IDLE +
+	// eClip) maps each ZM_ANIM_CLIP to its asset kind. Suffixes match ZM_CreatureClipName.
+	ZM_CREATURE_ASSET_ANIM_IDLE,       // <Name>_Idle.zanim    (SC6)
+	ZM_CREATURE_ASSET_ANIM_WALK,       // <Name>_Walk.zanim    (SC6)
+	ZM_CREATURE_ASSET_ANIM_ATTACK,     // <Name>_Attack.zanim  (SC6)
+	ZM_CREATURE_ASSET_ANIM_SPECIAL,    // <Name>_Special.zanim (SC6)
+	ZM_CREATURE_ASSET_ANIM_HIT,        // <Name>_Hit.zanim     (SC6)
+	ZM_CREATURE_ASSET_ANIM_FAINT,      // <Name>_Faint.zanim   (SC6)
 
 	ZM_CREATURE_ASSET_KIND_COUNT
 };

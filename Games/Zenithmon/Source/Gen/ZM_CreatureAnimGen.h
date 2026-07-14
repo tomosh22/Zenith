@@ -138,10 +138,10 @@ ZM_CreatureClipValidation ZM_ValidateCreatureClip(const Flux_AnimationClip& xCli
 	const ZM_GenMesh& xSkeletonMesh, bool bLooping);
 
 // ---------------------------------------------------------------------------
-// Disk bake (TOOLS ONLY) -- FROZEN decl now; the real .zanim bundle bake (the
-// asset-kind enum + per-species file paths) lands in a later sub-commit. The
-// SC1 tools body is a temporary stub that returns false; non-tools no-ops keep
-// _False configs linking.
+// Disk bake (TOOLS ONLY) -- tools builds bake each species' 6 clips to their
+// per-species .zanim files (the asset-kind enum + per-species file paths):
+// ZM_BakeCreatureClips bakes one species, ZM_BakeAllCreatureClips bakes every
+// species. Non-tools builds are a no-op returning false so _False configs link.
 // ---------------------------------------------------------------------------
 #ifdef ZENITH_TOOLS
 bool ZM_BakeCreatureClips(ZM_SPECIES_ID eId);
