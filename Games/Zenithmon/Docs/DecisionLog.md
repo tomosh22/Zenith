@@ -15,6 +15,19 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-14 -- ZM-D-065 -- S4 ZM_CreatureGen SC5b: .zmtrl + .zmodel bundle bake (creatures now scene-loadable)
+
+- **Trigger:** the SC5-deferred bundle bake -- ZM_BakeCreature baked mesh+skeleton+textures but stubbed the material/model writes (that author API was unsurveyed at design time). Flow: read-only survey subagent -> implementer -> orchestrator gate (incl. the D3D12_False link proof) -> reviewer.
+- **Decision:** ZM_BakeCreature (TOOLS-only) now writes the full 9-file per-species bundle. Added: base + shiny .zmtrl (Zenith_MaterialAsset::SaveToFile, schema v5) + base + shiny .zmodel (Zenith_ModelAsset::Export, schema v2), via the Zenith_AssetRegistry::Create<T>()+GetDirect() owning-handle pattern. SHINY is an INDEPENDENT material (its own _shiny.zmtrl -> _shiny.ztxtr), NOT a child of the base -- the shiny albedo is a fully-baked independent texture (inheritance would override 100% of what differs) and the child path triggers a registry load of the base .zmtrl by ref at bake time (an ordering/IO hazard). Discipline: the write target (SaveToFile/Export arg) is a FILESYSTEM path (ZM_CreatureFsPath); every ref EMBEDDED in an asset (albedo/shiny tex, mesh, skeleton, material) is a game: ref (ZM_CreatureAssetPath); one material per submesh (creature mesh is single-submesh); all 4 writes verified landed via std::filesystem::exists (SaveToFile always returns true, Export returns void).
+- **Test:** new TOOLS-gated Tests/ZM_Tests_CreatureBake.cpp -- CreatureBake_BundleFilesLand bakes FERNFAWN and asserts all 9 bundle files exist + non-empty; ZENITH_SKIP if the bake env is unavailable. The full byte-identical re-bake invariant stays deferred to the later ZM_BakeManifest box (Roadmap S4).
+- **Reviewer:** ship-ready, no findings -- API fidelity (every Zenith_MaterialAsset/Zenith_ModelAsset/Zenith_AssetRegistry signature matches), FS-vs-ref discipline, the #ifdef ZENITH_TOOLS boundary (all new includes + code inside the guard), the IO-exists verify, the smoke test, comment-only refreshes, scope ALL clean. Nit for SC5c: a full ZM_BakeAllCreatures leaves ~152x4 procedural material/model assets at refcount 0 (reclaimed by UnloadUnused) -- mild reclaimable memory pressure, not a leak.
+- **Also:** refreshed the now-stale "SC1 wires ONLY QUADRUPED" comments in ZM_CreatureGen.h/.cpp + ZM_Tests_CreatureGen.cpp (all 8 wired) -- comment-only, no declaration change (reviewer-verified).
+- **Tests-that-lock-it:** boot unit gate **1846 -> 1847** (0 failed; +1 bake smoke; baseline bumped in .github/workflows/zm-tests.yml too). Vulkan_True build + D3D12_vs2022_Debug_Win64_False link proof both green; `zenith test Zenithmon --headless` 6/0.
+- **Milestone:** a baked creature is now a COMPLETE, scene-loadable asset bundle. Remaining S4: SC5c = bake all 152 creatures (ZM_BakeAllCreatures) + the windowed species-gallery visual gate (the S4 GATE hard-stop) + the S4-deferred format-doc refresh.
+- **Reversibility:** Moderate. The bake output format (.zmtrl v5 / .zmodel v2 / the game: ref scheme) is now a real on-disk contract S5+ scene-loading depends on; changing it needs a cold re-bake. The in-memory generation is unchanged.
+
+---
+
 ## 2026-07-14 -- ZM-D-064 -- S4 ZM_CreatureGen SC5a: FLOATER-PLANTOID builder + all-152 coverage gate (all 8 archetypes wired)
 
 - **Trigger:** the FINAL archetype builder + the "coverage complete" milestone. Authored by one subagent against the frozen seam; the orchestrator wired the last switch case, added the all-152 gate, gated serially, ran a reviewer.

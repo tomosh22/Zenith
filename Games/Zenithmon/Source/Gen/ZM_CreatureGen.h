@@ -11,8 +11,8 @@
 // then each output is a pure function of that recipe. The mesh is produced by
 // the archetype builder for the species' body plan (the 8 ZM_ARCHETYPE builders
 // each live in their own ZM_CreatureArchetype_<Name>.cpp and compose the shared
-// ZM_CreatureArchetypeCommon appendage kit); SC1 wires ONLY the QUADRUPED
-// builder (ZM_GetArchetypeBuilder returns nullptr for every other archetype).
+// ZM_CreatureArchetypeCommon appendage kit); all 8 archetype builders are wired,
+// so ZM_GetArchetypeBuilder returns a non-null builder for every archetype.
 //
 // DETERMINISM (AssetManifest 6.2, the load-bearing S4 invariant): every output
 // byte is a pure function of the species id. Randomness reaches a builder ONLY
@@ -104,8 +104,9 @@ void ZM_BuildArchetype_Insectoid      (ZM_GenMesh& xMesh, const ZM_CreatureRecip
 void ZM_BuildArchetype_Blob           (ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);   // SC4
 void ZM_BuildArchetype_FloaterPlantoid(ZM_GenMesh& xMesh, const ZM_CreatureRecipe& xRecipe);   // SC5
 
-// Explicit archetype -> builder mapping. SC1 wires ONLY QUADRUPED; every other
-// archetype returns nullptr until its builder lands.
+// Explicit archetype -> builder mapping. All 8 archetype builders are wired, so
+// every archetype value routes to a non-null builder; only the out-of-range
+// ZM_ARCHETYPE_COUNT sentinel returns nullptr.
 ZM_ArchetypeBuilderFn ZM_GetArchetypeBuilder(ZM_ARCHETYPE eArchetype);
 
 // ---------------------------------------------------------------------------
@@ -224,11 +225,12 @@ bool ZM_CreatureAssetPath(ZM_SPECIES_ID eId, ZM_CREATURE_ASSET_KIND eKind,
 	char* szOut, u_int uCap);
 
 // ---------------------------------------------------------------------------
-// Disk bake (TOOLS ONLY) -- SC1 bakes mesh + skeleton (ZM_GenBakeMesh) and
-// albedo / shiny / icon (ZM_SynthBakeAlbedoBC1 x2 + ZM_SynthBakeIconBC1) to the
-// ZM_CreatureAssetPath scheme under GAME_ASSETS_DIR. The .zmtrl / .zmodel bundle
-// writes are a deferred "// SC5:" TODO. NOT exercised by the in-memory ZM_Gen
-// gate. Non-tools no-ops keep _False configs linking.
+// Disk bake (TOOLS ONLY) -- ZM_BakeCreature writes the full bundle to the
+// ZM_CreatureAssetPath scheme under GAME_ASSETS_DIR: mesh + skeleton
+// (ZM_GenBakeMesh), albedo / shiny / icon (ZM_SynthBakeAlbedoBC1 x2 +
+// ZM_SynthBakeIconBC1), and (SC5b) the .zmtrl (base + shiny) + .zmodel (base +
+// shiny) bundle. NOT exercised by the in-memory ZM_Gen gate. Non-tools no-ops
+// keep _False configs linking.
 // ---------------------------------------------------------------------------
 #ifdef ZENITH_TOOLS
 bool ZM_BakeCreature(ZM_SPECIES_ID eId);

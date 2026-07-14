@@ -24,8 +24,8 @@
 //   (11) seed/evo sensitivity       -- two distinct species differ; stage1 != stage3
 //   (12) skeleton topology IDENTICAL across evo stages (equal bone count + equal
 //        per-index bone names, over EVERY multi-stage buildable family)
-// SC1 core: ZM_ResolveCreatureRecipe purity; QUADRUPED dispatch non-null while the
-// other 7 archetypes dispatch nullptr; ZM_CreatureArchetypeCommon kit-helper units.
+// SC1 core: ZM_ResolveCreatureRecipe purity; dispatch is pure + total with all 8
+// archetypes wired to a non-null builder; ZM_CreatureArchetypeCommon kit-helper units.
 //
 // PURE / HEADLESS: no disk, no GPU, no ZENITH_TOOLS reach (the .zmesh/.ztxtr bake
 // bridges are compiled out). These run at boot before the scene loads.

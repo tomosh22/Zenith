@@ -448,6 +448,16 @@ bool ZM_CreatureAssetPath(ZM_SPECIES_ID eId, ZM_CREATURE_ASSET_KIND eKind,
 // Disk bake (TOOLS ONLY).
 // ============================================================================
 #ifdef ZENITH_TOOLS
+
+// The .zmtrl / .zmodel bundle writers reach the asset layer directly (tools-only,
+// so these headers never touch the pure generation API compiled in every config).
+#include "AssetHandling/Zenith_MaterialAsset.h"   // Zenith_MaterialAsset, TextureHandle (BASE_COLOR = albedo)
+#include "AssetHandling/Zenith_ModelAsset.h"      // Zenith_ModelAsset (mesh+skeleton+material bundle)
+#include "AssetHandling/Zenith_AssetRegistry.h"   // Zenith_AssetRegistry::Create<> owning-handle pattern
+#include "Collections/Zenith_Vector.h"            // Zenith_Vector<std::string> material list
+#include <filesystem>
+#include <string>
+
 namespace
 {
 	// Build the GAME_ASSETS_DIR filesystem path mirroring the asset-ref scheme:
@@ -496,9 +506,100 @@ bool ZM_BakeCreature(ZM_SPECIES_ID eId)
 	bOk &= ZM_SynthBakeAlbedoBC1(xCreature.m_xShiny,  acShinyFs);
 	bOk &= ZM_SynthBakeIconBC1(xCreature.m_xIcon,     acIconFs);
 
-	// SC5: write the .zmtrl (normal + shiny child material) and .zmodel (normal +
-	// shiny) bundles here, keyed on ZM_CREATURE_ASSET_MATERIAL[_SHINY] /
-	// ZM_CREATURE_ASSET_MODEL[_SHINY], once the material/model bake bridges land.
+	// SC5b: write the .zmtrl (base + shiny) and .zmodel (base + shiny) bundles. The
+	// mesh/skeleton/texture bakes above already ran create_directories for this
+	// species' folder, and neither SaveToFile nor Export creates directories, so
+	// these writes MUST follow them (every bundle file lands in the same folder).
+
+	// The "game:" refs EMBEDDED inside the material/model assets (dependency refs --
+	// each names a file the loader resolves later). acSkelRef (the skeleton ref) is
+	// reused for both models.
+	char acMeshRef[512];
+	char acAlbedoRef[512];
+	char acShinyTexRef[512];
+	char acMatRef[512];
+	char acMatShinyRef[512];
+	// The FILESYSTEM paths for the four files WRITTEN here.
+	char acMatFs[1024];
+	char acMatShinyFs[1024];
+	char acModelFs[1024];
+	char acModelShinyFs[1024];
+
+	bOk &= ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_MESH,           acMeshRef,     sizeof(acMeshRef));
+	bOk &= ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_ALBEDO,         acAlbedoRef,   sizeof(acAlbedoRef));
+	bOk &= ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_SHINY,          acShinyTexRef, sizeof(acShinyTexRef));
+	bOk &= ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_MATERIAL,       acMatRef,      sizeof(acMatRef));
+	bOk &= ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_MATERIAL_SHINY, acMatShinyRef, sizeof(acMatShinyRef));
+	bOk &= ZM_CreatureFsPath(eId, ZM_CREATURE_ASSET_MATERIAL,       acMatFs,        sizeof(acMatFs));
+	bOk &= ZM_CreatureFsPath(eId, ZM_CREATURE_ASSET_MATERIAL_SHINY, acMatShinyFs,   sizeof(acMatShinyFs));
+	bOk &= ZM_CreatureFsPath(eId, ZM_CREATURE_ASSET_MODEL,         acModelFs,      sizeof(acModelFs));
+	bOk &= ZM_CreatureFsPath(eId, ZM_CREATURE_ASSET_MODEL_SHINY,   acModelShinyFs, sizeof(acModelShinyFs));
+	if (!bOk)
+	{
+		return false;   // a path overflowed; do not bake a partial bundle
+	}
+
+	const std::string strName = ZM_GetSpeciesName(eId);
+
+	// Base material (.zmtrl v5): baked albedo in the BASE_COLOR slot, matte dielectric.
+	// Create<>()+GetDirect() keeps the asset alive across SaveToFile (never a stack
+	// object). The albedo is passed as a "game:" ref (stored as a path, NOT loaded now).
+	{
+		Zenith_AssetHandle<Zenith_MaterialAsset> xMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMat = xMat.GetDirect();
+		pxMat->SetName(strName);
+		pxMat->SetDiffuseTexture(TextureHandle(std::string(acAlbedoRef)));
+		pxMat->SetRoughness(0.8f);
+		pxMat->SetMetallic(0.0f);
+		pxMat->SaveToFile(std::string(acMatFs));
+	}
+
+	// Shiny material: INDEPENDENT (not a child of the base). Shiny already has its own
+	// baked albedo, so inheritance would override 100% of what differs; and the child
+	// path would trigger a registry load of the base .zmtrl by ref at bake time (an
+	// ordering hazard). An independent material is cleaner.
+	{
+		Zenith_AssetHandle<Zenith_MaterialAsset> xMatShiny = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMatShiny = xMatShiny.GetDirect();
+		pxMatShiny->SetName(strName + "_shiny");
+		pxMatShiny->SetDiffuseTexture(TextureHandle(std::string(acShinyTexRef)));
+		pxMatShiny->SetRoughness(0.8f);
+		pxMatShiny->SetMetallic(0.0f);
+		pxMatShiny->SaveToFile(std::string(acMatShinyFs));
+	}
+
+	// Base model (.zmodel v2): the single-submesh creature mesh + skeleton ref + exactly
+	// ONE material (one entry per submesh -- the creature mesh is single-submesh).
+	{
+		Zenith_AssetHandle<Zenith_ModelAsset> xModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		Zenith_ModelAsset* pxModel = xModel.GetDirect();
+		pxModel->SetName(strName);
+		pxModel->SetSkeletonPath(std::string(acSkelRef));
+		Zenith_Vector<std::string> xMats;
+		xMats.PushBack(std::string(acMatRef));
+		pxModel->AddMeshByPath(std::string(acMeshRef), xMats);
+		pxModel->Export(acModelFs);
+	}
+
+	// Shiny model: identical mesh + skeleton, pointing at the shiny material.
+	{
+		Zenith_AssetHandle<Zenith_ModelAsset> xModelShiny = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		Zenith_ModelAsset* pxModelShiny = xModelShiny.GetDirect();
+		pxModelShiny->SetName(strName + "_shiny");
+		pxModelShiny->SetSkeletonPath(std::string(acSkelRef));
+		Zenith_Vector<std::string> xMatsShiny;
+		xMatsShiny.PushBack(std::string(acMatShinyRef));
+		pxModelShiny->AddMeshByPath(std::string(acMeshRef), xMatsShiny);
+		pxModelShiny->Export(acModelShinyFs);
+	}
+
+	// SaveToFile always returns true and Export is void, so exists() is the real IO
+	// signal (mirrors ZM_GenBakeMesh): AND all four new artifacts into bOk.
+	std::error_code xEc;
+	bOk &= std::filesystem::exists(std::filesystem::path(acMatFs),        xEc);
+	bOk &= std::filesystem::exists(std::filesystem::path(acMatShinyFs),   xEc);
+	bOk &= std::filesystem::exists(std::filesystem::path(acModelFs),      xEc);
+	bOk &= std::filesystem::exists(std::filesystem::path(acModelShinyFs), xEc);
 
 	return bOk;
 }
@@ -510,8 +611,9 @@ bool ZM_BakeAllCreatures()
 	for (u_int u = 0; u < uCount; ++u)
 	{
 		const ZM_SPECIES_ID eId = static_cast<ZM_SPECIES_ID>(u);
-		// SC1 wires only the QUADRUPED builder; skip species whose archetype has no
-		// builder yet (ZM_BuildCreatureMesh would assert on a null builder).
+		// All 8 archetype builders are wired (SC5a), so this guard is now effectively a
+		// no-op -- every species dispatches to a non-null builder. Kept defensively: a
+		// null builder would otherwise make ZM_BuildCreatureMesh assert.
 		if (ZM_GetArchetypeBuilder(ZM_GetSpeciesData(eId).m_eArchetype) == nullptr)
 		{
 			continue;
