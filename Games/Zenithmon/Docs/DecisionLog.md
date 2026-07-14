@@ -15,6 +15,16 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-14 -- ZM-D-062 -- S4 ZM_CreatureGen SC3: SERPENT + AQUATIC archetype builders
+
+- **Trigger:** next SC of ZM_CreatureGen after SC2. Two archetypes authored in parallel by disjoint subagents against the frozen seam; the orchestrator wired the dispatch switch, gated serially, and ran a reviewer.
+- **Decision:** SC3 adds the SERPENT and AQUATIC builders + per-archetype tests, wired into the explicit ZM_GetArchetypeBuilder switch (no header edit -- all 8 builders were declared at SC2). SERPENT: a limbless upright/rearing snake -- a fixed 12-bone skeleton (Spine00..05 six-vertebra body tube [root], Head with a +Z snout, Tail00..02 tapering to a point, HornL/R brow frills) built ENTIRELY from the shared kit (no local loft helper needed -- every serpent part is a round Y-swept shape). AQUATIC: a fixed 8-bone fish (Spine00..02 streamlined body [root], Head, FinDorsal, FinPecL/R, FinCaudal) using the kit PLUS one archetype-LOCAL helper ZM_AquaticAppendFin (a flat thin-Rx/broad-Rz blade generalized from AVIAN's ZM_AvianAppendWing to serve up- AND down-swept fins; single-bone ring skin, valid winding both sweep directions, no flat-washer, no dangling ring pointer). Both draw all rng up-front (MESH then SKELETON) via ZM_MakeGenRNG, scale by m_fSizeScale, keep bone topology IDENTICAL across evo stages (elaboration scales horn/fin SIZE only), stay <=30 bones, and never finalise/bake.
+- **Reviewer:** no blockers/majors/minors -- determinism, the AQUATIC local fin helper (verified against the real ZM_GenCommon loft signatures), SERPENT limblessness + within-cap spine chain, foundation-fidelity, conventions, and scope ALL clean. Two benign observations (no action): the builders locally re-derive the kit's spine-node world formula + mirror the kit's private add-bone helper -- the sanctioned anon-namespace pattern (kit internals are un-linkable), bind-pose-neutral.
+- **Tests-that-lock-it:** boot unit gate **1830 -> 1836** (0 failed; baseline bumped in .github/workflows/zm-tests.yml too). The universal 12-invariant harness now also runs over the SERPENT + AQUATIC species; each archetype adds a structural bone assert (SERPENT: single Spine root + Spine/Tail chain + Head + ZERO limb '...Up' bones; AQUATIC: single Spine root + Head + dorsal/2 pectoral/caudal fin bones). `zenith test Zenithmon --headless` 6/0. No stale-test churn -- the SC2 SC-agnostic dispatch test absorbed the newly-wired archetypes.
+- **Reversibility:** High. New per-archetype code under Source/Gen/ + Tests/; the only shared-file touch is the 2 switch cases. No baked assets. Golden pins per builder (jitter ranges, proportions, bone layout) documented in each .cpp; a change bumps uZM_CREATUREGEN_VERSION.
+
+---
+
 ## 2026-07-14 -- ZM-D-061 -- S4 ZM_CreatureGen SC2: BIPED + AVIAN archetype builders
 
 - **Trigger:** next SCs of ZM_CreatureGen after SC1 (QUADRUPED). Two archetypes authored in parallel by disjoint subagents against the now-frozen seam; the orchestrator wired the dispatch switch, gated serially, and ran a reviewer.

@@ -1,17 +1,17 @@
 # Zenithmon Status
 
 **Last updated:** 2026-07-14
-**Stage:** S4 (Asset generators) -- in progress. `ZM_GenCommon`/`ZM_TextureSynth` foundation (ZM-D-059) + `ZM_CreatureGen` **SC1** (QUADRUPED, ZM-D-060) + **SC2** (BIPED + AVIAN, ZM-D-061) COMPLETE. S1/S2/S3 COMPLETE (S3 visual gate SIGNED OFF 2026-07-13).
+**Stage:** S4 (Asset generators) -- in progress. `ZM_GenCommon`/`ZM_TextureSynth` foundation (ZM-D-059) + `ZM_CreatureGen` **SC1** (QUADRUPED, ZM-D-060) + **SC2** (BIPED + AVIAN, ZM-D-061) + **SC3** (SERPENT + AQUATIC, ZM-D-062) COMPLETE -- 5 of 8 archetypes wired. S1/S2/S3 COMPLETE (S3 visual gate SIGNED OFF 2026-07-13).
 **Build:** passing -- Vulkan_vs2022_Debug_Win64_True green.
-**Tests:** boot unit gate **1830 ran / 1829 passed / 0 failed / 1 skipped** (baseline bumped 1824 -> 1830, in `.github/workflows/zm-tests.yml` too); `zenith test Zenithmon --headless` **6 passed / 0 failed**.
+**Tests:** boot unit gate **1836 ran / 1835 passed / 0 failed / 1 skipped** (baseline bumped 1830 -> 1836, in `.github/workflows/zm-tests.yml` too); `zenith test Zenithmon --headless` **6 passed / 0 failed**.
 
 ## Current task
 
-`ZM_CreatureGen` archetype waves against the FROZEN `Source/Gen/ZM_CreatureGen.h` seam. 3 of 8 builders wired (QUADRUPED, BIPED, AVIAN). **Next unchecked: SC3 -- SERPENT + AQUATIC builders** (`ZM_CreatureArchetype_Serpent.cpp` + `_Aquatic.cpp` + per-archetype tests), authored disjointly against the frozen header + `ZM_CreatureArchetypeCommon.{h,cpp}` kit. Then SC4 (INSECTOID + BLOB), SC5 (FLOATER-PLANTOID + all-152 coverage gate + `.zmtrl`/`.zmodel` bundle bake + the windowed species-gallery visual gate). The S4 GATE ends with that gallery check -- a HARD-STOP for user sign-off (do NOT tick S4 without it).
+`ZM_CreatureGen` archetype waves against the FROZEN `Source/Gen/ZM_CreatureGen.h` seam. 5 of 8 builders wired (QUADRUPED, BIPED, AVIAN, SERPENT, AQUATIC). **Next unchecked: SC4 -- INSECTOID + BLOB builders** (`ZM_CreatureArchetype_Insectoid.cpp` + `_Blob.cpp` + per-archetype tests), authored disjointly against the frozen header + `ZM_CreatureArchetypeCommon.{h,cpp}` kit. INSECTOID is the highest-limb-count archetype (segmented thorax/abdomen + 6 legs + antennae -- closest to the 30-bone cap, watch it); BLOB is the low-bone extreme (2-4 bones, super-ellipse body). Then SC5 (FLOATER-PLANTOID + all-152 coverage gate + `.zmtrl`/`.zmodel` bundle bake + the windowed species-gallery visual gate). The S4 GATE ends with that gallery check -- a HARD-STOP for user sign-off (do NOT tick S4 without it).
 
 ## Last completed
 
-**S4 `ZM_CreatureGen` SC2** (this commit, ZM-D-061): the BIPED (14-bone) + AVIAN (13-bone, local wing helper) archetype builders + per-archetype tests, wired into the explicit `ZM_GetArchetypeBuilder` switch. The frozen header now declares all 8 builders (a one-time tech-lead append). The SC1 dispatch test was made SC-agnostic so it never goes stale as the wired set grows. +6 `ZM_Gen` units (1824 -> 1830). Reviewer: no blockers/majors (one MINOR BIPED-test guard fixed in-commit).
+**S4 `ZM_CreatureGen` SC3** (this commit, ZM-D-062): the SERPENT (12-bone limbless) + AQUATIC (8-bone, local `ZM_AquaticAppendFin` helper) archetype builders + per-archetype tests, wired into the explicit `ZM_GetArchetypeBuilder` switch. +6 `ZM_Gen` units (1830 -> 1836). Reviewer: no blockers/majors/minors -- fully clean. No stale-test churn (the SC-agnostic dispatch test absorbed the new archetypes).
 
 ## Notes for next agent
 
