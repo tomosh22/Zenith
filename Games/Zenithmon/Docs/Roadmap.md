@@ -69,7 +69,7 @@
 
 ## S4 -- Asset generators (L) -- parallel with S1/S2
 
-- [ ] `ZM_GenCommon` (seeded RNG + loft toolkit) + `ZM_TextureSynth`
+- [x] `ZM_GenCommon` (seeded RNG + loft toolkit) + `ZM_TextureSynth` -- the S4 asset-gen foundation under `Source/Gen/`: a PURE deterministic library compiled in ALL configs (`ZM_GenRNG` wrapping the golden PCG32, `ZM_GenHashName`/pinned `ZM_GEN_DOMAIN` seed derivation, `ZM_GenNoise`, loft -> POD `ZM_GenMesh` with outward-winding + skin, `ZM_GenImage` + palette/pattern/decal/shiny/normal texel synth) with only the disk-bake bridges `#ifdef ZENITH_TOOLS` (non-tools no-op fallback). 31 `ZM_Gen` units (boot baseline 1773 -> 1804); Vulkan Debug True + D3D12 Debug False link proof green; reviewer SHIP-WITH-FIXES applied (2026-07-14, ZM-D-059)
 - [ ] `ZM_CreatureGen` -- all 8 archetypes (QUADRUPED/BIPED/AVIAN/SERPENT/AQUATIC/INSECTOID/BLOB/FLOATER-PLANTOID), mesh+skeleton via StickFigure loft, palettes/patterns, shiny variants, dex icons (the single biggest work item, ~7-8.5k lines)
 - [ ] `ZM_CreatureAnimGen` -- 6 clips per archetype template, instantiated + exported per species (~900 .zanim)
 - [ ] `ZM_HumanGen` -- one shared skeleton + one shared 9-clip set; ~35 models
