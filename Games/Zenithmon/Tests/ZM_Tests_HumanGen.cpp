@@ -1,11 +1,12 @@
 #include "Zenith.h"
 
 // ============================================================================
-// ZM_Tests_HumanGen -- S4 SC1/SC2/SC3 unit gate for ZM_HumanGen (suite ZM_Gen).
+// ZM_Tests_HumanGen -- S4 SC1/SC2/SC3/SC4 unit gate for ZM_HumanGen (suite ZM_Gen).
 //
 // These author against the frozen public HumanGen/Data seam plus SC3's internal,
-// pure ZM_HumanAppearance seam. SC1 asserts the roster/skeleton/recipe/asset-path
-// contract; later cases extend it without disk, GPU, or tools-only reach:
+// pure ZM_HumanAppearance seam and SC4's shared in-memory clip seam. SC1 asserts
+// the roster/skeleton/recipe/asset-path contract; later cases extend it without
+// disk, GPU, or tools-only reach:
 //   1. HumanGen_RosterTotality      -- every id yields a valid recipe + a
 //                                      buildable, ZM_ValidateHuman-passing bundle.
 //   2. HumanGen_SharedSkeletonWellFormed -- ZM_AppendSharedHumanBones emits the
@@ -34,6 +35,14 @@
 //                                      Head-rigid, structurally valid silhouettes.
 //  14. HumanGen_AttachmentSilhouettes -- every attachment is deterministic,
 //                                      structurally valid, and visibly distinct.
+//  15. HumanGen_ClipChannelsMatchSharedSkeleton -- all nine clips use only the
+//                                      exact shared rig names and rotation keys.
+//  16. HumanGen_ClipTimingAndPlaybackPolicy -- key timing, loop seams, neutral
+//                                      one-shot recovery, and Faint hold policy.
+//  17. HumanGen_ClipDeterminismAndSensitivity -- byte/hash determinism plus
+//                                      pairwise motion (not metadata) distinction.
+//  18. HumanGen_ClipSetSharedAcrossRoster -- one model-independent clip set
+//                                      validates and rebuilds identically for all.
 //
 // PURE / HEADLESS: no disk, no GPU, no ZENITH_TOOLS reach. Runs at boot before
 // the scene loads.
@@ -42,12 +51,18 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Zenithmon/Source/Gen/ZM_HumanGen.h"
 #include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"
+#include "Zenithmon/Source/Gen/ZM_CreatureAnimGen.h"
 #include "Zenithmon/Source/Data/ZM_HumanData.h"
+#include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Maths/Zenith_Maths.h"
+#include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_Vector.h"
 
 #include <cstring>   // strlen, strcmp
 #include <cmath>     // fabsf
+#include <cstdio>    // snprintf
+#include <string>
+#include <utility>   // pair
 
 namespace
 {
@@ -56,6 +71,10 @@ namespace
 	constexpr float fHUMAN_UNIT_TOL = 1.0e-3f;
 	constexpr float fHUMAN_WORLD_BOX_LIMIT = 10.0f;
 	constexpr float fHUMAN_CHANNEL_TOL = 1.0e-5f;
+	constexpr float fHUMAN_ANIM_TICK_TOL = 1.0e-4f;
+	constexpr float fHUMAN_ANIM_QUAT_UNIT_TOL = 1.0e-3f;
+	constexpr float fHUMAN_ANIM_ROT_CLOSE_DOT = 0.9999f;
+	constexpr float fHUMAN_ANIM_ROT_MOTION_DOT = 0.99999f;
 	constexpr u_int uHUMAN_MIN_MATERIAL_COLOURS = 3u;
 	constexpr u_int64 ulHUMAN_DOMAIN_SEED_PERTURBATION = 0xA24BAED4963EE407ULL;
 
@@ -69,6 +88,305 @@ namespace
 		"LeftUpperLeg",  "LeftLowerLeg",  "LeftFoot",
 		"RightUpperLeg", "RightLowerLeg", "RightFoot"
 	};
+
+	struct HumanClipGold
+	{
+		ZM_HUMAN_ANIM_CLIP m_eClip;
+		const char* m_szName;
+		float m_fDurationSeconds;
+		bool m_bLooping;
+	};
+
+	const HumanClipGold g_axHumanClipGold[ZM_HUMAN_CLIP_COUNT] =
+	{
+		{ ZM_HUMAN_CLIP_IDLE,  "Idle",  2.0f, true  },
+		{ ZM_HUMAN_CLIP_WALK,  "Walk",  1.0f, true  },
+		{ ZM_HUMAN_CLIP_RUN,   "Run",   0.7f, true  },
+		{ ZM_HUMAN_CLIP_TALK,  "Talk",  1.6f, true  },
+		{ ZM_HUMAN_CLIP_WAVE,  "Wave",  1.0f, false },
+		{ ZM_HUMAN_CLIP_POINT, "Point", 0.8f, false },
+		{ ZM_HUMAN_CLIP_CHEER, "Cheer", 1.2f, false },
+		{ ZM_HUMAN_CLIP_HURT,  "Hurt",  0.4f, false },
+		{ ZM_HUMAN_CLIP_FAINT, "Faint", 1.2f, false },
+	};
+
+	bool HumanQuatFiniteNormalized(const Zenith_Maths::Quat& xQ)
+	{
+		if (!std::isfinite(xQ.w) || !std::isfinite(xQ.x)
+			|| !std::isfinite(xQ.y) || !std::isfinite(xQ.z))
+		{
+			return false;
+		}
+		const float fLengthSquared = xQ.w * xQ.w + xQ.x * xQ.x
+			+ xQ.y * xQ.y + xQ.z * xQ.z;
+		return fabsf(fLengthSquared - 1.0f) <= fHUMAN_ANIM_QUAT_UNIT_TOL;
+	}
+
+	float HumanQuatAbsDot(const Zenith_Maths::Quat& xA, const Zenith_Maths::Quat& xB)
+	{
+		return fabsf(xA.w * xB.w + xA.x * xB.x
+			+ xA.y * xB.y + xA.z * xB.z);
+	}
+
+	bool HumanRotationKeysWellFormed(const Flux_BoneChannel& xChannel,
+		float fDurationTicks, u_int& uFirstBadKey)
+	{
+		uFirstBadKey = 0xFFFFFFFFu;
+		const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys =
+			xChannel.GetRotationKeyframes();
+		if (!std::isfinite(fDurationTicks) || fDurationTicks <= 0.0f || xKeys.GetSize() < 2u)
+		{
+			uFirstBadKey = 0u;
+			return false;
+		}
+
+		float fPreviousTick = -1.0f;
+		for (u_int k = 0u; k < xKeys.GetSize(); ++k)
+		{
+			const float fTick = xKeys.Get(k).second;
+			const bool bTickValid = std::isfinite(fTick)
+				&& fTick >= 0.0f
+				&& fTick <= fDurationTicks
+				&& (k == 0u || fTick > fPreviousTick);
+			if (!bTickValid || !HumanQuatFiniteNormalized(xKeys.Get(k).first))
+			{
+				uFirstBadKey = k;
+				return false;
+			}
+			fPreviousTick = fTick;
+		}
+		return true;
+	}
+
+	bool HumanClipHasTemporalMotion(const Flux_AnimationClip& xClip)
+	{
+		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels =
+			xClip.GetBoneChannels();
+		Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
+		for (; !xIt.Done(); xIt.Next())
+		{
+			const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys =
+				xIt.GetValue().GetRotationKeyframes();
+			if (xKeys.GetSize() < 2u || !HumanQuatFiniteNormalized(xKeys.GetFront().first))
+			{
+				continue;
+			}
+			const Zenith_Maths::Quat& xFirst = xKeys.GetFront().first;
+			for (u_int k = 1u; k < xKeys.GetSize(); ++k)
+			{
+				if (HumanQuatFiniteNormalized(xKeys.Get(k).first)
+					&& HumanQuatAbsDot(xFirst, xKeys.Get(k).first)
+						< fHUMAN_ANIM_ROT_MOTION_DOT)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	bool HumanClipMotionEquivalentNormalized(const Flux_AnimationClip& xA,
+		const Flux_AnimationClip& xB)
+	{
+		const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
+		const float fDurationA = xA.GetDurationInTicks();
+		const float fDurationB = xB.GetDurationInTicks();
+		if (!std::isfinite(fDurationA) || fDurationA <= 0.0f
+			|| !std::isfinite(fDurationB) || fDurationB <= 0.0f)
+		{
+			return true;
+		}
+
+		for (u_int b = 0u; b < uZM_HUMAN_BONE_COUNT; ++b)
+		{
+			const Flux_BoneChannel* pxA = xA.GetBoneChannel(g_aszSharedBones[b]);
+			const Flux_BoneChannel* pxB = xB.GetBoneChannel(g_aszSharedBones[b]);
+			if (pxA == nullptr && pxB == nullptr)
+			{
+				continue;
+			}
+			if (pxA == nullptr || pxB == nullptr)
+			{
+				const Flux_BoneChannel* pxPresent = pxA != nullptr ? pxA : pxB;
+				const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xPresentKeys =
+					pxPresent->GetRotationKeyframes();
+				for (u_int k = 0u; k < xPresentKeys.GetSize(); ++k)
+				{
+					if (!HumanQuatFiniteNormalized(xPresentKeys.Get(k).first))
+					{
+						return true;
+					}
+					if (HumanQuatAbsDot(xPresentKeys.Get(k).first, xIdentity)
+						< fHUMAN_ANIM_ROT_MOTION_DOT)
+					{
+						return false;
+					}
+				}
+				continue;
+			}
+
+			const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeysA =
+				pxA->GetRotationKeyframes();
+			const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeysB =
+				pxB->GetRotationKeyframes();
+			if ((xKeysA.GetSize() == 0u) != (xKeysB.GetSize() == 0u))
+			{
+				const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xPresentKeys =
+					xKeysA.GetSize() != 0u ? xKeysA : xKeysB;
+				for (u_int k = 0u; k < xPresentKeys.GetSize(); ++k)
+				{
+					if (!HumanQuatFiniteNormalized(xPresentKeys.Get(k).first))
+					{
+						return true;
+					}
+					if (HumanQuatAbsDot(xPresentKeys.Get(k).first, xIdentity)
+						< fHUMAN_ANIM_ROT_MOTION_DOT)
+					{
+						return false;
+					}
+				}
+				continue;
+			}
+			if (xKeysA.GetSize() == 0u)
+			{
+				continue;
+			}
+
+			for (u_int k = 0u; k < xKeysA.GetSize(); ++k)
+			{
+				const float fTick = xKeysA.Get(k).second;
+				if (!std::isfinite(fTick) || fTick < 0.0f || fTick > fDurationA)
+				{
+					return true;
+				}
+				const Zenith_Maths::Quat xOther = pxB->SampleRotation(
+					(fTick / fDurationA) * fDurationB);
+				if (HumanQuatFiniteNormalized(xKeysA.Get(k).first)
+					&& HumanQuatFiniteNormalized(xOther)
+					&& HumanQuatAbsDot(xKeysA.Get(k).first, xOther)
+						< fHUMAN_ANIM_ROT_MOTION_DOT)
+				{
+					return false;
+				}
+			}
+			for (u_int k = 0u; k < xKeysB.GetSize(); ++k)
+			{
+				const float fTick = xKeysB.Get(k).second;
+				if (!std::isfinite(fTick) || fTick < 0.0f || fTick > fDurationB)
+				{
+					return true;
+				}
+				const Zenith_Maths::Quat xOther = pxA->SampleRotation(
+					(fTick / fDurationB) * fDurationA);
+				if (HumanQuatFiniteNormalized(xKeysB.Get(k).first)
+					&& HumanQuatFiniteNormalized(xOther)
+					&& HumanQuatAbsDot(xKeysB.Get(k).first, xOther)
+						< fHUMAN_ANIM_ROT_MOTION_DOT)
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	template <u_int uCount>
+	bool HumanClipHasAllChannels(const Flux_AnimationClip& xClip,
+		const char* const (&aszRequired)[uCount], const char*& szMissing)
+	{
+		szMissing = nullptr;
+		for (u_int i = 0u; i < uCount; ++i)
+		{
+			if (!xClip.HasBoneChannel(aszRequired[i]))
+			{
+				szMissing = aszRequired[i];
+				return false;
+			}
+		}
+		return true;
+	}
+
+	bool HumanClipHasCompleteArmChain(const Flux_AnimationClip& xClip, bool bLeft)
+	{
+		const char* szUpper = bLeft ? "LeftUpperArm" : "RightUpperArm";
+		const char* szLower = bLeft ? "LeftLowerArm" : "RightLowerArm";
+		const char* szHand = bLeft ? "LeftHand" : "RightHand";
+		return xClip.HasBoneChannel(szUpper)
+			&& xClip.HasBoneChannel(szLower)
+			&& xClip.HasBoneChannel(szHand);
+	}
+
+	bool HumanClipHasSemanticChannels(ZM_HUMAN_ANIM_CLIP eClip,
+		const Flux_AnimationClip& xClip, const char*& szMissing)
+	{
+		switch (eClip)
+		{
+		case ZM_HUMAN_CLIP_IDLE:
+		{
+			const char* const aszRequired[] = { "Spine", "Neck", "Head" };
+			return HumanClipHasAllChannels(xClip, aszRequired, szMissing);
+		}
+		case ZM_HUMAN_CLIP_WALK:
+		case ZM_HUMAN_CLIP_RUN:
+		{
+			const char* const aszRequired[] =
+			{
+				"Spine", "Head", "LeftUpperArm", "RightUpperArm",
+				"LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+				"RightUpperLeg", "RightLowerLeg", "RightFoot"
+			};
+			return HumanClipHasAllChannels(xClip, aszRequired, szMissing);
+		}
+		case ZM_HUMAN_CLIP_TALK:
+		{
+			const char* const aszRequired[] = { "Spine", "Neck", "Head" };
+			if (!HumanClipHasAllChannels(xClip, aszRequired, szMissing))
+			{
+				return false;
+			}
+			if (!HumanClipHasCompleteArmChain(xClip, true)
+				&& !HumanClipHasCompleteArmChain(xClip, false))
+			{
+				szMissing = "either complete arm chain";
+				return false;
+			}
+			return true;
+		}
+		case ZM_HUMAN_CLIP_WAVE:
+		case ZM_HUMAN_CLIP_POINT:
+			if (!HumanClipHasCompleteArmChain(xClip, true)
+				&& !HumanClipHasCompleteArmChain(xClip, false))
+			{
+				szMissing = "either complete arm chain";
+				return false;
+			}
+			return true;
+		case ZM_HUMAN_CLIP_CHEER:
+		{
+			const char* const aszRequired[] =
+				{ "Spine", "LeftUpperArm", "LeftLowerArm", "RightUpperArm", "RightLowerArm" };
+			return HumanClipHasAllChannels(xClip, aszRequired, szMissing);
+		}
+		case ZM_HUMAN_CLIP_HURT:
+		{
+			const char* const aszRequired[] =
+				{ "Spine", "Neck", "Head", "LeftUpperArm", "RightUpperArm" };
+			return HumanClipHasAllChannels(xClip, aszRequired, szMissing);
+		}
+		case ZM_HUMAN_CLIP_FAINT:
+		{
+			const char* const aszRequired[] =
+			{
+				"Spine", "Neck", "Head", "LeftUpperLeg", "LeftLowerLeg",
+				"RightUpperLeg", "RightLowerLeg"
+			};
+			return HumanClipHasAllChannels(xClip, aszRequired, szMissing);
+		}
+		default:
+			szMissing = "known clip semantic contract";
+			return false;
+		}
+	}
 
 	// A quaternion is the identity bind-local rotation (w=1, x=y=z=0) within tol.
 	bool QuatIsIdentity(const Zenith_Maths::Quat& xQ)
@@ -760,30 +1078,68 @@ ZENITH_TEST(ZM_Gen, HumanGen_AssetPathScheme)
 // 5. The frozen 9-clip metadata (golden literals)
 // ############################################################################
 
-// Golden-locks the shared 9-clip set frozen at SC1: exact names, durations, and
-// loop flags. The curves land in SC4, but the metadata is a fixed contract now.
+// Golden-locks the shared 9-clip set frozen at SC1: exact names, durations, loop
+// flags, shared paths, and the metadata SC4 stamps on each in-memory clip.
 ZENITH_TEST(ZM_Gen, HumanGen_ClipMetadataGolden)
 {
-	struct ClipGold { ZM_HUMAN_ANIM_CLIP m_eClip; const char* m_szName; float m_fDur; bool m_bLoop; };
-	const ClipGold aGold[ZM_HUMAN_CLIP_COUNT] =
-	{
-		{ ZM_HUMAN_CLIP_IDLE,  "Idle",  2.0f, true  },
-		{ ZM_HUMAN_CLIP_WALK,  "Walk",  1.0f, true  },
-		{ ZM_HUMAN_CLIP_RUN,   "Run",   0.7f, true  },
-		{ ZM_HUMAN_CLIP_TALK,  "Talk",  1.6f, true  },
-		{ ZM_HUMAN_CLIP_WAVE,  "Wave",  1.0f, false },
-		{ ZM_HUMAN_CLIP_POINT, "Point", 0.8f, false },
-		{ ZM_HUMAN_CLIP_CHEER, "Cheer", 1.2f, false },
-		{ ZM_HUMAN_CLIP_HURT,  "Hurt",  0.4f, false },
-		{ ZM_HUMAN_CLIP_FAINT, "Faint", 1.2f, false },
-	};
+	static_assert((u_int)ZM_HUMAN_CLIP_COUNT == 9u,
+		"the shared human clip enum must stay complete at nine entries");
+	static_assert((u_int)ZM_HUMAN_ASSET_KIND_COUNT == 4u,
+		"human animation files are shared, never appended to the per-model asset kinds");
+	static_assert((u_int)ZM_HUMAN_SHARED_ASSET_ANIM_IDLE
+		== (u_int)ZM_HUMAN_SHARED_ASSET_SKELETON + 1u,
+		"the contiguous shared animation range must immediately follow the skeleton");
+	static_assert((u_int)ZM_HUMAN_SHARED_ASSET_KIND_COUNT
+		== (u_int)ZM_HUMAN_SHARED_ASSET_ANIM_IDLE + (u_int)ZM_HUMAN_CLIP_COUNT,
+		"the shared asset enum must contain one path for every human clip");
+	static_assert(uZM_CREATURE_ANIM_TICKS_PER_SECOND == 24u,
+		"human clips reuse the pinned 24 ticks-per-second animation kit");
 
 	for (u_int c = 0; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
 	{
-		const ClipGold& xG = aGold[c];
-		ZENITH_ASSERT_STREQ(ZM_HumanClipName(xG.m_eClip), xG.m_szName, "clip %u name drifted", c);
-		ZENITH_ASSERT_EQ(ZM_HumanClipDurationSeconds(xG.m_eClip), xG.m_fDur, "clip %u duration drifted", c);
-		ZENITH_ASSERT_TRUE(ZM_HumanClipLooping(xG.m_eClip) == xG.m_bLoop, "clip %u loop flag drifted", c);
+		const HumanClipGold& xG = g_axHumanClipGold[c];
+		ZENITH_ASSERT_EQ((u_int)xG.m_eClip, c,
+			"clip-golden row %u no longer matches the contiguous clip enum", c);
+		ZENITH_ASSERT_STREQ(ZM_HumanClipName(xG.m_eClip), xG.m_szName,
+			"clip %u name drifted", c);
+		ZENITH_ASSERT_EQ(ZM_HumanClipDurationSeconds(xG.m_eClip), xG.m_fDurationSeconds,
+			"clip %u duration drifted", c);
+		ZENITH_ASSERT_TRUE(ZM_HumanClipLooping(xG.m_eClip) == xG.m_bLooping,
+			"clip %u loop flag drifted", c);
+
+		char acPath[256];
+		const ZM_HUMAN_SHARED_ASSET_KIND eKind = (ZM_HUMAN_SHARED_ASSET_KIND)
+			(ZM_HUMAN_SHARED_ASSET_ANIM_IDLE + c);
+		const bool bPathFits = ZM_HumanSharedAssetPath(eKind, acPath, sizeof(acPath));
+		ZENITH_ASSERT_TRUE(bPathFits, "shared path for clip %u must fit", c);
+		char acExpected[256];
+		const int iExpectedLength = snprintf(acExpected, sizeof(acExpected),
+			"game:Humans/Shared/Human_%s.zanim", xG.m_szName);
+		const bool bExpectedFits = iExpectedLength >= 0
+			&& (u_int)iExpectedLength < (u_int)sizeof(acExpected);
+		ZENITH_ASSERT_TRUE(bExpectedFits, "golden shared path for clip %u must fit", c);
+		if (bPathFits && bExpectedFits)
+		{
+			ZENITH_ASSERT_STREQ(acPath, acExpected,
+				"clip %u no longer maps to its one shared path", c);
+		}
+
+		Flux_AnimationClip xBuilt;
+		ZM_BuildHumanClip(xG.m_eClip, xBuilt);
+		ZENITH_ASSERT_STREQ(xBuilt.GetName().c_str(), xG.m_szName,
+			"built clip %u name was not stamped from the golden metadata", c);
+		ZENITH_ASSERT_EQ(xBuilt.GetDuration(), xG.m_fDurationSeconds,
+			"built clip %u duration was not stamped from the golden metadata", c);
+		ZENITH_ASSERT_EQ(xBuilt.GetTicksPerSecond(), uZM_CREATURE_ANIM_TICKS_PER_SECOND,
+			"built clip %u ticks-per-second must be the shared 24-tps value", c);
+		ZENITH_ASSERT_TRUE(xBuilt.IsLooping() == xG.m_bLooping,
+			"built clip %u looping flag was not stamped from the golden metadata", c);
+
+		for (u_int other = c + 1u; other < (u_int)ZM_HUMAN_CLIP_COUNT; ++other)
+		{
+			ZENITH_ASSERT_TRUE(strcmp(xG.m_szName, g_axHumanClipGold[other].m_szName) != 0,
+				"clip-golden rows %u/%u reuse one name", c, other);
+		}
 	}
 }
 
@@ -1925,4 +2281,295 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 	}
 	ZENITH_ASSERT_GT(uRosterAttachments, 0u,
 		"human roster contains no non-NONE attachment selection to exercise");
+}
+
+// ############################################################################
+// 15. SC4 clip channels bind the one exact shared skeleton
+// ############################################################################
+
+// Every shared clip is non-empty, uses only exact names from the fixed 16-bone
+// rig, and authors rotation channels only. Absence of position/scale channels is
+// the load-bearing proof that the animation player preserves each model's shared
+// bind translation and scale. The semantic minimums describe motion roles, not
+// implementation details: exact channel counts and curve values remain free.
+ZENITH_TEST(ZM_Gen, HumanGen_ClipChannelsMatchSharedSkeleton)
+{
+	ZM_GenMesh xSharedSkeleton;
+	ZM_AppendSharedHumanBones(xSharedSkeleton);
+	ZENITH_ASSERT_EQ(xSharedSkeleton.GetNumBones(), uZM_HUMAN_BONE_COUNT,
+		"the SC4 channel gate requires the complete shared human skeleton");
+
+	for (u_int c = 0u; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
+	{
+		const ZM_HUMAN_ANIM_CLIP eClip = (ZM_HUMAN_ANIM_CLIP)c;
+		Flux_AnimationClip xClip;
+		ZM_BuildHumanClip(eClip, xClip);
+
+		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels =
+			xClip.GetBoneChannels();
+		ZENITH_ASSERT_GT(xChannels.GetSize(), 0u,
+			"human clip %u has no authored bone channels", c);
+
+		const ZM_CreatureClipValidation xValidation = ZM_ValidateCreatureClip(
+			xClip, xSharedSkeleton, ZM_HumanClipLooping(eClip));
+		ZENITH_ASSERT_TRUE(xValidation.m_bAllValid,
+			"human clip %u failed the shared clip validator (first bad bone '%s')",
+			c, xValidation.m_szFirstBadBone);
+
+		const Flux_RootMotion& xRootMotion = xClip.GetRootMotion();
+		ZENITH_ASSERT_FALSE(xRootMotion.m_bEnabled,
+			"human clip %u must not enable root motion", c);
+		ZENITH_ASSERT_EQ(xRootMotion.m_xPositionDeltas.GetSize(), 0u,
+			"human clip %u must not author root-position deltas", c);
+		ZENITH_ASSERT_EQ(xRootMotion.m_xRotationDeltas.GetSize(), 0u,
+			"human clip %u must not author root-rotation deltas", c);
+		ZENITH_ASSERT_EQ(xClip.GetEvents().GetSize(), 0u,
+			"human clip %u must not acquire per-model animation events", c);
+		ZENITH_ASSERT_TRUE(xClip.GetSourcePath().empty(),
+			"fresh in-memory human clip %u must have no source path", c);
+
+		Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
+		for (; !xIt.Done(); xIt.Next())
+		{
+			const Flux_BoneChannel& xChannel = xIt.GetValue();
+			const std::string& strBone = xChannel.GetBoneName();
+			const int iBone = ZM_GenMeshFindBone(xSharedSkeleton, strBone.c_str());
+			ZENITH_ASSERT_GE(iBone, 0,
+				"human clip %u channel '%s' is not an exact shared bone name",
+				c, strBone.c_str());
+			if (iBone >= 0 && (u_int)iBone < uZM_HUMAN_BONE_COUNT)
+			{
+				ZENITH_ASSERT_STREQ(strBone.c_str(), g_aszSharedBones[iBone],
+					"human clip %u channel '%s' resolved outside the canonical name order",
+					c, strBone.c_str());
+			}
+
+			ZENITH_ASSERT_TRUE(xChannel.HasRotationKeyframes(),
+				"human clip %u channel '%s' has no rotation keys", c, strBone.c_str());
+			ZENITH_ASSERT_FALSE(xChannel.HasPositionKeyframes(),
+				"human clip %u channel '%s' would overwrite bind translation",
+				c, strBone.c_str());
+			ZENITH_ASSERT_EQ(xChannel.GetPositionKeyframes().GetSize(), 0u,
+				"human clip %u channel '%s' carries hidden position keys",
+				c, strBone.c_str());
+			ZENITH_ASSERT_FALSE(xChannel.HasScaleKeyframes(),
+				"human clip %u channel '%s' would overwrite bind scale",
+				c, strBone.c_str());
+			ZENITH_ASSERT_EQ(xChannel.GetScaleKeyframes().GetSize(), 0u,
+				"human clip %u channel '%s' carries hidden scale keys",
+				c, strBone.c_str());
+		}
+
+		const char* szMissing = nullptr;
+		const bool bSemanticChannels = HumanClipHasSemanticChannels(eClip, xClip, szMissing);
+		ZENITH_ASSERT_TRUE(bSemanticChannels,
+			"human clip %u lacks semantic motion coverage: %s", c,
+			szMissing != nullptr ? szMissing : "unknown requirement");
+	}
+}
+
+// ############################################################################
+// 16. SC4 key timing, loop seams, and one-shot end policy
+// ############################################################################
+
+// Times are ticks, duration is seconds, and every channel explicitly spans the
+// complete clip. Loops close orientation at the seam. Wave/Point/Cheer/Hurt
+// recover to identity; Faint instead authors a final held downed pose.
+ZENITH_TEST(ZM_Gen, HumanGen_ClipTimingAndPlaybackPolicy)
+{
+	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
+
+	for (u_int c = 0u; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
+	{
+		const ZM_HUMAN_ANIM_CLIP eClip = (ZM_HUMAN_ANIM_CLIP)c;
+		Flux_AnimationClip xClip;
+		ZM_BuildHumanClip(eClip, xClip);
+
+		const float fDurationTicks = xClip.GetDurationInTicks();
+		const bool bDurationValid = std::isfinite(xClip.GetDuration())
+			&& xClip.GetDuration() > 0.0f
+			&& std::isfinite(fDurationTicks)
+			&& fDurationTicks > 0.0f;
+		ZENITH_ASSERT_TRUE(bDurationValid,
+			"human clip %u has no finite positive duration", c);
+		ZENITH_ASSERT_TRUE(xClip.IsLooping() == ZM_HumanClipLooping(eClip),
+			"human clip %u built looping policy differs from its metadata", c);
+
+		const Zenith_HashMap<std::string, Flux_BoneChannel>& xChannels =
+			xClip.GetBoneChannels();
+		ZENITH_ASSERT_GT(xChannels.GetSize(), 0u,
+			"human clip %u has no channels to exercise timing policy", c);
+		ZENITH_ASSERT_TRUE(HumanClipHasTemporalMotion(xClip),
+			"human clip %u contains no temporal rotation change", c);
+		if (!bDurationValid || xChannels.GetSize() == 0u)
+		{
+			continue;
+		}
+
+		u_int uFaintHeldDifferent = 0u;
+		Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xChannels);
+		for (; !xIt.Done(); xIt.Next())
+		{
+			const Flux_BoneChannel& xChannel = xIt.GetValue();
+			const char* szBone = xChannel.GetBoneName().c_str();
+			u_int uFirstBadKey = 0xFFFFFFFFu;
+			const bool bKeysWellFormed = HumanRotationKeysWellFormed(
+				xChannel, fDurationTicks, uFirstBadKey);
+			ZENITH_ASSERT_TRUE(bKeysWellFormed,
+				"human clip %u channel '%s' has an invalid/duplicate/out-of-range key %u",
+				c, szBone, uFirstBadKey);
+			if (!bKeysWellFormed)
+			{
+				continue;
+			}
+
+			const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys =
+				xChannel.GetRotationKeyframes();
+			ZENITH_ASSERT_LE(fabsf(xKeys.GetFront().second), fHUMAN_ANIM_TICK_TOL,
+				"human clip %u channel '%s' has no first key at tick zero", c, szBone);
+			ZENITH_ASSERT_LE(fabsf(xKeys.GetBack().second - fDurationTicks),
+				fHUMAN_ANIM_TICK_TOL,
+				"human clip %u channel '%s' has no final key at duration", c, szBone);
+
+			const Zenith_Maths::Quat& xFirst = xKeys.GetFront().first;
+			const Zenith_Maths::Quat& xLast = xKeys.GetBack().first;
+			if (ZM_HumanClipLooping(eClip))
+			{
+				ZENITH_ASSERT_GE(HumanQuatAbsDot(xFirst, xLast),
+					fHUMAN_ANIM_ROT_CLOSE_DOT,
+					"looping human clip %u channel '%s' does not close at the seam",
+					c, szBone);
+				continue;
+			}
+
+			const Zenith_Maths::Quat xAtEnd = xChannel.SampleRotation(fDurationTicks);
+			const Zenith_Maths::Quat xPastEnd = xChannel.SampleRotation(fDurationTicks * 2.0f);
+			ZENITH_ASSERT_TRUE(HumanQuatFiniteNormalized(xAtEnd)
+				&& HumanQuatFiniteNormalized(xPastEnd),
+				"one-shot human clip %u channel '%s' end/past-end sample is invalid",
+				c, szBone);
+			ZENITH_ASSERT_GE(HumanQuatAbsDot(xAtEnd, xPastEnd),
+				fHUMAN_ANIM_ROT_CLOSE_DOT,
+				"one-shot human clip %u channel '%s' does not clamp past its end",
+				c, szBone);
+
+			if (eClip != ZM_HUMAN_CLIP_FAINT)
+			{
+				ZENITH_ASSERT_GE(HumanQuatAbsDot(xAtEnd, xIdentity),
+					fHUMAN_ANIM_ROT_CLOSE_DOT,
+					"one-shot human clip %u channel '%s' does not recover to identity",
+					c, szBone);
+				continue;
+			}
+
+			const u_int uPenultimateKey = xKeys.GetSize() - 2u;
+			const Zenith_Maths::Quat& xPenultimate = xKeys.Get(uPenultimateKey).first;
+			const float fPenultimateTick = xKeys.Get(uPenultimateKey).second;
+			ZENITH_ASSERT_LT(fPenultimateTick, fDurationTicks,
+				"Faint channel '%s' penultimate key must precede duration", szBone);
+			ZENITH_ASSERT_GE(HumanQuatAbsDot(xPenultimate, xLast),
+				fHUMAN_ANIM_ROT_CLOSE_DOT,
+				"Faint channel '%s' penultimate/final authored keys do not hold one pose",
+				szBone);
+
+			const Zenith_Maths::Quat xAtZero = xChannel.SampleRotation(0.0f);
+			ZENITH_ASSERT_TRUE(HumanQuatFiniteNormalized(xAtZero),
+				"Faint channel '%s' tick-zero sample is invalid", szBone);
+			if (HumanQuatAbsDot(xAtZero, xAtEnd) < fHUMAN_ANIM_ROT_MOTION_DOT)
+			{
+				++uFaintHeldDifferent;
+			}
+		}
+
+		if (eClip == ZM_HUMAN_CLIP_FAINT)
+		{
+			ZENITH_ASSERT_GT(uFaintHeldDifferent, 0u,
+				"Faint final held pose matches tick zero on every channel");
+		}
+	}
+}
+
+// ############################################################################
+// 17. SC4 byte determinism and implementation-independent motion sensitivity
+// ############################################################################
+
+// Equality/hash reuse the established serialized-clip helpers. Pairwise motion
+// comparison normalizes each clip's own duration and ignores metadata, so merely
+// changing Name/Duration cannot disguise two collapsed motion implementations.
+ZENITH_TEST(ZM_Gen, HumanGen_ClipDeterminismAndSensitivity)
+{
+	Flux_AnimationClip axClips[ZM_HUMAN_CLIP_COUNT];
+	u_int auHashes[ZM_HUMAN_CLIP_COUNT] = {};
+	for (u_int c = 0u; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
+	{
+		const ZM_HUMAN_ANIM_CLIP eClip = (ZM_HUMAN_ANIM_CLIP)c;
+		ZM_BuildHumanClip(eClip, axClips[c]);
+		Flux_AnimationClip xAgain;
+		ZM_BuildHumanClip(eClip, xAgain);
+
+		ZENITH_ASSERT_GT(axClips[c].GetBoneChannels().GetSize(), 0u,
+			"human clip %u determinism would be vacuous with no channels", c);
+		ZENITH_ASSERT_TRUE(ZM_CreatureClipBytesEqual(axClips[c], xAgain),
+			"human clip %u is not byte-identical on a repeat build", c);
+		auHashes[c] = ZM_CreatureClipContentHash(axClips[c]);
+		ZENITH_ASSERT_EQ(auHashes[c], ZM_CreatureClipContentHash(xAgain),
+			"human clip %u content hash changes on a repeat build", c);
+	}
+
+	for (u_int a = 0u; a < (u_int)ZM_HUMAN_CLIP_COUNT; ++a)
+	{
+		for (u_int b = a + 1u; b < (u_int)ZM_HUMAN_CLIP_COUNT; ++b)
+		{
+			ZENITH_ASSERT_FALSE(HumanClipMotionEquivalentNormalized(axClips[a], axClips[b]),
+				"human clips %u/%u collapse to the same normalized rotation motion", a, b);
+			ZENITH_ASSERT_NE(auHashes[a], auHashes[b],
+				"human clips %u/%u share a serialized content hash", a, b);
+		}
+	}
+}
+
+// ############################################################################
+// 18. SC4 clips are one shared, model-independent set across the whole roster
+// ############################################################################
+
+// Build the nine clips once, then validate that exact set against every model's
+// unchanged shared rig. Rebuilding after each model proves no ambient per-ID
+// state can perturb the no-ID clip builder.
+ZENITH_TEST(ZM_Gen, HumanGen_ClipSetSharedAcrossRoster)
+{
+	ZM_GenMesh xSharedSkeleton;
+	ZM_AppendSharedHumanBones(xSharedSkeleton);
+	Flux_AnimationClip axSharedClips[ZM_HUMAN_CLIP_COUNT];
+	for (u_int c = 0u; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
+	{
+		ZM_BuildHumanClip((ZM_HUMAN_ANIM_CLIP)c, axSharedClips[c]);
+	}
+
+	for (u_int id = 0u; id < (u_int)ZM_HUMAN_COUNT; ++id)
+	{
+		const ZM_HumanRecipe xRecipe = ZM_ResolveHumanRecipe((ZM_HUMAN_ID)id);
+		ZM_GenMesh xModelMesh;
+		ZM_BuildHumanMesh(xRecipe, xModelMesh);
+		ZENITH_ASSERT_TRUE(MeshBonesEqual(xModelMesh, xSharedSkeleton),
+			"human %u no longer carries the exact shared skeleton", id);
+
+		for (u_int c = 0u; c < (u_int)ZM_HUMAN_CLIP_COUNT; ++c)
+		{
+			const ZM_HUMAN_ANIM_CLIP eClip = (ZM_HUMAN_ANIM_CLIP)c;
+			const ZM_CreatureClipValidation xValidation = ZM_ValidateCreatureClip(
+				axSharedClips[c], xModelMesh, ZM_HumanClipLooping(eClip));
+			ZENITH_ASSERT_TRUE(xValidation.m_bAllValid,
+				"shared clip %u does not transfer to human %u (first bad bone '%s')",
+				c, id, xValidation.m_szFirstBadBone);
+
+			Flux_AnimationClip xAfterModelBuild;
+			ZM_BuildHumanClip(eClip, xAfterModelBuild);
+			ZENITH_ASSERT_TRUE(ZM_CreatureClipBytesEqual(
+				axSharedClips[c], xAfterModelBuild),
+				"shared clip %u bytes depend on preceding human %u generation", c, id);
+			ZENITH_ASSERT_EQ(ZM_CreatureClipContentHash(axSharedClips[c]),
+				ZM_CreatureClipContentHash(xAfterModelBuild),
+				"shared clip %u hash depends on preceding human %u generation", c, id);
+		}
+	}
 }

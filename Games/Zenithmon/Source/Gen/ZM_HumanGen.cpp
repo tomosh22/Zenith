@@ -156,15 +156,6 @@ bool ZM_HumanClipLooping(ZM_HUMAN_ANIM_CLIP eClip)
 	}
 }
 
-void ZM_BuildHumanClip(ZM_HUMAN_ANIM_CLIP eClip, Flux_AnimationClip& xOut)
-{
-	// SC4: author the shared clip's rotation channels against the shared skeleton
-	// here. SC1 is a declared placeholder (never invoked by the SC1 gate), so the
-	// body is intentionally empty -- the real curves land in SC4.
-	(void)eClip;
-	(void)xOut;
-}
-
 // ============================================================================
 // Recipe resolution.
 // ============================================================================
