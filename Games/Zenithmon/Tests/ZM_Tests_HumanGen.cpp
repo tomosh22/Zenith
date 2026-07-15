@@ -1,7 +1,7 @@
 #include "Zenith.h"
 
 // ============================================================================
-// ZM_Tests_HumanGen -- S4 SC1 unit gate for ZM_HumanGen (suite ZM_Gen).
+// ZM_Tests_HumanGen -- S4 SC1/SC2 unit gate for ZM_HumanGen (suite ZM_Gen).
 //
 // These author against the FROZEN seam (Games/Zenithmon/Source/Gen/ZM_HumanGen.h
 // + ZM_HumanData.h) only. SC1 asserts the roster/skeleton/recipe/asset-path
@@ -19,9 +19,13 @@
 //   6. HumanGen_BuildDeterminism    -- reflexive lock on the byte-identity + hash
 //                                      helpers (rebuild the same id twice ==; two
 //                                      genuinely-different ids !=, non-degeneracy).
-// (The fuller SameSeedDeterminism over ALL ids / structural cross-id invariants /
-// bones-match-shared land in SC2 once the real humanoid loft replaces the SC1
-// placeholder body.)
+//   7. HumanGen_StructuralInvariants -- every SC2 mesh is fully finalised and
+//                                      satisfies the loft/skin contract.
+//   8. HumanGen_PerModelBonesMatchShared -- every model carries the exact shared
+//                                      bone data in the exact index order.
+//   9. HumanGen_SameSeedDeterminism -- every id rebuilds byte-identically.
+//  10. HumanGen_Sensitivity        -- same-build humans with different mesh seeds
+//                                      do not collapse to one canned geometry.
 //
 // PURE / HEADLESS: no disk, no GPU, no ZENITH_TOOLS reach. Runs at boot before
 // the scene loads.
@@ -38,6 +42,11 @@
 
 namespace
 {
+	constexpr float fHUMAN_WEIGHT_TOL = 1.0e-4f;
+	constexpr float fHUMAN_INFLUENCE_EPS = 1.0e-6f;
+	constexpr float fHUMAN_UNIT_TOL = 1.0e-3f;
+	constexpr float fHUMAN_WORLD_BOX_LIMIT = 10.0f;
+
 	// The 16 shared-skeleton bone names, in the frozen ZM_AppendSharedHumanBones
 	// emit order (index i must resolve to bone i).
 	const char* g_aszSharedBones[uZM_HUMAN_BONE_COUNT] =
@@ -57,6 +66,55 @@ namespace
 			&& fabsf(xQ.x) < fEps
 			&& fabsf(xQ.y) < fEps
 			&& fabsf(xQ.z) < fEps;
+	}
+
+	bool IsFiniteVec2(const Zenith_Maths::Vector2& xV)
+	{
+		return std::isfinite(xV.x) && std::isfinite(xV.y);
+	}
+
+	bool IsFiniteVec3(const Zenith_Maths::Vector3& xV)
+	{
+		return std::isfinite(xV.x) && std::isfinite(xV.y) && std::isfinite(xV.z);
+	}
+
+	bool IsFiniteVec4(const Zenith_Maths::Vector4& xV)
+	{
+		return std::isfinite(xV.x) && std::isfinite(xV.y)
+			&& std::isfinite(xV.z) && std::isfinite(xV.w);
+	}
+
+	// Full field-wise equality for one shared bone. Avoid memcmp: ZM_GenBone is
+	// POD-like, but this test should not depend on compiler padding bytes.
+	bool BoneFieldsEqual(const ZM_GenBone& xA, const ZM_GenBone& xB)
+	{
+		return strcmp(xA.m_szName, xB.m_szName) == 0
+			&& xA.m_iParent == xB.m_iParent
+			&& xA.m_xLocalPos.x == xB.m_xLocalPos.x
+			&& xA.m_xLocalPos.y == xB.m_xLocalPos.y
+			&& xA.m_xLocalPos.z == xB.m_xLocalPos.z
+			&& xA.m_xLocalRot.w == xB.m_xLocalRot.w
+			&& xA.m_xLocalRot.x == xB.m_xLocalRot.x
+			&& xA.m_xLocalRot.y == xB.m_xLocalRot.y
+			&& xA.m_xLocalRot.z == xB.m_xLocalRot.z
+			&& xA.m_xLocalScale.x == xB.m_xLocalScale.x
+			&& xA.m_xLocalScale.y == xB.m_xLocalScale.y
+			&& xA.m_xLocalScale.z == xB.m_xLocalScale.z;
+	}
+
+	bool BoundsFiniteAndSane(const ZM_GenMesh& xMesh)
+	{
+		if (xMesh.GetNumVerts() == 0u) { return false; }
+		const Zenith_Maths::Vector3 xMin = ZM_GenMeshBoundsMin(xMesh);
+		const Zenith_Maths::Vector3 xMax = ZM_GenMeshBoundsMax(xMesh);
+		if (!IsFiniteVec3(xMin) || !IsFiniteVec3(xMax)) { return false; }
+		if (!(xMin.x < xMax.x) || !(xMin.y < xMax.y) || !(xMin.z < xMax.z)) { return false; }
+		return fabsf(xMin.x) <= fHUMAN_WORLD_BOX_LIMIT
+			&& fabsf(xMin.y) <= fHUMAN_WORLD_BOX_LIMIT
+			&& fabsf(xMin.z) <= fHUMAN_WORLD_BOX_LIMIT
+			&& fabsf(xMax.x) <= fHUMAN_WORLD_BOX_LIMIT
+			&& fabsf(xMax.y) <= fHUMAN_WORLD_BOX_LIMIT
+			&& fabsf(xMax.z) <= fHUMAN_WORLD_BOX_LIMIT;
 	}
 
 	// Field-wise recipe equality (no memcmp -- avoids padding sensitivity). Compares
@@ -337,4 +395,337 @@ ZENITH_TEST(ZM_Gen, HumanGen_BuildDeterminism)
 	const bool bMeshDiffers = !ZM_HumanMeshEqual(xA.m_xMesh, xOther.m_xMesh);
 	ZENITH_ASSERT_TRUE(bHashDiffers || bMeshDiffers,
 		"PlayerM and Bram differ in build+skin -- their content hash or mesh must differ");
+}
+
+// ############################################################################
+// 7. SC2 mesh structural invariants over the complete human roster
+// ############################################################################
+
+// Every per-model loft carries one complete attribute/skin tuple per vertex,
+// valid outward triangles, finite sane bounds, unit orthogonal normal/tangent
+// frames, and a normalised <=2-bone bind inside the frozen 16-bone cap. Re-running
+// the mandated finalisers in their fixed order must be a byte-identical no-op.
+ZENITH_TEST(ZM_Gen, HumanGen_StructuralInvariants)
+{
+	u_int uTested = 0u;
+	for (u_int id = 0; id < (u_int)ZM_HUMAN_COUNT; ++id)
+	{
+		const ZM_HumanRecipe xRecipe = ZM_ResolveHumanRecipe((ZM_HUMAN_ID)id);
+		ZM_GenMesh xMesh;
+		ZM_BuildHumanMesh(xRecipe, xMesh);
+
+		const u_int uNumVerts = xMesh.GetNumVerts();
+		const u_int uNumIndices = xMesh.m_xIndices.GetSize();
+		const bool bHasVerts = uNumVerts > 0u;
+		const bool bIndexCountAligned = (uNumIndices % 3u) == 0u;
+		const bool bHasTriangles = uNumIndices >= 3u;
+		const bool bNormalsComplete = xMesh.m_xNormals.GetSize() == uNumVerts;
+		const bool bUVsComplete = xMesh.m_xUVs.GetSize() == uNumVerts;
+		const bool bTangentsComplete = xMesh.m_xTangents.GetSize() == uNumVerts;
+		const bool bColorsComplete = xMesh.m_xColors.GetSize() == uNumVerts;
+		const bool bBoneIndicesComplete = xMesh.m_xBoneIndices.GetSize() == uNumVerts;
+		const bool bBoneWeightsComplete = xMesh.m_xBoneWeights.GetSize() == uNumVerts;
+		const bool bCompleteVertexBuffers = bNormalsComplete
+			&& bUVsComplete
+			&& bTangentsComplete
+			&& bColorsComplete
+			&& bBoneIndicesComplete
+			&& bBoneWeightsComplete;
+
+		bool bIndicesInRange = true;
+		u_int uFirstBadIndex = 0xFFFFFFFFu;
+		for (u_int i = 0u; i < uNumIndices; ++i)
+		{
+			if (xMesh.m_xIndices.Get(i) >= uNumVerts)
+			{
+				bIndicesInRange = false;
+				if (uFirstBadIndex == 0xFFFFFFFFu) { uFirstBadIndex = i; }
+			}
+		}
+
+		// ZM_ValidateGenMesh and ZM_GenGenerateTangents dereference triangle
+		// indices. Gate both behind every buffer/range prerequisite so a broken
+		// builder reports assertions instead of turning the test into an OOB read.
+		const bool bSafeForMeshAlgorithms = bHasVerts
+			&& bHasTriangles
+			&& bIndexCountAligned
+			&& bIndicesInRange
+			&& bCompleteVertexBuffers;
+
+		ZENITH_ASSERT_TRUE(bHasVerts, "human %u mesh has no vertices", id);
+		ZENITH_ASSERT_TRUE(bHasTriangles, "human %u mesh has no complete triangles", id);
+		ZENITH_ASSERT_TRUE(bIndexCountAligned,
+			"human %u index count is not triangle-aligned", id);
+		ZENITH_ASSERT_TRUE(bIndicesInRange,
+			"human %u index %u references a missing vertex", id, uFirstBadIndex);
+		ZENITH_ASSERT_TRUE(bNormalsComplete,
+			"human %u must carry one normal per vertex", id);
+		ZENITH_ASSERT_TRUE(bUVsComplete,
+			"human %u must carry one UV per vertex", id);
+		ZENITH_ASSERT_TRUE(bTangentsComplete,
+			"human %u must carry one generated tangent per vertex", id);
+		ZENITH_ASSERT_TRUE(bColorsComplete,
+			"human %u must carry one colour per vertex", id);
+		ZENITH_ASSERT_TRUE(bBoneIndicesComplete,
+			"human %u must carry one bone-index tuple per vertex", id);
+		ZENITH_ASSERT_TRUE(bBoneWeightsComplete,
+			"human %u must carry one bone-weight tuple per vertex", id);
+		ZENITH_ASSERT_EQ(xMesh.GetNumBones(), uZM_HUMAN_BONE_COUNT,
+			"human %u must carry exactly the shared 16 bones", id);
+
+		if (bHasVerts)
+		{
+			ZENITH_ASSERT_TRUE(BoundsFiniteAndSane(xMesh),
+				"human %u bounds are non-finite, degenerate, or outside the sane world box", id);
+		}
+
+		if (bSafeForMeshAlgorithms)
+		{
+			const ZM_GenMeshValidation xVal = ZM_ValidateGenMesh(xMesh, uZM_HUMAN_BONE_COUNT);
+			ZENITH_ASSERT_TRUE(xVal.m_bWindingOutward,
+				"human %u has inward winding (bad tri %u)", id, xVal.m_uFirstBadTriangle);
+			ZENITH_ASSERT_TRUE(xVal.m_bBoundsNonDegen, "human %u has degenerate bounds", id);
+			ZENITH_ASSERT_TRUE(xVal.m_bWeightsSumToOne,
+				"human %u has unnormalised skin weights (bad vert %u)", id, xVal.m_uFirstBadVertex);
+			ZENITH_ASSERT_TRUE(xVal.m_bWeightsAtMostTwo,
+				"human %u has a vertex with more than two influences", id);
+			ZENITH_ASSERT_TRUE(xVal.m_bBonesWithinCap,
+				"human %u exceeds the shared 16-bone cap", id);
+		}
+		if (bHasVerts && bCompleteVertexBuffers)
+		{
+			bool bHasBlendedVertex = false;
+			for (u_int v = 0u; v < uNumVerts; ++v)
+			{
+				const Zenith_Maths::Vector3& xPos = xMesh.m_xPositions.Get(v);
+				const Zenith_Maths::Vector3& xNormal = xMesh.m_xNormals.Get(v);
+				const Zenith_Maths::Vector2& xUV = xMesh.m_xUVs.Get(v);
+				const Zenith_Maths::Vector3& xTangent = xMesh.m_xTangents.Get(v);
+				const Zenith_Maths::Vector4& xColour = xMesh.m_xColors.Get(v);
+				const glm::uvec4& xIndices = xMesh.m_xBoneIndices.Get(v);
+				const glm::vec4& xWeights = xMesh.m_xBoneWeights.Get(v);
+
+				ZENITH_ASSERT_TRUE(IsFiniteVec3(xPos), "human %u vertex %u position is non-finite", id, v);
+				ZENITH_ASSERT_TRUE(IsFiniteVec3(xNormal), "human %u vertex %u normal is non-finite", id, v);
+				ZENITH_ASSERT_TRUE(IsFiniteVec2(xUV), "human %u vertex %u UV is non-finite", id, v);
+				ZENITH_ASSERT_TRUE(IsFiniteVec3(xTangent), "human %u vertex %u tangent is non-finite", id, v);
+				ZENITH_ASSERT_TRUE(IsFiniteVec4(xColour), "human %u vertex %u colour is non-finite", id, v);
+				ZENITH_ASSERT_TRUE(IsFiniteVec4(xWeights), "human %u vertex %u weights are non-finite", id, v);
+
+				ZENITH_ASSERT_LE(fabsf(glm::length(xNormal) - 1.0f), fHUMAN_UNIT_TOL,
+					"human %u vertex %u normal is not unit length", id, v);
+				ZENITH_ASSERT_LE(fabsf(glm::length(xTangent) - 1.0f), fHUMAN_UNIT_TOL,
+					"human %u vertex %u tangent is not unit length", id, v);
+				ZENITH_ASSERT_LE(fabsf(glm::dot(xNormal, xTangent)), fHUMAN_UNIT_TOL,
+					"human %u vertex %u tangent is not orthogonal to its normal", id, v);
+
+				u_int uActiveInfluences = 0u;
+				float fWeightSum = 0.0f;
+				for (u_int c = 0u; c < 4u; ++c)
+				{
+					ZENITH_ASSERT_LT(xIndices[c], uZM_HUMAN_BONE_COUNT,
+						"human %u vertex %u influence %u references bone %u", id, v, c, xIndices[c]);
+					ZENITH_ASSERT_TRUE(xWeights[c] >= 0.0f && xWeights[c] <= 1.0f,
+						"human %u vertex %u influence %u weight is outside [0,1]", id, v, c);
+					fWeightSum += xWeights[c];
+					if (fabsf(xWeights[c]) > fHUMAN_INFLUENCE_EPS) { ++uActiveInfluences; }
+				}
+				ZENITH_ASSERT_LE(fabsf(fWeightSum - 1.0f), fHUMAN_WEIGHT_TOL,
+					"human %u vertex %u weights do not sum to one", id, v);
+				ZENITH_ASSERT_TRUE(uActiveInfluences >= 1u && uActiveInfluences <= 2u,
+					"human %u vertex %u must have one or two active influences", id, v);
+				if (uActiveInfluences == 2u) { bHasBlendedVertex = true; }
+			}
+			ZENITH_ASSERT_TRUE(bHasBlendedVertex,
+				"human %u mesh has no two-bone blend at any articulation", id);
+		}
+
+		if (bSafeForMeshAlgorithms)
+		{
+			ZM_GenMesh xRefinalised = xMesh;
+			ZM_GenGenerateTangents(xRefinalised);
+			ZM_GenNormalizeSkinWeights(xRefinalised);
+			ZENITH_ASSERT_TRUE(ZM_HumanMeshEqual(xMesh, xRefinalised),
+				"human %u mesh was not already finalised tangent-then-skin", id);
+		}
+
+		++uTested;
+	}
+	ZENITH_ASSERT_EQ(uTested, (u_int)ZM_HUMAN_COUNT,
+		"structural gate did not exercise the complete human roster");
+}
+
+// ############################################################################
+// 8. Every per-model skeleton is the canonical shared skeleton
+// ############################################################################
+
+ZENITH_TEST(ZM_Gen, HumanGen_PerModelBonesMatchShared)
+{
+	ZM_GenMesh xShared;
+	ZM_AppendSharedHumanBones(xShared);
+	ZENITH_ASSERT_EQ(xShared.GetNumBones(), uZM_HUMAN_BONE_COUNT,
+		"canonical shared skeleton must contain exactly 16 bones");
+
+	u_int uTested = 0u;
+	for (u_int id = 0u; id < (u_int)ZM_HUMAN_COUNT; ++id)
+	{
+		ZM_GenMesh xMesh;
+		ZM_BuildHumanMesh(ZM_ResolveHumanRecipe((ZM_HUMAN_ID)id), xMesh);
+		ZENITH_ASSERT_EQ(xMesh.GetNumBones(), uZM_HUMAN_BONE_COUNT,
+			"human %u bone count differs from the shared skeleton", id);
+
+		if (xMesh.GetNumBones() == uZM_HUMAN_BONE_COUNT
+			&& xShared.GetNumBones() == uZM_HUMAN_BONE_COUNT)
+		{
+			for (u_int b = 0u; b < uZM_HUMAN_BONE_COUNT; ++b)
+			{
+				const ZM_GenBone& xBone = xMesh.m_xBones.Get(b);
+				const ZM_GenBone& xReference = xShared.m_xBones.Get(b);
+				ZENITH_ASSERT_STREQ(xBone.m_szName, g_aszSharedBones[b],
+					"human %u bone %u name/order differs from the frozen rig", id, b);
+				ZENITH_ASSERT_STREQ(xBone.m_szName, xReference.m_szName,
+					"human %u bone %u name differs from the canonical emit", id, b);
+				ZENITH_ASSERT_EQ(ZM_GenMeshFindBone(xMesh, g_aszSharedBones[b]), (int)b,
+					"human %u shared bone '%s' does not resolve to index %u", id, g_aszSharedBones[b], b);
+				ZENITH_ASSERT_TRUE(BoneFieldsEqual(xBone, xReference),
+					"human %u bone %u bind-local data differs from the shared skeleton", id, b);
+			}
+		}
+
+		ZENITH_ASSERT_EQ(xMesh.m_xBoneIndices.GetSize(), xMesh.GetNumVerts(),
+			"human %u must carry one bone-index tuple per vertex", id);
+		if (xMesh.m_xBoneIndices.GetSize() == xMesh.GetNumVerts())
+		{
+			for (u_int v = 0u; v < xMesh.m_xBoneIndices.GetSize(); ++v)
+			{
+				const glm::uvec4& xIndices = xMesh.m_xBoneIndices.Get(v);
+				for (u_int c = 0u; c < 4u; ++c)
+				{
+					ZENITH_ASSERT_LT(xIndices[c], uZM_HUMAN_BONE_COUNT,
+						"human %u vertex %u influence %u references bone %u", id, v, c, xIndices[c]);
+				}
+			}
+		}
+
+		++uTested;
+	}
+	ZENITH_ASSERT_EQ(uTested, (u_int)ZM_HUMAN_COUNT,
+		"shared-skeleton gate did not exercise the complete human roster");
+}
+
+// ############################################################################
+// 9. Same-seed determinism over the complete human roster
+// ############################################################################
+
+ZENITH_TEST(ZM_Gen, HumanGen_SameSeedDeterminism)
+{
+	u_int uTested = 0u;
+	for (u_int id = 0u; id < (u_int)ZM_HUMAN_COUNT; ++id)
+	{
+		const ZM_HUMAN_ID eId = (ZM_HUMAN_ID)id;
+		ZM_Human xA;
+		ZM_Human xB;
+		ZM_BuildHuman(eId, xA);
+		ZM_BuildHuman(eId, xB);
+
+		ZENITH_ASSERT_EQ((u_int)xA.m_eId, id, "first human %u build carries the wrong id", id);
+		ZENITH_ASSERT_EQ((u_int)xB.m_eId, id, "second human %u build carries the wrong id", id);
+		ZENITH_ASSERT_GT(xA.m_xMesh.GetNumVerts(), 0u, "human %u deterministic mesh is empty", id);
+		ZENITH_ASSERT_GT(xA.m_xMesh.m_xTangents.GetSize(), 0u,
+			"human %u deterministic mesh has no finalised tangents", id);
+		ZENITH_ASSERT_FALSE(xA.m_xAlbedo.IsEmpty(), "human %u deterministic albedo is empty", id);
+		ZENITH_ASSERT_TRUE(ZM_HumanMeshEqual(xA.m_xMesh, xB.m_xMesh),
+			"human %u mesh differs across same-seed rebuilds", id);
+		ZENITH_ASSERT_TRUE(ZM_HumanBuildEqual(xA, xB),
+			"human %u bundle differs across same-seed rebuilds", id);
+		ZENITH_ASSERT_EQ(ZM_HumanContentHash(xA), ZM_HumanContentHash(xB),
+			"human %u content hash differs across same-seed rebuilds", id);
+
+		++uTested;
+	}
+	ZENITH_ASSERT_EQ(uTested, (u_int)ZM_HUMAN_COUNT,
+		"determinism gate did not exercise the complete human roster");
+}
+
+// ############################################################################
+// 10. Mesh-domain sensitivity
+// ############################################################################
+
+// Clone one resolved recipe and perturb exactly one domain seed at a time. Every
+// non-MESH perturbation (including SKELETON) must be invisible to the mesh, while
+// a MESH-only perturbation must change it. PlayerM and Villager additionally share
+// build/height, skin, hair style, and hair colour: their independently-derived
+// MESH streams must yield distinct geometry without freezing an artistic golden.
+ZENITH_TEST(ZM_Gen, HumanGen_Sensitivity)
+{
+	const ZM_HumanRecipe xPlayerRecipe = ZM_ResolveHumanRecipe(ZM_HUMAN_PLAYER_M);
+	const ZM_HumanRecipe xVillagerRecipe = ZM_ResolveHumanRecipe(ZM_HUMAN_TOWN_VILLAGER);
+	constexpr u_int64 ulDOMAIN_SEED_PERTURBATION = 0xD1B54A32D192ED03ULL;
+
+	ZM_GenMesh xBaselineMesh;
+	ZM_BuildHumanMesh(xPlayerRecipe, xBaselineMesh);
+
+	// Domain isolation: changing any one non-MESH stream must not affect mesh
+	// bytes. This explicitly covers SKELETON -- the human rig is shared/fixed.
+	u_int uNonMeshDomainsTested = 0u;
+	bool bSkeletonDomainTested = false;
+	for (u_int d = 0u; d < (u_int)ZM_GEN_DOMAIN_COUNT; ++d)
+	{
+		const ZM_GEN_DOMAIN eDomain = (ZM_GEN_DOMAIN)d;
+		if (eDomain == ZM_GEN_DOMAIN_MESH) { continue; }
+
+		ZM_HumanRecipe xDomainMutated = xPlayerRecipe;
+		xDomainMutated.m_aulDomainSeed[eDomain] ^= ulDOMAIN_SEED_PERTURBATION;
+		ZENITH_ASSERT_NE(xDomainMutated.m_aulDomainSeed[eDomain],
+			xPlayerRecipe.m_aulDomainSeed[eDomain],
+			"domain %u seed perturbation must change that seed", d);
+
+		ZM_GenMesh xDomainMutatedMesh;
+		ZM_BuildHumanMesh(xDomainMutated, xDomainMutatedMesh);
+		ZENITH_ASSERT_TRUE(ZM_HumanMeshEqual(xBaselineMesh, xDomainMutatedMesh),
+			"human mesh consumed forbidden non-MESH domain %u", d);
+		if (eDomain == ZM_GEN_DOMAIN_SKELETON) { bSkeletonDomainTested = true; }
+		++uNonMeshDomainsTested;
+	}
+	ZENITH_ASSERT_EQ(uNonMeshDomainsTested, (u_int)ZM_GEN_DOMAIN_COUNT - 1u,
+		"domain-isolation gate did not exercise every non-MESH stream");
+	ZENITH_ASSERT_TRUE(bSkeletonDomainTested,
+		"domain-isolation gate must explicitly exercise the forbidden SKELETON stream");
+
+	// MESH sensitivity: changing only the MESH seed must alter the authored mesh.
+	ZM_HumanRecipe xMeshMutatedRecipe = xPlayerRecipe;
+	xMeshMutatedRecipe.m_aulDomainSeed[ZM_GEN_DOMAIN_MESH] ^= ulDOMAIN_SEED_PERTURBATION;
+	ZENITH_ASSERT_NE(xMeshMutatedRecipe.m_aulDomainSeed[ZM_GEN_DOMAIN_MESH],
+		xPlayerRecipe.m_aulDomainSeed[ZM_GEN_DOMAIN_MESH],
+		"MESH-domain perturbation must change that seed");
+	ZM_GenMesh xMeshMutated;
+	ZM_BuildHumanMesh(xMeshMutatedRecipe, xMeshMutated);
+	ZENITH_ASSERT_FALSE(ZM_HumanMeshEqual(xBaselineMesh, xMeshMutated),
+		"changing only the MESH-domain seed must change human geometry");
+
+	ZENITH_ASSERT_EQ((u_int)xPlayerRecipe.m_eBuild, (u_int)xVillagerRecipe.m_eBuild,
+		"sensitivity control pair must share a build");
+	ZENITH_ASSERT_EQ(xPlayerRecipe.m_fHeightScale, xVillagerRecipe.m_fHeightScale,
+		"sensitivity control pair must share a height scale");
+	ZENITH_ASSERT_EQ((u_int)xPlayerRecipe.m_eSkinTone, (u_int)xVillagerRecipe.m_eSkinTone,
+		"sensitivity control pair must share a skin tone");
+	ZENITH_ASSERT_EQ(xPlayerRecipe.m_uHairStyle, xVillagerRecipe.m_uHairStyle,
+		"sensitivity control pair must share a hair style");
+	ZENITH_ASSERT_EQ((u_int)xPlayerRecipe.m_eHairColour, (u_int)xVillagerRecipe.m_eHairColour,
+		"sensitivity control pair must share a hair colour");
+	ZENITH_ASSERT_NE(xPlayerRecipe.m_aulDomainSeed[ZM_GEN_DOMAIN_MESH],
+		xVillagerRecipe.m_aulDomainSeed[ZM_GEN_DOMAIN_MESH],
+		"distinct humans must carry distinct mesh-domain seeds");
+
+	ZM_Human xPlayer;
+	ZM_Human xVillager;
+	ZM_BuildHuman(ZM_HUMAN_PLAYER_M, xPlayer);
+	ZM_BuildHuman(ZM_HUMAN_TOWN_VILLAGER, xVillager);
+
+	ZENITH_ASSERT_FALSE(ZM_HumanMeshEqual(xPlayer.m_xMesh, xVillager.m_xMesh),
+		"same-build humans with distinct mesh seeds collapsed to one canned geometry");
+	ZENITH_ASSERT_FALSE(ZM_HumanBuildEqual(xPlayer, xVillager),
+		"distinct mesh-domain seeds collapsed to one identical human bundle");
+	ZENITH_ASSERT_NE(ZM_HumanContentHash(xPlayer), ZM_HumanContentHash(xVillager),
+		"distinct mesh-domain seeds collapsed to one identical content hash");
 }

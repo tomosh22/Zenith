@@ -3,10 +3,11 @@
 // ============================================================================
 // ZM_HumanGen -- the S4 human generator driver. See the header for the
 // architecture + determinism contract. This TU owns: human -> recipe resolution,
-// the per-domain seed derivation, the shared 16-bone skeleton emit, the minimal
-// SC1 body loft, the placeholder albedo, the full-bundle driver, the byte-
-// identity + hash + validation machinery, the golden clip metadata, the two
-// asset-path schemes, and (tools only, SC5) the disk bake stubs.
+// the per-domain seed derivation, the shared 16-bone skeleton emit, the
+// placeholder albedo, the full-bundle driver, the byte-identity + hash +
+// validation machinery, the golden clip metadata, the two asset-path schemes,
+// and (tools only, SC5) the disk bake stubs. The SC2 mesh loft lives in
+// ZM_HumanMesh.cpp.
 // ============================================================================
 
 #include "Zenithmon/Source/Gen/ZM_HumanGen.h"
@@ -63,28 +64,16 @@ namespace
 	};
 
 	// Per-build height factor -- applied about the grounded feet (y=0), so scaling
-	// height never lifts the feet off the floor. Modest spread (0.92..1.15).
+	// height never lifts the feet off the floor. The skeleton remains fixed, hence
+	// the intentionally narrow 0.97..1.03 spread.
 	float ZM_HumanBuildHeightScale(ZM_HUMAN_BUILD eBuild)
 	{
 		switch (eBuild)
 		{
-		case ZM_HUMAN_BUILD_SLIGHT:  return 0.95f;
+		case ZM_HUMAN_BUILD_SLIGHT:  return 0.98f;
 		case ZM_HUMAN_BUILD_AVERAGE: return 1.00f;
-		case ZM_HUMAN_BUILD_STOCKY:  return 0.92f;
-		case ZM_HUMAN_BUILD_TALL:    return 1.15f;
-		default:                     return 1.00f;
-		}
-	}
-
-	// Per-build width factor -- scales the loft ring extents + limb offsets.
-	float ZM_HumanBuildWidthScale(ZM_HUMAN_BUILD eBuild)
-	{
-		switch (eBuild)
-		{
-		case ZM_HUMAN_BUILD_SLIGHT:  return 0.85f;
-		case ZM_HUMAN_BUILD_AVERAGE: return 1.00f;
-		case ZM_HUMAN_BUILD_STOCKY:  return 1.25f;
-		case ZM_HUMAN_BUILD_TALL:    return 1.00f;
+		case ZM_HUMAN_BUILD_STOCKY:  return 0.97f;
+		case ZM_HUMAN_BUILD_TALL:    return 1.03f;
 		default:                     return 1.00f;
 		}
 	}
@@ -102,45 +91,6 @@ namespace
 		case ZM_HUMAN_SKIN_DARK:  return Zenith_Maths::Vector3(0.34f, 0.24f, 0.18f);
 		default:                  return Zenith_Maths::Vector3(0.80f, 0.66f, 0.55f);
 		}
-	}
-
-	// Sweep one authored ring table into a closed (both ends capped) tube. Segment
-	// count + light subdivision are fixed; caps are proven-outward by the shipped
-	// loft (ZM_Gen/Loft_WindingOutward), which uses this exact AppendPart+cap path.
-	void ZM_AppendHumanTube(ZM_GenMesh& xMesh, const ZM_LoftRing* pxRings, u_int uNumRings)
-	{
-		ZM_MeshLoft::Part xPart;
-		xPart.m_pxRings   = pxRings;
-		xPart.m_uNumRings = uNumRings;
-		xPart.m_uSegs     = 8u;
-		xPart.m_bCapStart = true;
-		xPart.m_bCapEnd   = true;
-		xPart.m_uSubdiv   = 2u;
-		ZM_MeshLoft::AppendPart(xMesh, xPart);
-	}
-
-	// A 3-ring descending limb (top -> mid -> end), 2-bone blended across the mid
-	// joint. All coordinates are pre-scaled by the caller (width/height factors).
-	void ZM_AppendHumanLimb(ZM_GenMesh& xMesh, float fX, float fYTop, float fYBot,
-		float fRTop, float fRBot, u_int uBoneUp, u_int uBoneLo, u_int uBoneEnd)
-	{
-		const float fYMid = 0.5f * (fYTop + fYBot);
-		const float fRMid = 0.5f * (fRTop + fRBot);
-
-		ZM_LoftRing axRings[3];
-		axRings[0] = ZM_LoftRing{};
-		axRings[0].m_fCx = fX; axRings[0].m_fY = fYTop; axRings[0].m_fRx = fRTop; axRings[0].m_fRz = fRTop;
-		axRings[0].m_uBoneA = uBoneUp;  axRings[0].m_uBoneB = uBoneUp;  axRings[0].m_fBlendB = 0.0f;
-
-		axRings[1] = ZM_LoftRing{};
-		axRings[1].m_fCx = fX; axRings[1].m_fY = fYMid; axRings[1].m_fRx = fRMid; axRings[1].m_fRz = fRMid;
-		axRings[1].m_uBoneA = uBoneUp;  axRings[1].m_uBoneB = uBoneLo;  axRings[1].m_fBlendB = 0.5f;
-
-		axRings[2] = ZM_LoftRing{};
-		axRings[2].m_fCx = fX; axRings[2].m_fY = fYBot; axRings[2].m_fRx = fRBot; axRings[2].m_fRz = fRBot;
-		axRings[2].m_uBoneA = uBoneEnd; axRings[2].m_uBoneB = uBoneEnd; axRings[2].m_fBlendB = 0.0f;
-
-		ZM_AppendHumanTube(xMesh, axRings, 3u);
 	}
 
 	// The SC1 placeholder body texture: a flat skin-tone fill.
@@ -298,50 +248,6 @@ void ZM_AppendSharedHumanBones(ZM_GenMesh& xMesh)
 	ZM_GenAddBone(xMesh, "RightUpperLeg", HB_ROOT,  Zenith_Maths::Vector3( 0.15f,  0.0f, 0.0f), xIdentity, xUnitScale);   // 13
 	ZM_GenAddBone(xMesh, "RightLowerLeg", HB_RULEG, Zenith_Maths::Vector3( 0.00f, -0.5f, 0.0f), xIdentity, xUnitScale);   // 14
 	ZM_GenAddBone(xMesh, "RightFoot",     HB_RLLEG, Zenith_Maths::Vector3( 0.00f, -0.5f, 0.0f), xIdentity, xUnitScale);   // 15
-}
-
-// ============================================================================
-// Mesh builder (SC1 minimal humanoid: torso + head + 2 arms + 2 legs).
-// ============================================================================
-void ZM_BuildHumanMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh)
-{
-	xMesh.Reset();
-	ZM_AppendSharedHumanBones(xMesh);
-
-	const float fW = ZM_HumanBuildWidthScale(xRecipe.m_eBuild);
-	const float fH = xRecipe.m_fHeightScale;
-
-	// Torso: pelvis -> upper chest, blending Spine -> Neck (ascending Y).
-	{
-		ZM_LoftRing axRings[4];
-		axRings[0] = ZM_LoftRing{}; axRings[0].m_fY = 1.00f * fH; axRings[0].m_fRx = 0.24f * fW; axRings[0].m_fRz = 0.15f * fW; axRings[0].m_uBoneA = HB_SPINE; axRings[0].m_uBoneB = HB_SPINE; axRings[0].m_fBlendB = 0.0f;
-		axRings[1] = ZM_LoftRing{}; axRings[1].m_fY = 1.50f * fH; axRings[1].m_fRx = 0.26f * fW; axRings[1].m_fRz = 0.16f * fW; axRings[1].m_uBoneA = HB_SPINE; axRings[1].m_uBoneB = HB_SPINE; axRings[1].m_fBlendB = 0.0f;
-		axRings[2] = ZM_LoftRing{}; axRings[2].m_fY = 1.90f * fH; axRings[2].m_fRx = 0.22f * fW; axRings[2].m_fRz = 0.14f * fW; axRings[2].m_uBoneA = HB_SPINE; axRings[2].m_uBoneB = HB_NECK;  axRings[2].m_fBlendB = 0.40f;
-		axRings[3] = ZM_LoftRing{}; axRings[3].m_fY = 2.20f * fH; axRings[3].m_fRx = 0.13f * fW; axRings[3].m_fRz = 0.11f * fW; axRings[3].m_uBoneA = HB_NECK;  axRings[3].m_uBoneB = HB_NECK;  axRings[3].m_fBlendB = 0.0f;
-		ZM_AppendHumanTube(xMesh, axRings, 4u);
-	}
-
-	// Head: a small closed ovoid around the Head bone (ascending Y).
-	{
-		ZM_LoftRing axRings[3];
-		axRings[0] = ZM_LoftRing{}; axRings[0].m_fY = 2.30f * fH; axRings[0].m_fRx = 0.09f * fW; axRings[0].m_fRz = 0.09f * fW; axRings[0].m_uBoneA = HB_HEAD; axRings[0].m_uBoneB = HB_HEAD; axRings[0].m_fBlendB = 0.0f;
-		axRings[1] = ZM_LoftRing{}; axRings[1].m_fY = 2.42f * fH; axRings[1].m_fRx = 0.13f * fW; axRings[1].m_fRz = 0.13f * fW; axRings[1].m_uBoneA = HB_HEAD; axRings[1].m_uBoneB = HB_HEAD; axRings[1].m_fBlendB = 0.0f;
-		axRings[2] = ZM_LoftRing{}; axRings[2].m_fY = 2.55f * fH; axRings[2].m_fRx = 0.09f * fW; axRings[2].m_fRz = 0.09f * fW; axRings[2].m_uBoneA = HB_HEAD; axRings[2].m_uBoneB = HB_HEAD; axRings[2].m_fBlendB = 0.0f;
-		ZM_AppendHumanTube(xMesh, axRings, 3u);
-	}
-
-	// Arms (descending from the shoulder to the hand).
-	ZM_AppendHumanLimb(xMesh, -0.30f * fW, 2.10f * fH, 1.40f * fH, 0.07f * fW, 0.05f * fW, HB_LUARM, HB_LLARM, HB_LHAND);
-	ZM_AppendHumanLimb(xMesh,  0.30f * fW, 2.10f * fH, 1.40f * fH, 0.07f * fW, 0.05f * fW, HB_RUARM, HB_RLARM, HB_RHAND);
-
-	// Legs (descending from the hip to the grounded foot).
-	ZM_AppendHumanLimb(xMesh, -0.15f * fW, 1.00f * fH, 0.05f * fH, 0.10f * fW, 0.08f * fW, HB_LULEG, HB_LLLEG, HB_LFOOT);
-	ZM_AppendHumanLimb(xMesh,  0.15f * fW, 1.00f * fH, 0.05f * fH, 0.10f * fW, 0.08f * fW, HB_RULEG, HB_RLLEG, HB_RFOOT);
-
-	// THE finalise order (EmitRing already wrote analytic loft normals, so normals
-	// are NOT regenerated): tangents from UVs, then renormalise the <=2-bone skin.
-	ZM_GenGenerateTangents(xMesh);
-	ZM_GenNormalizeSkinWeights(xMesh);
 }
 
 void ZM_BuildHuman(ZM_HUMAN_ID eId, ZM_Human& xOut)
