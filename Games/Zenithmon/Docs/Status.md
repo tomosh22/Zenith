@@ -1,17 +1,17 @@
 # Zenithmon Status
 
 **Last updated:** 2026-07-15
-**Stage:** S4 (Asset generators) -- in progress. **`ZM_HumanGen` SC1-SC2 of 5 LANDED (ZM-D-074/075).** The 34-row roster, shared fixed 16-bone skeleton, frozen public seam, and real six-part per-model humanoid loft are complete. **`ZM_CreatureGen` + `ZM_CreatureAnimGen` COMPLETE.** S1/S2/S3 COMPLETE.
-**Build:** GREEN -- regeneration/check + target-only Vulkan_vs2022_Debug_Win64_True build. (SC2 adds one new pure all-config TU; the full 5-config matrix re-runs at the SC5 gate that adds the tools disk bake + edits `ZM_GenCommon`.)
-**Tests:** boot unit gate **1876 ran / 1875 passed / 0 failed / 1 skipped** (was 1872; +4 `ZM_Gen` HumanGen units); `zenith test Zenithmon --headless` **7 passed / 0 failed**. The canonical helper reached its 300 s watchdog only after the successful tally and all 105 post-unit editor-authoring steps completed. `.github/workflows/zm-tests.yml` baseline = **1876**.
+**Stage:** S4 (Asset generators) -- in progress. **`ZM_HumanGen` SC1-SC3 of 5 LANDED (ZM-D-074/075/076).** The 34-row roster, shared fixed 16-bone skeleton, frozen public seam, six-part body loft, deterministic 256x256 skin/hair/outfit albedo, six hair silhouettes, and five attachment silhouettes are complete. **`ZM_CreatureGen` + `ZM_CreatureAnimGen` COMPLETE.** S1/S2/S3 COMPLETE.
+**Build:** GREEN -- regeneration/check + target-only Vulkan_vs2022_Debug_Win64_True build. (SC3 adds one new pure all-config internal appearance TU; the full 5-config matrix re-runs at the SC5 gate that adds the tools disk bake + edits `ZM_GenCommon`.)
+**Tests:** boot unit gate **1880 ran / 1879 passed / 0 failed / 1 skipped** (was 1876; +4 `ZM_Gen` HumanGen SC3 units); `zenith test Zenithmon --headless` **7 passed / 0 failed**. The canonical helper reached its known 300 s watchdog only after the successful unit tally. `.github/workflows/zm-tests.yml` baseline = **1880**.
 
 ## Current task
 
-**`ZM_HumanGen` SC3: texture + attachment silhouette.** Replace the SC1 placeholder albedo with deterministic per-model skin/hair/outfit synthesis and add recipe-selected attachment meshes for silhouette variety, while keeping the shared skeleton and bone mapping fixed and preserving per-domain RNG isolation. Add structural/determinism/sensitivity coverage. Still NO shared 9-clip curves (SC4) / NO disk bake (SC5). Remaining after SC3: SC4 shared 9-clip curves, SC5 tools disk bake (ticks the Roadmap box), SC6 optional windowed showcase.
+**`ZM_HumanGen` SC4: shared nine-clip curves.** Author Idle/Walk/Run/Talk/Wave/Point/Cheer/Hurt/Faint ONCE against the fixed shared 16-bone names via the linkable `ZM_CreatureAnimCommon` kit. Curves remain rotation-only, pure `f(clip)`, and byte-identical across every model. Add channel/metadata/determinism/loop/one-shot coverage. Still NO disk bake until SC5. Remaining after SC4: SC5 tools disk bake (ticks the Roadmap box), SC6 optional windowed showcase.
 
 ## Last completed
 
-**`ZM_HumanGen` SC2 (ZM-D-075):** `ZM_HumanMesh.cpp` replaced SC1's minimal placeholder with the StickFigure-derived torso/head+neck/2-arm/2-leg loft, skinned to unchanged shared bones 0..15, with modest height, BUILD attenuation, six fixed-order MESH-domain draws, and tangent-then-weight-normalization finalisation. Four units added: StructuralInvariants, PerModelBonesMatchShared, SameSeedDeterminism, and Sensitivity (including non-MESH-domain isolation). Public header, shared skeleton, version 1, texture/clip/bake outputs unchanged. Regeneration/build, unit and headless gates green; independent reviewer clean.
+**`ZM_HumanGen` SC3 (ZM-D-076):** internal-only `ZM_HumanAppearance` replaced the flat placeholder with deterministic 256x256 skin/hair/outfit synthesis and appended six recipe-selected hair silhouettes plus five attachment silhouettes before the existing finalisers. MESH retains its exact six draws; ALBEDO owns exactly six isolated draws; shared bones/public header/version 1 remain unchanged. Four units added: AppearanceAlbedoStructural, AppearanceDomainIsolation, HairStyleSilhouettes, and AttachmentSilhouettes, including direct/full suffix identity, rigid Head/Spine binding, UV ownership, and attachment-atlas coverage. Regeneration/build, 1880-unit and 7/0 headless gates green; independent reviewer functionally clean and its P3 brace/lambda-name findings corrected. Evidence: `Build/artifacts/zenithmon/s4/humangen_sc3/`.
 
 ## Notes for next agent
 

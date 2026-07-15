@@ -1,14 +1,14 @@
 #include "Zenith.h"
 
 // ============================================================================
-// ZM_HumanMesh -- the S4 SC2 per-model human mesh loft. The authored ring rows
+// ZM_HumanMesh -- the S4 SC2/SC3 per-model human mesh loft. The authored ring rows
 // are the StickFigure golden torso/head/arm/leg tables, translated +1Y so the
 // shared feet remain near world y=0. BUILD girth and the fixed MESH-domain draw
 // stream vary radii only; the separate modest recipe height scales authored Y.
 // The shared 16-bone skeleton, Cx/Cz centres and bone indices never vary.
 // ============================================================================
 
-#include "Zenithmon/Source/Gen/ZM_HumanGen.h"
+#include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"
 
 namespace
 {
@@ -27,15 +27,6 @@ namespace
 		"human mesh bone indices must match the frozen shared skeleton");
 
 	constexpr u_int uZM_HUMAN_RING_SUBDIV = 4u;
-
-	// StickFigure's golden 1024^2 atlas islands. SC3 paints these same normalized
-	// rectangles; SC2 already fixes the topology and UV contract.
-	constexpr ZM_GenUVIsland xZM_HUMAN_UV_HEAD  { 0.005f, 0.005f, 0.325f, 0.420f };
-	constexpr ZM_GenUVIsland xZM_HUMAN_UV_TORSO { 0.335f, 0.005f, 0.660f, 0.420f };
-	constexpr ZM_GenUVIsland xZM_HUMAN_UV_ARM_L { 0.670f, 0.005f, 0.825f, 0.420f };
-	constexpr ZM_GenUVIsland xZM_HUMAN_UV_ARM_R { 0.835f, 0.005f, 0.990f, 0.420f };
-	constexpr ZM_GenUVIsland xZM_HUMAN_UV_LEG_L { 0.005f, 0.430f, 0.230f, 0.900f };
-	constexpr ZM_GenUVIsland xZM_HUMAN_UV_LEG_R { 0.240f, 0.430f, 0.465f, 0.900f };
 
 	// BUILD's full girth factor. It is applied directly to the torso, then
 	// attenuated for the head and limbs so the fixed skeleton stays inside them.
@@ -203,9 +194,10 @@ namespace
 }
 
 // ============================================================================
-// Per-model mesh builder: exactly six loft parts and exactly six MESH-domain
-// proportion draws. No SKELETON-domain draws are permitted because every model
-// binds the same fixed skeleton.
+// Per-model mesh builder: exactly six body loft parts and exactly six MESH-domain
+// proportion draws, followed by categorical SC3 appearance parts. No
+// SKELETON-domain draws are permitted because every model binds the same fixed
+// skeleton.
 // ============================================================================
 void ZM_BuildHumanMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh)
 {
@@ -240,6 +232,7 @@ void ZM_BuildHumanMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh)
 		xRecipe.m_fHeightScale, fLimbBuild * fLegGirthJ);
 	ZM_AppendHumanLeg(xMesh,  1.0f, HB_RULEG, HB_RLLEG, HB_RFOOT, xZM_HUMAN_UV_LEG_R,
 		xRecipe.m_fHeightScale, fLimbBuild * fLegGirthJ);
+	ZM_AppendHumanAppearanceMesh(xRecipe, xMesh);
 
 	// EmitRing already wrote analytic loft normals; never regenerate them. This is
 	// the sole finalisation sequence and is intentionally byte-idempotent.

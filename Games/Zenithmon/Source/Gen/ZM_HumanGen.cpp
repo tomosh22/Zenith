@@ -4,13 +4,15 @@
 // ZM_HumanGen -- the S4 human generator driver. See the header for the
 // architecture + determinism contract. This TU owns: human -> recipe resolution,
 // the per-domain seed derivation, the shared 16-bone skeleton emit, the
-// placeholder albedo, the full-bundle driver, the byte-identity + hash +
+// SC3 appearance driver, the full-bundle driver, the byte-identity + hash +
 // validation machinery, the golden clip metadata, the two asset-path schemes,
 // and (tools only, SC5) the disk bake stubs. The SC2 mesh loft lives in
-// ZM_HumanMesh.cpp.
+// ZM_HumanMesh.cpp; the SC3 appearance implementation lives in
+// ZM_HumanAppearance.cpp.
 // ============================================================================
 
 #include "Zenithmon/Source/Gen/ZM_HumanGen.h"
+#include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"
 
 #include <cstdio>    // snprintf
 #include <cstring>   // memcmp, memcpy, strlen
@@ -76,29 +78,6 @@ namespace
 		case ZM_HUMAN_BUILD_TALL:    return 1.03f;
 		default:                     return 1.00f;
 		}
-	}
-
-	// Skin-tone -> flat linear colour (SC1 placeholder albedo). SC3 replaces this
-	// with the real synthesised body texture.
-	Zenith_Maths::Vector3 ZM_HumanSkinColour(ZM_HUMAN_SKIN_TONE eTone)
-	{
-		switch (eTone)
-		{
-		case ZM_HUMAN_SKIN_PALE:  return Zenith_Maths::Vector3(0.94f, 0.82f, 0.74f);
-		case ZM_HUMAN_SKIN_FAIR:  return Zenith_Maths::Vector3(0.88f, 0.72f, 0.60f);
-		case ZM_HUMAN_SKIN_TAN:   return Zenith_Maths::Vector3(0.76f, 0.58f, 0.44f);
-		case ZM_HUMAN_SKIN_BROWN: return Zenith_Maths::Vector3(0.54f, 0.38f, 0.28f);
-		case ZM_HUMAN_SKIN_DARK:  return Zenith_Maths::Vector3(0.34f, 0.24f, 0.18f);
-		default:                  return Zenith_Maths::Vector3(0.80f, 0.66f, 0.55f);
-		}
-	}
-
-	// The SC1 placeholder body texture: a flat skin-tone fill.
-	ZM_GenImage ZM_BuildHumanAlbedo(const ZM_HumanRecipe& xRecipe)
-	{
-		ZM_GenImage xImg(uZM_HUMAN_ALBEDO_RESOLUTION, uZM_HUMAN_ALBEDO_RESOLUTION);
-		ZM_SynthFillSolid(xImg, ZM_HumanSkinColour(xRecipe.m_eSkinTone));
-		return xImg;
 	}
 
 	// Per-kind per-model file basename pattern (embeds the human name).
