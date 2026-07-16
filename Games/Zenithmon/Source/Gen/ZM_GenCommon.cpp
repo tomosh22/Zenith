@@ -953,4 +953,115 @@ bool ZM_GenBakeMesh(const ZM_GenMesh& xMesh, const char* szMeshPath,
 	const bool bSkelOk = std::filesystem::exists(xSkelFsPath, xEc);
 	return bMeshOk && bSkelOk;
 }
+
+// ---- Skeleton-only bake (shared rig) --------------------------------------
+// Builds a Zenith_SkeletonAsset from m_xBones (the SAME AddBone + Compute-
+// BindPoseMatrices block ZM_GenBakeMesh uses) and Exports ONLY the .zskel. For a
+// SHARED rig that many models bind by ref (humans), baked ONCE.
+bool ZM_GenBakeSkeleton(const ZM_GenMesh& xMesh, const char* szSkeletonPath)
+{
+	if (szSkeletonPath == nullptr) { return false; }
+
+	Zenith_SkeletonAsset xSkeleton;
+	for (u_int b = 0; b < xMesh.GetNumBones(); b++)
+	{
+		const ZM_GenBone& xBone = xMesh.m_xBones.Get(b);
+		xSkeleton.AddBone(std::string(xBone.m_szName), xBone.m_iParent,
+			xBone.m_xLocalPos, xBone.m_xLocalRot, xBone.m_xLocalScale);
+	}
+	xSkeleton.ComputeBindPoseMatrices();
+
+	std::error_code xEc;
+	const std::filesystem::path xSkelFsPath(szSkeletonPath);
+	if (xSkelFsPath.has_parent_path())
+	{
+		std::filesystem::create_directories(xSkelFsPath.parent_path(), xEc);
+	}
+	xSkeleton.Export(szSkeletonPath);
+	return std::filesystem::exists(xSkelFsPath, xEc);
+}
+
+// ---- Mesh-only bake binding an EXISTING shared skeleton -------------------
+// The vertex/triangle/skin copy block below is VERBATIM the ZM_GenBakeMesh block
+// above, duplicated so ZM_GenBakeMesh stays byte-for-byte untouched (which is what
+// guarantees creatures re-bake identically). The ONLY differences vs ZM_GenBakeMesh
+// are: no szSkeletonPath param, no Zenith_SkeletonAsset build/Export, no skel-path
+// create_directories.
+bool ZM_GenBakeMeshWithSharedSkeleton(const ZM_GenMesh& xMesh, const char* szMeshPath,
+	const char* szSkeletonRef)
+{
+	if (szMeshPath == nullptr || szSkeletonRef == nullptr)
+	{
+		return false;
+	}
+
+	const u_int uNumVerts = xMesh.GetNumVerts();
+	const u_int uNumIndices = xMesh.m_xIndices.GetSize();
+
+	// --- Element-wise copy into a stack Zenith_MeshAsset (no re-derive) ---
+	Zenith_MeshAsset xAsset;
+	xAsset.Reserve(uNumVerts, uNumIndices);
+
+	const bool bHasTangents = xMesh.m_xTangents.GetSize() == uNumVerts;
+	const bool bHasColors = xMesh.m_xColors.GetSize() == uNumVerts;
+	for (u_int u = 0; u < uNumVerts; u++)
+	{
+		const Zenith_Maths::Vector3 xTangent = bHasTangents
+			? xMesh.m_xTangents.Get(u)
+			: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+		const Zenith_Maths::Vector4 xColor = bHasColors
+			? xMesh.m_xColors.Get(u)
+			: Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+		xAsset.AddVertex(xMesh.m_xPositions.Get(u), xMesh.m_xNormals.Get(u),
+			xMesh.m_xUVs.Get(u), xTangent, xColor);
+	}
+
+	// Bitangents = cross(N, T) per vertex (AddVertex does not populate them);
+	// matches Zenith_MeshAsset::GenerateTangents' output so the asset is complete.
+	for (u_int u = 0; u < uNumVerts; u++)
+	{
+		const Zenith_Maths::Vector3 xTangent = bHasTangents
+			? xMesh.m_xTangents.Get(u)
+			: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+		xAsset.m_xBitangents.PushBack(glm::cross(xMesh.m_xNormals.Get(u), xTangent));
+	}
+
+	const u_int uNumTris = xMesh.GetNumTris();
+	for (u_int u = 0; u < uNumTris; u++)
+	{
+		xAsset.AddTriangle(xMesh.m_xIndices.Get(u * 3u + 0u),
+			xMesh.m_xIndices.Get(u * 3u + 1u), xMesh.m_xIndices.Get(u * 3u + 2u));
+	}
+
+	const bool bHasSkin = xMesh.m_xBoneIndices.GetSize() == uNumVerts
+		&& xMesh.m_xBoneWeights.GetSize() == uNumVerts;
+	if (bHasSkin)
+	{
+		for (u_int u = 0; u < uNumVerts; u++)
+		{
+			xAsset.SetVertexSkinning(u, xMesh.m_xBoneIndices.Get(u), xMesh.m_xBoneWeights.Get(u));
+		}
+	}
+
+	if (uNumIndices > 0u)
+	{
+		xAsset.AddSubmesh(0u, uNumIndices, 0u);
+	}
+
+	xAsset.SetSkeletonPath(std::string(szSkeletonRef));   // SHARED ref; NO Zenith_SkeletonAsset built, NO .zskel written
+	xAsset.ComputeBounds();
+
+	// --- create_directories (tolerating an absent Assets/ tree), then Export ---
+	std::error_code xEc;
+	const std::filesystem::path xMeshFsPath(szMeshPath);
+	if (xMeshFsPath.has_parent_path())
+	{
+		std::filesystem::create_directories(xMeshFsPath.parent_path(), xEc);
+	}
+
+	xAsset.Export(szMeshPath);
+
+	// Export is void; verify the artifact landed as the IO-success signal.
+	return std::filesystem::exists(xMeshFsPath, xEc);
+}
 #endif

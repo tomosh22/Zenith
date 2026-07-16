@@ -383,26 +383,143 @@ bool ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_KIND eKind, char* szOut, u_in
 }
 
 // ============================================================================
-// Disk bake (TOOLS ONLY) -- bodies land in SC5.
+// Disk bake (TOOLS ONLY) -- the shared rig + 9 clips baked ONCE, then each model's
+// mesh/albedo/.zmtrl/.zmodel binding the shared refs. Mirrors ZM_BakeCreature; the
+// two new ZM_GenCommon bridges (ZM_GenBakeSkeleton / ZM_GenBakeMeshWithShared-
+// Skeleton) keep the shared-rig-vs-per-model split explicit.
 // ============================================================================
 #ifdef ZENITH_TOOLS
+
+// The .zmtrl / .zmodel bundle writers reach the asset layer directly (tools-only,
+// so these headers never touch the pure generation API compiled in every config).
+#include "AssetHandling/Zenith_MaterialAsset.h"   // Zenith_MaterialAsset, TextureHandle (BASE_COLOR = albedo)
+#include "AssetHandling/Zenith_ModelAsset.h"      // Zenith_ModelAsset (mesh+skeleton+material bundle)
+#include "AssetHandling/Zenith_AssetRegistry.h"   // Zenith_AssetRegistry::Create<> owning-handle + ResolvePath
+#include "Flux/MeshAnimation/Flux_AnimationClip.h"   // Flux_AnimationClip authoring + Export
+#include "Collections/Zenith_Vector.h"            // Zenith_Vector<std::string> material list
+#include <filesystem>
+#include <string>
+
+// Bake the ONE shared rig + 9 clips (game:Humans/Shared/Human.zskel +
+// Human_<Clip>.zanim x9). The skeleton bake creates the Humans/Shared/ folder
+// FIRST (Flux_AnimationClip::Export creates NO directories), so the 9 clip Exports
+// that follow land in the already-created folder.
 bool ZM_BakeHumanShared()
 {
-	// SC5: bake the shared Human.zskel + the 9 shared Human_<Clip>.zanim files ONCE.
-	return false;
+	// The shared 16-bone rig -- the SAME canonical emit every model's mesh binds.
+	ZM_GenMesh xRig;
+	ZM_AppendSharedHumanBones(xRig);
+
+	char acSkelRef[512];
+	if (!ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_SKELETON, acSkelRef, sizeof(acSkelRef)))
+	{
+		return false;
+	}
+	const std::string strSkelFs = Zenith_AssetRegistry::ResolvePath(std::string(acSkelRef));
+	bool bOk = ZM_GenBakeSkeleton(xRig, strSkelFs.c_str());   // create_directories(Humans/Shared/)
+
+	std::error_code xEc;
+	for (u_int c = 0; c < static_cast<u_int>(ZM_HUMAN_CLIP_COUNT); ++c)
+	{
+		Flux_AnimationClip xClip;
+		ZM_BuildHumanClip(static_cast<ZM_HUMAN_ANIM_CLIP>(c), xClip);
+
+		char acClipRef[512];
+		if (!ZM_HumanSharedAssetPath(
+				static_cast<ZM_HUMAN_SHARED_ASSET_KIND>(ZM_HUMAN_SHARED_ASSET_ANIM_IDLE + c),
+				acClipRef, sizeof(acClipRef)))
+		{
+			return false;
+		}
+		const std::string strClipFs = Zenith_AssetRegistry::ResolvePath(std::string(acClipRef));
+		xClip.Export(strClipFs);   // void; creates no directories (folder already made by skel bake)
+		bOk &= std::filesystem::exists(std::filesystem::path(strClipFs), xEc);
+	}
+	return bOk;
 }
 
+// Bake ONE model's mesh + placeholder albedo + .zmtrl + .zmodel. Binds the SHARED
+// .zskel + SHARED 9-clip set by ref; writes NO per-model skeleton. Mesh + albedo
+// bakes create the Humans/<Name>/ folder FIRST (SaveToFile + model Export create no
+// directories), so the material + model writes that follow land in it.
 bool ZM_BakeHuman(ZM_HUMAN_ID eId)
 {
-	(void)eId;
-	// SC5: bake this model's mesh + placeholder albedo + .zmtrl + .zmodel bundle
-	// (referencing the shared skeleton + shared clip set).
-	return false;
+	ZM_Human xHuman;
+	ZM_BuildHuman(eId, xHuman);   // mesh (16 shared bones) + placeholder albedo
+
+	char acMeshRef[512], acAlbedoRef[512], acMatRef[512], acModelRef[512], acSkelRef[512];
+	bool bOk = true;
+	bOk &= ZM_HumanAssetPath(eId, ZM_HUMAN_ASSET_MESH,     acMeshRef,   sizeof(acMeshRef));
+	bOk &= ZM_HumanAssetPath(eId, ZM_HUMAN_ASSET_ALBEDO,   acAlbedoRef, sizeof(acAlbedoRef));
+	bOk &= ZM_HumanAssetPath(eId, ZM_HUMAN_ASSET_MATERIAL, acMatRef,    sizeof(acMatRef));
+	bOk &= ZM_HumanAssetPath(eId, ZM_HUMAN_ASSET_MODEL,    acModelRef,  sizeof(acModelRef));
+	bOk &= ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_SKELETON, acSkelRef, sizeof(acSkelRef));
+	if (!bOk)
+	{
+		return false;   // a path overflowed; do not bake a partial bundle
+	}
+
+	const std::string strMeshFs   = Zenith_AssetRegistry::ResolvePath(std::string(acMeshRef));
+	const std::string strAlbedoFs = Zenith_AssetRegistry::ResolvePath(std::string(acAlbedoRef));
+	const std::string strMatFs    = Zenith_AssetRegistry::ResolvePath(std::string(acMatRef));
+	const std::string strModelFs  = Zenith_AssetRegistry::ResolvePath(std::string(acModelRef));
+
+	// Mesh (.zmesh) binding the SHARED skeleton ref; NO per-model .zskel. Albedo (BC1).
+	bOk &= ZM_GenBakeMeshWithSharedSkeleton(xHuman.m_xMesh, strMeshFs.c_str(), acSkelRef);
+	bOk &= ZM_SynthBakeAlbedoBC1(xHuman.m_xAlbedo, strAlbedoFs.c_str());
+
+	const std::string strName = ZM_GetHumanName(eId);
+
+	// Material (.zmtrl v5): baked albedo in the BASE_COLOR slot, matte dielectric.
+	// Create<>()+GetDirect() keeps the asset alive across SaveToFile (never a stack
+	// object). The albedo is passed as a "game:" ref (stored as a path, NOT loaded now).
+	{
+		Zenith_AssetHandle<Zenith_MaterialAsset> xMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMat = xMat.GetDirect();
+		pxMat->SetName(strName);
+		pxMat->SetDiffuseTexture(TextureHandle(std::string(acAlbedoRef)));
+		pxMat->SetRoughness(0.8f);
+		pxMat->SetMetallic(0.0f);
+		pxMat->SaveToFile(strMatFs);
+	}
+
+	// Model (.zmodel v2): the single-submesh human mesh + the SHARED skeleton ref +
+	// the SHARED 9-clip set (IDLE..FAINT) + exactly ONE material (single-submesh mesh).
+	{
+		Zenith_AssetHandle<Zenith_ModelAsset> xModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		Zenith_ModelAsset* pxModel = xModel.GetDirect();
+		pxModel->SetName(strName);
+		pxModel->SetSkeletonPath(std::string(acSkelRef));               // SHARED .zskel
+		for (u_int c = 0; c < static_cast<u_int>(ZM_HUMAN_CLIP_COUNT); ++c)
+		{
+			char acClipRef[512];
+			ZM_HumanSharedAssetPath(
+				static_cast<ZM_HUMAN_SHARED_ASSET_KIND>(ZM_HUMAN_SHARED_ASSET_ANIM_IDLE + c),
+				acClipRef, sizeof(acClipRef));
+			pxModel->AddAnimationPath(std::string(acClipRef));          // SHARED .zanim x9
+		}
+		Zenith_Vector<std::string> xMats;
+		xMats.PushBack(std::string(acMatRef));
+		pxModel->AddMeshByPath(std::string(acMeshRef), xMats);
+		pxModel->Export(strModelFs.c_str());
+	}
+
+	// SaveToFile always returns true and Export is void, so exists() is the real IO
+	// signal (mirrors ZM_BakeCreature): AND both new artifacts into bOk.
+	std::error_code xEc;
+	bOk &= std::filesystem::exists(std::filesystem::path(strMatFs),   xEc);
+	bOk &= std::filesystem::exists(std::filesystem::path(strModelFs), xEc);
+	return bOk;
 }
 
 bool ZM_BakeAllHumans()
 {
-	// SC5: bake the shared rig once, then every model.
-	return false;
+	bool bOk = ZM_BakeHumanShared();
+	const u_int uCount = static_cast<u_int>(ZM_HUMAN_COUNT);
+	for (u_int u = 0; u < uCount; ++u)
+	{
+		bOk &= ZM_BakeHuman(static_cast<ZM_HUMAN_ID>(u));
+	}
+	return bOk;
 }
 #endif   // ZENITH_TOOLS

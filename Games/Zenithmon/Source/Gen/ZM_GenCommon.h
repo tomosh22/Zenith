@@ -296,9 +296,23 @@ void ZM_GenNormalizeSkinWeights(ZM_GenMesh& xMesh);
 #ifdef ZENITH_TOOLS
 bool ZM_GenBakeMesh(const ZM_GenMesh& xMesh, const char* szMeshPath,
 	const char* szSkeletonPath, const char* szSkeletonRef);
+
+// SC5: skeleton-ONLY bake -- builds a Zenith_SkeletonAsset from m_xBones
+// (AddBone parent-before-child + ComputeBindPoseMatrices) and Exports ONLY the
+// .zskel. Writes NO .zmesh. For a SHARED rig referenced by many models (humans).
+bool ZM_GenBakeSkeleton(const ZM_GenMesh& xMesh, const char* szSkeletonPath);
+
+// SC5: mesh-ONLY bake that binds an EXISTING shared skeleton -- element-wise
+// copies the pure buffers into a Zenith_MeshAsset, SetSkeletonPath(szSkeletonRef)
+// pointing at a shared .zskel, ComputeBounds, Exports ONLY the .zmesh. Writes NO
+// per-model .zskel (contrast ZM_GenBakeMesh, which writes one).
+bool ZM_GenBakeMeshWithSharedSkeleton(const ZM_GenMesh& xMesh, const char* szMeshPath,
+	const char* szSkeletonRef);
 #else
 inline bool ZM_GenBakeMesh(const ZM_GenMesh&, const char*, const char*, const char*)
 {
 	return false;   // non-tools no-op keeps _False configs linking
 }
+inline bool ZM_GenBakeSkeleton(const ZM_GenMesh&, const char*) { return false; }
+inline bool ZM_GenBakeMeshWithSharedSkeleton(const ZM_GenMesh&, const char*, const char*) { return false; }
 #endif

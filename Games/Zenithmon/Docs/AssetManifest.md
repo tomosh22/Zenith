@@ -13,10 +13,13 @@ Scope.md (what is cut), TestPlan.md (determinism + generator test specs),
 BuildEnvironment.md (the tools build that runs the bake), CIPolicy.md
 (why CI never sees these files), Roadmap.md (S3/S4 stage gates).
 
-**Last updated:** 2026-07-14 (S4 -- `ZM_CreatureAnimGen` COMPLETE (SC1..SC6):
-6 rotation-only clips per archetype (Idle/Walk/Attack/Special/Hit/Faint), baked
-as `.zanim` into each species' bundle, so the per-species set is now 15 files
-(section 1.2) and `uZM_CREATUREGEN_VERSION` bumped to 3. All baked outputs
+**Last updated:** 2026-07-16 (S4 -- `ZM_HumanGen` COMPLETE (SC1..SC5): ~34
+humanoid NPC models all share ONE fixed 16-bone skeleton + ONE shared 9-clip
+set (Idle/Walk/Run/Talk/Wave/Point/Cheer/Hurt/Faint), baked ONCE for the whole
+roster (shared `Human.zskel` + 9 shared `.zanim`), plus per-model
+`.zmesh`/`_albedo.ztxtr`/`.zmtrl`/`.zmodel` (section 2); per-model variation is
+mesh-loft + texture only, with NO per-model skeleton and NO per-model clips
+(inverting the creature layout). `uZM_HUMANGEN_VERSION` = 1. All baked outputs
 remain git-ignored.).
 
 ---
@@ -146,11 +149,58 @@ byte-identical across every species of an archetype. They are part of the
 - **ONE shared skeleton** (generalized StickFigure) + **ONE shared 9-clip
   set** -- every human model binds the same .zskel and reuses the same
   .zanim files. No per-model clips.
-- Generator: ZM_HumanGen (S4) -- height / build / skin / hair / outfit
-  parameters + attachment meshes.
+- Generator: ZM_HumanGen (S4 -- SHIPPED, SC1..SC5) -- height / build / skin /
+  hair / outfit parameters + attachment meshes.
 - Roster (~35): player m/f, professor, mom, rival, 8 gym leaders, Elite 4 +
   champion, ~10 trainer classes, 6 townsfolk.
-- Per-model file breakdown (mesh/texture/material/model split): TBD at S4.
+
+**Human family file sets (SHIPPED -- 10 shared files + 4 per model).**
+`ZM_HumanGen` INVERTS the creature bundle: instead of a full per-model bundle,
+the whole roster shares ONE rig and ONE clip set, baked ONCE, and each model
+contributes only mesh + texture + material + model. `ZM_BakeHumanShared`
+(TOOLS-only) writes the shared set ONCE under `game:Humans/Shared/`; `ZM_BakeHuman`
+(TOOLS-only) writes the 4 per-model files under `game:Humans/<Name>/`. Per-model
+variation is mesh-loft + texture ONLY -- NO per-model skeleton, NO per-model
+clips (contrast creatures, which bake 15 files EACH, section 1.2).
+
+**Shared set (baked ONCE for the whole roster, under `game:Humans/Shared/`):**
+
+| File | Count | Format / notes |
+|---|---|---|
+| `Human.zskel` | 1 | the ONE shared 16-bone humanoid rig, single-rooted; every model binds it |
+| `Human_Idle.zanim` | 1 | Idle clip -- rotation-only, 24 ticks/sec, looping |
+| `Human_Walk.zanim` | 1 | Walk clip -- rotation-only, 24 ticks/sec, looping |
+| `Human_Run.zanim` | 1 | Run clip -- rotation-only, 24 ticks/sec, looping |
+| `Human_Talk.zanim` | 1 | Talk clip -- rotation-only, 24 ticks/sec, looping |
+| `Human_Wave.zanim` | 1 | Wave clip -- rotation-only, 24 ticks/sec, one-shot returns to identity |
+| `Human_Point.zanim` | 1 | Point clip -- rotation-only, 24 ticks/sec, one-shot returns to identity |
+| `Human_Cheer.zanim` | 1 | Cheer clip -- rotation-only, 24 ticks/sec, one-shot returns to identity |
+| `Human_Hurt.zanim` | 1 | Hurt clip -- rotation-only, 24 ticks/sec, one-shot returns to identity |
+| `Human_Faint.zanim` | 1 | Faint clip -- rotation-only, 24 ticks/sec, settles into and holds its final pose |
+
+That is 1 `.zskel` + 9 `.zanim` = **10 shared files**, baked once for the entire
+roster (not per model).
+
+**Per-model set (under `game:Humans/<Name>/`, 4 files each):**
+
+| File | Count per model | Format / notes |
+|---|---|---|
+| `<Name>.zmesh` | 1 | lofted skinned humanoid mesh, the 16 SHARED bones |
+| `<Name>_albedo.ztxtr` | 1 | base albedo, BC1 256x256 |
+| `<Name>.zmtrl` | 1 | matte dielectric material, .zmtrl v5 -- albedo in BASE_COLOR |
+| `<Name>.zmodel` | 1 | binds the shared `Human.zskel` by ref + self-lists all 9 shared `.zanim` in IDLE..FAINT order + one material -- NO per-model skeleton, NO per-model clips |
+
+**Family total.** 10 shared files (baked once) + (~34 models x 4 per-model
+files). Because the rig and clips are shared, the whole family is `10 + ~34 x 4`
+rather than `~34 x 15`. Every ref EMBEDDED in a baked `.zmodel` (the shared
+skeleton, the 9 shared clips, the per-model mesh/material) is a `game:` ref; only
+the write targets are filesystem paths.
+
+**Determinism / version stamp.** Every output byte is a pure function of the
+roster id (section 6.2); the generator version is `uZM_HUMANGEN_VERSION`
+(currently **1**), golden-pinned -- a change to the generation algorithm bumps it
+and forces a cold family re-bake. Locked by the `ZM_Gen` HumanGen units
+([TestPlan.md](TestPlan.md) 5.4).
 
 ---
 
@@ -365,9 +415,11 @@ This is the hardened RenderTest pattern. The three measured families lock the
 terrain-family format now (`ZMTR`, v1, count 771 for each 256-chunk town and
 count 1,155 for the 384-chunk route in a 12-byte atomic marker; section 4.3).
 The creature generator already stamps its generation version via
-`uZM_CREATUREGEN_VERSION` (currently 3; section 1.2), but the full per-family
-`ZM_BakeManifest` marker (version + file-existence gate) is itself a later S4 box;
-the human/building/prop marker formats remain TBD until those generators land.
+`uZM_CREATUREGEN_VERSION` (currently 3; section 1.2), and the human family
+likewise stamps `uZM_HUMANGEN_VERSION` (currently 1; section 2). The full
+per-family `ZM_BakeManifest` marker (version + file-existence gate) is itself a
+later S4 box; the building/prop marker formats remain TBD until those generators
+land.
 
 ### 6.2 Determinism invariant (tested)
 

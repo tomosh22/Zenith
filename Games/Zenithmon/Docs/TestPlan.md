@@ -488,9 +488,10 @@ biggest suite; all headless, all seeded (C8).
 Category `ZM_Gen` (headless, in-memory -- no disk dependency, CI-safe). The S4
 foundation (`ZM_GenCommon` + `ZM_TextureSynth`, ZM-D-059) shipped **31** `ZM_Gen`
 units (boot gate 1773 -> 1804); the creature generator below adds **43** more
-(1804 -> 1847), and the creature-animation generator below adds **19** more
-(1847 -> 1866). The whole `ZM_Gen` T0 category is now **93** units, two of which
-(the two bake smokes) are `ZENITH_TOOLS`-only, so `_False`/Android configs
+(1804 -> 1847), the creature-animation generator below adds **19** more
+(1847 -> 1866), and the human generator below adds **20** more (1866 -> 1886).
+The whole `ZM_Gen` T0 category is now **113** units, four of which
+(the four bake smokes) are `ZENITH_TOOLS`-only, so `_False`/Android configs
 register them as empty TUs.
 
 #### ZM_Gen -- creature generator (SHIPPED)
@@ -619,13 +620,68 @@ its 6 clips via `AddAnimationPath` in IDLE..FAINT order
   unavailable. In `_False`/Android configs the whole TU is empty, so it does not
   register.
 
-Boot unit-gate baseline after the S4 creature + creature-animation work:
-**1866** (was 1773 at the S3 gate, 1847 after the creature generator;
-`.github/workflows/zm-tests.yml` runs `run_unit_gate.ps1 -Baseline 1866`).
+#### ZM_Gen -- human generator (SHIPPED)
 
-**Not-yet-built S4 families** (`ZM_HumanGen`, `ZM_BuildingGen`, `ZM_PropGen`)
-get their own `ZM_Gen` units as they land; the invariants above (same-seed
-determinism, structural validity, shiny-differs) are the shared template.
+`ZM_HumanGen` (SC1..SC5) turns each of the ~34 humanoid NPC roster rows into a
+deterministic model, but INVERTS the creature layout: every human binds ONE
+fixed shared 16-bone skeleton and reuses ONE shared 9-clip animation set
+(Idle / Walk / Run / Talk / Wave / Point / Cheer / Hurt / Faint) -- per-model
+variation is mesh-loft + texture ONLY, with NO per-model skeleton and NO
+per-model clips (contrast creatures, which bake their own skeleton + own 6
+clips EACH). Determinism is golden-pinned (`uZM_HUMANGEN_VERSION` = 1). It ships
+**20** `ZM_Gen` units (boot gate 1866 -> 1886) -- 18 pure/all-config in
+`Tests/ZM_Tests_HumanGen.cpp`, plus 2 `ZENITH_TOOLS`-only bake smokes in the new
+`Tests/ZM_Tests_HumanBake.cpp`:
+
+- **SC1 -- roster + shared 16-bone skeleton + frozen seam**
+  (`Tests/ZM_Tests_HumanGen.cpp`, 6 units): `RosterTotality` (all 34 rows build +
+  full `ZM_ValidateHuman`), `SharedSkeletonWellFormed` (16 bones, single root,
+  parent < child, identity bind rotation), `RecipePurity` (pure f(id) + distinct
+  per-human seeds), `AssetPathScheme` (golden shared + per-model refs;
+  too-small-buffer -> false), `ClipMetadataGolden` (the frozen 9 clips'
+  count/order/tick-rate -- extended in SC4 to all nine schedules), and
+  `BuildDeterminism` (reflexive equality/hash + PlayerM-vs-Bram non-degeneracy).
+
+- **SC2 -- per-model humanoid mesh loft** (`Tests/ZM_Tests_HumanGen.cpp`, 4
+  units): `StructuralInvariants`, `PerModelBonesMatchShared`,
+  `SameSeedDeterminism`, and `Sensitivity` (the MESH domain changes the mesh;
+  every non-MESH domain does not; cross-id difference).
+
+- **SC3 -- deterministic appearance + silhouettes**
+  (`Tests/ZM_Tests_HumanGen.cpp`, 4 units): `AppearanceAlbedoStructural`,
+  `AppearanceDomainIsolation`, `HairStyleSilhouettes`, and
+  `AttachmentSilhouettes`.
+
+- **SC4 -- shared 9-clip rotation-only curves** (`Tests/ZM_Tests_HumanGen.cpp`,
+  4 units): `HumanGen_ClipChannelsMatchSharedSkeleton`,
+  `HumanGen_ClipTimingAndPlaybackPolicy`,
+  `HumanGen_ClipDeterminismAndSensitivity`, and
+  `HumanGen_ClipSetSharedAcrossRoster`. Clips are rotation-only, pure f(clip),
+  byte-identical across all 34 models; looping clips (Idle/Walk/Run/Talk) close
+  their loop seams, one-shots (Wave/Point/Cheer/Hurt) return to identity, and
+  Faint settles into and holds its final pose.
+
+- **SC5 -- tools disk bake** (`Tests/ZM_Tests_HumanBake.cpp`,
+  `ZENITH_TOOLS`-only, 2 units): `HumanBake_SharedAndModelFilesLand` (bakes the
+  shared rig + 9 clips + PlayerM's per-model bundle and asserts all 10 shared
+  files [1 `.zskel` + 9 `.zanim`] and all 4 per-model files
+  [`.zmesh`/`_albedo.ztxtr`/`.zmtrl`/`.zmodel`] land non-empty) and
+  `HumanBake_ModelBindsSharedRigAndClips` (hermetically loads the baked `.zmodel`
+  via stream + `ParseStream`, asserts it binds the SHARED skeleton ref -- proving
+  NO per-model rig -- and self-lists exactly the 9 SHARED clip refs in
+  IDLE..FAINT order). Both `ZENITH_SKIP` when the bake environment is
+  unavailable; in `_False`/Android configs the whole TU is empty, so they do not
+  register.
+
+Boot unit-gate baseline after the S4 creature + creature-animation + human
+work: **1886** (was 1773 at the S3 gate, 1847 after the creature generator,
+1866 after the creature-animation generator; HumanGen SC1..SC5 add the final
+**+20**, so `.github/workflows/zm-tests.yml` now runs
+`run_unit_gate.ps1 -Baseline 1886`).
+
+**Not-yet-built S4 families** (`ZM_BuildingGen`, `ZM_PropGen`) get their own
+`ZM_Gen` units as they land; the invariants above (same-seed determinism,
+structural validity, shiny-differs) are the shared template.
 
 ### 5.5 S5 -- battle integration slice
 
