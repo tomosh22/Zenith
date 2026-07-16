@@ -13,6 +13,7 @@
 #include "Zenithmon/Components/ZM_GameStateManager.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
+#include "Zenithmon/Components/ZM_TallGrassSystem.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
@@ -135,6 +136,7 @@ ZENITH_REGISTER_COMPONENT(ZM_SpawnPoint, "ZM_SpawnPoint", 105u)
 ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger, "ZM_WarpTrigger", 106u)
 ZENITH_REGISTER_COMPONENT(ZM_GreyboxVisual, "ZM_GreyboxVisual", 107u)
 ZENITH_REGISTER_COMPONENT(ZM_BattleArena, "ZM_BattleArena", 108u)
+ZENITH_REGISTER_COMPONENT(ZM_TallGrassSystem, "ZM_TallGrassSystem", 109u)
 
 #ifdef ZENITH_TOOLS
 namespace
@@ -312,6 +314,7 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_WarpTrigger>("ZM_WarpTrigger");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_GreyboxVisual>("ZM_GreyboxVisual");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleArena>("ZM_BattleArena");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_TallGrassSystem>("ZM_TallGrassSystem");
 #endif
 
 	// Save/load persistence root: %APPDATA%/Zenith/Zenithmon/. The versioned

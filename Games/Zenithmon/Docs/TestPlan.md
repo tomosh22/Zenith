@@ -849,10 +849,24 @@ and `WorldSpec_EncounterRateColumn` (route-with-slots rate > 0, all else 0, <= 2
 Boot unit baseline **1913 -> 1924** (Zenithmon-only; engine default 1078 unchanged).
 The `ZM_OnWildEncounter` event is defined but not yet dispatched (SC3 emits it).
 
-**Remaining S5 items (items 2 SC1/SC3/SC4, 3-5, planning):**
+**#### ZM_Grass -- tall-grass system static surface (item 2 SC3, SHIPPED ZM-D-091)**
 
-- Units: `ZM_Grass` (density-map CPU sampling, tile-transition roll
-  gating, clear-on-interior), E5 engine units (grass reset on scene load).
+Pure/headless T0 units for `ZM_TallGrassSystem`'s (order 109) three static helpers
+(`Tests/ZM_Tests_TallGrass.cpp`, category `ZM_Grass`, 6 units): `QuantizeToTile_FloorSemantics`
+(per-axis `std::floor`; negatives round toward -inf), `QuantizeToTile_AxesIndependent`,
+`IsTileTransition_FirstTileNever` (no last tile -> never a transition), `_SameTile`,
+`_ChangedTile` (x-only / z-only / both), `IsGrassDensity_Threshold` (inclusive >= 0.5
+gate; `fGRASS_DENSITY_THRESHOLD == 0.5`). No component instance is constructed (the ctor
+needs a `Zenith_Entity&` and OnAwake/OnUpdate touch scene/Flux state). Boot unit baseline
+**1924 -> 1930** (Zenithmon-only; engine default 1078 unchanged). The runtime behaviour
+(density load, tile-transition roll -> `ZM_OnWildEncounter` emission, clear-on-interior)
+is the SC4 windowed test.
+
+**Remaining S5 items (item 2 SC1 [engine E5 grass reset] + SC4 [windowed integration], items 3-5, planning):**
+
+- SC1 engine E5 units (grass singleton reset clears on scene load); SC4 P1 windowed
+  (walk grass -> rigged `ZM_OnWildEncounter` fires; grass cleared on interior via a
+  per-scene instance-count assertion).
 - **P1 encounter round trip (windowed):** walk grass until a rigged encounter
   fires -> additive battle scene loads at the -2000 m offset -> win via
   scripted input -> assert exp applied and EXACT overworld resume (position,
