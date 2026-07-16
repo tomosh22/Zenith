@@ -142,7 +142,7 @@ namespace
 	constexpr float fZM_AG_PROP_PITCH     =  8.0f;
 	constexpr float fZM_AG_CREATURE_PITCH =  7.5f;
 	constexpr float fZM_AG_HUMAN_PITCH    =  8.0f;
-	constexpr float fZM_AG_BUILDING_PITCH = 12.0f;
+	constexpr float fZM_AG_BUILDING_PITCH = 14.0f;   // >= the building width budget (11) + margin
 
 	// Per-family target on-screen display height (world units); the per-entry scale
 	// divides out the family's natural-size field so each model hits this height.
@@ -152,6 +152,19 @@ namespace
 	constexpr float fZM_AG_BUILDING_HEIGHT = 6.5f;
 	constexpr float fZM_AG_HUMAN_NOMINAL_M = 1.8f;    // a build-1.0 human is ~1.8m tall
 	constexpr float fZM_AG_MIN_DENOM       = 1.0e-3f; // guard against a zero natural size
+
+	// Per-column WIDTH budget for the families whose footprint width varies a lot vs
+	// their height (buildings/props). AGFitScale (below) caps each model's SCALED
+	// width at this so a wide, short model cannot spill into its neighbour's column.
+	// WHY THIS EXISTS (ZM-D-087): buildings were originally scaled by HEIGHT ONLY, so a
+	// wide 1-storey building (CareCenter 10x8x1, resolve keeps m_fStoreyHeight=3) got
+	// scale = 6.5/3 ~= 2.17 -> ~21u wide, far past the old 12u pitch -> buildings
+	// INTERSECTED. Creatures/humans are ~isotropic (roughly as wide as tall) so height
+	// normalization alone keeps them inside their pitch; buildings/props are not, so
+	// they MUST also honour a width budget. Each budget must be < its family's pitch.
+	constexpr float fZM_AG_BUILDING_WIDTH_BUDGET  = 11.0f;   // < building pitch 14
+	constexpr float fZM_AG_PROP_WIDTH_BUDGET      =  6.5f;   // < prop pitch 8
+	constexpr float fZM_AG_BUILDING_ROOF_OVERHANG =  0.6f;   // eaves extend 0.3 each side (SC2 shell)
 
 	// Raised, +Z cameras that tilt DOWN over the rows: the reflective floor mirrors
 	// the models while all 26 stay clearly visible. Tune later against the first TGA.
@@ -408,6 +421,19 @@ namespace
 		xEntity.AddComponent<Zenith_ModelComponent>().LoadModel(szRef);
 	}
 
+	// Fit an instance into BOTH a column-width budget and a height cap -- the MIN of
+	// the two scale ratios. This is the guard against the height-only-normalization
+	// overlap (ZM-D-087): a wide, short model scaled by height alone would spill past
+	// its column pitch and intersect its neighbour. fNaturalWidth = the model's X
+	// footprint (incl. any roof overhang). Use for families with varying aspect ratios
+	// (buildings/props); ~isotropic families (creatures/humans) may height-normalize.
+	float AGFitScale(float fNaturalWidth, float fNaturalHeight, float fWidthBudget, float fHeightCap)
+	{
+		const float fWidthScale  = fWidthBudget / std::max(fNaturalWidth,  fZM_AG_MIN_DENOM);
+		const float fHeightScale = fHeightCap   / std::max(fNaturalHeight, fZM_AG_MIN_DENOM);
+		return std::min(fWidthScale, fHeightScale);
+	}
+
 	void BuildAGBuilding(Zenith_SceneData* pxSceneData, u_int uIndex)
 	{
 		const ZM_BUILDING_ID eId = g_aeAGBuildings[uIndex];
@@ -426,7 +452,11 @@ namespace
 
 		const ZM_BuildingRecipe xRecipe = ZM_ResolveBuildingRecipe(eId);
 		const float fNaturalHeight = xRecipe.m_fStoreyHeight * static_cast<float>(xRecipe.m_uStoreys);
-		const float fScale = fZM_AG_BUILDING_HEIGHT / std::max(fNaturalHeight, fZM_AG_MIN_DENOM);
+		const float fNaturalWidth  = xRecipe.m_fWidth + fZM_AG_BUILDING_ROOF_OVERHANG;   // body + roof eaves
+		// Fit BOTH the column-width budget AND the height cap so a wide low-storey
+		// building can't scale up past the pitch and intersect its neighbour (ZM-D-087).
+		const float fScale = AGFitScale(fNaturalWidth, fNaturalHeight,
+			fZM_AG_BUILDING_WIDTH_BUDGET, fZM_AG_BUILDING_HEIGHT);
 		xTransform.SetScale({ fScale, fScale, fScale });
 
 		xEntity.AddComponent<Zenith_ModelComponent>().LoadModel(szRef);
@@ -448,8 +478,11 @@ namespace
 			* fZM_AG_PROP_PITCH;
 		xTransform.SetPosition({ fX, 0.0f, fZM_AG_PROP_ROW_Z });
 
-		const float fNaturalHeight = ZM_ResolvePropRecipe(eId).m_fHeight;
-		const float fScale = fZM_AG_PROP_HEIGHT / std::max(fNaturalHeight, fZM_AG_MIN_DENOM);
+		const ZM_PropRecipe xPropRecipe = ZM_ResolvePropRecipe(eId);
+		// Same width-budget + height-cap fit as buildings (ZM-D-087): a wide prop
+		// (e.g. FenceWood) can't scale up past its column pitch and intersect.
+		const float fScale = AGFitScale(xPropRecipe.m_fWidth, xPropRecipe.m_fHeight,
+			fZM_AG_PROP_WIDTH_BUDGET, fZM_AG_PROP_HEIGHT);
 		xTransform.SetScale({ fScale, fScale, fScale });
 
 		xEntity.AddComponent<Zenith_ModelComponent>().LoadModel(szRef);
