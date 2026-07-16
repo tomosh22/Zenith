@@ -876,10 +876,23 @@ Zenithmon 1933/0 + windowed `ZM_GrassRegeneration_Test`, DP 158/0, CityBuilder 4
 RenderTest is pre-existingly red here (missing terrain -- Questions.md Q-2026-07-16-001) and
 E5 was proven non-regressing against it by a stash-revert diagnostic.
 
-**Remaining S5 items (item 2 SC4 [windowed integration + scene wiring], items 3-5, planning):**
+**#### ZM_TallGrass windowed integration (item 2 SC4, SHIPPED ZM-D-093) -- S5 ITEM 2 COMPLETE**
 
-- SC4 P1 windowed (walk grass -> rigged `ZM_OnWildEncounter` fires; grass cleared on interior
-  via a per-scene instance-count assertion, now backed by the E5 engine reset).
+2 windowed P1 tests (`Tests/ZM_AutoTests_TallGrass.cpp`, both `m_bRequiresGraphics`, skip
+headless CI + asset-guarded -> 0 boot-unit-baseline change, stays 1933): `ZM_TallGrassEncounter_Test`
+(loads Dawnmere, runtime-attaches `ZM_TallGrassSystem` to the terrain entity + manual `OnAwake()`,
+subscribes to `ZM_OnWildEncounter` under `ScopedTestIsolation`, arms the explicit-species force
+`ForceEncounterOnNextTransitionForTests(FERNFAWN, 5)`, data-drives the walk direction from the
+density map, walks the player onto grass, and asserts `ZM_OnWildEncounter{FERNFAWN,5,DAWNMERE}`
+fired) and `ZM_TallGrassInteriorClear_Test` (Dawnmere grass generates -> SINGLE-load PlayerHome
+interior -> `Grass().GetGeneratedInstanceCount()==0`, the E5 reset with an INTERIOR target). Both
+PASSED windowed (2/0; the encounter test 206 frames). **S5 item 2 is COMPLETE** (SC2 encounter roll +
+SC3 tall-grass component + SC1 engine E5 + SC4 integration); the tall-grass -> encounter -> event
+path is proven end-to-end (emit-only; item 3 wires the additive-battle subscriber).
+
+**Remaining S5 items (items 3-5, planning):** additive load / `SetScenePaused` / camera+HUD switch
+round trip (item 3); `ZM_BattleDirector` + `ZM_UI_BattleHUD` + engine E3 typewriter (item 4);
+catch/exp/faint/whiteout applied to GameState (item 5). Then the S5 VISUAL GATE (hard stop).
 - **P1 encounter round trip (windowed):** walk grass until a rigged encounter
   fires -> additive battle scene loads at the -2000 m offset -> win via
   scripted input -> assert exp applied and EXACT overworld resume (position,

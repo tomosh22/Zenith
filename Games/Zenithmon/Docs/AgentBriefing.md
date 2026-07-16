@@ -95,7 +95,7 @@ Plus, always:
   shared pinned vectors live in `Tools/ZenithCli/Tests/name_validation_cases.txt`;
   the buildsystem suite passed 45 / 0 after the change.
 - **Current landmark (2026-07-16): S0-S4 COMPLETE; S5 (Battle integration slice)
-  IN PROGRESS -- item 1 (Battle scene) DONE.** Shipped and gate-signed: S0 skeleton + CI, S1 data core, S2 headless
+  IN PROGRESS -- items 1-2 DONE (Battle scene + encounters/tall-grass/engine-E5); item 3 (additive load) NEXT.** Shipped and gate-signed: S0 skeleton + CI, S1 data core, S2 headless
   battle engine (incl. feature-complete breeding/gender + Battle Tower), S3
   first-overworld (Dawnmere -> PlayerHome(build 40) warp round trip via the
   persistent manager/spawn/trigger orders 102-106 + `ZM_GreyboxVisual` 107 +

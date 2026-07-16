@@ -34,6 +34,7 @@ void ZM_TallGrassSystem::OnAwake()
 	// forced encounter into a later re-awake (test-isolation hygiene; the flag is
 	// only ever written under ZENITH_INPUT_SIMULATOR).
 	m_bForceEncounter = false;
+	m_bForceExplicit = false;
 
 	// Sibling-terrain resolution mirrors ZM_TerrainGrass: the density map is loaded
 	// from the same canonical path so encounter sampling matches the rendered grass,
@@ -85,6 +86,22 @@ void ZM_TallGrassSystem::OnUpdate(float /*fDeltaTime*/)
 			// bounds assert inside RollStepForScene, so gate it out here.
 			if (eScene < ZM_SCENE_COUNT)
 			{
+#ifdef ZENITH_INPUT_SIMULATOR
+				// Explicit test force: the next on-grass transition emits the caller-
+				// specified species/level, bypassing BOTH the honest roll AND the scene
+				// slot table, so a slot-less TOWN (Dawnmere) can still drive an integration
+				// encounter. Advance the baseline here because we early-return past the tail.
+				if (m_bForceExplicit)
+				{
+					m_bForceExplicit = false;
+					Zenith_EventDispatcher::Get().Dispatch(
+						ZM_OnWildEncounter{ m_eForcedSpecies, m_uForcedLevel, eScene });
+					m_xLastTile = xCurrentTile;
+					m_bHasLastTile = true;
+					return;
+				}
+#endif
+
 				ZM_EncounterRollResult xResult =
 					ZM_EncounterZone::RollStepForScene(eScene, m_xRng);
 
@@ -191,6 +208,13 @@ bool ZM_TallGrassSystem::IsGrassDensity(float fDensity)
 void ZM_TallGrassSystem::ForceEncounterOnNextTransitionForTests()
 {
 	m_bForceEncounter = true;
+}
+
+void ZM_TallGrassSystem::ForceEncounterOnNextTransitionForTests(ZM_SPECIES_ID eSpecies, u_int uLevel)
+{
+	m_bForceExplicit = true;
+	m_eForcedSpecies = eSpecies;
+	m_uForcedLevel = uLevel;
 }
 
 void ZM_TallGrassSystem::SetRngSeedForTests(u_int64 ulSeed)

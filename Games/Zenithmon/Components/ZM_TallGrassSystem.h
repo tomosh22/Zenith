@@ -53,6 +53,7 @@ public:
 
 #ifdef ZENITH_INPUT_SIMULATOR
 	void ForceEncounterOnNextTransitionForTests();   // next on-grass transition forces an encounter
+	void ForceEncounterOnNextTransitionForTests(ZM_SPECIES_ID eSpecies, u_int uLevel); // NEW: explicit species/level
 	void SetRngSeedForTests(u_int64 ulSeed);         // m_xRng = ZM_BattleRNG(ulSeed)
 #endif
 
@@ -70,4 +71,7 @@ private:
 	ZM_GrassTile       m_xLastTile;
 	bool               m_bHasLastTile = false;
 	bool               m_bForceEncounter = false;
+	bool          m_bForceExplicit = false;
+	ZM_SPECIES_ID m_eForcedSpecies = ZM_SPECIES_NONE;
+	u_int         m_uForcedLevel   = 0u;
 };
