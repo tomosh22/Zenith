@@ -39,16 +39,22 @@ namespace
 		{ ZM_SPECIES_SPARKIT, 3, 5, 20 },
 	};
 
+	// Per-tile-transition wild-encounter rate /256 for a ROUTE with an encounter
+	// table (~15.6%/step). A gameplay tuning value for the S11 balance pass; the
+	// exact figure is not test-critical (unit tests rig the RNG). Non-route scenes
+	// and routes with no slots carry rate 0.
+	constexpr u_int uZM_DEFAULT_ROUTE_ENCOUNTER_RATE = 40u;
+
 	const ZM_WorldSpec s_axScenes[ZM_SCENE_COUNT] =
 	{
-		{ ZM_SCENE_FRONTEND,   "Title",            0,  ZM_SCENE_KIND_FRONTEND, "",          s_axConnFrontEnd,  ZM_ARRLEN(s_axConnFrontEnd),  s_aszTagsFrontEnd,  ZM_ARRLEN(s_aszTagsFrontEnd),  nullptr,        0 },
-		{ ZM_SCENE_BATTLE,     "Battlefield",      1,  ZM_SCENE_KIND_BATTLE,   "",          nullptr,           0,                            nullptr,            0,                             nullptr,        0 },
-		{ ZM_SCENE_DAWNMERE,   "Dawnmere Village", 2,  ZM_SCENE_KIND_TOWN,     "Dawnmere",  s_axConnDawnmere,  ZM_ARRLEN(s_axConnDawnmere),  s_aszTagsDawnmere,  ZM_ARRLEN(s_aszTagsDawnmere),  nullptr,        0 },
-		{ ZM_SCENE_THORNACRE,  "Thornacre Town",   3,  ZM_SCENE_KIND_TOWN,     "Thornacre", s_axConnThornacre, ZM_ARRLEN(s_axConnThornacre), s_aszTagsThornacre, ZM_ARRLEN(s_aszTagsThornacre), nullptr,        0 },
-		{ ZM_SCENE_ROUTE1,     "Route 1",          20, ZM_SCENE_KIND_ROUTE,    "Route1",    s_axConnRoute1,    ZM_ARRLEN(s_axConnRoute1),    s_aszTagsRoute1,    ZM_ARRLEN(s_aszTagsRoute1),    s_axEncRoute1,  ZM_ARRLEN(s_axEncRoute1) },
-		{ ZM_SCENE_PLAYERHOME, "Player's Home",    40, ZM_SCENE_KIND_INTERIOR, "",          s_axConnPlayerHome,ZM_ARRLEN(s_axConnPlayerHome),s_aszTagsPlayerHome,ZM_ARRLEN(s_aszTagsPlayerHome),nullptr,        0 },
-		{ ZM_SCENE_PROFLAB,    "Aster's Lab",      41, ZM_SCENE_KIND_INTERIOR, "",          s_axConnProfLab,   ZM_ARRLEN(s_axConnProfLab),   s_aszTagsProfLab,   ZM_ARRLEN(s_aszTagsProfLab),   nullptr,        0 },
-		{ ZM_SCENE_GYM1,       "Thornacre Gym",    42, ZM_SCENE_KIND_GYM,      "",          s_axConnGym1,      ZM_ARRLEN(s_axConnGym1),      s_aszTagsGym1,      ZM_ARRLEN(s_aszTagsGym1),      nullptr,        0 },
+		{ ZM_SCENE_FRONTEND,   "Title",            0,  ZM_SCENE_KIND_FRONTEND, "",          s_axConnFrontEnd,  ZM_ARRLEN(s_axConnFrontEnd),  s_aszTagsFrontEnd,  ZM_ARRLEN(s_aszTagsFrontEnd),  nullptr,        0,                       0 },
+		{ ZM_SCENE_BATTLE,     "Battlefield",      1,  ZM_SCENE_KIND_BATTLE,   "",          nullptr,           0,                            nullptr,            0,                             nullptr,        0,                       0 },
+		{ ZM_SCENE_DAWNMERE,   "Dawnmere Village", 2,  ZM_SCENE_KIND_TOWN,     "Dawnmere",  s_axConnDawnmere,  ZM_ARRLEN(s_axConnDawnmere),  s_aszTagsDawnmere,  ZM_ARRLEN(s_aszTagsDawnmere),  nullptr,        0,                       0 },
+		{ ZM_SCENE_THORNACRE,  "Thornacre Town",   3,  ZM_SCENE_KIND_TOWN,     "Thornacre", s_axConnThornacre, ZM_ARRLEN(s_axConnThornacre), s_aszTagsThornacre, ZM_ARRLEN(s_aszTagsThornacre), nullptr,        0,                       0 },
+		{ ZM_SCENE_ROUTE1,     "Route 1",          20, ZM_SCENE_KIND_ROUTE,    "Route1",    s_axConnRoute1,    ZM_ARRLEN(s_axConnRoute1),    s_aszTagsRoute1,    ZM_ARRLEN(s_aszTagsRoute1),    s_axEncRoute1,  ZM_ARRLEN(s_axEncRoute1), uZM_DEFAULT_ROUTE_ENCOUNTER_RATE },
+		{ ZM_SCENE_PLAYERHOME, "Player's Home",    40, ZM_SCENE_KIND_INTERIOR, "",          s_axConnPlayerHome,ZM_ARRLEN(s_axConnPlayerHome),s_aszTagsPlayerHome,ZM_ARRLEN(s_aszTagsPlayerHome),nullptr,        0,                       0 },
+		{ ZM_SCENE_PROFLAB,    "Aster's Lab",      41, ZM_SCENE_KIND_INTERIOR, "",          s_axConnProfLab,   ZM_ARRLEN(s_axConnProfLab),   s_aszTagsProfLab,   ZM_ARRLEN(s_aszTagsProfLab),   nullptr,        0,                       0 },
+		{ ZM_SCENE_GYM1,       "Thornacre Gym",    42, ZM_SCENE_KIND_GYM,      "",          s_axConnGym1,      ZM_ARRLEN(s_axConnGym1),      s_aszTagsGym1,      ZM_ARRLEN(s_aszTagsGym1),      nullptr,        0,                       0 },
 	};
 
 #undef ZM_ARRLEN

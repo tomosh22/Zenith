@@ -833,11 +833,26 @@ sets, exactly one shown at a time. Determinism/placement are golden-pinned
   restores the prior active scene. It auto-skips the headless CI batch and runs at the
   local gate (end-to-end PASS with real warm assets, 1/0, 31 frames).
 
-**Remaining S5 items (items 2-5, planning):**
+**#### ZM_Encounter -- wild-encounter selector (item 2 SC2, SHIPPED ZM-D-090)**
+
+Pure/headless units for `ZM_EncounterZone` (rate gate -> weighted slot pick ->
+inclusive level band, all from a caller-owned seeded `ZM_BattleRNG`; no
+entity/scene/Flux state). In `Tests/ZM_Tests_Encounter.cpp` (category
+`ZM_Encounter`, 10 units) + `Tests/ZM_Tests_WorldSpec.cpp` (+1 `ZM_Data`):
+`SelectSlotIndex_WeightedDeterminism` / `_ProportionalHistogram` (1:3:6 over
+10000 draws) / `_SingleSlot`; `RollStep_RateGateExtremes` (0 never / 256 always) /
+`_EmptyTable` / `_LevelBandInclusive` (both endpoints reachable) / `_Determinism` /
+`_InertAndMissDoNotPerturbRng` (raw `Next()` position: inert step draws 0, miss
+draws exactly 1 -- the rig-stability lock); `RollStepForScene_NonRouteNoEncounter` /
+`_RouteYieldsRosterSpecies` (Route1 hits validated against the LIVE slot table);
+and `WorldSpec_EncounterRateColumn` (route-with-slots rate > 0, all else 0, <= 256).
+Boot unit baseline **1913 -> 1924** (Zenithmon-only; engine default 1078 unchanged).
+The `ZM_OnWildEncounter` event is defined but not yet dispatched (SC3 emits it).
+
+**Remaining S5 items (items 2 SC1/SC3/SC4, 3-5, planning):**
 
 - Units: `ZM_Grass` (density-map CPU sampling, tile-transition roll
-  gating, clear-on-interior), `ZM_Encounter` (table selection, rate rolls
-  with rigged RNG), E5 engine units (grass reset on scene load).
+  gating, clear-on-interior), E5 engine units (grass reset on scene load).
 - **P1 encounter round trip (windowed):** walk grass until a rigged encounter
   fires -> additive battle scene loads at the -2000 m offset -> win via
   scripted input -> assert exp applied and EXACT overworld resume (position,

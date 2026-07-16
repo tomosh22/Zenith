@@ -195,6 +195,30 @@ ZENITH_TEST(ZM_Data, WorldSpec_FindByBuildIndex)
 	ZENITH_ASSERT_EQ((u_int)ZM_FindSceneByBuildIndex(9999u), (u_int)ZM_SCENE_NONE, "unknown index resolved");
 }
 
+// The new per-route encounter rate column (S5): a ROUTE that carries encounter
+// slots must have a positive rate; every other row (non-route, or a route with no
+// slots) must be 0; and no rate exceeds the /256 gate ceiling.
+ZENITH_TEST(ZM_Data, WorldSpec_EncounterRateColumn)
+{
+	for (u_int i = 0; i < ZM_SCENE_COUNT; ++i)
+	{
+		const ZM_WorldSpec& x = Sc(i);
+		const bool bRouteWithSlots = (x.m_eKind == ZM_SCENE_KIND_ROUTE) && (x.m_uEncounterCount > 0);
+		if (bRouteWithSlots)
+		{
+			ZENITH_ASSERT_GT(x.m_uEncounterRatePer256, 0u,
+				"%s is a route with slots but has a 0 encounter rate", x.m_szName);
+		}
+		else
+		{
+			ZENITH_ASSERT_EQ(x.m_uEncounterRatePer256, 0u,
+				"%s must have a 0 encounter rate (not a route with slots)", x.m_szName);
+		}
+		ZENITH_ASSERT_LE(x.m_uEncounterRatePer256, 256u,
+			"%s encounter rate exceeds the /256 gate ceiling", x.m_szName);
+	}
+}
+
 ZENITH_TEST(ZM_Data, WorldSpec_AccessorAndToString)
 {
 	for (u_int i = 0; i < ZM_SCENE_COUNT; ++i)

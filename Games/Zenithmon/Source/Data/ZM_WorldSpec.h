@@ -87,6 +87,7 @@ struct ZM_WorldSpec
 	u_int						m_uSpawnTagCount;
 	const ZM_EncounterSlot*		m_pxEncounters;
 	u_int						m_uEncounterCount;
+	u_int						m_uEncounterRatePer256;   // per-tile-transition wild-encounter chance /256; 0 = none (non-route)
 };
 
 // Table accessors (bounds-asserted). GetWorldSpec indexes by ZM_SCENE_ID.

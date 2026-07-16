@@ -105,7 +105,7 @@ Plus, always:
   per-family manifest guard; the full-family `ZM_AssetGallery_Test` was visually
   signed off 2026-07-16 (ZM-D-088). **S5 item 1 (ZM-D-089): `ZM_BattleArena` (order 108)
   + the Battle scene (build index 1, world Y = -2000).** ECS component orders 100-108 are used;
-  **next free is 109**. Boot unit gate **1913 / 0 failed**. The authoritative
+  **next free is 109**. Boot unit gate **1924 / 0 failed**. The authoritative
   current stage, in-flight task, and exact numbers live in Status.md; this line
   is a coarse pointer. Do NOT begin a stage's next work past a VISUAL GATE
   without the user's sign-off (standing order). The S5 gate visual sign-off is a hard stop.
