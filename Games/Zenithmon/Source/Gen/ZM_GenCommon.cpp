@@ -570,6 +570,91 @@ namespace ZM_MeshLoft
 }
 
 // ============================================================================
+// Static (bone-free) primitive kit -- buildings/props.
+// ============================================================================
+namespace
+{
+	// Append one quad face: 4 verts (hard, per-face outward normal), 2 tris. The
+	// winding (0,2,1)+(1,2,3) over corners laid out {BL, BR, TL, TR} makes each
+	// triangle's cross(C-A,B-A) point along xNormal (outward) -- the repo front-face
+	// rule, matching Zenith_MeshAsset::GenerateUnitCube. Pushes position/normal/uv/
+	// colour ONLY -- NO bone buffers (the static contract; contrast ZM_PushLoftVertex).
+	void ZM_PushStaticFace(ZM_GenMesh& xMesh,
+		const Zenith_Maths::Vector3& xP0, const Zenith_Maths::Vector3& xP1,
+		const Zenith_Maths::Vector3& xP2, const Zenith_Maths::Vector3& xP3,
+		const Zenith_Maths::Vector3& xNormal, const ZM_GenUVIsland& xIsland)
+	{
+		const u_int uBase = xMesh.GetNumVerts();
+
+		xMesh.m_xPositions.PushBack(xP0);
+		xMesh.m_xPositions.PushBack(xP1);
+		xMesh.m_xPositions.PushBack(xP2);
+		xMesh.m_xPositions.PushBack(xP3);
+
+		for (u_int u = 0; u < 4u; u++) { xMesh.m_xNormals.PushBack(xNormal); }
+		for (u_int u = 0; u < 4u; u++)
+		{
+			xMesh.m_xColors.PushBack(Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+		}
+
+		// Corner UVs into the island sub-rect: p0=BL, p1=BR, p2=TL, p3=TR.
+		xMesh.m_xUVs.PushBack(Zenith_Maths::Vector2(xIsland.U(0.0f), xIsland.V(0.0f)));
+		xMesh.m_xUVs.PushBack(Zenith_Maths::Vector2(xIsland.U(1.0f), xIsland.V(0.0f)));
+		xMesh.m_xUVs.PushBack(Zenith_Maths::Vector2(xIsland.U(0.0f), xIsland.V(1.0f)));
+		xMesh.m_xUVs.PushBack(Zenith_Maths::Vector2(xIsland.U(1.0f), xIsland.V(1.0f)));
+
+		ZM_PushTri(xMesh, uBase + 0u, uBase + 2u, uBase + 1u);
+		ZM_PushTri(xMesh, uBase + 1u, uBase + 2u, uBase + 3u);
+	}
+}
+
+namespace ZM_StaticMesh
+{
+	u_int AppendBox(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xMin,
+		const Zenith_Maths::Vector3& xMax, const ZM_GenUVIsland& xIsland)
+	{
+		const u_int uFirst = xMesh.GetNumVerts();
+		const float x0 = xMin.x, y0 = xMin.y, z0 = xMin.z;
+		const float x1 = xMax.x, y1 = xMax.y, z1 = xMax.z;
+
+		// Six faces, corner layout + winding copied from Zenith_MeshAsset::Generate-
+		// UnitCube (its (0,2,1)+(1,2,3) order is outward under cross(C-A,B-A)).
+		// +Z (front)
+		ZM_PushStaticFace(xMesh,
+			Zenith_Maths::Vector3(x0, y0, z1), Zenith_Maths::Vector3(x1, y0, z1),
+			Zenith_Maths::Vector3(x0, y1, z1), Zenith_Maths::Vector3(x1, y1, z1),
+			Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), xIsland);
+		// -Z (back)
+		ZM_PushStaticFace(xMesh,
+			Zenith_Maths::Vector3(x1, y0, z0), Zenith_Maths::Vector3(x0, y0, z0),
+			Zenith_Maths::Vector3(x1, y1, z0), Zenith_Maths::Vector3(x0, y1, z0),
+			Zenith_Maths::Vector3(0.0f, 0.0f, -1.0f), xIsland);
+		// +Y (top)
+		ZM_PushStaticFace(xMesh,
+			Zenith_Maths::Vector3(x0, y1, z1), Zenith_Maths::Vector3(x1, y1, z1),
+			Zenith_Maths::Vector3(x0, y1, z0), Zenith_Maths::Vector3(x1, y1, z0),
+			Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), xIsland);
+		// -Y (bottom)
+		ZM_PushStaticFace(xMesh,
+			Zenith_Maths::Vector3(x0, y0, z0), Zenith_Maths::Vector3(x1, y0, z0),
+			Zenith_Maths::Vector3(x0, y0, z1), Zenith_Maths::Vector3(x1, y0, z1),
+			Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), xIsland);
+		// +X (right)
+		ZM_PushStaticFace(xMesh,
+			Zenith_Maths::Vector3(x1, y0, z1), Zenith_Maths::Vector3(x1, y0, z0),
+			Zenith_Maths::Vector3(x1, y1, z1), Zenith_Maths::Vector3(x1, y1, z0),
+			Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), xIsland);
+		// -X (left)
+		ZM_PushStaticFace(xMesh,
+			Zenith_Maths::Vector3(x0, y0, z0), Zenith_Maths::Vector3(x0, y0, z1),
+			Zenith_Maths::Vector3(x0, y1, z0), Zenith_Maths::Vector3(x0, y1, z1),
+			Zenith_Maths::Vector3(-1.0f, 0.0f, 0.0f), xIsland);
+
+		return uFirst;
+	}
+}
+
+// ============================================================================
 // Skeleton + finalisation.
 // ============================================================================
 
@@ -850,6 +935,92 @@ ZM_GenMeshValidation ZM_ValidateGenMesh(const ZM_GenMesh& xMesh, u_int uBoneCap,
 
 	// --- Bone count within cap ---
 	xResult.m_bBonesWithinCap = xMesh.GetNumBones() <= uBoneCap;
+
+	return xResult;
+}
+
+ZM_GenStaticMeshValidation ZM_ValidateGenMeshStatic(const ZM_GenMesh& xMesh)
+{
+	ZM_GenStaticMeshValidation xResult;
+
+	const u_int uNumVerts = xMesh.GetNumVerts();
+	const u_int uNumTris = xMesh.GetNumTris();
+	const u_int uNumIndices = xMesh.m_xIndices.GetSize();
+	const bool bHasNormals = xMesh.m_xNormals.GetSize() == uNumVerts;
+
+	// --- Indices in range + triangle-aligned count ---
+	bool bIndices = (uNumVerts > 0u) && (uNumIndices > 0u) && ((uNumIndices % 3u) == 0u);
+	for (u_int i = 0; i < uNumIndices && bIndices; i++)
+	{
+		if (xMesh.m_xIndices.Get(i) >= uNumVerts)
+		{
+			bIndices = false;
+		}
+	}
+	xResult.m_bIndicesInRange = bIndices;
+
+	// --- Winding: cross(C-A,B-A) . avg(vertex normals) > 0 for every triangle ---
+	// (same outward rule as the skinned ZM_ValidateGenMesh). Only run once indices
+	// are known in range + normals present so no dereference goes out of bounds.
+	bool bWinding = (uNumTris > 0u) && bHasNormals && bIndices;
+	for (u_int u = 0; u < uNumTris && bIndices && bHasNormals; u++)
+	{
+		const u_int uA = xMesh.m_xIndices.Get(u * 3u + 0u);
+		const u_int uB = xMesh.m_xIndices.Get(u * 3u + 1u);
+		const u_int uC = xMesh.m_xIndices.Get(u * 3u + 2u);
+		const Zenith_Maths::Vector3& xA = xMesh.m_xPositions.Get(uA);
+		const Zenith_Maths::Vector3& xB = xMesh.m_xPositions.Get(uB);
+		const Zenith_Maths::Vector3& xC = xMesh.m_xPositions.Get(uC);
+		const Zenith_Maths::Vector3 xFace = glm::cross(xC - xA, xB - xA);
+		const Zenith_Maths::Vector3 xAvgN =
+			xMesh.m_xNormals.Get(uA) + xMesh.m_xNormals.Get(uB) + xMesh.m_xNormals.Get(uC);
+		if (glm::dot(xFace, xAvgN) <= 0.0f)
+		{
+			bWinding = false;
+			if (xResult.m_uFirstBadTriangle == 0xFFFFFFFFu)
+			{
+				xResult.m_uFirstBadTriangle = u;
+			}
+		}
+	}
+	xResult.m_bWindingOutward = bWinding;
+
+	// --- Bounds non-degenerate on all three axes ---
+	if (uNumVerts > 0u)
+	{
+		const Zenith_Maths::Vector3 xMin = ZM_GenMeshBoundsMin(xMesh);
+		const Zenith_Maths::Vector3 xMax = ZM_GenMeshBoundsMax(xMesh);
+		constexpr float fEps = 1.0e-5f;
+		xResult.m_bBoundsNonDegen =
+			(xMax.x - xMin.x) > fEps &&
+			(xMax.y - xMin.y) > fEps &&
+			(xMax.z - xMin.z) > fEps;
+	}
+
+	// --- UVs finite and within [0,1] (one per vertex) ---
+	bool bUVs = (xMesh.m_xUVs.GetSize() == uNumVerts) && (uNumVerts > 0u);
+	constexpr float fUVeps = 1.0e-4f;
+	for (u_int u = 0; u < xMesh.m_xUVs.GetSize() && bUVs; u++)
+	{
+		const Zenith_Maths::Vector2& xUV = xMesh.m_xUVs.Get(u);
+		if (!std::isfinite(xUV.x) || !std::isfinite(xUV.y)
+			|| xUV.x < -fUVeps || xUV.x > 1.0f + fUVeps
+			|| xUV.y < -fUVeps || xUV.y > 1.0f + fUVeps)
+		{
+			bUVs = false;
+		}
+	}
+	xResult.m_bUVsFinite = bUVs;
+
+	// --- The static contract: zero bones, byte-empty skin buffers ---
+	xResult.m_bNoSkeleton = (xMesh.GetNumBones() == 0u);
+	xResult.m_bNoSkinBuffers =
+		(xMesh.m_xBoneIndices.GetSize() == 0u) && (xMesh.m_xBoneWeights.GetSize() == 0u);
+
+	// --- Rollup ---
+	xResult.m_bAllValid = xResult.m_bWindingOutward && xResult.m_bBoundsNonDegen
+		&& xResult.m_bIndicesInRange && xResult.m_bUVsFinite
+		&& xResult.m_bNoSkeleton && xResult.m_bNoSkinBuffers;
 
 	return xResult;
 }

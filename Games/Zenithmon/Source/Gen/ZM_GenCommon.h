@@ -219,6 +219,26 @@ struct ZM_GenMeshValidation
 ZM_GenMeshValidation ZM_ValidateGenMesh(const ZM_GenMesh& xMesh, u_int uBoneCap,
 	float fWeightTol = 1.0e-4f);
 
+// Structural validation for a STATIC (bone-free) mesh -- the ZM_BuildingGen /
+// ZM_PropGen test contract in one pure call. The skinned ZM_ValidateGenMesh above
+// flags a no-weight mesh invalid (its weight-sum check fails when there are no
+// weights), so static geometry needs its own validator. The winding check reuses
+// the SAME outward rule as the skinned validator (cross(C-A,B-A) . avg(vertex
+// normals) > 0 per triangle); the extra clauses assert the static contract: zero
+// bones and byte-empty skin buffers.
+struct ZM_GenStaticMeshValidation
+{
+	bool  m_bWindingOutward   = false;   // cross(C-A,B-A) . faceNormal > 0 per triangle
+	bool  m_bBoundsNonDegen   = false;   // extent on all 3 axes > eps
+	bool  m_bIndicesInRange   = false;   // every index < numVerts, index count % 3 == 0
+	bool  m_bUVsFinite        = false;   // all UVs finite and within [0,1]
+	bool  m_bNoSkeleton       = false;   // GetNumBones() == 0 (the static contract)
+	bool  m_bNoSkinBuffers    = false;   // m_xBoneIndices and m_xBoneWeights are empty
+	bool  m_bAllValid         = false;
+	u_int m_uFirstBadTriangle = 0xFFFFFFFFu;
+};
+ZM_GenStaticMeshValidation ZM_ValidateGenMeshStatic(const ZM_GenMesh& xMesh);
+
 // ---- Loft primitives (append into xMesh; return the first-vertex index) ----
 namespace ZM_MeshLoft
 {
@@ -260,6 +280,23 @@ namespace ZM_MeshLoft
 	// the first vertex index. This is the workhorse the creature/human builders
 	// call.
 	u_int AppendPart(ZM_GenMesh& xMesh, const Part& xPart);
+}
+
+// ---- Static (bone-free) primitive kit --------------------------------------
+// Buildings/props are STATIC models (NO skeleton, NO skin) unlike the skinned
+// creature/human lofts. These emitters write positions/normals/uvs/colours/
+// indices but DELIBERATELY push NO m_xBoneIndices/m_xBoneWeights (contrast
+// ZM_MeshLoft::EmitRing / the loft's ZM_PushLoftVertex, which always bind bone
+// buffers). The result satisfies ZM_ValidateGenMeshStatic, never the skinned one.
+namespace ZM_StaticMesh
+{
+	// Axis-aligned box from xMin..xMax: 24 verts (per-face, hard normals) / 12 tris,
+	// outward winding (each triangle's cross(C-A,B-A) points along the face normal,
+	// matching Zenith_MeshAsset::GenerateUnitCube -- no corner welding/smoothing),
+	// analytic per-face normal, each face mapped into xIsland's [u0,v0,u1,v1] sub-
+	// rect. Writes NO bone indices/weights (static). Returns the first vertex index.
+	u_int AppendBox(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xMin,
+		const Zenith_Maths::Vector3& xMax, const ZM_GenUVIsland& xIsland);
 }
 
 // ---- Skeleton + finalisation ----------------------------------------------
