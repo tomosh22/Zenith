@@ -13,14 +13,15 @@ Scope.md (what is cut), TestPlan.md (determinism + generator test specs),
 BuildEnvironment.md (the tools build that runs the bake), CIPolicy.md
 (why CI never sees these files), Roadmap.md (S3/S4 stage gates).
 
-**Last updated:** 2026-07-16 (S4 -- `ZM_BuildingGen` (30 buildings) + `ZM_PropGen`
-(25 props) COMPLETE (SC1..SC5): the two STATIC-model generators. Each turns a
-roster row into a box composition via `ZM_StaticMesh` and bakes a **4-file STATIC
-bundle** per model -- a skeleton-less `.zmesh` + an albedo `.ztxtr` + a `.zmtrl` +
-a no-rig `.zmodel` (NO skeleton, NO animation; contrast creatures' 15 files and
-humans' shared rig) -- via the `ZM_GenBakeStaticMesh` bridge (section 3). Box
-colliders stay SCENE-authored, not baked. `uZM_BUILDINGGEN_VERSION` = 1,
-`uZM_PROPGEN_VERSION` = 1. All baked outputs remain git-ignored.).
+**Last updated:** 2026-07-16 (S4 COMPLETE -- `ZM_BakeManifest` SHIPPED (ZM-D-085)
+and the full-family S4 asset gate SIGNED OFF (ZM-D-088). All four asset-generator
+families (creatures v3 / humans v1 / buildings v1 / props v1) now bake under a
+per-family `ZM_BakeManifest` guard -- a 12-byte `ZMBM` stamp (magic + generator
+version + expected-file count) at `game:<Family>/.manifest`, written atomically
+after a successful `ZM_BakeAll*` and checked fail-open on warm boots (section 6.1).
+The windowed `ZM_AssetGallery_Test` cold-baked all four families and showed 26
+representatives across them (8 creatures / 6 humans / 6 buildings / 6 props) for
+the visual sign-off. All baked outputs remain git-ignored.).
 
 ---
 
@@ -458,10 +459,14 @@ The creature generator already stamps its generation version via
 `uZM_CREATUREGEN_VERSION` (currently 3; section 1.2), the human family likewise
 stamps `uZM_HUMANGEN_VERSION` (currently 1; section 2), and the building and prop
 families stamp `uZM_BUILDINGGEN_VERSION` (currently 1) and `uZM_PROPGEN_VERSION`
-(currently 1; section 3). The full per-family `ZM_BakeManifest` marker (version +
-file-existence gate) is itself a later S4 box; now that every generator family
-stamps its own version, only that top-level marker format itself remains to be
-built.
+(currently 1; section 3). The full per-family `ZM_BakeManifest` marker is now
+**SHIPPED (ZM-D-085)**: a per-family 12-byte `ZMBM` stamp (ASCII magic + u32-LE
+generator version + u32-LE expected-file count) at `game:<Family>/.manifest`,
+written atomically after a successful `ZM_BakeAll*` and read fail-open by
+`ZM_BakeManifestCheck` (a family is warm -- and its bake skipped -- iff the stamp
+is current AND every enumerated file is present non-empty). It mirrors the terrain
+`ZMTR` marker (section 4.3) and completes the bake-governance scheme; a tools-only
+`ZM_BakeAllAssets()` bakes all four generator families under it.
 
 ### 6.2 Determinism invariant (tested)
 

@@ -94,32 +94,20 @@ Plus, always:
   lowercase continuations like `Zenithmon` are distinct words and valid). The
   shared pinned vectors live in `Tools/ZenithCli/Tests/name_validation_cases.txt`;
   the buildsystem suite passed 45 / 0 after the change.
-- **Current S3 landmark (2026-07-13, ZM-D-057):** the first-overworld
-  automated implementation and definitive post-overlay-hitch authority gate,
-  including the final audited lifecycle fixes, are complete; only the human
-  visual gate remains. The existing
-  input/controller/camera and manager/spawn/trigger orders 102-106 now drive a
-  real Dawnmere -> PlayerHome(build 40) -> Dawnmere route through the authored
-  `Door` and `FromHome` feet tags. The manager's persistent `WarpFade` overlay
-  fades out and in over **0.20 s** each way, does not issue SINGLE below opacity,
-  and keeps input locked until the replacement generation has been placed and
-  exactly one active-scene main `ZM_FollowCamera` targets it. A missing overlay,
-  ambiguous Player/camera, wrong scene generation, or readiness loss fails
-  closed at opaque black with input frozen. Engine UI quad sort keys are now
-  global across canvases, and overlay text clipping chooses the highest sort
-  key, so the persistent root's order-10000 fade remains above later active-
-  scene HUD canvases even though the persistent scene is visited first.
-  `ZM_GreyboxVisual` owns component order **107** for the replaceable home-shell
-  blocks; **next free is 108**. The ratcheted contract is **1773** boot units
-  (1772 pass / 0 fail / the existing 1 skip) and **6** P1 registrations:
-  Boot + ControllerHarness pass headless, while Warp/Grass/Dawnmere/PlayerHome
-  skip for graphics. The definitive **12 parsed / 12 passed / 0 failed** JSON
-  set lives under the ignored
-  `Build/artifacts/zenithmon/s3/final/post_overlay_hitch_fix/` root; exact
-  timings live in Status.md and ZM-D-057.
-  Do not tick the S3 visual gate or begin S4/S5 until the user reviews the
-  ignored captures under `Build/artifacts/zenithmon/s3/visual/` and supplies a
-  verdict.
+- **Current landmark (2026-07-16): S0-S4 COMPLETE; S5 (Battle integration slice)
+  is next.** Shipped and gate-signed: S0 skeleton + CI, S1 data core, S2 headless
+  battle engine (incl. feature-complete breeding/gender + Battle Tower), S3
+  first-overworld (Dawnmere -> PlayerHome(build 40) warp round trip via the
+  persistent manager/spawn/trigger orders 102-106 + `ZM_GreyboxVisual` 107 +
+  the 0.20 s `WarpFade`; visual-signed), and **S4 asset generators** --
+  `ZM_CreatureGen`(v3)/`ZM_CreatureAnimGen`/`ZM_HumanGen`(v1)/`ZM_BuildingGen`(v1)/
+  `ZM_PropGen`(v1) + `ZM_BakeManifest`, all baked to git-ignored `Assets/` under a
+  per-family manifest guard; the full-family `ZM_AssetGallery_Test` was visually
+  signed off 2026-07-16 (ZM-D-088). ECS component orders 100-107 are used;
+  **next free is 108**. Boot unit gate **1908 / 0 failed**. The authoritative
+  current stage, in-flight task, and exact numbers live in Status.md; this line
+  is a coarse pointer. Do NOT begin a stage's next work past a VISUAL GATE
+  without the user's sign-off (standing order).
 
 ### Document map
 

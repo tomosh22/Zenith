@@ -491,10 +491,12 @@ units (boot gate 1773 -> 1804); the creature generator below adds **43** more
 (1804 -> 1847), the creature-animation generator below adds **19** more
 (1847 -> 1866), the human generator below adds **20** more (1866 -> 1886), the
 building generator below adds **10** more (1886 -> 1896; 9 units + 1 bake smoke),
-and the prop generator below adds **9** more (1896 -> 1905; 8 units + 1 bake
-smoke). The whole `ZM_Gen` T0 category is now **132** units, six of which
-(the six bake smokes) are `ZENITH_TOOLS`-only, so `_False`/Android configs
-register them as empty TUs.
+the prop generator below adds **9** more (1896 -> 1905; 8 units + 1 bake
+smoke), and `ZM_BakeManifest` below adds the final **3** more (1905 -> 1908;
+`EnumerationMatchesRoster` all-config + `RebakeByteIdentical`/`GuardWarmStale`
+tools-only). The whole `ZM_Gen` T0 category is now **135** units, eight of which
+(the six generator bake smokes plus the two `ZM_BakeManifest` tools-only cases)
+are `ZENITH_TOOLS`-only, so `_False`/Android configs register them as empty TUs.
 
 #### ZM_Gen -- creature generator (SHIPPED)
 
@@ -752,19 +754,49 @@ bake smoke (SC5) in `Tests/ZM_Tests_PropBake.cpp`:
   environment is unavailable. In `_False`/Android configs the whole TU is empty,
   so it does not register.
 
-Boot unit-gate baseline after the S4 creature + creature-animation + human +
-building + prop work: **1905** (was 1773 at the S3 gate, 1847 after the creature
-generator, 1866 after the creature-animation generator, 1886 after the human
-generator; the building generator adds **+10** [9 units + 1 bake smoke] to reach
-1896 and the prop generator adds the final **+9** [8 units + 1 bake smoke] to
-reach 1905, so `.github/workflows/zm-tests.yml` now runs
-`run_unit_gate.ps1 -Baseline 1905`).
+#### ZM_Gen -- bake manifest (SHIPPED)
+
+`ZM_BakeManifest` (ZM-D-085) is the per-family bake guard: a 12-byte `ZMBM`
+stamp (ASCII magic + u32-LE generator version + u32-LE expected-file count)
+written atomically to `game:<Family>/.manifest` after a successful
+`ZM_BakeAll*`, and read fail-open by `ZM_BakeManifestCheck` (a family is WARM
+iff the stamp is current AND every enumerated file is present non-empty). It
+mirrors the terrain `ZMTR` marker (section 5.3 / [AssetManifest.md](AssetManifest.md)
+4.3). It ships **3** `ZM_Gen` units (boot gate 1905 -> 1908):
+`EnumerationMatchesRoster` (all-config -- each family's enumerated file set
+matches its roster) plus the `ZENITH_TOOLS`-only `RebakeByteIdentical` and
+`GuardWarmStale`; the two tools-only cases register as empty TUs in
+`_False`/Android configs.
+
+#### S4 visual gate -- ZM_AssetGallery_Test (SIGNED OFF)
+
+The S4 stage gate is the windowed `ZM_AssetGallery_Test`
+(`Tests/ZM_AutoTests_AssetGallery.cpp`, `#ifdef ZENITH_INPUT_SIMULATOR`,
+`m_bRequiresGraphics`, tools-gated `ZM_BakeAllAssets()`): it bakes all four
+families then shows 26 representatives across them (8 creatures
+one-per-archetype, 6 humans, 6 buildings, 6 props) on a reflective floor,
+asserting all 26 `.zmodel` bundles loaded into renderable instances and that
+three angle-TGA dumps landed on disk. It skips headless/CI (graphics-required
+C5 + asset-guarded C6) and is **NOT** in the boot unit gate. It passed windowed
+and the S4 visual gate was **SIGNED OFF 2026-07-16 (ZM-D-088)**; the first
+capture was rejected for buildings intersecting (height-only scale overlap) and
+fixed via a width-budget `AGFitScale` (ZM-D-087) before approval.
+
+Boot unit-gate baseline after the full S4 creature + creature-animation + human +
+building + prop + bake-manifest work: **1908** (was 1773 at the S3 gate, 1847
+after the creature generator, 1866 after the creature-animation generator, 1886
+after the human generator; the building generator adds **+10** [9 units + 1 bake
+smoke] to reach 1896, the prop generator adds **+9** [8 units + 1 bake smoke] to
+reach 1905, and `ZM_BakeManifest` adds the final **+3** [`EnumerationMatchesRoster`
+all-config + `RebakeByteIdentical`/`GuardWarmStale` tools-only] to reach 1908, so
+`.github/workflows/zm-tests.yml` now runs `run_unit_gate.ps1 -Baseline 1908`).
 
 **All S4 generator families are now built** (creatures, creature animation,
-humans, buildings, props); the shared invariant template above (same-seed
-determinism, structural validity, domain-seed isolation) governs each. The only
-remaining S4 box is the top-level per-family `ZM_BakeManifest` marker (version +
-file-existence gate), which is not a generator family.
+humans, buildings, props), gated by the per-family `ZM_BakeManifest` marker
+above; the shared invariant template (same-seed determinism, structural
+validity, domain-seed isolation) governs each. **S4 is COMPLETE** -- every code
+box shipped and the full-family `ZM_AssetGallery_Test` visual gate is signed off
+(2026-07-16, ZM-D-088).
 
 ### 5.5 S5 -- battle integration slice
 

@@ -15,6 +15,17 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-16 -- ZM-D-088 -- S4 gate SIGNED OFF -- S4 (Asset generators) COMPLETE
+
+- **Decision (gate sign-off):** the user reviewed the re-captured full-family gallery (after the ZM-D-087 building-overlap fix) and **APPROVED** the S4 visual gate. **S4 (Asset generators) is COMPLETE.**
+- **Evidence reviewed:** `Build/artifacts/zenithmon/s4/gallery/gallery_0{1,2,3}.tga`+`.png` (front/left/right) -- the windowed `ZM_AssetGallery_Test` showing 26 representatives across all four families (8 creatures one-per-archetype incl. a shiny / 6 humans / 6 buildings / 6 props) on a reflective floor, buildings cleanly separated.
+- **Gate summary (all GREEN + signed):** full 5-config matrix (Vulkan Debug/Release x True/False + `D3D12_vs2022_Debug_Win64_False` link proof); boot unit gate **1908 / 0 failed** (creature/creature-anim/human/building/prop `ZM_Gen` generator units + 6 tools bake smokes + 3 `ZM_BakeManifest` units); `zenith test --headless` 7/0; `ZM_AssetGallery_Test` windowed PASS; per-family determinism/structural/static-or-skeletal + bake smokes + the byte-identical re-bake invariant; user visual sign-off 2026-07-16.
+- **What S4 shipped:** the full procedural asset pipeline -- `ZM_GenCommon`+`ZM_TextureSynth` foundation, `ZM_CreatureGen`(v3, 152, skinned+animated) + `ZM_CreatureAnimGen`, `ZM_HumanGen`(v1, 34, shared rig+9 clips), `ZM_BuildingGen`(v1, 30) + `ZM_PropGen`(v1, 25, static), the four `ZM_GenCommon` bake bridges (own-skel / shared-skel / bind-shared / no-skel), and `ZM_BakeManifest` (per-family version+file-existence guard). All assets are procedurally generated + baked to git-ignored `Assets/` under the manifest guard.
+- **Next:** **S5 (Battle integration slice)** -- critical path. The next session starts here (Status.md refreshed for a cold resume).
+- **Reversibility:** n/a (a stage-gate sign-off).
+
+---
+
 ## 2026-07-16 -- ZM-D-087 -- S4 gate REJECTED (buildings intersecting) -> width-budget layout fix
 
 - **Rejection + root cause:** the user reviewed the ZM-D-086 gallery captures and REJECTED the S4 visual gate -- the buildings were intersecting each other. Root cause (tracked to `Tests/ZM_AutoTests_AssetGallery.cpp` `BuildAGBuilding`): each family sat in a FIXED-pitch grid row and each model was scaled by **HEIGHT ONLY** (`targetHeight / naturalHeight`, uniform). Buildings have widely-varying footprint-to-height aspect ratios -- `ZM_ResolveBuildingRecipe` keeps `m_fStoreyHeight = 3.0`, so a 1-storey wide building (CareCenter 10x8x1, Lab 9x8x1, PlayerHome 7x6x1) got scale = 6.5/3 ~= **2.17** -> its 7-10u footprint scaled to **15-22u wide**, far past the **12u column pitch** -> adjacent buildings INTERSECTED. (2-storey gyms scaled ~1.08 and barely fit, hiding the cause.)
