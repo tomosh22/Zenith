@@ -357,6 +357,7 @@ bool ZM_PropAssetPath(ZM_PROP_ID eId, ZM_PROP_ASSET_KIND eKind, char* szOut, u_i
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Collections/Zenith_Vector.h"
+#include "Zenithmon/Source/Gen/ZM_BakeManifest.h"    // per-family bake guard (check) + stamp (write)
 #include <filesystem>
 #include <string>
 
@@ -423,11 +424,21 @@ bool ZM_BakeProp(ZM_PROP_ID eId)
 
 bool ZM_BakeAllProps()
 {
+	// Per-family bake guard: skip when the stamp is current + every file present.
+	const std::filesystem::path xRoot(GAME_ASSETS_DIR);
+	if (ZM_BakeManifestCheck(ZM_ASSET_FAMILY_PROPS, xRoot))
+	{
+		return true;   // warm: stamp current + all files present -> skip the family
+	}
 	bool bOk = true;
 	const u_int uCount = static_cast<u_int>(ZM_PROP_COUNT);
 	for (u_int u = 0; u < uCount; ++u)
 	{
 		bOk &= ZM_BakeProp(static_cast<ZM_PROP_ID>(u));
+	}
+	if (bOk)
+	{
+		bOk &= ZM_WriteBakeManifest(ZM_ASSET_FAMILY_PROPS, xRoot);   // stamp only after a fully-successful bake
 	}
 	return bOk;
 }

@@ -397,6 +397,7 @@ bool ZM_HumanSharedAssetPath(ZM_HUMAN_SHARED_ASSET_KIND eKind, char* szOut, u_in
 #include "AssetHandling/Zenith_AssetRegistry.h"   // Zenith_AssetRegistry::Create<> owning-handle + ResolvePath
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"   // Flux_AnimationClip authoring + Export
 #include "Collections/Zenith_Vector.h"            // Zenith_Vector<std::string> material list
+#include "Zenithmon/Source/Gen/ZM_BakeManifest.h"    // per-family bake guard (check) + stamp (write)
 #include <filesystem>
 #include <string>
 
@@ -514,11 +515,21 @@ bool ZM_BakeHuman(ZM_HUMAN_ID eId)
 
 bool ZM_BakeAllHumans()
 {
+	// Per-family bake guard: skip when the stamp is current + every file present.
+	const std::filesystem::path xRoot(GAME_ASSETS_DIR);
+	if (ZM_BakeManifestCheck(ZM_ASSET_FAMILY_HUMANS, xRoot))
+	{
+		return true;   // warm: stamp current + all files present -> skip the family
+	}
 	bool bOk = ZM_BakeHumanShared();
 	const u_int uCount = static_cast<u_int>(ZM_HUMAN_COUNT);
 	for (u_int u = 0; u < uCount; ++u)
 	{
 		bOk &= ZM_BakeHuman(static_cast<ZM_HUMAN_ID>(u));
+	}
+	if (bOk)
+	{
+		bOk &= ZM_WriteBakeManifest(ZM_ASSET_FAMILY_HUMANS, xRoot);   // stamp only after a fully-successful bake
 	}
 	return bOk;
 }

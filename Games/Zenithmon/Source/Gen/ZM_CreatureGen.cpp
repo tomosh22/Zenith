@@ -463,6 +463,7 @@ bool ZM_CreatureAssetPath(ZM_SPECIES_ID eId, ZM_CREATURE_ASSET_KIND eKind,
 #include "AssetHandling/Zenith_ModelAsset.h"      // Zenith_ModelAsset (mesh+skeleton+material bundle)
 #include "AssetHandling/Zenith_AssetRegistry.h"   // Zenith_AssetRegistry::Create<> owning-handle pattern
 #include "Collections/Zenith_Vector.h"            // Zenith_Vector<std::string> material list
+#include "Zenithmon/Source/Gen/ZM_BakeManifest.h"    // per-family bake guard (check) + stamp (write)
 #include <filesystem>
 #include <string>
 
@@ -635,6 +636,12 @@ bool ZM_BakeCreature(ZM_SPECIES_ID eId)
 
 bool ZM_BakeAllCreatures()
 {
+	// Per-family bake guard: skip when the stamp is current + every file present.
+	const std::filesystem::path xRoot(GAME_ASSETS_DIR);
+	if (ZM_BakeManifestCheck(ZM_ASSET_FAMILY_CREATURES, xRoot))
+	{
+		return true;   // warm: stamp current + all files present -> skip the family
+	}
 	bool bOk = true;
 	const u_int uCount = ZM_GetSpeciesCount();
 	for (u_int u = 0; u < uCount; ++u)
@@ -648,6 +655,10 @@ bool ZM_BakeAllCreatures()
 			continue;
 		}
 		bOk &= ZM_BakeCreature(eId);
+	}
+	if (bOk)
+	{
+		bOk &= ZM_WriteBakeManifest(ZM_ASSET_FAMILY_CREATURES, xRoot);   // stamp only after a fully-successful bake
 	}
 	return bOk;
 }
