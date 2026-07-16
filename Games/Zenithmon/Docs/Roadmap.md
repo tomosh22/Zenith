@@ -80,7 +80,7 @@
 
 ## S5 -- Battle integration slice (L) -- critical path
 
-- [ ] Battle scene (build index 1, world offset (0,-2000,0), enclosing dome + platforms, ~6 baked biome prop sets swapped at runtime)
+- [x] Battle scene (build index 1, world offset (0,-2000,0), enclosing dome + platforms, ~6 baked biome prop sets swapped at runtime) -- **DONE** (ZM-D-089): `ZM_BattleArena` component (order 108) spawns an always-visible dome (`CreateUnitSphere`) + 2 platforms (`CreateUnitCube`) + 6 per-biome dressing sets (`ZM_PROP_DRESSING_*` via `LoadModel`; exactly one shown via `SetEnabled`, `SetBiome` swaps). Self-contained `Battle` scene authored at world Y = -2000 (`fARENA_WORLD_Y`; NO engine scene-offset mechanism exists -- realized per-entity), registered build index 1 in `Project_LoadInitialScene` (non-tools-gated); WorldSpec `ZM_SCENE_BATTLE` row already existed (not edited). 5 T0 `ZM_BattleArena` units + windowed `ZM_BattleArena_Test` (`IsBuilt`/`IsFullyBuilt`/`SetBiome`/root-Y; end-to-end PASS with real assets). Boot baseline 1908->1913. Camera Z-sign + `IsFullyBuilt` coverage + read-reset fixes applied per reviewer.
 - [ ] `ZM_EncounterZone` + `ZM_TallGrassSystem` (own CPU density copy, 1 m tile quantization, per-route encounter rolls) + engine E5 grass-reset hygiene
 - [ ] Additive load / `SetScenePaused` / camera + HUD switch round trip; grass cleared entering interiors/battle
 - [ ] `ZM_BattleDirector` (event-stream interpreter, `zm_instant_battles` DebugVariable) + `ZM_UI_BattleHUD` + engine E3 typewriter

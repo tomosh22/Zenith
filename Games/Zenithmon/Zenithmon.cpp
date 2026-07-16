@@ -7,6 +7,7 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "SaveData/Zenith_SaveData.h"
+#include "Zenithmon/Components/ZM_BattleArena.h"
 #include "Zenithmon/Components/ZM_GameComponent.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_GameStateManager.h"
@@ -133,6 +134,7 @@ ZENITH_REGISTER_COMPONENT(ZM_GameStateManager, "ZM_GameStateManager", 104u)
 ZENITH_REGISTER_COMPONENT(ZM_SpawnPoint, "ZM_SpawnPoint", 105u)
 ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger, "ZM_WarpTrigger", 106u)
 ZENITH_REGISTER_COMPONENT(ZM_GreyboxVisual, "ZM_GreyboxVisual", 107u)
+ZENITH_REGISTER_COMPONENT(ZM_BattleArena, "ZM_BattleArena", 108u)
 
 #ifdef ZENITH_TOOLS
 namespace
@@ -309,6 +311,7 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_SpawnPoint>("ZM_SpawnPoint");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_WarpTrigger>("ZM_WarpTrigger");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_GreyboxVisual>("ZM_GreyboxVisual");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleArena>("ZM_BattleArena");
 #endif
 
 	// Save/load persistence root: %APPDATA%/Zenith/Zenithmon/. The versioned
@@ -457,6 +460,33 @@ void Project_RegisterEditorAutomationSteps()
 
 	xAuto.AddStep_SaveScene(
 		GAME_ASSETS_DIR "Scenes/PlayerHome" ZENITH_SCENE_EXT);
+	xAuto.AddStep_UnloadScene();
+
+	// Battle arena (build index 1) is a terrain-independent, self-contained scene
+	// authored 2000 m below the overworld (ZM_BattleArena::fARENA_WORLD_Y) so the
+	// S5 additive load never bleeds through the overworld. The ZM_BattleArena
+	// component spawns the dome + platforms + six dressing sets in OnStart.
+	xAuto.AddStep_CreateScene("Battle");
+
+	xAuto.AddStep_CreateEntity("BattleArena");
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_SetTransformPosition(0.0f, -2000.0f, 0.0f);   // ZM_BattleArena::fARENA_WORLD_Y
+	xAuto.AddStep_AddComponent("ZM_BattleArena");
+
+	xAuto.AddStep_CreateEntity("BattleCamera");
+	xAuto.AddStep_AddCamera();
+	// Camera forward at yaw 0 is +Z, so the camera sits on the -Z side looking
+	// toward the arena/platforms at Z~=0 (pitched slightly down onto the -2000 m
+	// platform plane). Mirrors the PlayerHome camera, which sits behind its subject.
+	xAuto.AddStep_SetCameraPosition(0.0f, -1997.5f, -8.0f);
+	xAuto.AddStep_SetCameraYaw(0.0f);
+	xAuto.AddStep_SetCameraPitch(-0.25f);
+	xAuto.AddStep_SetCameraFOV(glm::radians(55.0f));
+	xAuto.AddStep_SetCameraNear(0.1f);
+	xAuto.AddStep_SetCameraFar(200.0f);
+	xAuto.AddStep_SetAsMainCamera();
+
+	xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Battle" ZENITH_SCENE_EXT);
 	xAuto.AddStep_UnloadScene();
 
 	// Terrain rendering requires a graphics device. Headless runs still author
@@ -659,6 +689,7 @@ void Project_RegisterEditorAutomationSteps()
 void Project_LoadInitialScene()
 {
 	g_xEngine.Scenes().RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/FrontEnd" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Battle" ZENITH_SCENE_EXT);
 	g_xEngine.Scenes().RegisterSceneBuildIndex(2, GAME_ASSETS_DIR "Scenes/Dawnmere" ZENITH_SCENE_EXT);
 	g_xEngine.Scenes().RegisterSceneBuildIndex(40, GAME_ASSETS_DIR "Scenes/PlayerHome" ZENITH_SCENE_EXT);
 	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);

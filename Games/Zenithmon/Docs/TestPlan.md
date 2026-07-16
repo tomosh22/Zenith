@@ -788,8 +788,10 @@ after the creature generator, 1866 after the creature-animation generator, 1886
 after the human generator; the building generator adds **+10** [9 units + 1 bake
 smoke] to reach 1896, the prop generator adds **+9** [8 units + 1 bake smoke] to
 reach 1905, and `ZM_BakeManifest` adds the final **+3** [`EnumerationMatchesRoster`
-all-config + `RebakeByteIdentical`/`GuardWarmStale` tools-only] to reach 1908, so
-`.github/workflows/zm-tests.yml` now runs `run_unit_gate.ps1 -Baseline 1908`).
+all-config + `RebakeByteIdentical`/`GuardWarmStale` tools-only] to reach 1908).
+S5 item 1 (`ZM_BattleArena`, ZM-D-089) then adds **+5** T0 units to reach **1913**,
+so `.github/workflows/zm-tests.yml` now runs `run_unit_gate.ps1 -Baseline 1913`
+(see section 5.5).
 
 **All S4 generator families are now built** (creatures, creature animation,
 humans, buildings, props), gated by the per-family `ZM_BakeManifest` marker
@@ -799,6 +801,39 @@ box shipped and the full-family `ZM_AssetGallery_Test` visual gate is signed off
 (2026-07-16, ZM-D-088).
 
 ### 5.5 S5 -- battle integration slice
+
+**#### ZM_BattleArena -- battle-arena component (item 1, SHIPPED ZM-D-089)**
+
+`ZM_BattleArena` (serialization order 108) manages the always-visible battle
+arena at world Y = -2000 -- a dome + 2 platforms + 6 per-biome dressing prop
+sets, exactly one shown at a time. Determinism/placement are golden-pinned
+(`uSERIALIZATION_VERSION` = 1, `fARENA_WORLD_Y` = -2000, `uBIOME_COUNT` = 6).
+
+- **T0 `ZM_BattleArena` units (SHIPPED -- 5)** in `Tests/ZM_Tests_BattleArena.cpp`,
+  pure/all-config (no disk, no GPU, no entity construction -- only the `static`
+  helpers + the compiled `ZM_PropData`/`ZM_WorldSpec` tables): `BiomeEnumCoverage`
+  (the 6-biome roster agrees across the battle enum, the component constant, the
+  real-prop-biome count, and the DRESSING roster span), `DressingMappingContract`
+  (`DressingPropForBiome` maps every biome to a distinct real DRESSING prop whose
+  roster biome tag matches `MEADOW+e`; out-of-range -> `ZM_PROP_NONE`),
+  `VisibilityExactlyOne` (`VisibilityMaskForBiome` is one-hot `1u<<e`, popcount 1;
+  out-of-range -> 0 -- the "exactly one dressing shown" invariant), `ArenaConstants`
+  (golden `fARENA_WORLD_Y` / `uSERIALIZATION_VERSION`), and `WorldSpecBattleRowContract`
+  (Battle is build index 1, kind BATTLE, empty terrain set). These raise the boot
+  unit baseline **1908 -> 1913** (bumped in `.github/workflows/zm-tests.yml`).
+- **P1 `ZM_BattleArena_Test` (SHIPPED, windowed)** in `Tests/ZM_AutoTests_BattleArena.cpp`,
+  `m_bRequiresGraphics = true`, max 240 frames. Warm-bake-guarded on the PROP family
+  (`ZM_BakeAllAssets` in tools / `ZM_BakeManifestCheck(ZM_ASSET_FAMILY_PROPS, ...)`
+  otherwise) and exists-guarded on `Battle.zscen`, both `RequestSkip` when absent
+  (C5/C6). It registers build index 1, additively loads Battle over the running
+  game, lets the arena's `OnStart` build, then drives `SetBiome(ZM_BATTLE_BIOME_VOLCANIC)`
+  and verifies a unique arena, `IsBuilt()` + `IsFullyBuilt()` (all 9 child entities
+  spawned), `SetBiome` true, `GetActiveBiome()` == VOLCANIC, and the arena-root entity
+  at world Y within 0.5 of `fARENA_WORLD_Y`; cleanup unloads the additive scene and
+  restores the prior active scene. It auto-skips the headless CI batch and runs at the
+  local gate (end-to-end PASS with real warm assets, 1/0, 31 frames).
+
+**Remaining S5 items (items 2-5, planning):**
 
 - Units: `ZM_Grass` (density-map CPU sampling, tile-transition roll
   gating, clear-on-interior), `ZM_Encounter` (table selection, rate rolls
