@@ -3,10 +3,11 @@
 // ============================================================================
 // ZM_BuildingGen -- the S4 building generator driver. See the header for the
 // architecture + determinism contract. This TU owns: building -> recipe
-// resolution, the per-domain seed derivation, the SC1 static box-shell mesh
-// builder, the flat-facade builder, the full-bundle driver, the byte-identity +
-// hash + validation machinery, the asset-path scheme, and (tools only, SC5) the
-// disk bake STUBS. The SC2 parametric shell + SC3 facade decals land later.
+// resolution, the per-domain seed derivation, the SC2 parametric shell mesh
+// builder (body box + roof-by-kind + MESH-domain jitter), the flat-facade builder,
+// the full-bundle driver, the byte-identity + hash + validation machinery, the
+// asset-path scheme, and (tools only, SC5) the disk bake STUBS. The SC3 facade
+// decals land later.
 // ============================================================================
 
 #include "Zenithmon/Source/Gen/ZM_BuildingGen.h"
@@ -129,21 +130,52 @@ void ZM_BuildBuildingMesh(const ZM_BuildingRecipe& xR, ZM_GenMesh& xMesh)
 {
 	xMesh.Reset();
 
-	// One real-dimensioned axis-aligned box, footprint centred on the origin and
-	// grounded at y=0 (feet-on-floor, matching the human bind convention). Full-
-	// atlas UV island; SC3 subdivides the facade per face.
-	const float fHalfW  = xR.m_fWidth * 0.5f;
-	const float fHalfD  = xR.m_fDepth * 0.5f;
-	const float fHeight = xR.m_fStoreyHeight * static_cast<float>(xR.m_uStoreys);
-	const Zenith_Maths::Vector3 xMin(-fHalfW, 0.0f, -fHalfD);
-	const Zenith_Maths::Vector3 xMax( fHalfW, fHeight, fHalfD);
+	// MESH-domain jitter: ALL draws up-front, in a FIXED order, BEFORE the roof-kind
+	// branch (so kind never changes the draw count) and drawing ONLY the MESH domain
+	// RNG (mutating any other domain seed can never perturb the mesh bytes).
+	ZM_GenRNG xRng = ZM_MakeGenRNG(xR, ZM_GEN_DOMAIN_MESH);
+	const float fWJit     = xRng.NextFloatRange(-0.03f, 0.03f);
+	const float fDJit     = xRng.NextFloatRange(-0.03f, 0.03f);
+	const float fHJit     = xRng.NextFloatRange(-0.03f, 0.03f);
+	const float fPitchJit = xRng.NextFloatRange(-0.10f, 0.10f);   // always drawn (even FLAT)
 
-	const ZM_GenUVIsland xIsland;   // default {0,0,1,1} -- the whole atlas
-	ZM_StaticMesh::AppendBox(xMesh, xMin, xMax, xIsland);
+	const float fWidth   = xR.m_fWidth        * (1.0f + fWJit);
+	const float fDepth   = xR.m_fDepth        * (1.0f + fDJit);
+	const float fStoreyH = xR.m_fStoreyHeight * (1.0f + fHJit);
+	const float fHalfW   = fWidth * 0.5f;
+	const float fHalfD   = fDepth * 0.5f;
+	const float fWallTop = fStoreyH * static_cast<float>(xR.m_uStoreys);
 
-	// Finalise tangents (needs normals + UVs; static, so NO skin normaliser, NO
-	// bones). AppendBox already wrote analytic per-face normals -- do NOT re-run
-	// ZM_GenGenerateNormals (it would weld + smooth the hard box corners).
+	// Two disjoint UV sub-rects of the facade atlas: walls in the lower band, roof in
+	// the upper band. Both stay within [0,1] (the static validator rejects out-of-range UVs).
+	ZM_GenUVIsland xWall;  xWall.m_fU0 = 0.0f; xWall.m_fV0 = 0.0f;  xWall.m_fU1 = 1.0f; xWall.m_fV1 = 0.72f;
+	ZM_GenUVIsland xRoof;  xRoof.m_fU0 = 0.0f; xRoof.m_fV0 = 0.78f; xRoof.m_fU1 = 1.0f; xRoof.m_fV1 = 1.0f;
+
+	// Body box: footprint centred on the origin, grounded at y=0 (feet-on-floor,
+	// matching the human bind convention).
+	ZM_StaticMesh::AppendBox(xMesh, Zenith_Maths::Vector3(-fHalfW, 0.0f, -fHalfD),
+		Zenith_Maths::Vector3(fHalfW, fWallTop, fHalfD), xWall);
+
+	// Roof sits on an overhang-expanded eave rectangle at the wall top.
+	const float fOverhang = 0.3f;
+	const float fHalfMin  = (fHalfW < fHalfD) ? fHalfW : fHalfD;
+	const float fRise     = 0.7f * fHalfMin * (1.0f + fPitchJit);
+	const float fExW      = fHalfW + fOverhang;
+	const float fExD      = fHalfD + fOverhang;
+	const Zenith_Maths::Vector3 xEaveMin(-fExW, fWallTop, -fExD);
+	const Zenith_Maths::Vector3 xEaveMax( fExW, fWallTop,  fExD);
+
+	switch (xR.m_eRoof)
+	{
+	case ZM_ROOF_GABLE: ZM_StaticMesh::AppendGableRoof(xMesh, xEaveMin, xEaveMax, fRise, xRoof); break;
+	case ZM_ROOF_HIP:   ZM_StaticMesh::AppendHipRoof(xMesh, xEaveMin, xEaveMax, fRise, xRoof);   break;
+	case ZM_ROOF_FLAT:
+	default:            ZM_StaticMesh::AppendFlatRoof(xMesh, xEaveMin, xEaveMax, 0.4f, xRoof);   break;
+	}
+
+	// Finalise tangents (needs normals + UVs; static, so NO skin normaliser, NO bones).
+	// AppendBox/the roof emitters already wrote hard per-face normals -- do NOT re-run
+	// ZM_GenGenerateNormals (it would weld + smooth the hard corners).
 	ZM_GenGenerateTangents(xMesh);
 }
 

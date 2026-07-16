@@ -606,6 +606,38 @@ namespace
 		ZM_PushTri(xMesh, uBase + 0u, uBase + 2u, uBase + 1u);
 		ZM_PushTri(xMesh, uBase + 1u, uBase + 2u, uBase + 3u);
 	}
+
+	// Append one triangular face: 3 verts (hard per-face normal), 1 tri. Normal derived
+	// from winding so cross(C-A,B-A).normal>0 by construction; emitted with the winding
+	// that makes the stored normal face AWAY from xInside (a point inside the solid) ->
+	// always OUTWARD. UVs: v0->BL, v1->BR, v2->top-centre of the island. NO bone buffers
+	// (the static contract; contrast ZM_PushLoftVertex).
+	void ZM_PushStaticTri(ZM_GenMesh& xMesh,
+		const Zenith_Maths::Vector3& xV0, const Zenith_Maths::Vector3& xV1, const Zenith_Maths::Vector3& xV2,
+		const Zenith_Maths::Vector3& xInside, const ZM_GenUVIsland& xIsland)
+	{
+		const u_int uBase = xMesh.GetNumVerts();
+
+		Zenith_Maths::Vector3 xN = glm::cross(xV2 - xV0, xV1 - xV0);   // A=v0,B=v1,C=v2 -> cross(C-A,B-A)
+		const float fLen = glm::length(xN);
+		xN = (fLen > 1.0e-8f) ? (xN / fLen) : Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+
+		const Zenith_Maths::Vector3 xCentroid = (xV0 + xV1 + xV2) * (1.0f / 3.0f);
+		const bool bOutward = glm::dot(xN, xCentroid - xInside) >= 0.0f;
+		const Zenith_Maths::Vector3 xStoreN = bOutward ? xN : -xN;
+
+		xMesh.m_xPositions.PushBack(xV0);
+		xMesh.m_xPositions.PushBack(xV1);
+		xMesh.m_xPositions.PushBack(xV2);
+		for (u_int u = 0; u < 3u; u++) { xMesh.m_xNormals.PushBack(xStoreN); }
+		for (u_int u = 0; u < 3u; u++) { xMesh.m_xColors.PushBack(Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f)); }
+		xMesh.m_xUVs.PushBack(Zenith_Maths::Vector2(xIsland.U(0.0f), xIsland.V(0.0f)));
+		xMesh.m_xUVs.PushBack(Zenith_Maths::Vector2(xIsland.U(1.0f), xIsland.V(0.0f)));
+		xMesh.m_xUVs.PushBack(Zenith_Maths::Vector2(xIsland.U(0.5f), xIsland.V(1.0f)));
+
+		if (bOutward) { ZM_PushTri(xMesh, uBase + 0u, uBase + 1u, uBase + 2u); }
+		else          { ZM_PushTri(xMesh, uBase + 0u, uBase + 2u, uBase + 1u); }
+	}
 }
 
 namespace ZM_StaticMesh
@@ -651,6 +683,57 @@ namespace ZM_StaticMesh
 			Zenith_Maths::Vector3(-1.0f, 0.0f, 0.0f), xIsland);
 
 		return uFirst;
+	}
+
+	u_int AppendGableRoof(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xEaveMin,
+		const Zenith_Maths::Vector3& xEaveMax, float fRise, const ZM_GenUVIsland& xIsland)
+	{
+		const u_int uFirst = xMesh.GetNumVerts();
+		const float x0 = xEaveMin.x, x1 = xEaveMax.x, z0 = xEaveMin.z, z1 = xEaveMax.z;
+		const float yTop = xEaveMin.y, yApex = yTop + fRise, zMid = 0.5f * (z0 + z1);
+		const Zenith_Maths::Vector3 xInside(0.0f, yTop, 0.0f);
+
+		// +Z pitch: eave edge z=z1 up to ridge z=zMid. Corners BL,BR,TL,TR; normal from winding.
+		{
+			const Zenith_Maths::Vector3 BL(x0, yTop, z1), BR(x1, yTop, z1), TL(x0, yApex, zMid), TR(x1, yApex, zMid);
+			Zenith_Maths::Vector3 n = glm::cross(BR - BL, TL - BL);
+			const float fL = glm::length(n); n = (fL > 1.0e-8f) ? (n / fL) : Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+			ZM_PushStaticFace(xMesh, BL, BR, TL, TR, n, xIsland);
+		}
+		// -Z pitch: eave edge z=z0 (X reversed to stay outward).
+		{
+			const Zenith_Maths::Vector3 BL(x1, yTop, z0), BR(x0, yTop, z0), TL(x1, yApex, zMid), TR(x0, yApex, zMid);
+			Zenith_Maths::Vector3 n = glm::cross(BR - BL, TL - BL);
+			const float fL = glm::length(n); n = (fL > 1.0e-8f) ? (n / fL) : Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+			ZM_PushStaticFace(xMesh, BL, BR, TL, TR, n, xIsland);
+		}
+		// +X gable end, -X gable end (auto-oriented outward by ZM_PushStaticTri).
+		ZM_PushStaticTri(xMesh, Zenith_Maths::Vector3(x1, yTop, z1), Zenith_Maths::Vector3(x1, yApex, zMid), Zenith_Maths::Vector3(x1, yTop, z0), xInside, xIsland);
+		ZM_PushStaticTri(xMesh, Zenith_Maths::Vector3(x0, yTop, z0), Zenith_Maths::Vector3(x0, yApex, zMid), Zenith_Maths::Vector3(x0, yTop, z1), xInside, xIsland);
+		return uFirst;
+	}
+
+	u_int AppendHipRoof(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xEaveMin,
+		const Zenith_Maths::Vector3& xEaveMax, float fRise, const ZM_GenUVIsland& xIsland)
+	{
+		const u_int uFirst = xMesh.GetNumVerts();
+		const float x0 = xEaveMin.x, x1 = xEaveMax.x, z0 = xEaveMin.z, z1 = xEaveMax.z, yTop = xEaveMin.y;
+		const Zenith_Maths::Vector3 apex(0.5f * (x0 + x1), yTop + fRise, 0.5f * (z0 + z1));
+		const Zenith_Maths::Vector3 inside(0.5f * (x0 + x1), yTop, 0.5f * (z0 + z1));
+		const Zenith_Maths::Vector3 c0(x0, yTop, z0), c1(x1, yTop, z0), c2(x1, yTop, z1), c3(x0, yTop, z1);
+		ZM_PushStaticTri(xMesh, c0, c1, apex, inside, xIsland);
+		ZM_PushStaticTri(xMesh, c1, c2, apex, inside, xIsland);
+		ZM_PushStaticTri(xMesh, c2, c3, apex, inside, xIsland);
+		ZM_PushStaticTri(xMesh, c3, c0, apex, inside, xIsland);
+		return uFirst;
+	}
+
+	u_int AppendFlatRoof(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xEaveMin,
+		const Zenith_Maths::Vector3& xEaveMax, float fParapet, const ZM_GenUVIsland& xIsland)
+	{
+		return AppendBox(xMesh,
+			Zenith_Maths::Vector3(xEaveMin.x, xEaveMin.y,            xEaveMin.z),
+			Zenith_Maths::Vector3(xEaveMax.x, xEaveMin.y + fParapet, xEaveMax.z), xIsland);
 	}
 }
 

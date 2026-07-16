@@ -1,7 +1,7 @@
 #include "Zenith.h"
 
 // ============================================================================
-// ZM_Tests_BuildingGen -- S4 SC1 unit gate for ZM_BuildingGen (suite ZM_Gen).
+// ZM_Tests_BuildingGen -- S4 unit gate for ZM_BuildingGen (suite ZM_Gen).
 //
 // Buildings are STATIC models (NO skeleton, NO animation). These author against
 // the frozen public BuildingGen/Data seam and assert the roster/recipe/asset-path
@@ -17,6 +17,10 @@
 //                                        distinct ids differ.
 //   5. BuildingGen_StaticMeshContract -- zero bones, empty skin buffers, tris > 0,
 //                                        outward winding, finite in-range UVs.
+//   6. BuildingGen_ShellStructural    -- exact per-roof-kind vert/tri counts, static
+//                                        validity, grounded at y=0, roof above walls.
+//   7. BuildingGen_MeshSensitivity    -- the MESH seed perturbs the mesh; a non-MESH
+//                                        seed does not; distinct ids differ.
 // ============================================================================
 
 #include "Core/Zenith_TestFramework.h"
@@ -274,4 +278,86 @@ ZENITH_TEST(ZM_Gen, BuildingGen_StaticMeshContract)
 		ZENITH_ASSERT_TRUE(xUV.y >= -1.0e-4f && xUV.y <= 1.0f + 1.0e-4f,
 			"vertex %u V outside [0,1]", v);
 	}
+}
+
+// ############################################################################
+// 6. Parametric-shell structure -- per-roof-kind counts + geometry contract
+// ############################################################################
+
+// For EVERY building id: the SC2 shell (body box + roof-by-kind) emits the exact
+// per-kind vertex/triangle counts (AppendBox 24/12 body + GABLE 14/6, HIP 12/4,
+// FLAT 24/12 roof), passes ZM_ValidateGenMeshStatic (outward winding + finite
+// in-range UVs), stays grounded at y=0 after the MESH jitter, and rises above the
+// nominal wall height (the roof genuinely sits on top of the walls).
+ZENITH_TEST(ZM_Gen, BuildingGen_ShellStructural)
+{
+	u_int uTested = 0u;
+	for (u_int id = 0; id < (u_int)ZM_BUILDING_COUNT; ++id)
+	{
+		const ZM_BUILDING_ID eId = (ZM_BUILDING_ID)id;
+		const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(eId);
+
+		ZM_GenMesh xMesh;
+		ZM_BuildBuildingMesh(xR, xMesh);
+
+		// Exact per-roof-kind vertex/triangle counts.
+		const ZM_ROOF_KIND eRoof = ZM_GetBuildingData(eId).m_eRoof;
+		u_int uExpectVerts = 0u, uExpectTris = 0u;
+		switch (eRoof)
+		{
+		case ZM_ROOF_GABLE: uExpectVerts = 38u; uExpectTris = 18u; break;
+		case ZM_ROOF_HIP:   uExpectVerts = 36u; uExpectTris = 16u; break;
+		case ZM_ROOF_FLAT:
+		default:            uExpectVerts = 48u; uExpectTris = 24u; break;
+		}
+		ZENITH_ASSERT_EQ(xMesh.GetNumVerts(), uExpectVerts,
+			"building %u (roof %u) vertex count drifted", id, (u_int)eRoof);
+		ZENITH_ASSERT_EQ(xMesh.GetNumTris(), uExpectTris,
+			"building %u (roof %u) triangle count drifted", id, (u_int)eRoof);
+
+		// Static structural contract: outward winding, finite in-range UVs, valid rollup.
+		const ZM_GenStaticMeshValidation xV = ZM_ValidateGenMeshStatic(xMesh);
+		ZENITH_ASSERT_TRUE(xV.m_bAllValid, "building %u shell failed static validation", id);
+		ZENITH_ASSERT_TRUE(xV.m_bWindingOutward,
+			"building %u shell winding not outward (bad tri %u)", id, xV.m_uFirstBadTriangle);
+		ZENITH_ASSERT_TRUE(xV.m_bUVsFinite, "building %u shell UVs not finite/in [0,1]", id);
+
+		// Grounded at y=0 (the body-box base is literal 0.0f, even after jitter).
+		ZENITH_ASSERT_TRUE(std::fabs(ZM_GenMeshBoundsMin(xMesh).y) <= 1.0e-3f,
+			"building %u shell not grounded at y=0", id);
+
+		// The roof apex rises above the nominal wall height.
+		const float fNominalWall = xR.m_fStoreyHeight * static_cast<float>(xR.m_uStoreys);
+		ZENITH_ASSERT_TRUE(ZM_GenMeshBoundsMax(xMesh).y > fNominalWall,
+			"building %u roof apex must exceed nominal wall height", id);
+
+		++uTested;
+	}
+	ZENITH_ASSERT_GT(uTested, 0u, "no buildings exercised the shell-structural gate");
+}
+
+// ############################################################################
+// 7. Mesh sensitivity -- the MESH seed (and only it) drives the geometry
+// ############################################################################
+
+// Mutating the MESH domain seed perturbs the shell (the jitter reads it), mutating a
+// NON-mesh (ALBEDO) domain seed leaves the mesh byte-identical (the builder never
+// draws it), and two distinct ids yield distinct meshes.
+ZENITH_TEST(ZM_Gen, BuildingGen_MeshSensitivity)
+{
+	const ZM_BuildingRecipe xBase = ZM_ResolveBuildingRecipe(ZM_BUILDING_PLAYER_HOME);
+	ZM_GenMesh x0; ZM_BuildBuildingMesh(xBase, x0);
+
+	ZM_BuildingRecipe xMeshMut = xBase;
+	xMeshMut.m_aulDomainSeed[ZM_GEN_DOMAIN_MESH] ^= 0x9E3779B97F4A7C15ull;
+	ZM_GenMesh xM; ZM_BuildBuildingMesh(xMeshMut, xM);
+	ZENITH_ASSERT_FALSE(ZM_BuildingMeshEqual(x0, xM), "mutating the MESH seed must perturb the mesh");
+
+	ZM_BuildingRecipe xAlbMut = xBase;
+	xAlbMut.m_aulDomainSeed[ZM_GEN_DOMAIN_ALBEDO] ^= 0x9E3779B97F4A7C15ull;
+	ZM_GenMesh xA; ZM_BuildBuildingMesh(xAlbMut, xA);
+	ZENITH_ASSERT_TRUE(ZM_BuildingMeshEqual(x0, xA), "mutating a non-MESH seed must NOT change the mesh");
+
+	ZM_GenMesh xOther; ZM_BuildBuildingMesh(ZM_ResolveBuildingRecipe(ZM_BUILDING_LAB), xOther);
+	ZENITH_ASSERT_FALSE(ZM_BuildingMeshEqual(x0, xOther), "distinct ids must yield distinct meshes");
 }

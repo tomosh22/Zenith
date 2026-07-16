@@ -297,6 +297,20 @@ namespace ZM_StaticMesh
 	// rect. Writes NO bone indices/weights (static). Returns the first vertex index.
 	u_int AppendBox(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xMin,
 		const Zenith_Maths::Vector3& xMax, const ZM_GenUVIsland& xIsland);
+
+	// GABLE: ridge parallel to X (width). xEaveMin/xEaveMax = overhang-expanded roof
+	// footprint at eave level y=xEaveMin.y; ridge at y=eave+fRise, z=mid. 2 sloped pitch
+	// quads + 2 gable-end tris = 14 verts / 6 tris. NO bones.
+	u_int AppendGableRoof(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xEaveMin,
+		const Zenith_Maths::Vector3& xEaveMax, float fRise, const ZM_GenUVIsland& xIsland);
+	// HIP (pyramidal): four triangles from the eave rectangle to a single apex at the
+	// footprint centre, y=eave+fRise. 12 verts / 4 tris. NO bones.
+	u_int AppendHipRoof(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xEaveMin,
+		const Zenith_Maths::Vector3& xEaveMax, float fRise, const ZM_GenUVIsland& xIsland);
+	// FLAT: a thin parapet-cap box from the eave rectangle up by fParapet. 24 verts /
+	// 12 tris. NO bones.
+	u_int AppendFlatRoof(ZM_GenMesh& xMesh, const Zenith_Maths::Vector3& xEaveMin,
+		const Zenith_Maths::Vector3& xEaveMax, float fParapet, const ZM_GenUVIsland& xIsland);
 }
 
 // ---- Skeleton + finalisation ----------------------------------------------
