@@ -4,10 +4,10 @@
 // ZM_BuildingGen -- the S4 building generator driver. See the header for the
 // architecture + determinism contract. This TU owns: building -> recipe
 // resolution, the per-domain seed derivation, the SC2 parametric shell mesh
-// builder (body box + roof-by-kind + MESH-domain jitter), the flat-facade builder,
-// the full-bundle driver, the byte-identity + hash + validation machinery, the
-// asset-path scheme, and (tools only, SC5) the disk bake STUBS. The SC3 facade
-// decals land later.
+// builder (body box + roof-by-kind + MESH-domain jitter), the SC3 facade decal
+// builder (wall band palette/theme/window-grid/door + roof band, ALBEDO domain
+// only), the full-bundle driver, the byte-identity + hash + validation machinery,
+// the asset-path scheme, and (tools only, SC5) the disk bake STUBS.
 // ============================================================================
 
 #include "Zenithmon/Source/Gen/ZM_BuildingGen.h"
@@ -52,8 +52,9 @@ namespace
 			static_cast<size_t>(xA.GetSize()) * sizeof(T)) == 0;
 	}
 
-	// Per-palette solid facade base colour (SC1 flat fill; distinct per palette so
-	// different-palette facades never collide). SC3 replaces this with real decals.
+	// Per-palette wall base colour (the SC3 facade wall band's starting colour before
+	// the gym theme tint + ALBEDO jitter; distinct per palette so different-palette
+	// facades never collide).
 	Zenith_Maths::Vector3 ZM_BuildingPaletteColour(ZM_BUILDING_PALETTE ePalette)
 	{
 		switch (ePalette)
@@ -64,6 +65,29 @@ namespace
 		default:
 			Zenith_Assert(false, "ZM_BuildingPaletteColour: bad palette %u", (u_int)ePalette);
 			return Zenith_Maths::Vector3(0.5f, 0.5f, 0.5f);
+		}
+	}
+
+	// Small colour helpers -- ZM_TextureSynth.cpp keeps its Clamp01/Lerp3 file-local
+	// (static, not visible here), so the facade builder gets its own copies.
+	inline float ZM_Clamp01f(float f) { return f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f); }
+	inline Zenith_Maths::Vector3 ZM_ClampV3(const Zenith_Maths::Vector3& v)
+	{ return Zenith_Maths::Vector3(ZM_Clamp01f(v.x), ZM_Clamp01f(v.y), ZM_Clamp01f(v.z)); }
+	inline Zenith_Maths::Vector3 ZM_LerpV3(const Zenith_Maths::Vector3& a, const Zenith_Maths::Vector3& b, float t)
+	{ return Zenith_Maths::Vector3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t); }
+
+	// Per-palette roof band colour (the SC3 facade roof band; distinct from the wall
+	// base so window/door/roof/wall read as separate surfaces).
+	Zenith_Maths::Vector3 ZM_BuildingRoofColour(ZM_BUILDING_PALETTE ePalette)
+	{
+		switch (ePalette)
+		{
+		case ZM_BUILDING_PALETTE_WARM:  return Zenith_Maths::Vector3(0.45f, 0.22f, 0.18f);
+		case ZM_BUILDING_PALETTE_COOL:  return Zenith_Maths::Vector3(0.28f, 0.32f, 0.42f);
+		case ZM_BUILDING_PALETTE_EARTH: return Zenith_Maths::Vector3(0.30f, 0.26f, 0.20f);
+		default:
+			Zenith_Assert(false, "ZM_BuildingRoofColour: bad palette %u", (u_int)ePalette);
+			return Zenith_Maths::Vector3(0.25f, 0.25f, 0.25f);
 		}
 	}
 
@@ -182,7 +206,56 @@ void ZM_BuildBuildingMesh(const ZM_BuildingRecipe& xR, ZM_GenMesh& xMesh)
 ZM_GenImage ZM_BuildBuildingFacade(const ZM_BuildingRecipe& xR)
 {
 	ZM_GenImage xImg(uZM_BUILDING_FACADE_RESOLUTION, uZM_BUILDING_FACADE_RESOLUTION);
-	ZM_SynthFillSolid(xImg, ZM_BuildingPaletteColour(xR.m_ePalette));
+
+	// ALBEDO is the SOLE randomness source (a MESH-seed mutation can never perturb the
+	// facade -> FacadeDomainIsolation). ALL draws up-front, FIXED count + order, BEFORE
+	// any palette/theme/grid branch (catch/flee draw-order contract). The window loop
+	// draws NO RNG (positions are geometry).
+	ZM_GenRNG xRng = ZM_MakeGenRNG(xR, ZM_GEN_DOMAIN_ALBEDO);
+	const float fWallJitR = xRng.NextFloatRange(-0.04f, 0.04f);
+	const float fWallJitG = xRng.NextFloatRange(-0.04f, 0.04f);
+	const float fWallJitB = xRng.NextFloatRange(-0.04f, 0.04f);
+	const float fRoofJit  = xRng.NextFloatRange(-0.04f, 0.04f);
+
+	Zenith_Maths::Vector3 xWall = ZM_BuildingPaletteColour(xR.m_ePalette);
+	if (xR.m_eThemeType != ZM_TYPE_NONE)
+	{
+		const Zenith_Maths::Vector3 xType = ZM_SynthTypePalette(xR.m_eThemeType).m_xBase;
+		xWall = ZM_LerpV3(xWall, xType, 0.35f);
+	}
+	xWall = ZM_ClampV3(Zenith_Maths::Vector3(xWall.x + fWallJitR, xWall.y + fWallJitG, xWall.z + fWallJitB));
+
+	Zenith_Maths::Vector3 xRoof = ZM_BuildingRoofColour(xR.m_ePalette);
+	xRoof = ZM_ClampV3(Zenith_Maths::Vector3(xRoof.x + fRoofJit, xRoof.y + fRoofJit, xRoof.z + fRoofJit));
+
+	const Zenith_Maths::Vector3 xWindow(0.80f, 0.88f, 0.95f);
+	const Zenith_Maths::Vector3 xDoor(0.30f, 0.18f, 0.10f);
+
+	// FIXED paint order: wall base -> roof band -> window grid (r outer, c inner) -> door.
+	ZM_SynthFillSolid(xImg, xWall);
+	ZM_SynthStampRectDecal(xImg, 0.0f, fZM_FACADE_ROOF_V0, 1.0f, 1.0f, xRoof);
+
+	const u_int uCols = xR.m_uWindowCols > 0u ? xR.m_uWindowCols : 1u;
+	const u_int uRows = xR.m_uWindowRows > 0u ? xR.m_uWindowRows : 1u;
+	const float fCellW = (fZM_FACADE_GRID_U1 - fZM_FACADE_GRID_U0) / (float)uCols;
+	const float fCellH = (fZM_FACADE_GRID_V1 - fZM_FACADE_GRID_V0) / (float)uRows;
+	for (u_int r = 0u; r < uRows; ++r)
+	{
+		for (u_int c = 0u; c < uCols; ++c)
+		{
+			const float fCellU = fZM_FACADE_GRID_U0 + (float)c * fCellW;
+			const float fCellV = fZM_FACADE_GRID_V0 + (float)r * fCellH;
+			ZM_SynthStampRectDecal(xImg,
+				fCellU + fZM_FACADE_WIN_INSET * fCellW,
+				fCellV + fZM_FACADE_WIN_INSET * fCellH,
+				fCellU + (1.0f - fZM_FACADE_WIN_INSET) * fCellW,
+				fCellV + (1.0f - fZM_FACADE_WIN_INSET) * fCellH,
+				xWindow);
+		}
+	}
+
+	ZM_SynthStampRectDecal(xImg, fZM_FACADE_DOOR_U0, fZM_FACADE_DOOR_V0,
+		fZM_FACADE_DOOR_U1, fZM_FACADE_DOOR_V1, xDoor);
 	return xImg;
 }
 

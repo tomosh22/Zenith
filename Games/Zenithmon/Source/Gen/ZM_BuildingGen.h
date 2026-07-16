@@ -45,6 +45,20 @@ constexpr u_int uZM_BUILDING_FACADE_RESOLUTION    = 256u;
 // constant (keeps ZM_GenDeriveSeed's signature shared with creatures/humans).
 constexpr u_int uZM_BUILDING_SYNTHETIC_EVO_STAGE  = 1u;
 
+// SC3 facade layout, NORMALIZED full-image UV. Wall island V in [0,0.72] (V=0 ground,
+// V=0.72 eave); roof island V in [0.78,1.0]. Windows/door stay in the wall band; the
+// roof fill covers the roof island.
+constexpr float fZM_FACADE_GRID_U0   = 0.08f;
+constexpr float fZM_FACADE_GRID_U1   = 0.92f;
+constexpr float fZM_FACADE_GRID_V0   = 0.26f;
+constexpr float fZM_FACADE_GRID_V1   = 0.68f;
+constexpr float fZM_FACADE_WIN_INSET = 0.22f;
+constexpr float fZM_FACADE_DOOR_U0   = 0.42f;
+constexpr float fZM_FACADE_DOOR_U1   = 0.58f;
+constexpr float fZM_FACADE_DOOR_V0   = 0.02f;
+constexpr float fZM_FACADE_DOOR_V1   = 0.20f;
+constexpr float fZM_FACADE_ROOF_V0   = 0.75f;
+
 // ---------------------------------------------------------------------------
 // ZM_BuildingRecipe -- the fully resolved per-building generation inputs. Pure
 // data; ZM_ResolveBuildingRecipe fills it deterministically from ZM_BuildingData.
@@ -87,8 +101,11 @@ ZM_GenRNG ZM_MakeGenRNG(const ZM_BuildingRecipe& xR, ZM_GEN_DOMAIN eDomain);
 // replaces it with the real parametric shell.
 void        ZM_BuildBuildingMesh  (const ZM_BuildingRecipe& xR, ZM_GenMesh& xMesh);
 
-// Build the placeholder facade: a uZM_BUILDING_FACADE_RESOLUTION-square image
-// filled with a per-palette solid colour. SC3 paints the real decals.
+// Build the facade: a uZM_BUILDING_FACADE_RESOLUTION-square image whose wall band
+// (V in [0,0.72]) carries the palette base + gym theme tint + a window grid + a
+// door, and whose roof band (V >= fZM_FACADE_ROOF_V0) carries a roof colour. ALL
+// randomness (a small per-channel colour jitter) is drawn from the ALBEDO domain
+// ONLY, so a MESH-seed change can never perturb the facade.
 ZM_GenImage ZM_BuildBuildingFacade(const ZM_BuildingRecipe& xR);
 
 // ---------------------------------------------------------------------------

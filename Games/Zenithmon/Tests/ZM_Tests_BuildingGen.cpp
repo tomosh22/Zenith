@@ -21,6 +21,14 @@
 //                                        validity, grounded at y=0, roof above walls.
 //   7. BuildingGen_MeshSensitivity    -- the MESH seed perturbs the mesh; a non-MESH
 //                                        seed does not; distinct ids differ.
+//   8. BuildingGen_FacadeStructural   -- every id's facade is 256^2, wall/roof/window/
+//                                        door read as >=3 distinct colours in the right
+//                                        V bands (window/door below the roof band), and
+//                                        rebuilds byte-identically.
+//   9. BuildingGen_FacadeDomainIsolation -- the ALBEDO seed perturbs the facade; a
+//                                        non-ALBEDO (MESH) seed does not; distinct
+//                                        palette/theme facades (incl. same-palette gyms
+//                                        via theme tint) differ.
 // ============================================================================
 
 #include "Core/Zenith_TestFramework.h"
@@ -360,4 +368,99 @@ ZENITH_TEST(ZM_Gen, BuildingGen_MeshSensitivity)
 
 	ZM_GenMesh xOther; ZM_BuildBuildingMesh(ZM_ResolveBuildingRecipe(ZM_BUILDING_LAB), xOther);
 	ZENITH_ASSERT_FALSE(ZM_BuildingMeshEqual(x0, xOther), "distinct ids must yield distinct meshes");
+}
+
+// ############################################################################
+// 8. Facade structure -- wall/roof/window/door bands + determinism
+// ############################################################################
+
+// For EVERY building id: the SC3 facade is the expected square resolution, the
+// wall base / roof band / window grid / door read as at least three distinct
+// colours sampled in the right V bands (windows + door strictly below the roof
+// band, so a flipped-V regression collapses them), and rebuilding the same recipe
+// yields a byte-identical image.
+ZENITH_TEST(ZM_Gen, BuildingGen_FacadeStructural)
+{
+	auto Differ = [](const Zenith_Maths::Vector4& a, const Zenith_Maths::Vector4& b) {
+		return std::fabs(a.x - b.x) > 2.0f / 255.0f
+			|| std::fabs(a.y - b.y) > 2.0f / 255.0f
+			|| std::fabs(a.z - b.z) > 2.0f / 255.0f;
+	};
+	u_int uTested = 0u;
+	for (u_int id = 0; id < (u_int)ZM_BUILDING_COUNT; ++id)
+	{
+		const ZM_BUILDING_ID eId = (ZM_BUILDING_ID)id;
+		const ZM_BuildingRecipe xR = ZM_ResolveBuildingRecipe(eId);
+		const ZM_GenImage xF = ZM_BuildBuildingFacade(xR);
+		ZENITH_ASSERT_FALSE(xF.IsEmpty(), "building %u facade empty", id);
+		ZENITH_ASSERT_EQ(xF.GetWidth(),  uZM_BUILDING_FACADE_RESOLUTION, "facade width drifted (%u)", id);
+		ZENITH_ASSERT_EQ(xF.GetHeight(), uZM_BUILDING_FACADE_RESOLUTION, "facade height drifted (%u)", id);
+
+		const u_int uCols = xR.m_uWindowCols > 0u ? xR.m_uWindowCols : 1u;
+		const u_int uRows = xR.m_uWindowRows > 0u ? xR.m_uWindowRows : 1u;
+		const float fCellW = (fZM_FACADE_GRID_U1 - fZM_FACADE_GRID_U0) / (float)uCols;
+		const float fCellH = (fZM_FACADE_GRID_V1 - fZM_FACADE_GRID_V0) / (float)uRows;
+		const float fCU = fZM_FACADE_GRID_U0 + 0.5f * fCellW;
+		const float fCV = fZM_FACADE_GRID_V0 + 0.5f * fCellH;
+		const u_int uYwin = (u_int)(fCV * 255.0f + 0.5f);
+		const u_int uXwin = (u_int)(fCU * 255.0f + 0.5f);
+
+		const Zenith_Maths::Vector4 xWall = xF.Get(150u, 8u);
+		const Zenith_Maths::Vector4 xRoof = xF.Get(230u, 128u);
+		const Zenith_Maths::Vector4 xWin  = xF.Get(uYwin, uXwin);
+		const Zenith_Maths::Vector4 xDoor = xF.Get(28u, 128u);
+
+		ZENITH_ASSERT_TRUE(fCV < 0.72f, "building %u window row V not in wall band", id);
+		ZENITH_ASSERT_TRUE(Differ(xWin,  xRoof), "building %u window colour == roof (flipped V?)", id);
+		ZENITH_ASSERT_TRUE(Differ(xDoor, xRoof), "building %u door colour == roof (flipped V?)", id);
+		ZENITH_ASSERT_TRUE(Differ(xWin,  xWall), "building %u window not painted over wall", id);
+
+		const Zenith_Maths::Vector4 axS[4] = { xWall, xRoof, xWin, xDoor };
+		u_int uDistinct = 0u;
+		for (u_int i = 0; i < 4u; ++i)
+		{
+			bool bNew = true;
+			for (u_int j = 0; j < i; ++j) { if (!Differ(axS[i], axS[j])) { bNew = false; } }
+			if (bNew) { ++uDistinct; }
+		}
+		ZENITH_ASSERT_TRUE(uDistinct >= 3u, "building %u facade has < 3 distinct colours", id);
+
+		const ZM_GenImage xF2 = ZM_BuildBuildingFacade(xR);
+		ZENITH_ASSERT_TRUE(xF.Equals(xF2), "building %u facade not deterministic", id);
+		++uTested;
+	}
+	ZENITH_ASSERT_GT(uTested, 0u, "no buildings exercised the facade-structural gate");
+}
+
+// ############################################################################
+// 9. Facade domain isolation -- ALBEDO (and only it) drives the facade
+// ############################################################################
+
+// Mutating the ALBEDO domain seed perturbs the facade (the wall/roof jitter reads
+// it), mutating a NON-albedo (MESH) domain seed leaves the facade byte-identical
+// (the builder never constructs a MESH RNG), and distinct palette/theme facades --
+// including two same-palette gyms separated only by their theme tint -- differ.
+ZENITH_TEST(ZM_Gen, BuildingGen_FacadeDomainIsolation)
+{
+	const ZM_BuildingRecipe xBase = ZM_ResolveBuildingRecipe(ZM_BUILDING_CARE_CENTER);
+	const ZM_GenImage x0 = ZM_BuildBuildingFacade(xBase);
+
+	ZM_BuildingRecipe xAlb = xBase;
+	xAlb.m_aulDomainSeed[ZM_GEN_DOMAIN_ALBEDO] ^= 0x9E3779B97F4A7C15ull;
+	const ZM_GenImage xA = ZM_BuildBuildingFacade(xAlb);
+	ZENITH_ASSERT_FALSE(x0.Equals(xA), "mutating the ALBEDO seed must change the facade");
+	ZENITH_ASSERT_NE(x0.ContentHash(), xA.ContentHash(), "ALBEDO mutation must change the facade hash");
+
+	ZM_BuildingRecipe xMesh = xBase;
+	xMesh.m_aulDomainSeed[ZM_GEN_DOMAIN_MESH] ^= 0x9E3779B97F4A7C15ull;
+	const ZM_GenImage xM = ZM_BuildBuildingFacade(xMesh);
+	ZENITH_ASSERT_TRUE(x0.Equals(xM), "mutating a non-ALBEDO seed must NOT change the facade");
+	ZENITH_ASSERT_EQ(x0.ContentHash(), xM.ContentHash(), "non-ALBEDO mutation must not change the facade hash");
+
+	const ZM_GenImage xEarth = ZM_BuildBuildingFacade(ZM_ResolveBuildingRecipe(ZM_BUILDING_GYM_1));
+	ZENITH_ASSERT_FALSE(x0.Equals(xEarth), "distinct palette/theme facades must differ");
+
+	const ZM_GenImage xFire = ZM_BuildBuildingFacade(ZM_ResolveBuildingRecipe(ZM_BUILDING_GYM_2));
+	const ZM_GenImage xElec = ZM_BuildBuildingFacade(ZM_ResolveBuildingRecipe(ZM_BUILDING_GYM_4));
+	ZENITH_ASSERT_FALSE(xFire.Equals(xElec), "same-palette gyms must diverge via theme tint");
 }
