@@ -489,9 +489,11 @@ Category `ZM_Gen` (headless, in-memory -- no disk dependency, CI-safe). The S4
 foundation (`ZM_GenCommon` + `ZM_TextureSynth`, ZM-D-059) shipped **31** `ZM_Gen`
 units (boot gate 1773 -> 1804); the creature generator below adds **43** more
 (1804 -> 1847), the creature-animation generator below adds **19** more
-(1847 -> 1866), and the human generator below adds **20** more (1866 -> 1886).
-The whole `ZM_Gen` T0 category is now **113** units, four of which
-(the four bake smokes) are `ZENITH_TOOLS`-only, so `_False`/Android configs
+(1847 -> 1866), the human generator below adds **20** more (1866 -> 1886), the
+building generator below adds **10** more (1886 -> 1896; 9 units + 1 bake smoke),
+and the prop generator below adds **9** more (1896 -> 1905; 8 units + 1 bake
+smoke). The whole `ZM_Gen` T0 category is now **132** units, six of which
+(the six bake smokes) are `ZENITH_TOOLS`-only, so `_False`/Android configs
 register them as empty TUs.
 
 #### ZM_Gen -- creature generator (SHIPPED)
@@ -673,15 +675,96 @@ clips EACH). Determinism is golden-pinned (`uZM_HUMANGEN_VERSION` = 1). It ships
   unavailable; in `_False`/Android configs the whole TU is empty, so they do not
   register.
 
-Boot unit-gate baseline after the S4 creature + creature-animation + human
-work: **1886** (was 1773 at the S3 gate, 1847 after the creature generator,
-1866 after the creature-animation generator; HumanGen SC1..SC5 add the final
-**+20**, so `.github/workflows/zm-tests.yml` now runs
-`run_unit_gate.ps1 -Baseline 1886`).
+#### ZM_Gen -- building generator (SHIPPED)
 
-**Not-yet-built S4 families** (`ZM_BuildingGen`, `ZM_PropGen`) get their own
-`ZM_Gen` units as they land; the invariants above (same-seed determinism,
-structural validity, shiny-differs) are the shared template.
+`ZM_BuildingGen` turns each of the 30 building roster rows into a deterministic
+STATIC model -- a box composition lofted via `ZM_StaticMesh` with NO skeleton and
+NO animation (contrast creatures/humans, which carry rigs + clips) -- and bakes a
+4-file static bundle per building. Per-model variation is shell geometry + facade
+texture only. Determinism is golden-pinned (`uZM_BUILDINGGEN_VERSION` = 1). It
+ships **9** pure/all-config `ZM_Gen` units in `Tests/ZM_Tests_BuildingGen.cpp`
+(SC1..SC3), plus 1 `ZENITH_TOOLS`-only bake smoke (SC5) in
+`Tests/ZM_Tests_BuildingBake.cpp`:
+
+- **SC1 -- roster + recipe purity + static mesh contract**
+  (`Tests/ZM_Tests_BuildingGen.cpp`, 5 units): `BuildingGen_RosterTotality` (all
+  30 rows self-index + build + `ZM_ValidateBuilding` pass + static contract +
+  gym/non-gym theme-type contract), `BuildingGen_RecipePurity` (pure f(id) +
+  pairwise-distinct synthetic seeds + MESH != ALBEDO seed),
+  `BuildingGen_AssetPathScheme` (golden `game:Buildings/<Name>/...` refs +
+  too-small-buffer -> false truncation), `BuildingGen_BuildDeterminism`
+  (reflexive byte-identity/hash + distinct-ids-differ), and
+  `BuildingGen_StaticMeshContract` (zero bones, empty skin buffers, outward
+  winding, finite in-range UVs).
+
+- **SC2 -- parametric shell** (`Tests/ZM_Tests_BuildingGen.cpp`, 2 units):
+  `BuildingGen_ShellStructural` (exact per-roof-kind vert/tri counts -- GABLE
+  38/18, HIP 36/16, FLAT 48/24 -- + static validity + grounded y=0 + roof apex
+  above wall height) and `BuildingGen_MeshSensitivity` (the MESH seed perturbs
+  the mesh; a non-MESH seed does not; distinct ids differ).
+
+- **SC3 -- facade texture** (`Tests/ZM_Tests_BuildingGen.cpp`, 2 units):
+  `BuildingGen_FacadeStructural` (facade non-empty for all 30 rows; window/door
+  pixels land in the wall band not the roof band; >= 3 distinct colours;
+  deterministic) and `BuildingGen_FacadeDomainIsolation` (the ALBEDO seed changes
+  the facade; the MESH seed does not; distinct palette/theme ids differ;
+  same-palette gyms diverge via theme tint).
+
+- **Bake smoke** (`Tests/ZM_Tests_BuildingBake.cpp`, `ZENITH_TOOLS`-only, 1
+  unit): `BuildingBake_StaticModelFilesLandAndNoRig` bakes CareCenter via
+  `ZM_BakeBuilding` and asserts the 4 per-model files land on disk non-empty,
+  then hermetically re-parses the baked `.zmodel` and asserts it is STATIC --
+  `GetSkeletonPath().empty()` + `HasSkeleton()` == false +
+  `GetNumAnimations()` == 0; `ZENITH_SKIP`s when the bake environment is
+  unavailable. In `_False`/Android configs the whole TU is empty, so it does not
+  register.
+
+#### ZM_Gen -- prop generator (SHIPPED)
+
+`ZM_PropGen` turns each of the 25 prop roster rows into a deterministic STATIC
+model -- like buildings, a box composition via `ZM_StaticMesh` with NO skeleton
+and NO animation, baked as a 4-file static bundle per prop. Determinism is
+golden-pinned (`uZM_PROPGEN_VERSION` = 1). It ships **8** pure/all-config
+`ZM_Gen` units in `Tests/ZM_Tests_PropGen.cpp` (SC4), plus 1 `ZENITH_TOOLS`-only
+bake smoke (SC5) in `Tests/ZM_Tests_PropBake.cpp`:
+
+- **Roster + purity + static contract** (`Tests/ZM_Tests_PropGen.cpp`, 5 units,
+  mirroring BuildingGen's SC1): `PropGen_RosterTotality` (all 25 rows self-index +
+  build + `ZM_ValidateProp` pass + static contract + biome contract: DRESSING
+  rows carry a real biome, all others NONE), `PropGen_RecipePurity` (pure f(id) +
+  pairwise-distinct synthetic seeds + MESH != ALBEDO seed),
+  `PropGen_AssetPathScheme` (golden `game:Props/<Name>/...` refs +
+  too-small-buffer -> false truncation), `PropGen_BuildDeterminism` (reflexive
+  byte-identity/hash + distinct-ids-differ), and `PropGen_StaticMeshContract`
+  (zero bones, empty skin buffers, outward winding, finite in-range UVs).
+
+- **Biome coverage + domain isolation** (`Tests/ZM_Tests_PropGen.cpp`, 3 units):
+  `PropGen_BiomeDressingCoverage` (every real battle-dome biome has >= 1 dressing
+  prop), `PropGen_MeshSensitivity` (the MESH seed perturbs the mesh; a non-MESH
+  seed does not; distinct ids differ), and `PropGen_TextureDomainIsolation` (the
+  ALBEDO seed changes the texture; the MESH seed does not; distinct palette/biome
+  ids differ).
+
+- **Bake smoke** (`Tests/ZM_Tests_PropBake.cpp`, `ZENITH_TOOLS`-only, 1 unit):
+  `PropBake_StaticModelFilesLandAndNoRig` bakes LampPost via `ZM_BakeProp` and
+  asserts the 4 per-model files land, then re-parses the baked `.zmodel` and
+  asserts it is STATIC -- no skeleton, 0 anims; `ZENITH_SKIP`s when the bake
+  environment is unavailable. In `_False`/Android configs the whole TU is empty,
+  so it does not register.
+
+Boot unit-gate baseline after the S4 creature + creature-animation + human +
+building + prop work: **1905** (was 1773 at the S3 gate, 1847 after the creature
+generator, 1866 after the creature-animation generator, 1886 after the human
+generator; the building generator adds **+10** [9 units + 1 bake smoke] to reach
+1896 and the prop generator adds the final **+9** [8 units + 1 bake smoke] to
+reach 1905, so `.github/workflows/zm-tests.yml` now runs
+`run_unit_gate.ps1 -Baseline 1905`).
+
+**All S4 generator families are now built** (creatures, creature animation,
+humans, buildings, props); the shared invariant template above (same-seed
+determinism, structural validity, domain-seed isolation) governs each. The only
+remaining S4 box is the top-level per-family `ZM_BakeManifest` marker (version +
+file-existence gate), which is not a generator family.
 
 ### 5.5 S5 -- battle integration slice
 

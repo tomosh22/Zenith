@@ -13,14 +13,14 @@ Scope.md (what is cut), TestPlan.md (determinism + generator test specs),
 BuildEnvironment.md (the tools build that runs the bake), CIPolicy.md
 (why CI never sees these files), Roadmap.md (S3/S4 stage gates).
 
-**Last updated:** 2026-07-16 (S4 -- `ZM_HumanGen` COMPLETE (SC1..SC5): ~34
-humanoid NPC models all share ONE fixed 16-bone skeleton + ONE shared 9-clip
-set (Idle/Walk/Run/Talk/Wave/Point/Cheer/Hurt/Faint), baked ONCE for the whole
-roster (shared `Human.zskel` + 9 shared `.zanim`), plus per-model
-`.zmesh`/`_albedo.ztxtr`/`.zmtrl`/`.zmodel` (section 2); per-model variation is
-mesh-loft + texture only, with NO per-model skeleton and NO per-model clips
-(inverting the creature layout). `uZM_HUMANGEN_VERSION` = 1. All baked outputs
-remain git-ignored.).
+**Last updated:** 2026-07-16 (S4 -- `ZM_BuildingGen` (30 buildings) + `ZM_PropGen`
+(25 props) COMPLETE (SC1..SC5): the two STATIC-model generators. Each turns a
+roster row into a box composition via `ZM_StaticMesh` and bakes a **4-file STATIC
+bundle** per model -- a skeleton-less `.zmesh` + an albedo `.ztxtr` + a `.zmtrl` +
+a no-rig `.zmodel` (NO skeleton, NO animation; contrast creatures' 15 files and
+humans' shared rig) -- via the `ZM_GenBakeStaticMesh` bridge (section 3). Box
+colliders stay SCENE-authored, not baked. `uZM_BUILDINGGEN_VERSION` = 1,
+`uZM_PROPGEN_VERSION` = 1. All baked outputs remain git-ignored.).
 
 ---
 
@@ -204,17 +204,57 @@ and forces a cold family re-bake. Locked by the `ZM_Gen` HumanGen units
 
 ---
 
-## 3. Buildings (~30) and props (~25)
+## 3. Buildings (30) and props (25)
 
-- **Buildings** (ZM_BuildingGen, S4): parametric shells (footprint / roof /
-  facade texture with baked window + door decals). Roster: 4 house styles x
-  3 palettes (12), player home, lab, 8 themed gyms, Care Center, Trade Post,
-  League, Battle Tower -- ~30 models. Box colliders are authored at SCENE
-  time (2-3 per building leaving door gaps), not baked into the model.
-- **Props** (ZM_PropGen, S4): ~25 -- fences, signs, lamps, bridges, ledge
-  lips, cave rocks, interior furniture, and the ~6 battle-dome biome
-  dressing sets (the battle scene is ONE scene; per-biome dressing is
-  swapped at runtime from these baked sets).
+`ZM_BuildingGen` and `ZM_PropGen` (S4 -- SHIPPED, SC1..SC5) are the two
+STATIC-model generators: each turns a roster row into a box composition lofted
+via `ZM_StaticMesh` and bakes a **4-file STATIC bundle** per model with NO
+skeleton and NO animation. This contrasts creatures (15 files EACH, section 1.2)
+and humans (a shared rig + 4 per-model files, section 2): here every model is
+fully self-contained in 4 files and carries no rig at all. Both families bake the
+mesh through the shipped `ZM_GenBakeStaticMesh` bridge (skeleton-less) and the
+albedo through `ZM_SynthBakeAlbedoBC1`; the baked `.zmodel` lists one submesh +
+one material and carries NO skeleton path and NO animation paths. Box colliders
+are authored at SCENE time for BOTH families, never baked into the model.
+
+**Buildings (30 models).** `ZM_BuildingGen` (SHIPPED): parametric shells
+(footprint / roof / facade texture with baked window + door decals). Roster:
+4 house styles x 3 palettes (12), player home, lab, 8 themed gyms, Care Center,
+Trade Post, League, Battle Tower -- 30 models. Box colliders are authored at
+SCENE time (2-3 per building leaving door gaps), not baked. `ZM_BakeBuilding`
+(TOOLS-only) writes the 4 files under `game:Buildings/<Name>/`:
+
+| File | Count per building | Format / notes |
+|---|---|---|
+| `<Name>.zmesh` | 1 | skeleton-less static shell mesh, single submesh (`HasSkinning()` == false) |
+| `<Name>_facade.ztxtr` | 1 | facade albedo (baked window + door decals), BC1 256x256 |
+| `<Name>.zmtrl` | 1 | matte dielectric, .zmtrl v5 -- facade in BASE_COLOR, roughness 0.8 / metallic 0.0 |
+| `<Name>.zmodel` | 1 | single-submesh mesh + one material, .zmodel v2 -- NO skeleton path, NO animation paths |
+
+Family total: **30 buildings x 4 = 120 files**.
+
+**Props (25 models).** `ZM_PropGen` (SHIPPED): 25 models -- fences, signs, lamps,
+bridges, ledge lips, cave rocks, interior furniture, and the ~6 battle-dome biome
+dressing sets (the battle scene is ONE scene; per-biome dressing is swapped at
+runtime from these baked sets). Like buildings, props carry SCENE-authored box
+colliders, not baked into the model. `ZM_BakeProp` (TOOLS-only) writes the 4
+files under `game:Props/<Name>/`:
+
+| File | Count per prop | Format / notes |
+|---|---|---|
+| `<Name>.zmesh` | 1 | skeleton-less static mesh, single submesh (`HasSkinning()` == false) |
+| `<Name>_albedo.ztxtr` | 1 | base albedo, BC1 128x128 |
+| `<Name>.zmtrl` | 1 | matte dielectric, .zmtrl v5 -- albedo in BASE_COLOR |
+| `<Name>.zmodel` | 1 | single-submesh mesh + one material, .zmodel v2 -- NO skeleton path, NO animation paths |
+
+Family total: **25 props x 4 = 100 files**.
+
+**Determinism / version stamp.** Every output byte is a pure function of the
+roster id (section 6.2); the generator versions are `uZM_BUILDINGGEN_VERSION`
+(currently **1**) and `uZM_PROPGEN_VERSION` (currently **1**), golden-pinned -- a
+change to either generation algorithm bumps its version and forces a cold family
+re-bake. Locked by the `ZM_Gen` BuildingGen/PropGen units
+([TestPlan.md](TestPlan.md) 5.4).
 
 ---
 
@@ -415,11 +455,13 @@ This is the hardened RenderTest pattern. The three measured families lock the
 terrain-family format now (`ZMTR`, v1, count 771 for each 256-chunk town and
 count 1,155 for the 384-chunk route in a 12-byte atomic marker; section 4.3).
 The creature generator already stamps its generation version via
-`uZM_CREATUREGEN_VERSION` (currently 3; section 1.2), and the human family
-likewise stamps `uZM_HUMANGEN_VERSION` (currently 1; section 2). The full
-per-family `ZM_BakeManifest` marker (version + file-existence gate) is itself a
-later S4 box; the building/prop marker formats remain TBD until those generators
-land.
+`uZM_CREATUREGEN_VERSION` (currently 3; section 1.2), the human family likewise
+stamps `uZM_HUMANGEN_VERSION` (currently 1; section 2), and the building and prop
+families stamp `uZM_BUILDINGGEN_VERSION` (currently 1) and `uZM_PROPGEN_VERSION`
+(currently 1; section 3). The full per-family `ZM_BakeManifest` marker (version +
+file-existence gate) is itself a later S4 box; now that every generator family
+stamps its own version, only that top-level marker format itself remains to be
+built.
 
 ### 6.2 Determinism invariant (tested)
 
