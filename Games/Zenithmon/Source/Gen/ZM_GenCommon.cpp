@@ -1318,4 +1318,80 @@ bool ZM_GenBakeMeshWithSharedSkeleton(const ZM_GenMesh& xMesh, const char* szMes
 	// Export is void; verify the artifact landed as the IO-success signal.
 	return std::filesystem::exists(xMeshFsPath, xEc);
 }
+
+// ---- Static (bone-free) mesh bake -----------------------------------------
+// Buildings/props are STATIC models (NO skeleton, NO animation). This is
+// ZM_GenBakeMesh's vertex/triangle copy block VERBATIM, with the skin block, the
+// Zenith_SkeletonAsset build/Export, the SetSkeletonPath, and the skel-path
+// create_directories REMOVED. Because NO SetVertexSkinning runs, the asset's
+// m_xBoneIndices stays empty -> the on-disk .zmesh has HasSkinning()==false.
+bool ZM_GenBakeStaticMesh(const ZM_GenMesh& xMesh, const char* szMeshPath)
+{
+	if (szMeshPath == nullptr)
+	{
+		return false;
+	}
+
+	const u_int uNumVerts = xMesh.GetNumVerts();
+	const u_int uNumIndices = xMesh.m_xIndices.GetSize();
+
+	// --- Element-wise copy into a stack Zenith_MeshAsset (no re-derive) ---
+	Zenith_MeshAsset xAsset;
+	xAsset.Reserve(uNumVerts, uNumIndices);
+
+	const bool bHasTangents = xMesh.m_xTangents.GetSize() == uNumVerts;
+	const bool bHasColors = xMesh.m_xColors.GetSize() == uNumVerts;
+	for (u_int u = 0; u < uNumVerts; u++)
+	{
+		const Zenith_Maths::Vector3 xTangent = bHasTangents
+			? xMesh.m_xTangents.Get(u)
+			: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+		const Zenith_Maths::Vector4 xColor = bHasColors
+			? xMesh.m_xColors.Get(u)
+			: Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+		xAsset.AddVertex(xMesh.m_xPositions.Get(u), xMesh.m_xNormals.Get(u),
+			xMesh.m_xUVs.Get(u), xTangent, xColor);
+	}
+
+	// Bitangents = cross(N, T) per vertex (AddVertex does not populate them);
+	// matches Zenith_MeshAsset::GenerateTangents' output so the asset is complete.
+	for (u_int u = 0; u < uNumVerts; u++)
+	{
+		const Zenith_Maths::Vector3 xTangent = bHasTangents
+			? xMesh.m_xTangents.Get(u)
+			: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+		xAsset.m_xBitangents.PushBack(glm::cross(xMesh.m_xNormals.Get(u), xTangent));
+	}
+
+	const u_int uNumTris = xMesh.GetNumTris();
+	for (u_int u = 0; u < uNumTris; u++)
+	{
+		xAsset.AddTriangle(xMesh.m_xIndices.Get(u * 3u + 0u),
+			xMesh.m_xIndices.Get(u * 3u + 1u), xMesh.m_xIndices.Get(u * 3u + 2u));
+	}
+
+	// NO skin block (static): no SetVertexSkinning -> m_xBoneIndices stays empty ->
+	// HasSkinning()==false on the baked asset.
+
+	if (uNumIndices > 0u)
+	{
+		xAsset.AddSubmesh(0u, uNumIndices, 0u);
+	}
+
+	// NO Zenith_SkeletonAsset, NO SetSkeletonPath: a pure static mesh.
+	xAsset.ComputeBounds();
+
+	// --- create_directories (tolerating an absent Assets/ tree), then Export ---
+	std::error_code xEc;
+	const std::filesystem::path xMeshFsPath(szMeshPath);
+	if (xMeshFsPath.has_parent_path())
+	{
+		std::filesystem::create_directories(xMeshFsPath.parent_path(), xEc);
+	}
+
+	xAsset.Export(szMeshPath);
+
+	// Export is void; verify the artifact landed as the IO-success signal.
+	return std::filesystem::exists(xMeshFsPath, xEc);
+}
 #endif

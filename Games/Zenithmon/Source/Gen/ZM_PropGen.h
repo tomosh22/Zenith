@@ -149,14 +149,15 @@ enum ZM_PROP_ASSET_KIND : u_int
 bool ZM_PropAssetPath(ZM_PROP_ID eId, ZM_PROP_ASSET_KIND eKind, char* szOut, u_int uCap);
 
 // ---------------------------------------------------------------------------
-// Disk bake (TOOLS ONLY) -- ZM_BakeProp writes one model's mesh/albedo/material/
-// model bundle; ZM_BakeAllProps bakes every model. NOT exercised by the in-memory
-// ZM_Gen gate. Bodies land in SC5; SC4 declares them as STUBS returning false.
-// Non-tools no-ops keep _False configs linking.
+// Disk bake (TOOLS ONLY) -- ZM_BakeProp writes one model's STATIC
+// mesh/albedo/material/model bundle (skeleton-less .zmesh via ZM_GenBakeStaticMesh
+// + .zmtrl + a .zmodel with NO skeleton/anim); ZM_BakeAllProps bakes every model.
+// NOT exercised by the in-memory ZM_Gen gate (see the tools-only bake smoke
+// ZM_Tests_PropBake.cpp). Non-tools no-ops keep _False configs linking.
 // ---------------------------------------------------------------------------
 #ifdef ZENITH_TOOLS
-bool ZM_BakeProp(ZM_PROP_ID eId);    // STUB in SC4 (return false); real bake = SC5
-bool ZM_BakeAllProps();               // STUB in SC4 (return false); real bake = SC5
+bool ZM_BakeProp(ZM_PROP_ID eId);    // static bundle: .zmesh/_albedo.ztxtr/.zmtrl/.zmodel
+bool ZM_BakeAllProps();               // bakes every prop in the roster
 #else
 inline bool ZM_BakeProp(ZM_PROP_ID) { return false; }
 inline bool ZM_BakeAllProps()       { return false; }

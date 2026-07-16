@@ -345,18 +345,90 @@ bool ZM_PropAssetPath(ZM_PROP_ID eId, ZM_PROP_ASSET_KIND eKind, char* szOut, u_i
 }
 
 // ============================================================================
-// Disk bake (TOOLS ONLY) -- STUBS in SC4. The real bake (mesh/albedo/.zmtrl/
-// .zmodel bundle via the ZM_GenBakeStaticMesh bridge) lands in SC5. Declared here
-// so the seam is frozen; non-tools no-ops live in the header.
+// Disk bake (TOOLS ONLY) -- SC5. Writes one static prop bundle: the .zmesh (via
+// the skeleton-less ZM_GenBakeStaticMesh bridge), the albedo .ztxtr (BC1), the
+// .zmtrl (baked albedo in BASE_COLOR, matte dielectric), and the .zmodel -- which
+// binds NO skeleton and lists NO animations (props are static). The mesh bake
+// creates the Props/<Name>/ folder FIRST (SaveToFile + model Export create no
+// directories), so the material + model writes that follow land in it.
 // ============================================================================
 #ifdef ZENITH_TOOLS
-bool ZM_BakeProp(ZM_PROP_ID /*eId*/)
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "Collections/Zenith_Vector.h"
+#include <filesystem>
+#include <string>
+
+bool ZM_BakeProp(ZM_PROP_ID eId)
 {
-	return false;   // SC5
+	ZM_Prop xProp;
+	ZM_BuildProp(eId, xProp);
+
+	char acMeshRef[512], acAlbedoRef[512], acMatRef[512], acModelRef[512];
+	bool bOk = true;
+	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_MESH,     acMeshRef,   sizeof(acMeshRef));
+	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_ALBEDO,   acAlbedoRef, sizeof(acAlbedoRef));
+	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_MATERIAL, acMatRef,    sizeof(acMatRef));
+	bOk &= ZM_PropAssetPath(eId, ZM_PROP_ASSET_MODEL,    acModelRef,  sizeof(acModelRef));
+	if (!bOk)
+	{
+		return false;   // a path overflowed; do not bake a partial bundle
+	}
+
+	const std::string strMeshFs   = Zenith_AssetRegistry::ResolvePath(std::string(acMeshRef));
+	const std::string strAlbedoFs = Zenith_AssetRegistry::ResolvePath(std::string(acAlbedoRef));
+	const std::string strMatFs    = Zenith_AssetRegistry::ResolvePath(std::string(acMatRef));
+	const std::string strModelFs  = Zenith_AssetRegistry::ResolvePath(std::string(acModelRef));
+
+	// Static mesh (.zmesh) -- NO skeleton, NO skin. Albedo (.ztxtr, BC1).
+	bOk &= ZM_GenBakeStaticMesh(xProp.m_xMesh, strMeshFs.c_str());
+	bOk &= ZM_SynthBakeAlbedoBC1(xProp.m_xTexture, strAlbedoFs.c_str());
+
+	const std::string strName = ZM_GetPropName(eId);
+
+	// Material (.zmtrl v5): baked albedo in the BASE_COLOR slot, matte dielectric.
+	// Create<>()+GetDirect() keeps the asset alive across SaveToFile (never a stack
+	// object). The albedo is passed as a "game:" ref (stored as a path, NOT loaded now).
+	{
+		Zenith_AssetHandle<Zenith_MaterialAsset> xMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMat = xMat.GetDirect();
+		pxMat->SetName(strName);
+		pxMat->SetDiffuseTexture(TextureHandle(std::string(acAlbedoRef)));
+		pxMat->SetRoughness(0.8f);
+		pxMat->SetMetallic(0.0f);
+		pxMat->SaveToFile(strMatFs);
+	}
+
+	// Model (.zmodel v2): the single-submesh static mesh + exactly ONE material.
+	// STATIC: NO SetSkeletonPath, NO AddAnimationPath -> HasSkeleton()==false and
+	// GetNumAnimations()==0 on the baked model.
+	{
+		Zenith_AssetHandle<Zenith_ModelAsset> xModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		Zenith_ModelAsset* pxModel = xModel.GetDirect();
+		pxModel->SetName(strName);
+		Zenith_Vector<std::string> xMats;
+		xMats.PushBack(std::string(acMatRef));
+		pxModel->AddMeshByPath(std::string(acMeshRef), xMats);
+		pxModel->Export(strModelFs.c_str());   // STATIC: NO SetSkeletonPath, NO AddAnimationPath
+	}
+
+	// SaveToFile always returns true and Export is void, so exists() is the real IO
+	// signal (mirrors ZM_BakeHuman): AND both new artifacts into bOk.
+	std::error_code xEc;
+	bOk &= std::filesystem::exists(std::filesystem::path(strMatFs),   xEc);
+	bOk &= std::filesystem::exists(std::filesystem::path(strModelFs), xEc);
+	return bOk;
 }
 
 bool ZM_BakeAllProps()
 {
-	return false;   // SC5
+	bool bOk = true;
+	const u_int uCount = static_cast<u_int>(ZM_PROP_COUNT);
+	for (u_int u = 0; u < uCount; ++u)
+	{
+		bOk &= ZM_BakeProp(static_cast<ZM_PROP_ID>(u));
+	}
+	return bOk;
 }
 #endif   // ZENITH_TOOLS

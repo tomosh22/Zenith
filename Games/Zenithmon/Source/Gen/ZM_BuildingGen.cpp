@@ -346,18 +346,90 @@ bool ZM_BuildingAssetPath(ZM_BUILDING_ID eId, ZM_BUILDING_ASSET_KIND eKind, char
 }
 
 // ============================================================================
-// Disk bake (TOOLS ONLY) -- STUBS in SC1. The real bake (mesh/facade/.zmtrl/
-// .zmodel bundle via the ZM_GenBakeStaticMesh bridge) lands in SC5. Declared here
-// so the seam is frozen; non-tools no-ops live in the header.
+// Disk bake (TOOLS ONLY) -- SC5. Writes one static building bundle: the .zmesh
+// (via the skeleton-less ZM_GenBakeStaticMesh bridge), the facade .ztxtr (BC1),
+// the .zmtrl (baked facade in BASE_COLOR, matte dielectric), and the .zmodel --
+// which binds NO skeleton and lists NO animations (buildings are static). The
+// mesh bake creates the Buildings/<Name>/ folder FIRST (SaveToFile + model Export
+// create no directories), so the material + model writes that follow land in it.
 // ============================================================================
 #ifdef ZENITH_TOOLS
-bool ZM_BakeBuilding(ZM_BUILDING_ID /*eId*/)
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "Collections/Zenith_Vector.h"
+#include <filesystem>
+#include <string>
+
+bool ZM_BakeBuilding(ZM_BUILDING_ID eId)
 {
-	return false;   // SC5
+	ZM_Building xBuilding;
+	ZM_BuildBuilding(eId, xBuilding);
+
+	char acMeshRef[512], acFacadeRef[512], acMatRef[512], acModelRef[512];
+	bool bOk = true;
+	bOk &= ZM_BuildingAssetPath(eId, ZM_BUILDING_ASSET_MESH,     acMeshRef,   sizeof(acMeshRef));
+	bOk &= ZM_BuildingAssetPath(eId, ZM_BUILDING_ASSET_FACADE,   acFacadeRef, sizeof(acFacadeRef));
+	bOk &= ZM_BuildingAssetPath(eId, ZM_BUILDING_ASSET_MATERIAL, acMatRef,    sizeof(acMatRef));
+	bOk &= ZM_BuildingAssetPath(eId, ZM_BUILDING_ASSET_MODEL,    acModelRef,  sizeof(acModelRef));
+	if (!bOk)
+	{
+		return false;   // a path overflowed; do not bake a partial bundle
+	}
+
+	const std::string strMeshFs   = Zenith_AssetRegistry::ResolvePath(std::string(acMeshRef));
+	const std::string strFacadeFs = Zenith_AssetRegistry::ResolvePath(std::string(acFacadeRef));
+	const std::string strMatFs    = Zenith_AssetRegistry::ResolvePath(std::string(acMatRef));
+	const std::string strModelFs  = Zenith_AssetRegistry::ResolvePath(std::string(acModelRef));
+
+	// Static mesh (.zmesh) -- NO skeleton, NO skin. Facade (.ztxtr, BC1).
+	bOk &= ZM_GenBakeStaticMesh(xBuilding.m_xMesh, strMeshFs.c_str());
+	bOk &= ZM_SynthBakeAlbedoBC1(xBuilding.m_xFacade, strFacadeFs.c_str());
+
+	const std::string strName = ZM_GetBuildingName(eId);
+
+	// Material (.zmtrl v5): baked facade in the BASE_COLOR slot, matte dielectric.
+	// Create<>()+GetDirect() keeps the asset alive across SaveToFile (never a stack
+	// object). The facade is passed as a "game:" ref (stored as a path, NOT loaded now).
+	{
+		Zenith_AssetHandle<Zenith_MaterialAsset> xMat = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxMat = xMat.GetDirect();
+		pxMat->SetName(strName);
+		pxMat->SetDiffuseTexture(TextureHandle(std::string(acFacadeRef)));
+		pxMat->SetRoughness(0.8f);
+		pxMat->SetMetallic(0.0f);
+		pxMat->SaveToFile(strMatFs);
+	}
+
+	// Model (.zmodel v2): the single-submesh static mesh + exactly ONE material.
+	// STATIC: NO SetSkeletonPath, NO AddAnimationPath -> HasSkeleton()==false and
+	// GetNumAnimations()==0 on the baked model.
+	{
+		Zenith_AssetHandle<Zenith_ModelAsset> xModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+		Zenith_ModelAsset* pxModel = xModel.GetDirect();
+		pxModel->SetName(strName);
+		Zenith_Vector<std::string> xMats;
+		xMats.PushBack(std::string(acMatRef));
+		pxModel->AddMeshByPath(std::string(acMeshRef), xMats);
+		pxModel->Export(strModelFs.c_str());   // STATIC: NO SetSkeletonPath, NO AddAnimationPath
+	}
+
+	// SaveToFile always returns true and Export is void, so exists() is the real IO
+	// signal (mirrors ZM_BakeHuman): AND both new artifacts into bOk.
+	std::error_code xEc;
+	bOk &= std::filesystem::exists(std::filesystem::path(strMatFs),   xEc);
+	bOk &= std::filesystem::exists(std::filesystem::path(strModelFs), xEc);
+	return bOk;
 }
 
 bool ZM_BakeAllBuildings()
 {
-	return false;   // SC5
+	bool bOk = true;
+	const u_int uCount = static_cast<u_int>(ZM_BUILDING_COUNT);
+	for (u_int u = 0; u < uCount; ++u)
+	{
+		bOk &= ZM_BakeBuilding(static_cast<ZM_BUILDING_ID>(u));
+	}
+	return bOk;
 }
 #endif   // ZENITH_TOOLS

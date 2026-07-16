@@ -359,6 +359,12 @@ bool ZM_GenBakeSkeleton(const ZM_GenMesh& xMesh, const char* szSkeletonPath);
 // per-model .zskel (contrast ZM_GenBakeMesh, which writes one).
 bool ZM_GenBakeMeshWithSharedSkeleton(const ZM_GenMesh& xMesh, const char* szMeshPath,
 	const char* szSkeletonRef);
+
+// SC5: STATIC mesh bake -- buildings/props are static models (NO skeleton, NO
+// animation). Element-wise copies the pure buffers into a Zenith_MeshAsset,
+// ComputeBounds, Exports ONLY the .zmesh. Writes NO .zskel and calls NO
+// SetSkeletonPath/SetVertexSkinning, so the on-disk mesh has HasSkinning()==false.
+bool ZM_GenBakeStaticMesh(const ZM_GenMesh& xMesh, const char* szMeshPath);
 #else
 inline bool ZM_GenBakeMesh(const ZM_GenMesh&, const char*, const char*, const char*)
 {
@@ -366,4 +372,5 @@ inline bool ZM_GenBakeMesh(const ZM_GenMesh&, const char*, const char*, const ch
 }
 inline bool ZM_GenBakeSkeleton(const ZM_GenMesh&, const char*) { return false; }
 inline bool ZM_GenBakeMeshWithSharedSkeleton(const ZM_GenMesh&, const char*, const char*) { return false; }
+inline bool ZM_GenBakeStaticMesh(const ZM_GenMesh&, const char*) { return false; }
 #endif
