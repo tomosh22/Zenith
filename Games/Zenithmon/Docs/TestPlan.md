@@ -862,11 +862,24 @@ needs a `Zenith_Entity&` and OnAwake/OnUpdate touch scene/Flux state). Boot unit
 (density load, tile-transition roll -> `ZM_OnWildEncounter` emission, clear-on-interior)
 is the SC4 windowed test.
 
-**Remaining S5 items (item 2 SC1 [engine E5 grass reset] + SC4 [windowed integration], items 3-5, planning):**
+**#### Flux_Grass -- engine E5 grass-singleton reset (item 2 SC1, SHIPPED ZM-D-092)**
 
-- SC1 engine E5 units (grass singleton reset clears on scene load); SC4 P1 windowed
-  (walk grass -> rigged `ZM_OnWildEncounter` fires; grass cleared on interior via a
-  per-scene instance-count assertion).
+3 ENGINE `Flux_Grass` units (`Zenith/Flux/Vegetation/Flux_Grass.Tests.inl`, hosted in
+the always-linked `Flux_Grass.cpp` under `ZENITH_TESTING`, headless CPU-only via
+`g_xEngine.Grass()`): `Reset_ClearsAllSceneData` (Reset zeroes the CPU instance array +
+generated/uploaded flags + density map + chunks + counters), `Reset_IsIdempotent`,
+`Reset_NoAccumulationAcrossSetup` (a second scene's setup doesn't pile on the first --
+the per-scene instance-count lock). Engine units run in EVERY game's boot, so these bump
+BOTH the engine default `1078 -> 1081` (`Tools/run_unit_gate.ps1`; engine-gate + scaffold-smoke)
+AND Zenithmon `1930 -> 1933` (`zm-tests.yml`). Cross-game regression all green (Combat 1081/0,
+Zenithmon 1933/0 + windowed `ZM_GrassRegeneration_Test`, DP 158/0, CityBuilder 45/0);
+RenderTest is pre-existingly red here (missing terrain -- Questions.md Q-2026-07-16-001) and
+E5 was proven non-regressing against it by a stash-revert diagnostic.
+
+**Remaining S5 items (item 2 SC4 [windowed integration + scene wiring], items 3-5, planning):**
+
+- SC4 P1 windowed (walk grass -> rigged `ZM_OnWildEncounter` fires; grass cleared on interior
+  via a per-scene instance-count assertion, now backed by the E5 engine reset).
 - **P1 encounter round trip (windowed):** walk grass until a rigged encounter
   fires -> additive battle scene loads at the -2000 m offset -> win via
   scripted input -> assert exp applied and EXACT overworld resume (position,

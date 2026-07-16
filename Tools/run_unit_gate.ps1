@@ -4,7 +4,7 @@
 # the single known layout-sensitive flake (GraphComponent::
 # RegistryWideNodeRoundTrip, task_726cc81d) as the SOLE failure.
 #
-# Usage:  pwsh ./Tools/run_unit_gate.ps1 -Exe <game exe> [-Baseline 1078]
+# Usage:  pwsh ./Tools/run_unit_gate.ps1 -Exe <game exe> [-Baseline 1081]
 # Exit:   0 = baseline met, 1 = anything else (missing exe, timeout, failures).
 #
 # ASCII-only body; runs under Windows PowerShell 5.1 and pwsh 7.
@@ -12,7 +12,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Exe,
-    [int]$Baseline = 1078,
+    [int]$Baseline = 1081,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

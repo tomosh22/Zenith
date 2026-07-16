@@ -615,6 +615,12 @@ void Zenith_Engine::InitialiseECS()
 	Zenith_ECSRuntimeHooks xHooks;
 	xHooks.m_pfnIsMainThread       = []() -> bool { return g_xEngine.Threading().IsMainThread(); };
 	xHooks.m_pfnResetRenderSystems = []() { g_xEngine.Terrain().Reset(); g_xEngine.Text().Reset(); g_xEngine.Particles().Reset(); g_xEngine.Skybox().Reset(); g_xEngine.Fog().Reset();
+		// Grass (E5): the global grass singleton is engine-owned; clear its scene
+		// state UNCONDITIONALLY on SINGLE load so one scene's blades never leak into
+		// the next. New engine-owned reset (grass was never previously reset on load —
+		// the leak); consumers (RenderTest / DevilsPlayground / CityBuilder) regenerate
+		// their grass on their own scene loads, so nothing visible changes for them.
+		g_xEngine.Grass().Reset();
 #ifdef ZENITH_TOOLS
 		g_xEngine.Gizmos().Reset();
 #endif

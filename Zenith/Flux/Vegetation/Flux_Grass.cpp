@@ -143,10 +143,16 @@ void Flux_GrassImpl::Shutdown()
 
 void Flux_GrassImpl::Reset()
 {
-	// Reset is handled by the render graph
-	m_axChunks.Clear();
-	m_uVisibleBladeCount = 0;
-	m_uActiveChunkCount = 0;
+	// Engine-owned scene-state reset. Invoked UNCONDITIONALLY on the SINGLE-load
+	// render-reset path (Zenith_Engine's m_pfnResetRenderSystems hook, fired by
+	// Zenith_SceneSystem::ResetAllRenderSystems on SINGLE teardown) so grass
+	// generated for one scene never leaks into the next. Delegates to the single
+	// full-clear body (ClearSceneData) so scene-state teardown stays one source of
+	// truth: chunk LOD, the CPU instance array, the generated/uploaded flags, the
+	// visible/active counters, and the copied density map are all discarded. The
+	// instance VRAM buffer is engine-owned and stays allocated until Shutdown;
+	// invalidating the upload flag prevents stale bytes from being drawn.
+	ClearSceneData();
 }
 
 void Flux_GrassImpl::ClearSceneData()
@@ -822,3 +828,10 @@ void Flux_GrassImpl::RegisterDebugVariables()
 	g_xEngine.DebugVariables().AddUInt32({ "Flux", "Grass", "ForcedLOD" }, dbg_uGrassForcedLOD, 0, 3);
 }
 #endif
+
+// Unit tests for the grass scene-state lifecycle (Reset/ClearSceneData full-clear
+// semantics). Hosted at the bottom of this always-linked feature TU — the same
+// feature-owned idiom as Flux_RenderViews.cpp / Flux_AnimationClip.cpp. The
+// ZENITH_TEST macros self-noop when ZENITH_TESTING is undefined, so this include
+// stays unconditional (matching every other Flux .Tests.inl host).
+#include "Flux/Vegetation/Flux_Grass.Tests.inl"

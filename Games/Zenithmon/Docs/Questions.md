@@ -10,6 +10,18 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-16-001 -- RenderTest is pre-existingly red in this checkout (missing baked terrain); the E5 grass canary was substituted
+
+**Question:** the AgentBriefing 6.4 engine-change gate names "RenderTest still boots green" as the terrain/grass canary, but `zenith test RenderTest --headless` CRASHES in this checkout (`[Core] Assertion failed: Invalid buffer VRAM handle`, "127 missing/invalid terrain chunks") because RenderTest's baked terrain is absent (git-ignored `Assets/`, never `_True`-baked here). It crashes during terrain streaming BEFORE grass generates. Should a future session `_True`-bake RenderTest's terrain (seed 1337) so the RenderTest engine-change canary works locally again?
+
+**Best-guess action taken (E5 / ZM-D-092):** proceeded. Proved the RenderTest crash is ORTHOGONAL to E5 via a stash-revert diagnostic (RenderTest crashes IDENTICALLY, 0/10 same assertion, with E5 reverted), and validated E5's grass behaviour instead via Zenithmon's windowed `ZM_GrassRegeneration_Test` (a more direct E5 canary -- it exercises the exact grass clear->regenerate-on-scene-load cycle E5 changes) plus Combat 1081/0 (the official engine-gate canary), DP 158/0, CityBuilder 45/0.
+
+**Cost if wrong:** LOW. E5 is thoroughly validated by other games + the grass-regen windowed test + engine units; the RenderTest gap is an environment issue, not a code risk. A future engine change touching terrain/grass would benefit from a locally-baked RenderTest, so this is worth a one-time `_True` bake when convenient (or a RequestSkip hardening so RenderTest degrades gracefully on absent terrain like DP does).
+
+**Status:** asked 2026-07-16; acting on best guess (E5 landed).
+
+---
+
 ### [OPEN] Q-2026-07-12-005 -- ZM_BattleTower: defaulted tuning + a future-integration note
 
 **Question:** ratify (or override) the defaulted rulings for the S2 box-6 SC2 `ZM_BattleTower` logic. Battle Tower LOGIC is a Roadmap box-6 item (in-scope); all of these are additive/retunable, so I proceeded rather than halting.
