@@ -890,13 +890,34 @@ PASSED windowed (2/0; the encounter test 206 frames). **S5 item 2 is COMPLETE** 
 SC3 tall-grass component + SC1 engine E5 + SC4 integration); the tall-grass -> encounter -> event
 path is proven end-to-end (emit-only; item 3 wires the additive-battle subscriber).
 
-**Remaining S5 items (items 3-5, planning):** additive load / `SetScenePaused` / camera+HUD switch
-round trip (item 3); `ZM_BattleDirector` + `ZM_UI_BattleHUD` + engine E3 typewriter (item 4);
-catch/exp/faint/whiteout applied to GameState (item 5). Then the S5 VISUAL GATE (hard stop).
-- **P1 encounter round trip (windowed):** walk grass until a rigged encounter
-  fires -> additive battle scene loads at the -2000 m offset -> win via
-  scripted input -> assert exp applied and EXACT overworld resume (position,
-  scene, pause state).
+**#### ZM_BattleTransition windowed round trip (item 3 SC5, SHIPPED ZM-D-099) -- S5 ITEM 3 COMPLETE**
+
+2 windowed P1 tests in `Tests/ZM_AutoTests_BattleTransition.cpp` (both `m_bRequiresGraphics = true`,
+skip headless CI + asset-guarded -> 0 boot-unit-baseline change, stays **1946**). `ZM_BattleEncounterLatch_Test`
+(SC3b, 900-frame cap) drives the Dawnmere player onto a real grass tile and proves the persistent
+`ZM_BattleTransition` singleton (order 110) OBSERVED the `ZM_OnWildEncounter` that `ZM_TallGrassSystem`
+dispatched -- i.e. its `OnStart` subscription is bound to the LIVE dispatcher end to end -- then asserts
+accepting the encounter hands the screen to the machine (`OwnsFade(state)`; PASS 207 frames).
+`ZM_BattleRoundTrip_Test` (SC5, 2200-frame cap, fixed dt 1/30) is the item-3 END-TO-END GATE: walk grass ->
+forced `FERNFAWN` L5 encounter -> assert the additive load only issues behind an OPAQUE fade -> in battle
+assert active build index == 1, the battle camera is live (`FindMainCameraEntityAcrossScenes` == the Battle
+scene's own main camera), the overworld is PAUSED (and `IsOverworldPausedInState(IN_BATTLE)` agrees), grass == 0,
+the arena is `IsFullyBuilt()` with all `uCHILD_COUNT`(9) children owned by the BATTLE scene, biome == MEADOW,
+issued-load count == 1 -> call `RequestBattleEnd()` (the SOLE exit) -> assert EXACT resume: build index 2,
+unpaused, Battle unloaded, zero arena instances, movement re-enabled, zero aborts, grass restored to the entry
+blade count, and drift from `GetParkedPlayerPosition()` < 0.05 m. Constructs NO `ScopedTestIsolation` (it needs
+the game's own live subscriber -- the subject under test). PASS windowed (146 frames, `skipped:false`, `failures:[]`).
+**S5 item 3 is COMPLETE** (SC1 own-scene arena + SC2 grass-restore seam + SC3a/SC3b component + SC4 state machine +
+SC5 gate); the overworld<->battle round trip is proven end-to-end.
+
+**Remaining S5 items (items 4-5, planning):** `ZM_BattleDirector` + `ZM_UI_BattleHUD` + engine E3 typewriter
+(item 4); catch/exp/faint/whiteout applied to GameState (item 5). Then the S5 VISUAL GATE (hard stop).
+- **P1 encounter round trip (windowed) -- SHIPPED `ZM_BattleRoundTrip_Test` (item 3, see above):**
+  walk grass until a rigged encounter fires -> additive battle scene loads at the
+  -2000 m offset -> assert opaque-fade-gated load, in-battle invariants, and
+  EXACT overworld resume (scene, pause state, parked-body drift < 0.05 m).
+  Applying exp on a real win + party mutation is item 5's scope (the current
+  gate ends the battle via the item-4 `RequestBattleEnd()` seam, no resolution).
 - **P1 catch test:** rigged catch succeeds; monster lands in party; dex
   updates.
 - **P1 bleed-through screenshot check:** scripted capture during battle

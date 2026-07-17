@@ -10,6 +10,18 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-17-001 -- `ZM_BattleTransition::BiomeForScene` is a hard-coded table, not a `ZM_WorldSpec` column
+
+**Question:** should the source-scene -> battle-arena-biome mapping live as a `ZM_BATTLE_BIOME m_eBattleBiome` column on `ZM_WorldSpec`, rather than the hard-coded `BiomeForScene` switch item 3 introduced?
+
+**Context:** item 3 (SC4) needed a deterministic, unit-testable biome input for `ZM_BattleArena::SetBiome`. `ZM_WorldSpec` has no biome column (its rows are id/name/build-index/kind/terrain-set/connections/spawn-tags/encounters/rate and nothing else), so `ZM_BattleTransition::BiomeForScene(ZM_SCENE_ID)` is a component-local lookup table -- currently every registered scene maps to `ZM_BATTLE_BIOME_MEADOW` (the default). This is an INVENTION, not an authored data source; it works for the S5 gate (only DAWNMERE->MEADOW is exercised) but does not scale to the ~40-scene world.
+
+**Best-guess action taken:** ship the hard-coded table for S5; propose adding `m_eBattleBiome` to `ZM_WorldSpec` at S9/S10 when the full world is authored, and delete the table then. Not a blocker.
+
+**Cost if wrong:** low. Moving the mapping to a WorldSpec column later is a mechanical refactor confined to `BiomeForScene` + the world table; no save-format or battle-engine surface depends on it.
+
+**Status:** asked 2026-07-17; acting on best guess.
+
 ### [OPEN] Q-2026-07-16-001 -- RenderTest is pre-existingly red in this checkout (missing baked terrain); the E5 grass canary was substituted
 
 **Question:** the AgentBriefing 6.4 engine-change gate names "RenderTest still boots green" as the terrain/grass canary, but `zenith test RenderTest --headless` CRASHES in this checkout (`[Core] Assertion failed: Invalid buffer VRAM handle`, "127 missing/invalid terrain chunks") because RenderTest's baked terrain is absent (git-ignored `Assets/`, never `_True`-baked here). It crashes during terrain streaming BEFORE grass generates. Should a future session `_True`-bake RenderTest's terrain (seed 1337) so the RenderTest engine-change canary works locally again?
@@ -107,7 +119,7 @@
 
 **Context:** the overworld<->battle transition is an ADDITIVE scene load + `SetScenePaused` on the overworld (a SINGLE reload would reset render systems + physics and re-stream terrain twice per encounter -- seconds of hitch at encounter frequency, disqualifying). The offset puts the arena outside grass LOD rings (200 m max) and terrain high-LOD streaming (1000 m), and the arena has an enclosing backdrop dome. But global render features (skybox, fog, IBL, shadows) are not per-scene, so isolation is asserted by design reasoning, not yet by pixels.
 
-**Best-guess action taken:** proceed with the additive design; the S5 gate includes a dedicated screenshot check for overworld bleed-through at the offset. Documented fallback: SINGLE load + world-state snapshot. Contingency beyond that (only if needed): a per-scene render visibility toggle in the engine.
+**Best-guess action taken:** proceed with the additive design; the S5 gate includes a dedicated screenshot check for overworld bleed-through at the offset. Documented fallback: SINGLE load + world-state snapshot. Contingency beyond that (only if needed): a per-scene render visibility toggle in the engine. **Update (2026-07-17, item 3 SC5):** the additive battle path now CLEARS the overworld grass on entry (`ZM_BattleRoundTrip_Test` asserts `Grass().GetGeneratedInstanceCount() == 0` at IN_BATTLE) and regenerates it on resume, which strictly REDUCES the bleed-through surface (the tallest, most visible overworld geometry is gone during the battle). Still not pixel-proven -- global render features (skybox/fog/IBL/shadows) remain per-frame, not per-scene -- so this Q stays OPEN for the S5 SCREENSHOT gate.
 
 **Cost if wrong:** moderate. Falling back to SINGLE + snapshot re-introduces the transition hitch and adds a world-state snapshot/restore surface to test -- but the battle engine, director, HUD, and encounter logic are all transition-agnostic, so the rework is confined to the transition layer.
 
