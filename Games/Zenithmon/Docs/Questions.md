@@ -10,6 +10,18 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-17-002 -- S5 item 4 scoping rulings (BattleDirector + BattleHUD)
+
+**Question:** four scope boundaries for S5 item 4 (`ZM_BattleDirector` + `ZM_UI_BattleHUD` + E3 typewriter), from the planning pass (plan at `Build/artifacts/zm_s5_item4_plan/plan.md`): (a) player-team source, (b) is exp awarded/presented in item 4 or item 5, (c) action-menu subset, (d) wild-battle enemy AI tier.
+
+**Context:** there is NO persistent player party / GameState in the codebase yet (verified -- no `ZM_GameState`/`ZM_Party`). Item 5 is "Catch / exp / faint / whiteout applied to GameState"; S6 owns the general menu/dialogue/party/bag/dex/shop UI. Item 4 must present a battle to resolution without pulling item-5 or S6 scope forward.
+
+**Best-guess action taken (proceeding on these unless corrected):** (a) the director synthesizes a deterministic **placeholder** player team, discarded on battle unload -- item 5/S7 swaps in a real GameState read; (b) `m_bAwardExp` stays **OFF** in item 4 (item 4 = present the battle; item 5 = turn exp/catch write-back on), but the EXP/LEVEL/CATCH events are mapped for totality so item 5 flips one flag; (c) action menu = **Fight + Run only** in item 4; Bag/ball-throw + party/switch (and `m_bCanCatch`) defer to item 5 where capture is meaningful and the S5 catch gate lives; (d) wild enemy AI tier = **GREEDY** (more believable than RANDOM; one-line change if you prefer RANDOM's mainline-faithfulness).
+
+**Cost if wrong:** low-moderate. Each is a localized change: (a) one placeholder builder; (b) one config flag + already-mapped events; (c) additional menu buttons the SC5 menu machine can grow; (d) one enum. None touch save format or the battle engine.
+
+**Status:** asked 2026-07-17; acting on best guess. Plus 3 lower-stakes item-4 questions in the plan (creature-anim depth, text-line pacing/confirm-to-advance, whether the catch test needs item-4 HUD surface) deferred to their SCs.
+
 ### [OPEN] Q-2026-07-17-001 -- `ZM_BattleTransition::BiomeForScene` is a hard-coded table, not a `ZM_WorldSpec` column
 
 **Question:** should the source-scene -> battle-arena-biome mapping live as a `ZM_BATTLE_BIOME m_eBattleBiome` column on `ZM_WorldSpec`, rather than the hard-coded `BiomeForScene` switch item 3 introduced?
