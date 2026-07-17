@@ -927,9 +927,26 @@ test, Q-2026-07-16-001). Builds: Vulkan Debug True + Debug False + D3D12 Debug F
 typewriter drive (HP text log revealing glyph-by-glyph, `zm_instant_battles` collapsing it) is exercised
 by the item-4 `ZM_UI_BattleHUD` windowed tests (SC4+).
 
-**Remaining S5 item 4 (SC2-SC6) + item 5 (planning):** `ZM_BattleDirectorCore` (SC2) + `ZM_BattleDirector`
-component (SC3) + `ZM_UI_BattleHUD` (SC4-SC5) + the windowed win gate (SC6) for item 4;
-catch/exp/faint/whiteout applied to GameState (item 5). Then the S5 VISUAL GATE (hard stop).
+**#### ZM_BattleDirector -- battle-presenter driver (item 4 SC2, SHIPPED ZM-D-101)**
+
+9 pure/headless `ZM_BattleDirector` units in `Tests/ZM_Tests_BattleDirector.cpp` (no ECS/scene/graphics,
+no baked assets -> no RequestSkip) for `ZM_BattleDirectorCore` (`Source/Battle/ZM_BattleDirectorCore.{h,cpp}`):
+`MapEventToOp_TotalOverEveryKind` (every one of the 39 `ZM_BATTLE_EVENT` kinds maps to a defined op;
+framing kinds -> `ZM_POP_NONE`, all others non-NONE -- the no-kind-dropped lock), `MapEventToOp_TextKindsCarryALine`,
+`MapEventToOp_HpKindsAreTweens`, `InstantBattles_DrainsWholeTurnInOneTick` (with `zm_instant_battles` on, one
+`Tick(0)` drains the intro then a full turn -- never mid-turn), `TimedBattles_AdvancesGraduallyNotInstant`
+(off: a 0.01 s tick leaves the intro mid-range; a large tick drains it), `SubmitPlayerAction_RejectedOutsideAwaitInput`
+(the AWAIT_INPUT precondition, checked non-fatally), `Resolution_SignalsRequestEndExactlyOnce` (a full instant
+battle latches `ShouldRequestEnd()` at OVER), `BuildWildEnemySpec_DerivesLearnsetMoves`, and
+`AiRngUnperturbing_DirectorDriveMatchesManualDrive` (a director drive is byte-identical to a raw-engine hand
+drive with the same seed / player picks / identically-seeded AI rng -- the non-perturbation proof). Game-only,
+so `zm-tests.yml` bumped **1953 -> 1962** (engine default 1088 unchanged). The runtime drive of a REAL battle
+in the Battle scene (model placement + `RequestBattleEnd`) is the SC3 windowed `ZM_BattleDirectorRoundTrip_Test`.
+
+**Remaining S5 item 4 (SC3-SC6) + item 5 (planning):** `ZM_BattleDirector` component (SC3, order 111, drives
+the core in the Battle scene + places creature models + calls `RequestBattleEnd()`) + `ZM_UI_BattleHUD` (SC4-SC5)
++ the windowed win gate (SC6) for item 4; catch/exp/faint/whiteout applied to GameState (item 5). Then the S5
+VISUAL GATE (hard stop).
 - **P1 encounter round trip (windowed) -- SHIPPED `ZM_BattleRoundTrip_Test` (item 3, see above):**
   walk grass until a rigged encounter fires -> additive battle scene loads at the
   -2000 m offset -> assert opaque-fade-gated load, in-battle invariants, and

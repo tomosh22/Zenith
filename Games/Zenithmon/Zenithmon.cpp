@@ -17,6 +17,7 @@
 #include "Zenithmon/Components/ZM_TallGrassSystem.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
+#include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
@@ -31,6 +32,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
+#include "DebugVariables/Zenith_DebugVariables.h"
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
 
 #include <filesystem>
@@ -356,6 +358,11 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleArena>("ZM_BattleArena");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_TallGrassSystem>("ZM_TallGrassSystem");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleTransition>("ZM_BattleTransition");
+
+	// Runtime toggle for the battle presenter's instant-battle mode (collapses all
+	// presentation timing). Bound by reference to the ZM_BattleDirectorCore backing
+	// store (ZM-D-101); flip it in the Debug Variables panel under Zenithmon/Battle.
+	g_xEngine.DebugVariables().AddBoolean({ "Zenithmon", "Battle", "zm_instant_battles" }, ZM_InstantBattlesRef());
 #endif
 
 	// Save/load persistence root: %APPDATA%/Zenith/Zenithmon/. The versioned
@@ -372,6 +379,7 @@ void Project_RegisterGameComponents()
 	{
 		ZM_BattleTransition::ResetRuntimeStateForTests();
 		ZM_GameStateManager::ResetRuntimeStateForTests();
+		ZM_SetInstantBattlesForTests(false);
 		Zenith_SaveData::ClearForTest();
 	});
 #endif
