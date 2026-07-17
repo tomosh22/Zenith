@@ -910,8 +910,26 @@ the game's own live subscriber -- the subject under test). PASS windowed (146 fr
 **S5 item 3 is COMPLETE** (SC1 own-scene arena + SC2 grass-restore seam + SC3a/SC3b component + SC4 state machine +
 SC5 gate); the overworld<->battle round trip is proven end-to-end.
 
-**Remaining S5 items (items 4-5, planning):** `ZM_BattleDirector` + `ZM_UI_BattleHUD` + engine E3 typewriter
-(item 4); catch/exp/faint/whiteout applied to GameState (item 5). Then the S5 VISUAL GATE (hard stop).
+**#### UIText -- engine E3 typewriter reveal (item 4 SC1, SHIPPED ZM-D-100)**
+
+7 ENGINE `UIText` units (`Zenith/UI/Zenith_UIText.Tests.inl`, hosted unconditionally at the `.cpp`
+tail; pure/headless -- never call `Render()`): `ClipToVisibleGlyphs_Boundaries` (0 / mid / exact /
+over-length / negative), `ClipToVisibleGlyphs_CountsSpacesAndNewlines` (spaces + `\n` each count;
+empty stays empty), `DefaultVisibleGlyphCount_IsFullyRevealed` (-1 default, whole string), `SetGetVisibleGlyphCount_RoundTripsRawValue`
+(no clamp: 3 / -1 / 1000 verbatim), `GetTotalGlyphCount_MatchesTextLengthNoWrap` (== display length;
+0 for empty), `Serialization_RoundTripsVisibleGlyphCount` (v3 preserves 4 and the -1 sentinel), and
+`Serialization_PreV3BlobDefaultsToRevealed` (hand-built v2 blob -> glyph count defaults -1 AND text reads
+back intact -- the additive back-compat proof). Engine units run in every game's boot, so BOTH baselines
+bumped +7: engine default `1081 -> 1088` (`Tools/run_unit_gate.ps1`) AND Zenithmon `1946 -> 1953`
+(`zm-tests.yml`). Cross-game regression all green (Combat 1088/0, DP 1089/0, CityBuilder 1089/0,
+RenderTest 1179 units/0 + builds clean; RenderTest's pre-existing red is a separate windowed terrain
+test, Q-2026-07-16-001). Builds: Vulkan Debug True + Debug False + D3D12 Debug False. The runtime
+typewriter drive (HP text log revealing glyph-by-glyph, `zm_instant_battles` collapsing it) is exercised
+by the item-4 `ZM_UI_BattleHUD` windowed tests (SC4+).
+
+**Remaining S5 item 4 (SC2-SC6) + item 5 (planning):** `ZM_BattleDirectorCore` (SC2) + `ZM_BattleDirector`
+component (SC3) + `ZM_UI_BattleHUD` (SC4-SC5) + the windowed win gate (SC6) for item 4;
+catch/exp/faint/whiteout applied to GameState (item 5). Then the S5 VISUAL GATE (hard stop).
 - **P1 encounter round trip (windowed) -- SHIPPED `ZM_BattleRoundTrip_Test` (item 3, see above):**
   walk grass until a rigged encounter fires -> additive battle scene loads at the
   -2000 m offset -> assert opaque-fade-gated load, in-battle invariants, and

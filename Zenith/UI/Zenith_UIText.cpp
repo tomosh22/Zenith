@@ -10,7 +10,7 @@
 
 namespace Zenith_UI {
 
-static constexpr uint32_t UI_TEXT_VERSION = 2;
+static constexpr uint32_t UI_TEXT_VERSION = 3;
 
 Zenith_UIText::Zenith_UIText(const std::string& strText, const std::string& strName)
     : Zenith_UIElement(strName)
@@ -120,6 +120,20 @@ float Zenith_UIText::GetTextHeight() const
     return m_fFontSize * uLineCount;
 }
 
+int Zenith_UIText::GetTotalGlyphCount() const
+{
+    return static_cast<int>(GetDisplayText().length());
+}
+
+std::string Zenith_UIText::ClipToVisibleGlyphs(const std::string& strDisplay, int iVisible)
+{
+    if (iVisible < 0 || static_cast<size_t>(iVisible) >= strDisplay.length())
+    {
+        return strDisplay;
+    }
+    return strDisplay.substr(0, static_cast<size_t>(iVisible));
+}
+
 // ========== Rendering ==========
 
 float Zenith_UIText::ComputeHorizontalStartX(float fLeft, float fWidth, float fLineWidth, TextAlignment eAlignment)
@@ -200,6 +214,18 @@ void Zenith_UIText::Render(Zenith_UICanvas& xCanvas)
     if (!m_bVisible || m_strText.empty()) return;
 
     const std::string& strDisplay = GetDisplayText();
+    // Typewriter reveal: only materialise a clipped copy when a reveal limit is
+    // actually active, so the default fully-revealed path stays zero-copy -- this
+    // Render() runs for every visible text widget every frame. The gate mirrors
+    // ClipToVisibleGlyphs's "reveal the whole string" condition (which the unit
+    // tests pin), so a partial reveal reuses the tested helper and the default
+    // path binds strVisible straight to strDisplay with no allocation.
+    const bool bReveal = m_iVisibleGlyphCount >= 0
+        && static_cast<size_t>(m_iVisibleGlyphCount) < strDisplay.length();
+    const std::string strClipped = bReveal
+        ? ClipToVisibleGlyphs(strDisplay, m_iVisibleGlyphCount)
+        : std::string();
+    const std::string& strVisible = bReveal ? strClipped : strDisplay;
 
     const Zenith_Maths::Vector4 xBounds = GetScreenBounds();
     const float fLeft = xBounds.x;
@@ -219,7 +245,7 @@ void Zenith_UIText::Render(Zenith_UICanvas& xCanvas)
     float fTextEndX = 0.0f;
     if (m_eAlignment != TextAlignment::Left && bMultiLine)
     {
-        RenderMultilineAligned(xCanvas, strDisplay, fLeft, fWidth, fStartY, fAlpha);
+        RenderMultilineAligned(xCanvas, strVisible, fLeft, fWidth, fStartY, fAlpha);
         // For warning bounds: use the widest line as a worst-case
         // approximation. The actual rendered text may be narrower for
         // shorter lines, but it never exceeds GetTextWidth().
@@ -232,7 +258,7 @@ void Zenith_UIText::Render(Zenith_UICanvas& xCanvas)
     {
         const float fLineWidth = GetTextWidth();
         const float fLineX = ComputeHorizontalStartX(fLeft, fWidth, fLineWidth, m_eAlignment);
-        SubmitTextWithShadow(xCanvas, strDisplay, { fLineX, fStartY }, fAlpha);
+        SubmitTextWithShadow(xCanvas, strVisible, { fLineX, fStartY }, fAlpha);
         fTextStartX = fLineX;
         fTextEndX = fLineX + fLineWidth;
     }
@@ -336,6 +362,7 @@ void Zenith_UIText::WriteToDataStream(Zenith_DataStream& xStream) const
     xStream << m_bShadowEnabled;
     xStream << m_xShadowColor.x; xStream << m_xShadowColor.y; xStream << m_xShadowColor.z; xStream << m_xShadowColor.w;
     xStream << m_xShadowOffset.x; xStream << m_xShadowOffset.y;
+    xStream << m_iVisibleGlyphCount;
 }
 
 void Zenith_UIText::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -347,7 +374,7 @@ void Zenith_UIText::ReadFromDataStream(Zenith_DataStream& xStream)
     uint32_t uVersion;
     xStream >> uVersion;
 
-    Zenith_Assert(uVersion == UI_TEXT_VERSION, "UIText version mismatch");
+    Zenith_Assert(uVersion == 2u || uVersion == 3u, "UIText version mismatch (expected 2 or 3), got %u", uVersion);
 
     xStream >> m_strText;
     xStream >> m_fFontSize;
@@ -362,6 +389,12 @@ void Zenith_UIText::ReadFromDataStream(Zenith_DataStream& xStream)
     xStream >> m_bShadowEnabled;
     xStream >> m_xShadowColor.x; xStream >> m_xShadowColor.y; xStream >> m_xShadowColor.z; xStream >> m_xShadowColor.w;
     xStream >> m_xShadowOffset.x; xStream >> m_xShadowOffset.y;
+
+    m_iVisibleGlyphCount = -1;   // default for pre-v3 blobs = fully revealed
+    if (uVersion >= 3u)
+    {
+        xStream >> m_iVisibleGlyphCount;
+    }
 }
 
 // ========== Editor Properties Panel ==========
@@ -417,3 +450,7 @@ void Zenith_UIText::RenderPropertiesPanel()
 #endif
 
 } // namespace Zenith_UI
+
+// ZENITH_TEST macros self-noop when ZENITH_TESTING is undefined, so this include
+// stays unconditional (matching every other .Tests.inl host).
+#include "UI/Zenith_UIText.Tests.inl"

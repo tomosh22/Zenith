@@ -72,6 +72,21 @@ public:
     void SetShadowColor(const Zenith_Maths::Vector4& xColor) { m_xShadowColor = xColor; }
     void SetShadowOffset(const Zenith_Maths::Vector2& xOffset) { m_xShadowOffset = xOffset; }
 
+    // ========== Typewriter Reveal (E3) ==========
+
+    // Reveal only the first N glyphs of the display string (for battle text /
+    // dialogue). A negative value, or one >= the total glyph count, reveals the
+    // whole string. Default -1 = fully revealed, so existing widgets are unchanged.
+    // Glyphs are counted over the post-wrap DISPLAY string (spaces and '\n' count).
+    void SetVisibleGlyphCount(int iCount) { m_iVisibleGlyphCount = iCount; }
+    int GetVisibleGlyphCount() const { return m_iVisibleGlyphCount; }
+    // Total glyphs in the current display string (post-wrap when SetMaxWidth is set).
+    int GetTotalGlyphCount() const;
+
+    // Pure, testable: the first iVisible glyphs of strDisplay; the whole string when
+    // iVisible < 0 or >= strDisplay length. Spaces and '\n' each count as one glyph.
+    static std::string ClipToVisibleGlyphs(const std::string& strDisplay, int iVisible);
+
     // ========== Text Metrics ==========
 
     float GetTextWidth() const;
@@ -109,6 +124,7 @@ private:
     std::string m_strWrappedText;
     float m_fFontSize = 24.0f;
     float m_fMaxWidth = 0.f;
+    int m_iVisibleGlyphCount = -1;   // -1 = fully revealed (typewriter reveal, E3)
     TextAlignment m_eAlignment = TextAlignment::Left;
     TextVerticalAlignment m_eVerticalAlignment = TextVerticalAlignment::Top;
 
