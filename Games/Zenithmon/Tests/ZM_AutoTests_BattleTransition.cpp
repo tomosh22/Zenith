@@ -36,8 +36,14 @@
 // bound to the LIVE Zenith_EventDispatcher, end to end, with no test-authored
 // subscriber standing in for the game's.
 //
-// It also pins SC3b's scene-inertness: the latch is observed AND the transition
-// state is still IDLE afterwards. Nothing loaded, nothing paused, nobody stranded.
+// It also pins the HANDOFF: accepting an encounter must leave the battle machine
+// owning the screen (OwnsFade, i.e. no longer IDLE). Until SC4 this asserted the
+// opposite -- that the state stayed IDLE -- which pinned SC3b's deliberate
+// scene-inertness; SC4 made the machine live and inverted that contract, so the
+// assertion moved with the behaviour. The precise state is deliberately NOT
+// asserted: AcceptPendingEncounter enters FADING_OUT in the same OnUpdate that
+// makes the count visible, but the 0.20 s fade means the exact state sampled is a
+// race, whereas "no longer IDLE" is not.
 //
 // NO Zenith_EventDispatcher::ScopedTestIsolation -- deliberately, and this is
 // load-bearing. That guard STEALS the live subscription tables and leaves the
@@ -512,7 +518,7 @@ namespace
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_BattleEncounterLatch] captured: observed=%u (want 1) species=%d "
 				"(want FERNFAWN=%d) level=%u (want 5) scene=%d (want DAWNMERE=%d) "
-				"state=%d (want IDLE=%d) walkKey=%d hitDist=%f hitDensity=%f",
+				"state=%d (want non-IDLE; IDLE=%d) walkKey=%d hitDist=%f hitDensity=%f",
 				g_uBLObservedCount,
 				(int)g_eBLSpecies, (int)ZM_SPECIES_FERNFAWN,
 				g_uBLLevel,
@@ -556,11 +562,17 @@ namespace
 						(int)g_eBLScene, (int)ZM_SCENE_DAWNMERE);
 					bPassed = false;
 				}
-				if (g_eBLState != ZM_BATTLE_TRANSITION_IDLE)
+				// SC4 made the machine live: AcceptPendingEncounter increments the
+				// observed count and enters FADING_OUT in the SAME OnUpdate, so by
+				// the time the count is visible the machine already owns the screen.
+				// Assert the OWNERSHIP invariant via the shipped predicate rather
+				// than a specific fade frame -- the exact state is a race (the fade
+				// runs 0.20 s), but "no longer IDLE" is not.
+				if (!ZM_BattleTransition::OwnsFade(g_eBLState))
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
-						"[ZM_BattleEncounterLatch] transition state was %d, expected IDLE %d "
-						"(SC3b must not touch any scene)",
+						"[ZM_BattleEncounterLatch] transition state was %d (IDLE=%d): accepting an "
+						"encounter must hand the screen to the battle machine",
 						(int)g_eBLState, (int)ZM_BATTLE_TRANSITION_IDLE);
 					bPassed = false;
 				}

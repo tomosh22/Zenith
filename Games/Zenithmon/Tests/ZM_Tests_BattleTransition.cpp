@@ -31,6 +31,16 @@
 //   7. BiomeForScene_EverySceneMapsInRange -- total function over ZM_SCENE_ID.
 //   8. BiomeForScene_UnknownSceneDefaultsToMeadow -- out-of-range default.
 //   9. BiomeForScene_DawnmereIsMeadow -- the pinned starter-town mapping.
+//  10. ShouldAcceptBattleEnd_OnlyInBattle -- IN_BATTLE and nothing else.
+//  11. OwnsFade_EveryNonIdleStateOwnsTheScreen -- fade ownership == non-idle.
+//  12. IsOverworldPausedInState_MatchesPauseWindow -- the exact pause window.
+//
+// Cases 10-12 pin the state-machine PREDICATES the round trip is built on. They
+// walk the whole ZM_BATTLE_TRANSITION_STATE enum rather than spot-checking, so
+// INSERTING a state without classifying it is caught here: an unclassified state
+// silently defaults to "not IN_BATTLE / not paused", which would either let item
+// 4 end a battle that never started or leave the overworld ticking underneath a
+// live battle.
 // ============================================================================
 
 #include "Core/Zenith_TestFramework.h"
@@ -221,4 +231,104 @@ ZENITH_TEST(ZM_BattleTransition, BiomeForScene_DawnmereIsMeadow)
 		(u_int)ZM_BattleTransition::BiomeForScene(ZM_SCENE_DAWNMERE),
 		(u_int)ZM_BATTLE_BIOME_MEADOW,
 		"Dawnmere must dress the arena with the MEADOW set");
+}
+
+// ############################################################################
+// 10. ShouldAcceptBattleEnd -- IN_BATTLE is the ONLY state that may be ended
+// ############################################################################
+
+// RequestBattleEnd() is the SOLE exit from IN_BATTLE -- there is deliberately no
+// battle timer -- so this predicate is the whole gate protecting the round trip
+// from item 4. Item 4 may only end a battle that is ACTUALLY RUNNING: accepting
+// the request one state early (FADING_IN) would tear down an arena the player has
+// not seen yet, and one state late (FADING_TO_OVERWORLD) would double-count the
+// resume. The loop walks every enumerator so a newly inserted state is classified
+// deliberately rather than defaulting to "not endable" unnoticed.
+ZENITH_TEST(ZM_BattleTransition, ShouldAcceptBattleEnd_OnlyInBattle)
+{
+	for (u_int u = ZM_BATTLE_TRANSITION_IDLE;
+		u <= ZM_BATTLE_TRANSITION_RESUME_FADING_IN;
+		++u)
+	{
+		const ZM_BATTLE_TRANSITION_STATE eState =
+			static_cast<ZM_BATTLE_TRANSITION_STATE>(u);
+		const bool bExpected = (eState == ZM_BATTLE_TRANSITION_IN_BATTLE);
+		ZENITH_ASSERT_EQ(
+			(u_int)ZM_BattleTransition::ShouldAcceptBattleEnd(eState),
+			(u_int)bExpected,
+			"ShouldAcceptBattleEnd must be true for IN_BATTLE and false for every "
+			"other state (state %u)", u);
+	}
+}
+
+// ############################################################################
+// 11. OwnsFade -- every non-idle state owns the screen
+// ############################################################################
+
+// OwnsFade is what OnUpdate consults when the persistent root has LOST its
+// authored BattleFade overlay: an owning state is slammed opaque so a broken
+// overlay can never reveal a half-built arena or a half-restored overworld. IDLE
+// is the only state with nothing to hide, so it must NOT claim the fade -- were
+// it to, an idle machine would blacken the screen for a fault it is not part of.
+ZENITH_TEST(ZM_BattleTransition, OwnsFade_EveryNonIdleStateOwnsTheScreen)
+{
+	for (u_int u = ZM_BATTLE_TRANSITION_IDLE;
+		u <= ZM_BATTLE_TRANSITION_RESUME_FADING_IN;
+		++u)
+	{
+		const ZM_BATTLE_TRANSITION_STATE eState =
+			static_cast<ZM_BATTLE_TRANSITION_STATE>(u);
+		const bool bExpected = (eState != ZM_BATTLE_TRANSITION_IDLE);
+		ZENITH_ASSERT_EQ(
+			(u_int)ZM_BattleTransition::OwnsFade(eState),
+			(u_int)bExpected,
+			"every non-idle state owns the fade; IDLE owns nothing (state %u)", u);
+	}
+}
+
+// ############################################################################
+// 12. IsOverworldPausedInState -- the pause window is exactly ENTERING..RESUMING
+// ############################################################################
+
+// The pause window is bounded on BOTH sides for concrete reasons. It opens no
+// earlier than ENTERING because FADING_OUT and WAITING_FOR_SCENE still need the
+// live overworld -- the player is parked from the active scene during ENTERING,
+// and a scene paused before that would never dispatch. It closes at RESUMING
+// (which unpauses) rather than at RESUME_FADING_IN, so the world is already
+// ticking again by the time the screen starts to reveal it. IDLE is trivially
+// unpaused. Each state is named explicitly rather than derived, so this case
+// disagrees with the implementation on drift instead of restating it.
+ZENITH_TEST(ZM_BattleTransition, IsOverworldPausedInState_MatchesPauseWindow)
+{
+	ZENITH_ASSERT_FALSE(
+		ZM_BattleTransition::IsOverworldPausedInState(ZM_BATTLE_TRANSITION_IDLE),
+		"IDLE owns no overworld and must not report it paused");
+	ZENITH_ASSERT_FALSE(
+		ZM_BattleTransition::IsOverworldPausedInState(ZM_BATTLE_TRANSITION_FADING_OUT),
+		"FADING_OUT still runs the live overworld under the fade");
+	ZENITH_ASSERT_FALSE(
+		ZM_BattleTransition::IsOverworldPausedInState(
+			ZM_BATTLE_TRANSITION_WAITING_FOR_SCENE),
+		"WAITING_FOR_SCENE has not yet parked the player, so the overworld must tick");
+	ZENITH_ASSERT_FALSE(
+		ZM_BattleTransition::IsOverworldPausedInState(
+			ZM_BATTLE_TRANSITION_RESUME_FADING_IN),
+		"RESUMING already unpaused the overworld before the reveal fade");
+
+	ZENITH_ASSERT_TRUE(
+		ZM_BattleTransition::IsOverworldPausedInState(ZM_BATTLE_TRANSITION_ENTERING),
+		"ENTERING pauses the overworld once the player is parked");
+	ZENITH_ASSERT_TRUE(
+		ZM_BattleTransition::IsOverworldPausedInState(ZM_BATTLE_TRANSITION_FADING_IN),
+		"FADING_IN reveals the battle with the overworld paused");
+	ZENITH_ASSERT_TRUE(
+		ZM_BattleTransition::IsOverworldPausedInState(ZM_BATTLE_TRANSITION_IN_BATTLE),
+		"IN_BATTLE must never tick the overworld underneath the battle");
+	ZENITH_ASSERT_TRUE(
+		ZM_BattleTransition::IsOverworldPausedInState(
+			ZM_BATTLE_TRANSITION_FADING_TO_OVERWORLD),
+		"FADING_TO_OVERWORLD is still inside the pause window");
+	ZENITH_ASSERT_TRUE(
+		ZM_BattleTransition::IsOverworldPausedInState(ZM_BATTLE_TRANSITION_RESUMING),
+		"RESUMING is the state that performs the unpause, so it is still in-window");
 }

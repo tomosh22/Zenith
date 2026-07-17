@@ -32,10 +32,26 @@ class Zenith_DataStream;
 // The two overlays never fight for the top of the canvas either: BattleFade is
 // authored at sort order 10001, one above WarpFade's 10000 (ZM-D-097).
 //
-// SC3b SCOPE: this component is deliberately SCENE-INERT. It observes and latches
-// encounters and holds the state enum, but OnUpdate touches no scene, issues no
-// load, pauses nothing, and never leaves ZM_BATTLE_TRANSITION_IDLE. SC4 wires the
-// state machine.
+// THE ROUND TRIP, and why each step is where it is:
+//   * The additive Battle load is FIRE AND FORGET. Issued from a component
+//     OnUpdate it DEFERS and returns INVALID_SCENE (the scene system is mid-
+//     Update), so the handle is POLLED for on a later frame via
+//     FindLoadedSceneByPath -- exactly the shipped ZM_GameStateManager
+//     IssueSingleLoad/PollForTargetScene split. Only ONE pending load survives
+//     per frame, which is why this machine and the warp machine refuse to run
+//     concurrently in BOTH directions.
+//   * Only the OVERWORLD is ever paused. Pausing Battle would gate its own
+//     pending-Start dispatch, so ZM_BattleArena::OnStart would never run and the
+//     arena would never build.
+//   * SetScenePaused gates ONLY the ECS update dispatch: physics is global and
+//     keeps stepping every body, and the transform sync keeps writing poses back
+//     into the paused scene. That is why the player is PARKED (velocity zeroed +
+//     gravity dropped), not merely frozen. No position is ever written.
+//   * SetActiveScene(Battle) IS the camera switch -- FindMainCameraEntityAcross
+//     Scenes scans the active scene first and Battle authors its own main camera.
+//   * SetActiveScene(overworld) ALWAYS precedes UnloadScene(battle): the unload
+//     auto-reselects the LOWEST build index loaded, which would hand focus to
+//     FrontEnd if it were ever loaded.
 enum ZM_BATTLE_TRANSITION_STATE : u_int
 {
 	ZM_BATTLE_TRANSITION_IDLE,
@@ -85,11 +101,20 @@ public:
 	// unmapped or out of range.
 	static ZM_BATTLE_BIOME BiomeForScene(ZM_SCENE_ID eScene);
 
+	// Item 4 may only end a battle that is actually running: IN_BATTLE and
+	// nothing else. Every other state is mid-transition and owns the screen.
+	static bool ShouldAcceptBattleEnd(ZM_BATTLE_TRANSITION_STATE eState);
+	// Any non-idle state owns the fade overlay, so a lost overlay must lock the
+	// screen opaque rather than reveal a half-built arena or half-restored world.
+	static bool OwnsFade(ZM_BATTLE_TRANSITION_STATE eState);
+	// The window in which the overworld scene is PAUSED: from the one-shot entry
+	// through to the resume. Outside it the overworld dispatches normally.
+	static bool IsOverworldPausedInState(ZM_BATTLE_TRANSITION_STATE eState);
+
 	// ---- item 4 seam ----
 
 	// The SOLE exit from ZM_BATTLE_TRANSITION_IN_BATTLE. Returns false when there
-	// is no battle to end. SC3b has no state machine to drive, so it always
-	// returns false; SC4 wires it.
+	// is no battle to end (i.e. whenever ShouldAcceptBattleEnd is false).
 	static bool RequestBattleEnd();
 	// True while a round trip owns the screen. ZM_GameStateManager::TryQueueWarp
 	// rejects on it so no warp can race the battle.
@@ -120,6 +145,31 @@ public:
 private:
 	static void OnWildEncounterEvent(const ZM_OnWildEncounter& xEvent);
 	bool ApplyFadeVisual();
+
+	void AcceptPendingEncounter();
+	void AdvanceFadeOut(float fDeltaTime, ZM_BATTLE_TRANSITION_STATE eNextState);
+	void IssueAdditiveBattleLoad();
+	void PollForBattleScene();
+	void EnterBattleOnce();       // one-shot: park + pause + activate + clear grass
+	void PollForBattleReady();    // poll-only: arena built + battle camera live + SetBiome
+	void AdvanceFadeIn(float fDeltaTime, ZM_BATTLE_TRANSITION_STATE eNextState);
+	void ResumeOverworld(bool bCompletedBattle);
+	void AbortToOverworld(const char* szReason);
+	bool TryParkOverworldPlayer();
+	bool TryRestoreOverworldPlayer(bool bEnableMovement);
+	// True == the deadline fired and the machine aborted; the caller must return.
+	bool AdvancePollDeadline(float fDeltaTime, const char* szReason);
+	static bool IsBattleCameraActive(Zenith_Scene xBattleScene);
+	// The returned pointer is valid ONLY for the duration of the calling function:
+	// component pools swap-and-pop. NEVER cache it across frames.
+	static ZM_BattleArena* ResolveUniqueBattleArena();
+	static void ClearOverworldGrass();
+	static void RegenerateOverworldGrass();
+
+	// WALL-CLOCK, deliberately not a frame count: nothing pins the frame rate, and
+	// the windowed gate runs at a fixed dt of 1/30, where a 240-frame budget would
+	// silently mean 8 s instead of 4 s.
+	static constexpr float fPOLL_DEADLINE_SECONDS = 4.0f;
 
 	static Zenith_EntityID s_xSingletonEntityID;
 	static Zenith_EventHandle s_uEncounterSubscription;

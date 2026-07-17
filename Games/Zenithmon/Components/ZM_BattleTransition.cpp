@@ -2,10 +2,21 @@
 
 #include "Zenithmon/Components/ZM_BattleTransition.h"
 
+#include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_Engine.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "Flux/Vegetation/Flux_GrassImpl.h"
+#include "Physics/Zenith_Physics.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+// ZM_GameStateManager.h is included HERE and deliberately NEVER in
+// ZM_BattleTransition.h: ZM_GameStateManager.cpp already includes this
+// component's header, so keeping the dependency in the .cpp is what keeps it
+// one-directional.
+#include "Zenithmon/Components/ZM_GameStateManager.h"
+#include "Zenithmon/Components/ZM_PlayerController.h"
+#include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
 #include "Zenithmon/Source/UI/ZM_FadeOverlay.h"
 
 #ifdef ZENITH_TOOLS
@@ -13,6 +24,13 @@
 #endif
 
 #include <cmath>
+#include <string>
+
+namespace
+{
+	constexpr float fFADE_OPAQUE = 1.0f;
+	constexpr float fFADE_TRANSPARENT = 0.0f;
+}
 
 #ifdef ZENITH_TOOLS
 namespace
@@ -95,16 +113,68 @@ void ZM_BattleTransition::OnUpdate(float fDeltaTime)
 		return;
 	}
 
-	// SC3b is deliberately SCENE-INERT: the latched encounter is recorded and
-	// observable, but nothing loads, pauses, or switches scenes and the state
-	// never leaves IDLE. SC4 wires the state machine onto this drain.
-	if (s_bPendingEncounter)
+	// The fade is the safety boundary, exactly as for the warp machine: if the
+	// persistent root loses its authored overlay, lock every non-idle state opaque
+	// rather than reveal a half-built arena or a half-restored overworld.
+	if (!ApplyFadeVisual())
 	{
-		m_eBattleSpecies = s_ePendingSpecies;
-		m_uBattleLevel = s_uPendingLevel;
-		m_eSourceScene = s_ePendingScene;
-		++m_uObservedEncounterCount;
-		s_bPendingEncounter = false;
+		if (OwnsFade(m_eState))
+		{
+			m_fFadeAlpha = fFADE_OPAQUE;
+		}
+		return;
+	}
+
+	switch (m_eState)
+	{
+	case ZM_BATTLE_TRANSITION_IDLE:
+		AcceptPendingEncounter();
+		break;
+	case ZM_BATTLE_TRANSITION_FADING_OUT:
+		AdvanceFadeOut(fDeltaTime, ZM_BATTLE_TRANSITION_WAITING_FOR_SCENE);
+		break;
+	case ZM_BATTLE_TRANSITION_WAITING_FOR_SCENE:
+		if (AdvancePollDeadline(fDeltaTime, "the additive Battle load never landed"))
+		{
+			break;
+		}
+		PollForBattleScene();
+		break;
+	case ZM_BATTLE_TRANSITION_ENTERING:
+		if (AdvancePollDeadline(fDeltaTime, "the battle arena/camera never became ready"))
+		{
+			break;
+		}
+		if (!m_bBattleEntered)
+		{
+			EnterBattleOnce();   // one-shot; poll from the NEXT frame
+			break;
+		}
+		PollForBattleReady();
+		break;
+	case ZM_BATTLE_TRANSITION_FADING_IN:
+		AdvanceFadeIn(fDeltaTime, ZM_BATTLE_TRANSITION_IN_BATTLE);
+		break;
+	case ZM_BATTLE_TRANSITION_IN_BATTLE:
+		// Item 4 (ZM_BattleDirector) owns battle resolution and calls
+		// RequestBattleEnd(). There is deliberately NO timer here.
+		if (s_bBattleEndRequested)
+		{
+			s_bBattleEndRequested = false;
+			m_eState = ZM_BATTLE_TRANSITION_FADING_TO_OVERWORLD;
+		}
+		break;
+	case ZM_BATTLE_TRANSITION_FADING_TO_OVERWORLD:
+		AdvanceFadeOut(fDeltaTime, ZM_BATTLE_TRANSITION_RESUMING);
+		break;
+	case ZM_BATTLE_TRANSITION_RESUMING:
+		ResumeOverworld(true);
+		break;
+	case ZM_BATTLE_TRANSITION_RESUME_FADING_IN:
+		AdvanceFadeIn(fDeltaTime, ZM_BATTLE_TRANSITION_IDLE);
+		break;
+	default:
+		break;
 	}
 }
 
@@ -248,11 +318,44 @@ ZM_BATTLE_BIOME ZM_BattleTransition::BiomeForScene(ZM_SCENE_ID eScene)
 	return (eScene < ZM_SCENE_COUNT) ? ls_aeBiome[eScene] : ZM_BATTLE_BIOME_MEADOW;
 }
 
+bool ZM_BattleTransition::ShouldAcceptBattleEnd(ZM_BATTLE_TRANSITION_STATE eState)
+{
+	return eState == ZM_BATTLE_TRANSITION_IN_BATTLE;
+}
+
+bool ZM_BattleTransition::OwnsFade(ZM_BATTLE_TRANSITION_STATE eState)
+{
+	return eState != ZM_BATTLE_TRANSITION_IDLE;
+}
+
+bool ZM_BattleTransition::IsOverworldPausedInState(ZM_BATTLE_TRANSITION_STATE eState)
+{
+	return eState == ZM_BATTLE_TRANSITION_ENTERING
+		|| eState == ZM_BATTLE_TRANSITION_FADING_IN
+		|| eState == ZM_BATTLE_TRANSITION_IN_BATTLE
+		|| eState == ZM_BATTLE_TRANSITION_FADING_TO_OVERWORLD
+		|| eState == ZM_BATTLE_TRANSITION_RESUMING;
+}
+
 bool ZM_BattleTransition::RequestBattleEnd()
 {
-	// SC4 wires the machine; SC3b never reaches IN_BATTLE, so there is never a
-	// battle to end.
-	return false;
+	Zenith_EntityID xID = INVALID_ENTITY_ID;
+	if (!TryGetUniqueSingletonEntityID(xID))
+	{
+		return false;
+	}
+
+	Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xID);
+	ZM_BattleTransition* pxSelf = xEntity.IsValid()
+		? xEntity.TryGetComponent<ZM_BattleTransition>()
+		: nullptr;
+	if (pxSelf == nullptr || !ShouldAcceptBattleEnd(pxSelf->m_eState))
+	{
+		return false;
+	}
+
+	s_bBattleEndRequested = true;
+	return true;
 }
 
 bool ZM_BattleTransition::IsTransitionActive()
@@ -288,6 +391,12 @@ void ZM_BattleTransition::ResetRuntimeStateForTests()
 	pxTransition->ApplyFadeVisual();
 	pxTransition->m_xOverworldScene = Zenith_Scene();
 	pxTransition->m_xBattleScene = Zenith_Scene();
+	// Release a still-PARKED player before dropping the ID that identifies it,
+	// mirroring the warp machine's ResetTransitionState(true). Parking drops
+	// gravity and disables input on the live body; clearing the ID alone would
+	// strand a floating, uncontrollable player in every later test. A no-op when
+	// nothing was parked (the resolve fails closed).
+	pxTransition->TryRestoreOverworldPlayer(true);
 	pxTransition->m_xParkedPlayerEntityID = INVALID_ENTITY_ID;
 	pxTransition->m_xParkedPlayerPosition = Zenith_Maths::Vector3(0.0f);
 	pxTransition->m_eBattleSpecies = ZM_SPECIES_NONE;
@@ -334,4 +443,385 @@ bool ZM_BattleTransition::IsAuthoritativeSingleton() const
 bool ZM_BattleTransition::ApplyFadeVisual()
 {
 	return ZM_FadeOverlay::Apply(m_xParentEntity, szFADE_ELEMENT_NAME, m_fFadeAlpha);
+}
+
+void ZM_BattleTransition::AcceptPendingEncounter()
+{
+	if (!s_bPendingEncounter)
+	{
+		return;
+	}
+	s_bPendingEncounter = false;
+
+	// Never race the SINGLE-warp machine for the screen (only one pending load
+	// survives per frame). TryQueueWarp already rejects on IsTransitionActive(),
+	// so this closes the other direction.
+	if (ZM_GameStateManager::IsWarpInProgress())
+	{
+		return;
+	}
+
+	const Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+	const Zenith_SceneInfo xInfo = g_xEngine.Scenes().GetSceneInfo(xActive);
+	if (!xInfo.m_bLoaded || xInfo.m_iBuildIndex < 0)
+	{
+		return;
+	}
+	if (!IsSceneEligibleForBattle(
+		ZM_FindSceneByBuildIndex(static_cast<u_int>(xInfo.m_iBuildIndex))))
+	{
+		return;
+	}
+
+	m_xOverworldScene = xActive;   // generation-bearing handle, NEVER a SceneData*
+	m_eBattleSpecies = s_ePendingSpecies;
+	m_uBattleLevel = s_uPendingLevel;
+	m_eSourceScene = s_ePendingScene;
+	++m_uObservedEncounterCount;
+	m_fFadeAlpha = fFADE_TRANSPARENT;
+	ApplyFadeVisual();
+	m_fPollSeconds = 0.0f;
+	m_bBattleEntered = false;
+	m_bGrassCleared = false;
+	s_bTransitionActive = true;    // from here the subscriber + TryQueueWarp fail closed
+	m_eState = ZM_BATTLE_TRANSITION_FADING_OUT;
+}
+
+void ZM_BattleTransition::AdvanceFadeOut(
+	float fDeltaTime,
+	ZM_BATTLE_TRANSITION_STATE eNextState)
+{
+	m_fFadeAlpha = ZM_GameStateManager::AdvanceFadeAlpha(
+		m_fFadeAlpha, fFADE_OPAQUE, fDeltaTime);
+	if (!ApplyFadeVisual())
+	{
+		return;
+	}
+	if (m_fFadeAlpha < fFADE_OPAQUE)
+	{
+		return;
+	}
+
+	if (eNextState == ZM_BATTLE_TRANSITION_WAITING_FOR_SCENE)
+	{
+		IssueAdditiveBattleLoad();
+		return;
+	}
+	m_fPollSeconds = 0.0f;
+	m_eState = eNextState;
+}
+
+void ZM_BattleTransition::IssueAdditiveBattleLoad()
+{
+	// FIRE AND FORGET. This runs inside a component OnUpdate, so the load DEFERS
+	// and returns INVALID_SCENE; the engine drains the pending slot at the end of
+	// this Update and we poll for the handle next frame. Mirrors the shipped
+	// ZM_GameStateManager::IssueSingleLoad: issue ONCE here, poll ONLY in
+	// PollForBattleScene.
+	++m_uIssuedLoadRequestCount;
+	m_fPollSeconds = 0.0f;
+	m_eState = ZM_BATTLE_TRANSITION_WAITING_FOR_SCENE;
+	g_xEngine.Scenes().LoadSceneByIndex(iBATTLE_BUILD_INDEX, SCENE_LOAD_ADDITIVE);
+}
+
+void ZM_BattleTransition::PollForBattleScene()
+{
+	const Zenith_Scene xBattle = g_xEngine.Scenes().FindLoadedSceneByPath(
+		std::string(GAME_ASSETS_DIR) + "Scenes/Battle" + ZENITH_SCENE_EXT);
+	if (!xBattle.IsValid())
+	{
+		return;   // the deadline is owned by OnUpdate
+	}
+
+	m_xBattleScene = xBattle;
+	m_fPollSeconds = 0.0f;
+	m_eState = ZM_BATTLE_TRANSITION_ENTERING;
+}
+
+void ZM_BattleTransition::EnterBattleOnce()
+{
+	// ORDER IS LOAD-BEARING. Runs EXACTLY ONCE per round trip (m_bBattleEntered).
+	// 1) Park the player FIRST, while the overworld is still ACTIVE:
+	//    TryGetUniqueActiveScenePlayerEntityID is active-scene bound and goes blind
+	//    the instant focus moves to Battle. If the player is not resolvable yet,
+	//    leave m_bBattleEntered false and retry next frame -- the deadline still
+	//    bounds it.
+	if (!TryParkOverworldPlayer())
+	{
+		return;
+	}
+
+	// 2) Pause the overworld. This gates ONLY the ECS update dispatch; physics is
+	//    global and keeps stepping, which is why step 1 parks the body.
+	g_xEngine.Scenes().SetScenePaused(m_xOverworldScene, true);
+
+	// 3) Focus = the camera switch (FindMainCameraEntityAcrossScenes scans the
+	//    active scene first, and Battle authors its own main camera). Battle is
+	//    NEVER paused: the pause gates pending-Start dispatch, so a paused Battle
+	//    would never run ZM_BattleArena::OnStart and the arena would never build.
+	if (!g_xEngine.Scenes().SetActiveScene(m_xBattleScene))
+	{
+		AbortToOverworld("SetActiveScene(Battle) was refused");
+		return;
+	}
+
+	// 4) Additive loads never hit the engine's SINGLE-only render-reset hook, so
+	//    clear the engine-owned grass singleton explicitly. The overworld's
+	//    ZM_TallGrassSystem keeps its OWN CPU map, so gameplay sampling is
+	//    untouched. m_bGrassCleared is what licenses the matching regenerate on
+	//    resume -- no other path may regenerate.
+	ClearOverworldGrass();
+	m_bGrassCleared = true;
+	m_bBattleEntered = true;
+	m_fPollSeconds = 0.0f;
+}
+
+void ZM_BattleTransition::PollForBattleReady()
+{
+	// Re-resolved every frame: a component pool may swap-and-pop under us, so an
+	// arena pointer must never outlive this call.
+	ZM_BattleArena* pxArena = ResolveUniqueBattleArena();
+	if (pxArena == nullptr
+		|| !pxArena->IsFullyBuilt()
+		|| !IsBattleCameraActive(m_xBattleScene))
+	{
+		return;   // deadline owned by OnUpdate
+	}
+
+	pxArena->SetBiome(BiomeForScene(m_eSourceScene));
+	m_fPollSeconds = 0.0f;
+	m_eState = ZM_BATTLE_TRANSITION_FADING_IN;
+}
+
+void ZM_BattleTransition::AdvanceFadeIn(
+	float fDeltaTime,
+	ZM_BATTLE_TRANSITION_STATE eNextState)
+{
+	m_fFadeAlpha = ZM_GameStateManager::AdvanceFadeAlpha(
+		m_fFadeAlpha, fFADE_TRANSPARENT, fDeltaTime);
+	if (!ApplyFadeVisual())
+	{
+		m_fFadeAlpha = fFADE_OPAQUE;
+		return;
+	}
+	if (m_fFadeAlpha > fFADE_TRANSPARENT)
+	{
+		return;
+	}
+
+	if (eNextState == ZM_BATTLE_TRANSITION_IN_BATTLE)
+	{
+		s_bBattleEndRequested = false;
+		m_eState = ZM_BATTLE_TRANSITION_IN_BATTLE;
+		return;
+	}
+
+	// Resume complete: hand input back only now, mirroring the warp machine.
+	TryRestoreOverworldPlayer(true);
+	// m_xParkedPlayerPosition is DELIBERATELY retained -- it is the drift baseline
+	// the windowed gate reads via GetParkedPlayerPosition() after IDLE.
+	m_xParkedPlayerEntityID = INVALID_ENTITY_ID;
+	m_xBattleScene = Zenith_Scene();
+	m_xOverworldScene = Zenith_Scene();
+	m_eBattleSpecies = ZM_SPECIES_NONE;
+	m_uBattleLevel = 0u;
+	m_eSourceScene = ZM_SCENE_NONE;
+	m_bBattleEntered = false;
+	m_bGrassCleared = false;
+	s_bPendingEncounter = false;   // drop anything the stray pause-frame tick latched
+	s_bTransitionActive = false;
+	m_eState = ZM_BATTLE_TRANSITION_IDLE;
+}
+
+void ZM_BattleTransition::ResumeOverworld(bool bCompletedBattle)
+{
+	// ORDER IS LOAD-BEARING: activate the overworld BEFORE unloading Battle, so we
+	// never depend on the unload's lowest-build-index reselection (FrontEnd would
+	// win if it were ever loaded).
+	if (m_xOverworldScene.IsValid())
+	{
+		g_xEngine.Scenes().SetActiveScene(m_xOverworldScene);
+	}
+	if (m_xBattleScene.IsValid())
+	{
+		// Legal: this component lives on the PERSISTENT scene, so this is not the
+		// unsupported self-unload-from-own-dispatch case.
+		g_xEngine.Scenes().UnloadScene(m_xBattleScene);
+		m_xBattleScene = Zenith_Scene();
+	}
+	if (m_xOverworldScene.IsValid())
+	{
+		g_xEngine.Scenes().SetScenePaused(m_xOverworldScene, false);
+	}
+
+	// Gravity + zeroed velocity; input stays off until the fade completes.
+	TryRestoreOverworldPlayer(false);
+
+	// ONLY a path that actually cleared may regenerate: RegenerateForSceneResume
+	// ALWAYS clears first, so calling it on an abort that never entered the battle
+	// would destroy and rebuild live overworld grass.
+	if (m_bGrassCleared)
+	{
+		RegenerateOverworldGrass();
+		m_bGrassCleared = false;
+	}
+
+	if (bCompletedBattle)
+	{
+		++m_uCompletedBattleCount;
+	}
+	else
+	{
+		++m_uAbortedTransitionCount;
+	}
+	m_bBattleEntered = false;
+	m_eState = ZM_BATTLE_TRANSITION_RESUME_FADING_IN;
+}
+
+void ZM_BattleTransition::AbortToOverworld(const char* szReason)
+{
+	// LOG_CATEGORY_GAMEPLAY (not UNITTEST): this is shipping runtime code.
+	Zenith_Error(LOG_CATEGORY_GAMEPLAY,
+		"[ZM_BattleTransition] aborting the battle round trip: %s", szReason);
+	ResumeOverworld(false);   // an ABORT, not a completion; skips the grass regen unless it cleared
+}
+
+bool ZM_BattleTransition::TryParkOverworldPlayer()
+{
+	Zenith_EntityID xPlayerID = INVALID_ENTITY_ID;
+	if (!ZM_GameStateManager::TryGetUniqueActiveScenePlayerEntityID(xPlayerID))
+	{
+		return false;
+	}
+
+	Zenith_Entity xPlayer = g_xEngine.Scenes().ResolveEntity(xPlayerID);
+	ZM_PlayerController* pxController = xPlayer.IsValid()
+		? xPlayer.TryGetComponent<ZM_PlayerController>()
+		: nullptr;
+	Zenith_ColliderComponent* pxCollider = xPlayer.IsValid()
+		? xPlayer.TryGetComponent<Zenith_ColliderComponent>()
+		: nullptr;
+	if (pxController == nullptr
+		|| pxCollider == nullptr
+		|| !pxCollider->HasValidBody())
+	{
+		return false;
+	}
+
+	// PARK, do not merely freeze: the pause stops the ECS dispatch only; physics
+	// keeps stepping every body and the transform sync keeps writing the pose back.
+	// Zeroing velocity + dropping gravity removes the accumulating force. This is
+	// NOT teleportation -- no position is written.
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+	const Zenith_PhysicsBodyID xBodyID = pxCollider->GetBodyID();
+	xPhysics.SetLinearVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
+	xPhysics.SetAngularVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
+	xPhysics.SetGravityEnabled(xBodyID, false);
+	pxController->SetMovementEnabled(false);
+	m_xParkedPlayerEntityID = xPlayerID;
+	m_xParkedPlayerPosition = xPhysics.GetBodyPosition(xBodyID);   // the ONLY sound drift baseline
+	return true;
+}
+
+bool ZM_BattleTransition::TryRestoreOverworldPlayer(bool bEnableMovement)
+{
+	Zenith_Entity xPlayer =
+		g_xEngine.Scenes().ResolveEntity(m_xParkedPlayerEntityID);
+	ZM_PlayerController* pxController = xPlayer.IsValid()
+		? xPlayer.TryGetComponent<ZM_PlayerController>()
+		: nullptr;
+	Zenith_ColliderComponent* pxCollider = xPlayer.IsValid()
+		? xPlayer.TryGetComponent<Zenith_ColliderComponent>()
+		: nullptr;
+	if (pxController == nullptr
+		|| pxCollider == nullptr
+		|| !pxCollider->HasValidBody())
+	{
+		return false;
+	}
+
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+	const Zenith_PhysicsBodyID xBodyID = pxCollider->GetBodyID();
+	xPhysics.SetLinearVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
+	xPhysics.SetAngularVelocity(xBodyID, Zenith_Maths::Vector3(0.0f));
+	xPhysics.SetGravityEnabled(xBodyID, true);
+	if (bEnableMovement)
+	{
+		pxController->ResetRuntimeState();
+		pxController->SetMovementEnabled(true);
+	}
+	else
+	{
+		pxController->SetMovementEnabled(false);
+	}
+	return true;
+}
+
+bool ZM_BattleTransition::AdvancePollDeadline(
+	float fDeltaTime,
+	const char* szReason)
+{
+	m_fPollSeconds += fDeltaTime;
+	if (m_fPollSeconds <= fPOLL_DEADLINE_SECONDS)
+	{
+		return false;
+	}
+
+	AbortToOverworld(szReason);
+	return true;
+}
+
+bool ZM_BattleTransition::IsBattleCameraActive(Zenith_Scene xBattleScene)
+{
+	// Used within this call only -- SceneData storage is recyclable.
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(xBattleScene);
+	if (pxData == nullptr)
+	{
+		return false;
+	}
+
+	const Zenith_EntityID xCameraID = pxData->GetMainCameraEntity();
+	return xCameraID.IsValid()
+		&& g_xEngine.Scenes().FindMainCameraEntityAcrossScenes() == xCameraID;
+}
+
+ZM_BattleArena* ZM_BattleTransition::ResolveUniqueBattleArena()
+{
+	u_int uCount = 0u;
+	ZM_BattleArena* pxFound = nullptr;
+	g_xEngine.Scenes().QueryAllScenes<ZM_BattleArena>().ForEach(
+		[&](Zenith_EntityID, ZM_BattleArena& xArena)
+		{
+			++uCount;
+			if (uCount == 1u)
+			{
+				pxFound = &xArena;
+			}
+		});
+	return (uCount == 1u) ? pxFound : nullptr;   // pointer valid only for this call
+}
+
+void ZM_BattleTransition::ClearOverworldGrass()
+{
+	if (Zenith_CommandLine::IsHeadless())
+	{
+		return;
+	}
+	g_xEngine.Grass().ClearSceneData();
+}
+
+void ZM_BattleTransition::RegenerateOverworldGrass()
+{
+	if (Zenith_CommandLine::IsHeadless())
+	{
+		return;
+	}
+
+	// QueryAllScenes, NOT QueryActiveScene: under an additive Battle the overworld
+	// is loaded but NOT active, so an active-scene query would find nothing.
+	g_xEngine.Scenes().QueryAllScenes<ZM_TerrainGrass>().ForEach(
+		[](Zenith_EntityID, ZM_TerrainGrass& xGrass)
+		{
+			xGrass.RegenerateForSceneResume();
+		});
 }
