@@ -35,7 +35,7 @@ void ZM_PlayerController::OnStart()
 {
 	ResetRuntimeState();
 	EnsureAndConfigureBody();
-	if (ZM_GameStateManager::ShouldFreezePlayerOnStart())
+	if (ZM_GameStateManager::IsWarpInProgress())
 	{
 		SetMovementEnabled(false);
 	}

@@ -916,7 +916,7 @@ ZENITH_TEST(ZM_WorldTraversal, WarpResolutionFreezesThenResetsOnMissingDuplicate
 	ZM_PlayerController& xReplacementController =
 		xReplacementPlayer.GetComponent<ZM_PlayerController>();
 	xReplacementController.OnStart();
-	ZENITH_ASSERT_TRUE(ZM_GameStateManager::ShouldFreezePlayerOnStart());
+	ZENITH_ASSERT_TRUE(ZM_GameStateManager::IsWarpInProgress());
 	ZENITH_ASSERT_FALSE(xReplacementController.IsMovementEnabled(),
 		"a new scene generation must freeze before its first movement update");
 
@@ -951,7 +951,7 @@ ZENITH_TEST(ZM_WorldTraversal, WarpResolutionFreezesThenResetsOnMissingDuplicate
 	ZENITH_ASSERT_EQ(xManager.GetTransitionState(), ZM_WARP_TRANSITION_IDLE);
 	ZENITH_ASSERT_EQ(xManager.GetFrozenPlayerEntityID(), INVALID_ENTITY_ID);
 	ZENITH_ASSERT_TRUE(xReplacementController.IsMovementEnabled());
-	ZENITH_ASSERT_FALSE(ZM_GameStateManager::ShouldFreezePlayerOnStart());
+	ZENITH_ASSERT_FALSE(ZM_GameStateManager::IsWarpInProgress());
 }
 
 ZENITH_TEST(ZM_WorldTraversal, FadeAdvanceClampsInvalidDtAndRuntimeReset)

@@ -47,9 +47,9 @@ public:
 #endif
 
 	static bool RequestWarp(u_int uTargetBuildIndex, const char* szSpawnTag);
-	// PlayerController calls this from OnStart so a scene-owned replacement
-	// cannot consume one input frame before the later-ordered manager resolves it.
-	static bool ShouldFreezePlayerOnStart();
+	// True while a warp transition owns the screen (also the predicate
+	// ZM_PlayerController uses to decide whether to freeze on Start).
+	static bool IsWarpInProgress();
 	// Collision sources use this generation-bearing ID seam to prove the body
 	// entering them is the one authoritative active-scene Player. Foreign
 	// additive-scene, duplicate, malformed, and bodyless controllers fail closed.

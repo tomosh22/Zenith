@@ -7,7 +7,6 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Physics/Zenith_Physics.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -15,6 +14,7 @@
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
+#include "Zenithmon/Source/UI/ZM_FadeOverlay.h"
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -28,24 +28,6 @@ namespace
 {
 	constexpr float fFADE_OPAQUE = 1.0f;
 	constexpr float fFADE_TRANSPARENT = 0.0f;
-
-	Zenith_UI::Zenith_UIOverlay* ResolveWarpFadeOverlay(
-		Zenith_Entity& xManagerEntity)
-	{
-		Zenith_UIComponent* pxUI = xManagerEntity.IsValid()
-			? xManagerEntity.TryGetComponent<Zenith_UIComponent>()
-			: nullptr;
-		Zenith_UI::Zenith_UIElement* pxElement = pxUI != nullptr
-			? pxUI->FindElement(ZM_GameStateManager::szFADE_ELEMENT_NAME)
-			: nullptr;
-		if (pxElement == nullptr
-			|| pxElement->GetType() != Zenith_UI::UIElementType::Overlay)
-		{
-			return nullptr;
-		}
-
-		return static_cast<Zenith_UI::Zenith_UIOverlay*>(pxElement);
-	}
 
 	void FreezeActiveScenePlayers()
 	{
@@ -232,7 +214,7 @@ bool ZM_GameStateManager::RequestWarp(
 		&& pxManager->TryQueueWarp(uTargetBuildIndex, szSpawnTag);
 }
 
-bool ZM_GameStateManager::ShouldFreezePlayerOnStart()
+bool ZM_GameStateManager::IsWarpInProgress()
 {
 	Zenith_Entity xManagerEntity =
 		g_xEngine.Scenes().ResolveEntity(s_xSingletonEntityID);
@@ -654,30 +636,7 @@ void ZM_GameStateManager::AdvanceFadeIn(float fDeltaTime)
 
 bool ZM_GameStateManager::ApplyFadeVisual()
 {
-	Zenith_UI::Zenith_UIOverlay* pxFadeOverlay =
-		ResolveWarpFadeOverlay(m_xParentEntity);
-	if (pxFadeOverlay == nullptr)
-	{
-		return false;
-	}
-
-	// UIOverlay deserialization restores the generic modal-overlay default
-	// (centred content bounds). WarpFade is deliberately different: its bounds
-	// must cover the canvas so the overlay's text clip hides every lower-order
-	// UIText while the screen is black. Reassert the game-owned invariant at
-	// every use, including the authoritative manager's first OnStart.
-	pxFadeOverlay->SetContentSize(0.0f, 0.0f);
-	pxFadeOverlay->SetAnchorAndPivot(Zenith_UI::AnchorPreset::StretchAll);
-	pxFadeOverlay->SetGroupAlpha(m_fFadeAlpha);
-	if (m_fFadeAlpha > fFADE_TRANSPARENT)
-	{
-		pxFadeOverlay->Show();
-	}
-	else
-	{
-		pxFadeOverlay->Hide();
-	}
-	return true;
+	return ZM_FadeOverlay::Apply(m_xParentEntity, szFADE_ELEMENT_NAME, m_fFadeAlpha);
 }
 
 bool ZM_GameStateManager::IsTargetSceneActive() const
