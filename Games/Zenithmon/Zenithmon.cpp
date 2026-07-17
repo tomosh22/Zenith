@@ -8,6 +8,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "SaveData/Zenith_SaveData.h"
 #include "Zenithmon/Components/ZM_BattleArena.h"
+#include "Zenithmon/Components/ZM_BattleTransition.h"
 #include "Zenithmon/Components/ZM_GameComponent.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_GameStateManager.h"
@@ -137,6 +138,7 @@ ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger, "ZM_WarpTrigger", 106u)
 ZENITH_REGISTER_COMPONENT(ZM_GreyboxVisual, "ZM_GreyboxVisual", 107u)
 ZENITH_REGISTER_COMPONENT(ZM_BattleArena, "ZM_BattleArena", 108u)
 ZENITH_REGISTER_COMPONENT(ZM_TallGrassSystem, "ZM_TallGrassSystem", 109u)
+ZENITH_REGISTER_COMPONENT(ZM_BattleTransition, "ZM_BattleTransition", 110u)
 
 #ifdef ZENITH_TOOLS
 namespace
@@ -172,6 +174,44 @@ namespace
 		pxFadeOverlay->SetAnchorAndPivot(
 			Zenith_UI::AnchorPreset::StretchAll);
 		pxFadeOverlay->SetSortOrder(10000);
+		pxFadeOverlay->SetDimColor({ 0.0f, 0.0f, 0.0f, 1.0f });
+		pxFadeOverlay->SetFadeDuration(0.0f);
+		pxFadeOverlay->SetGroupAlpha(0.0f);
+		pxFadeOverlay->SetVisible(false);
+	}
+
+	// ZM_BattleTransition's OWN full-canvas fade, on its OWN persistent root. Sort
+	// order 10001 puts it one above WarpFade's 10000, so the two overlays never
+	// fight for the top of the canvas (ZM-D-097).
+	void ZM_ConfigureBattleFade()
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_UIComponent* pxUI = pxSelectedEntity != nullptr
+			? pxSelectedEntity->TryGetComponent<Zenith_UIComponent>()
+			: nullptr;
+		Zenith_Assert(pxUI != nullptr,
+			"BattleFade authoring requires the selected root UI component");
+		if (pxUI == nullptr)
+		{
+			return;
+		}
+
+		Zenith_UI::Zenith_UIElement* pxFade = pxUI->FindElement("BattleFade");
+		Zenith_Assert(pxFade != nullptr
+			&& pxFade->GetType() == Zenith_UI::UIElementType::Overlay,
+			"BattleFade must be an Overlay on ZM_BattleTransitionRoot");
+		if (pxFade == nullptr
+			|| pxFade->GetType() != Zenith_UI::UIElementType::Overlay)
+		{
+			return;
+		}
+
+		Zenith_UI::Zenith_UIOverlay* pxFadeOverlay =
+			static_cast<Zenith_UI::Zenith_UIOverlay*>(pxFade);
+		pxFadeOverlay->SetContentSize(0.0f, 0.0f);
+		pxFadeOverlay->SetAnchorAndPivot(
+			Zenith_UI::AnchorPreset::StretchAll);
+		pxFadeOverlay->SetSortOrder(10001);
 		pxFadeOverlay->SetDimColor({ 0.0f, 0.0f, 0.0f, 1.0f });
 		pxFadeOverlay->SetFadeDuration(0.0f);
 		pxFadeOverlay->SetGroupAlpha(0.0f);
@@ -315,6 +355,7 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_GreyboxVisual>("ZM_GreyboxVisual");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleArena>("ZM_BattleArena");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_TallGrassSystem>("ZM_TallGrassSystem");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleTransition>("ZM_BattleTransition");
 #endif
 
 	// Save/load persistence root: %APPDATA%/Zenith/Zenithmon/. The versioned
@@ -329,6 +370,7 @@ void Project_RegisterGameComponents()
 	// this hook current as systems land (the DP hook is the reference).
 	Zenith_AutomatedTestRunner::RegisterBetweenTestsHook([]()
 	{
+		ZM_BattleTransition::ResetRuntimeStateForTests();
 		ZM_GameStateManager::ResetRuntimeStateForTests();
 		Zenith_SaveData::ClearForTest();
 	});
@@ -389,6 +431,16 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreateUIOverlay("WarpFade");
 	xAuto.AddStep_Custom(&ZM_ConfigureWarpFade);
 	xAuto.AddStep_AddComponent("ZM_GameStateManager");
+
+	// Its OWN persistent root: ZM_GameStateManager drives WarpFade every frame and
+	// its DontDestroyOnLoad relocates every component on ZM_GameStateRoot, so the
+	// battle machine gets a separate entity + a separate overlay (ZM-D-097).
+	xAuto.AddStep_CreateEntity("ZM_BattleTransitionRoot");
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_AddUI();
+	xAuto.AddStep_CreateUIOverlay("BattleFade");
+	xAuto.AddStep_Custom(&ZM_ConfigureBattleFade);
+	xAuto.AddStep_AddComponent("ZM_BattleTransition");
 
 	xAuto.AddStep_CreateEntity("GameManager");
 	xAuto.AddStep_AddCamera();

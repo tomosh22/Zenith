@@ -10,6 +10,7 @@
 #include "Physics/Zenith_Physics.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+#include "Zenithmon/Components/ZM_BattleTransition.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
@@ -363,6 +364,7 @@ bool ZM_GameStateManager::TryQueueWarp(
 	const char* szSpawnTag)
 {
 	if (!IsAuthoritativeSingleton()
+		|| ZM_BattleTransition::IsTransitionActive()   // no warp may race the battle round trip
 		|| m_eTransitionState != ZM_WARP_TRANSITION_IDLE
 		|| !IsWarpDestinationValid(uTargetBuildIndex, szSpawnTag)
 		|| !ApplyFadeVisual())
