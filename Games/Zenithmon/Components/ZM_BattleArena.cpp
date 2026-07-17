@@ -57,12 +57,6 @@ void ZM_BattleArena::OnStart()
 		return;
 	}
 
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
-	if (pxSceneData == nullptr)
-	{
-		return;
-	}
-
 	BuildArena();
 	ApplyBiomeVisibility();
 	m_bBuilt = true;
@@ -70,7 +64,12 @@ void ZM_BattleArena::OnStart()
 
 void ZM_BattleArena::BuildArena()
 {
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
+	// The arena's OWN scene, NOT the active scene (ZM-D-089): S5 item 3 loads the
+	// battle ADDITIVELY over a still-active overworld, and DispatchPendingStarts
+	// fires this OnStart before any component OnUpdate can move focus.
+	// GetSceneData() re-resolves the parent entity's own slot every call, so the
+	// children can never orphan into the overworld.
+	Zenith_SceneData* pxSceneData = m_xParentEntity.GetSceneData();
 	if (pxSceneData == nullptr)
 	{
 		return;
@@ -268,6 +267,23 @@ void ZM_BattleArena::ReadFromDataStream(Zenith_DataStream& xStream)
 	{
 		m_eActiveBiome = static_cast<ZM_BATTLE_BIOME>(uBiome);
 	}
+}
+
+Zenith_EntityID ZM_BattleArena::GetChildEntityID(u_int uIndex) const
+{
+	if (!m_bBuilt || uIndex >= uCHILD_COUNT)
+	{
+		return INVALID_ENTITY_ID;
+	}
+	if (uIndex == 0u)
+	{
+		return m_xDomeEntity.GetEntityID();
+	}
+	if (uIndex < 3u)
+	{
+		return m_axPlatformEntities[uIndex - 1u].GetEntityID();
+	}
+	return m_axDressingEntities[uIndex - 3u].GetEntityID();
 }
 
 #ifdef ZENITH_TOOLS

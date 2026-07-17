@@ -33,6 +33,11 @@ public:
 	static constexpr u_int  uBIOME_COUNT           = ZM_BATTLE_BIOME_COUNT;   // 6
 	static constexpr float  fARENA_WORLD_Y         = -2000.0f;
 
+	// Dome + two platforms + one dressing set per biome. The arena's children are
+	// spawned as ROOT entities in the arena's OWN scene (never parented), so this
+	// is the full set that dies with an UnloadScene(battle).
+	static constexpr u_int  uCHILD_COUNT           = 1u + 2u + ZM_BATTLE_BIOME_COUNT;
+
 	ZM_BattleArena() = delete;
 	explicit ZM_BattleArena(Zenith_Entity& xParentEntity);
 
@@ -60,6 +65,12 @@ public:
 	// invariant the windowed test asserts (a regression that spawned nothing
 	// would still flip m_bBuilt but fails here).
 	bool            IsFullyBuilt()   const;
+
+	// Stable child enumeration for tests and for item 4's battle director.
+	// Index order is: 0 = dome, 1..2 = platforms (player, enemy),
+	// 3..3+uBIOME_COUNT-1 = dressing sets in ZM_BATTLE_BIOME order.
+	// Returns INVALID_ENTITY_ID when out of range or not yet built.
+	Zenith_EntityID GetChildEntityID(u_int uIndex) const;
 
 	// --- pure, headless-testable helpers (no entity/graphics state) ---
 

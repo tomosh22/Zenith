@@ -25,7 +25,10 @@
 //                                  out-of-range -> 0.
 //   4. ArenaConstants           -- the arena world Y and serialization version
 //                                  are golden-pinned.
-//   5. WorldSpecBattleRowContract -- the Battle scene row is build index 1, kind
+//   5. ChildCountMatchesArenaComposition -- uCHILD_COUNT is 9 (dome + 2
+//                                  platforms + 6 dressing sets), the span the
+//                                  GetChildEntityID accessor enumerates.
+//   6. WorldSpecBattleRowContract -- the Battle scene row is build index 1, kind
 //                                  BATTLE, no terrain set.
 // ============================================================================
 
@@ -167,7 +170,22 @@ ZENITH_TEST(ZM_BattleArena, ArenaConstants)
 }
 
 // ############################################################################
-// 5. WorldSpec Battle row -- build index 1, kind BATTLE, no terrain
+// 5. Child composition -- the arena spawns exactly 9 children
+// ############################################################################
+
+// uCHILD_COUNT is the contract the windowed own-scene test enumerates against
+// (GetChildEntityID walks [0, uCHILD_COUNT)): 1 dome + 2 platforms + 6 dressing
+// sets. Pinning the 9 catches a biome-enum append that silently widens the arena
+// without the accessor's index mapping (0=dome, 1..2=platforms, 3+=dressing)
+// being revisited.
+ZENITH_TEST(ZM_BattleArena, ChildCountMatchesArenaComposition)
+{
+	ZENITH_ASSERT_EQ(ZM_BattleArena::uCHILD_COUNT, 9u,
+		"dome + 2 platforms + 6 dressing sets");
+}
+
+// ############################################################################
+// 6. WorldSpec Battle row -- build index 1, kind BATTLE, no terrain
 // ############################################################################
 
 // The additive battle scene is WorldSpec row ZM_SCENE_BATTLE: build index 1
