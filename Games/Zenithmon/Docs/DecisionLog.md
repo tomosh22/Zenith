@@ -15,6 +15,17 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-17 -- ZM-D-095 -- S5 item 3 (SC2): `ZM_TerrainGrass::RegenerateForSceneResume()` -- an explicit, game-owned grass-restore seam
+
+- **Decision:** Add a shipping (NOT `#ifdef`-guarded) public method `bool ZM_TerrainGrass::RegenerateForSceneResume()` that drops the `m_bGrassApplied` latch + the `m_uRetryFrameCount` budget and DELEGATES to the existing private `TryApplyToReadyTerrain()`. Early-returns false for headless / terminal-failure / map-less instances. Five lines; zero duplicated logic.
+- **Why an explicit seam is required (the additive path gets nothing for free):** the engine E5 grass reset (ZM-D-092) is wired into the **SINGLE-load** render-reset hook only, so an ADDITIVE battle load neither clears nor restores grass. And the overworld's own `ZM_TerrainGrass` cannot self-heal on resume for two independent reasons: its `OnUpdate` early-returns while `m_bGrassApplied` is true (`.cpp:54`), and while the overworld is paused its `OnUpdate` does not run at all. So the transition must clear on entry and drive this seam on resume.
+- **Why delegation rather than a new apply path:** `TryApplyToReadyTerrain` (`.cpp:110-137`) already performs `ClearSceneData()` -> `SetDensityScale` -> `SetDensityMap` -> `GenerateFromTerrain` -> latch. Reusing it means the resume path is byte-for-byte the first-Awake path. **Corollary for SC4:** this call ALWAYS clears before regenerating, so it must never run on a path that did not itself clear.
+- **Tests that lock it:** `ZM_TerrainGrassResumeRegen_Test` (windowed, `m_bRequiresGraphics`, +0 units -- baseline stays **1934**). Loads Dawnmere, waits for blades > 0, `ClearSceneData()`, asserts the count really drops to 0, drives the seam, and asserts the restored count EQUALS the baseline (deterministic regen). Non-vacuous by construction: it asserts `baseline > 0` and `afterClear == 0`, and nothing can silently self-heal in between because a bare singleton clear does not touch the `m_bGrassApplied` latch.
+- **Gotcha recorded for SC4:** the resume must drive this via `QueryAllScenes<ZM_TerrainGrass>()`, **NOT** `QueryActiveScene<...>()` -- under an additive Battle scene the overworld is loaded but NOT active, so an active-scene query finds nothing and the grass would stay cleared.
+- **Reversibility:** easy -- one additive public method + one windowed test, localised to `ZM_TerrainGrass`. NO engine change.
+
+---
+
 ## 2026-07-17 -- ZM-D-094 -- S5 item 3 (SC1): `ZM_BattleArena::BuildArena` spawns into the arena's OWN scene, never the active scene
 
 - **Decision:** Resolve `BuildArena`'s target scene via `m_xParentEntity.GetSceneData()` instead of `g_xEngine.Scenes().GetActiveSceneData()` (the option-(b) fix flagged as a decision-to-make in ZM-D-089/091 and Status.md). Also delete the dead `GetActiveSceneData()` fetch + null-guard that sat at the top of `OnStart` (its pointer was never used; `BuildArena` re-fetched it), and add `uCHILD_COUNT` (= 1 dome + 2 platforms + 6 dressing sets = 9) plus a `GetChildEntityID(u_int)` accessor giving tests -- and item 4's battle director -- a stable child enumeration.

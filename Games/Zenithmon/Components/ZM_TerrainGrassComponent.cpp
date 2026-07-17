@@ -84,6 +84,23 @@ void ZM_TerrainGrass::OnDestroy()
 	ClearComponentState();
 }
 
+bool ZM_TerrainGrass::RegenerateForSceneResume()
+{
+	if (m_bHeadless
+		|| m_bTerminalFailure
+		|| !m_xDensityMap.IsLoaded())
+	{
+		return false;
+	}
+
+	// Drop the applied latch + the retry budget so the shared apply path runs again
+	// exactly as it did on the first Awake. TryApplyToReadyTerrain re-clears the
+	// grass singleton itself, so a partially-populated singleton cannot survive.
+	m_bGrassApplied = false;
+	m_uRetryFrameCount = 0u;
+	return TryApplyToReadyTerrain();
+}
+
 void ZM_TerrainGrass::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	const u_int uComponentVersion = 1;

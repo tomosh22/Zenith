@@ -29,6 +29,15 @@ public:
 	void RenderPropertiesPanel();
 #endif
 
+	// Re-uploads this instance's CPU density map and regenerates its blades against
+	// the sibling terrain. The S5 additive-battle round trip CLEARS the engine-owned
+	// grass singleton on battle entry (grass cleared entering interiors/battle) and
+	// must restore this scene's grass on resume; the engine E5 render-reset hook only
+	// fires on SINGLE loads, and this component's OnUpdate cannot self-heal while its
+	// scene is paused. Returns true when grass was regenerated. Headless, terminal-
+	// failure, and map-less instances return false.
+	bool RegenerateForSceneResume();
+
 	bool HasCPUMap() const { return m_xDensityMap.IsLoaded(); }
 	bool IsGrassApplied() const { return m_bGrassApplied; }
 	bool HasTerminalFailure() const { return m_bTerminalFailure; }
