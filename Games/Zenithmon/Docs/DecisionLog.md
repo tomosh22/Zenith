@@ -15,6 +15,15 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-18 -- ZM-D-112 -- S5 STAGE GATE SIGNED OFF (user APPROVED the overworld bleed-through visual check)
+
+- **Verdict (gate sign-off):** the user reviewed the rendered S5 bleed-through evidence -- a deterministic before -> in-arena -> after round trip (`Build/artifacts/zenithmon/s5/visual/cap_overworld_before.png`, `cap_arena_a.png`, `cap_overworld_after.png`), presented as a published Artifact -- and **APPROVED** the S5 visual gate. The in-battle frame shows the additive Battle scene at world Y=-2000 (dome + two platforms + two Fernfawn + biome dressing) with the overworld grass cleared to 0 and **no Dawnmere terrain/grass bleeding into the viewport** (only the shared global skybox at the horizon, which the gate accepts as per-frame not per-scene). Q-2026-07-09-003 is CLOSED (the additive-at-offset design is confirmed; the SINGLE-load + world-state-snapshot fallback is NOT needed).
+- **Evidence method:** the frames were captured by temporarily instrumenting `Step_ZMBattleMenu` (Win mode) with `Flux_Screenshot::RequestDump` at the Walk overworld frame + early AwaitResume, running `ZM_BattleMenuWin_Test` windowed, then **reverting the instrumentation** (master stayed clean; exe rebuilt to match HEAD). TGA swapchain dumps -> PNG. This session also re-confirmed the automated gate first-party (headless 22/0 + boot unit gate 2025/0) before setting the GATE-WAIT at SC6 (ZM-D-111).
+- **Result:** **S5 (Battle integration slice) COMPLETE + gate-signed.** Roadmap S5 `*Gate:*` line marked MET + SIGNED OFF; Status.md `GATE-WAIT: S5 visual sign-off` marker CLEARED. The lifecycle loop resumes at **S6 (Dialogue, menus, NPCs, shops)** -- first task: engine E4 `Zenith_UIGridLayoutGroup`.
+- **Reversibility:** n/a (sign-off record). The next visual hard-stop is the S8 vertical-slice go/no-go (manual playthrough sign-off).
+
+---
+
 ## 2026-07-18 -- ZM-D-111 -- S5 item 5 (SC6): item-5 CLOSER + S5 automated stage gate GREEN -> GATE-WAIT (S5 visual sign-off)
 
 - **Decision:** Close S5 item 5 ("Catch / exp / faint / whiteout applied to GameState") and open the S5 STAGE gate. SC6 is a **docs-only closer** (no new source, no new tests -- item 5's gameplay shipped in SC1-SC5, ZM-D-106..110): run the consolidated S5 automated stage gate, tick the item-5 Roadmap box (line 87), refresh Shortfalls.md, capture the bleed-through evidence, and set a **`GATE-WAIT: S5 visual sign-off`** marker in Status.md -> HARD STOP for the user (the S5 VISUAL hard-stop, user's standing order 2026-07-10). Do NOT tick the S5 stage gate or start S6 without the user's sign-off (StartPrompts prompt 4 -> a separate later DecisionLog entry).
