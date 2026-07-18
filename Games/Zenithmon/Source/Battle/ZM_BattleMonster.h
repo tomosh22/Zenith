@@ -26,6 +26,11 @@ struct ZM_MoveSlot
 // omitted value must use the explicit all-bits-set UINT_MAX-style marker.
 static const u_int uZM_EXP_UNSPECIFIED = ~0u;
 
+// Appended spec input sentinel (S5 item 5 SC3 damaged-HP carry): 0 is a valid
+// current-HP request (a fainted lead sent into a to-be-resolved battle), so an
+// omitted value uses the explicit all-bits-set marker. UNSPECIFIED == full HP.
+static const u_int uZM_CURHP_UNSPECIFIED = ~0u;
+
 // The serializable authoring seed. Tests, box-4 party->battle, box-6 breeding all
 // produce one of these. Everything overridable so a golden fixes every input.
 struct ZM_BattleMonsterSpec
@@ -48,6 +53,10 @@ struct ZM_BattleMonsterSpec
 	// gender keeps current behaviour; gender has no battle effect yet. Wild-gen +
 	// breeding egg-gen override it via ZM_RollGender.
 	ZM_GENDER     m_eGender = ZM_GENDER_GENDERLESS;
+	// APPENDED LAST (S5 item 5 SC3 damaged-HP carry). UNSPECIFIED == full HP (the
+	// default, so every existing spec is byte-identical: the build branch is skipped
+	// and curHP stays at max HP); a specified value is clamped to [1, maxHP] at build.
+	u_int         m_uCurHP = uZM_CURHP_UNSPECIFIED;
 };
 
 struct ZM_BattleMonster

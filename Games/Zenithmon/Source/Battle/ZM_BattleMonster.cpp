@@ -48,6 +48,18 @@ ZM_BattleMonster ZM_BuildBattleMonster(const ZM_BattleMonsterSpec& xSpec)
 
 	xMon.m_uCurHP = xMon.m_auMaxStat[ZM_STAT_HP];
 
+	// S5 item 5 SC3 damaged-HP carry: an explicitly specified current HP overrides
+	// the full-HP default, clamped to [1, maxHP]. UNSPECIFIED (every legacy spec)
+	// skips this branch entirely -> full HP -> byte-identical to before.
+	if (xSpec.m_uCurHP != uZM_CURHP_UNSPECIFIED)
+	{
+		const u_int uMaxHP = xMon.m_auMaxStat[ZM_STAT_HP];
+		u_int uWant = xSpec.m_uCurHP;
+		if (uWant < 1u)     { uWant = 1u; }
+		if (uWant > uMaxHP) { uWant = uMaxHP; }
+		xMon.m_uCurHP = uWant;
+	}
+
 	// Box 4: stash the resolved base stats (the level-up recompute source, override-
 	// aware) and normalize an explicitly supplied cumulative-exp value into the
 	// declared level's band. Legacy callers omit it and receive the curve floor.

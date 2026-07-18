@@ -423,3 +423,66 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_CancelReturnsToRoot)
 		ZM_BATTLE_MENU_HIDDEN,
 		"cancelling a hidden menu leaves it hidden");
 }
+
+// ============================================================================
+// S5 item 5 (SC3) -- the gapped-moveset compaction fix on ZM_UI_BattleHUD. A real
+// party lead can carry a SPARSE moveset (filled slots interleaved with ZM_MOVE_NONE
+// holes -- e.g. a forgotten move). BuildFilledMoveMenu compacts the filled slots
+// into contiguous cursor order and reports each cursor's RAW slot, so a cursor pick
+// maps back to the correct underlying move slot; MenuConfirm's optional rawslot
+// argument translates the cursor to that raw slot (nullptr keeps the identity map).
+// Pure statics; hermetic; no RequestSkip needed.
+// ============================================================================
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_GappedMovesetCompaction)
+{
+	// A sparse moveset: real moves in RAW slots 0 and 2, holes (ZM_MOVE_NONE) in 1 and 3.
+	const ZM_MOVE_ID aeMoves[uZM_MAX_MOVES] = { ZM_MOVE_RAMBASH, ZM_MOVE_NONE, ZM_MOVE_RAMBASH, ZM_MOVE_NONE };
+	const u_int      auCurPP[uZM_MAX_MOVES] = { 5u, 0u, 5u, 0u };
+
+	const char* aszName[uZM_MAX_MOVES] = {};
+	bool        abSel[uZM_MAX_MOVES]   = {};
+	int         aiRaw[uZM_MAX_MOVES]   = {};
+
+	const int n = ZM_UI_BattleHUD::BuildFilledMoveMenu(aeMoves, auCurPP, aszName, abSel, aiRaw);
+
+	// The two filled slots are compacted into cursor order 0,1 -> raw slots 0,2.
+	ZENITH_ASSERT_EQ(n, 2, "only the two filled slots are offered");
+	ZENITH_ASSERT_EQ(aiRaw[0], 0, "cursor 0 maps to raw slot 0");
+	ZENITH_ASSERT_EQ(aiRaw[1], 2, "cursor 1 maps to raw slot 2 (the hole at raw slot 1 is skipped)");
+	ZENITH_ASSERT_TRUE(abSel[0] && abSel[1], "both filled moves have PP and are selectable");
+	ZENITH_ASSERT_TRUE(aszName[0] != nullptr && aszName[0][0] != '\0', "cursor 0 has a non-empty name");
+	ZENITH_ASSERT_TRUE(aszName[1] != nullptr && aszName[1][0] != '\0', "cursor 1 has a non-empty name");
+
+	// Confirming cursor 1 submits a MOVE whose slot is the RAW slot (2), not the cursor.
+	const ZM_BattleMenuConfirmResult xR =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 1, abSel, n, aiRaw);
+	ZENITH_ASSERT_EQ(xR.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT, "a selectable move submits");
+	ZENITH_ASSERT_EQ(xR.m_xAction.m_eKind, ZM_ACTION_MOVE, "the submitted action is a MOVE");
+	ZENITH_ASSERT_EQ(xR.m_xAction.m_uMoveSlot, 2u, "the submitted move slot is the RAW slot of the 2nd filled move");
+
+	// Backward-compat: the nullptr rawslot overload maps the cursor straight to the slot.
+	const bool abSel4[uZM_MAX_MOVES] = { true, true, true, true };
+	const ZM_BattleMenuConfirmResult xIdentity =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 2, abSel4, 4);
+	ZENITH_ASSERT_EQ(xIdentity.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT, "the identity path submits");
+	ZENITH_ASSERT_EQ(xIdentity.m_xAction.m_uMoveSlot, 2u, "no rawslot arg -> cursor 2 maps straight to slot 2");
+
+	// LEADING gap {_,A,_,B}: filled moves at raw slots 1 and 3 (the first filled slot is
+	// NOT slot 0, so the dense cursor index and the raw slot diverge from cursor 0).
+	const ZM_MOVE_ID aeLeadGap[uZM_MAX_MOVES] = { ZM_MOVE_NONE, ZM_MOVE_RAMBASH, ZM_MOVE_NONE, ZM_MOVE_RAMBASH };
+	const u_int      auLeadGapPP[uZM_MAX_MOVES] = { 0u, 5u, 0u, 5u };
+	const char* aszLg[uZM_MAX_MOVES] = {}; bool abLg[uZM_MAX_MOVES] = {}; int aiLg[uZM_MAX_MOVES] = {};
+	const int nLead = ZM_UI_BattleHUD::BuildFilledMoveMenu(aeLeadGap, auLeadGapPP, aszLg, abLg, aiLg);
+	ZENITH_ASSERT_EQ(nLead, 2, "leading gap: two filled slots offered");
+	ZENITH_ASSERT_EQ(aiLg[0], 1, "leading gap: cursor 0 maps to raw slot 1");
+	ZENITH_ASSERT_EQ(aiLg[1], 3, "leading gap: cursor 1 maps to raw slot 3");
+	ZENITH_ASSERT_TRUE(abLg[0] && abLg[1], "leading gap: both filled moves selectable");
+
+	// ALL-EMPTY {_,_,_,_}: no moves offered (a fainted/moveless active would show none).
+	const ZM_MOVE_ID aeEmpty[uZM_MAX_MOVES] = { ZM_MOVE_NONE, ZM_MOVE_NONE, ZM_MOVE_NONE, ZM_MOVE_NONE };
+	const u_int      auEmptyPP[uZM_MAX_MOVES] = { 0u, 0u, 0u, 0u };
+	const char* aszEm[uZM_MAX_MOVES] = {}; bool abEm[uZM_MAX_MOVES] = {}; int aiEm[uZM_MAX_MOVES] = {};
+	const int nEmpty = ZM_UI_BattleHUD::BuildFilledMoveMenu(aeEmpty, auEmptyPP, aszEm, abEm, aiEm);
+	ZENITH_ASSERT_EQ(nEmpty, 0, "all-empty moveset offers no moves");
+}

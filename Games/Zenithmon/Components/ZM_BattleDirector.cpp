@@ -12,8 +12,12 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Components/ZM_BattleArena.h"          // ZM_BattleArena (arena resolve + platform ids)
 #include "Zenithmon/Components/ZM_BattleTransition.h"      // ZM_BattleTransition (payload + RequestBattleEnd)
+#include "Zenithmon/Components/ZM_GameStateManager.h"      // TryGetGameState (real party lead + write-back target)
 #include "Zenithmon/Source/Battle/ZM_BattleAI.h"           // ZM_AI_TIER_GREEDY
 #include "Zenithmon/Source/Gen/ZM_CreatureGen.h"           // ZM_CreatureAssetPath, ZM_CREATURE_ASSET_MODEL
+#include "Zenithmon/Source/Party/ZM_GameState.h"           // ZM_GameState (party lead read + write-back)
+#include "Zenithmon/Source/Party/ZM_Monster.h"             // ZM_MonsterToBattleSpec (real lead -> battle seed)
+#include "Zenithmon/Source/Party/ZM_BattleWriteBack.h"     // ZM_ApplyBattleResultToParty (SC3 write-back)
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -44,9 +48,10 @@ void ZM_BattleDirector::OnStart()
 {
 	// Dormant until the persistent transition reaches IN_BATTLE. Start from a clean
 	// baseline (defensive; a fresh instance already defaults here).
-	m_ePhase          = ZM_BD_WAIT_FOR_IN_BATTLE;
-	m_bEndRequested   = false;
-	m_fRunningSeconds = 0.0f;
+	m_ePhase            = ZM_BD_WAIT_FOR_IN_BATTLE;
+	m_bEndRequested     = false;
+	m_bWriteBackToLead  = false;
+	m_fRunningSeconds   = 0.0f;
 }
 
 void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
@@ -110,6 +115,17 @@ void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
 			// for us (never re-fire).
 			m_xHud.Hide(m_xParentEntity);
 			m_xHud.HideMenu(m_xParentEntity);
+			// SC3 write-back: the battle LEGITIMATELY resolved. If the player side was
+			// built from the real party lead, persist the result (win-only inside; a
+			// loss/flee/draw is a no-op). Re-resolve the GameState fresh (never cache).
+			if (m_bWriteBackToLead)
+			{
+				ZM_GameState* pxGS = nullptr;
+				if (ZM_GameStateManager::TryGetGameState(pxGS) && pxGS != nullptr)
+				{
+					ZM_ApplyBattleResultToParty(*pxGS, m_xCore);   // win-only inside; loss/flee no-op
+				}
+			}
 			const bool bAccepted = ZM_BattleTransition::RequestBattleEnd();
 			m_bEndRequested = true;
 			m_ePhase        = ZM_BD_RESOLVED;
@@ -158,10 +174,29 @@ void ZM_BattleDirector::RunSetup(const ZM_BattleTransition& xTransition)
 	const ZM_SPECIES_ID eEnemySpecies = xTransition.GetBattleSpecies();
 	const u_int         uEnemyLevel   = xTransition.GetBattleLevel();
 
-	const ZM_BattleMonsterSpec xPlayerSpec = BuildPlaceholderPlayerSpec();
+	// Build the player side from the REAL persistent party lead when one exists (SC3);
+	// fall back to the deterministic placeholder otherwise (headless windowed drives /
+	// no GameStateManager). Only a real lead awards exp + is written back on resolve.
+	ZM_BattleMonsterSpec xPlayerSpec;
+	ZM_GameState* pxGS = nullptr;
+	m_bWriteBackToLead = false;
+	if (ZM_GameStateManager::TryGetGameState(pxGS) && pxGS != nullptr && !pxGS->m_xParty.IsEmpty())
+	{
+		xPlayerSpec = ZM_MonsterToBattleSpec(pxGS->m_xParty.Lead());
+		m_bWriteBackToLead = true;
+	}
+	else
+	{
+		xPlayerSpec = BuildPlaceholderPlayerSpec();
+	}
+
 	const ZM_BattleMonsterSpec xEnemySpec  = ZM_BuildWildEnemySpec(eEnemySpecies, uEnemyLevel);
-	const ZM_BattleConfig      xConfig     = BuildBattleConfig();
 	const u_int64              ulSeed      = DeriveBattleSeed(eEnemySpecies, uEnemyLevel);
+
+	// BuildBattleConfig() itself stays exp-OFF (a shipped unit asserts it); flip exp ON
+	// only for a real-lead battle so the engine mutates the lead in place (SC3).
+	ZM_BattleConfig xConfig = BuildBattleConfig();
+	xConfig.m_bAwardExp = m_bWriteBackToLead;
 
 	// Begin enters PLAYING_EVENTS (intro); the drive loop Ticks it to AWAIT_INPUT.
 	m_xCore.Begin(&xPlayerSpec, 1u, &xEnemySpec, 1u, xConfig, ulSeed, ZM_AI_TIER_GREEDY);
@@ -301,10 +336,11 @@ void ZM_BattleDirector::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Reset every live field to defaults BEFORE the version gate (the reset-first
 	// idiom, mirroring ZM_BattleArena): never retain stale runtime state from a reused
 	// instance, and rebuild on the next OnUpdate regardless of version.
-	m_ePhase          = ZM_BD_WAIT_FOR_IN_BATTLE;
-	m_bEndRequested   = false;
-	m_fRunningSeconds = 0.0f;
-	m_xCore           = ZM_BattleDirectorCore{};   // fresh, un-begun core
+	m_ePhase           = ZM_BD_WAIT_FOR_IN_BATTLE;
+	m_bEndRequested    = false;
+	m_bWriteBackToLead = false;
+	m_fRunningSeconds  = 0.0f;
+	m_xCore            = ZM_BattleDirectorCore{};   // fresh, un-begun core
 
 	if (uVersion != uSERIALIZATION_VERSION)
 	{

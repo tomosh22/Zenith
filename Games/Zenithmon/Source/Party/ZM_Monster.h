@@ -69,9 +69,10 @@ ZM_Monster ZM_BuildMonsterRecord(ZM_SPECIES_ID eSpecies, u_int uLevel);
 // --- pure conversions between the persistent record and the battle layer -----
 
 // Persistent record -> battle authoring seed (the battle INPUT). Carries species,
-// level, IVs, EVs, nature, ability, move ids, cumulative exp, and gender. NOTE:
-// ZM_BattleMonsterSpec has no curHP/PP override in SC1 (SC3 appends m_uCurHP), so
-// the built battle monster starts at FULL HP/PP -- damaged-HP carry is SC3 (Q5).
+// level, IVs, EVs, nature, ability, move ids, cumulative exp, gender, and (SC3) the
+// record's damaged current HP via ZM_BattleMonsterSpec::m_uCurHP (clamped to
+// [1, maxHP] at build; a full-health record passes its max HP through). PP is not
+// carried -- moves rebuild at full PP from the ids (per-battle PP is not persisted).
 ZM_BattleMonsterSpec ZM_MonsterToBattleSpec(const ZM_Monster& xRecord);
 
 // Build a NEW persistent record from a battle instance (the caught-monster path,

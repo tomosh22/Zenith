@@ -131,6 +131,9 @@ ZM_BattleMonsterSpec ZM_MonsterToBattleSpec(const ZM_Monster& xRecord)
 	}
 	xSpec.m_uCurExp = xRecord.m_uCurrentExp;
 	xSpec.m_eGender = xRecord.m_eGender;
+	// S5 item 5 SC3: carry the record's damaged current HP into battle (clamped to
+	// [1, maxHP] at build). A full-health record simply passes its max HP through.
+	xSpec.m_uCurHP  = xRecord.m_uCurrentHp;
 	// m_bOverrideBaseStats stays false: real-species stats via the table.
 	return xSpec;
 }

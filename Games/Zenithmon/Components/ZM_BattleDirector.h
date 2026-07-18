@@ -102,6 +102,10 @@ private:
 	Zenith_Entity            m_xParentEntity;
 	ZM_BATTLE_DIRECTOR_PHASE m_ePhase        = ZM_BD_WAIT_FOR_IN_BATTLE;
 	bool                     m_bEndRequested = false;   // RequestBattleEnd fired exactly once
+	// True iff RunSetup built the player side from the REAL persistent party lead (not
+	// the placeholder). Only then is exp awarded + the result written back to the lead
+	// on resolve (SC3). POD -- keeps the pool's move-construct; reset in OnStart / Read.
+	bool                     m_bWriteBackToLead = false;
 	float                    m_fRunningSeconds = 0.0f;  // wall-clock time spent driving (deadline guard)
 	// The director-owned battle HUD (SC4): authored onto THIS entity's UI component
 	// at bake time, revealed at Setup, driven each frame, hidden before the end-fade.

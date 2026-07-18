@@ -11,7 +11,9 @@
 #include "Zenithmon/Source/Party/ZM_Monster.h"
 #include "Zenithmon/Source/Party/ZM_Party.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"
-#include "Zenithmon/Source/Battle/ZM_BattleMonster.h"    // ZM_BuildBattleMonster
+#include "Zenithmon/Source/Party/ZM_BattleWriteBack.h"   // ZM_ApplyBattleResultToParty (win-only lead persist)
+#include "Zenithmon/Source/Battle/ZM_BattleMonster.h"    // ZM_BuildBattleMonster, uZM_CURHP_UNSPECIFIED
+#include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h" // ZM_BuildWildEnemySpec
 #include "Zenithmon/Source/Battle/ZM_ExpAndLevel.h"      // ZM_ExpForLevel, ZM_GetSpeciesGrowthRate
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"        // ZM_GetSpeciesBaseStats/Abilities
 #include "Zenithmon/Source/Data/ZM_StatCalc.h"           // ZM_CalcStat, uZM_MAX_IV
@@ -369,4 +371,139 @@ ZENITH_TEST(ZM_Party, Convert_MonsterToBattleSpecIsDeterministic)
 	{
 		ZENITH_ASSERT_EQ((u_int)xA.m_aeMoves[i], (u_int)xB.m_aeMoves[i], "move %u", i);
 	}
+}
+
+// ############################################################################
+// E. Battle result write-back to the party (S5 item 5 SC3)
+//
+// ZM_ApplyBattleResultToParty(party, leadSlot, winner, finalLead) is the win-only
+// bridge that persists the post-battle lead back into the party. It writes the
+// mutable progression (level / cumulative exp / EVs / moves+PP / curHP / status)
+// into the lead slot ONLY when the player won, leaving identity untouched, and
+// guards the empty / out-of-range cases.
+// ############################################################################
+
+// A PLAYER win persists the post-battle progression (level-up, new exp, trained
+// EV, damaged HP, spent PP) into the party's lead slot, leaving identity intact.
+ZENITH_TEST(ZM_Party, WriteBack_WinPersistsProgression)
+{
+	// A party holding a fresh L5 record at slot 0 (the battle lead).
+	const ZM_Monster xLead = ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 5u);
+	ZM_Party xParty;
+	ZENITH_ASSERT_TRUE(xParty.Add(xLead), "seed the lead at slot 0");
+
+	// Identity fields a win must NEVER rewrite.
+	const ZM_SPECIES_ID eSpeciesBefore = xParty.Get(0u).m_eSpecies;
+	const ZM_NATURE     eNatureBefore  = xParty.Get(0u).m_eNature;
+	const u_int         uIV0Before     = xParty.Get(0u).m_auIV[0];
+
+	// Build the lead's battle monster, then apply a realistic post-win mutation:
+	// it took damage, gained a level + exp, trained an EV, and spent PP.
+	const ZM_GROWTH_RATE eRate = ZM_GetSpeciesGrowthRate(ZM_SPECIES_FERNFAWN);
+	ZM_BattleMonster xMon = ZM_BuildBattleMonster(ZM_MonsterToBattleSpec(xLead));
+	xMon.m_uLevel = 6u;
+	const u_int uNewExp = ZM_ExpForLevel(eRate, 6u) + 25u;
+	xMon.m_uCurExp = uNewExp;
+	const u_int uNewEV = xMon.m_auEV[ZM_STAT_HP] + 4u;
+	xMon.m_auEV[ZM_STAT_HP] = uNewEV;
+	xMon.m_uCurHP = 3u;
+	ZENITH_ASSERT_GE(xMon.m_axMoves[0].m_uCurPP, 2u, "slot 0 has PP to spend");
+	xMon.m_axMoves[0].m_uCurPP -= 2u;
+	const u_int uSpentPP0 = xMon.m_axMoves[0].m_uCurPP;
+	// Perturb an IDENTITY field on the battle monster (^1 stays in [0,31]) so the
+	// identity-preservation assertion proves the write-back does NOT copy identity
+	// -- rather than copying an identical value.
+	xMon.m_auIV[0] = uIV0Before ^ 1u;
+
+	// A PLAYER win writes the final lead back into the party's lead slot.
+	ZM_ApplyBattleResultToParty(xParty, 0u, ZM_SIDE_PLAYER, xMon);
+
+	const ZM_Monster& xAfter = xParty.Get(0u);
+	ZENITH_ASSERT_EQ(xAfter.m_uLevel, 6u, "win persisted the level-up");
+	ZENITH_ASSERT_EQ(xAfter.m_uCurrentExp, uNewExp, "win persisted the new exp total");
+	ZENITH_ASSERT_EQ(xAfter.m_uCurrentHp, 3u, "win persisted the damaged HP");
+	ZENITH_ASSERT_EQ(xAfter.m_axMoves[0].m_uCurPP, uSpentPP0, "win persisted the spent PP");
+	ZENITH_ASSERT_EQ(xAfter.m_auEV[ZM_STAT_HP], uNewEV, "win persisted the trained EV");
+	// Identity is immutable across a battle -- NOT copied from the (perturbed) battle monster.
+	ZENITH_ASSERT_EQ((u_int)xAfter.m_eSpecies, (u_int)eSpeciesBefore, "species unchanged");
+	ZENITH_ASSERT_EQ((u_int)xAfter.m_eNature,  (u_int)eNatureBefore,  "nature unchanged");
+	ZENITH_ASSERT_EQ(xAfter.m_auIV[0], uIV0Before, "IVs are identity -- not overwritten by the battle monster");
+}
+
+// A non-win outcome (enemy win / draw) is a strict no-op: the lead record is left
+// byte-for-byte unchanged, even though the battle monster would have changed it.
+ZENITH_TEST(ZM_Party, WriteBack_NonWinIsNoOp)
+{
+	const ZM_Monster xLead = ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 5u);
+	ZM_Party xParty;
+	xParty.Add(xLead);
+	const ZM_Monster xBefore = xParty.Get(0u);   // exact snapshot before any call
+
+	// A battle monster that WOULD rewrite everything IF a win wrote it back.
+	const ZM_GROWTH_RATE eRate = ZM_GetSpeciesGrowthRate(ZM_SPECIES_FERNFAWN);
+	ZM_BattleMonster xMon = ZM_BuildBattleMonster(ZM_MonsterToBattleSpec(xLead));
+	xMon.m_uLevel  = 6u;
+	xMon.m_uCurExp = ZM_ExpForLevel(eRate, 6u) + 25u;
+	xMon.m_uCurHP  = 1u;
+
+	// Only a PLAYER win writes back: a loss (ENEMY) and a draw (COUNT) are no-ops.
+	ZM_ApplyBattleResultToParty(xParty, 0u, ZM_SIDE_ENEMY, xMon);
+	AssertRecordEq(xBefore, xParty.Get(0u), "after enemy-win (loss)");
+	ZM_ApplyBattleResultToParty(xParty, 0u, ZM_SIDE_COUNT, xMon);
+	AssertRecordEq(xBefore, xParty.Get(0u), "after draw");
+}
+
+// The write-back guards degenerate inputs: an empty party and an out-of-range lead
+// slot both leave the party untouched and never index out of bounds.
+ZENITH_TEST(ZM_Party, WriteBack_GuardsEmptyAndOutOfRange)
+{
+	const ZM_Monster xLead = ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 5u);
+	ZM_BattleMonster xMon = ZM_BuildBattleMonster(ZM_MonsterToBattleSpec(xLead));
+	xMon.m_uLevel = 9u;
+	xMon.m_uCurHP = 1u;
+
+	// Empty party: a win write-back must guard the empty case (no crash, no write).
+	ZM_Party xEmpty;
+	ZM_ApplyBattleResultToParty(xEmpty, 0u, ZM_SIDE_PLAYER, xMon);
+	ZENITH_ASSERT_EQ(xEmpty.Count(), 0u, "empty party stays empty");
+
+	// One member + an out-of-range lead slot: guarded, no write to the real member.
+	ZM_Party xParty;
+	xParty.Add(xLead);
+	const ZM_Monster xBefore = xParty.Get(0u);
+	ZM_ApplyBattleResultToParty(xParty, 5u, ZM_SIDE_PLAYER, xMon);
+	AssertRecordEq(xBefore, xParty.Get(0u), "out-of-range lead slot leaves the member untouched");
+}
+
+// SC3 spec-HP contract: ZM_BattleMonsterSpec::m_uCurHP round-trips a record's
+// damaged HP through the build, clamps a specified value into [1, maxHP], and
+// treats the uZM_CURHP_UNSPECIFIED sentinel as "full HP".
+ZENITH_TEST(ZM_Party, SpecCurHP_RoundTripAndClamp)
+{
+	const ZM_Monster xRec = ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 5u);
+	const u_int uMaxHP = xRec.GetMaxHP();
+	ZENITH_ASSERT_GT(uMaxHP, 1u, "max HP must exceed 1 so the clamp bands are distinct");
+
+	// A record carrying damaged HP round-trips its exact curHP: record -> spec -> build.
+	ZM_Monster xDamaged = xRec;
+	xDamaged.m_uCurrentHp = uMaxHP / 2u;
+	const ZM_BattleMonster xMonHalf = ZM_BuildBattleMonster(ZM_MonsterToBattleSpec(xDamaged));
+	ZENITH_ASSERT_EQ(xMonHalf.m_uCurHP, uMaxHP / 2u, "damaged curHP carried through the spec");
+
+	// Explicit spec clamps: build the spec, then override m_uCurHP to exercise the
+	// [1, maxHP] clamp the builder applies for a specified (non-sentinel) value.
+	ZM_BattleMonsterSpec xSpecLow = ZM_MonsterToBattleSpec(xRec);
+	xSpecLow.m_uCurHP = 0u;
+	ZENITH_ASSERT_EQ(ZM_BuildBattleMonster(xSpecLow).m_uCurHP, 1u, "a specified 0 clamps up to 1");
+
+	ZM_BattleMonsterSpec xSpecHigh = ZM_MonsterToBattleSpec(xRec);
+	xSpecHigh.m_uCurHP = 999999u;
+	ZENITH_ASSERT_EQ(ZM_BuildBattleMonster(xSpecHigh).m_uCurHP, uMaxHP, "a specified over-max clamps down to maxHP");
+
+	// The UNSPECIFIED sentinel means "full HP": ZM_BuildWildEnemySpec never sets
+	// m_uCurHP, so it defaults to the sentinel and builds at full HP.
+	const ZM_BattleMonsterSpec xWild = ZM_BuildWildEnemySpec(ZM_SPECIES_FERNFAWN, 5u);
+	ZENITH_ASSERT_EQ((u_int)xWild.m_uCurHP, uZM_CURHP_UNSPECIFIED, "the wild spec leaves curHP at the full-HP sentinel");
+	const ZM_BattleMonster xMonWild = ZM_BuildBattleMonster(xWild);
+	ZENITH_ASSERT_EQ(xMonWild.m_uCurHP, xMonWild.m_auMaxStat[ZM_STAT_HP], "the sentinel builds at full HP");
 }

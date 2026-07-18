@@ -19,6 +19,7 @@
 #include "Zenithmon/Components/ZM_BattleDirector.h"           // GetCore / GetHudMenuScreen / GetHudMenuCursor
 #include "Zenithmon/Components/ZM_BattleTransition.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
+#include "Zenithmon/Components/ZM_GameStateManager.h"          // TryGetGameState (persistent lead exp-persist proof, SC3)
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_TallGrassSystem.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
@@ -28,6 +29,9 @@
 #include "Zenithmon/Source/Battle/ZM_BattleTypes.h"           // ZM_SIDE_PLAYER / ZM_SIDE_COUNT
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
 #include "Zenithmon/Source/Gen/ZM_BakeManifest.h"
+#include "Zenithmon/Source/Party/ZM_GameState.h"              // ZM_GameState (persistent lead read, SC3)
+#include "Zenithmon/Source/Party/ZM_Monster.h"                // ZM_Monster::m_uCurrentExp / m_uLevel
+#include "Zenithmon/Source/Party/ZM_Party.h"                  // ZM_Party::Lead()
 #include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"              // ZM_BattleMenuScreen + ZM_BATTLE_MENU_* enums
 #include "Zenithmon/Source/World/ZM_GrassDensityMap.h"
 
@@ -349,6 +353,15 @@ namespace
 	float   g_fBMMinHudRectFill   = 2.0f;    // min fill over the HUD's two HP bars (min-latched)
 	u_int   g_uBMHudRectCount     = 0u;      // how many HP bars the HUD exposed
 
+	// ---- Persistent-exp captures (SC3: a win awards exp and writes it, plus level,
+	// back to the persistent GameState lead; only asserted in the Win test) ----
+	bool    g_bBMExpCapturedBefore = false;  // the manager resolved a GameState before the encounter
+	u_int   g_uBMExpBefore         = 0u;     // persistent lead cumulative exp pre-battle
+	u_int   g_uBMLevelBefore       = 0u;     // persistent lead level pre-battle
+	bool    g_bBMExpCapturedAfter  = false;  // the manager resolved a GameState after the resume
+	u_int   g_uBMExpAfter          = 0u;     // persistent lead cumulative exp post-resume
+	u_int   g_uBMLevelAfter        = 0u;     // persistent lead level post-resume
+
 	// Recursively take the minimum GetFillAmount() over every UIRect in an element
 	// subtree. On the battle HUD the only rects are the two HP bars, so the min is
 	// the fill of the more-depleted side.
@@ -514,6 +527,13 @@ namespace
 		g_fBMMinHudRectFill        = 2.0f;
 		g_uBMHudRectCount          = 0u;
 
+		g_bBMExpCapturedBefore     = false;
+		g_uBMExpBefore             = 0u;
+		g_uBMLevelBefore           = 0u;
+		g_bBMExpCapturedAfter      = false;
+		g_uBMExpAfter              = 0u;
+		g_uBMLevelAfter            = 0u;
+
 		// Guard order is MANDATORY: RequestSkip bypasses Verify, so install NO
 		// process state (fixed dt, instant-battles flag, scene load) until EVERY
 		// git-ignored input is confirmed present -- the Dawnmere terrain/scene, the
@@ -652,6 +672,20 @@ namespace
 			// Entry capture: the deterministic overworld grass-blade count (restored on resume).
 			g_uBMEntryGrassBlades = g_xEngine.Grass().GetGeneratedInstanceCount();
 
+			// SC3 exp-persist baseline: capture the persistent lead's exp+level BEFORE
+			// the encounter, so the resume can prove the win wrote progression back
+			// through the DontDestroyOnLoad GameState. Skip-safe: the assertion is
+			// guarded on this capture, so an absent manager leaves the check vacuous.
+			{
+				ZM_GameState* pxGameState = nullptr;
+				if (ZM_GameStateManager::TryGetGameState(pxGameState) && pxGameState != nullptr)
+				{
+					g_uBMExpBefore         = pxGameState->m_xParty.Lead().m_uCurrentExp;
+					g_uBMLevelBefore       = pxGameState->m_xParty.Lead().m_uLevel;
+					g_bBMExpCapturedBefore = true;
+				}
+			}
+
 			g_eBMPhase = BMPhase::Baseline;
 			g_iBMPhaseFrames = 0;
 			return true;
@@ -784,6 +818,19 @@ namespace
 
 			g_uBMCompletedAfter = pxTransition->GetCompletedBattleCount();
 			g_uBMAbortedAfter   = pxTransition->GetAbortedTransitionCount();
+
+			// SC3: re-resolve the persistent GameState FRESH after the resume settles and
+			// read the lead's exp+level, so Verify can prove the win's exp write-back
+			// persisted across the additive battle + unload (only asserted in the Win test).
+			{
+				ZM_GameState* pxGameStateAfter = nullptr;
+				if (ZM_GameStateManager::TryGetGameState(pxGameStateAfter) && pxGameStateAfter != nullptr)
+				{
+					g_uBMExpAfter         = pxGameStateAfter->m_xParty.Lead().m_uCurrentExp;
+					g_uBMLevelAfter       = pxGameStateAfter->m_xParty.Lead().m_uLevel;
+					g_bBMExpCapturedAfter = true;
+				}
+			}
 
 			g_eBMPhase = BMPhase::Done;
 			return false;
@@ -941,6 +988,42 @@ namespace
 						"[ZM_BattleMenuWin] no HP bar reached 0 (min fill was %f) -- a side fainted, so "
 						"the HUD must have tracked one HP bar to empty", (double)g_fBMMinHudRectFill);
 					bPassed = false;
+				}
+
+				// --- SC3: the win awarded exp and wrote it back to the persistent lead ---
+				Zenith_Log(LOG_CATEGORY_UNITTEST,
+					"[ZM_BattleMenuWin] exp-persist: capturedBefore=%s expBefore=%u levelBefore=%u "
+					"capturedAfter=%s expAfter=%u levelAfter=%u",
+					g_bBMExpCapturedBefore ? "true" : "false", g_uBMExpBefore, g_uBMLevelBefore,
+					g_bBMExpCapturedAfter ? "true" : "false", g_uBMExpAfter, g_uBMLevelAfter);
+				// Guarded on the pre-battle capture: skip-safe when the manager was absent.
+				if (g_bBMExpCapturedBefore && !g_bBMExpCapturedAfter)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuWin] the persistent GameState did not resolve after resume -- the "
+						"exp write-back could not be observed");
+					bPassed = false;
+				}
+				else if (g_bBMExpCapturedBefore)
+				{
+					// Exp STRICTLY rose (the win awarded exp); the level never regresses. We
+					// do NOT assert a specific level-up -- the weak enemy may not cross the
+					// curve, so "exp rose" is the invariant.
+					if (g_uBMExpAfter <= g_uBMExpBefore)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_BattleMenuWin] the persistent lead's exp did not rise across the win "
+							"(before=%u after=%u) -- a win must award and persist exp to the lead",
+							g_uBMExpBefore, g_uBMExpAfter);
+						bPassed = false;
+					}
+					if (g_uBMLevelAfter < g_uBMLevelBefore)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_BattleMenuWin] the persistent lead's level fell across the win "
+							"(before=%u after=%u)", g_uBMLevelBefore, g_uBMLevelAfter);
+						bPassed = false;
+					}
 				}
 			}
 			else

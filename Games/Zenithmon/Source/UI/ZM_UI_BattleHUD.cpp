@@ -311,8 +311,37 @@ int ZM_UI_BattleHUD::MenuMoveCursor(int iCursor, int iDelta, int iItemCount)
 	return iNext;
 }
 
+int ZM_UI_BattleHUD::BuildFilledMoveMenu(const ZM_MOVE_ID (&aeMoves)[uZM_MAX_MOVES], const u_int (&auCurPP)[uZM_MAX_MOVES],
+	const char* (&paszNameOut)[uZM_MAX_MOVES], bool (&pbSelectableOut)[uZM_MAX_MOVES], int (&paiRawSlotOut)[uZM_MAX_MOVES])
+{
+	// Compact the (possibly gapped) raw 4-slot moveset into a dense menu: only NON-empty
+	// raw slots produce an entry, so the cursor never lands on an empty slot and a real
+	// move that follows a gap stays reachable. Each filled entry records its RAW slot so
+	// the submit maps back to the engine's slot (MenuConfirm's paiRawMoveSlot).
+	int iFilled = 0;
+	for (u_int k = 0u; k < uZM_MAX_MOVES; ++k)
+	{
+		if (aeMoves[k] == ZM_MOVE_NONE)
+		{
+			continue;
+		}
+		paszNameOut[iFilled]     = ZM_GetMoveName(aeMoves[k]);
+		pbSelectableOut[iFilled] = (auCurPP[k] > 0u);   // a real move with no PP left is shown but not selectable
+		paiRawSlotOut[iFilled]   = (int)k;
+		++iFilled;
+	}
+	// Clear the trailing unused entries so a stale name/selectable never leaks through.
+	for (int i = iFilled; i < (int)uZM_MAX_MOVES; ++i)
+	{
+		paszNameOut[i]     = "";
+		pbSelectableOut[i] = false;
+		paiRawSlotOut[i]   = -1;
+	}
+	return iFilled;
+}
+
 ZM_BattleMenuConfirmResult ZM_UI_BattleHUD::MenuConfirm(ZM_BattleMenuScreen eScreen, int iCursor,
-	const bool* pbMoveSelectable, int iMoveCount)
+	const bool* pbMoveSelectable, int iMoveCount, const int* paiRawMoveSlot)
 {
 	ZM_BattleMenuConfirmResult xResult;   // default {NONE, action{}, next=HIDDEN, cursor 0}
 	switch (eScreen)
@@ -337,7 +366,9 @@ ZM_BattleMenuConfirmResult ZM_UI_BattleHUD::MenuConfirm(ZM_BattleMenuScreen eScr
 		{
 			xResult.m_eKind               = ZM_BATTLE_MENU_CONFIRM_SUBMIT;
 			xResult.m_xAction.m_eKind     = ZM_ACTION_MOVE;
-			xResult.m_xAction.m_uMoveSlot = (u_int)iCursor;
+			// SC3 gapped-moveset fix: the compacted cursor maps back to a RAW engine slot
+			// when a mapping is supplied; a null mapping is the identity (legacy behaviour).
+			xResult.m_xAction.m_uMoveSlot = (paiRawMoveSlot != nullptr) ? (u_int)paiRawMoveSlot[iCursor] : (u_int)iCursor;
 			xResult.m_eNextScreen         = ZM_BATTLE_MENU_HIDDEN;
 			xResult.m_iNextCursor         = 0;
 		}
@@ -368,23 +399,23 @@ bool ZM_UI_BattleHUD::UpdateMenu(Zenith_Entity& xDirectorEntity, const ZM_Battle
 		m_iMenuCursor = 0;
 	}
 
-	// Build the player active's move table: selectable iff a real move with PP left.
-	// The active always has >=1 move, so iMoveCount is normally >=1.
-	bool        abSelectable[uZM_MAX_MOVES] = {};
-	const char* aszMoveName[uZM_MAX_MOVES]  = { "", "", "", "" };
+	// Build the player active's COMPACTED move table (SC3 gapped-moveset fix): only
+	// filled slots become menu entries, each carrying its RAW engine slot so the submit
+	// maps back correctly across a gap. The active always has >=1 move, so iMoveCount>=1.
+	bool        abSelectable[uZM_MAX_MOVES]   = {};
+	const char* aszMoveName[uZM_MAX_MOVES]    = { "", "", "", "" };
+	int         aiRawMoveSlot[uZM_MAX_MOVES]  = { -1, -1, -1, -1 };
 	int         iMoveCount = 0;
 	{
 		const ZM_BattleMonster& xActive = xCore.GetEngine().GetState().Side(ZM_SIDE_PLAYER).Active();
+		ZM_MOVE_ID aeMoves[uZM_MAX_MOVES] = { ZM_MOVE_NONE, ZM_MOVE_NONE, ZM_MOVE_NONE, ZM_MOVE_NONE };
+		u_int      auCurPP[uZM_MAX_MOVES] = { 0u, 0u, 0u, 0u };
 		for (u_int i = 0u; i < uZM_MAX_MOVES; ++i)
 		{
-			const ZM_MoveSlot& xSlot = xActive.m_axMoves[i];
-			if (xSlot.m_eMove != ZM_MOVE_NONE)
-			{
-				abSelectable[i] = (xSlot.m_uCurPP > 0u);
-				aszMoveName[i]  = ZM_GetMoveName(xSlot.m_eMove);
-				++iMoveCount;
-			}
+			aeMoves[i] = xActive.m_axMoves[i].m_eMove;
+			auCurPP[i] = xActive.m_axMoves[i].m_uCurPP;
 		}
+		iMoveCount = BuildFilledMoveMenu(aeMoves, auCurPP, aszMoveName, abSelectable, aiRawMoveSlot);
 	}
 
 	// Edge input: nav FIRST, then confirm, then cancel (Down+Enter in one frame moves
@@ -398,7 +429,7 @@ bool ZM_UI_BattleHUD::UpdateMenu(Zenith_Entity& xDirectorEntity, const ZM_Battle
 	bool bSubmitted = false;
 	if (bConfirm)
 	{
-		const ZM_BattleMenuConfirmResult xR = MenuConfirm(m_eMenuScreen, m_iMenuCursor, abSelectable, iMoveCount);
+		const ZM_BattleMenuConfirmResult xR = MenuConfirm(m_eMenuScreen, m_iMenuCursor, abSelectable, iMoveCount, aiRawMoveSlot);
 		if (xR.m_eKind == ZM_BATTLE_MENU_CONFIRM_SUBMIT)
 		{
 			xOut          = xR.m_xAction;

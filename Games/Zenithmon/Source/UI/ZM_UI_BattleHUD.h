@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"   // ZM_SPECIES_ID (by value in the static formatters)
+#include "Zenithmon/Source/Data/ZM_MoveData.h"       // ZM_MOVE_ID (by value in BuildFilledMoveMenu)
 #include "Zenithmon/Source/Battle/ZM_BattleTypes.h"  // ZM_BattleAction (by value in ZM_BattleMenuConfirmResult), uZM_MAX_MOVES
 
 #include <string>
@@ -80,8 +81,19 @@ public:
 	static int MenuItemCount(ZM_BattleMenuScreen eScreen, int iMoveCount);
 	// iItemCount <= 0 -> 0; else clamp iCursor + iDelta to [0, iItemCount-1] (NO wrap).
 	static int MenuMoveCursor(int iCursor, int iDelta, int iItemCount);
+	// Compact the (possibly GAPPED) 4-slot moveset into a dense menu (SC3 gapped-moveset
+	// fix). For each successive NON-empty raw slot k in [0,uZM_MAX_MOVES) it writes, at
+	// the next filled index: the move name (ZM_GetMoveName), selectable == (curPP > 0),
+	// and the raw engine slot index k. Trailing unused entries are cleared ("" / false /
+	// -1). Returns the filled count -- so the cursor addresses the k-th FILLED move and
+	// its raw engine slot is paiRawSlotOut[cursor]. Pure (no scene / graphics / core).
+	static int BuildFilledMoveMenu(const ZM_MOVE_ID (&aeMoves)[uZM_MAX_MOVES], const u_int (&auCurPP)[uZM_MAX_MOVES],
+		const char* (&paszNameOut)[uZM_MAX_MOVES], bool (&pbSelectableOut)[uZM_MAX_MOVES], int (&paiRawSlotOut)[uZM_MAX_MOVES]);
 	// The pure confirm resolution (see the SC5 contract for the exact per-screen cases).
-	static ZM_BattleMenuConfirmResult MenuConfirm(ZM_BattleMenuScreen eScreen, int iCursor, const bool* pbMoveSelectable, int iMoveCount);
+	// paiRawMoveSlot (SC3) maps the compacted move cursor back to a raw engine slot; when
+	// null the submit slot is the cursor itself (identity -- unchanged 4-arg behaviour).
+	static ZM_BattleMenuConfirmResult MenuConfirm(ZM_BattleMenuScreen eScreen, int iCursor,
+		const bool* pbMoveSelectable, int iMoveCount, const int* paiRawMoveSlot = nullptr);
 	// MOVE_SELECT -> ACTION_ROOT; any other screen -> unchanged.
 	static ZM_BattleMenuScreen MenuCancel(ZM_BattleMenuScreen eScreen);
 
