@@ -83,24 +83,41 @@ void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
 
 		if (m_xCore.IsAwaitingInput())
 		{
-			// Singles wild battle: the player side always uses move slot 0. The core
-			// picks the enemy reply through its own AI rng (non-perturbing).
-			ZM_BattleAction xPlayerMove;
-			xPlayerMove.m_eKind     = ZM_ACTION_MOVE;
-			xPlayerMove.m_uMoveSlot = 0u;
-			m_xCore.SubmitPlayerAction(xPlayerMove);
+			// SC5: the player drives the Fight/Run menu. UpdateMenu returns true exactly
+			// when a full action was chosen this frame (MOVE slot or RUN); the core's own
+			// AI rng picks the enemy reply (non-perturbing). RUN submits {ZM_ACTION_RUN}
+			// and the engine resolves the flee (-> FLEE/FLEE_FAILED -> OVER on success).
+			ZM_BattleAction xAction;
+			if (m_xHud.UpdateMenu(m_xParentEntity, m_xCore, xAction))
+			{
+				m_xCore.SubmitPlayerAction(xAction);   // MOVE or RUN (engine resolves the flee)
+			}
+			// else: wait for the player -- NO auto-submit
+		}
+		else
+		{
+			m_xHud.HideMenu(m_xParentEntity);   // the menu only shows while awaiting input
 		}
 		m_xCore.Tick(fDeltaSeconds);
 		m_xHud.Update(m_xParentEntity, m_xCore, fDeltaSeconds);
 
 		if (ShouldRequestEndNow(m_ePhase, m_xCore.ShouldRequestEnd(), m_bEndRequested))
 		{
-			// The battle resolved: RequestBattleEnd is the SOLE exit from IN_BATTLE.
-			// Hide the HUD first so the end-fade never shows it over black.
+			// The battle resolved (incl. a successful flee reaching OVER): RequestBattleEnd
+			// is the SOLE exit from IN_BATTLE. Hide the HUD + menu first so the end-fade
+			// never shows them over black. Latch RESOLVED regardless of the return value --
+			// a false means the transition already left IN_BATTLE, which is still terminal
+			// for us (never re-fire).
 			m_xHud.Hide(m_xParentEntity);
-			ZM_BattleTransition::RequestBattleEnd();
+			m_xHud.HideMenu(m_xParentEntity);
+			const bool bAccepted = ZM_BattleTransition::RequestBattleEnd();
 			m_bEndRequested = true;
 			m_ePhase        = ZM_BD_RESOLVED;
+			if (!bAccepted)
+			{
+				Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+					"ZM_BattleDirector: RequestBattleEnd returned false (already ended/not IN_BATTLE); latching.");
+			}
 		}
 		else if (m_fRunningSeconds >= fRUNNING_DEADLINE_SECONDS && !m_bEndRequested)
 		{
@@ -108,9 +125,15 @@ void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
 			// (Under zm_instant_battles a battle resolves in a couple of Ticks, so this
 			// path is unreachable there.)
 			m_xHud.Hide(m_xParentEntity);
-			ZM_BattleTransition::RequestBattleEnd();
+			m_xHud.HideMenu(m_xParentEntity);
+			const bool bAccepted = ZM_BattleTransition::RequestBattleEnd();
 			m_bEndRequested = true;
 			m_ePhase        = ZM_BD_RESOLVED;
+			if (!bAccepted)
+			{
+				Zenith_Log(LOG_CATEGORY_GAMEPLAY,
+					"ZM_BattleDirector: RequestBattleEnd returned false (already ended/not IN_BATTLE); latching.");
+			}
 		}
 	}
 
@@ -120,7 +143,8 @@ void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
 	//         RUNNING director whose battle was torn down externally also settles. --
 	if (!bInBattle && (m_ePhase == ZM_BD_RESOLVED || m_ePhase == ZM_BD_RUNNING))
 	{
-		m_xHud.Hide(m_xParentEntity);   // defensive: ensure the HUD is down as the scene unloads
+		m_xHud.Hide(m_xParentEntity);       // defensive: ensure the HUD is down as the scene unloads
+		m_xHud.HideMenu(m_xParentEntity);   // ...and the SC5 menu too
 		m_ePhase = ZM_BD_DONE;
 	}
 }
@@ -237,6 +261,7 @@ ZM_BattleConfig ZM_BattleDirector::BuildBattleConfig()
 	ZM_BattleConfig xConfig;      // every other field takes its struct default
 	xConfig.m_bIsWild   = true;
 	xConfig.m_bAwardExp = false;
+	xConfig.m_bCanFlee  = true;   // SC5 RUN: the engine asserts on a flee unless flee is allowed
 	return xConfig;
 }
 

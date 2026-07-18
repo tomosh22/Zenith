@@ -311,6 +311,74 @@ namespace
 			pxPlayerHpBar->SetFillDirection(Zenith_UI::FillDirection::LeftToRight);
 			pxPlayerHpBar->SetColor(xHpGreen);
 		}
+
+		// --- SC5 interactive Fight/Run menu (7 elements). Sort order 10003 sits above
+		//     the SC4 HUD (10002) so the menu reads on top; all authored hidden --
+		//     ZM_BattleDirector reveals/highlights/hides them via UpdateMenu/HideMenu.
+		//     A bottom-right box: Fight/Run on one row, or a 2x2 move grid in its place. ---
+		auto fnPlaceMenu = [](Zenith_UI::Zenith_UIElement* pxElement,
+			Zenith_UI::AnchorPreset ePreset, float fX, float fY, float fW, float fH)
+		{
+			if (pxElement == nullptr)
+			{
+				return;
+			}
+			pxElement->SetSortOrder(10003);
+			pxElement->SetAnchor(ePreset);
+			pxElement->SetPivot(ePreset);
+			pxElement->SetPosition(fX, fY);
+			pxElement->SetSize(fW, fH);
+			pxElement->SetVisible(false);
+		};
+
+		const Zenith_Maths::Vector4 xMenuPanelColour = { 0.05f, 0.06f, 0.10f, 0.85f };
+
+		// Backing panel -- the box behind the buttons, bottom-right.
+		Zenith_UI::Zenith_UIRect* pxMenuPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>("BattleHUD_MenuPanel");
+		fnPlaceMenu(pxMenuPanel, Zenith_UI::AnchorPreset::BottomRight, -24.0f, -24.0f, 388.0f, 132.0f);
+		if (pxMenuPanel != nullptr)
+		{
+			pxMenuPanel->SetColor(xMenuPanelColour);
+		}
+
+		// Root actions -- Fight (left) / Run (right), a single row inside the panel.
+		Zenith_UI::Zenith_UIButton* pxFight =
+			pxUI->FindElement<Zenith_UI::Zenith_UIButton>("BattleHUD_ActionFight");
+		fnPlaceMenu(pxFight, Zenith_UI::AnchorPreset::BottomRight, -206.0f, -80.0f, 170.0f, 48.0f);
+		if (pxFight != nullptr)
+		{
+			pxFight->SetFontSize(26.0f);
+		}
+
+		Zenith_UI::Zenith_UIButton* pxRun =
+			pxUI->FindElement<Zenith_UI::Zenith_UIButton>("BattleHUD_ActionRun");
+		fnPlaceMenu(pxRun, Zenith_UI::AnchorPreset::BottomRight, -30.0f, -80.0f, 170.0f, 48.0f);
+		if (pxRun != nullptr)
+		{
+			pxRun->SetFontSize(26.0f);
+		}
+
+		// Move slots -- a 2x2 grid in the same box (shown only in MOVE_SELECT). The
+		// director rewrites the labels to the active's move names each frame.
+		struct MenuButtonPlace { const char* m_szName; float m_fX; float m_fY; };
+		const MenuButtonPlace axMoves[4] =
+		{
+			{ "BattleHUD_Move0", -206.0f, -80.0f },
+			{ "BattleHUD_Move1",  -30.0f, -80.0f },
+			{ "BattleHUD_Move2", -206.0f, -32.0f },
+			{ "BattleHUD_Move3",  -30.0f, -32.0f },
+		};
+		for (const MenuButtonPlace& xMove : axMoves)
+		{
+			Zenith_UI::Zenith_UIButton* pxMove =
+				pxUI->FindElement<Zenith_UI::Zenith_UIButton>(xMove.m_szName);
+			fnPlaceMenu(pxMove, Zenith_UI::AnchorPreset::BottomRight, xMove.m_fX, xMove.m_fY, 170.0f, 44.0f);
+			if (pxMove != nullptr)
+			{
+				pxMove->SetFontSize(22.0f);
+			}
+		}
 	}
 
 	bool ZM_SetSelectedSpawnPointTag(const char* szTag)
@@ -644,6 +712,16 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreateUIText("BattleHUD_EnemyPanel", "");
 	xAuto.AddStep_CreateUIRect("BattleHUD_PlayerHPBar");
 	xAuto.AddStep_CreateUIRect("BattleHUD_EnemyHPBar");
+	// The SC5 interactive Fight/Run menu: a backing panel + two root buttons + four
+	// move buttons, all authored hidden by ZM_ConfigureBattleHUD. ZM_UI_BattleHUD
+	// (owned by ZM_BattleDirector) shows/highlights/hides them via UpdateMenu/HideMenu.
+	xAuto.AddStep_CreateUIRect("BattleHUD_MenuPanel");
+	xAuto.AddStep_CreateUIButton("BattleHUD_ActionFight", "Fight");
+	xAuto.AddStep_CreateUIButton("BattleHUD_ActionRun",   "Run");
+	xAuto.AddStep_CreateUIButton("BattleHUD_Move0", "");
+	xAuto.AddStep_CreateUIButton("BattleHUD_Move1", "");
+	xAuto.AddStep_CreateUIButton("BattleHUD_Move2", "");
+	xAuto.AddStep_CreateUIButton("BattleHUD_Move3", "");
 	xAuto.AddStep_Custom(&ZM_ConfigureBattleHUD);
 	xAuto.AddStep_AddComponent("ZM_BattleDirector");
 

@@ -743,6 +743,12 @@ namespace
 			// Sample the HUD every frame from the moment the Battle scene may exist.
 			CaptureBattleHUD();
 
+			// SC5: the director no longer auto-submits -- press ENTER every frame so
+			// the default menu (ACTION_ROOT, cursor 0 = Fight) drives Fight->move0 each
+			// turn once the core reaches AWAIT_INPUT (a HIDDEN-menu press is an inert
+			// no-op while the battle is still fading in).
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+
 			// Latch the opaque-fade observation EVERY frame: the additive load must
 			// only issue behind a fully-opaque screen, and by IN_BATTLE the fade has
 			// already returned to transparent, so the endpoint alone proves nothing.
@@ -824,6 +830,11 @@ namespace
 			// the window where the director has resolved the battle (log populated, HP
 			// tracked to the end) and the HUD is still alive to observe.
 			CaptureBattleHUD();
+
+			// SC5: keep pressing ENTER while polling for the director to end the battle
+			// -- this is where the turns actually resolve, so the menu drive (Fight->
+			// move0 each turn) MUST run here for the player-side action to be submitted.
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
 
 			if (!g_bBDResumeReached)
 			{

@@ -59,6 +59,17 @@ namespace ZM_InputActions
 			|| g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_BACKSPACE);
 	}
 
+	// -1 up / +1 down / 0 none -- EDGE (WasKeyPressedThisFrame) so one press = one step.
+	// Drives the battle Fight/Run menu cursor (SC5). Kept in this namespace to match
+	// the sibling readers rather than the brief's free-function ZM_ReadMenuVertical.
+	inline int ReadMenuVertical()
+	{
+		Zenith_Input& xInput = g_xEngine.Input();
+		const bool bUp   = xInput.WasKeyPressedThisFrame(ZENITH_KEY_UP)   || xInput.WasKeyPressedThisFrame(ZENITH_KEY_W);
+		const bool bDown = xInput.WasKeyPressedThisFrame(ZENITH_KEY_DOWN) || xInput.WasKeyPressedThisFrame(ZENITH_KEY_S);
+		return (bDown ? 1 : 0) - (bUp ? 1 : 0);
+	}
+
 	inline bool ReadMenuPressed()
 	{
 		return g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_M)

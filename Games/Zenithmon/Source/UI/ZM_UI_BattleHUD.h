@@ -1,12 +1,35 @@
 #pragma once
 
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"   // ZM_SPECIES_ID (by value in the static formatters)
+#include "Zenithmon/Source/Battle/ZM_BattleTypes.h"  // ZM_BattleAction (by value in ZM_BattleMenuConfirmResult), uZM_MAX_MOVES
 
 #include <string>
 
 class Zenith_Entity;
 class ZM_BattleDirectorCore;
 struct ZM_BattleEvent;
+
+// ============================================================================
+// Battle menu state machine (S5 item 4 SC5) -- the first PLAYER-driven battle
+// input. Fight -> move submenu -> SubmitPlayerAction({MOVE, slot}); Run ->
+// SubmitPlayerAction({ZM_ACTION_RUN}). The enums / result struct below are the
+// FROZEN CONTRACT unit-tested verbatim by the parallel Test Author.
+// ============================================================================
+enum ZM_BattleMenuScreen : u_int
+{
+    ZM_BATTLE_MENU_HIDDEN,
+    ZM_BATTLE_MENU_ACTION_ROOT,   // cursor over [Fight(0), Run(1)]
+    ZM_BATTLE_MENU_MOVE_SELECT,   // cursor over move slots [0..iMoveCount-1]
+};
+enum ZM_BattleMenuRootItem : u_int { ZM_BATTLE_MENU_FIGHT = 0u, ZM_BATTLE_MENU_RUN = 1u, ZM_BATTLE_MENU_ROOT_COUNT = 2u };
+enum ZM_BattleMenuConfirmKind : u_int { ZM_BATTLE_MENU_CONFIRM_NONE, ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES, ZM_BATTLE_MENU_CONFIRM_SUBMIT };
+struct ZM_BattleMenuConfirmResult
+{
+    ZM_BattleMenuConfirmKind m_eKind       = ZM_BATTLE_MENU_CONFIRM_NONE;
+    ZM_BattleAction          m_xAction;                       // valid iff SUBMIT
+    ZM_BattleMenuScreen      m_eNextScreen  = ZM_BATTLE_MENU_HIDDEN;
+    int                      m_iNextCursor  = 0;
+};
 
 // ============================================================================
 // ZM_UI_BattleHUD (S5 item 4 SC4) -- the first VISIBLE battle UI: a text log
@@ -38,6 +61,30 @@ public:
 	// Hide all five HUD elements (so the end-fade never shows the HUD over black).
 	void Hide(Zenith_Entity& xDirectorEntity);
 
+	// --- Battle menu drive (SC5; called by ZM_BattleDirector in AWAIT_INPUT) ---
+
+	// Advance the Fight/Run menu one frame. On a fresh AWAIT_INPUT turn (screen
+	// HIDDEN) it opens the ACTION_ROOT. Reads edge input (nav, confirm, cancel) and
+	// walks the state machine via the pure statics below. Re-resolves + refreshes the
+	// authored menu elements each frame (never caches; best-effort if absent). Returns
+	// true exactly when the player submitted an action this frame (xOut is then valid).
+	bool UpdateMenu(Zenith_Entity& xDirectorEntity, const ZM_BattleDirectorCore& xCore, ZM_BattleAction& xOut);
+	// Hide all seven menu elements and reset to ZM_BATTLE_MENU_HIDDEN.
+	void HideMenu(Zenith_Entity& xDirectorEntity);
+	ZM_BattleMenuScreen GetMenuScreen() const { return m_eMenuScreen; }
+	int                 GetMenuCursor() const { return m_iMenuCursor; }
+
+	// --- PURE menu statics (no scene / graphics / core -- unit-tested verbatim) ---
+
+	// ACTION_ROOT -> 2; MOVE_SELECT -> iMoveCount; HIDDEN -> 0.
+	static int MenuItemCount(ZM_BattleMenuScreen eScreen, int iMoveCount);
+	// iItemCount <= 0 -> 0; else clamp iCursor + iDelta to [0, iItemCount-1] (NO wrap).
+	static int MenuMoveCursor(int iCursor, int iDelta, int iItemCount);
+	// The pure confirm resolution (see the SC5 contract for the exact per-screen cases).
+	static ZM_BattleMenuConfirmResult MenuConfirm(ZM_BattleMenuScreen eScreen, int iCursor, const bool* pbMoveSelectable, int iMoveCount);
+	// MOVE_SELECT -> ACTION_ROOT; any other screen -> unchanged.
+	static ZM_BattleMenuScreen MenuCancel(ZM_BattleMenuScreen eScreen);
+
 	// --- PURE statics (no scene / graphics / core -- unit-tested) ---
 
 	// The total event->log-line mapping. Defined for EVERY ZM_BATTLE_EVENT kind in
@@ -58,6 +105,9 @@ public:
 	static int         ComputeVisibleGlyphCount(int iTotalGlyphs, float fLineElapsedSeconds, bool bInstant);
 
 private:
-	std::string m_strShownLine;
-	float       m_fLineElapsedSeconds = 0.0f;
+	std::string         m_strShownLine;
+	float               m_fLineElapsedSeconds = 0.0f;
+	// SC5 menu state (trivially copyable PODs -- the pool's move-construct is preserved).
+	ZM_BattleMenuScreen m_eMenuScreen = ZM_BATTLE_MENU_HIDDEN;
+	int                 m_iMenuCursor = 0;
 };

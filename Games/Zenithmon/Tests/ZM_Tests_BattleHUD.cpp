@@ -308,3 +308,118 @@ ZENITH_TEST(ZM_BattleHUD, Format_CarriesTextImpliesNonEmpty)
 		}
 	}
 }
+
+// ============================================================================
+// S5 item 4 (SC5) -- the pure Fight/Run battle-menu state machine on
+// ZM_UI_BattleHUD. Four PURE statics (no scene / graphics / core): MenuItemCount,
+// MenuMoveCursor, MenuConfirm, MenuCancel. These are the whole decision surface
+// the director's per-frame input drive delegates to, so pinning them here means a
+// single-key windowed drive is enough to exercise the wiring (the arithmetic is
+// proven hermetically). Every fixture is deterministic; no RequestSkip needed.
+// ============================================================================
+
+// ---- MenuItemCount ----------------------------------------------------------
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_ItemCounts)
+{
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_ACTION_ROOT, 4), 2,
+		"the action root always offers exactly two items (Fight, Run)");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_MOVE_SELECT, 3), 3,
+		"move-select offers one item per available move");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_HIDDEN, 4), 0,
+		"a hidden menu offers no items");
+}
+
+// ---- MenuMoveCursor: clamp, no wrap ----------------------------------------
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_CursorClampsNoWrap)
+{
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(0, +1, 2), 1,
+		"+1 from 0 in a 2-item menu advances to 1");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(1, +1, 2), 1,
+		"+1 from the last item clamps (never wraps to 0)");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(1, -1, 2), 0,
+		"-1 from 1 moves to 0");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(0, -1, 2), 0,
+		"-1 from the first item clamps (never wraps to the last)");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(0, +1, 0), 0,
+		"an empty menu (n<=0) guards the cursor at 0");
+}
+
+// ---- MenuConfirm ------------------------------------------------------------
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_FightOpensMoveSelect)
+{
+	const bool abSel4[4] = { true, true, true, true };
+	const ZM_BattleMenuConfirmResult xResult =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 0, abSel4, 4);
+	ZENITH_ASSERT_EQ(xResult.m_eKind, ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES,
+		"Fight (root cursor 0) opens the move list, not a submit");
+	ZENITH_ASSERT_EQ(xResult.m_eNextScreen, ZM_BATTLE_MENU_MOVE_SELECT,
+		"Fight advances the menu to MOVE_SELECT");
+	ZENITH_ASSERT_EQ(xResult.m_iNextCursor, 0,
+		"MOVE_SELECT opens on the first move");
+}
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_RunEmitsRunAction)
+{
+	const bool abSel4[4] = { true, true, true, true };
+	const ZM_BattleMenuConfirmResult xResult =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 1, abSel4, 4);
+	ZENITH_ASSERT_EQ(xResult.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT,
+		"Run (root cursor 1) submits an action immediately");
+	ZENITH_ASSERT_EQ(xResult.m_xAction.m_eKind, ZM_ACTION_RUN,
+		"the submitted action is a RUN");
+	ZENITH_ASSERT_EQ(xResult.m_eNextScreen, ZM_BATTLE_MENU_HIDDEN,
+		"submitting Run hides the menu");
+}
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_MoveSelectEmitsMoveAction)
+{
+	const bool abSel4[4] = { true, true, true, true };
+	const ZM_BattleMenuConfirmResult xResult =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 2, abSel4, 4);
+	ZENITH_ASSERT_EQ(xResult.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT,
+		"confirming a selectable move submits an action");
+	ZENITH_ASSERT_EQ(xResult.m_xAction.m_eKind, ZM_ACTION_MOVE,
+		"the submitted action is a MOVE");
+	ZENITH_ASSERT_EQ(xResult.m_xAction.m_uMoveSlot, 2u,
+		"the submitted move slot is the cursor position");
+	ZENITH_ASSERT_EQ(xResult.m_eNextScreen, ZM_BATTLE_MENU_HIDDEN,
+		"submitting a move hides the menu");
+}
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_UnselectableMoveStays)
+{
+	// Slot 1 is unselectable (e.g. no PP); slot 0 is selectable.
+	const bool abSel[4] = { true, false, true, true };
+
+	const ZM_BattleMenuConfirmResult xBlocked =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 1, abSel, 4);
+	ZENITH_ASSERT_EQ(xBlocked.m_eKind, ZM_BATTLE_MENU_CONFIRM_NONE,
+		"confirming an unselectable move is a no-op (no submit)");
+
+	const ZM_BattleMenuConfirmResult xOk =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 0, abSel, 4);
+	ZENITH_ASSERT_EQ(xOk.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT,
+		"a selectable move at the cursor submits");
+	ZENITH_ASSERT_EQ(xOk.m_xAction.m_eKind, ZM_ACTION_MOVE,
+		"the submitted action is a MOVE");
+	ZENITH_ASSERT_EQ(xOk.m_xAction.m_uMoveSlot, 0u,
+		"the submitted move slot is 0");
+}
+
+// ---- MenuCancel -------------------------------------------------------------
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_CancelReturnsToRoot)
+{
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuCancel(ZM_BATTLE_MENU_MOVE_SELECT),
+		ZM_BATTLE_MENU_ACTION_ROOT,
+		"cancelling out of the move list returns to the action root");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuCancel(ZM_BATTLE_MENU_ACTION_ROOT),
+		ZM_BATTLE_MENU_ACTION_ROOT,
+		"cancelling at the action root stays at the action root");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuCancel(ZM_BATTLE_MENU_HIDDEN),
+		ZM_BATTLE_MENU_HIDDEN,
+		"cancelling a hidden menu leaves it hidden");
+}

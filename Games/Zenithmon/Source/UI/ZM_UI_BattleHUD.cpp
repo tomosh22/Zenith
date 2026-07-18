@@ -6,14 +6,18 @@
 #include "UI/Zenith_UIElement.h"
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UIText.h"
+#include "UI/Zenith_UIButton.h"                                // SC5 menu buttons (SetText / SetFocused / SetVisible)
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"   // core read API + ZM_BattlePresentationOp + ZM_MapEventToOp + ZM_InstantBattlesEnabled
 #include "Zenithmon/Source/Battle/ZM_BattleEngine.h"          // GetEvent / GetEventCount over the presented range
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"           // ZM_BattleEvent + ZM_BATTLE_EVENT kinds
-#include "Zenithmon/Source/Battle/ZM_BattleTypes.h"           // ZM_SIDE
+#include "Zenithmon/Source/Battle/ZM_BattleMonster.h"         // ZM_BattleMonster / ZM_MoveSlot / uZM_MAX_MOVES (menu move table)
+#include "Zenithmon/Source/Battle/ZM_BattleState.h"           // Side(...).Active() chain (SC5 move read)
+#include "Zenithmon/Source/Battle/ZM_BattleTypes.h"           // ZM_SIDE, ZM_BattleAction, ZM_ACTION_*
 #include "Zenithmon/Source/Data/ZM_MoveData.h"                // ZM_GetMoveName / ZM_MOVE_ID
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"             // ZM_GetSpeciesName / ZM_SPECIES_ID
+#include "Zenithmon/Source/ZM_InputActions.h"                 // ReadMenuVertical / ReadConfirmPressed / ReadCancelPressed (SC5 input)
 
 #include <cmath>
 #include <string>
@@ -102,6 +106,64 @@ namespace
 			{
 				pxBar->SetFillAmount(ZM_UI_BattleHUD::ComputeHpFraction(uCurHp, uMaxHp));
 			}
+		}
+	}
+
+	// --- SC5 battle menu elements (mirrored by the authoring step ZM_ConfigureBattleHUD
+	//     in Zenithmon.cpp + the parallel Test Author). Seven total: one panel rect +
+	//     Fight/Run root buttons + four move buttons. ---
+	constexpr const char* szMENU_PANEL_NAME   = "BattleHUD_MenuPanel";
+	constexpr const char* szACTION_FIGHT_NAME = "BattleHUD_ActionFight";
+	constexpr const char* szACTION_RUN_NAME   = "BattleHUD_ActionRun";
+	constexpr const char* szMOVE_NAMES[uZM_MAX_MOVES] =
+	{
+		"BattleHUD_Move0", "BattleHUD_Move1", "BattleHUD_Move2", "BattleHUD_Move3"
+	};
+
+	// Focus tint for the button under the cursor; plain white otherwise.
+	const Zenith_Maths::Vector4 xMENU_FOCUS_COLOUR  = { 1.0f, 0.85f, 0.30f, 1.0f };
+	const Zenith_Maths::Vector4 xMENU_NORMAL_COLOUR = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+	// Best-effort per-frame refresh of one menu button: optionally overwrite its text
+	// (szText == nullptr keeps the authored label), set visibility, and highlight it
+	// (keyboard focus + tint) when it is the cursor target.
+	void ZM_ApplyMenuButton(Zenith_UI::Zenith_UIButton* pxButton, bool bVisible, bool bFocused, const char* szText)
+	{
+		if (pxButton == nullptr)
+		{
+			return;
+		}
+		if (szText != nullptr)
+		{
+			pxButton->SetText(szText);
+		}
+		pxButton->SetVisible(bVisible);
+		pxButton->SetFocused(bVisible && bFocused);
+		pxButton->SetTextColor((bVisible && bFocused) ? xMENU_FOCUS_COLOUR : xMENU_NORMAL_COLOUR);
+	}
+
+	// Re-resolve + refresh all seven menu elements for the current screen + cursor
+	// (never cache). ROOT shows the panel + Fight/Run; MOVE_SELECT shows the panel +
+	// the move buttons for the filled slots; anything else hides them all. The move
+	// buttons' text is set every frame regardless of visibility.
+	void ZM_RefreshBattleMenuElements(Zenith_UIComponent& xUI, ZM_BattleMenuScreen eScreen,
+		int iMenuCursor, const char* const* paszMoveName, int iMoveCount)
+	{
+		const bool bRoot = (eScreen == ZM_BATTLE_MENU_ACTION_ROOT);
+		const bool bMove = (eScreen == ZM_BATTLE_MENU_MOVE_SELECT);
+
+		ZM_SetHudElementVisible(xUI, szMENU_PANEL_NAME, bRoot || bMove);
+
+		ZM_ApplyMenuButton(xUI.FindElement<Zenith_UI::Zenith_UIButton>(szACTION_FIGHT_NAME),
+			bRoot, bRoot && iMenuCursor == (int)ZM_BATTLE_MENU_FIGHT, nullptr);
+		ZM_ApplyMenuButton(xUI.FindElement<Zenith_UI::Zenith_UIButton>(szACTION_RUN_NAME),
+			bRoot, bRoot && iMenuCursor == (int)ZM_BATTLE_MENU_RUN, nullptr);
+
+		for (int i = 0; i < (int)uZM_MAX_MOVES; ++i)
+		{
+			const bool bSlotShown = bMove && (i < iMoveCount);
+			ZM_ApplyMenuButton(xUI.FindElement<Zenith_UI::Zenith_UIButton>(szMOVE_NAMES[i]),
+				bSlotShown, bSlotShown && iMenuCursor == i, paszMoveName[i]);
 		}
 	}
 }
@@ -211,6 +273,184 @@ void ZM_UI_BattleHUD::Hide(Zenith_Entity& xDirectorEntity)
 	ZM_SetHudElementVisible(*pxUI, szENEMY_PANEL_NAME,  false);
 	ZM_SetHudElementVisible(*pxUI, szPLAYER_HPBAR_NAME, false);
 	ZM_SetHudElementVisible(*pxUI, szENEMY_HPBAR_NAME,  false);
+}
+
+// ============================================================================
+// SC5 -- the interactive Fight/Run battle menu (the first player-driven input).
+// ============================================================================
+
+int ZM_UI_BattleHUD::MenuItemCount(ZM_BattleMenuScreen eScreen, int iMoveCount)
+{
+	switch (eScreen)
+	{
+	case ZM_BATTLE_MENU_ACTION_ROOT:
+		return (int)ZM_BATTLE_MENU_ROOT_COUNT;   // 2 (Fight, Run)
+	case ZM_BATTLE_MENU_MOVE_SELECT:
+		return iMoveCount;
+	case ZM_BATTLE_MENU_HIDDEN:
+	default:
+		return 0;
+	}
+}
+
+int ZM_UI_BattleHUD::MenuMoveCursor(int iCursor, int iDelta, int iItemCount)
+{
+	if (iItemCount <= 0)
+	{
+		return 0;
+	}
+	int iNext = iCursor + iDelta;
+	if (iNext < 0)
+	{
+		iNext = 0;               // clamp low (no wrap)
+	}
+	if (iNext > iItemCount - 1)
+	{
+		iNext = iItemCount - 1;  // clamp high (no wrap)
+	}
+	return iNext;
+}
+
+ZM_BattleMenuConfirmResult ZM_UI_BattleHUD::MenuConfirm(ZM_BattleMenuScreen eScreen, int iCursor,
+	const bool* pbMoveSelectable, int iMoveCount)
+{
+	ZM_BattleMenuConfirmResult xResult;   // default {NONE, action{}, next=HIDDEN, cursor 0}
+	switch (eScreen)
+	{
+	case ZM_BATTLE_MENU_ACTION_ROOT:
+		if (iCursor == (int)ZM_BATTLE_MENU_FIGHT)
+		{
+			xResult.m_eKind       = ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES;
+			xResult.m_eNextScreen = ZM_BATTLE_MENU_MOVE_SELECT;
+			xResult.m_iNextCursor = 0;
+		}
+		else if (iCursor == (int)ZM_BATTLE_MENU_RUN)
+		{
+			xResult.m_eKind           = ZM_BATTLE_MENU_CONFIRM_SUBMIT;
+			xResult.m_xAction.m_eKind = ZM_ACTION_RUN;
+			xResult.m_eNextScreen     = ZM_BATTLE_MENU_HIDDEN;
+			xResult.m_iNextCursor     = 0;
+		}
+		return xResult;   // any other cursor -> {NONE}
+	case ZM_BATTLE_MENU_MOVE_SELECT:
+		if (pbMoveSelectable != nullptr && iCursor >= 0 && iCursor < iMoveCount && pbMoveSelectable[iCursor])
+		{
+			xResult.m_eKind               = ZM_BATTLE_MENU_CONFIRM_SUBMIT;
+			xResult.m_xAction.m_eKind     = ZM_ACTION_MOVE;
+			xResult.m_xAction.m_uMoveSlot = (u_int)iCursor;
+			xResult.m_eNextScreen         = ZM_BATTLE_MENU_HIDDEN;
+			xResult.m_iNextCursor         = 0;
+		}
+		// else: {NONE} -- stay on MOVE_SELECT, cursor unchanged (UpdateMenu ignores next*)
+		return xResult;
+	case ZM_BATTLE_MENU_HIDDEN:
+	default:
+		return xResult;   // {NONE, next=HIDDEN}
+	}
+}
+
+ZM_BattleMenuScreen ZM_UI_BattleHUD::MenuCancel(ZM_BattleMenuScreen eScreen)
+{
+	if (eScreen == ZM_BATTLE_MENU_MOVE_SELECT)
+	{
+		return ZM_BATTLE_MENU_ACTION_ROOT;
+	}
+	return eScreen;
+}
+
+bool ZM_UI_BattleHUD::UpdateMenu(Zenith_Entity& xDirectorEntity, const ZM_BattleDirectorCore& xCore,
+	ZM_BattleAction& xOut)
+{
+	// A fresh AWAIT_INPUT turn opens the root menu; subsequent frames keep the cursor.
+	if (m_eMenuScreen == ZM_BATTLE_MENU_HIDDEN)
+	{
+		m_eMenuScreen = ZM_BATTLE_MENU_ACTION_ROOT;
+		m_iMenuCursor = 0;
+	}
+
+	// Build the player active's move table: selectable iff a real move with PP left.
+	// The active always has >=1 move, so iMoveCount is normally >=1.
+	bool        abSelectable[uZM_MAX_MOVES] = {};
+	const char* aszMoveName[uZM_MAX_MOVES]  = { "", "", "", "" };
+	int         iMoveCount = 0;
+	{
+		const ZM_BattleMonster& xActive = xCore.GetEngine().GetState().Side(ZM_SIDE_PLAYER).Active();
+		for (u_int i = 0u; i < uZM_MAX_MOVES; ++i)
+		{
+			const ZM_MoveSlot& xSlot = xActive.m_axMoves[i];
+			if (xSlot.m_eMove != ZM_MOVE_NONE)
+			{
+				abSelectable[i] = (xSlot.m_uCurPP > 0u);
+				aszMoveName[i]  = ZM_GetMoveName(xSlot.m_eMove);
+				++iMoveCount;
+			}
+		}
+	}
+
+	// Edge input: nav FIRST, then confirm, then cancel (Down+Enter in one frame moves
+	// then confirms).
+	const int  iNav     = ZM_InputActions::ReadMenuVertical();
+	const bool bConfirm = ZM_InputActions::ReadConfirmPressed();
+	const bool bCancel  = ZM_InputActions::ReadCancelPressed();
+
+	m_iMenuCursor = MenuMoveCursor(m_iMenuCursor, iNav, MenuItemCount(m_eMenuScreen, iMoveCount));
+
+	bool bSubmitted = false;
+	if (bConfirm)
+	{
+		const ZM_BattleMenuConfirmResult xR = MenuConfirm(m_eMenuScreen, m_iMenuCursor, abSelectable, iMoveCount);
+		if (xR.m_eKind == ZM_BATTLE_MENU_CONFIRM_SUBMIT)
+		{
+			xOut          = xR.m_xAction;
+			m_eMenuScreen = xR.m_eNextScreen;
+			m_iMenuCursor = xR.m_iNextCursor;
+			bSubmitted    = true;
+		}
+		else if (xR.m_eKind == ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES)
+		{
+			m_eMenuScreen = xR.m_eNextScreen;
+			m_iMenuCursor = xR.m_iNextCursor;
+		}
+	}
+	else if (bCancel)
+	{
+		m_eMenuScreen = MenuCancel(m_eMenuScreen);
+		m_iMenuCursor = 0;
+	}
+
+	// Refresh the authored buttons (best-effort: a missing UI component skips the
+	// visuals, but the state machine above already ran so a headless drive still
+	// submits). Re-resolve every element each frame -- never cache.
+	Zenith_UIComponent* pxUI = xDirectorEntity.IsValid()
+		? xDirectorEntity.TryGetComponent<Zenith_UIComponent>()
+		: nullptr;
+	if (pxUI != nullptr)
+	{
+		ZM_RefreshBattleMenuElements(*pxUI, m_eMenuScreen, m_iMenuCursor, aszMoveName, iMoveCount);
+	}
+
+	return bSubmitted;
+}
+
+void ZM_UI_BattleHUD::HideMenu(Zenith_Entity& xDirectorEntity)
+{
+	m_eMenuScreen = ZM_BATTLE_MENU_HIDDEN;
+	m_iMenuCursor = 0;
+
+	Zenith_UIComponent* pxUI = xDirectorEntity.IsValid()
+		? xDirectorEntity.TryGetComponent<Zenith_UIComponent>()
+		: nullptr;
+	if (pxUI == nullptr)
+	{
+		return;
+	}
+	ZM_SetHudElementVisible(*pxUI, szMENU_PANEL_NAME,   false);
+	ZM_SetHudElementVisible(*pxUI, szACTION_FIGHT_NAME, false);
+	ZM_SetHudElementVisible(*pxUI, szACTION_RUN_NAME,   false);
+	for (u_int i = 0u; i < uZM_MAX_MOVES; ++i)
+	{
+		ZM_SetHudElementVisible(*pxUI, szMOVE_NAMES[i], false);
+	}
 }
 
 std::string ZM_UI_BattleHUD::FormatBattleLogLine(const ZM_BattleEvent& xEvent,

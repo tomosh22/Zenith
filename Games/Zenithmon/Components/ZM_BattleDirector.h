@@ -57,6 +57,11 @@ public:
 
 	ZM_BATTLE_DIRECTOR_PHASE GetPhase() const { return m_ePhase; }
 
+	// --- Read accessors for the windowed SC5 tests (menu/core inspection) ---
+	const ZM_BattleDirectorCore& GetCore() const { return m_xCore; }
+	ZM_BattleMenuScreen GetHudMenuScreen() const { return m_xHud.GetMenuScreen(); }
+	int                 GetHudMenuCursor() const { return m_xHud.GetMenuCursor(); }
+
 	// --- Pure static decision surface (unit-tested with NO entity/scene/graphics) ---
 
 	// A deterministic, reproducible placeholder spec for the player side (the real
