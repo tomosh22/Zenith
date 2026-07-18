@@ -15,6 +15,23 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-18 -- ZM-D-111 -- S5 item 5 (SC6): item-5 CLOSER + S5 automated stage gate GREEN -> GATE-WAIT (S5 visual sign-off)
+
+- **Decision:** Close S5 item 5 ("Catch / exp / faint / whiteout applied to GameState") and open the S5 STAGE gate. SC6 is a **docs-only closer** (no new source, no new tests -- item 5's gameplay shipped in SC1-SC5, ZM-D-106..110): run the consolidated S5 automated stage gate, tick the item-5 Roadmap box (line 87), refresh Shortfalls.md, capture the bleed-through evidence, and set a **`GATE-WAIT: S5 visual sign-off`** marker in Status.md -> HARD STOP for the user (the S5 VISUAL hard-stop, user's standing order 2026-07-10). Do NOT tick the S5 stage gate or start S6 without the user's sign-off (StartPrompts prompt 4 -> a separate later DecisionLog entry).
+- **Automated S5 stage gate -- ALL GREEN** (evidence `Build/artifacts/zenithmon/s5/visual/S5_GATE_EVIDENCE.md` + 7 per-test result JSONs, git-ignored):
+  - **5-config build matrix:** Vulkan Debug/Release x True/False + `D3D12_vs2022_Debug_Win64_False` null-backend link proof (Flux backend-neutrality) -- all GREEN.
+  - **Boot unit gate** (`run_unit_gate.ps1 -Baseline 2025`): **2025 ran / 2024 passed / 0 failed / 1 skipped.**
+  - **`zenith test Zenithmon --headless`:** **22 passed / 0 failed.**
+  - **Full windowed suite** (`zenith test Zenithmon`): **22 passed / 0 failed** (113 s), incl. the 10-test windowed battle suite (`--filter ZM_Battle` = **10/0**) + `ZM_GameStatePersistence`.
+  - The ~380 S2 `ZM_Battle` engine goldens stayed BYTE-IDENTICAL through all of item 5 (pure wiring, zero engine changes).
+  - **Re-confirmed first-party at the SC6 commit** (against the byte-identical pushed SC5 code, no code churn since -- working tree was docs-only): headless **22/0** + boot unit gate **2025 / 0 failed** re-run and GREEN. The 5-config matrix is cited from the 14:22 evidence (same Debug-True exe exercised here); not rebuilt for a docs-only commit.
+- **Q-2026-07-09-003 (overworld bleed-through at the (0,-2000,0) offset) -- automated isolation proof GREEN; PIXEL sign-off PENDING the user.** The round-trip tests assert the overworld grass clears to 0 blades at IN_BATTLE and regenerates on resume; the Battle scene (build 1) sits at world Y=-2000, outside the 200 m grass LOD ring and 1000 m terrain HIGH-LOD streaming, inside an enclosing arena dome; exact resume drift < 0.05 m; 0 arenas after unload. The DEFINITIVE pixel check is the user's live visual sign-off (`... test Zenithmon --filter ZM_BattleMenuWin_Test`, windowed). Documented SINGLE-load + world-state-snapshot fallback stands if the pixel check fails.
+- **Shortfalls.md refreshed** (honest gap audit at the gate): sections 1.5/1.6/1.7 updated to "S5 items 1-5 shipped, stage gate pending sign-off"; recorded the S6/S7 deferrals surfaced by the item-5 reviewers -- (a) the battle menu's **Catch item is shown unconditionally, ignoring `m_bCanCatch`** (inert while all S5 battles are wild; S6+ trainer battles MUST gate it on a core-surfaced flag or trip the `SubmitAction` assert / roll an illegal trainer-catch), (b) full-party catch marks-but-drops (box storage = S7), (c) single-LEAD battles only (multi-member + forced-switch-on-faint = S6+), (d) GameState is in-memory only (disk save = S7).
+- **Tests that lock it:** none new (docs-only closer). The gate above IS the lock; the 4 item-5 windowed acceptance proofs (`ZM_BattleMenuWin`/`Catch`/`Run`/`Whiteout` + the round-trip/HUD/persistence tests) remain the regression set.
+- **Reversibility:** trivial (docs only). On the user's **APPROVED** verdict: append the sign-off entry, tick the S5 stage-gate line, clear the GATE-WAIT marker, S5 COMPLETE -> resume at S6 (Dialogue/menus/NPCs/shops). On **REJECTED**: the rework becomes the current task (likely the SINGLE-load + world-state-snapshot fallback for the offset render if bleed-through is visible).
+
+---
+
 ## 2026-07-18 -- ZM-D-110 -- S5 item 5 (SC5): loss -> whiteout + flee-HP-persist (the LAST item-5 gameplay SC)
 
 - **Decision:** A party wipe triggers a WHITEOUT (heal the party full + warp to Dawnmere "TownCenter"); a flee now persists the lead's damaged HP; the fainted-lead "guard" is a documented no-op.
