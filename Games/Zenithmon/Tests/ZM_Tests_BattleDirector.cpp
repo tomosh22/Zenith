@@ -19,6 +19,7 @@
 // ============================================================================
 
 #include "Core/Zenith_TestFramework.h"
+#include "Zenithmon/Components/ZM_BattleDirector.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "Zenithmon/Source/Battle/ZM_BattleEngine.h"
 #include "Zenithmon/Source/Battle/ZM_BattleAI.h"
@@ -316,4 +317,131 @@ ZENITH_TEST(ZM_BattleDirector, AiRngUnperturbing_DirectorDriveMatchesManualDrive
 	}
 
 	ZM_SetInstantBattlesForTests(false);
+}
+
+// ============================================================================
+// SC3 additions -- the ECS-facing ZM_BattleDirector component's pure seams. These
+// exercise the FROZEN static contract of ZM_BattleDirector (S5 item-4 SC3): the
+// placeholder/config builders and the two guard predicates that gate its OnUpdate
+// phase machine. They stay PURE (no ECS, no scene) -- the windowed round-trip
+// gate (ZM_AutoTests_BattleDirector.cpp) proves the live drive.
+// ============================================================================
+
+// 10. The placeholder player spec the director hands the arena is deterministic:
+//     byte-identical across calls on the fields that matter, a real (non-NONE)
+//     species, and a filled slot-0 move. The exact species is an impl choice, so
+//     it is asserted only non-NONE, never a specific value.
+ZENITH_TEST(ZM_BattleDirector, Director_PlaceholderPlayerIsDeterministic)
+{
+	const ZM_BattleMonsterSpec xA = ZM_BattleDirector::BuildPlaceholderPlayerSpec();
+	const ZM_BattleMonsterSpec xB = ZM_BattleDirector::BuildPlaceholderPlayerSpec();
+
+	// A real, usable monster -- but the species is an impl choice, so assert only
+	// non-NONE + a filled first move, never a value.
+	ZENITH_ASSERT_NE((u_int)xA.m_eSpecies, (u_int)ZM_SPECIES_NONE,
+		"the placeholder player must be a real species");
+	ZENITH_ASSERT_NE((u_int)xA.m_aeMoves[0], (u_int)ZM_MOVE_NONE,
+		"the placeholder player must have a real slot-0 move");
+
+	// Deterministic across calls on every field that matters.
+	ZENITH_ASSERT_EQ((u_int)xA.m_eSpecies, (u_int)xB.m_eSpecies, "species must be deterministic");
+	ZENITH_ASSERT_EQ(xA.m_uLevel, xB.m_uLevel, "level must be deterministic");
+	for (u_int i = 0u; i < uZM_MAX_MOVES; ++i)
+	{
+		ZENITH_ASSERT_EQ((u_int)xA.m_aeMoves[i], (u_int)xB.m_aeMoves[i],
+			"move slot %u must be deterministic across calls", i);
+	}
+}
+
+// 11. The director's battle is a wild encounter with exp OFF: the headless
+//     AI-vs-AI battle must never perturb progression (zero-perturbation, ZM-D-032).
+ZENITH_TEST(ZM_BattleDirector, Director_BattleConfigExpOff)
+{
+	const ZM_BattleConfig xCfg = ZM_BattleDirector::BuildBattleConfig();
+	ZENITH_ASSERT_TRUE(xCfg.m_bIsWild, "the director's battle is a wild battle");
+	ZENITH_ASSERT_FALSE(xCfg.m_bAwardExp, "the headless AI-vs-AI battle must not award exp");
+}
+
+// 12. Setup is one-shot: it fires ONLY in WAIT_FOR_IN_BATTLE, ONLY once the
+//     transition is in battle, and ONLY if not already set up. A wrong phase, a
+//     not-yet-in-battle transition, or an already-set-up latch all suppress it.
+ZENITH_TEST(ZM_BattleDirector, Director_SetupIsOneShot)
+{
+	ZENITH_ASSERT_TRUE(
+		ZM_BattleDirector::ShouldRunSetup(ZM_BD_WAIT_FOR_IN_BATTLE, true, false),
+		"first in-battle frame, not yet set up -> run setup");
+	ZENITH_ASSERT_FALSE(
+		ZM_BattleDirector::ShouldRunSetup(ZM_BD_WAIT_FOR_IN_BATTLE, true, true),
+		"already set up -> never again (one-shot latch)");
+	ZENITH_ASSERT_FALSE(
+		ZM_BattleDirector::ShouldRunSetup(ZM_BD_WAIT_FOR_IN_BATTLE, false, false),
+		"transition not yet in battle -> do not run setup");
+	ZENITH_ASSERT_FALSE(
+		ZM_BattleDirector::ShouldRunSetup(ZM_BD_RUNNING, true, false),
+		"wrong phase (RUNNING) -> do not run setup");
+}
+
+// 13. The end request is gated on the core actually resolving: the director only
+//     asks the transition to end AFTER a real ZM_BattleDirectorCore reaches OVER,
+//     and it latches (asks exactly once). Drives a REAL core to OVER under instant
+//     mode, reusing the drive pattern above.
+ZENITH_TEST(ZM_BattleDirector, Director_RequestsEndOnlyAfterResolved)
+{
+	ZM_SetInstantBattlesForTests(true);
+
+	const ZM_BattleMonsterSpec xPlayer = ZM_BuildWildEnemySpec(ZM_SPECIES_FERNFAWN, 5u);
+	const ZM_BattleMonsterSpec xEnemy  = ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 5u);
+	const ZM_BattleConfig xCfg = MakeWildConfig();
+
+	ZM_BattleDirectorCore xCore;
+	xCore.Begin(&xPlayer, 1u, &xEnemy, 1u, xCfg, 0xD1EEC7ull, ZM_AI_TIER_GREEDY);
+
+	// Before the core is OVER, the director must NOT request an end even in RUNNING:
+	// the gate demands the core actually reports it should end.
+	ZENITH_ASSERT_FALSE(xCore.ShouldRequestEnd(), "the core is not over immediately after Begin");
+	ZENITH_ASSERT_FALSE(
+		ZM_BattleDirector::ShouldRequestEndNow(ZM_BD_RUNNING, false, false),
+		"RUNNING but the core has not yet ended -> must not request the end");
+
+	// Drive the core to OVER (same bounded pattern as test 7 above).
+	u_int uIter = 0u;
+	while (!xCore.ShouldRequestEnd() && uIter < 200u)
+	{
+		if (xCore.IsAwaitingInput())
+		{
+			xCore.SubmitPlayerAction(MakeMoveSlot0());
+		}
+		xCore.Tick(0.0f);
+		++uIter;
+	}
+	ZENITH_ASSERT_TRUE(xCore.ShouldRequestEnd(), "the driven core should reach the request-end latch");
+
+	// Now the core says it should end: RUNNING + not yet requested -> request now.
+	ZENITH_ASSERT_TRUE(
+		ZM_BattleDirector::ShouldRequestEndNow(ZM_BD_RUNNING, true, false),
+		"RUNNING + core over + not yet requested -> request the end now");
+	// Latch: once requested, never again.
+	ZENITH_ASSERT_FALSE(
+		ZM_BattleDirector::ShouldRequestEndNow(ZM_BD_RUNNING, true, true),
+		"already requested -> must not request the end again");
+	// Phase guard: only RUNNING requests the end.
+	ZENITH_ASSERT_FALSE(
+		ZM_BattleDirector::ShouldRequestEndNow(ZM_BD_SETUP, true, false),
+		"non-RUNNING phase (SETUP) -> must not request the end");
+
+	ZM_SetInstantBattlesForTests(false);
+}
+
+// 14. The battle seed is a deterministic PURE function of the encounter payload, so a
+//     windowed drive is reproducible; it is sensitive to BOTH the species and the
+//     level, so distinct encounters derive distinct seeds (FNV-1a over both inputs).
+ZENITH_TEST(ZM_BattleDirector, Director_BattleSeedIsDeterministic)
+{
+	const u_int64 ulA = ZM_BattleDirector::DeriveBattleSeed(ZM_SPECIES_FERNFAWN, 5u);
+	ZENITH_ASSERT_EQ(ulA, ZM_BattleDirector::DeriveBattleSeed(ZM_SPECIES_FERNFAWN, 5u),
+		"same (species, level) must derive the same seed");
+	ZENITH_ASSERT_NE(ulA, ZM_BattleDirector::DeriveBattleSeed(ZM_SPECIES_KINDLET, 5u),
+		"a different species must derive a different seed");
+	ZENITH_ASSERT_NE(ulA, ZM_BattleDirector::DeriveBattleSeed(ZM_SPECIES_FERNFAWN, 6u),
+		"a different level must derive a different seed");
 }

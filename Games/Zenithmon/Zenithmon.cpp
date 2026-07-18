@@ -8,6 +8,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "SaveData/Zenith_SaveData.h"
 #include "Zenithmon/Components/ZM_BattleArena.h"
+#include "Zenithmon/Components/ZM_BattleDirector.h"
 #include "Zenithmon/Components/ZM_BattleTransition.h"
 #include "Zenithmon/Components/ZM_GameComponent.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
@@ -141,6 +142,7 @@ ZENITH_REGISTER_COMPONENT(ZM_GreyboxVisual, "ZM_GreyboxVisual", 107u)
 ZENITH_REGISTER_COMPONENT(ZM_BattleArena, "ZM_BattleArena", 108u)
 ZENITH_REGISTER_COMPONENT(ZM_TallGrassSystem, "ZM_TallGrassSystem", 109u)
 ZENITH_REGISTER_COMPONENT(ZM_BattleTransition, "ZM_BattleTransition", 110u)
+ZENITH_REGISTER_COMPONENT(ZM_BattleDirector, "ZM_BattleDirector", 111u)
 
 #ifdef ZENITH_TOOLS
 namespace
@@ -358,6 +360,7 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleArena>("ZM_BattleArena");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_TallGrassSystem>("ZM_TallGrassSystem");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleTransition>("ZM_BattleTransition");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleDirector>("ZM_BattleDirector");
 
 	// Runtime toggle for the battle presenter's instant-battle mode (collapses all
 	// presentation timing). Bound by reference to the ZM_BattleDirectorCore backing
@@ -535,6 +538,13 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_SetEntityTransient(false);
 	xAuto.AddStep_SetTransformPosition(0.0f, -2000.0f, 0.0f);   // ZM_BattleArena::fARENA_WORLD_Y
 	xAuto.AddStep_AddComponent("ZM_BattleArena");
+
+	// The battle presenter-driver (S5 item 4 SC3, order 111): a sibling entity in the
+	// Battle scene that watches the persistent transition and, once IN_BATTLE, runs a
+	// deterministic AI-vs-AI wild battle and ends it via RequestBattleEnd().
+	xAuto.AddStep_CreateEntity("BattleDirector");
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_AddComponent("ZM_BattleDirector");
 
 	xAuto.AddStep_CreateEntity("BattleCamera");
 	xAuto.AddStep_AddCamera();
