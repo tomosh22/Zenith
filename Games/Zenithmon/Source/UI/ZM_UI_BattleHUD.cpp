@@ -15,6 +15,7 @@
 #include "Zenithmon/Source/Battle/ZM_BattleMonster.h"         // ZM_BattleMonster / ZM_MoveSlot / uZM_MAX_MOVES (menu move table)
 #include "Zenithmon/Source/Battle/ZM_BattleState.h"           // Side(...).Active() chain (SC5 move read)
 #include "Zenithmon/Source/Battle/ZM_BattleTypes.h"           // ZM_SIDE, ZM_BattleAction, ZM_ACTION_*
+#include "Zenithmon/Source/Data/ZM_ItemData.h"                // ZM_ITEM_CATCHORB (SC4 CATCH action item)
 #include "Zenithmon/Source/Data/ZM_MoveData.h"                // ZM_GetMoveName / ZM_MOVE_ID
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"             // ZM_GetSpeciesName / ZM_SPECIES_ID
 #include "Zenithmon/Source/ZM_InputActions.h"                 // ReadMenuVertical / ReadConfirmPressed / ReadCancelPressed (SC5 input)
@@ -109,11 +110,12 @@ namespace
 		}
 	}
 
-	// --- SC5 battle menu elements (mirrored by the authoring step ZM_ConfigureBattleHUD
-	//     in Zenithmon.cpp + the parallel Test Author). Seven total: one panel rect +
-	//     Fight/Run root buttons + four move buttons. ---
+	// --- SC5/SC4 battle menu elements (mirrored by the authoring step ZM_ConfigureBattleHUD
+	//     in Zenithmon.cpp + the parallel Test Author). Eight total: one panel rect +
+	//     Fight/Catch/Run root buttons + four move buttons. ---
 	constexpr const char* szMENU_PANEL_NAME   = "BattleHUD_MenuPanel";
 	constexpr const char* szACTION_FIGHT_NAME = "BattleHUD_ActionFight";
+	constexpr const char* szACTION_CATCH_NAME = "BattleHUD_ActionCatch";
 	constexpr const char* szACTION_RUN_NAME   = "BattleHUD_ActionRun";
 	constexpr const char* szMOVE_NAMES[uZM_MAX_MOVES] =
 	{
@@ -142,8 +144,8 @@ namespace
 		pxButton->SetTextColor((bVisible && bFocused) ? xMENU_FOCUS_COLOUR : xMENU_NORMAL_COLOUR);
 	}
 
-	// Re-resolve + refresh all seven menu elements for the current screen + cursor
-	// (never cache). ROOT shows the panel + Fight/Run; MOVE_SELECT shows the panel +
+	// Re-resolve + refresh all eight menu elements for the current screen + cursor
+	// (never cache). ROOT shows the panel + Fight/Catch/Run; MOVE_SELECT shows the panel +
 	// the move buttons for the filled slots; anything else hides them all. The move
 	// buttons' text is set every frame regardless of visibility.
 	void ZM_RefreshBattleMenuElements(Zenith_UIComponent& xUI, ZM_BattleMenuScreen eScreen,
@@ -156,6 +158,8 @@ namespace
 
 		ZM_ApplyMenuButton(xUI.FindElement<Zenith_UI::Zenith_UIButton>(szACTION_FIGHT_NAME),
 			bRoot, bRoot && iMenuCursor == (int)ZM_BATTLE_MENU_FIGHT, nullptr);
+		ZM_ApplyMenuButton(xUI.FindElement<Zenith_UI::Zenith_UIButton>(szACTION_CATCH_NAME),
+			bRoot, bRoot && iMenuCursor == (int)ZM_BATTLE_MENU_CATCH, nullptr);
 		ZM_ApplyMenuButton(xUI.FindElement<Zenith_UI::Zenith_UIButton>(szACTION_RUN_NAME),
 			bRoot, bRoot && iMenuCursor == (int)ZM_BATTLE_MENU_RUN, nullptr);
 
@@ -284,7 +288,7 @@ int ZM_UI_BattleHUD::MenuItemCount(ZM_BattleMenuScreen eScreen, int iMoveCount)
 	switch (eScreen)
 	{
 	case ZM_BATTLE_MENU_ACTION_ROOT:
-		return (int)ZM_BATTLE_MENU_ROOT_COUNT;   // 2 (Fight, Run)
+		return (int)ZM_BATTLE_MENU_ROOT_COUNT;   // 3 (Fight, Catch, Run)
 	case ZM_BATTLE_MENU_MOVE_SELECT:
 		return iMoveCount;
 	case ZM_BATTLE_MENU_HIDDEN:
@@ -352,6 +356,17 @@ ZM_BattleMenuConfirmResult ZM_UI_BattleHUD::MenuConfirm(ZM_BattleMenuScreen eScr
 			xResult.m_eKind       = ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES;
 			xResult.m_eNextScreen = ZM_BATTLE_MENU_MOVE_SELECT;
 			xResult.m_iNextCursor = 0;
+		}
+		else if (iCursor == (int)ZM_BATTLE_MENU_CATCH)
+		{
+			// SC4: submit a catch-orb ITEM action. The director substitutes the actual ball
+			// (ZM_SetCatchBallForTests) onto the ITEM action before submitting; production
+			// uses ZM_ITEM_CATCHORB, so the pure result declares CATCHORB here.
+			xResult.m_eKind           = ZM_BATTLE_MENU_CONFIRM_SUBMIT;
+			xResult.m_xAction.m_eKind = ZM_ACTION_ITEM;
+			xResult.m_xAction.m_eItem = ZM_ITEM_CATCHORB;
+			xResult.m_eNextScreen     = ZM_BATTLE_MENU_HIDDEN;
+			xResult.m_iNextCursor     = 0;
 		}
 		else if (iCursor == (int)ZM_BATTLE_MENU_RUN)
 		{
@@ -477,6 +492,7 @@ void ZM_UI_BattleHUD::HideMenu(Zenith_Entity& xDirectorEntity)
 	}
 	ZM_SetHudElementVisible(*pxUI, szMENU_PANEL_NAME,   false);
 	ZM_SetHudElementVisible(*pxUI, szACTION_FIGHT_NAME, false);
+	ZM_SetHudElementVisible(*pxUI, szACTION_CATCH_NAME, false);
 	ZM_SetHudElementVisible(*pxUI, szACTION_RUN_NAME,   false);
 	for (u_int i = 0u; i < uZM_MAX_MOVES; ++i)
 	{

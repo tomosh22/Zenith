@@ -312,10 +312,11 @@ namespace
 			pxPlayerHpBar->SetColor(xHpGreen);
 		}
 
-		// --- SC5 interactive Fight/Run menu (7 elements). Sort order 10003 sits above
-		//     the SC4 HUD (10002) so the menu reads on top; all authored hidden --
-		//     ZM_BattleDirector reveals/highlights/hides them via UpdateMenu/HideMenu.
-		//     A bottom-right box: Fight/Run on one row, or a 2x2 move grid in its place. ---
+		// --- Interactive battle menu (8 elements). Sort order 10003 sits above the SC4
+		//     HUD (10002) so the menu reads on top; all authored hidden -- ZM_BattleDirector
+		//     reveals/highlights/hides them via UpdateMenu/HideMenu. A bottom-right box:
+		//     Fight/Catch/Run as a vertical stack (SC4 adds Catch), or a 2x2 move grid in
+		//     its place (mutually exclusive screens, so they share the box). ---
 		auto fnPlaceMenu = [](Zenith_UI::Zenith_UIElement* pxElement,
 			Zenith_UI::AnchorPreset ePreset, float fX, float fY, float fW, float fH)
 		{
@@ -333,27 +334,38 @@ namespace
 
 		const Zenith_Maths::Vector4 xMenuPanelColour = { 0.05f, 0.06f, 0.10f, 0.85f };
 
-		// Backing panel -- the box behind the buttons, bottom-right.
+		// Backing panel -- the box behind the buttons, bottom-right. Tall enough for the
+		// 3-row root stack AND wide enough for the 2x2 move grid (they share the box).
 		Zenith_UI::Zenith_UIRect* pxMenuPanel =
 			pxUI->FindElement<Zenith_UI::Zenith_UIRect>("BattleHUD_MenuPanel");
-		fnPlaceMenu(pxMenuPanel, Zenith_UI::AnchorPreset::BottomRight, -24.0f, -24.0f, 388.0f, 132.0f);
+		fnPlaceMenu(pxMenuPanel, Zenith_UI::AnchorPreset::BottomRight, -24.0f, -24.0f, 388.0f, 184.0f);
 		if (pxMenuPanel != nullptr)
 		{
 			pxMenuPanel->SetColor(xMenuPanelColour);
 		}
 
-		// Root actions -- Fight (left) / Run (right), a single row inside the panel.
+		// Root actions -- Fight / Catch / Run, a single vertical stack inside the panel
+		// (top to bottom, matching the ZM_BATTLE_MENU_FIGHT/CATCH/RUN cursor order). 48px
+		// row pitch, shown only in ACTION_ROOT.
 		Zenith_UI::Zenith_UIButton* pxFight =
 			pxUI->FindElement<Zenith_UI::Zenith_UIButton>("BattleHUD_ActionFight");
-		fnPlaceMenu(pxFight, Zenith_UI::AnchorPreset::BottomRight, -206.0f, -80.0f, 170.0f, 48.0f);
+		fnPlaceMenu(pxFight, Zenith_UI::AnchorPreset::BottomRight, -133.0f, -128.0f, 170.0f, 44.0f);
 		if (pxFight != nullptr)
 		{
 			pxFight->SetFontSize(26.0f);
 		}
 
+		Zenith_UI::Zenith_UIButton* pxCatch =
+			pxUI->FindElement<Zenith_UI::Zenith_UIButton>("BattleHUD_ActionCatch");
+		fnPlaceMenu(pxCatch, Zenith_UI::AnchorPreset::BottomRight, -133.0f, -80.0f, 170.0f, 44.0f);
+		if (pxCatch != nullptr)
+		{
+			pxCatch->SetFontSize(26.0f);
+		}
+
 		Zenith_UI::Zenith_UIButton* pxRun =
 			pxUI->FindElement<Zenith_UI::Zenith_UIButton>("BattleHUD_ActionRun");
-		fnPlaceMenu(pxRun, Zenith_UI::AnchorPreset::BottomRight, -30.0f, -80.0f, 170.0f, 48.0f);
+		fnPlaceMenu(pxRun, Zenith_UI::AnchorPreset::BottomRight, -133.0f, -32.0f, 170.0f, 44.0f);
 		if (pxRun != nullptr)
 		{
 			pxRun->SetFontSize(26.0f);
@@ -715,11 +727,13 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreateUIText("BattleHUD_EnemyPanel", "");
 	xAuto.AddStep_CreateUIRect("BattleHUD_PlayerHPBar");
 	xAuto.AddStep_CreateUIRect("BattleHUD_EnemyHPBar");
-	// The SC5 interactive Fight/Run menu: a backing panel + two root buttons + four
-	// move buttons, all authored hidden by ZM_ConfigureBattleHUD. ZM_UI_BattleHUD
-	// (owned by ZM_BattleDirector) shows/highlights/hides them via UpdateMenu/HideMenu.
+	// The interactive battle menu: a backing panel + three root buttons (Fight/Catch/Run,
+	// SC4 adds Catch) + four move buttons, all authored hidden by ZM_ConfigureBattleHUD.
+	// ZM_UI_BattleHUD (owned by ZM_BattleDirector) shows/highlights/hides them via
+	// UpdateMenu/HideMenu.
 	xAuto.AddStep_CreateUIRect("BattleHUD_MenuPanel");
 	xAuto.AddStep_CreateUIButton("BattleHUD_ActionFight", "Fight");
+	xAuto.AddStep_CreateUIButton("BattleHUD_ActionCatch", "Catch");
 	xAuto.AddStep_CreateUIButton("BattleHUD_ActionRun",   "Run");
 	xAuto.AddStep_CreateUIButton("BattleHUD_Move0", "");
 	xAuto.AddStep_CreateUIButton("BattleHUD_Move1", "");

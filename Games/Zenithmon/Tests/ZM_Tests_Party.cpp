@@ -507,3 +507,73 @@ ZENITH_TEST(ZM_Party, SpecCurHP_RoundTripAndClamp)
 	const ZM_BattleMonster xMonWild = ZM_BuildBattleMonster(xWild);
 	ZENITH_ASSERT_EQ(xMonWild.m_uCurHP, xMonWild.m_auMaxStat[ZM_STAT_HP], "the sentinel builds at full HP");
 }
+
+// ############################################################################
+// F. Catch write-back to the game state (S5 item 5 SC4)
+//
+// ZM_ApplyCatchToGameState(gameState, bCaught, caughtMonster) is the catch bridge:
+// on a successful catch it ALWAYS marks the caught species in the dex, and Adds the
+// caught monster as a new party record WHEN the party is not full (box storage is
+// S7). A failed catch is a strict no-op. Pure: no ECS, no scene, no RNG.
+// ############################################################################
+
+// A successful catch of a NEW species appends it to the party (as the record built
+// from the caught battle monster) and marks it in the dex.
+ZENITH_TEST(ZM_Party, Catch_AddsToPartyAndMarksDex)
+{
+	// A game state carrying a single Fernfawn L5 party lead.
+	ZM_GameState xState;
+	ZENITH_ASSERT_TRUE(xState.m_xParty.Add(ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 5u)),
+		"seed the lead at slot 0");
+	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), 1u, "one party member before the catch");
+	ZENITH_ASSERT_FALSE(xState.IsCaught(ZM_SPECIES_KINDLET), "Kindlet is not caught before the catch");
+
+	// The caught wild monster (a damaged/final battle instance in the shipped flow).
+	const ZM_BattleMonster xCaught = ZM_BuildBattleMonster(ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 3u));
+
+	ZM_ApplyCatchToGameState(xState, true, xCaught);
+
+	// It joined the party as slot 1, exactly equal to the record the caught monster converts to.
+	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), 2u, "the caught monster joined the party");
+	AssertRecordEq(ZM_MonsterFromBattleMonster(xCaught), xState.m_xParty.Get(1u),
+		"the new party slot equals the record built from the caught battle monster");
+	// The dex marks the species.
+	ZENITH_ASSERT_TRUE(xState.IsCaught(ZM_SPECIES_KINDLET), "the caught species is marked in the dex");
+}
+
+// A failed catch (bCaught == false) is a strict no-op: no party growth, no dex mark.
+ZENITH_TEST(ZM_Party, Catch_NotCaughtIsNoOp)
+{
+	ZM_GameState xState;
+	xState.m_xParty.Add(ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 5u));
+	const u_int uCountBefore  = xState.m_xParty.Count();
+	const u_int uCaughtBefore = xState.GetCaughtCount();
+
+	const ZM_BattleMonster xCaught = ZM_BuildBattleMonster(ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 3u));
+	ZM_ApplyCatchToGameState(xState, false, xCaught);
+
+	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), uCountBefore, "a failed catch adds no party member");
+	ZENITH_ASSERT_EQ(xState.GetCaughtCount(), uCaughtBefore, "a failed catch marks nothing in the dex");
+	ZENITH_ASSERT_FALSE(xState.IsCaught(ZM_SPECIES_KINDLET), "the un-caught species stays unmarked");
+}
+
+// A successful catch with a FULL party still marks the dex, but does NOT add (there is
+// no free slot; box storage is S7). The party count stays at the cap.
+ZENITH_TEST(ZM_Party, Catch_FullPartyMarksButDoesNotAdd)
+{
+	ZM_GameState xState;
+	for (u_int i = 0u; i < uZM_MAX_PARTY_SIZE; ++i)
+	{
+		ZENITH_ASSERT_TRUE(xState.m_xParty.Add(ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 5u)),
+			"fill party slot %u", i);
+	}
+	ZENITH_ASSERT_TRUE(xState.m_xParty.IsFull(), "the party is full (6)");
+	ZENITH_ASSERT_FALSE(xState.IsCaught(ZM_SPECIES_KINDLET), "Kindlet is not caught before the catch");
+
+	const ZM_BattleMonster xCaught = ZM_BuildBattleMonster(ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 3u));
+	ZM_ApplyCatchToGameState(xState, true, xCaught);
+
+	// The party cannot grow past the cap (box storage is S7) -- but the dex still marks it.
+	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), uZM_MAX_PARTY_SIZE, "a full party does not grow past 6");
+	ZENITH_ASSERT_TRUE(xState.IsCaught(ZM_SPECIES_KINDLET), "the dex marks a catch even when the party is full");
+}

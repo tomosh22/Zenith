@@ -28,6 +28,7 @@
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"           // ZM_BATTLE_EVENT_FLEE
 #include "Zenithmon/Source/Battle/ZM_BattleTypes.h"           // ZM_SIDE_PLAYER / ZM_SIDE_COUNT
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
+#include "Zenithmon/Source/Data/ZM_ItemData.h"                 // ZM_ITEM_PRIMEORB / ZM_ITEM_CATCHORB (catch-ball override)
 #include "Zenithmon/Source/Gen/ZM_BakeManifest.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"              // ZM_GameState (persistent lead read, SC3)
 #include "Zenithmon/Source/Party/ZM_Monster.h"                // ZM_Monster::m_uCurrentExp / m_uLevel
@@ -41,15 +42,19 @@
 #include <string>
 
 // ============================================================================
-// ZM_AutoTests_BattleMenu -- the S5 item-4 (SC5) windowed gate for the player-
-// driven Fight/Run battle menu on ZM_UI_BattleHUD (owned by ZM_BattleDirector).
-// TWO tests, both m_bRequiresGraphics = true:
+// ZM_AutoTests_BattleMenu -- the windowed gate for the player-driven battle menu
+// on ZM_UI_BattleHUD (owned by ZM_BattleDirector). THREE tests, all
+// m_bRequiresGraphics = true:
 //   * ZM_BattleMenuWin_Test -- ENTER-spam drives Fight->move0 every turn; the
 //     placeholder L5 player KOs a deliberately weak L2 wild FERNFAWN, so the
 //     DIRECTOR ends the battle with the PLAYER as winner and an HP bar at 0.
 //   * ZM_BattleMenuRun_Test -- reads the live menu screen/cursor and confirms
 //     Run once the cursor is on it; the faster L5 player flees the same weak
 //     enemy, so the engine emits a FLEE event and the battle ends with NO winner.
+//   * ZM_BattleMenuCatch_Test (S5 item-5 SC4) -- forces a DISTINCT wild KINDLET and
+//     installs a GUARANTEED-catch ball (ZM_ITEM_PRIMEORB), then drives the menu to
+//     Catch; the wild monster is caught, so the core ends with the PLAYER as winner
+//     and the persistent GameState gains a party member + a marked caught-set entry.
 //
 // Both CLONE ZM_AutoTests_BattleHUD.cpp's shipped phase machine (its Dawnmere
 // runtime-ready gate, the forced wild encounter, fixed-dt 1/30, zm_instant_battles
@@ -281,9 +286,9 @@ namespace
 	// The shared menu-driven phase machine
 	// -------------------------------------------------------------------------
 
-	// Two tests, one machine. Set by each test's thin Setup; the drive + the
-	// win/flee assertions branch on it.
-	enum class MenuTestMode { Win, Run };
+	// Three tests, one machine. Set by each test's thin Setup; the drive + the
+	// win/flee/catch assertions branch on it.
+	enum class MenuTestMode { Win, Run, Catch };
 
 	// A deliberately weak, low wild enemy so BOTH slices are reliable: the L5
 	// placeholder player (ZM_BattleDirector.cpp) reliably KOs an L2 FERNFAWN
@@ -293,6 +298,12 @@ namespace
 	// win/flee at L2, this is the single knob to lower/raise.
 	constexpr ZM_SPECIES_ID eBM_ENEMY_SPECIES = ZM_SPECIES_FERNFAWN;
 	constexpr u_int         uBM_ENEMY_LEVEL   = 2u;
+
+	// The Catch test forces a DISTINCT wild species (KINDLET) so a successful catch
+	// provably changes BOTH the party count (1 -> 2) and the caught-set (KINDLET is
+	// unmarked at start -- the starter only marks FERNFAWN). L2 keeps it weak.
+	constexpr ZM_SPECIES_ID eBM_CATCH_ENEMY_SPECIES = ZM_SPECIES_KINDLET;
+	constexpr u_int         uBM_CATCH_ENEMY_LEVEL   = 2u;
 
 	// Coarser than 1/60 (mirrors the shipped round trip): the trip must fit the
 	// additive load + arena build + the director's headless battle + grass regen
@@ -362,6 +373,15 @@ namespace
 	u_int   g_uBMExpAfter          = 0u;     // persistent lead cumulative exp post-resume
 	u_int   g_uBMLevelAfter        = 0u;     // persistent lead level post-resume
 
+	// ---- Catch captures (SC4: a successful catch adds the caught wild monster to the
+	// persistent party and marks the caught-set; only asserted in the Catch test) ----
+	bool    g_bBMPartyCapturedBefore = false;  // the manager resolved a GameState before the encounter
+	u_int   g_uBMPartyCountBefore    = 0u;     // persistent party size pre-catch
+	bool    g_bBMCatchSpeciesBefore  = false;  // the DISTINCT wild species already in the caught-set pre-catch
+	bool    g_bBMPartyCapturedAfter  = false;  // the manager resolved a GameState after the resume
+	u_int   g_uBMPartyCountAfter     = 0u;     // persistent party size post-catch
+	bool    g_bBMCatchSpeciesAfter   = false;  // the DISTINCT wild species in the caught-set post-catch
+
 	// Recursively take the minimum GetFillAmount() over every UIRect in an element
 	// subtree. On the battle HUD the only rects are the two HP bars, so the min is
 	// the fill of the more-depleted side.
@@ -425,12 +445,33 @@ namespace
 			// therefore picks Fight->move0 each turn (a HIDDEN-menu press is inert).
 			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
 		}
+		else if (g_eBMMode == MenuTestMode::Catch)
+		{
+			// Menu-aware catch: only confirm once the committed cursor is on Catch, so
+			// we never accidentally open the move list. DOWN walks Fight(0)->Catch(1);
+			// ENTER on Catch submits {ZM_ACTION_ITEM, catch ball}. With ZM_ITEM_PRIMEORB
+			// installed in Setup the capture succeeds on turn 1 (zero RNG).
+			const ZM_BattleMenuScreen eScreen = pxDirector->GetHudMenuScreen();
+			const int                 iCursor = pxDirector->GetHudMenuCursor();
+			if (eScreen == ZM_BATTLE_MENU_ACTION_ROOT)
+			{
+				if (iCursor == (int)ZM_BATTLE_MENU_CATCH)
+				{
+					Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				}
+				else
+				{
+					Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_DOWN);
+				}
+			}
+			// HIDDEN (fading / between turns) or MOVE_SELECT (never reached): press nothing.
+		}
 		else   // Run
 		{
 			// Menu-aware flee: only confirm once the committed cursor is on Run, so we
-			// never accidentally open the move list. DOWN moves Fight(0)->Run(1); ENTER
-			// on Run submits {ZM_ACTION_RUN}. A failed flee returns to ACTION_ROOT and
-			// this converges again next turn.
+			// never accidentally open the move list. DOWN moves Fight(0)->Catch(1)->Run(2);
+			// ENTER on Run submits {ZM_ACTION_RUN}. A failed flee returns to ACTION_ROOT
+			// and this converges again next turn.
 			const ZM_BattleMenuScreen eScreen = pxDirector->GetHudMenuScreen();
 			const int                 iCursor = pxDirector->GetHudMenuCursor();
 			if (eScreen == ZM_BATTLE_MENU_ACTION_ROOT)
@@ -534,6 +575,13 @@ namespace
 		g_uBMExpAfter              = 0u;
 		g_uBMLevelAfter            = 0u;
 
+		g_bBMPartyCapturedBefore   = false;
+		g_uBMPartyCountBefore      = 0u;
+		g_bBMCatchSpeciesBefore    = false;
+		g_bBMPartyCapturedAfter    = false;
+		g_uBMPartyCountAfter       = 0u;
+		g_bBMCatchSpeciesAfter     = false;
+
 		// Guard order is MANDATORY: RequestSkip bypasses Verify, so install NO
 		// process state (fixed dt, instant-battles flag, scene load) until EVERY
 		// git-ignored input is confirmed present -- the Dawnmere terrain/scene, the
@@ -586,6 +634,21 @@ namespace
 	{
 		g_eBMMode = MenuTestMode::Run;
 		SetupCommon();
+	}
+
+	void Setup_ZMBattleMenuCatch()
+	{
+		g_eBMMode = MenuTestMode::Catch;
+		SetupCommon();
+		// A GUARANTEED capture (the prime orb never fails), so the catch resolves on turn
+		// 1 with zero RNG dependence. Installed ONLY when the test will actually run: a
+		// RequestSkip bypasses Verify, so its teardown would never restore the gameplay
+		// ball -- gating on g_bBMPrereqsPresent keeps the ball override from leaking into
+		// a later batched test.
+		if (g_bBMPrereqsPresent)
+		{
+			ZM_SetCatchBallForTests(ZM_ITEM_PRIMEORB);
+		}
 	}
 
 	bool Step_ZMBattleMenu(int)
@@ -650,8 +713,17 @@ namespace
 			}
 			pxSystem->SetRngSeedForTests(0xABCull);
 			// A deliberately weak, low wild enemy so the L5 placeholder player reliably
-			// WINS (Win) and reliably out-speeds it for a guaranteed flee (Run).
-			pxSystem->ForceEncounterOnNextTransitionForTests(eBM_ENEMY_SPECIES, uBM_ENEMY_LEVEL);
+			// WINS (Win) and reliably out-speeds it for a guaranteed flee (Run). The Catch
+			// test forces a DISTINCT species (KINDLET) so a successful catch provably
+			// changes both the party count and the caught-set.
+			if (g_eBMMode == MenuTestMode::Catch)
+			{
+				pxSystem->ForceEncounterOnNextTransitionForTests(eBM_CATCH_ENEMY_SPECIES, uBM_CATCH_ENEMY_LEVEL);
+			}
+			else
+			{
+				pxSystem->ForceEncounterOnNextTransitionForTests(eBM_ENEMY_SPECIES, uBM_ENEMY_LEVEL);
+			}
 
 			// Data-driven direction pick from the SAME density map the system reads.
 			ZM_TerrainGrass* pxGrass = xTerrain.TryGetComponent<ZM_TerrainGrass>();
@@ -683,6 +755,13 @@ namespace
 					g_uBMExpBefore         = pxGameState->m_xParty.Lead().m_uCurrentExp;
 					g_uBMLevelBefore       = pxGameState->m_xParty.Lead().m_uLevel;
 					g_bBMExpCapturedBefore = true;
+
+					// SC4 catch baseline: the persistent party size + whether the DISTINCT
+					// wild species is ALREADY caught (it must NOT be, so a successful catch
+					// provably changes BOTH). Only asserted in the Catch test.
+					g_uBMPartyCountBefore    = pxGameState->m_xParty.Count();
+					g_bBMCatchSpeciesBefore  = pxGameState->IsCaught(eBM_CATCH_ENEMY_SPECIES);
+					g_bBMPartyCapturedBefore = true;
 				}
 			}
 
@@ -829,6 +908,13 @@ namespace
 					g_uBMExpAfter         = pxGameStateAfter->m_xParty.Lead().m_uCurrentExp;
 					g_uBMLevelAfter       = pxGameStateAfter->m_xParty.Lead().m_uLevel;
 					g_bBMExpCapturedAfter = true;
+
+					// SC4: the caught monster joined the party + marked the caught-set. Read
+					// FRESH after the resume settles so Verify can prove the catch write-back
+					// persisted across the additive battle + unload (only asserted in Catch).
+					g_uBMPartyCountAfter    = pxGameStateAfter->m_xParty.Count();
+					g_bBMCatchSpeciesAfter  = pxGameStateAfter->IsCaught(eBM_CATCH_ENEMY_SPECIES);
+					g_bBMPartyCapturedAfter = true;
 				}
 			}
 
@@ -846,7 +932,10 @@ namespace
 	{
 		bool bPassed = true;
 		const bool bIsWin = (g_eBMMode == MenuTestMode::Win);
-		const char* szTag = bIsWin ? "ZM_BattleMenuWin" : "ZM_BattleMenuRun";
+		const char* szTag =
+			g_eBMMode == MenuTestMode::Win   ? "ZM_BattleMenuWin"
+		  : g_eBMMode == MenuTestMode::Catch ? "ZM_BattleMenuCatch"
+		  :                                    "ZM_BattleMenuRun";
 
 		if (g_bBMActive)
 		{
@@ -1026,6 +1115,72 @@ namespace
 					}
 				}
 			}
+			else if (g_eBMMode == MenuTestMode::Catch)
+			{
+				// The menu-driven Catch threw the GUARANTEED ZM_ITEM_PRIMEORB: the wild
+				// monster was caught, so the core ends with the PLAYER as winner...
+				if (!g_bBMWinnerCaptured)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuCatch] the core never reached OVER while the Battle scene was "
+						"loaded -- no winner was captured");
+					bPassed = false;
+				}
+				else if (g_eBMWinner != ZM_SIDE_PLAYER)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuCatch] the battle winner was side %d, expected PLAYER %d (a "
+						"successful catch ends the battle for the player)",
+						(int)g_eBMWinner, (int)ZM_SIDE_PLAYER);
+					bPassed = false;
+				}
+
+				// ...and the caught monster joined the persistent party + marked the caught-set.
+				Zenith_Log(LOG_CATEGORY_UNITTEST,
+					"[ZM_BattleMenuCatch] catch-persist: capturedBefore=%s partyBefore=%u "
+					"speciesCaughtBefore=%s capturedAfter=%s partyAfter=%u speciesCaughtAfter=%s",
+					g_bBMPartyCapturedBefore ? "true" : "false", g_uBMPartyCountBefore,
+					g_bBMCatchSpeciesBefore ? "true" : "false",
+					g_bBMPartyCapturedAfter ? "true" : "false", g_uBMPartyCountAfter,
+					g_bBMCatchSpeciesAfter ? "true" : "false");
+				// Guarded on the pre-battle capture: skip-safe when the manager was absent.
+				if (g_bBMPartyCapturedBefore && !g_bBMPartyCapturedAfter)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuCatch] the persistent GameState did not resolve after resume -- the "
+						"catch write-back could not be observed");
+					bPassed = false;
+				}
+				else if (g_bBMPartyCapturedBefore)
+				{
+					// The DISTINCT wild species must have been UNMARKED before, else the
+					// caught-set change would be vacuous.
+					if (g_bBMCatchSpeciesBefore)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_BattleMenuCatch] the wild species was ALREADY caught before the encounter "
+							"-- the caught-set change is vacuous");
+						bPassed = false;
+					}
+					// The caught monster joined the party: count grew by exactly 1 (1 -> 2).
+					if (g_uBMPartyCountAfter != g_uBMPartyCountBefore + 1u)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_BattleMenuCatch] persistent party count was %u before and %u after the "
+							"catch, expected +1 (the caught monster must join the party)",
+							g_uBMPartyCountBefore, g_uBMPartyCountAfter);
+						bPassed = false;
+					}
+					// The caught species is now marked in the persistent caught-set.
+					if (!g_bBMCatchSpeciesAfter)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_BattleMenuCatch] the caught species was not marked in the persistent "
+							"caught-set after the catch");
+						bPassed = false;
+					}
+				}
+			}
 			else
 			{
 				// The menu-driven Run reached the engine as a successful flee: a FLEE
@@ -1056,11 +1211,14 @@ namespace
 
 		// Always tear down, in order (all guarded), even on a terminal failure:
 		// release the key, drop the fixed timestep, clear the instant-battles flag,
-		// clear the transition's ownerless statics, force-unload any lingering Battle
-		// scene, restore FrontEnd, then wipe input.
+		// restore the gameplay catch ball (only the Catch test changed it, but the
+		// restore is an unconditional skip-safe no-op otherwise), clear the transition's
+		// ownerless statics, force-unload any lingering Battle scene, restore FrontEnd,
+		// then wipe input.
 		Zenith_InputSimulator::SetKeyHeld(g_eBMWalkKey, false);
 		Zenith_InputSimulator::ClearFixedDt();
 		ZM_SetInstantBattlesForTests(false);
+		ZM_SetCatchBallForTests(ZM_ITEM_CATCHORB);
 		ZM_BattleTransition::ResetRuntimeStateForTests();
 		Zenith_Scene xBattle = g_xEngine.Scenes().FindLoadedSceneByPath(
 			std::string(GAME_ASSETS_DIR) + "Scenes/Battle" ZENITH_SCENE_EXT);
@@ -1098,5 +1256,15 @@ static const Zenith_AutomatedTest g_xZMBattleMenuRunTest = {
 	true /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMBattleMenuRunTest);
+
+static const Zenith_AutomatedTest g_xZMBattleMenuCatchTest = {
+	"ZM_BattleMenuCatch_Test",
+	&Setup_ZMBattleMenuCatch,
+	&Step_ZMBattleMenu,
+	&Verify_ZMBattleMenu,
+	/* maxFrames */ 2200,
+	true /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMBattleMenuCatchTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

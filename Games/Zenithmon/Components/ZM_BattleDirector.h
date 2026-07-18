@@ -4,11 +4,18 @@
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"   // ZM_BattleDirectorCore, ZM_DIRECTOR_STATE, ZM_BuildWildEnemySpec
 #include "Zenithmon/Source/Battle/ZM_BattleMonster.h"         // ZM_BattleMonsterSpec
 #include "Zenithmon/Source/Battle/ZM_BattleTypes.h"           // ZM_BattleConfig, ZM_SIDE
+#include "Zenithmon/Source/Data/ZM_ItemData.h"                // ZM_ITEM_ID (SC4 test-only catch-ball override)
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"             // ZM_SPECIES_ID
 #include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"              // ZM_UI_BattleHUD (director-owned battle HUD, SC4)
 
 class Zenith_DataStream;
 class ZM_BattleTransition;   // RunSetup takes it by const& (full type included in the .cpp)
+
+// Test-only catch-ball override (S5 item 5 SC4). Mirrors ZM_SetInstantBattlesForTests: a
+// process-lifetime seam the RUNNING drive substitutes onto any ITEM (catch) action the
+// player submits, so the windowed catch test can force a guaranteed capture with
+// ZM_ITEM_PRIMEORB. Default ZM_ITEM_CATCHORB makes the production override a no-op.
+void ZM_SetCatchBallForTests(ZM_ITEM_ID eBall);
 
 // The presenter-driver ECS component (S5 item 4 SC3, order 111). It lives on its
 // own entity inside the additively-loaded Battle scene (build index 1, world Y ~

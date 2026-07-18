@@ -362,6 +362,17 @@ ZENITH_TEST(ZM_BattleDirector, Director_BattleConfigExpOff)
 	ZENITH_ASSERT_FALSE(xCfg.m_bAwardExp, "the headless AI-vs-AI battle must not award exp");
 }
 
+// 11b. The director's wild battle permits BOTH catch and flee: the SC4 root menu adds
+//      Catch (Fight/Catch/Run), so BuildBattleConfig() now sets m_bCanCatch = true (and
+//      keeps m_bCanFlee = true for RUN). A sibling of the exp-off assert above so that
+//      pin stays untouched.
+ZENITH_TEST(ZM_BattleDirector, Director_BattleConfigCatchOn)
+{
+	const ZM_BattleConfig xCfg = ZM_BattleDirector::BuildBattleConfig();
+	ZENITH_ASSERT_TRUE(xCfg.m_bCanCatch, "the director's wild battle permits catching (SC4)");
+	ZENITH_ASSERT_TRUE(xCfg.m_bCanFlee, "the director's wild battle permits fleeing (SC5 RUN)");
+}
+
 // 12. Setup is one-shot: it fires ONLY in WAIT_FOR_IN_BATTLE, ONLY once the
 //     transition is in battle, and ONLY if not already set up. A wrong phase, a
 //     not-yet-in-battle transition, or an already-set-up latch all suppress it.

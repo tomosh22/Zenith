@@ -14,6 +14,7 @@
 #include "Zenithmon/Components/ZM_BattleTransition.h"      // ZM_BattleTransition (payload + RequestBattleEnd)
 #include "Zenithmon/Components/ZM_GameStateManager.h"      // TryGetGameState (real party lead + write-back target)
 #include "Zenithmon/Source/Battle/ZM_BattleAI.h"           // ZM_AI_TIER_GREEDY
+#include "Zenithmon/Source/Data/ZM_ItemData.h"             // ZM_ITEM_ID / ZM_ITEM_CATCHORB (SC4 catch-ball seam)
 #include "Zenithmon/Source/Gen/ZM_CreatureGen.h"           // ZM_CreatureAssetPath, ZM_CREATURE_ASSET_MODEL
 #include "Zenithmon/Source/Party/ZM_GameState.h"           // ZM_GameState (party lead read + write-back)
 #include "Zenithmon/Source/Party/ZM_Monster.h"             // ZM_MonsterToBattleSpec (real lead -> battle seed)
@@ -38,6 +39,13 @@
 // m_aeMoves[0] != ZM_MOVE_NONE.
 static const ZM_SPECIES_ID s_ePLACEHOLDER_PLAYER_SPECIES = ZM_SPECIES_FERNFAWN;
 static const u_int         s_uPLACEHOLDER_PLAYER_LEVEL   = 5u;
+
+// Test-only catch-ball override (S5 item 5 SC4). Mirrors ZM_SetInstantBattlesForTests: a
+// process-lifetime static the RUNNING drive substitutes onto any ITEM (catch) action the
+// player submits. Default ZM_ITEM_CATCHORB -> the production path is an identity no-op; the
+// windowed catch test sets ZM_ITEM_PRIMEORB (guaranteed capture) for a deterministic catch.
+static ZM_ITEM_ID g_eCatchBallForTests = ZM_ITEM_CATCHORB;
+void ZM_SetCatchBallForTests(ZM_ITEM_ID eBall) { g_eCatchBallForTests = eBall; }
 
 ZM_BattleDirector::ZM_BattleDirector(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)
@@ -95,7 +103,11 @@ void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
 			ZM_BattleAction xAction;
 			if (m_xHud.UpdateMenu(m_xParentEntity, m_xCore, xAction))
 			{
-				m_xCore.SubmitPlayerAction(xAction);   // MOVE or RUN (engine resolves the flee)
+				// SC4 CATCH: swap in the configured catch ball on an ITEM action so the windowed
+				// test can force a guaranteed capture (ZM_ITEM_PRIMEORB). In production
+				// g_eCatchBallForTests == ZM_ITEM_CATCHORB, so this is an identity no-op.
+				if (xAction.m_eKind == ZM_ACTION_ITEM) { xAction.m_eItem = g_eCatchBallForTests; }
+				m_xCore.SubmitPlayerAction(xAction);   // MOVE / CATCH item / RUN (engine resolves each)
 			}
 			// else: wait for the player -- NO auto-submit
 		}
@@ -296,6 +308,7 @@ ZM_BattleConfig ZM_BattleDirector::BuildBattleConfig()
 	ZM_BattleConfig xConfig;      // every other field takes its struct default
 	xConfig.m_bIsWild   = true;
 	xConfig.m_bAwardExp = false;
+	xConfig.m_bCanCatch = true;   // SC4 CATCH: the engine asserts on a catch unless catch is allowed
 	xConfig.m_bCanFlee  = true;   // SC5 RUN: the engine asserts on a flee unless flee is allowed
 	return xConfig;
 }

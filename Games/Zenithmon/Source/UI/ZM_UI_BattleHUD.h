@@ -19,10 +19,10 @@ struct ZM_BattleEvent;
 enum ZM_BattleMenuScreen : u_int
 {
     ZM_BATTLE_MENU_HIDDEN,
-    ZM_BATTLE_MENU_ACTION_ROOT,   // cursor over [Fight(0), Run(1)]
+    ZM_BATTLE_MENU_ACTION_ROOT,   // cursor over [Fight(0), Catch(1), Run(2)]
     ZM_BATTLE_MENU_MOVE_SELECT,   // cursor over move slots [0..iMoveCount-1]
 };
-enum ZM_BattleMenuRootItem : u_int { ZM_BATTLE_MENU_FIGHT = 0u, ZM_BATTLE_MENU_RUN = 1u, ZM_BATTLE_MENU_ROOT_COUNT = 2u };
+enum ZM_BattleMenuRootItem : u_int { ZM_BATTLE_MENU_FIGHT = 0u, ZM_BATTLE_MENU_CATCH = 1u, ZM_BATTLE_MENU_RUN = 2u, ZM_BATTLE_MENU_ROOT_COUNT = 3u };
 enum ZM_BattleMenuConfirmKind : u_int { ZM_BATTLE_MENU_CONFIRM_NONE, ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES, ZM_BATTLE_MENU_CONFIRM_SUBMIT };
 struct ZM_BattleMenuConfirmResult
 {
@@ -70,14 +70,14 @@ public:
 	// authored menu elements each frame (never caches; best-effort if absent). Returns
 	// true exactly when the player submitted an action this frame (xOut is then valid).
 	bool UpdateMenu(Zenith_Entity& xDirectorEntity, const ZM_BattleDirectorCore& xCore, ZM_BattleAction& xOut);
-	// Hide all seven menu elements and reset to ZM_BATTLE_MENU_HIDDEN.
+	// Hide all eight menu elements and reset to ZM_BATTLE_MENU_HIDDEN.
 	void HideMenu(Zenith_Entity& xDirectorEntity);
 	ZM_BattleMenuScreen GetMenuScreen() const { return m_eMenuScreen; }
 	int                 GetMenuCursor() const { return m_iMenuCursor; }
 
 	// --- PURE menu statics (no scene / graphics / core -- unit-tested verbatim) ---
 
-	// ACTION_ROOT -> 2; MOVE_SELECT -> iMoveCount; HIDDEN -> 0.
+	// ACTION_ROOT -> 3; MOVE_SELECT -> iMoveCount; HIDDEN -> 0.
 	static int MenuItemCount(ZM_BattleMenuScreen eScreen, int iMoveCount);
 	// iItemCount <= 0 -> 0; else clamp iCursor + iDelta to [0, iItemCount-1] (NO wrap).
 	static int MenuMoveCursor(int iCursor, int iDelta, int iItemCount);

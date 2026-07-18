@@ -22,6 +22,7 @@
 #include "Zenithmon/Source/Battle/ZM_BattleTypes.h"
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
+#include "Zenithmon/Source/Data/ZM_ItemData.h"   // ZM_ITEM_CATCHORB (the Catch action's submitted item)
 
 #include <string>
 
@@ -322,8 +323,8 @@ ZENITH_TEST(ZM_BattleHUD, Format_CarriesTextImpliesNonEmpty)
 
 ZENITH_TEST(ZM_BattleHUD, HudMenu_ItemCounts)
 {
-	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_ACTION_ROOT, 4), 2,
-		"the action root always offers exactly two items (Fight, Run)");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_ACTION_ROOT, 4), 3,
+		"the action root always offers exactly three items (Fight, Catch, Run)");
 	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_MOVE_SELECT, 3), 3,
 		"move-select offers one item per available move");
 	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_HIDDEN, 4), 0,
@@ -334,13 +335,16 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_ItemCounts)
 
 ZENITH_TEST(ZM_BattleHUD, HudMenu_CursorClampsNoWrap)
 {
-	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(0, +1, 2), 1,
-		"+1 from 0 in a 2-item menu advances to 1");
-	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(1, +1, 2), 1,
+	// The 3-item action root (Fight, Catch, Run) exercises the clamp end to end.
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(0, +1, 3), 1,
+		"+1 from 0 in a 3-item menu advances to 1");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(1, +1, 3), 2,
+		"+1 from 1 advances to 2 (the last item)");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(2, +1, 3), 2,
 		"+1 from the last item clamps (never wraps to 0)");
-	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(1, -1, 2), 0,
-		"-1 from 1 moves to 0");
-	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(0, -1, 2), 0,
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(2, -1, 3), 1,
+		"-1 from 2 moves to 1");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(0, -1, 3), 0,
 		"-1 from the first item clamps (never wraps to the last)");
 	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(0, +1, 0), 0,
 		"an empty menu (n<=0) guards the cursor at 0");
@@ -365,13 +369,30 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_RunEmitsRunAction)
 {
 	const bool abSel4[4] = { true, true, true, true };
 	const ZM_BattleMenuConfirmResult xResult =
-		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 1, abSel4, 4);
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 2, abSel4, 4);
 	ZENITH_ASSERT_EQ(xResult.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT,
-		"Run (root cursor 1) submits an action immediately");
+		"Run (root cursor 2) submits an action immediately");
 	ZENITH_ASSERT_EQ(xResult.m_xAction.m_eKind, ZM_ACTION_RUN,
 		"the submitted action is a RUN");
 	ZENITH_ASSERT_EQ(xResult.m_eNextScreen, ZM_BATTLE_MENU_HIDDEN,
 		"submitting Run hides the menu");
+}
+
+// Catch (root cursor 1) submits a ZM_ACTION_ITEM carrying the catch orb, then hides
+// the menu -- the battle engine's catch path interprets the item (SC4).
+ZENITH_TEST(ZM_BattleHUD, HudMenu_CatchEmitsCatchAction)
+{
+	const bool abSel4[4] = { true, true, true, true };
+	const ZM_BattleMenuConfirmResult xResult =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 1 /*CATCH*/, abSel4, 3);
+	ZENITH_ASSERT_EQ(xResult.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT,
+		"Catch (root cursor 1) submits an action immediately");
+	ZENITH_ASSERT_EQ(xResult.m_xAction.m_eKind, ZM_ACTION_ITEM,
+		"the submitted action is an ITEM (a thrown ball)");
+	ZENITH_ASSERT_EQ((u_int)xResult.m_xAction.m_eItem, (u_int)ZM_ITEM_CATCHORB,
+		"the thrown ball is the catch orb");
+	ZENITH_ASSERT_EQ(xResult.m_eNextScreen, ZM_BATTLE_MENU_HIDDEN,
+		"submitting Catch hides the menu");
 }
 
 ZENITH_TEST(ZM_BattleHUD, HudMenu_MoveSelectEmitsMoveAction)
