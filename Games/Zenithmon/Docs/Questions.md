@@ -10,6 +10,23 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-18-001 -- S5 item 5 scoping rulings (persistent GameState + catch/exp/faint/whiteout)
+
+**Question:** five FOUNDATIONAL scope boundaries for S5 item 5 ("Catch / exp / faint / whiteout applied to GameState"), from the decomposition pass (durable plan at `Build/artifacts/zm_s5_item5_plan/plan.md`). Item 5 introduces the FIRST persistent player GameState/party (item 4 used a discarded placeholder), so these calls set the shape a lot of later work builds on -- surfaced for ratification/override before the persistence layer is authored on them.
+
+**Context:** item 5 is almost pure WIRING -- every battle rule seam shipped in S2 (the engine awards exp when `m_bAwardExp` flips, `DoItemAction` already rolls the catch + emits `CATCH_RESULT`; its own comment says "the party-add is box 4/5" = item 5). No `ZM_Party`/`ZM_GameState`/persistent `ZM_Monster`/whiteout code exists yet (grep-verified). S6 owns party/bag/dex UI; S7 owns the full versioned `ZM_SaveSchema` + migration -- so item 5 must NOT pull those forward.
+
+**Best-guess actions taken (plan proceeds on these unless corrected):**
+1. **Single-LEAD battle; defer switching.** Only the party lead enters battle; multi-member battles + forced-switch-on-faint + the Party UI defer to S6+. Whiteout = "lose the (single-mon) battle." **Cost if wrong: MODERATE** -- adds ~2 SCs for a `ZM_BattleDirectorCore` FORCED_SWITCH state (the engine primitives already exist), but no data-model change.
+2. **Initial party = one fixed test starter** (Fernfawn L5). No lab/starter-choice until S8, so item 5's party is seeded at boot. Cost if wrong: trivial (one seed line).
+3. **GameState in-memory ONLY** -- no `ZM_SaveSchema` disk fields yet (S7 owns disk + the migration gate); SaveFormat.md gets a "not yet serialized" note (like the S3 traversal-stream note). Cost if wrong: low -- S7 adds the Read/Write; item 5's in-memory shape is the source of truth.
+4. **Catch UX = a direct "Catch" root-menu button + a fixed default ball** (submits `{ITEM, ball}`); no Bag UI (S6 `ZM_UI_Bag`). Cost if wrong: low/additive (the Bag menu can grow it).
+5. **Whiteout -> Dawnmere (build 2, spawn tag "TownCenter")**, party healed full; no Care Center until S6/S8. Cost if wrong: low (one warp target).
+
+**Cost if wrong:** low-moderate overall -- each is localized; only #1 (single-lead) would add SCs, and even that reuses existing engine primitives. None touch the shipped battle engine goldens.
+
+**Status:** asked 2026-07-18; the loop will PROCEED on these best-guesses (Questions.md protocol) unless the user overrides. The item-5 plan's SC1 (the pure `ZM_Party`/`ZM_Monster`/`ZM_GameState` data model) is needed under ALL of these rulings, so it is safe to author first regardless.
+
 ### [OPEN] Q-2026-07-17-002 -- S5 item 4 scoping rulings (BattleDirector + BattleHUD)
 
 **Question:** four scope boundaries for S5 item 4 (`ZM_BattleDirector` + `ZM_UI_BattleHUD` + E3 typewriter), from the planning pass (plan at `Build/artifacts/zm_s5_item4_plan/plan.md`): (a) player-team source, (b) is exp awarded/presented in item 4 or item 5, (c) action-menu subset, (d) wild-battle enemy AI tier.
