@@ -27,6 +27,9 @@ public:
 	static constexpr u_int uTAG_CAPACITY = 32u;
 	static constexpr float fFADE_DURATION_SECONDS = 0.20f;
 	static constexpr const char* szFADE_ELEMENT_NAME = "WarpFade";
+	// SC5 whiteout destination: Dawnmere Village (build index 2), its TownCenter spawn.
+	static constexpr u_int uWHITEOUT_BUILD_INDEX = 2u;
+	static constexpr const char* szWHITEOUT_SPAWN_TAG = "TownCenter";
 
 	ZM_GameStateManager() = delete;
 	explicit ZM_GameStateManager(Zenith_Entity& xParentEntity);

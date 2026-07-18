@@ -56,6 +56,51 @@ namespace
 		}
 		return false;
 	}
+
+	// --- real-core drive helpers (SC5). Mirror ZM_Tests_BattleDirector's file-local
+	// fixtures -- those copies are internal linkage there and not linkable across TUs. ---
+
+	// A wild single-battle config: exp OFF (so a win never perturbs progression) with
+	// flee permitted, so a RUN action resolves to a successful flee.
+	ZM_BattleConfig MakeWildConfig()
+	{
+		ZM_BattleConfig xCfg;
+		xCfg.m_bIsWild  = true;
+		xCfg.m_bCanFlee = true;
+		return xCfg;
+	}
+
+	ZM_BattleAction MakeMoveSlot0()
+	{
+		ZM_BattleAction xAction;
+		xAction.m_eKind     = ZM_ACTION_MOVE;
+		xAction.m_uMoveSlot = 0u;
+		return xAction;
+	}
+
+	ZM_BattleAction MakeRunAction()
+	{
+		ZM_BattleAction xAction;
+		xAction.m_eKind = ZM_ACTION_RUN;
+		return xAction;
+	}
+
+	// Drive a real ZM_BattleDirectorCore to resolution under instant-battles, submitting
+	// xPlayerAction on every AWAIT_INPUT. Bounded so a mis-specified fixture can never
+	// hang; the caller asserts the resulting winner side.
+	void DriveDirectorToEnd(ZM_BattleDirectorCore& xCore, const ZM_BattleAction& xPlayerAction)
+	{
+		u_int uIter = 0u;
+		while (!xCore.ShouldRequestEnd() && uIter < 200u)
+		{
+			if (xCore.IsAwaitingInput())
+			{
+				xCore.SubmitPlayerAction(xPlayerAction);
+			}
+			xCore.Tick(0.0f);
+			++uIter;
+		}
+	}
 }
 
 // ############################################################################
@@ -576,4 +621,210 @@ ZENITH_TEST(ZM_Party, Catch_FullPartyMarksButDoesNotAdd)
 	// The party cannot grow past the cap (box storage is S7) -- but the dex still marks it.
 	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), uZM_MAX_PARTY_SIZE, "a full party does not grow past 6");
 	ZENITH_ASSERT_TRUE(xState.IsCaught(ZM_SPECIES_KINDLET), "the dex marks a catch even when the party is full");
+}
+
+// ############################################################################
+// G. Loss -> whiteout + flee-HP-persist (S5 item 5 SC5)
+//
+// The loss/flee branches of the (ZM_GameState&, const ZM_BattleDirectorCore&) write-back
+// overload, plus the vitals-only persist it uses on a flee:
+//   * ZM_PersistBattleVitalsToRecord -- copies curHP + each move's curPP + status, NEVER
+//     level/exp/EVs (the KEY flee-persist lock).
+//   * the 3-way winner branch: PLAYER -> full write-back; ENEMY(loss) -> set
+//     m_bPendingWhiteout (no heal); COUNT(flee) -> vitals-only persist (no progression).
+//   * ZM_Party::HealAllFull -- the whiteout heal the manager runs (curHP/PP/status).
+// All PURE: the core is driven headlessly under instant-battles; no ECS, no scene.
+// ############################################################################
+
+// ZM_PersistBattleVitalsToRecord copies the flee-carried vitals (curHP, per-move curPP,
+// major status) but leaves the progression fields (level, cumulative exp, EVs) UNTOUCHED
+// even when the battle monster carries a higher level/exp/EV. This is the flee-persist lock.
+ZENITH_TEST(ZM_Party, Vitals_PersistCopiesHpPpStatusNotProgression)
+{
+	ZM_Monster xRec = ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 5u);
+	// Snapshot the progression fields a vitals persist must NEVER rewrite.
+	const u_int uLevelBefore = xRec.m_uLevel;        // 5
+	const u_int uExpBefore   = xRec.m_uCurrentExp;   // L5 curve floor
+	const u_int uEVBefore    = xRec.m_auEV[ZM_STAT_HP];
+
+	ZM_BattleMonster xMon = ZM_BuildBattleMonster(ZM_MonsterToBattleSpec(xRec));
+	// Vitals to carry: low HP, a spent move, a major status.
+	xMon.m_uCurHP = 3u;
+	ZENITH_ASSERT_GE(xMon.m_axMoves[0].m_uMaxPP, 1u, "slot 0 has PP to spend");
+	xMon.m_axMoves[0].m_uCurPP = xMon.m_axMoves[0].m_uMaxPP - 1u;
+	const u_int uSpentPP0 = xMon.m_axMoves[0].m_uCurPP;
+	xMon.m_eStatus = ZM_MAJOR_STATUS_BURN;
+	// Progression a flee must IGNORE -- bumped ABOVE the record so an accidental
+	// full write-back would be detectable (a vitals copy must not touch these).
+	xMon.m_uLevel           = uLevelBefore + 3u;
+	xMon.m_uCurExp          = uExpBefore + 4321u;
+	xMon.m_auEV[ZM_STAT_HP] = uEVBefore + 12u;
+
+	ZM_PersistBattleVitalsToRecord(xMon, xRec);
+
+	// Vitals copied.
+	ZENITH_ASSERT_EQ(xRec.m_uCurrentHp, 3u, "curHP persisted");
+	ZENITH_ASSERT_EQ(xRec.m_axMoves[0].m_uCurPP, uSpentPP0, "spent PP persisted");
+	ZENITH_ASSERT_EQ((u_int)xRec.m_eStatus, (u_int)ZM_MAJOR_STATUS_BURN, "major status persisted");
+	// Progression untouched (a flee never levels / awards exp / trains EVs).
+	ZENITH_ASSERT_EQ(xRec.m_uLevel, uLevelBefore, "level NOT persisted by a vitals copy");
+	ZENITH_ASSERT_EQ(xRec.m_uCurrentExp, uExpBefore, "exp NOT persisted by a vitals copy");
+	ZENITH_ASSERT_EQ(xRec.m_auEV[ZM_STAT_HP], uEVBefore, "EV NOT persisted by a vitals copy");
+}
+
+// A real LOSS (winner == ENEMY): the write-back overload latches m_bPendingWhiteout and
+// does NOT touch the party -- in particular it does NOT heal (that is the manager's job).
+// A pre-damaged lead therefore stays damaged, proving no heal happened in the write-back.
+ZENITH_TEST(ZM_Party, WriteBack_LossSetsPendingWhiteout)
+{
+	ZM_SetInstantBattlesForTests(true);
+
+	// A WEAK player vs a STRONG enemy so the enemy reliably KOs the player (the L2 player
+	// can never faint the L60 enemy, and the enemy one-shots the L2 -> winner is ENEMY).
+	const ZM_BattleMonsterSpec xPlayer = ZM_BuildWildEnemySpec(ZM_SPECIES_FERNFAWN, 2u);
+	const ZM_BattleMonsterSpec xEnemy  = ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 60u);
+
+	ZM_BattleDirectorCore xCore;
+	xCore.Begin(&xPlayer, 1u, &xEnemy, 1u, MakeWildConfig(), 0x105Full, ZM_AI_TIER_GREEDY);
+	DriveDirectorToEnd(xCore, MakeMoveSlot0());
+	ZENITH_ASSERT_TRUE(xCore.ShouldRequestEnd(), "the loss drive should resolve the battle");
+	ZENITH_ASSERT_EQ((u_int)xCore.GetWinner(), (u_int)ZM_SIDE_ENEMY,
+		"a weak L2 player against a strong L60 enemy must lose (winner ENEMY)");
+
+	// The persistent lead, pre-damaged so "unchanged" proves the write-back did NOT heal it.
+	ZM_GameState xState;
+	ZENITH_ASSERT_TRUE(xState.m_xParty.Add(ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 2u)),
+		"seed the lead at slot 0");
+	xState.m_xParty.Get(0u).m_uCurrentHp = 1u;
+	const u_int uHpBefore = xState.m_xParty.Get(0u).m_uCurrentHp;
+	ZENITH_ASSERT_FALSE(xState.m_bPendingWhiteout, "no whiteout pending before the loss");
+
+	ZM_ApplyBattleResultToParty(xState, xCore);
+
+	ZENITH_ASSERT_TRUE(xState.m_bPendingWhiteout, "a loss latches the pending whiteout");
+	ZENITH_ASSERT_EQ(xState.m_xParty.Get(0u).m_uCurrentHp, uHpBefore,
+		"the write-back does NOT heal on a loss -- the pre-damaged lead stays damaged");
+
+	ZM_SetInstantBattlesForTests(false);
+}
+
+// A real PLAYER win: the write-back overload never latches the whiteout (that is loss-only),
+// and it writes the resolved lead back into the party (identity intact, level not regressed).
+ZENITH_TEST(ZM_Party, WriteBack_WinDoesNotSetWhiteout)
+{
+	ZM_SetInstantBattlesForTests(true);
+
+	// A STRONG player vs a WEAK enemy: the L20 player one-shots the L2 enemy (winner PLAYER).
+	const ZM_BattleMonsterSpec xPlayer = ZM_BuildWildEnemySpec(ZM_SPECIES_FERNFAWN, 20u);
+	const ZM_BattleMonsterSpec xEnemy  = ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 2u);
+
+	ZM_BattleDirectorCore xCore;
+	xCore.Begin(&xPlayer, 1u, &xEnemy, 1u, MakeWildConfig(), 0x2A22ull, ZM_AI_TIER_GREEDY);
+	DriveDirectorToEnd(xCore, MakeMoveSlot0());
+	ZENITH_ASSERT_TRUE(xCore.ShouldRequestEnd(), "the win drive should resolve the battle");
+	ZENITH_ASSERT_EQ((u_int)xCore.GetWinner(), (u_int)ZM_SIDE_PLAYER,
+		"a strong L20 player against a weak L2 enemy must win (winner PLAYER)");
+
+	ZM_GameState xState;
+	ZENITH_ASSERT_TRUE(xState.m_xParty.Add(ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 20u)),
+		"seed the lead at slot 0");
+	const u_int uLevelBefore = xState.m_xParty.Get(0u).m_uLevel;   // 20
+
+	ZM_ApplyBattleResultToParty(xState, xCore);
+
+	ZENITH_ASSERT_FALSE(xState.m_bPendingWhiteout, "a win must NEVER latch the whiteout");
+	// The win branch wrote the resolved lead back: identity is intact and the level never
+	// regressed (exp is OFF for this config, so the level stays put rather than rising).
+	ZENITH_ASSERT_EQ((u_int)xState.m_xParty.Get(0u).m_eSpecies, (u_int)ZM_SPECIES_FERNFAWN,
+		"identity (species) survives the win write-back");
+	ZENITH_ASSERT_GE(xState.m_xParty.Get(0u).m_uLevel, uLevelBefore, "the win never regresses the lead's level");
+
+	ZM_SetInstantBattlesForTests(false);
+}
+
+// A real FLEE (winner == COUNT): the write-back overload never latches the whiteout and
+// never writes progression -- the lead's level + cumulative exp are left exactly as they
+// were (only the vitals-only persist runs, which this fixture's distinct-level lead exposes).
+ZENITH_TEST(ZM_Party, WriteBack_FleeDoesNotSetWhiteoutOrProgress)
+{
+	ZM_SetInstantBattlesForTests(true);
+
+	// The faster L5 player flees the weak L2 enemy every time (guaranteed flee).
+	const ZM_BattleMonsterSpec xPlayer = ZM_BuildWildEnemySpec(ZM_SPECIES_FERNFAWN, 5u);
+	const ZM_BattleMonsterSpec xEnemy  = ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 2u);
+
+	ZM_BattleDirectorCore xCore;
+	xCore.Begin(&xPlayer, 1u, &xEnemy, 1u, MakeWildConfig(), 0xF1EEull, ZM_AI_TIER_GREEDY);
+	DriveDirectorToEnd(xCore, MakeRunAction());
+	ZENITH_ASSERT_TRUE(xCore.ShouldRequestEnd(), "the flee drive should resolve the battle");
+	ZENITH_ASSERT_EQ((u_int)xCore.GetWinner(), (u_int)ZM_SIDE_COUNT,
+		"a successful flee ends with no winner (COUNT)");
+
+	// A lead at a DISTINCT level (6) from the battle monster (5): a buggy full write-back
+	// would overwrite it to 5, so "unchanged" is a decisive lock, not vacuous.
+	ZM_GameState xState;
+	ZENITH_ASSERT_TRUE(xState.m_xParty.Add(ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 6u)),
+		"seed a distinct-level lead at slot 0");
+	const u_int uLevelBefore = xState.m_xParty.Get(0u).m_uLevel;      // 6
+	const u_int uExpBefore   = xState.m_xParty.Get(0u).m_uCurrentExp; // L6 floor
+
+	ZM_ApplyBattleResultToParty(xState, xCore);
+
+	ZENITH_ASSERT_FALSE(xState.m_bPendingWhiteout, "a flee must NEVER latch the whiteout");
+	ZENITH_ASSERT_EQ(xState.m_xParty.Get(0u).m_uLevel, uLevelBefore, "a flee never levels the lead");
+	ZENITH_ASSERT_EQ(xState.m_xParty.Get(0u).m_uCurrentExp, uExpBefore, "a flee never awards exp");
+
+	ZM_SetInstantBattlesForTests(false);
+}
+
+// ZM_SIDE_COUNT is returned for BOTH a successful flee AND a DRAW/double-KO. The classifier
+// must NOT treat a draw that fainted the lead as a flee (which would persist a 0-HP lead and
+// SKIP the whiteout, stranding the player with a wiped party). A real flee leaves the lead
+// alive; a COUNT-with-fainted-lead is a party wipe -> WHITEOUT, same as an ENEMY loss.
+ZENITH_TEST(ZM_Party, WriteBack_ClassifyDrawVsFleeVsLoss)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_ClassifyBattleResult(ZM_SIDE_PLAYER, false),
+		(u_int)ZM_BRA_WRITE_BACK_WIN, "PLAYER win -> write-back");
+	ZENITH_ASSERT_EQ((u_int)ZM_ClassifyBattleResult(ZM_SIDE_ENEMY, false),
+		(u_int)ZM_BRA_WHITEOUT, "ENEMY win -> whiteout");
+	ZENITH_ASSERT_EQ((u_int)ZM_ClassifyBattleResult(ZM_SIDE_ENEMY, true),
+		(u_int)ZM_BRA_WHITEOUT, "ENEMY win (lead fainted) -> whiteout");
+	ZENITH_ASSERT_EQ((u_int)ZM_ClassifyBattleResult(ZM_SIDE_COUNT, false),
+		(u_int)ZM_BRA_PERSIST_VITALS, "COUNT with a LIVE lead is a real flee -> persist vitals");
+	ZENITH_ASSERT_EQ((u_int)ZM_ClassifyBattleResult(ZM_SIDE_COUNT, true),
+		(u_int)ZM_BRA_WHITEOUT, "COUNT with a FAINTED lead is a DRAW/double-KO wipe -> whiteout, NOT a flee");
+}
+
+// The whiteout heal the manager runs on a loss: HealAllFull restores EVERY member's curHP
+// to max, every move's PP to max, AND clears major status (the status dimension the S5-SC1
+// Party_HealAllFullRestoresEveryMember unit does not cover -- this is the loss-specific case).
+ZENITH_TEST(ZM_Party, Party_HealAllFullFromLossRestoresEveryMember)
+{
+	ZM_Party xParty;
+	xParty.Add(ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 5u));
+	xParty.Add(ZM_BuildMonsterRecord(ZM_SPECIES_KINDLET, 5u));
+
+	const u_int uMaxHP0 = xParty.Get(0u).GetMaxHP();
+	const u_int uMaxHP1 = xParty.Get(1u).GetMaxHP();
+	const u_int uMaxPP0 = xParty.Get(0u).m_axMoves[0].m_uMaxPP;
+	const u_int uMaxPP1 = xParty.Get(1u).m_axMoves[0].m_uMaxPP;
+
+	// A battle loss leaves the party damaged: chipped/fainted HP, spent PP, and -- the
+	// loss-specific dimension -- a lingering major status on each member.
+	xParty.Get(0u).m_uCurrentHp = 1u;
+	xParty.Get(0u).m_axMoves[0].m_uCurPP = 0u;
+	xParty.Get(0u).m_eStatus = ZM_MAJOR_STATUS_BURN;
+	xParty.Get(1u).m_uCurrentHp = 0u;                        // fainted
+	xParty.Get(1u).m_axMoves[0].m_uCurPP = 0u;
+	xParty.Get(1u).m_eStatus = ZM_MAJOR_STATUS_PARALYSIS;
+
+	xParty.HealAllFull();
+
+	ZENITH_ASSERT_EQ(xParty.Get(0u).m_uCurrentHp, uMaxHP0, "member 0 HP restored to max");
+	ZENITH_ASSERT_EQ(xParty.Get(1u).m_uCurrentHp, uMaxHP1, "member 1 HP restored to max");
+	ZENITH_ASSERT_EQ(xParty.Get(0u).m_axMoves[0].m_uCurPP, uMaxPP0, "member 0 PP restored to max");
+	ZENITH_ASSERT_EQ(xParty.Get(1u).m_axMoves[0].m_uCurPP, uMaxPP1, "member 1 PP restored to max");
+	ZENITH_ASSERT_EQ((u_int)xParty.Get(0u).m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "member 0 status cleared");
+	ZENITH_ASSERT_EQ((u_int)xParty.Get(1u).m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "member 1 status cleared");
+	ZENITH_ASSERT_FALSE(xParty.AllFainted(), "nobody fainted after a full heal");
 }

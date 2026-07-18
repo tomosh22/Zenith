@@ -43,7 +43,7 @@
 
 // ============================================================================
 // ZM_AutoTests_BattleMenu -- the windowed gate for the player-driven battle menu
-// on ZM_UI_BattleHUD (owned by ZM_BattleDirector). THREE tests, all
+// on ZM_UI_BattleHUD (owned by ZM_BattleDirector). FOUR tests, all
 // m_bRequiresGraphics = true:
 //   * ZM_BattleMenuWin_Test -- ENTER-spam drives Fight->move0 every turn; the
 //     placeholder L5 player KOs a deliberately weak L2 wild FERNFAWN, so the
@@ -55,14 +55,19 @@
 //     installs a GUARANTEED-catch ball (ZM_ITEM_PRIMEORB), then drives the menu to
 //     Catch; the wild monster is caught, so the core ends with the PLAYER as winner
 //     and the persistent GameState gains a party member + a marked caught-set entry.
+//   * ZM_BattleMenuWhiteout_Test (S5 item-5 SC5) -- forces a HIGH-LEVEL L60 enemy and
+//     runs the SAME ENTER-spam drive, so the L5 lead LOSES; the write-back latches
+//     m_bPendingWhiteout and the manager consumes it -> HealAllFull + a second warp to
+//     Dawnmere/TownCenter (build 2). A pre-damaged (1 HP) lead heals to full and the
+//     latch clears; the exact-restore drift/grass locks are replaced by whiteout ones.
 //
-// Both CLONE ZM_AutoTests_BattleHUD.cpp's shipped phase machine (its Dawnmere
+// All CLONE ZM_AutoTests_BattleHUD.cpp's shipped phase machine (its Dawnmere
 // runtime-ready gate, the forced wild encounter, fixed-dt 1/30, zm_instant_battles
 // on in Setup / off in teardown, the RequestSkip guard order, and the director-
 // ended + exact-resume invariants), differing only in the input DRIVE (menu-
-// aware) and the win/flee assertions. The shared file-local helpers are internal
-// linkage in the shipped TU and cannot be linked across TUs, so they are
-// re-declared verbatim here; the two tests share one phase machine that branches
+// aware) and the win/flee/catch/whiteout assertions. The shared file-local helpers
+// are internal linkage in the shipped TU and cannot be linked across TUs, so they are
+// re-declared verbatim here; the tests share one phase machine that branches
 // on a MenuTestMode set by each test's thin Setup.
 //
 // Since the director no longer auto-submits (SC5), a battle that receives NO menu
@@ -222,6 +227,22 @@ namespace
 			: nullptr;
 	}
 
+	// The persistent ZM_GameStateManager singleton, resolved FRESH each frame (same
+	// swap-and-pop hazard as the battle transition). The Whiteout test reads its warp
+	// state + issued-load count to prove the loss-driven whiteout warp ran.
+	ZM_GameStateManager* ResolveSingletonGameStateManager()
+	{
+		Zenith_EntityID xEntityID = INVALID_ENTITY_ID;
+		if (!ZM_GameStateManager::TryGetUniqueSingletonEntityID(xEntityID))
+		{
+			return nullptr;
+		}
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xEntityID);
+		return xEntity.IsValid()
+			? xEntity.TryGetComponent<ZM_GameStateManager>()
+			: nullptr;
+	}
+
 	// -------------------------------------------------------------------------
 	// Direction search (re-declared from ZM_AutoTests_BattleHUD.cpp)
 	// -------------------------------------------------------------------------
@@ -286,9 +307,9 @@ namespace
 	// The shared menu-driven phase machine
 	// -------------------------------------------------------------------------
 
-	// Three tests, one machine. Set by each test's thin Setup; the drive + the
-	// win/flee/catch assertions branch on it.
-	enum class MenuTestMode { Win, Run, Catch };
+	// Four tests, one machine. Set by each test's thin Setup; the drive + the
+	// win/flee/catch/whiteout assertions branch on it.
+	enum class MenuTestMode { Win, Run, Catch, Whiteout };
 
 	// A deliberately weak, low wild enemy so BOTH slices are reliable: the L5
 	// placeholder player (ZM_BattleDirector.cpp) reliably KOs an L2 FERNFAWN
@@ -305,6 +326,13 @@ namespace
 	constexpr ZM_SPECIES_ID eBM_CATCH_ENEMY_SPECIES = ZM_SPECIES_KINDLET;
 	constexpr u_int         uBM_CATCH_ENEMY_LEVEL   = 2u;
 
+	// The Whiteout test forces a HIGH-LEVEL enemy so the L5 lead reliably LOSES: the L60
+	// KINDLET one-shots the L5 lead, so the ENTER-spam Fight->move0 drive ends with the
+	// ENEMY as winner -> the write-back latches m_bPendingWhiteout -> the manager whiteout-
+	// warps. The single knob: if an L5 lead ever survives to win, raise this toward 100.
+	constexpr ZM_SPECIES_ID eBM_WHITEOUT_ENEMY_SPECIES = ZM_SPECIES_KINDLET;
+	constexpr u_int         uBM_WHITEOUT_ENEMY_LEVEL   = 60u;
+
 	// Coarser than 1/60 (mirrors the shipped round trip): the trip must fit the
 	// additive load + arena build + the director's headless battle + grass regen
 	// poll chains into the frame budget, and 1/60 would be too tight.
@@ -317,6 +345,7 @@ namespace
 		Walk,
 		AwaitInBattle,
 		AwaitResume,
+		AwaitWhiteoutWarp,   // Whiteout only: the manager consumes the loss latch + warps to Dawnmere/TownCenter
 		Done,
 	};
 
@@ -326,6 +355,7 @@ namespace
 	constexpr int iBM_INBATTLE_DEADLINE    = 600;   // fade-out + additive load + arena build + fade-in
 	constexpr int iBM_RESUME_DEADLINE      = 600;   // player drives the menu to resolution + fade + unload + regrow
 	constexpr int iBM_RESUME_SETTLE_FRAMES = 8;     // let the resume settle before sampling the exact state
+	constexpr int iBM_WHITEOUT_DEADLINE    = 700;   // Whiteout only: fade-out + Dawnmere reload + spawn/camera + fade-in
 
 	// ---- Control state (all reset in Setup; batch mode reuses the process) ----
 	MenuTestMode   g_eBMMode              = MenuTestMode::Win;
@@ -381,6 +411,20 @@ namespace
 	bool    g_bBMPartyCapturedAfter  = false;  // the manager resolved a GameState after the resume
 	u_int   g_uBMPartyCountAfter     = 0u;     // persistent party size post-catch
 	bool    g_bBMCatchSpeciesAfter   = false;  // the DISTINCT wild species in the caught-set post-catch
+
+	// ---- Whiteout captures (SC5: a LOSS latches m_bPendingWhiteout; the manager consumes
+	// it -> HealAllFull + warp to Dawnmere/TownCenter; only asserted in the Whiteout test) ----
+	bool    g_bBMWhiteoutMgrCapturedBefore = false;  // the manager resolved before the encounter
+	u_int   g_uBMWhiteoutMaxHP             = 0u;     // the lead's full HP, captured BEFORE we damage it to 1
+	bool    g_bBMWhiteoutPreDamaged        = false;  // the lead was pre-damaged to 1 (so the heal is observable)
+	u_int   g_uBMWhiteoutIssuedLoadBefore  = 0u;     // manager issued-load count pre-encounter (want 0; warp adds 1)
+	bool    g_bBMWhiteoutWarpSettled       = false;  // the whiteout warp reached IDLE on Dawnmere with the load issued
+	u_int   g_uBMWhiteoutIssuedLoadAfter   = 0u;     // manager issued-load count post-warp
+	u_int   g_uBMWhiteoutWarpStateAfter    = (u_int)ZM_WARP_TRANSITION_IDLE;   // manager warp state post-warp
+	bool    g_bBMWhiteoutGameStateAfter    = false;  // a GameState resolved after the warp settled
+	bool    g_bBMWhiteoutPendingAfter      = true;   // m_bPendingWhiteout post-warp (want false = consumed)
+	u_int   g_uBMWhiteoutLeadHpAfter       = 0u;     // persistent lead curHP post-warp (want == max)
+	u_int   g_uBMWhiteoutLeadMaxHpAfter    = 0u;     // persistent lead max HP post-warp
 
 	// Recursively take the minimum GetFillAmount() over every UIRect in an element
 	// subtree. On the battle HUD the only rects are the two HP bars, so the min is
@@ -438,11 +482,13 @@ namespace
 		g_bBMDirectorSeen = true;
 
 		// ---- Drive the player's action THIS frame ----
-		if (g_eBMMode == MenuTestMode::Win)
+		if (g_eBMMode == MenuTestMode::Win || g_eBMMode == MenuTestMode::Whiteout)
 		{
 			// The default menu is ACTION_ROOT, cursor 0 = Fight: one ENTER opens the
 			// move list, the next ENTER submits move 0. Pressing ENTER every frame
-			// therefore picks Fight->move0 each turn (a HIDDEN-menu press is inert).
+			// therefore picks Fight->move0 each turn (a HIDDEN-menu press is inert). The
+			// Whiteout test uses the SAME drive as Win -- only the enemy level differs, so
+			// the L5 lead LOSES (Whiteout) instead of winning (Win).
 			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
 		}
 		else if (g_eBMMode == MenuTestMode::Catch)
@@ -582,6 +628,18 @@ namespace
 		g_uBMPartyCountAfter       = 0u;
 		g_bBMCatchSpeciesAfter     = false;
 
+		g_bBMWhiteoutMgrCapturedBefore = false;
+		g_uBMWhiteoutMaxHP             = 0u;
+		g_bBMWhiteoutPreDamaged        = false;
+		g_uBMWhiteoutIssuedLoadBefore  = 0u;
+		g_bBMWhiteoutWarpSettled       = false;
+		g_uBMWhiteoutIssuedLoadAfter   = 0u;
+		g_uBMWhiteoutWarpStateAfter    = (u_int)ZM_WARP_TRANSITION_IDLE;
+		g_bBMWhiteoutGameStateAfter    = false;
+		g_bBMWhiteoutPendingAfter      = true;
+		g_uBMWhiteoutLeadHpAfter       = 0u;
+		g_uBMWhiteoutLeadMaxHpAfter    = 0u;
+
 		// Guard order is MANDATORY: RequestSkip bypasses Verify, so install NO
 		// process state (fixed dt, instant-battles flag, scene load) until EVERY
 		// git-ignored input is confirmed present -- the Dawnmere terrain/scene, the
@@ -651,6 +709,16 @@ namespace
 		}
 	}
 
+	void Setup_ZMBattleMenuWhiteout()
+	{
+		g_eBMMode = MenuTestMode::Whiteout;
+		SetupCommon();
+		// No catch-ball override and no extra setup: the forced HIGH-LEVEL enemy (installed
+		// in AwaitReady) plus the ENTER-spam Fight->move0 drive is all the loss needs. The
+		// pre-damage of the lead + issued-load baseline are also captured in AwaitReady, where
+		// the manager + persistent GameState first resolve.
+	}
+
 	bool Step_ZMBattleMenu(int)
 	{
 		if (!g_bBMActive || g_bBMFailed || g_eBMPhase == BMPhase::Done)
@@ -715,10 +783,15 @@ namespace
 			// A deliberately weak, low wild enemy so the L5 placeholder player reliably
 			// WINS (Win) and reliably out-speeds it for a guaranteed flee (Run). The Catch
 			// test forces a DISTINCT species (KINDLET) so a successful catch provably
-			// changes both the party count and the caught-set.
+			// changes both the party count and the caught-set. The Whiteout test forces a
+			// HIGH-LEVEL enemy so the L5 lead reliably LOSES and triggers the whiteout warp.
 			if (g_eBMMode == MenuTestMode::Catch)
 			{
 				pxSystem->ForceEncounterOnNextTransitionForTests(eBM_CATCH_ENEMY_SPECIES, uBM_CATCH_ENEMY_LEVEL);
+			}
+			else if (g_eBMMode == MenuTestMode::Whiteout)
+			{
+				pxSystem->ForceEncounterOnNextTransitionForTests(eBM_WHITEOUT_ENEMY_SPECIES, uBM_WHITEOUT_ENEMY_LEVEL);
 			}
 			else
 			{
@@ -762,6 +835,24 @@ namespace
 					g_uBMPartyCountBefore    = pxGameState->m_xParty.Count();
 					g_bBMCatchSpeciesBefore  = pxGameState->IsCaught(eBM_CATCH_ENEMY_SPECIES);
 					g_bBMPartyCapturedBefore = true;
+
+					// SC5 whiteout baseline (only used by the Whiteout test): pre-damage the
+					// persistent lead to 1 HP so the manager's HealAllFull is OBSERVABLE
+					// (a full lead would make the heal check vacuous), capturing its full HP
+					// first. Also snapshot the manager's issued-load count so Verify can prove
+					// the whiteout warp issued exactly one load: the between-tests reset zeroes
+					// it and the Setup's direct scene load never touches it, so before == 0.
+					if (g_eBMMode == MenuTestMode::Whiteout)
+					{
+						g_uBMWhiteoutMaxHP = pxGameState->m_xParty.Lead().GetMaxHP();
+						pxGameState->m_xParty.Lead().m_uCurrentHp = 1u;
+						g_bBMWhiteoutPreDamaged = true;
+						if (ZM_GameStateManager* pxManager = ResolveSingletonGameStateManager())
+						{
+							g_uBMWhiteoutIssuedLoadBefore  = pxManager->GetIssuedLoadRequestCount();
+							g_bBMWhiteoutMgrCapturedBefore = true;
+						}
+					}
 				}
 			}
 
@@ -863,6 +954,21 @@ namespace
 				{
 					g_bBMResumeReached = true;
 					g_iBMResumeSettle = 0;
+
+					// Whiteout: the battle round-trip resolved, but a LOSS latched
+					// m_bPendingWhiteout, so the manager is about to warp to Dawnmere/
+					// TownCenter. The exact-restore settle/sample below would RACE that
+					// incoming warp (it moves the player + reloads the scene), so record
+					// the round-trip's completion NOW and hand off to the warp-wait phase.
+					if (g_eBMMode == MenuTestMode::Whiteout)
+					{
+						g_uBMCompletedAfter = pxTransition->GetCompletedBattleCount();
+						g_uBMAbortedAfter   = pxTransition->GetAbortedTransitionCount();
+						g_bBMBattleSceneUnloaded = !g_xEngine.Scenes().FindLoadedSceneByPath(
+							std::string(GAME_ASSETS_DIR) + "Scenes/Battle" ZENITH_SCENE_EXT).IsValid();
+						g_eBMPhase = BMPhase::AwaitWhiteoutWarp;
+						g_iBMPhaseFrames = 0;
+					}
 					return true;
 				}
 				if (g_iBMPhaseFrames > iBM_RESUME_DEADLINE)
@@ -922,6 +1028,72 @@ namespace
 			return false;
 		}
 
+		case BMPhase::AwaitWhiteoutWarp:
+		{
+			// The loss latched m_bPendingWhiteout in the write-back; the manager's OnUpdate
+			// consumes it once the battle transition is idle -> HealAllFull + warp to
+			// Dawnmere/TownCenter. Poll until that warp FULLY settles, then sample once.
+			ZM_GameStateManager* pxManager = ResolveSingletonGameStateManager();
+			if (pxManager == nullptr)
+			{
+				FailBM("the ZM_GameStateManager singleton stopped resolving during the whiteout warp");
+				return false;
+			}
+
+			ZM_GameState* pxGameState = nullptr;
+			const bool bHaveGS = ZM_GameStateManager::TryGetGameState(pxGameState)
+				&& pxGameState != nullptr;
+			const bool bPending  = bHaveGS && pxGameState->m_bPendingWhiteout;
+			const bool bWarpIdle = pxManager->GetTransitionState() == ZM_WARP_TRANSITION_IDLE;
+			const bool bIssued   = pxManager->GetIssuedLoadRequestCount() > g_uBMWhiteoutIssuedLoadBefore;
+			const int  iBuildNow = g_xEngine.Scenes().GetSceneInfo(
+				g_xEngine.Scenes().GetActiveScene()).m_iBuildIndex;
+
+			// Settled == the latch was consumed (pending cleared), the warp returned to IDLE,
+			// it issued the whiteout load, and we are back on Dawnmere (build 2).
+			if (!bPending && bWarpIdle && bIssued && iBuildNow == 2)
+			{
+				g_bBMWhiteoutWarpSettled    = true;
+				g_uBMWhiteoutIssuedLoadAfter = pxManager->GetIssuedLoadRequestCount();
+				g_uBMWhiteoutWarpStateAfter  = (u_int)pxManager->GetTransitionState();
+				g_iBMBuildIndexAfter         = iBuildNow;
+
+				// The heal ran BEFORE the warp was accepted, so a fresh GameState read now
+				// shows the pre-damaged lead restored to full and the latch cleared.
+				if (bHaveGS)
+				{
+					g_bBMWhiteoutPendingAfter     = pxGameState->m_bPendingWhiteout;   // false
+					g_uBMWhiteoutLeadHpAfter      = pxGameState->m_xParty.Lead().m_uCurrentHp;
+					g_uBMWhiteoutLeadMaxHpAfter   = pxGameState->m_xParty.Lead().GetMaxHP();
+					g_bBMWhiteoutGameStateAfter   = true;
+				}
+
+				// The warped-in overworld player is live + movement re-enabled.
+				PlayerView xPlayerWO;
+				if (FindActivePlayer(xPlayerWO))
+				{
+					g_xBMResumePlayerPos       = xPlayerWO.m_xPosition;
+					g_bBMPlayerMovementEnabled = xPlayerWO.m_pxController->IsMovementEnabled();
+					g_bBMPlayerResolved        = true;
+				}
+
+				g_eBMPhase = BMPhase::Done;
+				return false;
+			}
+
+			if (g_iBMPhaseFrames > iBM_WHITEOUT_DEADLINE)
+			{
+				// Capture what we can for the failure diagnostics.
+				g_uBMWhiteoutIssuedLoadAfter = pxManager->GetIssuedLoadRequestCount();
+				g_uBMWhiteoutWarpStateAfter  = (u_int)pxManager->GetTransitionState();
+				g_bBMWhiteoutPendingAfter    = bPending;
+				FailBM("whiteout warp never settled (want: pending cleared + warp IDLE + "
+					"issued-load risen + active build 2)");
+				return false;
+			}
+			return true;
+		}
+
 		case BMPhase::Done:
 			return false;
 		}
@@ -933,9 +1105,10 @@ namespace
 		bool bPassed = true;
 		const bool bIsWin = (g_eBMMode == MenuTestMode::Win);
 		const char* szTag =
-			g_eBMMode == MenuTestMode::Win   ? "ZM_BattleMenuWin"
-		  : g_eBMMode == MenuTestMode::Catch ? "ZM_BattleMenuCatch"
-		  :                                    "ZM_BattleMenuRun";
+			g_eBMMode == MenuTestMode::Win      ? "ZM_BattleMenuWin"
+		  : g_eBMMode == MenuTestMode::Catch    ? "ZM_BattleMenuCatch"
+		  : g_eBMMode == MenuTestMode::Whiteout ? "ZM_BattleMenuWhiteout"
+		  :                                       "ZM_BattleMenuRun";
 
 		if (g_bBMActive)
 		{
@@ -1021,26 +1194,33 @@ namespace
 					"[%s] player movement was not re-enabled after resume", szTag);
 				bPassed = false;
 			}
-			if (fDrift >= 0.05f)
+			// The drift + grass-restore invariants hold for the plain round trip, but the
+			// Whiteout test DELIBERATELY breaks them: the loss-driven warp relocates the
+			// player to TownCenter and reloads Dawnmere, so its exact-restore locks are the
+			// whiteout-specific ones below (heal + build 2 + IDLE), not these.
+			if (g_eBMMode != MenuTestMode::Whiteout)
 			{
-				Zenith_Error(LOG_CATEGORY_UNITTEST,
-					"[%s] the resumed player drifted %f m from its parked position, expected < 0.05",
-					szTag, (double)fDrift);
-				bPassed = false;
-			}
-			if (g_uBMEntryGrassBlades == 0u)
-			{
-				Zenith_Error(LOG_CATEGORY_UNITTEST,
-					"[%s] the overworld had 0 grass blades before the encounter -- the grass-restore "
-					"invariant is vacuous", szTag);
-				bPassed = false;
-			}
-			if (g_uBMGrassAfter != g_uBMEntryGrassBlades)
-			{
-				Zenith_Error(LOG_CATEGORY_UNITTEST,
-					"[%s] resumed grass blade count was %u, expected %u (resume must restore the same "
-					"deterministic blade count)", szTag, g_uBMGrassAfter, g_uBMEntryGrassBlades);
-				bPassed = false;
+				if (fDrift >= 0.05f)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[%s] the resumed player drifted %f m from its parked position, expected < 0.05",
+						szTag, (double)fDrift);
+					bPassed = false;
+				}
+				if (g_uBMEntryGrassBlades == 0u)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[%s] the overworld had 0 grass blades before the encounter -- the grass-restore "
+						"invariant is vacuous", szTag);
+					bPassed = false;
+				}
+				if (g_uBMGrassAfter != g_uBMEntryGrassBlades)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[%s] resumed grass blade count was %u, expected %u (resume must restore the same "
+						"deterministic blade count)", szTag, g_uBMGrassAfter, g_uBMEntryGrassBlades);
+					bPassed = false;
+				}
 			}
 
 			// --- the outcome the player's input drove ---
@@ -1181,6 +1361,119 @@ namespace
 					}
 				}
 			}
+			else if (g_eBMMode == MenuTestMode::Whiteout)
+			{
+				// The ENTER-spam Fight->move0 sent the L5 lead against the forced L60 enemy,
+				// which KO'd it: the core ends with the ENEMY as winner, the write-back latched
+				// m_bPendingWhiteout, and the manager consumed it -> HealAllFull + warp to
+				// Dawnmere/TownCenter. Prove the whole SC5 chain landed.
+				Zenith_Log(LOG_CATEGORY_UNITTEST,
+					"[ZM_BattleMenuWhiteout] whiteout: preDamaged=%s maxHP=%u issuedBefore=%u "
+					"issuedAfter=%u warpState=%u buildAfter=%d warpSettled=%s gsAfter=%s "
+					"pendingAfter=%s leadHpAfter=%u leadMaxHpAfter=%u",
+					g_bBMWhiteoutPreDamaged ? "true" : "false", g_uBMWhiteoutMaxHP,
+					g_uBMWhiteoutIssuedLoadBefore, g_uBMWhiteoutIssuedLoadAfter,
+					g_uBMWhiteoutWarpStateAfter, g_iBMBuildIndexAfter,
+					g_bBMWhiteoutWarpSettled ? "true" : "false",
+					g_bBMWhiteoutGameStateAfter ? "true" : "false",
+					g_bBMWhiteoutPendingAfter ? "true" : "false",
+					g_uBMWhiteoutLeadHpAfter, g_uBMWhiteoutLeadMaxHpAfter);
+
+				// ...the ENEMY won (the loss that triggers the whiteout).
+				if (!g_bBMWinnerCaptured)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuWhiteout] the core never reached OVER while the Battle scene was "
+						"loaded -- no winner was captured");
+					bPassed = false;
+				}
+				else if (g_eBMWinner != ZM_SIDE_ENEMY)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuWhiteout] the battle winner was side %d, expected ENEMY %d (the "
+						"forced L60 enemy must KO the L5 lead)", (int)g_eBMWinner, (int)ZM_SIDE_ENEMY);
+					bPassed = false;
+				}
+
+				// The lead MUST have been pre-damaged, else the heal check is vacuous.
+				if (!g_bBMWhiteoutPreDamaged)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuWhiteout] the lead was never pre-damaged -- the heal check is vacuous");
+					bPassed = false;
+				}
+
+				// Guarded on the manager resolving before the encounter: skip-safe if absent.
+				if (g_bBMWhiteoutMgrCapturedBefore && !g_bBMWhiteoutWarpSettled)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuWhiteout] the whiteout warp never settled -- the whiteout could not be "
+						"observed");
+					bPassed = false;
+				}
+				else if (g_bBMWhiteoutMgrCapturedBefore)
+				{
+					// The whiteout warp issued exactly one scene load (0 -> 1): the manager
+					// never loads during the ZM_BattleTransition round trip, and the Setup's
+					// direct scene load never touches the manager's counter.
+					if (g_uBMWhiteoutIssuedLoadAfter != g_uBMWhiteoutIssuedLoadBefore + 1u)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_BattleMenuWhiteout] manager issued-load count went %u -> %u, expected +1 "
+							"(exactly one whiteout warp load)",
+							g_uBMWhiteoutIssuedLoadBefore, g_uBMWhiteoutIssuedLoadAfter);
+						bPassed = false;
+					}
+					// The warp returned to IDLE on Dawnmere (build 2).
+					if (g_uBMWhiteoutWarpStateAfter != (u_int)ZM_WARP_TRANSITION_IDLE)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_BattleMenuWhiteout] warp state after the whiteout was %u, expected IDLE %u",
+							g_uBMWhiteoutWarpStateAfter, (u_int)ZM_WARP_TRANSITION_IDLE);
+						bPassed = false;
+					}
+					if (g_iBMBuildIndexAfter != 2)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_BattleMenuWhiteout] active build index after the whiteout was %d, expected 2 "
+							"(Dawnmere)", g_iBMBuildIndexAfter);
+						bPassed = false;
+					}
+					// The latch was consumed and the whole party healed to full.
+					if (!g_bBMWhiteoutGameStateAfter)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_BattleMenuWhiteout] the persistent GameState did not resolve after the whiteout");
+						bPassed = false;
+					}
+					else
+					{
+						if (g_bBMWhiteoutPendingAfter)
+						{
+							Zenith_Error(LOG_CATEGORY_UNITTEST,
+								"[ZM_BattleMenuWhiteout] m_bPendingWhiteout was still set after the warp -- the "
+								"latch was not consumed");
+							bPassed = false;
+						}
+						// HealAllFull restored the pre-damaged (1 HP) lead to full.
+						if (g_uBMWhiteoutLeadHpAfter != g_uBMWhiteoutLeadMaxHpAfter)
+						{
+							Zenith_Error(LOG_CATEGORY_UNITTEST,
+								"[ZM_BattleMenuWhiteout] lead HP after the whiteout was %u / max %u, expected "
+								"full (the whiteout HealAllFull must restore the pre-damaged lead)",
+								g_uBMWhiteoutLeadHpAfter, g_uBMWhiteoutLeadMaxHpAfter);
+							bPassed = false;
+						}
+						if (g_uBMWhiteoutLeadHpAfter <= 1u)
+						{
+							Zenith_Error(LOG_CATEGORY_UNITTEST,
+								"[ZM_BattleMenuWhiteout] lead HP after the whiteout was %u, expected > 1 (healed "
+								"up from the pre-damaged 1)", g_uBMWhiteoutLeadHpAfter);
+							bPassed = false;
+						}
+					}
+				}
+			}
 			else
 			{
 				// The menu-driven Run reached the engine as a successful flee: a FLEE
@@ -1220,6 +1513,14 @@ namespace
 		ZM_SetInstantBattlesForTests(false);
 		ZM_SetCatchBallForTests(ZM_ITEM_CATCHORB);
 		ZM_BattleTransition::ResetRuntimeStateForTests();
+		// Whiteout only: this is the sole test that drives the manager's warp machine, so
+		// reset it to IDLE (also zeroes its issued-load count) -- a mid-warp manager (e.g. a
+		// deadline-failed run) must not bleed into the next batched test. Skip-safe no-op
+		// when no manager exists; guarded so the other three tests' teardown is untouched.
+		if (g_eBMMode == MenuTestMode::Whiteout)
+		{
+			ZM_GameStateManager::ResetRuntimeStateForTests();
+		}
 		Zenith_Scene xBattle = g_xEngine.Scenes().FindLoadedSceneByPath(
 			std::string(GAME_ASSETS_DIR) + "Scenes/Battle" ZENITH_SCENE_EXT);
 		if (xBattle.IsValid())
@@ -1266,5 +1567,18 @@ static const Zenith_AutomatedTest g_xZMBattleMenuCatchTest = {
 	true /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMBattleMenuCatchTest);
+
+// Larger frame budget than the other three: there are now TWO transitions -- the battle
+// round trip AND the loss-driven whiteout warp (fade-out + Dawnmere reload + spawn/camera
+// + fade-in) -- so the frame budget must cover both back to back.
+static const Zenith_AutomatedTest g_xZMBattleMenuWhiteoutTest = {
+	"ZM_BattleMenuWhiteout_Test",
+	&Setup_ZMBattleMenuWhiteout,
+	&Step_ZMBattleMenu,
+	&Verify_ZMBattleMenu,
+	/* maxFrames */ 4000,
+	true /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMBattleMenuWhiteoutTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

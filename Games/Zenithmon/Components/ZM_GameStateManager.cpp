@@ -127,6 +127,24 @@ void ZM_GameStateManager::OnUpdate(float fDeltaTime)
 		return;
 	}
 
+	// SC5 whiteout consume: a battle loss latched m_bPendingWhiteout in the write-back
+	// (ZM_ApplyBattleResultToParty). Full-heal the whole party (idempotent) and warp to
+	// Dawnmere's TownCenter. Only fire while nothing else owns the screen. The heal runs
+	// BEFORE TryQueueWarp freezes/unfreezes the player, so the party is always whole before
+	// it can re-enter grass -- which is why no fainted-lead guard is needed anywhere. Clear
+	// the latch ONLY on an accepted warp, so a not-yet-ready frame retries rather than
+	// silently dropping the whiteout (double-fire guard).
+	if (m_xGameState.m_bPendingWhiteout
+		&& m_eTransitionState == ZM_WARP_TRANSITION_IDLE
+		&& !ZM_BattleTransition::IsTransitionActive())
+	{
+		m_xGameState.m_xParty.HealAllFull();
+		if (TryQueueWarp(uWHITEOUT_BUILD_INDEX, szWHITEOUT_SPAWN_TAG))
+		{
+			m_xGameState.m_bPendingWhiteout = false;
+		}
+	}
+
 	switch (m_eTransitionState)
 	{
 	case ZM_WARP_TRANSITION_QUEUED:

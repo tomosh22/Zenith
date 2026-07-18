@@ -9,11 +9,21 @@
 #include "Zenithmon/Source/Battle/ZM_BattleState.h"           // Side(...).Active()
 
 // ============================================================================
-// ZM_BattleWriteBack -- pure battle-result persistence (S5 item 5 SC3). Win-only,
-// single-lead. The engine already mutated the player battle monster in place when
-// ZM_BattleConfig::m_bAwardExp was set; these helpers copy that result into the
-// persistent party lead. No ECS / graphics / I/O.
+// ZM_BattleWriteBack -- pure battle-result persistence (S5 item 5). Routes a resolved
+// battle to the GameState by winner (SC3 win write-back, SC4 catch add, SC5 loss->whiteout
+// + flee vitals). The engine already mutated the player battle monster in place; these
+// helpers copy the relevant slice into the persistent party lead. Single-lead. No ECS /
+// graphics / I/O.
 // ============================================================================
+
+ZM_BATTLE_RESULT_ACTION ZM_ClassifyBattleResult(ZM_SIDE eWinner, bool bLeadFainted)
+{
+	if (eWinner == ZM_SIDE_PLAYER) { return ZM_BRA_WRITE_BACK_WIN; }
+	if (eWinner == ZM_SIDE_ENEMY)  { return ZM_BRA_WHITEOUT; }
+	// ZM_SIDE_COUNT is a successful flee OR a draw/double-KO. A real flee leaves the lead
+	// alive; a COUNT whose lead fainted is a party wipe -> whiteout (same as a loss).
+	return bLeadFainted ? ZM_BRA_WHITEOUT : ZM_BRA_PERSIST_VITALS;
+}
 
 void ZM_ApplyBattleResultToParty(ZM_Party& xPartyInOut, u_int uLeadSlot, ZM_SIDE eWinner,
                                  const ZM_BattleMonster& xFinalLead)
@@ -46,19 +56,51 @@ void ZM_ApplyBattleResultToParty(ZM_GameState& xGameStateInOut, const ZM_BattleD
 {
 	const ZM_SIDE eWinner = xCore.GetWinner();
 	const ZM_BattleMonster& xLead = xCore.GetEngine().GetState().Side(ZM_SIDE_PLAYER).Active();
-	ZM_ApplyBattleResultToParty(xGameStateInOut.m_xParty, xGameStateInOut.m_xParty.LeadIndex(), eWinner, xLead);
+	// Single-lead: the active IS the party lead, so its faint == a full-party wipe. (S6's
+	// multi-member battles will need ZM_Party::AllFainted() here instead.)
+	const bool bLeadFainted = (xLead.m_uCurHP == 0u);
 
-	// SC4 catch add: a successful capture ends the wild battle with the PLAYER as winner,
-	// so the lead write-back above already fired (carrying the lead's damaged HP). Scan the
-	// engine event stream for a CATCH_RESULT that reports caught (m_iAmount == 1) and, when
-	// one fired, add the caught wild monster -- the ENEMY active at resolve -- to the party
-	// + dex. A non-catch battle finds no such event, so this is a strict no-op there.
-	const ZM_BattleEngine& xEngine = xCore.GetEngine();
-	bool bCaught = false;
-	for (u_int i = 0u; i < xEngine.GetEventCount(); ++i)
+	switch (ZM_ClassifyBattleResult(eWinner, bLeadFainted))
 	{
-		const ZM_BattleEvent& xEv = xEngine.GetEvent(i);
-		if (xEv.m_eKind == ZM_BATTLE_EVENT_CATCH_RESULT && xEv.m_iAmount == 1) { bCaught = true; break; }
+	case ZM_BRA_WRITE_BACK_WIN:
+	{
+		// WIN: carry the lead's mutable post-battle state (level/exp/EVs/moves+PP + damaged
+		// HP) back into the party lead. The per-slot leaf re-checks win-only, so passing the
+		// (always PLAYER here) eWinner keeps it unchanged.
+		ZM_ApplyBattleResultToParty(xGameStateInOut.m_xParty, xGameStateInOut.m_xParty.LeadIndex(), eWinner, xLead);
+
+		// SC4 catch add: a successful capture ends the wild battle with the PLAYER as winner,
+		// so the lead write-back above already fired (carrying the lead's damaged HP). Scan the
+		// engine event stream for a CATCH_RESULT that reports caught (m_iAmount == 1) and, when
+		// one fired, add the caught wild monster -- the ENEMY active at resolve -- to the party
+		// + dex. A non-catch battle finds no such event, so this is a strict no-op there.
+		const ZM_BattleEngine& xEngine = xCore.GetEngine();
+		bool bCaught = false;
+		for (u_int i = 0u; i < xEngine.GetEventCount(); ++i)
+		{
+			const ZM_BattleEvent& xEv = xEngine.GetEvent(i);
+			if (xEv.m_eKind == ZM_BATTLE_EVENT_CATCH_RESULT && xEv.m_iAmount == 1) { bCaught = true; break; }
+		}
+		ZM_ApplyCatchToGameState(xGameStateInOut, bCaught, xEngine.GetState().Side(ZM_SIDE_ENEMY).Active());
+		break;
 	}
-	ZM_ApplyCatchToGameState(xGameStateInOut, bCaught, xEngine.GetState().Side(ZM_SIDE_ENEMY).Active());
+	case ZM_BRA_WHITEOUT:
+		// PARTY WIPE (SC5): an ENEMY loss OR a COUNT draw/double-KO that fainted the lead.
+		// Latch the whiteout; the heal + warp to Dawnmere are the manager's job
+		// (ZM_GameStateManager::OnUpdate consumes this flag) -- healing here would double-heal
+		// and race the battle-round-trip resume. The heal happens BEFORE the player is
+		// unfrozen, so a 0-HP lead can never re-enter grass; hence no fainted-lead guard.
+		xGameStateInOut.m_bPendingWhiteout = true;
+		break;
+
+	case ZM_BRA_PERSIST_VITALS:
+		// A real FLEE (COUNT, lead alive): persist ONLY the lead's per-battle vitals
+		// (curHP / spent PP / major status); a flee awards no level/exp/EV progression.
+		// Guard the empty party (Lead() would otherwise index slot 0 of an empty array).
+		if (!xGameStateInOut.m_xParty.IsEmpty())
+		{
+			ZM_PersistBattleVitalsToRecord(xLead, xGameStateInOut.m_xParty.Lead());
+		}
+		break;
+	}
 }

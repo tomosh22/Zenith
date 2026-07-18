@@ -85,3 +85,11 @@ ZM_Monster ZM_MonsterFromBattleMonster(const ZM_BattleMonster& xMon);
 // curHP, and major status. Immutable identity (species, IVs, nature, ability,
 // gender) is left untouched -- terminal evolution is deferred (D6).
 void ZM_ApplyBattleMonsterToRecord(const ZM_BattleMonster& xMon, ZM_Monster& xRecordInOut);
+
+// Persist ONLY the transient per-battle vitals of a battle instance back into an
+// EXISTING record (the flee path, SC5): current HP, each move's current PP, and the
+// major status. Deliberately copies NO progression -- level, cumulative exp, EVs,
+// moves-learned, and identity are left untouched, because a successful flee awards
+// no progression (unlike ZM_ApplyBattleMonsterToRecord, which carries the WIN's
+// level/exp/EV gains). Pure.
+void ZM_PersistBattleVitalsToRecord(const ZM_BattleMonster& xMon, ZM_Monster& xRecordInOut);

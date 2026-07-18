@@ -156,6 +156,17 @@ void ZM_ApplyBattleMonsterToRecord(const ZM_BattleMonster& xMon, ZM_Monster& xRe
 	// (terminal evolution is deferred -- D6), so they are deliberately not copied.
 }
 
+void ZM_PersistBattleVitalsToRecord(const ZM_BattleMonster& xMon, ZM_Monster& xRecordInOut)
+{
+	xRecordInOut.m_uCurrentHp = xMon.m_uCurHP;
+	for (u_int u = 0u; u < uZM_MAX_MOVES; ++u)
+	{
+		xRecordInOut.m_axMoves[u].m_uCurPP = xMon.m_axMoves[u].m_uCurPP;   // spent PP only; move ids untouched
+	}
+	xRecordInOut.m_eStatus = xMon.m_eStatus;
+	// level / cumulative exp / EVs / moves-learned / identity are NOT copied (no flee progression).
+}
+
 ZM_Monster ZM_MonsterFromBattleMonster(const ZM_BattleMonster& xMon)
 {
 	ZM_Monster xRec;
