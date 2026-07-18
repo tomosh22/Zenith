@@ -5,6 +5,7 @@
 #include "Zenithmon/Source/Battle/ZM_BattleMonster.h"         // ZM_BattleMonsterSpec
 #include "Zenithmon/Source/Battle/ZM_BattleTypes.h"           // ZM_BattleConfig, ZM_SIDE
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"             // ZM_SPECIES_ID
+#include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"              // ZM_UI_BattleHUD (director-owned battle HUD, SC4)
 
 class Zenith_DataStream;
 class ZM_BattleTransition;   // RunSetup takes it by const& (full type included in the .cpp)
@@ -18,7 +19,8 @@ class ZM_BattleTransition;   // RunSetup takes it by const& (full type included 
 // two creature models on the arena platforms (best effort -- a missing bundle never
 // aborts the battle), drives the core turn by turn, and calls
 // ZM_BattleTransition::RequestBattleEnd() EXACTLY ONCE when the battle resolves.
-// NO HUD (a later sub-commit). Deterministic under zm_instant_battles. ZM-D-102.
+// It also owns and drives a ZM_UI_BattleHUD (the first visible battle UI; SC4).
+// Deterministic under zm_instant_battles. ZM-D-102/103.
 enum ZM_BATTLE_DIRECTOR_PHASE : u_int
 {
 	ZM_BD_WAIT_FOR_IN_BATTLE,   // before the transition reaches IN_BATTLE
@@ -96,4 +98,9 @@ private:
 	ZM_BATTLE_DIRECTOR_PHASE m_ePhase        = ZM_BD_WAIT_FOR_IN_BATTLE;
 	bool                     m_bEndRequested = false;   // RequestBattleEnd fired exactly once
 	float                    m_fRunningSeconds = 0.0f;  // wall-clock time spent driving (deadline guard)
+	// The director-owned battle HUD (SC4): authored onto THIS entity's UI component
+	// at bake time, revealed at Setup, driven each frame, hidden before the end-fade.
+	// Held by value (only a std::string + float), so the pool's move-construct is
+	// preserved (see the move-ctor note above).
+	ZM_UI_BattleHUD          m_xHud;
 };

@@ -445,3 +445,65 @@ ZENITH_TEST(ZM_BattleDirector, Director_BattleSeedIsDeterministic)
 	ZENITH_ASSERT_NE(ulA, ZM_BattleDirector::DeriveBattleSeed(ZM_SPECIES_FERNFAWN, 6u),
 		"a different level must derive a different seed");
 }
+
+// 15. The presented-event boundary the HUD scans (ZM_BattleDirectorCore::PresentedEventCount)
+//     reaches the FULL event stream once the battle is OVER -- this is what lets the HUD show
+//     the final line even under an instant drain (where CurrentEvent() is already null). A
+//     resolved battle also emitted at least one event.
+ZENITH_TEST(ZM_BattleDirector, Director_PresentedEventCountReachesEndAtOver)
+{
+	ZM_SetInstantBattlesForTests(true);
+
+	const ZM_BattleMonsterSpec xPlayer = ZM_BuildWildEnemySpec(ZM_SPECIES_FERNFAWN, 5u);
+	const ZM_BattleMonsterSpec xEnemy  = ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 5u);
+	const ZM_BattleConfig xCfg = MakeWildConfig();
+
+	ZM_BattleDirectorCore xCore;
+	xCore.Begin(&xPlayer, 1u, &xEnemy, 1u, xCfg, 0xBEEF77ull, ZM_AI_TIER_GREEDY);
+
+	u_int uIter = 0u;
+	while (!xCore.ShouldRequestEnd() && uIter < 200u)
+	{
+		if (xCore.IsAwaitingInput())
+		{
+			xCore.SubmitPlayerAction(MakeMoveSlot0());
+		}
+		xCore.Tick(0.0f);
+		++uIter;
+	}
+	ZENITH_ASSERT_TRUE(xCore.ShouldRequestEnd(), "the driven core should reach OVER");
+
+	// At OVER every event has been presented -> the HUD's scan boundary spans the whole
+	// stream, so the final (winner) line is reachable even after an instant drain.
+	ZENITH_ASSERT_EQ(xCore.PresentedEventCount(), xCore.GetEngine().GetEventCount(),
+		"at OVER, every event is presented (the HUD must see the final line)");
+	ZENITH_ASSERT_TRUE(xCore.GetEngine().GetEventCount() >= 1u, "a resolved battle emitted events");
+
+	ZM_SetInstantBattlesForTests(false);
+}
+
+// 16. In TIMED mode (zm_instant_battles OFF -- the DEFAULT shipping mode) the intro range
+//     is NOT drained in Begin, so the core sits in PLAYING_EVENTS with the current op still
+//     pending. PresentedEventCount() must INCLUDE that current op (the cursor+1 branch) so
+//     the HUD's [0, PresentedEventCount()) scan can show the line being presented right now.
+//     Every OTHER test runs under instant (which only ever hits the cursor/else branch), so
+//     this is the sole lock on the timed-reveal path: dropping the +1 would return 0 here.
+ZENITH_TEST(ZM_BattleDirector, Director_PresentedEventCountIncludesCurrentOpWhilePresenting)
+{
+	ZM_SetInstantBattlesForTests(false);   // timed: the intro is presented op-by-op, not drained
+
+	const ZM_BattleMonsterSpec xPlayer = ZM_BuildWildEnemySpec(ZM_SPECIES_FERNFAWN, 5u);
+	const ZM_BattleMonsterSpec xEnemy  = ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 5u);
+	const ZM_BattleConfig xCfg = MakeWildConfig();
+
+	ZM_BattleDirectorCore xCore;
+	xCore.Begin(&xPlayer, 1u, &xEnemy, 1u, xCfg, 0xC0FFEEull, ZM_AI_TIER_GREEDY);
+
+	// Begin enters PLAYING_EVENTS presenting the intro range [0, N) WITHOUT draining it.
+	ZENITH_ASSERT_EQ((u_int)xCore.GetState(), (u_int)ZM_DIRECTOR_PLAYING_EVENTS,
+		"timed Begin sits in PLAYING_EVENTS (the intro is not drained)");
+	ZENITH_ASSERT_TRUE(xCore.GetEngine().GetEventCount() >= 1u, "the intro emitted events");
+	// cursor is 0 and the current op is INCLUDED -> the count is 1, not 0.
+	ZENITH_ASSERT_EQ(xCore.PresentedEventCount(), 1u,
+		"the currently-presenting op is included (cursor+1) while PLAYING_EVENTS");
+}

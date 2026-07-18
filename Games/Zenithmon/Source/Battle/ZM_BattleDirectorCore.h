@@ -111,6 +111,18 @@ public:
 	// &the event currently being presented, or nullptr.
 	const ZM_BattleEvent* CurrentEvent() const;
 
+	// The count of events PRESENTED so far -- index one past the last-presented event,
+	// INCLUDING the op currently being presented in PLAYING_EVENTS. The HUD scans
+	// [0, PresentedEventCount()) for the latest text-carrying line, so it shows the
+	// current line while paced (timed) AND the final line after an instant drain (where
+	// a single Tick empties the range, so CurrentEvent() is already null when sampled).
+	u_int PresentedEventCount() const
+	{
+		return (m_eState == ZM_DIRECTOR_PLAYING_EVENTS && m_uCursor < m_uTurnEndCursor)
+			? m_uCursor + 1u
+			: m_uCursor;
+	}
+
 	// Read-through accessors for SC3/SC4 (HP bars, name/level panels).
 	u_int SideActiveHP(ZM_SIDE eSide) const;
 	u_int SideActiveMaxHP(ZM_SIDE eSide) const;

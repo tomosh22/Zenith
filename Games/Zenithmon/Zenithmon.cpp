@@ -222,6 +222,97 @@ namespace
 		pxFadeOverlay->SetVisible(false);
 	}
 
+	// The director-owned battle HUD (S5 item 4 SC4). Authors the five HUD elements on
+	// the selected BattleDirector entity's UI component: sort order 10002 (one above
+	// BattleFade's 10001, so the end-fade never clips them), sensible anchor / position
+	// / size / font, and hidden (SetVisible(false)) -- ZM_BattleDirector shows them at
+	// Setup and hides them at Hide. Element names are the ZM_UI_BattleHUD contract.
+	void ZM_ConfigureBattleHUD()
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_UIComponent* pxUI = pxSelectedEntity != nullptr
+			? pxSelectedEntity->TryGetComponent<Zenith_UIComponent>()
+			: nullptr;
+		Zenith_Assert(pxUI != nullptr,
+			"BattleHUD authoring requires the selected root UI component");
+		if (pxUI == nullptr)
+		{
+			return;
+		}
+
+		// Shared placement: every HUD element sits above BattleFade (10001) and is
+		// authored hidden. Anchor == pivot keeps the offset intuitive per corner.
+		auto fnPlace = [](Zenith_UI::Zenith_UIElement* pxElement,
+			Zenith_UI::AnchorPreset ePreset, float fX, float fY, float fW, float fH)
+		{
+			if (pxElement == nullptr)
+			{
+				return;
+			}
+			pxElement->SetSortOrder(10002);
+			pxElement->SetAnchor(ePreset);
+			pxElement->SetPivot(ePreset);
+			pxElement->SetPosition(fX, fY);
+			pxElement->SetSize(fW, fH);
+			pxElement->SetVisible(false);
+		};
+
+		const Zenith_Maths::Vector4 xWhite = { 1.0f, 1.0f, 1.0f, 1.0f };
+		const Zenith_Maths::Vector4 xHpGreen = { 0.20f, 0.85f, 0.30f, 1.0f };
+
+		// Battle text log -- bottom-centre, wide, centred, word-wrapped.
+		Zenith_UI::Zenith_UIText* pxLog =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>("BattleHUD_Log");
+		fnPlace(pxLog, Zenith_UI::AnchorPreset::BottomCenter, 0.0f, -48.0f, 900.0f, 72.0f);
+		if (pxLog != nullptr)
+		{
+			pxLog->SetFontSize(30.0f);
+			pxLog->SetAlignment(Zenith_UI::TextAlignment::Center);
+			pxLog->SetMaxWidth(900.0f);
+			pxLog->SetColor(xWhite);
+		}
+
+		// Enemy active panel -- top-left, left-aligned; its HP bar just below.
+		Zenith_UI::Zenith_UIText* pxEnemyPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>("BattleHUD_EnemyPanel");
+		fnPlace(pxEnemyPanel, Zenith_UI::AnchorPreset::TopLeft, 40.0f, 36.0f, 320.0f, 32.0f);
+		if (pxEnemyPanel != nullptr)
+		{
+			pxEnemyPanel->SetFontSize(24.0f);
+			pxEnemyPanel->SetAlignment(Zenith_UI::TextAlignment::Left);
+			pxEnemyPanel->SetColor(xWhite);
+		}
+
+		Zenith_UI::Zenith_UIRect* pxEnemyHpBar =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>("BattleHUD_EnemyHPBar");
+		fnPlace(pxEnemyHpBar, Zenith_UI::AnchorPreset::TopLeft, 40.0f, 76.0f, 240.0f, 16.0f);
+		if (pxEnemyHpBar != nullptr)
+		{
+			pxEnemyHpBar->SetFillDirection(Zenith_UI::FillDirection::LeftToRight);
+			pxEnemyHpBar->SetColor(xHpGreen);
+		}
+
+		// Player active panel -- bottom-right, right-aligned; its HP bar just above.
+		Zenith_UI::Zenith_UIText* pxPlayerPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>("BattleHUD_PlayerPanel");
+		fnPlace(pxPlayerPanel, Zenith_UI::AnchorPreset::BottomRight, -40.0f, -120.0f, 320.0f, 32.0f);
+		if (pxPlayerPanel != nullptr)
+		{
+			pxPlayerPanel->SetFontSize(24.0f);
+			pxPlayerPanel->SetAlignment(Zenith_UI::TextAlignment::Right);
+			pxPlayerPanel->SetColor(xWhite);
+		}
+
+		Zenith_UI::Zenith_UIRect* pxPlayerHpBar =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>("BattleHUD_PlayerHPBar");
+		fnPlace(pxPlayerHpBar, Zenith_UI::AnchorPreset::BottomRight, -40.0f, -100.0f, 240.0f, 16.0f);
+		if (pxPlayerHpBar != nullptr)
+		{
+			pxPlayerHpBar->SetFillDirection(Zenith_UI::FillDirection::LeftToRight);
+			pxPlayerHpBar->SetColor(xHpGreen);
+		}
+	}
+
 	bool ZM_SetSelectedSpawnPointTag(const char* szTag)
 	{
 		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
@@ -544,6 +635,16 @@ void Project_RegisterEditorAutomationSteps()
 	// deterministic AI-vs-AI wild battle and ends it via RequestBattleEnd().
 	xAuto.AddStep_CreateEntity("BattleDirector");
 	xAuto.AddStep_SetEntityTransient(false);
+	// The battle HUD (S5 item 4 SC4): a UI component + five elements authored on the
+	// director entity, configured hidden by ZM_ConfigureBattleHUD. ZM_BattleDirector
+	// owns a ZM_UI_BattleHUD by value and drives them (reveal / typewriter / hide).
+	xAuto.AddStep_AddUI();
+	xAuto.AddStep_CreateUIText("BattleHUD_Log", "");
+	xAuto.AddStep_CreateUIText("BattleHUD_PlayerPanel", "");
+	xAuto.AddStep_CreateUIText("BattleHUD_EnemyPanel", "");
+	xAuto.AddStep_CreateUIRect("BattleHUD_PlayerHPBar");
+	xAuto.AddStep_CreateUIRect("BattleHUD_EnemyHPBar");
+	xAuto.AddStep_Custom(&ZM_ConfigureBattleHUD);
 	xAuto.AddStep_AddComponent("ZM_BattleDirector");
 
 	xAuto.AddStep_CreateEntity("BattleCamera");

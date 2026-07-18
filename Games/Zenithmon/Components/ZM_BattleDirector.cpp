@@ -25,7 +25,7 @@
 // watch the persistent transition, one-shot Begin a deterministic AI-vs-AI wild
 // battle, place two creature models on the arena platforms, drive the core turn
 // by turn, and end the round-trip via ZM_BattleTransition::RequestBattleEnd()
-// exactly once. NO HUD (later SC). ZM-D-102.
+// exactly once; it also owns and drives the ZM_UI_BattleHUD (SC4). ZM-D-102/103.
 // ============================================================================
 
 // A fixed valid starter (dex row 0). BuildPlaceholderPlayerSpec pins this so the
@@ -91,10 +91,13 @@ void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
 			m_xCore.SubmitPlayerAction(xPlayerMove);
 		}
 		m_xCore.Tick(fDeltaSeconds);
+		m_xHud.Update(m_xParentEntity, m_xCore, fDeltaSeconds);
 
 		if (ShouldRequestEndNow(m_ePhase, m_xCore.ShouldRequestEnd(), m_bEndRequested))
 		{
 			// The battle resolved: RequestBattleEnd is the SOLE exit from IN_BATTLE.
+			// Hide the HUD first so the end-fade never shows it over black.
+			m_xHud.Hide(m_xParentEntity);
 			ZM_BattleTransition::RequestBattleEnd();
 			m_bEndRequested = true;
 			m_ePhase        = ZM_BD_RESOLVED;
@@ -104,6 +107,7 @@ void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
 			// Wall-clock safety abort: never softlock the round-trip if the core wedges.
 			// (Under zm_instant_battles a battle resolves in a couple of Ticks, so this
 			// path is unreachable there.)
+			m_xHud.Hide(m_xParentEntity);
 			ZM_BattleTransition::RequestBattleEnd();
 			m_bEndRequested = true;
 			m_ePhase        = ZM_BD_RESOLVED;
@@ -116,6 +120,7 @@ void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
 	//         RUNNING director whose battle was torn down externally also settles. --
 	if (!bInBattle && (m_ePhase == ZM_BD_RESOLVED || m_ePhase == ZM_BD_RUNNING))
 	{
+		m_xHud.Hide(m_xParentEntity);   // defensive: ensure the HUD is down as the scene unloads
 		m_ePhase = ZM_BD_DONE;
 	}
 }
@@ -139,6 +144,10 @@ void ZM_BattleDirector::RunSetup(const ZM_BattleTransition& xTransition)
 
 	// Best-effort visuals: a missing arena / creature bundle must NOT abort the battle.
 	PlaceCreatureModels(xPlayerSpec.m_eSpecies, eEnemySpecies);
+
+	// Reveal + seed the HUD onto this entity's own UI component (best-effort: a
+	// missing UI component skips gracefully).
+	m_xHud.Setup(m_xParentEntity, m_xCore);
 
 	m_fRunningSeconds = 0.0f;
 	m_ePhase          = ZM_BD_RUNNING;
