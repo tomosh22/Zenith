@@ -37,6 +37,7 @@ enum class UIElementType : uint32_t
     Toggle,
     Overlay,
     ScrollView,
+    GridLayoutGroup,
     COUNT
 };
 

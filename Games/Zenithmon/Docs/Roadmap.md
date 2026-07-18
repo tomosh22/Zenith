@@ -90,7 +90,7 @@
 
 ## S6 -- Dialogue, menus, NPCs, shops (M) -- parallel with late S5
 
-- [ ] Engine E4: `Zenith_UIGridLayoutGroup` (fixed columns/cell size)
+- [x] Engine E4: `Zenith_UIGridLayoutGroup` (fixed columns/cell size) -- **DONE (ZM-D-113):** new engine UI element (grid analogue of `Zenith_UILayoutGroup`): fixed columns + cell size, row-major visible-child placement, spacing/padding, fit-to-content auto-size; anti-thrash resize guard. +9 engine `UIGrid` units (engine 1088->1097; zm boot 2025->2034); reviewer CLEAN; cross-game regression green (Combat 1097/0+14/0, DP 158/0, CB 45/0, RenderTest no-worse). Baselines bumped (`run_unit_gate.ps1` 1097, `zm-tests.yml` 2034). Additive-only -- nothing instantiates it yet (S6 UI screens will).
 - [ ] `ZM_UI_DialogueBox` / `ZM_UI_MenuStack` / `ZM_UI_Party` / `ZM_UI_Bag` / `ZM_UI_Dex` / `ZM_UI_Shop`
 - [ ] `ZM_Interactable` + NPC graphs via `ZM_GraphAuthoring`; `ZM_NpcWalker` (navmesh wanderers)
 - [ ] Care Center heal + mart buy/sell

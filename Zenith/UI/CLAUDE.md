@@ -22,6 +22,7 @@ Screen-space UI framework with a canvas-based element hierarchy. Renders via `Fl
 - `Zenith_UIOverlay.h/cpp` - Modal overlay widget with dim background and fade animations (`UIElementType::Overlay`)
 - `Zenith_UIScrollView.h/cpp` - Scrollable content container with clip-rect support (`UIElementType::ScrollView`)
 - `Zenith_UILayoutGroup.h/cpp` - Layout container with horizontal/vertical arrangement, padding, spacing, child alignment, fit-to-content (`UIElementType::LayoutGroup`)
+- `Zenith_UIGridLayoutGroup.h/cpp` - Grid layout container: fixed column count + fixed cell size, row-major placement of visible children, spacing, padding, fit-to-content auto-size (`UIElementType::GridLayoutGroup`). The grid analogue of `Zenith_UILayoutGroup` (bag/box/dex/party grids).
 - `Zenith_UIStyle.h` - `UIStyle` struct: fill, gradient, border, corner radius, and shadow properties used throughout the UI system
 - `Zenith_UIStyleRenderer.h/cpp` - `RenderStyledRect()` static method rendering styled rects (shadow, border, fill, gradient); used by rect, button, overlay, scrollview, and toggle elements
 - `Zenith_UITween.h` - `TweenEasing`/`TweenProperty` enums and `Zenith_UITween` struct for element animation
@@ -65,6 +66,7 @@ All elements have:
 | `Zenith_UIOverlay` | Modal full-screen dim background + centered content container, tween-driven fade in/out, blocks input behind it |
 | `Zenith_UIScrollView` | Viewport that clips children, scrollable via `ScrollDirection` (`VERTICAL`/`HORIZONTAL`/`BOTH`) using the canvas clip-rect stack |
 | `Zenith_UILayoutGroup` | `LayoutDirection` (`Horizontal`/`Vertical`) child arrangement with padding, spacing, `ChildAlignment` (9 values, `UpperLeft`..`LowerRight`), fit-to-content |
+| `Zenith_UIGridLayoutGroup` | Fixed-column, fixed-cell-size grid: row-major placement of visible children, horizontal/vertical spacing, padding, fit-to-content auto-size |
 
 ### Styling & Animation
 - **`UIStyle`** (`Zenith_UIStyle.h`) bundles fill color, optional bottom gradient color, border (color + thickness), corner radius, and shadow (color/offset/spread). `UIStyle::Lerp` blends two styles for tween targets.

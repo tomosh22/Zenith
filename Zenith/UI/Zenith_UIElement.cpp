@@ -11,6 +11,7 @@
 #include "UI/Zenith_UIToggle.h"
 #include "UI/Zenith_UIOverlay.h"
 #include "UI/Zenith_UIScrollView.h"
+#include "UI/Zenith_UIGridLayoutGroup.h"
 #include "Input/Zenith_Input.h"
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Input/Zenith_InputSimulator.h"
@@ -52,6 +53,7 @@ const char* Zenith_UIElement::GetTypeName(UIElementType eType)
     case UIElementType::Toggle: return "Toggle";
     case UIElementType::Overlay: return "Overlay";
     case UIElementType::ScrollView: return "ScrollView";
+    case UIElementType::GridLayoutGroup: return "GridLayoutGroup";
     default: return "Unknown";
     }
 }
@@ -69,6 +71,7 @@ Zenith_UIElement* Zenith_UIElement::CreateFromType(UIElementType eType, const st
     case UIElementType::Toggle: return new Zenith_UIToggle("", strName);
     case UIElementType::Overlay: return new Zenith_UIOverlay(strName);
     case UIElementType::ScrollView: return new Zenith_UIScrollView(strName);
+    case UIElementType::GridLayoutGroup: return new Zenith_UIGridLayoutGroup(strName);
     default: return nullptr;
     }
 }

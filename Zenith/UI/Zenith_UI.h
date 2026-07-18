@@ -18,6 +18,7 @@
 #include "UI/Zenith_UIImage.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UILayoutGroup.h"
+#include "UI/Zenith_UIGridLayoutGroup.h"
 #include "UI/Zenith_UIToggle.h"
 #include "UI/Zenith_UIOverlay.h"
 #include "UI/Zenith_UIScrollView.h"
