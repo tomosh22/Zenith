@@ -541,6 +541,9 @@ void Project_RegisterGameComponents()
 	{
 		ZM_BattleTransition::ResetRuntimeStateForTests();
 		ZM_GameStateManager::ResetRuntimeStateForTests();
+		// The persistent manager's GameState survives DontDestroyOnLoad across tests;
+		// re-seed the starter so a caught/levelled party cannot leak into the next test.
+		ZM_GameStateManager::ResetGameStateForTests();
 		ZM_SetInstantBattlesForTests(false);
 		Zenith_SaveData::ClearForTest();
 	});

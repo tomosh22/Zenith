@@ -2,6 +2,7 @@
 
 #include "Maths/Zenith_Maths.h"
 #include "ZenithECS/Zenith_Entity.h"
+#include "Zenithmon/Source/Party/ZM_GameState.h"   // ZM_GameState (owned by value)
 
 class Zenith_DataStream;
 class ZM_PlayerController;
@@ -56,6 +57,12 @@ public:
 	static bool TryGetUniqueActiveScenePlayerEntityID(
 		Zenith_EntityID& xEntityIDOut);
 	static bool TryGetUniqueSingletonEntityID(Zenith_EntityID& xEntityIDOut);
+
+	// Resolves the unique persistent ZM_GameStateManager and hands back its owned
+	// ZM_GameState (mutable). Returns false + leaves pxGameStateOut null when no manager
+	// exists (e.g. before boot). Cross-scene safe (the manager is DontDestroyOnLoad).
+	static bool TryGetGameState(ZM_GameState*& pxGameStateOut);
+
 	static bool IsWarpDestinationValid(u_int uTargetBuildIndex, const char* szSpawnTag);
 	static Zenith_Maths::Vector3 CalculateSpawnCenter(
 		const Zenith_Maths::Vector3& xMarkerFeetPosition,
@@ -71,6 +78,11 @@ public:
 	// It clears only session transition state and any injected load callback.
 	static void ResetRuntimeStateForTests();
 	static void SetLoadSceneRequestCallbackForTests(LoadSceneRequestCallback pfnCallback);
+	// Re-seeds the persistent GameState to the fixed starter (D4). The manager is
+	// DontDestroyOnLoad, so its m_xGameState survives between batched tests; the
+	// between-tests hook calls this so a caught/levelled party cannot leak forward.
+	// A safe no-op when no manager exists at hook time.
+	static void ResetGameStateForTests();
 
 	ZM_WARP_TRANSITION_STATE GetTransitionState() const { return m_eTransitionState; }
 	u_int GetTargetBuildIndex() const { return m_uTargetBuildIndex; }
@@ -101,6 +113,10 @@ private:
 	static LoadSceneRequestCallback s_pfnLoadSceneRequestForTests;
 
 	Zenith_Entity m_xParentEntity;
+	// Persistent player state (S5 item 5 SC2), owned BY VALUE so it rides the
+	// DontDestroyOnLoad move. Seeded with the starter exactly once at first-boot init
+	// (OnStart); reachable cross-scene via TryGetGameState for the battle write-back.
+	ZM_GameState m_xGameState;
 	Zenith_EntityID m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 	ZM_WARP_TRANSITION_STATE m_eTransitionState = ZM_WARP_TRANSITION_IDLE;
 	u_int m_uTargetBuildIndex = uINVALID_BUILD_INDEX;

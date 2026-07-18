@@ -15,6 +15,7 @@
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
+#include "Zenithmon/Source/Party/ZM_GameState.h"   // ZM_MakeStarterGameState
 #include "Zenithmon/Source/UI/ZM_FadeOverlay.h"
 
 #ifdef ZENITH_TOOLS
@@ -88,6 +89,13 @@ void ZM_GameStateManager::OnStart()
 	s_xSingletonEntityID = xOwnEntityID;
 	ResetTransitionState(false);
 	m_uIssuedLoadRequestCount = 0u;
+
+	// First-boot seed of the persistent GameState (S5 item 5 SC2, D4). Reached
+	// exactly once for the lifetime of the authoritative singleton: every later
+	// re-authored manager is retired as a duplicate above and never gets here, and
+	// the singleton's OnStart runs only once. Seeding BEFORE DontDestroyOnLoad lets
+	// the starter ride the cross-scene move with the rest of this component.
+	m_xGameState = ZM_MakeStarterGameState();
 
 	// Moving to the persistent scene relocates this component's pool entry.
 	// Nothing may access `this` after the call.
@@ -257,6 +265,33 @@ bool ZM_GameStateManager::TryGetUniqueSingletonEntityID(
 	return g_xEngine.Scenes().ResolveEntity(xEntityIDOut).IsValid();
 }
 
+bool ZM_GameStateManager::TryGetGameState(ZM_GameState*& pxGameStateOut)
+{
+	pxGameStateOut = nullptr;
+
+	// Resolve the unique manager fresh every call -- never cache it. The manager is
+	// DontDestroyOnLoad, so this reaches its owned state from any active scene (e.g.
+	// the additively-loaded Battle scene doing the SC3-SC5 write-back).
+	Zenith_EntityID xManagerEntityID = INVALID_ENTITY_ID;
+	if (!TryGetUniqueSingletonEntityID(xManagerEntityID))
+	{
+		return false;
+	}
+
+	Zenith_Entity xManagerEntity =
+		g_xEngine.Scenes().ResolveEntity(xManagerEntityID);
+	ZM_GameStateManager* pxManager = xManagerEntity.IsValid()
+		? xManagerEntity.TryGetComponent<ZM_GameStateManager>()
+		: nullptr;
+	if (pxManager == nullptr)
+	{
+		return false;
+	}
+
+	pxGameStateOut = &pxManager->m_xGameState;
+	return true;
+}
+
 bool ZM_GameStateManager::IsWarpDestinationValid(
 	u_int uTargetBuildIndex,
 	const char* szSpawnTag)
@@ -351,6 +386,18 @@ void ZM_GameStateManager::SetLoadSceneRequestCallbackForTests(
 	LoadSceneRequestCallback pfnCallback)
 {
 	s_pfnLoadSceneRequestForTests = pfnCallback;
+}
+
+void ZM_GameStateManager::ResetGameStateForTests()
+{
+	// The DontDestroyOnLoad manager (and its m_xGameState) usually survives between
+	// batched tests, so a test that caught a monster or levelled the party would leak
+	// forward. Re-seed to the fixed starter. A safe no-op when no manager exists yet.
+	ZM_GameState* pxGameState = nullptr;
+	if (TryGetGameState(pxGameState))
+	{
+		*pxGameState = ZM_MakeStarterGameState();
+	}
 }
 
 bool ZM_GameStateManager::IsAuthoritativeSingleton() const
