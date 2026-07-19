@@ -21,6 +21,7 @@
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // sz*_NAME element contract (dialogue authoring)
+#include "Zenithmon/Source/UI/ZM_UI_Party.h"         // sz*_NAME + SlotElementName contract (party authoring)
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
@@ -404,7 +405,8 @@ namespace
 	// ZM_UI_MenuStack shows/hides + focuses them at runtime. Element names are the
 	// ZM_UI_MenuStack::sz*_NAME contract. SC2 adds the dialogue box (a bottom-centre
 	// panel + wrapped text, also authored hidden) under the ZM_UI_DialogueBox::sz*_NAME
-	// contract.
+	// contract, and SC4 the party screen (list panel + six slot rows + summary panel and
+	// body, all hidden) under the ZM_UI_Party::sz*_NAME / SlotElementName contract.
 	void ZM_ConfigureMenuRoot()
 	{
 		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
@@ -510,6 +512,98 @@ namespace
 			pxDialogueText->SetAlignment(Zenith_UI::TextAlignment::Center);   // matches the BottomCenter anchor
 			pxDialogueText->SetMaxWidth(820.0f);   // > 0 enables word wrap inside the panel
 			pxDialogueText->SetVisible(false);
+		}
+
+		// The SC4 party screen: a centred list panel, six slot buttons stacked inside it,
+		// and a summary panel + body text on top -- same 9000/9001 sort band, ALL authored
+		// HIDDEN (ZM_UI_Party shows what the live party fills). The slots are focusable and
+		// navigation-wired exactly like the ROOT entries; ZM_UI_Party turns the unfilled
+		// ones back off at runtime so nav can never reach an empty slot.
+		Zenith_UI::Zenith_UIRect* pxPartyPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_Party::szPANEL_NAME);
+		if (pxPartyPanel != nullptr)
+		{
+			pxPartyPanel->SetSortOrder(ZM_UI_MenuStack::iMENU_PANEL_SORT_ORDER);
+			pxPartyPanel->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxPartyPanel->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxPartyPanel->SetPosition(0.0f, 0.0f);
+			pxPartyPanel->SetSize(560.0f, 360.0f);
+			pxPartyPanel->SetColor({ 0.05f, 0.06f, 0.10f, 0.85f });
+			pxPartyPanel->SetVisible(false);
+		}
+
+		// Six rows at a 52 px pitch, centred on the panel (5 gaps -> a 260 px span, so
+		// +/-130 keeps the stack inside the 360-tall panel).
+		Zenith_UI::Zenith_UIButton* apxPartySlots[ZM_UI_Party::uMAX_SLOTS] = {};
+		for (u_int u = 0u; u < ZM_UI_Party::uMAX_SLOTS; ++u)
+		{
+			Zenith_UI::Zenith_UIButton* pxSlot =
+				pxUI->FindElement<Zenith_UI::Zenith_UIButton>(ZM_UI_Party::SlotElementName(u));
+			apxPartySlots[u] = pxSlot;
+			if (pxSlot == nullptr)
+			{
+				continue;
+			}
+			pxSlot->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxSlot->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxSlot->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxSlot->SetPosition(0.0f, -130.0f + 52.0f * static_cast<float>(u));
+			pxSlot->SetSize(500.0f, 44.0f);
+			pxSlot->SetFontSize(22.0f);
+			pxSlot->SetFocusable(true);
+			pxSlot->SetVisible(false);
+		}
+
+		// Explicit up/down navigation links (no wrap); left/right null -- the ROOT idiom.
+		for (u_int u = 0u; u < ZM_UI_Party::uMAX_SLOTS; ++u)
+		{
+			if (apxPartySlots[u] == nullptr)
+			{
+				continue;
+			}
+			Zenith_UI::Zenith_UIElement* pxUp   = (u > 0u) ? apxPartySlots[u - 1u] : nullptr;
+			Zenith_UI::Zenith_UIElement* pxDown = (u + 1u < ZM_UI_Party::uMAX_SLOTS) ? apxPartySlots[u + 1u] : nullptr;
+			apxPartySlots[u]->SetNavigation(pxUp, pxDown, nullptr, nullptr);
+		}
+
+		Zenith_UI::Zenith_UIRect* pxSummaryPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_Party::szSUMMARY_PANEL_NAME);
+		if (pxSummaryPanel != nullptr)
+		{
+			// +2/+3 inside the SAME menu band (still far below the WarpFade 10000 /
+			// BattleFade 10001 overlays): the summary OVERLAYS the list, and the slot
+			// buttons sit at 9001, so a flat 9000/9001 pair would draw the rows straight
+			// through it.
+			pxSummaryPanel->SetSortOrder(ZM_UI_MenuStack::iMENU_PANEL_SORT_ORDER + 2);
+			pxSummaryPanel->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxSummaryPanel->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxSummaryPanel->SetPosition(0.0f, 0.0f);
+			// 340 tall, NOT 300: the slot stack spans y [-152,+152] (slot 0 sits at -130
+			// with a 44-tall Center pivot, slot 5 at +130), so a 300-tall overlay would
+			// leave the top 2 px of slot 0 and the bottom 2 px of slot 5 rendering OUTSIDE
+			// it -- the exact bleed-through class the S5 visual gate (ZM-D-112) caught.
+			// 340 still fits inside the 360-tall list panel.
+			pxSummaryPanel->SetSize(520.0f, 340.0f);
+			pxSummaryPanel->SetColor({ 0.08f, 0.09f, 0.14f, 0.95f });
+			pxSummaryPanel->SetVisible(false);
+		}
+
+		Zenith_UI::Zenith_UIText* pxSummaryText =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_Party::szSUMMARY_TEXT_NAME);
+		if (pxSummaryText != nullptr)
+		{
+			pxSummaryText->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER + 2);
+			pxSummaryText->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxSummaryText->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxSummaryText->SetPosition(0.0f, 0.0f);
+			// Size == the wrap width == SetMaxWidth, with a matching alignment: the SC2
+			// lesson is that leaving the default 100x100 Left-aligned bounds flows the body
+			// clean off the right of the screen. All three are set together, always.
+			pxSummaryText->SetSize(470.0f, 260.0f);
+			pxSummaryText->SetFontSize(20.0f);
+			pxSummaryText->SetAlignment(Zenith_UI::TextAlignment::Center);
+			pxSummaryText->SetMaxWidth(470.0f);
+			pxSummaryText->SetVisible(false);
 		}
 	}
 
@@ -752,7 +846,8 @@ void Project_RegisterEditorAutomationSteps()
 	// The overworld pause menu (S6 item 2 SC1) on its OWN persistent root, mirroring
 	// the two roots above: a non-transient DontDestroyOnLoad entity carrying a UI
 	// component (the ROOT panel + Party/Bag/Dex/Exit entries plus the SC2 dialogue
-	// box panel + text, all authored hidden by ZM_ConfigureMenuRoot) + the
+	// box panel + text and the SC4 party screen, all authored hidden by
+	// ZM_ConfigureMenuRoot) + the
 	// ZM_UI_MenuStack machine. Persistent so the menu and the dialogue box are
 	// reachable from every overworld scene (Dawnmere / PlayerHome / future towns)
 	// without re-authoring, and separate so its 9000/9001 sort band never collides
@@ -769,6 +864,16 @@ void Project_RegisterEditorAutomationSteps()
 	// hidden): names are the ZM_UI_DialogueBox::szPANEL_NAME / szTEXT_NAME contract.
 	xAuto.AddStep_CreateUIRect(ZM_UI_DialogueBox::szPANEL_NAME);
 	xAuto.AddStep_CreateUIText(ZM_UI_DialogueBox::szTEXT_NAME, "");
+	// ...and the SC4 party screen (list panel + six slot rows + summary panel/body),
+	// likewise authored hidden. SlotElementName returns string literals, so calling it
+	// at authoring time is safe.
+	xAuto.AddStep_CreateUIRect(ZM_UI_Party::szPANEL_NAME);
+	for (u_int uSlot = 0u; uSlot < ZM_UI_Party::uMAX_SLOTS; ++uSlot)
+	{
+		xAuto.AddStep_CreateUIButton(ZM_UI_Party::SlotElementName(uSlot), "");
+	}
+	xAuto.AddStep_CreateUIRect(ZM_UI_Party::szSUMMARY_PANEL_NAME);
+	xAuto.AddStep_CreateUIText(ZM_UI_Party::szSUMMARY_TEXT_NAME, "");
 	xAuto.AddStep_Custom(&ZM_ConfigureMenuRoot);
 	xAuto.AddStep_AddComponent("ZM_UI_MenuStack");
 

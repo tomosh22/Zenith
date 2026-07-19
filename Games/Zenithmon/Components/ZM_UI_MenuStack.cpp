@@ -10,7 +10,7 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Components/ZM_BattleTransition.h"   // ZM_BattleTransition::IsTransitionActive (gating)
-#include "Zenithmon/Components/ZM_GameStateManager.h"   // IsWarpInProgress + TryGetUniqueActiveScenePlayerEntityID
+#include "Zenithmon/Components/ZM_GameStateManager.h"   // IsWarpInProgress + TryGetUniqueActiveScenePlayerEntityID + TryGetGameState (+ ZM_GameState)
 #include "Zenithmon/Components/ZM_PlayerController.h"    // SetMovementEnabled (freeze seam)
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"         // ZM_FindSceneByBuildIndex / ZM_GetWorldSpec / ZM_SCENE_KIND
 #include "Zenithmon/Source/ZM_InputActions.h"           // ReadMenuPressed / ReadConfirmPressed / ReadCancelPressed
@@ -22,12 +22,16 @@
 #endif
 
 // ============================================================================
-// ZM_UI_MenuStack (S6 item 2 SC1). The overworld pause-menu machine on the
-// persistent ZM_MenuRoot entity. Opens a focus-navigable ROOT menu, freezes the
+// ZM_UI_MenuStack (S6 item 2 SC1 + SC2 + SC4). The overworld pause-menu machine on
+// the persistent ZM_MenuRoot entity. Opens a focus-navigable ROOT menu, freezes the
 // player, drives traversal via the engine focus-nav API, dispatches confirm by
 // the focused element's NAME, pops on cancel/Escape. Mirrors ZM_BattleTransition
 // (persistent singleton) + ZM_UI_BattleHUD (re-resolve elements by name, never
 // cache; dispatch by name, never SetOnClick(this)).
+//
+// Screen dispatch lives in exactly TWO per-screen switches -- the input routing in
+// OnUpdate and the show/hide + focus policy in PresentTopScreen. A new screen adds
+// an arm to each and a by-value presenter member; nothing else moves.
 // ============================================================================
 
 Zenith_EntityID ZM_UI_MenuStack::s_xSingletonEntityID = INVALID_ENTITY_ID;
@@ -91,6 +95,7 @@ void ZM_UI_MenuStack::OnStart()
 	// Start closed: menu is a session-only overlay, nothing persists across saves.
 	m_xStack.Clear();
 	m_xDialogue.Reset();
+	m_xParty.Reset();
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 
@@ -124,14 +129,25 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		return;
 	}
 
-	if (m_xStack.Top() == ZM_MENU_SCREEN_DIALOGUE)
+	// -- Menu open. Arrow-key traversal is driven automatically by the engine's
+	//    per-canvas UpdateFocusNavigation (keyboard confirm / cancel are NOT wired
+	//    engine-side, so they are game-supplied here). Both readers are pure edge
+	//    queries with no consume side effect, so reading them up front is free. --
+	const bool bConfirm = ZM_InputActions::ReadConfirmPressed();
+	const bool bCancel  = ZM_InputActions::ReadCancelPressed();
+
+	// ONE per-screen input-routing switch: every screen owns its own confirm / cancel
+	// semantics here, so adding SC5 (Dex) / SC6 (Bag) / SC7 (Shop) is a new arm rather
+	// than a reshape of the routing.
+	switch (m_xStack.Top())
 	{
+	case ZM_MENU_SCREEN_DIALOGUE:
 		// The dialogue owns input while it is the top screen: confirm advances the
 		// typewriter / the line, and CANCEL is deliberately IGNORED -- a dialogue is
 		// modal and closes only by being read to the end, so a prompt can never be
 		// escaped past (S6 item 3 hangs yes/no prompts off exactly this).
 		m_xDialogue.Tick(fDeltaSeconds);
-		if (ZM_InputActions::ReadConfirmPressed())
+		if (bConfirm)
 		{
 			if (m_xDialogue.Confirm() == ZM_DIALOGUE_ADVANCE_CLOSED)
 			{
@@ -142,14 +158,29 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 				}
 			}
 		}
-	}
-	else
-	{
-		// -- Menu open. Arrow-key traversal is driven automatically by the engine's
-		//    per-canvas UpdateFocusNavigation (keyboard confirm / cancel are NOT wired
-		//    engine-side, so they are game-supplied here). --
-		const bool bConfirm = ZM_InputActions::ReadConfirmPressed();
-		const bool bCancel  = ZM_InputActions::ReadCancelPressed();
+		break;
+
+	case ZM_MENU_SCREEN_PARTY:
+		// Confirm toggles the focused member's summary; cancel is offered to the screen
+		// FIRST, so an open summary swallows the Escape and only the next one pops back
+		// to ROOT. Traversal stays the engine focus-nav (no hand-rolled cursor).
+		if (bConfirm)
+		{
+			m_xParty.Confirm();
+		}
+		else if (bCancel && !m_xParty.Cancel())
+		{
+			HandleCancel();
+		}
+		break;
+
+	// ROOT dispatches its focused entry by NAME. BAG / DEX have no presenter yet, so
+	// their focused name is null -> ResolveRootAction NONE and cancel simply pops --
+	// the ROOT arm's behaviour verbatim, which is what a placeholder needs.
+	case ZM_MENU_SCREEN_ROOT:
+	case ZM_MENU_SCREEN_BAG:
+	case ZM_MENU_SCREEN_DEX:
+	default:
 		if (bConfirm)
 		{
 			HandleConfirm();
@@ -158,6 +189,7 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		{
 			HandleCancel();
 		}
+		break;
 	}
 
 	// Refresh visibility / focus + mirror the cursor every frame the menu stays open
@@ -183,27 +215,19 @@ void ZM_UI_MenuStack::CloseMenu()
 {
 	m_xStack.Clear();
 	m_iCursor = -1;
-	// Drop any queued dialogue too: a force-close (ResetRuntimeStateForTests) must not
-	// bleed a half-read conversation into the next batched test / play session.
+	// Drop EVERY screen's session state too: a force-close (ResetRuntimeStateForTests)
+	// must not bleed a half-read conversation or an open party summary into the next
+	// batched test / play session.
 	m_xDialogue.Reset();
 	m_xDialogue.Hide(m_xParentEntity);
+	m_xParty.Reset();
+	m_xParty.Hide(m_xParentEntity);
 
 	// Hide every ROOT element + clear the canvas focus so arrow keys never drive an
 	// invisible menu on the shared persistent canvas (watch-out 2).
 	if (Zenith_UIComponent* pxUI = ResolveUI())
 	{
-		if (Zenith_UI::Zenith_UIElement* pxPanel = pxUI->FindElement(szROOT_PANEL_NAME))
-		{
-			pxPanel->SetVisible(false);
-		}
-		for (u_int i = 0u; i < ZM_MENU_ROOT_ITEM_COUNT; ++i)
-		{
-			if (Zenith_UI::Zenith_UIElement* pxItem =
-				pxUI->FindElement(RootItemElementName(static_cast<ZM_MENU_ROOT_ITEM>(i))))
-			{
-				pxItem->SetVisible(false);
-			}
-		}
+		SetRootElementsShown(*pxUI, false);
 		pxUI->GetCanvas().SetFocusedElement(nullptr);
 	}
 
@@ -212,8 +236,8 @@ void ZM_UI_MenuStack::CloseMenu()
 
 void ZM_UI_MenuStack::HandleConfirm()
 {
-	// Only the ROOT screen is interactive in SC1 (the placeholder sub-screens have no
-	// focusable elements, so their focused name is null -> NONE anyway).
+	// Only the ROOT screen dispatches by entry name (the BAG / DEX placeholders share
+	// this arm but have no focusable elements, so their focused name is null -> NONE).
 	if (m_xStack.Top() != ZM_MENU_SCREEN_ROOT)
 	{
 		return;
@@ -303,27 +327,32 @@ void ZM_UI_MenuStack::PresentTopScreen()
 		return;   // best-effort: a missing UI component never crashes the menu
 	}
 	Zenith_UI::Zenith_UICanvas& xCanvas = pxUI->GetCanvas();
-	const bool bRoot     = (m_xStack.Top() == ZM_MENU_SCREEN_ROOT);
-	const bool bDialogue = (m_xStack.Top() == ZM_MENU_SCREEN_DIALOGUE);
+	const ZM_MENU_SCREEN eTop = m_xStack.Top();
 
-	if (Zenith_UI::Zenith_UIElement* pxPanel = pxUI->FindElement(szROOT_PANEL_NAME))
+	// ---- Show/hide, one step per screen. Each step owns exactly ITS OWN elements and
+	//      hides them for every other top screen, so adding a screen is one more step
+	//      plus one more focus arm below -- never a reshape of this function. ----
+	SetRootElementsShown(*pxUI, eTop == ZM_MENU_SCREEN_ROOT);
+	if (eTop == ZM_MENU_SCREEN_DIALOGUE)
 	{
-		pxPanel->SetVisible(bRoot);
+		m_xDialogue.Present(m_xParentEntity);
 	}
-	for (u_int i = 0u; i < ZM_MENU_ROOT_ITEM_COUNT; ++i)
+	else
 	{
-		if (Zenith_UI::Zenith_UIElement* pxItem =
-			pxUI->FindElement(RootItemElementName(static_cast<ZM_MENU_ROOT_ITEM>(i))))
-		{
-			pxItem->SetVisible(bRoot);
-			pxItem->SetFocusable(bRoot);   // nav collects only visible + focusable elements
-		}
+		m_xDialogue.Hide(m_xParentEntity);
 	}
+	const bool bPartyPresented = PresentPartyScreen(eTop == ZM_MENU_SCREEN_PARTY);
 
-	if (bRoot)
+	// ---- Focus policy. A FOCUS-NAVIGABLE screen owns the canvas focus and mirrors it
+	//      into m_iCursor; every other screen clears both, so arrows can never drive a
+	//      hidden screen's entries (watch-out 2). ----
+	switch (eTop)
+	{
+	case ZM_MENU_SCREEN_ROOT:
 	{
 		// Ensure a focused ROOT entry (freshly opened, or returned from a sub-screen
-		// where focus was cleared). Otherwise mirror the engine-navigated focus.
+		// where focus was cleared / left on that screen). Otherwise mirror the
+		// engine-navigated focus.
 		Zenith_UI::Zenith_UIElement* pxFocused = xCanvas.GetFocusedElement();
 		const int iFocusedIdx = (pxFocused != nullptr)
 			? RootItemIndexFromElementName(pxFocused->GetName().c_str())
@@ -337,24 +366,69 @@ void ZM_UI_MenuStack::PresentTopScreen()
 		{
 			m_iCursor = iFocusedIdx;
 		}
-	}
-	else
-	{
-		// Any non-ROOT screen (a placeholder, or DIALOGUE -- whose advance is a confirm
-		// press, NOT focus-nav): clear focus so arrows never drive the hidden root
-		// entries.
-		xCanvas.SetFocusedElement(nullptr);
-		m_iCursor = -1;
+		break;
 	}
 
-	if (bDialogue)
-	{
-		m_xDialogue.Present(m_xParentEntity);
+	case ZM_MENU_SCREEN_PARTY:
+		if (bPartyPresented)
+		{
+			// ZM_UI_Party::Present already ensured a focused VISIBLE slot and mirrored the
+			// engine-navigated focus; just carry its cursor up.
+			m_iCursor = m_xParty.GetCursor();
+		}
+		else
+		{
+			// The screen could not be presented (no live game state) and its widgets were
+			// just hidden, so it degrades to the non-navigable policy -- otherwise the
+			// canvas focus would stay parked on the ROOT entry hidden two lines above.
+			xCanvas.SetFocusedElement(nullptr);
+			m_iCursor = -1;
+		}
+		break;
+
+	// DIALOGUE advances on a confirm press, NOT focus-nav; BAG / DEX have no focusable
+	// elements until their presenters land. Both clear the focus.
+	case ZM_MENU_SCREEN_DIALOGUE:
+	case ZM_MENU_SCREEN_BAG:
+	case ZM_MENU_SCREEN_DEX:
+	default:
+		xCanvas.SetFocusedElement(nullptr);
+		m_iCursor = -1;
+		break;
 	}
-	else
+}
+
+void ZM_UI_MenuStack::SetRootElementsShown(Zenith_UIComponent& xUI, bool bShown)
+{
+	if (Zenith_UI::Zenith_UIElement* pxPanel = xUI.FindElement(szROOT_PANEL_NAME))
 	{
-		m_xDialogue.Hide(m_xParentEntity);
+		pxPanel->SetVisible(bShown);
 	}
+	for (u_int i = 0u; i < ZM_MENU_ROOT_ITEM_COUNT; ++i)
+	{
+		if (Zenith_UI::Zenith_UIElement* pxItem =
+			xUI.FindElement(RootItemElementName(static_cast<ZM_MENU_ROOT_ITEM>(i))))
+		{
+			pxItem->SetVisible(bShown);
+			pxItem->SetFocusable(bShown);   // nav collects only visible + focusable elements
+		}
+	}
+}
+
+bool ZM_UI_MenuStack::PresentPartyScreen(bool bShown)
+{
+	ZM_GameState* pxState = nullptr;
+	if (!bShown
+		|| !ZM_GameStateManager::TryGetGameState(pxState)
+		|| pxState == nullptr)
+	{
+		// Not the top screen, or no live game state (headless / between scenes): hide
+		// the screen rather than crash on a party that cannot be resolved.
+		m_xParty.Hide(m_xParentEntity);
+		return false;
+	}
+	m_xParty.Present(m_xParentEntity, pxState->m_xParty);
+	return true;
 }
 
 void ZM_UI_MenuStack::FreezePlayer()
@@ -551,9 +625,11 @@ void ZM_UI_MenuStack::ReadFromDataStream(Zenith_DataStream& xStream)
 	u_int uVersion = 0u;
 	xStream >> uVersion;
 
-	// Reset-first: never retain a stale open menu / queued dialogue from a reused instance.
+	// Reset-first: never retain a stale open menu / queued dialogue / open party summary
+	// from a reused instance.
 	m_xStack.Clear();
 	m_xDialogue.Reset();
+	m_xParty.Reset();
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 	(void)uVersion;
@@ -572,5 +648,8 @@ void ZM_UI_MenuStack::RenderPropertiesPanel()
 		m_xDialogue.GetCurrentLineIndex(),
 		m_xDialogue.GetQueuedLineCount(),
 		m_xDialogue.IsRevealComplete() ? "true" : "false");
+	ImGui::Text("Party - slot=%d summary=%s",
+		m_xParty.GetCursor(),
+		m_xParty.IsSummaryOpen() ? "open" : "closed");
 }
 #endif

@@ -3,6 +3,7 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"        // ZM_SCENE_KIND (by value in the pure gating statics)
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"     // owned BY VALUE (the SC2 dialogue screen)
+#include "Zenithmon/Source/UI/ZM_UI_Party.h"           // owned BY VALUE (the SC4 party screen)
 
 class Zenith_DataStream;
 class Zenith_UIComponent;
@@ -24,12 +25,16 @@ class Zenith_UIComponent;
 // SC1 shipped the ROOT screen (Party / Bag / Dex / Exit entries) plus the screen-
 // stack machinery; SC2 adds the DIALOGUE screen -- a by-value ZM_UI_DialogueBox
 // raised by PushDialogueLines / TryPushDialogue (the seam NPCs and prompts talk
-// through), modal (Escape never dismisses it) and advanced only by confirm. SC3+
-// fill in the real Party/Bag/Dex/Shop screens (the remaining ZM_MENU_SCREEN_*
-// enumerators are forward placeholders). The pure decision surface (the screen
-// stack, the gating predicate, the focused-name -> action resolver, the scene-kind
-// test, the dialogue model) is static / value-typed and unit-tested with NO scene
-// / graphics.
+// through), modal (Escape never dismisses it) and advanced only by confirm; SC4
+// adds the PARTY screen -- a by-value ZM_UI_Party list + summary. BAG / DEX are
+// still forward placeholders (SC5 / SC6).
+//
+// Screen dispatch is GENERALIZED: OnUpdate routes input through ONE per-screen
+// switch and PresentTopScreen shows/hides through ONE per-screen block, so adding
+// a screen is a new arm in each -- never a reshape of either site. The pure
+// decision surface (the screen stack, the gating predicate, the focused-name ->
+// action resolver, the scene-kind test, the dialogue + party models) is static /
+// value-typed and unit-tested with NO scene / graphics.
 // ============================================================================
 
 // The menu screen ids pushed onto the stack. ROOT is the pause root and DIALOGUE
@@ -41,7 +46,7 @@ enum ZM_MENU_SCREEN : u_int
 {
 	ZM_MENU_SCREEN_NONE = 0u,   // "empty stack" sentinel (never stored)
 	ZM_MENU_SCREEN_ROOT,        // the pause root (Party / Bag / Dex / Exit)
-	ZM_MENU_SCREEN_PARTY,       // placeholder (SC4)
+	ZM_MENU_SCREEN_PARTY,       // SC4: the party list + per-member summary
 	ZM_MENU_SCREEN_BAG,         // placeholder (SC6)
 	ZM_MENU_SCREEN_DEX,         // placeholder (SC5)
 	ZM_MENU_SCREEN_DIALOGUE,    // SC2: the NPC / prompt dialogue box (modal, not a ROOT entry)
@@ -147,8 +152,9 @@ public:
 	bool           IsOpen()       const { return !m_xStack.IsEmpty(); }
 	ZM_MENU_SCREEN GetTopScreen() const { return m_xStack.Top(); }
 	u_int          GetDepth()     const { return m_xStack.GetDepth(); }
-	// The focused ROOT-item index mirror (0..ZM_MENU_ROOT_ITEM_COUNT-1); refreshed
-	// from the canvas focus each frame the ROOT is shown. -1 when not on ROOT.
+	// The focused-item mirror of the top FOCUS-NAVIGABLE screen, refreshed from the
+	// canvas focus each frame it is shown: the ROOT entry index on ROOT, the party
+	// slot on PARTY. -1 on a screen that owns no focus (DIALOGUE / the placeholders).
 	int            GetCursor()    const { return m_iCursor; }
 
 	// ---- Dialogue (SC2) ----
@@ -163,6 +169,9 @@ public:
 	// windowed test use). False when no live ZM_MenuRoot singleton exists.
 	static bool TryPushDialogue(const char* const* paszLines, u_int uCount);
 	const ZM_UI_DialogueBox& GetDialogue() const { return m_xDialogue; }
+
+	// ---- Party (SC4) ----
+	const ZM_UI_Party& GetPartyScreen() const { return m_xParty; }
 
 	// ---- Persistent-singleton observation (mirrors ZM_BattleTransition) ----
 	static bool TryGetUniqueSingletonEntityID(Zenith_EntityID& xEntityIDOut);
@@ -199,6 +208,13 @@ private:
 	// Re-resolve the authored elements by name each frame (never cache) and show /
 	// hide + focus them for the current top screen. Also mirrors m_iCursor.
 	void PresentTopScreen();
+	// Per-screen show/hide steps, called by PresentTopScreen (and by CloseMenu for the
+	// hide side). Each owns exactly ONE screen's authored elements.
+	static void SetRootElementsShown(Zenith_UIComponent& xUI, bool bShown);
+	// True only when the party screen was actually PRESENTED (it is the top screen AND
+	// a live game state resolved); false means it was hidden, so the caller must fall
+	// back to the non-navigable focus policy.
+	bool PresentPartyScreen(bool bShown);
 	void FreezePlayer();
 	void UnfreezePlayer();
 
@@ -215,6 +231,7 @@ private:
 	Zenith_Entity      m_xParentEntity;
 	ZM_MenuScreenStack m_xStack;                                  // empty == closed
 	ZM_UI_DialogueBox  m_xDialogue;                               // the DIALOGUE screen's model (SC2)
-	int                m_iCursor = -1;                            // focused ROOT-item mirror
+	ZM_UI_Party        m_xParty;                                  // the PARTY screen's model (SC4; PODs only)
+	int                m_iCursor = -1;                            // focused-item mirror (see GetCursor)
 	Zenith_EntityID    m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 };

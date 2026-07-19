@@ -11,6 +11,7 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Maths/Zenith_Maths.h"
+#include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIElement.h"
 #include "UI/Zenith_UIRect.h"
@@ -18,10 +19,12 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
+#include "Zenithmon/Components/ZM_GameStateManager.h"   // TryGetGameState (the live party the screen renders)
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"
+#include "Zenithmon/Source/UI/ZM_UI_Party.h"
 
 #include <array>
 #include <cstdint>
@@ -36,6 +39,12 @@
 //     arrow (Down) and assert the focus cursor advances (engine focus-nav); press
 //     Escape and assert the menu closes, player movement is re-enabled, and the
 //     canvas focus is cleared.
+//   * ZM_PartyScreen_Test (SC4) -- open the pause menu, confirm the focused Party
+//     entry, and assert the PARTY screen really presents: the authored panel plus
+//     exactly VisibleSlotCount(live party) slot widgets shown (the rest hidden), the
+//     canvas focus parked on a party slot, confirm opening a non-empty summary,
+//     Escape closing the summary WITHOUT leaving the screen, the next Escape
+//     returning to ROOT, and the last one closing the menu and unfreezing the player.
 //   * ZM_DialogueTalk_Test (SC2) -- push two lines through
 //     ZM_UI_MenuStack::TryPushDialogue and walk the whole conversation with spaced
 //     Enter edges (complete the reveal, advance a line, close), asserting the
@@ -1459,6 +1468,697 @@ namespace
 
 		return bPassed || !g_bDlgPrereqsPresent;
 	}
+
+	// =========================================================================
+	// ZM_PartyScreen_Test (S6 item 2 SC4) -- the windowed gate for the party
+	// screen. In a runtime-ready Dawnmere it walks the whole screen:
+	//   M -> ROOT is up -> Enter on the focused Party entry -> the PARTY screen is
+	//   on top with the authored panel and exactly VisibleSlotCount(live party) slot
+	//   widgets shown (every other slot hidden) and the canvas focus parked on one of
+	//   them -> Enter -> the summary panel + a NON-EMPTY body are shown -> Escape ->
+	//   the summary is gone but the screen is STILL PARTY -> Escape -> back on ROOT ->
+	//   Escape -> the menu is closed and the player is movable again.
+	//
+	// The model-only assertions cannot see a typo'd element name, a missing
+	// AddStep_CreateUI*, or a ZM_ConfigureMenuRoot FindElement that silently returned
+	// nullptr -- ZM_UI_Party null-guards all three -- so the widget view below is the
+	// on-screen half of the gate. It reuses this file's Dawnmere prerequisite guards /
+	// entity views / fixed dt and keeps its OWN control + observation globals.
+	// =========================================================================
+
+	// What the AUTHORED party widgets actually report this frame.
+	struct PartyElementView
+	{
+		bool        m_bResolved            = false;   // the ZM_MenuRoot UI component resolved
+		bool        m_bPanelFound          = false;
+		bool        m_bPanelVisible        = false;
+		bool        m_abSlotFound[ZM_UI_Party::uMAX_SLOTS]   = {};
+		bool        m_abSlotVisible[ZM_UI_Party::uMAX_SLOTS] = {};
+		u_int       m_uSlotsFound          = 0u;
+		u_int       m_uSlotsVisible        = 0u;
+		bool        m_bSummaryPanelFound   = false;
+		bool        m_bSummaryPanelVisible = false;
+		bool        m_bSummaryTextFound    = false;
+		bool        m_bSummaryTextVisible  = false;
+		std::string m_strSummaryText;
+		std::string m_strFocusedName;                 // the canvas focus (want a party slot)
+	};
+
+	PartyElementView ReadPartyElements()
+	{
+		PartyElementView xView;
+		Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+		if (pxUI == nullptr)
+		{
+			return xView;
+		}
+		xView.m_bResolved = true;
+
+		if (Zenith_UI::Zenith_UIRect* pxPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_Party::szPANEL_NAME))
+		{
+			xView.m_bPanelFound = true;
+			xView.m_bPanelVisible = pxPanel->IsVisible();
+		}
+		for (u_int u = 0u; u < ZM_UI_Party::uMAX_SLOTS; ++u)
+		{
+			Zenith_UI::Zenith_UIButton* pxSlot =
+				pxUI->FindElement<Zenith_UI::Zenith_UIButton>(ZM_UI_Party::SlotElementName(u));
+			if (pxSlot == nullptr)
+			{
+				continue;
+			}
+			xView.m_abSlotFound[u] = true;
+			++xView.m_uSlotsFound;
+			xView.m_abSlotVisible[u] = pxSlot->IsVisible();
+			if (xView.m_abSlotVisible[u])
+			{
+				++xView.m_uSlotsVisible;
+			}
+		}
+		if (Zenith_UI::Zenith_UIRect* pxSummaryPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_Party::szSUMMARY_PANEL_NAME))
+		{
+			xView.m_bSummaryPanelFound = true;
+			xView.m_bSummaryPanelVisible = pxSummaryPanel->IsVisible();
+		}
+		if (Zenith_UI::Zenith_UIText* pxSummaryText =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_Party::szSUMMARY_TEXT_NAME))
+		{
+			xView.m_bSummaryTextFound = true;
+			xView.m_bSummaryTextVisible = pxSummaryText->IsVisible();
+			xView.m_strSummaryText = pxSummaryText->GetText();
+		}
+		if (Zenith_UI::Zenith_UIElement* pxFocused = pxUI->GetCanvas().GetFocusedElement())
+		{
+			xView.m_strFocusedName = pxFocused->GetName();
+		}
+		return xView;
+	}
+
+	// The live party's member count (0 when no game state resolves).
+	u_int ReadLivePartyCount()
+	{
+		ZM_GameState* pxState = nullptr;
+		if (!ZM_GameStateManager::TryGetGameState(pxState) || pxState == nullptr)
+		{
+			return 0u;
+		}
+		return pxState->m_xParty.Count();
+	}
+
+	enum class PtyPhase
+	{
+		AwaitReady,
+		OpenMenu,      // press M until the ROOT pause menu is up
+		EnterParty,    // ONE Enter edge on the focused Party entry -> the PARTY screen
+		OpenSummary,   // ONE Enter edge -> the member summary opens
+		CloseSummary,  // ONE Escape edge -> the summary closes, the screen SURVIVES
+		BackToRoot,    // ONE Escape edge -> the party screen pops back to ROOT
+		CloseMenu,     // Escape edges until the menu closes
+		Done,
+	};
+
+	constexpr int iPTY_READY_DEADLINE = 420;   // Dawnmere first-load ready window (sibling parity)
+	constexpr int iPTY_OPEN_DEADLINE  = 120;   // frames for the M press to open the ROOT menu
+	constexpr int iPTY_PRESS_FRAME    = 2;     // the frame within a press phase that emits the edge
+	constexpr int iPTY_SETTLE_FRAME   = 6;     // ...and the frame the outcome is sampled on
+	constexpr int iPTY_CLOSE_DEADLINE = 120;   // frames for the final Escape to close the menu
+
+	// ---- Control state (all reset in Setup; batch mode reuses the process) ----
+	PtyPhase g_ePtyPhase          = PtyPhase::Done;
+	int      g_iPtyPhaseFrames    = 0;
+	bool     g_bPtyPrereqsPresent = false;
+	bool     g_bPtyActive         = false;
+	bool     g_bPtyFailed         = false;
+	const char* g_szPtyFailure    = "test did not reach verification";
+
+	// ---- Captured observations ----
+	bool  g_bPtyMovementEnabledBefore = false;   // player movable BEFORE opening (baseline)
+	bool  g_bPtyRootOpened            = false;   // ROOT came up on the M press
+	u_int g_ePtyTopOnParty            = (u_int)ZM_MENU_SCREEN_NONE;   // want PARTY after the confirm
+	u_int g_uPtyLivePartyCount        = 0u;      // the live party's member count
+	u_int g_uPtyExpectedVisibleSlots  = 0u;      // == VisibleSlotCount(live count)
+	int   g_iPtyFocusedSlotOnEnter    = -99;     // the focused element's slot index (want >= 0)
+	bool  g_bPtySummaryOpenModel      = false;   // the screen model reports the summary open
+	u_int g_ePtyTopWithSummary        = (u_int)ZM_MENU_SCREEN_NONE;   // want PARTY
+	bool  g_bPtySummaryClosedModel    = false;   // ...and closed again after the first Escape
+	u_int g_ePtyTopAfterSummaryEscape = (u_int)ZM_MENU_SCREEN_NONE;   // want PARTY (NOT popped)
+	bool  g_bPtyOpenAfterBack         = false;   // the menu is still open after the second Escape
+	u_int g_ePtyTopAfterBack          = (u_int)ZM_MENU_SCREEN_NONE;   // want ROOT
+	bool  g_bPtyMenuClosed            = false;   // the final Escape closed the menu
+	bool  g_bPtyMovementReenabled     = false;   // ...and the player is movable again
+	bool  g_bPtyFocusClearedOnClose   = false;   // canvas focus == nullptr after close
+
+	// ---- The AUTHORED widgets ----
+	PartyElementView g_xPtyElementsOnEnter;    // want: panel + exactly the filled slots shown
+	PartyElementView g_xPtyElementsWithSummary;// want: summary panel + non-empty body shown
+	PartyElementView g_xPtyElementsAfterBack;  // want: everything party-side hidden again
+
+	void FailPty(const char* szReason)
+	{
+		g_szPtyFailure = szReason;
+		g_bPtyFailed = true;
+		g_ePtyPhase = PtyPhase::Done;
+	}
+
+	void Setup_ZMPartyScreen()
+	{
+		g_ePtyPhase                 = PtyPhase::Done;
+		g_iPtyPhaseFrames           = 0;
+		g_bPtyActive                = false;
+		g_bPtyFailed                = false;
+		g_szPtyFailure              = "test did not reach verification";
+
+		g_bPtyMovementEnabledBefore = false;
+		g_bPtyRootOpened            = false;
+		g_ePtyTopOnParty            = (u_int)ZM_MENU_SCREEN_NONE;
+		g_uPtyLivePartyCount        = 0u;
+		g_uPtyExpectedVisibleSlots  = 0u;
+		g_iPtyFocusedSlotOnEnter    = -99;
+		g_bPtySummaryOpenModel      = false;
+		g_ePtyTopWithSummary        = (u_int)ZM_MENU_SCREEN_NONE;
+		g_bPtySummaryClosedModel    = false;
+		g_ePtyTopAfterSummaryEscape = (u_int)ZM_MENU_SCREEN_NONE;
+		g_bPtyOpenAfterBack         = false;
+		g_ePtyTopAfterBack          = (u_int)ZM_MENU_SCREEN_NONE;
+		g_bPtyMenuClosed            = false;
+		g_bPtyMovementReenabled     = false;
+		g_bPtyFocusClearedOnClose   = false;
+
+		g_xPtyElementsOnEnter       = PartyElementView{};
+		g_xPtyElementsWithSummary   = PartyElementView{};
+		g_xPtyElementsAfterBack     = PartyElementView{};
+
+		// Guard order is MANDATORY: RequestSkip bypasses Verify, so install NO process
+		// state (fixed dt, scene load) until every git-ignored input is confirmed
+		// present. CI has no baked Assets tree -> skip.
+		g_bPtyPrereqsPresent = RequiredDawnmereAssetsPresent();
+		if (!g_bPtyPrereqsPresent)
+		{
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"Dawnmere assets absent -- run a *_True build");
+			return;
+		}
+
+		Zenith_InputSimulator::ResetAllInputState();
+		Zenith_InputSimulator::SetFixedDt(fUI_FIXED_DT);
+
+		g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);   // Dawnmere
+
+		g_ePtyPhase = PtyPhase::AwaitReady;
+		g_bPtyActive = true;
+	}
+
+	bool Step_ZMPartyScreen(int)
+	{
+		if (!g_bPtyActive || g_bPtyFailed || g_ePtyPhase == PtyPhase::Done)
+		{
+			return false;
+		}
+
+		++g_iPtyPhaseFrames;
+		switch (g_ePtyPhase)
+		{
+		case PtyPhase::AwaitReady:
+		{
+			PlayerView xPlayer;
+			CameraView xCamera;
+			if (!DawnmereRuntimeReady(xPlayer, xCamera))
+			{
+				if (g_iPtyPhaseFrames > iPTY_READY_DEADLINE)
+				{
+					FailPty("Dawnmere did not become runtime-ready in time");
+					return false;
+				}
+				return true;
+			}
+			if (ResolveSingletonMenuStack() == nullptr)
+			{
+				FailPty("no unique ZM_UI_MenuStack singleton (ZM_MenuRoot missing)");
+				return false;
+			}
+
+			g_bPtyMovementEnabledBefore = xPlayer.m_pxController->IsMovementEnabled();
+			// The live party is what the screen must render -- capture it before opening.
+			g_uPtyLivePartyCount       = ReadLivePartyCount();
+			g_uPtyExpectedVisibleSlots = ZM_UI_Party::VisibleSlotCount(g_uPtyLivePartyCount);
+
+			g_ePtyPhase = PtyPhase::OpenMenu;
+			g_iPtyPhaseFrames = 0;
+			return true;
+		}
+
+		case PtyPhase::OpenMenu:
+		{
+			// Resolve FRESH each frame (the pool relocates on swap-and-pop).
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailPty("the ZM_UI_MenuStack singleton stopped resolving while opening");
+				return false;
+			}
+			if (pxMenu->IsOpen() && pxMenu->GetTopScreen() == ZM_MENU_SCREEN_ROOT)
+			{
+				g_bPtyRootOpened = true;
+				g_ePtyPhase = PtyPhase::EnterParty;
+				g_iPtyPhaseFrames = 0;
+				return true;
+			}
+			if (g_iPtyPhaseFrames > iPTY_OPEN_DEADLINE)
+			{
+				FailPty("the ROOT menu never opened after the M press");
+				return false;
+			}
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_M);
+			return true;
+		}
+
+		case PtyPhase::EnterParty:
+		{
+			// ONE Enter edge, with idle frames on either side so the edge-detected
+			// ZM_InputActions::ReadConfirmPressed fires exactly once. The ROOT opens with
+			// the Party entry focused (cursor 0), so this confirms Party.
+			if (g_iPtyPhaseFrames == iPTY_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iPtyPhaseFrames < iPTY_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailPty("the ZM_UI_MenuStack singleton stopped resolving after the Party confirm");
+				return false;
+			}
+			g_ePtyTopOnParty      = (u_int)pxMenu->GetTopScreen();
+			g_xPtyElementsOnEnter = ReadPartyElements();
+			g_iPtyFocusedSlotOnEnter = ZM_UI_Party::SlotIndexFromElementName(
+				g_xPtyElementsOnEnter.m_strFocusedName.c_str());
+
+			g_ePtyPhase = PtyPhase::OpenSummary;
+			g_iPtyPhaseFrames = 0;
+			return true;
+		}
+
+		case PtyPhase::OpenSummary:
+		{
+			if (g_iPtyPhaseFrames == iPTY_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iPtyPhaseFrames < iPTY_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailPty("the ZM_UI_MenuStack singleton stopped resolving after the summary confirm");
+				return false;
+			}
+			g_bPtySummaryOpenModel    = pxMenu->GetPartyScreen().IsSummaryOpen();
+			g_ePtyTopWithSummary      = (u_int)pxMenu->GetTopScreen();
+			g_xPtyElementsWithSummary = ReadPartyElements();
+
+			g_ePtyPhase = PtyPhase::CloseSummary;
+			g_iPtyPhaseFrames = 0;
+			return true;
+		}
+
+		case PtyPhase::CloseSummary:
+		{
+			// The party screen CONSUMES this Escape: the summary closes and the screen
+			// stays on top (were the cancel routed straight to the stack, the screen
+			// would pop here and the ROOT would already be back).
+			if (g_iPtyPhaseFrames == iPTY_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+				return true;
+			}
+			if (g_iPtyPhaseFrames < iPTY_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailPty("the ZM_UI_MenuStack singleton stopped resolving after the summary Escape");
+				return false;
+			}
+			g_bPtySummaryClosedModel    = !pxMenu->GetPartyScreen().IsSummaryOpen();
+			g_ePtyTopAfterSummaryEscape = (u_int)pxMenu->GetTopScreen();
+
+			g_ePtyPhase = PtyPhase::BackToRoot;
+			g_iPtyPhaseFrames = 0;
+			return true;
+		}
+
+		case PtyPhase::BackToRoot:
+		{
+			if (g_iPtyPhaseFrames == iPTY_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+				return true;
+			}
+			if (g_iPtyPhaseFrames < iPTY_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailPty("the ZM_UI_MenuStack singleton stopped resolving after the second Escape");
+				return false;
+			}
+			g_bPtyOpenAfterBack     = pxMenu->IsOpen();
+			g_ePtyTopAfterBack      = (u_int)pxMenu->GetTopScreen();
+			g_xPtyElementsAfterBack = ReadPartyElements();
+
+			g_ePtyPhase = PtyPhase::CloseMenu;
+			g_iPtyPhaseFrames = 0;
+			return true;
+		}
+
+		case PtyPhase::CloseMenu:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailPty("the ZM_UI_MenuStack singleton stopped resolving while closing");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				g_bPtyMenuClosed          = true;
+				g_bPtyFocusClearedOnClose = MenuFocusCleared();
+
+				bool bEnabled = false;
+				if (ReadActivePlayerMovementEnabled(bEnabled))
+				{
+					g_bPtyMovementReenabled = bEnabled;
+				}
+
+				g_ePtyPhase = PtyPhase::Done;
+				return false;
+			}
+			if (g_iPtyPhaseFrames > iPTY_CLOSE_DEADLINE)
+			{
+				FailPty("the ROOT menu never closed after the final Escape press");
+				return false;
+			}
+			// Spaced edges (one every fourth frame) so each press is a clean edge.
+			if ((g_iPtyPhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+			}
+			return true;
+		}
+
+		case PtyPhase::Done:
+			return false;
+		}
+		return false;
+	}
+
+	bool Verify_ZMPartyScreen()
+	{
+		bool bPassed = true;
+
+		if (g_bPtyActive)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_PartyScreen] captured: failed=%s (%s) movBefore=%s rootOpened=%s "
+				"topOnParty=%u (want PARTY=%u) partyCount=%u wantVisibleSlots=%u focusedSlot=%d "
+				"summaryOpen=%s topWithSummary=%u summaryClosed=%s topAfterSummaryEscape=%u "
+				"openAfterBack=%s topAfterBack=%u (want ROOT=%u) closed=%s movReenabled=%s "
+				"focusCleared=%s",
+				g_bPtyFailed ? "true" : "false", g_szPtyFailure,
+				g_bPtyMovementEnabledBefore ? "true" : "false",
+				g_bPtyRootOpened ? "true" : "false",
+				g_ePtyTopOnParty, (u_int)ZM_MENU_SCREEN_PARTY,
+				g_uPtyLivePartyCount, g_uPtyExpectedVisibleSlots,
+				g_iPtyFocusedSlotOnEnter,
+				g_bPtySummaryOpenModel ? "true" : "false",
+				g_ePtyTopWithSummary,
+				g_bPtySummaryClosedModel ? "true" : "false",
+				g_ePtyTopAfterSummaryEscape,
+				g_bPtyOpenAfterBack ? "true" : "false",
+				g_ePtyTopAfterBack, (u_int)ZM_MENU_SCREEN_ROOT,
+				g_bPtyMenuClosed ? "true" : "false",
+				g_bPtyMovementReenabled ? "true" : "false",
+				g_bPtyFocusClearedOnClose ? "true" : "false");
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_PartyScreen] widgets: onEnter(resolved=%s panel=%s/%s slotsFound=%u "
+				"slotsVisible=%u focus='%s') summary(panel=%s/%s text=%s/%s body='%s') "
+				"afterBack(panel=%s slotsVisible=%u summaryPanel=%s)",
+				g_xPtyElementsOnEnter.m_bResolved ? "true" : "false",
+				g_xPtyElementsOnEnter.m_bPanelFound ? "found" : "MISSING",
+				g_xPtyElementsOnEnter.m_bPanelVisible ? "visible" : "hidden",
+				g_xPtyElementsOnEnter.m_uSlotsFound,
+				g_xPtyElementsOnEnter.m_uSlotsVisible,
+				g_xPtyElementsOnEnter.m_strFocusedName.c_str(),
+				g_xPtyElementsWithSummary.m_bSummaryPanelFound ? "found" : "MISSING",
+				g_xPtyElementsWithSummary.m_bSummaryPanelVisible ? "visible" : "hidden",
+				g_xPtyElementsWithSummary.m_bSummaryTextFound ? "found" : "MISSING",
+				g_xPtyElementsWithSummary.m_bSummaryTextVisible ? "visible" : "hidden",
+				g_xPtyElementsWithSummary.m_strSummaryText.c_str(),
+				g_xPtyElementsAfterBack.m_bPanelVisible ? "visible" : "hidden",
+				g_xPtyElementsAfterBack.m_uSlotsVisible,
+				g_xPtyElementsAfterBack.m_bSummaryPanelVisible ? "visible" : "hidden");
+
+			if (g_bPtyFailed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST, "[ZM_PartyScreen] %s", g_szPtyFailure);
+				bPassed = false;
+			}
+
+			// The baseline must be meaningful: the player was movable before opening, and
+			// the live party actually holds a member (otherwise every slot / summary
+			// assertion below would pass vacuously on an empty list).
+			if (!g_bPtyMovementEnabledBefore)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the player was not movable before opening -- the freeze "
+					"assertions would be vacuous");
+				bPassed = false;
+			}
+			if (g_uPtyExpectedVisibleSlots == 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the live party is EMPTY (count=%u) -- the slot and summary "
+					"assertions would be vacuous", g_uPtyLivePartyCount);
+				bPassed = false;
+			}
+
+			if (!g_bPtyRootOpened)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the ROOT menu never opened after the M press");
+				bPassed = false;
+			}
+
+			// --- confirm on Party: the PARTY screen is on top and really presented ---
+			if (g_ePtyTopOnParty != (u_int)ZM_MENU_SCREEN_PARTY)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] top screen after confirming Party was %u, expected PARTY %u",
+					g_ePtyTopOnParty, (u_int)ZM_MENU_SCREEN_PARTY);
+				bPassed = false;
+			}
+			if (!g_xPtyElementsOnEnter.m_bResolved)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the ZM_MenuRoot UI component did not resolve on the party screen");
+				bPassed = false;
+			}
+			else
+			{
+				if (!g_xPtyElementsOnEnter.m_bPanelFound
+					|| g_xPtyElementsOnEnter.m_uSlotsFound != ZM_UI_Party::uMAX_SLOTS
+					|| !g_xPtyElementsOnEnter.m_bSummaryPanelFound
+					|| !g_xPtyElementsOnEnter.m_bSummaryTextFound)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_PartyScreen] the authored party widgets did not all resolve by name "
+						"(panel '%s' found=%s, slots found=%u of %u, summary panel found=%s, summary "
+						"text found=%s) -- ZM_ConfigureMenuRoot / the AddStep_CreateUI* contract is "
+						"broken and NOTHING would render",
+						ZM_UI_Party::szPANEL_NAME,
+						g_xPtyElementsOnEnter.m_bPanelFound ? "true" : "false",
+						g_xPtyElementsOnEnter.m_uSlotsFound, ZM_UI_Party::uMAX_SLOTS,
+						g_xPtyElementsOnEnter.m_bSummaryPanelFound ? "true" : "false",
+						g_xPtyElementsOnEnter.m_bSummaryTextFound ? "true" : "false");
+					bPassed = false;
+				}
+				if (!g_xPtyElementsOnEnter.m_bPanelVisible)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_PartyScreen] the party panel was not shown on the party screen");
+					bPassed = false;
+				}
+				// EXACTLY the filled slots are visible: a hidden slot must stay hidden (and
+				// non-focusable), or the nav could park on an empty row.
+				if (g_xPtyElementsOnEnter.m_uSlotsVisible != g_uPtyExpectedVisibleSlots)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_PartyScreen] %u slot widgets were visible, expected %u (the live party "
+						"holds %u member(s))",
+						g_xPtyElementsOnEnter.m_uSlotsVisible, g_uPtyExpectedVisibleSlots,
+						g_uPtyLivePartyCount);
+					bPassed = false;
+				}
+				for (u_int u = 0u; u < ZM_UI_Party::uMAX_SLOTS; ++u)
+				{
+					const bool bWantVisible = (u < g_uPtyExpectedVisibleSlots);
+					if (g_xPtyElementsOnEnter.m_abSlotVisible[u] != bWantVisible)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_PartyScreen] slot %u visible=%s, expected %s",
+							u,
+							g_xPtyElementsOnEnter.m_abSlotVisible[u] ? "true" : "false",
+							bWantVisible ? "true" : "false");
+						bPassed = false;
+					}
+				}
+				// The summary must NOT be up before it is asked for.
+				if (g_xPtyElementsOnEnter.m_bSummaryPanelVisible
+					|| g_xPtyElementsOnEnter.m_bSummaryTextVisible)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_PartyScreen] the summary was already showing when the list opened "
+						"(panel visible=%s, text visible=%s)",
+						g_xPtyElementsOnEnter.m_bSummaryPanelVisible ? "true" : "false",
+						g_xPtyElementsOnEnter.m_bSummaryTextVisible ? "true" : "false");
+					bPassed = false;
+				}
+			}
+			if (g_iPtyFocusedSlotOnEnter < 0)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the canvas focus was '%s', expected one of the party slots -- "
+					"the screen must park the focus on a visible member or the arrow keys drive "
+					"nothing", g_xPtyElementsOnEnter.m_strFocusedName.c_str());
+				bPassed = false;
+			}
+
+			// --- confirm again: the member summary opens with a real body ---
+			if (!g_bPtySummaryOpenModel)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the summary did not open on the second confirm");
+				bPassed = false;
+			}
+			if (g_ePtyTopWithSummary != (u_int)ZM_MENU_SCREEN_PARTY)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] opening the summary changed the top screen to %u -- it must "
+					"stay on PARTY %u", g_ePtyTopWithSummary, (u_int)ZM_MENU_SCREEN_PARTY);
+				bPassed = false;
+			}
+			if (!g_xPtyElementsWithSummary.m_bSummaryPanelVisible
+				|| !g_xPtyElementsWithSummary.m_bSummaryTextVisible)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the summary widgets were not shown (panel visible=%s, text "
+					"visible=%s)",
+					g_xPtyElementsWithSummary.m_bSummaryPanelVisible ? "true" : "false",
+					g_xPtyElementsWithSummary.m_bSummaryTextVisible ? "true" : "false");
+				bPassed = false;
+			}
+			if (g_xPtyElementsWithSummary.m_strSummaryText.empty())
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the summary text element is EMPTY -- Present is not writing "
+					"the formatted body");
+				bPassed = false;
+			}
+
+			// --- Escape 1: the SCREEN consumes it (summary closes, PARTY survives) ---
+			if (!g_bPtySummaryClosedModel)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the summary was still open after the first Escape");
+				bPassed = false;
+			}
+			if (g_ePtyTopAfterSummaryEscape != (u_int)ZM_MENU_SCREEN_PARTY)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the first Escape left top=%u, expected PARTY %u -- an open "
+					"summary must SWALLOW the cancel instead of popping the screen",
+					g_ePtyTopAfterSummaryEscape, (u_int)ZM_MENU_SCREEN_PARTY);
+				bPassed = false;
+			}
+
+			// --- Escape 2: back on ROOT with the party widgets down ---
+			if (!g_bPtyOpenAfterBack || g_ePtyTopAfterBack != (u_int)ZM_MENU_SCREEN_ROOT)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] after the second Escape the menu was open=%s on top=%u, "
+					"expected the ROOT %u to be restored",
+					g_bPtyOpenAfterBack ? "true" : "false",
+					g_ePtyTopAfterBack, (u_int)ZM_MENU_SCREEN_ROOT);
+				bPassed = false;
+			}
+			// The *Found flags prove the capture actually ran (a default-initialised view
+			// would pass the "hidden" checks vacuously).
+			if (!g_xPtyElementsAfterBack.m_bPanelFound
+				|| g_xPtyElementsAfterBack.m_bPanelVisible
+				|| g_xPtyElementsAfterBack.m_uSlotsVisible != 0u
+				|| g_xPtyElementsAfterBack.m_bSummaryPanelVisible
+				|| g_xPtyElementsAfterBack.m_bSummaryTextVisible)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the party widgets were not all hidden once the screen popped "
+					"(panel found=%s visible=%s, slots visible=%u, summary panel visible=%s, summary "
+					"text visible=%s)",
+					g_xPtyElementsAfterBack.m_bPanelFound ? "true" : "false",
+					g_xPtyElementsAfterBack.m_bPanelVisible ? "true" : "false",
+					g_xPtyElementsAfterBack.m_uSlotsVisible,
+					g_xPtyElementsAfterBack.m_bSummaryPanelVisible ? "true" : "false",
+					g_xPtyElementsAfterBack.m_bSummaryTextVisible ? "true" : "false");
+				bPassed = false;
+			}
+
+			// --- Escape 3: the menu closes and the player is movable again ---
+			if (!g_bPtyMenuClosed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the menu never closed after the final Escape press");
+				bPassed = false;
+			}
+			if (!g_bPtyMovementReenabled)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] player movement was not re-enabled after the menu closed");
+				bPassed = false;
+			}
+			if (!g_bPtyFocusClearedOnClose)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_PartyScreen] the canvas focus was not cleared (nullptr) after the menu "
+					"closed -- arrow keys could still drive the hidden menu");
+				bPassed = false;
+			}
+		}
+
+		// Always tear down, in order (all guarded), exactly like the sibling tests.
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
+		Zenith_InputSimulator::ClearFixedDt();
+		if (g_bPtyActive)
+		{
+			g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);   // FrontEnd
+		}
+		Zenith_InputSimulator::ResetAllInputState();
+		g_bPtyActive = false;
+
+		return bPassed || !g_bPtyPrereqsPresent;
+	}
 }
 
 static const Zenith_AutomatedTest g_xZMMenuOpenCloseTest = {
@@ -1480,5 +2180,15 @@ static const Zenith_AutomatedTest g_xZMDialogueTalkTest = {
 	true /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDialogueTalkTest);
+
+static const Zenith_AutomatedTest g_xZMPartyScreenTest = {
+	"ZM_PartyScreen_Test",
+	&Setup_ZMPartyScreen,
+	&Step_ZMPartyScreen,
+	&Verify_ZMPartyScreen,
+	/* maxFrames */ 1400,   // ready window + one open + four spaced press phases + the close
+	true /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMPartyScreenTest);
 
 #endif // ZENITH_INPUT_SIMULATOR
