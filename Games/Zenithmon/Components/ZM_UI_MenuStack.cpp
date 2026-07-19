@@ -12,6 +12,7 @@
 #include "Zenithmon/Components/ZM_BattleTransition.h"   // ZM_BattleTransition::IsTransitionActive (gating)
 #include "Zenithmon/Components/ZM_GameStateManager.h"   // IsWarpInProgress + TryGetUniqueActiveScenePlayerEntityID + TryGetGameState (+ ZM_GameState)
 #include "Zenithmon/Components/ZM_PlayerController.h"    // SetMovementEnabled (freeze seam)
+#include "Zenithmon/Source/Data/ZM_SpeciesData.h"       // ZM_SPECIES_COUNT (the dex size the DEX screen pages over)
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"         // ZM_FindSceneByBuildIndex / ZM_GetWorldSpec / ZM_SCENE_KIND
 #include "Zenithmon/Source/ZM_InputActions.h"           // ReadMenuPressed / ReadConfirmPressed / ReadCancelPressed
 
@@ -22,7 +23,7 @@
 #endif
 
 // ============================================================================
-// ZM_UI_MenuStack (S6 item 2 SC1 + SC2 + SC4). The overworld pause-menu machine on
+// ZM_UI_MenuStack (S6 item 2 SC1 + SC2 + SC4 + SC5). The overworld pause-menu machine on
 // the persistent ZM_MenuRoot entity. Opens a focus-navigable ROOT menu, freezes the
 // player, drives traversal via the engine focus-nav API, dispatches confirm by
 // the focused element's NAME, pops on cancel/Escape. Mirrors ZM_BattleTransition
@@ -96,6 +97,7 @@ void ZM_UI_MenuStack::OnStart()
 	m_xStack.Clear();
 	m_xDialogue.Reset();
 	m_xParty.Reset();
+	m_xDex.Reset();
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 
@@ -137,8 +139,8 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 	const bool bCancel  = ZM_InputActions::ReadCancelPressed();
 
 	// ONE per-screen input-routing switch: every screen owns its own confirm / cancel
-	// semantics here, so adding SC5 (Dex) / SC6 (Bag) / SC7 (Shop) is a new arm rather
-	// than a reshape of the routing.
+	// semantics here, so adding SC6 (Bag) / SC7 (Shop) is a new arm rather than a
+	// reshape of the routing.
 	switch (m_xStack.Top())
 	{
 	case ZM_MENU_SCREEN_DIALOGUE:
@@ -174,12 +176,26 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		}
 		break;
 
-	// ROOT dispatches its focused entry by NAME. BAG / DEX have no presenter yet, so
-	// their focused name is null -> ResolveRootAction NONE and cancel simply pops --
-	// the ROOT arm's behaviour verbatim, which is what a placeholder needs.
+	case ZM_MENU_SCREEN_DEX:
+		// The dex dispatches BY THE FOCUSED ELEMENT'S NAME too (never SetOnClick(this)):
+		// the two page buttons page, and a cell is inert until a per-species detail panel
+		// exists. Cancel pops straight back to ROOT -- the screen has no sub-state to
+		// swallow it with. Grid traversal is the engine SPATIAL focus-nav.
+		if (bConfirm)
+		{
+			m_xDex.Confirm(ResolveFocusedElementName(), static_cast<u_int>(ZM_SPECIES_COUNT));
+		}
+		else if (bCancel)
+		{
+			HandleCancel();
+		}
+		break;
+
+	// ROOT dispatches its focused entry by NAME. BAG has no presenter yet, so its
+	// focused name is null -> ResolveRootAction NONE and cancel simply pops -- the ROOT
+	// arm's behaviour verbatim, which is what a placeholder needs.
 	case ZM_MENU_SCREEN_ROOT:
 	case ZM_MENU_SCREEN_BAG:
-	case ZM_MENU_SCREEN_DEX:
 	default:
 		if (bConfirm)
 		{
@@ -222,6 +238,8 @@ void ZM_UI_MenuStack::CloseMenu()
 	m_xDialogue.Hide(m_xParentEntity);
 	m_xParty.Reset();
 	m_xParty.Hide(m_xParentEntity);
+	m_xDex.Reset();
+	m_xDex.Hide(m_xParentEntity);
 
 	// Hide every ROOT element + clear the canvas focus so arrow keys never drive an
 	// invisible menu on the shared persistent canvas (watch-out 2).
@@ -236,8 +254,8 @@ void ZM_UI_MenuStack::CloseMenu()
 
 void ZM_UI_MenuStack::HandleConfirm()
 {
-	// Only the ROOT screen dispatches by entry name (the BAG / DEX placeholders share
-	// this arm but have no focusable elements, so their focused name is null -> NONE).
+	// Only the ROOT screen dispatches by entry name (the BAG placeholder shares this arm
+	// but has no focusable elements, so its focused name is null -> NONE).
 	if (m_xStack.Top() != ZM_MENU_SCREEN_ROOT)
 	{
 		return;
@@ -245,17 +263,7 @@ void ZM_UI_MenuStack::HandleConfirm()
 
 	// DISPATCH BY THE FOCUSED ELEMENT'S NAME -- never SetOnClick(this): a `this`
 	// userdata dangles when the ECS pool relocates this component.
-	const char* szFocusedName = nullptr;
-	if (Zenith_UIComponent* pxUI = ResolveUI())
-	{
-		Zenith_UI::Zenith_UIElement* pxFocused = pxUI->GetCanvas().GetFocusedElement();
-		if (pxFocused != nullptr)
-		{
-			szFocusedName = pxFocused->GetName().c_str();
-		}
-	}
-
-	const ZM_MENU_ACTION eAction = ResolveRootAction(szFocusedName);
+	const ZM_MENU_ACTION eAction = ResolveRootAction(ResolveFocusedElementName());
 	if (eAction == ZM_MENU_ACTION_CLOSE)
 	{
 		CloseMenu();
@@ -342,6 +350,7 @@ void ZM_UI_MenuStack::PresentTopScreen()
 		m_xDialogue.Hide(m_xParentEntity);
 	}
 	const bool bPartyPresented = PresentPartyScreen(eTop == ZM_MENU_SCREEN_PARTY);
+	const bool bDexPresented = PresentDexScreen(eTop == ZM_MENU_SCREEN_DEX);
 
 	// ---- Focus policy. A FOCUS-NAVIGABLE screen owns the canvas focus and mirrors it
 	//      into m_iCursor; every other screen clears both, so arrows can never drive a
@@ -386,11 +395,27 @@ void ZM_UI_MenuStack::PresentTopScreen()
 		}
 		break;
 
-	// DIALOGUE advances on a confirm press, NOT focus-nav; BAG / DEX have no focusable
-	// elements until their presenters land. Both clear the focus.
+	case ZM_MENU_SCREEN_DEX:
+		if (bDexPresented)
+		{
+			// ZM_UI_Dex::Present already ensured a focused LIVE cell and mirrored the
+			// engine-navigated focus; just carry its cursor up (-1 on a page button).
+			m_iCursor = m_xDex.GetCursor();
+		}
+		else
+		{
+			// Same degradation as PARTY: the widgets were just hidden, so leaving the focus
+			// parked on the ROOT entry hidden a few lines above would let the arrows drive
+			// an invisible menu.
+			xCanvas.SetFocusedElement(nullptr);
+			m_iCursor = -1;
+		}
+		break;
+
+	// DIALOGUE advances on a confirm press, NOT focus-nav; BAG has no focusable
+	// elements until its presenter lands. Both clear the focus.
 	case ZM_MENU_SCREEN_DIALOGUE:
 	case ZM_MENU_SCREEN_BAG:
-	case ZM_MENU_SCREEN_DEX:
 	default:
 		xCanvas.SetFocusedElement(nullptr);
 		m_iCursor = -1;
@@ -428,6 +453,22 @@ bool ZM_UI_MenuStack::PresentPartyScreen(bool bShown)
 		return false;
 	}
 	m_xParty.Present(m_xParentEntity, pxState->m_xParty);
+	return true;
+}
+
+bool ZM_UI_MenuStack::PresentDexScreen(bool bShown)
+{
+	ZM_GameState* pxState = nullptr;
+	if (!bShown
+		|| !ZM_GameStateManager::TryGetGameState(pxState)
+		|| pxState == nullptr)
+	{
+		// Not the top screen, or no live game state (headless / between scenes): hide the
+		// screen rather than page over a caught set that cannot be resolved.
+		m_xDex.Hide(m_xParentEntity);
+		return false;
+	}
+	m_xDex.Present(m_xParentEntity, pxState->m_xCaught);
 	return true;
 }
 
@@ -486,6 +527,17 @@ Zenith_UIComponent* ZM_UI_MenuStack::ResolveUI() const
 	return m_xParentEntity.IsValid()
 		? m_xParentEntity.TryGetComponent<Zenith_UIComponent>()
 		: nullptr;
+}
+
+const char* ZM_UI_MenuStack::ResolveFocusedElementName() const
+{
+	Zenith_UIComponent* pxUI = ResolveUI();
+	if (pxUI == nullptr)
+	{
+		return nullptr;
+	}
+	Zenith_UI::Zenith_UIElement* pxFocused = pxUI->GetCanvas().GetFocusedElement();
+	return (pxFocused != nullptr) ? pxFocused->GetName().c_str() : nullptr;
 }
 
 // ---- Persistent-singleton observation --------------------------------------
@@ -626,10 +678,11 @@ void ZM_UI_MenuStack::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> uVersion;
 
 	// Reset-first: never retain a stale open menu / queued dialogue / open party summary
-	// from a reused instance.
+	// / dex page from a reused instance.
 	m_xStack.Clear();
 	m_xDialogue.Reset();
 	m_xParty.Reset();
+	m_xDex.Reset();
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 	(void)uVersion;
@@ -651,5 +704,9 @@ void ZM_UI_MenuStack::RenderPropertiesPanel()
 	ImGui::Text("Party - slot=%d summary=%s",
 		m_xParty.GetCursor(),
 		m_xParty.IsSummaryOpen() ? "open" : "closed");
+	ImGui::Text("Dex - page=%d/%u cell=%d",
+		m_xDex.GetPage(),
+		ZM_UI_Dex::PageCount(static_cast<u_int>(ZM_SPECIES_COUNT)),
+		m_xDex.GetCursor());
 }
 #endif

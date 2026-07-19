@@ -21,6 +21,7 @@
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // sz*_NAME element contract (dialogue authoring)
+#include "Zenithmon/Source/UI/ZM_UI_Dex.h"           // sz*_NAME + geometry contract (dex authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"         // sz*_NAME + SlotElementName contract (party authoring)
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -405,8 +406,10 @@ namespace
 	// ZM_UI_MenuStack shows/hides + focuses them at runtime. Element names are the
 	// ZM_UI_MenuStack::sz*_NAME contract. SC2 adds the dialogue box (a bottom-centre
 	// panel + wrapped text, also authored hidden) under the ZM_UI_DialogueBox::sz*_NAME
-	// contract, and SC4 the party screen (list panel + six slot rows + summary panel and
-	// body, all hidden) under the ZM_UI_Party::sz*_NAME / SlotElementName contract.
+	// contract, SC4 the party screen (list panel + six slot rows + summary panel and
+	// body, all hidden) under the ZM_UI_Party::sz*_NAME / SlotElementName contract, and
+	// SC5 the dex screen's STATIC half (panel + completion header + two page buttons)
+	// under the ZM_UI_Dex::sz*_NAME contract -- its grid is built at runtime, not here.
 	void ZM_ConfigureMenuRoot()
 	{
 		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
@@ -604,6 +607,73 @@ namespace
 			pxSummaryText->SetAlignment(Zenith_UI::TextAlignment::Center);
 			pxSummaryText->SetMaxWidth(470.0f);
 			pxSummaryText->SetVisible(false);
+		}
+
+		// The SC5 dex screen: only the STATIC widgets are authored here (a centred panel,
+		// the completion header and the two page buttons) -- the 5x6
+		// Zenith_UIGridLayoutGroup and its 30 cells are built ONCE AT RUNTIME by
+		// ZM_UI_Dex::Present, because the engine exposes no CreateGridLayoutGroup /
+		// AddStep_* for a grid and adding one is out of SC5's scope. Same 9000/9001 sort
+		// band, ALL authored HIDDEN. Geometry comes from the ZM_UI_Dex f*_ constants so
+		// this site and the runtime grid build can never drift apart.
+		Zenith_UI::Zenith_UIRect* pxDexPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_Dex::szPANEL_NAME);
+		if (pxDexPanel != nullptr)
+		{
+			pxDexPanel->SetSortOrder(ZM_UI_MenuStack::iMENU_PANEL_SORT_ORDER);
+			pxDexPanel->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxDexPanel->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxDexPanel->SetPosition(0.0f, 0.0f);
+			// Fully COVERS the grid (912x270 at +10) plus the header and page-button bands,
+			// so nothing the screen draws bleeds outside the panel it sits on (ZM-D-112).
+			pxDexPanel->SetSize(ZM_UI_Dex::fPANEL_WIDTH, ZM_UI_Dex::fPANEL_HEIGHT);
+			pxDexPanel->SetColor({ 0.05f, 0.06f, 0.10f, 0.85f });
+			pxDexPanel->SetVisible(false);
+		}
+
+		Zenith_UI::Zenith_UIText* pxDexHeader =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_Dex::szHEADER_NAME);
+		if (pxDexHeader != nullptr)
+		{
+			pxDexHeader->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxDexHeader->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxDexHeader->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxDexHeader->SetPosition(0.0f, ZM_UI_Dex::fHEADER_CENTRE_Y);
+			// Size == the wrap width == SetMaxWidth, with a matching alignment -- all three
+			// together, always (the SC2 lesson: the default 100x100 Left-aligned bounds flow
+			// the line clean off the right of the screen).
+			pxDexHeader->SetSize(ZM_UI_Dex::fHEADER_WIDTH, ZM_UI_Dex::fHEADER_HEIGHT);
+			pxDexHeader->SetFontSize(26.0f);
+			pxDexHeader->SetAlignment(Zenith_UI::TextAlignment::Center);
+			pxDexHeader->SetMaxWidth(ZM_UI_Dex::fHEADER_WIDTH);
+			pxDexHeader->SetVisible(false);
+		}
+
+		// The two page buttons sit BELOW the grid and carry NO explicit navigation links:
+		// the engine's spatial focus-nav walks down off the last grid row onto them and
+		// back up again, which is the whole point of using a grid.
+		struct DexPageButton { const char* m_szName; float m_fX; };
+		const DexPageButton axDexPageButtons[2] =
+		{
+			{ ZM_UI_Dex::szPREV_NAME, -ZM_UI_Dex::fPAGE_BUTTON_CENTRE_X },
+			{ ZM_UI_Dex::szNEXT_NAME,  ZM_UI_Dex::fPAGE_BUTTON_CENTRE_X },
+		};
+		for (const DexPageButton& xPageButton : axDexPageButtons)
+		{
+			Zenith_UI::Zenith_UIButton* pxButton =
+				pxUI->FindElement<Zenith_UI::Zenith_UIButton>(xPageButton.m_szName);
+			if (pxButton == nullptr)
+			{
+				continue;
+			}
+			pxButton->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxButton->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxButton->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxButton->SetPosition(xPageButton.m_fX, ZM_UI_Dex::fPAGE_BUTTON_CENTRE_Y);
+			pxButton->SetSize(ZM_UI_Dex::fPAGE_BUTTON_WIDTH, ZM_UI_Dex::fPAGE_BUTTON_HEIGHT);
+			pxButton->SetFontSize(22.0f);
+			pxButton->SetFocusable(true);
+			pxButton->SetVisible(false);
 		}
 	}
 
@@ -846,8 +916,8 @@ void Project_RegisterEditorAutomationSteps()
 	// The overworld pause menu (S6 item 2 SC1) on its OWN persistent root, mirroring
 	// the two roots above: a non-transient DontDestroyOnLoad entity carrying a UI
 	// component (the ROOT panel + Party/Bag/Dex/Exit entries plus the SC2 dialogue
-	// box panel + text and the SC4 party screen, all authored hidden by
-	// ZM_ConfigureMenuRoot) + the
+	// box panel + text, the SC4 party screen and the SC5 dex screen's static
+	// widgets, all authored hidden by ZM_ConfigureMenuRoot) + the
 	// ZM_UI_MenuStack machine. Persistent so the menu and the dialogue box are
 	// reachable from every overworld scene (Dawnmere / PlayerHome / future towns)
 	// without re-authoring, and separate so its 9000/9001 sort band never collides
@@ -874,6 +944,14 @@ void Project_RegisterEditorAutomationSteps()
 	}
 	xAuto.AddStep_CreateUIRect(ZM_UI_Party::szSUMMARY_PANEL_NAME);
 	xAuto.AddStep_CreateUIText(ZM_UI_Party::szSUMMARY_TEXT_NAME, "");
+	// ...and the SC5 dex screen's STATIC widgets (panel + completion header + the two
+	// page buttons), likewise authored hidden. The 5x6 grid and its 30 cells are NOT
+	// authored -- ZM_UI_Dex::Present builds them once at runtime (there is no engine
+	// surface for creating a Zenith_UIGridLayoutGroup from an automation step).
+	xAuto.AddStep_CreateUIRect(ZM_UI_Dex::szPANEL_NAME);
+	xAuto.AddStep_CreateUIText(ZM_UI_Dex::szHEADER_NAME, "");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Dex::szPREV_NAME, "< Prev");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Dex::szNEXT_NAME, "Next >");
 	xAuto.AddStep_Custom(&ZM_ConfigureMenuRoot);
 	xAuto.AddStep_AddComponent("ZM_UI_MenuStack");
 

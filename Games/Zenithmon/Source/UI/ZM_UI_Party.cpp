@@ -237,8 +237,13 @@ void ZM_UI_Party::Present(Zenith_Entity& xRootEntity, const ZM_Party& xParty)
 			: -1;
 		if (iFocused < 0 || static_cast<u_int>(iFocused) >= uVisible)
 		{
-			xCanvas.SetFocusedElement(pxUI->FindElement(SlotElementName(0u)));
-			m_iCursor = 0;
+			// Resolve FIRST: if slot 0 is missing (an unbaked / stale scene) the focus is
+			// cleared, so claiming cursor 0 would report a focused member that does not
+			// exist -- and the windowed test asserts on the cursor, so it would pass in
+			// exactly the case it exists to catch. Mirror the real outcome instead.
+			Zenith_UI::Zenith_UIElement* pxFirstSlot = pxUI->FindElement(SlotElementName(0u));
+			xCanvas.SetFocusedElement(pxFirstSlot);
+			m_iCursor = (pxFirstSlot != nullptr) ? 0 : -1;
 		}
 		else
 		{

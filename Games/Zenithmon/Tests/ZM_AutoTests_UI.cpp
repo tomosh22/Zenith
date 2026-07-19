@@ -23,7 +23,11 @@
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
+#include "Zenithmon/Source/Data/ZM_SpeciesData.h"      // ZM_SPECIES_COUNT / ZM_GetSpeciesName (the dex gate)
+#include "Zenithmon/Source/Party/ZM_Monster.h"         // ZM_Monster::m_eSpecies (the party lead's caught entry)
+#include "Zenithmon/Source/Party/ZM_Party.h"
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"
+#include "Zenithmon/Source/UI/ZM_UI_Dex.h"
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"
 
 #include <array>
@@ -45,6 +49,14 @@
 //     canvas focus parked on a party slot, confirm opening a non-empty summary,
 //     Escape closing the summary WITHOUT leaving the screen, the next Escape
 //     returning to ROOT, and the last one closing the menu and unfreezing the player.
+//   * ZM_DexScreen_Test (SC5) -- open the pause menu, walk the ROOT focus down to
+//     the Dex entry, confirm it, and assert the DEX screen really presents: the
+//     authored panel / header / page buttons AND the RUNTIME-BUILT grid all resolve
+//     by name, exactly VisibleCellCount(page 0) cells are shown, the header carries
+//     the completion string, the party lead's species renders CAUGHT while an
+//     uncaught entry renders with its name hidden, the ENGINE spatial focus-nav
+//     walks down off the grid onto a page button, confirming Next advances the page,
+//     and Escape returns to ROOT then closes the menu and unfreezes the player.
 //   * ZM_DialogueTalk_Test (SC2) -- push two lines through
 //     ZM_UI_MenuStack::TryPushDialogue and walk the whole conversation with spaced
 //     Enter edges (complete the reveal, advance a line, close), asserting the
@@ -2159,6 +2171,895 @@ namespace
 
 		return bPassed || !g_bPtyPrereqsPresent;
 	}
+
+	// =========================================================================
+	// ZM_DexScreen_Test (S6 item 2 SC5) -- the windowed gate for the dex screen,
+	// and the first on-screen proof of the E4 Zenith_UIGridLayoutGroup. In a
+	// runtime-ready Dawnmere:
+	//   M -> ROOT -> Down, Down (the ROOT cursor walks Party -> Bag -> Dex) -> Enter
+	//   -> the DEX screen is on top with the authored panel / header / page buttons
+	//   AND the RUNTIME-BUILT grid resolving by name, exactly VisibleCellCount(page 0)
+	//   cells visible, the header carrying the completion string, the party lead
+	//   rendering CAUGHT and an uncaught entry rendering with its name hidden, and the
+	//   canvas focus parked on a cell -> spaced Downs walk the ENGINE spatial nav off
+	//   the grid onto a page button -> confirm Next -> the page advances -> Escape ->
+	//   back on ROOT with every dex widget hidden -> Escape -> the menu closes and the
+	//   player is movable again.
+	//
+	// The model-only assertions cannot see a typo'd element name, a missing
+	// AddStep_CreateUI*, a ZM_ConfigureMenuRoot FindElement that silently returned
+	// nullptr, or a grid whose cells were never parented -- ZM_UI_Dex null-guards all
+	// of it -- so the widget view below is the on-screen half of the gate. It reuses
+	// this file's Dawnmere prerequisite guards / entity views / fixed dt and keeps its
+	// OWN control + observation globals.
+	// =========================================================================
+
+	// What the AUTHORED + RUNTIME-BUILT dex widgets actually report this frame.
+	struct DexElementView
+	{
+		bool        m_bResolved      = false;   // the ZM_MenuRoot UI component resolved
+		bool        m_bPanelFound    = false;
+		bool        m_bPanelVisible  = false;
+		bool        m_bGridFound     = false;   // the RUNTIME-built grid
+		bool        m_bGridVisible   = false;
+		bool        m_bHeaderFound   = false;
+		bool        m_bHeaderVisible = false;
+		std::string m_strHeaderText;
+		bool        m_bPrevFound     = false;
+		bool        m_bPrevVisible   = false;
+		bool        m_bNextFound     = false;
+		bool        m_bNextVisible   = false;
+		u_int       m_uCellsFound    = 0u;
+		u_int       m_uCellsVisible  = 0u;
+		bool        m_abCellVisible[ZM_UI_Dex::uCELL_COUNT] = {};
+		std::string m_astrCellText[ZM_UI_Dex::uCELL_COUNT];
+		std::string m_strFocusedName;           // the canvas focus (want a cell, then a page button)
+	};
+
+	DexElementView ReadDexElements()
+	{
+		DexElementView xView;
+		Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+		if (pxUI == nullptr)
+		{
+			return xView;
+		}
+		xView.m_bResolved = true;
+
+		if (Zenith_UI::Zenith_UIRect* pxPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_Dex::szPANEL_NAME))
+		{
+			xView.m_bPanelFound = true;
+			xView.m_bPanelVisible = pxPanel->IsVisible();
+		}
+		// Resolved through the BASE element type: the grid is created at runtime, so a
+		// name that resolves at all is the proof the build-once routine really ran.
+		if (Zenith_UI::Zenith_UIElement* pxGrid = pxUI->FindElement(ZM_UI_Dex::szGRID_NAME))
+		{
+			xView.m_bGridFound = true;
+			xView.m_bGridVisible = pxGrid->IsVisible();
+		}
+		if (Zenith_UI::Zenith_UIText* pxHeader =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_Dex::szHEADER_NAME))
+		{
+			xView.m_bHeaderFound = true;
+			xView.m_bHeaderVisible = pxHeader->IsVisible();
+			xView.m_strHeaderText = pxHeader->GetText();
+		}
+		if (Zenith_UI::Zenith_UIElement* pxPrev = pxUI->FindElement(ZM_UI_Dex::szPREV_NAME))
+		{
+			xView.m_bPrevFound = true;
+			xView.m_bPrevVisible = pxPrev->IsVisible();
+		}
+		if (Zenith_UI::Zenith_UIElement* pxNext = pxUI->FindElement(ZM_UI_Dex::szNEXT_NAME))
+		{
+			xView.m_bNextFound = true;
+			xView.m_bNextVisible = pxNext->IsVisible();
+		}
+		for (u_int u = 0u; u < ZM_UI_Dex::uCELL_COUNT; ++u)
+		{
+			Zenith_UI::Zenith_UIButton* pxCell =
+				pxUI->FindElement<Zenith_UI::Zenith_UIButton>(ZM_UI_Dex::CellElementName(u));
+			if (pxCell == nullptr)
+			{
+				continue;
+			}
+			++xView.m_uCellsFound;
+			xView.m_abCellVisible[u] = pxCell->IsVisible();
+			xView.m_astrCellText[u] = pxCell->GetText();
+			if (xView.m_abCellVisible[u])
+			{
+				++xView.m_uCellsVisible;
+			}
+		}
+		if (Zenith_UI::Zenith_UIElement* pxFocused = pxUI->GetCanvas().GetFocusedElement())
+		{
+			xView.m_strFocusedName = pxFocused->GetName();
+		}
+		return xView;
+	}
+
+	// True while the named element is one of the two page buttons.
+	bool IsDexPageButtonName(const std::string& strName)
+	{
+		return strName == ZM_UI_Dex::szPREV_NAME || strName == ZM_UI_Dex::szNEXT_NAME;
+	}
+
+	enum class DexPhase
+	{
+		AwaitReady,
+		OpenMenu,          // press M until the ROOT pause menu is up
+		NavToBag,          // ONE Down edge -> the ROOT cursor advances Party(0) -> Bag(1)
+		NavToDex,          // ONE Down edge -> Bag(1) -> Dex(2)
+		EnterDex,          // ONE Enter edge -> the DEX screen
+		WalkToPageButton,  // spaced Down edges: the ENGINE spatial nav walks off the grid
+		ConfirmNextPage,   // park the focus on Next, ONE Enter edge -> the page advances
+		BackToRoot,        // ONE Escape edge -> the dex pops back to ROOT
+		CloseMenu,         // Escape edges until the menu closes
+		Done,
+	};
+
+	constexpr int iDEX_READY_DEADLINE = 420;   // Dawnmere first-load ready window (sibling parity)
+	constexpr int iDEX_OPEN_DEADLINE  = 120;   // frames for the M press to open the ROOT menu
+	constexpr int iDEX_NAV_DEADLINE   = 120;   // frames for a Down press to advance the ROOT cursor
+	constexpr int iDEX_PRESS_FRAME    = 2;     // the frame within a press phase that emits the edge
+	constexpr int iDEX_SETTLE_FRAME   = 6;     // ...and the frame the outcome is sampled on
+	constexpr int iDEX_FOCUS_FRAME    = 1;     // the frame ConfirmNextPage parks the focus on Next
+	constexpr int iDEX_LATE_PRESS     = 4;     // ...and the (later) frame it presses Enter
+	constexpr int iDEX_LATE_SETTLE    = 10;    // ...and the frame it samples the paged outcome
+	constexpr int iDEX_WALK_DEADLINE  = 200;   // frames for the spatial nav to reach a page button
+	constexpr int iDEX_CLOSE_DEADLINE = 120;   // frames for the final Escape to close the menu
+
+	// ---- Control state (all reset in Setup; batch mode reuses the process) ----
+	DexPhase g_eDexPhase          = DexPhase::Done;
+	int      g_iDexPhaseFrames    = 0;
+	bool     g_bDexPrereqsPresent = false;
+	bool     g_bDexActive         = false;
+	bool     g_bDexFailed         = false;
+	const char* g_szDexFailure    = "test did not reach verification";
+
+	// ---- Captured observations ----
+	bool  g_bDexMovementEnabledBefore = false;   // player movable BEFORE opening (baseline)
+	bool  g_bDexRootOpened            = false;   // ROOT came up on the M press
+	int   g_iDexRootCursorOnConfirm   = -99;     // the ROOT cursor when Dex was confirmed (want 2)
+	u_int g_eDexTopOnEnter            = (u_int)ZM_MENU_SCREEN_NONE;   // want DEX
+	u_int g_uDexExpectedVisibleCells  = 0u;      // == VisibleCellCount(page 0, ZM_SPECIES_COUNT)
+	u_int g_uDexCaughtCount           = 0u;      // the live caught-set size
+	// The party lead (caught) and a deliberately UNCAUGHT entry, both on page 0.
+	u_int g_eDexLeadSpecies           = (u_int)ZM_SPECIES_COUNT;
+	int   g_iDexLeadCell              = -1;
+	u_int g_eDexUncaughtSpecies       = (u_int)ZM_SPECIES_COUNT;
+	int   g_iDexUncaughtCell          = -1;
+	int   g_iDexCursorOnEnter         = -99;     // the screen's focused-cell mirror (want >= 0)
+	bool  g_bDexNavReachedPageButton  = false;   // the spatial nav walked off the grid
+	std::string g_strDexNavFocusName;            // ...onto this element
+	bool  g_bDexNextFocusParked       = false;   // the test parked the focus on Next
+	int   g_iDexPageBeforeNext        = -99;     // want 0
+	int   g_iDexPageAfterNext         = -99;     // want 1
+	bool  g_bDexOpenAfterBack         = false;   // the menu is still open after the Escape
+	u_int g_eDexTopAfterBack          = (u_int)ZM_MENU_SCREEN_NONE;   // want ROOT
+	bool  g_bDexMenuClosed            = false;   // the final Escape closed the menu
+	bool  g_bDexMovementReenabled     = false;   // ...and the player is movable again
+	bool  g_bDexFocusClearedOnClose   = false;   // canvas focus == nullptr after close
+
+	// ---- The AUTHORED + runtime-built widgets ----
+	DexElementView g_xDexElementsOnEnter;    // want: panel + grid + header + every page-0 cell shown
+	DexElementView g_xDexElementsAfterNext;  // want: the page-1 labels
+	DexElementView g_xDexElementsAfterBack;  // want: everything dex-side hidden again
+
+	void FailDex(const char* szReason)
+	{
+		g_szDexFailure = szReason;
+		g_bDexFailed = true;
+		g_eDexPhase = DexPhase::Done;
+	}
+
+	// Pick the party lead's (caught) page-0 cell and the first page-0 cell whose species
+	// is NOT caught, so the caught/hidden label assertions are anchored on real state.
+	void CaptureDexFixtureSpecies()
+	{
+		ZM_GameState* pxState = nullptr;
+		if (!ZM_GameStateManager::TryGetGameState(pxState) || pxState == nullptr)
+		{
+			return;
+		}
+		g_uDexCaughtCount = pxState->GetCaughtCount();
+
+		if (pxState->m_xParty.Count() > 0u)
+		{
+			const ZM_SPECIES_ID eLead = pxState->m_xParty.Get(0u).m_eSpecies;
+			g_eDexLeadSpecies = (u_int)eLead;
+			// Page 0 cell u shows species u, so a lead inside the first page has a cell.
+			if (pxState->IsCaught(eLead) && (u_int)eLead < ZM_UI_Dex::uCELL_COUNT)
+			{
+				g_iDexLeadCell = (int)eLead;
+			}
+		}
+		for (u_int u = 0u; u < ZM_UI_Dex::uCELL_COUNT; ++u)
+		{
+			const int iSpecies = ZM_UI_Dex::SpeciesIndexForCell(
+				0u, u, (u_int)ZM_SPECIES_COUNT);
+			if (iSpecies < 0)
+			{
+				continue;
+			}
+			if (!pxState->IsCaught((ZM_SPECIES_ID)iSpecies))
+			{
+				g_eDexUncaughtSpecies = (u_int)iSpecies;
+				g_iDexUncaughtCell = (int)u;
+				break;
+			}
+		}
+	}
+
+	void Setup_ZMDexScreen()
+	{
+		g_eDexPhase                 = DexPhase::Done;
+		g_iDexPhaseFrames           = 0;
+		g_bDexActive                = false;
+		g_bDexFailed                = false;
+		g_szDexFailure              = "test did not reach verification";
+
+		g_bDexMovementEnabledBefore = false;
+		g_bDexRootOpened            = false;
+		g_iDexRootCursorOnConfirm   = -99;
+		g_eDexTopOnEnter            = (u_int)ZM_MENU_SCREEN_NONE;
+		g_uDexExpectedVisibleCells  = 0u;
+		g_uDexCaughtCount           = 0u;
+		g_eDexLeadSpecies           = (u_int)ZM_SPECIES_COUNT;
+		g_iDexLeadCell              = -1;
+		g_eDexUncaughtSpecies       = (u_int)ZM_SPECIES_COUNT;
+		g_iDexUncaughtCell          = -1;
+		g_iDexCursorOnEnter         = -99;
+		g_bDexNavReachedPageButton  = false;
+		g_strDexNavFocusName.clear();
+		g_bDexNextFocusParked       = false;
+		g_iDexPageBeforeNext        = -99;
+		g_iDexPageAfterNext         = -99;
+		g_bDexOpenAfterBack         = false;
+		g_eDexTopAfterBack          = (u_int)ZM_MENU_SCREEN_NONE;
+		g_bDexMenuClosed            = false;
+		g_bDexMovementReenabled     = false;
+		g_bDexFocusClearedOnClose   = false;
+
+		g_xDexElementsOnEnter       = DexElementView{};
+		g_xDexElementsAfterNext     = DexElementView{};
+		g_xDexElementsAfterBack     = DexElementView{};
+
+		// Guard order is MANDATORY: RequestSkip bypasses Verify, so install NO process
+		// state (fixed dt, scene load) until every git-ignored input is confirmed
+		// present. CI has no baked Assets tree -> skip.
+		g_bDexPrereqsPresent = RequiredDawnmereAssetsPresent();
+		if (!g_bDexPrereqsPresent)
+		{
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"Dawnmere assets absent -- run a *_True build");
+			return;
+		}
+
+		Zenith_InputSimulator::ResetAllInputState();
+		Zenith_InputSimulator::SetFixedDt(fUI_FIXED_DT);
+
+		g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);   // Dawnmere
+
+		g_eDexPhase = DexPhase::AwaitReady;
+		g_bDexActive = true;
+	}
+
+	bool Step_ZMDexScreen(int)
+	{
+		if (!g_bDexActive || g_bDexFailed || g_eDexPhase == DexPhase::Done)
+		{
+			return false;
+		}
+
+		++g_iDexPhaseFrames;
+		switch (g_eDexPhase)
+		{
+		case DexPhase::AwaitReady:
+		{
+			PlayerView xPlayer;
+			CameraView xCamera;
+			if (!DawnmereRuntimeReady(xPlayer, xCamera))
+			{
+				if (g_iDexPhaseFrames > iDEX_READY_DEADLINE)
+				{
+					FailDex("Dawnmere did not become runtime-ready in time");
+					return false;
+				}
+				return true;
+			}
+			if (ResolveSingletonMenuStack() == nullptr)
+			{
+				FailDex("no unique ZM_UI_MenuStack singleton (ZM_MenuRoot missing)");
+				return false;
+			}
+
+			g_bDexMovementEnabledBefore = xPlayer.m_pxController->IsMovementEnabled();
+			g_uDexExpectedVisibleCells = ZM_UI_Dex::VisibleCellCount(0u, (u_int)ZM_SPECIES_COUNT);
+			CaptureDexFixtureSpecies();
+
+			g_eDexPhase = DexPhase::OpenMenu;
+			g_iDexPhaseFrames = 0;
+			return true;
+		}
+
+		case DexPhase::OpenMenu:
+		{
+			// Resolve FRESH each frame (the pool relocates on swap-and-pop).
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDex("the ZM_UI_MenuStack singleton stopped resolving while opening");
+				return false;
+			}
+			if (pxMenu->IsOpen() && pxMenu->GetTopScreen() == ZM_MENU_SCREEN_ROOT)
+			{
+				g_bDexRootOpened = true;
+				g_eDexPhase = DexPhase::NavToBag;
+				g_iDexPhaseFrames = 0;
+				return true;
+			}
+			if (g_iDexPhaseFrames > iDEX_OPEN_DEADLINE)
+			{
+				FailDex("the ROOT menu never opened after the M press");
+				return false;
+			}
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_M);
+			return true;
+		}
+
+		case DexPhase::NavToBag:
+		case DexPhase::NavToDex:
+		{
+			// The engine's per-canvas focus-nav runs AFTER the component's OnUpdate, so the
+			// component's cursor MIRROR trails the canvas focus by a frame and a conditional
+			// re-press would over-shoot. Press Down EXACTLY ONCE (on the first frame of the
+			// phase) and then poll the mirror until it settles on the wanted entry.
+			const int iWanted = (g_eDexPhase == DexPhase::NavToBag)
+				? (int)ZM_MENU_ROOT_BAG
+				: (int)ZM_MENU_ROOT_DEX;
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDex("the ZM_UI_MenuStack singleton stopped resolving while navigating ROOT");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				FailDex("the menu closed unexpectedly while navigating ROOT");
+				return false;
+			}
+			if (pxMenu->GetCursor() >= iWanted)
+			{
+				g_eDexPhase = (g_eDexPhase == DexPhase::NavToBag)
+					? DexPhase::NavToDex
+					: DexPhase::EnterDex;
+				g_iDexPhaseFrames = 0;
+				return true;
+			}
+			if (g_iDexPhaseFrames == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_DOWN);
+			}
+			if (g_iDexPhaseFrames > iDEX_NAV_DEADLINE)
+			{
+				FailDex("the ROOT focus cursor never reached the Dex entry");
+				return false;
+			}
+			return true;
+		}
+
+		case DexPhase::EnterDex:
+		{
+			// ONE Enter edge, with idle frames on either side so the edge-detected
+			// ZM_InputActions::ReadConfirmPressed fires exactly once.
+			if (g_iDexPhaseFrames == iDEX_PRESS_FRAME)
+			{
+				ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+				g_iDexRootCursorOnConfirm = (pxMenu != nullptr) ? pxMenu->GetCursor() : -99;
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iDexPhaseFrames < iDEX_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDex("the ZM_UI_MenuStack singleton stopped resolving after the Dex confirm");
+				return false;
+			}
+			g_eDexTopOnEnter      = (u_int)pxMenu->GetTopScreen();
+			g_iDexCursorOnEnter   = pxMenu->GetDexScreen().GetCursor();
+			g_iDexPageBeforeNext  = pxMenu->GetDexScreen().GetPage();
+			g_xDexElementsOnEnter = ReadDexElements();
+
+			g_eDexPhase = DexPhase::WalkToPageButton;
+			g_iDexPhaseFrames = 0;
+			return true;
+		}
+
+		case DexPhase::WalkToPageButton:
+		{
+			// Spaced Down edges. Nothing links the cells or the page buttons: this walks
+			// purely on the ENGINE SPATIAL search (FindNearestFocusable), which is the whole
+			// reason the screen is a grid.
+			Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+			if (pxUI == nullptr)
+			{
+				FailDex("the ZM_MenuRoot UI component stopped resolving while walking the grid");
+				return false;
+			}
+			Zenith_UI::Zenith_UIElement* pxFocused = pxUI->GetCanvas().GetFocusedElement();
+			if (pxFocused != nullptr && IsDexPageButtonName(pxFocused->GetName()))
+			{
+				g_bDexNavReachedPageButton = true;
+				g_strDexNavFocusName = pxFocused->GetName();
+				g_eDexPhase = DexPhase::ConfirmNextPage;
+				g_iDexPhaseFrames = 0;
+				return true;
+			}
+			if (g_iDexPhaseFrames > iDEX_WALK_DEADLINE)
+			{
+				g_strDexNavFocusName = (pxFocused != nullptr) ? pxFocused->GetName() : std::string();
+				FailDex("the spatial focus-nav never walked off the grid onto a page button");
+				return false;
+			}
+			if ((g_iDexPhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_DOWN);
+			}
+			return true;
+		}
+
+		case DexPhase::ConfirmNextPage:
+		{
+			// The walk above proved the page buttons are nav-REACHABLE; park the focus on
+			// the NEXT button explicitly so the paging assertion does not also depend on the
+			// left/right geometry between the two buttons.
+			if (g_iDexPhaseFrames == iDEX_FOCUS_FRAME)
+			{
+				Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+				Zenith_UI::Zenith_UIElement* pxNext = (pxUI != nullptr)
+					? pxUI->FindElement(ZM_UI_Dex::szNEXT_NAME)
+					: nullptr;
+				if (pxNext == nullptr)
+				{
+					FailDex("the Next-page button did not resolve by name");
+					return false;
+				}
+				pxUI->GetCanvas().SetFocusedElement(pxNext);
+				g_bDexNextFocusParked = true;
+				return true;
+			}
+			if (g_iDexPhaseFrames == iDEX_LATE_PRESS)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iDexPhaseFrames < iDEX_LATE_SETTLE)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDex("the ZM_UI_MenuStack singleton stopped resolving after the Next confirm");
+				return false;
+			}
+			g_iDexPageAfterNext     = pxMenu->GetDexScreen().GetPage();
+			g_xDexElementsAfterNext = ReadDexElements();
+
+			g_eDexPhase = DexPhase::BackToRoot;
+			g_iDexPhaseFrames = 0;
+			return true;
+		}
+
+		case DexPhase::BackToRoot:
+		{
+			if (g_iDexPhaseFrames == iDEX_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+				return true;
+			}
+			if (g_iDexPhaseFrames < iDEX_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDex("the ZM_UI_MenuStack singleton stopped resolving after the Escape");
+				return false;
+			}
+			g_bDexOpenAfterBack     = pxMenu->IsOpen();
+			g_eDexTopAfterBack      = (u_int)pxMenu->GetTopScreen();
+			g_xDexElementsAfterBack = ReadDexElements();
+
+			g_eDexPhase = DexPhase::CloseMenu;
+			g_iDexPhaseFrames = 0;
+			return true;
+		}
+
+		case DexPhase::CloseMenu:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDex("the ZM_UI_MenuStack singleton stopped resolving while closing");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				g_bDexMenuClosed          = true;
+				g_bDexFocusClearedOnClose = MenuFocusCleared();
+
+				bool bEnabled = false;
+				if (ReadActivePlayerMovementEnabled(bEnabled))
+				{
+					g_bDexMovementReenabled = bEnabled;
+				}
+
+				g_eDexPhase = DexPhase::Done;
+				return false;
+			}
+			if (g_iDexPhaseFrames > iDEX_CLOSE_DEADLINE)
+			{
+				FailDex("the ROOT menu never closed after the final Escape press");
+				return false;
+			}
+			// Spaced edges (one every fourth frame) so each press is a clean edge.
+			if ((g_iDexPhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+			}
+			return true;
+		}
+
+		case DexPhase::Done:
+			return false;
+		}
+		return false;
+	}
+
+	bool Verify_ZMDexScreen()
+	{
+		bool bPassed = true;
+
+		if (g_bDexActive)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_DexScreen] captured: failed=%s (%s) movBefore=%s rootOpened=%s "
+				"rootCursorOnConfirm=%d (want %u) topOnEnter=%u (want DEX=%u) wantVisibleCells=%u "
+				"caught=%u/%u lead=%u cell=%d uncaught=%u cell=%d cursorOnEnter=%d navFocus='%s' "
+				"pageBefore=%d pageAfter=%d openAfterBack=%s topAfterBack=%u (want ROOT=%u) "
+				"closed=%s movReenabled=%s focusCleared=%s",
+				g_bDexFailed ? "true" : "false", g_szDexFailure,
+				g_bDexMovementEnabledBefore ? "true" : "false",
+				g_bDexRootOpened ? "true" : "false",
+				g_iDexRootCursorOnConfirm, (u_int)ZM_MENU_ROOT_DEX,
+				g_eDexTopOnEnter, (u_int)ZM_MENU_SCREEN_DEX,
+				g_uDexExpectedVisibleCells,
+				g_uDexCaughtCount, (u_int)ZM_SPECIES_COUNT,
+				g_eDexLeadSpecies, g_iDexLeadCell,
+				g_eDexUncaughtSpecies, g_iDexUncaughtCell,
+				g_iDexCursorOnEnter, g_strDexNavFocusName.c_str(),
+				g_iDexPageBeforeNext, g_iDexPageAfterNext,
+				g_bDexOpenAfterBack ? "true" : "false",
+				g_eDexTopAfterBack, (u_int)ZM_MENU_SCREEN_ROOT,
+				g_bDexMenuClosed ? "true" : "false",
+				g_bDexMovementReenabled ? "true" : "false",
+				g_bDexFocusClearedOnClose ? "true" : "false");
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_DexScreen] widgets: onEnter(resolved=%s panel=%s/%s grid=%s/%s header=%s/%s "
+				"'%s' prev=%s/%s next=%s/%s cellsFound=%u cellsVisible=%u focus='%s') "
+				"afterBack(panel=%s grid=%s cellsVisible=%u prev=%s)",
+				g_xDexElementsOnEnter.m_bResolved ? "true" : "false",
+				g_xDexElementsOnEnter.m_bPanelFound ? "found" : "MISSING",
+				g_xDexElementsOnEnter.m_bPanelVisible ? "visible" : "hidden",
+				g_xDexElementsOnEnter.m_bGridFound ? "found" : "MISSING",
+				g_xDexElementsOnEnter.m_bGridVisible ? "visible" : "hidden",
+				g_xDexElementsOnEnter.m_bHeaderFound ? "found" : "MISSING",
+				g_xDexElementsOnEnter.m_bHeaderVisible ? "visible" : "hidden",
+				g_xDexElementsOnEnter.m_strHeaderText.c_str(),
+				g_xDexElementsOnEnter.m_bPrevFound ? "found" : "MISSING",
+				g_xDexElementsOnEnter.m_bPrevVisible ? "visible" : "hidden",
+				g_xDexElementsOnEnter.m_bNextFound ? "found" : "MISSING",
+				g_xDexElementsOnEnter.m_bNextVisible ? "visible" : "hidden",
+				g_xDexElementsOnEnter.m_uCellsFound,
+				g_xDexElementsOnEnter.m_uCellsVisible,
+				g_xDexElementsOnEnter.m_strFocusedName.c_str(),
+				g_xDexElementsAfterBack.m_bPanelVisible ? "visible" : "hidden",
+				g_xDexElementsAfterBack.m_bGridVisible ? "visible" : "hidden",
+				g_xDexElementsAfterBack.m_uCellsVisible,
+				g_xDexElementsAfterBack.m_bPrevVisible ? "visible" : "hidden");
+
+			if (g_bDexFailed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST, "[ZM_DexScreen] %s", g_szDexFailure);
+				bPassed = false;
+			}
+
+			// The baselines must be meaningful: the player was movable before opening, the
+			// page really holds cells, and the fixture found BOTH a caught and an uncaught
+			// entry on page 0 (otherwise the label assertions would be vacuous).
+			if (!g_bDexMovementEnabledBefore)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the player was not movable before opening -- the freeze "
+					"assertions would be vacuous");
+				bPassed = false;
+			}
+			if (g_uDexExpectedVisibleCells == 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] page 0 holds no cells -- every widget assertion would be vacuous");
+				bPassed = false;
+			}
+			if (g_iDexLeadCell < 0 || g_iDexUncaughtCell < 0)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the fixture needs BOTH a caught page-0 entry (the party lead, "
+					"cell=%d) and an uncaught one (cell=%d) -- the caught/hidden label assertions "
+					"would be vacuous", g_iDexLeadCell, g_iDexUncaughtCell);
+				bPassed = false;
+			}
+
+			if (!g_bDexRootOpened)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the ROOT menu never opened after the M press");
+				bPassed = false;
+			}
+			if (g_iDexRootCursorOnConfirm != (int)ZM_MENU_ROOT_DEX)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the ROOT cursor was %d when Enter was pressed, expected %u (Dex) "
+					"-- the two Down presses did not land on the Dex entry",
+					g_iDexRootCursorOnConfirm, (u_int)ZM_MENU_ROOT_DEX);
+				bPassed = false;
+			}
+
+			// --- confirm on Dex: the DEX screen is on top and really presented ---
+			if (g_eDexTopOnEnter != (u_int)ZM_MENU_SCREEN_DEX)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] top screen after confirming Dex was %u, expected DEX %u",
+					g_eDexTopOnEnter, (u_int)ZM_MENU_SCREEN_DEX);
+				bPassed = false;
+			}
+			if (!g_xDexElementsOnEnter.m_bResolved)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the ZM_MenuRoot UI component did not resolve on the dex screen");
+				bPassed = false;
+			}
+			else
+			{
+				if (!g_xDexElementsOnEnter.m_bPanelFound
+					|| !g_xDexElementsOnEnter.m_bHeaderFound
+					|| !g_xDexElementsOnEnter.m_bPrevFound
+					|| !g_xDexElementsOnEnter.m_bNextFound)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_DexScreen] the AUTHORED dex widgets did not all resolve by name (panel=%s "
+						"header=%s prev=%s next=%s) -- ZM_ConfigureMenuRoot / the AddStep_CreateUI* "
+						"contract is broken and NOTHING would render",
+						g_xDexElementsOnEnter.m_bPanelFound ? "true" : "false",
+						g_xDexElementsOnEnter.m_bHeaderFound ? "true" : "false",
+						g_xDexElementsOnEnter.m_bPrevFound ? "true" : "false",
+						g_xDexElementsOnEnter.m_bNextFound ? "true" : "false");
+					bPassed = false;
+				}
+				// The RUNTIME half: the grid and all 30 cells must exist and be findable by
+				// name, which only happens if the build-once routine ran AND reparented every
+				// cell under the grid (FindElement recurses, so a cell that was never
+				// reparented would still resolve -- the grid's own presence is the proof).
+				if (!g_xDexElementsOnEnter.m_bGridFound
+					|| g_xDexElementsOnEnter.m_uCellsFound != ZM_UI_Dex::uCELL_COUNT)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_DexScreen] the RUNTIME-built grid did not materialise (grid found=%s, "
+						"cells found=%u of %u) -- ZM_UI_Dex::Present's build-once routine did not run",
+						g_xDexElementsOnEnter.m_bGridFound ? "true" : "false",
+						g_xDexElementsOnEnter.m_uCellsFound, ZM_UI_Dex::uCELL_COUNT);
+					bPassed = false;
+				}
+				if (!g_xDexElementsOnEnter.m_bPanelVisible
+					|| !g_xDexElementsOnEnter.m_bGridVisible
+					|| !g_xDexElementsOnEnter.m_bHeaderVisible
+					|| !g_xDexElementsOnEnter.m_bPrevVisible
+					|| !g_xDexElementsOnEnter.m_bNextVisible)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_DexScreen] the dex widgets were not all shown (panel=%s grid=%s header=%s "
+						"prev=%s next=%s)",
+						g_xDexElementsOnEnter.m_bPanelVisible ? "true" : "false",
+						g_xDexElementsOnEnter.m_bGridVisible ? "true" : "false",
+						g_xDexElementsOnEnter.m_bHeaderVisible ? "true" : "false",
+						g_xDexElementsOnEnter.m_bPrevVisible ? "true" : "false",
+						g_xDexElementsOnEnter.m_bNextVisible ? "true" : "false");
+					bPassed = false;
+				}
+				// EXACTLY the live cells are visible: a dead trailing cell must stay hidden
+				// (and non-focusable), or the nav could park on a blank entry.
+				if (g_xDexElementsOnEnter.m_uCellsVisible != g_uDexExpectedVisibleCells)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_DexScreen] %u cells were visible on page 0, expected %u",
+						g_xDexElementsOnEnter.m_uCellsVisible, g_uDexExpectedVisibleCells);
+					bPassed = false;
+				}
+				const std::string strWantHeader = ZM_UI_Dex::FormatCompletion(
+					g_uDexCaughtCount, (u_int)ZM_SPECIES_COUNT);
+				if (g_xDexElementsOnEnter.m_strHeaderText.find(strWantHeader) == std::string::npos)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_DexScreen] the header element reads '%s', expected it to carry the "
+						"completion string '%s' -- Present is not writing the header",
+						g_xDexElementsOnEnter.m_strHeaderText.c_str(), strWantHeader.c_str());
+					bPassed = false;
+				}
+				// The caught / hidden label pair, read straight off the widgets.
+				if (g_iDexLeadCell >= 0)
+				{
+					const ZM_SPECIES_ID eLead = (ZM_SPECIES_ID)g_eDexLeadSpecies;
+					const std::string& strLeadCell =
+						g_xDexElementsOnEnter.m_astrCellText[g_iDexLeadCell];
+					if (strLeadCell != ZM_UI_Dex::FormatCell(eLead, true)
+						|| strLeadCell.find(ZM_GetSpeciesName(eLead)) == std::string::npos)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_DexScreen] the party lead's cell %d reads '%s', expected the CAUGHT "
+							"label '%s' naming '%s'",
+							g_iDexLeadCell, strLeadCell.c_str(),
+							ZM_UI_Dex::FormatCell(eLead, true).c_str(), ZM_GetSpeciesName(eLead));
+						bPassed = false;
+					}
+				}
+				if (g_iDexUncaughtCell >= 0)
+				{
+					const ZM_SPECIES_ID eHidden = (ZM_SPECIES_ID)g_eDexUncaughtSpecies;
+					const std::string& strHiddenCell =
+						g_xDexElementsOnEnter.m_astrCellText[g_iDexUncaughtCell];
+					if (strHiddenCell != ZM_UI_Dex::FormatCell(eHidden, false)
+						|| strHiddenCell.find(ZM_GetSpeciesName(eHidden)) != std::string::npos)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_DexScreen] the uncaught cell %d reads '%s', expected the HIDDEN label "
+							"'%s' -- an uncaught entry must never leak the species name '%s'",
+							g_iDexUncaughtCell, strHiddenCell.c_str(),
+							ZM_UI_Dex::FormatCell(eHidden, false).c_str(), ZM_GetSpeciesName(eHidden));
+						bPassed = false;
+					}
+				}
+			}
+			if (g_iDexCursorOnEnter < 0)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the screen's focused-cell mirror was %d, expected a real cell -- "
+					"the screen must park the focus on a live entry or the arrow keys drive nothing "
+					"(canvas focus was '%s')",
+					g_iDexCursorOnEnter, g_xDexElementsOnEnter.m_strFocusedName.c_str());
+				bPassed = false;
+			}
+
+			// --- the ENGINE spatial nav walks off the grid onto a page button ---
+			if (!g_bDexNavReachedPageButton)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the spatial focus-nav never reached a page button (last focus "
+					"'%s') -- the page buttons carry no explicit links, so an unreachable button "
+					"means the grid layout never placed the cells", g_strDexNavFocusName.c_str());
+				bPassed = false;
+			}
+
+			// --- confirm Next: the page advances ---
+			if (!g_bDexNextFocusParked)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the test never parked the focus on the Next-page button");
+				bPassed = false;
+			}
+			if (g_iDexPageBeforeNext != 0)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the dex opened on page %d, expected page 0",
+					g_iDexPageBeforeNext);
+				bPassed = false;
+			}
+			if (g_iDexPageAfterNext != 1)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] confirming Next left the dex on page %d, expected 1 -- the "
+					"by-name confirm dispatch did not page", g_iDexPageAfterNext);
+				bPassed = false;
+			}
+			// Paging must actually RELABEL the grid, not just move a counter.
+			if (g_iDexLeadCell >= 0
+				&& g_xDexElementsAfterNext.m_astrCellText[g_iDexLeadCell]
+					== g_xDexElementsOnEnter.m_astrCellText[g_iDexLeadCell])
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] cell %d still reads '%s' after paging -- Present is not "
+					"refilling the grid from the new page",
+					g_iDexLeadCell, g_xDexElementsAfterNext.m_astrCellText[g_iDexLeadCell].c_str());
+				bPassed = false;
+			}
+
+			// --- Escape: back on ROOT with every dex widget down ---
+			if (!g_bDexOpenAfterBack || g_eDexTopAfterBack != (u_int)ZM_MENU_SCREEN_ROOT)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] after the Escape the menu was open=%s on top=%u, expected the "
+					"ROOT %u to be restored",
+					g_bDexOpenAfterBack ? "true" : "false",
+					g_eDexTopAfterBack, (u_int)ZM_MENU_SCREEN_ROOT);
+				bPassed = false;
+			}
+			// The *Found flags prove the capture actually ran (a default-initialised view
+			// would pass the "hidden" checks vacuously).
+			if (!g_xDexElementsAfterBack.m_bPanelFound
+				|| !g_xDexElementsAfterBack.m_bGridFound
+				|| g_xDexElementsAfterBack.m_bPanelVisible
+				|| g_xDexElementsAfterBack.m_bGridVisible
+				|| g_xDexElementsAfterBack.m_bHeaderVisible
+				|| g_xDexElementsAfterBack.m_bPrevVisible
+				|| g_xDexElementsAfterBack.m_bNextVisible
+				|| g_xDexElementsAfterBack.m_uCellsVisible != 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the dex widgets were not all hidden once the screen popped "
+					"(panel found=%s visible=%s, grid found=%s visible=%s, header visible=%s, "
+					"prev visible=%s, next visible=%s, cells visible=%u)",
+					g_xDexElementsAfterBack.m_bPanelFound ? "true" : "false",
+					g_xDexElementsAfterBack.m_bPanelVisible ? "true" : "false",
+					g_xDexElementsAfterBack.m_bGridFound ? "true" : "false",
+					g_xDexElementsAfterBack.m_bGridVisible ? "true" : "false",
+					g_xDexElementsAfterBack.m_bHeaderVisible ? "true" : "false",
+					g_xDexElementsAfterBack.m_bPrevVisible ? "true" : "false",
+					g_xDexElementsAfterBack.m_bNextVisible ? "true" : "false",
+					g_xDexElementsAfterBack.m_uCellsVisible);
+				bPassed = false;
+			}
+
+			// --- the last Escape: the menu closes and the player is movable again ---
+			if (!g_bDexMenuClosed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the menu never closed after the final Escape press");
+				bPassed = false;
+			}
+			if (!g_bDexMovementReenabled)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] player movement was not re-enabled after the menu closed");
+				bPassed = false;
+			}
+			if (!g_bDexFocusClearedOnClose)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DexScreen] the canvas focus was not cleared (nullptr) after the menu "
+					"closed -- arrow keys could still drive the hidden menu");
+				bPassed = false;
+			}
+		}
+
+		// Always tear down, in order (all guarded), exactly like the sibling tests.
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
+		Zenith_InputSimulator::ClearFixedDt();
+		if (g_bDexActive)
+		{
+			g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);   // FrontEnd
+		}
+		Zenith_InputSimulator::ResetAllInputState();
+		g_bDexActive = false;
+
+		return bPassed || !g_bDexPrereqsPresent;
+	}
 }
 
 static const Zenith_AutomatedTest g_xZMMenuOpenCloseTest = {
@@ -2190,5 +3091,15 @@ static const Zenith_AutomatedTest g_xZMPartyScreenTest = {
 	true /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMPartyScreenTest);
+
+static const Zenith_AutomatedTest g_xZMDexScreenTest = {
+	"ZM_DexScreen_Test",
+	&Setup_ZMDexScreen,
+	&Step_ZMDexScreen,
+	&Verify_ZMDexScreen,
+	/* maxFrames */ 1600,   // ready window + open + two nav + confirm + the grid walk + close
+	true /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDexScreenTest);
 
 #endif // ZENITH_INPUT_SIMULATOR
