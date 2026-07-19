@@ -20,6 +20,7 @@
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
+#include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // sz*_NAME element contract (dialogue authoring)
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
@@ -401,7 +402,9 @@ namespace
 	// 10001 so a fade always covers the menu), each entry focusable + navigation-wired
 	// (up/down) for deterministic engine focus-nav, and ALL authored hidden --
 	// ZM_UI_MenuStack shows/hides + focuses them at runtime. Element names are the
-	// ZM_UI_MenuStack::sz*_NAME contract.
+	// ZM_UI_MenuStack::sz*_NAME contract. SC2 adds the dialogue box (a bottom-centre
+	// panel + wrapped text, also authored hidden) under the ZM_UI_DialogueBox::sz*_NAME
+	// contract.
 	void ZM_ConfigureMenuRoot()
 	{
 		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
@@ -471,6 +474,42 @@ namespace
 			Zenith_UI::Zenith_UIElement* pxUp   = (i > 0u) ? apxButtons[i - 1u] : nullptr;
 			Zenith_UI::Zenith_UIElement* pxDown = (i + 1u < ZM_MENU_ROOT_ITEM_COUNT) ? apxButtons[i + 1u] : nullptr;
 			apxButtons[i]->SetNavigation(pxUp, pxDown, nullptr, nullptr);
+		}
+
+		// The SC2 dialogue box: a wide bottom-centre panel + its wrapped text line, in
+		// the same 9000/9001 sort band and likewise authored HIDDEN -- ZM_UI_DialogueBox
+		// shows them while the DIALOGUE screen is on top. NOT focusable: the box advances
+		// on confirm, never by focus-nav.
+		Zenith_UI::Zenith_UIRect* pxDialoguePanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_DialogueBox::szPANEL_NAME);
+		if (pxDialoguePanel != nullptr)
+		{
+			pxDialoguePanel->SetSortOrder(ZM_UI_MenuStack::iMENU_PANEL_SORT_ORDER);
+			pxDialoguePanel->SetAnchor(Zenith_UI::AnchorPreset::BottomCenter);
+			pxDialoguePanel->SetPivot(Zenith_UI::AnchorPreset::BottomCenter);
+			pxDialoguePanel->SetPosition(0.0f, -32.0f);
+			pxDialoguePanel->SetSize(880.0f, 160.0f);
+			pxDialoguePanel->SetColor({ 0.05f, 0.06f, 0.10f, 0.90f });
+			pxDialoguePanel->SetVisible(false);
+		}
+
+		Zenith_UI::Zenith_UIText* pxDialogueText =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_DialogueBox::szTEXT_NAME);
+		if (pxDialogueText != nullptr)
+		{
+			pxDialogueText->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxDialogueText->SetAnchor(Zenith_UI::AnchorPreset::BottomCenter);
+			pxDialogueText->SetPivot(Zenith_UI::AnchorPreset::BottomCenter);
+			pxDialogueText->SetPosition(0.0f, -56.0f);
+			// Size == the wrap width (the BattleHUD_Log idiom above): text is drawn inside
+			// the element's bounds, so leaving the default 100x100 would start a Left-
+			// aligned line at centre-50 and flow it clean off the right of the screen. 120
+			// tall keeps the box inside the 160-tall panel at the -56 offset.
+			pxDialogueText->SetSize(820.0f, 120.0f);
+			pxDialogueText->SetFontSize(24.0f);
+			pxDialogueText->SetAlignment(Zenith_UI::TextAlignment::Center);   // matches the BottomCenter anchor
+			pxDialogueText->SetMaxWidth(820.0f);   // > 0 enables word wrap inside the panel
+			pxDialogueText->SetVisible(false);
 		}
 	}
 
@@ -712,8 +751,9 @@ void Project_RegisterEditorAutomationSteps()
 
 	// The overworld pause menu (S6 item 2 SC1) on its OWN persistent root, mirroring
 	// the two roots above: a non-transient DontDestroyOnLoad entity carrying a UI
-	// component (the ROOT panel + Party/Bag/Dex/Exit entries, authored hidden by
-	// ZM_ConfigureMenuRoot) + the ZM_UI_MenuStack machine. Persistent so the menu is
+	// component (the ROOT panel + Party/Bag/Dex/Exit entries plus the SC2 dialogue
+	// box panel + text, all authored hidden by ZM_ConfigureMenuRoot) + the
+	// ZM_UI_MenuStack machine. Persistent so the menu and the dialogue box are
 	// reachable from every overworld scene (Dawnmere / PlayerHome / future towns)
 	// without re-authoring, and separate so its 9000/9001 sort band never collides
 	// with the two fade overlays' 10000/10001.
@@ -725,6 +765,10 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreateUIButton("Menu_RootBag", "Bag");
 	xAuto.AddStep_CreateUIButton("Menu_RootDex", "Dex");
 	xAuto.AddStep_CreateUIButton("Menu_RootExit", "Exit");
+	// The SC2 dialogue box lives on the same root (bottom-centre band, authored
+	// hidden): names are the ZM_UI_DialogueBox::szPANEL_NAME / szTEXT_NAME contract.
+	xAuto.AddStep_CreateUIRect(ZM_UI_DialogueBox::szPANEL_NAME);
+	xAuto.AddStep_CreateUIText(ZM_UI_DialogueBox::szTEXT_NAME, "");
 	xAuto.AddStep_Custom(&ZM_ConfigureMenuRoot);
 	xAuto.AddStep_AddComponent("ZM_UI_MenuStack");
 

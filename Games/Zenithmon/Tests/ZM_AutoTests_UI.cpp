@@ -13,12 +13,15 @@
 #include "Maths/Zenith_Maths.h"
 #include "UI/Zenith_UICanvas.h"
 #include "UI/Zenith_UIElement.h"
+#include "UI/Zenith_UIRect.h"
+#include "UI/Zenith_UIText.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
+#include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"
 
 #include <array>
 #include <cstdint>
@@ -26,13 +29,20 @@
 #include <string>
 
 // ============================================================================
-// ZM_AutoTests_UI -- the windowed gate for the overworld pause menu (S6 item 2
-// SC1). ONE test, m_bRequiresGraphics = true:
-//   * ZM_MenuOpenClose_Test -- in a runtime-ready Dawnmere, press the menu key
-//     (M) and assert the ROOT menu opens with the player FROZEN; press an arrow
-//     (Down) and assert the focus cursor advances (engine focus-nav); press
+// ZM_AutoTests_UI -- the windowed gates for the overworld pause menu (S6 item 2).
+// TWO tests, both m_bRequiresGraphics = true:
+//   * ZM_MenuOpenClose_Test (SC1) -- in a runtime-ready Dawnmere, press the menu
+//     key (M) and assert the ROOT menu opens with the player FROZEN; press an
+//     arrow (Down) and assert the focus cursor advances (engine focus-nav); press
 //     Escape and assert the menu closes, player movement is re-enabled, and the
 //     canvas focus is cleared.
+//   * ZM_DialogueTalk_Test (SC2) -- push two lines through
+//     ZM_UI_MenuStack::TryPushDialogue and walk the whole conversation with spaced
+//     Enter edges (complete the reveal, advance a line, close), asserting the
+//     player freezes for the talk and is movable again afterwards, that Escape does
+//     NOT dismiss the modal box, that the AUTHORED panel + text widgets are really
+//     shown/typed/hidden, and that a second push STACKS on an open ROOT and returns
+//     to it.
 //
 // It CLONES the ZM_AutoTests_BattleMenu Dawnmere runtime-ready gate, its fixed-dt
 // 1/30, its RequestSkip-when-assets-absent guard order, and its FRESH-resolve-
@@ -180,24 +190,78 @@ namespace
 			: nullptr;
 	}
 
-	// The persistent ZM_MenuRoot canvas's currently-focused element (nullptr when
-	// none). Read FRESH each call; used to prove focus is cleared on close.
-	bool MenuFocusCleared()
+	// The persistent ZM_MenuRoot entity's UI component, resolved FRESH each call (the
+	// pool relocates, so this is never cached across frames).
+	Zenith_UIComponent* ResolveMenuRootUI()
 	{
 		Zenith_EntityID xEntityID = INVALID_ENTITY_ID;
 		if (!ZM_UI_MenuStack::TryGetUniqueSingletonEntityID(xEntityID))
 		{
-			return true;   // no menu root -> vacuously "no focus held"
+			return nullptr;
 		}
 		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xEntityID);
-		Zenith_UIComponent* pxUI = xEntity.IsValid()
+		return xEntity.IsValid()
 			? xEntity.TryGetComponent<Zenith_UIComponent>()
 			: nullptr;
+	}
+
+	// The persistent ZM_MenuRoot canvas's currently-focused element (nullptr when
+	// none). Read FRESH each call; used to prove focus is cleared on close.
+	bool MenuFocusCleared()
+	{
+		Zenith_UIComponent* pxUI = ResolveMenuRootUI();
 		if (pxUI == nullptr)
 		{
-			return true;
+			return true;   // no menu root / UI -> vacuously "no focus held"
 		}
 		return pxUI->GetCanvas().GetFocusedElement() == nullptr;
+	}
+
+	// What the AUTHORED dialogue widgets actually report this frame. The model-only
+	// assertions cannot see a typo'd element name, a missing AddStep_CreateUI*, or a
+	// ZM_ConfigureMenuRoot FindElement that silently returned nullptr -- ZM_UI_DialogueBox
+	// null-guards all three, so nothing would render while every model assertion stayed
+	// green. This view is the on-screen half of the SC2 gate.
+	struct DialogueElementView
+	{
+		bool        m_bResolved      = false;   // the ZM_MenuRoot UI component resolved
+		bool        m_bPanelFound    = false;
+		bool        m_bTextFound     = false;
+		bool        m_bPanelVisible  = false;
+		bool        m_bTextVisible   = false;
+		std::string m_strText;                  // the element's text (want the pushed line)
+		int         m_iVisibleGlyphs = -1;      // the element's revealed count (post-wrap)
+		int         m_iTotalGlyphs   = -1;      // the element's post-wrap glyph total
+	};
+
+	DialogueElementView ReadDialogueElements()
+	{
+		DialogueElementView xView;
+		Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+		if (pxUI == nullptr)
+		{
+			return xView;
+		}
+		xView.m_bResolved = true;
+
+		Zenith_UI::Zenith_UIRect* pxPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_DialogueBox::szPANEL_NAME);
+		Zenith_UI::Zenith_UIText* pxText =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_DialogueBox::szTEXT_NAME);
+		xView.m_bPanelFound = (pxPanel != nullptr);
+		xView.m_bTextFound  = (pxText != nullptr);
+		if (pxPanel != nullptr)
+		{
+			xView.m_bPanelVisible = pxPanel->IsVisible();
+		}
+		if (pxText != nullptr)
+		{
+			xView.m_bTextVisible   = pxText->IsVisible();
+			xView.m_strText        = pxText->GetText();
+			xView.m_iVisibleGlyphs = pxText->GetVisibleGlyphCount();
+			xView.m_iTotalGlyphs   = pxText->GetTotalGlyphCount();
+		}
+		return xView;
 	}
 
 	// -------------------------------------------------------------------------
@@ -575,6 +639,826 @@ namespace
 
 		return bPassed || !g_bUIPrereqsPresent;
 	}
+
+	// =========================================================================
+	// ZM_DialogueTalk_Test (S6 item 2 SC2) -- the windowed gate for the dialogue
+	// box. In a runtime-ready Dawnmere it walks BOTH push paths:
+	//   1. from an EMPTY stack (an NPC talking with no pause menu open): push two
+	//      lines through ZM_UI_MenuStack::TryPushDialogue (the S6 item 3 seam),
+	//      assert the menu rose on the DIALOGUE screen with the player FROZEN, the
+	//      AUTHORED panel + text elements shown and mid-reveal, that ESCAPE does NOT
+	//      dismiss the modal box, then walk it with spaced Enter edges (press 1
+	//      completes the reveal, press 2 advances to line 1, the rest close it) and
+	//      assert the widgets are hidden again and the player is movable.
+	//   2. STACKED on an open ROOT menu: open ROOT with M, push again, assert depth 2
+	//      with DIALOGUE on top, read it out, and assert the stack returns to ROOT
+	//      still open with the player still frozen -- then Escape out.
+	//
+	// It reuses this file's Dawnmere prerequisite guards / entity views / fixed dt
+	// and keeps its OWN control + observation globals (the g_bUI* set belongs to the
+	// sibling test). State-setters only -- never a reentrant StepFrame.
+	// =========================================================================
+
+	// The pushed conversation. Line 0 is deliberately LONG (59 glyphs > the 45
+	// glyphs/sec reveal rate x the few frames before the first press), so the
+	// typewriter is provably mid-reveal when the first Enter lands.
+	constexpr const char* szDLG_LINE_0 = "Hello there! The tall grass is dangerous without a partner.";
+	constexpr const char* szDLG_LINE_1 = "Take this Catchorb and be careful out there.";
+
+	enum class DlgPhase
+	{
+		AwaitReady,
+		Push,            // raise the dialogue via TryPushDialogue + capture the open state
+		Typing,          // idle frames: the typewriter must be running but unfinished
+		EscapeIgnored,   // ONE Escape edge -> the modal box must survive it untouched
+		CompleteReveal,  // ONE Enter edge -> reveal completes, line index stays 0
+		NextLine,        // ONE Enter edge -> line index advances to 1
+		Finish,          // spaced Enter edges until the box closes
+		OpenRoot,        // press M until the ROOT pause menu is up (the stacking fixture)
+		PushOverRoot,    // push a SECOND conversation on top of ROOT -> depth 2
+		FinishOverRoot,  // spaced Enter edges until the box pops back to ROOT
+		CloseRoot,       // Escape -> the restored ROOT closes and the player is movable
+		Done,
+	};
+
+	constexpr int iDLG_READY_DEADLINE  = 420;   // Dawnmere first-load ready window (parity with the sibling)
+	constexpr int iDLG_TYPING_FRAMES   = 4;     // idle frames sampled mid-reveal (~0.13s -> 6 of 59 glyphs)
+	constexpr int iDLG_PRESS_FRAME     = 2;     // the frame within a press phase that emits the edge
+	constexpr int iDLG_SETTLE_FRAME    = 6;     // ...and the frame the outcome is sampled on
+	constexpr int iDLG_FINISH_DEADLINE = 120;   // frames for the remaining presses to close the box
+	constexpr int iDLG_OPEN_DEADLINE   = 120;   // frames for the M press to open the ROOT menu
+	constexpr int iDLG_CLOSE_DEADLINE  = 120;   // frames for the final Escape to close the ROOT
+
+	// ---- Control state (all reset in Setup; batch mode reuses the process) ----
+	DlgPhase g_eDlgPhase          = DlgPhase::Done;
+	int      g_iDlgPhaseFrames    = 0;
+	bool     g_bDlgPrereqsPresent = false;
+	bool     g_bDlgActive         = false;
+	bool     g_bDlgFailed         = false;
+	const char* g_szDlgFailure    = "test did not reach verification";
+
+	// ---- Captured observations ----
+	bool  g_bDlgMovementEnabledBefore = false;   // player movable BEFORE the push (baseline)
+	bool  g_bDlgPushAccepted          = false;   // TryPushDialogue returned true
+	bool  g_bDlgMenuOpened            = false;   // the menu reported open after the push
+	u_int g_eDlgTopWhileOpen          = (u_int)ZM_MENU_SCREEN_NONE;   // want DIALOGUE
+	bool  g_bDlgActiveWhileOpen       = false;   // the dialogue model reported active
+	bool  g_bDlgPlayerFrozen          = false;   // player movement disabled while talking
+	int   g_iDlgVisibleWhileTyping    = -1;      // glyphs revealed mid-reveal (want > 0)
+	int   g_iDlgTotalWhileTyping      = -1;      // the line's glyph total (want > the visible count)
+	bool  g_bDlgRevealRunning         = false;   // reveal NOT complete while typing
+	bool  g_bDlgRevealCompletedByPress = false;  // press 1 completed the reveal
+	u_int g_uDlgIndexAfterReveal      = 99u;     // line index after press 1 (want 0)
+	u_int g_uDlgIndexAfterAdvance     = 99u;     // line index after press 2 (want 1)
+	bool  g_bDlgClosed                = false;   // the menu closed after the last press
+	bool  g_bDlgInactiveOnClose       = false;   // the dialogue model is inactive after closing
+	bool  g_bDlgMovementReenabled     = false;   // player movement re-enabled after closing
+
+	// ---- The AUTHORED widgets (the on-screen half -- see DialogueElementView) ----
+	DialogueElementView g_xDlgElementsWhileTyping;   // want: both found + visible, mid-reveal
+	DialogueElementView g_xDlgElementsOnClose;       // want: both found + hidden
+
+	// ---- Escape is ignored: a dialogue is modal ----
+	bool  g_bDlgOpenAfterEscape       = false;   // the menu is STILL open after Escape
+	u_int g_eDlgTopAfterEscape        = (u_int)ZM_MENU_SCREEN_NONE;   // want DIALOGUE
+	u_int g_uDlgIndexAfterEscape      = 99u;     // want 0 (Escape consumed nothing)
+
+	// ---- The second conversation, STACKED on an open ROOT ----
+	bool  g_bDlgRootOpened            = false;   // ROOT came up on the M press
+	u_int g_eDlgTopWithRoot           = (u_int)ZM_MENU_SCREEN_NONE;   // want DIALOGUE
+	u_int g_uDlgDepthWithRoot         = 0u;      // want 2 (ROOT + DIALOGUE)
+	bool  g_bDlgSecondPushAccepted    = false;   // TryPushDialogue accepted the stacked push
+	bool  g_bDlgOpenAfterPop          = false;   // the menu is still open once the box pops
+	u_int g_eDlgTopAfterPop           = (u_int)ZM_MENU_SCREEN_NONE;   // want ROOT (restored)
+	bool  g_bDlgPlayerFrozenAfterPop  = false;   // ...and the player is still frozen by the ROOT
+	bool  g_bDlgRootClosed            = false;   // the final Escape closed the ROOT
+	bool  g_bDlgMovementReenabledFinal = false;  // ...and the player is movable again
+
+	void FailDlg(const char* szReason)
+	{
+		g_szDlgFailure = szReason;
+		g_bDlgFailed = true;
+		g_eDlgPhase = DlgPhase::Done;
+	}
+
+	void Setup_ZMDialogueTalk()
+	{
+		g_eDlgPhase                 = DlgPhase::Done;
+		g_iDlgPhaseFrames           = 0;
+		g_bDlgActive                = false;
+		g_bDlgFailed                = false;
+		g_szDlgFailure              = "test did not reach verification";
+
+		g_bDlgMovementEnabledBefore = false;
+		g_bDlgPushAccepted          = false;
+		g_bDlgMenuOpened            = false;
+		g_eDlgTopWhileOpen          = (u_int)ZM_MENU_SCREEN_NONE;
+		g_bDlgActiveWhileOpen       = false;
+		g_bDlgPlayerFrozen          = false;
+		g_iDlgVisibleWhileTyping    = -1;
+		g_iDlgTotalWhileTyping      = -1;
+		g_bDlgRevealRunning         = false;
+		g_bDlgRevealCompletedByPress = false;
+		g_uDlgIndexAfterReveal      = 99u;
+		g_uDlgIndexAfterAdvance     = 99u;
+		g_bDlgClosed                = false;
+		g_bDlgInactiveOnClose       = false;
+		g_bDlgMovementReenabled     = false;
+
+		g_xDlgElementsWhileTyping   = DialogueElementView{};
+		g_xDlgElementsOnClose       = DialogueElementView{};
+
+		g_bDlgOpenAfterEscape       = false;
+		g_eDlgTopAfterEscape        = (u_int)ZM_MENU_SCREEN_NONE;
+		g_uDlgIndexAfterEscape      = 99u;
+
+		g_bDlgRootOpened            = false;
+		g_eDlgTopWithRoot           = (u_int)ZM_MENU_SCREEN_NONE;
+		g_uDlgDepthWithRoot         = 0u;
+		g_bDlgSecondPushAccepted    = false;
+		g_bDlgOpenAfterPop          = false;
+		g_eDlgTopAfterPop           = (u_int)ZM_MENU_SCREEN_NONE;
+		g_bDlgPlayerFrozenAfterPop  = false;
+		g_bDlgRootClosed            = false;
+		g_bDlgMovementReenabledFinal = false;
+
+		// Guard order is MANDATORY: RequestSkip bypasses Verify, so install NO process
+		// state (fixed dt, scene load) until every git-ignored input is confirmed
+		// present. CI has no baked Assets tree -> skip.
+		g_bDlgPrereqsPresent = RequiredDawnmereAssetsPresent();
+		if (!g_bDlgPrereqsPresent)
+		{
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"Dawnmere assets absent -- run a *_True build");
+			return;
+		}
+
+		Zenith_InputSimulator::ResetAllInputState();
+		Zenith_InputSimulator::SetFixedDt(fUI_FIXED_DT);
+
+		g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);   // Dawnmere
+
+		g_eDlgPhase = DlgPhase::AwaitReady;
+		g_bDlgActive = true;
+	}
+
+	bool Step_ZMDialogueTalk(int)
+	{
+		if (!g_bDlgActive || g_bDlgFailed || g_eDlgPhase == DlgPhase::Done)
+		{
+			return false;
+		}
+
+		++g_iDlgPhaseFrames;
+		switch (g_eDlgPhase)
+		{
+		case DlgPhase::AwaitReady:
+		{
+			PlayerView xPlayer;
+			CameraView xCamera;
+			if (!DawnmereRuntimeReady(xPlayer, xCamera))
+			{
+				if (g_iDlgPhaseFrames > iDLG_READY_DEADLINE)
+				{
+					FailDlg("Dawnmere did not become runtime-ready in time");
+					return false;
+				}
+				return true;
+			}
+			if (ResolveSingletonMenuStack() == nullptr)
+			{
+				FailDlg("no unique ZM_UI_MenuStack singleton (ZM_MenuRoot missing)");
+				return false;
+			}
+
+			g_bDlgMovementEnabledBefore = xPlayer.m_pxController->IsMovementEnabled();
+
+			g_eDlgPhase = DlgPhase::Push;
+			g_iDlgPhaseFrames = 0;
+			return true;
+		}
+
+		case DlgPhase::Push:
+		{
+			// The NPC seam: a static singleton call, exactly what S6 item 3's
+			// ZM_Interactable will make. Pushed ONCE, on the first frame of the phase.
+			const char* aszLines[2] = { szDLG_LINE_0, szDLG_LINE_1 };
+			g_bDlgPushAccepted = ZM_UI_MenuStack::TryPushDialogue(aszLines, 2u);
+			if (!g_bDlgPushAccepted)
+			{
+				FailDlg("TryPushDialogue rejected the two-line conversation");
+				return false;
+			}
+
+			// Resolve FRESH (the pool relocates on swap-and-pop).
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDlg("the ZM_UI_MenuStack singleton stopped resolving after the push");
+				return false;
+			}
+			g_bDlgMenuOpened      = pxMenu->IsOpen();
+			g_eDlgTopWhileOpen    = (u_int)pxMenu->GetTopScreen();
+			g_bDlgActiveWhileOpen = pxMenu->GetDialogue().IsActive();
+
+			bool bEnabled = true;
+			if (ReadActivePlayerMovementEnabled(bEnabled))
+			{
+				g_bDlgPlayerFrozen = !bEnabled;
+			}
+
+			g_eDlgPhase = DlgPhase::Typing;
+			g_iDlgPhaseFrames = 0;
+			return true;
+		}
+
+		case DlgPhase::Typing:
+		{
+			if (g_iDlgPhaseFrames < iDLG_TYPING_FRAMES)
+			{
+				return true;   // idle: let the typewriter run for a few fixed-dt frames
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDlg("the ZM_UI_MenuStack singleton stopped resolving while typing");
+				return false;
+			}
+			const ZM_UI_DialogueBox& xDialogue = pxMenu->GetDialogue();
+			g_iDlgVisibleWhileTyping = xDialogue.GetVisibleGlyphCount();
+			g_iDlgTotalWhileTyping   = xDialogue.GetCurrentLineGlyphTotal();
+			g_bDlgRevealRunning      = !xDialogue.IsRevealComplete();
+			// ...and what the AUTHORED widgets are actually showing this frame.
+			g_xDlgElementsWhileTyping = ReadDialogueElements();
+
+			g_eDlgPhase = DlgPhase::EscapeIgnored;
+			g_iDlgPhaseFrames = 0;
+			return true;
+		}
+
+		case DlgPhase::EscapeIgnored:
+		{
+			// A dialogue is MODAL: cancel is deliberately not routed while it is the top
+			// screen, so this Escape must change nothing (were it routed, HandleCancel
+			// would pop the box and close the menu outright).
+			if (g_iDlgPhaseFrames == iDLG_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+				return true;
+			}
+			if (g_iDlgPhaseFrames < iDLG_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDlg("the ZM_UI_MenuStack singleton stopped resolving after the Escape press");
+				return false;
+			}
+			g_bDlgOpenAfterEscape  = pxMenu->IsOpen();
+			g_eDlgTopAfterEscape   = (u_int)pxMenu->GetTopScreen();
+			g_uDlgIndexAfterEscape = pxMenu->GetDialogue().GetCurrentLineIndex();
+
+			g_eDlgPhase = DlgPhase::CompleteReveal;
+			g_iDlgPhaseFrames = 0;
+			return true;
+		}
+
+		case DlgPhase::CompleteReveal:
+		{
+			// One Enter edge, with idle frames on either side so the edge-detected
+			// ZM_InputActions::ReadConfirmPressed fires exactly once.
+			if (g_iDlgPhaseFrames == iDLG_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iDlgPhaseFrames < iDLG_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDlg("the ZM_UI_MenuStack singleton stopped resolving after the first press");
+				return false;
+			}
+			const ZM_UI_DialogueBox& xDialogue = pxMenu->GetDialogue();
+			g_bDlgRevealCompletedByPress = xDialogue.IsRevealComplete();
+			g_uDlgIndexAfterReveal       = xDialogue.GetCurrentLineIndex();
+
+			g_eDlgPhase = DlgPhase::NextLine;
+			g_iDlgPhaseFrames = 0;
+			return true;
+		}
+
+		case DlgPhase::NextLine:
+		{
+			if (g_iDlgPhaseFrames == iDLG_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iDlgPhaseFrames < iDLG_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDlg("the ZM_UI_MenuStack singleton stopped resolving after the second press");
+				return false;
+			}
+			g_uDlgIndexAfterAdvance = pxMenu->GetDialogue().GetCurrentLineIndex();
+
+			g_eDlgPhase = DlgPhase::Finish;
+			g_iDlgPhaseFrames = 0;
+			return true;
+		}
+
+		case DlgPhase::Finish:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDlg("the ZM_UI_MenuStack singleton stopped resolving while finishing");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				g_bDlgClosed          = true;
+				g_bDlgInactiveOnClose = !pxMenu->GetDialogue().IsActive();
+				// CloseMenu hides the widgets directly (the per-frame Present stops running
+				// the moment the stack empties), so they must be down here.
+				g_xDlgElementsOnClose = ReadDialogueElements();
+
+				bool bEnabled = false;
+				if (ReadActivePlayerMovementEnabled(bEnabled))
+				{
+					g_bDlgMovementReenabled = bEnabled;
+				}
+
+				g_eDlgPhase = DlgPhase::OpenRoot;
+				g_iDlgPhaseFrames = 0;
+				return true;
+			}
+			if (g_iDlgPhaseFrames > iDLG_FINISH_DEADLINE)
+			{
+				FailDlg("the dialogue never closed after the remaining Enter presses");
+				return false;
+			}
+			// Spaced edges (one every fourth frame): line 1's reveal completes on the
+			// first, and the last line is consumed on the next -- closing the box.
+			if ((g_iDlgPhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			}
+			return true;
+		}
+
+		case DlgPhase::OpenRoot:
+		{
+			// Second half: the STACKING path. Bring up the ROOT pause menu first so the
+			// next push lands ON TOP of a live screen instead of an empty stack.
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDlg("the ZM_UI_MenuStack singleton stopped resolving while opening ROOT");
+				return false;
+			}
+			if (pxMenu->IsOpen() && pxMenu->GetTopScreen() == ZM_MENU_SCREEN_ROOT)
+			{
+				g_bDlgRootOpened = true;
+				g_eDlgPhase = DlgPhase::PushOverRoot;
+				g_iDlgPhaseFrames = 0;
+				return true;
+			}
+			if (g_iDlgPhaseFrames > iDLG_OPEN_DEADLINE)
+			{
+				FailDlg("the ROOT menu never opened after the M press");
+				return false;
+			}
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_M);
+			return true;
+		}
+
+		case DlgPhase::PushOverRoot:
+		{
+			const char* aszLines[2] = { szDLG_LINE_0, szDLG_LINE_1 };
+			g_bDlgSecondPushAccepted = ZM_UI_MenuStack::TryPushDialogue(aszLines, 2u);
+			if (!g_bDlgSecondPushAccepted)
+			{
+				FailDlg("TryPushDialogue rejected the conversation stacked on ROOT");
+				return false;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDlg("the ZM_UI_MenuStack singleton stopped resolving after the stacked push");
+				return false;
+			}
+			g_eDlgTopWithRoot   = (u_int)pxMenu->GetTopScreen();
+			g_uDlgDepthWithRoot = pxMenu->GetDepth();
+
+			g_eDlgPhase = DlgPhase::FinishOverRoot;
+			g_iDlgPhaseFrames = 0;
+			return true;
+		}
+
+		case DlgPhase::FinishOverRoot:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDlg("the ZM_UI_MenuStack singleton stopped resolving while reading the stacked box");
+				return false;
+			}
+			// Stop pressing the FRAME the box pops -- another Enter would land on the
+			// restored ROOT and confirm its focused entry.
+			if (pxMenu->GetTopScreen() != ZM_MENU_SCREEN_DIALOGUE)
+			{
+				g_bDlgOpenAfterPop = pxMenu->IsOpen();
+				g_eDlgTopAfterPop  = (u_int)pxMenu->GetTopScreen();
+
+				bool bEnabled = true;
+				if (ReadActivePlayerMovementEnabled(bEnabled))
+				{
+					g_bDlgPlayerFrozenAfterPop = !bEnabled;
+				}
+
+				g_eDlgPhase = DlgPhase::CloseRoot;
+				g_iDlgPhaseFrames = 0;
+				return true;
+			}
+			if (g_iDlgPhaseFrames > iDLG_FINISH_DEADLINE)
+			{
+				FailDlg("the stacked dialogue never popped back to ROOT");
+				return false;
+			}
+			// Four spaced edges read both lines out (complete + advance, complete + close).
+			if ((g_iDlgPhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			}
+			return true;
+		}
+
+		case DlgPhase::CloseRoot:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailDlg("the ZM_UI_MenuStack singleton stopped resolving while closing ROOT");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				g_bDlgRootClosed = true;
+
+				bool bEnabled = false;
+				if (ReadActivePlayerMovementEnabled(bEnabled))
+				{
+					g_bDlgMovementReenabledFinal = bEnabled;
+				}
+
+				g_eDlgPhase = DlgPhase::Done;
+				return false;
+			}
+			if (g_iDlgPhaseFrames > iDLG_CLOSE_DEADLINE)
+			{
+				FailDlg("the restored ROOT never closed after the Escape press");
+				return false;
+			}
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+			return true;
+		}
+
+		case DlgPhase::Done:
+			return false;
+		}
+		return false;
+	}
+
+	bool Verify_ZMDialogueTalk()
+	{
+		bool bPassed = true;
+
+		if (g_bDlgActive)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_DialogueTalk] captured: failed=%s (%s) movBefore=%s pushed=%s opened=%s "
+				"top=%u (want DIALOGUE=%u) dlgActive=%s frozen=%s visible=%d total=%d running=%s "
+				"revealDone=%s idxAfterReveal=%u (want 0) idxAfterAdvance=%u (want 1) closed=%s "
+				"inactive=%s movReenabled=%s",
+				g_bDlgFailed ? "true" : "false", g_szDlgFailure,
+				g_bDlgMovementEnabledBefore ? "true" : "false",
+				g_bDlgPushAccepted ? "true" : "false",
+				g_bDlgMenuOpened ? "true" : "false",
+				g_eDlgTopWhileOpen, (u_int)ZM_MENU_SCREEN_DIALOGUE,
+				g_bDlgActiveWhileOpen ? "true" : "false",
+				g_bDlgPlayerFrozen ? "true" : "false",
+				g_iDlgVisibleWhileTyping, g_iDlgTotalWhileTyping,
+				g_bDlgRevealRunning ? "true" : "false",
+				g_bDlgRevealCompletedByPress ? "true" : "false",
+				g_uDlgIndexAfterReveal, g_uDlgIndexAfterAdvance,
+				g_bDlgClosed ? "true" : "false",
+				g_bDlgInactiveOnClose ? "true" : "false",
+				g_bDlgMovementReenabled ? "true" : "false");
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_DialogueTalk] widgets: typing(resolved=%s panel=%s/%s text=%s/%s "
+				"glyphs=%d of %d text='%s') onClose(panel=%s/%s text=%s/%s) | escape(open=%s "
+				"top=%u idx=%u) | stacked(rootOpen=%s top=%u depth=%u pushed=%s afterPop(open=%s "
+				"top=%u frozen=%s) rootClosed=%s movReenabled=%s)",
+				g_xDlgElementsWhileTyping.m_bResolved ? "true" : "false",
+				g_xDlgElementsWhileTyping.m_bPanelFound ? "found" : "MISSING",
+				g_xDlgElementsWhileTyping.m_bPanelVisible ? "visible" : "hidden",
+				g_xDlgElementsWhileTyping.m_bTextFound ? "found" : "MISSING",
+				g_xDlgElementsWhileTyping.m_bTextVisible ? "visible" : "hidden",
+				g_xDlgElementsWhileTyping.m_iVisibleGlyphs,
+				g_xDlgElementsWhileTyping.m_iTotalGlyphs,
+				g_xDlgElementsWhileTyping.m_strText.c_str(),
+				g_xDlgElementsOnClose.m_bPanelFound ? "found" : "MISSING",
+				g_xDlgElementsOnClose.m_bPanelVisible ? "visible" : "hidden",
+				g_xDlgElementsOnClose.m_bTextFound ? "found" : "MISSING",
+				g_xDlgElementsOnClose.m_bTextVisible ? "visible" : "hidden",
+				g_bDlgOpenAfterEscape ? "true" : "false",
+				g_eDlgTopAfterEscape, g_uDlgIndexAfterEscape,
+				g_bDlgRootOpened ? "true" : "false",
+				g_eDlgTopWithRoot, g_uDlgDepthWithRoot,
+				g_bDlgSecondPushAccepted ? "true" : "false",
+				g_bDlgOpenAfterPop ? "true" : "false",
+				g_eDlgTopAfterPop,
+				g_bDlgPlayerFrozenAfterPop ? "true" : "false",
+				g_bDlgRootClosed ? "true" : "false",
+				g_bDlgMovementReenabledFinal ? "true" : "false");
+
+			if (g_bDlgFailed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST, "[ZM_DialogueTalk] %s", g_szDlgFailure);
+				bPassed = false;
+			}
+
+			// The baseline must be meaningful: the player was movable before talking.
+			if (!g_bDlgMovementEnabledBefore)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the player was not movable before the push -- the freeze "
+					"assertion would be vacuous");
+				bPassed = false;
+			}
+
+			// --- push: the DIALOGUE screen is up and the player is frozen ---
+			if (!g_bDlgPushAccepted)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] TryPushDialogue rejected the conversation");
+				bPassed = false;
+			}
+			if (!g_bDlgMenuOpened)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the menu did not open when the dialogue was pushed");
+				bPassed = false;
+			}
+			if (g_eDlgTopWhileOpen != (u_int)ZM_MENU_SCREEN_DIALOGUE)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] top screen while talking was %u, expected DIALOGUE %u",
+					g_eDlgTopWhileOpen, (u_int)ZM_MENU_SCREEN_DIALOGUE);
+				bPassed = false;
+			}
+			if (!g_bDlgActiveWhileOpen)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the dialogue model was not active after the push");
+				bPassed = false;
+			}
+			if (!g_bDlgPlayerFrozen)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the player was NOT frozen while the dialogue was up");
+				bPassed = false;
+			}
+
+			// --- typing: the typewriter is running but unfinished ---
+			if (g_iDlgVisibleWhileTyping <= 0)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] no glyphs were revealed mid-reveal (visible=%d) -- the "
+					"typewriter clock is not being ticked", g_iDlgVisibleWhileTyping);
+				bPassed = false;
+			}
+			if (g_iDlgVisibleWhileTyping >= g_iDlgTotalWhileTyping)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the line was already fully revealed (%d of %d) when sampled "
+					"-- the mid-reveal assertion would be vacuous",
+					g_iDlgVisibleWhileTyping, g_iDlgTotalWhileTyping);
+				bPassed = false;
+			}
+			if (!g_bDlgRevealRunning)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the reveal reported complete while still typing");
+				bPassed = false;
+			}
+
+			// --- the AUTHORED widgets are really on screen mid-reveal ---
+			if (!g_xDlgElementsWhileTyping.m_bResolved)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the ZM_MenuRoot UI component did not resolve while typing");
+				bPassed = false;
+			}
+			else
+			{
+				if (!g_xDlgElementsWhileTyping.m_bPanelFound
+					|| !g_xDlgElementsWhileTyping.m_bTextFound)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_DialogueTalk] the authored dialogue widgets did not resolve by name "
+						"(panel '%s' found=%s, text '%s' found=%s) -- ZM_ConfigureMenuRoot / the "
+						"AddStep_CreateUI* contract is broken and NOTHING would render",
+						ZM_UI_DialogueBox::szPANEL_NAME,
+						g_xDlgElementsWhileTyping.m_bPanelFound ? "true" : "false",
+						ZM_UI_DialogueBox::szTEXT_NAME,
+						g_xDlgElementsWhileTyping.m_bTextFound ? "true" : "false");
+					bPassed = false;
+				}
+				if (!g_xDlgElementsWhileTyping.m_bPanelVisible
+					|| !g_xDlgElementsWhileTyping.m_bTextVisible)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_DialogueTalk] the dialogue widgets were not shown while the box was up "
+						"(panel visible=%s, text visible=%s)",
+						g_xDlgElementsWhileTyping.m_bPanelVisible ? "true" : "false",
+						g_xDlgElementsWhileTyping.m_bTextVisible ? "true" : "false");
+					bPassed = false;
+				}
+				if (g_xDlgElementsWhileTyping.m_strText != szDLG_LINE_0)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_DialogueTalk] the text element reads '%s', expected the pushed line 0 '%s'",
+						g_xDlgElementsWhileTyping.m_strText.c_str(), szDLG_LINE_0);
+					bPassed = false;
+				}
+				// The ELEMENT's own reveal counter (driven off the post-wrap total) must be
+				// strictly inside (0, total) -- proof Present is running the typewriter and
+				// not just showing the whole line.
+				if (g_xDlgElementsWhileTyping.m_iVisibleGlyphs <= 0
+					|| g_xDlgElementsWhileTyping.m_iVisibleGlyphs
+						>= g_xDlgElementsWhileTyping.m_iTotalGlyphs)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_DialogueTalk] the text element's revealed glyph count was %d of %d -- "
+						"expected a partial reveal (Present is not driving SetVisibleGlyphCount)",
+						g_xDlgElementsWhileTyping.m_iVisibleGlyphs,
+						g_xDlgElementsWhileTyping.m_iTotalGlyphs);
+					bPassed = false;
+				}
+			}
+
+			// --- Escape is IGNORED: the dialogue is modal ---
+			if (!g_bDlgOpenAfterEscape
+				|| g_eDlgTopAfterEscape != (u_int)ZM_MENU_SCREEN_DIALOGUE
+				|| g_uDlgIndexAfterEscape != 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] Escape disturbed the modal dialogue (open=%s top=%u want %u "
+					"lineIndex=%u want 0) -- cancel must never dismiss a prompt",
+					g_bDlgOpenAfterEscape ? "true" : "false",
+					g_eDlgTopAfterEscape, (u_int)ZM_MENU_SCREEN_DIALOGUE,
+					g_uDlgIndexAfterEscape);
+				bPassed = false;
+			}
+
+			// --- press 1: completes the reveal WITHOUT advancing ---
+			if (!g_bDlgRevealCompletedByPress)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the first Enter did not complete the reveal");
+				bPassed = false;
+			}
+			if (g_uDlgIndexAfterReveal != 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the line index after the first Enter was %u, expected 0 "
+					"(completing a reveal must not consume the line)", g_uDlgIndexAfterReveal);
+				bPassed = false;
+			}
+
+			// --- press 2: advances to the second line ---
+			if (g_uDlgIndexAfterAdvance != 1u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the line index after the second Enter was %u, expected 1",
+					g_uDlgIndexAfterAdvance);
+				bPassed = false;
+			}
+
+			// --- close: menu down, dialogue empty, player movable ---
+			if (!g_bDlgClosed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the menu never closed after the remaining Enter presses");
+				bPassed = false;
+			}
+			if (!g_bDlgInactiveOnClose)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the dialogue model was still active after the box closed");
+				bPassed = false;
+			}
+			if (!g_bDlgMovementReenabled)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] player movement was not re-enabled after the dialogue closed");
+				bPassed = false;
+			}
+			// The *Found flags are asserted too, not just the *Visible ones: a default-
+			// initialised DialogueElementView has both Visible flags false, so a
+			// "hidden" check alone would pass VACUOUSLY if the close phase never
+			// captured. Requiring Found proves the capture actually ran.
+			if (!g_xDlgElementsOnClose.m_bPanelFound
+				|| !g_xDlgElementsOnClose.m_bTextFound
+				|| g_xDlgElementsOnClose.m_bPanelVisible
+				|| g_xDlgElementsOnClose.m_bTextVisible)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the dialogue widgets were not captured hidden after the box "
+					"closed (panel found=%s visible=%s, text found=%s visible=%s)",
+					g_xDlgElementsOnClose.m_bPanelFound ? "true" : "false",
+					g_xDlgElementsOnClose.m_bPanelVisible ? "true" : "false",
+					g_xDlgElementsOnClose.m_bTextFound ? "true" : "false",
+					g_xDlgElementsOnClose.m_bTextVisible ? "true" : "false");
+				bPassed = false;
+			}
+
+			// --- the second conversation, STACKED on an open ROOT ---
+			if (!g_bDlgRootOpened)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the ROOT menu never opened for the stacking half of the test");
+				bPassed = false;
+			}
+			if (!g_bDlgSecondPushAccepted)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] TryPushDialogue rejected the conversation stacked on ROOT");
+				bPassed = false;
+			}
+			if (g_eDlgTopWithRoot != (u_int)ZM_MENU_SCREEN_DIALOGUE || g_uDlgDepthWithRoot != 2u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the stacked push gave top=%u depth=%u, expected DIALOGUE %u "
+					"at depth 2 (it must stack ON TOP of ROOT, not replace it)",
+					g_eDlgTopWithRoot, g_uDlgDepthWithRoot, (u_int)ZM_MENU_SCREEN_DIALOGUE);
+				bPassed = false;
+			}
+			if (!g_bDlgOpenAfterPop || g_eDlgTopAfterPop != (u_int)ZM_MENU_SCREEN_ROOT)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] after the stacked box was read out the menu was open=%s on "
+					"top=%u, expected the ROOT %u to be restored underneath it",
+					g_bDlgOpenAfterPop ? "true" : "false",
+					g_eDlgTopAfterPop, (u_int)ZM_MENU_SCREEN_ROOT);
+				bPassed = false;
+			}
+			if (!g_bDlgPlayerFrozenAfterPop)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the player was unfrozen when the stacked dialogue popped -- "
+					"the ROOT menu underneath still owns the freeze");
+				bPassed = false;
+			}
+			if (!g_bDlgRootClosed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] the restored ROOT never closed after the final Escape");
+				bPassed = false;
+			}
+			if (!g_bDlgMovementReenabledFinal)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DialogueTalk] player movement was not re-enabled after the ROOT finally closed");
+				bPassed = false;
+			}
+		}
+
+		// Always tear down, in order (all guarded), exactly like the sibling test.
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
+		Zenith_InputSimulator::ClearFixedDt();
+		if (g_bDlgActive)
+		{
+			g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);   // FrontEnd
+		}
+		Zenith_InputSimulator::ResetAllInputState();
+		g_bDlgActive = false;
+
+		return bPassed || !g_bDlgPrereqsPresent;
+	}
 }
 
 static const Zenith_AutomatedTest g_xZMMenuOpenCloseTest = {
@@ -586,5 +1470,15 @@ static const Zenith_AutomatedTest g_xZMMenuOpenCloseTest = {
 	true /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMMenuOpenCloseTest);
+
+static const Zenith_AutomatedTest g_xZMDialogueTalkTest = {
+	"ZM_DialogueTalk_Test",
+	&Setup_ZMDialogueTalk,
+	&Step_ZMDialogueTalk,
+	&Verify_ZMDialogueTalk,
+	/* maxFrames */ 1200,
+	true /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDialogueTalkTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

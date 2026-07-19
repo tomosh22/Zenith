@@ -90,6 +90,7 @@ void ZM_UI_MenuStack::OnStart()
 
 	// Start closed: menu is a session-only overlay, nothing persists across saves.
 	m_xStack.Clear();
+	m_xDialogue.Reset();
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 
@@ -108,8 +109,6 @@ void ZM_UI_MenuStack::OnDestroy()
 
 void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 {
-	(void)fDeltaSeconds;
-
 	if (!IsOpen())
 	{
 		// Overworld pause-open gate: menu key, in an overworld scene, no warp / battle.
@@ -125,18 +124,40 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		return;
 	}
 
-	// -- Menu open. Arrow-key traversal is driven automatically by the engine's
-	//    per-canvas UpdateFocusNavigation (keyboard confirm / cancel are NOT wired
-	//    engine-side, so they are game-supplied here). --
-	const bool bConfirm = ZM_InputActions::ReadConfirmPressed();
-	const bool bCancel  = ZM_InputActions::ReadCancelPressed();
-	if (bConfirm)
+	if (m_xStack.Top() == ZM_MENU_SCREEN_DIALOGUE)
 	{
-		HandleConfirm();
+		// The dialogue owns input while it is the top screen: confirm advances the
+		// typewriter / the line, and CANCEL is deliberately IGNORED -- a dialogue is
+		// modal and closes only by being read to the end, so a prompt can never be
+		// escaped past (S6 item 3 hangs yes/no prompts off exactly this).
+		m_xDialogue.Tick(fDeltaSeconds);
+		if (ZM_InputActions::ReadConfirmPressed())
+		{
+			if (m_xDialogue.Confirm() == ZM_DIALOGUE_ADVANCE_CLOSED)
+			{
+				m_xStack.Pop();
+				if (m_xStack.IsEmpty())
+				{
+					CloseMenu();
+				}
+			}
+		}
 	}
-	else if (bCancel)
+	else
 	{
-		HandleCancel();
+		// -- Menu open. Arrow-key traversal is driven automatically by the engine's
+		//    per-canvas UpdateFocusNavigation (keyboard confirm / cancel are NOT wired
+		//    engine-side, so they are game-supplied here). --
+		const bool bConfirm = ZM_InputActions::ReadConfirmPressed();
+		const bool bCancel  = ZM_InputActions::ReadCancelPressed();
+		if (bConfirm)
+		{
+			HandleConfirm();
+		}
+		else if (bCancel)
+		{
+			HandleCancel();
+		}
 	}
 
 	// Refresh visibility / focus + mirror the cursor every frame the menu stays open
@@ -162,6 +183,10 @@ void ZM_UI_MenuStack::CloseMenu()
 {
 	m_xStack.Clear();
 	m_iCursor = -1;
+	// Drop any queued dialogue too: a force-close (ResetRuntimeStateForTests) must not
+	// bleed a half-read conversation into the next batched test / play session.
+	m_xDialogue.Reset();
+	m_xDialogue.Hide(m_xParentEntity);
 
 	// Hide every ROOT element + clear the canvas focus so arrow keys never drive an
 	// invisible menu on the shared persistent canvas (watch-out 2).
@@ -229,6 +254,47 @@ void ZM_UI_MenuStack::HandleCancel()
 	// else: back to a lower screen (ROOT) -- PresentTopScreen re-shows it this frame.
 }
 
+// ---- Dialogue (SC2) --------------------------------------------------------
+
+bool ZM_UI_MenuStack::PushDialogueLines(const char* const* paszLines, u_int uCount)
+{
+	if (!m_xDialogue.QueueLines(paszLines, uCount))
+	{
+		return false;
+	}
+	// An already-showing dialogue just gains lines: keep the in-flight reveal (the
+	// stack already has DIALOGUE on top, and re-pushing would double the pop).
+	if (m_xStack.Top() != ZM_MENU_SCREEN_DIALOGUE)
+	{
+		const bool bWasClosed = m_xStack.IsEmpty();
+		if (!m_xStack.Push(ZM_MENU_SCREEN_DIALOGUE))
+		{
+			m_xDialogue.Reset();   // depth-limit: never leave a queue with no screen to show it
+			return false;
+		}
+		if (bWasClosed)
+		{
+			FreezePlayer();   // an NPC can talk without the pause menu ever being opened
+		}
+	}
+	PresentTopScreen();
+	return true;
+}
+
+bool ZM_UI_MenuStack::TryPushDialogue(const char* const* paszLines, u_int uCount)
+{
+	Zenith_EntityID xEntityID = INVALID_ENTITY_ID;
+	if (!TryGetUniqueSingletonEntityID(xEntityID))
+	{
+		return false;
+	}
+	Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xEntityID);
+	ZM_UI_MenuStack* pxMenu = xEntity.IsValid()
+		? xEntity.TryGetComponent<ZM_UI_MenuStack>()
+		: nullptr;
+	return pxMenu != nullptr && pxMenu->PushDialogueLines(paszLines, uCount);
+}
+
 void ZM_UI_MenuStack::PresentTopScreen()
 {
 	Zenith_UIComponent* pxUI = ResolveUI();
@@ -237,7 +303,8 @@ void ZM_UI_MenuStack::PresentTopScreen()
 		return;   // best-effort: a missing UI component never crashes the menu
 	}
 	Zenith_UI::Zenith_UICanvas& xCanvas = pxUI->GetCanvas();
-	const bool bRoot = (m_xStack.Top() == ZM_MENU_SCREEN_ROOT);
+	const bool bRoot     = (m_xStack.Top() == ZM_MENU_SCREEN_ROOT);
+	const bool bDialogue = (m_xStack.Top() == ZM_MENU_SCREEN_DIALOGUE);
 
 	if (Zenith_UI::Zenith_UIElement* pxPanel = pxUI->FindElement(szROOT_PANEL_NAME))
 	{
@@ -273,10 +340,20 @@ void ZM_UI_MenuStack::PresentTopScreen()
 	}
 	else
 	{
-		// Placeholder sub-screen (SC1): nothing authored yet -- clear focus so arrows
-		// never drive the (now hidden) root entries.
+		// Any non-ROOT screen (a placeholder, or DIALOGUE -- whose advance is a confirm
+		// press, NOT focus-nav): clear focus so arrows never drive the hidden root
+		// entries.
 		xCanvas.SetFocusedElement(nullptr);
 		m_iCursor = -1;
+	}
+
+	if (bDialogue)
+	{
+		m_xDialogue.Present(m_xParentEntity);
+	}
+	else
+	{
+		m_xDialogue.Hide(m_xParentEntity);
 	}
 }
 
@@ -474,8 +551,9 @@ void ZM_UI_MenuStack::ReadFromDataStream(Zenith_DataStream& xStream)
 	u_int uVersion = 0u;
 	xStream >> uVersion;
 
-	// Reset-first: never retain a stale open menu from a reused instance.
+	// Reset-first: never retain a stale open menu / queued dialogue from a reused instance.
 	m_xStack.Clear();
+	m_xDialogue.Reset();
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 	(void)uVersion;
@@ -489,5 +567,10 @@ void ZM_UI_MenuStack::RenderPropertiesPanel()
 		m_xStack.GetDepth(),
 		static_cast<u_int>(m_xStack.Top()),
 		m_iCursor);
+	ImGui::Text("Dialogue - active=%s line=%u/%u revealed=%s",
+		m_xDialogue.IsActive() ? "true" : "false",
+		m_xDialogue.GetCurrentLineIndex(),
+		m_xDialogue.GetQueuedLineCount(),
+		m_xDialogue.IsRevealComplete() ? "true" : "false");
 }
 #endif

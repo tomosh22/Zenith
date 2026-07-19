@@ -1,13 +1,15 @@
 #pragma once
 
 #include "ZenithECS/Zenith_Entity.h"
-#include "Zenithmon/Source/Data/ZM_WorldSpec.h"   // ZM_SCENE_KIND (by value in the pure gating statics)
+#include "Zenithmon/Source/Data/ZM_WorldSpec.h"        // ZM_SCENE_KIND (by value in the pure gating statics)
+#include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"     // owned BY VALUE (the SC2 dialogue screen)
 
 class Zenith_DataStream;
 class Zenith_UIComponent;
 
 // ============================================================================
-// Zenithmon S6 item 2 SC1 -- ZM_UI_MenuStack: the overworld pause-menu machine.
+// Zenithmon S6 item 2 (SC1 + SC2) -- ZM_UI_MenuStack: the overworld pause-menu
+// machine, and host of the dialogue box.
 //
 // A new ECS component (order 112) living on the persistent ZM_MenuRoot entity
 // (authored in FrontEnd, DontDestroyOnLoad, with its own Zenith_UIComponent),
@@ -19,18 +21,22 @@ class Zenith_UIComponent;
 // pointer dangles when the ECS pool relocates), and pops on cancel/Escape,
 // unfreezing the player + clearing focus when the stack empties.
 //
-// SC1 ships the ROOT screen (Party / Bag / Dex / Exit entries) plus the screen-
-// stack machinery; SC2+ fill in the real Party/Bag/Dex/Dialogue/Shop screens
-// (the extra ZM_MENU_SCREEN_* enumerators here are forward placeholders). The
-// pure decision surface (the screen stack, the gating predicate, the focused-
-// name -> action resolver, the scene-kind test) is static / value-typed and
-// unit-tested with NO scene / graphics.
+// SC1 shipped the ROOT screen (Party / Bag / Dex / Exit entries) plus the screen-
+// stack machinery; SC2 adds the DIALOGUE screen -- a by-value ZM_UI_DialogueBox
+// raised by PushDialogueLines / TryPushDialogue (the seam NPCs and prompts talk
+// through), modal (Escape never dismisses it) and advanced only by confirm. SC3+
+// fill in the real Party/Bag/Dex/Shop screens (the remaining ZM_MENU_SCREEN_*
+// enumerators are forward placeholders). The pure decision surface (the screen
+// stack, the gating predicate, the focused-name -> action resolver, the scene-kind
+// test, the dialogue model) is static / value-typed and unit-tested with NO scene
+// / graphics.
 // ============================================================================
 
-// The menu screen ids pushed onto the stack. ROOT is the pause root; the rest
-// are forward placeholders wired to real presenters in later SCs (pushing one in
-// SC1 simply hides the root panel until the player pops back). Save-stable:
-// append before ZM_MENU_SCREEN_COUNT, never reorder.
+// The menu screen ids pushed onto the stack. ROOT is the pause root and DIALOGUE
+// is the SC2 dialogue box; PARTY / BAG / DEX are still forward placeholders wired
+// to real presenters in later SCs (pushing one simply hides the root panel until
+// the player pops back). Save-stable: append before ZM_MENU_SCREEN_COUNT, never
+// reorder.
 enum ZM_MENU_SCREEN : u_int
 {
 	ZM_MENU_SCREEN_NONE = 0u,   // "empty stack" sentinel (never stored)
@@ -38,6 +44,7 @@ enum ZM_MENU_SCREEN : u_int
 	ZM_MENU_SCREEN_PARTY,       // placeholder (SC4)
 	ZM_MENU_SCREEN_BAG,         // placeholder (SC6)
 	ZM_MENU_SCREEN_DEX,         // placeholder (SC5)
+	ZM_MENU_SCREEN_DIALOGUE,    // SC2: the NPC / prompt dialogue box (modal, not a ROOT entry)
 
 	ZM_MENU_SCREEN_COUNT
 };
@@ -117,7 +124,9 @@ public:
 	explicit ZM_UI_MenuStack(Zenith_Entity& xParentEntity);
 
 	// Move-CONSTRUCTIBLE only (the ECS pool move-constructs on Grow / swap-and-pop /
-	// DontDestroyOnLoad). All members are trivially movable, so noexcept-default is
+	// DontDestroyOnLoad). Every member is NOEXCEPT-movable -- the PODs trivially, and
+	// m_xDialogue's std::string queue via std::string's noexcept move (the same reason
+	// ZM_BattleDirector may hold ZM_UI_BattleHUD by value) -- so noexcept-default is
 	// well-formed (mirrors ZM_BattleTransition / ZM_GameStateManager). Copy deleted.
 	ZM_UI_MenuStack(const ZM_UI_MenuStack&) = delete;
 	ZM_UI_MenuStack& operator=(const ZM_UI_MenuStack&) = delete;
@@ -141,6 +150,19 @@ public:
 	// The focused ROOT-item index mirror (0..ZM_MENU_ROOT_ITEM_COUNT-1); refreshed
 	// from the canvas focus each frame the ROOT is shown. -1 when not on ROOT.
 	int            GetCursor()    const { return m_iCursor; }
+
+	// ---- Dialogue (SC2) ----
+
+	// Queue NPC / prompt lines and raise the DIALOGUE screen. All-or-nothing (the
+	// queue is only mutated when every line is accepted). Freezes the player and
+	// opens the menu when the stack was empty, so an NPC can talk without the pause
+	// menu; when a menu screen is already open the dialogue stacks ON TOP of it and
+	// popping returns to it. Returns false when the lines are rejected.
+	bool PushDialogueLines(const char* const* paszLines, u_int uCount);
+	// Singleton-resolving convenience (the seam S6 item 3 ZM_Interactable + the
+	// windowed test use). False when no live ZM_MenuRoot singleton exists.
+	static bool TryPushDialogue(const char* const* paszLines, u_int uCount);
+	const ZM_UI_DialogueBox& GetDialogue() const { return m_xDialogue; }
 
 	// ---- Persistent-singleton observation (mirrors ZM_BattleTransition) ----
 	static bool TryGetUniqueSingletonEntityID(Zenith_EntityID& xEntityIDOut);
@@ -192,6 +214,7 @@ private:
 	// mutable state -- it re-resolves its own slot every call.
 	Zenith_Entity      m_xParentEntity;
 	ZM_MenuScreenStack m_xStack;                                  // empty == closed
+	ZM_UI_DialogueBox  m_xDialogue;                               // the DIALOGUE screen's model (SC2)
 	int                m_iCursor = -1;                            // focused ROOT-item mirror
 	Zenith_EntityID    m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 };
