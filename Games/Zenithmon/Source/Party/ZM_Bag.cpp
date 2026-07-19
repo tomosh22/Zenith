@@ -56,11 +56,33 @@ void ZM_Bag::Clear()
 	}
 }
 
-bool ZM_Bag::Add(ZM_ITEM_ID eItem, u_int uCount)
+bool ZM_Bag::CanAdd(ZM_ITEM_ID eItem, u_int uCount) const
 {
 	// NONE is DEFINED as ZM_ITEM_COUNT, so the range check covers it.
 	if ((u_int)eItem >= (u_int)ZM_ITEM_COUNT) { return false; }
 	if (uCount == 0u) { return false; }
+
+	const u_int uCategory = PocketIndexFor(eItem);
+	const ZM_ItemStack* pxPocket = m_axPocket[uCategory];
+	const u_int uStackCount = m_auPocketCount[uCategory];
+
+	u_int uSlot = 0u;
+	if (FindPocketSlot(pxPocket, uStackCount, eItem, uSlot))
+	{
+		// Headroom-first so a huge uCount can never wrap the sum past the cap.
+		return uCount <= uZM_BAG_MAX_STACK_COUNT - pxPocket[uSlot].m_uCount;
+	}
+
+	if (uCount > uZM_BAG_MAX_STACK_COUNT) { return false; }
+	return uStackCount < uZM_BAG_MAX_STACKS_PER_POCKET;
+}
+
+bool ZM_Bag::Add(ZM_ITEM_ID eItem, u_int uCount)
+{
+	// The accept/reject rule lives in exactly ONE place -- Add IS CanAdd plus the
+	// mutation, so the predicate the shop leans on can never drift from what the
+	// mutator actually does.
+	if (!CanAdd(eItem, uCount)) { return false; }
 
 	const u_int uCategory = PocketIndexFor(eItem);
 	ZM_ItemStack* pxPocket = m_axPocket[uCategory];
@@ -69,14 +91,9 @@ bool ZM_Bag::Add(ZM_ITEM_ID eItem, u_int uCount)
 	u_int uSlot = 0u;
 	if (FindPocketSlot(pxPocket, uStackCount, eItem, uSlot))
 	{
-		// Headroom-first so a huge uCount can never wrap the sum past the cap.
-		if (uCount > uZM_BAG_MAX_STACK_COUNT - pxPocket[uSlot].m_uCount) { return false; }
 		pxPocket[uSlot].m_uCount += uCount;
 		return true;
 	}
-
-	if (uCount > uZM_BAG_MAX_STACK_COUNT) { return false; }
-	if (uStackCount >= uZM_BAG_MAX_STACKS_PER_POCKET) { return false; }
 
 	// Insert at uSlot, shifting the later (higher-id) stacks up one.
 	for (u_int u = uStackCount; u > uSlot; --u)

@@ -23,7 +23,7 @@
 #endif
 
 // ============================================================================
-// ZM_UI_MenuStack (S6 item 2 SC1 + SC2 + SC4 + SC5 + SC6). The overworld pause-menu machine on
+// ZM_UI_MenuStack (S6 item 2 SC1 + SC2 + SC4 + SC5 + SC6 + SC7). The overworld pause-menu machine on
 // the persistent ZM_MenuRoot entity. Opens a focus-navigable ROOT menu, freezes the
 // player, drives traversal via the engine focus-nav API, dispatches confirm by
 // the focused element's NAME, pops on cancel/Escape. Mirrors ZM_BattleTransition
@@ -32,8 +32,8 @@
 //
 // Screen dispatch lives in exactly TWO per-screen switches -- the input routing in
 // OnUpdate and the show/hide + focus policy in PresentTopScreen. A new screen adds
-// an arm to each and a by-value presenter member; nothing else moves. SC6 (Bag) is
-// the third screen added that way, and it reshaped neither site.
+// an arm to each and a by-value presenter member; nothing else moves. SC7 (Shop) is
+// the fourth screen added that way, and it reshaped neither site.
 // ============================================================================
 
 Zenith_EntityID ZM_UI_MenuStack::s_xSingletonEntityID = INVALID_ENTITY_ID;
@@ -100,6 +100,7 @@ void ZM_UI_MenuStack::OnStart()
 	m_xParty.Reset();
 	m_xDex.Reset();
 	m_xBagScreen.Reset();
+	m_xShop.Reset();
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 
@@ -214,6 +215,36 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		}
 		break;
 
+	case ZM_MENU_SCREEN_SHOP:
+		// The shop dispatches BY THE FOCUSED ELEMENT'S NAME too. Its EXIT control is
+		// resolved HERE rather than inside the presenter, because leaving is the STACK's
+		// business -- a by-value screen cannot pop itself. Everything else (the mode tabs,
+		// the paging, the quantity stepper, and the Confirm that actually moves money) goes
+		// to the screen, with the LIVE game state's bag and money passed BY REFERENCE so a
+		// purchase persists. A missing state simply eats the confirm instead of crashing.
+		// Cancel pops straight back to whatever raised the shop.
+		if (bConfirm)
+		{
+			const char* szFocusedName = ResolveFocusedElementName();
+			if (ZM_UI_Shop::IsExitElementName(szFocusedName))
+			{
+				HandleCancel();
+			}
+			else
+			{
+				ZM_GameState* pxState = nullptr;
+				if (ZM_GameStateManager::TryGetGameState(pxState) && pxState != nullptr)
+				{
+					m_xShop.Confirm(szFocusedName, pxState->m_xBag, pxState->m_uMoney);
+				}
+			}
+		}
+		else if (bCancel)
+		{
+			HandleCancel();
+		}
+		break;
+
 	// ROOT dispatches its focused entry by NAME.
 	case ZM_MENU_SCREEN_ROOT:
 	default:
@@ -262,6 +293,8 @@ void ZM_UI_MenuStack::CloseMenu()
 	m_xDex.Hide(m_xParentEntity);
 	m_xBagScreen.Reset();
 	m_xBagScreen.Hide(m_xParentEntity);
+	m_xShop.Reset();
+	m_xShop.Hide(m_xParentEntity);
 
 	// Hide every ROOT element + clear the canvas focus so arrow keys never drive an
 	// invisible menu on the shared persistent canvas (watch-out 2).
@@ -349,6 +382,50 @@ bool ZM_UI_MenuStack::TryPushDialogue(const char* const* paszLines, u_int uCount
 	return pxMenu != nullptr && pxMenu->PushDialogueLines(paszLines, uCount);
 }
 
+// ---- Shop (SC7) ------------------------------------------------------------
+
+bool ZM_UI_MenuStack::OpenShop(const ZM_ITEM_ID* paeInventory, u_int uCount)
+{
+	// The stock is validated FIRST and all-or-nothing (SetInventory rejects a null list,
+	// an empty / over-capacity one, and any out-of-range id), so a mis-authored mart
+	// never raises a screen with nothing to sell -- and never wipes the stock of the
+	// shop that is already open.
+	if (!m_xShop.SetInventory(paeInventory, uCount))
+	{
+		return false;
+	}
+	// An already-showing shop just gains the new stock: re-pushing would double the pop.
+	if (m_xStack.Top() != ZM_MENU_SCREEN_SHOP)
+	{
+		const bool bWasClosed = m_xStack.IsEmpty();
+		if (!m_xStack.Push(ZM_MENU_SCREEN_SHOP))
+		{
+			m_xShop.Reset();   // depth-limit: never leave stock with no screen to show it
+			return false;
+		}
+		if (bWasClosed)
+		{
+			FreezePlayer();   // a mart clerk can trade without the pause menu ever being opened
+		}
+	}
+	PresentTopScreen();
+	return true;
+}
+
+bool ZM_UI_MenuStack::TryOpenShop(const ZM_ITEM_ID* paeInventory, u_int uCount)
+{
+	Zenith_EntityID xEntityID = INVALID_ENTITY_ID;
+	if (!TryGetUniqueSingletonEntityID(xEntityID))
+	{
+		return false;
+	}
+	Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xEntityID);
+	ZM_UI_MenuStack* pxMenu = xEntity.IsValid()
+		? xEntity.TryGetComponent<ZM_UI_MenuStack>()
+		: nullptr;
+	return pxMenu != nullptr && pxMenu->OpenShop(paeInventory, uCount);
+}
+
 void ZM_UI_MenuStack::PresentTopScreen()
 {
 	Zenith_UIComponent* pxUI = ResolveUI();
@@ -374,6 +451,7 @@ void ZM_UI_MenuStack::PresentTopScreen()
 	const bool bPartyPresented = PresentPartyScreen(eTop == ZM_MENU_SCREEN_PARTY);
 	const bool bDexPresented = PresentDexScreen(eTop == ZM_MENU_SCREEN_DEX);
 	const bool bBagPresented = PresentBagScreen(eTop == ZM_MENU_SCREEN_BAG);
+	const bool bShopPresented = PresentShopScreen(eTop == ZM_MENU_SCREEN_SHOP);
 
 	// ---- Focus policy. A FOCUS-NAVIGABLE screen owns the canvas focus and mirrors it
 	//      into m_iCursor; every other screen clears both, so arrows can never drive a
@@ -452,6 +530,25 @@ void ZM_UI_MenuStack::PresentTopScreen()
 		}
 		break;
 
+	case ZM_MENU_SCREEN_SHOP:
+		if (bShopPresented)
+		{
+			// ZM_UI_Shop::Present already ensured a focused LIVE row (or, over an empty list,
+			// a control) and settled the selection; carry its cursor up. Unlike the bag's, this
+			// cursor stays put while the focus walks onto a control -- that is the selection the
+			// Confirm button transacts on.
+			m_iCursor = m_xShop.GetCursor();
+		}
+		else
+		{
+			// Same degradation as PARTY / DEX / BAG: the widgets were just hidden, so leaving
+			// the focus parked on the ROOT entry hidden a few lines above would let the arrows
+			// drive an invisible menu.
+			xCanvas.SetFocusedElement(nullptr);
+			m_iCursor = -1;
+		}
+		break;
+
 	// DIALOGUE advances on a confirm press, NOT focus-nav, so it clears the focus.
 	case ZM_MENU_SCREEN_DIALOGUE:
 	default:
@@ -523,6 +620,24 @@ bool ZM_UI_MenuStack::PresentBagScreen(bool bShown)
 		return false;
 	}
 	m_xBagScreen.Present(m_xParentEntity, pxState->m_xBag, pxState->m_uMoney);
+	return true;
+}
+
+bool ZM_UI_MenuStack::PresentShopScreen(bool bShown)
+{
+	ZM_GameState* pxState = nullptr;
+	if (!bShown
+		|| !ZM_GameStateManager::TryGetGameState(pxState)
+		|| pxState == nullptr)
+	{
+		// Not the top screen, or no live game state (headless / between scenes): hide the
+		// screen rather than trade against a bag and a purse that cannot be resolved.
+		m_xShop.Hide(m_xParentEntity);
+		return false;
+	}
+	// PRESENTATION IS READ-ONLY over the model -- the money is passed by value here on
+	// purpose. The only write path is the Confirm arm in OnUpdate.
+	m_xShop.Present(m_xParentEntity, pxState->m_xBag, pxState->m_uMoney);
 	return true;
 }
 
@@ -732,12 +847,13 @@ void ZM_UI_MenuStack::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> uVersion;
 
 	// Reset-first: never retain a stale open menu / queued dialogue / open party summary
-	// / dex page / bag pocket from a reused instance.
+	// / dex page / bag pocket / shop stock from a reused instance.
 	m_xStack.Clear();
 	m_xDialogue.Reset();
 	m_xParty.Reset();
 	m_xDex.Reset();
 	m_xBagScreen.Reset();
+	m_xShop.Reset();
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 	(void)uVersion;
@@ -776,5 +892,22 @@ void ZM_UI_MenuStack::RenderPropertiesPanel()
 		ZM_UI_Bag::PageCount(uBagStacks),
 		m_xBagScreen.GetCursor(),
 		uBagStacks);
+
+	// The shop's page COUNT depends on the live list (its own stock in BUY, the player's
+	// stacks in SELL), so it is read from the same state when one resolves.
+	const u_int uShopEntries = (pxState != nullptr)
+		? m_xShop.EntryCount(pxState->m_xBag)
+		: m_xShop.GetInventoryCount();
+	// row=%d, matching the bag's field: the shop's cursor is a PAGE-RELATIVE row, not a
+	// flat list index (labelling it "entry" would misread page 1 row 0 as entry 0).
+	ImGui::Text("Shop - mode=%s page=%d/%u qty=%u row=%d stock=%u entries=%u result=%s",
+		ZM_UI_Shop::ModeToString(m_xShop.GetMode()),
+		m_xShop.GetPage(),
+		ZM_UI_Shop::PageCount(uShopEntries),
+		m_xShop.GetQuantity(),
+		m_xShop.GetCursor(),
+		m_xShop.GetInventoryCount(),
+		uShopEntries,
+		m_xShop.HasResult() ? ZM_UI_Shop::FormatResult(m_xShop.GetLastResult()) : "(none yet)");
 }
 #endif

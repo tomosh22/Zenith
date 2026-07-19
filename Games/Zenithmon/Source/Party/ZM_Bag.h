@@ -12,8 +12,9 @@
 // The shape mirrors SaveFormat.md module 6 one-for-one (entryCount, then
 // { itemId, count } entries with count >= 1), so S7 serializes it without a
 // re-shape. Every mutator is ALL-OR-NOTHING: a rejected Add/Remove leaves the bag
-// bit-identical, because SC7's shop transaction deducts money and then calls Add()
-// -- a partial add would silently destroy the player's money.
+// bit-identical: SC7's shop transaction asks CanAdd, deducts the money and then calls
+// Add(), so a partial add -- or a mutator whose accept rule drifted from the predicate
+// -- would silently destroy the player's money.
 // ============================================================================
 
 // One stored stack == one module-6 entry. A STORED stack always has m_uCount >= 1;
@@ -48,11 +49,18 @@ struct ZM_Bag
 
 	void Clear();
 
+	// Would Add(eItem, uCount) be accepted? NON-MUTATING and const: this is Add's
+	// entire accept/reject rule with the mutation removed, and Add itself calls it, so
+	// the two can never disagree. SC7's shop transaction asks this BEFORE it deducts
+	// the money -- "SpendMoney then Add" would take the money and deliver nothing when
+	// the add is refused.
+	bool CanAdd(ZM_ITEM_ID eItem, u_int uCount) const;
+
 	// Add uCount copies of eItem. Rejects (strict no-op, returns false) an id at or
 	// past ZM_ITEM_COUNT -- which covers ZM_ITEM_NONE, since NONE IS ZM_ITEM_COUNT --
 	// a zero count, a resulting stack past uZM_BAG_MAX_STACK_COUNT, and a new stack
-	// in a full pocket. Otherwise stacks onto the existing entry, or inserts a new
-	// one keeping the pocket ascending by id.
+	// in a full pocket (all of that is CanAdd). Otherwise stacks onto the existing
+	// entry, or inserts a new one keeping the pocket ascending by id.
 	bool Add(ZM_ITEM_ID eItem, u_int uCount);
 
 	// Remove uCount copies. Rejects (strict no-op) an out-of-range id, a zero count,

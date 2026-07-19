@@ -32,6 +32,8 @@
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"
 #include "Zenithmon/Source/UI/ZM_UI_Dex.h"
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"
+#include "Zenithmon/Source/Shop/ZM_ShopLogic.h"        // ZM_ShopBuyPrice / ZM_SHOP_RESULT (the shop gate)
+#include "Zenithmon/Source/UI/ZM_UI_Shop.h"
 
 #include <array>
 #include <cstdint>
@@ -74,6 +76,15 @@
 //     money, row 0's label names the seeded Catch Orb, then confirming the
 //     Next-Pocket button changes the pocket AND relabels the rows, and Escape
 //     returns to ROOT then closes the menu and unfreezes the player.
+//   * ZM_ShopScreen_Test (SC7) -- raise the mart straight over the overworld with
+//     ZM_UI_MenuStack::TryOpenShop (no pause menu involved), and assert the SHOP
+//     screen really presents: the authored panel / header / six rows / eight controls
+//     all resolve by name, exactly VisibleRowCount(page 0) rows list the configured
+//     stock with its TABLE prices, the player is frozen, real Down edges walk the
+//     focus off the list onto the CONFIRM control, one Enter buys the SELECTED entry
+//     and the LIVE ZM_GameState's money falls by exactly price x quantity while the
+//     bag rises by exactly the quantity, and Escape closes the shop, hides every
+//     widget and re-enables movement.
 //
 // It CLONES the ZM_AutoTests_BattleMenu Dawnmere runtime-ready gate, its fixed-dt
 // 1/30, its RequestSkip-when-assets-absent guard order, and its FRESH-resolve-
@@ -4077,6 +4088,881 @@ namespace
 
 		return bPassed || !g_bBagPrereqsPresent;
 	}
+
+	// =========================================================================
+	// ZM_ShopScreen_Test (S6 item 2 SC7) -- the windowed gate for the mart, and the
+	// first proof that a menu screen can WRITE the live ZM_GameState. In a
+	// runtime-ready Dawnmere:
+	//   ZM_UI_MenuStack::TryOpenShop (the S6 item 3 mart-NPC seam) raises the SHOP
+	//   screen straight over the overworld with NO pause menu involved -> the player
+	//   is frozen, the authored panel / header / six rows / eight controls all resolve
+	//   by name, exactly VisibleRowCount(page 0) rows are shown and they list the
+	//   configured stock WITH its table prices -> Down edges WALK the focus off the row
+	//   list onto the CONFIRM control (real arrow keys, deadline-guarded: parking the
+	//   focus programmatically would prove nothing about whether the screen is playable)
+	//   -> ONE Enter buys the SELECTED entry -> the LIVE money is down by exactly
+	//   price x quantity and the LIVE bag is up by exactly the quantity -> Escape closes
+	//   the shop and movement is re-enabled.
+	//
+	// The purchase assertions are anchored on the entry the CURSOR is actually on when
+	// Enter lands (read off the screen at the press frame), not on a guessed row: the
+	// walk decides where the selection ends up, and the point of the test is that the
+	// selection SURVIVES the walk onto the control.
+	// =========================================================================
+
+	// The mart's stock. Both purchasable, in DIFFERENT pockets, and cheap enough for the
+	// starter purse (the fixture asserts the price is real rather than assuming it).
+	constexpr u_int uSHOP_STOCK_COUNT = 2u;
+	const ZM_ITEM_ID aeSHOP_STOCK[uSHOP_STOCK_COUNT] = { ZM_ITEM_CATCHORB, ZM_ITEM_SALVE };
+	static_assert(uSHOP_STOCK_COUNT <= ZM_UI_Shop::uROWS_PER_PAGE,
+		"the shop fixture must fit on page 0 -- the row assertions below assume no paging");
+
+	// What the AUTHORED shop widgets actually report this frame.
+	struct ShopElementView
+	{
+		bool        m_bResolved       = false;   // the ZM_MenuRoot UI component resolved
+		bool        m_bPanelFound     = false;
+		bool        m_bPanelVisible   = false;
+		bool        m_bHeaderFound    = false;
+		bool        m_bHeaderVisible  = false;
+		std::string m_strHeaderText;
+		u_int       m_uControlsFound  = 0u;      // of the eight
+		u_int       m_uControlsVisible = 0u;
+		u_int       m_uRowsFound      = 0u;
+		u_int       m_uRowsVisible    = 0u;
+		bool        m_abRowVisible[ZM_UI_Shop::uROWS_PER_PAGE] = {};
+		// Focusability is HALF the contract: a dead row must be unreachable by the engine
+		// nav, which collects visible + FOCUSABLE elements.
+		bool        m_abRowFocusable[ZM_UI_Shop::uROWS_PER_PAGE] = {};
+		std::string m_astrRowText[ZM_UI_Shop::uROWS_PER_PAGE];
+		std::string m_strFocusedName;            // the canvas focus (want a row, then Confirm)
+	};
+
+	ShopElementView ReadShopElements()
+	{
+		ShopElementView xView;
+		Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+		if (pxUI == nullptr)
+		{
+			return xView;
+		}
+		xView.m_bResolved = true;
+
+		if (Zenith_UI::Zenith_UIRect* pxPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_Shop::szPANEL_NAME))
+		{
+			xView.m_bPanelFound = true;
+			xView.m_bPanelVisible = pxPanel->IsVisible();
+		}
+		if (Zenith_UI::Zenith_UIText* pxHeader =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_Shop::szHEADER_NAME))
+		{
+			xView.m_bHeaderFound = true;
+			xView.m_bHeaderVisible = pxHeader->IsVisible();
+			xView.m_strHeaderText = pxHeader->GetText();
+		}
+		for (u_int u = 0u; u < ZM_UI_Shop::uCONTROL_COUNT; ++u)
+		{
+			Zenith_UI::Zenith_UIElement* pxControl =
+				pxUI->FindElement(ZM_UI_Shop::ControlElementName(u));
+			if (pxControl == nullptr)
+			{
+				continue;
+			}
+			++xView.m_uControlsFound;
+			if (pxControl->IsVisible())
+			{
+				++xView.m_uControlsVisible;
+			}
+		}
+		for (u_int u = 0u; u < ZM_UI_Shop::uROWS_PER_PAGE; ++u)
+		{
+			Zenith_UI::Zenith_UIButton* pxRow =
+				pxUI->FindElement<Zenith_UI::Zenith_UIButton>(ZM_UI_Shop::RowElementName(u));
+			if (pxRow == nullptr)
+			{
+				continue;
+			}
+			++xView.m_uRowsFound;
+			xView.m_abRowVisible[u] = pxRow->IsVisible();
+			xView.m_abRowFocusable[u] = pxRow->IsFocusable();
+			xView.m_astrRowText[u] = pxRow->GetText();
+			if (xView.m_abRowVisible[u])
+			{
+				++xView.m_uRowsVisible;
+			}
+		}
+		if (Zenith_UI::Zenith_UIElement* pxFocused = pxUI->GetCanvas().GetFocusedElement())
+		{
+			xView.m_strFocusedName = pxFocused->GetName();
+		}
+		return xView;
+	}
+
+	enum class ShopPhase
+	{
+		AwaitReady,
+		OpenShop,        // raise the mart via TryOpenShop + capture the open state
+		SampleOnOpen,    // ...and what the authored widgets are showing
+		WalkToConfirm,   // spaced Down edges: the ENGINE spatial nav walks onto CONFIRM
+		BuySelected,     // ONE Enter edge -> the selected entry is bought
+		CloseShop,       // Escape edges until the shop closes
+		Done,
+	};
+
+	constexpr int iSHOP_READY_DEADLINE = 420;   // Dawnmere first-load ready window (sibling parity)
+	constexpr int iSHOP_PRESS_FRAME    = 2;     // the frame within a press phase that emits the edge
+	constexpr int iSHOP_SETTLE_FRAME   = 6;     // ...and the frame the outcome is sampled on
+	constexpr int iSHOP_WALK_DEADLINE  = 200;   // frames for the spatial nav to reach CONFIRM
+	constexpr int iSHOP_CLOSE_DEADLINE = 120;   // frames for the Escape to close the shop
+
+	// ---- Control state (all reset in Setup; batch mode reuses the process) ----
+	ShopPhase g_eShopPhase          = ShopPhase::Done;
+	int       g_iShopPhaseFrames    = 0;
+	bool      g_bShopPrereqsPresent = false;
+	bool      g_bShopActive         = false;
+	bool      g_bShopFailed         = false;
+	const char* g_szShopFailure     = "test did not reach verification";
+
+	// ---- Captured observations ----
+	bool  g_bShopMovementEnabledBefore = false;   // player movable BEFORE the shop (baseline)
+	bool  g_bShopOpenAccepted          = false;   // TryOpenShop returned true
+	bool  g_bShopMenuOpened            = false;   // the menu reported open after the raise
+	u_int g_eShopTopOnOpen             = (u_int)ZM_MENU_SCREEN_NONE;   // want SHOP
+	u_int g_uShopDepthOnOpen           = 0u;      // want 1 (the shop alone -- no pause menu)
+	bool  g_bShopPlayerFrozen          = false;   // player movement disabled while trading
+	u_int g_eShopModeOnOpen            = (u_int)ZM_SHOP_MODE_COUNT;   // want BUY
+	u_int g_uShopQtyOnOpen             = 0u;      // want 1
+	u_int g_uShopExpectedVisibleRows   = 0u;      // == VisibleRowCount(0, the stock count)
+	u_int g_uShopMoneyOnOpen           = 0u;      // the LIVE purse when the widgets were sampled
+	int   g_iShopCursorOnOpen          = -99;     // the screen's selection mirror (want >= 0)
+
+	// ---- The Down walk onto CONFIRM (real arrow edges -- defaults to FAILING) ----
+	bool        g_bShopReachedConfirm  = false;
+	std::string g_strShopWalkFocusName;           // where the focus ended up (or stalled)
+	// The screen's selection the LAST frame the focus was still on a list row. The walk
+	// must move off row 0 (or the survival check below is vacuous), and the selection must
+	// still read this once the focus has landed on the control.
+	int         g_iShopCursorOnLastRow = -99;
+
+	// ---- The purchase, anchored on the entry the cursor is ACTUALLY on ----
+	int   g_iShopCursorAtConfirm  = -99;
+	u_int g_eShopBoughtItem       = (u_int)ZM_ITEM_NONE;
+	u_int g_uShopBoughtPrice      = 0u;
+	u_int g_uShopBoughtQuantity   = 0u;
+	u_int g_uShopMoneyBeforeBuy   = 0u;
+	u_int g_uShopMoneyAfterBuy    = 0u;
+	u_int g_uShopHeldBeforeBuy    = 0u;
+	u_int g_uShopHeldAfterBuy     = 0u;
+	u_int g_eShopResultAfterBuy   = (u_int)ZM_SHOP_RESULT_COUNT;   // want ZM_SHOP_OK
+	bool  g_bShopReportedResult   = false;
+
+	// ---- The close ----
+	bool g_bShopClosed             = false;
+	bool g_bShopMovementReenabled  = false;
+	bool g_bShopFocusClearedOnClose = false;
+
+	// ---- The AUTHORED widgets ----
+	ShopElementView g_xShopElementsOnOpen;    // want: panel + header + every page-0 row shown
+	ShopElementView g_xShopElementsOnClose;   // want: everything shop-side hidden again
+
+	void FailShop(const char* szReason)
+	{
+		g_szShopFailure = szReason;
+		g_bShopFailed = true;
+		g_eShopPhase = ShopPhase::Done;
+	}
+
+	// The live purse + the held count of one item, or false when no game state resolves.
+	bool ReadShopState(ZM_ITEM_ID eItem, u_int& uMoneyOut, u_int& uHeldOut)
+	{
+		ZM_GameState* pxState = nullptr;
+		if (!ZM_GameStateManager::TryGetGameState(pxState) || pxState == nullptr)
+		{
+			return false;
+		}
+		uMoneyOut = pxState->m_uMoney;
+		uHeldOut = ((u_int)eItem < (u_int)ZM_ITEM_COUNT) ? pxState->m_xBag.GetCount(eItem) : 0u;
+		return true;
+	}
+
+	void Setup_ZMShopScreen()
+	{
+		g_eShopPhase                 = ShopPhase::Done;
+		g_iShopPhaseFrames           = 0;
+		g_bShopActive                = false;
+		g_bShopFailed                = false;
+		g_szShopFailure              = "test did not reach verification";
+
+		g_bShopMovementEnabledBefore = false;
+		g_bShopOpenAccepted          = false;
+		g_bShopMenuOpened            = false;
+		g_eShopTopOnOpen             = (u_int)ZM_MENU_SCREEN_NONE;
+		g_uShopDepthOnOpen           = 0u;
+		g_bShopPlayerFrozen          = false;
+		g_eShopModeOnOpen            = (u_int)ZM_SHOP_MODE_COUNT;
+		g_uShopQtyOnOpen             = 0u;
+		g_uShopExpectedVisibleRows   = 0u;
+		g_uShopMoneyOnOpen           = 0u;
+		g_iShopCursorOnOpen          = -99;
+
+		g_bShopReachedConfirm        = false;
+		g_strShopWalkFocusName.clear();
+		g_iShopCursorOnLastRow       = -99;
+
+		g_iShopCursorAtConfirm       = -99;
+		g_eShopBoughtItem            = (u_int)ZM_ITEM_NONE;
+		g_uShopBoughtPrice           = 0u;
+		g_uShopBoughtQuantity        = 0u;
+		g_uShopMoneyBeforeBuy        = 0u;
+		g_uShopMoneyAfterBuy         = 0u;
+		g_uShopHeldBeforeBuy         = 0u;
+		g_uShopHeldAfterBuy          = 0u;
+		g_eShopResultAfterBuy        = (u_int)ZM_SHOP_RESULT_COUNT;
+		g_bShopReportedResult        = false;
+
+		g_bShopClosed                = false;
+		g_bShopMovementReenabled     = false;
+		g_bShopFocusClearedOnClose   = false;
+
+		g_xShopElementsOnOpen        = ShopElementView{};
+		g_xShopElementsOnClose       = ShopElementView{};
+
+		// Guard order is MANDATORY: RequestSkip bypasses Verify, so install NO process
+		// state (fixed dt, scene load) until every git-ignored input is confirmed
+		// present. CI has no baked Assets tree -> skip.
+		g_bShopPrereqsPresent = RequiredDawnmereAssetsPresent();
+		if (!g_bShopPrereqsPresent)
+		{
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"Dawnmere assets absent -- run a *_True build");
+			return;
+		}
+
+		Zenith_InputSimulator::ResetAllInputState();
+		Zenith_InputSimulator::SetFixedDt(fUI_FIXED_DT);
+
+		g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);   // Dawnmere
+
+		g_eShopPhase = ShopPhase::AwaitReady;
+		g_bShopActive = true;
+	}
+
+	bool Step_ZMShopScreen(int)
+	{
+		if (!g_bShopActive || g_bShopFailed || g_eShopPhase == ShopPhase::Done)
+		{
+			return false;
+		}
+
+		++g_iShopPhaseFrames;
+		switch (g_eShopPhase)
+		{
+		case ShopPhase::AwaitReady:
+		{
+			PlayerView xPlayer;
+			CameraView xCamera;
+			if (!DawnmereRuntimeReady(xPlayer, xCamera))
+			{
+				if (g_iShopPhaseFrames > iSHOP_READY_DEADLINE)
+				{
+					FailShop("Dawnmere did not become runtime-ready in time");
+					return false;
+				}
+				return true;
+			}
+			if (ResolveSingletonMenuStack() == nullptr)
+			{
+				FailShop("no unique ZM_UI_MenuStack singleton (ZM_MenuRoot missing)");
+				return false;
+			}
+
+			g_bShopMovementEnabledBefore = xPlayer.m_pxController->IsMovementEnabled();
+			g_uShopExpectedVisibleRows = ZM_UI_Shop::VisibleRowCount(0u, uSHOP_STOCK_COUNT);
+
+			g_eShopPhase = ShopPhase::OpenShop;
+			g_iShopPhaseFrames = 0;
+			return true;
+		}
+
+		case ShopPhase::OpenShop:
+		{
+			// The mart seam: a static singleton call, exactly what S6 item 3's clerk will
+			// make. Pushed ONCE, on the first frame of the phase, over an EMPTY stack -- a
+			// shop must be reachable without the pause menu.
+			if (g_iShopPhaseFrames == 1)
+			{
+				g_bShopOpenAccepted = ZM_UI_MenuStack::TryOpenShop(aeSHOP_STOCK, uSHOP_STOCK_COUNT);
+				if (!g_bShopOpenAccepted)
+				{
+					FailShop("TryOpenShop rejected the two-item mart inventory");
+					return false;
+				}
+				return true;
+			}
+			if (g_iShopPhaseFrames < iSHOP_SETTLE_FRAME)
+			{
+				return true;   // let a Present run so the widgets are filled before sampling
+			}
+
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailShop("the ZM_UI_MenuStack singleton stopped resolving after the shop raise");
+				return false;
+			}
+			g_bShopMenuOpened  = pxMenu->IsOpen();
+			g_eShopTopOnOpen   = (u_int)pxMenu->GetTopScreen();
+			g_uShopDepthOnOpen = pxMenu->GetDepth();
+
+			bool bEnabled = true;
+			if (ReadActivePlayerMovementEnabled(bEnabled))
+			{
+				g_bShopPlayerFrozen = !bEnabled;
+			}
+			if (!g_bShopMenuOpened || g_eShopTopOnOpen != (u_int)ZM_MENU_SCREEN_SHOP)
+			{
+				// TryOpenShop is SYNCHRONOUS (it pushes and presents inside the call), so there is
+				// nothing to wait for: if the screen is not up by the settle frame it never will be.
+				FailShop("the shop screen never came up after TryOpenShop");
+				return false;
+			}
+
+			g_eShopPhase = ShopPhase::SampleOnOpen;
+			g_iShopPhaseFrames = 0;
+			return true;
+		}
+
+		case ShopPhase::SampleOnOpen:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailShop("the ZM_UI_MenuStack singleton stopped resolving while sampling the shop");
+				return false;
+			}
+			const ZM_UI_Shop& xShop = pxMenu->GetShopScreen();
+			g_eShopModeOnOpen   = (u_int)xShop.GetMode();
+			g_uShopQtyOnOpen    = xShop.GetQuantity();
+			g_iShopCursorOnOpen = xShop.GetCursor();
+
+			u_int uHeld = 0u;
+			if (!ReadShopState(aeSHOP_STOCK[0], g_uShopMoneyOnOpen, uHeld))
+			{
+				FailShop("the live game state did not resolve while sampling the shop");
+				return false;
+			}
+			g_xShopElementsOnOpen = ReadShopElements();
+
+			g_eShopPhase = ShopPhase::WalkToConfirm;
+			g_iShopPhaseFrames = 0;
+			return true;
+		}
+
+		case ShopPhase::WalkToConfirm:
+		{
+			// Spaced Down edges from the focused row. NOTHING on this screen carries explicit
+			// navigation links, so this walks purely on the ENGINE SPATIAL search -- and it is
+			// the traversal the whole screen depends on, because CONFIRM is the only element
+			// that moves money. It MUST be driven by real key edges: parking the focus by hand
+			// would prove nothing about whether a player can ever reach the button.
+			Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+			if (pxUI == nullptr)
+			{
+				FailShop("the ZM_MenuRoot UI component stopped resolving while walking to Confirm");
+				return false;
+			}
+			Zenith_UI::Zenith_UIElement* pxFocused = pxUI->GetCanvas().GetFocusedElement();
+			// While the focus is still ON the list, mirror the screen's selection. The LAST
+			// value captured here is the one the selection must STILL read once the walk has
+			// landed on the control -- without it the survival deviation this screen makes from
+			// the bag (ZM_UI_Shop::SettleFocus) is untested: resetting the cursor to 0 on a
+			// control would simply buy stock entry 0 and every assertion below would still pass.
+			if (pxFocused != nullptr
+				&& ZM_UI_Shop::RowIndexFromElementName(pxFocused->GetName().c_str()) >= 0)
+			{
+				if (ZM_UI_MenuStack* pxWalkMenu = ResolveSingletonMenuStack())
+				{
+					g_iShopCursorOnLastRow = pxWalkMenu->GetShopScreen().GetCursor();
+				}
+			}
+			if (pxFocused != nullptr && pxFocused->GetName() == ZM_UI_Shop::szCONFIRM_NAME)
+			{
+				g_bShopReachedConfirm = true;
+				g_strShopWalkFocusName = pxFocused->GetName();
+				g_eShopPhase = ShopPhase::BuySelected;
+				g_iShopPhaseFrames = 0;
+				return true;
+			}
+			if (g_iShopPhaseFrames > iSHOP_WALK_DEADLINE)
+			{
+				g_strShopWalkFocusName = (pxFocused != nullptr) ? pxFocused->GetName() : std::string();
+				FailShop("the Down edges never walked the focus onto the Confirm control");
+				return false;
+			}
+			if ((g_iShopPhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_DOWN);
+			}
+			return true;
+		}
+
+		case ShopPhase::BuySelected:
+		{
+			// ONE Enter edge, with idle frames on either side so the edge-detected
+			// ZM_InputActions::ReadConfirmPressed fires exactly once. The purchase is anchored
+			// on the entry the CURSOR is on at the press frame -- the walk above decided that,
+			// and the selection SURVIVING the walk is exactly what is under test.
+			if (g_iShopPhaseFrames == iSHOP_PRESS_FRAME)
+			{
+				ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+				if (pxMenu == nullptr)
+				{
+					FailShop("the ZM_UI_MenuStack singleton stopped resolving before the purchase");
+					return false;
+				}
+				const ZM_UI_Shop& xShop = pxMenu->GetShopScreen();
+				g_iShopCursorAtConfirm = xShop.GetCursor();
+				g_uShopBoughtQuantity = xShop.GetQuantity();
+
+				ZM_GameState* pxState = nullptr;
+				if (!ZM_GameStateManager::TryGetGameState(pxState) || pxState == nullptr)
+				{
+					FailShop("the live game state did not resolve before the purchase");
+					return false;
+				}
+				// The FLAT entry index resolved BY THE SCREEN -- never the raw cursor, which is a
+				// PAGE-RELATIVE row and would name the wrong stock entry on any page but the first.
+				const int iEntry = xShop.GetSelectedEntryIndex(pxState->m_xBag);
+				const ZM_ITEM_ID eItem = (iEntry >= 0)
+					? xShop.GetInventoryItem((u_int)iEntry)
+					: ZM_ITEM_NONE;
+				g_eShopBoughtItem = (u_int)eItem;
+				g_uShopBoughtPrice = ZM_ShopBuyPrice(eItem);
+				if (!ReadShopState(eItem, g_uShopMoneyBeforeBuy, g_uShopHeldBeforeBuy))
+				{
+					FailShop("the live game state did not resolve before the purchase");
+					return false;
+				}
+
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iShopPhaseFrames < iSHOP_SETTLE_FRAME)
+			{
+				return true;
+			}
+
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailShop("the ZM_UI_MenuStack singleton stopped resolving after the purchase");
+				return false;
+			}
+			g_eShopResultAfterBuy = (u_int)pxMenu->GetShopScreen().GetLastResult();
+			g_bShopReportedResult = pxMenu->GetShopScreen().HasResult();
+			if (!ReadShopState((ZM_ITEM_ID)g_eShopBoughtItem, g_uShopMoneyAfterBuy, g_uShopHeldAfterBuy))
+			{
+				FailShop("the live game state did not resolve after the purchase");
+				return false;
+			}
+
+			g_eShopPhase = ShopPhase::CloseShop;
+			g_iShopPhaseFrames = 0;
+			return true;
+		}
+
+		case ShopPhase::CloseShop:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailShop("the ZM_UI_MenuStack singleton stopped resolving while closing the shop");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				g_bShopClosed = true;
+				g_bShopFocusClearedOnClose = MenuFocusCleared();
+				// CloseMenu hides the widgets directly (the per-frame Present stops running the
+				// moment the stack empties), so they must be down here.
+				g_xShopElementsOnClose = ReadShopElements();
+
+				bool bEnabled = false;
+				if (ReadActivePlayerMovementEnabled(bEnabled))
+				{
+					g_bShopMovementReenabled = bEnabled;
+				}
+
+				g_eShopPhase = ShopPhase::Done;
+				return false;
+			}
+			if (g_iShopPhaseFrames > iSHOP_CLOSE_DEADLINE)
+			{
+				FailShop("the shop never closed after the Escape press");
+				return false;
+			}
+			// Spaced edges (one every fourth frame) so each press is a clean edge. The shop
+			// was raised over an EMPTY stack, so one pop empties it and closes the menu.
+			if ((g_iShopPhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+			}
+			return true;
+		}
+
+		case ShopPhase::Done:
+			return false;
+		}
+		return false;
+	}
+
+	bool Verify_ZMShopScreen()
+	{
+		bool bPassed = true;
+
+		if (g_bShopActive)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_ShopScreen] captured: failed=%s (%s) movBefore=%s openAccepted=%s opened=%s "
+				"top=%u (want SHOP=%u) depth=%u (want 1) frozen=%s mode=%u (want BUY=%u) qty=%u "
+				"cursorOnOpen=%d wantVisibleRows=%u moneyOnOpen=%u closed=%s movReenabled=%s "
+				"focusCleared=%s",
+				g_bShopFailed ? "true" : "false", g_szShopFailure,
+				g_bShopMovementEnabledBefore ? "true" : "false",
+				g_bShopOpenAccepted ? "true" : "false",
+				g_bShopMenuOpened ? "true" : "false",
+				g_eShopTopOnOpen, (u_int)ZM_MENU_SCREEN_SHOP,
+				g_uShopDepthOnOpen,
+				g_bShopPlayerFrozen ? "true" : "false",
+				g_eShopModeOnOpen, (u_int)ZM_SHOP_MODE_BUY,
+				g_uShopQtyOnOpen, g_iShopCursorOnOpen,
+				g_uShopExpectedVisibleRows, g_uShopMoneyOnOpen,
+				g_bShopClosed ? "true" : "false",
+				g_bShopMovementReenabled ? "true" : "false",
+				g_bShopFocusClearedOnClose ? "true" : "false");
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_ShopScreen] purchase: reachedConfirm=%s focus='%s' cursorOnLastRow=%d "
+				"cursorAtConfirm=%d item=%u "
+				"('%s') price=%u qty=%u money %u->%u held %u->%u result=%u (want OK=%u) reported=%s",
+				g_bShopReachedConfirm ? "true" : "false", g_strShopWalkFocusName.c_str(),
+				g_iShopCursorOnLastRow,
+				g_iShopCursorAtConfirm, g_eShopBoughtItem,
+				ZM_GetItemName((ZM_ITEM_ID)g_eShopBoughtItem),
+				g_uShopBoughtPrice, g_uShopBoughtQuantity,
+				g_uShopMoneyBeforeBuy, g_uShopMoneyAfterBuy,
+				g_uShopHeldBeforeBuy, g_uShopHeldAfterBuy,
+				g_eShopResultAfterBuy, (u_int)ZM_SHOP_OK,
+				g_bShopReportedResult ? "true" : "false");
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_ShopScreen] widgets: onOpen(resolved=%s panel=%s/%s header=%s/%s '%s' "
+				"controlsFound=%u controlsVisible=%u rowsFound=%u rowsVisible=%u row0='%s' row1='%s' "
+				"focus='%s') onClose(panelFound=%s panelVisible=%s headerVisible=%s rowsVisible=%u "
+				"controlsVisible=%u)",
+				g_xShopElementsOnOpen.m_bResolved ? "true" : "false",
+				g_xShopElementsOnOpen.m_bPanelFound ? "found" : "MISSING",
+				g_xShopElementsOnOpen.m_bPanelVisible ? "visible" : "hidden",
+				g_xShopElementsOnOpen.m_bHeaderFound ? "found" : "MISSING",
+				g_xShopElementsOnOpen.m_bHeaderVisible ? "visible" : "hidden",
+				g_xShopElementsOnOpen.m_strHeaderText.c_str(),
+				g_xShopElementsOnOpen.m_uControlsFound, g_xShopElementsOnOpen.m_uControlsVisible,
+				g_xShopElementsOnOpen.m_uRowsFound, g_xShopElementsOnOpen.m_uRowsVisible,
+				g_xShopElementsOnOpen.m_astrRowText[0].c_str(),
+				g_xShopElementsOnOpen.m_astrRowText[1].c_str(),
+				g_xShopElementsOnOpen.m_strFocusedName.c_str(),
+				g_xShopElementsOnClose.m_bPanelFound ? "true" : "false",
+				g_xShopElementsOnClose.m_bPanelVisible ? "true" : "false",
+				g_xShopElementsOnClose.m_bHeaderVisible ? "true" : "false",
+				g_xShopElementsOnClose.m_uRowsVisible,
+				g_xShopElementsOnClose.m_uControlsVisible);
+
+			if (g_bShopFailed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST, "[ZM_ShopScreen] %s", g_szShopFailure);
+				bPassed = false;
+			}
+
+			// The baseline must be meaningful: the player was movable before the shop opened.
+			if (!g_bShopMovementEnabledBefore)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the player was not movable before the shop opened -- the freeze "
+					"assertions would be vacuous");
+				bPassed = false;
+			}
+
+			// --- the raise: SHOP on top of an otherwise EMPTY stack, player frozen ---
+			if (!g_bShopOpenAccepted || !g_bShopMenuOpened)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] TryOpenShop accepted=%s and the menu opened=%s -- the mart seam "
+					"S6 item 3 hangs its clerk off did not raise the screen",
+					g_bShopOpenAccepted ? "true" : "false", g_bShopMenuOpened ? "true" : "false");
+				bPassed = false;
+			}
+			if (g_eShopTopOnOpen != (u_int)ZM_MENU_SCREEN_SHOP)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] top screen after the raise was %u, expected SHOP %u",
+					g_eShopTopOnOpen, (u_int)ZM_MENU_SCREEN_SHOP);
+				bPassed = false;
+			}
+			if (g_uShopDepthOnOpen != 1u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] stack depth after the raise was %u, expected 1 -- a mart must be "
+					"reachable WITHOUT the pause menu", g_uShopDepthOnOpen);
+				bPassed = false;
+			}
+			if (!g_bShopPlayerFrozen)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the player was NOT frozen while the shop was open");
+				bPassed = false;
+			}
+			if (g_eShopModeOnOpen != (u_int)ZM_SHOP_MODE_BUY || g_uShopQtyOnOpen != 1u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the shop opened in mode %u qty %u, expected BUY %u qty 1",
+					g_eShopModeOnOpen, g_uShopQtyOnOpen, (u_int)ZM_SHOP_MODE_BUY);
+				bPassed = false;
+			}
+
+			// --- the AUTHORED widgets really render the stock ---
+			if (!g_xShopElementsOnOpen.m_bResolved)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the ZM_MenuRoot UI component did not resolve on the shop screen");
+				bPassed = false;
+			}
+			else
+			{
+				if (!g_xShopElementsOnOpen.m_bPanelFound
+					|| !g_xShopElementsOnOpen.m_bHeaderFound
+					|| g_xShopElementsOnOpen.m_uRowsFound != ZM_UI_Shop::uROWS_PER_PAGE
+					|| g_xShopElementsOnOpen.m_uControlsFound != ZM_UI_Shop::uCONTROL_COUNT)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_ShopScreen] the AUTHORED shop widgets did not all resolve by name (panel=%s "
+						"header=%s rows=%u of %u controls=%u of %u) -- ZM_ConfigureMenuRoot / the "
+						"AddStep_CreateUI* contract is broken and NOTHING would render",
+						g_xShopElementsOnOpen.m_bPanelFound ? "true" : "false",
+						g_xShopElementsOnOpen.m_bHeaderFound ? "true" : "false",
+						g_xShopElementsOnOpen.m_uRowsFound, ZM_UI_Shop::uROWS_PER_PAGE,
+						g_xShopElementsOnOpen.m_uControlsFound, ZM_UI_Shop::uCONTROL_COUNT);
+					bPassed = false;
+				}
+				if (!g_xShopElementsOnOpen.m_bPanelVisible
+					|| !g_xShopElementsOnOpen.m_bHeaderVisible
+					|| g_xShopElementsOnOpen.m_uControlsVisible != ZM_UI_Shop::uCONTROL_COUNT)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_ShopScreen] the shop chrome was not all shown (panel=%s header=%s controls "
+						"visible=%u of %u)",
+						g_xShopElementsOnOpen.m_bPanelVisible ? "true" : "false",
+						g_xShopElementsOnOpen.m_bHeaderVisible ? "true" : "false",
+						g_xShopElementsOnOpen.m_uControlsVisible, ZM_UI_Shop::uCONTROL_COUNT);
+					bPassed = false;
+				}
+				// EXACTLY the stocked rows are visible AND focusable; the rest are neither.
+				if (g_xShopElementsOnOpen.m_uRowsVisible != g_uShopExpectedVisibleRows)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_ShopScreen] %u rows were visible on page 0, expected %u (the mart stocks 2)",
+						g_xShopElementsOnOpen.m_uRowsVisible, g_uShopExpectedVisibleRows);
+					bPassed = false;
+				}
+				for (u_int u = 0u; u < ZM_UI_Shop::uROWS_PER_PAGE; ++u)
+				{
+					const bool bWantVisible = (u < g_uShopExpectedVisibleRows);
+					if (g_xShopElementsOnOpen.m_abRowVisible[u] != bWantVisible
+						|| g_xShopElementsOnOpen.m_abRowFocusable[u] != bWantVisible)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_ShopScreen] row %u visible=%s focusable=%s, expected both %s", u,
+							g_xShopElementsOnOpen.m_abRowVisible[u] ? "true" : "false",
+							g_xShopElementsOnOpen.m_abRowFocusable[u] ? "true" : "false",
+							bWantVisible ? "true" : "false");
+						bPassed = false;
+					}
+				}
+				// The rows list the STOCK, with its table prices.
+				for (u_int u = 0u; u < g_uShopExpectedVisibleRows && u < 2u; ++u)
+				{
+					const std::string strWantRow = ZM_UI_Shop::FormatBuyRow(aeSHOP_STOCK[u]);
+					if (g_xShopElementsOnOpen.m_astrRowText[u] != strWantRow)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_ShopScreen] row %u reads '%s', expected '%s' -- Present is not listing the "
+							"configured stock with its price", u,
+							g_xShopElementsOnOpen.m_astrRowText[u].c_str(), strWantRow.c_str());
+						bPassed = false;
+					}
+				}
+				// ...and the header carries the live purse (no transaction yet, so no report).
+				const std::string strWantHeader = ZM_UI_Shop::FormatHeaderLine(
+					ZM_SHOP_MODE_BUY, g_uShopMoneyOnOpen, 1u, /* bHasResult */ false, ZM_SHOP_OK);
+				if (g_xShopElementsOnOpen.m_strHeaderText != strWantHeader)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_ShopScreen] the header element reads '%s', expected '%s'",
+						g_xShopElementsOnOpen.m_strHeaderText.c_str(), strWantHeader.c_str());
+					bPassed = false;
+				}
+			}
+			if (g_iShopCursorOnOpen < 0)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the screen's selection mirror was %d on open, expected a real entry "
+					"-- with nothing selected the Confirm button could never transact (canvas focus was "
+					"'%s')", g_iShopCursorOnOpen, g_xShopElementsOnOpen.m_strFocusedName.c_str());
+				bPassed = false;
+			}
+
+			// --- CONFIRM is KEY-REACHABLE from the list ---
+			// Without this the whole screen could ship unusable: every other assertion here
+			// passes with the one button that moves money unreachable by keyboard.
+			if (!g_bShopReachedConfirm)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the Down edges never walked the focus onto the Confirm control (the "
+					"focus stalled on '%s') -- the shop cannot be transacted with by keyboard",
+					g_strShopWalkFocusName.c_str());
+				bPassed = false;
+			}
+
+			// --- the purchase moved the LIVE game state by exactly the right amounts ---
+			if (g_iShopCursorAtConfirm < 0)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the selection was %d when Confirm was pressed -- the SELECTION did "
+					"not survive the walk off the list onto the control, so Confirm had nothing to buy",
+					g_iShopCursorAtConfirm);
+				bPassed = false;
+			}
+			// The survival contract itself, and it has to be pinned by VALUE: with the cursor
+			// simply reset to 0 on a control the purchase assertions below all still pass (they
+			// are derived from whatever the cursor reads at the press frame), so only comparing
+			// the selection ACROSS the walk can catch it. The walk must also have moved off row
+			// 0 first, or the comparison is vacuous -- with a two-item mart it passes through
+			// row 1 on its way to Confirm.
+			if (g_iShopCursorOnLastRow <= 0)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the selection was %d on the last frame the focus was on a list "
+					"row -- the walk never moved off row 0, so the selection-survival check below "
+					"would prove nothing", g_iShopCursorOnLastRow);
+				bPassed = false;
+			}
+			else if (g_iShopCursorAtConfirm != g_iShopCursorOnLastRow)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the selection was %d on the last list row but %d once the focus "
+					"reached Confirm -- the SELECTION did not SURVIVE the walk onto the control "
+					"(ZM_UI_Shop::SettleFocus), so Confirm buys whatever row 0 happens to be rather "
+					"than what the player picked",
+					g_iShopCursorOnLastRow, g_iShopCursorAtConfirm);
+				bPassed = false;
+			}
+			if (g_eShopBoughtItem >= (u_int)ZM_ITEM_COUNT || g_uShopBoughtPrice == 0u
+				|| g_uShopBoughtQuantity == 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the selected entry was item %u at price %u quantity %u -- the "
+					"purchase assertions below would be vacuous",
+					g_eShopBoughtItem, g_uShopBoughtPrice, g_uShopBoughtQuantity);
+				bPassed = false;
+			}
+			else
+			{
+				if (g_eShopResultAfterBuy != (u_int)ZM_SHOP_OK || !g_bShopReportedResult)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_ShopScreen] the purchase reported result %u (reported=%s), expected OK %u",
+						g_eShopResultAfterBuy, g_bShopReportedResult ? "true" : "false",
+						(u_int)ZM_SHOP_OK);
+					bPassed = false;
+				}
+				const u_int uWantMoney = g_uShopMoneyBeforeBuy - g_uShopBoughtPrice * g_uShopBoughtQuantity;
+				if (g_uShopMoneyBeforeBuy < g_uShopBoughtPrice * g_uShopBoughtQuantity
+					|| g_uShopMoneyAfterBuy != uWantMoney)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_ShopScreen] the LIVE purse went %u -> %u, expected %u (price %u x qty %u) -- "
+						"the confirm did not debit the real ZM_GameState",
+						g_uShopMoneyBeforeBuy, g_uShopMoneyAfterBuy, uWantMoney,
+						g_uShopBoughtPrice, g_uShopBoughtQuantity);
+					bPassed = false;
+				}
+				if (g_uShopHeldAfterBuy != g_uShopHeldBeforeBuy + g_uShopBoughtQuantity)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_ShopScreen] the LIVE bag held %u -> %u of '%s', expected +%u -- the confirm "
+						"did not deliver the goods into the real ZM_GameState",
+						g_uShopHeldBeforeBuy, g_uShopHeldAfterBuy,
+						ZM_GetItemName((ZM_ITEM_ID)g_eShopBoughtItem), g_uShopBoughtQuantity);
+					bPassed = false;
+				}
+			}
+
+			// --- Escape: the shop closes, its widgets go down, the player moves again ---
+			if (!g_bShopClosed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the shop never closed after the Escape press");
+				bPassed = false;
+			}
+			// The *Found flags prove the capture actually ran (a default-initialised view would
+			// pass the "hidden" checks vacuously).
+			if (!g_xShopElementsOnClose.m_bPanelFound
+				|| g_xShopElementsOnClose.m_uRowsFound != ZM_UI_Shop::uROWS_PER_PAGE
+				|| g_xShopElementsOnClose.m_bPanelVisible
+				|| g_xShopElementsOnClose.m_bHeaderVisible
+				|| g_xShopElementsOnClose.m_uRowsVisible != 0u
+				|| g_xShopElementsOnClose.m_uControlsVisible != 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the shop widgets were not all hidden once it closed (panel found=%s "
+					"visible=%s, rows found=%u visible=%u, header visible=%s, controls visible=%u)",
+					g_xShopElementsOnClose.m_bPanelFound ? "true" : "false",
+					g_xShopElementsOnClose.m_bPanelVisible ? "true" : "false",
+					g_xShopElementsOnClose.m_uRowsFound,
+					g_xShopElementsOnClose.m_uRowsVisible,
+					g_xShopElementsOnClose.m_bHeaderVisible ? "true" : "false",
+					g_xShopElementsOnClose.m_uControlsVisible);
+				bPassed = false;
+			}
+			if (!g_bShopMovementReenabled)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] player movement was not re-enabled after the shop closed");
+				bPassed = false;
+			}
+			if (!g_bShopFocusClearedOnClose)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_ShopScreen] the canvas focus was not cleared (nullptr) after the shop closed -- "
+					"arrow keys could still drive the hidden screen");
+				bPassed = false;
+			}
+		}
+
+		// Always tear down, in order (all guarded), exactly like the sibling tests. The
+		// purchase mutated the persistent GameState; the harness's between-tests hook
+		// re-seeds the starter, so nothing leaks into the next test.
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
+		Zenith_InputSimulator::ClearFixedDt();
+		if (g_bShopActive)
+		{
+			g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);   // FrontEnd
+		}
+		Zenith_InputSimulator::ResetAllInputState();
+		g_bShopActive = false;
+
+		return bPassed || !g_bShopPrereqsPresent;
+	}
 }
 
 static const Zenith_AutomatedTest g_xZMMenuOpenCloseTest = {
@@ -4128,5 +5014,15 @@ static const Zenith_AutomatedTest g_xZMBagScreenTest = {
 	true /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMBagScreenTest);
+
+static const Zenith_AutomatedTest g_xZMShopScreenTest = {
+	"ZM_ShopScreen_Test",
+	&Setup_ZMShopScreen,
+	&Step_ZMShopScreen,
+	&Verify_ZMShopScreen,
+	/* maxFrames */ 1600,   // ready window + the raise + the walk to Confirm + the buy + the close
+	true /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMShopScreenTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

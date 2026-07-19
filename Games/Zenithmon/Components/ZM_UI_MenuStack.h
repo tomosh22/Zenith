@@ -6,6 +6,7 @@
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"     // owned BY VALUE (the SC2 dialogue screen)
 #include "Zenithmon/Source/UI/ZM_UI_Dex.h"             // owned BY VALUE (the SC5 dex screen)
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"           // owned BY VALUE (the SC4 party screen)
+#include "Zenithmon/Source/UI/ZM_UI_Shop.h"            // owned BY VALUE (the SC7 shop screen)
 
 class Zenith_DataStream;
 class Zenith_UIComponent;
@@ -30,7 +31,9 @@ class Zenith_UIComponent;
 // through), modal (Escape never dismisses it) and advanced only by confirm; SC4
 // adds the PARTY screen -- a by-value ZM_UI_Party list + summary; SC5 adds the DEX
 // screen -- a by-value ZM_UI_Dex paged grid; SC6 adds the BAG screen -- a by-value
-// ZM_UI_Bag pocket-tabbed, paged item list.
+// ZM_UI_Bag pocket-tabbed, paged item list; SC7 adds the SHOP screen -- a by-value
+// ZM_UI_Shop buy/sell list raised by OpenShop / the static TryOpenShop (the seam the
+// mart NPC talks through), and the first screen that WRITES the live game state.
 //
 // Screen dispatch is GENERALIZED: OnUpdate routes input through ONE per-screen
 // switch and PresentTopScreen shows/hides through ONE per-screen block, so adding
@@ -51,6 +54,7 @@ enum ZM_MENU_SCREEN : u_int
 	ZM_MENU_SCREEN_BAG,         // SC6: the pocket-tabbed, paged item list + money
 	ZM_MENU_SCREEN_DEX,         // SC5: the paged species grid
 	ZM_MENU_SCREEN_DIALOGUE,    // SC2: the NPC / prompt dialogue box (modal, not a ROOT entry)
+	ZM_MENU_SCREEN_SHOP,        // SC7: the mart buy/sell screen (raised by TryOpenShop, not a ROOT entry)
 
 	ZM_MENU_SCREEN_COUNT
 };
@@ -156,8 +160,11 @@ public:
 	// The focused-item mirror of the top FOCUS-NAVIGABLE screen, refreshed from the
 	// canvas focus each frame it is shown: the ROOT entry index on ROOT, the party
 	// slot on PARTY, the dex CELL on DEX (-1 there while a page button holds the
-	// focus), the bag ROW on BAG (-1 while a nav button holds it). -1 on a screen
-	// that owns no focus (DIALOGUE).
+	// focus), the bag ROW on BAG (-1 while a nav button holds it), and the selected ROW
+	// on the shop's current PAGE on SHOP -- a page-relative row, NOT a flat list index
+	// (ZM_UI_Shop::GetSelectedEntryIndex resolves that), which deliberately SURVIVES the
+	// focus moving onto a control so the walk to Confirm cannot forget what was picked.
+	// -1 on a screen that owns no focus (DIALOGUE).
 	int            GetCursor()    const { return m_iCursor; }
 
 	// ---- Dialogue (SC2) ----
@@ -181,6 +188,21 @@ public:
 
 	// ---- Bag (SC6) ----
 	const ZM_UI_Bag& GetBagScreen() const { return m_xBagScreen; }
+
+	// ---- Shop (SC7) ----
+
+	// Configure the mart's stock and raise the SHOP screen. All-or-nothing (the stock
+	// is only taken when SetInventory accepts the whole list). Freezes the player and
+	// opens the menu when the stack was empty, so a mart clerk can trade without the
+	// pause menu; when a menu screen is already open the shop stacks ON TOP of it and
+	// popping returns to it. The shop is NOT a ROOT entry -- a mart is entered by
+	// talking to its clerk, never from the pause menu.
+	bool OpenShop(const ZM_ITEM_ID* paeInventory, u_int uCount);
+	// Singleton-resolving convenience -- the SAME seam shape as TryPushDialogue (what
+	// S6 item 3's mart NPC and the windowed test call). False when no live ZM_MenuRoot
+	// singleton exists, or when the inventory is rejected.
+	static bool TryOpenShop(const ZM_ITEM_ID* paeInventory, u_int uCount);
+	const ZM_UI_Shop& GetShopScreen() const { return m_xShop; }
 
 	// ---- Persistent-singleton observation (mirrors ZM_BattleTransition) ----
 	static bool TryGetUniqueSingletonEntityID(Zenith_EntityID& xEntityIDOut);
@@ -228,6 +250,8 @@ private:
 	bool PresentDexScreen(bool bShown);
 	// ...and for the SC6 bag screen (top screen AND a live game state).
 	bool PresentBagScreen(bool bShown);
+	// ...and for the SC7 shop screen (top screen AND a live game state).
+	bool PresentShopScreen(bool bShown);
 	void FreezePlayer();
 	void UnfreezePlayer();
 
@@ -253,6 +277,7 @@ private:
 	// NOT m_xBag -- that name belongs to ZM_GameState's MODEL, which this presenter
 	// renders; keeping them distinct keeps the two straight at every call site.
 	ZM_UI_Bag          m_xBagScreen;                              // the BAG screen's model (SC6; PODs only)
+	ZM_UI_Shop         m_xShop;                                   // the SHOP screen's model (SC7; PODs only)
 	int                m_iCursor = -1;                            // focused-item mirror (see GetCursor)
 	Zenith_EntityID    m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 };

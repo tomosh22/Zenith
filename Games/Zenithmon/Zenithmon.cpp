@@ -24,6 +24,7 @@
 #include "Zenithmon/Source/UI/ZM_UI_Bag.h"           // sz*_NAME + RowElementName + geometry contract (bag authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Dex.h"           // sz*_NAME + geometry contract (dex authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"         // sz*_NAME + SlotElementName contract (party authoring)
+#include "Zenithmon/Source/UI/ZM_UI_Shop.h"          // sz*_NAME + RowElementName + geometry contract (shop authoring)
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
@@ -399,6 +400,110 @@ namespace
 		}
 	}
 
+	// The SC7 shop screen, authored WHOLE like the SC6 bag: a centred panel, the
+	// mode/money/quantity header, six list rows and the eight controls in two bands
+	// below them. Split out of ZM_ConfigureMenuRoot (which is already five screens long)
+	// rather than inlined; it owns exactly the ZM_UI_Shop::sz*_NAME / RowElementName
+	// contract and reads all of its geometry off the ZM_UI_Shop f*_ constants, so this
+	// site and the presenter can never drift apart. ALL authored HIDDEN.
+	void ZM_ConfigureMenuRootShopScreen(Zenith_UIComponent& xUI)
+	{
+		Zenith_UI::Zenith_UIRect* pxPanel =
+			xUI.FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_Shop::szPANEL_NAME);
+		if (pxPanel != nullptr)
+		{
+			pxPanel->SetSortOrder(ZM_UI_MenuStack::iMENU_PANEL_SORT_ORDER);
+			pxPanel->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxPanel->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxPanel->SetPosition(0.0f, 0.0f);
+			// Fully COVERS the header band, the row stack and BOTH control bands, so nothing
+			// the screen draws bleeds outside the panel it sits on (ZM-D-112).
+			pxPanel->SetSize(ZM_UI_Shop::fPANEL_WIDTH, ZM_UI_Shop::fPANEL_HEIGHT);
+			pxPanel->SetColor({ 0.05f, 0.06f, 0.10f, 0.85f });
+			pxPanel->SetVisible(false);
+		}
+
+		Zenith_UI::Zenith_UIText* pxHeader =
+			xUI.FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_Shop::szHEADER_NAME);
+		if (pxHeader != nullptr)
+		{
+			pxHeader->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxHeader->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxHeader->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxHeader->SetPosition(0.0f, ZM_UI_Shop::fHEADER_CENTRE_Y);
+			// Size == the wrap width == SetMaxWidth, with a matching alignment -- all three
+			// together, always (the SC2 lesson: the default 100x100 Left-aligned bounds flow
+			// the line clean off the right of the screen). The header carries the transaction
+			// report too, so it is authored two lines tall.
+			pxHeader->SetSize(ZM_UI_Shop::fHEADER_WIDTH, ZM_UI_Shop::fHEADER_HEIGHT);
+			pxHeader->SetFontSize(22.0f);
+			pxHeader->SetAlignment(Zenith_UI::TextAlignment::Center);
+			pxHeader->SetMaxWidth(ZM_UI_Shop::fHEADER_WIDTH);
+			pxHeader->SetVisible(false);
+		}
+
+		// The rows carry NO explicit navigation links -- the party / bag idiom, and here it
+		// is a CORRECTNESS requirement, not a preference: ZM_UI_Shop::Present hides every
+		// row past the live entry count, and Zenith_UICanvas::NavigateDown only falls back
+		// to the spatial search when the link is NULL. A bake-time link from the last LIVE
+		// row into a row Present has just hidden would be fetched, fail the
+		// visible+focusable test, and swallow the press -- dead navigation on every partial
+		// page. Liveness is per-page runtime state, so it cannot be wired at bake time.
+		for (u_int uRow = 0u; uRow < ZM_UI_Shop::uROWS_PER_PAGE; ++uRow)
+		{
+			Zenith_UI::Zenith_UIButton* pxRow =
+				xUI.FindElement<Zenith_UI::Zenith_UIButton>(ZM_UI_Shop::RowElementName(uRow));
+			if (pxRow == nullptr)
+			{
+				continue;
+			}
+			pxRow->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxRow->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxRow->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxRow->SetPosition(0.0f,
+				ZM_UI_Shop::fROW_FIRST_CENTRE_Y + ZM_UI_Shop::fROW_PITCH_Y * (float)uRow);
+			pxRow->SetSize(ZM_UI_Shop::fROW_WIDTH, ZM_UI_Shop::fROW_HEIGHT);
+			pxRow->SetFontSize(22.0f);
+			pxRow->SetFocusable(true);
+			pxRow->SetVisible(false);
+		}
+
+		// The eight controls, in two bands below the list and likewise unlinked. CONFIRM
+		// sits ALONE at x == 0 in the first band, directly under the row column: the engine
+		// scores spatial candidates on raw squared distance, so from any live row (they all
+		// share x == 0) it is always the nearest element below -- ONE Down press reaches the
+		// primary action even when the page holds a single row.
+		struct ShopControl { const char* m_szName; float m_fX; float m_fY; };
+		const ShopControl axShopControls[ZM_UI_Shop::uCONTROL_COUNT] =
+		{
+			{ ZM_UI_Shop::szBUY_TAB_NAME,   -ZM_UI_Shop::fCONTROL_OUTER_X, ZM_UI_Shop::fCONTROL_BAND1_Y },
+			{ ZM_UI_Shop::szSELL_TAB_NAME,  -ZM_UI_Shop::fCONTROL_INNER_X, ZM_UI_Shop::fCONTROL_BAND1_Y },
+			{ ZM_UI_Shop::szCONFIRM_NAME,                            0.0f, ZM_UI_Shop::fCONTROL_BAND1_Y },
+			{ ZM_UI_Shop::szPREV_PAGE_NAME,  ZM_UI_Shop::fCONTROL_INNER_X, ZM_UI_Shop::fCONTROL_BAND1_Y },
+			{ ZM_UI_Shop::szNEXT_PAGE_NAME,  ZM_UI_Shop::fCONTROL_OUTER_X, ZM_UI_Shop::fCONTROL_BAND1_Y },
+			{ ZM_UI_Shop::szQTY_DOWN_NAME,  -ZM_UI_Shop::fCONTROL_INNER_X, ZM_UI_Shop::fCONTROL_BAND2_Y },
+			{ ZM_UI_Shop::szQTY_UP_NAME,                             0.0f, ZM_UI_Shop::fCONTROL_BAND2_Y },
+			{ ZM_UI_Shop::szEXIT_NAME,       ZM_UI_Shop::fCONTROL_INNER_X, ZM_UI_Shop::fCONTROL_BAND2_Y },
+		};
+		for (const ShopControl& xControl : axShopControls)
+		{
+			Zenith_UI::Zenith_UIButton* pxButton =
+				xUI.FindElement<Zenith_UI::Zenith_UIButton>(xControl.m_szName);
+			if (pxButton == nullptr)
+			{
+				continue;
+			}
+			pxButton->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxButton->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxButton->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxButton->SetPosition(xControl.m_fX, xControl.m_fY);
+			pxButton->SetSize(ZM_UI_Shop::fCONTROL_WIDTH, ZM_UI_Shop::fCONTROL_HEIGHT);
+			pxButton->SetFontSize(20.0f);
+			pxButton->SetFocusable(true);
+			pxButton->SetVisible(false);
+		}
+	}
+
 	// The overworld pause menu (S6 item 2 SC1). Authors the ROOT screen's backing panel
 	// + Party/Bag/Dex/Exit entries on the selected ZM_MenuRoot entity's UI component:
 	// centred vertical stack, sort band 9000/9001 (BELOW WarpFade 10000 / BattleFade
@@ -412,7 +517,9 @@ namespace
 	// SC5 the dex screen's STATIC half (panel + completion header + two page buttons)
 	// under the ZM_UI_Dex::sz*_NAME contract -- its grid is built at runtime, not here --
 	// and SC6 the bag screen (panel + header + eight list rows + four nav buttons),
-	// authored WHOLE under the ZM_UI_Bag::sz*_NAME / RowElementName contract.
+	// authored WHOLE under the ZM_UI_Bag::sz*_NAME / RowElementName contract. SC7's
+	// shop screen (panel + header + six list rows + eight controls) is authored the same
+	// way, in ZM_ConfigureMenuRootShopScreen above.
 	void ZM_ConfigureMenuRoot()
 	{
 		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
@@ -776,6 +883,8 @@ namespace
 			pxButton->SetFocusable(true);
 			pxButton->SetVisible(false);
 		}
+
+		ZM_ConfigureMenuRootShopScreen(*pxUI);
 	}
 
 	bool ZM_SetSelectedSpawnPointTag(const char* szTag)
@@ -1017,8 +1126,9 @@ void Project_RegisterEditorAutomationSteps()
 	// The overworld pause menu (S6 item 2 SC1) on its OWN persistent root, mirroring
 	// the two roots above: a non-transient DontDestroyOnLoad entity carrying a UI
 	// component (the ROOT panel + Party/Bag/Dex/Exit entries plus the SC2 dialogue
-	// box panel + text, the SC4 party screen, the SC5 dex screen's static widgets
-	// and the SC6 bag screen, all authored hidden by ZM_ConfigureMenuRoot) + the
+	// box panel + text, the SC4 party screen, the SC5 dex screen's static widgets,
+	// the SC6 bag screen and the SC7 shop screen, all authored hidden by
+	// ZM_ConfigureMenuRoot) + the
 	// ZM_UI_MenuStack machine. Persistent so the menu and the dialogue box are
 	// reachable from every overworld scene (Dawnmere / PlayerHome / future towns)
 	// without re-authoring, and separate so its 9000/9001 sort band never collides
@@ -1067,6 +1177,24 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreateUIButton(ZM_UI_Bag::szNEXT_POCKET_NAME, "Pocket >");
 	xAuto.AddStep_CreateUIButton(ZM_UI_Bag::szPREV_PAGE_NAME, "< Prev");
 	xAuto.AddStep_CreateUIButton(ZM_UI_Bag::szNEXT_PAGE_NAME, "Next >");
+	// ...and the SC7 shop screen, authored WHOLE too (panel + header + six list rows +
+	// the eight controls), likewise hidden. RowElementName / ControlElementName return
+	// string literals, so calling them at authoring time is safe. The row labels are
+	// written at runtime; the control labels are static and set here.
+	xAuto.AddStep_CreateUIRect(ZM_UI_Shop::szPANEL_NAME);
+	xAuto.AddStep_CreateUIText(ZM_UI_Shop::szHEADER_NAME, "");
+	for (u_int uRow = 0u; uRow < ZM_UI_Shop::uROWS_PER_PAGE; ++uRow)
+	{
+		xAuto.AddStep_CreateUIButton(ZM_UI_Shop::RowElementName(uRow), "");
+	}
+	xAuto.AddStep_CreateUIButton(ZM_UI_Shop::szBUY_TAB_NAME, "Buy");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Shop::szSELL_TAB_NAME, "Sell");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Shop::szCONFIRM_NAME, "Confirm");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Shop::szPREV_PAGE_NAME, "< Prev");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Shop::szNEXT_PAGE_NAME, "Next >");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Shop::szQTY_DOWN_NAME, "Qty -");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Shop::szQTY_UP_NAME, "Qty +");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Shop::szEXIT_NAME, "Leave");
 	xAuto.AddStep_Custom(&ZM_ConfigureMenuRoot);
 	xAuto.AddStep_AddComponent("ZM_UI_MenuStack");
 
