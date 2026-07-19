@@ -17,6 +17,7 @@
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Components/ZM_TallGrassSystem.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
+#include "Zenithmon/Components/ZM_UI_MenuStack.h"
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
@@ -143,6 +144,7 @@ ZENITH_REGISTER_COMPONENT(ZM_BattleArena, "ZM_BattleArena", 108u)
 ZENITH_REGISTER_COMPONENT(ZM_TallGrassSystem, "ZM_TallGrassSystem", 109u)
 ZENITH_REGISTER_COMPONENT(ZM_BattleTransition, "ZM_BattleTransition", 110u)
 ZENITH_REGISTER_COMPONENT(ZM_BattleDirector, "ZM_BattleDirector", 111u)
+ZENITH_REGISTER_COMPONENT(ZM_UI_MenuStack, "ZM_UI_MenuStack", 112u)
 
 #ifdef ZENITH_TOOLS
 namespace
@@ -393,6 +395,85 @@ namespace
 		}
 	}
 
+	// The overworld pause menu (S6 item 2 SC1). Authors the ROOT screen's backing panel
+	// + Party/Bag/Dex/Exit entries on the selected ZM_MenuRoot entity's UI component:
+	// centred vertical stack, sort band 9000/9001 (BELOW WarpFade 10000 / BattleFade
+	// 10001 so a fade always covers the menu), each entry focusable + navigation-wired
+	// (up/down) for deterministic engine focus-nav, and ALL authored hidden --
+	// ZM_UI_MenuStack shows/hides + focuses them at runtime. Element names are the
+	// ZM_UI_MenuStack::sz*_NAME contract.
+	void ZM_ConfigureMenuRoot()
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_UIComponent* pxUI = pxSelectedEntity != nullptr
+			? pxSelectedEntity->TryGetComponent<Zenith_UIComponent>()
+			: nullptr;
+		Zenith_Assert(pxUI != nullptr,
+			"MenuRoot authoring requires the selected root UI component");
+		if (pxUI == nullptr)
+		{
+			return;
+		}
+
+		// Backing panel -- centred box behind the entries, authored hidden.
+		Zenith_UI::Zenith_UIRect* pxPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_MenuStack::szROOT_PANEL_NAME);
+		if (pxPanel != nullptr)
+		{
+			pxPanel->SetSortOrder(ZM_UI_MenuStack::iMENU_PANEL_SORT_ORDER);
+			pxPanel->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxPanel->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxPanel->SetPosition(0.0f, 0.0f);
+			pxPanel->SetSize(260.0f, 232.0f);
+			pxPanel->SetColor({ 0.05f, 0.06f, 0.10f, 0.85f });
+			pxPanel->SetVisible(false);
+		}
+
+		// The four entries, top to bottom (== ZM_MENU_ROOT_PARTY..EXIT). 48 px pitch,
+		// centred, focusable, authored hidden.
+		struct MenuEntry { ZM_MENU_ROOT_ITEM m_eItem; float m_fY; };
+		const MenuEntry axEntries[ZM_MENU_ROOT_ITEM_COUNT] =
+		{
+			{ ZM_MENU_ROOT_PARTY, -72.0f },
+			{ ZM_MENU_ROOT_BAG,   -24.0f },
+			{ ZM_MENU_ROOT_DEX,    24.0f },
+			{ ZM_MENU_ROOT_EXIT,   72.0f },
+		};
+		Zenith_UI::Zenith_UIButton* apxButtons[ZM_MENU_ROOT_ITEM_COUNT] = {};
+		for (u_int i = 0u; i < ZM_MENU_ROOT_ITEM_COUNT; ++i)
+		{
+			Zenith_UI::Zenith_UIButton* pxButton =
+				pxUI->FindElement<Zenith_UI::Zenith_UIButton>(
+					ZM_UI_MenuStack::RootItemElementName(axEntries[i].m_eItem));
+			apxButtons[i] = pxButton;
+			if (pxButton == nullptr)
+			{
+				continue;
+			}
+			pxButton->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxButton->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxButton->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxButton->SetPosition(0.0f, axEntries[i].m_fY);
+			pxButton->SetSize(220.0f, 44.0f);
+			pxButton->SetFontSize(26.0f);
+			pxButton->SetFocusable(true);
+			pxButton->SetVisible(false);
+		}
+
+		// Explicit up/down navigation links (no wrap); left/right null. The engine's
+		// focus-nav follows these first, falling back to the spatial search otherwise.
+		for (u_int i = 0u; i < ZM_MENU_ROOT_ITEM_COUNT; ++i)
+		{
+			if (apxButtons[i] == nullptr)
+			{
+				continue;
+			}
+			Zenith_UI::Zenith_UIElement* pxUp   = (i > 0u) ? apxButtons[i - 1u] : nullptr;
+			Zenith_UI::Zenith_UIElement* pxDown = (i + 1u < ZM_MENU_ROOT_ITEM_COUNT) ? apxButtons[i + 1u] : nullptr;
+			apxButtons[i]->SetNavigation(pxUp, pxDown, nullptr, nullptr);
+		}
+	}
+
 	bool ZM_SetSelectedSpawnPointTag(const char* szTag)
 	{
 		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
@@ -532,6 +613,7 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_TallGrassSystem>("ZM_TallGrassSystem");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleTransition>("ZM_BattleTransition");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleDirector>("ZM_BattleDirector");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_UI_MenuStack>("ZM_UI_MenuStack");
 
 	// Runtime toggle for the battle presenter's instant-battle mode (collapses all
 	// presentation timing). Bound by reference to the ZM_BattleDirectorCore backing
@@ -552,6 +634,7 @@ void Project_RegisterGameComponents()
 	Zenith_AutomatedTestRunner::RegisterBetweenTestsHook([]()
 	{
 		ZM_BattleTransition::ResetRuntimeStateForTests();
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
 		ZM_GameStateManager::ResetRuntimeStateForTests();
 		// The persistent manager's GameState survives DontDestroyOnLoad across tests;
 		// re-seed the starter so a caught/levelled party cannot leak into the next test.
@@ -626,6 +709,24 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreateUIOverlay("BattleFade");
 	xAuto.AddStep_Custom(&ZM_ConfigureBattleFade);
 	xAuto.AddStep_AddComponent("ZM_BattleTransition");
+
+	// The overworld pause menu (S6 item 2 SC1) on its OWN persistent root, mirroring
+	// the two roots above: a non-transient DontDestroyOnLoad entity carrying a UI
+	// component (the ROOT panel + Party/Bag/Dex/Exit entries, authored hidden by
+	// ZM_ConfigureMenuRoot) + the ZM_UI_MenuStack machine. Persistent so the menu is
+	// reachable from every overworld scene (Dawnmere / PlayerHome / future towns)
+	// without re-authoring, and separate so its 9000/9001 sort band never collides
+	// with the two fade overlays' 10000/10001.
+	xAuto.AddStep_CreateEntity("ZM_MenuRoot");
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_AddUI();
+	xAuto.AddStep_CreateUIRect("Menu_RootPanel");
+	xAuto.AddStep_CreateUIButton("Menu_RootParty", "Party");
+	xAuto.AddStep_CreateUIButton("Menu_RootBag", "Bag");
+	xAuto.AddStep_CreateUIButton("Menu_RootDex", "Dex");
+	xAuto.AddStep_CreateUIButton("Menu_RootExit", "Exit");
+	xAuto.AddStep_Custom(&ZM_ConfigureMenuRoot);
+	xAuto.AddStep_AddComponent("ZM_UI_MenuStack");
 
 	xAuto.AddStep_CreateEntity("GameManager");
 	xAuto.AddStep_AddCamera();

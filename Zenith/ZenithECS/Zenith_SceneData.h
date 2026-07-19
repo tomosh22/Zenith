@@ -459,8 +459,17 @@ private:
 		Zenith_EntitySlot& xSlot = Zenith_ECS_EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (!xSlot.IsPendingStart()) return;
 		xSlot.RevertFromPendingStart();
-		Zenith_Assert(m_uPendingStartCount > 0, "PendingStartCount underflow in CancelPendingStart");
-		m_uPendingStartCount--;
+		// Underflow tolerance: mirrors the same guard in ProcessSinglePendingStart
+		// (Internal/Zenith_SceneData.cpp) for the harness's between-tests scene cycling
+		// and the persistent-singleton duplicate-destroy pattern, where an entity's
+		// PENDING_START bookkeeping can already have been cleared elsewhere (e.g. a
+		// MoveEntityInternal-during-Start transferred the count to another scene). The
+		// list-erase below is idempotent; only decrement when there is something to
+		// decrement -- the underflow case means the bookkeeping is already consistent.
+		if (m_uPendingStartCount > 0)
+		{
+			m_uPendingStartCount--;
+		}
 		m_axPendingStartEntities.EraseValue(xID);
 	}
 
