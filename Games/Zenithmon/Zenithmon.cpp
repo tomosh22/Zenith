@@ -512,7 +512,8 @@ namespace
 	// ZM_UI_MenuStack shows/hides + focuses them at runtime. Element names are the
 	// ZM_UI_MenuStack::sz*_NAME contract. SC2 adds the dialogue box (a bottom-centre
 	// panel + wrapped text, also authored hidden) under the ZM_UI_DialogueBox::sz*_NAME
-	// contract, SC4 the party screen (list panel + six slot rows + summary panel and
+	// contract -- to which SC8 adds the two yes/no prompt buttons inside that same panel
+	// -- SC4 the party screen (list panel + six slot rows + summary panel and
 	// body, all hidden) under the ZM_UI_Party::sz*_NAME / SlotElementName contract, and
 	// SC5 the dex screen's STATIC half (panel + completion header + two page buttons)
 	// under the ZM_UI_Dex::sz*_NAME contract -- its grid is built at runtime, not here --
@@ -625,6 +626,44 @@ namespace
 			pxDialogueText->SetAlignment(Zenith_UI::TextAlignment::Center);   // matches the BottomCenter anchor
 			pxDialogueText->SetMaxWidth(820.0f);   // > 0 enables word wrap inside the panel
 			pxDialogueText->SetVisible(false);
+		}
+
+		// The SC8 yes/no prompt buttons, side by side in the dialogue panel's lower-right
+		// band (the geometry constants are ZM_UI_DialogueBox's, so this site and the
+		// presenter can never drift). They sit INSIDE the 880x160 panel -- a question the
+		// player answers must never float over the world (ZM-D-112) -- and BELOW where a
+		// one/two-line prompt actually renders. Authored HIDDEN and NOT focusable:
+		// ZM_UI_DialogueBox::Present raises + labels them only while a choice is awaiting an
+		// answer, and turns both off again afterwards.
+		//
+		// NO SetNavigation between them, deliberately: the engine consults the explicit
+		// link FIRST and only falls back to the spatial search when it is null, so a
+		// bake-time link into a button Present has just hidden would swallow the press
+		// outright (the SC6/SC7 rule). Side by side at the same Y, the spatial search walks
+		// Yes <-> No on Left/Right with no links at all.
+		struct DialogueChoiceButton { const char* m_szName; const char* m_szLabel; float m_fX; };
+		const DialogueChoiceButton axChoiceButtons[2] =
+		{
+			{ ZM_UI_DialogueBox::szYES_NAME, "Yes", ZM_UI_DialogueBox::fCHOICE_YES_X },
+			{ ZM_UI_DialogueBox::szNO_NAME,  "No",  ZM_UI_DialogueBox::fCHOICE_NO_X  },
+		};
+		for (const DialogueChoiceButton& xChoice : axChoiceButtons)
+		{
+			Zenith_UI::Zenith_UIButton* pxChoice =
+				pxUI->FindElement<Zenith_UI::Zenith_UIButton>(xChoice.m_szName);
+			if (pxChoice == nullptr)
+			{
+				continue;
+			}
+			pxChoice->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxChoice->SetAnchor(Zenith_UI::AnchorPreset::BottomCenter);
+			pxChoice->SetPivot(Zenith_UI::AnchorPreset::BottomCenter);
+			pxChoice->SetPosition(xChoice.m_fX, ZM_UI_DialogueBox::fCHOICE_Y);
+			pxChoice->SetSize(ZM_UI_DialogueBox::fCHOICE_WIDTH, ZM_UI_DialogueBox::fCHOICE_HEIGHT);
+			pxChoice->SetFontSize(20.0f);
+			pxChoice->SetText(xChoice.m_szLabel);   // the arming caller overwrites this at runtime
+			pxChoice->SetFocusable(false);
+			pxChoice->SetVisible(false);
 		}
 
 		// The SC4 party screen: a centred list panel, six slot buttons stacked inside it,
@@ -1145,6 +1184,11 @@ void Project_RegisterEditorAutomationSteps()
 	// hidden): names are the ZM_UI_DialogueBox::szPANEL_NAME / szTEXT_NAME contract.
 	xAuto.AddStep_CreateUIRect(ZM_UI_DialogueBox::szPANEL_NAME);
 	xAuto.AddStep_CreateUIText(ZM_UI_DialogueBox::szTEXT_NAME, "");
+	// ...plus the SC8 yes/no prompt buttons on the same panel, likewise hidden. The
+	// labels here are the defaults; the caller that ARMS a choice supplies the real ones
+	// and ZM_UI_DialogueBox::Present writes them.
+	xAuto.AddStep_CreateUIButton(ZM_UI_DialogueBox::szYES_NAME, "Yes");
+	xAuto.AddStep_CreateUIButton(ZM_UI_DialogueBox::szNO_NAME, "No");
 	// ...and the SC4 party screen (list panel + six slot rows + summary panel/body),
 	// likewise authored hidden. SlotElementName returns string literals, so calling it
 	// at authoring time is safe.

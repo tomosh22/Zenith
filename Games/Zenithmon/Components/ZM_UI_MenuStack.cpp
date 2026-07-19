@@ -12,6 +12,7 @@
 #include "Zenithmon/Components/ZM_BattleTransition.h"   // ZM_BattleTransition::IsTransitionActive (gating)
 #include "Zenithmon/Components/ZM_GameStateManager.h"   // IsWarpInProgress + TryGetUniqueActiveScenePlayerEntityID + TryGetGameState (+ ZM_GameState)
 #include "Zenithmon/Components/ZM_PlayerController.h"    // SetMovementEnabled (freeze seam)
+#include "Zenithmon/Source/CareCenter/ZM_CareCenter.h"  // the SC8 prompt lines + the heal
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"       // ZM_SPECIES_COUNT (the dex size the DEX screen pages over)
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"         // ZM_FindSceneByBuildIndex / ZM_GetWorldSpec / ZM_SCENE_KIND
 #include "Zenithmon/Source/ZM_InputActions.h"           // ReadMenuPressed / ReadConfirmPressed / ReadCancelPressed
@@ -23,7 +24,7 @@
 #endif
 
 // ============================================================================
-// ZM_UI_MenuStack (S6 item 2 SC1 + SC2 + SC4 + SC5 + SC6 + SC7). The overworld pause-menu machine on
+// ZM_UI_MenuStack (S6 item 2 SC1 + SC2 + SC4 + SC5 + SC6 + SC7 + SC8). The overworld pause-menu machine on
 // the persistent ZM_MenuRoot entity. Opens a focus-navigable ROOT menu, freezes the
 // player, drives traversal via the engine focus-nav API, dispatches confirm by
 // the focused element's NAME, pops on cancel/Escape. Mirrors ZM_BattleTransition
@@ -33,7 +34,9 @@
 // Screen dispatch lives in exactly TWO per-screen switches -- the input routing in
 // OnUpdate and the show/hide + focus policy in PresentTopScreen. A new screen adds
 // an arm to each and a by-value presenter member; nothing else moves. SC7 (Shop) is
-// the fourth screen added that way, and it reshaped neither site.
+// the fourth screen added that way, and it reshaped neither site. SC8 adds NO screen
+// at all -- the Care Center prompt is the DIALOGUE screen with a yes/no choice armed
+// on the box, so it only widened the two DIALOGUE arms.
 // ============================================================================
 
 Zenith_EntityID ZM_UI_MenuStack::s_xSingletonEntityID = INVALID_ENTITY_ID;
@@ -101,6 +104,11 @@ void ZM_UI_MenuStack::OnStart()
 	m_xDex.Reset();
 	m_xBagScreen.Reset();
 	m_xShop.Reset();
+	m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
+	// The latched answer is deliberately NOT cleared by CloseMenu (it must survive the
+	// close that resolving a prompt triggers), so boot and deserialize are the only
+	// places a stale one can be dropped.
+	m_eLastDialogueAnswer = ZM_DIALOGUE_CHOICE_NONE;
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 
@@ -149,18 +157,34 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 	case ZM_MENU_SCREEN_DIALOGUE:
 		// The dialogue owns input while it is the top screen: confirm advances the
 		// typewriter / the line, and CANCEL is deliberately IGNORED -- a dialogue is
-		// modal and closes only by being read to the end, so a prompt can never be
-		// escaped past (S6 item 3 hangs yes/no prompts off exactly this).
+		// modal and closes only by being read to the end, so its LINES can never be
+		// escaped past.
 		m_xDialogue.Tick(fDeltaSeconds);
-		if (bConfirm)
+		if (m_xDialogue.IsAwaitingChoice())
+		{
+			// SC8: the lines are read and a yes/no prompt is up. Confirm answers BY THE
+			// FOCUSED ELEMENT'S NAME (the box owns the two buttons), and cancel resolves NO --
+			// the lines stay modal, but a question the player could neither answer nor escape
+			// would be a dead end.
+			ZM_DIALOGUE_CHOICE eAnswer = ZM_DIALOGUE_CHOICE_NONE;
+			if (bConfirm)
+			{
+				eAnswer = m_xDialogue.ResolveChoice(ResolveFocusedElementName());
+			}
+			else if (bCancel)
+			{
+				eAnswer = m_xDialogue.CancelChoice();
+			}
+			if (eAnswer != ZM_DIALOGUE_CHOICE_NONE)
+			{
+				ApplyDialogueChoice(eAnswer);
+			}
+		}
+		else if (bConfirm)
 		{
 			if (m_xDialogue.Confirm() == ZM_DIALOGUE_ADVANCE_CLOSED)
 			{
-				m_xStack.Pop();
-				if (m_xStack.IsEmpty())
-				{
-					CloseMenu();
-				}
+				PopTopScreen();
 			}
 		}
 		break;
@@ -175,7 +199,7 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		}
 		else if (bCancel && !m_xParty.Cancel())
 		{
-			HandleCancel();
+			PopTopScreen();
 		}
 		break;
 
@@ -190,7 +214,7 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		}
 		else if (bCancel)
 		{
-			HandleCancel();
+			PopTopScreen();
 		}
 		break;
 
@@ -211,7 +235,7 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		}
 		else if (bCancel)
 		{
-			HandleCancel();
+			PopTopScreen();
 		}
 		break;
 
@@ -228,7 +252,7 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 			const char* szFocusedName = ResolveFocusedElementName();
 			if (ZM_UI_Shop::IsExitElementName(szFocusedName))
 			{
-				HandleCancel();
+				PopTopScreen();
 			}
 			else
 			{
@@ -241,7 +265,7 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		}
 		else if (bCancel)
 		{
-			HandleCancel();
+			PopTopScreen();
 		}
 		break;
 
@@ -254,7 +278,7 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		}
 		else if (bCancel)
 		{
-			HandleCancel();
+			PopTopScreen();
 		}
 		break;
 	}
@@ -295,6 +319,9 @@ void ZM_UI_MenuStack::CloseMenu()
 	m_xBagScreen.Hide(m_xParentEntity);
 	m_xShop.Reset();
 	m_xShop.Hide(m_xParentEntity);
+	// ...including any pending prompt action: a force-close must never leave a HEAL_PARTY
+	// armed for whatever conversation comes next.
+	m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
 
 	// Hide every ROOT element + clear the canvas focus so arrow keys never drive an
 	// invisible menu on the shared persistent canvas (watch-out 2).
@@ -331,7 +358,7 @@ void ZM_UI_MenuStack::HandleConfirm()
 	}
 }
 
-void ZM_UI_MenuStack::HandleCancel()
+void ZM_UI_MenuStack::PopTopScreen()
 {
 	m_xStack.Pop();
 	if (m_xStack.IsEmpty())
@@ -341,10 +368,50 @@ void ZM_UI_MenuStack::HandleCancel()
 	// else: back to a lower screen (ROOT) -- PresentTopScreen re-shows it this frame.
 }
 
+void ZM_UI_MenuStack::ApplyDialogueChoice(ZM_DIALOGUE_CHOICE eAnswer)
+{
+	// The action is consumed WHATEVER the answer was: one prompt, one action, so a NO (or
+	// a cancel) can never leave a HEAL_PARTY armed for the next unrelated conversation.
+	const ZM_DIALOGUE_ACTION eAction = m_eDialogueAction;
+	m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
+
+	if (eAnswer == ZM_DIALOGUE_CHOICE_YES && eAction == ZM_DIALOGUE_ACTION_HEAL_PARTY)
+	{
+		// The LIVE state, resolved per answer rather than cached (the same seam the bag and
+		// shop arms use); a missing state simply eats the heal instead of crashing.
+		ZM_GameState* pxState = nullptr;
+		if (ZM_GameStateManager::TryGetGameState(pxState) && pxState != nullptr)
+		{
+			ZM_ApplyCareCenterHeal(*pxState);
+		}
+	}
+
+	// The box already reset itself as part of resolving, so leaving is the stack's half of
+	// the same close path a read-to-the-end dialogue takes.
+	PopTopScreen();
+
+	// LATCH the answer on the HOST, deliberately AFTER PopTopScreen. The box's own
+	// GetChoice() survives the resolve, but NOT the close: a prompt raised over an empty
+	// stack pops to empty, which calls CloseMenu(), which Reset()s the box and clears the
+	// stored answer -- all synchronously inside this one OnUpdate, so no caller ever gets
+	// a frame in which it could read it. The latch outlives that and is what consumers
+	// (and the windowed test) actually read. Cleared on boot / deserialize only, NOT in
+	// CloseMenu -- it is the LAST answer, not live session state.
+	m_eLastDialogueAnswer = eAnswer;
+}
+
 // ---- Dialogue (SC2) --------------------------------------------------------
 
 bool ZM_UI_MenuStack::PushDialogueLines(const char* const* paszLines, u_int uCount)
 {
+	// An UNANSWERED question owns the box (the mirror of OpenCareCenterPrompt's guard).
+	// Without this, ordinary NPC lines queued while a prompt awaits its answer would push
+	// the read cursor back below the line count, drop the box out of IsAwaitingChoice()
+	// and strand the armed choice with its buttons hidden -- an unanswerable prompt.
+	if (m_xDialogue.IsChoiceArmed())
+	{
+		return false;
+	}
 	if (!m_xDialogue.QueueLines(paszLines, uCount))
 	{
 		return false;
@@ -380,6 +447,65 @@ bool ZM_UI_MenuStack::TryPushDialogue(const char* const* paszLines, u_int uCount
 		? xEntity.TryGetComponent<ZM_UI_MenuStack>()
 		: nullptr;
 	return pxMenu != nullptr && pxMenu->PushDialogueLines(paszLines, uCount);
+}
+
+// ---- Care Center prompt (SC8) ----------------------------------------------
+
+bool ZM_UI_MenuStack::OpenCareCenterPrompt()
+{
+	// A prompt OWNS the box: refused outright while a conversation is still being read or
+	// another choice is already armed. Refusing here (rather than stacking lines onto
+	// whatever is showing) is what lets the two mutations below be all-or-nothing -- the
+	// box is known empty, so a Reset on the rejection path can never destroy someone
+	// else's half-read conversation.
+	if (m_xDialogue.IsActive() || m_xDialogue.IsChoiceArmed())
+	{
+		return false;
+	}
+
+	const char* aszLines[1] = { ZM_CareCenterPromptLine() };
+	if (!m_xDialogue.QueueLines(aszLines, 1u))
+	{
+		return false;
+	}
+	if (!m_xDialogue.ArmChoice(ZM_CareCenterYesLabel(), ZM_CareCenterNoLabel()))
+	{
+		m_xDialogue.Reset();   // never leave the question queued with no way to answer it
+		return false;
+	}
+	m_eDialogueAction = ZM_DIALOGUE_ACTION_HEAL_PARTY;
+
+	// From here it raises the screen exactly as PushDialogueLines does.
+	if (m_xStack.Top() != ZM_MENU_SCREEN_DIALOGUE)
+	{
+		const bool bWasClosed = m_xStack.IsEmpty();
+		if (!m_xStack.Push(ZM_MENU_SCREEN_DIALOGUE))
+		{
+			m_xDialogue.Reset();   // depth-limit: never leave a prompt with no screen to show it
+			m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
+			return false;
+		}
+		if (bWasClosed)
+		{
+			FreezePlayer();   // the Care Center attendant can talk without the pause menu
+		}
+	}
+	PresentTopScreen();
+	return true;
+}
+
+bool ZM_UI_MenuStack::TryOpenCareCenterPrompt()
+{
+	Zenith_EntityID xEntityID = INVALID_ENTITY_ID;
+	if (!TryGetUniqueSingletonEntityID(xEntityID))
+	{
+		return false;
+	}
+	Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xEntityID);
+	ZM_UI_MenuStack* pxMenu = xEntity.IsValid()
+		? xEntity.TryGetComponent<ZM_UI_MenuStack>()
+		: nullptr;
+	return pxMenu != nullptr && pxMenu->OpenCareCenterPrompt();
 }
 
 // ---- Shop (SC7) ------------------------------------------------------------
@@ -549,8 +675,19 @@ void ZM_UI_MenuStack::PresentTopScreen()
 		}
 		break;
 
-	// DIALOGUE advances on a confirm press, NOT focus-nav, so it clears the focus.
 	case ZM_MENU_SCREEN_DIALOGUE:
+		// A dialogue advances on a confirm press, NOT focus-nav, so it clears the focus --
+		// EXCEPT while its SC8 yes/no prompt is awaiting an answer, where the two choice
+		// buttons ARE the navigable surface and ZM_UI_DialogueBox::Present has just parked
+		// the focus on one of them (clearing it here would kill the arrow keys and leave the
+		// question unanswerable). The cursor mirror stays -1 either way: the box has no list.
+		if (!m_xDialogue.IsAwaitingChoice())
+		{
+			xCanvas.SetFocusedElement(nullptr);
+		}
+		m_iCursor = -1;
+		break;
+
 	default:
 		xCanvas.SetFocusedElement(nullptr);
 		m_iCursor = -1;
@@ -854,6 +991,11 @@ void ZM_UI_MenuStack::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_xDex.Reset();
 	m_xBagScreen.Reset();
 	m_xShop.Reset();
+	m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
+	// The latched answer is deliberately NOT cleared by CloseMenu (it must survive the
+	// close that resolving a prompt triggers), so boot and deserialize are the only
+	// places a stale one can be dropped.
+	m_eLastDialogueAnswer = ZM_DIALOGUE_CHOICE_NONE;
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 	(void)uVersion;
@@ -872,6 +1014,13 @@ void ZM_UI_MenuStack::RenderPropertiesPanel()
 		m_xDialogue.GetCurrentLineIndex(),
 		m_xDialogue.GetQueuedLineCount(),
 		m_xDialogue.IsRevealComplete() ? "true" : "false");
+	ImGui::Text("Prompt - armed=%s awaiting=%s answer=%u action=%u ('%s' / '%s')",
+		m_xDialogue.IsChoiceArmed() ? "true" : "false",
+		m_xDialogue.IsAwaitingChoice() ? "true" : "false",
+		static_cast<u_int>(m_xDialogue.GetChoice()),
+		static_cast<u_int>(m_eDialogueAction),
+		m_xDialogue.GetYesLabel().c_str(),
+		m_xDialogue.GetNoLabel().c_str());
 	ImGui::Text("Party - slot=%d summary=%s",
 		m_xParty.GetCursor(),
 		m_xParty.IsSummaryOpen() ? "open" : "closed");

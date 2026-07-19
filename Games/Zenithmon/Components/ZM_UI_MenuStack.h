@@ -33,7 +33,10 @@ class Zenith_UIComponent;
 // screen -- a by-value ZM_UI_Dex paged grid; SC6 adds the BAG screen -- a by-value
 // ZM_UI_Bag pocket-tabbed, paged item list; SC7 adds the SHOP screen -- a by-value
 // ZM_UI_Shop buy/sell list raised by OpenShop / the static TryOpenShop (the seam the
-// mart NPC talks through), and the first screen that WRITES the live game state.
+// mart NPC talks through), and the first screen that WRITES the live game state; SC8
+// adds the yes/no PROMPT -- the same DIALOGUE screen with a choice armed on the box,
+// raised by OpenCareCenterPrompt / the static TryOpenCareCenterPrompt, whose answer
+// runs the pending ZM_DIALOGUE_ACTION (the Care Center heal) against that state.
 //
 // Screen dispatch is GENERALIZED: OnUpdate routes input through ONE per-screen
 // switch and PresentTopScreen shows/hides through ONE per-screen block, so adding
@@ -68,6 +71,16 @@ enum ZM_MENU_ROOT_ITEM : u_int
 	ZM_MENU_ROOT_EXIT  = 3u,
 
 	ZM_MENU_ROOT_ITEM_COUNT = 4u
+};
+
+// What a resolved YES on the dialogue's yes/no prompt actually DOES (S6 item 2
+// SC8). It lives here rather than on the box because a by-value screen cannot call
+// back into its host, and a function pointer would be the wrong shape for a single
+// consumer. Session state only -- never serialized, and cleared on every close.
+enum ZM_DIALOGUE_ACTION : u_int
+{
+	ZM_DIALOGUE_ACTION_NONE = 0u,   // an ordinary conversation: YES/NO do nothing extra
+	ZM_DIALOGUE_ACTION_HEAL_PARTY,  // the Care Center heal (ZM_ApplyCareCenterHeal)
 };
 
 // The action a confirmed ROOT entry resolves to (dispatch is BY FOCUSED-ELEMENT
@@ -164,7 +177,8 @@ public:
 	// on the shop's current PAGE on SHOP -- a page-relative row, NOT a flat list index
 	// (ZM_UI_Shop::GetSelectedEntryIndex resolves that), which deliberately SURVIVES the
 	// focus moving onto a control so the walk to Confirm cannot forget what was picked.
-	// -1 on a screen that owns no focus (DIALOGUE).
+	// ALWAYS -1 on DIALOGUE: it has no list to mirror, even while its SC8 yes/no prompt
+	// owns the canvas focus (which of the two buttons is focused is read off the canvas).
 	int            GetCursor()    const { return m_iCursor; }
 
 	// ---- Dialogue (SC2) ----
@@ -179,6 +193,29 @@ public:
 	// windowed test use). False when no live ZM_MenuRoot singleton exists.
 	static bool TryPushDialogue(const char* const* paszLines, u_int uCount);
 	const ZM_UI_DialogueBox& GetDialogue() const { return m_xDialogue; }
+
+	// ---- Care Center prompt (SC8) ----
+
+	// Raise the Care Center's yes/no prompt: queue ZM_CareCenterPromptLine, arm the
+	// choice with the Yes/No labels, set the pending action to HEAL_PARTY, and push /
+	// raise the DIALOGUE screen exactly as PushDialogueLines does (freezing the player
+	// when the stack was empty). Refused when the box is already busy -- a prompt owns
+	// the box outright, it never interleaves itself into someone else's conversation.
+	bool OpenCareCenterPrompt();
+	// Singleton-resolving convenience -- the SAME seam shape as TryPushDialogue /
+	// TryOpenShop (what S6 item 3's Care Center NPC and the windowed test call). False
+	// when no live ZM_MenuRoot singleton exists, or when the prompt is refused.
+	static bool TryOpenCareCenterPrompt();
+	// What a YES on the prompt currently in the box would do (NONE when nothing is armed).
+	ZM_DIALOGUE_ACTION GetPendingDialogueAction() const { return m_eDialogueAction; }
+	// The LAST answer a prompt resolved to, latched on the HOST. Read this rather than
+	// GetDialogue().GetChoice() after the fact: resolving a prompt that was raised over an
+	// empty stack pops to empty, which CloseMenu()s, which Reset()s the box and clears its
+	// stored answer -- all in the same OnUpdate, so the box-level answer is unobservable
+	// from outside. Survives the close; cleared only on boot / deserialize.
+	ZM_DIALOGUE_CHOICE GetLastDialogueAnswer() const { return m_eLastDialogueAnswer; }
+	// The dialogue has read its lines and is waiting on the yes/no answer.
+	bool IsDialogueAwaitingChoice() const { return m_xDialogue.IsAwaitingChoice(); }
 
 	// ---- Party (SC4) ----
 	const ZM_UI_Party& GetPartyScreen() const { return m_xParty; }
@@ -235,7 +272,13 @@ private:
 	void OpenRootMenu();
 	void CloseMenu();
 	void HandleConfirm();
-	void HandleCancel();
+	// Leave the top screen: pop it, and close the whole menu once the stack empties.
+	// The ONE close path -- cancel, a dialogue read to the end, and an answered prompt
+	// all leave through it.
+	void PopTopScreen();
+	// Run the pending action for an answered prompt (YES + HEAL_PARTY heals the LIVE
+	// game state), clear it, and leave the screen through PopTopScreen.
+	void ApplyDialogueChoice(ZM_DIALOGUE_CHOICE eAnswer);
 	// Re-resolve the authored elements by name each frame (never cache) and show /
 	// hide + focus them for the current top screen. Also mirrors m_iCursor.
 	void PresentTopScreen();
@@ -278,6 +321,8 @@ private:
 	// renders; keeping them distinct keeps the two straight at every call site.
 	ZM_UI_Bag          m_xBagScreen;                              // the BAG screen's model (SC6; PODs only)
 	ZM_UI_Shop         m_xShop;                                   // the SHOP screen's model (SC7; PODs only)
+	ZM_DIALOGUE_ACTION m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;   // what a YES does (SC8)
+	ZM_DIALOGUE_CHOICE m_eLastDialogueAnswer = ZM_DIALOGUE_CHOICE_NONE;   // the latched answer (SC8)
 	int                m_iCursor = -1;                            // focused-item mirror (see GetCursor)
 	Zenith_EntityID    m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 };

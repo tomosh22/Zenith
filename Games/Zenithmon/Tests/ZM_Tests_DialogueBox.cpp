@@ -32,6 +32,11 @@ namespace
 	constexpr float fPARTIAL_ELAPSED = 0.5f;    // -> 22 of 45
 	constexpr int   iPARTIAL_GLYPHS  = 22;
 	constexpr float fFULL_ELAPSED    = 2.0f;    // -> 90 uncapped, clamps to 45
+
+	// The SC8 prompt's two button labels. Deliberately NOT "Yes"/"No": distinct strings
+	// prove the box stores what it was armed with rather than a hard-coded pair.
+	constexpr const char* szYES_LABEL = "Rest up";
+	constexpr const char* szNO_LABEL  = "Not now";
 }
 
 // ---- Fresh state ------------------------------------------------------------
@@ -373,6 +378,265 @@ ZENITH_TEST(ZM_DialogueBox, TryPushDialogue_WithoutASingletonIsRejected)
 		"TryPushDialogue reports failure when there is no live ZM_UI_MenuStack singleton");
 }
 
+// ---- ArmChoice (S6 item 2 SC8) ---------------------------------------------
+
+ZENITH_TEST(ZM_DialogueBox, ArmChoice_RejectsNullAndEmptyLabels)
+{
+	ZM_UI_DialogueBox xBox;
+	ZENITH_ASSERT_FALSE(xBox.ArmChoice(nullptr, szNO_LABEL), "a null YES label is rejected");
+	ZENITH_ASSERT_FALSE(xBox.ArmChoice(szYES_LABEL, nullptr), "a null NO label is rejected");
+	ZENITH_ASSERT_FALSE(xBox.ArmChoice("", szNO_LABEL),
+		"an empty YES label is rejected (it would draw an unreadable button)");
+	ZENITH_ASSERT_FALSE(xBox.ArmChoice(szYES_LABEL, ""), "an empty NO label is rejected");
+	ZENITH_ASSERT_FALSE(xBox.IsChoiceArmed(), "no rejected arm ever armed the choice");
+	ZENITH_ASSERT_TRUE(xBox.GetYesLabel().empty(), "a rejected arm never stored a YES label");
+	ZENITH_ASSERT_TRUE(xBox.GetNoLabel().empty(), "a rejected arm never stored a NO label");
+}
+
+ZENITH_TEST(ZM_DialogueBox, ArmChoice_StoresLabelsAndRejectsADoubleArm)
+{
+	ZM_UI_DialogueBox xBox;
+	ZENITH_ASSERT_TRUE(xBox.ArmChoice(szYES_LABEL, szNO_LABEL), "the first arm is accepted");
+	ZENITH_ASSERT_TRUE(xBox.IsChoiceArmed(), "the box reports the choice armed");
+	ZENITH_ASSERT_STREQ(xBox.GetYesLabel().c_str(), szYES_LABEL, "the YES label was stored");
+	ZENITH_ASSERT_STREQ(xBox.GetNoLabel().c_str(), szNO_LABEL, "the NO label was stored");
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_NONE,
+		"arming a choice does not answer it");
+
+	ZENITH_ASSERT_FALSE(xBox.ArmChoice("Sure", "Nope"),
+		"a SECOND arm is rejected -- it would silently replace the question on screen");
+	ZENITH_ASSERT_STREQ(xBox.GetYesLabel().c_str(), szYES_LABEL,
+		"the rejected re-arm left the original YES label untouched");
+	ZENITH_ASSERT_STREQ(xBox.GetNoLabel().c_str(), szNO_LABEL,
+		"the rejected re-arm left the original NO label untouched");
+}
+
+ZENITH_TEST(ZM_DialogueBox, ArmChoice_IsIndependentOfTheQueue)
+{
+	// Armed BEFORE anything is queued: legal (a caller arms alongside QueueLines, in
+	// either order), and it neither activates the box nor makes it await an answer.
+	ZM_UI_DialogueBox xBox;
+	ZENITH_ASSERT_TRUE(xBox.ArmChoice(szYES_LABEL, szNO_LABEL), "arming an empty box is legal");
+	ZENITH_ASSERT_FALSE(xBox.IsActive(), "arming never activates the box");
+	ZENITH_ASSERT_FALSE(xBox.IsAwaitingChoice(),
+		"an armed choice with NOTHING queued is not awaiting -- no line has been read");
+	ZENITH_ASSERT_TRUE(xBox.QueueLine(szSECOND_LINE), "the line still queues afterwards");
+	ZENITH_ASSERT_TRUE(xBox.IsActive(), "the queued line activated the box");
+	ZENITH_ASSERT_FALSE(xBox.IsAwaitingChoice(), "the line is still unread");
+}
+
+// ---- The unchanged (no choice armed) close path -----------------------------
+
+ZENITH_TEST(ZM_DialogueBox, Confirm_WithNoChoiceArmedStillClosesAndResets)
+{
+	// The SC2 regression pin: with nothing armed, SC8 must not have changed a thing.
+	ZM_UI_DialogueBox xBox;
+	xBox.QueueLine(szSECOND_LINE);
+	xBox.Tick(fFULL_ELAPSED);
+
+	ZENITH_ASSERT_FALSE(xBox.IsChoiceArmed(), "nothing is armed on this box");
+	ZENITH_ASSERT_EQ((u_int)xBox.Confirm(), (u_int)ZM_DIALOGUE_ADVANCE_CLOSED,
+		"with NO choice armed the last line still CLOSES (never AWAITING_CHOICE)");
+	ZENITH_ASSERT_FALSE(xBox.IsActive(), "a closed dialogue is inactive");
+	ZENITH_ASSERT_FALSE(xBox.IsAwaitingChoice(), "an unarmed box never awaits an answer");
+	ZENITH_ASSERT_EQ(xBox.GetQueuedLineCount(), 0u, "closing still resets the queue");
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_NONE,
+		"a plain conversation never produces an answer");
+}
+
+// ---- Confirming into the wait ----------------------------------------------
+
+ZENITH_TEST(ZM_DialogueBox, Confirm_LastLineWithAChoiceArmedAwaitsInsteadOfClosing)
+{
+	ZM_UI_DialogueBox xBox;
+	xBox.QueueLine(szSECOND_LINE);
+	xBox.ArmChoice(szYES_LABEL, szNO_LABEL);
+	xBox.Tick(fFULL_ELAPSED);
+
+	ZENITH_ASSERT_EQ((u_int)xBox.Confirm(), (u_int)ZM_DIALOGUE_ADVANCE_AWAITING_CHOICE,
+		"confirming past the LAST line with a choice armed opens the question");
+	ZENITH_ASSERT_TRUE(xBox.IsAwaitingChoice(), "the box is now awaiting the answer");
+	ZENITH_ASSERT_EQ(xBox.GetQueuedLineCount(), 1u,
+		"the wait did NOT reset the box -- the question stays resolvable (and on screen)");
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_NONE,
+		"reaching the wait answers nothing by itself");
+}
+
+ZENITH_TEST(ZM_DialogueBox, Confirm_WhileAwaitingResolvesNothing)
+{
+	ZM_UI_DialogueBox xBox;
+	xBox.QueueLine(szSECOND_LINE);
+	xBox.ArmChoice(szYES_LABEL, szNO_LABEL);
+	xBox.Tick(fFULL_ELAPSED);
+	xBox.Confirm();   // -> AWAITING_CHOICE
+
+	ZENITH_ASSERT_EQ((u_int)xBox.Confirm(), (u_int)ZM_DIALOGUE_ADVANCE_AWAITING_CHOICE,
+		"a further confirm re-reports the wait");
+	ZENITH_ASSERT_TRUE(xBox.IsAwaitingChoice(), "...and the box is still waiting");
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_NONE,
+		"a bare confirm must never PICK for the player -- the answer is by element NAME");
+}
+
+ZENITH_TEST(ZM_DialogueBox, IsAwaitingChoice_IsFalseWhileLinesRemainUnread)
+{
+	ZM_UI_DialogueBox xBox;
+	const char* aszLines[2] = { szLONG_LINE, szSECOND_LINE };
+	xBox.QueueLines(aszLines, 2u);
+	xBox.ArmChoice(szYES_LABEL, szNO_LABEL);
+
+	ZENITH_ASSERT_FALSE(xBox.IsAwaitingChoice(), "nothing has been read yet");
+	xBox.Tick(fFULL_ELAPSED);
+	ZENITH_ASSERT_EQ((u_int)xBox.Confirm(), (u_int)ZM_DIALOGUE_ADVANCE_NEXT_LINE,
+		"the first confirm advances to line 1 as usual -- the armed choice changes nothing here");
+	ZENITH_ASSERT_FALSE(xBox.IsAwaitingChoice(), "line 1 is still unread");
+	xBox.Tick(fFULL_ELAPSED);
+	ZENITH_ASSERT_EQ((u_int)xBox.Confirm(), (u_int)ZM_DIALOGUE_ADVANCE_AWAITING_CHOICE,
+		"only the LAST line opens the question");
+	ZENITH_ASSERT_TRUE(xBox.IsAwaitingChoice(), "every line is read -- the box awaits the answer");
+}
+
+// ---- ResolveChoice (by element NAME) ---------------------------------------
+
+namespace
+{
+	// Read the prompt to its end so the box is awaiting an answer.
+	void ZM_ArmAndReachTheChoice(ZM_UI_DialogueBox& xBox)
+	{
+		xBox.QueueLine(szSECOND_LINE);
+		xBox.ArmChoice(szYES_LABEL, szNO_LABEL);
+		xBox.Tick(fFULL_ELAPSED);
+		xBox.Confirm();
+	}
+}
+
+ZENITH_TEST(ZM_DialogueBox, ResolveChoice_YesNameAnswersYesAndClosesTheBox)
+{
+	ZM_UI_DialogueBox xBox;
+	ZM_ArmAndReachTheChoice(xBox);
+	ZENITH_ASSERT_TRUE(xBox.IsAwaitingChoice(), "the fixture reached the question");
+
+	ZENITH_ASSERT_EQ((u_int)xBox.ResolveChoice(ZM_UI_DialogueBox::szYES_NAME),
+		(u_int)ZM_DIALOGUE_CHOICE_YES, "the YES element name answers YES");
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_YES,
+		"the answer SURVIVES the reset the resolve performs");
+	ZENITH_ASSERT_FALSE(xBox.IsActive(), "an answered box is inactive");
+	ZENITH_ASSERT_FALSE(xBox.IsAwaitingChoice(), "...and is no longer awaiting");
+	ZENITH_ASSERT_FALSE(xBox.IsChoiceArmed(), "...and no longer holds an armed choice");
+	ZENITH_ASSERT_EQ(xBox.GetQueuedLineCount(), 0u, "the resolve dropped the queue");
+}
+
+ZENITH_TEST(ZM_DialogueBox, ResolveChoice_NoNameAnswersNo)
+{
+	ZM_UI_DialogueBox xBox;
+	ZM_ArmAndReachTheChoice(xBox);
+
+	ZENITH_ASSERT_EQ((u_int)xBox.ResolveChoice(ZM_UI_DialogueBox::szNO_NAME),
+		(u_int)ZM_DIALOGUE_CHOICE_NO, "the NO element name answers NO");
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_NO,
+		"the stored answer is NO");
+	ZENITH_ASSERT_FALSE(xBox.IsAwaitingChoice(), "an answered box stops awaiting");
+}
+
+ZENITH_TEST(ZM_DialogueBox, ResolveChoice_UnknownAndNullNamesLeaveItAwaiting)
+{
+	ZM_UI_DialogueBox xBox;
+	ZM_ArmAndReachTheChoice(xBox);
+
+	ZENITH_ASSERT_EQ((u_int)xBox.ResolveChoice(nullptr), (u_int)ZM_DIALOGUE_CHOICE_NONE,
+		"a null focused name answers nothing");
+	ZENITH_ASSERT_EQ((u_int)xBox.ResolveChoice("Menu_RootExit"), (u_int)ZM_DIALOGUE_CHOICE_NONE,
+		"a FOREIGN element holding the focus answers nothing");
+	ZENITH_ASSERT_TRUE(xBox.IsAwaitingChoice(),
+		"neither miss dismissed the question -- the box is still waiting for a real answer");
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_NONE,
+		"...and nothing was stored");
+}
+
+ZENITH_TEST(ZM_DialogueBox, ResolveChoice_IsInertWhenNothingIsAwaiting)
+{
+	// A stray confirm on a plain conversation must never fabricate an answer.
+	ZM_UI_DialogueBox xBox;
+	xBox.QueueLine(szSECOND_LINE);
+	ZENITH_ASSERT_EQ((u_int)xBox.ResolveChoice(ZM_UI_DialogueBox::szYES_NAME),
+		(u_int)ZM_DIALOGUE_CHOICE_NONE, "resolving with no choice armed answers nothing");
+	ZENITH_ASSERT_TRUE(xBox.IsActive(), "...and never closed the conversation");
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_NONE,
+		"...and stored nothing");
+}
+
+// ---- CancelChoice -----------------------------------------------------------
+
+ZENITH_TEST(ZM_DialogueBox, CancelChoice_ResolvesNoWhileAwaiting)
+{
+	ZM_UI_DialogueBox xBox;
+	ZM_ArmAndReachTheChoice(xBox);
+
+	ZENITH_ASSERT_EQ((u_int)xBox.CancelChoice(), (u_int)ZM_DIALOGUE_CHOICE_NO,
+		"cancelling an open question answers NO -- a prompt is never a dead end");
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_NO,
+		"the NO answer is stored like any other");
+	ZENITH_ASSERT_FALSE(xBox.IsAwaitingChoice(), "the box stopped awaiting");
+	ZENITH_ASSERT_FALSE(xBox.IsActive(), "...and is inactive");
+}
+
+ZENITH_TEST(ZM_DialogueBox, CancelChoice_IsInertWhileLinesAreStillBeingRead)
+{
+	// The LINES stay modal: cancel must not skip them, so it answers nothing until the
+	// question is actually up.
+	ZM_UI_DialogueBox xBox;
+	xBox.QueueLine(szLONG_LINE);
+	xBox.ArmChoice(szYES_LABEL, szNO_LABEL);
+
+	ZENITH_ASSERT_EQ((u_int)xBox.CancelChoice(), (u_int)ZM_DIALOGUE_CHOICE_NONE,
+		"cancel answers nothing while a line is still unread");
+	ZENITH_ASSERT_TRUE(xBox.IsActive(), "...and never dismissed the line");
+	ZENITH_ASSERT_TRUE(xBox.IsChoiceArmed(), "...and left the choice armed");
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_NONE,
+		"...and stored no answer");
+}
+
+// ---- Reset clears the whole prompt -----------------------------------------
+
+ZENITH_TEST(ZM_DialogueBox, Reset_ClearsAStillArmedChoiceAndItsLabels)
+{
+	// Reset is exercised on a box that is STILL ARMED. The sibling test below resolves
+	// first, but ResolveChoice already performs a full Reset internally -- so asserting
+	// "armed is false / the labels are empty" AFTER a resolve would pass whether or not
+	// the Reset under test did anything at all. This fixture pins the pre-state first.
+	ZM_UI_DialogueBox xBox;
+	ZENITH_ASSERT_TRUE(xBox.QueueLine(szSECOND_LINE), "the fixture queues a prompt line");
+	ZENITH_ASSERT_TRUE(xBox.ArmChoice(szYES_LABEL, szNO_LABEL), "the fixture arms the choice");
+	ZENITH_ASSERT_TRUE(xBox.IsChoiceArmed(), "PRE-STATE: the choice really is armed");
+	ZENITH_ASSERT_FALSE(xBox.GetYesLabel().empty(), "PRE-STATE: the YES label is set");
+	ZENITH_ASSERT_FALSE(xBox.GetNoLabel().empty(), "PRE-STATE: the NO label is set");
+	ZENITH_ASSERT_EQ(xBox.GetQueuedLineCount(), 1u, "PRE-STATE: the line is queued");
+
+	xBox.Reset();
+	ZENITH_ASSERT_FALSE(xBox.IsChoiceArmed(), "Reset clears the armed choice");
+	ZENITH_ASSERT_FALSE(xBox.IsAwaitingChoice(), "Reset leaves nothing awaiting");
+	ZENITH_ASSERT_TRUE(xBox.GetYesLabel().empty(), "Reset clears the YES label");
+	ZENITH_ASSERT_TRUE(xBox.GetNoLabel().empty(), "Reset clears the NO label");
+	ZENITH_ASSERT_EQ(xBox.GetQueuedLineCount(), 0u, "Reset drops the queue too");
+	ZENITH_ASSERT_TRUE(xBox.ArmChoice("Again", "Never"), "a reset box can be armed afresh");
+}
+
+ZENITH_TEST(ZM_DialogueBox, Reset_ClearsTheStoredAnswerFromAResolvedPrompt)
+{
+	// The ANSWER is the one piece of choice state that deliberately SURVIVES a resolve
+	// (ResolveChoice resets everything else and writes it back), so it is the only thing
+	// this fixture can meaningfully assert Reset clears.
+	ZM_UI_DialogueBox xBox;
+	ZM_ArmAndReachTheChoice(xBox);
+	ZENITH_ASSERT_EQ((u_int)xBox.ResolveChoice(ZM_UI_DialogueBox::szYES_NAME),
+		(u_int)ZM_DIALOGUE_CHOICE_YES, "the fixture answered YES");
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_YES,
+		"PRE-STATE: the answer survived the resolve, so Reset has something to clear");
+
+	xBox.Reset();
+	ZENITH_ASSERT_EQ((u_int)xBox.GetChoice(), (u_int)ZM_DIALOGUE_CHOICE_NONE,
+		"Reset clears the STORED ANSWER -- a reused box must never report the last one");
+}
+
 // ---- Host enum guard --------------------------------------------------------
 
 ZENITH_TEST(ZM_DialogueBox, HostScreenEnum_DialogueIsAppendedAndNotARootEntry)
@@ -384,6 +648,13 @@ ZENITH_TEST(ZM_DialogueBox, HostScreenEnum_DialogueIsAppendedAndNotARootEntry)
 		"DIALOGUE is the 6th enumerator (NONE/ROOT/PARTY/BAG/DEX/DIALOGUE) -- append-only");
 	ZENITH_ASSERT_TRUE((u_int)ZM_MENU_SCREEN_DIALOGUE < (u_int)ZM_MENU_SCREEN_COUNT,
 		"DIALOGUE is within the enumerated range");
+
+	// The SC8 outcome is APPENDED: the four SC2 values keep their numbering, so a stack
+	// or a test comparing against CLOSED still means CLOSED.
+	ZENITH_ASSERT_EQ((u_int)ZM_DIALOGUE_ADVANCE_CLOSED, 3u,
+		"CLOSED is still the 4th advance outcome");
+	ZENITH_ASSERT_EQ((u_int)ZM_DIALOGUE_ADVANCE_AWAITING_CHOICE, 4u,
+		"AWAITING_CHOICE was APPENDED after CLOSED, never inserted");
 
 	for (u_int uAction = (u_int)ZM_MENU_ACTION_NONE; uAction <= (u_int)ZM_MENU_ACTION_CLOSE; ++uAction)
 	{
