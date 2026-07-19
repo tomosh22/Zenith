@@ -21,6 +21,7 @@
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // sz*_NAME element contract (dialogue authoring)
+#include "Zenithmon/Source/UI/ZM_UI_Bag.h"           // sz*_NAME + RowElementName + geometry contract (bag authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Dex.h"           // sz*_NAME + geometry contract (dex authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"         // sz*_NAME + SlotElementName contract (party authoring)
 #include "ZenithECS/Zenith_ComponentMeta.h"
@@ -409,7 +410,9 @@ namespace
 	// contract, SC4 the party screen (list panel + six slot rows + summary panel and
 	// body, all hidden) under the ZM_UI_Party::sz*_NAME / SlotElementName contract, and
 	// SC5 the dex screen's STATIC half (panel + completion header + two page buttons)
-	// under the ZM_UI_Dex::sz*_NAME contract -- its grid is built at runtime, not here.
+	// under the ZM_UI_Dex::sz*_NAME contract -- its grid is built at runtime, not here --
+	// and SC6 the bag screen (panel + header + eight list rows + four nav buttons),
+	// authored WHOLE under the ZM_UI_Bag::sz*_NAME / RowElementName contract.
 	void ZM_ConfigureMenuRoot()
 	{
 		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
@@ -557,17 +560,17 @@ namespace
 			pxSlot->SetVisible(false);
 		}
 
-		// Explicit up/down navigation links (no wrap); left/right null -- the ROOT idiom.
-		for (u_int u = 0u; u < ZM_UI_Party::uMAX_SLOTS; ++u)
-		{
-			if (apxPartySlots[u] == nullptr)
-			{
-				continue;
-			}
-			Zenith_UI::Zenith_UIElement* pxUp   = (u > 0u) ? apxPartySlots[u - 1u] : nullptr;
-			Zenith_UI::Zenith_UIElement* pxDown = (u + 1u < ZM_UI_Party::uMAX_SLOTS) ? apxPartySlots[u + 1u] : nullptr;
-			apxPartySlots[u]->SetNavigation(pxUp, pxDown, nullptr, nullptr);
-		}
+		// DELIBERATELY NO SetNavigation links on the slot pool (unlike the ROOT entries,
+		// whose four items are always visible). Slot LIVENESS is per-page runtime state:
+		// ZM_UI_Party::Present hides + SetFocusable(false)s every slot past the party
+		// count, and Zenith_UICanvas::NavigateDown consults the explicit link FIRST,
+		// falling back to the spatial FindNearestFocusable only when that link is NULL --
+		// a link into a slot that Present has just hidden therefore SWALLOWS the press
+		// instead of degrading. The slots share x, so the spatial search walks the live
+		// column correctly and re-reads liveness every frame. (SC6 hit exactly this on
+		// the bag list, where it also blocked the walk down onto the nav band.) Bake-time
+		// links are additionally NOT serialized by Zenith_UIElement::WriteToDataStream,
+		// so they would only exist in tools builds -- another reason not to rely on them.
 
 		Zenith_UI::Zenith_UIRect* pxSummaryPanel =
 			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_Party::szSUMMARY_PANEL_NAME);
@@ -672,6 +675,104 @@ namespace
 			pxButton->SetPosition(xPageButton.m_fX, ZM_UI_Dex::fPAGE_BUTTON_CENTRE_Y);
 			pxButton->SetSize(ZM_UI_Dex::fPAGE_BUTTON_WIDTH, ZM_UI_Dex::fPAGE_BUTTON_HEIGHT);
 			pxButton->SetFontSize(22.0f);
+			pxButton->SetFocusable(true);
+			pxButton->SetVisible(false);
+		}
+
+		// The SC6 bag screen, authored WHOLE (unlike the dex): a centred panel, the
+		// pocket/money header, eight list rows stacked inside it and four nav buttons
+		// below them. It is a 1-D LIST, so there is nothing a Zenith_UIGridLayoutGroup
+		// would buy -- the rows are a plain authored pool like the party slots, with no
+		// runtime construction and none of SC5's reparenting ownership hazard. Same
+		// 9000/9001 sort band, ALL authored HIDDEN; geometry comes from the ZM_UI_Bag
+		// f*_ constants so this site and the presenter can never drift apart.
+		Zenith_UI::Zenith_UIRect* pxBagPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_Bag::szPANEL_NAME);
+		if (pxBagPanel != nullptr)
+		{
+			pxBagPanel->SetSortOrder(ZM_UI_MenuStack::iMENU_PANEL_SORT_ORDER);
+			pxBagPanel->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxBagPanel->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxBagPanel->SetPosition(0.0f, 0.0f);
+			// Fully COVERS the header band, the row stack and the nav band, so nothing the
+			// screen draws bleeds outside the panel it sits on (ZM-D-112).
+			pxBagPanel->SetSize(ZM_UI_Bag::fPANEL_WIDTH, ZM_UI_Bag::fPANEL_HEIGHT);
+			pxBagPanel->SetColor({ 0.05f, 0.06f, 0.10f, 0.85f });
+			pxBagPanel->SetVisible(false);
+		}
+
+		Zenith_UI::Zenith_UIText* pxBagHeader =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_Bag::szHEADER_NAME);
+		if (pxBagHeader != nullptr)
+		{
+			pxBagHeader->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxBagHeader->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxBagHeader->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxBagHeader->SetPosition(0.0f, ZM_UI_Bag::fHEADER_CENTRE_Y);
+			// Size == the wrap width == SetMaxWidth, with a matching alignment -- all three
+			// together, always (the SC2 lesson: the default 100x100 Left-aligned bounds flow
+			// the line clean off the right of the screen).
+			pxBagHeader->SetSize(ZM_UI_Bag::fHEADER_WIDTH, ZM_UI_Bag::fHEADER_HEIGHT);
+			pxBagHeader->SetFontSize(26.0f);
+			pxBagHeader->SetAlignment(Zenith_UI::TextAlignment::Center);
+			pxBagHeader->SetMaxWidth(ZM_UI_Bag::fHEADER_WIDTH);
+			pxBagHeader->SetVisible(false);
+		}
+
+		// The rows carry NO explicit navigation links -- the dex idiom, and here it is a
+		// CORRECTNESS requirement, not a preference: ZM_UI_Bag::Present hides every row past
+		// the live stack count, and Zenith_UICanvas::NavigateDown only falls back to the
+		// spatial search when the link is NULL. A bake-time link from the last LIVE row to a
+		// row Present has just hidden would be fetched, fail the visible+focusable test, and
+		// swallow the press -- so on every partial page (the starter BALL pocket holds ONE
+		// stack) Down would be dead. Liveness is per-page runtime state, so it cannot be
+		// wired at bake time; the spatial search reads it correctly every frame because it
+		// collects only visible + focusable elements.
+		for (u_int u = 0u; u < ZM_UI_Bag::uROWS_PER_PAGE; ++u)
+		{
+			Zenith_UI::Zenith_UIButton* pxRow =
+				pxUI->FindElement<Zenith_UI::Zenith_UIButton>(ZM_UI_Bag::RowElementName(u));
+			if (pxRow == nullptr)
+			{
+				continue;
+			}
+			pxRow->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxRow->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxRow->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxRow->SetPosition(0.0f,
+				ZM_UI_Bag::fROW_FIRST_CENTRE_Y + ZM_UI_Bag::fROW_PITCH_Y * static_cast<float>(u));
+			pxRow->SetSize(ZM_UI_Bag::fROW_WIDTH, ZM_UI_Bag::fROW_HEIGHT);
+			pxRow->SetFontSize(22.0f);
+			pxRow->SetFocusable(true);
+			pxRow->SetVisible(false);
+		}
+
+		// The four nav buttons sit BELOW the rows and carry no explicit links either: the
+		// rows all share x == 0, so the spatial search walks the live column vertically and,
+		// off the LAST LIVE row, onto this band (and back up again). Pocket pair on the
+		// left, page pair on the right.
+		struct BagNavButton { const char* m_szName; float m_fX; };
+		const BagNavButton axBagNavButtons[4] =
+		{
+			{ ZM_UI_Bag::szPREV_POCKET_NAME, -ZM_UI_Bag::fNAV_BUTTON_OUTER_X },
+			{ ZM_UI_Bag::szNEXT_POCKET_NAME, -ZM_UI_Bag::fNAV_BUTTON_INNER_X },
+			{ ZM_UI_Bag::szPREV_PAGE_NAME,    ZM_UI_Bag::fNAV_BUTTON_INNER_X },
+			{ ZM_UI_Bag::szNEXT_PAGE_NAME,    ZM_UI_Bag::fNAV_BUTTON_OUTER_X },
+		};
+		for (const BagNavButton& xNavButton : axBagNavButtons)
+		{
+			Zenith_UI::Zenith_UIButton* pxButton =
+				pxUI->FindElement<Zenith_UI::Zenith_UIButton>(xNavButton.m_szName);
+			if (pxButton == nullptr)
+			{
+				continue;
+			}
+			pxButton->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxButton->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxButton->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxButton->SetPosition(xNavButton.m_fX, ZM_UI_Bag::fNAV_BUTTON_CENTRE_Y);
+			pxButton->SetSize(ZM_UI_Bag::fNAV_BUTTON_WIDTH, ZM_UI_Bag::fNAV_BUTTON_HEIGHT);
+			pxButton->SetFontSize(20.0f);
 			pxButton->SetFocusable(true);
 			pxButton->SetVisible(false);
 		}
@@ -916,8 +1017,8 @@ void Project_RegisterEditorAutomationSteps()
 	// The overworld pause menu (S6 item 2 SC1) on its OWN persistent root, mirroring
 	// the two roots above: a non-transient DontDestroyOnLoad entity carrying a UI
 	// component (the ROOT panel + Party/Bag/Dex/Exit entries plus the SC2 dialogue
-	// box panel + text, the SC4 party screen and the SC5 dex screen's static
-	// widgets, all authored hidden by ZM_ConfigureMenuRoot) + the
+	// box panel + text, the SC4 party screen, the SC5 dex screen's static widgets
+	// and the SC6 bag screen, all authored hidden by ZM_ConfigureMenuRoot) + the
 	// ZM_UI_MenuStack machine. Persistent so the menu and the dialogue box are
 	// reachable from every overworld scene (Dawnmere / PlayerHome / future towns)
 	// without re-authoring, and separate so its 9000/9001 sort band never collides
@@ -952,6 +1053,20 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreateUIText(ZM_UI_Dex::szHEADER_NAME, "");
 	xAuto.AddStep_CreateUIButton(ZM_UI_Dex::szPREV_NAME, "< Prev");
 	xAuto.AddStep_CreateUIButton(ZM_UI_Dex::szNEXT_NAME, "Next >");
+	// ...and the SC6 bag screen, authored WHOLE (panel + header + eight list rows + the
+	// four pocket/page nav buttons), likewise hidden. Unlike the dex there is NO runtime
+	// construction: a 1-D list needs no grid. RowElementName returns string literals, so
+	// calling it at authoring time is safe.
+	xAuto.AddStep_CreateUIRect(ZM_UI_Bag::szPANEL_NAME);
+	xAuto.AddStep_CreateUIText(ZM_UI_Bag::szHEADER_NAME, "");
+	for (u_int uRow = 0u; uRow < ZM_UI_Bag::uROWS_PER_PAGE; ++uRow)
+	{
+		xAuto.AddStep_CreateUIButton(ZM_UI_Bag::RowElementName(uRow), "");
+	}
+	xAuto.AddStep_CreateUIButton(ZM_UI_Bag::szPREV_POCKET_NAME, "< Pocket");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Bag::szNEXT_POCKET_NAME, "Pocket >");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Bag::szPREV_PAGE_NAME, "< Prev");
+	xAuto.AddStep_CreateUIButton(ZM_UI_Bag::szNEXT_PAGE_NAME, "Next >");
 	xAuto.AddStep_Custom(&ZM_ConfigureMenuRoot);
 	xAuto.AddStep_AddComponent("ZM_UI_MenuStack");
 

@@ -23,7 +23,7 @@
 #endif
 
 // ============================================================================
-// ZM_UI_MenuStack (S6 item 2 SC1 + SC2 + SC4 + SC5). The overworld pause-menu machine on
+// ZM_UI_MenuStack (S6 item 2 SC1 + SC2 + SC4 + SC5 + SC6). The overworld pause-menu machine on
 // the persistent ZM_MenuRoot entity. Opens a focus-navigable ROOT menu, freezes the
 // player, drives traversal via the engine focus-nav API, dispatches confirm by
 // the focused element's NAME, pops on cancel/Escape. Mirrors ZM_BattleTransition
@@ -32,7 +32,8 @@
 //
 // Screen dispatch lives in exactly TWO per-screen switches -- the input routing in
 // OnUpdate and the show/hide + focus policy in PresentTopScreen. A new screen adds
-// an arm to each and a by-value presenter member; nothing else moves.
+// an arm to each and a by-value presenter member; nothing else moves. SC6 (Bag) is
+// the third screen added that way, and it reshaped neither site.
 // ============================================================================
 
 Zenith_EntityID ZM_UI_MenuStack::s_xSingletonEntityID = INVALID_ENTITY_ID;
@@ -98,6 +99,7 @@ void ZM_UI_MenuStack::OnStart()
 	m_xDialogue.Reset();
 	m_xParty.Reset();
 	m_xDex.Reset();
+	m_xBagScreen.Reset();
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 
@@ -139,8 +141,8 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 	const bool bCancel  = ZM_InputActions::ReadCancelPressed();
 
 	// ONE per-screen input-routing switch: every screen owns its own confirm / cancel
-	// semantics here, so adding SC6 (Bag) / SC7 (Shop) is a new arm rather than a
-	// reshape of the routing.
+	// semantics here, so adding SC7 (Shop) is a new arm rather than a reshape of the
+	// routing.
 	switch (m_xStack.Top())
 	{
 	case ZM_MENU_SCREEN_DIALOGUE:
@@ -191,11 +193,29 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 		}
 		break;
 
-	// ROOT dispatches its focused entry by NAME. BAG has no presenter yet, so its
-	// focused name is null -> ResolveRootAction NONE and cancel simply pops -- the ROOT
-	// arm's behaviour verbatim, which is what a placeholder needs.
-	case ZM_MENU_SCREEN_ROOT:
 	case ZM_MENU_SCREEN_BAG:
+		// The bag dispatches BY THE FOCUSED ELEMENT'S NAME too (never SetOnClick(this)):
+		// the four nav buttons page / change pocket, and a row is inert until an item
+		// action menu exists (SC7+). Cancel pops straight back to ROOT -- the screen has
+		// no sub-state to swallow it with. The live bag is resolved per press rather than
+		// cached: the same TryGetGameState the presenter uses, and a missing state simply
+		// eats the confirm instead of crashing.
+		if (bConfirm)
+		{
+			ZM_GameState* pxState = nullptr;
+			if (ZM_GameStateManager::TryGetGameState(pxState) && pxState != nullptr)
+			{
+				m_xBagScreen.Confirm(ResolveFocusedElementName(), pxState->m_xBag);
+			}
+		}
+		else if (bCancel)
+		{
+			HandleCancel();
+		}
+		break;
+
+	// ROOT dispatches its focused entry by NAME.
+	case ZM_MENU_SCREEN_ROOT:
 	default:
 		if (bConfirm)
 		{
@@ -240,6 +260,8 @@ void ZM_UI_MenuStack::CloseMenu()
 	m_xParty.Hide(m_xParentEntity);
 	m_xDex.Reset();
 	m_xDex.Hide(m_xParentEntity);
+	m_xBagScreen.Reset();
+	m_xBagScreen.Hide(m_xParentEntity);
 
 	// Hide every ROOT element + clear the canvas focus so arrow keys never drive an
 	// invisible menu on the shared persistent canvas (watch-out 2).
@@ -254,8 +276,8 @@ void ZM_UI_MenuStack::CloseMenu()
 
 void ZM_UI_MenuStack::HandleConfirm()
 {
-	// Only the ROOT screen dispatches by entry name (the BAG placeholder shares this arm
-	// but has no focusable elements, so its focused name is null -> NONE).
+	// Only the ROOT screen dispatches by ROOT entry name; every other screen owns its
+	// own confirm arm in OnUpdate.
 	if (m_xStack.Top() != ZM_MENU_SCREEN_ROOT)
 	{
 		return;
@@ -272,7 +294,7 @@ void ZM_UI_MenuStack::HandleConfirm()
 	const ZM_MENU_SCREEN eScreen = RootActionToScreen(eAction);
 	if (eScreen != ZM_MENU_SCREEN_NONE)
 	{
-		m_xStack.Push(eScreen);   // placeholder screen (SC2+ present it); PresentTopScreen hides root
+		m_xStack.Push(eScreen);   // PresentTopScreen raises it and hides ROOT this frame
 	}
 }
 
@@ -351,6 +373,7 @@ void ZM_UI_MenuStack::PresentTopScreen()
 	}
 	const bool bPartyPresented = PresentPartyScreen(eTop == ZM_MENU_SCREEN_PARTY);
 	const bool bDexPresented = PresentDexScreen(eTop == ZM_MENU_SCREEN_DEX);
+	const bool bBagPresented = PresentBagScreen(eTop == ZM_MENU_SCREEN_BAG);
 
 	// ---- Focus policy. A FOCUS-NAVIGABLE screen owns the canvas focus and mirrors it
 	//      into m_iCursor; every other screen clears both, so arrows can never drive a
@@ -412,10 +435,25 @@ void ZM_UI_MenuStack::PresentTopScreen()
 		}
 		break;
 
-	// DIALOGUE advances on a confirm press, NOT focus-nav; BAG has no focusable
-	// elements until its presenter lands. Both clear the focus.
-	case ZM_MENU_SCREEN_DIALOGUE:
 	case ZM_MENU_SCREEN_BAG:
+		if (bBagPresented)
+		{
+			// ZM_UI_Bag::Present already ensured a focused LIVE row (or a nav button over an
+			// empty pocket) and mirrored the engine-navigated focus; carry its cursor up.
+			m_iCursor = m_xBagScreen.GetCursor();
+		}
+		else
+		{
+			// Same degradation as PARTY / DEX: the widgets were just hidden, so leaving the
+			// focus parked on the ROOT entry hidden a few lines above would let the arrows
+			// drive an invisible menu.
+			xCanvas.SetFocusedElement(nullptr);
+			m_iCursor = -1;
+		}
+		break;
+
+	// DIALOGUE advances on a confirm press, NOT focus-nav, so it clears the focus.
+	case ZM_MENU_SCREEN_DIALOGUE:
 	default:
 		xCanvas.SetFocusedElement(nullptr);
 		m_iCursor = -1;
@@ -469,6 +507,22 @@ bool ZM_UI_MenuStack::PresentDexScreen(bool bShown)
 		return false;
 	}
 	m_xDex.Present(m_xParentEntity, pxState->m_xCaught);
+	return true;
+}
+
+bool ZM_UI_MenuStack::PresentBagScreen(bool bShown)
+{
+	ZM_GameState* pxState = nullptr;
+	if (!bShown
+		|| !ZM_GameStateManager::TryGetGameState(pxState)
+		|| pxState == nullptr)
+	{
+		// Not the top screen, or no live game state (headless / between scenes): hide the
+		// screen rather than list a bag that cannot be resolved.
+		m_xBagScreen.Hide(m_xParentEntity);
+		return false;
+	}
+	m_xBagScreen.Present(m_xParentEntity, pxState->m_xBag, pxState->m_uMoney);
 	return true;
 }
 
@@ -678,11 +732,12 @@ void ZM_UI_MenuStack::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> uVersion;
 
 	// Reset-first: never retain a stale open menu / queued dialogue / open party summary
-	// / dex page from a reused instance.
+	// / dex page / bag pocket from a reused instance.
 	m_xStack.Clear();
 	m_xDialogue.Reset();
 	m_xParty.Reset();
 	m_xDex.Reset();
+	m_xBagScreen.Reset();
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 	(void)uVersion;
@@ -708,5 +763,18 @@ void ZM_UI_MenuStack::RenderPropertiesPanel()
 		m_xDex.GetPage(),
 		ZM_UI_Dex::PageCount(static_cast<u_int>(ZM_SPECIES_COUNT)),
 		m_xDex.GetCursor());
+
+	// The bag's page COUNT depends on the live pocket, so it is read from the game
+	// state when one resolves (the panel must stay a read-only observer).
+	ZM_GameState* pxState = nullptr;
+	const u_int uBagStacks = (ZM_GameStateManager::TryGetGameState(pxState) && pxState != nullptr)
+		? pxState->m_xBag.PocketStackCount(m_xBagScreen.GetPocket())
+		: 0u;
+	ImGui::Text("Bag - pocket=%s page=%d/%u row=%d stacks=%u",
+		ZM_ItemCategoryToString(m_xBagScreen.GetPocket()),
+		m_xBagScreen.GetPage(),
+		ZM_UI_Bag::PageCount(uBagStacks),
+		m_xBagScreen.GetCursor(),
+		uBagStacks);
 }
 #endif

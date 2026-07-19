@@ -2,6 +2,7 @@
 
 #include "ZenithECS/Zenith_Entity.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"        // ZM_SCENE_KIND (by value in the pure gating statics)
+#include "Zenithmon/Source/UI/ZM_UI_Bag.h"             // owned BY VALUE (the SC6 bag screen)
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"     // owned BY VALUE (the SC2 dialogue screen)
 #include "Zenithmon/Source/UI/ZM_UI_Dex.h"             // owned BY VALUE (the SC5 dex screen)
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"           // owned BY VALUE (the SC4 party screen)
@@ -28,8 +29,8 @@ class Zenith_UIComponent;
 // raised by PushDialogueLines / TryPushDialogue (the seam NPCs and prompts talk
 // through), modal (Escape never dismisses it) and advanced only by confirm; SC4
 // adds the PARTY screen -- a by-value ZM_UI_Party list + summary; SC5 adds the DEX
-// screen -- a by-value ZM_UI_Dex paged grid. BAG is still a forward placeholder
-// (SC6).
+// screen -- a by-value ZM_UI_Dex paged grid; SC6 adds the BAG screen -- a by-value
+// ZM_UI_Bag pocket-tabbed, paged item list.
 //
 // Screen dispatch is GENERALIZED: OnUpdate routes input through ONE per-screen
 // switch and PresentTopScreen shows/hides through ONE per-screen block, so adding
@@ -40,15 +41,14 @@ class Zenith_UIComponent;
 // ============================================================================
 
 // The menu screen ids pushed onto the stack. ROOT is the pause root and DIALOGUE
-// is the SC2 dialogue box; BAG is still a forward placeholder wired to a real
-// presenter in a later SC (pushing it simply hides the root panel until the player
-// pops back). Save-stable: append before ZM_MENU_SCREEN_COUNT, never reorder.
+// is the SC2 dialogue box. Save-stable: append before ZM_MENU_SCREEN_COUNT, never
+// reorder.
 enum ZM_MENU_SCREEN : u_int
 {
 	ZM_MENU_SCREEN_NONE = 0u,   // "empty stack" sentinel (never stored)
 	ZM_MENU_SCREEN_ROOT,        // the pause root (Party / Bag / Dex / Exit)
 	ZM_MENU_SCREEN_PARTY,       // SC4: the party list + per-member summary
-	ZM_MENU_SCREEN_BAG,         // placeholder (SC6)
+	ZM_MENU_SCREEN_BAG,         // SC6: the pocket-tabbed, paged item list + money
 	ZM_MENU_SCREEN_DEX,         // SC5: the paged species grid
 	ZM_MENU_SCREEN_DIALOGUE,    // SC2: the NPC / prompt dialogue box (modal, not a ROOT entry)
 
@@ -156,7 +156,8 @@ public:
 	// The focused-item mirror of the top FOCUS-NAVIGABLE screen, refreshed from the
 	// canvas focus each frame it is shown: the ROOT entry index on ROOT, the party
 	// slot on PARTY, the dex CELL on DEX (-1 there while a page button holds the
-	// focus). -1 on a screen that owns no focus (DIALOGUE / the BAG placeholder).
+	// focus), the bag ROW on BAG (-1 while a nav button holds it). -1 on a screen
+	// that owns no focus (DIALOGUE).
 	int            GetCursor()    const { return m_iCursor; }
 
 	// ---- Dialogue (SC2) ----
@@ -177,6 +178,9 @@ public:
 
 	// ---- Dex (SC5) ----
 	const ZM_UI_Dex& GetDexScreen() const { return m_xDex; }
+
+	// ---- Bag (SC6) ----
+	const ZM_UI_Bag& GetBagScreen() const { return m_xBagScreen; }
 
 	// ---- Persistent-singleton observation (mirrors ZM_BattleTransition) ----
 	static bool TryGetUniqueSingletonEntityID(Zenith_EntityID& xEntityIDOut);
@@ -222,6 +226,8 @@ private:
 	bool PresentPartyScreen(bool bShown);
 	// The same contract for the SC5 dex screen (top screen AND a live game state).
 	bool PresentDexScreen(bool bShown);
+	// ...and for the SC6 bag screen (top screen AND a live game state).
+	bool PresentBagScreen(bool bShown);
 	void FreezePlayer();
 	void UnfreezePlayer();
 
@@ -244,6 +250,9 @@ private:
 	ZM_UI_DialogueBox  m_xDialogue;                               // the DIALOGUE screen's model (SC2)
 	ZM_UI_Party        m_xParty;                                  // the PARTY screen's model (SC4; PODs only)
 	ZM_UI_Dex          m_xDex;                                    // the DEX screen's model (SC5; PODs only)
+	// NOT m_xBag -- that name belongs to ZM_GameState's MODEL, which this presenter
+	// renders; keeping them distinct keeps the two straight at every call site.
+	ZM_UI_Bag          m_xBagScreen;                              // the BAG screen's model (SC6; PODs only)
 	int                m_iCursor = -1;                            // focused-item mirror (see GetCursor)
 	Zenith_EntityID    m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 };

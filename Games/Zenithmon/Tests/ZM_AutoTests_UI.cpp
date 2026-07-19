@@ -26,6 +26,9 @@
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"      // ZM_SPECIES_COUNT / ZM_GetSpeciesName (the dex gate)
 #include "Zenithmon/Source/Party/ZM_Monster.h"         // ZM_Monster::m_eSpecies (the party lead's caught entry)
 #include "Zenithmon/Source/Party/ZM_Party.h"
+#include "Zenithmon/Source/Data/ZM_ItemData.h"         // ZM_GetItemName / ZM_ITEM_CATCHORB (the bag gate)
+#include "Zenithmon/Source/Party/ZM_Bag.h"             // ZM_Bag / ZM_ItemStack (the live bag the screen renders)
+#include "Zenithmon/Source/UI/ZM_UI_Bag.h"
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"
 #include "Zenithmon/Source/UI/ZM_UI_Dex.h"
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"
@@ -64,6 +67,13 @@
 //     NOT dismiss the modal box, that the AUTHORED panel + text widgets are really
 //     shown/typed/hidden, and that a second push STACKS on an open ROOT and returns
 //     to it.
+//   * ZM_BagScreen_Test (SC6) -- open the pause menu, walk the ROOT focus down to
+//     the Bag entry, confirm it, and assert the BAG screen really presents: the
+//     authored panel / header / eight rows / four nav buttons all resolve by name,
+//     exactly VisibleRowCount(page 0) rows are shown, the header carries the seeded
+//     money, row 0's label names the seeded Catch Orb, then confirming the
+//     Next-Pocket button changes the pocket AND relabels the rows, and Escape
+//     returns to ROOT then closes the menu and unfreezes the player.
 //
 // It CLONES the ZM_AutoTests_BattleMenu Dawnmere runtime-ready gate, its fixed-dt
 // 1/30, its RequestSkip-when-assets-absent guard order, and its FRESH-resolve-
@@ -3060,6 +3070,1013 @@ namespace
 
 		return bPassed || !g_bDexPrereqsPresent;
 	}
+
+	// =========================================================================
+	// ZM_BagScreen_Test (S6 item 2 SC6) -- the windowed gate for the bag screen,
+	// and the first on-screen proof of the SC3 model (ZM_Bag + m_uMoney). In a
+	// runtime-ready Dawnmere:
+	//   M -> ROOT -> Down (the ROOT cursor walks Party -> Bag) -> Enter -> the BAG
+	//   screen is on top with the authored panel / header / eight rows / four nav
+	//   buttons resolving by name, exactly VisibleRowCount(page 0) rows visible, the
+	//   header carrying the seeded money, row 0 naming the seeded Catch Orb, and the
+	//   canvas focus parked on a row -> Down edges WALK off the row list onto the nav
+	//   band (the screen's one new traversal; the starter pocket is a PARTIAL page, so
+	//   this is exactly where a stale explicit nav link would swallow the press) ->
+	//   park + confirm the Next-Pocket button -> the pocket changes and the rows
+	//   RELABEL -> keep confirming until an EMPTY pocket, where one non-focusable
+	//   notice row shows and the screen re-parks the cleared focus itself -> Escape ->
+	//   back on ROOT with every bag widget hidden -> Escape -> the menu closes and the
+	//   player is movable again.
+	//
+	// The model-only assertions cannot see a typo'd element name, a missing
+	// AddStep_CreateUI*, or a ZM_ConfigureMenuRoot FindElement that silently returned
+	// nullptr -- ZM_UI_Bag null-guards all of it -- so the widget view below is the
+	// on-screen half of the gate. It reuses this file's Dawnmere prerequisite guards /
+	// entity views / fixed dt and keeps its OWN control + observation globals.
+	// =========================================================================
+
+	// What the AUTHORED bag widgets actually report this frame.
+	struct BagElementView
+	{
+		bool        m_bResolved      = false;   // the ZM_MenuRoot UI component resolved
+		bool        m_bPanelFound    = false;
+		bool        m_bPanelVisible  = false;
+		bool        m_bHeaderFound   = false;
+		bool        m_bHeaderVisible = false;
+		std::string m_strHeaderText;
+		u_int       m_uNavFound      = 0u;      // of the four pocket / page buttons
+		u_int       m_uNavVisible    = 0u;
+		u_int       m_uRowsFound     = 0u;
+		u_int       m_uRowsVisible   = 0u;
+		bool        m_abRowVisible[ZM_UI_Bag::uROWS_PER_PAGE] = {};
+		// Focusability is HALF the contract: a dead row (or the "(empty)" notice) must be
+		// unreachable by the engine nav, which collects visible + FOCUSABLE elements.
+		bool        m_abRowFocusable[ZM_UI_Bag::uROWS_PER_PAGE] = {};
+		std::string m_astrRowText[ZM_UI_Bag::uROWS_PER_PAGE];
+		std::string m_strFocusedName;           // the canvas focus (want a row, then a nav button)
+	};
+
+	// The four nav buttons, in the order ZM_ConfigureMenuRoot places them.
+	const char* const aszBAG_NAV_NAMES[4] =
+	{
+		ZM_UI_Bag::szPREV_POCKET_NAME,
+		ZM_UI_Bag::szNEXT_POCKET_NAME,
+		ZM_UI_Bag::szPREV_PAGE_NAME,
+		ZM_UI_Bag::szNEXT_PAGE_NAME,
+	};
+
+	// True while the named element is one of the four pocket / page buttons.
+	bool IsBagNavButtonName(const std::string& strName)
+	{
+		for (const char* szNav : aszBAG_NAV_NAMES)
+		{
+			if (strName == szNav)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	BagElementView ReadBagElements()
+	{
+		BagElementView xView;
+		Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+		if (pxUI == nullptr)
+		{
+			return xView;
+		}
+		xView.m_bResolved = true;
+
+		if (Zenith_UI::Zenith_UIRect* pxPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_Bag::szPANEL_NAME))
+		{
+			xView.m_bPanelFound = true;
+			xView.m_bPanelVisible = pxPanel->IsVisible();
+		}
+		if (Zenith_UI::Zenith_UIText* pxHeader =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_Bag::szHEADER_NAME))
+		{
+			xView.m_bHeaderFound = true;
+			xView.m_bHeaderVisible = pxHeader->IsVisible();
+			xView.m_strHeaderText = pxHeader->GetText();
+		}
+		for (const char* szNav : aszBAG_NAV_NAMES)
+		{
+			Zenith_UI::Zenith_UIElement* pxNav = pxUI->FindElement(szNav);
+			if (pxNav == nullptr)
+			{
+				continue;
+			}
+			++xView.m_uNavFound;
+			if (pxNav->IsVisible())
+			{
+				++xView.m_uNavVisible;
+			}
+		}
+		for (u_int u = 0u; u < ZM_UI_Bag::uROWS_PER_PAGE; ++u)
+		{
+			Zenith_UI::Zenith_UIButton* pxRow =
+				pxUI->FindElement<Zenith_UI::Zenith_UIButton>(ZM_UI_Bag::RowElementName(u));
+			if (pxRow == nullptr)
+			{
+				continue;
+			}
+			++xView.m_uRowsFound;
+			xView.m_abRowVisible[u] = pxRow->IsVisible();
+			xView.m_abRowFocusable[u] = pxRow->IsFocusable();
+			xView.m_astrRowText[u] = pxRow->GetText();
+			if (xView.m_abRowVisible[u])
+			{
+				++xView.m_uRowsVisible;
+			}
+		}
+		if (Zenith_UI::Zenith_UIElement* pxFocused = pxUI->GetCanvas().GetFocusedElement())
+		{
+			xView.m_strFocusedName = pxFocused->GetName();
+		}
+		return xView;
+	}
+
+	enum class BagPhase
+	{
+		AwaitReady,
+		OpenMenu,           // press M until the ROOT pause menu is up
+		NavToBag,           // ONE Down edge -> the ROOT cursor advances Party(0) -> Bag(1)
+		EnterBag,           // ONE Enter edge -> the BAG screen
+		WalkToNavBand,      // spaced Down edges: the ENGINE spatial nav walks off the row list
+		ConfirmNextPocket,  // park the focus on Next-Pocket, ONE Enter edge -> the pocket cycles
+		CycleToEmptyPocket, // spaced Enter edges until the shown pocket holds nothing
+		SampleEmptyPocket,  // ...and read the "(empty)" presentation + its focus fallback
+		BackToRoot,         // ONE Escape edge -> the bag pops back to ROOT
+		CloseMenu,          // Escape edges until the menu closes
+		Done,
+	};
+
+	constexpr int iBAG_READY_DEADLINE = 420;   // Dawnmere first-load ready window (sibling parity)
+	constexpr int iBAG_OPEN_DEADLINE  = 120;   // frames for the M press to open the ROOT menu
+	constexpr int iBAG_NAV_DEADLINE   = 120;   // frames for the Down press to advance the ROOT cursor
+	constexpr int iBAG_PRESS_FRAME    = 2;     // the frame within a press phase that emits the edge
+	constexpr int iBAG_SETTLE_FRAME   = 6;     // ...and the frame the outcome is sampled on
+	constexpr int iBAG_FOCUS_FRAME    = 1;     // the frame ConfirmNextPocket parks the focus
+	constexpr int iBAG_LATE_PRESS     = 4;     // ...and the (later) frame it presses Enter
+	constexpr int iBAG_LATE_SETTLE    = 10;    // ...and the frame it samples the outcome
+	constexpr int iBAG_WALK_DEADLINE  = 200;   // frames for the spatial nav to reach the nav band
+	constexpr int iBAG_CYCLE_DEADLINE = 200;   // frames for the pocket cycle to reach an empty pocket
+	constexpr int iBAG_CLOSE_DEADLINE = 120;   // frames for the final Escape to close the menu
+
+	// ---- Control state (all reset in Setup; batch mode reuses the process) ----
+	BagPhase g_eBagPhase          = BagPhase::Done;
+	int      g_iBagPhaseFrames    = 0;
+	bool     g_bBagPrereqsPresent = false;
+	bool     g_bBagActive         = false;
+	bool     g_bBagFailed         = false;
+	const char* g_szBagFailure    = "test did not reach verification";
+
+	// ---- Captured observations ----
+	bool  g_bBagMovementEnabledBefore = false;   // player movable BEFORE opening (baseline)
+	bool  g_bBagRootOpened            = false;   // ROOT came up on the M press
+	int   g_iBagRootCursorOnConfirm   = -99;     // the ROOT cursor when Bag was confirmed (want 1)
+	u_int g_eBagTopOnEnter            = (u_int)ZM_MENU_SCREEN_NONE;   // want BAG
+	// The live model the screen must render, captured BEFORE the menu is opened.
+	u_int g_uBagFirstPocketStacks     = 0u;      // stacks in the BALL pocket (the opening pocket)
+	u_int g_uBagExpectedVisibleRows   = 0u;      // == VisibleRowCount(page 0, that count)
+	u_int g_uBagMoney                 = 0u;
+	u_int g_eBagRow0Item              = (u_int)ZM_ITEM_NONE;
+	u_int g_uBagRow0Count             = 0u;
+	u_int g_uBagCatchOrbCount         = 0u;      // the seeded Catch Orb count (want > 0)
+	int   g_iBagCursorOnEnter         = -99;     // the screen's focused-row mirror (want >= 0)
+	u_int g_eBagPocketOnEnter         = (u_int)ZM_ITEM_CATEGORY_COUNT;   // want BALL
+	u_int g_eBagPocketAfterNext       = (u_int)ZM_ITEM_CATEGORY_COUNT;   // want != BALL
+	bool  g_bBagNavReachedNavBand     = false;   // Down edges walked off the list onto the band
+	std::string g_strBagNavFocusName;            // ...onto this element (or where it stalled)
+	bool  g_bBagNextPocketFocusParked = false;   // the test parked the focus on Next-Pocket
+	u_int g_eBagEmptyPocket           = (u_int)ZM_ITEM_CATEGORY_COUNT;   // the EMPTY pocket reached
+	bool  g_bBagEmptyFocusCleared     = false;   // the test cleared the focus on that pocket
+	int   g_iBagCursorOnEmpty         = -99;     // the row mirror over an empty pocket (want -1)
+	bool  g_bBagOpenAfterBack         = false;   // the menu is still open after the Escape
+	u_int g_eBagTopAfterBack          = (u_int)ZM_MENU_SCREEN_NONE;   // want ROOT
+	bool  g_bBagMenuClosed            = false;   // the final Escape closed the menu
+	bool  g_bBagMovementReenabled     = false;   // ...and the player is movable again
+	bool  g_bBagFocusClearedOnClose   = false;   // canvas focus == nullptr after close
+
+	// ---- The AUTHORED widgets ----
+	BagElementView g_xBagElementsOnEnter;    // want: panel + header + every page-0 row shown
+	BagElementView g_xBagElementsAfterNext;  // want: the NEXT pocket's labels
+	BagElementView g_xBagElementsOnEmpty;    // want: ONE visible, NON-focusable "(empty)" row
+	BagElementView g_xBagElementsAfterBack;  // want: everything bag-side hidden again
+
+	void FailBag(const char* szReason)
+	{
+		g_szBagFailure = szReason;
+		g_bBagFailed = true;
+		g_eBagPhase = BagPhase::Done;
+	}
+
+	// Read the live bag facts the widget assertions are anchored on. The screen opens
+	// on pocket 0 (BALL), so that is the pocket whose page 0 must be on screen.
+	void CaptureBagFixture()
+	{
+		ZM_GameState* pxState = nullptr;
+		if (!ZM_GameStateManager::TryGetGameState(pxState) || pxState == nullptr)
+		{
+			return;
+		}
+		g_uBagMoney = pxState->m_uMoney;
+		g_uBagCatchOrbCount = pxState->m_xBag.GetCount(ZM_ITEM_CATCHORB);
+		g_uBagFirstPocketStacks = pxState->m_xBag.PocketStackCount(ZM_ITEM_CATEGORY_BALL);
+		g_uBagExpectedVisibleRows = ZM_UI_Bag::VisibleRowCount(0u, g_uBagFirstPocketStacks);
+		if (g_uBagFirstPocketStacks > 0u)
+		{
+			const ZM_ItemStack& xStack = pxState->m_xBag.PocketStack(ZM_ITEM_CATEGORY_BALL, 0u);
+			g_eBagRow0Item = (u_int)xStack.m_eItem;
+			g_uBagRow0Count = xStack.m_uCount;
+		}
+	}
+
+	void Setup_ZMBagScreen()
+	{
+		g_eBagPhase                 = BagPhase::Done;
+		g_iBagPhaseFrames           = 0;
+		g_bBagActive                = false;
+		g_bBagFailed                = false;
+		g_szBagFailure              = "test did not reach verification";
+
+		g_bBagMovementEnabledBefore = false;
+		g_bBagRootOpened            = false;
+		g_iBagRootCursorOnConfirm   = -99;
+		g_eBagTopOnEnter            = (u_int)ZM_MENU_SCREEN_NONE;
+		g_uBagFirstPocketStacks     = 0u;
+		g_uBagExpectedVisibleRows   = 0u;
+		g_uBagMoney                 = 0u;
+		g_eBagRow0Item              = (u_int)ZM_ITEM_NONE;
+		g_uBagRow0Count             = 0u;
+		g_uBagCatchOrbCount         = 0u;
+		g_iBagCursorOnEnter         = -99;
+		g_eBagPocketOnEnter         = (u_int)ZM_ITEM_CATEGORY_COUNT;
+		g_eBagPocketAfterNext       = (u_int)ZM_ITEM_CATEGORY_COUNT;
+		g_bBagNavReachedNavBand     = false;
+		g_strBagNavFocusName.clear();
+		g_bBagNextPocketFocusParked = false;
+		g_eBagEmptyPocket           = (u_int)ZM_ITEM_CATEGORY_COUNT;
+		g_bBagEmptyFocusCleared     = false;
+		g_iBagCursorOnEmpty         = -99;
+		g_bBagOpenAfterBack         = false;
+		g_eBagTopAfterBack          = (u_int)ZM_MENU_SCREEN_NONE;
+		g_bBagMenuClosed            = false;
+		g_bBagMovementReenabled     = false;
+		g_bBagFocusClearedOnClose   = false;
+
+		g_xBagElementsOnEnter       = BagElementView{};
+		g_xBagElementsAfterNext     = BagElementView{};
+		g_xBagElementsOnEmpty       = BagElementView{};
+		g_xBagElementsAfterBack     = BagElementView{};
+
+		// Guard order is MANDATORY: RequestSkip bypasses Verify, so install NO process
+		// state (fixed dt, scene load) until every git-ignored input is confirmed
+		// present. CI has no baked Assets tree -> skip.
+		g_bBagPrereqsPresent = RequiredDawnmereAssetsPresent();
+		if (!g_bBagPrereqsPresent)
+		{
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"Dawnmere assets absent -- run a *_True build");
+			return;
+		}
+
+		Zenith_InputSimulator::ResetAllInputState();
+		Zenith_InputSimulator::SetFixedDt(fUI_FIXED_DT);
+
+		g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);   // Dawnmere
+
+		g_eBagPhase = BagPhase::AwaitReady;
+		g_bBagActive = true;
+	}
+
+	bool Step_ZMBagScreen(int)
+	{
+		if (!g_bBagActive || g_bBagFailed || g_eBagPhase == BagPhase::Done)
+		{
+			return false;
+		}
+
+		++g_iBagPhaseFrames;
+		switch (g_eBagPhase)
+		{
+		case BagPhase::AwaitReady:
+		{
+			PlayerView xPlayer;
+			CameraView xCamera;
+			if (!DawnmereRuntimeReady(xPlayer, xCamera))
+			{
+				if (g_iBagPhaseFrames > iBAG_READY_DEADLINE)
+				{
+					FailBag("Dawnmere did not become runtime-ready in time");
+					return false;
+				}
+				return true;
+			}
+			if (ResolveSingletonMenuStack() == nullptr)
+			{
+				FailBag("no unique ZM_UI_MenuStack singleton (ZM_MenuRoot missing)");
+				return false;
+			}
+
+			g_bBagMovementEnabledBefore = xPlayer.m_pxController->IsMovementEnabled();
+			CaptureBagFixture();
+
+			g_eBagPhase = BagPhase::OpenMenu;
+			g_iBagPhaseFrames = 0;
+			return true;
+		}
+
+		case BagPhase::OpenMenu:
+		{
+			// Resolve FRESH each frame (the pool relocates on swap-and-pop).
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailBag("the ZM_UI_MenuStack singleton stopped resolving while opening");
+				return false;
+			}
+			if (pxMenu->IsOpen() && pxMenu->GetTopScreen() == ZM_MENU_SCREEN_ROOT)
+			{
+				g_bBagRootOpened = true;
+				g_eBagPhase = BagPhase::NavToBag;
+				g_iBagPhaseFrames = 0;
+				return true;
+			}
+			if (g_iBagPhaseFrames > iBAG_OPEN_DEADLINE)
+			{
+				FailBag("the ROOT menu never opened after the M press");
+				return false;
+			}
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_M);
+			return true;
+		}
+
+		case BagPhase::NavToBag:
+		{
+			// The engine's per-canvas focus-nav runs AFTER the component's OnUpdate, so the
+			// component's cursor MIRROR trails the canvas focus by a frame and a conditional
+			// re-press would over-shoot. Press Down EXACTLY ONCE and poll the mirror.
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailBag("the ZM_UI_MenuStack singleton stopped resolving while navigating ROOT");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				FailBag("the menu closed unexpectedly while navigating ROOT");
+				return false;
+			}
+			if (pxMenu->GetCursor() >= (int)ZM_MENU_ROOT_BAG)
+			{
+				g_eBagPhase = BagPhase::EnterBag;
+				g_iBagPhaseFrames = 0;
+				return true;
+			}
+			if (g_iBagPhaseFrames == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_DOWN);
+			}
+			if (g_iBagPhaseFrames > iBAG_NAV_DEADLINE)
+			{
+				FailBag("the ROOT focus cursor never reached the Bag entry");
+				return false;
+			}
+			return true;
+		}
+
+		case BagPhase::EnterBag:
+		{
+			// ONE Enter edge, with idle frames on either side so the edge-detected
+			// ZM_InputActions::ReadConfirmPressed fires exactly once.
+			if (g_iBagPhaseFrames == iBAG_PRESS_FRAME)
+			{
+				ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+				g_iBagRootCursorOnConfirm = (pxMenu != nullptr) ? pxMenu->GetCursor() : -99;
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iBagPhaseFrames < iBAG_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailBag("the ZM_UI_MenuStack singleton stopped resolving after the Bag confirm");
+				return false;
+			}
+			g_eBagTopOnEnter      = (u_int)pxMenu->GetTopScreen();
+			g_iBagCursorOnEnter   = pxMenu->GetBagScreen().GetCursor();
+			g_eBagPocketOnEnter   = (u_int)pxMenu->GetBagScreen().GetPocket();
+			g_xBagElementsOnEnter = ReadBagElements();
+
+			g_eBagPhase = BagPhase::WalkToNavBand;
+			g_iBagPhaseFrames = 0;
+			return true;
+		}
+
+		case BagPhase::WalkToNavBand:
+		{
+			// Spaced Down edges from the focused row. NOTHING on this screen carries explicit
+			// navigation links, so this walks purely on the ENGINE SPATIAL search -- and it is
+			// the one traversal the bag adds over the party / dex screens. It must be driven
+			// by real key edges: an explicit bake-time link into a row this page has hidden
+			// would be fetched instead of the spatial fallback and swallow the press, and the
+			// starter BALL pocket is exactly that case (ONE stack, so row 0 IS the last live
+			// row). Parking the focus by hand would hide that entirely.
+			Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+			if (pxUI == nullptr)
+			{
+				FailBag("the ZM_MenuRoot UI component stopped resolving while walking the row list");
+				return false;
+			}
+			Zenith_UI::Zenith_UIElement* pxFocused = pxUI->GetCanvas().GetFocusedElement();
+			if (pxFocused != nullptr && IsBagNavButtonName(pxFocused->GetName()))
+			{
+				g_bBagNavReachedNavBand = true;
+				g_strBagNavFocusName = pxFocused->GetName();
+				g_eBagPhase = BagPhase::ConfirmNextPocket;
+				g_iBagPhaseFrames = 0;
+				return true;
+			}
+			if (g_iBagPhaseFrames > iBAG_WALK_DEADLINE)
+			{
+				g_strBagNavFocusName = (pxFocused != nullptr) ? pxFocused->GetName() : std::string();
+				FailBag("the spatial focus-nav never walked off the row list onto the nav band");
+				return false;
+			}
+			if ((g_iBagPhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_DOWN);
+			}
+			return true;
+		}
+
+		case BagPhase::ConfirmNextPocket:
+		{
+			// The walk above proved the nav band is reachable by key; park the focus on
+			// Next-Pocket explicitly so the pocket assertion does not ALSO depend on which of
+			// the four buttons the walk happened to land on.
+			if (g_iBagPhaseFrames == iBAG_FOCUS_FRAME)
+			{
+				Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+				Zenith_UI::Zenith_UIElement* pxNextPocket = (pxUI != nullptr)
+					? pxUI->FindElement(ZM_UI_Bag::szNEXT_POCKET_NAME)
+					: nullptr;
+				if (pxNextPocket == nullptr)
+				{
+					FailBag("the Next-Pocket button did not resolve by name");
+					return false;
+				}
+				pxUI->GetCanvas().SetFocusedElement(pxNextPocket);
+				g_bBagNextPocketFocusParked = true;
+				return true;
+			}
+			if (g_iBagPhaseFrames == iBAG_LATE_PRESS)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iBagPhaseFrames < iBAG_LATE_SETTLE)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailBag("the ZM_UI_MenuStack singleton stopped resolving after the pocket confirm");
+				return false;
+			}
+			g_eBagPocketAfterNext   = (u_int)pxMenu->GetBagScreen().GetPocket();
+			g_xBagElementsAfterNext = ReadBagElements();
+
+			g_eBagPhase = BagPhase::CycleToEmptyPocket;
+			g_iBagPhaseFrames = 0;
+			return true;
+		}
+
+		case BagPhase::CycleToEmptyPocket:
+		{
+			// More spaced Enter edges on the (still focused) Next-Pocket button until the
+			// pocket on screen holds NOTHING -- the starter seeds only BALL and MEDICINE, so
+			// the very next pocket qualifies. Driven off the LIVE bag rather than a counted
+			// number of presses, so a re-tuned starter seed cannot silently leave this phase
+			// asserting the empty-pocket presentation against a full pocket.
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailBag("the ZM_UI_MenuStack singleton stopped resolving while cycling pockets");
+				return false;
+			}
+			ZM_GameState* pxState = nullptr;
+			if (!ZM_GameStateManager::TryGetGameState(pxState) || pxState == nullptr)
+			{
+				FailBag("the game state stopped resolving while cycling pockets");
+				return false;
+			}
+			const ZM_ITEM_CATEGORY eCategory = pxMenu->GetBagScreen().GetPocket();
+			if (pxState->m_xBag.PocketStackCount(eCategory) == 0u)
+			{
+				g_eBagEmptyPocket = (u_int)eCategory;
+				g_eBagPhase = BagPhase::SampleEmptyPocket;
+				g_iBagPhaseFrames = 0;
+				return true;
+			}
+			if (g_iBagPhaseFrames > iBAG_CYCLE_DEADLINE)
+			{
+				FailBag("the Next-Pocket confirms never reached an empty pocket");
+				return false;
+			}
+			// One edge every sixth frame: a pocket change re-lays the whole list, so this is
+			// spaced wider than the Escape loop below.
+			if ((g_iBagPhaseFrames % 6) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			}
+			return true;
+		}
+
+		case BagPhase::SampleEmptyPocket:
+		{
+			// CLEAR the canvas focus first. With it still parked on Next-Pocket, Present takes
+			// its nav-button branch and the empty-pocket FOCUS FALLBACK -- the branch that has
+			// to park the focus itself because no focusable row exists -- would never run.
+			// Clearing it makes the next Present exercise exactly that branch, so the sample
+			// below reads a focus the SCREEN chose, not one the test set.
+			if (g_iBagPhaseFrames == iBAG_FOCUS_FRAME)
+			{
+				Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+				if (pxUI == nullptr)
+				{
+					FailBag("the ZM_MenuRoot UI component stopped resolving on the empty pocket");
+					return false;
+				}
+				pxUI->GetCanvas().SetFocusedElement(nullptr);
+				g_bBagEmptyFocusCleared = true;
+				return true;
+			}
+			if (g_iBagPhaseFrames < iBAG_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailBag("the ZM_UI_MenuStack singleton stopped resolving on the empty pocket");
+				return false;
+			}
+			g_iBagCursorOnEmpty   = pxMenu->GetBagScreen().GetCursor();
+			g_xBagElementsOnEmpty = ReadBagElements();
+
+			g_eBagPhase = BagPhase::BackToRoot;
+			g_iBagPhaseFrames = 0;
+			return true;
+		}
+
+		case BagPhase::BackToRoot:
+		{
+			if (g_iBagPhaseFrames == iBAG_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+				return true;
+			}
+			if (g_iBagPhaseFrames < iBAG_SETTLE_FRAME)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailBag("the ZM_UI_MenuStack singleton stopped resolving after the Escape");
+				return false;
+			}
+			g_bBagOpenAfterBack     = pxMenu->IsOpen();
+			g_eBagTopAfterBack      = (u_int)pxMenu->GetTopScreen();
+			g_xBagElementsAfterBack = ReadBagElements();
+
+			g_eBagPhase = BagPhase::CloseMenu;
+			g_iBagPhaseFrames = 0;
+			return true;
+		}
+
+		case BagPhase::CloseMenu:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailBag("the ZM_UI_MenuStack singleton stopped resolving while closing");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				g_bBagMenuClosed          = true;
+				g_bBagFocusClearedOnClose = MenuFocusCleared();
+
+				bool bEnabled = false;
+				if (ReadActivePlayerMovementEnabled(bEnabled))
+				{
+					g_bBagMovementReenabled = bEnabled;
+				}
+
+				g_eBagPhase = BagPhase::Done;
+				return false;
+			}
+			if (g_iBagPhaseFrames > iBAG_CLOSE_DEADLINE)
+			{
+				FailBag("the ROOT menu never closed after the final Escape press");
+				return false;
+			}
+			// Spaced edges (one every fourth frame) so each press is a clean edge.
+			if ((g_iBagPhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+			}
+			return true;
+		}
+
+		case BagPhase::Done:
+			return false;
+		}
+		return false;
+	}
+
+	bool Verify_ZMBagScreen()
+	{
+		bool bPassed = true;
+
+		if (g_bBagActive)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_BagScreen] captured: failed=%s (%s) movBefore=%s rootOpened=%s "
+				"rootCursorOnConfirm=%d (want %u) topOnEnter=%u (want BAG=%u) ballStacks=%u "
+				"wantVisibleRows=%u money=%u row0Item=%u row0Count=%u catchOrbs=%u cursorOnEnter=%d "
+				"pocketOnEnter=%u (want BALL=%u) pocketAfterNext=%u openAfterBack=%s "
+				"topAfterBack=%u (want ROOT=%u) closed=%s movReenabled=%s focusCleared=%s",
+				g_bBagFailed ? "true" : "false", g_szBagFailure,
+				g_bBagMovementEnabledBefore ? "true" : "false",
+				g_bBagRootOpened ? "true" : "false",
+				g_iBagRootCursorOnConfirm, (u_int)ZM_MENU_ROOT_BAG,
+				g_eBagTopOnEnter, (u_int)ZM_MENU_SCREEN_BAG,
+				g_uBagFirstPocketStacks, g_uBagExpectedVisibleRows,
+				g_uBagMoney, g_eBagRow0Item, g_uBagRow0Count, g_uBagCatchOrbCount,
+				g_iBagCursorOnEnter,
+				g_eBagPocketOnEnter, (u_int)ZM_ITEM_CATEGORY_BALL,
+				g_eBagPocketAfterNext,
+				g_bBagOpenAfterBack ? "true" : "false",
+				g_eBagTopAfterBack, (u_int)ZM_MENU_SCREEN_ROOT,
+				g_bBagMenuClosed ? "true" : "false",
+				g_bBagMovementReenabled ? "true" : "false",
+				g_bBagFocusClearedOnClose ? "true" : "false");
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_BagScreen] nav walk: reachedNavBand=%s focus='%s' | empty pocket=%u (COUNT=%u) "
+				"focusCleared=%s rowsVisible=%u row0='%s' row0Focusable=%s focus='%s' cursor=%d",
+				g_bBagNavReachedNavBand ? "true" : "false", g_strBagNavFocusName.c_str(),
+				g_eBagEmptyPocket, (u_int)ZM_ITEM_CATEGORY_COUNT,
+				g_bBagEmptyFocusCleared ? "true" : "false",
+				g_xBagElementsOnEmpty.m_uRowsVisible,
+				g_xBagElementsOnEmpty.m_astrRowText[0].c_str(),
+				g_xBagElementsOnEmpty.m_abRowFocusable[0] ? "true" : "false",
+				g_xBagElementsOnEmpty.m_strFocusedName.c_str(),
+				g_iBagCursorOnEmpty);
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_BagScreen] widgets: onEnter(resolved=%s panel=%s/%s header=%s/%s '%s' "
+				"navFound=%u navVisible=%u rowsFound=%u rowsVisible=%u row0='%s' focus='%s') "
+				"afterNext(header='%s' row0='%s' rowsVisible=%u) afterBack(panel=%s header=%s "
+				"rowsVisible=%u navVisible=%u)",
+				g_xBagElementsOnEnter.m_bResolved ? "true" : "false",
+				g_xBagElementsOnEnter.m_bPanelFound ? "found" : "MISSING",
+				g_xBagElementsOnEnter.m_bPanelVisible ? "visible" : "hidden",
+				g_xBagElementsOnEnter.m_bHeaderFound ? "found" : "MISSING",
+				g_xBagElementsOnEnter.m_bHeaderVisible ? "visible" : "hidden",
+				g_xBagElementsOnEnter.m_strHeaderText.c_str(),
+				g_xBagElementsOnEnter.m_uNavFound, g_xBagElementsOnEnter.m_uNavVisible,
+				g_xBagElementsOnEnter.m_uRowsFound, g_xBagElementsOnEnter.m_uRowsVisible,
+				g_xBagElementsOnEnter.m_astrRowText[0].c_str(),
+				g_xBagElementsOnEnter.m_strFocusedName.c_str(),
+				g_xBagElementsAfterNext.m_strHeaderText.c_str(),
+				g_xBagElementsAfterNext.m_astrRowText[0].c_str(),
+				g_xBagElementsAfterNext.m_uRowsVisible,
+				g_xBagElementsAfterBack.m_bPanelVisible ? "visible" : "hidden",
+				g_xBagElementsAfterBack.m_bHeaderVisible ? "visible" : "hidden",
+				g_xBagElementsAfterBack.m_uRowsVisible,
+				g_xBagElementsAfterBack.m_uNavVisible);
+
+			if (g_bBagFailed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST, "[ZM_BagScreen] %s", g_szBagFailure);
+				bPassed = false;
+			}
+
+			// The baselines must be meaningful: the player was movable before opening, the
+			// opening pocket really holds a stack, and the starter really seeded money and a
+			// Catch Orb (otherwise every widget assertion below would pass vacuously).
+			if (!g_bBagMovementEnabledBefore)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the player was not movable before opening -- the freeze "
+					"assertions would be vacuous");
+				bPassed = false;
+			}
+			if (g_uBagExpectedVisibleRows == 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the live BALL pocket is EMPTY (stacks=%u) -- the row assertions "
+					"would be vacuous", g_uBagFirstPocketStacks);
+				bPassed = false;
+			}
+			if (g_uBagCatchOrbCount == 0u || g_uBagMoney == 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the starter state seeded catchOrbs=%u money=%u -- both must be "
+					"non-zero or the label / header assertions would be vacuous",
+					g_uBagCatchOrbCount, g_uBagMoney);
+				bPassed = false;
+			}
+
+			if (!g_bBagRootOpened)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the ROOT menu never opened after the M press");
+				bPassed = false;
+			}
+			if (g_iBagRootCursorOnConfirm != (int)ZM_MENU_ROOT_BAG)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the ROOT cursor was %d when Enter was pressed, expected %u (Bag) "
+					"-- the Down press did not land on the Bag entry",
+					g_iBagRootCursorOnConfirm, (u_int)ZM_MENU_ROOT_BAG);
+				bPassed = false;
+			}
+
+			// --- confirm on Bag: the BAG screen is on top and really presented ---
+			if (g_eBagTopOnEnter != (u_int)ZM_MENU_SCREEN_BAG)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] top screen after confirming Bag was %u, expected BAG %u",
+					g_eBagTopOnEnter, (u_int)ZM_MENU_SCREEN_BAG);
+				bPassed = false;
+			}
+			if (g_eBagPocketOnEnter != (u_int)ZM_ITEM_CATEGORY_BALL)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the bag opened on pocket %u, expected BALL %u",
+					g_eBagPocketOnEnter, (u_int)ZM_ITEM_CATEGORY_BALL);
+				bPassed = false;
+			}
+			if (!g_xBagElementsOnEnter.m_bResolved)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the ZM_MenuRoot UI component did not resolve on the bag screen");
+				bPassed = false;
+			}
+			else
+			{
+				if (!g_xBagElementsOnEnter.m_bPanelFound
+					|| !g_xBagElementsOnEnter.m_bHeaderFound
+					|| g_xBagElementsOnEnter.m_uRowsFound != ZM_UI_Bag::uROWS_PER_PAGE
+					|| g_xBagElementsOnEnter.m_uNavFound != 4u)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BagScreen] the AUTHORED bag widgets did not all resolve by name (panel=%s "
+						"header=%s rows=%u of %u nav=%u of 4) -- ZM_ConfigureMenuRoot / the "
+						"AddStep_CreateUI* contract is broken and NOTHING would render",
+						g_xBagElementsOnEnter.m_bPanelFound ? "true" : "false",
+						g_xBagElementsOnEnter.m_bHeaderFound ? "true" : "false",
+						g_xBagElementsOnEnter.m_uRowsFound, ZM_UI_Bag::uROWS_PER_PAGE,
+						g_xBagElementsOnEnter.m_uNavFound);
+					bPassed = false;
+				}
+				if (!g_xBagElementsOnEnter.m_bPanelVisible
+					|| !g_xBagElementsOnEnter.m_bHeaderVisible
+					|| g_xBagElementsOnEnter.m_uNavVisible != 4u)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BagScreen] the bag chrome was not all shown (panel=%s header=%s nav "
+						"visible=%u of 4)",
+						g_xBagElementsOnEnter.m_bPanelVisible ? "true" : "false",
+						g_xBagElementsOnEnter.m_bHeaderVisible ? "true" : "false",
+						g_xBagElementsOnEnter.m_uNavVisible);
+					bPassed = false;
+				}
+				// EXACTLY the live rows are visible: a dead row must stay hidden (and
+				// non-focusable), or the nav could park on a blank entry.
+				if (g_xBagElementsOnEnter.m_uRowsVisible != g_uBagExpectedVisibleRows)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BagScreen] %u rows were visible on page 0, expected %u (the BALL pocket "
+						"holds %u stack(s))",
+						g_xBagElementsOnEnter.m_uRowsVisible, g_uBagExpectedVisibleRows,
+						g_uBagFirstPocketStacks);
+					bPassed = false;
+				}
+				for (u_int u = 0u; u < ZM_UI_Bag::uROWS_PER_PAGE; ++u)
+				{
+					const bool bWantVisible = (u < g_uBagExpectedVisibleRows);
+					// Visibility AND focusability must agree: a dead row that stayed focusable
+					// would still be collected by the engine nav and the arrows could park on a
+					// blank entry.
+					if (g_xBagElementsOnEnter.m_abRowVisible[u] != bWantVisible
+						|| g_xBagElementsOnEnter.m_abRowFocusable[u] != bWantVisible)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_BagScreen] row %u visible=%s focusable=%s, expected both %s", u,
+							g_xBagElementsOnEnter.m_abRowVisible[u] ? "true" : "false",
+							g_xBagElementsOnEnter.m_abRowFocusable[u] ? "true" : "false",
+							bWantVisible ? "true" : "false");
+						bPassed = false;
+					}
+				}
+				// The header carries the seeded money AND names the pocket.
+				const std::string strWantHeader = ZM_UI_Bag::FormatHeader(
+					ZM_ITEM_CATEGORY_BALL, g_uBagMoney);
+				if (g_xBagElementsOnEnter.m_strHeaderText != strWantHeader)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BagScreen] the header element reads '%s', expected '%s' -- Present is "
+						"not writing the pocket name + money",
+						g_xBagElementsOnEnter.m_strHeaderText.c_str(), strWantHeader.c_str());
+					bPassed = false;
+				}
+				// Row 0 names the seeded Catch Orb with its real count.
+				const std::string strWantRow0 = ZM_UI_Bag::FormatRow(
+					(ZM_ITEM_ID)g_eBagRow0Item, g_uBagRow0Count);
+				if (g_xBagElementsOnEnter.m_astrRowText[0] != strWantRow0
+					|| g_xBagElementsOnEnter.m_astrRowText[0].find(
+						ZM_GetItemName(ZM_ITEM_CATCHORB)) == std::string::npos)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BagScreen] row 0 reads '%s', expected '%s' naming the seeded '%s'",
+						g_xBagElementsOnEnter.m_astrRowText[0].c_str(), strWantRow0.c_str(),
+						ZM_GetItemName(ZM_ITEM_CATCHORB));
+					bPassed = false;
+				}
+			}
+			if (g_iBagCursorOnEnter < 0)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the screen's focused-row mirror was %d, expected a real row -- "
+					"the screen must park the focus on a live stack or the arrow keys drive nothing "
+					"(canvas focus was '%s')",
+					g_iBagCursorOnEnter, g_xBagElementsOnEnter.m_strFocusedName.c_str());
+				bPassed = false;
+			}
+
+			// --- the nav band is KEY-REACHABLE from the list ---
+			// Without this the whole screen could ship with its vertical navigation dead:
+			// every other assertion here passes with the pocket / page buttons unreachable.
+			if (!g_bBagNavReachedNavBand)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the Down edges never walked off the row list onto a pocket / "
+					"page button (the focus stalled on '%s') -- the nav band is unreachable by "
+					"keyboard, so the screen cannot be paged or pocket-switched",
+					g_strBagNavFocusName.c_str());
+				bPassed = false;
+			}
+
+			// --- confirm Next-Pocket: the pocket cycles and the rows RELABEL ---
+			if (!g_bBagNextPocketFocusParked)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the test never parked the focus on the Next-Pocket button");
+				bPassed = false;
+			}
+			if (g_eBagPocketAfterNext == g_eBagPocketOnEnter
+				|| g_eBagPocketAfterNext >= (u_int)ZM_ITEM_CATEGORY_COUNT)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] confirming Next-Pocket left the bag on pocket %u (was %u) -- the "
+					"by-name confirm dispatch did not change pocket",
+					g_eBagPocketAfterNext, g_eBagPocketOnEnter);
+				bPassed = false;
+			}
+			// Changing pocket must actually REFILL the list, not just move a counter.
+			if (g_xBagElementsAfterNext.m_astrRowText[0] == g_xBagElementsOnEnter.m_astrRowText[0]
+				|| g_xBagElementsAfterNext.m_strHeaderText == g_xBagElementsOnEnter.m_strHeaderText)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the list did not relabel after the pocket change (row0 '%s' -> "
+					"'%s', header '%s' -> '%s') -- Present is not refilling from the new pocket",
+					g_xBagElementsOnEnter.m_astrRowText[0].c_str(),
+					g_xBagElementsAfterNext.m_astrRowText[0].c_str(),
+					g_xBagElementsOnEnter.m_strHeaderText.c_str(),
+					g_xBagElementsAfterNext.m_strHeaderText.c_str());
+				bPassed = false;
+			}
+
+			// --- an EMPTY pocket: one visible, NON-focusable notice row and a parked focus ---
+			if (g_eBagEmptyPocket >= (u_int)ZM_ITEM_CATEGORY_COUNT || !g_bBagEmptyFocusCleared)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the cycle never reached an empty pocket (pocket=%u focusCleared=%s) "
+					"-- the empty-pocket notice and its focus fallback are unverified",
+					g_eBagEmptyPocket, g_bBagEmptyFocusCleared ? "true" : "false");
+				bPassed = false;
+			}
+			else
+			{
+				const std::string strWantEmpty = ZM_UI_Bag::FormatEmptyPocket();
+				if (g_xBagElementsOnEmpty.m_uRowsVisible != 1u
+					|| g_xBagElementsOnEmpty.m_astrRowText[0] != strWantEmpty
+					|| g_xBagElementsOnEmpty.m_abRowFocusable[0])
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BagScreen] the empty pocket %u showed %u visible row(s), row0='%s' "
+						"focusable=%s -- expected exactly ONE visible row reading '%s' that the nav "
+						"cannot select (it is a message, not an item)",
+						g_eBagEmptyPocket, g_xBagElementsOnEmpty.m_uRowsVisible,
+						g_xBagElementsOnEmpty.m_astrRowText[0].c_str(),
+						g_xBagElementsOnEmpty.m_abRowFocusable[0] ? "true" : "false",
+						strWantEmpty.c_str());
+					bPassed = false;
+				}
+				// The test cleared the focus, so this is the SCREEN's own fallback: with no
+				// focusable row it must park the focus on a nav button and report no cursor,
+				// otherwise the arrows would drive nothing and the player would be stuck.
+				if (g_xBagElementsOnEmpty.m_strFocusedName != ZM_UI_Bag::szNEXT_POCKET_NAME
+					|| g_iBagCursorOnEmpty != -1)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BagScreen] over the empty pocket %u the focus was '%s' and the cursor %d, "
+						"expected the '%s' button and -1 -- the empty-pocket focus fallback did not run",
+						g_eBagEmptyPocket, g_xBagElementsOnEmpty.m_strFocusedName.c_str(),
+						g_iBagCursorOnEmpty, ZM_UI_Bag::szNEXT_POCKET_NAME);
+					bPassed = false;
+				}
+			}
+
+			// --- Escape: back on ROOT with every bag widget down ---
+			if (!g_bBagOpenAfterBack || g_eBagTopAfterBack != (u_int)ZM_MENU_SCREEN_ROOT)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] after the Escape the menu was open=%s on top=%u, expected the "
+					"ROOT %u to be restored",
+					g_bBagOpenAfterBack ? "true" : "false",
+					g_eBagTopAfterBack, (u_int)ZM_MENU_SCREEN_ROOT);
+				bPassed = false;
+			}
+			// The *Found flags prove the capture actually ran (a default-initialised view
+			// would pass the "hidden" checks vacuously).
+			if (!g_xBagElementsAfterBack.m_bPanelFound
+				|| g_xBagElementsAfterBack.m_uRowsFound != ZM_UI_Bag::uROWS_PER_PAGE
+				|| g_xBagElementsAfterBack.m_bPanelVisible
+				|| g_xBagElementsAfterBack.m_bHeaderVisible
+				|| g_xBagElementsAfterBack.m_uRowsVisible != 0u
+				|| g_xBagElementsAfterBack.m_uNavVisible != 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the bag widgets were not all hidden once the screen popped "
+					"(panel found=%s visible=%s, rows found=%u visible=%u, header visible=%s, nav "
+					"visible=%u)",
+					g_xBagElementsAfterBack.m_bPanelFound ? "true" : "false",
+					g_xBagElementsAfterBack.m_bPanelVisible ? "true" : "false",
+					g_xBagElementsAfterBack.m_uRowsFound,
+					g_xBagElementsAfterBack.m_uRowsVisible,
+					g_xBagElementsAfterBack.m_bHeaderVisible ? "true" : "false",
+					g_xBagElementsAfterBack.m_uNavVisible);
+				bPassed = false;
+			}
+
+			// --- the last Escape: the menu closes and the player is movable again ---
+			if (!g_bBagMenuClosed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the menu never closed after the final Escape press");
+				bPassed = false;
+			}
+			if (!g_bBagMovementReenabled)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] player movement was not re-enabled after the menu closed");
+				bPassed = false;
+			}
+			if (!g_bBagFocusClearedOnClose)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BagScreen] the canvas focus was not cleared (nullptr) after the menu "
+					"closed -- arrow keys could still drive the hidden menu");
+				bPassed = false;
+			}
+		}
+
+		// Always tear down, in order (all guarded), exactly like the sibling tests.
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
+		Zenith_InputSimulator::ClearFixedDt();
+		if (g_bBagActive)
+		{
+			g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);   // FrontEnd
+		}
+		Zenith_InputSimulator::ResetAllInputState();
+		g_bBagActive = false;
+
+		return bPassed || !g_bBagPrereqsPresent;
+	}
 }
 
 static const Zenith_AutomatedTest g_xZMMenuOpenCloseTest = {
@@ -3101,5 +4118,15 @@ static const Zenith_AutomatedTest g_xZMDexScreenTest = {
 	true /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDexScreenTest);
+
+static const Zenith_AutomatedTest g_xZMBagScreenTest = {
+	"ZM_BagScreen_Test",
+	&Setup_ZMBagScreen,
+	&Step_ZMBagScreen,
+	&Verify_ZMBagScreen,
+	/* maxFrames */ 1800,   // ready + open + nav + the list walk + three press phases + the close
+	true /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMBagScreenTest);
 
 #endif // ZENITH_INPUT_SIMULATOR
