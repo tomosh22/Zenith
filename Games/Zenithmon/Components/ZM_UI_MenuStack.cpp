@@ -375,29 +375,43 @@ void ZM_UI_MenuStack::ApplyDialogueChoice(ZM_DIALOGUE_CHOICE eAnswer)
 	const ZM_DIALOGUE_ACTION eAction = m_eDialogueAction;
 	m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
 
+	// LATCH the answer on the HOST, FIRST and on EVERY path. The box's own GetChoice()
+	// survives the resolve, but NOT the close: a prompt raised over an empty stack pops to
+	// empty, which calls CloseMenu(), which Reset()s the box and clears the stored answer --
+	// all synchronously inside this one OnUpdate, so no caller ever gets a frame in which it
+	// could read it. The latch outlives that and is what consumers (and the windowed tests)
+	// actually read. CloseMenu deliberately does NOT touch it (it is the LAST answer, not
+	// live session state), so writing it here rather than after the pop is equivalent -- and
+	// it keeps the healed-line early return below from having to repeat the assignment.
+	m_eLastDialogueAnswer = eAnswer;
+
 	if (eAnswer == ZM_DIALOGUE_CHOICE_YES && eAction == ZM_DIALOGUE_ACTION_HEAL_PARTY)
 	{
 		// The LIVE state, resolved per answer rather than cached (the same seam the bag and
 		// shop arms use); a missing state simply eats the heal instead of crashing.
 		ZM_GameState* pxState = nullptr;
-		if (ZM_GameStateManager::TryGetGameState(pxState) && pxState != nullptr)
+		if (ZM_GameStateManager::TryGetGameState(pxState) && pxState != nullptr
+			&& ZM_ApplyCareCenterHeal(*pxState))
 		{
-			ZM_ApplyCareCenterHeal(*pxState);
+			// The heal ACTUALLY changed something, so SAY SO instead of closing on a silent
+			// button (an S8 manual-playthrough risk: a YES that heals and vanishes reads as a
+			// dead control). ResolveChoice has already fully Reset() the box -- queue empty,
+			// choice UNARMED -- so queueing one line leaves it active with nothing armed, and
+			// the ORDINARY read-to-the-end CLOSED path pops it on the next confirm. No pop
+			// here; OnUpdate's trailing PresentTopScreen raises the line this same frame.
+			if (m_xDialogue.QueueLine(ZM_CareCenterHealedLine()))
+			{
+				return;
+			}
+			// The queue refused the line (it cannot, from an empty queue with a literal) --
+			// fall through and close exactly as every other path does rather than strand the
+			// player on a box with nothing in it.
 		}
 	}
 
 	// The box already reset itself as part of resolving, so leaving is the stack's half of
 	// the same close path a read-to-the-end dialogue takes.
 	PopTopScreen();
-
-	// LATCH the answer on the HOST, deliberately AFTER PopTopScreen. The box's own
-	// GetChoice() survives the resolve, but NOT the close: a prompt raised over an empty
-	// stack pops to empty, which calls CloseMenu(), which Reset()s the box and clears the
-	// stored answer -- all synchronously inside this one OnUpdate, so no caller ever gets
-	// a frame in which it could read it. The latch outlives that and is what consumers
-	// (and the windowed test) actually read. Cleared on boot / deserialize only, NOT in
-	// CloseMenu -- it is the LAST answer, not live session state.
-	m_eLastDialogueAnswer = eAnswer;
 }
 
 // ---- Dialogue (SC2) --------------------------------------------------------

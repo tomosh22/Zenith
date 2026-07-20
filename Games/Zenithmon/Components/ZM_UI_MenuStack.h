@@ -277,7 +277,11 @@ private:
 	// all leave through it.
 	void PopTopScreen();
 	// Run the pending action for an answered prompt (YES + HEAL_PARTY heals the LIVE
-	// game state), clear it, and leave the screen through PopTopScreen.
+	// game state), clear it, latch the answer, and leave the screen through PopTopScreen.
+	// ONE exception (SC9): a YES whose heal actually CHANGED something queues
+	// ZM_CareCenterHealedLine() onto the (already reset, now unarmed) box and does NOT pop
+	// -- the ordinary read-to-the-end CLOSED path pops it on the next confirm, so the heal
+	// is never a silent button. Every other path pops immediately.
 	void ApplyDialogueChoice(ZM_DIALOGUE_CHOICE eAnswer);
 	// Re-resolve the authored elements by name each frame (never cache) and show /
 	// hide + focus them for the current top screen. Also mirrors m_iCursor.

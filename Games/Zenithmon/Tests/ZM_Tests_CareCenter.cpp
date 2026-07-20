@@ -6,6 +6,12 @@
 // the heal applied to a ZM_GameState. All hermetic -- no ECS, no scene, no
 // graphics, no baked assets, no RNG -- so no RequestSkip is needed.
 //
+// SC9 adds the two units behind the "the heal is not SILENT" follow-up: the
+// confirmation line is queueable and distinct, and ZM_ApplyCareCenterHeal's return
+// really distinguishes "actually healed" from "already healthy" -- which is the one
+// bit ZM_UI_MenuStack::ApplyDialogueChoice branches on when it decides whether to
+// show that line instead of popping.
+//
 // Every fixture is built with the REAL ZM_BuildMonsterRecord and mutated through
 // the REAL fields (m_uCurrentHp / m_eStatus / m_axMoves[].m_uCurPP), never a
 // hand-rolled stand-in: the predicate's whole job is to read those three, and a
@@ -70,6 +76,60 @@ ZENITH_TEST(ZM_CareCenter, PromptLines_AreNonEmptyAndDistinct)
 		"the two answer labels differ -- identical buttons would be unanswerable");
 	ZENITH_ASSERT_TRUE(std::strcmp(szPrompt, szHealed) != 0,
 		"the question and the confirmation are different lines");
+}
+
+// ---- The healed CONFIRMATION line (SC9: the heal is not silent) -------------
+//
+// ZM_UI_MenuStack::ApplyDialogueChoice queues ZM_CareCenterHealedLine() onto the box
+// -- instead of popping -- when, and only when, ZM_ApplyCareCenterHeal reports that
+// something actually needed healing. That wiring is proved end to end by the windowed
+// ZM_CareCenterHeal_Test; what CAN be pinned purely is the two things it depends on:
+// the line is queueable at all, and the return value really distinguishes the two
+// cases. Both live here because both are hermetic.
+
+ZENITH_TEST(ZM_CareCenter, HealedLine_IsQueueableAndDistinctFromThePrompt)
+{
+	const char* szHealed = ZM_CareCenterHealedLine();
+	const char* szPrompt = ZM_CareCenterPromptLine();
+
+	// ZM_UI_DialogueBox::QueueLine REJECTS a null or empty line, so an empty confirmation
+	// would silently fail to queue and the heal would go straight back to being silent.
+	ZENITH_ASSERT_TRUE(szHealed != nullptr, "the healed line is a real string");
+	ZENITH_ASSERT_TRUE(szHealed[0] != '\0',
+		"the healed line is non-empty -- QueueLine rejects an empty line, which would put the "
+		"heal straight back to closing on a silent button");
+	// It replaces the question in the SAME text element, so an identical string would be
+	// indistinguishable on screen from the prompt that was just answered.
+	ZENITH_ASSERT_TRUE(std::strcmp(szHealed, szPrompt) != 0,
+		"the confirmation is not the question repeated back");
+	// String LITERALS: the host holds the pointer only long enough to copy it into the
+	// queue, but the contract is process-lifetime, so a second call must return the same
+	// storage rather than a rebuilt buffer.
+	ZENITH_ASSERT_TRUE(ZM_CareCenterHealedLine() == szHealed,
+		"the healed line is a stable literal, not a per-call temporary");
+}
+
+ZENITH_TEST(ZM_CareCenter, ApplyHeal_ReturnGatesTheConfirmationLine)
+{
+	// The BRANCH the host reads: a true return is what makes it queue the confirmation and
+	// hold the box open; a false return makes it pop immediately. Pinning the two returns
+	// against the SAME fixture (damaged vs already-healthy) is what stops the host's "did
+	// this heal do anything?" question from quietly becoming unanswerable.
+	ZM_GameState xState;
+	xState.m_xParty = ZM_MakeHealthyFixtureParty();
+	ZENITH_ASSERT_FALSE(ZM_ApplyCareCenterHeal(xState),
+		"a healthy party reports FALSE -- the host pops without a confirmation line");
+
+	ZM_Monster& xLead = xState.m_xParty.Get(0u);
+	ZENITH_ASSERT_TRUE(xLead.GetMaxHP() > 1u, "the fixture has room to be damaged");
+	xLead.m_uCurrentHp = xLead.GetMaxHP() - 1u;
+	ZENITH_ASSERT_TRUE(ZM_ApplyCareCenterHeal(xState),
+		"the SAME party, one HP down, reports TRUE -- the host shows the confirmation line");
+
+	// ...and the heal is idempotent, so a second YES on an already-serviced party falls
+	// back to the silent pop rather than showing a confirmation for nothing.
+	ZENITH_ASSERT_FALSE(ZM_ApplyCareCenterHeal(xState),
+		"healing an already-healed party reports FALSE again");
 }
 
 // ---- ZM_PartyNeedsHealing ---------------------------------------------------

@@ -44,7 +44,10 @@
 
 // ============================================================================
 // ZM_AutoTests_UI -- the windowed gates for the overworld pause menu (S6 item 2).
-// SEVEN tests, all m_bRequiresGraphics = true:
+// EIGHT tests, all m_bRequiresGraphics = true. The first seven each cover ONE screen
+// in its OWN session (fresh scene, own teardown); the eighth (SC9) is the
+// CONSOLIDATED gate that walks the whole surface in ONE session and is the only one
+// that can catch state bleeding BETWEEN screens:
 //   * ZM_MenuOpenClose_Test (SC1) -- in a runtime-ready Dawnmere, press the menu
 //     key (M) and assert the ROOT menu opens with the player FROZEN; press an
 //     arrow (Down) and assert the focus cursor advances (engine focus-nav); press
@@ -92,8 +95,19 @@
 //     with spaced Enter edges, and assert the box HOLDS on the question rather than
 //     closing: both AUTHORED buttons shown, focusable and labelled from ZM_CareCenter,
 //     the canvas focus parked on Yes, real arrow edges walking Yes -> No -> Yes, one
-//     Enter on Yes healing the REAL ZM_GameState to full and closing the menu with
-//     movement restored -- then the same prompt answered NO healing nothing.
+//     Enter on Yes healing the REAL ZM_GameState to full, leaving the HEALED
+//     CONFIRMATION line showing, and closing the menu with movement restored once it
+//     is read out -- then the same prompt answered NO healing nothing.
+//   * ZM_S6UIGate_Test (SC9) -- the CONSOLIDATED gate: ONE Dawnmere session with NO
+//     scene reload, walking Party / Bag / Dex / Bag-AGAIN open-and-back via real ROOT
+//     focus navigation (each visit also asserting the ROOT panel + entries and every
+//     OTHER screen's panel went HIDDEN under it, and the revisit asserting the Bag's
+//     page / pocket / cursor survived unchanged), then asserting NOTHING bled between
+//     them (stack back to depth 1, the focus AND the cursor mirror back on the same
+//     ROOT entry, no sub-screen panel still drawn, the money + bag totals byte-identical
+//     to the pre-browse baseline), then talk -> buy -> heal in the same session, and
+//     finally that the session ends with the menu closed, the stack empty, the player
+//     movable and the canvas focus cleared.
 //
 // It CLONES the ZM_AutoTests_BattleMenu Dawnmere runtime-ready gate, its fixed-dt
 // 1/30, its RequestSkip-when-assets-absent guard order, and its FRESH-resolve-
@@ -4984,9 +4998,11 @@ namespace
 	//   AWAITING an answer, the two AUTHORED buttons are shown, focusable and labelled
 	//   from ZM_CareCenter -> REAL arrow edges walk the focus Yes -> No -> Yes (both
 	//   answers must be key-reachable; parking the focus programmatically would prove
-	//   nothing) -> one Enter on Yes -> the LIVE party is at FULL HP and the menu closed
-	//   with movement re-enabled. Then the NO branch: re-damage, prompt again, walk to
-	//   No, confirm, and assert the party was NOT healed.
+	//   nothing) -> one Enter on Yes -> the LIVE party is at FULL HP and the box shows the
+	//   HEALED CONFIRMATION line (SC9: a heal that changed something is never silent) ->
+	//   spaced Enter edges read that out and the menu closes with movement re-enabled.
+	//   Then the NO branch: re-damage, prompt again, walk to No, confirm, and assert the
+	//   party was NOT healed (and, healing nothing, that answer closes immediately).
 	//
 	// The heal assertions are anchored on the LIVE ZM_GameState the game itself renders
 	// (never a local fixture): the point of the gate is that the answer moves the real
@@ -5012,6 +5028,17 @@ namespace
 		std::string m_strYesText;
 		std::string m_strNoText;
 		std::string m_strFocusedName;
+		// The PANEL and the QUESTION the two buttons answer. A prompt awaiting its answer is
+		// IsActive() == false (the queue has been read to the end), so ZM_UI_DialogueBox
+		// deliberately keeps the panel + text SHOWN through `IsActive() || IsAwaitingChoice()`.
+		// Without these three fields a regression to a bare `bShown = IsActive()` would blank
+		// the question and leave two buttons floating over the world -- the ZM-D-112
+		// bleed-through class -- while every button-only assertion below stayed green.
+		bool        m_bPanelFound   = false;
+		bool        m_bPanelVisible = false;
+		bool        m_bTextFound    = false;
+		bool        m_bTextVisible  = false;
+		std::string m_strText;
 	};
 
 	ChoiceElementView ReadChoiceElements()
@@ -5024,6 +5051,19 @@ namespace
 		}
 		xView.m_bResolved = true;
 
+		if (Zenith_UI::Zenith_UIRect* pxPanel =
+			pxUI->FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_DialogueBox::szPANEL_NAME))
+		{
+			xView.m_bPanelFound = true;
+			xView.m_bPanelVisible = pxPanel->IsVisible();
+		}
+		if (Zenith_UI::Zenith_UIText* pxText =
+			pxUI->FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_DialogueBox::szTEXT_NAME))
+		{
+			xView.m_bTextFound = true;
+			xView.m_bTextVisible = pxText->IsVisible();
+			xView.m_strText = pxText->GetText();
+		}
 		if (Zenith_UI::Zenith_UIButton* pxYes =
 			pxUI->FindElement<Zenith_UI::Zenith_UIButton>(ZM_UI_DialogueBox::szYES_NAME))
 		{
@@ -5117,7 +5157,8 @@ namespace
 		SampleChoice,    // ...and what the authored buttons are showing
 		WalkToNo,        // REAL arrow edges: the focus must reach the No button
 		WalkBackToYes,   // ...and come back, so BOTH answers are proved reachable
-		ConfirmYes,      // ONE Enter on Yes -> the heal runs and the menu closes
+		ConfirmYes,      // ONE Enter on Yes -> the heal runs and the HEALED LINE comes up
+		ReadHealedLine,  // ...spaced Enter edges read that confirmation out, THEN the menu closes
 		DamageAgain,     // re-damage for the NO branch
 		OpenPromptNo,    // raise the prompt a second time
 		ReadPromptNo,    // ...read past its line
@@ -5167,6 +5208,16 @@ namespace
 	bool  g_bCareClosedAfterYes    = false;
 	bool  g_bCareMovementReenabled = false;
 	bool  g_bCareFocusClearedOnClose = false;
+
+	// ---- ...and the HEALED CONFIRMATION LINE the YES now leaves behind (SC9) ----
+	// A heal that actually changed something is no longer silent: ApplyDialogueChoice queues
+	// ZM_CareCenterHealedLine() onto the (reset, unarmed) box and does NOT pop, so the answer
+	// is followed by one more readable line before the ordinary CLOSED path takes the menu
+	// down. These default to the FAILING values so a run that never reaches the phase fails.
+	u_int g_eCareTopAfterYes        = (u_int)ZM_MENU_SCREEN_NONE;   // want DIALOGUE (NOT closed)
+	bool  g_bCareHealedLineActive   = false;   // the box is active again on the queued line
+	DialogueElementView g_xCareHealedLineElements;   // want panel + text shown, text == the line
+	int   g_iCareHealedLinePresses  = 0;       // Enter edges it took to close it (want > 0)
 
 	// ---- The NO branch ----
 	u_int g_uCareDamagedMembersNo   = 0u;
@@ -5229,6 +5280,11 @@ namespace
 		g_bCareClosedAfterYes        = false;
 		g_bCareMovementReenabled     = false;
 		g_bCareFocusClearedOnClose   = false;
+
+		g_eCareTopAfterYes           = (u_int)ZM_MENU_SCREEN_NONE;
+		g_bCareHealedLineActive      = false;
+		g_xCareHealedLineElements    = DialogueElementView{};
+		g_iCareHealedLinePresses     = 0;
 
 		g_uCareDamagedMembersNo      = 0u;
 		g_xCarePartyDamagedNo        = CarePartyView{};
@@ -5478,28 +5534,67 @@ namespace
 				return false;
 			}
 			g_eCareChoiceAfterYes = (u_int)pxMenu->GetLastDialogueAnswer();   // the HOST latch:
-			// the box's own answer is wiped by the CloseMenu the resolve triggers.
+			// the box's own answer is wiped by the Reset the resolve performs.
 			g_eCareActionAfterYes = (u_int)pxMenu->GetPendingDialogueAction();
-			g_bCareClosedAfterYes = !pxMenu->IsOpen();
 			g_xCarePartyAfterYes  = ReadLiveParty();
-			// CloseMenu hides the widgets directly (the per-frame Present stops the moment
-			// the stack empties), so they must be down here.
-			g_xCareChoiceOnClose  = ReadChoiceElements();
-			g_bCareFocusClearedOnClose = MenuFocusCleared();
 
-			bool bEnabled = false;
-			if (ReadActivePlayerMovementEnabled(bEnabled))
+			// The YES does NOT close here any more: the heal actually changed something, so
+			// ApplyDialogueChoice queued ZM_CareCenterHealedLine() onto the (reset, unarmed)
+			// box and left the DIALOGUE screen up. The close is the ORDINARY read-to-the-end
+			// pop, one phase later -- so this samples the CONFIRMATION, not the close.
+			g_eCareTopAfterYes        = (u_int)pxMenu->GetTopScreen();
+			g_bCareHealedLineActive   = pxMenu->GetDialogue().IsActive();
+			g_xCareHealedLineElements = ReadDialogueElements();
+			if (g_eCareTopAfterYes != (u_int)ZM_MENU_SCREEN_DIALOGUE)
 			{
-				g_bCareMovementReenabled = bEnabled;
-			}
-			if (!g_bCareClosedAfterYes)
-			{
-				FailCare("the prompt never closed after the YES answer");
+				FailCare("the healed confirmation line never came up after the YES answer");
 				return false;
 			}
 
-			g_eCarePhase = CarePhase::DamageAgain;
+			g_eCarePhase = CarePhase::ReadHealedLine;
 			g_iCarePhaseFrames = 0;
+			return true;
+		}
+
+		case CarePhase::ReadHealedLine:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailCare("the ZM_UI_MenuStack singleton stopped resolving on the healed line");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				g_bCareClosedAfterYes = true;
+				// CloseMenu hides the widgets directly (the per-frame Present stops the moment
+				// the stack empties), so they must be down here.
+				g_xCareChoiceOnClose  = ReadChoiceElements();
+				g_bCareFocusClearedOnClose = MenuFocusCleared();
+
+				bool bEnabled = false;
+				if (ReadActivePlayerMovementEnabled(bEnabled))
+				{
+					g_bCareMovementReenabled = bEnabled;
+				}
+
+				g_eCarePhase = CarePhase::DamageAgain;
+				g_iCarePhaseFrames = 0;
+				return true;
+			}
+			if (g_iCarePhaseFrames > iCC_READ_DEADLINE)
+			{
+				FailCare("the healed confirmation line never closed after the Enter edges");
+				return false;
+			}
+			// Spaced edges (one every fourth frame): the first completes the typewriter, the
+			// second consumes the line -- and with nothing armed that is the plain SC2 CLOSED
+			// advance, so the stack pops and the menu comes down.
+			if ((g_iCarePhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				++g_iCareHealedLinePresses;
+			}
 			return true;
 		}
 
@@ -5652,6 +5747,24 @@ namespace
 				g_eCareActionOnOpen, (u_int)ZM_DIALOGUE_ACTION_HEAL_PARTY,
 				g_bCareAwaitingChoice ? "true" : "false",
 				g_iCareReadPresses);
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_CareCenterHeal] awaiting box: panel=%s/%s text=%s/%s line='%s' | healed line: "
+				"top=%u (want DIALOGUE=%u) active=%s panel=%s/%s text=%s/%s text='%s' (want '%s') "
+				"presses=%d",
+				g_xCareChoiceOnAwait.m_bPanelFound ? "found" : "MISSING",
+				g_xCareChoiceOnAwait.m_bPanelVisible ? "visible" : "hidden",
+				g_xCareChoiceOnAwait.m_bTextFound ? "found" : "MISSING",
+				g_xCareChoiceOnAwait.m_bTextVisible ? "visible" : "hidden",
+				g_xCareChoiceOnAwait.m_strText.c_str(),
+				g_eCareTopAfterYes, (u_int)ZM_MENU_SCREEN_DIALOGUE,
+				g_bCareHealedLineActive ? "true" : "false",
+				g_xCareHealedLineElements.m_bPanelFound ? "found" : "MISSING",
+				g_xCareHealedLineElements.m_bPanelVisible ? "visible" : "hidden",
+				g_xCareHealedLineElements.m_bTextFound ? "found" : "MISSING",
+				g_xCareHealedLineElements.m_bTextVisible ? "visible" : "hidden",
+				g_xCareHealedLineElements.m_strText.c_str(), ZM_CareCenterHealedLine(),
+				g_iCareHealedLinePresses);
 
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_CareCenterHeal] widgets: onAwait(resolved=%s yes=%s/%s/%s '%s' no=%s/%s/%s '%s' "
@@ -5817,6 +5930,27 @@ namespace
 						g_xCareChoiceOnAwait.m_strFocusedName.c_str(), ZM_UI_DialogueBox::szYES_NAME);
 					bPassed = false;
 				}
+				// ...and the QUESTION ITSELF is still on screen behind them. A prompt awaiting
+				// its answer is IsActive() == false, so a regression to a bare
+				// `bShown = IsActive()` in ZM_UI_DialogueBox::Present would blank the panel and
+				// the line and leave two labelled buttons floating over the world -- the
+				// ZM-D-112 bleed-through class, and every button assertion above would still
+				// have passed.
+				if (!g_xCareChoiceOnAwait.m_bPanelFound || !g_xCareChoiceOnAwait.m_bTextFound
+					|| !g_xCareChoiceOnAwait.m_bPanelVisible || !g_xCareChoiceOnAwait.m_bTextVisible
+					|| g_xCareChoiceOnAwait.m_strText.empty())
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_CareCenterHeal] the prompt's panel / question did not stay SHOWN while "
+						"the answer was awaited (panel found=%s visible=%s, text found=%s visible=%s, "
+						"line='%s') -- the two buttons would be floating over the world",
+						g_xCareChoiceOnAwait.m_bPanelFound ? "true" : "false",
+						g_xCareChoiceOnAwait.m_bPanelVisible ? "true" : "false",
+						g_xCareChoiceOnAwait.m_bTextFound ? "true" : "false",
+						g_xCareChoiceOnAwait.m_bTextVisible ? "true" : "false",
+						g_xCareChoiceOnAwait.m_strText.c_str());
+					bPassed = false;
+				}
 			}
 
 			// --- BOTH answers are key-reachable ---
@@ -5858,6 +5992,42 @@ namespace
 					g_xCarePartyAfterYes.m_uLeadCurrentHp, g_xCarePartyAfterYes.m_uLeadMaxHp);
 				bPassed = false;
 			}
+			// --- the heal is NOT silent: one more readable line before the box comes down ---
+			if (g_eCareTopAfterYes != (u_int)ZM_MENU_SCREEN_DIALOGUE || !g_bCareHealedLineActive)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_CareCenterHeal] after YES the top screen was %u (want DIALOGUE %u) with the "
+					"box active=%s -- a heal that changed something must SAY so rather than closing "
+					"on a silent button",
+					g_eCareTopAfterYes, (u_int)ZM_MENU_SCREEN_DIALOGUE,
+					g_bCareHealedLineActive ? "true" : "false");
+				bPassed = false;
+			}
+			if (!g_xCareHealedLineElements.m_bPanelFound
+				|| !g_xCareHealedLineElements.m_bTextFound
+				|| !g_xCareHealedLineElements.m_bPanelVisible
+				|| !g_xCareHealedLineElements.m_bTextVisible
+				|| g_xCareHealedLineElements.m_strText != ZM_CareCenterHealedLine())
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_CareCenterHeal] the healed confirmation did not render (panel found=%s "
+					"visible=%s, text found=%s visible=%s, text='%s', expected '%s')",
+					g_xCareHealedLineElements.m_bPanelFound ? "true" : "false",
+					g_xCareHealedLineElements.m_bPanelVisible ? "true" : "false",
+					g_xCareHealedLineElements.m_bTextFound ? "true" : "false",
+					g_xCareHealedLineElements.m_bTextVisible ? "true" : "false",
+					g_xCareHealedLineElements.m_strText.c_str(), ZM_CareCenterHealedLine());
+				bPassed = false;
+			}
+			if (g_iCareHealedLinePresses <= 0)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_CareCenterHeal] the healed line took %d Enter edges to close -- it must be a "
+					"real readable line, not one that vanishes on its own",
+					g_iCareHealedLinePresses);
+				bPassed = false;
+			}
+
 			if (!g_bCareClosedAfterYes || !g_bCareMovementReenabled || !g_bCareFocusClearedOnClose)
 			{
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
@@ -5943,6 +6113,1631 @@ namespace
 
 		return bPassed || !g_bCarePrereqsPresent;
 	}
+
+	// =========================================================================
+	// ZM_S6UIGate_Test (S6 item 2 SC9) -- the CONSOLIDATED gate for the whole S6 UI
+	// surface, and the ONE test in this file that never reloads the scene mid-run.
+	//
+	// The seven per-screen tests above each start from a fresh Dawnmere and tear down
+	// after themselves, so between them they prove every screen works ALONE. NOTHING
+	// proves they work TOGETHER. This test walks the entire surface in ONE
+	// uninterrupted play session -- open every menu via focus navigation, talk, buy,
+	// heal -- so it catches the class the per-screen tests structurally CANNOT: state
+	// BLEEDING between screens (a cursor or page left set by a previous screen, a focus
+	// left on a now-hidden element, a pending dialogue action surviving into an
+	// unrelated prompt, the player left frozen after a screen that closed, a stale
+	// screen still visible under the next one, money or bag mutated by merely LOOKING
+	// at a screen).
+	//
+	// Every menu transition is driven by REAL simulated key edges: the ROOT entries are
+	// reached by walking the canvas focus with ZENITH_KEY_UP / ZENITH_KEY_DOWN and
+	// confirming, NEVER by SetFocusedElement -- "via focus navigation" is exactly what
+	// the roadmap gate asks for, and parking the focus by hand would prove nothing
+	// about whether a player can reach the screen at all. Every recorded flag defaults
+	// to the FAILING value, so a phase that never runs fails rather than passing on a
+	// stale global.
+	//
+	// It reuses this file's Dawnmere prerequisite guards / entity views / fixed dt /
+	// fresh-resolve-every-frame discipline / RequestSkip guard order / teardown order,
+	// and keeps its OWN control + observation globals (the g_*Gate* set).
+	// =========================================================================
+
+	// The three ROOT-reachable screens, in visit order. A table rather than three
+	// hand-rolled copies: every visit is the same four steps (walk / confirm / sample /
+	// escape), so a fourth screen is one more row.
+	struct GateScreenVisit
+	{
+		ZM_MENU_ROOT_ITEM m_eRootItem;
+		ZM_MENU_SCREEN    m_eScreen;
+		const char*       m_szPanelName;   // that screen's OWN authored panel
+		const char*       m_szLabel;       // for the failure text only
+	};
+
+	// FOUR rows, not three: the Bag is opened AGAIN after the other two screens have been
+	// through. A pop back to a non-empty stack deliberately Reset()s nothing (ZM_UI_Bag /
+	// ZM_UI_Dex / ZM_UI_Party are only reset on OnStart / CloseMenu / deserialize), so a
+	// screen's page + pocket + cursor genuinely SURVIVE being left and re-entered inside one
+	// menu session -- and "a cursor or page left set from a previous screen" is the first
+	// bleed class this test exists to catch. Opening each screen only once could never
+	// observe it. The revisit pins that surviving state to the SPECIFIC values the first
+	// visit ended on (nothing navigated inside the bag in between, so a differing page /
+	// pocket / cursor means something outside the bag reached in and moved it).
+	constexpr u_int uGATE_VISIT_COUNT   = 4u;
+	constexpr u_int uGATE_BAG_VISIT     = 1u;   // the FIRST Bag visit -- the reference sample
+	constexpr u_int uGATE_BAG_REVISIT   = 3u;   // ...and the one that must match it
+	const GateScreenVisit axGATE_VISITS[uGATE_VISIT_COUNT] = {
+		{ ZM_MENU_ROOT_PARTY, ZM_MENU_SCREEN_PARTY, ZM_UI_Party::szPANEL_NAME, "Party" },
+		{ ZM_MENU_ROOT_BAG,   ZM_MENU_SCREEN_BAG,   ZM_UI_Bag::szPANEL_NAME,   "Bag"   },
+		{ ZM_MENU_ROOT_DEX,   ZM_MENU_SCREEN_DEX,   ZM_UI_Dex::szPANEL_NAME,   "Dex"   },
+		{ ZM_MENU_ROOT_BAG,   ZM_MENU_SCREEN_BAG,   ZM_UI_Bag::szPANEL_NAME,   "Bag (revisit)" },
+	};
+
+	// The ROOT entry the nav probe walks DOWN to before the first visit: the genuinely LAST
+	// ROOT entry, NOT the last row of the visit table (which is a revisit, so the table no
+	// longer runs bottom-most last). Exit is never CONFIRMED here -- only walked onto.
+	constexpr ZM_MENU_ROOT_ITEM eGATE_NAV_PROBE_ITEM = ZM_MENU_ROOT_EXIT;
+
+	// One visit's outcome. EVERY field defaults FALSE: a visit whose phases never ran
+	// must FAIL rather than inherit a pass from a default.
+	struct GateVisitResult
+	{
+		bool m_bReachedEntry    = false;   // arrow edges walked the ROOT focus onto the entry
+		bool m_bScreenOpened    = false;   // ...and confirming it made that screen the top one
+		bool m_bPanelFound      = false;   // the screen's OWN authored panel resolved by name
+		bool m_bPanelVisible    = false;   // ...and is actually on screen
+		// The ZM-D-112 bleed-through class: what is UNDER this screen must be GONE, not
+		// merely covered. Both default FALSE, so a visit that never sampled them fails.
+		bool m_bRootHiddenUnder = false;   // the ROOT panel AND its entries went hidden
+		bool m_bOthersHidden    = false;   // ...and so did every OTHER screen's panel
+		bool m_bReturnedToRoot  = false;   // one Escape put ROOT back on top
+		// Only filled on a BAG visit (see uGATE_BAG_VISIT / uGATE_BAG_REVISIT).
+		bool  m_bBagStateRead = false;
+		int   m_iBagPage      = -99;
+		u_int m_eBagPocket    = 0xFFFFFFFFu;
+		int   m_iBagCursor    = -99;
+	};
+
+	// The LIVE economy, read fresh. Money plus BOTH bag totals: a mutation that changed
+	// a count INSIDE an existing stack would not move the stack total, and one that
+	// added an empty entry would not move the item total, so neither number alone is
+	// enough to prove that browsing changed nothing.
+	bool ReadGateEconomy(u_int& uMoneyOut, u_int& uItemsOut, u_int& uStacksOut)
+	{
+		uMoneyOut  = 0u;
+		uItemsOut  = 0u;
+		uStacksOut = 0u;
+		ZM_GameState* pxState = nullptr;
+		if (!ZM_GameStateManager::TryGetGameState(pxState) || pxState == nullptr)
+		{
+			return false;
+		}
+		uMoneyOut  = pxState->m_uMoney;
+		uStacksOut = pxState->m_xBag.TotalStackCount();
+		for (u_int u = 0u; u < (u_int)ZM_ITEM_COUNT; ++u)
+		{
+			uItemsOut += pxState->m_xBag.GetCount((ZM_ITEM_ID)u);
+		}
+		return true;
+	}
+
+	enum class GatePhase
+	{
+		AwaitReady,
+		Baseline,        // capture the movement + economy baselines BEFORE any screen opens
+		OpenMenu,        // press M until the ROOT pause menu is up
+		ProbeNavDown,    // DOWN edges: walk the ROOT focus to the LAST ROOT entry (Exit)
+		ProbeNavUp,      // UP edges: ...and back to the first, proving BOTH directions work
+		VisitWalk,       // walk the ROOT focus onto the current visit's entry
+		VisitConfirm,    // ONE Enter -> that screen is on top and its own panel is shown
+		VisitEscape,     // ONE Escape -> ROOT is back on top
+		BleedCheck,      // depth 1 + a ROOT-entry focus + an UNTOUCHED economy
+		CloseMenu,       // Escape edges until the stack is empty
+		TalkPush,        // TryPushDialogue (the NPC seam) over the now-empty stack
+		TalkRead,        // spaced Enter edges until the conversation closes
+		ShopOpen,        // TryOpenShop (the mart seam)
+		ShopWalk,        // spaced DOWN edges: the engine spatial nav walks onto CONFIRM
+		ShopBuy,         // ONE Enter -> the selected entry is bought
+		ShopClose,       // Escape edges until the shop closes
+		HealDamage,      // state-set the LIVE party below full HP
+		HealOpen,        // TryOpenCareCenterPrompt (the attendant seam)
+		HealRead,        // spaced Enter edges until the box awaits the answer
+		HealWalkToNo,    // RIGHT edges: prove the other answer is key-reachable...
+		HealWalkToYes,   // ...and LEFT edges walk back onto Yes, where the confirm lands
+		HealConfirm,     // ONE Enter on Yes -> the heal runs
+		HealFinish,      // spaced Enter edges read out whatever the answer left showing
+		FinalState,      // closed + empty + movable + no canvas focus
+		Done,
+	};
+
+	constexpr int iGATE_READY_DEADLINE    = 420;   // Dawnmere first-load ready window (sibling parity)
+	constexpr int iGATE_OPEN_DEADLINE     = 120;   // frames for the M press to open the ROOT menu
+	constexpr int iGATE_WALK_DEADLINE     = 160;   // frames for the arrow edges to reach an element
+	constexpr int iGATE_SHOPWALK_DEADLINE = 200;   // ...and for the spatial nav to reach CONFIRM
+	constexpr int iGATE_PRESS_FRAME       = 2;     // the frame within a press phase that emits the edge
+	constexpr int iGATE_SETTLE_FRAME      = 6;     // ...and the frame the outcome is sampled on
+	constexpr int iGATE_READ_DEADLINE     = 120;   // frames for spaced Enter edges to read a box out
+	constexpr int iGATE_CLOSE_DEADLINE    = 120;   // frames for the Escape edges to close a screen
+
+	// ---- Control state (all reset in Setup; batch mode reuses the process) ----
+	GatePhase g_eGatePhase          = GatePhase::Done;
+	int       g_iGatePhaseFrames    = 0;
+	bool      g_bGatePrereqsPresent = false;
+	bool      g_bGateActive         = false;
+	bool      g_bGateFailed         = false;
+	const char* g_szGateFailure     = "test did not reach verification";
+
+	// ---- Baselines, captured BEFORE the first screen opens ----
+	bool  g_bGateMovementEnabledBefore = false;
+	bool  g_bGateEconomyBaselineRead   = false;
+	u_int g_uGateMoneyBaseline         = 0u;
+	u_int g_uGateBagItemsBaseline      = 0u;
+	u_int g_uGateBagStacksBaseline     = 0u;
+
+	// ---- Phase 1: open every menu via focus navigation ----
+	bool  g_bGateRootOpened           = false;
+	bool  g_bGateProbeReachedLast     = false;   // DOWN edges walked ROOT focus to the last entry
+	bool  g_bGateProbeReturnedToFirst = false;   // ...and UP edges walked it back to the first
+	u_int g_uGateVisitIndex           = 0u;
+	GateVisitResult g_axGateVisits[uGATE_VISIT_COUNT];
+
+	// ---- Phase 2: the cross-screen BLEED assertions (the reason SC9 exists) ----
+	bool  g_bGateBleedSampled          = false;
+	u_int g_uGateDepthAfterVisits      = 99u;    // want exactly 1 -- no leaked push
+	u_int g_eGateTopAfterVisits        = (u_int)ZM_MENU_SCREEN_NONE;   // want ROOT
+	int   g_iGateRootFocusAfterVisits  = -99;    // the ROOT entry index the focus sits on (want >= 0)
+	int   g_iGateCursorAfterVisits     = -98;    // the component's mirror (want == the index above)
+	bool  g_bGateBleedPanelsRead       = false;  // the ROOT + sub-screen panels all resolved
+	bool  g_bGateRootPanelShownAtRoot  = false;  // ...the ROOT panel came back visible
+	bool  g_bGateSubPanelsHiddenAtRoot = false;  // ...and NO sub-screen panel is still drawn
+	bool  g_bGateEconomyAfterVisitsRead = false;
+	u_int g_uGateMoneyAfterVisits      = 0u;
+	u_int g_uGateBagItemsAfterVisits   = 0u;
+	u_int g_uGateBagStacksAfterVisits  = 0u;
+	bool  g_bGateMenuClosedAfterVisits = false;
+
+	// ---- Phase 3: talk ----
+	bool  g_bGateTalkPushed            = false;
+	u_int g_eGateTopWhileTalking       = (u_int)ZM_MENU_SCREEN_NONE;   // want DIALOGUE
+	bool  g_bGateTalkFrozen            = false;
+	bool  g_bGateTalkClosed            = false;
+	bool  g_bGateTalkMovementReenabled = false;
+
+	// ---- Phase 4: buy ----
+	bool        g_bGateShopOpened        = false;
+	u_int       g_eGateTopWhileShopping  = (u_int)ZM_MENU_SCREEN_NONE;   // want SHOP
+	bool        g_bGateShopReachedConfirm = false;
+	std::string g_strGateShopFocusName;
+	bool        g_bGateShopStateRead     = false;
+	u_int       g_eGateShopBoughtItem    = (u_int)ZM_ITEM_NONE;
+	u_int       g_uGateShopPrice         = 0u;
+	u_int       g_uGateShopQuantity      = 0u;
+	u_int       g_uGateShopMoneyBefore   = 0u;
+	u_int       g_uGateShopMoneyAfter    = 0u;
+	u_int       g_uGateShopHeldBefore    = 0u;
+	u_int       g_uGateShopHeldAfter     = 0u;
+	u_int       g_eGateShopResult        = (u_int)ZM_SHOP_RESULT_COUNT;   // want ZM_SHOP_OK
+	// ZM_UI_Shop::m_uLastResult is INITIALISED to ZM_SHOP_OK and Reset() restores it, so
+	// GetLastResult() alone cannot tell "the purchase succeeded" from "no transaction was
+	// ever recorded". HasResult() is the bit that can (sibling parity with ZM_ShopScreen_Test).
+	bool        g_bGateShopReportedResult = false;
+	bool        g_bGateShopClosed        = false;
+
+	// ---- Phase 5: heal ----
+	u_int g_uGateHealDamagedMembers = 0u;
+	CarePartyView g_xGatePartyDamaged;
+	bool  g_bGateHealOpened         = false;
+	bool  g_bGateHealAwaiting       = false;
+	bool  g_bGateHealReachedNo      = false;
+	bool  g_bGateHealReturnedToYes  = false;
+	u_int g_eGateHealAnswer         = (u_int)ZM_DIALOGUE_CHOICE_NONE;   // want YES
+	CarePartyView g_xGatePartyAfterHeal;
+
+	// ---- Phase 6: the final state ----
+	bool  g_bGateFinalSampled          = false;
+	bool  g_bGateFinalClosed           = false;
+	u_int g_uGateFinalDepth            = 99u;    // want 0
+	bool  g_bGateFinalMovementEnabled  = false;
+	bool  g_bGateFinalFocusCleared     = false;
+
+	void FailGate(const char* szReason)
+	{
+		g_szGateFailure = szReason;
+		g_bGateFailed = true;
+		g_eGatePhase = GatePhase::Done;
+	}
+
+	// Walk the ROOT focus onto entry iTargetItem with REAL arrow edges, at most one
+	// spaced edge per call. True once the focus is already on it.
+	//
+	// The direction comes from where the focus actually IS, so the walk is correct
+	// wherever the previous screen left it. In practice DOWN is what fires:
+	// PresentTopScreen's ROOT arm re-parks the focus on the first entry whenever ROOT
+	// comes back holding a non-ROOT element, which is exactly what returning from a
+	// sub-screen leaves behind. The UP arm is proved by the nav-probe phases, which
+	// deliberately walk down to the last entry and back up before the first visit.
+	bool StepGateRootFocusWalk(int iTargetItem, int iPhaseFrames)
+	{
+		const std::string strFocus = ReadMenuFocusName();
+		const int iFocused = ZM_UI_MenuStack::RootItemIndexFromElementName(strFocus.c_str());
+		if (iFocused == iTargetItem)
+		{
+			return true;
+		}
+		if ((iPhaseFrames % 4) == 1)
+		{
+			Zenith_InputSimulator::SimulateKeyPress(
+				(iFocused > iTargetItem) ? ZENITH_KEY_UP : ZENITH_KEY_DOWN);
+		}
+		return false;
+	}
+
+	void Setup_ZMS6UIGate()
+	{
+		g_eGatePhase                 = GatePhase::Done;
+		g_iGatePhaseFrames           = 0;
+		g_bGateActive                = false;
+		g_bGateFailed                = false;
+		g_szGateFailure              = "test did not reach verification";
+
+		g_bGateMovementEnabledBefore = false;
+		g_bGateEconomyBaselineRead   = false;
+		g_uGateMoneyBaseline         = 0u;
+		g_uGateBagItemsBaseline      = 0u;
+		g_uGateBagStacksBaseline     = 0u;
+
+		g_bGateRootOpened            = false;
+		g_bGateProbeReachedLast      = false;
+		g_bGateProbeReturnedToFirst  = false;
+		g_uGateVisitIndex            = 0u;
+		for (u_int u = 0u; u < uGATE_VISIT_COUNT; ++u)
+		{
+			g_axGateVisits[u] = GateVisitResult{};
+		}
+
+		g_bGateBleedSampled           = false;
+		g_uGateDepthAfterVisits       = 99u;
+		g_eGateTopAfterVisits         = (u_int)ZM_MENU_SCREEN_NONE;
+		g_iGateRootFocusAfterVisits   = -99;
+		g_iGateCursorAfterVisits      = -98;
+		g_bGateBleedPanelsRead        = false;
+		g_bGateRootPanelShownAtRoot   = false;
+		g_bGateSubPanelsHiddenAtRoot  = false;
+		g_bGateEconomyAfterVisitsRead = false;
+		g_uGateMoneyAfterVisits       = 0u;
+		g_uGateBagItemsAfterVisits    = 0u;
+		g_uGateBagStacksAfterVisits   = 0u;
+		g_bGateMenuClosedAfterVisits  = false;
+
+		g_bGateTalkPushed            = false;
+		g_eGateTopWhileTalking       = (u_int)ZM_MENU_SCREEN_NONE;
+		g_bGateTalkFrozen            = false;
+		g_bGateTalkClosed            = false;
+		g_bGateTalkMovementReenabled = false;
+
+		g_bGateShopOpened            = false;
+		g_eGateTopWhileShopping      = (u_int)ZM_MENU_SCREEN_NONE;
+		g_bGateShopReachedConfirm    = false;
+		g_strGateShopFocusName.clear();
+		g_bGateShopStateRead         = false;
+		g_eGateShopBoughtItem        = (u_int)ZM_ITEM_NONE;
+		g_uGateShopPrice             = 0u;
+		g_uGateShopQuantity          = 0u;
+		g_uGateShopMoneyBefore       = 0u;
+		g_uGateShopMoneyAfter        = 0u;
+		g_uGateShopHeldBefore        = 0u;
+		g_uGateShopHeldAfter         = 0u;
+		g_eGateShopResult            = (u_int)ZM_SHOP_RESULT_COUNT;
+		g_bGateShopReportedResult    = false;
+		g_bGateShopClosed            = false;
+
+		g_uGateHealDamagedMembers    = 0u;
+		g_xGatePartyDamaged          = CarePartyView{};
+		g_bGateHealOpened            = false;
+		g_bGateHealAwaiting          = false;
+		g_bGateHealReachedNo         = false;
+		g_bGateHealReturnedToYes     = false;
+		g_eGateHealAnswer            = (u_int)ZM_DIALOGUE_CHOICE_NONE;
+		g_xGatePartyAfterHeal        = CarePartyView{};
+
+		g_bGateFinalSampled          = false;
+		g_bGateFinalClosed           = false;
+		g_uGateFinalDepth            = 99u;
+		g_bGateFinalMovementEnabled  = false;
+		g_bGateFinalFocusCleared     = false;
+
+		// Guard order is MANDATORY: RequestSkip bypasses Verify, so install NO process
+		// state (fixed dt, scene load) until every git-ignored input is confirmed
+		// present. CI has no baked Assets tree -> skip.
+		g_bGatePrereqsPresent = RequiredDawnmereAssetsPresent();
+		if (!g_bGatePrereqsPresent)
+		{
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"Dawnmere assets absent -- run a *_True build");
+			return;
+		}
+
+		Zenith_InputSimulator::ResetAllInputState();
+		Zenith_InputSimulator::SetFixedDt(fUI_FIXED_DT);
+
+		// The ONLY scene load in this test. Everything from here to teardown happens in
+		// ONE uninterrupted session -- that is the whole point of the gate.
+		g_xEngine.Scenes().LoadSceneByIndex(2, SCENE_LOAD_SINGLE);   // Dawnmere
+
+		g_eGatePhase = GatePhase::AwaitReady;
+		g_bGateActive = true;
+	}
+
+	bool Step_ZMS6UIGate(int)
+	{
+		if (!g_bGateActive || g_bGateFailed || g_eGatePhase == GatePhase::Done)
+		{
+			return false;
+		}
+
+		++g_iGatePhaseFrames;
+		switch (g_eGatePhase)
+		{
+		case GatePhase::AwaitReady:
+		{
+			PlayerView xPlayer;
+			CameraView xCamera;
+			if (!DawnmereRuntimeReady(xPlayer, xCamera))
+			{
+				if (g_iGatePhaseFrames > iGATE_READY_DEADLINE)
+				{
+					FailGate("Dawnmere did not become runtime-ready in time");
+					return false;
+				}
+				return true;
+			}
+			if (ResolveSingletonMenuStack() == nullptr)
+			{
+				FailGate("no unique ZM_UI_MenuStack singleton (ZM_MenuRoot missing)");
+				return false;
+			}
+
+			g_bGateMovementEnabledBefore = xPlayer.m_pxController->IsMovementEnabled();
+
+			g_eGatePhase = GatePhase::Baseline;
+			g_iGatePhaseFrames = 0;
+			return true;
+		}
+
+		case GatePhase::Baseline:
+		{
+			// Captured BEFORE anything is opened: phase 2 asserts that walking through
+			// four screen visits moved neither number.
+			g_bGateEconomyBaselineRead = ReadGateEconomy(
+				g_uGateMoneyBaseline, g_uGateBagItemsBaseline, g_uGateBagStacksBaseline);
+			if (!g_bGateEconomyBaselineRead)
+			{
+				FailGate("the live game state did not resolve for the economy baseline");
+				return false;
+			}
+
+			g_eGatePhase = GatePhase::OpenMenu;
+			g_iGatePhaseFrames = 0;
+			return true;
+		}
+
+		case GatePhase::OpenMenu:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving while opening the menu");
+				return false;
+			}
+			if (pxMenu->IsOpen() && pxMenu->GetTopScreen() == ZM_MENU_SCREEN_ROOT)
+			{
+				g_bGateRootOpened = true;
+				g_eGatePhase = GatePhase::ProbeNavDown;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (g_iGatePhaseFrames > iGATE_OPEN_DEADLINE)
+			{
+				FailGate("the ROOT menu never opened after the M press");
+				return false;
+			}
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_M);
+			return true;
+		}
+
+		case GatePhase::ProbeNavDown:
+		{
+			// DOWN edges to the LAST ROOT entry, then UP edges back to the first. Both
+			// directions of the ROOT focus-nav are load-bearing for the visits below, and a
+			// one-directional walk would hide a broken NavigateUp entirely.
+			const int iLast = (int)eGATE_NAV_PROBE_ITEM;
+			if (StepGateRootFocusWalk(iLast, g_iGatePhaseFrames))
+			{
+				g_bGateProbeReachedLast = true;
+				g_eGatePhase = GatePhase::ProbeNavUp;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (g_iGatePhaseFrames > iGATE_WALK_DEADLINE)
+			{
+				FailGate("the DOWN edges never walked the ROOT focus to the last entry");
+				return false;
+			}
+			return true;
+		}
+
+		case GatePhase::ProbeNavUp:
+		{
+			const int iFirst = (int)axGATE_VISITS[0].m_eRootItem;
+			if (StepGateRootFocusWalk(iFirst, g_iGatePhaseFrames))
+			{
+				g_bGateProbeReturnedToFirst = true;
+				g_eGatePhase = GatePhase::VisitWalk;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (g_iGatePhaseFrames > iGATE_WALK_DEADLINE)
+			{
+				FailGate("the UP edges never walked the ROOT focus back to the first entry");
+				return false;
+			}
+			return true;
+		}
+
+		case GatePhase::VisitWalk:
+		{
+			if (g_uGateVisitIndex >= uGATE_VISIT_COUNT)
+			{
+				FailGate("the screen-visit index ran past the visit table");
+				return false;
+			}
+			if (StepGateRootFocusWalk((int)axGATE_VISITS[g_uGateVisitIndex].m_eRootItem,
+				g_iGatePhaseFrames))
+			{
+				g_axGateVisits[g_uGateVisitIndex].m_bReachedEntry = true;
+				g_eGatePhase = GatePhase::VisitConfirm;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (g_iGatePhaseFrames > iGATE_WALK_DEADLINE)
+			{
+				FailGate("the arrow edges never walked the ROOT focus onto a menu entry");
+				return false;
+			}
+			return true;
+		}
+
+		case GatePhase::VisitConfirm:
+		{
+			// ONE Enter edge with idle frames on either side, so the edge-detected
+			// ZM_InputActions::ReadConfirmPressed fires exactly once on the entry the walk
+			// above landed on.
+			if (g_iGatePhaseFrames == iGATE_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iGatePhaseFrames < iGATE_SETTLE_FRAME)
+			{
+				return true;
+			}
+
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving after a screen confirm");
+				return false;
+			}
+			const GateScreenVisit& xVisit = axGATE_VISITS[g_uGateVisitIndex];
+			GateVisitResult& xResult = g_axGateVisits[g_uGateVisitIndex];
+			xResult.m_bScreenOpened = (pxMenu->GetTopScreen() == xVisit.m_eScreen);
+			// The screen's OWN authored panel, resolved by name: the stack reporting the
+			// right top screen proves nothing about whether anything is on screen.
+			if (Zenith_UIComponent* pxUI = ResolveMenuRootUI())
+			{
+				if (Zenith_UI::Zenith_UIRect* pxPanel =
+					pxUI->FindElement<Zenith_UI::Zenith_UIRect>(xVisit.m_szPanelName))
+				{
+					xResult.m_bPanelFound = true;
+					xResult.m_bPanelVisible = pxPanel->IsVisible();
+				}
+
+				// ...and what is UNDERNEATH it must be GONE, not merely covered. This is the
+				// ZM-D-112 bleed-through class, and the per-screen sibling tests structurally
+				// CANNOT see it: each opens exactly one screen per session, so nothing there
+				// ever has a second screen to be drawn through. A regression in
+				// SetRootElementsShown, or in a Present*Screen(false) arm that stopped
+				// reaching its Hide(), would draw the pause list (or the previous screen)
+				// straight through this panel and every other assertion would stay green.
+				//
+				// The ROOT panel AND a ROOT entry -- the entries are separate elements with
+				// their own visibility, so the panel alone would miss four floating buttons.
+				Zenith_UI::Zenith_UIElement* pxRootPanel =
+					pxUI->FindElement(ZM_UI_MenuStack::szROOT_PANEL_NAME);
+				Zenith_UI::Zenith_UIElement* pxRootEntry =
+					pxUI->FindElement(ZM_UI_MenuStack::RootItemElementName(ZM_MENU_ROOT_PARTY));
+				xResult.m_bRootHiddenUnder = (pxRootPanel != nullptr && !pxRootPanel->IsVisible()
+					&& pxRootEntry != nullptr && !pxRootEntry->IsVisible());
+
+				// ...and every OTHER screen's panel. Rows are skipped BY SCREEN, not by index:
+				// the Bag appears twice in the table, and its own panel is the one that must be
+				// visible on both of its visits.
+				bool bAllOthersResolved = true;
+				bool bAnyOtherVisible   = false;
+				for (u_int u = 0u; u < uGATE_VISIT_COUNT; ++u)
+				{
+					if (axGATE_VISITS[u].m_eScreen == xVisit.m_eScreen)
+					{
+						continue;
+					}
+					Zenith_UI::Zenith_UIRect* pxOther =
+						pxUI->FindElement<Zenith_UI::Zenith_UIRect>(axGATE_VISITS[u].m_szPanelName);
+					if (pxOther == nullptr)
+					{
+						bAllOthersResolved = false;
+						continue;
+					}
+					if (pxOther->IsVisible())
+					{
+						bAnyOtherVisible = true;
+					}
+				}
+				xResult.m_bOthersHidden = bAllOthersResolved && !bAnyOtherVisible;
+
+				// The BAG rows additionally sample the screen's own surviving state, so the
+				// revisit can be pinned against the first visit (see uGATE_BAG_REVISIT).
+				if (xVisit.m_eScreen == ZM_MENU_SCREEN_BAG)
+				{
+					const ZM_UI_Bag& xBag = pxMenu->GetBagScreen();
+					xResult.m_bBagStateRead = true;
+					xResult.m_iBagPage      = xBag.GetPage();
+					xResult.m_eBagPocket    = (u_int)xBag.GetPocket();
+					xResult.m_iBagCursor    = xBag.GetCursor();
+				}
+			}
+			if (!xResult.m_bScreenOpened)
+			{
+				FailGate("confirming a ROOT entry did not raise its screen");
+				return false;
+			}
+
+			g_eGatePhase = GatePhase::VisitEscape;
+			g_iGatePhaseFrames = 0;
+			return true;
+		}
+
+		case GatePhase::VisitEscape:
+		{
+			if (g_iGatePhaseFrames == iGATE_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+				return true;
+			}
+			if (g_iGatePhaseFrames < iGATE_SETTLE_FRAME)
+			{
+				return true;
+			}
+
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving after a screen escape");
+				return false;
+			}
+			GateVisitResult& xResult = g_axGateVisits[g_uGateVisitIndex];
+			xResult.m_bReturnedToRoot =
+				pxMenu->IsOpen() && pxMenu->GetTopScreen() == ZM_MENU_SCREEN_ROOT;
+			if (!xResult.m_bReturnedToRoot)
+			{
+				FailGate("Escape did not return the stack to ROOT after a screen visit");
+				return false;
+			}
+
+			++g_uGateVisitIndex;
+			g_eGatePhase = (g_uGateVisitIndex < uGATE_VISIT_COUNT)
+				? GatePhase::VisitWalk
+				: GatePhase::BleedCheck;
+			g_iGatePhaseFrames = 0;
+			return true;
+		}
+
+		case GatePhase::BleedCheck:
+		{
+			// The reason SC9 exists. Four visits over three screens (the Bag twice) have been
+			// opened and left; the stack must be back to exactly ROOT (not ROOT plus a leaked
+			// push), the ROOT entries must own the focus and the shared cursor mirror, every
+			// sub-screen panel must be GONE rather than merely covered, and the economy must be
+			// untouched -- LOOKING at a bag or a dex is not a transaction.
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving for the bleed check");
+				return false;
+			}
+			g_uGateDepthAfterVisits = pxMenu->GetDepth();
+			g_eGateTopAfterVisits   = (u_int)pxMenu->GetTopScreen();
+
+			const std::string strFocus = ReadMenuFocusName();
+			g_iGateRootFocusAfterVisits =
+				ZM_UI_MenuStack::RootItemIndexFromElementName(strFocus.c_str());
+			// The component's own cursor mirror, which PresentTopScreen's ROOT arm sets from
+			// the SAME focus it is asked about. A mirror still holding a party slot / dex cell
+			// / bag row from a screen that has been left is a cursor bleed the focus read alone
+			// cannot see -- the ROOT arm re-parks the FOCUS but the mirror is a separate field.
+			g_iGateCursorAfterVisits = pxMenu->GetCursor();
+
+			// The panels: back at ROOT, the ROOT panel must be on screen and NO sub-screen
+			// panel may still be. The focus read above cannot fail for a stranded focus --
+			// PresentTopScreen's ROOT arm re-parks it onto Menu_RootParty every frame ROOT is
+			// top holding a non-ROOT element -- so it proves the entries EXIST, not that the
+			// screens went away. These do.
+			if (Zenith_UIComponent* pxUI = ResolveMenuRootUI())
+			{
+				bool bAllResolved   = true;
+				bool bAnySubVisible = false;
+				for (u_int u = 0u; u < uGATE_VISIT_COUNT; ++u)
+				{
+					Zenith_UI::Zenith_UIRect* pxPanel =
+						pxUI->FindElement<Zenith_UI::Zenith_UIRect>(axGATE_VISITS[u].m_szPanelName);
+					if (pxPanel == nullptr)
+					{
+						bAllResolved = false;
+						continue;
+					}
+					if (pxPanel->IsVisible())
+					{
+						bAnySubVisible = true;
+					}
+				}
+				Zenith_UI::Zenith_UIElement* pxRootPanel =
+					pxUI->FindElement(ZM_UI_MenuStack::szROOT_PANEL_NAME);
+				if (pxRootPanel == nullptr)
+				{
+					bAllResolved = false;
+				}
+				else
+				{
+					g_bGateRootPanelShownAtRoot = pxRootPanel->IsVisible();
+				}
+				g_bGateBleedPanelsRead = bAllResolved;
+				g_bGateSubPanelsHiddenAtRoot = bAllResolved && !bAnySubVisible;
+			}
+
+			g_bGateEconomyAfterVisitsRead = ReadGateEconomy(
+				g_uGateMoneyAfterVisits, g_uGateBagItemsAfterVisits, g_uGateBagStacksAfterVisits);
+			g_bGateBleedSampled = true;
+
+			g_eGatePhase = GatePhase::CloseMenu;
+			g_iGatePhaseFrames = 0;
+			return true;
+		}
+
+		case GatePhase::CloseMenu:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving while closing the menu");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				g_bGateMenuClosedAfterVisits = true;
+				g_eGatePhase = GatePhase::TalkPush;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (g_iGatePhaseFrames > iGATE_CLOSE_DEADLINE)
+			{
+				FailGate("the menu never closed after the Escape edges");
+				return false;
+			}
+			if ((g_iGatePhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+			}
+			return true;
+		}
+
+		case GatePhase::TalkPush:
+		{
+			// The NPC seam, raised over the now-EMPTY stack -- exactly what an S6 item 3
+			// ZM_Interactable does after the player has been through the pause menu.
+			if (g_iGatePhaseFrames == 1)
+			{
+				const char* aszLines[2] = { szDLG_LINE_0, szDLG_LINE_1 };
+				g_bGateTalkPushed = ZM_UI_MenuStack::TryPushDialogue(aszLines, 2u);
+				if (!g_bGateTalkPushed)
+				{
+					FailGate("TryPushDialogue was refused after the menu round trips");
+					return false;
+				}
+				return true;
+			}
+			if (g_iGatePhaseFrames < iGATE_SETTLE_FRAME)
+			{
+				return true;
+			}
+
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving after the talk push");
+				return false;
+			}
+			g_eGateTopWhileTalking = (u_int)pxMenu->GetTopScreen();
+
+			bool bEnabled = true;
+			if (ReadActivePlayerMovementEnabled(bEnabled))
+			{
+				g_bGateTalkFrozen = !bEnabled;
+			}
+			if (g_eGateTopWhileTalking != (u_int)ZM_MENU_SCREEN_DIALOGUE)
+			{
+				FailGate("the DIALOGUE screen never came up after TryPushDialogue");
+				return false;
+			}
+
+			g_eGatePhase = GatePhase::TalkRead;
+			g_iGatePhaseFrames = 0;
+			return true;
+		}
+
+		case GatePhase::TalkRead:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving while reading the talk");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				g_bGateTalkClosed = true;
+
+				bool bEnabled = false;
+				if (ReadActivePlayerMovementEnabled(bEnabled))
+				{
+					g_bGateTalkMovementReenabled = bEnabled;
+				}
+
+				g_eGatePhase = GatePhase::ShopOpen;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (g_iGatePhaseFrames > iGATE_READ_DEADLINE)
+			{
+				FailGate("the conversation never closed after the Enter edges");
+				return false;
+			}
+			if ((g_iGatePhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			}
+			return true;
+		}
+
+		case GatePhase::ShopOpen:
+		{
+			if (g_iGatePhaseFrames == 1)
+			{
+				g_bGateShopOpened = ZM_UI_MenuStack::TryOpenShop(aeSHOP_STOCK, uSHOP_STOCK_COUNT);
+				if (!g_bGateShopOpened)
+				{
+					FailGate("TryOpenShop was refused after the conversation");
+					return false;
+				}
+				return true;
+			}
+			if (g_iGatePhaseFrames < iGATE_SETTLE_FRAME)
+			{
+				return true;
+			}
+
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving after the shop raise");
+				return false;
+			}
+			g_eGateTopWhileShopping = (u_int)pxMenu->GetTopScreen();
+			if (g_eGateTopWhileShopping != (u_int)ZM_MENU_SCREEN_SHOP)
+			{
+				FailGate("the SHOP screen never came up after TryOpenShop");
+				return false;
+			}
+
+			g_eGatePhase = GatePhase::ShopWalk;
+			g_iGatePhaseFrames = 0;
+			return true;
+		}
+
+		case GatePhase::ShopWalk:
+		{
+			// Spaced DOWN edges off the focused row onto the CONFIRM control, on the ENGINE
+			// spatial search (nothing on this screen carries explicit navigation links).
+			// Real key edges, deadline-guarded: CONFIRM is the only element that moves money.
+			Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+			if (pxUI == nullptr)
+			{
+				FailGate("the ZM_MenuRoot UI component stopped resolving while walking to Confirm");
+				return false;
+			}
+			Zenith_UI::Zenith_UIElement* pxFocused = pxUI->GetCanvas().GetFocusedElement();
+			if (pxFocused != nullptr && pxFocused->GetName() == ZM_UI_Shop::szCONFIRM_NAME)
+			{
+				g_bGateShopReachedConfirm = true;
+				g_strGateShopFocusName = pxFocused->GetName();
+				g_eGatePhase = GatePhase::ShopBuy;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (g_iGatePhaseFrames > iGATE_SHOPWALK_DEADLINE)
+			{
+				g_strGateShopFocusName = (pxFocused != nullptr) ? pxFocused->GetName() : std::string();
+				FailGate("the DOWN edges never walked the focus onto the shop's Confirm control");
+				return false;
+			}
+			if ((g_iGatePhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_DOWN);
+			}
+			return true;
+		}
+
+		case GatePhase::ShopBuy:
+		{
+			if (g_iGatePhaseFrames == iGATE_PRESS_FRAME)
+			{
+				ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+				if (pxMenu == nullptr)
+				{
+					FailGate("the ZM_UI_MenuStack singleton stopped resolving before the purchase");
+					return false;
+				}
+				const ZM_UI_Shop& xShop = pxMenu->GetShopScreen();
+				g_uGateShopQuantity = xShop.GetQuantity();
+
+				ZM_GameState* pxState = nullptr;
+				if (!ZM_GameStateManager::TryGetGameState(pxState) || pxState == nullptr)
+				{
+					FailGate("the live game state did not resolve before the purchase");
+					return false;
+				}
+				// The FLAT entry index resolved BY THE SCREEN -- never the raw cursor, which is
+				// a PAGE-RELATIVE row.
+				const int iEntry = xShop.GetSelectedEntryIndex(pxState->m_xBag);
+				const ZM_ITEM_ID eItem = (iEntry >= 0)
+					? xShop.GetInventoryItem((u_int)iEntry)
+					: ZM_ITEM_NONE;
+				g_eGateShopBoughtItem = (u_int)eItem;
+				g_uGateShopPrice = ZM_ShopBuyPrice(eItem);   // the TABLE price, never a literal
+				if (!ReadShopState(eItem, g_uGateShopMoneyBefore, g_uGateShopHeldBefore))
+				{
+					FailGate("the live game state did not resolve before the purchase");
+					return false;
+				}
+
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iGatePhaseFrames < iGATE_SETTLE_FRAME)
+			{
+				return true;
+			}
+
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving after the purchase");
+				return false;
+			}
+			// BOTH: m_uLastResult is initialised to (and Reset() restores) ZM_SHOP_OK, so an
+			// Enter that dispatched NO transaction at all still reads OK. HasResult() is the
+			// only bit that separates the two.
+			g_eGateShopResult = (u_int)pxMenu->GetShopScreen().GetLastResult();
+			g_bGateShopReportedResult = pxMenu->GetShopScreen().HasResult();
+			g_bGateShopStateRead = ReadShopState(
+				(ZM_ITEM_ID)g_eGateShopBoughtItem, g_uGateShopMoneyAfter, g_uGateShopHeldAfter);
+			if (!g_bGateShopStateRead)
+			{
+				FailGate("the live game state did not resolve after the purchase");
+				return false;
+			}
+
+			g_eGatePhase = GatePhase::ShopClose;
+			g_iGatePhaseFrames = 0;
+			return true;
+		}
+
+		case GatePhase::ShopClose:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving while closing the shop");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				g_bGateShopClosed = true;
+				g_eGatePhase = GatePhase::HealDamage;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (g_iGatePhaseFrames > iGATE_CLOSE_DEADLINE)
+			{
+				FailGate("the shop never closed after the Escape edges");
+				return false;
+			}
+			if ((g_iGatePhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+			}
+			return true;
+		}
+
+		case GatePhase::HealDamage:
+		{
+			// A state-setter on the REAL party (no battle needed): the heal must be provably
+			// needed, or the "at full HP" assertion below would be vacuous.
+			if (!DamageLiveParty(g_uGateHealDamagedMembers))
+			{
+				FailGate("the LIVE party could not be damaged -- the heal gate would be vacuous");
+				return false;
+			}
+			g_xGatePartyDamaged = ReadLiveParty();
+
+			g_eGatePhase = GatePhase::HealOpen;
+			g_iGatePhaseFrames = 0;
+			return true;
+		}
+
+		case GatePhase::HealOpen:
+		{
+			if (g_iGatePhaseFrames == 1)
+			{
+				g_bGateHealOpened = ZM_UI_MenuStack::TryOpenCareCenterPrompt();
+				if (!g_bGateHealOpened)
+				{
+					// A prompt refused HERE is the bleed this test exists to catch: the shop and
+					// the conversation before it must have left the box completely clean.
+					FailGate("TryOpenCareCenterPrompt was refused after the shop -- a previous "
+						"screen left the dialogue box dirty");
+					return false;
+				}
+				return true;
+			}
+			if (g_iGatePhaseFrames < iGATE_SETTLE_FRAME)
+			{
+				return true;
+			}
+
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr || pxMenu->GetTopScreen() != ZM_MENU_SCREEN_DIALOGUE)
+			{
+				FailGate("the DIALOGUE screen never came up after TryOpenCareCenterPrompt");
+				return false;
+			}
+
+			g_eGatePhase = GatePhase::HealRead;
+			g_iGatePhaseFrames = 0;
+			return true;
+		}
+
+		case GatePhase::HealRead:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving while reading the prompt");
+				return false;
+			}
+			if (pxMenu->IsDialogueAwaitingChoice())
+			{
+				g_bGateHealAwaiting = true;
+				g_eGatePhase = GatePhase::HealWalkToNo;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				FailGate("the Care Center prompt CLOSED instead of awaiting an answer");
+				return false;
+			}
+			if (g_iGatePhaseFrames > iGATE_READ_DEADLINE)
+			{
+				FailGate("the Enter edges never read the prompt through to its question");
+				return false;
+			}
+			if ((g_iGatePhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			}
+			return true;
+		}
+
+		case GatePhase::HealWalkToNo:
+		{
+			// The focus is parked on Yes by default, so walking RIGHT to No and LEFT back
+			// again is what makes the confirm below a REAL keyboard answer rather than a
+			// press onto a focus nobody moved.
+			if (ReadMenuFocusName() == ZM_UI_DialogueBox::szNO_NAME)
+			{
+				g_bGateHealReachedNo = true;
+				g_eGatePhase = GatePhase::HealWalkToYes;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (g_iGatePhaseFrames > iGATE_WALK_DEADLINE)
+			{
+				FailGate("the RIGHT edges never walked the prompt focus onto the No button");
+				return false;
+			}
+			if ((g_iGatePhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_RIGHT);
+			}
+			return true;
+		}
+
+		case GatePhase::HealWalkToYes:
+		{
+			if (ReadMenuFocusName() == ZM_UI_DialogueBox::szYES_NAME)
+			{
+				g_bGateHealReturnedToYes = true;
+				g_eGatePhase = GatePhase::HealConfirm;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (g_iGatePhaseFrames > iGATE_WALK_DEADLINE)
+			{
+				FailGate("the LEFT edges never walked the prompt focus back onto the Yes button");
+				return false;
+			}
+			if ((g_iGatePhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_LEFT);
+			}
+			return true;
+		}
+
+		case GatePhase::HealConfirm:
+		{
+			if (g_iGatePhaseFrames == iGATE_PRESS_FRAME)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+			if (g_iGatePhaseFrames < iGATE_SETTLE_FRAME)
+			{
+				return true;
+			}
+
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving after the YES answer");
+				return false;
+			}
+			// The HOST latch, NOT GetDialogue().GetChoice(): resolving Reset()s the box and
+			// wipes the box-level answer inside this same OnUpdate, so it is unobservable.
+			g_eGateHealAnswer     = (u_int)pxMenu->GetLastDialogueAnswer();
+			g_xGatePartyAfterHeal = ReadLiveParty();
+
+			g_eGatePhase = GatePhase::HealFinish;
+			g_iGatePhaseFrames = 0;
+			return true;
+		}
+
+		case GatePhase::HealFinish:
+		{
+			// The YES leaves the healed CONFIRMATION line showing (a heal that changed
+			// something is never silent), so the box is read out exactly like any other
+			// conversation before the menu comes down.
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving after the heal");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				g_eGatePhase = GatePhase::FinalState;
+				g_iGatePhaseFrames = 0;
+				return true;
+			}
+			if (g_iGatePhaseFrames > iGATE_READ_DEADLINE)
+			{
+				FailGate("the answered Care Center prompt never closed");
+				return false;
+			}
+			if ((g_iGatePhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			}
+			return true;
+		}
+
+		case GatePhase::FinalState:
+		{
+			// One idle frame first, so a stale in-flight press cannot be what is sampled.
+			if (g_iGatePhaseFrames < 2)
+			{
+				return true;
+			}
+			ZM_UI_MenuStack* pxMenu = ResolveSingletonMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailGate("the ZM_UI_MenuStack singleton stopped resolving for the final state");
+				return false;
+			}
+			g_bGateFinalClosed  = !pxMenu->IsOpen();
+			g_uGateFinalDepth   = pxMenu->GetDepth();
+			g_bGateFinalFocusCleared = MenuFocusCleared();
+
+			bool bEnabled = false;
+			if (ReadActivePlayerMovementEnabled(bEnabled))
+			{
+				g_bGateFinalMovementEnabled = bEnabled;
+			}
+			g_bGateFinalSampled = true;
+
+			g_eGatePhase = GatePhase::Done;
+			return false;
+		}
+
+		case GatePhase::Done:
+			return false;
+		}
+		return false;
+	}
+
+	bool Verify_ZMS6UIGate()
+	{
+		bool bPassed = true;
+
+		if (g_bGateActive)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_S6UIGate] session: failed=%s (%s) movBefore=%s baseline(read=%s money=%u "
+				"items=%u stacks=%u) rootOpened=%s navProbe(down=%s up=%s)",
+				g_bGateFailed ? "true" : "false", g_szGateFailure,
+				g_bGateMovementEnabledBefore ? "true" : "false",
+				g_bGateEconomyBaselineRead ? "true" : "false",
+				g_uGateMoneyBaseline, g_uGateBagItemsBaseline, g_uGateBagStacksBaseline,
+				g_bGateRootOpened ? "true" : "false",
+				g_bGateProbeReachedLast ? "true" : "false",
+				g_bGateProbeReturnedToFirst ? "true" : "false");
+
+			for (u_int u = 0u; u < uGATE_VISIT_COUNT; ++u)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] visit %s: reachedEntry=%s screenOpened=%s panel(%s)=%s/%s "
+					"rootHiddenUnder=%s othersHidden=%s returnedToRoot=%s bag(read=%s page=%d "
+					"pocket=%u cursor=%d)",
+					axGATE_VISITS[u].m_szLabel,
+					g_axGateVisits[u].m_bReachedEntry ? "true" : "false",
+					g_axGateVisits[u].m_bScreenOpened ? "true" : "false",
+					axGATE_VISITS[u].m_szPanelName,
+					g_axGateVisits[u].m_bPanelFound ? "found" : "MISSING",
+					g_axGateVisits[u].m_bPanelVisible ? "visible" : "hidden",
+					g_axGateVisits[u].m_bRootHiddenUnder ? "true" : "false",
+					g_axGateVisits[u].m_bOthersHidden ? "true" : "false",
+					g_axGateVisits[u].m_bReturnedToRoot ? "true" : "false",
+					g_axGateVisits[u].m_bBagStateRead ? "true" : "false",
+					g_axGateVisits[u].m_iBagPage,
+					g_axGateVisits[u].m_eBagPocket,
+					g_axGateVisits[u].m_iBagCursor);
+			}
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_S6UIGate] bleed: sampled=%s depth=%u (want 1) top=%u (want ROOT=%u) "
+				"rootFocusIdx=%d (want >= 0) cursor=%d (want == rootFocusIdx) panels(read=%s "
+				"rootShown=%s subsHidden=%s) economy(read=%s money %u->%u items %u->%u stacks %u->%u) "
+				"menuClosed=%s",
+				g_bGateBleedSampled ? "true" : "false",
+				g_uGateDepthAfterVisits,
+				g_eGateTopAfterVisits, (u_int)ZM_MENU_SCREEN_ROOT,
+				g_iGateRootFocusAfterVisits,
+				g_iGateCursorAfterVisits,
+				g_bGateBleedPanelsRead ? "true" : "false",
+				g_bGateRootPanelShownAtRoot ? "true" : "false",
+				g_bGateSubPanelsHiddenAtRoot ? "true" : "false",
+				g_bGateEconomyAfterVisitsRead ? "true" : "false",
+				g_uGateMoneyBaseline, g_uGateMoneyAfterVisits,
+				g_uGateBagItemsBaseline, g_uGateBagItemsAfterVisits,
+				g_uGateBagStacksBaseline, g_uGateBagStacksAfterVisits,
+				g_bGateMenuClosedAfterVisits ? "true" : "false");
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_S6UIGate] talk(pushed=%s top=%u frozen=%s closed=%s movReenabled=%s) | "
+				"buy(opened=%s top=%u reachedConfirm=%s focus='%s' item=%u price=%u qty=%u "
+				"money %u->%u held %u->%u result=%u (want OK=%u) reported=%s closed=%s)",
+				g_bGateTalkPushed ? "true" : "false",
+				g_eGateTopWhileTalking,
+				g_bGateTalkFrozen ? "true" : "false",
+				g_bGateTalkClosed ? "true" : "false",
+				g_bGateTalkMovementReenabled ? "true" : "false",
+				g_bGateShopOpened ? "true" : "false",
+				g_eGateTopWhileShopping,
+				g_bGateShopReachedConfirm ? "true" : "false",
+				g_strGateShopFocusName.c_str(),
+				g_eGateShopBoughtItem, g_uGateShopPrice, g_uGateShopQuantity,
+				g_uGateShopMoneyBefore, g_uGateShopMoneyAfter,
+				g_uGateShopHeldBefore, g_uGateShopHeldAfter,
+				g_eGateShopResult, (u_int)ZM_SHOP_OK,
+				g_bGateShopReportedResult ? "true" : "false",
+				g_bGateShopClosed ? "true" : "false");
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_S6UIGate] heal(damaged=%u leadHp %u/%u full=%u/%u opened=%s awaiting=%s "
+				"reachedNo=%s backToYes=%s answer=%u (want YES=%u) after(leadHp %u/%u full=%u/%u)) | "
+				"final(sampled=%s closed=%s depth=%u movable=%s focusCleared=%s)",
+				g_uGateHealDamagedMembers,
+				g_xGatePartyDamaged.m_uLeadCurrentHp, g_xGatePartyDamaged.m_uLeadMaxHp,
+				g_xGatePartyDamaged.m_uFullHpMembers, g_xGatePartyDamaged.m_uCount,
+				g_bGateHealOpened ? "true" : "false",
+				g_bGateHealAwaiting ? "true" : "false",
+				g_bGateHealReachedNo ? "true" : "false",
+				g_bGateHealReturnedToYes ? "true" : "false",
+				g_eGateHealAnswer, (u_int)ZM_DIALOGUE_CHOICE_YES,
+				g_xGatePartyAfterHeal.m_uLeadCurrentHp, g_xGatePartyAfterHeal.m_uLeadMaxHp,
+				g_xGatePartyAfterHeal.m_uFullHpMembers, g_xGatePartyAfterHeal.m_uCount,
+				g_bGateFinalSampled ? "true" : "false",
+				g_bGateFinalClosed ? "true" : "false",
+				g_uGateFinalDepth,
+				g_bGateFinalMovementEnabled ? "true" : "false",
+				g_bGateFinalFocusCleared ? "true" : "false");
+
+			if (g_bGateFailed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST, "[ZM_S6UIGate] %s", g_szGateFailure);
+				bPassed = false;
+			}
+
+			// --- the baselines must be meaningful ---
+			if (!g_bGateMovementEnabledBefore)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the player was not movable before the session -- every freeze / "
+					"unfreeze assertion would be vacuous");
+				bPassed = false;
+			}
+			if (!g_bGateEconomyBaselineRead)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the economy baseline was never read -- the 'browsing changes "
+					"nothing' assertion would be vacuous");
+				bPassed = false;
+			}
+
+			// --- phase 1: open every menu VIA FOCUS NAVIGATION ---
+			if (!g_bGateRootOpened)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the ROOT pause menu never opened on the M press");
+				bPassed = false;
+			}
+			if (!g_bGateProbeReachedLast || !g_bGateProbeReturnedToFirst)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the ROOT focus could not be walked down to the last entry and back "
+					"up again (down=%s up=%s) -- one direction of the engine focus-nav is dead, and "
+					"every screen below is only reachable by luck",
+					g_bGateProbeReachedLast ? "true" : "false",
+					g_bGateProbeReturnedToFirst ? "true" : "false");
+				bPassed = false;
+			}
+			for (u_int u = 0u; u < uGATE_VISIT_COUNT; ++u)
+			{
+				const GateVisitResult& xResult = g_axGateVisits[u];
+				if (!xResult.m_bReachedEntry || !xResult.m_bScreenOpened
+					|| !xResult.m_bPanelFound || !xResult.m_bPanelVisible
+					|| !xResult.m_bReturnedToRoot)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_S6UIGate] the %s round trip did not complete (reachedEntry=%s "
+						"screenOpened=%s panel '%s' found=%s visible=%s returnedToRoot=%s) -- the "
+						"screen is not reachable + leavable by keyboard alone in a live session",
+						axGATE_VISITS[u].m_szLabel,
+						xResult.m_bReachedEntry ? "true" : "false",
+						xResult.m_bScreenOpened ? "true" : "false",
+						axGATE_VISITS[u].m_szPanelName,
+						xResult.m_bPanelFound ? "true" : "false",
+						xResult.m_bPanelVisible ? "true" : "false",
+						xResult.m_bReturnedToRoot ? "true" : "false");
+					bPassed = false;
+				}
+				// The bleed-THROUGH half of the same visit, kept separate so the failure text
+				// names what was still on screen rather than burying it in the round-trip line.
+				if (!xResult.m_bRootHiddenUnder || !xResult.m_bOthersHidden)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_S6UIGate] while %s was up, something UNDER it was still drawn "
+						"(rootHiddenUnder=%s othersHidden=%s) -- the ROOT panel + its entries and "
+						"every other screen's panel must be HIDDEN, not merely covered (ZM-D-112 "
+						"bleed-through); no per-screen test can see this, they open one screen each",
+						axGATE_VISITS[u].m_szLabel,
+						xResult.m_bRootHiddenUnder ? "true" : "false",
+						xResult.m_bOthersHidden ? "true" : "false");
+					bPassed = false;
+				}
+			}
+
+			// The REVISIT: the bag was left, two other screens were used, and it was opened
+			// again -- all without leaving the menu, so nothing Reset() it. Its page / pocket /
+			// cursor must come back EXACTLY as they were left; a differing value means an
+			// unrelated screen reached into it (or the bag rebuilt itself off stale state).
+			{
+				const GateVisitResult& xFirst = g_axGateVisits[uGATE_BAG_VISIT];
+				const GateVisitResult& xAgain = g_axGateVisits[uGATE_BAG_REVISIT];
+				if (!xFirst.m_bBagStateRead || !xAgain.m_bBagStateRead
+					|| xAgain.m_iBagPage != xFirst.m_iBagPage
+					|| xAgain.m_eBagPocket != xFirst.m_eBagPocket
+					|| xAgain.m_iBagCursor != xFirst.m_iBagCursor)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_S6UIGate] re-opening the Bag in the SAME session did not restore its "
+						"state (read %s/%s page %d->%d pocket %u->%u cursor %d->%d) -- a page or "
+						"cursor left set by another screen is the first cross-screen bleed class",
+						xFirst.m_bBagStateRead ? "true" : "false",
+						xAgain.m_bBagStateRead ? "true" : "false",
+						xFirst.m_iBagPage, xAgain.m_iBagPage,
+						xFirst.m_eBagPocket, xAgain.m_eBagPocket,
+						xFirst.m_iBagCursor, xAgain.m_iBagCursor);
+					bPassed = false;
+				}
+			}
+
+			// --- phase 2: NOTHING bled between the screens ---
+			if (!g_bGateBleedSampled)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the cross-screen bleed check never ran");
+				bPassed = false;
+			}
+			else
+			{
+				if (g_uGateDepthAfterVisits != 1u
+					|| g_eGateTopAfterVisits != (u_int)ZM_MENU_SCREEN_ROOT)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_S6UIGate] after the screen round trips the stack was depth %u with top "
+						"%u, expected depth 1 / ROOT %u -- a screen leaked a push",
+						g_uGateDepthAfterVisits, g_eGateTopAfterVisits,
+						(u_int)ZM_MENU_SCREEN_ROOT);
+					bPassed = false;
+				}
+				if (g_iGateRootFocusAfterVisits < 0)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_S6UIGate] the ROOT entry elements never regained the canvas focus after "
+						"the round trips (root index %d) -- ROOT is back on top but nothing the arrows "
+						"can drive is focused",
+						g_iGateRootFocusAfterVisits);
+					bPassed = false;
+				}
+				// The cursor MIRROR, which the focus read above cannot stand in for:
+				// PresentTopScreen's ROOT arm re-parks the focus onto Menu_RootParty every frame
+				// ROOT is top holding a non-ROOT element, so the focus effectively cannot be left
+				// stranded -- but m_iCursor is a separate field, and a screen that left it holding
+				// its own row would point the pause menu at the wrong entry.
+				if (g_iGateCursorAfterVisits != g_iGateRootFocusAfterVisits)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_S6UIGate] the cursor mirror read %d but the focused ROOT entry is %d -- a "
+						"sub-screen left its own row in the shared cursor",
+						g_iGateCursorAfterVisits, g_iGateRootFocusAfterVisits);
+					bPassed = false;
+				}
+				// ...and NOTHING from the screens that were left is still on screen behind ROOT.
+				if (!g_bGateBleedPanelsRead || !g_bGateRootPanelShownAtRoot
+					|| !g_bGateSubPanelsHiddenAtRoot)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_S6UIGate] back at ROOT the panels read=%s rootShown=%s subsHidden=%s -- "
+						"every screen that was escaped must have HIDDEN its panel, and the ROOT panel "
+						"must be back (a sub-screen panel still drawn under the pause list is the "
+						"ZM-D-112 bleed-through class)",
+						g_bGateBleedPanelsRead ? "true" : "false",
+						g_bGateRootPanelShownAtRoot ? "true" : "false",
+						g_bGateSubPanelsHiddenAtRoot ? "true" : "false");
+					bPassed = false;
+				}
+				if (!g_bGateEconomyAfterVisitsRead
+					|| g_uGateMoneyAfterVisits != g_uGateMoneyBaseline
+					|| g_uGateBagItemsAfterVisits != g_uGateBagItemsBaseline
+					|| g_uGateBagStacksAfterVisits != g_uGateBagStacksBaseline)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_S6UIGate] browsing the menus MOVED the economy (read=%s money %u->%u "
+						"items %u->%u stacks %u->%u) -- opening a party / bag / dex screen must be "
+						"read-only over the live game state",
+						g_bGateEconomyAfterVisitsRead ? "true" : "false",
+						g_uGateMoneyBaseline, g_uGateMoneyAfterVisits,
+						g_uGateBagItemsBaseline, g_uGateBagItemsAfterVisits,
+						g_uGateBagStacksBaseline, g_uGateBagStacksAfterVisits);
+					bPassed = false;
+				}
+			}
+			if (!g_bGateMenuClosedAfterVisits)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the pause menu never closed after the round trips");
+				bPassed = false;
+			}
+
+			// --- phase 3: talk ---
+			if (!g_bGateTalkPushed
+				|| g_eGateTopWhileTalking != (u_int)ZM_MENU_SCREEN_DIALOGUE
+				|| !g_bGateTalkFrozen)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the conversation did not come up over the closed menu (pushed=%s "
+					"top=%u want DIALOGUE %u frozen=%s)",
+					g_bGateTalkPushed ? "true" : "false",
+					g_eGateTopWhileTalking, (u_int)ZM_MENU_SCREEN_DIALOGUE,
+					g_bGateTalkFrozen ? "true" : "false");
+				bPassed = false;
+			}
+			if (!g_bGateTalkClosed || !g_bGateTalkMovementReenabled)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] after the conversation closed=%s movement re-enabled=%s -- a talk "
+					"that leaves the player frozen is a soft-lock",
+					g_bGateTalkClosed ? "true" : "false",
+					g_bGateTalkMovementReenabled ? "true" : "false");
+				bPassed = false;
+			}
+
+			// --- phase 4: buy ---
+			if (!g_bGateShopOpened
+				|| g_eGateTopWhileShopping != (u_int)ZM_MENU_SCREEN_SHOP
+				|| !g_bGateShopReachedConfirm)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the mart did not set up (opened=%s top=%u want SHOP %u "
+					"reachedConfirm=%s, focus stalled on '%s')",
+					g_bGateShopOpened ? "true" : "false",
+					g_eGateTopWhileShopping, (u_int)ZM_MENU_SCREEN_SHOP,
+					g_bGateShopReachedConfirm ? "true" : "false",
+					g_strGateShopFocusName.c_str());
+				bPassed = false;
+			}
+			if (g_eGateShopBoughtItem == (u_int)ZM_ITEM_NONE
+				|| g_uGateShopPrice == 0u || g_uGateShopQuantity == 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the purchase had nothing to anchor on (item=%u price=%u qty=%u) -- "
+					"the money / bag deltas below would be vacuous",
+					g_eGateShopBoughtItem, g_uGateShopPrice, g_uGateShopQuantity);
+				bPassed = false;
+			}
+			else
+			{
+				// BOTH halves: ZM_UI_Shop::m_uLastResult starts life as ZM_SHOP_OK (and Reset()
+				// puts it back), so the code alone cannot distinguish a successful purchase from
+				// an Enter that was never a transaction at all. HasResult() is what says a
+				// transaction happened (sibling parity with ZM_ShopScreen_Test).
+				if (!g_bGateShopReportedResult || g_eGateShopResult != (u_int)ZM_SHOP_OK)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_S6UIGate] the purchase reported result %u (reported=%s), expected "
+						"ZM_SHOP_OK %u from a real transaction",
+						g_eGateShopResult, g_bGateShopReportedResult ? "true" : "false",
+						(u_int)ZM_SHOP_OK);
+					bPassed = false;
+				}
+				const u_int uExpectedSpend = g_uGateShopPrice * g_uGateShopQuantity;
+				if (!g_bGateShopStateRead
+					|| g_uGateShopMoneyBefore < uExpectedSpend
+					|| g_uGateShopMoneyAfter != (g_uGateShopMoneyBefore - uExpectedSpend))
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_S6UIGate] the purse read %u -> %u, expected a fall of exactly "
+						"price %u x qty %u == %u",
+						g_uGateShopMoneyBefore, g_uGateShopMoneyAfter,
+						g_uGateShopPrice, g_uGateShopQuantity, uExpectedSpend);
+					bPassed = false;
+				}
+				if (g_uGateShopHeldAfter != (g_uGateShopHeldBefore + g_uGateShopQuantity))
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_S6UIGate] the bag held %u -> %u of item %u, expected a rise of exactly "
+						"the quantity %u",
+						g_uGateShopHeldBefore, g_uGateShopHeldAfter,
+						g_eGateShopBoughtItem, g_uGateShopQuantity);
+					bPassed = false;
+				}
+			}
+			if (!g_bGateShopClosed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the mart never closed after the Escape edges");
+				bPassed = false;
+			}
+
+			// --- phase 5: heal ---
+			if (g_uGateHealDamagedMembers == 0u
+				|| !g_xGatePartyDamaged.m_bResolved
+				|| g_xGatePartyDamaged.m_uCount == 0u
+				|| g_xGatePartyDamaged.m_uFullHpMembers != 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the LIVE party was not damaged before the Care Center (damaged=%u "
+					"resolved=%s count=%u atFullHp=%u) -- the heal assertion would pass on a party "
+					"that never needed healing",
+					g_uGateHealDamagedMembers, g_xGatePartyDamaged.m_bResolved ? "true" : "false",
+					g_xGatePartyDamaged.m_uCount, g_xGatePartyDamaged.m_uFullHpMembers);
+				bPassed = false;
+			}
+			if (!g_bGateHealOpened || !g_bGateHealAwaiting
+				|| !g_bGateHealReachedNo || !g_bGateHealReturnedToYes)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the Care Center prompt did not set up (raised=%s awaiting=%s "
+					"reachedNo=%s backToYes=%s) -- the YES below would not be a keyboard answer",
+					g_bGateHealOpened ? "true" : "false",
+					g_bGateHealAwaiting ? "true" : "false",
+					g_bGateHealReachedNo ? "true" : "false",
+					g_bGateHealReturnedToYes ? "true" : "false");
+				bPassed = false;
+			}
+			if (g_eGateHealAnswer != (u_int)ZM_DIALOGUE_CHOICE_YES)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the latched answer was %u, expected YES %u",
+					g_eGateHealAnswer, (u_int)ZM_DIALOGUE_CHOICE_YES);
+				bPassed = false;
+			}
+			if (!g_xGatePartyAfterHeal.m_bResolved
+				|| g_xGatePartyAfterHeal.m_uCount == 0u
+				|| g_xGatePartyAfterHeal.m_uFullHpMembers != g_xGatePartyAfterHeal.m_uCount)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] after the YES the LIVE party had %u of %u members at full HP (lead "
+					"%u/%u) -- the answer did not heal the real ZM_GameState",
+					g_xGatePartyAfterHeal.m_uFullHpMembers, g_xGatePartyAfterHeal.m_uCount,
+					g_xGatePartyAfterHeal.m_uLeadCurrentHp, g_xGatePartyAfterHeal.m_uLeadMaxHp);
+				bPassed = false;
+			}
+
+			// --- phase 6: the session ends CLEAN ---
+			if (!g_bGateFinalSampled)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the final-state check never ran");
+				bPassed = false;
+			}
+			else if (!g_bGateFinalClosed || g_uGateFinalDepth != 0u
+				|| !g_bGateFinalMovementEnabled || !g_bGateFinalFocusCleared)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the session did not end clean (closed=%s depth=%u want 0 "
+					"movable=%s focusCleared=%s) -- after a full pass over the S6 surface the player "
+					"must be left free with an idle canvas",
+					g_bGateFinalClosed ? "true" : "false",
+					g_uGateFinalDepth,
+					g_bGateFinalMovementEnabled ? "true" : "false",
+					g_bGateFinalFocusCleared ? "true" : "false");
+				bPassed = false;
+			}
+		}
+
+		// Always tear down, in order (all guarded), exactly like the sibling tests. This
+		// test spent money and healed the persistent GameState; the harness's between-tests
+		// hook re-seeds the starter, so nothing leaks into the next test.
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
+		Zenith_InputSimulator::ClearFixedDt();
+		if (g_bGateActive)
+		{
+			g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);   // FrontEnd
+		}
+		Zenith_InputSimulator::ResetAllInputState();
+		g_bGateActive = false;
+
+		return bPassed || !g_bGatePrereqsPresent;
+	}
 }
 
 static const Zenith_AutomatedTest g_xZMMenuOpenCloseTest = {
@@ -6010,9 +7805,28 @@ static const Zenith_AutomatedTest g_xZMCareCenterHealTest = {
 	&Setup_ZMCareCenterHeal,
 	&Step_ZMCareCenterHeal,
 	&Verify_ZMCareCenterHeal,
-	/* maxFrames */ 2000,   // ready window + TWO full prompts (raise + read + walk + answer)
+	/* maxFrames */ 2200,   // ready window + TWO full prompts (raise + read + walk + answer)
+	                       //   + the SC9 healed-confirmation line the YES now leaves behind
 	true /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMCareCenterHealTest);
+
+static const Zenith_AutomatedTest g_xZMS6UIGateTest = {
+	"ZM_S6UIGate_Test",
+	&Setup_ZMS6UIGate,
+	&Step_ZMS6UIGate,
+	&Verify_ZMS6UIGate,
+	// Sized from the phase deadlines, summed worst case (all at the fixed 1/30 dt):
+	//   ready 420 + baseline 1 + open 120 + the two nav probes 2x160 + FOUR screen visits
+	//   (Party / Bag / Dex / Bag AGAIN -- the revisit is what makes a surviving page or
+	//   cursor observable) 4x(walk 160 + confirm 6 + escape 6) + bleed 1 + close 120 +
+	//   talk (6 + 120) + shop (6 + 200 + 6 + 120) + heal (1 + 6 + 120 + 160 + 160 + 6 +
+	//   120) + final 1 == ~2700.
+	// 3400 leaves ~25% headroom -- and NO phase may be reached twice, because the whole
+	// flow is ONE session with no scene reload between phases.
+	/* maxFrames */ 3400,
+	true /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMS6UIGateTest);
 
 #endif // ZENITH_INPUT_SIMULATOR
