@@ -10,6 +10,24 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-20-001 -- S6 item 3 defers BOTH behaviour graphs and the navmesh to S7 (mechanism change, not a scope change)
+
+**Question:** the Roadmap line for S6 item 3 reads *"`ZM_Interactable` + NPC graphs via `ZM_GraphAuthoring`; `ZM_NpcWalker` (navmesh wanderers)"*. The decomposition pass ruled that **both** named mechanisms are deferred to S7, while the item's actual payload -- a player walks up to an NPC, presses E, and gets dialogue / a shop / a Care Center heal -- ships in full at S6. Surfaced for ratification or override, because the shipped code will not match the Roadmap's literal wording until SC9 amends it.
+
+**Best-guess rulings taken (implementation PROCEEDS on these -- see ZM-D-123 for the full evidence):**
+
+1. **Behaviour graphs deferred; interact dispatch is plain C++.** Zenithmon has zero lines of graph code today; the payload is `NPC role -> one of three already-shipped raise statics`, i.e. a closed 3-way enum that would cost ~300-700 lines of node classes plus a registration hook to express as a graph, with no designer to benefit. A `.bgraph` would also add a silent-failure axis: `Assets/` is git-ignored, so a cold checkout resolves the graph slot *unresolved* -- no crash, no log, a mute NPC. ZM-D-010 already scopes graphs to "glue only (menu flow, NPC scripted events, cutscene beats)", and a fixed 3-way dispatch is not that. Graphs earn their keep at the S7 trainer beat (sight -> freeze -> approach -> dialogue -> battle), which genuinely branches and carries state.
+   **Cost if wrong:** S7 pays the first-graph tax plus converting a 3-arm switch into node dispatch -- roughly one additive sub-commit. Every existing test is unaffected, because they assert screen state rather than how the raise happened. A single `Interact()` dispatch function is kept as the latent seam.
+
+2. **Navmesh deferred; the wanderer is a deterministic 2-waypoint patrol.** `Zenith_AINavGeometry::GenerateFromScene` collects only `RIGIDBODY_TYPE_STATIC` colliders and models each as a box OBB, so Dawnmere's untransformed terrain collider degenerates to a 1 m cube at the origin: the generated mesh would contain roofs and pillar caps but **no ground**, with the player spawning off-mesh. That is a missing engine feature, and fixing it is an ENGINE change -> 4-game cross-regression + a `run_unit_gate.ps1` baseline bump, which is grossly disproportionate for a town pedestrian. The generator additionally clamps to a 1024x1024 voxel grid against Dawnmere's 1024 m domain, forcing cells coarser than the 0.8 m player capsule, and `.znavmesh` file I/O has zero in-repo callers. The S6 gate contains no clause that NPC motion helps pass.
+   **Cost if wrong:** ~120 lines of pure state machine plus ~15 units are superseded and deleted at S7. The `ZM_Interactable` interface, the NPC data table, all four walk-up tests and the consolidated gate are unaffected, because the walker sits behind `SetWanderEnabled(bool)` and a per-frame velocity write.
+
+**Why the loop did not stop for this:** `Scope.md` Section 4 governs what SHIPS -- "NPC wanderers exist and are interactable" -- and that is unchanged; only the mechanism differs. Both rulings are logged with their engine evidence and both are additive to reverse.
+
+**Status:** asked 2026-07-20 at the start of S6 item 3. Implementation proceeds under these rulings. If the user overrides either, the correction lands as its own additive S7 sub-commit rather than a rework.
+
+---
+
 ### [OPEN] Q-2026-07-18-001 -- S5 item 5 scoping rulings (persistent GameState + catch/exp/faint/whiteout)
 
 **Question:** five FOUNDATIONAL scope boundaries for S5 item 5 ("Catch / exp / faint / whiteout applied to GameState"), from the decomposition pass (durable plan at `Build/artifacts/zm_s5_item5_plan/plan.md`). Item 5 introduces the FIRST persistent player GameState/party (item 4 used a discarded placeholder), so these calls set the shape a lot of later work builds on -- surfaced for ratification/override before the persistence layer is authored on them.

@@ -897,6 +897,24 @@ void ZM_UI_MenuStack::ResetRuntimeStateForTests()
 	}
 }
 
+bool ZM_UI_MenuStack::IsMenuOpen()
+{
+	// Same resolve-then-ask shape as the Try* seams. An unresolved singleton is a
+	// plain FALSE, never an assert: headless unit boots and the FrontEnd have no
+	// menu entity at all, and "there is no menu, so no menu is open" is the honest
+	// answer for the interaction gate to act on.
+	Zenith_EntityID xEntityID = INVALID_ENTITY_ID;
+	if (!TryGetUniqueSingletonEntityID(xEntityID))
+	{
+		return false;
+	}
+	Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xEntityID);
+	const ZM_UI_MenuStack* pxMenu = xEntity.IsValid()
+		? xEntity.TryGetComponent<ZM_UI_MenuStack>()
+		: nullptr;
+	return pxMenu != nullptr && pxMenu->IsOpen();
+}
+
 // ---- PURE decision surface (unit-tested) -----------------------------------
 
 bool ZM_UI_MenuStack::ShouldOpenMenu(bool bMenuKeyPressed, bool bAlreadyOpen,

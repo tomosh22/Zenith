@@ -247,6 +247,12 @@ public:
 	// no-op when no singleton exists. Called from windowed-test teardown so a batched
 	// test cannot inherit an open menu from a previous (possibly failed) test.
 	static void ResetRuntimeStateForTests();
+	// Is the menu (any screen, including DIALOGUE) up on the live singleton? FALSE
+	// when no singleton resolves -- headless units and FrontEnd-less contexts must
+	// get a plain "no", never an assert. The static counterpart of the instance
+	// IsOpen() above, added by S6 item 3 SC1 so the interaction gate can ask the
+	// question from a free context without hand-rolling the resolve.
+	static bool IsMenuOpen();
 
 	// ---- PURE decision surface (no scene / graphics -- unit-tested verbatim) ----
 
@@ -258,6 +264,12 @@ public:
 	// A scene kind the pause menu may open over: everything except the title screen
 	// (FRONTEND) and the additive battle scene (BATTLE).
 	static bool IsOverworldSceneKind(ZM_SCENE_KIND eKind);
+	// True iff the active scene is an overworld the menu may open over. NOT pure --
+	// it reads the live scene table -- but it touches no instance state, so it is a
+	// plain static. PUBLIC since S6 item 3 SC1: the interaction gate asks the SAME
+	// question, and duplicating the build-index -> scene -> kind resolve in
+	// interaction code is exactly how the two would drift apart.
+	static bool IsActiveSceneOverworld();
 	// Map a confirmed ROOT element name to its action (nullptr / unknown -> NONE).
 	static ZM_MENU_ACTION ResolveRootAction(const char* szFocusedElementName);
 	// The authored element name for a ROOT item (the ZM_ConfigureMenuRoot contract).
@@ -308,8 +320,6 @@ private:
 	// own string, so it is only valid for the duration of the dispatching call -- which
 	// is exactly how every by-name dispatch site uses it.
 	const char* ResolveFocusedElementName() const;
-	// True iff the active scene is an overworld the menu may open over.
-	static bool IsActiveSceneOverworld();
 
 	static Zenith_EntityID s_xSingletonEntityID;
 

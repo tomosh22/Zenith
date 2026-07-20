@@ -231,3 +231,24 @@ ZENITH_TEST(ZM_MenuStack, ScreenEnum_NoneIsZeroAndRootDistinct)
 	ZENITH_ASSERT_TRUE((u_int)ZM_MENU_SCREEN_ROOT < (u_int)ZM_MENU_SCREEN_COUNT,
 		"ROOT is within the enumerated range");
 }
+
+// ---- IsMenuOpen without a singleton (S6 item 3 SC1) -------------------------
+
+ZENITH_TEST(ZM_MenuStack, MenuStack_IsMenuOpenIsFalseWithoutSingleton)
+{
+	// Units run at boot, BEFORE any scene loads, so no ZM_UI_MenuStack singleton
+	// exists here. The static must answer a plain "no" rather than assert or
+	// dereference an unresolved singleton -- the interaction gate (SC2+) calls it
+	// from a free context that has no way to know whether a menu entity exists.
+	//
+	// Pin the PRECONDITION first: IsMenuOpen returns false on BOTH the unresolved
+	// branch and the resolved-but-closed branch, so without this the unit would
+	// still pass while exercising a completely different code path from the one it
+	// is named for -- and it would stop being able to fail for its stated reason.
+	Zenith_EntityID xUnresolved = INVALID_ENTITY_ID;
+	ZENITH_ASSERT_FALSE(ZM_UI_MenuStack::TryGetUniqueSingletonEntityID(xUnresolved),
+		"precondition: boot units run before any scene, so no ZM_MenuRoot may resolve");
+
+	ZENITH_ASSERT_FALSE(ZM_UI_MenuStack::IsMenuOpen(),
+		"IsMenuOpen must be a skip-safe false when no menu singleton resolves");
+}
