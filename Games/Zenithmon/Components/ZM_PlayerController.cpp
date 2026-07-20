@@ -71,6 +71,51 @@ void ZM_PlayerController::OnUpdate(float fDeltaTime)
 		return;
 	}
 
+	// -- NPC interaction (S6 item 3 SC4). PLACEMENT IS LOAD-BEARING. --
+	// AFTER the frozen early-out above: a frozen player must not start a new
+	// interaction, because whatever froze them (a menu, a dialogue, a warp fade)
+	// already owns the screen.
+	// AFTER the transform early-out immediately above: the candidate picker needs
+	// the player's POSITION and ROTATION.
+	// STRICTLY BEFORE the collider / physics early-out below, because interaction is
+	// pure geometry off the TRANSFORM and must not depend on the player having a
+	// live physics body: an NPC stays talkable on any frame where the capsule is
+	// missing, un-bodied, or the physics system is absent.
+	//
+	// ★ CORRECTION (measured 2026-07-20, do not re-introduce the old claim): an
+	// earlier version of this comment said early-out #4 "is precisely the headless
+	// case". That is FALSE. Zenith_Physics::HasActiveSimulation() is just
+	// `m_pxPhysicsSystem != nullptr`, and Zenith_Engine::Initialise calls
+	// Physics().Initialise() unconditionally -- headless included. Verified by
+	// mutation: moving this block below early-out #4 leaves ZM_NpcDispatch_Test
+	// GREEN, because the fixture player gets a valid body via EnsureAndConfigureBody
+	// and physics is live. The placement above is still correct on the principle
+	// stated above, but it is NOT load-bearing for headless coverage. What IS pinned
+	// by the test is that this call site EXISTS: deleting the Tick below turns
+	// ZM_NpcDispatch_Test RED (also verified by mutation).
+	{
+		Zenith_TransformComponent& xInteractionTransform =
+			m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+		Zenith_Maths::Vector3 xInteractionPosition(0.0f);
+		Zenith_Maths::Quat xInteractionRotation(1.0f, 0.0f, 0.0f, 0.0f);
+		xInteractionTransform.GetPosition(xInteractionPosition);
+		xInteractionTransform.GetRotation(xInteractionRotation);
+		m_xInteraction.Tick(xInteractionPosition, xInteractionRotation);
+	}
+
+	// A successful Interact() re-enters THIS controller: the raise seams call
+	// ZM_UI_MenuStack::FreezePlayer -> SetMovementEnabled(false). The early-out
+	// above only sampled the flag on ENTRY, so without re-honouring it here the
+	// rest of this frame would still read live input and drive the motor -- the
+	// player visibly drifts and turns for one frame as the dialogue box opens.
+	// This is the first code in OnUpdate that can flip the flag mid-function.
+	if (!m_bMovementEnabled)
+	{
+		StopHorizontalMotion();
+		DriveAnimatorSpeed();
+		return;
+	}
+
 	Zenith_ColliderComponent* pxCollider =
 		m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
 	Zenith_Physics& xPhysics = g_xEngine.Physics();

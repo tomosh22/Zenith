@@ -3,6 +3,7 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "Maths/Zenith_Maths.h"
 #include "ZenithECS/Zenith_Entity.h"
+#include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // owned BY VALUE (S6 item 3 SC4)
 
 // Velocity-driven overworld controller. The component owns no persistent
 // gameplay state: the serialized payload is version-only, while all movement,
@@ -76,6 +77,11 @@ public:
 	bool IsGrounded() const { return m_bGrounded; }
 	const Zenith_Maths::Vector3& GetMoveDirection() const { return m_xMoveDirection; }
 
+	// The NPC-interaction runtime this controller ticks each frame (S6 item 3 SC4).
+	// Exposed read-only so tests can poll its latches / its EvaluateForTests seam
+	// through the player they already hold.
+	const ZM_InteractionRuntime& GetInteractionRuntime() const { return m_xInteraction; }
+
 private:
 	static constexpr float fBODY_FRICTION = 0.8f;
 	static constexpr float fBODY_RESTITUTION = 0.0f;
@@ -104,6 +110,9 @@ private:
 	float GetCapsuleHalfExtent() const;
 
 	Zenith_Entity m_xParentEntity;
+	// Stateless by-value glue (S6 item 3 SC4): interaction rides on the controller
+	// rather than on its own component, so every authored Player gets it for free.
+	ZM_InteractionRuntime m_xInteraction;
 	Zenith_Maths::Vector3 m_xMoveDirection = Zenith_Maths::Vector3(0.0f);
 	float m_fRequestedSpeed = 0.0f;
 	bool m_bGrounded = false;

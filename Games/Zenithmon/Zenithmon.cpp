@@ -13,6 +13,7 @@
 #include "Zenithmon/Components/ZM_GameComponent.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_GameStateManager.h"
+#include "Zenithmon/Components/ZM_Interactable.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Components/ZM_TallGrassSystem.h"
@@ -20,6 +21,7 @@
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
+#include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // ResetRuntimeStateForTests (between-tests hook)
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // sz*_NAME element contract (dialogue authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Bag.h"           // sz*_NAME + RowElementName + geometry contract (bag authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Dex.h"           // sz*_NAME + geometry contract (dex authoring)
@@ -150,6 +152,7 @@ ZENITH_REGISTER_COMPONENT(ZM_TallGrassSystem, "ZM_TallGrassSystem", 109u)
 ZENITH_REGISTER_COMPONENT(ZM_BattleTransition, "ZM_BattleTransition", 110u)
 ZENITH_REGISTER_COMPONENT(ZM_BattleDirector, "ZM_BattleDirector", 111u)
 ZENITH_REGISTER_COMPONENT(ZM_UI_MenuStack, "ZM_UI_MenuStack", 112u)
+ZENITH_REGISTER_COMPONENT(ZM_Interactable, "ZM_Interactable", 113u)
 
 #ifdef ZENITH_TOOLS
 namespace
@@ -1066,6 +1069,7 @@ void Project_RegisterGameComponents()
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleTransition>("ZM_BattleTransition");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_BattleDirector>("ZM_BattleDirector");
 	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_UI_MenuStack>("ZM_UI_MenuStack");
+	Zenith_ComponentEditorRegistry::Get().RegisterComponent<ZM_Interactable>("ZM_Interactable");
 
 	// Runtime toggle for the battle presenter's instant-battle mode (collapses all
 	// presentation timing). Bound by reference to the ZM_BattleDirectorCore backing
@@ -1087,6 +1091,10 @@ void Project_RegisterGameComponents()
 	{
 		ZM_BattleTransition::ResetRuntimeStateForTests();
 		ZM_UI_MenuStack::ResetRuntimeStateForTests();
+		// The interaction latches are process-global (the runtime rides on whichever
+		// player exists), so a batched test must not inherit the previous test's
+		// interaction outcome or raise count.
+		ZM_InteractionRuntime::ResetRuntimeStateForTests();
 		ZM_GameStateManager::ResetRuntimeStateForTests();
 		// The persistent manager's GameState survives DontDestroyOnLoad across tests;
 		// re-seed the starter so a caught/levelled party cannot leak into the next test.
