@@ -177,18 +177,6 @@
 
 ---
 
-### [OPEN] Q-2026-07-09-003 -- Battle-scene visual isolation at the (0,-2000,0) offset is asserted, not yet proven
-
-**Question:** does the additive battle scene at world offset (0,-2000,0) actually render with zero overworld bleed-through?
-
-**Context:** the overworld<->battle transition is an ADDITIVE scene load + `SetScenePaused` on the overworld (a SINGLE reload would reset render systems + physics and re-stream terrain twice per encounter -- seconds of hitch at encounter frequency, disqualifying). The offset puts the arena outside grass LOD rings (200 m max) and terrain high-LOD streaming (1000 m), and the arena has an enclosing backdrop dome. But global render features (skybox, fog, IBL, shadows) are not per-scene, so isolation is asserted by design reasoning, not yet by pixels.
-
-**Best-guess action taken:** proceed with the additive design; the S5 gate includes a dedicated screenshot check for overworld bleed-through at the offset. Documented fallback: SINGLE load + world-state snapshot. Contingency beyond that (only if needed): a per-scene render visibility toggle in the engine. **Update (2026-07-17, item 3 SC5):** the additive battle path now CLEARS the overworld grass on entry (`ZM_BattleRoundTrip_Test` asserts `Grass().GetGeneratedInstanceCount() == 0` at IN_BATTLE) and regenerates it on resume, which strictly REDUCES the bleed-through surface (the tallest, most visible overworld geometry is gone during the battle). Still not pixel-proven -- global render features (skybox/fog/IBL/shadows) remain per-frame, not per-scene -- so this Q stays OPEN for the S5 SCREENSHOT gate.
-
-**Cost if wrong:** moderate. Falling back to SINGLE + snapshot re-introduces the transition hitch and adds a world-state snapshot/restore surface to test -- but the battle engine, director, HUD, and encounter logic are all transition-agnostic, so the rework is confined to the transition layer.
-
-**Status:** asked 2026-07-09. Verified or falsified at the S5 screenshot gate (see Roadmap.md).
-
 ### [OPEN] Q-2026-07-10-004 -- Unit-test verification gap in `zenith test` + baseline-ratchet churn
 
 **Question:** `zenith test Zenithmon --headless` (the loop's verify command) passes
@@ -199,7 +187,7 @@ should the CI unit gate keep the exact-count baseline or switch to a failures-on
 check?
 
 **Context:** found while landing S1's first unit tests. The exact-count baseline
-(1079 at the time of asking; **2313 today**) couples zm-tests to the engine unit count -- an unrelated engine PR that
+(1079 at the time of asking; **2319 today**) couples zm-tests to the engine unit count -- an unrelated engine PR that
 changes that count reddens zm-tests until the baseline is bumped. A failures-only
 check (assert the "Unit tests complete" line shows 0 failed, ignore the count)
 avoids the coupling but no longer catches a silently-vanishing `ZM_` test.
@@ -218,6 +206,23 @@ only symptom is an occasional one-line baseline bump caught immediately by red C
 ---
 
 ## Resolved
+
+### [RESOLVED] Q-2026-07-09-003 -- Battle-scene visual isolation at the (0,-2000,0) offset is asserted, not yet proven
+
+**Question:** does the additive battle scene at world offset (0,-2000,0) actually render with zero overworld bleed-through?
+
+**Context:** the overworld<->battle transition is an ADDITIVE scene load + `SetScenePaused` on the overworld (a SINGLE reload would reset render systems + physics and re-stream terrain twice per encounter -- seconds of hitch at encounter frequency, disqualifying). The offset puts the arena outside grass LOD rings (200 m max) and terrain high-LOD streaming (1000 m), and the arena has an enclosing backdrop dome. But global render features (skybox, fog, IBL, shadows) are not per-scene, so isolation is asserted by design reasoning, not yet by pixels.
+
+**Best-guess action taken:** proceed with the additive design; the S5 gate includes a dedicated screenshot check for overworld bleed-through at the offset. Documented fallback: SINGLE load + world-state snapshot. Contingency beyond that (only if needed): a per-scene render visibility toggle in the engine. **Update (2026-07-17, item 3 SC5):** the additive battle path now CLEARS the overworld grass on entry (`ZM_BattleRoundTrip_Test` asserts `Grass().GetGeneratedInstanceCount() == 0` at IN_BATTLE) and regenerates it on resume, which strictly REDUCES the bleed-through surface (the tallest, most visible overworld geometry is gone during the battle). Still not pixel-proven -- global render features (skybox/fog/IBL/shadows) remain per-frame, not per-scene -- so this Q stays OPEN for the S5 SCREENSHOT gate.
+
+**Cost if wrong:** moderate. Falling back to SINGLE + snapshot re-introduces the transition hitch and adds a world-state snapshot/restore surface to test -- but the battle engine, director, HUD, and encounter logic are all transition-agnostic, so the rework is confined to the transition layer.
+
+**Resolution (2026-07-18, ZM-D-112):** VERIFIED. The user reviewed the captured overworld/battle frames at the S5 screenshot gate and **APPROVED** -- there is no visible bleed-through at the offset, so the additive design stands and the documented SINGLE + world-state-snapshot fallback was not needed (it remains available if a future change reintroduces bleed). The S5 stage gate was signed off on that evidence.
+
+**Status:** RESOLVED 2026-07-18 by the user's visual sign-off (ZM-D-112).
+
+---
+
 
 ### [RESOLVED] Q-2026-07-09-001 -- Branch protection for `zm-tests`
 
