@@ -145,6 +145,14 @@ namespace
 	float g_fTalkBasisDeltaX = 0.0f;
 	float g_fTalkBasisDeltaZ = 0.0f;
 
+	// The re-raise negative's ONE press-sensitive pair: the conversation's read cursor
+	// either side of the press (see ReRaiseAssert). The defaults DIFFER on both halves,
+	// so a phase that never ran cannot read as "unchanged".
+	u_int       g_uTalkReRaiseLineIdxBefore = 99u;
+	u_int       g_uTalkReRaiseLineIdxAfter  = 98u;
+	std::string g_strTalkReRaiseLineBefore;
+	std::string g_strTalkReRaiseLineAfter   = "<not sampled>";
+
 	// Boot diagnostics: exactly WHAT had not resolved when the deadline expired.
 	bool g_bTalkSawScene       = false;
 	bool g_bTalkSawPlayer      = false;
@@ -161,6 +169,7 @@ namespace
 	bool g_bTalkRaisePassed          = false;
 	bool g_bTalkContentPassed        = false;
 	bool g_bTalkReRaisePassed        = false;
+	bool g_bTalkReRaiseLinePassed    = false;   // ...its ONE press-sensitive clause
 	bool g_bTalkPhysicsMotionSeen    = false;
 	const char* g_szTalkFailure = "test did not reach verification";
 
@@ -199,6 +208,18 @@ namespace
 	// key choices and the held run modifier are identical on purpose -- this walk
 	// characterises the SAME input path the shipped traversal proof does.
 	// It additionally records the held set, so a stall failure can name it.
+	//
+	// ★ KNOWN LIMIT, MEASURED IN SC7 (ZM-D-130) -- this world-space key choice is
+	// only correct while the camera is still near its authored yaw. Movement is
+	// CAMERA-RELATIVE (ZM_PlayerController.cpp:140-147, 244-271) and ZM_FollowCamera
+	// re-aims itself at the player every frame off a LAGGING camera-to-player vector
+	// (ZM_FollowCamera.cpp:309-323), so once the player turns hard, held W stops
+	// meaning +Z and this function starts choosing keys in the wrong frame. It is
+	// safe HERE only because this test walks ONE leg, from rest, straight down +Z.
+	// SC7's shared walk machine in Tests/ZM_AutoTests_NpcServices.cpp carries the
+	// CORRECTED, camera-relative version (it projects the desired world direction
+	// onto the live camera basis, and degenerates to exactly this behaviour at yaw
+	// 0). Copy THAT one, never this one, for any new multi-leg walk.
 	void DriveTowardXZ(
 		const Zenith_Maths::Vector3& xPosition,
 		const Zenith_Maths::Vector3& xTarget)
@@ -390,6 +411,11 @@ namespace
 		g_bTalkRaisePassed = false;
 		g_bTalkContentPassed = false;
 		g_bTalkReRaisePassed = false;
+		g_bTalkReRaiseLinePassed = false;
+		g_uTalkReRaiseLineIdxBefore = 99u;
+		g_uTalkReRaiseLineIdxAfter = 98u;
+		g_strTalkReRaiseLineBefore.clear();
+		g_strTalkReRaiseLineAfter = "<not sampled>";
 		g_bTalkPhysicsMotionSeen = false;
 		g_szTalkFailure = "test did not reach verification";
 
@@ -865,6 +891,16 @@ namespace
 				FailTalk("with the dialogue open the seam did not report MENU_OPEN");
 				return false;
 			}
+			ZM_UI_MenuStack* pxMenu = ResolveMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailTalk("the ZM_MenuRoot singleton vanished before the re-raise negative");
+				return false;
+			}
+			// The PRESS-SENSITIVE baseline (see ReRaiseAssert): where the conversation's
+			// read cursor is, and what it is showing, on the frame BEFORE E goes down.
+			g_uTalkReRaiseLineIdxBefore = pxMenu->GetDialogue().GetCurrentLineIndex();
+			g_strTalkReRaiseLineBefore = pxMenu->GetDialogue().GetCurrentLine();
 			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_E);
 			g_eTalkPhase = TalkPhase::ReRaiseAssert;
 			g_iTalkPhaseFrames = 0;
@@ -881,16 +917,21 @@ namespace
 			}
 			const ZM_InteractionRuntime& xRuntime =
 				xPlayer.m_pxController->GetInteractionRuntime();
-			// ★ HONEST ACCOUNTING OF WHAT THIS PHASE PROVES. The load-bearing check is
-			// the EvaluateForTests(...) == MENU_OPEN assertion on the PRESS frame
+			// ★ HONEST ACCOUNTING OF WHAT THIS PHASE PROVES. The blocker-PRECEDENCE check
+			// is the EvaluateForTests(...) == MENU_OPEN assertion on the PRESS frame
 			// above: that is the one that fails if ZM_ShouldInteract's bMenuOpen rule
-			// is deleted (the seam would then answer PLAYER_FROZEN instead).
+			// is deleted (the seam would then answer PLAYER_FROZEN instead). It is NOT a
+			// proof that the press landed: the seam hard-codes bInteractPressed = true, so
+			// it answers MENU_OPEN whether or not E was ever pressed.
 			// The raise-count check below is a re-raise-loop / self-closing-dialogue
 			// guard, NOT a proof of the menu-open blocker: raising the dialogue
 			// freezes the player, and OnUpdate early-outs on !m_bMovementEnabled
 			// strictly BEFORE the interaction tick, so with a box open the runtime
 			// cannot tick at all and this count is structurally incapable of moving.
-			// Keep both, but do not delete the seam assertion believing this covers it.
+			// THE PRESS PROOF is the line-index / line-text pair: it is the only thing
+			// here the live E edge can move, and it reds the moment E enters
+			// ZM_CONFIRM_KEYS or the dialogue box starts consuming the interact key.
+			// Keep all three, but do not mistake any one of them for the others.
 			if (xRuntime.GetRaiseCount() != g_uTalkRaiseCountBefore)
 			{
 				FailTalk("pressing E with the dialogue already open raised ANOTHER screen");
@@ -901,6 +942,23 @@ namespace
 				FailTalk("the dialogue closed itself during the re-raise negative");
 				return false;
 			}
+			ZM_UI_MenuStack* pxMenu = ResolveMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailTalk("the ZM_MenuRoot singleton vanished during the re-raise negative");
+				return false;
+			}
+			g_uTalkReRaiseLineIdxAfter = pxMenu->GetDialogue().GetCurrentLineIndex();
+			g_strTalkReRaiseLineAfter = pxMenu->GetDialogue().GetCurrentLine();
+			if (g_uTalkReRaiseLineIdxAfter != g_uTalkReRaiseLineIdxBefore
+				|| g_strTalkReRaiseLineAfter != g_strTalkReRaiseLineBefore)
+			{
+				FailTalk("pressing E with the dialogue already open ADVANCED it -- the "
+					"interact key is being consumed as a CONFIRM (the line index and text "
+					"either side of the press are logged below)");
+				return false;
+			}
+			g_bTalkReRaiseLinePassed = true;
 			// Single-frame phase, same as the out-of-range assert: no reachable timeout.
 			g_bTalkReRaisePassed = true;
 			g_eTalkPhase = TalkPhase::Done;
@@ -934,6 +992,7 @@ namespace
 			&& g_bTalkRaisePassed
 			&& g_bTalkContentPassed
 			&& g_bTalkReRaisePassed
+			&& g_bTalkReRaiseLinePassed
 			// The motion must have been PHYSICS-DRIVEN. This flag defaults false and is
 			// only ever set from a live body velocity + run speed + real displacement,
 			// so a walk faked by any means at all leaves it false. (SetPosition appears
@@ -962,11 +1021,15 @@ namespace
 				g_szTalkNegativeReject);
 			Zenith_Error(LOG_CATEGORY_UNITTEST,
 				"[ZM_NpcTalk] phase flags: boot=%d basis=%d negative=%d approach=%d "
-				"raise=%d content=%d reRaise=%d physicsMotion=%d",
+				"raise=%d content=%d reRaise=%d reRaiseLine=%d physicsMotion=%d "
+				"| reRaise lineIdx %u->%u line '%s'->'%s' (both must be UNCHANGED)",
 				(int)g_bTalkBootPassed, (int)g_bTalkBasisPassed,
 				(int)g_bTalkNegativePassed, (int)g_bTalkApproachPassed,
 				(int)g_bTalkRaisePassed, (int)g_bTalkContentPassed,
-				(int)g_bTalkReRaisePassed, (int)g_bTalkPhysicsMotionSeen);
+				(int)g_bTalkReRaisePassed, (int)g_bTalkReRaiseLinePassed,
+				(int)g_bTalkPhysicsMotionSeen,
+				g_uTalkReRaiseLineIdxBefore, g_uTalkReRaiseLineIdxAfter,
+				g_strTalkReRaiseLineBefore.c_str(), g_strTalkReRaiseLineAfter.c_str());
 		}
 		return bPassed;
 	}

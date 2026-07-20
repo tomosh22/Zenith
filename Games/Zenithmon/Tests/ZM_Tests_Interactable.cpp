@@ -27,6 +27,7 @@
 #include "Core/Zenith_TestFramework.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Maths/Zenith_Maths.h"
+#include "ZenithECS/Zenith_ComponentMeta.h"   // the registry the SC7 gate's NPCs deserialize through
 #include "ZenithECS/Zenith_Entity.h"
 #include "Zenithmon/Components/ZM_Interactable.h"
 #include "Zenithmon/Source/Data/ZM_NpcData.h"
@@ -47,6 +48,22 @@ namespace
 
 		DetachedInteractable() : m_xEntity(), m_xInteractable(m_xEntity) {}
 	};
+
+	// The Dawnmere roster the SC7 consolidated gate (ZM_S6InteractGate_Test) can
+	// actually WALK UP TO: the three rows Zenithmon.cpp places in the scene.
+	// ZM_NPC_WANDERER is deliberately excluded -- Zenithmon.cpp does not author it
+	// (it needs SC8's waypoint patrol first), so no walk-up test can ever reach it.
+	// See the unit below for why that exclusion is the whole point.
+	constexpr u_int uPLACED_NPC_COUNT = 3u;
+	const ZM_NPC_ID aePLACED_NPCS[uPLACED_NPC_COUNT] = {
+		ZM_NPC_VILLAGER,           // "Npc_Villager"       -- the gate's talk beat
+		ZM_NPC_TRADE_POST_CLERK,   // "Npc_TradePostClerk" -- the gate's buy beat
+		ZM_NPC_CARETAKER,          // "Npc_Caretaker"      -- the gate's heal beat
+	};
+
+	// The registered NAME of the interaction component, spelled exactly as
+	// Zenithmon.cpp's ZENITH_REGISTER_COMPONENT line spells it.
+	constexpr const char* szINTERACTABLE_META_NAME = "ZM_Interactable";
 }
 
 // ---- Component configuration ------------------------------------------------
@@ -360,4 +377,124 @@ ZENITH_TEST(ZM_Interaction, Runtime_ProbeCapClearsTheAuthoredRoster)
 	// wrong, and carried no correctness signal.
 	ZENITH_ASSERT_GT(uZM_MAX_INTERACT_PROBES, ZM_GetNpcCount(),
 		"the probe cap must exceed the whole authored NPC roster");
+}
+
+// ---- SC7 gate preconditions -------------------------------------------------
+
+// The SC7 consolidated gate (ZM_S6InteractGate_Test) proves one beat per ROLE by
+// walking up to the three SCENE-PLACED Dawnmere NPCs. Adding a fourth role, or
+// re-rolling one of those three, would leave a dispatch arm with no gate beat
+// behind it -- and because the gate is m_bRequiresGraphics it SKIPS (== passes) in
+// headless CI, so nothing would go red.
+//
+// This is NOT a duplicate of ZM_Tests_NpcData's Npc_RolesCoverEveryDispatchArm.
+// That unit walks the WHOLE roster, which includes ZM_NPC_WANDERER -- a row
+// Zenithmon.cpp deliberately does not place in any scene. So it stays green in
+// exactly the case this one is written to catch: re-roll ZM_NPC_VILLAGER to
+// SHOPKEEP and the wanderer still covers TALKER, while no PLACED NPC talks any
+// more and the gate's talk beat silently starts raising a mart.
+ZENITH_TEST(ZM_Interaction, GateRoster_PlacedNpcsCoverEveryRole)
+{
+	ZENITH_ASSERT_GT((u_int)ZM_NPC_ROLE_COUNT, 0u,
+		"the role enum must be non-empty, or the walk below is vacuous");
+	ZENITH_ASSERT_GT(uPLACED_NPC_COUNT, 0u,
+		"the placed-NPC table must be non-empty, or every role below fails for the "
+		"wrong reason");
+	// The table names REAL rows -- an out-of-range id would assert inside
+	// ZM_GetNpcData rather than reporting here.
+	for (u_int u = 0u; u < uPLACED_NPC_COUNT; ++u)
+	{
+		ZENITH_ASSERT_LT((u_int)aePLACED_NPCS[u], (u_int)ZM_NPC_COUNT,
+			"placed-NPC table entry %u names no roster row", u);
+	}
+
+	for (u_int uRole = 0u; uRole < (u_int)ZM_NPC_ROLE_COUNT; ++uRole)
+	{
+		bool bCovered = false;
+		for (u_int u = 0u; u < uPLACED_NPC_COUNT && !bCovered; ++u)
+		{
+			bCovered = ((u_int)ZM_GetNpcData(aePLACED_NPCS[u]).m_eRole == uRole);
+		}
+		ZENITH_ASSERT_TRUE(bCovered,
+			"role %u is carried by NO Dawnmere-placed NPC, so the SC7 walk-up gate has "
+			"no beat that exercises it -- place an NPC with that role and add a beat",
+			uRole);
+	}
+}
+
+// The gate reaches every NPC by loading the BAKED Dawnmere scene and resolving
+// entities by name, which only yields an armed ZM_Interactable if the component
+// deserializes -- and it only deserializes if it is in the component-meta registry
+// under exactly this name (DeserializeEntityComponents keys on the type NAME and
+// merely LOGS + skips an unknown one). Deleting the ZENITH_REGISTER_COMPONENT line
+// therefore turns every NPC in the town silently inert, which the windowed gate
+// reports as a boot timeout hundreds of frames later -- and never reports at all in
+// headless CI, where it skips.
+//
+// The ORDER VALUE is deliberately NOT asserted equal to 113. Serialization is keyed
+// by NAME (see above), the component header says in so many words that the number is
+// a within-entity tiebreak that must not be "fixed" by renumbering, and an `== 113u`
+// clause would restate Zenithmon.cpp's literal back to itself -- exactly the
+// tautology that was already removed from Runtime_ProbeCapClearsTheAuthoredRoster.
+// What IS asserted is the part the engine genuinely does not police: Finalize sorts
+// by order and logs every pair but has NO duplicate detection, so two components
+// silently sharing an order sort arbitrarily against each other.
+ZENITH_TEST(ZM_Interaction, GateRoster_InteractableIsRegisteredExactlyOnce)
+{
+	const Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+	ZENITH_ASSERT_TRUE(xRegistry.IsInitialized(),
+		"the component-meta registry is not sealed yet -- the walk below would be over "
+		"an empty list and the uniqueness check would pass vacuously");
+
+	const Zenith_ComponentMeta* pxMeta = xRegistry.GetMetaByName(szINTERACTABLE_META_NAME);
+	ZENITH_ASSERT_NOT_NULL(pxMeta,
+		"'%s' is not in the component-meta registry -- it cannot deserialize out of the "
+		"baked Dawnmere scene, so every authored NPC would be inert",
+		szINTERACTABLE_META_NAME);
+	// A failed assert RECORDS and CONTINUES, so the null case has to be guarded here
+	// rather than trusted.
+	if (pxMeta == nullptr)
+	{
+		return;
+	}
+
+	// ZM components claim the 100+ band (Zenithmon.cpp). Registering a game component
+	// down in the engine's band is how an order collision gets introduced in the first
+	// place.
+	ZENITH_ASSERT_GE(pxMeta->m_uSerializationOrder, 100u,
+		"'%s' is registered at order %u, below the 100+ band ZM components claim",
+		szINTERACTABLE_META_NAME, pxMeta->m_uSerializationOrder);
+
+	// OnStart is the hook that de-arms an unconfigured row (see
+	// Interactable_OnStartClearsAnUnconfiguredRow). Concept detection dropping it
+	// would leave a mis-authored NPC live and absorbing the player's interact press.
+	ZENITH_ASSERT_NOT_NULL(pxMeta->m_pfnOnStart,
+		"'%s' registered without its OnStart hook -- an unconfigured NPC row would stay "
+		"a live interact candidate",
+		szINTERACTABLE_META_NAME);
+
+	const Zenith_Vector<const Zenith_ComponentMeta*>& xSorted = xRegistry.GetAllMetasSorted();
+	ZENITH_ASSERT_GT(xSorted.GetSize(), 0u,
+		"the sorted meta list is empty, so the uniqueness count below would be vacuous");
+	u_int uAtSameOrder = 0u;
+	for (u_int u = 0u; u < xSorted.GetSize(); ++u)
+	{
+		const Zenith_ComponentMeta* pxOther = xSorted.Get(u);
+		if (pxOther == nullptr)
+		{
+			continue;
+		}
+		if (pxOther->m_uSerializationOrder == pxMeta->m_uSerializationOrder)
+		{
+			++uAtSameOrder;
+		}
+	}
+	// Only the ORDER count is asserted: the registry stores metas in a map KEYED BY TYPE
+	// NAME (RegisterComponent overwrites by name and Finalize pushes exactly one pointer
+	// per map entry), so a by-NAME count is structurally 1 once GetMetaByName has already
+	// resolved above -- it could not fail. Duplicate ORDERS are genuinely unpoliced.
+	ZENITH_ASSERT_EQ(uAtSameOrder, 1u,
+		"%u components share serialization order %u with '%s' -- the registry sorts "
+		"duplicates arbitrarily against each other and warns about nothing",
+		uAtSameOrder, pxMeta->m_uSerializationOrder, szINTERACTABLE_META_NAME);
 }
