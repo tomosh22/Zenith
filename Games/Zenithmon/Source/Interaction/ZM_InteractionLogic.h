@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Maths/Zenith_Maths.h"   // Zenith_Maths::Vector3 / Quat (the SC2 picker's inputs)
+
 // ============================================================================
 // ZM_InteractionLogic (S6 item 3 SC1) -- the PURE "may the player interact right
 // now?" gate, plus the tuning constants the later sub-commits' candidate picker
@@ -16,11 +18,17 @@
 // the dialogue box must stay usable inside the battle scene for trainer lines --
 // so the "can the player talk right now?" question is owned HERE instead.
 //
-// SC1 lands the foundation ONLY. Nothing calls ZM_ShouldInteract yet; the
-// candidate picker (range / vertical band / facing) arrives in SC2, which is why
-// the reject reasons for those tests already exist in the enum but no picker is
-// declared: the enum's VALUES are asserted on by later windowed tests and must
-// not shift under them.
+// SC1 landed the foundation: the enum, the tuning constants and the world gate.
+// SC2 adds the CANDIDATE picker below (range / vertical band / facing), which is
+// what the SC1 enum's NO_CANDIDATE / OUT_OF_RANGE / OUT_OF_VERTICAL_BAND /
+// NOT_FACING / DEGENERATE_ORIGIN reasons were reserved for. Nothing calls either
+// function yet -- the live wiring is a later sub-commit's job -- so this file
+// stays pure and headlessly testable.
+//
+// The two halves compose in the obvious order at the eventual call site: the
+// world gate first (is interacting legal AT ALL right now?), then the picker
+// (WHICH interactable, if any?). Both report the same reject enum so the caller
+// has exactly one reason value to log, poll and assert on.
 // ============================================================================
 
 // Why an interaction attempt was refused. ZM_INTERACT_OK is the only success
@@ -80,3 +88,94 @@ ZM_INTERACT_REJECT ZM_ShouldInteract(bool bPressed, bool bMenuOpen, bool bOverwo
 // messages. TOTAL: never returns nullptr and never indexes out of bounds -- any
 // value outside the enumerated range yields "UNKNOWN".
 const char* ZM_InteractRejectName(ZM_INTERACT_REJECT eReject);
+
+// ---- The candidate picker (SC2) ---------------------------------------------
+
+// One interactable's world presence, BY VALUE. The picker never reads the ECS, a
+// scene or a physics body: the live call site (a later sub-commit) fills an array
+// of these from whatever it has, and every rule below stays unit-testable.
+struct ZM_InteractProbe
+{
+	Zenith_Maths::Vector3 m_xPosition = Zenith_Maths::Vector3(0.0f);
+	// A per-NPC reach bonus ADDED to xTuning.m_fMaxDistance, so a physically large
+	// interactable (a counter, a sign post) can be talked to from its edge rather
+	// than from its centre. A NEGATIVE radius never shrinks reach below zero --
+	// such a probe is simply never in range.
+	float m_fRadius = 0.0f;
+	// A parked / scripted-off NPC is not a candidate AT ALL: it neither wins nor
+	// contributes a near-miss reason (see the reject precedence below).
+	bool m_bEnabled = false;
+};
+
+// Where the player is and which way they are looking. m_xForward need NOT be
+// normalised and need NOT be XZ-flat -- the picker flattens and normalises it with
+// the SAME policy as ZM_ForwardFromRotation, so a camera-derived forward with
+// pitch in it behaves identically to a yaw-only one.
+struct ZM_InteractOrigin
+{
+	Zenith_Maths::Vector3 m_xPosition = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 m_xForward  = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+};
+
+// The three thresholds, passed in rather than read from the constants above so a
+// unit can move a boundary without touching shipped tuning. Seed one from
+// fZM_INTERACT_MAX_DISTANCE / fZM_INTERACT_MIN_FACING_DOT / fZM_INTERACT_MAX_VERTICAL
+// for the live values.
+struct ZM_InteractTuning
+{
+	float m_fMaxDistance   = fZM_INTERACT_MAX_DISTANCE;
+	float m_fMinFacingDot  = fZM_INTERACT_MIN_FACING_DOT;
+	float m_fMaxVertical   = fZM_INTERACT_MAX_VERTICAL;
+};
+
+// Pick the best interaction candidate out of paxProbes[0 .. uCount).
+//
+// ACCEPTANCE, per probe, in this order:
+//   1. m_bEnabled, or the probe does not exist as far as this function is concerned.
+//   2. XZ distance (Y IGNORED) <= m_fMaxDistance + probe.m_fRadius. INCLUSIVE at the
+//      boundary. Y is ignored here so a sunk or floating NPC stays reachable; the
+//      height difference is policed separately by rule 3.
+//   3. fabs(dY) <= m_fMaxVertical. INCLUSIVE. This is what stops interaction through
+//      a floor / ceiling.
+//   4. dot(forwardXZ, toCandidateXZ), both flattened and normalised, >= m_fMinFacingDot.
+//      INCLUSIVE.
+//
+// WINNER: among all survivors the SMALLEST XZ distance wins, ties break to the
+// LOWEST INDEX. The outcome therefore does NOT depend on array order (reversing the
+// array picks the same probe), while remaining deterministic when two probes tie.
+//
+// COINCIDENT PROBE: a probe whose XZ position is within the degenerate epsilon of the
+// origin's has no direction to face, so instead of a NaN dot product it SKIPS the cone
+// test and counts as FACED -- you are standing on it. It still has to clear the reach
+// and band tests, both of which it passes for any non-negative reach, and being at
+// distance zero it then wins outright.
+//
+// DEGENERATE ORIGIN is checked FIRST, before any probe is looked at: if the origin's
+// forward flattens to (near) nothing -- a straight up or straight down facing -- the
+// cone test is meaningless, so the call returns ZM_INTERACT_REJECT_DEGENERATE_ORIGIN
+// without walking the array.
+//
+// REJECT REPORTING is MOST-SPECIFIC-LAST: the reason returned is how FAR the best
+// near-miss got, so a walk-up test can poll it and know how close the player is:
+//   NO_CANDIDATE          - empty set, or every probe disabled
+//   OUT_OF_RANGE          - enabled probes exist, none passed the distance test
+//   OUT_OF_VERTICAL_BAND  - one passed distance, none passed the band
+//   NOT_FACING            - one passed distance AND band, none passed the cone
+//
+// uBestIndexOut is the winner's index into paxProbes on ZM_INTERACT_OK. On EVERY
+// reject it is set to uCount -- an unreachable index -- so a caller that ignores the
+// return value cannot silently address probe 0.
+ZM_INTERACT_REJECT ZM_PickInteractTarget(const ZM_InteractProbe* paxProbes, u_int uCount,
+	const ZM_InteractOrigin& xOrigin,
+	const ZM_InteractTuning& xTuning,
+	u_int& uBestIndexOut);
+
+// The player's facing as an XZ-flat UNIT vector: xRotation * (0,0,1), Y zeroed,
+// normalised. Returns the ZERO vector for a straight-up / straight-down facing,
+// which ZM_PickInteractTarget turns into ZM_INTERACT_REJECT_DEGENERATE_ORIGIN.
+//
+// It rotates +Z DELIBERATELY, and must never be rewritten in terms of
+// glm::eulerAngles(quat).y: that decomposition collapses once the rotation is more
+// than 90 degrees off +Z and has already cost this repo a full debugging cycle in
+// RenderTest's tennis AI. A unit pins the 180-degree case specifically.
+Zenith_Maths::Vector3 ZM_ForwardFromRotation(const Zenith_Maths::Quat& xRotation);
