@@ -983,6 +983,88 @@ namespace
 			"Dawnmere Home doorway warp configuration is invalid");
 	}
 
+	// ---- S6 item 3 SC5: the authored Dawnmere NPCs ---------------------------
+	//
+	// Reach BONUS authored onto every Dawnmere NPC. 0.4 is this NPC's OWN AABB
+	// half-width (the greybox body is 0.8 m wide), so the global 2.5 m reach is not
+	// silently spent crossing the NPC's own body. Note the player capsule adds a
+	// further 0.4 m of its own radius, so contact actually happens at ~0.8 m from
+	// the NPC's transform centre against a 2.9 m effective reach -- do NOT read 0.4
+	// as "the distance the capsule stops at". Well inside
+	// ZM_Interactable::fMAX_RADIUS (8.0), and far too small to let one NPC swallow a
+	// neighbour's press: the closest NPC PAIR in this town is 16.1 m apart, 5.5x the
+	// effective reach.
+	constexpr float fZM_NPC_AUTHORED_RADIUS = 0.4f;
+
+	// The shared body of the three configure functions below. A PER-NPC function is
+	// unavoidable: AddStep_Custom takes a captureless `void (*)()`, so there is no
+	// way to hand one parameterised step the row it should install.
+	bool ZM_ConfigureSelectedNpc(ZM_NPC_ID eId)
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		ZM_Interactable* pxInteractable = pxSelectedEntity != nullptr
+			? pxSelectedEntity->TryGetComponent<ZM_Interactable>()
+			: nullptr;
+		Zenith_Assert(pxInteractable != nullptr,
+			"NPC authoring requires the selected ZM_Interactable");
+		if (pxInteractable == nullptr)
+		{
+			return false;
+		}
+
+		// SetInteractable LAST, deliberately: SetNpcId fails CLOSED by clearing the
+		// candidacy flag, so arming before the row is installed would be silently
+		// undone by a bad id and the NPC would author itself mute.
+		const bool bIdSet = pxInteractable->SetNpcId(eId);
+		const bool bRadiusSet = pxInteractable->SetRadius(fZM_NPC_AUTHORED_RADIUS);
+		pxInteractable->SetInteractable(true);
+		// IsInteractable() is the LIVE candidacy answer the picker reads, so assert on
+		// it rather than on the setters alone -- that is the property authoring owes.
+		return bIdSet && bRadiusSet && pxInteractable->IsInteractable();
+	}
+
+	void ZM_ConfigureVillagerNpc()
+	{
+		Zenith_Assert(ZM_ConfigureSelectedNpc(ZM_NPC_VILLAGER),
+			"Dawnmere Villager NPC authoring is invalid");
+	}
+
+	void ZM_ConfigureTradePostClerkNpc()
+	{
+		Zenith_Assert(ZM_ConfigureSelectedNpc(ZM_NPC_TRADE_POST_CLERK),
+			"Dawnmere Trade Post clerk NPC authoring is invalid");
+	}
+
+	void ZM_ConfigureCaretakerNpc()
+	{
+		Zenith_Assert(ZM_ConfigureSelectedNpc(ZM_NPC_CARETAKER),
+			"Dawnmere Caretaker NPC authoring is invalid");
+	}
+
+	// One authored NPC: a greybox body the player can SEE, a STATIC AABB it can
+	// physically bump into (so walking up to one ends in contact rather than in
+	// walking through it), the ZM_Interactable that makes it talkable, and the
+	// captureless step that installs its row. Step order mirrors HomeDoorTrigger --
+	// transform, collider, components, then the configure custom step.
+	void ZM_QueueDawnmereNpc(
+		Zenith_EditorAutomation& xAuto,
+		const char* szName,
+		const Zenith_Maths::Vector3& xCenter,
+		const Zenith_Maths::Vector3& xScale,
+		void (*pfnConfigure)())
+	{
+		xAuto.AddStep_CreateEntity(szName);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(xCenter.x, xCenter.y, xCenter.z);
+		xAuto.AddStep_SetTransformScale(xScale.x, xScale.y, xScale.z);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
+		xAuto.AddStep_AddComponent("ZM_Interactable");
+		xAuto.AddStep_Custom(pfnConfigure);
+	}
+
 	void ZM_QueueGreyboxBlock(
 		Zenith_EditorAutomation& xAuto,
 		const char* szName,
@@ -1559,6 +1641,78 @@ void Project_RegisterEditorAutomationSteps()
 			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
 		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
 		xAuto.AddStep_Custom(&ZM_ConfigureHomeDoorTrigger);
+
+		// ---- S6 item 3 SC5: the three authored Dawnmere NPCs ----
+		//
+		// Bodies share the PLAYER'S scale, so an NPC's AABB half-height IS
+		// fPlayerCapsuleHalfExtent and every NPC centre sits at exactly the player's
+		// authored centre height.
+		//
+		// ★ HEIGHT IS AN ASSUMPTION, NOT A GUARANTEE. Every NPC reuses the ONE feet
+		// height sampled at the town centre (512, 480); this authoring cannot sample
+		// the terrain at each NPC's own XZ, and the rest of this file DOES author
+		// per-location measured heights (see the Home block's three distinct values).
+		// The picker's band is |NPC.y - player.y|, and once the capsule settles the
+		// player's y is terrain(x,z) + halfExtent, so the band reduces to the TERRAIN
+		// DELTA between the spawn and each NPC. Dawnmere's neighbourhood is gently
+		// rolling (the authored anchors differ by ~0.6 m over 128 m), so the +/-2 m
+		// band holds comfortably -- but if a regenerated heightmap ever exceeded it,
+		// that NPC becomes permanently un-talkable. The villager is covered by
+		// ZM_NpcTalk_Test; the clerk and caretaker are NOT yet, so treat a mute one as
+		// a height check first. (S9 should author sampled per-NPC feet.)
+		//
+		// SEPARATION is deliberately enormous -- the closest PAIR is 16.1 m, against
+		// a 2.9 m effective reach (2.5 global + 0.4 per-NPC). The picker resolves the
+		// NEAREST FACED candidate, so two NPCs within reach of each other would make
+		// "which NPC answered?" a function of sub-metre walk error; at 16 m the
+		// answer cannot be ambiguous, and the walk-up test can assert the winner BY
+		// ENTITY ID. Exact distances are derived at the coordinates below.
+		//
+		// The VILLAGER is the walk-up target and sits straight +Z of the spawn on
+		// purpose: +Z is the one movement axis with existing evidence
+		// (ZM_DawnmerePlayerCamera_Test already proves held-W moves the yaw-zero
+		// player +Z), so the walk needs no unproven basis assumption.
+		//
+		// ★★ THE OTHER TWO MUST STAY OFF z = 480. A solid STATIC AABB on that line
+		// WEDGES A DIFFERENT, ALREADY-GREEN TEST: ZM_PlayerHomeRoundTrip_Test drives
+		// the player from the TownCenter spawn (512, 480) to xDoorStaging
+		// (384, 0, 480) with DriveTowardXZ, which has NO obstacle avoidance -- |dz|
+		// is inside its 0.08 dead zone, so it holds ONLY 'A' and runs pure -X along
+		// z = 480. An NPC box there stops the capsule head-on (the 1.8 m body is far
+		// above the 0.40 m step assist), the staging tolerance is never met, and that
+		// test dies at its frame cap with a timeout that names distance, not the NPC.
+		// So both flank NPCs are pushed to z + 18, keeping 18 m of clearance from the
+		// Home corridor while staying 14 m off the x = 512 spawn-to-villager corridor
+		// and well clear of the Home shell (x 376..392, z 436..476).
+		// A scene-placement change can regress a suite it never mentions -- check the
+		// existing traversal routes before moving anything in this block.
+		//
+		// The WANDERER (ZM_NPC_WANDERER) is deliberately NOT authored here -- it needs
+		// the SC8 waypoint patrol, and a stationary "wanderer" would be content that
+		// silently contradicts its own row.
+		const Zenith_Maths::Vector3 xNpcScale = xPlayerScale;
+		const Zenith_Maths::Vector3 xVillagerCenter(
+			xTownCenterFeet.x, xPlayerCenter.y, xTownCenterFeet.z + 10.0f);
+		// z + 18 keeps both off the z = 480 Home-traversal corridor (see above).
+		// Separations against the 2.9 m effective reach (2.5 global + 0.4 authored):
+		//   villager <-> clerk      = sqrt(14^2 + 8^2) = 16.1 m
+		//   villager <-> caretaker  = sqrt(14^2 + 8^2) = 16.1 m
+		//   clerk    <-> caretaker  = 28.0 m
+		//   spawn    <-> either     = sqrt(14^2 + 18^2) = 22.8 m
+		// The closest pair is 5.5x reach, so the nearest-faced-candidate picker can
+		// never confuse two of them and the walk-up test can assert the winner BY
+		// ENTITY ID; and neither flank NPC is reachable from spawn, which keeps the
+		// test's out-of-range negative unambiguous.
+		const Zenith_Maths::Vector3 xClerkCenter(
+			xTownCenterFeet.x + 14.0f, xPlayerCenter.y, xTownCenterFeet.z + 18.0f);
+		const Zenith_Maths::Vector3 xCaretakerCenter(
+			xTownCenterFeet.x - 14.0f, xPlayerCenter.y, xTownCenterFeet.z + 18.0f);
+		ZM_QueueDawnmereNpc(xAuto, "Npc_Villager",
+			xVillagerCenter, xNpcScale, &ZM_ConfigureVillagerNpc);
+		ZM_QueueDawnmereNpc(xAuto, "Npc_TradePostClerk",
+			xClerkCenter, xNpcScale, &ZM_ConfigureTradePostClerkNpc);
+		ZM_QueueDawnmereNpc(xAuto, "Npc_Caretaker",
+			xCaretakerCenter, xNpcScale, &ZM_ConfigureCaretakerNpc);
 
 		xAuto.AddStep_CreateEntity("DawnmerePreviewCamera");
 		xAuto.AddStep_AddCamera();
