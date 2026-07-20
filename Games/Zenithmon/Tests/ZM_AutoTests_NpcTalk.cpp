@@ -556,9 +556,11 @@ namespace
 			}
 			g_fTalkCurrentDistance =
 				PlanarDistance(xPlayer.m_xPosition, g_xTalkVillagerPosition);
-			// Still comfortably beyond ANY per-NPC reach bonus an author could add on
-			// top of the global distance, so the refusal below is unambiguously
-			// "too far", never a boundary case.
+			// 2 x fZM_INTERACT_MAX_DISTANCE (5.0 m) is beyond the 2.9 m effective reach
+			// this villager is actually authored with (2.5 global + 0.4 authored), so the
+			// refusal below is unambiguously "too far", never a boundary case. It does
+			// NOT cover the 10.5 m an author could reach by pushing the per-NPC radius up
+			// to ZM_Interactable::fMAX_RADIUS (8.0 m).
 			if (g_fTalkCurrentDistance <= fZM_INTERACT_MAX_DISTANCE * 2.0f)
 			{
 				FailTalk("the basis probe walked too close to the villager -- the "
@@ -608,18 +610,25 @@ namespace
 				FailTalk("pressing E from out of range RAISED a screen");
 				return false;
 			}
-			// ★ Prove the PRESS REACHED the runtime, and prove the REASON. Without
-			// these, every assertion in this phase is satisfied by a runtime that
-			// never ticked at all: Tick only writes s_eLastResult when the interact
-			// edge is true, so with no edge delivered the latch stays at the reset
-			// value NO_INPUT_EDGE and a bare "!= ZM_INTERACT_OK" passes. This is the
-			// half of the test that must survive a stubbed-true interactor, so it has
-			// to assert a real refusal for a real reason, not merely "nothing
+			// ★ TWO DIFFERENT PROOFS, and they are NOT interchangeable.
+			// HasLatchedResult() proves only THE RUNTIME TICKED AT ALL:
+			// ZM_InteractionRuntime::Tick sets s_bHasLatchedResult = true
+			// UNCONDITIONALLY, outside the `if (bInteractPressed)` branch that writes
+			// s_eLastResult / s_xLastTarget (the runtime source says so itself --
+			// "s_bHasLatchedResult still moves every tick, so it remains an honest 'the
+			// runtime ran' signal"). It would therefore go false only if
+			// ZM_PlayerController::OnUpdate stopped calling Tick at all.
+			// The EDGE proof is the GetLastResult() == OUT_OF_RANGE check below:
+			// s_eLastResult is written ONLY under bInteractPressed and its reset value
+			// is NO_INPUT_EDGE, so that clause -- and only that clause -- fails if the E
+			// press never landed. It is also the half that survives a stubbed-true
+			// interactor: a real refusal for a real reason, not merely "nothing
 			// happened". Three enabled probes exist and all are far beyond reach, so
 			// OUT_OF_RANGE is fully deterministic here.
 			if (!xRuntime.HasLatchedResult())
 			{
-				FailTalk("the out-of-range E press never reached the interaction runtime");
+				FailTalk("the interaction runtime never ticked at all "
+					"(ZM_PlayerController::OnUpdate is no longer driving it)");
 				return false;
 			}
 			if (xRuntime.GetLastResult() != ZM_INTERACT_REJECT_OUT_OF_RANGE)

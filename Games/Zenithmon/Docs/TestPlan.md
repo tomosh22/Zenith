@@ -966,6 +966,42 @@ VISUAL GATE (hard stop).
 - P1 automated flows via focus navigation: talk to an NPC, buy/sell at the
   mart, heal at the Care Center, open every top-level menu (party/bag/dex/
   box/options) and back out cleanly.
+- **Item 3 walk-up flows** (`Tests/ZM_AutoTests_NpcTalk.cpp`,
+  `Tests/ZM_AutoTests_NpcServices.cpp`). These prove the screens are reachable
+  by WALKING UP to an authored Dawnmere NPC and pressing the interact key,
+  rather than only through their static raise seams:
+  - `ZM_NpcTalk_Test` (SC5) -- walk to `Npc_Villager`, talk, and see that
+    row's own first line on the dialogue.
+  - `ZM_NpcShop_Test` (SC6) -- walk to `Npc_TradePostClerk`, press E, assert
+    the SHOP screen carries **that clerk's `ZM_NpcData` stock** (count and
+    every id, read at runtime -- never re-spelled as a literal), walk the
+    focus onto Confirm with real Down edges, buy one, and assert the LIVE
+    money fell by exactly `price x quantity` and the bag rose by exactly the
+    quantity. The bought entry is resolved via `GetSelectedEntryIndex`, never
+    hardcoded.
+  - `ZM_NpcHeal_Test` (SC6) -- walk to `Npc_Caretaker`, press E, and run BOTH
+    answers in one session: YES (party restored, healed line shown) then a
+    re-damage and NO (party still damaged). The answer is read from
+    `ZM_UI_MenuStack::GetLastDialogueAnswer()`, never off the box after the
+    fact, **and only after asserting `!IsDialogueAwaitingChoice()`** -- the
+    latch survives test boundaries, so without that guard a dropped Enter
+    would read an earlier test's answer.
+  - Shared conventions for all three: every phase flag defaults to FAILING;
+    a TWO-LEG basis probe (+Z then +X) fails fast with measured deltas; an
+    out-of-range NEGATIVE runs before the walk; the approach is closed-loop
+    with a progress watchdog that reports the live
+    `ZM_InteractRejectName(...)` so a broken NPC height reads as
+    `OUT_OF_VERTICAL_BAND` rather than a timeout; the press is EVENT-DRIVEN
+    (poll `EvaluateForTests` until OK **at the target entity id**); motion is
+    asserted physics-driven; `SetPosition` and `SetFocusedElement` appear
+    nowhere.
+- **★ CI VISIBILITY:** all three are `m_bRequiresGraphics = true`, and
+  `zm-tests` runs HEADLESS, where the harness SKIPS such tests **and a skip
+  counts as PASS**. They are proven only by the LOCAL WINDOWED gate, and only
+  by a run reporting `PASSED` with a NON-ZERO frame count. Mutation-checked
+  (ZM-D-129): rewiring the shop/care-center dispatch arms reddens both SC6
+  tests but leaves the CI-visible `ZM_NpcDispatch_Test` GREEN, because that
+  test asserts *a* screen was raised, not *which one*.
 
 ### 5.7 S7 -- save/load, story flags, trainers
 

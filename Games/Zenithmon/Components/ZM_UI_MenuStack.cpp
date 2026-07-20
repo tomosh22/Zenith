@@ -894,6 +894,13 @@ void ZM_UI_MenuStack::ResetRuntimeStateForTests()
 		{
 			pxMenu->CloseMenu();   // unfreeze + clear focus + hide the root
 		}
+		// The latched answer deliberately survives CloseMenu (a resolved prompt closes the
+		// menu and the answer must outlive that pop), and it is otherwise cleared only in
+		// OnStart / ReadFromDataStream. A batched test process never re-boots and ZM_MenuRoot
+		// is DontDestroyOnLoad, so without this the NEXT test inherits this one's answer and
+		// any "the prompt answered YES" assertion passes without a press. The between-tests
+		// reset is exactly the right place to drop it.
+		pxMenu->m_eLastDialogueAnswer = ZM_DIALOGUE_CHOICE_NONE;
 	}
 }
 
