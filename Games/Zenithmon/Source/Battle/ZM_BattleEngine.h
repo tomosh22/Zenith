@@ -37,6 +37,11 @@ public:
 	u_int                 GetEventCount()          const { return m_xEvents.GetSize(); }
 	const ZM_BattleEvent& GetEvent(u_int uIndex)   const { return m_xEvents.Get(uIndex); }
 	const ZM_BattleState& GetState()               const { return m_xState; }
+	// The config this battle was Begun with. Read-only, and the ONE source of the
+	// battle's rules: presentation gates on it rather than keeping its own copy, so a
+	// UI that offers an action the engine would assert on cannot exist (the wild-only
+	// catch is exactly that case -- see SubmitAction's m_bCanCatch assert).
+	const ZM_BattleConfig& GetConfig()             const { return m_xConfig; }
 	ZM_BattleState&       GetStateMutable()              { return m_xState; }   // tests rig HP/stages pre-turn
 
 	// Shared switch primitive (SC5 forced switch; SC6 voluntary switch reuses it).

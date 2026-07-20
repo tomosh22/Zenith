@@ -14,10 +14,28 @@
 // It proves the DISPATCH, not the walking:
 //   * the ZM_InteractionRuntime tick reaches ZM_Interactable::Interact(),
 //   * the winner is the RIGHT entity (asserted by EntityID, not just "OK"),
-//   * a screen was ACTUALLY raised (the monotonic raise count moved), and
+//   * a screen was ACTUALLY raised (the monotonic raise count moved),
+//   * ...and, for EACH of the three NPC roles, WHICH screen came up, and
 //   * a candidate that is out of range does NOT raise, and reports OUT_OF_RANGE.
 // The negative half matters as much as the positive one: without it an interactor
 // stubbed permanently true would pass.
+//
+// ★ WHY THE PER-ROLE SCREEN ASSERTIONS EXIST. VERIFIED BY MUTATION (2026-07-20):
+// rewiring the SHOPKEEP and CARETAKER arms of ZM_Interactable::Interact() to call
+// TryPushDialogue reddened two WINDOWED tests but left this one GREEN, because it
+// only asked whether *a* screen went up. A dispatch arm pointed at the wrong seam
+// was therefore invisible to CI entirely -- the one place the feature is tested
+// there. Each role case below now pins the screen the role's seam actually raises:
+//     ZM_NPC_ROLE_TALKER    -> TryPushDialogue         -> DIALOGUE, action NONE
+//     ZM_NPC_ROLE_SHOPKEEP  -> TryOpenShop             -> SHOP, stocked from the row
+//     ZM_NPC_ROLE_CARETAKER -> TryOpenCareCenterPrompt -> DIALOGUE, action HEAL_PARTY
+// TALKER and CARETAKER both raise DIALOGUE, so the top-screen check ALONE cannot
+// tell them apart; the pending dialogue action is what separates them, and it is
+// exactly the clause the mutation above trips.
+//
+// Every role case reads its expectations OUT OF THE LIVE TABLE (ZM_GetNpcData) at
+// runtime rather than re-spelling ids as literals: a test that restates the content
+// it is checking proves only that someone typed the same thing twice.
 //
 // NO baked asset beyond what the harness already boots is touched. The fixture
 // scene is created through LoadSceneByIndex(<Dawnmere>, ADDITIVE_WITHOUT_LOADING),
@@ -46,6 +64,8 @@
 #include "Zenithmon/Source/Data/ZM_NpcData.h"
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"
+#include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // GetDialogue(): IsChoiceArmed / GetQueuedLineCount
+#include "Zenithmon/Source/UI/ZM_UI_Shop.h"          // GetShopScreen(): GetInventoryCount / GetInventoryItem
 
 namespace
 {
@@ -64,7 +84,12 @@ namespace
 	{
 		Settle,
 		Negative,
-		Positive,
+		// One phase per NPC ROLE, in role order. Each raises through the SAME near NPC
+		// (re-pointed at that role's row) and then asserts the screen the role's seam
+		// is contracted to raise.
+		RoleTalker,
+		RoleShopkeep,
+		RoleCaretaker,
 		Done,
 	};
 
@@ -79,9 +104,16 @@ namespace
 	// Phase flags DEFAULT TO FAILING: a phase that never runs must fail, not pass.
 	bool        g_bNpcSetupComplete = false;
 	bool        g_bNpcNegativePassed = false;
-	bool        g_bNpcPositivePassed = false;
+	bool        g_bNpcPositivePassed = false;     // the TALKER role case
+	bool        g_bNpcShopkeepPassed = false;     // the SHOPKEEP role case
+	bool        g_bNpcCaretakerPassed = false;    // the CARETAKER role case
 	bool        g_bNpcSkipped = false;
 	const char* g_szNpcFailure = "test did not reach verification";
+	// Which role case was running when it broke. The role cases share their failure
+	// text (they share their code), so this is what makes a failure legible -- the
+	// same "measured values live in globals, Verify prints them" convention the rest
+	// of this game's automated tests use.
+	const char* g_szNpcRoleUnderTest = "<none>";
 
 	void FailNpc(const char* szReason)
 	{
@@ -136,6 +168,128 @@ namespace
 		return xPlayer.IsValid() ? xPlayer.TryGetComponent<ZM_PlayerController>() : nullptr;
 	}
 
+	// The LIVE menu singleton. Every screen assertion below reads through THIS rather
+	// than through a locally built ZM_UI_MenuStack: the three raise seams resolve the
+	// singleton themselves, so anything else would be interrogating a different object
+	// than the one ZM_Interactable::Interact() actually raised -- the same class of
+	// blindness the local-runtime defect had.
+	ZM_UI_MenuStack* ResolveLiveMenuStack()
+	{
+		Zenith_EntityID xEntityID = INVALID_ENTITY_ID;
+		if (!ZM_UI_MenuStack::TryGetUniqueSingletonEntityID(xEntityID))
+		{
+			return nullptr;
+		}
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xEntityID);
+		return xEntity.IsValid() ? xEntity.TryGetComponent<ZM_UI_MenuStack>() : nullptr;
+	}
+
+	// The shared front half of a ROLE CASE: point the NEAR NPC at eNpcId's row, prove
+	// the live decision still predicts it, press E through the REAL call site, and
+	// require an OK dispatch AT that entity which raised EXACTLY ONE screen. The caller
+	// then asserts WHICH screen -- the half this test used to be blind to.
+	//
+	// The two resets at the top are load-bearing, not hygiene. The role cases raise real
+	// screens on the ONE live ZM_UI_MenuStack singleton, and:
+	//   * the world gate rejects with MENU_OPEN while a previous case's screen is up
+	//     (ZM_ShouldInteract blocker 2), and
+	//   * the dialogue box is SINGLE-TENANT while a choice is armed -- OpenCareCenterPrompt
+	//     refuses outright if the box is still active, and PushDialogueLines refuses while
+	//     a choice is armed.
+	// ResetRuntimeStateForTests force-closes the menu (which drops every screen's session
+	// state and unfreezes the player) and clears the latched dialogue answer.
+	bool RaiseThroughNearNpc(
+		ZM_PlayerController& xController,
+		ZM_Interactable& xNear,
+		const ZM_InteractionRuntime& xRuntime,
+		ZM_NPC_ID eNpcId,
+		ZM_NPC_ROLE eExpectedRole,
+		const char* szRoleLabel)
+	{
+		g_szNpcRoleUnderTest = szRoleLabel;
+		ZM_InteractionRuntime::ResetRuntimeStateForTests();
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
+		// NOT "a previous role case left the menu open" -- that is the NORMAL state here.
+		// Every role case ends having raised a screen and never closes it, so cases 2 and 3
+		// arrive with the menu genuinely open; the reset above is precisely what clears it.
+		// What must hold is that the reset ACTUALLY closed it, because the world gate
+		// rejects with MENU_OPEN while any screen is up (ZM_ShouldInteract blocker 2) and
+		// every case after the first would then prove nothing. Reachable exactly when
+		// ZM_UI_MenuStack::ResetRuntimeStateForTests / CloseMenu stops emptying the stack.
+		if (ZM_UI_MenuStack::IsMenuOpen())
+		{
+			FailNpc("ResetRuntimeStateForTests left the menu open -- the world gate would "
+				"reject the next raise with MENU_OPEN and prove nothing");
+			return false;
+		}
+
+		// A CONTENT precondition, not a behaviour assertion: if the row this case picked
+		// stopped carrying the role it is meant to exercise, the case would silently test
+		// the wrong seam and still pass. Read from the live table, never restated.
+		if (ZM_GetNpcData(eNpcId).m_eRole != eExpectedRole)
+		{
+			FailNpc("the NPC row this role case exercises no longer carries that role");
+			return false;
+		}
+		if (!xNear.SetNpcId(eNpcId))
+		{
+			FailNpc("SetNpcId refused the row this role case exercises");
+			return false;
+		}
+		xNear.SetInteractable(true);   // arm the reachable candidate
+
+		Zenith_EntityID xSeamTarget = INVALID_ENTITY_ID;
+		const ZM_INTERACT_REJECT eSeam = xRuntime.EvaluateForTests(xSeamTarget);
+		if (eSeam != ZM_INTERACT_OK || xSeamTarget != g_xNpcNearEntityID)
+		{
+			FailNpc("EvaluateForTests did not predict the reachable NPC as the winner");
+			return false;
+		}
+		if (xRuntime.HasLatchedResult())
+		{
+			FailNpc("EvaluateForTests must not touch a latch");
+			return false;
+		}
+
+		// The RAW key code, deliberately: a windowed/automated test characterises the
+		// binding rather than restating ZM_InputActions' constant back to itself.
+		Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_E);
+		// Through the REAL call site, never a local runtime -- see
+		// ResolveFixtureController. This is what makes the tick's PLACEMENT
+		// (above OnUpdate's collider / HasActiveSimulation early-out) load-bearing
+		// for this test rather than merely asserted in a comment.
+		xController.OnUpdate(fNPC_FIXED_DT);
+
+		// Captured IMMEDIATELY, and every screen assertion the caller makes runs in THIS
+		// same Step call: the player's own controller ticks the same runtime later this
+		// frame, and the menu component's own OnUpdate runs later still.
+		if (xRuntime.GetLastResult() != ZM_INTERACT_OK)
+		{
+			FailNpc("the reachable, faced, enabled NPC was not accepted");
+			return false;
+		}
+		// Asserted by IDENTITY, not merely by "something was picked": the far NPC is
+		// also enabled, so picking it would be a real defect an OK-only check misses.
+		if (xRuntime.GetLastTarget() != g_xNpcNearEntityID)
+		{
+			FailNpc("the winning target was not the NEAR NPC");
+			return false;
+		}
+		// The load-bearing count: a screen ACTUALLY went up, exactly once. A stubbed-true
+		// interactor satisfies every check above but never moves this counter.
+		if (xRuntime.GetRaiseCount() != 1u)
+		{
+			FailNpc("Interact() did not raise exactly one screen");
+			return false;
+		}
+		if (!ZM_UI_MenuStack::IsMenuOpen())
+		{
+			FailNpc("the raised screen did not open the menu stack");
+			return false;
+		}
+		return true;
+	}
+
 	Zenith_EntityID CreateFixtureNpc(
 		Zenith_SceneData* pxSceneData,
 		const char* szName,
@@ -162,8 +316,11 @@ namespace
 		g_bNpcSetupComplete = false;
 		g_bNpcNegativePassed = false;
 		g_bNpcPositivePassed = false;
+		g_bNpcShopkeepPassed = false;
+		g_bNpcCaretakerPassed = false;
 		g_bNpcSkipped = false;
 		g_szNpcFailure = "test did not reach verification";
+		g_szNpcRoleUnderTest = "<none>";
 		g_xNpcPlayerEntityID = INVALID_ENTITY_ID;
 		g_xNpcNearEntityID = INVALID_ENTITY_ID;
 		g_xNpcFarEntityID = INVALID_ENTITY_ID;
@@ -332,64 +489,154 @@ namespace
 			// LATER IN THIS SAME FRAME with the E edge still asserted, so arming now
 			// would let the real call site raise the dialogue before the positive phase
 			// ever got to observe it.
-			g_eNpcPhase = NpcPhase::Positive;
+			g_eNpcPhase = NpcPhase::RoleTalker;
 			g_iNpcPhaseFrames = 0;
 			return true;
 		}
 
-		case NpcPhase::Positive:
+		case NpcPhase::RoleTalker:
 		{
-			ZM_InteractionRuntime::ResetRuntimeStateForTests();
-			pxNear->SetInteractable(true);   // arm the reachable candidate
+			if (!RaiseThroughNearNpc(*pxController, *pxNear, xRuntime,
+				ZM_NPC_VILLAGER, ZM_NPC_ROLE_TALKER, "TALKER"))
+			{
+				return false;
+			}
+			const ZM_UI_MenuStack* pxMenu = ResolveLiveMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailNpc("the live ZM_UI_MenuStack singleton could not be resolved");
+				return false;
+			}
+			// FAILS IF: ZM_Interactable.cpp's ZM_NPC_RAISE_DIALOGUE arm stops calling
+			// TryPushDialogue (e.g. is rewired to TryOpenShop), or ZM_RaiseKindForRole
+			// stops mapping TALKER -> ZM_NPC_RAISE_DIALOGUE.
+			if (pxMenu->GetTopScreen() != ZM_MENU_SCREEN_DIALOGUE)
+			{
+				FailNpc("a TALKER must raise the DIALOGUE screen");
+				return false;
+			}
+			// FAILS IF: the TALKER arm is rewired to TryOpenCareCenterPrompt. That also
+			// raises DIALOGUE, so the top-screen clause above CANNOT see it -- but the
+			// prompt arms HEAL_PARTY and an ordinary conversation must not.
+			if (pxMenu->GetPendingDialogueAction() != ZM_DIALOGUE_ACTION_NONE)
+			{
+				FailNpc("an ordinary TALKER must not arm a pending dialogue action");
+				return false;
+			}
+			// ...and the same mutation seen from the box: a care prompt ARMS a yes/no
+			// choice, a conversation never does.
+			if (pxMenu->GetDialogue().IsChoiceArmed())
+			{
+				FailNpc("an ordinary TALKER must not arm a yes/no choice");
+				return false;
+			}
+			// FAILS IF: the arm stops handing THIS ROW's lines to the seam (e.g. passes a
+			// hard-coded placeholder, or the row's count and pointer drift apart). Read
+			// out of the live table at runtime -- never re-spelled here.
+			if (pxMenu->GetDialogue().GetQueuedLineCount()
+				!= ZM_GetNpcData(ZM_NPC_VILLAGER).m_uLineCount)
+			{
+				FailNpc("the raised dialogue did not carry this NPC row's own lines");
+				return false;
+			}
 
-			Zenith_EntityID xSeamTarget = INVALID_ENTITY_ID;
-			const ZM_INTERACT_REJECT eSeam = xRuntime.EvaluateForTests(xSeamTarget);
-			if (eSeam != ZM_INTERACT_OK || xSeamTarget != g_xNpcNearEntityID)
+			g_bNpcPositivePassed = true;
+			g_eNpcPhase = NpcPhase::RoleShopkeep;
+			g_iNpcPhaseFrames = 0;
+			return true;
+		}
+
+		case NpcPhase::RoleShopkeep:
+		{
+			if (!RaiseThroughNearNpc(*pxController, *pxNear, xRuntime,
+				ZM_NPC_TRADE_POST_CLERK, ZM_NPC_ROLE_SHOPKEEP, "SHOPKEEP"))
 			{
-				FailNpc("EvaluateForTests did not predict the reachable NPC as the winner");
 				return false;
 			}
-			if (xRuntime.HasLatchedResult())
+			const ZM_UI_MenuStack* pxMenu = ResolveLiveMenuStack();
+			if (pxMenu == nullptr)
 			{
-				FailNpc("EvaluateForTests must not touch a latch");
+				FailNpc("the live ZM_UI_MenuStack singleton could not be resolved");
 				return false;
+			}
+			// FAILS IF: ZM_Interactable.cpp's ZM_NPC_RAISE_SHOP arm stops calling
+			// TryOpenShop -- the EXACT mutation (SHOPKEEP -> TryPushDialogue) that used
+			// to leave this test green while reddening only the windowed ones.
+			if (pxMenu->GetTopScreen() != ZM_MENU_SCREEN_SHOP)
+			{
+				FailNpc("a SHOPKEEP must raise the SHOP screen");
+				return false;
+			}
+			const ZM_NpcData& xRow = ZM_GetNpcData(ZM_NPC_TRADE_POST_CLERK);
+			const ZM_UI_Shop& xShop = pxMenu->GetShopScreen();
+			// A CONTENT precondition: a clerk with no stock would make every clause
+			// below vacuously true.
+			if (xRow.m_paeStock == nullptr || xRow.m_uStockCount == 0u)
+			{
+				FailNpc("the SHOPKEEP row carries no stock, so its shop assertions "
+					"would be vacuous");
+				return false;
+			}
+			// FAILS IF: the SHOP arm stops passing THIS ROW's stock (a hard-coded list, a
+			// wrong row, or the count and pointer drifting apart). Both sides are read at
+			// RUNTIME from ZM_GetNpcData -- re-spelling the ids here would only prove that
+			// the same literals were typed twice.
+			if (xShop.GetInventoryCount() != xRow.m_uStockCount)
+			{
+				FailNpc("the raised shop's stock count is not this NPC row's own");
+				return false;
+			}
+			for (u_int uItem = 0u; uItem < xRow.m_uStockCount; ++uItem)
+			{
+				if (xShop.GetInventoryItem(uItem) != xRow.m_paeStock[uItem])
+				{
+					FailNpc("the raised shop's stock is not this NPC row's own");
+					return false;
+				}
 			}
 
-			// The RAW key code, deliberately: a windowed/automated test characterises the
-			// binding rather than restating ZM_InputActions' constant back to itself.
-			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_E);
-			// Through the REAL call site, never a local runtime -- see
-			// ResolveFixtureController. This is what makes the tick's PLACEMENT
-			// (above OnUpdate's collider / HasActiveSimulation early-out) load-bearing
-			// for this test rather than merely asserted in a comment.
-			pxController->OnUpdate(fNPC_FIXED_DT);
+			g_bNpcShopkeepPassed = true;
+			g_eNpcPhase = NpcPhase::RoleCaretaker;
+			g_iNpcPhaseFrames = 0;
+			return true;
+		}
 
-			const ZM_INTERACT_REJECT eResult = xRuntime.GetLastResult();
-			const Zenith_EntityID xTarget = xRuntime.GetLastTarget();
-			const u_int uRaiseCount = xRuntime.GetRaiseCount();
-
-			if (eResult != ZM_INTERACT_OK)
+		case NpcPhase::RoleCaretaker:
+		{
+			if (!RaiseThroughNearNpc(*pxController, *pxNear, xRuntime,
+				ZM_NPC_CARETAKER, ZM_NPC_ROLE_CARETAKER, "CARETAKER"))
 			{
-				FailNpc("the reachable, faced, enabled NPC was not accepted");
 				return false;
 			}
-			// Asserted by IDENTITY, not merely by "something was picked": the far NPC is
-			// also enabled, so picking it would be a real defect an OK-only check misses.
-			if (xTarget != g_xNpcNearEntityID)
+			const ZM_UI_MenuStack* pxMenu = ResolveLiveMenuStack();
+			if (pxMenu == nullptr)
 			{
-				FailNpc("the winning target was not the NEAR NPC");
+				FailNpc("the live ZM_UI_MenuStack singleton could not be resolved");
 				return false;
 			}
-			// The load-bearing assertion: a screen ACTUALLY went up. A stubbed-true
-			// interactor satisfies every check above but never moves this counter.
-			if (uRaiseCount != 1u)
+			// The care prompt IS a dialogue, so this clause alone cannot separate it from
+			// a TALKER -- it only FAILS IF the CARE_CENTER arm is rewired to TryOpenShop.
+			if (pxMenu->GetTopScreen() != ZM_MENU_SCREEN_DIALOGUE)
 			{
-				FailNpc("Interact() did not raise exactly one screen");
+				FailNpc("a CARETAKER must raise the DIALOGUE screen (its yes/no prompt)");
 				return false;
 			}
-			if (!ZM_UI_MenuStack::IsMenuOpen())
+			// THE clause that separates the two DIALOGUE roles, and the one the verified
+			// mutation trips. FAILS IF: ZM_Interactable.cpp's ZM_NPC_RAISE_CARE_CENTER arm
+			// calls TryPushDialogue instead of TryOpenCareCenterPrompt -- only the prompt
+			// path sets m_eDialogueAction, so plain lines leave it NONE.
+			if (pxMenu->GetPendingDialogueAction() != ZM_DIALOGUE_ACTION_HEAL_PARTY)
 			{
-				FailNpc("the raised dialogue did not open the menu stack");
+				FailNpc("a CARETAKER must arm the HEAL_PARTY prompt action, not plain lines");
+				return false;
+			}
+			// ...and the same distinction seen from the box: only the prompt arms a
+			// yes/no choice. FAILS IF the arm stops going through OpenCareCenterPrompt,
+			// or that function stops arming the choice (which would strand an
+			// unanswerable question on screen).
+			if (!pxMenu->GetDialogue().IsChoiceArmed())
+			{
+				FailNpc("the CARETAKER's prompt did not arm its yes/no choice");
 				return false;
 			}
 
@@ -409,7 +656,7 @@ namespace
 				return false;
 			}
 
-			g_bNpcPositivePassed = true;
+			g_bNpcCaretakerPassed = true;
 			g_eNpcPhase = NpcPhase::Done;
 			return false;
 		}
@@ -445,10 +692,13 @@ namespace
 
 		const bool bPassed = g_bNpcSetupComplete
 			&& g_bNpcNegativePassed
-			&& g_bNpcPositivePassed;
+			&& g_bNpcPositivePassed
+			&& g_bNpcShopkeepPassed
+			&& g_bNpcCaretakerPassed;
 		if (!bPassed)
 		{
-			Zenith_Error(LOG_CATEGORY_UNITTEST, "[ZM_NpcDispatch] %s", g_szNpcFailure);
+			Zenith_Error(LOG_CATEGORY_UNITTEST, "[ZM_NpcDispatch] %s (role case: %s)",
+				g_szNpcFailure, g_szNpcRoleUnderTest);
 		}
 		return bPassed;
 	}

@@ -373,6 +373,40 @@ ZENITH_TEST(ZM_BattleDirector, Director_BattleConfigCatchOn)
 	ZENITH_ASSERT_TRUE(xCfg.m_bCanFlee, "the director's wild battle permits fleeing (SC5 RUN)");
 }
 
+// 11c. The core SURFACES the battle's can-catch rule to its presenter (Shortfalls 1.5
+//      deferral (a)). The battle menu gates its Catch entry on this, so it must track
+//      the config the battle was actually Begun with -- never a copy the UI keeps, and
+//      never a constant. ZM_BattleTower already Begins battles with m_bCanCatch = false,
+//      so the false case is a REAL reachable state, not a hypothetical.
+ZENITH_TEST(ZM_BattleDirector, Director_CoreSurfacesCanCatchFromConfig)
+{
+	const ZM_BattleMonsterSpec xPlayer = ZM_BuildWildEnemySpec(ZM_SPECIES_FERNFAWN, 5u);
+	const ZM_BattleMonsterSpec xEnemy  = ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 5u);
+
+	// FAILS IF: IsCatchAllowed() is implemented as a constant / a UI-side copy rather
+	// than a read-through to the engine's config -- a battle that never Begun has no
+	// rules yet, and the fail-CLOSED answer is "no catching".
+	ZM_BattleDirectorCore xNotStarted;
+	ZENITH_ASSERT_FALSE(xNotStarted.IsCatchAllowed(),
+		"a core that has not Begun a battle must not claim catching is allowed");
+
+	// FAILS IF: IsCatchAllowed() stops reading m_bCanCatch (e.g. reads m_bIsWild, which
+	// is TRUE in both configs below and would make both cases agree).
+	ZM_BattleConfig xNoCatch = MakeWildConfig();   // MakeWildConfig leaves m_bCanCatch false
+	ZENITH_ASSERT_FALSE(xNoCatch.m_bCanCatch, "fixture precondition: this config forbids catching");
+	ZM_BattleDirectorCore xNoCatchCore;
+	xNoCatchCore.Begin(&xPlayer, 1u, &xEnemy, 1u, xNoCatch, 0x5EED01ull, ZM_AI_TIER_GREEDY);
+	ZENITH_ASSERT_FALSE(xNoCatchCore.IsCatchAllowed(),
+		"a battle Begun with m_bCanCatch = false must report catching as disallowed");
+
+	ZM_BattleConfig xCatch = MakeWildConfig();
+	xCatch.m_bCanCatch = true;
+	ZM_BattleDirectorCore xCatchCore;
+	xCatchCore.Begin(&xPlayer, 1u, &xEnemy, 1u, xCatch, 0x5EED02ull, ZM_AI_TIER_GREEDY);
+	ZENITH_ASSERT_TRUE(xCatchCore.IsCatchAllowed(),
+		"a battle Begun with m_bCanCatch = true must report catching as allowed");
+}
+
 // 12. Setup is one-shot: it fires ONLY in WAIT_FOR_IN_BATTLE, ONLY once the
 //     transition is in battle, and ONLY if not already set up. A wrong phase, a
 //     not-yet-in-battle transition, or an already-set-up latch all suppress it.

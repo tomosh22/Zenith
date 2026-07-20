@@ -497,11 +497,16 @@ namespace
 			// we never accidentally open the move list. DOWN walks Fight(0)->Catch(1);
 			// ENTER on Catch submits {ZM_ACTION_ITEM, catch ball}. With ZM_ITEM_PRIMEORB
 			// installed in Setup the capture succeeds on turn 1 (zero RNG).
+			// The cursor is resolved to an ENTRY through MenuRootItemAtIndex rather than
+			// compared to an item id: the root list is gated on the battle's can-catch
+			// flag, so an index only means what the LIVE list says it means (it is the
+			// identity here, this being a wild battle).
 			const ZM_BattleMenuScreen eScreen = pxDirector->GetHudMenuScreen();
 			const int                 iCursor = pxDirector->GetHudMenuCursor();
+			const bool                bCanCatch = pxDirector->GetCore().IsCatchAllowed();
 			if (eScreen == ZM_BATTLE_MENU_ACTION_ROOT)
 			{
-				if (iCursor == (int)ZM_BATTLE_MENU_CATCH)
+				if (ZM_UI_BattleHUD::MenuRootItemAtIndex(iCursor, bCanCatch) == ZM_BATTLE_MENU_CATCH)
 				{
 					Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
 				}
@@ -520,9 +525,12 @@ namespace
 			// and this converges again next turn.
 			const ZM_BattleMenuScreen eScreen = pxDirector->GetHudMenuScreen();
 			const int                 iCursor = pxDirector->GetHudMenuCursor();
+			const bool                bCanCatch = pxDirector->GetCore().IsCatchAllowed();
 			if (eScreen == ZM_BATTLE_MENU_ACTION_ROOT)
 			{
-				if (iCursor == (int)ZM_BATTLE_MENU_RUN)
+				// Resolved through the LIVE list (see the Catch drive above): with catching
+				// gated off, Run would sit at index 1, not 2.
+				if (ZM_UI_BattleHUD::MenuRootItemAtIndex(iCursor, bCanCatch) == ZM_BATTLE_MENU_RUN)
 				{
 					Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
 				}

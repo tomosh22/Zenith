@@ -47,8 +47,10 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Engine.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Zenith_CameraResolve.h"       // Zenith_GetMainCameraAcrossScenes -- the walk's live basis
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Maths/Zenith_Maths.h"
@@ -209,25 +211,70 @@ namespace
 	// characterises the SAME input path the shipped traversal proof does.
 	// It additionally records the held set, so a stall failure can name it.
 	//
-	// ★ KNOWN LIMIT, MEASURED IN SC7 (ZM-D-130) -- this world-space key choice is
-	// only correct while the camera is still near its authored yaw. Movement is
-	// CAMERA-RELATIVE (ZM_PlayerController.cpp:140-147, 244-271) and ZM_FollowCamera
-	// re-aims itself at the player every frame off a LAGGING camera-to-player vector
-	// (ZM_FollowCamera.cpp:309-323), so once the player turns hard, held W stops
-	// meaning +Z and this function starts choosing keys in the wrong frame. It is
-	// safe HERE only because this test walks ONE leg, from rest, straight down +Z.
-	// SC7's shared walk machine in Tests/ZM_AutoTests_NpcServices.cpp carries the
-	// CORRECTED, camera-relative version (it projects the desired world direction
-	// onto the live camera basis, and degenerates to exactly this behaviour at yaw
-	// 0). Copy THAT one, never this one, for any new multi-leg walk.
+	// ★★ THE TRAVERSAL DRIVE IS CAMERA-RELATIVE, and it MUST be. ★★
+	//
+	// Player movement is camera-relative: ZM_PlayerController::OnUpdate reads the main
+	// camera's facing dir and hands it to BuildCameraRelativeDirection, which builds
+	// xForward = flatten(cameraForward), xRight = (xForward.z, 0, -xForward.x) and
+	// moves along xForward * input.y + xRight * input.x (ZM_PlayerController.cpp:
+	// 140-147, 244-271). So "W" does NOT mean +Z -- it means "the way the camera is
+	// facing". ZM_FollowCamera is a SPRING follow: it places the camera from the fixed
+	// authored yaw but then AIMS it at the player every frame with
+	// fYaw = atan2(-direction.x, direction.z) over the LAGGING camera-to-player vector
+	// (ZM_FollowCamera.cpp:309-323), so the world-space meaning of W/A/S/D rotates as
+	// the player turns.
+	//
+	// This function therefore picks keys in the CAMERA frame: it resolves the live
+	// camera basis exactly as the controller does and projects the desired world
+	// direction onto it -- dot(toTarget, xForward) is the W/S axis and
+	// dot(toTarget, xRight) the D/A axis, the exact INVERSE of the controller's own
+	// mapping. At EXACTLY yaw 0 it degenerates to plain world space (forward == +Z,
+	// right == +X) and picks the same keys the world-space version would. That identity
+	// holds ONLY on such frames: the spring described above aims the camera off a LAGGING
+	// vector, so the live yaw is not pinned at 0 during a walk, and on lagged frames the
+	// two versions can select DIFFERENT keys -- which is the entire correction, not a
+	// caveat to it. A hard turn therefore no longer drives the player off on a stable
+	// wrong heading. (The earlier world-space
+	// chooser was MEASURED failing exactly that way in
+	// Tests/ZM_AutoTests_NpcServices.cpp: a ~120-degree heading change settled onto a
+	// stable 45-degree wrong heading, receded from 9.25 m to 12.34 m and died on the
+	// stall watchdog.) Copy THIS version for any new walk.
 	void DriveTowardXZ(
 		const Zenith_Maths::Vector3& xPosition,
 		const Zenith_Maths::Vector3& xTarget)
 	{
 		ClearTalkInput();
 		constexpr float fDEAD_ZONE = 0.08f;
-		const float fDeltaX = xTarget.x - xPosition.x;
-		const float fDeltaZ = xTarget.z - xPosition.z;
+
+		// The LIVE camera basis, resolved exactly as the controller resolves it. The
+		// fallback matches BuildCameraRelativeDirection's own: +Z forward.
+		Zenith_Maths::Vector3 xCameraForward(0.0f, 0.0f, 1.0f);
+		if (Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes())
+		{
+			pxCamera->GetFacingDir(xCameraForward);
+		}
+		Zenith_Maths::Vector3 xForward(xCameraForward.x, 0.0f, xCameraForward.z);
+		const float fForwardLengthSq = xForward.x * xForward.x + xForward.z * xForward.z;
+		if (fForwardLengthSq <= 0.000001f)
+		{
+			xForward = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+		}
+		else
+		{
+			xForward /= std::sqrt(fForwardLengthSq);
+		}
+		const Zenith_Maths::Vector3 xRight(xForward.z, 0.0f, -xForward.x);
+
+		// The desired WORLD direction, decomposed onto that basis. fForwardAmount is
+		// the W/S axis and fRightAmount the D/A axis -- the same two components the
+		// controller will multiply back out.
+		const Zenith_Maths::Vector3 xToTarget(
+			xTarget.x - xPosition.x, 0.0f, xTarget.z - xPosition.z);
+		const float fForwardAmount = xToTarget.x * xForward.x + xToTarget.z * xForward.z;
+		const float fRightAmount   = xToTarget.x * xRight.x   + xToTarget.z * xRight.z;
+
+		const float fDeltaX = fRightAmount;
+		const float fDeltaZ = fForwardAmount;
 		if (fDeltaX < -fDEAD_ZONE)
 		{
 			Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true);

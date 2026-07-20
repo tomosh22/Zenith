@@ -24,6 +24,7 @@
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // ResetRuntimeStateForTests (between-tests hook)
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // sz*_NAME element contract (dialogue authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Bag.h"           // sz*_NAME + RowElementName + geometry contract (bag authoring)
+#include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"     // fZM_BATTLE_MENU_ROOT_* row constants (battle menu authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Dex.h"           // sz*_NAME + geometry contract (dex authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"         // sz*_NAME + SlotElementName contract (party authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Shop.h"          // sz*_NAME + RowElementName + geometry contract (shop authoring)
@@ -354,12 +355,23 @@ namespace
 			pxMenuPanel->SetColor(xMenuPanelColour);
 		}
 
-		// Root actions -- Fight / Catch / Run, a single vertical stack inside the panel
-		// (top to bottom, matching the ZM_BATTLE_MENU_FIGHT/CATCH/RUN cursor order). 48px
-		// row pitch, shown only in ACTION_ROOT.
+		// Root actions -- a single vertical stack inside the panel, authored top to bottom
+		// in Fight / Catch / Run ENTRY order. That is entry IDENTITY order, NOT cursor
+		// order: ZM_BATTLE_MENU_FIGHT/CATCH/RUN are entry ids, and the Catch entry is
+		// HIDDEN outright when the battle disallows catching (a trainer battle, or the
+		// Battle Tower), which makes Run cursor index 1. A cursor is therefore resolved to
+		// an entry through ZM_UI_BattleHUD::MenuRootItemAtIndex, never by reading this
+		// layout -- and the presenter re-anchors each visible button to the row of its
+		// resolved index, so hiding Catch closes the gap instead of leaving a hole. The
+		// row Y values come from the SHARED constants for exactly that reason.
+		auto fnRootRowY = [](int iRow)
+		{
+			return fZM_BATTLE_MENU_ROOT_FIRST_ROW_Y + fZM_BATTLE_MENU_ROOT_ROW_PITCH_Y * (float)iRow;
+		};
+
 		Zenith_UI::Zenith_UIButton* pxFight =
 			pxUI->FindElement<Zenith_UI::Zenith_UIButton>("BattleHUD_ActionFight");
-		fnPlaceMenu(pxFight, Zenith_UI::AnchorPreset::BottomRight, -133.0f, -128.0f, 170.0f, 44.0f);
+		fnPlaceMenu(pxFight, Zenith_UI::AnchorPreset::BottomRight, -133.0f, fnRootRowY(0), 170.0f, 44.0f);
 		if (pxFight != nullptr)
 		{
 			pxFight->SetFontSize(26.0f);
@@ -367,7 +379,7 @@ namespace
 
 		Zenith_UI::Zenith_UIButton* pxCatch =
 			pxUI->FindElement<Zenith_UI::Zenith_UIButton>("BattleHUD_ActionCatch");
-		fnPlaceMenu(pxCatch, Zenith_UI::AnchorPreset::BottomRight, -133.0f, -80.0f, 170.0f, 44.0f);
+		fnPlaceMenu(pxCatch, Zenith_UI::AnchorPreset::BottomRight, -133.0f, fnRootRowY(1), 170.0f, 44.0f);
 		if (pxCatch != nullptr)
 		{
 			pxCatch->SetFontSize(26.0f);
@@ -375,7 +387,7 @@ namespace
 
 		Zenith_UI::Zenith_UIButton* pxRun =
 			pxUI->FindElement<Zenith_UI::Zenith_UIButton>("BattleHUD_ActionRun");
-		fnPlaceMenu(pxRun, Zenith_UI::AnchorPreset::BottomRight, -133.0f, -32.0f, 170.0f, 44.0f);
+		fnPlaceMenu(pxRun, Zenith_UI::AnchorPreset::BottomRight, -133.0f, fnRootRowY(2), 170.0f, 44.0f);
 		if (pxRun != nullptr)
 		{
 			pxRun->SetFontSize(26.0f);

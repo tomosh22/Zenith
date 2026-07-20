@@ -144,24 +144,71 @@ namespace
 		pxButton->SetTextColor((bVisible && bFocused) ? xMENU_FOCUS_COLOUR : xMENU_NORMAL_COLOUR);
 	}
 
+	// Move a VISIBLE root button onto the row its RESOLVED cursor index occupies. The
+	// authored X (and everything else the authoring step chose) is kept -- only the Y is
+	// derived, from the constants BOTH sites share, so the gated layout can never drift
+	// away from the authored one. A negative row means "this entry is not in the present
+	// list", which leaves the (hidden) button exactly where it was.
+	void ZM_PlaceRootButtonAtRow(Zenith_UI::Zenith_UIButton* pxButton, int iRow)
+	{
+		if (pxButton == nullptr || iRow < 0)
+		{
+			return;
+		}
+		const Zenith_Maths::Vector2 xPosition = pxButton->GetPosition();
+		pxButton->SetPosition(xPosition.x,
+			fZM_BATTLE_MENU_ROOT_FIRST_ROW_Y + fZM_BATTLE_MENU_ROOT_ROW_PITCH_Y * (float)iRow);
+	}
+
 	// Re-resolve + refresh all eight menu elements for the current screen + cursor
-	// (never cache). ROOT shows the panel + Fight/Catch/Run; MOVE_SELECT shows the panel +
-	// the move buttons for the filled slots; anything else hides them all. The move
-	// buttons' text is set every frame regardless of visibility.
+	// (never cache). ROOT shows the panel + Fight/Run, plus Catch ONLY when the battle
+	// allows catching; MOVE_SELECT shows the panel + the move buttons for the filled
+	// slots; anything else hides them all. The move buttons' text is set every frame
+	// regardless of visibility.
 	void ZM_RefreshBattleMenuElements(Zenith_UIComponent& xUI, ZM_BattleMenuScreen eScreen,
-		int iMenuCursor, const char* const* paszMoveName, int iMoveCount)
+		int iMenuCursor, const char* const* paszMoveName, int iMoveCount, bool bCanCatch)
 	{
 		const bool bRoot = (eScreen == ZM_BATTLE_MENU_ACTION_ROOT);
 		const bool bMove = (eScreen == ZM_BATTLE_MENU_MOVE_SELECT);
 
 		ZM_SetHudElementVisible(xUI, szMENU_PANEL_NAME, bRoot || bMove);
 
-		ZM_ApplyMenuButton(xUI.FindElement<Zenith_UI::Zenith_UIButton>(szACTION_FIGHT_NAME),
-			bRoot, bRoot && iMenuCursor == (int)ZM_BATTLE_MENU_FIGHT, nullptr);
-		ZM_ApplyMenuButton(xUI.FindElement<Zenith_UI::Zenith_UIButton>(szACTION_CATCH_NAME),
-			bRoot, bRoot && iMenuCursor == (int)ZM_BATTLE_MENU_CATCH, nullptr);
-		ZM_ApplyMenuButton(xUI.FindElement<Zenith_UI::Zenith_UIButton>(szACTION_RUN_NAME),
-			bRoot, bRoot && iMenuCursor == (int)ZM_BATTLE_MENU_RUN, nullptr);
+		// ONE cursor -> entry resolution, shared with MenuConfirm: the highlighted button
+		// and the button a confirm would act on can never disagree.
+		const ZM_BattleMenuRootItem eItem =
+			ZM_UI_BattleHUD::MenuRootItemAtIndex(iMenuCursor, bCanCatch);
+
+		// The three root buttons in ENTRY-IDENTITY order -- which is NOT cursor order once
+		// the gate removes Catch. Each button's ROW is looked up through the same
+		// MenuRootItemAtIndex the cursor resolves through, so the VISIBLE entries are always
+		// a contiguous stack: with catching off Run renders in row 1, not in row 2 behind a
+		// 48px hole. An entry the gate removed resolves to no row and is hidden outright, so
+		// a trainer battle never even shows an action the engine would assert on.
+		struct RootButton { ZM_BattleMenuRootItem m_eItem; const char* m_szName; };
+		const RootButton axRootButtons[(u_int)ZM_BATTLE_MENU_ROOT_COUNT] =
+		{
+			{ ZM_BATTLE_MENU_FIGHT, szACTION_FIGHT_NAME },
+			{ ZM_BATTLE_MENU_CATCH, szACTION_CATCH_NAME },
+			{ ZM_BATTLE_MENU_RUN,   szACTION_RUN_NAME   },
+		};
+		const int iRootCount = ZM_UI_BattleHUD::MenuRootItemCount(bCanCatch);
+		for (const RootButton& xRoot : axRootButtons)
+		{
+			int iRow = -1;
+			for (int i = 0; i < iRootCount; ++i)
+			{
+				if (ZM_UI_BattleHUD::MenuRootItemAtIndex(i, bCanCatch) == xRoot.m_eItem)
+				{
+					iRow = i;
+					break;
+				}
+			}
+			const bool bShown = bRoot && iRow >= 0;
+			Zenith_UI::Zenith_UIButton* pxButton =
+				xUI.FindElement<Zenith_UI::Zenith_UIButton>(xRoot.m_szName);
+			ZM_PlaceRootButtonAtRow(pxButton, bShown ? iRow : -1);
+			ZM_ApplyMenuButton(pxButton, bShown, bShown && eItem == xRoot.m_eItem, nullptr);
+		}
 
 		for (int i = 0; i < (int)uZM_MAX_MOVES; ++i)
 		{
@@ -283,12 +330,44 @@ void ZM_UI_BattleHUD::Hide(Zenith_Entity& xDirectorEntity)
 // SC5 -- the interactive Fight/Run battle menu (the first player-driven input).
 // ============================================================================
 
-int ZM_UI_BattleHUD::MenuItemCount(ZM_BattleMenuScreen eScreen, int iMoveCount)
+int ZM_UI_BattleHUD::MenuRootItemCount(bool bCanCatch)
+{
+	// Counted as the LIST IT DESCRIBES rather than derived from ZM_BATTLE_MENU_ROOT_COUNT:
+	// Fight + Run always; Catch ONLY when the battle allows it (Shortfalls 1.5 (a)). A
+	// fourth root entry would then have to be added here explicitly, next to the mapping
+	// below, instead of arriving in the count for free while the mapping stayed wrong.
+	return 1 /*Fight*/ + (bCanCatch ? 1 : 0) /*Catch*/ + 1 /*Run*/;
+}
+
+// The gated mapping below enumerates Fight/Catch/Run BY HAND, so it does not generalise
+// to a longer root list. Break the build rather than let a 4th entry ship with a correct
+// count and a silently wrong cursor->entry mapping.
+static_assert(ZM_BATTLE_MENU_ROOT_COUNT == 3u,
+	"the gated root mapping enumerates Fight/Catch/Run by hand -- update it before adding a root entry");
+
+ZM_BattleMenuRootItem ZM_UI_BattleHUD::MenuRootItemAtIndex(int iIndex, bool bCanCatch)
+{
+	if (iIndex < 0 || iIndex >= MenuRootItemCount(bCanCatch))
+	{
+		// The "no entry here" sentinel. Returning a REAL item for an out-of-range index
+		// is how an off-by-one turns into a wrong SUBMITTED action, which is worse than
+		// the missing gate this function exists to add.
+		return ZM_BATTLE_MENU_ROOT_COUNT;
+	}
+	if (bCanCatch)
+	{
+		return (ZM_BattleMenuRootItem)iIndex;   // identity: Fight(0), Catch(1), Run(2)
+	}
+	// Catch is absent, so Run closes the gap: Fight(0), Run(1).
+	return (iIndex == 0) ? ZM_BATTLE_MENU_FIGHT : ZM_BATTLE_MENU_RUN;
+}
+
+int ZM_UI_BattleHUD::MenuItemCount(ZM_BattleMenuScreen eScreen, int iMoveCount, bool bCanCatch)
 {
 	switch (eScreen)
 	{
 	case ZM_BATTLE_MENU_ACTION_ROOT:
-		return (int)ZM_BATTLE_MENU_ROOT_COUNT;   // 3 (Fight, Catch, Run)
+		return MenuRootItemCount(bCanCatch);   // 3 (Fight, Catch, Run) or 2 (Fight, Run)
 	case ZM_BATTLE_MENU_MOVE_SELECT:
 		return iMoveCount;
 	case ZM_BATTLE_MENU_HIDDEN:
@@ -345,19 +424,26 @@ int ZM_UI_BattleHUD::BuildFilledMoveMenu(const ZM_MOVE_ID (&aeMoves)[uZM_MAX_MOV
 }
 
 ZM_BattleMenuConfirmResult ZM_UI_BattleHUD::MenuConfirm(ZM_BattleMenuScreen eScreen, int iCursor,
-	const bool* pbMoveSelectable, int iMoveCount, const int* paiRawMoveSlot)
+	const bool* pbMoveSelectable, int iMoveCount, bool bCanCatch, const int* paiRawMoveSlot)
 {
 	ZM_BattleMenuConfirmResult xResult;   // default {NONE, action{}, next=HIDDEN, cursor 0}
 	switch (eScreen)
 	{
 	case ZM_BATTLE_MENU_ACTION_ROOT:
-		if (iCursor == (int)ZM_BATTLE_MENU_FIGHT)
+	{
+		// The cursor is an INDEX INTO THE PRESENT LIST, never an item id: with catching
+		// disallowed index 1 is Run, and index 2 is nothing at all. Resolving through
+		// MenuRootItemAtIndex is what makes the gate total -- there is no cursor value
+		// that yields CATCH when bCanCatch is false, so an ITEM (catch) action the engine
+		// would assert on cannot be produced here.
+		const ZM_BattleMenuRootItem eItem = MenuRootItemAtIndex(iCursor, bCanCatch);
+		if (eItem == ZM_BATTLE_MENU_FIGHT)
 		{
 			xResult.m_eKind       = ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES;
 			xResult.m_eNextScreen = ZM_BATTLE_MENU_MOVE_SELECT;
 			xResult.m_iNextCursor = 0;
 		}
-		else if (iCursor == (int)ZM_BATTLE_MENU_CATCH)
+		else if (eItem == ZM_BATTLE_MENU_CATCH)
 		{
 			// SC4: submit a catch-orb ITEM action. The director substitutes the actual ball
 			// (ZM_SetCatchBallForTests) onto the ITEM action before submitting; production
@@ -368,14 +454,15 @@ ZM_BattleMenuConfirmResult ZM_UI_BattleHUD::MenuConfirm(ZM_BattleMenuScreen eScr
 			xResult.m_eNextScreen     = ZM_BATTLE_MENU_HIDDEN;
 			xResult.m_iNextCursor     = 0;
 		}
-		else if (iCursor == (int)ZM_BATTLE_MENU_RUN)
+		else if (eItem == ZM_BATTLE_MENU_RUN)
 		{
 			xResult.m_eKind           = ZM_BATTLE_MENU_CONFIRM_SUBMIT;
 			xResult.m_xAction.m_eKind = ZM_ACTION_RUN;
 			xResult.m_eNextScreen     = ZM_BATTLE_MENU_HIDDEN;
 			xResult.m_iNextCursor     = 0;
 		}
-		return xResult;   // any other cursor -> {NONE}
+		return xResult;   // no entry at this index -> {NONE}
+	}
 	case ZM_BATTLE_MENU_MOVE_SELECT:
 		if (pbMoveSelectable != nullptr && iCursor >= 0 && iCursor < iMoveCount && pbMoveSelectable[iCursor])
 		{
@@ -433,18 +520,26 @@ bool ZM_UI_BattleHUD::UpdateMenu(Zenith_Entity& xDirectorEntity, const ZM_Battle
 		iMoveCount = BuildFilledMoveMenu(aeMoves, auCurPP, aszMoveName, abSelectable, aiRawMoveSlot);
 	}
 
+	// The battle's OWN rule, read off the config it was Begun with -- never a copy kept
+	// here. With catching off (a trainer battle, or the Battle Tower) the root list has
+	// no Catch entry at all, so the cursor cannot reach it and a confirm cannot submit it.
+	const bool bCanCatch = xCore.IsCatchAllowed();
+
 	// Edge input: nav FIRST, then confirm, then cancel (Down+Enter in one frame moves
 	// then confirms).
 	const int  iNav     = ZM_InputActions::ReadMenuVertical();
 	const bool bConfirm = ZM_InputActions::ReadConfirmPressed();
 	const bool bCancel  = ZM_InputActions::ReadCancelPressed();
 
-	m_iMenuCursor = MenuMoveCursor(m_iMenuCursor, iNav, MenuItemCount(m_eMenuScreen, iMoveCount));
+	// This also RE-CLAMPS a cursor that is now past the end (MenuMoveCursor clamps with
+	// no wrap even for a zero delta), so a cursor left on index 2 by a longer list can
+	// never address a missing entry.
+	m_iMenuCursor = MenuMoveCursor(m_iMenuCursor, iNav, MenuItemCount(m_eMenuScreen, iMoveCount, bCanCatch));
 
 	bool bSubmitted = false;
 	if (bConfirm)
 	{
-		const ZM_BattleMenuConfirmResult xR = MenuConfirm(m_eMenuScreen, m_iMenuCursor, abSelectable, iMoveCount, aiRawMoveSlot);
+		const ZM_BattleMenuConfirmResult xR = MenuConfirm(m_eMenuScreen, m_iMenuCursor, abSelectable, iMoveCount, bCanCatch, aiRawMoveSlot);
 		if (xR.m_eKind == ZM_BATTLE_MENU_CONFIRM_SUBMIT)
 		{
 			xOut          = xR.m_xAction;
@@ -472,7 +567,7 @@ bool ZM_UI_BattleHUD::UpdateMenu(Zenith_Entity& xDirectorEntity, const ZM_Battle
 		: nullptr;
 	if (pxUI != nullptr)
 	{
-		ZM_RefreshBattleMenuElements(*pxUI, m_eMenuScreen, m_iMenuCursor, aszMoveName, iMoveCount);
+		ZM_RefreshBattleMenuElements(*pxUI, m_eMenuScreen, m_iMenuCursor, aszMoveName, iMoveCount, bCanCatch);
 	}
 
 	return bSubmitted;

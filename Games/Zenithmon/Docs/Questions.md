@@ -10,6 +10,22 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-20-002 -- engine gap: `Zenith_ComponentMetaRegistry::Finalize()` has no duplicate-serialization-order detection
+
+**Question:** should `Zenith_ComponentMetaRegistry::Finalize()` warn (or assert) when two components are registered at the SAME `m_uSerializationOrder`?
+
+**Context:** found by review during S6 item 3 SC7 (2026-07-20). `Finalize()` builds its sorted meta list and sorts by `m_uSerializationOrder`, logging each entry, but performs **no duplicate detection at all**. Two components sharing an order therefore sort arbitrarily against each other -- a silent, potentially build-dependent ordering that affects serialization. Component orders are a manually-assigned global namespace (engine components sit at <= 95, AI at 90, Zenithmon at 100-113 with 114 next free), so a copy-paste collision is an easy mistake to make and an invisible one to have made.
+
+**Why this was NOT fixed in the bug-fix pass:** it is an **engine (`Zenith/`) change**. Every engine change moves the engine unit baseline (currently 1097) and owes a cross-game regression run (Combat / DevilsPlayground / CityBuilder) plus a RenderTest boot check, per the AgentBriefing engine-change gate. That is a materially different task with a different gate, and bundling it into a Zenithmon game-only fix pass would have made the diff impossible to gate cleanly.
+
+**Best-guess action taken:** left the engine untouched and defended Zenithmon game-side instead -- `GateRoster_InteractableIsRegisteredExactlyOnce` (Tests/ZM_Tests_Interactable.cpp) asserts that exactly ONE registered meta sits at `ZM_Interactable`'s order, so a future collision with order 113 specifically is caught at boot. That is a spot check, not the general fix.
+
+**Cost if wrong:** low today, rising with component count. Nothing currently collides (verified: no engine component sits at 113). The risk is a future collision landing silently and only surfacing as a confusing serialization bug. The fix itself is small -- a duplicate scan in `Finalize()` with a `Zenith_Warning` (or an assert in debug) -- but it should land as its own engine commit with the full cross-game gate.
+
+**Status:** asked 2026-07-20. Non-blocking; a good small standalone ENGINE task.
+
+---
+
 ### [OPEN] Q-2026-07-20-001 -- S6 item 3 defers BOTH behaviour graphs and the navmesh to S7 (mechanism change, not a scope change)
 
 **Question:** the Roadmap line for S6 item 3 reads *"`ZM_Interactable` + NPC graphs via `ZM_GraphAuthoring`; `ZM_NpcWalker` (navmesh wanderers)"*. The decomposition pass ruled that **both** named mechanisms are deferred to S7, while the item's actual payload -- a player walks up to an NPC, presses E, and gets dialogue / a shop / a Care Center heal -- ships in full at S6. Surfaced for ratification or override, because the shipped code will not match the Roadmap's literal wording until SC9 amends it.
@@ -183,7 +199,7 @@ should the CI unit gate keep the exact-count baseline or switch to a failures-on
 check?
 
 **Context:** found while landing S1's first unit tests. The exact-count baseline
-(1079) couples zm-tests to the engine unit count -- an unrelated engine PR that
+(1079 at the time of asking; **2313 today**) couples zm-tests to the engine unit count -- an unrelated engine PR that
 changes that count reddens zm-tests until the baseline is bumped. A failures-only
 check (assert the "Unit tests complete" line shows 0 failed, ignore the count)
 avoids the coupling but no longer catches a silently-vanishing `ZM_` test.

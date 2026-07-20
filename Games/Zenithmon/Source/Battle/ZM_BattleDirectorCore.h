@@ -131,6 +131,16 @@ public:
 
 	const ZM_BattleEngine& GetEngine() const { return m_xEngine; }
 
+	// May the player attempt a CATCH in this battle? The presenter's Catch entry is
+	// gated on this (Shortfalls 1.5 deferral (a)): the engine ASSERTS on an ITEM
+	// (catch) action unless the config allows catching (ZM_BattleEngine.cpp
+	// SubmitAction / DoItemAction), and a trainer battle -- or the Battle Tower, which
+	// already sets m_bCanCatch = false -- is a REAL, reachable config with catching
+	// off. Surfaced HERE, off the config the battle was actually Begun with, so the UI
+	// never carries a second copy of the rule that could drift from the engine's.
+	// FALSE before Begin (the default config), which is the fail-closed answer.
+	bool IsCatchAllowed() const { return m_xEngine.GetConfig().m_bCanCatch; }
+
 private:
 	ZM_BattleEngine   m_xEngine;
 	ZM_BattleRNG      m_xAIRng;                   // AI's OWN generator (distinct from the battle RNG)

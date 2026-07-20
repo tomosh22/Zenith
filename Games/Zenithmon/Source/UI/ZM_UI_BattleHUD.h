@@ -19,10 +19,27 @@ struct ZM_BattleEvent;
 enum ZM_BattleMenuScreen : u_int
 {
     ZM_BATTLE_MENU_HIDDEN,
-    ZM_BATTLE_MENU_ACTION_ROOT,   // cursor over [Fight(0), Catch(1), Run(2)]
+    ZM_BATTLE_MENU_ACTION_ROOT,   // cursor over the root entries (see ZM_BattleMenuRootItem)
     ZM_BATTLE_MENU_MOVE_SELECT,   // cursor over move slots [0..iMoveCount-1]
 };
+// The root entries' IDENTITIES. These are NOT cursor indices: the root list is
+// DYNAMIC -- the Catch entry exists only when the battle config allows catching, so
+// with catching OFF the list is [Fight, Run] and Run sits at cursor 1. Always map a
+// cursor to an entry through MenuRootItemAtIndex; never compare a cursor to one of
+// these values directly. ZM_BATTLE_MENU_ROOT_COUNT doubles as the "no entry here"
+// sentinel MenuRootItemAtIndex returns for an out-of-range index.
 enum ZM_BattleMenuRootItem : u_int { ZM_BATTLE_MENU_FIGHT = 0u, ZM_BATTLE_MENU_CATCH = 1u, ZM_BATTLE_MENU_RUN = 2u, ZM_BATTLE_MENU_ROOT_COUNT = 3u };
+// The root stack's authored geometry, in the BottomRight anchor's pixel space (more
+// negative == higher up the panel): the FIRST row's Y and the pitch between rows.
+// Shared by BOTH sites on purpose. The authoring step (ZM_ConfigureBattleHUD in
+// Zenithmon.cpp) lays the three buttons out with them, and the presenter RE-ANCHORS
+// each VISIBLE button to the row of its RESOLVED cursor index -- because with the
+// Catch entry gated out the list is [Fight, Run] and Run must move up into row 1, or
+// the panel renders Fight, a blank row, then Run, with the highlighted "index 1"
+// drawn in the third slot. If the two sites spelled these numbers separately, that
+// re-anchoring would silently drift away from the authored layout.
+inline constexpr float fZM_BATTLE_MENU_ROOT_FIRST_ROW_Y = -128.0f;
+inline constexpr float fZM_BATTLE_MENU_ROOT_ROW_PITCH_Y =   48.0f;
 enum ZM_BattleMenuConfirmKind : u_int { ZM_BATTLE_MENU_CONFIRM_NONE, ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES, ZM_BATTLE_MENU_CONFIRM_SUBMIT };
 struct ZM_BattleMenuConfirmResult
 {
@@ -77,8 +94,20 @@ public:
 
 	// --- PURE menu statics (no scene / graphics / core -- unit-tested verbatim) ---
 
-	// ACTION_ROOT -> 3; MOVE_SELECT -> iMoveCount; HIDDEN -> 0.
-	static int MenuItemCount(ZM_BattleMenuScreen eScreen, int iMoveCount);
+	// How many entries the ROOT screen shows: 3 (Fight/Catch/Run) when catching is
+	// allowed, 2 (Fight/Run) when it is not.
+	static int MenuRootItemCount(bool bCanCatch);
+	// The root ENTRY at a cursor index. With catching allowed this is the identity
+	// (0->Fight, 1->Catch, 2->Run); with catching disallowed the Catch entry does not
+	// exist at all and Run closes the gap (0->Fight, 1->Run). Any index outside
+	// [0, MenuRootItemCount(bCanCatch)) yields ZM_BATTLE_MENU_ROOT_COUNT -- never a
+	// real entry, so an out-of-range cursor can NEVER submit an action.
+	static ZM_BattleMenuRootItem MenuRootItemAtIndex(int iIndex, bool bCanCatch);
+	// ACTION_ROOT -> MenuRootItemCount(bCanCatch); MOVE_SELECT -> iMoveCount; HIDDEN -> 0.
+	// bCanCatch comes from ZM_BattleDirectorCore::IsCatchAllowed() at the live call
+	// site; it is a REQUIRED argument on purpose -- a defaulted "true" is exactly how a
+	// caller would silently re-offer Catch in a trainer battle.
+	static int MenuItemCount(ZM_BattleMenuScreen eScreen, int iMoveCount, bool bCanCatch);
 	// iItemCount <= 0 -> 0; else clamp iCursor + iDelta to [0, iItemCount-1] (NO wrap).
 	static int MenuMoveCursor(int iCursor, int iDelta, int iItemCount);
 	// Compact the (possibly GAPPED) 4-slot moveset into a dense menu (SC3 gapped-moveset
@@ -90,10 +119,14 @@ public:
 	static int BuildFilledMoveMenu(const ZM_MOVE_ID (&aeMoves)[uZM_MAX_MOVES], const u_int (&auCurPP)[uZM_MAX_MOVES],
 		const char* (&paszNameOut)[uZM_MAX_MOVES], bool (&pbSelectableOut)[uZM_MAX_MOVES], int (&paiRawSlotOut)[uZM_MAX_MOVES]);
 	// The pure confirm resolution (see the SC5 contract for the exact per-screen cases).
+	// bCanCatch gates the CATCH entry: with it false the root list has no Catch entry,
+	// so no cursor position can produce an ITEM (catch) action -- which is what keeps
+	// the presenter from submitting the action ZM_BattleEngine::SubmitAction asserts on.
 	// paiRawMoveSlot (SC3) maps the compacted move cursor back to a raw engine slot; when
-	// null the submit slot is the cursor itself (identity -- unchanged 4-arg behaviour).
+	// null the submit slot is the cursor itself (identity).
 	static ZM_BattleMenuConfirmResult MenuConfirm(ZM_BattleMenuScreen eScreen, int iCursor,
-		const bool* pbMoveSelectable, int iMoveCount, const int* paiRawMoveSlot = nullptr);
+		const bool* pbMoveSelectable, int iMoveCount, bool bCanCatch,
+		const int* paiRawMoveSlot = nullptr);
 	// MOVE_SELECT -> ACTION_ROOT; any other screen -> unchanged.
 	static ZM_BattleMenuScreen MenuCancel(ZM_BattleMenuScreen eScreen);
 

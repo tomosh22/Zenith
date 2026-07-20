@@ -16,9 +16,14 @@
 // ============================================================================
 
 #include "Core/Zenith_TestFramework.h"
+#include "Input/Zenith_InputSimulator.h"   // the LIVE UpdateMenu drive injects real key edges
+#include "Input/Zenith_KeyCodes.h"         // ZENITH_KEY_DOWN / ZENITH_KEY_ENTER (raw, deliberately)
+#include "ZenithECS/Zenith_Entity.h"       // a default (INVALID) entity is what keeps the live drive headless
 #include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"
+#include "Zenithmon/Source/Battle/ZM_BattleAI.h"              // ZM_AI_TIER_GREEDY (the fixture battle's enemy tier)
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"   // ZM_MapEventToOp (carries-text cross-table lock)
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"
+#include "Zenithmon/Source/Battle/ZM_BattleMonster.h"         // ZM_BattleMonsterSpec (the fixture battle's sides)
 #include "Zenithmon/Source/Battle/ZM_BattleTypes.h"
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
@@ -312,22 +317,24 @@ ZENITH_TEST(ZM_BattleHUD, Format_CarriesTextImpliesNonEmpty)
 
 // ============================================================================
 // S5 item 4 (SC5) -- the pure Fight/Run battle-menu state machine on
-// ZM_UI_BattleHUD. Four PURE statics (no scene / graphics / core): MenuItemCount,
-// MenuMoveCursor, MenuConfirm, MenuCancel. These are the whole decision surface
-// the director's per-frame input drive delegates to, so pinning them here means a
-// single-key windowed drive is enough to exercise the wiring (the arithmetic is
-// proven hermetically). Every fixture is deterministic; no RequestSkip needed.
+// ZM_UI_BattleHUD. Six PURE statics (no scene / graphics / core):
+// MenuRootItemCount, MenuRootItemAtIndex, MenuItemCount, MenuMoveCursor,
+// MenuConfirm, MenuCancel. (The first two arrived with the S6 catch gate below.)
+// These are the whole decision surface the director's per-frame input drive
+// delegates to, so pinning them here means a single-key windowed drive is enough
+// to exercise the wiring (the arithmetic is proven hermetically). Every fixture is
+// deterministic; no RequestSkip needed.
 // ============================================================================
 
 // ---- MenuItemCount ----------------------------------------------------------
 
 ZENITH_TEST(ZM_BattleHUD, HudMenu_ItemCounts)
 {
-	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_ACTION_ROOT, 4), 3,
-		"the action root always offers exactly three items (Fight, Catch, Run)");
-	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_MOVE_SELECT, 3), 3,
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_ACTION_ROOT, 4, true), 3,
+		"a catch-allowed action root offers three items (Fight, Catch, Run)");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_MOVE_SELECT, 3, true), 3,
 		"move-select offers one item per available move");
-	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_HIDDEN, 4), 0,
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_HIDDEN, 4, true), 0,
 		"a hidden menu offers no items");
 }
 
@@ -356,7 +363,7 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_FightOpensMoveSelect)
 {
 	const bool abSel4[4] = { true, true, true, true };
 	const ZM_BattleMenuConfirmResult xResult =
-		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 0, abSel4, 4);
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 0, abSel4, 4, /* bCanCatch */ true);
 	ZENITH_ASSERT_EQ(xResult.m_eKind, ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES,
 		"Fight (root cursor 0) opens the move list, not a submit");
 	ZENITH_ASSERT_EQ(xResult.m_eNextScreen, ZM_BATTLE_MENU_MOVE_SELECT,
@@ -369,7 +376,7 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_RunEmitsRunAction)
 {
 	const bool abSel4[4] = { true, true, true, true };
 	const ZM_BattleMenuConfirmResult xResult =
-		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 2, abSel4, 4);
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 2, abSel4, 4, /* bCanCatch */ true);
 	ZENITH_ASSERT_EQ(xResult.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT,
 		"Run (root cursor 2) submits an action immediately");
 	ZENITH_ASSERT_EQ(xResult.m_xAction.m_eKind, ZM_ACTION_RUN,
@@ -384,7 +391,7 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_CatchEmitsCatchAction)
 {
 	const bool abSel4[4] = { true, true, true, true };
 	const ZM_BattleMenuConfirmResult xResult =
-		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 1 /*CATCH*/, abSel4, 3);
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 1 /*CATCH*/, abSel4, 3, /* bCanCatch */ true);
 	ZENITH_ASSERT_EQ(xResult.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT,
 		"Catch (root cursor 1) submits an action immediately");
 	ZENITH_ASSERT_EQ(xResult.m_xAction.m_eKind, ZM_ACTION_ITEM,
@@ -399,7 +406,7 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_MoveSelectEmitsMoveAction)
 {
 	const bool abSel4[4] = { true, true, true, true };
 	const ZM_BattleMenuConfirmResult xResult =
-		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 2, abSel4, 4);
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 2, abSel4, 4, /* bCanCatch */ true);
 	ZENITH_ASSERT_EQ(xResult.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT,
 		"confirming a selectable move submits an action");
 	ZENITH_ASSERT_EQ(xResult.m_xAction.m_eKind, ZM_ACTION_MOVE,
@@ -416,12 +423,12 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_UnselectableMoveStays)
 	const bool abSel[4] = { true, false, true, true };
 
 	const ZM_BattleMenuConfirmResult xBlocked =
-		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 1, abSel, 4);
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 1, abSel, 4, /* bCanCatch */ true);
 	ZENITH_ASSERT_EQ(xBlocked.m_eKind, ZM_BATTLE_MENU_CONFIRM_NONE,
 		"confirming an unselectable move is a no-op (no submit)");
 
 	const ZM_BattleMenuConfirmResult xOk =
-		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 0, abSel, 4);
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 0, abSel, 4, /* bCanCatch */ true);
 	ZENITH_ASSERT_EQ(xOk.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT,
 		"a selectable move at the cursor submits");
 	ZENITH_ASSERT_EQ(xOk.m_xAction.m_eKind, ZM_ACTION_MOVE,
@@ -443,6 +450,319 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_CancelReturnsToRoot)
 	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuCancel(ZM_BATTLE_MENU_HIDDEN),
 		ZM_BATTLE_MENU_HIDDEN,
 		"cancelling a hidden menu leaves it hidden");
+}
+
+// ============================================================================
+// S6 -- the CATCH-ENTRY GATE (Shortfalls 1.5 deferral (a)). The battle menu used
+// to offer Catch unconditionally. That is inert while every battle is wild, but a
+// TRAINER battle -- and the Battle Tower, which ALREADY sets m_bCanCatch = false
+// (ZM_BattleTower.cpp) -- is a real, reachable config with catching off, and
+// ZM_BattleEngine::SubmitAction / DoItemAction ASSERT on an ITEM (catch) action
+// unless the config allows it. The root list is therefore DYNAMIC, and the tests
+// below pin both halves: the entry is absent, AND the indices stay coherent with
+// it absent (an off-by-one here would submit the WRONG action, which is strictly
+// worse than the bug being fixed).
+// ============================================================================
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_RootItemCountGatesCatch)
+{
+	// FAILS IF: MenuRootItemCount stops consulting bCanCatch (e.g. returns
+	// ZM_BATTLE_MENU_ROOT_COUNT unconditionally, the pre-fix behaviour).
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuRootItemCount(true), 3,
+		"a catch-allowed root offers Fight, Catch and Run");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuRootItemCount(false), 2,
+		"a catch-DISALLOWED root offers only Fight and Run");
+	// FAILS IF: MenuItemCount's ACTION_ROOT arm stops routing through
+	// MenuRootItemCount -- the path UpdateMenu actually clamps the cursor with.
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_ACTION_ROOT, 4, false), 2,
+		"the root item count is what MenuItemCount reports for ACTION_ROOT");
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_MOVE_SELECT, 3, false), 3,
+		"the catch gate must not touch the move list's item count");
+}
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_RootItemAtIndexGatesCatch)
+{
+	// Catch allowed: the mapping is the identity, so every already-green windowed
+	// drive (which walks Fight(0) -> Catch(1) -> Run(2)) is unchanged.
+	// FAILS IF: the gated mapping stops degenerating to the identity when catching is
+	// allowed -- which would silently repoint every existing cursor position.
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_BattleHUD::MenuRootItemAtIndex(0, true), (u_int)ZM_BATTLE_MENU_FIGHT,
+		"catch allowed: index 0 is Fight");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_BattleHUD::MenuRootItemAtIndex(1, true), (u_int)ZM_BATTLE_MENU_CATCH,
+		"catch allowed: index 1 is Catch");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_BattleHUD::MenuRootItemAtIndex(2, true), (u_int)ZM_BATTLE_MENU_RUN,
+		"catch allowed: index 2 is Run");
+
+	// Catch disallowed: Run CLOSES THE GAP. This is the index arithmetic that would
+	// otherwise submit the wrong action.
+	// FAILS IF: the gated mapping keeps Run at index 2 (leaving index 1 dead) or maps
+	// index 1 to Catch anyway.
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_BattleHUD::MenuRootItemAtIndex(0, false), (u_int)ZM_BATTLE_MENU_FIGHT,
+		"catch disallowed: index 0 is still Fight");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_BattleHUD::MenuRootItemAtIndex(1, false), (u_int)ZM_BATTLE_MENU_RUN,
+		"catch disallowed: index 1 is RUN -- the Catch entry does not exist");
+
+	// Out of range in BOTH directions yields the sentinel, never a real entry.
+	// FAILS IF: the bounds check is dropped and the raw index is cast to an item --
+	// index 2 would then read as Run in a 2-entry list, i.e. a phantom duplicate.
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_BattleHUD::MenuRootItemAtIndex(2, false), (u_int)ZM_BATTLE_MENU_ROOT_COUNT,
+		"catch disallowed: index 2 is past the end and maps to no entry");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_BattleHUD::MenuRootItemAtIndex(3, true), (u_int)ZM_BATTLE_MENU_ROOT_COUNT,
+		"catch allowed: index 3 is past the end and maps to no entry");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_BattleHUD::MenuRootItemAtIndex(-1, true), (u_int)ZM_BATTLE_MENU_ROOT_COUNT,
+		"a negative index maps to no entry");
+}
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_CatchDisallowedNeverSubmitsACatch)
+{
+	const bool abSel4[4] = { true, true, true, true };
+
+	// Index 0 is Fight either way.
+	const ZM_BattleMenuConfirmResult xFight =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 0, abSel4, 4, /* bCanCatch */ false);
+	ZENITH_ASSERT_EQ(xFight.m_eKind, ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES,
+		"catch disallowed: Fight still opens the move list");
+
+	// Index 1 is RUN, not Catch. This is THE regression clause: before the gate,
+	// confirming index 1 submitted {ZM_ACTION_ITEM, CATCHORB} -- the action
+	// ZM_BattleEngine::SubmitAction asserts on when m_bCanCatch is false.
+	// FAILS IF: MenuConfirm's ACTION_ROOT arm goes back to comparing the cursor
+	// against ZM_BATTLE_MENU_CATCH directly instead of resolving the entry.
+	const ZM_BattleMenuConfirmResult xIndex1 =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 1, abSel4, 4, /* bCanCatch */ false);
+	ZENITH_ASSERT_EQ(xIndex1.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT,
+		"catch disallowed: index 1 still submits an action");
+	ZENITH_ASSERT_EQ(xIndex1.m_xAction.m_eKind, ZM_ACTION_RUN,
+		"catch disallowed: the action at index 1 is RUN, never a thrown ball");
+
+	// Index 2 no longer exists, so it submits NOTHING (rather than falling through to
+	// a real entry). FAILS IF: MenuRootItemAtIndex's bounds check is dropped.
+	const ZM_BattleMenuConfirmResult xPastEnd =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 2, abSel4, 4, /* bCanCatch */ false);
+	ZENITH_ASSERT_EQ(xPastEnd.m_eKind, ZM_BATTLE_MENU_CONFIRM_NONE,
+		"catch disallowed: a cursor past the end submits nothing");
+
+	// TOTALITY over every cursor a clamped (or corrupted) menu could hold: with
+	// catching off, NO cursor value may produce an ITEM action.
+	// FAILS IF: any future root arm reintroduces an ungated catch path.
+	for (int iCursor = -2; iCursor <= 5; ++iCursor)
+	{
+		const ZM_BattleMenuConfirmResult xR =
+			ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, iCursor, abSel4, 4, /* bCanCatch */ false);
+		ZENITH_ASSERT_FALSE(
+			xR.m_eKind == ZM_BATTLE_MENU_CONFIRM_SUBMIT && xR.m_xAction.m_eKind == ZM_ACTION_ITEM,
+			"cursor %d must not submit an ITEM (catch) action when catching is disallowed", iCursor);
+	}
+
+	// ...and the catch-allowed root is UNCHANGED: index 1 still throws the orb, so the
+	// gate did not cost the shipped wild-battle behaviour.
+	const ZM_BattleMenuConfirmResult xAllowed =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 1, abSel4, 4, /* bCanCatch */ true);
+	ZENITH_ASSERT_EQ(xAllowed.m_xAction.m_eKind, ZM_ACTION_ITEM,
+		"catch allowed: index 1 still submits the catch item");
+	ZENITH_ASSERT_EQ((u_int)xAllowed.m_xAction.m_eItem, (u_int)ZM_ITEM_CATCHORB,
+		"catch allowed: the thrown ball is still the catch orb");
+}
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_GatedRootCursorStaysCoherent)
+{
+	const bool abSel4[4] = { true, true, true, true };
+	const int  iGatedCount = ZM_UI_BattleHUD::MenuItemCount(ZM_BATTLE_MENU_ACTION_ROOT, 4, false);
+
+	// Walking DOWN off the end of the shortened list clamps to the last real entry
+	// (Run at index 1) -- it never parks on the index the Catch entry used to occupy.
+	// FAILS IF: MenuItemCount's ACTION_ROOT arm stops routing through MenuRootItemCount,
+	// or MenuMoveCursor stops clamping to the count it is handed. It says NOTHING about
+	// UpdateMenu -- this block calls the statics directly and never enters it. The claim
+	// that the LIVE clamp is fed the gated count belongs to (and is only pinned by)
+	// HudMenu_LiveGateNeverSubmitsACatchWhenDisallowed below.
+	int iCursor = 0;
+	for (int i = 0; i < 5; ++i)
+	{
+		iCursor = ZM_UI_BattleHUD::MenuMoveCursor(iCursor, +1, iGatedCount);
+	}
+	ZENITH_ASSERT_EQ(iCursor, 1, "the gated root clamps the cursor at its last entry (Run)");
+
+	// A cursor LEFT OVER from a longer list re-clamps into range on the next nav read
+	// (MenuMoveCursor clamps even for a zero delta), so a stale index 2 can never
+	// address a missing entry. FAILS IF: MenuMoveCursor stops clamping a zero delta.
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuMoveCursor(2, 0, iGatedCount), 1,
+		"a stale cursor past the gated end re-clamps to the last entry");
+
+	// Every in-range cursor of the gated list resolves to a REAL entry that submits
+	// something -- no dead index, no silent no-op row.
+	for (int i = 0; i < iGatedCount; ++i)
+	{
+		ZENITH_ASSERT_TRUE(
+			ZM_UI_BattleHUD::MenuRootItemAtIndex(i, false) != ZM_BATTLE_MENU_ROOT_COUNT,
+			"gated root index %d must resolve to a real entry", i);
+		const ZM_BattleMenuConfirmResult xR =
+			ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, i, abSel4, 4, /* bCanCatch */ false);
+		ZENITH_ASSERT_TRUE(xR.m_eKind != ZM_BATTLE_MENU_CONFIRM_NONE,
+			"gated root index %d must do something on confirm", i);
+	}
+}
+
+// ============================================================================
+// The LIVE half of the catch gate. Everything above this point calls the PURE
+// statics with a literal bCanCatch, and ZM_BattleDirectorCore's own unit only asks
+// IsCatchAllowed() in isolation -- so NOTHING connected the accessor to the menu.
+// VERIFIED: replacing UpdateMenu's
+//     const bool bCanCatch = xCore.IsCatchAllowed();
+// with a hard-coded `true` left every other test in the repo green while fully
+// restoring the shortfall's failure mode (a m_bCanCatch == false battle offering
+// Catch, then tripping ZM_BattleEngine::SubmitAction's assert). This test is the one
+// that reddens under that mutation: it Begins a REAL catch-disallowed battle, drives
+// the REAL UpdateMenu with REAL key edges, and demands that confirming cursor index 1
+// yields RUN. Under the mutation index 1 resolves to Catch and the action is an ITEM.
+//
+// It stays a hermetic headless unit because UpdateMenu is best-effort about UI: an
+// INVALID Zenith_Entity resolves no Zenith_UIComponent, so the visual refresh is
+// skipped (ZM_UI_BattleHUD.cpp) while the whole state machine still runs. No scene,
+// no graphics, no baked asset.
+// ============================================================================
+
+namespace
+{
+#ifdef ZENITH_INPUT_SIMULATOR
+	// Scoped simulator ownership, matching ZM_Tests_Overworld.cpp's InputScope: a unit
+	// that injects key edges must not leak them into whatever boots next in the batch.
+	struct HudInputScope
+	{
+		HudInputScope()
+		{
+			Zenith_InputSimulator::Enable();
+			Zenith_InputSimulator::ResetAllInputState();
+		}
+
+		~HudInputScope()
+		{
+			Zenith_InputSimulator::ResetAllInputState();
+			Zenith_InputSimulator::Disable();
+		}
+	};
+
+	// zm_instant_battles for the duration, so the intro drains in a single Tick and the
+	// director reaches AWAIT_INPUT -- the exact state ZM_BattleDirector calls UpdateMenu
+	// from -- without any wall-clock pacing.
+	struct HudInstantBattleScope
+	{
+		HudInstantBattleScope()  { ZM_SetInstantBattlesForTests(true);  }
+		~HudInstantBattleScope() { ZM_SetInstantBattlesForTests(false); }
+	};
+
+	// A REAL battle whose ONLY varying rule is the catch permission, drained to
+	// AWAIT_INPUT. The config is built here rather than copied from a helper so the
+	// m_bCanCatch line is visible at the fixture site.
+	void BeginBattleAwaitingInput(ZM_BattleDirectorCore& xCore, bool bCanCatch)
+	{
+		const ZM_BattleMonsterSpec xPlayer = ZM_BuildWildEnemySpec(eZM_HUD_PLAYER_SPECIES, 5u);
+		const ZM_BattleMonsterSpec xEnemy  = ZM_BuildWildEnemySpec(eZM_HUD_ENEMY_SPECIES, 5u);
+		ZM_BattleConfig xConfig;
+		xConfig.m_bIsWild   = true;
+		xConfig.m_bCanFlee  = true;
+		xConfig.m_bCanCatch = bCanCatch;   // THE rule under test; read back via IsCatchAllowed()
+		xCore.Begin(&xPlayer, 1u, &xEnemy, 1u, xConfig, 0xB4771E60ull, ZM_AI_TIER_GREEDY);
+		xCore.Tick(0.0f);   // instant: one tick drains the whole intro
+	}
+
+	// One frame of the live menu drive: assert a single key edge, run UpdateMenu, then
+	// close the frame out (clear the pressed edges + release the key) exactly as the main
+	// loop would. Returns UpdateMenu's submitted flag.
+	bool DriveMenuFrame(ZM_UI_BattleHUD& xHud, Zenith_Entity& xEntity,
+		const ZM_BattleDirectorCore& xCore, ZM_BattleAction& xActionOut, Zenith_KeyCode eKey)
+	{
+		Zenith_InputSimulator::SimulateKeyDown(eKey);
+		const bool bSubmitted = xHud.UpdateMenu(xEntity, xCore, xActionOut);
+		Zenith_InputSimulator::EndTestFrame();
+		Zenith_InputSimulator::SimulateKeyUp(eKey);
+		return bSubmitted;
+	}
+#endif
+}
+
+ZENITH_TEST(ZM_BattleHUD, HudMenu_LiveGateNeverSubmitsACatchWhenDisallowed)
+{
+#ifdef ZENITH_INPUT_SIMULATOR
+	HudInputScope         xInput;
+	HudInstantBattleScope xInstant;
+
+	// Raw key codes throughout, deliberately: this drive characterises the bindings the
+	// live menu actually consumes rather than restating ZM_InputActions' constants.
+	//
+	// A default Zenith_Entity is INVALID (no scene data), so UpdateMenu's
+	// TryGetComponent<Zenith_UIComponent> path is skipped entirely -- that is what keeps
+	// this live drive a hermetic headless unit.
+	Zenith_Entity xNoEntity;
+
+	// ---- catching DISALLOWED (the Battle Tower's shipped config; every S7 trainer) ----
+	{
+		ZM_BattleDirectorCore xCore;
+		BeginBattleAwaitingInput(xCore, /* bCanCatch */ false);
+		ZENITH_ASSERT_TRUE(xCore.IsAwaitingInput(),
+			"the instant intro must drain to AWAIT_INPUT before the menu is driven");
+		// Without this the whole case would be vacuous: it must be a battle that really
+		// does forbid catching, read back through the accessor UpdateMenu consults.
+		ZENITH_ASSERT_FALSE(xCore.IsCatchAllowed(),
+			"the fixture battle must actually disallow catching");
+
+		ZM_UI_BattleHUD xHud;
+		ZM_BattleAction xAction;
+
+		// Frame 1: UpdateMenu opens the root (screen was HIDDEN) and consumes one DOWN
+		// edge. The cursor lands on index 1 -- the slot Catch occupies in a wild battle.
+		ZENITH_ASSERT_FALSE(DriveMenuFrame(xHud, xNoEntity, xCore, xAction, ZENITH_KEY_DOWN),
+			"a bare nav frame must not submit an action");
+		ZENITH_ASSERT_EQ(xHud.GetMenuScreen(), ZM_BATTLE_MENU_ACTION_ROOT,
+			"a fresh AWAIT_INPUT turn opens the action root");
+		ZENITH_ASSERT_EQ(xHud.GetMenuCursor(), 1,
+			"one DOWN edge moves the live root cursor to index 1");
+
+		// Frame 2: confirm index 1. THE clause. FAILS IF: UpdateMenu stops reading
+		// xCore.IsCatchAllowed() (e.g. hard-codes true) -- index 1 then resolves to Catch
+		// and the submitted action becomes the ITEM the engine asserts on.
+		const bool bSubmitted =
+			DriveMenuFrame(xHud, xNoEntity, xCore, xAction, ZENITH_KEY_ENTER);
+		ZENITH_ASSERT_TRUE(bSubmitted,
+			"confirming index 1 of the gated root submits an action");
+		ZENITH_ASSERT_NE((u_int)xAction.m_eKind, (u_int)ZM_ACTION_ITEM,
+			"a catch-disallowed battle must NEVER submit an ITEM (thrown ball) action");
+		ZENITH_ASSERT_EQ((u_int)xAction.m_eKind, (u_int)ZM_ACTION_RUN,
+			"catch disallowed: the live entry at index 1 is RUN");
+		ZENITH_ASSERT_EQ(xHud.GetMenuScreen(), ZM_BATTLE_MENU_HIDDEN,
+			"a submitted action hides the live menu");
+	}
+
+	// ---- catching ALLOWED: the MIRROR, so this proves the GATE and not merely "index 1
+	//      is never a catch". Same drive, same cursor, opposite config, opposite action.
+	{
+		ZM_BattleDirectorCore xCore;
+		BeginBattleAwaitingInput(xCore, /* bCanCatch */ true);
+		ZENITH_ASSERT_TRUE(xCore.IsAwaitingInput(),
+			"the instant intro must drain to AWAIT_INPUT before the menu is driven");
+		ZENITH_ASSERT_TRUE(xCore.IsCatchAllowed(),
+			"the mirror fixture must actually allow catching");
+
+		ZM_UI_BattleHUD xHud;
+		ZM_BattleAction xAction;
+
+		ZENITH_ASSERT_FALSE(DriveMenuFrame(xHud, xNoEntity, xCore, xAction, ZENITH_KEY_DOWN),
+			"a bare nav frame must not submit an action");
+		ZENITH_ASSERT_EQ(xHud.GetMenuCursor(), 1,
+			"one DOWN edge moves the live root cursor to index 1");
+
+		// FAILS IF: the gate is inverted, or UpdateMenu stops offering Catch at all --
+		// which would silently cost wild battles the shipped catch action.
+		ZENITH_ASSERT_TRUE(DriveMenuFrame(xHud, xNoEntity, xCore, xAction, ZENITH_KEY_ENTER),
+			"confirming index 1 of the ungated root submits an action");
+		ZENITH_ASSERT_EQ((u_int)xAction.m_eKind, (u_int)ZM_ACTION_ITEM,
+			"catch allowed: the live entry at index 1 throws a ball");
+		ZENITH_ASSERT_EQ((u_int)xAction.m_eItem, (u_int)ZM_ITEM_CATCHORB,
+			"catch allowed: the thrown ball is the catch orb");
+	}
+#else
+	ZENITH_SKIP("input simulator is unavailable in this configuration");
+#endif
 }
 
 // ============================================================================
@@ -477,7 +797,7 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_GappedMovesetCompaction)
 
 	// Confirming cursor 1 submits a MOVE whose slot is the RAW slot (2), not the cursor.
 	const ZM_BattleMenuConfirmResult xR =
-		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 1, abSel, n, aiRaw);
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 1, abSel, n, /* bCanCatch */ true, aiRaw);
 	ZENITH_ASSERT_EQ(xR.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT, "a selectable move submits");
 	ZENITH_ASSERT_EQ(xR.m_xAction.m_eKind, ZM_ACTION_MOVE, "the submitted action is a MOVE");
 	ZENITH_ASSERT_EQ(xR.m_xAction.m_uMoveSlot, 2u, "the submitted move slot is the RAW slot of the 2nd filled move");
@@ -485,7 +805,7 @@ ZENITH_TEST(ZM_BattleHUD, HudMenu_GappedMovesetCompaction)
 	// Backward-compat: the nullptr rawslot overload maps the cursor straight to the slot.
 	const bool abSel4[uZM_MAX_MOVES] = { true, true, true, true };
 	const ZM_BattleMenuConfirmResult xIdentity =
-		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 2, abSel4, 4);
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 2, abSel4, 4, /* bCanCatch */ true);
 	ZENITH_ASSERT_EQ(xIdentity.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT, "the identity path submits");
 	ZENITH_ASSERT_EQ(xIdentity.m_xAction.m_uMoveSlot, 2u, "no rawslot arg -> cursor 2 maps straight to slot 2");
 
