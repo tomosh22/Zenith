@@ -15,6 +15,53 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-21 -- ZM-D-134 -- S6 COMPLETE after the fresh local SC9 closure gate
+
+- **Decision:** close S6 (dialogue, menus, NPCs and shops). The full SC9 local
+  gate is green and is the landing authority under the direct-`master` policy;
+  `zm-tests` remains an asynchronous post-push backstop, so no CI result is
+  awaited or claimed here. S6 has no visual gate and requires no human stop.
+- **Delivered boundary:** the shipped S6 runtime has dialogue, menu-stack,
+  party, bag, dex, shop and Care Center flows; four authored Dawnmere NPCs
+  across three roles;
+  one role-dispatch seam; physics-driven walk-up interaction; and the
+  deterministic two-point `Npc_Wanderer` with dialogue halt/resume. Behaviour
+  graphs and navmesh-driven wandering are deliberately not represented as S6
+  deliverables.
+- **Graph/navmesh deferral and factual terrain correction:** the first useful
+  `ZM_GraphAuthoring` integration and trainer/navigation evaluation move to S7.
+  `Zenith_NavMeshGenerator::GenerateFromGeometry` can process caller-supplied
+  triangle geometry, including suitable terrain triangles; the convenience
+  `Zenith_AINavGeometry::GenerateFromScene` path does **not** harvest streamed
+  terrain geometry or a terrain heightfield -- it represents static colliders
+  as box geometry. Therefore terrain navigation is not already available via a
+  one-call scene scrape. S7 owns the terrain-triangle or grid-coverage source,
+  the 1024 m Dawnmere coverage decision, and any `.znavmesh` persistence work.
+- **Document authority:** `MasterPlan.md` is historical/read-only. Its graph-led
+  NPC wording records intent at the time, not current shipped truth, and it is
+  not to be rewritten as a living plan. Roadmap.md, Status.md and this
+  append-only log carry the current stage boundary and rationale.
+- **Fresh closure evidence:** five serial builds passed -- Vulkan Debug/Release
+  x Tools true/false plus D3D12 Debug Tools=false. Boot units were **2343 ran /
+  2342 passed / 0 failed / 1 skipped**; the separate engine-only reference
+  remained **1103**. The automated registry was **36**: headless **36/0**, with
+  three semantic executions and 33 expected graphics skips; full windowed
+  **36/0/0**, with no zero-frame tests. The six S6 windowed filters all ran and
+  passed without skips: `ZM_S6UIGate_Test` **158 frames**,
+  `ZM_NpcTalk_Test` **85**, `ZM_NpcShop_Test` **286**,
+  `ZM_NpcHeal_Test` **315**, `ZM_S6InteractGate_Test` **749**, and
+  `ZM_NpcWander_Test` **830**.
+- **Reversibility / next boundary:** the graph and navigation deferrals are
+  reversible by additive S7 work through the seams S6 retained; the shipped
+  `ZM_Interactable` v2 persistence contract is save-affecting and any incompatible
+  rollback requires another versioned migration. This closure remains immutable
+  history and may only be superseded by a later decision. S7 starts with the
+  full versioned `ZM_SaveSchema`; the next free ECS serialization order is
+  **114**. Autonomous work continues through S7, and the next human intervention
+  point is the S8 vertical-slice gate.
+
+---
+
 ## 2026-07-21 -- ZM-D-133 -- S6 item 3 (SC8): deterministic authored waypoint patrol + a causal moving-NPC dialogue proof
 
 - **Decision:** ship `ZM_NpcWalkerLogic` as a pure, deterministic authored-waypoint state machine and keep its ECS/physics glue inside the existing `ZM_Interactable` (order 113). The pure step consumes fixed waypoints, explicit cursor/dwell state, position, fixed dt, halt and tuning; it steers only in XZ, has no RNG, installs/consumes authored dwell deterministically, freezes both cursor and dwell while halted, and emits a patrol velocity that replaces XZ while preserving the body's live Y velocity. Runtime movement uses a **dynamic capsule** and `Zenith_Physics::SetLinearVelocity`, never transform teleportation.

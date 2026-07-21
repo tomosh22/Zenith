@@ -286,10 +286,12 @@ biggest suite; all headless, all seeded (C8).
   | `Terrain::EditorAssetSetResolvesLegacyAndNamedBakeDirectories` | Legacy/named mesh and texture targets, safe mesh-only cleanup, missing-map defaults, dirty-session resume and target reset |
   | `Terrain::EditorAutomationTerrainAssetSetActionOwnsArgument` | Owned automation argument, executed set action, fresh-component stamping and scene serialization |
 
-  All seven are engine-side `ZENITH_TEST` cases and are count-ratcheted into
-  both the shared engine unit gate (**1078** registered) and Zenithmon's CI
-  boot unit gate (**1773** registered). The latter expects 1772 passed,
-  0 failed and the one quarantined skip.
+  All seven are engine-side `ZENITH_TEST` cases. At the S3 closure they were
+  count-ratcheted into the then-current shared engine unit gate (**1078**
+  registered) and Zenithmon CI boot unit gate (**1773** registered); the latter
+  expected 1772 passed, 0 failed and the one quarantined skip. Those are
+  historical S3 values: the current S6 closure references are **1103**
+  engine-only and **2343** combined engine + Zenithmon units.
 - **E2 engine unit tests (SHIPPED -- exactly three):**
 
   | Test | Contract covered |
@@ -310,8 +312,8 @@ biggest suite; all headless, all seeded (C8).
   then raised only the Zenithmon baseline to 1732, and the five measurement-
   registry units below raised it to 1737; the 20 overworld input/controller/
   physics/camera/ECS units below raised it by 20; the first 12 traversal units
-  raised it to 1769, and the four fade/round-trip units below raise it to the
-  current **1773**.
+  raised it to 1769, and the four fade/round-trip units below raised it to the
+  then-current S3 closure value of **1773**.
 - **Dawnmere terrain/grass unit tests (SHIPPED -- exactly four):**
 
   | Test | Contract covered |
@@ -943,16 +945,20 @@ drive with the same seed / player picks / identically-seeded AI rng -- the non-p
 so `zm-tests.yml` bumped **1953 -> 1962** (engine default 1088 unchanged). The runtime drive of a REAL battle
 in the Battle scene (model placement + `RequestBattleEnd`) is the SC3 windowed `ZM_BattleDirectorRoundTrip_Test`.
 
-**Remaining S5 item 4 (SC3-SC6) + item 5 (planning):** `ZM_BattleDirector` component (SC3, order 111, drives
-the core in the Battle scene + places creature models + calls `RequestBattleEnd()`) + `ZM_UI_BattleHUD` (SC4-SC5)
-+ the windowed win gate (SC6) for item 4; catch/exp/faint/whiteout applied to GameState (item 5). Then the S5
-VISUAL GATE (hard stop).
+**Historical S5 item 4/item 5 planning snapshot (now resolved):** at this point,
+the remaining work was the `ZM_BattleDirector` component (SC3, order 111, driving
+the core in the Battle scene + placing creature models + calling
+`RequestBattleEnd()`), `ZM_UI_BattleHUD` (SC4-SC5), the windowed win gate (SC6),
+and catch/exp/faint/whiteout applied to GameState (item 5), followed by the S5
+visual gate. All of that work subsequently shipped and the S5 visual gate was
+user-approved; this paragraph preserves the earlier planning boundary only.
 - **P1 encounter round trip (windowed) -- SHIPPED `ZM_BattleRoundTrip_Test` (item 3, see above):**
   walk grass until a rigged encounter fires -> additive battle scene loads at the
   -2000 m offset -> assert opaque-fade-gated load, in-battle invariants, and
   EXACT overworld resume (scene, pause state, parked-body drift < 0.05 m).
-  Applying exp on a real win + party mutation is item 5's scope (the current
-  gate ends the battle via the item-4 `RequestBattleEnd()` seam, no resolution).
+  At this item-3 snapshot, applying exp on a real win + party mutation was item
+  5's scope (that gate ended the battle via the item-4 `RequestBattleEnd()` seam,
+  with no resolution). Item 5 subsequently shipped.
 - **P1 catch test:** rigged catch succeeds; monster lands in party; dex
   updates.
 - **P1 bleed-through screenshot check:** scripted capture during battle
@@ -961,47 +967,63 @@ VISUAL GATE (hard stop).
 
 ### 5.6 S6 -- UI flows
 
-- Units: `ZM_UI` state-machine tests (menu-stack push/pop, dialogue-box
-  paging, grid navigation orders) on the headless-safe widget state.
-- P1 automated flows via focus navigation: talk to an NPC, buy/sell at the
-  mart, heal at the Care Center, open every top-level menu (party/bag/dex/
-  box/options) and back out cleanly.
-- **Item 3 walk-up flows** (`Tests/ZM_AutoTests_NpcTalk.cpp`,
-  `Tests/ZM_AutoTests_NpcServices.cpp`). These prove the screens are reachable
-  by WALKING UP to an authored Dawnmere NPC and pressing the interact key,
-  rather than only through their static raise seams:
-  - `ZM_NpcTalk_Test` (SC5) -- walk to `Npc_Villager`, talk, and see that
-    row's own first line on the dialogue.
-  - `ZM_NpcShop_Test` (SC6) -- walk to `Npc_TradePostClerk`, press E, assert
-    the SHOP screen carries **that clerk's `ZM_NpcData` stock** (count and
-    every id, read at runtime -- never re-spelled as a literal), walk the
-    focus onto Confirm with real Down edges, buy one, and assert the LIVE
-    money fell by exactly `price x quantity` and the bag rose by exactly the
-    quantity. The bought entry is resolved via `GetSelectedEntryIndex`, never
-    hardcoded.
-  - `ZM_NpcHeal_Test` (SC6) -- walk to `Npc_Caretaker`, press E, and run BOTH
-    answers in one session: YES (party restored, healed line shown) then a
-    re-damage and NO (party still damaged). The answer is read from
-    `ZM_UI_MenuStack::GetLastDialogueAnswer()`, never off the box after the
-    fact, **and only after asserting `!IsDialogueAwaitingChoice()`** -- the
-    latch survives test boundaries, so without that guard a dropped Enter
-    would read an earlier test's answer.
-  - Shared conventions for all three: every phase flag defaults to FAILING;
-    a TWO-LEG basis probe (+Z then +X) fails fast with measured deltas; an
-    out-of-range NEGATIVE runs before the walk; the approach is closed-loop
-    with a progress watchdog that reports the live
-    `ZM_InteractRejectName(...)` so a broken NPC height reads as
-    `OUT_OF_VERTICAL_BAND` rather than a timeout; the press is EVENT-DRIVEN
-    (poll `EvaluateForTests` until OK **at the target entity id**); motion is
-    asserted physics-driven; `SetPosition` and `SetFocusedElement` appear
-    nowhere.
-- **★ CI VISIBILITY:** all three are `m_bRequiresGraphics = true`, and
-  `zm-tests` runs HEADLESS, where the harness SKIPS such tests **and a skip
-  counts as PASS**. They are proven only by the LOCAL WINDOWED gate, and only
-  by a run reporting `PASSED` with a NON-ZERO frame count. Mutation-checked
-  (ZM-D-129): rewiring the shop/care-center dispatch arms reddens both SC6
-  tests but leaves the CI-visible `ZM_NpcDispatch_Test` GREEN, because that
-  test asserts *a* screen was raised, not *which one*.
+- **Shipped surface.** The overworld root menu has exactly **Party / Bag /
+  Dex / Exit**. Dialogue, the buy-only **Trade Post** screen, and the Care
+  Center yes/no heal prompt are reached through the same menu stack. Box is
+  deferred to S7. `ZM_ShopLogic` selling exists and is pure-unit-covered, but
+  S6 does not claim a sell UI flow.
+- **T0 units.** Headless-safe `ZM_UI` units cover stack push/pop, dialogue
+  paging/choice latches, focus order, party/bag/dex presenters, atomic shop
+  buy/sell logic, and interaction dispatch. `ZM_NpcWalkerLogic` units cover
+  deterministic XZ steering, arrival/dwell, halt, invalid inputs, and
+  preservation of the body's vertical velocity. The walker has no RNG,
+  navmesh, scene, UI, or ECS dependency.
+- **Authored NPC surface.** Dawnmere contains exactly four NPCs:
+  `Npc_Villager`, `Npc_TradePostClerk`, `Npc_Caretaker`, and
+  `Npc_Wanderer`. The Wanderer follows an authored, deterministic two-point
+  patrol; opening its own dialogue halts it and closing the dialogue resumes
+  it. NPC roles dispatch in C++ through `ZM_Interactable` for S6.
+  `ZM_GraphAuthoring` and terrain-backed navmesh integration are deferred to
+  S7.
+- **P1 walk-up proofs** (`Tests/ZM_AutoTests_NpcTalk.cpp` and
+  `Tests/ZM_AutoTests_NpcServices.cpp`) reach the real authored entities using
+  physics movement and `ZENITH_KEY_E`:
+  - `ZM_NpcTalk_Test` walks to `Npc_Villager` and proves that row's own
+    dialogue.
+  - `ZM_NpcShop_Test` walks to `Npc_TradePostClerk`, proves the screen carries
+    that row's runtime-read stock, buys the selected entry through focus input,
+    and checks exact live money/bag deltas.
+  - `ZM_NpcHeal_Test` walks to `Npc_Caretaker` and proves both YES
+    (party restored) and NO (damage retained), including the completed-choice
+    latch guard.
+  - `ZM_S6InteractGate_Test` performs talk + buy + heal + every actual root
+    menu entry in one uninterrupted session, with no static raise seam.
+  - `ZM_NpcWander_Test` proves body-driven patrol motion, waypoint advance,
+    moving-target interaction, 30 consecutive dialogue-halt samples, explicit
+    close input, and resumed motion.
+  Shared walk machinery uses a two-leg camera-basis probe, an out-of-range
+  negative, target-entity identity, a bounded progress watchdog, and live
+  camera-relative steering. It never calls `SetPosition` or
+  `SetFocusedElement`.
+- **S6 closure evidence (2026-07-21).** All five configurations built green,
+  serially: Vulkan Debug/Release x Tools True/False and D3D12 Debug
+  Tools=False. The unit gate was **2343 ran / 2342 passed / 0 failed /
+  1 skipped**. The headless automated registry was **36 passed / 0 failed**:
+  3 semantic tests executed and 33 graphics-required tests skipped as
+  expected. The six exact-name windowed filters all ran non-skipped and
+  passed: `ZM_S6UIGate_Test` **158 frames**, `ZM_NpcTalk_Test` **85**,
+  `ZM_NpcShop_Test` **286**, `ZM_NpcHeal_Test` **315**,
+  `ZM_S6InteractGate_Test` **749**, and `ZM_NpcWander_Test` **830**.
+  The full windowed registry was **36 passed / 0 failed / 0 skipped**, and no
+  test reported zero frames.
+- **Authority and next gate.** Under the direct-master policy, this full local
+  gate is the pre-commit/pre-push authority; headless `zm-tests` is the
+  post-push backstop, not a reason to hold a locally proven Roadmap tick.
+  Graphics-required flows remain intentionally invisible to headless CI, so
+  the non-skipped local filters are their evidence. `ZM_NpcDispatch_Test` is
+  the headless semantic dispatch proof and now asserts the role-specific
+  screen/action rather than merely any raised screen. S6 has no visual or
+  human gate. S7 is next.
 
 ### 5.7 S7 -- save/load, story flags, trainers
 

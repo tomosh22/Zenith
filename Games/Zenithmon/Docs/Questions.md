@@ -20,7 +20,7 @@
 
 So: any terrain-bearing scene is not merely "unsupported" headless, it hard-kills the process. RenderTest can therefore only ever be a WINDOWED canary, and the terrain path has no CI coverage on a GPU-less runner. Player impact is nil (shipping builds are not headless); the cost is entirely to testability.
 
-**Checked and clear:** no assert fires on any currently-green path -- a full `zenith test Zenithmon --headless` run (35/0) and the windowed `TerrainEditorSmoke` both log ZERO "Assertion failed" lines. The assert-capture hook (`Zenith_AssertCaptureScope`) is RAII-scoped to tests that deliberately trigger asserts, so it is not masking anything globally. This is the only assert firing anywhere in the suite.
+**Checked and clear (historical pre-SC8 measurement):** no assert fired on the then-current green paths -- a full `zenith test Zenithmon --headless` run (35/0) and the windowed `TerrainEditorSmoke` both logged ZERO "Assertion failed" lines. The assert-capture hook (`Zenith_AssertCaptureScope`) is RAII-scoped to tests that deliberately trigger asserts, so it was not masking anything globally. This was the only assert firing anywhere in the suite at that measurement.
 
 **Best-guess action taken:** none -- left untouched and logged. It is an engine change in the Flux/terrain streaming path, which is a materially larger blast radius than the ECS registry fix landed alongside it, and it was not what the user asked for. The canary works windowed, which was the goal.
 
@@ -41,25 +41,6 @@ So: any terrain-bearing scene is not merely "unsupported" headless, it hard-kill
 **Cost if wrong:** low while RenderTest is used as a terrain/grass canary (`TerrainEditorSmoke` is the relevant test and it passes). Moderate if RenderTest is ever promoted to a full required gate, since one red test would mask others.
 
 **Status:** asked 2026-07-21. Non-blocking.
-
----
-
-### [OPEN] Q-2026-07-20-001 -- S6 item 3 defers BOTH behaviour graphs and the navmesh to S7 (mechanism change, not a scope change)
-
-**Question:** the Roadmap line for S6 item 3 reads *"`ZM_Interactable` + NPC graphs via `ZM_GraphAuthoring`; `ZM_NpcWalker` (navmesh wanderers)"*. The decomposition pass ruled that **both** named mechanisms are deferred to S7, while the item's actual payload -- a player walks up to an NPC, presses E, and gets dialogue / a shop / a Care Center heal -- ships in full at S6. Surfaced for ratification or override, because the shipped code will not match the Roadmap's literal wording until SC9 amends it.
-
-**Best-guess rulings taken (implementation PROCEEDS on these -- see ZM-D-123 for the full evidence):**
-
-1. **Behaviour graphs deferred; interact dispatch is plain C++.** Zenithmon has zero lines of graph code today; the payload is `NPC role -> one of three already-shipped raise statics`, i.e. a closed 3-way enum that would cost ~300-700 lines of node classes plus a registration hook to express as a graph, with no designer to benefit. A `.bgraph` would also add a silent-failure axis: `Assets/` is git-ignored, so a cold checkout resolves the graph slot *unresolved* -- no crash, no log, a mute NPC. ZM-D-010 already scopes graphs to "glue only (menu flow, NPC scripted events, cutscene beats)", and a fixed 3-way dispatch is not that. Graphs earn their keep at the S7 trainer beat (sight -> freeze -> approach -> dialogue -> battle), which genuinely branches and carries state.
-   **Cost if wrong:** S7 pays the first-graph tax plus converting a 3-arm switch into node dispatch -- roughly one additive sub-commit. Every existing test is unaffected, because they assert screen state rather than how the raise happened. A single `Interact()` dispatch function is kept as the latent seam.
-
-2. **Navmesh deferred; the wanderer is a deterministic 2-waypoint patrol.** **(Justification CORRECTED 2026-07-20 -- the original was wrong; see ZM-D-123 ruling B.)** To be explicit, because the first draft of this entry said otherwise: **the Zenith navmesh generator IS terrain-capable.** `Zenith_NavMeshGenerator::GenerateFromGeometry` takes arbitrary triangle geometry and carries a walkable-slope filter (`m_fMaxSlope = 45.0f`, `IsWalkableSlope`), which exists precisely because it is designed for non-flat ground. What cannot handle terrain is the convenience scene-scraper `Zenith_AINavGeometry::GenerateFromScene`, which models every static collider as a **box OBB** and never reads a mesh or heightfield -- so it is the wrong tool for terrain, while being exactly right for DevilsPlayground's box-collider levels.
-   The actual reason to defer is **scope, not capability**: using the navmesh here means sourcing terrain triangles to feed `GenerateFromGeometry`, and no terrain-geometry accessor has been identified yet; there is also a grid-coverage question at Dawnmere's 1024 m domain (the generator truncates its voxel grid at 1024 cells per axis, ~307 m at the default 0.3 m cell). That is unscoped work of unknown size, and **the S6 gate contains no clause that NPC motion helps pass** -- a stationary-plus-patrolling cast meets every criterion. Deferring costs no engine change and no cross-game regression. Note `.znavmesh` file I/O has zero in-repo callers, so persistence would be first-of-its-kind work too.
-   **Cost if wrong:** ~120 lines of pure state machine plus ~15 units are superseded and deleted at S7. The `ZM_Interactable` interface, the NPC data table, all four walk-up tests and the consolidated gate are unaffected, because the walker sits behind `SetWanderEnabled(bool)` and a per-frame velocity write.
-
-**Why the loop did not stop for this:** `Scope.md` Section 4 governs what SHIPS -- "NPC wanderers exist and are interactable" -- and that is unchanged; only the mechanism differs. Both rulings are logged with their engine evidence and both are additive to reverse.
-
-**Status:** asked 2026-07-20 at the start of S6 item 3. Implementation proceeds under these rulings. If the user overrides either, the correction lands as its own additive S7 sub-commit rather than a rework.
 
 ---
 
@@ -193,7 +174,7 @@ should the CI unit gate keep the exact-count baseline or switch to a failures-on
 check?
 
 **Context:** found while landing S1's first unit tests. The exact-count baseline
-(1079 at the time of asking; **2319 today**) couples zm-tests to the engine unit count -- an unrelated engine PR that
+(1079 at the time of asking; **2319 at the 2026-07-20 pre-SC8 snapshot; 2343 at current S6 closure**) couples zm-tests to the engine unit count -- an unrelated engine PR that
 changes that count reddens zm-tests until the baseline is bumped. A failures-only
 check (assert the "Unit tests complete" line shows 0 failed, ignore the count)
 avoids the coupling but no longer catches a silently-vanishing `ZM_` test.
@@ -212,6 +193,22 @@ only symptom is an occasional one-line baseline bump caught immediately by red C
 ---
 
 ## Resolved
+
+### [RESOLVED] Q-2026-07-20-001 -- S6 item 3 defers BOTH behaviour graphs and the navmesh to S7 (mechanism change, not a scope change)
+
+**Resolution (2026-07-21): autonomous reversible default completed, not user ratification.** Under the standing Questions.md protocol, S6 proceeded without a human gate and SC9 closed locally green. The shipped payload is four authored, walk-up-interactable Dawnmere NPCs (villager, Trade Post clerk, Care Center caretaker and wanderer), with plain-C++ role dispatch and a deterministic two-waypoint patrol. Behaviour-graph and terrain-fed navmesh evaluation remains explicit S7 work; a later user override can land additively without invalidating the S6 interaction contract.
+
+**Ruling 1 -- behaviour graphs deferred; interact dispatch is plain C++.** Zenithmon has zero graph code today; the payload is `NPC role -> one of three already-shipped raise statics`, a closed three-way enum. A `.bgraph` would pay the first-graph cost and add an unresolved-asset failure axis before a genuinely branching authored beat exists. The `Interact()` dispatch function remains the conversion seam; S7's trainer beat is the first suitable graph evaluation point.
+
+**Ruling 2 -- navmesh deferred; the wanderer is a deterministic two-waypoint patrol.** The deferral is about scope, not engine capability: `Zenith_NavMeshGenerator::GenerateFromGeometry` accepts arbitrary triangle geometry and applies a slope filter, while the convenience scene scraper emits box OBBs rather than terrain geometry. S7 must identify a terrain-triangle source and decide coverage for Dawnmere's 1024 m domain. S6 instead ships `ZM_NpcWalkerLogic`, configured through `ConfigureWander(...)`; `ZM_Interactable` serialization v2 persists the patrol configuration and v1 loads stationary.
+
+**Observed implementation / reversal cost:** the forecast was superseded by the actual result: **18 pure units** (not 15), `ConfigureWander(...)` (not `SetWanderEnabled(bool)`), and a substantive windowed `ZM_NpcWander_Test` passing in **830 frames**. Reversal remains localized to the walker/dispatch seams; the NPC table, four individual walk-up proofs and consolidated interaction gate assert outcomes rather than mechanism.
+
+**Closure evidence:** boot units **2343 ran / 2342 passed / 0 failed / 1 skipped**; engine baseline **1103**; headless automation **36 passed / 0 failed** with **3 semantic executions + 33 expected graphics skips**; full windowed automation **36 passed / 0 failed / 0 skipped**. S0-S6 are complete as of 2026-07-21. S7 Full `ZM_SaveSchema` is next and remains autonomous; the next human gate is S8.
+
+**Status:** RESOLVED 2026-07-21 by completion under the documented autonomous, reversible default. No user-ratification claim is made.
+
+---
 
 ### [RESOLVED] Q-2026-07-16-001 -- RenderTest is pre-existingly red in this checkout (missing baked terrain); the E5 grass canary was substituted
 
@@ -252,7 +249,7 @@ RenderTest's terrain was `_True`-baked (it generates procedurally at boot from s
 
 **`Zenith_Check`, not `Zenith_Assert`, for two verified reasons:** (1) `ZENITH_ASSERT` is `#define`d UNCONDITIONALLY one line above its own `#ifdef` in `Zenith/Core/Zenith.h`, so `Zenith_Assert` calls `Zenith_DebugBreak()` in EVERY config including Release -- hard-breaking a shipped player's game over a developer's numbering mistake is exactly what the check tier exists to avoid; (2) `Finalize()` runs at engine init, BEFORE the boot unit suite, so an assert would pre-empt the very unit written to catch this and it could never report. Both were measured, not assumed -- an earlier draft of this fix carried the opposite (false) claim in a comment.
 
-**Engine baseline moved 1097 -> 1103** (+6, exactly these units). Cross-game gate: Combat 1103/0 + suite 14/0, DevilsPlayground 1104/0 + suite 158/0, CityBuilder 1104/0 + suite 45/0, Zenithmon 2325/0 with 35/0 headless and 35/0 windowed, RenderTest terrain canary green. Mutation-verified: giving `ZM_Interactable` the same order as `ZM_UI_MenuStack` logs the named pair and reds the live-registry unit while boot continues.
+**Engine baseline moved 1097 -> 1103** (+6, exactly these units). Historical ZM-D-132 cross-game gate snapshot: Combat 1103/0 + suite 14/0, DevilsPlayground 1104/0 + suite 158/0, CityBuilder 1104/0 + suite 45/0, Zenithmon 2325/0 with 35/0 headless and 35/0 windowed, RenderTest terrain canary green. Those Zenithmon counts predate S6 SC8 and are evidence for that engine-change gate, not current totals. Mutation-verified: giving `ZM_Interactable` the same order as `ZM_UI_MenuStack` logs the named pair and reds the live-registry unit while boot continues.
 
 **Status:** RESOLVED 2026-07-21 (ZM-D-132).
 

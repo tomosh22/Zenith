@@ -94,21 +94,20 @@ Plus, always:
   lowercase continuations like `Zenithmon` are distinct words and valid). The
   shared pinned vectors live in `Tools/ZenithCli/Tests/name_validation_cases.txt`;
   the buildsystem suite passed 45 / 0 after the change.
-- **Current landmark (2026-07-16): S0-S4 COMPLETE; S5 (Battle integration slice)
-  IN PROGRESS -- items 1-2 DONE (Battle scene + encounters/tall-grass/engine-E5); item 3 (additive load) NEXT.** Shipped and gate-signed: S0 skeleton + CI, S1 data core, S2 headless
-  battle engine (incl. feature-complete breeding/gender + Battle Tower), S3
-  first-overworld (Dawnmere -> PlayerHome(build 40) warp round trip via the
-  persistent manager/spawn/trigger orders 102-106 + `ZM_GreyboxVisual` 107 +
-  the 0.20 s `WarpFade`; visual-signed), and **S4 asset generators** --
-  `ZM_CreatureGen`(v3)/`ZM_CreatureAnimGen`/`ZM_HumanGen`(v1)/`ZM_BuildingGen`(v1)/
-  `ZM_PropGen`(v1) + `ZM_BakeManifest`, all baked to git-ignored `Assets/` under a
-  per-family manifest guard; the full-family `ZM_AssetGallery_Test` was visually
-  signed off 2026-07-16 (ZM-D-088). **S5 item 1 (ZM-D-089): `ZM_BattleArena` (order 108)
-  + the Battle scene (build index 1, world Y = -2000).** ECS component orders 100-108 are used;
-  **next free is 110**. Boot unit gate **1933 / 0 failed** (engine E5 added 3 `Flux_Grass` units -> engine default 1078->1081 + zm-tests 1930->1933). The authoritative
-  current stage, in-flight task, and exact numbers live in Status.md; this line
-  is a coarse pointer. Do NOT begin a stage's next work past a VISUAL GATE
-  without the user's sign-off (standing order). The S5 gate visual sign-off is a hard stop.
+- **Current landmark (2026-07-21): S0-S6 COMPLETE with the required local gates passed; S7 Full
+  `ZM_SaveSchema` is NEXT.** S6 ships the full dialogue/menu/party/bag/dex/shop
+  surface and four authored Dawnmere NPCs (villager, Trade Post clerk, Care
+  Center caretaker and wanderer). The wanderer is a deterministic two-waypoint
+  patrol configured through `ConfigureWander(...)`; `ZM_Interactable` v2
+  persists patrol configuration and v1 data loads as a stationary fail-closed
+  fallback. Behaviour-graph and terrain-fed navmesh work is deliberately S7
+  work. The SC9 local closure is green: boot units **2343 ran / 2342 passed / 0
+  failed / 1 skipped**, engine baseline **1103**, headless automation **36 passed
+  / 0 failed** (**3 semantic executions + 33 expected graphics skips**), and the
+  full windowed suite **36 passed / 0 failed / 0 skipped**. ECS orders 100-113
+  are occupied; **next free is 114**. The authoritative current stage and exact
+  task live in Status.md. S7 runs autonomously; the next human gate is the S8
+  vertical-slice go/no-go.
 
 ### Document map
 
@@ -236,10 +235,11 @@ classes `ZM_BattleEngine`, data tables `ZM_SpeciesData`, unit-test TUs
 Component serialization orders: ZM components claim **100+** and remain unique:
 `ZM_GameComponent` = 100, `ZM_TerrainGrass` = 101,
 `ZM_PlayerController` = 102, `ZM_FollowCamera` = 103,
-`ZM_GameStateManager` = 104, `ZM_SpawnPoint` = 105, and `ZM_WarpTrigger` =
-106, and the replaceable blockout renderer `ZM_GreyboxVisual` = 107, and the
-battle-arena manager `ZM_BattleArena` = 108, and the tall-grass encounter
-system `ZM_TallGrassSystem` = 109; **next free is 110**.
+`ZM_GameStateManager` = 104, `ZM_SpawnPoint` = 105, `ZM_WarpTrigger` = 106,
+the replaceable blockout renderer `ZM_GreyboxVisual` = 107, the battle-arena
+manager `ZM_BattleArena` = 108, the tall-grass encounter system
+`ZM_TallGrassSystem` = 109, `ZM_BattleTransition` = 110, `ZM_BattleDirector` =
+111, `ZM_UI_MenuStack` = 112, and `ZM_Interactable` = 113; **next free is 114**.
 
 ### 3.2 Engine naming conventions (mandatory)
 
@@ -510,7 +510,8 @@ component:
 2. **Register in `Zenithmon.cpp`** -- `#include` the header and add the
    file-scope `ZENITH_REGISTER_COMPONENT(ZM_WarpTrigger, "ZM_WarpTrigger", 106u)`
    next to the existing registrations (106 is this component's locked order;
-   order 107 is now `ZM_GreyboxVisual`, so the next free order is 108). The
+   current registrations continue through `ZM_Interactable` at 113, so the
+   next free order is 114). The
    macro must be static-init in an always-linked TU --
    `Zenithmon.cpp` defines the `Project_*` entry points, so it is safe. Do NOT
    call it from `Project_RegisterGameComponents` (the meta registry is sealed

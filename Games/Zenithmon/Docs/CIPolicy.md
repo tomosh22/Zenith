@@ -13,7 +13,7 @@ AssetManifest.md (why the runner has no assets).
 **Status:** LIVING -- update whenever a gate is added/retired or branch
 protection changes.
 
-**Last updated:** 2026-07-13 (S3 PlayerHome/fade milestone -- unit baseline 1773, ZM-D-057).
+**Last updated:** 2026-07-21 (S6 local closure -- ZM-D-134).
 
 ---
 
@@ -52,13 +52,17 @@ pattern), active from S0. Required check name: **`zm-tests`**.
      (`if: always()` -- results survive red runs).
 
 **Unit-test baseline ratchet:** step 8's `-Baseline` is the exact registered
-unit-test count of `zenithmon.exe` (engine units + `ZM_*` cases; currently
-**1773**: 1772 passed, 0 failed, and 1 quarantined
-`RegistryWideNodeRoundTrip` skip). Every
-commit that changes the `ZM_*` count -- and any engine change that changes the
-engine unit count -- bumps this number in `zm-tests.yml` in the same commit.
-This mirrors engine-gate's discipline and guards against unit tests silently vanishing; the
-coupling-vs-simplicity trade-off is Questions.md Q-2026-07-10-004.
+unit-test count of `zenithmon.exe`: the **combined engine + Zenithmon** suite.
+At S6 closure it is **2343**: 2342 passed, 0 failed, and 1 quarantined
+`GraphComponent::RegistryWideNodeRoundTrip` skip. This is deliberately distinct
+from the **1103 engine-only reference** owned by `engine-gate` and the default
+engine gate invocation of `Tools/run_unit_gate.ps1`; the two values are not
+interchangeable. Every commit that changes the `ZM_*` count -- and any engine
+change that changes the registrations visible in the game executable -- bumps
+the explicit `zm-tests.yml` number in the same commit. This mirrors
+engine-gate's exact-count discipline and guards against unit tests silently
+vanishing; the coupling-vs-simplicity trade-off is Questions.md
+Q-2026-07-10-004.
 
 ## 2. Runner constraints -- why headless pure-logic suites are the backbone
 
@@ -82,27 +86,42 @@ WorldSpec-integrity tests. These touch no disk assets and no GPU, so they
 run in FULL on every `zm-tests` invocation. This is a deliberate design
 constraint on all new tests, not an accident (see TestPlan.md).
 
-The current automated registry contains six P1 tests. On the asset-less,
-GPU-less runner, `ZM_Boot_Test` and the asset-free
-`ZM_ControllerHarness_Test` execute and pass; graphics-required
-`ZM_WarpInfrastructure_Test`, `ZM_GrassRegeneration_Test`, and
-`ZM_DawnmerePlayerCamera_Test`, and `ZM_PlayerHomeRoundTrip_Test` report skips
-by design. The four scene tests also exists-guard their ignored inputs where
-applicable. The definitive post-overlay-hitch headless registry ran **6/6 in
-1.590 s** wall: ControllerHarness **142 frames / 25.100 ms**, Boot **1 / 0.018 ms**,
-and exactly four graphics-required skips. Windowed evidence is Warp **29 /
+**Current S6 closure snapshot (2026-07-21):** the registry contains **36** P1
+tests. The fresh headless gate reported **36 passed / 0 failed**: three tests
+executed semantically and 33 graphics-required tests took their expected skip
+paths (the harness counts a requested skip as a pass). The fresh full windowed
+gate reported **36 passed / 0 failed / 0 skipped**, with no zero-frame tests.
+The six S6 windowed filters all executed rather than skipping:
+`ZM_S6UIGate_Test` **158 frames**, `ZM_NpcTalk_Test` **85**,
+`ZM_NpcShop_Test` **286**, `ZM_NpcHeal_Test` **315**,
+`ZM_S6InteractGate_Test` **749**, and `ZM_NpcWander_Test` **830**. The closure
+also passed five serial builds: all four Vulkan Debug/Release x Tools
+true/false configurations and the D3D12 Debug Tools=false link proof. Its boot
+unit result is the combined **2343 / 2342 / 0 / 1** contract described above;
+the engine-only reference remains **1103**. S6 has no visual gate.
+
+**Historical S3 snapshot (2026-07-13; retained for chronology, not a current
+baseline):** the automated registry then contained six P1 tests. On the
+asset-less, GPU-less runner, `ZM_Boot_Test` and the asset-free
+`ZM_ControllerHarness_Test` executed and passed; graphics-required
+`ZM_WarpInfrastructure_Test`, `ZM_GrassRegeneration_Test`,
+`ZM_DawnmerePlayerCamera_Test`, and `ZM_PlayerHomeRoundTrip_Test` reported
+skips by design. The four scene tests also exists-guarded their ignored inputs
+where applicable. That post-overlay-hitch headless registry ran **6/6 in 1.590
+s** wall: ControllerHarness **142 frames / 25.100 ms**, Boot **1 / 0.018 ms**,
+and exactly four graphics-required skips. Windowed evidence was Warp **29 /
 2008.714 ms** (**14.869 s** wall; **29 frames** after the synchronous opacity
 fix), Grass **11 / 2579.674 ms** (**15.125 s**), Camera **117 / 6212.128 ms**
 (**18.712 s**), and the real input-driven Dawnmere -> PlayerHome -> Dawnmere
-route **673 / 14662.601 ms** (**27.514 s**). The major-gate build matrix is
+route **673 / 14662.601 ms** (**27.514 s**). That major-gate build matrix was
 green for all four Vulkan Debug/Release x Tools true/false configurations plus
 the D3D12 Debug Tools=false link proof. The engine-global UI/lifecycle changes
 additionally passed a **6.192 s** RenderTest rebuild:
 `EngineBootShutdownSmoke` **1 / 28.606 ms** (**40.622 s** wall) and
 `TerrainEditorSmoke` **151 / 5291.193 ms** (**46.025 s** wall). The ignored
 `Build/artifacts/zenithmon/s3/final/post_overlay_hitch_fix/` authority root
-contains **12 parsed JSON / 12 passed / 0 failed** for the unchanged **1773-unit
-/ 6-P1** contract.
+contains **12 parsed JSON / 12 passed / 0 failed** for that historical
+**1773-unit / 6-P1** contract.
 
 CI budget: the headless batch must stay in the minutes range (DP precedent:
 ~2 min for ~140 tests); the slowest-10 report is reviewed at every stage
@@ -117,7 +136,7 @@ gate.
 | `complexity.yml` (`complexity-gate`) | Engine-wide complexity-ceiling ratchet (analyze_code_complexity.py thresholds). |
 | `layering-gate.yml` (`layering-gate`) | Architecture ratchet: layer-DAG direction, ECS-leaf purity, encapsulation + convention lints. |
 | `memory-gate.yml` (`memory-gate`) | Memory-budget ratchet: committed baseline JSON validation, no build needed. |
-| `engine-gate.yml` (`engine-gate`) | Engine-only proofs: Sentinel leaf-purity links (SentinelECS/Physics/AI) + the engine unit-test suite at boot (game workflows run `--skip-unit-tests`; this gate owns them). |
+| `engine-gate.yml` (`engine-gate`) | Engine-only proofs: Sentinel leaf-purity links (SentinelECS/Physics/AI) + the engine-only boot-unit reference, currently 1103. This is separate from `zm-tests`'s 2343-test combined engine + Zenithmon executable gate. |
 | `shader-validation.yml` (`shader-validation`) | Shader catalog validity + feature parity; fails if running FluxCompiler dirties the generated tree. |
 | `doc-lint.yml` (`doc-lint`) | Cross-document consistency lint (currently DP-scoped docs via Tools/doc_lint.ps1). |
 | `scaffold-smoke.yml` (`scaffold-smoke`) | Path-filtered proof that `zenith new` still produces a game that builds + boots; non-required burn-in. |
@@ -154,6 +173,11 @@ Consequences of that shape:
   reports deadlocks non-admin merges.
 
 ## 5. Direct-master landing policy (ZM-D-031)
+
+This is the current operating model at S6 closure: local evidence is the
+landing authority, work lands directly on `master`, and CI runs asynchronously
+as a post-push backstop. A pending CI run does not hold a locally green stage
+open.
 
 - **The full local gate must be green before every commit and direct push to
   `master`.** It is the authoritative quality bar: build, exact-baseline boot
