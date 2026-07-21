@@ -15,6 +15,82 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-21 -- ZM-D-136 -- S7 item 1 SC2 freezes pure transactional save schema v1 and its literal compatibility artifact
+
+- **Decision / boundary:** ship `Games/Zenithmon/Source/Core/ZM_SaveSchema.{h,cpp}`
+  as the pure inner-game-payload codec, below `Zenith_SaveData`. Its public seam
+  is exactly `Write(const ZM_GameState&, Zenith_DataStream&)` and
+  `Read(Zenith_DataStream&, uint64_t ulByteLength, ZM_GameState&)`. It knows the
+  durable aggregate and byte stream only -- no files, slot names, ECS entities,
+  scenes, menu flow or autosave policy. This completes Roadmap S7 item 1; item 2
+  wires the frozen codec through story gates and Save0-2/Auto flows.
+- **Frozen v1 wire contract:** explicit little-endian inner magic/version/count,
+  followed by exactly **11** ordered, independently length-framed modules; all
+  global and module versions are 1. Multi-byte values are emitted explicitly,
+  and floats use little-endian IEEE-754 bit patterns. The shared monster record
+  is exactly **61 bytes**; species and real moves use concrete enum + 1 while 0
+  is reserved, and a real move with current/max PP `{0,0}` is valid under the
+  current<=max invariant. StoryFlags writes highest-set-index+1 as its uint16
+  high-water count. Options is a counted uint16 `{tag,length,value}` sequence:
+  bounded unknown tags are skipped, but exactly one valid text-speed tag is
+  mandatory, so unknown-only payloads reject. Dex writes the current roster,
+  accepts current or smaller counts (zero-filling appended species), returns
+  `VERSION_MISMATCH` for a larger same-v1 roster within the 512 cap, and returns
+  `CORRUPT_DATA` above the cap.
+- **Transaction and status contract:** `Write` validates and stages the complete
+  payload privately, then appends at the destination cursor without changing
+  its prefix. Returned invalid-source/destination or capacity failures leave
+  destination cursor/bytes unchanged (`INVALID_ARGUMENT` or `OUT_OF_MEMORY`).
+  `Read` is exact-length and parses into a temporary state; it publishes and
+  advances the cursor only after all 11 framed modules validate. Every returned
+  failure leaves caller cursor/state unchanged. Wrong magic is `BAD_MAGIC`;
+  unsupported global/module versions and the newer-roster Dex case are
+  `VERSION_MISMATCH`; malformed lengths/fields/trailing data are `CORRUPT_DATA`.
+- **Smallest safe engine seam:** add the read-only
+  `Zenith_DataStream::OwnsData()` query. Existing public state (`GetData`,
+  `GetCapacity`, cursor, `IsValid`) cannot distinguish a growable owned stream
+  from a fixed wrapped external buffer. Without that fact the codec must either
+  reject valid owned growth or call `WriteData` past an external buffer and hit
+  DataStream's assert-on-resize path. `OwnsData()` lets the codec preflight a
+  whole fixed-buffer append while preserving ordinary owned growth; it changes
+  no allocation/write behavior. Engine units pin default/sized ownership,
+  external non-ownership, destruction safety, and move-construction/assignment
+  ownership transfer/reset. Owned allocator exhaustion remains the engine's
+  existing fatal/asserting policy.
+- **Compatibility policy:** v1 is the first real schema. The complete literal
+  **824-byte** array in `ZM_Tests_SaveMigration.cpp` is independently authored
+  and pins both writer bytes and literal decode/re-encode. It is not a fake v0
+  migration. From this commit forward, every incompatible global/module change
+  owes a version bump and a literal historical-blob migration test in the same
+  commit.
+- **Tests that lock it:** **29** new `ZM_Save` schema tests cover maximal and
+  edge round trips, append/exact-read atomicity, statuses, every truncation
+  boundary, exact framing and all module/domain/cap rules, including raw
+  move/float wire oracles, StoryFlags high water, Dex roster drift and Options
+  TLVs. **2** compatibility tests cover the literal golden. Observed Zenithmon
+  gate: regen green; five builds green (Vulkan Debug/Release x Tools true/false
+  plus D3D12 Debug Tools=false); units **2392 ran / 2391 passed / 0 failed / 1
+  skipped**; engine reference **1103**; headless **36/0**; full windowed
+  **36/0/0** with 36 JSON results, no skips and no zero-frame tests.
+- **Complete engine-surface regression evidence:** SentinelECS,
+  SentinelPhysics and SentinelAI built and ran green; Combat Vulkan + **1103 /
+  1102 / 0 / 1** boot + **14/0** suite passed; DevilsPlayground Vulkan/D3D12 +
+  **1104 / 1103 / 0 / 1** boot + **158/0** suite (29 expected skips) passed;
+  CityBuilder Vulkan/D3D12 + **1104 / 1103 / 0 / 1** boot + **45/0** suite (6
+  expected skips) passed. Focused windowed RenderTest emitted exactly one
+  unskipped passing JSON per canary: `EngineBootShutdownSmoke` **1 frame** and
+  `TerrainEditorSmoke` **151 frames**. Scaffold smoke passed **11/0**, met its
+  embedded **1103** unit baseline, and teardown regeneration was green with git
+  status unchanged.
+- **Reversibility / next boundary:** the codec is localized, but its v1 bytes
+  are now durable compatibility surface and must evolve through migration, not
+  silent edits. `OwnsData()` is additive/read-only and can remain independently
+  useful. No visual/human gate applies. S7 continues with story-flag gates,
+  slot/manual/continue/autosave integration, then trainers/navigation/rival;
+  the next human intervention remains the S8 vertical-slice go/no-go.
+
+---
+
 ## 2026-07-21 -- ZM-D-135 -- S7 item 1 SC1 freezes the durable save model before bytes
 
 - **Decision:** complete SC1 as the durable **in-memory model freeze**, not as a

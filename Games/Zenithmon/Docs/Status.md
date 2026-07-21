@@ -1,13 +1,13 @@
 # Zenithmon Status
 
 **Last updated:** 2026-07-21
-**Stage:** **S7 (save/load, story flags, trainer battles) ACTIVE; item 1 SC1 durable-model freeze COMPLETE (ZM-D-135).** S0-S6 remain complete. SC1 freezes the complete in-memory inventory and its 18-unit contract without claiming a disk schema; **SC2 is NEXT: the full transactional 11-module codec plus initial v1 golden.** S7 requires no human intervention; the next human stop remains the S8 vertical-slice go/no-go.
-**Build:** GREEN on the fresh local S7 item 1 SC1 gate -- regen passed, then five serial configurations passed: all four **Vulkan Debug/Release x Tools true/false** builds plus the **D3D12 Debug Tools=false** null-backend link proof. The local gate is the direct-`master` landing authority; CI is the asynchronous post-push backstop, and no CI result is claimed here.
-**Tests:** boot unit gate **2361 ran / 2360 passed / 0 failed / 1 skipped** (the 1 skip is the pre-existing `GraphComponent::RegistryWideNodeRoundTrip` quarantine); the separate engine-only reference remains **1103**. The unchanged 36-test registry was headless **36/0** with three semantic executions and 33 expected graphics skips, then full windowed **36/0/0** with every test reporting a positive frame count. SC1 has no visual or human gate.
+**Stage:** **S7 (save/load, story flags, trainer battles) ACTIVE; item 1 full schema-v1 codec COMPLETE (SC1-SC2, ZM-D-135/136).** S0-S6 remain complete. The durable model and pure 11-module binary contract are now frozen; **NEXT is item 2: story-flag gates plus slot/manual/continue/autosave integration.** S7 requires no human intervention; the next human stop remains the S8 vertical-slice go/no-go.
+**Build:** GREEN on the fresh local S7 item 1 SC2 Zenithmon gate -- regen passed, then five serial configurations passed: all four **Vulkan Debug/Release x Tools true/false** builds plus the **D3D12 Debug Tools=false** null-backend link proof. The local gate is the direct-`master` landing authority; CI is the asynchronous post-push backstop, and no CI result is claimed here.
+**Tests:** boot unit gate **2392 ran / 2391 passed / 0 failed / 1 skipped** (the 1 skip is the pre-existing `GraphComponent::RegistryWideNodeRoundTrip` quarantine); the separate engine-only reference remains **1103**. The unchanged 36-test registry was headless **36/0**, then full windowed **36/0/0** with 36 JSON results, no skips and no zero-frame tests. SC2 has no visual or human gate.
 
 ## Current task
 
-**S7 item 1 SC2 -- the full transactional 11-module codec + initial v1 golden -- is NEXT.** SC1 did not implement a codec, schema/module version, golden, migration or slot I/O. ECS serialization order 113 remains the last occupied game order, so the next free order remains **114**. Continue autonomously through S7; there is no human intervention point until the **S8 vertical-slice go/no-go**.
+**S7 item 2 -- story-flag gating plus slots/manual save/continue/milestone autosave -- is NEXT.** Reuse the frozen pure schema-v1 codec; do not redesign it or claim a historical v0 migration. ECS serialization order 113 remains the last occupied game order, so the next free order remains **114**. Continue autonomously through S7; there is no human intervention point until the **S8 vertical-slice go/no-go**.
 
 **S6 CLOSURE RULING (ZM-D-134):** behaviour graphs and navmesh-driven wandering were deliberately deferred to S7. `ZM_GraphAuthoring` is not written; S6 ships a bounded 3-arm C++ role dispatch behind one `Interact()` seam. `Zenith_NavMeshGenerator::GenerateFromGeometry` is terrain-capable when supplied suitable triangles, but `Zenith_AINavGeometry::GenerateFromScene` does **not** harvest streamed terrain geometry or a heightfield; it represents static colliders as box geometry. S7 therefore owns the first useful graph integration plus the terrain-triangle/grid-coverage and `.znavmesh` evaluation. `MasterPlan.md` is historical/read-only, not the source of current shipped truth.
 
@@ -15,7 +15,8 @@
 
 **S7 ITEM 1 STATUS:**
 - **SC1 DONE (ZM-D-135)** -- complete durable in-memory model + 18 `ZM_Save` units + reconciled provisional SaveFormat inventory; no disk codec/version/golden/migration/slot I/O.
-- **SC2 NEXT** -- transactional 11-module codec + initial v1 golden.
+- **SC2 DONE (ZM-D-136)** -- pure transactional 11-module schema-v1 codec + 29 schema units + 2 literal-golden compatibility units; exact 824-byte v1 artifact; no slot I/O and no fake v0 migration.
+- **NEXT** -- item 2 story-flag gates plus slots/manual/continue/autosave integration.
 
 **S6 ITEM 3 SUB-COMMIT STATUS (historical):**
 - **SC1 DONE (ZM-D-124)** -- interact key + pure gate + MenuStack seams.
@@ -32,9 +33,38 @@
 
 ## Last completed
 
+**S7 item 1 SC2 -- SCHEMA-V1 CODEC FREEZE (ZM-D-136).**
+`ZM_SaveSchema::{Write,Read}` is the pure inner-payload boundary over
+`ZM_GameState`: 11 ordered independently length-framed modules, explicit
+little-endian fixed widths, schema/module version 1, a 61-byte monster record,
+append-transactional writes and exact-length transactional reads. Dex accepts
+current/older roster counts and rejects newer counts with `VERSION_MISMATCH`;
+StoryFlags writes its high-water count; Options is a counted uint16 TLV list
+that skips bounded unknown tags but requires exactly one known text-speed tag.
+The codec owns no slots, disk I/O, ECS or runtime scene behavior.
+
+The 29 new schema units plus 2 literal-golden compatibility units raise the
+observed combined gate to **2392 / 2391 / 0 / 1**; engine remains **1103**. The
+independent complete v1 golden is exactly **824 bytes** and represents v1, not a
+fabricated v0 migration. Regen, all five Zenithmon builds, headless **36/0** and
+full windowed **36/0/0** were green. Because the codec needs to distinguish a
+growable owned stream from a fixed wrapped buffer, engine `Zenith_DataStream`
+adds the read-only `OwnsData()` query and ownership-transfer units.
+
+Complete cross-game evidence includes all three Sentinel
+leaf proofs; Combat Vulkan + **1103 / 1102 / 0 / 1** boot + **14/0** suite;
+DevilsPlayground Vulkan/D3D12 + **1104 / 1103 / 0 / 1** boot + **158/0** suite
+(29 expected skips); and CityBuilder Vulkan/D3D12 + **1104 / 1103 / 0 / 1**
+boot + **45/0** suite (6 expected skips). Focused windowed RenderTest canaries
+each produced exactly one unskipped passing JSON: boot **1 frame**, terrain
+**151 frames**. Scaffold smoke passed **11/0**, met its embedded **1103** unit
+baseline, and its teardown regeneration left git status unchanged. **NEXT:** S7
+item 2 story flags plus slot/manual/continue/autosave integration. No
+visual/human gate applies.
+
 **S7 item 1 SC1 -- DURABLE-MODEL FREEZE (ZM-D-135).** `ZM_GameState` now owns the complete module inventory: party plus deterministic transactional 16x30 boxes, seen/caught dex, 4096 story bits, 8 badges, bag/full-width money, daycare, tower current/best/seed, unset world position and NORMAL-default options. `ZM_Monster` adds zero-default friendship and a zeroed 16-byte nickname; caught battle records normalize `ABILITY_NONE` to the species regular ability. Catch placement is party-first then first-free box while dex marking remains invariant. The starter seeds seen+caught and every new module's empty/default state.
 
-The 18 new `ZM_Save` units raised the observed combined baseline to **2361 / 2360 / 0 / 1**; engine stays **1103**. Regen, all five required builds, headless **36/0** (3 semantic + 33 expected graphics skips), and full windowed **36/0/0** with every test positive-frame were green. The automated registry remains 36. `SaveFormat.md` now inventories the frozen model, but SC1 assigns no codec, final version/offset, golden, migration or slot I/O. No visual/human gate applies. **SC2 is next: the transactional 11-module codec + initial v1 golden.** ECS next-free remains **114**.
+The 18 new `ZM_Save` units raised that boundary's observed combined baseline to **2361 / 2360 / 0 / 1**; engine stayed **1103**. Regen, all five required builds, headless **36/0** (3 semantic + 33 expected graphics skips), and full windowed **36/0/0** with every test positive-frame were green. The automated registry remained 36. `SaveFormat.md` inventoried the frozen model, but SC1 assigned no codec, final version/offset, golden, migration or slot I/O. No visual/human gate applied. **SC2 was next at this historical boundary and is now complete above.** ECS next-free remained **114**.
 
 Prior: **S6 item 3 SC9 -- FULL STAGE CLOSURE (ZM-D-134).** Fresh local evidence passed the five-build serial matrix, the **2343 / 2342 / 0 / 1** combined boot-unit contract, headless **36/0** with three semantic executions and 33 expected graphics skips, and full windowed **36/0/0** with no zero-frame tests. The exact S6 windowed filters passed non-skipped in UI **158**, Talk **85**, Shop **286**, Heal **315**, Interact **749**, and Wander **830** frames. The engine-only reference remains **1103**. S6 had no visual gate, so it closes without human intervention; S7 starts at the full versioned `ZM_SaveSchema`, and the next human stop remains S8.
 
@@ -106,7 +136,7 @@ Prior: **S6 item 2 SC9 -- the consolidated gate; ITEM 2 COMPLETE (ZM-D-122).** O
 
 ## Notes for next agent (S7)
 
-- **★ SC1 IS A MODEL FREEZE, NOT A PARTIAL CODEC.** Preserve its exact 11-module inventory and 18-unit semantics. SC2 must transactionally decode into a temporary state, validate every module, and publish only on complete success; it owns the first schema/module versions and v1 golden. Do not claim migration or slot I/O until those bytes and tests exist.
+- **★ SCHEMA V1 IS NOW FROZEN.** Preserve the exact 11-module order, fixed widths, 61-byte monster encoding, statuses and transactional cursor/destination behavior in `SaveFormat.md`; every incompatible change now owes a real version bump + literal historical-blob migration test. There is no v0. The next slice wires this codec to story gates and Save0-2/Auto flows; do not fold slot or ECS concerns back into the pure codec.
 - **★ `zenith test <Game>` runs the EXISTING exe -- it does NOT relink after an ENGINE-lib change.** For cross-game engine regression you MUST `zenith build <Game>` FIRST, THEN test, or you validate a STALE exe. If scoped work is expected to be game-only and this arises, verify whether an engine file was touched.
 - **★ UI element ownership:** `AddElement` pushes into BOTH `m_xAllElements` and `m_xRootElements`; `Clear()` deletes only `m_xAllElements`, so a merely-`AddChild`'d element **LEAKS** and an `AddElement`+`AddChild` element is **walked TWICE**. `Zenith_UICanvas::ReparentElement` is the only correct path. And `SetVisible` notifies the parent (a grid re-runs layout), so write child visibility **ONLY ON CHANGE** -- in Hide as well as Present.
 - **★ ENGINE UI NAV RULE:** never wire bake-time `SetNavigation` links into a pool whose members are shown/hidden at RUNTIME. `NavigateDown` consults the explicit link FIRST and falls back to the spatial search ONLY when it is null, so a link into a hidden element silently swallows the press -- and a partial page is usually the DEFAULT state. `SetNavigation` is also not serialized, so bake-time links exist only in tools builds.

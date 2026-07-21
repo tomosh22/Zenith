@@ -290,8 +290,8 @@ biggest suite; all headless, all seeded (C8).
   count-ratcheted into the then-current shared engine unit gate (**1078**
   registered) and Zenithmon CI boot unit gate (**1773** registered); the latter
   expected 1772 passed, 0 failed and the one quarantined skip. Those are
-  historical S3 values: the current S7 item 1 SC1 references are **1103**
-  engine-only and **2361** combined engine + Zenithmon units.
+  historical S3 values: the current S7 item 1 SC2 references are **1103**
+  engine-only and **2392** combined engine + Zenithmon units.
 - **E2 engine unit tests (SHIPPED -- exactly three):**
 
   | Test | Contract covered |
@@ -1036,18 +1036,39 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   starter defaults. `SaveFormat.md` is reconciled to that inventory, but SC1
   deliberately implements no codec, schema/module version, golden, migration,
   or save-slot I/O.
-- **SC1 observed gate:** regen green; Vulkan Debug/Release x Tools True/False
-  plus D3D12 Debug Tools=False all green; units **2361 ran / 2360 passed / 0
-  failed / 1 skipped**; engine-only baseline unchanged at **1103**; headless
-  automated registry **36/0** (3 semantic executions, 33 expected graphics
-  skips); full windowed registry **36/0/0**, every test positive-frame. Registry
-  count remains 36, and SC1 has no visual/human gate.
-- **SC2 NEXT:** the full transactional 11-module codec and initial v1 golden.
-  Its remaining `ZM_Save` units cover full round-trip equality, corruption robustness,
-  version-mismatch rejection, **canned-blob migrations** (one test per
-  historical schema version, blobs compiled into the test TU), sanity-cap
-  rejects -- the full obligation list lives in [SaveFormat.md](SaveFormat.md).
-  Plus story-flag gating units and trainer sight-cone/defeat-flag units.
+- **SC2 schema-v1 codec (COMPLETE 2026-07-21, ZM-D-136):** **29** pure
+  `ZM_Save` cases in `ZM_Tests_SaveSchema.cpp` lock the complete explicit-LE
+  11-module format, 61-byte monster record, maximal/empty/egg-only round trips,
+  append-write and exact-length read transactionality, status mapping, every
+  truncation boundary, exact framing, all field domains/sanity caps, raw move
+  and IEEE-float bytes, StoryFlags high-water encoding, older/current/newer Dex
+  roster-count policy, and counted Options TLVs including bounded unknown-field
+  skipping and unknown-only rejection. **2** more cases in
+  `ZM_Tests_SaveMigration.cpp` compare the canonical writer with an independent
+  literal **824-byte v1 golden**, then decode/re-encode that literal and assert
+  every represented field. They are initial v1 compatibility tests, not a fake
+  v0 migration; future format changes owe a real version bump + historical
+  literal migration in the same commit.
+- **SC2 observed Zenithmon gate:** regen green; Vulkan Debug/Release x Tools
+  True/False plus D3D12 Debug Tools=False all green; units **2392 ran / 2391
+  passed / 0 failed / 1 skipped**; engine-only reference **1103**; headless
+  registry **36/0**; full windowed registry **36/0/0**, with 36 JSON results,
+  no skips and no zero-frame tests. Registry count remains 36 and SC2 has no
+  visual/human gate.
+- **SC2 engine-seam regression evidence (complete):** regenerate passed;
+  SentinelECS, SentinelPhysics and SentinelAI built and ran green; Combat's
+  Vulkan build, **1103 / 1102 / 0 / 1** boot gate and headless **14/0** suite
+  passed; DevilsPlayground Vulkan/D3D12 builds, **1104 / 1103 / 0 / 1** boot
+  gate and **158/0** suite (29 expected skips) passed; CityBuilder
+  Vulkan/D3D12 builds, **1104 / 1103 / 0 / 1** boot gate and **45/0** suite (6
+  expected skips) passed. Focused windowed RenderTest canaries each emitted
+  exactly one unskipped passing JSON: `EngineBootShutdownSmoke` **1 frame** and
+  `TerrainEditorSmoke` **151 frames**. Scaffold smoke finished **11 passed / 0
+  failed** with its embedded **1103** unit baseline met; teardown regeneration
+  was green and left git status unchanged.
+- **NEXT:** story-flag gating plus slot/manual/continue/autosave integration.
+  The existing v1 codec is reused; slot I/O is not retroactively claimed by
+  SC2. Trainer sight-cone/defeat-flag units follow within S7.
 - **P1 `ZM_SaveContinue_Test`:** save -> quit to FrontEnd -> continue restores
   position/party/flags exactly.
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->

@@ -23,6 +23,7 @@
 - `operator<<(value)` / `operator>>(value)` - Type-dispatched serialization
 - `SetCursor()` / `GetCursor()` / `SkipBytes()` - Cursor management
 - `GetCapacity()` - Buffer capacity in bytes; for an owned write stream this is NOT the bytes written (use `GetCursor()` for that)
+- `OwnsData()` - True for growable engine-owned storage; false for fixed-capacity wrapped external storage
 - `GetData()` (const and mutable) - Direct access to the underlying buffer pointer
 - `IsValid()` - True if buffer is non-null with non-zero size (useful after `ReadFromFile`)
 
@@ -53,6 +54,7 @@ Built-in `<<`/`>>` specializations for:
 
 - **Owned buffers** (`m_bOwnsData = true`): Auto-resize by doubling on overflow. Freed in destructor.
 - **External buffers** (`m_bOwnsData = false`): No resize capability. Assert on overflow.
+- **Move semantics**: Move construction and move assignment transfer the data pointer, capacity, cursor, and ownership flag unchanged. The moved-from stream is reset to a null pointer, zero capacity/cursor, and non-owning state, so its destructor is harmless.
 - Uses `Zenith_MemoryManagement::Allocate/Reallocate/Deallocate` for memory.
 
 ## Safety

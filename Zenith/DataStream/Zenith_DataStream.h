@@ -100,6 +100,12 @@ public:
 		return m_ulDataSize;
 	}
 
+	// Owned streams may grow; wrapped external buffers have a fixed capacity.
+	bool OwnsData() const
+	{
+		return m_bOwnsData;
+	}
+
 	// Returns true if the stream contains valid data (non-null pointer and non-zero size)
 	// Use this after ReadFromFile() to verify the file was loaded successfully
 	bool IsValid() const

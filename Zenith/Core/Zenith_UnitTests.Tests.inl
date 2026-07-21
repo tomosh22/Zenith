@@ -9,6 +9,8 @@
 // the interface grows the friend declarations are the cheapest option.
 #include <chrono>
 #include <thread>   // Phase 1 transform-cache worker-contract test spawns a non-main thread
+#include <type_traits>
+#include <utility>
 #include "Collections/Zenith_CircularQueue.h"
 #include "Collections/Zenith_HashSet.h"
 #include "Collections/Zenith_MemoryPool.h"
@@ -100,7 +102,76 @@
 ZENITH_TEST(Core, DataStream) { Zenith_UnitTests::TestDataStream(); }
 
 void Zenith_UnitTests::TestDataStream(){
+	static_assert(!std::is_copy_constructible_v<Zenith_DataStream>);
+	static_assert(!std::is_copy_assignable_v<Zenith_DataStream>);
+	static_assert(std::is_destructible_v<Zenith_DataStream>);
+
+	Zenith_DataStream xDefaultStream;
+	ZENITH_ASSERT_TRUE(xDefaultStream.OwnsData(), "default DataStream must own its growable buffer");
+
 	Zenith_DataStream xStream(1);
+	ZENITH_ASSERT_TRUE(xStream.OwnsData(), "sized DataStream must own its growable buffer");
+
+	u_int8 auExternalData[8] = { 0x1u, 0x2u, 0x3u, 0x4u, 0x5u, 0x6u, 0x7u, 0x8u };
+	{
+		Zenith_DataStream xExternalStream(auExternalData, sizeof(auExternalData));
+		xExternalStream.SetCursor(3u);
+		ZENITH_ASSERT_FALSE(xExternalStream.OwnsData(),
+			"wrapped external DataStream must report fixed non-owning storage");
+		ZENITH_ASSERT_TRUE(xExternalStream.GetData() == auExternalData,
+			"wrapped external DataStream changed its pointer");
+		ZENITH_ASSERT_EQ(xExternalStream.GetCapacity(), (uint64_t)sizeof(auExternalData));
+		ZENITH_ASSERT_EQ(xExternalStream.GetCursor(), 3ull);
+	}
+	ZENITH_ASSERT_EQ((u_int)auExternalData[0], 0x1u,
+		"destroying a wrapped DataStream must not free or modify external storage");
+
+	{
+		Zenith_DataStream xMoveSource(32u);
+		const uint32_t uMarker = 0x12345678u;
+		xMoveSource << uMarker;
+		const void* pExpectedData = xMoveSource.GetData();
+		const uint64_t ulExpectedCapacity = xMoveSource.GetCapacity();
+		const uint64_t ulExpectedCursor = xMoveSource.GetCursor();
+
+		Zenith_DataStream xMoveTarget(std::move(xMoveSource));
+		ZENITH_ASSERT_TRUE(xMoveTarget.OwnsData(),
+			"move construction did not transfer owned storage");
+		ZENITH_ASSERT_TRUE(xMoveTarget.GetData() == pExpectedData,
+			"move construction changed the storage pointer");
+		ZENITH_ASSERT_EQ(xMoveTarget.GetCapacity(), ulExpectedCapacity);
+		ZENITH_ASSERT_EQ(xMoveTarget.GetCursor(), ulExpectedCursor);
+		ZENITH_ASSERT_FALSE(xMoveSource.OwnsData(),
+			"move construction left the source owning storage");
+		ZENITH_ASSERT_TRUE(xMoveSource.GetData() == nullptr,
+			"move construction did not null the source pointer");
+		ZENITH_ASSERT_EQ(xMoveSource.GetCapacity(), 0ull);
+		ZENITH_ASSERT_EQ(xMoveSource.GetCursor(), 0ull);
+	}
+
+	{
+		Zenith_DataStream xMoveSource(48u);
+		const uint16_t uMarker = 0x5aa5u;
+		xMoveSource << uMarker;
+		const void* pExpectedData = xMoveSource.GetData();
+		const uint64_t ulExpectedCapacity = xMoveSource.GetCapacity();
+		const uint64_t ulExpectedCursor = xMoveSource.GetCursor();
+		Zenith_DataStream xMoveTarget(8u);
+
+		xMoveTarget = std::move(xMoveSource);
+		ZENITH_ASSERT_TRUE(xMoveTarget.OwnsData(),
+			"move assignment did not transfer owned storage");
+		ZENITH_ASSERT_TRUE(xMoveTarget.GetData() == pExpectedData,
+			"move assignment changed the storage pointer");
+		ZENITH_ASSERT_EQ(xMoveTarget.GetCapacity(), ulExpectedCapacity);
+		ZENITH_ASSERT_EQ(xMoveTarget.GetCursor(), ulExpectedCursor);
+		ZENITH_ASSERT_FALSE(xMoveSource.OwnsData(),
+			"move assignment left the source owning storage");
+		ZENITH_ASSERT_TRUE(xMoveSource.GetData() == nullptr,
+			"move assignment did not null the source pointer");
+		ZENITH_ASSERT_EQ(xMoveSource.GetCapacity(), 0ull);
+		ZENITH_ASSERT_EQ(xMoveSource.GetCursor(), 0ull);
+	}
 
 	const char* szTestData = "This is a test string";
 	constexpr u_int uTestDataLen = 22;

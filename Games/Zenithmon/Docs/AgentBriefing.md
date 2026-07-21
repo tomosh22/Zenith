@@ -94,23 +94,22 @@ Plus, always:
   lowercase continuations like `Zenithmon` are distinct words and valid). The
   shared pinned vectors live in `Tools/ZenithCli/Tests/name_validation_cases.txt`;
   the buildsystem suite passed 45 / 0 after the change.
-- **Current landmark (2026-07-21): S0-S6 COMPLETE; S7 item 1 SC1 durable-model
-  freeze COMPLETE (`ZM-D-135`), and SC2 transactional 11-module codec + initial
-  v1 golden is NEXT.** SC1 freezes the in-memory save contract: catch is
-  party-first then deterministic 16x30 box storage; the model owns seen/caught
-  dex state, 4096 story bits, 8 badges, daycare state, tower seed, an unset
-  world position, NORMAL default options, friendship/nickname state and ability
-  normalization. `SaveFormat.md` now matches that inventory, but no
-  codec/version/golden/migration/slot I/O exists yet, so Roadmap's full
-  `ZM_SaveSchema` checkbox remains open. The local closure is green: all five
-  required builds passed; boot units **2361 ran / 2360 passed / 0 failed / 1
-  skipped** (including 18 new `ZM_Save` units), engine baseline **1103**,
-  headless automation **36 passed / 0 failed** (**3 semantic executions + 33
-  expected graphics skips**), and the full windowed suite **36 passed / 0 failed
-  / 0 skipped**, with every test producing positive frames. The registry remains
-  **36** tests. ECS orders 100-113 are occupied; **next free is 114**. The
-  authoritative current stage and exact task live in Status.md. No human or
-  visual gate is pending; S7 continues autonomously toward the S8
+- **Current landmark (2026-07-21): S0-S6 COMPLETE; S7 item 1 COMPLETE through
+  the durable-model and schema-v1 freezes (`ZM-D-135/136`); item 2 story flags
+  + slots/manual/continue/autosave is NEXT.** The model owns party-first 16x30
+  box storage, seen/caught, 4096 story bits, 8 badges, daycare, tower, world,
+  options and complete monster instance state. `ZM_SaveSchema` now freezes that
+  inventory as a pure explicit-LE 11-module payload with 61-byte monster
+  records, append-transactional writes, exact-length transactional reads and an
+  independent literal 824-byte v1 golden. Its 29 schema + 2 compatibility units
+  join SC1's 18 model units. There is no fake v0 migration and the codec owns no
+  slot/disk/ECS concerns. The local Zenithmon closure is green: all five builds;
+  boot units **2392 ran / 2391 passed / 0 failed / 1 skipped**, engine reference
+  **1103**, headless automation **36 passed / 0 failed**, and full windowed
+  automation **36 passed / 0 failed / 0 skipped** with no zero-frame tests. The
+  registry remains **36** tests. ECS orders 100-113 are occupied; **next free is
+  114**. The authoritative current stage and exact task live in Status.md. No
+  human or visual gate is pending; S7 continues autonomously toward the S8
   vertical-slice go/no-go.
 
 ### Document map
