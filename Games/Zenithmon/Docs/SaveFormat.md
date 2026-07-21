@@ -10,10 +10,10 @@ are frozen by `Tests/ZM_Tests_SaveSchema.cpp` plus the independent literal-byte
 golden in `Tests/ZM_Tests_SaveMigration.cpp`. They are no longer proposals.
 
 **Current S7 status:** `Games/Zenithmon/Source/Core/ZM_SaveSchema.{h,cpp}` is a
-pure game-payload codec for the complete durable `ZM_GameState` inventory. It
-does not name files or slots, touch ECS/scenes, or call `Zenith_SaveData`.
-Schema v1 therefore completes the first Roadmap item; slot I/O, manual save,
-continue and milestone autosave belong to the next S7 item.
+pure game-payload codec for the complete durable `ZM_GameState` inventory; it
+names no file, slot, ECS type or scene. Slot identity and disk I/O are owned by
+`Source/Save/ZM_SaveSlots.{h,cpp}` (S7 item 2 SC2, ZM-D-138; see "Slot layer"
+below). Manual save, continue and milestone autosave are later sub-commits.
 
 Public API (`ZM_SaveSchema.h`):
 
@@ -25,10 +25,10 @@ Zenith_Status Read(Zenith_DataStream& xInStream, uint64_t ulByteLength,
 
 ## Engine framing (Zenith_SaveData)
 
-Zenithmon will persist the inner payload through `Zenith_SaveData`, initialised at boot as
-`Zenith_SaveData::Initialise("Zenithmon")` (wired since S0 in
-`Zenithmon.cpp`). S7 SC2 does not yet connect the codec to slots. When that
-integration lands, the engine wraps every payload in its own header:
+Zenithmon persists the inner payload through `Zenith_SaveData`, initialised at boot as
+`Zenith_SaveData::Initialise("Zenithmon")` (wired since S0 in `Zenithmon.cpp`)
+and driven by `ZM_SaveSlots` since S7 item 2 SC2. The engine wraps every payload
+in its own header, and that header is the ENGINE's alone:
 
 - magic `'ZENS'`
 - format version (engine)
@@ -37,7 +37,7 @@ integration lands, the engine wraps every payload in its own header:
 - payload size
 - timestamp
 
-The planned files live at `%APPDATA%/Zenith/Zenithmon/<slot>.zsave`.
+Slot files live at `%APPDATA%/Zenith/Zenithmon/<slot>.zsave`.
 
 | Slot name | Purpose |
 |---|---|
@@ -45,13 +45,13 @@ The planned files live at `%APPDATA%/Zenith/Zenithmon/<slot>.zsave`.
 | `Auto` | Autosave -- written only by milestone triggers, never by the manual flow |
 
 `LoadEx` can report `SUCCESS / FILE_NOT_FOUND / BAD_MAGIC / VERSION_MISMATCH /
-CORRUPT_DATA`; once wired, the engine layer rejects wrong-magic, bad-CRC and
-truncated outer files before the game payload is parsed. Everything below
-concerns only the game payload inside that future wrapper.
+CORRUPT_DATA`; the engine layer rejects wrong-magic, bad-CRC and truncated outer
+files before the game payload is parsed. Everything below concerns the game
+payload inside that wrapper (plus the slot layer's prefix -- see "Slot layer").
 
-Test hygiene: `Zenith_SaveData::ClearForTest` is registered as a
-between-tests hook from S0, so save writes in one batched test can never leak
-into the next (TestPlan.md convention C3).
+Test hygiene: `Zenith_SaveData::ClearForTest` is a between-tests hook from S0
+(TestPlan.md C3). It clears only the in-memory write log and readback stash, so
+`ZM_SaveSlots::DeleteAllSlotsForTests()` runs immediately before it since SC2.
 
 ### S3 runtime traversal streams are not this save schema
 
@@ -315,10 +315,80 @@ and field -- never a crash, never a partial apply, never silent clamping.
 | Options | counted TLVs stay module-bounded; exactly one valid text-speed tag is present |
 | Strings | Fixed-size buffers only; no length-prefixed heap reads |
 
-The later slot layer must surface a failed payload as damaged and must not
-auto-overwrite or silently reset it. That UI/slot behavior is not implemented
-by this pure codec; v1 provides the status and atomic destination semantics the
-slot layer will consume.
+The slot layer surfaces a failed payload as DAMAGED and never auto-overwrites,
+repairs or silently resets it; classifying a slot performs no write and no
+delete. That policy lives in `ZM_SaveSlots` (see "Slot layer" below); v1 provides
+the status and atomic destination semantics that layer consumes.
+
+## Slot layer (`ZM_SaveSlots`) -- settled at S7 item 2 SC2 (ZM-D-138)
+
+`Games/Zenithmon/Source/Save/ZM_SaveSlots.{h,cpp}` is the only code in the game
+that names a save file. The directory boundary is the ownership boundary:
+
+| Layer | Owns |
+|---|---|
+| `Zenith_SaveData` (engine) | The file: `'ZENS'` magic, engine format version, the game-version field, CRC32 over the payload, payload size, timestamp, and the save directory |
+| `ZM_SaveSlots` (this layer) | Slot identity/naming and ONE framing field -- the 4-byte length prefix below. It adds nothing else to the payload |
+| `ZM_SaveSchema` (codec) | Every byte of the ZMSV payload, exactly as frozen above |
+
+**On-disk inventory.** Four slots, whose ordinals pick their file stems and are
+therefore APPEND ONLY -- reordering the enum renames every existing save. The
+roles are the table under "Engine framing": `Save0`/`Save1`/`Save2` are the
+MANUAL slots and `Auto` is written only by milestone triggers. That split is a
+POLICY owned by the caller; to the storage layer `Auto` is an ordinary slot in
+every respect. Player-facing copy is "Slot 1".."Slot 3" and "Auto". Under an
+automated-test run (or a test's explicit opt-in) every stem gains a `_Test`
+suffix, so units never address `Save0.zsave` and friends.
+
+**The 4-byte little-endian length prefix.** Inside the engine's payload region,
+this layer writes:
+
+```
+[uint32 little-endian ZMSV byte length][ZMSV blob ...]
+```
+
+The prefix sits OUTSIDE the frozen v1 payload -- the literal 824-byte golden is
+unaffected -- and it carries no magic and no version, because ZMSV's own magic
+and schema version sit immediately after it. It exists because `ZM_SaveSchema::
+Read` requires an EXACT `ulByteLength` (any slack is rejected as trailing bytes)
+while the engine's two load paths disagree about `Zenith_DataStream::
+GetCapacity()`: the disk path wraps a stream whose capacity IS the header's
+declared payload size, whereas the staged-readback path used by tests hands the
+callback a default-constructed OWNING stream whose capacity is its whole
+allocation. `GetCapacity()` can therefore never be used as the codec's length,
+and branching on `OwnsData()` would couple the game to which engine path is
+running. The prefix makes both paths present the codec an identical exact length.
+It is written and read byte by byte, so it never inherits host byte order or
+struct padding, and it is UNTRUSTED on read: a payload too small to hold it, a
+zero length, or a length beyond the bytes actually available is `CORRUPT_DATA`
+(defence in depth -- the codec applies an equivalent bound itself).
+
+**Slot status and write semantics.**
+
+- `ProbeSlot` classifies a slot as `EMPTY` (no file), `READY` (file present and
+  its ZMSV payload decoded) or `DAMAGED` (file present but the outer file or the
+  payload was rejected). Three states, not a bool: collapsing "no file" and
+  "unreadable file" is how a New Game silently clobbers a recoverable save. It
+  re-reads disk every call, decodes into a scratch state, and never writes.
+- Occupancy and readiness are different questions. A DAMAGED slot COUNTS as
+  occupied (so a damaged save can never make Continue disappear); only a `READY`
+  slot is loadable.
+- `WriteState` stages and validates the whole payload BEFORE calling
+  `Zenith_SaveData::Save`, because Save creates the file the moment it is called
+  -- so a rejected state leaves the slot exactly as it was, with not even a
+  zero-length file. It then answers ONLY from a verify RE-PROBE of what landed,
+  never from Save's return value. Statuses: `SUCCESS`, `INVALID_ARGUMENT` (bad
+  slot id or a state the codec rejects), `OUT_OF_MEMORY` (the payload could not
+  be staged), `FILE_NOT_FOUND` (the write claimed success but no file exists) and
+  `CORRUPT_DATA` (a file landed but the verify probe did not decode it).
+- `ReadState` is transactional end to end: on ANY failure the destination
+  `ZM_GameState` is byte-for-byte unchanged, inheriting the codec's guarantee.
+  It reports `FILE_NOT_FOUND / BAD_MAGIC / VERSION_MISMATCH / CORRUPT_DATA /
+  SUCCESS`, plus `INVALID_ARGUMENT` for a bad slot id.
+- The engine header's game-version field is stamped with this layer's own
+  constant and is never used as a gate: the real version gate is the ZMSV schema
+  version inside the payload, and a second independent version axis would be a
+  gate with no owner.
 
 ## Migration policy
 
@@ -346,7 +416,7 @@ slot layer will consume.
   appending options (tagged fields), appending bag item IDs (ids validated,
   not positional).
 
-## When saves happen (next S7 slice; not yet wired)
+## When saves happen (policy; the triggers are a later S7 sub-commit)
 
 - **Menu-save anywhere** in the overworld (pause menu), to a chosen manual
   slot. Saving is disallowed mid-battle and during scripted cutscene beats --
@@ -381,10 +451,25 @@ slot layer will consume.
   the independent literal **824-byte** array: canonical writer byte equality,
   and literal decode + field assertions + byte-identical re-encode. No fake v0
   migration is represented.
-- SC2's observed combined boot gate is **2392 ran / 2391 passed / 0 failed / 1
-  skipped**; the engine-only reference remains **1103**. All five Zenithmon
-  configurations, headless automation **36/0**, and full windowed automation
-  **36/0/0** were green; the automated registry remains 36.
-- Still planned for the slot/UI slice: `ZM_SaveContinue_Test` -- save, quit to
+- Item 1 SC2's observed combined boot gate was **2392 ran / 2391 passed / 0
+  failed / 1 skipped**; the engine-only reference remains **1103**. All five
+  Zenithmon configurations, headless automation **36/0**, and full windowed
+  automation **36/0/0** were green; the automated registry remains 36.
+- `Tests/ZM_Tests_SaveSlots.cpp` contains **33** `ZM_Save` tests over the slot
+  layer (item 2 SC2): the four distinct file stems, their `_Test` aliases and the
+  totality of every name map; manual-vs-Auto classification and display copy;
+  empty/ready/damaged probing including a damaged slot left byte-identical across
+  a probe and a read; a maximal all-eleven-module round trip; per-slot and
+  Auto-vs-manual independence; overwrite-rather-than-append; the recorded payload
+  being exactly `[u32 length][ZMSV]` with a little-endian prefix; decode through
+  the real staged-readback seam; the four prefix/payload rejection shapes
+  (oversized prefix, prefix longer than the payload, a hand-built disk file whose
+  payload is too small to hold the prefix, and a staged payload with a corrupt
+  inner magic); out-of-range write/read rejection; an invalid state rejected
+  WITHOUT creating a file; the verify re-probe (mutation-verified); delete
+  semantics; occupancy vs readiness; and all sixteen save-blocker combinations.
+  Observed boot gate **2458 ran / 2457 passed / 0 failed / 1 skipped**, engine
+  reference **1103** unchanged, headless **36/0**, full windowed **36/0/0**.
+- Still planned for the UI/flow slice: `ZM_SaveContinue_Test` -- save, quit to
   FrontEnd, continue and assert position/party/flags exactly -- plus the
   milestone autosave trigger test.

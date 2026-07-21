@@ -22,6 +22,7 @@
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // ResetRuntimeStateForTests (between-tests hook)
+#include "Zenithmon/Source/Save/ZM_SaveSlots.h"                   // DeleteAllSlotsForTests (between-tests hook)
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // sz*_NAME element contract (dialogue authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Bag.h"           // sz*_NAME + RowElementName + geometry contract (bag authoring)
 #include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"     // fZM_BATTLE_MENU_ROOT_* row constants (battle menu authoring)
@@ -1254,6 +1255,11 @@ void Project_RegisterGameComponents()
 		// re-seed the starter so a caught/levelled party cannot leak into the next test.
 		ZM_GameStateManager::ResetGameStateForTests();
 		ZM_SetInstantBattlesForTests(false);
+		// Disk hygiene FIRST: Zenith_SaveData::ClearForTest wipes only the in-memory
+		// write log and readback stash and explicitly does NOT delete files
+		// (Zenith_SaveData.h:119), so a .zsave written by one test would otherwise
+		// survive into the next test AND into the next process.
+		ZM_SaveSlots::DeleteAllSlotsForTests();
 		Zenith_SaveData::ClearForTest();
 	});
 #endif

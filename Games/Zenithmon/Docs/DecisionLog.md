@@ -15,6 +15,210 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-21 -- ZM-D-138 -- S7 item 2 SC2 adds the typed slot/disk layer over the frozen codec, framed by an explicit length prefix
+
+- **Decision / boundary:** ship `Games/Zenithmon/Source/Save/ZM_SaveSlots.{h,cpp}`
+  as the typed SLOT and DISK layer that sits ON TOP of the ZMSV codec frozen by
+  ZM-D-136. The new `Source/Save/` directory IS the boundary: `Source/Core/` owns
+  the pure payload codec and names no slot, no file and no runtime, while
+  `Source/Save/` owns slot identity, the engine save layer and the on-disk file,
+  and adds NOTHING to the payload. Four slots are declared -- `ZM_SAVE_SLOT_0/1/2`
+  (manual) plus `ZM_SAVE_SLOT_AUTO` -- with a three-state probe
+  (`EMPTY / READY / DAMAGED`), typed `WriteState` / `ReadState` returning
+  `Zenith_Status`, `AnySlotOccupied` / `AnySlotReady`, `DeleteSlotFile`, and a
+  pure save-blocker predicate with a fixed precedence. The header names NO ECS
+  type, NO scene, NO UI element and NO component; the .cpp's only live-state
+  reach is `ResolveLiveSaveBlocker` at the very bottom, which forwards four bools
+  into the pure predicate above it. World-position capture, quit-to-FrontEnd,
+  autosave policy and the save screen are LATER sub-commits and deliberately do
+  not exist here. This is SC2 of six in S7 item 2.
+- **The one piece of framing this layer adds, and why it is not optional:** the
+  engine payload region is written as `[u32 little-endian ZMSV byte length][ZMSV
+  blob]`, emitted byte by byte rather than as a memcpy of a `uint32_t`, so the
+  field can never inherit host byte order or struct padding. It exists because
+  `ZM_SaveSchema::Read` demands an EXACT byte length (any slack is rejected as
+  trailing bytes) and the engine's two Load paths DISAGREE about
+  `Zenith_DataStream::GetCapacity()`: the disk path wraps an exactly-payload-sized
+  buffer (`Zenith_SaveData.cpp:317-319`, capacity == payload) while the staged
+  readback path used by tests hands the callback a DEFAULT-CONSTRUCTED OWNING
+  stream whose capacity is the whole 1024-byte allocation
+  (`Zenith_SaveData.cpp:229-235`). `GetCapacity()` therefore can NEVER be used as
+  the codec's length, and branching on `OwnsData()` would couple the game to which
+  engine load path happens to be running. The prefix is what makes both paths hand
+  the codec a byte-identical exact length. It carries no magic and no version --
+  ZMSV's own magic and schema version sit four bytes later, and duplicating either
+  would create two sources of truth. It sits OUTSIDE the frozen payload, so the
+  literal **824-byte** v1 golden is untouched. `uGAME_VERSION = 1` is stamped into
+  the ENGINE header's `uGameVersion` field only; `LoadEx` never inspects it and
+  the real version gate remains inside the payload.
+- **Two orderings in `WriteState` are load-bearing:** (1) the payload is STAGED
+  AND VALIDATED with the frozen codec BEFORE `Zenith_SaveData::Save` is called at
+  all, because Save creates the file the instant it is called -- validating inside
+  the write callback would leave a zero-length file behind for every rejected
+  state, so "a rejected state leaves the slot exactly as it was" is a consequence
+  of this ordering and nothing else. (2) Save's return value is DELIBERATELY
+  DISCARDED: it is the literal constant `true` on every path
+  (`Zenith_SaveData.cpp:204`) because `Zenith_DataStream::WriteToFile` is void and
+  `Zenith_FileAccess::WriteFile` only logs, so believing it would report SUCCESS
+  for a disk-full or permission failure. The answer comes ONLY from a re-probe of
+  the slot just written, and that re-probe is the layer's SOLE evidence that the
+  save landed and is loadable. `SUCCESS / INVALID_ARGUMENT / OUT_OF_MEMORY /
+  CORRUPT_DATA` are all unit-pinned; the `FILE_NOT_FOUND` arm is deliberately
+  uncovered and documented as unreachable from a unit (making
+  `Zenith_FileAccess::WriteFile` fail trips a `Zenith_Assert` on the ofstream open
+  and would kill the whole boot gate rather than fail one unit).
+- **Damage is surfaced, never repaired.** `ProbeSlot` re-reads disk every call and
+  is deliberately UNCACHED -- four ~830-byte reads when a slot screen opens are
+  free, and a cache is a stale-state generator the between-tests hook would then
+  have to know about. It decodes into a scratch state that is thrown away, and it
+  NEVER writes, deletes or "repairs" the file it is looking at. Three states
+  rather than a bool because "no file" and "unreadable file" demand OPPOSITE UI:
+  collapsing them is how a New Game silently clobbers a recoverable save. For the
+  same reason `AnySlotOccupied` counts a DAMAGED slot as occupied (the Continue
+  VISIBILITY gate must not vanish on a damaged save) while `AnySlotReady` is the
+  stricter, separate question. All three name maps are TOTAL and every name is a
+  compile-time literal, because `Zenith_SaveData::BuildSlotPath` performs ZERO
+  sanitisation -- an empty name for a bad id is what makes a path-traversal seam
+  structurally impossible.
+- **One save-permission predicate, shared by both future callers.**
+  `ResolveSaveBlocker(bOverworld, bBattleTransitionActive, bWarpInProgress,
+  bPendingWhiteout)` is PURE -- every live condition is passed in -- with a fixed
+  top-to-bottom precedence (`NOT_OVERWORLD > BATTLE > WARP > PENDING_WHITEOUT >
+  NONE`), the `ZM_ShouldInteract` idiom, append-only. It exists now, ahead of both
+  of its callers, so the manual menu path (SC4) and the milestone autosave path
+  (SC3) can never give "may the player save right now" two different answers.
+  `ResolveLiveSaveBlocker` is the thin live wrapper; a context with no live game
+  state reports "no pending whiteout" rather than inventing a blocker.
+- **★ DEFECT 1, AND THE RULE IT ESTABLISHES: never infer "am I under test" from a
+  process flag the run in question does not set.** The test-slot interlock
+  originally redirected slot names onto their `"_Test"` aliases only when
+  `Zenith_CommandLine::IsAutomatedTestRun()` was true. That is FALSE during the
+  boot unit run: `Tools/run_unit_gate.ps1` launches with only `--headless
+  --exit-after-frames 120`, a developer simply running the game passes no flags at
+  all, and the one command that DOES pass `--all-automated-tests` (`zenith test
+  <Game>`) also passes `--skip-unit-tests`, so the boot units never run there. The
+  interlock was therefore keyed on a condition that could not hold, and it was
+  simultaneously a TOTAL COVERAGE HOLE and a DATA-LOSS HAZARD. Consequence A:
+  every disk unit hit `ZENITH_SKIP`, and **a skip counts as a PASS**, so the
+  entire storage half of this sub-commit was green-by-skip and could not fail.
+  Consequence B: that same interlock is the ONLY thing stopping those units from
+  writing and then DELETING the real `Save0`/`Save1`/`Save2`/`Auto` files -- and
+  the boot unit suite runs on EVERY boot, including an ordinary interactive
+  developer run. Fixed by making the redirection EXPLICIT rather than inferred: a
+  test-only `SetTestSlotNamesForTests` setter plus a default-FALSE file-scope
+  flag, driven by the tests' RAII `ZM_SlotDiskScope`, which sets it as the very
+  first thing it does, VERIFIES that all four names actually moved off their
+  shipping stems BEFORE it deletes anything (so a broken redirection performs no
+  disk operation at all), and clears it unconditionally on the way out. The
+  per-test skip became a HARD FAILURE -- a unit that cannot redirect is a failed
+  unit -- and a dedicated unit, declared first in the TU so it RUNS LAST
+  (`Zenith_TestRunner::RegisterTest` prepends), asserts the redirection defaults
+  OFF, so a leaked redirect reds instead of silently repointing the player's
+  saves. RULE: make a safety interlock explicit and assert it, and NEVER let one
+  degrade into a skip.
+- **★ DEFECT 2, AND THE RULE IT ESTABLISHES: this layer's own rejection branches
+  were dead to its tests.** DAMAGED was only ever manufactured by flipping a byte
+  on disk -- which breaks the ENGINE's CRC32 and makes `LoadEx` bail BEFORE the
+  read callback is ever invoked. Every payload-rejection branch this layer owns
+  could therefore have been deleted outright with every unit still green. Closed
+  by staging a readback whose inner ZMSV magic is corrupt: the readback stash is
+  consulted AHEAD of the file (`Zenith_SaveData.cpp:219-238`), which bypasses the
+  engine's CRC gate entirely and is the only way to make the game's own decode
+  arm run. When a lower layer rejects a fixture first, the layer under test never
+  executes -- verify WHICH layer produced the verdict.
+- **★ DEFECT 3: the verify re-probe was pinned by nothing.** Every other write
+  unit writes a good state to a working disk, so deleting the re-probe and
+  returning success immediately after `Zenith_SaveData::Save` left them all green
+  -- despite the header calling the re-probe the only evidence the save landed.
+  Closed by `Slot_WriteAnswersFromTheVerifyProbeNotFromSaveReturn`, which stages a
+  corrupt-magic readback for the TARGET slot BEFORE the write, so the file that
+  actually lands is perfectly good and only a layer that BELIEVES its re-probe can
+  report `CORRUPT_DATA`. Its three non-vacuity assertions confirm the write really
+  reached the engine, that a file really landed (so the verdict is the
+  `CORRUPT_DATA` arm and not `FILE_NOT_FOUND`), and that the poisoned read fixture
+  never leaked into the bytes written. **Mutation-verified: making `WriteState`
+  accept a DAMAGED verdict turns the gate RED (1 failed); restored, green.**
+- **★ DEFECT 4: the too-small-for-a-prefix guard had zero coverage and was
+  structurally unreachable from any staged fixture** -- the staged stream's
+  capacity is always the full 1024-byte allocation, so `capacity - cursor < 4`
+  cannot hold there, and the CRC-flip helper preserves the declared payload length
+  and so can never produce a sub-prefix payload. Closed by
+  `Slot_ReadRejectsADiskPayloadTooSmallForAPrefix`, which drives the DISK path
+  with a hand-built `.zsave` declaring a 2-byte payload with a matching CRC, and
+  which first runs a WELL-FORMED CONTROL ARM through the same fixture builder so
+  the corrupt verdict is attributable to this layer's guard rather than to an
+  engine header/CRC gate. Deleting the guard does not merely mis-report: it asks a
+  2-byte stream for 4 bytes and trips `Zenith_DataStream`'s FATAL bounds assert.
+- **Wrong claims caught and corrected before the commit** (the recurring
+  false-claim-in-an-argumentative-passage defect class; SC1 had seven such sites):
+  a comment claimed an unbounded prefix "would walk far past the buffer" if handed
+  to the codec -- false, the frozen codec applies an equivalent bound at the same
+  cursor and publishes only after full validation, so this layer's own bound is
+  DEFENCE IN DEPTH, not the only thing preventing an overrun. The unit that pins
+  that branch now states its honest scope: it pins the layer's OUTCOME contract (a
+  lying prefix reports `CORRUPT_DATA`, and the destination survives), not the
+  overrun. Also corrected: a stale doc citation repeated at four sites, a
+  miscounted unit total in a rationale comment, and a stale line citation.
+- **Tests that lock it:** **33** new `ZM_Save` units in
+  `Tests/ZM_Tests_SaveSlots.cpp` -- six pure name/classification/policy units and
+  27 that construct the RAII disk scope. They cover the four distinct file stems
+  and their `_Test` aliases (both spelled as LITERALS, never derived from the
+  production tables), total/empty names for `NONE` and garbage ids, manual-vs-Auto
+  classification, original display copy, empty/ready/damaged probing, a maximal
+  eleven-module field-for-field round trip, per-slot and Auto-vs-manual
+  independence, overwrite-rather-than-append, the recorded payload being exactly
+  prefix + blob with a little-endian prefix, staged-readback decode through the
+  REAL engine seam, all four prefix/payload rejection shapes, the recorded game
+  version, out-of-range write/read rejection, invalid-state rejection creating NO
+  file, the verify-probe unit above, delete semantics, occupancy vs readiness, a
+  write/probe/read composition, and all SIXTEEN boolean combinations of the
+  blocker precedence spelled out by hand. Transactional reads are pinned by raw
+  byte snapshots of the destination (never a copy-construct memcmp, which would
+  compare indeterminate padding). `Zenithmon.cpp`'s between-tests hook now calls
+  `ZM_SaveSlots::DeleteAllSlotsForTests()` BEFORE `Zenith_SaveData::ClearForTest`,
+  because ClearForTest wipes only the in-memory write log and readback stash and
+  explicitly does NOT delete files.
+- **Observed gate evidence:** `Build\regen.ps1` green (a NEW `Source/Save/`
+  directory plus two new `.cpp` files, so the regen was genuinely owed); `zenith
+  build Zenithmon` (`Vulkan_vs2022_Debug_Win64_True`) green; boot units **2458 ran
+  / 2457 passed / 0 failed / 1 skipped**, up **+33** from the 2425 baseline. The
+  single skip is the pre-existing unrelated `GraphComponent::
+  RegistryWideNodeRoundTrip` quarantine -- which is itself the proof that none of
+  the 33 new disk units skipped. `.github/workflows/zm-tests.yml` bumped **2425 ->
+  2458** from the OBSERVED boot line; an intermediate prediction of 2429 was wrong
+  and was caught precisely because the observed line, never arithmetic, is what
+  gets written. The engine-only reference baseline **1103 is UNCHANGED** and no
+  engine file was touched, so no cross-game regression sweep was owed. Headless
+  automation **36 passed / 0 failed**; full windowed automation **36 passed / 0
+  failed, ZERO skipped**. The registered automated-test count is unchanged at
+  **36**. `%APPDATA%/Zenith/Zenithmon` was verified EMPTY after the run: no
+  residue, and no shipping-named slot file was ever created. No commit, push or CI
+  result is claimed.
+- **Contracts held:** `ZM_SaveSchema` is untouched, so ZM-D-136 is honoured and
+  the literal **824-byte** v1 golden is unchanged -- the length prefix is framing
+  AROUND that payload, inside the engine's payload region, never part of it.
+  `ZM_GameState`'s layout is untouched, so ZM-D-135 is honoured; no
+  `uSERIALIZATION_VERSION` was bumped; NO new ECS serialization order was
+  consumed, so the next free order remains **114**.
+- **Reversibility / next boundary:** the slot ORDINALS and their file stems are
+  durable the moment a save exists (an ordinal picks a name, so reordering renames
+  every save on disk) and the length prefix is now on-disk surface, recorded in
+  `SaveFormat.md`; the statuses, the blocker enum and the display copy are local
+  and freely revisable, both enums being append-only. Four sub-commits of S7 item
+  2 remain: **SC3** world-position capture, resume placement, quit-to-FrontEnd and
+  the autosave latch; **SC4** the save-slot screen and root-menu Save/Quit;
+  **SC5** the title menu and Continue; **SC6** the S7 stage-gate windowed test
+  (save -> quit-to-FrontEnd -> continue restores position/party/flags exactly)
+  plus an autosave milestone test. **A hazard SC3/SC6 must design around:**
+  `ZM_GameStateManager` is `DontDestroyOnLoad` and its FrontEnd re-author path
+  DESTROYS the duplicate rather than reseeding, so the live `ZM_GameState`
+  survives quit-to-title entirely in RAM -- a naive "save -> quit -> continue"
+  test would pass green against a Continue that reads zero bytes from disk, so the
+  gate test MUST scramble the live state before continuing. S7 has no visual gate
+  and needs no human sign-off; the next human stop remains the S8 vertical-slice
+  go/no-go.
+
+---
 ## 2026-07-21 -- ZM-D-137 -- S7 item 2 SC1 gives story flags an identity registry and gates NPC lines on it
 
 - **Decision / boundary:** ship `Games/Zenithmon/Source/Data/ZM_StoryFlags.{h,cpp}`
