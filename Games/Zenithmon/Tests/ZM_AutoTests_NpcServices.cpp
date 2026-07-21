@@ -139,6 +139,10 @@ namespace
 	// the villager's name too (SC5's own test spells it in its own file's anonymous
 	// namespace, which is unreachable from here).
 	constexpr const char* szVILLAGER_ENTITY_NAME  = "Npc_Villager";
+	// SC8's fourth NPC is deliberately covered in this SAME TU so its moving-target
+	// approach reuses the camera-relative WalkContext instead of forking a fourth
+	// DriveTowardXZ implementation.
+	constexpr const char* szWANDERER_ENTITY_NAME   = "Npc_Wanderer";
 
 	// ---- Walk budgets. Each waiting phase owns a deadline that FAILS with its own
 	// diagnostic; none of them may be reached by the harness's m_iMaxFrames instead,
@@ -396,6 +400,11 @@ namespace
 		// Returns nullptr on success, or the failure text to fail the walk with.
 		// (A captureless function pointer, not std::function -- project rule.)
 		const char* (*m_pfnAfterBoot)() = nullptr;
+		// Optional final press gate, sampled in ArmAndPress immediately BEFORE the E
+		// edge is injected. Stationary-NPC tests leave it null. SC8 uses it to prove
+		// the wanderer was genuinely moving (and not naturally dwelling) on the
+		// causal frame before opening dialogue.
+		bool (*m_pfnCanPress)() = nullptr;
 
 		// ---- live bookkeeping (also the failure diagnostics) ----
 		WalkStage             m_eStage = WalkStage::Failed;
@@ -1099,6 +1108,16 @@ namespace
 				{
 					FailWalk(xWalk, "the NPC never armed as the interaction target after the "
 						"approach reported it reachable");
+					return WalkTick::Failed;
+				}
+				return WalkTick::Running;
+			}
+			if (xWalk.m_pfnCanPress != nullptr && !xWalk.m_pfnCanPress())
+			{
+				if (xWalk.m_iStageFrames > iARM_DEADLINE_FRAMES)
+				{
+					FailWalk(xWalk, "the target stayed reachable but never satisfied the "
+						"test-specific causal press gate before its deadline");
 					return WalkTick::Failed;
 				}
 				return WalkTick::Running;
@@ -4939,6 +4958,868 @@ namespace
 		}
 		return bPassed;
 	}
+
+	// ========================================================================
+	// ZM_NpcWander_Test -- SC8's authored-waypoint patrol, end to end.
+	//
+	// This deliberately lives beside WalkContext. The target MOVES while the
+	// player approaches, so reusing the camera-relative closed loop is more
+	// important here than in any stationary-NPC test. The test first watches the
+	// wanderer from safely outside interaction range (proving its dynamic body is
+	// moving without player contact), then walks to the LIVE target, talks, proves
+	// it halts for the dialogue, closes the dialogue and proves it resumes.
+	// ========================================================================
+
+	constexpr int iWANDER_READY_DEADLINE_FRAMES   = 840;
+	constexpr int iWANDER_OBSERVE_DEADLINE_FRAMES = 900;
+	constexpr int iWANDER_HALT_FRAMES             = 30;
+	constexpr int iWANDER_CLOSE_DEADLINE_FRAMES   = 480;
+	constexpr int iWANDER_RESUME_DEADLINE_FRAMES  = 360;
+	constexpr float fWANDER_MIN_OBSERVED_PATH      = 2.0f;
+	constexpr float fWANDER_MIN_RESUME_PATH        = 0.2f;
+	constexpr float fWANDER_MIN_BODY_SPEED         = 0.25f;
+	constexpr float fWANDER_MAX_HALT_DRIFT         = 0.15f;
+	constexpr float fWANDER_MAX_HALT_SPEED         = 0.15f;
+	constexpr float fWANDER_MIN_MOTION_ALIGNMENT   = 0.80f;
+	constexpr float fWANDER_MOTION_ABS_TOLERANCE   = 0.01f;
+	constexpr float fWANDER_MOTION_REL_TOLERANCE   = 0.50f;
+	constexpr u_int uWANDER_OBSERVE_COUPLED_SAMPLES = 8u;
+	constexpr u_int uWANDER_RESUME_COUPLED_SAMPLES  = 6u;
+
+	struct WandererView
+	{
+		Zenith_EntityID           m_xEntityID = INVALID_ENTITY_ID;
+		Zenith_Maths::Vector3     m_xPosition = Zenith_Maths::Vector3(0.0f);
+		ZM_Interactable*           m_pxInteractable = nullptr;
+		Zenith_ColliderComponent* m_pxCollider = nullptr;
+	};
+
+	bool ResolveWanderer(WandererView& xOut)
+	{
+		xOut = WandererView{};
+		Zenith_SceneData* pxData = g_xEngine.Scenes().GetActiveSceneData();
+		if (pxData == nullptr)
+		{
+			return false;
+		}
+
+		Zenith_Entity xEntity = pxData->FindEntityByName(szWANDERER_ENTITY_NAME);
+		if (!xEntity.IsValid())
+		{
+			return false;
+		}
+
+		xOut.m_pxInteractable = xEntity.TryGetComponent<ZM_Interactable>();
+		xOut.m_pxCollider = xEntity.TryGetComponent<Zenith_ColliderComponent>();
+		Zenith_TransformComponent* pxTransform =
+			xEntity.TryGetComponent<Zenith_TransformComponent>();
+		if (xOut.m_pxInteractable == nullptr
+			|| xOut.m_pxCollider == nullptr
+			|| pxTransform == nullptr)
+		{
+			return false;
+		}
+
+		xOut.m_xEntityID = xEntity.GetEntityID();
+		pxTransform->GetPosition(xOut.m_xPosition);
+		return true;
+	}
+
+	bool ReadWandererVelocity(
+		const WandererView& xView,
+		Zenith_Maths::Vector3& xVelocityOut)
+	{
+		xVelocityOut = Zenith_Maths::Vector3(0.0f);
+		if (xView.m_pxCollider == nullptr || !xView.m_pxCollider->HasValidBody())
+		{
+			return false;
+		}
+		xVelocityOut =
+			g_xEngine.Physics().GetLinearVelocity(xView.m_pxCollider->GetBodyID());
+		return true;
+	}
+
+	float PlanarSpeed(const Zenith_Maths::Vector3& xVelocity)
+	{
+		return std::sqrt(
+			xVelocity.x * xVelocity.x + xVelocity.z * xVelocity.z);
+	}
+
+	struct CoupledMotionEvidence
+	{
+		bool  m_bMatched = false;
+		float m_fDisplacement = 0.0f;
+		float m_fVelocitySpeed = 0.0f;
+		float m_fExpectedDisplacement = 0.0f;
+		float m_fAlignment = -1.0f;
+		float m_fMagnitudeError = 99999.0f;
+	};
+
+	CoupledMotionEvidence MatchDisplacementToVelocity(
+		const Zenith_Maths::Vector3& xDelta,
+		const Zenith_Maths::Vector3& xVelocity,
+		float fDt)
+	{
+		CoupledMotionEvidence xEvidence;
+		xEvidence.m_fDisplacement =
+			std::sqrt(xDelta.x * xDelta.x + xDelta.z * xDelta.z);
+		xEvidence.m_fVelocitySpeed = PlanarSpeed(xVelocity);
+		if (xEvidence.m_fDisplacement <= 0.0001f
+			|| xEvidence.m_fVelocitySpeed <= fWANDER_MIN_BODY_SPEED
+			|| fDt <= 0.0f)
+		{
+			return xEvidence;
+		}
+
+		xEvidence.m_fAlignment =
+			(xDelta.x * xVelocity.x + xDelta.z * xVelocity.z)
+			/ (xEvidence.m_fDisplacement * xEvidence.m_fVelocitySpeed);
+		xEvidence.m_fExpectedDisplacement = xEvidence.m_fVelocitySpeed * fDt;
+		xEvidence.m_fMagnitudeError = std::fabs(
+			xEvidence.m_fDisplacement - xEvidence.m_fExpectedDisplacement);
+		const float fTolerance = fWANDER_MOTION_ABS_TOLERANCE
+			+ xEvidence.m_fExpectedDisplacement * fWANDER_MOTION_REL_TOLERANCE;
+		xEvidence.m_bMatched =
+			xEvidence.m_fAlignment >= fWANDER_MIN_MOTION_ALIGNMENT
+			&& xEvidence.m_fMagnitudeError <= fTolerance;
+		return xEvidence;
+	}
+
+	// Step() samples before Scenes().Update(). Depending on whether a component
+	// changed velocity on the preceding update, this frame's transform delta can
+	// correspond to either the velocity sampled LAST Step or the velocity sampled
+	// NOW. Compare both and accept the better real match. A teleport paired with an
+	// unrelated non-zero velocity fails alignment and/or speed*dt magnitude.
+	CoupledMotionEvidence CoupleMotionAcrossFrame(
+		const Zenith_Maths::Vector3& xPreviousPosition,
+		const Zenith_Maths::Vector3& xCurrentPosition,
+		const Zenith_Maths::Vector3& xPreviousVelocity,
+		const Zenith_Maths::Vector3& xCurrentVelocity)
+	{
+		const Zenith_Maths::Vector3 xDelta(
+			xCurrentPosition.x - xPreviousPosition.x,
+			0.0f,
+			xCurrentPosition.z - xPreviousPosition.z);
+		const CoupledMotionEvidence xPrevious =
+			MatchDisplacementToVelocity(xDelta, xPreviousVelocity, fNPC_FIXED_DT);
+		const CoupledMotionEvidence xCurrent =
+			MatchDisplacementToVelocity(xDelta, xCurrentVelocity, fNPC_FIXED_DT);
+		if (xPrevious.m_bMatched && xCurrent.m_bMatched)
+		{
+			return xPrevious.m_fMagnitudeError <= xCurrent.m_fMagnitudeError
+				? xPrevious : xCurrent;
+		}
+		return xPrevious.m_bMatched ? xPrevious : xCurrent;
+	}
+
+	enum class WanderPhase
+	{
+		AwaitReady,
+		ObserveWander,
+		Walk,
+		AssertRaise,
+		AssertHalt,
+		CloseDialogue,
+		AssertResume,
+		Done,
+	};
+
+	WanderPhase g_eWanderPhase = WanderPhase::Done;
+	int g_iWanderPhaseFrames = 0;
+	WalkContext g_xWanderWalk;
+	bool g_bWanderSkipped = false;
+	bool g_bWanderPrereqsPresent = false;
+	const char* g_szWanderFailure = "test did not reach verification";
+
+	// Every outcome starts false. A phase that never runs therefore fails Verify.
+	bool g_bWanderAuthored = false;
+	bool g_bWanderDynamicCapsule = false;
+	bool g_bWanderObservedAwayFromPlayer = false;
+	bool g_bWanderMoved = false;
+	bool g_bWanderWaypointAdvanced = false;
+	bool g_bWanderPhysicsDrivenSeen = false;
+	bool g_bWanderMovingAtPress = false;
+	bool g_bWanderWaypointStableAcrossPress = false;
+	bool g_bWanderDialogueRaised = false;
+	bool g_bWanderContentPassed = false;
+	bool g_bWanderPlayerFrozen = false;
+	bool g_bWanderHaltedDuringDialogue = false;
+	bool g_bWanderDialogueClosed = false;
+	bool g_bWanderPlayerUnfrozen = false;
+	bool g_bWanderResumed = false;
+
+	Zenith_EntityID g_xWanderNamedTarget = INVALID_ENTITY_ID;
+	Zenith_EntityID g_xWanderLatchedTarget = INVALID_ENTITY_ID;
+	Zenith_Maths::Vector3 g_xWanderPreviousPosition = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xWanderPreviousVelocity = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xWanderHaltStart = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xWanderResumePrevious = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 g_xWanderResumePreviousVelocity = Zenith_Maths::Vector3(0.0f);
+	u_int g_uWanderInitialWaypoint = 99u;
+	u_int g_uWanderLastWaypoint = 99u;
+	u_int g_uWanderWaypointAtPress = 99u;
+	u_int g_uWanderWaypointAfterPress = 99u;
+	u_int g_uWanderRaiseDelta = 0u;
+	u_int g_uWanderObserveConsecutiveCoupled = 0u;
+	u_int g_uWanderObserveMaxConsecutiveCoupled = 0u;
+	u_int g_uWanderResumeConsecutiveCoupled = 0u;
+	u_int g_uWanderResumeMaxConsecutiveCoupled = 0u;
+	u_int g_uWanderHaltMenuSamples = 0u;
+	u_int g_uWanderCloseEnterEdges = 0u;
+	float g_fWanderObservedPath = 0.0f;
+	float g_fWanderObserveMinPlayerDistance = 99999.0f;
+	float g_fWanderMaxObservedSpeed = 0.0f;
+	float g_fWanderMaxHaltDrift = 0.0f;
+	float g_fWanderMaxHaltSpeed = 0.0f;
+	float g_fWanderResumePath = 0.0f;
+	float g_fWanderMaxResumeSpeed = 0.0f;
+	float g_fWanderPrePressSpeed = 0.0f;
+	CoupledMotionEvidence g_xWanderLastObserveCoupling;
+	CoupledMotionEvidence g_xWanderLatestWalkCoupling;
+	CoupledMotionEvidence g_xWanderLastResumeCoupling;
+	std::string g_strWanderActualLine;
+	std::string g_strWanderExpectedLine;
+
+	void FailWander(const char* szReason)
+	{
+		g_szWanderFailure = szReason;
+		g_eWanderPhase = WanderPhase::Done;
+		ClearWalkInput(g_xWanderWalk);
+	}
+
+	bool CanPressMovingWanderer()
+	{
+		WandererView xWanderer;
+		Zenith_Maths::Vector3 xVelocity(0.0f);
+		if (!ResolveWanderer(xWanderer)
+			|| !ReadWandererVelocity(xWanderer, xVelocity))
+		{
+			g_bWanderMovingAtPress = false;
+			g_uWanderWaypointAtPress = 99u;
+			return false;
+		}
+
+		g_fWanderPrePressSpeed = PlanarSpeed(xVelocity);
+		g_bWanderMovingAtPress =
+			g_xWanderLatestWalkCoupling.m_bMatched
+			&& g_fWanderPrePressSpeed > fWANDER_MIN_BODY_SPEED;
+		if (g_bWanderMovingAtPress)
+		{
+			// TickWalk injects E immediately after this gate returns true, so this
+			// is the live cursor on the causal pre-press sample.
+			g_uWanderWaypointAtPress =
+				xWanderer.m_pxInteractable->GetWaypointIndex();
+		}
+		return g_bWanderMovingAtPress;
+	}
+
+	void Setup_NpcWander()
+	{
+		g_xWanderWalk = WalkContext{};
+		g_xWanderWalk.m_szTargetEntityName = szWANDERER_ENTITY_NAME;
+		g_xWanderWalk.m_pfnAfterBoot = nullptr;
+		g_xWanderWalk.m_pfnCanPress = &CanPressMovingWanderer;
+		g_eWanderPhase = WanderPhase::Done;
+		g_iWanderPhaseFrames = 0;
+		g_bWanderSkipped = false;
+		g_bWanderPrereqsPresent = false;
+		g_szWanderFailure = "test did not reach verification";
+
+		g_bWanderAuthored = false;
+		g_bWanderDynamicCapsule = false;
+		g_bWanderObservedAwayFromPlayer = false;
+		g_bWanderMoved = false;
+		g_bWanderWaypointAdvanced = false;
+		g_bWanderPhysicsDrivenSeen = false;
+		g_bWanderMovingAtPress = false;
+		g_bWanderWaypointStableAcrossPress = false;
+		g_bWanderDialogueRaised = false;
+		g_bWanderContentPassed = false;
+		g_bWanderPlayerFrozen = false;
+		g_bWanderHaltedDuringDialogue = false;
+		g_bWanderDialogueClosed = false;
+		g_bWanderPlayerUnfrozen = false;
+		g_bWanderResumed = false;
+
+		g_xWanderNamedTarget = INVALID_ENTITY_ID;
+		g_xWanderLatchedTarget = INVALID_ENTITY_ID;
+		g_xWanderPreviousPosition = Zenith_Maths::Vector3(0.0f);
+		g_xWanderPreviousVelocity = Zenith_Maths::Vector3(0.0f);
+		g_xWanderHaltStart = Zenith_Maths::Vector3(0.0f);
+		g_xWanderResumePrevious = Zenith_Maths::Vector3(0.0f);
+		g_xWanderResumePreviousVelocity = Zenith_Maths::Vector3(0.0f);
+		g_uWanderInitialWaypoint = 99u;
+		g_uWanderLastWaypoint = 99u;
+		g_uWanderWaypointAtPress = 99u;
+		g_uWanderWaypointAfterPress = 99u;
+		g_uWanderRaiseDelta = 0u;
+		g_uWanderObserveConsecutiveCoupled = 0u;
+		g_uWanderObserveMaxConsecutiveCoupled = 0u;
+		g_uWanderResumeConsecutiveCoupled = 0u;
+		g_uWanderResumeMaxConsecutiveCoupled = 0u;
+		g_uWanderHaltMenuSamples = 0u;
+		g_uWanderCloseEnterEdges = 0u;
+		g_fWanderObservedPath = 0.0f;
+		g_fWanderObserveMinPlayerDistance = 99999.0f;
+		g_fWanderMaxObservedSpeed = 0.0f;
+		g_fWanderMaxHaltDrift = 0.0f;
+		g_fWanderMaxHaltSpeed = 0.0f;
+		g_fWanderResumePath = 0.0f;
+		g_fWanderMaxResumeSpeed = 0.0f;
+		g_fWanderPrePressSpeed = 0.0f;
+		g_xWanderLastObserveCoupling = CoupledMotionEvidence{};
+		g_xWanderLatestWalkCoupling = CoupledMotionEvidence{};
+		g_xWanderLastResumeCoupling = CoupledMotionEvidence{};
+		g_strWanderActualLine.clear();
+		g_strWanderExpectedLine.clear();
+
+		Zenith_InputSimulator::ResetAllInputState();
+		ZM_InteractionRuntime::ResetRuntimeStateForTests();
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
+
+		// RequestSkip bypasses Verify. Install no fixed dt and load no scene until
+		// both baked prerequisites are known present. A missing or misconfigured
+		// wanderer is NOT a skip: AwaitReady fails it below.
+		g_bWanderPrereqsPresent = RequiredDawnmereAssetsPresent();
+		if (!g_bWanderPrereqsPresent)
+		{
+			g_bWanderSkipped = true;
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"[ZM_NpcWander] the Dawnmere scene / terrain bake is absent or incomplete -- "
+				"there is no world in which to prove a waypoint patrol");
+			return;
+		}
+		Zenith_EntityID xMenuRootID = INVALID_ENTITY_ID;
+		if (!ZM_UI_MenuStack::TryGetUniqueSingletonEntityID(xMenuRootID))
+		{
+			g_bWanderSkipped = true;
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"[ZM_NpcWander] no persistent ZM_MenuRoot singleton -- FrontEnd.zscen "
+				"has not been baked, so the wanderer's dialogue cannot be raised");
+			return;
+		}
+
+		Zenith_InputSimulator::SetFixedDt(fNPC_FIXED_DT);
+		g_eWanderPhase = WanderPhase::AwaitReady;
+		g_xEngine.Scenes().LoadSceneByIndex(
+			iNPC_OVERWORLD_BUILD_INDEX, SCENE_LOAD_SINGLE);
+	}
+
+	bool Step_NpcWander(int)
+	{
+		if (g_eWanderPhase == WanderPhase::Done)
+		{
+			return false;
+		}
+		++g_iWanderPhaseFrames;
+
+		switch (g_eWanderPhase)
+		{
+		case WanderPhase::AwaitReady:
+		{
+			NpcPlayerView xPlayer;
+			WandererView xWanderer;
+			const bool bScene = g_xEngine.Scenes().GetSceneInfo(
+				g_xEngine.Scenes().GetActiveScene()).m_iBuildIndex
+					== iNPC_OVERWORLD_BUILD_INDEX;
+			const bool bPlayer = bScene && FindActiveNpcPlayer(xPlayer)
+				&& xPlayer.m_pxCollider->HasValidBody()
+				&& xPlayer.m_pxController->IsGrounded();
+			const bool bWanderer = bScene && ResolveWanderer(xWanderer)
+				&& xWanderer.m_pxCollider->HasValidBody();
+			if (!bPlayer || !bWanderer)
+			{
+				if (g_iWanderPhaseFrames > iWANDER_READY_DEADLINE_FRAMES)
+				{
+					FailWander("Dawnmere never produced a grounded player plus the authored "
+						"Npc_Wanderer with a valid physics body");
+					return false;
+				}
+				return true;
+			}
+
+			const ZM_NpcData& xRow = ZM_GetNpcData(ZM_NPC_WANDERER);
+			g_bWanderDynamicCapsule =
+				xWanderer.m_pxCollider->GetRigidBodyType() == RIGIDBODY_TYPE_DYNAMIC
+				&& xWanderer.m_pxCollider->GetCollisionVolumeType()
+					== COLLISION_VOLUME_TYPE_CAPSULE;
+			g_bWanderAuthored =
+				xWanderer.m_pxInteractable->GetNpcId() == ZM_NPC_WANDERER
+				&& xRow.m_bWanders
+				&& xWanderer.m_pxInteractable->IsInteractable()
+				&& xWanderer.m_pxInteractable->IsWanderEnabled()
+				&& xWanderer.m_pxInteractable->GetWaypointCount() == 2u;
+			if (!g_bWanderAuthored || !g_bWanderDynamicCapsule)
+			{
+				FailWander("Npc_Wanderer resolved but was not the armed WANDERER row with "
+					"an enabled two-waypoint patrol on a dynamic capsule");
+				return false;
+			}
+
+			g_fWanderObserveMinPlayerDistance =
+				PlanarDistance(xPlayer.m_xPosition, xWanderer.m_xPosition);
+			g_bWanderObservedAwayFromPlayer =
+				g_fWanderObserveMinPlayerDistance > fZM_INTERACT_MAX_DISTANCE * 2.0f;
+			if (!g_bWanderObservedAwayFromPlayer)
+			{
+				FailWander("the wanderer authored inside the player's interaction radius -- "
+					"the observation could not distinguish self-motion from player contact");
+				return false;
+			}
+
+			g_xWanderNamedTarget = xWanderer.m_xEntityID;
+			g_xWanderPreviousPosition = xWanderer.m_xPosition;
+			if (!ReadWandererVelocity(xWanderer, g_xWanderPreviousVelocity))
+			{
+				FailWander("the wanderer's body became invalid before motion sampling began");
+				return false;
+			}
+			g_uWanderInitialWaypoint = xWanderer.m_pxInteractable->GetWaypointIndex();
+			g_uWanderLastWaypoint = g_uWanderInitialWaypoint;
+			g_eWanderPhase = WanderPhase::ObserveWander;
+			g_iWanderPhaseFrames = 0;
+			return true;
+		}
+
+		case WanderPhase::ObserveWander:
+		{
+			NpcPlayerView xPlayer;
+			WandererView xWanderer;
+			if (!FindActiveNpcPlayer(xPlayer) || !ResolveWanderer(xWanderer))
+			{
+				FailWander("the player or wanderer disappeared during the no-contact motion observation");
+				return false;
+			}
+
+			Zenith_Maths::Vector3 xCurrentVelocity(0.0f);
+			if (!ReadWandererVelocity(xWanderer, xCurrentVelocity))
+			{
+				FailWander("the wanderer's body became invalid during coupled motion sampling");
+				return false;
+			}
+			g_xWanderLastObserveCoupling = CoupleMotionAcrossFrame(
+				g_xWanderPreviousPosition, xWanderer.m_xPosition,
+				g_xWanderPreviousVelocity, xCurrentVelocity);
+			g_fWanderObservedPath += g_xWanderLastObserveCoupling.m_fDisplacement;
+			if (g_xWanderLastObserveCoupling.m_bMatched)
+			{
+				++g_uWanderObserveConsecutiveCoupled;
+				if (g_uWanderObserveConsecutiveCoupled
+					> g_uWanderObserveMaxConsecutiveCoupled)
+				{
+					g_uWanderObserveMaxConsecutiveCoupled =
+						g_uWanderObserveConsecutiveCoupled;
+				}
+			}
+			else
+			{
+				g_uWanderObserveConsecutiveCoupled = 0u;
+			}
+			g_xWanderPreviousPosition = xWanderer.m_xPosition;
+			g_xWanderPreviousVelocity = xCurrentVelocity;
+			const float fSpeed = PlanarSpeed(xCurrentVelocity);
+			if (fSpeed > g_fWanderMaxObservedSpeed)
+			{
+				g_fWanderMaxObservedSpeed = fSpeed;
+			}
+			const float fPlayerDistance =
+				PlanarDistance(xPlayer.m_xPosition, xWanderer.m_xPosition);
+			if (fPlayerDistance < g_fWanderObserveMinPlayerDistance)
+			{
+				g_fWanderObserveMinPlayerDistance = fPlayerDistance;
+			}
+			if (g_fWanderObserveMinPlayerDistance <= fZM_INTERACT_MAX_DISTANCE * 2.0f)
+			{
+				FailWander("the wanderer entered the player's interaction radius during the "
+					"self-motion observation -- authored waypoints must remain away from spawn");
+				return false;
+			}
+
+			g_uWanderLastWaypoint = xWanderer.m_pxInteractable->GetWaypointIndex();
+			g_bWanderWaypointAdvanced |=
+				g_uWanderLastWaypoint != g_uWanderInitialWaypoint;
+			g_bWanderMoved |= g_fWanderObservedPath > fWANDER_MIN_OBSERVED_PATH;
+			g_bWanderPhysicsDrivenSeen |=
+				g_bWanderMoved
+				&& g_uWanderObserveMaxConsecutiveCoupled
+					>= uWANDER_OBSERVE_COUPLED_SAMPLES;
+
+			if (g_bWanderMoved
+				&& g_bWanderWaypointAdvanced
+				&& g_bWanderPhysicsDrivenSeen)
+			{
+				g_xWanderWalk.m_eStage = WalkStage::Boot;
+				g_eWanderPhase = WanderPhase::Walk;
+				g_iWanderPhaseFrames = 0;
+				return true;
+			}
+			if (g_iWanderPhaseFrames > iWANDER_OBSERVE_DEADLINE_FRAMES)
+			{
+				FailWander("the authored wanderer did not cover 2 m, produce eight "
+					"consecutive displacement/velocity-coupled samples and advance its "
+					"waypoint cursor within the observation budget");
+				return false;
+			}
+			return true;
+		}
+
+		case WanderPhase::Walk:
+		{
+			WandererView xWanderer;
+			Zenith_Maths::Vector3 xCurrentVelocity(0.0f);
+			if (!ResolveWanderer(xWanderer)
+				|| !ReadWandererVelocity(xWanderer, xCurrentVelocity))
+			{
+				FailWander("the wanderer disappeared while the shared moving-target walk ran");
+				return false;
+			}
+			g_xWanderLatestWalkCoupling = CoupleMotionAcrossFrame(
+				g_xWanderPreviousPosition, xWanderer.m_xPosition,
+				g_xWanderPreviousVelocity, xCurrentVelocity);
+			g_xWanderPreviousPosition = xWanderer.m_xPosition;
+			g_xWanderPreviousVelocity = xCurrentVelocity;
+
+			const WalkTick eTick = TickWalk(g_xWanderWalk);
+			if (eTick == WalkTick::Failed)
+			{
+				FailWander(g_xWanderWalk.m_szFailure);
+				return false;
+			}
+			if (eTick == WalkTick::Pressed)
+			{
+				if (!g_bWanderMovingAtPress)
+				{
+					FailWander("the shared walk emitted E without coupled live motion above "
+						"the body-speed threshold");
+					return false;
+				}
+				g_eWanderPhase = WanderPhase::AssertRaise;
+				g_iWanderPhaseFrames = 0;
+			}
+			return true;
+		}
+
+		case WanderPhase::AssertRaise:
+		{
+			NpcPlayerView xPlayer;
+			WandererView xWanderer;
+			ZM_UI_MenuStack* pxMenu = ResolveMenuStack();
+			if (!FindActiveNpcPlayer(xPlayer) || !ResolveWanderer(xWanderer)
+				|| pxMenu == nullptr)
+			{
+				FailWander("player, wanderer or menu root vanished while asserting the dialogue raise");
+				return false;
+			}
+			const ZM_InteractionRuntime& xRuntime =
+				xPlayer.m_pxController->GetInteractionRuntime();
+			g_uWanderRaiseDelta =
+				xRuntime.GetRaiseCount() - g_xWanderWalk.m_uRaiseCountBefore;
+			g_xWanderLatchedTarget = xRuntime.GetLastTarget();
+			g_bWanderPlayerFrozen =
+				g_xWanderWalk.m_bMovementEnabledBefore
+				&& !xPlayer.m_pxController->IsMovementEnabled();
+
+			const ZM_NpcData& xRow = ZM_GetNpcData(ZM_NPC_WANDERER);
+			if (xRow.m_paszLines != nullptr && xRow.m_uLineCount > 0u)
+			{
+				g_strWanderExpectedLine = xRow.m_paszLines[0];
+			}
+			g_strWanderActualLine = pxMenu->GetDialogue().GetCurrentLine();
+			g_bWanderContentPassed = !g_strWanderExpectedLine.empty()
+				&& g_strWanderActualLine == g_strWanderExpectedLine;
+
+			// The pre-press gate proved coupled motion and latched the live target
+			// cursor immediately before TickWalk injected E. Correct dialogue ownership
+			// may zero XZ velocity on that same update, so cursor continuity -- not
+			// post-press speed -- proves no natural arrival started the halt.
+			g_uWanderWaypointAfterPress =
+				xWanderer.m_pxInteractable->GetWaypointIndex();
+			g_bWanderWaypointStableAcrossPress =
+				g_uWanderWaypointAtPress != 99u
+				&& g_uWanderWaypointAfterPress == g_uWanderWaypointAtPress;
+			g_bWanderDialogueRaised =
+				g_uWanderRaiseDelta == 1u
+				&& xRuntime.GetLastResult() == ZM_INTERACT_OK
+				&& g_xWanderLatchedTarget == xWanderer.m_xEntityID
+				&& xWanderer.m_xEntityID == g_xWanderNamedTarget
+				&& ZM_UI_MenuStack::IsMenuOpen()
+				&& pxMenu->GetTopScreen() == ZM_MENU_SCREEN_DIALOGUE
+				&& pxMenu->GetDepth() == 1u
+				&& pxMenu->GetDialogue().IsActive()
+				&& g_bWanderWaypointStableAcrossPress
+				&& xWanderer.m_pxInteractable->IsWanderEnabled();
+			if (!g_bWanderDialogueRaised
+				|| !g_bWanderContentPassed
+				|| !g_bWanderPlayerFrozen)
+			{
+				FailWander("walking to Npc_Wanderer and pressing E did not raise exactly its "
+					"own dialogue at the named entity while freezing the player");
+				return false;
+			}
+
+			g_xWanderHaltStart = xWanderer.m_xPosition;
+			g_eWanderPhase = WanderPhase::AssertHalt;
+			g_iWanderPhaseFrames = 0;
+			return true;
+		}
+
+		case WanderPhase::AssertHalt:
+		{
+			WandererView xWanderer;
+			ZM_UI_MenuStack* pxMenu = ResolveMenuStack();
+			if (!ResolveWanderer(xWanderer)
+				|| pxMenu == nullptr
+				|| !ZM_UI_MenuStack::IsMenuOpen()
+				|| pxMenu->GetTopScreen() != ZM_MENU_SCREEN_DIALOGUE
+				|| !pxMenu->GetDialogue().IsActive())
+			{
+				FailWander("a halt sample lacked the active DIALOGUE screen owning the "
+					"open menu");
+				return false;
+			}
+			++g_uWanderHaltMenuSamples;
+			const float fDrift =
+				PlanarDistance(g_xWanderHaltStart, xWanderer.m_xPosition);
+			if (fDrift > g_fWanderMaxHaltDrift)
+			{
+				g_fWanderMaxHaltDrift = fDrift;
+			}
+			Zenith_Maths::Vector3 xVelocity(0.0f);
+			if (!ReadWandererVelocity(xWanderer, xVelocity))
+			{
+				FailWander("the wanderer's body became invalid during the halt samples");
+				return false;
+			}
+			const float fSpeed = PlanarSpeed(xVelocity);
+			if (fSpeed > g_fWanderMaxHaltSpeed)
+			{
+				g_fWanderMaxHaltSpeed = fSpeed;
+			}
+
+			if (g_iWanderPhaseFrames >= iWANDER_HALT_FRAMES)
+			{
+				g_bWanderHaltedDuringDialogue =
+					g_fWanderMaxHaltDrift < fWANDER_MAX_HALT_DRIFT
+					&& g_fWanderMaxHaltSpeed < fWANDER_MAX_HALT_SPEED
+					&& g_uWanderHaltMenuSamples == (u_int)iWANDER_HALT_FRAMES;
+				if (!g_bWanderHaltedDuringDialogue)
+				{
+					FailWander("the waypoint patrol kept moving while its dialogue owned the menu");
+					return false;
+				}
+				g_eWanderPhase = WanderPhase::CloseDialogue;
+				g_iWanderPhaseFrames = 0;
+			}
+			return true;
+		}
+
+		case WanderPhase::CloseDialogue:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailWander("the menu root vanished while closing the wanderer's dialogue");
+				return false;
+			}
+			if (!pxMenu->IsOpen())
+			{
+				if (g_uWanderCloseEnterEdges == 0u)
+				{
+					FailWander("the wanderer's dialogue closed without an explicit Enter edge");
+					return false;
+				}
+				NpcPlayerView xPlayer;
+				WandererView xWanderer;
+				if (!FindActiveNpcPlayer(xPlayer) || !ResolveWanderer(xWanderer))
+				{
+					FailWander("player or wanderer vanished immediately after dialogue close");
+					return false;
+				}
+				if (!ReadWandererVelocity(
+					xWanderer, g_xWanderResumePreviousVelocity))
+				{
+					FailWander("the wanderer's body became invalid as dialogue closed");
+					return false;
+				}
+				g_bWanderDialogueClosed = g_uWanderCloseEnterEdges > 0u;
+				g_bWanderPlayerUnfrozen = xPlayer.m_pxController->IsMovementEnabled();
+				g_xWanderResumePrevious = xWanderer.m_xPosition;
+				g_eWanderPhase = WanderPhase::AssertResume;
+				g_iWanderPhaseFrames = 0;
+				return true;
+			}
+			if (g_iWanderPhaseFrames > iWANDER_CLOSE_DEADLINE_FRAMES)
+			{
+				FailWander("the wanderer's dialogue never closed under spaced Enter edges");
+				return false;
+			}
+			if ((g_iWanderPhaseFrames % 4) == 1)
+			{
+				++g_uWanderCloseEnterEdges;
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			}
+			return true;
+		}
+
+		case WanderPhase::AssertResume:
+		{
+			WandererView xWanderer;
+			Zenith_Maths::Vector3 xCurrentVelocity(0.0f);
+			if (!ResolveWanderer(xWanderer)
+				|| !ReadWandererVelocity(xWanderer, xCurrentVelocity))
+			{
+				FailWander("the wanderer or its physics body disappeared while its patrol "
+					"should resume");
+				return false;
+			}
+			g_xWanderLastResumeCoupling = CoupleMotionAcrossFrame(
+				g_xWanderResumePrevious, xWanderer.m_xPosition,
+				g_xWanderResumePreviousVelocity, xCurrentVelocity);
+			g_fWanderResumePath += g_xWanderLastResumeCoupling.m_fDisplacement;
+			if (g_xWanderLastResumeCoupling.m_bMatched)
+			{
+				++g_uWanderResumeConsecutiveCoupled;
+				if (g_uWanderResumeConsecutiveCoupled
+					> g_uWanderResumeMaxConsecutiveCoupled)
+				{
+					g_uWanderResumeMaxConsecutiveCoupled =
+						g_uWanderResumeConsecutiveCoupled;
+				}
+			}
+			else
+			{
+				g_uWanderResumeConsecutiveCoupled = 0u;
+			}
+			g_xWanderResumePrevious = xWanderer.m_xPosition;
+			g_xWanderResumePreviousVelocity = xCurrentVelocity;
+			const float fSpeed = PlanarSpeed(xCurrentVelocity);
+			if (fSpeed > g_fWanderMaxResumeSpeed)
+			{
+				g_fWanderMaxResumeSpeed = fSpeed;
+			}
+			g_bWanderResumed =
+				xWanderer.m_pxInteractable->IsWanderEnabled()
+				&& g_fWanderResumePath > fWANDER_MIN_RESUME_PATH
+				&& g_uWanderResumeMaxConsecutiveCoupled
+					>= uWANDER_RESUME_COUPLED_SAMPLES;
+			if (g_bWanderResumed)
+			{
+				g_eWanderPhase = WanderPhase::Done;
+				return false;
+			}
+			if (g_iWanderPhaseFrames > iWANDER_RESUME_DEADLINE_FRAMES)
+			{
+				FailWander("the wanderer never produced six consecutive displacement/velocity-"
+					"coupled resume samples after its dialogue closed");
+				return false;
+			}
+			return true;
+		}
+
+		case WanderPhase::Done:
+			return false;
+		}
+		return false;
+	}
+
+	bool Verify_NpcWander()
+	{
+		ClearWalkInput(g_xWanderWalk);
+		Zenith_InputSimulator::ResetAllInputState();
+		Zenith_InputSimulator::ClearFixedDt();
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
+		ZM_InteractionRuntime::ResetRuntimeStateForTests();
+
+		if (g_bWanderSkipped)
+		{
+			return true;
+		}
+
+		const bool bPassed =
+			g_bWanderAuthored
+			&& g_bWanderDynamicCapsule
+			&& g_bWanderObservedAwayFromPlayer
+			&& g_bWanderMoved
+			&& g_bWanderWaypointAdvanced
+			&& g_bWanderPhysicsDrivenSeen
+			&& WalkPassed(g_xWanderWalk)
+			&& g_bWanderMovingAtPress
+			&& g_bWanderWaypointStableAcrossPress
+			&& g_bWanderDialogueRaised
+			&& g_bWanderContentPassed
+			&& g_bWanderPlayerFrozen
+			&& g_bWanderHaltedDuringDialogue
+			&& g_uWanderHaltMenuSamples == (u_int)iWANDER_HALT_FRAMES
+			&& g_bWanderDialogueClosed
+			&& g_uWanderCloseEnterEdges > 0u
+			&& g_bWanderPlayerUnfrozen
+			&& g_bWanderResumed;
+
+		if (!bPassed)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_NpcWander] %s", g_szWanderFailure);
+			LogWalkDiagnostics(g_xWanderWalk, "ZM_NpcWander");
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_NpcWander] authored=%d dynamicCapsule=%d awayFromPlayer=%d "
+				"minPlayerDist=%.3f | observed path=%.3f (want > %.3f) maxSpeed=%.3f "
+				"(want > %.3f) waypoint %u->%u advanced=%d physicsDriven=%d "
+				"coupledMax=%u (want >= %u)",
+				(int)g_bWanderAuthored, (int)g_bWanderDynamicCapsule,
+				(int)g_bWanderObservedAwayFromPlayer, g_fWanderObserveMinPlayerDistance,
+				g_fWanderObservedPath, fWANDER_MIN_OBSERVED_PATH,
+				g_fWanderMaxObservedSpeed, fWANDER_MIN_BODY_SPEED,
+				g_uWanderInitialWaypoint, g_uWanderLastWaypoint,
+				(int)g_bWanderWaypointAdvanced, (int)g_bWanderPhysicsDrivenSeen,
+				g_uWanderObserveMaxConsecutiveCoupled,
+				uWANDER_OBSERVE_COUPLED_SAMPLES);
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_NpcWander] observe coupling matched=%d displacement=%.5f "
+				"speed=%.3f expected=%.5f alignment=%.3f error=%.5f | "
+				"prePress speed=%.3f moving=%d latestCoupled=%d | pressWaypoint "
+				"%u->%u stable=%d",
+				(int)g_xWanderLastObserveCoupling.m_bMatched,
+				g_xWanderLastObserveCoupling.m_fDisplacement,
+				g_xWanderLastObserveCoupling.m_fVelocitySpeed,
+				g_xWanderLastObserveCoupling.m_fExpectedDisplacement,
+				g_xWanderLastObserveCoupling.m_fAlignment,
+				g_xWanderLastObserveCoupling.m_fMagnitudeError,
+				g_fWanderPrePressSpeed, (int)g_bWanderMovingAtPress,
+				(int)g_xWanderLatestWalkCoupling.m_bMatched,
+				g_uWanderWaypointAtPress, g_uWanderWaypointAfterPress,
+				(int)g_bWanderWaypointStableAcrossPress);
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_NpcWander] raiseDelta=%u latchedTarget=%u namedTarget=%u raised=%d "
+				"content=%d line='%s' expected='%s' playerFrozen=%d | halt drift=%.3f "
+				"(want < %.3f) speed=%.3f (want < %.3f) menuSamples=%u (want %d) "
+				"halted=%d | close=%d enterEdges=%u playerUnfrozen=%d resumePath=%.3f "
+				"(want > %.3f) resumeSpeed=%.3f coupledMax=%u (want >= %u) resumed=%d",
+				g_uWanderRaiseDelta, g_xWanderLatchedTarget.m_uIndex,
+				g_xWanderNamedTarget.m_uIndex, (int)g_bWanderDialogueRaised,
+				(int)g_bWanderContentPassed, g_strWanderActualLine.c_str(),
+				g_strWanderExpectedLine.c_str(), (int)g_bWanderPlayerFrozen,
+				g_fWanderMaxHaltDrift, fWANDER_MAX_HALT_DRIFT,
+				g_fWanderMaxHaltSpeed, fWANDER_MAX_HALT_SPEED,
+				g_uWanderHaltMenuSamples, iWANDER_HALT_FRAMES,
+				(int)g_bWanderHaltedDuringDialogue,
+				(int)g_bWanderDialogueClosed, g_uWanderCloseEnterEdges,
+				(int)g_bWanderPlayerUnfrozen,
+				g_fWanderResumePath, fWANDER_MIN_RESUME_PATH,
+				g_fWanderMaxResumeSpeed, g_uWanderResumeMaxConsecutiveCoupled,
+				uWANDER_RESUME_COUPLED_SAMPLES,
+				(int)g_bWanderResumed);
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_NpcWander] resume coupling matched=%d displacement=%.5f "
+				"speed=%.3f expected=%.5f alignment=%.3f error=%.5f",
+				(int)g_xWanderLastResumeCoupling.m_bMatched,
+				g_xWanderLastResumeCoupling.m_fDisplacement,
+				g_xWanderLastResumeCoupling.m_fVelocitySpeed,
+				g_xWanderLastResumeCoupling.m_fExpectedDisplacement,
+				g_xWanderLastResumeCoupling.m_fAlignment,
+				g_xWanderLastResumeCoupling.m_fMagnitudeError);
+		}
+		return bPassed;
+	}
 }
 
 static const Zenith_AutomatedTest g_xZMNpcShopTest = {
@@ -5009,5 +5890,19 @@ static const Zenith_AutomatedTest g_xZMS6InteractGateTest = {
 	true /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMS6InteractGateTest);
+
+static const Zenith_AutomatedTest g_xZMNpcWanderTest = {
+	"ZM_NpcWander_Test",
+	&Setup_NpcWander,
+	&Step_NpcWander,
+	&Verify_NpcWander,
+	// Per-phase deadlines at the fixed 1/60 dt: 840 ready + 900 no-contact
+	// observation + the shared walk's 2342 worst case + 1 raise + 30 halt +
+	// 480 close + 360 resume = 4953. The harness cap sits above that sum so a
+	// named phase failure always fires before the generic frame cap.
+	/* maxFrames */ 5500,
+	true /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMNpcWanderTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

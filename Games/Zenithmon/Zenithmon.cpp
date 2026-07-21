@@ -1008,7 +1008,7 @@ namespace
 	// effective reach.
 	constexpr float fZM_NPC_AUTHORED_RADIUS = 0.4f;
 
-	// The shared body of the three configure functions below. A PER-NPC function is
+	// The shared body of the three stationary configure functions below. A PER-NPC function is
 	// unavoidable: AddStep_Custom takes a captureless `void (*)()`, so there is no
 	// way to hand one parameterised step the row it should install.
 	bool ZM_ConfigureSelectedNpc(ZM_NPC_ID eId)
@@ -1053,6 +1053,37 @@ namespace
 			"Dawnmere Caretaker NPC authoring is invalid");
 	}
 
+	void ZM_ConfigureWandererNpc()
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		ZM_Interactable* pxInteractable = pxSelectedEntity != nullptr
+			? pxSelectedEntity->TryGetComponent<ZM_Interactable>()
+			: nullptr;
+		Zenith_Assert(pxInteractable != nullptr,
+			"Wanderer authoring requires the selected ZM_Interactable");
+		if (pxInteractable == nullptr)
+		{
+			return;
+		}
+
+		ZM_WalkerWaypoints xWaypoints{};
+		xWaypoints.m_uCount = 2u;
+		// A north/south loop at x=540 stays 28 m east of TownCenter spawn, beyond
+		// every existing straight-line traversal corridor and all stationary NPCs.
+		// Waypoint Y is serialized only as an authored reference: ZM_StepWalker is
+		// explicitly XZ-only, while the dynamic capsule owns Y and follows terrain.
+		xWaypoints.m_axPoints[0] = { 540.0f, 26.88577f, 476.0f };
+		xWaypoints.m_axPoints[1] = { 540.0f, 26.88577f, 484.0f };
+
+		const bool bNpcConfigured = ZM_ConfigureSelectedNpc(ZM_NPC_WANDERER);
+		const bool bPatrolConfigured =
+			pxInteractable->ConfigureWander(xWaypoints, ZM_WalkerTuning{});
+		Zenith_Assert(bNpcConfigured && bPatrolConfigured
+			&& pxInteractable->IsWanderEnabled()
+			&& pxInteractable->GetWaypointCount() == 2u,
+			"Dawnmere Wanderer NPC authoring is invalid");
+	}
+
 	// One authored NPC: a greybox body the player can SEE, a STATIC AABB it can
 	// physically bump into (so walking up to one ends in contact rather than in
 	// walking through it), the ZM_Interactable that makes it talkable, and the
@@ -1075,6 +1106,25 @@ namespace
 		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
 		xAuto.AddStep_AddComponent("ZM_Interactable");
 		xAuto.AddStep_Custom(pfnConfigure);
+	}
+
+	// SC8's one moving NPC intentionally does NOT reuse the stationary helper: the
+	// authored body contract is a solid dynamic capsule, driven only by XZ velocity.
+	void ZM_QueueDawnmereWanderer(
+		Zenith_EditorAutomation& xAuto,
+		const Zenith_Maths::Vector3& xCenter,
+		const Zenith_Maths::Vector3& xScale)
+	{
+		xAuto.AddStep_CreateEntity("Npc_Wanderer");
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(xCenter.x, xCenter.y, xCenter.z);
+		xAuto.AddStep_SetTransformScale(xScale.x, xScale.y, xScale.z);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
+		xAuto.AddStep_AddComponent("ZM_Interactable");
+		xAuto.AddStep_Custom(&ZM_ConfigureWandererNpc);
 	}
 
 	void ZM_QueueGreyboxBlock(
@@ -1654,7 +1704,7 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
 		xAuto.AddStep_Custom(&ZM_ConfigureHomeDoorTrigger);
 
-		// ---- S6 item 3 SC5: the three authored Dawnmere NPCs ----
+		// ---- S6 item 3: the four authored Dawnmere NPCs (SC8 adds the patrol) ----
 		//
 		// Bodies share the PLAYER'S scale, so an NPC's AABB half-height IS
 		// fPlayerCapsuleHalfExtent and every NPC centre sits at exactly the player's
@@ -1699,9 +1749,6 @@ void Project_RegisterEditorAutomationSteps()
 		// A scene-placement change can regress a suite it never mentions -- check the
 		// existing traversal routes before moving anything in this block.
 		//
-		// The WANDERER (ZM_NPC_WANDERER) is deliberately NOT authored here -- it needs
-		// the SC8 waypoint patrol, and a stationary "wanderer" would be content that
-		// silently contradicts its own row.
 		const Zenith_Maths::Vector3 xNpcScale = xPlayerScale;
 		const Zenith_Maths::Vector3 xVillagerCenter(
 			xTownCenterFeet.x, xPlayerCenter.y, xTownCenterFeet.z + 10.0f);
@@ -1725,6 +1772,15 @@ void Project_RegisterEditorAutomationSteps()
 			xClerkCenter, xNpcScale, &ZM_ConfigureTradePostClerkNpc);
 		ZM_QueueDawnmereNpc(xAuto, "Npc_Caretaker",
 			xCaretakerCenter, xNpcScale, &ZM_ConfigureCaretakerNpc);
+		// SC8: the fourth row is a deterministic two-point patrol. Both endpoints are
+		// 28 m east of the TownCenter spawn and outside the z=480 Home corridor's
+		// x<=512 run; the nearest stationary NPC (the clerk) remains >19 m away.
+		// Reusing xPlayerCenter.y directly starts this capsule about 0.414 m inside
+		// the higher local terrain mesh. One existing capsule half-extent of clearance
+		// authors it safely above the surface so gravity settles it from the front side.
+		const Zenith_Maths::Vector3 xWandererCenter(
+			540.0f, xPlayerCenter.y + fPlayerCapsuleHalfExtent, 476.0f);
+		ZM_QueueDawnmereWanderer(xAuto, xWandererCenter, xNpcScale);
 
 		xAuto.AddStep_CreateEntity("DawnmerePreviewCamera");
 		xAuto.AddStep_AddCamera();

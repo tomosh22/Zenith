@@ -1,7 +1,9 @@
 #pragma once
 
+#include "Physics/Zenith_Physics_Fwd.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "Zenithmon/Source/Data/ZM_NpcData.h"   // ZM_NPC_ID / ZM_NPC_ROLE -- the row this component IS
+#include "Zenithmon/Source/Interaction/ZM_NpcWalkerLogic.h"
 
 class Zenith_DataStream;
 
@@ -55,7 +57,7 @@ const char* ZM_NpcRaiseKindName(ZM_NPC_RAISE_KIND eKind);
 class ZM_Interactable
 {
 public:
-	static constexpr u_int uSERIALIZATION_VERSION = 1u;
+	static constexpr u_int uSERIALIZATION_VERSION = 2u;
 
 	// Reach BONUS added to fZM_INTERACT_MAX_DISTANCE by the picker, so a physically
 	// large interactable (a shop counter, a sign post) can be addressed from its edge.
@@ -77,6 +79,7 @@ public:
 	ZM_Interactable& operator=(ZM_Interactable&&) noexcept = default;
 
 	void OnStart();
+	void OnUpdate(float fDeltaTime);
 
 	ZM_NPC_ID GetNpcId() const { return m_eNpcId; }
 	// Rejects an out-of-range id by storing ZM_NPC_NONE (which makes the component
@@ -95,6 +98,18 @@ public:
 	bool IsInteractable() const { return m_bInteractable && m_eNpcId < ZM_NPC_COUNT; }
 	void SetInteractable(bool bInteractable) { m_bInteractable = bInteractable; }
 
+	// Install the authored waypoint loop and its deterministic tuning. A malformed
+	// configuration fails closed and disables wandering; successful configuration
+	// resets the runtime cursor/dwell state and enables the patrol.
+	bool ConfigureWander(const ZM_WalkerWaypoints& xWaypoints,
+		const ZM_WalkerTuning& xTuning = ZM_WalkerTuning{});
+	// These are observations, not transient "currently moving" flags. In particular,
+	// IsWanderEnabled remains true while this NPC is deliberately halted for its own
+	// dialogue, and GetWaypointIndex exposes the pure walker's live target cursor.
+	bool IsWanderEnabled() const { return m_bWanderEnabled; }
+	u_int GetWaypointCount() const { return m_xWalkerWaypoints.m_uCount; }
+	u_int GetWaypointIndex() const { return m_xWalkerState.m_uTargetIndex; }
+
 	// Fire this NPC's role: ONE switch over ZM_RaiseKindForRole(row.m_eRole) onto the
 	// three shipped ZM_UI_MenuStack seams. Returns whether a screen was actually
 	// raised. A refusal (no menu singleton, a full dialogue queue, a rejected stock
@@ -110,6 +125,11 @@ public:
 #endif
 
 private:
+	// Configure (or reconfigure after a body replacement) the physics half of an
+	// enabled patrol. Non-strict calls are used while editor construction may still
+	// be assembling the entity; the first runtime update is strict and fails closed.
+	bool TryConfigureWanderBody(bool bRequireRuntimeReady);
+
 	// Stored BY VALUE (never a reference): a reference member would dangle on the
 	// temporary ctor handle and break the pool's move-construct.
 	Zenith_Entity m_xParentEntity;
@@ -118,4 +138,17 @@ private:
 	// Defaults FALSE. A freshly added, unconfigured component is inert by
 	// construction -- SC5 authoring turns each NPC on explicitly.
 	bool          m_bInteractable = false;
+
+	// Authored patrol data is serialized with the NPC. Cursor/dwell and the ownership
+	// latch are session-only: loading always restarts deterministically at point zero,
+	// and only a screen raised by THIS component is allowed to halt THIS walker.
+	ZM_WalkerWaypoints m_xWalkerWaypoints;
+	ZM_WalkerTuning    m_xWalkerTuning;
+	ZM_WalkerState     m_xWalkerState;
+	bool               m_bWanderEnabled = false;
+	bool               m_bOwnsInteractionMenu = false;
+	// Runtime-only lifecycle/body identity. A body-id change causes the shared setup
+	// path to apply gravity/upright/material properties to the replacement exactly once.
+	Zenith_PhysicsBodyID m_xConfiguredWanderBodyID;
+	bool                  m_bLifecycleStarted = false;
 };
