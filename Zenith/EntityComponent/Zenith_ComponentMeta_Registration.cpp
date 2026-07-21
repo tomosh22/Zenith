@@ -115,3 +115,12 @@ void Zenith_RegisterEngineComponents()
 	xEditorRegistry.RegisterComponent<Zenith_AttachmentComponent>("Attachment");
 #endif
 }
+
+// The component-meta registry's serialization-order collision units. Hosted HERE,
+// not in the ZenithECS leaf: the leaf may depend only on ZenithBase, while the test
+// framework lives in Zenith/Core, so a .Tests.inl inside the leaf would break both
+// the SentinelECS link proof and the ECS-leaf ratchet. This TU is always linked (it
+// is the registrar every game calls through), so the static test registrations
+// survive /OPT:REF in every config -- the same idiom as
+// Zenith_Physics.Tests.inl -> Zenith_ColliderComponent.cpp.
+#include "EntityComponent/Zenith_ComponentMetaRegistry.Tests.inl"

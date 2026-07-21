@@ -82,7 +82,7 @@ struct Zenith_PropertyDescriptor
 struct Zenith_ComponentMeta
 {
 	std::string m_strTypeName;		// e.g., "MyComponent"
-	u_int m_uSerializationOrder;	// Lower values serialize first (for dependencies)
+	u_int m_uSerializationOrder = 0u;	// Lower values serialize first (for dependencies)
 
 	// Type-erased operations via function pointers
 	ComponentCreateFn m_pfnCreate = nullptr;
@@ -164,6 +164,22 @@ public:
 
 	// Get all registered component metas (sorted by serialization order)
 	const Zenith_Vector<const Zenith_ComponentMeta*>& GetAllMetasSorted() const;
+
+	// PURE. Counts ADJACENT pairs sharing a serialization order in a list already
+	// sorted by that order; 0 means every order is unique. Public and pure so it can
+	// be unit-tested against synthetic rows without standing up a second registry --
+	// the registry is a boot-sealed singleton, so the collision logic would otherwise
+	// only be reachable through Finalize().
+	//
+	// WHY THIS EXISTS: serialization order is a hand-assigned global namespace
+	// (engine built-ins low, AI mid, per-game components above them), and Finalize()
+	// sorts by it. Two components sharing an order are ordered ARBITRARILY against
+	// each other -- and because the sort is by a single key, that ordering was not
+	// even reproducible. A collision is therefore a silent, order-dependent
+	// serialization hazard that grows with every component added. Finalize() now
+	// reports one loudly rather than sorting it into a shrug.
+	static u_int CountDuplicateSerializationOrders(
+		const Zenith_Vector<const Zenith_ComponentMeta*>& xSortedMetas);
 
 	// Check if registry is initialized with all components
 	bool IsInitialized() const { return m_bInitialized; }

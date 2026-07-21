@@ -106,11 +106,25 @@ void Zenith_ComponentMetaRegistry::Finalize()
 		m_xMetasSorted.PushBack(&xIt.GetValueMutable());
 	}
 
-	// Sort by serialization order
+	// Sort by serialization order, tie-breaking on the TYPE NAME.
+	//
+	// The tie-break is not cosmetic. std::sort is NOT stable, and the source order
+	// here is a hash-map walk, so two components sharing a serialization order had no
+	// reproducible ordering at all -- it could differ between builds, between runs, or
+	// with an unrelated component added elsewhere. Since serialization order decides
+	// the byte order components are written in, that made a collision a source of
+	// nondeterministic scene output. Ordering by name makes a collision at least
+	// DETERMINISTIC; the diagnostic below is what makes it VISIBLE. With no
+	// collisions (the correct state, and the state every shipped game is in) the
+	// tie-break never fires and this sort is identical to the old one.
 	std::sort(m_xMetasSorted.begin(), m_xMetasSorted.end(),
 		[](const Zenith_ComponentMeta* a, const Zenith_ComponentMeta* b)
 		{
-			return a->m_uSerializationOrder < b->m_uSerializationOrder;
+			if (a->m_uSerializationOrder != b->m_uSerializationOrder)
+			{
+				return a->m_uSerializationOrder < b->m_uSerializationOrder;
+			}
+			return a->m_strTypeName < b->m_strTypeName;
 		});
 
 	m_bInitialized = true;
@@ -121,6 +135,82 @@ void Zenith_ComponentMetaRegistry::Finalize()
 		Zenith_Log(LOG_CATEGORY_ECS, "  [%u] %s",
 			pxMeta->m_uSerializationOrder, pxMeta->m_strTypeName.c_str());
 	}
+
+	// ---- Duplicate serialization orders are CONTENT breakage; say so loudly. ----
+	// Previously this was completely undetected: the sort simply put the colliding
+	// pair in some order and the log above printed them one after another, looking
+	// entirely normal. Name both offenders and the order they collide on, so the fix
+	// (renumber one of them) is obvious from the log alone.
+	const u_int uDuplicatePairs = CountDuplicateSerializationOrders(m_xMetasSorted);
+	if (uDuplicatePairs > 0u)
+	{
+		for (u_int u = 1u; u < m_xMetasSorted.GetSize(); ++u)
+		{
+			const Zenith_ComponentMeta* pxPrev = m_xMetasSorted.Get(u - 1u);
+			const Zenith_ComponentMeta* pxThis = m_xMetasSorted.Get(u);
+			// The SAME null guard CountDuplicateSerializationOrders applies. Both walks
+			// run over this identical vector, so they must agree about their own
+			// precondition: without this, a null could make the counter report a
+			// collision and then this loop dereference on the way to logging it.
+			// (Unreachable today -- m_xMetasSorted is filled only from live map values.)
+			if (pxPrev == nullptr || pxThis == nullptr)
+			{
+				continue;
+			}
+			if (pxPrev->m_uSerializationOrder == pxThis->m_uSerializationOrder)
+			{
+				Zenith_Error(LOG_CATEGORY_ECS,
+					"[ComponentMetaRegistry] DUPLICATE serialization order %u shared by "
+					"'%s' and '%s' -- their relative serialization order is arbitrary. "
+					"Give one of them a distinct order.",
+					pxThis->m_uSerializationOrder,
+					pxPrev->m_strTypeName.c_str(), pxThis->m_strTypeName.c_str());
+			}
+		}
+		// Zenith_Check, deliberately, NOT Zenith_Assert. Two verified reasons:
+		//
+		// 1. Zenith_Assert is NOT debug-only. Zenith/Core/Zenith.h defines
+		//    ZENITH_ASSERT unconditionally on the line above its own #ifdef, so
+		//    Zenith_Assert calls Zenith_DebugBreak() in EVERY config including
+		//    Release. Hard-breaking a shipped player's game over a developer's
+		//    numbering mistake is exactly the disproportion the check tier exists to
+		//    avoid -- and the tie-broken sort above already makes a collision
+		//    deterministic rather than corrupting.
+		// 2. An assert here fires during Finalize(), which runs at engine init --
+		//    BEFORE the boot unit suite. It would therefore pre-empt
+		//    ECSComponentMeta::DuplicateOrders_LiveRegistryHasNoCollisions, the unit
+		//    written to catch precisely this, and that unit could never report.
+		//    Logging and continuing lets the unit be the gate that actually fails.
+		//
+		// The per-pair errors above are unmissable; this line is the summary.
+		Zenith_Check(false,
+			"ComponentMetaRegistry: %u duplicate serialization-order pair(s) -- see the errors above",
+			uDuplicatePairs);
+	}
+}
+
+u_int Zenith_ComponentMetaRegistry::CountDuplicateSerializationOrders(
+	const Zenith_Vector<const Zenith_ComponentMeta*>& xSortedMetas)
+{
+	// Adjacent-pair scan: valid precisely because the caller hands us a list already
+	// sorted by serialization order, so equal orders are necessarily neighbours.
+	// Three components sharing one order therefore count as TWO pairs, which is the
+	// honest answer to "how many collisions are there" for a diagnostic.
+	u_int uPairs = 0u;
+	for (u_int u = 1u; u < xSortedMetas.GetSize(); ++u)
+	{
+		const Zenith_ComponentMeta* pxPrev = xSortedMetas.Get(u - 1u);
+		const Zenith_ComponentMeta* pxThis = xSortedMetas.Get(u);
+		if (pxPrev == nullptr || pxThis == nullptr)
+		{
+			continue;
+		}
+		if (pxPrev->m_uSerializationOrder == pxThis->m_uSerializationOrder)
+		{
+			++uPairs;
+		}
+	}
+	return uPairs;
 }
 
 const Zenith_Vector<const Zenith_ComponentMeta*>& Zenith_ComponentMetaRegistry::GetAllMetasSorted() const

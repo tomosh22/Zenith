@@ -10,19 +10,33 @@
 
 ## Open
 
-### [OPEN] Q-2026-07-20-002 -- engine gap: `Zenith_ComponentMetaRegistry::Finalize()` has no duplicate-serialization-order detection
+### [OPEN] Q-2026-07-21-001 -- ENGINE: terrain sets up GPU culling resources with no headless guard
 
-**Question:** should `Zenith_ComponentMetaRegistry::Finalize()` warn (or assert) when two components are registered at the SAME `m_uSerializationOrder`?
+**Question:** should `Zenith_TerrainComponent::InitializeCullingResources()` (and the unified terrain buffer upload around it) skip GPU-driven culling setup when the engine is running headless?
 
-**Context:** found by review during S6 item 3 SC7 (2026-07-20). `Finalize()` builds its sorted meta list and sorts by `m_uSerializationOrder`, logging each entry, but performs **no duplicate detection at all**. Two components sharing an order therefore sort arbitrarily against each other -- a silent, potentially build-dependent ordering that affects serialization. Component orders are a manually-assigned global namespace (engine components sit at <= 95, AI at 90, Zenithmon at 100-113 with 114 next free), so a copy-paste collision is an easy mistake to make and an invisible one to have made.
+**Context:** found 2026-07-21 while restoring the RenderTest canary (Q-2026-07-16-001). With RenderTest's terrain fully baked -- 12,313 files, no missing chunks, clean boot -- `zenith test RenderTest --headless` still dies on `[Core] Assertion failed: Invalid buffer VRAM handle`, immediately after `Zenith_TerrainComponent::InitializeCullingResources() - Setting up GPU-driven terrain culling with LOD support`. A headless run short-circuits Flux init and has no Vulkan device, so the buffers it asks for have no VRAM handle. This is why the original Q's "it crashes because the terrain is absent" premise was only half right.
 
-**Why this was NOT fixed in the bug-fix pass:** it is an **engine (`Zenith/`) change**. Every engine change moves the engine unit baseline (currently 1097) and owes a cross-game regression run (Combat / DevilsPlayground / CityBuilder) plus a RenderTest boot check, per the AgentBriefing engine-change gate. That is a materially different task with a different gate, and bundling it into a Zenithmon game-only fix pass would have made the diff impossible to gate cleanly.
+**Consequence today:** any terrain-bearing scene is un-runnable headless, so RenderTest can only be used as a WINDOWED canary. That is survivable (every local gate in this project is windowed) but it means the terrain path has no CI coverage at all, on a GPU-less runner, forever.
 
-**Best-guess action taken:** left the engine untouched and defended Zenithmon game-side instead -- `GateRoster_InteractableIsRegisteredExactlyOnce` (Tests/ZM_Tests_Interactable.cpp) asserts that exactly ONE registered meta sits at `ZM_Interactable`'s order, so a future collision with order 113 specifically is caught at boot. That is a spot check, not the general fix.
+**Best-guess action taken:** none -- left untouched and logged. It is an engine change in the Flux/terrain streaming path, which is a materially larger blast radius than the ECS registry fix landed alongside it, and it was not what the user asked for. The canary works windowed, which was the goal.
 
-**Cost if wrong:** low today, rising with component count. Nothing currently collides (verified: no engine component sits at 113). The risk is a future collision landing silently and only surfacing as a confusing serialization bug. The fix itself is small -- a duplicate scan in `Finalize()` with a `Zenith_Warning` (or an assert in debug) -- but it should land as its own engine commit with the full cross-game gate.
+**Cost if wrong:** low-to-moderate. The terrain path stays headless-hostile, so terrain regressions can only ever be caught by a windowed run on a GPU machine. If a future engine change wants headless terrain coverage this has to be fixed first.
 
-**Status:** asked 2026-07-20. Non-blocking; a good small standalone ENGINE task.
+**Status:** asked 2026-07-21. Not blocking; a well-scoped standalone ENGINE task with a clear repro (`zenith test RenderTest --headless`).
+
+---
+
+### [OPEN] Q-2026-07-21-002 -- RenderTest `RT_TennisDeterminismDigest` fails windowed
+
+**Question:** is `RT_TennisDeterminismDigest`'s failure a real determinism regression, or a stale golden digest?
+
+**Context:** with the terrain baked and RenderTest finally runnable, the windowed suite is **8 passed / 1 failed**. The one failure is `RT_TennisDeterminismDigest` (2490 frames, 81 s, and an EMPTY `failures` array in its result JSON, which is itself odd -- it fails without recording why). It is unaffected by, and predates, both the terrain bake and the ZM-D-132 engine change; nothing in this work touches tennis.
+
+**Best-guess action taken:** none -- reported rather than chased. It was outside the requested scope, and a determinism digest wants deliberate investigation (is the digest stale, or is the sim genuinely non-deterministic?) rather than a quick patch.
+
+**Cost if wrong:** low while RenderTest is used as a terrain/grass canary (`TerrainEditorSmoke` is the relevant test and it passes). Moderate if RenderTest is ever promoted to a full required gate, since one red test would mask others.
+
+**Status:** asked 2026-07-21. Non-blocking.
 
 ---
 
@@ -85,18 +99,6 @@
 **Cost if wrong:** low. Moving the mapping to a WorldSpec column later is a mechanical refactor confined to `BiomeForScene` + the world table; no save-format or battle-engine surface depends on it.
 
 **Status:** asked 2026-07-17; acting on best guess.
-
-### [OPEN] Q-2026-07-16-001 -- RenderTest is pre-existingly red in this checkout (missing baked terrain); the E5 grass canary was substituted
-
-**Question:** the AgentBriefing 6.4 engine-change gate names "RenderTest still boots green" as the terrain/grass canary, but `zenith test RenderTest --headless` CRASHES in this checkout (`[Core] Assertion failed: Invalid buffer VRAM handle`, "127 missing/invalid terrain chunks") because RenderTest's baked terrain is absent (git-ignored `Assets/`, never `_True`-baked here). It crashes during terrain streaming BEFORE grass generates. Should a future session `_True`-bake RenderTest's terrain (seed 1337) so the RenderTest engine-change canary works locally again?
-
-**Best-guess action taken (E5 / ZM-D-092):** proceeded. Proved the RenderTest crash is ORTHOGONAL to E5 via a stash-revert diagnostic (RenderTest crashes IDENTICALLY, 0/10 same assertion, with E5 reverted), and validated E5's grass behaviour instead via Zenithmon's windowed `ZM_GrassRegeneration_Test` (a more direct E5 canary -- it exercises the exact grass clear->regenerate-on-scene-load cycle E5 changes) plus Combat 1081/0 (the official engine-gate canary), DP 158/0, CityBuilder 45/0.
-
-**Cost if wrong:** LOW. E5 is thoroughly validated by other games + the grass-regen windowed test + engine units; the RenderTest gap is an environment issue, not a code risk. A future engine change touching terrain/grass would benefit from a locally-baked RenderTest, so this is worth a one-time `_True` bake when convenient (or a RequestSkip hardening so RenderTest degrades gracefully on absent terrain like DP does).
-
-**Status:** asked 2026-07-16; acting on best guess (E5 landed).
-
----
 
 ### [OPEN] Q-2026-07-12-005 -- ZM_BattleTower: defaulted tuning + a future-integration note
 
@@ -206,6 +208,54 @@ only symptom is an occasional one-line baseline bump caught immediately by red C
 ---
 
 ## Resolved
+
+### [RESOLVED] Q-2026-07-16-001 -- RenderTest is pre-existingly red in this checkout (missing baked terrain); the E5 grass canary was substituted
+
+**Question:** the AgentBriefing 6.4 engine-change gate names "RenderTest still boots green" as the terrain/grass canary, but `zenith test RenderTest --headless` CRASHES in this checkout (`[Core] Assertion failed: Invalid buffer VRAM handle`, "127 missing/invalid terrain chunks") because RenderTest's baked terrain is absent (git-ignored `Assets/`, never `_True`-baked here). It crashes during terrain streaming BEFORE grass generates. Should a future session `_True`-bake RenderTest's terrain (seed 1337) so the RenderTest engine-change canary works locally again?
+
+**Best-guess action taken (E5 / ZM-D-092):** proceeded. Proved the RenderTest crash is ORTHOGONAL to E5 via a stash-revert diagnostic (RenderTest crashes IDENTICALLY, 0/10 same assertion, with E5 reverted), and validated E5's grass behaviour instead via Zenithmon's windowed `ZM_GrassRegeneration_Test` (a more direct E5 canary -- it exercises the exact grass clear->regenerate-on-scene-load cycle E5 changes) plus Combat 1081/0 (the official engine-gate canary), DP 158/0, CityBuilder 45/0.
+
+**Cost if wrong:** LOW. E5 is thoroughly validated by other games + the grass-regen windowed test + engine units; the RenderTest gap is an environment issue, not a code risk. A future engine change touching terrain/grass would benefit from a locally-baked RenderTest, so this is worth a one-time `_True` bake when convenient (or a RequestSkip hardening so RenderTest degrades gracefully on absent terrain like DP does).
+
+**Resolution (2026-07-21, ZM-D-132): BAKED, canary restored -- and the original premise was only HALF right.**
+
+RenderTest's terrain was `_True`-baked (it generates procedurally at boot from seed 1337 via tools-only editor automation): **12,313 files / 1.78 GB** under `Games/RenderTest/Assets/Terrain/`. That fixed the boot path -- the `127 missing/invalid terrain chunks` warning and the boot-time crash are gone, `--list-automated-tests` boots clean, and **`TerrainEditorSmoke` (the actual terrain/grass canary) PASSES windowed.** It was then used as a real canary for the ZM-D-132 engine change and stayed green.
+
+**★ The premise correction, recorded so nobody re-inherits it.** This Q said RenderTest "CRASHES ... because RenderTest's baked terrain is absent". The bake was NECESSARY but NOT SUFFICIENT: with the terrain fully baked, `zenith test RenderTest --headless` still asserts `Invalid buffer VRAM handle`, and the measured stack is `Zenith_TerrainComponent::InitializeCullingResources() - Setting up GPU-driven terrain culling` -- i.e. the terrain sets up GPU-driven culling resources unconditionally, with no headless guard, and there is no Vulkan device in a headless run. **That is a separate, still-open ENGINE gap, not an asset problem.** It does not block the canary, because the canary is run WINDOWED (as every local gate in this project is).
+
+**Residual, unrelated:** RenderTest windowed is **8 passed / 1 failed** -- `RT_TennisDeterminismDigest` fails (2490 frames, empty `failures` array) for pre-existing tennis-determinism reasons that predate and are unaffected by this work. Not chased here.
+
+**Status:** RESOLVED 2026-07-21 for the terrain bake + canary. Two follow-ups spun out: the headless terrain-culling guard, and `RT_TennisDeterminismDigest`.
+
+---
+
+---
+
+
+### [RESOLVED] Q-2026-07-20-002 -- engine gap: `Zenith_ComponentMetaRegistry::Finalize()` has no duplicate-serialization-order detection
+
+**Question:** should `Zenith_ComponentMetaRegistry::Finalize()` warn (or assert) when two components are registered at the SAME `m_uSerializationOrder`?
+
+**Context:** found by review during S6 item 3 SC7 (2026-07-20). `Finalize()` builds its sorted meta list and sorts by `m_uSerializationOrder`, logging each entry, but performs **no duplicate detection at all**. Two components sharing an order therefore sort arbitrarily against each other -- a silent, potentially build-dependent ordering that affects serialization. Component orders are a manually-assigned global namespace (engine components sit at <= 95, AI at 90, Zenithmon at 100-113 with 114 next free), so a copy-paste collision is an easy mistake to make and an invisible one to have made.
+
+**Why this was NOT fixed in the bug-fix pass:** it is an **engine (`Zenith/`) change**. Every engine change moves the engine unit baseline (currently 1097) and owes a cross-game regression run (Combat / DevilsPlayground / CityBuilder) plus a RenderTest boot check, per the AgentBriefing engine-change gate. That is a materially different task with a different gate, and bundling it into a Zenithmon game-only fix pass would have made the diff impossible to gate cleanly.
+
+**Best-guess action taken:** left the engine untouched and defended Zenithmon game-side instead -- `GateRoster_InteractableIsRegisteredExactlyOnce` (Tests/ZM_Tests_Interactable.cpp) asserts that exactly ONE registered meta sits at `ZM_Interactable`'s order, so a future collision with order 113 specifically is caught at boot. That is a spot check, not the general fix.
+
+**Cost if wrong:** low today, rising with component count. Nothing currently collides (verified: no engine component sits at 113). The risk is a future collision landing silently and only surfacing as a confusing serialization bug. The fix itself is small -- a duplicate scan in `Finalize()` with a `Zenith_Warning` (or an assert in debug) -- but it should land as its own engine commit with the full cross-game gate.
+
+**Resolution (2026-07-21, ZM-D-132): FIXED.** `Finalize()` now tie-breaks its sort on the type name (so a collision is at least DETERMINISTIC -- previously `std::sort` is unstable over a hash-map walk, so the ordering under collision was not even reproducible between builds), logs a `Zenith_Error` per colliding pair naming both components and the shared order, and emits a summary `Zenith_Check`. Six units land in `Zenith/EntityComponent/Zenith_ComponentMetaRegistry.Tests.inl` -- five over the new pure `CountDuplicateSerializationOrders`, plus `DuplicateOrders_LiveRegistryHasNoCollisions`, which runs the check against the ACTUAL registry this build ships and is what turns a future copy-pasted order into a boot-time unit failure in every game.
+
+**`Zenith_Check`, not `Zenith_Assert`, for two verified reasons:** (1) `ZENITH_ASSERT` is `#define`d UNCONDITIONALLY one line above its own `#ifdef` in `Zenith/Core/Zenith.h`, so `Zenith_Assert` calls `Zenith_DebugBreak()` in EVERY config including Release -- hard-breaking a shipped player's game over a developer's numbering mistake is exactly what the check tier exists to avoid; (2) `Finalize()` runs at engine init, BEFORE the boot unit suite, so an assert would pre-empt the very unit written to catch this and it could never report. Both were measured, not assumed -- an earlier draft of this fix carried the opposite (false) claim in a comment.
+
+**Engine baseline moved 1097 -> 1103** (+6, exactly these units). Cross-game gate: Combat 1103/0 + suite 14/0, DevilsPlayground 1104/0 + suite 158/0, CityBuilder 1104/0 + suite 45/0, Zenithmon 2325/0 with 35/0 headless and 35/0 windowed, RenderTest terrain canary green. Mutation-verified: giving `ZM_Interactable` the same order as `ZM_UI_MenuStack` logs the named pair and reds the live-registry unit while boot continues.
+
+**Status:** RESOLVED 2026-07-21 (ZM-D-132).
+
+---
+
+---
+
 
 ### [RESOLVED] Q-2026-07-09-003 -- Battle-scene visual isolation at the (0,-2000,0) offset is asserted, not yet proven
 
