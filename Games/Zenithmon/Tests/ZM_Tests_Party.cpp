@@ -34,6 +34,7 @@ namespace
 		ZENITH_ASSERT_EQ(xActual.m_uCurrentHp,  xExpected.m_uCurrentHp,  "%s curHP", szLabel);
 		ZENITH_ASSERT_EQ((u_int)xActual.m_eGender,  (u_int)xExpected.m_eGender,  "%s gender", szLabel);
 		ZENITH_ASSERT_EQ(xActual.m_uFlags,      xExpected.m_uFlags,      "%s flags", szLabel);
+		ZENITH_ASSERT_EQ(xActual.m_uFriendship, xExpected.m_uFriendship, "%s friendship", szLabel);
 		for (u_int i = 0u; i < ZM_STAT_COUNT; ++i)
 		{
 			ZENITH_ASSERT_EQ(xActual.m_auIV[i], xExpected.m_auIV[i], "%s IV %u", szLabel, i);
@@ -44,6 +45,11 @@ namespace
 			ZENITH_ASSERT_EQ((u_int)xActual.m_axMoves[i].m_eMove, (u_int)xExpected.m_axMoves[i].m_eMove, "%s move %u", szLabel, i);
 			ZENITH_ASSERT_EQ(xActual.m_axMoves[i].m_uCurPP, xExpected.m_axMoves[i].m_uCurPP, "%s curPP %u", szLabel, i);
 			ZENITH_ASSERT_EQ(xActual.m_axMoves[i].m_uMaxPP, xExpected.m_axMoves[i].m_uMaxPP, "%s maxPP %u", szLabel, i);
+		}
+		for (u_int i = 0u; i < uZM_MONSTER_NICKNAME_CAPACITY; ++i)
+		{
+			ZENITH_ASSERT_EQ((u_int)(unsigned char)xActual.m_szNickname[i],
+				(u_int)(unsigned char)xExpected.m_szNickname[i], "%s nickname byte %u", szLabel, i);
 		}
 	}
 
@@ -591,36 +597,76 @@ ZENITH_TEST(ZM_Party, Catch_NotCaughtIsNoOp)
 {
 	ZM_GameState xState;
 	xState.m_xParty.Add(ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 5u));
-	const u_int uCountBefore  = xState.m_xParty.Count();
-	const u_int uCaughtBefore = xState.GetCaughtCount();
+	const u_int uCountBefore      = xState.m_xParty.Count();
+	const ZM_Monster xLeadBefore = xState.m_xParty.Get(0u);
+	const u_int uSeenBefore       = xState.GetSeenCount();
+	const u_int uCaughtBefore     = xState.GetCaughtCount();
+	const u_int uBoxCountBefore  = xState.m_xBoxes.Count();
+	ZENITH_ASSERT_FALSE(xState.IsSeen(ZM_SPECIES_KINDLET), "Kindlet begins unseen");
+	ZENITH_ASSERT_FALSE(xState.IsCaught(ZM_SPECIES_KINDLET), "Kindlet begins uncaught");
+	ZENITH_ASSERT_EQ(uBoxCountBefore, 0u, "boxes begin empty");
 
 	const ZM_BattleMonster xCaught = ZM_BuildBattleMonster(ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 3u));
 	ZM_ApplyCatchToGameState(xState, false, xCaught);
 
 	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), uCountBefore, "a failed catch adds no party member");
+	AssertRecordEq(xLeadBefore, xState.m_xParty.Get(0u), "a failed catch leaves the existing party record untouched");
+	ZENITH_ASSERT_EQ(xState.GetSeenCount(), uSeenBefore, "a failed catch marks nothing in the seen dex");
 	ZENITH_ASSERT_EQ(xState.GetCaughtCount(), uCaughtBefore, "a failed catch marks nothing in the dex");
+	ZENITH_ASSERT_FALSE(xState.IsSeen(ZM_SPECIES_KINDLET), "the un-caught species stays unseen");
 	ZENITH_ASSERT_FALSE(xState.IsCaught(ZM_SPECIES_KINDLET), "the un-caught species stays unmarked");
+	ZENITH_ASSERT_EQ(xState.m_xBoxes.Count(), uBoxCountBefore, "a failed catch stores nothing in boxes");
+	for (u_int uBox = 0u; uBox < uZM_BOX_COUNT; ++uBox)
+	{
+		for (u_int uSlot = 0u; uSlot < uZM_BOX_SLOTS_PER_BOX; ++uSlot)
+		{
+			ZENITH_ASSERT_TRUE(xState.m_xBoxes.TryGet(uBox, uSlot) == nullptr,
+				"a failed catch leaves box %u slot %u empty", uBox, uSlot);
+		}
+	}
 }
 
-// A successful catch with a FULL party still marks the dex, but does NOT add (there is
-// no free slot; box storage is S7). The party count stays at the cap.
-ZENITH_TEST(ZM_Party, Catch_FullPartyMarksButDoesNotAdd)
+// Catch placement is party-first. A catch which fills the last party slot leaves
+// boxes untouched; the next catch enters the first free slot of the first box.
+// Both catches mark seen + caught, and the party never exceeds its fixed cap.
+ZENITH_TEST(ZM_Party, Catch_FullPartyStoresFirstBoxAndMarksDex)
 {
 	ZM_GameState xState;
-	for (u_int i = 0u; i < uZM_MAX_PARTY_SIZE; ++i)
+	for (u_int i = 0u; i < uZM_MAX_PARTY_SIZE - 1u; ++i)
 	{
 		ZENITH_ASSERT_TRUE(xState.m_xParty.Add(ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN, 5u)),
-			"fill party slot %u", i);
+			"seed party slot %u", i);
 	}
-	ZENITH_ASSERT_TRUE(xState.m_xParty.IsFull(), "the party is full (6)");
+	ZENITH_ASSERT_FALSE(xState.m_xParty.IsFull(), "one party slot remains before the first catch");
+	ZENITH_ASSERT_EQ(xState.m_xBoxes.Count(), 0u, "boxes begin empty");
 	ZENITH_ASSERT_FALSE(xState.IsCaught(ZM_SPECIES_KINDLET), "Kindlet is not caught before the catch");
+	ZENITH_ASSERT_FALSE(xState.IsCaught(ZM_SPECIES_NIBBIN), "Nibbin is not caught before the catch");
 
-	const ZM_BattleMonster xCaught = ZM_BuildBattleMonster(ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 3u));
-	ZM_ApplyCatchToGameState(xState, true, xCaught);
+	const ZM_BattleMonster xPartyCatch =
+		ZM_BuildBattleMonster(ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 3u));
+	ZM_ApplyCatchToGameState(xState, true, xPartyCatch);
+	ZENITH_ASSERT_TRUE(xState.m_xParty.IsFull(), "the first catch fills the final party slot");
+	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), uZM_MAX_PARTY_SIZE, "party reaches exactly its cap");
+	ZENITH_ASSERT_EQ(xState.m_xBoxes.Count(), 0u, "party-first placement leaves boxes untouched while space exists");
+	AssertRecordEq(ZM_MonsterFromBattleMonster(xPartyCatch),
+		xState.m_xParty.Get(uZM_MAX_PARTY_SIZE - 1u), "first catch occupies the final party slot");
+	ZENITH_ASSERT_TRUE(xState.IsSeen(ZM_SPECIES_KINDLET), "the party catch marks Kindlet seen");
+	ZENITH_ASSERT_TRUE(xState.IsCaught(ZM_SPECIES_KINDLET), "the party catch marks Kindlet caught");
 
-	// The party cannot grow past the cap (box storage is S7) -- but the dex still marks it.
-	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), uZM_MAX_PARTY_SIZE, "a full party does not grow past 6");
-	ZENITH_ASSERT_TRUE(xState.IsCaught(ZM_SPECIES_KINDLET), "the dex marks a catch even when the party is full");
+	const ZM_BattleMonster xBoxCatch =
+		ZM_BuildBattleMonster(ZM_BuildWildEnemySpec(ZM_SPECIES_NIBBIN, 4u));
+	ZM_ApplyCatchToGameState(xState, true, xBoxCatch);
+	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), uZM_MAX_PARTY_SIZE, "the overflow catch does not grow the party");
+	ZENITH_ASSERT_EQ(xState.m_xBoxes.Count(), 1u, "the overflow catch is stored exactly once");
+	const ZM_Monster* pxStored = xState.m_xBoxes.TryGet(0u, 0u);
+	ZENITH_ASSERT_TRUE(pxStored != nullptr, "the overflow catch occupies first box slot 0");
+	if (pxStored != nullptr)
+	{
+		AssertRecordEq(ZM_MonsterFromBattleMonster(xBoxCatch), *pxStored,
+			"the first box slot equals the caught battle monster record");
+	}
+	ZENITH_ASSERT_TRUE(xState.IsSeen(ZM_SPECIES_NIBBIN), "the boxed catch marks Nibbin seen");
+	ZENITH_ASSERT_TRUE(xState.IsCaught(ZM_SPECIES_NIBBIN), "the boxed catch marks Nibbin caught");
 }
 
 // ############################################################################

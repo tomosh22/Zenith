@@ -21,10 +21,12 @@
 // headless, compiled in ALL configs (no ZENITH_TOOLS gate); no ECS, no graphics.
 // ============================================================================
 
-// Persistent flag bits (SaveFormat.md: bit 0 = IS_EGG, bit 1 = IS_SHINY). Both
-// are reserved at item 5 (no egg/shiny gameplay yet); records write 0.
+// Persistent flag bits (SaveFormat.md: bit 0 = IS_EGG, bit 1 = IS_SHINY).
+// Ordinary records write 0; durable daycare eggs set IS_EGG.
 static const u_int uZM_MONSTER_FLAG_IS_EGG   = 1u << 0;
 static const u_int uZM_MONSTER_FLAG_IS_SHINY = 1u << 1;
+static const u_int uZM_DEFAULT_FRIENDSHIP = 0u;
+static const u_int uZM_MONSTER_NICKNAME_CAPACITY = 16u;
 
 struct ZM_Monster
 {
@@ -39,7 +41,9 @@ struct ZM_Monster
 	ZM_MoveSlot     m_axMoves[uZM_MAX_MOVES];           // id + current PP + max PP per slot (empty slots = ZM_MOVE_NONE)
 	u_int           m_uCurrentHp  = 0u;                 // carries across battles; whiteout heals to full
 	ZM_GENDER       m_eGender     = ZM_GENDER_GENDERLESS;
+	u_int           m_uFriendship = uZM_DEFAULT_FRIENDSHIP; // durable 0..255 value; evolution use is not yet defined
 	u_int           m_uFlags      = 0u;                 // uZM_MONSTER_FLAG_* (all reserved at item 5)
+	char            m_szNickname[uZM_MONSTER_NICKNAME_CAPACITY] = {}; // ASCII, NUL-padded; empty uses species name
 
 	// A record is valid when its species is a real dex id and its level is in the
 	// engine-wide [1,100] band.
@@ -62,8 +66,8 @@ struct ZM_Monster
 // EV 0 / neutral (FERAL) nature / the species' REGULAR ability / a deterministic
 // MALE gender (no RNG in SC1; gender is battle-inert) / exp at the level's curve
 // floor / the up-to-four highest-level learnset moves learnable at/below uLevel
-// (learn order; keep the LAST four) at full PP / curHP == max HP. Asserts level in
-// [1,100]. This is the item-5 starter/test-monster factory.
+// (learn order; keep the LAST four) at full PP / curHP == max HP / friendship 0 /
+// empty nickname. Asserts level in [1,100]. This is the starter/test factory.
 ZM_Monster ZM_BuildMonsterRecord(ZM_SPECIES_ID eSpecies, u_int uLevel);
 
 // --- pure conversions between the persistent record and the battle layer -----
@@ -77,7 +81,9 @@ ZM_BattleMonsterSpec ZM_MonsterToBattleSpec(const ZM_Monster& xRecord);
 
 // Build a NEW persistent record from a battle instance (the caught-monster path,
 // SC4): copies species/level/exp/IVs/EVs/nature/ability/gender + the mutable
-// post-battle state (curHP, moves + PP, status).
+// post-battle state (curHP, moves + PP, status), defaulting friendship/nickname.
+// The battle-authoring NONE ability sentinel normalizes to the species regular
+// ability; explicit concrete abilities are retained.
 ZM_Monster ZM_MonsterFromBattleMonster(const ZM_BattleMonster& xMon);
 
 // Write the mutable post-battle state of a battle instance back into an EXISTING

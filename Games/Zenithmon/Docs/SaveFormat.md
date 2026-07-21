@@ -11,6 +11,12 @@ integer widths marked "proposed" are pinned when `ZM_SaveSchema` lands at S7
 and are then frozen by the golden-blob tests; anything genuinely undecided is
 marked TBD with its stage.
 
+**Current S7 status:** SC1 now supplies the complete durable **in-memory**
+inventory in `ZM_GameState`; it does not implement the byte codec. The proposed
+wire rows below therefore describe presence and validation intent only. SC1
+assigns no schema/module version, final byte offsets, or golden blob, and does
+not freeze a proposed integer width.
+
 ## Engine framing (Zenith_SaveData)
 
 Zenithmon persists through `Zenith_SaveData`, initialised at boot as
@@ -69,7 +75,7 @@ Inner header:
 | Field | Proposed type | Notes |
 |---|---|---|
 | `magic` | uint32 | `'ZMSV'` -- reads as `0x56534D5A` little-endian. Catches "not a Zenithmon save" before any field reads. |
-| `schemaVersion` | uint32 | Global `uZM_SAVE_SCHEMA_VERSION`. `1` when S7 ships. |
+| `schemaVersion` | uint32 | Global version assigned when the first byte codec and its golden coverage land; SC1 does not define it. |
 | `moduleCount` | uint32 | Number of framed modules that follow. |
 
 Each module:
@@ -97,32 +103,34 @@ the compiler-chosen underlying type.
 | 5 | Badges | Badge bitmask |
 | 6 | Bag | Item id + count entries |
 | 7 | Money | Balance |
-| 8 | Daycare | Parents, egg, step counter |
-| 9 | Tower | Battle Tower streak |
+| 8 | Daycare | Parents, egg, aggregate hatch progress |
+| 9 | Tower | Battle Tower current/best streak + procedural seed |
 | 10 | WorldPos | Scene build index + spawn tag + transform |
 | 11 | Options | Player options |
 
 ## ZM_Monster instance record
 
-Shared by Party, Boxes, and Daycare. Field order is normative; widths
-proposed. The record mirrors `ZM_Monster` (built at S2); if S2 adds instance
-fields beyond this plan-locked list (e.g. gender for breeding), they join the
-record here BEFORE the v1 golden blob is cut at S7 -- after that, additions
-are a version bump.
+Shared by Party, Boxes, and Daycare. Field presence mirrors the SC1
+`ZM_Monster` durable record; row order and widths remain proposed until the
+codec/golden step. The in-memory record intentionally has no held-item field
+and no per-monster egg-step counter: hatch progress belongs to Daycare.
 
 | Field | Proposed type | Notes |
 |---|---|---|
-| `speciesId` | uint16 | 1..species count; 0 invalid. Validated against `ZM_DataRegistry`. |
+| `speciesId` | uint16 | Proposed one-based wire id: 1..species count, 0 invalid; the codec maps from the concrete zero-based `ZM_SPECIES_ID`. Validated against `ZM_DataRegistry`. |
 | `level` | uint8 | 1..100 |
 | `exp` | uint32 | Consistent with level under the species' exp curve (checked on read) |
 | `ivs[6]` | uint8 x6 | 0..31 each; HP/Atk/Def/SpA/SpD/Spe order |
 | `evs[6]` | uint8 x6 | 0..252 each; total <= 510 (checked on read) |
 | `nature` | uint8 | 0..24 |
-| `abilitySlot` | uint8 | 0 or 1 |
+| `abilitySlot` | uint8 | Proposed wire form, 0 = regular and 1 = hidden, derived from the concrete in-memory `ZM_ABILITY_ID`. A battle authoring value of `ZM_ABILITY_NONE` normalizes to the species' regular ability before becoming durable. |
 | `status` | uint8 | Major status only (none/sleep/poison/toxic/burn/paralysis/freeze). Volatile statuses are battle-scoped and NEVER saved. |
-| `moveIds[4]` | uint16 x4 | 0 = empty slot; validated against the move table |
-| `movePP[4]` | uint8 x4 | Current PP per slot; <= the move's max |
-| `friendship` | uint8 | 0..255 |
+| `moveIds[4]` | uint16 x4 | Proposed wire mapping reserves 0 for an empty slot; concrete move ids are validated against the move table. |
+| `moveCurrentPP[4]` | uint8 x4 | Current PP per slot; independently durable and <= its stored maximum. |
+| `moveMaxPP[4]` | uint8 x4 | Maximum PP per slot; independently durable rather than reconstructed from current PP. |
+| `currentHp` | uint32 | Current instance HP, including 0 for fainted; validated against the record's derived maximum HP. |
+| `gender` | uint8 | Concrete durable `ZM_GENDER` value. |
+| `friendship` | uint8 | 0..255; a new record defaults to 0. |
 | `flags` | uint8 | bit 0 = IS_EGG, bit 1 = IS_SHINY; remaining bits reserved (write 0, reject non-zero) |
 | `nickname` | char[16] | ASCII, NUL-padded, NUL-termination enforced on read; empty = display the species name |
 
@@ -140,7 +148,7 @@ are a version bump.
 | Field | Proposed type | Notes |
 |---|---|---|
 | `boxCount` | uint8 | Writes 16. Written explicitly so a future box-count change is data, not layout. |
-| `slotsPerBox` | uint8 | Writes 30, same reasoning. v1 readers reject anything other than 16x30. |
+| `slotsPerBox` | uint8 | Writes 30, same reasoning. The initial reader rejects anything other than 16x30. |
 | per slot: `occupied` | uint8 | 0 or 1 |
 | per slot: record | ZM_Monster | Present only when occupied |
 
@@ -156,7 +164,7 @@ are a version bump.
 
 | Field | Proposed type | Notes |
 |---|---|---|
-| `flagCount` | uint16 | Written explicitly; flag indices are the compiled `ZM_StoryFlags` enum -- appending flags grows the bitset without migration; reordering/removing existing flags is a version bump. |
+| `flagCount` | uint16 | Written explicitly and <= the fixed 4096-index in-memory capacity; appending assigned flags grows the used bitset without reshaping `ZM_GameState`. Reordering/removing assigned indices is a versioned codec change. |
 | `flags` | ceil(flagCount/8) bytes | |
 
 ### 5. Badges
@@ -170,13 +178,13 @@ are a version bump.
 | Field | Proposed type | Notes |
 |---|---|---|
 | `entryCount` | uint16 | |
-| entries | { `itemId` uint16, `count` uint16 } x entryCount | itemId validated against the item table; count >= 1 (zero-count entries are never written) |
+| entries | { `itemId` uint16, `count` uint16 } x entryCount | itemId validated against the item table; count is 1..`uZM_BAG_MAX_STACK_COUNT` (999), and zero-count entries are never written. |
 
 ### 7. Money
 
 | Field | Proposed type | Notes |
 |---|---|---|
-| `money` | uint32 | Cap TBD at S7 (a max-money constant in `ZM_ItemData`/economy tuning) |
+| `money` | uint32 | The full value is durable. `uZM_MONEY_CAP` (999999) is a gameplay credit ceiling, not a load-time validity cap: an imported value above it is preserved, and `AddMoney` credits nothing until spending brings it below the cap. |
 
 ### 8. Daycare
 
@@ -186,21 +194,22 @@ are a version bump.
 | parents | ZM_Monster x parentCount | |
 | `eggPresent` | uint8 | 0 or 1 |
 | egg | ZM_Monster | Present only when eggPresent; must have IS_EGG set |
-| `eggStepsRemaining` | uint32 | 0 when no egg |
+| `eggStepsRemaining` | uint32 | 0 when no egg. This is aggregate Daycare state, never a field on `ZM_Monster`. |
 
 ### 9. Tower
 
 | Field | Proposed type | Notes |
 |---|---|---|
 | `currentStreak` | uint32 | |
-| `bestStreak` | uint32 | Whether best-streak is tracked separately from current is TBD at S11; the field is reserved in v1 either way so S11 does not force a migration. |
+| `bestStreak` | uint32 | Retained separately from current streak across losses and new runs. |
+| `seed` | uint64 | Full procedural run seed (`ZM_TowerRun::m_ulSeed`); required to reproduce the run. |
 
 ### 10. WorldPos
 
 | Field | Proposed type | Notes |
 |---|---|---|
-| `sceneBuildIndex` | uint32 | Must be a scene registered in `ZM_WorldSpec` (checked on read) |
-| `spawnTag` | char[32] | Same runtime grammar as `ZM_SpawnPoint`: 1-31 printable ASCII bytes (`0x20..0x7E`), NUL-padded; must resolve in the target scene's WorldSpec row |
+| `sceneBuildIndex` | uint32 | `uZM_WORLD_SCENE_UNSET` means no resume position yet; otherwise it must be a scene registered in `ZM_WorldSpec` (checked on read). |
+| `spawnTag` | char[32] | Empty/NUL-filled with an unset scene. Otherwise uses the `ZM_SpawnPoint` grammar: 1-31 printable ASCII bytes (`0x20..0x7E`), NUL-padded, resolving in the target scene's WorldSpec row. |
 | `position` | float x3 | Player world position |
 | `yaw` | float | Player facing |
 
@@ -212,9 +221,12 @@ fallback on validation failure.
 
 ### 11. Options
 
-Exists from v1 so option additions never shift later modules. Contents are
-largely TBD at S6/S7 (text speed is the known first entry); each option is a
-tagged field within the module so additions are append-only.
+Exists in the initial module inventory so option additions never shift later
+modules. Each option is a tagged field so additions are append-only.
+
+| Field | Proposed type | Notes |
+|---|---|---|
+| `textSpeed` | uint8 | `SLOW / NORMAL / FAST`; new and starter states default to `NORMAL`. |
 
 ## Sanity caps -- corrupt saves fail LOUDLY, never UB
 
@@ -227,11 +239,11 @@ and field -- never a crash, never a partial apply, never silent clamping.
 | Truncation | Every read verifies remaining bytes first; mid-field EOF rejects |
 | Module framing | Reader must consume exactly `byteLength` bytes per module; mismatch rejects |
 | Party count | <= 6 |
-| Box grid | Exactly 16 x 30 in v1 |
+| Box grid | Exactly 16 x 30 in the initial schema |
 | Dex species count | <= 512 (comfortably above the ~150 ship count) |
 | Story flag count | <= 4096 |
 | Bag entries | <= 512; item ids must exist in the item table |
-| Monster fields | species/move ids resolve in `ZM_DataRegistry`; level 1..100; IVs <= 31; EV total <= 510; PP <= move max; reserved flag bits zero; nickname NUL-terminated |
+| Monster fields | species/move ids resolve in `ZM_DataRegistry`; level 1..100; IVs <= 31; EV total <= 510; current PP <= stored max PP; current HP <= derived max HP; friendship <= 255; gender valid; reserved flag bits zero; nickname NUL-terminated |
 | Strings | Fixed-size buffers only; no length-prefixed heap reads |
 
 A slot that fails to load is surfaced to the UI as damaged and is NOT
@@ -277,6 +289,8 @@ progress save.
 ## What is NOT saved
 
 - Battle-in-progress state (see above -- saves cannot occur mid-battle).
+- `ZM_GameState::m_bPendingWhiteout` -- a transient loss-to-warp latch consumed
+  by runtime coordination before saving is allowed.
 - NPC/trainer positions and graph state -- respawned from `ZM_WorldSpec` and
   scene data on load; defeat state persists via StoryFlags.
 - Grass/render/streaming state -- rebuilt per scene load.

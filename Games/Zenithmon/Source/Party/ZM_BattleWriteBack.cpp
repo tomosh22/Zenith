@@ -12,8 +12,8 @@
 // ZM_BattleWriteBack -- pure battle-result persistence (S5 item 5). Routes a resolved
 // battle to the GameState by winner (SC3 win write-back, SC4 catch add, SC5 loss->whiteout
 // + flee vitals). The engine already mutated the player battle monster in place; these
-// helpers copy the relevant slice into the persistent party lead. Single-lead. No ECS /
-// graphics / I/O.
+// helpers copy the relevant slice into the persistent party lead and route catches
+// party-first into box overflow. Single-lead. No ECS / graphics / I/O.
 // ============================================================================
 
 ZM_BATTLE_RESULT_ACTION ZM_ClassifyBattleResult(ZM_SIDE eWinner, bool bLeadFainted)
@@ -45,10 +45,11 @@ void ZM_ApplyCatchToGameState(ZM_GameState& xGameStateInOut, bool bCaught, const
 	{
 		return;
 	}
-	xGameStateInOut.MarkCaught(xCaught.m_eSpecies);          // dex: ALWAYS, even if the party is full
-	if (!xGameStateInOut.m_xParty.IsFull())                  // box storage is S7 -> a full party marks caught but does NOT add
+	xGameStateInOut.MarkCaught(xCaught.m_eSpecies);          // dex: ALWAYS, even if every storage slot is full
+	const ZM_Monster xRecord = ZM_MonsterFromBattleMonster(xCaught);
+	if (!xGameStateInOut.m_xParty.Add(xRecord))              // party-first; Add is transactional at the cap
 	{
-		xGameStateInOut.m_xParty.Add(ZM_MonsterFromBattleMonster(xCaught));
+		xGameStateInOut.m_xBoxes.StoreFirstFree(xRecord);      // first free box slot; full storage is a strict no-op
 	}
 }
 
@@ -72,8 +73,8 @@ void ZM_ApplyBattleResultToParty(ZM_GameState& xGameStateInOut, const ZM_BattleD
 		// SC4 catch add: a successful capture ends the wild battle with the PLAYER as winner,
 		// so the lead write-back above already fired (carrying the lead's damaged HP). Scan the
 		// engine event stream for a CATCH_RESULT that reports caught (m_iAmount == 1) and, when
-		// one fired, add the caught wild monster -- the ENEMY active at resolve -- to the party
-		// + dex. A non-catch battle finds no such event, so this is a strict no-op there.
+		// one fired, add the caught wild monster -- the ENEMY active at resolve -- party-first,
+		// then into box overflow, and mark the dex. A non-catch battle is a strict no-op there.
 		const ZM_BattleEngine& xEngine = xCore.GetEngine();
 		bool bCaught = false;
 		for (u_int i = 0u; i < xEngine.GetEventCount(); ++i)

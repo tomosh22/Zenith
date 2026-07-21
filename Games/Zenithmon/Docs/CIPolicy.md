@@ -13,7 +13,7 @@ AssetManifest.md (why the runner has no assets).
 **Status:** LIVING -- update whenever a gate is added/retired or branch
 protection changes.
 
-**Last updated:** 2026-07-21 (S6 local closure -- ZM-D-134).
+**Last updated:** 2026-07-21 (S7 item 1 SC1 durable-model freeze -- ZM-D-135).
 
 ---
 
@@ -53,7 +53,7 @@ pattern), active from S0. Required check name: **`zm-tests`**.
 
 **Unit-test baseline ratchet:** step 8's `-Baseline` is the exact registered
 unit-test count of `zenithmon.exe`: the **combined engine + Zenithmon** suite.
-At S6 closure it is **2343**: 2342 passed, 0 failed, and 1 quarantined
+At S7 item 1 SC1 it is **2361**: 2360 passed, 0 failed, and 1 quarantined
 `GraphComponent::RegistryWideNodeRoundTrip` skip. This is deliberately distinct
 from the **1103 engine-only reference** owned by `engine-gate` and the default
 engine gate invocation of `Tools/run_unit_gate.ps1`; the two values are not
@@ -86,19 +86,16 @@ WorldSpec-integrity tests. These touch no disk assets and no GPU, so they
 run in FULL on every `zm-tests` invocation. This is a deliberate design
 constraint on all new tests, not an accident (see TestPlan.md).
 
-**Current S6 closure snapshot (2026-07-21):** the registry contains **36** P1
-tests. The fresh headless gate reported **36 passed / 0 failed**: three tests
-executed semantically and 33 graphics-required tests took their expected skip
-paths (the harness counts a requested skip as a pass). The fresh full windowed
-gate reported **36 passed / 0 failed / 0 skipped**, with no zero-frame tests.
-The six S6 windowed filters all executed rather than skipping:
-`ZM_S6UIGate_Test` **158 frames**, `ZM_NpcTalk_Test` **85**,
-`ZM_NpcShop_Test` **286**, `ZM_NpcHeal_Test` **315**,
-`ZM_S6InteractGate_Test` **749**, and `ZM_NpcWander_Test` **830**. The closure
-also passed five serial builds: all four Vulkan Debug/Release x Tools
-true/false configurations and the D3D12 Debug Tools=false link proof. Its boot
-unit result is the combined **2343 / 2342 / 0 / 1** contract described above;
-the engine-only reference remains **1103**. S6 has no visual gate.
+**Current S7 item 1 SC1 snapshot (2026-07-21):** the automated registry remains
+unchanged at **36** P1 tests. The fresh headless gate reported **36 passed / 0
+failed**: three tests executed semantically and 33 graphics-required tests took
+their expected skip paths (the harness counts a requested skip as a pass). The
+fresh full windowed gate reported **36 passed / 0 failed / 0 skipped**, with
+every test reporting a positive frame count. Regen and five serial builds also
+passed: all four Vulkan Debug/Release x Tools true/false configurations and the
+D3D12 Debug Tools=false link proof. The boot-unit result is the combined **2361
+/ 2360 / 0 / 1** contract described above; the engine-only reference remains
+**1103**. SC1 has no visual or human gate.
 
 **Historical S3 snapshot (2026-07-13; retained for chronology, not a current
 baseline):** the automated registry then contained six P1 tests. On the
@@ -136,7 +133,7 @@ gate.
 | `complexity.yml` (`complexity-gate`) | Engine-wide complexity-ceiling ratchet (analyze_code_complexity.py thresholds). |
 | `layering-gate.yml` (`layering-gate`) | Architecture ratchet: layer-DAG direction, ECS-leaf purity, encapsulation + convention lints. |
 | `memory-gate.yml` (`memory-gate`) | Memory-budget ratchet: committed baseline JSON validation, no build needed. |
-| `engine-gate.yml` (`engine-gate`) | Engine-only proofs: Sentinel leaf-purity links (SentinelECS/Physics/AI) + the engine-only boot-unit reference, currently 1103. This is separate from `zm-tests`'s 2343-test combined engine + Zenithmon executable gate. |
+| `engine-gate.yml` (`engine-gate`) | Engine-only proofs: Sentinel leaf-purity links (SentinelECS/Physics/AI) + the engine-only boot-unit reference, currently 1103. This is separate from `zm-tests`'s 2361-test combined engine + Zenithmon executable gate. |
 | `shader-validation.yml` (`shader-validation`) | Shader catalog validity + feature parity; fails if running FluxCompiler dirties the generated tree. |
 | `doc-lint.yml` (`doc-lint`) | Cross-document consistency lint (currently DP-scoped docs via Tools/doc_lint.ps1). |
 | `scaffold-smoke.yml` (`scaffold-smoke`) | Path-filtered proof that `zenith new` still produces a game that builds + boots; non-required burn-in. |

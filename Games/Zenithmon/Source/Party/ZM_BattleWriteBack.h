@@ -10,7 +10,7 @@ class ZM_BattleDirectorCore;   // read the resolved battle via GetWinner() + Get
 // ZM_BattleWriteBack -- the S5 item 5 battle-result persistence (SC3 win write-back,
 // SC4 catch add, SC5 loss->whiteout + flee vitals). The engine has already mutated the
 // player's ZM_BattleMonster IN PLACE; these pure helpers route the outcome into the
-// persistent GameState by winner: PLAYER wins -> full lead write-back (+ catch); a
+// persistent GameState by winner: PLAYER wins -> full lead write-back (+ party/box catch); a
 // party wipe (ENEMY, or a COUNT draw whose lead fainted) -> latch the whiteout; a real
 // flee (COUNT, lead alive) -> persist the lead's vitals only. SINGLE-LEAD (Q-2026-07-18-001).
 // Pure: no ECS, no graphics, no I/O; compiled in ALL configs.
@@ -47,9 +47,8 @@ ZM_BATTLE_RESULT_ACTION ZM_ClassifyBattleResult(ZM_SIDE eWinner, bool bLeadFaint
 //                       ZM_PersistBattleVitalsToRecord -- a flee awards no progression.
 void ZM_ApplyBattleResultToParty(ZM_GameState& xGameStateInOut, const ZM_BattleDirectorCore& xCore);
 
-// Add a caught wild monster to the persistent state (S5 item 5 SC4). A failed catch
-// (bCaught == false) is a strict no-op. On a successful catch it ALWAYS marks the caught
-// species in the dex (even when the party is full), then appends a NEW party member from
-// the post-battle instance -- UNLESS the party is already full, in which case box storage
-// (S7) owns the overflow, so a full party marks caught but does NOT add. Pure.
+// Add a caught wild monster to the persistent state. A failed catch is a strict
+// no-op. A successful catch always marks the species seen+caught, then stores the
+// new durable record party-first and falls back to the first free box slot. A full
+// party plus full box grid still keeps the dex marks while rejecting storage. Pure.
 void ZM_ApplyCatchToGameState(ZM_GameState& xGameStateInOut, bool bCaught, const ZM_BattleMonster& xCaught);

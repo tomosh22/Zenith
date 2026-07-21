@@ -25,7 +25,7 @@ ZM_GameState ZM_MakeStarterGameState()
 	ZM_GameState xState;
 	const ZM_Monster xStarter = ZM_BuildMonsterRecord(eZM_STARTER_SPECIES, uZM_STARTER_LEVEL);
 	xState.m_xParty.Add(xStarter);
-	xState.MarkCaught(eZM_STARTER_SPECIES);
+	xState.MarkCaught(eZM_STARTER_SPECIES);   // caught implies seen
 	xState.m_bPendingWhiteout = false;
 
 	// Through the helper, not a direct write: the seed can then never place the purse

@@ -69,6 +69,7 @@ ZM_Monster ZM_BuildMonsterRecord(ZM_SPECIES_ID eSpecies, u_int uLevel)
 	xRec.m_eAbility = ZM_GetSpeciesAbilities(eSpecies).m_eRegular;     // slot-0 (regular) ability
 	xRec.m_eGender  = ZM_GENDER_MALE;   // deterministic default (SC1 has no RNG); gender is battle-inert
 	xRec.m_eStatus  = ZM_MAJOR_STATUS_NONE;
+	xRec.m_uFriendship = uZM_DEFAULT_FRIENDSHIP;
 	xRec.m_uFlags   = 0u;
 
 	// Exp at the level's curve floor (level<->exp consistency invariant).
@@ -176,8 +177,14 @@ ZM_Monster ZM_MonsterFromBattleMonster(const ZM_BattleMonster& xMon)
 		xRec.m_auIV[u] = xMon.m_auIV[u];
 	}
 	xRec.m_eNature  = xMon.m_eNature;
-	xRec.m_eAbility = xMon.m_eAbility;
+	// Battle authoring deliberately uses NONE to mean "use the species default".
+	// A durable record stores a concrete ability, so normalize only that sentinel;
+	// an explicitly selected regular or hidden ability remains byte-for-byte intact.
+	xRec.m_eAbility = xMon.m_eAbility == ZM_ABILITY_NONE
+		? ZM_GetSpeciesAbilities(xMon.m_eSpecies).m_eRegular
+		: xMon.m_eAbility;
 	xRec.m_eGender  = xMon.m_eGender;
+	xRec.m_uFriendship = uZM_DEFAULT_FRIENDSHIP;
 	xRec.m_uFlags   = 0u;
 	// level / exp / EVs / moves+PP / curHP / status.
 	ZM_ApplyBattleMonsterToRecord(xMon, xRec);

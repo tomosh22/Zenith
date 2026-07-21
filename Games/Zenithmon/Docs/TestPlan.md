@@ -290,8 +290,8 @@ biggest suite; all headless, all seeded (C8).
   count-ratcheted into the then-current shared engine unit gate (**1078**
   registered) and Zenithmon CI boot unit gate (**1773** registered); the latter
   expected 1772 passed, 0 failed and the one quarantined skip. Those are
-  historical S3 values: the current S6 closure references are **1103**
-  engine-only and **2343** combined engine + Zenithmon units.
+  historical S3 values: the current S7 item 1 SC1 references are **1103**
+  engine-only and **2361** combined engine + Zenithmon units.
 - **E2 engine unit tests (SHIPPED -- exactly three):**
 
   | Test | Contract covered |
@@ -1027,7 +1027,23 @@ user-approved; this paragraph preserves the earlier planning boundary only.
 
 ### 5.7 S7 -- save/load, story flags, trainers
 
-- Units (`ZM_Save`): full round-trip equality, corruption robustness,
+- **SC1 durable-model freeze (COMPLETE 2026-07-21, ZM-D-135):** 18 new pure
+  `ZM_Save` units pin the complete in-memory inventory before bytes are written:
+  monster friendship/nickname and caught-ability normalization; deterministic
+  transactional 16x30 boxes with party-first catch overflow; seen/caught dex;
+  4096 story bits; 8 badges; full-width money behavior; daycare-owned egg
+  progress; tower current/best/seed; unset world position; NORMAL options; and
+  starter defaults. `SaveFormat.md` is reconciled to that inventory, but SC1
+  deliberately implements no codec, schema/module version, golden, migration,
+  or save-slot I/O.
+- **SC1 observed gate:** regen green; Vulkan Debug/Release x Tools True/False
+  plus D3D12 Debug Tools=False all green; units **2361 ran / 2360 passed / 0
+  failed / 1 skipped**; engine-only baseline unchanged at **1103**; headless
+  automated registry **36/0** (3 semantic executions, 33 expected graphics
+  skips); full windowed registry **36/0/0**, every test positive-frame. Registry
+  count remains 36, and SC1 has no visual/human gate.
+- **SC2 NEXT:** the full transactional 11-module codec and initial v1 golden.
+  Its remaining `ZM_Save` units cover full round-trip equality, corruption robustness,
   version-mismatch rejection, **canned-blob migrations** (one test per
   historical schema version, blobs compiled into the test TU), sanity-cap
   rejects -- the full obligation list lives in [SaveFormat.md](SaveFormat.md).

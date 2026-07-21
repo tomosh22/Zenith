@@ -15,6 +15,45 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-21 -- ZM-D-135 -- S7 item 1 SC1 freezes the durable save model before bytes
+
+- **Decision:** complete SC1 as the durable **in-memory model freeze**, not as a
+  partial codec. `ZM_GameState` now owns the full save-facing aggregate and
+  `SaveFormat.md` names the same inventory. Under the direct-`master` policy,
+  the fresh local gate is the landing authority; no CI result is awaited or
+  claimed, and S7 has no human or visual stop at this boundary.
+- **Frozen model:** catch placement is party-first, then deterministic across
+  **16 boxes x 30 slots**; full capacity rejects without mutation. The aggregate
+  stores seen/caught dex state, **4096** story bits, **8** badges, money, daycare
+  state, Battle Tower seed, an explicitly unset world position, NORMAL default
+  options, and per-creature friendship/nickname. Newly caught battle records
+  normalize `ABILITY_NONE` to the species regular ability.
+- **What SC1 does not claim:** there is no binary codec, schema/module version
+  handling, fixed offset/size contract, golden file, migration path, corrupt- or
+  unknown-version rejection, or transactional slot I/O yet. Therefore the
+  Roadmap's full versioned `ZM_SaveSchema` checkbox remains unchecked. SC2 owns
+  the transactional 11-module codec and its initial v1 golden.
+- **Tests that lock it:** **18 new `ZM_Save` units** cover defaults, range
+  boundaries, idempotence, party-first and first-free box placement, box
+  rollover/full-capacity rejection, nickname/friendship state, ability
+  normalization, and save-state mutation isolation. They are included in the
+  observed boot-unit total below.
+- **Fresh closure evidence:** regen passed; all five required serial builds
+  passed -- Vulkan Debug/Release x Tools true/false plus D3D12 Debug
+  Tools=false. Boot units were **2361 ran / 2360 passed / 0 failed / 1 skipped**;
+  the separate engine-only reference remained **1103**. The automated registry
+  remained **36**: headless **36/0**, with three semantic executions and 33
+  expected graphics skips; full windowed **36/0/0**, with every test producing
+  positive frames.
+- **Reversibility / next boundary:** the in-memory aggregate can evolve before
+  SC2 freezes its byte representation, but any change after the v1 golden will
+  require explicit version/migration handling. Work proceeds autonomously to
+  SC2's transactional 11-module codec and initial v1 golden. The next free ECS
+  serialization order remains **114**; no human intervention is required before
+  the S8 vertical-slice gate.
+
+---
+
 ## 2026-07-21 -- ZM-D-134 -- S6 COMPLETE after the fresh local SC9 closure gate
 
 - **Decision:** close S6 (dialogue, menus, NPCs and shops). The full SC9 local
