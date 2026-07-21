@@ -1053,6 +1053,16 @@ namespace
 			"Dawnmere Caretaker NPC authoring is invalid");
 	}
 
+	// S7 item 2 SC1: the story-gated NPC. Nothing about the AUTHORING differs from
+	// the other stationary talkers -- the gate lives entirely in the compiled row
+	// (ZM_NpcData.cpp), so a gated NPC costs no extra authoring step and no extra
+	// component state.
+	void ZM_ConfigureRouteWardenNpc()
+	{
+		const bool bConfigured = ZM_ConfigureSelectedNpc(ZM_NPC_ROUTE_WARDEN);
+		Zenith_Assert(bConfigured, "Dawnmere Route Warden NPC authoring is invalid");
+	}
+
 	void ZM_ConfigureWandererNpc()
 	{
 		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
@@ -1704,7 +1714,8 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_AddComponent("ZM_WarpTrigger");
 		xAuto.AddStep_Custom(&ZM_ConfigureHomeDoorTrigger);
 
-		// ---- S6 item 3: the four authored Dawnmere NPCs (SC8 adds the patrol) ----
+		// ---- The authored Dawnmere NPCs (S6 item 3; SC8 added the patrol, and ----
+		// ---- S7 item 2 SC1 added the story-gated warden)                    ----
 		//
 		// Bodies share the PLAYER'S scale, so an NPC's AABB half-height IS
 		// fPlayerCapsuleHalfExtent and every NPC centre sits at exactly the player's
@@ -1772,6 +1783,38 @@ void Project_RegisterEditorAutomationSteps()
 			xClerkCenter, xNpcScale, &ZM_ConfigureTradePostClerkNpc);
 		ZM_QueueDawnmereNpc(xAuto, "Npc_Caretaker",
 			xCaretakerCenter, xNpcScale, &ZM_ConfigureCaretakerNpc);
+		// S7 item 2 SC1: the story-gated warden. He stands on the authored HOME
+		// WALKWAY, not on the north road: (478, 498) is ~1.1 m off the Home path
+		// centreline and ~36.8 m from the nearest point of the Route polyline
+		// (ZM_TerrainAuthoring.cpp:36-49), so his lines are written as a lane warden
+		// rather than a road-blocker. The position itself is derived under exactly the
+		// constraints stated above, NOT eyeballed:
+		//   * z + 18 is the SAME clearance the two flank NPCs use, so the warden is
+		//     18 m off the z = 480 Home traversal corridor that
+		//     ZM_PlayerHomeRoundTrip_Test drives blind along. Anything nearer would
+		//     re-open the wedging hazard the block above is written to prevent.
+		//   * x - 34 keeps it 34 m off the x = 512 spawn-to-villager corridor.
+		//   * Separations from the existing roster, against the same 2.9 m effective
+		//     reach: caretaker (498, 498) = 20.0 m (the new closest pair, still 6.9x
+		//     reach and wider than the existing 16.1 m minimum, so the "closest pair"
+		//     figure quoted at fZM_NPC_AUTHORED_RADIUS is unchanged); villager
+		//     (512, 490) = sqrt(34^2 + 8^2) = 34.9 m; clerk (526, 498) = 48.0 m;
+		//     wanderer patrol (540, 476..484) = 63.6 m at its nearest endpoint;
+		//     TownCenter spawn = sqrt(34^2 + 18^2) = 38.5 m, so the warden is not
+		//     reachable from spawn and the existing out-of-range negative stays clean.
+		//   * The Home shell (x 376..392, z 436..476) lies WEST OF the warden, who
+		//     stands at (478, 498): its east face (x = 392) is 86 m west of him, and
+		//     its north face (z = 476) 22 m south. No overlap on either axis.
+		// Height reuses xPlayerCenter.y like every other stationary NPC -- the same
+		// single sampled town-centre feet height, with the caveat block above.
+		// ★ When a later stage authors a real Route 1, a warden who is meant to BLOCK
+		// the road belongs on the Route polyline itself. Re-place him there and
+		// re-derive every separation above from scratch -- none of these figures carry
+		// over -- and rewrite his lines in ZM_NpcData.cpp to match the new ground.
+		const Zenith_Maths::Vector3 xRouteWardenCenter(
+			xTownCenterFeet.x - 34.0f, xPlayerCenter.y, xTownCenterFeet.z + 18.0f);
+		ZM_QueueDawnmereNpc(xAuto, "Npc_Warden",
+			xRouteWardenCenter, xNpcScale, &ZM_ConfigureRouteWardenNpc);
 		// SC8: the fourth row is a deterministic two-point patrol. Both endpoints are
 		// 28 m east of the TownCenter spawn and outside the z=480 Home corridor's
 		// x<=512 run; the nearest stationary NPC (the clerk) remains >19 m away.

@@ -1,156 +1,405 @@
 # Zenithmon Status
 
 **Last updated:** 2026-07-21
-**Stage:** **S7 (save/load, story flags, trainer battles) ACTIVE; item 1 full schema-v1 codec COMPLETE (SC1-SC2, ZM-D-135/136).** S0-S6 remain complete. The durable model and pure 11-module binary contract are now frozen; **NEXT is item 2: story-flag gates plus slot/manual/continue/autosave integration.** S7 requires no human intervention; the next human stop remains the S8 vertical-slice go/no-go.
-**Build:** GREEN on the fresh local S7 item 1 SC2 Zenithmon gate -- regen passed, then five serial configurations passed: all four **Vulkan Debug/Release x Tools true/false** builds plus the **D3D12 Debug Tools=false** null-backend link proof. The local gate is the direct-`master` landing authority; CI is the asynchronous post-push backstop, and no CI result is claimed here.
-**Tests:** boot unit gate **2392 ran / 2391 passed / 0 failed / 1 skipped** (the 1 skip is the pre-existing `GraphComponent::RegistryWideNodeRoundTrip` quarantine); the separate engine-only reference remains **1103**. The unchanged 36-test registry was headless **36/0**, then full windowed **36/0/0** with 36 JSON results, no skips and no zero-frame tests. SC2 has no visual or human gate.
+**Stage:** **S7 (save/load, story flags, trainer battles) ACTIVE. Item 1 (full schema-v1 codec) COMPLETE (SC1-SC2, ZM-D-135/136). Item 2 (story flags + save integration) IN PROGRESS -- SC1 of 6 DONE (ZM-D-137); NEXT is SC2, the typed slot/disk layer over the frozen codec.** S0-S6 remain complete. S7 requires no human intervention; the next human stop remains the S8 vertical-slice go/no-go.
+**Build:** GREEN on the S7 item 2 SC1 gate -- `Build\regen.ps1` GREEN (two new `.cpp` files, no new directory) then `zenith build Zenithmon` (`Vulkan_vs2022_Debug_Win64_True`) GREEN. SC1 touched no engine file, so the five-configuration serial matrix and the cross-game regression sweep were not owed (they were last run in full at the item 1 SC2 boundary and were green there). The local gate is the direct-`master` landing authority; CI is the asynchronous post-push backstop, and no CI result is claimed here.
+**Tests:** boot unit gate **2425 ran / 2424 passed / 0 failed / 1 skipped** (the 1 skip is the pre-existing unrelated `GraphComponent::RegistryWideNodeRoundTrip` quarantine), **+33** over the previous 2392; `zm-tests.yml` bumped **2392 -> 2425** from the OBSERVED boot line. The separate engine-only reference remains **1103** and `Tools/run_unit_gate.ps1`'s default is untouched. The registered automated-test count is unchanged at **36**: headless **36/0**, then full windowed **36/0/0** with zero skips and no zero-frame tests. S7 has no visual or human gate.
 
 ## Current task
 
-**S7 item 2 -- story-flag gating plus slots/manual save/continue/milestone autosave -- is NEXT.** Reuse the frozen pure schema-v1 codec; do not redesign it or claim a historical v0 migration. ECS serialization order 113 remains the last occupied game order, so the next free order remains **114**. Continue autonomously through S7; there is no human intervention point until the **S8 vertical-slice go/no-go**.
+**S7 item 2 SC2 -- the typed slot/disk layer over the frozen schema-v1 codec -- is NEXT.** Reuse `ZM_SaveSchema` exactly as ZM-D-136 froze it: do not redesign the codec, do not fold slot or ECS concerns back into it, and do not invent a historical v0 migration. ECS serialization order 113 remains the last occupied game order, so the next free order is **114**. Continue autonomously through S7; there is no human intervention point until the **S8 vertical-slice go/no-go**.
 
-**S6 CLOSURE RULING (ZM-D-134):** behaviour graphs and navmesh-driven wandering were deliberately deferred to S7. `ZM_GraphAuthoring` is not written; S6 ships a bounded 3-arm C++ role dispatch behind one `Interact()` seam. `Zenith_NavMeshGenerator::GenerateFromGeometry` is terrain-capable when supplied suitable triangles, but `Zenith_AINavGeometry::GenerateFromScene` does **not** harvest streamed terrain geometry or a heightfield; it represents static colliders as box geometry. S7 therefore owns the first useful graph integration plus the terrain-triangle/grid-coverage and `.znavmesh` evaluation. `MasterPlan.md` is historical/read-only, not the source of current shipped truth.
+**S7 ITEM 2 SUB-COMMIT PLAN (6 total):**
+- **SC1 DONE (ZM-D-137)** -- `ZM_StoryFlags` identity registry + flag-gated NPC lines + the `Npc_Warden` row. See "Last completed".
+- **SC2 NEXT** -- a typed slot/disk layer over the frozen codec (Save0-2 + Auto).
+- **SC3** -- world-position capture + resume placement + quit-to-FrontEnd + the autosave latch.
+- **SC4** -- the save-slot screen and root-menu Save/Quit.
+- **SC5** -- the title menu and Continue.
+- **SC6** -- the S7 stage-gate windowed test (save -> quit-to-FrontEnd -> continue restores position/party/flags exactly) plus an autosave milestone test.
 
-**Architecture (fixed, do not re-litigate):** exactly **ONE ECS order is consumed -- 113 (`ZM_Interactable`)**; the walker is a by-value member of it and `ZM_InteractionRuntime` is a by-value member of `ZM_PlayerController` (already on every Player in every scene, so there is no per-scene `AddStep_AddComponent` to forget). **Next free ECS order after item 3: 114.** Interaction is a forward CONE, never a raycast -- a raycast would drag physics into what is otherwise pure, unit-testable geometry, and S7's trainer occlusion ray can enter as a probe filter in the GLUE layer leaving the pure picker untouched. **★ CORRECTED 2026-07-20 (ZM-D-127): the old justification here said a raycast "needs `HasActiveSimulation()`, false headless". That is FALSE and must not be repeated** -- `HasActiveSimulation()` is merely `m_pxPhysicsSystem != nullptr` and `Zenith_Engine::Initialise` calls `Physics().Initialise()` unconditionally, so **physics IS live headless** (measured by mutation). The cone still wins on the purity argument alone. Four NPC rows only (villager / Trade Post clerk / town Caretaker / wanderer) -- populated towns are S9/S10. **"Trade Post"**, never "Mart", in data/entity/asset names. NO RNG in the walker (TestPlan C8) -- determinism is what makes the SC8 rendezvous provable.
+**S7 ITEM 1 STATUS (complete):**
+- **SC1 DONE (ZM-D-135)** -- the durable in-memory `ZM_GameState` model freeze + 18 `ZM_Save` units. Its LAYOUT IS FROZEN: add named free functions beside it, never new members, unless a version bump is being paid for.
+- **SC2 DONE (ZM-D-136)** -- the pure transactional 11-module schema-v1 codec, 29 schema + 2 literal-golden units, and the exact **824-byte** v1 artifact. Every incompatible change from here owes a version bump + a literal historical-blob migration test IN THE SAME COMMIT.
 
-**S7 ITEM 1 STATUS:**
-- **SC1 DONE (ZM-D-135)** -- complete durable in-memory model + 18 `ZM_Save` units + reconciled provisional SaveFormat inventory; no disk codec/version/golden/migration/slot I/O.
-- **SC2 DONE (ZM-D-136)** -- pure transactional 11-module schema-v1 codec + 29 schema units + 2 literal-golden compatibility units; exact 824-byte v1 artifact; no slot I/O and no fake v0 migration.
-- **NEXT** -- item 2 story-flag gates plus slots/manual/continue/autosave integration.
+**Architecture (fixed, do not re-litigate):** exactly **ONE ECS order is consumed for interaction -- 113 (`ZM_Interactable`)**; the NPC walker is a by-value member of it and `ZM_InteractionRuntime` is a by-value member of `ZM_PlayerController` (already on every Player in every scene, so there is no per-scene `AddStep_AddComponent` to forget). **Next free ECS order: 114.** Screens are by-value non-ECS presenters on `ZM_UI_MenuStack` (order 112), so a new screen is one arm per dispatch switch and costs no ECS order. Interaction is a forward CONE, never a raycast -- not for a headless reason (`HasActiveSimulation()` is merely `m_pxPhysicsSystem != nullptr` and `Physics().Initialise()` is unconditional, so **physics IS live headless**; ZM-D-127 corrected the old false claim) but because the cone stays pure and unit-testable; S7's trainer occlusion ray enters as a probe filter in the GLUE layer, leaving the pure picker untouched. Five authored Dawnmere NPCs only (villager / Trade Post clerk / Caretaker / wanderer / **warden**) -- populated towns are S9/S10. **"Trade Post"**, never "Mart", in data/entity/asset names. NO RNG in the walker (TestPlan C8).
 
-**S6 ITEM 3 SUB-COMMIT STATUS (historical):**
-- **SC1 DONE (ZM-D-124)** -- interact key + pure gate + MenuStack seams.
-- **SC2 DONE (ZM-D-125)** -- the pure candidate picker.
-- **SC3 DONE (ZM-D-126)** -- the `ZM_NpcData` content table.
-- **SC4 DONE (ZM-D-127)** -- `ZM_Interactable` (order 113) + `ZM_InteractionRuntime` + the headless `ZM_NpcDispatch_Test`. **Next free ECS order is now 114.**
-- **SC5 DONE (ZM-D-128)** -- three Dawnmere NPCs + `ZM_NpcTalk_Test`, the walk-up proof.
-- **SC6 DONE (ZM-D-129)** -- `ZM_NpcShop_Test` + `ZM_NpcHeal_Test` in the new `Tests/ZM_AutoTests_NpcServices.cpp`.
-- **SC7 DONE (ZM-D-130)** -- `ZM_S6InteractGate_Test` + 2 units; **the S6 gate sentence is satisfied through NPCs.** See "Last completed".
-- **SC8 DONE (ZM-D-133)** -- deterministic `ZM_NpcWalkerLogic`, v2 patrol persistence with v1 stationary fallback, authored dynamic-capsule `Npc_Wanderer`, 18 pure units and the 830-frame windowed halt/resume proof.
-- **SC9 DONE (ZM-D-134)** -- durable-doc reconciliation and the fresh full local stage gate; **S6 COMPLETE**.
+**S6 CLOSURE RULING (ZM-D-134, still binding):** behaviour graphs and navmesh-driven wandering were deliberately deferred to S7. `ZM_GraphAuthoring` is not written; S6 ships a bounded 3-arm C++ role dispatch behind one `Interact()` seam. `Zenith_NavMeshGenerator::GenerateFromGeometry` is terrain-capable when supplied suitable triangles, but `Zenith_AINavGeometry::GenerateFromScene` does **not** harvest streamed terrain geometry or a heightfield; it represents static colliders as box geometry. S7 item 3 owns the first useful graph integration plus the terrain-triangle/grid-coverage and `.znavmesh` evaluation. `MasterPlan.md` is historical/read-only, not the source of current shipped truth.
 
 **PER-SC GATE -- run in this exact order, every time:** `Build\regen.ps1` (ONLY when a new .cpp or folder was added) -> `zenith build Zenithmon` -> `zenith test Zenithmon --headless` (heals DLLs) -> `Tools\run_unit_gate.ps1 -Exe ... -Baseline <N> -TimeoutSec 300` (the 300 s timeout-kill is EXPECTED) -> full windowed `zenith test Zenithmon`. **Two standing tripwires:** (a) never write a PREDICTED unit count into `zm-tests.yml` -- only the OBSERVED one from the boot log; (b) the engine baseline **1103 must remain unchanged** unless an explicitly-scoped engine change owns the cross-game gate.
 
 ## Last completed
 
-**S7 item 1 SC2 -- SCHEMA-V1 CODEC FREEZE (ZM-D-136).**
+**S7 item 2 SC1 -- STORY-FLAG IDENTITY REGISTRY + FLAG-GATED NPC LINES (ZM-D-137).**
+New `Source/Data/ZM_StoryFlags.{h,cpp}` gives the ZM-D-135 bitset an identity:
+a SAVE-STABLE `enum ZM_STORY_FLAG_ID : u_int` whose **value IS the persisted bit
+index in save-schema module 4**. Six flags are allocated densely from zero
+(`INTRO_LEFT_HOME` 0, `MET_PROFESSOR` 1, `STARTER_RECEIVED` 2, `WARDEN_CLEARED`
+3, `ROUTE1_OPEN` 4, `GYM1_DEFEATED` 5), then `ZM_STORY_FLAG_COUNT` and
+`ZM_STORY_FLAG_NONE`, which aliases COUNT and is NEVER persisted. Allocation is
+APPEND ONLY -- reordering or reusing a retired value is a versioned codec change.
+**Density is a storage contract, not tidiness:** module 4 writes a u16 count of
+highest-set-index+1 then ceil(count/8) bytes, so ONE sparse index would add those
+bytes to EVERY save forever and could not be reclaimed without a version bump.
+The compiled `const ZM_StoryFlagInfo s_axFlags[]` table has a **DEDUCED bound**
+plus a row-count `static_assert`, so a missing or extra row is a COMPILE error
+rather than a silently zero-initialised row. Accessors are FREE FUNCTIONS
+(`ZM_SetStoryFlag` / `ZM_IsStoryFlagSet`, overloaded on `ZM_GameState` and on
+`ZM_StoryFlagSet`) precisely because `ZM_GameState` is frozen: naming a flag
+costs zero wire change. `ZM_StoryGate { m_eFlag = NONE; m_bRequireSet = true; }`
+plus a TOTAL, FAIL-CLOSED `ZM_StoryGatePasses` means a default-constructed gate
+is unconditional, so a data row that GAINS the field keeps its old behaviour by
+construction. `ZM_IsMilestoneStoryFlag` (WARDEN_CLEARED / ROUTE1_OPEN /
+GYM1_DEFEATED) is authored beside the registry so the milestone list cannot drift
+-- nothing consumes it yet; it is reserved for SC3's autosave hook.
+
+**The first gameplay consumer.** Before SC1 there was **not one gameplay consumer
+of the story-flag bitset anywhere in the tree** -- an index was a raw literal
+inside a test. `ZM_NpcData` gains three fields **APPENDED AT THE END**
+(`m_xLineGate`, `m_paszGatedLines`, `m_uGatedLineCount`) -- last on purpose,
+because every row is a POSITIONAL aggregate initializer and a mid-struct
+insertion shifts each trailing value one column left, the first casualty being
+`m_bWanders` (the Wanderer would stop patrolling with no compile error). A pure
+`ZM_SelectNpcLines` picks the set, and `ZM_Interactable`'s
+`ZM_NPC_RAISE_DIALOGUE` arm reads the LIVE flags via
+`ZM_GameStateManager::TryGetGameState` and routes through it (a manager-less
+context is treated as an all-clear set, so require-SET gates fail closed and
+require-CLEAR gates pass -- exactly what a fresh save answers). **`ZM_RaiseKindForRole`
+and `ZM_NPC_RAISE_KIND` are UNCHANGED: gating selects CONTENT, it never re-routes
+which seam a role talks through.** A fifth Dawnmere NPC, `ZM_NPC_ROUTE_WARDEN` /
+entity `Npc_Warden`, is the first gated row.
+
+**★★ DEFECT 1 -- A FATAL ASSERT ON A UNIT-PINNED INPUT DESTROYED THE ENTIRE BOOT
+GATE.** `ZM_StoryGatePasses` first did `Zenith_Assert(false, ...)` on an
+unregistered id; the unit `Gate_OutOfRangeFailsClosed` deliberately passes id 13
+to pin fail-closed behaviour. **`Zenith_Assert` is NOT compiled out anywhere** --
+`Zenith/Core/Zenith.h:138` defines `ZENITH_ASSERT` unconditionally immediately
+ABOVE its own `#ifdef ZENITH_ASSERT`, so the real definition at `:140` always
+wins and calls `Zenith_DebugBreak()` in every configuration. The whole
+`ZENITH_TEST` suite runs at BOOT before the scene loads, so the process died and
+**no "Unit tests complete" line was printed at all** -- the loss was the whole
+2425-unit gate, not one red unit. RULE: totality and a defensive assert are
+mutually exclusive; a total function pinned by a unit must RETURN its defined
+answer, diagnosing mis-authored data with a non-fatal
+`Zenith_Error(LOG_CATEGORY_GAMEPLAY, ...)` and logging nothing for a legitimate
+sentinel. (There is no `LOG_CATEGORY_GAME`.)
+
+**★★ DEFECT 2 -- THE NEW NPC SILENTLY DISARMED AN EXISTING TEST.** Adding the
+Warden put a SECOND `ZM_NPC_ROLE_TALKER` into the fixture behind
+`GateRoster_PlacedNpcsCoverEveryRole`, so that unit's own advertised mutation
+(re-roll `ZM_NPC_VILLAGER` to SHOPKEEP) stopped redding it -- the Warden covered
+TALKER while the interaction gate's talk beat would have started raising a shop.
+Fixed by splitting the three BEAT NPCs (villager = talk, clerk = buy,
+caretaker = heal, each with its expected raise kind SPELLED IN THE TEST rather
+than read back off the row) from the merely-PLACED roster, and asserting role
+coverage over the beat table. RULE: adding a data row can weaken an existing
+test's teeth without touching that test.
+
+**★★ DEFECT 3 -- THE GATED BRANCH WAS PINNED BY NOTHING.** `ZM_SelectNpcLines`
+returns the ordinary lines verbatim for any row with a null gated array, and
+every pre-existing row is ungated, so reverting the dispatch arm to the old
+one-liner left all 33 new units AND the full 36-test windowed suite GREEN.
+Closed by two new phases on the HEADLESS (therefore CI-visible)
+`ZM_NpcDispatch_Test` that drive a real interact edge at the warden row with the
+flag clear then set, asserting the queued line COUNT **and the FIRST LINE TEXT**
+-- the text clause is load-bearing because both line sets have 2 entries, so a
+count-only assertion would not catch a selector that always returns the ordinary
+set. **Mutation-verified: with the arm reverted the test goes RED (exit=1) and is
+green again with the source restored.** The test restores the flag it mutates on
+every exit path, including a mid-phase failure that leaves it set.
+
+**Also corrected pre-commit (the recurring false-claim-in-an-argumentative-passage
+defect class):** SEVEN comment sites justified the selector's null guard by
+claiming `ZM_UI_DialogueBox::QueueLines` would CRASH on a `(null, non-zero)`
+pair. It does not -- `ZM_UI_DialogueBox.cpp:68` rejects a null array as the first
+disjunct of its first guard, before any dereference; the real consequence is a
+refused push and a completely MUTE NPC, the same outcome as the over-cap case.
+Both sanitisers were KEPT; only the rationale was wrong. The sparse-index
+rationale in the story-flag units was premised on a fixed-bound table the code no
+longer uses. And the warden's placement comment claimed he stood "on the north
+road out of town" when he is ~37 m from the Route polyline and ~1 m from the
+authored Home walkway centreline -- his fiction and lines were rewritten to match
+where he actually stands; **his position was NOT moved** (his coordinates are
+separately derived against every traversal constraint and the windowed suite
+passed green at them). A note records that when a real route is authored, a
+road-blocking warden should be re-placed onto the route polyline with every
+separation re-derived from scratch.
+
+**Evidence.** +33 units: 18 `ZM_Story` in the new `Tests/ZM_Tests_StoryFlags.cpp`,
+13 `ZM_Data` over the gate columns and selector, net +2 in
+`Tests/ZM_Tests_Interactable.cpp`. Registered automated tests unchanged at **36**
+(the new coverage is two extra phases inside an existing headless test). Regen
+GREEN; `zenith build Zenithmon` GREEN; boot **2425 / 2424 / 0 / 1**;
+`zm-tests.yml` bumped **2392 -> 2425** from the OBSERVED line; engine reference
+**1103 UNCHANGED**; headless **36/0**; full windowed **36/0/0**, zero skips, no
+zero-frame tests. Pre-existing S6 windowed tests held their historical frame
+counts EXACTLY -- `ZM_PlayerHomeRoundTrip` **831**, `ZM_NpcWander` **830**,
+`ZM_S6InteractGate` **749**, `ZM_NpcHeal` **315**, `ZM_NpcShop` **286** -- so the
+fifth authored NPC perturbed neither the nearest-wins interaction picker nor any
+traversal route. **Contracts held:** `ZM_SaveSchema` untouched (the 824-byte v1
+golden is unchanged), `ZM_GameState` layout untouched, no new ECS order (next
+free still **114**), no `uSERIALIZATION_VERSION` bump, no engine file touched
+(so baseline 1103 stands and no cross-game regression was owed). No commit, push
+or CI result is claimed.
+
+---
+
+Prior: **S7 item 1 SC2 -- SCHEMA-V1 CODEC FREEZE (ZM-D-136).**
 `ZM_SaveSchema::{Write,Read}` is the pure inner-payload boundary over
 `ZM_GameState`: 11 ordered independently length-framed modules, explicit
 little-endian fixed widths, schema/module version 1, a 61-byte monster record,
 append-transactional writes and exact-length transactional reads. Dex accepts
 current/older roster counts and rejects newer counts with `VERSION_MISMATCH`;
-StoryFlags writes its high-water count; Options is a counted uint16 TLV list
-that skips bounded unknown tags but requires exactly one known text-speed tag.
-The codec owns no slots, disk I/O, ECS or runtime scene behavior.
+StoryFlags writes its high-water count; Options is a counted uint16 TLV list that
+skips bounded unknown tags but requires exactly one known text-speed tag. The
+codec owns no slots, disk I/O, ECS or runtime scene behavior. 29 schema units + 2
+literal-golden compatibility units took the gate to **2392 / 2391 / 0 / 1**;
+engine **1103**. The independent complete v1 golden is exactly **824 bytes** and
+represents v1, not a fabricated v0 migration. Regen, all five Zenithmon builds,
+headless **36/0** and full windowed **36/0/0** were green, plus a complete
+cross-game sweep (three Sentinels; Combat **1103/1102/0/1** + 14/0; DP
+**1104/1103/0/1** + 158/0; CityBuilder **1104/1103/0/1** + 45/0; RenderTest
+canaries boot **1 frame** / terrain **151 frames**; scaffold smoke 11/0). Because
+the codec must distinguish a growable owned stream from a fixed wrapped buffer,
+engine `Zenith_DataStream` gained the read-only `OwnsData()` query plus
+ownership-transfer units -- that is what moved engine 1097 -> 1103.
 
-The 29 new schema units plus 2 literal-golden compatibility units raise the
-observed combined gate to **2392 / 2391 / 0 / 1**; engine remains **1103**. The
-independent complete v1 golden is exactly **824 bytes** and represents v1, not a
-fabricated v0 migration. Regen, all five Zenithmon builds, headless **36/0** and
-full windowed **36/0/0** were green. Because the codec needs to distinguish a
-growable owned stream from a fixed wrapped buffer, engine `Zenith_DataStream`
-adds the read-only `OwnsData()` query and ownership-transfer units.
+Prior: **S7 item 1 SC1 -- DURABLE-MODEL FREEZE (ZM-D-135).** `ZM_GameState` owns
+the complete module inventory: party plus deterministic transactional 16x30
+boxes, seen/caught dex, 4096 story bits, 8 badges, bag/full-width money, daycare,
+tower current/best/seed, unset world position and NORMAL-default options.
+`ZM_Monster` adds zero-default friendship and a zeroed 16-byte nickname; caught
+battle records normalize `ABILITY_NONE` to the species regular ability. Catch
+placement is party-first then first-free box while dex marking remains invariant.
+18 new `ZM_Save` units (**2361 / 2360 / 0 / 1**); engine **1103**. **The layout is
+frozen: reach it with free functions, never new members.**
 
-Complete cross-game evidence includes all three Sentinel
-leaf proofs; Combat Vulkan + **1103 / 1102 / 0 / 1** boot + **14/0** suite;
-DevilsPlayground Vulkan/D3D12 + **1104 / 1103 / 0 / 1** boot + **158/0** suite
-(29 expected skips); and CityBuilder Vulkan/D3D12 + **1104 / 1103 / 0 / 1**
-boot + **45/0** suite (6 expected skips). Focused windowed RenderTest canaries
-each produced exactly one unskipped passing JSON: boot **1 frame**, terrain
-**151 frames**. Scaffold smoke passed **11/0**, met its embedded **1103** unit
-baseline, and its teardown regeneration left git status unchanged. **NEXT:** S7
-item 2 story flags plus slot/manual/continue/autosave integration. No
-visual/human gate applies.
+Prior: **S6 item 3 SC9 -- FULL STAGE CLOSURE (ZM-D-134); S6 COMPLETE.** Fresh
+local evidence passed the five-build serial matrix, boot **2343 / 2342 / 0 / 1**,
+headless **36/0** and full windowed **36/0/0**. The six exact S6 windowed filters
+passed non-skipped: UI **158**, Talk **85**, Shop **286**, Heal **315**, Interact
+**749**, Wander **830**. S6 has no visual gate, so it closed without human
+intervention. It also settled the two bounded deferrals (graphs + navmesh to S7)
+and ruled `MasterPlan.md` historical/read-only.
 
-**S7 item 1 SC1 -- DURABLE-MODEL FREEZE (ZM-D-135).** `ZM_GameState` now owns the complete module inventory: party plus deterministic transactional 16x30 boxes, seen/caught dex, 4096 story bits, 8 badges, bag/full-width money, daycare, tower current/best/seed, unset world position and NORMAL-default options. `ZM_Monster` adds zero-default friendship and a zeroed 16-byte nickname; caught battle records normalize `ABILITY_NONE` to the species regular ability. Catch placement is party-first then first-free box while dex marking remains invariant. The starter seeds seen+caught and every new module's empty/default state.
+Prior: **S6 item 3 SC8 -- THE AUTHORED WANDERER (ZM-D-133).** `ZM_NpcWalkerLogic`
+is a deterministic pure two-waypoint walker: fixed authored points, arrival
+dwell, explicit halt, no RNG, XZ-only steering, patrol velocity that preserves
+the body's existing Y velocity. `ZM_Interactable` serialization went **v2** for
+authored patrol configuration with v1 data as a stationary fail-closed fallback;
+runtime cursor/dwell state deliberately restarts from point zero on load. The
+runtime contract is a dynamic capsule driven through body linear velocity;
+opening **its own** dialogue halts the patrol and closing it resumes.
+`Npc_Wanderer` sits at **x=540, z=476..484**. **★ Its first placement intersected
+the ONE-SIDED terrain mesh**, letting the dynamic capsule penetrate from the
+non-colliding side and fall instead of patrol -- fixed with real clearance above
+sampled terrain, never by pinning Y or teleporting. 18 pure units + the 830-frame
+windowed halt/resume proof.
 
-The 18 new `ZM_Save` units raised that boundary's observed combined baseline to **2361 / 2360 / 0 / 1**; engine stayed **1103**. Regen, all five required builds, headless **36/0** (3 semantic + 33 expected graphics skips), and full windowed **36/0/0** with every test positive-frame were green. The automated registry remained 36. `SaveFormat.md` inventoried the frozen model, but SC1 assigned no codec, final version/offset, golden, migration or slot I/O. No visual/human gate applied. **SC2 was next at this historical boundary and is now complete above.** ECS next-free remained **114**.
+Prior: **RENDERTEST CANARY RESTORED + THE ECS DUPLICATE-ORDER ENGINE GAP CLOSED
+(ZM-D-132).** RenderTest's terrain is `_True`-baked (12,313 files / 1.78 GB from
+seed 1337), so `TerrainEditorSmoke` -- the terrain/grass canary the engine-change
+gate names -- PASSES windowed and was used as a real canary.
+**★ With terrain fully baked, HEADLESS still asserts `Invalid buffer VRAM handle`
+at `Zenith_TerrainComponent::InitializeCullingResources()`** -- the terrain path
+sets up GPU-driven culling with no headless guard. That is an open ENGINE gap
+(Q-2026-07-21-001), not an asset problem, and it means terrain has no CI coverage
+on a GPU-less runner. The engine fix: `Zenith_ComponentMetaRegistry::Finalize()`
+now detects duplicate serialization orders (tie-break the sort on type name,
+`Zenith_Error` per colliding pair, gate on a `Zenith_Check`), +6 units hosted
+ENGINE-SIDE because the ECS leaf may not include the test framework. **★ Lesson:
+an engine baseline is pinned in a script DEFAULT (`Tools/run_unit_gate.ps1`,
+consumed argument-less by `engine-gate.yml` and `test_scaffold.ps1`) as well as
+in per-game workflow args.**
 
-Prior: **S6 item 3 SC9 -- FULL STAGE CLOSURE (ZM-D-134).** Fresh local evidence passed the five-build serial matrix, the **2343 / 2342 / 0 / 1** combined boot-unit contract, headless **36/0** with three semantic executions and 33 expected graphics skips, and full windowed **36/0/0** with no zero-frame tests. The exact S6 windowed filters passed non-skipped in UI **158**, Talk **85**, Shop **286**, Heal **315**, Interact **749**, and Wander **830** frames. The engine-only reference remains **1103**. S6 had no visual gate, so it closes without human intervention; S7 starts at the full versioned `ZM_SaveSchema`, and the next human stop remains S8.
+Prior: **KNOWN-BUG SWEEP (ZM-D-131) -- four verified defects fixed, GAME-ONLY.**
+(1)+(2) the traversal drive picked keys in the WRONG FRAME in both remaining
+copies; both now project onto the LIVE camera basis (`ZM_PlayerHomeRoundTrip`
+moved 673 -> **831** frames, deterministic across three runs at 54% headroom).
+(3) `ZM_NpcDispatch_Test` -- the ONLY CI-visible interaction test -- now asserts
+WHICH screen each role raises, mutation-proven. (4) the battle menu offered Catch
+unconditionally, ignoring `m_bCanCatch`; now gated on `IsCatchAllowed()` and
+pinned by a real `UpdateMenu` key-edge unit after the review caught the fix was
+UNPINNED.
 
-The closure also settles the two bounded S6 deferrals: first useful `ZM_GraphAuthoring` and trainer/navmesh evaluation belong to S7. `GenerateFromGeometry` can consume supplied terrain triangles; `GenerateFromScene` does not extract streamed terrain geometry. `MasterPlan.md` remains historical/read-only. See ZM-D-134 for the durable rationale and reversibility boundary.
+Prior (S6 item 3, condensed -- full detail in DecisionLog ZM-D-124..130):
+**SC7 (ZM-D-130)** `ZM_S6InteractGate_Test` passes in **749** frames in one
+uninterrupted session (talk + buy + heal + open-every-menu, each reached by a
+real `SimulateKeyPress(ZENITH_KEY_E)`); its root-cause finding -- **movement is
+CAMERA-RELATIVE, so world-space key choice is correct only for a single leg from
+rest** -- is the standing rule below. Its review also produced the mutation test
+that FAILED to bite: a single confirm on a running typewriter only COMPLETES the
+reveal and never advances a line, so the negative now emits six spaced interact
+edges. **SC6 (ZM-D-129)** `ZM_NpcShop_Test` (286) + `ZM_NpcHeal_Test` (315) in
+one new TU carrying the shared `WalkContext`/`TickWalk` machine at fixed **1/60**;
+the shop test asserts the screen carries the clerk's OWN runtime-read
+`ZM_NpcData` stock. **SC5 (ZM-D-128)** three NPCs authored into the real
+Dawnmere block + `ZM_NpcTalk_Test` (85 frames); its blocker -- an NPC placed dead
+centre on the `ZM_PlayerHomeRoundTrip` corridor stopped the capsule 108 m short,
+because `DriveTowardXZ` has NO obstacle avoidance -- is the standing
+check-traversal-routes rule. **SC4 (ZM-D-127)** `ZM_Interactable` (order 113) +
+`ZM_InteractionRuntime` + the headless `ZM_NpcDispatch_Test`; corrected the false
+"physics is dead headless" premise by mutation. **SC3 (ZM-D-126)** the
+`ZM_NpcData` content table with both row caps pinned to their UI limits at
+COMPILE time (both UI guards are ALL-OR-NOTHING -- an oversized list is REJECTED,
+not truncated, so a drifted cap makes an NPC silently mute or its shop refuse to
+open). **SC2 (ZM-D-125)** the pure candidate picker: XZ-only range with a
+separate absolute height band, inclusive distance/band/cone, most-specific-last
+reject reporting via a high-water mark, nearest wins with ties to the lowest
+index. **SC1 (ZM-D-124)** `ZENITH_KEY_E` + pure `ZM_ShouldInteract` returning a
+REASON (append-only enum, fixed unit-pinned blocker precedence) +
+`ZM_InputActions.h` as the single source of every binding, walked by both the
+live readers and the collision units.
 
-Prior: **S6 item 3 SC8 -- THE AUTHORED WANDERER (ZM-D-133).** `ZM_NpcWalkerLogic` is a deterministic pure two-waypoint walker: fixed authored points, arrival dwell, explicit halt, no RNG, XZ-only steering, and patrol velocity that preserves the body's existing Y velocity. `ZM_Interactable` serialization is now v2 for authored patrol configuration while v1 data remains a stationary, fail-closed fallback; runtime cursor/dwell state deliberately restarts from point zero on load. The runtime contract is a dynamic capsule driven through body linear velocity; opening **its own** dialogue halts the patrol and closing that dialogue resumes it.
-
-`Npc_Wanderer` is authored clear of the existing NPC/traversal lanes at **x=540, z=476..484**. Its initial transform now has safe clearance above the sampled terrain. That clearance was not cosmetic: the first placement intersected the one-sided terrain mesh, let the dynamic capsule penetrate from the non-colliding side, and produced a large fall instead of a patrol. The correction preserves terrain collision as the authority rather than pinning Y or teleporting the body.
-
-**Evidence:** 18 new pure units cover movement, arrival/dwell/halt, determinism and vertical-velocity preservation. The substantive `ZM_NpcWander_Test` reuses the camera-relative walk machine at fixed **1/60** and proves coupled body-driven motion, waypoint advance, a moving-target approach, the correct named entity's dialogue/content, **30 consecutive active-dialogue halt samples**, an explicit Enter edge before closure, and coupled physics motion after resume. Local gate: regen GREEN; Vulkan Debug True GREEN; D3D12 Debug False GREEN; boot units **2343 ran / 2342 passed / 0 failed / 1 skipped**; headless **36/0** with the graphics test skipped as expected; full windowed **36/0, zero skips**, wander **830 frames**. No commit, push or CI result is claimed yet.
-
-Prior: **RENDERTEST CANARY RESTORED + THE ECS ENGINE GAP CLOSED (ZM-D-132).** RenderTest's terrain is `_True`-baked (12,313 files / 1.78 GB from seed 1337), so the boot-time missing-chunk crash is gone and **`TerrainEditorSmoke` -- the terrain/grass canary the engine-change gate names -- PASSES windowed**; it was then used as a real canary for the engine change below. **★ The Q-2026-07-16-001 premise was only HALF right:** with terrain fully baked, headless STILL asserts `Invalid buffer VRAM handle` at `Zenith_TerrainComponent::InitializeCullingResources()` -- the terrain path sets up GPU-driven culling with no headless guard. That is a separate open engine gap (Q-2026-07-21-001), not an asset problem, and it means terrain has no CI coverage on a GPU-less runner.
-
-**The engine fix:** `Zenith_ComponentMetaRegistry::Finalize()` now detects duplicate serialization orders -- tie-breaking the sort on type name (a collision was previously not even reproducible between builds, since `std::sort` is unstable over a hash-map walk), logging a `Zenith_Error` per colliding pair, and gating on a `Zenith_Check`. Six units, hosted ENGINE-SIDE because the ECS leaf may not include the test framework. **★ The first draft used `Zenith_Assert` with a comment claiming shipped builds keep booting -- that was FALSE** (`ZENITH_ASSERT` is `#define`d unconditionally above its own `#ifdef`, so it breaks in every config) **and it also pre-empted the very unit written to catch this.** Caught by verifying the claim instead of asserting it. **★★ The review then caught TWO BLOCKERS:** the +6 engine units break `Tools/run_unit_gate.ps1`'s **default** baseline, which `engine-gate.yml` and `test_scaffold.ps1` both consume with no argument, plus the stale `zm-tests.yml` pin. **Lesson: an engine baseline is pinned in a script DEFAULT as well as in per-game workflow args.**
-
-**Cross-game engine gate:** Combat 1103/0 + 14/0, DevilsPlayground 1104/0 + 158/0, CityBuilder 1104/0 + 45/0, Zenithmon 2325/0 + 35/0 headless + 35/0 windowed, RenderTest canary green. Mutation-verified both ways.
-
-Prior: **KNOWN-BUG SWEEP (ZM-D-131) -- four verified defects fixed, GAME-ONLY.** (1)+(2) The traversal drive picked keys in the WRONG FRAME in both remaining copies (`ZM_AutoTests_NpcTalk.cpp`, `ZM_AutoTests_WorldTraversal.cpp`); both now project onto the LIVE camera basis. **A false claim of my own was caught here:** my brief said `ZM_PlayerHomeRoundTrip_Test` "walks out and back, a ~180-degree heading change, and was passing on tolerance" -- verified FALSE on both counts (128 m straight -X with a ~90-degree final turn; the return leg is a separate from-rest walk in build 40 after a warp) and nothing measured its margin. That test moved **673 -> 831 frames**, verified deterministic across three runs at 54% headroom under its 1800 cap. (3) `ZM_NpcDispatch_Test` -- the ONLY CI-visible interaction test -- now asserts WHICH screen each role raises; TALKER and CARETAKER both raise DIALOGUE, so the caretaker is pinned by `GetPendingDialogueAction()` and the shopkeep by the screen carrying that NPC row's own runtime-read stock. **Mutation-proven: the dispatch-arm rewiring that left it GREEN under ZM-D-129 now reds it.** (4) The battle menu offered Catch unconditionally, ignoring `m_bCanCatch` (a reachable state -- `ZM_BattleTower` already produces one, and the engine asserts on an illegal catch); it is now gated on a core-surfaced `IsCatchAllowed()`. **The review caught that the fix was UNPINNED** -- reverting the flag to a hard-coded `true` left every test passing -- so a sixth unit now drives the real `UpdateMenu` with real key edges; mutation-verified RED.
-
-**DELIBERATELY NOT FIXED:** `Zenith_ComponentMetaRegistry::Finalize()` has no duplicate-serialization-order detection. Real latent hazard, but it is an ENGINE change owing a cross-game regression gate -- logged as **Q-2026-07-20-002**, with the game-side spot check that already guards order 113.
-
-**Docs:** Shortfalls.md was substantially stale and is rewritten in place (verdict, S3/S5 gate statuses, the S6 UI section, NPCs, the test inventory, the E4 row, three discharged forward-notes) plus three NEW cross-cutting risks -- the camera-relative-movement rule, the **windowed-tests-are-invisible-to-CI** caveat, and the deferred engine gap.
-
-Prior: **S6 item 3 SC7 -- the S6 GATE SENTENCE, satisfied through NPCs (ZM-D-130).** `ZM_S6InteractGate_Test` PASSES in **749 frames**: one uninterrupted session, no scene reload and no between-tests reset, proving talk + buy + heal + open-every-menu -- each of the first three reached by a real `SimulateKeyPress(ZENITH_KEY_E)` against an authored NPC, never by calling a raise seam. It REUSES SC6's `WalkContext` machine via a new `RetargetWalk`, so Boot, both basis legs and the out-of-range negative run exactly ONCE and the gate is three approach-and-press legs. Two units land in the existing `Tests/ZM_Tests_Interactable.cpp`, so **no new file and no regen**.
-
-**★★ THE ROOT-CAUSE FINDING: `DriveTowardXZ` was picking keys in WORLD space, but movement is CAMERA-RELATIVE.** The gate failed on leg 3 (clerk -> caretaker). A frame trace showed the player running a stable 45-degree **-X-Z** heading at full speed while holding **W**, receding from 9.25 m to 12.34 m -- not an obstruction, not physics, not a budget. `ZM_PlayerController` builds its basis from the main camera's facing dir, and `ZM_FollowCamera` re-aims itself at the player from a **lagging** camera-to-player vector, so the world-space meaning of W/A/S/D rotates as the player turns. World-space key choice is correct **only for a single leg walked from rest** -- which is all any shipped test had ever done. Fixed by inverting the controller's own mapping: project the desired world direction onto the LIVE camera basis. At yaw 0 it degenerates to the old behaviour, so the single-leg walks are unchanged -- and measurably better (shop 320 -> 286 frames, heal 365 -> 315). **★ The other two copies of `DriveTowardXZ` (`ZM_AutoTests_NpcTalk.cpp` and the shipped world-traversal test) carry the same latent bug, safe today only because each walks one leg from rest. SC8 and the S9/S10 content waves MUST copy the camera-relative version from `ZM_AutoTests_NpcServices.cpp`.**
-
-**★★ A MUTATION TEST THAT FAILED TO BITE.** The review's BLOCKER: the re-raise negative had NO assertion depending on the E press -- `EvaluateForTests` hard-codes `bInteractPressed = true`, the raise-count clause is dominated by the freeze, and "top screen still DIALOGUE" cannot catch a confirming E. The fix added a line-index pair across the press -- and mutating the key to `ZENITH_KEY_ENTER` **still passed**, because a single confirm on a running typewriter only COMPLETES THE REVEAL and never advances the line. The negative now emits **six** spaced interact edges (enough that a confirming key would read all three villager lines and close the box) plus an assertion that the six edges were actually emitted. Re-mutated: **reds at 159 frames.** Without the mutation round this would have shipped looking rigorous and proving nothing.
-
-**Also fixed from review (9 more):** `ShopSettle`'s "still the top screen" was true BY CONSTRUCTION; **the first menu visit reached its ROOT entry with ZERO arrow edges** (the ROOT presenter parks focus on `Menu_RootParty`, which was visit 0's target) and `ZENITH_KEY_UP` was never emitted at all -- fixed by restoring the item-2 gate's `ProbeNavDown`/`ProbeNavUp` pair; heal focus/frozen diagnostics captured but never logged; `g_uGateDepthAfterExit` never asserted; three screen headers only transitively included; and the registration unit's name-uniqueness half was a container tautology. Separately, **`FailWalk` was destroying its own evidence** -- it calls `ClearWalkInput`, so every stall printed "held W=0 A=0 S=0 D=0"; the held set and live position are now snapshotted BEFORE the clear, which is what made the camera-frame bug diagnosable at all.
-
-Prior: **S6 item 3 SC6 -- buying and healing BY WALKING (ZM-D-129).** `ZM_NpcShop_Test` (320 frames) and `ZM_NpcHeal_Test` (365 frames) land in ONE new TU, `Tests/ZM_AutoTests_NpcServices.cpp`. There is no shared test-helper header and every sibling helper sits in a per-file anonymous namespace, so the file carries ONE parameterised `WalkContext` / `TickWalk` machine that both tests drive -- **SC7 lands in this same file and reuses it.** Fixed dt is **1/60** (matching the proven walk, not the UI tests' 1/30), so every frame budget copied from a 1/30 test was DOUBLED. The shop test asserts the screen carries **the clerk's own `ZM_NpcData` stock**, read at runtime -- the one thing the shipped `ZM_ShopScreen_Test` structurally cannot prove, since it configures the screen from its own fixture array.
-
-**★★ MUTATION-PROVEN, and the mutation found something.** Rewiring the SHOPKEEP and CARETAKER arms of `ZM_Interactable::Interact()` to `TryPushDialogue` turned **both new tests RED** while `ZM_NpcTalk_Test` stayed GREEN (targeted mutation) -- **but `ZM_NpcDispatch_Test`, the ONLY one of the four visible to CI, stayed GREEN too.** It asserts *a* screen was raised, not *which*. So a dispatch arm pointed at the wrong seam is invisible to `zm-tests` entirely. Source restored, rebuilt, and the whole gate re-run green before any result above was recorded.
-
-**★ THE BASIS PROBE IS NOW TWO LEGS.** SC5 placed the villager at pure +Z *because* +Z was the only movement axis with evidence; both SC6 targets are DIAGONAL, so the strafe leg was unproven. The probe now runs W (dz dominant) then D (dx dominant). Honest limit in the code: leg 2 exercises the +X sign only; the caretaker walk uses -X, the same multiply with the opposite sign.
-
-**Review (4 lenses): NO BLOCKERS, 14 defects, all applied.** The load-bearing one: **`ZM_UI_MenuStack::m_eLastDialogueAnswer` survives every test boundary** (cleared only in `OnStart` / `ReadFromDataStream`; `CloseMenu` deliberately preserves it and `ResetRuntimeStateForTests` only called `CloseMenu`; `ZM_MenuRoot` is `DontDestroyOnLoad`). A dropped Enter would leave the box awaiting and `GetLastDialogueAnswer()` would return **an earlier test's answer**. Fixed on both sides: the tests assert `!IsDialogueAwaitingChoice()` before reading the latch, and **`ResetRuntimeStateForTests` now clears it** (the one runtime edit in this SC -- game code, so engine 1097 is untouched). **★ A FOURTH WRONG CLAIM, again in an argumentative passage:** `HasLatchedResult()` does NOT prove the press reached the runtime -- `Tick` sets it UNCONDITIONALLY, outside the edge branch -- so the edge proof is `GetLastResult() == OUT_OF_RANGE`. That comment was **inherited verbatim from the shipped SC5 file**, and was corrected in BOTH (SC5 comment/message text only; verified by diff that not one statement moved, and it still passes). Also fixed: the shop quantity guards could not fire (`GetQuantity()` clamps to >= 1, now asserts `== 1`); the "buttons hidden after close" clause proved nothing about the close; `MenuFocusCleared()` passed vacuously on an unresolved root; and the heal test's `m_iMaxFrames` (4800) sat BELOW the sum of its own phase deadlines (5478), letting the harness cap silently pre-empt every phase diagnostic -- raised to 6000.
-
-Prior: **S6 item 3 SC5 -- the walk-up proof LANDS (ZM-D-128).** Three NPCs authored into the real Dawnmere block, and `ZM_NpcTalk_Test` PASSES in 85 frames: a player walks up to the villager under real simulated input and talks to it, with the raise asserted by entity identity, by raise count, and by **the villager row own first line appearing on the open dialogue**. Configure functions use `AddStep_Custom` (a captureless `void (*)()`) reaching `GetSelectedEntity()`, arming candidacy LAST because `SetNpcId` fails closed.
-
-**★★ The review caught a BLOCKER that all three lenses found independently: a scene-placement change regressing a suite it never mentions.** The caretaker was first placed at z = 480 -- dead centre on the corridor `ZM_PlayerHomeRoundTrip_Test` walks from spawn to the Home door. `DriveTowardXZ` has NO obstacle avoidance (|dz| inside its dead zone means it holds only A and runs a straight -X line), so a solid AABB there stops the capsule 108 m short and that already-green test dies at its frame cap. Moved both flank NPCs to z + 18; verified `ZM_PlayerHomeRoundTrip_Test` PASSED (673 frames) afterwards. **Rule for S9/S10: check existing traversal routes before placing anything solid in a town.**
-
-**★ CI-VISIBILITY WARNING (applies to SC6 and SC7 too).** `ZM_NpcTalk_Test` is `m_bRequiresGraphics = true`; `zm-tests` runs HEADLESS, where the harness SKIPS it and **a skip counts as PASS**. Confirmed: headless reports `SKIPPED (0 frames)` inside a green 32/0. **The walk-up proof is carried by the LOCAL WINDOWED gate, not by CI** -- a green `zm-tests` says nothing about whether walking up to an NPC works, and a skipped run is NOT acceptable evidence for a sub-commit. Only SC4 `ZM_NpcDispatch_Test` covers this feature in CI, and it proves dispatch, not walking.
-
-Review also hardened three things: the out-of-range negative was satisfiable by a runtime that never ticked (the latch only writes on a real edge, so it sat at the reset NO_INPUT_EDGE and a bare `!= OK` passed) -- it now asserts the edge arrived AND the exact `OUT_OF_RANGE` reason AND a null target; the physics-displacement baseline was captured at spawn so the basis probe already satisfied it, now re-captured at approach entry; and the re-raise raise-count check is dominated by the player FREEZE rather than the menu-open blocker it claimed to prove, so the `EvaluateForTests == MENU_OPEN` assertion is now marked as the load-bearing one. **Known bounded assumption:** all three NPCs reuse one sampled height; the clerk and caretaker have no test, so treat a mute one as a height check first.
-
-Prior: **S6 item 3 SC4 -- interaction goes LIVE (ZM-D-127).** `ZM_Interactable` (order 113, the only order this item takes -- next free is now **114**) owns the single role->seam switch; `ZM_InteractionRuntime` is a by-value member of `ZM_PlayerController` so no scene can forget to add it. `Tick` and `EvaluateForTests` share one `Decide()`, with the pose threaded in as `bHavePose` so the world gate always outranks a missing origin (otherwise the seam answered `DEGENERATE_ORIGIN` on FrontEnd / mid-warp / in-battle, hiding the honest reason SC5+ pollers wait on). The latch records the last ATTEMPT, not the last frame. A successful `Interact()` re-enters the controller, so `OnUpdate` re-honours the freeze immediately or the player drifts for one frame as the box opens. Every seam refusal now logs (closes a Shortfalls 1.6 item).
-
-**★ The review found a BLOCKER and measuring it corrected a false premise.** Two lenses independently caught that `ZM_NpcDispatch_Test` ticked its OWN local runtime -- and since the runtime is stateless with process-global latches, the whole WIRING half of SC4 had ZERO coverage. Fixed by driving every tick through the real `OnUpdate`, then **verified by mutation rather than asserted**: deleting the call site turns the test RED (good), but **moving it below the physics early-out leaves it GREEN** -- which falsified the dossier claim (repeated in my own spec and code comments) that that early-out "is the headless case". `HasActiveSimulation()` is just `m_pxPhysicsSystem != nullptr` and `Physics().Initialise()` is unconditional, so **physics IS live headless**. The placement stays correct on principle (interaction is transform-only geometry) but is NOT pinned by any test -- the comments now say so. **Third wrong claim from the same dossier, again in an argumentative passage.** +20 units + the headless test; zm **2291 -> 2311**; windowed **30 -> 31**; engine **1097 UNCHANGED**.
-
-Prior: **S6 item 3 SC3 -- the NPC content table (ZM-D-126).** Four Dawnmere NPC rows (Villager / Trade Post Clerk / Caretaker / Wanderer) as a compiled `const` table in the ZM-D-009 idiom, row index == id, per-row line and stock arrays by pointer+count. Roles map **1:1 onto the three shipped raise seams**, so SC4 is one switch adding no UI. Care Center prose is NOT duplicated -- the caretaker carries greetings only. **Both row caps are pinned to their UI limits at COMPILE time** (`uZM_NPC_MAX_LINES` is *defined as* `ZM_UI_DialogueBox::uMAX_QUEUED_LINES`; `uZM_NPC_MAX_STOCK` is `static_assert`ed `<= ZM_UI_Shop::uMAX_INVENTORY`) because **both UI guards are ALL-OR-NOTHING** -- an oversized list is REJECTED, not truncated, so a drifted cap makes an NPC silently mute or its shop refuse to open. **The one sanctioned Data->UI header edge** is the derived line cap; any further UI dependency goes in the `.cpp` as a `static_assert`.
-
-**Review (3 lenses): NO BLOCKERS.** All three independently flagged the same defect -- the named line cap was **dead surface** (the unit asserted against the UI constant directly), which also left the Data->UI include unjustified; fixed by pointing the unit at the named cap. Also applied: the stock cap pinned to the shop limit (it had re-spelled `16u` -- the exact drift the line cap was derived to avoid); `Npc_EveryTalkerHasAtLeastOneLine` **de-guarded** to every row, since a role-guarded walk passes vacuously with no TALKER *and* a zero-line CARETAKER/SHOPKEEP is equally broken; non-zero-total guards on the two remaining stock walks; and the display-name unit split into null-check-then-compare passes, because the assert macros record without aborting, so the interleaved form would `strcmp` a not-yet-checked name and turn a named failure into a UB crash at boot. **+15 units**; zm **2276 -> 2291**; engine **1097 UNCHANGED**.
-
-Prior: **S6 item 3 SC2 -- the pure candidate picker (ZM-D-125).** Still zero runtime behaviour change and no new files, so no regen was owed. `ZM_PickInteractTarget` + `ZM_ForwardFromRotation` join `ZM_ShouldInteract`, over three by-value structs; the SC1 enum is UNCHANGED (SC2 only starts PRODUCING the five reasons it reserved). **Range is XZ-ONLY** with height as a separate absolute band, so a sunk or floating NPC stays reachable while talking through a floor is still blocked; distance, band and cone are all INCLUSIVE, each pinned by an accept/reject pair. **Reject reporting is most-specific-last via a single high-water mark**, so the reason returned is how far the BEST near-miss got -- the walk-up windowed tests POLL that reason to know how close the player is, and reporting the last probe walked would tell a test the player is far away while they stand underneath the target. Nearest wins, ties to the lowest index, order-independent (pinned by reversing the array and asserting the same probe by identity). `uBestIndexOut` is `uCount` on every reject so a caller ignoring the return value cannot address probe 0.
-
-**Review (3 lenses): NO BLOCKERS, 3 SHOULD-FIX, all applied -- all three were vacuity finds.** (1) `Forward_StraightUpFlattensToZero` **could not fail for its stated reason**: the framework's assertions fire only when a difference EXCEEDS the epsilon, and every comparison against NaN is false, so removing the degenerate early-out would have sailed through the one unit guarding it; it now also asserts `length < epsilon` and exact componentwise zero. (2) The header's "forward need NOT be normalised or XZ-flat" contract **was pinned by nothing** -- every fixture looked along an already-unit, already-flat +Z, so the flatten was only exercised as the identity and deleting it passed all 27 units; in the live game a transform-derived forward carries pitch, and with `(0,8,4)` a raw dot is ~4x too large, effectively turning the cone OFF. (3) The documented negative-radius guard had **zero coverage, and deleting it INVERTS the behaviour** (reach -7.5 squares to 56.25, putting the probe in range out to 7.5 m). +29 pure units (file 15 -> 44); zm baseline **2247 -> 2276**; engine **1097 UNCHANGED**.
-
-Prior: **S6 item 3 SC1 -- the interaction foundation, with ZERO runtime behaviour change (ZM-D-124).** Nothing calls the new surface yet; the only observable difference is a higher boot unit count. Three parts. (1) **`ZENITH_KEY_E`** as the interact key, verified free across the whole Zenithmon tree. (2) **`ZM_ShouldInteract`** in a new pure `Source/Interaction/ZM_InteractionLogic.{h,cpp}` -- mirrors `ZM_UI_MenuStack::ShouldOpenMenu`'s doctrine (all bools in, impure lookups left at the thin call site) but returns a **REASON** (`ZM_INTERACT_REJECT`) rather than a bool, because the later walk-up tests poll on the reason to know when to press. The enum is **APPEND-ONLY** and its blocker precedence is fixed and unit-pinned: `NO_INPUT_EDGE > MENU_OPEN > NOT_OVERWORLD > WARP_IN_PROGRESS > BATTLE_TRANSITION > PLAYER_FROZEN > OK`. (3) two `ZM_UI_MenuStack` seams -- a new `static IsMenuOpen()` (a plain false, never an assert, when no singleton resolves) and `IsActiveSceneOverworld()` promoted private -> public static, so the scene-kind resolve is not duplicated in interaction code.
-
-**`ZM_InputActions.h` is now the single source of every binding:** named `inline constexpr` key sets that **the live readers AND the collision units both walk**, so a rebind aliasing the interact key fails a unit instead of silently double-firing (interact would also step). A `static_assert` ties the flat movement set to the four per-direction counts -- shrinking already failed via a constexpr OOB index, and this makes GROWING (the realistic edit, which would silently narrow the collision unit's walk) a build break too. **`ReadInteractPressed` is NON-consuming**, like its confirm/cancel siblings, so mutual exclusion is expressed EXPLICITLY by the gate's `bMenuOpen` blocker and never implied by consumption -- that is the documented answer to the SC2-era forward-note about a raising confirm edge being re-read the same frame. **Interiors are deliberately talkable** (`IsOverworldSceneKind` excludes only FRONTEND and BATTLE, so PLAYERHOME/PROFLAB/GYM1 all pass); no S6 test depends on it, but S9's interior NPCs will.
-
-**Review (4 adversarial lenses): NO BLOCKERS, 5 SHOULD-FIX, all applied before the build.** The two that mattered were both vacuity finds. (a) `RejectName_IsTotalAndDistinct` could not catch its own stated regression -- appending an enumerator without a switch arm falls through to `"UNKNOWN"`, which is non-null, non-empty and distinct from every real name, so the unit went green while later windowed failures would report UNKNOWN and lie; fixed by hoisting the out-of-range sentinel and asserting no IN-RANGE enumerator returns it. (b) `MenuStack_IsMenuOpenIsFalseWithoutSingleton` asserted only its postcondition, and `IsMenuOpen()` returns false on BOTH the unresolved and the resolved-but-closed branch, so it would have passed while exercising the wrong path; it now pins the precondition first. Also applied: the movement `static_assert`; a `ZM_` prefix + `inline` on the three tuning constants (`fZM_INTERACT_MAX_DISTANCE` / `_MIN_FACING_DOT` / `_MAX_VERTICAL` -- the assert macros bind by const ref, so SC2's units odr-use them); and a **fifth** collision unit for the run keys, a live binding set (`ReadRunHeld` walks it every overworld frame) that the four spec'd units did not cover.
-
-**+16 pure units** (15 in the new `Tests/ZM_Tests_Interaction.cpp` + 1 in `ZM_Tests_MenuStack.cpp`, 22 -> 23), including a **64-combination totality walk** that recomputes the expected reason longhand -- never by calling the function under test -- and additionally pins that exactly ONE combination returns OK. zm baseline **2231 -> 2247** (OBSERVED); engine **1097 UNCHANGED**, so no cross-game regression was owed. `Build\regen.ps1` was MANDATORY (new `Source/Interaction/` directory; without it the build link-fails on `ZM_ShouldInteract` from the new test TU).
-
-Prior: **S6 item 2 SC9 -- the consolidated gate; ITEM 2 COMPLETE (ZM-D-122).** One windowed test adding no per-screen coverage on purpose: the seven earlier tests each prove one screen ALONE, so nothing proved they work TOGETHER. It runs one uninterrupted session and asserts the cross-screen bleed conditions, walking every ROOT entry by REAL arrow-key edges (`SetFocusedElement` is never called). The review earned its keep -- two assertions could not fail as first written, fixed by adding a fourth visit (Bag revisited) and swapping in checks that can actually fail. Also closed both SC8 follow-ups (the heal is no longer silent; the awaiting-choice panel visibility is pinned). Prior: SC8 Care Center heal as a dialogue yes/no CHOICE (ZM-D-121); SC7 shop `ZM_ShopLogic` + `ZM_UI_Shop` (ZM-D-120); SC6 `ZM_UI_Bag` (ZM-D-119); SC5 `ZM_UI_Dex` (ZM-D-118); SC4 `ZM_UI_Party` + generalized screen dispatch (ZM-D-117); SC3 `ZM_Bag` + money (ZM-D-116); SC2 `ZM_UI_DialogueBox` (ZM-D-115); SC1 `ZM_UI_MenuStack` + an engine ECS fix (ZM-D-114); S6 item 1 E4 `Zenith_UIGridLayoutGroup` (ZM-D-113); S5 STAGE GATE SIGNED OFF (ZM-D-112).
+Prior (S6 item 2, condensed): SC9 the consolidated `ZM_S6UIGate_Test`
+(ZM-D-122, **item 2 COMPLETE**); SC8 Care Center heal as a dialogue yes/no CHOICE
+(ZM-D-121); SC7 shop `ZM_ShopLogic` + `ZM_UI_Shop` (ZM-D-120); SC6 `ZM_UI_Bag`
+(ZM-D-119); SC5 `ZM_UI_Dex` (ZM-D-118); SC4 `ZM_UI_Party` + generalized screen
+dispatch (ZM-D-117); SC3 `ZM_Bag` + money (ZM-D-116); SC2 `ZM_UI_DialogueBox`
+(ZM-D-115); SC1 `ZM_UI_MenuStack` + an engine ECS fix (ZM-D-114); S6 item 1 E4
+`Zenith_UIGridLayoutGroup` (ZM-D-113); S5 STAGE GATE SIGNED OFF (ZM-D-112).
 
 ## Notes for next agent (S7)
 
-- **★ SCHEMA V1 IS NOW FROZEN.** Preserve the exact 11-module order, fixed widths, 61-byte monster encoding, statuses and transactional cursor/destination behavior in `SaveFormat.md`; every incompatible change now owes a real version bump + literal historical-blob migration test. There is no v0. The next slice wires this codec to story gates and Save0-2/Auto flows; do not fold slot or ECS concerns back into the pure codec.
-- **★ `zenith test <Game>` runs the EXISTING exe -- it does NOT relink after an ENGINE-lib change.** For cross-game engine regression you MUST `zenith build <Game>` FIRST, THEN test, or you validate a STALE exe. If scoped work is expected to be game-only and this arises, verify whether an engine file was touched.
-- **★ UI element ownership:** `AddElement` pushes into BOTH `m_xAllElements` and `m_xRootElements`; `Clear()` deletes only `m_xAllElements`, so a merely-`AddChild`'d element **LEAKS** and an `AddElement`+`AddChild` element is **walked TWICE**. `Zenith_UICanvas::ReparentElement` is the only correct path. And `SetVisible` notifies the parent (a grid re-runs layout), so write child visibility **ONLY ON CHANGE** -- in Hide as well as Present.
-- **★ ENGINE UI NAV RULE:** never wire bake-time `SetNavigation` links into a pool whose members are shown/hidden at RUNTIME. `NavigateDown` consults the explicit link FIRST and falls back to the spatial search ONLY when it is null, so a link into a hidden element silently swallows the press -- and a partial page is usually the DEFAULT state. `SetNavigation` is also not serialized, so bake-time links exist only in tools builds.
-- **★ Windowed-gate rule:** a test that PARKS the canvas focus programmatically proves NOTHING about navigation -- it passes with navigation completely broken. Drive real arrow-key edges, deadline-guarded, with flags that **DEFAULT TO FAILING** so a phase that never runs fails.
-- **★ The dialogue-answer trap, BOTH halves:** (a) a prompt raised over an EMPTY stack pops to empty on resolve, which `CloseMenu()`s and `Reset()`s the box, clearing its stored answer -- all in ONE `OnUpdate`. Read `ZM_UI_MenuStack::GetLastDialogueAnswer()` (the host latch), **NEVER** `GetDialogue().GetChoice()` after the fact. (b) **that host latch is NOT per-test state** -- it is cleared only in `OnStart` / `ReadFromDataStream`, `CloseMenu` deliberately preserves it, and `ZM_MenuRoot` is `DontDestroyOnLoad`. SC6 made `ResetRuntimeStateForTests` clear it, but a test must ALSO assert `!IsDialogueAwaitingChoice()` before trusting the value, or a dropped Enter reads a stale answer. Do NOT "capture before and require a change" -- a prior test ending on the same answer makes that a false failure.
-- **★★ THE TRAVERSAL DRIVE MUST BE CAMERA-RELATIVE.** Player movement is camera-relative and `ZM_FollowCamera` re-aims from a LAGGING camera-to-player vector, so the world-space meaning of W/A/S/D rotates as the player turns. Picking walk keys from raw world dx/dz is correct ONLY for a single leg from rest. The shipped traversal drives now project the desired world direction onto the live camera basis; use `Tests/ZM_AutoTests_NpcServices.cpp` as the canonical source for any new walk (ZM-D-130/ZM-D-131).
-- **★ REUSE the shared walk machine.** `Tests/ZM_AutoTests_NpcServices.cpp` owns ONE parameterised `WalkContext` / `TickWalk` machine driving the shop, heal, consolidated S6 and moving-wanderer approaches. There is NO shared test header (`Tests/` is `.cpp` only) and every sibling helper is in a per-file anonymous namespace, so a NEW TU cannot reach any of it -- which is exactly why another hand-rolled copy of `DriveTowardXZ` must not be written.
-- **★ MUTATION-TEST any test you claim has teeth** -- break the thing it should catch, rebuild, confirm RED, restore, rebuild, re-gate. SC6 did this and it paid: it proved both new tests bite, AND revealed that the CI-visible `ZM_NpcDispatch_Test` asserts *a* screen was raised but not *which one*, so a dispatch arm pointed at the wrong seam is invisible to `zm-tests`.
-- **★ The recurring review win is finding tests that CANNOT FAIL** -- loops bounded by a count just asserted zero; "unchanged" asserts on state never populated; a bleed assertion whose state can never differ; a totality test whose expectation calls the function under test. Check for vacuity EXPLICITLY on every SC, and for each unit name the source change that would make it fail.
-- **★ A new stateful game component MUST be wired into the between-tests `ResetRuntimeStateForTests` hook** (`Zenithmon.cpp`) or batched tests inherit its state. SC4 owes this for `ZM_InteractionRuntime`.
-- **★ Dispatch by the FOCUSED ELEMENT'S NAME**, never `SetOnClick(this)` -- a `this` userdata dangles on ECS pool relocation. All screen presenters are NON-ECS `Source/UI/` classes owned BY VALUE by the MenuStack, re-resolving elements by name each frame.
-- **★ No teleportation for movement** -- use `Zenith_Physics`, never `SetPosition`, **even in tests**. The gate criteria require every walk-up to prove physics-driven motion (requested speed, XZ linear velocity > 1, displacement > 1 m) and that `SetPosition` appears nowhere in the item.
-- **Diagnosing a windowed test:** game `Zenith_Log(LOG_CATEGORY_UNITTEST)` diagnostics are NOT in harness stdout -- run the exe directly, `<exe> --automated-test <Name> --exit-after-frames N` (pair the flag with `--automated-test`; bare idles forever). Windowed visual evidence via `Flux_Screenshot::RequestDump` in a test Step -> BGRA TGA -> PNG; the CLI `--screenshot-frame N` is fragile.
-- **New files -> `Build\regen.ps1`.** Sharpmake globs `/Zenith` + each game's tree recursively; the generated `.vcxproj`/`.filters` are gitignored, so a new FOLDER without a regen link-fails in a way that looks like a code defect.
-- **Working model:** MASTER-ONLY (ZM-D-031); the LOCAL gate is the authority; `zm-tests` is a post-push backstop (fix forward on red, never revert/force-push). Only the orchestrator builds/tests/commits; subagents author and never build. Sweep stray `zenithmon.exe` processes before ending. NEVER commit baked assets or `Build/artifacts` (git-ignored). A Combat test writes a stray `EnemyBase.zpfb` to the repo root during `zenith test Combat` -- delete it if it appears, never commit it.
-- **Open Questions:** Q-2026-07-21-001 (ENGINE: terrain sets up GPU culling resources with no headless guard); Q-2026-07-21-002 (RenderTest `RT_TennisDeterminismDigest` fails windowed); Q-2026-07-17-001 (`ZM_BattleTransition::BiomeForScene` is a hard-coded table, not a `ZM_WorldSpec` column); Q-2026-07-12-003 (`ZM_BattleAI`: three in-scope rulings -- file location, no-Struggle, tunable thresholds).
-- **The next VISUAL hard-stop is the S8 vertical-slice go/no-go** (manual playthrough sign-off). S6/S7 have no visual gate -- the loop runs through them automatically.
+- **★ NEW -- A TOTAL FUNCTION MUST NEVER `Zenith_Assert` ON ITS ARGUMENTS.**
+  `Zenith/Core/Zenith.h:138` defines `ZENITH_ASSERT` unconditionally immediately
+  ABOVE its own `#ifdef ZENITH_ASSERT`, so the definition at `:140` always wins
+  and `Zenith_DebugBreak()` fires in EVERY configuration. Units run at BOOT
+  before the scene loads, so an assert on an input a unit deliberately supplies
+  kills the process partway through and **the whole boot gate is lost -- no
+  "Unit tests complete" line prints at all**, which reads as a build/harness
+  failure rather than one red unit. Diagnose mis-authored data with a non-fatal
+  `Zenith_Error(LOG_CATEGORY_GAMEPLAY, ...)` -- there is no `LOG_CATEGORY_GAME`
+  -- and return the defined fail-closed answer.
+- **★ NEW -- ADDING A DATA ROW CAN DISARM AN EXISTING TEST WITHOUT TOUCHING IT.**
+  A fifth NPC row gave a roster unit a second TALKER, so that unit's own
+  advertised mutation stopped redding it. Whenever you append to a compiled data
+  table, re-read every unit that WALKS that table and ask what its stated
+  mutation still proves. Fixture rows a test depends on must be a named,
+  explicitly-spelled subset (the "beat" table), not "whatever the table happens
+  to contain".
+- **★ NEW -- A NEW BRANCH WITH A BENIGN FALLBACK IS PINNED BY NOTHING.** Because
+  the line selector returns the ordinary lines for every ungated row, reverting
+  the whole dispatch arm left 33 new units and the full windowed suite green.
+  When a feature's default path is indistinguishable from the old behaviour, the
+  ONLY proof is a fixture that takes the new path, and its assertion must
+  distinguish the two outputs by CONTENT (both warden line sets have 2 entries --
+  a count-only assertion proves nothing). Put it in a HEADLESS test so CI sees it.
+- **★ SCHEMA V1 IS FROZEN (ZM-D-136) AND SO IS `ZM_GameState`'s LAYOUT
+  (ZM-D-135).** Preserve the exact 11-module order, fixed widths, 61-byte monster
+  encoding, statuses and transactional cursor/destination behavior in
+  `SaveFormat.md`; every incompatible change owes a real version bump + a literal
+  historical-blob migration test in the same commit. There is no v0. Reach the
+  frozen model with named FREE FUNCTIONS (the `ZM_StoryFlags` pattern), never new
+  members. Do not fold slot or ECS concerns back into the pure codec.
+- **★ STORY-FLAG INDICES ARE WIRE FORMAT.** `Source/Data/ZM_StoryFlags.h` is the
+  authoritative index registry: append only, dense from zero, never renumber or
+  reuse. Module 4 sizes itself from the highest SET index, so one sparse index
+  costs ceil bytes in EVERY save forever and cannot be reclaimed without a
+  version bump. Reserve a flag by adding a row, never by leaving a gap. Renaming
+  a debug name is free.
+- **★ `zenith test <Game>` runs the EXISTING exe -- it does NOT relink after an
+  ENGINE-lib change.** For cross-game engine regression you MUST
+  `zenith build <Game>` FIRST, THEN test, or you validate a STALE exe. If scoped
+  work is expected to be game-only and this arises, verify whether an engine file
+  was touched.
+- **★★ THE TRAVERSAL DRIVE MUST BE CAMERA-RELATIVE.** Player movement is
+  camera-relative and `ZM_FollowCamera` re-aims from a LAGGING camera-to-player
+  vector, so the world-space meaning of W/A/S/D rotates as the player turns.
+  Picking walk keys from raw world dx/dz is correct ONLY for a single leg from
+  rest. Use `Tests/ZM_AutoTests_NpcServices.cpp` as the canonical source for any
+  new walk (ZM-D-130/131).
+- **★ REUSE the shared walk machine.** `Tests/ZM_AutoTests_NpcServices.cpp` owns
+  ONE parameterised `WalkContext` / `TickWalk` machine. There is NO shared test
+  header (`Tests/` is `.cpp` only) and every sibling helper sits in a per-file
+  anonymous namespace, so a NEW TU cannot reach any of it -- which is exactly why
+  another hand-rolled copy of `DriveTowardXZ` must not be written.
+- **★ CHECK EXISTING TRAVERSAL ROUTES BEFORE PLACING ANYTHING SOLID.**
+  `DriveTowardXZ` has no obstacle avoidance, so a solid AABB on a corridor an
+  existing windowed test walks blind will kill that test at its frame cap. SC1's
+  warden derives every separation explicitly (18 m off the z=480 Home corridor,
+  34 m off the x=512 spawn-to-villager corridor, 20.0 m to the nearest NPC) --
+  copy that derivation style, and re-derive from scratch if anything moves.
+- **★ MUTATION-TEST any test you claim has teeth** -- break the thing it should
+  catch, rebuild, confirm RED (exit=1), restore, rebuild, re-gate. This has paid
+  off in four consecutive sub-commits; twice it revealed the test proved nothing.
+- **★ The recurring review win is finding tests that CANNOT FAIL** -- loops
+  bounded by a count just asserted zero; "unchanged" asserts on state never
+  populated; a totality test whose expectation calls the function under test.
+  Check for vacuity EXPLICITLY on every SC, and for each unit name the source
+  change that would make it fail.
+- **★ THE RECURRING DEFECT CLASS: confidently-worded FALSE claims inside
+  argumentative comment passages.** SC1 found seven copies of one
+  (`QueueLines` "would crash" on a null array -- it rejects it at
+  `ZM_UI_DialogueBox.cpp:68` and the real consequence is a MUTE NPC). Verify
+  every claim a comment makes about another function's behaviour by reading that
+  function, not by reasoning about it. A wrong rationale can survive alongside a
+  correct guard for a long time.
+- **★ UI element ownership:** `AddElement` pushes into BOTH `m_xAllElements` and
+  `m_xRootElements`; `Clear()` deletes only `m_xAllElements`, so a merely-
+  `AddChild`'d element **LEAKS** and an `AddElement`+`AddChild` element is walked
+  TWICE. `Zenith_UICanvas::ReparentElement` is the only correct path. And
+  `SetVisible` notifies the parent (a grid re-runs layout), so write child
+  visibility **ONLY ON CHANGE** -- in Hide as well as Present.
+- **★ ENGINE UI NAV RULE:** never wire bake-time `SetNavigation` links into a
+  pool whose members are shown/hidden at RUNTIME. `NavigateDown` consults the
+  explicit link FIRST and falls back to the spatial search ONLY when it is null,
+  so a link into a hidden element silently swallows the press. `SetNavigation` is
+  also not serialized, so bake-time links exist only in tools builds.
+- **★ Windowed-gate rule:** a test that PARKS the canvas focus programmatically
+  proves NOTHING about navigation. Drive real arrow-key edges, deadline-guarded,
+  with flags that **DEFAULT TO FAILING** so a phase that never runs fails.
+- **★ The dialogue-answer trap, BOTH halves:** (a) a prompt raised over an EMPTY
+  stack pops to empty on resolve, which `CloseMenu()`s and `Reset()`s the box,
+  clearing its stored answer, all in ONE `OnUpdate` -- read
+  `ZM_UI_MenuStack::GetLastDialogueAnswer()`, NEVER `GetDialogue().GetChoice()`.
+  (b) that host latch is NOT per-test state, so a test must ALSO assert
+  `!IsDialogueAwaitingChoice()` before trusting it. Do NOT "capture before and
+  require a change" -- a prior test ending on the same answer makes that a false
+  failure.
+- **★ ANY per-test mutation of persistent state must be RESTORED on EVERY exit
+  path**, including a mid-phase failure. `ZM_GameStateManager` outlives a test,
+  so SC1's warden phases capture `WARDEN_CLEARED` once and restore it in a
+  teardown that runs even when a phase failed with the flag set. Same family as
+  the `ResetRuntimeStateForTests` rule: **a new stateful game component MUST be
+  wired into the between-tests hook** in `Zenithmon.cpp` or batched tests inherit
+  its state.
+- **★ Dispatch by the FOCUSED ELEMENT'S NAME**, never `SetOnClick(this)` -- a
+  `this` userdata dangles on ECS pool relocation. All screen presenters are
+  NON-ECS `Source/UI/` classes owned BY VALUE by the MenuStack, re-resolving
+  elements by name each frame.
+- **★ Positional aggregate tables: append new columns AT THE END.** Every
+  `ZM_NpcData` row is a positional initializer, so a mid-struct field shifts each
+  trailing value one column left with no compile error -- `m_bWanders` would
+  swallow the gate and the Wanderer would stop patrolling silently.
+- **★ No teleportation for movement** -- use `Zenith_Physics`, never
+  `SetPosition`, **even in tests**.
+- **★ CI-VISIBILITY:** `zm-tests` runs HEADLESS and a SKIP counts as a PASS, so
+  every `m_bRequiresGraphics = true` test (the whole walk-up family) is carried by
+  the LOCAL WINDOWED gate only. New coverage that must be CI-visible has to live
+  in a headless test -- which is why SC1's gate proof went into
+  `ZM_NpcDispatch_Test` rather than a new windowed test.
+- **Diagnosing a windowed test:** game `Zenith_Log(LOG_CATEGORY_UNITTEST)`
+  diagnostics are NOT in harness stdout -- run the exe directly,
+  `<exe> --automated-test <Name> --exit-after-frames N` (pair the flag with
+  `--automated-test`; bare idles forever). Windowed visual evidence via
+  `Flux_Screenshot::RequestDump` in a test Step -> BGRA TGA -> PNG; the CLI
+  `--screenshot-frame N` is fragile.
+- **New files -> `Build\regen.ps1`.** Sharpmake globs `/Zenith` + each game's
+  tree recursively; the generated `.vcxproj`/`.filters` are gitignored, so a new
+  FOLDER without a regen link-fails in a way that looks like a code defect.
+- **Working model:** MASTER-ONLY (ZM-D-031); the LOCAL gate is the authority;
+  `zm-tests` is a post-push backstop (fix forward on red, never revert or
+  force-push). Only the orchestrator builds/tests/commits; subagents author and
+  never build. Sweep stray `zenithmon.exe` processes before ending. NEVER commit
+  baked assets or `Build/artifacts` (git-ignored). A Combat test writes a stray
+  `EnemyBase.zpfb` to the repo root during `zenith test Combat` -- delete it if it
+  appears, never commit it.
+- **Open Questions:** Q-2026-07-21-001 (ENGINE: terrain sets up GPU culling
+  resources with no headless guard); Q-2026-07-21-002 (RenderTest
+  `RT_TennisDeterminismDigest` fails windowed); Q-2026-07-17-001
+  (`ZM_BattleTransition::BiomeForScene` is a hard-coded table, not a
+  `ZM_WorldSpec` column); Q-2026-07-12-003 (`ZM_BattleAI`: three in-scope
+  rulings -- file location, no-Struggle, tunable thresholds).
+- **The next VISUAL hard-stop is the S8 vertical-slice go/no-go** (manual
+  playthrough sign-off). S6/S7 have no visual gate -- the loop runs through them
+  automatically.

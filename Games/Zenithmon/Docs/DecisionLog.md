@@ -15,6 +15,176 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-21 -- ZM-D-137 -- S7 item 2 SC1 gives story flags an identity registry and gates NPC lines on it
+
+- **Decision / boundary:** ship `Games/Zenithmon/Source/Data/ZM_StoryFlags.{h,cpp}`
+  as the identity registry for the story-flag bitset frozen by ZM-D-135, and make
+  authored NPC dialogue the first gameplay consumer of it. Before this sub-commit
+  there was **not one gameplay consumer of the story-flag bitset anywhere in the
+  tree**: an index was a raw integer literal living only inside a test, and
+  nothing stopped two pieces of content claiming the same bit. This is SC1 of a
+  planned **six** sub-commits in S7 item 2; it deliberately ships no slot layer,
+  no disk I/O, no resume placement, no quit-to-FrontEnd flow, no autosave latch
+  and no save UI.
+- **The enum value IS the wire bit index, and density is a storage contract:**
+  `enum ZM_STORY_FLAG_ID : u_int` is SAVE-STABLE -- its value is the persisted bit
+  index in save-schema module 4. Six flags are allocated densely from zero:
+  `INTRO_LEFT_HOME` 0, `MET_PROFESSOR` 1, `STARTER_RECEIVED` 2, `WARDEN_CLEARED`
+  3, `ROUTE1_OPEN` 4, `GYM1_DEFEATED` 5, followed by `ZM_STORY_FLAG_COUNT` and
+  `ZM_STORY_FLAG_NONE`, which aliases COUNT and is NEVER persisted. Allocation is
+  APPEND ONLY; reordering or reusing a retired value is a versioned codec change,
+  not an edit to this file. Density is not tidiness: module 4 writes a uint16
+  high-water count of highest-set-index+1 followed by ceil(count/8) bytes, so ONE
+  sparse index (say 4000) would add ~500 bytes to EVERY save this game ever
+  writes, and those bytes cannot be reclaimed without a version bump. Reserve a
+  future flag by adding a row, never by leaving a numeric gap. Recorded in
+  `SaveFormat.md` module 4, which now names this header as the authoritative
+  registry.
+- **Compiled table with a deduced bound:** the `const ZM_StoryFlagInfo
+  s_axFlags[]` row table is written WITHOUT an explicit `[ZM_STORY_FLAG_COUNT]`
+  bound, because with the bound spelled the row-count `static_assert` becomes a
+  tautology and a forgotten row merely zero-initialises the tail into a nameless
+  flag that only a boot unit could catch. Deduced, a missing or extra row is a
+  COMPILE error at the table itself. Accessors are FREE FUNCTIONS
+  (`ZM_SetStoryFlag` / `ZM_IsStoryFlagSet`, overloaded on `ZM_GameState` and on
+  `ZM_StoryFlagSet`) specifically because `ZM_GameState` is frozen by ZM-D-135:
+  naming a flag costs zero wire change and keeps the durable model a plain
+  aggregate. `ZM_IsMilestoneStoryFlag` (WARDEN_CLEARED / ROUTE1_OPEN /
+  GYM1_DEFEATED) is authored beside the registry so the milestone list cannot
+  drift from the flags it names; nothing consumes it yet -- it is reserved for
+  the autosave hook in a later sub-commit.
+- **★ DEFECT 1, AND THE RULE IT ESTABLISHES: totality and a defensive assert are
+  mutually exclusive.** `ZM_StoryGatePasses` originally did `Zenith_Assert(false,
+  ...)` on an unregistered flag id. The unit `Gate_OutOfRangeFailsClosed`
+  deliberately passes id 13 to pin the fail-closed answer. **`Zenith_Assert` is
+  not compiled out anywhere in this engine:** `Zenith/Core/Zenith.h:138` defines
+  `ZENITH_ASSERT` unconditionally, immediately ABOVE its own `#ifdef
+  ZENITH_ASSERT`, so the real definition at `:140` always wins and calls
+  `Zenith_DebugBreak()` in every configuration. Because the whole `ZENITH_TEST`
+  suite runs at BOOT before the scene loads, the process died and **no "Unit
+  tests complete" line was printed at all** -- the loss was the entire 2425-unit
+  gate, not one red unit. RULE: where a function's contract is TOTAL and a unit
+  pins that totality, the function must RETURN its defined answer. Diagnose
+  mis-authored data with a non-fatal `Zenith_Error(LOG_CATEGORY_GAMEPLAY, ...)`
+  and log nothing at all for a legitimate sentinel. (There is no
+  `LOG_CATEGORY_GAME`; the enumerator is `LOG_CATEGORY_GAMEPLAY`.) Every function
+  in `ZM_StoryFlags` is now total: the sentinel is decided BEFORE the range check
+  (NONE aliases COUNT, so the ungated answer must not be classified as garbage),
+  and the gate fails closed rather than being written as `IsSet(id) ==
+  m_bRequireSet`, which would return TRUE for an unregistered id whenever the
+  gate wanted the flag CLEAR -- a typo would UNLOCK content instead of locking it.
+- **Gating selects CONTENT, never the seam:** `ZM_StoryGate { ZM_STORY_FLAG_ID
+  m_eFlag = NONE; bool m_bRequireSet = true; }` is embedded by value in authored
+  data rows, so a DEFAULT-constructed gate is unconditional and a data row that
+  GAINS the field keeps its previous behaviour by construction rather than by
+  every author remembering to fill it in. `ZM_NpcData` gains three fields
+  APPENDED AT THE END (`m_xLineGate`, `m_paszGatedLines`, `m_uGatedLineCount`) --
+  last on purpose, because every row is a POSITIONAL aggregate initializer and a
+  field inserted mid-struct would silently shift each trailing value one column
+  left, the first casualty being `m_bWanders` (the Wanderer would stop patrolling
+  with no compile error). The pure `ZM_SelectNpcLines` chooses the set;
+  `ZM_Interactable`'s `ZM_NPC_RAISE_DIALOGUE` arm reads the LIVE flags via
+  `ZM_GameStateManager::TryGetGameState` and routes through it, treating a
+  manager-less context as an all-clear set (a require-SET gate therefore fails
+  closed and a require-CLEAR gate passes, which is exactly what a fresh save would
+  answer). **`ZM_RaiseKindForRole` and `ZM_NPC_RAISE_KIND` are unchanged:** gating
+  selects which lines a role SAYS, it never re-routes which seam a role talks
+  through. A fifth Dawnmere NPC, `ZM_NPC_ROUTE_WARDEN` / entity `Npc_Warden`, is
+  the first gated row and carries both an ordinary and a refusal line set.
+- **★ DEFECT 2, AND THE RULE IT ESTABLISHES: adding a data row can weaken an
+  existing test's teeth without touching that test.** Adding the Warden put a
+  SECOND `ZM_NPC_ROLE_TALKER` into the fixture behind
+  `GateRoster_PlacedNpcsCoverEveryRole`, so that unit's own advertised mutation
+  (re-roll `ZM_NPC_VILLAGER` to SHOPKEEP) stopped redding it -- the Warden now
+  covered TALKER, while the interaction gate's talk beat would have started
+  raising a shop. Fixed by splitting the three BEAT NPCs (villager = talk,
+  clerk = buy, caretaker = heal, each with its expected raise kind SPELLED IN THE
+  TEST rather than read back off the row) from the merely-PLACED roster, and
+  asserting role coverage over the beat table
+  (`GateRoster_BeatNpcsCoverEveryRole` +
+  `GateRoster_PlacedNpcsAreStationaryAndIncludeEveryBeat`). When authoring a new
+  data row, re-read the units that walk that table and ask what each one's stated
+  mutation still proves.
+- **★ DEFECT 3, AND THE RULE IT ESTABLISHES: the new branch was pinned by
+  nothing.** `ZM_SelectNpcLines` returns the ordinary lines verbatim for any row
+  with a null gated array, and every pre-existing row is ungated -- so reverting
+  the dispatch arm to the old one-liner left all 33 new units AND the full 36-test
+  windowed suite GREEN. Closed by two new phases on the HEADLESS (therefore
+  CI-visible) `ZM_NpcDispatch_Test`, which drive a real interact edge at the
+  warden row with `WARDEN_CLEARED` clear and then set, asserting the queued line
+  COUNT and the FIRST LINE TEXT. The text clause is load-bearing: both line sets
+  have 2 entries, so a count-only assertion would not catch a selector that always
+  returns the ordinary set. The phases also guard that the warden row is still a
+  genuine demonstration (gate on WARDEN_CLEARED-set, both sets present, first
+  lines distinct), and the flag is captured and RESTORED on every exit path,
+  including a mid-phase failure that leaves it set. **Mutation-verified: with the
+  dispatch arm reverted the test goes RED (exit=1), and green again with the
+  source restored.**
+- **Wrong claims caught and corrected before the commit** (a recurring defect
+  class in this project -- confidently-worded false statements inside
+  argumentative passages): (a) SEVEN comment sites justified the selector's null
+  guard by claiming `ZM_UI_DialogueBox::QueueLines` would CRASH on a `(null,
+  non-zero)` pair. It does not -- `ZM_UI_DialogueBox.cpp:68` rejects a null array
+  as the first disjunct of its first guard, before any dereference. The real
+  consequence is a refused push and a completely MUTE NPC, the same outcome as the
+  over-cap case. Both sanitisers were KEPT (the selector owes its callers a pair
+  that does not contradict itself); only the rationale was wrong. (b) The
+  sparse-index rationale in the story-flag units was premised on a fixed-bound
+  table the code no longer uses. (c) The warden's placement comment claimed he
+  stood "on the north road out of town"; he is ~37 m from the Route polyline and
+  ~1 m from the authored Home walkway centreline. His fiction and lines were
+  rewritten to match where he actually stands and his position was NOT moved --
+  the coordinates are separately derived against every traversal constraint and
+  the windowed suite passed green at them. A note records that when a real route
+  is authored, a road-blocking warden should be re-placed onto the route polyline
+  with every separation re-derived from scratch.
+- **Tests that lock it:** **33** new units -- **18** `ZM_Story` units in the new
+  `Tests/ZM_Tests_StoryFlags.cpp` (id-equals-row-index, unique non-empty debug
+  names, count vs the 4096 ceiling, dense-from-zero allocation, the enum-value-is-
+  the-wire-bit-index and module-4 sizing claims, total/never-null naming,
+  set/clear round trips, no-mutation rejection of NONE and out-of-range, all four
+  gate arms including out-of-range fail-closed and the default-constructed
+  unconditional gate, milestone totality, and a starter state with no registered
+  flag set); **13** `ZM_Data` units over the gate columns and the selector; and a
+  net **+2** in `Tests/ZM_Tests_Interactable.cpp` (the warden row dispatches as
+  dialogue, plus the split roster pair from defect 2). Plus the two mutation-
+  verified `ZM_NpcDispatch_Test` phases above -- the registered automated-test
+  count is UNCHANGED at **36**, because the new coverage is extra phases inside an
+  existing headless test.
+- **Observed gate evidence:** `Build\regen.ps1` green (two new `.cpp` files, no
+  new directory); `zenith build Zenithmon`
+  (`Vulkan_vs2022_Debug_Win64_True`) green; boot units **2425 ran / 2424 passed /
+  0 failed / 1 skipped** (the 1 skip is the pre-existing unrelated
+  `GraphComponent::RegistryWideNodeRoundTrip` quarantine), up **+33** from the
+  2392 baseline; `.github/workflows/zm-tests.yml` bumped **2392 -> 2425** from the
+  OBSERVED boot line, never predicted arithmetic; the engine-only reference
+  baseline **1103 is UNCHANGED** (`Tools/run_unit_gate.ps1`'s default untouched);
+  headless automation **36 passed / 0 failed**; full windowed automation **36
+  passed / 0 failed, ZERO skipped**, with no zero-frame tests. The pre-existing S6
+  windowed tests held their historical frame counts exactly --
+  `ZM_PlayerHomeRoundTrip` **831**, `ZM_NpcWander` **830**, `ZM_S6InteractGate`
+  **749**, `ZM_NpcHeal` **315**, `ZM_NpcShop` **286** -- so the fifth authored NPC
+  perturbed neither the nearest-wins interaction picker nor any traversal route.
+  No commit, push or CI result is claimed.
+- **Contracts held:** `ZM_SaveSchema` is untouched, so ZM-D-136 is honoured and
+  the literal **824-byte** v1 golden is unchanged; `ZM_GameState`'s layout is
+  untouched, so ZM-D-135 is honoured; no `uSERIALIZATION_VERSION` was bumped
+  anywhere; NO new ECS serialization order was consumed, so the next free order
+  remains **114**; no engine file was touched, so the engine baseline **1103**
+  stands and no cross-game regression was owed.
+- **Reversibility / next boundary:** the registry enum's VALUES are durable the
+  moment a save containing them exists, so they evolve by appending, never by
+  renumbering; the debug names, the gate columns and the selector are all local
+  and freely revisable. Five sub-commits of S7 item 2 remain: **SC2** a typed
+  slot/disk layer over the frozen codec; **SC3** world-position capture, resume
+  placement, quit-to-FrontEnd and the autosave latch; **SC4** the save-slot screen
+  and root-menu Save/Quit; **SC5** the title menu and Continue; **SC6** the S7
+  stage-gate windowed test (save -> quit-to-FrontEnd -> continue restores
+  position/party/flags exactly) plus an autosave milestone test. S7 has no visual
+  gate and needs no human sign-off; the next human stop remains the S8
+  vertical-slice go/no-go.
+
+---
 ## 2026-07-21 -- ZM-D-136 -- S7 item 1 SC2 freezes pure transactional save schema v1 and its literal compatibility artifact
 
 - **Decision / boundary:** ship `Games/Zenithmon/Source/Core/ZM_SaveSchema.{h,cpp}`

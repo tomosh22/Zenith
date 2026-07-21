@@ -7,7 +7,9 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
+#include "Zenithmon/Components/ZM_GameStateManager.h"   // TryGetGameState -- the live story flags
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"   // the three shipped raise seams
+#include "Zenithmon/Source/Data/ZM_StoryFlags.h"    // ZM_StoryFlagSet (the gate's input)
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -312,8 +314,31 @@ bool ZM_Interactable::Interact()
 	switch (eKind)
 	{
 	case ZM_NPC_RAISE_DIALOGUE:
-		bRaised = ZM_UI_MenuStack::TryPushDialogue(xRow.m_paszLines, xRow.m_uLineCount);
+	{
+		// Which lines this row says depends on the LIVE story flags. Gating selects
+		// CONTENT only -- it never re-routes which seam a role talks through, so
+		// ZM_RaiseKindForRole above is untouched by it.
+		//
+		// No reachable game state means an all-clear flag set -- a manager-less
+		// context (a headless dispatch unit, or anything running before the
+		// singleton exists) is treated as "NOTHING HAS HAPPENED YET". Every
+		// require-SET gate therefore fails CLOSED under it, so an NPC guarding a
+		// story beat says its GATED lines rather than leaking content the player has
+		// not earned; a require-CLEAR gate PASSES under it by construction, which is
+		// exactly the answer a fresh save would give.
+		const ZM_StoryFlagSet xNoFlags{};
+		ZM_GameState* pxGameState = nullptr;
+		const bool bHasGameState =
+			ZM_GameStateManager::TryGetGameState(pxGameState) && pxGameState != nullptr;
+		const ZM_StoryFlagSet& xFlags =
+			bHasGameState ? pxGameState->m_xStoryFlags : xNoFlags;
+
+		const char* const* paszLines = nullptr;
+		u_int uLineCount = 0u;
+		ZM_SelectNpcLines(xRow, xFlags, paszLines, uLineCount);
+		bRaised = ZM_UI_MenuStack::TryPushDialogue(paszLines, uLineCount);
 		break;
+	}
 	case ZM_NPC_RAISE_SHOP:
 		bRaised = ZM_UI_MenuStack::TryOpenShop(xRow.m_paeStock, xRow.m_uStockCount);
 		break;

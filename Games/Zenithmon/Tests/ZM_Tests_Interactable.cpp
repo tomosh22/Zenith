@@ -49,16 +49,48 @@ namespace
 		DetachedInteractable() : m_xEntity(), m_xInteractable(m_xEntity) {}
 	};
 
-	// The Dawnmere roster the SC7 consolidated gate (ZM_S6InteractGate_Test) can
-	// actually WALK UP TO: the three rows Zenithmon.cpp places in the scene.
-	// ZM_NPC_WANDERER is deliberately excluded -- Zenithmon.cpp does not author it
-	// (it needs SC8's waypoint patrol first), so no walk-up test can ever reach it.
-	// See the unit below for why that exclusion is the whole point.
-	constexpr u_int uPLACED_NPC_COUNT = 3u;
+	// ---- Two SC7 fixtures, deliberately NOT one ----------------------------
+	//
+	// BEATS vs merely-PLACED. The consolidated gate (ZM_S6InteractGate_Test) proves
+	// one BEAT per dispatch role -- talk / buy / heal -- and each beat presses E at
+	// ONE specific authored NPC. Role coverage is asserted over THAT table only.
+	//
+	// The wider placed table must never be allowed to launder beat coverage, and
+	// since S7 SC1 it demonstrably would: it carries the warden, a SECOND TALKER, so
+	// "every role has a placed carrier" stays true after ZM_NPC_VILLAGER is re-rolled
+	// to SHOPKEEP -- while the gate's talk beat silently starts raising a mart. That
+	// is the exact hole splitting these two tables closes.
+
+	// The gate's three beats. m_eExpectedKind is the seam that beat exists to press,
+	// spelled HERE rather than read back off the row, so a re-rolled row disagrees
+	// with the test instead of quietly agreeing with itself.
+	struct GateBeat
+	{
+		ZM_NPC_ID         m_eNpc;
+		const char*       m_szEntityName;    // the entity name Zenithmon.cpp authors
+		const char*       m_szBeat;
+		ZM_NPC_RAISE_KIND m_eExpectedKind;
+	};
+
+	constexpr u_int uGATE_BEAT_COUNT = 3u;
+	const GateBeat axGATE_BEATS[uGATE_BEAT_COUNT] = {
+		{ ZM_NPC_VILLAGER,         "Npc_Villager",       "talk", ZM_NPC_RAISE_DIALOGUE    },
+		{ ZM_NPC_TRADE_POST_CLERK, "Npc_TradePostClerk", "buy",  ZM_NPC_RAISE_SHOP        },
+		{ ZM_NPC_CARETAKER,        "Npc_Caretaker",      "heal", ZM_NPC_RAISE_CARE_CENTER },
+	};
+
+	// Every STATIONARY NPC Zenithmon.cpp stands in Dawnmere -- a SUPERSET of the beat
+	// table (the warden is placed and walkable but carries no beat of his own yet).
+	// ZM_NPC_WANDERER is excluded even though SC8 DOES author it
+	// (ZM_QueueDawnmereWanderer places "Npc_Wanderer"): it MOVES, and everything here
+	// is approached at a FIXED authored position, so reaching it takes the chase
+	// machinery SC8's own walk-up test carries instead.
+	constexpr u_int uPLACED_NPC_COUNT = 4u;
 	const ZM_NPC_ID aePLACED_NPCS[uPLACED_NPC_COUNT] = {
 		ZM_NPC_VILLAGER,           // "Npc_Villager"       -- the gate's talk beat
 		ZM_NPC_TRADE_POST_CLERK,   // "Npc_TradePostClerk" -- the gate's buy beat
 		ZM_NPC_CARETAKER,          // "Npc_Caretaker"      -- the gate's heal beat
+		ZM_NPC_ROUTE_WARDEN,       // "Npc_Warden"         -- S7 SC1's flag-gated talker
 	};
 
 	// The registered NAME of the interaction component, spelled exactly as
@@ -305,6 +337,20 @@ ZENITH_TEST(ZM_Interaction, RaiseKind_NamesAreTotalAndDistinct)
 // Content x mapping: every AUTHORED roster row lands on a real seam. This is the
 // join the two halves of the feature meet at, and neither table alone can catch a
 // row whose role has no arm.
+// S7 item 2 SC1: the warden is the ONE live consumer of story-flag gating, and
+// gating selects CONTENT -- it never re-routes which seam a role talks through. So
+// his row has to keep landing on the dialogue seam specifically: given any other
+// role he would open a mart or a heal prompt and his refusal lines, which are the
+// whole demonstration, would never be spoken.
+ZENITH_TEST(ZM_Interaction, Interactable_WardenRowIsDispatchableAsDialogue)
+{
+	const ZM_NpcData& xRow = ZM_GetNpcData(ZM_NPC_ROUTE_WARDEN);
+	ZENITH_ASSERT_EQ((u_int)ZM_RaiseKindForRole(xRow.m_eRole),
+		(u_int)ZM_NPC_RAISE_DIALOGUE,
+		"'%s' has role %u, which does not talk through ZM_UI_MenuStack::TryPushDialogue",
+		xRow.m_szDisplayName, (u_int)xRow.m_eRole);
+}
+
 ZENITH_TEST(ZM_Interaction, RaiseKind_EveryAuthoredNpcHasASeam)
 {
 	ZENITH_ASSERT_GT(ZM_GetNpcCount(), 0u,
@@ -381,44 +427,110 @@ ZENITH_TEST(ZM_Interaction, Runtime_ProbeCapClearsTheAuthoredRoster)
 
 // ---- SC7 gate preconditions -------------------------------------------------
 
-// The SC7 consolidated gate (ZM_S6InteractGate_Test) proves one beat per ROLE by
-// walking up to the three SCENE-PLACED Dawnmere NPCs. Adding a fourth role, or
-// re-rolling one of those three, would leave a dispatch arm with no gate beat
-// behind it -- and because the gate is m_bRequiresGraphics it SKIPS (== passes) in
-// headless CI, so nothing would go red.
+// The SC7 consolidated gate (ZM_S6InteractGate_Test) proves one beat per ROLE, and
+// because it is m_bRequiresGraphics it SKIPS (== passes) in headless CI -- so a role
+// that quietly lost its beat is reported by NOTHING there. This unit is the headless
+// stand-in, and it walks the BEAT table specifically.
 //
-// This is NOT a duplicate of ZM_Tests_NpcData's Npc_RolesCoverEveryDispatchArm.
-// That unit walks the WHOLE roster, which includes ZM_NPC_WANDERER -- a row
-// Zenithmon.cpp deliberately does not place in any scene. So it stays green in
-// exactly the case this one is written to catch: re-roll ZM_NPC_VILLAGER to
-// SHOPKEEP and the wanderer still covers TALKER, while no PLACED NPC talks any
-// more and the gate's talk beat silently starts raising a mart.
-ZENITH_TEST(ZM_Interaction, GateRoster_PlacedNpcsCoverEveryRole)
+// It deliberately does NOT walk the placed roster: that table carries the warden, a
+// second TALKER, so coverage over it survives the very mutation this unit exists to
+// catch. Nor is it a duplicate of ZM_Tests_NpcData's Npc_RolesCoverEveryDispatchArm,
+// which walks the WHOLE roster (wanderer and warden included) and stays green in
+// exactly the same case.
+//
+// The beats' ids are spelled as enumerators, so "names a real row" is true by
+// construction and no range walk is written for it -- that assertion could not fail,
+// and this file has already had one such tautology removed
+// (Runtime_ProbeCapClearsTheAuthoredRoster).
+ZENITH_TEST(ZM_Interaction, GateRoster_BeatNpcsCoverEveryRole)
 {
-	ZENITH_ASSERT_GT((u_int)ZM_NPC_ROLE_COUNT, 0u,
-		"the role enum must be non-empty, or the walk below is vacuous");
-	ZENITH_ASSERT_GT(uPLACED_NPC_COUNT, 0u,
-		"the placed-NPC table must be non-empty, or every role below fails for the "
-		"wrong reason");
-	// The table names REAL rows -- an out-of-range id would assert inside
-	// ZM_GetNpcData rather than reporting here.
-	for (u_int u = 0u; u < uPLACED_NPC_COUNT; ++u)
+	// REDS ON: adding a ZM_NPC_ROLE enumerator (or deleting a row from axGATE_BEATS).
+	// One beat per role is what "the gate covers the dispatch switch" means, and a
+	// new role with no beat is a shipped arm nothing ever presses. This also subsumes
+	// the usual non-vacuity guard: an EMPTY role enum fails here rather than making
+	// the walk below pass silently.
+	ZENITH_ASSERT_EQ(uGATE_BEAT_COUNT, (u_int)ZM_NPC_ROLE_COUNT,
+		"the gate authors %u beats for %u dispatch roles -- some role has no beat, and "
+		"the gate SKIPS in headless CI so nothing else would report it",
+		uGATE_BEAT_COUNT, (u_int)ZM_NPC_ROLE_COUNT);
+
+	// REDS ON: re-rolling a beat NPC's m_eRole in ZM_NpcData.cpp -- precisely the
+	// ZM_NPC_VILLAGER -> ZM_NPC_ROLE_SHOPKEEP mutation. The talk beat would walk up to
+	// Npc_Villager, press E and be handed a MART; here that reads as the row's seam
+	// (SHOP) disagreeing with the seam the beat was written against (DIALOGUE).
+	for (u_int u = 0u; u < uGATE_BEAT_COUNT; ++u)
 	{
-		ZENITH_ASSERT_LT((u_int)aePLACED_NPCS[u], (u_int)ZM_NPC_COUNT,
-			"placed-NPC table entry %u names no roster row", u);
+		const GateBeat& xBeat = axGATE_BEATS[u];
+		const ZM_NpcData& xRow = ZM_GetNpcData(xBeat.m_eNpc);
+		const ZM_NPC_RAISE_KIND eActual = ZM_RaiseKindForRole(xRow.m_eRole);
+		ZENITH_ASSERT_EQ((u_int)eActual, (u_int)xBeat.m_eExpectedKind,
+			"the gate's %s beat walks up to %s ('%s', role %u), which now raises %s "
+			"instead of %s", xBeat.m_szBeat, xBeat.m_szEntityName, xRow.m_szDisplayName,
+			(u_int)xRow.m_eRole, ZM_NpcRaiseKindName(eActual),
+			ZM_NpcRaiseKindName(xBeat.m_eExpectedKind));
 	}
 
+	// REDS ON: that same re-roll "fixed" by editing m_eExpectedKind above to agree
+	// with the mutated row. The kinds would line up again, but the role the NPC
+	// VACATED would then be carried by no beat at all, and this walk still reports it.
+	//
+	// Together with the count equality above, this also forces the three beats onto
+	// three DISTINCT roles -- three carriers cannot double up on a role without
+	// leaving another uncovered -- so no separate distinctness assertion is written.
 	for (u_int uRole = 0u; uRole < (u_int)ZM_NPC_ROLE_COUNT; ++uRole)
 	{
 		bool bCovered = false;
-		for (u_int u = 0u; u < uPLACED_NPC_COUNT && !bCovered; ++u)
+		for (u_int u = 0u; u < uGATE_BEAT_COUNT && !bCovered; ++u)
 		{
-			bCovered = ((u_int)ZM_GetNpcData(aePLACED_NPCS[u]).m_eRole == uRole);
+			bCovered = ((u_int)ZM_GetNpcData(axGATE_BEATS[u].m_eNpc).m_eRole == uRole);
 		}
 		ZENITH_ASSERT_TRUE(bCovered,
-			"role %u is carried by NO Dawnmere-placed NPC, so the SC7 walk-up gate has "
-			"no beat that exercises it -- place an NPC with that role and add a beat",
+			"role %u is carried by NO gate BEAT, so the SC7 walk-up gate never presses E "
+			"at an NPC that uses it -- give a beat NPC that role, or add a beat",
 			uRole);
+	}
+}
+
+// What the wider PLACED table still legitimately proves, now that role coverage has
+// been taken off it. Every assertion here is about "an NPC standing in the town that
+// a walk-up test can reach"; none of them speaks about roles as a SET, so none of
+// them can stand in for the beat coverage above.
+ZENITH_TEST(ZM_Interaction, GateRoster_PlacedNpcsAreStationaryAndIncludeEveryBeat)
+{
+	// REDS ON: emptying aePLACED_NPCS. Both walks below are bounded by this count, so
+	// an empty table would make them pass while proving nothing.
+	ZENITH_ASSERT_GT(uPLACED_NPC_COUNT, 0u,
+		"the placed-NPC table is empty, so the walks below are vacuous");
+
+	// REDS ON: setting m_bWanders on one of these rows in ZM_NpcData.cpp. Every entry
+	// here is approached at a FIXED authored position; a row that started patrolling
+	// would walk out from under that approach, and the walk-up test would time out
+	// naming a distance rather than the patrol. ZM_Tests_NpcData's
+	// Npc_ExactlyOneRowWanders cannot see this: MOVING the flag from the wanderer onto
+	// the villager keeps its count at exactly one.
+	for (u_int u = 0u; u < uPLACED_NPC_COUNT; ++u)
+	{
+		const ZM_NpcData& xRow = ZM_GetNpcData(aePLACED_NPCS[u]);
+		ZENITH_ASSERT_FALSE(xRow.m_bWanders,
+			"placed NPC '%s' now WANDERS, but this table's entries are walked up to at a "
+			"fixed authored position", xRow.m_szDisplayName);
+	}
+
+	// REDS ON: dropping an NPC from aePLACED_NPCS while a beat still names it -- which
+	// is exactly what removing its ZM_QueueDawnmereNpc call from Zenithmon.cpp is
+	// supposed to look like here. A beat that presses E at an NPC nobody placed is a
+	// gate beat that can only ever time out.
+	for (u_int uBeat = 0u; uBeat < uGATE_BEAT_COUNT; ++uBeat)
+	{
+		bool bPlaced = false;
+		for (u_int u = 0u; u < uPLACED_NPC_COUNT && !bPlaced; ++u)
+		{
+			bPlaced = (aePLACED_NPCS[u] == axGATE_BEATS[uBeat].m_eNpc);
+		}
+		ZENITH_ASSERT_TRUE(bPlaced,
+			"the gate's %s beat walks up to %s, which no longer appears in the placed "
+			"roster -- nothing stands in Dawnmere for that beat to reach",
+			axGATE_BEATS[uBeat].m_szBeat, axGATE_BEATS[uBeat].m_szEntityName);
 	}
 }
 

@@ -2,6 +2,7 @@
 
 #include "Zenithmon/Source/Data/ZM_HumanData.h"        // ZM_HUMAN_ID (which townsfolk appearance a row wears)
 #include "Zenithmon/Source/Data/ZM_ItemData.h"         // ZM_ITEM_ID (a shopkeep's stock list)
+#include "Zenithmon/Source/Data/ZM_StoryFlags.h"       // ZM_StoryGate / ZM_StoryFlagSet (the per-row line gate)
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"     // uMAX_QUEUED_LINES -- the line cap is DERIVED from it
 
 // ============================================================================
@@ -47,6 +48,7 @@ enum ZM_NPC_ID : u_int
 	ZM_NPC_TRADE_POST_CLERK,   // the Trade Post counter (the town's shop)
 	ZM_NPC_CARETAKER,          // the Care Center's heal prompt
 	ZM_NPC_WANDERER,           // a second talker; SC8 gives it a waypoint patrol
+	ZM_NPC_ROUTE_WARDEN,       // the S7 story gate: refuses the way on until cleared
 
 	ZM_NPC_COUNT,
 	ZM_NPC_NONE = ZM_NPC_COUNT   // "no NPC" sentinel
@@ -90,8 +92,36 @@ struct ZM_NpcData
 	const ZM_ITEM_ID*	m_paeStock;        // shop stock (SHOPKEEP only), row-owned
 	u_int				m_uStockCount;
 	bool				m_bWanders;        // SC8 gives this one a waypoint patrol
+	// ---- S7 item 2 SC1: the story gate, APPENDED AT THE END -----------------
+	// These three are last on purpose. Every row above is a POSITIONAL aggregate
+	// initializer, so inserting a field mid-struct silently shifts each trailing
+	// value one column left -- m_bWanders would swallow the gate and the Wanderer
+	// would stop patrolling with no compile error to say why.
+	//
+	// A default gate is unconditional, so an ungated row is simply one that leaves
+	// m_eFlag at ZM_STORY_FLAG_NONE and carries no gated array.
+	ZM_StoryGate		m_xLineGate;        // NONE == ungated
+	const char* const*	m_paszGatedLines;   // spoken while the gate FAILS (null <=> count 0)
+	u_int				m_uGatedLineCount;
 };
 
 // Table accessors (bounds-asserted). ZM_GetNpcData indexes by ZM_NPC_ID.
 const ZM_NpcData&	ZM_GetNpcData(ZM_NPC_ID eId);
 u_int				ZM_GetNpcCount();   // == ZM_NPC_COUNT
+
+// PURE. Which line array this row says RIGHT NOW: the ordinary lines when the
+// gate passes (or the row authored no gated set), the gated set otherwise.
+//
+// The COUNT guarantee exists because ZM_UI_DialogueBox::QueueLines is
+// ALL-OR-NOTHING: a count above uZM_NPC_MAX_LINES would not truncate the
+// conversation, it would make that NPC completely MUTE.
+//
+// The NULL guarantee is about this selector's OWN contract, not the callee's.
+// QueueLines rejects a null array outright, so a (null, non-zero) pair is
+// already mute rather than fatal there -- but it is self-contradictory, and
+// without the guard the clamp would happily emit (nullptr, min(N, cap)): a count
+// that passes every check attached to a pointer that does not. Emitting neither
+// makes the guarantee the selector's own rather than a property borrowed from
+// whichever screen happens to consume it.
+void ZM_SelectNpcLines(const ZM_NpcData& xRow, const ZM_StoryFlagSet& xFlags,
+	const char* const*& paszLinesOut, u_int& uCountOut);

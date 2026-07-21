@@ -201,6 +201,35 @@ egg-step counter: hatch progress belongs to Daycare.
 | `flagCount` | uint16 | Writer emits a high-water count: zero when empty, otherwise highest set flag index + 1; maximum 4096. A reader accepts any count <=4096 and zero-fills the unencoded tail. Reordering/removing assigned indices is a versioned codec change. |
 | `flags` | ceil(flagCount/8) bytes | Bit `N%8` is flag N; unused high bits in the final byte must be zero. |
 
+#### Index registry (authoritative: `Source/Data/ZM_StoryFlags.h`)
+
+The wire format above says nothing about WHICH beat each bit means. That
+mapping is owned by `enum ZM_STORY_FLAG_ID : u_int` in
+`Games/Zenithmon/Source/Data/ZM_StoryFlags.h` (ZM-D-137): **the enum value IS
+the bit index written by this module.** A flag index is durable save surface the
+moment a save containing it exists, so the registry is governed by two rules.
+
+- **Append only.** New flags are added immediately before
+  `ZM_STORY_FLAG_COUNT`. Never reorder, never renumber, and never reuse a
+  retired value -- any such reassignment silently changes the meaning of
+  existing saves and is therefore a versioned codec change under the migration
+  policy below, not an edit to the header. Debug names are not persisted, so
+  RENAMING a flag is free while renumbering one is not.
+  `ZM_STORY_FLAG_NONE` aliases `ZM_STORY_FLAG_COUNT`, is a sentinel for
+  "no flag" in authored data, and is NEVER persisted.
+- **Dense from zero, and that density is a STORAGE contract rather than
+  tidiness.** Because this module sizes itself from the highest SET index
+  (`flagCount` = highest-set-index + 1, then ceil(flagCount/8) bytes), a single
+  sparse allocation -- say index 4000 -- would add ~500 bytes to EVERY save this
+  game ever writes, in every slot, forever. Those bytes cannot be reclaimed by
+  later tidying: shrinking the allocation renumbers indices, which is exactly
+  the versioned codec change the rule above forbids doing casually. Reserve a
+  future flag by adding a row to the registry, never by leaving a numeric gap.
+
+Appending flags remains a no-migration growth path (this module writes its own
+count), which is what makes dense append-only allocation cheap and any other
+allocation pattern expensive.
+
 ### 5. Badges
 
 | Field | v1 type | Notes |

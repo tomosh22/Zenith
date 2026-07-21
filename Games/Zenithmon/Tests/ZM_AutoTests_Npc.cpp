@@ -15,7 +15,8 @@
 //   * the ZM_InteractionRuntime tick reaches ZM_Interactable::Interact(),
 //   * the winner is the RIGHT entity (asserted by EntityID, not just "OK"),
 //   * a screen was ACTUALLY raised (the monotonic raise count moved),
-//   * ...and, for EACH of the three NPC roles, WHICH screen came up, and
+//   * ...and, for EACH of the three NPC roles, WHICH screen came up,
+//   * that a GATED row's spoken lines follow the LIVE story flags, both ways, and
 //   * a candidate that is out of range does NOT raise, and reports OUT_OF_RANGE.
 // The negative half matters as much as the positive one: without it an interactor
 // stubbed permanently true would pass.
@@ -36,6 +37,23 @@
 // Every role case reads its expectations OUT OF THE LIVE TABLE (ZM_GetNpcData) at
 // runtime rather than re-spelling ids as literals: a test that restates the content
 // it is checking proves only that someone typed the same thing twice.
+//
+// ★ WHY THE TWO STORY-GATE CASES EXIST (S7 item 2 SC1). The three role cases above
+// all drive UNGATED rows, and ZM_SelectNpcLines hands back m_paszLines verbatim for
+// any row whose m_paszGatedLines is null -- so with only those cases, reverting
+// ZM_Interactable.cpp's ZM_NPC_RAISE_DIALOGUE arm to its pre-gating one-liner
+//     bRaised = ZM_UI_MenuStack::TryPushDialogue(xRow.m_paszLines, xRow.m_uLineCount);
+// left EVERY test in this game green: nothing drove a GATED row through Interact(),
+// so the whole gating feature was unpinned at the integration boundary (the pure
+// selector's own units cannot see the call site at all). The two cases below drive
+// the ROUTE WARDEN -- the one authored row that carries both sets -- through the
+// real Interact(), once with ZM_STORY_FLAG_WARDEN_CLEARED clear and once with it
+// set, and assert the FIRST LINE TEXT each time. Text, not count: the warden's two
+// sets happen to be the same length, so a count-only clause would not notice a
+// selector (or a reverted arm) that always returns the ordinary lines.
+// They live HERE, in the one headless test, rather than in a windowed walk-up:
+// m_bRequiresGraphics tests are SKIPPED in CI and a skip counts as a pass, so
+// gating coverage parked in one would be invisible exactly where it must not be.
 //
 // NO baked asset beyond what the harness already boots is touched. The fixture
 // scene is created through LoadSceneByIndex(<Dawnmere>, ADDITIVE_WITHOUT_LOADING),
@@ -58,14 +76,18 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+#include "Zenithmon/Components/ZM_GameStateManager.h"   // TryGetGameState -- the LIVE story flags the gate reads
 #include "Zenithmon/Components/ZM_Interactable.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
 #include "Zenithmon/Source/Data/ZM_NpcData.h"
+#include "Zenithmon/Source/Data/ZM_StoryFlags.h"      // ZM_SetStoryFlag / ZM_IsStoryFlagSet / ZM_STORY_FLAG_WARDEN_CLEARED
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"
-#include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // GetDialogue(): IsChoiceArmed / GetQueuedLineCount
+#include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // GetDialogue(): IsChoiceArmed / GetQueuedLineCount / GetCurrentLine
 #include "Zenithmon/Source/UI/ZM_UI_Shop.h"          // GetShopScreen(): GetInventoryCount / GetInventoryItem
+
+#include <cstring>   // strcmp -- the two warden line sets must genuinely differ
 
 namespace
 {
@@ -90,6 +112,11 @@ namespace
 		RoleTalker,
 		RoleShopkeep,
 		RoleCaretaker,
+		// The two STORY-GATE cases, both through the SAME dialogue seam the TALKER case
+		// uses, differing only in the live flag: refusal lines while the gate FAILS, the
+		// ordinary lines once it PASSES.
+		GatedRefusal,
+		GatedCleared,
 		Done,
 	};
 
@@ -107,7 +134,20 @@ namespace
 	bool        g_bNpcPositivePassed = false;     // the TALKER role case
 	bool        g_bNpcShopkeepPassed = false;     // the SHOPKEEP role case
 	bool        g_bNpcCaretakerPassed = false;    // the CARETAKER role case
+	bool        g_bNpcGatedRefusalPassed = false; // the warden with the gate FAILING
+	bool        g_bNpcGatedClearedPassed = false; // ...and with it PASSING
 	bool        g_bNpcSkipped = false;
+	// ★ STATE THIS TEST MUTATES AND MUST PUT BACK. The story flags live on the
+	// DontDestroyOnLoad ZM_GameStateManager's ZM_GameState, so a flag set here would
+	// otherwise be visible to every test that runs after this one in the same process.
+	// Zenithmon.cpp's between-tests hook does re-seed the whole state
+	// (ZM_GameStateManager::ResetGameStateForTests -> *pxGameState = ZM_MakeStarterGameState(),
+	// whose ZM_StoryFlagSet is all-zero), so the leak is already covered -- but this test
+	// restores the flag itself in Verify anyway rather than depending on a hook it does
+	// not own, and because Verify is the only place that runs on EVERY exit path
+	// (including a mid-phase failure that leaves the flag set).
+	bool        g_bNpcWardenFlagCaptured = false;
+	bool        g_bNpcWardenFlagOriginal = false;
 	const char* g_szNpcFailure = "test did not reach verification";
 	// Which role case was running when it broke. The role cases share their failure
 	// text (they share their code), so this is what makes a failure legible -- the
@@ -290,6 +330,109 @@ namespace
 		return true;
 	}
 
+	// The LIVE story flags, read through the SAME seam ZM_Interactable::Interact()
+	// reads them through. Anything else (a locally built ZM_GameState, a flag set
+	// handed straight to ZM_SelectNpcLines) would prove only that the pure selector
+	// works -- which its own units already do -- and would leave the dispatch arm's
+	// TryGetGameState reach completely uncovered.
+	//
+	// ZM_GameStateRoot is authored into FrontEnd by the SAME automation block that
+	// authors ZM_MenuRoot, so once Setup has cleared its menu-singleton skip this
+	// manager is present too; its absence is a regression, not an environment fault,
+	// and therefore FAILS rather than skips.
+	ZM_GameState* ResolveLiveGameState()
+	{
+		ZM_GameState* pxGameState = nullptr;
+		if (!ZM_GameStateManager::TryGetGameState(pxGameState))
+		{
+			return nullptr;
+		}
+		return pxGameState;
+	}
+
+	// CONTENT preconditions for the two gate cases. Without these the cases would
+	// still "pass" against a warden row that had lost its gate, its gated set, or
+	// (worst) had two IDENTICAL line sets -- in which case the first-line-text clause
+	// below could never tell the two selections apart and would be pure decoration.
+	bool WardenRowIsAGenuineGateDemonstration(const ZM_NpcData& xRow)
+	{
+		if (xRow.m_xLineGate.m_eFlag != ZM_STORY_FLAG_WARDEN_CLEARED
+			|| !xRow.m_xLineGate.m_bRequireSet)
+		{
+			FailNpc("the warden row no longer gates on WARDEN_CLEARED being SET, so these "
+				"two cases would drive the same selection twice");
+			return false;
+		}
+		if (xRow.m_paszLines == nullptr || xRow.m_uLineCount == 0u
+			|| xRow.m_paszLines[0] == nullptr
+			|| xRow.m_paszGatedLines == nullptr || xRow.m_uGatedLineCount == 0u
+			|| xRow.m_paszGatedLines[0] == nullptr)
+		{
+			FailNpc("the warden row no longer carries BOTH an ordinary and a gated line "
+				"set, so the selection under test has nothing to choose between");
+			return false;
+		}
+		// The whole reason these cases assert TEXT rather than count: the two authored
+		// sets are the SAME LENGTH, so a count clause alone cannot see a selector -- or a
+		// dispatch arm -- that always hands back the ordinary lines. If the first lines
+		// ever became equal, the text clause would go blind the same way, silently.
+		if (std::strcmp(xRow.m_paszLines[0], xRow.m_paszGatedLines[0]) == 0)
+		{
+			FailNpc("the warden's ordinary and gated first lines are IDENTICAL, so no "
+				"assertion here can tell the two selections apart");
+			return false;
+		}
+		return true;
+	}
+
+	// The shared back half of a GATE CASE: the raise landed on the dialogue seam and
+	// queued EXACTLY the expected line array.
+	//
+	// FAILS IF: ZM_Interactable.cpp's ZM_NPC_RAISE_DIALOGUE arm stops consulting the
+	// live flags -- most bluntly, if it is reverted to the pre-gating one-liner
+	// `TryPushDialogue(xRow.m_paszLines, xRow.m_uLineCount)`, which makes the
+	// gate-FAILING case queue the ordinary lines and trips the first-line clause.
+	// Also fails if the arm passes a flag set that is not the live one (a
+	// default-constructed ZM_StoryFlagSet reads as all-clear, which would make the
+	// gate-PASSING case keep speaking the refusal), or if ZM_SelectNpcLines' two
+	// outputs drift apart from each other.
+	bool CheckRaisedDialogueLines(
+		const ZM_UI_MenuStack& xMenu,
+		const char* const* paszExpectedLines,
+		u_int uExpectedLineCount)
+	{
+		if (xMenu.GetTopScreen() != ZM_MENU_SCREEN_DIALOGUE)
+		{
+			FailNpc("the gated TALKER did not raise the DIALOGUE screen");
+			return false;
+		}
+		const ZM_UI_DialogueBox& xBox = xMenu.GetDialogue();
+		if (xBox.GetQueuedLineCount() != uExpectedLineCount)
+		{
+			FailNpc("the raised dialogue queued the wrong number of lines for the live "
+				"story-flag state");
+			return false;
+		}
+		// GetCurrentLine() answers with a shared EMPTY string when the box is inactive,
+		// so an inactive box would compare unequal and read as a content mismatch. Ask
+		// the honest question first -- and never let the check below run on a box whose
+		// answer means "nothing is showing".
+		if (!xBox.IsActive())
+		{
+			FailNpc("the raised dialogue is not active, so its current line means nothing");
+			return false;
+		}
+		// THE clause the whole gate case exists for. Both sides come from the live table
+		// at runtime; the expected text is never re-spelled here.
+		if (xBox.GetCurrentLine() != paszExpectedLines[0])
+		{
+			FailNpc("the raised dialogue's FIRST LINE is not the set the live story flags "
+				"select -- the dispatch arm is not consulting them");
+			return false;
+		}
+		return true;
+	}
+
 	Zenith_EntityID CreateFixtureNpc(
 		Zenith_SceneData* pxSceneData,
 		const char* szName,
@@ -318,7 +461,11 @@ namespace
 		g_bNpcPositivePassed = false;
 		g_bNpcShopkeepPassed = false;
 		g_bNpcCaretakerPassed = false;
+		g_bNpcGatedRefusalPassed = false;
+		g_bNpcGatedClearedPassed = false;
 		g_bNpcSkipped = false;
+		g_bNpcWardenFlagCaptured = false;
+		g_bNpcWardenFlagOriginal = false;
 		g_szNpcFailure = "test did not reach verification";
 		g_szNpcRoleUnderTest = "<none>";
 		g_xNpcPlayerEntityID = INVALID_ENTITY_ID;
@@ -657,6 +804,120 @@ namespace
 			}
 
 			g_bNpcCaretakerPassed = true;
+			g_eNpcPhase = NpcPhase::GatedRefusal;
+			g_iNpcPhaseFrames = 0;
+			return true;
+		}
+
+		case NpcPhase::GatedRefusal:
+		{
+			const ZM_NpcData& xRow = ZM_GetNpcData(ZM_NPC_ROUTE_WARDEN);
+			if (!WardenRowIsAGenuineGateDemonstration(xRow))
+			{
+				return false;
+			}
+			ZM_GameState* pxGameState = ResolveLiveGameState();
+			if (pxGameState == nullptr)
+			{
+				FailNpc("the persistent ZM_GameStateManager / ZM_GameState could not be "
+					"resolved, so the dispatch arm has no live story flags to consult");
+				return false;
+			}
+
+			// The flag is FORCED CLEAR here rather than assumed clear: this case must not
+			// depend on what an earlier test (or an earlier phase) left behind, and the
+			// gate-PASSING case that follows deliberately sets it. Captured first so
+			// Verify can put back exactly what was there.
+			if (!g_bNpcWardenFlagCaptured)
+			{
+				g_bNpcWardenFlagOriginal =
+					ZM_IsStoryFlagSet(*pxGameState, ZM_STORY_FLAG_WARDEN_CLEARED);
+				g_bNpcWardenFlagCaptured = true;
+			}
+			ZM_SetStoryFlag(*pxGameState, ZM_STORY_FLAG_WARDEN_CLEARED, false);
+			// The write is checked, not trusted: a silently-refused clear would leave this
+			// case asserting the ORDINARY lines against the gated expectation and read as
+			// a dispatch defect instead of a fixture one.
+			if (ZM_IsStoryFlagSet(*pxGameState, ZM_STORY_FLAG_WARDEN_CLEARED))
+			{
+				FailNpc("WARDEN_CLEARED could not be forced clear, so the gate under test "
+					"is not in the state this case needs");
+				return false;
+			}
+
+			if (!RaiseThroughNearNpc(*pxController, *pxNear, xRuntime,
+				ZM_NPC_ROUTE_WARDEN, ZM_NPC_ROLE_TALKER, "WARDEN (flag CLEAR -> refusal)"))
+			{
+				return false;
+			}
+			const ZM_UI_MenuStack* pxMenu = ResolveLiveMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailNpc("the live ZM_UI_MenuStack singleton could not be resolved");
+				return false;
+			}
+			// FAILS IF: the dialogue arm stops selecting by the live flags -- exactly what
+			// the pre-gating one-liner `TryPushDialogue(xRow.m_paszLines, xRow.m_uLineCount)`
+			// does. With the gate FAILING the warden owes the player his refusal; the
+			// one-liner speaks the open-road lines instead, and the first-line clause inside
+			// CheckRaisedDialogueLines is what sees it (the two sets are the same LENGTH,
+			// so the count clause alone would not).
+			if (!CheckRaisedDialogueLines(*pxMenu,
+				xRow.m_paszGatedLines, xRow.m_uGatedLineCount))
+			{
+				return false;
+			}
+
+			g_bNpcGatedRefusalPassed = true;
+			g_eNpcPhase = NpcPhase::GatedCleared;
+			g_iNpcPhaseFrames = 0;
+			return true;
+		}
+
+		case NpcPhase::GatedCleared:
+		{
+			const ZM_NpcData& xRow = ZM_GetNpcData(ZM_NPC_ROUTE_WARDEN);
+			ZM_GameState* pxGameState = ResolveLiveGameState();
+			if (pxGameState == nullptr)
+			{
+				FailNpc("the persistent ZM_GameStateManager / ZM_GameState could not be "
+					"resolved, so the dispatch arm has no live story flags to consult");
+				return false;
+			}
+
+			// The ONE mutation this case is about: flip the story beat and interact again.
+			// Nothing else changes -- same NPC row, same seam, same fixture.
+			ZM_SetStoryFlag(*pxGameState, ZM_STORY_FLAG_WARDEN_CLEARED, true);
+			if (!ZM_IsStoryFlagSet(*pxGameState, ZM_STORY_FLAG_WARDEN_CLEARED))
+			{
+				FailNpc("WARDEN_CLEARED could not be set, so this case would merely repeat "
+					"the gate-failing one");
+				return false;
+			}
+
+			if (!RaiseThroughNearNpc(*pxController, *pxNear, xRuntime,
+				ZM_NPC_ROUTE_WARDEN, ZM_NPC_ROLE_TALKER, "WARDEN (flag SET -> ordinary)"))
+			{
+				return false;
+			}
+			const ZM_UI_MenuStack* pxMenu = ResolveLiveMenuStack();
+			if (pxMenu == nullptr)
+			{
+				FailNpc("the live ZM_UI_MenuStack singleton could not be resolved");
+				return false;
+			}
+			// FAILS IF: the arm hands the selector something other than the LIVE flags --
+			// a default-constructed ZM_StoryFlagSet, or the manager-less all-clear
+			// fallback taken unconditionally -- because either keeps the warden refusing
+			// after the road has been cleared. Together with the case above, this pins the
+			// gate in BOTH directions: a selector wired to always-gated fails here, one
+			// wired to never-gated (the reverted one-liner) fails there.
+			if (!CheckRaisedDialogueLines(*pxMenu, xRow.m_paszLines, xRow.m_uLineCount))
+			{
+				return false;
+			}
+
+			g_bNpcGatedClearedPassed = true;
 			g_eNpcPhase = NpcPhase::Done;
 			return false;
 		}
@@ -673,6 +934,21 @@ namespace
 		Zenith_InputSimulator::ClearFixedDt();
 		ZM_UI_MenuStack::ResetRuntimeStateForTests();
 		ZM_InteractionRuntime::ResetRuntimeStateForTests();
+
+		// PUT THE STORY FLAG BACK. It lives on the DontDestroyOnLoad ZM_GameState, which
+		// outlives this test, so leaving WARDEN_CLEARED set would hand every later test in
+		// the batch a world where the warden's gate has already been passed. Restored to
+		// the value that was actually there, and done HERE because Verify is the one place
+		// that runs on every exit path -- including a phase that failed with the flag set.
+		if (g_bNpcWardenFlagCaptured)
+		{
+			if (ZM_GameState* pxGameState = ResolveLiveGameState())
+			{
+				ZM_SetStoryFlag(*pxGameState, ZM_STORY_FLAG_WARDEN_CLEARED,
+					g_bNpcWardenFlagOriginal);
+			}
+			g_bNpcWardenFlagCaptured = false;
+		}
 
 		if (g_xNpcPreviousScene.IsValid())
 		{
@@ -694,7 +970,9 @@ namespace
 			&& g_bNpcNegativePassed
 			&& g_bNpcPositivePassed
 			&& g_bNpcShopkeepPassed
-			&& g_bNpcCaretakerPassed;
+			&& g_bNpcCaretakerPassed
+			&& g_bNpcGatedRefusalPassed
+			&& g_bNpcGatedClearedPassed;
 		if (!bPassed)
 		{
 			Zenith_Error(LOG_CATEGORY_UNITTEST, "[ZM_NpcDispatch] %s (role case: %s)",
