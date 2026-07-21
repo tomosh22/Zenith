@@ -15,6 +15,256 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-21 -- ZM-D-139 -- S7 item 2 SC3 captures the player's world position, resumes into it, quits to the title, and latches the milestone autosave
+
+- **Decision / boundary:** ship `Games/Zenithmon/Source/Save/ZM_ResumePoint.{h,cpp}`
+  (the PURE half of "where does a loaded save put the player") and
+  `Games/Zenithmon/Source/Save/ZM_Autosave.{h,cpp}` (the milestone autosave policy
+  plus its one live entry point), and wire both into `ZM_GameStateManager` --
+  world-position capture, resume placement, the playerless quit-to-FrontEnd path
+  and the arrival autosave latch. This is SC3 of six in S7 item 2. Before it,
+  `ZM_GameState::m_xWorldPosition` was written by NO runtime code anywhere in the
+  tree and nothing recorded which spawn tag the player had arrived at:
+  `m_szTargetSpawnTag` is the tag of an IN-FLIGHT warp and `ResetTransitionState`
+  memsets it the instant the warp finishes, so by the time anything could ask, it
+  was already gone. The save-slot screen, root-menu Save/Quit, the title menu and
+  Continue are SC4/SC5 and deliberately do not exist here; `ZM_SaveSchema` and
+  `ZM_SaveSlots` are consumed exactly as ZM-D-136/138 froze them, with no codec
+  redesign and nothing added to the payload.
+- **The pure/impure split is the reason this is testable at all.** Validation
+  (`ZM_ValidateResume`, `ZM_CanResume`, `ZM_ShouldUseSavedTransform`,
+  `ZM_IsResumeTransformUsable`), world-position construction
+  (`ZM_MakeWorldPosition`), the yaw conversions (`ZM_YawFromRotation` /
+  `ZM_RotationFromYaw`) and the autosave predicate (`ZM_IsAutosaveTriggerLive`,
+  `ZM_ShouldAutosave`) name NO ECS type, NO component, NO scene handle and NO
+  physics body, so the entire decision surface is pinned by headless boot units
+  with no scene loaded. The impure reaches -- resolving the unique player, reading
+  and writing its body pose, resolving the active scene, asking
+  `ZM_SaveSlots::ResolveLiveSaveBlocker` -- live on `ZM_GameStateManager` and on
+  `ZM_TryAutosave`, and call DOWN into the pure layer. `ZM_SpawnPoint::IsTagValid`
+  is passed IN to `ZM_ValidateResume` as a bool for exactly that reason. Every
+  function in both new TUs is TOTAL and diagnoses mis-authored data with a
+  non-fatal `Zenith_Error(LOG_CATEGORY_GAMEPLAY, ...)`, because the boot units feed
+  them NaNs, oversized tags, the UNSET sentinel and unresolvable build indices ON
+  PURPOSE and one `Zenith_Assert` would end the whole unit gate rather than red one
+  unit. `ZM_ValidateResume` therefore evaluates SCENE -> TAG -> TRANSFORM in that
+  order and only reaches `ZM_GetWorldSpec` after `ZM_FindSceneByBuildIndex` has
+  returned something other than `ZM_SCENE_NONE`, which that accessor asserts on.
+- **`SaveFormat.md`'s transform-vs-spawn-tag TBD is RESOLVED as transform-first,
+  spawn-tag fallback -- and the fallback costs nothing because it is already on the
+  path.** A resume rides the ORDINARY validated `TryQueueWarp`: same fade, same
+  single load, same spawn-marker placement. `ZM_RESUME_INVALID_TRANSFORM` is a
+  RECOVERABLE verdict -- scene and tag are a complete warp destination, so the
+  resume still happens and the marker placement simply stands, with no second
+  placement path to keep in sync. `INVALID_SCENE` and `INVALID_TAG` are refusals.
+  The interesting tag failure is a tag ANOTHER scene offers: it passes grammar and
+  the warp validator's own tag test, and would then WEDGE the transition in
+  `WAITING_FOR_SPAWN` forever because no marker with that tag exists in the
+  destination -- which is why validity is checked against the destination's
+  `ZM_WorldSpec` spawn-tag list, not just against the grammar.
+- **The captured position is the capsule CENTRE; spawn markers store FEET.**
+  `CaptureWorldPosition` records `Zenith_Physics::GetBodyPosition`, and
+  `ApplyPendingResumePlacement` writes it straight back; the feet convention exists
+  only on spawn MARKERS, where `CalculateSpawnCenter` adds the capsule half-extent
+  (0.9 m for the authored 1.8 m player). Mixing the two is a silent 0.9 m error
+  that sinks or floats the player, so the two conventions meet in exactly one
+  function and nowhere else. Capture is TRANSACTIONAL -- it builds into a local and
+  publishes in one assignment, so a rejected pose leaves `m_xWorldPosition`
+  byte-identical -- and it falls back to the scene's FIRST offered spawn tag when
+  no transition recorded an arrival, which is load-bearing rather than defensive:
+  the boot path and every direct `LoadSceneByIndex` enter a scene without a warp,
+  and the codec rejects an empty spawn tag on a set scene index, so without the
+  fallback such a game would be UNSAVEABLE.
+- **Restoring the pose uses `SetBodyPosition`, never `TeleportBody`, and facing is
+  a real contract rather than best effort.** `TeleportBody` forces IDENTITY
+  rotation, so using it here would throw the yaw away two lines later; rotation is
+  written AFTER position for the same reason. The restored yaw SURVIVES
+  `ZM_PlayerController`'s per-frame `Zenith_Physics::EnforceUpright` because that
+  call rebuilds a Y-axis-only quaternion from the body's own heading -- it flattens
+  pitch and roll and PRESERVES yaw. Yaw itself is `atan2` of the quaternion-rotated
+  +Z, matching what `ZM_PlayerController` writes and what `EnforceUpright` reads
+  back, and NEVER `glm::eulerAngles(quat).y`, a documented trap in this repo that
+  collapses once the facing is more than 90 degrees off +Z (so a player facing
+  backwards would be restored facing forwards, and only SOME headings would look
+  wrong). The placement sits AFTER the marker teleport and BEFORE the camera
+  barrier, so `ZM_FollowCamera` acquires the FINAL pose instead of springing across
+  the correction, and it ends with `SyncPhysicsPoseAndInvalidate` because
+  `SetBodyPosition`/`SetBodyRotation` deliberately do NOT fire the body-pose-changed
+  hook that `TeleportBody` does -- without it the transform cache keeps the MARKER
+  pose for a frame and the camera and renderer read the pre-correction pose.
+- **Quit-to-FrontEnd is a PLAYERLESS DESTINATION, and that took two bypasses, not
+  one.** FrontEnd authors no Player, no `ZM_SpawnPoint` and no `ZM_FollowCamera`,
+  and `AdvanceFadeIn` carries TWO INDEPENDENT barriers:
+  `TryResolveFrozenTargetPlayer` (which on failure forces the screen opaque and
+  bounces the state back to `WAITING_FOR_SPAWN`, which bounces straight back) and,
+  separately, `HasUniqueReadyFollowCamera`. Patching only
+  `PollForSpawnAndPlacePlayer` would have left quit-to-title ping-ponging forever
+  on a permanently opaque screen, and falling through would additionally
+  dereference a null controller. Both are bypassed on the playerless path, which is
+  latched ONLY on `TryQueueWarp`'s accept line (so a refused warp cannot clobber an
+  in-flight transition's flag) and cleared only by `ResetTransitionState`. The
+  destination is compared against the literal build index 0 -- mirroring the
+  existing playerless-SOURCE branch -- because `ZM_GetWorldSpec` asserts fatally on
+  the `ZM_SCENE_NONE` an unresolvable index returns. The arrival tail is SHARED
+  between the playerful and playerless paths so there is exactly one, not two that
+  can drift.
+- **The milestone autosave is an edge-triggered latch drained from `OnUpdate`, and
+  it asks SC2's blocker policy rather than re-deriving one.** `ZM_ShouldAutosave`
+  forwards `ZM_SaveSlots::ZM_SAVE_BLOCKER` straight through and compares it against
+  `NONE` rather than listing arms, so a blocker appended later is honoured with no
+  edit and the manual menu save and the autosave can never give "may the player
+  save right now" two different answers; the ONE condition autosave adds is the
+  open menu, because the manual path is reached THROUGH the menu. It cannot fire
+  from the fade-in tail: `ResolveLiveSaveBlocker` consults `IsWarpInProgress()`,
+  true for EVERY non-IDLE transition state, so an in-tail autosave would always
+  resolve `WARP` and silently never save. The arrival tail therefore latches and
+  `OnUpdate` drains it once the machine is IDLE, consuming the latch BEFORE the
+  attempt so a refused or failed autosave is never retried (that is a
+  disk-hammering loop, not a recovery). `ZM_AUTOSAVE_TRIGGER` ships all five
+  milestone arms now so the vocabulary never has to be renumbered, but
+  `ZM_IsAutosaveTriggerLive` gates each one and exactly ONE is live today
+  (`SCENE_ENTERED`) -- declaring a trigger is not shipping it, and a trigger whose
+  producer has not landed cannot ship untestable production code.
+- **★ DEFECT 1, AND THE RULE IT ESTABLISHES: a latch consumed at the top of a
+  function that its own state machine can re-enter is a race waiting to happen.**
+  `ApplyPendingResumePlacement` originally cleared `m_bResumePending` BEFORE
+  validating and applying the pose. But `PollForSpawnAndPlacePlayer` can run MORE
+  THAN ONCE per transition -- both `AdvanceFadeIn` and `PollForCameraAndBeginFadeIn`
+  push the state back to `WAITING_FOR_SPAWN` whenever the frozen player id stops
+  matching the unique player, and every one of those passes re-runs the marker
+  `TeleportBody`. On any second pass the marker teleport would therefore stand as
+  the FINAL placement while the resume no longer applied, silently landing the
+  player on the default spawn with nothing in the log to say why: green today,
+  flaky by construction, and only on the runs where the bounce happens. Fixed by
+  letting the latch die with the TRANSITION instead of with the attempt --
+  `ResetTransitionState` already clears it on BOTH the success tail and the
+  cancel/test-reset path, so it can neither outlive its transition nor retry
+  forever, and every entry re-validates the pose, so re-applying it is idempotent
+  and still fail-closed.
+- **★ DEFECT 2: the milestone-autosave PRODUCER was pinned by nothing.** Deleting
+  the entire `OnUpdate` drain block would have left every test in the suite green,
+  and `ZM_GetAutosaveCount()` was read by NO test at all. Closed by asserting both
+  the counter delta and the Auto slot's probed status in BOTH windowed tests --
+  `+1` and `READY` on the resume arrival, `+0` and `EMPTY` across the quit.
+- **★ DEFECT 3, AND THE RULE IT ESTABLISHES: when two independent guards both
+  produce the right answer, a test that only observes the OUTCOME pins NEITHER.**
+  `ZM_QuitToFrontEnd_Test`'s "must NOT autosave" assertions could not catch the
+  mutations their own comment claimed, because the refusal there is
+  OVER-DETERMINED: the save-blocker policy refuses first, but deleting that policy
+  (or whitelisting the not-overworld blocker) merely falls through to the
+  playerless capture guard, so the counter never moves either way and the test
+  stays green. The comment was corrected to state what those assertions really pin,
+  AND a genuine integration negative was added to `ZM_ResumePlacement_Test`: with
+  the player ALIVE in Dawnmere and a warp IN PROGRESS, it proves the capture WOULD
+  have succeeded on that very frame, then proves `ZM_TryAutosave` refused and the
+  counter did not move. Windowed evidence: `blocker=3` (WARP),
+  `captureWouldWork=true`, `refused=true`, autosaves `0->0`. The POSITIVE half --
+  the same trigger DOES save once the blocker clears -- is the arrival's `+1`, so
+  neither half is satisfiable by an autosave that never fires at all.
+- **★ DEFECT 4: a function shipped with no caller and no test.** A story-flag
+  autosave trigger resolver -- not in the SC3 spec, with no producer until the S8
+  story beats land -- was deleted outright. Uncalled production surface cannot be
+  pinned by anything a caller does, so it lands WITH its producer, in the
+  sub-commit that first calls it, together with its own units. The
+  `STORY_FLAG_SET` enum arm already reserves its vocabulary.
+- **Also fixed pre-commit:** a world-extent unit that bracketed the guard only to
+  `(512, 1e9]`, so the production constant could have been loosened from 4096 to
+  1e8 with the entire boot suite and both windowed tests still green -- i.e. the
+  guard effectively disabled for every realistic bad value an edited save carries;
+  a hand-written 5000.0f rejection fixture (deliberately NOT spelled against
+  `fZM_RESUME_WORLD_EXTENT`, which would move with the code under test) now
+  brackets it to roughly `(540, 5000]`. Plus a comment naming the WRONG guard as
+  the rejecting mechanism, three stale line citations, a missing explicit include
+  (asset-guard extension macros were reaching the TU only through
+  `Zenith_SaveData.h`'s transitive chain, which is nobody's contract to keep), and
+  the one-frame transform-cache staleness described above.
+- **Convention drift cleared, honestly scoped:** three save-area test files were
+  using `std::vector`, which the project conventions forbid outright ("no `std::`
+  containers -- use `Zenith_Vector`"). All three were converted to
+  `Zenith_Vector<u_int8>`, or to a fixed array where that read more cleanly, with a
+  local `AppendBytes` helper standing in for the range-insert `Zenith_Vector` does
+  not carry. A FOURTH file, `Tests/ZM_Tests_SaveSchema.cpp`, predates this work and
+  was deliberately left OUT OF SCOPE and is tracked separately -- the drift is NOT
+  fully cleared. The sharpest trap for whoever does that one: `Zenith_Vector`'s
+  single-argument constructor takes a CAPACITY, not a size, unlike `std::vector`.
+- **Tests that lock it:** **27** new pure `ZM_Save` units in
+  `Tests/ZM_Tests_ResumePoint.cpp` -- the three-way validity answer in SCENE ->
+  TAG -> TRANSFORM order (including the UNSET sentinel, an unresolvable build
+  index, a malformed tag, an empty tag, and a tag PlayerHome offers that Dawnmere
+  does not, which is what makes "the spawn-tag list is actually consulted"
+  testable), the totality of `ZM_CanResume` and `ZM_ResumeValidityName` across the
+  whole enum and past `COUNT`, `ZM_MakeWorldPosition`'s reject-without-mutation
+  contract byte-checked, its tag-tail zero-fill (the codec hard-rejects any non-NUL
+  byte after the terminator, so a memcpy leaving stack garbage makes the game
+  UNSAVEABLE), non-finite and out-of-extent rejection with both bracketing
+  magnitudes, the four cardinal yaw headings and a `ZM_RotationFromYaw` ->
+  `ZM_YawFromRotation` round trip (the cardinal -Z case is what catches
+  `glm::eulerAngles`), a resume decision surviving a full schema round trip, and
+  the autosave policy with FIVE separate one-blocker-each units, because a combined
+  truth table still passes with any one term missing. **2** new registered windowed
+  tests in `Tests/ZM_AutoTests_SaveResume.cpp` carry the ECS half, which no unit can
+  reach. `ZM_ResumePlacement_Test` walks the player under real simulated
+  camera-relative input to a pose provably away from the marker, captures it,
+  resumes through the ordinary warp, and asserts the restored pose IS the captured
+  one, is NOT the marker placement, and arrived across a REAL scene load; it then
+  runs the live-blocker negative above and proves capture REFUSES in a playerless
+  scene. `ZM_QuitToFrontEnd_Test` proves the quit finishes on a scene with no
+  Player, no spawn point and no follow camera.
+- **Observed gate evidence:** `Build\regen.ps1` GREEN (four new `.cpp` files, in
+  the EXISTING `Source/Save/` and `Tests/` directories); `zenith build Zenithmon`
+  (`Vulkan_vs2022_Debug_Win64_True`) GREEN. Boot units **2485 ran / 2484 passed / 0
+  failed / 1 skipped**, up **+27** from 2458; the single skip is the pre-existing
+  unrelated `GraphComponent::RegistryWideNodeRoundTrip` quarantine, which is itself
+  the proof that none of the 27 new units skipped.
+  `.github/workflows/zm-tests.yml` bumped **2458 -> 2485** from the OBSERVED boot
+  line. The engine-only reference baseline **1103 is UNCHANGED** and no engine file
+  was touched, so no cross-game regression sweep was owed. Headless automation **38
+  passed / 0 failed**; FULL WINDOWED automation **38 passed / 0 failed, ZERO
+  skipped**; the registered automated-test count grew **36 -> 38**.
+  `ZM_QuitToFrontEnd_Test` passes in **38 frames** (players 1->0, loads 0->1, peak
+  alpha 1.0, final alpha 0.0, final state IDLE, autosaves 0->0, Auto slot EMPTY).
+  `ZM_ResumePlacement_Test` passes in **236 frames**: spawn (512.000, 26.886,
+  480.000), captured (518.092, 27.149, 471.476), planar error 0.0000 (< 0.050),
+  vertical error 0.0000 (< 0.100), yaw error 0.0000 (< 0.050), **10.477 m from the
+  spawn** against a 2.000 m requirement -- so the restore is provably NOT the spawn
+  teleport -- loads 1->2, so the value came from a real scene load and not from RAM
+  survival, autosaves 0->1, Auto slot READY. **Mutation-verified:** suppressing the
+  `SetBodyPosition` write in `ApplyPendingResumePlacement` turns
+  `ZM_ResumePlacement_Test` RED; restored, the full suite is green again.
+  `%APPDATA%/Zenith/Zenithmon` was verified EMPTY afterwards. **Both new windowed
+  tests are `m_bRequiresGraphics = true`, so the headless CI batch SKIPS them and a
+  skip counts as a PASS -- a green `zm-tests` proves NOTHING about either of them;
+  they are carried by the LOCAL windowed gate alone.** No commit, push or CI result
+  is claimed.
+- **Contracts held:** `ZM_SaveSchema` untouched, so ZM-D-136 is honoured and the
+  literal 824-byte v1 golden is unchanged; `ZM_SaveSlots` consumed exactly as
+  ZM-D-138 shipped it, with nothing added to the payload; `ZM_GameState`'s layout
+  untouched, so ZM-D-135 is honoured -- `m_xWorldPosition` is now WRITTEN for the
+  first time, not redefined. No `uSERIALIZATION_VERSION` bump and NO new ECS
+  serialization order consumed (next free remains **114**): every new
+  `ZM_GameStateManager` member is SESSION state and `WriteToDataStream` still
+  writes only the version word.
+- **Reversibility / next boundary:** the placement RULE (transform-first,
+  spawn-tag fallback), the capsule-CENTRE storage convention and the yaw
+  convention are now durable -- they are recorded in `SaveFormat.md` and a save
+  written under one convention cannot be read under the other. The world-extent
+  bound, the trigger enum's unshipped arms and the drain's frame placement are
+  local and freely revisable, both enums being append-only. Three sub-commits of S7
+  item 2 remain: **SC4** the save-slot screen and root-menu Save/Quit; **SC5** the
+  title menu and Continue; **SC6** the S7 stage-gate windowed test (save ->
+  quit-to-FrontEnd -> continue restores position/party/flags exactly) plus an
+  autosave milestone test. **The hazard SC6 must design around is unchanged and now
+  demonstrated:** `ZM_GameStateManager` is `DontDestroyOnLoad` and its FrontEnd
+  re-author path DESTROYS the duplicate rather than reseeding, so the live
+  `ZM_GameState` survives quit-to-title ENTIRELY IN RAM -- which is precisely why
+  SC3's windowed proof is written against the PLAYER'S BODY POSE (destroyed and
+  rebuilt by the scene reload) rather than a game-state field. SC6's gate test MUST
+  scramble the live state before continuing, and PROVE the scramble took, or it
+  passes green against a Continue that reads zero bytes from disk. S7 has no visual
+  gate and needs no human sign-off; the next human stop remains the S8
+  vertical-slice go/no-go.
+
+---
 ## 2026-07-21 -- ZM-D-138 -- S7 item 2 SC2 adds the typed slot/disk layer over the frozen codec, framed by an explicit length prefix
 
 - **Decision / boundary:** ship `Games/Zenithmon/Source/Save/ZM_SaveSlots.{h,cpp}`

@@ -277,10 +277,10 @@ allocation pattern expensive.
 | `yaw` | float | Player facing |
 
 Load-time placement is a one-time spawn (the same rule as warp spawn tags),
-not gameplay teleportation. Exact precedence between the saved transform and
-the spawn tag when they disagree (e.g. after a terrain re-bake moves ground
-height) is TBD at S7 -- the intended rule is transform-first with spawn-tag
-fallback on validation failure.
+not gameplay teleportation. SETTLED at S7 SC3 (ZM-D-139): precedence is
+transform-first with spawn-tag fallback on validation failure. `position` is
+the capsule CENTRE (spawn markers store FEET, +0.9 half-extent); `yaw` restores
+facing as a real contract, written after placement so `EnforceUpright` keeps it.
 
 ### 11. Options
 
@@ -425,7 +425,14 @@ zero length, or a length beyond the bytes actually available is `CORRUPT_DATA`
   save can occur).
 - **Autosave at milestones**, always to `Auto`, never to a manual slot. The
   milestone list is finalized at S7; planned triggers: badge earned, entering
-  a new scene after a story beat, League entry, tower streak banked.
+  a new scene after a story beat, League entry, tower streak banked. **The
+  latch shipped at S7 SC3 (ZM-D-139)** is edge-triggered (a milestone flag
+  already set does not re-fire) and gated by the SC2 save-blocker policy, so it
+  is refused mid-battle, mid-warp, on a non-overworld scene, or while a menu is
+  open -- quit-to-title (a playerless destination) never autosaves. Milestone
+  flags are `ZM_IsMilestoneStoryFlag` (`WARDEN_CLEARED / ROUTE1_OPEN /
+  GYM1_DEFEATED`); the arrival trigger is drained once per frame from
+  `ZM_GameStateManager::OnUpdate` while the scene is IDLE and overworld.
 
 ## What is NOT saved
 

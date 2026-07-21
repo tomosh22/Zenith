@@ -78,8 +78,8 @@
 
 #include <cstdio>
 #include <cstring>
-#include <vector>
 
+#include "Collections/Zenith_Vector.h"
 #include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_ErrorCode.h"
 #include "Core/Zenith_TestFramework.h"
@@ -469,46 +469,61 @@ namespace
 	// INDEPENDENT oracle for the framing layer under test: the codec is not what
 	// SC2 changes, so using it to learn a blob's true length does not make any
 	// assertion self-referential.
-	std::vector<uint8_t> EncodeBlob(const ZM_GameState& xState, const char* szContext)
+	Zenith_Vector<u_int8> EncodeBlob(const ZM_GameState& xState, const char* szContext)
 	{
 		Zenith_DataStream xStream;
 		const Zenith_Status xStatus = ZM_SaveSchema::Write(xState, xStream);
 		ZENITH_ASSERT_TRUE(xStatus.IsOk(), "%s fixture failed to encode (error %u)",
 			szContext, (u_int)xStatus.Error());
-		if (!xStatus.IsOk()) { return {}; }
-		std::vector<uint8_t> xBytes((size_t)xStream.GetCursor());
-		if (!xBytes.empty())
+		if (!xStatus.IsOk()) { return Zenith_Vector<u_int8>(); }
+		Zenith_Vector<u_int8> xBytes;
+		xBytes.Resize((u_int)xStream.GetCursor());
+		if (xBytes.GetSize() != 0u)
 		{
-			memcpy(xBytes.data(), xStream.GetData(), xBytes.size());
+			memcpy(xBytes.GetDataPointer(), xStream.GetData(), (size_t)xBytes.GetSize());
 		}
 		return xBytes;
 	}
 
-	uint32_t DecodeLE32(const std::vector<uint8_t>& xBytes, size_t uOffset)
+	// Append every byte of xSource onto the end of xTarget. Zenith_Vector carries no
+	// range-insert, so the staged-payload fixtures below assemble their
+	// [4-byte prefix][blob] images with this. Byte-for-byte identical to the
+	// end-insert it replaces: same source range, same order, same destination tail.
+	void AppendBytes(Zenith_Vector<u_int8>& xTarget, const Zenith_Vector<u_int8>& xSource)
 	{
-		if (uOffset + 4u > xBytes.size()) { return 0u; }
-		return (uint32_t)xBytes[uOffset]
-			| ((uint32_t)xBytes[uOffset + 1u] << 8u)
-			| ((uint32_t)xBytes[uOffset + 2u] << 16u)
-			| ((uint32_t)xBytes[uOffset + 3u] << 24u);
+		for (u_int u = 0u; u < xSource.GetSize(); ++u)
+		{
+			xTarget.PushBack(xSource.Get(u));
+		}
+	}
+
+	uint32_t DecodeLE32(const Zenith_Vector<u_int8>& xBytes, u_int uOffset)
+	{
+		if (uOffset + 4u > xBytes.GetSize()) { return 0u; }
+		return (uint32_t)xBytes.Get(uOffset)
+			| ((uint32_t)xBytes.Get(uOffset + 1u) << 8u)
+			| ((uint32_t)xBytes.Get(uOffset + 2u) << 16u)
+			| ((uint32_t)xBytes.Get(uOffset + 3u) << 24u);
 	}
 
 	// A raw byte snapshot of the destination object, padding included. Copy-
 	// constructing a ZM_GameState and memcmp-ing the two would compare
 	// indeterminate padding; memcpy-ing the SAME object's bytes does not.
-	std::vector<uint8_t> SnapshotState(const ZM_GameState& xState)
+	Zenith_Vector<u_int8> SnapshotState(const ZM_GameState& xState)
 	{
-		std::vector<uint8_t> xBytes(sizeof(ZM_GameState));
-		memcpy(xBytes.data(), &xState, sizeof(ZM_GameState));
+		Zenith_Vector<u_int8> xBytes;
+		xBytes.Resize((u_int)sizeof(ZM_GameState));
+		memcpy(xBytes.GetDataPointer(), &xState, sizeof(ZM_GameState));
 		return xBytes;
 	}
 
-	void AssertStateByteIdentical(const std::vector<uint8_t>& xBefore,
+	void AssertStateByteIdentical(const Zenith_Vector<u_int8>& xBefore,
 		const ZM_GameState& xAfter, const char* szContext)
 	{
-		ZENITH_ASSERT_EQ(xBefore.size(), sizeof(ZM_GameState), "%s snapshot size", szContext);
-		if (xBefore.size() != sizeof(ZM_GameState)) { return; }
-		ZENITH_ASSERT_TRUE(memcmp(xBefore.data(), &xAfter, sizeof(ZM_GameState)) == 0,
+		ZENITH_ASSERT_EQ(xBefore.GetSize(), (u_int)sizeof(ZM_GameState),
+			"%s snapshot size", szContext);
+		if (xBefore.GetSize() != (u_int)sizeof(ZM_GameState)) { return; }
+		ZENITH_ASSERT_TRUE(memcmp(xBefore.GetDataPointer(), &xAfter, sizeof(ZM_GameState)) == 0,
 			"%s mutated the destination on failure", szContext);
 	}
 
@@ -581,17 +596,17 @@ namespace
 			ZM_SaveSlots::SlotName(eSlot), ZENITH_SAVE_EXT);
 	}
 
-	bool ReadSlotFileBytes(ZM_SAVE_SLOT eSlot, std::vector<uint8_t>& xOut)
+	bool ReadSlotFileBytes(ZM_SAVE_SLOT eSlot, Zenith_Vector<u_int8>& xOut)
 	{
-		xOut.clear();
+		xOut.Clear();
 		char szPath[ZENITH_MAX_PATH_LENGTH];
 		BuildSlotFilePath(eSlot, szPath, sizeof(szPath));
 		if (!Zenith_FileAccess::FileExists(szPath)) { return false; }
 		uint64_t ulSize = 0u;
 		char* pData = Zenith_FileAccess::ReadFile(szPath, ulSize);
 		if (pData == nullptr) { return false; }
-		xOut.resize((size_t)ulSize);
-		if (ulSize > 0u) { memcpy(xOut.data(), pData, (size_t)ulSize); }
+		xOut.Resize((u_int)ulSize);
+		if (ulSize > 0u) { memcpy(xOut.GetDataPointer(), pData, (size_t)ulSize); }
 		Zenith_FileAccess::FreeFileData(pData);
 		return true;
 	}
@@ -601,13 +616,13 @@ namespace
 	// report CORRUPT_DATA without disturbing magic or format version.
 	bool CorruptSlotPayloadOnDisk(ZM_SAVE_SLOT eSlot)
 	{
-		std::vector<uint8_t> xBytes;
+		Zenith_Vector<u_int8> xBytes;
 		if (!ReadSlotFileBytes(eSlot, xBytes)) { return false; }
-		if (xBytes.size() <= sizeof(Zenith_SaveFileHeader)) { return false; }
-		xBytes[xBytes.size() - 1u] = (uint8_t)(xBytes[xBytes.size() - 1u] ^ 0xffu);
+		if (xBytes.GetSize() <= (u_int)sizeof(Zenith_SaveFileHeader)) { return false; }
+		xBytes.GetBack() = (u_int8)(xBytes.GetBack() ^ 0xffu);
 		char szPath[ZENITH_MAX_PATH_LENGTH];
 		BuildSlotFilePath(eSlot, szPath, sizeof(szPath));
-		Zenith_FileAccess::WriteFile(szPath, xBytes.data(), (uint64_t)xBytes.size());
+		Zenith_FileAccess::WriteFile(szPath, xBytes.GetDataPointer(), (uint64_t)xBytes.GetSize());
 		return true;
 	}
 
@@ -639,32 +654,33 @@ namespace
 		xHeader.ulPayloadSize  = ulPayloadBytes;
 		xHeader.ulTimestamp    = 0u;   // metadata only; LoadEx never inspects it
 
-		std::vector<uint8_t> xFile(sizeof(Zenith_SaveFileHeader) + (size_t)ulPayloadBytes);
-		memcpy(xFile.data(), &xHeader, sizeof(Zenith_SaveFileHeader));
+		Zenith_Vector<u_int8> xFile;
+		xFile.Resize((u_int)(sizeof(Zenith_SaveFileHeader) + (size_t)ulPayloadBytes));
+		memcpy(xFile.GetDataPointer(), &xHeader, sizeof(Zenith_SaveFileHeader));
 		if (ulPayloadBytes > 0u && pPayload != nullptr)
 		{
-			memcpy(xFile.data() + sizeof(Zenith_SaveFileHeader), pPayload,
+			memcpy(xFile.GetDataPointer() + sizeof(Zenith_SaveFileHeader), pPayload,
 				(size_t)ulPayloadBytes);
 		}
 
 		char szPath[ZENITH_MAX_PATH_LENGTH];
 		BuildSlotFilePath(eSlot, szPath, sizeof(szPath));
-		Zenith_FileAccess::WriteFile(szPath, xFile.data(), (uint64_t)xFile.size());
+		Zenith_FileAccess::WriteFile(szPath, xFile.GetDataPointer(), (uint64_t)xFile.GetSize());
 	}
 
 	// The payload bytes the engine recorded for the most recent Save() call --
 	// i.e. exactly what this layer handed the engine: [u32 length][ZMSV blob].
-	bool CaptureLastWrittenPayload(std::vector<uint8_t>& xOut)
+	bool CaptureLastWrittenPayload(Zenith_Vector<u_int8>& xOut)
 	{
-		xOut.clear();
+		xOut.Clear();
 		const Zenith_Vector<Zenith_SaveData::WrittenSlot>& xLog =
 			Zenith_SaveData::GetWrittenSlotsForTest();
 		if (xLog.GetSize() == 0u) { return false; }
 		const Zenith_SaveData::WrittenSlot& xEntry = xLog.GetBack();
-		xOut.resize((size_t)xEntry.m_xPayload.GetSize());
+		xOut.Resize(xEntry.m_xPayload.GetSize());
 		for (u_int u = 0u; u < xEntry.m_xPayload.GetSize(); ++u)
 		{
-			xOut[(size_t)u] = xEntry.m_xPayload.Get(u);
+			xOut.Get(u) = xEntry.m_xPayload.Get(u);
 		}
 		return true;
 	}
@@ -1064,7 +1080,7 @@ ZENITH_TEST(ZM_Save, Slot_ReadOfAMissingSlotIsFileNotFoundAndLeavesDestinationBy
 	if (!RequireTestSlotNames(xScope, "Slot_ReadOfAMissingSlotIsFileNotFoundAndLeavesDestinationByteIdentical")) { return; }
 
 	ZM_GameState xDestination = MakeMaximalState(1u);
-	const std::vector<uint8_t> xBefore = SnapshotState(xDestination);
+	const Zenith_Vector<u_int8> xBefore = SnapshotState(xDestination);
 
 	const Zenith_Status xStatus = ZM_SaveSlots::ReadState(ZM_SAVE_SLOT_1, xDestination);
 	AssertStatus(xStatus, Zenith_ErrorCode::FILE_NOT_FOUND, "ReadState(absent Save1)");
@@ -1091,7 +1107,7 @@ ZENITH_TEST(ZM_Save, Slot_ReadOfACorruptedPayloadLeavesDestinationByteIdentical)
 		"could not corrupt the Save2 file for the test");
 
 	ZM_GameState xDestination = MakeMaximalState(2u);
-	const std::vector<uint8_t> xBefore = SnapshotState(xDestination);
+	const Zenith_Vector<u_int8> xBefore = SnapshotState(xDestination);
 
 	// The SPECIFIC status, not merely "not success": flipping a payload byte breaks
 	// the ENGINE's CRC32, which LoadEx reports as CORRUPT_DATA
@@ -1154,11 +1170,11 @@ ZENITH_TEST(ZM_Save, Slot_ProbeNeverMutatesADamagedSlot)
 	ZENITH_ASSERT_TRUE(CorruptSlotPayloadOnDisk(ZM_SAVE_SLOT_1),
 		"could not corrupt the Save1 file for the test");
 
-	std::vector<uint8_t> xBefore;
+	Zenith_Vector<u_int8> xBefore;
 	ZENITH_ASSERT_TRUE(ReadSlotFileBytes(ZM_SAVE_SLOT_1, xBefore),
 		"the damaged Save1 file could not be read back");
-	ZENITH_ASSERT_GT(xBefore.size(), (size_t)16u, "damaged fixture is implausibly small");
-	if (xBefore.size() <= 16u) { return; }
+	ZENITH_ASSERT_GT(xBefore.GetSize(), 16u, "damaged fixture is implausibly small");
+	if (xBefore.GetSize() <= 16u) { return; }
 
 	// Probe it TWICE -- a "repair on first sight" would still be caught, and an
 	// uncached probe must give the same answer both times.
@@ -1171,16 +1187,17 @@ ZENITH_TEST(ZM_Save, Slot_ProbeNeverMutatesADamagedSlot)
 	// auto-overwritten or "repaired".
 	ZENITH_ASSERT_TRUE(Zenith_SaveData::SlotExists(ZM_SaveSlots::SlotName(ZM_SAVE_SLOT_1)),
 		"probing a damaged slot deleted its file");
-	std::vector<uint8_t> xAfter;
+	Zenith_Vector<u_int8> xAfter;
 	ZENITH_ASSERT_TRUE(ReadSlotFileBytes(ZM_SAVE_SLOT_1, xAfter),
 		"the damaged file disappeared across a probe");
-	ZENITH_ASSERT_EQ(xAfter.size(), xBefore.size(),
+	ZENITH_ASSERT_EQ(xAfter.GetSize(), xBefore.GetSize(),
 		"probing a damaged slot changed its byte length");
 	// EVERY byte, not just the header: a "repair" that rewrote only the payload (or
 	// recomputed the CRC in place) would leave the length and the leading 16 bytes
 	// untouched and slip past a prefix-only comparison.
-	if (xAfter.size() != xBefore.size()) { return; }
-	ZENITH_ASSERT_TRUE(memcmp(xAfter.data(), xBefore.data(), xBefore.size()) == 0,
+	if (xAfter.GetSize() != xBefore.GetSize()) { return; }
+	ZENITH_ASSERT_TRUE(memcmp(xAfter.GetDataPointer(), xBefore.GetDataPointer(),
+		(size_t)xBefore.GetSize()) == 0,
 		"probing a damaged slot rewrote its contents");
 #else
 	ZENITH_SKIP("save-slot disk instrumentation is unavailable in this configuration");
@@ -1341,19 +1358,19 @@ ZENITH_TEST(ZM_Save, Slot_OverwriteReplacesRatherThanAppends)
 	// so a write path that reuses a stream without resetting produces A+B.
 	const ZM_GameState xFirst = MakeMaximalState(0u);
 	const ZM_GameState xSecond = ZM_MakeStarterGameState();
-	const std::vector<uint8_t> xSecondBlob = EncodeBlob(xSecond, "second state");
-	ZENITH_ASSERT_GT(xSecondBlob.size(), (size_t)0u, "second fixture encoded to nothing");
-	if (xSecondBlob.empty()) { return; }
+	const Zenith_Vector<u_int8> xSecondBlob = EncodeBlob(xSecond, "second state");
+	ZENITH_ASSERT_GT(xSecondBlob.GetSize(), 0u, "second fixture encoded to nothing");
+	if (xSecondBlob.GetSize() == 0u) { return; }
 
 	AssertStatus(ZM_SaveSlots::WriteState(xFirst, ZM_SAVE_SLOT_0),
 		Zenith_ErrorCode::SUCCESS, "first WriteState");
 	AssertStatus(ZM_SaveSlots::WriteState(xSecond, ZM_SAVE_SLOT_0),
 		Zenith_ErrorCode::SUCCESS, "second WriteState");
 
-	std::vector<uint8_t> xPayload;
+	Zenith_Vector<u_int8> xPayload;
 	ZENITH_ASSERT_TRUE(CaptureLastWrittenPayload(xPayload),
 		"no Save() was recorded for the overwrite");
-	ZENITH_ASSERT_EQ(xPayload.size(), (size_t)uEXPECTED_PREFIX_BYTES + xSecondBlob.size(),
+	ZENITH_ASSERT_EQ(xPayload.GetSize(), uEXPECTED_PREFIX_BYTES + xSecondBlob.GetSize(),
 		"the second write carries more than the second state alone");
 
 	ZM_GameState xRead;
@@ -1385,8 +1402,8 @@ ZENITH_TEST(ZM_Save, Slot_RecordedPayloadIsPrefixPlusBlob)
 	const ZM_GameState xGolden = MakeGoldenV1State();
 	// Tripwire: the frozen v1 payload for this state is 824 bytes. If this fires,
 	// the CODEC moved, not the framing.
-	const std::vector<uint8_t> xBlob = EncodeBlob(xGolden, "golden v1 state");
-	ZENITH_ASSERT_EQ(xBlob.size(), (size_t)uGOLDEN_BLOB_BYTES,
+	const Zenith_Vector<u_int8> xBlob = EncodeBlob(xGolden, "golden v1 state");
+	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_BLOB_BYTES,
 		"the frozen v1 golden payload length changed");
 
 	AssertStatus(ZM_SaveSlots::WriteState(xGolden, ZM_SAVE_SLOT_0),
@@ -1395,25 +1412,25 @@ ZENITH_TEST(ZM_Save, Slot_RecordedPayloadIsPrefixPlusBlob)
 	ZENITH_ASSERT_EQ(Zenith_SaveData::GetWrittenSlotsForTest().GetSize(), 1u,
 		"one WriteState must produce exactly one engine Save() call");
 
-	std::vector<uint8_t> xPayload;
+	Zenith_Vector<u_int8> xPayload;
 	ZENITH_ASSERT_TRUE(CaptureLastWrittenPayload(xPayload), "no Save() was recorded");
-	ZENITH_ASSERT_EQ(xPayload.size(),
-		(size_t)uEXPECTED_PREFIX_BYTES + (size_t)uGOLDEN_BLOB_BYTES,
+	ZENITH_ASSERT_EQ(xPayload.GetSize(),
+		uEXPECTED_PREFIX_BYTES + uGOLDEN_BLOB_BYTES,
 		"the engine payload is not [4-byte prefix][824-byte ZMSV blob]");
-	if (xPayload.size() < (size_t)uEXPECTED_PREFIX_BYTES + 4u) { return; }
+	if (xPayload.GetSize() < uEXPECTED_PREFIX_BYTES + 4u) { return; }
 
 	// The ZMSV magic must begin at byte 4 -- i.e. the prefix is FIRST, not appended
 	// after the blob.
-	ZENITH_ASSERT_EQ((u_int)xPayload[4], (u_int)'Z', "payload byte 4");
-	ZENITH_ASSERT_EQ((u_int)xPayload[5], (u_int)'M', "payload byte 5");
-	ZENITH_ASSERT_EQ((u_int)xPayload[6], (u_int)'S', "payload byte 6");
-	ZENITH_ASSERT_EQ((u_int)xPayload[7], (u_int)'V', "payload byte 7");
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(4u), (u_int)'Z', "payload byte 4");
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(5u), (u_int)'M', "payload byte 5");
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(6u), (u_int)'S', "payload byte 6");
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(7u), (u_int)'V', "payload byte 7");
 
 	// And the framed blob is byte-for-byte the codec's own output.
-	if (xPayload.size() == (size_t)uEXPECTED_PREFIX_BYTES + xBlob.size())
+	if (xPayload.GetSize() == uEXPECTED_PREFIX_BYTES + xBlob.GetSize())
 	{
-		ZENITH_ASSERT_TRUE(memcmp(xPayload.data() + uEXPECTED_PREFIX_BYTES,
-			xBlob.data(), xBlob.size()) == 0,
+		ZENITH_ASSERT_TRUE(memcmp(xPayload.GetDataPointer() + uEXPECTED_PREFIX_BYTES,
+			xBlob.GetDataPointer(), (size_t)xBlob.GetSize()) == 0,
 			"the framed blob differs from the codec's own bytes");
 	}
 #else
@@ -1435,17 +1452,17 @@ ZENITH_TEST(ZM_Save, Slot_PrefixIsLittleEndian)
 	AssertStatus(ZM_SaveSlots::WriteState(MakeGoldenV1State(), ZM_SAVE_SLOT_0),
 		Zenith_ErrorCode::SUCCESS, "WriteState(golden, Save0)");
 
-	std::vector<uint8_t> xPayload;
+	Zenith_Vector<u_int8> xPayload;
 	ZENITH_ASSERT_TRUE(CaptureLastWrittenPayload(xPayload), "no Save() was recorded");
-	if (xPayload.size() < (size_t)uEXPECTED_PREFIX_BYTES) { return; }
+	if (xPayload.GetSize() < uEXPECTED_PREFIX_BYTES) { return; }
 
 	// Byte-by-byte, so a memcpy of a struct or a byte-swap is caught explicitly.
-	ZENITH_ASSERT_EQ((u_int)xPayload[0], (u_int)(uGOLDEN_BLOB_BYTES & 0xffu), "prefix byte 0");
-	ZENITH_ASSERT_EQ((u_int)xPayload[1], (u_int)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu),
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(0u), (u_int)(uGOLDEN_BLOB_BYTES & 0xffu), "prefix byte 0");
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(1u), (u_int)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu),
 		"prefix byte 1");
-	ZENITH_ASSERT_EQ((u_int)xPayload[2], (u_int)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu),
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(2u), (u_int)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu),
 		"prefix byte 2");
-	ZENITH_ASSERT_EQ((u_int)xPayload[3], (u_int)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu),
+	ZENITH_ASSERT_EQ((u_int)xPayload.Get(3u), (u_int)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu),
 		"prefix byte 3");
 	ZENITH_ASSERT_EQ((u_int)DecodeLE32(xPayload, 0u), uGOLDEN_BLOB_BYTES,
 		"the little-endian prefix does not decode to the 824-byte blob length");
@@ -1477,17 +1494,17 @@ ZENITH_TEST(ZM_Save, Slot_StagedReadbackDecodesWithoutTouchingDisk)
 	AssertStatus(ZM_SaveSlots::WriteState(xGolden, ZM_SAVE_SLOT_0),
 		Zenith_ErrorCode::SUCCESS, "WriteState(golden, Save0)");
 
-	std::vector<uint8_t> xPayload;
+	Zenith_Vector<u_int8> xPayload;
 	ZENITH_ASSERT_TRUE(CaptureLastWrittenPayload(xPayload), "no Save() was recorded");
-	ZENITH_ASSERT_EQ(xPayload.size(),
-		(size_t)uEXPECTED_PREFIX_BYTES + (size_t)uGOLDEN_BLOB_BYTES, "captured payload size");
-	if (xPayload.size() != (size_t)uEXPECTED_PREFIX_BYTES + (size_t)uGOLDEN_BLOB_BYTES)
+	ZENITH_ASSERT_EQ(xPayload.GetSize(),
+		uEXPECTED_PREFIX_BYTES + uGOLDEN_BLOB_BYTES, "captured payload size");
+	if (xPayload.GetSize() != uEXPECTED_PREFIX_BYTES + uGOLDEN_BLOB_BYTES)
 	{
 		return;
 	}
 	// The staged buffer must be smaller than the stream's 1024-byte allocation for
 	// the capacity ambiguity to exist at all.
-	ZENITH_ASSERT_LT(xPayload.size(), (size_t)1024u,
+	ZENITH_ASSERT_LT(xPayload.GetSize(), 1024u,
 		"the fixture no longer exercises the capacity-vs-length ambiguity");
 
 	// Remove every file, then serve the bytes from the stash.
@@ -1496,7 +1513,7 @@ ZENITH_TEST(ZM_Save, Slot_StagedReadbackDecodesWithoutTouchingDisk)
 		"the Save0 file survived DeleteAllSlotsForTests");
 
 	Zenith_SaveData::SetReadbackForTest(ZM_SaveSlots::SlotName(ZM_SAVE_SLOT_0),
-		ZM_SaveSlots::uGAME_VERSION, xPayload.data(), (uint64_t)xPayload.size());
+		ZM_SaveSlots::uGAME_VERSION, xPayload.GetDataPointer(), (uint64_t)xPayload.GetSize());
 
 	ZM_GameState xDestination;
 	const Zenith_Status xStatus = ZM_SaveSlots::ReadState(ZM_SAVE_SLOT_0, xDestination);
@@ -1543,7 +1560,7 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsAPrefixLongerThanTheStagedPayload)
 		ZM_SaveSlots::uGAME_VERSION, auTruncated, 2ull);
 
 	ZM_GameState xDestination = MakeMaximalState(1u);
-	const std::vector<uint8_t> xBefore = SnapshotState(xDestination);
+	const Zenith_Vector<u_int8> xBefore = SnapshotState(xDestination);
 
 	const Zenith_Status xStatus = ZM_SaveSlots::ReadState(ZM_SAVE_SLOT_0, xDestination);
 	AssertStatus(xStatus, Zenith_ErrorCode::CORRUPT_DATA, "ReadState(overlong prefix)");
@@ -1593,17 +1610,18 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsADiskPayloadTooSmallForAPrefix)
 	// subject arm below pass for entirely the wrong reason -- LoadEx would reject the
 	// file itself and report CORRUPT_DATA without the layer's guard ever running.
 	const ZM_GameState xGolden = MakeGoldenV1State();
-	const std::vector<uint8_t> xBlob = EncodeBlob(xGolden, "golden v1 state");
-	ZENITH_ASSERT_EQ(xBlob.size(), (size_t)uGOLDEN_BLOB_BYTES, "golden blob length");
-	if (xBlob.size() != (size_t)uGOLDEN_BLOB_BYTES) { return; }
+	const Zenith_Vector<u_int8> xBlob = EncodeBlob(xGolden, "golden v1 state");
+	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_BLOB_BYTES, "golden blob length");
+	if (xBlob.GetSize() != uGOLDEN_BLOB_BYTES) { return; }
 
-	std::vector<uint8_t> xWellFormed;
-	xWellFormed.push_back((uint8_t)(uGOLDEN_BLOB_BYTES & 0xffu));
-	xWellFormed.push_back((uint8_t)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu));
-	xWellFormed.push_back((uint8_t)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu));
-	xWellFormed.push_back((uint8_t)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu));
-	xWellFormed.insert(xWellFormed.end(), xBlob.begin(), xBlob.end());
-	WriteHandBuiltSlotFile(ZM_SAVE_SLOT_0, xWellFormed.data(), (uint64_t)xWellFormed.size());
+	Zenith_Vector<u_int8> xWellFormed;
+	xWellFormed.PushBack((u_int8)(uGOLDEN_BLOB_BYTES & 0xffu));
+	xWellFormed.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu));
+	xWellFormed.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu));
+	xWellFormed.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu));
+	AppendBytes(xWellFormed, xBlob);
+	WriteHandBuiltSlotFile(ZM_SAVE_SLOT_0, xWellFormed.GetDataPointer(),
+		(uint64_t)xWellFormed.GetSize());
 
 	ZENITH_ASSERT_EQ((u_int)ZM_SaveSlots::ProbeSlot(ZM_SAVE_SLOT_0),
 		(u_int)ZM_SAVE_SLOT_READY,
@@ -1624,20 +1642,20 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsADiskPayloadTooSmallForAPrefix)
 	WriteHandBuiltSlotFile(ZM_SAVE_SLOT_0, auSubPrefix, 2ull);
 
 	// The file really is header + exactly two payload bytes...
-	std::vector<uint8_t> xOnDisk;
+	Zenith_Vector<u_int8> xOnDisk;
 	ZENITH_ASSERT_TRUE(ReadSlotFileBytes(ZM_SAVE_SLOT_0, xOnDisk),
 		"the hand-built sub-prefix file is not on disk");
-	ZENITH_ASSERT_EQ(xOnDisk.size(), sizeof(Zenith_SaveFileHeader) + (size_t)2u,
+	ZENITH_ASSERT_EQ(xOnDisk.GetSize(), (u_int)(sizeof(Zenith_SaveFileHeader) + (size_t)2u),
 		"the hand-built sub-prefix file is not header + 2 bytes");
 	// ...and check-then-use: the assert macros RECORD AND CONTINUE, so the header read
 	// below must not run on a short buffer.
-	if (xOnDisk.size() != sizeof(Zenith_SaveFileHeader) + (size_t)2u) { return; }
+	if (xOnDisk.GetSize() != (u_int)(sizeof(Zenith_SaveFileHeader) + (size_t)2u)) { return; }
 
 	// EVERY engine gate is satisfied by this file, asserted directly rather than
 	// assumed. This is what makes the CORRUPT_DATA verdict attributable to THIS
 	// layer's guard and not to Zenith_SaveData::LoadEx's own header/CRC checks.
 	Zenith_SaveFileHeader xOnDiskHeader = {};
-	memcpy(&xOnDiskHeader, xOnDisk.data(), sizeof(Zenith_SaveFileHeader));
+	memcpy(&xOnDiskHeader, xOnDisk.GetDataPointer(), sizeof(Zenith_SaveFileHeader));
 	ZENITH_ASSERT_EQ((u_int)xOnDiskHeader.uMagic, (u_int)uZENITH_SAVE_MAGIC,
 		"the fixture would be rejected at the engine's magic gate");
 	ZENITH_ASSERT_EQ((u_int)xOnDiskHeader.uFormatVersion, (u_int)uZENITH_SAVE_FORMAT_VERSION,
@@ -1656,7 +1674,7 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsADiskPayloadTooSmallForAPrefix)
 		"a payload too small to hold the length prefix must probe DAMAGED");
 
 	ZM_GameState xDestination = MakeMaximalState(1u);
-	const std::vector<uint8_t> xBefore = SnapshotState(xDestination);
+	const Zenith_Vector<u_int8> xBefore = SnapshotState(xDestination);
 	const Zenith_Status xStatus = ZM_SaveSlots::ReadState(ZM_SAVE_SLOT_0, xDestination);
 	AssertStatus(xStatus, Zenith_ErrorCode::CORRUPT_DATA, "ReadState(sub-prefix payload)");
 	// TRANSACTIONAL: the caller's state survives a file this malformed untouched.
@@ -1665,14 +1683,15 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsADiskPayloadTooSmallForAPrefix)
 	// ...and neither the probe nor the read repaired, truncated or deleted it.
 	ZENITH_ASSERT_TRUE(Zenith_SaveData::SlotExists(ZM_SaveSlots::SlotName(ZM_SAVE_SLOT_0)),
 		"reading a sub-prefix slot deleted its file");
-	std::vector<uint8_t> xAfter;
+	Zenith_Vector<u_int8> xAfter;
 	ZENITH_ASSERT_TRUE(ReadSlotFileBytes(ZM_SAVE_SLOT_0, xAfter),
 		"the sub-prefix file disappeared across a probe + read");
-	ZENITH_ASSERT_EQ(xAfter.size(), xOnDisk.size(),
+	ZENITH_ASSERT_EQ(xAfter.GetSize(), xOnDisk.GetSize(),
 		"the sub-prefix file changed length across a probe + read");
-	if (xAfter.size() == xOnDisk.size())
+	if (xAfter.GetSize() == xOnDisk.GetSize())
 	{
-		ZENITH_ASSERT_TRUE(memcmp(xAfter.data(), xOnDisk.data(), xOnDisk.size()) == 0,
+		ZENITH_ASSERT_TRUE(memcmp(xAfter.GetDataPointer(), xOnDisk.GetDataPointer(),
+			(size_t)xOnDisk.GetSize()) == 0,
 			"the sub-prefix file was rewritten across a probe + read");
 	}
 	// The scope's destructor deletes all four _Test files, so this unit leaves NOTHING
@@ -1707,22 +1726,22 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsAnOversizedPrefix)
 	// lying prefix is reported as CORRUPT_DATA (not BAD_MAGIC, not SUCCESS) and that
 	// the caller's state survives. It reds if the layer forwards a bogus length as a
 	// different status, or pre-clears/partially publishes the destination.
-	const std::vector<uint8_t> xBlob = EncodeBlob(MakeGoldenV1State(), "golden v1 state");
-	ZENITH_ASSERT_EQ(xBlob.size(), (size_t)uGOLDEN_BLOB_BYTES, "golden blob length");
-	if (xBlob.empty()) { return; }
+	const Zenith_Vector<u_int8> xBlob = EncodeBlob(MakeGoldenV1State(), "golden v1 state");
+	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_BLOB_BYTES, "golden blob length");
+	if (xBlob.GetSize() == 0u) { return; }
 
-	std::vector<uint8_t> xStaged;
-	xStaged.push_back(0xffu);
-	xStaged.push_back(0xffu);
-	xStaged.push_back(0xffu);
-	xStaged.push_back(0xffu);
-	xStaged.insert(xStaged.end(), xBlob.begin(), xBlob.end());
+	Zenith_Vector<u_int8> xStaged;
+	xStaged.PushBack((u_int8)0xffu);
+	xStaged.PushBack((u_int8)0xffu);
+	xStaged.PushBack((u_int8)0xffu);
+	xStaged.PushBack((u_int8)0xffu);
+	AppendBytes(xStaged, xBlob);
 
 	Zenith_SaveData::SetReadbackForTest(ZM_SaveSlots::SlotName(ZM_SAVE_SLOT_0),
-		ZM_SaveSlots::uGAME_VERSION, xStaged.data(), (uint64_t)xStaged.size());
+		ZM_SaveSlots::uGAME_VERSION, xStaged.GetDataPointer(), (uint64_t)xStaged.GetSize());
 
 	ZM_GameState xDestination = MakeMaximalState(2u);
-	const std::vector<uint8_t> xBefore = SnapshotState(xDestination);
+	const Zenith_Vector<u_int8> xBefore = SnapshotState(xDestination);
 
 	const Zenith_Status xStatus = ZM_SaveSlots::ReadState(ZM_SAVE_SLOT_0, xDestination);
 	AssertStatus(xStatus, Zenith_ErrorCode::CORRUPT_DATA, "ReadState(oversized prefix)");
@@ -1763,35 +1782,35 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsAStagedPayloadWithACorruptInnerMagic)
 	ZENITH_ASSERT_EQ((u_int)ZM_SaveSlots::ProbeSlot(ZM_SAVE_SLOT_0),
 		(u_int)ZM_SAVE_SLOT_READY, "the fixture must be READY before the payload is poisoned");
 
-	std::vector<uint8_t> xDiskBefore;
+	Zenith_Vector<u_int8> xDiskBefore;
 	ZENITH_ASSERT_TRUE(ReadSlotFileBytes(ZM_SAVE_SLOT_0, xDiskBefore),
 		"the fixture file could not be read back");
 
-	std::vector<uint8_t> xBlob = EncodeBlob(xGolden, "golden v1 state");
-	ZENITH_ASSERT_EQ(xBlob.size(), (size_t)uGOLDEN_BLOB_BYTES, "golden blob length");
-	if (xBlob.size() != (size_t)uGOLDEN_BLOB_BYTES) { return; }
+	Zenith_Vector<u_int8> xBlob = EncodeBlob(xGolden, "golden v1 state");
+	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_BLOB_BYTES, "golden blob length");
+	if (xBlob.GetSize() != uGOLDEN_BLOB_BYTES) { return; }
 
 	// Byte 0 of a ZMSV blob is the low byte of ZM_SaveSchema::uMAGIC. Pinned, so this
 	// unit fails loudly rather than silently corrupting some unrelated field if the
 	// blob layout ever moves.
-	const uint8_t uOriginalMagicByte = xBlob[0];
+	const u_int8 uOriginalMagicByte = xBlob.Get(0u);
 	ZENITH_ASSERT_EQ((u_int)uOriginalMagicByte, (u_int)(ZM_SaveSchema::uMAGIC & 0xffu),
 		"byte 0 of a ZMSV blob is no longer the magic's low byte");
-	xBlob[0] = (uint8_t)(uOriginalMagicByte ^ 0xffu);
-	ZENITH_ASSERT_NE((u_int)xBlob[0], (u_int)uOriginalMagicByte,
+	xBlob.Get(0u) = (u_int8)(uOriginalMagicByte ^ 0xffu);
+	ZENITH_ASSERT_NE((u_int)xBlob.Get(0u), (u_int)uOriginalMagicByte,
 		"the magic byte was not actually mutated");
 
 	// [u32 LE length][blob] -- exactly the framing WriteState produces, with a HONEST
 	// length. Only the magic is wrong, so any rejection can only come from the
 	// codec's magic gate, never from the prefix bounds check above it.
-	std::vector<uint8_t> xStaged;
-	xStaged.push_back((uint8_t)(uGOLDEN_BLOB_BYTES & 0xffu));
-	xStaged.push_back((uint8_t)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu));
-	xStaged.push_back((uint8_t)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu));
-	xStaged.push_back((uint8_t)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu));
-	xStaged.insert(xStaged.end(), xBlob.begin(), xBlob.end());
+	Zenith_Vector<u_int8> xStaged;
+	xStaged.PushBack((u_int8)(uGOLDEN_BLOB_BYTES & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu));
+	AppendBytes(xStaged, xBlob);
 	Zenith_SaveData::SetReadbackForTest(ZM_SaveSlots::SlotName(ZM_SAVE_SLOT_0),
-		ZM_SaveSlots::uGAME_VERSION, xStaged.data(), (uint64_t)xStaged.size());
+		ZM_SaveSlots::uGAME_VERSION, xStaged.GetDataPointer(), (uint64_t)xStaged.GetSize());
 
 	// The FILE is intact and its CRC still verifies, so LoadEx would report SUCCESS on
 	// the disk path: a layer that only forwarded the engine's status reports READY
@@ -1801,7 +1820,7 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsAStagedPayloadWithACorruptInnerMagic)
 		"a payload the codec rejects must probe DAMAGED even though the file is intact");
 
 	ZM_GameState xDestination = MakeMaximalState(1u);
-	const std::vector<uint8_t> xBefore = SnapshotState(xDestination);
+	const Zenith_Vector<u_int8> xBefore = SnapshotState(xDestination);
 	const Zenith_Status xStatus = ZM_SaveSlots::ReadState(ZM_SAVE_SLOT_0, xDestination);
 	// The codec's SPECIFIC reason, forwarded verbatim (ZM_SaveSchema.cpp:1107-1111).
 	// Reds if ReadState collapses the callback status into CORRUPT_DATA, or answers
@@ -1810,15 +1829,16 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsAStagedPayloadWithACorruptInnerMagic)
 	AssertStateByteIdentical(xBefore, xDestination, "ReadState(bad inner magic)");
 
 	// ...and neither call repaired, truncated or deleted the file it rejected.
-	std::vector<uint8_t> xDiskAfter;
+	Zenith_Vector<u_int8> xDiskAfter;
 	ZENITH_ASSERT_TRUE(ReadSlotFileBytes(ZM_SAVE_SLOT_0, xDiskAfter),
 		"the rejected slot's file disappeared");
-	ZENITH_ASSERT_EQ(xDiskAfter.size(), xDiskBefore.size(),
+	ZENITH_ASSERT_EQ(xDiskAfter.GetSize(), xDiskBefore.GetSize(),
 		"the rejected slot's file changed length");
-	if (!xDiskBefore.empty() && xDiskAfter.size() == xDiskBefore.size())
+	if (xDiskBefore.GetSize() != 0u && xDiskAfter.GetSize() == xDiskBefore.GetSize())
 	{
 		ZENITH_ASSERT_TRUE(
-			memcmp(xDiskAfter.data(), xDiskBefore.data(), xDiskBefore.size()) == 0,
+			memcmp(xDiskAfter.GetDataPointer(), xDiskBefore.GetDataPointer(),
+				(size_t)xDiskBefore.GetSize()) == 0,
 			"the rejected slot's file was rewritten");
 	}
 #else
@@ -1918,7 +1938,7 @@ ZENITH_TEST(ZM_Save, Slot_ReadRejectsAnOutOfRangeSlot)
 	// side had no unit at all, so ReadState's documented INVALID_ARGUMENT return was
 	// entirely unexecuted.
 	ZM_GameState xDestination = MakeMaximalState(1u);
-	const std::vector<uint8_t> xBefore = SnapshotState(xDestination);
+	const Zenith_Vector<u_int8> xBefore = SnapshotState(xDestination);
 
 	const ZM_SAVE_SLOT aeBadSlots[] = { ZM_SAVE_SLOT_NONE, (ZM_SAVE_SLOT)uGARBAGE_SLOT_ID };
 	for (u_int u = 0u; u < 2u; ++u)
@@ -2005,19 +2025,19 @@ ZENITH_TEST(ZM_Save, Slot_WriteAnswersFromTheVerifyProbeNotFromSaveReturn)
 	// landed on disk is perfectly good. Only a layer that BELIEVES its re-probe can
 	// report corruption here.
 	const ZM_GameState xGolden = MakeGoldenV1State();
-	std::vector<uint8_t> xBlob = EncodeBlob(xGolden, "golden v1 state");
-	ZENITH_ASSERT_EQ(xBlob.size(), (size_t)uGOLDEN_BLOB_BYTES, "golden blob length");
-	if (xBlob.size() != (size_t)uGOLDEN_BLOB_BYTES) { return; }
-	xBlob[0] = (uint8_t)(xBlob[0] ^ 0xffu);   // break the ZMSV magic; honest length
+	Zenith_Vector<u_int8> xBlob = EncodeBlob(xGolden, "golden v1 state");
+	ZENITH_ASSERT_EQ(xBlob.GetSize(), uGOLDEN_BLOB_BYTES, "golden blob length");
+	if (xBlob.GetSize() != uGOLDEN_BLOB_BYTES) { return; }
+	xBlob.Get(0u) = (u_int8)(xBlob.Get(0u) ^ 0xffu);   // break the ZMSV magic; honest length
 
-	std::vector<uint8_t> xStaged;
-	xStaged.push_back((uint8_t)(uGOLDEN_BLOB_BYTES & 0xffu));
-	xStaged.push_back((uint8_t)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu));
-	xStaged.push_back((uint8_t)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu));
-	xStaged.push_back((uint8_t)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu));
-	xStaged.insert(xStaged.end(), xBlob.begin(), xBlob.end());
+	Zenith_Vector<u_int8> xStaged;
+	xStaged.PushBack((u_int8)(uGOLDEN_BLOB_BYTES & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 8u) & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 16u) & 0xffu));
+	xStaged.PushBack((u_int8)((uGOLDEN_BLOB_BYTES >> 24u) & 0xffu));
+	AppendBytes(xStaged, xBlob);
 	Zenith_SaveData::SetReadbackForTest(ZM_SaveSlots::SlotName(ZM_SAVE_SLOT_1),
-		ZM_SaveSlots::uGAME_VERSION, xStaged.data(), (uint64_t)xStaged.size());
+		ZM_SaveSlots::uGAME_VERSION, xStaged.GetDataPointer(), (uint64_t)xStaged.GetSize());
 
 	// CORRUPT_DATA, not SUCCESS: the write "succeeded" by every signal except the one
 	// this layer is documented to trust.
@@ -2036,13 +2056,13 @@ ZENITH_TEST(ZM_Save, Slot_WriteAnswersFromTheVerifyProbeNotFromSaveReturn)
 	// (c) The bytes handed to the engine are the GOOD ones -- the poison is a
 	// read-side fixture and must never have been written. If this fired, the unit
 	// would be proving something else entirely.
-	std::vector<uint8_t> xPayload;
+	Zenith_Vector<u_int8> xPayload;
 	ZENITH_ASSERT_TRUE(CaptureLastWrittenPayload(xPayload), "no Save() was recorded");
-	ZENITH_ASSERT_EQ(xPayload.size(),
-		(size_t)uEXPECTED_PREFIX_BYTES + (size_t)uGOLDEN_BLOB_BYTES, "written payload size");
-	if (xPayload.size() >= (size_t)uEXPECTED_PREFIX_BYTES + 1u)
+	ZENITH_ASSERT_EQ(xPayload.GetSize(),
+		uEXPECTED_PREFIX_BYTES + uGOLDEN_BLOB_BYTES, "written payload size");
+	if (xPayload.GetSize() >= uEXPECTED_PREFIX_BYTES + 1u)
 	{
-		ZENITH_ASSERT_EQ((u_int)xPayload[uEXPECTED_PREFIX_BYTES],
+		ZENITH_ASSERT_EQ((u_int)xPayload.Get(uEXPECTED_PREFIX_BYTES),
 			(u_int)(ZM_SaveSchema::uMAGIC & 0xffu),
 			"the poisoned read fixture leaked into the bytes that were written");
 	}

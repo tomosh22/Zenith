@@ -30,6 +30,15 @@ public:
 	// SC5 whiteout destination: Dawnmere Village (build index 2), its TownCenter spawn.
 	static constexpr u_int uWHITEOUT_BUILD_INDEX = 2u;
 	static constexpr const char* szWHITEOUT_SPAWN_TAG = "TownCenter";
+	// The title screen, and the ONLY playerless destination in the game: FrontEnd
+	// authors no Player, no ZM_SpawnPoint and no ZM_FollowCamera. Spelled as the
+	// literal build index rather than resolved through ZM_GetWorldSpec on purpose --
+	// ZM_GetWorldSpec asserts (fatally, in every configuration) on the ZM_SCENE_NONE
+	// an unresolvable index returns, so an unvalidated destination must never reach
+	// it. This mirrors the existing playerless-SOURCE branch in TryQueueWarp, which
+	// compares m_iBuildIndex against the same literal 0.
+	static constexpr u_int uFRONTEND_BUILD_INDEX = 0u;
+	static constexpr const char* szFRONTEND_SPAWN_TAG = "Start";
 
 	ZM_GameStateManager() = delete;
 	explicit ZM_GameStateManager(Zenith_Entity& xParentEntity);
@@ -65,6 +74,43 @@ public:
 	// ZM_GameState (mutable). Returns false + leaves pxGameStateOut null when no manager
 	// exists (e.g. before boot). Cross-scene safe (the manager is DontDestroyOnLoad).
 	static bool TryGetGameState(ZM_GameState*& pxGameStateOut);
+
+	// ---- S7 item 2 SC3: world-position capture, resume, quit-to-title ----------
+
+	// The spawn tag the last COMPLETED transition placed the player at in the
+	// active scene, or "" when none. Nothing tracked this before: m_szTargetSpawnTag
+	// is the tag of an IN-FLIGHT warp and ResetTransitionState memsets it the moment
+	// the warp finishes, so by the time anyone could ask, it was already gone.
+	const char* GetLastArrivedSpawnTag() const { return m_szLastArrivedSpawnTag; }
+	// The same answer from a free context. "" when there is no live manager.
+	static const char* GetActiveSceneArrivedSpawnTag();
+
+	// Capture the live active scene + the unique authoritative player's BODY CENTRE
+	// + its yaw + the arrived spawn tag into xStateInOut.m_xWorldPosition.
+	// TRANSACTIONAL: false with NO mutation when there is no unique bodied player,
+	// no resolvable active scene, no spawn tag to record, or ZM_MakeWorldPosition
+	// rejects the pose.
+	// The recorded position is the capsule CENTRE, matching what
+	// Zenith_Physics::GetBodyPosition returns and what the resume applies back --
+	// spawn MARKERS store feet and CalculateSpawnCenter is the only place the two
+	// conventions meet.
+	static bool CaptureWorldPosition(ZM_GameState& xStateInOut);
+
+	// Begin a RESUME: validate the saved position, queue the warp to its scene/tag
+	// through the SAME validated TryQueueWarp path every other warp uses, and latch
+	// a ONE-SHOT pose override that is applied after the marker teleport.
+	// False -- with nothing latched and no warp queued -- when ZM_CanResume says no
+	// or the warp itself is refused. A save whose transform is unusable but whose
+	// scene+tag are good still resumes; it simply lands on the marker.
+	static bool RequestResume(const ZM_WorldPosition& xResume);
+	bool IsResumePending() const { return m_bResumePending; }
+
+	// Begin a QUIT TO TITLE: fade out, SINGLE-load build index 0, and fade back in
+	// WITHOUT waiting for a Player or a follow camera. FrontEnd authors neither, so
+	// the ordinary spawn and camera barriers would park the machine on a permanently
+	// opaque screen forever.
+	static bool RequestQuitToFrontEnd();
+	bool IsPlayerlessDestination() const { return m_bTargetIsPlayerless; }
 
 	static bool IsWarpDestinationValid(u_int uTargetBuildIndex, const char* szSpawnTag);
 	static Zenith_Maths::Vector3 CalculateSpawnCenter(
@@ -104,6 +150,28 @@ private:
 	void PollForSpawnAndPlacePlayer();
 	void PollForCameraAndBeginFadeIn();
 	void AdvanceFadeIn(float fDeltaTime);
+	// Applies the latched resume pose to the player body. MUST be called AFTER the
+	// marker TeleportBody (which forces identity rotation and would destroy an
+	// earlier pose write) and BEFORE the camera barrier (so the follow camera
+	// acquires the FINAL pose and does not spring across the correction).
+	//
+	// The latch is NOT consumed here. It belongs to the TRANSITION, not to a single
+	// placement attempt: PollForSpawnAndPlacePlayer can run SEVERAL times in one
+	// transition, because both AdvanceFadeIn and PollForCameraAndBeginFadeIn push
+	// the state back to WAITING_FOR_SPAWN whenever the frozen player id stops
+	// matching the unique player, and every one of those passes re-runs the marker
+	// TeleportBody. A latch spent on the first pass would let a later pass silently
+	// leave the player standing on the default spawn -- with no diagnostic, and only
+	// on the runs where the bounce happens. ResetTransitionState clears it on BOTH
+	// the success tail and the cancel/test-reset path, so it can never outlive its
+	// transition and can never retry forever. Every entry re-validates the pose, so
+	// re-applying it is idempotent and still fail-closed.
+	void ApplyPendingResumePlacement(Zenith_EntityID xPlayerEntityID);
+	// The shared arrival tail for both the playerful and the playerless fade-in.
+	// Records the tag the transition arrived at and latches the milestone autosave
+	// for a LATER frame. Must run BEFORE ResetTransitionState, which memsets the
+	// target tag it copies from.
+	void RecordArrivalAndLatchAutosave();
 	bool ApplyFadeVisual();
 	bool IsTargetSceneActive() const;
 	bool TryResolveFrozenTargetPlayer(ZM_PlayerController*& pxControllerOut) const;
@@ -126,4 +194,19 @@ private:
 	u_int m_uIssuedLoadRequestCount = 0u;
 	float m_fFadeAlpha = 0.0f;
 	char m_szTargetSpawnTag[uTAG_CAPACITY] = {};
+
+	// ---- S7 item 2 SC3 session state ------------------------------------------
+	// All of it is SESSION state: WriteToDataStream still writes only the version
+	// word, so none of this reaches a .zscen and uSERIALIZATION_VERSION stays 1.
+	//
+	// m_xPendingResume / m_bResumePending are cleared by ResetTransitionState (they
+	// belong to one transition). m_szLastArrivedSpawnTag and
+	// m_bArrivalAutosavePending deliberately are NOT: the arrival tail records them
+	// and then calls ResetTransitionState, so clearing them there would erase the
+	// very thing that was just recorded.
+	ZM_WorldPosition m_xPendingResume;
+	bool m_bResumePending = false;
+	bool m_bTargetIsPlayerless = false;
+	bool m_bArrivalAutosavePending = false;
+	char m_szLastArrivedSpawnTag[uTAG_CAPACITY] = {};
 };
