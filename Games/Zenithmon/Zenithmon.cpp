@@ -28,6 +28,7 @@
 #include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"     // fZM_BATTLE_MENU_ROOT_* row constants (battle menu authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Dex.h"           // sz*_NAME + geometry contract (dex authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"         // sz*_NAME + SlotElementName contract (party authoring)
+#include "Zenithmon/Source/UI/ZM_UI_SaveSlots.h"     // sz*_NAME + RowElementName contract (S7 SC4 save-screen authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Shop.h"          // sz*_NAME + RowElementName + geometry contract (shop authoring)
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -520,8 +521,101 @@ namespace
 		}
 	}
 
+	// The S7 SC4 save/load slot screen, authored WHOLE like the bag/shop: a centred panel,
+	// the mode header, four slot rows and a Back button. Every row stays VISIBLE + FOCUSABLE
+	// regardless of status (RowIsAlwaysShown), so a row is disarmed by ResolveRowAction
+	// returning NONE, never by hiding it. The rows and Back share one vertical column:
+	// SetNavigation below helps only in the live authoring session because navigation links
+	// are not serialized; loaded runtime scenes use the spatial fallback and reach the same
+	// row0..row3..Back order. Same 9000/9001 sort band, ALL authored HIDDEN. The 420x300
+	// panel spans y [-150,+150]; header, rows and Back all sit inside it (ZM-D-112).
+	void ZM_ConfigureMenuRootSaveScreen(Zenith_UIComponent& xUI)
+	{
+		Zenith_UI::Zenith_UIRect* pxPanel =
+			xUI.FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_SaveSlots::szPANEL_NAME);
+		if (pxPanel != nullptr)
+		{
+			pxPanel->SetSortOrder(ZM_UI_MenuStack::iMENU_PANEL_SORT_ORDER);
+			pxPanel->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxPanel->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxPanel->SetPosition(0.0f, 0.0f);
+			pxPanel->SetSize(420.0f, 300.0f);
+			pxPanel->SetColor({ 0.05f, 0.06f, 0.10f, 0.85f });
+			pxPanel->SetVisible(false);
+		}
+
+		Zenith_UI::Zenith_UIText* pxHeader =
+			xUI.FindElement<Zenith_UI::Zenith_UIText>(ZM_UI_SaveSlots::szHEADER_NAME);
+		if (pxHeader != nullptr)
+		{
+			pxHeader->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxHeader->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxHeader->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxHeader->SetPosition(0.0f, -124.0f);
+			// Size == wrap width == SetMaxWidth with a matching alignment (the SC2 lesson).
+			pxHeader->SetSize(380.0f, 32.0f);
+			pxHeader->SetFontSize(24.0f);
+			pxHeader->SetAlignment(Zenith_UI::TextAlignment::Center);
+			pxHeader->SetMaxWidth(380.0f);
+			pxHeader->SetVisible(false);
+		}
+
+		// The four rows + Back form one vertical column. The explicit links mirror that geometry
+		// for this live authoring session; they are not serialized, so runtime navigation uses
+		// spatial fallback. The rows sit at a 52 px pitch; Back is the fifth element.
+		const float afRowY[ZM_UI_SaveSlots::uROW_COUNT] = { -68.0f, -16.0f, 36.0f, 88.0f };
+		Zenith_UI::Zenith_UIElement* apxNav[ZM_UI_SaveSlots::uROW_COUNT + 1u] = {};
+		for (u_int uRow = 0u; uRow < ZM_UI_SaveSlots::uROW_COUNT; ++uRow)
+		{
+			Zenith_UI::Zenith_UIButton* pxRow =
+				xUI.FindElement<Zenith_UI::Zenith_UIButton>(ZM_UI_SaveSlots::RowElementName(uRow));
+			apxNav[uRow] = pxRow;
+			if (pxRow == nullptr)
+			{
+				continue;
+			}
+			pxRow->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxRow->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxRow->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxRow->SetPosition(0.0f, afRowY[uRow]);
+			pxRow->SetSize(380.0f, 44.0f);
+			pxRow->SetFontSize(22.0f);
+			pxRow->SetFocusable(true);
+			pxRow->SetVisible(false);
+		}
+
+		Zenith_UI::Zenith_UIButton* pxCancel =
+			xUI.FindElement<Zenith_UI::Zenith_UIButton>(ZM_UI_SaveSlots::szCANCEL_NAME);
+		apxNav[ZM_UI_SaveSlots::uROW_COUNT] = pxCancel;
+		if (pxCancel != nullptr)
+		{
+			pxCancel->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxCancel->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxCancel->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxCancel->SetPosition(0.0f, 126.0f);
+			pxCancel->SetSize(200.0f, 32.0f);
+			pxCancel->SetFontSize(20.0f);
+			pxCancel->SetFocusable(true);
+			pxCancel->SetVisible(false);
+		}
+
+		const u_int uNavCount = ZM_UI_SaveSlots::uROW_COUNT + 1u;
+		for (u_int i = 0u; i < uNavCount; ++i)
+		{
+			if (apxNav[i] == nullptr)
+			{
+				continue;
+			}
+			Zenith_UI::Zenith_UIElement* pxUp   = (i > 0u) ? apxNav[i - 1u] : nullptr;
+			Zenith_UI::Zenith_UIElement* pxDown = (i + 1u < uNavCount) ? apxNav[i + 1u] : nullptr;
+			apxNav[i]->SetNavigation(pxUp, pxDown, nullptr, nullptr);
+		}
+	}
+
 	// The overworld pause menu (S6 item 2 SC1). Authors the ROOT screen's backing panel
-	// + Party/Bag/Dex/Exit entries on the selected ZM_MenuRoot entity's UI component:
+	// + Party/Bag/Dex/Save/Quit/Exit entries (Save/Quit added by S7 item 2 SC4, INSERTED
+	// before Exit so the authored visual order matches ZM_MENU_ROOT_ITEM's enum order) on
+	// the selected ZM_MenuRoot entity's UI component:
 	// centred vertical stack, sort band 9000/9001 (BELOW WarpFade 10000 / BattleFade
 	// 10001 so a fade always covers the menu), each entry focusable + navigation-wired
 	// (up/down) for deterministic engine focus-nav, and ALL authored hidden --
@@ -559,20 +653,26 @@ namespace
 			pxPanel->SetAnchor(Zenith_UI::AnchorPreset::Center);
 			pxPanel->SetPivot(Zenith_UI::AnchorPreset::Center);
 			pxPanel->SetPosition(0.0f, 0.0f);
-			pxPanel->SetSize(260.0f, 232.0f);
+			// 328 tall (was 232): SC4 grew the ROOT stack from four entries to six.
+			pxPanel->SetSize(260.0f, 328.0f);
 			pxPanel->SetColor({ 0.05f, 0.06f, 0.10f, 0.85f });
 			pxPanel->SetVisible(false);
 		}
 
-		// The four entries, top to bottom (== ZM_MENU_ROOT_PARTY..EXIT). 48 px pitch,
-		// centred, focusable, authored hidden.
+		// The six entries, top to bottom (== ZM_MENU_ROOT_PARTY..EXIT). 48 px pitch, centred,
+		// focusable, authored hidden. THE VISUAL ORDER HERE MUST MATCH THE ENUM ORDER: the
+		// focus walk in ZM_AutoTests_UI compares enum ordinals to decide UP vs DOWN, so an
+		// entry placed out of enum order would make it oscillate to its deadline. The six span
+		// [-120, +120] inside the 328-tall panel's [-164, +164].
 		struct MenuEntry { ZM_MENU_ROOT_ITEM m_eItem; float m_fY; };
 		const MenuEntry axEntries[ZM_MENU_ROOT_ITEM_COUNT] =
 		{
-			{ ZM_MENU_ROOT_PARTY, -72.0f },
-			{ ZM_MENU_ROOT_BAG,   -24.0f },
-			{ ZM_MENU_ROOT_DEX,    24.0f },
-			{ ZM_MENU_ROOT_EXIT,   72.0f },
+			{ ZM_MENU_ROOT_PARTY, -120.0f },
+			{ ZM_MENU_ROOT_BAG,    -72.0f },
+			{ ZM_MENU_ROOT_DEX,    -24.0f },
+			{ ZM_MENU_ROOT_SAVE,    24.0f },
+			{ ZM_MENU_ROOT_QUIT,    72.0f },
+			{ ZM_MENU_ROOT_EXIT,   120.0f },
 		};
 		Zenith_UI::Zenith_UIButton* apxButtons[ZM_MENU_ROOT_ITEM_COUNT] = {};
 		for (u_int i = 0u; i < ZM_MENU_ROOT_ITEM_COUNT; ++i)
@@ -940,6 +1040,7 @@ namespace
 		}
 
 		ZM_ConfigureMenuRootShopScreen(*pxUI);
+		ZM_ConfigureMenuRootSaveScreen(*pxUI);
 	}
 
 	bool ZM_SetSelectedSpawnPointTag(const char* szTag)
@@ -1347,6 +1448,10 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreateUIButton("Menu_RootParty", "Party");
 	xAuto.AddStep_CreateUIButton("Menu_RootBag", "Bag");
 	xAuto.AddStep_CreateUIButton("Menu_RootDex", "Dex");
+	// The S7 SC4 Save / Quit entries, INSERTED before Exit so the created + authored visual
+	// order matches ZM_MENU_ROOT_ITEM's enum order (Party/Bag/Dex/Save/Quit/Exit).
+	xAuto.AddStep_CreateUIButton("Menu_RootSave", "Save");
+	xAuto.AddStep_CreateUIButton("Menu_RootQuit", "Quit");
 	xAuto.AddStep_CreateUIButton("Menu_RootExit", "Exit");
 	// The SC2 dialogue box lives on the same root (bottom-centre band, authored
 	// hidden): names are the ZM_UI_DialogueBox::szPANEL_NAME / szTEXT_NAME contract.
@@ -1407,6 +1512,17 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreateUIButton(ZM_UI_Shop::szQTY_DOWN_NAME, "Qty -");
 	xAuto.AddStep_CreateUIButton(ZM_UI_Shop::szQTY_UP_NAME, "Qty +");
 	xAuto.AddStep_CreateUIButton(ZM_UI_Shop::szEXIT_NAME, "Leave");
+	// ...and the S7 SC4 save/load screen (panel + header + four ALWAYS-VISIBLE slot rows +
+	// Back), likewise authored hidden. ONE presenter serves both modes. RowElementName
+	// returns string literals, so calling it at authoring time is safe. Row labels are
+	// written at runtime from the live slot statuses.
+	xAuto.AddStep_CreateUIRect(ZM_UI_SaveSlots::szPANEL_NAME);
+	xAuto.AddStep_CreateUIText(ZM_UI_SaveSlots::szHEADER_NAME, "");
+	for (u_int uRow = 0u; uRow < ZM_UI_SaveSlots::uROW_COUNT; ++uRow)
+	{
+		xAuto.AddStep_CreateUIButton(ZM_UI_SaveSlots::RowElementName(uRow), "");
+	}
+	xAuto.AddStep_CreateUIButton(ZM_UI_SaveSlots::szCANCEL_NAME, "Back");
 	xAuto.AddStep_Custom(&ZM_ConfigureMenuRoot);
 	xAuto.AddStep_AddComponent("ZM_UI_MenuStack");
 

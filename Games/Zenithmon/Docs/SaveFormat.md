@@ -13,7 +13,11 @@ golden in `Tests/ZM_Tests_SaveMigration.cpp`. They are no longer proposals.
 pure game-payload codec for the complete durable `ZM_GameState` inventory; it
 names no file, slot, ECS type or scene. Slot identity and disk I/O are owned by
 `Source/Save/ZM_SaveSlots.{h,cpp}` (S7 item 2 SC2, ZM-D-138; see "Slot layer"
-below). Manual save, continue and milestone autosave are later sub-commits.
+below). SC3 (ZM-D-139) shipped world-position capture/resume and the
+edge-triggered milestone-autosave foundation. SC4 (ZM-D-140) shipped the manual
+Save0-2 UI and root Save/Quit without changing one persistent byte. The title
+menu and Continue remain SC5; SC6 closes disk-backed restoration and milestone
+autosave coverage.
 
 Public API (`ZM_SaveSchema.h`):
 
@@ -390,6 +394,41 @@ zero length, or a length beyond the bytes actually available is `CORRUPT_DATA`
   version inside the payload, and a second independent version axis would be a
   gate with no owner.
 
+## Player-facing slot policy -- settled at S7 item 2 SC4 (ZM-D-140)
+
+`Games/Zenithmon/Source/UI/ZM_UI_SaveSlots.{h,cpp}` is a by-value non-ECS
+presenter on `ZM_UI_MenuStack`, not another persistence layer. One presenter
+serves SAVE and LOAD, and every opening re-probes all four disk slots so its rows
+show the exact `EMPTY / READY / DAMAGED` classification above.
+
+- **SAVE is manual Save0-2 only.** An EMPTY manual slot writes immediately.
+  READY and DAMAGED manual slots require an input-driven Yes/No overwrite
+  confirmation. A DAMAGED save remains visibly labelled Damaged; SC4 never
+  repairs or deletes it and never overwrites it automatically. `Auto` remains a
+  visible, read-only row in the manual flow and is still written only by milestone
+  autosave.
+- **LOAD is readiness-based, not manual-slot-based.** A READY Save0-2 or Auto row
+  resolves to a confirm-load action; EMPTY and DAMAGED rows are not loadable.
+  SC4 ships that action seam and proves Auto remains visible/focusable on
+  FrontEnd, but intentionally performs no load. The title menu and Continue
+  consume the seam in SC5.
+- **There is one live SAVE permission predicate.** Root Save and SAVE opening use
+  `ZM_SaveSlots::ResolveLiveSaveBlocker`; the irreversible write boundary asks it
+  again because the context can change while the screen or overwrite prompt is
+  open. The only permitted order is `ResolveLiveSaveBlocker ->
+  CaptureWorldPosition -> WriteState`. A blocked boundary returns before capture,
+  write, latches or result UI. LOAD is not gated by this overworld-only SAVE
+  predicate, because it must work on FrontEnd.
+- **Blocked root presentation fails closed.** If a blocker becomes live while
+  Save itself is focused, Save is hidden, made unfocusable and removed from both
+  navigation directions, and focus is immediately rehomed to Quit. Quit's No/Yes
+  flow is separate from slot persistence: No returns to ROOT; Yes invokes the
+  SC3 playerless quit-to-FrontEnd transition.
+
+None of this changes the engine wrapper, the slot-layer prefix, the ZMSV payload,
+the eleven-module order, the 824-byte v1 artifact, `ZM_GameState` layout or ECS
+serialization order.
+
 ## Migration policy
 
 - **Today there is one real schema: v1.** The reader accepts global v1 plus
@@ -416,23 +455,26 @@ zero length, or a length beyond the bytes actually available is `CORRUPT_DATA`
   appending options (tagged fields), appending bag item IDs (ids validated,
   not positional).
 
-## When saves happen (policy; the triggers are a later S7 sub-commit)
+## When saves happen (runtime policy; SC3/SC4 shipped)
 
-- **Menu-save anywhere** in the overworld (pause menu), to a chosen manual
-  slot. Saving is disallowed mid-battle and during scripted cutscene beats --
-  battle state is deliberately not serializable (the battle engine is a
-  transient seeded state machine; whiteout/victory always resolves before a
-  save can occur).
+- **Manual menu save shipped at S7 SC4 (ZM-D-140).** The pause-menu SAVE screen
+  targets Save0-2 only and follows the action/confirmation policy above. Saving
+  is disallowed off-overworld, mid-battle, mid-warp and while a whiteout is
+  pending; battle state is deliberately not serializable (the battle engine is
+  a transient seeded state machine; whiteout/victory always resolves before a
+  save can occur). The canonical blocker is checked at screen opening and again
+  immediately before `CaptureWorldPosition -> WriteState`.
 - **Autosave at milestones**, always to `Auto`, never to a manual slot. The
-  milestone list is finalized at S7; planned triggers: badge earned, entering
-  a new scene after a story beat, League entry, tower streak banked. **The
-  latch shipped at S7 SC3 (ZM-D-139)** is edge-triggered (a milestone flag
-  already set does not re-fire) and gated by the SC2 save-blocker policy, so it
-  is refused mid-battle, mid-warp, on a non-overworld scene, or while a menu is
-  open -- quit-to-title (a playerless destination) never autosaves. Milestone
+  edge-triggered latch and first live arrival producer shipped at S7 SC3
+  (ZM-D-139). It is gated by the same SC2 blocker policy plus "no menu open", so
+  it is refused mid-battle, mid-warp, on a non-overworld scene, or while a menu
+  is open -- quit-to-title (a playerless destination) never autosaves. Milestone
   flags are `ZM_IsMilestoneStoryFlag` (`WARDEN_CLEARED / ROUTE1_OPEN /
-  GYM1_DEFEATED`); the arrival trigger is drained once per frame from
-  `ZM_GameStateManager::OnUpdate` while the scene is IDLE and overworld.
+  GYM1_DEFEATED`); their producers plus the planned badge/story-scene, League and
+  tower-bank triggers land only with the gameplay that can emit them. The current
+  scene-arrival trigger drains once per frame from `ZM_GameStateManager::OnUpdate`
+  while the scene is IDLE and overworld. SC6 still owes the milestone-autosave
+  closure test; declaring the trigger vocabulary is not claiming every producer.
 
 ## What is NOT saved
 
@@ -477,6 +519,30 @@ zero length, or a length beyond the bytes actually available is `CORRUPT_DATA`
   semantics; occupancy vs readiness; and all sixteen save-blocker combinations.
   Observed boot gate **2458 ran / 2457 passed / 0 failed / 1 skipped**, engine
   reference **1103** unchanged, headless **36/0**, full windowed **36/0/0**.
-- Still planned for the UI/flow slice: `ZM_SaveContinue_Test` -- save, quit to
-  FrontEnd, continue and assert position/party/flags exactly -- plus the
-  milestone autosave trigger test.
+- Item 2 SC3 adds **27** pure `ZM_Save` units in
+  `Tests/ZM_Tests_ResumePoint.cpp` plus the graphics-gated
+  `ZM_ResumePlacement_Test` and `ZM_QuitToFrontEnd_Test`: resume validity,
+  capsule-centre position/yaw construction, transform-first/tag-fallback
+  placement, the live blocker/autosave policy, real scene-reload placement and
+  the two-barrier playerless quit. Observed boot **2485 / 2484 / 0 / 1**;
+  headless **38/0** and full windowed **38/0/0**, with the two focused windowed
+  tests carrying the graphics-only behavior and the save directory empty
+  afterwards.
+- Item 2 SC4 adds **23** `ZM_Save` units in
+  `Tests/ZM_Tests_SaveSlotScreen.cpp` and **5** `ZM_MenuStack` units: the complete
+  SAVE/LOAD action matrix, Auto's manual-read-only/LOAD-visible split, damaged-row
+  non-mutation, reprobe/label/name totality, the six-item root resolver and the
+  title-load singleton seam. `ZM_SaveMenuFlow_Test` (**98 frames**) locks the real
+  immediate write, confirmed overwrite, invalid targets and irreversible-boundary
+  blocker; `ZM_RootQuitAndBlockedSave_Test` (**146 frames**) locks Quit No/Yes,
+  focused-Save rehome under a live WARP blocker and READY Auto on FrontEnd LOAD.
+  Observed gate: regen/build green; boot **2513 ran / 2512 passed / 0 failed / 1
+  documented skip**; headless discovery/gate **40/40**; full windowed **40/40
+  passed, 0 failed, 0 skipped, 0 zero-frame**; save directory empty; exact-diff
+  check green. No commit, push or CI result is claimed yet.
+- **Still owed:** SC5 title menu + Continue consumes the READY-slot LOAD seam.
+  SC6's `ZM_SaveContinue_Test` must save, quit to FrontEnd, deliberately scramble
+  the persistent live state and prove that scramble took, then Continue and assert
+  position/party/flags restored exactly from DISK; it also closes the milestone
+  autosave test. Without the scramble, `DontDestroyOnLoad` can let a Continue that
+  reads zero bytes pass green.

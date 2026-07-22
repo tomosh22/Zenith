@@ -252,3 +252,130 @@ ZENITH_TEST(ZM_MenuStack, MenuStack_IsMenuOpenIsFalseWithoutSingleton)
 	ZENITH_ASSERT_FALSE(ZM_UI_MenuStack::IsMenuOpen(),
 		"IsMenuOpen must be a skip-safe false when no menu singleton resolves");
 }
+
+// ---- TryOpenSaveScreen without a singleton (S7 item 2 SC4 forward seam) ------
+
+ZENITH_TEST(ZM_MenuStack, MenuStack_TryOpenSaveScreenRefusesWithoutSingleton)
+{
+	// TryOpenSaveScreen is the static seam SC5's title-screen "Continue"/LOAD path will
+	// call; it has NO caller yet, so this pins its refusal contract now -- the consistent
+	// parallel of the sibling TryPushDialogue / TryOpenShop without-singleton units. Boot
+	// units run BEFORE any scene loads, so no ZM_UI_MenuStack singleton has claimed itself:
+	// the static must resolve nothing and return a clean false (its body bails at the
+	// TryGetUniqueSingletonEntityID guard, never dereferencing a stale id or OpenSaveScreen).
+	//
+	// Pin the PRECONDITION first, exactly as MenuStack_IsMenuOpenIsFalseWithoutSingleton
+	// does: without it the unit would still pass even if TryOpenSaveScreen returned false
+	// for some UNRELATED reason, and it would stop being able to fail for its stated one --
+	// the day a live singleton makes TryGetUniqueSingletonEntityID succeed here, THIS assert
+	// is what flags that the test is no longer exercising the refusal branch.
+	Zenith_EntityID xUnresolved = INVALID_ENTITY_ID;
+	ZENITH_ASSERT_FALSE(ZM_UI_MenuStack::TryGetUniqueSingletonEntityID(xUnresolved),
+		"precondition: boot units run before any scene, so no ZM_MenuRoot may resolve");
+
+	// A VALID mode (SAVE) so the false is proven to come from the MISSING SINGLETON, not
+	// from an out-of-range mode folding away. Reds if TryOpenSaveScreen ever reports success
+	// (or drives a menu) with no live singleton -- e.g. if its TryGetUniqueSingletonEntityID
+	// guard is dropped and it resolves an INVALID_ENTITY_ID entity.
+	ZENITH_ASSERT_FALSE(ZM_UI_MenuStack::TryOpenSaveScreen(ZM_SAVE_SCREEN_MODE_SAVE),
+		"TryOpenSaveScreen reports failure when there is no live ZM_UI_MenuStack singleton");
+}
+
+// ============================================================================
+// S7 item 2 SC4 -- the ROOT Save / Quit entries and the visual==enum order rule.
+//
+// SC4 inserts SAVE (3) and QUIT (4) into ZM_MENU_ROOT_ITEM *before* EXIT (which
+// moves 3 -> 5), because the nav chain is built in axEntries (visual) order while
+// RootItemIndexFromElementName returns the enum ordinal, and ZM_AutoTests_UI.cpp's
+// focus walk presses UP/DOWN by comparing those two. Enum order MUST equal the
+// authored visual order or that walk oscillates until its deadline. These four
+// units pin the new resolver arms and that ordering invariant.
+// ============================================================================
+
+ZENITH_TEST(ZM_MenuStack, MenuStack_ResolveRootActionMapsSaveAndQuit)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_MenuStack::ResolveRootAction(ZM_UI_MenuStack::szROOT_SAVE_NAME),
+		(u_int)ZM_MENU_ACTION_OPEN_SAVE, "the Save entry resolves to OPEN_SAVE");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_MenuStack::ResolveRootAction(ZM_UI_MenuStack::szROOT_QUIT_NAME),
+		(u_int)ZM_MENU_ACTION_QUIT_TO_TITLE, "the Quit entry resolves to QUIT_TO_TITLE");
+	// The two must not collide with the pre-existing entries, or an old entry becomes
+	// inert while the new one shadows it.
+	ZENITH_ASSERT_NE((u_int)ZM_MENU_ACTION_OPEN_SAVE, (u_int)ZM_MENU_ACTION_QUIT_TO_TITLE,
+		"OPEN_SAVE and QUIT_TO_TITLE are distinct actions");
+	ZENITH_ASSERT_NE((u_int)ZM_UI_MenuStack::ResolveRootAction(ZM_UI_MenuStack::szROOT_SAVE_NAME),
+		(u_int)ZM_UI_MenuStack::ResolveRootAction(ZM_UI_MenuStack::szROOT_EXIT_NAME),
+		"Save does not resolve to the same action as Exit");
+}
+
+ZENITH_TEST(ZM_MenuStack, MenuStack_RootActionToScreenMapsOpenSaveAndNotQuit)
+{
+	// OPEN_SAVE pushes the SAVE screen; QUIT_TO_TITLE is an ACTION like CLOSE and
+	// pushes NOTHING (it runs quit-to-title, it does not open a screen). Reds if quit
+	// is made to push a screen.
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_MenuStack::RootActionToScreen(ZM_MENU_ACTION_OPEN_SAVE),
+		(u_int)ZM_MENU_SCREEN_SAVE, "OPEN_SAVE pushes the SAVE screen");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_MenuStack::RootActionToScreen(ZM_MENU_ACTION_QUIT_TO_TITLE),
+		(u_int)ZM_MENU_SCREEN_NONE, "QUIT_TO_TITLE pushes nothing -- it is an action, not a screen");
+	// The SAVE screen must be a real, distinct screen.
+	ZENITH_ASSERT_NE((u_int)ZM_MENU_SCREEN_SAVE, (u_int)ZM_MENU_SCREEN_NONE,
+		"SAVE is a distinct, real screen");
+	ZENITH_ASSERT_TRUE((u_int)ZM_MENU_SCREEN_SAVE < (u_int)ZM_MENU_SCREEN_COUNT,
+		"SAVE is within the enumerated screen range");
+}
+
+ZENITH_TEST(ZM_MenuStack, MenuStack_RootItemElementNameIsTotalOverSixItems)
+{
+	// The ROOT now has SIX items. Every one must have a non-empty element name that
+	// round-trips -- an entry whose name is "" is invisible and unfocusable. Reds if
+	// ZM_MENU_ROOT_ITEM_COUNT was raised without adding the Save / Quit arms.
+	ZENITH_ASSERT_EQ((u_int)ZM_MENU_ROOT_ITEM_COUNT, 6u,
+		"the ROOT holds exactly six items after SC4 (Party/Bag/Dex/Save/Quit/Exit)");
+	for (u_int i = 0u; i < ZM_MENU_ROOT_ITEM_COUNT; ++i)
+	{
+		const char* szName = ZM_UI_MenuStack::RootItemElementName(static_cast<ZM_MENU_ROOT_ITEM>(i));
+		ZENITH_ASSERT_NOT_NULL(szName, "root item %u has a name", i);
+		if (szName == nullptr) { continue; }
+		ZENITH_ASSERT_TRUE(szName[0] != '\0',
+			"root item %u has a non-empty element name (an empty name is unfocusable)", i);
+		ZENITH_ASSERT_EQ(ZM_UI_MenuStack::RootItemIndexFromElementName(szName), (int)i,
+			"root item %u round-trips through its element name", i);
+	}
+}
+
+ZENITH_TEST(ZM_MenuStack, MenuStack_RootEnumOrderMatchesTheAuthoredVisualOrder)
+{
+	// The load-bearing invariant. StepGateRootFocusWalk (ZM_AutoTests_UI.cpp) presses
+	// DOWN whenever the focused ordinal is BELOW the target ordinal, so a visually
+	// LOWER entry MUST carry a HIGHER enum ordinal, or the walk oscillates to its
+	// deadline. This pins that the enum ordinals are strictly increasing top-to-bottom
+	// AND that the authored Y layout is strictly increasing in that same order.
+	ZENITH_ASSERT_TRUE((u_int)ZM_MENU_ROOT_PARTY < (u_int)ZM_MENU_ROOT_BAG
+		&& (u_int)ZM_MENU_ROOT_BAG < (u_int)ZM_MENU_ROOT_DEX
+		&& (u_int)ZM_MENU_ROOT_DEX < (u_int)ZM_MENU_ROOT_SAVE
+		&& (u_int)ZM_MENU_ROOT_SAVE < (u_int)ZM_MENU_ROOT_QUIT
+		&& (u_int)ZM_MENU_ROOT_QUIT < (u_int)ZM_MENU_ROOT_EXIT,
+		"the ROOT enum ordinals must be strictly increasing top-to-bottom "
+		"(Party<Bag<Dex<Save<Quit<Exit) -- appending Save/Quit AFTER Exit while placing "
+		"them visually above it is exactly the divergence that oscillates the focus walk");
+	ZENITH_ASSERT_EQ((u_int)ZM_MENU_ROOT_EXIT, 5u,
+		"Exit is the last of the six ROOT items after SC4 moved it 3 -> 5");
+
+	// The OTHER half of the invariant -- that a visually LOWER ROOT entry really does carry
+	// a HIGHER enum ordinal -- is NOT re-checkable in this pure boot unit. Proving it would
+	// mean reading the real axEntries authored in Zenithmon.cpp's ZM_ConfigureMenuRoot,
+	// which this unit (no scene, no ECS, no graphics) has no access to. A hand-copied local
+	// table of authored Y values would only prove ITSELF internally consistent: swapping the
+	// authored Y of ZM_MENU_ROOT_SAVE and ZM_MENU_ROOT_QUIT in ZM_ConfigureMenuRoot -- so
+	// Quit renders ABOVE Save while the enum ordinals here stay put -- leaves such a table
+	// untouched and GREEN, yet oscillates the runtime focus walk. That local-table check was
+	// therefore a tautology and has been removed.
+	//
+	// The enum->authored-Y binding is instead enforced at RUNTIME by the windowed
+	// focus-walk gates. StepGateRootFocusWalk (ZM_S6UIGate_Test, ZM_AutoTests_UI.cpp)
+	// presses UP when the focused ENUM ordinal is above the target's and DOWN when it is
+	// below, and ZM_SaveMenuFlow_Test walks DOWN onto the Save entry the same way -- so an
+	// authored visual order that disagrees with the enum order makes the walk step the wrong
+	// way, oscillate, and hit its deadline. The windowed gate thus REDS on exactly the
+	// Save/Quit Y swap this pure unit cannot see; the strictly-increasing enum assertion
+	// above is the pure half of the same invariant.
+}

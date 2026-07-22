@@ -6277,6 +6277,12 @@ namespace
 	bool  g_bGateRootOpened           = false;
 	bool  g_bGateProbeReachedLast     = false;   // DOWN edges walked ROOT focus to the last entry
 	bool  g_bGateProbeReturnedToFirst = false;   // ...and UP edges walked it back to the first
+	// S7 SC4: the DOWN probe now traverses the two entries INSERTED between Dex and
+	// Exit. Prove the focus actually RESTS on each -- so they are live, focusable links
+	// in the nav chain and were not dropped by the ZM-D-119 hidden-target trap (which
+	// would let the walk skip straight past them to Exit while these stayed false).
+	bool  g_bGateProbeSawSave         = false;
+	bool  g_bGateProbeSawQuit         = false;
 	u_int g_uGateVisitIndex           = 0u;
 	GateVisitResult g_axGateVisits[uGATE_VISIT_COUNT];
 
@@ -6388,6 +6394,8 @@ namespace
 		g_bGateRootOpened            = false;
 		g_bGateProbeReachedLast      = false;
 		g_bGateProbeReturnedToFirst  = false;
+		g_bGateProbeSawSave          = false;
+		g_bGateProbeSawQuit          = false;
 		g_uGateVisitIndex            = 0u;
 		for (u_int u = 0u; u < uGATE_VISIT_COUNT; ++u)
 		{
@@ -6549,6 +6557,15 @@ namespace
 			// DOWN edges to the LAST ROOT entry, then UP edges back to the first. Both
 			// directions of the ROOT focus-nav are load-bearing for the visits below, and a
 			// one-directional walk would hide a broken NavigateUp entirely.
+			//
+			// As the focus walks down PAST the S7 SC4 entries it rests on each for several
+			// frames; capture that here BY NAME. If Save / Quit were hidden or dropped from
+			// the nav chain (ZM-D-119) the walk would skip straight to Exit and these would
+			// stay false -- caught in Verify, never masked by "the probe still reached Exit".
+			const std::string strProbeFocus = ReadMenuFocusName();
+			g_bGateProbeSawSave |= (strProbeFocus == ZM_UI_MenuStack::szROOT_SAVE_NAME);
+			g_bGateProbeSawQuit |= (strProbeFocus == ZM_UI_MenuStack::szROOT_QUIT_NAME);
+
 			const int iLast = (int)eGATE_NAV_PROBE_ITEM;
 			if (StepGateRootFocusWalk(iLast, g_iGatePhaseFrames))
 			{
@@ -7426,6 +7443,17 @@ namespace
 					"every screen below is only reachable by luck",
 					g_bGateProbeReachedLast ? "true" : "false",
 					g_bGateProbeReturnedToFirst ? "true" : "false");
+				bPassed = false;
+			}
+			if (!g_bGateProbeSawSave || !g_bGateProbeSawQuit)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_S6UIGate] the ROOT nav probe never rested on the Save (%s) / Quit (%s) "
+					"entries inserted before Exit -- an S7 SC4 entry is missing from the ROOT nav "
+					"chain, or its authored SetNavigation link points at a hidden target and was "
+					"dropped with no spatial fallback (ZM-D-119)",
+					g_bGateProbeSawSave ? "true" : "false",
+					g_bGateProbeSawQuit ? "true" : "false");
 				bPassed = false;
 			}
 			for (u_int u = 0u; u < uGATE_VISIT_COUNT; ++u)

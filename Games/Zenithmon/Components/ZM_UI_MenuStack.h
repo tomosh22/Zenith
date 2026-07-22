@@ -1,11 +1,13 @@
 #pragma once
 
+#include "Core/Zenith_Result.h"                         // Zenith_Status (the last-save latch)
 #include "ZenithECS/Zenith_Entity.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"        // ZM_SCENE_KIND (by value in the pure gating statics)
 #include "Zenithmon/Source/UI/ZM_UI_Bag.h"             // owned BY VALUE (the SC6 bag screen)
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"     // owned BY VALUE (the SC2 dialogue screen)
 #include "Zenithmon/Source/UI/ZM_UI_Dex.h"             // owned BY VALUE (the SC5 dex screen)
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"           // owned BY VALUE (the SC4 party screen)
+#include "Zenithmon/Source/UI/ZM_UI_SaveSlots.h"       // owned BY VALUE (the S7 SC4 save/load screen)
 #include "Zenithmon/Source/UI/ZM_UI_Shop.h"            // owned BY VALUE (the SC7 shop screen)
 
 class Zenith_DataStream;
@@ -58,19 +60,28 @@ enum ZM_MENU_SCREEN : u_int
 	ZM_MENU_SCREEN_DEX,         // SC5: the paged species grid
 	ZM_MENU_SCREEN_DIALOGUE,    // SC2: the NPC / prompt dialogue box (modal, not a ROOT entry)
 	ZM_MENU_SCREEN_SHOP,        // SC7: the mart buy/sell screen (raised by TryOpenShop, not a ROOT entry)
+	ZM_MENU_SCREEN_SAVE,        // S7 SC4: the save/load slot screen (serves BOTH modes)
 
 	ZM_MENU_SCREEN_COUNT
 };
 
-// The ROOT screen's selectable entries, top to bottom (== the focus order).
+// The ROOT screen's selectable entries, top to bottom (== the focus order). ENUM ORDER
+// MUST EQUAL THE AUTHORED VISUAL ORDER (Zenithmon.cpp ZM_ConfigureMenuRoot axEntries):
+// ZM_AutoTests_UI's focus walk presses DOWN when the focused ENUM ordinal is below the
+// target's and UP otherwise, so an entry placed visually above EXIT but numbered after
+// it would make the walk oscillate to its deadline. SAVE and QUIT are therefore INSERTED
+// before EXIT (which moves 3 -> 5), never appended after it. All consumers are symbolic
+// and COUNT-driven.
 enum ZM_MENU_ROOT_ITEM : u_int
 {
 	ZM_MENU_ROOT_PARTY = 0u,
 	ZM_MENU_ROOT_BAG   = 1u,
 	ZM_MENU_ROOT_DEX   = 2u,
-	ZM_MENU_ROOT_EXIT  = 3u,
+	ZM_MENU_ROOT_SAVE  = 3u,   // S7 SC4: opens the save-slot screen (SAVE mode)
+	ZM_MENU_ROOT_QUIT  = 4u,   // S7 SC4: confirm, then quit to the title screen
+	ZM_MENU_ROOT_EXIT  = 5u,
 
-	ZM_MENU_ROOT_ITEM_COUNT = 4u
+	ZM_MENU_ROOT_ITEM_COUNT = 6u
 };
 
 // What a resolved YES on the dialogue's yes/no prompt actually DOES (S6 item 2
@@ -81,6 +92,8 @@ enum ZM_DIALOGUE_ACTION : u_int
 {
 	ZM_DIALOGUE_ACTION_NONE = 0u,   // an ordinary conversation: YES/NO do nothing extra
 	ZM_DIALOGUE_ACTION_HEAL_PARTY,  // the Care Center heal (ZM_ApplyCareCenterHeal)
+	ZM_DIALOGUE_ACTION_WRITE_SAVE_SLOT,   // S7 SC4: YES writes m_ePendingSaveSlot (overwrite confirm)
+	ZM_DIALOGUE_ACTION_QUIT_TO_TITLE,     // S7 SC4: YES quits to the title screen
 };
 
 // The action a confirmed ROOT entry resolves to (dispatch is BY FOCUSED-ELEMENT
@@ -91,7 +104,9 @@ enum ZM_MENU_ACTION : u_int
 	ZM_MENU_ACTION_OPEN_PARTY,
 	ZM_MENU_ACTION_OPEN_BAG,
 	ZM_MENU_ACTION_OPEN_DEX,
-	ZM_MENU_ACTION_CLOSE,       // Exit -> pop the whole menu
+	ZM_MENU_ACTION_CLOSE,           // Exit -> pop the whole menu
+	ZM_MENU_ACTION_OPEN_SAVE,       // S7 SC4: Save -> push the save-slot screen (SAVE mode)
+	ZM_MENU_ACTION_QUIT_TO_TITLE,   // S7 SC4: Quit -> confirm, then quit to the title screen
 };
 
 // ----------------------------------------------------------------------------
@@ -136,6 +151,8 @@ public:
 	static constexpr const char* szROOT_PARTY_NAME = "Menu_RootParty";
 	static constexpr const char* szROOT_BAG_NAME   = "Menu_RootBag";
 	static constexpr const char* szROOT_DEX_NAME   = "Menu_RootDex";
+	static constexpr const char* szROOT_SAVE_NAME  = "Menu_RootSave";
+	static constexpr const char* szROOT_QUIT_NAME  = "Menu_RootQuit";
 	static constexpr const char* szROOT_EXIT_NAME  = "Menu_RootExit";
 
 	// Sort band: BELOW the fade overlays (WarpFade 10000 / BattleFade 10001) so a
@@ -241,6 +258,34 @@ public:
 	static bool TryOpenShop(const ZM_ITEM_ID* paeInventory, u_int uCount);
 	const ZM_UI_Shop& GetShopScreen() const { return m_xShop; }
 
+	// ---- Save / load slot screen (S7 item 2 SC4) ----
+
+	// Re-probe all four slots, set the mode and raise the SAVE screen. Opens the menu +
+	// freezes the player when the stack was empty (the SC5 title Continue path), or stacks
+	// on top of an already-open menu (the pause-menu Save entry). SAVE (including an invalid
+	// mode, which folds to SAVE) is refused while the live save policy reports a blocker;
+	// LOAD remains available on FrontEnd. SC5 owns LOAD's eventual Continue trigger.
+	bool OpenSaveScreen(ZM_SAVE_SCREEN_MODE eMode);
+	// Singleton-resolving convenience -- the SAME seam shape as TryOpenShop. False when no
+	// live ZM_MenuRoot singleton exists, or when the screen refuses to raise.
+	static bool TryOpenSaveScreen(ZM_SAVE_SCREEN_MODE eMode);
+	// Arm the EXISTING yes/no dialogue over a READY/DAMAGED MANUAL slot (ZM-D-121: the choice
+	// mode IS the yes/no primitive -- no new screen, no new ECS order). Auto, NONE and every
+	// out-of-range slot are rejected before mutation. The box is SINGLE-TENANT
+	// (Shortfalls.md:72), so this returns FALSE while it is busy and the caller MUST handle
+	// the refusal rather than half-arm.
+	bool OpenSaveConfirmPrompt(ZM_SAVE_SLOT eSlot);
+	// The quit-to-title yes/no confirm, armed the same way; also FALSE when the box is busy.
+	bool OpenQuitConfirmPrompt();
+	const ZM_UI_SaveSlots& GetSaveScreen() const { return m_xSaveScreen; }
+	// The slot an armed WRITE confirm targets (ZM_SAVE_SLOT_NONE when none is armed).
+	ZM_SAVE_SLOT  GetPendingSaveSlot() const { return m_ePendingSaveSlot; }
+	// The status of the LAST manual save (non-Ok until one runs). Survives a menu close,
+	// like m_eLastDialogueAnswer -- it is a latch, not live session state.
+	Zenith_Status GetLastSaveStatus()  const { return m_xLastSaveStatus; }
+	// Manual writes performed this session (test / observation latch; survives close).
+	u_int         GetSaveWriteCount()  const { return m_uSaveWriteCount; }
+
 	// ---- Persistent-singleton observation (mirrors ZM_BattleTransition) ----
 	static bool TryGetUniqueSingletonEntityID(Zenith_EntityID& xEntityIDOut);
 	// Force-close the menu on the live singleton (unfreeze + clear focus). Skip-safe
@@ -311,6 +356,16 @@ private:
 	bool PresentBagScreen(bool bShown);
 	// ...and for the SC7 shop screen (top screen AND a live game state).
 	bool PresentShopScreen(bool bShown);
+	// ...and for the S7 SC4 save screen. Unlike the four above it does NOT gate on a live
+	// game state -- the LOAD half runs on the title screen where none exists yet -- so it is
+	// always presented when it is the top screen. Returns bShown.
+	bool PresentSaveScreen(bool bShown);
+	// Perform a manual save into eSlot: recheck the canonical live blocker, then capture the
+	// live world position into the game state, WriteState through the SC2 slot layer, latch
+	// the status + bump the write count, RE-PROBE the screen so the row reflects the new
+	// status, and queue a result line onto the (empty) box. The single write path shared by
+	// the immediate-WRITE arm and the WRITE_SAVE_SLOT confirm.
+	void PerformSaveToSlot(ZM_SAVE_SLOT eSlot);
 	void FreezePlayer();
 	void UnfreezePlayer();
 
@@ -335,6 +390,13 @@ private:
 	// renders; keeping them distinct keeps the two straight at every call site.
 	ZM_UI_Bag          m_xBagScreen;                              // the BAG screen's model (SC6; PODs only)
 	ZM_UI_Shop         m_xShop;                                   // the SHOP screen's model (SC7; PODs only)
+	ZM_UI_SaveSlots    m_xSaveScreen;                            // the SAVE/LOAD screen's model (S7 SC4; PODs only)
+	// The slot an armed WRITE confirm targets. Session state; consumed with m_eDialogueAction.
+	ZM_SAVE_SLOT       m_ePendingSaveSlot = ZM_SAVE_SLOT_NONE;
+	// The LAST manual save's status. A deliberately non-Ok default (no save has run yet);
+	// a latch that survives a menu close, like m_eLastDialogueAnswer.
+	Zenith_Status      m_xLastSaveStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
+	u_int              m_uSaveWriteCount = 0u;                   // manual writes performed (test / observation latch)
 	ZM_DIALOGUE_ACTION m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;   // what a YES does (SC8)
 	ZM_DIALOGUE_CHOICE m_eLastDialogueAnswer = ZM_DIALOGUE_CHOICE_NONE;   // the latched answer (SC8)
 	int                m_iCursor = -1;                            // focused-item mirror (see GetCursor)

@@ -1066,11 +1066,55 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   `TerrainEditorSmoke` **151 frames**. Scaffold smoke finished **11 passed / 0
   failed** with its embedded **1103** unit baseline met; teardown regeneration
   was green and left git status unchanged.
-- **NEXT:** story-flag gating plus slot/manual/continue/autosave integration.
-  The existing v1 codec is reused; slot I/O is not retroactively claimed by
-  SC2. Trainer sight-cone/defeat-flag units follow within S7.
-- **P1 `ZM_SaveContinue_Test`:** save -> quit to FrontEnd -> continue restores
-  position/party/flags exactly.
+- **Item 2 SC1 story-flag identity/gating (COMPLETE 2026-07-21, ZM-D-137):**
+  **33** `ZM_Save` units pin the append-only dense-from-zero flag registry,
+  name/identity/bit access and total fail-closed story gates. The first runtime
+  consumer is gated `Npc_Warden` dialogue, with both branches mutation-pinned on
+  the CI-visible `ZM_NpcDispatch_Test`. Observed boot **2425 / 2424 / 0 / 1**;
+  headless/windowed registry remained 36.
+- **Item 2 SC2 slot/disk layer (COMPLETE 2026-07-21, ZM-D-138):** **33**
+  `ZM_Save` units pin Save0-2 + Auto identity, the `_Test` interlock, uncached
+  `EMPTY / READY / DAMAGED` probing, transactional reads/writes, the explicit
+  little-endian ZMSV-length prefix, verify re-probe, damaged-slot preservation,
+  occupancy/readiness and all sixteen save-blocker combinations. Observed boot
+  **2458 / 2457 / 0 / 1**; headless/windowed registry remained 36; save directory
+  empty.
+- **Item 2 SC3 capture/resume/quit/autosave foundation (COMPLETE 2026-07-21,
+  ZM-D-139):** **27** pure `ZM_Save` units pin resume validation in scene -> tag
+  -> transform order, capsule-centre world-position construction, yaw round trips,
+  transform-first/spawn-tag-fallback placement and the autosave predicate.
+  `ZM_ResumePlacement_Test` (**236 frames**) proves a captured pose 10.477 m from
+  the marker survives a real scene reload and lands at planar/vertical/yaw error
+  0.0000; `ZM_QuitToFrontEnd_Test` (**38 frames**) proves the two-barrier playerless
+  transition. Observed boot **2485 / 2484 / 0 / 1**, headless **38/0**, full
+  windowed **38/0/0**, save directory empty.
+- **Item 2 SC4 save/manual/root flow (COMPLETE 2026-07-22, ZM-D-140):** **23**
+  `ZM_Save` units in `ZM_Tests_SaveSlotScreen.cpp` pin the complete SAVE/LOAD x
+  slot x `EMPTY / READY / DAMAGED` action matrix, row/label/name totality,
+  uncached reprobes, Auto as manual-read-only but LOAD-visible, and damaged-row
+  non-mutation. **5** `ZM_MenuStack` units pin the singleton refusal seam plus the
+  six-item root resolver/screen/enum-order contract. `ZM_SaveMenuFlow_Test` (**98
+  frames**) drives real input through an EMPTY write and confirmed READY overwrite,
+  rejects invalid targets, and proves the second canonical blocker check wins at
+  the irreversible boundary before `CaptureWorldPosition -> WriteState`.
+  `ZM_RootQuitAndBlockedSave_Test` (**146 frames**) drives Quit No then Yes,
+  focuses Save before a live WARP blocker, proves immediate focus rehome to Quit
+  plus live Up/Down/Accept traversal, and reaches a READY Auto row in FrontEnd
+  LOAD without writing it.
+- **SC4 observed gate:** regen green; Vulkan tools-debug build green; boot **2513
+  ran / 2512 passed / 0 failed / 1 documented skip**, +28 from clean SC3 (**23 +
+  5**); automated registrations **38 -> 40**; headless discovery/gate **40/40**;
+  both focused tests green at the frame counts above; full windowed **40/40 passed,
+  0 failed, 0 skipped, 0 zero-frame**; save directory empty; final exact-diff
+  check green. No commit, push or CI result is claimed yet.
+- **Item 2 state / NEXT:** SC1-SC4 of six are complete; the aggregate Roadmap
+  checkbox remains unchecked. **SC5 NEXT** is the title menu and Continue,
+  consuming SC4's READY-slot LOAD seam (including Auto; EMPTY/DAMAGED remain
+  non-loadable). **SC6** owns `ZM_SaveContinue_Test`: save -> quit to FrontEnd ->
+  deliberately scramble the persistent live state AND prove the scramble took ->
+  Continue -> assert position/party/flags restored exactly from disk. This is
+  mandatory because the `DontDestroyOnLoad` manager otherwise lets a zero-byte
+  Continue pass against RAM survival. SC6 also closes the milestone-autosave test.
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->
   defeat flag + prize money.
 

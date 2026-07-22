@@ -15,6 +15,102 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-22 -- ZM-D-140 -- S7 item 2 SC4 ships one save/load slot presenter plus root-menu Save and Quit
+
+- **Decision / boundary:** ship `Games/Zenithmon/Source/UI/ZM_UI_SaveSlots.{h,cpp}`
+  as the ONE presenter for both SAVE and LOAD, owned BY VALUE by
+  `ZM_UI_MenuStack`, and extend the existing root menu with Save and Quit. The
+  presenter is non-ECS, follows the established one-arm-per-dispatch-site screen
+  pattern and consumes no serialization order. This is SC4 of six in S7 item 2;
+  the title menu and the actual Continue/load transaction remain SC5, and the
+  disk-backed restoration plus milestone-autosave gate remains SC6.
+- **The four-row action matrix is fixed at the UI boundary.** Every opening
+  re-probes Save0, Save1, Save2 and Auto and renders the storage layer's exact
+  `EMPTY / READY / DAMAGED` answer. In SAVE mode only Save0-2 are writable:
+  EMPTY writes immediately; READY and DAMAGED return `CONFIRM_WRITE` and require
+  a Yes/No overwrite prompt. This does NOT reinterpret DAMAGED as healthy: the
+  damage remains surfaced, no code repairs or deletes it, and replacement occurs
+  only after an explicit Yes. Auto remains visible but read-only to the manual
+  path. In LOAD mode a READY row -- including Auto -- returns `CONFIRM_LOAD`;
+  EMPTY and DAMAGED return NONE. SC4 deliberately leaves that load action
+  unconsumed so SC5 cannot be mistaken for already shipped.
+- **`ZM_SaveSlots::ResolveLiveSaveBlocker` remains the single permission
+  predicate, and it is checked at TWO different boundaries.** `OpenSaveScreen`
+  checks it before probing slots or changing the stack. `PerformSaveToSlot`
+  checks it again before resolving live state, capturing, writing, changing the
+  write/status latches or raising result UI, because the context can change while
+  a screen or overwrite prompt is open. The only permitted write sequence is
+  `ResolveLiveSaveBlocker -> ZM_GameStateManager::CaptureWorldPosition ->
+  ZM_SaveSlots::WriteState`; the second check fails closed before both capture
+  and disk. LOAD is intentionally exempt from the SAVE permission check so it can
+  open on FrontEnd, which is necessarily `NOT_OVERWORLD`.
+- **A live blocker changes ROOT focus and navigation atomically.** ROOT is now
+  Party / Bag / Dex / Save / Quit / Exit. While ROOT is shown, Save is hidden,
+  made unfocusable and omitted from both explicit navigation directions whenever
+  the canonical blocker is live. If Save owned focus on the visible-to-hidden
+  transition, focus is immediately rehomed to Quit. This is a correctness rule,
+  not polish: engine focus navigation follows an explicit link first and does not
+  spatially fall back when that target is hidden, while focused-name dispatch
+  would otherwise retain a pointer to the newly hidden Save element.
+- **Quit is an input-driven action, not another screen.** Confirm on the root Quit
+  entry raises `Quit to title? Unsaved progress will be lost.` through the existing
+  single-tenant dialogue choice. No consumes the action and returns to ROOT with
+  no warp or load. Yes closes the menu and calls
+  `ZM_GameStateManager::RequestQuitToFrontEnd()`, reusing SC3's two-barrier
+  playerless transition rather than adding a second title path. Exit remains the
+  distinct close-menu action.
+- **The integration negatives have one attributable guard rather than an
+  over-determined outcome.** `ZM_SaveMenuFlow_Test` uses real M/arrow/Enter input
+  to write an EMPTY manual slot to a real READY file, reopen and overwrite the
+  READY row only after real-input Yes, and rejects Auto/NONE/out-of-range
+  overwrite targets without leaving a target armed. For the irreversible-boundary
+  negative it first proves `CaptureWorldPosition` WOULD succeed into a copy on
+  the same frame, then raises a WARP blocker and proves the real Enter produces no
+  capture/write/file. `ZM_RootQuitAndBlockedSave_Test` first focuses Save with
+  real input before making WARP live, so its hidden/unfocusable Save, immediate
+  Quit focus, live Up/Down/Accept traversal and unchanged public SAVE-open seam
+  directly pin the rehome/rewire behavior. The same test drives Quit No and Yes
+  end to end, then opens LOAD on FrontEnd and reaches a READY Auto row while
+  proving its activation did not write.
+- **Tests that lock it:** **23** new `ZM_Save` boot units in
+  `Tests/ZM_Tests_SaveSlotScreen.cpp` cover row/name totality, labels, the complete
+  SAVE/LOAD x slot x status action matrix, Auto's asymmetric policy, uncached
+  reprobes and damaged-row non-mutation. **5** `ZM_MenuStack` units cover the
+  singleton refusal seam plus the six-item resolver/screen/order contract.
+  `ZM_SaveMenuFlow_Test` and `ZM_RootQuitAndBlockedSave_Test` are the two new
+  registered graphics tests carrying the ECS/input/disk/focus boundary described
+  above; the existing `ZM_S6UIGate_Test` also proves its real two-way root walk
+  now rests on both inserted entries.
+- **Observed gate evidence:** `Build\regen.ps1` GREEN; `zenith build Zenithmon`
+  (`Vulkan_vs2022_Debug_Win64_True`) GREEN. Boot units **2513 ran / 2512 passed /
+  0 failed / 1 documented skip**, up **+28** from clean SC3 (**23 + 5**), and the
+  workflow baseline moved **2485 -> 2513** from that observed line. Automated
+  registrations grew **38 -> 40**; headless discovery/gate **40/40**; focused
+  `ZM_SaveMenuFlow_Test` **98 frames** and
+  `ZM_RootQuitAndBlockedSave_Test` **146 frames**; full windowed **40/40 passed,
+  0 failed, 0 skipped, 0 zero-frame**. The save directory was EMPTY afterwards
+  and the final exact-diff check was GREEN. Both new tests require graphics, so
+  their behavioral authority is the focused/full local windowed gate, not a
+  headless skip. No commit, push or CI result is claimed.
+- **Contracts held:** `ZM_SaveSchema` and its literal 824-byte v1 artifact are
+  byte-untouched; the eleven modules, their versions/order and all framing remain
+  unchanged. `ZM_GameState` layout is unchanged. `ZM_SaveSlots` is consumed as
+  shipped and no second disk owner exists. `ZM_UI_MenuStack`'s serialized schema
+  and every existing ECS order are unchanged; this by-value presenter consumes no
+  new order, so **114 remains next-free**.
+- **Reversibility / next boundary:** the presentation and root wiring are local,
+  but manual-vs-Auto ownership, the READY/DAMAGED confirmation rule, the dual
+  blocker checks, and focus rehome are now player-facing contracts pinned on both
+  the pure and windowed sides. **SC5 NEXT** adds the title menu and consumes the
+  READY-slot LOAD action as Continue. **SC6** must save to disk, quit, deliberately
+  scramble the persistent live state and prove that scramble took BEFORE
+  Continue, then prove position/party/flags were restored from disk; otherwise
+  `DontDestroyOnLoad` can make a zero-byte Continue look green. SC6 also closes
+  the milestone-autosave obligation. The item-2 Roadmap checkbox therefore stays
+  unchecked at SC1-SC4 of six.
+
+---
+
 ## 2026-07-21 -- ZM-D-139 -- S7 item 2 SC3 captures the player's world position, resumes into it, quits to the title, and latches the milestone autosave
 
 - **Decision / boundary:** ship `Games/Zenithmon/Source/Save/ZM_ResumePoint.{h,cpp}`
