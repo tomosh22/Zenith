@@ -15,6 +15,108 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-24 -- ZM-D-141 -- S7 item 2 SC5 ships the title menu, New Game and the disk-authentic Continue gate
+
+- **Decision / boundary:** ship `Games/Zenithmon/Source/UI/ZM_UI_TitleMenu.{h,cpp}`
+  as the FrontEnd title presenter (by-value, non-ECS, on `ZM_UI_MenuStack` order
+  112, one arm per dispatch switch -- no new ECS order, **114 remains next
+  free**), with `ZM_GameStateManager::RequestNewGame()` /
+  `RequestContinue(ZM_SAVE_SLOT)` as the two title actions, and land the
+  disk-backed scramble gate `ZM_SaveContinue_Test` **in this sub-commit**. The
+  six-SC plan is therefore re-scoped: SC6 retains ONLY the milestone-autosave
+  test closure, because the save -> quit -> scramble -> Continue -> exact
+  restoration proof is already shipped here. This work was found IN FLIGHT and
+  uncommitted on master at session start (runtime complete; the observer seam
+  and windowed test unfinished); the iteration protocol's "finish in-flight
+  work first" rule applied.
+- **The title menu is an ambient FrontEnd screen, not a stack the player
+  opens.** `ZM_UI_MenuStack::OnUpdate` auto-raises TITLE only when the stack is
+  empty AND FrontEnd is the active scene AND no warp/battle transition owns the
+  screen, and force-closes any stack containing TITLE the instant that stops
+  being true -- so TITLE can never fight the pause menu, a warp, or a battle.
+  Continue is visible iff ANY slot probes non-EMPTY (a DAMAGED slot counts,
+  matching `AnySlotOccupied`'s contract from ZM-D-138); New Game is always
+  live. Navigation links are rebuilt on every Present so no link ever targets
+  a hidden Continue, and canvas focus is repaired onto the live default.
+- **Continue is transactional and reads disk exactly once.**
+  `RequestContinue` runs `ZM_SaveSlots::ReadState` into a LOCAL candidate,
+  `QueueResume(candidate.m_xWorldPosition)` through SC3's ordinary validated
+  placement path, then publishes the candidate LAST; any failure returns the
+  exact `Zenith_ErrorCode` and leaves live state and the transition machine
+  untouched. The Yes/No load prompt is armed only from LOAD mode against a row
+  that still probes READY, and the YES arm performs the one definitive
+  `RequestContinue` -- no second codec, slot reader, or placement path, and
+  LOAD remains ungated by the overworld-only SAVE predicate.
+- **The slot layer gained a test-only operation observer, because the
+  disk-authentic claim needs disk-layer evidence.** `ZM_SaveSlots` now ships
+  `ZM_SAVE_SLOT_OPERATION_FOR_TESTS` {PROBE_SLOT, READ_STATE, WRITE_STATE}, a
+  plain-function-pointer observer, and `SetOperationObserverForTests`, firing
+  exactly one event ON ENTRY per public API call (a refused attempt is still
+  observed once). The global defaults nullptr, so shipped behaviour is
+  byte-for-byte unchanged when unset, and `DeleteAllSlotsForTests()` now clears
+  it FIRST -- the between-tests hook needed no edit, honouring TestPlan C3.
+- **Tests that lock it:** 6 `ZM_Title` boot units (name/action totality,
+  all-empty hides Continue, DAMAGED-only keeps Continue without claiming
+  READY, reopen refresh, malformed snapshot fail-closed) + 2 `ZM_MenuStack`
+  boot units (title routing; the `ZM_LoadConfirmState` arm/resolve/reset
+  matrix). The extended `ZM_RootQuitAndBlockedSave_Test` (**158 frames**)
+  proves the Auto-only FrontEnd TITLE contract and the armed-then-ESCAPEd load
+  prompt. The new `ZM_SaveContinue_Test` (**247 frames**) is the full
+  disk-authentic gate: real-input New Game publishes a fresh starter over an
+  installed canary; a busy transition queue refuses `RequestContinue` with
+  exactly one READ and `QUEUE_FULL`; after quit-to-title, Continue stays
+  visible with ONLY a DAMAGED slot on disk; the Auto fixture is restored from
+  bytes captured before its deletion; DAMAGED and EMPTY rows refuse with a
+  plain line, never an armed choice; pre-Yes the live state is still the
+  scramble; the Yes window performs exactly ONE `READ_STATE` on AUTO and ZERO
+  writes at the slot layer; the published state equals the saved fixture and
+  not the scramble; and the restored pose lands within 0.05 planar / 0.10
+  vertical / 0.05 yaw of the saved pose, >= 2 m from both TownCenter and the
+  scramble pose.
+- **★ THE HEADLINE DEFECT, now a standing rule: a monolithic automated-test
+  `Step` function is one stack frame, and in a /Od build that frame is the SUM
+  of every local in every phase.** `Step_ZMSaveContinue`'s 29 phases aggregated
+  ~six `ZM_GameState` locals (each embedding a 6-mon party + 16x30 box
+  storage, ~150-200 KB) into a measured **1,312,136-byte** frame against the
+  exe's **1,048,576-byte** stack reserve -- the process died in `__chkstk` on
+  the FIRST Step call (exit -1073741571 = STATUS_STACK_OVERFLOW, caught via
+  crash-dump analysis, not guesswork). Fixed structurally: 28 per-phase driver
+  functions, each holding at most ~2 `ZM_GameState` (~300-400 KB ceiling), a
+  thin dispatch Step, and a `SCResetGameState` helper so even Setup holds one
+  temporary per frame. Any future multi-phase test touching `ZM_GameState`
+  must follow the per-phase-function shape.
+- **Assessment-found defects repaired in flight:** the observer seam the test
+  referenced was never written (hard compile failure); the
+  `RestoreAutoFixture` phase was declared but unreachable, leaving Auto
+  deleted while a later phase required it READY (logically unpassable); the
+  New Game canary latches were never consumed (vacuous "proof"); six dead
+  latches/helpers were wired or deleted.
+- **Observed gate evidence (all orchestrator-run, serial):** `Build\regen.ps1`
+  GREEN; `zenith build Zenithmon` (`Vulkan_vs2022_Debug_Win64_True`) GREEN;
+  headless **41/0**; boot unit gate **2521 ran / 2520 passed / 0 failed / 1
+  documented skip** (the +8 = 6 `ZM_Title` + 2 `ZM_MenuStack` units; the
+  workflow baseline moved **2513 -> 2521** from the OBSERVED line); focused
+  windowed `ZM_SaveContinue_Test` **247 frames**, `ZM_RootQuitAndBlockedSave_Test`
+  **158**, `ZM_SaveMenuFlow_Test` **98**; full windowed **41/41 passed, 0
+  failed, 0 skipped, 0 zero-frame**; `%APPDATA%/Zenith/Zenithmon` EMPTY
+  afterwards. Adversarial review panel verdict **CLEAN** (0 critical/high/
+  medium; two low/low possible-concerns noted and deliberately not churned:
+  unconditional per-frame `SetFocusable` writes in the title `Present`, and
+  `std::filesystem` use inside the test-only fixture path).
+- **Contracts held:** `ZM_SaveSchema` and its 824-byte v1 golden byte-untouched;
+  `ZM_GameState` layout frozen; `ZM_SaveSlots` framing and
+  write-answers-from-re-probe untouched (the observer is additive and
+  behaviour-inert when unset); `uSERIALIZATION_VERSION` stays 1; no new ECS
+  order; FrontEnd.zscen re-baked by the tools boot and still git-ignored.
+- **Reversibility / next boundary:** the title surface, the two manager
+  actions, and the observer are locally reversible; the player-facing
+  contracts (Continue-visible-on-occupied, exactly-one-read Continue, the
+  transactional publish-last ordering) are now pinned on both the pure and
+  windowed sides. **SC6 NEXT (re-scoped):** the milestone-autosave test
+  obligation only. The item-2 aggregate Roadmap checkbox stays open until SC6.
+
+---
+
 ## 2026-07-22 -- ZM-D-140 -- S7 item 2 SC4 ships one save/load slot presenter plus root-menu Save and Quit
 
 - **Decision / boundary:** ship `Games/Zenithmon/Source/UI/ZM_UI_SaveSlots.{h,cpp}`

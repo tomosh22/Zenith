@@ -9,6 +9,7 @@
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"           // owned BY VALUE (the SC4 party screen)
 #include "Zenithmon/Source/UI/ZM_UI_SaveSlots.h"       // owned BY VALUE (the S7 SC4 save/load screen)
 #include "Zenithmon/Source/UI/ZM_UI_Shop.h"            // owned BY VALUE (the SC7 shop screen)
+#include "Zenithmon/Source/UI/ZM_UI_TitleMenu.h"       // owned BY VALUE (the S7 SC5 FrontEnd title screen)
 
 class Zenith_DataStream;
 class Zenith_UIComponent;
@@ -61,6 +62,7 @@ enum ZM_MENU_SCREEN : u_int
 	ZM_MENU_SCREEN_DIALOGUE,    // SC2: the NPC / prompt dialogue box (modal, not a ROOT entry)
 	ZM_MENU_SCREEN_SHOP,        // SC7: the mart buy/sell screen (raised by TryOpenShop, not a ROOT entry)
 	ZM_MENU_SCREEN_SAVE,        // S7 SC4: the save/load slot screen (serves BOTH modes)
+	ZM_MENU_SCREEN_TITLE,       // S7 SC5: FrontEnd Continue / New Game (auto-raised, not a pause ROOT entry)
 
 	ZM_MENU_SCREEN_COUNT
 };
@@ -94,6 +96,7 @@ enum ZM_DIALOGUE_ACTION : u_int
 	ZM_DIALOGUE_ACTION_HEAL_PARTY,  // the Care Center heal (ZM_ApplyCareCenterHeal)
 	ZM_DIALOGUE_ACTION_WRITE_SAVE_SLOT,   // S7 SC4: YES writes m_ePendingSaveSlot (overwrite confirm)
 	ZM_DIALOGUE_ACTION_QUIT_TO_TITLE,     // S7 SC4: YES quits to the title screen
+	ZM_DIALOGUE_ACTION_LOAD_SAVE_SLOT,    // S7 SC5: YES consumes the pending load slot exactly once
 };
 
 // The action a confirmed ROOT entry resolves to (dispatch is BY FOCUSED-ELEMENT
@@ -125,6 +128,8 @@ public:
 	bool  Push(ZM_MENU_SCREEN eScreen);
 	// Pop the top screen; false when already empty.
 	bool  Pop();
+	// True iff eScreen is stored anywhere in the stack.
+	bool  Contains(ZM_MENU_SCREEN eScreen) const;
 	u_int GetDepth() const { return m_uDepth; }
 	bool  IsEmpty() const { return m_uDepth == 0u; }
 	// The current top, or ZM_MENU_SCREEN_NONE when empty.
@@ -133,6 +138,21 @@ public:
 private:
 	ZM_MENU_SCREEN m_aeScreens[uMAX_DEPTH] = {};
 	u_int          m_uDepth = 0u;
+};
+
+// Pure one-shot pending-load transaction. Arm is single-tenant and transactional;
+// NONE preserves it, NO clears without yielding a slot, and YES clears + yields it.
+class ZM_LoadConfirmState
+{
+public:
+	void Reset() { m_ePendingSlot = ZM_SAVE_SLOT_NONE; }
+	bool Arm(ZM_SAVE_SLOT eSlot);
+	ZM_SAVE_SLOT Resolve(ZM_DIALOGUE_CHOICE eAnswer);
+	bool IsArmed() const { return m_ePendingSlot != ZM_SAVE_SLOT_NONE; }
+	ZM_SAVE_SLOT GetPendingSlot() const { return m_ePendingSlot; }
+
+private:
+	ZM_SAVE_SLOT m_ePendingSlot = ZM_SAVE_SLOT_NONE;
 };
 
 // ----------------------------------------------------------------------------
@@ -286,6 +306,15 @@ public:
 	// Manual writes performed this session (test / observation latch; survives close).
 	u_int         GetSaveWriteCount()  const { return m_uSaveWriteCount; }
 
+	// ---- Title / Continue (S7 item 2 SC5) ----
+	const ZM_UI_TitleMenu& GetTitleScreen() const { return m_xTitle; }
+	// Pending is session state. Result latches survive an ordinary successful close
+	// so the transaction remains observable on the following test/runtime frame.
+	ZM_SAVE_SLOT GetPendingLoadSlot() const { return m_xLoadConfirm.GetPendingSlot(); }
+	ZM_SAVE_SLOT GetLastLoadSlot() const { return m_eLastLoadSlot; }
+	Zenith_Status GetLastLoadStatus() const { return m_xLastLoadStatus; }
+	u_int GetLoadReadCount() const { return m_uLoadReadCount; }
+
 	// ---- Persistent-singleton observation (mirrors ZM_BattleTransition) ----
 	static bool TryGetUniqueSingletonEntityID(Zenith_EntityID& xEntityIDOut);
 	// Force-close the menu on the live singleton (unfreeze + clear focus). Skip-safe
@@ -323,12 +352,19 @@ public:
 	static int RootItemIndexFromElementName(const char* szElementName);
 	// The screen an OPEN_* action pushes; ZM_MENU_SCREEN_NONE for CLOSE / NONE.
 	static ZM_MENU_SCREEN RootActionToScreen(ZM_MENU_ACTION eAction);
+	// Continue must route to the shared slot screen in specifically LOAD mode.
+	// Non-screen title actions return NONE / MODE_COUNT.
+	static ZM_MENU_SCREEN TitleActionToScreen(ZM_TITLE_ACTION eAction);
+	static ZM_SAVE_SCREEN_MODE TitleActionToSaveMode(ZM_TITLE_ACTION eAction);
 
 private:
 	// Session lifecycle helpers.
+	void OpenTitleMenu();
+	void RefreshTitleMenu();
 	void OpenRootMenu();
 	void CloseMenu();
 	void HandleConfirm();
+	bool OpenLoadConfirmPrompt(ZM_SAVE_SLOT eSlot);
 	// Leave the top screen: pop it, and close the whole menu once the stack empties.
 	// The ONE close path -- cancel, a dialogue read to the end, and an answered prompt
 	// all leave through it.
@@ -366,6 +402,9 @@ private:
 	// status, and queue a result line onto the (empty) box. The single write path shared by
 	// the immediate-WRITE arm and the WRITE_SAVE_SLOT confirm.
 	void PerformSaveToSlot(ZM_SAVE_SLOT eSlot);
+	// True only for the loaded active FrontEnd scene (build index 0). Warp/battle
+	// transition ownership is checked separately by OnUpdate.
+	static bool IsActiveSceneFrontEnd();
 	void FreezePlayer();
 	void UnfreezePlayer();
 
@@ -391,12 +430,17 @@ private:
 	ZM_UI_Bag          m_xBagScreen;                              // the BAG screen's model (SC6; PODs only)
 	ZM_UI_Shop         m_xShop;                                   // the SHOP screen's model (SC7; PODs only)
 	ZM_UI_SaveSlots    m_xSaveScreen;                            // the SAVE/LOAD screen's model (S7 SC4; PODs only)
+	ZM_UI_TitleMenu    m_xTitle;                                 // the FrontEnd title model (S7 SC5; two bools)
 	// The slot an armed WRITE confirm targets. Session state; consumed with m_eDialogueAction.
 	ZM_SAVE_SLOT       m_ePendingSaveSlot = ZM_SAVE_SLOT_NONE;
+	ZM_LoadConfirmState m_xLoadConfirm;                           // pending READ target (all slots incl Auto)
 	// The LAST manual save's status. A deliberately non-Ok default (no save has run yet);
 	// a latch that survives a menu close, like m_eLastDialogueAnswer.
 	Zenith_Status      m_xLastSaveStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
 	u_int              m_uSaveWriteCount = 0u;                   // manual writes performed (test / observation latch)
+	ZM_SAVE_SLOT       m_eLastLoadSlot = ZM_SAVE_SLOT_NONE;
+	Zenith_Status      m_xLastLoadStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
+	u_int              m_uLoadReadCount = 0u;                    // definitive RequestContinue attempts
 	ZM_DIALOGUE_ACTION m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;   // what a YES does (SC8)
 	ZM_DIALOGUE_CHOICE m_eLastDialogueAnswer = ZM_DIALOGUE_CHOICE_NONE;   // the latched answer (SC8)
 	int                m_iCursor = -1;                            // focused-item mirror (see GetCursor)

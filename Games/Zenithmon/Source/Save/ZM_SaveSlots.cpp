@@ -104,6 +104,26 @@ namespace
 	// expression it was before.
 	bool s_bForceTestSlotNames = false;
 
+	// The installed slot-operation observer behind
+	// ZM_SaveSlots::SetOperationObserverForTests. Same deliberate file-scope
+	// mutable-static exception as s_bForceTestSlotNames above, and the same safety
+	// shape: it DEFAULTS nullptr, nothing outside a test ever installs one, and
+	// every call site below is then a single null check, so shipped behaviour and
+	// cost are byte-for-byte unchanged. DeleteAllSlotsForTests clears it, which is
+	// what lets the between-tests hook (Zenithmon.cpp) reset every test seam in
+	// this file without naming the observer.
+	ZM_SaveSlotOperationObserverForTests s_pfnOperationObserver = nullptr;
+
+	// The ONE firing point. On entry of each observed public function, exactly
+	// once per call -- see the header for the full semantics.
+	void NotifySlotOperation(ZM_SAVE_SLOT_OPERATION_FOR_TESTS eOperation, ZM_SAVE_SLOT eSlot)
+	{
+		if (s_pfnOperationObserver != nullptr)
+		{
+			s_pfnOperationObserver(eOperation, eSlot);
+		}
+	}
+
 	bool ZM_IsRealSlot(ZM_SAVE_SLOT eSlot)
 	{
 		// ZM_SAVE_SLOT_NONE aliases ZM_SAVE_SLOT_COUNT, so this single comparison
@@ -277,6 +297,7 @@ Zenith_Status ZM_SaveSlots::WriteState(const ZM_GameState& xState, ZM_SAVE_SLOT 
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"ZM_SaveSlots::WriteState must be called from the main thread");
+	NotifySlotOperation(ZM_SAVE_SLOT_OPERATION_WRITE_STATE, eSlot);
 
 	const char* szSlot = SlotName(eSlot);
 	if (szSlot[0] == '\0')
@@ -337,6 +358,7 @@ Zenith_Status ZM_SaveSlots::ReadState(ZM_SAVE_SLOT eSlot, ZM_GameState& xOutStat
 {
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"ZM_SaveSlots::ReadState must be called from the main thread");
+	NotifySlotOperation(ZM_SAVE_SLOT_OPERATION_READ_STATE, eSlot);
 
 	const char* szSlot = SlotName(eSlot);
 	if (szSlot[0] == '\0')
@@ -370,6 +392,7 @@ ZM_SAVE_SLOT_STATUS ZM_SaveSlots::ProbeSlot(ZM_SAVE_SLOT eSlot)
 	// (Zenithmon.cpp:1262) is likewise main-thread. No unit can trip it.
 	Zenith_Assert(g_xEngine.Threading().IsMainThread(),
 		"ZM_SaveSlots::ProbeSlot must be called from the main thread");
+	NotifySlotOperation(ZM_SAVE_SLOT_OPERATION_PROBE_SLOT, eSlot);
 
 	const char* szSlot = SlotName(eSlot);
 	if (szSlot[0] == '\0') { return ZM_SAVE_SLOT_EMPTY; }
@@ -465,6 +488,12 @@ ZM_SaveSlots::ZM_SAVE_BLOCKER ZM_SaveSlots::ResolveLiveSaveBlocker()
 #ifdef ZENITH_INPUT_SIMULATOR
 void ZM_SaveSlots::DeleteAllSlotsForTests()
 {
+	// The one reset point for every test seam in this file: clear the operation
+	// observer FIRST (before any file work, so not even a future observed delete
+	// could leak an event into a successor test), so the between-tests hook --
+	// which calls this and nothing else from this layer -- honours TestPlan C3's
+	// "every test-global is reset between tests" without knowing the seam exists.
+	s_pfnOperationObserver = nullptr;
 	for (u_int uSlot = 0u; uSlot < (u_int)ZM_SAVE_SLOT_COUNT; ++uSlot)
 	{
 		// The false return (nothing there) is the ordinary case and is not a failure.
@@ -477,5 +506,13 @@ void ZM_SaveSlots::SetTestSlotNamesForTests(bool bEnable)
 	// Deliberately unconditional and un-asserted: a test's RAII scope must be able to
 	// clear this on the way out even from a unit that has already recorded failures.
 	s_bForceTestSlotNames = bEnable;
+}
+
+void ZM_SaveSlots::SetOperationObserverForTests(
+	ZM_SaveSlotOperationObserverForTests pfnObserver)
+{
+	// Same shape as SetTestSlotNamesForTests: unconditional and un-asserted, so a
+	// test can always clear the seam on the way out of an already-failed run.
+	s_pfnOperationObserver = pfnObserver;
 }
 #endif

@@ -10,6 +10,20 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-24-001 -- repo-root `AGENTS.md` was deleted in the in-flight working tree; restored as out-of-scope
+
+**Question:** was the deletion of the repo-root `AGENTS.md` (290 lines, the pre-CLAUDE.md onboarding doc) deliberate?
+
+**Context:** found at session start 2026-07-24 as an unstaged ` D AGENTS.md` alongside the in-flight SC5 save-system work. The deletion is unrelated to the title-menu change and is mentioned in no Zenithmon doc. `AGENTS.md` is the stale predecessor of the now-primary `CLAUDE.md` (same structure; the per-directory docs are all CLAUDE.md today), so the deletion is plausibly intentional repo hygiene -- but committing it inside the SC5 save commit would be a scope leak.
+
+**Best guess if you don't reply:** the file was RESTORED (`git restore AGENTS.md`) and kept out of the SC5 commit. If you want it deleted repo-wide, say so and it lands as its own `chore` commit.
+
+**Cost of getting it wrong:** low either way -- restoring a stale duplicate costs a stale file in the tree; deleting it later is one commit.
+
+**Status:** asked 2026-07-24; acting on best guess.
+
+---
+
 ### [OPEN] Q-2026-07-21-001 -- ENGINE: terrain sets up GPU culling resources with no headless guard
 
 **Question:** should `Zenith_TerrainComponent::InitializeCullingResources()` (and the unified terrain buffer upload around it) skip GPU-driven culling setup when the engine is running headless?

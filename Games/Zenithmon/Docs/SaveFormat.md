@@ -540,9 +540,13 @@ serialization order.
   documented skip**; headless discovery/gate **40/40**; full windowed **40/40
   passed, 0 failed, 0 skipped, 0 zero-frame**; save directory empty; exact-diff
   check green. No commit, push or CI result is claimed yet.
-- **Still owed:** SC5 title menu + Continue consumes the READY-slot LOAD seam.
-  SC6's `ZM_SaveContinue_Test` must save, quit to FrontEnd, deliberately scramble
-  the persistent live state and prove that scramble took, then Continue and assert
-  position/party/flags restored exactly from DISK; it also closes the milestone
-  autosave test. Without the scramble, `DontDestroyOnLoad` can let a Continue that
-  reads zero bytes pass green.
+- **Still owed:** SC6 (re-scoped, ZM-D-141) closes the milestone-autosave test
+  obligation only. SC5 SHIPPED 2026-07-24: the title menu consumes the
+  READY-slot LOAD seam (EMPTY/DAMAGED non-loadable; DAMAGED still counts as
+  occupied for Continue visibility), and `ZM_SaveContinue_Test` (**247
+  frames**) is the disk-authentic gate -- save, quit to FrontEnd, deliberately
+  scramble the persistent live state AND prove the scramble took, then Continue
+  and assert position/party/flags restored exactly from DISK, with exactly one
+  `READ_STATE` on AUTO and zero writes in the Yes window (pinned by the
+  `ZM_SaveSlots` operation observer). Without the scramble, `DontDestroyOnLoad`
+  can let a Continue that reads zero bytes pass green.

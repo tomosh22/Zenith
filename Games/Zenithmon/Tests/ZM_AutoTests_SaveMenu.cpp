@@ -73,6 +73,7 @@
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"
 #include "Zenithmon/Source/UI/ZM_UI_SaveSlots.h"
+#include "Zenithmon/Source/UI/ZM_UI_TitleMenu.h"
 
 namespace
 {
@@ -1288,7 +1289,8 @@ namespace
 	// after real M/Down input has opened ROOT and focused Save itself, so hiding Save
 	// must also re-home the canvas focus onto a recognized live ROOT entry. All
 	// blocked traversal remains real input. After the real Yes reaches FrontEnd, the
-	// public LOAD seam proves Auto remains presentable there.
+	// public LOAD seam proves Auto remains presentable there, raises the real load
+	// confirmation, and a real No returns without reading or mutating anything.
 	// ========================================================================
 
 	constexpr int iRQ_READY_DEADLINE    = 600;
@@ -1323,6 +1325,8 @@ namespace
 		OpenLoad,
 		WalkToAuto,
 		ActivateAuto,
+		ReadAutoPrompt,
+		ObserveAutoNo,
 		Done,
 	};
 
@@ -1346,6 +1350,7 @@ namespace
 	bool g_bRQReachedYes = false;
 	bool g_bRQReachedFrontEnd = false;
 	bool g_bRQFrontEndIdle = false;
+	bool g_bRQAutoOnlyTitleReady = false;
 	u_int g_uRQLoadsBeforeNo = 0xFFFFFFFFu;
 	u_int g_uRQLoadsAfterNo = 0u;
 	u_int g_uRQLoadsAfterYes = 0u;
@@ -1371,8 +1376,26 @@ namespace
 	bool g_bRQAutoVisible = false;
 	bool g_bRQAutoFocusable = false;
 	bool g_bRQReachedAuto = false;
+	bool g_bRQAutoStateSnapshotTaken = false;
+	bool g_bRQAutoPromptAwaiting = false;
+	bool g_bRQAutoPromptPendingAuto = false;
+	bool g_bRQAutoPromptActionLoad = false;
+	bool g_bRQAutoPreAnswerNoRead = false;
+	bool g_bRQAutoPreAnswerNoWarp = false;
+	bool g_bRQAutoPreAnswerStateUnchanged = false;
+	bool g_bRQAutoPreAnswerNoWrite = false;
+	bool g_bRQAutoNoReturnedLoad = false;
+	bool g_bRQAutoNoClearedPending = false;
+	bool g_bRQAutoNoRead = false;
+	bool g_bRQAutoNoWarp = false;
+	bool g_bRQAutoNoStateMutation = false;
 	bool g_bRQAutoActivationStayedLoad = false;
 	bool g_bRQAutoActivationDidNotWrite = false;
+	u_int g_uRQAutoLoadReadsBefore = 0xffffffffu;
+	u_int g_uRQAutoLoadsBefore = 0xffffffffu;
+	u_int g_uRQAutoWritesBefore = 0xffffffffu;
+	u_int g_uRQAutoWriteLogBefore = 0xffffffffu;
+	u_int8 g_auRQAutoStateBefore[sizeof(ZM_GameState)] = {};
 
 	int RQActiveBuildIndex()
 	{
@@ -1446,6 +1469,7 @@ namespace
 		g_bRQReachedYes = false;
 		g_bRQReachedFrontEnd = false;
 		g_bRQFrontEndIdle = false;
+		g_bRQAutoOnlyTitleReady = false;
 		g_uRQLoadsBeforeNo = 0xFFFFFFFFu;
 		g_uRQLoadsAfterNo = 0u;
 		g_uRQLoadsAfterYes = 0u;
@@ -1470,8 +1494,26 @@ namespace
 		g_bRQAutoVisible = false;
 		g_bRQAutoFocusable = false;
 		g_bRQReachedAuto = false;
+		g_bRQAutoStateSnapshotTaken = false;
+		g_bRQAutoPromptAwaiting = false;
+		g_bRQAutoPromptPendingAuto = false;
+		g_bRQAutoPromptActionLoad = false;
+		g_bRQAutoPreAnswerNoRead = false;
+		g_bRQAutoPreAnswerNoWarp = false;
+		g_bRQAutoPreAnswerStateUnchanged = false;
+		g_bRQAutoPreAnswerNoWrite = false;
+		g_bRQAutoNoReturnedLoad = false;
+		g_bRQAutoNoClearedPending = false;
+		g_bRQAutoNoRead = false;
+		g_bRQAutoNoWarp = false;
+		g_bRQAutoNoStateMutation = false;
 		g_bRQAutoActivationStayedLoad = false;
 		g_bRQAutoActivationDidNotWrite = false;
+		g_uRQAutoLoadReadsBefore = 0xffffffffu;
+		g_uRQAutoLoadsBefore = 0xffffffffu;
+		g_uRQAutoWritesBefore = 0xffffffffu;
+		g_uRQAutoWriteLogBefore = 0xffffffffu;
+		std::memset(g_auRQAutoStateBefore, 0, sizeof(g_auRQAutoStateBefore));
 
 		Zenith_InputSimulator::ResetAllInputState();
 		ZM_UI_MenuStack::ResetRuntimeStateForTests();
@@ -1811,17 +1853,37 @@ namespace
 		case RQPhase::AwaitFrontEndIdle:
 		{
 			ZM_GameStateManager* pxManager = RQResolveManager();
+			ZM_UI_MenuStack* pxMenu = ResolveMenuStack();
 			if (pxManager != nullptr
 				&& pxManager->GetTransitionState() == ZM_WARP_TRANSITION_IDLE
-				&& ResolveMenuStack() != nullptr)
+				&& pxMenu != nullptr)
 			{
-				g_bRQFrontEndIdle = true;
-				g_uRQLoadsAfterYes = pxManager->GetIssuedLoadRequestCount();
-				g_eRQPhase = RQPhase::OpenLoad; g_iRQPhaseFrames = 0; return true;
+				Zenith_UIComponent* pxUI = ResolveMenuRootUI();
+				Zenith_UI::Zenith_UIElement* pxContinue = pxUI != nullptr
+					? pxUI->FindElement(ZM_UI_TitleMenu::szCONTINUE_NAME)
+					: nullptr;
+				g_bRQAutoOnlyTitleReady =
+					ZM_SaveSlots::ProbeSlot(ZM_SAVE_SLOT_0) == ZM_SAVE_SLOT_EMPTY
+					&& ZM_SaveSlots::ProbeSlot(ZM_SAVE_SLOT_1) == ZM_SAVE_SLOT_EMPTY
+					&& ZM_SaveSlots::ProbeSlot(ZM_SAVE_SLOT_2) == ZM_SAVE_SLOT_EMPTY
+					&& ZM_SaveSlots::ProbeSlot(ZM_SAVE_SLOT_AUTO) == ZM_SAVE_SLOT_READY
+					&& pxMenu->GetTopScreen() == ZM_MENU_SCREEN_TITLE
+					&& pxMenu->GetTitleScreen().HasOccupiedSlot()
+					&& pxMenu->GetTitleScreen().HasReadySlot()
+					&& pxContinue != nullptr
+					&& pxContinue->IsVisible()
+					&& pxContinue->IsFocusable()
+					&& pxUI->GetCanvas().GetFocusedElement() == pxContinue;
+				if (g_bRQAutoOnlyTitleReady)
+				{
+					g_bRQFrontEndIdle = true;
+					g_uRQLoadsAfterYes = pxManager->GetIssuedLoadRequestCount();
+					g_eRQPhase = RQPhase::OpenLoad; g_iRQPhaseFrames = 0; return true;
+				}
 			}
 			if (g_iRQPhaseFrames > iRQ_IDLE_DEADLINE)
 			{
-				FailRQ("FrontEnd never settled with unique manager/menu roots"); return false;
+				FailRQ("FrontEnd never settled with the Auto-only TITLE contract"); return false;
 			}
 			return true;
 		}
@@ -1847,7 +1909,23 @@ namespace
 		case RQPhase::WalkToAuto:
 			if (StepRQDownTo(ZM_UI_SaveSlots::RowElementName((u_int)ZM_SAVE_SLOT_AUTO)))
 			{
-				g_bRQReachedAuto = true; g_eRQPhase = RQPhase::ActivateAuto;
+				ZM_UI_MenuStack* pxMenu = ResolveMenuStack();
+				ZM_GameStateManager* pxManager = RQResolveManager();
+				ZM_GameState* pxState = nullptr;
+				if (pxMenu == nullptr || pxManager == nullptr
+					|| !ZM_GameStateManager::TryGetGameState(pxState) || pxState == nullptr)
+				{
+					FailRQ("menu/manager/live state missing before READY Auto activation");
+					return false;
+				}
+				g_bRQReachedAuto = true;
+				std::memcpy(g_auRQAutoStateBefore, pxState, sizeof(ZM_GameState));
+				g_bRQAutoStateSnapshotTaken = true;
+				g_uRQAutoLoadReadsBefore = pxMenu->GetLoadReadCount();
+				g_uRQAutoLoadsBefore = pxManager->GetIssuedLoadRequestCount();
+				g_uRQAutoWritesBefore = pxMenu->GetSaveWriteCount();
+				g_uRQAutoWriteLogBefore = Zenith_SaveData::GetWrittenSlotsForTest().GetSize();
+				g_eRQPhase = RQPhase::ActivateAuto;
 				g_iRQPhaseFrames = 0; return true;
 			}
 			if (g_iRQPhaseFrames > iRQ_WALK_DEADLINE)
@@ -1859,16 +1937,85 @@ namespace
 			if (g_iRQPhaseFrames == 2) { Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER); }
 			if (g_iRQPhaseFrames >= iRQ_SETTLE_FRAMES)
 			{
-				ZM_UI_MenuStack* pxMenu = ResolveMenuStack();
-				g_bRQAutoActivationStayedLoad = pxMenu != nullptr
-					&& pxMenu->GetTopScreen() == ZM_MENU_SCREEN_SAVE
-					&& pxMenu->GetSaveScreen().GetMode() == ZM_SAVE_SCREEN_MODE_LOAD;
-				g_bRQAutoActivationDidNotWrite = pxMenu != nullptr
-					&& pxMenu->GetSaveWriteCount() == 0u
-					&& ZM_SaveSlots::ProbeSlot(ZM_SAVE_SLOT_AUTO) == ZM_SAVE_SLOT_READY;
-				g_eRQPhase = RQPhase::Done; return false;
+				g_eRQPhase = RQPhase::ReadAutoPrompt;
+				g_iRQPhaseFrames = 0;
 			}
 			return true;
+		case RQPhase::ReadAutoPrompt:
+		{
+			ZM_UI_MenuStack* pxMenu = ResolveMenuStack();
+			ZM_GameStateManager* pxManager = RQResolveManager();
+			ZM_GameState* pxState = nullptr;
+			if (pxMenu != nullptr && pxManager != nullptr
+				&& ZM_GameStateManager::TryGetGameState(pxState) && pxState != nullptr
+				&& pxMenu->IsDialogueAwaitingChoice())
+			{
+				g_bRQAutoPromptAwaiting = true;
+				g_bRQAutoPromptPendingAuto =
+					pxMenu->GetPendingLoadSlot() == ZM_SAVE_SLOT_AUTO;
+				g_bRQAutoPromptActionLoad =
+					pxMenu->GetPendingDialogueAction() == ZM_DIALOGUE_ACTION_LOAD_SAVE_SLOT;
+				g_bRQAutoPreAnswerNoRead =
+					pxMenu->GetLoadReadCount() == g_uRQAutoLoadReadsBefore;
+				g_bRQAutoPreAnswerNoWarp =
+					!ZM_GameStateManager::IsWarpInProgress()
+					&& pxManager->GetIssuedLoadRequestCount() == g_uRQAutoLoadsBefore;
+				g_bRQAutoPreAnswerStateUnchanged = g_bRQAutoStateSnapshotTaken
+					&& std::memcmp(pxState, g_auRQAutoStateBefore, sizeof(ZM_GameState)) == 0;
+				g_bRQAutoPreAnswerNoWrite =
+					pxMenu->GetSaveWriteCount() == g_uRQAutoWritesBefore
+					&& Zenith_SaveData::GetWrittenSlotsForTest().GetSize()
+						== g_uRQAutoWriteLogBefore
+					&& ZM_SaveSlots::ProbeSlot(ZM_SAVE_SLOT_AUTO) == ZM_SAVE_SLOT_READY;
+
+				// Escape is the dialogue primitive's real No edge (the same input path used
+				// by the Quit-No half above). No direct Resolve/Pop seam is called here.
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ESCAPE);
+				g_eRQPhase = RQPhase::ObserveAutoNo;
+				g_iRQPhaseFrames = 0; return true;
+			}
+			if (g_iRQPhaseFrames > iRQ_PROMPT_DEADLINE)
+			{
+				FailRQ("READY Auto load prompt never reached its real Yes/No choice");
+				return false;
+			}
+			if ((g_iRQPhaseFrames % 4) == 1)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			}
+			return true;
+		}
+		case RQPhase::ObserveAutoNo:
+		{
+			if (g_iRQPhaseFrames < iRQ_SETTLE_FRAMES) { return true; }
+			ZM_UI_MenuStack* pxMenu = ResolveMenuStack();
+			ZM_GameStateManager* pxManager = RQResolveManager();
+			ZM_GameState* pxState = nullptr;
+			if (pxMenu == nullptr || pxManager == nullptr
+				|| !ZM_GameStateManager::TryGetGameState(pxState) || pxState == nullptr)
+			{
+				FailRQ("menu/manager/live state missing after cancelling READY Auto load");
+				return false;
+			}
+			g_bRQAutoNoReturnedLoad = pxMenu->GetTopScreen() == ZM_MENU_SCREEN_SAVE
+				&& pxMenu->GetSaveScreen().GetMode() == ZM_SAVE_SCREEN_MODE_LOAD
+				&& pxMenu->GetLastDialogueAnswer() == ZM_DIALOGUE_CHOICE_NO;
+			g_bRQAutoNoClearedPending =
+				pxMenu->GetPendingLoadSlot() == ZM_SAVE_SLOT_NONE
+				&& pxMenu->GetPendingDialogueAction() == ZM_DIALOGUE_ACTION_NONE;
+			g_bRQAutoNoRead = pxMenu->GetLoadReadCount() == g_uRQAutoLoadReadsBefore;
+			g_bRQAutoNoWarp = !ZM_GameStateManager::IsWarpInProgress()
+				&& pxManager->GetIssuedLoadRequestCount() == g_uRQAutoLoadsBefore;
+			g_bRQAutoNoStateMutation = g_bRQAutoStateSnapshotTaken
+				&& std::memcmp(pxState, g_auRQAutoStateBefore, sizeof(ZM_GameState)) == 0;
+			g_bRQAutoActivationStayedLoad = g_bRQAutoNoReturnedLoad;
+			g_bRQAutoActivationDidNotWrite =
+				pxMenu->GetSaveWriteCount() == g_uRQAutoWritesBefore
+				&& Zenith_SaveData::GetWrittenSlotsForTest().GetSize()
+					== g_uRQAutoWriteLogBefore
+				&& ZM_SaveSlots::ProbeSlot(ZM_SAVE_SLOT_AUTO) == ZM_SAVE_SLOT_READY;
+			g_eRQPhase = RQPhase::Done; return false;
+		}
 		case RQPhase::Done:
 			return false;
 		}
@@ -1909,6 +2056,15 @@ namespace
 				g_bRQFrontEndIdle ? "true" : "false", g_uRQLoadsBeforeNo, g_uRQLoadsAfterYes);
 			bPassed = false;
 		}
+		if (!g_bRQAutoOnlyTitleReady)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_RootQuitAndBlockedSave] settled Auto-only FrontEnd did not keep all manual "
+				"slots EMPTY and Auto READY while presenting active TITLE with occupied/ready "
+				"state and visible, focusable, focused Continue (observed=%s)",
+				g_bRQAutoOnlyTitleReady ? "true" : "false");
+			bPassed = false;
+		}
 		if (!g_bRQWarpBlockerLive || !g_bRQReachedSaveBeforeBlocker
 			|| !g_bRQSaveHidden || !g_bRQSaveNotFocusable
 			|| !g_bRQFocusRehomedToLiveRoot || g_bRQFocusedSaveWhileBlocked
@@ -1947,17 +2103,36 @@ namespace
 		}
 		if (!g_bRQAutoFixtureReady || !g_bRQLoadOpened || !g_bRQLoadMode
 			|| !g_bRQAutoReadyInLoad || !g_bRQAutoVisible || !g_bRQAutoFocusable
-			|| !g_bRQReachedAuto || !g_bRQAutoActivationStayedLoad
-			|| !g_bRQAutoActivationDidNotWrite)
+			|| !g_bRQReachedAuto || !g_bRQAutoStateSnapshotTaken
+			|| !g_bRQAutoPromptAwaiting || !g_bRQAutoPromptPendingAuto
+			|| !g_bRQAutoPromptActionLoad || !g_bRQAutoPreAnswerNoRead
+			|| !g_bRQAutoPreAnswerNoWarp || !g_bRQAutoPreAnswerStateUnchanged
+			|| !g_bRQAutoPreAnswerNoWrite || !g_bRQAutoNoReturnedLoad
+			|| !g_bRQAutoNoClearedPending || !g_bRQAutoNoRead
+			|| !g_bRQAutoNoWarp || !g_bRQAutoNoStateMutation
+			|| !g_bRQAutoActivationStayedLoad || !g_bRQAutoActivationDidNotWrite)
 		{
 			Zenith_Error(LOG_CATEGORY_UNITTEST,
-				"[ZM_RootQuitAndBlockedSave] LOAD from FrontEnd (including Auto) was not "
-				"preserved (fixture/open/mode/ready/visible/focusable/reached/stayed/noWrite="
-				"%s/%s/%s/%s/%s/%s/%s/%s/%s)",
+				"[ZM_RootQuitAndBlockedSave] READY Auto load-confirm No contract failed "
+				"(fixture/open/mode/ready/visible/focusable/reached/snapshot/prompt/pending/"
+				"action/preRead/preWarp/preState/preWrite/returned/cleared/postRead/postWarp/"
+				"postState/stayed/noWrite=%s/%s/%s/%s/%s/%s/%s/%s/%s/%s/%s/%s/%s/%s/"
+				"%s/%s/%s/%s/%s/%s/%s/%s)",
 				g_bRQAutoFixtureReady ? "true" : "false", g_bRQLoadOpened ? "true" : "false",
 				g_bRQLoadMode ? "true" : "false", g_bRQAutoReadyInLoad ? "true" : "false",
 				g_bRQAutoVisible ? "true" : "false", g_bRQAutoFocusable ? "true" : "false",
-				g_bRQReachedAuto ? "true" : "false",
+				g_bRQReachedAuto ? "true" : "false", g_bRQAutoStateSnapshotTaken ? "true" : "false",
+				g_bRQAutoPromptAwaiting ? "true" : "false",
+				g_bRQAutoPromptPendingAuto ? "true" : "false",
+				g_bRQAutoPromptActionLoad ? "true" : "false",
+				g_bRQAutoPreAnswerNoRead ? "true" : "false",
+				g_bRQAutoPreAnswerNoWarp ? "true" : "false",
+				g_bRQAutoPreAnswerStateUnchanged ? "true" : "false",
+				g_bRQAutoPreAnswerNoWrite ? "true" : "false",
+				g_bRQAutoNoReturnedLoad ? "true" : "false",
+				g_bRQAutoNoClearedPending ? "true" : "false",
+				g_bRQAutoNoRead ? "true" : "false", g_bRQAutoNoWarp ? "true" : "false",
+				g_bRQAutoNoStateMutation ? "true" : "false",
 				g_bRQAutoActivationStayedLoad ? "true" : "false",
 				g_bRQAutoActivationDidNotWrite ? "true" : "false");
 			bPassed = false;
@@ -1982,7 +2157,8 @@ static const Zenith_AutomatedTest g_xZMRootQuitAndBlockedSaveTest = {
 	&Step_ZMRootQuitAndBlockedSave,
 	&Verify_ZMRootQuitAndBlockedSave,
 	// 600 ready + 2x(90 open/walk + 120 prompt/walk) + 420 FrontEnd + 160 idle
-	// + four 120-frame nav walks + fixed settles stays below this backstop.
+	// + four 120-frame nav walks + the final 120-frame Auto prompt + fixed settles
+	// stays below this backstop.
 	/* maxFrames */ 2500,
 	true /* m_bRequiresGraphics */,
 };

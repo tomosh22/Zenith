@@ -71,9 +71,50 @@ bool ZM_MenuScreenStack::Pop()
 	return true;
 }
 
+bool ZM_MenuScreenStack::Contains(ZM_MENU_SCREEN eScreen) const
+{
+	if (eScreen == ZM_MENU_SCREEN_NONE)
+	{
+		return false;
+	}
+	for (u_int u = 0u; u < m_uDepth; ++u)
+	{
+		if (m_aeScreens[u] == eScreen)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 ZM_MENU_SCREEN ZM_MenuScreenStack::Top() const
 {
 	return (m_uDepth == 0u) ? ZM_MENU_SCREEN_NONE : m_aeScreens[m_uDepth - 1u];
+}
+
+// ---- ZM_LoadConfirmState (pure) --------------------------------------------
+
+bool ZM_LoadConfirmState::Arm(ZM_SAVE_SLOT eSlot)
+{
+	if (IsArmed()
+		|| static_cast<u_int>(eSlot) >= static_cast<u_int>(ZM_SAVE_SLOT_COUNT))
+	{
+		return false;
+	}
+	m_ePendingSlot = eSlot;
+	return true;
+}
+
+ZM_SAVE_SLOT ZM_LoadConfirmState::Resolve(ZM_DIALOGUE_CHOICE eAnswer)
+{
+	if (!IsArmed()
+		|| (eAnswer != ZM_DIALOGUE_CHOICE_YES && eAnswer != ZM_DIALOGUE_CHOICE_NO))
+	{
+		return ZM_SAVE_SLOT_NONE;   // NONE/invalid is not an answer and preserves the arm
+	}
+	const ZM_SAVE_SLOT eSlot = m_ePendingSlot;
+	Reset();
+	return (eAnswer == ZM_DIALOGUE_CHOICE_YES) ? eSlot : ZM_SAVE_SLOT_NONE;
 }
 
 // ---- Construction + lifecycle ----------------------------------------------
@@ -112,7 +153,9 @@ void ZM_UI_MenuStack::OnStart()
 	m_xBagScreen.Reset();
 	m_xShop.Reset();
 	m_xSaveScreen.Reset();
+	m_xTitle.Open(nullptr, 0u);
 	m_ePendingSaveSlot = ZM_SAVE_SLOT_NONE;
+	m_xLoadConfirm.Reset();
 	m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
 	// The latched answer is deliberately NOT cleared by CloseMenu (it must survive the
 	// close that resolving a prompt triggers), so boot and deserialize are the only
@@ -121,6 +164,9 @@ void ZM_UI_MenuStack::OnStart()
 	m_eLastDialogueAnswer = ZM_DIALOGUE_CHOICE_NONE;
 	m_xLastSaveStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
 	m_uSaveWriteCount = 0u;
+	m_eLastLoadSlot = ZM_SAVE_SLOT_NONE;
+	m_xLastLoadStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
+	m_uLoadReadCount = 0u;
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 
@@ -139,15 +185,36 @@ void ZM_UI_MenuStack::OnDestroy()
 
 void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 {
+	const bool bWarpInProgress = ZM_GameStateManager::IsWarpInProgress();
+	const bool bBattleTransitionActive = ZM_BattleTransition::IsTransitionActive();
+	const bool bFrontEndActive = IsActiveSceneFrontEnd();
+
+	// TITLE is a persistent-root session, not scene state. OnStart does not rerun when the
+	// surviving MenuRoot returns to FrontEnd, so raise it from settled active-scene state;
+	// conversely, tear the whole TITLE -> LOAD -> DIALOGUE stack down the instant another
+	// transition or scene owns the screen so no title control can leak into Dawnmere.
+	if (m_xStack.Contains(ZM_MENU_SCREEN_TITLE)
+		&& (!bFrontEndActive || bWarpInProgress || bBattleTransitionActive))
+	{
+		CloseMenu();
+		return;
+	}
+
 	if (!IsOpen())
 	{
+		if (bFrontEndActive && !bWarpInProgress && !bBattleTransitionActive)
+		{
+			OpenTitleMenu();
+			return;
+		}
+
 		// Overworld pause-open gate: menu key, in an overworld scene, no warp / battle.
 		if (ShouldOpenMenu(
 			ZM_InputActions::ReadMenuPressed(),
 			/* bAlreadyOpen */ false,
 			IsActiveSceneOverworld(),
-			ZM_GameStateManager::IsWarpInProgress(),
-			ZM_BattleTransition::IsTransitionActive()))
+			bWarpInProgress,
+			bBattleTransitionActive))
 		{
 			OpenRootMenu();
 		}
@@ -166,6 +233,29 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 	// routing.
 	switch (m_xStack.Top())
 	{
+	case ZM_MENU_SCREEN_TITLE:
+		// FrontEnd dispatch is by the focused element NAME, exactly like ROOT. Cancel is
+		// deliberately ignored: the title is the base screen and cannot pop to nothing.
+		if (bConfirm)
+		{
+			// Re-probe at the input boundary so a slot removed while the title was open cannot
+			// leave a stale Continue name live. ResolveConfirm applies the refreshed visibility.
+			RefreshTitleMenu();
+			const ZM_TITLE_ACTION eAction = m_xTitle.ResolveConfirm(ResolveFocusedElementName());
+			if (TitleActionToScreen(eAction) == ZM_MENU_SCREEN_SAVE
+				&& TitleActionToSaveMode(eAction) == ZM_SAVE_SCREEN_MODE_LOAD)
+			{
+				OpenSaveScreen(ZM_SAVE_SCREEN_MODE_LOAD);   // pushes above TITLE; Back reveals it
+			}
+			else if (eAction == ZM_TITLE_ACTION_NEW_GAME
+				&& ZM_GameStateManager::RequestNewGame())
+			{
+				// Queue first, close second: a refused transition leaves the title fully live.
+				CloseMenu();
+			}
+		}
+		break;
+
 	case ZM_MENU_SCREEN_DIALOGUE:
 		// The dialogue owns input while it is the top screen: confirm advances the
 		// typewriter / the line, and CANCEL is deliberately IGNORED -- a dialogue is
@@ -308,8 +398,9 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 					OpenSaveConfirmPrompt(eSlot);
 					break;
 				case ZM_SAVE_ROW_ACTION_CONFIRM_LOAD:
-					// LOAD + READY: the actual load is SC5. SC4 leaves a clean seam here rather
-					// than half-building it -- the pure resolver already returns the action.
+					// LOAD + READY only (the pure resolver excludes EMPTY/DAMAGED). Arm one
+					// input-driven Yes/No transaction; Auto is an ordinary load target here.
+					OpenLoadConfirmPrompt(eSlot);
 					break;
 				case ZM_SAVE_ROW_ACTION_NONE:
 				default:
@@ -353,6 +444,26 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 
 // ---- Session helpers -------------------------------------------------------
 
+void ZM_UI_MenuStack::RefreshTitleMenu()
+{
+	ZM_SAVE_SLOT_STATUS aeStatuses[static_cast<u_int>(ZM_SAVE_SLOT_COUNT)] = {};
+	for (u_int u = 0u; u < static_cast<u_int>(ZM_SAVE_SLOT_COUNT); ++u)
+	{
+		aeStatuses[u] = ZM_SaveSlots::ProbeSlot(static_cast<ZM_SAVE_SLOT>(u));
+	}
+	m_xTitle.Open(aeStatuses, static_cast<u_int>(ZM_SAVE_SLOT_COUNT));
+}
+
+void ZM_UI_MenuStack::OpenTitleMenu()
+{
+	RefreshTitleMenu();
+	m_xStack.Clear();
+	m_xStack.Push(ZM_MENU_SCREEN_TITLE);
+	m_iCursor = static_cast<int>(m_xTitle.GetDefaultFocusItem());
+	// FrontEnd is playerless: unlike ROOT, TITLE never freezes a controller.
+	PresentTopScreen();
+}
+
 void ZM_UI_MenuStack::OpenRootMenu()
 {
 	m_xStack.Clear();
@@ -381,11 +492,14 @@ void ZM_UI_MenuStack::CloseMenu()
 	m_xShop.Hide(m_xParentEntity);
 	m_xSaveScreen.Reset();
 	m_xSaveScreen.Hide(m_xParentEntity);
+	m_xTitle.Hide(m_xParentEntity);
+	m_xTitle.Open(nullptr, 0u);
 	// ...including any pending prompt action and armed overwrite slot: a force-close must
 	// never leave a HEAL_PARTY or a WRITE_SAVE_SLOT armed for whatever conversation comes
 	// next. The last-save latch (status + count) deliberately survives, like
 	// m_eLastDialogueAnswer -- CloseMenu runs on every ordinary close, not just teardown.
 	m_ePendingSaveSlot = ZM_SAVE_SLOT_NONE;
+	m_xLoadConfirm.Reset();
 	m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
 
 	// Hide every ROOT element + clear the canvas focus so arrow keys never drive an
@@ -444,6 +558,11 @@ void ZM_UI_MenuStack::PopTopScreen()
 	{
 		CloseMenu();
 	}
+	else if (m_xStack.Top() == ZM_MENU_SCREEN_TITLE)
+	{
+		// Returning from LOAD is a real reopen: disk may have changed while it was up.
+		RefreshTitleMenu();
+	}
 	// else: back to a lower screen (ROOT) -- PresentTopScreen re-shows it this frame.
 }
 
@@ -457,6 +576,7 @@ void ZM_UI_MenuStack::ApplyDialogueChoice(ZM_DIALOGUE_CHOICE eAnswer)
 	m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
 	const ZM_SAVE_SLOT ePendingSlot = m_ePendingSaveSlot;
 	m_ePendingSaveSlot = ZM_SAVE_SLOT_NONE;
+	const ZM_SAVE_SLOT ePendingLoadSlot = m_xLoadConfirm.Resolve(eAnswer);
 
 	// LATCH the answer on the HOST, FIRST and on EVERY path. The box's own GetChoice()
 	// survives the resolve, but NOT the close: a prompt raised over an empty stack pops to
@@ -467,6 +587,36 @@ void ZM_UI_MenuStack::ApplyDialogueChoice(ZM_DIALOGUE_CHOICE eAnswer)
 	// live session state), so writing it here rather than after the pop is equivalent -- and
 	// it keeps the healed-line early return below from having to repeat the assignment.
 	m_eLastDialogueAnswer = eAnswer;
+
+	if (eAnswer == ZM_DIALOGUE_CHOICE_YES
+		&& eAction == ZM_DIALOGUE_ACTION_LOAD_SAVE_SLOT
+		&& ePendingLoadSlot != ZM_SAVE_SLOT_NONE)
+	{
+		// ONE definitive transaction. RequestContinue owns the transactional disk read,
+		// validated resume queue and publish; the host only records exactly one attempt.
+		m_eLastLoadSlot = ePendingLoadSlot;
+		++m_uLoadReadCount;
+		m_xLastLoadStatus = ZM_GameStateManager::RequestContinue(ePendingLoadSlot);
+		if (m_xLastLoadStatus.IsOk())
+		{
+			// Queue is already accepted and the candidate already published. Only now may
+			// the title/load UI close; the latches above deliberately survive CloseMenu.
+			CloseMenu();
+			return;
+		}
+
+		// Failure leaves live state/transition untouched in the manager. Re-probe LOAD
+		// because the definitive read may have discovered a newly damaged/missing file,
+		// then keep this already-top DIALOGUE for one generic result line. Reading that
+		// line to the end pops back to LOAD, never to TITLE.
+		m_xSaveScreen.Open(ZM_SAVE_SCREEN_MODE_LOAD);
+		if (m_xDialogue.QueueLine("Could not load that save."))
+		{
+			return;
+		}
+		PopTopScreen();
+		return;
+	}
 
 	if (eAnswer == ZM_DIALOGUE_CHOICE_YES && eAction == ZM_DIALOGUE_ACTION_HEAL_PARTY)
 	{
@@ -768,6 +918,60 @@ bool ZM_UI_MenuStack::OpenSaveConfirmPrompt(ZM_SAVE_SLOT eSlot)
 	return true;
 }
 
+bool ZM_UI_MenuStack::OpenLoadConfirmPrompt(ZM_SAVE_SLOT eSlot)
+{
+	// This boundary is stricter than "valid slot": it may only be reached from the LOAD
+	// presenter while that exact row is still READY. Auto is intentionally accepted.
+	if (static_cast<u_int>(eSlot) >= static_cast<u_int>(ZM_SAVE_SLOT_COUNT)
+		|| m_xSaveScreen.GetMode() != ZM_SAVE_SCREEN_MODE_LOAD
+		|| m_xSaveScreen.GetRowStatus(static_cast<u_int>(eSlot)) != ZM_SAVE_SLOT_READY
+		|| m_xLoadConfirm.IsArmed()
+		|| m_xDialogue.IsActive()
+		|| m_xDialogue.IsChoiceArmed())
+	{
+		return false;
+	}
+
+	char acPrompt[uSAVE_LINE_CAPACITY];
+	std::snprintf(acPrompt, sizeof(acPrompt), "Load %s? Current progress will be lost.",
+		ZM_SaveSlots::SlotDisplayName(eSlot));
+	const char* aszLines[1] = { acPrompt };
+	if (!m_xDialogue.QueueLines(aszLines, 1u))
+	{
+		return false;
+	}
+	if (!m_xDialogue.ArmChoice("Yes", "No"))
+	{
+		m_xDialogue.Reset();
+		return false;
+	}
+	if (!m_xLoadConfirm.Arm(eSlot))
+	{
+		// All-or-nothing even if the pure one-shot model refuses unexpectedly.
+		m_xDialogue.Reset();
+		return false;
+	}
+	m_eDialogueAction = ZM_DIALOGUE_ACTION_LOAD_SAVE_SLOT;
+
+	if (m_xStack.Top() != ZM_MENU_SCREEN_DIALOGUE)
+	{
+		const bool bWasClosed = m_xStack.IsEmpty();
+		if (!m_xStack.Push(ZM_MENU_SCREEN_DIALOGUE))
+		{
+			m_xDialogue.Reset();
+			m_xLoadConfirm.Reset();
+			m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
+			return false;
+		}
+		if (bWasClosed)
+		{
+			FreezePlayer();
+		}
+	}
+	PresentTopScreen();
+	return true;
+}
+
 bool ZM_UI_MenuStack::OpenQuitConfirmPrompt()
 {
 	if (m_xDialogue.IsActive() || m_xDialogue.IsChoiceArmed())
@@ -868,6 +1072,14 @@ void ZM_UI_MenuStack::PresentTopScreen()
 	//      hides them for every other top screen, so adding a screen is one more step
 	//      plus one more focus arm below -- never a reshape of this function. ----
 	SetRootElementsShown(*pxUI, eTop == ZM_MENU_SCREEN_ROOT);
+	if (eTop == ZM_MENU_SCREEN_TITLE)
+	{
+		m_xTitle.Present(m_xParentEntity);
+	}
+	else
+	{
+		m_xTitle.Hide(m_xParentEntity);
+	}
 	if (eTop == ZM_MENU_SCREEN_DIALOGUE)
 	{
 		m_xDialogue.Present(m_xParentEntity);
@@ -887,6 +1099,12 @@ void ZM_UI_MenuStack::PresentTopScreen()
 	//      hidden screen's entries (watch-out 2). ----
 	switch (eTop)
 	{
+	case ZM_MENU_SCREEN_TITLE:
+		// ZM_UI_TitleMenu::Present repairs stale/hidden focus and owns its dynamic nav.
+		// Mirror the actual focused title item; -1 exposes a missing authored control.
+		m_iCursor = ZM_UI_TitleMenu::ItemIndexFromElementName(ResolveFocusedElementName());
+		break;
+
 	case ZM_MENU_SCREEN_ROOT:
 	{
 		// Ensure a focused ROOT entry (freshly opened, or returned from a sub-screen
@@ -1301,6 +1519,13 @@ void ZM_UI_MenuStack::ResetRuntimeStateForTests()
 		pxMenu->m_ePendingSaveSlot = ZM_SAVE_SLOT_NONE;
 		pxMenu->m_xLastSaveStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
 		pxMenu->m_uSaveWriteCount = 0u;
+		pxMenu->m_xTitle.Hide(pxMenu->m_xParentEntity);
+		pxMenu->m_xTitle.Open(nullptr, 0u);
+		pxMenu->m_xLoadConfirm.Reset();
+		pxMenu->m_eLastLoadSlot = ZM_SAVE_SLOT_NONE;
+		pxMenu->m_xLastLoadStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
+		pxMenu->m_uLoadReadCount = 0u;
+		pxMenu->m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
 	}
 }
 
@@ -1399,6 +1624,28 @@ ZM_MENU_SCREEN ZM_UI_MenuStack::RootActionToScreen(ZM_MENU_ACTION eAction)
 	}
 }
 
+ZM_MENU_SCREEN ZM_UI_MenuStack::TitleActionToScreen(ZM_TITLE_ACTION eAction)
+{
+	return (eAction == ZM_TITLE_ACTION_OPEN_LOAD)
+		? ZM_MENU_SCREEN_SAVE
+		: ZM_MENU_SCREEN_NONE;
+}
+
+ZM_SAVE_SCREEN_MODE ZM_UI_MenuStack::TitleActionToSaveMode(ZM_TITLE_ACTION eAction)
+{
+	return (eAction == ZM_TITLE_ACTION_OPEN_LOAD)
+		? ZM_SAVE_SCREEN_MODE_LOAD
+		: ZM_SAVE_SCREEN_MODE_COUNT;
+}
+
+bool ZM_UI_MenuStack::IsActiveSceneFrontEnd()
+{
+	const Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+	const Zenith_SceneInfo xInfo = g_xEngine.Scenes().GetSceneInfo(xActive);
+	return xInfo.m_bLoaded
+		&& xInfo.m_iBuildIndex == static_cast<int>(ZM_GameStateManager::uFRONTEND_BUILD_INDEX);
+}
+
 bool ZM_UI_MenuStack::IsActiveSceneOverworld()
 {
 	const Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
@@ -1438,7 +1685,9 @@ void ZM_UI_MenuStack::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_xBagScreen.Reset();
 	m_xShop.Reset();
 	m_xSaveScreen.Reset();
+	m_xTitle.Open(nullptr, 0u);
 	m_ePendingSaveSlot = ZM_SAVE_SLOT_NONE;
+	m_xLoadConfirm.Reset();
 	m_eDialogueAction = ZM_DIALOGUE_ACTION_NONE;
 	// The latched answer is deliberately NOT cleared by CloseMenu (it must survive the
 	// close that resolving a prompt triggers), so boot and deserialize are the only
@@ -1446,6 +1695,9 @@ void ZM_UI_MenuStack::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_eLastDialogueAnswer = ZM_DIALOGUE_CHOICE_NONE;
 	m_xLastSaveStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
 	m_uSaveWriteCount = 0u;
+	m_eLastLoadSlot = ZM_SAVE_SLOT_NONE;
+	m_xLastLoadStatus = Zenith_ErrorCode::INVALID_ARGUMENT;
+	m_uLoadReadCount = 0u;
 	m_iCursor = -1;
 	m_xFrozenPlayerEntityID = INVALID_ENTITY_ID;
 	(void)uVersion;

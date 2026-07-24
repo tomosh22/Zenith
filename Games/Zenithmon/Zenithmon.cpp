@@ -30,6 +30,7 @@
 #include "Zenithmon/Source/UI/ZM_UI_Party.h"         // sz*_NAME + SlotElementName contract (party authoring)
 #include "Zenithmon/Source/UI/ZM_UI_SaveSlots.h"     // sz*_NAME + RowElementName contract (S7 SC4 save-screen authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Shop.h"          // sz*_NAME + RowElementName + geometry contract (shop authoring)
+#include "Zenithmon/Source/UI/ZM_UI_TitleMenu.h"     // title panel / Continue / New Game authoring contract (S7 SC5)
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
@@ -612,6 +613,61 @@ namespace
 		}
 	}
 
+	// S7 SC5 FrontEnd title controls live on the persistent MenuRoot, not the
+	// scene-owned GameManager that carries the large "Zenithmon" title text. The
+	// automation steps create all three as canvas-owned root elements (AddElement);
+	// ReparentElement below then moves the buttons under the panel without dropping
+	// canvas ownership. AddChild-only would leak them from m_xAllElements.
+	void ZM_ConfigureMenuRootTitleScreen(Zenith_UIComponent& xUI)
+	{
+		Zenith_UI::Zenith_UIRect* pxPanel =
+			xUI.FindElement<Zenith_UI::Zenith_UIRect>(ZM_UI_TitleMenu::szPANEL_NAME);
+		if (pxPanel != nullptr)
+		{
+			pxPanel->SetSortOrder(ZM_UI_MenuStack::iMENU_PANEL_SORT_ORDER);
+			pxPanel->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxPanel->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxPanel->SetPosition(0.0f, 32.0f);
+			pxPanel->SetSize(360.0f, 168.0f);
+			pxPanel->SetColor({ 0.05f, 0.06f, 0.10f, 0.85f });
+			pxPanel->SetVisible(false);
+		}
+
+		struct TitleButton
+		{
+			const char* m_szName;
+			float m_fY;
+		};
+		const TitleButton axButtons[2] =
+		{
+			{ ZM_UI_TitleMenu::szCONTINUE_NAME, -32.0f },
+			{ ZM_UI_TitleMenu::szNEW_GAME_NAME,  32.0f },
+		};
+		for (const TitleButton& xButton : axButtons)
+		{
+			Zenith_UI::Zenith_UIButton* pxButton =
+				xUI.FindElement<Zenith_UI::Zenith_UIButton>(xButton.m_szName);
+			if (pxButton == nullptr)
+			{
+				continue;
+			}
+			if (pxPanel != nullptr)
+			{
+				xUI.GetCanvas().ReparentElement(pxButton, pxPanel);
+			}
+			pxButton->SetSortOrder(ZM_UI_MenuStack::iMENU_BUTTON_SORT_ORDER);
+			pxButton->SetAnchor(Zenith_UI::AnchorPreset::Center);
+			pxButton->SetPivot(Zenith_UI::AnchorPreset::Center);
+			pxButton->SetPosition(0.0f, xButton.m_fY);
+			pxButton->SetSize(280.0f, 48.0f);
+			pxButton->SetFontSize(28.0f);
+			pxButton->SetFocusable(false);
+			pxButton->SetVisible(false);
+			// Availability is runtime disk state. The presenter wires only live targets.
+			pxButton->SetNavigation(nullptr, nullptr, nullptr, nullptr);
+		}
+	}
+
 	// The overworld pause menu (S6 item 2 SC1). Authors the ROOT screen's backing panel
 	// + Party/Bag/Dex/Save/Quit/Exit entries (Save/Quit added by S7 item 2 SC4, INSERTED
 	// before Exit so the authored visual order matches ZM_MENU_ROOT_ITEM's enum order) on
@@ -1041,6 +1097,7 @@ namespace
 
 		ZM_ConfigureMenuRootShopScreen(*pxUI);
 		ZM_ConfigureMenuRootSaveScreen(*pxUI);
+		ZM_ConfigureMenuRootTitleScreen(*pxUI);
 	}
 
 	bool ZM_SetSelectedSpawnPointTag(const char* szTag)
@@ -1444,6 +1501,13 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_CreateEntity("ZM_MenuRoot");
 	xAuto.AddStep_SetEntityTransient(false);
 	xAuto.AddStep_AddUI();
+	// S7 SC5 title controls share the persistent MenuRoot so the surviving menu machine
+	// can auto-raise them on every return to FrontEnd. CreateUI* first adds each element
+	// to the canvas ownership lists; ZM_ConfigureMenuRootTitleScreen then reparents the
+	// two buttons under the panel through ReparentElement (never AddChild-only).
+	xAuto.AddStep_CreateUIRect(ZM_UI_TitleMenu::szPANEL_NAME);
+	xAuto.AddStep_CreateUIButton(ZM_UI_TitleMenu::szCONTINUE_NAME, "Continue");
+	xAuto.AddStep_CreateUIButton(ZM_UI_TitleMenu::szNEW_GAME_NAME, "New Game");
 	xAuto.AddStep_CreateUIRect("Menu_RootPanel");
 	xAuto.AddStep_CreateUIButton("Menu_RootParty", "Party");
 	xAuto.AddStep_CreateUIButton("Menu_RootBag", "Bag");

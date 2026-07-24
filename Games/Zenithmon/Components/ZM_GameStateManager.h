@@ -1,11 +1,13 @@
 #pragma once
 
+#include "Core/Zenith_Result.h"
 #include "Maths/Zenith_Maths.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"   // ZM_GameState (owned by value)
 
 class Zenith_DataStream;
 class ZM_PlayerController;
+enum ZM_SAVE_SLOT : u_int;
 
 enum ZM_WARP_TRANSITION_STATE : u_int
 {
@@ -30,6 +32,11 @@ public:
 	// SC5 whiteout destination: Dawnmere Village (build index 2), its TownCenter spawn.
 	static constexpr u_int uWHITEOUT_BUILD_INDEX = 2u;
 	static constexpr const char* szWHITEOUT_SPAWN_TAG = "TownCenter";
+	// A new run enters Dawnmere through the ordinary validated warp path. Kept
+	// semantically separate from whiteout even though both currently share a
+	// destination, so either flow may move later without silently moving the other.
+	static constexpr u_int uNEW_GAME_BUILD_INDEX = 2u;
+	static constexpr const char* szNEW_GAME_SPAWN_TAG = "TownCenter";
 	// The title screen, and the ONLY playerless destination in the game: FrontEnd
 	// authors no Player, no ZM_SpawnPoint and no ZM_FollowCamera. Spelled as the
 	// literal build index rather than resolved through ZM_GetWorldSpec on purpose --
@@ -74,6 +81,14 @@ public:
 	// ZM_GameState (mutable). Returns false + leaves pxGameStateOut null when no manager
 	// exists (e.g. before boot). Cross-scene safe (the manager is DontDestroyOnLoad).
 	static bool TryGetGameState(ZM_GameState*& pxGameStateOut);
+
+	// Manager-owned title transactions. New Game stages the fixed starter, queues
+	// the ordinary FrontEnd -> Dawnmere warp, then publishes the starter only after
+	// the queue accepts it; it never touches a save slot. Continue reads the selected
+	// slot into a local candidate, queues its validated resume position, then publishes
+	// the complete candidate. Any failure leaves the live state and resume latch alone.
+	static bool RequestNewGame();
+	static Zenith_Status RequestContinue(ZM_SAVE_SLOT eSlot);
 
 	// ---- S7 item 2 SC3: world-position capture, resume, quit-to-title ----------
 
@@ -144,6 +159,7 @@ public:
 
 private:
 	bool TryQueueWarp(u_int uTargetBuildIndex, const char* szSpawnTag);
+	Zenith_Status QueueResume(const ZM_WorldPosition& xResume);
 	void ResetTransitionState(bool bEnableFrozenPlayer);
 	void IssueSingleLoad();
 	void PollForTargetScene();

@@ -12,6 +12,7 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"   // ZM_SCENE_KIND (IsOverworldSceneKind fixtures)
+#include "Zenithmon/Source/UI/ZM_UI_TitleMenu.h"  // ZM_TITLE_ACTION (SC5 title routing)
 
 // ---- ZM_MenuScreenStack: push / pop / top / depth / clear -------------------
 
@@ -378,4 +379,74 @@ ZENITH_TEST(ZM_MenuStack, MenuStack_RootEnumOrderMatchesTheAuthoredVisualOrder)
 	// way, oscillate, and hit its deadline. The windowed gate thus REDS on exactly the
 	// Save/Quit Y swap this pure unit cannot see; the strictly-increasing enum assertion
 	// above is the pure half of the same invariant.
+}
+
+// ============================================================================
+// S7 item 2 SC5 -- title routing and the transactional pending-load model.
+// These stay pure boot units: the disk read + scene transition are covered by the
+// windowed Continue test, while these pin the host decisions it delegates through.
+// ============================================================================
+
+ZENITH_TEST(ZM_MenuStack, MenuStack_TitleContinueMapsSpecificallyToLoad)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_MenuStack::TitleActionToScreen(ZM_TITLE_ACTION_OPEN_LOAD),
+		(u_int)ZM_MENU_SCREEN_SAVE,
+		"title Continue raises the existing slot screen, never a second load UI");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_MenuStack::TitleActionToSaveMode(ZM_TITLE_ACTION_OPEN_LOAD),
+		(u_int)ZM_SAVE_SCREEN_MODE_LOAD,
+		"the raised slot screen is specifically LOAD mode (SAVE here could overwrite progress)");
+
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_MenuStack::TitleActionToScreen(ZM_TITLE_ACTION_NEW_GAME),
+		(u_int)ZM_MENU_SCREEN_NONE, "New Game is a transition action, not a screen push");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_MenuStack::TitleActionToSaveMode(ZM_TITLE_ACTION_NEW_GAME),
+		(u_int)ZM_SAVE_SCREEN_MODE_COUNT,
+		"New Game carries no save-screen mode");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_MenuStack::TitleActionToScreen(ZM_TITLE_ACTION_NONE),
+		(u_int)ZM_MENU_SCREEN_NONE, "NONE pushes no screen");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_MenuStack::TitleActionToSaveMode(ZM_TITLE_ACTION_NONE),
+		(u_int)ZM_SAVE_SCREEN_MODE_COUNT, "NONE carries no save-screen mode");
+}
+
+ZENITH_TEST(ZM_MenuStack, MenuStack_LoadConfirmIsTransactionalAndNoOrResetClearsIt)
+{
+	ZM_LoadConfirmState xConfirm;
+	ZENITH_ASSERT_FALSE(xConfirm.IsArmed(), "a fresh load confirm is not armed");
+	ZENITH_ASSERT_EQ((u_int)xConfirm.GetPendingSlot(), (u_int)ZM_SAVE_SLOT_NONE,
+		"a fresh load confirm targets no slot");
+
+	ZENITH_ASSERT_TRUE(xConfirm.Arm(ZM_SAVE_SLOT_AUTO),
+		"READY Auto is a valid Continue target and may be armed");
+	ZENITH_ASSERT_TRUE(xConfirm.IsArmed(), "arming records a pending load");
+	ZENITH_ASSERT_EQ((u_int)xConfirm.GetPendingSlot(), (u_int)ZM_SAVE_SLOT_AUTO,
+		"the exact requested slot is retained");
+
+	// Refused mutations are transactional: neither an invalid slot nor a second prompt may
+	// replace the already-armed target, and a non-answer must not consume it.
+	ZENITH_ASSERT_FALSE(xConfirm.Arm(ZM_SAVE_SLOT_NONE),
+		"NONE is rejected before mutating the armed target");
+	ZENITH_ASSERT_FALSE(xConfirm.Arm(ZM_SAVE_SLOT_1),
+		"a second prompt cannot replace the single pending load");
+	ZENITH_ASSERT_EQ((u_int)xConfirm.GetPendingSlot(), (u_int)ZM_SAVE_SLOT_AUTO,
+		"both refused arms leave the original Auto target unchanged");
+	ZENITH_ASSERT_EQ((u_int)xConfirm.Resolve(ZM_DIALOGUE_CHOICE_NONE), (u_int)ZM_SAVE_SLOT_NONE,
+		"NONE is not an answer and yields no load");
+	ZENITH_ASSERT_EQ((u_int)xConfirm.GetPendingSlot(), (u_int)ZM_SAVE_SLOT_AUTO,
+		"a non-answer leaves the pending confirmation armed");
+
+	ZENITH_ASSERT_EQ((u_int)xConfirm.Resolve(ZM_DIALOGUE_CHOICE_NO), (u_int)ZM_SAVE_SLOT_NONE,
+		"No never yields a slot to the disk-read path");
+	ZENITH_ASSERT_FALSE(xConfirm.IsArmed(), "No consumes and clears the prompt");
+	ZENITH_ASSERT_EQ((u_int)xConfirm.GetPendingSlot(), (u_int)ZM_SAVE_SLOT_NONE,
+		"No leaves no stale slot for the next unrelated choice");
+
+	ZENITH_ASSERT_TRUE(xConfirm.Arm(ZM_SAVE_SLOT_1), "a cleared state can be armed again");
+	xConfirm.Reset();
+	ZENITH_ASSERT_FALSE(xConfirm.IsArmed(), "Reset clears an armed load confirmation");
+	ZENITH_ASSERT_EQ((u_int)xConfirm.Resolve(ZM_DIALOGUE_CHOICE_YES), (u_int)ZM_SAVE_SLOT_NONE,
+		"Yes after Reset cannot resurrect the cleared slot");
+
+	ZENITH_ASSERT_TRUE(xConfirm.Arm(ZM_SAVE_SLOT_2), "a final valid slot arms");
+	ZENITH_ASSERT_EQ((u_int)xConfirm.Resolve(ZM_DIALOGUE_CHOICE_YES), (u_int)ZM_SAVE_SLOT_2,
+		"Yes publishes exactly the armed slot to the caller");
+	ZENITH_ASSERT_FALSE(xConfirm.IsArmed(), "Yes consumes the one-shot confirmation too");
 }

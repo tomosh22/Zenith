@@ -54,6 +54,25 @@ enum ZM_SAVE_SLOT_STATUS : u_int
 	ZM_SAVE_SLOT_STATUS_COUNT
 };
 
+// ---- Test-only operation observation (S7 item 2 SC5) ------------------------
+// Which PUBLIC slot operation an installed test observer is being told about.
+// File scope, like ZM_SAVE_SLOT / ZM_SAVE_SLOT_STATUS above, because the windowed
+// tests spell these unqualified. APPEND ONLY.
+enum ZM_SAVE_SLOT_OPERATION_FOR_TESTS : u_int
+{
+	ZM_SAVE_SLOT_OPERATION_PROBE_SLOT = 0u,   // a ProbeSlot call (one slot per event)
+	ZM_SAVE_SLOT_OPERATION_READ_STATE,        // a ReadState call
+	ZM_SAVE_SLOT_OPERATION_WRITE_STATE,       // a WriteState call
+
+	ZM_SAVE_SLOT_OPERATION_COUNT
+};
+
+// The observer callback shape. A PLAIN function pointer, never std::function: the
+// observer is a fixed test callback installed and cleared by address, and this
+// layer names no heap-owning type.
+typedef void (*ZM_SaveSlotOperationObserverForTests)(
+	ZM_SAVE_SLOT_OPERATION_FOR_TESTS eOperation, ZM_SAVE_SLOT eSlot);
+
 namespace ZM_SaveSlots
 {
 	// Stamped into the ENGINE header's uGameVersion field. Deliberately its own
@@ -199,7 +218,38 @@ namespace ZM_SaveSlots
 	// Delete every slot FILE this build would use. Zenith_SaveData::ClearForTest does
 	// NOT touch disk (Zenith_SaveData.h:119), so without this a test's real .zsave
 	// leaks into the next test AND into the next process.
+	//
+	// This is ALSO the one reset point for every test seam in this file: it clears
+	// the operation observer installed via SetOperationObserverForTests below, so
+	// the between-tests hook (Zenithmon.cpp, which calls this and nothing else from
+	// this layer) leaves no test-global behind, per TestPlan C3. The
+	// SetTestSlotNamesForTests redirection is deliberately NOT cleared here: it is
+	// owned by the RAII ZM_SlotDiskScope in Tests/ZM_Tests_SaveSlots.cpp, which
+	// must find it still set when it deletes files on scope exit.
 	void DeleteAllSlotsForTests();
+
+	// Install (or, with nullptr, clear) the test observer for the PUBLIC slot
+	// operations above. The observer lives in a file-scope mutable global in the
+	// .cpp and DEFAULTS TO nullptr, so with nothing installed every call site is a
+	// single null check and shipped behaviour is byte-for-byte unchanged.
+	//
+	// Invocation semantics, chosen so "zero reads before the Yes answer" and
+	// "exactly ONE READ_STATE on AUTO across the continue" are honestly
+	// interpretable:
+	//   * Exactly ONE event per public API call, fired ON ENTRY (after the
+	//     main-thread guard, before any validation). An attempt that is then
+	//     refused -- a bad slot id, a missing file, a rejected payload -- is still
+	//     observed exactly once, with the slot id it was handed.
+	//   * ProbeSlot is per-slot: AnySlotOccupied / AnySlotReady observe one
+	//     PROBE_SLOT per ProbeSlot call they make (early-out included), so a full
+	//     four-slot screen refresh produces exactly four PROBE_SLOT events in
+	//     ordinal order.
+	//   * WriteState's verify RE-PROBE goes through the PUBLIC ProbeSlot, so one
+	//     WriteState is observed as WRITE_STATE followed by PROBE_SLOT on the same
+	//     slot. DeleteSlotFile and DeleteAllSlotsForTests are NOT observed.
+	// The callback runs synchronously on the main thread inside the observed call;
+	// it must never call back into this layer.
+	void SetOperationObserverForTests(ZM_SaveSlotOperationObserverForTests pfnObserver);
 
 	// EXPLICIT, test-driven redirection of SlotName() onto the "_Test" aliases, for
 	// the window in which a unit touches disk. Owned by the RAII ZM_SlotDiskScope in

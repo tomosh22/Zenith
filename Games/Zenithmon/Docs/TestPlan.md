@@ -1107,14 +1107,40 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   both focused tests green at the frame counts above; full windowed **40/40 passed,
   0 failed, 0 skipped, 0 zero-frame**; save directory empty; final exact-diff
   check green. No commit, push or CI result is claimed yet.
-- **Item 2 state / NEXT:** SC1-SC4 of six are complete; the aggregate Roadmap
-  checkbox remains unchecked. **SC5 NEXT** is the title menu and Continue,
-  consuming SC4's READY-slot LOAD seam (including Auto; EMPTY/DAMAGED remain
-  non-loadable). **SC6** owns `ZM_SaveContinue_Test`: save -> quit to FrontEnd ->
-  deliberately scramble the persistent live state AND prove the scramble took ->
-  Continue -> assert position/party/flags restored exactly from disk. This is
-  mandatory because the `DontDestroyOnLoad` manager otherwise lets a zero-byte
-  Continue pass against RAM survival. SC6 also closes the milestone-autosave test.
+- **Item 2 SC5 title menu + Continue (COMPLETE 2026-07-24, ZM-D-141):** **6**
+  `ZM_Title` units pin the title name/action totality, Continue's
+  occupied-visibility matrix (DAMAGED counts, EMPTY hides), reopen refresh and
+  malformed-snapshot fail-closed; **2** `ZM_MenuStack` units pin the title
+  routing and the `ZM_LoadConfirmState` arm/resolve/reset matrix.
+  `ZM_SaveContinue_Test` (**247 frames**, graphics-required) is the
+  disk-authentic gate: real-input New Game publishes a fresh starter over an
+  installed canary; a busy queue refuses `RequestContinue` with exactly one
+  READ + `QUEUE_FULL`; Continue stays visible with ONLY a DAMAGED slot on disk;
+  the Auto fixture is restored from pre-deletion bytes; DAMAGED/EMPTY rows
+  refuse with a plain line, never an armed choice; the pre-Yes live state is
+  still the scramble; the Yes window performs exactly ONE `READ_STATE` on AUTO
+  and ZERO writes (via the new `ZM_SaveSlots` operation observer); the
+  published state equals the saved fixture and NOT the scramble; the restored
+  pose lands within 0.05 planar / 0.10 vertical / 0.05 yaw of saved, >= 2 m
+  from both TownCenter and the scramble pose. The extended
+  `ZM_RootQuitAndBlockedSave_Test` (**158 frames**) pins the Auto-only FrontEnd
+  TITLE contract and the armed-then-ESCAPEd load prompt. **Stack-frame rule:**
+  the test's 29 phases were split into per-phase driver functions after a
+  measured 1.3 MB `Step` frame overflowed the exe's 1 MB stack reserve
+  (`ZM_GameState` locals are ~150-200 KB each) -- any multi-phase automated
+  test touching `ZM_GameState` must use the per-phase-function shape.
+- **SC5 observed gate:** regen green; Vulkan tools-debug build green; boot
+  **2521 ran / 2520 passed / 0 failed / 1 documented skip** (+8 units);
+  automated registry **40 -> 41**; headless **41/41**; focused
+  `ZM_SaveContinue_Test` **247** / `ZM_RootQuitAndBlockedSave_Test` **158** /
+  `ZM_SaveMenuFlow_Test` **98** frames; full windowed **41/41 passed, 0 failed,
+  0 skipped, 0 zero-frame**; save directory empty; adversarial review CLEAN.
+- **Item 2 state / NEXT:** SC1-SC5 of six are complete; the aggregate Roadmap
+  checkbox remains unchecked. **SC6 NEXT (re-scoped, ZM-D-141)** closes the
+  milestone-autosave test obligation only -- the save -> quit -> scramble ->
+  Continue exact-restoration gate shipped with SC5 as `ZM_SaveContinue_Test`
+  (the `DontDestroyOnLoad` RAM-survival inoculation pattern: scramble, prove
+  the scramble took, assert published == saved != scramble).
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->
   defeat flag + prize money.
 

@@ -18,6 +18,7 @@
 #include "Zenithmon/Source/Party/ZM_GameState.h"   // ZM_MakeStarterGameState
 #include "Zenithmon/Source/Save/ZM_Autosave.h"     // the milestone autosave latch (SC3)
 #include "Zenithmon/Source/Save/ZM_ResumePoint.h"  // the PURE resume decision surface (SC3)
+#include "Zenithmon/Source/Save/ZM_SaveSlots.h"
 #include "Zenithmon/Source/UI/ZM_FadeOverlay.h"
 
 #ifdef ZENITH_TOOLS
@@ -355,6 +356,54 @@ bool ZM_GameStateManager::TryGetGameState(ZM_GameState*& pxGameStateOut)
 	return true;
 }
 
+bool ZM_GameStateManager::RequestNewGame()
+{
+	// Build the replacement first. No live state changes until the ordinary warp
+	// transaction has passed every validation gate and owns the transition.
+	const ZM_GameState xStarter = ZM_MakeStarterGameState();
+	ZM_GameStateManager* pxManager = ResolveAuthoritativeManager();
+	if (pxManager == nullptr
+		|| !pxManager->TryQueueWarp(uNEW_GAME_BUILD_INDEX, szNEW_GAME_SPAWN_TAG))
+	{
+		return false;
+	}
+
+	pxManager->m_xGameState = xStarter;
+	return true;
+}
+
+Zenith_Status ZM_GameStateManager::RequestContinue(ZM_SAVE_SLOT eSlot)
+{
+	// Never decode into the persistent state. ReadState itself is transactional,
+	// and keeping its destination local preserves both that guarantee and the exact
+	// disk error for the title UI.
+	ZM_GameState xCandidate;
+	const Zenith_Status xReadStatus = ZM_SaveSlots::ReadState(eSlot, xCandidate);
+	if (!xReadStatus.IsOk())
+	{
+		return xReadStatus.Error();
+	}
+
+	ZM_GameStateManager* pxManager = ResolveAuthoritativeManager();
+	if (pxManager == nullptr)
+	{
+		return Zenith_ErrorCode::INVALID_ARGUMENT;
+	}
+
+	// QueueResume validates and latches the candidate's one-shot pose only after
+	// TryQueueWarp accepts. Publish the entire candidate last, so any refusal leaves
+	// the running game byte-for-byte untouched.
+	const Zenith_Status xResumeStatus =
+		pxManager->QueueResume(xCandidate.m_xWorldPosition);
+	if (!xResumeStatus.IsOk())
+	{
+		return xResumeStatus.Error();
+	}
+
+	pxManager->m_xGameState = xCandidate;
+	return true;
+}
+
 const char* ZM_GameStateManager::GetActiveSceneArrivedSpawnTag()
 {
 	const ZM_GameStateManager* pxManager = ResolveAuthoritativeManager();
@@ -444,11 +493,11 @@ bool ZM_GameStateManager::CaptureWorldPosition(ZM_GameState& xStateInOut)
 bool ZM_GameStateManager::RequestResume(const ZM_WorldPosition& xResume)
 {
 	ZM_GameStateManager* pxManager = ResolveAuthoritativeManager();
-	if (pxManager == nullptr)
-	{
-		return false;
-	}
+	return pxManager != nullptr && pxManager->QueueResume(xResume).IsOk();
+}
 
+Zenith_Status ZM_GameStateManager::QueueResume(const ZM_WorldPosition& xResume)
+{
 	// The ECS half asks the pure half. ZM_SpawnPoint::IsTagValid is the grammar
 	// answer ZM_ValidateResume takes as an argument precisely so the pure TU never
 	// has to name a component.
@@ -459,22 +508,22 @@ bool ZM_GameStateManager::RequestResume(const ZM_WorldPosition& xResume)
 		Zenith_Error(LOG_CATEGORY_GAMEPLAY,
 			"[ZM GameStateManager] RequestResume refused: saved position is %s",
 			ZM_ResumeValidityName(eValidity));
-		return false;
+		return Zenith_ErrorCode::INVALID_ARGUMENT;
 	}
 
 	// The resume rides the ORDINARY validated warp -- same fade, same single load,
 	// same spawn-marker placement. Nothing is latched until that warp is accepted,
 	// so a refusal leaves no pose waiting to ambush the next transition.
-	if (!pxManager->TryQueueWarp(xResume.m_uSceneBuildIndex, xResume.m_szSpawnTag))
+	if (!TryQueueWarp(xResume.m_uSceneBuildIndex, xResume.m_szSpawnTag))
 	{
-		return false;
+		return Zenith_ErrorCode::QUEUE_FULL;
 	}
 
-	pxManager->m_xPendingResume = xResume;
+	m_xPendingResume = xResume;
 	// INVALID_TRANSFORM resumes with NO override: the warp still happens and the
 	// spawn marker stands. That is the fallback half of the rule, and it costs
 	// nothing because the marker placement is already on the path.
-	pxManager->m_bResumePending = ZM_ShouldUseSavedTransform(eValidity);
+	m_bResumePending = ZM_ShouldUseSavedTransform(eValidity);
 	return true;
 }
 
