@@ -10,6 +10,64 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-24-002 -- S7 item 3 (trainer battles + first graph + navmesh eval): 8 design defaults adopted
+
+**Question:** the S7 item 3 scoping survey surfaced eight design choices. Each has a
+sound default; the loop protocol says adopt the best-guess and proceed (the user
+corrects in batch). Confirm or override any of these before the relevant sub-commit
+lands real code against it:
+
+- **Q-A -- navmesh eval scope / `.znavmesh` persistence (drives SC1):** treat the
+  navigation clause as a **SPIKE + headless unit** proving
+  `Zenith_NavMeshGenerator::GenerateFromGeometry` ingests a Dawnmere-shaped procedural
+  coverage grid; runtime nav routing and `.znavmesh` persistence DEFERRED to S8/S9;
+  trainer approach uses the existing straight-line/cone drive. *Cost if wrong:* if a
+  shipped runtime nav path was expected, a follow-up SC is needed that likely pulls in
+  an ENGINE change (raise the navmesh `iMaxDim=1024` clamp and/or fix Q-2026-07-21-001)
+  + its full engine-test/RenderTest-regression/cross-game-sweep tax.
+- **Q-B -- `ZM_GraphAuthoring` "first useful" scope (drives SC7):** a **MINIMAL
+  authored `.bgraph`** owning one genuine decision (the trainer-defeat beat: set-flag ->
+  award-prize), with approach kept C++-driven. *Cost if wrong:* a fuller graph (running
+  NavMoveTo approach) couples to the unresolved nav decision; a thin C++ glue risks not
+  satisfying the twice-deferred "land the first useful integration" mandate.
+- **Q-C -- trainer roster size this stage:** exactly **ONE authored trainer (rival
+  Vesper)** in Dawnmere + one non-authored generic `ZM_TrainerData` row to prove table
+  multiplicity in units. *Cost if wrong:* a full roster bloats S7 and pre-commits Route 1
+  placement (not authored until S8/S9).
+- **Q-D -- rival battle 1 placement:** author Vesper in **Dawnmere** (the only scene that
+  exists in S7); record the deviation from GDD canon ("Route 1, L5"). *Cost if wrong:*
+  re-authoring/relocating Vesper + its trigger when Route 1 lands at S8.
+- **Q-E -- prize-money source:** an **explicit per-row prize field** in `ZM_TrainerData`
+  now (formula deferred). *Cost if wrong:* low -- a formula can later read the same table
+  with no data-format change.
+- **Q-F -- AI tier for brash/sloppy early Vesper:** **GREEDY** (matches today's hard-coded
+  enemy behaviour; lowest golden risk). *Cost if wrong:* cosmetic difficulty; a data field
+  flips it (tier is already threaded per-battle through `Begin`).
+- **Q-G -- trainer entry channel:** a **distinct `ZM_OnTrainerEncounter` event + 2nd
+  `ZM_BattleTransition` subscription** (leaves the wild validation path untouched). *Cost
+  if wrong:* minor rework of the subscription + payload widening.
+- **Q-H -- domain-size discrepancy:** the task says "Dawnmere's 1024 m domain" but the
+  terrain engine grid is a fixed 4096 m. Treat Dawnmere as a **1024 m export sub-rect** of
+  the 4096 m grid and BOUND the harvest to the recipe export rect. *Cost if wrong:* an
+  unbounded harvest builds a navmesh over ~16x the area (and a mis-sized cellSize collapses
+  coverage under the `iMaxDim` clamp).
+
+**Context:** full engine-fact survey + test-first 8-sub-commit plan logged as ZM-D-143.
+Net finding: the whole item is **Games/Zenithmon-only -- ZERO engine changes, ZERO new ECS
+orders**; the two engine risks (navmesh clamp, Q-2026-07-21-001 headless-terrain assert) are
+deliberately DESIGNED OUT via the procedural coverage grid + `cellSize>=1.0`.
+
+**Best guess if you don't reply:** all eight defaults above are adopted and the sub-commits
+proceed on them.
+
+**Cost of getting it wrong:** bounded per item above -- at worst a follow-up sub-commit;
+Q-A is the only one that could later pull in an engine change if a shipped nav path is wanted.
+
+**Status:** asked 2026-07-24; acting on best guesses. Q-A/Q-B/Q-D are the ones most worth an
+explicit steer.
+
+---
+
 ### [OPEN] Q-2026-07-24-001 -- repo-root `AGENTS.md` was deleted in the in-flight working tree; restored as out-of-scope
 
 **Question:** was the deletion of the repo-root `AGENTS.md` (290 lines, the pre-CLAUDE.md onboarding doc) deliberate?

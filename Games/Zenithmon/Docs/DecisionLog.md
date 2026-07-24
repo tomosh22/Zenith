@@ -15,6 +15,83 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-24 -- ZM-D-143 -- S7 item 3 (+ item 4) plan: trainer battles, first graph integration, navmesh eval -- 8 sub-commits, ZERO engine changes
+
+- **Decision / boundary:** the approved shape for S7 item 3 (trainer sight-cone ->
+  freeze -> approach -> dialogue -> forced battle -> defeat flags + prize money;
+  first useful `ZM_GraphAuthoring` integration; terrain-navmesh evaluation) plus
+  item 4 (rival battle 1) is an **8-sub-commit, test-first, Games/Zenithmon-only**
+  sequence that touches **NO `Zenith/` engine file** and consumes **NO new ECS
+  order** (114 stays next-free). Produced by an orchestrated engine-fact survey
+  (design intent + battle-entry + sight-cone + graph runtime + navmesh, cross-
+  verified). Individual SCs get their own DecisionLog entries as they land; this
+  is the plan of record.
+- **The two engine risks are DESIGNED OUT, not incurred:** (a) raising
+  `Zenith_NavMeshGenerator`'s `iMaxDim=1024` clamp for finer resolution, and (b)
+  fixing Q-2026-07-21-001 (`Zenith_TerrainComponent::InitializeCullingResources`
+  asserts headless) to harvest a LIVE terrain component. Both would be ZenithAI/
+  Flux leaf changes owing the full engine-unit + RenderTest-boot-regression +
+  cross-game-sweep tax. SC1 avoids both by harvesting a PROCEDURAL coverage grid
+  from the terrain recipe height function (no live component, no disk asset) at
+  `cellSize>=1.0 m` (so `domain/cell <= 1024`). If a shipped runtime nav path or
+  terrain CI coverage is later wanted, either fix becomes a separate, explicitly-
+  gated ENGINE sub-commit sequenced AFTER the game vertical -- never folded in.
+- **Survey finding that de-risks SC7:** the Behaviour-Graph runtime is FULLY
+  SHIPPED and proven by Combat/DP/TilePuzzle, so "the first useful
+  `ZM_GraphAuthoring` integration" is entirely a GAME-side authoring exercise
+  (node set + one authored `.bgraph`) with zero engine work.
+- **Sub-commit sequence (each lands its own mutation-provable tests):**
+  **SC1** navmesh EVALUATION spike (pure/headless): a `ZM_` coverage-grid
+  harvester feeds `GenerateFromGeometry`; units assert a non-empty walkable mesh
+  and that a too-fine `cellSize` provably collapses far coverage (the
+  `RasterizeTriangle` clamp), plus an all-vertical grid yields zero walkable
+  polys. Defers runtime routing + `.znavmesh` persistence (Q-A default).
+  **SC2** `ZM_TrainerData` table (append-only `ZM_TRAINER_ID`, compiled rows:
+  fixed enemy party, prize u32, defeat `ZM_STORY_FLAG_ID`, `ZM_AI_TIER`, name) +
+  a new `ZM_STORY_FLAG_RIVAL1_DEFEATED` row at index 6 (dense; no schema/version
+  bump; TOTAL accessors that never assert on args).
+  **SC3** pure sight-cone predicate (reuses `ZM_ForwardFromRotation`; occlusion
+  stays OUT) + a trainer `ZM_BattleConfig` helper (wild=false, canCatch=false,
+  canFlee=false, isTrainerBattle=true).
+  **SC4** HUD Run-gate on `bCanFlee` (impure; **golden-preserving** -- the wild
+  path stays byte-identical so the ~380 battle goldens do not move). **Hard
+  prerequisite of any trainer battle:** without it, a mandatory battle still shows
+  Run and selecting it hits `ZM_BattleEngine`'s `Zenith_Assert(m_bCanFlee)` = a
+  process break in every config. Must precede SC5.
+  **SC5** trainer forced-battle entry + prize/defeat write-back (impure, the
+  vertical's core): a new `ZM_OnTrainerEncounter` event + a 2nd
+  `ZM_BattleTransition` subscription (wild path untouched), a `ZM_BattleDirector`
+  trainer arm building the fixed enemy party + passing the row's `ZM_AI_TIER` to
+  `Begin`, and `ZM_ApplyTrainerResultToGameState` (win -> `AddMoney` + set defeat
+  flag; loss -> existing whiteout). Rides orders 110/111.
+  **SC6** trainer sight FSM + occlusion GLUE as a by-value member of
+  `ZM_Interactable` (order 113, no new order -- mirrors the NPC walker); the
+  occlusion ray enters HERE as a probe filter after the pure cone passes; ANDs in
+  "not yet defeated" so a beaten trainer never re-spots.
+  **SC7** first `ZM_GraphAuthoring` integration -- a minimal authored `.bgraph`
+  for the trainer-defeat beat (`SetStoryFlag` -> `AwardPrizeMoney` nodes), fired
+  from SC5's win callsite; node Execute bodies proven by pure units (no `.bgraph`
+  needed on CI), the authored wiring by a windowed test.
+  **SC8** rival battle 1 (item 4): Vesper authored in Dawnmere (counter-starter
+  team ~L5), satisfying the S7 traversal gate; mostly data on SC2-SC7 machinery.
+- **Open decisions (logged as Q-2026-07-24-002, defaults adopted):** navmesh =
+  spike/report not shipped nav path (Q-A); graph = minimal `.bgraph` (Q-B); one
+  authored trainer + one generic row (Q-C); rival authored in Dawnmere with the
+  GDD-Route-1 deviation recorded (Q-D); explicit per-row prize field (Q-E);
+  GREEDY AI for early Vesper (Q-F); distinct `ZM_OnTrainerEncounter` event (Q-G);
+  Dawnmere = 1024 m export sub-rect of the 4096 m grid (Q-H).
+- **Sequencing:** SC1 FIRST (settles the navmesh/`.znavmesh` question + proves the
+  single place an engine change could sneak in stays leaf-side); SC2/SC3 are pure
+  and may proceed alongside; SC4 before SC5 (the flee-assert prerequisite); SC5
+  yields the first test-dispatched forced battle; SC6 wires the overworld trigger;
+  SC7 stages the graph after there is a real defeat beat to author; SC8 is the
+  data-only rival vertical + gate.
+- **Reversibility / next boundary:** plan-level, fully reversible before any SC
+  lands. **NEXT concrete action = SC1.** The next VISUAL/human stop remains the
+  S8 vertical-slice go/no-go.
+
+---
+
 ## 2026-07-24 -- ZM-D-142 -- S7 item 2 SC6 closes the milestone-autosave test obligation; item 2 COMPLETE
 
 - **Decision / boundary:** land `Games/Zenithmon/Tests/ZM_AutoTests_SaveAutosave.cpp`
