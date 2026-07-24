@@ -28,8 +28,23 @@
 // TownCenter-sampled ground height over the 1024 m rect. That is sufficient to
 // evaluate whether the generator accepts a Dawnmere-scale ground surface.
 //
-// No persistence this SC: the .znavmesh write + runtime routing are DEFERRED
-// (Q-2026-07-24-002 Q-A). This is an EVALUATION spike only.
+// PERSISTENCE DECISION (Q-2026-07-24-002 Q-A, RESOLVED by user -> ZM-D-145):
+//   * SC1 (this file) is an EVALUATION spike -- it generates a navmesh in memory
+//     and reads back its polygon/walkability counts, but writes NOTHING.
+//   * "OPTION C" -- disk-baked .znavmesh PERSISTENCE -- is the ADOPTED path and
+//     the NEXT navmesh sub-commit: a tools-time bake generates the navmesh and
+//     Zenith_NavMesh::SaveToFile()s it to a COMMITTED, CI-testable
+//     `Games/Zenithmon/Assets/Navmesh/*.znavmesh` (no longer gitignored), which
+//     the runtime loads via Zenith_NavMesh::LoadFromFile() on scene load. The
+//     .znavmesh save/load format already exists in the engine -- option C is
+//     game-side wiring, no engine change.
+//   * "OPTION B" -- a RUNTIME-GENERATED nav path (build the navmesh on scene load
+//     from the terrain COLLISION mesh + a tiled generator so the iMaxDim=1024
+//     clamp stops bounding resolution) plus actual agent routing -- is DEFERRED
+//     future work (see ZM-D-145 / Shortfalls.md). It is what UE/Unity ship for
+//     large terrain worlds; it is an ENGINE change (ZenithAI/terrain) owing the
+//     full cross-game gate, so it lands as its own explicitly-gated sub-commit
+//     when populated-world navigation (S9/S10) actually needs it.
 // ============================================================================
 
 // The generator's hard voxel-grid clamp (Zenith_NavMeshGenerator::ComputeBounds

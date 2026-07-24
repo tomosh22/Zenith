@@ -73,8 +73,15 @@
 /Middleware/glfw-3.4.bin.WIN64/lib-vc2022/*
 !/Middleware/glfw-3.4.bin.WIN64/lib-vc2022/glfw3_mt.lib
 
-# Ignore all Assets directories
-**/Assets/
+# Ignore all Assets directories, EXCEPT .znavmesh navmesh assets.
+# .znavmesh is a first-class TRACKED asset (ZM-D-145): baked navmeshes are
+# COMMITTED and CI-testable, unlike other baked assets (which stay ignored). This
+# is the "option C" disk-baked navmesh persistence decision; the runtime-generated
+# nav path ("option B") is deferred future work. We ignore Assets *contents* (not
+# the directory entries, so git can descend) and re-include .znavmesh at any depth.
+**/Assets/**
+!**/Assets/**/
+!**/*.znavmesh
 
 # Accidental Windows NUL device redirections
 /nul

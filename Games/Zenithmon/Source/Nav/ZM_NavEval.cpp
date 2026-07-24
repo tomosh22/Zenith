@@ -11,7 +11,9 @@
 // ============================================================================
 // ZM_NavEval implementation. See the header for the SC1 rationale (headless
 // evaluation spike; flat-fallback coverage grid; no terrain component, no disk,
-// no persistence).
+// no persistence) and the RESOLVED persistence decision (ZM-D-145): disk-baked
+// .znavmesh (option C) is the next sub-commit; runtime-generated routing +
+// tiling (option B) is deferred engine work.
 // ============================================================================
 
 namespace

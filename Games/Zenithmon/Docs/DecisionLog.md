@@ -15,6 +15,58 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-24 -- ZM-D-145 -- USER DECISION: adopt navmesh persistence OPTION C now; OPTION B deferred; `.znavmesh` is a tracked asset
+
+- **Decision (user, resolves Q-2026-07-24-002 Q-A):** do NOT stop at the SC1
+  evaluation spike. Implement **OPTION C -- disk-baked `.znavmesh` persistence --
+  as the NEXT Zenithmon work, BEFORE continuing the trainer vertical (SC2+)**. A
+  separate session implements it from a handoff prompt (drafted this session). The
+  runtime-generated nav path ("OPTION B") is documented as deferred future work.
+- **`.znavmesh` is now a first-class TRACKED asset, not a gitignored bake.** The
+  `.gitignore` `**/Assets/` blanket rule was amended (ignore Assets *contents* so
+  git can descend, `!**/*.znavmesh` re-includes navmesh files at any depth);
+  verified with `git check-ignore` that `.znavmesh` under `Assets/` is trackable
+  while `.zscen`/`.zmodel`/`.ztchunk` remain ignored. **Why this matters:** a
+  committed `.znavmesh` is loadable headless on CI with NO terrain component and NO
+  GPU -- so it sidesteps BOTH the Q-2026-07-21-001 headless-terrain assert AND the
+  gitignored-asset CI gap that keeps other baked assets untestable. This is the
+  crux that makes option C worth doing now: navigation becomes CI-verifiable.
+- **Option C is game-side wiring -- NO engine change.** The `.znavmesh` format and
+  `Zenith_NavMesh::SaveToFile(path)` / `LoadFromFile(path)` (+
+  `WriteToDataStream`/`ReadFromDataStream`) already exist
+  (`Zenith/AI/Navigation/Zenith_NavMesh.{h,cpp}`). Option C = a TOOLS-time bake
+  (`#ifdef ZENITH_TOOLS`, a `*_True` build where the terrain/GPU is live) that
+  generates the Dawnmere navmesh and saves it to
+  `Games/Zenithmon/Assets/Navmesh/Dawnmere.znavmesh`, plus a runtime `LoadFromFile`
+  on scene load -- mirroring the FrontEnd.zscen bake-in-`_True` / load-everywhere
+  pattern. So the engine baseline 1103 stays put and no cross-game sweep is owed.
+- **Rationale (the UE/Unity comparison drove this):** both commercial engines are
+  Recast under the hood (like `Zenith_NavMeshGenerator`); the industry default for
+  a mostly-static overworld is to BAKE the navmesh at edit time and persist it with
+  the level -- exactly option C. Zenith's added constraint is that baked assets are
+  gitignored/untestable, which is why the persisted `.znavmesh` is deliberately
+  made a TRACKED, CI-loadable asset here. Option B (tiled runtime generation from
+  terrain collision) is what those engines do for large/streaming terrain worlds
+  and remains the correct EVENTUAL answer; it is an engine investment (tiling to
+  beat the `iMaxDim=1024` clamp + a terrain-collision nav-source) sequenced to when
+  populated-world navigation (S9/S10) needs it.
+- **Plan impact (amends ZM-D-143):** a new sub-commit **"SC1b -- navmesh
+  persistence (option C)"** is inserted AFTER SC1 and BEFORE SC2; the trainer
+  vertical (SC2 `ZM_TrainerData` ... SC8 rival Vesper) shifts to follow it,
+  unchanged in content. SC1b's own gate follows the standard PER-SC discipline
+  (bake determinism + a headless load-round-trip test on the committed
+  `.znavmesh`, mutation-verified). Source docs updated: `ZM_NavEval.{h,cpp}`
+  comments now record the resolved decision; `.gitignore` amended; Shortfalls.md
+  logs option B as a deferred capability.
+- **Reversibility / next boundary:** the `.gitignore` + doc changes are reversible;
+  the direction (bake-and-persist now, runtime-tiled later) is a durable
+  architecture call recorded here. **NEXT concrete action = SC1b (option C),
+  handled by a fresh session from the handoff prompt; the trainer vertical (SC2+)
+  resumes only after SC1b lands.** No Zenithmon feature work proceeds until then
+  (user directive).
+
+---
+
 ## 2026-07-24 -- ZM-D-144 -- S7 item 3 SC1: navmesh terrain-source EVALUATION spike (pure, headless)
 
 - **Decision / boundary:** land `Games/Zenithmon/Source/Nav/ZM_NavEval.{h,cpp}` +

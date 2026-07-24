@@ -17,14 +17,21 @@ sound default; the loop protocol says adopt the best-guess and proceed (the user
 corrects in batch). Confirm or override any of these before the relevant sub-commit
 lands real code against it:
 
-- **Q-A -- navmesh eval scope / `.znavmesh` persistence (drives SC1):** treat the
-  navigation clause as a **SPIKE + headless unit** proving
-  `Zenith_NavMeshGenerator::GenerateFromGeometry` ingests a Dawnmere-shaped procedural
-  coverage grid; runtime nav routing and `.znavmesh` persistence DEFERRED to S8/S9;
-  trainer approach uses the existing straight-line/cone drive. *Cost if wrong:* if a
-  shipped runtime nav path was expected, a follow-up SC is needed that likely pulls in
-  an ENGINE change (raise the navmesh `iMaxDim=1024` clamp and/or fix Q-2026-07-21-001)
-  + its full engine-test/RenderTest-regression/cross-game-sweep tax.
+- **Q-A -- navmesh eval scope / `.znavmesh` persistence (drives SC1): [RESOLVED
+  2026-07-24 by user -> ZM-D-145].** The default (spike-only) was NOT taken. The
+  user chose **OPTION C -- disk-baked `.znavmesh` persistence -- as the NEXT
+  Zenithmon work, before continuing the trainer vertical (SC2+):** a tools-time
+  bake generates a Dawnmere navmesh and `Zenith_NavMesh::SaveToFile()`s it to a
+  COMMITTED, CI-testable `Games/Zenithmon/Assets/Navmesh/*.znavmesh` (the
+  `.gitignore` `**/Assets/` rule was amended so `.znavmesh` is tracked everywhere),
+  loaded at runtime via `Zenith_NavMesh::LoadFromFile()`. The `.znavmesh` save/load
+  format already exists, so option C is game-side wiring -- no engine change.
+  **OPTION B** (a runtime-generated nav path from the terrain COLLISION mesh +
+  tiling to lift the `iMaxDim=1024` clamp + actual agent routing -- what UE/Unity
+  ship for large terrain worlds) is documented as **deferred future engine work**
+  (Shortfalls.md), to land as its own explicitly-gated sub-commit when
+  populated-world navigation (S9/S10) needs it. A separate session will implement
+  option C from a handoff prompt.
 - **Q-B -- `ZM_GraphAuthoring` "first useful" scope (drives SC7):** a **MINIMAL
   authored `.bgraph`** owning one genuine decision (the trainer-defeat beat: set-flag ->
   award-prize), with approach kept C++-driven. *Cost if wrong:* a fuller graph (running
@@ -57,14 +64,13 @@ Net finding: the whole item is **Games/Zenithmon-only -- ZERO engine changes, ZE
 orders**; the two engine risks (navmesh clamp, Q-2026-07-21-001 headless-terrain assert) are
 deliberately DESIGNED OUT via the procedural coverage grid + `cellSize>=1.0`.
 
-**Best guess if you don't reply:** all eight defaults above are adopted and the sub-commits
-proceed on them.
+**Best guess if you don't reply:** **Q-A is now user-RESOLVED (option C, ZM-D-145)**; the
+remaining seven defaults are adopted and the sub-commits proceed on them.
 
-**Cost of getting it wrong:** bounded per item above -- at worst a follow-up sub-commit;
-Q-A is the only one that could later pull in an engine change if a shipped nav path is wanted.
+**Cost of getting it wrong:** bounded per item above -- at worst a follow-up sub-commit.
 
-**Status:** asked 2026-07-24; acting on best guesses. Q-A/Q-B/Q-D are the ones most worth an
-explicit steer.
+**Status:** asked 2026-07-24. **Q-A RESOLVED 2026-07-24 (option C now; option B deferred).**
+Q-B/Q-D still on their defaults and worth an explicit steer if you have a preference.
 
 ---
 
