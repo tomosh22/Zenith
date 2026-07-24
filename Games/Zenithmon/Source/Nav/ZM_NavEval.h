@@ -35,9 +35,12 @@
 //     the NEXT navmesh sub-commit: a tools-time bake generates the navmesh and
 //     Zenith_NavMesh::SaveToFile()s it to a COMMITTED, CI-testable
 //     `Games/Zenithmon/Assets/Navmesh/*.znavmesh` (no longer gitignored), which
-//     the runtime loads via Zenith_NavMesh::LoadFromFile() on scene load. The
-//     .znavmesh save/load format already exists in the engine -- option C is
-//     game-side wiring, no engine change.
+//     the runtime loads via an engine runtime holder on scene load. The
+//     .znavmesh save/load PRIMITIVES already exist in the engine, but option C
+//     promotes the bake+persist+load ORCHESTRATION into a REUSABLE, game-agnostic
+//     ENGINE feature (Zenithmon is its first CONSUMER) -- so it is an engine
+//     change owing the full engine gate (engine units + RenderTest boot
+//     regression + a Combat/DP/CityBuilder cross-game sweep).
 //   * "OPTION B" -- a RUNTIME-GENERATED nav path (build the navmesh on scene load
 //     from the terrain COLLISION mesh + a tiled generator so the iMaxDim=1024
 //     clamp stops bounding resolution) plus actual agent routing -- is DEFERRED

@@ -31,15 +31,24 @@ Tuning-value changes go in git history, not here.
   GPU -- so it sidesteps BOTH the Q-2026-07-21-001 headless-terrain assert AND the
   gitignored-asset CI gap that keeps other baked assets untestable. This is the
   crux that makes option C worth doing now: navigation becomes CI-verifiable.
-- **Option C is game-side wiring -- NO engine change.** The `.znavmesh` format and
-  `Zenith_NavMesh::SaveToFile(path)` / `LoadFromFile(path)` (+
-  `WriteToDataStream`/`ReadFromDataStream`) already exist
-  (`Zenith/AI/Navigation/Zenith_NavMesh.{h,cpp}`). Option C = a TOOLS-time bake
-  (`#ifdef ZENITH_TOOLS`, a `*_True` build where the terrain/GPU is live) that
-  generates the Dawnmere navmesh and saves it to
-  `Games/Zenithmon/Assets/Navmesh/Dawnmere.znavmesh`, plus a runtime `LoadFromFile`
-  on scene load -- mirroring the FrontEnd.zscen bake-in-`_True` / load-everywhere
-  pattern. So the engine baseline 1103 stays put and no cross-game sweep is owed.
+- **Option C ships as a REUSABLE ZENITH ENGINE FEATURE, with Zenithmon as its
+  FIRST consumer (user directive 2026-07-24).** The low-level primitives already
+  exist (`Zenith_NavMesh::SaveToFile`/`LoadFromFile` +
+  `WriteToDataStream`/`ReadFromDataStream` + `Zenith_NavMeshGenerator::GenerateFromGeometry`,
+  `Zenith/AI/Navigation/`), but the bake -> persist -> runtime-load ORCHESTRATION
+  must live in the ENGINE (game-agnostic, no `ZM_`/Zenithmon types -- an engine
+  navmesh bake helper + a runtime baked-navmesh holder, the Unity-`NavMeshSurface`
+  / UE-`RecastNavMesh` analog) so Combat / DevilsPlayground (which already consume
+  navmesh) and future games reuse it with trivial wiring. **This IS an engine
+  change and owes the FULL engine gate -- engine unit tests (the engine baseline
+  1103 moves), a RenderTest boot regression, and a cross-game sweep
+  (Combat/DP/CityBuilder green) -- on top of Zenithmon's own gate.** Zenithmon
+  then CONSUMES the feature: it supplies its Dawnmere geometry (SC1's `ZM_NavEval`
+  grid) to the engine bake, commits `Games/Zenithmon/Assets/Navmesh/Dawnmere.znavmesh`,
+  and loads it via the engine runtime holder on scene load -- mirroring the
+  FrontEnd.zscen bake-in-`_True` / load-everywhere pattern. The runtime holder, if
+  an ECS component, takes an ENGINE component-meta order (like the graph host at
+  60), NOT a game order -- so Zenithmon's next-free game order 114 is untouched.
 - **Rationale (the UE/Unity comparison drove this):** both commercial engines are
   Recast under the hood (like `Zenith_NavMeshGenerator`); the industry default for
   a mostly-static overworld is to BAKE the navmesh at edit time and persist it with
