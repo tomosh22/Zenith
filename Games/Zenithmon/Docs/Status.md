@@ -1,21 +1,21 @@
 # Zenithmon Status
 
 **Last updated:** 2026-07-24
-**Stage:** **S7 (save/load, story flags, trainer battles) ACTIVE. Item 1 (full schema-v1 codec) COMPLETE (SC1-SC2, ZM-D-135/136). Item 2 (story flags + save integration) IN PROGRESS -- SC1-SC5 of 6 DONE (ZM-D-137..141); NEXT is SC6, re-scoped to the milestone-autosave test closure only** (the disk-backed scramble gate landed WITH SC5 as `ZM_SaveContinue_Test`). S0-S6 remain complete. The aggregate item-2 checkbox stays open until SC6 closes. S7 requires no human intervention; the next human stop remains the S8 vertical-slice go/no-go.
-**Build:** GREEN on the exact S7 item 2 SC5 diff -- `Build\regen.ps1` GREEN, then `zenith build Zenithmon` (`Vulkan_vs2022_Debug_Win64_True`, tools debug) GREEN. SC5 touched no engine file; no broader configuration matrix or cross-game sweep is claimed. The local gate is the direct-`master` landing authority; CI is the post-push backstop.
-**Tests:** boot unit gate **2521 ran / 2520 passed / 0 failed / 1 documented skip** (the pre-existing unrelated `GraphComponent::RegistryWideNodeRoundTrip` quarantine), **+8** from clean SC4: **6** `ZM_Title` units + **2** `ZM_MenuStack` units. `zm-tests.yml` was bumped **2513 -> 2521** from the OBSERVED boot line; the engine-only reference remains **1103** and `Tools/run_unit_gate.ps1`'s default is untouched. The automated registry grew **40 -> 41** with `ZM_SaveContinue_Test`; headless discovery/gate was **41/41**. Focused windowed runs: `ZM_SaveContinue_Test` **247 frames**, `ZM_RootQuitAndBlockedSave_Test` **158**, `ZM_SaveMenuFlow_Test` **98**; then the full windowed registry passed **41/41, 0 failed, 0 skipped, 0 zero-frame**. `%APPDATA%/Zenith/Zenithmon` was verified EMPTY. Adversarial review verdict CLEAN (two low/low nits, logged in ZM-D-141). S7 has no visual or human gate.
+**Stage:** **S7 (save/load, story flags, trainer battles) ACTIVE. Item 1 (full schema-v1 codec) COMPLETE (SC1-SC2, ZM-D-135/136). Item 2 (story flags + save integration) COMPLETE -- ALL SIX sub-commits done (SC1-SC6, ZM-D-137..142); the aggregate item-2 Roadmap checkbox is ticked. NEXT is S7 item 3** (trainer sight-cone -> forced battle -> defeat flags + prize money; the first useful `ZM_GraphAuthoring` trainer-glue integration; and the terrain-backed navmesh evaluation). S0-S6 remain complete. S7 requires no human intervention; the next human stop remains the S8 vertical-slice go/no-go.
+**Build:** GREEN on the S7 item 2 SC6 diff -- `Build\regen.ps1` GREEN (new untracked test TU picked up), then `zenith build Zenithmon` (`Vulkan_vs2022_Debug_Win64_True`, tools debug) GREEN. SC6 is **TEST-ONLY** -- no production or engine file ships (the five mutations below were reverted); no broader configuration matrix or cross-game sweep is owed. The local gate is the direct-`master` landing authority; CI is the post-push backstop.
+**Tests:** boot unit gate **2521 ran / 2520 passed / 0 failed / 1 documented skip** (the pre-existing unrelated `GraphComponent::RegistryWideNodeRoundTrip` quarantine) -- **UNCHANGED from SC5**: SC6 adds only a `ZENITH_AUTOMATED_TEST_REGISTER`, zero `ZENITH_TEST` boot units, so the boot baseline stays **2521**, `zm-tests.yml` is **NOT bumped**, the engine reference remains **1103**, and `Tools/run_unit_gate.ps1`'s default is untouched. The automated registry grew **41 -> 42** with `ZM_MilestoneAutosave_Test`; headless **42/42, 0 failed** (the new test skips headless -- skip==pass). Focused windowed `ZM_MilestoneAutosave_Test` **134 frames**; full windowed registry passed **42/42, 0 failed, 0 skipped, 0 zero-frame** (verified via 42 clean result JSONs). `%APPDATA%/Zenith/Zenithmon` verified EMPTY; no stray `zenithmon.exe`. **★ 5-mutation teeth battery: all RED in isolation, then restored GREEN** (see "Last completed"). S7 has no visual or human gate.
 
 ## Current task
 
-**S7 item 2 SC6 -- the milestone-autosave test closure -- is NEXT (re-scoped, ZM-D-141).** SC5 already shipped the disk-backed save -> quit-to-FrontEnd -> scramble-and-prove -> Continue exact-restoration gate as `ZM_SaveContinue_Test`. What remains for SC6: close the milestone-autosave TEST obligation from the item-2 spec -- the windowed proof that a milestone arrival (the live `SCENE_ENTERED` arm) writes the Auto slot exactly once with the full durable state, drained from `OnUpdate` while IDLE (never from the fade-in tail), and that a blocked arrival writes nothing. SC3 already ships the latch mechanics (`ZM_Autosave`, `ZM_TryAutosave`, the arrival latch drained in `OnUpdate`) and pins the counter/Auto-status in `ZM_ResumePlacement_Test` (+1/READY on arrival) and `ZM_QuitToFrontEnd_Test` (+0/EMPTY across quit); SC6 must assess what the item-2 "milestone-autosave closure" still owes BEYOND that (start from TestPlan 5.7 and the ZM-D-139 entry, and mutation-verify whatever is added). ECS order 113 remains the last occupied game order; next free is **114**. Continue autonomously; the next human stop is the **S8 vertical-slice go/no-go**.
+**S7 item 3 -- trainer battles + the first graph integration + the navmesh evaluation -- is NEXT.** With item 2 COMPLETE (SC1-SC6), the next unchecked Roadmap task (line 104) is the trainer chain: a forward sight-CONE -> freeze input -> approach -> dialogue -> forced battle -> defeat flags + prize money, with the occlusion RAY entering as a probe filter in the GLUE layer so the pure cone picker stays unit-testable (the fixed architecture rule); the FIRST useful `ZM_GraphAuthoring` trainer-glue integration (deferred here from S6 per ZM-D-134 -- `ZM_GraphAuthoring` is still not written); and the terrain-backed navigation evaluation -- feed terrain triangles or a coverage grid to `Zenith_NavMeshGenerator::GenerateFromGeometry` across Dawnmere's 1024 m domain and decide `.znavmesh` persistence. **Watch the OPEN engine gap Q-2026-07-21-001** (terrain sets up GPU culling resources with no headless guard), which may force an engine-side headless path for any terrain-triangle harvest -- an engine change then owes engine unit tests + a RenderTest boot regression + the cross-game sweep (rebuild each game before testing; `zenith test` runs the STALE exe otherwise). Story-flag PRODUCERS (`ZM_SetStoryFlag` at real beats) also first land here / with S8 -- SC1 shipped the registry + the gated CONSUMER only. ECS order 113 remains the last occupied game order; next free is **114**. Screens stay by-value non-ECS presenters on `ZM_UI_MenuStack` (order 112), one arm per dispatch switch. Continue autonomously; the next human stop is the **S8 vertical-slice go/no-go**.
 
-**S7 ITEM 2 SUB-COMMIT PLAN (6 total):**
+**S7 ITEM 2 SUB-COMMIT PLAN (6 total -- COMPLETE):**
 - **SC1 DONE (ZM-D-137)** -- `ZM_StoryFlags` identity registry + flag-gated NPC lines + the `Npc_Warden` row.
 - **SC2 DONE (ZM-D-138)** -- `ZM_SaveSlots`, the typed slot/disk layer over the frozen codec (Save0-2 + Auto).
 - **SC3 DONE (ZM-D-139)** -- world-position capture, resume placement, quit-to-FrontEnd, the milestone autosave latch.
 - **SC4 DONE (ZM-D-140)** -- the save/load slot presenter, manual Save0-2 flow and root-menu Save/Quit.
-- **SC5 DONE (ZM-D-141)** -- the title menu, New Game, transactional Continue, the slot-operation test observer, and the disk-authentic Continue gate (`ZM_SaveContinue_Test`). See "Last completed".
-- **SC6 NEXT (re-scoped)** -- the milestone-autosave test closure only (the disk-backed restoration gate landed with SC5).
+- **SC5 DONE (ZM-D-141)** -- the title menu, New Game, transactional Continue, the slot-operation test observer, and the disk-authentic Continue gate (`ZM_SaveContinue_Test`).
+- **SC6 DONE (ZM-D-142)** -- the milestone-autosave producer gate `ZM_MilestoneAutosave_Test` (test-only; the disk-backed restoration gate landed with SC5). See "Last completed".
 
 **S7 ITEM 1 (complete):** SC1 (ZM-D-135) froze `ZM_GameState`'s LAYOUT -- reach it with named free functions, never new members -- and SC2 (ZM-D-136) froze the pure transactional 11-module schema-v1 codec plus the exact **824-byte** v1 artifact. Every incompatible change from here owes a version bump + a literal historical-blob migration test IN THE SAME COMMIT.
 
@@ -27,7 +27,58 @@
 
 ## Last completed
 
-**S7 item 2 SC5 -- THE TITLE MENU, NEW GAME, TRANSACTIONAL CONTINUE, THE
+**S7 item 2 SC6 -- THE MILESTONE-AUTOSAVE TEST CLOSURE; S7 ITEM 2 COMPLETE
+(ZM-D-142).** Landed the windowed `ZM_MilestoneAutosave_Test`
+(`Tests/ZM_AutoTests_SaveAutosave.cpp`), the milestone-autosave PRODUCER gate --
+a **TEST-ONLY** change (no production or engine code ships). Found IN FLIGHT and
+uncommitted on master at session start (a prior session's work); an orchestrated
+forensic assessment (spec + build-correctness + test-teeth lenses,
+cross-verified) found it build-correct with **NO phantom seam** (unlike SC5's
+in-flight file) and genuinely passable, so it went straight to the gate.
+
+**What it pins BEYOND SC3** (which sampled only the autosave counter + the Auto
+slot STATUS enum): (1) FULL DURABLE STATE -- a real `SCENE_ENTERED` arrival's
+Auto slot is `ReadState`'d back FROM DISK and field-compared to a scrambled live
+state (party/boxes/dex/story bits/badges/money/world position+yaw), not just
+`ProbeSlot==READY`; (2) EXACTLY-ONCE twinned with SC5's slot observer -- one
+`WRITE_STATE` on AUTO (==1) alongside the +1 counter; (3) POSITIVE DRAIN-PHASE --
+the write is attributed to the `OnUpdate` IDLE drain via menu-term isolation
+(`blocker==NONE` with the ROOT menu open); (4) ATTRIBUTABLE BLOCKED REAL ARRIVAL
+-- a genuine arrival under a live non-transition blocker with a proven-capturable
+player writes NOTHING (byte-identical Auto file, zero WRITE, EMPTY); (5) LATCH
+RE-ARM + consume-before-attempt (`NoRetryWatch` -- no disk-hammering retry).
+
+**Disk-authentic + stack-safe:** `ProbeSlot`/`ReadState` fall through to the real
+file (the RAM readback stash is never staged), defeating the `DontDestroyOnLoad`
+hazard; 12 per-phase driver functions with the two large `ZM_GameState`
+instances as FILE-SCOPE globals avoid SC5's 1.31 MB monolithic-Step overflow.
+
+**★ THE TEETH ARE MUTATION-PROVEN.** Five production mutations, each rebuilt in
+isolation, all confirmed RED, then reverted + re-gated GREEN: DROP-CAPTURE reds
+the disk-content/scene-tag/resume-valid asserts (the SC3 status-only green hole)
+while counter+READY stay green; DROP MENU CONSULT reds the menu-probe +
+blocked-arrival asserts; CONSUME-AFTER-SUCCESS reds `NoRetryWatch`; DELETE THE
+DRAIN reds the `SamplePositive` poll deadline early at **45 frames**; DOUBLE-WRITE
+reds the observer `traceExact==1`. Two `counterDelta` booleans are tautological
+given their poll gates -- no false-green (the deadline carries the teeth),
+deliberately not churned (matching ZM-D-141's low/low disposition).
+
+**Evidence.** Regen GREEN (new untracked TU); build GREEN; headless **42/42, 0
+failed** (registry **41 -> 42**; the windowed test skips headless); boot unit
+gate **2521 / 2520 / 0 / 1 documented skip -- NO delta** (only a
+`ZENITH_AUTOMATED_TEST_REGISTER`, so `zm-tests.yml` is NOT bumped and the engine
+reference **1103** is unchanged); focused windowed **134 frames**; full windowed
+**42/42 passed, 0 failed, 0 skipped, 0 zero-frame** (42 clean result JSONs); save
+directory EMPTY; no stray `zenithmon.exe`. **★ CI-INVISIBILITY:**
+`m_bRequiresGraphics=true`, so the headless backstop skips it -- teeth exist only
+under the LOCAL windowed gate with `--filter ZM_MilestoneAutosave_Test`.
+**Contracts held:** no production code changed; `ZM_SaveSchema` + 824-byte v1
+golden, `ZM_GameState` layout, `ZM_SaveSlots` framing, and the latch/drain
+byte-untouched; `uSERIALIZATION_VERSION` 1; **no new ECS order (114 next-free)**;
+a phantom `Zenith_TerrainComponent.cpp` working-tree entry (blob byte-identical
+to HEAD) was restored, not committed.
+
+Prior: **S7 item 2 SC5 -- THE TITLE MENU, NEW GAME, TRANSACTIONAL CONTINUE, THE
 SLOT-OPERATION TEST OBSERVER, AND THE DISK-AUTHENTIC CONTINUE GATE (ZM-D-141).**
 Found IN FLIGHT and uncommitted on master (runtime complete; the observer seam
 the new windowed test referenced had never been written, the test was logically
@@ -95,10 +146,10 @@ both logged, deliberately not churned). **Contracts held:** `ZM_SaveSchema` +
 framing + write-answers-from-re-probe untouched; `uSERIALIZATION_VERSION` stays
 1; no new ECS order.
 
-**Remaining item-2 boundary:** SC1-SC5 of six are complete while the aggregate
-Roadmap checkbox remains open. **SC6 NEXT (re-scoped)** closes the
-milestone-autosave test obligation only -- the disk-backed restoration gate
-landed here as `ZM_SaveContinue_Test`.
+**Item-2 boundary (now closed):** SC6 (ZM-D-142) shipped
+`ZM_MilestoneAutosave_Test`, completing all six sub-commits; the disk-backed
+restoration gate had landed here as `ZM_SaveContinue_Test`. **S7 item 2 is
+COMPLETE.**
 
 Prior: **S7 item 2 SC4 -- THE SAVE/LOAD SLOT PRESENTER, MANUAL SAVE FLOW AND
 ROOT-MENU SAVE/QUIT (ZM-D-140).** `Source/UI/ZM_UI_SaveSlots.{h,cpp}` is the ONE

@@ -1135,12 +1135,51 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   `ZM_SaveContinue_Test` **247** / `ZM_RootQuitAndBlockedSave_Test` **158** /
   `ZM_SaveMenuFlow_Test` **98** frames; full windowed **41/41 passed, 0 failed,
   0 skipped, 0 zero-frame**; save directory empty; adversarial review CLEAN.
-- **Item 2 state / NEXT:** SC1-SC5 of six are complete; the aggregate Roadmap
-  checkbox remains unchecked. **SC6 NEXT (re-scoped, ZM-D-141)** closes the
-  milestone-autosave test obligation only -- the save -> quit -> scramble ->
-  Continue exact-restoration gate shipped with SC5 as `ZM_SaveContinue_Test`
-  (the `DontDestroyOnLoad` RAM-survival inoculation pattern: scramble, prove
-  the scramble took, assert published == saved != scramble).
+- **Item 2 SC6 milestone-autosave test closure (COMPLETE 2026-07-24, ZM-D-142):**
+  test-only -- no production code shipped. The new windowed
+  `ZM_MilestoneAutosave_Test` (**134 frames**, graphics-required, wrapped in
+  `#ifdef ZENITH_INPUT_SIMULATOR`) is the disk-authentic milestone-autosave gate
+  and extends the SC3 `ZM_ResumePlacement_Test` / `ZM_QuitToFrontEnd_Test`
+  coverage (which sampled only the autosave counter and the Auto slot STATUS
+  enum) with five new proofs. After a real `SCENE_ENTERED` arrival it (1) reads
+  the AUTO slot back FROM DISK and field-compares the decoded `ZM_GameState`
+  against a scrambled live state (party/boxes/dex/story bits/badges/money/world
+  position+yaw), not merely `ProbeSlot == READY`; (2) proves EXACTLY ONE
+  `ZM_SAVE_SLOT_OPERATION` `WRITE_STATE` on AUTO (`== 1`, not `>= 1`), twinned
+  with the +1 counter delta via the SC5 slot-operation observer; (3) attributes
+  the write to the OnUpdate IDLE drain, not the fade-in tail, with menu-term
+  isolation (`blocker == NONE` under the open ROOT pause menu); (4) proves an
+  attributable BLOCKED real arrival -- a genuine arrival completing under a live
+  non-transition blocker (ROOT menu held open) with a proven-capturable player
+  writes NOTHING: byte-identical Auto file (direct `Zenith_FileAccess` read), zero
+  `WRITE_STATE`, counter unmoved, `ProbeSlot(AUTO) == EMPTY`; (5) proves LATCH
+  RE-ARM + consume-before-attempt -- a second arrival autosaves again (+1) while
+  `NoRetryWatch` proves a refused attempt does not hammer disk on later IDLE
+  frames. It is disk-authentic (`ProbeSlot`/`ReadState` fall through to the real
+  file because the RAM readback stash is never staged) and uses 12 per-phase
+  driver functions with file-scope-global `ZM_GameState` instances, avoiding the
+  SC5 monolithic-`Step` stack overflow. A five-mutation battery (each rebuilt in
+  isolation, all confirmed RED then restored GREEN) proves the asserts bite:
+  DROP-CAPTURE reds the positive disk-content/scene-tag/resume-valid asserts (the
+  SC3 status-only green hole); DROP MENU CONSULT reds `MenuOpenProbe` + the
+  blocked-arrival byte/counter/trace asserts; CONSUME-AFTER-SUCCESS reds
+  `NoRetryWatch`; DELETE THE DRAIN reds the `SamplePositive` poll deadline (45
+  frames); DOUBLE-WRITE reds the observer exactly-once (`traceExact == 1`) assert.
+- **SC6 observed gate:** the file adds only a `ZENITH_AUTOMATED_TEST_REGISTER`
+  and zero `ZENITH_TEST` boot units, so the boot baseline is UNCHANGED at **2521
+  ran / 2520 passed / 0 failed / 1 documented skip** and `zm-tests.yml` is NOT
+  bumped. Automated registry **41 -> 42**; `ZM_MilestoneAutosave_Test` is
+  graphics-required and SKIPS headless (skip == pass), so it is CI-invisible and
+  carried by the local windowed gate only. Headless **42 passed, 0 failed**;
+  focused windowed `ZM_MilestoneAutosave_Test` **134 frames, PASS**; full windowed
+  **42/42 passed, 0 failed, 0 skipped, 0 zero-frame**; save directory
+  `%APPDATA%/Zenith/Zenithmon` verified EMPTY afterward.
+- **Item 2 state:** SC1-SC6 of six are complete -- **S7 item 2 is DONE.** The
+  milestone-autosave test obligation is closed by `ZM_MilestoneAutosave_Test`
+  (SC6, disk-authentic); the save -> quit -> scramble -> Continue
+  exact-restoration gate shipped with SC5 as `ZM_SaveContinue_Test` (the
+  `DontDestroyOnLoad` RAM-survival inoculation pattern: scramble, prove the
+  scramble took, assert published == saved != scramble).
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->
   defeat flag + prize money.
 
