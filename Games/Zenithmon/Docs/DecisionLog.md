@@ -15,6 +15,72 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-24 -- ZM-D-144 -- S7 item 3 SC1: navmesh terrain-source EVALUATION spike (pure, headless)
+
+- **Decision / boundary:** land `Games/Zenithmon/Source/Nav/ZM_NavEval.{h,cpp}` +
+  `Games/Zenithmon/Tests/ZM_Tests_NavEval.cpp` -- a PURE, HEADLESS spike that
+  answers the S7 item-3 evaluation clause: **can
+  `Zenith_NavMeshGenerator::GenerateFromGeometry` ingest a Dawnmere-bounded ground
+  surface and return a walkable navmesh?** Answer: YES. No engine file touched; no
+  new ECS order. **The `.znavmesh` persistence + runtime routing remain DEFERRED**
+  (Q-2026-07-24-002 Q-A) -- this SC is the evaluation, not a shipped nav path.
+- **Both engine risks are avoided, as ZM-D-143 required.** The harvester
+  synthesizes a FLAT coverage grid (2 tris/quad) at Dawnmere's sampled ground
+  height over the recipe's **1024 m export sub-rect** (`ZM_GetDawnmereTerrainRecipe()`
+  bounds `[0,1024]x[0,1024]`, ground `25.98577` = the TownCenter sampled feet Y),
+  and feeds the raw triangle soup straight to the leaf generator. It NEVER
+  constructs a live `Zenith_TerrainComponent` (sidesteps Q-2026-07-21-001's
+  headless VRAM assert) and reads NO disk asset (baked terrain is gitignored). It
+  chose the flat fallback because Dawnmere's ground is produced by the procedural
+  terrain generator on a live component -- there is no pure `height(x,z)` recipe
+  reachable headless; a flat grid still evaluates the generator's ingestion (the
+  task allows "triangles OR a coverage grid").
+- **The clamp is respected as a fail-closed guard, not discovered at runtime.**
+  `GenerateFromGeometry`'s `ComputeBounds` clamps the voxel grid to
+  `iMaxDim=1024` and `RasterizeTriangle` CLAMPS (not drops) out-of-range cells, so
+  a cell size finer than `domain/1024` collapses the far domain onto the border
+  columns. `ZM_BuildCoverageGrid` predicts the generator grid dim
+  (`ceil((domain+2*agentRadius)/cellSize)`) and refuses (fail-closed,
+  `Zenith_Error` + defined return, NEVER `Zenith_Assert` on args -- it runs at
+  boot) any cell size that would exceed the clamp. The recommended floor is
+  `~1.0 m` for the 1024 m domain.
+- **Tests that lock it (4 pure boot units, `ZM_Nav`):** (1) a Dawnmere flat grid
+  at 16 m yields a walkable navmesh with the polygon count in a HAND-BRACKETED
+  band **3969..4489** (the real generator produced a count INSIDE this analytically
+  predicted band -- empirical confirmation the test is non-vacuous, not just
+  non-null); (2) a too-fine 0.3 m cell is rejected fail-closed (`m_bAttempted`
+  false, grid dim in `[3000,3500]`, min-safe cell in `[0.99,1.5]`), with an 8 m
+  CONTROL that IS attempted+walkable so it cannot pass by rejecting everything;
+  (3) an all-VERTICAL grid yields ZERO walkable polygons (generator returns null),
+  with an upward CONTROL that IS walkable so verticality specifically is what
+  strips walkability; (4) the harvested rect is the 1024 m sub-rect (domain in
+  `[1000,1100]`, `<2048`, TownCenter (512,480) inside, ground in `[20,30]`), NOT
+  the 4096 m grid. Every numeric guard bracketed BOTH sides with hand literals,
+  never spelled against the production clamp constant.
+- **Teeth mutation-proven:** flipping the upward-quad winding (downward normals)
+  reded units 1, 2 (its walkable control) and 3 (its upward control) together --
+  3 units red -- while unit 4 (rect bounds) correctly stayed green, proving the
+  mutation is localised to the walkability claim; restored -> all green. (The
+  winding is the core novel behaviour; unit 2's fail-closed guard and unit 4's
+  rect binding are additionally non-vacuous by construction -- specific
+  hand-bracketed bounds + anti-everything controls.)
+- **Observed gate:** `Build\regen.ps1` GREEN (new `Source/Nav/` folder); `zenith
+  build Zenithmon` GREEN (warnings-as-errors, so the shipped code is warning-clean
+  -- proven when a mutation with an unused param was rejected at compile); boot
+  unit gate **2521 -> 2525 ran / 2524 passed / 0 failed / 1 documented skip**
+  (**+4 `ZM_Nav`**; `zm-tests.yml` bumped 2521 -> 2525 from the OBSERVED line);
+  headless registry unchanged **42/42** (SC1 adds NO windowed/automated test);
+  engine reference **1103 unchanged**. The full windowed batch was not re-run: SC1
+  is boot-units-only and touches no production/existing code, the new units run
+  identically in the windowed boot path (proven headless), and no windowed test
+  changed -- so a windowed regression is not possible from this diff.
+- **Reversibility / next boundary:** the spike is self-contained and reversible;
+  it commits the project to the coverage-grid navmesh SOURCE (not a live terrain
+  component) recorded here, and leaves persistence/routing open. **NEXT = SC2**
+  (`ZM_TrainerData` + `ZM_STORY_FLAG_RIVAL1_DEFEATED`).
+
+---
+
 ## 2026-07-24 -- ZM-D-143 -- S7 item 3 (+ item 4) plan: trainer battles, first graph integration, navmesh eval -- 8 sub-commits, ZERO engine changes
 
 - **Decision / boundary:** the approved shape for S7 item 3 (trainer sight-cone ->

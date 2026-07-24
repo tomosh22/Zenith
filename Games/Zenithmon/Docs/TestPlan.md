@@ -70,8 +70,8 @@ Unit-test categories planned per stage: `ZM_Boot` (S0, shipped), `ZM_Data` /
 `ZM_OverworldInput` / `ZM_OverworldController` / `ZM_OverworldPhysics` /
 `ZM_OverworldCamera` / `ZM_OverworldECS` / `ZM_WorldTraversal` (S3,
 shipped), `ZM_Gen` (S4),
-`ZM_Encounter` (S5), `ZM_UI` (S6), `ZM_Save` (S7). New systems get a new
-category, never a grab-bag.
+`ZM_Encounter` (S5), `ZM_UI` (S6), `ZM_Save` / `ZM_Nav` (S7). New systems get a
+new category, never a grab-bag.
 
 ---
 
@@ -1180,6 +1180,34 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   exact-restoration gate shipped with SC5 as `ZM_SaveContinue_Test` (the
   `DontDestroyOnLoad` RAM-survival inoculation pattern: scramble, prove the
   scramble took, assert published == saved != scramble).
+- **Item 3 SC1 navmesh terrain-source evaluation (COMPLETE 2026-07-24,
+  ZM-D-144):** a pure headless spike evaluating a coverage-grid terrain source
+  for `Zenith_NavMeshGenerator`. **4** `ZM_Nav` units in
+  `Tests/ZM_Tests_NavEval.cpp` (backed by the new `Source/Nav/ZM_NavEval.{h,cpp}`)
+  pin it: `DawnmereFlatGridYieldsWalkableNavmeshInBand` -- a flat coverage grid
+  over Dawnmere's 1024 m export sub-rect at a 16 m cell feeds
+  `Zenith_NavMeshGenerator::GenerateFromGeometry` and yields a walkable navmesh
+  whose polygon count lands in the hand-bracketed band **3969..4489**
+  (~4225 = a 65x65 voxel grid), every polygon upward-facing;
+  `TooFineCellSizeIsRejectedFailClosed` -- a 0.3 m cell over the 1024 m domain is
+  rejected fail-closed by the harvester (`m_bAttempted` false; generator grid dim
+  in [3000,3500]; min-safe cell in [0.99,1.5]), with an 8 m CONTROL that IS
+  attempted + walkable (defeats "rejects everything");
+  `AllVerticalGridHasZeroWalkablePolygons` -- an all-vertical grid yields zero
+  walkable polygons (generator returns null), with an upward CONTROL that IS
+  walkable (proves verticality specifically strips walkability); and
+  `DawnmereRectIsThe1024ExportSubRect` -- the harvested rect is Dawnmere's 1024 m
+  sub-rect (domain in [1000,1100], < 2048, TownCenter (512,480) inside, ground in
+  [20,30]), NOT the engine's 4096 m grid. This SC touches NO engine file, is
+  disk-free, and never constructs a live `Zenith_TerrainComponent` (sidesteps
+  Q-2026-07-21-001); the `.znavmesh` persistence + runtime routing are DEFERRED
+  (Q-2026-07-24-002 Q-A) -- this is the evaluation only. Teeth mutation-proven: a
+  winding flip reds units 1, 2-control and 3-control while unit 4 stays green.
+- **SC1 observed gate:** the four `ZM_Nav` cases are all headless/pure
+  `ZENITH_TEST` boot units (NOT windowed and NOT automated), so the boot baseline
+  moves **2521 -> 2525** (+4 `ZM_Nav`) and `zm-tests.yml` is bumped to **2525**;
+  the automated registry stays **42** (no windowed/automated test added) and the
+  engine-only reference is unchanged at **1103**.
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->
   defeat flag + prize money.
 
