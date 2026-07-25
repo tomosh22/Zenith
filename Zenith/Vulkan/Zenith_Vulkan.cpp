@@ -516,7 +516,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 
 	// Whether render command buffers were recorded this frame. RecordFrame set
 	// HasRecordedFrameWork() during Execute; combined with bSubmitRenderWork so a
-	// non-rendering frame (headless / scene transition) skips the render submit
+	// non-rendering frame (scene transition) skips the render submit
 	// and the memory submit doesn't signal a semaphore nobody waits on. The
 	// pending queue was already drained by RecordFrame, so there's nothing to
 	// clear here.
@@ -1819,10 +1819,10 @@ Flux_VRAMHandle Zenith_Vulkan::RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM)
 
 Zenith_Vulkan_VRAM* Zenith_Vulkan::GetVRAM(const Flux_VRAMHandle xHandle)
 {
-	// Headless mode (Zenith_CommandLine::IsHeadless()): Create*VRAM returns
-	// invalid (UINT32_MAX) handles, and asset-load paths still propagate them
-	// to view-creation / upload sites that read via GetVRAM. Return nullptr
-	// instead of asserting so those sites' existing null-pxVRAM guards run.
+	// A failed / not-yet-initialised allocator makes Create*VRAM return invalid
+	// (UINT32_MAX) handles, and asset-load paths still propagate them to
+	// view-creation / upload sites that read via GetVRAM. Return nullptr instead
+	// of asserting so those sites' existing null-pxVRAM guards run.
 	if (!xHandle.IsValid())
 	{
 		return nullptr;

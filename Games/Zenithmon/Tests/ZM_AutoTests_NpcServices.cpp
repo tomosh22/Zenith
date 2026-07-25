@@ -5834,7 +5834,7 @@ static const Zenith_AutomatedTest g_xZMNpcShopTest = {
 	// deliberately above that, so hitting this cap means a phase-machine bug rather
 	// than a gameplay timeout.
 	/* maxFrames */ 3600,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMNpcShopTest);
 
@@ -5852,7 +5852,7 @@ static const Zenith_AutomatedTest g_xZMNpcHealTest = {
 	// cap means a phase-machine bug rather than a gameplay timeout. No healthy run
 	// comes near either number -- the real run is ~1000 frames.
 	/* maxFrames */ 6000,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMNpcHealTest);
 
@@ -5887,7 +5887,7 @@ static const Zenith_AutomatedTest g_xZMS6InteractGateTest = {
 	// the three approaches are ~200 frames each in practice, not 1200, and each root
 	// walk is a handful of spaced edges rather than its whole 320-frame budget.
 	/* maxFrames */ 10000,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMS6InteractGateTest);
 
@@ -5901,7 +5901,7 @@ static const Zenith_AutomatedTest g_xZMNpcWanderTest = {
 	// 480 close + 360 resume = 4953. The harness cap sits above that sum so a
 	// named phase failure always fires before the generic frame cap.
 	/* maxFrames */ 5500,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMNpcWanderTest);
 

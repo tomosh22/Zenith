@@ -65,7 +65,7 @@ static bool Verify_UIShowcase()
 	return CB_CityManagerComponent::GetActiveBuild() != nullptr;
 }
 
-static const Zenith_AutomatedTest g_xUIShowcaseTest = { "CB_UIShowcase", &Setup_UIShowcase, &Step_UIShowcase, &Verify_UIShowcase, 1000, true };
+static const Zenith_AutomatedTest g_xUIShowcaseTest = { "CB_UIShowcase", &Setup_UIShowcase, &Step_UIShowcase, &Verify_UIShowcase, 1000, false };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xUIShowcaseTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

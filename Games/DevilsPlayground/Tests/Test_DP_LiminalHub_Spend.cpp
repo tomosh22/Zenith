@@ -61,7 +61,7 @@ static bool Step_LiminalSpend(int iFrame)
 {
 	if (g_bHubFailed || g_bHubDone) return false;
 	// Windowed runs: dump the hub UI once it's wired (skipped headless).
-	if (iFrame == 8 && !Zenith_CommandLine::IsHeadless())
+	if (iFrame == 8 && !Zenith_IsNullRenderer())
 	{
 		Flux_Screenshot::RequestDump("C:/tmp/dp_liminal_hub.tga");
 	}

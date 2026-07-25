@@ -11,14 +11,17 @@ public enum ToolsEnabled
 }
 
 // Render backend fragment. Selects which Flux backend a config compiles + links:
-// Vulkan (the real renderer) or D3D12 (the no-op null backend that proves the
-// Flux concepts are backend-neutral). Win64 ships both; agde is Vulkan-only.
-// Appears as a "_Vulkan" / "_D3D12" suffix on every config name.
+// Vulkan (the real renderer), D3D12 (a reserved no-op backend kept as the
+// link-neutrality proof and the future home of a real D3D12 implementation), or
+// Null (the GPU-less backend every headless/CI run executes on). Win64 ships all
+// three; agde is Vulkan-only. Appears as a "Vulkan_" / "D3D12_" / "Null_" PREFIX
+// on every config name.
 [Fragment, Flags]
 public enum RenderBackend
 {
 	Vulkan = 1,
-	D3D12 = 2
+	D3D12 = 2,
+	Null = 4
 }
 
 // Custom target supporting both Windows and Android platforms
@@ -85,15 +88,25 @@ public abstract class ZenithBaseProject : Project
 		if (target.RenderBackend == RenderBackend.Vulkan)
 		{
 			conf.SourceFilesBuildExcludeRegex.Add(@".*\\D3D12\\.*");
+			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Null\\.*");
 		}
 		else if (target.RenderBackend == RenderBackend.D3D12)
 		{
 			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Vulkan\\.*");
+			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Null\\.*");
 			// The ImGui Vulkan backend is a filename, not a path segment, so the
 			// Vulkan exclude above misses it; it #includes <vulkan/vulkan.h> which
 			// the D3D12 config has no SDK path for. The null backend does no real
 			// ImGui rendering, so drop it (a real D3D12 backend would swap in
 			// imgui_impl_dx12).
+			conf.SourceFilesBuildExcludeRegex.Add(@".*imgui_impl_vulkan.*");
+		}
+		else if (target.RenderBackend == RenderBackend.Null)
+		{
+			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Vulkan\\.*");
+			conf.SourceFilesBuildExcludeRegex.Add(@".*\\D3D12\\.*");
+			// Same reasoning as the D3D12 arm: imgui_impl_vulkan is a filename,
+			// not a path segment, and the Null config has no Vulkan SDK path.
 			conf.SourceFilesBuildExcludeRegex.Add(@".*imgui_impl_vulkan.*");
 		}
 	}
@@ -133,13 +146,26 @@ public abstract class ZenithBaseProject : Project
 
 		// One render-backend define per config; Flux_BackendGuard.h #errors unless
 		// exactly one is set. Agde is always Vulkan (its targets carry Vulkan).
-		if (target.RenderBackend == RenderBackend.D3D12)
+		// Explicit three-way (never a fall-through `else`): an unhandled fragment
+		// value must be a build error here, not a config that silently compiles
+		// the WRONG backend.
+		if (target.RenderBackend == RenderBackend.Vulkan)
+		{
+			conf.Defines.Add("ZENITH_VULKAN");
+		}
+		else if (target.RenderBackend == RenderBackend.D3D12)
 		{
 			conf.Defines.Add("ZENITH_D3D12");
 		}
+		else if (target.RenderBackend == RenderBackend.Null)
+		{
+			// THE build-time headless signal. Null_* configs are what every
+			// headless run (CI batches, unit gates) executes.
+			conf.Defines.Add("ZENITH_NULL_RENDERER");
+		}
 		else
 		{
-			conf.Defines.Add("ZENITH_VULKAN");
+			throw new Exception("Unhandled RenderBackend fragment value: " + target.RenderBackend);
 		}
 
 		if (target.Optimization == Optimization.Debug)
@@ -195,6 +221,11 @@ public abstract class ZenithBaseProject : Project
 				// with the Windows SDK on the default include path).
 				conf.IncludePaths.Add(RootPath + "/Zenith/D3D12");
 			}
+			else if (target.RenderBackend == RenderBackend.Null)
+			{
+				// The GPU-less Null backend: headers only, no graphics SDK at all.
+				conf.IncludePaths.Add(RootPath + "/Zenith/Null");
+			}
 		}
 		else if (target.Platform == Platform.agde)
 		{
@@ -238,6 +269,9 @@ public abstract class ZenithBaseProject : Project
 				conf.LibraryFiles.Add("dxgi.lib");
 				conf.LibraryFiles.Add("dxguid.lib");
 			}
+			// RenderBackend.Null deliberately adds NOTHING here: no vulkan-1/slang,
+			// no d3d12/dxgi/dxguid. glfw3_mt above is the only graphics-adjacent lib
+			// it links (the window/input layer is shared by every backend).
 
 			// glfw3_mt.lib is compiled with /MT (release CRT), which pulls in LIBCMT.
 			// In debug builds we use /MTd (LIBCMTD), causing a linker conflict.

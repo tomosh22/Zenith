@@ -39,7 +39,7 @@ public class SentinelPhysicsProject : ZenithBaseProject
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.False,
-			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12 | RenderBackend.Null
 		});
 	}
 

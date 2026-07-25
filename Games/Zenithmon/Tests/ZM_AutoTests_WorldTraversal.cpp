@@ -222,9 +222,16 @@ namespace
 			[&](Zenith_EntityID, ZM_TerrainGrass& xGrass)
 			{
 				++uCount;
-				bReady = xGrass.HasCPUMap() && xGrass.IsGrassApplied()
-					&& !xGrass.HasTerminalFailure()
-					&& xGrass.GetGeneratedBladeCount() > 0u;
+				// A Null (headless) build never APPLIES grass -- the blades are
+				// GPU-only content the backend deliberately does not author (see
+				// Zenith/Null/CLAUDE.md) -- so applied-ness / blade count are not
+				// available there. The CPU-side half (density map loaded, no
+				// terminal failure) IS, and stays asserted in every config; the
+				// windowed assertion is unchanged.
+				const bool bGPUHalf = Zenith_IsNullRenderer()
+					|| (xGrass.IsGrassApplied() && xGrass.GetGeneratedBladeCount() > 0u);
+				bReady = xGrass.HasCPUMap() && bGPUHalf
+					&& !xGrass.HasTerminalFailure();
 			});
 		return uCount == 1u && bReady;
 	}
@@ -1456,7 +1463,7 @@ static const Zenith_AutomatedTest g_xZMWarpInfrastructureTest = {
 	&Step_WarpInfrastructure,
 	&Verify_WarpInfrastructure,
 	/* maxFrames */ 900,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMWarpInfrastructureTest);
 
@@ -1466,7 +1473,7 @@ static const Zenith_AutomatedTest g_xZMPlayerHomeRoundTripTest = {
 	&Step_PlayerHomeRoundTrip,
 	&Verify_PlayerHomeRoundTrip,
 	/* maxFrames */ 1800,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMPlayerHomeRoundTripTest);
 

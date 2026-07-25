@@ -3,32 +3,27 @@
 // ============================================================================
 // Zenith_CommandLine
 //
-// Central parser and accessor for engine-level command-line flags. Authored
-// 2026-05-13 to give Flux init + the test harness + the window layer a SINGLE
-// source of truth for `--headless` (previously each parsed __argv directly).
+// Central parser and accessor for engine-level command-line flags.
 //
-// **Headless semantics, post-MVP-0.0.8:**
-//   --headless    -> hide the GLFW window (legacy behaviour) AND skip every
-//                    Vulkan / Flux init step. The exe boots through Zenith
-//                    subsystems that don't need a GPU (asset registry CPU
-//                    half, scene manager, physics, script registrations) and
-//                    is suitable for headless CI runners without a Vulkan ICD.
+// **HEADLESS IS BUILD-TIME, NOT A FLAG.** There is no `--headless`. A headless
+// run is a `Null_*` config: it defines `ZENITH_NULL_RENDERER`, compiles the
+// GPU-less `Zenith/Null` backend instead of Vulkan, and creates its window
+// hidden. Every render path therefore RUNS (pass callbacks, uploads, the editor
+// ImGui frame) against no-op backend calls, rather than being skipped by a
+// runtime branch -- which is what makes a headless CI run representative of a
+// windowed one. Compile-time gates use `#ifdef ZENITH_NULL_RENDERER`.
 //
-// Tests that DO need rendering input (materials, fog hole tables, render
-// hooks, visual wiring counts) set `m_bRequiresGraphics = true` on their
-// Zenith_AutomatedTest registration; the harness skips them when
-// IsHeadless() returns true. See AutomatedTest.h for that flag and
-// Games/DevilsPlayground/Docs/CIPolicy.md for the CI policy that depends
-// on this.
+// Tests that genuinely READ PIXELS (screenshots, bitmap asserts, A/B captures)
+// set `m_bRequiresGraphics = true` on their Zenith_AutomatedTest registration;
+// the harness skips those in Null builds. See AutomatedTest.h for that flag and
+// Games/DevilsPlayground/Docs/CIPolicy.md for the CI policy that depends on it.
 //
 // Other engine CLI flags (--list-automated-tests, --automated-test,
 // --all-automated-tests, --exit-after-frames, --fixed-dt,
 // --test-results, --test-results-dir, --skip-tool-exports,
-// --skip-unit-tests) continue to be parsed by their respective consumers
+// --skip-unit-tests) are parsed by their respective consumers
 // (Zenith_AutomatedTestRunner::ParseCommandLine, Zenith_Main's
-// Zenith_HasCommandLineFlag helper). Migrating those into here is a
-// follow-up; we centralise just --headless for now to unblock dp-tests
-// (Q-2026-05-12-007 resolution).
+// Zenith_HasCommandLineFlag helper).
 // ============================================================================
 
 namespace Zenith_CommandLine
@@ -38,10 +33,6 @@ namespace Zenith_CommandLine
     // Windows, before window creation). Repeat calls overwrite previous
     // state but are otherwise harmless.
     void Parse(int argc, char** argv);
-
-    // True iff `--headless` was on the command line. Implies "no Vulkan
-    // device, no GPU resources, no window visible".
-    bool IsHeadless();
 
     // True iff `--automated-test` or `--all-automated-tests` was on the
     // command line. Parsed HERE (not just by Zenith_AutomatedTestRunner,

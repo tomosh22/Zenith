@@ -143,7 +143,7 @@ static bool Step_CameraModeTransition(int iFrame)
 
 	// Windowed runs: dump the converged third-person pose (skipped
 	// headless; the numeric assertions below are the actual gate).
-	if (iFrame == 145 && !Zenith_CommandLine::IsHeadless())
+	if (iFrame == 145 && !Zenith_IsNullRenderer())
 	{
 		Flux_Screenshot::RequestDump("C:/tmp/dp_camera_thirdperson.tga");
 	}

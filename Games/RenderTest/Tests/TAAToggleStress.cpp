@@ -207,7 +207,7 @@ namespace
 		&Step_TAAToggleStress,
 		&Verify_TAAToggleStress,
 		720,
-		true /* m_bRequiresGraphics */,
+		false /* m_bRequiresGraphics */,
 		true /* m_bManualOnly */
 	};
 	ZENITH_AUTOMATED_TEST_REGISTER(g_xTAAToggleStress);

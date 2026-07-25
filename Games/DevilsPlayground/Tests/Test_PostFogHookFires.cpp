@@ -72,7 +72,7 @@ static const Zenith_AutomatedTest g_xPostFogHookFiresTest = {
 	&Step_PostFogHookFires,
 	&Verify_PostFogHookFires,
 	8, // max-frames safety net — Step exits on frame 0
-	true // m_bRequiresGraphics: post-fog render hook ordering check
+	false // m_bRequiresGraphics: post-fog render hook ordering check
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPostFogHookFiresTest);
 

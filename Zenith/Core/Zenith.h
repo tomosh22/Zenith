@@ -51,6 +51,28 @@ static_assert(sizeof(u_int64) == 8);
 // via the W5.1 opaque-storage change. This removes a large, volatile system header
 // from every translation unit's PCH.
 
+// ----------------------------------------------------------------------------
+// Render-backend query (compile-time).
+//
+// HEADLESS IS A BUILD CONFIG, NOT A FLAG. A `Null_*` config defines
+// ZENITH_NULL_RENDERER, compiles the GPU-less Zenith/Null backend, and creates
+// its window hidden — that IS "headless". There is no runtime --headless.
+//
+// Prefer this constexpr helper over a raw `#ifdef` wherever BOTH sides should
+// stay compiled (so a Vulkan build still type-checks the Null branch and vice
+// versa, and the dead branch is folded away with no runtime cost). Reach for
+// `#ifdef ZENITH_NULL_RENDERER` only when one side genuinely cannot compile —
+// e.g. it names a backend-specific type.
+// ----------------------------------------------------------------------------
+constexpr bool Zenith_IsNullRenderer()
+{
+#ifdef ZENITH_NULL_RENDERER
+	return true;
+#else
+	return false;
+#endif
+}
+
 // Log categories for categorized logging output
 enum Zenith_LogCategory : u_int8
 {

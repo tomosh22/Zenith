@@ -8,7 +8,6 @@
 #include "Zenith_Vulkan.h"
 
 #include "Collections/Zenith_HashMap.h"
-#include "Core/Zenith_CommandLine.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -46,7 +45,7 @@ Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(Flux_V
 
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateRenderTargetView");
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateRenderTargetView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
 	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);
@@ -83,7 +82,7 @@ Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetViewForLaye
 
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateRenderTargetViewForLayer");
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateRenderTargetViewForLayer");
 	if (!pxVRAM) return xView;
 
 	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);
@@ -114,7 +113,7 @@ Flux_DepthStencilView Zenith_Vulkan_MemoryManager::CreateDepthStencilView(Flux_V
 
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateDepthStencilView");
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateDepthStencilView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
 	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
@@ -150,7 +149,7 @@ Flux_DepthStencilView Zenith_Vulkan_MemoryManager::CreateDepthStencilViewForLaye
 
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateDepthStencilViewForLayer");
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateDepthStencilViewForLayer");
 	if (!pxVRAM) return xView;
 
 	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
@@ -180,7 +179,7 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateShaderResourceView");
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateShaderResourceView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
 	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
@@ -232,7 +231,7 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceViewFor
 
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateShaderResourceViewForLayer");
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateShaderResourceViewForLayer");
 	if (!pxVRAM) return xView;
 
 	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
@@ -278,7 +277,7 @@ Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAcc
 
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateUnorderedAccessView");
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateUnorderedAccessView");
 	if (!pxVRAM) return xView;  // Safety guard for release builds
 
 	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);
@@ -317,7 +316,7 @@ Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAcc
 
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xVRAMHandle);
-	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in CreateUnorderedAccessViewForSlice");
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateUnorderedAccessViewForSlice");
 	if (!pxVRAM) return xView;
 
 	vk::Format xFormat = m_pxVulkan->ConvertToVkFormat_Colour(xInfo.m_eFormat);

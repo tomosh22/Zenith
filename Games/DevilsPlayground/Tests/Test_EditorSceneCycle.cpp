@@ -83,7 +83,7 @@ static const Zenith_AutomatedTest g_xEditorSceneCycleTest = {
 	&Step_EditorSceneCycle,
 	&Verify_EditorSceneCycle,
 	/*maxFrames*/ 700,
-	true // m_bRequiresGraphics: the point is teardown with real GPU frames in flight
+	false // m_bRequiresGraphics: the point is teardown with real GPU frames in flight
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xEditorSceneCycleTest);
 

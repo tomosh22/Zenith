@@ -376,15 +376,22 @@ function Invoke-ZenithMsbuildStep {
 function Invoke-ZenithBuild {
     param([string[]]$CmdArgs)
     Import-BuildSystem
-    $target = $null; $config = Get-ZenithDefaultConfig; $timeoutMin = 0
+    $target = $null; $config = $null; $timeoutMin = 0; $headless = $false
     for ($i = 0; $i -lt $CmdArgs.Count; $i++) {
         $a = $CmdArgs[$i]
         if ($a -eq '--config') { $config = $CmdArgs[++$i] }
         elseif ($a -eq '--timeout') { $timeoutMin = [int]$CmdArgs[++$i] }
+        elseif ($a -eq '--headless') { $headless = $true }
         elseif ($a -like '--*') { Write-CliError "unknown option '$a'"; return $script:EXIT_USAGE }
         else { if ($null -eq $target) { $target = $a } }
     }
-    if ([string]::IsNullOrEmpty($target)) { Write-CliError "usage: zenith build <Name|engine> [--config <C>] [--timeout <min>]"; return $script:EXIT_USAGE }
+    if ([string]::IsNullOrEmpty($target)) { Write-CliError "usage: zenith build <Name|engine> [--config <C>] [--headless] [--timeout <min>]"; return $script:EXIT_USAGE }
+    # --headless selects the Null-backend config (the GPU-less build every
+    # headless/CI run executes). An explicit --config always wins.
+    if ([string]::IsNullOrEmpty($config)) {
+        if ($headless) { $config = (Get-ZenithBuildConfigData).HeadlessConfigWin64 }
+        else { $config = Get-ZenithDefaultConfig }
+    }
 
     $msbuild = Get-ZenithMsbuild
     if (-not $msbuild) {
@@ -484,7 +491,7 @@ function Invoke-ZenithTest {
         if ($a -eq '--filter') { $filter = $CmdArgs[++$i] }
         elseif ($a -eq '--tier') { $tier = [int]$CmdArgs[++$i] }
         elseif ($a -eq '--config') { $config = $CmdArgs[++$i] }
-        elseif ($a -eq '--headless') { $headless = $true }
+        elseif ($a -eq '--headless') { $headless = $true }   # selects the Null-backend exe
         elseif ($a -eq '--per-process') { $perProcess = $true }
         elseif ($a -eq '--fail-fast') { $failFast = $true }
         elseif ($a -eq '--build') { $doBuild = $true }
@@ -498,7 +505,14 @@ function Invoke-ZenithTest {
         Write-CliError "usage: zenith test <Name|all> [--filter X] [--tier N] [--config C] [--headless] [--per-process] [--fail-fast] [--build] [--results-dir D] [--exit-after-frames N] [--assertions-log F]"
         return $script:EXIT_USAGE
     }
-    if ([string]::IsNullOrEmpty($config)) { $config = Get-ZenithDefaultConfig }
+    # --headless is now a CONFIG SELECTOR, not a runtime flag: it swaps the exe
+    # for the game's Null-backend build (which defines ZENITH_NULL_RENDERER,
+    # creates its window hidden, and needs no GPU). An explicit --config always
+    # wins, so `--config <X> --headless` still runs X.
+    $headlessConfig = (Get-ZenithBuildConfigData).HeadlessConfigWin64
+    if ([string]::IsNullOrEmpty($config)) {
+        if ($headless) { $config = $headlessConfig } else { $config = Get-ZenithDefaultConfig }
+    }
     $artifactsRoot = (Get-ZenithBuildConfigData).ArtifactsRoot
 
     function Invoke-OneGameTests {
@@ -507,10 +521,22 @@ function Invoke-ZenithTest {
         $dir = if ($resultsDir) { $resultsDir } else { Join-Path (Get-CliRepoRoot) "$artifactsRoot/test_results/$lower" }
         $exe = Get-GameOutputExe -Name $Name -Config $config
         if (-not $exe) { return [PSCustomObject]@{ Name = $Name; Outcome = 'NOT_BUILT'; Passed = 0; Failed = 0 } }
+        # Discovery ALWAYS uses the Null exe -- listing from a Vulkan build hangs
+        # in vkEnumeratePhysicalDevices on a GPU-less runner. When the run itself
+        # is a Null run this is the same file.
+        $discoveryExe = $exe.FullName
+        if ($config -ne $headlessConfig) {
+            $nullExe = Get-GameOutputExe -Name $Name -Config $headlessConfig
+            if (-not $nullExe) {
+                Write-CliError "$($Name): test discovery needs the Null build -- run 'zenith build $Name --headless' first"
+                return [PSCustomObject]@{ Name = $Name; Outcome = 'ERROR'; Passed = 0; Failed = 1 }
+            }
+            $discoveryExe = $nullExe.FullName
+        }
         try {
             $r = Invoke-ZenithGameTests `
-                -Exe $exe.FullName -ResultsDir $dir -Filter $filter -Tier $tier `
-                -PerProcess:$perProcess -FailFast:$failFast -Headless:$headless `
+                -Exe $exe.FullName -DiscoveryExe $discoveryExe -ResultsDir $dir -Filter $filter -Tier $tier `
+                -PerProcess:$perProcess -FailFast:$failFast `
                 -ExitAfterFrames $exitAfterFrames -AssertionsLog $assertionsLog `
                 -Tag "zenith test $Name"
         }
@@ -713,7 +739,7 @@ Usage:
   zenith open <Name>
   zenith list [--json]
   zenith regen [--check]
-  zenith build <Name|engine> [--config <C>] [--timeout <min>]
+  zenith build <Name|engine> [--config <C>] [--headless] [--timeout <min>]
   zenith run <Name> [--config <C>] [--build] [-- <game args>]
   zenith test <Name|all> [--filter X] [--tier N] [--config <C>] [--headless]
               [--per-process] [--fail-fast] [--build] [--results-dir D]

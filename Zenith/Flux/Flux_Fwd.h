@@ -53,9 +53,9 @@ class Flux_IKSolver;
 // ============================================================================
 // Platform abstraction aliases (the LIGHT backend seam)
 //
-// The backend macro (ZENITH_VULKAN / ZENITH_D3D12, selected by the Sharpmake
-// RenderBackend fragment) chooses which concrete backend classes the Flux_*
-// aliases name. Only forward-declarations + the `using` aliases live here, so
+// The backend macro (ZENITH_VULKAN / ZENITH_D3D12 / ZENITH_NULL_RENDERER,
+// selected by the Sharpmake RenderBackend fragment) chooses which concrete
+// backend classes the Flux_* aliases name. Only forward-declarations + the `using` aliases live here, so
 // declaration-only consumers (the *Impl.h headers, Zenith_Engine.h) stay
 // light. Method-call sites that invoke methods on these types include the
 // HEAVY Flux_BackendTypes.h, which pulls the full backend headers. See
@@ -116,6 +116,33 @@ using Flux_RootSig                = Zenith_D3D12_RootSig;
 using Flux_ComputePipelineBuilder = Zenith_D3D12_ComputePipelineBuilder;
 using Flux_RootSigBuilder         = Zenith_D3D12_RootSigBuilder;
 using Flux_VRAM                   = Zenith_D3D12_VRAM;
+
+#elif defined(ZENITH_NULL_RENDERER)
+class Zenith_Null;
+class Zenith_Null_MemoryManager;
+class Zenith_Null_CommandBuffer;
+class Zenith_Null_Swapchain;
+class Zenith_Null_Pipeline;
+class Zenith_Null_PipelineBuilder;
+class Zenith_Null_Shader;
+class Zenith_Null_Sampler;
+class Zenith_Null_RootSig;
+class Zenith_Null_ComputePipelineBuilder;
+class Zenith_Null_RootSigBuilder;
+class Zenith_Null_VRAM;
+
+using Flux_PlatformAPI            = Zenith_Null;
+using Flux_MemoryManager          = Zenith_Null_MemoryManager;
+using Flux_CommandBuffer          = Zenith_Null_CommandBuffer;
+using Flux_Swapchain              = Zenith_Null_Swapchain;
+using Flux_Pipeline               = Zenith_Null_Pipeline;
+using Flux_PipelineBuilder        = Zenith_Null_PipelineBuilder;
+using Flux_Shader                 = Zenith_Null_Shader;
+using Flux_Sampler                = Zenith_Null_Sampler;
+using Flux_RootSig                = Zenith_Null_RootSig;
+using Flux_ComputePipelineBuilder = Zenith_Null_ComputePipelineBuilder;
+using Flux_RootSigBuilder         = Zenith_Null_RootSigBuilder;
+using Flux_VRAM                   = Zenith_Null_VRAM;
 #endif
 
 // Handle type (lightweight, doesn't need Vulkan)

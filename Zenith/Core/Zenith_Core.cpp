@@ -1,7 +1,6 @@
 #include "Zenith.h"
 #include "Zenith_Core.h"
 #include "Core/FrameContext.h"
-#include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_Engine.h"
 
 // InputSimulator + AutomatedTest are both gated on ZENITH_INPUT_SIMULATOR. The
@@ -92,7 +91,7 @@ static void ExecuteRenderGraph()
 // phase list. PROFILE index names are preserved verbatim for timeline
 // comparability with pre-extraction runs.
 
-// Backend per-frame begin (wait-fence + reset-pools, NOP in --headless) then
+// Backend per-frame begin (wait-fence + reset-pools, a no-op on the Null backend) then
 // input/window/touch begin-frame. Manual profile scope because BeginFrame is a
 // member function, not a free callable.
 static void BeginFrame_Platform()
@@ -107,14 +106,13 @@ static void BeginFrame_Platform()
 	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.Touch().Update, ZENITH_PROFILE_ZONE("Touch Update"));
 }
 
-// Acquire the swapchain image (windowed only). Returns true to proceed (always
-// in --headless). Returns false on a failed acquire (resize): it runs the
-// skipped-frame end-of-frame work and the caller must return WITHOUT advancing
-// the frame index — a rapid-resize run of consecutive skips would otherwise wrap
-// the ring index past valid fences and shorten the deferred-deletion grace period.
+// Acquire the swapchain image. Returns false on a failed acquire (resize): it
+// runs the skipped-frame end-of-frame work and the caller must return WITHOUT
+// advancing the frame index — a rapid-resize run of consecutive skips would
+// otherwise wrap the ring index past valid fences and shorten the
+// deferred-deletion grace period. The Null backend's swapchain always succeeds.
 static bool AcquireSwapchainOrSkip()
 {
-	if (Zenith_CommandLine::IsHeadless()) return true;
 	if (g_xEngine.FluxSwapchain().BeginFrame()) return true;
 
 	g_xEngine.FluxMemory().Flush();
@@ -126,7 +124,7 @@ static bool AcquireSwapchainOrSkip()
 // any game logic / render, with no render tasks active), the live property +
 // behaviour-graph hot-reload safe sync point, and the render-submit / game-logic
 // gates derived from editor mode. In non-tools builds the gates keep the
-// caller-set defaults (submit = !headless, game logic = on).
+// caller-set defaults (submit = on, game logic = on).
 static void UpdateEditorAndTuning(bool& bSubmitRenderWork, bool& bShouldUpdateGameLogic)
 {
 #ifdef ZENITH_TOOLS
@@ -136,10 +134,7 @@ static void UpdateEditorAndTuning(bool& bSubmitRenderWork, bool& bShouldUpdateGa
 		Zenith_Profiling::ScopeZone xEditorUpdateProfile(ZENITH_PROFILE_ZONE("Editor Update"));
 		bEditorWantsRender = g_xEngine.Editor().Update();
 	}
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		bSubmitRenderWork = bEditorWantsRender;
-	}
+	bSubmitRenderWork = bEditorWantsRender;
 	bShouldUpdateGameLogic = (g_xEngine.Editor().GetEditorMode() == EditorMode::Playing);
 
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_PropertyTuning::Update, ZENITH_PROFILE_ZONE("Property Tuning"));
@@ -201,16 +196,13 @@ static void UpdateGameLogic(bool bShouldUpdateGameLogic)
 }
 
 // Upload frame constants (windowed), then — only when submitting render work
-// (skipped in --headless and during scene transitions, to avoid recording
+// (skipped during scene transitions, to avoid recording
 // against incomplete scene state) — the UI frame, the ImGui frame, and the
 // render-graph execute bracketed by the SetRenderTasksActive window (so scene
 // reads on render-worker threads know the window is open).
 static void SubmitRenderWork(bool bSubmitRenderWork)
 {
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxGraphics().UploadFrameConstants();
-	}
+	g_xEngine.FluxGraphics().UploadFrameConstants();
 
 	if (!bSubmitRenderWork) return;
 
@@ -284,7 +276,6 @@ static void SubmitRenderWork(bool bSubmitRenderWork)
 // are instance methods, not free callables.
 static void EndFrameSubmitAndPresent(bool bSubmitRenderWork)
 {
-	if (!Zenith_CommandLine::IsHeadless())
 	{
 		Zenith_Profiling::ScopeZone xMemMgrProfile(ZENITH_PROFILE_ZONE("Flux Memory Manager"));
 		g_xEngine.FluxMemory().SubmitFrameMemoryWork();
@@ -298,16 +289,13 @@ static void EndFrameSubmitAndPresent(bool bSubmitRenderWork)
 	g_xEngine.Profiling().PushMemorySample(Zenith_MemoryManagement::SampleFrame());
 #endif
 
-	if (!Zenith_CommandLine::IsHeadless())
 	{
-		{
-			Zenith_Profiling::ScopeZone xEndFrameProfile(ZENITH_PROFILE_ZONE("Flux PlatformAPI End Frame"));
-			g_xEngine.FluxBackend().EndFrame(bSubmitRenderWork);
-		}
-		{
-			Zenith_Profiling::ScopeZone xSwapchainEndFrameProfile(ZENITH_PROFILE_ZONE("Flux Swapchain End Frame"));
-			g_xEngine.FluxSwapchain().EndFrame();
-		}
+		Zenith_Profiling::ScopeZone xEndFrameProfile(ZENITH_PROFILE_ZONE("Flux PlatformAPI End Frame"));
+		g_xEngine.FluxBackend().EndFrame(bSubmitRenderWork);
+	}
+	{
+		Zenith_Profiling::ScopeZone xSwapchainEndFrameProfile(ZENITH_PROFILE_ZONE("Flux Swapchain End Frame"));
+		g_xEngine.FluxSwapchain().EndFrame();
 	}
 }
 
@@ -327,7 +315,7 @@ void Zenith_Core::Zenith_MainLoop()
 		return;
 	}
 
-	bool bSubmitRenderWork      = !Zenith_CommandLine::IsHeadless();
+	bool bSubmitRenderWork      = true;
 	bool bShouldUpdateGameLogic = true;
 	UpdateEditorAndTuning(bSubmitRenderWork, bShouldUpdateGameLogic);
 	PumpAutomatedTest(bShouldUpdateGameLogic);
@@ -338,7 +326,7 @@ void Zenith_Core::Zenith_MainLoop()
 
 	// End of frame: deferred-deletion countdown, then advance the engine frame
 	// index. The advance happens AFTER Swapchain::EndFrame so the present uses the
-	// slot for frame N before the ring index moves to N+1. NOP-safe in headless.
+	// slot for frame N before the ring index moves to N+1.
 	g_xEngine.FluxRenderer().ProcessFrameEnd();
 	g_xEngine.Frame().AdvanceFrameIndex();
 }

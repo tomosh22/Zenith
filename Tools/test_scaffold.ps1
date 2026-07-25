@@ -1,8 +1,9 @@
 # test_scaffold.ps1 -- end-to-end scaffold smoke.
 # =============================================================================
-# Proves `zenith new` produces a game that builds (_True) and boots headless with
-# the engine units baseline, and that scaffolding + teardown touch NOTHING outside
-# Games/<Name>/ (git status is identical before and after).
+# Proves `zenith new` produces a game that builds (both the Vulkan _True config
+# and the GPU-less Null_True config), boots the Null build to the engine units
+# baseline, and that scaffolding + teardown touch NOTHING outside Games/<Name>/
+# (git status is identical before and after).
 #
 # Usage:  pwsh ./Tools/test_scaffold.ps1 [-Name ScaffoldSmoke]
 # Exit:   0 all green, 1 a check failed.
@@ -14,6 +15,8 @@ param([string]$Name = 'ScaffoldSmoke')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $repoRoot 'Tools/ZenithCli/ZenithCli.psm1') -Force
+# Config accessors + Repair-ZenithRuntimeDlls + ConvertTo-ZenithOutputDir.
+Import-Module (Join-Path $repoRoot 'Build/zenith_buildsystem.psm1') -Force
 $gameDir = Join-Path $repoRoot "Games/$Name"
 $zenith = Join-Path $repoRoot 'Tools/zenith.ps1'
 $scratch = [System.IO.Path]::GetTempPath()
@@ -53,13 +56,21 @@ try {
         & $msbuild $sln /t:$Name /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64 /p:WindowsTargetPlatformVersion=10.0 /m /nologo /v:minimal | Out-Host
         Check ($LASTEXITCODE -eq 0) "game builds _True"
 
-        $exe = Join-Path $gameDir "Build/output/win64/vulkan_vs2022_debug_win64_true/$($Name.ToLowerInvariant()).exe"
+        # The unit gate BOOTS an exe, so it needs the Null (GPU-less) build --
+        # headless is a build config now, not a flag. The Vulkan build above stays
+        # as the real-renderer compile proof.
+        $headlessConfig = (Get-ZenithBuildConfigData).HeadlessConfigWin64
+        Write-Host "[scaffold] building $Name ($headlessConfig)..." -ForegroundColor Cyan
+        & $msbuild $sln /t:$Name /p:Configuration=$headlessConfig /p:Platform=x64 /p:WindowsTargetPlatformVersion=10.0 /m /nologo /v:minimal | Out-Host
+        Check ($LASTEXITCODE -eq 0) "game builds Null_True"
+
+        $exeLeaf = ConvertTo-ZenithOutputDir -Config $headlessConfig
+        $exe = Join-Path $gameDir "Build/output/win64/$exeLeaf/$($Name.ToLowerInvariant()).exe"
         Check (Test-Path $exe) "exe produced"
         if (Test-Path $exe) {
-            $dir = Split-Path $exe
-            Get-ChildItem (Join-Path $repoRoot 'Middleware/slang/bin/*.dll') -ErrorAction SilentlyContinue | ForEach-Object {
-                $d = Join-Path $dir $_.Name; if (-not (Test-Path $d)) { Copy-Item $_.FullName $d -Force }
-            }
+            # A first build in a new config leaves the slang + assimp runtime DLLs
+            # absent; without the heal the exe dies 0xC0000135 before main().
+            $null = Repair-ZenithRuntimeDlls -ExeDir (Resolve-Path (Split-Path $exe)).Path
             # Boot with unit tests ENABLED (the smoke's assertion) via the canonical
             # unit gate, so the engine baseline lives in ONE place
             # (Tools/run_unit_gate.ps1 -Baseline default -- the same script

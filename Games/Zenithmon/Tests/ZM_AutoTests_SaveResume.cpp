@@ -2101,7 +2101,7 @@ static const Zenith_AutomatedTest g_xZMResumePlacementTest = {
 	&Step_ZMResumePlacement,
 	&Verify_ZMResumePlacement,
 	/* maxFrames */ 3000,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMResumePlacementTest);
 
@@ -2111,7 +2111,7 @@ static const Zenith_AutomatedTest g_xZMQuitToFrontEndTest = {
 	&Step_ZMQuitToFrontEnd,
 	&Verify_ZMQuitToFrontEnd,
 	/* maxFrames */ 1200,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMQuitToFrontEndTest);
 

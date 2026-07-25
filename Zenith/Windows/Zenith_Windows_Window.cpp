@@ -5,8 +5,6 @@
 
 #include "Input/Zenith_Input.h"
 #include <atomic>
-#include <cstdlib>  // __argc / __argv (MSVC globals) for --headless parsing
-#include <cstring>  // std::strcmp
 
 Zenith_Window* Zenith_Window::s_pxInstance = nullptr;
 
@@ -142,35 +140,31 @@ Zenith_Window::Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHei
 
 	glfwInit();
 
-#ifdef ZENITH_VULKAN
+#if defined(ZENITH_VULKAN) || defined(ZENITH_NULL_RENDERER)
+	// Neither backend wants GLFW to create a GL/GLES context: Vulkan owns the
+	// surface itself, and the Null backend creates no graphics device at all.
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 #endif
 
-	// EXT-3b: headless mode — hide the window when --headless is passed.
-	// We can't skip glfwCreateWindow entirely because Vulkan's surface still
-	// needs a HWND, but GLFW_VISIBLE=false keeps the window off-screen so
-	// CI / Claude Code automated test runs don't pop a black flash.
-	bool bHeadless = false;
-	for (int i = 1; i < __argc; ++i)
-	{
-		if (std::strcmp(__argv[i], "--headless") == 0) { bHeadless = true; break; }
-	}
-	if (bHeadless)
-	{
-		glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-	}
+#ifdef ZENITH_NULL_RENDERER
+	// Headless is BUILD-TIME: a Null_* config IS the headless build, so the
+	// window is created HIDDEN. We can't skip glfwCreateWindow entirely --
+	// ImGui platform init (tools configs), input pumping, and window-size
+	// queries all still run unchanged -- but GLFW_VISIBLE=false keeps it
+	// off-screen so CI / automated test runs never pop a black flash.
+	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+#endif
 
 	glfwSetErrorCallback(ErrorCallback);
 
 	m_pxNativeWindow = glfwCreateWindow(static_cast<int32_t>(uWidth), static_cast<int32_t>(uHeight), szTitle, nullptr, nullptr);
 
-	if (bHeadless)
-	{
-		// Belt-and-braces: re-hide in case the platform layer briefly flashed
-		// the window (some Windows window-managers ignore GLFW_VISIBLE before
-		// the first message pump).
-		glfwHideWindow(m_pxNativeWindow);
-	}
+#ifdef ZENITH_NULL_RENDERER
+	// Belt-and-braces: re-hide in case the platform layer briefly flashed the
+	// window (some Windows window-managers ignore GLFW_VISIBLE before the first
+	// message pump).
+	glfwHideWindow(m_pxNativeWindow);
+#endif
 
 	glfwSetKeyCallback(m_pxNativeWindow, KeyCallback);
 	glfwSetMouseButtonCallback(m_pxNativeWindow, MouseCallback);

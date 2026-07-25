@@ -5,7 +5,6 @@
 
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 
-#include "Core/Zenith_CommandLine.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "FileAccess/Zenith_FileAccess.h"
@@ -330,7 +329,9 @@ void Zenith_TerrainEditor::RebuildGrass()
 {
 	m_bGrassDirty = false;
 
-	if (Zenith_CommandLine::IsHeadless())
+	// Tools-bake semantic: grass instance buffers are GPU-only content, so a
+	// Null build deliberately does not author them (see Zenith/Null/CLAUDE.md).
+	if (Zenith_IsNullRenderer())
 	{
 		return;
 	}

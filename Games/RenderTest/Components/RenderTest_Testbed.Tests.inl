@@ -100,13 +100,14 @@ ZENITH_TEST(RenderTestTestbed, TennisSideRoundTrip)
 
 ZENITH_TEST(RenderTestTestbed, GrassApplyHeadlessSkips)
 {
-	// Headless: Grass owns GPU resources, so the apply must report SkippedHeadless
-	// (the bootstrap treats that as done, no warn/retry). Windowed runs exercise the
-	// other results via the live terrain, so this is headless-only.
-	if (!Zenith_CommandLine::IsHeadless())
+	// Null backend: Grass owns GPU resources, so the apply must report
+	// SkippedHeadless (the bootstrap treats that as done, no warn/retry).
+	// Vulkan runs exercise the other results via the live terrain, so this
+	// assertion is Null-only.
+	if (!Zenith_IsNullRenderer())
 	{
-		ZENITH_SKIP("grass-apply result test is headless-only");
+		ZENITH_SKIP("grass-apply result test is Null-backend-only");
 	}
 	ZENITH_ASSERT_TRUE(RenderTest_TryApplyGrassDensityFromDisk() == RenderTest_GrassApplyResult::SkippedHeadless,
-		"headless grass apply must report SkippedHeadless");
+		"Null-backend grass apply must report SkippedHeadless");
 }

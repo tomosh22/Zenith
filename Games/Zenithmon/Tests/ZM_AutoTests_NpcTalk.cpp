@@ -1092,7 +1092,7 @@ static const Zenith_AutomatedTest g_xZMNpcTalkTest = {
 	// single-frame asserts), so hitting it means a phase-machine bug rather than a
 	// gameplay timeout.
 	/* maxFrames */ 2400,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMNpcTalkTest);
 

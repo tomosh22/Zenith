@@ -793,10 +793,10 @@ ZENITH_TEST(ZM_TerrainRecipeSet, OutputsAreUniqueSetContainedAndQueuePolicyIsPur
 	// No selector means "bake missing". Unrelated command-line flags are
 	// deliberately ignored by this focused parser.
 	const char* const aszAutoArguments[] =
-		{ "zenithmon.exe", "--headless", "--skip-unit-tests" };
+		{ "zenithmon.exe", "--skip-unit-tests" };
 	ZM_TerrainBakeSelection xAutoSelection;
 	ZENITH_ASSERT_TRUE(ZM_ParseTerrainBakeSelection(
-		3, aszAutoArguments, xAutoSelection));
+		2, aszAutoArguments, xAutoSelection));
 	ZENITH_ASSERT_EQ((u_int)xAutoSelection.m_eMode,
 		(u_int)ZM_TERRAIN_BAKE_SELECTION_AUTO_MISSING);
 	ZENITH_ASSERT_EQ(xAutoSelection.m_uSelectedRecipeMask, 0u);
@@ -892,13 +892,12 @@ ZENITH_TEST(ZM_TerrainRecipeSet, OutputsAreUniqueSetContainedAndQueuePolicyIsPur
 	const char* const aszFirstFailureWins[] =
 	{
 		"zenithmon.exe",
-		"--headless",
 		"--zm-force-terrain-bake=Route1",
 		"--zm-force-terrain-bake=Unknown",
 		"--zm-force-terrain-bake=",
 	};
-	AssertSelectionFailure(aszFirstFailureWins, 5,
-		ZM_TERRAIN_BAKE_SELECTION_PARSE_UNKNOWN_SET, 3);
+	AssertSelectionFailure(aszFirstFailureWins, 4,
+		ZM_TERRAIN_BAKE_SELECTION_PARSE_UNKNOWN_SET, 2);
 
 	constexpr u_int uAllRecipeMask = (1u << uZM_TERRAIN_RECIPE_COUNT) - 1u;
 	ZM_TerrainBakeBatchPlan xBatch = ZM_BuildTerrainBakeBatchPlan(

@@ -49,7 +49,7 @@ zenith new <Name> [--template <T>] [--no-android] [--no-open]
 zenith open <Name>
 zenith list [--json]
 zenith regen [--check]
-zenith build <Name|engine> [--config <C>] [--timeout <min>]
+zenith build <Name|engine> [--config <C>] [--headless] [--timeout <min>]
 zenith run <Name> [--config <C>] [--build] [-- <game args>]
 zenith test <Name|all> [--filter X] [--tier N] [--config <C>] [--headless]
             [--per-process] [--fail-fast] [--build] [--results-dir D]
@@ -112,10 +112,22 @@ worktree generates projects that point at the wrong tree. `regen.ps1` refuses
 ## 4. Configurations, outputs, and the library structure
 
 Config axes (fragments): **RenderBackend** (`Vulkan_` = real renderer /
-`D3D12_` = no-op null backend that proves the Flux surface is backend-neutral)
-× **vs2022** × **Optimization** (`Debug`/`Release`) × **Win64/Agde** ×
-**ToolsEnabled** (`True` = editor/tools, `False` = runtime-only). agde is
-Vulkan-only. Example: `Vulkan_vs2022_Debug_Win64_True`.
+`Null_` = the GPU-less backend every headless run executes on / `D3D12_` = a
+reserved no-op backend kept as the link-neutrality proof) × **vs2022** ×
+**Optimization** (`Debug`/`Release`) × **Win64/Agde** × **ToolsEnabled**
+(`True` = editor/tools, `False` = runtime-only). agde is Vulkan-only and
+carries NO backend prefix (a single-valued fragment is omitted from the name).
+Example: `Vulkan_vs2022_Debug_Win64_True`.
+
+> **Headless is a build config, not a flag.** There is no `--headless` engine
+> flag. A `Null_*` config defines `ZENITH_NULL_RENDERER`, compiles `Zenith/Null`
+> in place of the Vulkan backend, and creates the window hidden. Crucially every
+> render path still RUNS (pass callbacks, buffer uploads, the editor ImGui frame)
+> against no-op backend calls, so a headless run exercises the same code as a
+> windowed one instead of skipping it behind a runtime branch. `--headless` on
+> `zenith build` / `zenith test` selects this config
+> (`zenith_config.psd1: HeadlessConfigWin64`). In C++, query it with the
+> constexpr `Zenith_IsNullRenderer()`.
 
 **Case rule:** `/p:Configuration=` takes the PascalCase name; Sharpmake
 LOWERCASES it to form the output directory leaf. The one place this fact lives
@@ -152,13 +164,23 @@ CI builds AND runs all three (engine-gate, §8).
 ## 5. Testing
 
 **Engine automated-test protocol** (any game exe): `--list-automated-tests`
-(headless-safe enumeration), `--all-automated-tests` (batch: one process runs
-every registered test) or `--automated-test <Name>` (single),
-`--test-results-dir <D>` / `--test-results <file>` (per-test JSON:
+(enumeration), `--all-automated-tests` (batch: one process runs every registered
+test) or `--automated-test <Name>` (single), `--test-results-dir <D>` /
+`--test-results <file>` (per-test JSON:
 `passed`/`skipped`/`failures`/`frames`/`durationMs`), `--exit-after-frames N`,
-`--fixed-dt`, `--skip-tool-exports`, `--skip-unit-tests`, `--headless` (skips
-ALL Vulkan/GPU init — required on GPU-less CI; tests tagged
-`m_bRequiresGraphics=true` are skipped-as-passed).
+`--fixed-dt`, `--skip-tool-exports`, `--skip-unit-tests`.
+
+There is no `--headless` engine flag: run the game's **Null build** instead
+(§4). Tests tagged `m_bRequiresGraphics=true` — the ones that READ PIXELS — are
+skipped-as-passed there. **Discovery always uses the Null exe**, in every mode:
+a Vulkan `--list-automated-tests` hangs in `vkEnumeratePhysicalDevices` on a
+GPU-less runner, so `zenith test` errors with "build the Null config first" if
+it is missing.
+
+> **`--exit-after-frames` only applies while the test harness is stepping.** A
+> boot with no `--automated-test` / `--all-automated-tests` never exits on its
+> own; `Tools/run_unit_gate.ps1` relies on its watchdog kill, which fires AFTER
+> the "Unit tests complete" line. A timeout there is expected, not a failure.
 
 **`zenith test`** is the only test entry point, backed by
 `Tools/ZenithCli/ZenithTestHarness.psm1` (`Invoke-ZenithGameTests`): pre-run
@@ -241,7 +263,7 @@ Concurrency groups cancel superseded PR runs (master pushes always complete).
 
 | Workflow | Gates |
 |----------|-------|
-| `cb-tests` | CityBuilder Vulkan `_True` build + D3D12 `_False` link proof + 45-test headless suite via `zenith test` |
+| `cb-tests` | CityBuilder Vulkan `_True` compile proof + **Null `_True` build (the exe every step runs)** + D3D12 `_False` link proof + 45-test headless suite via `zenith test` |
 | `dp-tests` | Same shape for DevilsPlayground (158 tests) |
 | `engine-gate` | Sentinels (`Vulkan_Debug_Win64_False`) built AND executed + Combat unit gate (`Tools/run_unit_gate.ps1`, 1042 baseline, known flake tolerated). Rollout: dispatch → burn-in → required |
 | `release-build` | NIGHTLY (not PR-blocking): engine + DP in `Vulkan_vs2022_Release_Win64_True`, build-only — the only Release compile in CI |

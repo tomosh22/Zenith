@@ -70,7 +70,7 @@ Some tests need a GPU (model rendering, material upload, etc) and
 register with `m_bRequiresGraphics = true`. In headless mode the
 harness counts these as PASSED-skipped — the runner's summary counts
 skipped graphics tests as passed, so the reported pass count includes
-tests that were never actually executed (currently ~14 of the suite
+tests that were never actually executed (currently 12 of the suite
 require graphics).
 
 **Manual-only tests** (the 8 `PersonalityPlaythrough_*` balance harnesses)

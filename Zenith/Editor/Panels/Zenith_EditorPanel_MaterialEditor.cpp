@@ -23,11 +23,7 @@
 
 // Windows file dialog support
 #ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
+#include "Core/Zenith_Win32.h"   // <windows.h> with the APIENTRY/LEAN guards
 #include <commdlg.h>
 #pragma comment(lib, "Comdlg32.lib")
 

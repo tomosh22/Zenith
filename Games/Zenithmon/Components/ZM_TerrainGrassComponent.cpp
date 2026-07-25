@@ -19,7 +19,10 @@ ZM_TerrainGrass::ZM_TerrainGrass(Zenith_Entity& xParentEntity)
 void ZM_TerrainGrass::OnAwake()
 {
 	ClearComponentState();
-	m_bHeadless = Zenith_CommandLine::IsHeadless();
+	// Latched from the compile-time backend so the rest of the component keeps
+	// reading one member (and the reset path can clear it) rather than sprinkling
+	// backend queries through every method.
+	m_bHeadless = Zenith_IsNullRenderer();
 
 	Zenith_TerrainComponent* pxTerrain =
 		m_xParentEntity.TryGetComponent<Zenith_TerrainComponent>();
@@ -38,7 +41,7 @@ void ZM_TerrainGrass::OnAwake()
 		return;
 	}
 
-	// CPU ownership is useful in headless runs; Flux is deliberately untouched.
+	// CPU ownership is useful in Null builds; Flux is deliberately untouched.
 	if (m_bHeadless)
 	{
 		return;
@@ -76,7 +79,7 @@ void ZM_TerrainGrass::OnUpdate(float)
 
 void ZM_TerrainGrass::OnDestroy()
 {
-	if (!Zenith_CommandLine::IsHeadless())
+	if (!Zenith_IsNullRenderer())
 	{
 		Flux_GrassImpl& xGrass = g_xEngine.Grass();
 		xGrass.ClearSceneData();

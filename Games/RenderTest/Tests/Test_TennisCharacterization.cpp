@@ -279,7 +279,7 @@ static const Zenith_AutomatedTest g_xTennisMatchFlowTest = {
 	&Step_TennisMatchFlow,
 	&Verify_TennisMatchFlow,
 	/*maxFrames*/ 4200,
-	/*bRequiresGraphics*/ true,
+	/*bRequiresGraphics*/ false,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xTennisMatchFlowTest);
 
@@ -439,7 +439,7 @@ static const Zenith_AutomatedTest g_xTennisDigestTest = {
 	&Step_TennisDigest,
 	&Verify_TennisDigest,
 	/*maxFrames*/ 4200,
-	/*bRequiresGraphics*/ true,
+	/*bRequiresGraphics*/ false,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xTennisDigestTest);
 
@@ -708,7 +708,7 @@ static const Zenith_AutomatedTest g_xPlayerActionsTest = {
 	&Step_PlayerActions,
 	&Verify_PlayerActions,
 	/*maxFrames*/ 3600,
-	/*bRequiresGraphics*/ true,
+	/*bRequiresGraphics*/ false,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPlayerActionsTest);
 

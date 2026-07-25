@@ -1721,10 +1721,12 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Battle" ZENITH_SCENE_EXT);
 	xAuto.AddStep_UnloadScene();
 
-	// Terrain rendering requires a graphics device. Headless runs still author
-	// the FrontEnd and terrain-independent PlayerHome scenes above, but neither
-	// mutate terrain assets nor author the Dawnmere Terrain/Flux scene.
-	const bool bHeadless = Zenith_CommandLine::IsHeadless();
+	// Null (headless/CI) builds still author the FrontEnd, Battle and
+	// terrain-independent PlayerHome scenes above -- preserve that split exactly.
+	// What they must NOT do is mutate terrain assets or author the Dawnmere
+	// Terrain/Flux scene: a null backend would bake render content from nothing
+	// and overwrite good baked terrain. Those two stay DEFERRED.
+	const bool bHeadless = Zenith_IsNullRenderer();
 	ZM_TerrainBakeBatchPlan xTerrainBatch;
 	if (bHeadless)
 	{

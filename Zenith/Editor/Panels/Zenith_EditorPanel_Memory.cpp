@@ -22,7 +22,7 @@
 #include "Collections/Zenith_Vector.h"
 
 #ifdef ZENITH_WINDOWS
-#include <windows.h>
+#include "Core/Zenith_Win32.h"   // <windows.h> with the APIENTRY/LEAN guards
 #include <psapi.h>
 #endif
 

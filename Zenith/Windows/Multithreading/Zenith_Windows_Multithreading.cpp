@@ -7,12 +7,9 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 
-// W5.1: <Windows.h> now lives in the .cpp (not the PCH-reachable header). The
-// APIENTRY guard mirrors Zenith.h's (GLFW, pulled via the PCH, also defines it).
-#ifdef APIENTRY
-#undef APIENTRY
-#endif
-#include <Windows.h>
+// W5.1: <Windows.h> now lives in the .cpp (not the PCH-reachable header), via
+// the shared Win32 include (which carries the GLFW APIENTRY guard).
+#include "Core/Zenith_Win32.h"
 #include <process.h>
 #include <processthreadsapi.h>
 

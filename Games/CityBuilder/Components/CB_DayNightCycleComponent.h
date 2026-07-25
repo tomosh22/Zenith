@@ -87,11 +87,8 @@ public:
 		m_xCycle.Advance(fDt);
 		// Visual pass: drive the sky's sun intensity from the time of day so the
 		// city visibly brightens toward noon and darkens at night.
-		if (!Zenith_CommandLine::IsHeadless())
-		{
-			const float fElev = m_xCycle.GetSunElevation();   // 0 at night .. 1 at noon
-			g_xEngine.Skybox().SetSunIntensity(0.2f + 2.6f * fElev);
-		}
+		const float fElev = m_xCycle.GetSunElevation();   // 0 at night .. 1 at noon
+		g_xEngine.Skybox().SetSunIntensity(0.2f + 2.6f * fElev);
 	}
 
 	void OnDestroy()

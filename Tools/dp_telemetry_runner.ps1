@@ -29,7 +29,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Exe       = "Games/DevilsPlayground/Build/output/win64/vulkan_vs2022_debug_win64_true/devilsplayground.exe",
+    [string]$Exe       = "Games/DevilsPlayground/Build/output/win64/null_vs2022_debug_win64_true/devilsplayground.exe",
     [string]$OutDir    = "Build/artifacts/telemetry",
     [switch]$Headless  = $true,
     [switch]$Build     = $false,
@@ -72,7 +72,7 @@ if ($Build) {
     }
     & $msbuild 'Games/DevilsPlayground/devilsplayground_win64.sln' `
         '-target:DevilsPlayground' `
-        '-property:Configuration=Vulkan_vs2022_Debug_Win64_True' `
+        '-property:Configuration=Null_vs2022_Debug_Win64_True' `
         '-property:Platform=x64' `
         '-maxCpuCount' `
         '-nologo' `
@@ -106,7 +106,6 @@ if (-not $SkipRun) {
     $cliArgs = @('test', 'DevilsPlayground',
         '--filter', 'Test_DPHeuristicBotPlaythrough',
         '--exit-after-frames', $ExitAfterFrames)
-    if ($Headless) { $cliArgs += '--headless' }
     & (Join-Path $repoRoot 'zenith.bat') @cliArgs
     $testExit = $LASTEXITCODE
     Write-Host "zenith test exit: $testExit"

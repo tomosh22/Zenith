@@ -4,7 +4,6 @@
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"   // Flux_GraphicsImpl full def for BindlessAllocator().AdvanceFrame()
 #include "Flux/Flux_BackendTypes.h"   // Flux_PlatformAPI / Flux_MemoryManager full defs for the neutral per-frame calls
-#include "Core/Zenith_CommandLine.h"  // IsHeadless() — the backend is never initialised in headless
 
 void Flux_RendererImpl::PerFrameInitialise()
 {
@@ -24,40 +23,31 @@ void Flux_RendererImpl::BeginFrame()
 {
 	// Default to "no render work this frame". RecordFrame (driven from
 	// Flux_RenderGraph::Execute) sets this true when it records a non-empty
-	// queue; if Execute does not run this frame (headless / scene transition /
+	// queue; if Execute does not run this frame (scene transition /
 	// !bSubmitRenderWork) the flag stays false so the backend's EndFrame skips
 	// the render submit instead of resubmitting last frame's command buffers.
 	m_bHasRenderWork = false;
 
 	// Issue the backend's per-frame begin work (fence wait, descriptor-pool
 	// reset, typed-deletion-queue drain, scratch-offset reset). Routed through
-	// the neutral Flux_PlatformAPI alias so both the Vulkan and D3D12 backends
-	// compile; the D3D12 null backend's PerFrameBegin is a no-op. Skipped in
-	// headless, where the backend is never initialised.
-	if (Zenith_CommandLine::IsHeadless())
-	{
-		return;
-	}
+	// the neutral Flux_PlatformAPI alias so every backend compiles; the Null and
+	// D3D12 backends' PerFrameBegin is a no-op.
 	g_xEngine.FluxBackend().PerFrameBegin(g_xEngine.Frame().GetRingIndex());
 }
 
 void Flux_RendererImpl::ProcessFrameEnd()
 {
 	// Advance the deferred-VRAM-deletion clock by one tick. Routed through the
-	// neutral Flux_MemoryManager alias (the D3D12 null backend's is a no-op).
-	// Skipped in headless, where the memory manager is never initialised.
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		auto& xEngine = g_xEngine;
-		xEngine.FluxMemory().ProcessDeferredDeletions();
-		// Advance the bindless-slot deferred-free clock alongside the VRAM one, so a
-		// freed bindless index is recycled only after MAX_FRAMES_IN_FLIGHT+1 frames.
-		xEngine.FluxGraphics().BindlessAllocator().AdvanceFrame();
-		// Same clock for the material table's index allocator: drain queued
-		// ReleaseIndex requests and reclaim slots whose grace has elapsed, so the
-		// table's live-index count is bounded across scene reloads.
-		xEngine.FluxGraphics().MaterialTable().AdvanceFrame();
-	}
+	// neutral Flux_MemoryManager alias (the Null / D3D12 backends' is a no-op).
+	auto& xEngine = g_xEngine;
+	xEngine.FluxMemory().ProcessDeferredDeletions();
+	// Advance the bindless-slot deferred-free clock alongside the VRAM one, so a
+	// freed bindless index is recycled only after MAX_FRAMES_IN_FLIGHT+1 frames.
+	xEngine.FluxGraphics().BindlessAllocator().AdvanceFrame();
+	// Same clock for the material table's index allocator: drain queued
+	// ReleaseIndex requests and reclaim slots whose grace has elapsed, so the
+	// table's live-index count is bounded across scene reloads.
+	xEngine.FluxGraphics().MaterialTable().AdvanceFrame();
 }
 
 // Note: the monotonic frame counter that used to live here (and the

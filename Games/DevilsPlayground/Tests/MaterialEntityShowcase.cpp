@@ -75,8 +75,6 @@ static void Setup_MaterialEntityShowcase()
 
 static bool Step_MaterialEntityShowcase(int iFrame)
 {
-	if (Zenith_CommandLine::IsHeadless()) return false;	// requiresGraphics: skip in headless
-
 	// DP's fog-of-war + volumetric fog washes out the scene in Stopped mode (no
 	// villager/light tick registers reveal holes). For a clean material
 	// showcase, force-disable the DP fog pass entirely — DP already force-disables
@@ -140,7 +138,6 @@ static bool Step_MaterialEntityShowcase(int iFrame)
 
 static bool Verify_MaterialEntityShowcase()
 {
-	if (Zenith_CommandLine::IsHeadless()) return true;	// passed-skip
 	if (!g_bLoaded)
 	{
 		Zenith_Error(LOG_CATEGORY_CORE, "[MaterialEntityShowcase] capture sequence did not run");

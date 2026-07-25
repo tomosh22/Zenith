@@ -212,7 +212,7 @@ static const Zenith_AutomatedTest g_xInteractableTuningTest = {
 	// entities in ProcLevel having model load + script attach succeed. CI
 	// checkouts without .zmodel assets skip via headless skip-list; windowed
 	// runs exercise the assertions.
-	true
+	false
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xInteractableTuningTest);
 

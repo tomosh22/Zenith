@@ -112,7 +112,7 @@ namespace ZM_SaveSlots
 	// destroy -- the developer's real Save0.zsave.
 	//
 	// The command-line flag ALONE is not enough, and that is why the explicit opt-in
-	// exists: the boot ZENITH_TEST suite runs under `--headless --exit-after-frames
+	// exists: the boot ZENITH_TEST suite runs under `--exit-after-frames
 	// 120` (Tools/run_unit_gate.ps1) and under a plain developer launch, NEITHER of
 	// which sets IsAutomatedTestRun(); and the one command that does pass
 	// --all-automated-tests (`zenith test <Game>`) also passes --skip-unit-tests

@@ -154,7 +154,7 @@ static bool Step_MinimapReveal(int iFrame)
 	}
 	// Windowed runs: dump a visual artifact of the revealed minimap
 	// (skipped headless; the assertions above are the actual gate).
-	if (iFrame == 42 && !Zenith_CommandLine::IsHeadless())
+	if (iFrame == 42 && !Zenith_IsNullRenderer())
 	{
 		Flux_Screenshot::RequestDump("C:/tmp/dp_minimap.tga");
 	}

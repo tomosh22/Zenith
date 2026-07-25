@@ -16,7 +16,6 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "Core/Zenith_CommandLine.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -195,11 +194,13 @@ void Zenith_Editor::RequestLoadSceneFromFile(const std::string& strPath)
 // that destroys GPU resources still in flight (scene reset, scene load).
 void Zenith_Editor::WaitForGPUAndFlushDeferred(const char* szReason)
 {
-	// Headless mode (Zenith_CommandLine::IsHeadless()): Flux::EarlyInitialise is
-	// skipped, so command buffers / allocator / device are never created. Every
-	// call below would assert. The semantics ("ensure GPU is idle before
-	// destroying resources") collapse to a no-op when there is no GPU.
-	if (Zenith_CommandLine::IsHeadless())
+	// Kept as a gate rather than dropped: on the Null backend every call below IS
+	// already a no-op (Flush / WaitForGPUIdle / ProcessDeferredDeletions all
+	// return immediately), so running them would be harmless -- but they are pure
+	// cost on the path CI takes most often, and the semantics ("ensure the GPU is
+	// idle before destroying resources") are vacuous with no GPU. Skipping is the
+	// honest expression of that.
+	if (Zenith_IsNullRenderer())
 	{
 		return;
 	}

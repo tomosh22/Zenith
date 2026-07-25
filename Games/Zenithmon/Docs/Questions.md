@@ -88,7 +88,7 @@ Q-B/Q-D still on their defaults and worth an explicit steer if you have a prefer
 
 ---
 
-### [OPEN] Q-2026-07-21-001 -- ENGINE: terrain sets up GPU culling resources with no headless guard
+### [CLOSED 2026-07-25] Q-2026-07-21-001 -- ENGINE: terrain sets up GPU culling resources with no headless guard
 
 **Question:** should `Zenith_TerrainComponent::InitializeCullingResources()` (and the unified terrain buffer upload around it) skip GPU-driven culling setup when the engine is running headless?
 
@@ -104,7 +104,39 @@ So: any terrain-bearing scene is not merely "unsupported" headless, it hard-kill
 
 **Cost if wrong:** low-to-moderate. The terrain path stays headless-hostile, so terrain regressions can only ever be caught by a windowed run on a GPU machine. If a future engine change wants headless terrain coverage this has to be fixed first.
 
-**Status:** asked 2026-07-21. Not blocking; a well-scoped standalone ENGINE task with a clear repro (`zenith test RenderTest --headless`).
+**RESOLUTION (2026-07-25, ZM-D-146): CLOSED by the Null render backend, and the answer to the question as asked is NO.**
+
+The fix is not a headless guard around `InitializeCullingResources()`. Headless
+is now a BUILD CONFIG: a `Null_*` build compiles the GPU-less `Zenith/Null`
+backend, whose `CreateBufferVRAM` returns monotonic non-zero DUMMY handles. The
+`Invalid buffer VRAM handle` assert therefore cannot fire, and -- better than a
+guard -- the culling-setup code still RUNS and is exercised on every CI run,
+rather than being skipped and left uncovered.
+
+**Correction to this entry's own diagnosis:** the original report framed the
+crash as "missing baked content". That was wrong in both directions. Missing or
+corrupt baked terrain was ALREADY graceful (`Zenith_Error` +
+`m_bTerrainGeometryUnusable` + clean bail, probed via `IsRenderGeometryUsable()`).
+The crash was specifically the culling-buffer allocation on a GPU-less boot --
+i.e. it reproduced with terrain FULLY BAKED, which is exactly what the RenderTest
+repro showed.
+
+**Evidence (2026-07-25):**
+- CityBuilder deleted its "skip terrain entirely when headless" guard -- the
+  terrain ENTITY is now authored in every config -- and its headless suite runs
+  **45/45, 0 skipped, 0 failed**. That guard's comment named this assert as its
+  reason for existing.
+- RenderTest `TerrainEditorSmoke` on a Null boot with warm baked terrain drives
+  real sculpt strokes, undo, and culling-resource create/destroy with ZERO
+  asserts. (It still ends red on a separate, honest assertion -- it requires the
+  splatmap GPU re-upload to drain, which has no meaning with no GPU -- so it
+  keeps `m_bRequiresGraphics=true`.)
+
+Terrain now has CI coverage on a GPU-less runner, which is what this question
+was ultimately about. The terrain disk BAKE stays windowed-only by design: a
+null backend must never author render content.
+
+**Status:** CLOSED 2026-07-25 by ZM-D-146 (SC1b commit A).
 
 ---
 

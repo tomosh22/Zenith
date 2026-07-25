@@ -1,10 +1,15 @@
-# run_unit_gate.ps1 -- boot a game exe headless and assert the engine
+# run_unit_gate.ps1 -- boot a game exe and assert the engine
 # unit-test baseline. CI's dedicated unit gate (engine-gate.yml); mirrors the
 # tolerance logic of Tools/test_scaffold.ps1: a clean "<N> ran, <N> passed" OR
 # the single known layout-sensitive flake (GraphComponent::
 # RegistryWideNodeRoundTrip, task_726cc81d) as the SOLE failure.
 #
-# Usage:  pwsh ./Tools/run_unit_gate.ps1 -Exe <game exe> [-Baseline 1081]
+# Usage:  pwsh ./Tools/run_unit_gate.ps1 -Exe <Null-config game exe> [-Baseline N]
+#
+# The exe MUST be a Null-backend build (Null_vs2022_*): headless is a build
+# config now, not a flag. A Vulkan exe hangs in vkEnumeratePhysicalDevices on a
+# GPU-less runner, and its unit count differs (it also compiles the Vulkan-only
+# backend tests, which the Null build has no equivalent of).
 # Exit:   0 = baseline met, 1 = anything else (missing exe, timeout, failures).
 #
 # ASCII-only body; runs under Windows PowerShell 5.1 and pwsh 7.
@@ -12,7 +17,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Exe,
-    [int]$Baseline = 1103,
+    [int]$Baseline = 1093,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )
@@ -39,13 +44,13 @@ if ($LogPath -eq "") {
 # disk. Zenith/Assets/ is gitignored, so on a from-scratch CI checkout that output
 # only exists if this boot generates it; --skip-tool-exports left those tests loading
 # missing assets and wedging the units-at-boot gate. The exports are CPU-only and
-# headless-safe. This script is invoked ONLY by engine-gate.yml, so the change is
+# backend-independent. This script is invoked ONLY by engine-gate.yml, so the change is
 # scoped here -- the game test gates (cb/dp-tests) keep --skip-tool-exports via their
 # own harness (they run --skip-unit-tests, so they need no generated engine assets).
 Write-Host "[unit_gate] Booting $Exe (baseline $Baseline, timeout ${TimeoutSec}s)..." -ForegroundColor Cyan
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = (Resolve-Path $Exe).Path
-$psi.Arguments = '--headless --exit-after-frames 120'
+$psi.Arguments = '--exit-after-frames 120'
 $psi.WorkingDirectory = Split-Path (Resolve-Path $Exe).Path
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
@@ -72,7 +77,7 @@ Write-Host "[unit_gate] $($unitsLine.Trim())"
 # passed bucket to the skipped bucket, never off the ran count). Deliberate skips
 # are expected and are never a failure: RegistryWideNodeRoundTrip is quarantined
 # (task_726cc81d intermittent heap corruption), so a clean boot is
-# "1078 ran, 1077 passed, 0 failed, 1 skipped".
+# "<N> ran, <N-1> passed, 0 failed, 1 skipped".
 if ($unitsLine -notmatch '(\d+)\s+ran,\s+(\d+)\s+passed,\s+(\d+)\s+failed(?:,\s+(\d+)\s+skipped)?') {
     Write-Error "[unit_gate] could not parse the tally from '$($unitsLine.Trim())' (log: $LogPath)"
     exit 1

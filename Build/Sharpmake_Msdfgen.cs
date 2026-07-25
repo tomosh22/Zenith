@@ -34,7 +34,7 @@ public class MsdfgenProject : Project
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.True,
-			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12 | RenderBackend.Null
 		});
 
 		// Skip stuff we don't compile at all.

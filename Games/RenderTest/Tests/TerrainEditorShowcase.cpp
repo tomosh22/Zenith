@@ -196,7 +196,7 @@ namespace
 		&Step_TerrainEditorShowcase,
 		&Verify_TerrainEditorShowcase,
 		9 * iFRAMES_PER_SCENARIO + 400,
-		true /* m_bRequiresGraphics */,
+		false /* m_bRequiresGraphics */,
 		true /* m_bManualOnly */
 	};
 	ZENITH_AUTOMATED_TEST_REGISTER(g_xTerrainEditorShowcase);

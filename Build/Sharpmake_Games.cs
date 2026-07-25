@@ -46,7 +46,7 @@ public abstract class GameProject : ZenithBaseProject
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False,
-			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12 | RenderBackend.Null
 		});
 
 		// Android target only for games that actually have a Gradle project.
@@ -231,7 +231,7 @@ public abstract class GameSolution : Solution
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False,
-			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12 | RenderBackend.Null
 		});
 
 		if (HasAndroid)

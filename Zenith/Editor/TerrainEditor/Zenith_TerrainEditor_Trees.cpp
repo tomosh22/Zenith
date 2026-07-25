@@ -5,7 +5,6 @@
 
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"
 
-#include "Core/Zenith_CommandLine.h"
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
 #include "ZenithECS/Zenith_SceneData.h"
@@ -78,8 +77,9 @@ void Zenith_TerrainEditor::SetTreeBrushSettings(u_int uTreesPerDab, float fScale
 
 bool Zenith_TerrainEditor::EnsureTreeEntities()
 {
-	// Instance groups allocate GPU buffers on first spawn — windowed only.
-	if (Zenith_CommandLine::IsHeadless())
+	// Instance groups allocate GPU buffers on first spawn — a tools-bake
+	// semantic that a Null build deliberately skips.
+	if (Zenith_IsNullRenderer())
 	{
 		return false;
 	}

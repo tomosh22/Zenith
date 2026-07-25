@@ -10,8 +10,8 @@
 // hub / Android bake), and an override => "<root>/<rel>" with trailing root
 // separators trimmed (run.bat passes "%~dp0", which ends in a backslash).
 // Zenith_CommandLine::Parse is deliberately NOT re-parsed with fake argv here:
-// that would clobber --headless state for the rest of the batch (documented
-// hazard) — the override argument is injected directly instead.
+// that would clobber the parsed flag state (--automated-test, --assets-root, ...)
+// for the rest of the batch — the override argument is injected directly instead.
 // ============================================================================
 
 ZENITH_TEST(CommandLine, ResolveUnderRootNullOverride) { Zenith_UnitTests::TestCommandLineResolveUnderRootNullOverride(); }

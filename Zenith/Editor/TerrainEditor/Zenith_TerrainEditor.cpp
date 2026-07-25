@@ -9,7 +9,6 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/FrameContext.h"
-#include "Core/Zenith_CommandLine.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_Gizmo.h"
@@ -486,7 +485,7 @@ void Zenith_TerrainEditor::ServiceUpdate()
 
 	// Live splatmap paint feedback: one full-image staged re-upload per dirty
 	// frame at most. Race-free — see Zenith_Vulkan_MemoryManager::UpdateTextureVRAM.
-	if (m_bSplatGPUDirty && !Zenith_CommandLine::IsHeadless())
+	if (m_bSplatGPUDirty && !Zenith_IsNullRenderer())
 	{
 		Zenith_TextureAsset* pxSplatTex = pxTerrain->GetSplatmapTexture();
 		if (pxSplatTex != nullptr && pxSplatTex->IsValid() &&
@@ -524,7 +523,7 @@ void Zenith_TerrainEditor::UpdatePerFrame(const Zenith_TerrainEditorFrameContext
 
 	HandleViewportInput(xCtx);
 
-	if (m_bCursorValid && !Zenith_CommandLine::IsHeadless())
+	if (m_bCursorValid && !Zenith_IsNullRenderer())
 	{
 		DrawBrushIndicatorDecal();
 	}

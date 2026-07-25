@@ -359,7 +359,7 @@ static const Zenith_AutomatedTest g_xZMBattleArenaTest = {
 	&Step_ZMBattleArena,
 	&Verify_ZMBattleArena,
 	/* maxFrames */ 240,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMBattleArenaTest);
 
@@ -602,7 +602,7 @@ static const Zenith_AutomatedTest g_xZMBattleArenaOwnSceneTest = {
 	&Step_ZMBattleArenaOwnScene,
 	&Verify_ZMBattleArenaOwnScene,
 	/* maxFrames */ 240,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMBattleArenaOwnSceneTest);
 

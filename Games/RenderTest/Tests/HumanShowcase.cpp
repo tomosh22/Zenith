@@ -291,7 +291,7 @@ namespace
 		&Step_HumanShowcase,
 		&Verify_HumanShowcase,
 		1200,
-		true /* m_bRequiresGraphics */,
+		false /* m_bRequiresGraphics */,
 		true /* m_bManualOnly */
 	};
 	ZENITH_AUTOMATED_TEST_REGISTER(g_xHumanShowcase);

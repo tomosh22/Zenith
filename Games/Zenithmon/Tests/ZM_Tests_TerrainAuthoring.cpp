@@ -5,6 +5,12 @@
 
 #if defined(ZENITH_TOOLS) && defined(ZENITH_WINDOWS)
 #include "Core/Zenith_Win32.h"
+// FSCTL_SET_REPARSE_POINT (the junction fixture below) lives in <winioctl.h>,
+// which <windows.h> only pulls in WITHOUT WIN32_LEAN_AND_MEAN. Zenith_Win32.h
+// sets LEAN, so include it explicitly rather than relying on some other header
+// having reached windows.h first -- which is exactly what used to happen via
+// vulkan.hpp, and stopped happening on the Null backend.
+#include <winioctl.h>
 #endif
 
 #include <filesystem>

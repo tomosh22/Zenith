@@ -2,7 +2,8 @@
 
 `Zenith_AutomatedTest` coverage for the game. Every test is gated `#ifdef ZENITH_INPUT_SIMULATOR`
 and registered with `ZENITH_AUTOMATED_TEST_REGISTER`. A registration's 6th field is
-`m_bRequiresGraphics` — **false = headless logic** (runs under `--headless`), **true = windowed**
+`m_bRequiresGraphics` — **false = runs on the Null (headless) build**, **true = windowed only**
+(it marks tests whose ASSERTIONS read GPU-produced output). CityBuilder has none.
 (needs the live camera/window + picker; skipped headless).
 
 The headless gate (run in `_True`) is currently **675 engine unit tests + 45 CityBuilder automated
@@ -15,7 +16,8 @@ guide, not a contract (several files register many tests each, e.g. `CB_CityServ
 # headless logic gate — MUST run in _True (the _True automation path guards the terrain GPU-culling
 # init; in _False the City scene's terrain deserialization asserts "Invalid buffer VRAM handle" at boot)
 msbuild Build/zenith_win64.sln /t:CityBuilder /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 -maxCpuCount
-citybuilder.exe --all-automated-tests --headless --exit-after-frames 6000 --fixed-dt 0.01666 --test-results-dir <dir>
+citybuilder.exe --all-automated-tests --exit-after-frames 6000 --fixed-dt 0.01666 --test-results-dir <dir>
+# (run the Null_vs2022_Debug_Win64_True exe -- headless is a build config, not a flag)
 
 # a single windowed test (build _False for clean screenshots — no ImGui)
 citybuilder.exe --automated-test CB_HumanSession --exit-after-frames 9000 --fixed-dt 0.01666 \

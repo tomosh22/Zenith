@@ -32,7 +32,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Exe         = "Games/DevilsPlayground/Build/output/win64/vs2022_debug_win64_true/devilsplayground.exe",
+    [string]$Exe         = "Games/DevilsPlayground/Build/output/win64/null_vs2022_debug_win64_true/devilsplayground.exe",
     [string]$ResultsDir  = "Build/artifacts/test_results/devilsplayground",
     [switch]$SkipRun
 )
@@ -54,7 +54,7 @@ $accept = @(
 
 if (-not $SkipRun) {
     if (-not (Test-Path $Exe)) {
-        Write-Error "Executable not found: $Exe -- build vs2022_Debug_Win64_True first"
+        Write-Error "Executable not found: $Exe -- build Null_vs2022_Debug_Win64_True first ('zenith build DevilsPlayground --headless')"
         exit 1
     }
     if (-not (Test-Path $ResultsDir)) {
@@ -71,7 +71,6 @@ if (-not $SkipRun) {
         $jsonPath = Join-Path $ResultsDir "$name.json"
         Write-Host "[acceptance]   $name" -ForegroundColor DarkGray
         $args = @(
-            '--headless',
             '--skip-tool-exports',
             '--skip-unit-tests',
             '--automated-test', $name,

@@ -596,7 +596,7 @@ static const Zenith_AutomatedTest g_xZMMilestoneAutosaveTest = {
 	// that sum so a named phase deadline, not this backstop, diagnoses every
 	// ordinary stall.
 	/* maxFrames */ 2600,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMMilestoneAutosaveTest);
 

@@ -86,11 +86,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 
 // Windows file dialog support
 #ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
+#include "Core/Zenith_Win32.h"   // <windows.h> with the APIENTRY/LEAN guards
 #include <commdlg.h>
 #include <shobjidl.h>
 #pragma comment(lib, "Comdlg32.lib")
@@ -303,7 +299,10 @@ void Zenith_Editor::ConfigureImGuiIniPath()
 	// Automated runs must get the deterministic code-built dock layout: any
 	// imgui.ini load would make windowed test layouts depend on whatever ini
 	// the cwd or user profile happens to hold.
-	if (Zenith_CommandLine::IsHeadless()
+	// A Null build is a headless/CI run by construction and must never read or
+	// write a user ini; the other two arms stay runtime (an automated test or an
+	// explicit opt-out can happen in a windowed build too).
+	if (Zenith_IsNullRenderer()
 		|| Zenith_CommandLine::IsAutomatedTestRun()
 		|| Zenith_CommandLine::IsImGuiIniDisabled())
 	{
@@ -614,8 +613,8 @@ bool Zenith_Editor::Update()
 	// early-return below, so automation-driven terrain editing (e.g. the
 	// RenderTest terrain showcase) gets its live preview pumped while the
 	// queue is still running. Unbaked edits also stay visible while
-	// playtesting. NULL headless: Initialise() (which injects the pointer)
-	// only runs windowed, but Update() still drives automation headless.
+	// playtesting. The null check is defensive: Initialise() injects the pointer
+	// in every config now, but Update() can run before it on an early frame.
 	if (m_pxTerrainEditor != nullptr)
 	{
 		m_pxTerrainEditor->ServiceUpdate();
@@ -660,8 +659,8 @@ bool Zenith_Editor::Update()
 	// Terrain editor gets first claim on viewport input: while a terrain
 	// editing session is armed over the viewport (or mid-stroke), gizmo
 	// interaction and object picking are skipped for the frame. RMB camera
-	// look is unaffected (UpdateEditorCamera ran above). NULL headless — see
-	// the ServiceUpdate note above.
+	// look is unaffected (UpdateEditorCamera ran above). Null check — see the
+	// ServiceUpdate note above.
 	if (m_pxTerrainEditor != nullptr)
 	{
 		Zenith_TerrainEditorFrameContext xTerrainCtx;

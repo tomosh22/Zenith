@@ -125,14 +125,24 @@ public:
 
 #ifdef ZENITH_TOOLS
 	// ===== ImGui integration (tools-only) — FluxBackendImGuiTools =====
-	void InitialiseImGui() { }
-	void InitialiseImGuiRenderPass() { }
-	void ShutdownImGui() { }
-	void ImGuiBeginFrame() { }
+	// NOT no-ops. The editor composes a REAL ImGui frame every tools boot
+	// (Zenith_Editor::RenderImGuiFrame -> ImGuiBeginFrame -> panels ->
+	// ImGui::Render()), and ImGui asserts hard without a live context. So this
+	// backend creates the context and initialises the RENDERER-AGNOSTIC GLFW
+	// platform backend (ImGui_ImplGlfw_InitForOther); only the RENDERER backend
+	// (ImGui_ImplVulkan_*) is absent, so the composed draw data is simply never
+	// rasterised. Kept identical to the Null twin (Zenith/Null/CLAUDE.md lists
+	// the only intended divergences). Out-of-line (Zenith_D3D12.cpp): the bodies
+	// need imgui.h + the GLFW backend header, neither of which belongs in this
+	// seam-reachable header.
+	void InitialiseImGui();
+	void InitialiseImGuiRenderPass() { }   // no render pass exists to build
+	void ShutdownImGui();
+	void ImGuiBeginFrame();
 
 	// ImGui memory tracking.
-	u_int64 GetImGuiMemoryAllocated() { return 0; }
-	u_int64 GetImGuiAllocationCount() { return 0; }
+	u_int64 GetImGuiMemoryAllocated();
+	u_int64 GetImGuiAllocationCount();
 
 	// Engine-typed wrapper that builds an ImGui-compatible texture identifier.
 	// Returns a dummy non-zero id of the right type (uint64_t).

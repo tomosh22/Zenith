@@ -551,6 +551,13 @@ public:
 	static void TestTerrainEditorChunkExportRectUsesInclusiveBounds();
 	static void TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAllocate();
 	static void TestTerrainStreamingUnavailableHighLODDoesNotRetryOrStarve();
+	// ZM-D-146 / Q-2026-07-21-001 -- terrain on a GPU-less boot. The culling
+	// test is the regression pin: InitializeCullingResources() used to assert
+	// "Invalid buffer VRAM handle" and terminate the process headless.
+	static void TestTerrainMissingContentStartsGracefulAndProbeable();
+	static void TestTerrainCullingResourceInitSurvivesOnCurrentBackend();
+	static void TestTerrainUnusableGeometryProbeGatesConsumers();
+	static void TestTerrainUnresolvableAssetSetIsRefused();
 	static void TestChunkDistanceSymmetry();
 	static void TestChunkDistanceZero();
 	// Per-component streaming-state isolation. Each Zenith_TerrainComponent

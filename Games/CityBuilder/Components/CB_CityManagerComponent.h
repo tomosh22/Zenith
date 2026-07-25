@@ -223,9 +223,9 @@ public:
 		// Buildings render as GPU-instanced cube MESHES with a lit PBR material, coloured per
 		// zone (residential green / commercial blue / industrial yellow) via the per-instance
 		// albedo tint — the DevilsPlayground material approach (real materials, no emissive),
-		// NOT washed-out debug primitives. Windowed only (GPU upload + instanced render).
+		// NOT washed-out debug primitives. Runs in every config: the Null backend's
+		// GPU upload is a no-op, so the instance data is still built and observable.
 		m_pxBuildingInst = nullptr;
-		if (!Zenith_CommandLine::IsHeadless())
 		{
 			EnsureBuildingMeshAssets();
 			Zenith_Entity xBuildings = g_xEngine.Scenes().CreateEntity(m_xParentEntity.GetSceneData(), "CityBuildings");
@@ -309,7 +309,6 @@ public:
 			}
 		}
 
-		if (!Zenith_CommandLine::IsHeadless())
 		{
 			// Roads draw as terrain-following ribbons over the baked hilly terrain (the
 			// heightfield stays the baked hill, so ribbons + frontage lots sit on the
@@ -1121,10 +1120,7 @@ public:
 		xBrush.m_fCentreX  = fWX; xBrush.m_fCentreZ = fWZ;
 		xBrush.m_fRadius   = TERRAFORM_RADIUS; xBrush.m_fStrength = fStrength;
 		for (int i = 0; i < iApplications; ++i) { m_xHeightfield.ApplyBrush(xBrush); }
-		if (!Zenith_CommandLine::IsHeadless())
-		{
-			RestreamTerraformRegion(fWX, fWZ);
-		}
+		RestreamTerraformRegion(fWX, fWZ);
 	}
 	CB_ESimSpeed                 GetSpeed() const       { return m_eSpeed; }
 	void                         SetSpeed(CB_ESimSpeed eSpeed) { m_eSpeed = eSpeed; }

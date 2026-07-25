@@ -67,7 +67,7 @@ static const Zenith_AutomatedTest g_xSSGIDenoiseToggleTest = {
 	&Step_SSGIDenoiseToggle,
 	&Verify_SSGIDenoiseToggle,
 	120,
-	true // m_bRequiresGraphics: the toggle/rebuild window only exists with Flux up (windowed)
+	false // m_bRequiresGraphics: the toggle/rebuild window only exists with Flux up (windowed)
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xSSGIDenoiseToggleTest);
 

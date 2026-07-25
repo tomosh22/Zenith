@@ -521,7 +521,7 @@ static const Zenith_AutomatedTest g_xZMGameStatePersistenceTest = {
 	&Step_ZMGameStatePersistence,
 	&Verify_ZMGameStatePersistence,
 	/* maxFrames */ 1000,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMGameStatePersistenceTest);
 

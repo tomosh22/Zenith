@@ -41,9 +41,9 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
 $exeMap = @{
-    "Debug_True"    = "Games/DevilsPlayground/Build/output/win64/vs2022_debug_win64_true/devilsplayground.exe"
-    "Debug_False"   = "Games/DevilsPlayground/Build/output/win64/vs2022_debug_win64_false/devilsplayground.exe"
-    "Release_False" = "Games/DevilsPlayground/Build/output/win64/vs2022_release_win64_false/devilsplayground.exe"
+    "Debug_True"    = "Games/DevilsPlayground/Build/output/win64/null_vs2022_debug_win64_true/devilsplayground.exe"
+    "Debug_False"   = "Games/DevilsPlayground/Build/output/win64/null_vs2022_debug_win64_false/devilsplayground.exe"
+    "Release_False" = "Games/DevilsPlayground/Build/output/win64/null_vs2022_release_win64_false/devilsplayground.exe"
 }
 $exe = $exeMap[$ConfigName]
 $exeAbs = (Resolve-Path $exe).Path
@@ -76,7 +76,6 @@ function Start-Cell {
         "--fixed-dt", "0.01666",
         "--test-results", $resultJson
     )
-    if ($Headless.IsPresent) { $procArgs += "--headless" }
     if (-not $IncludeUnitTests.IsPresent) { $procArgs += "--skip-unit-tests" }
 
     # Per-cell env vars: seed + temp prefix for parallel isolation.

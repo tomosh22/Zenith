@@ -281,11 +281,10 @@ void Zenith_Engine::AllocateRenderer()
 	Zenith_Assert(m_pxFluxRenderer == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxFluxRenderer = new Flux_RendererImpl();
 
-	// Phase 2: allocate the renderer-owned scene snapshot UNCONDITIONALLY here (not in
-	// Flux::EarlyInitialise, which is headless-skipped) so GetSceneSnapshot() is valid for
-	// the composition-root injection below in every config — including the headless
-	// unit-test boot. Held by pointer to break the snapshot-header include cycle; freed in
-	// Flux_RendererImpl::Shutdown.
+	// Phase 2: allocate the renderer-owned scene snapshot here rather than in
+	// Flux::EarlyInitialise, so GetSceneSnapshot() is valid for the
+	// composition-root injection below in every config. Held by pointer to break
+	// the snapshot-header include cycle; freed in Flux_RendererImpl::Shutdown.
 	m_pxFluxRenderer->m_pxSceneSnapshot = new Flux_RenderSceneSnapshot();
 
 	// Flux_Graphics state (samplers, fallback texture /
@@ -406,7 +405,8 @@ void Zenith_Engine::AllocateEditorSubsystems()
 // Unified-accounting poll callbacks (captureless free fns). Registered once at boot;
 // each reads a per-subsystem accessor at poll time (once/frame from EndFrame). Keeping
 // them at the engine-composition layer means leaf libs never depend on the memory
-// tracker. GPU/VRAM sources are only valid once Flux is up, so they no-op in headless.
+// tracker. On the Null backend the memory manager reports its own (zero) stats, so
+// no source needs a special case.
 namespace
 {
 	void PollEngineCPU(Zenith_MemorySource& xOut)
@@ -422,12 +422,6 @@ namespace
 	}
 	void PollVMA(Zenith_MemorySource& xOut)
 	{
-		if (Zenith_CommandLine::IsHeadless())
-		{
-			xOut.m_ulBytes = 0;
-			xOut.m_ulAllocCount = 0;
-			return;
-		}
 		const auto xStats = g_xEngine.FluxMemory().GetVMAStats();
 		xOut.m_ulBytes = xStats.m_ulTotalAllocatedBytes;
 		xOut.m_ulAllocCount = xStats.m_ulAllocationCount;
@@ -453,7 +447,8 @@ void Zenith_Engine::InitialiseRuntimeServices()
 
 #if ZENITH_MEMORY_TRACKING_ANY
 	// Register the unified-accounting sources (polled once per frame from EndFrame).
-	// m_bIsVRAM keeps GPU memory out of process-RAM sums. VRAM no-ops in headless.
+	// m_bIsVRAM keeps GPU memory out of process-RAM sums. The Null backend's memory
+	// manager reports zeros, so the VRAM source is inert there.
 	Zenith_MemoryAccounting::Initialise();
 	Zenith_MemoryAccounting::RegisterSource("Engine CPU", &PollEngineCPU, 0, false);
 	Zenith_MemoryAccounting::RegisterSource("Jolt Physics", &PollJolt, 0, false);
@@ -521,9 +516,9 @@ void Zenith_Engine::InitialiseAssets()
 	else
 	{
 		// Per-step markers: this phase runs pre-Flux at boot and a failure here
-		// (e.g. the headless engine-gate) leaves the last marker as the last log
-		// line, pinpointing which export died. Pairs with the unbuffered stdout set
-		// in the headless main() so the marker actually reaches a captured pipe.
+		// (e.g. the engine-gate) leaves the last marker as the last log line,
+		// pinpointing which export died. Pairs with the unbuffered stdout set in
+		// main() so the marker actually reaches a captured pipe.
 		Zenith_Log(LOG_CATEGORY_CORE, "Tool export: meshes...");
 		ExportAllMeshes();
 		Zenith_Log(LOG_CATEGORY_CORE, "Tool export: textures...");
@@ -542,10 +537,7 @@ void Zenith_Engine::InitialiseAssets()
 void Zenith_Engine::InitialiseRendererAndPhysics()
 {
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::EarlyInitialise...");
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxRenderer().EarlyInitialise();
-	}
+	g_xEngine.FluxRenderer().EarlyInitialise();
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Physics::Initialise...");
 	// per-Engine Physics state lives on Zenith_Physics.
 	// Allocate BEFORE g_xEngine.Physics().Initialise() below -- the static
@@ -682,38 +674,32 @@ void Zenith_Engine::InitialiseECS()
 void Zenith_Engine::InitialiseGPUAssets()
 {
 	//#TO_TODO: move somewhere sensible
-	if (!Zenith_CommandLine::IsHeadless())
+	Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after g_xEngine.FluxRenderer().EarlyInitialise()
+
+	// Load cubemap texture (pinned)
+	auto xhCubemap = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
+	if (Zenith_TextureAsset* pxCubemap = xhCubemap.GetDirect())
 	{
-		Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after g_xEngine.FluxRenderer().EarlyInitialise()
-
-		// Load cubemap texture (pinned)
-		auto xhCubemap = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-		if (Zenith_TextureAsset* pxCubemap = xhCubemap.GetDirect())
-		{
-			pxCubemap->LoadCubemapFromFiles(
-				ENGINE_ASSETS_DIR"Textures/Cubemap/px" ZENITH_TEXTURE_EXT,
-				ENGINE_ASSETS_DIR"Textures/Cubemap/nx" ZENITH_TEXTURE_EXT,
-				ENGINE_ASSETS_DIR"Textures/Cubemap/py" ZENITH_TEXTURE_EXT,
-				ENGINE_ASSETS_DIR"Textures/Cubemap/ny" ZENITH_TEXTURE_EXT,
-				ENGINE_ASSETS_DIR"Textures/Cubemap/pz" ZENITH_TEXTURE_EXT,
-				ENGINE_ASSETS_DIR"Textures/Cubemap/nz" ZENITH_TEXTURE_EXT
-			);
-			g_xEngine.FluxGraphics().m_xCubemapTexture.Set(pxCubemap);
-		}
-
-		// Load water normal texture (pinned)
-		if (Zenith_TextureAsset* pxWaterNormal = Zenith_AssetRegistry::GetView<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT))
-		{
-			g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWaterNormal);
-		}
-
-		g_xEngine.FluxMemory().Flush();
+		pxCubemap->LoadCubemapFromFiles(
+			ENGINE_ASSETS_DIR"Textures/Cubemap/px" ZENITH_TEXTURE_EXT,
+			ENGINE_ASSETS_DIR"Textures/Cubemap/nx" ZENITH_TEXTURE_EXT,
+			ENGINE_ASSETS_DIR"Textures/Cubemap/py" ZENITH_TEXTURE_EXT,
+			ENGINE_ASSETS_DIR"Textures/Cubemap/ny" ZENITH_TEXTURE_EXT,
+			ENGINE_ASSETS_DIR"Textures/Cubemap/pz" ZENITH_TEXTURE_EXT,
+			ENGINE_ASSETS_DIR"Textures/Cubemap/nz" ZENITH_TEXTURE_EXT
+		);
+		g_xEngine.FluxGraphics().m_xCubemapTexture.Set(pxCubemap);
 	}
+
+	// Load water normal texture (pinned)
+	if (Zenith_TextureAsset* pxWaterNormal = Zenith_AssetRegistry::GetView<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT))
+	{
+		g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWaterNormal);
+	}
+
+	g_xEngine.FluxMemory().Flush();
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::LateInitialise...");
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxRenderer().LateInitialise();
-	}
+	g_xEngine.FluxRenderer().LateInitialise();
 }
 
 // Editor init + export debug buttons (tools builds only).
@@ -721,17 +707,14 @@ void Zenith_Engine::InitialiseEditor()
 {
 #if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES
 	Zenith_GraphicsOptions::RegisterDebugVariables();
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		// Frame deps passed by member (not read back via g_xEngine inside the
-		// editor) so the relocated RenderImGuiFrame stays off the engine-
-		// singleton ratchet for Zenith_Editor.cpp.
-		m_pxEditor->Initialise(*m_pxVulkan, *m_pxFluxGraphics, *m_pxFrame, *m_pxDebugVariables, *m_pxProfiling, *m_pxTerrainEditor);
-		g_xEngine.DebugVariables().AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
-		g_xEngine.DebugVariables().AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
-		g_xEngine.DebugVariables().AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
-		g_xEngine.DebugVariables().AddButton({ "Export", "Font", "Export Font Atlas" }, ExportDefaultFontAtlas);
-	}
+	// Frame deps passed by member (not read back via g_xEngine inside the
+	// editor) so the relocated RenderImGuiFrame stays off the engine-
+	// singleton ratchet for Zenith_Editor.cpp.
+	m_pxEditor->Initialise(*m_pxVulkan, *m_pxFluxGraphics, *m_pxFrame, *m_pxDebugVariables, *m_pxProfiling, *m_pxTerrainEditor);
+	g_xEngine.DebugVariables().AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
+	g_xEngine.DebugVariables().AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
+	g_xEngine.DebugVariables().AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
+	g_xEngine.DebugVariables().AddButton({ "Export", "Font", "Export Font Atlas" }, ExportDefaultFontAtlas);
 #endif
 }
 
@@ -771,10 +754,7 @@ void Zenith_Engine::InitialiseProject()
 	// GPU allocations record into the memory command buffer lazily; Flush drains
 	// them synchronously before automation begins.
 	Project_InitializeResources();
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxMemory().Flush();
-	}
+	g_xEngine.FluxMemory().Flush();
 
 	// Register automation steps and begin execution (one step per frame in main loop)
 	Project_RegisterEditorAutomationSteps();
@@ -795,10 +775,7 @@ void Zenith_Engine::InitialiseProject()
 	// (the guard has cleared m_bIsLoadingScene, so the drained load runs
 	// synchronously). Without this the initial scene never loads.
 	g_xEngine.Scenes().DrainPendingLoadIfAny();
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxMemory().Flush();
-	}
+	g_xEngine.FluxMemory().Flush();
 	Zenith_Assert(g_xEngine.Scenes().GetActiveScene().IsValid(),
 		"No scene loaded. Run a ZENITH_TOOLS build first to generate .zscen files.");
 #endif
@@ -824,11 +801,8 @@ void Zenith_Engine::Initialise()
 // GPU idle wait, then editor, scenes, physics, project teardown.
 void Zenith_Engine::ShutdownGameSystems()
 {
-	// Wait for GPU to finish all pending work
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxBackend().WaitForGPUIdle();
-	}
+	// Wait for GPU to finish all pending work (a no-op on the Null backend).
+	g_xEngine.FluxBackend().WaitForGPUIdle();
 
 #ifdef ZENITH_TOOLS
 	// Shutdown editor (processes pending deletions, cleans up editor state)
@@ -857,10 +831,7 @@ void Zenith_Engine::ShutdownAssetsAndRenderer()
 	// Release Flux's asset-system references BEFORE the registry shuts down.
 	// Flux statics hold TextureHandle / MaterialHandle defaults that must drop their
 	// refs while the registry still owns its assets — g_xEngine.FluxRenderer().Shutdown() runs too late.
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxRenderer().ReleaseAssetReferences();
-	}
+	g_xEngine.FluxRenderer().ReleaseAssetReferences();
 
 	// Shutdown asset registry (unloads all assets). Engine then
 	// reclaims the instance — Phase 4 makes Zenith_Engine the sole
@@ -871,10 +842,7 @@ void Zenith_Engine::ShutdownAssetsAndRenderer()
 	Zenith_AssetRegistry::s_pxInstance = nullptr;
 
 	// Shutdown Flux (all subsystems + graphics + memory manager)
-	if (!Zenith_CommandLine::IsHeadless())
-	{
-		g_xEngine.FluxRenderer().Shutdown();
-	}
+	g_xEngine.FluxRenderer().Shutdown();
 }
 
 // Task workers, profiling, frame timing, thread registry.

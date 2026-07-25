@@ -60,7 +60,7 @@ static const Zenith_AutomatedTest g_xDPFogPassTest = {
 	&Step_DPFogPass,
 	&Verify_DPFogPass,
 	120, // max-frames safety net
-	true // m_bRequiresGraphics: exercises Flux fog-pass per-frame rebuild
+	false // m_bRequiresGraphics: exercises Flux fog-pass per-frame rebuild
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xDPFogPassTest);
 

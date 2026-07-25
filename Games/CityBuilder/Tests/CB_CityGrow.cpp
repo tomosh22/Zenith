@@ -80,7 +80,7 @@ static bool Verify_CityGrow()
 	return bOk;
 }
 
-static const Zenith_AutomatedTest g_xCityGrowTest = { "CB_CityGrow", &Setup_CityGrow, &Step_CityGrow, &Verify_CityGrow, 520, true };
+static const Zenith_AutomatedTest g_xCityGrowTest = { "CB_CityGrow", &Setup_CityGrow, &Step_CityGrow, &Verify_CityGrow, 520, false };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xCityGrowTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

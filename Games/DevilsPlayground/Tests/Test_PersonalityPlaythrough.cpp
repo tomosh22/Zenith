@@ -100,7 +100,7 @@
 //
 // Headless: the test always loads GameLevel directly (skips FrontEnd menu).
 // Menu-click coverage lives in Test_FullPlaythrough.cpp. With FrontEnd out
-// of the loop the personality tests run in either --headless or visible
+// of the loop the personality tests run in either a Null or a windowed
 // mode unchanged; the runner picks by flag.
 //
 // Each registration writes its telemetry recording to

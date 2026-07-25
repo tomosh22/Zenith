@@ -1,11 +1,18 @@
-# D3D12 Null Backend
+# D3D12 Backend (reserved)
 
 ## Overview
 
 A **no-op "null" D3D12 render backend**. Its only purpose is to be a **compile +
 link + conformance oracle** that proves the Flux renderer surface is genuinely
-backend-neutral: the entire engine + games compile, link, and run a full session
-against it without any concept or call referring to a concrete Vulkan type.
+backend-neutral: the entire engine + games compile and link against it without
+any concept or call referring to a concrete Vulkan type.
+
+> **This is NOT the headless backend.** `Zenith/Null` is — see
+> [Null/CLAUDE.md](../Null/CLAUDE.md). The two are deliberate twins with exactly
+> three intended divergences (the define, the hidden window, and which system
+> libs are linked); D3D12 is the one held in reserve for a REAL D3D12
+> implementation, while Null stays a no-op forever. Any change to the Flux
+> backend concepts updates Vulkan + D3D12 + Null together.
 
 It performs **zero real rendering**. There is no `<d3d12.h>`, no device, no
 swapchain, no GPU work — every method is an inline no-op that returns a benign
@@ -68,8 +75,13 @@ Selected by the Sharpmake `RenderBackend` fragment (`D3D12_*` configs define
 
 ## Verifying neutrality
 
-Build + link any game in a `D3D12_*` config (CI does CityBuilder + DevilsPlayground):
-a clean link with zero unresolved externals = every concept AND non-concept call
-the engine makes is satisfied by a second backend. CityBuilder runs `CB_HumanSession`
-to `passed:true` (4000 frames, 0 asserts) on this backend — a full gameplay session
-on a no-op renderer, presenting a blank window.
+CI **builds** `D3D12_vs2022_Debug_Win64_False` in `zm-tests`, `dp-tests` and
+`cb-tests`. A clean link with zero unresolved externals = every concept AND
+non-concept call the engine makes is satisfied by a second backend.
+
+**CI never EXECUTES a D3D12 exe** (an earlier version of this file claimed it ran
+`CB_HumanSession` continuously — it did not). That run was a one-off local
+windowed session: CityBuilder reached `passed:true` over 4000 frames with 0
+asserts on this backend, real evidence that the surface can carry a full gameplay
+session, but a point-in-time result rather than a standing gate. Continuous
+execution proof now comes from the Null twin, which every CI gate runs.

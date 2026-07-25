@@ -662,7 +662,7 @@ static const Zenith_AutomatedTest g_xZMSaveContinueTest = {
 	// every focus walk). The harness cap sits above that sum so a named phase
 	// deadline, not this backstop, diagnoses every ordinary stall.
 	/* maxFrames */ 6500,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMSaveContinueTest);
 

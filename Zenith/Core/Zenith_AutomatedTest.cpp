@@ -8,7 +8,6 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
-#include "Core/Zenith_CommandLine.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "FileAccess/Zenith_FileAccess.h"
@@ -113,7 +112,7 @@ namespace
 		// was triggered. -1 = scene reload not yet triggered for this gap.
 		int                             m_iBetweenTestsFrame = -1;
 		// Set when ResetSimulatorAndCallSetup detects that the current test
-		// requires graphics but the harness is running --headless. Causes
+		// requires graphics but this is a Null (GPU-less) build. Causes
 		// VerifyAndExit to skip the Verify() call, emit a SKIPPED log line,
 		// and write results JSON with skipped=true. Reused via the same
 		// advance/finalise code path so we don't duplicate state-machine
@@ -121,7 +120,7 @@ namespace
 		bool                            m_bSkipCurrentTest   = false;
 		// Wall-clock test timing. Captured immediately before Setup runs
 		// (or immediately before the skip-decision for graphics-required
-		// tests in headless mode) and consumed in VerifyAndExit to
+		// tests in a Null build) and consumed in VerifyAndExit to
 		// populate m_fLastDurationMs on the node + the JSON + stdout.
 		// Excludes the BetweenTests scene-reload settle phase so the
 		// reported duration reflects the test's own work, not harness
@@ -445,15 +444,15 @@ bool Zenith_AutomatedTestRunner::Tick()
 	{
 		const Zenith_AutomatedTest* pxTest = CurrentTest();
 
-		// Headless skip: tests that need Flux state (material assets, fog hole
-		// tables, render hooks, visual wiring) opt in via m_bRequiresGraphics.
-		// In --headless we skip them BEFORE running Setup so they don't crash
-		// dereferencing null Flux state. Transition straight to VerifyAndExit
-		// with the skip flag set; VerifyAndExit reuses its existing advance /
-		// finalise path so suite tally + JSON emission stay consistent.
-		if (pxTest != nullptr
-		    && pxTest->m_bRequiresGraphics
-		    && Zenith_CommandLine::IsHeadless())
+		// Graphics skip: tests that READ PIXELS (screenshots, bitmap asserts,
+		// A/B captures) opt in via m_bRequiresGraphics. A Null build rasterises
+		// nothing, so there is no image for them to assert on -- skip them
+		// BEFORE running Setup. Transition straight to VerifyAndExit with the
+		// skip flag set; VerifyAndExit reuses its existing advance / finalise
+		// path so suite tally + JSON emission stay consistent. Compile-time:
+		// headless IS the Null config.
+#ifdef ZENITH_NULL_RENDERER
+		if (pxTest != nullptr && pxTest->m_bRequiresGraphics)
 		{
 			// Skipped tests still get a (near-zero) duration so the
 			// JSON schema stays uniform across all rows.
@@ -466,14 +465,15 @@ bool Zenith_AutomatedTestRunner::Tick()
 			s_xRunner.m_ePhase           = HarnessPhase::VerifyAndExit;
 			return true;
 		}
+#endif // ZENITH_NULL_RENDERER
 
 		// Manual-only skip: tests flagged m_bManualOnly are excluded from the
 		// --all-automated-tests batch (long-running balance harnesses with no
 		// per-commit value -- see the field doc on Zenith_AutomatedTest). Marked
 		// SKIPPED so the suite tally stays transparent; a direct
 		// --automated-test <name> (m_bRunAllTests == false) still runs them in
-		// full. Unlike the graphics skip this is NOT gated on headless -- the
-		// exclusion applies to every batch run.
+		// full. Unlike the graphics skip this is NOT backend-gated -- the
+		// exclusion applies to every batch run in every config.
 		if (pxTest != nullptr
 		    && pxTest->m_bManualOnly
 		    && s_xRunner.m_bRunAllTests)

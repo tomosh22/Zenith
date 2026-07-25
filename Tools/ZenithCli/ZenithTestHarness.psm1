@@ -1,9 +1,9 @@
 # ZenithTestHarness.psm1
 # =============================================================================
 # THE implementation of the Zenith automated-test protocol; `zenith test` is
-# its only entry point. Owns: headless test discovery (+ ANSI strip), the
-# engine flag protocol (--all-automated-tests / --automated-test /
-# --test-results[-dir] / --skip-* / --headless), the pre-run JSON wipe, the
+# its only entry point. Owns: test discovery (+ ANSI strip), the engine flag
+# protocol (--all-automated-tests / --automated-test /
+# --test-results[-dir] / --skip-*), the pre-run JSON wipe, the
 # runtime-DLL self-heal, batch vs per-process mode selection, the per-test
 # JSON tally, and the slowest-tests timing report.
 #
@@ -52,15 +52,17 @@ function ConvertFrom-ZenithTestListOutput {
 
 function Get-ZenithRegisteredTests {
     # Discover the registered automated tests of a game exe. Discovery is
-    # mode-agnostic (the registry is identical headless or windowed), so ALWAYS
-    # list headless: a windowed listing boots the renderer / streams the world,
-    # which is slow and interleaves log lines -- and on GPU-less CI runners a
-    # non-headless listing hangs in vkEnumeratePhysicalDevices.
+    # backend-agnostic (the registry is identical in every config), so callers
+    # ALWAYS pass the game's NULL exe: a Vulkan listing boots the renderer /
+    # streams the world, which is slow and interleaves log lines -- and on a
+    # GPU-less runner it hangs outright in vkEnumeratePhysicalDevices. That is
+    # why this stayed `--headless` before headless became a build config; the
+    # requirement did not change, only how it is expressed.
     [CmdletBinding()]
     [OutputType([string[]])]
     param([Parameter(Mandatory)][string]$Exe)
 
-    $listArgs = @('--list-automated-tests', '--skip-tool-exports', '--skip-unit-tests', '--headless')
+    $listArgs = @('--list-automated-tests', '--skip-tool-exports', '--skip-unit-tests')
     $listOutput = & $Exe @listArgs 2>&1
     return (ConvertFrom-ZenithTestListOutput -Lines $listOutput)
 }
@@ -155,12 +157,15 @@ function Invoke-ZenithGameTests {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Exe,
+        # Exe used ONLY for the --list-automated-tests discovery step. Must be a
+        # Null-backend build (see Get-ZenithRegisteredTests). Defaults to $Exe,
+        # which is correct when the run itself is already a Null run.
+        [string]$DiscoveryExe = '',
         [Parameter(Mandatory)][string]$ResultsDir,
         [string]$Filter = '',
         [Nullable[int]]$Tier = $null,
         [switch]$PerProcess,
         [switch]$FailFast,
-        [switch]$Headless,
         # Per-batch frame ceiling. 8500 covers the slowest known suite (DP's
         # PersonalityPlaythrough_* run 6000-8000 frames each); per-test budgets
         # are still governed by each test's own m_iMaxFrames, so this is a
@@ -194,9 +199,14 @@ function Invoke-ZenithGameTests {
     }
 
     # Discovery (always, so the list prints before the run and batch results
-    # decode into a per-test tally).
+    # decode into a per-test tally). Runs against the NULL exe -- a Vulkan
+    # listing hangs on a GPU-less runner.
+    if ([string]::IsNullOrEmpty($DiscoveryExe)) { $DiscoveryExe = $Exe }
+    if (-not (Test-Path $DiscoveryExe)) {
+        throw "discovery exe not found: $DiscoveryExe -- build the Null config first ('zenith build <Game> --headless')"
+    }
     Write-Host "[$Tag] Discovering tests..." -ForegroundColor Cyan
-    $tests = @(Get-ZenithRegisteredTests -Exe $Exe)
+    $tests = @(Get-ZenithRegisteredTests -Exe $DiscoveryExe)
 
     # @(...) is load-bearing on every reassignment: a filter matching exactly
     # one test would otherwise unwrap to a scalar string.
@@ -222,7 +232,6 @@ function Invoke-ZenithGameTests {
     $commonFlags = @()
     if (-not $NoSkipToolExports) { $commonFlags += '--skip-tool-exports' }
     if (-not $NoSkipUnitTests) { $commonFlags += '--skip-unit-tests' }
-    if ($Headless) { $commonFlags += '--headless' }
 
     function Add-AssertionLogEntry {
         param([string]$Name, [string]$JsonPath, [string]$Extra)

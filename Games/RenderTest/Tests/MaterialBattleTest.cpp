@@ -94,8 +94,6 @@ static void Setup_MaterialBattleTest()
 
 static bool Step_MaterialBattleTest(int iFrame)
 {
-	if (Zenith_CommandLine::IsHeadless()) return false;	// requiresGraphics: skip in headless
-
 	switch (iFrame)
 	{
 	// The showcase is authored into the scene and loaded normally, so by the time the
@@ -144,7 +142,6 @@ static bool Step_MaterialBattleTest(int iFrame)
 
 static bool Verify_MaterialBattleTest()
 {
-	if (Zenith_CommandLine::IsHeadless()) return true;	// passed-skip
 	if (!g_bShowcasePresent || RenderTest_Showcase::g_iColumns <= 0)
 	{
 		Zenith_Error(LOG_CATEGORY_CORE, "[MaterialBattleTest] showcase grid was not spawned (g_iColumns=%d)", RenderTest_Showcase::g_iColumns);

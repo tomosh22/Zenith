@@ -86,7 +86,7 @@ static bool Verify_RoadDraw()
 	return bOk;
 }
 
-static const Zenith_AutomatedTest g_xRoadDrawTest = { "CB_RoadDraw", &Setup_RoadDraw, &Step_RoadDraw, &Verify_RoadDraw, 300, true };
+static const Zenith_AutomatedTest g_xRoadDrawTest = { "CB_RoadDraw", &Setup_RoadDraw, &Step_RoadDraw, &Verify_RoadDraw, 300, false };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xRoadDrawTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

@@ -165,8 +165,10 @@ dir, and never `git add` anything under an ignored path.
 Each project supports these configurations:
 
 Every win64 config is prefixed by the render backend (`Vulkan_` = the real
-renderer; `D3D12_` = the no-op null backend, a link-level neutrality proof).
-Output dirs are the LOWERCASED config name.
+renderer; `D3D12_` = the reserved no-op backend, a link-level neutrality proof;
+`Null_` = the GPU-less backend every HEADLESS run executes on). Output dirs are
+the LOWERCASED config name. **agde carries no backend prefix** — its target set
+is Vulkan-only, so Sharpmake omits the single-valued fragment from the name.
 
 | Configuration | Platform | Tools | Description |
 |--------------|----------|-------|-------------|
@@ -174,9 +176,11 @@ Output dirs are the LOWERCASED config name.
 | `Vulkan_vs2022_Debug_Win64_False` | Windows | No | Debug build, runtime only |
 | `Vulkan_vs2022_Release_Win64_True` | Windows | Yes | Release build with editor/tools |
 | `Vulkan_vs2022_Release_Win64_False` | Windows | No | Release build, runtime only |
-| `D3D12_vs2022_Debug_Win64_False` | Windows | No | Null-backend link proof (+ _True / Release variants) |
-| `Vulkan_arm64_v8a_vs2022_Debug_Agde_False` | Android | No | Android debug build |
-| `Vulkan_arm64_v8a_vs2022_Release_Agde_False` | Android | No | Android release build |
+| `Null_vs2022_Debug_Win64_True` | Windows | Yes | **Headless** debug build with tools (the CI/test config) |
+| `Null_vs2022_Debug_Win64_False` | Windows | No | Headless debug build, runtime only (+ Release variants) |
+| `D3D12_vs2022_Debug_Win64_False` | Windows | No | Reserved-backend link proof (+ _True / Release variants) |
+| `arm64_v8a_vs2022_Debug_Agde_False` | Android | No | Android debug build |
+| `arm64_v8a_vs2022_Release_Agde_False` | Android | No | Android release build |
 
 ### Projects
 

@@ -127,7 +127,13 @@ namespace
 		g_xEngine.Scenes().QueryActiveScene<ZM_TerrainGrass>().ForEach(
 			[&bReady](Zenith_EntityID, ZM_TerrainGrass& xGrass)
 			{
-				bReady = bReady || xGrass.IsGrassApplied();
+				// A Null (headless) build never APPLIES grass: the blades are GPU-only
+				// content the backend deliberately does not author (see
+				// Zenith/Null/CLAUDE.md). The component still exists and has reached
+				// its terminal inert state, which is what this gate is really asking:
+				// "has the overworld finished coming up?". The windowed assertion is
+				// unchanged -- there, applied-ness is still required.
+				bReady = bReady || xGrass.IsGrassApplied() || Zenith_IsNullRenderer();
 			});
 		return bReady;
 	}

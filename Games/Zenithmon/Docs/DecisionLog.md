@@ -15,6 +15,157 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-25 -- ZM-D-146 -- Null render backend; headless becomes BUILD-TIME; terrain headless gap CLOSED; m_bRequiresGraphics re-audited
+
+*(SC1b commit A of two. Engine-wide; owes the full engine gate. Commit B is the
+navmesh persistence feature -- ZM-D-147.)*
+
+- **Decision: headless is a BUILD CONFIG, not a runtime flag.** `--headless` is
+  DELETED end-to-end (`Zenith_CommandLine::IsHeadless()` and every consumer). A
+  headless run is now a `Null_*` config: it defines `ZENITH_NULL_RENDERER`,
+  compiles the new GPU-less `Zenith/Null` backend in place of Vulkan, and creates
+  its window HIDDEN. **Why this is the whole point:** the old flag SKIPPED the
+  render paths (`EarlyInitialise`, `UploadFrameConstants`, submit, the editor
+  ImGui frame). The Null backend RUNS them against no-op calls, so a headless run
+  now exercises the same code a windowed one does. Compile-time checks use the
+  constexpr `Zenith_IsNullRenderer()`; `#ifdef ZENITH_NULL_RENDERER` only where
+  one side cannot compile. `zenith build|test <G> --headless` survives as a CONFIG
+  SELECTOR. **Test discovery ALWAYS uses the Null exe** in every mode (a Vulkan
+  `--list-automated-tests` hangs in `vkEnumeratePhysicalDevices` on a GPU-less
+  runner) -- with an actionable error when it is missing.
+- **`Zenith/Null` is the D3D12 twin with exactly THREE intended divergences:**
+  the define, the hidden window, and linking no `d3d12`/`dxgi`/`dxguid` (nor
+  Vulkan/Slang). D3D12 stays RESERVED (link-neutrality proof + the future home of
+  a real implementation); Null is the one CI executes constantly. Any change to
+  the Flux backend concepts updates all three together. Full rationale + gotchas:
+  `Zenith/Null/CLAUDE.md`.
+- **Q-2026-07-21-001 (headless-terrain assert) is CLOSED, and the root cause in
+  the original report was wrong.** It was never about missing baked content (that
+  path was ALREADY graceful). It was
+  `Zenith_TerrainComponent::InitializeCullingResources()` asserting
+  `Invalid buffer VRAM handle` when a GPU-less boot allocated culling buffers.
+  **The precise mechanism, verified rather than assumed:** that assert is
+  VULKAN-SIDE (`Zenith_Vulkan_MemoryManager_Buffers.cpp`) and a Null build does
+  not compile it at all; Null's `Initialise*Buffer` stamps valid-looking dummy
+  handles DIRECTLY -- it does not route through `CreateBufferVRAM`, so an early
+  mutation attempt against that function proved inert. Consequence: nothing on
+  the Null path re-checks those handles, which is exactly why the new unit
+  asserts their validity explicitly. **Evidence:** CityBuilder's headless suite now authors its terrain ENTITY
+  in every config (its "skip terrain headless" guard is deleted) and runs
+  **45/45, 0 skipped, 0 failed**; RenderTest's `TerrainEditorSmoke` drives real
+  sculpt strokes, undo, and culling-resource create/destroy on a Null boot with
+  warm terrain and no assert. The disk BAKE stays windowed-only (a null backend
+  must never author render content).
+- **CI cost accepted: each of `zm-tests` / `dp-tests` / `cb-tests` /
+  `engine-gate` gains ONE extra full build** (the Null_True config). The Vulkan
+  `_True` build stays as the real-renderer compile proof and is no longer
+  executed; the D3D12 `_False` link proof is unchanged.
+
+### `m_bRequiresGraphics` re-audit (74 flagged -> 25)
+
+The flag's meaning is now precise: **it marks tests whose ASSERTIONS read
+GPU-produced output** -- pixels, or state only a real GPU produces. It was being
+used far more broadly as "might touch the renderer", which is what made 39 of
+Zenithmon's 42 tests silent auto-skips in CI (a skip counts as a PASS).
+
+**49 tests flipped to `false` and empirically verified green on Null.** Observed
+run/skip splits, all with 0 failures:
+
+| Game | ran BEFORE | ran AFTER | skipped | total |
+|---|---|---|---|---|
+| Zenithmon | **3** | **31** | 11 | 42 |
+| CityBuilder | 39 | **45** | 0 | 45 |
+| DevilsPlayground | 137 | **138** | 20 | 158 |
+| RenderTest | 1 | **4** | 5 | 9 |
+| Combat | 14 | 14 | 0 | 14 |
+
+**The 25 that KEEP `true`, by category:**
+
+| # | Category | Tests | Rationale |
+|---|---|---|---|
+| 7 | **(a) reads pixels** | ZM `AssetGallery` / `CreatureGallery`; DP `MaterialEntityShowcase`, `Test_DPFogPass_VisualOutput`, `Test_MaterialEditorLivePreview`, `Test_MaterialShowcase`; RT `MaterialBattleTest` | `Flux_Screenshot::RequestDump` + TGA/bitmap asserts. Nothing to assert on when nothing rasterises. |
+| 7 | **(a') asserts GPU-produced grass state** | ZM `BattleDirectorRoundTrip`, `BattleHUD`, `BattleMenu{Win,Run,Catch}`, `BattleRoundTrip`, `TallGrassInteriorClear` | Assert grass blade counts / clear-and-restore. A Null build never APPLIES grass (GPU-only content). These tests self-check for vacuity and correctly refuse to pass when the invariant is unobservable -- overriding that would silently weaken them. **Follow-up:** splitting the grass sub-invariant would return 6 rich battle tests to CI; logged, not done here. |
+| 2 | ZM grass feature tests | `ZM_GrassRegeneration_Test`, `ZM_TerrainGrassResumeRegen_Test` | The feature under test IS the GPU grass. |
+| 5 | DP GPU-upload-dependent | `Materials_Test`, `Test_P1Tuning_PriestValuesMatchConfig`, `Test_P1Villager_TuningMigration`, `Test_P2Villager_ArchetypeStatsApplied`, `Test_GraphEditorLiveAuthoring` | Verified FAILING standalone on Null: they read material/model state that only exists after a real GPU upload. |
+| 2 | DP visual-state | `DimLightsCutFog_Test`, `FullPlaythrough_Test` | Verified FAILING standalone on Null. |
+| 1 | **(c) deliberate keep -- batch contaminator** | DP `Test_GraphEditorScreenshotTour` | Passes on Null, but running it in-batch turned the **last 8 gameplay tests red** (all pass standalone). Bisected to this test; it drives the editor UI and leaves state the between-tests hook does not reset. Kept windowed-only so the DP gate stays green. **This is a pre-existing DP test-isolation defect that the new coverage EXPOSED, not one it caused** -- logged as a follow-up. |
+| 1 | RT GPU-upload assertion | `TerrainEditorSmoke` | Asserts the splatmap GPU re-upload drains (`splat GPU upload never drained`). The terrain work around it runs clean on Null -- that is this commit's terrain-closure evidence. |
+
+One enabling change was needed for the ZM flips: the tests' Dawnmere
+"runtime-ready" gate required `IsGrassApplied()`, which a Null build never
+reaches. That single clause is now `|| Zenith_IsNullRenderer()`; **the windowed
+assertion is unchanged** (applied-ness is still required there), and the
+CPU-side half (density map loaded, no terminal failure) stays asserted in every
+config. Without it, 22 of the 25 newly-executing ZM tests failed on
+"Dawnmere did not become runtime-ready in time".
+
+`RequestSkip` (runtime-prerequisite skips) and `m_bManualOnly` are SEPARATE
+mechanisms and were deliberately not touched.
+
+### Defects found and fixed along the way (none anticipated by the plan)
+
+1. **MSVC dead-strip silently deleted 13 unit tests.** `Flux_ViewSetBinding.cpp`'s
+   only caller is the Vulkan command buffer, so a Null link stripped the whole
+   `.obj` and its `ZENITH_TEST` registrars with it. Rehosted in the always-linked
+   `Flux_ShaderCatalog.cpp`. This was exactly half the observed unit-count delta.
+2. **`Repair-ZenithRuntimeDlls` could not heal a NEW config.** It knew only slang
+   + same-leaf siblings, so the first-ever Null build died `0xC0000135` with an
+   empty log. Extended with the assimp runtime tree.
+3. **`Core/Zenith_Win32.h`'s blunt `#undef APIENTRY`** left `APIENTRY` permanently
+   undefined in any TU where `<Windows.h>` had already been included, breaking
+   `commdlg.h` / `shobjidl.h` / `psapi.h`. Now keys precisely on GLFW's own
+   `GLFW_APIENTRY_DEFINED`; every raw `<Windows.h>` include and both backend seams
+   route through it.
+4. **No ImGui implementation existed off Vulkan.** Tools-enabled D3D12/Null builds
+   did not link, and once linked asserted "No current context". Both twins now
+   create a real ImGui context + the renderer-agnostic GLFW platform backend and
+   BUILD THE FONT ATLAS (nothing else would). Without this no editor-driven test
+   could run headless.
+
+### Baselines (OBSERVED, never predicted)
+
+| Pin | Vulkan | Null | Where |
+|---|---|---|---|
+| Engine units (Combat) | 1103 | 1089 -> **1093** | `Tools/run_unit_gate.ps1` default |
+| ZM boot units | 2525 | 2511 -> **2515** | `zm-tests.yml -Baseline` |
+
+The backend delta is exactly **-14**: the genuinely Vulkan-only tests (11
+`Flux_SlangProbes` + 3 `DetermineImageViewType`), which have no Null equivalent.
+The **+4** on top is this commit's new terrain units.
+
+### New terrain boot units (+4) and their mutation proof
+
+`Terrain::{MissingContentStartsGracefulAndProbeable,
+CullingResourceInitSurvivesOnCurrentBackend, UnusableGeometryProbeGatesConsumers,
+UnresolvableAssetSetIsRefused}`. They are meaningful in BOTH backends -- the unit
+suite runs at boot in whichever config the exe was built as -- and require no
+baked terrain on disk, which is exactly the missing-content shape a fresh CI
+checkout has.
+
+Two things writing them corrected:
+
+- `InitializeCullingResources()` is **not** idempotent: re-entry asserts "called
+  when already initialized". The first draft called it twice and killed the whole
+  boot gate. `DestroyCullingResources()` IS guarded and is safe to repeat.
+- **The obvious mutation was INERT, and the first version of the test had no
+  teeth.** Making `CreateBufferVRAM` return the invalid default handle changed
+  nothing (Null's buffer initialisers never call it), and the test as first
+  written only proved the call did not terminate the process -- with nothing on
+  the Null path re-checking a handle, a backend regression handing out invalid
+  ones would have been silent. Fixed by asserting the indirect-draw /
+  visible-count / LOD-level buffers' VRAM handles are VALID.
+- **Mutation proof (compiling; rebuilt before re-testing; restored + rebuilt
+  after):** leaving `Zenith_Null_MemoryManager::InitialiseIndirectBuffer`'s handle
+  invalid turns EXACTLY `Terrain::CullingResourceInitSurvivesOnCurrentBackend` red
+  -- 1093 ran / 1091 passed / **1 failed** -- and nothing else. Restored:
+  1093 / 1092 / 0.
+
+- **Reversibility:** high for the audit (one token per test). LOW for the backend
+  migration -- `--headless` is gone from living code and every gate now runs a
+  Null exe.
+
+---
+
 ## 2026-07-24 -- ZM-D-145 -- USER DECISION: adopt navmesh persistence OPTION C now; OPTION B deferred; `.znavmesh` is a tracked asset
 
 - **Decision (user, resolves Q-2026-07-24-002 Q-A):** do NOT stop at the SC1

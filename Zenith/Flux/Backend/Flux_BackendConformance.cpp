@@ -177,3 +177,70 @@ static_assert(FluxBackendImGuiTools            <Zenith_D3D12>,
 #endif
 
 #endif // ZENITH_D3D12
+
+// ---- Null-backend conformance ----------------------------------------------
+// The Null backend is THE headless/CI backend: every automated batch and unit
+// gate runs on it, so it must satisfy EVERY concept (and, via the link step,
+// every non-concept call the engine makes) exactly as the real renderer does.
+
+#ifdef ZENITH_NULL_RENDERER
+
+static_assert(FluxBackendDevice                <Zenith_Null>,
+	"Zenith_Null does not satisfy FluxBackendDevice");
+
+static_assert(FluxBackendMemoryAlloc           <Zenith_Null_MemoryManager>,
+	"Zenith_Null_MemoryManager does not satisfy FluxBackendMemoryAlloc");
+
+static_assert(FluxBackendMemoryDelete          <Zenith_Null_MemoryManager>,
+	"Zenith_Null_MemoryManager does not satisfy FluxBackendMemoryDelete");
+
+static_assert(FluxBackendTransientAliasing     <Zenith_Null_MemoryManager>,
+	"Zenith_Null_MemoryManager does not satisfy FluxBackendTransientAliasing");
+
+static_assert(FluxBackendCommandRecorder       <Zenith_Null_CommandBuffer>,
+	"Zenith_Null_CommandBuffer does not satisfy FluxBackendCommandRecorder (umbrella)");
+static_assert(FluxBackendRecordingLifecycle    <Zenith_Null_CommandBuffer>,
+	"Zenith_Null_CommandBuffer does not satisfy FluxBackendRecordingLifecycle");
+static_assert(FluxBackendPipelineBinding       <Zenith_Null_CommandBuffer>,
+	"Zenith_Null_CommandBuffer does not satisfy FluxBackendPipelineBinding");
+static_assert(FluxBackendVertexIndexStreams    <Zenith_Null_CommandBuffer>,
+	"Zenith_Null_CommandBuffer does not satisfy FluxBackendVertexIndexStreams");
+static_assert(FluxBackendBasicDraws            <Zenith_Null_CommandBuffer>,
+	"Zenith_Null_CommandBuffer does not satisfy FluxBackendBasicDraws");
+static_assert(FluxBackendIndirectDraws         <Zenith_Null_CommandBuffer>,
+	"Zenith_Null_CommandBuffer does not satisfy FluxBackendIndirectDraws");
+static_assert(FluxBackendCompute               <Zenith_Null_CommandBuffer>,
+	"Zenith_Null_CommandBuffer does not satisfy FluxBackendCompute");
+static_assert(FluxBackendResourceBinding       <Zenith_Null_CommandBuffer>,
+	"Zenith_Null_CommandBuffer does not satisfy FluxBackendResourceBinding");
+static_assert(FluxBackendDynamicState          <Zenith_Null_CommandBuffer>,
+	"Zenith_Null_CommandBuffer does not satisfy FluxBackendDynamicState");
+#ifdef ZENITH_FLUX_PROFILING
+static_assert(FluxBackendDebugMarkers          <Zenith_Null_CommandBuffer>,
+	"Zenith_Null_CommandBuffer does not satisfy FluxBackendDebugMarkers");
+#endif
+
+static_assert(FluxBackendSync                  <Zenith_Null_CommandBuffer>,
+	"Zenith_Null_CommandBuffer does not satisfy FluxBackendSync");
+
+static_assert(FluxBackendPresentation          <Zenith_Null_Swapchain>,
+	"Zenith_Null_Swapchain does not satisfy FluxBackendPresentation");
+
+static_assert(FluxBackendShader                <Zenith_Null_Shader>,
+	"Zenith_Null_Shader does not satisfy FluxBackendShader");
+
+static_assert(FluxBackendPipelineBuilder       <Zenith_Null_PipelineBuilder>,
+	"Zenith_Null_PipelineBuilder does not satisfy FluxBackendPipelineBuilder");
+
+static_assert(FluxBackendComputePipelineBuilder<Zenith_Null_ComputePipelineBuilder>,
+	"Zenith_Null_ComputePipelineBuilder does not satisfy FluxBackendComputePipelineBuilder");
+
+static_assert(FluxBackendRootSigBuilder        <Zenith_Null_RootSigBuilder>,
+	"Zenith_Null_RootSigBuilder does not satisfy FluxBackendRootSigBuilder");
+
+#ifdef ZENITH_TOOLS
+static_assert(FluxBackendImGuiTools            <Zenith_Null>,
+	"Zenith_Null does not satisfy FluxBackendImGuiTools");
+#endif
+
+#endif // ZENITH_NULL_RENDERER

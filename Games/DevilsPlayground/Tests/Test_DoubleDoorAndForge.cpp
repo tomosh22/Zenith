@@ -239,12 +239,12 @@ static const Zenith_AutomatedTest g_xDoubleDoorTest = {
 	240,
 	// m_bRequiresGraphics: this test exercises FindChildTransform("Leaf_L"/"Leaf_R"),
 	// which depends on the model's bone hierarchy being fully populated. In
-	// --headless mode the model's GPU upload is short-circuited (VMA leaf
+	// a Null build the model's GPU upload is short-circuited (VMA leaf
 	// guards) and the mesh-import path that builds the bone tree appears to
 	// short-circuit too -- leaves are missing, rotations never applied,
-	// Verify fails. Tagging skips the test under --headless; the windowed
+	// Verify fails. Tagging skips the test in Null builds; the windowed
 	// path remains fully covered. Root cause to investigate in a follow-up.
-	true
+	false
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xDoubleDoorTest);
 
@@ -414,10 +414,10 @@ static const Zenith_AutomatedTest g_xForgeTest = {
 	// m_bRequiresGraphics: see DoubleDoor_Test note above -- the Forge recipe
 	// path depends on the iron-item entity being fully wired up via mesh
 	// import + transform hierarchy + collider, all of which short-circuit in
-	// --headless mode. Tagging skips under --headless; windowed coverage
+	// a Null build. Tagging skips it there; windowed coverage
 	// preserved. Follow-up to investigate the mesh-import code path's
 	// headless behaviour.
-	true
+	false
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xForgeTest);
 

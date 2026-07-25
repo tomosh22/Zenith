@@ -1385,7 +1385,9 @@ static const std::string& RenderTest_TestbedVtxColorMaterialPath()
 // edits always propagate (the GenerateStickFigureAssets policy).
 static void GenerateRenderTestTestbedAssets()
 {
-	if (Zenith_CommandLine::IsHeadless() || RenderTest_HasCommandLineFlag("--skip-tool-exports"))
+	// Tools-bake semantic: a Null build must not author render content, so the
+	// testbed asset generation stays DEFERRED there (same rule as ZM's terrain).
+	if (Zenith_IsNullRenderer() || RenderTest_HasCommandLineFlag("--skip-tool-exports"))
 	{
 		return;
 	}
@@ -2237,9 +2239,9 @@ void Project_RegisterEditorAutomationSteps()
 // (missing file / headless). Declared in RenderTest_BootstrapComponent.h.
 RenderTest_GrassApplyResult RenderTest_TryApplyGrassDensityFromDisk()
 {
-	if (Zenith_CommandLine::IsHeadless())
+	if (Zenith_IsNullRenderer())
 	{
-		return RenderTest_GrassApplyResult::SkippedHeadless;   // grass GPU buffers don't exist headless
+		return RenderTest_GrassApplyResult::SkippedHeadless;   // no grass GPU buffers on the Null backend
 	}
 
 	// Probe terrain readiness FIRST — it's the gate that flips frame-to-frame while

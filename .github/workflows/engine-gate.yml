@@ -122,19 +122,38 @@ jobs:
               -maxCpuCount -nologo -clp:Summary -clp:ErrorsOnly
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      - name: Build Combat (Null_Debug_True -- the exe the unit gate runs)
+        shell: pwsh
+        run: |
+          # The unit gate BOOTS an exe, so it needs the GPU-less Null build; the
+          # Vulkan build above stays as a compile proof for the real renderer.
+          msbuild Games\Combat\combat_win64.sln `
+              /t:Combat `
+              /p:Configuration=Null_vs2022_Debug_Win64_True `
+              /p:Platform=x64 `
+              /p:WindowsTargetPlatformVersion=10.0 `
+              -maxCpuCount -nologo -clp:Summary -clp:ErrorsOnly
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Copy runtime DLLs into exe output dir
         shell: pwsh
         run: |
-          $exeDir = 'Games\Combat\Build\output\win64\vulkan_vs2022_debug_win64_true'
-          Copy-Item 'Middleware\slang\bin\*.dll' $exeDir -Force
-          $vkLoader = Join-Path $env:VULKAN_SDK 'Bin\vulkan-1.dll'
-          if (Test-Path $vkLoader) { Copy-Item $vkLoader $exeDir -Force }
+          $exeDir = 'Games\Combat\Build\output\win64\null_vs2022_debug_win64_true'
+          # Repair-ZenithRuntimeDlls is the single source of truth for what an exe
+          # dir needs: the whole slang dependency tree (the post-build event only
+          # copies slang.dll) plus the assimp runtime tree. A FIRST build in a new
+          # config leaves those absent and the exe dies with STATUS_DLL_NOT_FOUND
+          # (exit 0xC0000135) before main() -- an empty log that reads as a build
+          # failure. No vulkan-1.dll: the Null backend never loads a Vulkan loader.
+          Import-Module Build\zenith_buildsystem.psm1 -Force
+          $copied = Repair-ZenithRuntimeDlls -ExeDir (Resolve-Path $exeDir).Path
+          Write-Host "healed $($copied.Count) runtime DLL(s): $($copied -join ', ')"
 
       - name: Run engine unit tests at boot (baseline + known-flake tolerance)
         shell: pwsh
         run: |
           & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File .\Tools\run_unit_gate.ps1 `
-              -Exe 'Games/Combat/Build/output/win64/vulkan_vs2022_debug_win64_true/combat.exe'
+              -Exe 'Games/Combat/Build/output/win64/null_vs2022_debug_win64_true/combat.exe'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload boot log on failure

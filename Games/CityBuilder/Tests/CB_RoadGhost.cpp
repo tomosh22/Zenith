@@ -80,7 +80,7 @@ static bool Verify_RoadGhost()
 	return true;
 }
 
-static const Zenith_AutomatedTest g_xRoadGhostTest = { "CB_RoadGhost", &Setup_RoadGhost, &Step_RoadGhost, &Verify_RoadGhost, 1000, true };
+static const Zenith_AutomatedTest g_xRoadGhostTest = { "CB_RoadGhost", &Setup_RoadGhost, &Step_RoadGhost, &Verify_RoadGhost, 1000, false };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xRoadGhostTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

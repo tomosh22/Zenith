@@ -803,20 +803,11 @@ ZM_BattleArena* ZM_BattleTransition::ResolveUniqueBattleArena()
 
 void ZM_BattleTransition::ClearOverworldGrass()
 {
-	if (Zenith_CommandLine::IsHeadless())
-	{
-		return;
-	}
 	g_xEngine.Grass().ClearSceneData();
 }
 
 void ZM_BattleTransition::RegenerateOverworldGrass()
 {
-	if (Zenith_CommandLine::IsHeadless())
-	{
-		return;
-	}
-
 	// QueryAllScenes, NOT QueryActiveScene: under an additive Battle the overworld
 	// is loaded but NOT active, so an active-scene query would find nothing.
 	g_xEngine.Scenes().QueryAllScenes<ZM_TerrainGrass>().ForEach(

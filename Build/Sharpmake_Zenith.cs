@@ -51,7 +51,7 @@ public class ZenithBaseLibProject : ZenithBaseProject
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False,
-			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12 | RenderBackend.Null
 		});
 
 		AddTargets(new ZenithTarget
@@ -182,7 +182,7 @@ public class ZenithProject : ZenithBaseProject
 			DevEnv = DevEnv.vs2022,
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False,
-			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12
+			RenderBackend = RenderBackend.Vulkan | RenderBackend.D3D12 | RenderBackend.Null
 		});
 
 		AddTargets(new ZenithTarget

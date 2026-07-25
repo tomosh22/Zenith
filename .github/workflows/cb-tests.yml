@@ -1,12 +1,15 @@
 # CityBuilder tests -- active PR + push gate on master.
 #
-# Mirrors dp-tests.yml (the DevilsPlayground gate). The engine's --headless
+# Mirrors dp-tests.yml (the DevilsPlayground gate). The Null-backend build
 # boot mode (Zenith_CommandLine::IsHeadless) short-circuits Flux init / VMA
 # leaf functions / Editor flush paths / view-creation null-handle asserts, so
-# the suite runs on GPU-less GitHub windows-latest runners. The graphics-
-# mandatory terrain tests (CB_Deform* / CB_Paint* / CB_Physics*) are tagged
-# m_bRequiresGraphics=true and the harness skips them headless (counts as
-# pass); run windowed locally (omit -Headless) to exercise them.
+# the suite runs on GPU-less GitHub windows-latest runners.
+#
+# As of ZM-D-146 CityBuilder has ZERO graphics-gated tests: all 45 RUN on the
+# Null backend, including the terrain entity (the "skip terrain headless" guard
+# is gone -- see Q-2026-07-21-001). The previous note here named
+# CB_Deform* / CB_Paint* / CB_Physics* as the graphics-mandatory set; no tests
+# by those names have ever existed.
 #
 # Required check name: `cb-tests`.
 #
@@ -83,6 +86,23 @@ jobs:
               -clp:ErrorsOnly
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      - name: Build CityBuilder (Null backend -- THE headless/CI build)
+        shell: pwsh
+        run: |
+          # Everything below this point runs THIS exe. The Vulkan build above stays
+          # as a compile proof for the real renderer; it is never executed here (a
+          # Vulkan boot hangs in vkEnumeratePhysicalDevices on a GPU-less runner).
+          msbuild Games\\CityBuilder\\citybuilder_win64.sln `
+              /t:CityBuilder `
+              /p:Configuration=Null_vs2022_Debug_Win64_True `
+              /p:Platform=x64 `
+              /p:WindowsTargetPlatformVersion=10.0 `
+              -maxCpuCount `
+              -nologo `
+              -clp:Summary `
+              -clp:ErrorsOnly
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Build CityBuilder (D3D12 null backend -- backend-neutrality link proof)
         shell: pwsh
         run: |
@@ -106,36 +126,31 @@ jobs:
       - name: Copy runtime DLLs into exe output dir
         shell: pwsh
         run: |
-          $exeDir = 'Games\CityBuilder\Build\output\win64\vulkan_vs2022_debug_win64_true'
+          $exeDir = 'Games\CityBuilder\Build\output\win64\null_vs2022_debug_win64_true'
           if (-not (Test-Path $exeDir)) {
               Write-Error "exe output dir does not exist: $exeDir"
               exit 1
           }
-          # 1. All slang DLLs (the post-build event only copies slang.dll itself;
-          #    the rest of the slang dependency tree -- slang-rt, slang-glslang,
-          #    slang-glsl-module, slang-llvm, slang-compiler, gfx -- are needed
-          #    at runtime to avoid STATUS_DLL_NOT_FOUND).
-          Copy-Item 'Middleware\slang\bin\*.dll' $exeDir -Force
-          # 2. vulkan-1.dll from the Vulkan SDK (the system Windows runtime may
-          #    not have a loader installed on the CI runner).
-          $vkLoader = Join-Path $env:VULKAN_SDK 'Bin\vulkan-1.dll'
-          if (Test-Path $vkLoader) {
-              Copy-Item $vkLoader $exeDir -Force
-          } else {
-              Write-Warning "vulkan-1.dll not found at $vkLoader; relying on system loader."
-          }
+          # Repair-ZenithRuntimeDlls is the single source of truth for what an exe
+          # dir needs: the whole slang dependency tree (the post-build event only
+          # copies slang.dll) plus the assimp runtime tree. A FIRST build in a new
+          # config leaves those absent and the exe dies with STATUS_DLL_NOT_FOUND
+          # (exit 0xC0000135) before main() -- an empty log that reads as a build
+          # failure. No vulkan-1.dll: the Null backend never loads a Vulkan loader.
+          Import-Module Build\zenith_buildsystem.psm1 -Force
+          $copied = Repair-ZenithRuntimeDlls -ExeDir (Resolve-Path $exeDir).Path
+          Write-Host "healed $($copied.Count) runtime DLL(s): $($copied -join ', ')"
           Write-Host "DLLs in exe output dir:"
           Get-ChildItem "$exeDir\*.dll" | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,1)}} | Sort-Object Name | Format-Table -AutoSize | Out-String | Write-Host
 
       - name: Verify exe boots far enough to enumerate tests
         shell: pwsh
         run: |
-          $exe = 'Games\CityBuilder\Build\output\win64\vulkan_vs2022_debug_win64_true\citybuilder.exe'
-          # --list-automated-tests exits 0 cleanly without entering main loop;
-          # --headless skips Vulkan init entirely (Zenith_CommandLine::IsHeadless
-          # short-circuits Flux::EarlyInitialise / LateInitialise / Shutdown so
-          # vkEnumeratePhysicalDevices never runs on the GPU-less runner).
-          $out = & $exe --list-automated-tests --skip-tool-exports --skip-unit-tests --headless 2>&1
+          $exe = 'Games\CityBuilder\Build\output\win64\null_vs2022_debug_win64_true\citybuilder.exe'
+          # --list-automated-tests exits 0 cleanly without entering the main loop.
+          # The Null build creates no Vulkan instance at all, so
+          # vkEnumeratePhysicalDevices never runs on the GPU-less runner.
+          $out = & $exe --list-automated-tests --skip-tool-exports --skip-unit-tests 2>&1
           $code = $LASTEXITCODE
           Write-Host "exe --list exited $code; first 30 lines:"
           $out | Select-Object -First 30 | Out-Host

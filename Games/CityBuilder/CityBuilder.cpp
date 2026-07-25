@@ -375,16 +375,19 @@ void Project_InitializeResources()
 
 void Project_RegisterEditorAutomationSteps()
 {
-	// Terrain is a render-only feature. Skip it (bake + entity) entirely in
-	// headless runs: Zenith_TerrainComponent::InitializeCullingResources()
-	// allocates GPU culling buffers and asserts ("Invalid buffer VRAM handle")
-	// without a render device, which would break the headless logic-test gate.
-	// The flat ground isn't needed for the pure-logic sim tests anyway.
-	const bool bHeadless = Zenith_CommandLine::IsHeadless();
-
-	// Generate the terrain's textures / splatmap / heightmap + bake the chunk
-	// meshes on disk before the saved scene's terrain entity references them.
-	if (!bHeadless)
+	// Terrain used to be skipped entirely on headless runs because
+	// Zenith_TerrainComponent::InitializeCullingResources() asserted "Invalid
+	// buffer VRAM handle" without a render device (Q-2026-07-21-001). The Null
+	// backend hands back valid dummy handles, so that crash-class is gone and the
+	// terrain ENTITY is now authored in every config -- which is what gives
+	// terrain its first CI coverage.
+	//
+	// The disk BAKE stays windowed-only: it is a tools-time content step
+	// (textures / splatmap / heightmap / chunk meshes, ~1.9 GB for this game) and
+	// a Null build must never author render content. On a runner with no baked
+	// terrain the component simply reports its geometry unusable and stays inert,
+	// which is the documented expected state.
+	if (!Zenith_IsNullRenderer())
 	{
 		g_xEngine.EditorAutomation().AddStep_Custom(&CB_EnsureTerrainAssets);
 	}
@@ -430,9 +433,8 @@ void Project_RegisterEditorAutomationSteps()
 
 	// Ground terrain — a real Zenith_TerrainComponent (flat, 4096m, y=0). Not
 	// transient so it persists in the saved scene; the chunk meshes + materials +
-	// splatmap were produced by CB_EnsureTerrainAssets above. Windowed-only (see
-	// the headless guard above).
-	if (!bHeadless)
+	// splatmap were produced by CB_EnsureTerrainAssets above (windowed runs only
+	// -- see the note there; without them the component is inert but valid).
 	{
 		g_xEngine.EditorAutomation().AddStep_CreateEntity("CityTerrain");
 		g_xEngine.EditorAutomation().AddStep_SetEntityTransient(false);

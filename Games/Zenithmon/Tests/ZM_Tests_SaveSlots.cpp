@@ -39,7 +39,7 @@
 // DISK SAFETY (read before editing any unit below)
 // ---------------------------------------------------------------------------
 // ZENITH_TESTs run at EVERY boot -- the CI unit gate boots with
-// `--headless --exit-after-frames 120` (Tools/run_unit_gate.ps1) and a developer
+// `--exit-after-frames 120` (Tools/run_unit_gate.ps1) and a developer
 // simply running the game passes no flags at all. NEITHER sets
 // Zenith_CommandLine::IsAutomatedTestRun(), and the one command that DOES pass
 // --all-automated-tests (`zenith test <Game>`) also passes --skip-unit-tests, so

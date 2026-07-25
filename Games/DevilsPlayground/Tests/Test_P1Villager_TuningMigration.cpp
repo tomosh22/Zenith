@@ -175,7 +175,7 @@ static const Zenith_AutomatedTest g_xVillagerTuningMigrationTest = {
 	// authored villager entity in GameLevel. The villager's authoring chain
 	// (LoadModel + SET_MODEL_MATERIAL) needs the .zmodel asset tree which is
 	// gitignored, so on a fresh CI checkout no villager script will spawn.
-	// Tag accordingly so the harness skips the test under --headless until
+	// Tag accordingly so the harness skips the test in Null builds until
 	// asset provisioning lands (Q-2026-05-12-007 follow-up).
 	true
 };

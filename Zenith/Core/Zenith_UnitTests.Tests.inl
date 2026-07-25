@@ -16198,6 +16198,131 @@ void Zenith_UnitTests::TestTerrainComponentMoveAssignmentStealsState(){
 }
 
 //=============================================================================
+// ZM-D-146 / Q-2026-07-21-001 — terrain on a GPU-less boot.
+//
+// These pin the CLOSURE of the headless-terrain gap, and they are meaningful in
+// BOTH backends because the unit suite runs at boot in whatever config the exe
+// was built as:
+//   * Null build  -> the assertion is "a GPU-less boot survives full render +
+//                    culling resource init". This is the regression that
+//                    matters: before the Null backend, InitializeCullingResources()
+//                    asserted "Invalid buffer VRAM handle" and TERMINATED the
+//                    process (Zenith_Assert -> __debugbreak, every config).
+//   * Vulkan build -> the same calls are exercised against real VRAM, so the
+//                    tests double as an ordinary construction/teardown check.
+//
+// They deliberately do NOT require baked terrain on disk: a default-constructed
+// component has no asset set, which is exactly the missing-content shape a
+// fresh CI checkout has (terrain assets are gitignored).
+//=============================================================================
+
+// A default-constructed terrain component owns a streaming state and reports
+// its render geometry UNUSABLE (nothing has been loaded). That is the graceful
+// missing-content state, not a failure: no assert, no crash, and the probe the
+// rest of the engine gates on answers honestly.
+ZENITH_TEST(Terrain, MissingContentStartsGracefulAndProbeable) { Zenith_UnitTests::TestTerrainMissingContentStartsGracefulAndProbeable(); }
+void Zenith_UnitTests::TestTerrainMissingContentStartsGracefulAndProbeable(){
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "TerrainGracefulEntity");
+
+	Zenith_TerrainComponent xTerrain(xEntity);
+
+	ZENITH_ASSERT_TRUE(xTerrain.m_pxStreamingState != nullptr,
+		"A default-constructed terrain must still own its streaming state");
+	// No chunk sources were loaded, so there is no physics geometry to hand out.
+	// Consumers MUST gate on this rather than dereferencing.
+	ZENITH_ASSERT_TRUE(!xTerrain.HasPhysicsGeometry(),
+		"A terrain with no loaded chunks must report no physics geometry");
+}
+
+// THE Q-2026-07-21-001 PIN. Driving the GPU-driven-culling resource setup must
+// not terminate the process on a GPU-less boot. On the Null backend
+// CreateBufferVRAM hands back monotonic non-zero dummy handles, so the
+// validity assert inside the buffer wrappers is satisfied; on Vulkan it
+// allocates for real. Either way, reaching the line after the call IS the
+// assertion -- the failure mode this replaced was process death, not a
+// returned error.
+//
+// Mutation proof (ZM-D-146): making the Null backend's CreateBufferVRAM return
+// the invalid default handle kills the whole boot gate here.
+ZENITH_TEST(Terrain, CullingResourceInitSurvivesOnCurrentBackend) { Zenith_UnitTests::TestTerrainCullingResourceInitSurvivesOnCurrentBackend(); }
+void Zenith_UnitTests::TestTerrainCullingResourceInitSurvivesOnCurrentBackend(){
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "TerrainCullingInitEntity");
+
+	Zenith_TerrainComponent xTerrain(xEntity);
+
+	// ONE init only: re-initialising is an explicit contract violation
+	// ("called when already initialized"), not an idempotent no-op.
+	xTerrain.InitializeCullingResources();
+	ZENITH_ASSERT_TRUE(xTerrain.m_pxStreamingState->m_bCullingResourcesInitialized,
+		"Culling resources must report themselves initialised after the setup call");
+
+	// TEETH: assert the buffers actually came back with VALID VRAM handles.
+	// The bare "we survived the call" assertion above has none -- on the Null
+	// backend nothing downstream re-checks the handles, so a backend that
+	// handed out invalid ones would sail straight through. These are the
+	// handles the render graph and the culling compute pass bind, and an
+	// invalid one is precisely the Q-2026-07-21-001 failure shape.
+	ZENITH_ASSERT_TRUE(xTerrain.m_pxStreamingState->m_xIndirectDrawBuffer.GetBuffer().m_xVRAMHandle.IsValid(),
+		"The indirect-draw buffer must hold a valid VRAM handle after culling init");
+	ZENITH_ASSERT_TRUE(xTerrain.m_pxStreamingState->m_xVisibleCountBuffer.GetBuffer().m_xVRAMHandle.IsValid(),
+		"The visible-count buffer must hold a valid VRAM handle after culling init");
+	ZENITH_ASSERT_TRUE(xTerrain.m_pxStreamingState->m_xLODLevelBuffer.GetBuffer().m_xVRAMHandle.IsValid(),
+		"The LOD-level buffer must hold a valid VRAM handle after culling init");
+
+	// Destroy IS guarded (it early-outs when nothing is initialised), so the
+	// explicit call plus the destructor's call at scope exit must both be safe.
+	xTerrain.DestroyCullingResources();
+	xTerrain.DestroyCullingResources();
+	ZENITH_ASSERT_TRUE(!xTerrain.m_pxStreamingState->m_bCullingResourcesInitialized,
+		"Destroy must clear the culling-resources-initialised flag");
+
+	ZENITH_ASSERT_TRUE(xTerrain.m_pxStreamingState != nullptr,
+		"Culling init/destroy must not disturb the component's streaming state");
+}
+
+// The unusable-geometry probe is what gates streaming registration, culling
+// init and the render-graph declarations. Pin that a graceful (content-less)
+// terrain answers false, so a consumer that honours the gate does nothing --
+// this is the contract CityBuilder now relies on to author its terrain entity
+// in EVERY config, including runners with no baked terrain at all.
+ZENITH_TEST(Terrain, UnusableGeometryProbeGatesConsumers) { Zenith_UnitTests::TestTerrainUnusableGeometryProbeGatesConsumers(); }
+void Zenith_UnitTests::TestTerrainUnusableGeometryProbeGatesConsumers(){
+	Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "TerrainProbeEntity");
+
+	Zenith_TerrainComponent xTerrain(xEntity);
+
+	// Drive the flag the loader sets when the canonical chunk (0,0) fails, then
+	// confirm the probe inverts it. Reaching the member directly (friend access)
+	// keeps the test independent of whichever game's baked files happen to exist.
+	xTerrain.m_bTerrainGeometryUnusable = true;
+	ZENITH_ASSERT_TRUE(!xTerrain.IsRenderGeometryUsable(),
+		"A terrain whose anchor chunk failed must report its render geometry unusable");
+
+	xTerrain.m_bTerrainGeometryUnusable = false;
+	ZENITH_ASSERT_TRUE(xTerrain.IsRenderGeometryUsable(),
+		"Clearing the unusable flag must re-enable the render-geometry probe");
+}
+
+// A terrain asset SET that does not resolve must be refused, not silently
+// accepted -- otherwise a typo'd set name reads as "content missing" forever
+// instead of surfacing as a rejected authoring step. Pins the totality of the
+// resolver on a name that cannot exist.
+ZENITH_TEST(Terrain, UnresolvableAssetSetIsRefused) { Zenith_UnitTests::TestTerrainUnresolvableAssetSetIsRefused(); }
+void Zenith_UnitTests::TestTerrainUnresolvableAssetSetIsRefused(){
+	std::string strResolved;
+	const bool bResolved = Zenith_TerrainComponent::TryResolveTerrainAssetDirectory(
+		"__zm_d_146_no_such_terrain_set__", strResolved);
+	ZENITH_ASSERT_TRUE(!bResolved,
+		"An asset set with no directory on disk must not resolve");
+}
+
+//=============================================================================
 // Wave-19 — Zenith_AnimatorComponent forwarding-handle / store relocation.
 //
 // The controller lives in Flux_AnimationControllerStore (keyed by EntityID

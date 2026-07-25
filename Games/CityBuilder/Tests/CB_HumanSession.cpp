@@ -518,7 +518,7 @@ static bool Verify_CB_HumanSession()
 	return bOk;
 }
 
-static const Zenith_AutomatedTest g_xHumanSession = { "CB_HumanSession", &Setup_CB_HumanSession, &Step_CB_HumanSession, &Verify_CB_HumanSession, 4000, true };
+static const Zenith_AutomatedTest g_xHumanSession = { "CB_HumanSession", &Setup_CB_HumanSession, &Step_CB_HumanSession, &Verify_CB_HumanSession, 4000, false };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xHumanSession);
 
 #endif // ZENITH_INPUT_SIMULATOR

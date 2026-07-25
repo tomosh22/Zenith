@@ -1274,7 +1274,7 @@ static const Zenith_AutomatedTest g_xZMSaveMenuFlowTest = {
 	// settle remains below 2200, so a stalled phase still fails by its own deadline.
 	// Healthy runs remain far below the backstop.
 	/* maxFrames */ 2200,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMSaveMenuFlowTest);
 
@@ -2160,7 +2160,7 @@ static const Zenith_AutomatedTest g_xZMRootQuitAndBlockedSaveTest = {
 	// + four 120-frame nav walks + the final 120-frame Auto prompt + fixed settles
 	// stays below this backstop.
 	/* maxFrames */ 2500,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMRootQuitAndBlockedSaveTest);
 

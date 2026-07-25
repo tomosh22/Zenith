@@ -103,4 +103,10 @@ const Flux_ViewSetBinding* Flux_FindViewSetBinding(const char* szMemberName)
 	return nullptr;
 }
 
-#include "Flux/Flux_ViewSetBinding.Tests.inl"
+// NOTE: the unit tests for this registry are NOT hosted here. The ONLY caller of
+// Flux_FindViewSetBinding is the Vulkan command buffer's descriptor binder, so on
+// any other backend (Null / D3D12) nothing references this TU and MSVC dead-strips
+// the whole .obj -- silently taking 13 ZENITH_TEST registrars with it (the Null
+// bring-up found the suite 27 short for exactly this reason). The tests therefore
+// live in the always-linked Flux_ShaderCatalog.cpp, whose reference to the registry
+// also keeps this TU in the link. See UnitTests/CLAUDE.md's dead-strip rule.

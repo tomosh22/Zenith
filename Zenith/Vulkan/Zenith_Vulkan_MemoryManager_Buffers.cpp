@@ -8,7 +8,6 @@
 #include "Zenith_Vulkan.h"
 
 #include "Collections/Zenith_HashMap.h"
-#include "Core/Zenith_CommandLine.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -224,9 +223,9 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicReadWriteBuffer(const void* p
 
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency)
 {
-	// Headless guard: when Flux::EarlyInitialise was skipped (Zenith_CommandLine::IsHeadless()),
-	// g_xEngine.FluxMemory().m_xAllocator stays VK_NULL_HANDLE. Upstream asset-load paths still
-	// invoke buffer creation; return an empty handle so they get a benign
+	// Not-yet-initialised guard: until Flux::EarlyInitialise runs,
+	// g_xEngine.FluxMemory().m_xAllocator is VK_NULL_HANDLE. Upstream asset-load paths can
+	// still invoke buffer creation; return an empty handle so they get a benign
 	// invalid VRAM handle to store rather than asserting in vmaCreateBuffer.
 	if (m_xAllocator == VK_NULL_HANDLE)
 	{
@@ -338,7 +337,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 
 	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xBufferHandle);
-	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in UploadBufferData");
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in UploadBufferData");
 	if (!pxVRAM)
 	{
 		m_xMutex.Unlock();
@@ -497,7 +496,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = m_pxVulkan->GetVRAM(xBufferHandle);
-	Zenith_Assert(pxVRAM != nullptr || Zenith_CommandLine::IsHeadless(), "GetVRAM returned null in UploadBufferDataAtOffset");
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in UploadBufferDataAtOffset");
 	if (!pxVRAM) return;  // Safety guard for release builds
 	const VmaAllocation& xAlloc = pxVRAM->GetAllocation();
 	VkMemoryPropertyFlags eMemoryProps;

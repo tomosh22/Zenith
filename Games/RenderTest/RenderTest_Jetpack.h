@@ -16,7 +16,7 @@
 //
 // Like the tennis court and the guns, everything here is procedural (meshes
 // built at runtime, do not survive SaveScene), so the spawn runs post
-// scene-load and is windowed-only (Zenith_CommandLine::IsHeadless() early-out).
+// scene-load and is windowed-only (Zenith_IsNullRenderer() early-out).
 // Unlike the guns, the jetpack is NOT a pickup — it is auto-attached to the
 // player at spawn and stays on.
 

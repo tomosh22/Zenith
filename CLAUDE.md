@@ -188,9 +188,19 @@ sln inventory, CI mapping, and troubleshooting.
 ### Build Configurations
 
 Each project supports these configurations. Every win64 config is prefixed by the
-render backend (`Vulkan_` = the real renderer; `D3D12_` = the no-op null backend
-that proves Flux is backend-neutral). The table shows the `Vulkan_` rows; the
-`D3D12_` rows are identical with the prefix swapped. agde is Vulkan-only (`Vulkan_` prefix on all configs).
+render backend: `Vulkan_` (the real renderer), `Null_` (the GPU-less backend that
+**every headless run executes on**), or `D3D12_` (a reserved no-op backend kept as
+the link-neutrality proof). The table shows the `Vulkan_` rows in full; the other
+two prefixes offer the same four combinations. **agde carries no backend prefix** —
+its target set is Vulkan-only, so Sharpmake omits the single-valued fragment.
+
+> **HEADLESS IS A BUILD CONFIG, NOT A FLAG.** There is no `--headless`. A `Null_*`
+> config defines `ZENITH_NULL_RENDERER`, compiles `Zenith/Null` instead of Vulkan,
+> and creates its window hidden. Every render path still RUNS — pass callbacks,
+> uploads, the editor ImGui frame — against no-op backend calls, so a headless run
+> exercises the same code a windowed one does. `zenith build|test <G> --headless`
+> selects this config. Compile-time checks use `Zenith_IsNullRenderer()` (or
+> `#ifdef ZENITH_NULL_RENDERER` where one side cannot compile).
 
 | Configuration | Platform | Tools | Description |
 |--------------|----------|-------|-------------|
@@ -198,9 +208,10 @@ that proves Flux is backend-neutral). The table shows the `Vulkan_` rows; the
 | `Vulkan_vs2022_Debug_Win64_False` | Windows | No | Debug build, runtime only |
 | `Vulkan_vs2022_Release_Win64_True` | Windows | Yes | Release build with editor/tools |
 | `Vulkan_vs2022_Release_Win64_False` | Windows | No | Release build, runtime only |
-| `D3D12_vs2022_Debug_Win64_False` | Windows | No | Null-backend link/neutrality proof (+ _True / Release variants) |
-| `Vulkan_arm64_v8a_vs2022_Debug_Agde_False` | Android | No | Android debug build |
-| `Vulkan_arm64_v8a_vs2022_Release_Agde_False` | Android | No | Android release build |
+| `Null_vs2022_Debug_Win64_True` | Windows | Yes | **The headless/CI build** — GPU-less, hidden window |
+| `D3D12_vs2022_Debug_Win64_False` | Windows | No | Reserved-backend link/neutrality proof (+ _True / Release variants) |
+| `arm64_v8a_vs2022_Debug_Agde_False` | Android | No | Android debug build |
+| `arm64_v8a_vs2022_Release_Agde_False` | Android | No | Android release build |
 
 ### Projects
 
@@ -236,10 +247,11 @@ Always build with `/t:<Game>`, never the whole solution: the aux tools (FluxComp
 font libs) present in the sln are pre-existing-red in `ToolsEnabled=True`.
 
 > **Config-name prefix (RenderBackend fragment):** every win64 config is prefixed
-> with the render backend — `Vulkan_vs2022_Debug_Win64_True` (the real renderer)
-> or `D3D12_vs2022_Debug_Win64_False` (a no-op null backend that proves the Flux
-> surface is backend-neutral; see `Zenith/D3D12/CLAUDE.md`). The output dir is the
-> lowercased config name. agde is Vulkan-only (`Vulkan_` prefix on all configs).
+> with the render backend — `Vulkan_vs2022_Debug_Win64_True` (the real renderer),
+> `Null_vs2022_Debug_Win64_True` (the GPU-less headless/CI backend; see
+> `Zenith/Null/CLAUDE.md`), or `D3D12_vs2022_Debug_Win64_False` (the reserved
+> backend kept as a link-neutrality proof; see `Zenith/D3D12/CLAUDE.md`). The
+> output dir is the lowercased config name. agde carries no prefix (Vulkan-only).
 
 **Using Visual Studio:** `zenith open <Name>` regenerates then opens
 `Games/<Name>/<name>_win64.sln`; set the game as startup project, pick a config

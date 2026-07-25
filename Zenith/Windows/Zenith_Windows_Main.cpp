@@ -1,16 +1,11 @@
 #include "Zenith.h"
 
 #include <cstdio>    // setvbuf / stdout / stderr
-#include <cstring>
 #include <cstdlib>   // _set_abort_behavior
 #include <crtdbg.h>  // _CrtSetReportMode / _CrtSetReportFile
 
-// <Windows.h> for SetErrorMode. GLFW (pulled via the PCH) leaves APIENTRY
-// defined; undef before <windows.h> redefines it (mirrors Zenith_TestFramework.cpp).
-#ifdef APIENTRY
-#undef APIENTRY
-#endif
-#include <Windows.h>
+// <Windows.h> for SetErrorMode, via the shared Win32 include (GLFW APIENTRY guard).
+#include "Core/Zenith_Win32.h"
 
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Core/Zenith_AutomatedTest.h"
@@ -26,7 +21,9 @@ namespace
 	// heap-corruption check firing mid-boot, then waiting forever on the dialog).
 	// Route CRT diagnostics to stderr and kill the OS error boxes so a fatal error
 	// crashes FAST + diagnosably (non-zero exit + a logged message) instead of
-	// hanging. Interactive dev runs keep the dialogs (they are useful there).
+	// hanging. Applied unconditionally in Null builds -- those ARE the CI/headless
+	// builds, where a modal dialog is an infinite hang. Windowed dev runs keep the
+	// dialogs (they are useful there).
 	void HardenHeadlessFatalErrorHandling()
 	{
 		// Unbuffer stdout/stderr. Redirected to a pipe (CI captures both), the CRT
@@ -34,8 +31,8 @@ namespace
 		// the captured log stops at the last flush -- which is exactly why the
 		// engine-gate boot log ended at "AssetRegistry initialized" with the real
 		// crash (in the tool asset export phase that runs right after) invisible.
-		// Unbuffered => every line reaches the pipe immediately, so a headless crash
-		// is diagnosable from the captured log.
+		// Unbuffered => every line reaches the pipe immediately, so a crash is
+		// diagnosable from the captured log.
 		setvbuf(stdout, nullptr, _IONBF, 0);
 		setvbuf(stderr, nullptr, _IONBF, 0);
 #ifdef _DEBUG
@@ -60,15 +57,12 @@ namespace
 int main()
 {
 	// Do this BEFORE any engine work: the corruption check can fire during boot.
-	// Zenith_CommandLine is not parsed yet, so scan the raw argv for --headless.
-	for (int i = 1; i < __argc; ++i)
-	{
-		if (std::strcmp(__argv[i], "--headless") == 0)
-		{
-			HardenHeadlessFatalErrorHandling();
-			break;
-		}
-	}
+	// Headless is build-time now, so this is a compile-time decision -- no argv
+	// scan, and no way for a CI invocation to forget the flag and hang on a modal
+	// dialog instead of failing.
+#ifdef ZENITH_NULL_RENDERER
+	HardenHeadlessFatalErrorHandling();
+#endif
 
 	Zenith_Core::Zenith_Main();
 #ifdef ZENITH_INPUT_SIMULATOR

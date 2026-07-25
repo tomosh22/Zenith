@@ -5,7 +5,7 @@
 
 #include "Core/Zenith_FileWatcher.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
-#include <Windows.h>
+#include "Core/Zenith_Win32.h"   // <windows.h> with the APIENTRY/LEAN guards
 #include <queue>
 
 // Windows-specific data for file watching

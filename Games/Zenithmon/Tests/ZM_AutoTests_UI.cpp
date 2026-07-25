@@ -191,7 +191,13 @@ namespace
 		g_xEngine.Scenes().QueryActiveScene<ZM_TerrainGrass>().ForEach(
 			[&bReady](Zenith_EntityID, ZM_TerrainGrass& xGrass)
 			{
-				bReady = bReady || xGrass.IsGrassApplied();
+				// A Null (headless) build never APPLIES grass: the blades are GPU-only
+				// content the backend deliberately does not author (see
+				// Zenith/Null/CLAUDE.md). The component still exists and has reached
+				// its terminal inert state, which is what this gate is really asking:
+				// "has the overworld finished coming up?". The windowed assertion is
+				// unchanged -- there, applied-ness is still required.
+				bReady = bReady || xGrass.IsGrassApplied() || Zenith_IsNullRenderer();
 			});
 		return bReady;
 	}
@@ -7774,7 +7780,7 @@ static const Zenith_AutomatedTest g_xZMMenuOpenCloseTest = {
 	&Step_ZMMenuOpenClose,
 	&Verify_ZMMenuOpenClose,
 	/* maxFrames */ 1200,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMMenuOpenCloseTest);
 
@@ -7784,7 +7790,7 @@ static const Zenith_AutomatedTest g_xZMDialogueTalkTest = {
 	&Step_ZMDialogueTalk,
 	&Verify_ZMDialogueTalk,
 	/* maxFrames */ 1200,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDialogueTalkTest);
 
@@ -7794,7 +7800,7 @@ static const Zenith_AutomatedTest g_xZMPartyScreenTest = {
 	&Step_ZMPartyScreen,
 	&Verify_ZMPartyScreen,
 	/* maxFrames */ 1400,   // ready window + one open + four spaced press phases + the close
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMPartyScreenTest);
 
@@ -7804,7 +7810,7 @@ static const Zenith_AutomatedTest g_xZMDexScreenTest = {
 	&Step_ZMDexScreen,
 	&Verify_ZMDexScreen,
 	/* maxFrames */ 1600,   // ready window + open + two nav + confirm + the grid walk + close
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDexScreenTest);
 
@@ -7814,7 +7820,7 @@ static const Zenith_AutomatedTest g_xZMBagScreenTest = {
 	&Step_ZMBagScreen,
 	&Verify_ZMBagScreen,
 	/* maxFrames */ 1800,   // ready + open + nav + the list walk + three press phases + the close
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMBagScreenTest);
 
@@ -7824,7 +7830,7 @@ static const Zenith_AutomatedTest g_xZMShopScreenTest = {
 	&Step_ZMShopScreen,
 	&Verify_ZMShopScreen,
 	/* maxFrames */ 1600,   // ready window + the raise + the walk to Confirm + the buy + the close
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMShopScreenTest);
 
@@ -7835,7 +7841,7 @@ static const Zenith_AutomatedTest g_xZMCareCenterHealTest = {
 	&Verify_ZMCareCenterHeal,
 	/* maxFrames */ 2200,   // ready window + TWO full prompts (raise + read + walk + answer)
 	                       //   + the SC9 healed-confirmation line the YES now leaves behind
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMCareCenterHealTest);
 
@@ -7853,7 +7859,7 @@ static const Zenith_AutomatedTest g_xZMS6UIGateTest = {
 	// 3400 leaves ~25% headroom -- and NO phase may be reached twice, because the whole
 	// flow is ONE session with no scene reload between phases.
 	/* maxFrames */ 3400,
-	true /* m_bRequiresGraphics */,
+	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMS6UIGateTest);
 

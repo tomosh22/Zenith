@@ -302,3 +302,12 @@ bool Flux_ShaderCatalog::ValidateFeatureParity(const Flux_FeatureRegistry& xRegi
 // The serializer is backend-neutral (all configs read .spv.refl), so host here in
 // the always-linked catalog TU.
 #include "Flux/Slang/Flux_ShaderReflection.Tests.inl"
+
+// VIEW/GLOBAL spine-registry tests. Hosted HERE, not beside the registry: the only
+// caller of Flux_FindViewSetBinding is the Vulkan command buffer's descriptor
+// binder, so on a Null / D3D12 build nothing references Flux_ViewSetBinding.cpp and
+// MSVC dead-strips its .obj -- taking these 13 registrars with it (the Null
+// bring-up found the boot suite 27 short, and this was 13 of them). Including the
+// .inl from this always-linked TU makes the registrar set backend-independent AND
+// pulls Flux_ViewSetBinding.obj back into every link via the registry reference.
+#include "Flux/Flux_ViewSetBinding.Tests.inl"

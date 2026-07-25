@@ -5,11 +5,8 @@
 #include "Core/Multithreading/Zenith_Multithreading.h"
 
 // W5.1/W5.2: <Windows.h>/<DbgHelp.h> are confined to this .cpp now (the header
-// stores the process HANDLE opaquely). APIENTRY guard mirrors Zenith.h's.
-#ifdef APIENTRY
-#undef APIENTRY
-#endif
-#include <Windows.h>
+// stores the process HANDLE opaquely), via the shared Win32 include.
+#include "Core/Zenith_Win32.h"
 #include <DbgHelp.h>
 #include <cstring>
 

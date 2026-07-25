@@ -73,7 +73,7 @@ static bool Verify_TerrainShowcase()
 	return CB_CityManagerComponent::GetActiveBuild() != nullptr;
 }
 
-static const Zenith_AutomatedTest g_xTerrainShowcaseTest = { "CB_TerrainShowcase", &Setup_TerrainShowcase, &Step_TerrainShowcase, &Verify_TerrainShowcase, 3200, true };
+static const Zenith_AutomatedTest g_xTerrainShowcaseTest = { "CB_TerrainShowcase", &Setup_TerrainShowcase, &Step_TerrainShowcase, &Verify_TerrainShowcase, 3200, false };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xTerrainShowcaseTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

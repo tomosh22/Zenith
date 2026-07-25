@@ -562,20 +562,32 @@ function Stop-ZenithBuildProcesses {
 }
 
 function Repair-ZenithRuntimeDlls {
-    # Copy-missing-only runtime DLL heal for a game exe dir. Two sources:
+    # Copy-missing-only runtime DLL heal for a game exe dir. Three sources:
     #   1. Middleware/slang/bin/*.dll -- the Sharpmake post-build only copies
     #      slang.dll, but slang has a dependency tree (slang-rt, slang-glslang,
     #      slang-glsl-module, slang-llvm, slang-compiler, gfx); missing any of
     #      them kills the exe with STATUS_DLL_NOT_FOUND before main().
-    #   2. Sibling game output dirs with the same config leaf (assimp etc. that
-    #      a first build of this game has not produced yet).
+    #   2. The assimp runtime tree (assimp-vc143-mt[d] + draco/minizip/poly2tri/
+    #      pugixml/zlib). The engine links the assimp import chain into EVERY
+    #      game exe, so these must sit beside it. Debug DLLs live in
+    #      assimp/debug/bin, release DLLs in the BARE assimp/bin -- the same
+    #      asymmetry Sharpmake_Games.cs's post-build encodes. Which set is
+    #      needed follows the config leaf's own _debug_/_release_ token.
+    #   3. Sibling game output dirs with the same config leaf.
+    #
+    # Source 2 is NOT redundant with source 3: a brand-new config leaf (the
+    # first Null_* build on this machine, a fresh CI runner) has no sibling dir
+    # to copy from, and the sibling scan then silently heals nothing. That is
+    # exactly the STATUS_DLL_NOT_FOUND this function exists to prevent.
+    #
     # Never overwrites an existing DLL. Returns the copied file names.
-    # -SlangBinDir / -SiblingGlob overrides are for test fixtures.
+    # -SlangBinDir / -AssimpBinDir / -SiblingGlob overrides are for test fixtures.
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$ExeDir,
         [string]$RepoRoot,
         [string]$SlangBinDir,
+        [string]$AssimpBinDir,
         [string]$SiblingGlob
     )
 
@@ -583,12 +595,23 @@ function Repair-ZenithRuntimeDlls {
     $exeDirFull = (Resolve-Path -LiteralPath $ExeDir).Path
     $leaf = Split-Path -Leaf $exeDirFull
     if ([string]::IsNullOrEmpty($SlangBinDir)) { $SlangBinDir = Join-Path $RepoRoot 'Middleware/slang/bin' }
+    if ([string]::IsNullOrEmpty($AssimpBinDir)) {
+        # The config leaf is the lowercased config name, e.g.
+        # null_vs2022_debug_win64_true -- so the optimization token is a plain
+        # substring test. Anything that is not explicitly debug takes release.
+        $AssimpBinDir = if ($leaf -like '*_debug_*') {
+            Join-Path $RepoRoot 'Tools/Middleware/assimp/debug/bin'
+        } else {
+            Join-Path $RepoRoot 'Tools/Middleware/assimp/bin'
+        }
+    }
     if ([string]::IsNullOrEmpty($SiblingGlob)) { $SiblingGlob = Join-Path $RepoRoot "Games/*/Build/output/win64/$leaf" }
 
     $copied = New-Object System.Collections.Generic.List[string]
 
-    if (Test-Path -LiteralPath $SlangBinDir) {
-        foreach ($dll in @(Get-ChildItem (Join-Path $SlangBinDir '*.dll') -ErrorAction SilentlyContinue)) {
+    foreach ($srcDir in @($SlangBinDir, $AssimpBinDir)) {
+        if (-not (Test-Path -LiteralPath $srcDir)) { continue }
+        foreach ($dll in @(Get-ChildItem (Join-Path $srcDir '*.dll') -ErrorAction SilentlyContinue)) {
             $dest = Join-Path $exeDirFull $dll.Name
             if (-not (Test-Path -LiteralPath $dest)) {
                 Copy-Item -LiteralPath $dll.FullName -Destination $dest -Force
