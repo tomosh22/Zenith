@@ -98,6 +98,27 @@
 *.wav     filter=lfs diff=lfs merge=lfs -text
 *.ogg     filter=lfs diff=lfs merge=lfs -text
 *.mp3     filter=lfs diff=lfs merge=lfs -text
+
+###############################################################################
+# Deliberate carve-out from the "route every binary asset through LFS" rule
+# above (ZM-D-147).
+#
+# .znavmesh and .zscen are tracked INLINE, not through LFS, because they are
+# the two asset families the build system commits on purpose:
+#   - they are small (a Zenithmon scene is 1.8-27 KB; the Dawnmere navmesh is
+#     ~365 KB) and deterministic, so they neither bloat packs nor churn;
+#   - CI must be able to read them on a plain checkout with no `git lfs`
+#     prerequisite -- that is the whole reason they are committed, since a
+#     baked navmesh is loadable with no GPU and no terrain.
+# They are still BINARY: marked so here, or `* text=auto` at the top of this
+# file would corrupt them by normalising CRLF byte pairs inside float data.
+#
+# This carve-out does NOT reopen the LFS question for HEAVY assets (terrain is
+# ~4.3 GB across the games and stays gitignored pre-LFS) -- that remains a
+# logged user decision.
+###############################################################################
+*.znavmesh binary
+*.zscen    binary
 *.flac    filter=lfs diff=lfs merge=lfs -text
 *.gltf    filter=lfs diff=lfs merge=lfs -text
 *.glb     filter=lfs diff=lfs merge=lfs -text

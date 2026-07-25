@@ -2,22 +2,34 @@
 
 **Last updated:** 2026-07-25
 **Stage:** **S7 (save/load, story flags, trainer battles) ACTIVE. Item 1 (full schema-v1 codec) COMPLETE (SC1-SC2, ZM-D-135/136). Item 2 (story flags + save integration) COMPLETE -- ALL SIX sub-commits done (SC1-SC6, ZM-D-137..142); the aggregate item-2 Roadmap checkbox is ticked. NEXT is S7 item 3** (trainer sight-cone -> forced battle -> defeat flags + prize money; the first useful `ZM_GraphAuthoring` trainer-glue integration; and the terrain-backed navmesh evaluation). S0-S6 remain complete. S7 requires no human intervention; the next human stop remains the S8 vertical-slice go/no-go.
-**Build:** GREEN on the SC1b **commit A** diff (ZM-D-146 -- Null render backend + build-time headless). Engine-wide, so it owed and got the FULL matrix: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; **6 games x Null_True**, **6 games x Vulkan_True**, **6 games x D3D12_False** all build; engine `Zenith` (Null_True) + SentinelECS/Physics/AI build.
-**Tests:** **Headless now means the `Null_*` build config -- there is no `--headless` flag.** Null batches, ALL 0-failed: **ZM 42/42 (31 RUN, was 3)**, CB **45/45 (45 RUN)**, DP **158/158 (138 RUN)**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 42/42, 0 skipped, 0 failed**; windowed RenderTest 8/1 with only the documented pre-existing `RT_TennisDeterminismDigest` red (Q-2026-07-21-002) and `TerrainEditorSmoke` GREEN. Boot unit gates on the NULL exes: engine **1093** (Combat) and ZM **2515** -- both pinned from the OBSERVED line (`run_unit_gate.ps1` default and `zm-tests.yml`). The -14 vs the Vulkan counts (1103 / 2525) is exactly the Vulkan-only test set (11 `Flux_SlangProbes` + 3 `DetermineImageViewType`); the +4 is this commit's new terrain units. **★ Teeth mutation-proven:** leaving `Zenith_Null_MemoryManager::InitialiseIndirectBuffer`'s VRAM handle invalid reds EXACTLY `Terrain::CullingResourceInitSurvivesOnCurrentBackend` (1093/1091/1) and nothing else; restored -> 1093/1092/0. Ratchets: `architecture,lints` findings are **byte-identical to pristine HEAD** (all 3 pre-existing); `complexity` was ALREADY RED on master (same 2 cognitive findings) and moves duplicate clusters 9 -> 10, the accepted cost of the deliberate D3D12/Null twinning.
+**Build:** GREEN on the SC1b **commit B** diff (ZM-D-147 -- baked navmesh persistence). Engine-wide, so it owed and got the full gate: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; engine lib + SentinelECS/Physics/AI (all three exes exit 0); Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True.
+**Tests (commit B):** Null batches, ALL 0-failed: **ZM 44/44** (registry 42 -> 44; both new navmesh tests RUN, not skipped), CB **45/45**, DP **158/158**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 44/44, 0 skipped, 0 failed**. Boot unit gates on the NULL exes: engine **1093 -> 1121** (Combat) and ZM **2515 -> 2546** -- both pinned from the OBSERVED line. Windowed RenderTest 8 passed / 1 failed, only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002). Ratchets (`architecture,lints` and `complexity`) are **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added; two findings this commit DID introduce (an `Editor/` include and a `g_xEngine` reach from EntityComponent) were fixed, not allow-listed. **Asset-less CI condition reproduced locally** (`Zenith/Assets` hidden): ZM 44/44 and both unit gates unchanged; restored by MERGE and `diff -rq`-verified, since the run re-created only 60 of the 89 files and a naive rename-back would have clobbered the tree. **Teeth mutation-proven ×6** (see ZM-D-147; m1 re-run on the final build reds exactly the 3 serialization units).
+
+**Prior (commit A):** **Headless now means the `Null_*` build config -- there is no `--headless` flag.** Null batches, ALL 0-failed: **ZM 42/42 (31 RUN, was 3)**, CB **45/45 (45 RUN)**, DP **158/158 (138 RUN)**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 42/42, 0 skipped, 0 failed**; windowed RenderTest 8/1 with only the documented pre-existing `RT_TennisDeterminismDigest` red (Q-2026-07-21-002) and `TerrainEditorSmoke` GREEN. Boot unit gates on the NULL exes: engine **1093** (Combat) and ZM **2515** -- both pinned from the OBSERVED line (`run_unit_gate.ps1` default and `zm-tests.yml`). The -14 vs the Vulkan counts (1103 / 2525) is exactly the Vulkan-only test set (11 `Flux_SlangProbes` + 3 `DetermineImageViewType`); the +4 is this commit's new terrain units. **★ Teeth mutation-proven:** leaving `Zenith_Null_MemoryManager::InitialiseIndirectBuffer`'s VRAM handle invalid reds EXACTLY `Terrain::CullingResourceInitSurvivesOnCurrentBackend` (1093/1091/1) and nothing else; restored -> 1093/1092/0. Ratchets: `architecture,lints` findings are **byte-identical to pristine HEAD** (all 3 pre-existing); `complexity` was ALREADY RED on master (same 2 cognitive findings) and moves duplicate clusters 9 -> 10, the accepted cost of the deliberate D3D12/Null twinning.
 **CI (post-push, 3 commits -- `2628add3` then two fix-forwards):** `zm-tests`, `dp-tests`, `cb-tests`, `engine-gate`, `scaffold-smoke`, `shader-validation`, `doc-lint`, `Memory Gate` all **GREEN**. `Complexity Gate` + `layering-gate` remain red -- **pre-existing on master** (confirmed from CI history across the preceding commits AND from a pristine-HEAD worktree that reproduces the identical findings). **★ THREE CI-ONLY DEFECTS the local gate could not see**, all because this machine has `Zenith/Assets` baked while a fresh checkout does not (it is gitignored): (1) `Import-Module Build\...` without a leading `.\` is read as a MODULE NAME, killing four gates; (2) unset pinned cubemap/water textures reached the recorder's `BindSRV` assert -- a process KILL -- now falling back to the procedural white texture; (3) `Zenith_AssetHandle` caches only SUCCESS, so the missing default font was re-resolved EVERY frame by `Zenith_FontAsset::GetActiveOrDefaultMetrics` (~25k attempts in 180 s) and dp/cb TIMED OUT rather than failing. **★ The method that found them: reproduce CI's condition locally** (`Zenith/Assets` temporarily hidden, batches re-run) rather than iterating through 20-minute CI round trips -- CB 45/45, DP 158/158, ZM 42/42, zero asserts under that condition. Two asserts observed and deliberately NOT scoped in: asset-less Combat (missing `.zanim`) and RenderTest (null `LOAD_MODEL`); no workflow runs an automated batch for either game.
 
 ## Current task
 
-**S7 item 3 SC1b IN PROGRESS -- COMMIT A LANDED (ZM-D-146); COMMIT B (navmesh persistence, ZM-D-147) IS THE NEXT ACTION.** Per ZM-D-145 no other Zenithmon feature work proceeds until SC1b lands in full; the trainer vertical (SC2+) resumes only afterward.
+**S7 item 3 SC1b COMPLETE -- both commits landed (ZM-D-146 Null backend, ZM-D-147 navmesh persistence). NEXT = SC2 (`ZM_TrainerData` + `ZM_STORY_FLAG_RIVAL1_DEFEATED`).** The trainer vertical resumes now that SC1b is in full.
 
 **Commit A shipped the platform SC1b needs, and it is engine-wide:**
 - **`Zenith/Null` -- a GPU-less render backend, and headless is now a BUILD CONFIG.** `--headless` is deleted end-to-end. A `Null_*` config defines `ZENITH_NULL_RENDERER`, compiles `Zenith/Null` instead of Vulkan and hides the window. The difference that matters: the old flag SKIPPED the render paths, the Null backend RUNS them against no-ops -- so a headless run exercises the same code a windowed one does. `zenith build|test <G> --headless` survives as a CONFIG SELECTOR; **test discovery always uses the Null exe**. Compile-time checks use the constexpr `Zenith_IsNullRenderer()`.
 - **Q-2026-07-21-001 CLOSED.** The headless-terrain assert was never about missing baked content (already graceful) -- it was the culling-buffer allocation, and it reproduced with terrain FULLY BAKED. CityBuilder now authors its terrain entity in EVERY config and runs 45/45.
 - **`m_bRequiresGraphics` re-audited: 74 -> 25.** The flag now means "the assertions read GPU-produced output". **Zenithmon's headless suite went from executing 3 of 42 tests to 31** -- its old "42/42 green" was covering three tests, because a skip counts as a pass.
 
-**NEXT = SC1b commit B (ZM-D-147)**: the reusable engine navmesh-persistence feature (`Zenith_NavMeshBaker` / `Zenith_NavMeshStats` / hardened `Zenith_NavMesh` load path / `Zenith_NavMeshComponent` at ENGINE order 96 + its editor panel + ~21 units), Zenithmon as first consumer (`ZM_NavBake`, the Dawnmere bake step, 2 new automated tests -> registry 42 -> 44), and the tracked `Dawnmere.znavmesh` (+ the `.zscen` determinism probe that decides whether the four scenes commit too). Then SC2 `ZM_TrainerData` + `ZM_STORY_FLAG_RIVAL1_DEFEATED` -> SC3 sight cone -> SC4 HUD Run-gate -> SC5 forced-battle entry -> SC6 sight FSM/occlusion glue -> SC7 first `.bgraph` -> SC8 rival Vesper. Eight design defaults are logged in **Q-2026-07-24-002**. ECS order 113 remains the last occupied GAME order (next free **114**); the navmesh component takes an ENGINE order (96). Continue autonomously; the next human stop is the **S8 vertical-slice go/no-go**.
+**Commit B (ZM-D-147) shipped the reusable ENGINE feature, with Zenithmon as its first consumer:**
+- **`Zenith_NavMeshBaker`** (tools-time: generate -> serialize -> write -> **read back + memcmp**, because `WriteFile` returns void so the bytes on disk are the only truthful success signal), **`Zenith_NavMeshStats`** (the numbers the editor panel formats, so it cannot drift from the mesh), a **hardened validating `Zenith_NavMesh` load path** (every count/index checked BEFORE any `Reserve` or indexed `Get`; a refused load leaves an EMPTY mesh, never a half-populated one), and **`Zenith_NavMeshComponent` at ENGINE order 96** which OWNS its mesh -- no cache, no statics, lifetime = the scene's -- plus a full TOOLS debugging panel (stats, six visualisation toggles, point + path probes). **+28 engine units.**
+- **Zenithmon consumes it:** `Source/Nav/ZM_NavBake` bakes Dawnmere at 16 m from SC1's pure coverage grid; the bake step sits in the ALWAYS-RUN FrontEnd authoring section (the Dawnmere block needs warm terrain, which a fresh clone's first boot does not have) and is skipped on Null builds, so CI loads COMMITTED bytes and never re-authors them.
+- **TRACKED: `Dawnmere.znavmesh` + `Dawnmere.zscen` only** -- the four-scene plan was cut on evidence, see the churn finding below.
+- **Registry 42 -> 44**, both new tests RUNNING headless (no `RequestSkip`, no `m_bRequiresGraphics` -- a deliberate TestPlan C6 deviation, because a committed asset's absence is a defect and a skip counts as a pass).
 
-**PER-SC GATE -- run in this exact order, every time:** `Build\regen.ps1` (ONLY when a new .cpp or folder was added) -> `zenith build Zenithmon` -> `zenith build Zenithmon --headless` (the Null exe every gate below runs) -> `zenith test Zenithmon --headless` -> `Tools\run_unit_gate.ps1 -Exe <NULL exe> -Baseline <N> -TimeoutSec 300` (the 300 s timeout-kill is EXPECTED -- `--exit-after-frames` only applies while the test harness is stepping, so a no-test boot never exits on its own) -> full windowed `zenith test Zenithmon`. **Two standing tripwires:** (a) never write a PREDICTED unit count into `zm-tests.yml` -- only the OBSERVED one; (b) the engine baseline (now **1093**) moves only when an explicitly-scoped engine change owns the cross-game gate.
+**★ THE HEADLINE: the adversarial review found FIVE real defects that a fully green gate had missed.** Six games building, 44/44 headless and windowed, 2546 boot units, ratchets byte-identical to pristine HEAD -- and still: (1) the reader required `neighbourCount == vertexCount`, but **`StitchPortalAt` deliberately appends a phantom neighbour past the vertex count** and DP's `DPDoor` uses it, so baking and reloading a stitched mesh would have died process-level **on correct data** (the baker's read-back `memcmp` can never catch this class -- it compares bytes, it does not re-parse); (2) `SetAssetRef` + the deferred `OnStart` **double-loaded**, freeing and re-allocating and dangling any cached `GetNavMesh()`; (3) `m_bMovedOut` was never cleared by the load path, leaking on a revived moved-from component; (4) a failed bake **left the corrupt file on disk** -- and it writes straight into the committed asset; (5) two tests could not fail (a literal `ZENITH_ASSERT_TRUE(true, ...)`, and comments claiming a component-count check detects a MESH leak, which it cannot). All five fixed, with a new regression unit pinning the phantom-neighbour round trip.
+
+**★ AND the `.zscen` determinism probe was under-powered.** It repeated ONE boot shape three times and reported byte-identical scenes, so all four were staged for commit. The review found `Battle.zscen`/`PlayerHome.zscen` had since gone `AM` (4 and 12 entity-index-shaped bytes). Mechanism, confirmed by experiment: **authoring bakes in entity indices assigned during that boot, and the boot-time unit suite allocates entities first** -- re-running the original boot shape reproduced the staged bytes exactly. So any commit adding an entity-creating boot unit re-authors different scene bytes. **Consequence:** FrontEnd/Battle/PlayerHome stay ignored (CI re-authors them anyway); `Dawnmere.zscen` is tracked by EXACT PATH because it is the one scene a Null/CI boot never authors. Logged as Q-2026-07-25-001.
+
+Then SC2 `ZM_TrainerData` + `ZM_STORY_FLAG_RIVAL1_DEFEATED` -> SC3 sight cone -> SC4 HUD Run-gate -> SC5 forced-battle entry -> SC6 sight FSM/occlusion glue -> SC7 first `.bgraph` -> SC8 rival Vesper. Eight design defaults are logged in **Q-2026-07-24-002**. ECS order 113 remains the last occupied GAME order (next free **114**); the navmesh component took an ENGINE order (96). Continue autonomously; the next human stop is the **S8 vertical-slice go/no-go**.
+
+**PER-SC GATE -- run in this exact order, every time:** `Build\regen.ps1` (ONLY when a new .cpp or folder was added) -> `zenith build Zenithmon` -> `zenith build Zenithmon --headless` (the Null exe every gate below runs) -> `zenith test Zenithmon --headless` -> `Tools\run_unit_gate.ps1 -Exe <NULL exe> -Baseline <N> -TimeoutSec 300` (the 300 s timeout-kill is EXPECTED -- `--exit-after-frames` only applies while the test harness is stepping, so a no-test boot never exits on its own) -> full windowed `zenith test Zenithmon`. **Two standing tripwires:** (a) never write a PREDICTED unit count into `zm-tests.yml` -- only the OBSERVED one; (b) the engine baseline (now **1121**) moves only when an explicitly-scoped engine change owns the cross-game gate.
 
 **S7 ITEM 2 SUB-COMMIT PLAN (6 total -- COMPLETE):**
 - **SC1 DONE (ZM-D-137)** -- `ZM_StoryFlags` identity registry + flag-gated NPC lines + the `Npc_Warden` row.
@@ -33,11 +45,30 @@
 
 **S6 CLOSURE RULING (ZM-D-134, still binding):** behaviour graphs and navmesh-driven wandering were deferred to S7 -- `ZM_GraphAuthoring` is not written and S6 ships a bounded 3-arm C++ role dispatch behind one `Interact()` seam. `Zenith_NavMeshGenerator::GenerateFromGeometry` is terrain-capable when supplied suitable triangles, but `Zenith_AINavGeometry::GenerateFromScene` does **not** harvest streamed terrain geometry or a heightfield. S7 item 3 owns the first useful graph integration plus the terrain-triangle/grid-coverage and `.znavmesh` evaluation. `MasterPlan.md` is historical/read-only.
 
-**PER-SC GATE -- run in this exact order, every time:** `Build\regen.ps1` (ONLY when a new .cpp or folder was added) -> `zenith build Zenithmon` -> `zenith test Zenithmon --headless` (heals DLLs) -> `Tools\run_unit_gate.ps1 -Exe ... -Baseline <N> -TimeoutSec 300` (the 300 s timeout-kill is EXPECTED) -> full windowed `zenith test Zenithmon`. **Two standing tripwires:** (a) never write a PREDICTED unit count into `zm-tests.yml` -- only the OBSERVED one from the boot log; (b) the engine baseline **1103 must remain unchanged** unless an explicitly-scoped engine change owns the cross-game gate.
+**PER-SC GATE -- run in this exact order, every time:** `Build\regen.ps1` (ONLY when a new .cpp or folder was added) -> `zenith build Zenithmon` -> `zenith test Zenithmon --headless` (heals DLLs) -> `Tools\run_unit_gate.ps1 -Exe ... -Baseline <N> -TimeoutSec 300` (the 300 s timeout-kill is EXPECTED) -> full windowed `zenith test Zenithmon`. **Two standing tripwires:** (a) never write a PREDICTED unit count into `zm-tests.yml` -- only the OBSERVED one from the boot log; (b) the engine baseline **1121 must remain unchanged** unless an explicitly-scoped engine change owns the cross-game gate.
 
 ## Last completed
 
-**S7 item 3 SC1 -- NAVMESH TERRAIN-SOURCE EVALUATION SPIKE (ZM-D-144).** Pure,
+**S7 item 3 SC1b -- BAKED NAVMESH PERSISTENCE AS A REUSABLE ENGINE FEATURE
+(ZM-D-147); SC1b COMPLETE.** Engine: `Zenith_NavMeshBaker` (bake + read-back
+verify), `Zenith_NavMeshStats`, a hardened validating `Zenith_NavMesh` load path
+(bool-returning, asserts + logs + defined failure at every rejection, all
+validation ordered ahead of every `Reserve`/`Get`), `Zenith_NavMeshComponent` at
+ENGINE order **96** owning its mesh with a full TOOLS debugging panel, a
+flags-driven `DebugDraw`, `ZENITH_NAVMESH_EXT`, and **+28 engine units**.
+Zenithmon: `Source/Nav/ZM_NavBake`, the always-run bake step, the authored
+Dawnmere holder entity, **+3 boot units** and **+2 automated tests** (registry
+**42 -> 44**, both RUNNING headless). Tracked: `Dawnmere.znavmesh` (SHA256
+`A783FB0A...`) and `Dawnmere.zscen` (`7337853F...`). Baselines **1093 -> 1121**
+(engine) and **2515 -> 2546** (ZM boot), both from the OBSERVED line. Six
+mutations proved teeth. **The review pass found five real defects behind a fully
+green gate** -- the `StitchPortalAt` phantom-neighbour invariant (which would
+have killed DP's stitched meshes on reload), a `SetAssetRef`/`OnStart`
+double-load, an un-cleared `m_bMovedOut`, a failed bake leaving a corrupt file
+on the tracked asset, and two tests that could not fail -- all fixed, plus the
+`.zscen` churn finding that cut the tracked-scene set from four to one.
+
+Prior: **S7 item 3 SC1 -- NAVMESH TERRAIN-SOURCE EVALUATION SPIKE (ZM-D-144).** Pure,
 headless. `Source/Nav/ZM_NavEval.{h,cpp}` harvests a FLAT coverage grid (2
 tris/quad) at Dawnmere's sampled ground height (25.98577) over the recipe's
 **1024 m export sub-rect** and feeds the raw soup to
@@ -461,6 +492,31 @@ generalized screen dispatch; `ZM_Bag` + money; `ZM_UI_DialogueBox`;
 STAGE GATE sign-off.
 
 ## Notes for next agent (S7)
+
+- **★★ NEW -- A PASSING PROBE IS NOT EVIDENCE OF DETERMINISM IF YOU ONLY VARIED
+  THE REPETITION COUNT.** SC1b's `.zscen` probe ran the SAME boot shape three
+  times, got byte-identical files, and cleared four scenes for tracking. A
+  different boot shape falsified it within the hour: scene authoring bakes in
+  entity indices assigned during that boot, and the boot-time unit suite
+  allocates entities first, so **adding one entity-creating boot unit re-authors
+  different scene bytes**. Before a probe clears a decision, ask what the claim
+  is quantified over ("every boot") and vary THAT, not the number of runs. Only
+  `Dawnmere.zscen` is tracked, by exact path; the three scenes CI re-authors for
+  itself stay ignored (Q-2026-07-25-001).
+- **★★ NEW -- A READ-BACK `memcmp` CANNOT VALIDATE A FORMAT.** The navmesh baker
+  verifies its write by re-reading the file and comparing bytes, which is the
+  only truthful success signal available (`WriteFile` returns void) -- but it
+  never re-PARSES. That is exactly why a reader rule that was too strict
+  (`neighbourCount == vertexCount`, which `StitchPortalAt` legitimately breaks)
+  sailed through every bake. If a writer and a reader can disagree, something in
+  the loop has to actually parse.
+- **★★ NEW -- CHECK WHETHER A MUTATION LANDED ON A LIVE FIELD BEFORE CONCLUDING
+  "NO TEETH".** Corrupting the middle byte of the committed `.znavmesh` left the
+  test green -- because that byte is a per-polygon cached centre, which
+  `ComputeSpatialData` recomputes on every load. The format documents those as
+  dead bytes. Re-aimed at a vertex INDEX it kills the run at the assert; re-aimed
+  at a vertex COORDINATE it produces a clean assertion failure. An inert mutation
+  is a question, not an answer.
 
 - **★★ NEW -- A MONOLITHIC AUTOMATED-TEST `Step` IS ONE STACK FRAME, AND /Od
   MAKES THAT FRAME THE SUM OF EVERY LOCAL IN EVERY PHASE.** SC5's

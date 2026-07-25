@@ -15,6 +15,213 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-25 -- ZM-D-147 -- Baked navmesh persistence as a REUSABLE ENGINE FEATURE; Zenithmon first consumer; `.znavmesh` + `.zscen` become TRACKED assets
+
+*(SC1b commit B of two, completing S7 item 3 SC1b. Engine-wide, so it owes and
+got the full engine gate. Commit A was the Null backend -- ZM-D-146.)*
+
+- **Decision: the bake -> persist -> load ORCHESTRATION lives in the ENGINE, not
+  in Zenithmon** (ZM-D-145's user directive). The primitives already existed
+  (`Zenith_NavMeshGenerator::GenerateFromGeometry`, `Zenith_NavMesh::
+  {Write,Read}FromDataStream` / `{Save,Load}` -- the file APIs had ZERO callers);
+  what shipped here is the game-agnostic feature around them, the
+  Unity-`NavMeshSurface` / UE-`ARecastNavMesh` analog:
+  - **`Zenith_NavMeshBaker::BakeToFile`** -- stateless tools-time bake:
+    generate -> serialize -> write -> **read back and memcmp**. The read-back is
+    not belt-and-braces: `Zenith_FileAccess::WriteFile` returns void, so
+    comparing the bytes on disk against the bytes we meant to write is the ONLY
+    truthful success signal in the stack. Returns a typed
+    `{bSuccess, eError, polygons, vertices, bytesWritten}`.
+  - **`Zenith_NavMeshStats::Compute`** -- counts, bounds/extents, total +
+    min/avg/max polygon area, portal links (counted as UNORDERED pairs, so a
+    mutual link is one portal), isolated polygons, blocked polygons, approximate
+    footprint. The editor panel only FORMATS these, so it cannot drift from the
+    mesh.
+  - **`Zenith_NavMeshComponent`** at **ENGINE order 96** -- OWNS its loaded mesh.
+    No cache, no statics, no path keying: a navmesh's lifetime is its level's,
+    exactly as in both reference engines. Scene switching therefore frees and
+    re-loads automatically and the test harness needed NO hook edit. Registered
+    in the meta table **and the TOOLS editor mirror** -- the mirror is mandatory,
+    because `AddStep_AddComponent("NavMesh")` resolves display names through
+    `Zenith_ComponentEditorRegistry` and silently no-ops without it.
+  - **The TOOLS panel is a debugging suite, not a ref field** (user steering):
+    editable ref + resolved path + on-disk size + wire-format peek + a prominent
+    `LOADED / FAILED(reason) / UNLOADED` state + Reload/Unload; the full stats
+    block; six visualisation toggles driving an extended `DebugDraw`; and two
+    interactive probes (point -> `IsPointOnNavMesh` / `ProjectPoint` /
+    `FindNearestPolygon`; path -> `Zenith_Pathfinding` corridor + length).
+- **Failure doctrine (D6): validate everything, assert on violation, return a
+  DEFINED failure.** `ReadFromDataStream` now returns bool and validates every
+  section -- magic, version, per-section byte availability, count-vs-remaining
+  plausibility BEFORE any `Reserve`, polygon vertex indices < vertexCount,
+  neighbour indices in {-1} u [0, polyCount), neighbourCount == vertexCount,
+  finite vertices / cost / bounds. **All validation is ordered ahead of every
+  Reserve and every indexed Get**, so no UB precedes the assert -- before this,
+  an out-of-range index survived the read and reached `ComputeSpatialData`'s
+  unchecked `axVertices.Get()`. A refused load leaves an EMPTY mesh, never a
+  half-populated one; `LoadFromFile` deletes the partial mesh and returns
+  nullptr; `SaveToFile` answers from a post-write existence re-check.
+  **A well-formed ZERO-POLYGON file is VALID, not corrupt** -- it is what a bake
+  over unwalkable geometry legitimately produces.
+  - The one deliberate NON-assert: a generator that finds nothing walkable is a
+    DATA outcome, so `BakeToFile` reports `GENERATION_FAILED` with a log line and
+    no assert. Asserting there would kill the boot gate on legitimate input.
+- **Wire format "ZNAV" v1 is UNCHANGED** -- validation only; a valid mesh
+  round-trips byte-identically. Documented in the header: the per-polygon
+  center/normal/area are DEAD BYTES on the read path (`BuildSpatialGrid` ->
+  `ComputeSpatialData` overwrites them from the vertices), still written for
+  churn-freedom and read to advance the cursor, deliberately NOT validated. Mesh
+  bounds ARE validated, because `BuildSpatialGrid` early-outs on a zero-polygon
+  mesh and the read bounds then stand.
+- **TRACKED: `Dawnmere.znavmesh` + `Dawnmere.zscen` ONLY -- the four-scene plan
+  was CUT ON EVIDENCE.** The pre-implementation probe passed (three independent
+  tools boots produced byte-identical `.zscen` for all four scenes), but the
+  adversarial review pass caught what the probe could not: `Battle.zscen` and
+  `PlayerHome.zscen` had gone `AM` in the working tree, differing by 4 and 12
+  entity-index-shaped bytes.
+  - **Mechanism, confirmed by experiment:** scene authoring is deterministic for
+    a GIVEN BOOT SHAPE but bakes in entity indices assigned during that boot, and
+    the boot-time unit suite allocates entities before authoring runs. Re-running
+    the ORIGINAL boot shape reproduced the staged bytes exactly. So the probe was
+    not wrong -- it was under-powered: it repeated one boot shape three times.
+    **Any commit that adds an entity-creating boot unit re-authors different
+    bytes**, which is churn on a tracked binary.
+  - **Therefore** the three scenes CI re-authors for itself (FrontEnd, Battle,
+    PlayerHome) stay IGNORED -- tracking a file every dev boot rewrites buys
+    nothing. `Dawnmere.zscen` is re-included **by exact path**, because it is the
+    one scene a Null/CI boot never authors (the Dawnmere block is windowed +
+    all-warm gated), so without it CI has no Dawnmere scene and the authored
+    navmesh component has no gate at all. This is the plan's churn contingency,
+    narrowed to keep `ZM_DawnmereHeadless_Test` running in CI rather than
+    demoting it to local-windowed.
+  - Verified after every subsequent change (including the +1 unit that followed
+    the review): `Dawnmere.zscen` SHA256 `7337853F...` and `Dawnmere.znavmesh`
+    `A783FB0A...` survived two more windowed boots AND the whole 44-test windowed
+    batch byte-unchanged. `Dawnmere` carries the same latent hazard as its
+    siblings; if it ever moves, re-bake and re-commit rather than re-ignore.
+  - Scoping the re-include to one path also killed a side effect the wider rule
+    had: `!**/*.zscen` was repo-wide and had made ten OTHER games' scene files
+    trackable-but-untracked, one `git add -A` away from being committed unvetted.
+  - `.gitattributes` marks both extensions `binary` as a **deliberate carve-out**
+    from the "route every binary asset through LFS" rule: they are small
+    (scene 3.8 KB, navmesh ~365 KB) and CI must read them on a plain checkout
+    with no `git lfs` prerequisite. HEAVY assets (terrain, ~4.3 GB across the
+    games) stay gitignored -- the LFS question is unchanged and still the user's.
+- **Zenithmon consumes the feature** via `Source/Nav/ZM_NavBake`: the bake step
+  is queued in the ALWAYS-RUN FrontEnd authoring section, not inside the Dawnmere
+  block -- that block requires every terrain recipe to be warm (false on a fresh
+  clone's first boot), while the bake needs no terrain at all (it reuses SC1's
+  pure coverage grid from the const recipe table). Running it first also
+  guarantees the asset exists by the time the Dawnmere block authors a component
+  that loads it. The bake is skipped on a Null build: CI loads the COMMITTED
+  bytes and must never re-author them (D8).
+
+### Evidence
+
+| Gate | Result |
+|---|---|
+| Regen | GREEN; `zenith regen --check` in sync |
+| Builds | engine lib + 3 sentinels; Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True |
+| ZM headless batch (Null) | **44/44, 0 failed** -- registry 42 -> 44, and BOTH new tests RUN (not skipped) |
+| ZM windowed batch (Vulkan) | **44/44, 0 failed, 0 skipped** |
+| ZM boot units (Null) | **2515 -> 2546** ran / 2545 passed / 0 failed / 1 documented skip |
+| Engine units (Combat, Null) | **1093 -> 1121** ran / 1120 passed / 0 failed / 1 skip (+28 engine units) |
+| Cross-game (Null) | CityBuilder 45/45, DevilsPlayground 158/158, RenderTest 9/9, Combat 14/14 |
+| RenderTest windowed | 8 passed, 1 failed -- only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002) |
+| Sentinels | sentinelecs / sentinelphysics / sentinelai all exit 0 (leaf purity holds) |
+| Ratchets | `architecture,lints` and `complexity` findings **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added |
+| Asset-less CI repro | `Zenith/Assets` hidden, batches re-run: ZM 44/44 and both unit gates unchanged. Restored by MERGE and `diff -rq`-verified against a pristine backup (the run re-created 60 of the 89 files -- a naive rename-back would have clobbered the real tree) |
+
+**Two ratchet findings were introduced and FIXED, not allow-listed:** the panel's
+"use selected entity" button reached `g_xEngine.Editor()` from EntityComponent,
+tripping both the layer-up rule (EntityComponent must not include `Editor/`) and
+the per-file engine-singleton ceiling. It became "use THIS entity" (the
+component's own transform) -- which is also the more useful probe source.
+
+### ★ What the adversarial review pass caught (all fixed before the commit)
+
+The review ran six lenses over the full diff. Beyond the `.zscen` churn above, it
+found four REAL defects, every one of which the gate had been green through:
+
+1. **The reader would have hard-asserted on legitimate data.** It required
+   `neighbourCount == vertexCount`, with a comment claiming every producer holds
+   that. **`StitchPortalAt` does not** -- it deliberately APPENDS a phantom
+   neighbour slot past the vertex count to bridge two rooms that share no edge,
+   and DevilsPlayground's `DPDoor` calls it. Bake a stitched mesh and reload it
+   -- the exact workflow this feature exists to enable -- and the load would have
+   died process-level on correct data. The baker's read-back `memcmp` could never
+   have caught it, because it compares bytes rather than re-parsing. Now relaxed
+   to `vertexCount <= neighbourCount <= 64`; the bound that actually protects
+   memory is the per-index range check, which is unchanged. **Pinned by a new
+   regression unit** that round-trips a phantom-neighbour mesh AND still refuses
+   a short neighbour list.
+2. **`SetAssetRef` + deferred `OnStart` double-loaded.** The documented runtime
+   recipe (`AddComponent` -> `SetAssetRef`) loads immediately, then `OnStart`
+   fires on the first Update and re-loaded: free, re-allocate, and anything that
+   had already taken `GetNavMesh()` was left dangling. `OnStart` now returns
+   early when a mesh is present.
+3. **`m_bMovedOut` was never cleared by the load path,** so a revived moved-from
+   component would skip its own destructor's free and leak. Cleared in
+   `LoadFromAssetRef`.
+4. **A failed bake left the corrupt file on disk.** The baker writes STRAIGHT
+   into the committed asset, so a truncated write would have handed every later
+   load -- and CI -- a corrupt navmesh that hard-asserts, long after the bake
+   that produced it. It now removes the file and asserts, matching
+   `SaveToFile`'s doctrine on the identical condition. Absent is recoverable;
+   corrupt is not.
+
+It also caught two tests that could not fail: a literal
+`ZENITH_ASSERT_TRUE(true, ...)` standing in for "scene teardown completes", and
+two comments claiming a component-count check would detect a MESH leak (it cannot
+-- an undeleted mesh is invisible to an ECS query). The teardown unit now asserts
+a real count drop across the scene unload, and both comments say what they
+actually pin.
+
+### Mutation proof (each compiled, rebuilt before re-testing, restored + rebuilt after)
+
+| # | Mutation | Observed |
+|---|---|---|
+| m1 | swap the polygon serializer's `flags` / `cost` writes | **1120 ran / 1116 passed / 3 failed** -- exactly `NavMeshSerializationRoundTrip`, `NavMeshSerializationIsByteDeterministic`, `NavMeshStatsSurviveSerialization`, and nothing else |
+| m2 | invert the magic `strncmp` acceptance | boot gate dies process-level: every VALID load asserts `bad magic 'ZNAV' (expected ZNAV)`; no "Unit tests complete" line |
+| m3 | drop one serialized field (`boundsMax.z`) | boot gate dies with the precise diagnostic `NavMesh load: truncated inside the mesh bounds` |
+| m4 | mis-spell the component's resolved ref | `ZM_NavmeshAsset_Test` AND `ZM_DawnmereHeadless_Test` both die at the D6 assert (exit -2147483645) |
+| m5 | corrupt a byte mid-file in the COMMITTED `Dawnmere.znavmesh` | see below -- **measured three ways** |
+| m6 | phase C's reference bake at cell 8 instead of 16 | `ZM_NavmeshAsset_Test` FAILS at the structural-agreement phase (exit 1) |
+
+m1-m6 were measured before the review fixes; **m1 was re-run on the FINAL build**
+and still reds exactly the three serialization units (1121 / 1117 / 3), restored
+to 1121 / 1120 / 0.
+
+**★ m5 is the one worth reading.** The first attempt -- flip the byte at the
+file's midpoint -- left the test GREEN. That byte landed inside a polygon's
+cached CENTRE, which the header documents as a dead field (recomputed on every
+load), so the mutation was inert BY DESIGN rather than by weakness. Re-measured
+against live fields it bites twice: corrupting a **vertex INDEX** kills the run
+at the D6 assert (exit -2147483645), and corrupting a **vertex COORDINATE**
+(still finite, so validation passes) produces a clean test FAILURE (exit 1) at
+the content/agreement assertions. Both restored via `git checkout`; the asset's
+SHA256 is back to `A783FB0A...`. The lesson generalises: a mutation that lands on
+a documented dead field proves nothing about the test -- re-aim it at a live one
+before concluding either way.
+
+- **Reversibility:** high for the ZM wiring (delete the bake step + the authored
+  component). Medium for the engine feature (new files, one new ECS order, one
+  changed signature on `ReadFromDataStream`). LOW for the tracked assets -- the
+  `.gitignore` re-include and the committed bytes are now what CI tests against.
+
+- **★ The standing lesson: a green gate is not evidence of correctness, and a
+  passing probe is not evidence of determinism.** Every one of the five real
+  defects above survived a full green matrix -- six games building, 44/44
+  headless and windowed, 2546 boot units, byte-identical ratchets. Three of them
+  (the `StitchPortalAt` invariant, the double-load, the corrupt-file-on-disk)
+  are only reachable from code paths no test in this repo exercises yet. The
+  probe that cleared `.zscen` for tracking repeated ONE boot shape three times
+  and reported determinism; a different boot shape falsified it within the hour.
+  When a claim is load-bearing for a decision, vary the thing the claim is
+  quantified over, not the number of repetitions.
+
+---
+
 ## 2026-07-25 -- ZM-D-146 -- Null render backend; headless becomes BUILD-TIME; terrain headless gap CLOSED; m_bRequiresGraphics re-audited
 
 *(SC1b commit A of two. Engine-wide; owes the full engine gate. Commit B is the

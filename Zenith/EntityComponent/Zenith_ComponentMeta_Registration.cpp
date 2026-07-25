@@ -15,6 +15,7 @@
 #include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_AttachmentComponent.h"
+#include "EntityComponent/Components/Zenith_NavMeshComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 
 #ifdef ZENITH_TOOLS
@@ -78,6 +79,10 @@ void Zenith_RegisterEngineComponents()
 	// after every OnUpdate regardless of order, so the value is just a stable,
 	// distinct serialization slot.
 	xRegistry.RegisterComponent<Zenith_AttachmentComponent>("Attachment", 95);
+	// Baked-navmesh holder (ZM-D-147). Order 96 sits after Attachment(95) and
+	// before game components (100+); it depends on nothing else in the scene (it
+	// loads a file), so the slot is just a stable, distinct serialization value.
+	xRegistry.RegisterComponent<Zenith_NavMeshComponent>("NavMesh", 96);
 
 	// AIAgent (Zenith_AIAgentComponent, engine-side) registers via the forwarder
 	// (order 90 is passed inside Zenith_AI_RegisterComponents) so we don't pull the
@@ -113,6 +118,10 @@ void Zenith_RegisterEngineComponents()
 	xEditorRegistry.RegisterComponent<Zenith_GraphComponent>("Graph");
 	xEditorRegistry.RegisterComponent<Zenith_UIComponent>("UI");
 	xEditorRegistry.RegisterComponent<Zenith_AttachmentComponent>("Attachment");
+	// MANDATORY mirror: AddStep_AddComponent("NavMesh") resolves display names
+	// through this registry, so without the row the authoring step silently
+	// no-ops and the scene saves with no component.
+	xEditorRegistry.RegisterComponent<Zenith_NavMeshComponent>("NavMesh");
 #endif
 }
 

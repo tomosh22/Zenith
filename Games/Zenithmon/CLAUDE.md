@@ -29,8 +29,9 @@ Games/Zenithmon/
   Source/Data/                   # Compiled const gameplay tables + pure formulas
   Tests/ZM_Tests_*.cpp           # Boot, data, stats, battle, and integrity units
   Tests/ZM_AutoTests_*.cpp       # Harness-managed automated/windowed tests
-  Assets/Scenes/                 # FrontEnd.zscen is BOOT-AUTHORED (see below); all
-                                 #   baked assets are git-ignored
+  Assets/Scenes/                 # BOOT-AUTHORED (see below). Dawnmere.zscen is
+                                 #   COMMITTED; every other scene is git-ignored
+  Assets/Navmesh/                # Dawnmere.znavmesh -- COMMITTED, CI-loadable
   Docs/                          # Cross-session knowledge base (Status/Roadmap/GDD/...)
   CLAUDE.md                      # This file
 ```
@@ -64,6 +65,15 @@ Games\Zenithmon\Build\output\win64\vulkan_vs2022_debug_win64_true\zenithmon.exe
 
 If a `_False` build shows an empty scene, run a `_True` build once to bake it.
 
+**Two assets ARE committed (ZM-D-147):** `Assets/Navmesh/Dawnmere.znavmesh` and
+`Assets/Scenes/Dawnmere.zscen`. They are what let CI verify navigation with no
+GPU. Both are re-authored only by a **windowed** tools boot, and `Dawnmere.zscen`
+additionally needs every terrain recipe already warm -- so on a fresh clone it
+takes **two** `_True` boots to regenerate them (boot 1 bakes terrain, boot 2
+authors Dawnmere). You do not normally need to: the committed bytes are what the
+game loads. If a boot ever leaves either file modified in `git status`, that is
+churn worth understanding before committing (Q-2026-07-25-001).
+
 ## Testing
 
 ```
@@ -71,6 +81,8 @@ pwsh -File Tools\zenith.ps1 test Zenithmon --headless    # full batch
 pwsh -File Tools\zenith.ps1 test Zenithmon --filter ZM_Boot_Test
 ```
 
+Test DISCOVERY and every headless run use the **Null** exe (`zenith build
+Zenithmon --headless` first -- headless is a build config, not a flag).
 Unit tests (`Tests/ZM_Tests_*.cpp`, `ZENITH_TEST`) run at every boot before the
 scene loads; automated tests (`Tests/ZM_AutoTests_*.cpp`) run via the harness.
 Conventions (state-setters only, between-tests hook, RequestSkip when baked

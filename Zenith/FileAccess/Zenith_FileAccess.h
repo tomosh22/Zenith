@@ -13,6 +13,7 @@
 #define ZENITH_ANIMATION_EXT	".zanim"
 #define ZENITH_SAVE_EXT			".zsave"
 #define ZENITH_META_EXT			".zmeta"
+#define ZENITH_NAVMESH_EXT		".znavmesh"
 
 #define ZENITH_MAX_PATH_LENGTH 1024
 

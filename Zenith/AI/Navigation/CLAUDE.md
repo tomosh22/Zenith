@@ -103,6 +103,104 @@ Handles agent movement along paths:
 | `m_fStoppingDistance` | 0.2f | Distance to stop from goal |
 | `m_fAcceleration` | 20.0f | Acceleration rate |
 
+## Baked navmesh persistence (ZM-D-147)
+
+The bake → commit → load workflow, and the reason it exists: a baked `.znavmesh`
+loads with **no GPU, no terrain component and no scene geometry**, so navigation
+becomes CI-verifiable on a GPU-less runner. This is the engine's answer to
+Unity's `NavMeshSurface` and Unreal's `ARecastNavMesh`.
+
+### The three pieces
+
+| Piece | Role |
+|---|---|
+| `Zenith_NavMeshBaker::BakeToFile` | TOOLS-time: geometry → generate → serialize → write → **read back + memcmp** → typed result |
+| `Zenith_NavMeshComponent` (order 96) | RUNTIME: carries the asset ref, loads in `OnStart`, **owns** the mesh for its own lifetime |
+| `Zenith_NavMeshStats::Compute` | Read-only summary (counts, bounds, areas, portals, isolated/blocked) — what the editor panel formats |
+
+`BakeToFile`'s read-back is not paranoia: `Zenith_FileAccess::WriteFile` returns
+`void`, so comparing the bytes on disk to the bytes we meant to write is the only
+truthful success signal available.
+
+### Two adoption recipes
+
+```cpp
+// 1. AUTHORED scenes -- the component is serialized INTO the scene.
+//    In editor automation, before AddStep_SaveScene:
+xAuto.AddStep_CreateEntity("MyLevelNavMesh");
+xAuto.AddStep_AddComponent("NavMesh");        // needs the editor-registry mirror!
+xAuto.AddStep_Custom(&ConfigureMyNavMesh);    // captureless: SetAssetRef(...)
+
+// 2. RUNTIME scenes -- add and point it at the asset in code.
+Zenith_NavMeshComponent& xNav = xEntity.AddComponent<Zenith_NavMeshComponent>();
+xNav.SetAssetRef("game:Navmesh/MyLevel.znavmesh");   // loads immediately
+
+// Discovery is an ordinary ECS query -- there is no registry to consult.
+g_xEngine.Scenes().QueryActiveScene<Zenith_NavMeshComponent>().ForEach(
+    [](Zenith_EntityID, Zenith_NavMeshComponent& xNav) { /* xNav.GetNavMesh() */ });
+```
+
+**Ownership is the component's, deliberately.** There is no path-keyed cache and
+no static state anywhere in this feature: a navmesh's lifetime is its level's, so
+scene switching frees and re-loads automatically and there is nothing to
+invalidate. `OnStart` is **deferred to the entity's first Update**, so a test must
+tick at least one frame before `GetNavMesh()` is non-null.
+
+### Failure semantics
+
+Every rejection fires `Zenith_Assert` **and** `Zenith_Error(LOG_CATEGORY_AI, …)`
+**and** returns a defined failure. A malformed navmesh is a DEFECT, not an
+expected state — the asset is committed to the repo, so absence or corruption
+means a broken build.
+
+| Situation | Result |
+|---|---|
+| empty path / missing file / unreadable file | `LoadFromFile` → `nullptr` |
+| bad magic, wrong version, truncation, absurd count, out-of-range index, non-finite value | `ReadFromDataStream` → `false`, mesh left EMPTY |
+| well-formed **zero-polygon** file | **VALID** — loads cleanly, no assert |
+| bake with an empty path or empty geometry | asserts (caller defect) + typed error |
+| bake whose generator finds nothing walkable | `GENERATION_FAILED`, logged, **no assert** (a DATA outcome) |
+
+> Because the whole unit suite runs at boot and `Zenith_Assert` fires in every
+> config, any unit that deliberately feeds corrupt data MUST wrap
+> `Zenith_AssertCaptureScope` and assert both the hit count and the defined
+> result. One unscoped deliberate assert kills the entire boot gate.
+
+### Wire format and determinism
+
+`"ZNAV"` v1, unchanged by the hardening — the exact layout is documented at the
+top of `Zenith_NavMesh.h`. Two things to know before touching it:
+
+- The per-polygon **center / normal / area are DEAD BYTES on the read path**:
+  `BuildSpatialGrid` → `ComputeSpatialData` recomputes them from the vertices on
+  every load. They are still written (churn-freedom) and read (to advance the
+  cursor) but deliberately not validated — corrupting one is a no-op, which is
+  worth remembering when a mutation test comes back inert. Mesh **bounds** ARE
+  validated: `BuildSpatialGrid` early-outs on a zero-polygon mesh, so for an
+  empty mesh the read bounds stand.
+- **Determinism contract:** in-process re-bakes are byte-identical (the generator
+  has no hashmap-iteration output dependence, no threading, no time or random
+  source; the serializer is field-by-field). That is what lets a `.znavmesh` be
+  committed to git without churning on every boot. Cross-toolchain byte equality
+  is NOT promised — the drift check compares counts and bounds instead.
+
+A `StreamEnvelope` header was deliberately REJECTED here: `AssetHandling` is
+forbidden to the `ZenithAI` leaf, and `SentinelAI` enforces that.
+
+### Editor debugging suite
+
+The component's `RenderPropertiesPanel` (TOOLS only) is a full debugging surface,
+not a ref field: editable asset ref with Apply/Reload/Unload; resolved path,
+on-disk size and a wire-format header peek; a prominent
+`LOADED / FAILED(reason) / UNLOADED` state; the whole `ComputeStats` block; six
+visualisation toggles (edges, boundary edges, fill, adjacency links,
+centers+normals, blocked highlight) driving `Zenith_NavMesh::DebugDraw(flags)`;
+and two interactive probes — a **point probe**
+(`IsPointOnNavMesh` / `ProjectPoint` / `FindNearestPolygon`) and a **path probe**
+(`Zenith_Pathfinding::FindPath`, drawing the corridor and reporting length and
+waypoint count). Draw state is per-component, so two meshes can be visualised
+differently at once; the draw calls no-op under a Null render backend.
+
 ## Usage Patterns
 
 ### Generating NavMesh

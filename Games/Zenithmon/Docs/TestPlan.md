@@ -111,6 +111,14 @@ Each rule with its one-line why. Violations are review blockers.
   *Why:* baked assets are git-ignored, so a fresh CI checkout has NO
   `Assets/` -- a hard dependency would fail every PR (the engine-wide CI-fix
   pattern from commit `94813489`).
+  **DEVIATION -- the two COMMITTED asset families do NOT skip (ZM-D-147).**
+  `Assets/Navmesh/Dawnmere.znavmesh` and `Assets/Scenes/Dawnmere.zscen` are
+  TRACKED, so on CI they are always present and their absence is a DEFECT, not
+  a condition to tolerate. `ZM_NavmeshAsset_Test` and `ZM_DawnmereHeadless_Test`
+  therefore carry NO `RequestSkip`. Skipping would also be self-defeating: a
+  skip counts as a PASS, so the one gate proving the committed navmesh loads
+  would go quiet exactly when it broke. C6 continues to apply to every
+  git-ignored family.
 - **C7 -- Test TUs compile directly into the game exe** (`Tests/*.cpp` are
   project sources, never a static lib).
   *Why:* MSVC dead-strips static registrars in unreferenced library objects,
@@ -1208,6 +1216,31 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   moves **2521 -> 2525** (+4 `ZM_Nav`) and `zm-tests.yml` is bumped to **2525**;
   the automated registry stays **42** (no windowed/automated test added) and the
   engine-only reference is unchanged at **1103**.
+- **SC1b -- baked navmesh persistence (ZM-D-147).** The engine gained the
+  reusable bake/load feature and Zenithmon became its first consumer, so this SC
+  DOES touch engine files and owed the full engine gate. Two new automated tests
+  take the registry **42 -> 44**, and **both RUN headless** (neither is
+  `m_bRequiresGraphics`, neither `RequestSkip`s -- see the C6 deviation above):
+  - **`ZM_NavmeshAsset_Test`** -- four per-phase drivers over the COMMITTED
+    `Dawnmere.znavmesh`: (A) runtime adoption (`AddComponent` + `SetAssetRef`,
+    then a settle frame, because `OnStart` is deferred to the first Update);
+    (B) CONTENTS, not just non-null -- polygon count in **[3969, 4489]**, every
+    normal facing up, bounds covering the TownCenter spawn in XZ, zero vertical
+    extent (a FLAT coverage bake, so asserting 3D containment of y~26 would be
+    asserting the wrong thing), and `FindNearestPolygon` succeeding at the spawn;
+    (C) structural agreement against a FRESH in-memory bake of the same pure
+    inputs -- the drift detector that reds if the committed bytes stop matching
+    the source recipe; (D) fixture-scene unload with a component-count check.
+  - **`ZM_DawnmereHeadless_Test`** -- direct-loads the COMMITTED
+    `Dawnmere.zscen` (build index 2; a direct load records no warp arrival, so
+    no autosave side effects) and proves the AUTHORED component came back with a
+    live in-band mesh. This is the gate that catches the editor-registry mirror
+    being missed, which would silently save a scene with no component at all.
+    It makes no gameplay, height or terrain claims -- on CI the terrain chunks
+    are absent by design.
+  - **SC1b observed gate:** boot units **2515 -> 2546**, engine-only reference
+    **1093 -> 1121**, automated registry **42 -> 44**, all six mutations proved
+    teeth (see ZM-D-147).
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->
   defeat flag + prize money.
 

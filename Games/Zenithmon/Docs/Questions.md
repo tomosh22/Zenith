@@ -10,6 +10,59 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-25-001 -- `.zscen` bytes encode boot-time entity indices, so scenes cannot be tracked wholesale
+
+**Question:** should scene authoring be made boot-shape-independent, so `.zscen`
+files can be tracked like `.znavmesh` is?
+
+**Context.** SC1b intended to commit all four Zenithmon scenes. A determinism
+probe passed (three tools boots, byte-identical), but a later review found
+`Battle.zscen` and `PlayerHome.zscen` had gone `AM` in the working tree, off by
+4 and 12 entity-index-shaped bytes. Re-running the ORIGINAL boot shape
+reproduced the staged bytes exactly, so the mechanism is: authoring bakes in
+entity indices assigned during that boot, and the boot-time unit suite allocates
+entities before authoring runs. **Any commit adding an entity-creating boot unit
+therefore re-authors different scene bytes.** The probe was not wrong, it was
+under-powered — it repeated ONE boot shape three times rather than varying it.
+
+**Best-guess action taken:** track only `Dawnmere.zscen` (by exact path — the one
+scene a Null/CI boot never authors, so CI would otherwise have no Dawnmere scene
+and the authored navmesh component no gate). FrontEnd / Battle / PlayerHome stay
+ignored: CI re-authors them for itself every boot, so tracking them buys nothing
+and guarantees churn. `Dawnmere.zscen` carries the same latent hazard and has not
+moved through any measurement so far; if it does, re-bake and re-commit.
+
+**Cost if wrong:** low and visible — a churned `Dawnmere.zscen` shows up in
+`git status` and is fixed by re-committing. The real cost is the missed
+opportunity: a boot-shape-independent scene format (e.g. authoring-order-stable
+entity ids) would let every game commit its scenes and get fresh-clone
+`_False`/Null boots for free.
+
+**Status:** [OPEN] — recorded, not acted on.
+
+### [OPEN] Q-2026-07-25-002 -- other games' `.zscen` and the LFS question for heavy assets
+
+**Question (a):** should the other five games adopt tracked scenes/navmeshes,
+each gated on its own determinism probe? **(b):** should the heavy baked families
+(terrain: ~1.9 GB CityBuilder, ~1.8 GB RenderTest, 641 MB Zenithmon; largest
+single file 64 MB) move to git-LFS so they can be tracked too?
+
+**Context.** SC1b's re-include is deliberately narrow (`!**/*.znavmesh` at any
+depth plus one exact scene path). An earlier wider rule (`!**/*.zscen`) made ten
+other games' scene files trackable-but-untracked — one `git add -A` from being
+committed unvetted — which is why it was narrowed. Tracking `.znavmesh` repo-wide
+is already live, so any game that bakes one gets CI-verifiable navigation with no
+further plumbing.
+
+**Best-guess action taken:** neither. Only Zenithmon's two files are tracked;
+everything heavy stays gitignored, and `.gitattributes` carries an explicit
+carve-out note explaining why the two committed families bypass LFS.
+
+**Cost if wrong:** none immediately. (b) stays the blocker for fresh-clone
+visual parity — a clone still needs one windowed `_True` boot to bake terrain.
+
+**Status:** [OPEN] — both parts are user decisions.
+
 ### [OPEN] Q-2026-07-24-002 -- S7 item 3 (trainer battles + first graph + navmesh eval): 8 design defaults adopted
 
 **Question:** the S7 item 3 scoping survey surfaced eight design choices. Each has a
@@ -24,8 +77,16 @@ lands real code against it:
   bake generates a Dawnmere navmesh and `Zenith_NavMesh::SaveToFile()`s it to a
   COMMITTED, CI-testable `Games/Zenithmon/Assets/Navmesh/*.znavmesh` (the
   `.gitignore` `**/Assets/` rule was amended so `.znavmesh` is tracked everywhere),
-  loaded at runtime via `Zenith_NavMesh::LoadFromFile()`. The `.znavmesh` save/load
-  format already exists, so option C is game-side wiring -- no engine change.
+  loaded at runtime via `Zenith_NavMesh::LoadFromFile()`. **CORRECTION (ZM-D-145,
+  restated here because this paragraph was wrong): option C is NOT "game-side
+  wiring -- no engine change".** The save/load PRIMITIVES existed (with zero
+  callers), but the bake -> persist -> load ORCHESTRATION had to ship as a
+  reusable ENGINE feature with Zenithmon as its first consumer, so it owed the
+  FULL engine gate. **DELIVERED 2026-07-25 (ZM-D-147):** `Zenith_NavMeshBaker`,
+  `Zenith_NavMeshStats`, a hardened validating `Zenith_NavMesh` load path,
+  `Zenith_NavMeshComponent` at ECS order 96 with a full editor debugging panel,
+  28 engine units, and a committed `Dawnmere.znavmesh` gated by two new
+  headless-running automated tests.
   **OPTION B** (a runtime-generated nav path from the terrain COLLISION mesh +
   tiling to lift the `iMaxDim=1024` clamp + actual agent routing -- what UE/Unity
   ship for large terrain worlds) is documented as **deferred future engine work**

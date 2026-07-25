@@ -6,6 +6,7 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_NavMeshComponent.h"
 #include "SaveData/Zenith_SaveData.h"
 #include "Zenithmon/Components/ZM_BattleArena.h"
 #include "Zenithmon/Components/ZM_BattleDirector.h"
@@ -22,6 +23,7 @@
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // ResetRuntimeStateForTests (between-tests hook)
+#include "Zenithmon/Source/Nav/ZM_NavBake.h"                      // Dawnmere navmesh bake step + asset ref (S7 SC1b)
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"                   // DeleteAllSlotsForTests (between-tests hook)
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // sz*_NAME element contract (dialogue authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Bag.h"           // sz*_NAME + RowElementName + geometry contract (bag authoring)
@@ -1130,6 +1132,30 @@ namespace
 		Zenith_Assert(bTagSet, "TownCenter is not a valid spawn tag");
 	}
 
+	// Points Dawnmere's holder entity at the COMMITTED .znavmesh. The ref is the
+	// only thing that serializes, so this one call is what makes every future
+	// load of Dawnmere.zscen -- windowed, headless or packaged -- come up with a
+	// live navmesh.
+	void ZM_ConfigureDawnmereNavMesh()
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_NavMeshComponent* pxNavMesh = pxSelectedEntity != nullptr
+			? pxSelectedEntity->TryGetComponent<Zenith_NavMeshComponent>()
+			: nullptr;
+		Zenith_Assert(pxNavMesh != nullptr,
+			"Dawnmere navmesh authoring requires the selected Zenith_NavMeshComponent "
+			"(is \"NavMesh\" mirrored into the editor component registry?)");
+		if (pxNavMesh == nullptr)
+		{
+			return;
+		}
+
+		// SetAssetRef loads immediately, so authoring proves the committed asset
+		// is loadable rather than serializing a ref nobody has tried.
+		const bool bLoaded = pxNavMesh->SetAssetRef(szZM_DAWNMERE_NAVMESH_ASSET_REF);
+		Zenith_Assert(bLoaded, "Dawnmere navmesh ref did not load: %s", szZM_DAWNMERE_NAVMESH_ASSET_REF);
+	}
+
 	void ZM_ConfigureDoorSpawnPoint()
 	{
 		Zenith_Assert(ZM_SetSelectedSpawnPointTag("Door"),
@@ -1469,6 +1495,15 @@ void Project_RegisterEditorAutomationSteps()
 	}
 
 	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+
+	// Bake the Dawnmere navmesh FIRST, and unconditionally on a windowed tools
+	// boot. It belongs here rather than inside the Dawnmere authoring block
+	// below because that block is gated on every terrain recipe already being
+	// warm -- false on a fresh clone's first boot -- while this bake needs no
+	// terrain at all (it harvests a pure coverage grid from the const recipe
+	// table). Running it first also guarantees the committed asset exists by the
+	// time the Dawnmere block authors a component that loads it.
+	xAuto.AddStep_Custom(&ZM_BakeDawnmereNavmeshStep);
 
 	xAuto.AddStep_CreateScene("FrontEnd");
 	xAuto.AddStep_CreateEntity("ZM_GameStateRoot");
@@ -2023,6 +2058,14 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_SetCameraFar(xCamera.m_fFarPlane);
 		xAuto.AddStep_AddComponent("ZM_FollowCamera");
 		xAuto.AddStep_SetAsMainCamera();
+
+		// The scene's baked-navmesh holder. Its OWN entity so the component's
+		// lifetime is exactly the scene's -- load Dawnmere, the navmesh comes
+		// with it; unload, it goes. No cache, no hook, nothing to invalidate.
+		xAuto.AddStep_CreateEntity("DawnmereNavMesh");
+		xAuto.AddStep_AddComponent("NavMesh");
+		xAuto.AddStep_Custom(&ZM_ConfigureDawnmereNavMesh);
+
 		xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Dawnmere" ZENITH_SCENE_EXT);
 		xAuto.AddStep_UnloadScene();
 	}

@@ -120,6 +120,14 @@ struct ZM_NavEvalResult
 	u_int m_uQuadsPerSide;          // coverage soup resolution actually emitted
 	u_int m_uGeneratorGridDim;      // voxel grid dim the generator WOULD use (pre-clamp)
 	float m_fMinSafeCellSize;       // smallest cell size that stays under the clamp
+
+	// The generated mesh's world bounds (zero when m_bSuccess is false). Read
+	// back before the mesh is freed so a caller can compare a FRESH in-memory
+	// bake against one LOADED from disk without re-running the generator itself
+	// -- which is exactly what SC1b's structural-agreement test phase does to
+	// catch a committed .znavmesh drifting from its source geometry.
+	Zenith_Maths::Vector3 m_xBoundsMin;
+	Zenith_Maths::Vector3 m_xBoundsMax;
 };
 
 // Run the whole spike for the Dawnmere rect at fCellSize: build the flat soup,

@@ -132,7 +132,12 @@ void Zenith_AIAgentComponent::RenderPropertiesPanel()
 // Zenith_AIAgentComponent), so the ZENITH_TEST registrars survive /OPT:REF.
 #ifdef ZENITH_TESTING
 #include "AI/Zenith_AIDebugVariables.Tests.inl"
+// Zenith_NavMesh.Tests.inl FIRST: the baker and stats suites reuse its
+// NavMeshPersistTempFile / byte-buffer helpers (one TU, so they share the
+// anonymous namespace).
 #include "AI/Navigation/Zenith_NavMesh.Tests.inl"
+#include "AI/Navigation/Zenith_NavMeshBaker.Tests.inl"
+#include "AI/Navigation/Zenith_NavMeshStats.Tests.inl"
 #include "AI/Navigation/Zenith_NavMeshAgent.Tests.inl"
 #include "AI/Navigation/Zenith_NavMeshGenerator.Tests.inl"
 #include "AI/Navigation/Zenith_Pathfinding.Tests.inl"

@@ -19,6 +19,8 @@ AI/
 ├── Navigation/          # NavMesh, pathfinding, agent movement
 │   ├── Zenith_NavMesh.h/cpp
 │   ├── Zenith_NavMeshGenerator.h/cpp
+│   ├── Zenith_NavMeshBaker.h/cpp      # tools-time bake -> committed .znavmesh
+│   ├── Zenith_NavMeshStats.h/cpp      # read-only mesh summary (feeds the editor panel)
 │   ├── Zenith_Pathfinding.h/cpp
 │   └── Zenith_NavMeshAgent.h/cpp
 ├── Perception/          # Sensory systems
@@ -130,8 +132,12 @@ xConfig.m_fMaxSlope = 45.0f;
 // calls the leaf generator. The pure leaf entry point is
 // Zenith_NavMeshGenerator::GenerateFromGeometry(verts, indices, xConfig).
 Zenith_NavMesh* pxNavMesh = Zenith_AINavGeometry::GenerateFromScene(xScene, xConfig);
-pxNavMesh->SaveToFile("navmesh.znavmesh");
 ```
+
+To BAKE a navmesh to a committed `.znavmesh` and load it at runtime (the
+Unity-NavMeshSurface / UE-RecastNavMesh workflow), use `Zenith_NavMeshBaker` +
+`Zenith_NavMeshComponent` rather than calling `SaveToFile` by hand — see
+[Navigation/CLAUDE.md](Navigation/CLAUDE.md) → *Baked navmesh persistence*.
 
 ### Pathfinding
 

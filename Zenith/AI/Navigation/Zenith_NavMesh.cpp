@@ -1,9 +1,40 @@
 #include "Zenith.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
-#include "AI/Zenith_AIDebugVariables.h"
 #include "AI/Zenith_AIWorldHooks.h"
+#include "DataStream/Zenith_DataStream.h"
+#include "FileAccess/Zenith_FileAccess.h"
 
 #include <random>
+
+namespace
+{
+	// Bytes still readable from xStream. GetCapacity() is the buffer length —
+	// which IS the file length for a stream produced by ReadFromFile — and
+	// GetCursor() is how far the read has advanced. For an OWNED write-then-
+	// rewind stream the capacity over-reports (the allocator doubles past the
+	// bytes written), which makes the plausibility checks below weaker but never
+	// wrong: they exist to stop a corrupt count driving a huge Reserve, and the
+	// per-field bounds checks behind them are exact either way.
+	uint64_t NavMeshBytesRemaining(const Zenith_DataStream& xStream)
+	{
+		const uint64_t ulCapacity = xStream.GetCapacity();
+		const uint64_t ulCursor = xStream.GetCursor();
+		return (ulCursor < ulCapacity) ? (ulCapacity - ulCursor) : 0ull;
+	}
+
+	bool NavMeshIsFiniteVector(const Zenith_Maths::Vector3& xVector)
+	{
+		return std::isfinite(xVector.x) && std::isfinite(xVector.y) && std::isfinite(xVector.z);
+	}
+
+	// Smallest byte cost of one encoded polygon record: vertexCount(4) + 3
+	// indices(12) + neighbourCount(4) + 3 neighbours(12) + center/normal/area(28)
+	// + flags(4) + cost(4). Used ONLY to reject an absurd polygon count before
+	// Reserve; every field is bounds-checked again as it is read.
+	constexpr uint64_t ulNAVMESH_MIN_POLYGON_BYTES = 68ull;
+
+	constexpr uint64_t ulNAVMESH_VERTEX_BYTES = 3ull * sizeof(float);
+}
 
 // ========== Zenith_NavMeshPolygon ==========
 
@@ -174,33 +205,123 @@ void Zenith_NavMeshPolygon::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_fCost;
 }
 
-void Zenith_NavMeshPolygon::ReadFromDataStream(Zenith_DataStream& xStream)
+bool Zenith_NavMeshPolygon::ReadFromDataStream(Zenith_DataStream& xStream,
+	uint32_t uMeshVertexCount, uint32_t uMeshPolygonCount)
 {
-	// Read vertex indices
+	m_axVertexIndices.Clear();
+	m_axNeighborIndices.Clear();
+
+	// ---- vertex indices ----------------------------------------------------
+	if (NavMeshBytesRemaining(xStream) < sizeof(uint32_t))
+	{
+		Zenith_Assert(false, "NavMesh load: truncated before a polygon's vertex count");
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: truncated before a polygon's vertex count");
+		return false;
+	}
+
 	uint32_t uVertCount = 0;
 	xStream >> uVertCount;
-	m_axVertexIndices.Clear();
+	if (uVertCount < 3u || uVertCount > uZENITH_NAVMESH_MAX_POLYGON_VERTICES)
+	{
+		Zenith_Assert(false, "NavMesh load: polygon vertex count %u out of range [3, %u]",
+			uVertCount, uZENITH_NAVMESH_MAX_POLYGON_VERTICES);
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: polygon vertex count %u out of range [3, %u]",
+			uVertCount, uZENITH_NAVMESH_MAX_POLYGON_VERTICES);
+		return false;
+	}
+
+	if (static_cast<uint64_t>(uVertCount) * sizeof(uint32_t) > NavMeshBytesRemaining(xStream))
+	{
+		Zenith_Assert(false, "NavMesh load: truncated inside a polygon's %u vertex indices", uVertCount);
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: truncated inside a polygon's %u vertex indices", uVertCount);
+		return false;
+	}
+
 	m_axVertexIndices.Reserve(uVertCount);
 	for (uint32_t u = 0; u < uVertCount; ++u)
 	{
 		uint32_t uIdx = 0;
 		xStream >> uIdx;
+		if (uIdx >= uMeshVertexCount)
+		{
+			// Checked BEFORE it is stored: an out-of-range index would otherwise
+			// reach ComputeSpatialData's unchecked axVertices.Get().
+			Zenith_Assert(false, "NavMesh load: polygon vertex index %u >= vertex count %u",
+				uIdx, uMeshVertexCount);
+			Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: polygon vertex index %u >= vertex count %u",
+				uIdx, uMeshVertexCount);
+			return false;
+		}
 		m_axVertexIndices.PushBack(uIdx);
 	}
 
-	// Read neighbor indices
+	// ---- neighbour indices -------------------------------------------------
+	if (NavMeshBytesRemaining(xStream) < sizeof(uint32_t))
+	{
+		Zenith_Assert(false, "NavMesh load: truncated before a polygon's neighbour count");
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: truncated before a polygon's neighbour count");
+		return false;
+	}
+
 	uint32_t uNeighborCount = 0;
 	xStream >> uNeighborCount;
-	m_axNeighborIndices.Clear();
+
+	// At LEAST one neighbour slot per edge (AddPolygon / ComputeAdjacency size the
+	// list 1-per-edge), but NOT exactly: StitchPortalAt deliberately APPENDS a
+	// phantom slot past the vertex count to bridge two rooms that share no edge
+	// (DPDoor relies on it). Requiring equality here would hard-assert on a
+	// perfectly legitimate stitched mesh the moment it was baked and reloaded --
+	// which is exactly the workflow this feature exists to enable. The bound that
+	// actually protects memory is the per-index range check below; this one only
+	// rejects a count too small to be a real polygon or too large to be anything
+	// but corruption.
+	if (uNeighborCount < uVertCount || uNeighborCount > uZENITH_NAVMESH_MAX_POLYGON_VERTICES)
+	{
+		Zenith_Assert(false, "NavMesh load: polygon neighbour count %u outside [%u, %u]",
+			uNeighborCount, uVertCount, uZENITH_NAVMESH_MAX_POLYGON_VERTICES);
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: polygon neighbour count %u outside [%u, %u]",
+			uNeighborCount, uVertCount, uZENITH_NAVMESH_MAX_POLYGON_VERTICES);
+		return false;
+	}
+
+	if (static_cast<uint64_t>(uNeighborCount) * sizeof(int32_t) > NavMeshBytesRemaining(xStream))
+	{
+		Zenith_Assert(false, "NavMesh load: truncated inside a polygon's %u neighbour indices", uNeighborCount);
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: truncated inside a polygon's %u neighbour indices", uNeighborCount);
+		return false;
+	}
+
 	m_axNeighborIndices.Reserve(uNeighborCount);
 	for (uint32_t u = 0; u < uNeighborCount; ++u)
 	{
 		int32_t iIdx = 0;
 		xStream >> iIdx;
+		const bool bValid = (iIdx == iZENITH_NAVMESH_NO_NEIGHBOUR) ||
+			(iIdx >= 0 && static_cast<uint32_t>(iIdx) < uMeshPolygonCount);
+		if (!bValid)
+		{
+			Zenith_Assert(false, "NavMesh load: polygon neighbour index %d outside {%d} u [0, %u)",
+				iIdx, iZENITH_NAVMESH_NO_NEIGHBOUR, uMeshPolygonCount);
+			Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: polygon neighbour index %d outside {%d} u [0, %u)",
+				iIdx, iZENITH_NAVMESH_NO_NEIGHBOUR, uMeshPolygonCount);
+			return false;
+		}
 		m_axNeighborIndices.PushBack(iIdx);
 	}
 
-	// Read spatial data
+	// ---- cached spatial data + flags/cost -----------------------------------
+	// center(12) + normal(12) + area(4) + flags(4) + cost(4).
+	constexpr uint64_t ulTAIL_BYTES = 36ull;
+	if (NavMeshBytesRemaining(xStream) < ulTAIL_BYTES)
+	{
+		Zenith_Assert(false, "NavMesh load: truncated inside a polygon's cached spatial data");
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: truncated inside a polygon's cached spatial data");
+		return false;
+	}
+
+	// Read but deliberately NOT validated: BuildSpatialGrid -> ComputeSpatialData
+	// overwrites center/normal/area from the vertices on every load, so a corrupt
+	// value here cannot survive (see the wire-format comment in the header).
 	xStream >> m_xCenter.x;
 	xStream >> m_xCenter.y;
 	xStream >> m_xCenter.z;
@@ -209,9 +330,19 @@ void Zenith_NavMeshPolygon::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> m_xNormal.z;
 	xStream >> m_fArea;
 
-	// Read flags and cost
 	xStream >> m_uFlags;
 	xStream >> m_fCost;
+
+	// The cost multiplies every A* edge weight, so a non-finite value poisons
+	// pathfinding rather than being recomputed away.
+	if (!std::isfinite(m_fCost))
+	{
+		Zenith_Assert(false, "NavMesh load: polygon traversal cost is not finite");
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: polygon traversal cost is not finite");
+		return false;
+	}
+
+	return true;
 }
 
 // ========== Zenith_NavMesh ==========
@@ -1040,32 +1171,61 @@ void Zenith_NavMesh::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_xBoundsMax.z;
 }
 
-void Zenith_NavMesh::ReadFromDataStream(Zenith_DataStream& xStream)
+bool Zenith_NavMesh::ReadHeaderFromDataStream(Zenith_DataStream& xStream)
 {
-	Clear();
+	// magic(4) + version(4).
+	if (NavMeshBytesRemaining(xStream) < 8ull)
+	{
+		Zenith_Assert(false, "NavMesh load: stream too short to hold a ZNAV header");
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: stream too short to hold a ZNAV header (%llu bytes left)",
+			NavMeshBytesRemaining(xStream));
+		return false;
+	}
 
-	// Read and verify magic header
 	char szMagic[5] = {};
 	xStream.Read(szMagic, 4);
 	if (strncmp(szMagic, "ZNAV", 4) != 0)
 	{
-		Zenith_Log(LOG_CATEGORY_AI, "Invalid navmesh file format");
-		return;
+		Zenith_Assert(false, "NavMesh load: bad magic '%s' (expected ZNAV)", szMagic);
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: bad magic '%s' (expected ZNAV)", szMagic);
+		return false;
 	}
 
-	// Read version
 	uint32_t uVersion = 0;
 	xStream >> uVersion;
-	if (uVersion != 1)
+	if (uVersion != uZENITH_NAVMESH_WIRE_VERSION)
 	{
-		Zenith_Log(LOG_CATEGORY_AI, "Unsupported navmesh version: %u", uVersion);
-		return;
+		Zenith_Assert(false, "NavMesh load: unsupported wire version %u (this build writes %u)",
+			uVersion, uZENITH_NAVMESH_WIRE_VERSION);
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: unsupported wire version %u (this build writes %u)",
+			uVersion, uZENITH_NAVMESH_WIRE_VERSION);
+		return false;
 	}
 
-	// Read vertices
+	return true;
+}
+
+bool Zenith_NavMesh::ReadVerticesFromDataStream(Zenith_DataStream& xStream)
+{
+	if (NavMeshBytesRemaining(xStream) < sizeof(uint32_t))
+	{
+		Zenith_Assert(false, "NavMesh load: truncated before the vertex count");
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: truncated before the vertex count");
+		return false;
+	}
+
 	uint32_t uVertexCount = 0;
 	xStream >> uVertexCount;
-	m_axVertices.Clear();
+
+	// Plausibility BEFORE Reserve: a corrupt count must never drive an allocation.
+	if (static_cast<uint64_t>(uVertexCount) * ulNAVMESH_VERTEX_BYTES > NavMeshBytesRemaining(xStream))
+	{
+		Zenith_Assert(false, "NavMesh load: vertex count %u needs more bytes than the stream holds", uVertexCount);
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: vertex count %u needs more bytes than the stream holds (%llu left)",
+			uVertexCount, NavMeshBytesRemaining(xStream));
+		return false;
+	}
+
 	m_axVertices.Reserve(uVertexCount);
 	for (uint32_t u = 0; u < uVertexCount; ++u)
 	{
@@ -1073,22 +1233,65 @@ void Zenith_NavMesh::ReadFromDataStream(Zenith_DataStream& xStream)
 		xStream >> xVert.x;
 		xStream >> xVert.y;
 		xStream >> xVert.z;
+		if (!NavMeshIsFiniteVector(xVert))
+		{
+			// A NaN vertex silently poisons bounds, the spatial grid and every
+			// distance comparison downstream.
+			Zenith_Assert(false, "NavMesh load: vertex %u is not finite", u);
+			Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: vertex %u is not finite", u);
+			return false;
+		}
 		m_axVertices.PushBack(xVert);
 	}
 
-	// Read polygons
+	return true;
+}
+
+bool Zenith_NavMesh::ReadPolygonsFromDataStream(Zenith_DataStream& xStream)
+{
+	if (NavMeshBytesRemaining(xStream) < sizeof(uint32_t))
+	{
+		Zenith_Assert(false, "NavMesh load: truncated before the polygon count");
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: truncated before the polygon count");
+		return false;
+	}
+
 	uint32_t uPolyCount = 0;
 	xStream >> uPolyCount;
-	m_axPolygons.Clear();
+
+	if (static_cast<uint64_t>(uPolyCount) * ulNAVMESH_MIN_POLYGON_BYTES > NavMeshBytesRemaining(xStream))
+	{
+		Zenith_Assert(false, "NavMesh load: polygon count %u needs more bytes than the stream holds", uPolyCount);
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: polygon count %u needs more bytes than the stream holds (%llu left)",
+			uPolyCount, NavMeshBytesRemaining(xStream));
+		return false;
+	}
+
 	m_axPolygons.Reserve(uPolyCount);
 	for (uint32_t u = 0; u < uPolyCount; ++u)
 	{
 		Zenith_NavMeshPolygon xPoly;
-		xPoly.ReadFromDataStream(xStream);
+		// The polygon read asserts + logs the precise violation itself.
+		if (!xPoly.ReadFromDataStream(xStream, m_axVertices.GetSize(), uPolyCount))
+		{
+			return false;
+		}
 		m_axPolygons.PushBack(std::move(xPoly));
 	}
 
-	// Read bounds
+	return true;
+}
+
+bool Zenith_NavMesh::ReadBoundsFromDataStream(Zenith_DataStream& xStream)
+{
+	constexpr uint64_t ulBOUNDS_BYTES = 6ull * sizeof(float);
+	if (NavMeshBytesRemaining(xStream) < ulBOUNDS_BYTES)
+	{
+		Zenith_Assert(false, "NavMesh load: truncated inside the mesh bounds");
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: truncated inside the mesh bounds");
+		return false;
+	}
+
 	xStream >> m_xBoundsMin.x;
 	xStream >> m_xBoundsMin.y;
 	xStream >> m_xBoundsMin.z;
@@ -1096,31 +1299,102 @@ void Zenith_NavMesh::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> m_xBoundsMax.y;
 	xStream >> m_xBoundsMax.z;
 
-	// Rebuild spatial grid
-	BuildSpatialGrid();
+	// Validated even though ComputeSpatialData normally overwrites them: it
+	// early-outs on a zero-vertex mesh, and BuildSpatialGrid early-outs on a
+	// zero-polygon mesh, so for a well-formed EMPTY mesh these values do stand.
+	if (!NavMeshIsFiniteVector(m_xBoundsMin) || !NavMeshIsFiniteVector(m_xBoundsMax))
+	{
+		Zenith_Assert(false, "NavMesh load: mesh bounds are not finite");
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: mesh bounds are not finite");
+		return false;
+	}
+
+	return true;
+}
+
+bool Zenith_NavMesh::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	Clear();
+
+	if (ReadHeaderFromDataStream(xStream) &&
+		ReadVerticesFromDataStream(xStream) &&
+		ReadPolygonsFromDataStream(xStream) &&
+		ReadBoundsFromDataStream(xStream))
+	{
+		// Recomputes bounds + every polygon's center/normal/area from the
+		// vertices, then bins the polygons for point queries.
+		BuildSpatialGrid();
+		return true;
+	}
+
+	// DEFINED failure state: an empty mesh, never a half-populated one.
+	Clear();
+	return false;
 }
 
 Zenith_NavMesh* Zenith_NavMesh::LoadFromFile(const std::string& strPath)
 {
+	if (strPath.empty())
+	{
+		Zenith_Assert(false, "NavMesh load: empty path");
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: empty path");
+		return nullptr;
+	}
+
+	// Checked ahead of ReadFromFile so a missing asset reports THAT, rather than
+	// tripping Zenith_DataStream's generic read assert with no navmesh context.
+	if (!Zenith_FileAccess::FileExists(strPath.c_str()))
+	{
+		Zenith_Assert(false, "NavMesh load: file does not exist: %s", strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: file does not exist: %s", strPath.c_str());
+		return nullptr;
+	}
+
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(strPath.c_str());
 	if (!xStream.IsValid())
 	{
-		Zenith_Log(LOG_CATEGORY_AI, "Failed to load navmesh: %s", strPath.c_str());
+		Zenith_Assert(false, "NavMesh load: unreadable file: %s", strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh load: unreadable file: %s", strPath.c_str());
 		return nullptr;
 	}
 
 	Zenith_NavMesh* pxNavMesh = new Zenith_NavMesh();
-	pxNavMesh->ReadFromDataStream(xStream);
+	if (!pxNavMesh->ReadFromDataStream(xStream))
+	{
+		// The read already asserted + logged the precise violation. Never hand a
+		// partially-parsed mesh back to the caller.
+		delete pxNavMesh;
+		return nullptr;
+	}
+
+	Zenith_Log(LOG_CATEGORY_AI, "Loaded navmesh: %s (%u vertices, %u polygons)",
+		strPath.c_str(), pxNavMesh->GetVertexCount(), pxNavMesh->GetPolygonCount());
 	return pxNavMesh;
 }
 
 bool Zenith_NavMesh::SaveToFile(const std::string& strPath) const
 {
+	if (strPath.empty())
+	{
+		Zenith_Assert(false, "NavMesh save: empty path");
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh save: empty path");
+		return false;
+	}
+
 	Zenith_DataStream xStream;
 	WriteToDataStream(xStream);
 
 	xStream.WriteToFile(strPath.c_str());
+
+	// Zenith_FileAccess::WriteFile returns void, so the file being back on disk
+	// is the only truthful success signal available here.
+	if (!Zenith_FileAccess::FileExists(strPath.c_str()))
+	{
+		Zenith_Assert(false, "NavMesh save: file absent after write: %s", strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_AI, "NavMesh save: file absent after write: %s", strPath.c_str());
+		return false;
+	}
 
 	Zenith_Log(LOG_CATEGORY_AI, "Saved navmesh: %s (%u vertices, %u polygons)",
 		strPath.c_str(), m_axVertices.GetSize(), m_axPolygons.GetSize());
@@ -1149,8 +1423,8 @@ void Zenith_NavMesh::DebugDrawBoundaryEdges(const Zenith_NavMeshPolygon& xPoly, 
 		bool bEdgeHasNeighbor = false;
 		if (u < xPoly.m_axNeighborIndices.GetSize())
 		{
-			int32_t iNeighborIdx = xPoly.m_axNeighborIndices.Get(u);
-			bEdgeHasNeighbor = (iNeighborIdx >= 0 && iNeighborIdx != static_cast<int32_t>(UINT32_MAX));
+			const int32_t iNeighborIdx = xPoly.m_axNeighborIndices.Get(u);
+			bEdgeHasNeighbor = (iNeighborIdx >= 0 && iNeighborIdx != iZENITH_NAVMESH_NO_NEIGHBOUR);
 		}
 
 		// Draw boundary edge if no neighbor on this edge
@@ -1187,9 +1461,11 @@ void Zenith_NavMesh::DebugDrawNeighborConnections(uint32_t uPoly, const Zenith_N
 {
 	for (uint32_t n = 0; n < xPoly.m_axNeighborIndices.GetSize(); ++n)
 	{
-		uint32_t uNeighborIdx = xPoly.m_axNeighborIndices.Get(n);
-		if (uNeighborIdx != UINT32_MAX && uNeighborIdx < m_axPolygons.GetSize())
+		const int32_t iNeighborIdx = xPoly.m_axNeighborIndices.Get(n);
+		if (iNeighborIdx != iZENITH_NAVMESH_NO_NEIGHBOUR && iNeighborIdx >= 0 &&
+			static_cast<uint32_t>(iNeighborIdx) < m_axPolygons.GetSize())
 		{
+			const uint32_t uNeighborIdx = static_cast<uint32_t>(iNeighborIdx);
 			// Only draw if this poly index is less than neighbor to avoid duplicates
 			if (uPoly < uNeighborIdx)
 			{
@@ -1203,72 +1479,61 @@ void Zenith_NavMesh::DebugDrawNeighborConnections(uint32_t uPoly, const Zenith_N
 	}
 }
 
-void Zenith_NavMesh::DebugDraw() const
+void Zenith_NavMesh::DebugDrawCenterAndNormal(const Zenith_NavMeshPolygon& xPoly,
+	const Zenith_Maths::Vector3& xOffset, const Zenith_Maths::Vector3& xCenterColor) const
 {
-	if (!Zenith_AIDebugVariables::s_bEnableAllAIDebug)
-	{
-		return;
-	}
+	const Zenith_Maths::Vector3 xCenter = xPoly.m_xCenter + xOffset;
+	Zenith_AI_DebugDrawCross(xCenter, 0.15f, xCenterColor);
+	Zenith_AI_DebugDrawLine(xCenter, xCenter + xPoly.m_xNormal * 0.5f, xCenterColor, 0.015f);
+}
 
+void Zenith_NavMesh::DebugDraw(const Zenith_NavMeshDebugDrawFlags& xFlags) const
+{
 	const Zenith_Maths::Vector3 xWalkableColor(0.2f, 0.8f, 0.2f);
 	const Zenith_Maths::Vector3 xEdgeColor(0.1f, 0.5f, 0.1f);
 	const Zenith_Maths::Vector3 xBoundaryColor(0.8f, 0.2f, 0.2f);
 	const Zenith_Maths::Vector3 xNeighborColor(0.2f, 0.5f, 0.8f);
-
-	// Draw each polygon
-	// Use a small offset to lift visualization above underlying geometry
-	// (NavMesh polygons may be slightly below surfaces due to voxelization)
-	const float fVisualOffset = 0.15f;
-
-	// Debug: Log sample polygon heights (only once per NavMesh)
-	static bool s_bLoggedHeights = false;
-	if (!s_bLoggedHeights && m_axPolygons.GetSize() > 0)
-	{
-		s_bLoggedHeights = true;
-
-		// Find min/max Y of polygon vertices
-		float fMinY = FLT_MAX, fMaxY = -FLT_MAX;
-		for (uint32_t u = 0; u < m_axVertices.GetSize(); ++u)
-		{
-			fMinY = std::min(fMinY, m_axVertices.Get(u).y);
-			fMaxY = std::max(fMaxY, m_axVertices.Get(u).y);
-		}
-		Zenith_Log(LOG_CATEGORY_AI, "NavMesh DebugDraw: %u polygons, vertex Y range [%.2f, %.2f], visual offset %.2f",
-			m_axPolygons.GetSize(), fMinY, fMaxY, fVisualOffset);
-
-		// Log first floor polygon details
-		for (uint32_t uPoly = 0; uPoly < m_axPolygons.GetSize() && uPoly < 3; ++uPoly)
-		{
-			const Zenith_NavMeshPolygon& xP = m_axPolygons.Get(uPoly);
-			Zenith_Log(LOG_CATEGORY_AI, "  Poly %u: center Y=%.2f, normal=(%.2f,%.2f,%.2f), rendered at Y=%.2f",
-				uPoly, xP.m_xCenter.y, xP.m_xNormal.x, xP.m_xNormal.y, xP.m_xNormal.z,
-				xP.m_xCenter.y + xP.m_xNormal.y * fVisualOffset);
-		}
-	}
+	const Zenith_Maths::Vector3 xCenterColor(0.9f, 0.9f, 0.2f);
+	const Zenith_Maths::Vector3 xBlockedColor(0.9f, 0.35f, 0.05f);
 
 	for (uint32_t uPoly = 0; uPoly < m_axPolygons.GetSize(); ++uPoly)
 	{
 		const Zenith_NavMeshPolygon& xPoly = m_axPolygons.Get(uPoly);
-		Zenith_Maths::Vector3 xOffset = xPoly.m_xNormal * fVisualOffset;
 
-		if (Zenith_AIDebugVariables::s_bDrawNavMeshEdges)
+		// Lift along the polygon's own normal so the visualisation clears the
+		// surface it was voxelised from instead of z-fighting it.
+		const Zenith_Maths::Vector3 xOffset = xPoly.m_xNormal * xFlags.m_fSurfaceOffset;
+
+		if (xFlags.m_bEdges)
 		{
 			DebugDrawEdges(xPoly, xOffset, xEdgeColor);
 		}
 
-		if (Zenith_AIDebugVariables::s_bDrawNavMeshBoundary)
+		if (xFlags.m_bBoundaryEdges)
 		{
 			DebugDrawBoundaryEdges(xPoly, xOffset, xBoundaryColor);
 		}
 
-		if (Zenith_AIDebugVariables::s_bDrawNavMeshPolygons)
+		// A blocked polygon is filled in the warning colour whether or not the
+		// walkable fill is on, so a dynamic obstacle is visible at a glance.
+		const bool bBlocked = xPoly.IsBlocked();
+		if (xFlags.m_bHighlightBlocked && bBlocked)
+		{
+			DebugDrawPolygonFill(xPoly, xOffset, xBlockedColor);
+		}
+		else if (xFlags.m_bFilled)
 		{
 			DebugDrawPolygonFill(xPoly, xOffset, xWalkableColor);
 		}
 
-		if (Zenith_AIDebugVariables::s_bDrawNavMeshNeighbors)
+		if (xFlags.m_bAdjacencyLinks)
 		{
 			DebugDrawNeighborConnections(uPoly, xPoly, xOffset, xNeighborColor);
+		}
+
+		if (xFlags.m_bCentersAndNormals)
+		{
+			DebugDrawCenterAndNormal(xPoly, xOffset, xCenterColor);
 		}
 	}
 }

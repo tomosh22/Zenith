@@ -26,12 +26,33 @@ produced no behaviour-graph or navmesh asset.)
 ### 0.1 The one rule that shapes everything
 
 **Every asset is procedurally generated and baked to disk by ZENITH_TOOLS
-builds. Nothing under `Games/Zenithmon/Assets/` is ever committed** -- the
-directory is git-ignored (repo norm, same as RenderTest/DP/CityBuilder).
-A fresh checkout has NO assets; a `Vulkan_vs2022_Debug_Win64_True` build+run
-regenerates them. There is no artist, no outsourcing, no import pipeline --
-the "asset team" is generator/authoring code (`Games/Zenithmon/Tools/` for
-the S4 families and `Source/World/ZM_TerrainAuthoring` for S3 terrain).
+builds, and almost nothing under `Games/Zenithmon/Assets/` is committed** --
+the directory is git-ignored (repo norm, same as RenderTest/DP/CityBuilder).
+A fresh checkout has essentially NO assets; a `Vulkan_vs2022_Debug_Win64_True`
+build+run regenerates them. There is no artist, no outsourcing, no import
+pipeline -- the "asset team" is generator/authoring code
+(`Games/Zenithmon/Tools/` for the S4 families and
+`Source/World/ZM_TerrainAuthoring` for S3 terrain).
+
+**TWO deliberate exceptions, both added by SC1b (ZM-D-145 / ZM-D-147):**
+
+| Committed file | Size | Why it is tracked |
+|---|---|---|
+| `Assets/Navmesh/Dawnmere.znavmesh` | ~365 KB | Loadable with NO GPU, NO terrain component and NO other asset — which is what makes navigation CI-verifiable for the first time. Byte-deterministic across bakes. |
+| `Assets/Scenes/Dawnmere.zscen` | ~3.8 KB | The ONE scene a Null/CI boot never authors (the Dawnmere block is windowed + all-warm gated). Without it CI has no Dawnmere scene, and the authored navmesh component has no gate. |
+
+**The other three scenes stay IGNORED, on measurement.** `FrontEnd`, `Battle`
+and `PlayerHome` are re-authored on EVERY boot including Null/CI, so tracking
+them buys nothing — and they churn: a scene's bytes are deterministic for a
+given boot shape but encode entity indices assigned during that boot, so a boot
+whose unit-test population differs re-authors different bytes (measured:
+Battle 4 bytes, PlayerHome 12, entity-index-shaped). `Dawnmere.zscen` carries
+the same latent hazard and has not moved through any measurement so far; if it
+ever does, **re-bake and re-commit** rather than re-ignoring it.
+
+Everything else — creatures, humans, buildings, props, terrain (~641 MB) —
+stays git-ignored. Adopting git-LFS for the heavy families is a separate, still
+open user decision.
 
 ### 0.2 Headline counts
 

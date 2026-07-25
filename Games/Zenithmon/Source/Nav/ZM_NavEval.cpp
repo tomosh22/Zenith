@@ -194,6 +194,8 @@ ZM_NavEvalResult ZM_EvaluateDawnmereNavGeneration(float fCellSize, bool bUpwardN
 	xResult.m_uQuadsPerSide = 0u;
 	xResult.m_uGeneratorGridDim = 0u;
 	xResult.m_fMinSafeCellSize = 0.0f;
+	xResult.m_xBoundsMin = Zenith_Maths::Vector3(0.0f);
+	xResult.m_xBoundsMax = Zenith_Maths::Vector3(0.0f);
 
 	const ZM_NavEvalRect xRect = ZM_GetDawnmereNavRect();
 
@@ -236,6 +238,8 @@ ZM_NavEvalResult ZM_EvaluateDawnmereNavGeneration(float fCellSize, bool bUpwardN
 	xResult.m_bSuccess = true;
 	xResult.m_uPolygonCount = pxNavMesh->GetPolygonCount();
 	xResult.m_uVertexCount = pxNavMesh->GetVertexCount();
+	xResult.m_xBoundsMin = pxNavMesh->GetBoundsMin();
+	xResult.m_xBoundsMax = pxNavMesh->GetBoundsMax();
 
 	u_int uWalkable = 0u;
 	for (u_int u = 0u; u < xResult.m_uPolygonCount; ++u)

@@ -6,6 +6,64 @@
 
 class Zenith_DataStream;
 
+// ============================================================================
+// "ZNAV" wire format (version 1)
+//
+// Shared by the writer, the VALIDATING reader and the unit tests that hand-build
+// corrupt files. The format is unchanged by the SC1b hardening — a valid mesh
+// round-trips byte-identically; only the reader's rejection behaviour changed.
+//
+// Layout:
+//   char[4]  "ZNAV"
+//   u32      version (== uZENITH_NAVMESH_WIRE_VERSION)
+//   u32      vertexCount, then vertexCount * (f32 x, y, z)
+//   u32      polygonCount, then polygonCount * polygon records
+//   f32[6]   boundsMin.xyz, boundsMax.xyz
+//
+// A polygon record is:
+//   u32      vertexCount, then vertexCount * u32 vertex index
+//   u32      neighbourCount (== vertexCount), then neighbourCount * i32
+//   f32[7]   center.xyz, normal.xyz, area   (RECOMPUTED on load — see below)
+//   u32      flags
+//   f32      cost
+//
+// The per-polygon center/normal/area and the mesh bounds are DEAD BYTES on the
+// read path: ReadFromDataStream finishes with BuildSpatialGrid(), which calls
+// ComputeSpatialData() and overwrites all of them from the vertices. They are
+// still written (churn-free v1) and still read (to advance the cursor), but they
+// are deliberately NOT validated — a corrupt value there cannot survive the
+// load. Mesh bounds ARE validated: BuildSpatialGrid() early-outs on a zero-
+// polygon mesh, so for a well-formed empty mesh the read bounds do stand.
+// ============================================================================
+
+constexpr uint32_t uZENITH_NAVMESH_WIRE_VERSION = 1u;
+
+// Hard ceiling on one polygon's vertex count. The generator emits quads; this is
+// a corruption guard, not a design limit.
+constexpr uint32_t uZENITH_NAVMESH_MAX_POLYGON_VERTICES = 64u;
+
+// The "this edge has no neighbour" sentinel stored in m_axNeighborIndices.
+constexpr int32_t iZENITH_NAVMESH_NO_NEIGHBOUR = -1;
+
+/**
+ * Zenith_NavMeshDebugDrawFlags - which visual sections Zenith_NavMesh::DebugDraw
+ * emits. Per-caller (the editor panel owns one per component), so two navmeshes
+ * can be visualised differently at the same time; there is no global draw state.
+ */
+struct Zenith_NavMeshDebugDrawFlags
+{
+	bool m_bEdges = true;             // every polygon edge
+	bool m_bBoundaryEdges = true;     // edges with no neighbour, thicker
+	bool m_bFilled = false;           // fan-triangulated polygon interiors
+	bool m_bAdjacencyLinks = false;   // center-to-center portal links
+	bool m_bCentersAndNormals = false;// a cross at each center + its normal
+	bool m_bHighlightBlocked = true;  // BLOCKED polygons filled in warning colour
+
+	// Lift applied along each polygon's normal so the visualisation does not
+	// z-fight the surface it was voxelised from.
+	float m_fSurfaceOffset = 0.15f;
+};
+
 /**
  * Zenith_NavMeshPolygon - A convex polygon in the navigation mesh
  *
@@ -39,9 +97,17 @@ struct Zenith_NavMeshPolygon
 
 	bool IsBlocked() const { return (m_uFlags & FLAG_BLOCKED) != 0u; }
 
-	// Serialization
+	// Serialization.
+	//
+	// The read is VALIDATING and TOTAL: it is handed the mesh-level vertex and
+	// polygon counts so every index is range-checked BEFORE it is stored, and it
+	// returns false — after a Zenith_Assert and a Zenith_Error — on any
+	// violation. It takes the counts rather than being reachable through
+	// Zenith_DataStream::operator>>, because a polygon cannot be validated
+	// without its mesh's counts; the operator would have to trust the file.
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
-	void ReadFromDataStream(Zenith_DataStream& xStream);
+	bool ReadFromDataStream(Zenith_DataStream& xStream,
+		uint32_t uMeshVertexCount, uint32_t uMeshPolygonCount);
 
 	// Compute center, normal, and area from vertices
 	void ComputeSpatialData(const Zenith_Vector<Zenith_Maths::Vector3>& axVertices);
@@ -306,22 +372,46 @@ public:
 	// ========== Serialization ==========
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
-	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	/**
-	 * Load from file (.znavmesh)
+	 * Read a "ZNAV" v1 mesh from xStream, validating every section before it is
+	 * used. EVERY rejection fires a Zenith_Assert (a malformed navmesh is a
+	 * defect, not an expected state — the asset is committed) plus a
+	 * Zenith_Error, and returns false.
+	 *
+	 * DEFINED FAILURE: on false the mesh is left EMPTY (Clear()ed), never
+	 * half-populated. All validation is ordered ahead of every Reserve and every
+	 * indexed Get, so a corrupt count can neither drive an allocation nor read
+	 * out of bounds before the assert fires.
+	 *
+	 * @return true if the whole stream parsed and the spatial grid was rebuilt.
+	 */
+	bool ReadFromDataStream(Zenith_DataStream& xStream);
+
+	/**
+	 * Load from file (.znavmesh).
+	 * @return A newly allocated mesh the caller owns, or nullptr on ANY failure
+	 *         (empty path, missing file, unreadable file, invalid contents). The
+	 *         partially-read mesh is deleted rather than handed back.
 	 */
 	static Zenith_NavMesh* LoadFromFile(const std::string& strPath);
 
 	/**
-	 * Save to file (.znavmesh)
+	 * Save to file (.znavmesh).
+	 * @return true only if the bytes are back on disk afterwards. Zenith_FileAccess
+	 *         ::WriteFile returns void, so an existence re-check is the only
+	 *         truthful success signal available here.
 	 */
 	bool SaveToFile(const std::string& strPath) const;
 
 	// ========== Debug Visualization ==========
 
 #ifdef ZENITH_TOOLS
-	void DebugDraw() const;
+	// Emit the requested visual sections through the Zenith_AI_DebugDraw* seam.
+	// Draw state is the CALLER's (see Zenith_NavMeshDebugDrawFlags) — this
+	// consults no global, so the editor's per-component toggles are the whole
+	// story and two meshes can be visualised differently at once.
+	void DebugDraw(const Zenith_NavMeshDebugDrawFlags& xFlags) const;
 #endif
 
 private:
@@ -371,6 +461,14 @@ private:
 		const Zenith_Vector<Zenith_Maths::Vector3>& axVertices,
 		Zenith_Maths::Vector3& xPolyMinOut, Zenith_Maths::Vector3& xPolyMaxOut);
 
+	// ReadFromDataStream sections. Each validates its own section fully and
+	// returns false (having asserted + logged) rather than throwing the caller a
+	// half-read stream. Split out so the orchestrator stays a flat conjunction.
+	bool ReadHeaderFromDataStream(Zenith_DataStream& xStream);
+	bool ReadVerticesFromDataStream(Zenith_DataStream& xStream);
+	bool ReadPolygonsFromDataStream(Zenith_DataStream& xStream);
+	bool ReadBoundsFromDataStream(Zenith_DataStream& xStream);
+
 #ifdef ZENITH_TOOLS
 	// DebugDraw helpers (each draws one visual section per polygon)
 	void DebugDrawEdges(const Zenith_NavMeshPolygon& xPoly, const Zenith_Maths::Vector3& xOffset,
@@ -381,5 +479,7 @@ private:
 		const Zenith_Maths::Vector3& xWalkableColor) const;
 	void DebugDrawNeighborConnections(uint32_t uPoly, const Zenith_NavMeshPolygon& xPoly,
 		const Zenith_Maths::Vector3& xOffset, const Zenith_Maths::Vector3& xNeighborColor) const;
+	void DebugDrawCenterAndNormal(const Zenith_NavMeshPolygon& xPoly, const Zenith_Maths::Vector3& xOffset,
+		const Zenith_Maths::Vector3& xCenterColor) const;
 #endif
 };

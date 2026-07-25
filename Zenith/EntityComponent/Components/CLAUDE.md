@@ -20,6 +20,7 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_UIComponent` | UI element support |
 | `Zenith_AIAgentComponent` | Behaviour tree execution + blackboard state (AI system integration) |
 | `Zenith_AttachmentComponent` | Bone-attachment that follows a named bone on another entity each frame (e.g. racket in hand, held weapon) |
+| `Zenith_NavMeshComponent` | Baked-navmesh holder — loads a committed `.znavmesh` in `OnStart` and owns it for the component's lifetime; rich TOOLS debugging panel |
 
 ## AnimatorComponent is a forwarding handle (Wave-19 ownership relocation)
 
@@ -106,7 +107,7 @@ Component serialization order is determined by the explicit `order` argument pas
 Current order (centralised in `Zenith_ComponentMeta_Registration.cpp`):
 Transform (0), Model (10), Tween (12), Animator (15), Camera (20), Light (25),
 Terrain (40), Collider (50), Graph (60), UI (70), InstancedMesh (80),
-ParticleEmitter (85), AIAgent (90), Attachment (95).
+ParticleEmitter (85), AIAgent (90), Attachment (95), NavMesh (96).
 
 New components default to order 1000 (serialized last). Game components use
 orders 100+ (unique per game).

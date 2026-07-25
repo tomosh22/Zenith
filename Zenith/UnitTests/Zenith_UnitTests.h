@@ -354,6 +354,41 @@ public:
 	static void TestNavMeshFindNearestPolygonInCell();
 	static void TestNavMeshComputePolygonBounds();
 	static void TestNavMeshGetRandomReachablePointInRadius();
+
+	// AI System tests - NavMesh persistence (SC1b commit B, ZM-D-147)
+	static void TestNavMeshSerializationRoundTrip();
+	static void TestNavMeshSerializationIsByteDeterministic();
+	static void TestNavMeshEmptyMeshRoundTrips();
+	static void TestNavMeshStitchedPortalSurvivesRoundTrip();
+	static void TestNavMeshReadRejectsBadMagic();
+	static void TestNavMeshReadRejectsWrongVersion();
+	static void TestNavMeshReadRejectsTruncation();
+	static void TestNavMeshReadRejectsAbsurdCounts();
+	static void TestNavMeshReadRejectsOutOfRangeIndices();
+	static void TestNavMeshReadRejectsNonFiniteVertex();
+	static void TestNavMeshLoadFromFileRejectsMissingAndEmptyPaths();
+	static void TestNavMeshSaveAndLoadThroughDisk();
+	static void TestNavMeshLoadFromFileRejectsCorruptFile();
+
+	// AI System tests - NavMesh bake + stats
+	static void TestNavMeshBakerWritesLoadableFile();
+	static void TestNavMeshBakerIsByteDeterministic();
+	static void TestNavMeshBakerRejectsEmptyGeometry();
+	static void TestNavMeshBakerRejectsEmptyPath();
+	static void TestNavMeshBakerReportsUnwalkableGeometry();
+	static void TestNavMeshStatsOnCraftedMesh();
+	static void TestNavMeshStatsOnEmptyMeshIsDefined();
+	static void TestNavMeshStatsSurviveSerialization();
+
+	// Zenith_NavMeshComponent (the runtime baked-navmesh holder)
+	static void TestNavMeshComponentAssetRefRoundTrip();
+	static void TestNavMeshComponentSetAssetRefLoadsAndOwns();
+	static void TestNavMeshComponentOnStartLoads();
+	static void TestNavMeshComponentOnStartWithNoRefIsInert();
+	static void TestNavMeshComponentBadRefCapturesFailure();
+	static void TestNavMeshComponentMoveRelocation();
+	static void TestNavMeshComponentSceneUnloadFrees();
+
 	static void TestPathfindingStraightLine();
 	static void TestPathfindingAroundObstacle();
 	static void TestPathfindingNoPath();
