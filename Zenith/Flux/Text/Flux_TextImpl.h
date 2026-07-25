@@ -67,9 +67,19 @@ public:
 	void ClearOverlayClipRect();
 	void DiscardPendingFrame();
 
-	// Accessor for the active font asset. Returns the handle (which Resolves on first
-	// use) so callers can grab metrics or null-check. Used by
-	// Zenith_FontAsset::GetActiveOrDefaultMetrics and by UI layout call sites.
+	// THE font accessor. Returns nullptr once the font is known-unavailable
+	// instead of re-attempting the load, so a per-frame caller costs nothing.
+	//
+	// ALWAYS prefer this over GetFontHandle().Resolve() from anything that runs
+	// per frame: Zenith_AssetHandle caches only SUCCESS, so a bare Resolve() on a
+	// missing asset re-enters the registry (failed disk open + 3 log lines) EVERY
+	// call. With Zenith/Assets absent -- a fresh CI checkout, since it is
+	// gitignored -- UI layout drove ~25k load attempts in 180 s and reduced the
+	// headless batch to a crawl, once the Null backend made the text path
+	// actually execute.
+	Zenith_FontAsset* TryResolveFont() { return m_bFontUnavailable ? nullptr : m_xFontAsset.Resolve(); }
+
+	// Raw handle. For non-per-frame use (setup, teardown, tooling) only.
 	FontHandle& GetFontHandle() { return m_xFontAsset; }
 	const FontHandle& GetFontHandle() const { return m_xFontAsset; }
 
@@ -77,6 +87,14 @@ public:
 	Flux_Pipeline            m_xPipeline;
 	Flux_DynamicVertexBuffer m_xInstanceBuffer;
 	FontHandle               m_xFontAsset;
+	// Latched at Initialise when the font fails to load. Zenith_AssetHandle
+	// caches only SUCCESS, so an unresolved handle re-attempts the registry load
+	// on EVERY Resolve() -- and the two text sites below run per frame. With the
+	// font absent (a fresh CI checkout: Zenith/Assets is gitignored) that is a
+	// failed disk open + three log lines per frame, forever, which reduced a
+	// CityBuilder headless batch to a crawl once the Null backend made the text
+	// path actually execute. Ask once; then stay a no-op.
+	bool                     m_bFontUnavailable = false;
 
 	bool                     m_bOverlayClipActive    = false;
 	Zenith_Maths::Vector4    m_xOverlayClipRect      = { -1.f, -1.f, -1.f, -1.f };

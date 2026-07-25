@@ -73,6 +73,9 @@ void Flux_TextImpl::Initialise()
 	this->m_xFontAsset = FontHandle("engine:Fonts/LiberationMono.zfont");
 	if (!this->m_xFontAsset.Resolve())
 	{
+		// Latch it: the per-frame Resolve() calls below must not re-attempt the
+		// load every frame (see m_bFontUnavailable on Flux_TextImpl).
+		this->m_bFontUnavailable = true;
 		Zenith_Warning(LOG_CATEGORY_TEXT, "Flux_Text: failed to load engine:Fonts/LiberationMono.zfont — text rendering will be no-op");
 	}
 
@@ -218,7 +221,7 @@ uint32_t Flux_TextImpl::UploadChars()
 	Zenith_Vector<Flux_TextVertex> xVertices(s_uMaxCharsPerFrame);
 	uint32_t uCharCount = 0;
 
-	const Zenith_FontAsset* pxFont = this->m_xFontAsset.Resolve();
+	const Zenith_FontAsset* pxFont = this->TryResolveFont();
 
 	Zenith_Vector<Flux::Flux_TextEntry>& xTextEntries = Flux::Flux_TextQueue::GetPending();
 
@@ -305,7 +308,7 @@ void Flux_TextImpl::ExecuteRenderGraphPass(
 		return;
 	}
 
-	const Zenith_FontAsset* pxFont = xText.m_xFontAsset.Resolve();
+	const Zenith_FontAsset* pxFont = xText.TryResolveFont();
 	if (!pxFont)
 	{
 		// No font loaded — nothing to draw.

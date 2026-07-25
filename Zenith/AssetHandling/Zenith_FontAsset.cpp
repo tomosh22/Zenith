@@ -27,7 +27,10 @@ const Zenith_FontAsset::FontMetrics& Zenith_FontAsset::GetActiveOrDefaultMetrics
 	// torn down, or never initialised at all (headless test contexts).
 	if (Flux_TextImpl* pxText = g_xEngine.TryGetText())
 	{
-		if (Zenith_FontAsset* pxFont = pxText->GetFontHandle().Resolve())
+		// TryResolveFont, NOT GetFontHandle().Resolve(): UI layout calls this for
+		// every text element every frame, and a bare Resolve() re-attempts a
+		// failed load each time (see Flux_TextImpl::TryResolveFont).
+		if (Zenith_FontAsset* pxFont = pxText->TryResolveFont())
 		{
 			return pxFont->GetMetrics();
 		}

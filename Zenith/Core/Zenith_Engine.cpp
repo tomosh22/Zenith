@@ -676,9 +676,24 @@ void Zenith_Engine::InitialiseGPUAssets()
 	//#TO_TODO: move somewhere sensible
 	Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after g_xEngine.FluxRenderer().EarlyInitialise()
 
-	// Load cubemap texture (pinned)
+	// ---- Pinned engine textures -------------------------------------------
+	// EVERY pinned slot below MUST end up holding a texture with a VALID VRAM
+	// handle, even when its file is missing. `Zenith/Assets/` is gitignored, so a
+	// fresh CI checkout genuinely has none of these -- and since headless became a
+	// real render pass (the Null backend records the graph rather than skipping
+	// it), an unset slot reaches the recorder and trips
+	// `BindSRV: SRV has invalid VRAM handle`, which is a process kill, not a
+	// degradation. Absent content must be graceful; only CORRUPT content asserts.
+	//
+	// The 1x1 procedural white texture is the fallback: it has no disk dependency,
+	// so it is always valid. This is the same substitution the particle system
+	// already performs ("Failed to load particle texture, using white texture").
+	Zenith_TextureAsset* pxWhiteFallback = g_xEngine.FluxGraphics().m_xWhiteTexture.Resolve();
+
+	// Cubemap (pinned).
 	auto xhCubemap = Zenith_AssetRegistry::Create<Zenith_TextureAsset>();
-	if (Zenith_TextureAsset* pxCubemap = xhCubemap.GetDirect())
+	Zenith_TextureAsset* pxCubemap = xhCubemap.GetDirect();
+	if (pxCubemap != nullptr)
 	{
 		pxCubemap->LoadCubemapFromFiles(
 			ENGINE_ASSETS_DIR"Textures/Cubemap/px" ZENITH_TEXTURE_EXT,
@@ -688,13 +703,29 @@ void Zenith_Engine::InitialiseGPUAssets()
 			ENGINE_ASSETS_DIR"Textures/Cubemap/pz" ZENITH_TEXTURE_EXT,
 			ENGINE_ASSETS_DIR"Textures/Cubemap/nz" ZENITH_TEXTURE_EXT
 		);
+	}
+	if (pxCubemap != nullptr && pxCubemap->IsValid())
+	{
 		g_xEngine.FluxGraphics().m_xCubemapTexture.Set(pxCubemap);
 	}
+	else if (pxWhiteFallback != nullptr)
+	{
+		Zenith_Error(LOG_CATEGORY_ASSET,
+			"Engine cubemap missing or unloadable -- pinning the white fallback so the skybox bind stays valid");
+		g_xEngine.FluxGraphics().m_xCubemapTexture.Set(pxWhiteFallback);
+	}
 
-	// Load water normal texture (pinned)
-	if (Zenith_TextureAsset* pxWaterNormal = Zenith_AssetRegistry::GetView<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT))
+	// Water normal (pinned).
+	Zenith_TextureAsset* pxWaterNormal = Zenith_AssetRegistry::GetView<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT);
+	if (pxWaterNormal != nullptr && pxWaterNormal->IsValid())
 	{
 		g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWaterNormal);
+	}
+	else if (pxWhiteFallback != nullptr)
+	{
+		Zenith_Error(LOG_CATEGORY_ASSET,
+			"Engine water-normal texture missing or unloadable -- pinning the white fallback so the water bind stays valid");
+		g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWhiteFallback);
 	}
 
 	g_xEngine.FluxMemory().Flush();
