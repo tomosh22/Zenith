@@ -26,7 +26,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $buildDir = $PSScriptRoot
 $repoRoot = Split-Path -Parent $buildDir
-Import-Module (Join-Path $buildDir 'zenith_buildsystem.psm1') -Force
+# -Global: a plain -Force here DISPLACES a caller's already-global import of this
+# same module into regen's private scope, so a script that imported it, then ran
+# regen, then called an accessor would fail with "not recognized". Same hazard and
+# same fix as ZenithTestHarness.psm1 -- see Tools/ZenithCli/CLAUDE.md.
+Import-Module (Join-Path $buildDir 'zenith_buildsystem.psm1') -Force -Global
 
 function Fail([string]$Message, [int]$Code) {
     Write-Host ""

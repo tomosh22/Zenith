@@ -16,7 +16,11 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $repoRoot 'Tools/ZenithCli/ZenithCli.psm1') -Force
 # Config accessors + Repair-ZenithRuntimeDlls + ConvertTo-ZenithOutputDir.
-Import-Module (Join-Path $repoRoot 'Build/zenith_buildsystem.psm1') -Force
+# -Global is load-bearing: ZenithCli.psm1 (imported above) already imports this
+# module, and a plain -Force here DISPLACES that global import into a private
+# scope, leaving Get-ZenithBuildConfigData unresolvable at script scope. Same
+# hazard, same fix as ZenithTestHarness.psm1 -- see Tools/ZenithCli/CLAUDE.md.
+Import-Module (Join-Path $repoRoot 'Build/zenith_buildsystem.psm1') -Force -Global
 $gameDir = Join-Path $repoRoot "Games/$Name"
 $zenith = Join-Path $repoRoot 'Tools/zenith.ps1'
 $scratch = [System.IO.Path]::GetTempPath()
@@ -59,6 +63,10 @@ try {
         # The unit gate BOOTS an exe, so it needs the Null (GPU-less) build --
         # headless is a build config now, not a flag. The Vulkan build above stays
         # as the real-renderer compile proof.
+        # Re-import immediately before use: everything above ran `zenith new`,
+        # which runs regen, and any -Force import along that chain can displace
+        # this module out of script scope. Cheap and order-independent.
+        Import-Module (Join-Path $repoRoot 'Build/zenith_buildsystem.psm1') -Force -Global
         $headlessConfig = (Get-ZenithBuildConfigData).HeadlessConfigWin64
         Write-Host "[scaffold] building $Name ($headlessConfig)..." -ForegroundColor Cyan
         & $msbuild $sln /t:$Name /p:Configuration=$headlessConfig /p:Platform=x64 /p:WindowsTargetPlatformVersion=10.0 /m /nologo /v:minimal | Out-Host

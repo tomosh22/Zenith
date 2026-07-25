@@ -137,7 +137,9 @@ jobs:
           # config leaves those absent and the exe dies with STATUS_DLL_NOT_FOUND
           # (exit 0xC0000135) before main() -- an empty log that reads as a build
           # failure. No vulkan-1.dll: the Null backend never loads a Vulkan loader.
-          Import-Module Build\zenith_buildsystem.psm1 -Force
+          # NOTE the .\ prefix: without a leading dot PowerShell reads the argument
+          # as a MODULE NAME and searches $PSModulePath, not the repo.
+          Import-Module .\Build\zenith_buildsystem.psm1 -Force
           $copied = Repair-ZenithRuntimeDlls -ExeDir (Resolve-Path $exeDir).Path
           Write-Host "healed $($copied.Count) runtime DLL(s): $($copied -join ', ')"
           Write-Host "DLLs in exe output dir:"
