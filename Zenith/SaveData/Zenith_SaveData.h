@@ -2,6 +2,7 @@
 
 #include "DataStream/Zenith_DataStream.h"
 #include "Core/Zenith_Result.h"
+#include "FileAccess/Zenith_FileAccess.h"   // ZENITH_MAX_PATH_LENGTH / ZENITH_SAVE_EXT
 
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Collections/Zenith_Vector.h"
@@ -32,10 +33,48 @@ namespace Zenith_SaveData
 	// szGameName: used to create a per-game subdirectory (e.g. "TilePuzzle")
 	void Initialise(const char* szGameName);
 
-	// Get the platform-specific save directory path (ends with /)
+	// Get the save directory path (ends with /)
 	// Windows: %APPDATA%/Zenith/<GameName>/
 	// Android: <internal storage>/Zenith/<GameName>/
+	// ...unless this process is an automated-test run, in which case it is an
+	// owned SANDBOX directory instead — see below.
 	const char* GetSaveDirectory();
+
+	// ========================================================================
+	// Automated-test save sandbox
+	//
+	// An automated-test run must never touch the player's real save data, and
+	// must not leak a slot from one test into the next (or into the next
+	// PROCESS). Initialise therefore redirects the whole save directory into a
+	// sandbox whenever Zenith_CommandLine::IsAutomatedTestRun() is true.
+	//
+	// The sandbox is picked from one of exactly two TRUSTED roots:
+	//   (a) the engine's own fallback, <exe dir>/TestSaveData/<run-id>/ —
+	//       trusted because it is derived from this module's own path and
+	//       created here;
+	//   (b) a runner-supplied --test-save-root, accepted ONLY if it
+	//       canonicalises, is a directory, and carries an ownership marker
+	//       whose run-id matches --test-save-run-id. The runner is the only
+	//       thing that writes markers, and only under the artifacts root, so
+	//       marker presence IS the ownership proof.
+	// A supplied root that fails any check is refused with a warning and the
+	// engine falls back to (a). The engine never creates a supplied root.
+	//
+	// WipeTestSandbox() deletes ONLY *.zsave files, non-recursively, in the
+	// exact marker-bearing canonical directory, and only when this process
+	// actually established a sandbox. Never directories, never other
+	// extensions, never traversal — the canonical form is resolved once at
+	// Initialise and reused, so a junction cannot redirect a later delete.
+	// Removing the <run-id> directory itself is the RUNNER's job.
+	// ========================================================================
+
+	// True when Initialise redirected saves into an owned sandbox.
+	bool IsUsingTestSandbox();
+
+	// Delete every .zsave in the sandbox. No-op (returns 0) when no sandbox is
+	// active — so a stray call in a normal run can never touch real saves.
+	// Returns the number of files deleted.
+	uint32_t WipeTestSandbox();
 
 	// Callback for writing game-specific data into a DataStream
 	typedef void(*SaveWriteCallback)(Zenith_DataStream& xStream, void* pxUserData);
@@ -116,7 +155,28 @@ namespace Zenith_SaveData
 	void SetReadbackForTest(const char* szSlotName, uint32_t uGameVersion,
 		const void* pData, uint64_t ulSize);
 
-	// Wipe the recording log + readback stash. Disk files are NOT touched.
+	// Wipe the recording log + readback stash. Disk files are NOT touched
+	// (WipeTestSandbox is the disk half, and it is deliberately separate: no
+	// cleanup path may depend on the instrumentation log being present).
 	void ClearForTest();
+
+	// Scoped save-root override for boot units that do REAL disk I/O. Redirects
+	// GetSaveDirectory() to a caller-owned directory for the scope and restores
+	// the previous root (sandbox or production) on destruction, so a unit test
+	// can exercise the genuine file path without writing anywhere it does not
+	// own. Replaces the per-game ad-hoc slot-renaming schemes.
+	class ScopedSaveRootForTest
+	{
+	public:
+		explicit ScopedSaveRootForTest(const char* szDirectory);
+		~ScopedSaveRootForTest();
+
+		ScopedSaveRootForTest(const ScopedSaveRootForTest&) = delete;
+		ScopedSaveRootForTest& operator=(const ScopedSaveRootForTest&) = delete;
+
+	private:
+		char m_acPrevDirectory[ZENITH_MAX_PATH_LENGTH];
+		bool m_bPrevInitialised;
+	};
 #endif
 }

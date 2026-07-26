@@ -9,15 +9,35 @@
  *
  * Headless test harness driven by command-line flags:
  *   --automated-test <name>    : pick one named test
+ *   --automated-tests <a,b,c>  : run exactly these tests, in the given order,
+ *                                in ONE process. Duplicates are allowed and
+ *                                each occurrence runs ("A,A" is a self-
+ *                                contamination probe) -- note both occurrences
+ *                                write the same <name>.json, last-wins.
+ *                                Manual-only tests run when named explicitly,
+ *                                exactly as --automated-test has always done.
+ *                                Any unknown name: every unknown is printed,
+ *                                nothing runs, exit code 2.
  *   --all-automated-tests      : run every registered test sequentially in
  *                                ONE process (skips per-test boot ~20s)
+ *   --batch-order <spec>       : reorder the --all-automated-tests suite.
+ *                                "reverse", or "rotate:<N>" (rotate left by N,
+ *                                normalised modulo the suite size, so
+ *                                rotate:0 is registration order). Negative or
+ *                                malformed specs are rejected with exit 2, as
+ *                                is use without --all-automated-tests.
  *   --list-automated-tests     : print all registered test names + exit code 0
  *   --exit-after-frames <N>    : tick at most N frames then exit
  *   --test-results <path>      : write JSON {name, passed, frames, failures} to <path>
  *                                (single-test mode only)
- *   --test-results-dir <dir>   : in --all-automated-tests mode, write per-test
- *                                JSON to <dir>/<name>.json
+ *   --test-results-dir <dir>   : in any MULTI-test mode (--all-automated-tests
+ *                                or --automated-tests), write per-test JSON to
+ *                                <dir>/<name>.json
  *   --fixed-dt <secs>          : wraps Zenith_InputSimulator::SetFixedDt
+ *
+ * --automated-test / --automated-tests / --all-automated-tests are mutually
+ * exclusive: each one BUILDS the ordered execution list, so supplying more
+ * than one is an ambiguous request (exit code 2), not a merge.
  *
  * Tests register via static-init linked-list, mirroring the ZENITH_TEST macro
  * pattern in Zenith_TestFramework.h. Each test provides:
@@ -36,8 +56,30 @@
  * Process exit code:
  *   0 = pass (or all batch tests passed)
  *   1 = test failed (or any batch test failed; Setup/Verify reported failures)
- *   2 = test name not found / no tests registered for batch mode
- *   3 = harness setup error (could not enter Playing mode etc.)
+ *   2 = test name not found / no tests registered for batch mode /
+ *       CLI usage error (mode flags combined, bad --batch-order spec)
+ *   3 = INFRASTRUCTURE failure: the harness could not build a clean world for
+ *       the next test (boot scene would not load, or the post-reset settle
+ *       timed out). Distinct from 1 on purpose -- the remaining tests were NOT
+ *       RUN, so this is a harness fault rather than N test failures. Also
+ *       written to <results dir>/_infrastructure.json with the phase, reason
+ *       and the test we were about to run, plus one
+ *       {skipped:true, skipReason:"infrastructure"} record per unrun test.
+ *
+ * BETWEEN-TEST ISOLATION
+ *
+ * Every test -- batch member, batch-first, and single-test -- runs against a
+ * world the ENGINE built, not one its predecessor left behind. Before each
+ * test the harness normalises input + fixed-dt, calls
+ * Zenith_SceneSystem::ResetWorldForNextTest (which destroys EVERY scene,
+ * including the persistent one), runs engine hygiene for the few things no
+ * scene owns, reloads the boot scene, and settles.
+ *
+ * A test therefore needs NO cleanup for anything owned by an entity, a scene,
+ * or its own locals. It needs a Teardown (below) only for state it installed
+ * that no lifecycle owns: a global toggle, an observer function pointer, a
+ * pinned fixed-dt. Process statics holding WORLD state are the defect -- put
+ * that state on a component or the scene instead.
  *
  * Wave-3 integration tests (Games/DevilsPlayground/Tests/) consume this same
  * registry. The runner is engine-side because the boot ordering it owns
@@ -69,6 +111,22 @@ struct Zenith_AutomatedTest
 	// --automated-test <name> still runs them in full -- as does the
 	// seed-matrix tooling, which invokes them by name. Defaults to false.
 	bool m_bManualOnly          = false;
+
+	// Optional teardown. Runs EXACTLY ONCE per test that reached Setup, after
+	// the pass/fail/timeout/skip determination, before the results JSON is
+	// written and before the harness resets the world. Normal harness paths
+	// only -- a process-fatal assert cannot run it.
+	//
+	// This is where a test undoes anything it installed that is NOT owned by an
+	// entity, a scene, or the test's own locals: a global debug toggle it
+	// flipped, an observer function pointer it installed, a fixed-dt it pinned.
+	// Anything world-shaped needs no teardown -- the harness destroys the world
+	// between tests.
+	//
+	// Deliberately the LAST member: the existing aggregate initializers are
+	// positional with trailing members omitted, so a defaulted final member
+	// leaves every one of them compiling unchanged.
+	void (*m_pfnTeardown)()     = nullptr;
 };
 
 // Linked-list node populated by the registrar macro. Kept writable (no

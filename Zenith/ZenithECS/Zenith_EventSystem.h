@@ -96,6 +96,18 @@ public:
 	// Process all queued events (call from main thread)
 	void ProcessDeferredEvents();
 
+	// Drop every queued deferred event WITHOUT touching subscriptions, deleting
+	// the owned payloads. Returns how many were discarded.
+	//
+	// This is the between-tests hygiene op: an event queued by one test but
+	// never drained would otherwise be delivered to the NEXT test's subscribers,
+	// mid-scenario. Deliberately separate from ClearAllSubscriptions, which only
+	// drops the queue as a side effect of wiping the subscription tables --
+	// wiping subscriptions between tests breaks games outright (it is why
+	// ScopedTestIsolation has to save and restore them), so the harness needs
+	// the queue-only half.
+	u_int DiscardDeferredEvents();
+
 	// Clear all subscriptions (useful for testing)
 	void ClearAllSubscriptions();
 

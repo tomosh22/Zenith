@@ -1,9 +1,9 @@
 #pragma once
 
 #include "Collections/Zenith_Vector.h"
-#include "Collections/Zenith_HashMap.h"
 #include "Maths/Zenith_Maths.h"
 #include "ZenithECS/Zenith_Entity.h"
+#include "ZenithECS/Zenith_Scene.h"
 
 class Zenith_SceneData;
 
@@ -73,10 +73,27 @@ struct Zenith_SoundStimulus
 };
 
 /**
- * Zenith_PerceptionSystem - Global perception manager
+ * Zenith_PerceptionSystem - perception manager
  *
  * Handles registration of AI agents, processing of perception senses,
  * and emission of stimuli (sounds, damage events).
+ *
+ * OWNERSHIP: perception state is SCENE-OWNED, not process-owned. Every agent,
+ * target and in-flight sound lives in a bucket keyed by the owning scene, so it
+ * is destroyed with that scene -- the per-World-subsystem model (Unreal's
+ * UWorldSubsystem, Unity's per-Scene state). Nothing here outlives the world it
+ * describes, which is what makes a scene reload a genuine clean slate rather
+ * than something a caller has to remember to reset by hand.
+ *
+ * Registration order IS iteration order: the buckets hold registration-ordered
+ * vectors, not hash maps. A hash map's walk order depends on its insert/remove/
+ * rehash HISTORY, so a predecessor's registrations could reorder a later,
+ * cleanly-registered agent's update walk -- a silent cross-test determinism leak
+ * even when every entry was unregistered correctly.
+ *
+ * Queries and Update span EVERY loaded scene's bucket: additively-loaded scenes
+ * form one perceptual world (an agent in scene A can see a target in scene B),
+ * matching the cross-scene contract the sight/hearing passes already had.
  */
 class Zenith_PerceptionSystem
 {
@@ -91,6 +108,25 @@ public:
 	// without a scene argument — matching Unity's GameObject.scene intrinsic.
 	static void Update(float fDt);
 	static void Reset();
+
+	// ========== Scene-lifecycle notifications ==========
+	//
+	// Driven by the ECS runtime hooks (Zenith_ECSRuntimeHooks::
+	// m_pfnSceneDestroyed / m_pfnEntityOwnerSceneChanged), which the engine
+	// installs. The ECS leaf sits BELOW the AI leaf and so cannot name this
+	// class; the engine forwards. Calling them directly is legitimate in tests.
+
+	// A scene is going away: drop its bucket, then sweep every surviving agent's
+	// perceived-target list of entries whose entity no longer resolves, and
+	// re-derive that agent's primary target (an unswept primary would otherwise
+	// stay pointing at a dead entity until the next Update tick -- and if the
+	// agent never ticks again, forever).
+	static void OnSceneDestroyed(Zenith_Scene xScene);
+
+	// An entity changed owning scene (MoveToScene / DontDestroyOnLoad). Migrate
+	// its agent + target records so a persistent agent registered before the
+	// move is genuinely owned by the persistent scene and survives SINGLE loads.
+	static void OnEntityOwnerSceneChanged(Zenith_EntityID xEntityID, Zenith_Scene xOldScene, Zenith_Scene xNewScene);
 
 	// ========== Agent Registration ==========
 
@@ -181,6 +217,19 @@ public:
 		const Zenith_Maths::Vector3& xForward);
 #endif
 
+#ifdef ZENITH_TESTING
+	// Observation seams for the scene-ownership tests. Counts are summed across
+	// every live bucket; GetAgentIterationOrderForTest reports the exact walk
+	// order Update uses, which is what pins "registration order, not container
+	// history".
+	static uint32_t GetAgentCountForTest();
+	static uint32_t GetTargetCountForTest();
+	static uint32_t GetActiveSoundCountForTest();
+	static uint32_t GetLiveSceneBucketCountForTest();
+	static uint32_t GetAgentCountForSceneForTest(Zenith_Scene xScene);
+	static void     GetAgentIterationOrderForTest(Zenith_Vector<Zenith_EntityID>& axOut);
+#endif
+
 private:
 	// Per-agent perception data
 	struct AgentPerceptionData
@@ -197,14 +246,58 @@ private:
 		bool m_bHostile = true;
 	};
 
-	static Zenith_HashMap<uint64_t, AgentPerceptionData> s_xAgentData;
-	static Zenith_HashMap<uint64_t, TargetInfo> s_xTargets;
-	static Zenith_Vector<Zenith_SoundStimulus> s_axActiveSounds;
+	// Registration records. Deliberately vectors keyed by a linear scan rather
+	// than hash-map entries: agent/target counts are small (tens), and the
+	// linear scan buys deterministic iteration that no hash container can offer.
+	struct AgentRecord
+	{
+		Zenith_EntityID     m_xAgentID;
+		AgentPerceptionData m_xData;
+	};
 
-	// Update helpers. Audit §3.18: each agent/target resolves its own scene via
-	// GetSceneDataForEntity internally, so these helpers no longer take a scene
-	// parameter. The public Update(fDt, SceneData&) overload remains for API
-	// compatibility but ignores the scene argument.
+	struct TargetRecord
+	{
+		Zenith_EntityID m_xTargetID;
+		TargetInfo      m_xInfo;
+	};
+
+	// Everything perception owns for one scene. Freed wholesale when that scene
+	// is destroyed, so no per-entry unregistration is required for correctness
+	// (agents/targets still unregister themselves; this is the backstop that
+	// makes a missed unregister a non-leak).
+	struct ScenePerception
+	{
+		Zenith_Scene                        m_xScene = Zenith_Scene::INVALID_SCENE;
+		Zenith_Vector<AgentRecord>          m_axAgents;
+		Zenith_Vector<TargetRecord>         m_axTargets;
+		Zenith_Vector<Zenith_SoundStimulus> m_axSounds;
+	};
+
+	// Indexed by scene handle; grows to the high-water mark of allocated scene
+	// slots and never shrinks (slot count is tiny). A slot whose m_xScene is
+	// INVALID_SCENE -- or whose stored handle no longer matches the live scene
+	// of the same index -- is free.
+	static Zenith_Vector<ScenePerception> s_axScenes;
+
+	// Bucket resolution.
+	static ScenePerception* FindSceneBucket(Zenith_Scene xScene);
+	static ScenePerception& EnsureSceneBucket(Zenith_Scene xScene);
+	static bool             IsBucketLive(const ScenePerception& xBucket);
+	// Owning scene of an entity, or INVALID_SCENE when it cannot be resolved.
+	static Zenith_Scene     ResolveOwningScene(Zenith_EntityID xEntityID);
+	// The scene a NEW registration for this entity should land in: the entity's
+	// own scene, falling back to the active scene so a registration is never
+	// silently dropped.
+	static Zenith_Scene     ResolveRegistrationScene(Zenith_EntityID xEntityID);
+	// Whole-world record lookup: scans every live bucket. Used by the by-entity
+	// API (config setters, queries, unregistration) so it stays correct even
+	// when the entity is already half-destroyed and no longer resolves to a
+	// scene -- which is exactly the state OnDestroy unregisters from.
+	static AgentRecord*     FindAgentRecord(Zenith_EntityID xAgentID);
+	static AgentPerceptionData* FindAgentData(Zenith_EntityID xAgentID);
+
+	// Update helpers. Each agent/target resolves its own scene, so these helpers
+	// take no scene parameter and span every loaded scene's bucket.
 	static void UpdateSightPerception(float fDt);
 	static void UpdateHearingPerception();
 	static void UpdateMemoryDecay(float fDt);

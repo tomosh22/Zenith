@@ -21,6 +21,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
+#include "UnitTests/Zenith_AssertCapture.h"  // world-reset nested-reset rejection
 
 // Scene serialization includes
 #include "ZenithECS/Zenith_Scene.h"
@@ -8992,6 +8993,43 @@ void Zenith_UnitTests::TestEventSubscribeDispatch(){
 
 	// Cleanup is automatic when xIsolate leaves scope (restores boot subs).
 
+}
+
+ZENITH_TEST(ECS, EventDiscardDeferredEventsKeepsSubscriptions)
+{
+	// The between-tests hygiene op. A deferred event queued by one test but
+	// never drained is an OWNED payload that the next test's subscribers would
+	// receive mid-scenario, so the harness has to drop the queue -- but it must
+	// NOT drop subscriptions along with it. ClearAllSubscriptions does both,
+	// which is precisely why wiping subscriptions between tests breaks games
+	// (the reason ScopedTestIsolation has to save and restore them).
+	Zenith_EventDispatcher::ScopedTestIsolation xIsolate;
+	s_uTestEventCallCount = 0;
+	s_uTestEventLastValue = 0;
+
+	Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&TestEventCallback);
+
+	TestEvent_Custom xFirst;  xFirst.m_uValue  = 7;
+	TestEvent_Custom xSecond; xSecond.m_uValue = 9;
+	Zenith_EventDispatcher::Get().QueueEvent(xFirst);
+	Zenith_EventDispatcher::Get().QueueEvent(xSecond);
+
+	const u_int uDiscarded = Zenith_EventDispatcher::Get().DiscardDeferredEvents();
+	ZENITH_ASSERT_EQ(uDiscarded, 2u, "both queued events must be reported as discarded");
+
+	// Draining now must deliver nothing -- the queue really is empty, not just
+	// detached.
+	Zenith_EventDispatcher::Get().ProcessDeferredEvents();
+	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 0, "a discarded event must never be delivered");
+
+	// ...and the subscription is still live, so a subsequent dispatch works.
+	Zenith_EventDispatcher::Get().Dispatch(xSecond);
+	ZENITH_ASSERT_EQ(s_uTestEventCallCount, 1, "the subscription must survive the discard");
+	ZENITH_ASSERT_EQ(s_uTestEventLastValue, 9, "and still receive the right payload");
+
+	// Idempotent: discarding an already-empty queue is a no-op, not an underflow.
+	ZENITH_ASSERT_EQ(Zenith_EventDispatcher::Get().DiscardDeferredEvents(), 0u,
+		"discarding an empty queue reports zero");
 }
 
 ZENITH_TEST(ECS, EventUnsubscribe) { Zenith_UnitTests::TestEventUnsubscribe(); }
@@ -19912,4 +19950,323 @@ ZENITH_TEST(Serialization, ModelComponentV7DebugFlagFramingAbsorbed)
 		"ModelComponentV7DebugFlagFramingAbsorbed: empty v7 model handle yields no model instance");
 
 	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+//==============================================================================
+// Zenith_SceneSystem::ResetWorldForNextTest -- the automated-test clean slate
+//
+// The op destroys EVERY scene, including the persistent (DontDestroyOnLoad)
+// one, then rebuilds an empty persistent scene. These pin the two properties
+// that make that safe:
+//
+//   IDENTITY: generations stay MONOTONIC. A handle captured before a reset must
+//   stay invalid forever, even after its slot is reused -- so no stale
+//   Zenith_EntityID / Zenith_Scene can be revived by the reset.
+//
+//   DETERMINISM: slot INDICES replay. The free lists are normalised descending
+//   (both allocators pop from the back), so the same test always allocates the
+//   same indices regardless of what ran before it.
+//
+// The tests live here rather than beside the scene system because ZenithECS is
+// a strict leaf: a test TU inside it cannot name g_xEngine.
+//==============================================================================
+
+namespace
+{
+	// Probe component for the world-reset tests. Counts its own lifecycle
+	// dispatches so a test can prove the persistent scene really ran
+	// OnDisable -> OnDestroy, and can issue a scene load from OnDestroy to prove
+	// the reset DISCARDS it (deferring instead would fire a dead request into
+	// the freshly-built world).
+	uint32_t g_uWorldResetProbeDisableCount = 0;
+	uint32_t g_uWorldResetProbeDestroyCount = 0;
+	// 0 = none, 1 = LoadSceneByIndex, 2 = LoadScene ADDITIVE_WITHOUT_LOADING
+	// (the mode that deliberately bypasses the mid-dispatch deferral, so it is
+	// the one that would slip past a badly-placed guard).
+	int      g_iWorldResetProbeLoadFromDestroy = 0;
+	bool     g_bWorldResetProbeLoadReturnedValid = false;
+}
+
+class Zenith_WorldResetProbeComponent
+{
+public:
+	Zenith_WorldResetProbeComponent(Zenith_Entity& xEntity) : m_xParentEntity(xEntity) {}
+
+	void OnDisable() { ++g_uWorldResetProbeDisableCount; }
+
+	void OnDestroy()
+	{
+		++g_uWorldResetProbeDestroyCount;
+		if (g_iWorldResetProbeLoadFromDestroy == 1)
+		{
+			const Zenith_Scene xResult = g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+			g_bWorldResetProbeLoadReturnedValid = xResult.IsValid();
+		}
+		else if (g_iWorldResetProbeLoadFromDestroy == 2)
+		{
+			const Zenith_Scene xResult = g_xEngine.Scenes().LoadScene(
+				"WorldResetProbe_FromDestroy", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+			g_bWorldResetProbeLoadReturnedValid = xResult.IsValid();
+		}
+		else if (g_iWorldResetProbeLoadFromDestroy == 3)
+		{
+			// Nested reset -- the only way this is reachable in practice.
+			Zenith_SceneSystem::ResetWorldForNextTest();
+		}
+	}
+
+	void WriteToDataStream(Zenith_DataStream&) const {}
+	void ReadFromDataStream(Zenith_DataStream&) {}
+#ifdef ZENITH_TOOLS
+	void RenderPropertiesPanel() {}
+#endif
+
+private:
+	Zenith_Entity m_xParentEntity;
+};
+ZENITH_REGISTER_COMPONENT(Zenith_WorldResetProbeComponent, "WorldResetProbe", 202u)
+
+namespace
+{
+	void WorldResetProbe_ResetCounters()
+	{
+		g_uWorldResetProbeDisableCount      = 0;
+		g_uWorldResetProbeDestroyCount      = 0;
+		g_iWorldResetProbeLoadFromDestroy   = 0;
+		g_bWorldResetProbeLoadReturnedValid = false;
+	}
+
+	// Creates an entity carrying the probe component and promotes it into the
+	// persistent scene -- i.e. the exact shape of a game's singleton manager,
+	// which is what no production path has ever destroyed.
+	Zenith_Entity WorldResetProbe_MakePersistentEntity(const char* szName)
+	{
+		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+		Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(xActive, szName);
+		xEntity.AddComponent<Zenith_WorldResetProbeComponent>();
+		xEntity.DontDestroyOnLoad();
+		return xEntity;
+	}
+}
+
+ZENITH_TEST(SceneWorldReset, DestroysThePersistentSceneAndRunsItsLifecycle)
+{
+	WorldResetProbe_ResetCounters();
+
+	const Zenith_Scene xOldPersistent = g_xEngine.Scenes().GetPersistentScene();
+	Zenith_Entity xProbe = WorldResetProbe_MakePersistentEntity("PersistentProbe");
+	const Zenith_EntityID xProbeID = xProbe.GetEntityID();
+	ZENITH_ASSERT_TRUE(xOldPersistent.IsValid(), "precondition: a persistent scene exists");
+	ZENITH_ASSERT_TRUE(g_xEngine.Scenes().ResolveEntity(xProbeID).IsValid(), "precondition: the probe is live");
+
+	Zenith_SceneSystem::ResetWorldForNextTest();
+
+	// The persistent scene's entities really were torn down -- not just
+	// orphaned. This is the step that lets a game's singleton managers be
+	// re-authored fresh instead of surviving with stale state.
+	ZENITH_ASSERT_EQ(g_uWorldResetProbeDestroyCount, 1u, "the persistent entity's OnDestroy must fire");
+	ZENITH_ASSERT_EQ(g_uWorldResetProbeDisableCount, 1u, "and OnDisable must fire before it");
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().ResolveEntity(xProbeID).IsValid(),
+		"the pre-reset entity handle must not resolve after the reset");
+	ZENITH_ASSERT_FALSE(xOldPersistent.IsValid(),
+		"the pre-reset persistent scene handle must be stale");
+
+	// ...and a NEW, empty persistent scene exists to receive the next test's
+	// DontDestroyOnLoad calls.
+	const Zenith_Scene xNewPersistent = g_xEngine.Scenes().GetPersistentScene();
+	ZENITH_ASSERT_TRUE(xNewPersistent.IsValid(), "a fresh persistent scene must exist after the reset");
+	ZENITH_ASSERT_TRUE(xNewPersistent != xOldPersistent, "and it must not compare equal to the old one");
+}
+
+ZENITH_TEST(SceneWorldReset, GenerationsAreMonotonicWhileIndicesReplay)
+{
+	// The core identity contract. Two resets in a row: the entity INDEX handed
+	// out must be the same each time (determinism), while both the entity and
+	// scene GENERATIONS must strictly increase (no handle is ever revived).
+	Zenith_SceneSystem::ResetWorldForNextTest();
+
+	Zenith_Scene xSceneA = g_xEngine.Scenes().LoadScene("WorldResetRun_A", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_Entity xEntityA = g_xEngine.Scenes().CreateEntity(xSceneA, "RunA");
+	const Zenith_EntityID xIdA = xEntityA.GetEntityID();
+	const int      iSceneHandleA = xSceneA.GetHandle();
+
+	Zenith_SceneSystem::ResetWorldForNextTest();
+
+	Zenith_Scene xSceneB = g_xEngine.Scenes().LoadScene("WorldResetRun_B", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_Entity xEntityB = g_xEngine.Scenes().CreateEntity(xSceneB, "RunB");
+	const Zenith_EntityID xIdB = xEntityB.GetEntityID();
+	const int      iSceneHandleB = xSceneB.GetHandle();
+
+	ZENITH_ASSERT_EQ(xIdB.m_uIndex, xIdA.m_uIndex,
+		"entity slot INDEX must replay across a reset (free lists normalised descending)");
+	ZENITH_ASSERT_GT(xIdB.m_uGeneration, xIdA.m_uGeneration,
+		"entity GENERATION must strictly increase — never replayed");
+	ZENITH_ASSERT_EQ(iSceneHandleB, iSceneHandleA, "scene slot INDEX must replay across a reset");
+	ZENITH_ASSERT_TRUE(xSceneB != xSceneA, "the scene handle must not compare equal across a reset");
+
+	// The decisive check: the FIRST run's handles are dead even though their
+	// slots have been reused by the second run.
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().ResolveEntity(xIdA).IsValid(),
+		"a pre-reset entity handle must stay invalid after its slot is reused");
+	ZENITH_ASSERT_FALSE(xSceneA.IsValid(),
+		"a pre-reset scene handle must stay invalid after its slot is reused");
+	ZENITH_ASSERT_TRUE(g_xEngine.Scenes().ResolveEntity(xIdB).IsValid(),
+		"the current run's handle resolves normally");
+}
+
+ZENITH_TEST(SceneWorldReset, PreservedRegistryAndFlagsSurvive)
+{
+	// A PRESERVE list, not "Shutdown minus exceptions". Getting any of these
+	// wrong is silent: a cleared build-index registry makes the harness's
+	// boot-scene reload fail, and a cleared main-loop flag makes LoadScene's
+	// bootstrap assert fire on the next load.
+	g_xEngine.Scenes().RegisterSceneBuildIndex(0, "WorldResetPreserve_Boot.zscen");
+	const uint32_t uRegistrySizeBefore = g_xEngine.Scenes().GetBuildIndexRegistrySize();
+	ZENITH_ASSERT_GT(uRegistrySizeBefore, 0u, "precondition: the build-index registry has an entry");
+
+	g_xEngine.Scenes().SetMainLoopRunning(true);
+
+	Zenith_SceneSystem::ResetWorldForNextTest();
+
+	ZENITH_ASSERT_EQ(g_xEngine.Scenes().GetBuildIndexRegistrySize(), uRegistrySizeBefore,
+		"the build-index registry must survive the reset (the harness reloads BY INDEX right after)");
+	ZENITH_ASSERT_STREQ(g_xEngine.Scenes().GetRegisteredScenePath(0).c_str(), "WorldResetPreserve_Boot.zscen",
+		"and its contents must be intact");
+	ZENITH_ASSERT_TRUE(g_xEngine.Scenes().IsMainLoopRunning(),
+		"the main-loop flag must survive — the loop IS still running");
+
+	// A load must work immediately afterwards: no flag left latched.
+	Zenith_Scene xAfter = g_xEngine.Scenes().LoadScene("WorldResetPreserve_After", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	ZENITH_ASSERT_TRUE(xAfter.IsValid(), "a scene load must succeed immediately after the reset");
+}
+
+ZENITH_TEST(SceneWorldReset, SceneSlotAndGenerationTablesStaySizeSynced)
+{
+	// AllocateSceneHandle assumes m_axScenes and m_axSceneGenerations stay
+	// size-synced and pushes a hardcoded generation 1 on the fresh-slot path, so
+	// Clear()ing either one would desync the allocator and silently hand back a
+	// generation that a stale handle could match.
+	Zenith_SceneSystem::ResetWorldForNextTest();
+
+	Zenith_Vector<Zenith_Scene> axCreated;
+	for (int i = 0; i < 4; ++i)
+	{
+		char acName[64];
+		std::snprintf(acName, sizeof(acName), "WorldResetSync_%d", i);
+		Zenith_Scene xScene = g_xEngine.Scenes().LoadScene(acName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		ZENITH_ASSERT_TRUE(xScene.IsValid(), "regrow scene %d must allocate", i);
+		axCreated.PushBack(xScene);
+	}
+
+	// Every handle is distinct and live -- which is only true if the generation
+	// table grew in lockstep with the slot table.
+	for (u_int i = 0; i < axCreated.GetSize(); ++i)
+	{
+		ZENITH_ASSERT_TRUE(axCreated.Get(i).IsValid(), "regrown scene must be live");
+		for (u_int j = i + 1; j < axCreated.GetSize(); ++j)
+		{
+			ZENITH_ASSERT_TRUE(axCreated.Get(i) != axCreated.Get(j), "regrown scenes must be distinct");
+		}
+	}
+
+	Zenith_SceneSystem::ResetWorldForNextTest();
+	for (u_int i = 0; i < axCreated.GetSize(); ++i)
+	{
+		ZENITH_ASSERT_FALSE(axCreated.Get(i).IsValid(), "every regrown scene dies with the next reset");
+	}
+}
+
+ZENITH_TEST(SceneWorldReset, LoadIssuedFromOnDestroyIsDiscarded)
+{
+	// An OnDestroy body that loads a scene is asking to populate a world that is
+	// being torn down. Deferring it (what m_bIsLoadingScene / m_bIsUpdating do)
+	// would fire it into the FRESH world moments later; the reset discards it.
+	WorldResetProbe_ResetCounters();
+	g_iWorldResetProbeLoadFromDestroy = 1;   // LoadSceneByIndex
+	WorldResetProbe_MakePersistentEntity("LoadFromDestroyProbe");
+
+	Zenith_SceneSystem::ResetWorldForNextTest();
+
+	ZENITH_ASSERT_EQ(g_uWorldResetProbeDestroyCount, 1u, "the probe's OnDestroy ran");
+	ZENITH_ASSERT_FALSE(g_bWorldResetProbeLoadReturnedValid,
+		"LoadSceneByIndex from OnDestroy during the reset must be discarded");
+	g_iWorldResetProbeLoadFromDestroy = 0;
+
+	// The freshly-built world must be EMPTY of that request: nothing queued,
+	// nothing active.
+	ZENITH_ASSERT_FALSE(g_xEngine.Scenes().GetActiveScene().IsValid(),
+		"the discarded load must not have produced an active scene");
+}
+
+ZENITH_TEST(SceneWorldReset, AdditiveWithoutLoadingFromOnDestroyIsAlsoDiscarded)
+{
+	// ADDITIVE_WITHOUT_LOADING deliberately bypasses LoadScene's mid-dispatch
+	// deferral (callers need the handle immediately), so a guard placed with the
+	// deferral check would miss it entirely. This is the case that proves the
+	// guard sits ABOVE that early return.
+	WorldResetProbe_ResetCounters();
+	g_iWorldResetProbeLoadFromDestroy = 2;
+	WorldResetProbe_MakePersistentEntity("AdditiveFromDestroyProbe");
+
+	Zenith_SceneSystem::ResetWorldForNextTest();
+
+	ZENITH_ASSERT_EQ(g_uWorldResetProbeDestroyCount, 1u, "the probe's OnDestroy ran");
+	ZENITH_ASSERT_FALSE(g_bWorldResetProbeLoadReturnedValid,
+		"ADDITIVE_WITHOUT_LOADING from OnDestroy during the reset must also be discarded");
+	g_iWorldResetProbeLoadFromDestroy = 0;
+}
+
+ZENITH_TEST(SceneWorldReset, NestedResetIsRejected)
+{
+	// A reset driven from inside another reset would tear down the world the
+	// outer one is halfway through rebuilding. The only place that is reachable
+	// from is an OnDestroy body running inside the op -- which is exactly what
+	// this probe does. Rejection is an assert, so the capture scope is
+	// mandatory: an un-captured Zenith_Assert breaks in EVERY config and would
+	// kill the whole boot-unit run.
+	WorldResetProbe_ResetCounters();
+	g_iWorldResetProbeLoadFromDestroy = 3;   // nested ResetWorldForNextTest
+	WorldResetProbe_MakePersistentEntity("NestedResetProbe");
+
+	uint32_t uHits = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		Zenith_SceneSystem::ResetWorldForNextTest();
+		uHits = xCapture.GetHitCount();
+	}
+	g_iWorldResetProbeLoadFromDestroy = 0;
+
+	ZENITH_ASSERT_EQ(g_uWorldResetProbeDestroyCount, 1u, "the probe's OnDestroy ran");
+	ZENITH_ASSERT_EQ(uHits, 1u, "the nested reset must trip exactly one assert");
+
+	// The decisive part: rejecting must leave the OUTER reset's world intact --
+	// a nested reset that half-ran would leave no persistent scene at all.
+	const Zenith_Scene xPersistent = g_xEngine.Scenes().GetPersistentScene();
+	ZENITH_ASSERT_TRUE(xPersistent.IsValid(), "the outer reset still produced a live persistent scene");
+	Zenith_Scene xAfter = g_xEngine.Scenes().LoadScene("WorldResetNested_After", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	ZENITH_ASSERT_TRUE(xAfter.IsValid(), "and the world still accepts loads");
+}
+
+ZENITH_TEST(SceneWorldReset, BackToBackResetsAreIdempotent)
+{
+	// The harness fires the render-systems reset, then the boot-scene SINGLE
+	// load fires it AGAIN. Reset-then-reset with nothing in between must land in
+	// exactly the same shape as a single reset -- same slot indices handed out,
+	// no drift in the free lists.
+	Zenith_SceneSystem::ResetWorldForNextTest();
+	Zenith_Scene xOnce = g_xEngine.Scenes().LoadScene("WorldResetIdem_A", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_Entity xEntOnce = g_xEngine.Scenes().CreateEntity(xOnce, "IdemA");
+	const uint32_t uIndexOnce      = xEntOnce.GetEntityID().m_uIndex;
+	const int      iSceneSlotOnce  = xOnce.GetHandle();
+
+	Zenith_SceneSystem::ResetWorldForNextTest();
+	Zenith_SceneSystem::ResetWorldForNextTest();
+	Zenith_Scene xTwice = g_xEngine.Scenes().LoadScene("WorldResetIdem_B", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_Entity xEntTwice = g_xEngine.Scenes().CreateEntity(xTwice, "IdemB");
+
+	ZENITH_ASSERT_EQ(xEntTwice.GetEntityID().m_uIndex, uIndexOnce,
+		"a double reset must hand out the same entity slot as a single reset");
+	ZENITH_ASSERT_EQ(xTwice.GetHandle(), iSceneSlotOnce,
+		"a double reset must hand out the same scene slot as a single reset");
+	ZENITH_ASSERT_GT(xEntTwice.GetEntityID().m_uGeneration, 0u, "generations keep climbing regardless");
 }

@@ -134,6 +134,11 @@ bool Zenith_SceneSystem::MoveEntityInternal(Zenith_Entity& xEntity, Zenith_Scene
 			xPreMoveSlot.m_uGeneration, xEntityID.m_uGeneration);
 	}
 
+	// Capture BOTH generation-checked handles before the slot flips, so the
+	// notification below can name the entity's old home as well as its new one.
+	const Zenith_Scene xOldScene = GetSceneFromHandle(pxSourceData->m_iHandle);
+	const Zenith_Scene xNewScene = GetSceneFromHandle(pxTargetData->m_iHandle);
+
 	// Update global slot to point to target scene
 	Zenith_ECS_EntityStore().m_axEntitySlots.Get(xEntityID.m_uIndex).m_iSceneHandle = pxTargetData->m_iHandle;
 
@@ -182,6 +187,16 @@ bool Zenith_SceneSystem::MoveEntityInternal(Zenith_Entity& xEntity, Zenith_Scene
 
 	pxSourceData->MarkDirty();
 	pxTargetData->MarkDirty();
+
+	// Notify scene-keyed side-tables held outside the ECS so they can re-home
+	// this entity's records. Fired here — per entity, after the slot flip — and
+	// NOT at the public entry points, because this function recurses over
+	// children itself: a root-level notification would leave every child's
+	// registration attributed to the scene it just left.
+	if (m_xRuntimeHooks.m_pfnEntityOwnerSceneChanged)
+	{
+		m_xRuntimeHooks.m_pfnEntityOwnerSceneChanged(xEntityID, xOldScene, xNewScene);
+	}
 
 	// Entity handle stays valid - EntityID is unchanged, global slot points to new scene
 	return true;

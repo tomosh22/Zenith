@@ -134,6 +134,26 @@ public:
 	EditorMode GetEditorMode();
 	void SetEditorMode(EditorMode eMode);
 
+	// Drop every scrap of editor SESSION state so the next automated test starts
+	// from the same editor as the first one did.
+	//
+	// The harness destroys the world between tests, which invalidates every
+	// EntityID the editor is holding — the selection set, the selection system's
+	// entity-keyed bounds cache, the undo/redo stacks (raw command pointers
+	// keyed by EntityID), the camera's game-camera entity, and any play-mode
+	// scene backup. It also has to clear the editor's OWN pending-scene-load
+	// flags: those bypass the scene system's pending-load slot entirely (they go
+	// through Zenith_EditorSceneAccess), so the scene system's mid-reset load
+	// guard cannot see them, and a queued editor load would fire into the next
+	// test's world.
+	//
+	// Scope is exactly "references that are DEAD after the reset". The editor
+	// MODE and the play-mode scene backup are deliberately left alone: they are
+	// two halves of one state machine, and normalising either in isolation
+	// desynchronises it in a way that makes EnterPlayMode re-dispatch OnAwake
+	// over live entities (see the body for the concrete failure).
+	void ResetSessionForNextTest();
+
 	// Synchronously process the pending deferred scene load (mode-transition restore)
 	// Used by unit tests to ensure scene state is consistent after mode transitions
 	void FlushPendingSceneOperations();

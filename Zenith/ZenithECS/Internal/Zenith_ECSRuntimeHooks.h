@@ -22,7 +22,10 @@
 // identically whether or not the engine has wired the hooks yet.
 // =============================================================================
 
+#include "ZenithECS/Zenith_Scene.h"
+
 class Zenith_Entity;
+struct Zenith_EntityID;
 
 struct Zenith_ECSRuntimeHooks
 {
@@ -35,4 +38,23 @@ struct Zenith_ECSRuntimeHooks
 	// Awake/OnEnable dispatch, while re-entrant loads still defer). The engine
 	// wires this to the behaviour-graph "__SceneLoaded" broadcast. null => no-op.
 	void (*m_pfnSceneLoaded)(const char* szCanonicalPath, int iBuildIndex) = nullptr;
+
+	// Fired as a scene slot is torn down, with the generation-checked handle
+	// captured BEFORE the slot is freed (afterwards the handle is stale and
+	// resolves to nothing). Lets scene-owned state held OUTSIDE the ECS -- AI
+	// perception's per-scene buckets are the first -- drop that scene's records
+	// and purge cross-references to its entities. Fires from every destruction
+	// route: UnloadOneScene, Shutdown's slot loop, and the test-harness world
+	// reset. null => no-op.
+	void (*m_pfnSceneDestroyed)(Zenith_Scene xScene) = nullptr;
+
+	// Fired ONCE PER MOVED ENTITY inside MoveEntityInternal, after that entity's
+	// slot has been repointed. MoveEntityInternal recurses over children itself
+	// (depth-first, children before the parent), so a root-only notification
+	// would strand every child's registration in the old scene; both public
+	// entry points (MoveEntityToScene / MarkEntityPersistent) funnel through it.
+	// Lets scene-keyed side-tables re-home the entity's records so a
+	// DontDestroyOnLoad'd agent is genuinely owned by the persistent scene.
+	// null => no-op.
+	void (*m_pfnEntityOwnerSceneChanged)(Zenith_EntityID xEntityID, Zenith_Scene xOldScene, Zenith_Scene xNewScene) = nullptr;
 };

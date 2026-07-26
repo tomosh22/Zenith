@@ -486,10 +486,18 @@ function Invoke-ZenithTest {
     $target = $null; $filter = ''; $tier = $null; $config = $null
     $headless = $false; $perProcess = $false; $failFast = $false
     $doBuild = $false; $resultsDir = $null; $exitAfterFrames = 8500; $assertionsLog = ''
+    $testNames = ''; $batchOrder = ''
     for ($i = 0; $i -lt $CmdArgs.Count; $i++) {
         $a = $CmdArgs[$i]
         if ($a -eq '--filter') { $filter = $CmdArgs[++$i] }
         elseif ($a -eq '--tier') { $tier = [int]$CmdArgs[++$i] }
+        # Ordered single-process run of exactly these tests (engine:
+        # --automated-tests). The cross-test-leak probe: `--tests A,B` asks
+        # "does A contaminate B?" in one boot.
+        elseif ($a -eq '--tests') { $testNames = $CmdArgs[++$i] }
+        # Reorder the full batch without changing its set (engine:
+        # --batch-order). 'reverse' or 'rotate:<N>'.
+        elseif ($a -eq '--batch-order') { $batchOrder = $CmdArgs[++$i] }
         elseif ($a -eq '--config') { $config = $CmdArgs[++$i] }
         elseif ($a -eq '--headless') { $headless = $true }   # selects the Null-backend exe
         elseif ($a -eq '--per-process') { $perProcess = $true }
@@ -502,9 +510,17 @@ function Invoke-ZenithTest {
         else { if ($null -eq $target) { $target = $a } else { Write-CliError "unexpected argument '$a'"; return $script:EXIT_USAGE } }
     }
     if ([string]::IsNullOrEmpty($target)) {
-        Write-CliError "usage: zenith test <Name|all> [--filter X] [--tier N] [--config C] [--headless] [--per-process] [--fail-fast] [--build] [--results-dir D] [--exit-after-frames N] [--assertions-log F]"
+        Write-CliError "usage: zenith test <Name|all> [--filter X] [--tier N] [--tests A,B,C] [--batch-order reverse|rotate:N] [--config C] [--headless] [--per-process] [--fail-fast] [--build] [--results-dir D] [--exit-after-frames N] [--assertions-log F]"
         return $script:EXIT_USAGE
     }
+    # --tests names an explicit ORDER; --batch-order reorders the full suite.
+    # Both are diagnosis tools and neither composes with the other, nor with
+    # the set-selecting flags. Reject up front so 'zenith test all' cannot
+    # silently apply an order to only some games.
+    if ($testNames -ne '' -and $batchOrder -ne '') { Write-CliError "--tests and --batch-order are mutually exclusive"; return $script:EXIT_USAGE }
+    if ($testNames -ne '' -and ($filter -ne '' -or $null -ne $tier)) { Write-CliError "--tests cannot be combined with --filter/--tier"; return $script:EXIT_USAGE }
+    if ($testNames -ne '' -and ($perProcess -or $failFast)) { Write-CliError "--tests cannot be combined with --per-process/--fail-fast"; return $script:EXIT_USAGE }
+    if ($batchOrder -ne '' -and ($perProcess -or $failFast -or $filter -ne '')) { Write-CliError "--batch-order requires the full-suite batch run (no --per-process/--fail-fast/--filter)"; return $script:EXIT_USAGE }
     # --headless is now a CONFIG SELECTOR, not a runtime flag: it swaps the exe
     # for the game's Null-backend build (which defines ZENITH_NULL_RENDERER,
     # creates its window hidden, and needs no GPU). An explicit --config always
@@ -536,6 +552,7 @@ function Invoke-ZenithTest {
         try {
             $r = Invoke-ZenithGameTests `
                 -Exe $exe.FullName -DiscoveryExe $discoveryExe -ResultsDir $dir -Filter $filter -Tier $tier `
+                -TestNames $testNames -BatchOrder $batchOrder `
                 -PerProcess:$perProcess -FailFast:$failFast `
                 -ExitAfterFrames $exitAfterFrames -AssertionsLog $assertionsLog `
                 -Tag "zenith test $Name"
@@ -743,6 +760,7 @@ Usage:
   zenith run <Name> [--config <C>] [--build] [-- <game args>]
   zenith test <Name|all> [--filter X] [--tier N] [--config <C>] [--headless]
               [--per-process] [--fail-fast] [--build] [--results-dir D]
+              [--tests A,B,C] [--batch-order reverse|rotate:<N>]
   zenith clean [<Name>|engine|all] [--processes-only] [--dry-run]
   zenith package <Name> [--config <C>] [--out <D>] [--force] [--no-shaders]
   zenith hub [--rebuild]

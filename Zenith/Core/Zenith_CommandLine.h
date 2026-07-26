@@ -71,6 +71,15 @@ namespace Zenith_CommandLine
     // (process-lifetime), mirroring GetScreenshotPath.
     const char* GetAssetsRoot();
 
+    // Automated-test save sandbox: `--test-save-root <path>` +
+    // `--test-save-run-id <id>`. The test runner creates a per-run directory
+    // under the artifacts root, writes the ownership marker into it, and passes
+    // both here; Zenith_SaveData accepts the root ONLY if that marker's run-id
+    // matches this id, and otherwise falls back to an engine-owned sandbox.
+    // Both return nullptr when absent (pointers are into argv, process-lifetime).
+    const char* GetTestSaveRoot();
+    const char* GetTestSaveRunId();
+
     // Pick the effective on-disk dir for a baked compile-time path given an
     // optional override root. Pure: no override (null/empty) returns the baked
     // dir UNCHANGED (including the deliberately-empty "" that FluxCompiler/

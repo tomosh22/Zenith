@@ -6,50 +6,231 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Physics/Zenith_Physics.h"  // AI->Physics: sibling leaf
 
-Zenith_HashMap<uint64_t, Zenith_PerceptionSystem::AgentPerceptionData> Zenith_PerceptionSystem::s_xAgentData;
-Zenith_HashMap<uint64_t, Zenith_PerceptionSystem::TargetInfo> Zenith_PerceptionSystem::s_xTargets;
-Zenith_Vector<Zenith_SoundStimulus> Zenith_PerceptionSystem::s_axActiveSounds;
+Zenith_Vector<Zenith_PerceptionSystem::ScenePerception> Zenith_PerceptionSystem::s_axScenes;
+
+// ============================================================================
+// Bucket resolution
+// ============================================================================
+
+bool Zenith_PerceptionSystem::IsBucketLive(const ScenePerception& xBucket)
+{
+	// A bucket is live only while its stored generation-checked handle still
+	// names a loaded scene. Handle equality alone is not enough: scene slots are
+	// recycled, so a stale bucket and a brand-new scene can share an index and
+	// differ only in generation.
+	return xBucket.m_xScene.IsValid();
+}
+
+Zenith_PerceptionSystem::ScenePerception* Zenith_PerceptionSystem::FindSceneBucket(Zenith_Scene xScene)
+{
+	const int iHandle = xScene.GetHandle();
+	if (iHandle < 0 || static_cast<uint32_t>(iHandle) >= s_axScenes.GetSize())
+	{
+		return nullptr;
+	}
+	ScenePerception& xBucket = s_axScenes.Get(static_cast<uint32_t>(iHandle));
+	// Full-handle compare (handle AND generation) so a recycled slot never
+	// hands back the previous occupant's records.
+	if (xBucket.m_xScene != xScene)
+	{
+		return nullptr;
+	}
+	return &xBucket;
+}
+
+Zenith_PerceptionSystem::ScenePerception& Zenith_PerceptionSystem::EnsureSceneBucket(Zenith_Scene xScene)
+{
+	const int iHandle = xScene.GetHandle();
+	Zenith_Assert(iHandle >= 0, "EnsureSceneBucket: invalid scene handle");
+	while (s_axScenes.GetSize() <= static_cast<uint32_t>(iHandle))
+	{
+		s_axScenes.PushBack(ScenePerception());
+	}
+	ScenePerception& xBucket = s_axScenes.Get(static_cast<uint32_t>(iHandle));
+	if (xBucket.m_xScene != xScene)
+	{
+		// Claiming a slot whose previous occupant is gone. Anything still in it
+		// belonged to a destroyed scene (OnSceneDestroyed normally clears it
+		// first; this is the belt-and-braces path for a scene freed without the
+		// hook wired, e.g. a leaf-only unit run).
+		xBucket.m_axAgents.Clear();
+		xBucket.m_axTargets.Clear();
+		xBucket.m_axSounds.Clear();
+		xBucket.m_xScene = xScene;
+	}
+	return xBucket;
+}
+
+Zenith_Scene Zenith_PerceptionSystem::ResolveOwningScene(Zenith_EntityID xEntityID)
+{
+	Zenith_Entity xEntity = Zenith_SceneSystem::Get().ResolveEntity(xEntityID);
+	if (!xEntity.IsValid())
+	{
+		return Zenith_Scene::INVALID_SCENE;
+	}
+	return xEntity.GetScene();
+}
+
+Zenith_Scene Zenith_PerceptionSystem::ResolveRegistrationScene(Zenith_EntityID xEntityID)
+{
+	const Zenith_Scene xOwn = ResolveOwningScene(xEntityID);
+	if (xOwn.IsValid())
+	{
+		return xOwn;
+	}
+	// The entity does not resolve (registered before its scene finished loading,
+	// or a synthetic ID from a test). Fall back to the active scene so the
+	// registration is never silently dropped -- it then dies with the active
+	// scene, which is strictly better than outliving every world.
+	return Zenith_SceneSystem::Get().GetActiveScene();
+}
+
+Zenith_PerceptionSystem::AgentRecord* Zenith_PerceptionSystem::FindAgentRecord(Zenith_EntityID xAgentID)
+{
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize(); ++uScene)
+	{
+		ScenePerception& xBucket = s_axScenes.Get(uScene);
+		if (!IsBucketLive(xBucket)) continue;
+		for (uint32_t u = 0; u < xBucket.m_axAgents.GetSize(); ++u)
+		{
+			if (xBucket.m_axAgents.Get(u).m_xAgentID == xAgentID)
+			{
+				return &xBucket.m_axAgents.Get(u);
+			}
+		}
+	}
+	return nullptr;
+}
+
+Zenith_PerceptionSystem::AgentPerceptionData* Zenith_PerceptionSystem::FindAgentData(Zenith_EntityID xAgentID)
+{
+	AgentRecord* pxRecord = FindAgentRecord(xAgentID);
+	return pxRecord ? &pxRecord->m_xData : nullptr;
+}
+
+// ============================================================================
+// Lifecycle
+// ============================================================================
 
 void Zenith_PerceptionSystem::Initialise()
 {
-	s_xAgentData.Clear();
-	s_xTargets.Clear();
-	s_axActiveSounds.Clear();
+	s_axScenes.Clear();
 	Zenith_Log(LOG_CATEGORY_AI, "PerceptionSystem initialized");
 }
 
 void Zenith_PerceptionSystem::Shutdown()
 {
-	s_xAgentData.Clear();
-	s_xTargets.Clear();
-	s_axActiveSounds.Clear();
+	s_axScenes.Clear();
 }
 
 void Zenith_PerceptionSystem::Reset()
 {
-	s_xAgentData.Clear();
-	s_xTargets.Clear();
-	s_axActiveSounds.Clear();
+	s_axScenes.Clear();
+}
+
+void Zenith_PerceptionSystem::OnSceneDestroyed(Zenith_Scene xScene)
+{
+	ScenePerception* pxBucket = FindSceneBucket(xScene);
+	if (pxBucket != nullptr)
+	{
+		pxBucket->m_axAgents.Clear();
+		pxBucket->m_axTargets.Clear();
+		pxBucket->m_axSounds.Clear();
+		pxBucket->m_xScene = Zenith_Scene::INVALID_SCENE;
+	}
+
+	// Sweep cross-references held by agents in OTHER (surviving) scenes: a
+	// perceived-target memory naming an entity of the dead scene, and the
+	// derived primary target. Without the re-derive, an agent whose primary
+	// pointed into the dead scene keeps reporting it until its next Update tick
+	// -- and a paused / never-again-ticked agent keeps it forever.
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize(); ++uScene)
+	{
+		ScenePerception& xBucket = s_axScenes.Get(uScene);
+		if (!IsBucketLive(xBucket)) continue;
+		for (uint32_t uAgent = 0; uAgent < xBucket.m_axAgents.GetSize(); ++uAgent)
+		{
+			AgentPerceptionData& xData = xBucket.m_axAgents.Get(uAgent).m_xData;
+			for (uint32_t u = 0; u < xData.m_axPerceivedTargets.GetSize(); )
+			{
+				const Zenith_EntityID xTargetID = xData.m_axPerceivedTargets.Get(u).m_xEntityID;
+				if (!Zenith_SceneSystem::Get().ResolveEntity(xTargetID).IsValid())
+				{
+					xData.m_axPerceivedTargets.RemoveSwap(u);
+				}
+				else
+				{
+					++u;
+				}
+			}
+			UpdatePrimaryTarget(xData);
+		}
+	}
+}
+
+void Zenith_PerceptionSystem::OnEntityOwnerSceneChanged(Zenith_EntityID xEntityID,
+	Zenith_Scene xOldScene, Zenith_Scene xNewScene)
+{
+	if (xOldScene == xNewScene) return;
+
+	ScenePerception* pxOld = FindSceneBucket(xOldScene);
+	if (pxOld == nullptr) return;   // nothing registered for the entity's old home
+
+	// Move the agent record, preserving its accumulated awareness/memory: a
+	// DontDestroyOnLoad promotion must not amnesia the agent.
+	for (uint32_t u = 0; u < pxOld->m_axAgents.GetSize(); ++u)
+	{
+		if (pxOld->m_axAgents.Get(u).m_xAgentID != xEntityID) continue;
+		AgentRecord xMoved = std::move(pxOld->m_axAgents.Get(u));
+		pxOld->m_axAgents.RemoveSwap(u);
+		// EnsureSceneBucket may grow s_axScenes and invalidate pxOld -- take the
+		// destination reference only after the move out of the source is done,
+		// and do not touch pxOld afterwards.
+		EnsureSceneBucket(xNewScene).m_axAgents.PushBack(std::move(xMoved));
+		break;
+	}
+
+	pxOld = FindSceneBucket(xOldScene);
+	if (pxOld == nullptr) return;
+	for (uint32_t u = 0; u < pxOld->m_axTargets.GetSize(); ++u)
+	{
+		if (pxOld->m_axTargets.Get(u).m_xTargetID != xEntityID) continue;
+		TargetRecord xMoved = pxOld->m_axTargets.Get(u);
+		pxOld->m_axTargets.RemoveSwap(u);
+		EnsureSceneBucket(xNewScene).m_axTargets.PushBack(xMoved);
+		break;
+	}
 }
 
 void Zenith_PerceptionSystem::Update(float fDt)
 {
-	// Audit §3.18 fix: no active-scene lookup here. Each agent resolves its
-	// own scene via GetSceneDataForEntity(EntityID) inside UpdateSightPerception
-	// and UpdateHearingPerception, so agents in the persistent scene or in
-	// additively-loaded scenes are perceived correctly. Matches Unity's
+	// No active-scene lookup here: every agent and target is reached through its
+	// OWN scene's bucket, so agents in the persistent scene or in additively-
+	// loaded scenes are perceived correctly. Matches Unity's
 	// SceneManager.GetActiveScene contract — "the active Scene has no impact on
 	// what Scenes are rendered" (and by extension, no impact on which entities
 	// are queried).
 	// Ref: https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.GetActiveScene.html
 	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("AI Perception Update"));
 
-	if (s_xAgentData.IsEmpty())
+	// Sounds age out UNCONDITIONALLY, before the no-agents early-out. They used
+	// to tick only when at least one agent was registered, so a sound emitted in
+	// an agent-less window never spent its 0.5s lifetime and stayed audible for
+	// the rest of the process -- outliving its emitter, its scene, and (in a
+	// batch run) its test.
+	UpdateActiveSounds(fDt);
+
+	bool bAnyAgents = false;
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize() && !bAnyAgents; ++uScene)
+	{
+		const ScenePerception& xBucket = s_axScenes.Get(uScene);
+		bAnyAgents = IsBucketLive(xBucket) && xBucket.m_axAgents.GetSize() > 0;
+	}
+	if (!bAnyAgents)
 	{
 		return;
 	}
 
-	UpdateActiveSounds(fDt);
 	UpdateSightPerception(fDt);
 	UpdateHearingPerception();
 	UpdateMemoryDecay(fDt);
@@ -57,22 +238,47 @@ void Zenith_PerceptionSystem::Update(float fDt)
 
 void Zenith_PerceptionSystem::RegisterAgent(Zenith_EntityID xAgentID)
 {
-	uint64_t uKey = xAgentID.GetPacked();
-	if (!s_xAgentData.Contains(uKey))
+	if (FindAgentRecord(xAgentID) != nullptr)
 	{
-		s_xAgentData[uKey] = AgentPerceptionData();
-		Zenith_Log(LOG_CATEGORY_AI, "Registered perception agent: %u", xAgentID.m_uIndex);
+		return;   // already registered (idempotent, as before)
 	}
+
+	const Zenith_Scene xScene = ResolveRegistrationScene(xAgentID);
+	if (!xScene.IsValid())
+	{
+		Zenith_Warning(LOG_CATEGORY_AI,
+			"RegisterAgent: entity %u has no owning scene and there is no active scene; not registered",
+			xAgentID.m_uIndex);
+		return;
+	}
+
+	AgentRecord xRecord;
+	xRecord.m_xAgentID = xAgentID;
+	EnsureSceneBucket(xScene).m_axAgents.PushBack(std::move(xRecord));
+	Zenith_Log(LOG_CATEGORY_AI, "Registered perception agent: %u", xAgentID.m_uIndex);
 }
 
 void Zenith_PerceptionSystem::UnregisterAgent(Zenith_EntityID xAgentID)
 {
-	s_xAgentData.Remove(xAgentID.GetPacked());
+	// Scans every bucket rather than resolving the entity's scene: this runs
+	// from OnDestroy, where the entity may already be unresolvable.
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize(); ++uScene)
+	{
+		ScenePerception& xBucket = s_axScenes.Get(uScene);
+		for (uint32_t u = 0; u < xBucket.m_axAgents.GetSize(); ++u)
+		{
+			if (xBucket.m_axAgents.Get(u).m_xAgentID == xAgentID)
+			{
+				xBucket.m_axAgents.RemoveSwap(u);
+				return;
+			}
+		}
+	}
 }
 
 void Zenith_PerceptionSystem::SetSightConfig(Zenith_EntityID xAgentID, const Zenith_SightConfig& xConfig)
 {
-	AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	AgentPerceptionData* pxData = FindAgentData(xAgentID);
 	if (pxData)
 	{
 		pxData->m_xSightConfig = xConfig;
@@ -81,7 +287,7 @@ void Zenith_PerceptionSystem::SetSightConfig(Zenith_EntityID xAgentID, const Zen
 
 void Zenith_PerceptionSystem::SetHearingConfig(Zenith_EntityID xAgentID, const Zenith_HearingConfig& xConfig)
 {
-	AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	AgentPerceptionData* pxData = FindAgentData(xAgentID);
 	if (pxData)
 	{
 		pxData->m_xHearingConfig = xConfig;
@@ -98,13 +304,21 @@ void Zenith_PerceptionSystem::EmitSoundStimulus(const Zenith_Maths::Vector3& xPo
 	xSound.m_xSourceEntity = xSource;
 	xSound.m_fTimeRemaining = 0.5f;  // Sounds persist briefly
 
-	s_axActiveSounds.PushBack(xSound);
+	// Attributed to the emitter's scene (active scene when the emitter does not
+	// resolve). Sounds are 0.5s transients, so they are never re-homed when the
+	// emitter moves scene -- they simply expire where they were made.
+	const Zenith_Scene xScene = ResolveRegistrationScene(xSource);
+	if (!xScene.IsValid())
+	{
+		return;   // no world to hear it in
+	}
+	EnsureSceneBucket(xScene).m_axSounds.PushBack(xSound);
 }
 
 void Zenith_PerceptionSystem::EmitDamageStimulus(Zenith_EntityID xVictim,
 	Zenith_EntityID xAttacker)
 {
-	AgentPerceptionData* pxData = s_xAgentData.TryGet(xVictim.GetPacked());
+	AgentPerceptionData* pxData = FindAgentData(xVictim);
 	if (!pxData)
 	{
 		return;
@@ -132,28 +346,84 @@ void Zenith_PerceptionSystem::EmitDamageStimulus(Zenith_EntityID xVictim,
 
 void Zenith_PerceptionSystem::RegisterTarget(Zenith_EntityID xTargetID, bool bHostile)
 {
-	TargetInfo xInfo;
-	xInfo.m_bHostile = bHostile;
-	s_xTargets[xTargetID.GetPacked()] = xInfo;
+	// Re-registration updates in place (the hash-map assignment this replaces
+	// did the same), so a caller re-registering a target does not duplicate it.
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize(); ++uScene)
+	{
+		ScenePerception& xBucket = s_axScenes.Get(uScene);
+		if (!IsBucketLive(xBucket)) continue;
+		for (uint32_t u = 0; u < xBucket.m_axTargets.GetSize(); ++u)
+		{
+			if (xBucket.m_axTargets.Get(u).m_xTargetID == xTargetID)
+			{
+				xBucket.m_axTargets.Get(u).m_xInfo.m_bHostile = bHostile;
+				return;
+			}
+		}
+	}
+
+	const Zenith_Scene xScene = ResolveRegistrationScene(xTargetID);
+	if (!xScene.IsValid())
+	{
+		Zenith_Warning(LOG_CATEGORY_AI,
+			"RegisterTarget: entity %u has no owning scene and there is no active scene; not registered",
+			xTargetID.m_uIndex);
+		return;
+	}
+
+	TargetRecord xRecord;
+	xRecord.m_xTargetID = xTargetID;
+	xRecord.m_xInfo.m_bHostile = bHostile;
+	EnsureSceneBucket(xScene).m_axTargets.PushBack(xRecord);
 }
 
 void Zenith_PerceptionSystem::UnregisterTarget(Zenith_EntityID xTargetID)
 {
-	s_xTargets.Remove(xTargetID.GetPacked());
-
-	// Remove from all agent perceptions
-	for (Zenith_HashMap<uint64_t, AgentPerceptionData>::Iterator xIt(s_xAgentData); !xIt.Done(); xIt.Next())
+	// Scans every bucket (including stale ones) rather than resolving the
+	// entity's scene: this runs from OnDestroy, where the entity may already be
+	// unresolvable.
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize(); ++uScene)
 	{
-		Zenith_Vector<Zenith_PerceivedTarget>& axTargets = xIt.GetValueMutable().m_axPerceivedTargets;
-		for (uint32_t u = 0; u < axTargets.GetSize(); )
+		ScenePerception& xBucket = s_axScenes.Get(uScene);
+		for (uint32_t u = 0; u < xBucket.m_axTargets.GetSize(); ++u)
 		{
-			if (axTargets.Get(u).m_xEntityID == xTargetID)
+			if (xBucket.m_axTargets.Get(u).m_xTargetID == xTargetID)
 			{
-				axTargets.RemoveSwap(u);
+				xBucket.m_axTargets.RemoveSwap(u);
+				break;
 			}
-			else
+		}
+	}
+
+	// Remove from all agent perceptions, in every scene: an agent in scene A can
+	// legitimately hold a memory of a target in scene B.
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize(); ++uScene)
+	{
+		ScenePerception& xBucket = s_axScenes.Get(uScene);
+		if (!IsBucketLive(xBucket)) continue;
+		for (uint32_t uAgent = 0; uAgent < xBucket.m_axAgents.GetSize(); ++uAgent)
+		{
+			AgentPerceptionData& xData = xBucket.m_axAgents.Get(uAgent).m_xData;
+			Zenith_Vector<Zenith_PerceivedTarget>& axTargets = xData.m_axPerceivedTargets;
+			bool bRemovedAny = false;
+			for (uint32_t u = 0; u < axTargets.GetSize(); )
 			{
-				++u;
+				if (axTargets.Get(u).m_xEntityID == xTargetID)
+				{
+					axTargets.RemoveSwap(u);
+					bRemovedAny = true;
+				}
+				else
+				{
+					++u;
+				}
+			}
+			// Re-derive rather than leave m_xPrimaryTarget naming the entity we
+			// just forgot (the pre-scene-ownership sweep left it stale until the
+			// agent's next Update tick).
+			if (bRemovedAny)
+			{
+				UpdatePrimaryTarget(xData);
 			}
 		}
 	}
@@ -161,16 +431,24 @@ void Zenith_PerceptionSystem::UnregisterTarget(Zenith_EntityID xTargetID)
 
 void Zenith_PerceptionSystem::SetTargetHostile(Zenith_EntityID xTargetID, bool bHostile)
 {
-	TargetInfo* pxInfo = s_xTargets.TryGet(xTargetID.GetPacked());
-	if (pxInfo)
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize(); ++uScene)
 	{
-		pxInfo->m_bHostile = bHostile;
+		ScenePerception& xBucket = s_axScenes.Get(uScene);
+		if (!IsBucketLive(xBucket)) continue;
+		for (uint32_t u = 0; u < xBucket.m_axTargets.GetSize(); ++u)
+		{
+			if (xBucket.m_axTargets.Get(u).m_xTargetID == xTargetID)
+			{
+				xBucket.m_axTargets.Get(u).m_xInfo.m_bHostile = bHostile;
+				return;
+			}
+		}
 	}
 }
 
 const Zenith_Vector<Zenith_PerceivedTarget>* Zenith_PerceptionSystem::GetPerceivedTargets(Zenith_EntityID xAgentID)
 {
-	const AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	const AgentPerceptionData* pxData = FindAgentData(xAgentID);
 	if (pxData)
 	{
 		return &pxData->m_axPerceivedTargets;
@@ -186,7 +464,7 @@ Zenith_PerceptionSystem::Zenith_LastHeardSound
 Zenith_PerceptionSystem::GetLastHeardSoundFor(Zenith_EntityID xAgentID)
 {
 	Zenith_LastHeardSound xResult;
-	const AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	const AgentPerceptionData* pxData = FindAgentData(xAgentID);
 	if (!pxData) return xResult;
 
 	const Zenith_Vector<Zenith_PerceivedTarget>& axTargets = pxData->m_axPerceivedTargets;
@@ -209,7 +487,7 @@ Zenith_PerceptionSystem::GetLastHeardSoundFor(Zenith_EntityID xAgentID)
 
 Zenith_EntityID Zenith_PerceptionSystem::GetPrimaryTarget(Zenith_EntityID xAgentID)
 {
-	const AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	const AgentPerceptionData* pxData = FindAgentData(xAgentID);
 	if (pxData)
 	{
 		return pxData->m_xPrimaryTarget;
@@ -224,7 +502,7 @@ bool Zenith_PerceptionSystem::IsAwareOf(Zenith_EntityID xAgentID, Zenith_EntityI
 
 float Zenith_PerceptionSystem::GetAwarenessOf(Zenith_EntityID xAgentID, Zenith_EntityID xTargetID)
 {
-	const AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	const AgentPerceptionData* pxData = FindAgentData(xAgentID);
 	if (!pxData)
 	{
 		return 0.0f;
@@ -286,13 +564,19 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 {
 	Zenith_Profiling::ScopeZone xProfileScope(ZENITH_PROFILE_ZONE("AI Perception Sight"));
 
-	for (Zenith_HashMap<uint64_t, AgentPerceptionData>::Iterator xAgentIt(s_xAgentData); !xAgentIt.Done(); xAgentIt.Next())
+	// Scene-slot order, then registration order within each scene. Fully
+	// determined by scene-load + registration order -- no container history.
+	for (uint32_t uAgentScene = 0; uAgentScene < s_axScenes.GetSize(); ++uAgentScene)
 	{
-		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xAgentIt.GetKey());
-		AgentPerceptionData& xData = xAgentIt.GetValueMutable();
+	ScenePerception& xAgentBucket = s_axScenes.Get(uAgentScene);
+	if (!IsBucketLive(xAgentBucket)) continue;
+	for (uint32_t uAgent = 0; uAgent < xAgentBucket.m_axAgents.GetSize(); ++uAgent)
+	{
+		Zenith_EntityID xAgentID = xAgentBucket.m_axAgents.Get(uAgent).m_xAgentID;
+		AgentPerceptionData& xData = xAgentBucket.m_axAgents.Get(uAgent).m_xData;
 
-		// Audit §3.18 fix: resolve agent's OWN transform via the AI world-hooks
-		// seam — supports agents in any loaded scene, not just the active one.
+		// Resolve the agent's OWN transform via the AI world-hooks seam —
+		// supports agents in any loaded scene, not just the active one.
 		// A false return covers no-scene / stale-handle / no-transform — skip.
 		Zenith_Maths::Vector3 xAgentPos;
 		if (!Zenith_AI_GetEntityPosition(xAgentID, xAgentPos))
@@ -321,10 +605,17 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 			xData.m_axPerceivedTargets.Get(u).m_bCurrentlyVisible = false;
 		}
 
-		// Check each registered target
-		for (Zenith_HashMap<uint64_t, TargetInfo>::Iterator xTargetIt(s_xTargets); !xTargetIt.Done(); xTargetIt.Next())
+		// Check each registered target, in EVERY loaded scene — cross-scene
+		// perception (a persistent player entity, or a target in an additively-
+		// loaded scene) works as Unity would expect.
+		for (uint32_t uTargetScene = 0; uTargetScene < s_axScenes.GetSize(); ++uTargetScene)
 		{
-			Zenith_EntityID xTargetID = Zenith_EntityID::FromPacked(xTargetIt.GetKey());
+		ScenePerception& xTargetBucket = s_axScenes.Get(uTargetScene);
+		if (!IsBucketLive(xTargetBucket)) continue;
+		for (uint32_t uTarget = 0; uTarget < xTargetBucket.m_axTargets.GetSize(); ++uTarget)
+		{
+			const TargetRecord& xTargetRecord = xTargetBucket.m_axTargets.Get(uTarget);
+			Zenith_EntityID xTargetID = xTargetRecord.m_xTargetID;
 
 			// Don't perceive self
 			if (xTargetID == xAgentID)
@@ -332,9 +623,6 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 				continue;
 			}
 
-			// Audit §3.18 fix: resolve each target's own scene — cross-scene
-			// perception (e.g. a persistent player entity, or a target in an
-			// additively-loaded scene) now works as Unity would expect.
 			Zenith_Entity xTargetEntity = Zenith_SceneSystem::Get().ResolveEntity(xTargetID);
 			if (!xTargetEntity.IsValid())
 			{
@@ -360,7 +648,7 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 			pxTarget->m_fTimeSinceLastSeen = 0.0f;
 			pxTarget->m_xLastKnownPosition = xEval.m_xTargetPos;
 			pxTarget->m_uStimulusMask |= PERCEPTION_STIMULUS_SIGHT;
-			pxTarget->m_bHostile = xTargetIt.GetValue().m_bHostile;
+			pxTarget->m_bHostile = xTargetRecord.m_xInfo.m_bHostile;
 
 			// Awareness gain (peripheral vision is slower)
 			float fGainRate = xData.m_xSightConfig.m_fAwarenessGainRate;
@@ -372,8 +660,10 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt)
 
 			pxTarget->m_fAwareness = std::min(1.0f, pxTarget->m_fAwareness + fGainRate * fDt);
 		}
+		}
 
 		UpdatePrimaryTarget(xData);
+	}
 	}
 }
 
@@ -410,13 +700,17 @@ bool Zenith_PerceptionSystem::EvaluateHearingForSound(
 
 void Zenith_PerceptionSystem::UpdateHearingPerception()
 {
-	// Audit §3.18 fix: resolve each agent's OWN scene instead of the active
-	// scene — agents in persistent or additively-loaded scenes must still hear.
+	// Agents in persistent or additively-loaded scenes must still hear, and must
+	// hear sounds made in any loaded scene.
 	// Ref: https://docs.unity3d.com/ScriptReference/GameObject-scene.html
-	for (Zenith_HashMap<uint64_t, AgentPerceptionData>::Iterator xAgentIt(s_xAgentData); !xAgentIt.Done(); xAgentIt.Next())
+	for (uint32_t uAgentScene = 0; uAgentScene < s_axScenes.GetSize(); ++uAgentScene)
 	{
-		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xAgentIt.GetKey());
-		AgentPerceptionData& xData = xAgentIt.GetValueMutable();
+	ScenePerception& xAgentBucket = s_axScenes.Get(uAgentScene);
+	if (!IsBucketLive(xAgentBucket)) continue;
+	for (uint32_t uAgent = 0; uAgent < xAgentBucket.m_axAgents.GetSize(); ++uAgent)
+	{
+		Zenith_EntityID xAgentID = xAgentBucket.m_axAgents.Get(uAgent).m_xAgentID;
+		AgentPerceptionData& xData = xAgentBucket.m_axAgents.Get(uAgent).m_xData;
 
 		// Resolve the agent's OWN transform via the AI world-hooks seam. A false
 		// return covers no-scene / stale-handle / no-transform — skip.
@@ -426,10 +720,14 @@ void Zenith_PerceptionSystem::UpdateHearingPerception()
 			continue;
 		}
 
-		// Check each active sound
-		for (uint32_t u = 0; u < s_axActiveSounds.GetSize(); ++u)
+		// Check each active sound, in every loaded scene
+		for (uint32_t uSoundScene = 0; uSoundScene < s_axScenes.GetSize(); ++uSoundScene)
 		{
-			const Zenith_SoundStimulus& xSound = s_axActiveSounds.Get(u);
+		ScenePerception& xSoundBucket = s_axScenes.Get(uSoundScene);
+		if (!IsBucketLive(xSoundBucket)) continue;
+		for (uint32_t u = 0; u < xSoundBucket.m_axSounds.GetSize(); ++u)
+		{
+			const Zenith_SoundStimulus& xSound = xSoundBucket.m_axSounds.Get(u);
 
 			// Don't hear own sounds
 			if (xSound.m_xSourceEntity == xAgentID)
@@ -453,16 +751,22 @@ void Zenith_PerceptionSystem::UpdateHearingPerception()
 				pxTarget->m_fAwareness = std::min(1.0f, pxTarget->m_fAwareness + fAwarenessGain);
 			}
 		}
+		}
 
 		UpdatePrimaryTarget(xData);
+	}
 	}
 }
 
 void Zenith_PerceptionSystem::UpdateMemoryDecay(float fDt)
 {
-	for (Zenith_HashMap<uint64_t, AgentPerceptionData>::Iterator xAgentIt(s_xAgentData); !xAgentIt.Done(); xAgentIt.Next())
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize(); ++uScene)
 	{
-		AgentPerceptionData& xData = xAgentIt.GetValueMutable();
+	ScenePerception& xBucket = s_axScenes.Get(uScene);
+	if (!IsBucketLive(xBucket)) continue;
+	for (uint32_t uAgent = 0; uAgent < xBucket.m_axAgents.GetSize(); ++uAgent)
+	{
+		AgentPerceptionData& xData = xBucket.m_axAgents.Get(uAgent).m_xData;
 
 		for (uint32_t u = 0; u < xData.m_axPerceivedTargets.GetSize(); )
 		{
@@ -487,20 +791,27 @@ void Zenith_PerceptionSystem::UpdateMemoryDecay(float fDt)
 
 		UpdatePrimaryTarget(xData);
 	}
+	}
 }
 
 void Zenith_PerceptionSystem::UpdateActiveSounds(float fDt)
 {
-	for (uint32_t u = 0; u < s_axActiveSounds.GetSize(); )
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize(); ++uScene)
 	{
-		s_axActiveSounds.Get(u).m_fTimeRemaining -= fDt;
-		if (s_axActiveSounds.Get(u).m_fTimeRemaining <= 0.0f)
+		ScenePerception& xBucket = s_axScenes.Get(uScene);
+		if (!IsBucketLive(xBucket)) continue;
+		Zenith_Vector<Zenith_SoundStimulus>& axSounds = xBucket.m_axSounds;
+		for (uint32_t u = 0; u < axSounds.GetSize(); )
 		{
-			s_axActiveSounds.RemoveSwap(u);
-		}
-		else
-		{
-			++u;
+			axSounds.Get(u).m_fTimeRemaining -= fDt;
+			if (axSounds.Get(u).m_fTimeRemaining <= 0.0f)
+			{
+				axSounds.RemoveSwap(u);
+			}
+			else
+			{
+				++u;
+			}
 		}
 	}
 }
@@ -592,12 +903,77 @@ void Zenith_PerceptionSystem::UpdatePrimaryTarget(AgentPerceptionData& xData)
 	}
 }
 
+#ifdef ZENITH_TESTING
+uint32_t Zenith_PerceptionSystem::GetAgentCountForTest()
+{
+	uint32_t uCount = 0;
+	for (uint32_t u = 0; u < s_axScenes.GetSize(); ++u)
+	{
+		const ScenePerception& xBucket = s_axScenes.Get(u);
+		if (IsBucketLive(xBucket)) uCount += xBucket.m_axAgents.GetSize();
+	}
+	return uCount;
+}
+
+uint32_t Zenith_PerceptionSystem::GetTargetCountForTest()
+{
+	uint32_t uCount = 0;
+	for (uint32_t u = 0; u < s_axScenes.GetSize(); ++u)
+	{
+		const ScenePerception& xBucket = s_axScenes.Get(u);
+		if (IsBucketLive(xBucket)) uCount += xBucket.m_axTargets.GetSize();
+	}
+	return uCount;
+}
+
+uint32_t Zenith_PerceptionSystem::GetActiveSoundCountForTest()
+{
+	uint32_t uCount = 0;
+	for (uint32_t u = 0; u < s_axScenes.GetSize(); ++u)
+	{
+		const ScenePerception& xBucket = s_axScenes.Get(u);
+		if (IsBucketLive(xBucket)) uCount += xBucket.m_axSounds.GetSize();
+	}
+	return uCount;
+}
+
+uint32_t Zenith_PerceptionSystem::GetLiveSceneBucketCountForTest()
+{
+	uint32_t uCount = 0;
+	for (uint32_t u = 0; u < s_axScenes.GetSize(); ++u)
+	{
+		if (IsBucketLive(s_axScenes.Get(u))) ++uCount;
+	}
+	return uCount;
+}
+
+uint32_t Zenith_PerceptionSystem::GetAgentCountForSceneForTest(Zenith_Scene xScene)
+{
+	const ScenePerception* pxBucket = FindSceneBucket(xScene);
+	return pxBucket ? pxBucket->m_axAgents.GetSize() : 0u;
+}
+
+void Zenith_PerceptionSystem::GetAgentIterationOrderForTest(Zenith_Vector<Zenith_EntityID>& axOut)
+{
+	axOut.Clear();
+	for (uint32_t uScene = 0; uScene < s_axScenes.GetSize(); ++uScene)
+	{
+		const ScenePerception& xBucket = s_axScenes.Get(uScene);
+		if (!IsBucketLive(xBucket)) continue;
+		for (uint32_t u = 0; u < xBucket.m_axAgents.GetSize(); ++u)
+		{
+			axOut.PushBack(xBucket.m_axAgents.Get(u).m_xAgentID);
+		}
+	}
+}
+#endif // ZENITH_TESTING
+
 #ifdef ZENITH_TOOLS
 void Zenith_PerceptionSystem::DebugDrawAgent(Zenith_EntityID xAgentID,
 	const Zenith_Maths::Vector3& xAgentPos,
 	const Zenith_Maths::Vector3& xForward)
 {
-	const AgentPerceptionData* pxData = s_xAgentData.TryGet(xAgentID.GetPacked());
+	const AgentPerceptionData* pxData = FindAgentData(xAgentID);
 	if (!pxData)
 	{
 		return;

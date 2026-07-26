@@ -53,6 +53,7 @@ zenith build <Name|engine> [--config <C>] [--headless] [--timeout <min>]
 zenith run <Name> [--config <C>] [--build] [-- <game args>]
 zenith test <Name|all> [--filter X] [--tier N] [--config <C>] [--headless]
             [--per-process] [--fail-fast] [--build] [--results-dir D]
+            [--tests A,B,C] [--batch-order reverse|rotate:<N>]
             [--exit-after-frames N] [--assertions-log F]
 zenith clean [<Name>|engine|all] [--processes-only] [--dry-run]
 zenith package <Name> [--config <C>] [--out <D>] [--force] [--no-shaders]
@@ -194,17 +195,53 @@ every JSON says passed — crash-mid-suite guard), and a slowest-tests report.
   needs per-process).
 - `--tier N` filters by the DP naming convention (`Test_T0*` / `Test_P<N>*`)
   BEFORE dispatch (does not force per-process).
+- **Order control (cross-test-leak diagnosis).** `--tests A,B,C` runs exactly
+  those tests, in that order, in ONE process (engine: `--automated-tests`) —
+  the predecessor→victim probe for "does A contaminate B?". Duplicates are
+  preserved on purpose (`A,A` probes self-contamination); note both
+  occurrences write the same `<name>.json`, last-wins. Manual-only tests run
+  when named explicitly. `--batch-order reverse|rotate:<N>` reorders the full
+  batch without changing its set (`rotate:<N>` is normalised modulo the suite
+  size, so `rotate:0` is the default order). Neither composes with the other,
+  nor with `--filter`/`--tier`/`--per-process`/`--fail-fast`; conflicts are a
+  usage error (CLI exit 1, engine exit 2). An unknown name in `--tests`
+  reports EVERY unknown and runs nothing.
+- **Between-test isolation.** Every test — batch member, batch-first, and
+  single-test — runs against a world the ENGINE built. Before each test the
+  harness normalises input + fixed-dt, calls
+  `Zenith_SceneSystem::ResetWorldForNextTest()` (destroying **every** scene,
+  including the persistent/DontDestroyOnLoad one), runs hygiene for the few
+  things no scene owns (instrumentation logs, deferred-event queue, save
+  sandbox, editor session state), reloads the boot scene, and settles. A test
+  needs cleanup only for state no lifecycle owns — use `m_pfnTeardown`.
+- **Infrastructure failures are exit code 3, not 1.** If the harness cannot
+  build a clean world (boot scene will not load, post-reset settle times out)
+  the remaining tests are *not run*: the engine writes
+  `<results dir>/_infrastructure.json` (`phase` / `reason` / `beforeTest`) plus
+  a `skipReason: "infrastructure"` record per unrun test, and the runner reports
+  one infrastructure fault instead of a wall of MISSING lines. An
+  infra-skipped test counts as neither passed nor failed.
+- **Save sandbox.** Automated-test runs never touch real save data. The runner
+  creates `Build/artifacts/savedata/<run-id>/`, writes an ownership marker, and
+  passes `--test-save-root` + `--test-save-run-id`; `Zenith_SaveData` accepts a
+  supplied root only if the marker's run-id matches, else falls back to
+  `<exe dir>/TestSaveData/<game>/<run-id>/`. Between tests it deletes `*.zsave`
+  only, non-recursively, only in the marker-bearing directory. The runner drops
+  the sandbox on success and **keeps it on failure** for triage.
 - Frame ceiling defaults to 8500 — a runaway backstop covering the slowest
   known suite; each test's own `m_iMaxFrames` governs its budget.
 - Results default to `Build/artifacts/test_results/<game>/` (gitignored).
 - Current suite baselines: **CityBuilder 45**, **DevilsPlayground 158**.
 
 **Engine unit tests** run at every boot unless `--skip-unit-tests`. Baseline:
-**1042 ran, 1042 passed** — asserted by `Tools/run_unit_gate.ps1` (CI) and
-`Tools/test_scaffold.ps1` (scaffold gate), both tolerating exactly one known
-layout-sensitive flake (`GraphComponent::RegistryWideNodeRoundTrip`). **When
-you add engine unit tests, bump the baseline in BOTH scripts in the same
-change.** Combat carries the CI unit gate (`engine-gate.yml`).
+**1163 ran, 0 failed** — asserted by `Tools/run_unit_gate.ps1` (CI, which
+`Tools/test_scaffold.ps1` also invokes for the scaffold gate), tolerating
+exactly one known layout-sensitive skip
+(`GraphComponent::RegistryWideNodeRoundTrip`). **When you add engine unit
+tests, bump `-Baseline` in `Tools/run_unit_gate.ps1` in the same change** —
+and the ZM override in `.github/workflows/zm-tests.yml`, which counts the
+engine suite plus ZM's own. Combat carries the CI unit gate
+(`engine-gate.yml`).
 
 **PowerShell selftests** (`zenith selftest`): dependency-free assert-runners
 covering name validation (shared vector file pinning PS↔C++ hub), the

@@ -338,7 +338,7 @@ ZENITH_TEST(TerrainEditor, BrushIndicatorDecalArmsForOneFrame)
 	// Prepare/pack: the cursor re-arms every frame while valid, so a missed
 	// frame must make the indicator vanish rather than go stale.
 	Flux_DecalsImpl& xDecals = g_xEngine.Decals();
-	xDecals.ResetForTest();
+	xDecals.Reset();
 
 	xDecals.SetEditorDecal(Zenith_Maths::Vector3(100.0f, 50.0f, 100.0f),
 		30.0f, 60.0f, Zenith_Maths::Vector4(1.0f, 0.0f, 0.0f, 0.85f), nullptr);
@@ -352,7 +352,7 @@ ZENITH_TEST(TerrainEditor, BrushIndicatorDecalArmsForOneFrame)
 		30.0f, 60.0f, Zenith_Maths::Vector4(1.0f, 0.0f, 0.0f, 0.85f), nullptr);
 	ZENITH_ASSERT_EQ(xDecals.TickAndPackDense(0.016f), 2u, "Ring decal + editor decal must both pack");
 
-	xDecals.ResetForTest();
+	xDecals.Reset();
 }
 
 ZENITH_TEST(TerrainEditor, SetTreeBrushSettingsWritesFields)

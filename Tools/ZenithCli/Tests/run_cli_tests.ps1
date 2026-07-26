@@ -154,6 +154,40 @@ try {
         Assert ($byName['T_Bad'].Status -eq 'UNPARSEABLE') "unparseable status"
         Assert ($byName['T_Fail'].Detail -like 'failures=1*') "fail detail: got [$($byName['T_Fail'].Detail)]"
     }
+    Invoke-Test "tally: an infrastructure skip is neither a pass nor a fail" {
+        # An infrastructure-skipped test never RAN. Counting it as passed would
+        # hide a harness fault behind a green suite; counting it as failed would
+        # report N test failures for one harness problem.
+        $dir = Join-Path $tmp 'tally_infra'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Put $dir 'T_Ran.json' '{ "passed": true, "skipped": false, "skipReason": "" }'
+        Put $dir 'T_Graphics.json' '{ "passed": true, "skipped": true, "skipReason": "" }'
+        Put $dir 'T_NotRun.json' '{ "passed": false, "skipped": true, "skipReason": "infrastructure" }'
+        $r = Read-ZenithTestResults -ResultsDir $dir -Tests @('T_Ran', 'T_Graphics', 'T_NotRun')
+        Assert ($r.Passed -eq 2) "the ran + graphics-skipped tests count as passed: got $($r.Passed)"
+        Assert (@($r.FailedNames).Count -eq 0) "an infra skip must NOT be reported as a failed test: [$($r.FailedNames -join ',')]"
+        $byName = @{}
+        foreach ($e in $r.Entries) { $byName[$e.Name] = $e }
+        Assert ($byName['T_NotRun'].Status -eq 'INFRA_SKIPPED') "infra skip status: got $($byName['T_NotRun'].Status)"
+        Assert ($byName['T_Graphics'].Status -eq 'PASS' -and $byName['T_Graphics'].Skipped) "a plain skip stays a pass"
+    }
+    Invoke-Test "harness rejects conflicting order flags before touching the exe" {
+        # These throws are pure argument validation and must fire ahead of the
+        # "executable not found" check -- otherwise the conflict is only ever
+        # reported on machines that happen to have the game built.
+        function Test-Throws([scriptblock]$Body, [string]$Expect) {
+            $msg = ''
+            try { & $Body } catch { $msg = "$($_.Exception.Message)" }
+            Assert ($msg -like $Expect) "expected [$Expect], got [$msg]"
+        }
+        $fake = Join-Path $tmp 'no_such_game.exe'
+        Test-Throws { Invoke-ZenithGameTests -Exe $fake -ResultsDir $tmp -TestNames 'A,B' -Filter 'X' } '*-Filter*'
+        Test-Throws { Invoke-ZenithGameTests -Exe $fake -ResultsDir $tmp -TestNames 'A,B' -BatchOrder 'reverse' } '*-BatchOrder*'
+        Test-Throws { Invoke-ZenithGameTests -Exe $fake -ResultsDir $tmp -TestNames 'A,B' -PerProcess } '*-PerProcess*'
+        Test-Throws { Invoke-ZenithGameTests -Exe $fake -ResultsDir $tmp -BatchOrder 'reverse' -FailFast } '*-BatchOrder requires*'
+        # No conflict => validation passes and the missing exe is what fails.
+        Test-Throws { Invoke-ZenithGameTests -Exe $fake -ResultsDir $tmp -TestNames 'A,B' } 'executable not found*'
+    }
     Invoke-Test "timings: reads durationMs, tolerates absent field" {
         $dir = Join-Path $tmp 'timing'
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -167,6 +201,27 @@ try {
     Invoke-Test "test without a target exits 1 (usage)" { Assert ((Invoke-CliCode @('test')) -eq 1) "test -> 1" }
     Invoke-Test "test with unknown game exits 5 (not-found)" { Assert ((Invoke-CliCode @('test', 'NoSuchGameXYZ')) -eq 5) "test missing -> 5" }
     Invoke-Test "test with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('test', 'Combat', '--bogus')) -eq 1) "test --bogus -> 1" }
+    # Order-control flags: mutually-exclusive combinations must be rejected as
+    # usage (1) BEFORE any exe lookup, so the check is independent of whether
+    # Combat happens to be built on this machine.
+    Invoke-Test "test --tests with --batch-order exits 1 (usage)" {
+        Assert ((Invoke-CliCode @('test', 'Combat', '--tests', 'A,B', '--batch-order', 'reverse')) -eq 1) "--tests + --batch-order -> 1"
+    }
+    Invoke-Test "test --tests with --filter exits 1 (usage)" {
+        Assert ((Invoke-CliCode @('test', 'Combat', '--tests', 'A,B', '--filter', 'X')) -eq 1) "--tests + --filter -> 1"
+    }
+    Invoke-Test "test --tests with --per-process exits 1 (usage)" {
+        Assert ((Invoke-CliCode @('test', 'Combat', '--tests', 'A,B', '--per-process')) -eq 1) "--tests + --per-process -> 1"
+    }
+    Invoke-Test "test --batch-order with --fail-fast exits 1 (usage)" {
+        Assert ((Invoke-CliCode @('test', 'Combat', '--batch-order', 'rotate:3', '--fail-fast')) -eq 1) "--batch-order + --fail-fast -> 1"
+    }
+    Invoke-Test "test --tests/--batch-order parse alone (not rejected as unknown)" {
+        # A non-existent game short-circuits at name resolution (5). If the new
+        # flags were mis-parsed as unknown options this would be usage (1).
+        Assert ((Invoke-CliCode @('test', 'NoSuchGameXYZ', '--tests', 'A,B')) -eq 5) "--tests parses -> 5 not 1"
+        Assert ((Invoke-CliCode @('test', 'NoSuchGameXYZ', '--batch-order', 'reverse')) -eq 5) "--batch-order parses -> 5 not 1"
+    }
     Invoke-Test "clean with unknown game exits 5 (not-found)" { Assert ((Invoke-CliCode @('clean', 'NoSuchGameXYZ')) -eq 5) "clean missing -> 5" }
     Invoke-Test "clean with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('clean', '--bogus')) -eq 1) "clean --bogus -> 1" }
     Invoke-Test "clean --processes-only --dry-run exits 0" { Assert ((Invoke-CliCode @('clean', '--processes-only', '--dry-run')) -eq 0) "clean dry-run -> 0" }

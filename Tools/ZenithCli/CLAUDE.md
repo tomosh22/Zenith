@@ -77,9 +77,28 @@ parsing, orchestration, and console UX. The test protocol lives ONLY in
 headless discovery (`ConvertFrom-ZenithTestListOutput` ANSI-strips and parses
 the `Registered automated tests:` block) → Filter/Tier trim (`@(...)` on every
 reassignment — a single match would otherwise unwrap to a scalar string) →
-batch (`--all-automated-tests`) or per-process (forced by
-PerProcess/FailFast/Filter) → tally (`Read-ZenithTestResults`:
-PASS/FAIL/MISSING/UNPARSEABLE + skipped tag; a non-zero engine exit fails the
-batch regardless of JSONs) → timing report. Throws on setup errors (missing
-exe, zero tests) — callers map to exit codes. Pure parsers/tally are separate
-exported functions so the selftests cover them with fixtures, no engine needed.
+named-order (`--automated-tests`, from `-TestNames`), batch
+(`--all-automated-tests`, optionally `-BatchOrder reverse|rotate:<N>`), or
+per-process (forced by PerProcess/FailFast/Filter) → tally
+(`Read-ZenithTestResults`:
+PASS/FAIL/MISSING/UNPARSEABLE/INFRA_SKIPPED + skipped tag; a non-zero engine
+exit fails the batch regardless of JSONs) → timing report. Throws on setup
+errors (missing exe, zero tests) — callers map to exit codes. Pure
+parsers/tally are separate exported functions so the selftests cover them with
+fixtures, no engine needed.
+
+Two things the harness owns beyond dispatch:
+
+- **Save sandbox.** It creates `Build/artifacts/savedata/<run-id>/`, writes the
+  `.zenith_test_save_root` ownership marker itself, and passes
+  `--test-save-root` + `--test-save-run-id`. The engine refuses to delete inside
+  a directory that lacks a marker whose run-id matches, which is what makes
+  "wipe the `.zsave` files in here between tests" safe — the runner is the only
+  marker writer, and only under the artifacts root. Dropped on success, KEPT on
+  failure for triage, marker-bearing leftovers age-pruned next run.
+- **Infrastructure failures.** `_infrastructure.json` in the results dir means
+  the engine could not build a clean world and the remaining tests were never
+  RUN. The tally reports one fault (`<infrastructure:reason>`) and suppresses
+  the per-test noise + the synthetic `<batch:exit=N>` marker; an
+  `INFRA_SKIPPED` row counts as neither passed nor failed, because reporting it
+  either way hides a harness fault behind ordinary-looking results.

@@ -11,6 +11,7 @@
 #include "Editor/Zenith_EditorState.h"
 #include "Editor/Zenith_EditorSceneAccess.h"
 #include "Editor/Zenith_UndoSystem.h"
+#include "Editor/Zenith_SelectionSystem.h"   // ResetSessionForNextTest clears the entity-keyed bounds cache
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Entity.h"
@@ -310,6 +311,49 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 void Zenith_Editor::FlushPendingSceneOperations()
 {
 	HandlePendingSceneLoadDeferred();
+}
+
+void Zenith_Editor::ResetSessionForNextTest()
+{
+	// Everything here is keyed by an EntityID or a scene the harness is about to
+	// destroy, so none of it can meaningfully survive into the next test.
+
+	// Selection set. The selection system's entity-keyed BOUNDS CACHE and the
+	// undo/redo stacks are equally dead after the reset, but they live on
+	// sibling engine subsystems (Zenith_SelectionSystem / Zenith_UndoSystem)
+	// rather than in the editor state -- the harness clears those alongside its
+	// other engine-owned hygiene, which also keeps this TU off the
+	// engine-singleton ratchet it is budgeted against.
+	m_xEditorState.m_xSelection.Clear();
+
+	// The editor's OWN pending-scene-load flags. These bypass the scene system's
+	// pending-load slot (Zenith_EditorSceneAccess::LoadFromFile), so the scene
+	// system's mid-reset discard guard cannot see them -- a queued editor load
+	// would otherwise fire into the next test's freshly-built world.
+	m_xEditorState.m_xDeferredOps.Reset();
+
+	// Camera: the game-camera entity reference is a dead EntityID after the
+	// reset. Position/orientation are deliberately kept -- they are editor
+	// preferences, not world state.
+	m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
+
+	// DELIBERATELY NOT TOUCHED: the editor mode and the play-mode scene backup.
+	//
+	// They are two halves of one state machine, and normalising either in
+	// isolation desynchronises it. Clearing the backup while leaving the mode
+	// Playing was tried and is actively harmful: a test's Play->Stop then has
+	// nothing to restore, so the live scene stays standing, and the following
+	// Play re-dispatches OnAwake over already-awake entities -- EnterPlayMode's
+	// dispatch is unconditional, so a singleton component's
+	// "double-instantiated" assert fires (DPPlayerController_Component, hit for
+	// real in Test_EditorSceneCycle). Forcing the mode instead runs
+	// EnterPlayMode's full backup+dispatch on every single test, which
+	// multiplies that same double-awake by the suite size.
+	//
+	// Editor MODE leaking between tests is therefore left as the pre-existing
+	// behaviour it has always been (see the editor-UI-leakage follow-up); what
+	// this op fixes is the state that is unambiguously DEAD after the reset --
+	// EntityIDs and scene handles that no longer resolve.
 }
 
 #endif // ZENITH_TOOLS

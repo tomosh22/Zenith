@@ -106,6 +106,38 @@ public:
 #endif
 
 	//==========================================================================
+	// ResetWorldForNextTest -- the automated-test harness's clean slate.
+	//
+	// Destroys EVERY scene, including the persistent (DontDestroyOnLoad) one,
+	// so no world state survives into the next test. That is the whole point:
+	// the persistent scene is exactly where a game parks its singleton managers,
+	// and letting them live across tests is what forced every game to hand-write
+	// a between-tests reset hook.
+	//
+	// IDENTITY IS PRESERVED, NOT REPLAYED. Entity and scene GENERATIONS stay
+	// monotonic, so a handle captured before the reset stays invalid forever --
+	// it can never be revived by a slot being reused. Determinism instead comes
+	// from normalising the free lists so slot INDICES are handed out in
+	// ascending order again. This is why the op must NOT be built on
+	// ResetForNextTest / ShutdownSubsystems: those call Zenith_EntityStore::Reset(),
+	// which wipes slots, generations AND the per-slot transform-cache revisions
+	// -- destroying the very monotonicity this contract guarantees.
+	//
+	// Loads issued from an OnDestroy body during the reset are DISCARDED with a
+	// warning (there is no world left to load them into), and a nested reset is
+	// rejected. OnDestroy bodies must not call DontDestroyOnLoad during the
+	// reset: MarkEntityPersistent hard-asserts that the persistent scene is
+	// loaded, and by then it is not.
+	//
+	// Physics and asset resets are deliberately NOT done here -- the boot-scene
+	// SCENE_LOAD_SINGLE that follows performs them in its own established order
+	// (render reset -> unload -> UnloadUnusedAssets -> physics reset), and
+	// collider destructors need the live physics world during the teardown this
+	// op performs.
+	//==========================================================================
+	static void ResetWorldForNextTest();
+
+	//==========================================================================
 	// Scene handle / data resolution
 	//
 	// LIFETIME: these return a RAW Zenith_SceneData* into recyclable scene storage,
@@ -236,6 +268,11 @@ public:
 	void Update(float fDt);
 
 	void SetMainLoopRunning(bool bRunning);
+	// Read-back. ResetWorldForNextTest must PRESERVE this (unlike Shutdown,
+	// which clears it) — the main loop really is still running across a
+	// between-tests world reset, and clearing it would trip LoadScene's
+	// bootstrap-only assert on the very next load.
+	bool IsMainLoopRunning() const { return m_bIsMainLoopRunning; }
 
 #ifdef ZENITH_TESTING
 	void DispatchFullLifecycleInit();
@@ -482,6 +519,14 @@ private:
 	bool                          m_bIsLoadingScene          = false;
 	bool                          m_bIsPrefabInstantiating   = false;
 	bool                          m_bIsUpdating              = false;
+
+	// Set for the duration of ResetWorldForNextTest. Every scene-load entry
+	// point checks it and DISCARDS the request: mid-reset there is no world to
+	// load into, and the reset itself is about to create the next one. Distinct
+	// from m_bIsLoadingScene / m_bIsUpdating, which DEFER a load rather than
+	// dropping it -- deferring here would fire a dead request into the fresh
+	// world. Also rejects a nested reset.
+	bool                          m_bIsResettingWorld        = false;
 
 	float                         m_fFixedTimeAccumulator    = 0.0f;
 	float                         m_fFixedTimestep           = 0.02f;  // 50Hz default

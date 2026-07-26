@@ -99,6 +99,14 @@ public:
 	// already holds a cached Decals() reference.
 	u_int TickAndPackDense(float fDt);
 
+	// Drop every decal. Called by the SCENE_LOAD_SINGLE render-systems reset
+	// alongside Terrain/Text/Particles/Skybox/Fog/Grass: the ring holds
+	// gameplay-spawned WORLD marks (bullet holes stamped at world positions), so
+	// leaving them across a scene load leaves the previous world's scorch marks
+	// floating in the new one. This was previously a ZENITH_TESTING-only
+	// ResetForTest with no production caller -- the same omission Grass had.
+	void Reset();
+
 	bool IsInitialised() const { return m_bInitialised; }
 
 	static constexpr u_int uMAX_DECALS = 64;
@@ -116,7 +124,6 @@ public:
 	};
 	u_int        GetActiveCountForTest();
 	TestSlotView GetSlotForTest(u_int uSlotIndex);
-	void         ResetForTest();
 #endif
 
 	bool                        m_bInitialised      = false;

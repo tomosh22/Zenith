@@ -53,6 +53,19 @@ Zenith_Scene Zenith_SceneSystem::LoadScene(const std::string& strPath, Zenith_Sc
 	Zenith_Assert(!m_bRenderTasksActive,
 		"LoadScene: scene mutation while render tasks are reading — render-task invariant violated");
 
+	// Mid-world-reset loads are DISCARDED, not deferred. Placed above every
+	// other branch — in particular above the ADDITIVE_WITHOUT_LOADING early
+	// return below, which deliberately bypasses the mid-dispatch deferral and
+	// would otherwise slip straight past this. Deferring instead of dropping
+	// would fire an OnDestroy-issued request into the freshly built world.
+	if (m_bIsResettingWorld)
+	{
+		Zenith_Warning(LOG_CATEGORY_SCENE,
+			"LoadScene('%s') issued during ResetWorldForNextTest — discarded (there is no world to load into; "
+			"the reset builds the next one itself)", strPath.c_str());
+		return Zenith_Scene::INVALID_SCENE;
+	}
+
 	if (!ValidateLoadRequestInternal(strPath))
 		return Zenith_Scene::INVALID_SCENE;
 
@@ -228,6 +241,16 @@ Zenith_Scene Zenith_SceneSystem::LoadSceneByIndex(int iBuildIndex, Zenith_SceneL
 {
 	Zenith_Assert(Zenith_ECS_IsMainThread(), "LoadSceneByIndex must be called from main thread");
 
+	// See LoadScene: mid-world-reset requests are discarded, not deferred.
+	// Checked here as well as in LoadScene so the "no scene registered" warning
+	// below never fires for a request that was never going to run anyway.
+	if (m_bIsResettingWorld)
+	{
+		Zenith_Warning(LOG_CATEGORY_SCENE,
+			"LoadSceneByIndex(%d) issued during ResetWorldForNextTest — discarded", iBuildIndex);
+		return Zenith_Scene::INVALID_SCENE;
+	}
+
 	const u_int uBuildIndex = static_cast<u_int>(iBuildIndex);
 	if (iBuildIndex < 0
 		|| uBuildIndex >= m_axBuildIndexToPath.GetSize()
@@ -393,6 +416,13 @@ void Zenith_SceneSystem::UnloadOneScene(Zenith_Scene xScene, bool& bActiveSceneU
 
 	delete m_axScenes.Get(xScene.m_iHandle);
 	m_axScenes.Get(xScene.m_iHandle) = nullptr;
+
+	// Notify scene-owned state held OUTSIDE the ECS (AI perception's per-scene
+	// buckets) BEFORE releasing the handle: FreeSceneHandle bumps the generation,
+	// after which xScene is stale and a listener could not match its records.
+	// The SceneData is already gone, so a listener sees the entities as
+	// unresolvable — which is exactly the signal a cross-reference purge wants.
+	if (m_xRuntimeHooks.m_pfnSceneDestroyed) { m_xRuntimeHooks.m_pfnSceneDestroyed(xScene); }
 
 	FreeSceneHandle(xScene.m_iHandle);
 }

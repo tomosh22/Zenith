@@ -594,6 +594,21 @@ void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	}
 }
 
+void Flux_DecalsImpl::Reset()
+{
+	for (u_int u = 0; u < uMAX_DECALS; ++u)
+		m_axDecalSlots[u].m_bActive = false;
+	m_uNextSlot            = 0;
+	m_uActiveDecalCount    = 0;
+	// The editor brush-indicator slot is disarmed too. It is deliberately
+	// one-frame state -- the terrain editor re-arms it every frame its cursor is
+	// valid -- so dropping it here cannot make an indicator vanish for longer
+	// than the frame the scene load already consumed, and NOT dropping it would
+	// leave a stale indicator pointing into the world that just went away.
+	m_bEditorDecalArmed    = false;
+	m_pxEditorDecalTexture = nullptr;
+}
+
 // ===== TEST HOOKS =====
 
 #ifdef ZENITH_TESTING
@@ -613,14 +628,6 @@ Flux_DecalsImpl::TestSlotView Flux_DecalsImpl::GetSlotForTest(u_int uSlotIndex)
 	xView.m_bActive            = xSlot.m_bActive;
 	return xView;
 }
-
-void Flux_DecalsImpl::ResetForTest()
-{
-	for (u_int u = 0; u < uMAX_DECALS; ++u)
-		m_axDecalSlots[u].m_bActive = false;
-	m_uNextSlot            = 0;
-	m_uActiveDecalCount    = 0;
-	m_bEditorDecalArmed    = false;
-	m_pxEditorDecalTexture = nullptr;
-}
 #endif
+
+#include "Flux/Decals/Flux_Decals.Tests.inl"

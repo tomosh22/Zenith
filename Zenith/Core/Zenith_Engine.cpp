@@ -21,6 +21,7 @@
 // Behaviour Graphs: the node-type registry the engine installs its node
 // registrar onto (the Scripting module's twin of the component-meta inversion).
 #include "Scripting/Zenith_GraphNodeRegistry.h"
+#include "AI/Perception/Zenith_PerceptionSystem.h"	// m_pfnSceneDestroyed / m_pfnEntityOwnerSceneChanged thunks
 #include "EntityComponent/Components/Zenith_GraphComponent.h"	// m_pfnSceneLoaded -> BroadcastCustomEvent thunk
 // Engine-side (NOT the ECS leaf): needed so the m_pfnAddDefaultComponents hook
 // installed below can name Zenith_TransformComponent and add it via the
@@ -613,6 +614,11 @@ void Zenith_Engine::InitialiseECS()
 		// the leak); consumers (RenderTest / DevilsPlayground / CityBuilder) regenerate
 		// their grass on their own scene loads, so nothing visible changes for them.
 		g_xEngine.Grass().Reset();
+		// Decals: the 64-slot ring holds gameplay-spawned WORLD marks (bullet
+		// holes at world positions), so it belongs in this list for exactly the
+		// reason Grass does — it was simply never added, and its only clear was
+		// a ZENITH_TESTING-only helper with no production caller.
+		g_xEngine.Decals().Reset();
 #ifdef ZENITH_TOOLS
 		g_xEngine.Gizmos().Reset();
 #endif
@@ -632,6 +638,20 @@ void Zenith_Engine::InitialiseECS()
 		Zenith_PropertyValue xPayload;
 		xPayload.SetString(szCanonicalPath ? szCanonicalPath : "");
 		Zenith_GraphComponent::BroadcastCustomEvent("__SceneLoaded", &xPayload);
+	};
+	// Scene-owned state living OUTSIDE the ECS. AI perception keeps its agents,
+	// targets and in-flight sounds in per-scene buckets (the per-World-subsystem
+	// model), so it needs to know when a scene dies and when an entity changes
+	// owning scene. The ECS leaf sits below the AI leaf and cannot name it; the
+	// engine forwards. Anything else that grows scene-keyed state hangs off
+	// these two hooks rather than inventing another reset entry point.
+	xHooks.m_pfnSceneDestroyed = [](Zenith_Scene xScene)
+	{
+		Zenith_PerceptionSystem::OnSceneDestroyed(xScene);
+	};
+	xHooks.m_pfnEntityOwnerSceneChanged = [](Zenith_EntityID xEntityID, Zenith_Scene xOldScene, Zenith_Scene xNewScene)
+	{
+		Zenith_PerceptionSystem::OnEntityOwnerSceneChanged(xEntityID, xOldScene, xNewScene);
 	};
 	g_xEngine.Scenes().SetRuntimeHooks(xHooks);
 

@@ -55,17 +55,25 @@ void Zenith_EventDispatcher::ProcessDeferredEvents()
 	}
 }
 
-void Zenith_EventDispatcher::ClearAllSubscriptions()
+u_int Zenith_EventDispatcher::DiscardDeferredEvents()
 {
-	m_xSubscriptions.Clear();
-	m_xSubscribersByEventType.Clear();
-
-	// Also clear deferred events
 	m_xDeferredMutex.Lock();
-	for (u_int uIdx = 0; uIdx < m_axDeferredEvents.GetSize(); uIdx++)
+	const u_int uDiscarded = m_axDeferredEvents.GetSize();
+	for (u_int uIdx = 0; uIdx < uDiscarded; uIdx++)
 	{
 		delete m_axDeferredEvents.Get(uIdx);
 	}
 	m_axDeferredEvents.Clear();
 	m_xDeferredMutex.Unlock();
+	return uDiscarded;
+}
+
+void Zenith_EventDispatcher::ClearAllSubscriptions()
+{
+	m_xSubscriptions.Clear();
+	m_xSubscribersByEventType.Clear();
+
+	// Deferred events are owned pointers, so they must go with the
+	// subscriptions that would have received them.
+	DiscardDeferredEvents();
 }

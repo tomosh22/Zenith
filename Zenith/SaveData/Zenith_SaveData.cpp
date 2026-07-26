@@ -1,10 +1,13 @@
 #include "Zenith.h"
 
 #include "SaveData/Zenith_SaveData.h"
+#include "Core/Zenith_CommandLine.h"   // automated-test detection + sandbox flags
 
 #include <cstring>
+#include <cstdio>
 #include <ctime>
 #include <filesystem>
+#include <string>
 
 #ifdef ZENITH_ANDROID
 #include <android_native_app_glue.h>
@@ -88,6 +91,181 @@ namespace Zenith_SaveData
 	static char s_acSaveDirectory[ZENITH_MAX_PATH_LENGTH] = { 0 };
 	static bool s_bInitialised = false;
 
+	// ============================================================================
+	// Automated-test save sandbox
+	//
+	// Everything below only ever runs when Zenith_CommandLine::IsAutomatedTestRun()
+	// is true. The deletion contract is deliberately narrow: only *.zsave, only
+	// non-recursively, only inside the ONE canonical directory resolved here at
+	// Initialise time and proven to carry an ownership marker. Resolving the
+	// canonical form once (rather than per delete) is what stops a junction
+	// being swapped in later to redirect the deletes somewhere else.
+	// ============================================================================
+	static bool s_bTestSandboxActive = false;
+	// Canonical sandbox directory WITHOUT a trailing separator -- the exact
+	// directory WipeTestSandbox is allowed to delete inside.
+	static char s_acTestSandboxDir[ZENITH_MAX_PATH_LENGTH] = { 0 };
+
+	static constexpr const char* kszSandboxMarkerName = ".zenith_test_save_root";
+	static constexpr const char* kszSandboxMarkerMagic = "ZENITH_TEST_SAVE_ROOT";
+
+	// Reads the run-id line out of a marker file. Returns false when the file is
+	// missing, unreadable, or does not start with the magic.
+	static bool ReadSandboxMarkerRunId(const std::filesystem::path& xMarkerPath, std::string& strRunIdOut)
+	{
+		strRunIdOut.clear();
+		std::FILE* pxFile = nullptr;
+#ifdef _MSC_VER
+		if (::fopen_s(&pxFile, xMarkerPath.string().c_str(), "rb") != 0 || pxFile == nullptr) return false;
+#else
+		pxFile = std::fopen(xMarkerPath.string().c_str(), "rb");
+		if (pxFile == nullptr) return false;
+#endif
+		char acMagic[64] = { 0 };
+		char acRunId[256] = { 0 };
+		const bool bReadMagic = (std::fgets(acMagic, sizeof(acMagic), pxFile) != nullptr);
+		const bool bReadRunId = (std::fgets(acRunId, sizeof(acRunId), pxFile) != nullptr);
+		std::fclose(pxFile);
+		if (!bReadMagic) return false;
+
+		auto TrimEol = [](char* szText)
+		{
+			size_t uLen = std::strlen(szText);
+			while (uLen > 0 && (szText[uLen - 1] == '\n' || szText[uLen - 1] == '\r')) szText[--uLen] = '\0';
+		};
+		TrimEol(acMagic);
+		if (std::strcmp(acMagic, kszSandboxMarkerMagic) != 0) return false;
+		if (bReadRunId)
+		{
+			TrimEol(acRunId);
+			strRunIdOut = acRunId;
+		}
+		return true;
+	}
+
+	static void WriteSandboxMarker(const std::filesystem::path& xDirectory, const char* szRunId)
+	{
+		const std::filesystem::path xMarker = xDirectory / kszSandboxMarkerName;
+		std::FILE* pxFile = nullptr;
+#ifdef _MSC_VER
+		if (::fopen_s(&pxFile, xMarker.string().c_str(), "wb") != 0 || pxFile == nullptr) return;
+#else
+		pxFile = std::fopen(xMarker.string().c_str(), "wb");
+		if (pxFile == nullptr) return;
+#endif
+		std::fprintf(pxFile, "%s\n%s\n", kszSandboxMarkerMagic, szRunId != nullptr ? szRunId : "");
+		std::fclose(pxFile);
+	}
+
+	// The directory holding this executable, canonicalised. NOT the working
+	// directory: `zenith test` launches the exe from the repo root, so a
+	// CWD-relative sandbox would drop test saves straight into the repository.
+	static bool GetModuleDirectory(std::filesystem::path& xOut)
+	{
+#ifdef ZENITH_WINDOWS
+		char acModulePath[ZENITH_MAX_PATH_LENGTH] = { 0 };
+		const DWORD uLen = ::GetModuleFileNameA(nullptr, acModulePath, ZENITH_MAX_PATH_LENGTH);
+		if (uLen == 0 || uLen >= ZENITH_MAX_PATH_LENGTH) return false;
+		std::error_code xEC;
+		const std::filesystem::path xCanonical = std::filesystem::weakly_canonical(std::filesystem::path(acModulePath), xEC);
+		if (xEC) return false;
+		xOut = xCanonical.parent_path();
+		return true;
+#else
+		std::error_code xEC;
+		xOut = std::filesystem::current_path(xEC);
+		return !xEC;
+#endif
+	}
+
+	// Accepts a runner-supplied root only when every ownership check passes.
+	static bool TryAcceptSuppliedSandboxRoot(const char* szRoot, const char* szRunId, std::filesystem::path& xOut)
+	{
+		if (szRoot == nullptr || szRoot[0] == '\0') return false;
+
+		std::error_code xEC;
+		// canonical (not weakly_canonical): the directory MUST already exist --
+		// the engine never creates a supplied root -- and this resolves Windows
+		// junctions/symlinks so the accepted path is the real one.
+		const std::filesystem::path xCanonical = std::filesystem::canonical(std::filesystem::path(szRoot), xEC);
+		if (xEC)
+		{
+			Zenith_Warning(LOG_CATEGORY_CORE,
+				"SaveData: --test-save-root '%s' does not canonicalise (%s); falling back to the engine-owned sandbox",
+				szRoot, xEC.message().c_str());
+			return false;
+		}
+		if (!std::filesystem::is_directory(xCanonical, xEC) || xEC)
+		{
+			Zenith_Warning(LOG_CATEGORY_CORE,
+				"SaveData: --test-save-root '%s' is not a directory; falling back to the engine-owned sandbox", szRoot);
+			return false;
+		}
+
+		std::string strMarkerRunId;
+		if (!ReadSandboxMarkerRunId(xCanonical / kszSandboxMarkerName, strMarkerRunId))
+		{
+			Zenith_Warning(LOG_CATEGORY_CORE,
+				"SaveData: --test-save-root '%s' carries no ownership marker; falling back to the engine-owned sandbox. "
+				"Only the test runner writes markers, and only under the artifacts root -- an unmarked directory is not ours to delete in.",
+				szRoot);
+			return false;
+		}
+		const char* szExpectedRunId = (szRunId != nullptr) ? szRunId : "";
+		if (strMarkerRunId != szExpectedRunId)
+		{
+			Zenith_Warning(LOG_CATEGORY_CORE,
+				"SaveData: --test-save-root '%s' marker run-id '%s' does not match --test-save-run-id '%s'; "
+				"falling back to the engine-owned sandbox",
+				szRoot, strMarkerRunId.c_str(), szExpectedRunId);
+			return false;
+		}
+
+		xOut = xCanonical;
+		return true;
+	}
+
+	// Resolves the sandbox directory for this run, creating + marking the
+	// engine-owned fallback when no supplied root is accepted. Returns false
+	// only if even the fallback could not be established (in which case the
+	// caller keeps the production directory rather than guessing).
+	static bool ResolveTestSandboxDirectory(const char* szGameName, std::filesystem::path& xOut)
+	{
+		const char* szRunId = Zenith_CommandLine::GetTestSaveRunId();
+		if (szRunId == nullptr || szRunId[0] == '\0') szRunId = "default";
+
+		if (TryAcceptSuppliedSandboxRoot(Zenith_CommandLine::GetTestSaveRoot(), szRunId, xOut))
+		{
+			return true;
+		}
+
+		std::filesystem::path xModuleDir;
+		if (!GetModuleDirectory(xModuleDir))
+		{
+			Zenith_Warning(LOG_CATEGORY_CORE,
+				"SaveData: could not resolve the module directory; the automated-test save sandbox is unavailable");
+			return false;
+		}
+
+		const std::filesystem::path xFallback = xModuleDir / "TestSaveData" / szGameName / szRunId;
+		std::error_code xEC;
+		std::filesystem::create_directories(xFallback, xEC);
+		if (xEC)
+		{
+			Zenith_Warning(LOG_CATEGORY_CORE, "SaveData: could not create the sandbox '%s': %s",
+				xFallback.string().c_str(), xEC.message().c_str());
+			return false;
+		}
+		// The engine created it, so the engine marks it -- keeping the deletion
+		// contract uniform: WipeTestSandbox only ever deletes inside a
+		// marker-bearing directory, whoever produced it.
+		WriteSandboxMarker(xFallback, szRunId);
+
+		const std::filesystem::path xCanonical = std::filesystem::canonical(xFallback, xEC);
+		xOut = xEC ? xFallback : xCanonical;
+		return true;
+	}
+
 	static void BuildSlotPath(const char* szSlotName, char* szOutPath, size_t uOutSize)
 	{
 		snprintf(szOutPath, uOutSize, "%s%s%s", s_acSaveDirectory, szSlotName, ZENITH_SAVE_EXT);
@@ -96,6 +274,36 @@ namespace Zenith_SaveData
 	void Initialise(const char* szGameName)
 	{
 		Zenith_Assert(szGameName != nullptr && szGameName[0] != '\0', "SaveData: Game name cannot be empty");
+
+		s_bTestSandboxActive = false;
+		s_acTestSandboxDir[0] = '\0';
+
+		// Automated-test runs NEVER touch the player's real save data. This is
+		// the whole redirect: every Save/Load/DeleteSlot below resolves through
+		// s_acSaveDirectory, so nothing else in the file needs to know.
+		if (Zenith_CommandLine::IsAutomatedTestRun())
+		{
+			std::filesystem::path xSandbox;
+			if (ResolveTestSandboxDirectory(szGameName, xSandbox))
+			{
+				const std::string strSandbox = xSandbox.string();
+				snprintf(s_acTestSandboxDir, ZENITH_MAX_PATH_LENGTH, "%s", strSandbox.c_str());
+				snprintf(s_acSaveDirectory, ZENITH_MAX_PATH_LENGTH, "%s/", strSandbox.c_str());
+				s_bTestSandboxActive = true;
+				s_bInitialised = true;
+				// Cross-process residue: a previous run's slots would otherwise
+				// be visible to this run's FIRST test, which never passes
+				// through the between-tests reset.
+				const uint32_t uWiped = WipeTestSandbox();
+				Zenith_Log(LOG_CATEGORY_CORE,
+					"SaveData: automated-test run -- saves sandboxed to '%s' (%u stale .zsave removed)",
+					s_acSaveDirectory, uWiped);
+				return;
+			}
+			Zenith_Warning(LOG_CATEGORY_CORE,
+				"SaveData: automated-test run could not establish a save sandbox; falling back to the production "
+				"save directory. Test saves WILL be written to real save data.");
+		}
 
 #ifdef ZENITH_WINDOWS
 		char szAppData[ZENITH_MAX_PATH_LENGTH];
@@ -125,6 +333,57 @@ namespace Zenith_SaveData
 	const char* GetSaveDirectory()
 	{
 		return s_acSaveDirectory;
+	}
+
+	bool IsUsingTestSandbox()
+	{
+		return s_bTestSandboxActive;
+	}
+
+	// The whole deletion contract in one place: re-verify ownership, then delete
+	// ONLY top-level *.zsave regular files. Split out from WipeTestSandbox so
+	// the contract can be unit-tested against a scratch directory without the
+	// process having to be a real automated-test run.
+	static uint32_t WipeSandboxDirectory(const std::filesystem::path& xDir)
+	{
+		// Re-check the ownership marker at DELETE time as well as at accept
+		// time: cheap, and it means a directory that stopped being ours between
+		// the two is left alone.
+		std::string strRunId;
+		if (!ReadSandboxMarkerRunId(xDir / kszSandboxMarkerName, strRunId))
+		{
+			Zenith_Warning(LOG_CATEGORY_CORE,
+				"SaveData: '%s' carries no ownership marker; refusing to delete anything in it",
+				xDir.string().c_str());
+			return 0;
+		}
+
+		uint32_t uDeleted = 0;
+		std::error_code xEC;
+		// NON-recursive, and only regular files whose extension is exactly
+		// ZENITH_SAVE_EXT. Directories are never removed (the <run-id> dir is
+		// the runner's to clean up), the marker is never removed, and no other
+		// extension is ever touched.
+		for (std::filesystem::directory_iterator xIt(xDir, xEC), xEnd; !xEC && xIt != xEnd; xIt.increment(xEC))
+		{
+			std::error_code xFileEC;
+			if (!xIt->is_regular_file(xFileEC) || xFileEC) continue;
+			if (xIt->path().extension() != ZENITH_SAVE_EXT) continue;
+			std::error_code xRemoveEC;
+			if (std::filesystem::remove(xIt->path(), xRemoveEC) && !xRemoveEC) ++uDeleted;
+		}
+		return uDeleted;
+	}
+
+	uint32_t WipeTestSandbox()
+	{
+		// Refuses to do anything unless THIS process established a sandbox.
+		// A stray call in a normal run can therefore never reach real saves.
+		if (!s_bTestSandboxActive || !s_bInitialised || s_acTestSandboxDir[0] == '\0')
+		{
+			return 0;
+		}
+		return WipeSandboxDirectory(std::filesystem::path(s_acTestSandboxDir));
 	}
 
 	// ============================================================================
@@ -397,5 +656,36 @@ namespace Zenith_SaveData
 		s_xWrittenSlotsLog.Clear();
 		s_xReadbackStash.Clear();
 	}
+
+	ScopedSaveRootForTest::ScopedSaveRootForTest(const char* szDirectory)
+		: m_bPrevInitialised(s_bInitialised)
+	{
+		snprintf(m_acPrevDirectory, ZENITH_MAX_PATH_LENGTH, "%s", s_acSaveDirectory);
+
+		if (szDirectory == nullptr || szDirectory[0] == '\0')
+		{
+			Zenith_Assert(false, "ScopedSaveRootForTest: directory cannot be empty");
+			return;
+		}
+
+		std::error_code xEC;
+		std::filesystem::create_directories(szDirectory, xEC);
+
+		// Normalise to a trailing separator: BuildSlotPath concatenates
+		// directly, so a missing one silently turns "<dir>" + "slot" into a
+		// SIBLING file rather than a child.
+		const size_t uLen = std::strlen(szDirectory);
+		const bool bHasSeparator = (uLen > 0) && (szDirectory[uLen - 1] == '/' || szDirectory[uLen - 1] == '\\');
+		snprintf(s_acSaveDirectory, ZENITH_MAX_PATH_LENGTH, "%s%s", szDirectory, bHasSeparator ? "" : "/");
+		s_bInitialised = true;
+	}
+
+	ScopedSaveRootForTest::~ScopedSaveRootForTest()
+	{
+		snprintf(s_acSaveDirectory, ZENITH_MAX_PATH_LENGTH, "%s", m_acPrevDirectory);
+		s_bInitialised = m_bPrevInitialised;
+	}
 #endif
 }
+
+#include "SaveData/Zenith_SaveData.Tests.inl"

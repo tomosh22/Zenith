@@ -10,11 +10,20 @@
 #include "Core/Zenith_AutomatedTest.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+#include "ZenithECS/Zenith_EventSystem.h"
 #include "FileAccess/Zenith_FileAccess.h"
+// Between-tests engine hygiene: the process-level test-instrumentation logs and
+// counters that no scene owns.
+#include "Core/Zenith_AudioBus.h"
+#include "Flux/Zenith_RenderBus.h"
+#include "AI/Navigation/Zenith_NavMesh.h"
+#include "SaveData/Zenith_SaveData.h"
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorAutomation.h"
+#include "Editor/Zenith_SelectionSystem.h"   // entity-keyed bounds cache
+#include "Editor/Zenith_UndoSystem.h"        // EntityID-keyed undo/redo stacks
 #endif
 
 #include <cstring>
@@ -35,6 +44,172 @@ namespace
 	constexpr int kMaxBetweenTestsHooks = 8;
 	Zenith_AutomatedTestRunner::BetweenTestsHook s_apfnBetweenTestsHooks[kMaxBetweenTestsHooks] = {};
 	int s_iBetweenTestsHookCount = 0;
+
+	// ------------------------------------------------------------------
+	// Ordered execution list.
+	//
+	// Every selection mode — one named test (--automated-test), an explicit
+	// ordered name list (--automated-tests), or the whole suite with an
+	// optional order transform (--all-automated-tests [--batch-order]) —
+	// resolves to this array during ParseCommandLine. Tick's advance is then
+	// a single index bump rather than a linked-list walk, and the ordering
+	// question lives in exactly one place.
+	//
+	// Fixed capacity for the same reason the hook array is fixed: the
+	// harness sits in the engine module and runs on both sides of subsystem
+	// lifetimes, so it stays heap-free. Overflow is a loud error, never a
+	// silent truncation.
+	constexpr int kMaxOrderedTests = 1024;
+	const Zenith_AutomatedTestNode* s_apxOrderedNodes[kMaxOrderedTests] = {};
+	int s_iOrderedCount = 0;
+
+	// Backing storage for --automated-tests: argv hands us one comma-joined
+	// token and the split needs writable memory that outlives the parse
+	// (the resolved name pointers are only used during ParseCommandLine, but
+	// keeping them alive costs nothing and avoids a lifetime trap).
+	constexpr int kNameListBufferSize = 8192;
+	char        s_acNameListBuffer[kNameListBufferSize] = {};
+	const char* s_apszNameTokens[kMaxOrderedTests]      = {};
+
+	// --batch-order spec. Registration order (the flag absent) is the
+	// identity transform and is exactly what --all-automated-tests has
+	// always run.
+	enum class BatchOrderKind : uint32_t
+	{
+		Registration,
+		Reverse,
+		Rotate
+	};
+
+	struct BatchOrderSpec
+	{
+		BatchOrderKind m_eKind   = BatchOrderKind::Registration;
+		int            m_iRotate = 0;
+		bool           m_bValid  = true;
+	};
+}
+
+// ============================================================================
+// Order-control helpers (pure — unit-tested by Zenith_AutomatedTest.Tests.inl)
+// ============================================================================
+
+// Parses a --batch-order spec. nullptr / "" is the identity transform.
+// Anything not exactly "reverse" or "rotate:<non-negative integer>" is
+// rejected — including "rotate:-1", which the contract refuses outright
+// rather than silently wrapping, and an over-long digit run, which would
+// overflow the int conversion.
+static BatchOrderSpec ParseBatchOrderSpec(const char* szSpec)
+{
+	BatchOrderSpec xSpec;
+	if (szSpec == nullptr || szSpec[0] == '\0') return xSpec;
+
+	if (std::strcmp(szSpec, "reverse") == 0)
+	{
+		xSpec.m_eKind = BatchOrderKind::Reverse;
+		return xSpec;
+	}
+
+	static const char szRotatePrefix[] = "rotate:";
+	constexpr size_t uPrefixLen = sizeof(szRotatePrefix) - 1;
+	if (std::strncmp(szSpec, szRotatePrefix, uPrefixLen) == 0)
+	{
+		const char* szValue = szSpec + uPrefixLen;
+		int iDigits = 0;
+		for (const char* p = szValue; *p != '\0'; ++p, ++iDigits)
+		{
+			// Digits only. A leading '-' (negative rotation), a '+', and any
+			// trailing garbage all land here and fail the spec.
+			if (*p < '0' || *p > '9') { xSpec.m_bValid = false; return xSpec; }
+		}
+		// 9 digits is the widest run that cannot overflow a 32-bit int.
+		if (iDigits == 0 || iDigits > 9) { xSpec.m_bValid = false; return xSpec; }
+		xSpec.m_eKind   = BatchOrderKind::Rotate;
+		xSpec.m_iRotate = std::atoi(szValue);
+		return xSpec;
+	}
+
+	xSpec.m_bValid = false;
+	return xSpec;
+}
+
+// Rotation is normalised modulo the suite size, so rotate:<N> is always a
+// valid start offset; rotate:0 — and any exact multiple of the size — is the
+// untransformed registration order.
+static int NormalizeRotation(int iRotate, int iCount)
+{
+	if (iCount <= 0 || iRotate <= 0) return 0;
+	return iRotate % iCount;
+}
+
+// Splits a NUL-terminated, WRITABLE comma-separated list into tokens in
+// place. Surrounding spaces/tabs are trimmed and empty tokens are dropped
+// ("A,,B" == "A,B"), so a trailing comma is harmless. Returns the token
+// count, or -1 when the cap would be exceeded (never a silent truncation).
+static int SplitCommaList(char* acBuffer, const char** apszOut, int iMaxOut)
+{
+	if (acBuffer == nullptr || apszOut == nullptr || iMaxOut <= 0) return 0;
+
+	int   iCount   = 0;
+	char* pcCursor = acBuffer;
+	while (true)
+	{
+		char* pcComma = std::strchr(pcCursor, ',');
+		if (pcComma != nullptr) *pcComma = '\0';
+
+		char* pcStart = pcCursor;
+		while (*pcStart == ' ' || *pcStart == '\t') ++pcStart;
+		char* pcEnd = pcStart + std::strlen(pcStart);
+		while (pcEnd > pcStart && (pcEnd[-1] == ' ' || pcEnd[-1] == '\t')) --pcEnd;
+		*pcEnd = '\0';
+
+		if (pcStart[0] != '\0')
+		{
+			if (iCount >= iMaxOut) return -1;
+			apszOut[iCount++] = pcStart;
+		}
+
+		if (pcComma == nullptr) break;
+		pcCursor = pcComma + 1;
+	}
+	return iCount;
+}
+
+// How many of the three mutually-exclusive selection flags were supplied.
+// >1 is an ambiguous request, not a merge.
+static int CountSelectedModes(bool bSingleName, bool bNameList, bool bAllTests)
+{
+	return (bSingleName ? 1 : 0) + (bNameList ? 1 : 0) + (bAllTests ? 1 : 0);
+}
+
+static void ReverseNodeRange(const Zenith_AutomatedTestNode** apxNodes, int iFirst, int iLast)
+{
+	while (iFirst < iLast)
+	{
+		const Zenith_AutomatedTestNode* pxTmp = apxNodes[iFirst];
+		apxNodes[iFirst++] = apxNodes[iLast];
+		apxNodes[iLast--]  = pxTmp;
+	}
+}
+
+// Applies a --batch-order transform in place. Rotation is "rotate left by
+// N": the N-th test becomes the first and the prefix wraps to the end.
+// Implemented as the three-reversal rotation so no scratch array is needed.
+static void ApplyBatchOrder(const Zenith_AutomatedTestNode** apxNodes, int iCount, const BatchOrderSpec& xSpec)
+{
+	if (apxNodes == nullptr || iCount <= 1) return;
+
+	if (xSpec.m_eKind == BatchOrderKind::Reverse)
+	{
+		ReverseNodeRange(apxNodes, 0, iCount - 1);
+	}
+	else if (xSpec.m_eKind == BatchOrderKind::Rotate)
+	{
+		const int iShift = NormalizeRotation(xSpec.m_iRotate, iCount);
+		if (iShift == 0) return;
+		ReverseNodeRange(apxNodes, 0, iShift - 1);
+		ReverseNodeRange(apxNodes, iShift, iCount - 1);
+		ReverseNodeRange(apxNodes, 0, iCount - 1);
+	}
 }
 
 void Zenith_AutomatedTestRunner::RegisterNode(Zenith_AutomatedTestNode* pxNode)
@@ -59,6 +234,12 @@ void Zenith_AutomatedTestRunner::RegisterBetweenTestsHook(BetweenTestsHook pfn)
 
 static void FireBetweenTestsHooks()
 {
+	// The hooks are now a harmless overlay: BetweenTests destroys the world and
+	// rebuilds it before this runs, so every hook body acts on already-fresh
+	// state. They stay registered for one more change purely to keep this flip
+	// separable from their removal. Measured redundant with them suppressed --
+	// DevilsPlayground 158/158 and Zenithmon 44/44, in registration order,
+	// reversed, and rotated.
 	for (int i = 0; i < s_iBetweenTestsHookCount; ++i)
 	{
 		if (s_apfnBetweenTestsHooks[i] != nullptr)
@@ -66,6 +247,44 @@ static void FireBetweenTestsHooks()
 			s_apfnBetweenTestsHooks[i]();
 		}
 	}
+}
+
+// ============================================================================
+// Between-tests engine hygiene
+//
+// The process-level state that belongs to no scene and no entity: the
+// test-instrumentation logs, the query counter, the deferred-event queue, and
+// the owned save sandbox on disk. Everything world-shaped is handled by
+// destroying the world; this is the short, explicit list of what is left.
+//
+// Each entry is here because the state OUTLIVES a scene by design:
+//   * audio / render-bus logs + navmesh query counter -- process-global
+//     recording buffers a test asserts against. Each was previously cleared by
+//     exactly one test, at its own Setup, which only works while that test is
+//     the only reader.
+//   * deferred events -- owned payloads queued by one test but never drained
+//     would be delivered into the NEXT test's subscribers, mid-scenario.
+//     Subscriptions are deliberately NOT touched (wiping them breaks games).
+//   * the save sandbox -- files on disk, which no in-memory reset can reach.
+// The frame stamps on the audio / render buses stay monotonic by design: tests
+// assert on deltas, not absolute frame numbers.
+// ============================================================================
+static void RunBetweenTestsEngineHygiene()
+{
+	Zenith_EventDispatcher::Get().DiscardDeferredEvents();
+	Zenith_AudioBus::ClearEmittedSoundsForTest();
+	Zenith_RenderBus::ClearDrawCallsForTest();
+	Zenith_NavMesh::ResetQueryCountForTest();
+	Zenith_SaveData::WipeTestSandbox();
+#ifdef ZENITH_TOOLS
+	// Entity-keyed editor-adjacent caches. They sit on sibling engine
+	// subsystems rather than inside Zenith_Editor, and every entry is keyed by
+	// an EntityID the reset just invalidated: the selection system's bounds
+	// cache, and the undo/redo stacks (raw Zenith_UndoCommand* holding EntityIDs
+	// of entities that no longer exist -- Clear() deletes the owned commands).
+	g_xEngine.Selection().m_xEntityBoundingBoxes.Clear();
+	g_xEngine.UndoSystem().Clear();
+#endif
 }
 
 // ============================================================================
@@ -90,7 +309,8 @@ namespace
 	struct RunnerState
 	{
 		HarnessPhase                    m_ePhase             = HarnessPhase::Disabled;
-		const Zenith_AutomatedTestNode* m_pxCurrentNode      = nullptr;
+		// Index into s_apxOrderedNodes. -1 = no test selected yet.
+		int                             m_iCurrentIndex      = -1;
 		const char*                     m_szRequestedName    = nullptr;
 		const char*                     m_szResultsPath      = nullptr;
 		const char*                     m_szResultsDir       = nullptr;
@@ -99,7 +319,8 @@ namespace
 		float                           m_fFixedDt           = -1.0f;       // set via --fixed-dt
 		int                             m_iPendingExitCode   = 0;
 		bool                            m_bListThenExit      = false;
-		bool                            m_bRunAllTests       = false;
+		bool                            m_bRunAllTests       = false;   // --all-automated-tests
+		bool                            m_bRunNamedList      = false;   // --automated-tests a,b,c
 		bool                            m_bAnyFailures       = false;
 		// For VerifyAndExit serialization — populated lazily.
 		bool                            m_bVerifyReported    = false;
@@ -108,6 +329,10 @@ namespace
 		int                             m_iTotalTests        = 0;
 		int                             m_iPassedTests       = 0;
 		int                             m_iFailedTests       = 0;
+		// Counted separately from passed: an infrastructure-skipped test never
+		// ran, and reporting it as green is exactly the failure mode the
+		// structured infrastructure error exists to prevent.
+		int                             m_iSkippedTests      = 0;
 		// BetweenTests sub-state: counts frames since the boot-scene reload
 		// was triggered. -1 = scene reload not yet triggered for this gap.
 		int                             m_iBetweenTestsFrame = -1;
@@ -118,6 +343,11 @@ namespace
 		// advance/finalise code path so we don't duplicate state-machine
 		// bookkeeping.
 		bool                            m_bSkipCurrentTest   = false;
+		// True once Setup has been entered for the current test. Gates the
+		// Teardown callback: the pre-Setup graphics / manual-only skips never
+		// ran the test's code, so they have nothing to undo, and calling
+		// Teardown for them would break the exactly-one-per-Setup contract.
+		bool                            m_bSetupRan          = false;
 		// Wall-clock test timing. Captured immediately before Setup runs
 		// (or immediately before the skip-decision for graphics-required
 		// tests in a Null build) and consumed in VerifyAndExit to
@@ -129,9 +359,66 @@ namespace
 	};
 	RunnerState s_xRunner;
 
+	const Zenith_AutomatedTestNode* CurrentNode()
+	{
+		if (s_xRunner.m_iCurrentIndex < 0 || s_xRunner.m_iCurrentIndex >= s_iOrderedCount) return nullptr;
+		return s_apxOrderedNodes[s_xRunner.m_iCurrentIndex];
+	}
+
 	const Zenith_AutomatedTest* CurrentTest()
 	{
-		return s_xRunner.m_pxCurrentNode ? s_xRunner.m_pxCurrentNode->m_pxTest : nullptr;
+		const Zenith_AutomatedTestNode* pxNode = CurrentNode();
+		return pxNode ? pxNode->m_pxTest : nullptr;
+	}
+
+	// True for any run that executes more than one test out of one process:
+	// the whole suite OR an explicit ordered name list. Drives per-test JSON
+	// emission (results-DIR rather than results-PATH) and the suite summary.
+	// Deliberately NOT the same predicate as m_bRunAllTests, which alone
+	// governs the manual-only exclusion: naming a manual-only test explicitly
+	// still runs it, exactly as single-test mode always has.
+	bool IsMultiTestRun()
+	{
+		return s_xRunner.m_bRunAllTests || s_xRunner.m_bRunNamedList;
+	}
+
+	// Called at every transition INTO BetweenTests, i.e. BEFORE the world reset
+	// and settle rather than after them (which is where the simulator reset used
+	// to happen, inside ResetSimulatorAndCallSetup).
+	//
+	// Two things leak across a test boundary otherwise:
+	//   * HELD keys / mouse buttons. The previous test's held input drove the
+	//     freshly-loaded boot scene for the whole settle window -- which is why
+	//     RT_PlayerActions has to hand-release its keys in Verify.
+	//   * the fixed-dt override. ResetAllInputState does NOT clear it, and the
+	//     harness never did either, so a test that pinned a dt (the tennis
+	//     digest, the DP personality runs) silently changed the timebase of
+	//     every test after it.
+	// Re-applying the CLI value, or explicitly clearing when there is none,
+	// makes the boundary deterministic either way.
+	void NormalizeInputAndFixedDtForNextTest()
+	{
+		Zenith_InputSimulator::ResetAllInputState();
+		if (s_xRunner.m_fFixedDt > 0.0f)
+		{
+			Zenith_InputSimulator::SetFixedDt(s_xRunner.m_fFixedDt);
+		}
+		else
+		{
+			Zenith_InputSimulator::ClearFixedDt();
+		}
+	}
+
+	// Shared early-exit for the parse-time error paths. ParseCommandLine runs
+	// AFTER Zenith_Init, so there is a fully-initialised engine to tear down;
+	// going through the canonical full-shutdown wrapper means adding a new
+	// init-only singleton doesn't silently rot these branches.
+	[[noreturn]] void ExitHarness(int iCode)
+	{
+		std::fflush(stdout);
+		s_xRunner.m_iPendingExitCode = iCode;
+		Zenith_Core::Zenith_FullShutdown();
+		std::exit(iCode);
 	}
 }
 
@@ -179,6 +466,7 @@ void Zenith_AutomatedTestRunner::PrintRegisteredTests()
 void Zenith_AutomatedTestRunner::ResetRegistry_TEST_ONLY()
 {
 	s_pxTestListHead = nullptr;
+	s_iOrderedCount  = 0;
 	s_xRunner = RunnerState();
 }
 
@@ -200,8 +488,85 @@ static const Zenith_AutomatedTestNode* FindNodeByName(const char* szName)
 	return nullptr;
 }
 
+// Collects every registered node into the ordered execution list, in
+// registry-walk order — the same set and order --all-automated-tests has
+// always run (RegisterNode prepends, so within a TU this is reverse
+// declaration order; that is the historical baseline, not a claim about
+// declaration order). Returns false when the fixed capacity is exceeded.
+static bool CollectAllNodesInRegistrationOrder()
+{
+	s_iOrderedCount = 0;
+	for (const Zenith_AutomatedTestNode* p = s_pxTestListHead; p != nullptr; p = p->m_pxNext)
+	{
+		if (p->m_pxTest == nullptr) continue;
+		if (s_iOrderedCount >= kMaxOrderedTests) return false;
+		s_apxOrderedNodes[s_iOrderedCount++] = p;
+	}
+	return true;
+}
+
+// Resolves an --automated-tests spec into the ordered execution list.
+// Duplicates are deliberate and each occurrence runs (`A,A` is a
+// self-contamination probe) — note both occurrences write the same
+// <name>.json, last-wins, which is acceptable for probe use.
+// Every unknown name is reported before bailing so a typo'd list needs one
+// run to diagnose, not one per name. Returns false after printing the
+// diagnosis; the caller exits 2 without running anything.
+static bool BuildOrderedListFromNames(const char* szSpec)
+{
+	if (szSpec == nullptr) return false;
+
+	const size_t uLen = std::strlen(szSpec);
+	if (uLen + 1 > static_cast<size_t>(kNameListBufferSize))
+	{
+		std::printf("ERROR: --automated-tests list is too long (max %d characters).\n",
+			kNameListBufferSize - 1);
+		return false;
+	}
+	std::memcpy(s_acNameListBuffer, szSpec, uLen + 1);
+
+	const int iNameCount = SplitCommaList(s_acNameListBuffer, s_apszNameTokens, kMaxOrderedTests);
+	if (iNameCount < 0)
+	{
+		std::printf("ERROR: --automated-tests names exceed the harness capacity of %d entries.\n",
+			kMaxOrderedTests);
+		return false;
+	}
+	if (iNameCount == 0)
+	{
+		std::printf("ERROR: --automated-tests requires a comma-separated list of test names.\n");
+		return false;
+	}
+
+	int iUnknown = 0;
+	for (int i = 0; i < iNameCount; ++i)
+	{
+		if (FindNodeByName(s_apszNameTokens[i]) == nullptr)
+		{
+			std::printf("ERROR: --automated-tests: '%s' not found in registry.\n", s_apszNameTokens[i]);
+			++iUnknown;
+		}
+	}
+	if (iUnknown > 0)
+	{
+		std::printf("       %d unknown test name(s) -- nothing was run. "
+			"Run with --list-automated-tests for the full list.\n", iUnknown);
+		return false;
+	}
+
+	s_iOrderedCount = 0;
+	for (int i = 0; i < iNameCount; ++i)
+	{
+		s_apxOrderedNodes[s_iOrderedCount++] = FindNodeByName(s_apszNameTokens[i]);
+	}
+	return true;
+}
+
 void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
 {
+	const char* szNamedList  = nullptr;
+	const char* szBatchOrder = nullptr;
+
 	for (int i = 1; i < argc; ++i)
 	{
 		const char* szArg = argv[i];
@@ -214,9 +579,17 @@ void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
 		{
 			s_xRunner.m_szRequestedName = argv[++i];
 		}
+		else if (std::strcmp(szArg, "--automated-tests") == 0 && i + 1 < argc)
+		{
+			szNamedList = argv[++i];
+		}
 		else if (std::strcmp(szArg, "--all-automated-tests") == 0)
 		{
 			s_xRunner.m_bRunAllTests = true;
+		}
+		else if (std::strcmp(szArg, "--batch-order") == 0 && i + 1 < argc)
+		{
+			szBatchOrder = argv[++i];
 		}
 		else if (std::strcmp(szArg, "--test-results") == 0 && i + 1 < argc)
 		{
@@ -239,55 +612,108 @@ void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
 	if (s_xRunner.m_bListThenExit)
 	{
 		PrintRegisteredTests();
-		// Clean shutdown instead of std::exit so GPU/Jolt/audio resources
-		// release in the normal order. ParseCommandLine runs AFTER
-		// Zenith_Init, so we have a fully-initialised engine to tear down.
-		// Without this, --list-automated-tests would leak VRAM allocations,
-		// Jolt's body-interface lock, and the GLFW window — usually
-		// observable only as a noisy exit code from the Vulkan validation
-		// layer, but bad hygiene in any case.
-		Zenith_Core::Zenith_FullShutdown();
-		std::exit(0);
+		// Clean shutdown instead of a bare std::exit so GPU/Jolt/audio
+		// resources release in the normal order. Without it,
+		// --list-automated-tests would leak VRAM allocations, Jolt's
+		// body-interface lock, and the GLFW window — usually observable only
+		// as a noisy exit code from the Vulkan validation layer, but bad
+		// hygiene in any case.
+		ExitHarness(0);
 	}
 
-	// --all-automated-tests takes precedence: run every registered test in
-	// sequence inside the same process (avoids per-test boot of ~20s).
-	if (s_xRunner.m_bRunAllTests)
+	// The three selection flags each BUILD the ordered execution list, so
+	// supplying more than one is an ambiguous request rather than a merge.
+	const int iModes = CountSelectedModes(
+		s_xRunner.m_szRequestedName != nullptr,
+		szNamedList != nullptr,
+		s_xRunner.m_bRunAllTests);
+	if (iModes > 1)
 	{
-		s_xRunner.m_pxCurrentNode = s_pxTestListHead;
-		if (s_xRunner.m_pxCurrentNode == nullptr)
-		{
-			std::printf("ERROR: --all-automated-tests requested but no tests are registered.\n");
-			std::fflush(stdout);
-			s_xRunner.m_iPendingExitCode = 2;
-			// Use the canonical full-shutdown wrapper so adding a new
-			// init-only singleton doesn't silently rot these branches.
-			Zenith_Core::Zenith_FullShutdown();
-			std::exit(2);
-		}
-		Zenith_InputSimulator::Enable();
-		s_xRunner.m_ePhase = HarnessPhase::WaitForAutomationComplete;
+		std::printf("ERROR: --automated-test, --automated-tests and --all-automated-tests "
+			"are mutually exclusive; pass exactly one.\n");
+		ExitHarness(2);
+	}
+
+	// --batch-order reorders the FULL suite; it is meaningless against an
+	// explicit name list (which already states its order) or a single test.
+	// Rejecting it loudly beats silently ignoring it in a diagnosis run.
+	if (szBatchOrder != nullptr && !s_xRunner.m_bRunAllTests)
+	{
+		std::printf("ERROR: --batch-order requires --all-automated-tests.\n");
+		ExitHarness(2);
+	}
+	const BatchOrderSpec xOrder = ParseBatchOrderSpec(szBatchOrder);
+	if (!xOrder.m_bValid)
+	{
+		std::printf("ERROR: --batch-order '%s' is not understood. "
+			"Use 'reverse' or 'rotate:<N>' with N >= 0.\n", szBatchOrder);
+		ExitHarness(2);
+	}
+
+	if (iModes == 0)
+	{
+		// No automated-test mode requested — leave the harness disabled and
+		// let the normal game boot proceed.
 		return;
 	}
 
-	if (s_xRunner.m_szRequestedName != nullptr)
+	if (s_xRunner.m_bRunAllTests)
 	{
-		s_xRunner.m_pxCurrentNode = FindNodeByName(s_xRunner.m_szRequestedName);
-		if (s_xRunner.m_pxCurrentNode == nullptr)
+		if (!CollectAllNodesInRegistrationOrder())
+		{
+			std::printf("ERROR: --all-automated-tests: the registry exceeds the harness "
+				"capacity of %d tests.\n", kMaxOrderedTests);
+			ExitHarness(2);
+		}
+		if (s_iOrderedCount == 0)
+		{
+			std::printf("ERROR: --all-automated-tests requested but no tests are registered.\n");
+			ExitHarness(2);
+		}
+		ApplyBatchOrder(s_apxOrderedNodes, s_iOrderedCount, xOrder);
+	}
+	else if (szNamedList != nullptr)
+	{
+		s_xRunner.m_bRunNamedList = true;
+		// BuildOrderedListFromNames prints its own diagnosis (unknown names,
+		// empty list, capacity) before returning false.
+		if (!BuildOrderedListFromNames(szNamedList))
+		{
+			ExitHarness(2);
+		}
+	}
+	else
+	{
+		const Zenith_AutomatedTestNode* pxNode = FindNodeByName(s_xRunner.m_szRequestedName);
+		if (pxNode == nullptr)
 		{
 			std::printf("ERROR: --automated-test '%s' not found in registry. "
 				"Run with --list-automated-tests for the full list.\n",
 				s_xRunner.m_szRequestedName);
-			std::fflush(stdout);
-			s_xRunner.m_iPendingExitCode = 2;
-			// Use the canonical full-shutdown wrapper so adding a new
-			// init-only singleton doesn't silently rot these branches.
-			Zenith_Core::Zenith_FullShutdown();
-			std::exit(2);
+			ExitHarness(2);
 		}
-		Zenith_InputSimulator::Enable();
-		s_xRunner.m_ePhase = HarnessPhase::WaitForAutomationComplete;
+		s_apxOrderedNodes[0] = pxNode;
+		s_iOrderedCount      = 1;
 	}
+
+	// Echo the plan whenever the order is NOT the historical default, so a
+	// diagnosis run records exactly what it executed. A plain
+	// --all-automated-tests run stays quiet (158 extra lines is noise).
+	if (s_xRunner.m_bRunNamedList || szBatchOrder != nullptr)
+	{
+		std::printf("[AutomatedTest] Execution order (%d test(s)):\n", s_iOrderedCount);
+		for (int i = 0; i < s_iOrderedCount; ++i)
+		{
+			const Zenith_AutomatedTest* pxTest = s_apxOrderedNodes[i]->m_pxTest;
+			std::printf("  %3d. %s\n", i + 1,
+				(pxTest && pxTest->m_szName) ? pxTest->m_szName : "(unnamed)");
+		}
+		std::fflush(stdout);
+	}
+
+	Zenith_InputSimulator::Enable();
+	s_xRunner.m_iCurrentIndex = 0;
+	s_xRunner.m_ePhase        = HarnessPhase::WaitForAutomationComplete;
 }
 
 // ============================================================================
@@ -297,21 +723,24 @@ static void WriteResultsJson(const RunnerState& xRunner,
                              const Zenith_AutomatedTest* pxTest,
                              bool bPassed,
                              float fDurationMs,
-                             bool bSkipped = false)
+                             bool bSkipped = false,
+                             const char* szSkipReason = nullptr)
 {
-	// Resolve the output path. In batch mode prefer m_szResultsDir/<name>.json;
-	// in single mode use m_szResultsPath verbatim. If neither is set, skip.
+	// Resolve the output path. Any multi-test run (the whole suite OR an
+	// explicit ordered name list) prefers m_szResultsDir/<name>.json; single
+	// mode uses m_szResultsPath verbatim. If neither is set, skip.
 	char axPath[512];
 	const char* szPath = nullptr;
+	const bool bMultiTest = xRunner.m_bRunAllTests || xRunner.m_bRunNamedList;
 
-	if (xRunner.m_bRunAllTests && xRunner.m_szResultsDir != nullptr
+	if (bMultiTest && xRunner.m_szResultsDir != nullptr
 	    && pxTest != nullptr && pxTest->m_szName != nullptr)
 	{
 		std::snprintf(axPath, sizeof(axPath), "%s/%s.json",
 			xRunner.m_szResultsDir, pxTest->m_szName);
 		szPath = axPath;
 	}
-	else if (!xRunner.m_bRunAllTests && xRunner.m_szResultsPath != nullptr)
+	else if (!bMultiTest && xRunner.m_szResultsPath != nullptr)
 	{
 		szPath = xRunner.m_szResultsPath;
 	}
@@ -339,14 +768,89 @@ static void WriteResultsJson(const RunnerState& xRunner,
 		"  \"frames\": %d,\n"
 		"  \"durationMs\": %.3f,\n"
 		"  \"failures\": [],\n"
-		"  \"skipped\": %s\n"
+		"  \"skipped\": %s,\n"
+		"  \"skipReason\": \"%s\"\n"
 		"}\n",
 		szName,
 		bPassed ? "true" : "false",
 		xRunner.m_iStepFrame,
 		static_cast<double>(fDurationMs),
-		bSkipped ? "true" : "false");
+		bSkipped ? "true" : "false",
+		szSkipReason != nullptr ? szSkipReason : "");
 	std::fclose(pxFile);
+}
+
+// ============================================================================
+// Infrastructure failure
+//
+// A BetweenTests failure is NOT a test result — the harness could not build a
+// world to run the next test in, so every remaining test is unrun rather than
+// failed. Reported three ways so nothing has to guess:
+//   * exit code 3, which the harness header has always reserved for "harness
+//     setup error" (the SetPendingExitCode seam existed with zero callers);
+//   * a top-level _infrastructure.json naming the phase, the reason, and the
+//     test we were about to run;
+//   * a skipped record per not-yet-run test, so the runner reports one clear
+//     infrastructure failure instead of a wall of MISSING lines.
+// ============================================================================
+static void WriteInfrastructureFailureJson(const char* szReason, const char* szBeforeTest)
+{
+	if (s_xRunner.m_szResultsDir == nullptr) return;
+
+	char axPath[512];
+	std::snprintf(axPath, sizeof(axPath), "%s/_infrastructure.json", s_xRunner.m_szResultsDir);
+
+	std::FILE* pxFile = nullptr;
+#ifdef _MSC_VER
+	if (::fopen_s(&pxFile, axPath, "wb") != 0 || pxFile == nullptr) return;
+#else
+	pxFile = std::fopen(axPath, "wb");
+	if (pxFile == nullptr) return;
+#endif
+	std::fprintf(pxFile,
+		"{\n"
+		"  \"infrastructureFailure\": true,\n"
+		"  \"phase\": \"BetweenTests\",\n"
+		"  \"reason\": \"%s\",\n"
+		"  \"beforeTest\": \"%s\"\n"
+		"}\n",
+		szReason != nullptr ? szReason : "unknown",
+		szBeforeTest != nullptr ? szBeforeTest : "");
+	std::fclose(pxFile);
+}
+
+static void FailWithInfrastructureError(const char* szReason)
+{
+	const Zenith_AutomatedTest* pxTest = CurrentTest();
+	const char* szBeforeTest = (pxTest != nullptr && pxTest->m_szName != nullptr) ? pxTest->m_szName : "(unknown)";
+
+	std::printf("[AutomatedTest] INFRASTRUCTURE FAILURE in BetweenTests (%s) before '%s' -- "
+		"the harness could not build a clean world; %d test(s) were not run.\n",
+		szReason != nullptr ? szReason : "unknown",
+		szBeforeTest,
+		s_iOrderedCount - s_xRunner.m_iCurrentIndex);
+	std::fflush(stdout);
+
+	WriteInfrastructureFailureJson(szReason, szBeforeTest);
+
+	// One skipped record per test from here to the end of the ordered list.
+	// Counted as SKIPPED, never as passed — an unrun test must not read as a
+	// green one.
+	for (int i = s_xRunner.m_iCurrentIndex; i >= 0 && i < s_iOrderedCount; ++i)
+	{
+		const Zenith_AutomatedTestNode* pxNode = s_apxOrderedNodes[i];
+		const Zenith_AutomatedTest* pxRemaining = pxNode ? pxNode->m_pxTest : nullptr;
+		if (pxRemaining == nullptr) continue;
+		WriteResultsJson(s_xRunner, pxRemaining, /*bPassed*/ false, /*fDurationMs*/ 0.0f,
+			/*bSkipped*/ true, /*szSkipReason*/ "infrastructure");
+		++s_xRunner.m_iTotalTests;
+		++s_xRunner.m_iSkippedTests;
+	}
+
+	s_xRunner.m_bAnyFailures      = true;
+	s_xRunner.m_iPendingExitCode  = 3;
+	Zenith_Window::GetInstance()->RequestClose();
+	s_xRunner.m_ePhase = HarnessPhase::Done;
 }
 
 // ============================================================================
@@ -435,9 +939,18 @@ bool Zenith_AutomatedTestRunner::Tick()
 	case HarnessPhase::FlushFirstFrameOnStart:
 	{
 		// The current frame is the first one in Playing mode — OnStart fires
-		// during this frame's scene update. Move on next frame so Setup runs
-		// against fully-started entities.
-		s_xRunner.m_ePhase = HarnessPhase::ResetSimulatorAndCallSetup;
+		// during this frame's scene update.
+		//
+		// Route the FIRST test through BetweenTests too, rather than straight to
+		// Setup. Before this, test #1 (and every single-test run) inherited
+		// whatever the boot-time unit suite and editor automation left behind,
+		// while tests 2..N got a reset world — so the first test ran under
+		// different conditions from all the others, and a first-position-only
+		// failure was undiagnosable. The reset erases exactly that
+		// contamination.
+		NormalizeInputAndFixedDtForNextTest();
+		s_xRunner.m_iBetweenTestsFrame = -1;
+		s_xRunner.m_ePhase = HarnessPhase::BetweenTests;
 		return true;
 	}
 	case HarnessPhase::ResetSimulatorAndCallSetup:
@@ -498,6 +1011,10 @@ bool Zenith_AutomatedTestRunner::Tick()
 		// harness bookkeeping. Scene-load / BetweenTests settle frames are
 		// likewise excluded (they happen in earlier phases).
 		s_xRunner.m_xTestStartTime = std::chrono::high_resolution_clock::now();
+		// Marked BEFORE Setup runs, not after: a Setup that calls RequestSkip
+		// (or that half-installed something before deciding to skip) still has
+		// state to undo, so its Teardown must fire.
+		s_xRunner.m_bSetupRan = true;
 		if (pxTest != nullptr && pxTest->m_pfnSetup != nullptr)
 		{
 			pxTest->m_pfnSetup();
@@ -552,6 +1069,17 @@ bool Zenith_AutomatedTestRunner::Tick()
 		{
 			bPassed = pxTest->m_pfnVerify();
 		}
+		// Teardown runs after the outcome is decided and before ANYTHING is
+		// reported or reset: exactly once per test that reached this phase,
+		// whether it passed, failed, timed out or skipped. Ordering matters --
+		// running it after the world reset would hand the test a world that no
+		// longer contains what it is trying to undo.
+		if (s_xRunner.m_bSetupRan && pxTest != nullptr && pxTest->m_pfnTeardown != nullptr)
+		{
+			pxTest->m_pfnTeardown();
+		}
+		s_xRunner.m_bSetupRan = false;
+
 		// Stop the wall-clock immediately after Verify so harness JSON-
 		// write + stdout-print latency don't pollute the per-test number.
 		const auto xEndTime = std::chrono::high_resolution_clock::now();
@@ -560,9 +1088,9 @@ bool Zenith_AutomatedTestRunner::Tick()
 			std::chrono::duration_cast<std::chrono::nanoseconds>(xDuration).count() / 1.0e6);
 		// Stash on the node so the batch-mode summary + external tooling
 		// can surface it after every test has run.
-		if (s_xRunner.m_pxCurrentNode != nullptr)
+		if (const Zenith_AutomatedTestNode* pxNode = CurrentNode())
 		{
-			s_xRunner.m_pxCurrentNode->m_fLastDurationMs = fDurationMs;
+			pxNode->m_fLastDurationMs = fDurationMs;
 		}
 		s_xRunner.m_bVerifyPassed = bPassed;
 		s_xRunner.m_bVerifyReported = true;
@@ -590,23 +1118,32 @@ bool Zenith_AutomatedTestRunner::Tick()
 			s_xRunner.m_bAnyFailures = true;
 		}
 
-		// Batch mode: advance to the next test if there is one.
-		if (s_xRunner.m_bRunAllTests
-		    && s_xRunner.m_pxCurrentNode != nullptr
-		    && s_xRunner.m_pxCurrentNode->m_pxNext != nullptr)
+		// Advance to the next entry in the ordered execution list, if any.
+		if (s_xRunner.m_iCurrentIndex >= 0
+		    && s_xRunner.m_iCurrentIndex + 1 < s_iOrderedCount)
 		{
-			s_xRunner.m_pxCurrentNode = s_xRunner.m_pxCurrentNode->m_pxNext;
+			++s_xRunner.m_iCurrentIndex;
+			// Normalise input + fixed-dt HERE, before the reset/settle window,
+			// so the test that just finished cannot drive the next test's world.
+			NormalizeInputAndFixedDtForNextTest();
 			s_xRunner.m_iStepFrame         = 0;
-			s_xRunner.m_iBetweenTestsFrame = -1;  // signals "trigger reload on next BetweenTests tick"
+			s_xRunner.m_iBetweenTestsFrame = -1;  // signals "run the world reset on the next BetweenTests tick"
 			s_xRunner.m_bVerifyReported    = false;
 			s_xRunner.m_bVerifyPassed      = false;
 			s_xRunner.m_bSkipCurrentTest   = false;
+			s_xRunner.m_bSetupRan          = false;
 			s_xRunner.m_ePhase             = HarnessPhase::BetweenTests;
 			return true;
 		}
 
-		// No more tests — finalise exit code and request window close.
-		if (s_xRunner.m_bRunAllTests)
+		// No more tests. Terminal hygiene BEFORE the summary: the last test's
+		// residue (a save sandbox full of .zsave, a queued deferred event) has
+		// no next test to leak into, but it does leak into the next PROCESS via
+		// disk, and leaving it behind makes a triage dir misleading.
+		RunBetweenTestsEngineHygiene();
+
+		// Finalise exit code and request window close.
+		if (IsMultiTestRun())
 		{
 			std::printf("[AutomatedTest] Suite summary: %d passed, %d failed (of %d)\n",
 				s_xRunner.m_iPassedTests,
@@ -630,29 +1167,53 @@ bool Zenith_AutomatedTestRunner::Tick()
 	}
 	case HarnessPhase::BetweenTests:
 	{
-		// Goal: get the engine back to a known clean state before the next
-		// test's Setup runs. Two distinct sources of leakage to address:
-		//   1. Scene-managed side-tables (DP_Items::g_xItemTagTable,
-		//      DP_Fog::g_xFogHoles, …) which clear themselves when the
-		//      owning entity's OnDestroy fires. Solved by force-loading
-		//      the boot scene (build-index 0) in SCENE_LOAD_SINGLE mode —
-		//      every prior-test entity gets destroyed and unregistered.
-		//   2. Per-game persistent globals (DP_Player::g_xPossessedVillager,
-		//      DP_Win::g_uCollectedObjectivesMask, …) which are NOT tied to
-		//      entity lifetime. Solved by firing each registered
-		//      BetweenTestsHook AFTER the scene reload settles.
-		// The scene reload is async (queue-and-defer), so we wait at least
-		// kSettleFrames frames AND require the new active scene to be
-		// fully loaded before advancing. The frame budget on its own can
-		// fall through with the scene only partially populated when the
-		// async loader is slowed by asset I/O — the next test's Setup
-		// would then capture half-constructed entity references.
+		// Goal: hand the next test a world the ENGINE built, not one the
+		// previous test left behind. Every test — batch member, batch-first,
+		// single — routes through here.
+		//
+		// The order is load-bearing:
+		//   1. input + fixed-dt were already normalised at the transition INTO
+		//      this phase (see NormalizeInputAndFixedDtForNextTest) so the
+		//      previous test's held keys cannot drive the reset/settle window.
+		//   2. ResetWorldForNextTest destroys EVERY scene, INCLUDING the
+		//      persistent one. That is the step that makes this a clean slate
+		//      rather than a partial one: the persistent scene is where games
+		//      park their singleton managers, and preserving it across tests is
+		//      what used to force every game to hand-write a reset hook.
+		//   3. engine hygiene for the handful of things no scene owns (the
+		//      instrumentation logs, the deferred-event queue, the save sandbox
+		//      on disk) + editor session hygiene under TOOLS.
+		//   4. reload the boot scene, and SETTLE — the new scene's own asset
+		//      loads still need frames to land, and a next-test Setup that
+		//      captured half-constructed entities would fail mysteriously.
+		//
+		// A failure in any of that is INFRASTRUCTURE, not a test result: it is
+		// reported as such and the run stops, instead of silently handing the
+		// next test a broken world (which is what the old fall-through did).
 		constexpr int kSettleFrames    = 8;
 		constexpr int kMaxSettleFrames = 600;   // safety cap (~10 s @60Hz)
 
 		if (s_xRunner.m_iBetweenTestsFrame < 0)
 		{
-			g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+			// Destroying the whole world and rebuilding it is synchronous:
+			// PumpAutomatedTest runs BEFORE UpdateGameLogic, so m_bIsUpdating is
+			// false here and LoadSceneByIndex completes inline. (The pre-flip
+			// comments claiming this path was async were stale.)
+			Zenith_SceneSystem::ResetWorldForNextTest();
+			RunBetweenTestsEngineHygiene();
+#ifdef ZENITH_TOOLS
+			g_xEngine.Editor().ResetSessionForNextTest();
+#endif
+
+			// The return value is CHECKED. It used to be discarded, so a
+			// mis-registered build index 0 produced an empty world and a
+			// cascade of unexplained test failures instead of one clear error.
+			const Zenith_Scene xBootScene = g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+			if (!xBootScene.IsValid())
+			{
+				FailWithInfrastructureError("invalid-boot-scene");
+				return false;
+			}
 			s_xRunner.m_iBetweenTestsFrame = 0;
 			return true;
 		}
@@ -660,34 +1221,35 @@ bool Zenith_AutomatedTestRunner::Tick()
 		++s_xRunner.m_iBetweenTestsFrame;
 		if (s_xRunner.m_iBetweenTestsFrame < kSettleFrames) return true;
 
-		// IsValid() check on the active scene's handle: the boot-scene
-		// reload above is deferred via the scene-load queue, so the
-		// "active scene" only flips when the loader has actually
-		// finished. Without this check, a slow load (cold-disk asset
-		// fetch, big mesh re-import) could leave the next test's
-		// Setup querying a half-populated scene.
-		//
-		// HasPendingDestructions() check (2026-05-17): defence-in-depth
-		// against any future async-unload path that takes longer than
-		// the 8-frame settle. Today SCENE_LOAD_SINGLE's Phase 1
-		// destroys prior non-persistent scenes synchronously (pinned
-		// by Test_Scene_SingleLoad_OnDestroyDrainsBeforeNewSceneAwake
-		// and friends), so this branch is true at first check. If a
-		// future refactor introduces deferred destruction, the gate
-		// will simply wait longer rather than letting a test's Setup
-		// observe stale entity slots.
+		// The scene load itself is synchronous, but the assets it references are
+		// not necessarily resident yet, and destruction of the outgoing world
+		// can leave queued work. Requiring BOTH a live active scene and a
+		// drained destruction queue means a slow load waits rather than letting
+		// the next test's Setup observe stale entity slots.
 		Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
 		const bool bSceneReady =
 			xActive.IsValid()
 			&& g_xEngine.Scenes().GetSceneData(xActive) != nullptr;
 		const bool bDestructionDrained =
 			!g_xEngine.Scenes().HasPendingDestructions();
-		if ((!bSceneReady || !bDestructionDrained)
-			&& s_xRunner.m_iBetweenTestsFrame < kMaxSettleFrames)
+		if (!bSceneReady || !bDestructionDrained)
 		{
-			return true;
+			if (s_xRunner.m_iBetweenTestsFrame < kMaxSettleFrames)
+			{
+				return true;
+			}
+			// Previously this fell through and ran the next test against a
+			// half-built world.
+			FailWithInfrastructureError("settle-timeout");
+			return false;
 		}
 
+		// Per-game hooks still fire, at the same point they always did. They are
+		// a harmless overlap now that the engine does the work — every hook body
+		// is a statics clear, a generation-checked entity resolve, or a
+		// null-safe forwarder, all of which are no-ops against a freshly built
+		// world. Keeping them here isolates this flip's own regressions from
+		// their removal, which is a separate change.
 		FireBetweenTestsHooks();
 		s_xRunner.m_ePhase = HarnessPhase::ResetSimulatorAndCallSetup;
 		return true;
@@ -698,5 +1260,7 @@ bool Zenith_AutomatedTestRunner::Tick()
 	}
 	return false;
 }
+
+#include "Core/Zenith_AutomatedTest.Tests.inl"
 
 #endif // ZENITH_INPUT_SIMULATOR

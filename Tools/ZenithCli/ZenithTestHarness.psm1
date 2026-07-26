@@ -8,12 +8,17 @@
 # JSON tally, and the slowest-tests timing report.
 #
 # Mode selection (merged DP + CB semantics):
+#   named-order iff -TestNames is non-empty: ONE process runs exactly those
+#     tests, in the given order, via the engine's --automated-tests. This is
+#     the predecessor->victim probe used to root-cause cross-test state leaks;
+#     duplicates are preserved on purpose ("A,A" probes self-contamination).
 #   per-process iff -PerProcess OR -FailFast OR -Filter is non-empty
 #     (-Filter: the engine's --all-automated-tests has no name filter;
 #      -FailFast: batch mode runs every test regardless of outcomes;
 #      a single filtered test therefore runs exactly like CB's old
 #      single-test fast path.)
-#   batch otherwise: ONE process runs every registered test.
+#   batch otherwise: ONE process runs every registered test. -BatchOrder
+#     ('reverse' | 'rotate:<N>') reorders that suite without changing its set.
 #   -Tier filters the list BEFORE dispatch, so it does not force per-process.
 #
 # ASCII-only body; runs under Windows PowerShell 5.1 and pwsh 7.
@@ -99,7 +104,16 @@ function Read-ZenithTestResults {
             }
             else {
                 if ($obj.PSObject.Properties.Name -contains 'skipped' -and $obj.skipped) { $skipped = $true }
-                if ($obj.passed) {
+                # An infrastructure skip means the test never RAN. It is neither a
+                # pass nor a test failure -- classifying it as either would hide a
+                # harness fault behind ordinary-looking results.
+                $skipReason = ''
+                if ($obj.PSObject.Properties.Name -contains 'skipReason') { $skipReason = "$($obj.skipReason)" }
+                if ($skipped -and $skipReason -eq 'infrastructure') {
+                    $status = 'INFRA_SKIPPED'
+                    $detail = 'not run (harness could not build a clean world)'
+                }
+                elseif ($obj.passed) {
                     $status = 'PASS'
                     $passed++
                 }
@@ -164,6 +178,14 @@ function Invoke-ZenithGameTests {
         [Parameter(Mandatory)][string]$ResultsDir,
         [string]$Filter = '',
         [Nullable[int]]$Tier = $null,
+        # Ordered, comma-separated test names run in ONE process via the
+        # engine's --automated-tests. Duplicates are preserved deliberately
+        # ("A,A" is a self-contamination probe). Mutually exclusive with
+        # -Filter/-Tier (which select a SET, not an order) and -BatchOrder.
+        [string]$TestNames = '',
+        # --batch-order spec ('reverse' | 'rotate:<N>') for the full-suite
+        # batch run. Only meaningful in batch mode.
+        [string]$BatchOrder = '',
         [switch]$PerProcess,
         [switch]$FailFast,
         # Per-batch frame ceiling. 8500 covers the slowest known suite (DP's
@@ -178,6 +200,17 @@ function Invoke-ZenithGameTests {
         [string]$Tag = 'zenith test'
     )
 
+    # Argument validation first -- pure, so it stays testable without an exe
+    # and a typo costs nothing rather than a full engine boot.
+    if ($TestNames -ne '') {
+        if ($Filter -ne '' -or $null -ne $Tier) { throw "-TestNames states an explicit ORDER; combine it with neither -Filter nor -Tier (those select a set)" }
+        if ($PerProcess -or $FailFast) { throw "-TestNames runs one ordered process; it cannot be combined with -PerProcess or -FailFast" }
+        if ($BatchOrder -ne '') { throw "-BatchOrder reorders the full suite; it cannot be combined with -TestNames" }
+    }
+    if ($BatchOrder -ne '') {
+        if ($PerProcess -or $FailFast -or $Filter -ne '') { throw "-BatchOrder requires the full-suite batch run (no -PerProcess / -FailFast / -Filter)" }
+    }
+
     if (-not (Test-Path $Exe)) {
         throw "executable not found: $Exe (build the game first)"
     }
@@ -191,6 +224,30 @@ function Invoke-ZenithGameTests {
     # Only *.json directly inside $ResultsDir -- never unrelated artifacts.
     Get-ChildItem -Path $ResultsDir -Filter '*.json' -File -ErrorAction SilentlyContinue |
         ForEach-Object { Remove-Item $_.FullName -Force }
+
+    # Automated-test save sandbox. The engine will NOT delete inside a directory
+    # it was merely pointed at -- it requires an ownership marker, and the runner
+    # is the only thing that writes one, only under the artifacts root. That is
+    # what makes "wipe the .zsave files in here between tests" safe.
+    #
+    # Per-run-id directories keep concurrent invocations mutually invisible. The
+    # engine never removes the directory itself; cleanup below is ours.
+    $saveRunId = [guid]::NewGuid().ToString('N').Substring(0, 12)
+    $saveRootBase = Join-Path (Get-ZenithRepoRoot) ((Get-ZenithBuildConfigData).ArtifactsRoot + "/savedata")
+    $saveRoot = Join-Path $saveRootBase $saveRunId
+    New-Item -ItemType Directory -Force -Path $saveRoot | Out-Null
+    [System.IO.File]::WriteAllText(
+        (Join-Path $saveRoot '.zenith_test_save_root'),
+        "ZENITH_TEST_SAVE_ROOT`n$saveRunId`n$((Get-Date).ToString('o'))`n",
+        (New-Object System.Text.UTF8Encoding($false)))
+    $saveFlags = @('--test-save-root', $saveRoot, '--test-save-run-id', $saveRunId)
+
+    # Age-prune previous runs' sandboxes so the artifacts tree does not grow
+    # without bound. Only directories that carry OUR marker are ever removed.
+    Get-ChildItem -Path $saveRootBase -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -ne $saveRoot -and (Test-Path (Join-Path $_.FullName '.zenith_test_save_root')) } |
+        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } |
+        ForEach-Object { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
 
     # Runtime-DLL self-heal (slang dependency tree + sibling game output dirs).
     $exeDir = Split-Path -Parent (Resolve-Path $Exe).Path
@@ -227,6 +284,17 @@ function Invoke-ZenithGameTests {
     Write-Host "[$Tag] Found $($tests.Count) test(s):" -ForegroundColor Cyan
     $tests | ForEach-Object { Write-Host "    $_" }
 
+    # Resolve -TestNames against the discovered registry. Validating here (as
+    # well as engine-side) turns a typo into a fast, explicit failure instead
+    # of an engine boot that exits 2 with the reason buried in its log.
+    $orderedNames = @()
+    if ($TestNames -ne '') {
+        $orderedNames = @($TestNames -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+        if ($orderedNames.Count -eq 0) { throw "-TestNames was empty after trimming" }
+        $unknown = @($orderedNames | Where-Object { $tests -notcontains $_ } | Select-Object -Unique)
+        if ($unknown.Count -gt 0) { throw "unknown test name(s): $($unknown -join ', ')" }
+    }
+
     # Common engine flags. Tool exports + unit tests are skipped by default for
     # speed; -NoSkip* flips them back on for phases that need them.
     $commonFlags = @()
@@ -240,21 +308,37 @@ function Invoke-ZenithGameTests {
         Add-Content -Path $AssertionsLog -Value "$stamp  FAIL  $Name  json=$JsonPath  $Extra"
     }
 
-    $useBatch = (-not $PerProcess) -and (-not $FailFast) -and ($Filter -eq '')
+    $useNamed = ($TestNames -ne '')
+    $useBatch = (-not $useNamed) -and (-not $PerProcess) -and (-not $FailFast) -and ($Filter -eq '')
 
     $passed = 0
     $failedNames = New-Object System.Collections.Generic.List[string]
     $engineExit = 0
+    # Which names the tally / timing report cover. Batch = everything
+    # discovered; -TestNames = the named set, deduped (repeated occurrences
+    # overwrite the same <name>.json, so tallying them twice would
+    # double-count one result).
+    $reportTests = $tests
 
-    if ($useBatch) {
+    if ($useNamed -or $useBatch) {
         Write-Host ""
-        Write-Host "[$Tag] Running all tests in a single process (batch mode)..." -ForegroundColor Yellow
-        $runArgs = @(
-            '--all-automated-tests',
+        $tailArgs = @(
             '--exit-after-frames', $ExitAfterFrames,
             '--fixed-dt', $FixedDt,
             '--test-results-dir', $ResultsDir
-        ) + $commonFlags
+        ) + $saveFlags + $commonFlags
+
+        if ($useNamed) {
+            Write-Host "[$Tag] Running $($orderedNames.Count) named test(s) in one process, in order: $($orderedNames -join ' -> ')" -ForegroundColor Yellow
+            $runArgs = @('--automated-tests', ($orderedNames -join ',')) + $tailArgs
+            $reportTests = @($orderedNames | Select-Object -Unique)
+        }
+        else {
+            $orderTag = if ($BatchOrder -ne '') { " [order: $BatchOrder]" } else { '' }
+            Write-Host "[$Tag] Running all tests in a single process (batch mode)$orderTag..." -ForegroundColor Yellow
+            $runArgs = @('--all-automated-tests') + $tailArgs
+            if ($BatchOrder -ne '') { $runArgs += @('--batch-order', $BatchOrder) }
+        }
 
         $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         # Tee output for post-mortem on non-zero exits; Out-Host streams it to
@@ -264,7 +348,8 @@ function Invoke-ZenithGameTests {
         & $Exe @runArgs 2>&1 | Tee-Object -Variable runOutput | Out-Host
         $engineExit = $LASTEXITCODE
         $stopwatch.Stop()
-        Write-Host "[$Tag] Batch run finished in $([int]$stopwatch.Elapsed.TotalSeconds)s (exit=$engineExit)" -ForegroundColor Cyan
+        $runLabel = if ($useNamed) { 'Named run' } else { 'Batch run' }
+        Write-Host "[$Tag] $runLabel finished in $([int]$stopwatch.Elapsed.TotalSeconds)s (exit=$engineExit)" -ForegroundColor Cyan
 
         if ($engineExit -ne 0) {
             Write-Host "[$Tag] Last 80 lines of engine output:" -ForegroundColor Yellow
@@ -277,8 +362,40 @@ function Invoke-ZenithGameTests {
             Add-AssertionLogEntry -Name '<batch>' -JsonPath '' -Extra "engine exited $engineExit"
         }
 
-        $tally = Read-ZenithTestResults -ResultsDir $ResultsDir -Tests $tests
+        # Infrastructure failure: the harness could not build a clean world, so
+        # the remaining tests were never RUN. Report that once, and suppress the
+        # per-test noise + the synthetic batch-exit marker that would otherwise
+        # bury the actual cause under a wall of red.
+        $infraPath = Join-Path $ResultsDir '_infrastructure.json'
+        $infra = $null
+        if (Test-Path -LiteralPath $infraPath) {
+            try { $infra = Get-Content -LiteralPath $infraPath -Raw | ConvertFrom-Json } catch { }
+        }
+        if ($null -ne $infra) {
+            Write-Host ""
+            Write-Host "[$Tag] INFRASTRUCTURE FAILURE in $($infra.phase): $($infra.reason)" -ForegroundColor Red
+            Write-Host "[$Tag]   before test: $($infra.beforeTest)" -ForegroundColor Red
+            Write-Host "[$Tag]   Tests after that point were NOT RUN -- this is a harness fault, not a test failure." -ForegroundColor Red
+            $failedNames.Clear()
+            $failedNames.Add("<infrastructure:$($infra.reason)>")
+            Add-AssertionLogEntry -Name '<infrastructure>' -JsonPath $infraPath -Extra "$($infra.reason) before $($infra.beforeTest)"
+        }
+
+        $tally = Read-ZenithTestResults -ResultsDir $ResultsDir -Tests $reportTests
         $passed = $tally.Passed
+        if ($null -ne $infra) {
+            # Everything downstream of the fault is unrun; only the pre-fault
+            # results are meaningful, and the run has already been marked failed.
+            Write-Host "[$Tag] $passed test(s) completed before the fault." -ForegroundColor Yellow
+            $timings = @(Get-ZenithTestTimings -ResultsDir $ResultsDir -Tests $reportTests)
+            return [PSCustomObject]@{
+                Passed      = $passed
+                Failed      = $failedNames.Count
+                FailedNames = $failedNames.ToArray()
+                EngineExit  = $engineExit
+                Tests       = $reportTests
+            }
+        }
         foreach ($e in $tally.Entries) {
             switch ($e.Status) {
                 'PASS' {
@@ -297,6 +414,9 @@ function Invoke-ZenithGameTests {
                     Write-Host "    UNPARSEABLE $($e.Name) ($($e.JsonPath))" -ForegroundColor Red
                     Add-AssertionLogEntry -Name $e.Name -JsonPath $e.JsonPath -Extra 'json unparseable'
                 }
+                'INFRA_SKIPPED' {
+                    Write-Host "    NOT RUN $($e.Name) (infrastructure fault)" -ForegroundColor Yellow
+                }
             }
         }
         foreach ($n in $tally.FailedNames) { $failedNames.Add($n) }
@@ -311,7 +431,7 @@ function Invoke-ZenithGameTests {
                 '--exit-after-frames', $ExitAfterFrames,
                 '--fixed-dt', $FixedDt,
                 '--test-results', $jsonPath
-            ) + $commonFlags
+            ) + $saveFlags + $commonFlags
             & $Exe @runArgs 2>&1 | Out-Null
             $code = $LASTEXITCODE
             if ($code -eq 0) {
@@ -334,7 +454,7 @@ function Invoke-ZenithGameTests {
     Write-Host ""
     Write-Host "[$Tag] Summary: $passed passed, $($failedNames.Count) failed" -ForegroundColor Cyan
 
-    $timings = @(Get-ZenithTestTimings -ResultsDir $ResultsDir -Tests $tests)
+    $timings = @(Get-ZenithTestTimings -ResultsDir $ResultsDir -Tests $reportTests)
     if ($timings.Count -gt 0) {
         $totalMs = ($timings | Measure-Object -Property DurationMs -Sum).Sum
         $ran = @($timings | Where-Object { -not $_.Skipped })
@@ -360,12 +480,22 @@ function Invoke-ZenithGameTests {
         }
     }
 
+    # Sandbox cleanup: drop it on success, KEEP it on failure so a failing save
+    # test's actual .zsave files are available for triage. Stale keeps are
+    # age-pruned at the start of the next run.
+    if ($failedNames.Count -eq 0) {
+        Remove-Item -Recurse -Force $saveRoot -ErrorAction SilentlyContinue
+    }
+    else {
+        Write-Host "[$Tag] Save sandbox kept for triage: $saveRoot" -ForegroundColor DarkGray
+    }
+
     return [PSCustomObject]@{
         Passed      = $passed
         Failed      = $failedNames.Count
         FailedNames = $failedNames.ToArray()
         EngineExit  = $engineExit
-        Tests       = $tests
+        Tests       = $reportTests
     }
 }
 
