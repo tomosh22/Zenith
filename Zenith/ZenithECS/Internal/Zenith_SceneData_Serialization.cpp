@@ -23,16 +23,24 @@ void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeT
 	xStream << uSCENE_MAGIC;
 	xStream << uSCENE_VERSION_CURRENT;
 
-	u_int uNumEntities = 0;
+	// Assign every entity that will be written a DENSE file index, 0..N-1 in write
+	// order, and refer to entities by that alone. Slot indices are process-global,
+	// so writing them would make the bytes depend on how many entities this
+	// particular boot allocated first -- the same scene, authored by a boot that
+	// ran the unit suite and one that skipped it, produced different files.
+	// Write order is the scene's own authoring order: a property of the scene.
+	Zenith_EntityFileIndexMap xFileIndices;
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
 	{
-		Zenith_EntityID xID = m_xActiveEntities.Get(u);
+		const Zenith_EntityID xID = m_xActiveEntities.Get(u);
 		const Zenith_EntitySlot& xSlot = Zenith_ECS_EntityStore().m_axEntitySlots.Get(xID.m_uIndex);
 		if (bIncludeTransient || !xSlot.m_bTransient)
 		{
-			uNumEntities++;
+			xFileIndices.Insert(xID.m_uIndex, xFileIndices.GetSize());
 		}
 	}
+
+	const u_int uNumEntities = xFileIndices.GetSize();
 	xStream << uNumEntities;
 
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
@@ -44,19 +52,20 @@ void Zenith_SceneData::SaveToFile(const std::string& strFilename, bool bIncludeT
 			continue;
 		}
 		Zenith_Entity xEntity(this, xID);
-		xEntity.WriteToDataStream(xStream);
+		xEntity.WriteToDataStream(xStream, xFileIndices);
 	}
 
-	// Only write valid camera index if the camera entity was actually included
+	// Only write a valid camera index if the camera entity was actually included
 	// in the file — transient entities may be excluded, which would otherwise
-	// leave a dangling file index.
+	// leave a dangling file index. Written in the same dense scheme as everything
+	// else, so the loader resolves it through the same map.
 	uint32_t uMainCameraIndex = Zenith_EntityID::INVALID_INDEX;
 	if (m_xMainCameraEntity.IsValid())
 	{
-		const Zenith_EntitySlot& xCameraSlot = Zenith_ECS_EntityStore().m_axEntitySlots.Get(m_xMainCameraEntity.m_uIndex);
-		if (bIncludeTransient || !xCameraSlot.m_bTransient)
+		const uint32_t* puCameraFileIndex = xFileIndices.TryGet(m_xMainCameraEntity.m_uIndex);
+		if (puCameraFileIndex != nullptr)
 		{
-			uMainCameraIndex = m_xMainCameraEntity.m_uIndex;
+			uMainCameraIndex = *puCameraFileIndex;
 		}
 	}
 	xStream << uMainCameraIndex;

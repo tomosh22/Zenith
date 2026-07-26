@@ -10,7 +10,7 @@
 
 ## Open
 
-### [OPEN] Q-2026-07-25-001 -- `.zscen` bytes encode boot-time entity indices, so scenes cannot be tracked wholesale
+### [RESOLVED 2026-07-26] Q-2026-07-25-001 -- `.zscen` bytes encoded boot-time entity indices (FIXED at the source)
 
 **Question:** should scene authoring be made boot-shape-independent, so `.zscen`
 files can be tracked like `.znavmesh` is?
@@ -38,7 +38,25 @@ opportunity: a boot-shape-independent scene format (e.g. authoring-order-stable
 entity ids) would let every game commit its scenes and get fresh-clone
 `_False`/Null boots for free.
 
-**Status:** [OPEN] — recorded, not acted on.
+**RESOLUTION (2026-07-26, user-directed, ZM-D-148): fixed at the source rather
+than worked around.** The writer was putting each entity's PROCESS-GLOBAL slot
+index in the file as its "file index" (and the same for parent + main-camera
+references). It now assigns dense authoring-order indices 0..N-1
+(`Zenith_EntityFileIndexMap`), which depend only on the scene. The loader already
+treated file indices as opaque keys, so it needed no change and OLDER scene files
+still load — verified by Combat / CityBuilder / DevilsPlayground batches passing
+against their un-re-authored, sparse-index scenes.
+
+Reproduced first, deterministically (one boot with the unit suite, one with
+`--skip-unit-tests`): Battle, PlayerHome AND Dawnmere all differed — so the
+committed `Dawnmere.zscen` was at risk too, not just the three untracked ones.
+After the fix all four hash identically across both boot shapes, and a full
+44-test windowed batch leaves every tracked scene byte-unchanged. Pinned by
+`Scene::SceneBytesAreIndependentOfSlotAllocation`, which reds when the writer is
+reverted to slot indices. **All four Zenithmon scenes are now tracked**, and
+`.zscen` is re-included repo-wide, so any other game can adopt its scenes.
+
+**Status:** [RESOLVED] — the workaround (tracking one scene by exact path) is gone.
 
 ### [OPEN] Q-2026-07-25-002 -- other games' `.zscen` and the LFS question for heavy assets
 
@@ -47,16 +65,17 @@ each gated on its own determinism probe? **(b):** should the heavy baked familie
 (terrain: ~1.9 GB CityBuilder, ~1.8 GB RenderTest, 641 MB Zenithmon; largest
 single file 64 MB) move to git-LFS so they can be tracked too?
 
-**Context.** SC1b's re-include is deliberately narrow (`!**/*.znavmesh` at any
-depth plus one exact scene path). An earlier wider rule (`!**/*.zscen`) made ten
-other games' scene files trackable-but-untracked — one `git add -A` from being
-committed unvetted — which is why it was narrowed. Tracking `.znavmesh` repo-wide
-is already live, so any game that bakes one gets CI-verifiable navigation with no
-further plumbing.
+**Context.** Both `.znavmesh` and `.zscen` are now re-included repo-wide
+(ZM-D-148 made scene bytes boot-shape-independent, which was the blocker), so any
+game can adopt its scenes or a baked navmesh by simply committing the files — no
+further plumbing. The flip side: the other games' scene files now show as
+untracked on any machine that has run them, so a stray `git add -A` would commit
+them unvetted.
 
-**Best-guess action taken:** neither. Only Zenithmon's two files are tracked;
-everything heavy stays gitignored, and `.gitattributes` carries an explicit
-carve-out note explaining why the two committed families bypass LFS.
+**Best-guess action taken:** only Zenithmon's five files are committed (four
+scenes + one navmesh). Everything heavy stays gitignored, and `.gitattributes`
+carries an explicit carve-out note explaining why the two committed families
+bypass LFS.
 
 **Cost if wrong:** none immediately. (b) stays the blocker for fresh-clone
 visual parity — a clone still needs one windowed `_True` boot to bake terrain.
@@ -201,7 +220,7 @@ null backend must never author render content.
 
 ---
 
-### [OPEN] Q-2026-07-21-002 -- RenderTest `RT_TennisDeterminismDigest` fails windowed
+### [RESOLVED 2026-07-26] Q-2026-07-21-002 -- RenderTest `RT_TennisDeterminismDigest`: a TEST-ISOLATION defect, not a determinism regression
 
 **Question:** is `RT_TennisDeterminismDigest`'s failure a real determinism regression, or a stale golden digest?
 
@@ -211,7 +230,35 @@ null backend must never author render content.
 
 **Cost if wrong:** low while RenderTest is used as a terrain/grass canary (`TerrainEditorSmoke` is the relevant test and it passes). Moderate if RenderTest is ever promoted to a full required gate, since one red test would mask others.
 
-**Status:** asked 2026-07-21. Non-blocking.
+**ANSWER (2026-07-26, investigated on request).** Neither of the two hypotheses
+was right — the sim is deterministic AND the golden is current:
+
+- **Standalone it PASSES.** Run on its own (`--automated-test
+  RT_TennisDeterminismDigest`) the windowed build produces exactly the pinned
+  `0x9551B81E8F74B8AE` and exits 0. So the digest is not stale and the tennis sim
+  is not non-deterministic.
+- **It fails only IN BATCH**, and does so with a STABLE wrong digest
+  (`0x4369AB2293ADFDDB`) — identically on the Vulkan and Null backends. A stable
+  wrong value is contamination, not noise.
+- **RenderTest registers NO `BetweenTestsHook`.** DevilsPlayground and Zenithmon
+  both do; RenderTest and CityBuilder do not. So nothing resets process-global
+  state between tests, and `RT_PlayerActions` — which runs IMMEDIATELY BEFORE the
+  digest and drives the SAME `RenderTest_TennisMatchComponent`, including
+  `Zenith_PerceptionSystem::RegisterTarget` calls into a global registry that has
+  a `Reset()` nobody calls — is the prime suspect.
+- It is **not** caused by the ZM-D-148 scene-index change: with that change
+  stashed, the identical failing digest reproduces.
+
+**The empty `failures` array is explained too:** the test reports through
+`Zenith_Log`, not the assertion API that populates the JSON, so its "MISMATCH:
+pinned ..." line only ever appears in the engine log.
+
+**Follow-up (not done here):** give RenderTest a `BetweenTestsHook` that resets
+the perception registry (and whatever else the bisect implicates), then re-verify
+the digest in-batch. Until then the digest is a reliable STANDALONE gate and a
+false alarm in batch.
+
+**Status:** [RESOLVED] as a diagnosis; the isolation fix itself is open follow-up work.
 
 ---
 

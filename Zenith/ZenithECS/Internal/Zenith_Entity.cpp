@@ -561,22 +561,40 @@ void Zenith_Entity::ClearPendingParentFileIndex()
 // Serialization
 //------------------------------------------------------------------------------
 
-void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream)
+void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream, const Zenith_EntityFileIndexMap& xFileIndices)
 {
 	Zenith_Assert(IsValid(), "WriteToDataStream: Entity handle is invalid");
 
 	// Scene v7 entity RECORD: [fileIndex][name][parentFileIndex] then components.
-	// Write entity index only (generation is runtime-only for stale detection).
-	xStream << m_xEntityID.m_uIndex;
+	//
+	// The file index is this entity's DENSE, authoring-order position in the file
+	// -- NOT its slot index. Slot indices come from a process-global table, so
+	// writing one would bake "how many entities this boot happened to allocate
+	// first" into the scene bytes (see Zenith_EntityFileIndexMap). The loader
+	// keys xFileIndexToNewID on whatever we write here, so any internally
+	// consistent numbering loads correctly.
+	const uint32_t* puFileIndex = xFileIndices.TryGet(m_xEntityID.m_uIndex);
+	Zenith_Assert(puFileIndex != nullptr,
+		"WriteToDataStream: entity '%s' is being written but has no file index -- "
+		"the caller's map must cover every entity it writes", GetName().c_str());
+	xStream << (puFileIndex != nullptr ? *puFileIndex : Zenith_EntityID::INVALID_INDEX);
+
 	xStream << GetName();  // Get name from slot
 
-	// Phase 7a: the hierarchy parent file-index now lives in the entity record (it left
-	// the legacy component payload). The file-index scheme is the slot index m_uIndex -- the same
-	// value the loader keys xFileIndexToNewID on (each entity writes its own m_uIndex as
-	// its file index), so the parent's m_uIndex is exactly the parent's file index. A
-	// root entity writes INVALID_INDEX.
-	Zenith_EntityID xParentID = GetParentEntityID();
-	uint32_t uParentFileIndex = xParentID.IsValid() ? xParentID.m_uIndex : Zenith_EntityID::INVALID_INDEX;
+	// Phase 7a: the hierarchy parent file-index lives in the entity record (it left
+	// the legacy component payload). A root entity -- or one whose parent is NOT
+	// part of this save (a transient parent excluded from a non-transient write) --
+	// writes INVALID_INDEX, which the loader reads as "no parent".
+	const Zenith_EntityID xParentID = GetParentEntityID();
+	uint32_t uParentFileIndex = Zenith_EntityID::INVALID_INDEX;
+	if (xParentID.IsValid())
+	{
+		const uint32_t* puParentFileIndex = xFileIndices.TryGet(xParentID.m_uIndex);
+		if (puParentFileIndex != nullptr)
+		{
+			uParentFileIndex = *puParentFileIndex;
+		}
+	}
 	xStream << uParentFileIndex;
 
 	// Serialize all components using the ComponentMeta registry (the owning component

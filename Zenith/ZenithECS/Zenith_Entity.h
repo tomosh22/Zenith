@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Collections/Zenith_HashMap.h"
 #include "Collections/Zenith_Vector.h"
 #include <cstdint>
 #include <functional>  // Required for std::hash<Zenith_EntityID> specialization (NOT for std::function)
@@ -55,6 +56,28 @@ namespace std
 		}
 	};
 }
+
+/**
+ * Zenith_EntityFileIndexMap - live entity SLOT index -> DENSE, authoring-order
+ * index in the file currently being written.
+ *
+ * WHY THIS EXISTS. A scene file has to refer to entities somehow (a child names
+ * its parent; the scene names its main camera). The obvious choice — the
+ * entity's slot index — is wrong, because slots come from a PROCESS-GLOBAL
+ * table: whatever allocated entities earlier in the boot shifts every index.
+ * Authoring the same scene from a boot that ran the unit suite and one that
+ * skipped it produced different bytes for exactly this reason, which is what
+ * kept scene files out of git.
+ *
+ * So the writer assigns each written entity a dense index 0..N-1 in WRITE ORDER
+ * and refers to entities by that instead. Write order is the scene's own
+ * authoring order, which is a property of the scene, not of the process.
+ *
+ * The loader treats file indices as OPAQUE KEYS (it maps them to freshly
+ * allocated EntityIDs), so it needs no matching change and older files — whose
+ * indices are sparse slot indices — still load correctly.
+ */
+using Zenith_EntityFileIndexMap = Zenith_HashMap<uint32_t, uint32_t>;
 
 /**
  * Zenith_Entity - Lightweight handle to an entity in a scene
@@ -293,7 +316,15 @@ public:
 	// WriteToDataStream stays public: unit tests in
 	// Zenith/Core/Zenith_UnitTests.Tests.inl call it directly on an entity and are
 	// not friends. ReadFromDataStream is part of the public load API.
-	void WriteToDataStream(Zenith_DataStream& xStream);
+	//
+	// xFileIndices maps a live entity SLOT index to that entity's DENSE,
+	// authoring-order index in the file being written (see
+	// Zenith_EntityFileIndexMap). It is required, not optional: writing the raw
+	// slot index instead would bake process-global allocation state into the
+	// file, so the same scene authored by two differently-shaped boots would
+	// produce different bytes. An entity whose parent is absent from the map
+	// (e.g. a transient parent excluded from this save) writes INVALID_INDEX.
+	void WriteToDataStream(Zenith_DataStream& xStream, const Zenith_EntityFileIndexMap& xFileIndices);
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	//--------------------------------------------------------------------------

@@ -77,6 +77,7 @@ public:
 
 	// Scene serialization tests
 	static void TestSceneSerialization();
+	static void TestSceneBytesAreIndependentOfSlotAllocation();
 	static void TestComponentSerialization();
 	static void TestEntitySerialization();
 	static void TestSceneRoundTrip();

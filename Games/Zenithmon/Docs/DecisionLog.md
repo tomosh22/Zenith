@@ -15,6 +15,94 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-26 -- ZM-D-148 -- Scene files stop encoding process-global entity slot indices; all four ZM scenes become TRACKED; the RenderTest digest failure is diagnosed
+
+*(User-directed follow-up to ZM-D-147: "make scene authoring boot shape
+independent and investigate the failing tests". ENGINE change -- ZenithECS
+serialization -- so it owes the cross-game gate.)*
+
+### The defect
+
+`Zenith_Entity::WriteToDataStream` wrote `m_xEntityID.m_uIndex` -- the entity's
+**process-global SLOT index** -- as its file index, and `SaveToFile` did the same
+for the main camera. Slots come from one global table, so ANYTHING that allocated
+entities earlier in the boot shifted every index. The boot-time unit suite does
+exactly that, which is why the same scene authored by a boot that ran the units
+and one that skipped them produced different bytes.
+
+**Reproduced deterministically before touching anything** (one boot with the unit
+suite, one with `--skip-unit-tests`): `Battle`, `PlayerHome` **and `Dawnmere`**
+all differed. That last one matters -- the `Dawnmere.zscen` committed by ZM-D-147
+was itself at risk, not just the three scenes left untracked. The earlier
+"Dawnmere has never churned" reading was an artefact of every windowed boot
+happening to run the same unit population.
+
+### The fix
+
+The writer now assigns each written entity a **dense, authoring-order file index
+0..N-1** (`Zenith_EntityFileIndexMap`) and refers to entities -- parent links and
+the main camera -- by that alone. Write order is the scene's own authoring order:
+a property of the scene, not of the process.
+
+- **The loader needed NO change**, because it already treats file indices as
+  opaque keys (it maps them to freshly allocated EntityIDs). **Older scene files
+  still load** -- verified by Combat / CityBuilder / DevilsPlayground batches
+  passing against their un-re-authored, sparse-index scenes on disk.
+- An entity whose parent is absent from the map (a transient parent excluded from
+  a non-transient save) writes INVALID_INDEX, which the loader already reads as
+  "no parent" -- the same outcome the old code reached by writing a slot index
+  the map could not resolve.
+- No format version bump: the LAYOUT is identical, only the numbering scheme
+  changed, and the scheme was never part of the contract.
+
+### Evidence
+
+| Gate | Result |
+|---|---|
+| Boot-shape A/B (the original repro) | all four scenes now hash IDENTICALLY across both shapes (`Battle 1BEB0615`, `Dawnmere F8250E20`, `FrontEnd F7209CF5`, `PlayerHome AAE75C14`) |
+| Full windowed ZM batch | 44/44, and every tracked scene byte-unchanged afterwards (they went `AM` before) |
+| ZM headless batch | 44/44 -- the new dense-index scenes load correctly |
+| Backwards compatibility | Combat 14/14, CityBuilder 45/45, DevilsPlayground 158/158 against OLD-format scenes |
+| Boot units | engine **1121 -> 1122**, ZM **2546 -> 2547**, 0 failed |
+| Ratchets | unchanged from pristine HEAD |
+| Mutation | reverting the writer to `m_xEntityID.m_uIndex` reds EXACTLY `Scene::SceneBytesAreIndependentOfSlotAllocation` (1122 ran / 1120 passed / 1 failed) and nothing else; restored -> 1122 / 1121 / 0 |
+
+**All four Zenithmon scenes are now tracked** and `.zscen` is re-included
+repo-wide, so any other game can adopt its scenes by committing them. Q-2026-07-25-001
+is CLOSED.
+
+### The RenderTest failures, diagnosed (Q-2026-07-21-002 answered)
+
+Two separate things were being conflated under "8 passed, 2 failed":
+
+1. **The arithmetic is a harness artefact, not a second failing test.** When the
+   engine process exits non-zero the harness appends a synthetic
+   `<batch:exit=1>` entry to its failed list, on top of the real failure. The
+   engine's own line reads `8 passed, 1 failed (of 9)`.
+2. **`RT_TennisDeterminismDigest` is a TEST-ISOLATION defect** -- neither of the
+   two hypotheses in the original question. Run STANDALONE it produces exactly
+   the pinned `0x9551B81E8F74B8AE` and exits 0, so the sim is deterministic and
+   the golden is current. It fails only IN BATCH, with a STABLE wrong digest
+   (`0x4369AB2293ADFDDB`) -- identically on Vulkan and Null. A stable wrong value
+   is contamination, not noise. **RenderTest registers no `BetweenTestsHook`**
+   (DevilsPlayground and Zenithmon both do), so nothing resets process-global
+   state between tests; `RT_PlayerActions` runs immediately before the digest,
+   drives the SAME tennis component, and registers targets into the global
+   `Zenith_PerceptionSystem` whose `Reset()` nobody calls.
+   - **Not caused by this commit:** with the serialization change stashed, the
+     identical failing digest reproduces.
+   - The empty `failures` array in the JSON is explained too -- the test reports
+     through `Zenith_Log`, not the assertion API that populates the JSON.
+   - **Follow-up, not done here:** give RenderTest a between-tests hook and
+     re-verify. Until then the digest is a reliable standalone gate and a false
+     alarm in batch.
+
+- **Reversibility:** high. The writer change is ~30 lines behind one map; reverting
+  it would only reintroduce the churn (and red the new unit). The tracked scenes
+  can be dropped from git independently.
+
+---
+
 ## 2026-07-25 -- ZM-D-147 -- Baked navmesh persistence as a REUSABLE ENGINE FEATURE; Zenithmon first consumer; `.znavmesh` + `.zscen` become TRACKED assets
 
 *(SC1b commit B of two, completing S7 item 3 SC1b. Engine-wide, so it owes and

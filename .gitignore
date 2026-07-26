@@ -81,19 +81,18 @@
 # stays ignored -- terrain alone is ~4.3 GB across the games, which is a git-LFS
 # decision, not this one.
 #
-# .zscen is NOT re-included wholesale (ZM-D-147). A scene's bytes are
-# deterministic for a GIVEN boot shape but encode entity indices assigned during
-# that boot, so a boot whose unit-test population differs re-authors different
-# bytes -- measured: Battle.zscen 4 bytes, PlayerHome.zscen 12 bytes,
-# entity-index-shaped. Tracking a file that every dev boot rewrites is churn, so
-# the three scenes CI re-authors for itself stay ignored.
+# .zscen is re-included too (ZM-D-148). It was NOT, briefly: scene files used to
+# bake process-global entity SLOT indices into their bytes, so the same scene
+# authored by a boot that ran the unit suite and one that skipped it produced
+# different files. That was fixed at the source -- the writer now assigns dense
+# authoring-order file indices (Zenith_EntityFileIndexMap), pinned by the
+# `Scene::SceneBytesAreIndependentOfSlotAllocation` unit -- so a scene's bytes
+# now depend only on the scene.
 #
-# Dawnmere.zscen is the ONE exception, tracked by exact path: it is authored only
-# on a windowed all-warm tools boot (deliberately skipped on the Null/CI
-# backend), so without it CI has no Dawnmere scene at all and the authored
-# navmesh component has no gate. It is the narrowest re-include that keeps
-# ZM_DawnmereHeadless_Test running in CI. It carries the same latent churn risk;
-# if it ever moves, re-bake and re-commit rather than re-ignoring it.
+# Only Zenithmon's four scenes are actually COMMITTED today; the other games'
+# scenes are trackable but untracked, and can be adopted whenever their owners
+# want fresh-clone `_False`/Null boots. Watch out for `git add -A` picking them
+# up unintentionally.
 #
 # We ignore Assets *contents* (not the directory entries, so git can descend),
 # then re-include. NOTE the ordering contract: the later `unit_test_scene.zscen`
@@ -102,7 +101,7 @@
 **/Assets/**
 !**/Assets/**/
 !**/*.znavmesh
-!Games/Zenithmon/Assets/Scenes/Dawnmere.zscen
+!**/*.zscen
 
 # Accidental Windows NUL device redirections
 /nul

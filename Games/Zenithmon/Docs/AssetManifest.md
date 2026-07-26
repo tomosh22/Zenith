@@ -39,16 +39,16 @@ pipeline -- the "asset team" is generator/authoring code
 | Committed file | Size | Why it is tracked |
 |---|---|---|
 | `Assets/Navmesh/Dawnmere.znavmesh` | ~365 KB | Loadable with NO GPU, NO terrain component and NO other asset — which is what makes navigation CI-verifiable for the first time. Byte-deterministic across bakes. |
-| `Assets/Scenes/Dawnmere.zscen` | ~3.8 KB | The ONE scene a Null/CI boot never authors (the Dawnmere block is windowed + all-warm gated). Without it CI has no Dawnmere scene, and the authored navmesh component has no gate. |
+| `Assets/Scenes/*.zscen` (all four) | 1.8–27 KB each | Scene content, loadable on a fresh checkout with no bake. `Dawnmere.zscen` matters most: a Null/CI boot never authors it (the Dawnmere block is windowed + all-warm gated), so without it CI has no Dawnmere scene and the authored navmesh component has no gate. |
 
-**The other three scenes stay IGNORED, on measurement.** `FrontEnd`, `Battle`
-and `PlayerHome` are re-authored on EVERY boot including Null/CI, so tracking
-them buys nothing — and they churn: a scene's bytes are deterministic for a
-given boot shape but encode entity indices assigned during that boot, so a boot
-whose unit-test population differs re-authors different bytes (measured:
-Battle 4 bytes, PlayerHome 12, entity-index-shaped). `Dawnmere.zscen` carries
-the same latent hazard and has not moved through any measurement so far; if it
-ever does, **re-bake and re-commit** rather than re-ignoring it.
+**Scene bytes are boot-shape-independent (ZM-D-148), which is what makes this
+safe.** Scenes used to bake process-global entity SLOT indices into their file
+indices, so a boot whose unit-test population differed re-authored different
+bytes — measured at 4 bytes (Battle) and 12 (PlayerHome), and Dawnmere moved
+too. The writer now emits dense authoring-order indices, pinned by
+`Scene::SceneBytesAreIndependentOfSlotAllocation`. If a scene file ever shows up
+modified in `git status` after a boot, that is a REGRESSION of that property —
+investigate it rather than just re-committing.
 
 Everything else — creatures, humans, buildings, props, terrain (~641 MB) —
 stays git-ignored. Adopting git-LFS for the heavy families is a separate, still

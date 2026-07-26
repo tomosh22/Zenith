@@ -1631,9 +1631,13 @@ void Zenith_UnitTests::TestEntitySerialization(){
 		.m_xPosition = Zenith_Maths::Vector3(0.0f, 5.0f, 10.0f),
 	});
 
-	// Serialize entity
+	// Serialize entity. The writer refers to entities by their DENSE file index,
+	// so even a single-entity write needs the map (it is what keeps scene bytes
+	// independent of process-global slot allocation).
 	Zenith_DataStream xStream;
-	xGroundTruthEntity.WriteToDataStream(xStream);
+	Zenith_EntityFileIndexMap xFileIndices;
+	xFileIndices.Insert(xGroundTruthEntity.GetEntityID().m_uIndex, 0u);
+	xGroundTruthEntity.WriteToDataStream(xStream, xFileIndices);
 
 	// Verify entity metadata was written
 	const std::string strExpectedName = xGroundTruthEntity.GetName();
@@ -1716,6 +1720,95 @@ void Zenith_UnitTests::TestSceneSerialization(){
 	// Clean up test scene
 	g_xEngine.Scenes().UnloadScene(xTestScene);
 
+}
+
+/**
+ * Scene bytes must not depend on PROCESS-GLOBAL entity-slot allocation.
+ *
+ * Entity slots come from one global table, so anything that created entities
+ * earlier in the boot shifts every subsequent slot index. When the writer wrote
+ * slot indices into the file, that leaked straight into the bytes: authoring the
+ * same scene from a boot that ran the unit suite and one that skipped it produced
+ * DIFFERENT files, which is what kept .zscen out of git. The writer now assigns
+ * dense authoring-order file indices instead.
+ *
+ * This test builds the identical scene twice with a pile of unrelated entities
+ * allocated in between -- the in-process equivalent of a differently-shaped boot
+ * -- and requires the two saves to be byte-identical.
+ */
+#ifndef ZENITH_ANDROID // Uses raw std::filesystem with relative paths
+ZENITH_TEST(Scene, SceneBytesAreIndependentOfSlotAllocation) { Zenith_UnitTests::TestSceneBytesAreIndependentOfSlotAllocation(); }
+#endif
+void Zenith_UnitTests::TestSceneBytesAreIndependentOfSlotAllocation(){
+
+	// Builds a fixed scene (parented hierarchy + a main camera, so BOTH kinds of
+	// cross-entity reference are exercised) and returns its saved bytes.
+	auto BuildAndSaveFixture = [](const char* szSceneName, const std::string& strPath) -> Zenith_Vector<uint8_t>
+	{
+		Zenith_Scene xScene = g_xEngine.Scenes().LoadScene(szSceneName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(xScene);
+
+		Zenith_Entity xCamera = g_xEngine.Scenes().CreateEntity(pxData, "FixtureCamera");
+		xCamera.SetTransient(false);
+		xCamera.AddComponent<Zenith_CameraComponent>().InitialisePerspective({
+			.m_xPosition = Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f),
+		});
+		pxData->SetMainCameraEntity(xCamera.GetEntityID());
+
+		Zenith_Entity xParent = g_xEngine.Scenes().CreateEntity(pxData, "FixtureParent");
+		xParent.SetTransient(false);
+		xParent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f));
+
+		Zenith_Entity xChild = g_xEngine.Scenes().CreateEntity(pxData, "FixtureChild");
+		xChild.SetTransient(false);
+		xChild.SetParent(xParent.GetEntityID());
+		xChild.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(7.0f, 8.0f, 9.0f));
+
+		pxData->SaveToFile(strPath);
+		g_xEngine.Scenes().UnloadSceneForced(xScene);
+
+		Zenith_Vector<uint8_t> auBytes;
+		Zenith_DataStream xStream;
+		xStream.ReadFromFile(strPath.c_str());
+		if (xStream.IsValid())
+		{
+			const uint8_t* pSrc = static_cast<const uint8_t*>(xStream.GetData());
+			auBytes.Reserve(static_cast<u_int>(xStream.GetCapacity()));
+			for (uint64_t ul = 0; ul < xStream.GetCapacity(); ++ul)
+			{
+				auBytes.PushBack(pSrc[ul]);
+			}
+		}
+		std::error_code xEC;
+		std::filesystem::remove(strPath, xEC);
+		return auBytes;
+	};
+
+	const Zenith_Vector<uint8_t> auFirst =
+		BuildAndSaveFixture("SlotIndependenceSceneA", "unit_test_slot_independence_a" ZENITH_SCENE_EXT);
+	ZENITH_ASSERT_GT(auFirst.GetSize(), 16u, "The fixture scene saved actual bytes");
+
+	// Perturb the global slot table exactly as a differently-shaped boot would:
+	// allocate (and abandon) a batch of unrelated entities so the next scene's
+	// entities land on completely different slot indices.
+	{
+		Zenith_Scene xNoise = g_xEngine.Scenes().LoadScene("SlotIndependenceNoise", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		Zenith_SceneData* pxNoiseData = g_xEngine.Scenes().GetSceneData(xNoise);
+		for (u_int u = 0; u < 17u; ++u)
+		{
+			g_xEngine.Scenes().CreateEntity(pxNoiseData, "SlotNoise");
+		}
+		g_xEngine.Scenes().UnloadSceneForced(xNoise);
+	}
+
+	const Zenith_Vector<uint8_t> auSecond =
+		BuildAndSaveFixture("SlotIndependenceSceneB", "unit_test_slot_independence_b" ZENITH_SCENE_EXT);
+
+	ZENITH_ASSERT_EQ(auSecond.GetSize(), auFirst.GetSize(),
+		"The same scene must save to the same LENGTH regardless of slot allocation");
+	ZENITH_ASSERT_EQ(memcmp(auSecond.GetDataPointer(), auFirst.GetDataPointer(), auFirst.GetSize()), 0,
+		"The same scene must save to BYTE-IDENTICAL content regardless of slot allocation "
+		"(file indices must be dense + authoring-order, never process-global slot indices)");
 }
 
 /**
@@ -9349,9 +9442,16 @@ void Zenith_UnitTests::TestEntityHierarchySerialization(){
 	// Set parent
 	xChild.SetParent(uParentID);
 
+	// Both entities share one file-index map, so the child's record refers to the
+	// parent by its DENSE file index (0) rather than by a process-global slot
+	// index -- which is exactly what the pending-parent assertion below reads.
+	Zenith_EntityFileIndexMap xFileIndices;
+	xFileIndices.Insert(uParentID.m_uIndex, 0u);
+	xFileIndices.Insert(uChildID.m_uIndex, 1u);
+
 	// Serialize parent entity
 	Zenith_DataStream xStream(256);
-	xParent.WriteToDataStream(xStream);
+	xParent.WriteToDataStream(xStream, xFileIndices);
 
 	// Reset and read back
 	// Note: Must create a valid entity in scene first, as deserialization
@@ -9366,7 +9466,7 @@ void Zenith_UnitTests::TestEntityHierarchySerialization(){
 
 	// Serialize child entity
 	Zenith_DataStream xChildStream(256);
-	xChild.WriteToDataStream(xChildStream);
+	xChild.WriteToDataStream(xChildStream, xFileIndices);
 
 	// Create entity in scene before deserializing
 	xChildStream.SetCursor(0);
