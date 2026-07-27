@@ -47,6 +47,7 @@ enum ZM_STORY_FLAG_ID : u_int
 	ZM_STORY_FLAG_WARDEN_CLEARED     = 3u,   // the SC1 gated-line demonstration
 	ZM_STORY_FLAG_ROUTE1_OPEN        = 4u,   // reserved for S8 routes
 	ZM_STORY_FLAG_GYM1_DEFEATED      = 5u,   // reserved for S8 gyms
+	ZM_STORY_FLAG_RIVAL1_DEFEATED    = 6u,   // S7 item 3 SC2 -- the rival's first battle
 
 	ZM_STORY_FLAG_COUNT,
 	ZM_STORY_FLAG_NONE = ZM_STORY_FLAG_COUNT   // "no flag" sentinel; NEVER persisted

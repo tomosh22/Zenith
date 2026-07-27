@@ -33,6 +33,7 @@ namespace
 		{ ZM_STORY_FLAG_WARDEN_CLEARED,   "WARDEN_CLEARED"   },
 		{ ZM_STORY_FLAG_ROUTE1_OPEN,      "ROUTE1_OPEN"      },
 		{ ZM_STORY_FLAG_GYM1_DEFEATED,    "GYM1_DEFEATED"    },
+		{ ZM_STORY_FLAG_RIVAL1_DEFEATED,  "RIVAL1_DEFEATED"  },
 	};
 
 	static_assert(sizeof(s_axFlags) / sizeof(s_axFlags[0]) == ZM_STORY_FLAG_COUNT,

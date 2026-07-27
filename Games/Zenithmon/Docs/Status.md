@@ -2,17 +2,28 @@
 
 **Last updated:** 2026-07-27
 
-**★ VERIFIED BASELINE (2026-07-27, re-measured at iteration start on a fresh
-build of both configs):** ZM headless registry **44 passed / 0 failed**; ZM boot
-unit gate **2589 ran / 2588 passed / 0 failed / 1 skipped**; engine boot unit
-gate (Null Combat) **1164 ran / 1163 passed / 0 failed / 1 skipped**. The ZM
-count moved 2547 -> 2589 because the 07-27 engine commits (harness world reset,
-harness dt pinning, navmesh RNG determinism) added units. `e687d095` left BOTH
-baselines one short, so `engine-gate` and `zm-tests` were red on master;
-**fixed forward in ZM-D-149** (`run_unit_gate.ps1` 1163 -> 1164,
-`zm-tests.yml` 2588 -> 2589). Use these numbers, not the older ones quoted
-further down this file.
-**Stage:** **S7 (save/load, story flags, trainer battles) ACTIVE. Item 1 (full schema-v1 codec) COMPLETE (SC1-SC2, ZM-D-135/136). Item 2 (story flags + save integration) COMPLETE -- ALL SIX sub-commits done (SC1-SC6, ZM-D-137..142); the aggregate item-2 Roadmap checkbox is ticked. NEXT is S7 item 3** (trainer sight-cone -> forced battle -> defeat flags + prize money; the first useful `ZM_GraphAuthoring` trainer-glue integration; and the terrain-backed navmesh evaluation). S0-S6 remain complete. S7 requires no human intervention; the next human stop remains the S8 vertical-slice go/no-go.
+**★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
+down this file (all OBSERVED 2026-07-27 on a fresh build of both configs):**
+ZM headless registry **44 passed / 0 failed**; ZM boot unit gate **2607 ran /
+2606 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to 2607); engine boot
+unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed / 1 skipped**
+(`run_unit_gate.ps1` default). The 1 skipped in each is the quarantined
+`GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
+
+*How they moved this session:* 2547 -> **2589** was the 07-27 engine commits
+(harness world reset, harness dt pinning, navmesh RNG determinism) adding units,
+and `e687d095` left BOTH baselines one short, so `engine-gate` and `zm-tests`
+were RED on master until **ZM-D-149** fixed them forward (1163 -> 1164,
+2588 -> 2589). 2589 -> **2607** is SC2's own +18 units (ZM-D-150).
+
+**★ GATE-ORDER TRIPWIRE (cost a wasted 300 s boot to rediscover):** the boot unit
+gate must run AFTER `zenith test <Game> --headless`, never before, on a freshly
+built Null exe. `zenith test` heals the output directory's DLLs; a fresh `Null_*`
+build lacks `libcurl-d.dll`, so booting the exe first dies in the loader with
+ZERO stdout and the gate reports the misleading "no 'Unit tests complete' line in
+boot output" rather than a load failure.
+
+**Stage:** **S7 (save/load, story flags, trainer battles) ACTIVE. Item 1 (full schema-v1 codec) COMPLETE (SC1-SC2, ZM-D-135/136). Item 2 (story flags + save integration) COMPLETE (SC1-SC6, ZM-D-137..142). Item 3 IN PROGRESS: SC1 eval spike DONE (ZM-D-144), SC1b DONE (ZM-D-146/147), SC2 DONE (ZM-D-150). NEXT = SC3** (the pure sight-cone predicate + the trainer `ZM_BattleConfig` helper). S0-S6 remain complete. S7 requires no human intervention; the next human stop remains the S8 vertical-slice go/no-go.
 **Build:** GREEN on the ZM-D-148 diff (scene authoring made boot-shape-independent; all four ZM scenes now TRACKED) on top of SC1b commit B (ZM-D-147 -- baked navmesh persistence). Engine-wide, so it owed and got the full gate: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; engine lib + SentinelECS/Physics/AI (all three exes exit 0); Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True.
 **Tests (commit B):** Null batches, ALL 0-failed: **ZM 44/44** (registry 42 -> 44; both new navmesh tests RUN, not skipped), CB **45/45**, DP **158/158**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 44/44, 0 skipped, 0 failed**. Boot unit gates on the NULL exes: engine **1093 -> 1121** (Combat) and ZM **2515 -> 2546** -- both pinned from the OBSERVED line. Windowed RenderTest 8 passed / 1 failed, only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002). Ratchets (`architecture,lints` and `complexity`) are **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added; two findings this commit DID introduce (an `Editor/` include and a `g_xEngine` reach from EntityComponent) were fixed, not allow-listed. **Asset-less CI condition reproduced locally** (`Zenith/Assets` hidden): ZM 44/44 and both unit gates unchanged; restored by MERGE and `diff -rq`-verified, since the run re-created only 60 of the 89 files and a naive rename-back would have clobbered the tree. **Teeth mutation-proven ×6** (see ZM-D-147; m1 re-run on the final build reds exactly the 3 serialization units).
 
@@ -25,7 +36,18 @@ further down this file.
 
 ## Current task
 
-**S7 item 3 SC1b COMPLETE -- both commits landed (ZM-D-146 Null backend, ZM-D-147 navmesh persistence). NEXT = SC2 (`ZM_TrainerData` + `ZM_STORY_FLAG_RIVAL1_DEFEATED`).** The trainer vertical resumes now that SC1b is in full.
+**S7 item 3 SC2 COMPLETE (ZM-D-150) -- the `ZM_TrainerData` roster + `ZM_STORY_FLAG_RIVAL1_DEFEATED` at wire bit 6. NEXT = SC3: the pure sight-cone predicate (reuse `ZM_ForwardFromRotation`; occlusion stays OUT, it enters at SC6 as a probe filter in the glue layer) + a trainer `ZM_BattleConfig` helper (wild=false, canCatch=false, canFlee=false, isTrainerBattle=true).** Nothing consumes the trainer table yet -- that is SC5's job -- so SC2 is fully reversible.
+
+**What SC2 pinned that SC3-SC8 must not re-litigate:** a trainer party row stores
+ONLY `{species, level}` per member (`ZM_BuildWildEnemySpec` derives the rest with
+zero randomness, so that pair already IS a fixed team); the roster is TWO rows on
+purpose (Vesper carries a defeat flag, "Rambler Perrin" carries
+`ZM_STORY_FLAG_NONE`, so both column shapes stay covered); every accessor is
+TOTAL and returns the inert `UNKNOWN` row rather than asserting; and
+`ZM_IsMilestoneStoryFlag` was deliberately NOT extended to the new flag --
+uncalled surface ships with its producer at SC5/SC6.
+
+**Prior:** S7 item 3 SC1b COMPLETE -- both commits landed (ZM-D-146 Null backend, ZM-D-147 navmesh persistence).
 
 **Commit A shipped the platform SC1b needs, and it is engine-wide:**
 - **`Zenith/Null` -- a GPU-less render backend, and headless is now a BUILD CONFIG.** `--headless` is deleted end-to-end. A `Null_*` config defines `ZENITH_NULL_RENDERER`, compiles `Zenith/Null` instead of Vulkan and hides the window. The difference that matters: the old flag SKIPPED the render paths, the Null backend RUNS them against no-ops -- so a headless run exercises the same code a windowed one does. `zenith build|test <G> --headless` survives as a CONFIG SELECTOR; **test discovery always uses the Null exe**. Compile-time checks use the constexpr `Zenith_IsNullRenderer()`.
@@ -64,7 +86,32 @@ Then SC2 `ZM_TrainerData` + `ZM_STORY_FLAG_RIVAL1_DEFEATED` -> SC3 sight cone ->
 
 ## Last completed
 
-**S7 item 3 SC1b -- BAKED NAVMESH PERSISTENCE AS A REUSABLE ENGINE FEATURE
+**S7 item 3 SC2 -- THE `ZM_TrainerData` ROSTER + `ZM_STORY_FLAG_RIVAL1_DEFEATED`
+(ZM-D-150).** Pure, headless, `Games/Zenithmon`-only: zero engine files, zero new
+ECS orders (114 still next-free), no save-schema version bump.
+`Source/Data/ZM_TrainerData.{h,cpp}` ships the append-only `ZM_TRAINER_ID`
+(`ZM_TRAINER_NONE = ZM_TRAINER_COUNT`, so one `<` rejects the sentinel and all
+garbage together), a deduced-bound `s_axTrainers[]` under a row-count
+`static_assert`, and four TOTAL accessors that return an inert `UNKNOWN` row with
+a NON-fatal `Zenith_Error` instead of asserting. Two rows: **Vesper** (one L5
+KINDLET -- the Fire counterpart to the Grass FERNFAWN starter -- 500 prize,
+`RIVAL1_DEFEATED`, GREEDY) and **"Rambler Perrin"** (two L4 Route-1 species, 120
+prize, `ZM_STORY_FLAG_NONE`, RANDOM), because one row would leave the
+no-defeat-flag column arm untested. `ZM_STORY_FLAG_RIVAL1_DEFEATED = 6u` is dense
+and append-only; `COUNT`/`NONE` follow to 7 automatically and the name-table
+`static_assert` makes a forgotten registry row a COMPILE error.
+**+18 boot units** (17 `ZM_Data` + 1 `ZM_Story` freezing all seven wire bits as
+hand-typed literals), baseline **2589 -> 2607**; headless registry unmoved at
+**44** (correct -- a pure data sub-commit adds no automated test); full windowed
+**44/44**. **Adversarial review killed a toothless unit before it landed**
+(`Trainer_EveryPartyMemberHasAMoveAtItsAuthoredLevel` was a tautology:
+`ZM_BuildWildEnemySpec` copies species/level straight through and `ZM_Learnsets`
+always emits a level-1 STAB pick) and caught that two new TUs make
+`Build\regen.ps1` MANDATORY -- no other TU references the new accessors, so
+without it the build goes green with the whole table silently absent. **The +18
+delta is the proof regen took; +1 would have meant it did not.**
+
+Prior: **S7 item 3 SC1b -- BAKED NAVMESH PERSISTENCE AS A REUSABLE ENGINE FEATURE
 (ZM-D-147); SC1b COMPLETE.** Engine: `Zenith_NavMeshBaker` (bake + read-back
 verify), `Zenith_NavMeshStats`, a hardened validating `Zenith_NavMesh` load path
 (bool-returning, asserts + logs + defined failure at every rejection, all

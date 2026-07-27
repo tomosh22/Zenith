@@ -71,6 +71,7 @@ namespace
 		{ ZM_STORY_FLAG_WARDEN_CLEARED,   3u },
 		{ ZM_STORY_FLAG_ROUTE1_OPEN,      4u },
 		{ ZM_STORY_FLAG_GYM1_DEFEATED,    5u },
+		{ ZM_STORY_FLAG_RIVAL1_DEFEATED,  6u },
 	};
 	constexpr u_int uEXPECTED_WIRE_BIT_COUNT =
 		(u_int)(sizeof(axEXPECTED_WIRE_BITS) / sizeof(axEXPECTED_WIRE_BITS[0]));
@@ -308,6 +309,33 @@ ZENITH_TEST(ZM_Story, Registry_IndicesAreDenseFromZero)
 			"no registered flag owns index %u -- the allocation is not dense from zero",
 			uWanted);
 	}
+}
+
+// The six flags that shipped before S7 item 3 SC2 are frozen: their enum values
+// ARE the persisted bit indices of every save already written. This unit spells
+// all seven as LITERALS -- an appended flag that silently pushed an existing one
+// along would re-point shipped saves at the wrong story beat. The literal COUNT
+// is also the "the registry changed" tripwire, the same role uEXPECTED_NPCS
+// plays in ZM_Tests_NpcData.
+ZENITH_TEST(ZM_Story, Registry_ShippedIndicesAreFrozenAndRivalOneIsSix)
+{
+	ZENITH_ASSERT_EQ((u_int)ZM_STORY_FLAG_INTRO_LEFT_HOME,  0u, "INTRO_LEFT_HOME moved off wire bit 0");
+	ZENITH_ASSERT_EQ((u_int)ZM_STORY_FLAG_MET_PROFESSOR,    1u, "MET_PROFESSOR moved off wire bit 1");
+	ZENITH_ASSERT_EQ((u_int)ZM_STORY_FLAG_STARTER_RECEIVED, 2u, "STARTER_RECEIVED moved off wire bit 2");
+	ZENITH_ASSERT_EQ((u_int)ZM_STORY_FLAG_WARDEN_CLEARED,   3u, "WARDEN_CLEARED moved off wire bit 3");
+	ZENITH_ASSERT_EQ((u_int)ZM_STORY_FLAG_ROUTE1_OPEN,      4u, "ROUTE1_OPEN moved off wire bit 4");
+	ZENITH_ASSERT_EQ((u_int)ZM_STORY_FLAG_GYM1_DEFEATED,    5u, "GYM1_DEFEATED moved off wire bit 5");
+	ZENITH_ASSERT_EQ((u_int)ZM_STORY_FLAG_RIVAL1_DEFEATED,  6u,
+		"RIVAL1_DEFEATED must own wire bit 6 -- dense, immediately after GYM1_DEFEATED");
+
+	ZENITH_ASSERT_EQ((u_int)ZM_STORY_FLAG_COUNT, 7u,
+		"the registry gained or lost a flag; every literal above and the wire-bit "
+		"table at the top of this file must be reviewed together");
+	ZENITH_ASSERT_EQ((u_int)ZM_STORY_FLAG_NONE, 7u,
+		"the sentinel must keep aliasing COUNT -- ZM_IsRegisteredFlag rejects both with one compare");
+
+	ZENITH_ASSERT_STREQ(ZM_StoryFlagName(ZM_STORY_FLAG_RIVAL1_DEFEATED), "RIVAL1_DEFEATED",
+		"the new flag has no registry row of its own");
 }
 
 // ---- The wire contract ------------------------------------------------------

@@ -15,6 +15,110 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-27 -- ZM-D-150 -- S7 item 3 SC2: the `ZM_TrainerData` roster + `ZM_STORY_FLAG_RIVAL1_DEFEATED`
+
+*(Second sub-commit of the ZM-D-143 eight-SC sequence. Pure, headless, data-only:
+`Games/Zenithmon` ONLY, ZERO `Zenith/` files, ZERO new ECS orders -- 114 stays
+next-free -- no save-schema version bump, no UI, no RNG, no allocation.)*
+
+### What shipped
+
+- **`Source/Data/ZM_TrainerData.{h,cpp}`** in the ZM-D-009 compiled-const-table
+  idiom: an append-only `ZM_TRAINER_ID` with `ZM_TRAINER_NONE = ZM_TRAINER_COUNT`
+  (so ONE `<` comparison rejects the sentinel and every garbage value together),
+  a **deduced-bound** `s_axTrainers[]` guarded by a row-count `static_assert`,
+  and the POD row `{ m_eId, m_szDisplayName, m_paxParty, m_uPartyCount,
+  m_uPrizeMoney, m_eDefeatFlag, m_eAITier }`. Four TOTAL free-function
+  accessors: `ZM_GetTrainerData` / `ZM_GetTrainerCount` / `ZM_GetTrainerName` /
+  `ZM_IsRegisteredTrainer`.
+- **A row stores only `{species, level}` per party member** -- deliberately, not
+  a full monster spec. `ZM_BuildWildEnemySpec` derives IVs 31 / EVs 0 / nature
+  FERAL / ability NONE / the learnset moveset with ZERO randomness, so a
+  `{species, level}` pair already IS a fixed reproducible team; the omitted
+  columns would be dead ones. Per-monster overrides stay expressible on
+  `ZM_BattleMonsterSpec` if content ever needs them.
+- **Two rows, and the second is load-bearing** (Q-C): `ZM_TRAINER_RIVAL_VESPER`
+  ("Vesper", one L5 KINDLET -- the Fire counterpart to the player's Grass
+  FERNFAWN starter, 500 prize, `ZM_STORY_FLAG_RIVAL1_DEFEATED`, `GREEDY` per
+  Q-F) and `ZM_TRAINER_ROUTE1_RAMBLER` ("Rambler Perrin", two L4 Route-1
+  species, 120 prize, **`ZM_STORY_FLAG_NONE`**, `RANDOM`). A single row would
+  have let a "walk every row" unit pass while the accessors only ever saw index
+  0, and would have left the no-defeat-flag arm of the flag column entirely
+  unexercised.
+- **`ZM_STORY_FLAG_RIVAL1_DEFEATED = 6u`**, dense and append-only. The
+  registry's existing `static_assert` on the name-table bound makes a forgotten
+  row a COMPILE error, and `ZM_STORY_FLAG_COUNT`/`NONE` become 7 automatically.
+  No `uSERIALIZATION_VERSION` bump: bit 6 was already inside the module-4
+  bitset's reserved capacity. `ZM_IsMilestoneStoryFlag` was deliberately NOT
+  extended -- that predicate's producer lands with SC5/SC6, and uncalled surface
+  ships with its caller.
+
+### Why the accessors may never assert
+
+`Zenith_Assert` calls `Zenith_DebugBreak()` in EVERY configuration -- there is no
+build where it degrades to a log -- and the whole unit suite runs at boot. A
+defensive assert on an argument therefore does not report a bug; it ends the boot
+unit run partway through and takes the entire gate down with it. Every accessor
+is TOTAL: an unregistered id yields the inert shared `s_xInvalidTrainer` row
+(no party, no prize, `ZM_STORY_FLAG_NONE`, `ZM_AI_TIER_NONE`, name `"UNKNOWN"`),
+diagnosed with a NON-fatal `Zenith_Error`; the legal `ZM_TRAINER_NONE` sentinel
+is distinguished from garbage and names itself `"NONE"` without logging.
+
+### Tests that lock it (+18 boot units, all pure/headless)
+
+17 `ZENITH_TEST(ZM_Data, Trainer_*/Vesper_*/Rambler_*/Accessor_*)` in the new
+`Tests/ZM_Tests_TrainerData.cpp` -- table/enum density, row-index identity, >= 2
+distinct ids, unique non-empty display names, party non-empty and within the
+engine cap, every party species resolving, levels in range, prizes positive and
+under the money cap, defeat flags registered-or-NONE, BOTH flag shapes present,
+tiers real, Vesper's and the Rambler's exact authored values, and accessor
+totality on the sentinel and on garbage ids. Plus 1
+`ZENITH_TEST(ZM_Story, Registry_ShippedIndicesAreFrozenAndRivalOneIsSix)`
+spelling all seven wire bits as HAND-TYPED LITERALS -- an appended flag that
+silently pushed a shipped one along would re-point every existing save at the
+wrong story beat.
+
+`Accessor_NoAccessorAssertsOnAnyGarbageId` is the totality proof and is written
+in the mandatory local-hit-count form: no `ZENITH_ASSERT_*` inside the
+`Zenith_AssertCaptureScope` (the capture swallows framework failures, so an
+in-scope assertion could never red the test) and the count copied to a local
+BEFORE the closing brace (the destructor restores the previous hit count).
+
+### Review found three real defects behind an as-yet-unbuilt change
+
+Three adversarial lenses (build-correctness / spec-conformance / test-teeth) ran
+over the authored code. (1) **`Trainer_EveryPartyMemberHasAMoveAtItsAuthoredLevel`
+could not be redded** -- `ZM_BuildWildEnemySpec` copies species and level
+straight through, so both round-trip asserts were tautologies, and
+`ZM_Learnsets` unconditionally emits a level-1 STAB pick for every species, so
+the move assert held for the unit's entire admitted domain. The unit was
+RETIRED rather than re-pinned to a computed literal. (2) **Two new TUs demand
+`Build\regen.ps1` before the build** -- Sharpmake globs the game tree at
+GENERATION time and everything it emits is gitignored, and because no other TU
+references the new accessors there would have been NO link error: the build
+would have gone green with the table silently absent. The observed **+18** unit
+delta is the proof it took; a +1 delta would have meant a skipped regen. (3) The
+CI baseline needed re-observing (below).
+
+### Gate (all green, in the mandated order)
+
+`Build\regen.ps1` -> Zenithmon Vulkan_True -> Null_True -> headless batch
+**44 passed / 0 failed** -> boot unit gate **2607 ran / 2606 passed / 0 failed /
+1 skipped** (2589 -> 2607, the OBSERVED line, never predicted; `zm-tests.yml`
+bumped to 2607 in this commit) -> full windowed Vulkan **44 passed / 0 failed**.
+The headless registry is unmoved at 44: SC2 adds no automated test, which is
+correct for a pure data sub-commit. No `.zscen` churn from any boot (the
+ZM-D-148 property holds).
+
+### Reversibility / next boundary
+
+Fully reversible -- nothing consumes the table yet. **NEXT = SC3** (the pure
+sight-cone predicate reusing `ZM_ForwardFromRotation`, occlusion deliberately
+OUT, plus the trainer `ZM_BattleConfig` helper). The next human stop remains the
+S8 vertical-slice go/no-go.
+
+---
+
 ## 2026-07-27 -- ZM-D-149 -- CI fix-forward: both unit-gate baselines were left stale by an engine commit, so `engine-gate` and `zm-tests` were red on master
 
 *(Housekeeping fix-forward found while verifying the green baseline at the start
