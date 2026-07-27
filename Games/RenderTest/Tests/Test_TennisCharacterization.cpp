@@ -19,23 +19,21 @@
  * (LoadSceneByIndex(0, SINGLE)) in its Boot step AFTER fixed-dt engages -
  * from that point the whole sim is deterministic.
  *
+ * The R2 RNG-determinism contract (brain-tick cadence / Selector gate order /
+ * RNG draw counts) is NOT gated here. It used to be, by
+ * RT_TennisDeterminismDigest: an FNV-1a digest over 2400 frames of the live
+ * match, compared to a hard-pinned constant. That cost ~52 s and pinned an
+ * entire physics simulation, so any legitimate gameplay or physics tweak broke
+ * it with no signal about which clause of the contract had actually moved. It
+ * is replaced by the hermetic, per-clause RT_TennisBrain* tests in
+ * Tests/Test_TennisBrainContract.cpp, which drive the production brain-graph
+ * definition directly with no match, terrain, navmesh or ball.
+ *
  *   RT_TennisMatchFlow        - the autonomous match works: WARMUP->SERVING->
  *                               LIVE, a serve is struck, the receiver stands
  *                               up at the service line awaiting the serve
  *                               (ComputeReadyZ pin), at least one point
  *                               resolves, the ball epoch advances.
- *   RT_TennisDeterminismDigest- THE R2 gate: an FNV-1a digest over the exact
- *                               per-frame decision state (both brain RNG
- *                               streams, the referee jitter stream, phase/
- *                               epoch/points/serve state, quantized ball pos)
- *                               for 2400 fixed-dt frames, self-aligned on the
- *                               first SERVING frame of epoch 1 (immune to
- *                               settle-frame variance). Pinned from the C++
- *                               baseline after a run-to-run stability proof;
- *                               the graph conversion must reproduce it EXACTLY
- *                               (any brain-tick cadence / gate-order / RNG
- *                               draw-count divergence shifts every subsequent
- *                               value).
  *   RT_PlayerActions          - the discrete player actions that convert to
  *                               the PlayerActions graph: walk to a gun with
  *                               real held input, E equips, LMB fires (ammo
@@ -105,18 +103,6 @@ namespace
 		return pxRefereeOut != nullptr && pxRefereeOut->IsNavMeshValid()
 			&& pxNear != nullptr && pxNear->IsStarted()
 			&& pxFar != nullptr && pxFar->IsStarted();
-	}
-
-	// FNV-1a 64-bit fold (the digest primitive).
-	void Tennis_Fold(uint64_t& ulHash, uint64_t ulValue)
-	{
-		ulHash ^= ulValue;
-		ulHash *= 1099511628211ull;
-	}
-
-	int64_t Tennis_Quantize(float fValue)
-	{
-		return static_cast<int64_t>(std::llround(static_cast<double>(fValue) * 1000.0));
 	}
 }
 
@@ -282,174 +268,6 @@ static const Zenith_AutomatedTest g_xTennisMatchFlowTest = {
 	/*bRequiresGraphics*/ false,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xTennisMatchFlowTest);
-
-// ============================================================================
-// RT_TennisDeterminismDigest
-// ============================================================================
-
-namespace
-{
-	// RE-PINNED 2026-07-27. The previous pin (0x9551B81E8F74B8AE, 2026-07-05)
-	// was captured before the harness pinned dt across the reset/settle/Setup
-	// window, so it encoded a WALL-CLOCK-contaminated trajectory: Setup falls
-	// through to Step 0 in the same tick, so the scene-loading frame ran game
-	// logic on a real frame time and the brains' 0.08s tick accumulator froze
-	// with that residual (the park gate freezes, it does not reset). The
-	// accumulator's >=0.08 fire threshold quantised that continuous phase into
-	// a few discrete digests, so the test passed roughly 1 run in 5.
-	// Zenith_AutomatedTest's m_fFixedDt now defaults to 1/60 instead of "unset",
-	// which makes this deterministic: 3/3 identical with no CLI flags, and
-	// byte-identical to the value --fixed-dt produced independently.
-	// 0 = capture mode: the digest is logged and the test passes so the
-	// baseline can be recorded; any non-zero value is a hard pin.
-	constexpr uint64_t k_ulPinnedTennisDigest = 0x4369AB2293ADFDDBull;
-
-	// Frames folded into the digest (fixed dt 1/60 => 40 s of match).
-	constexpr int k_iDigestFrames = 2400;
-
-	enum class DigestPhase { Boot, WaitReady, Align, Fold, Done };
-
-	DigestPhase g_eDigestPhase = DigestPhase::Boot;
-	uint64_t    g_ulDigest = 14695981039346656037ull;   // FNV-1a offset basis
-	int         g_iDigestFolded = 0;
-	bool        g_bDigestComplete = false;
-}
-
-static void Setup_TennisDigest()
-{
-	Zenith_InputSimulator::SetFixedDt(1.0f / 60.0f);
-	g_eDigestPhase = DigestPhase::Boot;
-	g_ulDigest = 14695981039346656037ull;
-	g_iDigestFolded = 0;
-	g_bDigestComplete = false;
-}
-
-static bool Step_TennisDigest(int iFrame)
-{
-	switch (g_eDigestPhase)
-	{
-	case DigestPhase::Boot:
-		g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
-		g_eDigestPhase = DigestPhase::WaitReady;
-		return true;
-
-	case DigestPhase::WaitReady:
-	{
-		RenderTest_TennisMatchComponent* pxReferee = nullptr;
-		if (Tennis_Ready(pxReferee))
-		{
-			g_eDigestPhase = DigestPhase::Align;
-		}
-		return iFrame < 600;
-	}
-
-	case DigestPhase::Align:
-	{
-		// Self-align on the first observed SERVING frame of ball epoch 1 (the
-		// match's first serve attempt) so the digest window is independent of
-		// how many settle frames the harness spent before Setup - the sim is
-		// deterministic from the fixed-dt reload, only our OBSERVATION offset
-		// varies, and this pin removes it.
-		RenderTest_TennisMatchComponent* pxReferee = Tennis_FindReferee();
-		if (pxReferee == nullptr) return false;
-		if (pxReferee->GetPhase() == RenderTest_Tennis::POINT_PHASE_SERVING
-			&& pxReferee->GetBallEpoch() == 1u)
-		{
-			g_eDigestPhase = DigestPhase::Fold;
-			// Fall through into folding THIS frame (the alignment frame is
-			// part of the window).
-		}
-		else
-		{
-			return iFrame < 900;
-		}
-		[[fallthrough]];
-	}
-
-	case DigestPhase::Fold:
-	{
-		RenderTest_TennisMatchComponent* pxReferee = Tennis_FindReferee();
-		RenderTest_TennisAgentComponent* pxNear = Tennis_FindBrain(0);
-		RenderTest_TennisAgentComponent* pxFar = Tennis_FindBrain(1);
-		if (pxReferee == nullptr || pxNear == nullptr || pxFar == nullptr) return false;
-
-		// The exact decision-state tuple. Any divergence in brain-tick cadence,
-		// gate order, or RNG draw count shifts one of these within a frame or
-		// two and every subsequent fold amplifies it.
-		Tennis_Fold(g_ulDigest, pxNear->Rng().m_uState);
-		Tennis_Fold(g_ulDigest, pxFar->Rng().m_uState);
-		Tennis_Fold(g_ulDigest, pxReferee->GetJitterRngState());
-		Tennis_Fold(g_ulDigest, static_cast<uint64_t>(pxReferee->GetPhase()));
-		Tennis_Fold(g_ulDigest, pxReferee->GetBallEpoch());
-		Tennis_Fold(g_ulDigest, pxReferee->GetSidePoints(0));
-		Tennis_Fold(g_ulDigest, pxReferee->GetSidePoints(1));
-		Tennis_Fold(g_ulDigest, pxReferee->GetSideGames(0));
-		Tennis_Fold(g_ulDigest, pxReferee->GetSideGames(1));
-		Tennis_Fold(g_ulDigest, static_cast<uint64_t>(pxReferee->GetServeAttempt()));
-		Tennis_Fold(g_ulDigest, static_cast<uint64_t>(static_cast<int64_t>(pxReferee->GetPendingWinner())));
-		Tennis_Fold(g_ulDigest, static_cast<uint64_t>(static_cast<int64_t>(pxReferee->GetLastHitter())));
-		Tennis_Fold(g_ulDigest, static_cast<uint64_t>(static_cast<int64_t>(pxReferee->GetRallyShots())));
-
-		Zenith_Maths::Vector3 xBallPos;
-		if (Tennis_GetEntityPos("Tennis_Ball", xBallPos))
-		{
-			Tennis_Fold(g_ulDigest, static_cast<uint64_t>(Tennis_Quantize(xBallPos.x)));
-			Tennis_Fold(g_ulDigest, static_cast<uint64_t>(Tennis_Quantize(xBallPos.y)));
-			Tennis_Fold(g_ulDigest, static_cast<uint64_t>(Tennis_Quantize(xBallPos.z)));
-		}
-
-		if (++g_iDigestFolded >= k_iDigestFrames)
-		{
-			g_bDigestComplete = true;
-			g_eDigestPhase = DigestPhase::Done;
-			return false;
-		}
-		return true;
-	}
-
-	case DigestPhase::Done:
-		return false;
-	}
-	return false;
-}
-
-static bool Verify_TennisDigest()
-{
-	Zenith_InputSimulator::ClearFixedDt();
-	if (!g_bDigestComplete)
-	{
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "[TennisDigest] window never completed (%d/%d frames folded)",
-			g_iDigestFolded, k_iDigestFrames);
-		return false;
-	}
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "[TennisDigest] digest 0x%016llX over %d frames",
-		static_cast<unsigned long long>(g_ulDigest), g_iDigestFolded);
-	if constexpr (k_ulPinnedTennisDigest == 0ull)
-	{
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "[TennisDigest] CAPTURE MODE - pin this value before converting");
-		return true;
-	}
-	else
-	{
-		if (g_ulDigest != k_ulPinnedTennisDigest)
-		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "[TennisDigest] MISMATCH: pinned 0x%016llX",
-				static_cast<unsigned long long>(k_ulPinnedTennisDigest));
-			return false;
-		}
-		return true;
-	}
-}
-
-static const Zenith_AutomatedTest g_xTennisDigestTest = {
-	"RT_TennisDeterminismDigest",
-	&Setup_TennisDigest,
-	&Step_TennisDigest,
-	&Verify_TennisDigest,
-	/*maxFrames*/ 4200,
-	/*bRequiresGraphics*/ false,
-};
-ZENITH_AUTOMATED_TEST_REGISTER(g_xTennisDigestTest);
 
 // ============================================================================
 // RT_PlayerActions

@@ -88,6 +88,14 @@ const char* RenderTest_TennisBallModelPath();
 // inlined in the now-deleted runtime spawn).
 void RenderTest_ParseTennisCLI();
 
+// Authors the tennis NPC brain graph into xBuilder. THE single definition of
+// that graph: the tools boot writes RenderTest_TennisBrain.bgraph from it, and
+// the RT_TennisBrain* contract tests build it in-process so they can gate the
+// tick-cadence / Selector-gate-order / RNG-draw contract with no .bgraph on
+// disk and no prior tools boot. Deliberately not tools-gated for that reason.
+class Zenith_GraphBuilder;
+void BuildGraph_RenderTestTennisBrain(Zenith_GraphBuilder& xBuilder);
+
 // Release the file-scope material/model handles BEFORE Zenith_AssetRegistry
 // shutdown, so their static destructors don't Release into a freed registry
 // ("Release called on asset with 0 ref count"). Call from Project_Shutdown.

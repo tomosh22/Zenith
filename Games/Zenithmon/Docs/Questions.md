@@ -289,6 +289,19 @@ digest re-pinned to `0x4369AB2293ADFDDB`. All six game suites re-run green.
 The `BetweenTestsHook` follow-up above is moot — `d7027197` already replaced it
 with an engine-side world reset, and isolation was never the problem.
 
+**EPILOGUE (2026-07-27) — the test itself is retired.** Fixing the flake left a
+green but badly-designed gate: ~52 s per run, pinning a whole live physics
+simulation behind one opaque constant, so any legitimate gameplay or physics
+tweak broke it with no signal about whether the break was intended. That is the
+property that let it sit red-but-ignored for weeks and that produced the wrong
+turn recorded above. It is replaced by three HERMETIC per-clause tests
+(`RT_TennisBrainTickCadence` / `RT_TennisBrainGateOrder` /
+`RT_TennisBrainRngDraws`, in `Games/RenderTest/Tests/Test_TennisBrainContract.cpp`)
+that drive the production brain-graph definition directly — no match, terrain,
+navmesh or ball — in ~0.08 s total, and name the clause and the delta when they
+break. Mutation-proved: a threshold change, a Selector pin swap and a stray RNG
+draw each redden exactly one of the three.
+
 **Status:** [RESOLVED] — root-caused and fixed 2026-07-27. The 2026-07-26
 diagnosis was superseded.
 

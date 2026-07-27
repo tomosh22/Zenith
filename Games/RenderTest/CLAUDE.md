@@ -27,27 +27,48 @@ The tennis decide nodes consume the brains' per-side `TennisRng` streams only
 on un-armed ticks, so the whole match is a deterministic function of tick
 cadence + gate order. The graph tick runs at component order 60 — provably the
 same frame position as the retired BT tick at AIAgent(90)-before-nav (same
-inputs, same-frame nav-destination consumption). Pinned by
-`RT_TennisDeterminismDigest`: an FNV-1a digest over 2400 fixed-dt frames of
-[both brain RNG states, referee jitter RNG, phase/epoch/points/games/serve
-state, quantized ball position], self-aligned on the first SERVING frame of
-epoch 1. Anything that changes brain-tick cadence, Selector gate order, or RNG
-draw counts breaks this test — that is its job.
+inputs, same-frame nav-destination consumption).
 
-The pinned value is `0x4369AB2293ADFDDB` (**re-pinned 2026-07-27**). The original
-`0x9551B81E8F74B8AE` was captured on 2026-07-05 from the C++/BT baseline, but the
-harness did not yet pin dt across the between-tests reset/settle window, so that
-value encoded a WALL-CLOCK-contaminated run: `ResetSimulatorAndCallSetup` falls
-through to `Stepping` in the same tick, so `Setup`'s `SetFixedDt` lands after that
-frame's `UpdateTimers` and Step 0 — which loads the scene — ran game logic on a
-real frame time. The brains' 0.08 s tick accumulator integrated it, and
-`RTTennisTickGate` freezes rather than resets, so the residual survived to the
-align frame. The `>=0.08` fire threshold quantised that continuous phase into ~3
-discrete digests, so the test passed roughly 1 run in 5 and looked like a stable
-wrong value rather than a flake. `Zenith_AutomatedTest`'s `m_fFixedDt` now
-defaults to 1/60 instead of "unset", which makes the whole run deterministic:
-3/3 identical with no CLI flags, byte-identical to what `--fixed-dt` produced
-independently. `--fixed-dt` is therefore no longer needed for determinism.
+Gated **hermetically**, per clause, by the three `RT_TennisBrain*` automated
+tests in `Tests/Test_TennisBrainContract.cpp`. None of them loads a scene, runs
+physics, builds a navmesh or spawns a ball: each builds a one-entity scene,
+instantiates the production graph definition straight from
+`BuildGraph_RenderTestTennisBrain` (so there is no `.bgraph` on disk to go stale
+and no dependency on a prior tools boot), and drives it by hand with scripted dt
+and a scripted blackboard, reading the executed-node trace back out of
+`Zenith_BehaviourGraph::GetRecentlyExecuted`.
+
+| Test | Clause | Pins |
+|---|---|---|
+| `RT_TennisBrainTickCadence` | tick cadence | fire period 82 at dt=1/1024 (the 0.08 s threshold, to ~0.001 s); fire on tick 2 at dt=0.04 (the `>=` boundary — 0.04f doubles *exactly* to the float 0.08f); constant period 6 at dt=1/64 (reset-to-zero, not a subtractive carry); 42 ticks to fire after 40 accumulate + 200 parked ticks (FREEZE — reset would be 82, keep-accumulating 1) |
+| `RT_TennisBrainGateOrder` | gate order | the authored tick spine `RTTennisTickGate>AddBlackboardFloat>CompareBlackboardFloat>Gate>SetBlackboardFloat>Selector` and each Selector pin's full chain, compared as strings; at runtime, serve-pin success never evaluates the lower pins, and a rally tick evaluates serve→rally→recover in that order |
+| `RT_TennisBrainRngDraws` | RNG draw counts | zero draws on every accumulate-only tick and while parked or armed; first serve exactly 3 draws (placement coin + aim disc), second serve exactly 2, a neutral rally decision exactly 1; the near-side seed `0x1234567` |
+
+Each test is a set of NAMED checks that all run and all report, so a break says
+which clause moved and by how much — the design fix for the old digest, which
+could only ever say "mismatch". The clauses are deliberately decoupled: only the
+cadence test pins the threshold value, so a deliberate cadence change reddens
+exactly one test.
+
+Whole-run cost: **~0.08 s for all three** (1 frame each).
+
+**Retired: `RT_TennisDeterminismDigest`.** It folded an FNV-1a digest over 2400
+fixed-dt frames of the live match and compared it to a hard-pinned constant
+(finally `0x4369AB2293ADFDDB`). It cost ~52 s and pinned an entire physics
+simulation, so any legitimate gameplay or physics tweak broke it with no signal
+about whether the break was intended — which trained people to re-pin rather
+than investigate, and is how it stayed red-but-ignored for weeks
+(Q-2026-07-21-002). Its one genuine defect find was a HARNESS bug, not a tennis
+bug: the harness did not pin dt across the between-tests reset/settle window
+(`ResetSimulatorAndCallSetup` falls through to `Stepping` in the same tick, so
+`Setup`'s `SetFixedDt` landed after that frame's `UpdateTimers`, and Step 0 —
+which loads the scene — ran game logic on a real frame time). The brains' 0.08 s
+accumulator integrated that wall-clock residual, `RTTennisTickGate` freezes
+rather than resets so it survived to the align frame, and the `>=0.08` threshold
+quantised the continuous phase into ~3 discrete digests — a genuine flake that
+looked like a stable wrong value. Fixed in `e2f5796c`: `Zenith_AutomatedTest`'s
+`m_fFixedDt` now defaults to 1/60 instead of "unset", so `--fixed-dt` is no
+longer needed for determinism anywhere.
 
 ### Node library (`Components/RenderTest_GraphNodes.h`)
 
@@ -91,14 +112,15 @@ VERBATIM with blackboard reads redirected at the graph blackboard.
   everywhere else; the task_726cc81d layout corruption has tripped here on
   some layouts — 2026-07-05 post-conversion layout runs clean).
 - **Automated tests** (`Tests/`): EngineBootShutdownSmoke, MaterialBattleTest,
-  TerrainEditorSmoke(+Showcase), TAAToggleStress, HumanShowcase, and the W3
-  characterizations `Test_TennisCharacterization.cpp`:
-  `RT_TennisMatchFlow` (match plays: phases, serve, receiver stand-in, point
-  resolution), `RT_TennisDeterminismDigest` (the R2 gate above),
+  TerrainEditorSmoke(+Showcase), TAAToggleStress, HumanShowcase, the W3
+  characterizations `Test_TennisCharacterization.cpp` — `RT_TennisMatchFlow`
+  (match plays: phases, serve, receiver stand-in, point resolution) and
   `RT_PlayerActions` (walk-to-gun with real held input, E equip, LMB fire,
   R reload, E drop, T camera cycle — state-setters only, never the reentrant
-  simulator helpers). All three reload scene 0 in their Boot step so the sim
-  runs entirely under fixed dt.
+  simulator helpers), both of which reload scene 0 in their Boot step so the sim
+  runs entirely under fixed dt — and the hermetic `Test_TennisBrainContract.cpp`
+  (`RT_TennisBrainTickCadence` / `RT_TennisBrainGateOrder` /
+  `RT_TennisBrainRngDraws`, the R2 gate above), which load no scene at all.
 
 ### Recipes
 
@@ -110,8 +132,12 @@ VERBATIM with blackboard reads redirected at the graph blackboard.
 
 # One characterization, WINDOWED (headless skips Flux; StickFigure GPU state)
 cd Games\RenderTest\build\output\win64\vulkan_vs2022_debug_win64_true
-.\rendertest.exe --automated-test RT_TennisDeterminismDigest --skip-unit-tests `
-  --skip-tool-exports --fixed-dt 0.01666
+.\rendertest.exe --automated-test RT_TennisMatchFlow --skip-unit-tests --skip-tool-exports
+
+# The three hermetic brain-contract tests (1 frame each; no scene, no physics)
+.\rendertest.exe --automated-tests `
+  RT_TennisBrainTickCadence,RT_TennisBrainGateOrder,RT_TennisBrainRngDraws `
+  --skip-unit-tests --skip-tool-exports
 
 # Full windowed batch (manual-only tests skip themselves)
 .\rendertest.exe --all-automated-tests --skip-unit-tests --skip-tool-exports --fixed-dt 0.01666

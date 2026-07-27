@@ -13,11 +13,12 @@
  * Gate nodes inside RenderTest_TennisBrain.bgraph; what remains here are the
  * verbs that touch the brain/body/nav/perception systems.
  *
- * RNG-DETERMINISM CONTRACT (pinned by RT_TennisDeterminismDigest): the decide
- * nodes draw from the brain's per-side TennisRng ONLY when un-armed, exactly
- * as the BT decide leaves did; the graph's tick chain reproduces the AIAgent
- * accumulator (accumulate-while-enabled, fire at >= 0.08, reset-to-zero) so
- * the draw cadence is bit-identical to the BT baseline.
+ * RNG-DETERMINISM CONTRACT (pinned by the hermetic RT_TennisBrain* tests in
+ * Tests/Test_TennisBrainContract.cpp): the decide nodes draw from the brain's
+ * per-side TennisRng ONLY when un-armed, exactly as the BT decide leaves did;
+ * the graph's tick chain reproduces the AIAgent accumulator
+ * (accumulate-while-enabled, fire at >= 0.08, reset-to-zero) so the draw cadence
+ * is bit-identical to the BT baseline.
  *
  * PLAYER: the discrete-press decisions (E interact, R reload, LMB fire,
  * T tennis-cam cycle) dispatched by RenderTest_PlayerActions.bgraph. The
