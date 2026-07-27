@@ -309,6 +309,97 @@ void Zenith_UnitTests::TestNavMeshGetRandomReachablePointInRadius()
 		"All samples should be within the requested radius");
 }
 
+ZENITH_TEST(AI, NavMeshRandomPointSamplingIsDeterministic) { Zenith_UnitTests::TestNavMeshRandomPointSamplingIsDeterministic(); }
+
+// The sampler used to seed a thread_local std::mt19937 from std::random_device,
+// so every process run produced different points -- silently contradicting the
+// determinism contract this module documents. It is now a per-instance,
+// fixed-seed xorshift64* rewound by Clear(). This pins all three properties that
+// fix has to hold simultaneously: same sequence across instances, a stream that
+// actually ADVANCES (or wandering agents would freeze on one destination), and
+// Clear() rewinding rather than continuing.
+void Zenith_UnitTests::TestNavMeshRandomPointSamplingIsDeterministic()
+{
+	auto fnBuild = [](Zenith_NavMesh& xMesh)
+	{
+		const uint32_t uV0 = xMesh.AddVertex(Zenith_Maths::Vector3(-2.0f, 0.0f, -2.0f));
+		const uint32_t uV1 = xMesh.AddVertex(Zenith_Maths::Vector3(2.0f, 0.0f, -2.0f));
+		const uint32_t uV2 = xMesh.AddVertex(Zenith_Maths::Vector3(2.0f, 0.0f, 2.0f));
+		const uint32_t uV3 = xMesh.AddVertex(Zenith_Maths::Vector3(-2.0f, 0.0f, 2.0f));
+		Zenith_Vector<uint32_t> ax;
+		ax.PushBack(uV0); ax.PushBack(uV1); ax.PushBack(uV2); ax.PushBack(uV3);
+		xMesh.AddPolygon(ax);
+		xMesh.ComputeAdjacency();
+		xMesh.ComputeSpatialData();
+		xMesh.BuildSpatialGrid();
+	};
+
+	auto fnSampleSeq = [](Zenith_NavMesh& xMesh, Zenith_Vector<Zenith_Maths::Vector3>& xOut)
+	{
+		const Zenith_Maths::Vector3 xCenter(0.0f, 0.0f, 0.0f);
+		for (uint32_t i = 0; i < 16; ++i)
+		{
+			Zenith_Maths::Vector3 xPoint;
+			if (xMesh.GetRandomReachablePointInRadius(xCenter, 3.0f, xPoint))
+			{
+				xOut.PushBack(xPoint);
+			}
+		}
+	};
+
+	Zenith_NavMesh xMeshA;
+	Zenith_NavMesh xMeshB;
+	fnBuild(xMeshA);
+	fnBuild(xMeshB);
+
+	Zenith_Vector<Zenith_Maths::Vector3> xSeqA;
+	Zenith_Vector<Zenith_Maths::Vector3> xSeqB;
+	fnSampleSeq(xMeshA, xSeqA);
+	fnSampleSeq(xMeshB, xSeqB);
+
+	ZENITH_ASSERT_TRUE(xSeqA.GetSize() > 1,
+		"Sampler should produce a usable sequence on a valid mesh");
+	ZENITH_ASSERT_EQ(xSeqA.GetSize(), xSeqB.GetSize(),
+		"Two identically-built meshes must yield the same number of samples");
+
+	// 1. Reproducible: two fresh instances replay the same stream bit-for-bit.
+	for (uint32_t i = 0; i < xSeqA.GetSize(); ++i)
+	{
+		ZENITH_ASSERT_EQ(xSeqA.Get(i).x, xSeqB.Get(i).x, "Sample x must be reproducible across instances");
+		ZENITH_ASSERT_EQ(xSeqA.Get(i).y, xSeqB.Get(i).y, "Sample y must be reproducible across instances");
+		ZENITH_ASSERT_EQ(xSeqA.Get(i).z, xSeqB.Get(i).z, "Sample z must be reproducible across instances");
+	}
+
+	// 2. Advancing: a fixed seed must not mean a fixed POINT. At least one
+	//    sample has to differ from the first, or wander behaviour is broken.
+	bool bAnyDifferent = false;
+	for (uint32_t i = 1; i < xSeqA.GetSize(); ++i)
+	{
+		if (xSeqA.Get(i).x != xSeqA.Get(0).x || xSeqA.Get(i).z != xSeqA.Get(0).z)
+		{
+			bAnyDifferent = true;
+			break;
+		}
+	}
+	ZENITH_ASSERT_TRUE(bAnyDifferent,
+		"Sampling stream must advance - a fixed seed must not pin every call to one point");
+
+	// 3. Clear() rewinds the stream rather than continuing it, so a reloaded
+	//    mesh (and the next test) starts from a known position.
+	xMeshA.Clear();
+	fnBuild(xMeshA);
+	Zenith_Vector<Zenith_Maths::Vector3> xSeqAfterClear;
+	fnSampleSeq(xMeshA, xSeqAfterClear);
+
+	ZENITH_ASSERT_EQ(xSeqAfterClear.GetSize(), xSeqA.GetSize(),
+		"Cleared+rebuilt mesh must yield the same number of samples");
+	for (uint32_t i = 0; i < xSeqAfterClear.GetSize(); ++i)
+	{
+		ZENITH_ASSERT_EQ(xSeqAfterClear.Get(i).x, xSeqA.Get(i).x, "Clear() must rewind the sampling stream (x)");
+		ZENITH_ASSERT_EQ(xSeqAfterClear.Get(i).z, xSeqA.Get(i).z, "Clear() must rewind the sampling stream (z)");
+	}
+}
+
 // ============================================================================
 // NavMesh PERSISTENCE tests (SC1b commit B, ZM-D-147)
 //

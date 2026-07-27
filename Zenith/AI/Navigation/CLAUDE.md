@@ -23,7 +23,7 @@ Stores the navigation mesh data structure:
 - `IsPointOnNavMesh()`: Check if a point is on walkable surface
 - `Raycast()`: Test line-of-sight on navmesh
 - `ProjectPoint()`: Project point onto navmesh surface
-- `GetRandomReachablePointInRadius()`: Sample a uniformly-random walkable point path-connected to a center within a horizontal radius (Unreal-style; disconnected islands excluded)
+- `GetRandomReachablePointInRadius()`: Sample a uniformly-random walkable point path-connected to a center within a horizontal radius (Unreal-style; disconnected islands excluded). **Deterministic**: a per-instance, fixed-seed xorshift64* stream (NOT `std::random_device` — it was, which made every process run differ), rewound by `Clear()`. The stream still ADVANCES per call, so repeated queries give different points. Main-thread (graph-tick) use only. Pinned by `NavMeshRandomPointSamplingIsDeterministic`.
 
 **Dynamic obstacles** (carve transient obstacles like doors without regenerating the mesh):
 - `SetPolygonBlocked()`: Toggle a polygon's BLOCKED flag (skipped by `FindPath`); `const`, mutates flag via internal `const_cast`

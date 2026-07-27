@@ -421,6 +421,23 @@ private:
 	Zenith_Vector<Zenith_Maths::Vector3> m_axVertices;
 	Zenith_Vector<Zenith_NavMeshPolygon> m_axPolygons;
 
+	// Sampling stream for GetRandomReachablePointInRadius. Per-INSTANCE and
+	// seeded to a fixed constant -- NEVER std::random_device, which is what
+	// this used to be and which made every call non-reproducible, silently
+	// contradicting the determinism contract documented in CLAUDE.md.
+	// `mutable` because sampling is logically const but MUST advance, so
+	// repeated calls still return different points (an agent wandering must
+	// not be handed the same destination forever). Reset by Clear(), so a
+	// reloaded mesh -- and every test -- starts from the same stream position
+	// instead of inheriting whatever the previous consumer left behind.
+	// Main-thread (graph-tick) use only, matching its sole caller.
+	static constexpr uint64_t k_ulSampleRngSeed = 0x9E3779B97F4A7C15ull;
+	mutable uint64_t m_ulSampleRngState = k_ulSampleRngSeed;
+
+	// xorshift64* -> uniform float in [0,1). Mirrors the graph Random* nodes'
+	// PRNG so the engine has one sampling idiom, not two.
+	float SampleUnit() const;
+
 	// Bounding box
 	Zenith_Maths::Vector3 m_xBoundsMin;
 	Zenith_Maths::Vector3 m_xBoundsMax;

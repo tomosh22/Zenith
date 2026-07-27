@@ -4,7 +4,6 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-#include <random>
 
 namespace
 {
@@ -381,6 +380,9 @@ void Zenith_NavMesh::Clear()
 	m_uGridHeight = 0;
 	m_xBoundsMin = Zenith_Maths::Vector3(0.0f);
 	m_xBoundsMax = Zenith_Maths::Vector3(0.0f);
+	// Rewind the sampling stream too: a reloaded mesh must replay the same
+	// sequence, not continue the previous mesh's.
+	m_ulSampleRngState = k_ulSampleRngSeed;
 }
 
 uint32_t Zenith_NavMesh::AddVertex(const Zenith_Maths::Vector3& xVertex)
@@ -907,6 +909,18 @@ bool Zenith_NavMesh::ProjectPoint(const Zenith_Maths::Vector3& xPoint,
 	return FindNearestPolygon(xPoint, uPoly, xProjectedOut, fMaxDist);
 }
 
+float Zenith_NavMesh::SampleUnit() const
+{
+	// xorshift64* (same constants as the graph Random* nodes).
+	m_ulSampleRngState ^= m_ulSampleRngState >> 12;
+	m_ulSampleRngState ^= m_ulSampleRngState << 25;
+	m_ulSampleRngState ^= m_ulSampleRngState >> 27;
+	const uint64_t ulValue = m_ulSampleRngState * 0x2545F4914F6CDD1Dull;
+	// Top 24 bits -> [0,1). 24 is float's exact-integer width, so every
+	// representable step is hit exactly once and the result never reaches 1.0.
+	return static_cast<float>(ulValue >> 40) * (1.0f / 16777216.0f);
+}
+
 bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3& xCenter,
 	float fRadius,
 	Zenith_Maths::Vector3& xOutPoint,
@@ -1049,18 +1063,11 @@ bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3
 
 	if (fTotalArea <= 0.0f) return false;
 
-	thread_local std::mt19937 s_xRng(std::random_device{}());
-	auto fnSampleUnit = [&]() -> float
-	{
-		std::uniform_real_distribution<float> xDist(0.0f, 1.0f);
-		return xDist(s_xRng);
-	};
-
 	// ---- Phase 4: rejection sampling --------------------------------------
 	for (uint32_t uAttempt = 0; uAttempt < uMaxAttempts; ++uAttempt)
 	{
 		// Pick a polygon weighted by area.
-		const float fPolyPick = fnSampleUnit() * fTotalArea;
+		const float fPolyPick = SampleUnit() * fTotalArea;
 		uint32_t uPickedPolyArrayIdx = 0;
 		for (uint32_t i = 0; i < afCumulativeArea.GetSize(); ++i)
 		{
@@ -1094,7 +1101,7 @@ bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3
 		if (fTriTotal <= 0.0f) continue;
 
 		// Pick a triangle.
-		const float fTriPick = fnSampleUnit() * fTriTotal;
+		const float fTriPick = SampleUnit() * fTriTotal;
 		uint32_t uTriIdx = 0;
 		for (uint32_t i = 0; i < afTriCumArea.GetSize(); ++i)
 		{
@@ -1108,8 +1115,8 @@ bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3
 		// Uniform barycentric sample inside the triangle.
 		const Zenith_Maths::Vector3& xVa = m_axVertices.Get(xPoly.m_axVertexIndices.Get(uTriIdx + 1));
 		const Zenith_Maths::Vector3& xVb = m_axVertices.Get(xPoly.m_axVertexIndices.Get(uTriIdx + 2));
-		float fU = fnSampleUnit();
-		float fV = fnSampleUnit();
+		float fU = SampleUnit();
+		float fV = SampleUnit();
 		if (fU + fV > 1.0f)
 		{
 			// Fold back into the triangle (Turk's barycentric trick).

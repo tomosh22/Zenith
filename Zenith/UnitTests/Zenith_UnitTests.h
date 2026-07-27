@@ -355,6 +355,7 @@ public:
 	static void TestNavMeshFindNearestPolygonInCell();
 	static void TestNavMeshComputePolygonBounds();
 	static void TestNavMeshGetRandomReachablePointInRadius();
+	static void TestNavMeshRandomPointSamplingIsDeterministic();
 
 	// AI System tests - NavMesh persistence (SC1b commit B, ZM-D-147)
 	static void TestNavMeshSerializationRoundTrip();
