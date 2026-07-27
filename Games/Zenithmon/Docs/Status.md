@@ -1,6 +1,17 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-26
+**Last updated:** 2026-07-27
+
+**★ VERIFIED BASELINE (2026-07-27, re-measured at iteration start on a fresh
+build of both configs):** ZM headless registry **44 passed / 0 failed**; ZM boot
+unit gate **2589 ran / 2588 passed / 0 failed / 1 skipped**; engine boot unit
+gate (Null Combat) **1164 ran / 1163 passed / 0 failed / 1 skipped**. The ZM
+count moved 2547 -> 2589 because the 07-27 engine commits (harness world reset,
+harness dt pinning, navmesh RNG determinism) added units. `e687d095` left BOTH
+baselines one short, so `engine-gate` and `zm-tests` were red on master;
+**fixed forward in ZM-D-149** (`run_unit_gate.ps1` 1163 -> 1164,
+`zm-tests.yml` 2588 -> 2589). Use these numbers, not the older ones quoted
+further down this file.
 **Stage:** **S7 (save/load, story flags, trainer battles) ACTIVE. Item 1 (full schema-v1 codec) COMPLETE (SC1-SC2, ZM-D-135/136). Item 2 (story flags + save integration) COMPLETE -- ALL SIX sub-commits done (SC1-SC6, ZM-D-137..142); the aggregate item-2 Roadmap checkbox is ticked. NEXT is S7 item 3** (trainer sight-cone -> forced battle -> defeat flags + prize money; the first useful `ZM_GraphAuthoring` trainer-glue integration; and the terrain-backed navmesh evaluation). S0-S6 remain complete. S7 requires no human intervention; the next human stop remains the S8 vertical-slice go/no-go.
 **Build:** GREEN on the ZM-D-148 diff (scene authoring made boot-shape-independent; all four ZM scenes now TRACKED) on top of SC1b commit B (ZM-D-147 -- baked navmesh persistence). Engine-wide, so it owed and got the full gate: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; engine lib + SentinelECS/Physics/AI (all three exes exit 0); Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True.
 **Tests (commit B):** Null batches, ALL 0-failed: **ZM 44/44** (registry 42 -> 44; both new navmesh tests RUN, not skipped), CB **45/45**, DP **158/158**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 44/44, 0 skipped, 0 failed**. Boot unit gates on the NULL exes: engine **1093 -> 1121** (Combat) and ZM **2515 -> 2546** -- both pinned from the OBSERVED line. Windowed RenderTest 8 passed / 1 failed, only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002). Ratchets (`architecture,lints` and `complexity`) are **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added; two findings this commit DID introduce (an `Editor/` include and a `g_xEngine` reach from EntityComponent) were fixed, not allow-listed. **Asset-less CI condition reproduced locally** (`Zenith/Assets` hidden): ZM 44/44 and both unit gates unchanged; restored by MERGE and `diff -rq`-verified, since the run re-created only 60 of the 89 files and a naive rename-back would have clobbered the tree. **Teeth mutation-proven ×6** (see ZM-D-147; m1 re-run on the final build reds exactly the 3 serialization units).

@@ -15,6 +15,46 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-27 -- ZM-D-149 -- CI fix-forward: both unit-gate baselines were left stale by an engine commit, so `engine-gate` and `zm-tests` were red on master
+
+*(Housekeeping fix-forward found while verifying the green baseline at the start
+of an S7 item 3 SC2 iteration. Two one-line baseline bumps; no product code.)*
+
+- **The defect:** `e687d095` ("fix(ai): navmesh random-point sampling must be
+  reproducible") added exactly ONE engine unit test
+  (`ZENITH_TEST(AI, NavMeshRandomPointSamplingIsDeterministic)` in
+  `Zenith/AI/Navigation/Zenith_NavMesh.Tests.inl`) without bumping either
+  registered-count baseline. `run_unit_gate.ps1` asserts `ran == Baseline`
+  exactly -- a count that grows fails the gate just as a count that shrinks does
+  -- so from that commit onward **`engine-gate` (default 1163) and `zm-tests`
+  (2588) were both failing on master**, one test short, on a suite that is
+  otherwise entirely green.
+- **Both numbers are OBSERVED, never predicted** (the standing tripwire).
+  Engine, from a Null Combat boot: `1164 ran, 1163 passed, 0 failed, 1 skipped`
+  (the 1 skipped is the quarantined `GraphComponent::RegistryWideNodeRoundTrip`,
+  task_726cc81d). Zenithmon, from a Null Zenithmon boot:
+  `2589 ran, 2588 passed, 0 failed, 1 skipped`. Both gates PASS at the bumped
+  numbers. The ZM delta over the count Status.md recorded (2547) is the +42 the
+  07-27 engine commits added (harness world-reset, harness dt pinning, the
+  navmesh RNG unit); the ZM headless registry is unmoved at **44 passed / 0
+  failed**.
+- **Fix:** `Tools/run_unit_gate.ps1` default `1163 -> 1164`;
+  `.github/workflows/zm-tests.yml` `-Baseline 2588 -> 2589`. Those two literals
+  are the only places either number lives (`engine-gate.yml`,
+  `scaffold-smoke.yml` and `Tools/test_scaffold.ps1` all defer to the script
+  default by design, and were verified to carry no copy of their own).
+- **Operational finding worth keeping:** the boot unit gate must run AFTER
+  `zenith test <Game> --headless`, never before, on a freshly-built Null exe.
+  `zenith test` heals the output directory's DLLs; a fresh `Null_*` build lacks
+  `libcurl-d.dll`, so booting the exe directly first dies in the loader with
+  **zero stdout**, and the gate reports the misleading "no 'Unit tests complete'
+  line in boot output" rather than a load failure. Status.md's PER-SC GATE order
+  already encodes this; it cost a wasted 300 s boot to rediscover.
+- **Reversibility:** trivial (revert two literals). **Not** a product change --
+  no test was added, removed, or altered by this entry.
+
+---
+
 ## 2026-07-26 -- ZM-D-148 -- Scene files stop encoding process-global entity slot indices; all four ZM scenes become TRACKED; the RenderTest digest failure is diagnosed
 
 *(User-directed follow-up to ZM-D-147: "make scene authoring boot shape
