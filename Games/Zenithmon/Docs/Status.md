@@ -4,8 +4,8 @@
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (all OBSERVED 2026-07-27 on a fresh build of both configs):**
-ZM headless registry **44 passed / 0 failed**; ZM boot unit gate **2638 ran /
-2637 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to 2638); engine boot
+ZM headless registry **44 passed / 0 failed**; ZM boot unit gate **2644 ran /
+2643 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to 2644); engine boot
 unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed / 1 skipped**
 (`run_unit_gate.ps1` default). The 1 skipped in each is the quarantined
 `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
@@ -15,7 +15,18 @@ unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed / 1 skipped**
 and `e687d095` left BOTH baselines one short, so `engine-gate` and `zm-tests`
 were RED on master until **ZM-D-149** fixed them forward (1163 -> 1164,
 2588 -> 2589). 2589 -> **2607** is SC2's own +18 units (ZM-D-150), and
-2607 -> **2638** is SC3's +31 (ZM-D-151).
+2607 -> **2638** is SC3's +31 (ZM-D-151), and 2638 -> **2644** is SC4's +6
+(ZM-D-152).
+
+**★ THIRD TRIPWIRE -- A MUTATION BATTERY MUST CHECK THE BUILD'S EXIT CODE.** Two
+SC4 batteries mutated the gate to `if (false)` / `if (true)` and then to a
+hard-coded flag argument. Both FAILED TO COMPILE (unreachable `return`, and an
+unreferenced formal parameter -- C2220, warnings are errors here), so the gate
+booted the STALE exe and reported a perfectly green 2644/2643/0. That is
+indistinguishable at a glance from "the mutation did not red, so the test has no
+teeth" -- i.e. it would have libelled a good test. Mutations must keep every
+parameter referenced (transpose arguments, invert a returned expression) AND the
+harness must hard-fail on a non-zero build exit.
 
 **★ SECOND GATE TRIPWIRE:** a new `.cpp` under `Games/Zenithmon/` needs
 `Build\regen.ps1` BEFORE the build, and the failure mode is SILENT. Sharpmake
@@ -45,21 +56,24 @@ boot output" rather than a load failure.
 
 ## Current task
 
-**S7 item 3 SC3 COMPLETE (ZM-D-151) -- the pure trainer sight cone, the ONE shared cone primitive, and `BuildTrainerBattleConfig()`. NEXT = SC4: the HUD Run-gate on `m_bCanFlee`.**
+**S7 item 3 SC4 COMPLETE (ZM-D-152) -- the HUD Run-gate. NEXT = SC5: trainer forced-battle entry (`ZM_OnTrainerEncounter` + a 2nd `ZM_BattleTransition` subscription, leaving the wild validation path untouched), the `ZM_BattleDirector` trainer arm building the fixed enemy party and passing the row's `ZM_AI_TIER` to `Begin`, and `ZM_ApplyTrainerResultToGameState` (win -> `AddMoney` + set the defeat flag; loss -> the existing whiteout). Rides ECS orders 110/111.**
 
-**SC4 is a HARD PREREQUISITE, not a nicety.** `BuildTrainerBattleConfig()` ships
-with NO CALLER on purpose: it sets `m_bCanFlee = false`, `ZM_BattleEngine`
-asserts on a RUN action, and `Zenith_Assert` breaks the process in EVERY
-configuration -- so nothing may `Begin` a battle with that config until the menu
-refuses Run. A read-only planning pass has already surveyed SC4 and found:
-`xCore.GetEngine().GetConfig().m_bCanFlee` is reachable from
-`ZM_UI_BattleHUD::UpdateMenu` today with zero plumbing (the plan still adds one
-`ZM_BattleDirectorCore::IsFleeAllowed()` getter beside the existing
-`IsCatchAllowed()`, per ZM-D-131's precedent that the RULE lives on the core);
-and the gate must **REFUSE-IN-PLACE at the confirm boundary**, never remove the
-Run entry, because `MenuRootItemAtIndex` is called directly by
-`ZM_AutoTests_BattleMenu.cpp` and a removal gate would renumber the root and
-could make its DOWN-press loop non-terminating.
+**SC4 removed the last blocker:** a trainer battle can now be begun without the
+menu being able to break the process. SC5 is the first sub-commit that may
+actually call `BuildTrainerBattleConfig()` in production.
+
+**What SC4 pinned that SC5-SC8 must not re-litigate:** the Run gate is the
+CONFIRM-boundary guard in `MenuConfirm`'s `ACTION_ROOT` arm, never the button
+colour (the dim tint is cosmetic, labelled as such in three places); the root
+list and every cursor index are flee-INDEPENDENT and
+`MenuRootItemCount`/`MenuRootItemAtIndex`/`MenuItemCount` keep byte-identical
+bodies (a removal gate could make `ZM_AutoTests_BattleMenu.cpp`'s DOWN-press loop
+non-terminating); and the rule is read through
+`ZM_BattleDirectorCore::IsFleeAllowed()` off the live config, never copied into
+the UI. **Also discovered: `ZM_MakeTowerBattleConfig()` has long shipped
+`m_bCanFlee = false`** with no production caller, so the Battle Tower would have
+inherited the identical latent break the moment S11 wires it -- SC4 pre-empts
+both.
 
 **What SC3 pinned that SC4-SC8 must not re-litigate:** there is exactly ONE
 facing-cone test in the game (`ZM_IsFacingXZ`, shared by the interaction picker
@@ -120,7 +134,24 @@ Then SC2 `ZM_TrainerData` + `ZM_STORY_FLAG_RIVAL1_DEFEATED` -> SC3 sight cone ->
 
 ## Last completed
 
-**S7 item 3 SC3 -- THE PURE TRAINER SIGHT CONE + THE ONE SHARED CONE PRIMITIVE
+**S7 item 3 SC4 -- THE HUD RUN-GATE (ZM-D-152).** A REFUSE-IN-PLACE guard in
+`MenuConfirm`'s `ACTION_ROOT` arm, consulting the new total pure predicate
+`MenuRootItemIsAllowed(eItem, bCanCatch, bCanFlee)` and returning the established
+`{CONFIRM_NONE}` refusal BEFORE the Fight/Catch/Run if-chain -- so a forbidden
+entry can never become a `ZM_BattleAction`, however the cursor got there and
+whether or not anything was rendered. `ZM_BattleDirectorCore::IsFleeAllowed()`
+surfaces the rule off the live config (sibling of `IsCatchAllowed()`, ZM-D-131).
+5 files modified, no new TU (no regen owed), +6 units (**2638 -> 2644**),
+headless and windowed both **44/44**.
+
+**Review closed the hole that mattered:** nothing proved a MOVE still submits
+when `m_bCanFlee` is false -- the only action a trainer battle has left once Run
+is gated -- so hoisting the guard to the top of `MenuConfirm` would have left the
+suite green while making a no-flee battle UNPLAYABLE. **Mutation-proven
+two-sided:** transposing the two flags reds 6 units, inverting the RUN arm reds
+10.
+
+Prior: **S7 item 3 SC3 -- THE PURE TRAINER SIGHT CONE + THE ONE SHARED CONE PRIMITIVE
 (ZM-D-151).** `Source/Interaction/ZM_TrainerSightLogic.{h,cpp}` ships
 `ZM_TrainerSightTuning` and two TOTAL predicates (forward-vector and quaternion
 forms). The cone maths was **EXTRACTED, not duplicated**: `ZM_FlattenXZ` and the

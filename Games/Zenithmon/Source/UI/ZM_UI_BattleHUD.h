@@ -103,6 +103,20 @@ public:
 	// [0, MenuRootItemCount(bCanCatch)) yields ZM_BATTLE_MENU_ROOT_COUNT -- never a
 	// real entry, so an out-of-range cursor can NEVER submit an action.
 	static ZM_BattleMenuRootItem MenuRootItemAtIndex(int iIndex, bool bCanCatch);
+	// May the player ACT on the root entry eItem in a battle with these rules? Fight is
+	// never gated; Catch requires bCanCatch; Run requires bCanFlee; the
+	// ZM_BATTLE_MENU_ROOT_COUNT sentinel (and any out-of-contract value) is never allowed.
+	// TOTAL over ZM_BattleMenuRootItem -- there is no input for which the answer is
+	// undefined, and it never asserts on an argument.
+	//
+	// This is the SC4 Run gate's single rule table, and MenuConfirm consults it at the
+	// CONFIRM BOUNDARY before it builds any action. It is deliberately NOT consulted by
+	// MenuRootItemCount / MenuRootItemAtIndex / MenuItemCount: the root LIST and every
+	// cursor index stay flee-INDEPENDENT, so a no-flee battle still shows Run at its usual
+	// index and the cursor can still land on it -- confirming it is simply refused. (Catch
+	// keeps its older remove-and-close-gap shape; the two gates are deliberately different
+	// and both are total.)
+	static bool MenuRootItemIsAllowed(ZM_BattleMenuRootItem eItem, bool bCanCatch, bool bCanFlee);
 	// ACTION_ROOT -> MenuRootItemCount(bCanCatch); MOVE_SELECT -> iMoveCount; HIDDEN -> 0.
 	// bCanCatch comes from ZM_BattleDirectorCore::IsCatchAllowed() at the live call
 	// site; it is a REQUIRED argument on purpose -- a defaulted "true" is exactly how a
@@ -122,10 +136,21 @@ public:
 	// bCanCatch gates the CATCH entry: with it false the root list has no Catch entry,
 	// so no cursor position can produce an ITEM (catch) action -- which is what keeps
 	// the presenter from submitting the action ZM_BattleEngine::SubmitAction asserts on.
+	//
+	// bCanFlee (SC4) gates the RUN entry at THIS boundary -- refuse-in-place. Unlike the
+	// catch gate it does NOT reshape the root: MenuRootItemCount / MenuRootItemAtIndex /
+	// MenuItemCount are deliberately flee-INDEPENDENT, so Run keeps its index and the
+	// cursor can still land on it; confirming it in a no-flee battle simply resolves to
+	// {NONE}. Refusing HERE is what makes the gate real: this is the single point every
+	// root action is born at, so a forbidden entry can never become a ZM_BattleAction --
+	// no matter how the cursor got there, and whether or not anything was ever rendered.
+	// REQUIRED (never defaulted) on purpose: a defaulted `true` is exactly how a caller
+	// would silently re-offer Run in a trainer battle, the same rationale as bCanCatch.
+	//
 	// paiRawMoveSlot (SC3) maps the compacted move cursor back to a raw engine slot; when
 	// null the submit slot is the cursor itself (identity).
 	static ZM_BattleMenuConfirmResult MenuConfirm(ZM_BattleMenuScreen eScreen, int iCursor,
-		const bool* pbMoveSelectable, int iMoveCount, bool bCanCatch,
+		const bool* pbMoveSelectable, int iMoveCount, bool bCanCatch, bool bCanFlee,
 		const int* paiRawMoveSlot = nullptr);
 	// MOVE_SELECT -> ACTION_ROOT; any other screen -> unchanged.
 	static ZM_BattleMenuScreen MenuCancel(ZM_BattleMenuScreen eScreen);

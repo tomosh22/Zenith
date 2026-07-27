@@ -125,11 +125,18 @@ namespace
 	// Focus tint for the button under the cursor; plain white otherwise.
 	const Zenith_Maths::Vector4 xMENU_FOCUS_COLOUR  = { 1.0f, 0.85f, 0.30f, 1.0f };
 	const Zenith_Maths::Vector4 xMENU_NORMAL_COLOUR = { 1.0f, 1.0f, 1.0f, 1.0f };
+	// A root entry the battle's rules forbid (SC4: Run in a no-flee battle). The tint is
+	// COSMETIC ONLY -- the gate is MenuConfirm's refusal, never this colour.
+	const Zenith_Maths::Vector4 xMENU_DISABLED_COLOUR = { 0.45f, 0.45f, 0.45f, 1.0f };
 
 	// Best-effort per-frame refresh of one menu button: optionally overwrite its text
-	// (szText == nullptr keeps the authored label), set visibility, and highlight it
-	// (keyboard focus + tint) when it is the cursor target.
-	void ZM_ApplyMenuButton(Zenith_UI::Zenith_UIButton* pxButton, bool bVisible, bool bFocused, const char* szText)
+	// (szText == nullptr keeps the authored label), set visibility, highlight it (keyboard
+	// focus + tint) when it is the cursor target, and grey it when the battle's rules forbid
+	// acting on it. A DISABLED entry still takes focus, because the cursor can still land on
+	// it (SC4 refuses in place; it does not renumber) and the player must be able to see
+	// where the cursor is.
+	void ZM_ApplyMenuButton(Zenith_UI::Zenith_UIButton* pxButton, bool bVisible, bool bFocused,
+		bool bEnabled, const char* szText)
 	{
 		if (pxButton == nullptr)
 		{
@@ -141,7 +148,12 @@ namespace
 		}
 		pxButton->SetVisible(bVisible);
 		pxButton->SetFocused(bVisible && bFocused);
-		pxButton->SetTextColor((bVisible && bFocused) ? xMENU_FOCUS_COLOUR : xMENU_NORMAL_COLOUR);
+		// A HIDDEN button keeps exactly its pre-SC4 colour, so nothing about the non-root
+		// screens can shift.
+		const Zenith_Maths::Vector4 xColour = (bVisible && !bEnabled)
+			? xMENU_DISABLED_COLOUR
+			: ((bVisible && bFocused) ? xMENU_FOCUS_COLOUR : xMENU_NORMAL_COLOUR);
+		pxButton->SetTextColor(xColour);
 	}
 
 	// Move a VISIBLE root button onto the row its RESOLVED cursor index occupies. The
@@ -164,9 +176,11 @@ namespace
 	// (never cache). ROOT shows the panel + Fight/Run, plus Catch ONLY when the battle
 	// allows catching; MOVE_SELECT shows the panel + the move buttons for the filled
 	// slots; anything else hides them all. The move buttons' text is set every frame
-	// regardless of visibility.
+	// regardless of visibility. bCanFlee (SC4) only GREYS the Run entry -- the enforcement
+	// is MenuConfirm's refusal, and this function is never the gate.
 	void ZM_RefreshBattleMenuElements(Zenith_UIComponent& xUI, ZM_BattleMenuScreen eScreen,
-		int iMenuCursor, const char* const* paszMoveName, int iMoveCount, bool bCanCatch)
+		int iMenuCursor, const char* const* paszMoveName, int iMoveCount,
+		bool bCanCatch, bool bCanFlee)
 	{
 		const bool bRoot = (eScreen == ZM_BATTLE_MENU_ACTION_ROOT);
 		const bool bMove = (eScreen == ZM_BATTLE_MENU_MOVE_SELECT);
@@ -204,17 +218,24 @@ namespace
 				}
 			}
 			const bool bShown = bRoot && iRow >= 0;
+			// SC4: an entry the RULES forbid is still SHOWN at its usual row -- greyed, and
+			// refused on confirm. Only the catch gate removes an entry outright.
+			const bool bEnabled =
+				ZM_UI_BattleHUD::MenuRootItemIsAllowed(xRoot.m_eItem, bCanCatch, bCanFlee);
 			Zenith_UI::Zenith_UIButton* pxButton =
 				xUI.FindElement<Zenith_UI::Zenith_UIButton>(xRoot.m_szName);
 			ZM_PlaceRootButtonAtRow(pxButton, bShown ? iRow : -1);
-			ZM_ApplyMenuButton(pxButton, bShown, bShown && eItem == xRoot.m_eItem, nullptr);
+			ZM_ApplyMenuButton(pxButton, bShown, bShown && eItem == xRoot.m_eItem, bEnabled, nullptr);
 		}
 
 		for (int i = 0; i < (int)uZM_MAX_MOVES; ++i)
 		{
 			const bool bSlotShown = bMove && (i < iMoveCount);
+			// bEnabled = true unconditionally: a PP-dry move is already "shown but refused on
+			// confirm" and dimming it would change the WILD path's appearance. Out of SC4
+			// scope on purpose.
 			ZM_ApplyMenuButton(xUI.FindElement<Zenith_UI::Zenith_UIButton>(szMOVE_NAMES[i]),
-				bSlotShown, bSlotShown && iMenuCursor == i, paszMoveName[i]);
+				bSlotShown, bSlotShown && iMenuCursor == i, true, paszMoveName[i]);
 		}
 	}
 }
@@ -362,6 +383,28 @@ ZM_BattleMenuRootItem ZM_UI_BattleHUD::MenuRootItemAtIndex(int iIndex, bool bCan
 	return (iIndex == 0) ? ZM_BATTLE_MENU_FIGHT : ZM_BATTLE_MENU_RUN;
 }
 
+// The rule table the SC4 Run gate and the S6 Catch gate both answer to. Deliberately a
+// SEPARATE function from the index mapping above: the mapping answers "what entry lives at
+// this cursor" (flee-independent, so indices never move) and this answers "may the player
+// act on it" (the gate). Keeping them apart is what lets a no-flee battle show, place and
+// highlight Run while making a confirm on it impossible. TOTAL: every enumerator, and any
+// out-of-contract value, has a defined answer, and no argument is asserted on.
+bool ZM_UI_BattleHUD::MenuRootItemIsAllowed(ZM_BattleMenuRootItem eItem, bool bCanCatch, bool bCanFlee)
+{
+	switch (eItem)
+	{
+	case ZM_BATTLE_MENU_FIGHT:
+		return true;         // Fight is never gated: every battle has moves
+	case ZM_BATTLE_MENU_CATCH:
+		return bCanCatch;    // ZM_BattleEngine::SubmitAction / DoItemAction assert otherwise
+	case ZM_BATTLE_MENU_RUN:
+		return bCanFlee;     // ZM_BattleEngine::SubmitAction AND DoRunAction assert otherwise
+	case ZM_BATTLE_MENU_ROOT_COUNT:
+	default:
+		return false;        // the "no entry here" sentinel is never actionable
+	}
+}
+
 int ZM_UI_BattleHUD::MenuItemCount(ZM_BattleMenuScreen eScreen, int iMoveCount, bool bCanCatch)
 {
 	switch (eScreen)
@@ -424,7 +467,8 @@ int ZM_UI_BattleHUD::BuildFilledMoveMenu(const ZM_MOVE_ID (&aeMoves)[uZM_MAX_MOV
 }
 
 ZM_BattleMenuConfirmResult ZM_UI_BattleHUD::MenuConfirm(ZM_BattleMenuScreen eScreen, int iCursor,
-	const bool* pbMoveSelectable, int iMoveCount, bool bCanCatch, const int* paiRawMoveSlot)
+	const bool* pbMoveSelectable, int iMoveCount, bool bCanCatch, bool bCanFlee,
+	const int* paiRawMoveSlot)
 {
 	ZM_BattleMenuConfirmResult xResult;   // default {NONE, action{}, next=HIDDEN, cursor 0}
 	switch (eScreen)
@@ -437,6 +481,18 @@ ZM_BattleMenuConfirmResult ZM_UI_BattleHUD::MenuConfirm(ZM_BattleMenuScreen eScr
 		// that yields CATCH when bCanCatch is false, so an ITEM (catch) action the engine
 		// would assert on cannot be produced here.
 		const ZM_BattleMenuRootItem eItem = MenuRootItemAtIndex(iCursor, bCanCatch);
+		// ===== THE SC4 RUN GATE, AT THE CONFIRM BOUNDARY =====
+		// Not a grey-out: this is the single point every root action is born at, so an entry
+		// the battle's rules forbid can never become a ZM_BattleAction at all -- no matter how
+		// the cursor got here, and no matter whether anything was ever rendered (an automated
+		// drive with no Zenith_UIComponent takes this same path). {NONE} is the established
+		// refusal: UpdateMenu ignores m_eNextScreen / m_iNextCursor on a NONE, so the menu
+		// stays open on the same entry and NOTHING reaches
+		// ZM_BattleDirectorCore::SubmitPlayerAction -> ZM_BattleEngine.
+		if (!MenuRootItemIsAllowed(eItem, bCanCatch, bCanFlee))
+		{
+			return xResult;   // {NONE} -- refused
+		}
 		if (eItem == ZM_BATTLE_MENU_FIGHT)
 		{
 			xResult.m_eKind       = ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES;
@@ -524,6 +580,10 @@ bool ZM_UI_BattleHUD::UpdateMenu(Zenith_Entity& xDirectorEntity, const ZM_Battle
 	// here. With catching off (a trainer battle, or the Battle Tower) the root list has
 	// no Catch entry at all, so the cursor cannot reach it and a confirm cannot submit it.
 	const bool bCanCatch = xCore.IsCatchAllowed();
+	// SC4: the battle's OWN flee rule, read off the config it was Begun with. A hard-coded
+	// `true` here is the exact mutation HudMenu_LiveGateNeverSubmitsARunWhenFleeDisallowed
+	// reddens on -- every PURE menu unit passes literals and would stay green.
+	const bool bCanFlee = xCore.IsFleeAllowed();
 
 	// Edge input: nav FIRST, then confirm, then cancel (Down+Enter in one frame moves
 	// then confirms).
@@ -539,7 +599,7 @@ bool ZM_UI_BattleHUD::UpdateMenu(Zenith_Entity& xDirectorEntity, const ZM_Battle
 	bool bSubmitted = false;
 	if (bConfirm)
 	{
-		const ZM_BattleMenuConfirmResult xR = MenuConfirm(m_eMenuScreen, m_iMenuCursor, abSelectable, iMoveCount, bCanCatch, aiRawMoveSlot);
+		const ZM_BattleMenuConfirmResult xR = MenuConfirm(m_eMenuScreen, m_iMenuCursor, abSelectable, iMoveCount, bCanCatch, bCanFlee, aiRawMoveSlot);
 		if (xR.m_eKind == ZM_BATTLE_MENU_CONFIRM_SUBMIT)
 		{
 			xOut          = xR.m_xAction;
@@ -567,7 +627,7 @@ bool ZM_UI_BattleHUD::UpdateMenu(Zenith_Entity& xDirectorEntity, const ZM_Battle
 		: nullptr;
 	if (pxUI != nullptr)
 	{
-		ZM_RefreshBattleMenuElements(*pxUI, m_eMenuScreen, m_iMenuCursor, aszMoveName, iMoveCount, bCanCatch);
+		ZM_RefreshBattleMenuElements(*pxUI, m_eMenuScreen, m_iMenuCursor, aszMoveName, iMoveCount, bCanCatch, bCanFlee);
 	}
 
 	return bSubmitted;

@@ -28,6 +28,10 @@
 #include "Zenithmon/Source/Data/ZM_Learnsets.h"
 #include "Zenithmon/Source/Data/ZM_MoveData.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
+// Explicit (it also arrives transitively via ZM_BattleDirector.h): the S7 item-3 SC4
+// tests below ask the battle menu's PURE decision surface what a trainer-config root
+// allows, which is exactly what ZM_UI_BattleHUD::UpdateMenu delegates to.
+#include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"
 
 namespace
 {
@@ -407,6 +411,52 @@ ZENITH_TEST(ZM_BattleDirector, Director_CoreSurfacesCanCatchFromConfig)
 		"a battle Begun with m_bCanCatch = true must report catching as allowed");
 }
 
+// 11d. (S7 item 3 SC4) The core SURFACES the battle's can-FLEE rule to its presenter, the
+//      direct sibling of 11c. The battle menu's Run entry is gated on this at the CONFIRM
+//      boundary, so it must track the config the battle was actually Begun with -- never a
+//      copy the UI keeps, and never a constant. Both the trainer config (SC3) and the
+//      Battle Tower are REAL reachable states with m_bCanFlee == false.
+ZENITH_TEST(ZM_BattleDirector, Director_CoreSurfacesCanFleeFromConfig)
+{
+	const ZM_BattleMonsterSpec xPlayer = ZM_BuildWildEnemySpec(ZM_SPECIES_FERNFAWN, 5u);
+	const ZM_BattleMonsterSpec xEnemy  = ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 5u);
+
+	// FAIL-CLOSED. FAILS IF: IsFleeAllowed() is a constant `true` -- a battle that never
+	// Begun has no rules yet, and "no fleeing" is the safe answer.
+	ZM_BattleDirectorCore xNotStarted;
+	ZENITH_ASSERT_FALSE(xNotStarted.IsFleeAllowed(),
+		"a core that has not Begun a battle must not claim fleeing is allowed");
+
+	// The TRUE case: MakeWildConfig() already sets m_bCanFlee = true.
+	ZM_BattleConfig xFlee = MakeWildConfig();
+	ZENITH_ASSERT_TRUE(xFlee.m_bCanFlee, "fixture precondition: this config permits fleeing");
+	ZM_BattleDirectorCore xFleeCore;
+	xFleeCore.Begin(&xPlayer, 1u, &xEnemy, 1u, xFlee, 0x5EED03ull, ZM_AI_TIER_GREEDY);
+	ZENITH_ASSERT_TRUE(xFleeCore.IsFleeAllowed(),
+		"a battle Begun with m_bCanFlee = true must report fleeing as allowed");
+
+	// DISCRIMINATION against reading the WRONG field: m_bIsWild stays TRUE here while
+	// m_bCanFlee is false, and m_bCanCatch is false in both wild configs above.
+	// FAILS IF: IsFleeAllowed() returns m_bIsWild, m_bCanCatch, or a constant.
+	ZM_BattleConfig xNoFlee = MakeWildConfig();
+	xNoFlee.m_bCanFlee = false;
+	ZENITH_ASSERT_TRUE(xNoFlee.m_bIsWild,
+		"fixture precondition: m_bIsWild stays TRUE, so only m_bCanFlee distinguishes the cases");
+	ZM_BattleDirectorCore xNoFleeCore;
+	xNoFleeCore.Begin(&xPlayer, 1u, &xEnemy, 1u, xNoFlee, 0x5EED04ull, ZM_AI_TIER_GREEDY);
+	ZENITH_ASSERT_FALSE(xNoFleeCore.IsFleeAllowed(),
+		"a battle Begun with m_bCanFlee = false must report fleeing as disallowed");
+
+	// THE PRODUCTION CONFIG: SC3's trainer helper, read back through the accessor the
+	// menu actually consults.
+	ZM_BattleDirectorCore xTrainerCore;
+	xTrainerCore.Begin(&xPlayer, 1u, &xEnemy, 1u,
+		ZM_BattleDirector::BuildTrainerBattleConfig(), 0x5EED05ull, ZM_AI_TIER_GREEDY);
+	ZENITH_ASSERT_FALSE(xTrainerCore.IsFleeAllowed(),
+		"the SC3 trainer config must report fleeing as forbidden through the accessor "
+		"the menu reads");
+}
+
 // 12. Setup is one-shot: it fires ONLY in WAIT_FOR_IN_BATTLE, ONLY once the
 //     transition is in battle, and ONLY if not already set up. A wrong phase, a
 //     not-yet-in-battle transition, or an already-set-up latch all suppress it.
@@ -577,6 +627,80 @@ ZENITH_TEST(ZM_BattleDirector, Director_TrainerBattleConfigFields)
 		"it on a LOCAL COPY, so this static stays a constant a unit can pin");
 	ZENITH_ASSERT_EQ(xCfg.m_uExpAwardSideMask, (u_int)(1u << (u_int)ZM_SIDE_PLAYER),
 		"only the player side may ever progress from a trainer battle");
+}
+
+// 17b. (S7 item 3 SC4) THE END-TO-END TIE between SC3's trainer config and SC4's Run
+//      gate. This is what DISCHARGES the invariant ZM_BattleDirector.h states over
+//      BuildTrainerBattleConfig(): "Nothing may Begin a battle with this config until the
+//      SC4 HUD Run-gate lands." It needs no input simulator -- it Begins a core and then
+//      asks the PURE decision surface, which is exactly what UpdateMenu delegates to.
+//
+//      HARD RULE: this test must NEVER call SubmitPlayerAction. Under a regressed gate a
+//      RUN submission would trip ZM_BattleEngine's Zenith_Assert, and Zenith_Assert calls
+//      Zenith_DebugBreak() in EVERY configuration -- killing the WHOLE boot unit suite
+//      instead of reddening this one case.
+ZENITH_TEST(ZM_BattleDirector, Director_TrainerConfigRootRefusesRun)
+{
+	const ZM_BattleMonsterSpec xPlayer = ZM_BuildWildEnemySpec(ZM_SPECIES_FERNFAWN, 5u);
+	const ZM_BattleMonsterSpec xEnemy  = ZM_BuildWildEnemySpec(ZM_SPECIES_KINDLET, 5u);
+
+	ZM_BattleDirectorCore xCore;
+	xCore.Begin(&xPlayer, 1u, &xEnemy, 1u,
+		ZM_BattleDirector::BuildTrainerBattleConfig(), 0x71A11E12ull, ZM_AI_TIER_GREEDY);
+
+	// Non-vacuity: this really is the trainer shape, read back through the two accessors
+	// UpdateMenu consults.
+	ZENITH_ASSERT_FALSE(xCore.IsFleeAllowed(),
+		"a trainer battle forbids fleeing");
+	ZENITH_ASSERT_FALSE(xCore.IsCatchAllowed(),
+		"a trainer battle forbids catching");
+
+	// The CATCH gate still shapes the LIST (remove-and-close-gap), so the trainer root is
+	// [Fight, Run] and Run is PRESENT and reachable at index 1. The flee gate deliberately
+	// does NOT shorten this list -- it refuses in place.
+	ZENITH_ASSERT_EQ(ZM_UI_BattleHUD::MenuRootItemCount(xCore.IsCatchAllowed()), 2,
+		"the trainer root is [Fight, Run]: the catch entry is removed, the Run entry is not");
+	ZENITH_ASSERT_EQ((u_int)ZM_UI_BattleHUD::MenuRootItemAtIndex(1, xCore.IsCatchAllowed()),
+		(u_int)ZM_BATTLE_MENU_RUN,
+		"the trainer root still LISTS Run at index 1 -- the gate refuses, it never renumbers");
+
+	// THE clause: that still-present, still-reachable Run entry can never become an action.
+	ZENITH_ASSERT_FALSE(
+		ZM_UI_BattleHUD::MenuRootItemIsAllowed(ZM_BATTLE_MENU_RUN,
+			xCore.IsCatchAllowed(), xCore.IsFleeAllowed()),
+		"the trainer battle's rules must forbid acting on the Run entry");
+	const bool abSel4[4] = { true, true, true, true };
+	const ZM_BattleMenuConfirmResult xRun =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 1, abSel4, 4,
+			xCore.IsCatchAllowed(), xCore.IsFleeAllowed());
+	ZENITH_ASSERT_EQ(xRun.m_eKind, ZM_BATTLE_MENU_CONFIRM_NONE,
+		"confirming Run in a trainer battle must resolve to NONE -- otherwise the action "
+		"reaches ZM_BattleEngine, whose SubmitAction and DoRunAction both Zenith_Assert on "
+		"a RUN without a wild-flee config, in every configuration");
+
+	// ...and the trainer battle is still PLAYABLE: Fight is untouched by the gate.
+	const ZM_BattleMenuConfirmResult xFight =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_ACTION_ROOT, 0, abSel4, 4,
+			xCore.IsCatchAllowed(), xCore.IsFleeAllowed());
+	ZENITH_ASSERT_EQ(xFight.m_eKind, ZM_BATTLE_MENU_CONFIRM_OPEN_MOVES,
+		"a trainer battle must still let Fight open the move list");
+
+	// ...all the way through to a SUBMITTED move. Once Run is gated a MOVE is the ONLY
+	// action a trainer battle has left, so stopping at OPEN_MOVES would leave "the trainer
+	// battle is playable" unproven: a Run gate applied to the whole of MenuConfirm rather
+	// than to its ACTION_ROOT arm refuses this move too (the MOVE cursor 1 would be
+	// resolved as a ROOT index, i.e. Run) and softlocks the battle with every other test
+	// in the repo still green.
+	const ZM_BattleMenuConfirmResult xMove =
+		ZM_UI_BattleHUD::MenuConfirm(ZM_BATTLE_MENU_MOVE_SELECT, 1, abSel4, 4,
+			xCore.IsCatchAllowed(), xCore.IsFleeAllowed());
+	ZENITH_ASSERT_EQ(xMove.m_eKind, ZM_BATTLE_MENU_CONFIRM_SUBMIT,
+		"a trainer battle must still be able to SUBMIT a move -- the Run gate is scoped to "
+		"the ACTION_ROOT screen and must never reach MOVE_SELECT");
+	ZENITH_ASSERT_EQ(xMove.m_xAction.m_eKind, ZM_ACTION_MOVE,
+		"the submitted trainer-battle action is a MOVE");
+	ZENITH_ASSERT_EQ(xMove.m_xAction.m_uMoveSlot, 1u,
+		"the flee rule must not disturb the cursor -> engine slot mapping");
 }
 
 // 18. (S7 item 3 SC3) THE GOLDEN-PRESERVATION unit. The wild battle path is

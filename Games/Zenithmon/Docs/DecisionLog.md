@@ -15,6 +15,123 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-27 -- ZM-D-152 -- S7 item 3 SC4: the HUD Run-gate is a REFUSE-IN-PLACE guard at the confirm boundary
+
+*(Fourth sub-commit of the ZM-D-143 sequence, and the HARD PREREQUISITE of SC5.
+`Games/Zenithmon` only; ZERO `Zenith/` files, ZERO new ECS orders, ZERO new
+translation units -- so no regen was owed.)*
+
+### Why this had to land before any trainer battle
+
+`ZM_BattleEngine` asserts on a RUN action at TWO sites --
+`SubmitAction` ("RUN requires a wild-flee config") and `DoRunAction` ("fleeing
+requires a wild-flee config") -- and `Zenith_Assert` calls `Zenith_DebugBreak()`
+in EVERY configuration. A menu that offers Run in a no-flee battle is therefore
+a hard process break, not a soft misbehaviour. SC3 shipped
+`BuildTrainerBattleConfig()` (`m_bCanFlee = false`) deliberately caller-less for
+exactly this reason.
+
+**Discovered while wiring it: the trainer config is not the only no-flee config.**
+`ZM_MakeTowerBattleConfig()` (`Source/Battle/ZM_BattleTower.cpp:232`) has shipped
+`m_bCanFlee = false` for some time. It currently has NO production caller -- only
+`ZM_Tests_BattleTower.cpp` constructs it -- so no player-reachable break existed,
+but the Battle Tower would have inherited the identical latent break the moment
+S11 wired it up. SC4 pre-empts both.
+
+### The shape: refuse-in-place, not remove-the-entry
+
+`MenuConfirm`'s `ACTION_ROOT` arm resolves the cursor to an entry exactly as
+before, then consults the new TOTAL pure predicate
+`MenuRootItemIsAllowed(eItem, bCanCatch, bCanFlee)` and returns the established
+`{CONFIRM_NONE}` refusal before the Fight/Catch/Run if-chain. So a forbidden
+entry can never become a `ZM_BattleAction` -- regardless of how the cursor got
+there, and regardless of whether anything was ever rendered. The dim tint added
+to `ZM_ApplyMenuButton` is labelled cosmetic in three places: **the gate is the
+confirm guard, never the colour.**
+
+`MenuRootItemCount`, `MenuRootItemAtIndex` and `MenuItemCount` keep byte-identical
+signatures and bodies, so the root list and every cursor index stay
+flee-INDEPENDENT. A removal gate was rejected on evidence, not taste:
+`Tests/ZM_AutoTests_BattleMenu.cpp` calls `MenuRootItemAtIndex` directly and
+presses DOWN until it returns `ZM_BATTLE_MENU_RUN`, so renumbering the root could
+make that loop non-terminating -- and the "indices unchanged in both cases"
+property would have been unassertable.
+
+The rule is surfaced as `ZM_BattleDirectorCore::IsFleeAllowed()`, sibling of the
+existing `IsCatchAllowed()` (ZM-D-131's precedent), read off the config the battle
+was actually `Begin`-ed with, so the UI never carries a second copy that could
+drift. It is FALSE before `Begin` (the default `ZM_BattleConfig`) -- the
+fail-closed answer.
+
+### Golden preservation, by mechanism rather than assertion
+
+The goldens are hand-built `Zenith_Vector<ZM_BattleEvent>` sequences compared
+element-by-element, plus ~380 pinned scalars, plus a structural validator over
+2000 seeded fuzz battles, plus one RAW RNG-cursor comparison. The golden TUs
+(`ZM_Tests_Battle.cpp`, `ZM_Tests_ExpAndLevel.cpp`, `ZM_Tests_BattleAI.cpp`,
+`ZM_Tests_BattleTower.cpp`) include `ZM_UI_BattleHUD.h` NOWHERE and drive
+`ZM_BattleEngine` directly -- the dependency arrow points UI -> engine only. SC4
+adds, removes and reorders zero `Emit` calls and does not touch `DoRunAction`,
+`ZM_RollFlee` or the RNG stream, so the flee draw discipline is bit-identical.
+And the only config reachable from a live battle today is `BuildBattleConfig()`
+with `m_bCanFlee = true`, under which every menu answer is unchanged.
+
+### Tests, and the coverage hole review closed
+
++6 boot units: four in `ZM_Tests_BattleHUD.cpp`
+(`HudMenu_RootItemIsAllowedGatesRunOnCanFlee`,
+`HudMenu_ConfirmRefusesRunWhenFleeDisallowed`,
+`HudMenu_RootIndicesAreFleeIndependent`,
+`HudMenu_LiveGateNeverSubmitsARunWhenFleeDisallowed` -- which drives the real
+`UpdateMenu` with an INVALID entity so nothing renders and the confirm is still
+refused) and two in `ZM_Tests_BattleDirector.cpp`
+(`Director_CoreSurfacesCanFleeFromConfig`, `Director_TrainerConfigRootRefusesRun`).
+14 existing `MenuConfirm` call sites gained `/* bCanFlee */ true` with every
+assertion preserved; `ZM_AutoTests_BattleMenu.cpp` is byte-untouched.
+
+**Adversarial review found the hole that mattered: nothing proved a MOVE still
+submits when `m_bCanFlee` is false** -- the only action a trainer battle has left
+once Run is gated. Hoisting the guard out of the `ACTION_ROOT` arm to the top of
+`MenuConfirm` would have left the whole suite green while making a no-flee battle
+UNPLAYABLE. Closed by extending two existing units (deliberately adding no new
+registration, so the count delta stayed exactly +6).
+
+### Mutation battery -- and two invalid batteries before it
+
+Final result, both BUILD-VERIFIED:
+- **Transposed flags** at the call site (`bCanCatch`/`bCanFlee` swapped -- the
+  classic adjacent-bool mix-up): **RED, 6 units** (2644 ran / 2638 passed).
+- **Inverted RUN arm** inside the predicate (`return !bCanFlee`), which is
+  two-sided in one mutation: **RED, 10 units** (2644 ran / 2634 passed).
+- Restore -> **2644 ran / 2643 passed / 0 failed / 1 skipped**.
+
+**Two earlier batteries produced a false "no teeth" reading and are worth
+recording.** Mutating the guard to `if (false)` / `if (true)`, then to a
+hard-coded flag argument, both FAILED TO COMPILE -- the first makes the following
+`return` unreachable, the second leaves `bCanFlee` an unreferenced formal
+parameter, and this build treats both warnings as errors (C2220). The gate then
+booted the STALE exe and reported a perfectly green 2644/2643/0, which is
+indistinguishable at a glance from "the mutation did not red, so the test has no
+teeth". **A mutation battery that does not check the build's exit code can
+libel a good test.** The harness now hard-fails on a failed build and prints the
+compiler error instead of a verdict.
+
+### Gate
+
+Vulkan_True -> Null_True -> headless **44 passed / 0 failed** -> boot unit gate
+**2644 ran / 2643 passed / 0 failed / 1 skipped** (2638 -> 2644, OBSERVED;
+`zm-tests.yml` bumped to match) -> full windowed Vulkan **44 passed / 0 failed**.
+No new `.cpp`, so no regen was owed.
+
+### Reversibility / next boundary
+
+Reversible. **NEXT = SC5** -- trainer forced-battle entry, the
+`ZM_OnTrainerEncounter` event, the `ZM_BattleDirector` trainer arm, and
+prize/defeat write-back. SC4 removes the last blocker: a trainer battle can now
+be begun without the menu being able to break the process.
+
+---
+
 ## 2026-07-27 -- ZM-D-151 -- S7 item 3 SC3: the pure trainer sight cone, the ONE shared cone primitive, and the trainer battle config
 
 *(Third sub-commit of the ZM-D-143 sequence. `Games/Zenithmon` only; ZERO

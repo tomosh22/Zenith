@@ -141,6 +141,19 @@ public:
 	// FALSE before Begin (the default config), which is the fail-closed answer.
 	bool IsCatchAllowed() const { return m_xEngine.GetConfig().m_bCanCatch; }
 
+	// May the player attempt to RUN in this battle? The presenter's Run entry is gated on
+	// this (S7 item 3 SC4): ZM_BattleEngine Zenith_Asserts on a RUN action at TWO sites --
+	// SubmitAction ("RUN requires a wild-flee config") and DoRunAction ("fleeing requires a
+	// wild-flee config") -- and Zenith_Assert calls Zenith_DebugBreak() in EVERY
+	// configuration, so a menu that offers Run in a no-flee battle is a hard process break,
+	// not a soft misbehaviour. A trainer battle (ZM_BattleDirector::BuildTrainerBattleConfig)
+	// and the Battle Tower (ZM_MakeTowerBattleConfig) are both REAL configs with
+	// m_bCanFlee == false. Surfaced HERE, off the config the battle was actually Begun with,
+	// so the UI never carries a second copy of the rule that could drift from the engine's.
+	// FALSE before Begin (the default ZM_BattleConfig), which is the fail-closed answer.
+	// Sibling of IsCatchAllowed() by design (ZM-D-131).
+	bool IsFleeAllowed() const { return m_xEngine.GetConfig().m_bCanFlee; }
+
 private:
 	ZM_BattleEngine   m_xEngine;
 	ZM_BattleRNG      m_xAIRng;                   // AI's OWN generator (distinct from the battle RNG)
