@@ -47,31 +47,83 @@ const char* ZM_InteractRejectName(ZM_INTERACT_REJECT eReject)
 	}
 }
 
+// ---- The shared XZ cone primitives (SC3) ------------------------------------
+//
+// These two were unnamed internals of this file until SC3. They now live at
+// EXTERNAL linkage (declared in the header) because the trainer sight predicate
+// must reuse the SAME cone rather than restate it. The unnamed-namespace copies
+// were DELETED rather than left in place: with the header's declarations visible
+// here, keeping them would make unqualified lookup ambiguous, not shadowed.
+
+Zenith_Maths::Vector3 ZM_FlattenXZ(const Zenith_Maths::Vector3& xVector)
+{
+	const float fLengthSquared = (xVector.x * xVector.x) + (xVector.z * xVector.z);
+	if (fLengthSquared <= fZM_INTERACT_DEGENERATE_LEN_SQ)
+	{
+		return Zenith_Maths::Vector3(0.0f);
+	}
+	const float fInverseLength = 1.0f / std::sqrt(fLengthSquared);
+	return Zenith_Maths::Vector3(xVector.x * fInverseLength, 0.0f, xVector.z * fInverseLength);
+}
+
+bool ZM_IsFacingXZ(const Zenith_Maths::Vector3& xObserverPosition,
+	const Zenith_Maths::Vector3& xFlatUnitForward,
+	const Zenith_Maths::Vector3& xTargetPosition,
+	float fMinFacingDot)
+{
+	// No facing at all -> nothing is faced. FAIL CLOSED. ZM_PickInteractTarget can
+	// never reach this line (it returns DEGENERATE_ORIGIN before the walk), so the
+	// guard is behaviour-neutral there and load-bearing for every other caller.
+	const float fForwardLengthSquared =
+		(xFlatUnitForward.x * xFlatUnitForward.x) + (xFlatUnitForward.z * xFlatUnitForward.z);
+	if (fForwardLengthSquared <= fZM_INTERACT_DEGENERATE_LEN_SQ)
+	{
+		return false;
+	}
+
+	const float fDeltaX = xTargetPosition.x - xObserverPosition.x;
+	const float fDeltaZ = xTargetPosition.z - xObserverPosition.z;
+	const float fDistanceSquared = (fDeltaX * fDeltaX) + (fDeltaZ * fDeltaZ);
+
+	// POLARITY IS `>`, NOT `<=`, and that is not a style choice: this is verbatim
+	// the branch lifted out of the picker's loop, so a non-finite separation falls
+	// into the coincident arm here exactly as it did there. That answer -- TRUE for
+	// a NaN separation -- is pinned by Facing_NonFiniteSeparationIsTreatedAsCoincident,
+	// so any rewrite of this branch has to keep that unit green. Reason about
+	// respellings from what the suite actually says rather than from first
+	// principles: the sibling `>=` / `!(<)` respelling below LOOKS like it must move
+	// the non-finite answer, and was measured not to (see the note there).
+	if (fDistanceSquared > fZM_INTERACT_DEGENERATE_LEN_SQ)
+	{
+		const float fDistance = std::sqrt(fDistanceSquared);
+		const float fFacingDot =
+			((xFlatUnitForward.x * fDeltaX) + (xFlatUnitForward.z * fDeltaZ)) / fDistance;
+		// INCLUSIVE at the cone edge, and spelled `>=` because that is the direct
+		// statement of the contract: "faced" is what must be PROVEN, so anything
+		// the comparison cannot prove -- a non-finite dot included, whether it came
+		// from the forward or from fMinFacingDot -- answers false and fails CLOSED.
+		// That fail-closed answer is pinned by Facing_NonFiniteOperandFailsClosed,
+		// at this surface and through ZM_PickInteractTarget.
+		// The spelling is NOT a behaviour change out of the pre-SC3 fused block,
+		// which wrote `if (fFacingDot < fMinFacingDot) { continue; }`. That was
+		// checked, not assumed: this line was mutated to
+		// `return !(fFacingDot < fMinFacingDot)`, the Null config rebuilt from
+		// scratch and the whole boot unit gate run -- the suite stayed green,
+		// identical counts, nothing redded, on a battery whose sibling mutations
+		// elsewhere DID red. No input the suite exercises, non-finite included,
+		// tells the two forms apart. Keep `>=` for clarity, and do not expect a
+		// respelling here to be caught by a test.
+		return fFacingDot >= fMinFacingDot;
+	}
+	// A COINCIDENT target has no direction to test, so it is defined to be faced
+	// rather than divided by zero into a NaN.
+	return true;
+}
+
 // ---- The candidate picker (SC2) ---------------------------------------------
 
 namespace
 {
-	// Below this squared XZ length a vector is treated as having no direction at
-	// all. A real facing is unit length, so anything this small is either an exact
-	// zero or a straight-up / straight-down facing whose XZ projection has
-	// collapsed -- in both cases normalising would produce NaN.
-	constexpr float fZM_INTERACT_DEGENERATE_LEN_SQ = 1.0e-8f;
-
-	// The ONE flattening policy, shared by ZM_ForwardFromRotation and the picker so
-	// the two can never disagree about what "facing" means: drop Y, normalise, and
-	// return the zero vector rather than a NaN when there is nothing left to
-	// normalise.
-	Zenith_Maths::Vector3 ZM_FlattenXZ(const Zenith_Maths::Vector3& xVector)
-	{
-		const float fLengthSquared = (xVector.x * xVector.x) + (xVector.z * xVector.z);
-		if (fLengthSquared <= fZM_INTERACT_DEGENERATE_LEN_SQ)
-		{
-			return Zenith_Maths::Vector3(0.0f);
-		}
-		const float fInverseLength = 1.0f / std::sqrt(fLengthSquared);
-		return Zenith_Maths::Vector3(xVector.x * fInverseLength, 0.0f, xVector.z * fInverseLength);
-	}
-
 	// How far the BEST near-miss got. Tracked as a single high-water mark during the
 	// one walk (rather than by re-scanning the array once per test) so the reported
 	// reason is always the furthest any probe reached, never the last one seen.
@@ -158,16 +210,15 @@ ZM_INTERACT_REJECT ZM_PickInteractTarget(const ZM_InteractProbe* paxProbes, u_in
 			eBestStage = ZM_INTERACT_STAGE_IN_BAND;
 		}
 
-		// 4. Facing cone, inclusive. A COINCIDENT probe has no direction to test, so
-		//    it is defined to be faced rather than divided by zero into a NaN.
-		if (fDistanceSquared > fZM_INTERACT_DEGENERATE_LEN_SQ)
+		// 4. Facing cone, inclusive -- the ONE angular test, now shared with the
+		//    trainer sight predicate. Same operands, same order, same result: the
+		//    helper recomputes fDeltaX / fDeltaZ / fDistanceSquared from the same
+		//    two positions with the same expression, so no value differs by a bit.
+		//    A COINCIDENT probe still has no direction to test and still counts as
+		//    faced -- that carve-out moved INTO the helper unchanged.
+		if (!ZM_IsFacingXZ(xOrigin.m_xPosition, xForward, xProbe.m_xPosition, xTuning.m_fMinFacingDot))
 		{
-			const float fDistance = std::sqrt(fDistanceSquared);
-			const float fFacingDot = ((xForward.x * fDeltaX) + (xForward.z * fDeltaZ)) / fDistance;
-			if (fFacingDot < xTuning.m_fMinFacingDot)
-			{
-				continue;
-			}
+			continue;
 		}
 
 		// A survivor. STRICTLY closer to displace the incumbent, which is what makes a

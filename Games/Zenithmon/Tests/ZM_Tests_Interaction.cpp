@@ -14,6 +14,7 @@
 // ============================================================================
 
 #include <cstring>   // strcmp (reject-name distinctness)
+#include <limits>    // quiet_NaN (the SC3 primitive's documented non-finite arm)
 
 #include "Core/Zenith_TestFramework.h"
 #include "Maths/Zenith_Maths.h"
@@ -958,4 +959,173 @@ ZENITH_TEST(ZM_Interaction, Forward_StraightUpFlattensToZero)
 	ZENITH_ASSERT_TRUE((xForward.x == 0.0f) && (xForward.y == 0.0f) && (xForward.z == 0.0f),
 		"EXACTLY zero, not NaN -- a NaN would compare false against every threshold "
 		"and silently accept whatever probe came first");
+}
+
+// ---- The EXTRACTED angular primitive, pinned directly (S7 item 3 SC3) --------
+//
+// ZM_IsFacingXZ was the picker's PRIVATE inner block until SC3 lifted it out so
+// the trainer sight predicate could call the SAME cone. The 44 units above are
+// the behaviour-preservation net for that extraction -- they exercise it through
+// ZM_PickInteractTarget and are deliberately UNEDITED. The six units below pin
+// the primitive at its OWN surface, including the two guards the picker can
+// never reach and the one arm that is a preserved quirk rather than an ideal.
+
+ZENITH_TEST(ZM_Interaction, Facing_ExactlyAtMinDotIsFaced)
+{
+	// The same dyadic 3-4-5 fixture Pick_ExactlyAtMinFacingDotAccepted uses, called
+	// DIRECTLY: the primitive's edge must be inclusive exactly where the picker's is,
+	// which is the whole point of there now being one cone instead of two.
+	ZENITH_ASSERT_TRUE(ZM_IsFacingXZ(Zenith_Maths::Vector3(0.0f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f),
+		Zenith_Maths::Vector3(fBOUNDARY_PROBE_X, 0.0f, fBOUNDARY_PROBE_Z),
+		fBOUNDARY_FACING_DOT),
+		"the cone edge is INCLUSIVE: a target exactly at the threshold dot is faced");
+}
+
+ZENITH_TEST(ZM_Interaction, Facing_JustBelowMinDotIsNotFaced)
+{
+	// The reject arm of the pair -- without it the accept arm would pass on a
+	// primitive that returned true unconditionally.
+	ZENITH_ASSERT_FALSE(ZM_IsFacingXZ(Zenith_Maths::Vector3(0.0f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f),
+		Zenith_Maths::Vector3(fBOUNDARY_PROBE_X, 0.0f, fBOUNDARY_PROBE_Z),
+		fBOUNDARY_FACING_DOT + 0.001f),
+		"one thousandth outside the cone is OUTSIDE the cone");
+}
+
+ZENITH_TEST(ZM_Interaction, Facing_CoincidentTargetIsFaced)
+{
+	// The carve-out the picker's header documents -- "you are standing on it" --
+	// now lives in the primitive, so it is pinned HERE directly rather than only
+	// through Pick_CoincidentProbeIsInRangeAndFacedAndWins.
+	ZENITH_ASSERT_TRUE(ZM_IsFacingXZ(Zenith_Maths::Vector3(3.0f, -2.0f, 7.0f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f),
+		Zenith_Maths::Vector3(3.0f, -2.0f, 7.0f),
+		fZM_INTERACT_MIN_FACING_DOT),
+		"a coincident target has no direction to test, so it is faced rather than "
+		"divided by zero into a NaN");
+}
+
+ZENITH_TEST(ZM_Interaction, Facing_DegenerateForwardIsNotFaced)
+{
+	// The all-directions threshold is load-bearing: with it the cone comparison
+	// cannot be what rejects, so the fail-closed forward guard is the ONLY thing
+	// under test. That guard is UNREACHABLE from ZM_PickInteractTarget, which
+	// returns DEGENERATE_ORIGIN before it walks a single probe -- so adding it
+	// cannot have changed one picker answer, and this unit is its only coverage.
+	ZENITH_ASSERT_FALSE(ZM_IsFacingXZ(Zenith_Maths::Vector3(0.0f),
+		Zenith_Maths::Vector3(0.0f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 4.0f), -1.5f),
+		"no facing means nothing is faced: a zero forward FAILS CLOSED");
+
+	// CONTROL: the same all-directions threshold with a real forward IS faced.
+	ZENITH_ASSERT_TRUE(ZM_IsFacingXZ(Zenith_Maths::Vector3(0.0f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 4.0f), -1.5f),
+		"...and the same threshold with a real forward faces everything, so this "
+		"unit is not passing merely because everything is rejected");
+}
+
+ZENITH_TEST(ZM_Interaction, Facing_IgnoresYSeparation)
+{
+	// The primitive is PLANAR. The vertical band is the picker's separate job, so
+	// folding Y into the dot here would silently change what that band means.
+	const Zenith_Maths::Vector3 xForward(0.0f, 0.0f, 1.0f);
+	const bool bLow  = ZM_IsFacingXZ(Zenith_Maths::Vector3(0.0f), xForward,
+		Zenith_Maths::Vector3(0.0f, -25.0f, 2.0f), fZM_INTERACT_MIN_FACING_DOT);
+	const bool bHigh = ZM_IsFacingXZ(Zenith_Maths::Vector3(0.0f), xForward,
+		Zenith_Maths::Vector3(0.0f,  25.0f, 2.0f), fZM_INTERACT_MIN_FACING_DOT);
+
+	ZENITH_ASSERT_EQ(bLow, bHigh,
+		"two targets identical in XZ but fifty units apart in Y must be faced identically");
+	ZENITH_ASSERT_TRUE(bLow,
+		"and both ARE faced -- a unit where both answers are false would agree vacuously");
+}
+
+ZENITH_TEST(ZM_Interaction, Facing_NonFiniteSeparationIsTreatedAsCoincident)
+{
+	// A DOCUMENTED QUIRK, pinned because it is today's behaviour, NOT because it is
+	// the ideal. A NaN separation makes the squared distance NaN, `NaN > epsilon` is
+	// false, and the primitive takes the coincident arm and answers TRUE. That is
+	// verbatim what the fused block inside ZM_PickInteractTarget did before SC3
+	// lifted it out, and preserving it bit-for-bit is why the branch polarity is
+	// `if (distSq > eps) { ...dot... } return true;` rather than the tidier inverse.
+	//
+	// The fail-CLOSED layer for non-finite input lives ONE LEVEL UP, in
+	// ZM_IsTargetInTrainerSight's finite guard, pinned by Sight_NonFiniteInputFailsClosed.
+	// Whoever changes this branch changes ZM_PickInteractTarget's answer on NaN
+	// input, so they have to edit this unit and read this note first.
+	const float fNaN = std::numeric_limits<float>::quiet_NaN();
+	ZENITH_ASSERT_TRUE(ZM_IsFacingXZ(Zenith_Maths::Vector3(0.0f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f),
+		Zenith_Maths::Vector3(fNaN, 0.0f, 4.0f), fZM_INTERACT_MIN_FACING_DOT),
+		"a non-finite separation lands in the coincident arm and answers TRUE -- the "
+		"preserved behaviour of the picker's original fused cone block");
+}
+
+ZENITH_TEST(ZM_Interaction, Facing_NonFiniteOperandFailsClosed)
+{
+	// A CONTRACT pin: however the cone comparison is spelled, a non-finite operand
+	// must FAIL CLOSED -- face nothing at the primitive's own surface, and hand back
+	// no winner through the shipped ZM_PickInteractTarget caller. Both operands that
+	// can go bad are covered below (the forward, and the threshold), plus the same
+	// input driven through the picker.
+	//
+	// It is NOT a mutation pin for the `>=` vs `!(<)` spelling, and must not be
+	// described as one. The SC3 extraction respells the fused block's
+	// `if (fFacingDot < fMinFacingDot) { continue; }` as
+	// `return fFacingDot >= fMinFacingDot`, and the two were MEASURED: mutating the
+	// shipped line back to `!(fFacingDot < fMinFacingDot)`, rebuilding the Null
+	// config from scratch and running the whole boot unit gate left every unit green
+	// -- identical counts, nothing redded -- on a battery whose sibling mutations
+	// elsewhere DID red. So this unit does NOT red on that respelling, and the
+	// extraction is not known to differ from the pre-SC3 fused block on any input.
+	// Why the two spellings agree was not measured; do not guess at a mechanism here.
+	//
+	// The unit still earns its place. Fail-closed on non-finite input is a real
+	// contract for a predicate that SC6 will feed live physics positions, and this
+	// is its only coverage at this surface.
+	// Facing_NonFiniteSeparationIsTreatedAsCoincident does NOT cover it -- a NaN
+	// SEPARATION is a different arm, taken before the dot is ever computed.
+	const float fNaN = std::numeric_limits<float>::quiet_NaN();
+	const Zenith_Maths::Vector3 xOriginPos(0.0f);
+	const Zenith_Maths::Vector3 xTarget(0.0f, 0.0f, 4.0f);
+
+	// CONTROL: the identical fixture with both operands finite IS faced, so neither
+	// assertion below can pass merely because everything is rejected.
+	ZENITH_ASSERT_TRUE(ZM_IsFacingXZ(xOriginPos, Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f),
+		xTarget, fZM_INTERACT_MIN_FACING_DOT),
+		"fixture precondition: the un-poisoned dead-centre case must be FACED");
+
+	// Operand 1: a non-finite FORWARD. ZM_FlattenXZ answers (NaN, 0, NaN) for
+	// (NaN, 0, 1) rather than the zero vector, so what reaches ZM_IsFacingXZ is
+	// itself non-finite. The assertion pins only the OBSERVABLE answer -- nothing is
+	// faced -- and deliberately does not claim WHICH guard inside the primitive
+	// produced it.
+	ZENITH_ASSERT_FALSE(ZM_IsFacingXZ(xOriginPos, ZM_FlattenXZ(Zenith_Maths::Vector3(fNaN, 0.0f, 1.0f)),
+		xTarget, fZM_INTERACT_MIN_FACING_DOT),
+		"a non-finite FORWARD makes the dot non-finite, and a non-finite dot faces "
+		"NOTHING -- fail closed");
+
+	// Operand 2: a non-finite THRESHOLD, with a perfectly finite forward. The
+	// second, independent path to the same fail-closed answer.
+	ZENITH_ASSERT_FALSE(ZM_IsFacingXZ(xOriginPos, Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f),
+		xTarget, fNaN),
+		"a non-finite THRESHOLD faces nothing either -- the fail-closed answer does "
+		"not depend on WHICH operand went bad");
+
+	// ...and the same fail-closed answer observed through the SHIPPED caller, which
+	// is the level that actually matters to the game: a non-finite origin forward
+	// yields a reject (NOT_FACING today) and no winner index. Asserted as "not OK"
+	// rather than as one specific reason, so the near-miss stage bookkeeping stays
+	// free to change.
+	const ZM_InteractProbe axProbes[1] = { MakeProbe(0.0f, 0.0f, 1.0f) };
+	ZM_InteractOrigin xOrigin = MakeOriginLookingAlongPlusZ();
+	xOrigin.m_xForward = Zenith_Maths::Vector3(fNaN, 0.0f, 1.0f);
+	u_int uBest = uTEST_INDEX_POISON;
+	ZENITH_ASSERT_NE((u_int)ZM_PickInteractTarget(axProbes, 1u, xOrigin, MakeLiveTuning(), uBest),
+		(u_int)ZM_INTERACT_OK,
+		"a non-finite player facing must never hand back a winner -- one body that "
+		"goes non-finite must not make the picker accept whatever probe came first");
+	ZENITH_ASSERT_EQ(uBest, 1u, "no winner -> the unreachable index uCount");
 }

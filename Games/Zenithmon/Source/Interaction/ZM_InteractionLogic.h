@@ -179,3 +179,79 @@ ZM_INTERACT_REJECT ZM_PickInteractTarget(const ZM_InteractProbe* paxProbes, u_in
 // than 90 degrees off +Z and has already cost this repo a full debugging cycle in
 // RenderTest's tennis AI. A unit pins the 180-degree case specifically.
 Zenith_Maths::Vector3 ZM_ForwardFromRotation(const Zenith_Maths::Quat& xRotation);
+
+// ---- Shared XZ cone primitives (S7 item 3 SC3) ------------------------------
+//
+// These three were the SC2 picker's PRIVATE internals. SC3 promotes them because
+// the trainer sight predicate needs the SAME cone, and a second hand-written
+// dot/normalise would let the two silently disagree about what "facing" means --
+// which is exactly what ZM_FlattenXZ's own comment exists to prevent.
+//
+// Nothing about ZM_PickInteractTarget's answers changes: it calls ZM_IsFacingXZ
+// with the same operands, in the same order, at the same point in its walk.
+
+// Squared XZ length at/below which a vector counts as having NO direction at all.
+// A real facing is unit length, so anything this small is either an exact zero or
+// a straight-up / straight-down facing whose XZ projection has collapsed -- in
+// both cases normalising would produce NaN.
+//
+// `inline` so it has ONE definition across every TU (the ZENITH_ASSERT_* macros
+// bind their operands by const reference, so the units odr-use it).
+inline constexpr float fZM_INTERACT_DEGENERATE_LEN_SQ = 1.0e-8f;
+
+// The ONE flattening policy, shared by ZM_ForwardFromRotation, the picker and the
+// trainer sight predicate so none of the three can ever disagree about what
+// "facing" means: drop Y, normalise, and return EXACTLY the zero vector -- never
+// a NaN -- when there is nothing left to normalise. TOTAL: no argument value
+// asserts.
+Zenith_Maths::Vector3 ZM_FlattenXZ(const Zenith_Maths::Vector3& xVector);
+
+// The ANGULAR half of the cone test, and the ONLY place in Zenithmon where a
+// facing dot is computed. True iff xTargetPosition lies inside the XZ cone of
+// half-angle acos(fMinFacingDot) about xFlatUnitForward, INCLUSIVE at the edge.
+//
+// Deliberately angle-ONLY: the picker interleaves range / vertical-band / cone so
+// it can report how far the best near-miss got, so a primitive that fused range
+// in could not be substituted back into it.
+//
+// xFlatUnitForward must ALREADY be flattened (call ZM_FlattenXZ or
+// ZM_ForwardFromRotation). Passing a raw vector is not UB, it is just a different
+// question -- the length scales the dot.
+//
+// TOTALITY, exactly:
+//   * degenerate forward (XZ length^2 <= fZM_INTERACT_DEGENERATE_LEN_SQ) -> false
+//     (fail closed). Unreachable from the picker, which rejects a degenerate
+//     origin before it walks a single probe, so this guard cannot move its answers.
+//   * COINCIDENT target (XZ separation^2 <= fZM_INTERACT_DEGENERATE_LEN_SQ) ->
+//     true. There is no direction to test; you are standing on it.
+//   * fMinFacingDot > 1.0f   -> an impossible cone: only a coincident target passes.
+//   * fMinFacingDot <= -1.0f -> every direction passes. No clamp, no assert: the
+//     parameter is a COSINE, so it has no out-of-domain value.
+//   * NON-FINITE separation -> lands in the coincident arm and answers TRUE. That
+//     is verbatim the branch the fused picker ran, and preserving it bit-for-bit
+//     is why this function keeps that branch polarity; the answer itself is
+//     pinned by Facing_NonFiniteSeparationIsTreatedAsCoincident. Callers that
+//     must fail CLOSED on non-finite input guard it BEFORE calling here --
+//     ZM_IsTargetInTrainerSight does exactly that.
+//   * NON-FINITE facing DOT -> false. FAIL CLOSED. Either operand can produce
+//     one: a non-finite xFlatUnitForward, or a non-finite fMinFacingDot. The
+//     answer is false either way, and Facing_NonFiniteOperandFailsClosed pins
+//     both paths at this surface as well as the same input driven through the
+//     shipped ZM_PickInteractTarget caller, which hands back no winner.
+//     That bullet is a CONTRACT, not a claimed difference from the pre-SC3 fused
+//     block. The extraction respells the test `return dot >= min` where the fused
+//     block wrote `if (dot < min) { continue; }`, and the two were MEASURED rather
+//     than reasoned about: mutating the shipped line to `return !(dot < min)`,
+//     rebuilding the Null config from scratch and running the whole boot unit gate
+//     left the suite entirely green -- identical counts, nothing redded -- on a
+//     battery whose sibling mutations elsewhere DID red. So on every input this
+//     suite exercises, non-finite ones included, the two spellings answer the
+//     same, and the extraction is not known to differ from the fused block on ANY
+//     input. WHY they agree was not measured, so nothing here claims a reason.
+//     `>=` is kept because it is the clearer fail-closed spelling of the intent --
+//     "faced" is what must be PROVEN -- not because it changes an answer.
+// It NEVER calls Zenith_Assert.
+bool ZM_IsFacingXZ(const Zenith_Maths::Vector3& xObserverPosition,
+	const Zenith_Maths::Vector3& xFlatUnitForward,
+	const Zenith_Maths::Vector3& xTargetPosition,
+	float fMinFacingDot);

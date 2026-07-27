@@ -552,3 +552,52 @@ ZENITH_TEST(ZM_BattleDirector, Director_PresentedEventCountIncludesCurrentOpWhil
 	ZENITH_ASSERT_EQ(xCore.PresentedEventCount(), 1u,
 		"the currently-presenting op is included (cursor+1) while PLAYING_EVENTS");
 }
+
+// 17. (S7 item 3 SC3) The TRAINER battle config, field by field. Every value is
+//     load-bearing, so each message names the consequence of flipping it.
+ZENITH_TEST(ZM_BattleDirector, Director_TrainerBattleConfigFields)
+{
+	const ZM_BattleConfig xCfg = ZM_BattleDirector::BuildTrainerBattleConfig();
+
+	ZENITH_ASSERT_FALSE(xCfg.m_bIsWild,
+		"a trainer battle is not a wild encounter");
+	ZENITH_ASSERT_FALSE(xCfg.m_bCanCatch,
+		"another trainer's monster can never be caught");
+	ZENITH_ASSERT_FALSE(xCfg.m_bCanFlee,
+		"m_bCanFlee must stay FALSE: ZM_BattleEngine Zenith_Asserts on a RUN action at "
+		"TWO sites (SubmitAction and DoRunAction), and Zenith_Assert breaks the process "
+		"in every configuration -- so the SC4 HUD Run-gate is a hard prerequisite");
+	ZENITH_ASSERT_TRUE(xCfg.m_bIsTrainerBattle,
+		"a trainer battle pays gross exp x1.5 -- inert while awards are off, but the "
+		"flag is what SC5 turns on when it flips exp for a real-party battle");
+	ZENITH_ASSERT_EQ(xCfg.m_uLevelCap, 0u,
+		"0 == no cap; only the flat-50 Battle Tower facility caps levels");
+	ZENITH_ASSERT_FALSE(xCfg.m_bAwardExp,
+		"exp is OFF BY CONSTRUCTION, exactly like the wild helper: SC5's caller flips "
+		"it on a LOCAL COPY, so this static stays a constant a unit can pin");
+	ZENITH_ASSERT_EQ(xCfg.m_uExpAwardSideMask, (u_int)(1u << (u_int)ZM_SIDE_PLAYER),
+		"only the player side may ever progress from a trainer battle");
+}
+
+// 18. (S7 item 3 SC3) THE GOLDEN-PRESERVATION unit. The wild battle path is
+//     BYTE-FROZEN: SC3 adds a trainer helper BESIDE BuildBattleConfig() and
+//     changes nothing inside it. The two shipped units above (11 / 11b) pin only
+//     FOUR of the seven fields; this closes the gap so no SC3..SC8 edit can drift
+//     the wild path unobserved -- m_bIsTrainerBattle going true here would apply
+//     the x1.5 trainer exp multiplier to every wild encounter, and nothing else
+//     would notice.
+ZENITH_TEST(ZM_BattleDirector, Director_WildBattleConfigFullFieldPin)
+{
+	const ZM_BattleConfig xCfg = ZM_BattleDirector::BuildBattleConfig();
+
+	ZENITH_ASSERT_TRUE(xCfg.m_bIsWild,        "the director's battle is a WILD encounter");
+	ZENITH_ASSERT_TRUE(xCfg.m_bCanCatch,      "the wild battle permits catching (SC4)");
+	ZENITH_ASSERT_TRUE(xCfg.m_bCanFlee,       "the wild battle permits fleeing (SC5 RUN)");
+	ZENITH_ASSERT_FALSE(xCfg.m_bAwardExp,     "the static helper stays exp-OFF; RunSetup flips a local copy");
+	ZENITH_ASSERT_FALSE(xCfg.m_bIsTrainerBattle,
+		"a WILD encounter must never carry the trainer exp multiplier");
+	ZENITH_ASSERT_EQ(xCfg.m_uLevelCap, 0u,
+		"a wild encounter is uncapped -- only the Battle Tower caps levels");
+	ZENITH_ASSERT_EQ(xCfg.m_uExpAwardSideMask, (u_int)(1u << (u_int)ZM_SIDE_PLAYER),
+		"the wild config's exp side mask is the struct default (player only)");
+}

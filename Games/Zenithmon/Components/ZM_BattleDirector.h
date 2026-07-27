@@ -77,6 +77,18 @@ public:
 	static ZM_BattleMonsterSpec BuildPlaceholderPlayerSpec();
 	// The S5 wild-battle config: wild, no exp award (all other fields default).
 	static ZM_BattleConfig      BuildBattleConfig();
+	// The S7 item-3 TRAINER-battle config: not wild, no catching, no fleeing, a
+	// trainer battle (gross exp x1.5), no level cap, and exp OFF BY CONSTRUCTION.
+	// Exp-off mirrors BuildBattleConfig() exactly: SC5's caller flips m_bAwardExp
+	// on a LOCAL COPY for a real-party battle, the same way RunSetup already does
+	// for the wild arm, so this static stays a constant a unit can pin.
+	//
+	// m_bCanFlee = false is a LOADED VALUE, not decoration: ZM_BattleEngine
+	// Zenith_Asserts on a RUN action at TWO sites (SubmitAction and DoRunAction),
+	// and Zenith_Assert breaks the process in every configuration. Nothing may
+	// Begin a battle with this config until the SC4 HUD Run-gate lands, which is
+	// exactly why SC3 ships the helper with NO caller.
+	static ZM_BattleConfig      BuildTrainerBattleConfig();
 	// Pure deterministic hash of (species, level) -> the core's battle seed, so a
 	// windowed drive is reproducible.
 	static u_int64              DeriveBattleSeed(ZM_SPECIES_ID eSpecies, u_int uLevel);

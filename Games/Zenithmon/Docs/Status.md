@@ -4,8 +4,8 @@
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (all OBSERVED 2026-07-27 on a fresh build of both configs):**
-ZM headless registry **44 passed / 0 failed**; ZM boot unit gate **2607 ran /
-2606 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to 2607); engine boot
+ZM headless registry **44 passed / 0 failed**; ZM boot unit gate **2638 ran /
+2637 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to 2638); engine boot
 unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed / 1 skipped**
 (`run_unit_gate.ps1` default). The 1 skipped in each is the quarantined
 `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
@@ -14,7 +14,16 @@ unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed / 1 skipped**
 (harness world reset, harness dt pinning, navmesh RNG determinism) adding units,
 and `e687d095` left BOTH baselines one short, so `engine-gate` and `zm-tests`
 were RED on master until **ZM-D-149** fixed them forward (1163 -> 1164,
-2588 -> 2589). 2589 -> **2607** is SC2's own +18 units (ZM-D-150).
+2588 -> 2589). 2589 -> **2607** is SC2's own +18 units (ZM-D-150), and
+2607 -> **2638** is SC3's +31 (ZM-D-151).
+
+**★ SECOND GATE TRIPWIRE:** a new `.cpp` under `Games/Zenithmon/` needs
+`Build\regen.ps1` BEFORE the build, and the failure mode is SILENT. Sharpmake
+globs the game tree at GENERATION time and everything it emits is gitignored, so
+a skipped regen builds GREEN with the new TU simply absent -- and if nothing else
+references its symbols there is no link error either. **The unit-count delta is
+the only proof the regen took** (SC2 expected +18 and got +18; SC3 expected +31
+and got +31).
 
 **★ GATE-ORDER TRIPWIRE (cost a wasted 300 s boot to rediscover):** the boot unit
 gate must run AFTER `zenith test <Game> --headless`, never before, on a freshly
@@ -36,7 +45,32 @@ boot output" rather than a load failure.
 
 ## Current task
 
-**S7 item 3 SC2 COMPLETE (ZM-D-150) -- the `ZM_TrainerData` roster + `ZM_STORY_FLAG_RIVAL1_DEFEATED` at wire bit 6. NEXT = SC3: the pure sight-cone predicate (reuse `ZM_ForwardFromRotation`; occlusion stays OUT, it enters at SC6 as a probe filter in the glue layer) + a trainer `ZM_BattleConfig` helper (wild=false, canCatch=false, canFlee=false, isTrainerBattle=true).** Nothing consumes the trainer table yet -- that is SC5's job -- so SC2 is fully reversible.
+**S7 item 3 SC3 COMPLETE (ZM-D-151) -- the pure trainer sight cone, the ONE shared cone primitive, and `BuildTrainerBattleConfig()`. NEXT = SC4: the HUD Run-gate on `m_bCanFlee`.**
+
+**SC4 is a HARD PREREQUISITE, not a nicety.** `BuildTrainerBattleConfig()` ships
+with NO CALLER on purpose: it sets `m_bCanFlee = false`, `ZM_BattleEngine`
+asserts on a RUN action, and `Zenith_Assert` breaks the process in EVERY
+configuration -- so nothing may `Begin` a battle with that config until the menu
+refuses Run. A read-only planning pass has already surveyed SC4 and found:
+`xCore.GetEngine().GetConfig().m_bCanFlee` is reachable from
+`ZM_UI_BattleHUD::UpdateMenu` today with zero plumbing (the plan still adds one
+`ZM_BattleDirectorCore::IsFleeAllowed()` getter beside the existing
+`IsCatchAllowed()`, per ZM-D-131's precedent that the RULE lives on the core);
+and the gate must **REFUSE-IN-PLACE at the confirm boundary**, never remove the
+Run entry, because `MenuRootItemAtIndex` is called directly by
+`ZM_AutoTests_BattleMenu.cpp` and a removal gate would renumber the root and
+could make its DOWN-press loop non-terminating.
+
+**What SC3 pinned that SC4-SC8 must not re-litigate:** there is exactly ONE
+facing-cone test in the game (`ZM_IsFacingXZ`, shared by the interaction picker
+and the trainer sight predicate) and ONE flattening policy (`ZM_FlattenXZ`) --
+do not hand-write a second dot product; the sight tuning has THREE parameters
+(range, half-angle cosine, and an absolute vertical band -- see the ruling in
+ZM-D-151); occlusion is NOT in the pure predicate and enters at SC6 as a glue-
+layer probe filter; and the trainer config is built beside the wild one, never
+by modifying it.
+
+**Prior:** SC2 COMPLETE (ZM-D-150) -- the `ZM_TrainerData` roster + `ZM_STORY_FLAG_RIVAL1_DEFEATED` at wire bit 6.
 
 **What SC2 pinned that SC3-SC8 must not re-litigate:** a trainer party row stores
 ONLY `{species, level}` per member (`ZM_BuildWildEnemySpec` derives the rest with
@@ -86,7 +120,32 @@ Then SC2 `ZM_TrainerData` + `ZM_STORY_FLAG_RIVAL1_DEFEATED` -> SC3 sight cone ->
 
 ## Last completed
 
-**S7 item 3 SC2 -- THE `ZM_TrainerData` ROSTER + `ZM_STORY_FLAG_RIVAL1_DEFEATED`
+**S7 item 3 SC3 -- THE PURE TRAINER SIGHT CONE + THE ONE SHARED CONE PRIMITIVE
+(ZM-D-151).** `Source/Interaction/ZM_TrainerSightLogic.{h,cpp}` ships
+`ZM_TrainerSightTuning` and two TOTAL predicates (forward-vector and quaternion
+forms). The cone maths was **EXTRACTED, not duplicated**: `ZM_FlattenXZ` and the
+new `ZM_IsFacingXZ` were promoted out of `ZM_InteractionLogic.cpp`'s anonymous
+namespace to external linkage, and the picker's fused block became one
+`if (!ZM_IsFacingXZ(...)) { continue; }`. **All 44 shipped interaction units were
+left untouched and stayed green** -- that is the behaviour-preservation net.
+`ZM_BattleDirector::BuildTrainerBattleConfig()` lands beside the wild helper
+(which is not touched by one character) and deliberately has NO CALLER until
+SC4's Run-gate. +31 units, baseline **2607 -> 2638**; headless and windowed both
+**44/44**.
+
+**★ THE MUTATION BATTERY RETRACTED A CLAIM RATHER THAN CONFIRMING ONE.** Three
+mutations, each rebuilt and re-gated: dropping `std::fabs` from the sight
+vertical band RED, flipping that band's `>` to `>=` RED -- and respelling the
+extracted comparison `dot >= min` back to `!(dot < min)` **GREEN, when the
+authored comments asserted in three files that this was "THE ONE DELIBERATE
+BEHAVIOUR CHANGE SC3 MAKES"**. It is not: on every input the suite exercises,
+non-finite included, the two spellings answer the same, so the extraction is not
+known to differ from the pre-SC3 block on ANY input. All three comment blocks
+were corrected to the measured result (and claim no mechanism, since none was
+measured); the unit was kept and re-documented as a fail-closed CONTRACT pin
+rather than a mutation pin. **Do not restore the retracted narrative.**
+
+Prior: **S7 item 3 SC2 -- THE `ZM_TrainerData` ROSTER + `ZM_STORY_FLAG_RIVAL1_DEFEATED`
 (ZM-D-150).** Pure, headless, `Games/Zenithmon`-only: zero engine files, zero new
 ECS orders (114 still next-free), no save-schema version bump.
 `Source/Data/ZM_TrainerData.{h,cpp}` ships the append-only `ZM_TRAINER_ID`

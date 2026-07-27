@@ -15,6 +15,115 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-27 -- ZM-D-151 -- S7 item 3 SC3: the pure trainer sight cone, the ONE shared cone primitive, and the trainer battle config
+
+*(Third sub-commit of the ZM-D-143 sequence. `Games/Zenithmon` only; ZERO
+`Zenith/` files, ZERO new ECS orders -- 114 stays next-free.)*
+
+### The extraction, which is the risky part
+
+SC3 needed a forward-cone test, and the interaction picker already had one --
+fused inside `ZM_PickInteractTarget`'s loop, with `ZM_FlattenXZ` and the
+degenerate epsilon hidden in an anonymous namespace. Rather than hand-write a
+second dot product that could silently disagree about what "facing" means, both
+were promoted to external linkage and declared in
+`Source/Interaction/ZM_InteractionLogic.h`, and the picker's fused block became a
+single `if (!ZM_IsFacingXZ(...)) { continue; }`. The unnamed-namespace copies were
+DELETED, not left in place: with the header's declarations visible in the same
+TU, keeping them makes unqualified lookup ambiguous rather than shadowed.
+
+The helper recomputes the deltas from the same two positions with the same
+expression, so no value differs by a bit, and the coincident-target carve-out
+moved in unchanged. **The 44 shipped interaction units are the behaviour-
+preservation net and were left completely untouched** -- not one was edited to
+accommodate the extraction, and all 44 stayed green.
+
+### The sight predicate
+
+`Source/Interaction/ZM_TrainerSightLogic.{h,cpp}`: `ZM_TrainerSightTuning` plus
+`ZM_IsTargetInTrainerSight` (forward-vector form) and
+`ZM_IsTargetInTrainerSightFromRotation` (quaternion form -- the only thing that
+calls `ZM_ForwardFromRotation`). Evaluation order is finite-guard -> flatten +
+degenerate-facing guard -> negative-range guard -> XZ range (inclusive) ->
+vertical band (inclusive) -> the SHARED `ZM_IsFacingXZ`. No assert on any
+argument, no statics, no allocation, no RNG. **Occlusion stays OUT** -- it enters
+at SC6 as a probe filter in the impure glue layer, exactly as ZM-D-143 requires.
+
+**ORCHESTRATOR RULING -- the tuning has THREE parameters, not two.** ZM-D-143
+described SC3's predicate as taking "range + half-angle". The shipped
+`ZM_TrainerSightTuning` also carries `m_fMaxVertical` (default 2.0), an absolute
+vertical band. This is a deliberate, recorded deviation and it is ruled IN, for
+two reasons: (1) it is exactly the shape of the shipped picker the cone was
+extracted FROM, whose per-probe test is XZ range + absolute Y band + XZ cone --
+and consistency with the shipped picker is the entire argument for extracting
+rather than duplicating; (2) without it a trainer sees the player through a floor
+in Dawnmere's interiors, and SC6 would then have to fix that by changing already-
+shipped behaviour instead of inheriting correct behaviour. The plan-of-record
+wording is superseded here, not silently exceeded.
+
+### The trainer battle config, deliberately with no caller
+
+`ZM_BattleDirector::BuildTrainerBattleConfig()` returns `m_bIsWild = false`,
+`m_bCanCatch = false`, `m_bCanFlee = false`, `m_bIsTrainerBattle = true`,
+`m_uLevelCap = 0`, `m_bAwardExp = false` (exp off by construction, mirroring the
+wild helper, which flips it on a local copy at its call site). It is added
+BESIDE `BuildBattleConfig()`, which is not touched by one character, so the wild
+path and its goldens cannot move. **It ships with NO CALLER on purpose:**
+`m_bCanFlee = false` is a loaded value because `ZM_BattleEngine` asserts on a RUN
+action, and `Zenith_Assert` breaks the process in every configuration -- so
+nothing may `Begin` a battle with this config until SC4's HUD Run-gate lands.
+
+### The mutation battery -- and the claim it RETRACTED
+
+Three mutations, each applied to production code, rebuilt from scratch on the
+Null config, and run through the full boot unit gate:
+
+- **M2 -- drop `std::fabs` from the sight vertical band: RED** (2638 ran / 2636
+  passed / 1 failed). Without it a trainer sees a target arbitrarily far BELOW
+  through the floor.
+- **M3 -- flip that band's `>` to `>=`: RED** (same shape). The band's documented
+  inclusivity is genuinely pinned.
+- **M1 -- respell the extracted comparison `fFacingDot >= fMinFacingDot` back to
+  `!(fFacingDot < fMinFacingDot)`: GREEN. Nothing redded.**
+
+M1 was expected to red. **It did not, and that retracted a claim rather than
+excusing one.** The authored comments in three files asserted as fact that the
+respelling was "THE ONE DELIBERATE BEHAVIOUR CHANGE SC3 MAKES" -- that the fused
+block ACCEPTED a non-finite dot where the extracted form REJECTS it. The
+measurement says otherwise: on every input this suite exercises, non-finite
+included, the two spellings answer the same, so **the extraction is not known to
+differ from the pre-SC3 fused block on ANY input** -- a stronger preservation
+result than was claimed. All three comment blocks were corrected to state the
+measured result; WHY the two agree was not measured, so nothing in the code now
+claims a mechanism. `>=` is kept because it is the clearer fail-closed spelling
+of the intent, not because it changes an answer.
+`Facing_NonFiniteOperandFailsClosed` was KEPT and re-documented honestly: it is a
+CONTRACT pin (a non-finite forward, a non-finite threshold, and a non-finite
+player facing driven through the shipped picker all fail closed) rather than a
+mutation pin for that respelling. The build was verified to have actually
+recompiled under M1 ("Built Zenithmon (Null_...)"), and the two sibling
+mutations redding in the same battery prove the harness had teeth.
+
+### Gate
+
+`Build\regen.ps1` -> Vulkan_True -> Null_True -> headless **44 passed / 0
+failed** -> boot unit gate **2638 ran / 2637 passed / 0 failed / 1 skipped**
+(2607 -> 2638, +31 = 22 sight + 7 interaction + 2 director; OBSERVED, and
+`zm-tests.yml` bumped to match) -> full windowed Vulkan **44 passed / 0 failed**.
+One transient `cl : command line error D8040: error creating or communicating
+with child process` hit the Vulkan build mid-session; `zenith clean
+--processes-only` then a rebuild cleared it, and BOTH the Vulkan build and the
+windowed batch were re-run afterwards on fresh binaries, because the windowed run
+that had passed during the failure was executing a stale exe.
+
+### Reversibility / next boundary
+
+Reversible, but note the extraction touched a shipped path (behaviour-preserving,
+44 units green). **NEXT = SC4**, the HUD Run-gate on `m_bCanFlee` -- a hard
+prerequisite of any trainer battle and of SC5.
+
+---
+
 ## 2026-07-27 -- ZM-D-150 -- S7 item 3 SC2: the `ZM_TrainerData` roster + `ZM_STORY_FLAG_RIVAL1_DEFEATED`
 
 *(Second sub-commit of the ZM-D-143 eight-SC sequence. Pure, headless, data-only:

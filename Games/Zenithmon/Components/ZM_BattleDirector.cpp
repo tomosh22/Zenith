@@ -313,6 +313,18 @@ ZM_BattleConfig ZM_BattleDirector::BuildBattleConfig()
 	return xConfig;
 }
 
+ZM_BattleConfig ZM_BattleDirector::BuildTrainerBattleConfig()
+{
+	ZM_BattleConfig xConfig;                 // every unnamed field keeps its struct default
+	xConfig.m_bIsWild          = false;      // a trainer battle is not a wild encounter
+	xConfig.m_bCanCatch        = false;      // another trainer's monster can never be caught
+	xConfig.m_bCanFlee         = false;      // and there is no running from a trainer
+	xConfig.m_bIsTrainerBattle = true;       // gross exp x1.5 -- inert until awards are on
+	xConfig.m_uLevelCap        = 0u;         // 0 == none; only the flat-50 tower facility caps
+	xConfig.m_bAwardExp        = false;      // OFF by construction, exactly like the wild helper
+	return xConfig;
+}
+
 u_int64 ZM_BattleDirector::DeriveBattleSeed(ZM_SPECIES_ID eSpecies, u_int uLevel)
 {
 	// Pure deterministic FNV-1a fold of (species, level). Same inputs -> same seed, so
