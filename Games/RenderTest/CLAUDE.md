@@ -31,10 +31,23 @@ inputs, same-frame nav-destination consumption). Pinned by
 `RT_TennisDeterminismDigest`: an FNV-1a digest over 2400 fixed-dt frames of
 [both brain RNG states, referee jitter RNG, phase/epoch/points/games/serve
 state, quantized ball position], self-aligned on the first SERVING frame of
-epoch 1. The pinned value `0x9551B81E8F74B8AE` was captured from the C++/BT
-baseline (two identical runs) and the graph build reproduces it bit-for-bit.
-Anything that changes brain-tick cadence, Selector gate order, or RNG draw
-counts breaks this test — that is its job.
+epoch 1. Anything that changes brain-tick cadence, Selector gate order, or RNG
+draw counts breaks this test — that is its job.
+
+The pinned value is `0x4369AB2293ADFDDB` (**re-pinned 2026-07-27**). The original
+`0x9551B81E8F74B8AE` was captured on 2026-07-05 from the C++/BT baseline, but the
+harness did not yet pin dt across the between-tests reset/settle window, so that
+value encoded a WALL-CLOCK-contaminated run: `ResetSimulatorAndCallSetup` falls
+through to `Stepping` in the same tick, so `Setup`'s `SetFixedDt` lands after that
+frame's `UpdateTimers` and Step 0 — which loads the scene — ran game logic on a
+real frame time. The brains' 0.08 s tick accumulator integrated it, and
+`RTTennisTickGate` freezes rather than resets, so the residual survived to the
+align frame. The `>=0.08` fire threshold quantised that continuous phase into ~3
+discrete digests, so the test passed roughly 1 run in 5 and looked like a stable
+wrong value rather than a flake. `Zenith_AutomatedTest`'s `m_fFixedDt` now
+defaults to 1/60 instead of "unset", which makes the whole run deterministic:
+3/3 identical with no CLI flags, byte-identical to what `--fixed-dt` produced
+independently. `--fixed-dt` is therefore no longer needed for determinism.
 
 ### Node library (`Components/RenderTest_GraphNodes.h`)
 

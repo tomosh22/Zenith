@@ -93,6 +93,17 @@ Two separate things were being conflated under "8 passed, 2 failed":
      identical failing digest reproduces.
    - The empty `failures` array in the JSON is explained too -- the test reports
      through `Zenith_Log`, not the assertion API that populates the JSON.
+   - **CORRECTED 2026-07-27:** point 2 is WRONG. "Standalone produces exactly the
+     pinned value" came from too few runs -- standalone actually passes 1 run in 5,
+     taking one of three digests. It was a genuine determinism defect, not an
+     isolation defect. Root cause: the harness left dt UNPINNED for the
+     reset/settle window (`m_fFixedDt` defaulted to `-1`) while Setup falls through
+     to Step 0 in the same tick, so the scene-loading frame ran game logic on
+     wall-clock dt and froze that residual into the tennis brains' 0.08s tick
+     accumulator; the `>=0.08` fire threshold quantised it into a few discrete
+     digests, which is why a flake looked like a stable wrong value. Fixed by
+     defaulting `m_fFixedDt` to 1/60; digest re-pinned to `0x4369AB2293ADFDDB`.
+     Full write-up in `Questions.md` under Q-2026-07-21-002.
    - **Follow-up, not done here:** give RenderTest a between-tests hook and
      re-verify. Until then the digest is a reliable standalone gate and a false
      alarm in batch.

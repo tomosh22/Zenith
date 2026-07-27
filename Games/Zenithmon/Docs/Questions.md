@@ -258,7 +258,39 @@ the perception registry (and whatever else the bisect implicates), then re-verif
 the digest in-batch. Until then the digest is a reliable STANDALONE gate and a
 false alarm in batch.
 
-**Status:** [RESOLVED] as a diagnosis; the isolation fix itself is open follow-up work.
+---
+
+**CORRECTION (2026-07-27) — the 2026-07-26 answer above is WRONG and is kept only
+as a record of the wrong turn.** "Standalone it PASSES" was concluded from too few
+standalone runs. Measured on pristine master with a freshly built Null exe,
+standalone passes **1 run in 5**: the digest takes one of three values
+(`0x9551B81E8F74B8AE`, `0xBF382FD57CE8E2B5`, `0x4369AB2293ADFDDB`). So it was
+never a pure isolation defect — the sim really was non-deterministic, which is
+one of the two hypotheses the 2026-07-26 answer explicitly ruled out.
+
+Real root cause: `HarnessPhase::ResetSimulatorAndCallSetup` falls through to
+`Stepping` in the SAME tick, and `m_fFixedDt` defaulted to `-1` ("unset"), so
+`Setup`'s `SetFixedDt` landed after that frame's `UpdateTimers` and Step 0 — which
+loads the scene — ran game logic on WALL-CLOCK dt. The tennis brains' 0.08 s tick
+accumulator integrated that real frame time, and `RTTennisTickGate` freezes rather
+than resets, so the residual survived to the align frame. The `>=0.08` fire
+threshold quantised a continuous phase into ~3 discrete digests — which is exactly
+why a genuine flake masqueraded as "a STABLE wrong value = contamination".
+
+Proof: the accumulator phase at fold frame 0 was `0.0142506 / 0.0153472 /
+0.0144641 / 0.0148813` across four runs (wall-clock frame times, none a multiple
+of 1/60), and collapsed to exactly `0.016666668` on all three runs with
+`--fixed-dt`. Also refuted along the way: asset drift (scene + `.bgraph` bytes are
+byte-identical across every boot) and Jolt solver threading (single-threaded
+physics is still flaky).
+
+Fixed by defaulting `m_fFixedDt` to `1/60` in `Zenith_AutomatedTest.cpp`, and the
+digest re-pinned to `0x4369AB2293ADFDDB`. All six game suites re-run green.
+The `BetweenTestsHook` follow-up above is moot — `d7027197` already replaced it
+with an engine-side world reset, and isolation was never the problem.
+
+**Status:** [RESOLVED] — root-caused and fixed 2026-07-27. The 2026-07-26
+diagnosis was superseded.
 
 ---
 

@@ -316,7 +316,15 @@ namespace
 		const char*                     m_szResultsDir       = nullptr;
 		int                             m_iStepFrame         = 0;
 		int                             m_iMaxFramesOverride = -1;          // set via --exit-after-frames
-		float                           m_fFixedDt           = -1.0f;       // set via --fixed-dt
+		// Defaulted (not -1 "unset") so the harness PINS dt across the world
+		// reset + settle + the Setup/Step-0 tick. UpdateTimers applies the
+		// override at frame TOP, and ResetSimulatorAndCallSetup falls through to
+		// Stepping in the SAME tick, so a test's own SetFixedDt in Setup lands
+		// too late for that frame -- leaving Step 0 (which loads the scene) to
+		// run game logic on wall-clock dt. Anything integrating dt from the frame
+		// it was created on then carries a real frame time forever. --fixed-dt
+		// overrides the value; it no longer decides whether dt is fixed at all.
+		float                           m_fFixedDt           = 1.0f / 60.0f;   // overridden by --fixed-dt
 		int                             m_iPendingExitCode   = 0;
 		bool                            m_bListThenExit      = false;
 		bool                            m_bRunAllTests       = false;   // --all-automated-tests

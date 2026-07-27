@@ -289,12 +289,20 @@ ZENITH_AUTOMATED_TEST_REGISTER(g_xTennisMatchFlowTest);
 
 namespace
 {
-	// Pinned from the C++/BT baseline (two identical runs proved run-to-run
-	// stability first: 0x9551B81E8F74B8AE both times, 2026-07-05, fixed-dt
-	// 1/60, 2400-frame window aligned on SERVING@epoch1). 0 = capture mode:
-	// the digest is logged and the test passes so the baseline can be
-	// recorded; any non-zero value is a hard pin.
-	constexpr uint64_t k_ulPinnedTennisDigest = 0x9551B81E8F74B8AEull;
+	// RE-PINNED 2026-07-27. The previous pin (0x9551B81E8F74B8AE, 2026-07-05)
+	// was captured before the harness pinned dt across the reset/settle/Setup
+	// window, so it encoded a WALL-CLOCK-contaminated trajectory: Setup falls
+	// through to Step 0 in the same tick, so the scene-loading frame ran game
+	// logic on a real frame time and the brains' 0.08s tick accumulator froze
+	// with that residual (the park gate freezes, it does not reset). The
+	// accumulator's >=0.08 fire threshold quantised that continuous phase into
+	// a few discrete digests, so the test passed roughly 1 run in 5.
+	// Zenith_AutomatedTest's m_fFixedDt now defaults to 1/60 instead of "unset",
+	// which makes this deterministic: 3/3 identical with no CLI flags, and
+	// byte-identical to the value --fixed-dt produced independently.
+	// 0 = capture mode: the digest is logged and the test passes so the
+	// baseline can be recorded; any non-zero value is a hard pin.
+	constexpr uint64_t k_ulPinnedTennisDigest = 0x4369AB2293ADFDDBull;
 
 	// Frames folded into the digest (fixed dt 1/60 => 40 s of match).
 	constexpr int k_iDigestFrames = 2400;
