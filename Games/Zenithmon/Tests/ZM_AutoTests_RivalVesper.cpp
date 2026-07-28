@@ -8,7 +8,8 @@
 //
 // Two independent tests, both m_bRequiresGraphics = FALSE (they assert nothing
 // about pixels, so they run FOR REAL on the Null backend):
-//   * ZM_RivalVesperAuthored_Test proves the authored rival and win/payout path.
+//   * ZM_RivalVesperAuthored_Test proves the authored rival, visual SPOTTED beat,
+//     and win/payout path.
 //   * ZM_RivalVesperWhiteout_Test proves the exact-starter loss, heal, warp, and
 //     no-immediate-retrigger path.
 //
@@ -140,6 +141,7 @@ namespace
 	constexpr int iRV_POST_LOAD_SETTLE_FRAMES    = 4;
 	constexpr int iRV_BASIS_FRAMES               = 30;
 	constexpr int iRV_APPROACH_DEADLINE          = 900;
+	constexpr int iRV_SPOTTED_DEADLINE           = 60;
 	constexpr int iRV_CHALLENGE_HOLD_FRAMES      = 30;
 	// The overworld typewriter is a hard constexpr 45 chars/sec and
 	// ZM_SetInstantBattlesForTests does NOTHING for a bark, so a bark costs real
@@ -184,11 +186,12 @@ namespace
 		InstallLead,       // (3)
 		BasisProbe,        // (4)
 		Approach,          // (5)
-		AwaitChallenge,    // (6)
-		DismissChallenge,  // (7)
-		AwaitInBattle,     // (8)
-		DriveMenu,         // (9)
-		Settle,            // (10)
+		AwaitSpotted,      // (6)  the W3 visual beat
+		AwaitChallenge,    // (7)
+		DismissChallenge,  // (8)
+		AwaitInBattle,     // (9)
+		DriveMenu,         // (10)
+		Settle,            // (11)
 		Done,
 	};
 
@@ -397,6 +400,8 @@ namespace
 	ZM_TRAINER_ID   g_eRVSecondTrainer   = ZM_TRAINER_NONE;
 	u_int           g_uRVSecondState     = 0xffffffffu;   // want WATCHING
 	u_int           g_uRVSecondRaise     = 0xffffffffu;   // want 0
+	u_int           g_uRVSecondSpotted   = 0xffffffffu;   // want 0
+	u_int           g_uRVSecondIndicator = 0xffffffffu;   // want 0
 	bool            g_bRVEntityIDChanged = false;
 
 	// ---- (3) baselines. "after" money defaults to 0xffffffff so an unsampled run
@@ -423,7 +428,23 @@ namespace
 	bool  g_bRVEarlyRaiseSeen  = false;
 	float g_fRVEarlyRaiseDistance = 0.0f;
 
-	// ---- (6)/(7) THE BARK ----
+	// ---- (6) THE VISUAL SPOTTED BEAT ----
+	// The indicator submit sample is captured while the FSM is still SPOTTED.
+	// Therefore zero challenge/raise counts and idle UI/transition on that SAME
+	// sample prove the marker preceded both the bark and the encounter.
+	bool  g_bRVSpottedObserved          = false;
+	bool  g_bRVSpottedCompleted         = false;
+	bool  g_bRVIndicatorObserved        = false;
+	bool  g_bRVSpottedMenuIdleAtSubmit  = false;
+	bool  g_bRVSpottedTransitionIdleAtSubmit = false;
+	u_int g_uRVSpottedCount             = 0xffffffffu;   // want 1
+	u_int g_uRVSpottedIndicatorSubmits  = 0xffffffffu;   // want > 0
+	u_int g_uRVSpottedRaiseAtSubmit     = 0xffffffffu;   // want 0
+	u_int g_uRVSpottedChallengeAtSubmit = 0xffffffffu;   // want 0
+	u_int g_uRVSpottedFramesObserved    = 0u;            // want > 0
+	float g_fRVSpottedElapsedAtSubmit   = -1.0f;
+
+	// ---- (7)/(8) THE BARK ----
 	// ★ NOT part of g_bRVPrereqsPresent. This one flag gates the BARK CLAUSES in
 	// Verify and nothing else; see the file header for why a whole-test skip on a
 	// gitignored .bgraph would have been a pass that proved nothing.
@@ -443,7 +464,7 @@ namespace
 	bool  g_bRVBarkToBattleOK       = false;
 	int   g_iRVBarkToBattleFrames   = -1;
 
-	// ---- (8)/(9)/(10) battle + payout ----
+	// ---- (9)/(10)/(11) battle + payout ----
 	bool          g_bRVChannelCaptured = false;
 	ZM_TRAINER_ID g_eRVChannelTrainer  = ZM_TRAINER_NONE;
 	bool          g_bRVReachedInBattle = false;
@@ -456,6 +477,8 @@ namespace
 	u_int g_uRVStateAfter     = (u_int)ZM_BATTLE_TRANSITION_FADING_OUT;   // want IDLE
 	bool  g_bRVBattleUnloaded = false;
 	bool  g_bRVSettleResolved = false;
+	u_int g_uRVSettleSpotted   = 0xffffffffu;   // want 1
+	u_int g_uRVSettleIndicator = 0xffffffffu;   // want the observed submit count
 	u_int g_uRVSettleRaise     = 0xffffffffu;   // want 1
 	u_int g_uRVSettleChallenge = 0xffffffffu;   // want 1
 
@@ -630,6 +653,45 @@ namespace
 			: uRV_ENCOUNTERS_UNRESOLVED_AT_BARK;
 	}
 
+	// Sample one ACTUAL SPOTTED frame off the authored component. The submit count
+	// advances only after both marker primitives have been queued, so observing it
+	// here while challenge/raise/UI/transition are all still idle is the ordering
+	// proof: the visual beat happened first, rather than being inferred later from a
+	// battle that could have bypassed it.
+	bool RVObserveSpottedFrame(const ZM_Interactable& xVesper)
+	{
+		g_bRVSpottedObserved = true;
+		++g_uRVSpottedFramesObserved;
+		g_uRVSpottedCount = xVesper.GetTrainerSpottedCount();
+		g_uRVSpottedIndicatorSubmits =
+			xVesper.GetTrainerSpottedIndicatorSubmitCount();
+
+		const u_int uRaise = xVesper.GetTrainerSightRaiseCount();
+		const u_int uChallenge = xVesper.GetTrainerChallengeCount();
+		const bool bMenuIdle = RVTopScreen() == ZM_MENU_SCREEN_NONE;
+		const bool bTransitionIdle = !ZM_BattleTransition::IsTransitionActive();
+		if (g_uRVSpottedCount != 1u || g_uRVSpottedIndicatorSubmits == 0u
+			|| uRaise != 0u || uChallenge != 0u || !bMenuIdle
+			|| !bTransitionIdle)
+		{
+			FailRV("the authored SPOTTED frame did not submit its indicator before "
+				"dialogue/challenge/encounter activity");
+			return false;
+		}
+
+		if (!g_bRVIndicatorObserved)
+		{
+			g_bRVIndicatorObserved = true;
+			g_bRVSpottedMenuIdleAtSubmit = bMenuIdle;
+			g_bRVSpottedTransitionIdleAtSubmit = bTransitionIdle;
+			g_uRVSpottedRaiseAtSubmit = uRaise;
+			g_uRVSpottedChallengeAtSubmit = uChallenge;
+			g_fRVSpottedElapsedAtSubmit =
+				xVesper.GetTrainerSpottedElapsedSeconds();
+		}
+		return true;
+	}
+
 	// -------------------------------------------------------------------------
 	// Per-phase drivers. Each returns true to keep stepping, false to stop.
 	// -------------------------------------------------------------------------
@@ -723,9 +785,11 @@ namespace
 				"(IsTrainerSightEnabled / IsInteractable disagree)");
 			return false;
 		}
-		if (uRaise != 0u || uChallenge != 0u)
+		if (uRaise != 0u || uChallenge != 0u
+			|| pxVesper->GetTrainerSpottedCount() != 0u
+			|| pxVesper->GetTrainerSpottedIndicatorSubmitCount() != 0u)
 		{
-			FailRV("the authored rival had already raised an encounter or barked "
+			FailRV("the authored rival had already spotted, drawn, raised, or barked "
 				"before this test moved -- the walk-up below would be vacuous");
 			return false;
 		}
@@ -852,6 +916,8 @@ namespace
 			return false;
 		}
 		g_uRVSecondState = (u_int)pxVesper->GetTrainerSightState();
+		g_uRVSecondSpotted = pxVesper->GetTrainerSpottedCount();
+		g_uRVSecondIndicator = pxVesper->GetTrainerSpottedIndicatorSubmitCount();
 
 		if (eTrainer != eRV_TRAINER)
 		{
@@ -861,10 +927,11 @@ namespace
 			return false;
 		}
 		if (g_uRVSecondState != (u_int)ZM_TRAINER_SIGHT_WATCHING || uRaise != 0u
-			|| uChallenge != 0u)
+			|| uChallenge != 0u || g_uRVSecondSpotted != 0u
+			|| g_uRVSecondIndicator != 0u)
 		{
 			FailRV("the reloaded rival did not come up as a COLD watcher (state / "
-				"raise / challenge disagree)");
+				"spotted / indicator / raise / challenge disagree)");
 			return false;
 		}
 		if (!g_bRVEntityIDChanged)
@@ -969,10 +1036,13 @@ namespace
 			FailRV("the authored rival vanished during the basis probe");
 			return false;
 		}
-		if (pxVesper->GetTrainerSightRaiseCount() != 0u)
+		if (pxVesper->GetTrainerSightRaiseCount() != 0u
+			|| pxVesper->GetTrainerChallengeCount() != 0u
+			|| pxVesper->GetTrainerSpottedCount() != 0u
+			|| pxVesper->GetTrainerSpottedIndicatorSubmitCount() != 0u)
 		{
-			FailRV("the authored rival raised an encounter before the walk-up even "
-				"began");
+			FailRV("the authored rival spotted, drew, barked, or raised before the "
+				"walk-up even began");
 			return false;
 		}
 
@@ -989,6 +1059,45 @@ namespace
 	//     No SetPosition anywhere, so the player walks on Jolt velocity.
 	bool RVPhaseApproach()
 	{
+		const ZM_Interactable* pxVesper = ResolveVesperComponent();
+		if (pxVesper == nullptr)
+		{
+			FailRV("the authored rival was lost during the approach");
+			return false;
+		}
+
+		// The !completed guard mirrors the walk-up test's. Re-entry is unreachable
+		// today (after the beat the machine is CHALLENGING, and ClearRVInput has left
+		// the player standing inside the cone so it never re-arms to WATCHING), but
+		// without the guard a re-entry would red on RVObserveSpottedFrame's count
+		// clause and name the WRONG cause.
+		if (!g_bRVSpottedCompleted
+			&& pxVesper->GetTrainerSightState() == ZM_TRAINER_SIGHT_SPOTTED)
+		{
+			ClearRVInput();
+			if (!RVObserveSpottedFrame(*pxVesper))
+			{
+				return false;
+			}
+			g_eRVPhase = RVPhase::AwaitSpotted;
+			g_iRVPhaseFrames = 0;
+			return true;
+		}
+
+		// Fixed 1/30 stepping leaves the shipped 0.35 s SPOTTED state observable
+		// for many frames. Reaching any later activity without that observation is
+		// therefore a real bypass, not a polling race.
+		if (!g_bRVSpottedObserved
+			&& (RVTopScreen() == ZM_MENU_SCREEN_DIALOGUE
+				|| ZM_BattleTransition::IsTransitionActive()
+				|| pxVesper->GetTrainerChallengeCount() != 0u
+				|| pxVesper->GetTrainerSightRaiseCount() != 0u))
+		{
+			FailRV("the authored rival reached dialogue/challenge/encounter activity "
+				"without an observable SPOTTED indicator frame");
+			return false;
+		}
+
 		// THE BARK IS CHECKED FIRST, ahead of the transition, so a frame carrying
 		// both is still read as the bark: the claim is that the dialogue PRECEDES
 		// the encounter, and reading it the other way round would let the
@@ -1023,13 +1132,6 @@ namespace
 			FailRV("the player was lost during the approach");
 			return false;
 		}
-		const ZM_Interactable* pxVesper = ResolveVesperComponent();
-		if (pxVesper == nullptr)
-		{
-			FailRV("the authored rival was lost during the approach");
-			return false;
-		}
-
 		g_fRVCurrentDistance =
 			PlanarDistance(xPlayer.m_xPosition, g_xRVVesperPosition);
 
@@ -1038,13 +1140,16 @@ namespace
 		// raise count must be 0, so a pass cannot be "he could see the spawn all
 		// along".
 		if (g_fRVCurrentDistance > fRV_MIN_SPAWN_SEPARATION
-			&& pxVesper->GetTrainerSightRaiseCount() != 0u)
+			&& (pxVesper->GetTrainerSightRaiseCount() != 0u
+				|| pxVesper->GetTrainerChallengeCount() != 0u
+				|| pxVesper->GetTrainerSpottedCount() != 0u
+				|| pxVesper->GetTrainerSpottedIndicatorSubmitCount() != 0u))
 		{
 			g_bRVEarlyRaiseSeen = true;
 			g_fRVEarlyRaiseDistance = g_fRVCurrentDistance;
-			FailRV("the authored rival raised an encounter while the player was still "
-				"well outside the shipped sight range -- the walk-up is not what "
-				"triggered him");
+			FailRV("the authored rival spotted, drew, barked, or raised while the "
+				"player was still well outside the shipped sight range -- the walk-up "
+				"is not what triggered him");
 			return false;
 		}
 
@@ -1075,7 +1180,51 @@ namespace
 		return true;
 	}
 
-	// (6) THE BARK IS UP AND THE BATTLE IS NOT. Hold it, un-pressed, for
+	// (6) THE SPOTTED INDICATOR IS UP. No input is held and no bark/encounter may
+	//     begin until the fixed-duration visual beat leaves SPOTTED naturally.
+	bool RVPhaseAwaitSpotted()
+	{
+		const ZM_Interactable* pxVesper = ResolveVesperComponent();
+		if (pxVesper == nullptr)
+		{
+			FailRV("the authored rival was lost while his SPOTTED indicator was up");
+			return false;
+		}
+
+		if (pxVesper->GetTrainerSightState() == ZM_TRAINER_SIGHT_SPOTTED)
+		{
+			if (g_iRVPhaseFrames > iRV_SPOTTED_DEADLINE)
+			{
+				FailRV("the authored rival remained SPOTTED past the visual-beat deadline");
+				return false;
+			}
+			return RVObserveSpottedFrame(*pxVesper);
+		}
+
+		if (!g_bRVSpottedObserved || !g_bRVIndicatorObserved
+			|| g_uRVSpottedFramesObserved == 0u
+			|| pxVesper->GetTrainerSpottedCount() != 1u
+			|| pxVesper->GetTrainerSpottedIndicatorSubmitCount()
+				!= g_uRVSpottedIndicatorSubmits)
+		{
+			FailRV("the authored rival left SPOTTED without one completed, submitted "
+				"visual beat");
+			return false;
+		}
+		if (pxVesper->GetTrainerSightState() == ZM_TRAINER_SIGHT_WATCHING)
+		{
+			FailRV("the authored rival cancelled back to WATCHING before the visual "
+				"beat handed off to his challenge");
+			return false;
+		}
+
+		g_bRVSpottedCompleted = true;
+		g_eRVPhase = RVPhase::Approach;
+		g_iRVPhaseFrames = 0;
+		return true;
+	}
+
+	// (7) THE BARK IS UP AND THE BATTLE IS NOT. Hold it, un-pressed, for
 	//     iRV_CHALLENGE_HOLD_FRAMES: the challenge dialogue must PRECEDE the
 	//     encounter, not ride under the fade.
 	bool RVPhaseAwaitChallenge()
@@ -1260,6 +1409,9 @@ namespace
 		const ZM_Interactable* pxVesper = ResolveVesperComponent();
 		if (pxVesper != nullptr)
 		{
+			g_uRVSettleSpotted = pxVesper->GetTrainerSpottedCount();
+			g_uRVSettleIndicator =
+				pxVesper->GetTrainerSpottedIndicatorSubmitCount();
 			g_uRVSettleRaise = pxVesper->GetTrainerSightRaiseCount();
 			g_uRVSettleChallenge = pxVesper->GetTrainerChallengeCount();
 			g_bRVSettleResolved = true;
@@ -1305,6 +1457,8 @@ namespace
 		g_eRVSecondTrainer   = ZM_TRAINER_NONE;
 		g_uRVSecondState     = 0xffffffffu;
 		g_uRVSecondRaise     = 0xffffffffu;
+		g_uRVSecondSpotted   = 0xffffffffu;
+		g_uRVSecondIndicator = 0xffffffffu;
 		g_bRVEntityIDChanged = false;
 
 		g_bRVBaselineCaptured = false;
@@ -1328,6 +1482,18 @@ namespace
 		g_abRVHeldKeys[3] = false;
 		g_bRVEarlyRaiseSeen = false;
 		g_fRVEarlyRaiseDistance = 0.0f;
+
+		g_bRVSpottedObserved = false;
+		g_bRVSpottedCompleted = false;
+		g_bRVIndicatorObserved = false;
+		g_bRVSpottedMenuIdleAtSubmit = false;
+		g_bRVSpottedTransitionIdleAtSubmit = false;
+		g_uRVSpottedCount = 0xffffffffu;
+		g_uRVSpottedIndicatorSubmits = 0xffffffffu;
+		g_uRVSpottedRaiseAtSubmit = 0xffffffffu;
+		g_uRVSpottedChallengeAtSubmit = 0xffffffffu;
+		g_uRVSpottedFramesObserved = 0u;
+		g_fRVSpottedElapsedAtSubmit = -1.0f;
 
 		g_bRVBarkAssetPresent     = false;
 		g_bRVBarkObserved         = false;
@@ -1357,6 +1523,8 @@ namespace
 		g_uRVStateAfter      = (u_int)ZM_BATTLE_TRANSITION_FADING_OUT;
 		g_bRVBattleUnloaded  = false;
 		g_bRVSettleResolved  = false;
+		g_uRVSettleSpotted   = 0xffffffffu;
+		g_uRVSettleIndicator = 0xffffffffu;
 		g_uRVSettleRaise     = 0xffffffffu;
 		g_uRVSettleChallenge = 0xffffffffu;
 
@@ -1425,6 +1593,7 @@ namespace
 		case RVPhase::InstallLead:      return RVPhaseInstallLead();
 		case RVPhase::BasisProbe:       return RVPhaseBasisProbe();
 		case RVPhase::Approach:         return RVPhaseApproach();
+		case RVPhase::AwaitSpotted:     return RVPhaseAwaitSpotted();
 		case RVPhase::AwaitChallenge:   return RVPhaseAwaitChallenge();
 		case RVPhase::DismissChallenge: return RVPhaseDismissChallenge();
 		case RVPhase::AwaitInBattle:    return RVPhaseAwaitInBattle();
@@ -1479,14 +1648,16 @@ namespace
 
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_RivalVesper] reload: issued=%s resolved=%s count=%u (want 1) "
-				"trainer=%u (want %u) state=%u (want %u=WATCHING) raise=%u (want 0) "
+				"trainer=%u (want %u) state=%u (want %u=WATCHING) spotted=%u "
+				"indicator=%u raise=%u (all want 0) "
 				"entityIdChanged=%s (want true) | walk: basisPassed=%s dx=%.3f dz=%.3f "
 				"distance=%.3f best=%.3f stallFrames=%d held W=%d A=%d S=%d D=%d "
 				"earlyRaiseSeen=%s at %.3f m",
 				g_bRVReloadIssued ? "true" : "false",
 				g_bRVSecondResolved ? "true" : "false", g_uRVSecondCount,
 				(u_int)g_eRVSecondTrainer, (u_int)eRV_TRAINER,
-				g_uRVSecondState, (u_int)ZM_TRAINER_SIGHT_WATCHING, g_uRVSecondRaise,
+				g_uRVSecondState, (u_int)ZM_TRAINER_SIGHT_WATCHING,
+				g_uRVSecondSpotted, g_uRVSecondIndicator, g_uRVSecondRaise,
 				g_bRVEntityIDChanged ? "true" : "false",
 				g_bRVBasisPassed ? "true" : "false",
 				g_fRVBasisDeltaX, g_fRVBasisDeltaZ,
@@ -1494,6 +1665,20 @@ namespace
 				(int)g_abRVHeldKeys[0], (int)g_abRVHeldKeys[1],
 				(int)g_abRVHeldKeys[2], (int)g_abRVHeldKeys[3],
 				g_bRVEarlyRaiseSeen ? "true" : "false", g_fRVEarlyRaiseDistance);
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesper] spotted: observed=%s completed=%s frames=%u count=%u "
+				"(want 1) indicatorObserved=%s submits=%u (want >0) elapsedAtSubmit=%.3f "
+				"menuIdleAtSubmit=%s transitionIdleAtSubmit=%s raiseAtSubmit=%u "
+				"challengeAtSubmit=%u (both want 0)",
+				g_bRVSpottedObserved ? "true" : "false",
+				g_bRVSpottedCompleted ? "true" : "false",
+				g_uRVSpottedFramesObserved, g_uRVSpottedCount,
+				g_bRVIndicatorObserved ? "true" : "false",
+				g_uRVSpottedIndicatorSubmits, g_fRVSpottedElapsedAtSubmit,
+				g_bRVSpottedMenuIdleAtSubmit ? "true" : "false",
+				g_bRVSpottedTransitionIdleAtSubmit ? "true" : "false",
+				g_uRVSpottedRaiseAtSubmit, g_uRVSpottedChallengeAtSubmit);
 
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_RivalVesper] bark: assetPresent=%s (false => the bark clauses are "
@@ -1527,7 +1712,8 @@ namespace
 				"afterCaptured=%s moneyAfter=%u (want before+%u) flagAfter=%s (want "
 				"true) whiteoutAfter=%s (want false) completed=%u (want 1) aborted=%u "
 				"(want 0) stateAfter=%u (want %u=IDLE) battleUnloaded=%s "
-				"settleResolved=%s settleRaise=%u (want 1) settleChallenge=%u (want 1)",
+				"settleResolved=%s settleSpotted=%u (want 1) settleIndicator=%u "
+				"settleRaise=%u (want 1) settleChallenge=%u (want 1)",
 				g_bRVChannelCaptured ? "true" : "false",
 				(u_int)g_eRVChannelTrainer, (u_int)eRV_TRAINER,
 				g_bRVReachedInBattle ? "true" : "false",
@@ -1543,6 +1729,7 @@ namespace
 				g_uRVStateAfter, (u_int)ZM_BATTLE_TRANSITION_IDLE,
 				g_bRVBattleUnloaded ? "true" : "false",
 				g_bRVSettleResolved ? "true" : "false",
+				g_uRVSettleSpotted, g_uRVSettleIndicator,
 				g_uRVSettleRaise, g_uRVSettleChallenge);
 
 			if (g_bRVFailed)
@@ -1564,7 +1751,10 @@ namespace
 
 			// ===== THE RELOAD: the derivation survives a SECOND load ============
 			if (!g_bRVSecondResolved || g_uRVSecondCount != 1u
-				|| g_eRVSecondTrainer != eRV_TRAINER || !g_bRVEntityIDChanged)
+				|| g_eRVSecondTrainer != eRV_TRAINER || !g_bRVEntityIDChanged
+				|| g_uRVSecondState != (u_int)ZM_TRAINER_SIGHT_WATCHING
+				|| g_uRVSecondRaise != 0u || g_uRVSecondSpotted != 0u
+				|| g_uRVSecondIndicator != 0u)
 			{
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
 					"[ZM_RivalVesper] the SINGLE reload did not re-derive the rival off "
@@ -1645,6 +1835,22 @@ namespace
 						"the credit delta would be a saturation artefact", g_uRVMoneyBefore);
 					bPassed = false;
 				}
+			}
+
+			// ===== THE VISUAL SPOTTED BEAT CAME FIRST ===========================
+			if (!g_bRVSpottedObserved || !g_bRVSpottedCompleted
+				|| !g_bRVIndicatorObserved || g_uRVSpottedFramesObserved == 0u
+				|| g_uRVSpottedCount != 1u || g_uRVSpottedIndicatorSubmits == 0u
+				|| !g_bRVSpottedMenuIdleAtSubmit
+				|| !g_bRVSpottedTransitionIdleAtSubmit
+				|| g_uRVSpottedRaiseAtSubmit != 0u
+				|| g_uRVSpottedChallengeAtSubmit != 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_RivalVesper] the authored walk did not observe one SPOTTED state "
+					"with a real indicator submission while dialogue, challenge, raise, and "
+					"transition were all still idle");
+				bPassed = false;
 			}
 
 			// ===== THE BARK CAME FIRST =========================================
@@ -1797,14 +2003,17 @@ namespace
 			// ===== THE AUTHORED COMPONENT'S OWN COUNTERS ========================
 			// Sampled off the entity the reload resolved, so this is the AUTHORED
 			// rival's own bookkeeping and not the transition's.
-			if (!g_bRVSettleResolved || g_uRVSettleRaise != 1u
+			if (!g_bRVSettleResolved || g_uRVSettleSpotted != 1u
+				|| g_uRVSettleIndicator != g_uRVSpottedIndicatorSubmits
+				|| g_uRVSettleIndicator == 0u || g_uRVSettleRaise != 1u
 				|| g_uRVSettleChallenge != 1u)
 			{
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
 					"[ZM_RivalVesper] the authored rival's own counters after the battle were "
-					"resolved=%s raise=%u challenge=%u; expected exactly 1 and 1 -- one "
-					"walk-up, one bark, one battle",
+					"resolved=%s spotted=%u indicator=%u raise=%u challenge=%u; expected "
+					"one visual beat, one bark, and one battle",
 					g_bRVSettleResolved ? "true" : "false",
+					g_uRVSettleSpotted, g_uRVSettleIndicator,
 					g_uRVSettleRaise, g_uRVSettleChallenge);
 				bPassed = false;
 			}
@@ -1852,8 +2061,9 @@ static const Zenith_AutomatedTest g_xZMRivalVesperAuthoredTest = {
 	&Step_ZMRivalVesper,
 	&Verify_ZMRivalVesper,
 	// Above the SUM of the named phase deadlines (420 ready + 1 resolve + 424
-	// reload + 1 lead + 30 basis + 900 approach + 30 bark hold + 180 bark dismiss
-	// + 2 bark->battle + 600 in-battle + 900 drive + 8 settle = 3496). Two
+	// reload + 1 lead + 30 basis + 900 approach + 60 spotted + 30 bark hold + 180
+	// bark dismiss + 2 bark->battle + 600 in-battle + 900 drive + 8 settle = 3556).
+	// Two
 	// runtime-ready windows -- the initial load and the mid-test reload -- dominate.
 	// The harness jumps straight to Verify when maxFrames is hit, so this must
 	// exceed that sum or a slow-but-valid run would be cut off mid-battle and read
@@ -1866,7 +2076,8 @@ ZENITH_AUTOMATED_TEST_REGISTER(g_xZMRivalVesperAuthoredTest);
 // ============================================================================
 // ZM_RivalVesperWhiteout_Test -- the independent LOSS half of the authored
 // Vesper contract. This uses the exact L5 Fernfawn starter, physically walks into
-// the committed rival's cone, and drives Fight -> move 0 through the live HUD.
+// the committed rival's cone, and drives Fight -> its second learned move through
+// the live HUD.
 // No combat stat, HP, or trainer level is weakened before the core decides the
 // outcome. The input bot selects the starter's second legitimately learned move
 // through the live HUD because the old move-0 assumption was measured producing

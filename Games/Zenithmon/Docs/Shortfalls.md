@@ -112,7 +112,9 @@ The persistent `WarpFade`/`BattleFade` are real full-screen transition surfaces.
 Dawnmere's generated terrain/grass scene now connects through a real authored home-door trigger to PlayerHome build 40 and back through a real authored exit trigger; `TownCenter`, `Door`, and `FromHome` placement are all exercised at runtime. PlayerHome and the outdoor home shell are deliberate greyboxes, and this is still only one door edge. Thornacre and Route1 have measured ignored terrain families, **not** scene/content implementations. **Dawnmere now has five authored, interactable NPCs**: the four S6 townsfolk plus rival Vesper, the first live trainer. The patrol is persisted by `ZM_Interactable` v2; v1 data loads stationary. Vesper's sight/challenge/battle, win reward/flag and loss/whiteout routes are automated. There are still no live route edges, gyms beyond the data row, badge-award gameplay, broader rival arc, or League. The remaining scene/content families depend on shared WorldSpec-driven authoring.
 
 **S7 item 3 SC8 (ZM-D-156) adds the FIRST authored trainer and named two debts; W2
-(ZM-D-158) retires the loss debt, leaving only Route-1 placement open.**
+(ZM-D-158) retires the loss debt, leaving only Route-1 placement open. W3 (ZM-D-159)
+retires the "no visual spotted beat at all" limit, but only partly, and books what it
+deliberately cut.**
 Dawnmere now authors a FIFTH interactable NPC, rival Vesper, at (490, 524) facing the
 spawn approach; walking into his 8 m / 60-degree cone with a clear line of sight starts a
 real trainer battle, and his identity survives save/reload by a zero-byte route.
@@ -129,6 +131,31 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
    exactly one TownCenter load with an independent placement oracle, fresh trainer-row
    derivation after reload, and 200 no-input frames without re-engagement at the 49 m
    clearance. The flagged-row loss loop risk is now exercised rather than argued.
+3. **PARTLY RESOLVED 2026-07-28 (ZM-D-159) -- THE VISUAL "SPOTTED" BEAT.** A trainer no
+   longer notices the player in complete silence. `ZM_TRAINER_SIGHT_SPOTTED` (appended,
+   session-only, serialized nowhere) holds a 0.35 s cancellable window between first
+   sight and the SC7 bark, drawing an asset-free yellow exclamation mark -- one vertical
+   `Flux_Primitives` line plus one sphere, sized off `fabs(scale.y)` -- above every
+   sighted trainer, silent rows included. The player is never frozen, so walking out or
+   behind cover cancels cleanly; a busy channel pauses without consuming the sighting; a
+   corrupt duration fails open on a free tick. **STILL OPEN, and cut on evidence rather
+   than overlooked:**
+   - **No camera cut.** `ZM_FollowCamera::OnLateUpdate` OWNS and overwrites the camera
+     every frame and there is no override stack. A cinematic cut needs camera-ownership
+     arbitration -- a real engine/game-camera feature, not a polish item.
+   - **No approach walk.** Vesper is authored stationary with an OBB collider (ZM-D-156:
+     an AABB destroys his authored yaw). Moving him correctly needs dynamic-capsule/nav
+     ownership, avoidance, and freeze coordination with the order-110/111/112/113 seam.
+   - **The marker rides the DEBUG primitives channel.**
+     `Zenith_GraphicsOptions::m_bPrimitivesEnabled` defaults true and Zenithmon never
+     overrides it, so it renders by default -- but it is bound to a live debug variable,
+     so a tools user who unchecks `Graphics/Primitives/Enabled` loses a GAMEPLAY cue, and
+     `ExecuteGBuffer` early-returns before draining so the queued instances leak while a
+     trainer is SPOTTED. Promoting the marker to a real UI or mesh surface is deferred.
+
+   The honest one-line description is now **"a trainer who sees you shows you he has,
+   then speaks, then battles you"** -- he still does not walk to you and the camera does
+   not move.
 
 ### 1.9 Post-game
 

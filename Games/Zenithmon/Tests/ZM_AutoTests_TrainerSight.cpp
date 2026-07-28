@@ -31,8 +31,9 @@
 // flagless arm. (4b) proves the bark PRECEDES the encounter, (4c) proves the
 // order-112-closes-before-order-113-dispatches handoff lands the battle within two
 // frames of the box closing, and (9) proves a row with ZERO challenge lines skips
-// the beat entirely and battles anyway. NO new ZENITH_AUTOMATED_TEST_REGISTER: the
-// automated registry count deliberately does not move.
+// CHALLENGING and battles anyway after the shared W3 marker. NO new
+// ZENITH_AUTOMATED_TEST_REGISTER: the automated registry count deliberately does
+// not move.
 //
 // TWO SMALL THINGS IN THE MIDDLE ARE LOAD-BEARING; neither is decoration:
 //   * phase (7a) samples ZM_TrainerEngagementLatch::HasEngaged AFTER the walk-up
@@ -151,6 +152,16 @@ namespace
 	constexpr int iTS_HOLD_FRAMES       = 200;
 	constexpr int iTS_HOLD2_FRAMES      = 200;
 
+	// ---- W3: the live SPOTTED visual beat -----------------------------------
+	// Sample a few real movement frames, break the cone during SPOTTED, then
+	// re-enter and let the full presentation window complete before SC7's bark.
+	constexpr int   iTS_SPOTTED_CANCEL_SAMPLES      = 3;
+	constexpr int   iTS_SPOTTED_CANCEL_DEADLINE     = 30;
+	constexpr int   iTS_SPOTTED_REENTRY_DEADLINE    = 60;
+	constexpr int   iTS_SPOTTED_COMPLETE_DEADLINE   = 60;
+	constexpr int   iTS_SPOTTED_MIN_COMPLETE_SAMPLES = 10;
+	constexpr float fTS_SPOTTED_MIN_MOVEMENT        = 0.10f;
+
 	// ---- S7 item 3 SC7: the challenge bark's own budgets --------------------
 	//
 	// How long the bark is held up, un-pressed, proving it does not ride under the
@@ -172,11 +183,12 @@ namespace
 	// between that synchronous Dispatch and the transition's IDLE-arm accept is
 	// inherited from SC6's header comment, not measured.
 	constexpr int iTS_BARK_TO_BATTLE_DEADLINE = 2;
-	// THE SILENT ARM. A row with no challenge lines must reach the battle with no beat
-	// at all. This is BOTH the hold WINDOW and the failure deadline: the phase runs the
-	// whole of it, asserting on every frame that no DIALOGUE is up, and the raise +
-	// transition have to have landed by the time it elapses. It is NOT an early exit --
-	// see TSPhaseRamblerNoBark.
+	// THE SILENT ARM. A row with no challenge lines must reach the battle without a
+	// challenge bark. W3's shared marker still runs first. This is BOTH the hold
+	// WINDOW and the failure deadline: the phase runs the whole of it, asserting on
+	// every frame that no DIALOGUE is up, and the raise + transition have to have
+	// landed by the time it elapses. It is NOT an early exit -- see
+	// TSPhaseRamblerNoBark.
 	constexpr int iTS_RAMBLER_DEADLINE = 200;
 	// The window's FIRST frame is spent clearing the two gates phase (8) closed, so the
 	// no-DIALOGUE property is sampled on the remaining frames. Verify checks the sampled
@@ -209,6 +221,10 @@ namespace
 		PlaceTrainer,
 		BasisProbe,
 		Approach,
+		ObserveFirstSpotted,
+		AwaitSpottedCancellation,
+		AwaitSpottedReentry,
+		ObserveSecondSpotted,
 		// S7 item 3 SC7. INSERTED between Approach and AwaitInBattle so the bark is
 		// proven inside the SHIPPED walk rather than paying a second ~500-frame
 		// approach for it.
@@ -221,7 +237,7 @@ namespace
 		HoldInCone,
 		FlaglessArm,
 		// S7 item 3 SC7. APPENDED after the flagless arm: the same entity, now on a
-		// SILENT row, must battle with no beat at all.
+		// SILENT row: must battle with no challenge bark after the shared marker.
 		RamblerNoBark,
 		Done,
 	};
@@ -433,6 +449,32 @@ namespace
 	float g_fTSCurrentDistance  = 0.0f;
 	int   g_iTSStallFrames      = 0;
 	bool  g_abTSHeldKeys[4]     = { false, false, false, false };   // W A S D
+
+	// ---- W3: live SPOTTED presentation, cancellation, and re-entry ----
+	bool  g_bTSFirstSpottedObserved       = false;
+	bool  g_bTSSpottedCancellationIssued  = false;
+	bool  g_bTSSpottedCancellationObserved = false;
+	bool  g_bTSSpottedFacingRestored      = false;
+	bool  g_bTSSecondSpottedObserved      = false;
+	bool  g_bTSSpottedCompleted           = false;
+	bool  g_bTSSpottedNeverFrozen         = true;
+	bool  g_bTSSpottedPerFrameSubmissions = true;
+	bool  g_bTSFirstSpottedSawCone        = false;
+	bool  g_bTSSecondSpottedSawCone       = false;
+	int   g_iTSFirstSpottedSamples        = 0;
+	int   g_iTSSecondSpottedSamples       = 0;
+	u_int g_uTSSpottedIndicatorBefore     = 0xffffffffu;
+	u_int g_uTSSpottedIndicatorLast       = 0xffffffffu;
+	u_int g_uTSSpottedIndicatorAfterCancel = 0xffffffffu;
+	u_int g_uTSSpottedIndicatorAfterComplete = 0xffffffffu;
+	u_int g_uTSSpottedCountAfterComplete  = 0xffffffffu;
+	float g_fTSSpottedElapsedAfterComplete = 0.0f;
+	float g_fTSFirstSpottedMovement       = 0.0f;
+	float g_fTSSecondSpottedMovement      = 0.0f;
+	Zenith_Maths::Vector3 g_xTSFirstSpottedStart(0.0f);
+	Zenith_Maths::Vector3 g_xTSFirstSpottedEnd(0.0f);
+	Zenith_Maths::Vector3 g_xTSSecondSpottedStart(0.0f);
+	Zenith_Maths::Vector3 g_xTSSecondSpottedEnd(0.0f);
 
 	// ---- Channel captures ----
 	bool          g_bTSChannelCaptured = false;
@@ -666,6 +708,87 @@ namespace
 			ZM_TrainerSightTuning{});
 	}
 
+	// One live-frame observation of W3's SPOTTED state. This deliberately couples
+	// the pure state to the shipped component seam: movement remains enabled, the
+	// cone is genuinely occupied, no bark/battle side effect has fired, and the
+	// indicator submission counter advances exactly once per SPOTTED update.
+	bool TSSampleSpotted(bool bFirstPass)
+	{
+		ZM_Interactable* pxTrainer = ResolveTrainerComponent();
+		TSPlayerView xPlayer;
+		if (pxTrainer == nullptr || !FindActivePlayer(xPlayer))
+		{
+			FailTS("the trainer or player vanished while sampling SPOTTED");
+			return false;
+		}
+		if (pxTrainer->GetTrainerSightState() != ZM_TRAINER_SIGHT_SPOTTED)
+		{
+			FailTS("the trainer left SPOTTED before the requested live samples completed");
+			return false;
+		}
+		if (xPlayer.m_pxController == nullptr || !xPlayer.m_pxController->IsMovementEnabled())
+		{
+			g_bTSSpottedNeverFrozen = false;
+			FailTS("SPOTTED froze player movement before the challenge bark");
+			return false;
+		}
+
+		float fSeparation = 0.0f;
+		if (!PlayerIsInTrainerCone(fSeparation))
+		{
+			FailTS("a SPOTTED sample was not geometrically inside the trainer cone");
+			return false;
+		}
+		if (bFirstPass)
+		{
+			g_bTSFirstSpottedSawCone = true;
+		}
+		else
+		{
+			g_bTSSecondSpottedSawCone = true;
+		}
+
+		const u_int uExpectedSpottedCount = bFirstPass ? 1u : 2u;
+		if (ZM_UI_MenuStack::IsMenuOpen()
+			|| ZM_BattleTransition::IsTransitionActive()
+			|| pxTrainer->GetTrainerSightRaiseCount() != 0u
+			|| pxTrainer->GetTrainerChallengeCount() != 0u
+			|| ZM_TrainerEngagementLatch::HasEngaged(eTS_TRAINER)
+			|| pxTrainer->GetTrainerSpottedCount() != uExpectedSpottedCount)
+		{
+			FailTS("SPOTTED produced an early bark/battle side effect or wrong entry count");
+			return false;
+		}
+
+		const u_int uSubmissions = pxTrainer->GetTrainerSpottedIndicatorSubmitCount();
+		if (g_uTSSpottedIndicatorLast == 0xffffffffu
+			|| uSubmissions != g_uTSSpottedIndicatorLast + 1u)
+		{
+			g_bTSSpottedPerFrameSubmissions = false;
+			FailTS("the spotted indicator was not submitted exactly once on a SPOTTED frame");
+			return false;
+		}
+		g_uTSSpottedIndicatorLast = uSubmissions;
+		if (!std::isfinite(pxTrainer->GetTrainerSpottedElapsedSeconds()))
+		{
+			FailTS("the live SPOTTED elapsed time was non-finite");
+			return false;
+		}
+
+		if (bFirstPass)
+		{
+			++g_iTSFirstSpottedSamples;
+			g_xTSFirstSpottedEnd = xPlayer.m_xPosition;
+		}
+		else
+		{
+			++g_iTSSecondSpottedSamples;
+			g_xTSSecondSpottedEnd = xPlayer.m_xPosition;
+		}
+		DriveTowardXZ(xPlayer.m_xPosition, g_xTSTrainerPosition);
+		return true;
+	}
+
 	// ★ THE ORDERING PROOF, latched on the FIRST frame the challenge dialogue is
 	// observed. All four pins are captured AT ONCE and on that one frame, because the
 	// mutation they exist to catch -- transposing the two arms of the action switch in
@@ -826,12 +949,18 @@ namespace
 		}
 		g_xTSTrainerEntityID = xTrainer.GetEntityID();
 		g_bTSTrainerPlaced = true;
+		g_uTSSpottedIndicatorBefore =
+			xInteractable.GetTrainerSpottedIndicatorSubmitCount();
+		g_uTSSpottedIndicatorLast = g_uTSSpottedIndicatorBefore;
 		g_bTSTrainerArmed = xInteractable.IsTrainerSightEnabled()
 			&& xInteractable.GetTrainerId() == eTS_TRAINER
-			&& xInteractable.GetTrainerSightRaiseCount() == 0u;
+			&& xInteractable.GetTrainerSightRaiseCount() == 0u
+			&& xInteractable.GetTrainerSpottedCount() == 0u
+			&& xInteractable.GetTrainerSpottedElapsedSeconds() == 0.0f
+			&& g_uTSSpottedIndicatorBefore == 0u;
 		if (!g_bTSTrainerArmed)
 		{
-			FailTS("the placed trainer did not come up armed with a zero raise count");
+			FailTS("the placed trainer did not come up armed with zero sight counters");
 			return false;
 		}
 
@@ -909,6 +1038,36 @@ namespace
 	//     anywhere, so the player walks on Jolt velocity.
 	bool TSPhaseApproach()
 	{
+		ZM_Interactable* pxTrainer = ResolveTrainerComponent();
+		if (pxTrainer == nullptr)
+		{
+			FailTS("the runtime trainer was lost during the approach");
+			return false;
+		}
+
+		// W3 is observed before SC7: the visual beat must exist as its own live
+		// state, with no dialogue, encounter, freeze, or transition yet.
+		if (!g_bTSSpottedCompleted
+			&& pxTrainer->GetTrainerSightState() == ZM_TRAINER_SIGHT_SPOTTED)
+		{
+			TSPlayerView xPlayer;
+			if (!FindActivePlayer(xPlayer))
+			{
+				FailTS("the player was lost on first entry to SPOTTED");
+				return false;
+			}
+			g_bTSFirstSpottedObserved = true;
+			g_xTSFirstSpottedStart = xPlayer.m_xPosition;
+			g_xTSFirstSpottedEnd = xPlayer.m_xPosition;
+			if (!TSSampleSpotted(true))
+			{
+				return false;
+			}
+			g_eTSPhase = TSPhase::ObserveFirstSpotted;
+			g_iTSPhaseFrames = 0;
+			return true;
+		}
+
 		// S7 item 3 SC7: THE BARK IS CHECKED FIRST, ahead of the transition, so a
 		// frame carrying both would still be read as the bark -- SC7's whole claim is
 		// that the dialogue PRECEDES the encounter, and reading it the other way round
@@ -916,6 +1075,11 @@ namespace
 		// late".
 		if (TSTopScreen() == ZM_MENU_SCREEN_DIALOGUE)
 		{
+			if (!g_bTSSpottedCompleted)
+			{
+				FailTS("the challenge bark appeared before W3's SPOTTED window completed");
+				return false;
+			}
 			ClearTSInput();
 			TSLatchBarkObservation();
 			g_eTSPhase = TSPhase::AwaitChallenge;
@@ -925,6 +1089,11 @@ namespace
 
 		if (ZM_BattleTransition::IsTransitionActive())
 		{
+			if (!g_bTSSpottedCompleted)
+			{
+				FailTS("the battle transition started before W3's SPOTTED window completed");
+				return false;
+			}
 			// ANTI-VACUITY. The battle started and NO bark was ever seen. The run
 			// continues (every SC6 clause below still means what it meant), but Verify
 			// fails naming it: a silently barkless SC7 is exactly the regression the
@@ -945,12 +1114,6 @@ namespace
 			FailTS("the player was lost during the approach");
 			return false;
 		}
-		if (ResolveTrainerComponent() == nullptr)
-		{
-			FailTS("the runtime trainer was lost during the approach");
-			return false;
-		}
-
 		g_fTSCurrentDistance =
 			PlanarDistance(xPlayer.m_xPosition, g_xTSTrainerPosition);
 
@@ -974,6 +1137,217 @@ namespace
 		}
 
 		DriveTowardXZ(xPlayer.m_xPosition, g_xTSTrainerPosition);
+		return true;
+	}
+
+	// W3 first entry: keep driving for several real frames, then rotate the trainer
+	// through its exact back while still SPOTTED. Lost sight must cancel the beat.
+	bool TSPhaseObserveFirstSpotted()
+	{
+		if (!TSSampleSpotted(true))
+		{
+			return false;
+		}
+		if (g_iTSFirstSpottedSamples < iTS_SPOTTED_CANCEL_SAMPLES)
+		{
+			return true;
+		}
+
+		g_fTSFirstSpottedMovement =
+			PlanarDistance(g_xTSFirstSpottedStart, g_xTSFirstSpottedEnd);
+		if (g_fTSFirstSpottedMovement < fTS_SPOTTED_MIN_MOVEMENT)
+		{
+			FailTS("the player did not keep moving during the first SPOTTED window");
+			return false;
+		}
+		Zenith_TransformComponent* pxTransform = ResolveTrainerTransform();
+		if (pxTransform == nullptr)
+		{
+			FailTS("the trainer transform vanished before SPOTTED cancellation");
+			return false;
+		}
+		pxTransform->SetRotation(g_xTSTrainerAway);
+		ClearTSInput();
+		g_bTSSpottedCancellationIssued = true;
+		g_eTSPhase = TSPhase::AwaitSpottedCancellation;
+		g_iTSPhaseFrames = 0;
+		return true;
+	}
+
+	bool TSPhaseAwaitSpottedCancellation()
+	{
+		ZM_Interactable* pxTrainer = ResolveTrainerComponent();
+		TSPlayerView xPlayer;
+		if (pxTrainer == nullptr || !FindActivePlayer(xPlayer))
+		{
+			FailTS("the trainer or player vanished during SPOTTED cancellation");
+			return false;
+		}
+		// The rotation was issued at the END of the previous phase, so frame 0 of this
+		// one is the first that could possibly observe it. Checking the submit
+		// invariant on that frame would blame the INDICATOR for one tick of rotation
+		// latency; the cone/state check below is what actually enforces the deadline.
+		if (g_iTSPhaseFrames > 0
+			&& pxTrainer->GetTrainerSpottedIndicatorSubmitCount()
+				!= g_uTSSpottedIndicatorLast)
+		{
+			g_bTSSpottedPerFrameSubmissions = false;
+			FailTS("the spotted indicator was submitted after sight cancellation");
+			return false;
+		}
+
+		float fSeparation = 0.0f;
+		const bool bInCone = PlayerIsInTrainerCone(fSeparation);
+		if (!bInCone
+			&& pxTrainer->GetTrainerSightState() == ZM_TRAINER_SIGHT_WATCHING)
+		{
+			if (pxTrainer->GetTrainerSpottedCount() != 1u
+				|| pxTrainer->GetTrainerSpottedElapsedSeconds() != 0.0f
+				|| pxTrainer->GetTrainerSightRaiseCount() != 0u
+				|| pxTrainer->GetTrainerChallengeCount() != 0u
+				|| ZM_UI_MenuStack::IsMenuOpen()
+				|| ZM_BattleTransition::IsTransitionActive()
+				|| !xPlayer.m_pxController->IsMovementEnabled())
+			{
+				FailTS("SPOTTED cancellation left elapsed time or an early side effect behind");
+				return false;
+			}
+			g_bTSSpottedCancellationObserved = true;
+			g_uTSSpottedIndicatorAfterCancel =
+				pxTrainer->GetTrainerSpottedIndicatorSubmitCount();
+
+			Zenith_TransformComponent* pxTransform = ResolveTrainerTransform();
+			if (pxTransform == nullptr)
+			{
+				FailTS("the trainer transform vanished before SPOTTED re-entry");
+				return false;
+			}
+			pxTransform->SetRotation(g_xTSTrainerFacing);
+			g_bTSSpottedFacingRestored = true;
+			DriveTowardXZ(xPlayer.m_xPosition, g_xTSTrainerPosition);
+			g_eTSPhase = TSPhase::AwaitSpottedReentry;
+			g_iTSPhaseFrames = 0;
+			return true;
+		}
+		if (g_iTSPhaseFrames > iTS_SPOTTED_CANCEL_DEADLINE)
+		{
+			FailTS("breaking the cone did not cancel SPOTTED back to WATCHING");
+			return false;
+		}
+		return true;
+	}
+
+	bool TSPhaseAwaitSpottedReentry()
+	{
+		ZM_Interactable* pxTrainer = ResolveTrainerComponent();
+		TSPlayerView xPlayer;
+		if (pxTrainer == nullptr || !FindActivePlayer(xPlayer))
+		{
+			FailTS("the trainer or player vanished while re-entering SPOTTED");
+			return false;
+		}
+		if (pxTrainer->GetTrainerSightState() == ZM_TRAINER_SIGHT_SPOTTED)
+		{
+			g_bTSSecondSpottedObserved = true;
+			g_xTSSecondSpottedStart = xPlayer.m_xPosition;
+			g_xTSSecondSpottedEnd = xPlayer.m_xPosition;
+			if (!TSSampleSpotted(false))
+			{
+				return false;
+			}
+			g_eTSPhase = TSPhase::ObserveSecondSpotted;
+			g_iTSPhaseFrames = 0;
+			return true;
+		}
+		if (pxTrainer->GetTrainerSightState() != ZM_TRAINER_SIGHT_WATCHING
+			|| pxTrainer->GetTrainerSpottedIndicatorSubmitCount()
+				!= g_uTSSpottedIndicatorAfterCancel
+			|| ZM_UI_MenuStack::IsMenuOpen()
+			|| ZM_BattleTransition::IsTransitionActive())
+		{
+			FailTS("SPOTTED re-entry produced an unexpected state or early side effect");
+			return false;
+		}
+		if (g_iTSPhaseFrames > iTS_SPOTTED_REENTRY_DEADLINE)
+		{
+			FailTS("restoring the cone never re-entered SPOTTED");
+			return false;
+		}
+		DriveTowardXZ(xPlayer.m_xPosition, g_xTSTrainerPosition);
+		return true;
+	}
+
+	bool TSPhaseObserveSecondSpotted()
+	{
+		ZM_Interactable* pxTrainer = ResolveTrainerComponent();
+		if (pxTrainer == nullptr)
+		{
+			FailTS("the trainer vanished during the full SPOTTED window");
+			return false;
+		}
+		if (pxTrainer->GetTrainerSightState() == ZM_TRAINER_SIGHT_SPOTTED)
+		{
+			if (g_iTSPhaseFrames > iTS_SPOTTED_COMPLETE_DEADLINE)
+			{
+				FailTS("the full SPOTTED presentation window never completed");
+				return false;
+			}
+			return TSSampleSpotted(false);
+		}
+
+		g_fTSSecondSpottedMovement =
+			PlanarDistance(g_xTSSecondSpottedStart, g_xTSSecondSpottedEnd);
+		// SPLIT DELIBERATELY. Folded into one condition, a future tuning or dt change
+		// that merely shortened the beat below the sample bound would red with a
+		// message accusing the CHALLENGING handoff -- naming a cause that is not the
+		// one that fired. Each clause now names what it actually measured.
+		if (g_iTSSecondSpottedSamples < iTS_SPOTTED_MIN_COMPLETE_SAMPLES)
+		{
+			FailTS("the completed SPOTTED window was observable for too few frames -- "
+				"the marker duration and the fixed test dt no longer agree");
+			return false;
+		}
+		if (g_fTSSecondSpottedMovement < fTS_SPOTTED_MIN_MOVEMENT)
+		{
+			FailTS("the player did not keep physically moving through the full SPOTTED "
+				"window");
+			return false;
+		}
+		if (pxTrainer->GetTrainerSightState() != ZM_TRAINER_SIGHT_CHALLENGING)
+		{
+			FailTS("the completed SPOTTED window did not hand off to CHALLENGING");
+			return false;
+		}
+		if (pxTrainer->GetTrainerSpottedCount() != 2u
+			|| pxTrainer->GetTrainerSightRaiseCount() != 0u
+			|| pxTrainer->GetTrainerChallengeCount() != 1u)
+		{
+			FailTS("the completed SPOTTED window left the wrong beat/bark/raise counts");
+			return false;
+		}
+		if (pxTrainer->GetTrainerSpottedIndicatorSubmitCount()
+			!= g_uTSSpottedIndicatorLast)
+		{
+			FailTS("the indicator was submitted on the tick that LEFT SPOTTED");
+			return false;
+		}
+
+		g_fTSSpottedElapsedAfterComplete =
+			pxTrainer->GetTrainerSpottedElapsedSeconds();
+		if (!std::isfinite(g_fTSSpottedElapsedAfterComplete)
+			|| g_fTSSpottedElapsedAfterComplete
+				< ZM_TrainerSightFsmTuning{}.m_fSpottedSeconds)
+		{
+			FailTS("SPOTTED completed before its configured presentation duration");
+			return false;
+		}
+		g_uTSSpottedIndicatorAfterComplete =
+			pxTrainer->GetTrainerSpottedIndicatorSubmitCount();
+		g_uTSSpottedCountAfterComplete = pxTrainer->GetTrainerSpottedCount();
+		g_bTSSpottedCompleted = true;
+		ClearTSInput();
+		g_eTSPhase = TSPhase::Approach;
+		g_iTSPhaseFrames = 0;
 		return true;
 	}
 
@@ -1374,7 +1748,7 @@ namespace
 
 	// (9) THE SILENT ARM, END TO END. The same entity is still on the flagless row,
 	//     which ships ZERO challenge lines. Clear the two gates phase (8) deliberately
-	//     closed and the trainer must battle again -- with NO beat: no dialogue is
+	//     closed and the trainer must battle again -- with NO bark: no dialogue is
 	//     ever raised and GetTrainerChallengeCount stays exactly 0. That is what makes
 	//     the availability test two-sided: invert it and Vesper's bark disappears
 	//     while the rambler grows one.
@@ -1482,8 +1856,8 @@ namespace
 			|| !g_bTSRamblerTransitionMoved)
 		{
 			FailTS("the un-latched SILENT trainer never started a battle while the "
-				"player stood in his cone -- a row with no challenge lines must skip "
-				"the beat and raise immediately");
+				"player stood in his cone -- after the shared SPOTTED marker, a row "
+				"with no challenge lines must skip CHALLENGING and raise");
 			return false;
 		}
 
@@ -1530,6 +1904,31 @@ namespace
 		g_abTSHeldKeys[1] = false;
 		g_abTSHeldKeys[2] = false;
 		g_abTSHeldKeys[3] = false;
+
+		g_bTSFirstSpottedObserved        = false;
+		g_bTSSpottedCancellationIssued   = false;
+		g_bTSSpottedCancellationObserved = false;
+		g_bTSSpottedFacingRestored       = false;
+		g_bTSSecondSpottedObserved       = false;
+		g_bTSSpottedCompleted            = false;
+		g_bTSSpottedNeverFrozen          = true;
+		g_bTSSpottedPerFrameSubmissions  = true;
+		g_bTSFirstSpottedSawCone         = false;
+		g_bTSSecondSpottedSawCone        = false;
+		g_iTSFirstSpottedSamples         = 0;
+		g_iTSSecondSpottedSamples        = 0;
+		g_uTSSpottedIndicatorBefore      = 0xffffffffu;
+		g_uTSSpottedIndicatorLast        = 0xffffffffu;
+		g_uTSSpottedIndicatorAfterCancel = 0xffffffffu;
+		g_uTSSpottedIndicatorAfterComplete = 0xffffffffu;
+		g_uTSSpottedCountAfterComplete   = 0xffffffffu;
+		g_fTSSpottedElapsedAfterComplete = 0.0f;
+		g_fTSFirstSpottedMovement        = 0.0f;
+		g_fTSSecondSpottedMovement       = 0.0f;
+		g_xTSFirstSpottedStart           = Zenith_Maths::Vector3(0.0f);
+		g_xTSFirstSpottedEnd             = Zenith_Maths::Vector3(0.0f);
+		g_xTSSecondSpottedStart          = Zenith_Maths::Vector3(0.0f);
+		g_xTSSecondSpottedEnd            = Zenith_Maths::Vector3(0.0f);
 
 		g_bTSChannelCaptured = false;
 		g_eTSChannelTrainer  = ZM_TRAINER_NONE;
@@ -1653,6 +2052,10 @@ namespace
 		case TSPhase::PlaceTrainer:  return TSPhasePlaceTrainer();
 		case TSPhase::BasisProbe:    return TSPhaseBasisProbe();
 		case TSPhase::Approach:      return TSPhaseApproach();
+		case TSPhase::ObserveFirstSpotted: return TSPhaseObserveFirstSpotted();
+		case TSPhase::AwaitSpottedCancellation: return TSPhaseAwaitSpottedCancellation();
+		case TSPhase::AwaitSpottedReentry: return TSPhaseAwaitSpottedReentry();
+		case TSPhase::ObserveSecondSpotted: return TSPhaseObserveSecondSpotted();
 		case TSPhase::AwaitChallenge:   return TSPhaseAwaitChallenge();
 		case TSPhase::DismissChallenge: return TSPhaseDismissChallenge();
 		case TSPhase::AwaitInBattle: return TSPhaseAwaitInBattle();
@@ -1706,6 +2109,33 @@ namespace
 				g_uTSCompletedAfter, g_uTSAbortedAfter,
 				g_uTSStateAfter, (u_int)ZM_BATTLE_TRANSITION_IDLE,
 				g_bTSBattleUnloaded ? "true" : "false");
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_TrainerSight] W3 spotted: first=%s samples=%d cone=%s movement=%.3f "
+				"cancelIssued=%s cancelObserved=%s facingRestored=%s second=%s samples=%d "
+				"cone=%s movement=%.3f completed=%s neverFrozen=%s perFrameSubmits=%s "
+				"indicator before=%u afterCancel=%u afterComplete=%u spottedCount=%u "
+				"elapsed=%.3f (want >= %.3f)",
+				g_bTSFirstSpottedObserved ? "true" : "false",
+				g_iTSFirstSpottedSamples,
+				g_bTSFirstSpottedSawCone ? "true" : "false",
+				g_fTSFirstSpottedMovement,
+				g_bTSSpottedCancellationIssued ? "true" : "false",
+				g_bTSSpottedCancellationObserved ? "true" : "false",
+				g_bTSSpottedFacingRestored ? "true" : "false",
+				g_bTSSecondSpottedObserved ? "true" : "false",
+				g_iTSSecondSpottedSamples,
+				g_bTSSecondSpottedSawCone ? "true" : "false",
+				g_fTSSecondSpottedMovement,
+				g_bTSSpottedCompleted ? "true" : "false",
+				g_bTSSpottedNeverFrozen ? "true" : "false",
+				g_bTSSpottedPerFrameSubmissions ? "true" : "false",
+				g_uTSSpottedIndicatorBefore,
+				g_uTSSpottedIndicatorAfterCancel,
+				g_uTSSpottedIndicatorAfterComplete,
+				g_uTSSpottedCountAfterComplete,
+				g_fTSSpottedElapsedAfterComplete,
+				ZM_TrainerSightFsmTuning{}.m_fSpottedSeconds);
 
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_TrainerSight] negatives: holdCompleted=%s holdSawCone=%s "
@@ -1791,6 +2221,46 @@ namespace
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
 					"[ZM_TrainerSight] the armed trainer was never placed, or the movement "
 					"basis probe never passed -- everything below is vacuous");
+				bPassed = false;
+			}
+
+			// --- W3's live presentation, including cancellation and no-freeze ---
+			const bool bSpottedElapsedValid =
+				std::isfinite(g_fTSSpottedElapsedAfterComplete)
+				&& g_fTSSpottedElapsedAfterComplete
+					>= ZM_TrainerSightFsmTuning{}.m_fSpottedSeconds;
+			const bool bFirstSubmissionsExact =
+				g_uTSSpottedIndicatorBefore == 0u
+				&& g_uTSSpottedIndicatorAfterCancel
+					== static_cast<u_int>(g_iTSFirstSpottedSamples);
+			const bool bSecondSubmissionsExact =
+				g_uTSSpottedIndicatorAfterComplete
+					== g_uTSSpottedIndicatorAfterCancel
+						+ static_cast<u_int>(g_iTSSecondSpottedSamples);
+			if (!g_bTSFirstSpottedObserved
+				|| !g_bTSSpottedCancellationIssued
+				|| !g_bTSSpottedCancellationObserved
+				|| !g_bTSSpottedFacingRestored
+				|| !g_bTSSecondSpottedObserved
+				|| !g_bTSSpottedCompleted
+				|| !g_bTSSpottedNeverFrozen
+				|| !g_bTSSpottedPerFrameSubmissions
+				|| !g_bTSFirstSpottedSawCone
+				|| !g_bTSSecondSpottedSawCone
+				|| g_iTSFirstSpottedSamples < iTS_SPOTTED_CANCEL_SAMPLES
+				|| g_iTSSecondSpottedSamples < iTS_SPOTTED_MIN_COMPLETE_SAMPLES
+				|| g_fTSFirstSpottedMovement < fTS_SPOTTED_MIN_MOVEMENT
+				|| g_fTSSecondSpottedMovement < fTS_SPOTTED_MIN_MOVEMENT
+				|| !bFirstSubmissionsExact
+				|| !bSecondSubmissionsExact
+				|| g_uTSSpottedCountAfterComplete != 2u
+				|| !bSpottedElapsedValid)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_TrainerSight] the live W3 marker contract was incomplete: it must "
+					"submit exactly once per SPOTTED frame, leave movement enabled and "
+					"physically moving, cancel on lost cone with no extra submit, re-enter, "
+					"and complete its full duration before the bark");
 				bPassed = false;
 			}
 
@@ -2193,8 +2663,8 @@ namespace
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
 						"[ZM_TrainerSight] the SILENT trainer started %u challenge beat(s) and "
 						"%s raised a dialogue. A row whose ZM_SelectTrainerChallengeLines yields "
-						"zero lines must skip the beat ENTIRELY -- otherwise it pays a half-second "
-						"of dead air for a bark nobody can hear, and the availability test is "
+						"zero lines must skip CHALLENGING -- the shared SPOTTED marker is "
+						"intentional, but no bark window may run, and the availability test is "
 						"inverted", g_uTSRamblerMaxChallenge,
 						g_bTSRamblerSawDialogue ? "DID" : "did not");
 					bPassed = false;
@@ -2205,7 +2675,7 @@ namespace
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
 						"[ZM_TrainerSight] the un-latched SILENT trainer's raise count went %u -> "
 						"%u and transitionStarted=%s -- with the session latch cleared he must "
-						"raise, and the battle must still happen with no beat in front of it",
+						"raise, and the battle must still happen after only the shared marker",
 						g_uTSRamblerRaiseAtStart, g_uTSRamblerMaxRaise,
 						g_bTSRamblerTransitionMoved ? "true" : "false");
 					bPassed = false;
@@ -2339,9 +2809,13 @@ static const Zenith_AutomatedTest g_xZMTrainerSightWalkUpTest = {
 	&Step_ZMTrainerSight,
 	&Verify_ZMTrainerSight,
 	// Above the SUM of the named phase deadlines (420 ready + 1 place + 30 basis +
-	// 900 approach + 30 bark hold + 180 bark dismiss + 2 bark->battle + 600 in-battle
+	// 900 approach + 150 W3 cancellation/re-entry/complete (30 + 60 + 60) + 30 bark
+	// hold + 180 bark dismiss + 2 bark->battle + 600 in-battle
 	// + 900 drive + 8 settle + 120 re-arm + 200 hold + 200 hold2 + 200 rambler =
-	// 3791). The harness jumps straight to Verify when maxFrames is hit, so this
+	// 3941). ObserveSecondSpotted RE-ENTERS Approach with its frame counter reset,
+	// re-granting that 900 on paper; measured, the second pass costs 1-2 frames
+	// because the machine is already CHALLENGING. The harness jumps straight to
+	// Verify when maxFrames is hit, so this
 	// must exceed that sum or a slow-but-valid run would be cut off mid-battle and
 	// read as a failure rather than a timeout. NOTE: the rambler phase SPENDS its
 	// whole 200 -- it holds the window rather than exiting on the raise -- so the

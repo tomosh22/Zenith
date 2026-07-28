@@ -1278,6 +1278,48 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   exact-one-anchor compiled mutations red the focused result: HP-only whiteout heal
   (**510**), `FromHome` destination (**510**), inverted win-only reward guard (**311**);
   every restoration rebuilt and returned **1/1** green before the final full gates.
+- **Known-limit W3 -- the visual spotted beat (COMPLETE 2026-07-28, ZM-D-159):**
+  **+4 boot units, automated registry deliberately UNCHANGED at 48** -- the new live
+  coverage rides the existing `ZM_TrainerSightWalkUp_Test` and
+  `ZM_RivalVesperAuthored_Test` registrations, because both subjects already existed
+  (the same "did the coverage ride an existing registration?" rule SC7 established).
+  The three new FSM units pin the ordered beat (first sighting emits NO action and
+  enters SPOTTED; the bark starts only when the duration elapses), the two-arm
+  cancel/restart (lost sight AND closed gate, each clearing the partial timer and each
+  counting a second distinct beat on re-entry), and the busy-pause plus degenerate
+  fail-open (thirty busy seconds contribute exactly zero elapsed time; a zero duration
+  then fails open to the bark). The fourth unit,
+  `Interactable_SpottedIndicatorSubmitsOneReadableExclamationMark`, runs before the main
+  loop so the renderer cannot drain the CPU queues between the synchronous `Add` calls
+  and inspection: it asserts exactly one line and one sphere and NO cube/capsule/
+  cylinder/triangle, every literal coordinate/thickness/radius/colour, dot-above-stem
+  readability, the helper's MEASURED return value, its non-finite-centre refusal arm,
+  and restores every queue to its prior contents even when the payload is wrong. The
+  totality sweep grows from window PAIRS to independent TRIPLES (6,912 -> 41,472) and
+  gains a genuine SPOTTED seed arm.
+  **★ THE COVERAGE DEFECT THE REVIEW CAUGHT, and the reason this is not a proxy suite:**
+  the per-frame indicator counter every automated assertion reads was first written as a
+  bare `++` BESIDE the submit call, so deleting the call would have kept every test green
+  with nothing drawn -- and the boot unit could not see it either, because it calls the
+  static helper itself. The fix is structural, not another assertion:
+  `SubmitTrainerSpottedIndicator` now returns a value MEASURED off Flux's own CPU
+  instance queues and the caller `+=`s it, so a submission that never reached the
+  renderer cannot be reported as one.
+  Observed gate: boot **2708 -> 2712** (`2712 / 2711 / 0 / 1`), `zm-tests.yml` bumped
+  from the OBSERVED line; registry unchanged **48**; engine reference **1164** untouched;
+  Null headless **48/48**; full windowed **48/48 passed / 0 failed / 0 skipped / 0
+  zero-frame**; `ZM_TrainerSightWalkUp_Test` **754 frames**,
+  `ZM_RivalVesperAuthored_Test` **355 frames**; no new `.cpp`, scene, asset,
+  serialization version or ECS order, and therefore no regen.
+  **Six exact-one-anchor mutations**, each rebuilt with its exit code checked and each
+  result parsed off the OBSERVED line, then restored: shipped duration `0.35f -> 0.0f`
+  (**17 units**); SPOTTED cancellation `||` -> `&&` (**exactly 1 unit**); remove the
+  single `AddSphere` (**exactly 1 unit**); invert the runtime post-`Step` submit guard
+  (**both automated tests**, and correctly NO boot unit -- no boot unit drives
+  `TickTrainerSight`, which is a coverage BOUNDARY, not a gap); invert the elapsed
+  accumulation `+=` -> `-=` (**17 units**); and remove the live Flux submission
+  (**1 boot unit AND both automated tests** -- the mutation that would have SURVIVED
+  before the review fix, and the proof it no longer does).
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->
   defeat flag + prize money.
 

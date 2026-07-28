@@ -33,6 +33,10 @@ enum ZM_TRAINER_SIGHT_STATE : u_int
 	// moves -- this machine is session-only and serializes nowhere, but the roster
 	// enums next door are APPEND-ONLY and there is no reason for two doctrines.
 	ZM_TRAINER_SIGHT_CHALLENGING,
+	// Known-limit W3. A short, cancellable presentation window between first sight
+	// and either the challenge bark or a silent trainer's encounter. APPENDED to
+	// preserve every shipped ordinal; session-only and never serialized.
+	ZM_TRAINER_SIGHT_SPOTTED,
 
 	// NOT a state -- the walkable bound the totality unit iterates to.
 	ZM_TRAINER_SIGHT_STATE_COUNT
@@ -73,11 +77,9 @@ struct ZM_TrainerSightInputs
 	// S7 item 3 SC7. TRUE only when this trainer actually has something to say:
 	// ZM_SelectTrainerChallengeLines(row, ...) yielded a non-zero count.
 	//
-	// ★ IT DEFAULTS TO FALSE, AND THAT IS WHY SC6'S 16 UNITS PASS UNMODIFIED. With
-	// this false the machine is byte-for-byte SC6: WATCHING raises the encounter
-	// directly, CHALLENGING is never entered, no window runs. It is also what stops
-	// a SILENT trainer (ZM_TRAINER_ROUTE1_RAMBLER) paying a half-second of dead air
-	// for a beat he was never going to perform.
+	// It defaults to false so a silent trainer never enters CHALLENGING. Known-limit
+	// W3 still gives every trainer the shared SPOTTED presentation window first;
+	// after it, false routes directly to the encounter and true routes to the bark.
 	bool  m_bChallengeAvailable = false;
 
 	float m_fDeltaSeconds   = 0.0f;
@@ -110,6 +112,15 @@ struct ZM_TrainerSightFsmTuning
 	// safe to depend on: a _False or Android build loses the bark and keeps the
 	// battle.
 	float m_fChallengeConfirmSeconds = 0.5f;
+
+	// Known-limit W3. How long the visible exclamation mark stays up before the
+	// existing challenge/encounter path continues. While SPOTTED, lost sight or a
+	// closed engagement gate cancels cleanly, and a busy channel pauses the clock.
+	// A non-finite or non-positive duration fails OPEN ON A FREE TICK so
+	// presentation can never suppress the battle -- the busy-channel defer is
+	// checked FIRST and outranks it, exactly as it already does in WATCHING, since
+	// raising into a busy channel is silently dropped.
+	float m_fSpottedSeconds = 0.35f;
 };
 
 class ZM_TrainerSightFsm
@@ -139,6 +150,11 @@ public:
 	bool  IsChallengeAccepted() const { return m_bChallengeAccepted; }
 	float GetChallengeElapsedSeconds() const { return m_fChallengeElapsed; }
 
+	// Known-limit W3 observables. The count is monotonic per component session and
+	// distinguishes a real visual-beat entry from merely naming the SPOTTED state.
+	u_int GetSpottedCount() const { return m_uSpottedCount; }
+	float GetSpottedElapsedSeconds() const { return m_fSpottedElapsed; }
+
 private:
 	ZM_TRAINER_SIGHT_STATE m_eState          = ZM_TRAINER_SIGHT_WATCHING;
 	float                  m_fConfirmElapsed = 0.0f;
@@ -148,6 +164,9 @@ private:
 	float                  m_fChallengeElapsed  = 0.0f;
 	bool                   m_bChallengeAccepted = false;
 	u_int                  m_uChallengeCount    = 0u;
+
+	float                  m_fSpottedElapsed = 0.0f;
+	u_int                  m_uSpottedCount    = 0u;
 };
 
 // A stable short name for a state / action, for log lines and unit failure

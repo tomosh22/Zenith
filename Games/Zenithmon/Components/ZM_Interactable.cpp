@@ -2,11 +2,13 @@
 
 #include "Zenithmon/Components/ZM_Interactable.h"
 
+#include "Core/Multithreading/Zenith_Multithreading.h"   // Zenith_ScopedMutexLock (the primitive-queue sample)
 #include "Core/Zenith_Engine.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"   // the runtime graph host
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Physics/Zenith_Physics.h"
 #include "ZenithECS/Zenith_EventSystem.h"            // Zenith_EventDispatcher -- the encounter channel
 #include "ZenithECS/Zenith_SceneSystem.h"            // GetActiveScene / GetSceneInfo (the source-scene lookup)
@@ -38,6 +40,12 @@ namespace
 {
 	constexpr float fZM_WANDER_BODY_FRICTION = 0.8f;
 	constexpr float fZM_WANDER_BODY_RESTITUTION = 0.0f;
+	constexpr float fZM_SPOTTED_DOT_OFFSET = 0.25f;
+	constexpr float fZM_SPOTTED_DOT_RADIUS = 0.13f;
+	constexpr float fZM_SPOTTED_LINE_START_OFFSET = 0.55f;
+	constexpr float fZM_SPOTTED_LINE_END_OFFSET = 1.20f;
+	constexpr float fZM_SPOTTED_LINE_THICKNESS = 0.10f;
+	const Zenith_Maths::Vector3 xZM_SPOTTED_COLOUR(1.0f, 0.82f, 0.08f);
 
 	bool ZM_IsFiniteVector3(const Zenith_Maths::Vector3& xValue)
 	{
@@ -127,6 +135,7 @@ void ZM_Interactable::OnStart()
 	// start is a cold watcher, and a trainer id that no longer resolves must not
 	// survive as a live watcher either.
 	m_xSightFsm.Reset();
+	m_uSpottedIndicatorSubmitCount = 0u;
 	// S7 item 3 SC7: the runtime graph-attach latch is session state too, cleared
 	// exactly where the trainer id and the watcher are.
 	m_bChallengeGraphAttempted = false;
@@ -242,6 +251,62 @@ void ZM_Interactable::OnUpdate(float fDeltaTime)
 	UpdateWander(fDeltaTime);
 }
 
+u_int ZM_Interactable::SubmitTrainerSpottedIndicator(
+	const Zenith_Maths::Vector3& xTrainerCenter,
+	const Zenith_Maths::Vector3& xTrainerScale)
+{
+	// A non-finite CENTRE is refused outright rather than fed to Flux. The live
+	// path cannot produce one -- ZM_IsTargetInTrainerSight fails closed on any
+	// non-finite position before the FSM can reach SPOTTED -- but this helper is
+	// public and static precisely so a unit can call it, so it guards itself
+	// instead of trusting every present and future caller.
+	if (!ZM_IsFiniteVector3(xTrainerCenter))
+	{
+		return 0u;
+	}
+
+	// The greybox NPC transform is centred on the model. Absolute Y scale handles
+	// mirrored authoring, and a non-finite value falls back to unit height so a bad
+	// presentation scale cannot poison Flux's instance buffers.
+	const float fHeight = std::isfinite(xTrainerScale.y)
+		? std::fabs(xTrainerScale.y)
+		: 1.0f;
+	const float fTop = xTrainerCenter.y + fHeight * 0.5f;
+	const Zenith_Maths::Vector3 xDotCenter(
+		xTrainerCenter.x, fTop + fZM_SPOTTED_DOT_OFFSET, xTrainerCenter.z);
+	const Zenith_Maths::Vector3 xLineStart(
+		xTrainerCenter.x, fTop + fZM_SPOTTED_LINE_START_OFFSET, xTrainerCenter.z);
+	const Zenith_Maths::Vector3 xLineEnd(
+		xTrainerCenter.x, fTop + fZM_SPOTTED_LINE_END_OFFSET, xTrainerCenter.z);
+
+	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
+	u_int uLineBefore = 0u;
+	u_int uSphereBefore = 0u;
+	{
+		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
+		uLineBefore = xPrimitives.m_xLineInstances.GetSize();
+		uSphereBefore = xPrimitives.m_xSphereInstances.GetSize();
+	}
+
+	xPrimitives.AddLine(
+		xLineStart, xLineEnd, xZM_SPOTTED_COLOUR, fZM_SPOTTED_LINE_THICKNESS);
+	xPrimitives.AddSphere(xDotCenter, fZM_SPOTTED_DOT_RADIUS, xZM_SPOTTED_COLOUR);
+
+	// ★ THE RESULT IS MEASURED OFF FLUX, NOT ASSERTED. Every live test watches the
+	// caller's per-frame counter, and that counter is fed from THIS return value --
+	// so a submission that never reached the renderer cannot be reported as one.
+	// A counter incremented merely BESIDE the two Add calls would have left the
+	// whole live contract satisfiable with the calls deleted, which is exactly the
+	// hole this closes. Both queues only ever GROW between the two samples, so a
+	// concurrent producer can inflate the delta but can never hide a missing
+	// primitive of ours.
+	Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
+	return (xPrimitives.m_xLineInstances.GetSize() > uLineBefore
+			&& xPrimitives.m_xSphereInstances.GetSize() > uSphereBefore)
+		? 1u
+		: 0u;
+}
+
 void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 {
 	if (!IsTrainerSightEnabled())
@@ -273,10 +338,8 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 		|| ZM_GameStateManager::IsWarpInProgress()
 		|| ZM_UI_MenuStack::IsMenuOpen();
 
-	// S7 item 3 SC7. Does this trainer have anything to SAY? A row with no challenge
-	// lines skips the whole beat and raises immediately, so a silent trainer costs
-	// ZERO dead air -- and every SC6 unit still passes unmodified, because this
-	// input defaults to false.
+	// S7 item 3 SC7. Does this trainer have anything to SAY? After the shared W3
+	// visual beat, a row with no challenge lines skips CHALLENGING and raises.
 	const char* const* paszChallengeLines = nullptr;
 	u_int uChallengeLineCount = 0u;
 	ZM_SelectTrainerChallengeLines(xRow, paszChallengeLines, uChallengeLineCount);
@@ -295,14 +358,18 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 	Zenith_EntityID xPlayerID = INVALID_ENTITY_ID;
 	Zenith_Maths::Vector3 xPlayerPosition(0.0f);
 	Zenith_Maths::Quat xPlayerRotation(1.0f, 0.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xTrainerPosition(0.0f);
+	Zenith_Maths::Vector3 xTrainerScale(1.0f);
+	bool bHaveTrainerTransform = false;
 	const bool bHavePlayer = ZM_InteractionRuntime::TryResolveActivePlayer(
 		xPlayerID, xPlayerPosition, xPlayerRotation);
 	if (pxTransform != nullptr && bHavePlayer)
 	{
-		Zenith_Maths::Vector3 xTrainerPosition(0.0f);
 		Zenith_Maths::Quat xTrainerRotation(1.0f, 0.0f, 0.0f, 0.0f);
 		pxTransform->GetPosition(xTrainerPosition);
 		pxTransform->GetRotation(xTrainerRotation);
+		pxTransform->GetScale(xTrainerScale);
+		bHaveTrainerTransform = true;
 
 		// The SC3 PURE cone, unmodified and unduplicated. Rotation form, never
 		// glm::eulerAngles(quat).y.
@@ -321,7 +388,20 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 		}
 	}
 
-	switch (m_xSightFsm.Step(xInputs, ZM_TrainerSightFsmTuning{}))
+	const ZM_TRAINER_SIGHT_ACTION eAction =
+		m_xSightFsm.Step(xInputs, ZM_TrainerSightFsmTuning{});
+	if (bHaveTrainerTransform
+		&& m_xSightFsm.GetState() == ZM_TRAINER_SIGHT_SPOTTED)
+	{
+		// The counter is the helper's OWN measurement of what reached Flux's CPU
+		// queues, never a bare increment beside the call: deleting the submission
+		// cannot leave this advancing, so a live test watching this counter is
+		// watching the actual renderer payload rather than a proxy for it.
+		m_uSpottedIndicatorSubmitCount +=
+			SubmitTrainerSpottedIndicator(xTrainerPosition, xTrainerScale);
+	}
+
+	switch (eAction)
 	{
 	case ZM_TRAINER_SIGHT_ACTION_RUN_CHALLENGE:
 		// NO latch and NO dispatch on this arm. The bark is a presentation beat, not
@@ -563,6 +643,7 @@ bool ZM_Interactable::ConfigureWander(const ZM_WalkerWaypoints& xWaypoints,
 bool ZM_Interactable::ConfigureTrainerSight(ZM_TRAINER_ID eTrainer)
 {
 	m_xSightFsm.Reset();
+	m_uSpottedIndicatorSubmitCount = 0u;
 	// Re-arm the one-shot attach with the machine: the incoming row may be the first
 	// one on this component that has anything to say.
 	m_bChallengeGraphAttempted = false;
@@ -687,6 +768,7 @@ void ZM_Interactable::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Interactable_TrainerSightIsNotSerialized.
 	m_eTrainerId = ZM_TRAINER_NONE;
 	m_xSightFsm.Reset();
+	m_uSpottedIndicatorSubmitCount = 0u;
 	// SC7's graph-attach latch rides in the SAME runtime-only block, for the same
 	// reason: a reloaded scene starts with no trainer, a cold watcher and no graph.
 	m_bChallengeGraphAttempted = false;

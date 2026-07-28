@@ -7,7 +7,7 @@
 // decides WHICH ZM_UI_MenuStack seam a role talks through, and the
 // ZM_InteractionRuntime latches the windowed tests (SC5-SC7) poll.
 //
-// Nothing here raises a screen, loads a scene or needs graphics: the component is
+// Nothing here raises a screen, loads a scene or issues GPU work: the component is
 // constructed against an INVALID entity handle (it stores the handle by value and
 // never dereferences it for any of the surface tested here), the role -> seam map
 // is a pure switch, and the runtime's latch surface is exercised through its own
@@ -24,8 +24,11 @@
 #include <cstring>   // strcmp (raise-kind name distinctness)
 #include <limits>    // quiet_NaN (the radius sanitiser's fixture)
 
+#include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Zenith_Engine.h"
 #include "Core/Zenith_TestFramework.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Maths/Zenith_Maths.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"   // the registry the SC7 gate's NPCs deserialize through
 #include "ZenithECS/Zenith_Entity.h"
@@ -121,6 +124,196 @@ ZENITH_TEST(ZM_Interaction, Interactable_DefaultsAreSafe)
 	ZENITH_ASSERT_EQ_FLOAT(xFixture.m_xInteractable.GetRadius(),
 		ZM_Interactable::fDEFAULT_RADIUS, fTEST_EPSILON,
 		"the default reach BONUS is zero -- exactly the global reach, never more");
+}
+
+// W3's marker is deliberately an asset-free Flux primitive payload. This unit
+// runs before the main loop, so the renderer cannot drain the CPU queues between
+// the synchronous Add calls and inspection. It preserves every pre-existing queue
+// prefix and cleans its own tail before asserting, even when the payload is wrong.
+ZENITH_TEST(ZM_Interaction, Interactable_SpottedIndicatorSubmitsOneReadableExclamationMark)
+{
+	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
+	u_int uSphereBefore = 0u;
+	u_int uCubeBefore = 0u;
+	u_int uLineBefore = 0u;
+	u_int uCapsuleBefore = 0u;
+	u_int uCylinderBefore = 0u;
+	u_int uTriangleBefore = 0u;
+	{
+		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
+		uSphereBefore = xPrimitives.m_xSphereInstances.GetSize();
+		uCubeBefore = xPrimitives.m_xCubeInstances.GetSize();
+		uLineBefore = xPrimitives.m_xLineInstances.GetSize();
+		uCapsuleBefore = xPrimitives.m_xCapsuleInstances.GetSize();
+		uCylinderBefore = xPrimitives.m_xCylinderInstances.GetSize();
+		uTriangleBefore = xPrimitives.m_xTriangleInstances.GetSize();
+	}
+
+	// A distinctive centre and mirrored Y scale make every expected coordinate an
+	// independent literal while proving the helper uses absolute model height.
+	const u_int uSubmitted = ZM_Interactable::SubmitTrainerSpottedIndicator(
+		Zenith_Maths::Vector3(2.5f, -1.0f, 4.25f),
+		Zenith_Maths::Vector3(0.8f, -2.4f, 1.2f));
+
+	u_int uSphereAfter = 0u;
+	u_int uCubeAfter = 0u;
+	u_int uLineAfter = 0u;
+	u_int uCapsuleAfter = 0u;
+	u_int uCylinderAfter = 0u;
+	u_int uTriangleAfter = 0u;
+	u_int uSphereRestored = 0u;
+	u_int uCubeRestored = 0u;
+	u_int uLineRestored = 0u;
+	u_int uCapsuleRestored = 0u;
+	u_int uCylinderRestored = 0u;
+	u_int uTriangleRestored = 0u;
+	bool bHaveSphere = false;
+	bool bHaveLine = false;
+	Flux_PrimitivesSphereInstance xSphere{};
+	Flux_PrimitivesLineInstance xLine{};
+	{
+		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
+		uSphereAfter = xPrimitives.m_xSphereInstances.GetSize();
+		uCubeAfter = xPrimitives.m_xCubeInstances.GetSize();
+		uLineAfter = xPrimitives.m_xLineInstances.GetSize();
+		uCapsuleAfter = xPrimitives.m_xCapsuleInstances.GetSize();
+		uCylinderAfter = xPrimitives.m_xCylinderInstances.GetSize();
+		uTriangleAfter = xPrimitives.m_xTriangleInstances.GetSize();
+		if (uSphereAfter > uSphereBefore)
+		{
+			xSphere = xPrimitives.m_xSphereInstances.Get(uSphereBefore);
+			bHaveSphere = true;
+		}
+		if (uLineAfter > uLineBefore)
+		{
+			xLine = xPrimitives.m_xLineInstances.Get(uLineBefore);
+			bHaveLine = true;
+		}
+
+		while (xPrimitives.m_xSphereInstances.GetSize() > uSphereBefore)
+		{
+			xPrimitives.m_xSphereInstances.PopBack();
+		}
+		while (xPrimitives.m_xCubeInstances.GetSize() > uCubeBefore)
+		{
+			xPrimitives.m_xCubeInstances.PopBack();
+		}
+		while (xPrimitives.m_xLineInstances.GetSize() > uLineBefore)
+		{
+			xPrimitives.m_xLineInstances.PopBack();
+		}
+		while (xPrimitives.m_xCapsuleInstances.GetSize() > uCapsuleBefore)
+		{
+			xPrimitives.m_xCapsuleInstances.PopBack();
+		}
+		while (xPrimitives.m_xCylinderInstances.GetSize() > uCylinderBefore)
+		{
+			xPrimitives.m_xCylinderInstances.PopBack();
+		}
+		while (xPrimitives.m_xTriangleInstances.GetSize() > uTriangleBefore)
+		{
+			xPrimitives.m_xTriangleInstances.PopBack();
+		}
+
+		uSphereRestored = xPrimitives.m_xSphereInstances.GetSize();
+		uCubeRestored = xPrimitives.m_xCubeInstances.GetSize();
+		uLineRestored = xPrimitives.m_xLineInstances.GetSize();
+		uCapsuleRestored = xPrimitives.m_xCapsuleInstances.GetSize();
+		uCylinderRestored = xPrimitives.m_xCylinderInstances.GetSize();
+		uTriangleRestored = xPrimitives.m_xTriangleInstances.GetSize();
+	}
+
+	// ★ THE RETURN VALUE IS THE LIVE CONTRACT. The component's per-frame counter is
+	// fed from it, so if the helper could report a submission it did not make, every
+	// automated assertion downstream would be watching a proxy instead of Flux.
+	ZENITH_ASSERT_EQ(uSubmitted, 1u,
+		"a marker that reached both primitive queues must report exactly one "
+		"submission");
+	ZENITH_ASSERT_EQ(uLineAfter, uLineBefore + 1u,
+		"one marker must append exactly one line");
+	ZENITH_ASSERT_EQ(uSphereAfter, uSphereBefore + 1u,
+		"one marker must append exactly one sphere");
+	ZENITH_ASSERT_EQ(uCubeAfter, uCubeBefore,
+		"the marker must not append a cube");
+	ZENITH_ASSERT_EQ(uCapsuleAfter, uCapsuleBefore,
+		"the marker must not append a capsule");
+	ZENITH_ASSERT_EQ(uCylinderAfter, uCylinderBefore,
+		"the marker must not append a cylinder");
+	ZENITH_ASSERT_EQ(uTriangleAfter, uTriangleBefore,
+		"the marker must not append a triangle");
+	ZENITH_ASSERT_TRUE(bHaveLine, "the appended line payload must be inspectable");
+	ZENITH_ASSERT_TRUE(bHaveSphere, "the appended sphere payload must be inspectable");
+
+	if (bHaveLine)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xStart.x, 2.5f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xStart.y, 0.75f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xStart.z, 4.25f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xEnd.x, 2.5f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xEnd.y, 1.40f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xEnd.z, 4.25f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xLine.m_fThickness, 0.10f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xColor.x, 1.0f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xColor.y, 0.82f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xColor.z, 0.08f, fTEST_EPSILON);
+		ZENITH_ASSERT_GT(xLine.m_xEnd.y, xLine.m_xStart.y,
+			"the exclamation stem must be vertical and point upward");
+	}
+	if (bHaveSphere)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xCenter.x, 2.5f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xCenter.y, 0.45f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xCenter.z, 4.25f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_fRadius, 0.13f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xColor.x, 1.0f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xColor.y, 0.82f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xColor.z, 0.08f, fTEST_EPSILON);
+		ZENITH_ASSERT_GT(xSphere.m_xCenter.y - xSphere.m_fRadius, 0.20f,
+			"the full dot must sit strictly above the scaled model top");
+		if (bHaveLine)
+		{
+			ZENITH_ASSERT_LT(xSphere.m_xCenter.y + xSphere.m_fRadius,
+				xLine.m_xStart.y,
+				"the dot and stem need readable separation");
+		}
+	}
+
+	ZENITH_ASSERT_EQ(uSphereRestored, uSphereBefore);
+	ZENITH_ASSERT_EQ(uCubeRestored, uCubeBefore);
+	ZENITH_ASSERT_EQ(uLineRestored, uLineBefore);
+	ZENITH_ASSERT_EQ(uCapsuleRestored, uCapsuleBefore);
+	ZENITH_ASSERT_EQ(uCylinderRestored, uCylinderBefore);
+	ZENITH_ASSERT_EQ(uTriangleRestored, uTriangleBefore);
+
+	// ---- The refused arm: a non-finite CENTRE submits nothing and reports zero ---
+	// The live path cannot reach this (the pure sight predicate fails closed on a
+	// non-finite position first), but the helper is public and static, so its own
+	// refusal is pinned here rather than left to the caller.
+	u_int uRefusedLineAfter = 0u;
+	u_int uRefusedSphereAfter = 0u;
+	const float fNaN = std::numeric_limits<float>::quiet_NaN();
+	const u_int uRefused = ZM_Interactable::SubmitTrainerSpottedIndicator(
+		Zenith_Maths::Vector3(2.5f, fNaN, 4.25f),
+		Zenith_Maths::Vector3(0.8f, 2.4f, 1.2f));
+	{
+		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
+		uRefusedLineAfter = xPrimitives.m_xLineInstances.GetSize();
+		uRefusedSphereAfter = xPrimitives.m_xSphereInstances.GetSize();
+		while (xPrimitives.m_xLineInstances.GetSize() > uLineBefore)
+		{
+			xPrimitives.m_xLineInstances.PopBack();
+		}
+		while (xPrimitives.m_xSphereInstances.GetSize() > uSphereBefore)
+		{
+			xPrimitives.m_xSphereInstances.PopBack();
+		}
+	}
+	ZENITH_ASSERT_EQ(uRefused, 0u,
+		"a non-finite marker centre must report ZERO submissions");
+	ZENITH_ASSERT_EQ(uRefusedLineAfter, uLineBefore,
+		"a refused marker must not append a line");
+	ZENITH_ASSERT_EQ(uRefusedSphereAfter, uSphereBefore,
+		"a refused marker must not append a sphere");
 }
 
 ZENITH_TEST(ZM_Interaction, Interactable_SetGetRoundTrip)

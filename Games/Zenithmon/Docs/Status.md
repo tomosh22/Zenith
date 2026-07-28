@@ -4,10 +4,10 @@
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (ZM numbers OBSERVED 2026-07-28 on a fresh build of both configs
-after known-limit W2):** ZM headless registry **48 passed / 0 failed**; ZM boot unit gate
-**2708 ran / 2707 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
-2708); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
-1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6/SC7/SC8 -- none of
+after known-limit W3):** ZM headless registry **48 passed / 0 failed**; ZM boot unit gate
+**2712 ran / 2711 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
+2712); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
+1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6/SC7/SC8/W2/W3 -- none of
 them touches a `Zenith/` file). The 1 skipped in each is the quarantined
 `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
 
@@ -96,7 +96,7 @@ build lacks `libcurl-d.dll`, so booting the exe first dies in the loader with
 ZERO stdout and the gate reports the misleading "no 'Unit tests complete' line in
 boot output" rather than a load failure.
 
-**Stage:** **S7 COMPLETE (items 1-4). Pre-S8 known-limit closure ACTIVE: W1-W2/5 COMPLETE (ZM-D-157/158); NEXT = W3, the visual spotted beat.** S0-S6 remain complete. The S8 vertical-slice go/no-go is still a human stop and remains unsigned.
+**Stage:** **S7 COMPLETE (items 1-4). Pre-S8 known-limit closure ACTIVE: W1-W3 of 5 COMPLETE (ZM-D-157/158/159); NEXT = W4, rival visual distinctness.** S0-S6 remain complete. The S8 vertical-slice go/no-go is still a human stop and remains unsigned.
 **Build:** GREEN on the ZM-D-148 diff (scene authoring made boot-shape-independent; all four ZM scenes now TRACKED) on top of SC1b commit B (ZM-D-147 -- baked navmesh persistence). Engine-wide, so it owed and got the full gate: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; engine lib + SentinelECS/Physics/AI (all three exes exit 0); Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True.
 **Tests (commit B):** Null batches, ALL 0-failed: **ZM 44/44** (registry 42 -> 44; both new navmesh tests RUN, not skipped), CB **45/45**, DP **158/158**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 44/44, 0 skipped, 0 failed**. Boot unit gates on the NULL exes: engine **1093 -> 1121** (Combat) and ZM **2515 -> 2546** -- both pinned from the OBSERVED line. Windowed RenderTest 8 passed / 1 failed, only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002). Ratchets (`architecture,lints` and `complexity`) are **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added; two findings this commit DID introduce (an `Editor/` include and a `g_xEngine` reach from EntityComponent) were fixed, not allow-listed. **Asset-less CI condition reproduced locally** (`Zenith/Assets` hidden): ZM 44/44 and both unit gates unchanged; restored by MERGE and `diff -rq`-verified, since the run re-created only 60 of the 89 files and a naive rename-back would have clobbered the tree. **Teeth mutation-proven ×6** (see ZM-D-147; m1 re-run on the final build reds exactly the 3 serialization units).
 
@@ -111,23 +111,33 @@ boot output" rather than a load failure.
 
 **★★ S7 ITEM 3 AND ITEM 4 ARE COMPLETE (SC8, ZM-D-156). THE S8 VERTICAL-SLICE
 GO/NO-GO REMAINS A HUMAN GATE AND IS UNSIGNED.** This session has explicit authority
-only to close its five recorded known limits, not to start S8 content. **W1-W2/5 are
-now COMPLETE (ZM-D-157/158): forced replacement ships, complete authored trainer
-parties are live, and the honest Vesper-loss/whiteout route is proven. NEXT = W3, the
-visual spotted beat.**
+only to close its five recorded known limits, not to start S8 content. **W1-W3 of 5 are
+now COMPLETE (ZM-D-157/158/159): forced replacement ships, complete authored trainer
+parties are live, the honest Vesper-loss/whiteout route is proven, and a trainer who
+sees you now SHOWS you before he speaks. NEXT = W4, rival visual distinctness.**
 
 **What the vertical actually does now, end to end:** the player walks around Dawnmere;
 rival Vesper stands AUTHORED in the town at (490, 524) facing the spawn approach; when
-the player enters his 8 m / 60-degree forward cone with an unblocked line of sight he
-speaks a challenge line, the battle fades in, the player fights him, and on a win takes
-+500 money and sets `RIVAL1_DEFEATED` -- after which he never re-engages, and that
-silence survives a save/reload.
+the player enters his 8 m / 60-degree forward cone with an unblocked line of sight a
+yellow exclamation mark appears over his head for 0.35 s -- the player is never frozen
+and can still walk out of it, which cancels cleanly -- then he speaks a challenge line,
+the battle fades in, the player fights him, and on a win takes +500 money and sets
+`RIVAL1_DEFEATED` -- after which he never re-engages, and that silence survives a
+save/reload.
 
 **★ THE HONEST "WHAT IS STILL MISSING" LIST -- read this BEFORE signing the go/no-go.
 The vertical is real but it is not the full mainline beat, and it should not be
 oversold:**
-1. **There is no visual "spotted" beat at all** -- no exclamation mark, no camera cut, no
-   approach walk. The rival notices the player silently until the dialogue box appears.
+1. **PARTLY CLOSED by W3 (ZM-D-159).** The exclamation mark SHIPS -- a 0.35 s
+   cancellable `ZM_TRAINER_SIGHT_SPOTTED` state drawing an asset-free yellow line+sphere
+   over every sighted trainer, silent rows included, never freezing the player. **The
+   camera cut and the approach walk were CUT ON EVIDENCE and remain missing:**
+   `ZM_FollowCamera::OnLateUpdate` owns and overwrites the camera every frame with no
+   override stack, and moving the OBB-authored stationary Vesper correctly needs
+   dynamic-capsule/nav ownership, avoidance and freeze coordination. He still does not
+   walk to you and the camera does not move. **And the marker rides the DEBUG primitives
+   channel**, so a tools user who unchecks `Graphics/Primitives/Enabled` loses a gameplay
+   cue; promoting it to a real UI/mesh surface is deferred.
 2. **The rival is visually indistinguishable from the four townsfolk.** `ZM_GreyboxVisual`
    paints one fixed grey and `ZM_NpcData::m_eHuman` is consumed by NOTHING today.
 3. **Route 1 does not exist**, so the GDD's canonical location for rival battle 1
@@ -139,6 +149,25 @@ oversold:**
 5. **No test proves the authored Vesper carries no graph slot at RUNTIME** -- it cannot,
    because the runtime attach is idempotent by path. The property rests on an
    authoring-time assert plus the boot-stability check.
+
+**W3 closure, observed rather than inferred.** `ZM_TRAINER_SIGHT_SPOTTED` is appended
+(ordinal 3, session-only, serialized nowhere) between first sight and SC7's handoff. Arm
+order is **cancel -> busy -> fail-open -> accumulate**: lost sight or a closed engagement
+gate cancels to WATCHING clearing the partial timer; a busy channel PAUSES without
+consuming the sighting and deliberately OUTRANKS the fail-open (raising into a busy
+channel is silently dropped, so the fail-open is a FREE-TICK guarantee); a corrupt
+duration fails open, decided BEFORE the state entry so `m_uSpottedCount` can never book a
+beat no frame could show. **★ THE REVIEW'S HEADLINE, and the reason this is not a
+proxy test:** the submit counter every automated assertion reads was first written as a
+bare `++` BESIDE the submit call, so deleting the call would have left the whole live
+contract green with nothing drawn. `SubmitTrainerSpottedIndicator` now RETURNS a value
+measured off Flux's own CPU instance queues and the caller `+=`s it -- mutation M6
+(remove the two `Add*` calls) reds one boot unit AND both automated tests, which before
+the fix would have stayed green. **CUT ON EVIDENCE, not forgotten:** the camera cut
+(`ZM_FollowCamera::OnLateUpdate` owns the camera every frame, no override stack) and the
+approach walk (OBB-authored stationary Vesper would need dynamic-capsule/nav ownership,
+avoidance and freeze coordination). Boot **2708 -> 2712**, registry unchanged **48**,
+six mutations proved teeth.
 
 **W2 closure, observed rather than inferred.** `ZM_RivalVesperWhiteout_Test` starts from
 the canonical level-5 Fernfawn state, physically walks to committed Vesper, selects a
@@ -217,6 +246,12 @@ placed in a scene yet. Both are SC8's.
   units passing unmodified and stops a silent trainer paying half a second of dead
   air. `ZM_TRAINER_ROUTE1_RAMBLER` ships ZERO lines on purpose as the production
   instance of that arm.
+  **★ AMENDED BY W3 (ZM-D-159): the zero-dead-air rule now applies to the BARK ONLY.**
+  Every trainer, silent rows included, first runs the shared 0.35 s SPOTTED beat; a
+  silent row still skips CHALLENGING entirely. The unit that pinned the old rule was
+  RENAMED, not deleted (`Fsm_SilentTrainerIsByteForByteSC6` ->
+  `Fsm_SilentTrainerShowsSpottedThenRaisesWithoutChallenge`) -- do not "restore" the
+  original claim that a silent trainer reaches the encounter on its first Step.
 - **A three-node `Query -> Branch -> Bark` graph was REJECTED** and should stay
   rejected: the only branchable condition ("does this trainer have lines?") must
   already be decided in C++ so the FSM can skip its window, and a graph duplicating

@@ -148,6 +148,32 @@ public:
 	// raised. The walk-up test asserts on both: the beat must run exactly once and
 	// the battle must still happen exactly once.
 	u_int GetTrainerChallengeCount() const { return m_xSightFsm.GetChallengeCount(); }
+	// W3 presentation observations. The FSM count proves a genuine SPOTTED entry;
+	// the submit count is fed from the helper's MEASURED Flux queue growth, so it
+	// proves this live component's line+sphere actually reached the renderer once on
+	// every update that ended in SPOTTED. Both are runtime-only.
+	u_int GetTrainerSpottedCount() const { return m_xSightFsm.GetSpottedCount(); }
+	float GetTrainerSpottedElapsedSeconds() const
+	{
+		return m_xSightFsm.GetSpottedElapsedSeconds();
+	}
+	u_int GetTrainerSpottedIndicatorSubmitCount() const
+	{
+		return m_uSpottedIndicatorSubmitCount;
+	}
+
+	// The ONE renderer submission seam for W3's asset-free exclamation mark. Public
+	// so a boot unit can inspect the exact CPU primitive payload synchronously; live
+	// code calls the same function, and the per-component counter above is fed from
+	// this return value.
+	//
+	// RETURNS 1 only when BOTH primitives were observed to land in Flux's CPU
+	// instance queues, and 0 otherwise (including a refused non-finite centre). The
+	// caller adds the result rather than incrementing unconditionally, which is what
+	// stops the live contract from being satisfiable with the submission removed.
+	static u_int SubmitTrainerSpottedIndicator(
+		const Zenith_Maths::Vector3& xTrainerCenter,
+		const Zenith_Maths::Vector3& xTrainerScale);
 
 	// Fire this NPC's role: ONE switch over ZM_RaiseKindForRole(row.m_eRole) onto the
 	// three shipped ZM_UI_MenuStack seams. Returns whether a screen was actually
@@ -242,4 +268,5 @@ private:
 	// reload restarts a cold watcher deterministically.
 	ZM_TRAINER_ID      m_eTrainerId = ZM_TRAINER_NONE;
 	ZM_TrainerSightFsm m_xSightFsm;
+	u_int              m_uSpottedIndicatorSubmitCount = 0u;
 };

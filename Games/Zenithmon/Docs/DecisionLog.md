@@ -15,6 +15,147 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-28 -- ZM-D-159 -- Known-limit W3: a visible SPOTTED beat, with the camera cut and approach walk explicitly cut
+
+*(Third of five explicitly authorised pre-S8-gate known-limit commits. The human S8
+go/no-go remains UNSIGNED and no S8 content begins. No new `.cpp`, scene, asset,
+serialization version or ECS order -- 114 is still next-free -- and therefore **no
+`Build\regen.ps1`**.)*
+
+### Decision
+
+`ZM_TRAINER_SIGHT_SPOTTED` is APPENDED to the sight FSM (ordinal 3; every shipped
+ordinal preserved) as a 0.35 s presentation window between first sight and the existing
+SC7 bark / silent-encounter handoff. It is session-only and serializes nowhere.
+
+**Every trainer gets the beat, including a silent row.** This DELIBERATELY supersedes
+SC7's "a silent trainer pays zero dead air" rule, which existed to stop a trainer with
+nothing to say buying half a second of a BARK window. A silent trainer with no visible
+notice at all was the actual known limit; the shared marker is the fix, and the silent
+row still skips CHALLENGING. The unit that pinned the old rule was renamed
+(`Fsm_SilentTrainerIsByteForByteSC6` -> `Fsm_SilentTrainerShowsSpottedThenRaisesWithoutChallenge`)
+rather than deleted, so the arm is still covered under its new contract.
+
+Arm order inside SPOTTED is **cancel -> busy -> fail-open -> accumulate**, and each
+position is load-bearing:
+
+- **Lost sight OR a closed engagement gate cancels to WATCHING** and clears the partial
+  timer. The player is never frozen by this beat, so walking out or behind cover is a
+  first-class cancel rather than an interruption.
+- **A busy channel PAUSES without consuming the sighting**, the same defer-do-not-consume
+  rule WATCHING already applies one arm up, and it deliberately **outranks** the
+  fail-open: raising into a busy channel is silently dropped. The fail-open is therefore
+  a FREE-TICK guarantee, not an unconditional one, and the tuning comment now says so.
+- **A non-finite or non-positive duration fails OPEN**, decided **BEFORE** the state
+  entry. Entering SPOTTED first and then failing open in the same tick would book a beat
+  in `m_uSpottedCount` that no frame could ever show, because the caller reads the state
+  only AFTER `Step` -- an observable that can lie. Deciding first keeps the beat count
+  and the indicator-submit count in step.
+
+The marker is **asset-free**: one vertical `Flux_Primitives` line plus one sphere above
+the scaled model top, in yellow (1.0, 0.82, 0.08), sized off `fabs(scale.y)` so mirrored
+authoring still resolves. `ZM_Interactable` exposes the FSM observables plus a monotonic
+per-frame indicator-submit counter.
+
+### ★ THE REVIEW FOUND THE ONE DEFECT THAT MATTERED, AND IT WAS IN THE TESTS
+
+As first written, `TickTrainerSight` called the submit helper and then did
+`++m_uSpottedIndicatorSubmitCount;` **beside** it, and every automated assertion read
+that counter. **Deleting the submit call while keeping the increment would have left the
+entire live contract green with the marker drawing nothing** -- the boot unit could not
+see it either, because it calls the static helper itself. The header comment claiming
+the counter "proves this live component sent the helper to Flux" was true only by code
+inspection.
+
+Fixed structurally, not by adding an assertion: `SubmitTrainerSpottedIndicator` now
+**returns `u_int`, measured off Flux's own CPU instance queues** (sample line+sphere
+sizes, submit, re-sample; return 1 only if BOTH grew), and the caller does
+`m_uSpottedIndicatorSubmitCount += Submit(...)`. Both queues only ever grow between the
+samples, so a concurrent producer can inflate the delta but can never hide a missing
+primitive of ours. A submission that never reached the renderer can no longer be
+reported as one, and the counter the live tests watch IS the renderer payload.
+Mutation **M6** proves it: removing the two `Add*` calls now reds the boot unit AND both
+automated tests, which before the fix would have stayed green.
+
+The same review pass also produced: a public/static helper that now refuses a non-finite
+CENTRE (unreachable live -- the pure sight predicate fails closed first -- but the helper
+no longer trusts future callers, and a negative-control arm pins the refusal); split
+failure messages in the walk-up's completion phase so a future tuning/dt drift names the
+frame budget rather than accusing the CHALLENGING handoff; a first-frame exemption on the
+cancellation phase's submit invariant so one tick of rotation latency cannot be blamed on
+the indicator; a `!completed` re-entry guard on the Vesper approach phase, matching the
+walk-up's; a corrected `FinishSpotted` bound that no longer reds a machine that left
+SPOTTED on its 120th step; and corrected maxFrames budget arithmetic (the three new
+deadlines are 150, not 180).
+
+### What was CUT, and why
+
+- **The camera cut is CUT.** `ZM_FollowCamera::OnLateUpdate` OWNS and overwrites the
+  camera every frame and there is no override stack. A cinematic cut therefore needs a
+  camera-ownership arbitration mechanism, which is a real engine/game-camera feature and
+  far larger than the beat it would serve.
+- **The approach walk is CUT.** Stationary Vesper is authored with an OBB collider
+  (ZM-D-156 -- an AABB would destroy his authored yaw). Moving him correctly requires
+  dynamic-capsule/nav ownership, avoidance, and freeze coordination with the existing
+  order-110/111/112/113 seam. That is a system, not a polish item.
+
+Both were scoped out on evidence and are recorded in Shortfalls 1.8 rather than silently
+dropped. The honest one-line description is now: **"a trainer who sees you shows you he
+has, then speaks, then battles you"** -- he still does not walk to you, and the camera
+does not move.
+
+### Honest limitation shipped with it
+
+The marker rides the **debug** primitives channel. `Zenith_GraphicsOptions::m_bPrimitivesEnabled`
+defaults true and Zenithmon never overrides it, so it renders by default -- but it is
+bound to a live debug variable, so a tools user who unchecks `Graphics/Primitives/Enabled`
+loses a GAMEPLAY cue (and `ExecuteGBuffer` early-returns before draining, so the queued
+instances leak for as long as a trainer is SPOTTED). Promoting the marker to a real UI or
+mesh surface is deferred, not forgotten; recorded in Shortfalls 1.8.
+
+### Tests and observed gate
+
++4 boot units (three FSM units -- ordered beat, two-arm cancel/restart, busy-pause plus
+degenerate fail-open -- and one `ZM_Interaction` unit that synchronously inspects the exact
+Flux primitive queues, asserts every literal coordinate, pins the measured return value
+and its refusal arm, and restores each queue to its prior contents). The automated registry
+deliberately does NOT move: the new live coverage rides the existing
+`ZM_TrainerSightWalkUp_Test` and `ZM_RivalVesperAuthored_Test` registrations, because both
+subjects already existed.
+
+`ZM_TrainerSightWalkUp_Test` gains four phases: it proves movement stays enabled and the
+player physically advances during SPOTTED, rotates the trainer away to cancel mid-beat,
+restores facing, re-enters, and completes the full window before SC7's bark -- asserting
+exactly one indicator submission per SPOTTED frame and none after cancellation.
+`ZM_RivalVesperAuthored_Test` proves the COMMITTED rival submits the marker while
+dialogue, challenge, raise and transition are all still idle.
+
+Observed final gate, all on the restored tree: boot **2708 -> 2712**
+(**2712 ran / 2711 passed / 0 failed / 1 documented skip**), `zm-tests.yml` bumped from
+the OBSERVED line; automated registry unchanged **48**; engine reference **1164**
+untouched (no `Zenith/` file changed); Null and Vulkan builds green; Null headless
+**48/48**; full windowed **48/48 passed / 0 failed / 0 skipped / 0 zero-frame**
+(48 result JSONs); `ZM_TrainerSightWalkUp_Test` **754 frames**,
+`ZM_RivalVesperAuthored_Test` **355 frames**; no scene or asset byte moved.
+
+**Six exact-one-anchor mutations, each built with its exit code checked and each result
+parsed off the OBSERVED line:** shipped duration `0.35f -> 0.0f` (**17 units**); SPOTTED
+cancellation `||` -> `&&` (**exactly 1 unit** -- the two-arm cancel test); remove the
+single `AddSphere` (**exactly 1 unit**); invert the runtime post-`Step` submit guard
+(**both automated tests**, and correctly NO boot unit, since no boot unit drives
+`TickTrainerSight`); invert the elapsed accumulation `+=` -> `-=` (**17 units**); and M6,
+remove the live Flux submission (**1 boot unit AND both automated tests**). Every
+mutation was restored and rebuilt, and the final restored build re-gated green before
+commit.
+
+### Reversibility
+
+HIGH. The state is appended, session-only and serialized nowhere; the marker is one
+static helper with a single call site; deleting the state and its arm returns the machine
+to SC7 exactly. No save, scene or asset byte depends on any of it.
+
+---
+
 ## 2026-07-28 -- ZM-D-158 -- Known-limit W2: an honest authored-Vesper loss proves the complete whiteout recovery path
 
 *(Second of five explicitly authorised pre-S8-gate known-limit commits. The human S8

@@ -49,6 +49,7 @@ const char* ZM_TrainerSightStateName(ZM_TRAINER_SIGHT_STATE eState)
 	case ZM_TRAINER_SIGHT_WATCHING:    return "WATCHING";
 	case ZM_TRAINER_SIGHT_ENGAGED:     return "ENGAGED";
 	case ZM_TRAINER_SIGHT_CHALLENGING: return "CHALLENGING";
+	case ZM_TRAINER_SIGHT_SPOTTED:     return "SPOTTED";
 	// A switch, not a table lookup, precisely so ZM_TRAINER_SIGHT_STATE_COUNT and
 	// anything past it land here instead of reading off the end of an array.
 	default:                           return "UNKNOWN";
@@ -96,6 +97,8 @@ void ZM_TrainerSightFsm::Reset()
 	m_fChallengeElapsed = 0.0f;
 	m_bChallengeAccepted = false;
 	m_uChallengeCount = 0u;
+	m_fSpottedElapsed = 0.0f;
+	m_uSpottedCount = 0u;
 }
 
 ZM_TRAINER_SIGHT_ACTION ZM_TrainerSightFsm::Step(const ZM_TrainerSightInputs& xInputs,
@@ -104,6 +107,29 @@ ZM_TRAINER_SIGHT_ACTION ZM_TrainerSightFsm::Step(const ZM_TrainerSightInputs& xI
 	// SIGHT is the CONJUNCTION: inside the pure cone AND with an unblocked line.
 	// This single expression is where occlusion enters the decision.
 	const bool bSees = xInputs.m_bTargetInSight && xInputs.m_bSightLineClear;
+	// The SC6/SC7 handoff, reproduced EXACTLY and reachable from two arms: the
+	// WATCHING fail-open, and the completion of a real SPOTTED beat. Note it reads
+	// m_bChallengeAvailable on the tick the beat COMPLETES rather than on the
+	// sighting tick; that is immaterial because the flag is derived from a compiled
+	// roster row and is constant for the life of a component, but it is a real
+	// difference from the pre-W3 code and is recorded here rather than assumed away.
+	const auto CompleteSpottedBeat = [this, &xInputs]()
+	{
+		if (xInputs.m_bChallengeAvailable)
+		{
+			m_eState = ZM_TRAINER_SIGHT_CHALLENGING;
+			m_fChallengeElapsed = 0.0f;
+			m_bChallengeAccepted = false;
+			++m_uChallengeCount;
+			return ZM_TRAINER_SIGHT_ACTION_RUN_CHALLENGE;
+		}
+
+		m_eState = ZM_TRAINER_SIGHT_ENGAGED;
+		m_fConfirmElapsed = 0.0f;
+		m_bRaiseConfirmed = false;
+		++m_uRaiseCount;
+		return ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER;
+	};
 
 	switch (m_eState)
 	{
@@ -126,23 +152,63 @@ ZM_TRAINER_SIGHT_ACTION ZM_TrainerSightFsm::Step(const ZM_TrainerSightInputs& xI
 			// nothing.
 			return ZM_TRAINER_SIGHT_ACTION_NONE;
 		}
-		if (xInputs.m_bChallengeAvailable)
+		// A corrupt duration must not strand gameplay behind presentation. The
+		// fail-open is decided BEFORE the state entry on purpose: entering SPOTTED
+		// first would book a beat in m_uSpottedCount that no frame could ever show,
+		// because the caller reads the state only AFTER Step and would find the
+		// machine already handed off. Deciding here keeps the count and the
+		// indicator-submit count in step with one another.
+		if (!(std::isfinite(xTuning.m_fSpottedSeconds)
+				&& xTuning.m_fSpottedSeconds > 0.0f))
 		{
-			// S7 item 3 SC7: this trainer has lines, so the BEAT runs first. The
-			// engagement latch is deliberately NOT burnt here -- see the CHALLENGING
-			// abandon arm below.
-			m_eState = ZM_TRAINER_SIGHT_CHALLENGING;
-			m_fChallengeElapsed = 0.0f;
-			m_bChallengeAccepted = false;
-			++m_uChallengeCount;
-			return ZM_TRAINER_SIGHT_ACTION_RUN_CHALLENGE;
+			return CompleteSpottedBeat();
 		}
-		// A silent trainer is SC6 verbatim: straight to the encounter, no window.
-		m_eState = ZM_TRAINER_SIGHT_ENGAGED;
-		m_fConfirmElapsed = 0.0f;
-		m_bRaiseConfirmed = false;
-		++m_uRaiseCount;
-		return ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER;
+		// Known-limit W3: every live trainer sighting gets one readable visual beat,
+		// including a silent row. No latch, bark, encounter, or freeze happens here.
+		m_eState = ZM_TRAINER_SIGHT_SPOTTED;
+		m_fSpottedElapsed = 0.0f;
+		++m_uSpottedCount;
+		return ZM_TRAINER_SIGHT_ACTION_NONE;
+
+	case ZM_TRAINER_SIGHT_SPOTTED:
+		if (!bSees || !xInputs.m_bMayEngage)
+		{
+			// The player is never frozen by this beat, so walking out or behind cover is
+			// a first-class cancel. A gate closing while the marker is up cancels too.
+			m_eState = ZM_TRAINER_SIGHT_WATCHING;
+			m_fSpottedElapsed = 0.0f;
+			return ZM_TRAINER_SIGHT_ACTION_NONE;
+		}
+		if (xInputs.m_bChannelBusy)
+		{
+			// Another screen owns the channel. Keep the marker and pause without
+			// consuming this sighting; the free tick below resumes the same beat.
+			// ★ THIS PRECEDES THE FAIL-OPEN DELIBERATELY, and it is the same
+			// defer-do-not-consume rule WATCHING already applies one arm up. A
+			// permanently busy channel therefore holds the beat open rather than
+			// raising into a channel that would silently drop it -- the fail-open
+			// below is a FREE-TICK guarantee, not an unconditional one.
+			return ZM_TRAINER_SIGHT_ACTION_NONE;
+		}
+		if (!(std::isfinite(xTuning.m_fSpottedSeconds)
+				&& xTuning.m_fSpottedSeconds > 0.0f))
+		{
+			return CompleteSpottedBeat();
+		}
+		if (std::isfinite(xInputs.m_fDeltaSeconds) && xInputs.m_fDeltaSeconds > 0.0f)
+		{
+			m_fSpottedElapsed += xInputs.m_fDeltaSeconds;
+		}
+		if (m_fSpottedElapsed >= xTuning.m_fSpottedSeconds)
+		{
+			// ★ THE ACCUMULATOR IS DELIBERATELY NOT CLEARED ON COMPLETION (only the
+			// CANCEL arm above clears it), so GetSpottedElapsedSeconds() still reads
+			// the duration the finished beat actually ran. Two tests depend on that
+			// -- the Reset unit needs a populated accumulator to dirty, and the live
+			// walk-up asserts the completed beat ran at least its configured length.
+			return CompleteSpottedBeat();
+		}
+		return ZM_TRAINER_SIGHT_ACTION_NONE;
 
 	case ZM_TRAINER_SIGHT_CHALLENGING:
 		if (xInputs.m_bChannelBusy)
