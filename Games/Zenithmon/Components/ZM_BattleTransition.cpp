@@ -62,6 +62,10 @@ bool ZM_BattleTransition::s_bBattleEndRequested = false;
 ZM_SPECIES_ID ZM_BattleTransition::s_ePendingSpecies = ZM_SPECIES_NONE;
 u_int ZM_BattleTransition::s_uPendingLevel = 0u;
 ZM_SCENE_ID ZM_BattleTransition::s_ePendingScene = ZM_SCENE_NONE;
+Zenith_EventHandle ZM_BattleTransition::s_uTrainerSubscription = INVALID_EVENT_HANDLE;
+bool ZM_BattleTransition::s_bPendingTrainerEncounter = false;
+ZM_TRAINER_ID ZM_BattleTransition::s_ePendingTrainer = ZM_TRAINER_NONE;
+ZM_SCENE_ID ZM_BattleTransition::s_ePendingTrainerScene = ZM_SCENE_NONE;
 
 ZM_BattleTransition::ZM_BattleTransition(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)
@@ -99,6 +103,15 @@ void ZM_BattleTransition::OnStart()
 			.Subscribe<ZM_OnWildEncounter>(&ZM_BattleTransition::OnWildEncounterEvent);
 	}
 
+	// SC5: the SECOND entry channel, subscribed beside the wild one (never instead
+	// of it). Distinct event type -> distinct handler; a ZM_OnTrainerEncounter can
+	// never reach OnWildEncounterEvent, and vice versa.
+	if (s_uTrainerSubscription == INVALID_EVENT_HANDLE)
+	{
+		s_uTrainerSubscription = Zenith_EventDispatcher::Get()
+			.Subscribe<ZM_OnTrainerEncounter>(&ZM_BattleTransition::OnTrainerEncounterEvent);
+	}
+
 	// Moving to the persistent scene relocates this component's pool entry.
 	// Nothing may access `this` after the call -- keep it LAST.
 	m_xParentEntity.DontDestroyOnLoad();
@@ -129,6 +142,10 @@ void ZM_BattleTransition::OnUpdate(float fDeltaTime)
 	{
 	case ZM_BATTLE_TRANSITION_IDLE:
 		AcceptPendingEncounter();
+		// SC5: the trainer channel drains at the SAME point, SECOND. A wild accept
+		// in this frame has already set s_bTransitionActive, and the trainer accept
+		// consumes-and-drops on it -- so the two channels can never both fire.
+		AcceptPendingTrainerEncounter();
 		break;
 	case ZM_BATTLE_TRANSITION_FADING_OUT:
 		AdvanceFadeOut(fDeltaTime, ZM_BATTLE_TRANSITION_WAITING_FOR_SCENE);
@@ -190,8 +207,14 @@ void ZM_BattleTransition::OnDestroy()
 		Zenith_EventDispatcher::Get().Unsubscribe(s_uEncounterSubscription);
 		s_uEncounterSubscription = INVALID_EVENT_HANDLE;
 	}
+	if (s_uTrainerSubscription != INVALID_EVENT_HANDLE)
+	{
+		Zenith_EventDispatcher::Get().Unsubscribe(s_uTrainerSubscription);
+		s_uTrainerSubscription = INVALID_EVENT_HANDLE;
+	}
 	s_bTransitionActive = false;
 	s_bPendingEncounter = false;
+	s_bPendingTrainerEncounter = false;
 	s_bBattleEndRequested = false;
 	s_xSingletonEntityID = INVALID_ENTITY_ID;
 }
@@ -216,6 +239,7 @@ void ZM_BattleTransition::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_xParkedPlayerPosition = Zenith_Maths::Vector3(0.0f);
 	m_eState = ZM_BATTLE_TRANSITION_IDLE;
 	m_eBattleSpecies = ZM_SPECIES_NONE;
+	m_eBattleTrainer = ZM_TRAINER_NONE;
 	m_eSourceScene = ZM_SCENE_NONE;
 	m_uBattleLevel = 0u;
 	m_uIssuedLoadRequestCount = 0u;
@@ -271,6 +295,24 @@ void ZM_BattleTransition::OnWildEncounterEvent(const ZM_OnWildEncounter& xEvent)
 	s_ePendingScene = xEvent.m_eSourceScene;
 }
 
+void ZM_BattleTransition::OnTrainerEncounterEvent(const ZM_OnTrainerEncounter& xEvent)
+{
+	// FAIL CLOSED while ANY round trip is in flight OR already latched -- including
+	// a latched WILD encounter, so the trainer channel can never displace it.
+	if (s_bTransitionActive || s_bPendingEncounter || s_bPendingTrainerEncounter)
+	{
+		return;
+	}
+	if (!IsTrainerEncounterPayloadValid(xEvent.m_eTrainer, xEvent.m_eSourceScene))
+	{
+		return;
+	}
+
+	s_bPendingTrainerEncounter = true;
+	s_ePendingTrainer = xEvent.m_eTrainer;
+	s_ePendingTrainerScene = xEvent.m_eSourceScene;
+}
+
 bool ZM_BattleTransition::IsEncounterPayloadValid(
 	ZM_SPECIES_ID eSpecies,
 	u_int uLevel,
@@ -284,6 +326,16 @@ bool ZM_BattleTransition::IsEncounterPayloadValid(
 		return false;
 	}
 	return uLevel >= 1u && uLevel <= 100u && IsSceneEligibleForBattle(eScene);
+}
+
+bool ZM_BattleTransition::IsTrainerEncounterPayloadValid(ZM_TRAINER_ID eTrainer, ZM_SCENE_ID eScene)
+{
+	// ZM_IsRegisteredTrainer's single comparison rejects ZM_TRAINER_NONE (which
+	// aliases ZM_TRAINER_COUNT) and every garbage value together, exactly as the
+	// wild validator's species range check covers ZM_SPECIES_NONE. The scene clause
+	// is SHARED with the wild validator: "a battle may not spawn over itself / the
+	// FrontEnd has no world" is one rule, not two.
+	return ZM_IsRegisteredTrainer(eTrainer) && IsSceneEligibleForBattle(eScene);
 }
 
 bool ZM_BattleTransition::IsSceneEligibleForBattle(ZM_SCENE_ID eScene)
@@ -374,6 +426,11 @@ void ZM_BattleTransition::ResetRuntimeStateForTests()
 	s_ePendingSpecies = ZM_SPECIES_NONE;
 	s_uPendingLevel = 0u;
 	s_ePendingScene = ZM_SCENE_NONE;
+	// ...and the SC5 trainer channel's latch, for the same reason (its subscription
+	// handle is deliberately NOT dropped here either).
+	s_bPendingTrainerEncounter = false;
+	s_ePendingTrainer = ZM_TRAINER_NONE;
+	s_ePendingTrainerScene = ZM_SCENE_NONE;
 
 	Zenith_Entity xTransitionEntity =
 		g_xEngine.Scenes().ResolveEntity(s_xSingletonEntityID);
@@ -400,6 +457,7 @@ void ZM_BattleTransition::ResetRuntimeStateForTests()
 	pxTransition->m_xParkedPlayerEntityID = INVALID_ENTITY_ID;
 	pxTransition->m_xParkedPlayerPosition = Zenith_Maths::Vector3(0.0f);
 	pxTransition->m_eBattleSpecies = ZM_SPECIES_NONE;
+	pxTransition->m_eBattleTrainer = ZM_TRAINER_NONE;
 	pxTransition->m_eSourceScene = ZM_SCENE_NONE;
 	pxTransition->m_uBattleLevel = 0u;
 	pxTransition->m_uIssuedLoadRequestCount = 0u;
@@ -484,6 +542,68 @@ void ZM_BattleTransition::AcceptPendingEncounter()
 	m_bBattleEntered = false;
 	m_bGrassCleared = false;
 	s_bTransitionActive = true;    // from here the subscriber + TryQueueWarp fail closed
+	m_eState = ZM_BATTLE_TRANSITION_FADING_OUT;
+}
+
+void ZM_BattleTransition::AcceptPendingTrainerEncounter()
+{
+	if (!s_bPendingTrainerEncounter)
+	{
+		return;
+	}
+
+	// CONSUME AND DROP, unconditionally and FIRST. The wild latch is drained the
+	// same way: a latch that survived a refused frame would re-enter a battle the
+	// instant the machine next returned to IDLE.
+	s_bPendingTrainerEncounter = false;
+	const ZM_TRAINER_ID eTrainer = s_ePendingTrainer;
+	const ZM_SCENE_ID   eScene   = s_ePendingTrainerScene;
+	s_ePendingTrainer = ZM_TRAINER_NONE;
+	s_ePendingTrainerScene = ZM_SCENE_NONE;
+
+	// AcceptPendingEncounter already ran this frame. If it accepted, it owns the
+	// screen and this trainer encounter is simply dropped.
+	if (s_bTransitionActive || m_eState != ZM_BATTLE_TRANSITION_IDLE)
+	{
+		return;
+	}
+	if (!ZM_IsRegisteredTrainer(eTrainer))
+	{
+		return;   // re-checked at the accept boundary; never Begin off a bad id
+	}
+	// Never race the SINGLE-warp machine for the screen -- the wild accept's rule,
+	// restated rather than shared, because the wild function is frozen.
+	if (ZM_GameStateManager::IsWarpInProgress())
+	{
+		return;
+	}
+
+	const Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+	const Zenith_SceneInfo xInfo = g_xEngine.Scenes().GetSceneInfo(xActive);
+	if (!xInfo.m_bLoaded || xInfo.m_iBuildIndex < 0)
+	{
+		return;
+	}
+	if (!IsSceneEligibleForBattle(
+		ZM_FindSceneByBuildIndex(static_cast<u_int>(xInfo.m_iBuildIndex))))
+	{
+		return;
+	}
+
+	m_xOverworldScene = xActive;   // generation-bearing handle, NEVER a SceneData*
+	m_eBattleTrainer  = eTrainer;
+	// A trainer round trip carries NO wild payload: the team comes from the roster
+	// row, so leaving these at their sentinels is what makes a stale read obvious.
+	m_eBattleSpecies  = ZM_SPECIES_NONE;
+	m_uBattleLevel    = 0u;
+	m_eSourceScene    = eScene;   // still drives BiomeForScene in PollForBattleReady
+	++m_uObservedEncounterCount;
+	m_fFadeAlpha = fFADE_TRANSPARENT;
+	ApplyFadeVisual();
+	m_fPollSeconds = 0.0f;
+	m_bBattleEntered = false;
+	m_bGrassCleared = false;
+	s_bTransitionActive = true;    // from here BOTH subscribers + TryQueueWarp fail closed
 	m_eState = ZM_BATTLE_TRANSITION_FADING_OUT;
 }
 
@@ -624,11 +744,13 @@ void ZM_BattleTransition::AdvanceFadeIn(
 	m_xBattleScene = Zenith_Scene();
 	m_xOverworldScene = Zenith_Scene();
 	m_eBattleSpecies = ZM_SPECIES_NONE;
+	m_eBattleTrainer = ZM_TRAINER_NONE;   // EVERY path to IDLE runs this, incl. an abort
 	m_uBattleLevel = 0u;
 	m_eSourceScene = ZM_SCENE_NONE;
 	m_bBattleEntered = false;
 	m_bGrassCleared = false;
 	s_bPendingEncounter = false;   // drop anything the stray pause-frame tick latched
+	s_bPendingTrainerEncounter = false;   // ...and the trainer channel's equivalent
 	s_bTransitionActive = false;
 	m_eState = ZM_BATTLE_TRANSITION_IDLE;
 }

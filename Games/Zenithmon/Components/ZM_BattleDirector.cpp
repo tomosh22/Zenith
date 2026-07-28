@@ -14,6 +14,7 @@
 #include "Zenithmon/Components/ZM_BattleTransition.h"      // ZM_BattleTransition (payload + RequestBattleEnd)
 #include "Zenithmon/Components/ZM_GameStateManager.h"      // TryGetGameState (real party lead + write-back target)
 #include "Zenithmon/Source/Battle/ZM_BattleAI.h"           // ZM_AI_TIER_GREEDY
+#include "Zenithmon/Source/Battle/ZM_TrainerBattle.h"      // ZM_BuildTrainerBattleSetup (SC5 trainer arm)
 #include "Zenithmon/Source/Data/ZM_ItemData.h"             // ZM_ITEM_ID / ZM_ITEM_CATCHORB (SC4 catch-ball seam)
 #include "Zenithmon/Source/Gen/ZM_CreatureGen.h"           // ZM_CreatureAssetPath, ZM_CREATURE_ASSET_MODEL
 #include "Zenithmon/Source/Party/ZM_GameState.h"           // ZM_GameState (party lead read + write-back)
@@ -59,6 +60,7 @@ void ZM_BattleDirector::OnStart()
 	m_ePhase            = ZM_BD_WAIT_FOR_IN_BATTLE;
 	m_bEndRequested     = false;
 	m_bWriteBackToLead  = false;
+	m_eTrainer          = ZM_TRAINER_NONE;   // SC5: WILD until a trainer arm latches it
 	m_fRunningSeconds   = 0.0f;
 }
 
@@ -138,6 +140,27 @@ void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
 					ZM_ApplyBattleResultToParty(*pxGS, m_xCore);   // win-only inside; loss/flee no-op
 				}
 			}
+			// SC5 TRAINER PAYOUT: prize money + defeat flag. WIN-ONLY inside the pure
+			// helper, which routes through the SAME ZM_ClassifyBattleResult the block
+			// above uses -- so a draw, a double-KO or any other third outcome pays
+			// nothing. The LOSS half is UNCHANGED: the shipped write-back above is
+			// still the single owner of m_bPendingWhiteout.
+			//
+			// Deliberately NOT gated on m_bWriteBackToLead: money and story flags are
+			// GAME-STATE level, not lead level, so a placeholder-player trainer battle
+			// still legitimately beat the trainer. A wild battle carries
+			// ZM_TRAINER_NONE, so this is a strict no-op on the wild path.
+			//
+			// It is also deliberately absent from the 30-second deadline arm below: a
+			// wedged battle never resolved, so it pays nothing. Fail closed.
+			if (ZM_IsRegisteredTrainer(m_eTrainer))
+			{
+				ZM_GameState* pxTrainerGS = nullptr;
+				if (ZM_GameStateManager::TryGetGameState(pxTrainerGS) && pxTrainerGS != nullptr)
+				{
+					ZM_ApplyTrainerResultToGameState(*pxTrainerGS, m_eTrainer, m_xCore);
+				}
+			}
 			const bool bAccepted = ZM_BattleTransition::RequestBattleEnd();
 			m_bEndRequested = true;
 			m_ePhase        = ZM_BD_RESOLVED;
@@ -181,6 +204,16 @@ void ZM_BattleDirector::RunSetup(const ZM_BattleTransition& xTransition)
 {
 	m_ePhase = ZM_BD_SETUP;
 
+	// SC5 TRAINER ARM. A trainer round trip carries a REGISTERED id on the
+	// transition; a wild one carries ZM_TRAINER_NONE, so this branch is not taken on
+	// the wild path and NOTHING below it moves (the ~380 battle goldens depend on
+	// that body staying byte-identical).
+	if (ZM_IsRegisteredTrainer(xTransition.GetBattleTrainer()))
+	{
+		RunTrainerSetup(xTransition.GetBattleTrainer());
+		return;
+	}
+
 	// Read the accepted encounter payload (valid: bInBattle gates on the transition's
 	// own IsEncounterPayloadValid acceptance).
 	const ZM_SPECIES_ID eEnemySpecies = xTransition.GetBattleSpecies();
@@ -218,6 +251,70 @@ void ZM_BattleDirector::RunSetup(const ZM_BattleTransition& xTransition)
 
 	// Reveal + seed the HUD onto this entity's own UI component (best-effort: a
 	// missing UI component skips gracefully).
+	m_xHud.Setup(m_xParentEntity, m_xCore);
+
+	m_fRunningSeconds = 0.0f;
+	m_ePhase          = ZM_BD_RUNNING;
+}
+
+void ZM_BattleDirector::RunTrainerSetup(ZM_TRAINER_ID eTrainer)
+{
+	const ZM_TrainerBattleSetup xSetup = ZM_BuildTrainerBattleSetup(eTrainer);
+	if (!xSetup.m_bValid)
+	{
+		// FAIL CLOSED, and NEVER Begin: ZM_BattleEngine::Begin Zenith_Asserts on an
+		// empty enemy party, and Zenith_Assert calls Zenith_DebugBreak() in EVERY
+		// configuration. End the round trip instead -- the transition resumes the
+		// overworld and the player loses nothing.
+		Zenith_Error(LOG_CATEGORY_GAMEPLAY,
+			"[ZM_BattleDirector] trainer %u (%s) has no buildable party -- ending the round trip",
+			(u_int)eTrainer, ZM_GetTrainerName(eTrainer));
+		m_xHud.Hide(m_xParentEntity);
+		m_xHud.HideMenu(m_xParentEntity);
+		ZM_BattleTransition::RequestBattleEnd();
+		m_bEndRequested = true;
+		m_ePhase        = ZM_BD_RESOLVED;
+		return;
+	}
+
+	m_eTrainer = eTrainer;   // the payout gate, latched only once a battle really begins
+
+	// The player side follows the SAME rule as the wild arm and is DUPLICATED rather
+	// than extracted: the wild arm feeds ~380 frozen battle goldens, and SC5 is
+	// forbidden from re-routing or refactoring it. Unifying the two is a later
+	// commit's decision, not this one's.
+	ZM_BattleMonsterSpec xPlayerSpec;
+	ZM_GameState* pxGS = nullptr;
+	m_bWriteBackToLead = false;
+	if (ZM_GameStateManager::TryGetGameState(pxGS) && pxGS != nullptr && !pxGS->m_xParty.IsEmpty())
+	{
+		xPlayerSpec = ZM_MonsterToBattleSpec(pxGS->m_xParty.Lead());
+		m_bWriteBackToLead = true;
+	}
+	else
+	{
+		xPlayerSpec = BuildPlaceholderPlayerSpec();
+	}
+
+	// BuildTrainerBattleConfig() stays exp-OFF (a shipped unit pins it); flip exp on a
+	// LOCAL COPY only for a real-lead battle, exactly as the wild arm does. This is
+	// what makes m_bIsTrainerBattle's gross-exp x1.5 live.
+	ZM_BattleConfig xConfig = BuildTrainerBattleConfig();
+	xConfig.m_bAwardExp = m_bWriteBackToLead;
+
+	// The row's AI tier goes STRAIGHT into Begin's 7th argument -- the wild arm's
+	// hard-coded ZM_AI_TIER_GREEDY is a wild-path constant and is not reused here.
+	// m_uEnemyCount is already bounded by uZM_TRAINER_BATTLEABLE_PARTY (the builder
+	// clamps it): the engine has NO forced replacement on faint, so handing it a
+	// bench would faint-lock the battle into Zenith_Assert(!xActive.IsFainted(), ...)
+	// -- a break in EVERY configuration -- rather than end it. Do not "restore" the
+	// authored count here; raise the constant in ZM_TrainerBattle.h, and only in the
+	// commit that adds forced-switch-on-faint.
+	m_xCore.Begin(&xPlayerSpec, 1u, xSetup.m_axEnemyParty, xSetup.m_uEnemyCount,
+		xConfig, xSetup.m_ulBattleSeed, xSetup.m_eEnemyTier);
+
+	// Best-effort visuals: the trainer's LEAD is the monster on the enemy platform.
+	PlaceCreatureModels(xPlayerSpec.m_eSpecies, xSetup.m_eLeadSpecies);
 	m_xHud.Setup(m_xParentEntity, m_xCore);
 
 	m_fRunningSeconds = 0.0f;
@@ -364,6 +461,7 @@ void ZM_BattleDirector::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_ePhase           = ZM_BD_WAIT_FOR_IN_BATTLE;
 	m_bEndRequested    = false;
 	m_bWriteBackToLead = false;
+	m_eTrainer         = ZM_TRAINER_NONE;
 	m_fRunningSeconds  = 0.0f;
 	m_xCore            = ZM_BattleDirectorCore{};   // fresh, un-begun core
 

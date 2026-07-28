@@ -10,6 +10,44 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-28-001 -- a flagless trainer row has no re-engagement brake, so its prize is farmable
+
+**Question:** how should a trainer with NO defeat story flag be prevented from
+paying its prize repeatedly?
+
+**Context.** SC5 (ZM-D-153) pays `m_uPrizeMoney` on a win and sets the row's
+`m_eDefeatFlag`. SC6's sight FSM is specified to AND in "not yet defeated" so a
+beaten trainer never re-spots -- which is the intended re-engagement brake, and
+it reads the defeat flag. But `ZM_TRAINER_ROUTE1_RAMBLER` deliberately carries
+`ZM_STORY_FLAG_NONE` (SC2 authored it flagless precisely to exercise the
+no-flag column arm). For that row the brake's input is permanently false, so
+once it is placed in a scene its prize could be collected without limit. Vesper
+is unaffected -- it owns `ZM_STORY_FLAG_RIVAL1_DEFEATED`.
+
+Nothing is exploitable TODAY: no trainer is placed in a scene until SC8, and the
+only current callers are tests.
+
+**Best-guess action (adopted, to be implemented in SC6):** SC6's gate keys on a
+row's defeat flag when it HAS one, and on a runtime "already battled this session
+/ this scene visit" latch when it does not. That keeps SC2's flagless row honest
+as table-multiplicity coverage without inventing a persisted per-trainer bitset,
+and it leaves the door open to a proper `ZM_TRAINER_ID`-indexed persisted bitset
+later (which is what mainline effectively has) if rematch rules ever need to
+survive a save/load.
+
+**Alternatives if you prefer:** (a) give every roster row a defeat flag and drop
+the flagless case from the table (costs the no-flag column coverage, and burns a
+story-flag bit per trainer -- ~150 trainers would be a lot of bits); (b) add a
+persisted per-trainer defeated bitset NOW (a save-schema change, so it owes a
+version bump and a historical-blob migration test in the same commit).
+
+**Cost if wrong:** bounded and local -- SC6's gate is one predicate, and no save
+data is involved under the adopted option.
+
+**Status:** asked 2026-07-28.
+
+---
+
 ### [RESOLVED 2026-07-26] Q-2026-07-25-001 -- `.zscen` bytes encoded boot-time entity indices (FIXED at the source)
 
 **Question:** should scene authoring be made boot-shape-independent, so `.zscen`

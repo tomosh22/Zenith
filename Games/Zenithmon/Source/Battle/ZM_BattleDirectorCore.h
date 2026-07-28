@@ -154,6 +154,12 @@ public:
 	// Sibling of IsCatchAllowed() by design (ZM-D-131).
 	bool IsFleeAllowed() const { return m_xEngine.GetConfig().m_bCanFlee; }
 
+	// The AI tier this battle was Begun with (ZM_AI_TIER_GREEDY before Begin, the
+	// member's default). Read-only: it changes no behaviour and no battle bytes.
+	// Exposed so S7 item 3 SC5's windowed trainer gate can prove the ROSTER ROW's
+	// tier actually reached Begin's 7th argument, rather than trusting the call site.
+	ZM_AI_TIER GetEnemyTier() const { return m_eEnemyTier; }
+
 private:
 	ZM_BattleEngine   m_xEngine;
 	ZM_BattleRNG      m_xAIRng;                   // AI's OWN generator (distinct from the battle RNG)

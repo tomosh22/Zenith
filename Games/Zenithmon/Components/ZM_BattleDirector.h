@@ -6,6 +6,7 @@
 #include "Zenithmon/Source/Battle/ZM_BattleTypes.h"           // ZM_BattleConfig, ZM_SIDE
 #include "Zenithmon/Source/Data/ZM_ItemData.h"                // ZM_ITEM_ID (SC4 test-only catch-ball override)
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"             // ZM_SPECIES_ID
+#include "Zenithmon/Source/Data/ZM_TrainerData.h"             // ZM_TRAINER_ID / ZM_TRAINER_NONE (S7 item 3 SC5)
 #include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"              // ZM_UI_BattleHUD (director-owned battle HUD, SC4)
 
 class Zenith_DataStream;
@@ -86,8 +87,10 @@ public:
 	// m_bCanFlee = false is a LOADED VALUE, not decoration: ZM_BattleEngine
 	// Zenith_Asserts on a RUN action at TWO sites (SubmitAction and DoRunAction),
 	// and Zenith_Assert breaks the process in every configuration. Nothing may
-	// Begin a battle with this config until the SC4 HUD Run-gate lands, which is
-	// exactly why SC3 ships the helper with NO caller.
+	// Begin a battle with this config until the HUD Run-gate is in place: SC4
+	// landed that gate (ZM_BattleDirectorCore::IsFleeAllowed +
+	// ZM_UI_BattleHUD::MenuRootItemIsAllowed) and SC5's RunTrainerSetup is its
+	// first and only caller.
 	static ZM_BattleConfig      BuildTrainerBattleConfig();
 	// Pure deterministic hash of (species, level) -> the core's battle seed, so a
 	// windowed drive is reproducible.
@@ -108,6 +111,11 @@ private:
 
 	// One-shot: read the payload, Begin the core, place both models, -> RUNNING.
 	void RunSetup(const ZM_BattleTransition& xTransition);
+	// One-shot TRAINER setup (S7 item 3 SC5): build the fixed party from the roster
+	// row, Begin with the row's AI tier and the trainer config, -> RUNNING. Called
+	// ONLY from RunSetup's dispatch prefix; the wild body below that prefix is
+	// untouched.
+	void RunTrainerSetup(ZM_TRAINER_ID eTrainer);
 	// Best-effort model placement onto the unique arena's platforms (1=player,
 	// 2=enemy). A missing arena/bundle silently skips; it never aborts the battle.
 	void PlaceCreatureModels(ZM_SPECIES_ID ePlayerSpecies, ZM_SPECIES_ID eEnemySpecies);
@@ -125,6 +133,11 @@ private:
 	// the placeholder). Only then is exp awarded + the result written back to the lead
 	// on resolve (SC3). POD -- keeps the pool's move-construct; reset in OnStart / Read.
 	bool                     m_bWriteBackToLead = false;
+	// The trainer this battle is for, or ZM_TRAINER_NONE for a WILD battle (SC5). It
+	// is the ONLY gate on the prize/defeat-flag payout, and it is POD -- so the
+	// deliberately-not-noexcept move ctor above stays defined. Reset in OnStart and
+	// in ReadFromDataStream, exactly like m_bWriteBackToLead.
+	ZM_TRAINER_ID            m_eTrainer = ZM_TRAINER_NONE;
 	float                    m_fRunningSeconds = 0.0f;  // wall-clock time spent driving (deadline guard)
 	// The director-owned battle HUD (SC4): authored onto THIS entity's UI component
 	// at bake time, revealed at Setup, driven each frame, hidden before the end-fade.

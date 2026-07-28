@@ -44,7 +44,9 @@
 // ============================================================================
 
 #include "Core/Zenith_TestFramework.h"
+#include "UnitTests/Zenith_AssertCapture.h"                  // SC5: the trainer validator's totality proof
 #include "Zenithmon/Components/ZM_BattleTransition.h"
+#include "Zenithmon/Source/Data/ZM_TrainerData.h"            // SC5: ZM_TRAINER_ID / ZM_TRAINER_NONE
 
 // ############################################################################
 // 1. IsEncounterPayloadValid -- the golden Dawnmere/Fernfawn payload is accepted
@@ -331,4 +333,90 @@ ZENITH_TEST(ZM_BattleTransition, IsOverworldPausedInState_MatchesPauseWindow)
 	ZENITH_ASSERT_TRUE(
 		ZM_BattleTransition::IsOverworldPausedInState(ZM_BATTLE_TRANSITION_RESUMING),
 		"RESUMING is the state that performs the unpause, so it is still in-window");
+}
+
+// ############################################################################
+// 13/14. IsTrainerEncounterPayloadValid -- the SECOND entry channel's gate
+//        (S7 item 3 SC5)
+//
+// A DISTINCT validator, deliberately a SIBLING of IsEncounterPayloadValid rather
+// than an extension of it: the wild validator's (species, level, scene) shape is
+// frozen by ~380 battle goldens and the windowed wild gates, so the trainer
+// channel gets its own two-clause rule -- a REGISTERED roster id, and a scene a
+// battle may launch from. The scene clause is SHARED (IsSceneEligibleForBattle),
+// because "a battle may not spawn over itself / the FrontEnd has no world" is one
+// rule, not two.
+// ############################################################################
+
+// The payloads the SC6 sight FSM will raise, and the SC5 harness test dispatches
+// directly: a registered trainer in each of the three eligible scene kinds.
+ZENITH_TEST(ZM_BattleTransition, IsTrainerEncounterPayloadValid_AcceptsRegisteredTrainerInAnEligibleScene)
+{
+	// ANTI-VACUITY: if the shared scene clause were itself broken, every case
+	// below would fail for the wrong reason -- pin it first.
+	ZENITH_ASSERT_TRUE(
+		ZM_BattleTransition::IsSceneEligibleForBattle(ZM_SCENE_DAWNMERE),
+		"Dawnmere must be battle-eligible or the acceptance cases below are meaningless");
+	ZENITH_ASSERT_TRUE(ZM_IsRegisteredTrainer(ZM_TRAINER_RIVAL_VESPER),
+		"the rival must be a registered roster id or the acceptance cases are meaningless");
+
+	ZENITH_ASSERT_TRUE(
+		ZM_BattleTransition::IsTrainerEncounterPayloadValid(
+			ZM_TRAINER_RIVAL_VESPER, ZM_SCENE_DAWNMERE),
+		"the golden {VESPER, DAWNMERE} trainer payload must be accepted");
+	ZENITH_ASSERT_TRUE(
+		ZM_BattleTransition::IsTrainerEncounterPayloadValid(
+			ZM_TRAINER_ROUTE1_RAMBLER, ZM_SCENE_ROUTE1),
+		"a generic route trainer on its own route must be accepted");
+	ZENITH_ASSERT_TRUE(
+		ZM_BattleTransition::IsTrainerEncounterPayloadValid(
+			ZM_TRAINER_RIVAL_VESPER, ZM_SCENE_PLAYERHOME),
+		"an INTERIOR is a pausable world with a parkable player, so it is eligible too");
+}
+
+// The fail-closed half. ZM_TRAINER_NONE aliases ZM_TRAINER_COUNT, so the single
+// registered check rejects the sentinel and every garbage value together -- the
+// same shape the wild validator's species range check has.
+ZENITH_TEST(ZM_BattleTransition, IsTrainerEncounterPayloadValid_RejectsUnregisteredTrainerAndIneligibleScene)
+{
+	// The whole battery runs inside a capture scope: this validator is TOTAL and
+	// must never assert on a garbage id, and an assert here would end the boot unit
+	// run rather than fail one case. NO ZENITH_ASSERT_* inside the scope -- the
+	// capture swallows framework failures -- so the answers are recorded and
+	// asserted afterwards.
+	bool abRejected[6] = {};
+	u_int uHits = 0u;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		abRejected[0] = !ZM_BattleTransition::IsTrainerEncounterPayloadValid(
+			ZM_TRAINER_NONE, ZM_SCENE_DAWNMERE);
+		abRejected[1] = !ZM_BattleTransition::IsTrainerEncounterPayloadValid(
+			(ZM_TRAINER_ID)999u, ZM_SCENE_DAWNMERE);
+		abRejected[2] = !ZM_BattleTransition::IsTrainerEncounterPayloadValid(
+			ZM_TRAINER_RIVAL_VESPER, ZM_SCENE_BATTLE);
+		abRejected[3] = !ZM_BattleTransition::IsTrainerEncounterPayloadValid(
+			ZM_TRAINER_RIVAL_VESPER, ZM_SCENE_FRONTEND);
+		abRejected[4] = !ZM_BattleTransition::IsTrainerEncounterPayloadValid(
+			ZM_TRAINER_RIVAL_VESPER, ZM_SCENE_NONE);
+		abRejected[5] = !ZM_BattleTransition::IsTrainerEncounterPayloadValid(
+			ZM_TRAINER_RIVAL_VESPER, (ZM_SCENE_ID)999u);
+		uHits = (u_int)xCapture.GetHitCount();
+	}
+
+	ZENITH_ASSERT_EQ(uHits, 0u,
+		"the trainer payload validator asserted on a garbage id -- Zenith_Assert breaks "
+		"in EVERY config, so this would kill the whole boot unit run");
+
+	ZENITH_ASSERT_TRUE(abRejected[0],
+		"the ZM_TRAINER_NONE sentinel (== ZM_TRAINER_COUNT) must never begin a battle");
+	ZENITH_ASSERT_TRUE(abRejected[1],
+		"a garbage trainer id must never begin a battle");
+	ZENITH_ASSERT_TRUE(abRejected[2],
+		"a trainer battle may not spawn over the Battle scene itself");
+	ZENITH_ASSERT_TRUE(abRejected[3],
+		"the FrontEnd has no world to pause, park a player in, or resume to");
+	ZENITH_ASSERT_TRUE(abRejected[4],
+		"the ZM_SCENE_NONE sentinel must be rejected by the shared scene clause");
+	ZENITH_ASSERT_TRUE(abRejected[5],
+		"an out-of-range scene must fail closed");
 }

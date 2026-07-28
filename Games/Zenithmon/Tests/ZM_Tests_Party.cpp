@@ -8,6 +8,7 @@
 // ============================================================================
 
 #include "Core/Zenith_TestFramework.h"
+#include "UnitTests/Zenith_AssertCapture.h"               // SC5: the trainer payout's totality proof
 #include "Zenithmon/Source/Party/ZM_Monster.h"
 #include "Zenithmon/Source/Party/ZM_Party.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"
@@ -16,6 +17,8 @@
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h" // ZM_BuildWildEnemySpec
 #include "Zenithmon/Source/Battle/ZM_ExpAndLevel.h"      // ZM_ExpForLevel, ZM_GetSpeciesGrowthRate
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"        // ZM_GetSpeciesBaseStats/Abilities
+#include "Zenithmon/Source/Data/ZM_StoryFlags.h"         // ZM_SetStoryFlag / ZM_IsStoryFlagSet (SC5 trainer reward)
+#include "Zenithmon/Source/Data/ZM_TrainerData.h"        // ZM_TRAINER_ID + the authored roster rows (SC5)
 #include "Zenithmon/Source/Data/ZM_StatCalc.h"           // ZM_CalcStat, uZM_MAX_IV
 #include "Zenithmon/Source/Data/ZM_MoveData.h"           // ZM_GetMoveData
 #include "Zenithmon/Source/Data/ZM_Learnsets.h"          // ZM_GetSpeciesLearnset
@@ -873,4 +876,269 @@ ZENITH_TEST(ZM_Party, Party_HealAllFullFromLossRestoresEveryMember)
 	ZENITH_ASSERT_EQ((u_int)xParty.Get(0u).m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "member 0 status cleared");
 	ZENITH_ASSERT_EQ((u_int)xParty.Get(1u).m_eStatus, (u_int)ZM_MAJOR_STATUS_NONE, "member 1 status cleared");
 	ZENITH_ASSERT_FALSE(xParty.AllFainted(), "nobody fainted after a full heal");
+}
+
+// ############################################################################
+// H. Trainer reward write-back (S7 item 3 SC5)
+//
+// ZM_ApplyTrainerResultToGameState -- the trainer half of resolved-battle
+// persistence. WIN-ONLY, and the win test is NOT re-implemented: it routes
+// through the SAME shipped ZM_ClassifyBattleResult that section G pins, so the
+// trainer arm and the wild arm can never drift about what "the player won" means.
+//
+// What these cases pin is the ROUTING of the prize, not AddMoney's saturation
+// (ZM_Bag / Money_AddSaturatesAtTheCapWithoutWrapping already owns that) and not
+// the flag codec (ZM_Story / Accessor_SetThenIsSetRoundTripsEveryRegisteredFlag
+// owns that):
+//   * a win credits exactly the ROW's prize and sets the ROW's defeat flag;
+//   * a loss / draw / flee pays NOTHING and never touches m_bPendingWhiteout --
+//     ZM_ApplyBattleResultToParty stays the SINGLE owner of that latch;
+//   * a second win is IDEMPOTENT on the flag and NOT on the money (SC5's
+//     deliberate answer -- "pay once" is a caller-side gate, and ZM-D-135 forbids
+//     a "trainers already paid" member on the frozen ZM_GameState);
+//   * a ZM_STORY_FLAG_NONE row still pays and writes no bit at all;
+//   * an unregistered id is a TOTAL, SILENT no-op.
+// All PURE: a game state, a roster id, and two primitives. No ECS, no scene.
+// ############################################################################
+
+// The headline case: beating the rival credits the authored prize and sets the
+// authored defeat flag, and does nothing else.
+ZENITH_TEST(ZM_Party, TrainerReward_WinCreditsThePrizeAndSetsTheDefeatFlag)
+{
+	ZM_GameState xState = ZM_MakeStarterGameState();
+	const ZM_TrainerData& xRow = ZM_GetTrainerData(ZM_TRAINER_RIVAL_VESPER);
+	const u_int uMoneyBefore = xState.m_uMoney;
+	const u_int uPartyBefore = xState.m_xParty.Count();
+
+	// ANTI-VACUITY, before anything is applied: an already-set flag would make the
+	// transition meaningless, and a purse near the cap would make the delta a
+	// saturation artefact rather than the routed prize.
+	ZENITH_ASSERT_FALSE(ZM_IsStoryFlagSet(xState, ZM_STORY_FLAG_RIVAL1_DEFEATED),
+		"the starter state already has the rival flag set -- the transition is vacuous");
+	ZENITH_ASSERT_LT(uMoneyBefore + xRow.m_uPrizeMoney, uZM_MONEY_CAP,
+		"the starter purse plus the prize is at/over the cap -- the credit delta would be "
+		"a saturation artefact rather than the routed prize");
+
+	const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
+		xState, ZM_TRAINER_RIVAL_VESPER, ZM_SIDE_PLAYER, false);
+
+	ZENITH_ASSERT_TRUE(xResult.m_bApplied, "a PLAYER win over a registered trainer must pay out");
+	ZENITH_ASSERT_EQ(xResult.m_uMoneyCredited, xRow.m_uPrizeMoney,
+		"the credited amount is not the row's prize");
+	ZENITH_ASSERT_EQ(xResult.m_uMoneyCredited, 500u,
+		"the rival's authored prize is 500 -- either the row or the routing changed");
+	ZENITH_ASSERT_EQ(xState.m_uMoney, uMoneyBefore + 500u, "the purse did not gain exactly the prize");
+	ZENITH_ASSERT_TRUE(xResult.m_bFlagNewlySet, "the rival's defeat flag went 0 -> 1 and must be reported");
+	ZENITH_ASSERT_TRUE(ZM_IsStoryFlagSet(xState, ZM_STORY_FLAG_RIVAL1_DEFEATED),
+		"beating the rival must set ZM_STORY_FLAG_RIVAL1_DEFEATED");
+	ZENITH_ASSERT_FALSE(xState.m_bPendingWhiteout,
+		"a WIN must never latch a whiteout -- this helper is not the latch owner at all");
+	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), uPartyBefore,
+		"the trainer payout touched a monster record -- it owns money and flags ONLY");
+}
+
+// Fail closed on every outcome that is not an outright player win, and leave the
+// loss half entirely to the shipped ZM_ApplyBattleResultToParty whiteout latch.
+ZENITH_TEST(ZM_Party, TrainerReward_LossAndDrawPayNothingAndLeaveTheWhiteoutToTheExistingPath)
+{
+	struct Shape
+	{
+		ZM_SIDE     m_eWinner;
+		bool        m_bLeadFainted;
+		const char* m_szLabel;
+	};
+	const Shape axShapes[3] =
+	{
+		{ ZM_SIDE_ENEMY, true,  "an ENEMY win (a loss)" },
+		{ ZM_SIDE_COUNT, true,  "a COUNT draw/double-KO that wiped the lead" },
+		{ ZM_SIDE_COUNT, false, "a COUNT flee/draw with a live lead" },
+	};
+
+	ZM_GameState xState;
+	for (u_int u = 0u; u < 3u; ++u)
+	{
+		xState = ZM_MakeStarterGameState();
+		const u_int uMoneyBefore = xState.m_uMoney;
+
+		const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
+			xState, ZM_TRAINER_RIVAL_VESPER, axShapes[u].m_eWinner, axShapes[u].m_bLeadFainted);
+
+		ZENITH_ASSERT_FALSE(xResult.m_bApplied, "%s must not pay out", axShapes[u].m_szLabel);
+		ZENITH_ASSERT_EQ(xResult.m_uMoneyCredited, 0u, "%s credited money", axShapes[u].m_szLabel);
+		ZENITH_ASSERT_EQ(xState.m_uMoney, uMoneyBefore, "%s moved the purse", axShapes[u].m_szLabel);
+		ZENITH_ASSERT_FALSE(xResult.m_bFlagNewlySet, "%s reported a flag write", axShapes[u].m_szLabel);
+		ZENITH_ASSERT_FALSE(ZM_IsStoryFlagSet(xState, ZM_STORY_FLAG_RIVAL1_DEFEATED),
+			"%s set the rival's defeat flag", axShapes[u].m_szLabel);
+		ZENITH_ASSERT_FALSE(xState.m_bPendingWhiteout,
+			"%s latched m_bPendingWhiteout -- ZM_ApplyBattleResultToParty is its SINGLE owner",
+			axShapes[u].m_szLabel);
+	}
+
+	// State the hand-off explicitly rather than leaving it implied: the two shapes
+	// that wipe the party are WHITEOUTs, and the shipped write-back is what latches
+	// them. The trainer helper deliberately duplicates none of that.
+	ZENITH_ASSERT_EQ((u_int)ZM_ClassifyBattleResult(ZM_SIDE_ENEMY, true), (u_int)ZM_BRA_WHITEOUT,
+		"an ENEMY win is a WHITEOUT owned by ZM_ApplyBattleResultToParty");
+	ZENITH_ASSERT_EQ((u_int)ZM_ClassifyBattleResult(ZM_SIDE_COUNT, true), (u_int)ZM_BRA_WHITEOUT,
+		"a COUNT draw with a fainted lead is a WHITEOUT owned by ZM_ApplyBattleResultToParty");
+}
+
+// The deliberate asymmetry: ZM_SetStoryFlag is idempotent, AddMoney is not. SC5's
+// answer is that "pay once" is a CALLER-side gate (SC6's sight FSM ANDs in "not
+// yet defeated") because ZM-D-135 forbids a "trainers already paid" member on the
+// frozen ZM_GameState. m_bFlagNewlySet is the lever that gate will read.
+ZENITH_TEST(ZM_Party, TrainerReward_SecondWinIsFlagIdempotentAndPaysAgain)
+{
+	ZM_GameState xState = ZM_MakeStarterGameState();
+	const u_int uMoneyBefore = xState.m_uMoney;
+	ZENITH_ASSERT_LT(uMoneyBefore + 1000u, uZM_MONEY_CAP,
+		"two prizes must fit under the cap or the second credit is a saturation artefact");
+
+	const ZM_TrainerRewardResult xFirst = ZM_ApplyTrainerResultToGameState(
+		xState, ZM_TRAINER_RIVAL_VESPER, ZM_SIDE_PLAYER, false);
+	ZENITH_ASSERT_TRUE(xFirst.m_bFlagNewlySet, "the FIRST win must report a 0 -> 1 flag transition");
+	ZENITH_ASSERT_EQ(xFirst.m_uMoneyCredited, 500u, "the first win must credit the authored prize");
+
+	const ZM_TrainerRewardResult xSecond = ZM_ApplyTrainerResultToGameState(
+		xState, ZM_TRAINER_RIVAL_VESPER, ZM_SIDE_PLAYER, false);
+
+	ZENITH_ASSERT_TRUE(xSecond.m_bApplied, "a second win over the same trainer still applies");
+	ZENITH_ASSERT_EQ(xSecond.m_uMoneyCredited, 500u,
+		"the money is NOT idempotent by design -- the re-engagement gate is the caller's");
+	ZENITH_ASSERT_EQ(xState.m_uMoney, uMoneyBefore + 1000u, "two wins must credit two prizes");
+	ZENITH_ASSERT_FALSE(xSecond.m_bFlagNewlySet,
+		"the flag write is idempotent, so the SECOND win set nothing NEW -- this false is "
+		"exactly the lever SC6's 'never re-spot a beaten trainer' guard reads");
+	ZENITH_ASSERT_TRUE(ZM_IsStoryFlagSet(xState, ZM_STORY_FLAG_RIVAL1_DEFEATED),
+		"the flag is still SET after the second win -- idempotent, never toggled");
+}
+
+// The credit is REPORTED as the observed purse delta, not as the row's prize, so
+// a saturated credit reports what actually landed. Story progress is NEVER
+// coupled to the money landing.
+ZENITH_TEST(ZM_Party, TrainerReward_MoneyAtTheCapCreditsNothingAndStillSetsTheFlag)
+{
+	ZM_GameState xState;
+
+	// Case A -- exactly at the cap: nothing lands, the flag still does.
+	xState = ZM_MakeStarterGameState();
+	xState.m_uMoney = uZM_MONEY_CAP;
+	{
+		const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
+			xState, ZM_TRAINER_RIVAL_VESPER, ZM_SIDE_PLAYER, false);
+		ZENITH_ASSERT_EQ(xResult.m_uMoneyCredited, 0u,
+			"a purse at the cap has no headroom, so NOTHING was credited");
+		ZENITH_ASSERT_EQ(xState.m_uMoney, uZM_MONEY_CAP, "the capped purse saturated, never wrapped");
+		ZENITH_ASSERT_TRUE(xResult.m_bApplied, "a win still APPLIED even though no money landed");
+		ZENITH_ASSERT_TRUE(xResult.m_bFlagNewlySet, "the defeat flag is never coupled to the money");
+		ZENITH_ASSERT_TRUE(ZM_IsStoryFlagSet(xState, ZM_STORY_FLAG_RIVAL1_DEFEATED),
+			"story progress must survive a saturated prize");
+	}
+
+	// Case B -- partial headroom: exactly the headroom lands, not the whole prize.
+	xState = ZM_MakeStarterGameState();
+	xState.m_uMoney = uZM_MONEY_CAP - 100u;
+	{
+		const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
+			xState, ZM_TRAINER_RIVAL_VESPER, ZM_SIDE_PLAYER, false);
+		ZENITH_ASSERT_EQ(xResult.m_uMoneyCredited, 100u,
+			"the report must be the OBSERVED delta (100), not the row's prize (500)");
+		ZENITH_ASSERT_EQ(xState.m_uMoney, uZM_MONEY_CAP, "the partial credit lands exactly at the cap");
+	}
+
+	// Case C -- an imported over-cap purse (only reachable through a hand-edited
+	// save; module 7 restores the full uint32). AddMoney credits nothing there.
+	xState = ZM_MakeStarterGameState();
+	xState.m_uMoney = uZM_MONEY_CAP + 5000u;
+	{
+		const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
+			xState, ZM_TRAINER_RIVAL_VESPER, ZM_SIDE_PLAYER, false);
+		ZENITH_ASSERT_EQ(xResult.m_uMoneyCredited, 0u, "an over-cap purse credits nothing");
+		ZENITH_ASSERT_EQ(xState.m_uMoney, uZM_MONEY_CAP + 5000u,
+			"an over-cap balance is preserved byte-for-byte, never clamped down");
+	}
+}
+
+// ZM_TRAINER_ROUTE1_RAMBLER carries ZM_STORY_FLAG_NONE -- the arm no other roster
+// row exercises. The prize is still paid; ZM_SetStoryFlag returns false with no
+// mutation and no log, so there is deliberately NO 'NONE' branch in the helper.
+ZENITH_TEST(ZM_Party, TrainerReward_UnflaggedRowStillPaysAndWritesNoFlag)
+{
+	// ANTI-VACUITY: if this row ever GAINS a flag, this case stops testing the
+	// unflagged arm and must be re-pointed rather than silently passing.
+	ZENITH_ASSERT_EQ((u_int)ZM_GetTrainerData(ZM_TRAINER_ROUTE1_RAMBLER).m_eDefeatFlag,
+		(u_int)ZM_STORY_FLAG_NONE,
+		"the rambler no longer carries ZM_STORY_FLAG_NONE -- this case no longer covers "
+		"the unflagged arm");
+
+	ZM_GameState xState = ZM_MakeStarterGameState();
+	const u_int uMoneyBefore = xState.m_uMoney;
+
+	const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
+		xState, ZM_TRAINER_ROUTE1_RAMBLER, ZM_SIDE_PLAYER, false);
+
+	ZENITH_ASSERT_TRUE(xResult.m_bApplied, "an unflagged trainer still pays out on a win");
+	ZENITH_ASSERT_EQ(xResult.m_uMoneyCredited, 120u, "the rambler's authored prize is 120");
+	ZENITH_ASSERT_EQ(xState.m_uMoney, uMoneyBefore + 120u, "the purse did not gain exactly the prize");
+	ZENITH_ASSERT_FALSE(xResult.m_bFlagNewlySet, "a ZM_STORY_FLAG_NONE row writes no flag");
+
+	// NO bit at all -- not merely "not the rival's". A helper that substituted a
+	// hard-coded flag for the row's would be caught here and nowhere else.
+	for (u_int u = 0u; u < (u_int)ZM_STORY_FLAG_COUNT; ++u)
+	{
+		ZENITH_ASSERT_FALSE(ZM_IsStoryFlagSet(xState, (ZM_STORY_FLAG_ID)u),
+			"an unflagged trainer's payout set story flag %u", u);
+	}
+}
+
+// TOTAL and SILENT for every id the roster does not name -- including on the WIN
+// outcome, the one that would otherwise pay. The registered guard runs BEFORE
+// ZM_GetTrainerData precisely because that accessor logs a non-fatal
+// Zenith_Error on an unregistered id, and a total no-op must be silent.
+ZENITH_TEST(ZM_Party, TrainerReward_UnregisteredTrainerIsATotalSilentNoOp)
+{
+	const ZM_TRAINER_ID aeUnregistered[3] =
+	{
+		ZM_TRAINER_NONE,
+		(ZM_TRAINER_ID)ZM_TRAINER_COUNT,
+		(ZM_TRAINER_ID)77u
+	};
+
+	ZM_GameState xState = ZM_MakeStarterGameState();
+	const u_int uMoneyBefore = xState.m_uMoney;
+
+	// NO ZENITH_ASSERT_* inside the capture scope (it swallows framework failures),
+	// and the hit count is copied out BEFORE the closing brace (the dtor restores
+	// the previous count).
+	ZM_TrainerRewardResult axResults[3];
+	u_int uHits = 0u;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		for (u_int u = 0u; u < 3u; ++u)
+		{
+			axResults[u] = ZM_ApplyTrainerResultToGameState(
+				xState, aeUnregistered[u], ZM_SIDE_PLAYER, false);
+		}
+		uHits = (u_int)xCapture.GetHitCount();
+	}
+
+	ZENITH_ASSERT_EQ(uHits, 0u,
+		"the trainer payout asserted on an unregistered id -- Zenith_Assert breaks in "
+		"EVERY config, so this would kill the whole boot unit run");
+
+	for (u_int u = 0u; u < 3u; ++u)
+	{
+		ZENITH_ASSERT_FALSE(axResults[u].m_bApplied,
+			"unregistered id %u reported an applied payout", (u_int)aeUnregistered[u]);
+		ZENITH_ASSERT_EQ(axResults[u].m_uMoneyCredited, 0u,
+			"unregistered id %u credited money", (u_int)aeUnregistered[u]);
+		ZENITH_ASSERT_FALSE(axResults[u].m_bFlagNewlySet,
+			"unregistered id %u reported a flag write", (u_int)aeUnregistered[u]);
+	}
+	ZENITH_ASSERT_EQ(xState.m_uMoney, uMoneyBefore, "an unregistered id moved the purse");
+	for (u_int u = 0u; u < (u_int)ZM_STORY_FLAG_COUNT; ++u)
+	{
+		ZENITH_ASSERT_FALSE(ZM_IsStoryFlagSet(xState, (ZM_STORY_FLAG_ID)u),
+			"an unregistered id's payout set story flag %u", u);
+	}
 }

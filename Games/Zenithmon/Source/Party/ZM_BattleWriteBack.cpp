@@ -7,6 +7,7 @@
 #include "Zenithmon/Source/Battle/ZM_BattleEngine.h"          // GetState() / GetEventCount() / GetEvent()
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"           // ZM_BATTLE_EVENT_CATCH_RESULT (SC4 catch scan)
 #include "Zenithmon/Source/Battle/ZM_BattleState.h"           // Side(...).Active()
+#include "Zenithmon/Source/Data/ZM_StoryFlags.h"              // ZM_SetStoryFlag / ZM_IsStoryFlagSet (SC5 trainer payout)
 
 // ============================================================================
 // ZM_BattleWriteBack -- pure battle-result persistence (S5 item 5). Routes a resolved
@@ -104,4 +105,55 @@ void ZM_ApplyBattleResultToParty(ZM_GameState& xGameStateInOut, const ZM_BattleD
 		}
 		break;
 	}
+}
+
+// ============================================================================
+// S7 item 3 SC5 -- the TRAINER payout. APPENDED beside the shipped write-back;
+// nothing above this line is edited, so the whiteout latch, the catch scan and
+// the lead write-back behave identically for the (byte-frozen) wild path.
+// ============================================================================
+
+ZM_TrainerRewardResult ZM_ApplyTrainerResultToGameState(ZM_GameState& xGameStateInOut,
+	ZM_TRAINER_ID eTrainer, ZM_SIDE eWinner, bool bLeadFainted)
+{
+	ZM_TrainerRewardResult xResult;
+
+	// FAIL CLOSED on everything that is not an outright player win. Reusing the
+	// shipped classifier is load-bearing: a ZM_SIDE_COUNT draw whose lead fainted is
+	// a party WIPE, not a stalemate, and must never pay a prize.
+	if (ZM_ClassifyBattleResult(eWinner, bLeadFainted) != ZM_BRA_WRITE_BACK_WIN)
+	{
+		return xResult;
+	}
+	if (!ZM_IsRegisteredTrainer(eTrainer))
+	{
+		return xResult;   // silent: see the header's totality table
+	}
+
+	const ZM_TrainerData& xRow = ZM_GetTrainerData(eTrainer);
+
+	// Through AddMoney, never a raw m_uMoney write: it is the sole enforcer of
+	// uZM_MONEY_CAP and it is headroom-first, so a prize can never wrap the purse.
+	// The credit is REPORTED as the observed delta, so a saturated credit reports
+	// what actually landed rather than what was owed.
+	const u_int uMoneyBefore = xGameStateInOut.m_uMoney;
+	xGameStateInOut.AddMoney(xRow.m_uPrizeMoney);
+	xResult.m_uMoneyCredited = xGameStateInOut.m_uMoney - uMoneyBefore;
+
+	const bool bAlreadySet = ZM_IsStoryFlagSet(xGameStateInOut, xRow.m_eDefeatFlag);
+	const bool bWritten    = ZM_SetStoryFlag(xGameStateInOut, xRow.m_eDefeatFlag, true);
+	xResult.m_bFlagNewlySet = bWritten && !bAlreadySet;
+
+	xResult.m_bApplied = true;
+	return xResult;
+}
+
+ZM_TrainerRewardResult ZM_ApplyTrainerResultToGameState(ZM_GameState& xGameStateInOut,
+	ZM_TRAINER_ID eTrainer, const ZM_BattleDirectorCore& xCore)
+{
+	const ZM_BattleMonster& xLead = xCore.GetEngine().GetState().Side(ZM_SIDE_PLAYER).Active();
+	// Single-lead (Q-2026-07-18-001): the active IS the party lead, so its faint is a
+	// full-party wipe -- the same derivation the shipped overload uses.
+	return ZM_ApplyTrainerResultToGameState(xGameStateInOut, eTrainer,
+		xCore.GetWinner(), xLead.m_uCurHP == 0u);
 }

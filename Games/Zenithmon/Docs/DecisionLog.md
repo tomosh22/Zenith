@@ -15,6 +15,106 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-28 -- ZM-D-153 -- S7 item 3 SC5: trainer forced-battle entry, the trainer arm, and the prize/defeat write-back -- plus the discovery that the engine cannot resolve a multi-monster party
+
+*(Fifth sub-commit of the ZM-D-143 sequence and the vertical's CORE. `Games/Zenithmon`
+only; ZERO `Zenith/` files, ZERO new ECS orders -- it rides the existing 110
+(`ZM_BattleTransition`) and 111 (`ZM_BattleDirector`). Four new TUs, so a regen was owed
+and run.)*
+
+### ★ THE FINDING THAT MATTERS: no forced switch on faint
+
+The adversarial review caught, and the fix pass then verified against the engine rather
+than against the review text, that **`ZM_BattleEngine` has no faint-replacement path**.
+`m_uActiveSlot` is written only by `Begin` and by `DoSwitch`, and `DoSwitch` is reached
+only from a voluntary switch or a move's forced-switch secondary; `ResolveTurn` ends the
+battle only when a whole-party scan finds nothing unfainted; and `SubmitAction` opens
+with `Zenith_Assert(!xActive.IsFainted(), ...)`. So the moment a multi-monster side's
+active faints, nothing promotes its successor: the battle neither ends nor advances, and
+the next submitted action is a **hard process break in every configuration**.
+
+Nothing had ever hit this because every battle to date is single-lead
+(Q-2026-07-18-001) and the wild path fields one monster -- but **SC2's roster already
+authored `ZM_TRAINER_ROUTE1_RAMBLER` with TWO members**, so SC5 as first written would
+have shipped a battle that breaks the process on the first enemy KO.
+
+**Resolution: clamp, do not delete content.** `uZM_TRAINER_BATTLEABLE_PARTY = 1u`
+(`Source/Battle/ZM_TrainerBattle.h`, bounded by a `static_assert` and commented with the
+whole faint-lock chain) clamps every trainer's FIELDED party to its authored LEAD, taken
+from the front. The roster keeps its multi-member rows, so the content survives and the
+constant is the single place to raise when the engine grows a replacement path. Logged
+as the headline battle-engine shortfall (Shortfalls 1.2): multi-monster trainer battles
+and gym leaders are mainline-defining, so this must land before S8 can show a credible
+gym.
+
+### What shipped
+
+- **`Source/Battle/ZM_TrainerBattle.{h,cpp}` -- a PURE leaf.**
+  `ZM_BuildTrainerBattleSetup` maps a row's authored `{species, level}` pairs through the
+  SHIPPED `ZM_BuildWildEnemySpec` (deterministic: IVs 31 / EVs 0 / nature FERAL / ability
+  NONE / learnset moveset, zero RNG) and clamps the count; it guards with
+  `ZM_IsRegisteredTrainer` BEFORE touching `ZM_GetTrainerData`, because that accessor logs
+  a non-fatal `Zenith_Error` on an unregistered id and a total no-op must be SILENT.
+  `ZM_DeriveTrainerBattleSeed` mirrors `DeriveBattleSeed`'s FNV-1a shape but folds a
+  trainer DOMAIN SALT first, so the trainer and wild seed spaces are provably disjoint.
+  This split is what lets a boot unit prove the party, the tier and the seed **without
+  starting a battle**.
+- **`ZM_OnTrainerEncounter`** appended beside `ZM_OnWildEncounter` (design default Q-G: a
+  DISTINCT event, so the wild payload, its validator and its subscriber are untouched).
+  The trainer id is the WHOLE payload -- team, prize, defeat flag and AI tier all live in
+  the compiled row.
+- **`ZM_BattleTransition` (order 110)** gains a SECOND subscription beside the wild one,
+  a pure `IsTrainerEncounterPayloadValid`, and a trainer latch. `AcceptPendingEncounter`,
+  `OnWildEncounterEvent`, `IsEncounterPayloadValid`, `IssueAdditiveBattleLoad`,
+  `EnterBattleOnce`, `PollForBattleReady` and `ResumeOverworld` are not edited at all.
+- **`ZM_BattleDirector` (order 111)** gains a 5-line trainer-arm PREFIX to `RunSetup`
+  that dispatches and returns, leaving the shipped wild body byte-unchanged below it,
+  plus `RunTrainerSetup` and the payout block. `BuildTrainerBattleConfig()` -- shipped
+  caller-less by SC3 -- now has its first and only caller.
+- **`ZM_ApplyTrainerResultToGameState`** (in `Source/Party/ZM_BattleWriteBack`, beside the
+  shipped pair) routes through the SAME `ZM_ClassifyBattleResult` the wild path uses, so
+  trainer and wild can never disagree about what "the player won" means. It credits
+  through `AddMoney` (never a raw `m_uMoney` write -- that function is the sole enforcer of
+  the money cap and is headroom-first, so a prize cannot wrap the purse) and REPORTS the
+  observed delta, so a saturated credit reports what actually landed. Loss is left
+  entirely to the existing whiteout latch. `ZM_GameState` gains no member (its layout is
+  frozen, ZM-D-135).
+
+### Review also killed a vacuous assertion
+
+The windowed gate's "the row's AI tier reached `Begin`" clause was **vacuous**: Vesper
+authors `ZM_AI_TIER_GREEDY`, which is simultaneously the wild arm's hard-coded literal
+AND `ZM_BattleDirectorCore`'s pre-`Begin` default, so all three collided and no mutation
+could red it. Fixed by adding a second round trip driving `ZM_TRAINER_ROUTE1_RAMBLER`
+(`ZM_AI_TIER_RANDOM` -- a value neither the literal nor the default can produce), with
+two hard anti-vacuity guards that fail the test if the driven rows ever author the same
+tier or if the second row's tier becomes GREEDY. That second trip doubles as the
+end-to-end proof of the party clamp, asserting the OBSERVED enemy party size rather than
+resting on "the process did not break".
+
+### Tests and gate
+
++13 boot units (5 in the new `Tests/ZM_Tests_TrainerBattle.cpp`, 6 `ZM_Party`
+trainer-reward cases, 2 `ZM_BattleTransition` validator cases) and **+1 automated test**
+(`ZM_TrainerBattle_Test`, registry **44 -> 45**), which RUNS headless in 86 frames rather
+than skipping. Gate: `Build\regen.ps1` (verified the four new TUs actually entered the
+vcxproj) -> Vulkan_True -> Null_True -> headless **45 passed / 0 failed** -> boot unit
+gate **2657 ran / 2656 passed / 0 failed / 1 skipped** (2644 -> 2657 OBSERVED) -> full
+windowed Vulkan **45 passed / 0 failed**.
+
+**Mutation-proven, all three build-verified:** raising the party bound to 2 reds 2 units;
+inverting the win check reds 5; crediting the prize twice reds 3; restore green.
+
+### Reversibility / next boundary
+
+Reversible. **NEXT = SC6** -- the trainer sight FSM and the occlusion ray as a by-value
+member of `ZM_Interactable` (order 113, no new order), ANDing in "not yet defeated" so a
+beaten trainer never re-spots. SC6 also owns the re-engagement gate that the flagless
+`ZM_TRAINER_ROUTE1_RAMBLER` row currently cannot express (see the minor finding recorded
+in Questions.md).
+
+---
+
 ## 2026-07-27 -- ZM-D-152 -- S7 item 3 SC4: the HUD Run-gate is a REFUSE-IN-PLACE guard at the confirm boundary
 
 *(Fourth sub-commit of the ZM-D-143 sequence, and the HARD PREREQUISITE of SC5.

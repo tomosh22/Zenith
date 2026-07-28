@@ -26,6 +26,30 @@
 **Status: S2 COMPLETE -- all battle logic + the stage gate PASSED (2026-07-12, ZM-D-047). Post-gate, feature-complete breeding + gender is DONE (user-directed, ZM-D-048/049/050): gender + ratios, real egg groups, GLOOPET Ditto-analog, gendered compatibility, ability + hidden-ability + egg-move inheritance, and derived hatch cycles all shipped across SC-A/B/C. At S2 closure the next battle-adjacent step was S5 integration; S5 has since completed.**
 `Source/Battle/` now contains the deterministic append-only battle engine; the complete move/status/catch/switch executor; weather and all 50 ability realizations; `ZM_ExpAndLevel`; `ZM_BattleAI`; `ZM_Breeding` + `ZM_Daycare`; and `ZM_BattleTower`. Box 4 adds four integer curves, derived progression accessors, current cumulative EXP, modern per-opponent party share, capped EV accumulation, mid-battle level/stat/move learning, and terminal level-evolution queuing/pure mutation (67 tests; award-off event/state/RNG identity preserved). Box 5 adds `ZM_BattleAI` -- a pure, side-effect-free four-tier chooser (`ZM_ChooseAction`) that reads state `const`, draws only its own RNG (RANDOM tier only), and perturbs no battle RNG/state/event (box-1..4 goldens byte-identical); 28 `ZM_Battle` tests. Box 6 adds deterministic breeding/daycare and Battle Tower setup/settlement logic; the later feature-complete expansion supplies gender ratios, real egg groups, GLOOPET compatibility, hidden-ability and egg-move inheritance, and hatch cycles. The current inventories are **384 `ZM_Battle`** and **264 `ZM_Data`** tests. The S2-era integration/presentation follow-up shipped in S5; the mechanics gaps below remain the live battle-engine follow-ups.
 **Tracked deferrals (mechanics gaps, faithfully noted -- not bugs):**
+- **★ NO FORCED SWITCH ON FAINT -- so a trainer battle can field exactly ONE
+  monster (found 2026-07-27 by the S7 item 3 SC5 review; the highest-value gap on
+  this list).** `m_uActiveSlot` is written only by `Begin` and by `DoSwitch`, and
+  `DoSwitch` is reached only from a VOLUNTARY switch or a move's forced-switch
+  secondary. `ResolveTurn` ends the battle only when a whole-party scan finds no
+  unfainted monster, and `SubmitAction` opens with
+  `Zenith_Assert(!xActive.IsFainted(), ...)`. So when a multi-monster side's active
+  faints, nothing promotes the next monster: the battle neither ends nor advances,
+  and the next action submitted is a **hard process break in every configuration**.
+  Nothing had ever hit it because every battle to date is single-lead
+  (Q-2026-07-18-001) and the wild path fields one monster.
+  **Mitigation shipped with SC5 (ZM-D-153):** `uZM_TRAINER_BATTLEABLE_PARTY = 1`
+  in `Source/Battle/ZM_TrainerBattle.h` clamps every trainer's fielded party to its
+  authored LEAD, mutation-proven (raising it to 2 reds the clamp units). The roster
+  keeps its authored multi-member rows (`ZM_TRAINER_ROUTE1_RAMBLER` has two) so the
+  content survives the fix.
+  **What lifting it requires:** a forced-replacement path in `ZM_BattleEngine` --
+  promote the next unfainted monster when the active faints, on BOTH sides, with the
+  AI choosing the replacement -- plus the event(s) that emit it. That is an
+  append-only engine change with golden implications, so it owes its own explicitly-
+  gated sub-commit. **It is a real GDD gap:** multi-monster trainer battles and gym
+  leaders are mainline-defining, so this must land before the S8 vertical slice can
+  show a credible gym, and certainly before S9/S10 content scale-up. Raise the
+  constant only in the commit that adds the replacement path.
 - **Conditional ball bonuses not applied (SC6):** the net/dusk/quick/heal orbs use their base catch param (all x1.0 in the data) -- the type/time/turn/heal conditional multipliers are not yet computed. Faithful to the current `ZM_ItemData` (only great/ultra/prime differ), and the catch core 4-shake math is exact; revisit when a later gameplay context supplies time-of-day and turn-count inputs.
 - **High-crit MOVE flag under-applied:** a move's inherent `m_uCritStage==1` (high-crit) still crits at box-1's 1/24, not 1/8 -- it is NOT folded into the `RAISE_CRIT` `m_iCritStage` counter (`{0->1/24,1->1/8,2->1/2,>=3->always}`). Deferred because the two scales differ (move `2`=guaranteed vs counter `2`=1/2) so a correct fold is a scale-reconciliation decision; land it when high-crit/RAISE_CRIT moves get real battle coverage. Golden-invisible today (every tested move is `m_uCritStage 0`).
 - **Self-targeting damaging-secondary dropped on a KO:** the one self-buff secondary (Primeval Might, `RAISE_ALL` chance-10) gates its E3 proc on the DEFENDER being alive (per ZM-D-033), so a KO drops the user's self-boost. Contract-consistent (no golden desync) but debatable vs mainline; revisit when self-target secondaries get coverage.

@@ -4,8 +4,8 @@
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (all OBSERVED 2026-07-27 on a fresh build of both configs):**
-ZM headless registry **44 passed / 0 failed**; ZM boot unit gate **2644 ran /
-2643 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to 2644); engine boot
+ZM headless registry **45 passed / 0 failed**; ZM boot unit gate **2657 ran /
+2656 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to 2657); engine boot
 unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed / 1 skipped**
 (`run_unit_gate.ps1` default). The 1 skipped in each is the quarantined
 `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
@@ -15,8 +15,9 @@ unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed / 1 skipped**
 and `e687d095` left BOTH baselines one short, so `engine-gate` and `zm-tests`
 were RED on master until **ZM-D-149** fixed them forward (1163 -> 1164,
 2588 -> 2589). 2589 -> **2607** is SC2's own +18 units (ZM-D-150), and
-2607 -> **2638** is SC3's +31 (ZM-D-151), and 2638 -> **2644** is SC4's +6
-(ZM-D-152).
+2607 -> **2638** is SC3's +31 (ZM-D-151), 2638 -> **2644** is SC4's +6
+(ZM-D-152), and 2644 -> **2657** is SC5's +13 (ZM-D-153, which also took the
+automated registry **44 -> 45**).
 
 **★ THIRD TRIPWIRE -- A MUTATION BATTERY MUST CHECK THE BUILD'S EXIT CODE.** Two
 SC4 batteries mutated the gate to `if (false)` / `if (true)` and then to a
@@ -56,7 +57,27 @@ boot output" rather than a load failure.
 
 ## Current task
 
-**S7 item 3 SC4 COMPLETE (ZM-D-152) -- the HUD Run-gate. NEXT = SC5: trainer forced-battle entry (`ZM_OnTrainerEncounter` + a 2nd `ZM_BattleTransition` subscription, leaving the wild validation path untouched), the `ZM_BattleDirector` trainer arm building the fixed enemy party and passing the row's `ZM_AI_TIER` to `Begin`, and `ZM_ApplyTrainerResultToGameState` (win -> `AddMoney` + set the defeat flag; loss -> the existing whiteout). Rides ECS orders 110/111.**
+**S7 item 3 SC5 COMPLETE (ZM-D-153) -- trainer forced-battle entry, the trainer arm, and the prize/defeat write-back. NEXT = SC6: the trainer sight FSM + occlusion ray as a by-value member of `ZM_Interactable` (order 113, NO new order -- it mirrors the NPC walker), with the occlusion ray entering as a probe filter AFTER SC3's pure cone passes, and "not yet defeated" ANDed in so a beaten trainer never re-spots.**
+
+**★ READ THIS BEFORE SC6 OR ANY BATTLE WORK: the engine has NO forced switch on
+faint, so a trainer fields exactly ONE monster.** `m_uActiveSlot` is written only
+by `Begin` and `DoSwitch` (voluntary switch / a move's forced-switch secondary),
+`ResolveTurn` ends the battle only on a whole-party scan, and `SubmitAction`
+opens with `Zenith_Assert(!xActive.IsFainted(), ...)` -- so a multi-monster side
+whose active faints neither ends nor advances, and the next action is a hard
+process break in EVERY configuration. SC5 clamps every trainer's fielded party to
+its authored LEAD via `uZM_TRAINER_BATTLEABLE_PARTY = 1` in
+`Source/Battle/ZM_TrainerBattle.h`; the roster keeps its multi-member rows.
+**Raise that constant ONLY in the commit that adds the replacement path.** This
+is the headline battle-engine shortfall (Shortfalls 1.2) and it must land before
+S8 can show a credible gym.
+
+**Also open for SC6:** a flagless trainer row (`ZM_TRAINER_ROUTE1_RAMBLER`, which
+carries `ZM_STORY_FLAG_NONE` on purpose) has no defeat-flag brake, so SC6's
+re-engagement gate must key on a runtime latch for such rows -- see
+Q-2026-07-28-001.
+
+**Prior:** SC4 COMPLETE (ZM-D-152) -- the HUD Run-gate. It was the prerequisite for SC5: trainer forced-battle entry (`ZM_OnTrainerEncounter` + a 2nd `ZM_BattleTransition` subscription, leaving the wild validation path untouched), the `ZM_BattleDirector` trainer arm building the fixed enemy party and passing the row's `ZM_AI_TIER` to `Begin`, and `ZM_ApplyTrainerResultToGameState` (win -> `AddMoney` + set the defeat flag; loss -> the existing whiteout). Rides ECS orders 110/111.**
 
 **SC4 removed the last blocker:** a trainer battle can now be begun without the
 menu being able to break the process. SC5 is the first sub-commit that may
@@ -134,7 +155,32 @@ Then SC2 `ZM_TrainerData` + `ZM_STORY_FLAG_RIVAL1_DEFEATED` -> SC3 sight cone ->
 
 ## Last completed
 
-**S7 item 3 SC4 -- THE HUD RUN-GATE (ZM-D-152).** A REFUSE-IN-PLACE guard in
+**S7 item 3 SC5 -- TRAINER FORCED-BATTLE ENTRY + PRIZE/DEFEAT WRITE-BACK
+(ZM-D-153).** The vertical's core. New pure leaf
+`Source/Battle/ZM_TrainerBattle.{h,cpp}` (party built from the row through the
+shipped deterministic `ZM_BuildWildEnemySpec`; a domain-salted FNV-1a seed
+provably disjoint from the wild seed space) lets boot units prove the party, tier
+and seed WITHOUT starting a battle. `ZM_OnTrainerEncounter` + a SECOND
+`ZM_BattleTransition` subscription (order 110) leave the wild event, validator and
+subscriber untouched; a 5-line trainer PREFIX to `ZM_BattleDirector::RunSetup`
+(order 111) dispatches and returns, leaving the shipped wild body byte-unchanged.
+`ZM_ApplyTrainerResultToGameState` routes through the SAME
+`ZM_ClassifyBattleResult` the wild path uses and credits via `AddMoney` (the sole
+cap enforcer), reporting the OBSERVED delta so a saturated credit is honest.
+`ZM_GameState` gains no member. +13 units (**2644 -> 2657**), +1 automated test
+(registry **44 -> 45**, running headless in 86 frames), windowed **45/45**.
+Mutation-proven: party bound 2 reds 2 units, inverted win check reds 5, doubled
+prize reds 3.
+
+**★ THE REVIEW FOUND A LATENT PROCESS BREAK, NOT A STYLE ISSUE:** the engine has
+no faint-replacement, and SC2's roster already authored a 2-member trainer, so
+SC5 as first written would have broken the process on the first enemy KO. See
+the clamp note above. **A second finding killed a vacuous assertion:** the
+"row's AI tier reached `Begin`" clause could not fail, because Vesper's GREEDY is
+simultaneously the wild arm's literal and the pre-`Begin` default -- fixed by a
+second round trip on a RANDOM-tier row plus two anti-vacuity guards.
+
+Prior: **S7 item 3 SC4 -- THE HUD RUN-GATE (ZM-D-152).** A REFUSE-IN-PLACE guard in
 `MenuConfirm`'s `ACTION_ROOT` arm, consulting the new total pure predicate
 `MenuRootItemIsAllowed(eItem, bCanCatch, bCanFlee)` and returning the established
 `{CONFIRM_NONE}` refusal BEFORE the Fight/Catch/Run if-chain -- so a forbidden

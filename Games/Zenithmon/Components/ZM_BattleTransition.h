@@ -6,8 +6,9 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "Zenithmon/Components/ZM_BattleArena.h"          // ZM_BATTLE_BIOME
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"         // ZM_SPECIES_ID
+#include "Zenithmon/Source/Data/ZM_TrainerData.h"          // ZM_TRAINER_ID / ZM_TRAINER_NONE (SC5)
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"           // ZM_SCENE_ID
-#include "Zenithmon/Source/World/ZM_EncounterEvents.h"    // ZM_OnWildEncounter
+#include "Zenithmon/Source/World/ZM_EncounterEvents.h"    // ZM_OnWildEncounter + ZM_OnTrainerEncounter
 
 class Zenith_DataStream;
 
@@ -94,6 +95,11 @@ public:
 	// A dispatched encounter payload this component will act on: an in-range
 	// species, a level in [1, 100], and a scene a battle may launch from.
 	static bool IsEncounterPayloadValid(ZM_SPECIES_ID eSpecies, u_int uLevel, ZM_SCENE_ID eScene);
+	// A dispatched TRAINER payload this component will act on (S7 item 3 SC5): a
+	// registered roster id and a scene a battle may launch from. Deliberately a
+	// SIBLING of IsEncounterPayloadValid rather than an extension of it -- the wild
+	// validator is frozen and must keep its exact (species, level, scene) shape.
+	static bool IsTrainerEncounterPayloadValid(ZM_TRAINER_ID eTrainer, ZM_SCENE_ID eScene);
 	// Every scene kind except BATTLE (cannot spawn a battle over itself) and
 	// FRONTEND (no world to pause or resume). Out-of-range scenes fail closed.
 	static bool IsSceneEligibleForBattle(ZM_SCENE_ID eScene);
@@ -127,6 +133,10 @@ public:
 	ZM_BATTLE_TRANSITION_STATE GetTransitionState() const { return m_eState; }
 	ZM_SPECIES_ID GetBattleSpecies() const { return m_eBattleSpecies; }
 	u_int         GetBattleLevel()   const { return m_uBattleLevel; }
+	// The trainer this round trip is for, or ZM_TRAINER_NONE for a WILD round trip
+	// (S7 item 3 SC5). This IS the channel discriminator ZM_BattleDirector::RunSetup
+	// branches on; there is no second flag to keep in sync.
+	ZM_TRAINER_ID GetBattleTrainer() const { return m_eBattleTrainer; }
 	ZM_SCENE_ID   GetSourceScene()   const { return m_eSourceScene; }
 	Zenith_Scene  GetBattleScene()   const { return m_xBattleScene; }
 	Zenith_Scene  GetOverworldScene() const { return m_xOverworldScene; }
@@ -144,9 +154,18 @@ public:
 
 private:
 	static void OnWildEncounterEvent(const ZM_OnWildEncounter& xEvent);
+	// A SECOND static-function-pointer subscriber beside OnWildEncounterEvent (SC5).
+	// Same reason for the static: this component relocates on pool swap-and-pop and
+	// on the DontDestroyOnLoad move, so a `this`-capturing callback would dangle.
+	static void OnTrainerEncounterEvent(const ZM_OnTrainerEncounter& xEvent);
 	bool ApplyFadeVisual();
 
 	void AcceptPendingEncounter();
+	// Drains the trainer latch from the IDLE arm, AFTER AcceptPendingEncounter.
+	// CONSUME-AND-DROP: it always clears the latch, then refuses if a wild accept
+	// already took the frame -- so a trainer latch can never survive into a later
+	// idle frame and re-enter a battle out of nowhere.
+	void AcceptPendingTrainerEncounter();
 	void AdvanceFadeOut(float fDeltaTime, ZM_BATTLE_TRANSITION_STATE eNextState);
 	void IssueAdditiveBattleLoad();
 	void PollForBattleScene();
@@ -180,6 +199,13 @@ private:
 	static u_int s_uPendingLevel;
 	static ZM_SCENE_ID s_ePendingScene;
 
+	// The SECOND (trainer) entry channel's subscription + latch (SC5). Kept beside
+	// the wild set rather than folded into it, so the wild latch is untouched.
+	static Zenith_EventHandle s_uTrainerSubscription;
+	static bool s_bPendingTrainerEncounter;
+	static ZM_TRAINER_ID s_ePendingTrainer;
+	static ZM_SCENE_ID s_ePendingTrainerScene;
+
 	Zenith_Entity m_xParentEntity;
 	Zenith_Scene  m_xOverworldScene;
 	Zenith_Scene  m_xBattleScene;
@@ -187,6 +213,9 @@ private:
 	Zenith_Maths::Vector3 m_xParkedPlayerPosition = Zenith_Maths::Vector3(0.0f);
 	ZM_BATTLE_TRANSITION_STATE m_eState = ZM_BATTLE_TRANSITION_IDLE;
 	ZM_SPECIES_ID m_eBattleSpecies = ZM_SPECIES_NONE;
+	// ZM_TRAINER_NONE == this is a WILD round trip (SC5). POD, so the component's
+	// `noexcept = default` move ops are unaffected.
+	ZM_TRAINER_ID m_eBattleTrainer = ZM_TRAINER_NONE;
 	ZM_SCENE_ID   m_eSourceScene = ZM_SCENE_NONE;
 	u_int m_uBattleLevel = 0u;
 	u_int m_uIssuedLoadRequestCount = 0u;
