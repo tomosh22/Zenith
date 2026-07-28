@@ -57,6 +57,37 @@ boot output" rather than a load failure.
 
 ## Current task
 
+**★ STOPPED ON A SESSION USAGE LIMIT (2026-07-28), NOT ON A DEFECT.** master is
+CLEAN and fully pushed at `c3f01fa5` (SC5). SC6's survey and PLANNING passes
+completed; its AUTHORING and all three review passes were cut off mid-flight, so
+**no SC6 code exists and nothing is half-written**. The plan is preserved verbatim
+in **[SC6_Plan.md](SC6_Plan.md)** -- 13 files, 26 tests, regen required. **The next
+session should resume from that file rather than re-deriving it**, and delete it in
+the commit that lands SC6.
+
+**Two expensive SC6 questions are already SETTLED in that plan (do not re-open):**
+1. **The occlusion raycast is REAL here, not decoration.** Physics is live headless
+   (`InitialiseRendererAndPhysics` has no backend gate, and `ZM_Tests_Overworld.cpp`
+   already asserts real raycast hits from a plain boot unit). Dawnmere authors real
+   static AABB colliders (the home shell, doors, lintel, every stationary NPC) and
+   they live in the COMMITTED `Dawnmere.zscen`, so the ray is blockable on a fresh CI
+   checkout. **The one honest limitation: TERRAIN is not an occluder in CI**, because
+   its physics geometry is a gitignored baked asset -- so no test may assert occlusion
+   against terrain; every occlusion assertion must use an explicitly created static
+   AABB in a hermetic physics fixture. Fail polarity: no live simulation FAILS OPEN
+   (a world with no physics has no occluders), non-finite input FAILS CLOSED.
+2. **SC6 must change ZERO scene bytes.** `Dawnmere.zscen` carries five
+   `ZM_Interactable` payloads and the per-component size prefix is computed from what
+   is actually written, so ONE new serialized field would grow five payloads, bump the
+   version, and leave the committed scene modified after a windowed boot -- which this
+   project treats as a regression. Both new members are therefore RUNTIME-ONLY
+   (`m_eTrainerId`, `m_xSightFsm`), exactly like the walker's existing runtime state,
+   cleared in `ReadFromDataStream`'s reset block, and guarded by a unit that asserts
+   the written byte length is identical to an unconfigured component's.
+   **The debt this creates is owned by SC8:** a trainer id configured during authoring
+   does NOT survive save/reload, so SC6 ships BEHAVIOUR ONLY and SC8 owns persistence
+   for the authored placement.
+
 **S7 item 3 SC5 COMPLETE (ZM-D-153) -- trainer forced-battle entry, the trainer arm, and the prize/defeat write-back. NEXT = SC6: the trainer sight FSM + occlusion ray as a by-value member of `ZM_Interactable` (order 113, NO new order -- it mirrors the NPC walker), with the occlusion ray entering as a probe filter AFTER SC3's pure cone passes, and "not yet defeated" ANDed in so a beaten trainer never re-spots.**
 
 **★ READ THIS BEFORE SC6 OR ANY BATTLE WORK: the engine has NO forced switch on
