@@ -115,8 +115,24 @@
   load lands at independently-oracled TownCenter; reload re-derives a WATCHING rival;
   and 200 no-input frames do not re-trigger. Registry **47 -> 48**, boot unchanged at
   **2708 / 2707 / 0 / 1**, Null and full Vulkan **48/48**; three compiled mutations
-  independently red healing, destination and loss-reward clauses. The human S8 gate
-  remains unsigned; **NEXT = W3, the visual spotted beat.**
+  independently red healing, destination and loss-reward clauses.
+- **Known-limit W3 PARTLY COMPLETE 2026-07-28 (ZM-D-159):** `ZM_TRAINER_SIGHT_SPOTTED`
+  is appended (ordinal 3, session-only, serialized nowhere) as a 0.35 s cancellable
+  window between first sight and SC7's bark, drawing an asset-free yellow line+sphere
+  exclamation mark over EVERY sighted trainer, silent rows included, and never freezing
+  the player. Lost sight or a closed gate cancels; a busy channel pauses and outranks
+  the fail-open; a corrupt duration fails open, decided BEFORE the state entry.
+  **The camera cut and approach walk were CUT ON EVIDENCE and remain open** (the follow
+  camera owns the transform every frame with no override stack; moving the OBB-authored
+  rival needs dynamic-capsule/nav ownership, avoidance and freeze coordination), as does
+  the marker's reliance on the DEBUG primitives channel -- all three are booked in
+  Shortfalls 1.8. Boot **2708 -> 2712**, registry unchanged **48**, Null and full
+  Vulkan **48/48 / 0 skipped / 0 zero-frame**. **★ The review caught the defect that
+  mattered:** the indicator counter the live tests read was a bare `++` beside the
+  submit call, so deleting the call would have kept every test green with nothing drawn;
+  the helper now RETURNS a value measured off Flux's own queues. Six compiled mutations
+  proved teeth, including the one that would have survived before that fix. The human S8
+  gate remains unsigned; **NEXT = W4, rival visual distinctness.**
 - [ ] Rival battle 1
 
 *Gate:* automated save -> quit-to-FrontEnd -> continue restores position/party/flags exactly.
