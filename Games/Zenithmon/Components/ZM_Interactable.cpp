@@ -5,6 +5,7 @@
 #include "Core/Zenith_Engine.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"   // the runtime graph host
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
 #include "ZenithECS/Zenith_EventSystem.h"            // Zenith_EventDispatcher -- the encounter channel
@@ -14,6 +15,7 @@
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"   // the three shipped raise seams
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"    // ZM_StoryFlagSet (the gate's input)
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"      // ZM_SCENE_ID / ZM_FindSceneByBuildIndex
+#include "Zenithmon/Source/Graph/ZM_GraphAuthoring.h"             // the shared name constants
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // TryResolveActivePlayer -- THE player seam
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"    // the SC3 pure cone (unmodified)
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightProbe.h"    // the occlusion filter
@@ -23,7 +25,8 @@
 #include "imgui.h"
 #endif
 
-#include <cmath>   // std::isfinite (radius sanitising)
+#include <cmath>     // std::isfinite (radius sanitising)
+#include <cstring>   // std::strcmp (the idempotency scan)
 
 // ============================================================================
 // ZM_Interactable (S6 item 3 SC4). See the header for the contract. The role ->
@@ -124,6 +127,9 @@ void ZM_Interactable::OnStart()
 	// start is a cold watcher, and a trainer id that no longer resolves must not
 	// survive as a live watcher either.
 	m_xSightFsm.Reset();
+	// S7 item 3 SC7: the runtime graph-attach latch is session state too, cleared
+	// exactly where the trainer id and the watcher are.
+	m_bChallengeGraphAttempted = false;
 	if (!ZM_IsRegisteredTrainer(m_eTrainerId))
 	{
 		m_eTrainerId = ZM_TRAINER_NONE;
@@ -254,6 +260,23 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 		|| ZM_GameStateManager::IsWarpInProgress()
 		|| ZM_UI_MenuStack::IsMenuOpen();
 
+	// S7 item 3 SC7. Does this trainer have anything to SAY? A row with no challenge
+	// lines skips the whole beat and raises immediately, so a silent trainer costs
+	// ZERO dead air -- and every SC6 unit still passes unmodified, because this
+	// input defaults to false.
+	const char* const* paszChallengeLines = nullptr;
+	u_int uChallengeLineCount = 0u;
+	ZM_SelectTrainerChallengeLines(xRow, paszChallengeLines, uChallengeLineCount);
+	xInputs.m_bChallengeAvailable = (uChallengeLineCount > 0u);
+	if (xInputs.m_bChallengeAvailable)
+	{
+		// EAGER, not lazy-at-the-dramatic-moment: the .bgraph load is synchronous and
+		// Zenith_AssetRegistry caches it, so paying it on this trainer's first
+		// play-mode tick puts any hitch at scene entry rather than on the frame the
+		// player is spotted.
+		EnsureTrainerChallengeGraph();
+	}
+
 	Zenith_TransformComponent* pxTransform =
 		m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
 	Zenith_EntityID xPlayerID = INVALID_ENTITY_ID;
@@ -285,23 +308,102 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 		}
 	}
 
-	if (m_xSightFsm.Step(xInputs, ZM_TrainerSightFsmTuning{})
-		!= ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER)
+	switch (m_xSightFsm.Step(xInputs, ZM_TrainerSightFsmTuning{}))
 	{
+	case ZM_TRAINER_SIGHT_ACTION_RUN_CHALLENGE:
+		// NO latch and NO dispatch on this arm. The bark is a presentation beat, not
+		// the encounter: the engagement latch is still burnt on the RAISE alone, so an
+		// abandoned or unheard bark never costs a flagless trainer his one session
+		// shot.
+		RunTrainerChallenge();
+		return;
+
+	case ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER:
+		break;
+
+	default:
 		return;
 	}
 
+	// ---- UNCHANGED FROM SC6 BELOW THIS LINE ----
 	// Latch BEFORE dispatching: Dispatch is SYNCHRONOUS (the subscriber runs
 	// inside this stack frame), so the latch must already be true if anything
 	// downstream ever re-enters this component.
 	ZM_TrainerEngagementLatch::MarkEngaged(m_eTrainerId);
-	// This component does NOT freeze the player and does NOT push dialogue. The
-	// shipped subscriber owns both: ZM_BattleTransition::OnTrainerEncounterEvent
+	// This component still does NOT freeze the player and still owns no dialogue: it
+	// asks the GRAPH to speak and lets ZM_UI_MenuStack own that freeze, then lets
+	// ZM_BattleTransition::TryParkOverworldPlayer own the battle freeze. The shipped
+	// subscriber owns both halves of the battle side: OnTrainerEncounterEvent
 	// latches, and TryParkOverworldPlayer zeroes velocity, drops gravity and calls
-	// SetMovementEnabled(false). Adding a second freeze owner here would fight the
-	// menu/warp/battle protocol those three already coordinate over.
+	// SetMovementEnabled(false). The two owners are strictly SEQUENTIAL -- ECS order
+	// 112 (ZM_UI_MenuStack) closes, pops and UNFREEZES before order 113 (this
+	// component) dispatches, in the SAME frame -- and SC7 added neither. Adding a
+	// third freeze owner here would fight the menu/warp/battle protocol those
+	// systems already coordinate over.
 	Zenith_EventDispatcher::Get().Dispatch(
 		ZM_OnTrainerEncounter{ m_eTrainerId, ZM_ResolveActiveSceneIdForSight() });
+}
+
+void ZM_Interactable::EnsureTrainerChallengeGraph()
+{
+	if (m_bChallengeGraphAttempted)
+	{
+		return;
+	}
+	// Set BEFORE the work, not after: a failed load must not be retried every frame.
+	m_bChallengeGraphAttempted = true;
+
+	if (!m_xParentEntity.IsValid())
+	{
+		return;
+	}
+
+	Zenith_GraphComponent* pxGraph =
+		m_xParentEntity.TryGetComponent<Zenith_GraphComponent>();
+	if (pxGraph == nullptr)
+	{
+		// Grows a DIFFERENT pool from this component's, so `this` cannot relocate;
+		// the precedent for adding a component from inside a component body is
+		// DPProcLevelBootstrap_Component.cpp:341-371 and Combat_GameComponent.h:713.
+		pxGraph = &m_xParentEntity.AddComponent<Zenith_GraphComponent>();
+	}
+
+	// IDEMPOTENT BY PATH, not by flag alone: a scene reload or a future authored
+	// slot could already carry this graph, and two live copies would double-bark.
+	for (u_int u = 0u; u < pxGraph->GetGraphCount(); ++u)
+	{
+		const char* szPath = pxGraph->GetGraphAssetPathAt(u);
+		if (szPath != nullptr
+			&& std::strcmp(szPath, szZM_GRAPH_TRAINER_CHALLENGE_ASSET) == 0)
+		{
+			return;
+		}
+	}
+
+	// A load failure appends an UNRESOLVED slot and returns null (the unresolved-slot
+	// contract, Scripting/CLAUDE.md). That is the FAIL-OPEN case -- on a _False or
+	// Android build, or a fresh clone with no tools boot, the asset simply is not
+	// there. The trainer loses his line and still starts the battle.
+	pxGraph->AddGraphByAssetPath(szZM_GRAPH_TRAINER_CHALLENGE_ASSET);
+}
+
+void ZM_Interactable::RunTrainerChallenge()
+{
+	Zenith_GraphComponent* pxGraph = m_xParentEntity.IsValid()
+		? m_xParentEntity.TryGetComponent<Zenith_GraphComponent>()
+		: nullptr;
+	if (pxGraph == nullptr)
+	{
+		return;   // FAIL OPEN -- the FSM's challenge window raises the encounter.
+	}
+
+	// TARGETED, never Zenith_GraphComponent::BroadcastCustomEvent: that walks
+	// QueryAllScenes<Zenith_GraphComponent> (Zenith_GraphComponent.cpp:210-215) and
+	// would also reach the 31 engine UnitTest_*.bgraph components sitting in
+	// Games/Zenithmon/Assets/Graphs/.
+	Zenith_PropertyValue xPayload;
+	xPayload.SetInt32((int32_t)(u_int)m_eTrainerId);
+	pxGraph->FireCustomEvent(szZM_GRAPH_EVENT_TRAINER_SPOTTED, &xPayload);
 }
 
 void ZM_Interactable::UpdateWander(float fDeltaTime)
@@ -423,6 +525,9 @@ bool ZM_Interactable::ConfigureWander(const ZM_WalkerWaypoints& xWaypoints,
 bool ZM_Interactable::ConfigureTrainerSight(ZM_TRAINER_ID eTrainer)
 {
 	m_xSightFsm.Reset();
+	// Re-arm the one-shot attach with the machine: the incoming row may be the first
+	// one on this component that has anything to say.
+	m_bChallengeGraphAttempted = false;
 	if (!ZM_IsRegisteredTrainer(eTrainer))
 	{
 		// Fail CLOSED, exactly as SetNpcId does: CLEAR the row rather than keeping
@@ -544,6 +649,9 @@ void ZM_Interactable::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Interactable_TrainerSightIsNotSerialized.
 	m_eTrainerId = ZM_TRAINER_NONE;
 	m_xSightFsm.Reset();
+	// SC7's graph-attach latch rides in the SAME runtime-only block, for the same
+	// reason: a reloaded scene starts with no trainer, a cold watcher and no graph.
+	m_bChallengeGraphAttempted = false;
 	if (uVersion != 1u && uVersion != uSERIALIZATION_VERSION)
 	{
 		return;

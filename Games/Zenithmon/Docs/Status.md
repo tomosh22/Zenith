@@ -4,12 +4,32 @@
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (ZM numbers OBSERVED 2026-07-28 on a fresh build of both configs
-after SC6):** ZM headless registry **46 passed / 0 failed**; ZM boot unit gate
-**2682 ran / 2681 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
-2682); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
-1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6 -- it touches zero
-`Zenith/` files). The 1 skipped in each is the quarantined
+after SC7):** ZM headless registry **46 passed / 0 failed**; ZM boot unit gate
+**2695 ran / 2694 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
+2695); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
+1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6 and SC7 -- neither
+touches a `Zenith/` file). The 1 skipped in each is the quarantined
 `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
+
+**★ THE REGISTRY DID NOT MOVE AT SC7 AND THAT IS CORRECT.** SC7's three new
+end-to-end phases live INSIDE the existing `ZM_TrainerSightWalkUp_Test`
+registration, so the automated count stays 46 while the boot-unit count moved
++13. Do not "fix" a registry count that did not change after a sub-commit that
+added automated coverage -- check whether the coverage rode an existing
+registration first.
+
+**★ FIFTH TRIPWIRE -- A SURVIVING MUTATION HAS TWO POSSIBLE CAUSES AND YOU MUST
+DETERMINE WHICH.** SC7's battery had two survivals with OPPOSITE meanings. One was a
+real coverage gap: transposing the challenge-lines selector's null-check and clamp
+survived because the only pair that discriminates them is `(nullptr, count > cap)`
+and the clause used a count UNDER the cap -- **its failure text named the exact
+hazard while its fixture could not reach it.** The other was a BAD MUTATION:
+re-spelling the shared node-type-name constant redded nothing, and correctly so,
+because every site reads that one constant so the two sides cannot diverge (the real
+hazard is a hard-coded literal at one site, which does red). **Calling both "no
+teeth" would have libelled a good test; calling both "bad mutation" would have
+shipped a hole.** Ask, every time: *can this mutation actually produce the behaviour
+the test is meant to catch?*
 
 **★ FOURTH TRIPWIRE -- A MUTATION HARNESS MUST PARSE THE OBSERVED RESULT, NOT
 THE EXPECTATION.** SC6's battery script scraped `(\d+) failed` from
@@ -69,17 +89,69 @@ boot output" rather than a load failure.
 
 ## Current task
 
-**S7 item 3 SC6 COMPLETE (ZM-D-154).** The trainer sight FSM + the occlusion ray
-landed as RUNTIME-ONLY state on the existing order 113. `SC6_Plan.md` was consumed
-and DELETED in that commit, exactly as it instructed. **NEXT = SC7: the first
-useful `ZM_GraphAuthoring` trainer-glue `.bgraph`** -- the spot-bark / challenge
-dialogue beat, which SC6 deliberately does NOT ship. Then SC8 (rival Vesper's
-authored placement + trainer-id persistence).
+**S7 item 3 SC7 COMPLETE (ZM-D-155).** The game's FIRST `.bgraph` -- the trainer
+challenge bark -- landed with ZERO scene bytes and ZERO new ECS orders.
+`SC7_Plan.md` was consumed and DELETED in that commit, as it instructed.
+**NEXT = SC8: rival Vesper authored in Dawnmere + trainer-id persistence.**
 
-**The honest one-line description of what SC6 added in-game:** "a trainer who sees
-you starts a battle." There is no "!" bark, no challenge dialogue, and no
-walk-up-to-you approach -- the battle starts from where the player stands. Anyone
-expecting the full spot-bark-walk-talk-fight sequence should be pointed at SC7/SC8.
+**★ SC7's SCOPE WAS CONTRADICTED ACROSS TWO BINDING DOCS AND THE USER DECIDED IT
+(2026-07-28). Do not re-open this.** `DecisionLog.md`'s ZM-D-143 sequence block and
+`Questions.md` **Q-B** both defined SC7 as the trainer-DEFEAT beat (`SetStoryFlag`
+-> `AwardPrizeMoney`, fired from SC5's win callsite), while `SC6_Plan.md` -- and
+therefore `Roadmap.md` and this file -- said the spot-bark beat. Both were
+implementable and Q-B was a USER-ADOPTED default, so it was escalated to the user
+rather than resolved by an agent. **Verdict: the bark**, because the defeat beat is
+already shipped and test-locked in C++ as SC5's `ZM_ApplyTrainerResultToGameState`.
+The full ruling, including the honest caveat that NEITHER shape gives the graph "one
+genuine decision", is recorded against Q-B in `Questions.md`. The
+defeat-beat-as-graph is NOT scheduled.
+
+**The honest one-line description of what the vertical does in-game after SC7:** "a
+trainer who sees you speaks, then battles you." There is still no walk-up-to-you
+approach -- the battle starts from where the player stands -- and no trainer is
+placed in a scene yet. Both are SC8's.
+
+**What SC7 pinned that SC8 must not re-litigate:**
+- **★ AUTHORED VESPER MUST NOT CARRY AN ATTACHED GRAPH SLOT.** The graph is attached
+  at RUNTIME from `TickTrainerSight`, an `OnUpdate`-only path; `Zenith_Core.cpp:138`
+  gates `Scenes().Update` on `EditorMode::Playing` and the boot authoring pass runs
+  Stopped, so a `Zenith_GraphComponent` cannot exist during `AddStep_SaveScene`.
+  `AddStep_AttachGraph` on `ZM_MenuRoot` was REJECTED (it would add an order-60
+  payload to the committed `FrontEnd.zscen`). Vesper picks the graph up through the
+  same runtime attach and `Dawnmere.zscen` never moves.
+- **The battle is GRAPH-INDEPENDENT and FAILS OPEN.** `.bgraph` files are gitignored
+  and tools-authored, so a `_False`/Android build or a fresh CI checkout has none.
+  The FSM's `CHALLENGING` state raises the encounter anyway when
+  `m_fChallengeConfirmSeconds` expires. **That window's polarity is DELIBERATELY
+  OPPOSITE to `m_fRaiseConfirmSeconds`** (degenerate raise window = stay silent;
+  degenerate challenge window = raise immediately). Do NOT unify them into a shared
+  helper -- a unit pins both side by side precisely to stop that.
+- **`m_bChallengeAvailable` DEFAULTS FALSE**, which is what keeps all 16 SC6 FSM
+  units passing unmodified and stops a silent trainer paying half a second of dead
+  air. `ZM_TRAINER_ROUTE1_RAMBLER` ships ZERO lines on purpose as the production
+  instance of that arm.
+- **A three-node `Query -> Branch -> Bark` graph was REJECTED** and should stay
+  rejected: the only branchable condition ("does this trainer have lines?") must
+  already be decided in C++ so the FSM can skip its window, and a graph duplicating
+  a C++ gate is less correct. The graph owns the BEAT, not a decision.
+- **Order 112 < 113 is load-bearing**: MenuStack closes/unfreezes at 112 and the
+  withheld `Dispatch` fires at 113 in the SAME frame (measured
+  `barkToBattleFrames=1`). SC7 added NO new freeze owner and SC8 must not either.
+
+**★ A CORRECTED FALSE CLAIM, worth remembering because it was stated authoritatively
+in two files:** `GetUnresolvedCount() == 0u` CANNOT catch a typo'd node-type name for
+an in-process build. `Zenith_GraphBuilder::Node` looks the type up in the registry
+and, on a miss, logs "unknown node type", latches `m_bErrors` and returns id 0 -- the
+node never reaches the definition, so the count stays 0 and `Build()` returns false
+instead. **The real guards are `Build() == true` / `HasErrors() == false`.**
+`GetUnresolvedCount()` earns its keep only against a stale or hand-edited LOADED
+`.bgraph`.
+
+**Still true and still the headline battle-engine shortfall (Shortfalls 1.2): the
+engine has NO forced switch on faint**, so `uZM_TRAINER_BATTLEABLE_PARTY = 1` in
+`Source/Battle/ZM_TrainerBattle.h` clamps every trainer to its authored lead. Raise
+that constant ONLY in the commit that adds the replacement path. S8 needs it before
+it can show a credible gym.
 
 **What SC6 pinned that SC7-SC8 must not re-litigate:**
 - **Cheap-gate-first IS the cost control.** There is no raycast budget anywhere in

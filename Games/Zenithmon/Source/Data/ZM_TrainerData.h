@@ -4,6 +4,7 @@
 #include "Zenithmon/Source/Battle/ZM_BattleTypes.h"   // uZM_MAX_PARTY_SIZE -- the cap this row DERIVES from
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"     // ZM_SPECIES_ID
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"      // ZM_STORY_FLAG_ID / ZM_STORY_FLAG_NONE
+#include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"    // uMAX_QUEUED_LINES -- the challenge cap is DERIVED from it
 
 // ============================================================================
 // ZM_TrainerData (S7 item 3 SC2) -- the authored trainer roster: WHO the player
@@ -63,6 +64,13 @@ enum ZM_TRAINER_ID : u_int
 // -- it is simply a party the rest of the game's party-sized buffers cannot hold.
 inline constexpr u_int uZM_TRAINER_MAX_PARTY = uZM_MAX_PARTY_SIZE;
 
+// DERIVED, never re-spelled, for the same reason uZM_NPC_MAX_LINES is
+// (ZM_NpcData.h:67): ZM_UI_DialogueBox::QueueLines is ALL-OR-NOTHING, so a row
+// that outgrew the queue would not lose its last line -- it would leave that
+// trainer completely MUTE, and a mute trainer under a fail-open window is a
+// silent half-second of dead air rather than a visible bug.
+inline constexpr u_int uZM_TRAINER_MAX_CHALLENGE_LINES = ZM_UI_DialogueBox::uMAX_QUEUED_LINES;
+
 // One member of a fixed enemy party. Species + level is the WHOLE authoring
 // surface: ZM_BuildWildEnemySpec turns this pair into a complete
 // ZM_BattleMonsterSpec deterministically.
@@ -90,11 +98,21 @@ struct ZM_TrainerData
 	u_int							m_uPrizeMoney;     // EXPLICIT per-row u32 (Q-E: no formula); > 0
 	ZM_STORY_FLAG_ID				m_eDefeatFlag;     // set on defeat; ZM_STORY_FLAG_NONE == writes no flag
 	ZM_AI_TIER						m_eAITier;         // straight into ZM_BattleDirectorCore::Begin's 7th arg
+
+	// ---- S7 item 3 SC7: the pre-battle challenge bark --------------------------
+	// APPENDED AT THE END. The struct's own warning above is binding: every row is a
+	// POSITIONAL aggregate initializer, so a column inserted mid-struct silently
+	// shifts the prize into the flag and the flag into the tier with no compile
+	// error. Null array <=> zero count; a row with (nullptr, 0u) battles in SILENCE
+	// and skips the whole beat, which is a supported authoring choice, not an error
+	// (ZM_TRAINER_ROUTE1_RAMBLER ships exactly that).
+	const char* const*				m_paszChallengeLines;  // null when the row barks nothing
+	u_int							m_uChallengeLineCount; // 0 == silent; <= uZM_TRAINER_MAX_CHALLENGE_LINES
 };
 
 // TOTAL: an unregistered id (including the sentinel) yields the shared UNKNOWN
 // row -- { ZM_TRAINER_NONE, "UNKNOWN", nullptr, 0u, 0u, ZM_STORY_FLAG_NONE,
-// ZM_AI_TIER_NONE } -- rather than a table read, and logs a non-fatal
+// ZM_AI_TIER_NONE, nullptr, 0u } -- rather than a table read, and logs a non-fatal
 // Zenith_Error because such a lookup means mis-authored data or a mis-typed
 // caller.
 const ZM_TrainerData&	ZM_GetTrainerData(ZM_TRAINER_ID eId);
@@ -108,3 +126,14 @@ const char*				ZM_GetTrainerName(ZM_TRAINER_ID eId);
 // comparison. Callers that hold an id from data or a component use this before
 // building a battle.
 bool					ZM_IsRegisteredTrainer(ZM_TRAINER_ID eId);
+
+// The row's challenge lines, with the SAME two guarantees ZM_SelectNpcLines gives
+// (ZM_NpcData.h:115-127) and for the same reasons:
+//   * COUNT is clamped to uZM_TRAINER_MAX_CHALLENGE_LINES, because QueueLines is
+//     all-or-nothing and rejects an over-cap push WHOLE.
+//   * a NULL array yields count 0, so the pair can never contradict itself -- a
+//     count that passes every check attached to a pointer that does not.
+// TOTAL, and NEVER asserts: the boot units feed it hand-built rows with null
+// arrays and absurd counts on purpose.
+void ZM_SelectTrainerChallengeLines(const ZM_TrainerData& xRow,
+	const char* const*& paszLinesOut, u_int& uCountOut);

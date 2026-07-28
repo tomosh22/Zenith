@@ -16,7 +16,8 @@ static_assert(uZM_TRAINER_MAX_PARTY == uZM_MAX_PARTY_SIZE,
 // Per-row party arrays are static and referenced by pointer + count, the same
 // shape ZM_WorldSpec uses for its per-scene tables.
 // Column legend:
-//   id, "display name", party, partyCount, prize, defeatFlag, aiTier
+//   id, "display name", party, partyCount, prize, defeatFlag, aiTier,
+//   challengeLines, challengeLineCount
 //
 // The roster is deliberately TWO rows: the authored rival, and one generic route
 // trainer that carries NO story flag. One row would let a "walk every row" unit
@@ -59,6 +60,23 @@ namespace
 	static_assert(ZM_ARRLEN(s_axPartyVesper)  <= uZM_TRAINER_MAX_PARTY, "Vesper's party outgrew the engine party cap");
 	static_assert(ZM_ARRLEN(s_axPartyRambler) <= uZM_TRAINER_MAX_PARTY, "the rambler's party outgrew the engine party cap");
 
+	// -- the pre-battle challenge barks (S7 item 3 SC7) --
+
+	// TWO lines, each <= 40 characters, and that budget is not cosmetic. The
+	// overworld typewriter rate is a hard `constexpr float fCHARS_PER_SEC = 45.0f`
+	// (ZM_UI_BattleHUD.cpp:37) and ZM_UI_DialogueBox passes only its OWN
+	// m_bRevealInstant -- it never consults ZM_InstantBattlesEnabled() the way the
+	// battle log does (ZM_UI_BattleHUD.cpp:326-327). So ZM_SetInstantBattlesForTests
+	// does NOTHING for a bark, and every authored character costs the walk-up test
+	// real frames. Do NOT add a second reveal rate to work around this.
+	const char* const s_aszChallengeVesper[] =
+	{
+		"Hey! You're not walking past me.",
+		"Let's see what that starter can do.",
+	};
+	static_assert(ZM_ARRLEN(s_aszChallengeVesper) <= uZM_TRAINER_MAX_CHALLENGE_LINES,
+		"Vesper's challenge outgrew the dialogue queue -- QueueLines is all-or-nothing, so he would go MUTE");
+
 	// The bound is DEDUCED, never spelled. With an explicit [ZM_TRAINER_COUNT] the
 	// static_assert below would be a tautology -- true by construction -- and a
 	// forgotten row would merely zero-initialise the tail into a nameless trainer
@@ -66,8 +84,11 @@ namespace
 	// table itself.
 	const ZM_TrainerData s_axTrainers[] =
 	{
-		{ ZM_TRAINER_RIVAL_VESPER,   "Vesper",         s_axPartyVesper,  ZM_ARRLEN(s_axPartyVesper),  500u, ZM_STORY_FLAG_RIVAL1_DEFEATED, ZM_AI_TIER_GREEDY },
-		{ ZM_TRAINER_ROUTE1_RAMBLER, "Rambler Perrin", s_axPartyRambler, ZM_ARRLEN(s_axPartyRambler), 120u, ZM_STORY_FLAG_NONE,            ZM_AI_TIER_RANDOM },
+		{ ZM_TRAINER_RIVAL_VESPER,   "Vesper",         s_axPartyVesper,  ZM_ARRLEN(s_axPartyVesper),  500u, ZM_STORY_FLAG_RIVAL1_DEFEATED, ZM_AI_TIER_GREEDY, s_aszChallengeVesper, ZM_ARRLEN(s_aszChallengeVesper) },
+		// SILENT BY DESIGN. The generic route trainer is the production instance of
+		// the "no lines -> straight to the battle" arm, so that arm is live content
+		// rather than only a unit fixture.
+		{ ZM_TRAINER_ROUTE1_RAMBLER, "Rambler Perrin", s_axPartyRambler, ZM_ARRLEN(s_axPartyRambler), 120u, ZM_STORY_FLAG_NONE,            ZM_AI_TIER_RANDOM, nullptr,              0u                              },
 	};
 
 	static_assert(sizeof(s_axTrainers) / sizeof(s_axTrainers[0]) == ZM_TRAINER_COUNT,
@@ -78,10 +99,11 @@ namespace
 	// past, and a roster whose job is to make bad ids safe should not have that
 	// hole. Every field is the INERT answer: no party, no prize, no flag written,
 	// and ZM_AI_TIER_NONE, so a caller that ignores the id check still cannot start
-	// a battle out of it.
+	// a battle out of it -- and, since SC7, no challenge lines either, so the
+	// UNKNOWN row is silent as well as inert.
 	const ZM_TrainerData s_xInvalidTrainer =
 	{
-		ZM_TRAINER_NONE, "UNKNOWN", nullptr, 0u, 0u, ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE
+		ZM_TRAINER_NONE, "UNKNOWN", nullptr, 0u, 0u, ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE, nullptr, 0u
 	};
 
 #undef ZM_ARRLEN
@@ -127,4 +149,22 @@ const char* ZM_GetTrainerName(ZM_TRAINER_ID eId)
 		return "UNKNOWN";
 	}
 	return s_axTrainers[(u_int)eId].m_szDisplayName;
+}
+
+void ZM_SelectTrainerChallengeLines(const ZM_TrainerData& xRow,
+	const char* const*& paszLinesOut, u_int& uCountOut)
+{
+	paszLinesOut = xRow.m_paszChallengeLines;
+	uCountOut    = xRow.m_uChallengeLineCount;
+
+	// NULL first, THEN clamp -- the ZM_SelectNpcLines order. Clamping first would
+	// leave a validated count attached to a bogus pointer.
+	if (paszLinesOut == nullptr)
+	{
+		uCountOut = 0u;
+	}
+	else if (uCountOut > uZM_TRAINER_MAX_CHALLENGE_LINES)
+	{
+		uCountOut = uZM_TRAINER_MAX_CHALLENGE_LINES;
+	}
 }

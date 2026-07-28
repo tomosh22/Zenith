@@ -26,6 +26,14 @@
 // its prize is not farmable. Phase (7) proves the first arm and phase (8) the
 // second. Do not "fix" either.
 //
+// S7 item 3 SC7 EXTENDS THE SAME WALK with the challenge bark: phases (4b) and
+// (4c) sit between the approach and the battle, and phase (9) is appended after the
+// flagless arm. (4b) proves the bark PRECEDES the encounter, (4c) proves the
+// order-112-closes-before-order-113-dispatches handoff lands the battle within two
+// frames of the box closing, and (9) proves a row with ZERO challenge lines skips
+// the beat entirely and battles anyway. NO new ZENITH_AUTOMATED_TEST_REGISTER: the
+// automated registry count deliberately does not move.
+//
 // TWO SMALL THINGS IN THE MIDDLE ARE LOAD-BEARING; neither is decoration:
 //   * phase (7a) samples ZM_TrainerEngagementLatch::HasEngaged AFTER the walk-up
 //     encounter. That is the ONLY observation in this repo of the production
@@ -71,6 +79,7 @@
 #include "Zenithmon/Components/ZM_Interactable.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
+#include "Zenithmon/Components/ZM_UI_MenuStack.h"               // the bark's screen model (GetTopScreen / IsMenuOpen)
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"      // ZM_SetInstantBattlesForTests
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"                // ZM_IsStoryFlagSet
@@ -142,6 +151,51 @@ namespace
 	constexpr int iTS_HOLD_FRAMES       = 200;
 	constexpr int iTS_HOLD2_FRAMES      = 200;
 
+	// ---- S7 item 3 SC7: the challenge bark's own budgets --------------------
+	//
+	// How long the bark is held up, un-pressed, proving it does not ride under the
+	// battle fade.
+	constexpr int iTS_CHALLENGE_HOLD_FRAMES = 30;
+	// ★ THE OVERWORLD TYPEWRITER IS NOT COLLAPSIBLE. ZM_UI_DialogueBox reveals at a
+	// hard `constexpr float fCHARS_PER_SEC = 45.0f` (ZM_UI_BattleHUD.cpp:37) and
+	// passes only its OWN m_bRevealInstant -- it never consults
+	// ZM_InstantBattlesEnabled() the way the battle log does, so the
+	// ZM_SetInstantBattlesForTests(true) in Setup does NOTHING for a bark. Vesper's
+	// two authored lines are 32 and 35 characters, i.e. ceil(32/45) + ceil(35/45) =
+	// 2 s of reveal == 60 frames at the 1/30 dt this test pins. This is that budget
+	// times three, so a slow frame cannot turn a working handoff into a red.
+	constexpr int iTS_CHALLENGE_DISMISS_DEADLINE = 180;
+	// THE HANDOFF. ECS order 112 (ZM_UI_MenuStack) pops, closes and unfreezes before
+	// order 113 (ZM_Interactable) dispatches, in the SAME frame; the transition
+	// machine accepts its pending latch on its next OnUpdate. Two frames is
+	// deliberately generous for a one-frame handoff -- the exact frame relationship
+	// between that synchronous Dispatch and the transition's IDLE-arm accept is
+	// inherited from SC6's header comment, not measured.
+	constexpr int iTS_BARK_TO_BATTLE_DEADLINE = 2;
+	// THE SILENT ARM. A row with no challenge lines must reach the battle with no beat
+	// at all. This is BOTH the hold WINDOW and the failure deadline: the phase runs the
+	// whole of it, asserting on every frame that no DIALOGUE is up, and the raise +
+	// transition have to have landed by the time it elapses. It is NOT an early exit --
+	// see TSPhaseRamblerNoBark.
+	constexpr int iTS_RAMBLER_DEADLINE = 200;
+	// The window's FIRST frame is spent clearing the two gates phase (8) closed, so the
+	// no-DIALOGUE property is sampled on the remaining frames. Verify checks the sampled
+	// count against this: a phase that went back to exiting the instant it saw the raise
+	// would leave it at ~2 and red, rather than quietly shrinking a 200-frame claim to a
+	// 3-frame one.
+	constexpr int iTS_RAMBLER_SAMPLED_FRAMES = iTS_RAMBLER_DEADLINE - 1;
+
+	// ---- S7 item 3 SC7: the ordering pin's UNRESOLVED sentinels -------------
+	//
+	// DISTINCT PER SAMPLE POINT, deliberately. The pin is an EQUALITY test between the
+	// pre-walk encounter count and the count on the frame the bark was observed; if both
+	// samples fell back to the SAME sentinel, a run in which the ZM_BattleTransition
+	// singleton never resolved at either point would compare a sentinel against itself
+	// and PASS having measured nothing. Distinct values make that run red the equality
+	// clause too, and the resolved-bools beside them name WHY in the log.
+	constexpr u_int uTS_ENCOUNTERS_UNRESOLVED_BEFORE  = 0xfffffffeu;
+	constexpr u_int uTS_ENCOUNTERS_UNRESOLVED_AT_BARK = 0xffffffffu;
+
 	// The approach must keep CLOSING; a second of no improvement means stuck
 	// geometry / wrong basis / oscillation, and the test says so immediately.
 	constexpr int   iTS_STALL_LIMIT_FRAMES = 60;
@@ -155,12 +209,20 @@ namespace
 		PlaceTrainer,
 		BasisProbe,
 		Approach,
+		// S7 item 3 SC7. INSERTED between Approach and AwaitInBattle so the bark is
+		// proven inside the SHIPPED walk rather than paying a second ~500-frame
+		// approach for it.
+		AwaitChallenge,
+		DismissChallenge,
 		AwaitInBattle,
 		DriveMenu,
 		Settle,
 		BreakSight,
 		HoldInCone,
 		FlaglessArm,
+		// S7 item 3 SC7. APPENDED after the flagless arm: the same entity, now on a
+		// SILENT row, must battle with no beat at all.
+		RamblerNoBark,
 		Done,
 	};
 
@@ -305,6 +367,32 @@ namespace
 			: nullptr;
 	}
 
+	// The persistent ZM_MenuRoot's stack. Same re-resolve discipline, same reason.
+	ZM_UI_MenuStack* ResolveMenuStack()
+	{
+		Zenith_EntityID xEntityID = INVALID_ENTITY_ID;
+		if (!ZM_UI_MenuStack::TryGetUniqueSingletonEntityID(xEntityID))
+		{
+			return nullptr;
+		}
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xEntityID);
+		return xEntity.IsValid()
+			? xEntity.TryGetComponent<ZM_UI_MenuStack>()
+			: nullptr;
+	}
+
+	// The top screen, or ZM_MENU_SCREEN_NONE when nothing is raised (which is exactly
+	// what ZM_MenuScreenStack::Top() reports for an empty stack).
+	//
+	// ★ EVERY SC7 CLAUSE IS KEYED ON THIS MODEL, never on a rendered glyph count:
+	// whether ZM_UI_DialogueBox::Present's post-wrap glyph total is non-zero on the
+	// Null backend is UNVERIFIED, and this test runs there for real.
+	ZM_MENU_SCREEN TSTopScreen()
+	{
+		const ZM_UI_MenuStack* pxMenu = ResolveMenuStack();
+		return (pxMenu != nullptr) ? pxMenu->GetTopScreen() : ZM_MENU_SCREEN_NONE;
+	}
+
 	// -------------------------------------------------------------------------
 	// Control state (ALL reset in Setup; batch mode reuses the process)
 	// -------------------------------------------------------------------------
@@ -386,6 +474,37 @@ namespace
 	bool  g_bTSHoldEncountersMoved  = false;
 	float g_fTSHoldSeparation       = 0.0f;
 
+	// ---- Phases (4b/4c): THE SC7 CHALLENGE BARK ----
+	// The encounter-count baseline the bark's ordering pin is measured against. It is
+	// a PER-COMPONENT counter on the DontDestroyOnLoad singleton, so a batched run
+	// needs a captured baseline rather than an assumed zero.
+	//
+	// ★ EACH SAMPLE CARRIES ITS OWN RESOLVED-BOOL. The pin is an EQUALITY test, so
+	// "the singleton did not resolve" must never be able to look like "the counts
+	// matched": Verify fails outright when either bool is false, and the two distinct
+	// unresolved sentinels make the equality clause red as well.
+	u_int g_uTSEncountersBeforeWalk = uTS_ENCOUNTERS_UNRESOLVED_BEFORE;
+	bool  g_bTSEncountersBeforeWalkResolved = false;
+	// ★ THE ANTI-VACUITY LATCH: the approach ended at a battle without a bark ever
+	// being seen. Verify FAILS on it -- a silently barkless SC7 is precisely the
+	// regression these phases exist to catch.
+	bool  g_bTSBarkMissed          = false;
+	bool  g_bTSBarkObserved        = false;
+	// The four ordering pins, all latched on the FIRST frame the dialogue is seen.
+	bool  g_bTSBarkTopWasDialogue  = false;
+	bool  g_bTSBarkStateChallenging = false;
+	bool  g_bTSBarkTransitionIdle  = false;
+	u_int g_uTSBarkRaiseCount      = 0xffffffffu;   // want 0: the battle has NOT started
+	u_int g_uTSBarkChallengeCount  = 0xffffffffu;   // want 1: the beat ran exactly once
+	u_int g_uTSEncountersAtBark    = uTS_ENCOUNTERS_UNRESOLVED_AT_BARK;   // want == g_uTSEncountersBeforeWalk
+	bool  g_bTSEncountersAtBarkResolved = false;
+	bool  g_bTSBarkHoldCompleted   = false;
+	// The dismissal + the one-frame handoff into the battle.
+	bool  g_bTSDismissClosed       = false;
+	int   g_iTSDismissFrames       = -1;
+	bool  g_bTSBarkToBattleOK      = false;
+	int   g_iTSBarkToBattleFrames  = -1;
+
 	// ---- Phase (8): the FLAGLESS latch arm ----
 	bool  g_bTSFlaglessConfigured   = false;
 	bool  g_bTSFlaglessCompleted    = false;
@@ -393,6 +512,21 @@ namespace
 	u_int g_uTSFlaglessMaxRaise     = 0xffffffffu;
 	bool  g_bTSFlaglessTransitionMoved = false;
 	float g_fTSFlaglessSeparation   = 0.0f;
+
+	// ---- Phase (9): THE SILENT ARM, END TO END ----
+	bool  g_bTSRamblerStarted       = false;
+	bool  g_bTSRamblerCompleted     = false;
+	bool  g_bTSRamblerSawCone       = false;
+	bool  g_bTSRamblerSawDialogue   = false;   // want FALSE on every frame of the window
+	// How many frames the no-DIALOGUE property was ACTUALLY sampled on. Verify checks
+	// it against iTS_RAMBLER_SAMPLED_FRAMES, so the size of the window is itself a
+	// tested claim rather than a comment.
+	int   g_iTSRamblerSampledFrames = 0;
+	u_int g_uTSRamblerRaiseAtStart  = 0xffffffffu;
+	u_int g_uTSRamblerMaxRaise      = 0u;
+	u_int g_uTSRamblerMaxChallenge  = 0u;      // want 0: a silent row never enters the beat
+	bool  g_bTSRamblerTransitionMoved = false;
+	float g_fTSRamblerSeparation    = 0.0f;
 
 	void ClearTSInput()
 	{
@@ -532,6 +666,39 @@ namespace
 			ZM_TrainerSightTuning{});
 	}
 
+	// ★ THE ORDERING PROOF, latched on the FIRST frame the challenge dialogue is
+	// observed. All four pins are captured AT ONCE and on that one frame, because the
+	// mutation they exist to catch -- transposing the two arms of the action switch in
+	// ZM_Interactable::TickTrainerSight, so the encounter is dispatched on
+	// RUN_CHALLENGE and the bark fired on RAISE_ENCOUNTER -- still delivers the
+	// battle. ONLY the order is evidence, so only these four have teeth.
+	void TSLatchBarkObservation()
+	{
+		g_bTSBarkObserved = true;
+		g_bTSBarkTopWasDialogue = TSTopScreen() == ZM_MENU_SCREEN_DIALOGUE;
+
+		const ZM_Interactable* pxTrainer = ResolveTrainerComponent();
+		if (pxTrainer != nullptr)
+		{
+			g_bTSBarkStateChallenging =
+				pxTrainer->GetTrainerSightState() == ZM_TRAINER_SIGHT_CHALLENGING;
+			g_uTSBarkRaiseCount = pxTrainer->GetTrainerSightRaiseCount();
+			g_uTSBarkChallengeCount = pxTrainer->GetTrainerChallengeCount();
+		}
+
+		g_bTSBarkTransitionIdle = !ZM_BattleTransition::IsTransitionActive();
+		const ZM_BattleTransition* pxTransition = ResolveSingletonBattleTransition();
+		// The RESOLVED-BOOL is the load-bearing half. Without it an unresolved sample
+		// here would simply leave the sentinel in place, and comparing that against an
+		// equally unresolved pre-walk sample would pass the ordering pin on 0 == 0
+		// arithmetic -- the exact "passes for the wrong reason" shape this file is full
+		// of guards against.
+		g_bTSEncountersAtBarkResolved = pxTransition != nullptr;
+		g_uTSEncountersAtBark = (pxTransition != nullptr)
+			? pxTransition->GetObservedEncounterCount()
+			: uTS_ENCOUNTERS_UNRESOLVED_AT_BARK;
+	}
+
 	// -------------------------------------------------------------------------
 	// Per-phase drivers. Each returns true to keep stepping, false to stop.
 	// -------------------------------------------------------------------------
@@ -588,6 +755,16 @@ namespace
 		// PRODUCTION MarkEngaged rather than of something an earlier test left behind.
 		g_bTSLatchBefore = ZM_TrainerEngagementLatch::HasEngaged(eTS_TRAINER);
 		g_bTSBaselineCaptured = true;
+
+		// S7 item 3 SC7's ordering baseline. GetObservedEncounterCount is a
+		// PER-COMPONENT counter on the DontDestroyOnLoad singleton, so the bark's
+		// "the encounter has NOT happened yet" pin is measured against this captured
+		// value rather than against an assumed zero.
+		const ZM_BattleTransition* pxTransition = ResolveSingletonBattleTransition();
+		g_bTSEncountersBeforeWalkResolved = pxTransition != nullptr;
+		g_uTSEncountersBeforeWalk = (pxTransition != nullptr)
+			? pxTransition->GetObservedEncounterCount()
+			: uTS_ENCOUNTERS_UNRESOLVED_BEFORE;
 
 		pxGameState->m_xParty = ZM_Party{};
 		g_bTSLeadInstalled = pxGameState->m_xParty.Add(
@@ -732,8 +909,30 @@ namespace
 	//     anywhere, so the player walks on Jolt velocity.
 	bool TSPhaseApproach()
 	{
+		// S7 item 3 SC7: THE BARK IS CHECKED FIRST, ahead of the transition, so a
+		// frame carrying both would still be read as the bark -- SC7's whole claim is
+		// that the dialogue PRECEDES the encounter, and reading it the other way round
+		// would let the transposed-switch mutation slip through as "the bark was just
+		// late".
+		if (TSTopScreen() == ZM_MENU_SCREEN_DIALOGUE)
+		{
+			ClearTSInput();
+			TSLatchBarkObservation();
+			g_eTSPhase = TSPhase::AwaitChallenge;
+			g_iTSPhaseFrames = 0;
+			return true;
+		}
+
 		if (ZM_BattleTransition::IsTransitionActive())
 		{
+			// ANTI-VACUITY. The battle started and NO bark was ever seen. The run
+			// continues (every SC6 clause below still means what it meant), but Verify
+			// fails naming it: a silently barkless SC7 is exactly the regression the
+			// challenge phases exist to catch.
+			if (!g_bTSBarkObserved)
+			{
+				g_bTSBarkMissed = true;
+			}
 			ClearTSInput();
 			g_eTSPhase = TSPhase::AwaitInBattle;
 			g_iTSPhaseFrames = 0;
@@ -775,6 +974,95 @@ namespace
 		}
 
 		DriveTowardXZ(xPlayer.m_xPosition, g_xTSTrainerPosition);
+		return true;
+	}
+
+	// (4b) THE BARK IS UP AND THE BATTLE IS NOT. Hold it, un-pressed, for
+	//      iTS_CHALLENGE_HOLD_FRAMES: the challenge dialogue must PRECEDE the
+	//      encounter, not ride under the fade. Nothing here presses anything -- the
+	//      dismissal is phase (4c)'s job.
+	bool TSPhaseAwaitChallenge()
+	{
+		const ZM_Interactable* pxTrainer = ResolveTrainerComponent();
+		if (pxTrainer == nullptr)
+		{
+			FailTS("the runtime trainer was lost while its challenge bark was up");
+			return false;
+		}
+
+		if (ZM_BattleTransition::IsTransitionActive()
+			|| pxTrainer->GetTrainerSightRaiseCount() != 0u)
+		{
+			FailTS("the encounter was raised WHILE the challenge bark was still up -- "
+				"the bark must PRECEDE the battle (order 112 closes the menu before "
+				"order 113 dispatches), never ride under the fade");
+			return false;
+		}
+		if (TSTopScreen() != ZM_MENU_SCREEN_DIALOGUE)
+		{
+			FailTS("the challenge dialogue stopped being the top screen with no confirm "
+				"press -- something else claimed the menu stack mid-bark");
+			return false;
+		}
+
+		if (g_iTSPhaseFrames < iTS_CHALLENGE_HOLD_FRAMES)
+		{
+			return true;
+		}
+		g_bTSBarkHoldCompleted = true;
+		g_eTSPhase = TSPhase::DismissChallenge;
+		g_iTSPhaseFrames = 0;
+		return true;
+	}
+
+	// (4c) THE HANDOFF PROOF. Read the bark out with one confirm press per frame,
+	//      then require the battle to start within iTS_BARK_TO_BATTLE_DEADLINE
+	//      frames of the box closing: ZM_UI_MenuStack (order 112) pops, closes and
+	//      UNFREEZES, and ZM_Interactable (order 113) dispatches the withheld
+	//      encounter, in the SAME frame. Exactly one freeze owner at every instant,
+	//      and SC7 introduced neither of them.
+	bool TSPhaseDismissChallenge()
+	{
+		if (!g_bTSDismissClosed)
+		{
+			if (!ZM_UI_MenuStack::IsMenuOpen())
+			{
+				g_bTSDismissClosed = true;
+				g_iTSDismissFrames = g_iTSPhaseFrames;
+				// Restart the counter: the deadline below is measured from the CLOSE,
+				// not from the first press.
+				g_iTSPhaseFrames = 0;
+				return true;
+			}
+			if (g_iTSPhaseFrames > iTS_CHALLENGE_DISMISS_DEADLINE)
+			{
+				FailTS("the challenge bark never closed under one confirm press per "
+					"frame -- the dialogue is stuck (the typewriter is a hard "
+					"constexpr 45 chars/sec and ZM_SetInstantBattlesForTests does "
+					"NOTHING for a bark, so a longer authored line costs real frames)");
+				return false;
+			}
+			// State-setter only (convention C1), and the same press the shipped
+			// DriveMenu phase uses: ENTER is a ZM_CONFIRM_KEYS member.
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			return true;
+		}
+
+		if (ZM_BattleTransition::IsTransitionActive())
+		{
+			g_bTSBarkToBattleOK = true;
+			g_iTSBarkToBattleFrames = g_iTSPhaseFrames;
+			g_eTSPhase = TSPhase::AwaitInBattle;
+			g_iTSPhaseFrames = 0;
+			return true;
+		}
+		if (g_iTSPhaseFrames > iTS_BARK_TO_BATTLE_DEADLINE)
+		{
+			FailTS("the battle did NOT start within the deadline after the challenge "
+				"bark closed -- the withheld encounter was never dispatched, so the "
+				"trainer talked at the player and then let him walk away");
+			return false;
+		}
 		return true;
 	}
 
@@ -1079,6 +1367,127 @@ namespace
 			return true;
 		}
 		g_bTSFlaglessCompleted = true;
+		g_eTSPhase = TSPhase::RamblerNoBark;
+		g_iTSPhaseFrames = 0;
+		return true;
+	}
+
+	// (9) THE SILENT ARM, END TO END. The same entity is still on the flagless row,
+	//     which ships ZERO challenge lines. Clear the two gates phase (8) deliberately
+	//     closed and the trainer must battle again -- with NO beat: no dialogue is
+	//     ever raised and GetTrainerChallengeCount stays exactly 0. That is what makes
+	//     the availability test two-sided: invert it and Vesper's bark disappears
+	//     while the rambler grows one.
+	//
+	// ★ THE RAISE AND THE TRANSITION ARE LATCHES, NOT AN EXIT CONDITION. This phase
+	// runs the FULL iTS_RAMBLER_DEADLINE window and asserts the no-DIALOGUE property on
+	// every frame of it (iTS_RAMBLER_SAMPLED_FRAMES frames -- the first is spent
+	// clearing the two gates phase (8) closed). Exiting the moment both positives were
+	// observed, which is what the raise -> dispatch -> accept chain does in about three
+	// frames, would have sampled the ONE property this phase exists for on three frames
+	// and called it a 200-frame hold. Verify checks g_iTSRamblerSampledFrames against
+	// the window, so that shrinkage cannot come back silently.
+	//
+	// It ends DEEP IN THE ROUND TRIP on purpose, and that is a widening of SC7's
+	// accepted risk rather than a new one: at 1/30 dt the 0.20 s fade-out is ~6 frames
+	// and the additive Battle load + arena build a handful more, so the window outlives
+	// them and the phase now typically ends in IN_BATTLE rather than mid-fade. Three
+	// things make that safe. (1) IN_BATTLE has NO timer -- ZM_BattleTransition::OnUpdate
+	// only leaves it on RequestBattleEnd, which nothing here calls, so the state is
+	// stationary rather than racing us. (2) The teardown in Verify already force-resets
+	// the transition (restoring the parked player), force-unloads any lingering Battle
+	// scene and SINGLE-loads FrontEnd on EVERY exit path -- it is the same teardown that
+	// runs today whenever DriveMenu deadlines out mid-battle, so ending there is an
+	// already-designed-for state, not an unhandled one. (3) Nothing in the battle can
+	// push a DIALOGUE screen: every TryPushDialogue / PushDialogueLines call site is in
+	// ZM_Interactable (the overworld, which EnterBattleOnce PAUSES) or the graph node,
+	// so the property stays cleanly observable for the whole window.
+	//
+	// HONEST ABOUT WHAT THE TAIL BUYS: once EnterBattleOnce pauses the overworld,
+	// ZM_Interactable stops ticking and the sight machine cannot raise anything at all,
+	// so those frames prove no NEW bark is possible rather than exercising the beat.
+	// They are kept because they cost nothing and they cover the fade -- where a bark
+	// that "rode under" the encounter instead of preceding it would surface.
+	bool TSPhaseRamblerNoBark()
+	{
+		// Resolves for the whole window even once Battle takes focus: the trainer lives
+		// in Dawnmere, which the battle loads ADDITIVELY (paused, never unloaded), and
+		// ResolveEntity is keyed on the entity's own owning scene.
+		const ZM_Interactable* pxTrainer = ResolveTrainerComponent();
+		if (pxTrainer == nullptr)
+		{
+			FailTS("the runtime trainer was lost during the silent-arm hold");
+			return false;
+		}
+
+		if (!g_bTSRamblerStarted)
+		{
+			// BOTH gates, because phase (8) closed both: the session latch it marked by
+			// hand, and any transition state the earlier round trip left behind.
+			ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
+			ZM_BattleTransition::ResetRuntimeStateForTests();
+			if (ZM_TrainerEngagementLatch::HasEngaged(eTS_FLAGLESS_TRAINER))
+			{
+				FailTS("the flagless trainer's session latch survived its reset -- the "
+					"silent arm below could never raise and would prove nothing");
+				return false;
+			}
+			g_uTSRamblerRaiseAtStart = pxTrainer->GetTrainerSightRaiseCount();
+			g_bTSRamblerStarted = true;
+			return true;
+		}
+
+		++g_iTSRamblerSampledFrames;
+
+		// ANTI-VACUITY, the SC3 predicate directly: the geometry really is watching.
+		float fSeparation = 0.0f;
+		if (PlayerIsInTrainerCone(fSeparation))
+		{
+			g_bTSRamblerSawCone = true;
+		}
+		// KEEP THE LAST RESOLVED separation for the diagnostic. The poll reports 0 once
+		// Battle takes focus (FindActivePlayer is active-scene bound), and overwriting a
+		// real measurement with that would make the failure text lie about geometry the
+		// early frames did observe.
+		if (fSeparation > 0.0f)
+		{
+			g_fTSRamblerSeparation = fSeparation;
+		}
+
+		// ★ THE PROPERTY, ON EVERY FRAME OF THE WINDOW -- this is what the phase is for.
+		// A bark that appeared and was gone again before the end must still red it.
+		if (TSTopScreen() == ZM_MENU_SCREEN_DIALOGUE)
+		{
+			g_bTSRamblerSawDialogue = true;
+		}
+
+		const u_int uRaiseCount = pxTrainer->GetTrainerSightRaiseCount();
+		g_uTSRamblerMaxRaise = (uRaiseCount > g_uTSRamblerMaxRaise)
+			? uRaiseCount : g_uTSRamblerMaxRaise;
+		const u_int uChallengeCount = pxTrainer->GetTrainerChallengeCount();
+		g_uTSRamblerMaxChallenge = (uChallengeCount > g_uTSRamblerMaxChallenge)
+			? uChallengeCount : g_uTSRamblerMaxChallenge;
+		g_bTSRamblerTransitionMoved =
+			g_bTSRamblerTransitionMoved || ZM_BattleTransition::IsTransitionActive();
+
+		// The two positives above are LATCHED, never exited on. Keep holding.
+		if (g_iTSPhaseFrames < iTS_RAMBLER_DEADLINE)
+		{
+			return true;
+		}
+
+		// The window elapsed. Both positives had to land somewhere inside it -- this is
+		// the same deadline failure as before, moved to the end of the hold.
+		if (g_uTSRamblerMaxRaise <= g_uTSRamblerRaiseAtStart
+			|| !g_bTSRamblerTransitionMoved)
+		{
+			FailTS("the un-latched SILENT trainer never started a battle while the "
+				"player stood in his cone -- a row with no challenge lines must skip "
+				"the beat and raise immediately");
+			return false;
+		}
+
+		g_bTSRamblerCompleted = true;
 		g_eTSPhase = TSPhase::Done;
 		return false;
 	}
@@ -1161,6 +1570,34 @@ namespace
 		g_bTSFlaglessTransitionMoved = false;
 		g_fTSFlaglessSeparation      = 0.0f;
 
+		g_uTSEncountersBeforeWalk  = uTS_ENCOUNTERS_UNRESOLVED_BEFORE;
+		g_bTSEncountersBeforeWalkResolved = false;
+		g_bTSBarkMissed            = false;
+		g_bTSBarkObserved          = false;
+		g_bTSBarkTopWasDialogue    = false;
+		g_bTSBarkStateChallenging  = false;
+		g_bTSBarkTransitionIdle    = false;
+		g_uTSBarkRaiseCount        = 0xffffffffu;
+		g_uTSBarkChallengeCount    = 0xffffffffu;
+		g_uTSEncountersAtBark      = uTS_ENCOUNTERS_UNRESOLVED_AT_BARK;
+		g_bTSEncountersAtBarkResolved = false;
+		g_bTSBarkHoldCompleted     = false;
+		g_bTSDismissClosed         = false;
+		g_iTSDismissFrames         = -1;
+		g_bTSBarkToBattleOK        = false;
+		g_iTSBarkToBattleFrames    = -1;
+
+		g_bTSRamblerStarted        = false;
+		g_bTSRamblerCompleted      = false;
+		g_bTSRamblerSawCone        = false;
+		g_bTSRamblerSawDialogue    = false;
+		g_iTSRamblerSampledFrames  = 0;
+		g_uTSRamblerRaiseAtStart   = 0xffffffffu;
+		g_uTSRamblerMaxRaise       = 0u;
+		g_uTSRamblerMaxChallenge   = 0u;
+		g_bTSRamblerTransitionMoved = false;
+		g_fTSRamblerSeparation     = 0.0f;
+
 		// Guard order is MANDATORY: RequestSkip bypasses Verify, so install NO
 		// process state (fixed dt, instant-battles flag, scene load) until EVERY
 		// git-ignored input is confirmed present.
@@ -1216,12 +1653,15 @@ namespace
 		case TSPhase::PlaceTrainer:  return TSPhasePlaceTrainer();
 		case TSPhase::BasisProbe:    return TSPhaseBasisProbe();
 		case TSPhase::Approach:      return TSPhaseApproach();
+		case TSPhase::AwaitChallenge:   return TSPhaseAwaitChallenge();
+		case TSPhase::DismissChallenge: return TSPhaseDismissChallenge();
 		case TSPhase::AwaitInBattle: return TSPhaseAwaitInBattle();
 		case TSPhase::DriveMenu:     return TSPhaseDriveMenu();
 		case TSPhase::Settle:        return TSPhaseSettle();
 		case TSPhase::BreakSight:    return TSPhaseBreakSight();
 		case TSPhase::HoldInCone:    return TSPhaseHoldInCone();
 		case TSPhase::FlaglessArm:   return TSPhaseFlaglessArm();
+		case TSPhase::RamblerNoBark: return TSPhaseRamblerNoBark();
 		case TSPhase::Done:          return false;
 		}
 		return false;
@@ -1302,6 +1742,42 @@ namespace
 				g_bTSRearmRestored ? "true" : "false",
 				g_fTSRearmSeparation, g_uTSRaiseAtRearm,
 				g_bTSHoldEverEngaged ? "true" : "false");
+
+			// S7 item 3 SC7: the bark, its ordering pins, its handoff, and the silent arm.
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_TrainerSight] SC7 bark: observed=%s missed=%s topWasDialogue=%s "
+				"stateChallenging=%s transitionIdleAtBark=%s raiseAtBark=%u (want 0) "
+				"challengeAtBark=%u (want 1) encountersBeforeWalk=%u (resolved=%s) "
+				"encountersAtBark=%u (resolved=%s) (want equal AND both resolved) "
+				"holdCompleted=%s dismissClosed=%s dismissFrames=%d "
+				"barkToBattleOK=%s barkToBattleFrames=%d (want <= %d) | rambler: "
+				"started=%s completed=%s sawCone=%s sawDialogue=%s (want false) "
+				"sampledFrames=%d (want %d) "
+				"raiseAtStart=%u maxRaise=%u maxChallenge=%u (want 0) transitionMoved=%s "
+				"separation=%.3f",
+				g_bTSBarkObserved ? "true" : "false",
+				g_bTSBarkMissed ? "true" : "false",
+				g_bTSBarkTopWasDialogue ? "true" : "false",
+				g_bTSBarkStateChallenging ? "true" : "false",
+				g_bTSBarkTransitionIdle ? "true" : "false",
+				g_uTSBarkRaiseCount, g_uTSBarkChallengeCount,
+				g_uTSEncountersBeforeWalk,
+				g_bTSEncountersBeforeWalkResolved ? "true" : "false",
+				g_uTSEncountersAtBark,
+				g_bTSEncountersAtBarkResolved ? "true" : "false",
+				g_bTSBarkHoldCompleted ? "true" : "false",
+				g_bTSDismissClosed ? "true" : "false", g_iTSDismissFrames,
+				g_bTSBarkToBattleOK ? "true" : "false", g_iTSBarkToBattleFrames,
+				iTS_BARK_TO_BATTLE_DEADLINE,
+				g_bTSRamblerStarted ? "true" : "false",
+				g_bTSRamblerCompleted ? "true" : "false",
+				g_bTSRamblerSawCone ? "true" : "false",
+				g_bTSRamblerSawDialogue ? "true" : "false",
+				g_iTSRamblerSampledFrames, iTS_RAMBLER_SAMPLED_FRAMES,
+				g_uTSRamblerRaiseAtStart, g_uTSRamblerMaxRaise,
+				g_uTSRamblerMaxChallenge,
+				g_bTSRamblerTransitionMoved ? "true" : "false",
+				g_fTSRamblerSeparation);
 
 			if (g_bTSFailed)
 			{
@@ -1580,6 +2056,161 @@ namespace
 					bPassed = false;
 				}
 			}
+
+			// ============ (4b) THE CHALLENGE BARK CAME FIRST (SC7) =================
+			// ★ THE MUTATION THESE CLAUSES EXIST FOR still delivers the battle:
+			// transpose the two arms of the action switch in
+			// ZM_Interactable::TickTrainerSight (dispatch the encounter on
+			// RUN_CHALLENGE, bark on RAISE_ENCOUNTER) and everything above stays green.
+			// ONLY the ordering pins below have teeth.
+			if (!g_bTSBarkObserved || g_bTSBarkMissed)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_TrainerSight] Vesper reached the battle with no challenge bark -- the "
+					"DIALOGUE screen was never observed at any point of the walk-up. Either the "
+					"beat never ran (a missing game:Graphs/ZM_TrainerChallenge.bgraph, an "
+					"unresolved node type, or a refused TryPushDialogue -- all of which FAIL OPEN "
+					"to the battle by design) or the two action arms are transposed");
+				bPassed = false;
+			}
+			else
+			{
+				if (!g_bTSBarkTopWasDialogue)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the raised screen was not the DIALOGUE screen");
+					bPassed = false;
+				}
+				if (!g_bTSBarkStateChallenging)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the sight machine was not CHALLENGING on the frame its "
+						"bark was observed -- the dialogue on screen belongs to something else");
+					bPassed = false;
+				}
+				// ★ THE ORDERING PIN IS AN EQUALITY TEST, so an UNRESOLVED sample must
+				// never be able to satisfy it. Both counts come off the
+				// ZM_BattleTransition singleton; if it failed to resolve at either
+				// sample point the pin below is comparing sentinels, not encounter
+				// counts, and it would have "passed" having measured nothing. This
+				// clause is what makes that a red, and it is separate from the equality
+				// clause on purpose: the equality clause names an ordering violation,
+				// this one names a missing observation.
+				if (!g_bTSEncountersBeforeWalkResolved || !g_bTSEncountersAtBarkResolved)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the ZM_BattleTransition singleton did not resolve at "
+						"the pre-walk sample (resolved=%s) and/or on the frame the bark was "
+						"observed (resolved=%s), so at least one encounter count is an "
+						"unresolved sentinel -- the 'the encounter has not happened yet' "
+						"ordering pin measured NOTHING",
+						g_bTSEncountersBeforeWalkResolved ? "true" : "false",
+						g_bTSEncountersAtBarkResolved ? "true" : "false");
+					bPassed = false;
+				}
+				if (!g_bTSBarkTransitionIdle
+					|| g_uTSEncountersAtBark != g_uTSEncountersBeforeWalk)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the battle transition was ALREADY running (or had "
+						"already observed an encounter: %u vs the pre-walk %u) on the frame the "
+						"bark was observed -- the bark must PRECEDE the encounter, never ride "
+						"under the fade", g_uTSEncountersAtBark, g_uTSEncountersBeforeWalk);
+					bPassed = false;
+				}
+				if (g_uTSBarkRaiseCount != 0u || g_uTSBarkChallengeCount != 1u)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] at the bark the trainer had raised %u encounter(s) and "
+						"started %u challenge beat(s); expected EXACTLY 0 and 1. The beat must run "
+						"once and the encounter must not have been raised yet",
+						g_uTSBarkRaiseCount, g_uTSBarkChallengeCount);
+					bPassed = false;
+				}
+				if (!g_bTSBarkHoldCompleted)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the %d-frame un-pressed hold on the challenge bark never "
+						"completed -- 'the battle does not start under the bark' is unproven",
+						iTS_CHALLENGE_HOLD_FRAMES);
+					bPassed = false;
+				}
+
+				// ======= (4c) THE HANDOFF: order 112 closes, then 113 dispatches =======
+				if (!g_bTSDismissClosed)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the challenge bark never closed under confirm presses");
+					bPassed = false;
+				}
+				else if (!g_bTSBarkToBattleOK)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the bark closed but no battle transition started within "
+						"%d frames. ZM_UI_MenuStack (ECS order 112) pops, closes and UNFREEZES "
+						"before ZM_Interactable (order 113) dispatches the withheld encounter, in "
+						"the SAME frame -- so the trainer must not be able to talk at the player "
+						"and then let him walk away", iTS_BARK_TO_BATTLE_DEADLINE);
+					bPassed = false;
+				}
+			}
+
+			// ================= (9) THE SILENT ARM, END TO END (SC7) =================
+			if (!g_bTSRamblerStarted || !g_bTSRamblerCompleted)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_TrainerSight] the silent-arm phase never completed -- a trainer row with "
+					"ZERO challenge lines is unproven end to end");
+				bPassed = false;
+			}
+			else
+			{
+				if (!g_bTSRamblerSawCone)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the player was NEVER geometrically inside the SILENT "
+						"trainer's cone (separation %.3f) -- his battle proves nothing",
+						g_fTSRamblerSeparation);
+					bPassed = false;
+				}
+				// ★ THE WINDOW ITSELF IS A TESTED CLAIM. The no-DIALOGUE clause below is
+				// only worth as many frames as it was actually sampled on, and the
+				// regression it guards against is a phase that goes back to exiting the
+				// instant it sees the raise and the transition -- about three frames --
+				// while the comments still say 200. This reds that shrinkage directly.
+				if (g_iTSRamblerSampledFrames < iTS_RAMBLER_SAMPLED_FRAMES)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the SILENT trainer's no-DIALOGUE property was sampled "
+						"on only %d frame(s) of its %d-frame window -- the phase stopped holding "
+						"early, so 'a row with zero challenge lines never barks' is a claim about "
+						"a handful of frames rather than about the window",
+						g_iTSRamblerSampledFrames, iTS_RAMBLER_SAMPLED_FRAMES);
+					bPassed = false;
+				}
+				if (g_uTSRamblerMaxChallenge != 0u || g_bTSRamblerSawDialogue)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the SILENT trainer started %u challenge beat(s) and "
+						"%s raised a dialogue. A row whose ZM_SelectTrainerChallengeLines yields "
+						"zero lines must skip the beat ENTIRELY -- otherwise it pays a half-second "
+						"of dead air for a bark nobody can hear, and the availability test is "
+						"inverted", g_uTSRamblerMaxChallenge,
+						g_bTSRamblerSawDialogue ? "DID" : "did not");
+					bPassed = false;
+				}
+				if (g_uTSRamblerMaxRaise <= g_uTSRamblerRaiseAtStart
+					|| !g_bTSRamblerTransitionMoved)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the un-latched SILENT trainer's raise count went %u -> "
+						"%u and transitionStarted=%s -- with the session latch cleared he must "
+						"raise, and the battle must still happen with no beat in front of it",
+						g_uTSRamblerRaiseAtStart, g_uTSRamblerMaxRaise,
+						g_bTSRamblerTransitionMoved ? "true" : "false");
+					bPassed = false;
+				}
+			}
 		}
 
 		// Always tear down, in order (all guarded), even on a terminal failure: drop
@@ -1592,6 +2223,11 @@ namespace
 		ZM_SetInstantBattlesForTests(false);
 		ZM_BattleTransition::ResetRuntimeStateForTests();
 		ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
+		// S7 item 3 SC7: a run that died mid-bark would otherwise leave a DIALOGUE
+		// screen up and the player frozen by MenuStack's own freeze. This closes it
+		// (CloseMenu unfreezes) AFTER the transition reset has restored any parked
+		// player, so exactly one owner releases the player and it releases it last.
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
 		ZM_GameStateManager::ResetGameStateForTests();
 		Zenith_Scene xBattle = g_xEngine.Scenes().FindLoadedSceneByPath(
 			std::string(GAME_ASSETS_DIR) + "Scenes/Battle" ZENITH_SCENE_EXT);
@@ -1620,11 +2256,14 @@ static const Zenith_AutomatedTest g_xZMTrainerSightWalkUpTest = {
 	&Step_ZMTrainerSight,
 	&Verify_ZMTrainerSight,
 	// Above the SUM of the named phase deadlines (420 ready + 1 place + 30 basis +
-	// 900 approach + 600 in-battle + 900 drive + 8 settle + 120 re-arm + 200 hold +
-	// 200 hold2 = 3379). The harness jumps straight to Verify when maxFrames is hit, so this
+	// 900 approach + 30 bark hold + 180 bark dismiss + 2 bark->battle + 600 in-battle
+	// + 900 drive + 8 settle + 120 re-arm + 200 hold + 200 hold2 + 200 rambler =
+	// 3791). The harness jumps straight to Verify when maxFrames is hit, so this
 	// must exceed that sum or a slow-but-valid run would be cut off mid-battle and
-	// read as a failure rather than a timeout.
-	/* maxFrames */ 4000,
+	// read as a failure rather than a timeout. NOTE: the rambler phase SPENDS its
+	// whole 200 -- it holds the window rather than exiting on the raise -- so the
+	// slack above the sum is what absorbs a slow frame, not an early-exiting phase.
+	/* maxFrames */ 4400,
 	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMTrainerSightWalkUpTest);

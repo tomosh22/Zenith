@@ -178,6 +178,29 @@ lands real code against it:
   award-prize), with approach kept C++-driven. *Cost if wrong:* a fuller graph (running
   NavMoveTo approach) couples to the unresolved nav decision; a thin C++ glue risks not
   satisfying the twice-deferred "land the first useful integration" mandate.
+  **★ SUPERSEDED 2026-07-28 BY EXPLICIT USER RE-RATIFICATION.** SC7 carries the
+  **trainer CHALLENGE BARK** (a spotted trainer speaks, then the battle starts), NOT
+  the defeat beat. **How the contradiction arose:** this Q-B answer and
+  `DecisionLog.md`'s ZM-D-143 sequence both defined SC7 as the defeat beat
+  (`SetStoryFlag` -> `AwardPrizeMoney`, fired from SC5's win callsite), while
+  `SC6_Plan.md` asserted "'!' BARK / CHALLENGE DIALOGUE -> NOT SC6. That is SC7's
+  first `.bgraph`", and that second reading was propagated into `Roadmap.md` and
+  `Status.md` when SC6 landed. Both readings were implementable, so this was a real
+  fork rather than a stale-doc cleanup, and it was **put to the user rather than
+  resolved by an agent** -- Q-B had been a user-adopted default, and this project's
+  rule is that an already-decided item is not silently re-decided. **Verdict: the
+  bark.** Rationale: the defeat beat is already SHIPPED and test-locked in C++ as
+  SC5's `ZM_ApplyTrainerResultToGameState`, so re-expressing it as a graph would add
+  no player-visible behaviour while risking a tested path; the bark is a genuinely
+  missing beat the vertical slice needs before the S8 go/no-go. **Honest caveat
+  recorded:** NEITHER shape actually gives the graph "one genuine decision" as this
+  answer wanted -- SC7's plan deliberately rejects a `Query -> Branch -> Bark` chain
+  because the only branchable condition ("does this trainer have lines?") is already
+  decided in C++, and a graph duplicating a C++ gate is less correct, not more. The
+  graph earns its keep as the BEAT's owner (a designer can later insert
+  Wait/SFX/camera nodes, hot-reloaded) rather than as a decision owner. The
+  defeat-beat-as-graph is NOT scheduled; revisit only if more graph machinery makes
+  it worthwhile.
 - **Q-C -- trainer roster size this stage:** exactly **ONE authored trainer (rival
   Vesper)** in Dawnmere + one non-authored generic `ZM_TrainerData` row to prove table
   multiplicity in units. *Cost if wrong:* a full roster bloats S7 and pre-commits Route 1

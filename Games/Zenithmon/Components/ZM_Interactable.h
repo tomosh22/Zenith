@@ -141,6 +141,10 @@ public:
 	// Monotonic raises emitted by THIS component. The windowed gate asserts on
 	// this, not on "a battle happened", so a trainer that fired twice cannot pass.
 	u_int GetTrainerSightRaiseCount() const { return m_xSightFsm.GetRaiseCount(); }
+	// MONOTONIC count of challenge beats STARTED, as distinct from encounters
+	// raised. The walk-up test asserts on both: the beat must run exactly once and
+	// the battle must still happen exactly once.
+	u_int GetTrainerChallengeCount() const { return m_xSightFsm.GetChallengeCount(); }
 
 	// Fire this NPC's role: ONE switch over ZM_RaiseKindForRole(row.m_eRole) onto the
 	// three shipped ZM_UI_MenuStack seams. Returns whether a screen was actually
@@ -170,6 +174,22 @@ private:
 	void TickTrainerSight(float fDeltaTime);
 	void UpdateWander(float fDeltaTime);
 
+	// Attaches the shared challenge graph, at most once per session, the first time
+	// this component ticks as a trainer WITH lines.
+	//
+	// ★ CALLED ONLY FROM TickTrainerSight -- an OnUpdate-only path. Zenith_Core.cpp:138
+	// gates Scenes().Update (the sole driver of OnUpdate AND of the pending-OnStart
+	// queue) on EditorMode::Playing, and the boot authoring pass runs with the editor
+	// Stopped. A Zenith_GraphComponent therefore CANNOT exist on this entity during
+	// AddStep_SaveScene and CANNOT reach committed scene bytes. This is what keeps
+	// SC7 at zero .zscen bytes, and it BINDS SC8: do NOT AddStep_AttachGraph the
+	// authored Vesper -- he picks the graph up here for free.
+	void EnsureTrainerChallengeGraph();
+	// Fires szZM_GRAPH_EVENT_TRAINER_SPOTTED at this entity's own graph, payload =
+	// the trainer id. Silently does nothing when there is no resolved graph, which is
+	// the FAIL-OPEN path: the FSM's challenge window then raises the encounter.
+	void RunTrainerChallenge();
+
 	// Stored BY VALUE (never a reference): a reference member would dangle on the
 	// temporary ctor handle and break the pool's move-construct.
 	Zenith_Entity m_xParentEntity;
@@ -187,6 +207,12 @@ private:
 	ZM_WalkerState     m_xWalkerState;
 	bool               m_bWanderEnabled = false;
 	bool               m_bOwnsInteractionMenu = false;
+	// RUNTIME-ONLY, exactly like m_bOwnsInteractionMenu and m_xConfiguredWanderBodyID:
+	// NOT serialized, uSERIALIZATION_VERSION STAYS 2u, and
+	// Interactable_TrainerSightIsNotSerialized must stay green WITH NO EDIT.
+	// "Attempted", not "attached": one load attempt per session whether it succeeded
+	// or not, so a missing asset costs one failed lookup rather than one per frame.
+	bool               m_bChallengeGraphAttempted = false;
 	// Runtime-only lifecycle/body identity. A body-id change causes the shared setup
 	// path to apply gravity/upright/material properties to the replacement exactly once.
 	Zenith_PhysicsBodyID m_xConfiguredWanderBodyID;

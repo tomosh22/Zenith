@@ -24,6 +24,7 @@
 // ============================================================================
 
 #include <cmath>     // std::isfinite (the poisoned-accumulator assertion)
+#include <cstring>   // strcmp (the name-distinctness walk)
 #include <limits>    // quiet_NaN / infinity (the totality sweep)
 
 #include "Core/Zenith_TestFramework.h"
@@ -75,6 +76,36 @@ namespace
 			ZM_TrainerSightStateName(xFsm.GetState()));
 		ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 1u,
 			"...and must have counted exactly one raise");
+	}
+
+	// The SC7 delta, spelled ONCE: the same passing fixture plus a trainer who
+	// actually has something to say (ZM_SelectTrainerChallengeLines yielded a
+	// non-zero count). Every challenge unit below is this fixture with at most one
+	// further field flipped.
+	ZM_TrainerSightInputs MakeChallengeInputs()
+	{
+		ZM_TrainerSightInputs xInputs = MakePassingInputs();
+		xInputs.m_bChallengeAvailable = true;
+		return xInputs;
+	}
+
+	// Drive the one challenge BEAT every "starts from CHALLENGING" unit depends on,
+	// and PROVE it happened -- including that it did NOT raise, which is the whole
+	// ordering claim of SC7.
+	void ChallengeOnce(ZM_TrainerSightFsm& xFsm)
+	{
+		const ZM_TRAINER_SIGHT_ACTION eAction = xFsm.Step(MakeChallengeInputs(), MakeShippedTuning());
+		ZENITH_ASSERT_EQ(eAction, ZM_TRAINER_SIGHT_ACTION_RUN_CHALLENGE,
+			"a cold watcher with every clause satisfied AND lines to speak must run the "
+			"beat on its first Step (got %s)", ZM_TrainerSightActionName(eAction));
+		ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_CHALLENGING,
+			"...and must be CHALLENGING afterwards (got %s)",
+			ZM_TrainerSightStateName(xFsm.GetState()));
+		ZENITH_ASSERT_EQ(xFsm.GetChallengeCount(), 1u,
+			"...and must have counted exactly one challenge beat");
+		ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 0u,
+			"...and must NOT have raised: the beat PRECEDES the encounter, it never "
+			"replaces the ordering");
 	}
 }
 
@@ -376,15 +407,307 @@ ZENITH_TEST(ZM_Interaction, Fsm_DegenerateDeltaNeverAccumulatesOrRearms)
 		"no garbage frame may raise");
 }
 
+// ---- S7 item 3 SC7: the challenge beat ---------------------------------------
+
+ZENITH_TEST(ZM_Interaction, Fsm_AvailableChallengeRunsTheBeatInsteadOfRaising)
+{
+	ZM_TrainerSightFsm xFsm;
+	const ZM_TRAINER_SIGHT_ACTION eAction =
+		xFsm.Step(MakeChallengeInputs(), MakeShippedTuning());
+
+	ZENITH_ASSERT_EQ(eAction, ZM_TRAINER_SIGHT_ACTION_RUN_CHALLENGE,
+		"a trainer with lines must RUN THE BEAT on the sighting, not raise (got %s)",
+		ZM_TrainerSightActionName(eAction));
+	ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_CHALLENGING,
+		"the beat must move the machine to CHALLENGING (got %s)",
+		ZM_TrainerSightStateName(xFsm.GetState()));
+	ZENITH_ASSERT_EQ(xFsm.GetChallengeCount(), 1u,
+		"exactly one challenge beat has been started");
+	// THE LOAD-BEARING CLAUSE: the bark PRECEDES the encounter. A machine that
+	// raised here would still look healthy by state alone.
+	ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 0u,
+		"the beat must PRECEDE the encounter -- nothing may have been raised yet");
+}
+
+ZENITH_TEST(ZM_Interaction, Fsm_AcceptedChallengeRaisesOnceWhenTheChannelClears)
+{
+	ZM_TrainerSightFsm xFsm;
+	const ZM_TrainerSightFsmTuning xTuning = MakeShippedTuning();
+
+	ChallengeOnce(xFsm);
+
+	// The bark LANDED: pushing a ZM_UI_MenuStack dialogue is exactly what makes
+	// IsMenuOpen() -- and therefore this input -- true.
+	ZM_TrainerSightInputs xBusy = MakeChallengeInputs();
+	xBusy.m_bChannelBusy = true;
+	const ZM_TRAINER_SIGHT_ACTION eHeard = xFsm.Step(xBusy, xTuning);
+	ZENITH_ASSERT_EQ(eHeard, ZM_TRAINER_SIGHT_ACTION_NONE,
+		"the busy frame is an acknowledgement, not an action (got %s)",
+		ZM_TrainerSightActionName(eHeard));
+	ZENITH_ASSERT_TRUE(xFsm.IsChallengeAccepted(),
+		"a channel that went busy after our beat CONFIRMS the bark landed");
+
+	// A LONG conversation. 38 more busy frames is far past the 0.5s challenge
+	// window, and none of them may time out into an early raise: the window
+	// measures "did anyone speak", never "how long they spoke for".
+	for (u_int u = 3u; u <= 40u; ++u)
+	{
+		const ZM_TRAINER_SIGHT_ACTION eAction = xFsm.Step(xBusy, xTuning);
+		ZENITH_ASSERT_EQ(eAction, ZM_TRAINER_SIGHT_ACTION_NONE,
+			"step %u of an open dialogue produced an action (got %s)",
+			u, ZM_TrainerSightActionName(eAction));
+		ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 0u,
+			"a LONG bark must never time out into an early raise (step %u)", u);
+		ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_CHALLENGING,
+			"the machine must stay CHALLENGING while the box is open (step %u, got %s)",
+			u, ZM_TrainerSightStateName(xFsm.GetState()));
+	}
+
+	// The box CLOSES. ORDER 112 (MenuStack) < 113 (Interactable) means the menu
+	// freeze was already released earlier in this same frame.
+	const ZM_TRAINER_SIGHT_ACTION eClosed = xFsm.Step(MakeChallengeInputs(), xTuning);
+	ZENITH_ASSERT_EQ(eClosed, ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+		"the encounter must be raised once the conversation ends (got %s)",
+		ZM_TrainerSightActionName(eClosed));
+	ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 1u,
+		"the closed conversation must produce exactly one raise");
+	ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_ENGAGED,
+		"...and must leave the machine ENGAGED (got %s)",
+		ZM_TrainerSightStateName(xFsm.GetState()));
+
+	const ZM_TRAINER_SIGHT_ACTION eAfter = xFsm.Step(MakeChallengeInputs(), xTuning);
+	ZENITH_ASSERT_EQ(eAfter, ZM_TRAINER_SIGHT_ACTION_NONE,
+		"the raise is a rising edge, not a per-frame event (got %s)",
+		ZM_TrainerSightActionName(eAfter));
+	ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 1u,
+		"one conversation is still exactly one raise");
+}
+
+// THE _False-BUILD / MISSING-.bgraph CONTRACT: nothing ever spoke, and the battle
+// still happens.
+ZENITH_TEST(ZM_Interaction, Fsm_DroppedChallengeRaisesAfterTheChallengeWindow)
+{
+	ZM_TrainerSightFsm xFsm;
+
+	ZM_TrainerSightFsmTuning xTuning;
+	xTuning.m_fChallengeConfirmSeconds = 0.5f;
+
+	// The beat is asked for on the shipped tuning (that is what ChallengeOnce
+	// pins), then the window is driven at a coarse 0.1s so the arithmetic is
+	// readable as "five tenths of a half-second window".
+	ChallengeOnce(xFsm);
+
+	ZM_TrainerSightInputs xInputs = MakeChallengeInputs();
+	xInputs.m_bChannelBusy  = false;   // NOTHING EVER SPOKE
+	xInputs.m_fDeltaSeconds = 0.1f;
+
+	for (u_int u = 1u; u <= 4u; ++u)
+	{
+		const ZM_TRAINER_SIGHT_ACTION eAction = xFsm.Step(xInputs, xTuning);
+		ZENITH_ASSERT_EQ(eAction, ZM_TRAINER_SIGHT_ACTION_NONE,
+			"the challenge window must be TIMED, not immediate -- %u tenths into a "
+			"half-second window nothing may have happened (got %s)",
+			u, ZM_TrainerSightActionName(eAction));
+		ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 0u,
+			"nothing may have raised %u tenths into the challenge window", u);
+		ZENITH_ASSERT_FALSE(xFsm.IsChallengeAccepted(),
+			"a bark nobody ever heard is NOT accepted (step %u)", u);
+		// A poisoned accumulator would compare false against the window and leave
+		// the STATE looking perfectly healthy.
+		ZENITH_ASSERT_TRUE(std::isfinite(xFsm.GetChallengeElapsedSeconds()),
+			"the challenge accumulator went non-finite on step %u", u);
+	}
+
+	const ZM_TRAINER_SIGHT_ACTION eCrossed = xFsm.Step(xInputs, xTuning);
+	ZENITH_ASSERT_EQ(eCrossed, ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+		"a graph that never spoke must still deliver the BATTLE once the window "
+		"elapses (got %s) -- this is the whole missing-.bgraph / _False-build "
+		"contract", ZM_TrainerSightActionName(eCrossed));
+	ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 1u,
+		"the dropped bark must cost the bark and nothing else");
+	ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_ENGAGED,
+		"the fail-open raise must leave the machine ENGAGED (got %s)",
+		ZM_TrainerSightStateName(xFsm.GetState()));
+	ZENITH_ASSERT_TRUE(std::isfinite(xFsm.GetChallengeElapsedSeconds()),
+		"the challenge accumulator must stay finite across the whole beat");
+}
+
+// THE TWO POLARITIES, PINNED SIDE BY SIDE so neither can be "tidied" into the
+// other. A shared helper for both windows would red clause (a) or clause (b).
+ZENITH_TEST(ZM_Interaction, Fsm_DegenerateChallengeWindowFailsOpenWhileTheRaiseWindowFailsClosed)
+{
+	const float fNaN = std::numeric_limits<float>::quiet_NaN();
+
+	// ---- (a) a degenerate CHALLENGE window FAILS OPEN: raise IMMEDIATELY -------
+	constexpr u_int uDEGENERATE_COUNT = 3u;
+	const float afDEGENERATE[uDEGENERATE_COUNT] = { 0.0f, fNaN, -1.0f };
+
+	for (u_int u = 0u; u < uDEGENERATE_COUNT; ++u)
+	{
+		ZM_TrainerSightFsm xFsm;
+		ChallengeOnce(xFsm);
+
+		ZM_TrainerSightFsmTuning xTuning;
+		xTuning.m_fRaiseConfirmSeconds     = 0.5f;
+		xTuning.m_fChallengeConfirmSeconds = afDEGENERATE[u];
+
+		ZM_TrainerSightInputs xInputs = MakeChallengeInputs();
+		xInputs.m_bChannelBusy = false;
+
+		const ZM_TRAINER_SIGHT_ACTION eAction = xFsm.Step(xInputs, xTuning);
+		ZENITH_ASSERT_EQ(eAction, ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+			"degenerate challenge window %u must FAIL OPEN and raise IMMEDIATELY "
+			"(got %s) -- silence here would cost the battle altogether",
+			u, ZM_TrainerSightActionName(eAction));
+		ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_ENGAGED,
+			"degenerate challenge window %u must leave the machine ENGAGED (got %s)",
+			u, ZM_TrainerSightStateName(xFsm.GetState()));
+		ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 1u,
+			"degenerate challenge window %u must have raised exactly once", u);
+	}
+
+	// ---- (b) a degenerate RAISE window FAILS CLOSED: never re-arm --------------
+	// THE SAME UNIT, deliberately: copying the ENGAGED arm's guard shape onto the
+	// challenge raise reds (a) while leaving (b) green, and copying the challenge
+	// shape onto the ENGAGED arm reds (b) while leaving (a) green. Only having
+	// both here makes either mutation visible.
+	ZM_TrainerSightFsm xSilent;
+	ZM_TrainerSightFsmTuning xClosedTuning;
+	xClosedTuning.m_fRaiseConfirmSeconds = fNaN;
+
+	const ZM_TrainerSightInputs xSilentInputs = MakePassingInputs();   // NO lines
+	const ZM_TRAINER_SIGHT_ACTION eSeed = xSilent.Step(xSilentInputs, xClosedTuning);
+	ZENITH_ASSERT_EQ(eSeed, ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+		"the silent fixture must raise on its first Step or clause (b) proves nothing "
+		"(got %s)", ZM_TrainerSightActionName(eSeed));
+	ZENITH_ASSERT_FALSE(xSilent.IsRaiseConfirmed(),
+		"the drop timer must be running for clause (b) to mean anything");
+
+	for (u_int u = 0u; u < 600u; ++u)
+	{
+		const ZM_TRAINER_SIGHT_ACTION eAction = xSilent.Step(xSilentInputs, xClosedTuning);
+		ZENITH_ASSERT_EQ(eAction, ZM_TRAINER_SIGHT_ACTION_NONE,
+			"a degenerate RAISE window must FAIL CLOSED -- step %u re-raised (got %s); "
+			"silence beats a spurious battle on THIS side",
+			u, ZM_TrainerSightActionName(eAction));
+	}
+	ZENITH_ASSERT_EQ(xSilent.GetRaiseCount(), 1u,
+		"ten seconds under a degenerate raise window must still be ONE raise");
+	ZENITH_ASSERT_EQ(xSilent.GetState(), ZM_TRAINER_SIGHT_ENGAGED,
+		"a fail-closed machine stays ENGAGED rather than re-arming (got %s)",
+		ZM_TrainerSightStateName(xSilent.GetState()));
+}
+
+ZENITH_TEST(ZM_Interaction, Fsm_LeavingSightDuringChallengeAbandonsWithoutRaisingOrLatching)
+{
+	ZM_TrainerSightFsm xFsm;
+	const ZM_TrainerSightFsmTuning xTuning = MakeShippedTuning();
+
+	ChallengeOnce(xFsm);
+
+	// The bark never landed (the channel stayed idle) and the player walked out.
+	// A bark that HAD landed would have frozen him, so this arm is reachable only
+	// in the dropped case.
+	ZM_TrainerSightInputs xLeft = MakeChallengeInputs();
+	xLeft.m_bTargetInSight = false;
+	const ZM_TRAINER_SIGHT_ACTION eLeft = xFsm.Step(xLeft, xTuning);
+	ZENITH_ASSERT_EQ(eLeft, ZM_TRAINER_SIGHT_ACTION_NONE,
+		"abandoning a beat is not itself an action (got %s)",
+		ZM_TrainerSightActionName(eLeft));
+	ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_WATCHING,
+		"abandoning must re-arm the WATCHER, not fall through to ENGAGED (got %s)",
+		ZM_TrainerSightStateName(xFsm.GetState()));
+	ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 0u,
+		"an abandoned beat must NOT raise -- the caller therefore never reaches "
+		"MarkEngaged and a flagless trainer keeps his one session shot");
+
+	// Walking back in re-arms the BARK, not the battle.
+	const ZM_TRAINER_SIGHT_ACTION eReturned = xFsm.Step(MakeChallengeInputs(), xTuning);
+	ZENITH_ASSERT_EQ(eReturned, ZM_TRAINER_SIGHT_ACTION_RUN_CHALLENGE,
+		"walking back into the cone must re-run the BEAT (got %s)",
+		ZM_TrainerSightActionName(eReturned));
+	ZENITH_ASSERT_EQ(xFsm.GetChallengeCount(), 2u,
+		"the re-bark is the second challenge beat");
+	ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 0u,
+		"and still nothing has been raised");
+}
+
+// THE ZERO-DEAD-AIR CLAUSE, and the reason SC6's 16 units pass unmodified.
+ZENITH_TEST(ZM_Interaction, Fsm_SilentTrainerIsByteForByteSC6)
+{
+	ZM_TrainerSightFsm xFsm;
+	const ZM_TrainerSightInputs xInputs = MakePassingInputs();   // m_bChallengeAvailable == false
+	const ZM_TrainerSightFsmTuning xTuning = MakeShippedTuning();
+
+	ZENITH_ASSERT_FALSE(xInputs.m_bChallengeAvailable,
+		"the shared passing fixture must DEFAULT to 'no lines' -- that default is what "
+		"keeps every shipped SC6 unit byte-for-byte valid");
+
+	const ZM_TRAINER_SIGHT_ACTION eFirst = xFsm.Step(xInputs, xTuning);
+	ZENITH_ASSERT_EQ(eFirst, ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+		"a SILENT trainer must go straight to the encounter (got %s) -- he must not "
+		"pay half a second of dead air for a beat he was never going to perform",
+		ZM_TrainerSightActionName(eFirst));
+	ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_ENGAGED,
+		"a silent trainer must never enter CHALLENGING (got %s)",
+		ZM_TrainerSightStateName(xFsm.GetState()));
+	ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 1u,
+		"the silent sighting is exactly one raise");
+	ZENITH_ASSERT_EQ(xFsm.GetChallengeCount(), 0u,
+		"the beat was never entered, so no challenge window ran");
+
+	for (u_int u = 0u; u < 30u; ++u)
+	{
+		const ZM_TRAINER_SIGHT_ACTION eAction = xFsm.Step(xInputs, xTuning);
+		ZENITH_ASSERT_EQ(eAction, ZM_TRAINER_SIGHT_ACTION_NONE,
+			"step %u of ONE continuous silent spotting acted again (got %s)",
+			u, ZM_TrainerSightActionName(eAction));
+		ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 1u,
+			"the raise count moved on step %u of one continuous silent spotting", u);
+		ZENITH_ASSERT_EQ(xFsm.GetChallengeCount(), 0u,
+			"the challenge count moved for a trainer with nothing to say (step %u)", u);
+	}
+}
+
 // ---- Reset ------------------------------------------------------------------
 
 ZENITH_TEST(ZM_Interaction, Fsm_ResetReturnsAColdWatcher)
 {
 	ZM_TrainerSightFsm xFsm;
-	RaiseOnce(xFsm);
 
 	const ZM_TrainerSightInputs xInputs = MakePassingInputs();
 	const ZM_TrainerSightFsmTuning xTuning = MakeShippedTuning();
+
+	// ---- S7 item 3 SC7: dirty the CHALLENGE members FIRST ----------------------
+	// Reset now clears SEVEN members. A fixture that only dirtied the four SC6 ones
+	// would keep passing after the other three stopped being cleared, so the beat is
+	// driven BEFORE the raise -- which is also the production order.
+	ChallengeOnce(xFsm);
+	for (u_int u = 0u; u < 2u; ++u)
+	{
+		xFsm.Step(MakeChallengeInputs(), xTuning);
+	}
+	ZENITH_ASSERT_GT(xFsm.GetChallengeElapsedSeconds(), 0.0f,
+		"the fixture must have a POPULATED challenge accumulator before Reset, or the "
+		"new clauses below assert against an already-cold field");
+	ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_CHALLENGING,
+		"two frames of a 0.5s challenge window must not have ended the beat (got %s)",
+		ZM_TrainerSightStateName(xFsm.GetState()));
+
+	ZM_TrainerSightInputs xBarkHeard = MakeChallengeInputs();
+	xBarkHeard.m_bChannelBusy = true;
+	xFsm.Step(xBarkHeard, xTuning);
+	ZENITH_ASSERT_TRUE(xFsm.IsChallengeAccepted(),
+		"the fixture must be ACCEPTED before Reset for the same reason");
+
+	// The box closes and the withheld encounter is raised. The challenge members
+	// stay dirty behind it -- only Reset and a genuinely NEW beat clear them.
+	const ZM_TRAINER_SIGHT_ACTION eRaise = xFsm.Step(xInputs, xTuning);
+	ZENITH_ASSERT_EQ(eRaise, ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+		"the closed conversation must raise, or the SC6 half of this fixture never "
+		"reaches ENGAGED (got %s)", ZM_TrainerSightActionName(eRaise));
+	ZENITH_ASSERT_EQ(xFsm.GetChallengeCount(), 1u,
+		"the fixture must carry a non-zero challenge count before Reset");
 
 	// Advance the accumulator (10 frames of the 0.5s window)...
 	for (u_int u = 0u; u < 10u; ++u)
@@ -418,6 +741,14 @@ ZENITH_TEST(ZM_Interaction, Fsm_ResetReturnsAColdWatcher)
 		"Reset must clear the confirm accumulator");
 	ZENITH_ASSERT_FALSE(xFsm.IsRaiseConfirmed(),
 		"Reset must clear the confirmation latch");
+
+	// ---- S7 item 3 SC7: the three appended members ----------------------------
+	ZENITH_ASSERT_EQ(xFsm.GetChallengeCount(), 0u,
+		"Reset must clear the challenge count");
+	ZENITH_ASSERT_FALSE(xFsm.IsChallengeAccepted(),
+		"Reset must clear the challenge acceptance latch");
+	ZENITH_ASSERT_EQ_FLOAT(xFsm.GetChallengeElapsedSeconds(), 0.0f, 0.0f,
+		"Reset must clear the challenge accumulator");
 }
 
 // ---- Totality ---------------------------------------------------------------
@@ -435,43 +766,61 @@ ZENITH_TEST(ZM_Interaction, Fsm_StepNeverAssertsOnAnyDegenerateInput)
 	const float fInf = std::numeric_limits<float>::infinity();
 
 	constexpr u_int uDELTA_COUNT  = 6u;
-	constexpr u_int uWINDOW_COUNT = 4u;
+	constexpr u_int uWINDOW_COUNT = 6u;
 	const float afDELTAS[uDELTA_COUNT]   = { fNaN, fInf, -fInf, -1.0f, 0.0f, fFRAME_DT };
-	const float afWINDOWS[uWINDOW_COUNT] = { fNaN, -1.0f, 0.0f, 0.5f };
+	// S7 item 3 SC7: this array now feeds BOTH windows, and the two are swept
+	// INDEPENDENTLY -- their polarities are deliberately opposite, so a sweep that
+	// tied them together could never reach the mixed corners.
+	const float afWINDOWS[uWINDOW_COUNT] = { fNaN, fInf, -fInf, -1.0f, 0.0f, 0.5f };
+	constexpr u_int uWINDOW_PAIRS = uWINDOW_COUNT * uWINDOW_COUNT;
 
 	u_int uHits = 0u;
 	{
 		Zenith_AssertCaptureScope xCapture;
 
-		// The full cross product: 16 bool combinations x 6 deltas x 4 windows, each
-		// driven from BOTH arms of the machine.
-		for (u_int uBits = 0u; uBits < 16u; ++uBits)
+		// The full cross product: 32 bool combinations x 6 deltas x 36 window PAIRS,
+		// each driven from ALL THREE arms of the machine.
+		for (u_int uBits = 0u; uBits < 32u; ++uBits)
 		{
 			for (u_int uDelta = 0u; uDelta < uDELTA_COUNT; ++uDelta)
 			{
-				for (u_int uWindow = 0u; uWindow < uWINDOW_COUNT; ++uWindow)
+				// ONE flat loop over the PAIR, so the two windows move
+				// independently. A sweep that moved them together could never reach
+				// the mixed corners -- and the mixed corners are the whole point,
+				// because the two polarities are deliberately opposite.
+				for (u_int uPair = 0u; uPair < uWINDOW_PAIRS; ++uPair)
 				{
 					ZM_TrainerSightInputs xInputs;
-					xInputs.m_bMayEngage      = (uBits & 1u) != 0u;
-					xInputs.m_bTargetInSight  = (uBits & 2u) != 0u;
-					xInputs.m_bSightLineClear = (uBits & 4u) != 0u;
-					xInputs.m_bChannelBusy    = (uBits & 8u) != 0u;
-					xInputs.m_fDeltaSeconds   = afDELTAS[uDelta];
+					xInputs.m_bMayEngage          = (uBits & 1u) != 0u;
+					xInputs.m_bTargetInSight      = (uBits & 2u) != 0u;
+					xInputs.m_bSightLineClear     = (uBits & 4u) != 0u;
+					xInputs.m_bChannelBusy        = (uBits & 8u) != 0u;
+					xInputs.m_bChallengeAvailable = (uBits & 16u) != 0u;
+					xInputs.m_fDeltaSeconds       = afDELTAS[uDelta];
 
 					ZM_TrainerSightFsmTuning xTuning;
-					xTuning.m_fRaiseConfirmSeconds = afWINDOWS[uWindow];
+					xTuning.m_fRaiseConfirmSeconds     = afWINDOWS[uPair / uWINDOW_COUNT];
+					xTuning.m_fChallengeConfirmSeconds = afWINDOWS[uPair % uWINDOW_COUNT];
 
 					// From a COLD watcher...
 					ZM_TrainerSightFsm xCold;
 					const ZM_TRAINER_SIGHT_ACTION eCold = xCold.Step(xInputs, xTuning);
 
-					// ...and from an ENGAGED one, so the second arm is swept too.
+					// ...from an ENGAGED one...
 					ZM_TrainerSightFsm xEngaged;
 					const ZM_TRAINER_SIGHT_ACTION eSeed =
 						xEngaged.Step(MakePassingInputs(), MakeShippedTuning());
 					const ZM_TRAINER_SIGHT_ACTION eEngaged = xEngaged.Step(xInputs, xTuning);
 
+					// ...and from a CHALLENGING one, so the SC7 arm is swept too.
+					ZM_TrainerSightFsm xChallenging;
+					const ZM_TRAINER_SIGHT_ACTION eChallengeSeed =
+						xChallenging.Step(MakeChallengeInputs(), MakeShippedTuning());
+					const ZM_TRAINER_SIGHT_ACTION eChallenging =
+						xChallenging.Step(xInputs, xTuning);
+
 					(void)eCold; (void)eSeed; (void)eEngaged;
+					(void)eChallengeSeed; (void)eChallenging;
 				}
 			}
 		}
@@ -513,10 +862,111 @@ ZENITH_TEST(ZM_Interaction, Fsm_StepNeverAssertsOnAnyDegenerateInput)
 	ZENITH_ASSERT_EQ(eGated, ZM_TRAINER_SIGHT_ACTION_NONE,
 		"a gated Step must still answer NONE (got %s)",
 		ZM_TrainerSightActionName(eGated));
+	ZM_TrainerSightFsm xChallengeFsm;
+	const ZM_TRAINER_SIGHT_ACTION eChallenge =
+		xChallengeFsm.Step(MakeChallengeInputs(), MakeShippedTuning());
+	ZENITH_ASSERT_EQ(eChallenge, ZM_TRAINER_SIGHT_ACTION_RUN_CHALLENGE,
+		"a fully-passing cold Step for a trainer WITH lines must still run the beat "
+		"(got %s)", ZM_TrainerSightActionName(eChallenge));
+
 	ZENITH_ASSERT_STREQ(ZM_TrainerSightStateName((ZM_TRAINER_SIGHT_STATE)9999u), "UNKNOWN",
 		"the state namer must answer UNKNOWN for garbage");
 	ZENITH_ASSERT_STREQ(ZM_TrainerSightActionName((ZM_TRAINER_SIGHT_ACTION)9999u), "UNKNOWN",
 		"the action namer must answer UNKNOWN for garbage");
+}
+
+// ---- The name functions stay TOTAL and mutually DISTINCT ---------------------
+
+// ANTI-VACUITY SHAPE: the out-of-range answer is hoisted into a local FIRST and
+// every in-range name is then required to DIFFER from it. Without that hoist a
+// namer that returned "UNKNOWN" for absolutely everything would sail through a
+// naive non-null walk.
+ZENITH_TEST(ZM_Interaction, Fsm_StateAndActionNamesStayTotalAndDistinct)
+{
+	// ---- states ---------------------------------------------------------------
+	const char* szStateSentinel =
+		ZM_TrainerSightStateName((ZM_TRAINER_SIGHT_STATE)((u_int)ZM_TRAINER_SIGHT_STATE_COUNT));
+	ZENITH_ASSERT_NOT_NULL(szStateSentinel,
+		"the state namer must answer SOMETHING one past the last enumerator -- every "
+		"caller is a log-format argument");
+	ZENITH_ASSERT_TRUE(szStateSentinel != nullptr && szStateSentinel[0] != '\0',
+		"the out-of-range state answer must be non-empty");
+	const char* szStatePastEnd =
+		ZM_TrainerSightStateName((ZM_TRAINER_SIGHT_STATE)((u_int)ZM_TRAINER_SIGHT_STATE_COUNT + 1u));
+	ZENITH_ASSERT_NOT_NULL(szStatePastEnd,
+		"the state namer must answer for values beyond the sentinel too");
+
+	const char* aszStateNames[(u_int)ZM_TRAINER_SIGHT_STATE_COUNT] = {};
+	for (u_int u = 0u; u < (u_int)ZM_TRAINER_SIGHT_STATE_COUNT; ++u)
+	{
+		const char* szName = ZM_TrainerSightStateName((ZM_TRAINER_SIGHT_STATE)u);
+		aszStateNames[u] = szName;
+		ZENITH_ASSERT_NOT_NULL(szName, "state %u has no name", u);
+		ZENITH_ASSERT_TRUE(szName != nullptr && szName[0] != '\0',
+			"state %u has an empty name", u);
+		// The assert macros RECORD AND CONTINUE, so nothing reaches strcmp until both
+		// operands have been proven non-null.
+		if (szName == nullptr || szName[0] == '\0'
+			|| szStateSentinel == nullptr || szStateSentinel[0] == '\0')
+		{
+			continue;
+		}
+		ZENITH_ASSERT_NE(strcmp(szName, szStateSentinel), 0,
+			"state %u answers '%s', the same as the OUT-OF-RANGE sentinel -- a namer "
+			"that says UNKNOWN for everything is not a namer", u, szName);
+	}
+
+	for (u_int i = 0u; i < (u_int)ZM_TRAINER_SIGHT_STATE_COUNT; ++i)
+	{
+		if (aszStateNames[i] == nullptr) { continue; }
+		for (u_int j = i + 1u; j < (u_int)ZM_TRAINER_SIGHT_STATE_COUNT; ++j)
+		{
+			if (aszStateNames[j] == nullptr) { continue; }
+			ZENITH_ASSERT_NE(strcmp(aszStateNames[i], aszStateNames[j]), 0,
+				"states %u and %u share the name '%s' -- a shared name makes every "
+				"failure message that prints it ambiguous", i, j, aszStateNames[i]);
+		}
+	}
+
+	// ---- actions --------------------------------------------------------------
+	const char* szActionSentinel =
+		ZM_TrainerSightActionName((ZM_TRAINER_SIGHT_ACTION)((u_int)ZM_TRAINER_SIGHT_ACTION_COUNT));
+	ZENITH_ASSERT_NOT_NULL(szActionSentinel,
+		"the action namer must answer SOMETHING one past the last enumerator");
+	ZENITH_ASSERT_TRUE(szActionSentinel != nullptr && szActionSentinel[0] != '\0',
+		"the out-of-range action answer must be non-empty");
+	const char* szActionPastEnd =
+		ZM_TrainerSightActionName((ZM_TRAINER_SIGHT_ACTION)((u_int)ZM_TRAINER_SIGHT_ACTION_COUNT + 1u));
+	ZENITH_ASSERT_NOT_NULL(szActionPastEnd,
+		"the action namer must answer for values beyond the sentinel too");
+
+	const char* aszActionNames[(u_int)ZM_TRAINER_SIGHT_ACTION_COUNT] = {};
+	for (u_int u = 0u; u < (u_int)ZM_TRAINER_SIGHT_ACTION_COUNT; ++u)
+	{
+		const char* szName = ZM_TrainerSightActionName((ZM_TRAINER_SIGHT_ACTION)u);
+		aszActionNames[u] = szName;
+		ZENITH_ASSERT_NOT_NULL(szName, "action %u has no name", u);
+		ZENITH_ASSERT_TRUE(szName != nullptr && szName[0] != '\0',
+			"action %u has an empty name", u);
+		if (szName == nullptr || szName[0] == '\0'
+			|| szActionSentinel == nullptr || szActionSentinel[0] == '\0')
+		{
+			continue;
+		}
+		ZENITH_ASSERT_NE(strcmp(szName, szActionSentinel), 0,
+			"action %u answers '%s', the same as the OUT-OF-RANGE sentinel", u, szName);
+	}
+
+	for (u_int i = 0u; i < (u_int)ZM_TRAINER_SIGHT_ACTION_COUNT; ++i)
+	{
+		if (aszActionNames[i] == nullptr) { continue; }
+		for (u_int j = i + 1u; j < (u_int)ZM_TRAINER_SIGHT_ACTION_COUNT; ++j)
+		{
+			if (aszActionNames[j] == nullptr) { continue; }
+			ZENITH_ASSERT_NE(strcmp(aszActionNames[i], aszActionNames[j]), 0,
+				"actions %u and %u share the name '%s'", i, j, aszActionNames[i]);
+		}
+	}
 }
 
 // ---- The re-engagement gate (Q-2026-07-28-001), both arms --------------------

@@ -28,6 +28,11 @@ enum ZM_TRAINER_SIGHT_STATE : u_int
 	// when the target leaves sight, or when the raise is judged to have been
 	// dropped (see m_fRaiseConfirmSeconds).
 	ZM_TRAINER_SIGHT_ENGAGED,
+	// S7 item 3 SC7. Has asked the challenge graph to speak and is waiting to learn
+	// whether it did. APPENDED (not inserted before ENGAGED) so no existing ordinal
+	// moves -- this machine is session-only and serializes nowhere, but the roster
+	// enums next door are APPEND-ONLY and there is no reason for two doctrines.
+	ZM_TRAINER_SIGHT_CHALLENGING,
 
 	// NOT a state -- the walkable bound the totality unit iterates to.
 	ZM_TRAINER_SIGHT_STATE_COUNT
@@ -38,6 +43,10 @@ enum ZM_TRAINER_SIGHT_ACTION : u_int
 	ZM_TRAINER_SIGHT_ACTION_NONE = 0u,
 	// Dispatch ZM_OnTrainerEncounter. Returned on EXACTLY ONE Step per spotting.
 	ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+	// S7 item 3 SC7. Fire the challenge graph's custom event. The caller does NOT
+	// mark the engagement latch and does NOT dispatch anything on this action: the
+	// bark is a presentation beat, not the encounter.
+	ZM_TRAINER_SIGHT_ACTION_RUN_CHALLENGE,
 
 	ZM_TRAINER_SIGHT_ACTION_COUNT
 };
@@ -60,6 +69,17 @@ struct ZM_TrainerSightInputs
 	// consumes it, because Zenith_EventDispatcher::Dispatch returns void and a
 	// refused raise is indistinguishable from an accepted one at the call site.
 	bool  m_bChannelBusy    = false;
+
+	// S7 item 3 SC7. TRUE only when this trainer actually has something to say:
+	// ZM_SelectTrainerChallengeLines(row, ...) yielded a non-zero count.
+	//
+	// ★ IT DEFAULTS TO FALSE, AND THAT IS WHY SC6'S 16 UNITS PASS UNMODIFIED. With
+	// this false the machine is byte-for-byte SC6: WATCHING raises the encounter
+	// directly, CHALLENGING is never entered, no window runs. It is also what stops
+	// a SILENT trainer (ZM_TRAINER_ROUTE1_RAMBLER) paying a half-second of dead air
+	// for a beat he was never going to perform.
+	bool  m_bChallengeAvailable = false;
+
 	float m_fDeltaSeconds   = 0.0f;
 };
 
@@ -75,6 +95,21 @@ struct ZM_TrainerSightFsmTuning
 	// A non-finite or non-positive value disables the re-arm entirely (fail
 	// closed: stay silent rather than raise every frame).
 	float m_fRaiseConfirmSeconds = 0.5f;
+
+	// S7 item 3 SC7. How long a CHALLENGING trainer waits for the bark to be
+	// OBSERVED -- i.e. for m_bChannelBusy to go true, which is exactly what pushing a
+	// ZM_UI_MenuStack dialogue does -- before concluding the graph never spoke.
+	//
+	// ★ THE POLARITY IS DELIBERATELY OPPOSITE to m_fRaiseConfirmSeconds above and
+	// MUST NOT be "tidied" into a shared helper; U4 pins both side by side so nobody
+	// can. A degenerate RAISE window disables the re-arm (fail CLOSED -- silence
+	// beats a spurious battle). A degenerate CHALLENGE window raises IMMEDIATELY
+	// (fail OPEN -- silence here would mean NO BATTLE AT ALL).
+	//
+	// That asymmetry is the whole reason a gitignored, TOOLS-authored .bgraph is
+	// safe to depend on: a _False or Android build loses the bark and keeps the
+	// battle.
+	float m_fChallengeConfirmSeconds = 0.5f;
 };
 
 class ZM_TrainerSightFsm
@@ -96,11 +131,23 @@ public:
 	float GetConfirmElapsedSeconds() const { return m_fConfirmElapsed; }
 	bool  IsRaiseConfirmed() const { return m_bRaiseConfirmed; }
 
+	// MONOTONIC count of challenge beats actually STARTED. Assert on this rather
+	// than on the state alone: a machine stubbed to sit in CHALLENGING would satisfy
+	// a state check while never having asked anyone to speak.
+	u_int GetChallengeCount() const { return m_uChallengeCount; }
+	// The bark was OBSERVED to land (the channel went busy while CHALLENGING).
+	bool  IsChallengeAccepted() const { return m_bChallengeAccepted; }
+	float GetChallengeElapsedSeconds() const { return m_fChallengeElapsed; }
+
 private:
 	ZM_TRAINER_SIGHT_STATE m_eState          = ZM_TRAINER_SIGHT_WATCHING;
 	float                  m_fConfirmElapsed = 0.0f;
 	bool                   m_bRaiseConfirmed = false;
 	u_int                  m_uRaiseCount     = 0u;
+
+	float                  m_fChallengeElapsed  = 0.0f;
+	bool                   m_bChallengeAccepted = false;
+	u_int                  m_uChallengeCount    = 0u;
 };
 
 // A stable short name for a state / action, for log lines and unit failure

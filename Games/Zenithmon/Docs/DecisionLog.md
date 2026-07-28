@@ -15,6 +15,162 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-28 -- ZM-D-155 -- S7 item 3 SC7: the first Zenithmon `.bgraph` -- the trainer challenge bark -- plus the USER RE-RATIFICATION that redefined what SC7 is
+
+*(Seventh sub-commit of the ZM-D-143 sequence. `Games/Zenithmon` only; ZERO `Zenith/`
+files, ZERO new ECS orders, ZERO scene bytes. Two new `.cpp` TUs, so a regen was owed
+and run. Authored from the verbatim `SC7_Plan.md`, which this commit DELETES.)*
+
+### ★ FIRST: SC7's SCOPE WAS CONTRADICTED ACROSS TWO BINDING DOCS, AND THE USER DECIDED IT
+
+The planning pass found that `DecisionLog.md`'s own ZM-D-143 sequence block and
+`Questions.md`'s **Q-B** (a user-adopted default) both defined SC7 as the **trainer-DEFEAT
+beat** -- a `.bgraph` of `SetStoryFlag -> AwardPrizeMoney`, fired from SC5's win callsite --
+while `SC6_Plan.md` asserted SC7 was the **spot-bark / challenge-dialogue** beat, and that
+second reading had been propagated into `Roadmap.md` and `Status.md` when SC6 landed.
+
+Both readings were implementable, so this was a genuine fork rather than a stale-doc
+cleanup, and Q-B had been ratified by the user. **It was therefore put to the user rather
+than resolved by an agent**, per this project's rule that an already-decided item is not
+silently re-decided. **Verdict: the bark.** Rationale: the defeat beat is already SHIPPED
+and test-locked in C++ as SC5's `ZM_ApplyTrainerResultToGameState`, so re-expressing it as
+a graph would add no player-visible behaviour while risking a tested path; the bark is a
+genuinely missing beat the vertical slice needs before the S8 go/no-go. The full ruling,
+including how the contradiction arose, is recorded against Q-B in `Questions.md`.
+
+**Honest caveat, recorded so it is not rediscovered as a defect:** NEITHER shape actually
+gives the graph "one genuine decision", which was part of Q-B's original justification. A
+three-node `Query -> Branch -> Bark` chain was REJECTED because the only branchable
+condition ("does this trainer have lines?") must already be decided in C++ so the FSM can
+skip its window, and a graph duplicating a C++ gate is less correct, not more graph-native.
+The graph earns its keep as the BEAT's owner -- a designer can later insert Wait/SFX/camera
+nodes and hot-reload them -- not as a decision owner.
+
+### What shipped
+
+`Source/Graph/ZM_GraphAuthoring.{h,cpp}` holds `BuildGraph_ZM_TrainerChallenge`, a TWO-node
+chain (`OnCustomEvent("ZM_TrainerSpotted","zmTrainerId") -> ZMPushTrainerChallenge`)
+authored by `AddStep_GraphBuild` and shared by EVERY trainer, parameterised by the
+`ZM_TrainerData` row the event payload names. `Components/ZM_GraphNodes.h` is the game's
+first node library. `ZM_TrainerData` gains two APPENDED columns
+(`m_paszChallengeLines` / `m_uChallengeLineCount`) with a cap DERIVED from
+`ZM_UI_DialogueBox::uMAX_QUEUED_LINES`, and the total, assert-free null-then-clamp selector
+`ZM_SelectTrainerChallengeLines`.
+
+**THE BATTLE IS GRAPH-INDEPENDENT AND FAILS OPEN.** `ZM_TrainerSightFsm` gains a
+`CHALLENGING` state and a `RUN_CHALLENGE` action; `CHALLENGING` reuses the EXISTING
+`m_bChannelBusy` input (a bark IS a MenuStack dialogue -- no new seam, no completion
+callback) and raises the encounter anyway when `m_fChallengeConfirmSeconds` expires. That
+window's polarity is DELIBERATELY OPPOSITE to `m_fRaiseConfirmSeconds` -- degenerate raise
+window = stay silent (fail closed), degenerate challenge window = raise immediately (fail
+open) -- and `Fsm_DegenerateChallengeWindowFailsOpenWhileTheRaiseWindowFailsClosed` pins
+both side by side so nobody unifies them. **That asymmetry is what makes a gitignored,
+tools-authored `.bgraph` safe:** a `_False` or Android build, or a fresh CI checkout, loses
+the BARK and keeps the BATTLE.
+
+The new input `m_bChallengeAvailable` **DEFAULTS FALSE**, which is what lets all 16 SC6 FSM
+units pass unmodified (only two were EXTENDED, for new coverage, never to repair a break)
+and what stops a silent row paying half a second of dead air for a beat it never performs.
+`ZM_TRAINER_ROUTE1_RAMBLER` ships ZERO lines on purpose, as the production instance of that
+arm.
+
+### Zero scene bytes, airtightly -- and it BINDS SC8
+
+The graph is attached at RUNTIME from `TickTrainerSight`, an `OnUpdate`-only path, and
+`Zenith_Core.cpp:138` gates `Scenes().Update` (the sole driver of `OnUpdate` and of the
+pending-`OnStart` queue) on `EditorMode::Playing`, while the boot authoring pass runs with
+the editor Stopped -- so a `Zenith_GraphComponent` provably cannot exist during
+`AddStep_SaveScene`. `AddStep_AttachGraph` on the persistent `ZM_MenuRoot` was considered
+and REJECTED because it would add an order-60 payload to the committed `FrontEnd.zscen`.
+`uSERIALIZATION_VERSION` stays `2u` and `Interactable_TrainerSightIsNotSerialized` stayed
+green **without being edited**. **THIS BINDS SC8: the authored Vesper must NOT carry an
+attached graph slot** -- he picks the graph up through the same runtime attach, and
+`Dawnmere.zscen` never moves. Verified, not assumed: a full windowed batch left
+`Games/Zenithmon/Assets` byte-clean.
+
+**Exactly ONE freeze owner at every instant, and SC7 added NEITHER.** MenuStack's dialogue
+freeze covers the bark; `TryParkOverworldPlayer` covers the battle; ECS order 112 < 113
+means the close/unfreeze and the withheld `Dispatch` land in the correct order in ONE frame
+-- **measured at `barkToBattleFrames=1`** in the windowed run.
+
+### The review corrected a load-bearing claim that was FALSE
+
+Three lenses ran clean-complete. The one that mattered: `ZM_GraphAuthoring.h` and the graph
+test file both declared `GetUnresolvedCount() == 0u` to be "the only thing in the codebase
+that catches a typo'd node-type name". **It cannot catch one.**
+`Zenith_GraphBuilder::Node` looks the type up in the registry and, on a miss, logs
+"unknown node type", latches `m_bErrors` and returns id 0 -- the node never reaches the
+definition, so for an IN-PROCESS build the unresolved count stays 0 and `Build()` returns
+false instead. The real guards are `Build() == true` / `HasErrors() == false`; both were
+already asserted, and the overstated comments in BOTH files were corrected to say so.
+`GetUnresolvedCount()` earns its keep only against a stale or hand-edited LOADED `.bgraph`.
+**Mutation M4 below is the direct proof of the corrected claim.**
+
+Two further teeth defects were fixed before the build: the silent-trainer phase EXITED on
+first observation, so its advertised "hold 200 frames asserting no dialogue" was sampling
+about three -- now a real **199 sampled frames**, with the window size itself an asserted
+claim so the shrinkage cannot silently return; and the bark's ordering pin compared two
+counters that shared one `0xffffffff` unresolved sentinel, so a run where the transition
+singleton never resolved passed vacuously -- now distinct sentinels plus per-sample
+resolved-bools and a Verify clause that reds on either.
+
+### ★ THE MUTATION BATTERY FOUND TWO THINGS, AND THEY WERE DIFFERENT IN KIND
+
+Five mutations ran; three redded immediately (M1 the fail-open polarity, 1 unit; M2 the
+`Reset` clear of the challenge accumulator, 1 unit; M5 flipping `m_bChallengeAvailable`'s
+default to true, **11 units** -- the SC6-compatibility invariant is heavily load-bearing).
+**Two SURVIVED, and the two survivals had opposite causes. Checking which is which is the
+whole value of the exercise -- treating both as "no teeth" would have been wrong half the
+time.**
+
+1. **A GENUINE COVERAGE GAP (M3).** Transposing `ZM_SelectTrainerChallengeLines`'
+   null-check and clamp survived. The transposition only changes behaviour for
+   `(nullptr, count > cap)`, and the clause meant to catch it used `nullptr, 5u` -- a
+   count UNDER the cap, so a clamp-first selector never enters its clamp arm, falls
+   through to the null test and answers 0 anyway. **The clause's own failure text named
+   the exact hazard** ("clamping BEFORE the null test would leave a validated count
+   attached to a bogus pointer") **while its fixture could not reach it.** A new clause
+   (5) with the discriminating `(nullptr, cap + 3)` pair was added; the same mutation
+   then reds it. Shape worth remembering: *a correct hazard description does not prove a
+   fixture that exercises the hazard.*
+2. **A BAD MUTATION, NOT A TEETH FAILURE (M4).** Re-spelling
+   `szZM_GRAPH_NODE_PUSH_TRAINER_CHALLENGE` redded nothing -- **correctly.** Every site
+   reads that one constant (the `RegisterNodeType` call, the `GetTypeName()` override and
+   the builder's `Node()` lookup), so a rename renames both sides together and they
+   cannot diverge. The survival is EVIDENCE THE "SPELLED EXACTLY ONCE" INVARIANT WORKS,
+   not evidence of a hole. The residual hazard is a hard-coded string LITERAL at one site
+   instead of the constant; mutating THAT (M4b) reds all four graph units via
+   `Build()`/`HasErrors()`. The header comment was corrected a second time to say this
+   precisely -- the first correction had merely swapped one overstated guard for another.
+
+**The harness lesson from ZM-D-154 held.** SC6's battery misreported three redding
+mutations as SURVIVED because its regex matched the gate's own "wanted N ran, 0 failed"
+text; this battery parses the OBSERVED "Unit tests complete:" line only, and reported
+correctly throughout. Every mutation also had its build exit code checked, so a
+non-compiling mutation could not masquerade as a survival.
+
+### Observed gate (never predicted)
+
+Regen green with all 3 new TUs verified present in the generated vcxproj; Null_True and
+Vulkan_True both build clean. Headless **46/46, 0 failed** (registry correctly UNMOVED --
+the 3 new phases live inside the existing `ZM_TrainerSightWalkUp_Test` registration); boot
+units **2682 -> 2695** (2695 ran / 2694 passed / 0 failed / 1 documented skip), the +13
+delta being the only proof the regen took. Full windowed Vulkan **46/46, 0 failed**, the
+walk-up test now 738 frames, with `topWasDialogue=true stateChallenging=true raiseAtBark=0
+challengeAtBark=1`, both encounter samples resolved, `barkToBattleFrames=1`, and the
+rambler arm `sawDialogue=false sampledFrames=199`. `Assets/` byte-clean; zero save residue.
+`zm-tests.yml` pinned to the OBSERVED 2695 (`Tools/run_unit_gate.ps1`'s default is the
+ENGINE baseline and is untouched -- SC7 changes no `Zenith/` file). Clause (5) added no
+new `ZENITH_TEST`, so 2695 stands after it; the tree was rebuilt and the full chain
+re-verified after the battery, because the battery leaves a MUTATED exe on disk.
+
+### Reversibility
+
+High. Two new TUs, two appended data columns, one new FSM state/action pair, and a runtime
+attach. No format change, no ECS order, no engine change, no scene bytes.
+
+---
+
 ## 2026-07-28 -- ZM-D-154 -- S7 item 3 SC6: the trainer sight FSM + the occlusion ray, as runtime-only state on order 113
 
 *(Sixth sub-commit of the ZM-D-143 sequence, and the beat that makes the vertical

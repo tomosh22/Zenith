@@ -14,6 +14,7 @@
 #include "Zenithmon/Components/ZM_GameComponent.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_GameStateManager.h"
+#include "Zenithmon/Components/ZM_GraphNodes.h"                   // ZM_RegisterGraphNodes + the SC7 node counters
 #include "Zenithmon/Components/ZM_Interactable.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
@@ -22,6 +23,7 @@
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
+#include "Zenithmon/Source/Graph/ZM_GraphAuthoring.h"             // the challenge graph's asset path + builder (S7 SC7)
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // ResetRuntimeStateForTests (between-tests hook)
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"      // ZM_TrainerEngagementLatch (between-tests hook)
 #include "Zenithmon/Source/Nav/ZM_NavBake.h"                      // Dawnmere navmesh bake step + asset ref (S7 SC1b)
@@ -1417,6 +1419,12 @@ void Project_RegisterGameComponents()
 	g_xEngine.DebugVariables().AddBoolean({ "Zenithmon", "Battle", "zm_instant_battles" }, ZM_InstantBattlesRef());
 #endif
 
+	// Behaviour Graph node registration is CONFIG-INDEPENDENT: only .bgraph
+	// AUTHORING is tools-only. A _False build still has to resolve node types
+	// against a .bgraph left on disk, and the boot units build the definition
+	// in-process in every config.
+	ZM_RegisterGraphNodes();
+
 	// Save/load persistence root: %APPDATA%/Zenith/Zenithmon/. The versioned
 	// per-module save schema lands at S7 (Docs/SaveFormat.md); initialising from
 	// S0 keeps the test-hook plumbing live from the first commit.
@@ -1439,6 +1447,10 @@ void Project_RegisterGameComponents()
 		// scene-0 force-reload cannot clear it: without this, one test's engaged
 		// flagless trainer would silence him for every later batched test.
 		ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
+		// SC7's node counters are ownerless process-global observation state
+		// (convention C3): without this, one test's bark count leaks into every
+		// later batched test.
+		ZM_GraphNodeTestCounters::ResetRuntimeStateForTests();
 		ZM_GameStateManager::ResetRuntimeStateForTests();
 		// The persistent manager's GameState survives DontDestroyOnLoad across tests;
 		// re-seed the starter so a caught/levelled party cannot leak into the next test.
@@ -1509,6 +1521,14 @@ void Project_RegisterEditorAutomationSteps()
 	// table). Running it first also guarantees the committed asset exists by the
 	// time the Dawnmere block authors a component that loads it.
 	xAuto.AddStep_Custom(&ZM_BakeDawnmereNavmeshStep);
+
+	// Graphs are authored before any scene, so a scene that later references one
+	// cannot race the asset. The executor is GPU-free (Zenith_EditorAutomation.cpp:
+	// 2000-2023), so this runs on the Null headless config too -- and the harness
+	// blocks in HarnessPhase::WaitForAutomationComplete until
+	// EditorAutomation().IsComplete() (Zenith_AutomatedTest.cpp:920-923), so the
+	// .bgraph is guaranteed on disk before the first automated test steps.
+	xAuto.AddStep_GraphBuild(szZM_GRAPH_TRAINER_CHALLENGE_ASSET, &BuildGraph_ZM_TrainerChallenge);
 
 	xAuto.AddStep_CreateScene("FrontEnd");
 	xAuto.AddStep_CreateEntity("ZM_GameStateRoot");

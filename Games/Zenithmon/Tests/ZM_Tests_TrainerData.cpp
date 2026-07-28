@@ -38,6 +38,7 @@
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"            // ZM_STORY_FLAG_COUNT / _NONE
 #include "Zenithmon/Source/Data/ZM_TrainerData.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"            // uZM_MONEY_CAP
+#include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"          // uMAX_QUEUED_LINES (the derived-cap tripwire)
 
 namespace
 {
@@ -537,4 +538,223 @@ ZENITH_TEST(ZM_Data, Accessor_NoAccessorAssertsOnAnyGarbageId)
 		"the name accessor stopped answering UNKNOWN for garbage");
 	ZENITH_ASSERT_STREQ(ZM_GetTrainerData((ZM_TRAINER_ID)9999u).m_szDisplayName, "UNKNOWN",
 		"the row accessor stopped answering the UNKNOWN row for garbage");
+}
+
+// ---- S7 item 3 SC7: the pre-battle challenge columns ------------------------
+
+// HAND-BUILT rows, never the roster, so no content edit to ZM_TrainerData.cpp can
+// disarm a single clause below by making the inputs uninteresting. The roster's
+// own well-formedness is the NEXT unit's job.
+ZENITH_TEST(ZM_Data, TrainerData_SelectChallengeLinesIsTotalAndSelfConsistent)
+{
+	static const char* const aszFixtureLines[] = { "first", "second" };
+
+	// The static_assert-grade runtime check. The cap must stay DERIVED from the
+	// dialogue queue: ZM_UI_DialogueBox::QueueLines is ALL-OR-NOTHING, so an author
+	// who re-spells the cap as a literal would not cost a trainer his last line --
+	// he would go completely MUTE, which under the fail-open challenge window looks
+	// like half a second of dead air rather than a bug.
+	ZENITH_ASSERT_EQ(uZM_TRAINER_MAX_CHALLENGE_LINES, ZM_UI_DialogueBox::uMAX_QUEUED_LINES,
+		"the challenge cap stopped being derived from ZM_UI_DialogueBox::uMAX_QUEUED_LINES");
+
+	// (1) A valid pointer with an ABSURD count clamps to the cap, pointer preserved.
+	const ZM_TrainerData xOverCap =
+	{
+		ZM_TRAINER_RIVAL_VESPER, "over-cap fixture", nullptr, 0u, 0u,
+		ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE,
+		aszFixtureLines, uZM_TRAINER_MAX_CHALLENGE_LINES + 3u
+	};
+	const char* const* paszOver = nullptr;
+	u_int uOverCount = 0u;
+	ZM_SelectTrainerChallengeLines(xOverCap, paszOver, uOverCount);
+	ZENITH_ASSERT_TRUE(paszOver == aszFixtureLines,
+		"clamping the count must not disturb the array pointer");
+	ZENITH_ASSERT_EQ(uOverCount, uZM_TRAINER_MAX_CHALLENGE_LINES,
+		"an over-cap count must be clamped to the dialogue queue capacity -- QueueLines "
+		"rejects an over-cap push WHOLE, so the trainer would otherwise go mute");
+
+	// (2) A NULL array with a non-zero count yields (nullptr, 0). The pair must
+	// never contradict itself: a count that passes every check attached to a
+	// pointer that does not is the exact failure the null-FIRST order prevents.
+	const ZM_TrainerData xNullArray =
+	{
+		ZM_TRAINER_RIVAL_VESPER, "null fixture", nullptr, 0u, 0u,
+		ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE,
+		nullptr, 5u
+	};
+	const char* const* paszNull = aszFixtureLines;   // seeded NON-null on purpose
+	u_int uNullCount = 7u;                           // ...and non-zero on purpose
+	ZM_SelectTrainerChallengeLines(xNullArray, paszNull, uNullCount);
+	ZENITH_ASSERT_NULL(paszNull, "a null-array row must emit a null array");
+	ZENITH_ASSERT_EQ(uNullCount, 0u,
+		"a null array must yield count 0 -- clamping BEFORE the null test would leave "
+		"a validated count attached to a bogus pointer");
+
+	// (3) A valid pointer with a ZERO count stays zero (the silent-row shape).
+	const ZM_TrainerData xZeroCount =
+	{
+		ZM_TRAINER_RIVAL_VESPER, "zero fixture", nullptr, 0u, 0u,
+		ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE,
+		aszFixtureLines, 0u
+	};
+	const char* const* paszZero = nullptr;
+	u_int uZeroCount = 9u;
+	ZM_SelectTrainerChallengeLines(xZeroCount, paszZero, uZeroCount);
+	ZENITH_ASSERT_TRUE(paszZero == aszFixtureLines,
+		"a zero count must not rewrite the array pointer");
+	ZENITH_ASSERT_EQ(uZeroCount, 0u, "a zero count must stay zero");
+
+	// (4) An IN-RANGE pair passes through untouched -- without this the three
+	// clauses above would also pass on a selector that always emitted (nullptr, 0).
+	const ZM_TrainerData xExact =
+	{
+		ZM_TRAINER_RIVAL_VESPER, "exact fixture", nullptr, 0u, 0u,
+		ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE,
+		aszFixtureLines, 2u
+	};
+	const char* const* paszExact = nullptr;
+	u_int uExactCount = 0u;
+	ZM_SelectTrainerChallengeLines(xExact, paszExact, uExactCount);
+	ZENITH_ASSERT_TRUE(paszExact == aszFixtureLines,
+		"an in-range pair must pass its array through untouched");
+	ZENITH_ASSERT_EQ(uExactCount, 2u,
+		"an in-range count must pass through untouched -- otherwise every clause above "
+		"is satisfied by a selector that answers (nullptr, 0) for everything");
+
+	// (5) A NULL array with an OVER-CAP count. THIS is the only pair that
+	// discriminates the null-FIRST order from a clamp-first one, and it was added
+	// after a mutation battery proved clause (2) could not: with a count of 5 (which
+	// is UNDER the cap) a clamp-first selector never enters its clamp arm, falls
+	// through to the null test, and answers 0 anyway -- so transposing the two arms
+	// SURVIVED, even though clause (2)'s own failure text names that exact hazard.
+	// Only an over-cap count reaches the clamp arm first, and a clamp-first selector
+	// then returns (nullptr, cap) -- a validated count attached to a bogus pointer,
+	// which is precisely what ZM_UI_DialogueBox::QueueLines must never be handed.
+	const ZM_TrainerData xNullOverCap =
+	{
+		ZM_TRAINER_RIVAL_VESPER, "null over-cap fixture", nullptr, 0u, 0u,
+		ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE,
+		nullptr, uZM_TRAINER_MAX_CHALLENGE_LINES + 3u
+	};
+	const char* const* paszNullOverCap = aszFixtureLines;   // seeded NON-null on purpose
+	u_int uNullOverCapCount = 7u;                           // ...and non-zero on purpose
+	ZM_SelectTrainerChallengeLines(xNullOverCap, paszNullOverCap, uNullOverCapCount);
+	ZENITH_ASSERT_NULL(paszNullOverCap,
+		"a null-array row must emit a null array even when its count is over-cap");
+	ZENITH_ASSERT_EQ(uNullOverCapCount, 0u,
+		"a null array with an OVER-CAP count must yield 0, not the clamped cap -- this "
+		"is the clause that actually reds when the null test and the clamp are "
+		"transposed");
+
+	// TOTALITY, in the local-hit-count form this file already uses: NO
+	// ZENITH_ASSERT_* inside the scope, and the count copied out before the closing
+	// brace (~Zenith_AssertCaptureScope restores the previous count).
+	u_int uHits = 0u;
+	{
+		Zenith_AssertCaptureScope xCapture;
+
+		const ZM_TrainerData xGarbage =
+		{
+			(ZM_TRAINER_ID)9999u, nullptr, nullptr, 0u, 0u,
+			ZM_STORY_FLAG_NONE, ZM_AI_TIER_NONE,
+			nullptr, ~0u
+		};
+		const char* const* paszGarbage = nullptr;
+		u_int uGarbageCount = 0u;
+		ZM_SelectTrainerChallengeLines(xGarbage, paszGarbage, uGarbageCount);
+		(void)paszGarbage;
+		(void)uGarbageCount;
+
+		uHits = (u_int)xCapture.GetHitCount();
+	}
+
+	ZENITH_ASSERT_EQ(uHits, 0u,
+		"the challenge selector asserted on a hand-built row -- Zenith_Assert breaks in "
+		"EVERY config, so this would kill the whole boot unit run rather than fail one "
+		"test");
+}
+
+ZENITH_TEST(ZM_Data, TrainerData_ChallengeColumnsAreWellFormedAndBothArmsExist)
+{
+	ZENITH_ASSERT_GT((u_int)ZM_TRAINER_COUNT, 0u,
+		"an empty roster makes the walk below vacuous");
+
+	for (u_int i = 0u; i < (u_int)ZM_TRAINER_COUNT; ++i)
+	{
+		const ZM_TrainerData& x = Trainer(i);
+		const char* const* paszLines = nullptr;
+		u_int uCount = 0u;
+		ZM_SelectTrainerChallengeLines(x, paszLines, uCount);
+
+		// NULL IFF ZERO, in both directions. A row that contradicts itself is not a
+		// mute trainer -- it is a pair no consumer can trust.
+		ZENITH_ASSERT_EQ(x.m_paszChallengeLines == nullptr, x.m_uChallengeLineCount == 0u,
+			"%s has a challenge array/count pair that contradicts itself (array %s, "
+			"count %u)", ZM_GetTrainerName(x.m_eId),
+			x.m_paszChallengeLines == nullptr ? "null" : "set", x.m_uChallengeLineCount);
+		ZENITH_ASSERT_LE(x.m_uChallengeLineCount, uZM_TRAINER_MAX_CHALLENGE_LINES,
+			"%s authored %u challenge lines, past the dialogue queue capacity of %u -- "
+			"QueueLines is all-or-nothing, so he would go MUTE",
+			ZM_GetTrainerName(x.m_eId), x.m_uChallengeLineCount,
+			uZM_TRAINER_MAX_CHALLENGE_LINES);
+		ZENITH_ASSERT_EQ(uCount, x.m_uChallengeLineCount,
+			"%s's authored count does not survive the selector, so the row is already "
+			"out of contract", ZM_GetTrainerName(x.m_eId));
+
+		// The assert macros RECORD AND CONTINUE, so nothing walks the array until
+		// both the pointer and the count have been proven safe.
+		if (paszLines == nullptr || uCount == 0u || uCount > uZM_TRAINER_MAX_CHALLENGE_LINES)
+		{
+			continue;
+		}
+		for (u_int uLine = 0u; uLine < uCount; ++uLine)
+		{
+			const char* szLine = paszLines[uLine];
+			ZENITH_ASSERT_NOT_NULL(szLine, "%s challenge line %u is null",
+				ZM_GetTrainerName(x.m_eId), uLine);
+			ZENITH_ASSERT_TRUE(szLine != nullptr && szLine[0] != '\0',
+				"%s challenge line %u is empty -- an empty bark is a blank box, not a "
+				"silent trainer", ZM_GetTrainerName(x.m_eId), uLine);
+		}
+	}
+
+	// The sentinel and outright garbage: the UNKNOWN row is SILENT as well as inert.
+	const ZM_TRAINER_ID aeSilentIds[] = { ZM_TRAINER_NONE, (ZM_TRAINER_ID)99u };
+	for (u_int u = 0u; u < (u_int)(sizeof(aeSilentIds) / sizeof(aeSilentIds[0])); ++u)
+	{
+		const char* const* paszLines = nullptr;
+		u_int uCount = 0u;
+		ZM_SelectTrainerChallengeLines(ZM_GetTrainerData(aeSilentIds[u]), paszLines, uCount);
+		ZENITH_ASSERT_NULL(paszLines,
+			"unregistered id %u must yield no challenge array", (u_int)aeSilentIds[u]);
+		ZENITH_ASSERT_EQ(uCount, 0u,
+			"unregistered id %u must yield no challenge lines", (u_int)aeSilentIds[u]);
+	}
+
+	// THE ANTI-VACUITY CLAUSE. Both arms of the FSM fork -- "has lines" and
+	// "silent" -- must exist as LIVE CONTENT, not only as unit fixtures. A roster
+	// where every row barks would leave the zero-dead-air arm unexercised by the
+	// walk-up test, and a roster where none does would leave the beat itself dead.
+	const ZM_TrainerData& xVesper  = ZM_GetTrainerData(ZM_TRAINER_RIVAL_VESPER);
+	const ZM_TrainerData& xRambler = ZM_GetTrainerData(ZM_TRAINER_ROUTE1_RAMBLER);
+	ZENITH_ASSERT_GT(xVesper.m_uChallengeLineCount, 0u,
+		"the rival stopped barking -- SC7's whole beat is now unexercised by any "
+		"authored row; give the CHALLENGING arm a genuinely talkative trainer");
+	ZENITH_ASSERT_EQ(xRambler.m_uChallengeLineCount, 0u,
+		"the generic route trainer gained challenge lines -- the 'no lines -> straight "
+		"to the battle, zero dead air' arm now has NO silent row behind it; keep one "
+		"genuinely silent trainer in the roster");
+
+	// THE POSITIONAL TRIPWIRE. The two new columns were APPENDED; a column inserted
+	// mid-struct instead would shift exactly these three one place left, with no
+	// compile error to say why.
+	ZENITH_ASSERT_EQ(xVesper.m_uPrizeMoney, uEXPECTED_VESPER_PRIZE,
+		"the rival's prize moved -- a challenge column was inserted mid-struct instead "
+		"of appended");
+	ZENITH_ASSERT_EQ((u_int)xVesper.m_eDefeatFlag, (u_int)ZM_STORY_FLAG_RIVAL1_DEFEATED,
+		"the rival's defeat flag moved -- a challenge column was inserted mid-struct "
+		"instead of appended");
+	ZENITH_ASSERT_EQ((u_int)xVesper.m_eAITier, (u_int)ZM_AI_TIER_GREEDY,
+		"the rival's AI tier moved -- a challenge column was inserted mid-struct "
+		"instead of appended");
 }
