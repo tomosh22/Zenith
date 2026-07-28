@@ -6,8 +6,11 @@
 // ZM_AutoTests_RivalVesper -- the windowed/headless gate for S7 item 3 SC8 and
 // S7 item 4: THE AUTHORED RIVAL, off the committed scene bytes.
 //
-// ONE test, ZM_RivalVesperAuthored_Test, m_bRequiresGraphics = FALSE (it asserts
-// nothing about pixels, so it runs FOR REAL on the Null backend).
+// Two independent tests, both m_bRequiresGraphics = FALSE (they assert nothing
+// about pixels, so they run FOR REAL on the Null backend):
+//   * ZM_RivalVesperAuthored_Test proves the authored rival and win/payout path.
+//   * ZM_RivalVesperWhiteout_Test proves the exact-starter loss, heal, warp, and
+//     no-immediate-retrigger path.
 //
 // WHAT IS NEW HERE, and why it is not a copy of ZM_TrainerSightWalkUp_Test. That
 // test PLACES a transient trainer at runtime and calls ConfigureTrainerSight. THIS
@@ -26,9 +29,10 @@
 //     == nullptr assert, and it CANNOT be pinned here: EnsureTrainerChallengeGraph
 //     is idempotent by path, so an authored slot and the runtime attach both yield
 //     GetGraphCount() == 1 and are indistinguishable at runtime.
-//   * The trainer LOSS path. The lead is deliberately over-levelled so the win is
-//     not a coin flip; losing to Vesper (which leaves him re-battleable, by
-//     design -- Q-2026-07-28-001) has no coverage anywhere and is still missing.
+// The first test deliberately over-levels its lead so the payout proof is stable;
+// the second test separately keeps the exact full-health L5 starter and drives a
+// deterministic losing choice. Keeping the outcomes separate makes neither one
+// conditional on a balance coin flip.
 //
 // Per-phase driver functions, never one monolithic Step (the ZM-D-141 stack rule),
 // and EVERY component pointer is re-resolved each frame (pools relocate on
@@ -67,14 +71,18 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+#include "Physics/Zenith_Physics.h"
+#include "Zenithmon/Components/ZM_BattleDirector.h"
 #include "Zenithmon/Components/ZM_BattleTransition.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_GameStateManager.h"
 #include "Zenithmon/Components/ZM_Interactable.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
+#include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"               // the bark's screen model (GetTopScreen / IsMenuOpen)
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"      // ZM_SetInstantBattlesForTests
+#include "Zenithmon/Source/Battle/ZM_BattleEvent.h"
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"                // ZM_IsStoryFlagSet
 #include "Zenithmon/Source/Data/ZM_TrainerData.h"
@@ -91,6 +99,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <string>
 
@@ -1853,5 +1862,977 @@ static const Zenith_AutomatedTest g_xZMRivalVesperAuthoredTest = {
 	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMRivalVesperAuthoredTest);
+
+// ============================================================================
+// ZM_RivalVesperWhiteout_Test -- the independent LOSS half of the authored
+// Vesper contract. This uses the exact L5 Fernfawn starter, physically walks into
+// the committed rival's cone, and drives Fight -> move 0 through the live HUD.
+// No combat stat, HP, or trainer level is weakened before the core decides the
+// outcome. The input bot selects the starter's second legitimately learned move
+// through the live HUD because the old move-0 assumption was measured producing
+// a PLAYER win. Only after the observed ENEMY win + pending-whiteout latch do we make
+// HP/PP/status dirty, so the manager's HealAllFull is independently observable.
+// ============================================================================
+namespace
+{
+	constexpr ZM_TRAINER_ID eRVW_TRAINER = ZM_TRAINER_RIVAL_VESPER;
+	constexpr const char* szRVW_EXPECTED_WHITEOUT_TAG = "TownCenter";
+	constexpr int iRVW_DAWNMERE_BUILD = 2;
+	constexpr float fRVW_FIXED_DT = 1.0f / 30.0f;
+	constexpr float fRVW_POSITION_EPSILON = 0.05f;
+	constexpr int iRVW_READY_DEADLINE = 420;
+	constexpr int iRVW_APPROACH_DEADLINE = 900;
+	constexpr int iRVW_BARK_DEADLINE = 180;
+	constexpr int iRVW_IN_BATTLE_DEADLINE = 600;
+	constexpr int iRVW_BATTLE_DEADLINE = 900;
+	constexpr int iRVW_WHITEOUT_DEADLINE = 900;
+	constexpr int iRVW_NO_INPUT_HOLD_FRAMES = 200;
+
+	enum class RVWPhase
+	{
+		AwaitReady,
+		Approach,
+		DismissChallenge,
+		AwaitInBattle,
+		DriveBattle,
+		AwaitBattleResume,
+		AwaitWhiteout,
+		HoldRearmed,
+		Done,
+	};
+
+	struct RVWVesperView
+	{
+		Zenith_EntityID m_xEntityID = INVALID_ENTITY_ID;
+		Zenith_Maths::Vector3 m_xPosition = Zenith_Maths::Vector3(0.0f);
+		ZM_TRAINER_ID m_eTrainer = ZM_TRAINER_NONE;
+		bool m_bSightEnabled = false;
+		ZM_TRAINER_SIGHT_STATE m_eState = ZM_TRAINER_SIGHT_STATE_COUNT;
+		u_int m_uRaiseCount = 0xffffffffu;
+		u_int m_uChallengeCount = 0xffffffffu;
+	};
+
+	RVWPhase g_eRVWPhase = RVWPhase::Done;
+	int g_iRVWPhaseFrames = 0;
+	bool g_bRVWActive = false;
+	bool g_bRVWPrereqsPresent = false;
+	bool g_bRVWFailed = false;
+	const char* g_szRVWFailure = "test did not reach verification";
+
+	Zenith_EntityID g_xRVWOriginalVesperID = INVALID_ENTITY_ID;
+	Zenith_EntityID g_xRVWReloadedVesperID = INVALID_ENTITY_ID;
+	Zenith_Maths::Vector3 g_xRVWVesperPosition = Zenith_Maths::Vector3(0.0f);
+	float g_fRVWInitialSeparation = 0.0f;
+	float g_fRVWBestSeparation = 0.0f;
+	int g_iRVWStallFrames = 0;
+	bool g_bRVWWalkedIntoCone = false;
+	bool g_bRVWReachedInBattle = false;
+	bool g_bRVWChannelCaptured = false;
+	ZM_TRAINER_ID g_eRVWChannelTrainer = ZM_TRAINER_NONE;
+
+	bool g_bRVWStarterCaptured = false;
+	u_int g_uRVWMoneyBefore = 0xffffffffu;
+	u_int g_uRVWExpBefore = 0xffffffffu;
+	u_int g_uRVWLevelBefore = 0xffffffffu;
+	u_int g_uRVWMaxHpBefore = 0u;
+	u_int g_uRVWMaxPpBefore = 0u;
+	bool g_bRVWFlagBefore = true;
+	u_int g_uRVWManagerLoadsBefore = 0xffffffffu;
+
+	bool g_bRVWBattleConfigCaptured = false;
+	bool g_bRVWLiveHealthyMatchup = false;
+	bool g_bRVWCatchAllowed = true;
+	bool g_bRVWFleeAllowed = true;
+	ZM_MOVE_ID g_eRVWChosenMove = ZM_MOVE_NONE;
+	bool g_bRVWChosenMoveUsed = false;
+	ZM_SPECIES_ID g_eRVWPlayerSpecies = ZM_SPECIES_NONE;
+	u_int g_uRVWPlayerLevel = 0u;
+	ZM_SPECIES_ID g_eRVWEnemySpecies = ZM_SPECIES_NONE;
+	u_int g_uRVWEnemyLevel = 0u;
+	bool g_bRVWOutcomeCaptured = false;
+	ZM_SIDE g_eRVWWinner = ZM_SIDE_COUNT;
+	u_int g_uRVWFinalBattleHp = 0xffffffffu;
+	bool g_bRVWPendingObserved = false;
+	bool g_bRVWDirtyHealProbeInstalled = false;
+
+	bool g_bRVWBattleResumeObserved = false;
+	bool g_bRVWWhiteoutWarpObserved = false;
+	bool g_bRVWWhiteoutSettled = false;
+	bool g_bRVWPendingAfter = true;
+	u_int g_uRVWHpAfter = 0u;
+	u_int g_uRVWMaxHpAfter = 0u;
+	u_int g_uRVWPpAfter = 0u;
+	u_int g_uRVWMaxPpAfter = 0u;
+	ZM_MAJOR_STATUS g_eRVWStatusAfter = ZM_MAJOR_STATUS_COUNT;
+	u_int g_uRVWMoneyAfter = 0xffffffffu;
+	u_int g_uRVWExpAfter = 0xffffffffu;
+	bool g_bRVWFlagAfter = true;
+	u_int g_uRVWManagerLoadsAfter = 0xffffffffu;
+	u_int g_uRVWTransitionLoadsAfter = 0xffffffffu;
+	u_int g_uRVWEncounterCountAfter = 0xffffffffu;
+	u_int g_uRVWCompletedAfter = 0xffffffffu;
+	u_int g_uRVWAbortedAfter = 0xffffffffu;
+	bool g_bRVWTownCenterTag = false;
+	bool g_bRVWTownCenterResolved = false;
+	float g_fRVWTransformSpawnError = 9999.0f;
+	float g_fRVWBodySpawnError = 9999.0f;
+	bool g_bRVWVesperRearmed = false;
+	u_int g_uRVWReloadedRaise = 0xffffffffu;
+	u_int g_uRVWReloadedChallenge = 0xffffffffu;
+	bool g_bRVWNoInputHoldCompleted = false;
+
+	float RVWDistance(const Zenith_Maths::Vector3& xA,
+		const Zenith_Maths::Vector3& xB)
+	{
+		const float fX = xA.x - xB.x;
+		const float fY = xA.y - xB.y;
+		const float fZ = xA.z - xB.z;
+		return std::sqrt(fX * fX + fY * fY + fZ * fZ);
+	}
+
+	float RVWPlanarDistance(const Zenith_Maths::Vector3& xA,
+		const Zenith_Maths::Vector3& xB)
+	{
+		const float fX = xA.x - xB.x;
+		const float fZ = xA.z - xB.z;
+		return std::sqrt(fX * fX + fZ * fZ);
+	}
+
+	void RVWClearInput()
+	{
+		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, false);
+		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, false);
+		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, false);
+		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
+		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
+	}
+
+	void FailRVW(const char* szReason)
+	{
+		g_szRVWFailure = szReason;
+		g_bRVWFailed = true;
+		g_eRVWPhase = RVWPhase::Done;
+		RVWClearInput();
+	}
+
+	ZM_GameStateManager* RVWResolveManager()
+	{
+		Zenith_EntityID xID = INVALID_ENTITY_ID;
+		if (!ZM_GameStateManager::TryGetUniqueSingletonEntityID(xID))
+		{
+			return nullptr;
+		}
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xID);
+		return xEntity.IsValid()
+			? xEntity.TryGetComponent<ZM_GameStateManager>() : nullptr;
+	}
+
+	ZM_BattleDirector* RVWResolveDirector()
+	{
+		Zenith_EntityID xID = INVALID_ENTITY_ID;
+		u_int uCount = 0u;
+		g_xEngine.Scenes().QueryAllScenes<ZM_BattleDirector>().ForEach(
+			[&](Zenith_EntityID xCandidate, ZM_BattleDirector&)
+			{
+				++uCount;
+				if (uCount == 1u) { xID = xCandidate; }
+			});
+		if (uCount != 1u) { return nullptr; }
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(xID);
+		return xEntity.IsValid()
+			? xEntity.TryGetComponent<ZM_BattleDirector>() : nullptr;
+	}
+
+	u_int RVWFindVesper(RVWVesperView& xOut)
+	{
+		xOut = RVWVesperView{};
+		u_int uCount = 0u;
+		g_xEngine.Scenes().QueryActiveScene<
+			ZM_Interactable, Zenith_TransformComponent>().ForEach(
+			[&](Zenith_EntityID xID, ZM_Interactable& xInteractable,
+				Zenith_TransformComponent& xTransform)
+			{
+				if (xInteractable.GetNpcId() != ZM_NPC_RIVAL_VESPER) { return; }
+				++uCount;
+				if (uCount != 1u) { return; }
+				xOut.m_xEntityID = xID;
+				xTransform.GetPosition(xOut.m_xPosition);
+				xOut.m_eTrainer = xInteractable.GetTrainerId();
+				xOut.m_bSightEnabled = xInteractable.IsTrainerSightEnabled();
+				xOut.m_eState = xInteractable.GetTrainerSightState();
+				xOut.m_uRaiseCount = xInteractable.GetTrainerSightRaiseCount();
+				xOut.m_uChallengeCount = xInteractable.GetTrainerChallengeCount();
+			});
+		return uCount;
+	}
+
+	void RVWDriveToward(const Zenith_Maths::Vector3& xPosition,
+		const Zenith_Maths::Vector3& xTarget)
+	{
+		RVWClearInput();
+		Zenith_Maths::Vector3 xCameraForward(0.0f, 0.0f, 1.0f);
+		if (Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes())
+		{
+			pxCamera->GetFacingDir(xCameraForward);
+		}
+		Zenith_Maths::Vector3 xForward(xCameraForward.x, 0.0f, xCameraForward.z);
+		const float fLengthSq = xForward.x * xForward.x + xForward.z * xForward.z;
+		if (fLengthSq <= 0.000001f) { xForward = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f); }
+		else { xForward /= std::sqrt(fLengthSq); }
+		const Zenith_Maths::Vector3 xRight(xForward.z, 0.0f, -xForward.x);
+		const Zenith_Maths::Vector3 xToTarget(
+			xTarget.x - xPosition.x, 0.0f, xTarget.z - xPosition.z);
+		const float fForward = xToTarget.x * xForward.x + xToTarget.z * xForward.z;
+		const float fRight = xToTarget.x * xRight.x + xToTarget.z * xRight.z;
+		if (fRight < -0.08f) { Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true); }
+		else if (fRight > 0.08f) { Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true); }
+		if (fForward < -0.08f) { Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_S, true); }
+		else if (fForward > 0.08f) { Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_W, true); }
+		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
+	}
+
+	void RVWResetCaptures()
+	{
+		g_eRVWPhase = RVWPhase::Done;
+		g_iRVWPhaseFrames = 0;
+		g_bRVWActive = false;
+		g_bRVWPrereqsPresent = false;
+		g_bRVWFailed = false;
+		g_szRVWFailure = "test did not reach verification";
+		g_xRVWOriginalVesperID = INVALID_ENTITY_ID;
+		g_xRVWReloadedVesperID = INVALID_ENTITY_ID;
+		g_xRVWVesperPosition = Zenith_Maths::Vector3(0.0f);
+		g_fRVWInitialSeparation = 0.0f;
+		g_fRVWBestSeparation = 0.0f;
+		g_iRVWStallFrames = 0;
+		g_bRVWWalkedIntoCone = false;
+		g_bRVWReachedInBattle = false;
+		g_bRVWChannelCaptured = false;
+		g_eRVWChannelTrainer = ZM_TRAINER_NONE;
+		g_bRVWStarterCaptured = false;
+		g_uRVWMoneyBefore = g_uRVWExpBefore = g_uRVWLevelBefore = 0xffffffffu;
+		g_uRVWMaxHpBefore = g_uRVWMaxPpBefore = 0u;
+		g_bRVWFlagBefore = true;
+		g_uRVWManagerLoadsBefore = 0xffffffffu;
+		g_bRVWBattleConfigCaptured = false;
+		g_bRVWLiveHealthyMatchup = false;
+		g_bRVWCatchAllowed = true;
+		g_bRVWFleeAllowed = true;
+		g_eRVWChosenMove = ZM_MOVE_NONE;
+		g_bRVWChosenMoveUsed = false;
+		g_eRVWPlayerSpecies = g_eRVWEnemySpecies = ZM_SPECIES_NONE;
+		g_uRVWPlayerLevel = g_uRVWEnemyLevel = 0u;
+		g_bRVWOutcomeCaptured = false;
+		g_eRVWWinner = ZM_SIDE_COUNT;
+		g_uRVWFinalBattleHp = 0xffffffffu;
+		g_bRVWPendingObserved = false;
+		g_bRVWDirtyHealProbeInstalled = false;
+		g_bRVWBattleResumeObserved = false;
+		g_bRVWWhiteoutWarpObserved = false;
+		g_bRVWWhiteoutSettled = false;
+		g_bRVWPendingAfter = true;
+		g_uRVWHpAfter = g_uRVWMaxHpAfter = 0u;
+		g_uRVWPpAfter = g_uRVWMaxPpAfter = 0u;
+		g_eRVWStatusAfter = ZM_MAJOR_STATUS_COUNT;
+		g_uRVWMoneyAfter = g_uRVWExpAfter = 0xffffffffu;
+		g_bRVWFlagAfter = true;
+		g_uRVWManagerLoadsAfter = 0xffffffffu;
+		g_uRVWTransitionLoadsAfter = 0xffffffffu;
+		g_uRVWEncounterCountAfter = g_uRVWCompletedAfter = g_uRVWAbortedAfter = 0xffffffffu;
+		g_bRVWTownCenterTag = false;
+		g_bRVWTownCenterResolved = false;
+		g_fRVWTransformSpawnError = g_fRVWBodySpawnError = 9999.0f;
+		g_bRVWVesperRearmed = false;
+		g_uRVWReloadedRaise = g_uRVWReloadedChallenge = 0xffffffffu;
+		g_bRVWNoInputHoldCompleted = false;
+	}
+
+	bool RVWSampleTownCenter(const RVPlayerView& xPlayer)
+	{
+		const Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+		Zenith_EntityID xSpawnID = INVALID_ENTITY_ID;
+		if (!xActive.IsValid()
+			|| ZM_SpawnPoint::FindUniqueInScene(xActive,
+				szRVW_EXPECTED_WHITEOUT_TAG, xSpawnID)
+				!= ZM_SPAWN_POINT_LOOKUP_FOUND)
+		{
+			return false;
+		}
+		Zenith_Entity xSpawn = g_xEngine.Scenes().ResolveEntity(xSpawnID);
+		Zenith_Entity xPlayerEntity = g_xEngine.Scenes().ResolveEntity(xPlayer.m_xEntityID);
+		Zenith_TransformComponent* pxSpawnTransform = xSpawn.IsValid()
+			? xSpawn.TryGetComponent<Zenith_TransformComponent>() : nullptr;
+		Zenith_TransformComponent* pxPlayerTransform = xPlayerEntity.IsValid()
+			? xPlayerEntity.TryGetComponent<Zenith_TransformComponent>() : nullptr;
+		if (pxSpawnTransform == nullptr || pxPlayerTransform == nullptr
+			|| xPlayer.m_pxCollider == nullptr || !xPlayer.m_pxCollider->HasValidBody())
+		{
+			return false;
+		}
+		Zenith_Maths::Vector3 xFeet(0.0f);
+		Zenith_Maths::Vector3 xScale(1.0f);
+		pxSpawnTransform->GetPosition(xFeet);
+		pxPlayerTransform->GetScale(xScale);
+		// Independent oracle: do not call GameStateManager::CalculateSpawnCenter,
+		// because that is the production function whose result the warp consumes.
+		// Following a bad production offset with the same helper would compare a
+		// wrong placement to itself and stay green.
+		const Zenith_Maths::Vector3 xExpected = xFeet + Zenith_Maths::Vector3(
+			0.0f, ZM_PlayerController::CalculateCapsuleHalfExtent(xScale), 0.0f);
+		g_fRVWTransformSpawnError = RVWDistance(xPlayer.m_xPosition, xExpected);
+		g_fRVWBodySpawnError = RVWDistance(
+			g_xEngine.Physics().GetBodyPosition(xPlayer.m_pxCollider->GetBodyID()),
+			xExpected);
+		g_bRVWTownCenterResolved = true;
+		return true;
+	}
+
+	bool RVWCaptureBattleAndDrive()
+	{
+		ZM_BattleDirector* pxDirector = RVWResolveDirector();
+		if (pxDirector == nullptr) { return true; }
+		const ZM_BATTLE_DIRECTOR_PHASE ePhase = pxDirector->GetPhase();
+		if (ePhase != ZM_BD_RUNNING && ePhase != ZM_BD_RESOLVED
+			&& ePhase != ZM_BD_DONE)
+		{
+			return true;
+		}
+
+		const ZM_BattleDirectorCore& xCore = pxDirector->GetCore();
+		const ZM_BattleState& xState = xCore.GetEngine().GetState();
+		if (!g_bRVWBattleConfigCaptured)
+		{
+			const ZM_BattleSide& xPlayerSide = xState.Side(ZM_SIDE_PLAYER);
+			const ZM_BattleSide& xEnemySide = xState.Side(ZM_SIDE_ENEMY);
+			if (xPlayerSide.m_xParty.GetSize() != 1u
+				|| xEnemySide.m_xParty.GetSize() != 1u)
+			{
+				FailRVW("the live core did not begin with exactly two one-member parties");
+				return false;
+			}
+			const ZM_BattleMonster& xPlayer = xPlayerSide.Active();
+			const ZM_BattleMonster& xEnemy = xEnemySide.Active();
+			g_eRVWPlayerSpecies = xPlayer.m_eSpecies;
+			g_uRVWPlayerLevel = xPlayer.m_uLevel;
+			g_eRVWEnemySpecies = xEnemy.m_eSpecies;
+			g_uRVWEnemyLevel = xEnemy.m_uLevel;
+			g_bRVWCatchAllowed = xCore.IsCatchAllowed();
+			g_bRVWFleeAllowed = xCore.IsFleeAllowed();
+			g_eRVWChosenMove = xPlayer.m_axMoves[1].m_eMove;
+			if (xPlayer.m_uCurHP != xPlayer.m_auMaxStat[ZM_STAT_HP]
+				|| xPlayer.m_uCurHP != g_uRVWMaxHpBefore
+				|| xPlayer.m_eStatus != ZM_MAJOR_STATUS_NONE
+				|| xPlayer.m_axMoves[0].m_eMove == ZM_MOVE_NONE
+				|| xPlayer.m_axMoves[0].m_uCurPP != xPlayer.m_axMoves[0].m_uMaxPP
+				|| g_eRVWChosenMove == ZM_MOVE_NONE
+				|| xPlayer.m_axMoves[1].m_uCurPP != xPlayer.m_axMoves[1].m_uMaxPP
+				|| xEnemy.m_uCurHP != xEnemy.m_auMaxStat[ZM_STAT_HP]
+				|| xEnemy.m_eStatus != ZM_MAJOR_STATUS_NONE)
+			{
+				FailRVW("the live core did not begin with two healthy one-member L5 parties and full moves");
+				return false;
+			}
+			g_bRVWLiveHealthyMatchup = true;
+			g_bRVWBattleConfigCaptured = true;
+		}
+
+		for (u_int i = 0u; i < xCore.GetEngine().GetEventCount(); ++i)
+		{
+			const ZM_BattleEvent& xEvent = xCore.GetEngine().GetEvent(i);
+			if (xEvent.m_eKind == ZM_BATTLE_EVENT_MOVE_USED
+				&& xEvent.m_uSide == ZM_SIDE_PLAYER
+				&& xEvent.m_uMoveId == (u_int)g_eRVWChosenMove)
+			{
+				g_bRVWChosenMoveUsed = true;
+			}
+		}
+
+		if (!xCore.IsOver())
+		{
+			// The real HUD still owns submission. The exact L5 starter has two
+			// legitimately learned moves. On MOVE_SELECT choose its second entry via
+			// the same DOWN+ENTER edge a player uses (navigation is processed before
+			// confirm); every other input frame confirms Fight / opens the menu.
+			// Nothing about the battle state, party record, or authored trainer is
+			// weakened to force an outcome.
+			if (pxDirector->GetHudMenuScreen() == ZM_BATTLE_MENU_MOVE_SELECT
+				&& pxDirector->GetHudMenuCursor() == 0)
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_DOWN);
+			}
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			return true;
+		}
+
+		if (g_bRVWOutcomeCaptured) { return true; }
+		g_eRVWWinner = xCore.GetWinner();
+		g_uRVWFinalBattleHp = xState.Side(ZM_SIDE_PLAYER).Active().m_uCurHP;
+		g_bRVWOutcomeCaptured = true;
+
+		ZM_GameState* pxGameState = nullptr;
+		if (!ZM_GameStateManager::TryGetGameState(pxGameState) || pxGameState == nullptr
+			|| pxGameState->m_xParty.IsEmpty())
+		{
+			FailRVW("the persistent starter did not resolve at the natural loss");
+			return false;
+		}
+		g_bRVWPendingObserved = pxGameState->m_bPendingWhiteout;
+		if (g_eRVWWinner != ZM_SIDE_ENEMY || g_uRVWFinalBattleHp != 0u
+			|| !g_bRVWPendingObserved)
+		{
+			FailRVW("the honest L5-vs-L5 battle did not produce ENEMY winner, fainted lead, and a pending whiteout");
+			return false;
+		}
+
+		// The manager ran earlier this frame (order 104); the director set the latch
+		// later (111). Dirty the durable lead only NOW, after the core's natural loss,
+		// so every dimension of HealAllFull has an observable before/after value.
+		ZM_Monster& xLead = pxGameState->m_xParty.Lead();
+		if (xLead.m_axMoves[0].m_eMove == ZM_MOVE_NONE
+			|| xLead.m_axMoves[0].m_uMaxPP == 0u)
+		{
+			FailRVW("the exact starter has no move-0 PP for the whiteout heal probe");
+			return false;
+		}
+		xLead.m_uCurrentHp = 1u;
+		xLead.m_axMoves[0].m_uCurPP = 0u;
+		xLead.m_eStatus = ZM_MAJOR_STATUS_POISON;
+		g_bRVWDirtyHealProbeInstalled = true;
+		return true;
+	}
+
+	void Setup_ZMRivalVesperWhiteout()
+	{
+		RVWResetCaptures();
+
+		const std::string strBattlePath =
+			std::string(GAME_ASSETS_DIR) + "Scenes/Battle" ZENITH_SCENE_EXT;
+#ifdef ZENITH_TOOLS
+		const bool bWarm = ZM_BakeAllAssets();
+#else
+		const bool bWarm = ZM_BakeManifestCheck(
+			ZM_ASSET_FAMILY_PROPS, std::filesystem::path(GAME_ASSETS_DIR));
+#endif
+		g_bRVWPrereqsPresent = RequiredDawnmereAssetsPresent()
+			&& DiskFilePresent(strBattlePath) && bWarm;
+		if (!g_bRVWPrereqsPresent)
+		{
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"Dawnmere / Battle / prop bake absent -- run a *_True build");
+			return;
+		}
+
+		ZM_BattleTransition::ResetRuntimeStateForTests();
+		ZM_GameStateManager::ResetRuntimeStateForTests();
+		ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
+		Zenith_InputSimulator::ResetAllInputState();
+		Zenith_InputSimulator::SetFixedDt(fRVW_FIXED_DT);
+		ZM_SetInstantBattlesForTests(true);
+		g_xEngine.Scenes().LoadSceneByIndex(iRVW_DAWNMERE_BUILD, SCENE_LOAD_SINGLE);
+		g_eRVWPhase = RVWPhase::AwaitReady;
+		g_bRVWActive = true;
+	}
+
+	bool Step_ZMRivalVesperWhiteout(int)
+	{
+		if (!g_bRVWActive || g_bRVWFailed || g_eRVWPhase == RVWPhase::Done)
+		{
+			return false;
+		}
+		++g_iRVWPhaseFrames;
+
+		switch (g_eRVWPhase)
+		{
+		case RVWPhase::AwaitReady:
+		{
+			RVPlayerView xPlayer;
+			RVCameraView xCamera;
+			if (!DawnmereRuntimeReady(xPlayer, xCamera))
+			{
+				if (g_iRVWPhaseFrames > iRVW_READY_DEADLINE)
+				{
+					FailRVW("Dawnmere did not become runtime-ready for the loss walk");
+					return false;
+				}
+				return true;
+			}
+			ZM_BattleTransition* pxTransition = ResolveSingletonBattleTransition();
+			ZM_GameStateManager* pxManager = RVWResolveManager();
+			ZM_GameState* pxGameState = nullptr;
+			RVWVesperView xVesper;
+			if (pxTransition == nullptr || pxManager == nullptr
+				|| !ZM_GameStateManager::TryGetGameState(pxGameState)
+				|| pxGameState == nullptr || RVWFindVesper(xVesper) != 1u
+				|| xVesper.m_eTrainer != eRVW_TRAINER)
+			{
+				FailRVW("the authored Vesper, transition, manager, or game state did not resolve uniquely");
+				return false;
+			}
+
+			// The exact production starter: one full-health L5 Fernfawn, no edits.
+			*pxGameState = ZM_MakeStarterGameState();
+			if (pxGameState->m_xParty.Count() != 1u)
+			{
+				FailRVW("ZM_MakeStarterGameState did not produce exactly one member");
+				return false;
+			}
+			const ZM_Monster& xLead = pxGameState->m_xParty.Get(0u);
+			const ZM_TrainerData& xVesperRow = ZM_GetTrainerData(eRVW_TRAINER);
+			if (xLead.m_eSpecies != ZM_SPECIES_FERNFAWN || xLead.m_uLevel != 5u
+				|| xLead.m_uCurrentHp != xLead.GetMaxHP()
+				|| xLead.m_eStatus != ZM_MAJOR_STATUS_NONE
+				|| xVesperRow.m_uPartyCount == 0u
+				|| xVesperRow.m_paxParty[0].m_eSpecies != ZM_SPECIES_KINDLET
+				|| xVesperRow.m_paxParty[0].m_uLevel != 5u)
+			{
+				FailRVW("the honest matchup is not full L5 Fernfawn versus authored L5 Kindlet");
+				return false;
+			}
+
+			g_bRVWStarterCaptured = true;
+			g_uRVWMoneyBefore = pxGameState->m_uMoney;
+			g_uRVWExpBefore = xLead.m_uCurrentExp;
+			g_uRVWLevelBefore = xLead.m_uLevel;
+			g_uRVWMaxHpBefore = xLead.GetMaxHP();
+			g_uRVWMaxPpBefore = xLead.m_axMoves[0].m_uMaxPP;
+			g_bRVWFlagBefore = ZM_IsStoryFlagSet(
+				*pxGameState, ZM_STORY_FLAG_RIVAL1_DEFEATED);
+			g_uRVWManagerLoadsBefore = pxManager->GetIssuedLoadRequestCount();
+			g_xRVWOriginalVesperID = xVesper.m_xEntityID;
+			g_xRVWVesperPosition = xVesper.m_xPosition;
+			g_fRVWInitialSeparation = RVWPlanarDistance(
+				xPlayer.m_xPosition, xVesper.m_xPosition);
+			g_fRVWBestSeparation = g_fRVWInitialSeparation;
+			if (g_bRVWFlagBefore || pxGameState->m_bPendingWhiteout
+				|| g_fRVWInitialSeparation <= fZM_SIGHT_MAX_DISTANCE * 1.25f)
+			{
+				FailRVW("the loss walk began with a defeated/pending rival or inside the spawn-camp margin");
+				return false;
+			}
+			g_eRVWPhase = RVWPhase::Approach;
+			g_iRVWPhaseFrames = 0;
+			return true;
+		}
+
+		case RVWPhase::Approach:
+		{
+			if (RVTopScreen() == ZM_MENU_SCREEN_DIALOGUE)
+			{
+				RVWClearInput();
+				g_bRVWWalkedIntoCone = true;
+				g_eRVWPhase = RVWPhase::DismissChallenge;
+				g_iRVWPhaseFrames = 0;
+				return true;
+			}
+			if (ZM_BattleTransition::IsTransitionActive())
+			{
+				RVWClearInput();
+				g_bRVWWalkedIntoCone = true;
+				g_eRVWPhase = RVWPhase::AwaitInBattle;
+				g_iRVWPhaseFrames = 0;
+				return true;
+			}
+			RVPlayerView xPlayer;
+			RVWVesperView xVesper;
+			if (!FindActivePlayer(xPlayer) || RVWFindVesper(xVesper) != 1u)
+			{
+				FailRVW("the player or authored Vesper disappeared during the loss walk");
+				return false;
+			}
+			const float fDistance = RVWPlanarDistance(
+				xPlayer.m_xPosition, xVesper.m_xPosition);
+			if (fDistance < g_fRVWBestSeparation - 0.01f)
+			{
+				g_fRVWBestSeparation = fDistance;
+				g_iRVWStallFrames = 0;
+			}
+			else if (++g_iRVWStallFrames > 90)
+			{
+				FailRVW("the physical loss walk stopped closing on authored Vesper");
+				return false;
+			}
+			if (g_iRVWPhaseFrames > iRVW_APPROACH_DEADLINE)
+			{
+				FailRVW("the physical walk never entered authored Vesper's sight encounter");
+				return false;
+			}
+			RVWDriveToward(xPlayer.m_xPosition, xVesper.m_xPosition);
+			return true;
+		}
+
+		case RVWPhase::DismissChallenge:
+			RVWClearInput();
+			if (ZM_BattleTransition::IsTransitionActive())
+			{
+				g_eRVWPhase = RVWPhase::AwaitInBattle;
+				g_iRVWPhaseFrames = 0;
+				return true;
+			}
+			if (g_iRVWPhaseFrames > iRVW_BARK_DEADLINE)
+			{
+				FailRVW("Vesper's challenge bark did not hand off to the battle");
+				return false;
+			}
+			if (ZM_UI_MenuStack::IsMenuOpen())
+			{
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			}
+			return true;
+
+		case RVWPhase::AwaitInBattle:
+		{
+			ZM_BattleTransition* pxTransition = ResolveSingletonBattleTransition();
+			if (pxTransition == nullptr)
+			{
+				FailRVW("the battle transition disappeared before the honest loss");
+				return false;
+			}
+			if (!g_bRVWChannelCaptured
+				&& pxTransition->GetTransitionState() != ZM_BATTLE_TRANSITION_IDLE)
+			{
+				g_eRVWChannelTrainer = pxTransition->GetBattleTrainer();
+				g_bRVWChannelCaptured = true;
+			}
+			if (!RVWCaptureBattleAndDrive()) { return false; }
+			if (pxTransition->GetTransitionState() == ZM_BATTLE_TRANSITION_IN_BATTLE)
+			{
+				g_bRVWReachedInBattle = true;
+				g_eRVWPhase = RVWPhase::DriveBattle;
+				g_iRVWPhaseFrames = 0;
+				return true;
+			}
+			if (g_iRVWPhaseFrames > iRVW_IN_BATTLE_DEADLINE)
+			{
+				FailRVW("Vesper's loss encounter never reached IN_BATTLE");
+				return false;
+			}
+			return true;
+		}
+
+		case RVWPhase::DriveBattle:
+			if (!RVWCaptureBattleAndDrive()) { return false; }
+			if (g_bRVWOutcomeCaptured)
+			{
+				g_eRVWPhase = RVWPhase::AwaitBattleResume;
+				g_iRVWPhaseFrames = 0;
+				return true;
+			}
+			if (g_iRVWPhaseFrames > iRVW_BATTLE_DEADLINE)
+			{
+				FailRVW("the honest L5 rival battle did not resolve through the real menu");
+				return false;
+			}
+			return true;
+
+		case RVWPhase::AwaitBattleResume:
+		{
+			if (!RVWCaptureBattleAndDrive()) { return false; }
+			ZM_BattleTransition* pxTransition = ResolveSingletonBattleTransition();
+			ZM_GameState* pxGameState = nullptr;
+			if (pxTransition != nullptr
+				&& pxTransition->GetTransitionState() == ZM_BATTLE_TRANSITION_IDLE
+				&& pxTransition->GetCompletedBattleCount() == 1u
+				&& ZM_GameStateManager::TryGetGameState(pxGameState)
+				&& pxGameState != nullptr && pxGameState->m_bPendingWhiteout)
+			{
+				g_bRVWBattleResumeObserved = true;
+				g_eRVWPhase = RVWPhase::AwaitWhiteout;
+				g_iRVWPhaseFrames = 0;
+				return true;
+			}
+			if (g_iRVWPhaseFrames > iRVW_BATTLE_DEADLINE)
+			{
+				FailRVW("the lost rival battle did not resume to IDLE with the whiteout still pending");
+				return false;
+			}
+			return true;
+		}
+
+		case RVWPhase::AwaitWhiteout:
+		{
+			RVWClearInput();
+			ZM_GameStateManager* pxManager = RVWResolveManager();
+			if (pxManager != nullptr
+				&& pxManager->GetTransitionState() != ZM_WARP_TRANSITION_IDLE)
+			{
+				g_bRVWWhiteoutWarpObserved = true;
+			}
+			ZM_GameState* pxGameState = nullptr;
+			const bool bHaveGameState = ZM_GameStateManager::TryGetGameState(pxGameState)
+				&& pxGameState != nullptr && !pxGameState->m_xParty.IsEmpty();
+			RVPlayerView xPlayer;
+			RVCameraView xCamera;
+			ZM_BattleTransition* pxTransition = ResolveSingletonBattleTransition();
+			const Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+			const int iBuild = xActive.IsValid()
+				? g_xEngine.Scenes().GetSceneInfo(xActive).m_iBuildIndex : -1;
+			const bool bSettled = pxManager != nullptr && bHaveGameState
+				&& g_bRVWWhiteoutWarpObserved
+				&& pxManager->GetTransitionState() == ZM_WARP_TRANSITION_IDLE
+				&& pxManager->GetIssuedLoadRequestCount()
+					== g_uRVWManagerLoadsBefore + 1u
+				&& !pxGameState->m_bPendingWhiteout
+				&& iBuild == iRVW_DAWNMERE_BUILD
+				&& DawnmereRuntimeReady(xPlayer, xCamera)
+				&& xPlayer.m_pxController->IsMovementEnabled()
+				&& pxTransition != nullptr
+				&& pxTransition->GetTransitionState() == ZM_BATTLE_TRANSITION_IDLE;
+			if (bSettled)
+			{
+				RVWVesperView xVesper;
+				if (RVWFindVesper(xVesper) != 1u
+					|| !RVWSampleTownCenter(xPlayer))
+				{
+					FailRVW("the whiteout destination lacked unique Vesper or TownCenter placement");
+					return false;
+				}
+				const ZM_Monster& xLead = pxGameState->m_xParty.Lead();
+				g_bRVWWhiteoutSettled = true;
+				g_bRVWPendingAfter = pxGameState->m_bPendingWhiteout;
+				g_uRVWHpAfter = xLead.m_uCurrentHp;
+				g_uRVWMaxHpAfter = xLead.GetMaxHP();
+				g_uRVWPpAfter = xLead.m_axMoves[0].m_uCurPP;
+				g_uRVWMaxPpAfter = xLead.m_axMoves[0].m_uMaxPP;
+				g_eRVWStatusAfter = xLead.m_eStatus;
+				g_uRVWMoneyAfter = pxGameState->m_uMoney;
+				g_uRVWExpAfter = xLead.m_uCurrentExp;
+				g_bRVWFlagAfter = ZM_IsStoryFlagSet(
+					*pxGameState, ZM_STORY_FLAG_RIVAL1_DEFEATED);
+				g_uRVWManagerLoadsAfter = pxManager->GetIssuedLoadRequestCount();
+				g_uRVWTransitionLoadsAfter = pxTransition->GetIssuedLoadRequestCount();
+				g_uRVWEncounterCountAfter = pxTransition->GetObservedEncounterCount();
+				g_uRVWCompletedAfter = pxTransition->GetCompletedBattleCount();
+				g_uRVWAbortedAfter = pxTransition->GetAbortedTransitionCount();
+				g_bRVWTownCenterTag = std::strcmp(
+					ZM_GameStateManager::GetActiveSceneArrivedSpawnTag(),
+					szRVW_EXPECTED_WHITEOUT_TAG) == 0;
+				g_xRVWReloadedVesperID = xVesper.m_xEntityID;
+				g_uRVWReloadedRaise = xVesper.m_uRaiseCount;
+				g_uRVWReloadedChallenge = xVesper.m_uChallengeCount;
+				g_bRVWVesperRearmed = xVesper.m_eState == ZM_TRAINER_SIGHT_WATCHING;
+				g_eRVWPhase = RVWPhase::HoldRearmed;
+				g_iRVWPhaseFrames = 0;
+				return true;
+			}
+			if (g_iRVWPhaseFrames > iRVW_WHITEOUT_DEADLINE)
+			{
+				FailRVW("the pending loss did not heal and whiteout-warp to settled TownCenter");
+				return false;
+			}
+			return true;
+		}
+
+		case RVWPhase::HoldRearmed:
+		{
+			RVWClearInput();
+			ZM_GameStateManager* pxManager = RVWResolveManager();
+			ZM_BattleTransition* pxTransition = ResolveSingletonBattleTransition();
+			ZM_GameState* pxGameState = nullptr;
+			RVWVesperView xVesper;
+			const Zenith_Scene xActive = g_xEngine.Scenes().GetActiveScene();
+			const int iBuild = xActive.IsValid()
+				? g_xEngine.Scenes().GetSceneInfo(xActive).m_iBuildIndex : -1;
+			if (pxManager == nullptr || pxTransition == nullptr
+				|| !ZM_GameStateManager::TryGetGameState(pxGameState)
+				|| pxGameState == nullptr || pxGameState->m_xParty.IsEmpty()
+				|| RVWFindVesper(xVesper) != 1u)
+			{
+				FailRVW("a required singleton, state, or reloaded Vesper disappeared during the no-input hold");
+				return false;
+			}
+			const ZM_Monster& xLead = pxGameState->m_xParty.Lead();
+			if (iBuild != iRVW_DAWNMERE_BUILD
+				|| pxManager->GetTransitionState() != ZM_WARP_TRANSITION_IDLE
+				|| pxManager->GetIssuedLoadRequestCount() != g_uRVWManagerLoadsAfter
+				|| ZM_BattleTransition::IsTransitionActive()
+				|| pxTransition->GetObservedEncounterCount() != 1u
+				|| pxTransition->GetIssuedLoadRequestCount() != 1u
+				|| pxTransition->GetCompletedBattleCount() != 1u
+				|| pxTransition->GetAbortedTransitionCount() != 0u
+				|| ZM_UI_MenuStack::IsMenuOpen()
+				|| xVesper.m_eTrainer != eRVW_TRAINER || !xVesper.m_bSightEnabled
+				|| xVesper.m_eState != ZM_TRAINER_SIGHT_WATCHING
+				|| xVesper.m_uRaiseCount != 0u || xVesper.m_uChallengeCount != 0u
+				|| pxGameState->m_bPendingWhiteout
+				|| pxGameState->m_uMoney != g_uRVWMoneyBefore
+				|| xLead.m_uCurrentExp != g_uRVWExpBefore
+				|| ZM_IsStoryFlagSet(*pxGameState,
+					ZM_STORY_FLAG_RIVAL1_DEFEATED))
+			{
+				FailRVW("the healed TownCenter hold re-triggered Vesper or mutated the loss outcome");
+				return false;
+			}
+			if (g_iRVWPhaseFrames >= iRVW_NO_INPUT_HOLD_FRAMES)
+			{
+				g_bRVWNoInputHoldCompleted = true;
+				g_eRVWPhase = RVWPhase::Done;
+				return false;
+			}
+			return true;
+		}
+
+		case RVWPhase::Done:
+			return false;
+		}
+		return false;
+	}
+
+	bool Verify_ZMRivalVesperWhiteout()
+	{
+		bool bPassed = true;
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_RivalVesperWhiteout] failed=%s (%s) starter=%s walk=%s "
+			"separation=%.3f->%.3f channel=%u inBattle=%s matchup=(%u L%u vs %u L%u) "
+			"outcome=%s winner=%u finalHP=%u pendingSeen=%s dirtyProbe=%s",
+			g_bRVWFailed ? "true" : "false", g_szRVWFailure,
+			g_bRVWStarterCaptured ? "true" : "false",
+			g_bRVWWalkedIntoCone ? "true" : "false",
+			g_fRVWInitialSeparation, g_fRVWBestSeparation,
+			(u_int)g_eRVWChannelTrainer,
+			g_bRVWReachedInBattle ? "true" : "false",
+			(u_int)g_eRVWPlayerSpecies, g_uRVWPlayerLevel,
+			(u_int)g_eRVWEnemySpecies, g_uRVWEnemyLevel,
+			g_bRVWOutcomeCaptured ? "true" : "false", (u_int)g_eRVWWinner,
+			g_uRVWFinalBattleHp, g_bRVWPendingObserved ? "true" : "false",
+			g_bRVWDirtyHealProbeInstalled ? "true" : "false");
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_RivalVesperWhiteout] whiteout: battleResume=%s warpSeen=%s settled=%s "
+			"loads=%u->%u pendingAfter=%s HP=%u/%u PP=%u/%u status=%u "
+			"money=%u->%u exp=%u->%u flag=%s->%s encounters=%u completed=%u "
+			"battleLoads=%u aborted=%u townTag=%s townResolved=%s transformErr=%.4f bodyErr=%.4f",
+			g_bRVWBattleResumeObserved ? "true" : "false",
+			g_bRVWWhiteoutWarpObserved ? "true" : "false",
+			g_bRVWWhiteoutSettled ? "true" : "false",
+			g_uRVWManagerLoadsBefore, g_uRVWManagerLoadsAfter,
+			g_bRVWPendingAfter ? "true" : "false",
+			g_uRVWHpAfter, g_uRVWMaxHpAfter, g_uRVWPpAfter, g_uRVWMaxPpAfter,
+			(u_int)g_eRVWStatusAfter, g_uRVWMoneyBefore, g_uRVWMoneyAfter,
+			g_uRVWExpBefore, g_uRVWExpAfter,
+			g_bRVWFlagBefore ? "true" : "false",
+			g_bRVWFlagAfter ? "true" : "false",
+			g_uRVWEncounterCountAfter, g_uRVWCompletedAfter,
+			g_uRVWTransitionLoadsAfter, g_uRVWAbortedAfter,
+			g_bRVWTownCenterTag ? "true" : "false",
+			g_bRVWTownCenterResolved ? "true" : "false",
+			g_fRVWTransformSpawnError, g_fRVWBodySpawnError);
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_RivalVesperWhiteout] rearm: original=%llu reloaded=%llu stateWatching=%s "
+			"raise=%u challenge=%u noInputHold=%s (%d frames)",
+			(unsigned long long)g_xRVWOriginalVesperID.GetPacked(),
+			(unsigned long long)g_xRVWReloadedVesperID.GetPacked(),
+			g_bRVWVesperRearmed ? "true" : "false", g_uRVWReloadedRaise,
+			g_uRVWReloadedChallenge,
+			g_bRVWNoInputHoldCompleted ? "true" : "false",
+			iRVW_NO_INPUT_HOLD_FRAMES);
+
+		if (g_bRVWFailed)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesperWhiteout] %s", g_szRVWFailure);
+			bPassed = false;
+		}
+		if (!g_bRVWStarterCaptured || g_uRVWLevelBefore != 5u
+			|| g_uRVWMaxHpBefore == 0u || g_uRVWMaxPpBefore == 0u
+			|| g_bRVWFlagBefore)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesperWhiteout] the exact healthy L5 starter baseline was not captured");
+			bPassed = false;
+		}
+		if (!g_bRVWWalkedIntoCone
+			|| g_fRVWBestSeparation >= g_fRVWInitialSeparation
+			|| !g_bRVWChannelCaptured || g_eRVWChannelTrainer != eRVW_TRAINER
+			|| !g_bRVWReachedInBattle)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesperWhiteout] the authored physical walk/channel proof is incomplete");
+			bPassed = false;
+		}
+		if (!g_bRVWBattleConfigCaptured || !g_bRVWLiveHealthyMatchup
+			|| g_eRVWPlayerSpecies != ZM_SPECIES_FERNFAWN || g_uRVWPlayerLevel != 5u
+			|| g_eRVWEnemySpecies != ZM_SPECIES_KINDLET || g_uRVWEnemyLevel != 5u
+			|| g_bRVWCatchAllowed || g_bRVWFleeAllowed
+			|| g_eRVWChosenMove == ZM_MOVE_NONE || !g_bRVWChosenMoveUsed)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesperWhiteout] the live core was not L5 Fernfawn versus L5 Kindlet");
+			bPassed = false;
+		}
+		if (!g_bRVWOutcomeCaptured || g_eRVWWinner != ZM_SIDE_ENEMY
+			|| g_uRVWFinalBattleHp != 0u || !g_bRVWPendingObserved
+			|| !g_bRVWDirtyHealProbeInstalled || !g_bRVWBattleResumeObserved)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesperWhiteout] no natural ENEMY win -> faint -> pending-whiteout chain was observed");
+			bPassed = false;
+		}
+		if (!g_bRVWWhiteoutWarpObserved || !g_bRVWWhiteoutSettled
+			|| g_uRVWManagerLoadsAfter != g_uRVWManagerLoadsBefore + 1u
+			|| g_bRVWPendingAfter || g_uRVWHpAfter != g_uRVWMaxHpAfter
+			|| g_uRVWPpAfter != g_uRVWMaxPpAfter
+			|| g_eRVWStatusAfter != ZM_MAJOR_STATUS_NONE)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesperWhiteout] exactly-one warp did not fully heal HP, PP, and status");
+			bPassed = false;
+		}
+		if (g_uRVWMoneyAfter != g_uRVWMoneyBefore
+			|| g_uRVWExpAfter != g_uRVWExpBefore || g_bRVWFlagAfter)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesperWhiteout] the trainer loss paid money/exp or set the defeat flag");
+			bPassed = false;
+		}
+		if (g_uRVWEncounterCountAfter != 1u || g_uRVWCompletedAfter != 1u
+			|| g_uRVWTransitionLoadsAfter != 1u
+			|| g_uRVWAbortedAfter != 0u || !g_bRVWTownCenterTag
+			|| !g_bRVWTownCenterResolved
+			|| g_fRVWTransformSpawnError > fRVW_POSITION_EPSILON
+			|| g_fRVWBodySpawnError > fRVW_POSITION_EPSILON)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesperWhiteout] round-trip counts or exact TownCenter placement failed");
+			bPassed = false;
+		}
+		if (g_xRVWReloadedVesperID == g_xRVWOriginalVesperID
+			|| !g_bRVWVesperRearmed || g_uRVWReloadedRaise != 0u
+			|| g_uRVWReloadedChallenge != 0u || !g_bRVWNoInputHoldCompleted)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesperWhiteout] reloaded Vesper was not a fresh watcher through the no-input hold");
+			bPassed = false;
+		}
+		return bPassed || !g_bRVWPrereqsPresent;
+	}
+
+	void Teardown_ZMRivalVesperWhiteout()
+	{
+		RVWClearInput();
+		Zenith_InputSimulator::ClearFixedDt();
+		ZM_SetInstantBattlesForTests(false);
+		ZM_UI_MenuStack::ResetRuntimeStateForTests();
+		ZM_BattleTransition::ResetRuntimeStateForTests();
+		ZM_GameStateManager::ResetRuntimeStateForTests();
+		ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
+		ZM_GameStateManager::ResetGameStateForTests();
+		Zenith_InputSimulator::ResetAllInputState();
+		g_bRVWActive = false;
+	}
+}
+
+static const Zenith_AutomatedTest g_xZMRivalVesperWhiteoutTest = {
+	"ZM_RivalVesperWhiteout_Test",
+	&Setup_ZMRivalVesperWhiteout,
+	&Step_ZMRivalVesperWhiteout,
+	&Verify_ZMRivalVesperWhiteout,
+	// Above the sum of all independently reset phase budgets (5000 frames),
+	// leaving the harness as a backstop rather than pre-empting a phase's own
+	// diagnostic deadline.
+	/* maxFrames */ 5400,
+	false /* m_bRequiresGraphics */,
+	false /* m_bManualOnly */,
+	&Teardown_ZMRivalVesperWhiteout,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMRivalVesperWhiteoutTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

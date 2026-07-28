@@ -4,7 +4,7 @@
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (ZM numbers OBSERVED 2026-07-28 on a fresh build of both configs
-after known-limit W1):** ZM headless registry **47 passed / 0 failed**; ZM boot unit gate
+after known-limit W2):** ZM headless registry **48 passed / 0 failed**; ZM boot unit gate
 **2708 ran / 2707 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
 2708); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
 1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6/SC7/SC8 -- none of
@@ -96,7 +96,7 @@ build lacks `libcurl-d.dll`, so booting the exe first dies in the loader with
 ZERO stdout and the gate reports the misleading "no 'Unit tests complete' line in
 boot output" rather than a load failure.
 
-**Stage:** **S7 (save/load, story flags, trainer battles) ACTIVE. Item 1 (full schema-v1 codec) COMPLETE (SC1-SC2, ZM-D-135/136). Item 2 (story flags + save integration) COMPLETE (SC1-SC6, ZM-D-137..142). Item 3 IN PROGRESS: SC1 eval spike DONE (ZM-D-144), SC1b DONE (ZM-D-146/147), SC2 DONE (ZM-D-150). NEXT = SC3** (the pure sight-cone predicate + the trainer `ZM_BattleConfig` helper). S0-S6 remain complete. S7 requires no human intervention; the next human stop remains the S8 vertical-slice go/no-go.
+**Stage:** **S7 COMPLETE (items 1-4). Pre-S8 known-limit closure ACTIVE: W1-W2/5 COMPLETE (ZM-D-157/158); NEXT = W3, the visual spotted beat.** S0-S6 remain complete. The S8 vertical-slice go/no-go is still a human stop and remains unsigned.
 **Build:** GREEN on the ZM-D-148 diff (scene authoring made boot-shape-independent; all four ZM scenes now TRACKED) on top of SC1b commit B (ZM-D-147 -- baked navmesh persistence). Engine-wide, so it owed and got the full gate: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; engine lib + SentinelECS/Physics/AI (all three exes exit 0); Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True.
 **Tests (commit B):** Null batches, ALL 0-failed: **ZM 44/44** (registry 42 -> 44; both new navmesh tests RUN, not skipped), CB **45/45**, DP **158/158**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 44/44, 0 skipped, 0 failed**. Boot unit gates on the NULL exes: engine **1093 -> 1121** (Combat) and ZM **2515 -> 2546** -- both pinned from the OBSERVED line. Windowed RenderTest 8 passed / 1 failed, only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002). Ratchets (`architecture,lints` and `complexity`) are **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added; two findings this commit DID introduce (an `Editor/` include and a `g_xEngine` reach from EntityComponent) were fixed, not allow-listed. **Asset-less CI condition reproduced locally** (`Zenith/Assets` hidden): ZM 44/44 and both unit gates unchanged; restored by MERGE and `diff -rq`-verified, since the run re-created only 60 of the 89 files and a naive rename-back would have clobbered the tree. **Teeth mutation-proven ×6** (see ZM-D-147; m1 re-run on the final build reds exactly the 3 serialization units).
 
@@ -111,9 +111,10 @@ boot output" rather than a load failure.
 
 **★★ S7 ITEM 3 AND ITEM 4 ARE COMPLETE (SC8, ZM-D-156). THE S8 VERTICAL-SLICE
 GO/NO-GO REMAINS A HUMAN GATE AND IS UNSIGNED.** This session has explicit authority
-only to close its five recorded known limits, not to start S8 content. **W1/5 is now
-COMPLETE (ZM-D-157): forced replacement ships and complete authored trainer parties
-are live. NEXT = W2, the honest trainer-loss/whiteout proof.**
+only to close its five recorded known limits, not to start S8 content. **W1-W2/5 are
+now COMPLETE (ZM-D-157/158): forced replacement ships, complete authored trainer
+parties are live, and the honest Vesper-loss/whiteout route is proven. NEXT = W3, the
+visual spotted beat.**
 
 **What the vertical actually does now, end to end:** the player walks around Dawnmere;
 rival Vesper stands AUTHORED in the town at (490, 524) facing the spawn approach; when
@@ -125,24 +126,30 @@ silence survives a save/reload.
 **★ THE HONEST "WHAT IS STILL MISSING" LIST -- read this BEFORE signing the go/no-go.
 The vertical is real but it is not the full mainline beat, and it should not be
 oversold:**
-1. **The trainer LOSS / whiteout path has never been executed by any automated test** --
-   and it is the branch an honest human playthrough hits FIRST (L5 Grass starter vs L5
-   Fire rival, with Catch and Run both gated off). SC8 makes losing SAFE (the placement
-   clears the respawn by 49 m, pinned by a boot unit) but not PROVEN. The new test
-   installs an over-levelled lead precisely to avoid it.
-2. **There is no visual "spotted" beat at all** -- no exclamation mark, no camera cut, no
+1. **There is no visual "spotted" beat at all** -- no exclamation mark, no camera cut, no
    approach walk. The rival notices the player silently until the dialogue box appears.
-3. **The rival is visually indistinguishable from the four townsfolk.** `ZM_GreyboxVisual`
+2. **The rival is visually indistinguishable from the four townsfolk.** `ZM_GreyboxVisual`
    paints one fixed grey and `ZM_NpcData::m_eHuman` is consumed by NOTHING today.
-4. **Route 1 does not exist**, so the GDD's canonical location for rival battle 1
+3. **Route 1 does not exist**, so the GDD's canonical location for rival battle 1
    ("Route 1, L5") does not either. The Dawnmere placement is a RECORDED deviation
    (Q-D / ZM-D-156) carrying a re-placement debt.
-5. **The challenge `.bgraph` is gitignored**, so a fresh CI checkout loses the BARK and
+4. **The challenge `.bgraph` is gitignored**, so a fresh CI checkout loses the BARK and
    keeps the BATTLE (SC7's deliberate fail-open). The bark beat is exercised locally
    only, never in CI.
-6. **No test proves the authored Vesper carries no graph slot at RUNTIME** -- it cannot,
+5. **No test proves the authored Vesper carries no graph slot at RUNTIME** -- it cannot,
    because the runtime attach is idempotent by path. The property rests on an
    authoring-time assert plus the boot-stability check.
+
+**W2 closure, observed rather than inferred.** `ZM_RivalVesperWhiteout_Test` starts from
+the canonical level-5 Fernfawn state, physically walks to committed Vesper, selects a
+legitimate learned move through the live HUD, and reaches a natural ENEMY win with
+Catch and Run unavailable. It proves no loss payout/flag/EXP; observes the pending
+whiteout in the director/manager order boundary; dirties durable HP, PP and status;
+then requires a full heal, exactly one TownCenter load, independently computed capsule
+placement, a freshly derived WATCHING Vesper, and 200 no-input frames without a
+re-challenge. The first attempt also disproved a fixture assumption: move slot 0 made
+the player win with 13 HP, so the final test follows observed battle behavior instead
+of forcing a result.
 
 **W1 closure, observed rather than inferred.** `ResolveTurn` now performs a canonical
 `DoSwitch` after `TURN_END` and the whole-party terminal scan whenever a fainted active

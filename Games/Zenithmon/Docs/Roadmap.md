@@ -108,6 +108,15 @@
   party capacity; Rambler Perrin's two-member authored row and reserve arena model
   are proven end to end. The human S8 gate remains unsigned while W2-W5 close the
   other recorded limits.
+- **Known-limit W2 COMPLETE 2026-07-28 (ZM-D-158):** the new Null-capable
+  `ZM_RivalVesperWhiteout_Test` drives canonical level-5 Fernfawn through authored
+  Vesper's real sight, challenge, transition, live HUD and natural ENEMY result. It
+  proves loss gives no money/flag/EXP; whiteout full-heals HP/PP/status; exactly one
+  load lands at independently-oracled TownCenter; reload re-derives a WATCHING rival;
+  and 200 no-input frames do not re-trigger. Registry **47 -> 48**, boot unchanged at
+  **2708 / 2707 / 0 / 1**, Null and full Vulkan **48/48**; three compiled mutations
+  independently red healing, destination and loss-reward clauses. The human S8 gate
+  remains unsigned; **NEXT = W3, the visual spotted beat.**
 - [ ] Rival battle 1
 
 *Gate:* automated save -> quit-to-FrontEnd -> continue restores position/party/flags exactly.

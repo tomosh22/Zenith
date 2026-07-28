@@ -15,6 +15,71 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-28 -- ZM-D-158 -- Known-limit W2: an honest authored-Vesper loss proves the complete whiteout recovery path
+
+*(Second of five explicitly authorised pre-S8-gate known-limit commits. The human S8
+go/no-go remains UNSIGNED and no S8 content begins. Test + docs only: no production
+source, new `.cpp`, regen, ECS order, serialization version, scene byte or asset.)*
+
+### Decision
+
+The trainer-loss debt is retired by a new independent, Null-capable
+`ZM_RivalVesperWhiteout_Test`, not by extending the winning SC8 fixture or invoking a
+pure helper. It starts from `ZM_MakeStarterGameState()`'s real level-5 Fernfawn, walks
+the player physically into the committed authored Vesper's sight cone, observes the
+challenge channel and live Battle UI, and drives a legal learned move through that UI
+until the battle engine naturally resolves `ZM_SIDE_ENEMY`. Catch and Run must both be
+unavailable. The test never teleports movement, calls a result helper, rigs HP or
+injects a winner.
+
+An initial implementation exposed a useful false assumption: repeatedly confirming
+move slot 0 did NOT lose the canonical matchup; Fernfawn naturally won with 13 HP.
+That red run was kept as evidence rather than relabelled. The final driver uses the
+real HUD navigation edge to select Fernfawn's second learned move and requires the
+presented PLAYER `MOVE_USED` event to name that move. This produces the honest enemy
+win while keeping both parties at their exact authored level-5, full-health setup.
+
+The test samples the live director core before first input (exact species, levels,
+health, PP, status and trainer restrictions), then proves the loss awards no money,
+defeat flag or EXP and latches whiteout only after the order-111 director has resolved
+the battle. Before order 104 consumes that latch on the next frame, the durable lead is
+deliberately dirtied to 1 HP, zero PP and POISON. Recovery must full-heal all three
+dimensions, clear the latch, issue exactly one whiteout load, and place the player at
+TownCenter. The destination oracle is independent: a test literal names `TownCenter`
+and expected centre Y is marker feet plus `ZM_PlayerController`'s capsule half-extent,
+not `ZM_GameStateManager`'s production constant/helper.
+
+After reload, the unique authored Vesper must still derive the rival trainer row, keep
+sight enabled, return to WATCHING with zero raise/challenge counters, and remain silent
+for 200 real no-input frames at the 49 m respawn clearance. This covers the previously
+untested flagged-row-loss property: no defeat flag is written, yet range prevents an
+immediate re-challenge loop.
+
+### Tests and observed gate
+
+The new registration moves the automated registry **47 -> 48** and adds no boot unit,
+so the workflow pin remains **2708**. On the restored candidate, Null headless was
+**48/48**: **37 executed / 11 expected graphics skips / 0 zero-frame executions**;
+`ZM_RivalVesperWhiteout_Test` ran **510 frames**. The boot gate was exactly
+**2708 ran / 2707 passed / 0 failed / 1 documented skip**. The Vulkan tools-debug
+build was green and the full windowed registry was **48/48 executed / 0 failed / 0
+skipped / 0 zero-frame**, with the new test again at **510 frames**.
+
+Three exact-one-anchor mutations each compiled fresh, produced a parsed red focused
+result, and were restored to a rebuilt **1/1** green: replace `HealAllFull()` with an
+HP-only restoration (**510-frame fail**, catching dirty PP/status); redirect the valid
+whiteout tag from `TownCenter` to `FromHome` (**510-frame fail**, catching destination);
+and invert the trainer reward's win-only classifier guard (**311-frame fail**, catching
+loss money/flag). The final full headless, boot, Vulkan build and windowed gates ran
+only after restoration.
+
+### Reversibility
+
+High: one test registration and documentation. Removing it changes no runtime behavior
+but reopens the only honest authored-trainer loss proof. No committed asset changed.
+
+---
+
 ## 2026-07-28 -- ZM-D-157 -- Known-limit W1: forced replacement retires the lead-only trainer clamp, and presented reserves replace the fainted arena model
 
 *(First of five explicitly authorised pre-S8-gate known-limit commits. The human S8

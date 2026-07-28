@@ -1260,6 +1260,24 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   arena model (focused trainer gate **0/1**, restored **1/1**). A fifth candidate
   that merely restored the historical hard process break was rejected as an invalid
   mutation because it killed the process instead of producing a parseable unit result.
+- **Known-limit W2 -- honest rival loss/whiteout (COMPLETE 2026-07-28,
+  ZM-D-158):** new independent `ZM_RivalVesperWhiteout_Test` registration, runnable on
+  Null, starts with `ZM_MakeStarterGameState()`'s exact level-5 Fernfawn and physically
+  walks to the committed authored Vesper. Before input it captures the live director
+  core and pins exact parties/vitals/PP/status plus Catch/Run refusal. It navigates the
+  real HUD to a legitimate second learned move and requires the matching PLAYER
+  `MOVE_USED` event, then a natural ENEMY winner; move slot 0 was empirically rejected
+  because it produced a PLAYER win with 13 HP. The gate proves no money/flag/EXP,
+  observes the pending-whiteout order boundary, dirties durable HP/PP/status, requires
+  full healing plus exactly one manager/transition load, computes TownCenter placement
+  independently from marker feet + capsule half-extent, reloads a sight-enabled WATCHING
+  rival, and holds 200 no-input frames without re-engagement. Observed final gate:
+  registry **47 -> 48**; Null **48/48** (**37 run / 11 expected skips / 0 zero-frame**);
+  boot unchanged **2708 / 2707 / 0 / 1**; Vulkan build green; full windowed **48/48 run /
+  0 skipped / 0 zero-frame**; focused test **510 frames** on both backends. Three
+  exact-one-anchor compiled mutations red the focused result: HP-only whiteout heal
+  (**510**), `FromHome` destination (**510**), inverted win-only reward guard (**311**);
+  every restoration rebuilt and returned **1/1** green before the final full gates.
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->
   defeat flag + prize money.
 

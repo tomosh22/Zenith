@@ -109,9 +109,10 @@ The persistent `WarpFade`/`BattleFade` are real full-screen transition surfaces.
 ### 1.8 Story / world content
 
 **Status: broader gameplay/world connectivity not started -- slice at S8, buildout at S9/S10.**
-Dawnmere's generated terrain/grass scene now connects through a real authored home-door trigger to PlayerHome build 40 and back through a real authored exit trigger; `TownCenter`, `Door`, and `FromHome` placement are all exercised at runtime. PlayerHome and the outdoor home shell are deliberate greyboxes, and this is still only one door edge. Thornacre and Route1 have measured ignored terrain families, **not** scene/content implementations. **Dawnmere now has four authored, interactable NPCs** (a villager, a Trade Post clerk, a Care Center caretaker and a deterministic two-waypoint wanderer; S6 item 3), each reachable by walking up and pressing the interact key. The patrol is persisted by `ZM_Interactable` v2; v1 data loads stationary. There are still no live route edges, gyms beyond the data row, trainers, story-flag gating, badge-award gameplay, rival arc, or League; SC1 supplies the durable story-bit and badge storage primitives only. Behaviour-graph and terrain-fed navmesh work moves to S7; the remaining scene/content families still depend on shared WorldSpec-driven authoring.
+Dawnmere's generated terrain/grass scene now connects through a real authored home-door trigger to PlayerHome build 40 and back through a real authored exit trigger; `TownCenter`, `Door`, and `FromHome` placement are all exercised at runtime. PlayerHome and the outdoor home shell are deliberate greyboxes, and this is still only one door edge. Thornacre and Route1 have measured ignored terrain families, **not** scene/content implementations. **Dawnmere now has five authored, interactable NPCs**: the four S6 townsfolk plus rival Vesper, the first live trainer. The patrol is persisted by `ZM_Interactable` v2; v1 data loads stationary. Vesper's sight/challenge/battle, win reward/flag and loss/whiteout routes are automated. There are still no live route edges, gyms beyond the data row, badge-award gameplay, broader rival arc, or League. The remaining scene/content families depend on shared WorldSpec-driven authoring.
 
-**S7 item 3 SC8 (ZM-D-156) adds the FIRST authored trainer, and with it two named debts.**
+**S7 item 3 SC8 (ZM-D-156) adds the FIRST authored trainer and named two debts; W2
+(ZM-D-158) retires the loss debt, leaving only Route-1 placement open.**
 Dawnmere now authors a FIFTH interactable NPC, rival Vesper, at (490, 524) facing the
 spawn approach; walking into his 8 m / 60-degree cone with a clear line of sight starts a
 real trainer battle, and his identity survives save/reload by a zero-byte route.
@@ -121,14 +122,13 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
    is authored (S9/S10), move him and RE-DERIVE every separation from scratch** -- the
    current placement's clearances (caretaker 27.2 m, warden 28.6 m, villager 40.5 m, spawn
    49.2 m) are arithmetic against Dawnmere's specific geometry and none of them transfers.
-2. **THE TRAINER LOSS / WHITEOUT PATH IS UNTESTED.** No shipped test anywhere drives a
-   trainer LOSS. It is the branch an honest playthrough hits first (L5 Grass starter vs L5
-   Fire rival, Catch and Run both gated off), and it routes through the wild write-back ->
-   heal -> warp to TownCenter. SC8 makes it SAFE -- a loss respawns 49 m outside Vesper's
-   cone, and a boot unit pins that the spawn is outside the cone while he IS facing it, so
-   RANGE is provably the sole guard -- but SAFE is not PROVEN. **This matters because a
-   flagged row ignores the session latch, so a rival whose cone ever covered the respawn
-   would re-challenge forever.** Worth an explicit test before S8 ships a gym.
+2. **RESOLVED 2026-07-28 (ZM-D-158) -- TRAINER LOSS / WHITEOUT.** The independent
+   `ZM_RivalVesperWhiteout_Test` physically walks the canonical level-5 Grass starter to
+   authored level-5 Fire rival Vesper, uses the real HUD, and reaches a natural ENEMY win
+   with Catch and Run gated. It proves no prize/flag/EXP, full HP/PP/status recovery,
+   exactly one TownCenter load with an independent placement oracle, fresh trainer-row
+   derivation after reload, and 200 no-input frames without re-engagement at the 49 m
+   clearance. The flagged-row loss loop risk is now exercised rather than argued.
 
 ### 1.9 Post-game
 
