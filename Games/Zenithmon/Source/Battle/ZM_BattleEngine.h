@@ -3,6 +3,12 @@
 #include "Zenithmon/Source/Battle/ZM_BattleState.h"
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"
 
+// Optional policy used only when a completed, non-terminal turn leaves a
+// fainted active in front of live reserves. Return a party slot; an invalid
+// result falls back to the side's lowest live reserve. The opaque context keeps
+// the engine independent of BattleAI and its caller-owned RNG.
+using ZM_ForcedReplacementPolicy = u_int (*)(const ZM_BattleState&, ZM_SIDE, void*);
+
 // ============================================================================
 // ZM_BattleEngine -- the public battle API (S2 box 1). Deep-owns both parties,
 // seeds the state RNG, resolves turns into an append-only event stream. Box 1 is
@@ -27,8 +33,13 @@ public:
 	// submit for that side.
 	void SubmitAction(ZM_SIDE eSide, const ZM_BattleAction& xAction);
 
-	// Both sides must have submitted. Resolves the whole turn, appending events. No-op once over.
-	void ResolveTurn();
+	// Both sides must have submitted. Resolves the whole turn, appending events.
+	// After TURN_END and the whole-party terminal check, every fainted active with
+	// a live reserve is replaced before this returns. PLAYER is resolved before
+	// ENEMY; the optional policy can select a reserve without coupling this layer
+	// to AI. Invalid/no policy results use the lowest live reserve. No-op once over.
+	void ResolveTurn(ZM_ForcedReplacementPolicy pfnReplacement = nullptr,
+		void* pReplacementContext = nullptr);
 
 	bool    IsOver() const        { return m_bOver; }
 	ZM_SIDE GetWinnerSide() const { return m_eWinner; }   // valid iff IsOver(); COUNT == draw
@@ -69,6 +80,8 @@ private:
 	bool AwardsExpToSide(ZM_SIDE eSide) const;
 	void AwardExpForNewFaints();    // box 4: scan every party member and credit each new faint exactly once
 	void QueueTerminalEvolutions(); // box 4: immediately-before-BATTLE_END settlement only
+	void ResolveForcedReplacements(ZM_ForcedReplacementPolicy pfnReplacement,
+		void* pReplacementContext);
 	void Emit(const ZM_BattleEvent& x) { m_xEvents.PushBack(x); }
 
 	// SC6 pre-move action handlers (fixed PLAYER-then-ENEMY order). A catch/flee sets

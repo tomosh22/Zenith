@@ -51,13 +51,9 @@ ZM_TrainerBattleSetup ZM_BuildTrainerBattleSetup(ZM_TRAINER_ID eTrainer)
 		return xSetup;   // a trainer with no team cannot battle
 	}
 
-	// CLAMP HERE OR NOWHERE: ZM_BattleEngine::Begin loops uEnemyCount unbounded and
-	// ZM_BattleDirectorCore::Begin forwards the count verbatim. The bound is the
-	// count the ENGINE can resolve, NOT the row cap -- the engine has no forced
-	// replacement on faint, so a fielded bench ends in a Zenith_Assert the moment
-	// the enemy active is KO'd (uZM_TRAINER_BATTLEABLE_PARTY's comment spells the
-	// whole chain out). Members are taken from the FRONT, so the row's authored
-	// lead is the monster fielded.
+	// Defensively cap malformed content at the fixed destination array. For valid
+	// rows this equals the shared engine party capacity, so no authored bench is
+	// hidden and member zero remains the lead.
 	u_int uCount = xRow.m_uPartyCount;
 	if (uCount > uZM_TRAINER_BATTLEABLE_PARTY)
 	{

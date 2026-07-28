@@ -1241,6 +1241,25 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   - **SC1b observed gate:** boot units **2515 -> 2546**, engine-only reference
     **1093 -> 1121**, automated registry **42 -> 44**, all six mutations proved
     teeth (see ZM-D-147).
+- **Known-limit W1 -- forced replacement (COMPLETE 2026-07-28, ZM-D-157):** five
+  new boot units pin both-side replacement, `TURN_END -> SWITCH_IN` ordering,
+  invalid-policy lowest-live fallback, no extra normal turn, battle-RNG identity,
+  RANDOM live-reserve-only AI with private-RNG use, tactical best-match selection,
+  and the director-to-AI policy seam. Existing forced-switch, sand-chip, EXP and
+  trainer-builder cases were updated to the new invariant. The existing
+  `ZM_TrainerBattle_Test` now fields Rambler Perrin's complete authored two-member
+  row and observes lead `FAINT`, exactly one reserve `SWITCH_IN`, eventual player
+  win, flagless payout and one clean round trip. Observed gate: boot **2703 ->
+  2708** (`2708 / 2707 / 0 / 1`), registry unchanged **47/47**, Null headless and
+  full Vulkan windowed **47/47**, Vulkan and Null builds green. Required W1
+  compatibility gate: engine boot **1164 / 1163 / 0 / 1**; Combat **14/14** plus
+  its boot gate, CityBuilder **45/45**, DevilsPlayground **158/158**. Four
+  exact-one-anchor mutations compiled fresh and redded the observed W1 suite:
+  discard the policy's selected slot, reverse tactical AI scoring, restore the
+  trainer cap to 1, and consume presented event indices without synchronizing the
+  arena model (focused trainer gate **0/1**, restored **1/1**). A fifth candidate
+  that merely restored the historical hard process break was rejected as an invalid
+  mutation because it killed the process instead of producing a parseable unit result.
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->
   defeat flag + prize money.
 

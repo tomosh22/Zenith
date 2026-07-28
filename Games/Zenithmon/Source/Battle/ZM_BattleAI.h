@@ -38,3 +38,10 @@ enum ZM_AI_TIER : u_int
 // neither -- Scope.md singles, SubmitAction legality).
 ZM_BattleAction ZM_ChooseAction(const ZM_BattleState& xState, ZM_SIDE eSide,
 	ZM_AI_TIER eTier, ZM_BattleRNG& xAIRng);
+
+// Select a live reserve for a forced replacement. Returns uZM_MAX_PARTY_SIZE
+// when none exists. RANDOM is uniform over eligible reserves and draws only the
+// caller-owned AI RNG; tactical tiers deterministically choose the reserve with
+// the strongest best-move score against the opposing active (lowest-slot tie).
+u_int ZM_ChooseReplacement(const ZM_BattleState& xState, ZM_SIDE eSide,
+	ZM_AI_TIER eTier, ZM_BattleRNG& xAIRng);

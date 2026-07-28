@@ -18,7 +18,7 @@
 //   2. Setup_TierIsTheRowsTier -- the row's ZM_AI_TIER reaches the setup.
 //   3. Setup_UnregisteredTrainerIsAnInertTotalNoOp -- total, silent, assert-free.
 //   4. Seed_IsDeterministicPerTrainerAndDisjointFromTheWildSeedSpace -- the fold.
-//   5. Setup_EnemyCountNeverExceedsWhatTheEngineCanResolve -- the clamp bound.
+//   5. Setup_FieldsEveryAuthoredMemberWithinTheEngineCap -- the retired clamp.
 // ============================================================================
 
 #include "Core/Zenith_TestFramework.h"
@@ -89,22 +89,17 @@ namespace
 // ZM_BuildWildEnemySpec -- no second derivation, no reordering, no truncation.
 ZENITH_TEST(ZM_TrainerBattle, Setup_PartyMatchesTheAuthoredRowExactly)
 {
-	// ANTI-VACUITY, on the ROW DATA (never on the built setup, which the clamp
-	// bounds): a one-row roster, or a roster whose every row already fits inside
-	// uZM_TRAINER_BATTLEABLE_PARTY, would let the clamp branch below go unexecuted
-	// and a clamp-free builder would pass every assertion in this case.
+	// ANTI-VACUITY: the Rambler is the shipped multi-member row. If content ever
+	// collapses back to one-monster trainers this proof no longer exercises forced
+	// replacement and must fail loudly.
 	ZENITH_ASSERT_GE(ZM_GetTrainerCount(), 2u,
 		"the roster must carry at least two rows or this walk is near-vacuous");
-	u_int uMaxAuthoredParty = 0u;
-	for (u_int u = 0u; u < ZM_GetTrainerCount(); ++u)
-	{
-		const u_int uCount = ZM_GetTrainerData((ZM_TRAINER_ID)u).m_uPartyCount;
-		if (uCount > uMaxAuthoredParty) { uMaxAuthoredParty = uCount; }
-	}
-	ZENITH_ASSERT_GT(uMaxAuthoredParty, uZM_TRAINER_BATTLEABLE_PARTY,
-		"no roster row AUTHORS more members than the engine can field (%u), so the clamp "
-		"branch is never taken and a clamp-free builder would pass this case",
-		uZM_TRAINER_BATTLEABLE_PARTY);
+	ZENITH_ASSERT_GT(ZM_GetTrainerData(ZM_TRAINER_ROUTE1_RAMBLER).m_uPartyCount, 1u,
+		"the Rambler no longer supplies the multi-member forced-replacement fixture");
+	ZENITH_ASSERT_EQ(uZM_TRAINER_BATTLEABLE_PARTY, uZM_TRAINER_MAX_PARTY,
+		"the trainer builder still carries a hidden clamp below the engine party cap");
+	ZENITH_ASSERT_EQ(uZM_TRAINER_BATTLEABLE_PARTY, uZM_MAX_PARTY_SIZE,
+		"trainer and battle-engine party capacities drifted apart");
 
 	for (u_int u = 0u; u < ZM_GetTrainerCount(); ++u)
 	{
@@ -114,14 +109,10 @@ ZENITH_TEST(ZM_TrainerBattle, Setup_PartyMatchesTheAuthoredRowExactly)
 
 		ZENITH_ASSERT_TRUE(xSetup.m_bValid,
 			"trainer %u is registered but built no battle setup", u);
-		const u_int uExpectedCount = (xRow.m_uPartyCount > uZM_TRAINER_BATTLEABLE_PARTY)
-			? uZM_TRAINER_BATTLEABLE_PARTY
-			: xRow.m_uPartyCount;
-		ZENITH_ASSERT_EQ(xSetup.m_uEnemyCount, uExpectedCount,
-			"trainer %u's enemy count is not the (clamped) authored party count", u);
+		ZENITH_ASSERT_EQ(xSetup.m_uEnemyCount, xRow.m_uPartyCount,
+			"trainer %u's enemy count is not the complete authored party count", u);
 		ZENITH_ASSERT_LE(xSetup.m_uEnemyCount, uZM_TRAINER_BATTLEABLE_PARTY,
-			"trainer %u's enemy count exceeds what the battle engine can resolve -- "
-			"nothing downstream clamps it and the enemy's first faint would hard-assert", u);
+			"trainer %u's authored party exceeds the shared engine capacity", u);
 		ZENITH_ASSERT_GE(xSetup.m_uEnemyCount, 1u,
 			"trainer %u built an EMPTY enemy party -- ZM_BattleEngine::Begin asserts on that", u);
 
@@ -284,40 +275,42 @@ ZENITH_TEST(ZM_TrainerBattle, Seed_IsDeterministicPerTrainerAndDisjointFromTheWi
 }
 
 // ############################################################################
-// 5. The built party never exceeds what the battle ENGINE can resolve
+// 5. The built party fields every authored member within the shared engine cap
 // ############################################################################
 
-// This is the ONE place the bound is stated on its own, so it cannot drift by
-// somebody widening the clamp in the builder and "fixing" case 1's expectation to
-// match. The engine has no forced replacement on faint, so a fielded bench ends
-// the battle in Zenith_Assert(!xActive.IsFainted(), ...) -- a process break in
-// EVERY configuration -- the moment the enemy active is KO'd. Until
-// forced-switch-on-faint exists, EVERY row must field exactly what the engine can
-// finish, whatever the author wrote in the roster.
-ZENITH_TEST(ZM_TrainerBattle, Setup_EnemyCountNeverExceedsWhatTheEngineCanResolve)
+// This is the independent clamp-retirement pin: the builder and row cap must
+// expose the engine's entire supported party, and every current row must arrive
+// at Begin member-for-member rather than silently dropping its bench.
+ZENITH_TEST(ZM_TrainerBattle, Setup_FieldsEveryAuthoredMemberWithinTheEngineCap)
 {
 	ZENITH_ASSERT_GT(ZM_GetTrainerCount(), 0u, "an empty roster makes this walk vacuous");
 	ZENITH_ASSERT_LE(uZM_TRAINER_BATTLEABLE_PARTY, uZM_TRAINER_MAX_PARTY,
 		"the battleable count outgrew the row cap -- m_axEnemyParty would overrun");
 	ZENITH_ASSERT_GE(uZM_TRAINER_BATTLEABLE_PARTY, 1u,
 		"a zero battleable count means NO trainer can ever be fielded");
+	ZENITH_ASSERT_EQ(uZM_TRAINER_BATTLEABLE_PARTY, uZM_MAX_PARTY_SIZE,
+		"the public trainer capacity must equal the battle engine's party capacity");
 
 	for (u_int u = 0u; u < ZM_GetTrainerCount(); ++u)
 	{
 		const ZM_TRAINER_ID eId = (ZM_TRAINER_ID)u;
 		const ZM_TrainerBattleSetup xSetup = ZM_BuildTrainerBattleSetup(eId);
 
+		const ZM_TrainerData& xRow = ZM_GetTrainerData(eId);
+		ZENITH_ASSERT_EQ(xSetup.m_uEnemyCount, xRow.m_uPartyCount,
+			"trainer %u dropped authored bench members (%u fielded, %u authored)",
+			u, xSetup.m_uEnemyCount, xRow.m_uPartyCount);
 		ZENITH_ASSERT_LE(xSetup.m_uEnemyCount, uZM_TRAINER_BATTLEABLE_PARTY,
-			"trainer %u fields %u monsters -- more than the engine can resolve (%u); the "
-			"first enemy faint would hard-assert in ZM_BattleEngine::SubmitAction",
+			"trainer %u fields %u monsters -- more than the shared capacity %u",
 			u, xSetup.m_uEnemyCount, uZM_TRAINER_BATTLEABLE_PARTY);
 		ZENITH_ASSERT_GE(xSetup.m_uEnemyCount, 1u,
 			"trainer %u fields an EMPTY party -- ZM_BattleEngine::Begin asserts on that", u);
 
-		// The FRONT of the row is what survives the clamp: the authored lead is the
-		// monster the player actually faces.
-		ZENITH_ASSERT_EQ((u_int)xSetup.m_axEnemyParty[0].m_eSpecies,
-			(u_int)ZM_GetTrainerData(eId).m_paxParty[0].m_eSpecies,
-			"trainer %u's clamp dropped the FRONT of the row instead of the tail", u);
+		for (u_int i = 0u; i < xRow.m_uPartyCount; ++i)
+		{
+			ZENITH_ASSERT_EQ((u_int)xSetup.m_axEnemyParty[i].m_eSpecies,
+				(u_int)xRow.m_paxParty[i].m_eSpecies,
+				"trainer %u member %u was reordered or dropped", u, i);
+		}
 	}
 }

@@ -15,6 +15,83 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-28 -- ZM-D-157 -- Known-limit W1: forced replacement retires the lead-only trainer clamp, and presented reserves replace the fainted arena model
+
+*(First of five explicitly authorised pre-S8-gate known-limit commits. The human S8
+go/no-go remains UNSIGNED and no S8 content begins. Game-local only: no new `.cpp`,
+regen, ECS order, serialization version or scene byte.)*
+
+### Decision
+
+A completed, non-terminal turn may not return with a fainted active in front of a live
+reserve. `ZM_BattleEngine::ResolveTurn` now performs a forced-replacement phase only
+AFTER end-of-turn work has emitted `TURN_END` and AFTER the whole-party terminal scan.
+It visits PLAYER then ENEMY and routes every promotion through the existing canonical
+`DoSwitch`, preserving `SWITCH_IN`, switch-in ability dispatch, transient reset and
+participant marking. This timing is deliberate: an incoming monster does not inherit
+the completed turn's poison/weather/trap work, and a whole-party loss still emits
+`BATTLE_END` without a spurious switch.
+
+The engine accepts an optional opaque replacement policy. A missing or illegal result
+falls back to the lowest live reserve, which is the current player policy and makes raw
+engine callers safe. `ZM_BattleDirectorCore` supplies the enemy policy from its existing
+private AI RNG. `ZM_ChooseReplacement` makes RANDOM uniform over live reserves only
+(one/no candidate consumes no draw); GREEDY/SMART/CHAMPION choose the reserve whose best
+greedy move scores highest, with lowest-slot ties and no RNG. The battle RNG remains
+untouched. `uZM_TRAINER_BATTLEABLE_PARTY` moves from 1 to the shared full party cap in
+this SAME commit, so every valid authored trainer member reaches `Begin`.
+
+The first adversarial review found a real presentation omission before commit: the
+engine state and HUD changed species, but `ZM_BattleDirector` created only the lead model
+and retained no entity id, so the arena would keep displaying the corpse. The director
+now retains both runtime-only model entity ids and consumes newly PRESENTED `SWITCH_IN`
+events, renaming and reloading the affected model at reveal time. No model id or event
+cursor is serialized. Rambler Perrin's end-to-end gate checks the exact reserve slot,
+species, framing order and loaded model path, not merely that the process survived.
+
+Player party ingestion remains the pre-existing lead-only director path, so this entry
+does NOT claim a player party-choice UI or persistent multi-member write-back. The
+battle engine replacement invariant is live for both sides; the known limit being
+retired is multi-member enemy trainer battles and their hard process break.
+
+### Tests and observed gate
+
+Test-first compile was red on the absent policy/API. Five new boot units cover enemy
+policy selection, player fallback past a fainted slot, `TURN_END -> SWITCH_IN`, no
+consumed normal turn, battle-RNG identity, RANDOM private-RNG cursor/live-reserve rules,
+tactical scoring and the director callback seam. The director test hand-drives a raw
+engine with the identically seeded continuing RANDOM stream and requires an identical
+event stream, active slot and later battle-RNG draws. Existing sand, move-forced-switch,
+EXP and trainer-builder cases were updated to the stronger invariant.
+
+The existing `ZM_TrainerBattle_Test` registration now fields Rambler's complete authored
+two-member row and observes exact `lead FAINT < TURN_END < slot-1/species-1 SWITCH_IN <
+BATTLE_END`, the reserve model/name/path, eventual player win, flagless prize and one
+clean resume. Registry therefore stays **47**. Observed current gate: Null headless
+**47/47** (the trainer gate ran 88 frames), boot **2703 -> 2708** at
+**2708 ran / 2707 passed / 0 failed / 1 documented skip**, and full Vulkan windowed
+**47/47 / 0 skipped / 0 zero-frame**. Vulkan and Null builds are green.
+
+W1's required compatibility matrix is also green: engine/Combat boot
+**1164 / 1163 / 0 / 1**, Combat **14/14**, CityBuilder **45/45**, and
+DevilsPlayground **158/158**. These game-local edits touch no `Zenith/` source, but the
+explicit W1 engine gate was still paid.
+
+### Teeth and reversibility
+
+Four exact-one-anchor mutations compiled fresh and redded: discard the policy-selected
+slot; reverse tactical replacement scoring; restore the trainer cap to 1; and consume
+presented event indices without synchronizing the arena model (focused trainer gate
+**0/1**, then restored **1/1**). A candidate that restored the historical no-replacement
+hard break killed the process and yielded no parseable unit result, so it was rejected
+and is not counted as mutation evidence. Restoration rebuilt clean and the exact boot
+gate was rerun.
+
+Reversibility is high: one optional engine callback, one AI chooser, runtime presenter
+bookkeeping, the cap constant and tests/docs. No file format or authored asset changes.
+
+---
+
 ## 2026-07-28 -- ZM-D-156 -- S7 item 3 SC8: rival Vesper AUTHORED in Dawnmere + zero-byte trainer-id persistence -- and the discovery that an AABB collider silently destroys an authored rotation
 
 *(Eighth and FINAL sub-commit of the ZM-D-143 sequence. It CLOSES S7 item 3 and item 4.

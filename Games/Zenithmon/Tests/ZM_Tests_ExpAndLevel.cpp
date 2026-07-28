@@ -1734,9 +1734,12 @@ ZENITH_TEST(ZM_Battle, Engine_WeatherEOTKOGoldenAndNoDoubleCredit)
 		ZM_MOVE_NONE, ZM_SPECIES_SYLVASTAG, 95, 21855));
 	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 0u,
 		ZM_MOVE_NONE, ZM_SPECIES_NONE, 0, 1));
+	xExpected.PushBack(ZM_MakeEvent(ZM_BATTLE_EVENT_SWITCH_IN, ZM_SIDE_ENEMY, 0u,
+		ZM_MOVE_NONE, ZM_SPECIES_NIBBIN));
 	AssertStreamEq(xExpected, xEngine.GetEvents(), "weather-eot-ko");
 
-	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_ENEMY, 0u));
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 0u,
+		"weather KO must promote the surviving reserve after TURN_END");
 	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
 	xEngine.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
 	xEngine.ResolveTurn();
@@ -1910,7 +1913,8 @@ ZENITH_TEST(ZM_Battle, Engine_ModernPartySharePerOpponentLedgerAndOrder)
 	xEngine.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
 	xEngine.ResolveTurn();
 
-	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_ENEMY, 1u));
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 1u,
+		"the first opponent KO must automatically promote slot 1");
 	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_PLAYER, 2u));
 	xEngine.GetStateMutable().Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 1u;
 	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
@@ -2051,7 +2055,8 @@ ZENITH_TEST(ZM_Battle, Engine_ReserveLearnsThenUsesMoveMidBattle)
 	xEngine.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
 	xEngine.ResolveTurn();
 
-	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_ENEMY, 1u));
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 1u,
+		"the first opponent KO must automatically promote slot 1");
 	ZENITH_ASSERT_TRUE(xEngine.DoSwitch(ZM_SIDE_PLAYER, 1u));
 	ZM_BattleMonster& xLearned = xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active();
 	ZM_BattleMonster& xSecondEnemy = xEngine.GetStateMutable().Side(ZM_SIDE_ENEMY).Active();

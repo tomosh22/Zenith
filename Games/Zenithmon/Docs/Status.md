@@ -4,9 +4,9 @@
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (ZM numbers OBSERVED 2026-07-28 on a fresh build of both configs
-after SC8):** ZM headless registry **47 passed / 0 failed**; ZM boot unit gate
-**2703 ran / 2702 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
-2703); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
+after known-limit W1):** ZM headless registry **47 passed / 0 failed**; ZM boot unit gate
+**2708 ran / 2707 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
+2708); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
 1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6/SC7/SC8 -- none of
 them touches a `Zenith/` file). The 1 skipped in each is the quarantined
 `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
@@ -109,10 +109,11 @@ boot output" rather than a load failure.
 
 ## Current task
 
-**★★ S7 ITEM 3 AND ITEM 4 ARE COMPLETE (SC8, ZM-D-156). THE NEXT STEP IS A HUMAN
-GATE: THE S8 VERTICAL-SLICE GO/NO-GO.** Do not start S8 work. The loop's standing
-order is to hard-stop here and report. `SC8_Plan.md` was consumed and DELETED in that
-commit.
+**★★ S7 ITEM 3 AND ITEM 4 ARE COMPLETE (SC8, ZM-D-156). THE S8 VERTICAL-SLICE
+GO/NO-GO REMAINS A HUMAN GATE AND IS UNSIGNED.** This session has explicit authority
+only to close its five recorded known limits, not to start S8 content. **W1/5 is now
+COMPLETE (ZM-D-157): forced replacement ships and complete authored trainer parties
+are live. NEXT = W2, the honest trainer-loss/whiteout proof.**
 
 **What the vertical actually does now, end to end:** the player walks around Dawnmere;
 rival Vesper stands AUTHORED in the town at (490, 524) facing the spawn approach; when
@@ -133,18 +134,26 @@ oversold:**
    approach walk. The rival notices the player silently until the dialogue box appears.
 3. **The rival is visually indistinguishable from the four townsfolk.** `ZM_GreyboxVisual`
    paints one fixed grey and `ZM_NpcData::m_eHuman` is consumed by NOTHING today.
-4. **One-monster trainer battles only.** `uZM_TRAINER_BATTLEABLE_PARTY == 1` because the
-   engine has NO forced switch on faint. Vesper's row is one member so the clamp is a
-   no-op for him, **but S8's gym cannot ship until the replacement path does.**
-5. **Route 1 does not exist**, so the GDD's canonical location for rival battle 1
+4. **Route 1 does not exist**, so the GDD's canonical location for rival battle 1
    ("Route 1, L5") does not either. The Dawnmere placement is a RECORDED deviation
    (Q-D / ZM-D-156) carrying a re-placement debt.
-6. **The challenge `.bgraph` is gitignored**, so a fresh CI checkout loses the BARK and
+5. **The challenge `.bgraph` is gitignored**, so a fresh CI checkout loses the BARK and
    keeps the BATTLE (SC7's deliberate fail-open). The bark beat is exercised locally
    only, never in CI.
-7. **No test proves the authored Vesper carries no graph slot at RUNTIME** -- it cannot,
+6. **No test proves the authored Vesper carries no graph slot at RUNTIME** -- it cannot,
    because the runtime attach is idempotent by path. The property rests on an
    authoring-time assert plus the boot-stability check.
+
+**W1 closure, observed rather than inferred.** `ResolveTurn` now performs a canonical
+`DoSwitch` after `TURN_END` and the whole-party terminal scan whenever a fainted active
+has a live reserve. Enemy selection comes from the trainer AI's private RNG/tactical
+policy; player selection currently auto-promotes the lowest live reserve. Rambler
+Perrin's complete two-member row is driven through a real trainer round trip, where the
+lead `FAINT` is followed by exactly one reserve `SWITCH_IN` and the battle still pays
+out; the presented switch also reloads the arena entity from the reserve's creature
+model path. This retires the hard process break, lead-only clamp and stale-lead visual.
+A player-facing party choice screen is not part of this repair; the engine path is live
+for both sides.
 
 **★ WHAT SC8 BINDS FOR ANY FUTURE SCENE WORK:**
 - **An AABB collider DESTROYS an authored rotation.** `Zenith_ColliderComponent` forces
@@ -218,11 +227,8 @@ instead. **The real guards are `Build() == true` / `HasErrors() == false`.**
 `GetUnresolvedCount()` earns its keep only against a stale or hand-edited LOADED
 `.bgraph`.
 
-**Still true and still the headline battle-engine shortfall (Shortfalls 1.2): the
-engine has NO forced switch on faint**, so `uZM_TRAINER_BATTLEABLE_PARTY = 1` in
-`Source/Battle/ZM_TrainerBattle.h` clamps every trainer to its authored lead. Raise
-that constant ONLY in the commit that adds the replacement path. S8 needs it before
-it can show a credible gym.
+**RESOLVED by W1 / ZM-D-157:** the forced-replacement path and full trainer cap
+landed together; this historical SC7 warning is no longer live.
 
 **What SC6 pinned that SC7-SC8 must not re-litigate:**
 - **Cheap-gate-first IS the cost control.** There is no raycast budget anywhere in
@@ -266,24 +272,12 @@ the END of `ZM_NpcData`, derived in `OnStart` -- over a v3 payload bump.
    occluder.** Arguably correct, but SC8 must keep it in mind when placing Vesper:
    a trainer behind the door trigger will appear inexplicably blind.
 
-**Still true and still the headline battle-engine shortfall (Shortfalls 1.2): the
-engine has NO forced switch on faint**, so `uZM_TRAINER_BATTLEABLE_PARTY = 1` in
-`Source/Battle/ZM_TrainerBattle.h` clamps every trainer to its authored lead. Raise
-that constant ONLY in the commit that adds the replacement path. S8 needs it before
-it can show a credible gym.
+**RESOLVED by W1 / ZM-D-157:** the forced-replacement path and full trainer cap
+landed together; this historical SC6 warning is no longer live.
 
-**★ READ THIS BEFORE SC6 OR ANY BATTLE WORK: the engine has NO forced switch on
-faint, so a trainer fields exactly ONE monster.** `m_uActiveSlot` is written only
-by `Begin` and `DoSwitch` (voluntary switch / a move's forced-switch secondary),
-`ResolveTurn` ends the battle only on a whole-party scan, and `SubmitAction`
-opens with `Zenith_Assert(!xActive.IsFainted(), ...)` -- so a multi-monster side
-whose active faints neither ends nor advances, and the next action is a hard
-process break in EVERY configuration. SC5 clamps every trainer's fielded party to
-its authored LEAD via `uZM_TRAINER_BATTLEABLE_PARTY = 1` in
-`Source/Battle/ZM_TrainerBattle.h`; the roster keeps its multi-member rows.
-**Raise that constant ONLY in the commit that adds the replacement path.** This
-is the headline battle-engine shortfall (Shortfalls 1.2) and it must land before
-S8 can show a credible gym.
+**Historical SC5 warning -- RESOLVED by W1 / ZM-D-157.** `ResolveTurn` now
+promotes a live reserve atomically, and the trainer cap was raised in that same
+commit. The former next-action hard break no longer exists.
 
 **Also open for SC6:** a flagless trainer row (`ZM_TRAINER_ROUTE1_RAMBLER`, which
 carries `ZM_STORY_FLAG_NONE` on purpose) has no defeat-flag brake, so SC6's

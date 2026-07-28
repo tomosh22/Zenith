@@ -195,12 +195,23 @@ void ZM_BattleDirectorCore::SubmitPlayerAction(const ZM_BattleAction& xPlayerAct
 	m_xEngine.SubmitAction(ZM_SIDE_ENEMY, xEnemy);
 
 	const u_int uStart = m_xEngine.GetEventCount();
-	m_xEngine.ResolveTurn();
+	m_xEngine.ResolveTurn(&ZM_BattleDirectorCore::ChooseForcedReplacement, this);
 
 	m_uCursor        = uStart;
 	m_uTurnEndCursor = m_xEngine.GetEventCount();
 	m_fOpElapsed     = 0.0f;
 	m_eState         = ZM_DIRECTOR_PLAYING_EVENTS;
+}
+
+u_int ZM_BattleDirectorCore::ChooseForcedReplacement(
+	const ZM_BattleState& xState, ZM_SIDE eSide, void* pContext)
+{
+	if (eSide != ZM_SIDE_ENEMY || pContext == nullptr)
+	{
+		return uZM_MAX_PARTY_SIZE;
+	}
+	ZM_BattleDirectorCore* pxCore = static_cast<ZM_BattleDirectorCore*>(pContext);
+	return ZM_ChooseReplacement(xState, eSide, pxCore->m_eEnemyTier, pxCore->m_xAIRng);
 }
 
 void ZM_BattleDirectorCore::Tick(float fDeltaSeconds)

@@ -6,6 +6,7 @@
 #include "Core/Zenith_Engine.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
@@ -27,6 +28,7 @@
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"                // ZM_IsStoryFlagSet
 #include "Zenithmon/Source/Data/ZM_TrainerData.h"               // the authored rival row
 #include "Zenithmon/Source/Gen/ZM_BakeManifest.h"
+#include "Zenithmon/Source/Gen/ZM_CreatureGen.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"
 #include "Zenithmon/Source/Party/ZM_Monster.h"                  // ZM_BuildMonsterRecord
 #include "Zenithmon/Source/Party/ZM_Party.h"
@@ -59,8 +61,9 @@
 //   trip 2 -- the ROUTE-1 RAMBLER: the AI-tier proof (the rival's authored tier is
 //             ZM_AI_TIER_GREEDY, which is ALSO the wild arm's literal and the
 //             core's pre-Begin default, so trip 1 alone cannot distinguish the
-//             trainer arm's call site), the battleable-party CLAMP read straight
-//             off the engine's own state, and the ZM_STORY_FLAG_NONE payout arm.
+//             trainer arm's call site), the complete authored party read straight
+//             off the engine's own state, its forced replacement event, and the
+//             ZM_STORY_FLAG_NONE payout arm.
 // See the eTB_TRAINER2 comment for the mutations each clause kills.
 //
 // NO Zenith_EventDispatcher::ScopedTestIsolation -- deliberately, and this is
@@ -269,11 +272,9 @@ namespace
 	//     die here. Verify guards the property rather than trusting this comment.
 	//
 	// (2) It drives the row whose AUTHORED party is MULTI-member, proving the
-	//     battleable clamp (uZM_TRAINER_BATTLEABLE_PARTY) end to end: an unclamped
-	//     party would not end when its active fainted, and the next enemy
-	//     SubmitAction would hit Zenith_Assert(!xActive.IsFainted(), ...) -- a
-	//     process break in EVERY configuration. The observed enemy party SIZE is
-	//     asserted directly so the proof does not rest on "the run did not crash".
+	//     retired clamp and forced replacement end to end. The observed engine
+	//     party size must equal the row, and the lead's FAINT must be followed by
+	//     exactly one enemy SWITCH_IN to the authored reserve before battle end.
 	//
 	// (3) It exercises the ZM_STORY_FLAG_NONE arm of the payout on a REAL round trip:
 	//     the prize is credited and no flag is written.
@@ -351,7 +352,18 @@ namespace
 	bool          g_bTB2ConfigCaptured  = false;
 	ZM_AI_TIER    g_eTB2Tier            = ZM_AI_TIER_NONE;
 	ZM_SPECIES_ID g_eTB2EnemySpecies    = ZM_SPECIES_NONE;
-	u_int         g_uTB2EnemyPartySize  = 0xffffffffu;   // want exactly uZM_TRAINER_BATTLEABLE_PARTY
+	u_int         g_uTB2EnemyPartySize  = 0xffffffffu;   // want the complete authored row
+	u_int         g_uTB2ScannedEvents   = 0u;
+	int           g_iTB2LeadFaintEvent  = -1;
+	int           g_iTB2TurnEndEvent    = -1;
+	int           g_iTB2ReserveSwitchEvent = -1;
+	int           g_iTB2BattleEndEvent  = -1;
+	u_int         g_uTB2ReserveSwitchSlot = 0xffffffffu;
+	ZM_SPECIES_ID g_eTB2ReserveSwitchSpecies = ZM_SPECIES_NONE;
+	u_int         g_uTB2ForcedSwitchCount = 0u;
+	bool          g_bTB2ReserveModelSampled = false;
+	bool          g_bTB2ReserveModelNameMatched = false;
+	bool          g_bTB2ReserveModelPathMatched = false;
 	bool          g_bTB2WinnerCaptured  = false;
 	ZM_SIDE       g_eTB2Winner          = ZM_SIDE_COUNT;
 	u_int         g_uTB2MoneyBefore     = 0u;
@@ -419,6 +431,56 @@ namespace
 			g_uTB2EnemyPartySize =
 				xCore.GetEngine().GetState().Side(ZM_SIDE_ENEMY).m_xParty.GetSize();
 			g_bTB2ConfigCaptured = true;
+		}
+		const ZM_BattleEngine& xEngine = xCore.GetEngine();
+		while (g_uTB2ScannedEvents < xEngine.GetEventCount())
+		{
+			const u_int uEventIndex = g_uTB2ScannedEvents++;
+			const ZM_BattleEvent& xEvent = xEngine.GetEvent(uEventIndex);
+			if (xEvent.m_eKind == ZM_BATTLE_EVENT_FAINT
+				&& xEvent.m_uSide == (u_int)ZM_SIDE_ENEMY && xEvent.m_uSlot == 0u)
+			{
+				g_iTB2LeadFaintEvent = (int)uEventIndex;
+			}
+			if (xEvent.m_eKind == ZM_BATTLE_EVENT_TURN_END
+				&& g_iTB2LeadFaintEvent >= 0 && g_iTB2ReserveSwitchEvent < 0)
+			{
+				g_iTB2TurnEndEvent = (int)uEventIndex;
+			}
+			if (xEvent.m_eKind == ZM_BATTLE_EVENT_SWITCH_IN
+				&& xEvent.m_uSide == (u_int)ZM_SIDE_ENEMY && xEvent.m_uSlot != 0u)
+			{
+				++g_uTB2ForcedSwitchCount;
+				if (g_iTB2ReserveSwitchEvent < 0)
+				{
+					g_iTB2ReserveSwitchEvent = (int)uEventIndex;
+					g_uTB2ReserveSwitchSlot = xEvent.m_uSlot;
+					g_eTB2ReserveSwitchSpecies = (ZM_SPECIES_ID)xEvent.m_uSpeciesId;
+				}
+			}
+			if (xEvent.m_eKind == ZM_BATTLE_EVENT_BATTLE_END)
+			{
+				g_iTB2BattleEndEvent = (int)uEventIndex;
+			}
+		}
+		if (!g_bTB2ReserveModelSampled && g_iTB2ReserveSwitchEvent >= 0
+			&& xCore.PresentedEventCount() > (u_int)g_iTB2ReserveSwitchEvent)
+		{
+			g_bTB2ReserveModelSampled = true;
+			const ZM_TrainerData& xRow = ZM_GetTrainerData(eTB_TRAINER2);
+			const ZM_SPECIES_ID eExpected = xRow.m_paxParty[1u].m_eSpecies;
+			Zenith_Entity xModelEntity = g_xEngine.Scenes().ResolveEntity(
+				pxDirector->GetCreatureModelEntityID(ZM_SIDE_ENEMY));
+			g_bTB2ReserveModelNameMatched = xModelEntity.IsValid()
+				&& xModelEntity.GetName() == ZM_GetSpeciesName(eExpected);
+			Zenith_ModelComponent* pxModel = xModelEntity.IsValid()
+				? xModelEntity.TryGetComponent<Zenith_ModelComponent>()
+				: nullptr;
+			char szExpectedPath[256];
+			g_bTB2ReserveModelPathMatched = pxModel != nullptr
+				&& ZM_CreatureAssetPath(eExpected, ZM_CREATURE_ASSET_MODEL,
+					szExpectedPath, sizeof(szExpectedPath))
+				&& pxModel->GetModelPath() == szExpectedPath;
 		}
 		if (xCore.IsOver())
 		{
@@ -769,6 +831,17 @@ namespace
 		g_eTB2Tier            = ZM_AI_TIER_NONE;
 		g_eTB2EnemySpecies    = ZM_SPECIES_NONE;
 		g_uTB2EnemyPartySize  = 0xffffffffu;
+		g_uTB2ScannedEvents   = 0u;
+		g_iTB2LeadFaintEvent  = -1;
+		g_iTB2TurnEndEvent    = -1;
+		g_iTB2ReserveSwitchEvent = -1;
+		g_iTB2BattleEndEvent  = -1;
+		g_uTB2ReserveSwitchSlot = 0xffffffffu;
+		g_eTB2ReserveSwitchSpecies = ZM_SPECIES_NONE;
+		g_uTB2ForcedSwitchCount = 0u;
+		g_bTB2ReserveModelSampled = false;
+		g_bTB2ReserveModelNameMatched = false;
+		g_bTB2ReserveModelPathMatched = false;
 		g_bTB2WinnerCaptured  = false;
 		g_eTB2Winner          = ZM_SIDE_COUNT;
 		g_uTB2MoneyBefore     = 0u;
@@ -1058,7 +1131,9 @@ namespace
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_TrainerBattle] trip2 captured: channelCaptured=%s channelTrainer=%u (want %u) "
 				"configCaptured=%s tier=%u (want %u, must NOT be GREEDY=%u) enemySpecies=%u (want %u) "
-				"enemyPartySize=%u (want %u) winnerCaptured=%s winner=%d (want PLAYER=%d) "
+				"enemyPartySize=%u (want authored %u) leadFaint=%d turnEnd=%d reserveSwitch=%d "
+				"slot=%u species=%u battleEnd=%d switchCount=%u modelSampled=%s name=%s path=%s "
+				"winnerCaptured=%s winner=%d (want PLAYER=%d) "
 				"moneyBefore=%u afterCaptured=%s moneyAfter=%u (want before+%u) completed=%u (want 2) "
 				"aborted=%u (want 0) stateAfter=%u (want %u=IDLE)",
 				g_bTB2ChannelCaptured ? "true" : "false",
@@ -1066,7 +1141,13 @@ namespace
 				g_bTB2ConfigCaptured ? "true" : "false",
 				(u_int)g_eTB2Tier, (u_int)xRow2.m_eAITier, (u_int)ZM_AI_TIER_GREEDY,
 				(u_int)g_eTB2EnemySpecies, (u_int)eTB_ENEMY_LEAD2,
-				g_uTB2EnemyPartySize, uZM_TRAINER_BATTLEABLE_PARTY,
+				g_uTB2EnemyPartySize, xRow2.m_uPartyCount,
+				g_iTB2LeadFaintEvent, g_iTB2TurnEndEvent, g_iTB2ReserveSwitchEvent,
+				g_uTB2ReserveSwitchSlot, (u_int)g_eTB2ReserveSwitchSpecies,
+				g_iTB2BattleEndEvent, g_uTB2ForcedSwitchCount,
+				g_bTB2ReserveModelSampled ? "true" : "false",
+				g_bTB2ReserveModelNameMatched ? "true" : "false",
+				g_bTB2ReserveModelPathMatched ? "true" : "false",
 				g_bTB2WinnerCaptured ? "true" : "false",
 				(int)g_eTB2Winner, (int)ZM_SIDE_PLAYER,
 				g_uTB2MoneyBefore,
@@ -1124,16 +1205,19 @@ namespace
 						(u_int)g_eTB2Tier, (u_int)xRow2.m_eAITier);
 					bPassed = false;
 				}
-				// THE CLAMP, end to end: the engine was handed exactly the number of
-				// enemy monsters it can resolve. It has no forced replacement on faint,
-				// so a bigger party faint-locks it into
-				// Zenith_Assert(!xActive.IsFainted(), ...) -- a break in EVERY config.
-				if (g_uTB2EnemyPartySize != uZM_TRAINER_BATTLEABLE_PARTY)
+				if (xRow2.m_uPartyCount <= 1u)
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
-						"[ZM_TrainerBattle] the SECOND battle fielded %u enemy monsters, expected %u -- "
-						"this row AUTHORS more, so the battleable clamp did not reach Begin",
-						g_uTB2EnemyPartySize, uZM_TRAINER_BATTLEABLE_PARTY);
+						"[ZM_TrainerBattle] the SECOND row has only %u member(s) -- the forced "
+						"replacement proof is vacuous", xRow2.m_uPartyCount);
+					bPassed = false;
+				}
+				if (g_uTB2EnemyPartySize != xRow2.m_uPartyCount)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerBattle] the SECOND battle fielded %u enemy monsters, but the "
+						"row authors %u -- the old lead-only clamp still reached Begin",
+						g_uTB2EnemyPartySize, xRow2.m_uPartyCount);
 					bPassed = false;
 				}
 				if (g_eTB2EnemySpecies != eTB_ENEMY_LEAD2)
@@ -1142,6 +1226,35 @@ namespace
 						"[ZM_TrainerBattle] the SECOND battle's enemy active was %u, expected the row's "
 						"FIRST member %u -- the clamp dropped the front of the party, not the tail",
 						(u_int)g_eTB2EnemySpecies, (u_int)eTB_ENEMY_LEAD2);
+					bPassed = false;
+				}
+				const ZM_SPECIES_ID eExpectedReserve = xRow2.m_paxParty[1u].m_eSpecies;
+				if (g_iTB2LeadFaintEvent < 0
+					|| g_iTB2TurnEndEvent <= g_iTB2LeadFaintEvent
+					|| g_iTB2ReserveSwitchEvent <= g_iTB2TurnEndEvent
+					|| g_iTB2BattleEndEvent <= g_iTB2ReserveSwitchEvent
+					|| g_uTB2ReserveSwitchSlot != 1u
+					|| g_eTB2ReserveSwitchSpecies != eExpectedReserve
+					|| g_uTB2ForcedSwitchCount != 1u)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerBattle] forced replacement stream was FAINT=%d TURN_END=%d "
+						"SWITCH_IN=%d(slot=%u species=%u) BATTLE_END=%d count=%u; expected "
+						"FAINT < TURN_END < slot-1 reserve SWITCH_IN(species=%u) < BATTLE_END",
+						g_iTB2LeadFaintEvent, g_iTB2TurnEndEvent, g_iTB2ReserveSwitchEvent,
+						g_uTB2ReserveSwitchSlot, (u_int)g_eTB2ReserveSwitchSpecies,
+						g_iTB2BattleEndEvent, g_uTB2ForcedSwitchCount, (u_int)eExpectedReserve);
+					bPassed = false;
+				}
+				if (!g_bTB2ReserveModelSampled || !g_bTB2ReserveModelNameMatched
+					|| !g_bTB2ReserveModelPathMatched)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerBattle] reserve presentation sampled=%s nameMatched=%s "
+						"modelPathMatched=%s; the arena must replace the fainted lead model",
+						g_bTB2ReserveModelSampled ? "true" : "false",
+						g_bTB2ReserveModelNameMatched ? "true" : "false",
+						g_bTB2ReserveModelPathMatched ? "true" : "false");
 					bPassed = false;
 				}
 			}

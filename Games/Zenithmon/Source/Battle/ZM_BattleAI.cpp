@@ -498,3 +498,51 @@ ZM_BattleAction ZM_ChooseAction(const ZM_BattleState& xState, ZM_SIDE eSide,
 		return g_ChooseGreedy(xState, eSide, eOther);
 	}
 }
+
+u_int ZM_ChooseReplacement(const ZM_BattleState& xState, ZM_SIDE eSide,
+	ZM_AI_TIER eTier, ZM_BattleRNG& xAIRng)
+{
+	Zenith_Assert(eSide < ZM_SIDE_COUNT, "ZM_ChooseReplacement: invalid side");
+	Zenith_Assert(eTier < ZM_AI_TIER_COUNT, "ZM_ChooseReplacement: invalid AI tier");
+
+	const ZM_BattleSide& xSide = xState.Side(eSide);
+	u_int auEligible[uZM_MAX_PARTY_SIZE];
+	u_int uEligibleCount = 0u;
+	for (u_int uSlot = 0u; uSlot < xSide.m_xParty.GetSize(); ++uSlot)
+	{
+		if (xSide.CanSwitchTo(uSlot))
+		{
+			auEligible[uEligibleCount++] = uSlot;
+		}
+	}
+	if (uEligibleCount == 0u)
+	{
+		return uZM_MAX_PARTY_SIZE;
+	}
+	if (eTier == ZM_AI_TIER_RANDOM)
+	{
+		return uEligibleCount == 1u
+			? auEligible[0]
+			: auEligible[xAIRng.RandBelow(uEligibleCount)];
+	}
+
+	const ZM_SIDE eOther = eSide == ZM_SIDE_PLAYER ? ZM_SIDE_ENEMY : ZM_SIDE_PLAYER;
+	const ZM_BattleMonster& xOpponent = xState.Side(eOther).Active();
+	u_int uBestSlot = auEligible[0];
+	u_int uBestScore = 0u;
+	bool bHaveScore = false;
+	for (u_int u = 0u; u < uEligibleCount; ++u)
+	{
+		const u_int uSlot = auEligible[u];
+		const ZM_BattleMonster& xCandidate = xSide.m_xParty.Get(uSlot);
+		const u_int uMove = g_BestGreedyMoveSlot(xCandidate, xOpponent);
+		const u_int uScore = uMove == uZM_AI_NO_MOVE ? 0u : g_MoveScore(xCandidate, xOpponent, uMove);
+		if (!bHaveScore || uScore > uBestScore)
+		{
+			bHaveScore = true;
+			uBestScore = uScore;
+			uBestSlot = uSlot;
+		}
+	}
+	return uBestSlot;
+}

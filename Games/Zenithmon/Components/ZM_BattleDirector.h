@@ -69,6 +69,10 @@ public:
 	const ZM_BattleDirectorCore& GetCore() const { return m_xCore; }
 	ZM_BattleMenuScreen GetHudMenuScreen() const { return m_xHud.GetMenuScreen(); }
 	int                 GetHudMenuCursor() const { return m_xHud.GetMenuCursor(); }
+	Zenith_EntityID     GetCreatureModelEntityID(ZM_SIDE eSide) const
+	{
+		return eSide < ZM_SIDE_COUNT ? m_axCreatureModelIDs[eSide] : INVALID_ENTITY_ID;
+	}
 
 	// --- Pure static decision surface (unit-tested with NO entity/scene/graphics) ---
 
@@ -119,6 +123,9 @@ private:
 	// Best-effort model placement onto the unique arena's platforms (1=player,
 	// 2=enemy). A missing arena/bundle silently skips; it never aborts the battle.
 	void PlaceCreatureModels(ZM_SPECIES_ID ePlayerSpecies, ZM_SPECIES_ID eEnemySpecies);
+	// Apply every newly-presented SWITCH_IN to the corresponding live arena model.
+	void SyncCreatureModelsToPresentedEvents();
+	void SetCreatureModelSpecies(ZM_SIDE eSide, ZM_SPECIES_ID eSpecies);
 
 	// The pure, headless battle heart -- deep-owned (drives the AI-vs-AI battle).
 	ZM_BattleDirectorCore    m_xCore;
@@ -129,6 +136,12 @@ private:
 	Zenith_Entity            m_xParentEntity;
 	ZM_BATTLE_DIRECTOR_PHASE m_ePhase        = ZM_BD_WAIT_FOR_IN_BATTLE;
 	bool                     m_bEndRequested = false;   // RequestBattleEnd fired exactly once
+	Zenith_EntityID          m_axCreatureModelIDs[ZM_SIDE_COUNT] =
+	{
+		INVALID_ENTITY_ID,
+		INVALID_ENTITY_ID
+	};
+	u_int                    m_uCreatureModelEventCursor = 0u;
 	// True iff RunSetup built the player side from the REAL persistent party lead (not
 	// the placeholder). Only then is exp awarded + the result written back to the lead
 	// on resolve (SC3). POD -- keeps the pool's move-construct; reset in OnStart / Read.

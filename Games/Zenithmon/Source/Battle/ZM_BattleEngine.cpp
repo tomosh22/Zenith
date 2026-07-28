@@ -188,7 +188,8 @@ void ZM_BattleEngine::SubmitAction(ZM_SIDE eSide, const ZM_BattleAction& xAction
 	m_abSubmitted[eSide] = true;
 }
 
-void ZM_BattleEngine::ResolveTurn()
+void ZM_BattleEngine::ResolveTurn(ZM_ForcedReplacementPolicy pfnReplacement,
+	void* pReplacementContext)
 {
 	if (m_bOver)
 	{
@@ -232,10 +233,47 @@ void ZM_BattleEngine::ResolveTurn()
 			Emit(ZM_MakeEvent(ZM_BATTLE_EVENT_BATTLE_END, ZM_SIDE_COUNT, 0u, ZM_MOVE_NONE, ZM_SPECIES_NONE,
 				(int)m_eWinner, 0));
 		}
+		else
+		{
+			ResolveForcedReplacements(pfnReplacement, pReplacementContext);
+		}
 	}
 
 	m_abSubmitted[ZM_SIDE_PLAYER] = false;
 	m_abSubmitted[ZM_SIDE_ENEMY]  = false;
+}
+
+void ZM_BattleEngine::ResolveForcedReplacements(
+	ZM_ForcedReplacementPolicy pfnReplacement, void* pReplacementContext)
+{
+	// ResolveEndOfTurnPhase has already emitted TURN_END and the caller has proved
+	// both parties still have a survivor, so incoming monsters never inherit the
+	// completed turn's end-of-turn work. The bound prevents an entrant that faints
+	// during its own switch-in hooks from spinning forever.
+	for (u_int uSide = 0u; uSide < (u_int)ZM_SIDE_COUNT; ++uSide)
+	{
+		const ZM_SIDE eSide = (ZM_SIDE)uSide;
+		ZM_BattleSide& xSide = m_xState.Side(eSide);
+		const u_int uAttemptLimit = xSide.m_xParty.GetSize();
+		u_int uAttempts = 0u;
+		while (xSide.Active().IsFainted() && xSide.HasUnfainted() && uAttempts < uAttemptLimit)
+		{
+			u_int uTarget = uZM_MAX_PARTY_SIZE;
+			if (pfnReplacement != nullptr)
+			{
+				uTarget = pfnReplacement(m_xState, eSide, pReplacementContext);
+			}
+			if (!xSide.CanSwitchTo(uTarget))
+			{
+				uTarget = xSide.FindLowestSwitchTarget();
+			}
+			if (uTarget == uZM_MAX_PARTY_SIZE || !DoSwitch(eSide, uTarget))
+			{
+				break;
+			}
+			++uAttempts;
+		}
+	}
 }
 
 void ZM_BattleEngine::ResolvePreMovePhase()

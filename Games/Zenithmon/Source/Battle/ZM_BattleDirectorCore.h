@@ -161,6 +161,8 @@ public:
 	ZM_AI_TIER GetEnemyTier() const { return m_eEnemyTier; }
 
 private:
+	static u_int ChooseForcedReplacement(const ZM_BattleState& xState,
+		ZM_SIDE eSide, void* pContext);
 	ZM_BattleEngine   m_xEngine;
 	ZM_BattleRNG      m_xAIRng;                   // AI's OWN generator (distinct from the battle RNG)
 	ZM_AI_TIER        m_eEnemyTier = ZM_AI_TIER_GREEDY;

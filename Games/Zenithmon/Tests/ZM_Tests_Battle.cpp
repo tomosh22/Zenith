@@ -431,6 +431,135 @@ namespace
 	}
 }
 
+// ==========================================================================
+// W1 forced replacement: a fainted active is never allowed to escape
+// ResolveTurn while its side still has a live bench member. Replacement is a
+// between-turn transition: TURN_END first, then the canonical SWITCH_IN, with
+// no extra submitted action and no battle-RNG draw.
+// ==========================================================================
+
+namespace
+{
+	struct ZM_ReplacementProbe
+	{
+		u_int m_uCalls = 0u;
+		u_int m_uRequestedSlot = uZM_MAX_PARTY_SIZE;
+	};
+
+	u_int ZM_ChooseReplacementProbe(const ZM_BattleState&, ZM_SIDE eSide, void* pContext)
+	{
+		ZM_ReplacementProbe* pxProbe = static_cast<ZM_ReplacementProbe*>(pContext);
+		++pxProbe->m_uCalls;
+		return eSide == ZM_SIDE_ENEMY ? pxProbe->m_uRequestedSlot : uZM_MAX_PARTY_SIZE;
+	}
+}
+
+ZENITH_TEST(ZM_Battle, ForcedReplacement_EnemyPolicyRunsAfterTurnEndWithoutConsumingAction)
+{
+	const ZM_BattleMonsterSpec xPlayer = MakeSpec(ZM_SPECIES_NIBBIN, 50u, ZM_MOVE_RAMBASH);
+	ZM_BattleMonsterSpec axEnemy[3] =
+	{
+		MakeSpec(ZM_SPECIES_STRAYLING, 5u, ZM_MOVE_QUICKJAB),
+		MakeSpec(ZM_SPECIES_PIPWIT, 5u, ZM_MOVE_QUICKJAB),
+		MakeSpec(ZM_SPECIES_KINDLET, 5u, ZM_MOVE_EMBERCLAW)
+	};
+
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), &xPlayer, 1u, axEnemy, 3u, 0xF01CED01ull, 54ull);
+	xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active().m_auMaxStat[ZM_STAT_SPEED] = 999u;
+	xEngine.GetStateMutable().Side(ZM_SIDE_ENEMY).Active().m_auMaxStat[ZM_STAT_SPEED] = 1u;
+	xEngine.GetStateMutable().Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 1u;
+
+	ZM_ReplacementProbe xProbe;
+	xProbe.m_uRequestedSlot = 2u;
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xEngine.ResolveTurn(&ZM_ChooseReplacementProbe, &xProbe);
+
+	ZENITH_ASSERT_FALSE(xEngine.IsOver(), "a live enemy bench must keep the battle running");
+	ZENITH_ASSERT_EQ(xProbe.m_uCalls, 1u, "the enemy replacement policy must run exactly once");
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 2u,
+		"the engine ignored the policy and silently chose the lowest bench slot");
+	ZENITH_ASSERT_FALSE(xEngine.GetState().Side(ZM_SIDE_ENEMY).Active().IsFainted(),
+		"ResolveTurn returned with a corpse active");
+
+	int iTurnEnd = -1;
+	int iReplacement = -1;
+	for (u_int u = 0u; u < xEngine.GetEventCount(); ++u)
+	{
+		const ZM_BattleEvent& xEvent = xEngine.GetEvent(u);
+		if (xEvent.m_eKind == ZM_BATTLE_EVENT_TURN_END) { iTurnEnd = (int)u; }
+		if (xEvent.m_eKind == ZM_BATTLE_EVENT_SWITCH_IN
+			&& xEvent.m_uSide == (u_int)ZM_SIDE_ENEMY && xEvent.m_uSlot == 2u)
+		{
+			iReplacement = (int)u;
+		}
+	}
+	ZENITH_ASSERT_GE(iTurnEnd, 0, "the resolved turn emitted no TURN_END");
+	ZENITH_ASSERT_GT(iReplacement, iTurnEnd,
+		"forced replacement must be between turns, after the completed turn's TURN_END");
+
+	ZM_BattleRNG xObserved = xEngine.GetState().m_xRNG;
+	// The move itself consumes the battle stream, so compare against an otherwise
+	// identical raw drive whose replacement falls back instead of invoking policy.
+	ZM_BattleEngine xControl;
+	xControl.Begin(MakeTrainerConfig(), &xPlayer, 1u, axEnemy, 3u, 0xF01CED01ull, 54ull);
+	xControl.GetStateMutable().Side(ZM_SIDE_PLAYER).Active().m_auMaxStat[ZM_STAT_SPEED] = 999u;
+	xControl.GetStateMutable().Side(ZM_SIDE_ENEMY).Active().m_auMaxStat[ZM_STAT_SPEED] = 1u;
+	xControl.GetStateMutable().Side(ZM_SIDE_ENEMY).Active().m_uCurHP = 1u;
+	xControl.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xControl.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xControl.ResolveTurn();
+	ZM_BattleRNG xExpected = xControl.GetState().m_xRNG;
+	for (u_int u = 0u; u < 4u; ++u)
+	{
+		ZENITH_ASSERT_EQ(xObserved.Next(), xExpected.Next(),
+			"forced replacement perturbed the battle RNG at comparison draw %u", u);
+	}
+
+	// A replacement is not a normal action: the next turn can be submitted and
+	// resolved immediately without encountering the old fainted-active assert.
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xEngine.ResolveTurn(&ZM_ChooseReplacementProbe, &xProbe);
+	ZENITH_ASSERT_GE(xEngine.GetState().m_xField.m_uTurnCounter, 2u,
+		"the replacement consumed the next normal turn");
+}
+
+ZENITH_TEST(ZM_Battle, ForcedReplacement_PlayerFallsBackToLowestLiveBench)
+{
+	ZM_BattleMonsterSpec axPlayer[3] =
+	{
+		MakeSpec(ZM_SPECIES_FERNFAWN, 5u, ZM_MOVE_LEAFCUT),
+		MakeSpec(ZM_SPECIES_NIBBIN, 5u, ZM_MOVE_RAMBASH),
+		MakeSpec(ZM_SPECIES_PIPWIT, 5u, ZM_MOVE_QUICKJAB)
+	};
+	const ZM_BattleMonsterSpec xEnemy = MakeSpec(ZM_SPECIES_KINDLET, 50u, ZM_MOVE_EMBERCLAW);
+
+	ZM_BattleEngine xEngine;
+	xEngine.Begin(MakeTrainerConfig(), axPlayer, 3u, &xEnemy, 1u, 0xF01CED02ull, 54ull);
+	ZM_BattleSide& xPlayerSide = xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER);
+	xPlayerSide.Active().m_uCurHP = 1u;
+	xPlayerSide.Active().m_auMaxStat[ZM_STAT_SPEED] = 1u;
+	xPlayerSide.m_xParty.Get(1u).m_uCurHP = 0u;
+	xEngine.GetStateMutable().Side(ZM_SIDE_ENEMY).Active().m_auMaxStat[ZM_STAT_SPEED] = 999u;
+
+	xEngine.SubmitAction(ZM_SIDE_PLAYER, MoveAction(0u));
+	xEngine.SubmitAction(ZM_SIDE_ENEMY, MoveAction(0u));
+	xEngine.ResolveTurn();
+
+	ZENITH_ASSERT_FALSE(xEngine.IsOver(), "the player's live reserve must keep the battle running");
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_uActiveSlot, 2u,
+		"the fallback must skip the fainted slot 1 and promote the lowest live reserve");
+	ZENITH_ASSERT_FALSE(xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().IsFainted(),
+		"ResolveTurn returned with the player's corpse active");
+	const ZM_BattleEvent& xLast = xEngine.GetEvent(xEngine.GetEventCount() - 1u);
+	ZENITH_ASSERT_EQ((u_int)xLast.m_eKind, (u_int)ZM_BATTLE_EVENT_SWITCH_IN,
+		"a non-terminal forced replacement must close the event range with SWITCH_IN");
+	ZENITH_ASSERT_EQ(xLast.m_uSide, (u_int)ZM_SIDE_PLAYER);
+	ZENITH_ASSERT_EQ(xLast.m_uSlot, 2u);
+}
+
 // ============================================================================
 // 1. BuildMonster_StatsMatchStatCalc -- natural build == ZM_CalcStat per stat.
 // ============================================================================
@@ -6036,8 +6165,11 @@ ZENITH_TEST(ZM_Battle, ForceSwitch_DamagingCarrierDamageThenSwitchButNotOnKO)
 		}
 		else
 		{
-			ZENITH_ASSERT_TRUE(iSwitch < 0, "damaging FORCE_SWITCH never switches a KO target");
-			ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 0u);
+			const int iTurnEnd = ZM_SC5FindEvent(xEngine.GetEvents(),
+				ZM_BATTLE_EVENT_TURN_END, ZM_SIDE_COUNT, 3u);
+			ZENITH_ASSERT_GT(iSwitch, iTurnEnd,
+				"a KO suppresses the move secondary, then forced replacement occurs after TURN_END");
+			ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot, 1u);
 		}
 	}
 
@@ -7435,9 +7567,9 @@ ZENITH_TEST(ZM_Battle, Box3SC1_EndToEnd_SnowLeavesWaterMoveNeutral)
 	ZENITH_ASSERT_EQ(uSnow, uNone, "snow does not scale a water move");
 }
 
-// GAP 5: the chip loop skips an already-fainted active. The player active is KO'd in the
-// move phase (2-mon party keeps the battle alive); the engine runs NO replacement between
-// the move phase and end-of-turn, so the fainted mon is still the active when the chip runs.
+// GAP 5: the chip loop skips an already-fainted active. The player lead is KO'd
+// in the move phase; replacement happens only after end-of-turn, so the corpse
+// takes no sand chip and the reserve enters after TURN_END.
 ZENITH_TEST(ZM_Battle, Box3SC1_Sand_SkipsFaintedActive)
 {
 	ZM_BattleMonsterSpec axP[2] = {
@@ -7451,7 +7583,10 @@ ZENITH_TEST(ZM_Battle, Box3SC1_Sand_SkipsFaintedActive)
 	xEngine.GetStateMutable().Side(ZM_SIDE_PLAYER).Active().m_uCurHP = 1u;   // enemy Rambash (acc 100) KOs it in the move phase
 	ZM_SC5ResolveMoveTurn(xEngine);
 
-	ZENITH_ASSERT_TRUE(xEngine.GetState().Side(ZM_SIDE_PLAYER).Active().IsFainted(), "player active was KO'd this turn");
+	ZENITH_ASSERT_TRUE(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_xParty.Get(0u).IsFainted(),
+		"player lead was not KO'd this turn");
+	ZENITH_ASSERT_EQ(xEngine.GetState().Side(ZM_SIDE_PLAYER).m_uActiveSlot, 1u,
+		"the live reserve was not promoted after end-of-turn");
 	ZENITH_ASSERT_EQ(ZM_SC5CountForSide(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_PLAYER), 0u,
 		"the fainted active takes no sand chip (skipped)");
 	ZENITH_ASSERT_NOT_NULL(ZM_SC5FindEventPtr(xEngine.GetEvents(), ZM_BATTLE_EVENT_WEATHER_DAMAGE, ZM_SIDE_ENEMY));   // the living enemy still chips

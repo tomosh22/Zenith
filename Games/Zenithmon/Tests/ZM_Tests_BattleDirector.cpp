@@ -53,6 +53,39 @@ namespace
 		return xAction;
 	}
 
+	ZM_BattleMonsterSpec MakeDirectorOverride(ZM_SPECIES_ID eSpecies, ZM_MOVE_ID eMove,
+		u_int uHP, u_int uAttack, u_int uDefense, u_int uSpeed)
+	{
+		ZM_BattleMonsterSpec xSpec;
+		xSpec.m_eSpecies = eSpecies;
+		xSpec.m_uLevel = 50u;
+		xSpec.m_aeMoves[0] = eMove;
+		for (u_int u = 1u; u < uZM_MAX_MOVES; ++u) { xSpec.m_aeMoves[u] = ZM_MOVE_NONE; }
+		xSpec.m_bOverrideBaseStats = true;
+		xSpec.m_xBaseStatsOverride.m_au[ZM_STAT_HP] = uHP;
+		xSpec.m_xBaseStatsOverride.m_au[ZM_STAT_ATTACK] = uAttack;
+		xSpec.m_xBaseStatsOverride.m_au[ZM_STAT_DEFENSE] = uDefense;
+		xSpec.m_xBaseStatsOverride.m_au[ZM_STAT_SPATTACK] = uAttack;
+		xSpec.m_xBaseStatsOverride.m_au[ZM_STAT_SPDEFENSE] = uDefense;
+		xSpec.m_xBaseStatsOverride.m_au[ZM_STAT_SPEED] = uSpeed;
+		return xSpec;
+	}
+
+	struct ZM_ManualReplacementContext
+	{
+		ZM_AI_TIER m_eTier = ZM_AI_TIER_RANDOM;
+		ZM_BattleRNG* m_pxRng = nullptr;
+	};
+
+	u_int ChooseManualReplacement(const ZM_BattleState& xState, ZM_SIDE eSide, void* pContext)
+	{
+		ZM_ManualReplacementContext* pxContext =
+			static_cast<ZM_ManualReplacementContext*>(pContext);
+		return eSide == ZM_SIDE_ENEMY && pxContext != nullptr && pxContext->m_pxRng != nullptr
+			? ZM_ChooseReplacement(xState, eSide, pxContext->m_eTier, *pxContext->m_pxRng)
+			: uZM_MAX_PARTY_SIZE;
+	}
+
 	// A ZM_BATTLE_EVENT kind maps to ZM_POP_NONE iff it is a pure framing event.
 	bool IsFramingKind(ZM_BATTLE_EVENT eKind)
 	{
@@ -724,4 +757,85 @@ ZENITH_TEST(ZM_BattleDirector, Director_WildBattleConfigFullFieldPin)
 		"a wild encounter is uncapped -- only the Battle Tower caps levels");
 	ZENITH_ASSERT_EQ(xCfg.m_uExpAwardSideMask, (u_int)(1u << (u_int)ZM_SIDE_PLAYER),
 		"the wild config's exp side mask is the struct default (player only)");
+}
+
+ZENITH_TEST(ZM_BattleDirector, Director_EnemyForcedReplacementUsesItsAiPolicyBeforeAwaitInput)
+{
+	const u_int64 ulSeed = 0xF01CED40ull;
+	const ZM_BattleMonsterSpec xPlayer = MakeDirectorOverride(
+		ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH, 500u, 500u, 500u, 500u);
+	ZM_BattleMonsterSpec axEnemy[3] =
+	{
+		MakeDirectorOverride(ZM_SPECIES_STRAYLING, ZM_MOVE_QUICKJAB, 1u, 1u, 1u, 1u),
+		MakeDirectorOverride(ZM_SPECIES_PIPWIT, ZM_MOVE_MISTVEIL, 100u, 50u, 50u, 50u),
+		MakeDirectorOverride(ZM_SPECIES_KINDLET, ZM_MOVE_EMBERCLAW, 100u, 150u, 50u, 50u)
+	};
+
+	ZM_BattleDirectorCore xCore;
+	xCore.Begin(&xPlayer, 1u, axEnemy, 3u, MakeWildConfig(),
+		ulSeed, ZM_AI_TIER_RANDOM);
+	xCore.Tick(100.0f);
+	ZENITH_ASSERT_TRUE(xCore.IsAwaitingInput(), "the intro must drain before the driven turn");
+
+	// Hand-drive a raw engine with the same private AI stream. This comparison
+	// pins BOTH random action selection and the later replacement draw to the one
+	// director-owned RNG; using the battle RNG or a freshly seeded replacement RNG
+	// changes the exact event stream/active slot.
+	ZM_BattleEngine xManual;
+	xManual.Begin(MakeWildConfig(), &xPlayer, 1u, axEnemy, 3u, ulSeed);
+	ZM_BattleRNG xManualAIRng;
+	xManualAIRng.Seed(ZM_DeriveAiRngSeed(ulSeed));
+	const ZM_BattleAction xManualEnemy = ZM_ChooseAction(
+		xManual.GetState(), ZM_SIDE_ENEMY, ZM_AI_TIER_RANDOM, xManualAIRng);
+	xManual.SubmitAction(ZM_SIDE_PLAYER, MakeMoveSlot0());
+	xManual.SubmitAction(ZM_SIDE_ENEMY, xManualEnemy);
+	ZM_ManualReplacementContext xReplacementContext;
+	xReplacementContext.m_eTier = ZM_AI_TIER_RANDOM;
+	xReplacementContext.m_pxRng = &xManualAIRng;
+	xManual.ResolveTurn(&ChooseManualReplacement, &xReplacementContext);
+
+	const u_int uStart = xCore.GetEngine().GetEventCount();
+	xCore.SubmitPlayerAction(MakeMoveSlot0());
+	ZENITH_ASSERT_EQ(xCore.GetEngine().GetEventCount(), xManual.GetEventCount(),
+		"director/manual event counts diverged across random forced replacement");
+	for (u_int u = 0u; u < xManual.GetEventCount(); ++u)
+	{
+		ZENITH_ASSERT_TRUE(xCore.GetEngine().GetEvent(u) == xManual.GetEvent(u),
+			"director/manual event %u diverged across random forced replacement", u);
+	}
+	const u_int uReplacementSlot =
+		xCore.GetEngine().GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot;
+	ZENITH_ASSERT_EQ(uReplacementSlot,
+		xManual.GetState().Side(ZM_SIDE_ENEMY).m_uActiveSlot,
+		"the director did not feed its continuing private AI stream into ResolveTurn");
+	ZENITH_ASSERT_GT(uReplacementSlot, 0u);
+	ZENITH_ASSERT_FALSE(xCore.GetEngine().GetState().Side(ZM_SIDE_ENEMY).Active().IsFainted(),
+		"the director exposed a fainted active during PLAYING_EVENTS");
+	ZM_BattleRNG xDirectorBattleRng = xCore.GetEngine().GetState().m_xRNG;
+	ZM_BattleRNG xManualBattleRng = xManual.GetState().m_xRNG;
+	for (u_int u = 0u; u < 4u; ++u)
+	{
+		ZENITH_ASSERT_EQ(xDirectorBattleRng.Next(), xManualBattleRng.Next(),
+			"director replacement perturbed battle RNG at comparison draw %u", u);
+	}
+
+	int iTurnEnd = -1;
+	int iSwitch = -1;
+	for (u_int u = uStart; u < xCore.GetEngine().GetEventCount(); ++u)
+	{
+		const ZM_BattleEvent& xEvent = xCore.GetEngine().GetEvent(u);
+		if (xEvent.m_eKind == ZM_BATTLE_EVENT_TURN_END) { iTurnEnd = (int)u; }
+		if (xEvent.m_eKind == ZM_BATTLE_EVENT_SWITCH_IN
+			&& xEvent.m_uSide == (u_int)ZM_SIDE_ENEMY
+			&& xEvent.m_uSlot == uReplacementSlot)
+		{
+			iSwitch = (int)u;
+		}
+	}
+	ZENITH_ASSERT_GT(iSwitch, iTurnEnd,
+		"the director's presentation range must contain TURN_END then forced SWITCH_IN");
+
+	xCore.Tick(100.0f);
+	ZENITH_ASSERT_TRUE(xCore.IsAwaitingInput(),
+		"after presenting the replacement, the director must await the next normal action");
 }

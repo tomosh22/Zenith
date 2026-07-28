@@ -1109,3 +1109,102 @@ ZENITH_TEST(ZM_Battle, BattleAI_NoLegalMoveReturnsSwitch)
 		ZENITH_ASSERT_EQ(xA.m_uSwitchSlot, 1u, "tier %d must pick the lowest legal switch (slot 1)", t);
 	}
 }
+
+// A fainted active has no legal move. Forced replacement is a distinct AI
+// decision surface so RANDOM is uniform over live reserves only, while tactical
+// tiers score the reserves without ever touching the battle RNG.
+ZENITH_TEST(ZM_Battle, BattleAI_ForcedReplacementRandomUsesEveryLiveBenchOnly)
+{
+	ZM_BattleMonsterSpec axP[3] =
+	{
+		MakeNeutralAtk(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		MakeNeutralAtk(ZM_SPECIES_STRAYLING, ZM_MOVE_QUICKJAB),
+		MakeNeutralAtk(ZM_SPECIES_KINDLET, ZM_MOVE_EMBERCLAW)
+	};
+	const ZM_BattleMonsterSpec xEnemy = MakeNeutralDef(ZM_SPECIES_FINLET, ZM_MOVE_RAMBASH);
+	ZM_BattleState xState;
+	BuildAIState(xState, axP, 3u, &xEnemy, 1u, 0xA17E57ull);
+	PlayerActive(xState).m_uCurHP = 0u;
+
+	const ZM_BattleRNG xBattleBefore = xState.m_xRNG;
+	ZM_BattleRNG xAIRng(0xF01CED11ull, 54ull);
+	ZM_BattleRNG xExpectedAIRng(0xF01CED11ull, 54ull);
+	u_int auSeen[3] = { 0u, 0u, 0u };
+	for (u_int u = 0u; u < 512u; ++u)
+	{
+		const u_int uSlot = ZM_ChooseReplacement(
+			xState, ZM_SIDE_PLAYER, ZM_AI_TIER_RANDOM, xAIRng);
+		const u_int uExpectedSlot = 1u + xExpectedAIRng.RandBelow(2u);
+		ZENITH_ASSERT_EQ(uSlot, uExpectedSlot,
+			"RANDOM replacement draw %u did not consume exactly one private-AI draw", u);
+		ZENITH_ASSERT_TRUE(uSlot == 1u || uSlot == 2u,
+			"RANDOM replacement returned current/fainted/out-of-range slot %u", uSlot);
+		++auSeen[uSlot];
+	}
+	ZENITH_ASSERT_GT(auSeen[1], 0u, "RANDOM never selected live reserve slot 1");
+	ZENITH_ASSERT_GT(auSeen[2], 0u, "RANDOM never selected live reserve slot 2");
+
+	ZM_BattleRNG xObserved = xState.m_xRNG;
+	ZM_BattleRNG xExpected = xBattleBefore;
+	for (u_int u = 0u; u < 8u; ++u)
+	{
+		ZENITH_ASSERT_EQ(xObserved.Next(), xExpected.Next(),
+			"replacement policy advanced the battle RNG at comparison draw %u", u);
+	}
+
+	// A single live reserve is deterministic and consumes no private-AI draw.
+	xState.Side(ZM_SIDE_PLAYER).m_xParty.Get(2u).m_uCurHP = 0u;
+	const ZM_BattleRNG xSingleBefore = xAIRng;
+	ZENITH_ASSERT_EQ(ZM_ChooseReplacement(
+		xState, ZM_SIDE_PLAYER, ZM_AI_TIER_RANDOM, xAIRng), 1u);
+	xObserved = xAIRng;
+	xExpected = xSingleBefore;
+	ZENITH_ASSERT_EQ(xObserved.Next(), xExpected.Next(),
+		"a single eligible replacement consumed an unnecessary AI RNG draw");
+}
+
+ZENITH_TEST(ZM_Battle, BattleAI_ForcedReplacementTacticalTiersChooseBestReserve)
+{
+	ZM_BattleMonsterSpec axP[3] =
+	{
+		MakeNeutralAtk(ZM_SPECIES_NIBBIN, ZM_MOVE_RAMBASH),
+		MakeNeutralAtk(ZM_SPECIES_STRAYLING, ZM_MOVE_MISTVEIL),
+		MakeNeutralAtk(ZM_SPECIES_KINDLET, ZM_MOVE_EMBERCLAW)
+	};
+	const ZM_BattleMonsterSpec xEnemy = MakeNeutralDef(ZM_SPECIES_FERNFAWN, ZM_MOVE_LEAFCUT);
+	ZM_BattleState xState;
+	BuildAIState(xState, axP, 3u, &xEnemy, 1u);
+	PlayerActive(xState).m_uCurHP = 0u;
+
+	const ZM_AI_TIER aeTiers[] =
+	{
+		ZM_AI_TIER_GREEDY,
+		ZM_AI_TIER_SMART,
+		ZM_AI_TIER_CHAMPION
+	};
+	for (u_int u = 0u; u < (u_int)(sizeof(aeTiers) / sizeof(aeTiers[0])); ++u)
+	{
+		ZM_BattleRNG xAIRng(0xF01CED20ull + u, 54ull);
+		const ZM_BattleRNG xBefore = xAIRng;
+		const u_int uSlot = ZM_ChooseReplacement(xState, ZM_SIDE_PLAYER, aeTiers[u], xAIRng);
+		ZENITH_ASSERT_EQ(uSlot, 2u,
+			"tier %u chose the lowest reserve instead of the damaging Fire matchup", (u_int)aeTiers[u]);
+		ZM_BattleRNG xObserved = xAIRng;
+		ZM_BattleRNG xExpected = xBefore;
+		ZENITH_ASSERT_EQ(xObserved.Next(), xExpected.Next(),
+			"deterministic replacement tier %u consumed AI RNG", (u_int)aeTiers[u]);
+	}
+
+	// No live reserve is a total, draw-free sentinel result.
+	xState.Side(ZM_SIDE_PLAYER).m_xParty.Get(1u).m_uCurHP = 0u;
+	xState.Side(ZM_SIDE_PLAYER).m_xParty.Get(2u).m_uCurHP = 0u;
+	ZM_BattleRNG xNoTargetRng(0xF01CED30ull, 54ull);
+	const ZM_BattleRNG xNoTargetBefore = xNoTargetRng;
+	ZENITH_ASSERT_EQ(ZM_ChooseReplacement(
+		xState, ZM_SIDE_PLAYER, ZM_AI_TIER_RANDOM, xNoTargetRng), uZM_MAX_PARTY_SIZE,
+		"no live reserve must return the party sentinel");
+	ZM_BattleRNG xObserved = xNoTargetRng;
+	ZM_BattleRNG xExpected = xNoTargetBefore;
+	ZENITH_ASSERT_EQ(xObserved.Next(), xExpected.Next(),
+		"the no-target replacement path consumed AI RNG");
+}

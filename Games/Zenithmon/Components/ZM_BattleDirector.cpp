@@ -62,6 +62,9 @@ void ZM_BattleDirector::OnStart()
 	m_bWriteBackToLead  = false;
 	m_eTrainer          = ZM_TRAINER_NONE;   // SC5: WILD until a trainer arm latches it
 	m_fRunningSeconds   = 0.0f;
+	m_axCreatureModelIDs[ZM_SIDE_PLAYER] = INVALID_ENTITY_ID;
+	m_axCreatureModelIDs[ZM_SIDE_ENEMY]  = INVALID_ENTITY_ID;
+	m_uCreatureModelEventCursor = 0u;
 }
 
 void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
@@ -118,6 +121,7 @@ void ZM_BattleDirector::OnUpdate(float fDeltaSeconds)
 			m_xHud.HideMenu(m_xParentEntity);   // the menu only shows while awaiting input
 		}
 		m_xCore.Tick(fDeltaSeconds);
+		SyncCreatureModelsToPresentedEvents();
 		m_xHud.Update(m_xParentEntity, m_xCore, fDeltaSeconds);
 
 		if (ShouldRequestEndNow(m_ePhase, m_xCore.ShouldRequestEnd(), m_bEndRequested))
@@ -248,6 +252,7 @@ void ZM_BattleDirector::RunSetup(const ZM_BattleTransition& xTransition)
 
 	// Best-effort visuals: a missing arena / creature bundle must NOT abort the battle.
 	PlaceCreatureModels(xPlayerSpec.m_eSpecies, eEnemySpecies);
+	m_uCreatureModelEventCursor = m_xCore.GetEngine().GetEventCount();
 
 	// Reveal + seed the HUD onto this entity's own UI component (best-effort: a
 	// missing UI component skips gracefully).
@@ -304,17 +309,15 @@ void ZM_BattleDirector::RunTrainerSetup(ZM_TRAINER_ID eTrainer)
 
 	// The row's AI tier goes STRAIGHT into Begin's 7th argument -- the wild arm's
 	// hard-coded ZM_AI_TIER_GREEDY is a wild-path constant and is not reused here.
-	// m_uEnemyCount is already bounded by uZM_TRAINER_BATTLEABLE_PARTY (the builder
-	// clamps it): the engine has NO forced replacement on faint, so handing it a
-	// bench would faint-lock the battle into Zenith_Assert(!xActive.IsFainted(), ...)
-	// -- a break in EVERY configuration -- rather than end it. Do not "restore" the
-	// authored count here; raise the constant in ZM_TrainerBattle.h, and only in the
-	// commit that adds forced-switch-on-faint.
+	// m_uEnemyCount is already bounded by uZM_TRAINER_BATTLEABLE_PARTY. That bound
+	// now equals the shared party cap: ResolveTurn promotes a live reserve after a
+	// non-terminal faint, so the complete authored trainer row reaches Begin.
 	m_xCore.Begin(&xPlayerSpec, 1u, xSetup.m_axEnemyParty, xSetup.m_uEnemyCount,
 		xConfig, xSetup.m_ulBattleSeed, xSetup.m_eEnemyTier);
 
 	// Best-effort visuals: the trainer's LEAD is the monster on the enemy platform.
 	PlaceCreatureModels(xPlayerSpec.m_eSpecies, xSetup.m_eLeadSpecies);
+	m_uCreatureModelEventCursor = m_xCore.GetEngine().GetEventCount();
 	m_xHud.Setup(m_xParentEntity, m_xCore);
 
 	m_fRunningSeconds = 0.0f;
@@ -368,30 +371,74 @@ void ZM_BattleDirector::PlaceCreatureModels(ZM_SPECIES_ID ePlayerSpecies, ZM_SPE
 		return xPos;
 	};
 
-	auto fnPlaceOne = [&](ZM_SPECIES_ID eSpecies, const Zenith_Maths::Vector3& xPos)
+	auto fnPlaceOne = [&](ZM_SPECIES_ID eSpecies, const Zenith_Maths::Vector3& xPos) -> Zenith_EntityID
 	{
 		if (eSpecies >= ZM_SPECIES_COUNT)   // ZM_SPECIES_NONE / out of range
 		{
-			return;
+			return INVALID_ENTITY_ID;
 		}
 		char szRef[256];
 		if (!ZM_CreatureAssetPath(eSpecies, ZM_CREATURE_ASSET_MODEL, szRef, sizeof(szRef)))
 		{
-			return;   // ref overflow; skip (best-effort)
+			return INVALID_ENTITY_ID;   // ref overflow; skip (best-effort)
 		}
 		Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, ZM_GetSpeciesName(eSpecies));
 		if (!xEntity.IsValid())
 		{
-			return;
+			return INVALID_ENTITY_ID;
 		}
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xPos);
 		// A missing/unbaked .zmodel loads model-less (mirrors ZM_BattleArena dressing).
 		xEntity.AddComponent<Zenith_ModelComponent>().LoadModel(szRef);
+		return xEntity.GetEntityID();
 	};
 
-	fnPlaceOne(ePlayerSpecies, fnResolvePlacePos(xPlayerPlatformID));
-	fnPlaceOne(eEnemySpecies,  fnResolvePlacePos(xEnemyPlatformID));
+	m_axCreatureModelIDs[ZM_SIDE_PLAYER] =
+		fnPlaceOne(ePlayerSpecies, fnResolvePlacePos(xPlayerPlatformID));
+	m_axCreatureModelIDs[ZM_SIDE_ENEMY] =
+		fnPlaceOne(eEnemySpecies, fnResolvePlacePos(xEnemyPlatformID));
+}
+
+void ZM_BattleDirector::SyncCreatureModelsToPresentedEvents()
+{
+	const ZM_BattleEngine& xEngine = m_xCore.GetEngine();
+	u_int uPresented = m_xCore.PresentedEventCount();
+	if (uPresented > xEngine.GetEventCount())
+	{
+		uPresented = xEngine.GetEventCount();
+	}
+	while (m_uCreatureModelEventCursor < uPresented)
+	{
+		const ZM_BattleEvent& xEvent = xEngine.GetEvent(m_uCreatureModelEventCursor++);
+		if (xEvent.m_eKind == ZM_BATTLE_EVENT_SWITCH_IN && xEvent.m_uSide < ZM_SIDE_COUNT)
+		{
+			SetCreatureModelSpecies((ZM_SIDE)xEvent.m_uSide, (ZM_SPECIES_ID)xEvent.m_uSpeciesId);
+		}
+	}
+}
+
+void ZM_BattleDirector::SetCreatureModelSpecies(ZM_SIDE eSide, ZM_SPECIES_ID eSpecies)
+{
+	if (eSide >= ZM_SIDE_COUNT || eSpecies >= ZM_SPECIES_COUNT)
+	{
+		return;
+	}
+	Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(m_axCreatureModelIDs[eSide]);
+	Zenith_ModelComponent* pxModel = xEntity.IsValid()
+		? xEntity.TryGetComponent<Zenith_ModelComponent>()
+		: nullptr;
+	if (pxModel == nullptr)
+	{
+		return;
+	}
+	char szRef[256];
+	if (!ZM_CreatureAssetPath(eSpecies, ZM_CREATURE_ASSET_MODEL, szRef, sizeof(szRef)))
+	{
+		return;
+	}
+	xEntity.SetName(ZM_GetSpeciesName(eSpecies));
+	pxModel->LoadModel(szRef);
 }
 
 ZM_BattleMonsterSpec ZM_BattleDirector::BuildPlaceholderPlayerSpec()
@@ -463,6 +510,9 @@ void ZM_BattleDirector::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_bWriteBackToLead = false;
 	m_eTrainer         = ZM_TRAINER_NONE;
 	m_fRunningSeconds  = 0.0f;
+	m_axCreatureModelIDs[ZM_SIDE_PLAYER] = INVALID_ENTITY_ID;
+	m_axCreatureModelIDs[ZM_SIDE_ENEMY]  = INVALID_ENTITY_ID;
+	m_uCreatureModelEventCursor = 0u;
 	m_xCore            = ZM_BattleDirectorCore{};   // fresh, un-begun core
 
 	if (uVersion != uSERIALIZATION_VERSION)
