@@ -15,6 +15,128 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-28 -- ZM-D-156 -- S7 item 3 SC8: rival Vesper AUTHORED in Dawnmere + zero-byte trainer-id persistence -- and the discovery that an AABB collider silently destroys an authored rotation
+
+*(Eighth and FINAL sub-commit of the ZM-D-143 sequence. It CLOSES S7 item 3 and item 4.
+`Games/Zenithmon` only; ZERO `Zenith/` files, ZERO new ECS orders, ZERO serialization
+change. Three new `.cpp` TUs, so a regen was owed and run. **The first sub-commit in this
+sequence that deliberately changes a COMMITTED scene file.** Authored from the verbatim
+`SC8_Plan.md`, which this commit DELETES.)*
+
+### ★ THE DEFECT THAT ONLY THE WINDOWED ROUND TRIP COULD FIND
+
+`Zenith_ColliderComponent` builds an AABB body's rotation as
+`(eVolumeType == COLLISION_VOLUME_TYPE_AABB) ? JPH::Quat::sIdentity() : JPH::Quat(...)`
+-- an axis-aligned box is axis-aligned BY DEFINITION, so **an AABB collider forces the
+body to identity and the physics-to-transform sync writes that identity back over the
+authored yaw**. Vesper is the first authored entity in this game that has to FACE
+anywhere; the four shipped NPCs are all unrotated, so nothing had ever exposed it.
+
+The scene therefore saved with an unrotated rival staring north -- functionally blind,
+because the sight cone is a 60-degree FORWARD cone -- **with every boot unit still
+green.** That is the whole point of recording this: the units reason about the COMPILED
+placement constants (position, bearing, clearances, all correct --
+`placementErrX/Z = 0.0000`), while the defect existed ONLY in the SAVED BYTES. No unit
+test, and none of the three review lenses, could see it. The windowed round trip reported
+it exactly: `authoredRot=(w 1, 0, 0, 0)` against `expectedRot=(w 0.22975, y 0.97325)`,
+`facingAbsDot=0.22975` against a required `0.999`.
+
+**Fix: the trainer's collider is `COLLISION_VOLUME_TYPE_OBB`, not AABB.** OBB shares
+AABB's box shape exactly and differs ONLY in applying the rotation, so the occluder
+footprint SC6's sight ray sees is unchanged. A "do not tidy this back to AABB for
+consistency with the other four" warning ships at the call site, because that is exactly
+the well-intentioned cleanup that would silently re-break it.
+
+**How it was caught, and the process lesson.** The plan called for a negative control:
+stash the new scene bytes, require the new test to FAIL, restore, require it to PASS.
+The control was run and the test DID fail -- but it **also failed after the re-author**.
+A fail-then-fail is not a control, it is a masked defect. Had the test only been run
+AFTER re-authoring, one red test would most plausibly have been blamed on the re-author
+not having worked; had it only been run BEFORE, a clean-looking control would have been
+recorded that was pure coincidence. **It is the PAIR that carries the information, and
+only a genuine fail-to-pass FLIP proves the intended cause.** Observed flip:
+AABB-authored scene `66410151...` -> FAIL, OBB-authored scene `07B81342...` -> PASS, same
+test, same code but for the collider token.
+
+### What shipped
+
+`ZM_NpcData` gains `ZM_NPC_RIVAL_VESPER` and a `ZM_TRAINER_ID m_eTrainer` column APPENDED
+at the END of the row; `ZM_Interactable::DeriveTrainerFromNpcRow()` runs in `OnStart`
+ONLY and is FILL-IF-EMPTY, routing through `ConfigureTrainerSight` (the one validating
+installer) rather than assigning `m_eTrainerId` raw. A new PURE shared header
+`Source/World/ZM_DawnmerePlacement.{h,cpp}` owns the placement geometry so BOOT UNITS can
+reason about the coordinates instead of a comment. `Zenithmon.cpp` authors
+`Npc_RivalVesper` via a SEPARATE `ZM_QueueDawnmereTrainerNpc` -- the four shipped NPCs'
+step lists are untouched BY CONSTRUCTION, because this is the one sub-commit that
+rewrites a committed scene file.
+
+**ZERO-BYTE PERSISTENCE, VERIFIED NOT ASSUMED.** ZM-D-154 recorded this route as a
+PREFERENCE; the planning pass proved it from source. `m_eNpcId` is already serialized,
+`ReadFromDataStream` strictly precedes `OnStart` on every shipped load path, and a
+`ZM_NpcData` row is compiled-const that nothing serializes -- so the column costs zero
+disk bytes. `ZM_Interactable::uSERIALIZATION_VERSION` stays `2u` and the shipped byte pin
+`Interactable_TrainerSightIsNotSerialized` stayed green **WITH NO EDIT**. The v3 route was
+evaluated and REJECTED: it would grow five committed payloads and force an edit to the
+very unit written to red on that bump.
+
+**★ `ZM_TRAINER_RIVAL_VESPER == 0`, while `ZM_TRAINER_NONE` aliases `ZM_TRAINER_COUNT`.**
+A `ZM_NpcData` row that omits the new trailing initializer value-initialises to 0 and
+SILENTLY BECOMES THE RIVAL, with no MSVC warning under warnings-as-errors. Every existing
+row carries an explicit trailing `ZM_TRAINER_NONE`, and
+`Npc_ExactlyOneRowNamesARegisteredTrainer` is the load-bearing guard against it.
+
+### Two standing warnings CLOSED by reading the code
+
+1. **Dawnmere cannot roll a wild encounter at all.** `ZM_WorldSpec` gives it kind TOWN
+   with `nullptr/0/0` and the roll short-circuits on all three with no RNG draw. The
+   grass-steals-the-round-trip flake warning SC6 and SC7 both carried is PRECAUTIONARY
+   for this scene, not real.
+2. **The occlusion ray excludes the trainer's own body**, so an authored Vesper with a
+   collider is not self-blinded.
+
+### The scene re-author, and how stability was proven
+
+Exactly ONE tracked asset changed: `Assets/Scenes/Dawnmere.zscen`. The diff is NOT
+eyeballable -- `SaveToFile` assigns dense authoring-order file indices and the main camera
+is authored after the NPCs, so inserting the rival renumbers every trailing entity. So
+stability is proven OPERATIONALLY: a windowed `_True` boot whose log reads
+`sceneAuthoring=AUTHOR_DAWNMERE` (a `DEFERRED` boot silently does nothing and looks
+successful), SHA256, a SECOND authoring boot, hashes identical (`07B81342...` both times);
+the navmesh and the other three scenes unchanged; and the scene re-hashed after the full
+headless AND windowed batches to prove no play-session save baked an order-60
+`Zenith_GraphComponent` payload in -- SC7's zero-byte argument rests on the editor being
+STOPPED at `AddStep_SaveScene`, and an authored trainer is the first thing that could
+violate it.
+
+### Observed gate (never predicted)
+
+Regen green with all 4 new files in the vcxproj; both configs build clean. Headless
+**47/47, 0 failed**; boot units **2695 -> 2703** (2703 ran / 2702 passed / 0 failed / 1
+documented skip), the +8 delta being the only proof the regen took; full windowed
+**47/47, 0 failed**; automated registry **46 -> 47** (a NEW registration, not a ride-along
+-- SC8's subject is a different entity making a different claim). `Assets/` unchanged by
+the batches; zero save residue. `zm-tests.yml` pinned to the OBSERVED 2703
+(`run_unit_gate.ps1`'s default is the ENGINE baseline and is untouched).
+
+**Teeth mutation battery.** M1 (the Villager row loses its trailing `ZM_TRAINER_NONE`, so
+it value-initialises to 0 and silently becomes a second rival) reds 2; M2 (fill-if-empty
+inverted) reds 3; M3 (Vesper moved onto the player spawn, the whiteout-softlock guard)
+reds 1; M5 (the derivation never called) reds 2. **M4 SURVIVED, and it is NOT a teeth
+failure -- the ZM-D-155 lesson repeating a second time:** reverting the collider to AABB
+cannot manifest without RE-AUTHORING the scene, which a battery does not do, so the
+already-correct bytes are never re-wiped on load. That clause's teeth were proven LIVE
+and controlled instead: AABB-authored scene `66410151...` FAILS, OBB-authored scene
+`07B81342...` PASSES, same test, same code but for the collider token. (M1 also needed a
+re-run: its first anchor matched four identical row tails. An anchor that matches N sites
+mutates N sites -- always assert the occurrence count before trusting a battery row.)
+
+### Reversibility
+
+High. Three new TUs, one appended data column, one derivation call, one collider-type
+token, and one re-authored scene file. No format change, no ECS order, no engine change.
+
+---
+
 ## 2026-07-28 -- ZM-D-155 -- S7 item 3 SC7: the first Zenithmon `.bgraph` -- the trainer challenge bark -- plus the USER RE-RATIFICATION that redefined what SC7 is
 
 *(Seventh sub-commit of the ZM-D-143 sequence. `Games/Zenithmon` only; ZERO `Zenith/`

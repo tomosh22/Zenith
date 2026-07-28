@@ -3,6 +3,7 @@
 #include "Zenithmon/Source/Data/ZM_HumanData.h"        // ZM_HUMAN_ID (which townsfolk appearance a row wears)
 #include "Zenithmon/Source/Data/ZM_ItemData.h"         // ZM_ITEM_ID (a shopkeep's stock list)
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"       // ZM_StoryGate / ZM_StoryFlagSet (the per-row line gate)
+#include "Zenithmon/Source/Data/ZM_TrainerData.h"      // ZM_TRAINER_ID -- the trainer column
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"     // uMAX_QUEUED_LINES -- the line cap is DERIVED from it
 
 // ============================================================================
@@ -47,8 +48,9 @@ enum ZM_NPC_ID : u_int
 	ZM_NPC_VILLAGER,           // Dawnmere flavour talker
 	ZM_NPC_TRADE_POST_CLERK,   // the Trade Post counter (the town's shop)
 	ZM_NPC_CARETAKER,          // the Care Center's heal prompt
-	ZM_NPC_WANDERER,           // a second talker; SC8 gives it a waypoint patrol
+	ZM_NPC_WANDERER,           // a second talker; S6 SC8 gave it a waypoint patrol
 	ZM_NPC_ROUTE_WARDEN,       // the S7 story gate: refuses the way on until cleared
+	ZM_NPC_RIVAL_VESPER,       // S7 item 3 SC8: the rival. The ONE row naming a trainer.
 
 	ZM_NPC_COUNT,
 	ZM_NPC_NONE = ZM_NPC_COUNT   // "no NPC" sentinel
@@ -91,7 +93,7 @@ struct ZM_NpcData
 	u_int				m_uLineCount;
 	const ZM_ITEM_ID*	m_paeStock;        // shop stock (SHOPKEEP only), row-owned
 	u_int				m_uStockCount;
-	bool				m_bWanders;        // SC8 gives this one a waypoint patrol
+	bool				m_bWanders;        // S6 SC8 gave this one a waypoint patrol
 	// ---- S7 item 2 SC1: the story gate, APPENDED AT THE END -----------------
 	// These three are last on purpose. Every row above is a POSITIONAL aggregate
 	// initializer, so inserting a field mid-struct silently shifts each trailing
@@ -103,6 +105,28 @@ struct ZM_NpcData
 	ZM_StoryGate		m_xLineGate;        // NONE == ungated
 	const char* const*	m_paszGatedLines;   // spoken while the gate FAILS (null <=> count 0)
 	u_int				m_uGatedLineCount;
+	// ---- S7 item 3 SC8: the TRAINER column, APPENDED AT THE END ---------------
+	// The same positional-aggregate rule the gate columns above are written under:
+	// a field inserted higher up shifts every trailing value one column left with no
+	// compile error to say why.
+	//
+	// This column is what makes an AUTHORED trainer survive a scene reload at ZERO
+	// disk cost. ZM_Interactable::m_eTrainerId is runtime-only and
+	// uSERIALIZATION_VERSION stays 2u forever; the component RE-DERIVES its trainer
+	// from this compiled row in OnStart, keyed on the already-serialized m_eNpcId.
+	// Nothing serializes a ZM_NpcData row anywhere in this game, so adding columns
+	// here can never move a committed .zscen byte.
+	//
+	// ★★ THE ZERO VALUE IS A TRAP, AND IT IS NOT THEORETICAL.
+	// ZM_TRAINER_RIVAL_VESPER == 0 (it is the FIRST enumerator in ZM_TRAINER_ID),
+	// while ZM_TRAINER_NONE aliases ZM_TRAINER_COUNT == 2. A row that OMITS this
+	// trailing initializer therefore value-initialises it to 0 and SILENTLY BECOMES
+	// THE RIVAL -- MSVC does not warn on missing aggregate initialisers, so there is
+	// no build error. Every non-trainer row must spell ZM_TRAINER_NONE explicitly.
+	// The invariant is enforced at boot by Npc_ExactlyOneRowNamesARegisteredTrainer
+	// in Tests/ZM_Tests_NpcData.cpp; if you are reading this because that unit went
+	// red, a row lost its last initialiser.
+	ZM_TRAINER_ID		m_eTrainer;   // ZM_TRAINER_NONE == this NPC is not a trainer
 };
 
 // Table accessors (bounds-asserted). ZM_GetNpcData indexes by ZM_NPC_ID.

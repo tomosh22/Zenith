@@ -23,6 +23,7 @@
 #include "Zenithmon/Source/Data/ZM_ItemData.h"
 #include "Zenithmon/Source/Data/ZM_NpcData.h"
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"   // the gate a row's alternate line set hangs off
+#include "Zenithmon/Source/Data/ZM_TrainerData.h"  // ZM_TRAINER_* / ZM_IsRegisteredTrainer
 #include "Zenithmon/Source/Shop/ZM_ShopLogic.h"    // ZM_ShopBuyPrice -- the purchasable check
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h" // uMAX_QUEUED_LINES -- the line cap's source
 
@@ -30,7 +31,7 @@ namespace
 {
 	// Spelled in the TEST, not read back off the table, so "the roster changed"
 	// is a failure rather than a silently-agreeing tautology.
-	constexpr u_int uEXPECTED_NPCS = 5;
+	constexpr u_int uEXPECTED_NPCS = 6;   // S7 item 3 SC8 added the rival
 
 	const ZM_NpcData& Npc(u_int i) { return ZM_GetNpcData((ZM_NPC_ID)i); }
 
@@ -855,4 +856,69 @@ ZENITH_TEST(ZM_Data, Warden_OrdinaryAndGatedSetsAreDistinct)
 	}
 	ZENITH_ASSERT_FALSE(strcmp(szOrdinary, szGated) == 0,
 		"the warden opens both line sets with the same text ('%s')", szOrdinary);
+}
+
+// ============================================================================
+// S7 item 3 SC8 -- the TRAINER column.
+//
+// The column is what makes an AUTHORED trainer survive a scene reload at zero
+// disk cost: ZM_Interactable::OnStart re-derives its trainer from the row named
+// by the already-serialized m_eNpcId, so this table is the ONLY authority on
+// which NPC is armed. A mis-authored column is therefore not a cosmetic content
+// bug -- it is either a townsfolk who forces a battle or a rival who never does.
+//
+// The two units below have DELIBERATELY INDEPENDENT teeth:
+// Npc_ExactlyOneRowNamesARegisteredTrainer COUNTS registered trainers (and so
+// cannot see a garbage ordinal, which is not counted at all), while
+// Npc_TrainerColumnIsSentinelOrRegistered RANGE-CHECKS every ordinal (and so
+// cannot see a second VALID trainer). Neither subsumes the other.
+// ============================================================================
+
+// Q-C: EXACTLY ONE authored NPC row is a trainer, and it is the rival.
+//
+// This unit is the tripwire for the ZM_TRAINER_RIVAL_VESPER == 0 trap. That
+// enumerator is FIRST in ZM_TRAINER_ID, so a row that OMITS its trailing
+// initializer value-initialises the column to 0 and silently becomes the rival --
+// with no MSVC warning under warnings-as-errors. The count clause below is what
+// catches it. Every expected value is spelled HERE, never read back off the table.
+ZENITH_TEST(ZM_Data, Npc_ExactlyOneRowNamesARegisteredTrainer)
+{
+	u_int uTrainerRows = 0u;
+	u_int uTrainerRowIndex = ZM_NPC_COUNT;
+	for (u_int i = 0; i < ZM_NPC_COUNT; ++i)
+	{
+		if (ZM_IsRegisteredTrainer(Npc(i).m_eTrainer))
+		{
+			++uTrainerRows;
+			uTrainerRowIndex = i;
+		}
+	}
+	ZENITH_ASSERT_EQ(uTrainerRows, 1u,
+		"exactly one authored NPC row may name a trainer (Q-C) -- found %u. A row "
+		"that DROPPED its trailing ZM_TRAINER_NONE initializer value-initialises to "
+		"0 == ZM_TRAINER_RIVAL_VESPER and becomes a rival with no compile error",
+		uTrainerRows);
+	ZENITH_ASSERT_EQ(uTrainerRowIndex, (u_int)ZM_NPC_RIVAL_VESPER,
+		"the trainer row is not the rival's");
+	ZENITH_ASSERT_EQ((u_int)Npc(ZM_NPC_RIVAL_VESPER).m_eTrainer,
+		(u_int)ZM_TRAINER_RIVAL_VESPER,
+		"the rival row names the wrong trainer");
+}
+
+// The forward-looking range guard, in the exact shape of the shipped
+// Npc_EveryHumanIdIsInRange. A garbage ordinal would make ZM_GetTrainerData answer
+// with the UNKNOWN row (which has no party), leaving that NPC visibly a trainer and
+// permanently unbattleable -- and Npc_ExactlyOneRowNamesARegisteredTrainer would
+// not see it, because an unregistered value simply is not counted.
+ZENITH_TEST(ZM_Data, Npc_TrainerColumnIsSentinelOrRegistered)
+{
+	for (u_int i = 0; i < ZM_NPC_COUNT; ++i)
+	{
+		const ZM_NpcData& x = Npc(i);
+		const bool bValid = (x.m_eTrainer == ZM_TRAINER_NONE)
+			|| ZM_IsRegisteredTrainer(x.m_eTrainer);
+		ZENITH_ASSERT_TRUE(bValid,
+			"%s names trainer ordinal %u, which is neither the sentinel nor a "
+			"registered row", x.m_szDisplayName, (u_int)x.m_eTrainer);
+	}
 }

@@ -87,6 +87,9 @@
 #include "FileAccess/Zenith_FileAccess.h"
 #include "SaveData/Zenith_SaveData.h"
 #include "Zenithmon/Source/Core/ZM_SaveSchema.h"
+#include "Zenithmon/Source/Data/ZM_StoryFlags.h"                 // S7 item 3 SC8 U8: ZM_SetStoryFlag / ZM_IsStoryFlagSet
+#include "Zenithmon/Source/Data/ZM_TrainerData.h"                // S7 item 3 SC8 U8: ZM_GetTrainerData / ZM_TRAINER_RIVAL_VESPER
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"     // S7 item 3 SC8 U8: ZM_MayTrainerEngage
 #include "Zenithmon/Source/Party/ZM_GameState.h"
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"
 
@@ -2267,4 +2270,63 @@ ZENITH_TEST(ZM_Save, Blocker_NameIsTotalAndNeverNull)
 				"an out-of-range blocker renders as the real name '%s'", szReal);
 		}
 	}
+}
+
+// ============================================================================
+// S7 item 3 SC8 -- the rival's defeat flag across a slot round trip
+// ============================================================================
+
+// U8 -- the CHEAP HEADLESS HALF of "a defeated rival stays quiet after a reload".
+// ZM_RivalVesperAuthored_Test carries the live half; this one needs no scene and
+// no assets, so it runs in the CI unit gate.
+ZENITH_TEST(ZM_Save, Rival1DefeatSurvivesASlotRoundTripAndSilencesVesper)
+{
+#ifdef ZENITH_INPUT_SIMULATOR
+	// Scope FIRST: it redirects SlotName onto the _Test aliases BEFORE this unit
+	// resolves a single name, then deletes all four _Test files. So this unit assumes
+	// NO pre-existing file, starts from a known-empty disk even on a dirty machine,
+	// and leaves nothing behind. The redirection being live is a HARD requirement --
+	// a skip here would be counted as a PASS by the gate.
+	ZM_SlotDiskScope xScope;
+	if (!RequireTestSlotNames(xScope,
+		"Rival1DefeatSurvivesASlotRoundTripAndSilencesVesper")) { return; }
+
+	const ZM_TrainerData& xVesper = ZM_GetTrainerData(ZM_TRAINER_RIVAL_VESPER);
+
+	// NON-VACUITY: with the flag CLEAR he WOULD engage, so the FALSE below is caused
+	// by the flag rather than by the row being inert.
+	ZENITH_ASSERT_TRUE(ZM_MayTrainerEngage(xVesper, false, false),
+		"an undefeated rival must be engageable, or the clause below is vacuous");
+
+	// The starter state is the canonical VALID source: ZM_SaveSchema::Write
+	// validates before it emits a byte, and this unit is about the FLAG, not about
+	// what an under-populated state does to the codec.
+	ZM_GameState xWritten = ZM_MakeStarterGameState();
+	ZM_SetStoryFlag(xWritten, ZM_STORY_FLAG_RIVAL1_DEFEATED, true);
+	AssertStatus(ZM_SaveSlots::WriteState(xWritten, ZM_SAVE_SLOT_0),
+		Zenith_ErrorCode::SUCCESS, "WriteState(rival defeated, Save0)");
+
+	// Scrambled on purpose: a target that already agreed would restate the fixture.
+	ZM_GameState xRead = ZM_MakeStarterGameState();
+	ZM_SetStoryFlag(xRead, ZM_STORY_FLAG_RIVAL1_DEFEATED, false);
+	AssertStatus(ZM_SaveSlots::ReadState(ZM_SAVE_SLOT_0, xRead),
+		Zenith_ErrorCode::SUCCESS, "ReadState(Save0)");
+
+	// ★ THE COUPLING. The gate below is fed the ROUND-TRIPPED value, never a
+	// hard-coded `true`: with a literal there the two halves of this unit would be
+	// independent -- the codec could lose the flag entirely and the silencing clause
+	// would still pass, restating a shipped pure-gate unit instead of proving
+	// anything about disk.
+	const bool bFlagAfterRead = ZM_IsStoryFlagSet(xRead, ZM_STORY_FLAG_RIVAL1_DEFEATED);
+	ZENITH_ASSERT_TRUE(bFlagAfterRead,
+		"the rival-defeat flag did not survive the slot round trip");
+	// ...and the round-tripped flag is what silences him. The SESSION LATCH is
+	// deliberately passed FALSE: a FLAGGED row ignores it (ZM_MayTrainerEngage in
+	// ZM_TrainerSightFsm.h), so this proves the PERSISTENT flag is the sole guard
+	// after a process restart, which is exactly the state a Continue lands in.
+	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xVesper, bFlagAfterRead, false),
+		"a defeated rival re-challenges after a save/reload");
+#else
+	ZENITH_SKIP("save-slot disk instrumentation is unavailable in this configuration");
+#endif
 }

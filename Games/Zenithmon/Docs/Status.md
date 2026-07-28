@@ -4,22 +4,42 @@
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (ZM numbers OBSERVED 2026-07-28 on a fresh build of both configs
-after SC7):** ZM headless registry **46 passed / 0 failed**; ZM boot unit gate
-**2695 ran / 2694 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
-2695); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
-1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6 and SC7 -- neither
-touches a `Zenith/` file). The 1 skipped in each is the quarantined
+after SC8):** ZM headless registry **47 passed / 0 failed**; ZM boot unit gate
+**2703 ran / 2702 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
+2703); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
+1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6/SC7/SC8 -- none of
+them touches a `Zenith/` file). The 1 skipped in each is the quarantined
 `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
 
-**★ THE REGISTRY DID NOT MOVE AT SC7 AND THAT IS CORRECT.** SC7's three new
-end-to-end phases live INSIDE the existing `ZM_TrainerSightWalkUp_Test`
-registration, so the automated count stays 46 while the boot-unit count moved
-+13. Do not "fix" a registry count that did not change after a sub-commit that
-added automated coverage -- check whether the coverage rode an existing
-registration first.
+**★ THE REGISTRY MOVED AT SC8 (46 -> 47) BUT NOT AT SC7, AND BOTH ARE CORRECT.**
+SC7's three new end-to-end phases live INSIDE the existing
+`ZM_TrainerSightWalkUp_Test` registration, so its count stayed 46 while boot
+units moved +13. SC8 adds a genuinely NEW registration
+(`ZM_RivalVesperAuthored_Test`) because its subject is a different entity making
+a different claim. Before "fixing" a registry count that did not move, check
+whether the coverage rode an existing registration.
+
+**★ SIXTH TRIPWIRE -- A NEGATIVE CONTROL PROVES NOTHING UNTIL IT FLIPS.** SC8's plan
+called for one: make the new test fail against the old scene bytes, re-author, watch
+it pass. It DID fail first -- and then **failed again after the re-author**. A
+fail-then-fail is not a control, it is a masked defect. Run ONLY the "after" and one
+red test gets blamed on the re-author not working; run ONLY the "before" and a
+coincidence gets recorded as proof. **It is the PAIR that carries the information.**
+The masked defect here was real and is documented in ZM-D-156: an AABB collider
+forces its body to identity rotation, wiping the authored yaw out of the SAVED
+BYTES while every boot unit stayed green.
+
+**★ AND ITS COROLLARY: A UNIT SUITE CANNOT SEE A SCENE-BYTE DEFECT.** SC8's boot
+units reason about the COMPILED placement constants -- position, bearing, clearances
+-- all of which were correct (`placementErrX/Z = 0.0000`) while the authored rotation
+on disk was identity. Only the windowed round trip reads what was actually saved.
+When a sub-commit writes a scene file, the windowed run is not a formality.
 
 **★ FIFTH TRIPWIRE -- A SURVIVING MUTATION HAS TWO POSSIBLE CAUSES AND YOU MUST
-DETERMINE WHICH.** SC7's battery had two survivals with OPPOSITE meanings. One was a
+DETERMINE WHICH.** (SC8 reproduced this a second time: reverting the collider to AABB
+SURVIVED, not because the facing clause lacks teeth, but because the mutation cannot
+manifest without RE-AUTHORING the scene -- which a battery does not do. The clause's
+teeth were proven live instead: AABB-authored scene FAILS, OBB-authored scene PASSES.) SC7's battery had two survivals with OPPOSITE meanings. One was a
 real coverage gap: transposing the challenge-lines selector's null-check and clamp
 survived because the only pair that discriminates them is `(nullptr, count > cap)`
 and the clause used a count UNDER the cap -- **its failure text named the exact
@@ -89,7 +109,58 @@ boot output" rather than a load failure.
 
 ## Current task
 
-**S7 item 3 SC7 COMPLETE (ZM-D-155).** The game's FIRST `.bgraph` -- the trainer
+**★★ S7 ITEM 3 AND ITEM 4 ARE COMPLETE (SC8, ZM-D-156). THE NEXT STEP IS A HUMAN
+GATE: THE S8 VERTICAL-SLICE GO/NO-GO.** Do not start S8 work. The loop's standing
+order is to hard-stop here and report. `SC8_Plan.md` was consumed and DELETED in that
+commit.
+
+**What the vertical actually does now, end to end:** the player walks around Dawnmere;
+rival Vesper stands AUTHORED in the town at (490, 524) facing the spawn approach; when
+the player enters his 8 m / 60-degree forward cone with an unblocked line of sight he
+speaks a challenge line, the battle fades in, the player fights him, and on a win takes
++500 money and sets `RIVAL1_DEFEATED` -- after which he never re-engages, and that
+silence survives a save/reload.
+
+**★ THE HONEST "WHAT IS STILL MISSING" LIST -- read this BEFORE signing the go/no-go.
+The vertical is real but it is not the full mainline beat, and it should not be
+oversold:**
+1. **The trainer LOSS / whiteout path has never been executed by any automated test** --
+   and it is the branch an honest human playthrough hits FIRST (L5 Grass starter vs L5
+   Fire rival, with Catch and Run both gated off). SC8 makes losing SAFE (the placement
+   clears the respawn by 49 m, pinned by a boot unit) but not PROVEN. The new test
+   installs an over-levelled lead precisely to avoid it.
+2. **There is no visual "spotted" beat at all** -- no exclamation mark, no camera cut, no
+   approach walk. The rival notices the player silently until the dialogue box appears.
+3. **The rival is visually indistinguishable from the four townsfolk.** `ZM_GreyboxVisual`
+   paints one fixed grey and `ZM_NpcData::m_eHuman` is consumed by NOTHING today.
+4. **One-monster trainer battles only.** `uZM_TRAINER_BATTLEABLE_PARTY == 1` because the
+   engine has NO forced switch on faint. Vesper's row is one member so the clamp is a
+   no-op for him, **but S8's gym cannot ship until the replacement path does.**
+5. **Route 1 does not exist**, so the GDD's canonical location for rival battle 1
+   ("Route 1, L5") does not either. The Dawnmere placement is a RECORDED deviation
+   (Q-D / ZM-D-156) carrying a re-placement debt.
+6. **The challenge `.bgraph` is gitignored**, so a fresh CI checkout loses the BARK and
+   keeps the BATTLE (SC7's deliberate fail-open). The bark beat is exercised locally
+   only, never in CI.
+7. **No test proves the authored Vesper carries no graph slot at RUNTIME** -- it cannot,
+   because the runtime attach is idempotent by path. The property rests on an
+   authoring-time assert plus the boot-stability check.
+
+**★ WHAT SC8 BINDS FOR ANY FUTURE SCENE WORK:**
+- **An AABB collider DESTROYS an authored rotation.** `Zenith_ColliderComponent` forces
+  an AABB body to identity (axis-aligned by definition) and the physics-to-transform sync
+  writes it back. Any authored entity that must FACE anywhere needs
+  `COLLISION_VOLUME_TYPE_OBB`. Vesper's call site carries a "do not tidy this back to
+  AABB" warning; heed it.
+- **A sub-commit that rewrites a committed scene owes the full operational proof:** a
+  windowed `_True` boot logging `sceneAuthoring=AUTHOR_DAWNMERE` (a `DEFERRED` boot
+  silently does nothing and looks successful), SHA256, a SECOND authoring boot, identical
+  hashes, only the intended asset changed, and a re-hash after the batches to prove no
+  play-session save baked a `Zenith_GraphComponent` payload in.
+- **`ZM_TRAINER_RIVAL_VESPER == 0`** -- a `ZM_NpcData` row omitting its trailing
+  initializer silently becomes the rival, with no compiler warning.
+
+**Prior: S7 item 3 SC7 COMPLETE (ZM-D-155).** The game's FIRST `.bgraph` -- the trainer
 challenge bark -- landed with ZERO scene bytes and ZERO new ECS orders.
 `SC7_Plan.md` was consumed and DELETED in that commit, as it instructed.
 **NEXT = SC8: rival Vesper authored in Dawnmere + trainer-id persistence.**

@@ -117,17 +117,20 @@ public:
 	// the previous row, so a bad authoring value yields a blind NPC and never the
 	// WRONG trainer's battle. Always resets the sight machine.
 	//
-	// ★ RUNTIME-ONLY, AND THAT IS DELIBERATE. m_eTrainerId is NOT serialized and
-	// uSERIALIZATION_VERSION deliberately stays at 2u, so SC6 changes ZERO bytes
-	// in the five committed ZM_Interactable payloads inside Dawnmere.zscen and a
-	// boot still must not leave any scene modified in git status. SC6 ships the
-	// BEHAVIOUR; SC8, which places the authored trainer, owns persistence and
-	// picks one of two routes: (1) ZERO-BYTE -- add a ZM_TRAINER_ID column AT THE
-	// END of ZM_NpcData's row and derive this from the already-serialized
-	// m_eNpcId in OnStart; or (2) bump uSERIALIZATION_VERSION to 3u, append the
-	// block after the walker block gated by `if (uVersion == 2u) { return; }`
-	// exactly as v1->v2 did, and re-bake + re-commit Dawnmere.zscen IN THE SAME
-	// COMMIT. Do not do either here.
+	// ★ RUNTIME-ONLY, AND PERMANENTLY SO. m_eTrainerId is NOT serialized and
+	// uSERIALIZATION_VERSION stays at 2u, so the five committed ZM_Interactable
+	// payloads inside Dawnmere.zscen carry no trainer and a boot must never leave a
+	// scene modified in git status.
+	//
+	// S7 item 3 SC8 TOOK THE ZERO-BYTE ROUTE. An AUTHORED trainer's identity comes
+	// from a ZM_TRAINER_ID column at the END of its ZM_NpcData row, re-derived by
+	// DeriveTrainerFromNpcRow() in OnStart off the already-serialized m_eNpcId. That
+	// is strictly stronger than persisting the id: it is recomputed from committed
+	// scene bytes plus a compiled table on EVERY load, including the resume warp and
+	// the door round trip. Bump uSERIALIZATION_VERSION to 3u ONLY if a trainer ever
+	// needs per-ENTITY identity independent of its roster row -- and then the bump,
+	// the version-gated read, and the re-bake + re-commit of Dawnmere.zscen all
+	// belong in ONE commit.
 	bool ConfigureTrainerSight(ZM_TRAINER_ID eTrainer);
 	ZM_TRAINER_ID GetTrainerId() const { return m_eTrainerId; }
 	// The live "is this NPC a trainer that can spot anyone?" answer.
@@ -173,6 +176,23 @@ private:
 	// never see anything.
 	void TickTrainerSight(float fDeltaTime);
 	void UpdateWander(float fDeltaTime);
+
+	// S7 item 3 SC8. The AUTHORED trainer's identity, recovered from the compiled
+	// ZM_NpcData row named by the already-serialized m_eNpcId.
+	//
+	// FILL-IF-EMPTY, and that is mandatory rather than defensive: the shipped
+	// windowed sight gate builds a trainer with NO npc row and calls
+	// ConfigureTrainerSight BEFORE OnStart dispatches, so an unconditional assignment
+	// would wipe it. Runtime configuration WINS over the authored row.
+	//
+	// Called from OnStart ONLY. ReadFromDataStream provably runs FIRST on every
+	// shipped load path (Zenith_SceneData_Serialization.cpp:196 deserializes and
+	// marks pending-start; Zenith_SceneSystem_Lifecycle.cpp:399-407 drains
+	// DispatchPendingStarts at the TOP of the next Update), so there is nothing for a
+	// second call site to repair. If a tools-only editor re-read of a LIVE component
+	// ever appears, the fix is one line: call this again at the tail of
+	// ReadFromDataStream inside `if (m_bLifecycleStarted)`.
+	void DeriveTrainerFromNpcRow();
 
 	// Attaches the shared challenge graph, at most once per session, the first time
 	// this component ticks as a trainer WITH lines.

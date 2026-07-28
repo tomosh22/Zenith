@@ -48,9 +48,11 @@
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"   // the SC8 no-graph authoring pin
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"        // the shared authored coordinates (S7 item 3 SC8)
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
 
 #include <filesystem>
@@ -1196,7 +1198,7 @@ namespace
 	// effective reach.
 	constexpr float fZM_NPC_AUTHORED_RADIUS = 0.4f;
 
-	// The shared body of the three stationary configure functions below. A PER-NPC function is
+	// The shared body of the stationary configure functions below. A PER-NPC function is
 	// unavoidable: AddStep_Custom takes a captureless `void (*)()`, so there is no
 	// way to hand one parameterised step the row it should install.
 	bool ZM_ConfigureSelectedNpc(ZM_NPC_ID eId)
@@ -1249,6 +1251,37 @@ namespace
 	{
 		const bool bConfigured = ZM_ConfigureSelectedNpc(ZM_NPC_ROUTE_WARDEN);
 		Zenith_Assert(bConfigured, "Dawnmere Route Warden NPC authoring is invalid");
+	}
+
+	// S7 item 3 SC8: the authored rival. The trainer identity is NOT installed here
+	// -- it is DERIVED at load from his ZM_NpcData row by
+	// ZM_Interactable::DeriveTrainerFromNpcRow, which is the whole point of the
+	// zero-byte persistence route. Authoring only has to stand him up and point him.
+	void ZM_ConfigureRivalVesperNpc()
+	{
+		const bool bConfigured = ZM_ConfigureSelectedNpc(ZM_NPC_RIVAL_VESPER);
+		Zenith_Assert(bConfigured, "Dawnmere rival Vesper NPC authoring is invalid");
+		// The row really is the one that names a trainer -- authoring fails loudly
+		// rather than standing up a rival who can never battle.
+		Zenith_Assert(
+			ZM_GetNpcData(ZM_NPC_RIVAL_VESPER).m_eTrainer == ZM_TRAINER_RIVAL_VESPER,
+			"Vesper's ZM_NpcData row no longer names ZM_TRAINER_RIVAL_VESPER");
+
+		// ★ THE SC7 BINDING, PINNED AT THE ONLY DECIDABLE MOMENT. The challenge
+		// .bgraph is attached at RUNTIME by EnsureTrainerChallengeGraph, an
+		// OnUpdate-only path, and that call is idempotent BY PATH -- so a RUNTIME
+		// observation can never tell an authored slot apart from the runtime attach
+		// (both yield GetGraphCount() == 1). This assert runs with the editor
+		// STOPPED, in the very boot that calls AddStep_SaveScene, which is the one
+		// instant where "no graph component exists on this entity" is observable.
+		// If it ever fires, someone added AddStep_AttachGraph and an order-60 graph
+		// payload is about to land in the committed scene bytes.
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxSelectedEntity != nullptr
+			&& pxSelectedEntity->TryGetComponent<Zenith_GraphComponent>() == nullptr,
+			"the authored rival must carry NO graph slot -- SC7 attaches the "
+			"challenge graph at runtime (ZM_Interactable::EnsureTrainerChallengeGraph, "
+			"declared in ZM_Interactable.h)");
 	}
 
 	void ZM_ConfigureWandererNpc()
@@ -1323,6 +1356,58 @@ namespace
 		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
 		xAuto.AddStep_AddComponent("ZM_Interactable");
 		xAuto.AddStep_Custom(&ZM_ConfigureWandererNpc);
+	}
+
+	// SC8's authored TRAINER deliberately does NOT reuse the stationary helper, for
+	// the same reason ZM_QueueDawnmereWanderer does not: he needs a step the other
+	// four do not have. The sight cone is a 60-degree FORWARD cone and an unrotated
+	// entity faces +Z, so a trainer without an authored yaw stares north and is
+	// functionally blind.
+	//
+	// Adding a yaw parameter to ZM_QueueDawnmereNpc instead was considered and
+	// REJECTED. AddStep_SetTransformYaw(0.0f) does build an exact identity
+	// quaternion, so the four shipped NPCs' bytes probably would not move -- but SC8
+	// is the one sub-commit that rewrites a committed scene file, and their step
+	// lists must be untouchable BY CONSTRUCTION rather than by an argument about
+	// angleAxis(0). The yaw step sits between scale and collider so the transform is
+	// fully authored before the body is created.
+	//
+	// ★ THE COLLIDER IS OBB, NOT AABB, AND THAT IS LOAD-BEARING -- IT IS THE ONLY
+	// REASON THE AUTHORED YAW SURVIVES TO DISK. The four shipped NPCs all use AABB,
+	// which is why this never surfaced before: Vesper is the first authored entity
+	// that has to FACE anywhere. Zenith_ColliderComponent's body creation reads
+	//     const JPH::Quat xJoltRot = (eVolumeType == COLLISION_VOLUME_TYPE_AABB)
+	//         ? JPH::Quat::sIdentity() : JPH::Quat(...);
+	// -- an AABB is axis-aligned BY DEFINITION, so it forces the body to identity and
+	// the physics-to-transform sync then writes that identity straight back over the
+	// yaw this function just authored. The scene saves with an unrotated rival who
+	// stares north and is functionally blind, with every boot unit still green,
+	// because the units reason about the COMPILED placement constants while the
+	// defect lives in the SAVED BYTES. Only the windowed round trip catches it, and
+	// it did: facingAbsDot=0.22975 against a required 0.999, authoredRot=identity.
+	// OBB shares AABB's box shape exactly and differs ONLY in applying the rotation,
+	// so the occluder footprint the SC6 sight ray sees is unchanged. Do not "tidy"
+	// this back to AABB for consistency with the other four.
+	void ZM_QueueDawnmereTrainerNpc(
+		Zenith_EditorAutomation& xAuto,
+		const char* szName,
+		const Zenith_Maths::Vector3& xCenter,
+		const Zenith_Maths::Vector3& xScale,
+		float fYawRadians,
+		void (*pfnConfigure)())
+	{
+		xAuto.AddStep_CreateEntity(szName);
+		xAuto.AddStep_SetEntityTransient(false);
+		xAuto.AddStep_SetTransformPosition(xCenter.x, xCenter.y, xCenter.z);
+		xAuto.AddStep_SetTransformScale(xScale.x, xScale.y, xScale.z);
+		xAuto.AddStep_SetTransformYaw(fYawRadians);
+		xAuto.AddStep_AddCollider();
+		xAuto.AddStep_AddColliderShape(
+			COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
+		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
+		xAuto.AddStep_AddComponent("ZM_Interactable");
+		// NO AddStep_AttachGraph. See ZM_ConfigureRivalVesperNpc.
+		xAuto.AddStep_Custom(pfnConfigure);
 	}
 
 	void ZM_QueueGreyboxBlock(
@@ -1889,7 +1974,15 @@ void Project_RegisterEditorAutomationSteps()
 		const ZM_TerrainPreviewCameraSpec& xCamera = xRecipe.m_xPreviewCamera;
 		const std::string strSplatmapPath = std::string("game:Terrain/") +
 			xRecipe.m_pxWorldSpec->m_szTerrainSet + "/Splatmap_RGBA" ZENITH_TEXTURE_EXT;
-		const Zenith_Maths::Vector3 xTownCenterFeet(512.0f, 25.98577f, 480.0f);
+		// S7 item 3 SC8: the anchor now comes from the shared pure header, with
+		// IDENTICAL literals, so no already-authored entity moves by one bit. The
+		// migration is what lets the boot units reason about these coordinates --
+		// they used to be a local inside this ZENITH_TOOLS block, invisible to
+		// anything that runs in CI.
+		const Zenith_Maths::Vector3 xTownCenterFeet(
+			fZM_DAWNMERE_TOWN_CENTER_X,
+			fZM_DAWNMERE_TOWN_CENTER_FEET_Y,
+			fZM_DAWNMERE_TOWN_CENTER_Z);
 		const Zenith_Maths::Vector3 xPlayerScale(0.8f, 1.8f, 0.8f);
 		const float fPlayerCapsuleHalfExtent =
 			ZM_PlayerController::CalculateCapsuleHalfExtent(xPlayerScale);
@@ -2072,6 +2165,37 @@ void Project_RegisterEditorAutomationSteps()
 		const Zenith_Maths::Vector3 xWandererCenter(
 			540.0f, xPlayerCenter.y + fPlayerCapsuleHalfExtent, 476.0f);
 		ZM_QueueDawnmereWanderer(xAuto, xWandererCenter, xNpcScale);
+
+		// ---- S7 item 3 SC8 / item 4: rival Vesper, the FIRST authored trainer ----
+		//
+		// WHAT HE DOES. He is a stationary TALKER row like the warden, plus one
+		// thing no other NPC has: his ZM_NpcData row names ZM_TRAINER_RIVAL_VESPER,
+		// so ZM_Interactable::DeriveTrainerFromNpcRow arms his sight cone the moment
+		// this scene loads -- off the COMMITTED bytes, with nobody calling
+		// ConfigureTrainerSight. Walk into his cone and he barks, then battles.
+		//
+		// ★ HE IS A LIVE ARMED TRAINER IN A SCENE MANY TESTS LOAD. The between-tests
+		// hook re-seeds the game state and clears ZM_TrainerEngagementLatch, so he is
+		// RE-ARMED at the start of every batched Dawnmere test. DISTANCE is the
+		// guard, not facing. Any future walk that comes within 8 m of his forward
+		// cone will take a forced battle it never mentions, and it will surface as a
+		// timeout naming a distance rather than naming him.
+		//
+		// EVERY COORDINATE AND CLEARANCE IS DERIVED IN
+		// Source/World/ZM_DawnmerePlacement.h -- read that header before moving
+		// anything here. It is a shared header rather than a local so that the boot
+		// units (Vesper_PlacementCannotSpawnCampOnTheWhiteoutTarget,
+		// Vesper_FacingIsDerivedFromTheTownCentreBearing) can assert the geometry
+		// with no scene and no assets, in CI.
+		//
+		// ★ GDD DEVIATION, RECORDED: canon puts rival battle 1 on "Route 1 (L5)".
+		// Route 1 does not exist in S7. When it is authored, move him and re-derive
+		// every separation from scratch (ZM-D-156, Shortfalls).
+		const Zenith_Maths::Vector3 xRivalVesperCenter(
+			fZM_DAWNMERE_VESPER_X, xPlayerCenter.y, fZM_DAWNMERE_VESPER_Z);
+		ZM_QueueDawnmereTrainerNpc(xAuto, "Npc_RivalVesper",
+			xRivalVesperCenter, xNpcScale, ZM_DawnmereVesperYaw(),
+			&ZM_ConfigureRivalVesperNpc);
 
 		xAuto.AddStep_CreateEntity("DawnmerePreviewCamera");
 		xAuto.AddStep_AddCamera();

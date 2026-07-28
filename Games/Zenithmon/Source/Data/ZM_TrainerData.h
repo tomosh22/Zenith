@@ -25,11 +25,11 @@
 // team. Per-monster overrides remain expressible on ZM_BattleMonsterSpec if
 // content ever needs them; duplicating them here would be dead columns.
 //
-// Deliberately NOT here: a ZM_BattleConfig copy (SC3's helper is the single
-// source of the battle rules), a battle seed (SC5 derives one from m_eId), and
-// an appearance id (SC8 places Vesper in the scene and may APPEND a
-// ZM_HUMAN_ID column AT THE END of the row then -- see the positional warning
-// below).
+// Deliberately NOT here: a ZM_BattleConfig copy (SC3's helper is the single source
+// of the battle rules), a battle seed (SC5 derives one from m_eId), and an
+// appearance id -- SC8 stood Vesper in Dawnmere WITHOUT one, because the NPC row
+// that carries his scene identity (ZM_NpcData::m_eHuman) already names it and
+// nothing renders it yet. Do not add a second appearance column here.
 //
 // EVERY function below is TOTAL: no argument value, however garbage, is UB and
 // none of them asserts. Zenith_Assert breaks the process in EVERY configuration
@@ -87,8 +87,7 @@ struct ZM_TrainerPartyMember
 // COLUMN ORDER IS LOAD-BEARING. Every row is a POSITIONAL aggregate initializer,
 // so a field inserted mid-struct silently shifts each trailing value one column
 // left -- the prize would become the flag and the flag the tier, with no compile
-// error to say why. New columns (SC8's ZM_HUMAN_ID appearance, for one) go AT
-// THE END.
+// error to say why. New columns go AT THE END.
 struct ZM_TrainerData
 {
 	ZM_TRAINER_ID					m_eId;

@@ -116,6 +116,25 @@ The persistent `WarpFade`/`BattleFade` are real full-screen transition surfaces.
 **Status: broader gameplay/world connectivity not started -- slice at S8, buildout at S9/S10.**
 Dawnmere's generated terrain/grass scene now connects through a real authored home-door trigger to PlayerHome build 40 and back through a real authored exit trigger; `TownCenter`, `Door`, and `FromHome` placement are all exercised at runtime. PlayerHome and the outdoor home shell are deliberate greyboxes, and this is still only one door edge. Thornacre and Route1 have measured ignored terrain families, **not** scene/content implementations. **Dawnmere now has four authored, interactable NPCs** (a villager, a Trade Post clerk, a Care Center caretaker and a deterministic two-waypoint wanderer; S6 item 3), each reachable by walking up and pressing the interact key. The patrol is persisted by `ZM_Interactable` v2; v1 data loads stationary. There are still no live route edges, gyms beyond the data row, trainers, story-flag gating, badge-award gameplay, rival arc, or League; SC1 supplies the durable story-bit and badge storage primitives only. Behaviour-graph and terrain-fed navmesh work moves to S7; the remaining scene/content families still depend on shared WorldSpec-driven authoring.
 
+**S7 item 3 SC8 (ZM-D-156) adds the FIRST authored trainer, and with it two named debts.**
+Dawnmere now authors a FIFTH interactable NPC, rival Vesper, at (490, 524) facing the
+spawn approach; walking into his 8 m / 60-degree cone with a clear line of sight starts a
+real trainer battle, and his identity survives save/reload by a zero-byte route.
+
+1. **ROUTE-1 RE-PLACEMENT DEBT.** GDD canon puts rival battle 1 on "Route 1 (L5)". Route 1
+   does not exist in S7, so Q-D authorised authoring him in Dawnmere instead. **When Route 1
+   is authored (S9/S10), move him and RE-DERIVE every separation from scratch** -- the
+   current placement's clearances (caretaker 27.2 m, warden 28.6 m, villager 40.5 m, spawn
+   49.2 m) are arithmetic against Dawnmere's specific geometry and none of them transfers.
+2. **THE TRAINER LOSS / WHITEOUT PATH IS UNTESTED.** No shipped test anywhere drives a
+   trainer LOSS. It is the branch an honest playthrough hits first (L5 Grass starter vs L5
+   Fire rival, Catch and Run both gated off), and it routes through the wild write-back ->
+   heal -> warp to TownCenter. SC8 makes it SAFE -- a loss respawns 49 m outside Vesper's
+   cone, and a boot unit pins that the spawn is outside the cone while he IS facing it, so
+   RANGE is provably the sole guard -- but SAFE is not PROVEN. **This matters because a
+   flagged row ignores the session latch, so a rival whose cone ever covered the respawn
+   would re-challenge forever.** Worth an explicit test before S8 ships a gym.
+
 ### 1.9 Post-game
 
 **Status: Battle Tower LOGIC exists (S2 box 6, 2026-07-12); the rest lands at S11.**

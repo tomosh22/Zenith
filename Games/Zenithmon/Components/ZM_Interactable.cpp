@@ -142,6 +142,19 @@ void ZM_Interactable::OnStart()
 		m_eNpcId = ZM_NPC_NONE;
 		m_bInteractable = false;
 	}
+	// ★ ORDER IS LOAD-BEARING, in BOTH directions, and mirrors the warning on
+	// OnUpdate below.
+	//   * AFTER the clamp: ZM_GetNpcData (ZM_NpcData.cpp) ASSERTS on an out-of-range
+	//     id, and an assert in a boot unit does not fail one test -- it ends the
+	//     whole boot-unit run. Cited by SYMBOL, never by line: that file is an
+	//     APPEND-ONLY roster, so every new row shifts its line numbers (SC8's own
+	//     rival row already did).
+	//   * BEFORE the `if (!m_bWanderEnabled) { return; }` early-out below: SC8's
+	//     authored rival is STATIONARY, so folding this call past that return would
+	//     leave every authored trainer permanently blind while every unit still
+	//     passed. Interactable_OnStartDerivesTheTrainerFromItsNpcRow covers exactly
+	//     that mistake.
+	DeriveTrainerFromNpcRow();
 	SetRadius(m_fRadius);
 	if (m_bWanderEnabled
 		&& !ZM_IsValidWanderConfiguration(m_xWalkerWaypoints, m_xWalkerTuning))
@@ -342,6 +355,31 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 	// systems already coordinate over.
 	Zenith_EventDispatcher::Get().Dispatch(
 		ZM_OnTrainerEncounter{ m_eTrainerId, ZM_ResolveActiveSceneIdForSight() });
+}
+
+void ZM_Interactable::DeriveTrainerFromNpcRow()
+{
+	// ZM_GetNpcData is NOT total -- it asserts -- so bounds-check first. Do NOT
+	// mirror ZM_GetTrainerData's forgiving UNKNOWN-row shape here.
+	if (m_eNpcId >= ZM_NPC_COUNT)
+	{
+		return;
+	}
+	// FILL-IF-EMPTY: a runtime-configured trainer WINS. See the header.
+	if (ZM_IsRegisteredTrainer(m_eTrainerId))
+	{
+		return;
+	}
+	const ZM_TRAINER_ID eRowTrainer = ZM_GetNpcData(m_eNpcId).m_eTrainer;
+	if (!ZM_IsRegisteredTrainer(eRowTrainer))
+	{
+		return;
+	}
+	// Routed through the ONE validating installer rather than assigning
+	// m_eTrainerId directly: ConfigureTrainerSight fails closed, resets the sight
+	// machine and re-arms the graph latch, and keeping a single assignment site is
+	// what stops the authored and runtime paths drifting apart.
+	ConfigureTrainerSight(eRowTrainer);
 }
 
 void ZM_Interactable::EnsureTrainerChallengeGraph()

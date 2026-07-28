@@ -4,6 +4,7 @@
 
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
+#include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"   // the ONE spelling of the town-centre feet Y
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
 
 #include <cmath>
@@ -18,13 +19,17 @@
 
 namespace
 {
-	// Ground height for the flat coverage grid. This is the TownCenter feet Y
-	// captured in Zenithmon.cpp (xTownCenterFeet(512, 25.98577, 480)) -- the
-	// exact sampled Dawnmere terrain surface at the spawn (Zenithmon.cpp:1830,
-	// "TownCenter is the exact sampled terrain surface"). The recipe itself
+	// Ground height for the flat coverage grid: the TownCenter feet Y, i.e. the
+	// exact sampled Dawnmere terrain surface at the spawn. The recipe itself
 	// carries only noise parameters + a flatten target, not a world ground
 	// height, so this sampled value is the representative flat height.
-	constexpr float fZM_DAWNMERE_GROUND_HEIGHT = 25.98577f;
+	//
+	// ONE SPELLING ONLY. It is taken from the shared pure placement header rather
+	// than re-typed here: S7 item 3 SC8 moved the anchor out of a ZENITH_TOOLS-only
+	// local in Zenithmon.cpp into ZM_DawnmerePlacement.h precisely so every consumer
+	// reads the same constant. A second literal here would drift the moment the
+	// terrain is re-sampled, and nothing would red.
+	constexpr float fZM_DAWNMERE_GROUND_HEIGHT = fZM_DAWNMERE_TOWN_CENTER_FEET_Y;
 
 	// Height of the degenerate vertical wall quads (bUpwardNormals=false). Any
 	// positive value works; the point is a horizontal normal (normal.y == 0),

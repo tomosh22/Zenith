@@ -87,12 +87,18 @@ namespace
 	// (ZM_QueueDawnmereWanderer places "Npc_Wanderer"): it MOVES, and everything here
 	// is approached at a FIXED authored position, so reaching it takes the chase
 	// machinery SC8's own walk-up test carries instead.
-	constexpr u_int uPLACED_NPC_COUNT = 4u;
+	//
+	// S7 item 3 SC8 adds the rival. He IS a stationary placed NPC. This table is a
+	// PURE DATA WALK (it asserts !m_bWanders and that every gate beat has a carrier)
+	// -- it never approaches anything -- so adding him keeps the table's stated
+	// meaning true.
+	constexpr u_int uPLACED_NPC_COUNT = 5u;
 	const ZM_NPC_ID aePLACED_NPCS[uPLACED_NPC_COUNT] = {
 		ZM_NPC_VILLAGER,           // "Npc_Villager"       -- the gate's talk beat
 		ZM_NPC_TRADE_POST_CLERK,   // "Npc_TradePostClerk" -- the gate's buy beat
 		ZM_NPC_CARETAKER,          // "Npc_Caretaker"      -- the gate's heal beat
 		ZM_NPC_ROUTE_WARDEN,       // "Npc_Warden"         -- S7 SC1's flag-gated talker
+		ZM_NPC_RIVAL_VESPER,       // "Npc_RivalVesper"    -- S7 item 3 SC8's trainer
 	};
 
 	// The registered NAME of the interaction component, spelled exactly as
@@ -468,6 +474,135 @@ ZENITH_TEST(ZM_Interaction, Interactable_TrainerSightIsNotSerialized)
 	// because the write silently stopped writing anything.
 	ZENITH_ASSERT_EQ((u_int)xTarget.m_xInteractable.GetNpcId(), (u_int)ZM_NPC_VILLAGER);
 	ZENITH_ASSERT_TRUE(xTarget.m_xInteractable.IsInteractable());
+}
+
+// ---- S7 item 3 SC8: the ZERO-BYTE persistence route --------------------------
+
+// THE DERIVATION. OnStart is safe on a DETACHED component: it touches only its own
+// PODs and returns before TryConfigureWanderBody via `if (!m_bWanderEnabled)`.
+ZENITH_TEST(ZM_Interaction, Interactable_OnStartDerivesTheTrainerFromItsNpcRow)
+{
+	// (A) the rival's row arms the cone.
+	{
+		DetachedInteractable xFixture;
+		ZENITH_ASSERT_TRUE(xFixture.m_xInteractable.SetNpcId(ZM_NPC_RIVAL_VESPER));
+		// NON-VACUITY: nothing is armed BEFORE OnStart, so the assertion after it is
+		// a real observation rather than a restatement of the fixture.
+		ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerId(),
+			(u_int)ZM_TRAINER_NONE, "a freshly configured NPC has no trainer yet");
+		ZENITH_ASSERT_FALSE(xFixture.m_xInteractable.IsTrainerSightEnabled());
+
+		xFixture.m_xInteractable.OnStart();
+
+		ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerId(),
+			(u_int)ZM_TRAINER_RIVAL_VESPER,
+			"OnStart must derive the trainer from the NPC row -- this is the whole "
+			"zero-byte persistence route");
+		ZENITH_ASSERT_TRUE(xFixture.m_xInteractable.IsTrainerSightEnabled());
+		ZENITH_ASSERT_EQ(xFixture.m_xInteractable.GetTrainerSightRaiseCount(), 0u,
+			"a freshly started trainer is a COLD watcher");
+	}
+	// (B) THE ROW-DRIVEN NEGATIVE: a non-trainer row derives nothing, so the
+	//     derivation is driven by the COLUMN and not merely by "has an npc row".
+	{
+		DetachedInteractable xFixture;
+		ZENITH_ASSERT_TRUE(xFixture.m_xInteractable.SetNpcId(ZM_NPC_VILLAGER));
+		xFixture.m_xInteractable.OnStart();
+		ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerId(),
+			(u_int)ZM_TRAINER_NONE, "the villager's row names no trainer");
+		ZENITH_ASSERT_FALSE(xFixture.m_xInteractable.IsTrainerSightEnabled());
+	}
+	// (C) THE CLAMP. SetNpcId fails closed to ZM_NPC_NONE; the derivation must not
+	//     index past ZM_NPC_COUNT, where ZM_GetNpcData's Zenith_Assert would end the
+	//     ENTIRE boot-unit run rather than fail one test.
+	{
+		DetachedInteractable xFixture;
+		ZENITH_ASSERT_FALSE(xFixture.m_xInteractable.SetNpcId((ZM_NPC_ID)9999u));
+		xFixture.m_xInteractable.OnStart();
+		ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerId(),
+			(u_int)ZM_TRAINER_NONE);
+	}
+}
+
+// FILL-IF-EMPTY. Runtime configuration WINS over the authored row. This is the
+// clause that protects ZM_TrainerSightWalkUp_Test, whose runtime fixture has NO npc
+// row and is configured BEFORE OnStart dispatches -- and whose phases 7a2/8/9
+// reconfigure the SAME component onto the rambler row mid-test.
+ZENITH_TEST(ZM_Interaction, Interactable_DerivedTrainerNeverOverwritesARuntimeConfiguredOne)
+{
+	DetachedInteractable xFixture;
+	ZENITH_ASSERT_TRUE(xFixture.m_xInteractable.SetNpcId(ZM_NPC_RIVAL_VESPER));
+	ZENITH_ASSERT_TRUE(
+		xFixture.m_xInteractable.ConfigureTrainerSight(ZM_TRAINER_ROUTE1_RAMBLER));
+	// NON-VACUITY: the runtime row really took before OnStart runs.
+	ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerId(),
+		(u_int)ZM_TRAINER_ROUTE1_RAMBLER);
+
+	xFixture.m_xInteractable.OnStart();
+
+	ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerId(),
+		(u_int)ZM_TRAINER_ROUTE1_RAMBLER,
+		"the authored row overwrote a RUNTIME-configured trainer -- the derivation "
+		"must be fill-if-empty, or the shipped windowed sight gate goes blind");
+	ZENITH_ASSERT_TRUE(xFixture.m_xInteractable.IsTrainerSightEnabled());
+}
+
+// THE PERSISTENCE UNIT, and the reason uSERIALIZATION_VERSION can stay at 2u.
+// The BYTES carry no trainer; the ROW supplies it. Both halves asserted in one
+// place so nobody can "fix" one by breaking the other.
+ZENITH_TEST(ZM_Interaction, Interactable_TrainerIdIsRederivedFromTheRowAfterASceneRoundTrip)
+{
+	DetachedInteractable xSource;
+	ZENITH_ASSERT_TRUE(xSource.m_xInteractable.SetNpcId(ZM_NPC_RIVAL_VESPER));
+	ZENITH_ASSERT_TRUE(xSource.m_xInteractable.SetRadius(0.4f));
+	xSource.m_xInteractable.SetInteractable(true);
+	ZENITH_ASSERT_TRUE(
+		xSource.m_xInteractable.ConfigureTrainerSight(ZM_TRAINER_RIVAL_VESPER));
+
+	Zenith_DataStream xStream;
+	xSource.m_xInteractable.WriteToDataStream(xStream);
+
+	// Corroborates the shipped absolute pin from the OTHER side of the feature: SC8
+	// added a persistence route that must cost ZERO bytes, so re-derive the v2
+	// payload size symbolically HERE too. (Expected to red alongside
+	// Interactable_TrainerSightIsNotSerialized clause (1a); that is correct, and the
+	// mutation log should say so.)
+	constexpr u_int uEXPECTED_V2_PAYLOAD_BYTES = (u_int)(
+		sizeof(ZM_Interactable::uSERIALIZATION_VERSION)
+		+ sizeof(u_int) + sizeof(float) + sizeof(bool) + sizeof(bool) + sizeof(u_int)
+		+ sizeof(float) * 3u * ZM_WalkerWaypoints::uMAX_WAYPOINTS
+		+ sizeof(float) * 3u);
+	ZENITH_ASSERT_EQ((u_int)xStream.GetCursor(), uEXPECTED_V2_PAYLOAD_BYTES,
+		"SC8's persistence route must cost ZERO serialized bytes");
+
+	xStream.SetCursor(0u);
+	DetachedInteractable xTarget;
+	// ARM THE TARGET FIRST, exactly as Interactable_TrainerSightIsNotSerialized clause
+	// (3) does, and for the same reason: a FRESH fixture is ALREADY ZM_TRAINER_NONE, so
+	// the "THE BYTES CARRY NO TRAINER" clause below would restate the fixture and stay
+	// green with `m_eTrainerId = ZM_TRAINER_NONE;` deleted from ReadFromDataStream. A
+	// DIFFERENT roster id is used on purpose: it also makes the post-OnStart clause
+	// distinguish "the ROW supplied Vesper" from "Vesper was simply never cleared".
+	ZENITH_ASSERT_TRUE(
+		xTarget.m_xInteractable.ConfigureTrainerSight(ZM_TRAINER_ROUTE1_RAMBLER),
+		"arm the target FIRST, so the read below has something to clear");
+	ZENITH_ASSERT_TRUE(xTarget.m_xInteractable.IsTrainerSightEnabled(),
+		"...and the arming really took, or both clauses below are vacuous");
+	xTarget.m_xInteractable.ReadFromDataStream(xStream);
+	// THE BYTES CARRY NO TRAINER.
+	ZENITH_ASSERT_EQ((u_int)xTarget.m_xInteractable.GetNpcId(),
+		(u_int)ZM_NPC_RIVAL_VESPER, "the npc id is the ONLY thing on disk");
+	ZENITH_ASSERT_EQ((u_int)xTarget.m_xInteractable.GetTrainerId(),
+		(u_int)ZM_TRAINER_NONE,
+		"deserialization must leave NO trainer installed -- the ARMED rambler had to "
+		"be cleared by the read, not merely absent from the bytes");
+	// ...AND THE ROW SUPPLIES IT.
+	xTarget.m_xInteractable.OnStart();
+	ZENITH_ASSERT_EQ((u_int)xTarget.m_xInteractable.GetTrainerId(),
+		(u_int)ZM_TRAINER_RIVAL_VESPER,
+		"an authored rival came back from a scene round trip BLIND -- the row is "
+		"what makes his identity survive, not the bytes");
+	ZENITH_ASSERT_TRUE(xTarget.m_xInteractable.IsTrainerSightEnabled());
 }
 
 // ---- Role -> seam mapping (pure; nothing is raised) --------------------------

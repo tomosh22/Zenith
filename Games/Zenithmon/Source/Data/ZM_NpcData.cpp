@@ -20,7 +20,7 @@ static_assert(uZM_NPC_MAX_STOCK <= ZM_UI_Shop::uMAX_INVENTORY,
 // pointer + count, the same shape ZM_WorldSpec uses for its per-scene tables.
 // Column legend:
 //   id, "display name", role, human, lines, lineCount, stock, stockCount,
-//   wanders, lineGate, gatedLines, gatedLineCount
+//   wanders, lineGate, gatedLines, gatedLineCount, trainer
 //
 // The gate columns are the last three because the rows are POSITIONAL: a field
 // inserted higher up shifts every value after it one column left, and the first
@@ -86,6 +86,20 @@ namespace
 		"Come back once the crews have signed it off. Warden's orders.",
 	};
 
+	// The rival's OVERWORLD lines, which are NOT his challenge bark: the bark lives
+	// on ZM_TrainerData's m_paszChallengeLines and is spoken by the SC7 graph when he
+	// SPOTS the player. These are what he says if the player presses E at him.
+	//
+	// Written as POST-defeat lines and left UNGATED on purpose, and that is a merit
+	// decision rather than a budget one: the sight cone is 8 m while the interact
+	// reach is ~2.9 m, so a first-time player is challenged long before they can
+	// talk to him. A pre-defeat gated set would be UNREACHABLE CONTENT.
+	const char* const s_aszLinesVesper[] =
+	{
+		"Aster gave us both one. Mine's still stronger.",
+		"Come find me again when you've trained a bit.",
+	};
+
 	// -- shop stock (SHOPKEEP rows only) --
 	// The data is entirely compile-time, so an author who pastes a ninth line
 	// should find out at BUILD time rather than at boot. The runtime unit stays --
@@ -96,6 +110,7 @@ namespace
 	static_assert(ZM_ARRLEN(s_aszLinesWanderer)  <= uZM_NPC_MAX_LINES, "wanderer outgrew the dialogue queue");
 	static_assert(ZM_ARRLEN(s_aszLinesWarden)      <= uZM_NPC_MAX_LINES, "warden outgrew the dialogue queue");
 	static_assert(ZM_ARRLEN(s_aszLinesWardenGated) <= uZM_NPC_MAX_LINES, "warden refusal outgrew the dialogue queue");
+	static_assert(ZM_ARRLEN(s_aszLinesVesper)      <= uZM_NPC_MAX_LINES, "Vesper outgrew the dialogue queue");
 
 	const ZM_ITEM_ID s_aeStockClerk[] =
 	{
@@ -109,11 +124,12 @@ namespace
 
 	const ZM_NpcData s_axNpcs[ZM_NPC_COUNT] =
 	{
-		{ ZM_NPC_VILLAGER,         "Villager",  ZM_NPC_ROLE_TALKER,    ZM_HUMAN_TOWN_VILLAGER,  s_aszLinesVillager,  ZM_ARRLEN(s_aszLinesVillager),  nullptr,        0,                          false, { ZM_STORY_FLAG_NONE, true },            nullptr,                0u                                 },
-		{ ZM_NPC_TRADE_POST_CLERK, "Clerk",     ZM_NPC_ROLE_SHOPKEEP,  ZM_HUMAN_TOWN_SHOPKEEP,  s_aszLinesClerk,     ZM_ARRLEN(s_aszLinesClerk),     s_aeStockClerk, ZM_ARRLEN(s_aeStockClerk),  false, { ZM_STORY_FLAG_NONE, true },            nullptr,                0u                                 },
-		{ ZM_NPC_CARETAKER,        "Caretaker", ZM_NPC_ROLE_CARETAKER, ZM_HUMAN_TOWN_CARETAKER, s_aszLinesCaretaker, ZM_ARRLEN(s_aszLinesCaretaker), nullptr,        0,                          false, { ZM_STORY_FLAG_NONE, true },            nullptr,                0u                                 },
-		{ ZM_NPC_WANDERER,         "Wanderer",  ZM_NPC_ROLE_TALKER,    ZM_HUMAN_TOWN_ELDER,     s_aszLinesWanderer,  ZM_ARRLEN(s_aszLinesWanderer),  nullptr,        0,                          true,  { ZM_STORY_FLAG_NONE, true },            nullptr,                0u                                 },
-		{ ZM_NPC_ROUTE_WARDEN,     "Warden",    ZM_NPC_ROLE_TALKER,    ZM_HUMAN_TOWN_ELDER,     s_aszLinesWarden,    ZM_ARRLEN(s_aszLinesWarden),    nullptr,        0,                          false, { ZM_STORY_FLAG_WARDEN_CLEARED, true },  s_aszLinesWardenGated,  ZM_ARRLEN(s_aszLinesWardenGated)   },
+		{ ZM_NPC_VILLAGER,         "Villager",  ZM_NPC_ROLE_TALKER,    ZM_HUMAN_TOWN_VILLAGER,  s_aszLinesVillager,  ZM_ARRLEN(s_aszLinesVillager),  nullptr,        0,                          false, { ZM_STORY_FLAG_NONE, true },            nullptr,                0u,                               ZM_TRAINER_NONE         },
+		{ ZM_NPC_TRADE_POST_CLERK, "Clerk",     ZM_NPC_ROLE_SHOPKEEP,  ZM_HUMAN_TOWN_SHOPKEEP,  s_aszLinesClerk,     ZM_ARRLEN(s_aszLinesClerk),     s_aeStockClerk, ZM_ARRLEN(s_aeStockClerk),  false, { ZM_STORY_FLAG_NONE, true },            nullptr,                0u,                               ZM_TRAINER_NONE         },
+		{ ZM_NPC_CARETAKER,        "Caretaker", ZM_NPC_ROLE_CARETAKER, ZM_HUMAN_TOWN_CARETAKER, s_aszLinesCaretaker, ZM_ARRLEN(s_aszLinesCaretaker), nullptr,        0,                          false, { ZM_STORY_FLAG_NONE, true },            nullptr,                0u,                               ZM_TRAINER_NONE         },
+		{ ZM_NPC_WANDERER,         "Wanderer",  ZM_NPC_ROLE_TALKER,    ZM_HUMAN_TOWN_ELDER,     s_aszLinesWanderer,  ZM_ARRLEN(s_aszLinesWanderer),  nullptr,        0,                          true,  { ZM_STORY_FLAG_NONE, true },            nullptr,                0u,                               ZM_TRAINER_NONE         },
+		{ ZM_NPC_ROUTE_WARDEN,     "Warden",    ZM_NPC_ROLE_TALKER,    ZM_HUMAN_TOWN_ELDER,     s_aszLinesWarden,    ZM_ARRLEN(s_aszLinesWarden),    nullptr,        0,                          false, { ZM_STORY_FLAG_WARDEN_CLEARED, true },  s_aszLinesWardenGated,  ZM_ARRLEN(s_aszLinesWardenGated), ZM_TRAINER_NONE         },
+		{ ZM_NPC_RIVAL_VESPER,     "Vesper",    ZM_NPC_ROLE_TALKER,    ZM_HUMAN_RIVAL_VESPER,   s_aszLinesVesper,    ZM_ARRLEN(s_aszLinesVesper),    nullptr,        0,                          false, { ZM_STORY_FLAG_NONE, true },            nullptr,                0u,                               ZM_TRAINER_RIVAL_VESPER },
 	};
 
 #undef ZM_ARRLEN

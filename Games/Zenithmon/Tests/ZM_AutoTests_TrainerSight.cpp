@@ -2211,6 +2211,89 @@ namespace
 					bPassed = false;
 				}
 			}
+
+			// ====== (SC8) THE AUTHORED RIVAL NEVER TOUCHED THIS SUITE ==============
+			// It converts "an authored live trainer does not hijack a suite that never
+			// mentions him" from an assumption into a measured invariant for at least
+			// this one suite.
+			{
+				// ★ THE SAMPLE IS MANDATORY WHEN -- AND ONLY WHEN -- DAWNMERE IS LIVE.
+				// The counters below are summed over the ACTIVE scene, so with Dawnmere
+				// gone the walk finds nothing, both sums stay 0, and "he raised nothing"
+				// would be green having measured nothing whatever. That is exactly the
+				// repo's state until the scene is re-authored WITH the rival, which is
+				// the one condition this clause must not silently tolerate. Verify does
+				// legitimately run with Dawnmere gone on some paths (an early FailTS
+				// leaves the Battle scene active; the teardown's own FrontEnd SINGLE load
+				// runs later, below), so that case is reported NOT APPLICABLE out loud
+				// rather than counted as a pass.
+				//
+				// "Is Dawnmere the active scene" is spelled with the same
+				// FindLoadedSceneByPath idiom the settle phase uses for the Battle scene,
+				// against GetActiveScene() -- the scene QueryActiveScene actually walks.
+				const Zenith_Scene xDawnmereScene = g_xEngine.Scenes().FindLoadedSceneByPath(
+					std::string(GAME_ASSETS_DIR) + "Scenes/Dawnmere" ZENITH_SCENE_EXT);
+				const bool bDawnmereIsActive = xDawnmereScene.IsValid()
+					&& xDawnmereScene == g_xEngine.Scenes().GetActiveScene();
+
+				u_int uAuthoredRaises = 0u;
+				u_int uAuthoredChallenges = 0u;
+				u_int uAuthoredCount = 0u;
+				g_xEngine.Scenes().QueryActiveScene<ZM_Interactable>().ForEach(
+					[&](Zenith_EntityID xID, ZM_Interactable& xInteractable)
+					{
+						// The AUTHORED rival: not this test's runtime fixture, and standing
+						// on the rival's npc row.
+						if (xID == g_xTSTrainerEntityID
+							|| xInteractable.GetNpcId() != ZM_NPC_RIVAL_VESPER)
+						{
+							return;
+						}
+						++uAuthoredCount;
+						uAuthoredRaises += xInteractable.GetTrainerSightRaiseCount();
+						uAuthoredChallenges += xInteractable.GetTrainerChallengeCount();
+					});
+
+				if (!bDawnmereIsActive)
+				{
+					// VISIBLE, never silent: the clause did not run, and the log says so.
+					Zenith_Log(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the authored-rival silence clause is NOT "
+						"APPLICABLE on this run -- Dawnmere is not the active scene at "
+						"Verify (dawnmereLoaded=%s), so nothing could be sampled",
+						xDawnmereScene.IsValid() ? "true" : "false");
+				}
+				else if (uAuthoredCount == 0u)
+				{
+					g_szTSFailure = "the authored rival was never sampled, so this clause "
+						"proved nothing -- Dawnmere IS the active scene yet carries no "
+						"ZM_NPC_RIVAL_VESPER interactable. Re-author the scene from a "
+						"WINDOWED tools boot (see Source/World/ZM_DawnmerePlacement.h)";
+					// Logged HERE, not through the g_bTSFailed block above: that block has
+					// already run by this point, so an assignment alone would never reach
+					// the log and the red would name no cause.
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] %s", g_szTSFailure);
+					bPassed = false;
+				}
+				else
+				{
+					// THE CLAIM ITSELF, now standing on a real sample.
+					bPassed = bPassed
+						&& uAuthoredRaises == 0u
+						&& uAuthoredChallenges == 0u;
+					if (uAuthoredRaises != 0u || uAuthoredChallenges != 0u)
+					{
+						g_szTSFailure = "the AUTHORED Dawnmere rival raised or barked during a "
+							"suite that never mentions him -- his placement now overlaps this "
+							"walk line (see Source/World/ZM_DawnmerePlacement.h)";
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_TrainerSight] %s (authoredComponentsFound=%u raises=%u "
+							"challenges=%u)", g_szTSFailure, uAuthoredCount, uAuthoredRaises,
+							uAuthoredChallenges);
+					}
+				}
+			}
 		}
 
 		// Always tear down, in order (all guarded), even on a terminal failure: drop
