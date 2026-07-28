@@ -73,6 +73,22 @@ public:
 	// inherit a previous (possibly failed) test's interaction outcome.
 	static void ResetRuntimeStateForTests();
 
+	// The unique active-scene player's id and pose. THE one player-resolve seam
+	// this feature area has: SC6's occlusion probe needs the ID (to recognise the
+	// player's own capsule as the ray's legitimate terminator) as well as the pose.
+	//
+	// Deliberately NOT ZM_GameStateManager::TryGetUniqueActiveScenePlayerEntityID:
+	// that seam additionally demands a live physics body, which would make the
+	// whole thing unobservable headlessly.
+	//
+	// Fails OPEN in the sense that matters to Tick's caller: no unique player
+	// resolves -> false, and the REAL guard against interacting while frozen is
+	// WHERE Tick is called from (after ZM_PlayerController::OnUpdate's frozen
+	// early-out), never this.
+	static bool TryResolveActivePlayer(Zenith_EntityID& xEntityIDOut,
+		Zenith_Maths::Vector3& xPositionOut,
+		Zenith_Maths::Quat& xRotationOut);
+
 private:
 	// The ONE decision path. Tick and EvaluateForTests call this and NOTHING else, so
 	// the test seam can never drift from live behaviour -- if the two ever diverged,
@@ -94,13 +110,13 @@ private:
 		bool bInteractPressed,
 		Zenith_EntityID& xTargetOut) const;
 
-	// The unique active-scene player's pose / movement flag. Both fail OPEN (no pose
-	// -> false; no unique controller -> "movement enabled"), because the REAL guard
-	// against interacting while frozen is WHERE Tick is called from -- after
-	// ZM_PlayerController::OnUpdate's frozen early-out. The movement bool fed to
-	// ZM_ShouldInteract is belt-and-braces on top of that.
-	static bool TryResolveActivePlayerPose(Zenith_Maths::Vector3& xPositionOut,
-		Zenith_Maths::Quat& xRotationOut);
+	// The unique active-scene player's movement flag. Fails OPEN (no unique
+	// controller -> "movement enabled"), because the REAL guard against interacting
+	// while frozen is WHERE Tick is called from -- after ZM_PlayerController::
+	// OnUpdate's frozen early-out. The movement bool fed to ZM_ShouldInteract is
+	// belt-and-braces on top of that. (The pose half of this pair was PROMOTED to
+	// the public TryResolveActivePlayer above and the private
+	// TryResolveActivePlayerPose deleted in the same edit -- no-legacy mandate.)
 	static bool ResolveActivePlayerMovementEnabled();
 
 	static ZM_INTERACT_REJECT s_eLastResult;

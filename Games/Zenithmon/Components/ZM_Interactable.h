@@ -3,7 +3,9 @@
 #include "Physics/Zenith_Physics_Fwd.h"
 #include "ZenithECS/Zenith_Entity.h"
 #include "Zenithmon/Source/Data/ZM_NpcData.h"   // ZM_NPC_ID / ZM_NPC_ROLE -- the row this component IS
+#include "Zenithmon/Source/Data/ZM_TrainerData.h"                 // ZM_TRAINER_ID
 #include "Zenithmon/Source/Interaction/ZM_NpcWalkerLogic.h"
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"      // the by-value FSM
 
 class Zenith_DataStream;
 
@@ -110,6 +112,36 @@ public:
 	u_int GetWaypointCount() const { return m_xWalkerWaypoints.m_uCount; }
 	u_int GetWaypointIndex() const { return m_xWalkerState.m_uTargetIndex; }
 
+	// Install (or clear) this NPC's trainer identity. Fails CLOSED exactly as
+	// SetNpcId does: an unregistered id stores ZM_TRAINER_NONE rather than keeping
+	// the previous row, so a bad authoring value yields a blind NPC and never the
+	// WRONG trainer's battle. Always resets the sight machine.
+	//
+	// ★ RUNTIME-ONLY, AND THAT IS DELIBERATE. m_eTrainerId is NOT serialized and
+	// uSERIALIZATION_VERSION deliberately stays at 2u, so SC6 changes ZERO bytes
+	// in the five committed ZM_Interactable payloads inside Dawnmere.zscen and a
+	// boot still must not leave any scene modified in git status. SC6 ships the
+	// BEHAVIOUR; SC8, which places the authored trainer, owns persistence and
+	// picks one of two routes: (1) ZERO-BYTE -- add a ZM_TRAINER_ID column AT THE
+	// END of ZM_NpcData's row and derive this from the already-serialized
+	// m_eNpcId in OnStart; or (2) bump uSERIALIZATION_VERSION to 3u, append the
+	// block after the walker block gated by `if (uVersion == 2u) { return; }`
+	// exactly as v1->v2 did, and re-bake + re-commit Dawnmere.zscen IN THE SAME
+	// COMMIT. Do not do either here.
+	bool ConfigureTrainerSight(ZM_TRAINER_ID eTrainer);
+	ZM_TRAINER_ID GetTrainerId() const { return m_eTrainerId; }
+	// The live "is this NPC a trainer that can spot anyone?" answer.
+	// ZM_IsRegisteredTrainer collapses the sentinel and every garbage value into
+	// one comparison, so unlike IsInteractable there is no second flag to keep in
+	// sync -- the id IS the enable.
+	bool IsTrainerSightEnabled() const { return ZM_IsRegisteredTrainer(m_eTrainerId); }
+
+	// ---- test/tools observation ----
+	ZM_TRAINER_SIGHT_STATE GetTrainerSightState() const { return m_xSightFsm.GetState(); }
+	// Monotonic raises emitted by THIS component. The windowed gate asserts on
+	// this, not on "a battle happened", so a trainer that fired twice cannot pass.
+	u_int GetTrainerSightRaiseCount() const { return m_xSightFsm.GetRaiseCount(); }
+
 	// Fire this NPC's role: ONE switch over ZM_RaiseKindForRole(row.m_eRole) onto the
 	// three shipped ZM_UI_MenuStack seams. Returns whether a screen was actually
 	// raised. A refusal (no menu singleton, a full dialogue queue, a rejected stock
@@ -129,6 +161,14 @@ private:
 	// enabled patrol. Non-strict calls are used while editor construction may still
 	// be assembling the entity; the first runtime update is strict and fails closed.
 	bool TryConfigureWanderBody(bool bRequireRuntimeReady);
+
+	// OnUpdate is now these two, in this order. The walker body is UNCHANGED --
+	// it moved verbatim into UpdateWander -- so its behaviour is byte-identical.
+	// The sight tick must run FIRST and OUTSIDE the walker's `if (!m_bWanderEnabled)
+	// return;` early-out, or a stationary trainer (which is what SC8 authors) would
+	// never see anything.
+	void TickTrainerSight(float fDeltaTime);
+	void UpdateWander(float fDeltaTime);
 
 	// Stored BY VALUE (never a reference): a reference member would dangle on the
 	// temporary ctor handle and break the pool's move-construct.
@@ -151,4 +191,9 @@ private:
 	// path to apply gravity/upright/material properties to the replacement exactly once.
 	Zenith_PhysicsBodyID m_xConfiguredWanderBodyID;
 	bool                  m_bLifecycleStarted = false;
+
+	// Session-only, NEVER serialized -- the ZM_WalkerState precedent. A scene
+	// reload restarts a cold watcher deterministically.
+	ZM_TRAINER_ID      m_eTrainerId = ZM_TRAINER_NONE;
+	ZM_TrainerSightFsm m_xSightFsm;
 };

@@ -94,7 +94,11 @@ ZM_INTERACT_REJECT ZM_InteractionRuntime::EvaluateForTests(Zenith_EntityID& xTar
 	// consults bHavePose.
 	Zenith_Maths::Vector3 xPosition(0.0f);
 	Zenith_Maths::Quat xRotation(1.0f, 0.0f, 0.0f, 0.0f);
-	const bool bHavePose = TryResolveActivePlayerPose(xPosition, xRotation);
+	// The id this seam does not need is still resolved: TryResolveActivePlayer is
+	// the ONE player-resolve seam (SC6's occlusion probe consumes the id), and a
+	// second pose-only variant is exactly the drift the no-legacy mandate forbids.
+	Zenith_EntityID xPlayerID = INVALID_ENTITY_ID;
+	const bool bHavePose = TryResolveActivePlayer(xPlayerID, xPosition, xRotation);
 
 	// bInteractPressed is ASSUMED true: the question this seam answers is "what would
 	// pressing E right now do?", not "was E pressed?". Reading the real edge here
@@ -213,13 +217,18 @@ ZM_INTERACT_REJECT ZM_InteractionRuntime::Decide(bool bHavePose,
 	return ePick;
 }
 
-bool ZM_InteractionRuntime::TryResolveActivePlayerPose(Zenith_Maths::Vector3& xPositionOut,
+bool ZM_InteractionRuntime::TryResolveActivePlayer(Zenith_EntityID& xEntityIDOut,
+	Zenith_Maths::Vector3& xPositionOut,
 	Zenith_Maths::Quat& xRotationOut)
 {
 	// Deliberately NOT ZM_GameStateManager::TryGetUniqueActiveScenePlayerEntityID:
 	// that seam additionally demands a live physics body (it exists to authenticate a
 	// COLLIDING player), which is exactly the dependency interaction does not have and
 	// must not acquire -- it would make the whole runtime unobservable headlessly.
+	//
+	// The id is handed BACK rather than kept internal: SC6's occlusion probe needs it
+	// to recognise the player's own capsule as the ray's legitimate terminator.
+	xEntityIDOut = INVALID_ENTITY_ID;
 	Zenith_EntityID xPlayerID = INVALID_ENTITY_ID;
 	u_int uPlayerCount = 0u;
 	g_xEngine.Scenes().QueryActiveScene<ZM_PlayerController, Zenith_TransformComponent>().ForEach(
@@ -246,6 +255,7 @@ bool ZM_InteractionRuntime::TryResolveActivePlayerPose(Zenith_Maths::Vector3& xP
 	}
 	pxTransform->GetPosition(xPositionOut);
 	pxTransform->GetRotation(xRotationOut);
+	xEntityIDOut = xPlayerID;
 	return true;
 }
 

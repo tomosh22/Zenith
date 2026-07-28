@@ -23,6 +23,7 @@
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // ResetRuntimeStateForTests (between-tests hook)
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"      // ZM_TrainerEngagementLatch (between-tests hook)
 #include "Zenithmon/Source/Nav/ZM_NavBake.h"                      // Dawnmere navmesh bake step + asset ref (S7 SC1b)
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"                   // DeleteAllSlotsForTests (between-tests hook)
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // sz*_NAME element contract (dialogue authoring)
@@ -1434,6 +1435,10 @@ void Project_RegisterGameComponents()
 		// player exists), so a batched test must not inherit the previous test's
 		// interaction outcome or raise count.
 		ZM_InteractionRuntime::ResetRuntimeStateForTests();
+		// SC6's session latch is ownerless process-global state, so the harness's
+		// scene-0 force-reload cannot clear it: without this, one test's engaged
+		// flagless trainer would silence him for every later batched test.
+		ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
 		ZM_GameStateManager::ResetRuntimeStateForTests();
 		// The persistent manager's GameState survives DontDestroyOnLoad across tests;
 		// re-seed the starter so a caught/levelled party cannot leak into the next test.

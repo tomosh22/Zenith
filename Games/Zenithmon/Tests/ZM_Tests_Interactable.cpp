@@ -31,7 +31,9 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "Zenithmon/Components/ZM_Interactable.h"
 #include "Zenithmon/Source/Data/ZM_NpcData.h"
+#include "Zenithmon/Source/Data/ZM_TrainerData.h"                 // ZM_TRAINER_* (the S7 SC6 sight units)
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"      // ZM_TRAINER_SIGHT_* (the observed state)
 
 namespace
 {
@@ -266,6 +268,206 @@ ZENITH_TEST(ZM_Interaction, Interactable_DeserializeRejectsForeignVersion)
 	ZENITH_ASSERT_EQ((u_int)xTarget.m_xInteractable.GetNpcId(), (u_int)ZM_NPC_NONE);
 	ZENITH_ASSERT_FALSE(xTarget.m_xInteractable.IsInteractable(),
 		"an unreadable payload leaves an inert component, never a stale live one");
+}
+
+// ---- Trainer sight (S7 item 3 SC6) ------------------------------------------
+
+// A freshly added, unconfigured component is BLIND by construction -- the same
+// doctrine as m_bInteractable defaulting false. Nothing here needs a scene: the
+// two new members are PODs the component owns outright.
+ZENITH_TEST(ZM_Interaction, Interactable_TrainerSightDefaultsOff)
+{
+	DetachedInteractable xFixture;
+	ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerId(),
+		(u_int)ZM_TRAINER_NONE,
+		"a default-constructed interactable names no trainer row");
+	ZENITH_ASSERT_FALSE(xFixture.m_xInteractable.IsTrainerSightEnabled(),
+		"an unconfigured component must not be watching anyone");
+	ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerSightState(),
+		(u_int)ZM_TRAINER_SIGHT_WATCHING,
+		"the sight machine starts as a COLD watcher");
+	ZENITH_ASSERT_EQ(xFixture.m_xInteractable.GetTrainerSightRaiseCount(), 0u,
+		"nothing has been raised yet, so the monotonic raise count is zero");
+}
+
+// Fail CLOSED: a bad id CLEARS the row rather than keeping the previous one, so a
+// mis-authored value can only ever produce a BLIND NPC -- never the WRONG
+// trainer's battle.
+ZENITH_TEST(ZM_Interaction, Interactable_ConfigureTrainerSightFailsClosedOnABadId)
+{
+	DetachedInteractable xFixture;
+	ZENITH_ASSERT_TRUE(
+		xFixture.m_xInteractable.ConfigureTrainerSight(ZM_TRAINER_RIVAL_VESPER),
+		"a registered trainer row must be accepted");
+	ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerId(),
+		(u_int)ZM_TRAINER_RIVAL_VESPER);
+	ZENITH_ASSERT_TRUE(xFixture.m_xInteractable.IsTrainerSightEnabled(),
+		"the id IS the enable -- there is no second flag to set");
+
+	// The SENTINEL. ZM_TRAINER_NONE aliases ZM_TRAINER_COUNT, so this is also the
+	// "roster shrank underneath me" case.
+	ZENITH_ASSERT_FALSE(
+		xFixture.m_xInteractable.ConfigureTrainerSight(ZM_TRAINER_NONE),
+		"ZM_TRAINER_NONE is not a trainer");
+	ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerId(),
+		(u_int)ZM_TRAINER_NONE,
+		"a rejected id must not leave the PREVIOUS trainer installed");
+	ZENITH_ASSERT_FALSE(xFixture.m_xInteractable.IsTrainerSightEnabled(),
+		"clearing the row also blinds the watcher");
+
+	// ...and outright garbage, from the same armed starting state, so the clause
+	// above cannot be satisfied by a component that was already blind.
+	ZENITH_ASSERT_TRUE(
+		xFixture.m_xInteractable.ConfigureTrainerSight(ZM_TRAINER_RIVAL_VESPER));
+	ZENITH_ASSERT_FALSE(
+		xFixture.m_xInteractable.ConfigureTrainerSight((ZM_TRAINER_ID)9999u));
+	ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerId(),
+		(u_int)ZM_TRAINER_NONE);
+	ZENITH_ASSERT_FALSE(xFixture.m_xInteractable.IsTrainerSightEnabled());
+
+	// OnStart re-validates whatever authoring / deserialization left behind. Only ONE
+	// half of that guard has a non-vacuous fixture reachable from here, and it is the
+	// half asserted below.
+	//
+	// NOT ASSERTED HERE: "an UNREGISTERED id is CLEARED by OnStart". No public surface
+	// can install one -- ConfigureTrainerSight fails CLOSED, so a refused id leaves
+	// the component ALREADY at ZM_TRAINER_NONE (and ZM_TRAINER_NONE == ZM_TRAINER_COUNT,
+	// so an unconfigured component is the same state). Calling OnStart on that fixture
+	// and asserting NONE would restate the fixture back to itself and would stay green
+	// with the whole `if (!ZM_IsRegisteredTrainer(m_eTrainerId))` block deleted.
+	// Likewise OnStart's `m_xSightFsm.Reset()`: this component has no public stepper
+	// (only OnUpdate, which needs a live scene, a player and physics), so the watcher
+	// here is COLD whatever OnStart does. Reset on a genuinely DIRTY machine is covered
+	// by Fsm_ResetReturnsAColdWatcher in ZM_Tests_TrainerSightFsm.cpp.
+	//
+	// WHAT IS ASSERTED, and it DOES red: a REGISTERED id must SURVIVE OnStart. An
+	// OnStart that clears unconditionally, or one whose ZM_IsRegisteredTrainer test is
+	// inverted, blinds a correctly authored trainer -- and SC8 authors exactly one --
+	// which fails right here.
+	ZENITH_ASSERT_TRUE(
+		xFixture.m_xInteractable.ConfigureTrainerSight(ZM_TRAINER_RIVAL_VESPER));
+	xFixture.m_xInteractable.OnStart();
+	ZENITH_ASSERT_EQ((u_int)xFixture.m_xInteractable.GetTrainerId(),
+		(u_int)ZM_TRAINER_RIVAL_VESPER,
+		"a REGISTERED trainer id survives OnStart");
+	ZENITH_ASSERT_TRUE(xFixture.m_xInteractable.IsTrainerSightEnabled());
+}
+
+// ★ THE SCENE-BYTE GUARD. SC6 changes ZERO bytes in the five committed
+// ZM_Interactable payloads inside Dawnmere.zscen, BY CONSTRUCTION: both new
+// members are runtime-only and uSERIALIZATION_VERSION stays at 2u. The per-
+// component size prefix is computed from what is actually written, so ONE added
+// field would grow five payloads, move five size prefixes and leave a windowed
+// boot with a modified Dawnmere.zscen in git status -- which Games/Zenithmon/
+// CLAUDE.md calls a REGRESSION of boot-shape independence, not churn.
+//
+// Anyone who later appends a trainer field, or bumps the version, reds THIS unit
+// before they ever notice a dirty scene file. SC8 owns persistence and its two
+// routes; see the ConfigureTrainerSight header comment.
+ZENITH_TEST(ZM_Interaction, Interactable_TrainerSightIsNotSerialized)
+{
+	// A and B are identical apart from the trainer, so the length comparison below
+	// isolates exactly one variable.
+	DetachedInteractable xUnconfigured;
+	ZENITH_ASSERT_TRUE(xUnconfigured.m_xInteractable.SetNpcId(ZM_NPC_VILLAGER));
+	ZENITH_ASSERT_TRUE(xUnconfigured.m_xInteractable.SetRadius(0.4f));
+	xUnconfigured.m_xInteractable.SetInteractable(true);
+
+	DetachedInteractable xConfigured;
+	ZENITH_ASSERT_TRUE(xConfigured.m_xInteractable.SetNpcId(ZM_NPC_VILLAGER));
+	ZENITH_ASSERT_TRUE(xConfigured.m_xInteractable.SetRadius(0.4f));
+	xConfigured.m_xInteractable.SetInteractable(true);
+	// NON-VACUITY: the stream below is written by a component that genuinely HAS a
+	// trainer installed, so "the bytes did not move" is a real observation.
+	ZENITH_ASSERT_TRUE(
+		xConfigured.m_xInteractable.ConfigureTrainerSight(ZM_TRAINER_RIVAL_VESPER));
+	ZENITH_ASSERT_TRUE(xConfigured.m_xInteractable.IsTrainerSightEnabled());
+
+	Zenith_DataStream xUnconfiguredStream;
+	xUnconfigured.m_xInteractable.WriteToDataStream(xUnconfiguredStream);
+	Zenith_DataStream xConfiguredStream;
+	xConfigured.m_xInteractable.WriteToDataStream(xConfiguredStream);
+
+	// (1a) THE ABSOLUTE BYTE PIN, and it is the load-bearing half. Spelled out from
+	// the fields ZM_Interactable::WriteToDataStream actually writes, IN ITS ORDER --
+	// symbolically, so it stays readable and follows uMAX_WAYPOINTS rather than
+	// freezing a magic number. GetCursor() is the bytes WRITTEN (GetCapacity() would
+	// be the allocation, which doubles in 1 KB steps and would hide a small field).
+	//
+	// Clause (1b) below CANNOT catch an appended field on its own: the v2 payload is
+	// fixed-width and UNCONDITIONAL (even the waypoint loop is a constant-trip
+	// uMAX_WAYPOINTS, not m_uCount), so a new field grows BOTH streams equally and
+	// their cursors stay equal by construction. Only an absolute expectation reds.
+	constexpr u_int uEXPECTED_V2_PAYLOAD_BYTES = (u_int)(
+		sizeof(ZM_Interactable::uSERIALIZATION_VERSION)              // leading version
+		+ sizeof(u_int)                                              // m_eNpcId, widened to u_int
+		+ sizeof(float)                                              // m_fRadius
+		+ sizeof(bool)                                               // m_bInteractable
+		+ sizeof(bool)                                               // m_bWanderEnabled
+		+ sizeof(u_int)                                              // m_xWalkerWaypoints.m_uCount
+		+ sizeof(float) * 3u * ZM_WalkerWaypoints::uMAX_WAYPOINTS    // EVERY waypoint slot
+		+ sizeof(float) * 3u);                                       // speed / arrive / dwell
+	ZENITH_ASSERT_EQ((u_int)xConfiguredStream.GetCursor(),
+		uEXPECTED_V2_PAYLOAD_BYTES,
+		"ZM_Interactable wrote %u bytes, not the %u the v2 layout accounts for -- a "
+		"field was added to (or removed from) WriteToDataStream, so five payloads "
+		"inside the COMMITTED Dawnmere.zscen move, five size prefixes move with them, "
+		"and a boot leaves the scene modified in git status",
+		(u_int)xConfiguredStream.GetCursor(), uEXPECTED_V2_PAYLOAD_BYTES);
+
+	// (1b) ...and IDENTICAL byte length with and without a trainer installed. This
+	// clause is NOT redundant with (1a) and neither subsumes the other: (1a) catches
+	// an UNCONDITIONALLY written field (which keeps the two cursors equal), (1b)
+	// catches a CONDITIONALLY written one -- `if (IsTrainerSightEnabled()) xStream <<
+	// ...` -- which would keep the total at uEXPECTED_V2_PAYLOAD_BYTES for the
+	// unconfigured NPCs Dawnmere actually holds while still moving bytes the moment
+	// SC8 authors a trainer. Both are needed; do not delete either as a duplicate.
+	ZENITH_ASSERT_EQ((u_int)xConfiguredStream.GetCursor(),
+		(u_int)xUnconfiguredStream.GetCursor(),
+		"configuring a trainer changed the serialized size (%u vs %u bytes) -- SC6 "
+		"must add NO trainer-conditional field to ZM_Interactable::WriteToDataStream",
+		(u_int)xConfiguredStream.GetCursor(), (u_int)xUnconfiguredStream.GetCursor());
+
+	// (2) the leading version is untouched.
+	ZENITH_ASSERT_EQ(ZM_Interactable::uSERIALIZATION_VERSION, 2u,
+		"ZM_Interactable::uSERIALIZATION_VERSION moved off 2u -- every committed "
+		"scene's payloads change with it, so the bump and the re-bake + re-commit of "
+		"Dawnmere.zscen belong in ONE commit (SC8's version route)");
+
+	// (3) a component read back from the CONFIGURED stream has NO trainer: the reset
+	//     block in ReadFromDataStream owns that, and a reloaded scene must be
+	//     indistinguishable from a fresh component.
+	//
+	//     The target is ARMED WITH A REAL ROSTER ID FIRST, and that is what gives the
+	//     clause teeth: deleting `m_eTrainerId = ZM_TRAINER_NONE;` from
+	//     ReadFromDataStream leaves Vesper installed on a component that just loaded a
+	//     scene payload naming nobody, and this reds. Asserting NONE on a target that
+	//     was already NONE would restate the fixture.
+	xConfiguredStream.SetCursor(0u);
+	DetachedInteractable xTarget;
+	ZENITH_ASSERT_TRUE(
+		xTarget.m_xInteractable.ConfigureTrainerSight(ZM_TRAINER_RIVAL_VESPER),
+		"arm the target FIRST, so the read below has something to clear");
+	ZENITH_ASSERT_TRUE(xTarget.m_xInteractable.IsTrainerSightEnabled(),
+		"...and the arming really took, or the clause below is vacuous");
+	xTarget.m_xInteractable.ReadFromDataStream(xConfiguredStream);
+	ZENITH_ASSERT_EQ((u_int)xTarget.m_xInteractable.GetTrainerId(),
+		(u_int)ZM_TRAINER_NONE,
+		"deserialization must leave NO trainer installed -- the id is runtime-only");
+	ZENITH_ASSERT_FALSE(xTarget.m_xInteractable.IsTrainerSightEnabled());
+	// NOT ASSERTED HERE: that ReadFromDataStream's `m_xSightFsm.Reset()` ran. This
+	// component exposes no public stepper (only OnUpdate, which needs a live scene, a
+	// player and physics), so xTarget's watcher is COLD whatever the read does, and a
+	// state/raise-count assertion here would pass with that Reset deleted -- a
+	// tautology claiming coverage it does not have. Reset on a genuinely DIRTY
+	// machine -- ENGAGED, confirmed, with a populated accumulator and a non-zero raise
+	// count -- is covered by Fsm_ResetReturnsAColdWatcher in
+	// Games/Zenithmon/Tests/ZM_Tests_TrainerSightFsm.cpp.
+	//
+	// The rest of the payload still round-trips, so clause (1a) is not passing
+	// because the write silently stopped writing anything.
+	ZENITH_ASSERT_EQ((u_int)xTarget.m_xInteractable.GetNpcId(), (u_int)ZM_NPC_VILLAGER);
+	ZENITH_ASSERT_TRUE(xTarget.m_xInteractable.IsInteractable());
 }
 
 // ---- Role -> seam mapping (pure; nothing is raised) --------------------------

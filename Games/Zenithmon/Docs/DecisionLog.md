@@ -15,6 +15,128 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-28 -- ZM-D-154 -- S7 item 3 SC6: the trainer sight FSM + the occlusion ray, as runtime-only state on order 113
+
+*(Sixth sub-commit of the ZM-D-143 sequence, and the beat that makes the vertical
+playable: a trainer who sees you starts a battle. `Games/Zenithmon` only; ZERO
+`Zenith/` files, ZERO new ECS orders -- it rides the existing 113 (`ZM_Interactable`),
+so game order **114 remains next-free**. Five new TUs, so a regen was owed and run.
+Authored from the verbatim `SC6_Plan.md`, which this commit DELETES.)*
+
+### What shipped
+
+`Source/Interaction/ZM_TrainerSightFsm.{h,cpp}` -- a PURE two-state watcher
+(`WATCHING`/`ENGAGED`) plus the `ZM_MayTrainerEngage` re-engagement gate and the
+process-global `ZM_TrainerEngagementLatch`. It touches no ECS, scene, physics, UI or
+RNG surface; boot units drive it step by step. Every function is TOTAL and never calls
+`Zenith_Assert` -- NaN, +/-inf, negative and zero dt all return a defined answer, and a
+degenerate dt can never accumulate into the confirm window.
+
+`Source/Interaction/ZM_TrainerSightProbe.{h,cpp}` -- the occlusion raycast, reusing
+`Zenith_PhysicsQuery::RaycastIgnoring`. **The ray is real, not decorative:** physics is
+live on the Null backend, so the probe's units cast against actual bodies. Fail polarity
+is three-armed and deliberate: non-finite input **fails CLOSED**; no live simulation
+**fails OPEN** (a world with no physics has no occluders); coincident endpoints answer
+clear **without casting at all**. Only ONE body can be filtered per cast, so the trainer
+is ignored by id and the player's own capsule is excused by comparing
+`RaycastResult::m_xHitEntity` -- no distance tolerance.
+
+`ZM_Interactable` gains two **RUNTIME-ONLY** members (`m_eTrainerId`, `m_xSightFsm`),
+mirroring the existing `m_xWalkerState` precedent, cleared in both `OnStart` and
+`ReadFromDataStream`'s unconditional reset block.
+
+### The two rulings that constrained everything
+
+1. **Cheap-gate-first IS the cost control.** There is no raycast budget anywhere in this
+   engine, so the SC3 pure cone runs first and the ray is issued ONLY on a cone pass.
+2. **SC6 serializes NOTHING.** `uSERIALIZATION_VERSION` stays `2u` and
+   `WriteToDataStream` gained no field, because the per-component size prefix is computed
+   from what is actually written -- one new field would grow the five `ZM_Interactable`
+   payloads inside the COMMITTED `Dawnmere.zscen`. **Verified, not assumed:** a full
+   windowed Vulkan batch left `Games/Zenithmon/Assets` byte-clean in `git status`.
+   **The debt is SC8's:** an authored trainer id does not survive save/reload, so SC6
+   ships BEHAVIOUR ONLY. SC8 should prefer the zero-byte route (a `ZM_TRAINER_ID` column
+   at the END of `ZM_NpcData`, derived in `OnStart`) over a v3 payload bump.
+
+### Q-2026-07-28-001 answered: the flagged/flagless asymmetry is deliberate
+
+`ZM_MayTrainerEngage` keys on the row's defeat flag when it has one, and on the session
+latch when the row carries `ZM_STORY_FLAG_NONE` -- because `ZM_IsStoryFlagSet(state,
+NONE)` reads false forever, so a flagless row's prize money would otherwise be farmable.
+The consequence, documented in the gate's own header so nobody "fixes" it: losing to
+Vesper leaves him re-battleable, losing to the rambler does not. An unregistered row
+fails CLOSED.
+
+### Ordering is load-bearing, and the review is what protected it
+
+`TickTrainerSight` runs BEFORE `UpdateWander` and OUTSIDE the walker's
+`if (!m_bWanderEnabled) return;` early-out. SC8's Vesper is stationary, so folding the
+call inside the walker would leave every stationary trainer **permanently blind while
+every unit test still passed** -- the units drive the FSM directly, not through
+`OnUpdate`. Mutation M1 below exists specifically to pin this.
+
+No-legacy mandate honoured: `TryResolveActivePlayerPose` is **deleted**, replaced by the
+public `ZM_InteractionRuntime::TryResolveActivePlayer`. The latch is marked BEFORE
+`Dispatch` (which is synchronous), and SC6 adds **no second freeze owner** --
+`ZM_BattleTransition::OnTrainerEncounterEvent` + `TryParkOverworldPlayer` still own that.
+
+### The adversarial review found four real teeth defects, all fixed before the build
+
+1. **The advertised scene-byte guard was a tautology.** It compared a configured against
+   an unconfigured component's stream length, but the v2 payload is fixed-width and
+   unconditional (the waypoint loop is constant-trip), so a new field grows BOTH equally
+   and the assertion could never red. Replaced with an ABSOLUTE byte pin, keeping the
+   relative clause as a secondary catch for a *conditionally*-written field.
+2. **The production session-latch write was observed by no test** -- the automated test
+   set the latch by hand, so deleting `MarkEngaged` in `TickTrainerSight` would have left
+   a flagless trainer's prize farmable with the whole suite green. Now sampled before and
+   after the rival encounter and asserted in Verify.
+3. **The hold phase was over-determined** (the FSM's own confirmed-raise latch AND the
+   defeat-flag gate each pinned the count at 1, so the gate claim was unsupported). Fixed
+   properly rather than by softening the claim: a break-line-of-sight sub-phase now forces
+   the FSM to re-arm, leaving the gate as the sole remaining guard.
+4. **Reset assertions were tautological** (fixtures were already cold). Made genuinely
+   dirty where public surface allowed; where it did not, the vacuous assertions were
+   DELETED and replaced with a comment naming where the coverage actually lives, rather
+   than leaving a test that claims cover it lacks.
+
+**One reviewer claim was REJECTED as false:** that SC6 introduced "the first non-ASCII
+bytes ever committed to a Zenithmon source file". Non-ASCII already exists in 11 tracked
+Zenithmon sources (`ZM_AutoTests_NpcServices.cpp` alone has 19 such lines), all green in
+CI. Consistent with the standing pattern -- agents fabricate in the claims that ARGUE,
+not the ones that DESCRIBE.
+
+### Observed gate (never predicted)
+
+Regen green and the 5 new TUs verified present in the generated vcxproj; Vulkan_True and
+Null_True both build clean. Headless registry **45 -> 46**; boot units **2657 -> 2682**
+(2682 ran / 2681 passed / 0 failed / 1 documented skip) -- the +25 delta is the ONLY
+proof the regen took. Full windowed Vulkan **46/46, 0 failed**, with
+`ZM_TrainerSightWalkUp_Test` RUNNING (504 frames) on both backends. `Assets/` byte-clean
+after the windowed boot; no save-dir residue. `zm-tests.yml` pinned to the OBSERVED 2682.
+
+**Teeth mutation-proven x5**, each redding exactly its predicted target count:
+M1 sight tick folded behind the wander gate -> automated test RED; M2 the production
+`MarkEngaged` deleted -> automated test RED; M3 serializer grown by one field -> 1 unit
+RED; M4 gate arms transposed -> 2 units RED; M5 probe excusing the trainer id instead of
+the target id -> 1 unit RED. **A caveat recorded honestly:** the harness's own result
+regex misread the gate's "wanted ... 0 failed" clause and initially labelled the three
+unit mutations SURVIVED; the pass-count deltas and the "baseline NOT met" line are what
+settled it. Individual failing test NAMES were not captured -- the counts were.
+
+**Also recorded for future batteries:** the plan's named mutation for
+`Probe_TheTrainersOwnBodyIsIgnored` would NOT have compiled (it leaves a formal parameter
+unreferenced -> C4100 under warnings-as-errors), which would have booted the STALE exe
+and reported a false green. Substituted a compiling mutation. This is the third time this
+tripwire has fired; a mutation harness must hard-fail on a non-zero build exit.
+
+### Reversibility
+
+High. Two runtime-only members and four new files; no format, no ECS order, no engine
+change. Reverting the commit restores SC5 behaviour exactly.
+
+---
+
 ## 2026-07-28 -- ZM-D-153 -- S7 item 3 SC5: trainer forced-battle entry, the trainer arm, and the prize/defeat write-back -- plus the discovery that the engine cannot resolve a multi-monster party
 
 *(Fifth sub-commit of the ZM-D-143 sequence and the vertical's CORE. `Games/Zenithmon`

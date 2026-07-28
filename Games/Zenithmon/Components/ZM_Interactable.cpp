@@ -7,9 +7,17 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
+#include "ZenithECS/Zenith_EventSystem.h"            // Zenith_EventDispatcher -- the encounter channel
+#include "ZenithECS/Zenith_SceneSystem.h"            // GetActiveScene / GetSceneInfo (the source-scene lookup)
+#include "Zenithmon/Components/ZM_BattleTransition.h"   // IsTransitionActive -- the busy-channel input
 #include "Zenithmon/Components/ZM_GameStateManager.h"   // TryGetGameState -- the live story flags
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"   // the three shipped raise seams
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"    // ZM_StoryFlagSet (the gate's input)
+#include "Zenithmon/Source/Data/ZM_WorldSpec.h"      // ZM_SCENE_ID / ZM_FindSceneByBuildIndex
+#include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // TryResolveActivePlayer -- THE player seam
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"    // the SC3 pure cone (unmodified)
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightProbe.h"    // the occlusion filter
+#include "Zenithmon/Source/World/ZM_EncounterEvents.h"            // ZM_OnTrainerEncounter
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -59,6 +67,21 @@ namespace
 		}
 		return true;
 	}
+
+	// The SIXTH local instance of this three-line lookup (ZM_TallGrassSystem,
+	// ZM_UI_MenuStack, ZM_BattleTransition x2, ZM_GameStateManager already each
+	// hold one); it is a lookup, not a decision, and promoting it would be a new
+	// API for no gain.
+	ZM_SCENE_ID ZM_ResolveActiveSceneIdForSight()
+	{
+		const Zenith_Scene xActiveScene = g_xEngine.Scenes().GetActiveScene();
+		const Zenith_SceneInfo xInfo = g_xEngine.Scenes().GetSceneInfo(xActiveScene);
+		if (!xInfo.m_bLoaded || xInfo.m_iBuildIndex < 0)
+		{
+			return ZM_SCENE_NONE;
+		}
+		return ZM_FindSceneByBuildIndex(static_cast<u_int>(xInfo.m_iBuildIndex));
+	}
 }
 
 ZM_NPC_RAISE_KIND ZM_RaiseKindForRole(ZM_NPC_ROLE eRole)
@@ -97,6 +120,14 @@ void ZM_Interactable::OnStart()
 	m_xConfiguredWanderBodyID = Zenith_PhysicsBodyID{};
 	m_xWalkerState = ZM_WalkerState{};
 	m_bOwnsInteractionMenu = false;
+	// The sight machine is SESSION state, exactly like m_xWalkerState above: every
+	// start is a cold watcher, and a trainer id that no longer resolves must not
+	// survive as a live watcher either.
+	m_xSightFsm.Reset();
+	if (!ZM_IsRegisteredTrainer(m_eTrainerId))
+	{
+		m_eTrainerId = ZM_TRAINER_NONE;
+	}
 
 	// Re-validate what deserialization / authoring left behind. A row id that no
 	// longer exists (the roster shrank) must not survive as a live candidate.
@@ -183,6 +214,97 @@ bool ZM_Interactable::TryConfigureWanderBody(bool bRequireRuntimeReady)
 }
 
 void ZM_Interactable::OnUpdate(float fDeltaTime)
+{
+	// ORDER IS LOAD-BEARING. The sight tick runs FIRST and, crucially, OUTSIDE
+	// UpdateWander's `if (!m_bWanderEnabled) { return; }` early-out: SC8 authors a
+	// STATIONARY trainer, and folding this call into the walker body would leave
+	// every such trainer permanently blind while every unit test still passed.
+	TickTrainerSight(fDeltaTime);
+	UpdateWander(fDeltaTime);
+}
+
+void ZM_Interactable::TickTrainerSight(float fDeltaTime)
+{
+	if (!IsTrainerSightEnabled())
+	{
+		return;
+	}
+
+	const ZM_TrainerData& xRow = ZM_GetTrainerData(m_eTrainerId);
+
+	// The gate's two observations. No reachable game state means NOTHING HAS
+	// HAPPENED YET -- the identical ruling Interact() already makes for story-gated
+	// dialogue. Every defeat flag then reads clear, so a flagged trainer IS
+	// engageable, which is exactly the answer a fresh save gives.
+	ZM_GameState* pxGameState = nullptr;
+	const bool bHasGameState =
+		ZM_GameStateManager::TryGetGameState(pxGameState) && pxGameState != nullptr;
+	const bool bDefeatFlagSet =
+		bHasGameState && ZM_IsStoryFlagSet(*pxGameState, xRow.m_eDefeatFlag);
+	const bool bLatchSet = ZM_TrainerEngagementLatch::HasEngaged(m_eTrainerId);
+
+	ZM_TrainerSightInputs xInputs;
+	xInputs.m_fDeltaSeconds = fDeltaTime;
+	xInputs.m_bMayEngage = ZM_MayTrainerEngage(xRow, bDefeatFlagSet, bLatchSet);
+	// THE PRECONDITION ACCESSORS. IsTransitionActive() is the only public window
+	// onto the battle machine (there is NO accessor for its two pending latches),
+	// so the FSM additionally treats a raise as unconfirmed until the channel is
+	// observed BUSY -- see ZM_TrainerSightFsmTuning::m_fRaiseConfirmSeconds.
+	xInputs.m_bChannelBusy = ZM_BattleTransition::IsTransitionActive()
+		|| ZM_GameStateManager::IsWarpInProgress()
+		|| ZM_UI_MenuStack::IsMenuOpen();
+
+	Zenith_TransformComponent* pxTransform =
+		m_xParentEntity.TryGetComponent<Zenith_TransformComponent>();
+	Zenith_EntityID xPlayerID = INVALID_ENTITY_ID;
+	Zenith_Maths::Vector3 xPlayerPosition(0.0f);
+	Zenith_Maths::Quat xPlayerRotation(1.0f, 0.0f, 0.0f, 0.0f);
+	const bool bHavePlayer = ZM_InteractionRuntime::TryResolveActivePlayer(
+		xPlayerID, xPlayerPosition, xPlayerRotation);
+	if (pxTransform != nullptr && bHavePlayer)
+	{
+		Zenith_Maths::Vector3 xTrainerPosition(0.0f);
+		Zenith_Maths::Quat xTrainerRotation(1.0f, 0.0f, 0.0f, 0.0f);
+		pxTransform->GetPosition(xTrainerPosition);
+		pxTransform->GetRotation(xTrainerRotation);
+
+		// The SC3 PURE cone, unmodified and unduplicated. Rotation form, never
+		// glm::eulerAngles(quat).y.
+		xInputs.m_bTargetInSight = ZM_IsTargetInTrainerSightFromRotation(
+			xTrainerPosition, xTrainerRotation, xPlayerPosition,
+			ZM_TrainerSightTuning{});
+		if (xInputs.m_bTargetInSight)
+		{
+			// The ray enters HERE and only here, AFTER the pure cone passed. There
+			// is no raycast budget anywhere in this engine, so cheap-gate-first IS
+			// the cost control.
+			const ZM_TrainerSightProbeResult xProbe = ZM_ProbeTrainerSightLine(
+				xTrainerPosition, m_xParentEntity.GetEntityID(),
+				xPlayerPosition, xPlayerID);
+			xInputs.m_bSightLineClear = xProbe.m_bClear;
+		}
+	}
+
+	if (m_xSightFsm.Step(xInputs, ZM_TrainerSightFsmTuning{})
+		!= ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER)
+	{
+		return;
+	}
+
+	// Latch BEFORE dispatching: Dispatch is SYNCHRONOUS (the subscriber runs
+	// inside this stack frame), so the latch must already be true if anything
+	// downstream ever re-enters this component.
+	ZM_TrainerEngagementLatch::MarkEngaged(m_eTrainerId);
+	// This component does NOT freeze the player and does NOT push dialogue. The
+	// shipped subscriber owns both: ZM_BattleTransition::OnTrainerEncounterEvent
+	// latches, and TryParkOverworldPlayer zeroes velocity, drops gravity and calls
+	// SetMovementEnabled(false). Adding a second freeze owner here would fight the
+	// menu/warp/battle protocol those three already coordinate over.
+	Zenith_EventDispatcher::Get().Dispatch(
+		ZM_OnTrainerEncounter{ m_eTrainerId, ZM_ResolveActiveSceneIdForSight() });
+}
+
+void ZM_Interactable::UpdateWander(float fDeltaTime)
 {
 	if (!m_bWanderEnabled)
 	{
@@ -298,6 +420,21 @@ bool ZM_Interactable::ConfigureWander(const ZM_WalkerWaypoints& xWaypoints,
 	return true;
 }
 
+bool ZM_Interactable::ConfigureTrainerSight(ZM_TRAINER_ID eTrainer)
+{
+	m_xSightFsm.Reset();
+	if (!ZM_IsRegisteredTrainer(eTrainer))
+	{
+		// Fail CLOSED, exactly as SetNpcId does: CLEAR the row rather than keeping
+		// the previous one, so a bad authoring value yields a blind NPC and never
+		// the WRONG trainer's battle.
+		m_eTrainerId = ZM_TRAINER_NONE;
+		return false;
+	}
+	m_eTrainerId = eTrainer;
+	return true;
+}
+
 bool ZM_Interactable::Interact()
 {
 	if (m_eNpcId >= ZM_NPC_COUNT)
@@ -400,6 +537,13 @@ void ZM_Interactable::ReadFromDataStream(Zenith_DataStream& xStream)
 	m_bWanderEnabled = false;
 	m_bOwnsInteractionMenu = false;
 	m_xConfiguredWanderBodyID = Zenith_PhysicsBodyID{};
+	// The trainer identity and its watcher are RUNTIME-ONLY (uSERIALIZATION_VERSION
+	// deliberately stays at 2u and WriteToDataStream never touches either), so a
+	// reloaded scene starts with NO trainer and a COLD watcher -- deterministic, and
+	// identical to a fresh component. Guarded by
+	// Interactable_TrainerSightIsNotSerialized.
+	m_eTrainerId = ZM_TRAINER_NONE;
+	m_xSightFsm.Reset();
 	if (uVersion != 1u && uVersion != uSERIALIZATION_VERSION)
 	{
 		return;

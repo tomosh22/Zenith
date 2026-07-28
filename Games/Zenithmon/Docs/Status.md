@@ -1,14 +1,26 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-27
+**Last updated:** 2026-07-28
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (all OBSERVED 2026-07-27 on a fresh build of both configs):**
-ZM headless registry **45 passed / 0 failed**; ZM boot unit gate **2657 ran /
-2656 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to 2657); engine boot
-unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed / 1 skipped**
-(`run_unit_gate.ps1` default). The 1 skipped in each is the quarantined
+down this file (ZM numbers OBSERVED 2026-07-28 on a fresh build of both configs
+after SC6):** ZM headless registry **46 passed / 0 failed**; ZM boot unit gate
+**2682 ran / 2681 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
+2682); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
+1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6 -- it touches zero
+`Zenith/` files). The 1 skipped in each is the quarantined
 `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
+
+**★ FOURTH TRIPWIRE -- A MUTATION HARNESS MUST PARSE THE OBSERVED RESULT, NOT
+THE EXPECTATION.** SC6's battery script scraped `(\d+) failed` from
+`run_unit_gate.ps1`'s output and matched the **"wanted 2682 ran, 0 failed"**
+clause instead of the observed tally, so all three unit mutations were initially
+labelled SURVIVED -- i.e. "these tests have no teeth" -- when every one of them
+had in fact redded. The `baseline NOT met` line and the pass-count delta
+(2681 -> 2680 / 2679 / 2680) are what settled it. This is the same
+passes-because-it-never-really-checked defect the project hunts in game code,
+reproduced in the tooling: anchor result parsing to the OBSERVED line, and never
+to a string the harness also prints when describing what it wanted.
 
 *How they moved this session:* 2547 -> **2589** was the 07-27 engine commits
 (harness world reset, harness dt pinning, navmesh RNG determinism) adding units,
@@ -57,38 +69,65 @@ boot output" rather than a load failure.
 
 ## Current task
 
-**★ STOPPED ON A SESSION USAGE LIMIT (2026-07-28), NOT ON A DEFECT.** master is
-CLEAN and fully pushed at `c3f01fa5` (SC5). SC6's survey and PLANNING passes
-completed; its AUTHORING and all three review passes were cut off mid-flight, so
-**no SC6 code exists and nothing is half-written**. The plan is preserved verbatim
-in **[SC6_Plan.md](SC6_Plan.md)** -- 13 files, 26 tests, regen required. **The next
-session should resume from that file rather than re-deriving it**, and delete it in
-the commit that lands SC6.
+**S7 item 3 SC6 COMPLETE (ZM-D-154).** The trainer sight FSM + the occlusion ray
+landed as RUNTIME-ONLY state on the existing order 113. `SC6_Plan.md` was consumed
+and DELETED in that commit, exactly as it instructed. **NEXT = SC7: the first
+useful `ZM_GraphAuthoring` trainer-glue `.bgraph`** -- the spot-bark / challenge
+dialogue beat, which SC6 deliberately does NOT ship. Then SC8 (rival Vesper's
+authored placement + trainer-id persistence).
 
-**Two expensive SC6 questions are already SETTLED in that plan (do not re-open):**
-1. **The occlusion raycast is REAL here, not decoration.** Physics is live headless
-   (`InitialiseRendererAndPhysics` has no backend gate, and `ZM_Tests_Overworld.cpp`
-   already asserts real raycast hits from a plain boot unit). Dawnmere authors real
-   static AABB colliders (the home shell, doors, lintel, every stationary NPC) and
-   they live in the COMMITTED `Dawnmere.zscen`, so the ray is blockable on a fresh CI
-   checkout. **The one honest limitation: TERRAIN is not an occluder in CI**, because
-   its physics geometry is a gitignored baked asset -- so no test may assert occlusion
-   against terrain; every occlusion assertion must use an explicitly created static
-   AABB in a hermetic physics fixture. Fail polarity: no live simulation FAILS OPEN
-   (a world with no physics has no occluders), non-finite input FAILS CLOSED.
-2. **SC6 must change ZERO scene bytes.** `Dawnmere.zscen` carries five
-   `ZM_Interactable` payloads and the per-component size prefix is computed from what
-   is actually written, so ONE new serialized field would grow five payloads, bump the
-   version, and leave the committed scene modified after a windowed boot -- which this
-   project treats as a regression. Both new members are therefore RUNTIME-ONLY
-   (`m_eTrainerId`, `m_xSightFsm`), exactly like the walker's existing runtime state,
-   cleared in `ReadFromDataStream`'s reset block, and guarded by a unit that asserts
-   the written byte length is identical to an unconfigured component's.
-   **The debt this creates is owned by SC8:** a trainer id configured during authoring
-   does NOT survive save/reload, so SC6 ships BEHAVIOUR ONLY and SC8 owns persistence
-   for the authored placement.
+**The honest one-line description of what SC6 added in-game:** "a trainer who sees
+you starts a battle." There is no "!" bark, no challenge dialogue, and no
+walk-up-to-you approach -- the battle starts from where the player stands. Anyone
+expecting the full spot-bark-walk-talk-fight sequence should be pointed at SC7/SC8.
 
-**S7 item 3 SC5 COMPLETE (ZM-D-153) -- trainer forced-battle entry, the trainer arm, and the prize/defeat write-back. NEXT = SC6: the trainer sight FSM + occlusion ray as a by-value member of `ZM_Interactable` (order 113, NO new order -- it mirrors the NPC walker), with the occlusion ray entering as a probe filter AFTER SC3's pure cone passes, and "not yet defeated" ANDed in so a beaten trainer never re-spots.**
+**What SC6 pinned that SC7-SC8 must not re-litigate:**
+- **Cheap-gate-first IS the cost control.** There is no raycast budget anywhere in
+  this engine, so the SC3 pure cone runs FIRST and the ray is issued ONLY on a cone
+  pass. Do not add an unconditional raycast, and do not add a raycast budget.
+- **`TickTrainerSight` runs BEFORE `UpdateWander` and OUTSIDE its
+  `if (!m_bWanderEnabled) return;` bail.** SC8's Vesper is STATIONARY, so folding
+  the call inside the walker leaves every stationary trainer permanently blind
+  **while every unit test still passes** (the units drive the FSM directly, not
+  through `OnUpdate`). Mutation M1 exists solely to pin this -- do not "tidy" it.
+- **The flagged/flagless gate asymmetry is deliberate** (Q-2026-07-28-001, now
+  ANSWERED): a row with a defeat flag keys on that flag and ignores the latch; a
+  flagless row keys on the process-global session latch, because
+  `ZM_IsStoryFlagSet(state, NONE)` reads false forever and the prize would
+  otherwise be farmable. Losing to Vesper leaves him re-battleable; losing to the
+  rambler does not. It is documented in the gate's own header so nobody "fixes" it.
+- **Only ONE body can be filtered per raycast.** The trainer is ignored by id and
+  the player's capsule is excused by comparing `RaycastResult::m_xHitEntity` -- no
+  distance tolerance. Fail polarity: non-finite CLOSED, no live simulation OPEN,
+  coincident endpoints clear WITHOUT casting.
+- **`TryResolveActivePlayerPose` is GONE** (no-legacy). Use the public
+  `ZM_InteractionRuntime::TryResolveActivePlayer`.
+- SC6 adds **no second freeze owner**; `ZM_BattleTransition::OnTrainerEncounterEvent`
+  + `TryParkOverworldPlayer` still own that seam.
+
+**★ THE OPEN DEBT SC8 OWNS: an authored trainer id does NOT survive save/reload.**
+SC6 serializes nothing (`uSERIALIZATION_VERSION` stays `2u`) because the
+per-component size prefix is computed from what is written, so one new field would
+grow the five `ZM_Interactable` payloads inside the COMMITTED `Dawnmere.zscen`.
+**Verified, not assumed:** a full windowed Vulkan batch left `Games/Zenithmon/Assets`
+byte-clean. **SC8 should prefer the zero-byte route** -- a `ZM_TRAINER_ID` column at
+the END of `ZM_NpcData`, derived in `OnStart` -- over a v3 payload bump.
+
+**Two limitations recorded honestly, not papered over:**
+1. **There is no occlusion coverage in Dawnmere itself.** The occlusion proof is a
+   hermetic boot unit against an explicitly created box; the end-to-end test walks a
+   CLEAR line. Terrain is NOT an occluder on a fresh CI checkout (its physics
+   geometry is a gitignored baked asset), so "a wall blocks a trainer in the actual
+   town" is reasoned, not measured. Do not claim otherwise.
+2. **Another NPC's static AABB, or the `HomeDoorTrigger` box, counts as an
+   occluder.** Arguably correct, but SC8 must keep it in mind when placing Vesper:
+   a trainer behind the door trigger will appear inexplicably blind.
+
+**Still true and still the headline battle-engine shortfall (Shortfalls 1.2): the
+engine has NO forced switch on faint**, so `uZM_TRAINER_BATTLEABLE_PARTY = 1` in
+`Source/Battle/ZM_TrainerBattle.h` clamps every trainer to its authored lead. Raise
+that constant ONLY in the commit that adds the replacement path. S8 needs it before
+it can show a credible gym.
 
 **★ READ THIS BEFORE SC6 OR ANY BATTLE WORK: the engine has NO forced switch on
 faint, so a trainer fields exactly ONE monster.** `m_uActiveSlot` is written only

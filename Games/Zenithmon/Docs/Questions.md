@@ -10,7 +10,7 @@
 
 ## Open
 
-### [OPEN] Q-2026-07-28-001 -- a flagless trainer row has no re-engagement brake, so its prize is farmable
+### [RESOLVED 2026-07-28] Q-2026-07-28-001 -- a flagless trainer row has no re-engagement brake, so its prize is farmable
 
 **Question:** how should a trainer with NO defeat story flag be prevented from
 paying its prize repeatedly?
@@ -44,7 +44,30 @@ version bump and a historical-blob migration test in the same commit).
 **Cost if wrong:** bounded and local -- SC6's gate is one predicate, and no save
 data is involved under the adopted option.
 
-**Status:** asked 2026-07-28.
+**Status:** asked 2026-07-28; **RESOLVED 2026-07-28 by SC6 (ZM-D-154)**, exactly
+as the adopted best-guess specified. `ZM_MayTrainerEngage(row, bDefeatFlagSet,
+bSessionLatchSet)` in `Source/Interaction/ZM_TrainerSightFsm.cpp` keys on the
+row's defeat flag when `m_eDefeatFlag < ZM_STORY_FLAG_COUNT` and on the
+process-global `ZM_TrainerEngagementLatch` otherwise; an unregistered row fails
+CLOSED. No save-schema change was needed. The latch is a `u_int` bitmask, one bit
+per trainer, guarded by `static_assert(ZM_TRAINER_COUNT <= 32u)` and reset from
+Zenithmon.cpp's between-tests hook.
+
+**The asymmetry this creates is deliberate and is documented in the gate's own
+header comment so a future reader does not "fix" it:** losing to Vesper leaves him
+re-battleable (no flag is written on a loss), while losing to the rambler does not
+(his latch is set on the raise, not on the win). Locked by
+`Gate_FlaggedRowKeysOnItsDefeatFlagAndIgnoresTheLatch`,
+`Gate_FlaglessRowKeysOnTheSessionLatchAndIgnoresTheFlag`,
+`Gate_UnregisteredRowFailsClosed`, and the anti-vacuity
+`Gate_ShippedRosterStillExercisesBothArms` (which reds if the roster ever loses
+its flagged or its flagless row). Mutation M4 -- transposing the two gate arms --
+redded exactly 2 units.
+
+**Still open for a later stage, and deliberately not done now:** if rematch rules
+ever need to survive a save/load, the proper shape is a `ZM_TRAINER_ID`-indexed
+PERSISTED bitset (which is what mainline effectively has). The session latch is
+in-memory only.
 
 ---
 
