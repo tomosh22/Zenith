@@ -172,6 +172,48 @@ above:** Vulkan_True and Null_True both exit 0; headless registry **49 passed / 
 boot unit gate **2722 ran / 2721 passed / 0 failed / 1 skipped** -- equal to the pinned
 `zm-tests.yml` baseline, so the tree is green and unchanged.
 
+**★ QUEUE ITEM 1 IS UNDERWAY -- SC1 LANDED (ZM-D-163).** `ZM_TRAINER_SIGHT_APPROACHING` is
+appended at ordinal 4 with the pure `ZM_StepTrainerApproach`, **callerless** (the ZM-D-153
+shape), so `m_bApproachPossible` defaulting false leaves all 26 shipped FSM units unmodified.
+Observed: headless **49/0** (unmoved), boot **2722 -> 2731 / 2730 passed / 0 failed / 1
+skipped**, every committed `.zscen` byte-unchanged after a boot running all 216 authoring
+steps. Remaining for queue item 1: **SC2** (the cinematic freeze latch + arbitration -- reuse
+`m_bChannelBusy` and the menu/battle barriers, do NOT invent a second freeze concept), **SC3**
+(Vesper actually walks; re-authors `Dawnmere.zscen`, so the full two-boot SHA256 proof is
+owed, and he must stay OBB/keep his authored yaw), **SC4** (the camera cut).
+
+**★ SC4 REVERSES A RECORDED DECISION ON NEW EVIDENCE, AND THAT IS DELIBERATE.** ZM-D-159 cut
+the camera cut as needing "a real engine/game-camera feature". A code survey found that
+unsupported: `ZM_FollowCamera` is a **Zenithmon component (order 103)** and is the SOLE writer
+of the camera pose, so the override belongs INSIDE it and **no `Zenith/` change is required**.
+Reversing a logged decision on evidence is what the DecisionLog is for; SC4's own entry must
+say so plainly.
+
+**★ THREE TRAPS THIS SESSION PAID FOR -- read before repeating the work:**
+1. **A totality walker that does not iterate `_STATE_COUNT` is not one.**
+   `Fsm_StepNeverAssertsOnAnyDegenerateInput` hand-builds four seed fixtures; only its NAME
+   walks iterate the enum. A newly appended state was invisible to it while looking covered.
+   **The next appended state must add its own sweep.**
+2. **One sample per arm measures the machine, not the change.** The boot suite was timed at
+   175s (2722 units) then 193s (2731) and the delta blamed on the new tests -- then the
+   *trimmed* build measured 229/235s with 83% fewer operations. Variance exceeds the effect.
+   The suite is **per-test-fixture bound** (`Zenith_TestResetGlobalState` runs once per test;
+   2722 x ~64ms is essentially the whole runtime), so test BODIES are noise and adding a unit
+   costs ~64ms regardless of what it does. Take a second sample before accusing a diff.
+3. **A file restored with `Copy-Item` keeps its old `LastWriteTime`, so MSBuild skips it.**
+   That leaves a STALE `.obj` and a green build against a binary lacking the code under test.
+   It only surfaced as a link error because a second TU in the same build had also changed.
+   Touch restored files, or clean. Same silent-success family as a skipped `regen.ps1`.
+
+**★ AND A PRE-EXISTING CI LANDMINE, NOW FIXED (ZM-D-163).** `run_unit_gate.ps1` defaults to a
+**180s** watchdog and `zm-tests.yml` passed no `-TimeoutSec`. The watchdog is a HANG guard, but
+because the units line must be logged before the kill it silently caps the suite's RUNTIME --
+and the suite measures **175-235s**, i.e. it straddles the default and lands on whichever side
+machine load decides. Losing that race reports `no 'Unit tests complete' line in boot output`,
+which reads as a crash or loader failure and points at the wrong culprit. Now `-TimeoutSec 600`
+in the workflow, with the coupling documented in the script header. **Unrelated to SC1; it
+would have bitten whichever commit next added units.**
+
 **What the vertical actually does now, end to end:** the player walks around Dawnmere;
 rival Vesper stands AUTHORED in the town at (490, 524) facing the spawn approach; when
 the player enters his 8 m / 60-degree forward cone with an unblocked line of sight a

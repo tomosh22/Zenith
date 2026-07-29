@@ -15,6 +15,126 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-29 -- ZM-D-163 -- S7 item 3 SC1: the APPROACHING state lands pure and callerless, and the boot gate is found racing its own watchdog
+
+*(No new `.cpp`, `.h`, folder, scene, asset, ECS order or serialization version -- 114 is still
+next-free, `uSERIALIZATION_VERSION` stays `2u` -- and therefore **no `Build\regen.ps1`**. Two
+files outside `Games/Zenithmon/` change: `.github/workflows/zm-tests.yml` and
+`Tools/run_unit_gate.ps1`, both for the watchdog finding below.)*
+
+### Decision
+
+`ZM_TRAINER_SIGHT_APPROACHING` is appended at ordinal 4 of `ZM_TRAINER_SIGHT_STATE`
+(append-only; SPOTTED keeps 3), with inputs `m_bApproachPossible` / `m_bApproachArrived`,
+tuning `m_fApproachTimeoutSeconds = 2.0f` / `m_fApproachStandoffMetres = 2.0f`, observables
+`GetApproachCount()` / `GetApproachElapsedSeconds()`, and the pure
+`ZM_StepTrainerApproach(trainer, target, standoff, speed) -> {dirXZ, speed, arrived}`.
+**Nothing calls any of it at runtime** -- the same shape ZM-D-153 used for
+`BuildTrainerBattleConfig()`. `m_bApproachPossible` defaults **false**, so `CompleteSpottedBeat`
+reduces to the pre-SC1 CHALLENGING/raise handoff byte for byte and **all 26 existing sight-FSM
+units pass unmodified** (the technique SC7 used for `m_bChallengeAvailable`).
+
+This is the first of the sub-commits that close `Roadmap.md:104`'s two unshipped verbs,
+`freeze input` and `approach` (see ZM-D-162 for why that box is honestly unticked).
+
+**Adopted orderings, both pinned by units rather than comments:** (a) inside APPROACHING the
+order is cancel -> busy-defer -> fail-open -> accumulate, mirroring SPOTTED, so the busy defer
+**outranks** the fail-open and the fail-open is a *free-tick* guarantee; (b) the
+degenerate-timeout fail-open is decided **BEFORE** the state entry, because deciding it after
+produces an identical action *and* an identical final state -- `m_uApproachCount` is the sole
+witness. That is why the count exists, and why `Fsm_ApproachCountIsMonotonicAndMatchesEntries`
+derives its tally from observed `GetState()` transitions rather than a bare `++` (the W3 defect,
+ZM-D-159, reproduced as a design rule).
+
+**Graph independence, carried from SC7:** the APPROACHING route never consults
+`m_bChallengeAvailable`, so a `_False`/CI build with no `.bgraph` loses the bark and keeps both
+the walk and the battle. `ZM_StepTrainerApproach` is XZ-only and TOTAL: degenerate input yields
+zero speed **and** `m_bArrived = true`, so the caller fails OPEN -- "I cannot walk" must be
+indistinguishable from "I have walked far enough", or a corrupt tuning parks a trainer in
+APPROACHING for the whole timeout.
+
+### ★ A TOTALITY WALKER THAT DOES NOT ITERATE `_STATE_COUNT` IS NOT A TOTALITY WALKER
+
+The SC1 plan asserted that both existing walkers iterate `ZM_TRAINER_SIGHT_STATE_COUNT` and would
+cover the new ordinal for free. **Half of that was false, and it was checked rather than
+believed.** `Fsm_StateAndActionNamesStayTotalAndDistinct` is clean -- every bound is
+`_STATE_COUNT`, plus explicit probes at `_STATE_COUNT` and `+1`. But
+`Fsm_StepNeverAssertsOnAnyDegenerateInput`'s **Step** cross-product does not iterate the enum at
+all: it hand-builds four seed fixtures, sweeps a 5-bit bool mask, and its window triple contains
+raise/challenge/spotted only. **A state reachable only via a new input and gated on a new tuning
+field was completely invisible to it**, while its name walks -- which *do* iterate `_STATE_COUNT`
+-- passed and made it look covered. A dedicated narrow sweep was added instead of promoting the
+triple to a quadruple (~9M Steps per boot for no extra reach).
+**Binding on the next appended state: this walker will NOT pick you up. Add your own sweep.**
+
+### ★ THE BOOT GATE HAS BEEN RACING ITS OWN WATCHDOG, AND THIS IS THE REAL FIND
+
+`Tools/run_unit_gate.ps1` defaults `-TimeoutSec 180`. That watchdog exists to kill the known
+tools-build idle **after** the units line is logged -- it is a hang guard. But the units line must
+be written before the kill, so **it silently doubles as a ceiling on how long the unit suite may
+take**, and `zm-tests.yml` was invoking the script with no `-TimeoutSec` at all.
+
+Measured on one idle dev machine, seconds from process start to the "Unit tests complete" line:
+**175 (2722 units), 193 (2731), 229 and 235 (2731, after a 6x reduction in test-body work).**
+
+**The suite straddles the 180s default, and which side it lands on is decided by machine load
+rather than by the code under test.** When it loses that race the gate reports
+`no 'Unit tests complete' line in boot output` -- which reads like a crash or a DLL load failure,
+i.e. it points at the wrong culprit entirely (and there is already a recorded gate-order tripwire
+about exactly that message meaning a loader failure). Fixed by passing `-TimeoutSec 600` in
+`zm-tests.yml` and documenting the coupling in the script header. This is **pre-existing and
+independent of SC1**; it would have bitten whichever commit next added units.
+
+### ★ AND THE MEASUREMENT LESSON, RECORDED BECAUSE THE ORCHESTRATOR GOT IT WRONG FIRST
+
+The 175 -> 193 delta was initially attributed to SC1's new sweeps (~2s per unit against a
+~64ms average) and the implementer was sent to trim them. **It pushed back with arithmetic:** its
+additions total ~18,000 FSM/maths ops, so an 18s cost implies ~1.0ms per `Step` -- a switch over
+five enum cases with no allocation -- which is 3-4 orders of magnitude too slow. It located the
+real cost instead: `Zenith_TestRunner::RunAllTests` calls `Zenith_TestResetGlobalState()` **once
+per test**, and 2722 x ~64ms is essentially the entire baseline. **The suite is per-test-fixture
+bound; test bodies are noise.**
+**Then the trimmed build measured SLOWER (229/235s) than the untrimmed one (193s) despite 83%
+fewer operations** -- which settles it: run-to-run variance exceeds the effect, and a
+one-sample-each A/B could never have supported the conclusion. The trim was KEPT, but on its
+merits (see below), not on a performance claim that does not survive a second sample.
+**The rule: before attributing a regression to a diff, take a second sample of each side. One
+sample per arm measures the machine, not the change.**
+
+The trim was kept because it made one test **stronger**: the old 2401-case maths sweep tied
+`standoff` to `trainer.z` and `speed` to `target.x`, so those two guards could only fire once a
+position guard had already short-circuited -- **they were never exercised in isolation at all.**
+The 625-case replacement rotates the derived indices so healthy-positions-with-NaN-standoff and
+healthy-positions-with-NaN-speed genuinely occur.
+
+### ★ A THIRD TRAP, ORCHESTRATOR-CAUSED, WORTH NOT REPEATING
+
+To measure the baseline the three SC1 files were copied aside, reverted, built, then restored with
+`Copy-Item` -- **which preserves `LastWriteTime`**. The restored `.cpp` therefore came back OLDER
+than the `.obj` MSBuild had just produced from the reverted source, MSBuild judged it up to date,
+and it was never recompiled. The link then failed on `ZM_StepTrainerApproach` **only because a
+second TU in the same build had also changed and referenced it**. Had the test file not changed
+too, the build would have gone green against a binary that did not contain the code under test,
+and the timings taken from it would have been reported as real. **This is the same silent-success
+family as a skipped `regen.ps1`, arriving by a different route: a restored file must be touched,
+or the build must be cleaned.**
+
+- **Tests that lock it:** +9 boot units in `Tests/ZM_Tests_TrainerSightFsm.cpp` (26 -> 35 in that
+  TU). Observed gate, orchestrator-run: Vulkan_True and Null_True both exit 0; headless registry
+  **49 passed / 0 failed** (unmoved -- SC1 adds no `ZENITH_INPUT_SIMULATOR` code); boot units
+  **2731 ran / 2730 passed / 0 failed / 1 skipped**, exactly the predicted +9; every committed
+  `.zscen` byte-unchanged after a boot that ran all 216 authoring steps. `zm-tests.yml` baseline
+  bumped 2722 -> 2731 in this commit.
+- **Teeth:** five mutations named and reasoned per-test (transposed SPOTTED-exit condition;
+  cancel-arm `||`->`&&`; inverted timer accumulation; fail-open moved after state entry;
+  transposed `(xTrainer, xTarget)`). **NOT executed this commit** -- they are recorded as the
+  battery SC3 must run once the state has a live caller, since four of the five are only
+  observable through behaviour SC1 deliberately ships with no runtime path.
+- **Reversibility:** trivial. Nothing calls the new state; deleting the enum arm, the two inputs,
+  the two tuning fields and the pure function returns the FSM to its SC7 shape exactly.
+
+---
+
 ## 2026-07-29 -- ZM-D-162 -- S7 is NOT complete: the Roadmap checkbox outranks the Status.md summary
 
 *(Docs only. No source, no scene, no asset, no ECS order, no serialization version, no new

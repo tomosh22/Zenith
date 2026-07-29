@@ -12,6 +12,18 @@
 // ZM_TRAINER_NONE sentinel on purpose to pin the fail-closed answers.
 // ============================================================================
 
+namespace
+{
+	// S7 item 1 SC1. XZ-only finiteness, spelled here rather than reached for in
+	// ZM_NpcWalkerLogic.cpp (where the identical helper is file-local and must stay
+	// so). Y is deliberately NOT tested: a NaN height must not be able to veto a
+	// perfectly good horizontal approach.
+	bool ZM_IsApproachFiniteXZ(const Zenith_Maths::Vector3& xValue)
+	{
+		return std::isfinite(xValue.x) && std::isfinite(xValue.z);
+	}
+}
+
 u_int ZM_TrainerEngagementLatch::s_uEngagedMask = 0u;
 
 void ZM_TrainerEngagementLatch::MarkEngaged(ZM_TRAINER_ID eTrainer)
@@ -50,6 +62,7 @@ const char* ZM_TrainerSightStateName(ZM_TRAINER_SIGHT_STATE eState)
 	case ZM_TRAINER_SIGHT_ENGAGED:     return "ENGAGED";
 	case ZM_TRAINER_SIGHT_CHALLENGING: return "CHALLENGING";
 	case ZM_TRAINER_SIGHT_SPOTTED:     return "SPOTTED";
+	case ZM_TRAINER_SIGHT_APPROACHING: return "APPROACHING";
 	// A switch, not a table lookup, precisely so ZM_TRAINER_SIGHT_STATE_COUNT and
 	// anything past it land here instead of reading off the end of an array.
 	default:                           return "UNKNOWN";
@@ -99,6 +112,70 @@ void ZM_TrainerSightFsm::Reset()
 	m_uChallengeCount = 0u;
 	m_fSpottedElapsed = 0.0f;
 	m_uSpottedCount = 0u;
+	m_fApproachElapsed = 0.0f;
+	m_uApproachCount = 0u;
+}
+
+ZM_TrainerApproachStep ZM_StepTrainerApproach(const Zenith_Maths::Vector3& xTrainer,
+	const Zenith_Maths::Vector3& xTarget,
+	float fStandoff,
+	float fSpeed)
+{
+	ZM_TrainerApproachStep xStep{};
+
+	// ★ ARRIVED IS THE DEFAULT ANSWER FOR EVERY REJECTION BELOW, not merely zero
+	// speed. See the header: the caller only ever uses m_bArrived to STOP WAITING,
+	// so "I cannot walk" must look exactly like "I have walked far enough". It is
+	// set once here and cleared on the single success path at the bottom, so a
+	// rejection added later cannot forget it.
+	xStep.m_bArrived = true;
+
+	if (!ZM_IsApproachFiniteXZ(xTrainer) || !ZM_IsApproachFiniteXZ(xTarget))
+	{
+		return xStep;
+	}
+	// A NEGATIVE standoff is degenerate rather than "get closer": it names a ring
+	// no position can be inside. A standoff of EXACTLY zero is legitimate and means
+	// "stand on the target", so it is admitted.
+	if (!(std::isfinite(fStandoff) && fStandoff >= 0.0f))
+	{
+		return xStep;
+	}
+	// A non-positive or non-finite speed is a trainer who cannot move. Fail OPEN
+	// rather than returning "walking at 0 m/s", which would burn the whole approach
+	// timeout achieving nothing.
+	if (!(std::isfinite(fSpeed) && fSpeed > 0.0f))
+	{
+		return xStep;
+	}
+
+	// XZ ONLY, and the ONE place the trainer/target order is decided. std::hypot
+	// rather than sqrt(dx*dx + dz*dz) so a legitimately large-but-finite separation
+	// cannot overflow into an infinity on the way to a finite answer.
+	const float fDeltaX = xTarget.x - xTrainer.x;
+	const float fDeltaZ = xTarget.z - xTrainer.z;
+	const float fDistance = std::hypot(fDeltaX, fDeltaZ);
+	if (!std::isfinite(fDistance))
+	{
+		return xStep;
+	}
+	// INCLUSIVE, matching ZM_StepWalker's arrive radius. Note that a coincident
+	// pair (fDistance == 0.0f) lands HERE for every admitted standoff, which is
+	// exactly what makes the reciprocal below division-safe -- there is no separate
+	// zero-length guard because there cannot be a zero length past this line.
+	if (fDistance <= fStandoff)
+	{
+		return xStep;
+	}
+
+	const float fInverseDistance = 1.0f / fDistance;
+	xStep.m_xDirXZ = Zenith_Maths::Vector3(
+		fDeltaX * fInverseDistance,
+		0.0f,
+		fDeltaZ * fInverseDistance);
+	xStep.m_fSpeed = fSpeed;
+	xStep.m_bArrived = false;
+	return xStep;
 }
 
 ZM_TRAINER_SIGHT_ACTION ZM_TrainerSightFsm::Step(const ZM_TrainerSightInputs& xInputs,
@@ -107,13 +184,17 @@ ZM_TRAINER_SIGHT_ACTION ZM_TrainerSightFsm::Step(const ZM_TrainerSightInputs& xI
 	// SIGHT is the CONJUNCTION: inside the pure cone AND with an unblocked line.
 	// This single expression is where occlusion enters the decision.
 	const bool bSees = xInputs.m_bTargetInSight && xInputs.m_bSightLineClear;
-	// The SC6/SC7 handoff, reproduced EXACTLY and reachable from two arms: the
-	// WATCHING fail-open, and the completion of a real SPOTTED beat. Note it reads
-	// m_bChallengeAvailable on the tick the beat COMPLETES rather than on the
-	// sighting tick; that is immaterial because the flag is derived from a compiled
-	// roster row and is constant for the life of a component, but it is a real
-	// difference from the pre-W3 code and is recorded here rather than assumed away.
-	const auto CompleteSpottedBeat = [this, &xInputs]()
+	// The SC6/SC7 handoff, reproduced EXACTLY and now reachable from three arms: the
+	// WATCHING fail-open, the completion of a real SPOTTED beat, and (S7 item 1 SC1)
+	// the completion of a real APPROACHING walk. Note it reads m_bChallengeAvailable
+	// on the tick the beat COMPLETES rather than on the sighting tick; that is
+	// immaterial because the flag is derived from a compiled roster row and is
+	// constant for the life of a component, but it is a real difference from the
+	// pre-W3 code and is recorded here rather than assumed away.
+	//
+	// ★ ITS BODY IS UNCHANGED FROM SC7, byte for byte. SC1 renamed it (it is no
+	// longer only the spotted beat's ending) and wrapped it -- it did not touch it.
+	const auto CompleteChallengeOrRaise = [this, &xInputs]()
 	{
 		if (xInputs.m_bChallengeAvailable)
 		{
@@ -129,6 +210,42 @@ ZM_TRAINER_SIGHT_ACTION ZM_TrainerSightFsm::Step(const ZM_TrainerSightInputs& xI
 		m_bRaiseConfirmed = false;
 		++m_uRaiseCount;
 		return ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER;
+	};
+
+	// S7 item 1 SC1. THE SPOTTED EXIT, and the ONE place the walk is inserted.
+	//
+	// ★ WITH m_bApproachPossible FALSE -- ITS DEFAULT, AND WHAT EVERY SHIPPED CALLER
+	// STILL SENDS -- THIS IS EXACTLY CompleteChallengeOrRaise() AND NOTHING ELSE.
+	// That is the entire no-behaviour-change claim of this sub-commit, and it is why
+	// no existing unit needed touching.
+	//
+	// ★ IT NEVER CONSULTS m_bChallengeAvailable. The challenge .bgraph is gitignored,
+	// so a _False or CI build loses the BARK and keeps the BATTLE (SC7's fail-open
+	// design); the walk-up has to be graph-independent for the same reason, or a
+	// build with no graph would silently lose the approach as well.
+	const auto CompleteSpottedBeat = [this, &xInputs, &xTuning, &CompleteChallengeOrRaise]()
+	{
+		if (!xInputs.m_bApproachPossible)
+		{
+			return CompleteChallengeOrRaise();
+		}
+		// ★ THE FAIL-OPEN IS DECIDED BEFORE THE STATE ENTRY, for the same reason the
+		// WATCHING arm decides m_fSpottedSeconds before entering SPOTTED: entering
+		// first would book a walk in m_uApproachCount that no frame could ever show,
+		// because the caller reads the state only AFTER Step and would find the
+		// machine already handed off. Moving these four lines below the entry keeps
+		// the returned action and the final state IDENTICAL -- the count is the only
+		// witness, which is precisely why it is asserted on.
+		if (!(std::isfinite(xTuning.m_fApproachTimeoutSeconds)
+				&& xTuning.m_fApproachTimeoutSeconds > 0.0f))
+		{
+			return CompleteChallengeOrRaise();
+		}
+
+		m_eState = ZM_TRAINER_SIGHT_APPROACHING;
+		m_fApproachElapsed = 0.0f;
+		++m_uApproachCount;
+		return ZM_TRAINER_SIGHT_ACTION_NONE;
 	};
 
 	switch (m_eState)
@@ -207,6 +324,66 @@ ZM_TRAINER_SIGHT_ACTION ZM_TrainerSightFsm::Step(const ZM_TrainerSightInputs& xI
 			// -- the Reset unit needs a populated accumulator to dirty, and the live
 			// walk-up asserts the completed beat ran at least its configured length.
 			return CompleteSpottedBeat();
+		}
+		return ZM_TRAINER_SIGHT_ACTION_NONE;
+
+	case ZM_TRAINER_SIGHT_APPROACHING:
+		// S7 item 1 SC1. ★ THE ARM ORDER BELOW IS THE SPECIFICATION, and it mirrors
+		// SPOTTED's cancel -> busy -> fail-open -> accumulate one case up ON PURPOSE.
+		// Two states that both mean "a cancellable presentation window is running"
+		// must not answer the same question in two different orders.
+		if (!bSees || !xInputs.m_bMayEngage)
+		{
+			// (1) CANCEL. SC1 freezes nobody -- the freeze owner arrives in a later
+			// sub-commit -- so walking out of the cone or stepping behind cover is
+			// still a first-class cancel, and a gate closing mid-walk cancels too.
+			// The partial timer is cleared HERE and only here, exactly as SPOTTED
+			// clears m_fSpottedElapsed only on its cancel arm.
+			//
+			// ★ THE DISJUNCTION IS LOAD-BEARING. As a conjunction this arm would
+			// require the player to leave the cone AND the gate to slam in the same
+			// frame, so each of the two real cancels would silently stop working.
+			m_eState = ZM_TRAINER_SIGHT_WATCHING;
+			m_fApproachElapsed = 0.0f;
+			return ZM_TRAINER_SIGHT_ACTION_NONE;
+		}
+		if (xInputs.m_bChannelBusy)
+		{
+			// (2) PAUSE WITHOUT CONSUMING. Another screen owns the channel, so the
+			// walk holds where it is; the free tick below resumes the same beat.
+			// ★ THIS PRECEDES THE FAIL-OPEN DELIBERATELY -- the same
+			// defer-do-not-consume rule WATCHING and SPOTTED already apply. Handing
+			// off into a busy channel would raise into a dispatch that gets silently
+			// dropped, so a permanently busy channel must hold the walk open rather
+			// than spend it. The fail-open below is a FREE-TICK guarantee.
+			return ZM_TRAINER_SIGHT_ACTION_NONE;
+		}
+		if (!(std::isfinite(xTuning.m_fApproachTimeoutSeconds)
+				&& xTuning.m_fApproachTimeoutSeconds > 0.0f))
+		{
+			// (3) FAIL OPEN. A corrupt timeout must not strand the battle behind the
+			// walk. Checked BEFORE the accumulate, so a degenerate window costs
+			// nothing and cannot be mistaken for an elapsed one.
+			return CompleteChallengeOrRaise();
+		}
+		// A non-finite or non-positive dt contributes NOTHING (the SC6 rule), so the
+		// accumulator can never go NaN and the timeout can never fire on a garbage
+		// frame.
+		if (std::isfinite(xInputs.m_fDeltaSeconds) && xInputs.m_fDeltaSeconds > 0.0f)
+		{
+			m_fApproachElapsed += xInputs.m_fDeltaSeconds;
+		}
+		if (xInputs.m_bApproachArrived
+			|| m_fApproachElapsed >= xTuning.m_fApproachTimeoutSeconds)
+		{
+			// (4) PROCEED. Arrival SHORT-CIRCUITS the timeout: the timeout exists
+			// only for a body that can never arrive, and in the normal case the walk
+			// must end when the trainer is standing there, not seconds later.
+			// ★ THE ACCUMULATOR IS DELIBERATELY NOT CLEARED ON COMPLETION (only the
+			// cancel arm clears it), so GetApproachElapsedSeconds() still reads how
+			// long the finished walk actually ran -- the same rule SPOTTED follows,
+			// and what lets a unit prove the arrival beat the clock.
+			return CompleteChallengeOrRaise();
 		}
 		return ZM_TRAINER_SIGHT_ACTION_NONE;
 

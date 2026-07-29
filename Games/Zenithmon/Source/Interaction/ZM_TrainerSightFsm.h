@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Maths/Zenith_Maths.h"                     // Zenith_Maths::Vector3 (the S7 item 1 SC1 approach step)
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"    // ZM_STORY_FLAG_COUNT (the "row has a flag" test)
 #include "Zenithmon/Source/Data/ZM_TrainerData.h"   // ZM_TrainerData / ZM_TRAINER_ID / ZM_IsRegisteredTrainer
 
@@ -37,6 +38,16 @@ enum ZM_TRAINER_SIGHT_STATE : u_int
 	// and either the challenge bark or a silent trainer's encounter. APPENDED to
 	// preserve every shipped ordinal; session-only and never serialized.
 	ZM_TRAINER_SIGHT_SPOTTED,
+	// S7 item 1 SC1. The walk-up: the trainer physically closes the gap before the
+	// bark/encounter handoff runs. APPENDED at ordinal 4 -- SPOTTED keeps 3 and no
+	// shipped ordinal moves, for the same reason CHALLENGING and SPOTTED were
+	// appended rather than inserted.
+	//
+	// ★ NOTHING ENTERS THIS STATE UNLESS ZM_TrainerSightInputs::m_bApproachPossible
+	// IS TRUE, and that field defaults FALSE, so every caller that has not been
+	// taught about the walk keeps the pre-SC1 SPOTTED exit byte for byte. SC1 ships
+	// the state and its maths with NO runtime caller on purpose.
+	ZM_TRAINER_SIGHT_APPROACHING,
 
 	// NOT a state -- the walkable bound the totality unit iterates to.
 	ZM_TRAINER_SIGHT_STATE_COUNT
@@ -82,6 +93,24 @@ struct ZM_TrainerSightInputs
 	// after it, false routes directly to the encounter and true routes to the bark.
 	bool  m_bChallengeAvailable = false;
 
+	// S7 item 1 SC1. TRUE only when this trainer can physically WALK: the component
+	// owns a valid DYNAMIC CAPSULE body on an active simulation (the contract
+	// ZM_Interactable::TryConfigureWanderBody already enforces). It is NOT a
+	// designer switch and it is NOT read from the roster row -- a trainer authored
+	// as a static box simply never approaches.
+	//
+	// ★ IT DEFAULTS FALSE, AND THAT DEFAULT IS THE WHOLE COMPATIBILITY STORY. Every
+	// shipped caller that has not been taught to fill it keeps the pre-SC1 SPOTTED
+	// exit unchanged, which is exactly the technique m_bChallengeAvailable above
+	// used when SC7 landed.
+	bool  m_bApproachPossible = false;
+	// S7 item 1 SC1. TRUE when the walk is DONE -- the impure half measured the XZ
+	// gap with ZM_StepTrainerApproach and found it inside the standoff ring. It
+	// SHORT-CIRCUITS m_fApproachTimeoutSeconds; that timeout exists only so a body
+	// which can never arrive (wedged on geometry, asleep, shoved off a ledge)
+	// cannot strand the battle behind the walk.
+	bool  m_bApproachArrived  = false;
+
 	float m_fDeltaSeconds   = 0.0f;
 };
 
@@ -121,6 +150,26 @@ struct ZM_TrainerSightFsmTuning
 	// checked FIRST and outranks it, exactly as it already does in WATCHING, since
 	// raising into a busy channel is silently dropped.
 	float m_fSpottedSeconds = 0.35f;
+
+	// S7 item 1 SC1. The longest the walk-up may run before the machine stops
+	// waiting to arrive and hands off anyway.
+	//
+	// ★ FAILS OPEN ON A FREE TICK, the SAME polarity as m_fSpottedSeconds above and
+	// for the same reason: the walk is PRESENTATION, and presentation must never be
+	// able to suppress the battle. Two ordering rules come with it and are pinned by
+	// units, not by this comment:
+	//   * the busy-channel defer is checked FIRST and OUTRANKS the fail-open, so the
+	//     fail-open is a FREE-TICK guarantee rather than an unconditional one;
+	//   * the fail-open is decided BEFORE the state entry, so m_uApproachCount can
+	//     never book a walk that no frame could ever show. (Deciding it after entry
+	//     produces an IDENTICAL action and an IDENTICAL final state -- only the
+	//     count can see the difference, which is why the count exists.)
+	float m_fApproachTimeoutSeconds = 2.0f;
+
+	// S7 item 1 SC1. How close, in metres, the trainer stops to the target. Read
+	// ONLY by ZM_StepTrainerApproach; the FSM itself never sees a position, which is
+	// precisely why the answer reaches it as the m_bApproachArrived bool.
+	float m_fApproachStandoffMetres = 2.0f;
 };
 
 class ZM_TrainerSightFsm
@@ -155,6 +204,15 @@ public:
 	u_int GetSpottedCount() const { return m_uSpottedCount; }
 	float GetSpottedElapsedSeconds() const { return m_fSpottedElapsed; }
 
+	// S7 item 1 SC1 observables, same doctrine as the three counters above.
+	// MONOTONIC count of walk-ups actually ENTERED. Assert on THIS rather than on
+	// the state alone: a machine stubbed to sit in APPROACHING would satisfy a state
+	// check while never having taken a step, and -- the sharper case -- a fail-open
+	// decided one line too late books a beat here that no frame could ever render,
+	// which the action and the final state are both blind to.
+	u_int GetApproachCount() const { return m_uApproachCount; }
+	float GetApproachElapsedSeconds() const { return m_fApproachElapsed; }
+
 private:
 	ZM_TRAINER_SIGHT_STATE m_eState          = ZM_TRAINER_SIGHT_WATCHING;
 	float                  m_fConfirmElapsed = 0.0f;
@@ -167,12 +225,59 @@ private:
 
 	float                  m_fSpottedElapsed = 0.0f;
 	u_int                  m_uSpottedCount    = 0u;
+
+	float                  m_fApproachElapsed = 0.0f;
+	u_int                  m_uApproachCount   = 0u;
 };
 
 // A stable short name for a state / action, for log lines and unit failure
 // messages. TOTAL: never null, never indexes out of bounds ("UNKNOWN").
 const char* ZM_TrainerSightStateName(ZM_TRAINER_SIGHT_STATE eState);
 const char* ZM_TrainerSightActionName(ZM_TRAINER_SIGHT_ACTION eAction);
+
+// ---- The approach step (S7 item 1 SC1) ---------------------------------------
+//
+// The PURE maths behind the walk-up. One call takes the two world positions and
+// answers "which way, how fast, and are we there yet". The impure half -- reading
+// the two transforms and pushing the answer through ZM_BuildPatrolVelocity onto a
+// dynamic capsule -- stays in ZM_Interactable.cpp, exactly where UpdateWander's
+// already lives; NOTHING here touches the ECS, the physics world or a navmesh.
+//
+// ★ SC1 SHIPS THIS WITH NO RUNTIME CALLER, deliberately. It is the same shape
+// ZM_BattleDirector::BuildTrainerBattleConfig() landed in: the state and its
+// arithmetic are proven in isolation first, and a later sub-commit wires them to a
+// body. A pure layer with no caller changes no shipped behaviour by construction.
+struct ZM_TrainerApproachStep
+{
+	// Unit length in XZ with y == 0 exactly, or exactly zero when no motion is
+	// requested. Fed straight to ZM_BuildPatrolVelocity, which re-normalises and
+	// leaves the vertical component in the body's sole ownership.
+	Zenith_Maths::Vector3 m_xDirXZ = Zenith_Maths::Vector3(0.0f);
+	float m_fSpeed   = 0.0f;
+	bool  m_bArrived = false;
+};
+
+// TOTAL, and NEVER calls Zenith_Assert -- the boot units feed it NaN positions,
+// infinite standoffs and negative speeds on purpose.
+//
+// XZ ONLY: the Y difference belongs to the terrain and the capsule. Folding it in
+// would make a trainer standing on a slope believe he was still metres away while
+// stood on the player's toes.
+//
+// ★ IT FAILS **OPEN**. Every rejection below returns m_fSpeed == 0 AND
+// m_bArrived == true, because "I cannot walk" and "I have walked far enough" must
+// be INDISTINGUISHABLE to the caller: the only thing the caller does with
+// m_bArrived is stop waiting. A rejection that answered "not arrived, zero speed"
+// would park a trainer who can never move in APPROACHING until the timeout
+// expired -- i.e. it would turn a corrupt tuning into seconds of dead screen.
+//
+// Arrival is INCLUSIVE (distance <= standoff), matching ZM_StepWalker's arrive
+// radius, so the walk can never request a step that carries the trainer past the
+// ring it was asked to stop on.
+ZM_TrainerApproachStep ZM_StepTrainerApproach(const Zenith_Maths::Vector3& xTrainer,
+	const Zenith_Maths::Vector3& xTarget,
+	float fStandoff,
+	float fSpeed);
 
 // ---- The re-engagement gate (the adopted answer to Q-2026-07-28-001) --------
 //

@@ -145,6 +145,56 @@ namespace
 			"...and must NOT have raised: the beat PRECEDES the encounter, it never "
 			"replaces the ordering");
 	}
+
+	// The SC1 delta, spelled ONCE: the same passing fixture plus a trainer who can
+	// physically WALK (the component owns a dynamic capsule on an active
+	// simulation). Every approach unit below is this fixture with at most one
+	// further field flipped.
+	ZM_TrainerSightInputs MakeApproachInputs()
+	{
+		ZM_TrainerSightInputs xInputs = MakePassingInputs();
+		xInputs.m_bApproachPossible = true;
+		return xInputs;
+	}
+
+	// Drive the one approach BEAT every "starts from APPROACHING" unit depends on,
+	// and PROVE it happened -- including that it neither barked nor raised, which is
+	// the whole ordering claim of SC1. A helper that merely stepped would hand those
+	// units a silently cold watcher to assert against.
+	void ApproachOnce(ZM_TrainerSightFsm& xFsm,
+		const ZM_TrainerSightInputs& xInputs,
+		const ZM_TrainerSightFsmTuning& xTuning)
+	{
+		EnterSpotted(xFsm, xInputs, xTuning);
+		const ZM_TRAINER_SIGHT_ACTION eAction = FinishSpotted(xFsm, xInputs, xTuning);
+		ZENITH_ASSERT_EQ(eAction, ZM_TRAINER_SIGHT_ACTION_NONE,
+			"the spotted beat of a trainer who can WALK must hand off to the walk, not "
+			"to an action (got %s)", ZM_TrainerSightActionName(eAction));
+		ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_APPROACHING,
+			"...and must leave the machine APPROACHING (got %s)",
+			ZM_TrainerSightStateName(xFsm.GetState()));
+		ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 0u,
+			"...and must NOT have raised: the walk PRECEDES the encounter");
+		ZENITH_ASSERT_EQ(xFsm.GetChallengeCount(), 0u,
+			"...and must NOT have barked either -- the walk precedes the bark too");
+	}
+
+	// SC1's fail-OPEN contract for ZM_StepTrainerApproach, spelled once. Zero speed
+	// AND arrived: "I cannot walk" must be indistinguishable from "I have walked far
+	// enough", because the only thing the caller does with m_bArrived is stop
+	// waiting. Answering "not arrived, zero speed" would park a trainer who can
+	// never move in APPROACHING until the timeout burned itself out.
+	void AssertApproachFailedOpen(const ZM_TrainerApproachStep& xStep, const char* szContext)
+	{
+		ZENITH_ASSERT_TRUE(xStep.m_bArrived,
+			"%s: a degenerate approach must report ARRIVED so the caller fails OPEN",
+			szContext);
+		ZENITH_ASSERT_EQ_FLOAT(xStep.m_fSpeed, 0.0f, 0.0f,
+			"%s: a degenerate approach must request EXACTLY zero speed", szContext);
+		ZENITH_ASSERT_NEAR_VEC3(xStep.m_xDirXZ, Zenith_Maths::Vector3(0.0f), 0.0f,
+			"%s: a degenerate approach must request an exactly zero direction",
+			szContext);
+	}
 }
 
 // ---- The rising edge: one raise per continuous spotting -----------------------
@@ -873,6 +923,802 @@ ZENITH_TEST(ZM_Interaction, Fsm_SilentTrainerShowsSpottedThenRaisesWithoutChalle
 	}
 }
 
+// ---- S7 item 1 SC1: the APPROACHING walk-up ---------------------------------
+//
+// SC1 lands the state and the maths with NO runtime caller, so every unit below
+// drives the FSM directly. The compatibility claim -- that m_bApproachPossible
+// defaults false and therefore leaves every shipped path byte for byte as it was
+// -- is not asserted by a comment: it is the reason the twenty-six units ABOVE
+// still pass untouched, and the (a) half of the first unit re-states it.
+
+ZENITH_TEST(ZM_Interaction, Fsm_SpottedRoutesToApproachOnlyWhenPossible)
+{
+	const ZM_TrainerSightFsmTuning xTuning = MakeShippedTuning();
+
+	// ---- (a) THE NEGATIVE: no body to walk with -> the SHIPPED exit, unchanged --
+	// Swept over BOTH values of m_bChallengeAvailable, because the shipped exit has
+	// two destinations and a routing bug that only ever caught the silent one would
+	// otherwise hide behind the bark.
+	for (u_int uLines = 0u; uLines < 2u; ++uLines)
+	{
+		ZM_TrainerSightFsm xFsm;
+		ZM_TrainerSightInputs xInputs = MakePassingInputs();
+		xInputs.m_bChallengeAvailable = (uLines != 0u);
+		ZENITH_ASSERT_FALSE(xInputs.m_bApproachPossible,
+			"the shared passing fixture must DEFAULT to 'cannot walk' -- that default "
+			"is the entire reason the twenty-six units above needed no edit");
+
+		EnterSpotted(xFsm, xInputs, xTuning);
+		const ZM_TRAINER_SIGHT_ACTION eAction = FinishSpotted(xFsm, xInputs, xTuning);
+		const ZM_TRAINER_SIGHT_ACTION eExpected = (uLines != 0u)
+			? ZM_TRAINER_SIGHT_ACTION_RUN_CHALLENGE
+			: ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER;
+		ZENITH_ASSERT_EQ(eAction, eExpected,
+			"lines=%u: a trainer who cannot walk must take the pre-SC1 spotted exit "
+			"(expected %s, got %s)", uLines,
+			ZM_TrainerSightActionName(eExpected), ZM_TrainerSightActionName(eAction));
+		ZENITH_ASSERT_NE(xFsm.GetState(), ZM_TRAINER_SIGHT_APPROACHING,
+			"lines=%u: a trainer who cannot walk must NEVER enter APPROACHING", uLines);
+		ZENITH_ASSERT_EQ(xFsm.GetApproachCount(), 0u,
+			"lines=%u: ...and must never book a walk", uLines);
+	}
+
+	// ---- (b) THE PAIRED POSITIVE: the SAME fixture plus a body -> APPROACHING ---
+	// Without this half the negative above would be satisfied just as well by a
+	// state nothing can ever reach.
+	for (u_int uLines = 0u; uLines < 2u; ++uLines)
+	{
+		ZM_TrainerSightFsm xFsm;
+		ZM_TrainerSightInputs xInputs = MakeApproachInputs();
+		xInputs.m_bChallengeAvailable = (uLines != 0u);
+
+		EnterSpotted(xFsm, xInputs, xTuning);
+		const ZM_TRAINER_SIGHT_ACTION eAction = FinishSpotted(xFsm, xInputs, xTuning);
+		ZENITH_ASSERT_EQ(eAction, ZM_TRAINER_SIGHT_ACTION_NONE,
+			"lines=%u: starting the walk is not itself an action (got %s)",
+			uLines, ZM_TrainerSightActionName(eAction));
+		ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_APPROACHING,
+			"lines=%u: a trainer who CAN walk must leave SPOTTED into APPROACHING "
+			"(got %s)", uLines, ZM_TrainerSightStateName(xFsm.GetState()));
+		ZENITH_ASSERT_EQ(xFsm.GetApproachCount(), 1u,
+			"lines=%u: one sighting must book exactly one walk", uLines);
+		// ★ GRAPH INDEPENDENCE. The challenge .bgraph is gitignored, so a _False or
+		// CI build has NO lines at all; if the walk were routed through
+		// m_bChallengeAvailable the whole approach would vanish in exactly the builds
+		// the gate runs. lines=0 reaching APPROACHING here is that proof.
+		ZENITH_ASSERT_EQ(xFsm.GetChallengeCount(), 0u,
+			"lines=%u: the walk PRECEDES the bark and must not have started one", uLines);
+		ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 0u,
+			"lines=%u: the walk PRECEDES the encounter and must not have raised", uLines);
+	}
+}
+
+ZENITH_TEST(ZM_Interaction, Fsm_ApproachCancelsOnLostSightAndOnClosedGate)
+{
+	// TWO ARMS, ONE FLIPPED FIELD EACH, so exactly ONE of the disjunction's operands
+	// can be responsible for each cancel. Flipping both together would leave a
+	// conjunction (the M2 mutation) perfectly green.
+	for (u_int uArm = 0u; uArm < 2u; ++uArm)
+	{
+		ZM_TrainerSightFsm xFsm;
+		const ZM_TrainerSightFsmTuning xTuning = MakeShippedTuning();
+		const ZM_TrainerSightInputs xWalking = MakeApproachInputs();
+
+		ApproachOnce(xFsm, xWalking, xTuning);
+		ZENITH_ASSERT_EQ(xFsm.GetApproachCount(), 1u,
+			"arm %u must start from exactly one booked walk", uArm);
+
+		// Bank a PARTIAL walk (six 60Hz frames of a 2.0s window), so "clears the
+		// timer" below is asserting against a populated field rather than a cold one.
+		for (u_int u = 0u; u < 6u; ++u)
+		{
+			const ZM_TRAINER_SIGHT_ACTION eWalking = xFsm.Step(xWalking, xTuning);
+			ZENITH_ASSERT_EQ(eWalking, ZM_TRAINER_SIGHT_ACTION_NONE,
+				"arm %u frame %u: walking is not itself an action (got %s)",
+				uArm, u, ZM_TrainerSightActionName(eWalking));
+		}
+		ZENITH_ASSERT_GT(xFsm.GetApproachElapsedSeconds(), 0.0f,
+			"arm %u: the partial walk timer must be POPULATED before the cancel, or "
+			"the clear below proves nothing", uArm);
+		ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_APPROACHING,
+			"arm %u: a tenth of a 2.0s walk must not have finished it (got %s)",
+			uArm, ZM_TrainerSightStateName(xFsm.GetState()));
+
+		ZM_TrainerSightInputs xCancelled = xWalking;
+		if (uArm == 0u)
+		{
+			xCancelled.m_bTargetInSight = false;   // he walked out of the cone
+		}
+		else
+		{
+			xCancelled.m_bMayEngage = false;       // the gate slammed mid-walk
+		}
+		const ZM_TRAINER_SIGHT_ACTION eCancelled = xFsm.Step(xCancelled, xTuning);
+		ZENITH_ASSERT_EQ(eCancelled, ZM_TRAINER_SIGHT_ACTION_NONE,
+			"cancelling arm %u emitted an action (got %s)", uArm,
+			ZM_TrainerSightActionName(eCancelled));
+		ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_WATCHING,
+			"cancelling arm %u must re-arm WATCHING (got %s) -- ONE of the two "
+			"conditions is enough, so this arm reds a conjunction", uArm,
+			ZM_TrainerSightStateName(xFsm.GetState()));
+		ZENITH_ASSERT_EQ_FLOAT(xFsm.GetApproachElapsedSeconds(), 0.0f, 0.0f,
+			"cancelling arm %u must clear the partial walk timer", uArm);
+		ZENITH_ASSERT_EQ(xFsm.GetChallengeCount(), 0u,
+			"cancelling arm %u must not bark", uArm);
+		ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 0u,
+			"cancelling arm %u must not start a battle", uArm);
+		ZENITH_ASSERT_EQ(xFsm.GetApproachCount(), 1u,
+			"cancelling arm %u must not book a SECOND walk on its way out", uArm);
+
+		// PAIRED POSITIVE: the only thing that was wrong is the cancelled clause, so
+		// a genuinely new sighting must walk again.
+		ApproachOnce(xFsm, xWalking, xTuning);
+		ZENITH_ASSERT_EQ(xFsm.GetApproachCount(), 2u,
+			"a new sighting after cancel arm %u must be a SECOND distinct walk", uArm);
+	}
+}
+
+ZENITH_TEST(ZM_Interaction, Fsm_ApproachBusyChannelPausesAndOutranksFailOpen)
+{
+	ZM_TrainerSightFsm xFsm;
+	ZM_TrainerSightFsmTuning xTuning = MakeShippedTuning();
+	// Silent fixture on purpose: the handoff at the end is then RAISE_ENCOUNTER, so
+	// this unit also pins that the walk's fail-open is graph-independent.
+	const ZM_TrainerSightInputs xWalking = MakeApproachInputs();
+
+	ApproachOnce(xFsm, xWalking, xTuning);
+
+	// ---- (a) PAUSE WITHOUT CONSUMING, against a perfectly HEALTHY timeout -------
+	// Thirty simulated seconds at 10s a frame, which would blow through the 2.0s
+	// window many times over if the accumulator ran while the channel was busy.
+	ZM_TrainerSightInputs xBusy = xWalking;
+	xBusy.m_bChannelBusy  = true;
+	xBusy.m_fDeltaSeconds = 10.0f;
+	for (u_int u = 0u; u < 3u; ++u)
+	{
+		const ZM_TRAINER_SIGHT_ACTION eBusy = xFsm.Step(xBusy, xTuning);
+		ZENITH_ASSERT_EQ(eBusy, ZM_TRAINER_SIGHT_ACTION_NONE,
+			"busy walking step %u emitted an action (got %s)", u,
+			ZM_TrainerSightActionName(eBusy));
+		ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_APPROACHING,
+			"a busy channel must PAUSE, not consume, the walk (step %u, got %s)",
+			u, ZM_TrainerSightStateName(xFsm.GetState()));
+	}
+	ZENITH_ASSERT_EQ_FLOAT(xFsm.GetApproachElapsedSeconds(), 0.0f, 0.0f,
+		"thirty busy seconds must contribute exactly zero walk time");
+
+	// ---- (b) ...AND IT OUTRANKS THE FAIL-OPEN ----------------------------------
+	// The timeout now goes degenerate WHILE the channel is still busy. If the
+	// fail-open were checked first this would hand off immediately; the whole point
+	// of the ordering is that it does not, because handing off into a busy channel
+	// dispatches into a raise that is silently dropped.
+	xTuning.m_fApproachTimeoutSeconds = 0.0f;
+	for (u_int u = 0u; u < 3u; ++u)
+	{
+		const ZM_TRAINER_SIGHT_ACTION eHeld = xFsm.Step(xBusy, xTuning);
+		ZENITH_ASSERT_EQ(eHeld, ZM_TRAINER_SIGHT_ACTION_NONE,
+			"the busy defer must OUTRANK the degenerate-timeout fail-open (step %u, "
+			"got %s) -- the fail-open is a FREE-TICK guarantee, not an unconditional "
+			"one", u, ZM_TrainerSightActionName(eHeld));
+		ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_APPROACHING,
+			"a busy channel must hold the walk open even with a corrupt timeout "
+			"(step %u, got %s)", u, ZM_TrainerSightStateName(xFsm.GetState()));
+		ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 0u,
+			"nothing may have raised into a busy channel (step %u)", u);
+	}
+
+	// ---- (c) THE PAIRED POSITIVE: the free tick, and ONLY the fail-open ---------
+	// dt drops back to one 60Hz frame, so the timer cannot possibly be what fires
+	// here; the timeout is still degenerate, so the fail-open is the ONLY candidate.
+	ZM_TrainerSightInputs xFree = xWalking;
+	xFree.m_fDeltaSeconds = fFRAME_DT;
+	const ZM_TRAINER_SIGHT_ACTION eFreed = xFsm.Step(xFree, xTuning);
+	ZENITH_ASSERT_EQ(eFreed, ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+		"a degenerate walk timeout must fail OPEN on the first free tick (got %s) -- "
+		"presentation must never be able to suppress the battle",
+		ZM_TrainerSightActionName(eFreed));
+	ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_ENGAGED,
+		"the fail-open handoff must leave a silent trainer ENGAGED (got %s)",
+		ZM_TrainerSightStateName(xFsm.GetState()));
+	ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 1u,
+		"the freed channel must have produced exactly one raise");
+	// The accumulator is the WITNESS that the fail-open, not the clock, did this:
+	// the fail-open returns before the accumulate, so not one frame of walk time was
+	// ever banked across this entire unit.
+	ZENITH_ASSERT_EQ_FLOAT(xFsm.GetApproachElapsedSeconds(), 0.0f, 0.0f,
+		"the fail-open must be decided BEFORE the accumulate -- a non-zero timer here "
+		"means the clock fired and the fail-open was never exercised");
+}
+
+ZENITH_TEST(ZM_Interaction, Fsm_ApproachDegenerateTimeoutFailsOpenBeforeEntry)
+{
+	const float fNaN = std::numeric_limits<float>::quiet_NaN();
+	const float fInf = std::numeric_limits<float>::infinity();
+	constexpr u_int uDEGENERATE_COUNT = 5u;
+	const float afDEGENERATE[uDEGENERATE_COUNT] = { 0.0f, fNaN, fInf, -fInf, -1.0f };
+
+	for (u_int u = 0u; u < uDEGENERATE_COUNT; ++u)
+	{
+		ZM_TrainerSightFsm xFsm;
+		ZM_TrainerSightFsmTuning xTuning = MakeShippedTuning();
+		xTuning.m_fApproachTimeoutSeconds = afDEGENERATE[u];
+
+		const ZM_TrainerSightInputs xInputs = MakeApproachInputs();
+		EnterSpotted(xFsm, xInputs, xTuning);
+		const ZM_TRAINER_SIGHT_ACTION eAction = FinishSpotted(xFsm, xInputs, xTuning);
+
+		ZENITH_ASSERT_EQ(eAction, ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+			"degenerate walk timeout %u must fail OPEN straight past the walk (got %s)",
+			u, ZM_TrainerSightActionName(eAction));
+		ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_ENGAGED,
+			"degenerate walk timeout %u must leave a silent trainer ENGAGED (got %s)",
+			u, ZM_TrainerSightStateName(xFsm.GetState()));
+
+		// ★ THE LOAD-BEARING CLAUSE, AND THE ONLY ONE THAT CAN SEE THE ORDERING.
+		// Deciding the fail-open one line LATER -- after the state entry rather than
+		// before it -- returns the IDENTICAL action and leaves the IDENTICAL final
+		// state. The count is the sole witness that no walk was ever booked, and a
+		// booked walk that no frame could render is a beat the caller would submit
+		// an indicator for and then immediately tear down.
+		ZENITH_ASSERT_EQ(xFsm.GetApproachCount(), 0u,
+			"degenerate walk timeout %u BOOKED a walk before failing open -- the "
+			"fail-open must be decided BEFORE the state entry", u);
+		ZENITH_ASSERT_EQ_FLOAT(xFsm.GetApproachElapsedSeconds(), 0.0f, 0.0f,
+			"degenerate walk timeout %u banked walk time it never spent", u);
+	}
+
+	// PAIRED POSITIVE: the ONLY thing wrong above was the timeout, so a healthy one
+	// on the identical fixture must book exactly one walk. Without this the negative
+	// is satisfiable by an APPROACHING state that nothing can ever enter.
+	ZM_TrainerSightFsm xHealthy;
+	const ZM_TrainerSightFsmTuning xHealthyTuning = MakeShippedTuning();
+	ApproachOnce(xHealthy, MakeApproachInputs(), xHealthyTuning);
+	ZENITH_ASSERT_EQ(xHealthy.GetApproachCount(), 1u,
+		"a HEALTHY timeout on the same fixture must book exactly one walk");
+	ZENITH_ASSERT_GT(xHealthyTuning.m_fApproachTimeoutSeconds, 0.0f,
+		"the shipped walk timeout must be a real positive duration, or the sweep "
+		"above is indistinguishable from the shipped tuning");
+}
+
+ZENITH_TEST(ZM_Interaction, Fsm_ApproachArrivalShortCircuitsTheTimer)
+{
+	// ---- (a) ARRIVAL, with the clock staged so it CANNOT be responsible ---------
+	ZM_TrainerSightFsm xFsm;
+	ZM_TrainerSightFsmTuning xTuning = MakeShippedTuning();
+	xTuning.m_fApproachTimeoutSeconds = 10.0f;   // an eternity next to five frames
+
+	ZM_TrainerSightInputs xWalking = MakeApproachInputs();
+	ApproachOnce(xFsm, xWalking, xTuning);
+
+	for (u_int u = 0u; u < 5u; ++u)
+	{
+		const ZM_TRAINER_SIGHT_ACTION eWalking = xFsm.Step(xWalking, xTuning);
+		ZENITH_ASSERT_EQ(eWalking, ZM_TRAINER_SIGHT_ACTION_NONE,
+			"frame %u of a ten-second walk window must produce nothing (got %s)",
+			u, ZM_TrainerSightActionName(eWalking));
+		ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_APPROACHING,
+			"frame %u of a ten-second walk window must still be walking (got %s)",
+			u, ZM_TrainerSightStateName(xFsm.GetState()));
+	}
+	// The accumulator must be RUNNING but nowhere near the window: that is what
+	// makes the arrival below the only possible cause of the handoff.
+	ZENITH_ASSERT_GT(xFsm.GetApproachElapsedSeconds(), 0.0f,
+		"the walk clock must be RUNNING, or the short-circuit below is vacuous");
+	ZENITH_ASSERT_LT(xFsm.GetApproachElapsedSeconds(), xTuning.m_fApproachTimeoutSeconds,
+		"the walk clock must be nowhere near its window, or the timer -- not the "
+		"arrival -- could be what ends the beat");
+
+	ZM_TrainerSightInputs xArrived = xWalking;
+	xArrived.m_bApproachArrived = true;
+	const ZM_TRAINER_SIGHT_ACTION eArrived = xFsm.Step(xArrived, xTuning);
+	ZENITH_ASSERT_EQ(eArrived, ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+		"arriving must end the walk IMMEDIATELY (got %s) -- the timeout exists only "
+		"for a body that can never arrive", ZM_TrainerSightActionName(eArrived));
+	ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_ENGAGED,
+		"the arrival handoff must leave a silent trainer ENGAGED (got %s)",
+		ZM_TrainerSightStateName(xFsm.GetState()));
+	ZENITH_ASSERT_EQ(xFsm.GetRaiseCount(), 1u,
+		"the arrival must produce exactly one raise");
+	ZENITH_ASSERT_LT(xFsm.GetApproachElapsedSeconds(), xTuning.m_fApproachTimeoutSeconds,
+		"the arrival must have SHORT-CIRCUITED the timer -- the beat ended with the "
+		"clock still short of its window, which is the whole claim of this unit");
+
+	// ---- (b) THE OTHER OPERAND: the timer alone still ends a walk nobody finished
+	// Without this half, deleting the timeout arm entirely would leave (a) green.
+	ZM_TrainerSightFsm xTimed;
+	ZM_TrainerSightFsmTuning xShortTuning = MakeShippedTuning();
+	xShortTuning.m_fApproachTimeoutSeconds = 0.2f;
+
+	ZM_TrainerSightInputs xNeverArrives = MakeApproachInputs();
+	xNeverArrives.m_fDeltaSeconds = 0.05f;       // four twentieths of the window
+	ApproachOnce(xTimed, xNeverArrives, xShortTuning);
+	ZENITH_ASSERT_FALSE(xNeverArrives.m_bApproachArrived,
+		"this half must run with arrival OFF or it proves nothing about the timer");
+
+	for (u_int u = 1u; u <= 3u; ++u)
+	{
+		const ZM_TRAINER_SIGHT_ACTION eAction = xTimed.Step(xNeverArrives, xShortTuning);
+		ZENITH_ASSERT_EQ(eAction, ZM_TRAINER_SIGHT_ACTION_NONE,
+			"the walk window must be TIMED, not immediate -- %u twentieths into it "
+			"nothing may have happened (got %s)",
+			u, ZM_TrainerSightActionName(eAction));
+		ZENITH_ASSERT_TRUE(std::isfinite(xTimed.GetApproachElapsedSeconds()),
+			"the walk accumulator went non-finite on step %u", u);
+	}
+	// Bounded rather than counted, so a rounding crumb in the accumulator cannot
+	// decide this unit. A clock that ran BACKWARDS never crosses at all and reds on
+	// the bound below rather than on an off-by-one frame.
+	ZM_TRAINER_SIGHT_ACTION eExpired = ZM_TRAINER_SIGHT_ACTION_NONE;
+	u_int uExtraSteps = 0u;
+	while (xTimed.GetState() == ZM_TRAINER_SIGHT_APPROACHING && uExtraSteps < 200u)
+	{
+		eExpired = xTimed.Step(xNeverArrives, xShortTuning);
+		++uExtraSteps;
+	}
+	ZENITH_ASSERT_NE(xTimed.GetState(), ZM_TRAINER_SIGHT_APPROACHING,
+		"a body that never arrives must not walk FOREVER -- 200 steps of a 0.2s "
+		"window and the machine is still walking, which is what an accumulator "
+		"running the wrong way looks like");
+	ZENITH_ASSERT_EQ(eExpired, ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+		"a body that never arrives must still deliver the BATTLE when the walk window "
+		"elapses (got %s)", ZM_TrainerSightActionName(eExpired));
+	ZENITH_ASSERT_GE(xTimed.GetApproachElapsedSeconds(),
+		xShortTuning.m_fApproachTimeoutSeconds,
+		"the expiry must have been reached by ACCUMULATION -- a clock that ran "
+		"backwards would never cross its window at all");
+	ZENITH_ASSERT_EQ(xTimed.GetRaiseCount(), 1u,
+		"the expired walk must produce exactly one raise");
+}
+
+ZENITH_TEST(ZM_Interaction, Fsm_ApproachCountIsMonotonicAndMatchesEntries)
+{
+	// ★ THE OBSERVABLE IS DERIVED FROM THE TRANSITION THE MACHINE ACTUALLY MADE --
+	// "the state was not APPROACHING before this Step and is APPROACHING after it"
+	// -- never from a bare ++ beside the thing under test. A tally incremented next
+	// to the call it claims to witness stays green when the call is deleted.
+	ZM_TrainerSightFsm xFsm;
+
+	// ★ THE WHOLE UNIT RUNS ON A COARSE 0.1s TICK AND A 0.1s/0.2s TUNING -- DO NOT
+	// "RESTORE" 60Hz FRAMES AND THE SHIPPED 0.35s/2.0s WINDOWS. What this unit pins
+	// is a COUNTING invariant, not a duration: the tuning only has to be small enough
+	// relative to the tick that each round completes several full
+	// WATCHING -> SPOTTED -> APPROACHING -> ENGAGED -> re-arm cycles. At 60Hz that
+	// cost 845 Steps; at 0.1s it costs 128 and observes MORE cycles per round.
+	constexpr float fCOARSE_DT      = 0.1f;
+	constexpr float fCOARSE_SPOTTED = 0.1f;
+
+	constexpr u_int uROUND_COUNT = 5u;
+	// possible / timeout / frames. Round 1 cannot walk at all; round 2 can, but its
+	// timeout is degenerate and it must therefore be OBSERVED never to enter; round
+	// 3 is deliberately cut off mid-walk so the next round's out-of-sight frame
+	// cancels a PARTIAL walk rather than a finished one.
+	const bool  abPossible[uROUND_COUNT] = { true, false, true, true, true };
+	const float afTimeout [uROUND_COUNT] = { 0.2f, 0.2f,  0.0f, 0.2f, 0.2f };
+	const u_int auFrames  [uROUND_COUNT] = { 30u,  30u,   30u,  3u,   30u  };
+
+	u_int auRoundEntries[uROUND_COUNT] = {};
+	u_int uObservedEntries = 0u;
+	u_int uPreviousCount   = 0u;
+
+	// The per-frame invariant is checked on all 128 frames but REPORTED once: a
+	// broken counter diverges on the first bad frame and stays diverged, so
+	// asserting in the loop would emit a hundred identical failure lines and bury
+	// every other unit in the run.
+	bool  bCountTrackedEntries = true;
+	bool  bCountWasMonotonic   = true;
+	u_int uBadRound    = 0u;
+	u_int uBadFrame    = 0u;
+	u_int uBadCount    = 0u;
+	u_int uBadObserved = 0u;
+
+	for (u_int uRound = 0u; uRound < uROUND_COUNT; ++uRound)
+	{
+		const u_int uEntriesBefore = uObservedEntries;
+
+		ZM_TrainerSightFsmTuning xTuning = MakeShippedTuning();
+		xTuning.m_fSpottedSeconds         = fCOARSE_SPOTTED;
+		xTuning.m_fApproachTimeoutSeconds = afTimeout[uRound];
+
+		ZM_TrainerSightInputs xInputs = MakePassingInputs();
+		xInputs.m_bApproachPossible = abPossible[uRound];
+		xInputs.m_fDeltaSeconds     = fCOARSE_DT;
+		// Frame 0 of every round is deliberately out of sight, so each round is a
+		// genuinely NEW spotting rather than a continuation of the last one -- and so
+		// round 4 begins by cancelling round 3's unfinished walk.
+		ZM_TrainerSightInputs xGone = xInputs;
+		xGone.m_bTargetInSight = false;
+
+		for (u_int uFrame = 0u; uFrame <= auFrames[uRound]; ++uFrame)
+		{
+			const ZM_TRAINER_SIGHT_STATE eBefore = xFsm.GetState();
+			xFsm.Step((uFrame == 0u) ? xGone : xInputs, xTuning);
+			const ZM_TRAINER_SIGHT_STATE eAfter = xFsm.GetState();
+
+			if (eAfter == ZM_TRAINER_SIGHT_APPROACHING
+				&& eBefore != ZM_TRAINER_SIGHT_APPROACHING)
+			{
+				++uObservedEntries;
+			}
+
+			const u_int uCount = xFsm.GetApproachCount();
+			if (uCount < uPreviousCount)
+			{
+				bCountWasMonotonic = false;
+			}
+			uPreviousCount = uCount;
+
+			if (uCount != uObservedEntries && bCountTrackedEntries)
+			{
+				bCountTrackedEntries = false;
+				uBadRound    = uRound;
+				uBadFrame    = uFrame;
+				uBadCount    = uCount;
+				uBadObserved = uObservedEntries;
+			}
+		}
+
+		auRoundEntries[uRound] = uObservedEntries - uEntriesBefore;
+	}
+
+	ZENITH_ASSERT_TRUE(bCountWasMonotonic,
+		"the approach count went BACKWARDS -- it is a MONOTONIC per-session tally and "
+		"every unit that reads it assumes so");
+	// ★ THE CENTRAL ASSERTION OF THIS UNIT. GetApproachCount() must equal the number
+	// of entries into APPROACHING that were OBSERVED through GetState(), frame by
+	// frame. Deleting the real transition and leaving the ++ (or the reverse) breaks
+	// this and nothing else in the file.
+	ZENITH_ASSERT_TRUE(bCountTrackedEntries,
+		"round %u frame %u: the counter claims %u walks but %u entries into "
+		"APPROACHING were actually OBSERVED -- the count must TRACK the real "
+		"transition, not run beside it",
+		uBadRound, uBadFrame, uBadCount, uBadObserved);
+
+	// ANTI-VACUITY, and the three claims the rounds were staged to make.
+	ZENITH_ASSERT_GT(auRoundEntries[0], 0u,
+		"a trainer who CAN walk, with a healthy timeout, must actually enter the walk "
+		"-- otherwise every zero below is satisfied by a state nothing ever reaches");
+	ZENITH_ASSERT_EQ(auRoundEntries[1], 0u,
+		"a trainer who cannot walk must never enter APPROACHING");
+	ZENITH_ASSERT_EQ(auRoundEntries[2], 0u,
+		"a DEGENERATE timeout must fail open BEFORE the entry -- a walk observed here "
+		"is a beat booked that no frame could ever show");
+	ZENITH_ASSERT_GT(auRoundEntries[3], 0u,
+		"the paired positive after the degenerate round must walk again");
+	ZENITH_ASSERT_GT(auRoundEntries[4], 0u,
+		"...and so must the round that follows a mid-walk cancel");
+	ZENITH_ASSERT_GT(xFsm.GetApproachCount(), 1u,
+		"this unit must have driven MORE than one walk, or monotonicity is untested");
+
+	// Reset clears the two SC1 members. Asserted HERE rather than by editing the
+	// shipped Reset unit above, whose fixture predates this state.
+	ZENITH_ASSERT_GT(xFsm.GetApproachCount(), 0u,
+		"the fixture must carry a non-zero approach count before Reset");
+	xFsm.Reset();
+	ZENITH_ASSERT_EQ(xFsm.GetApproachCount(), 0u,
+		"Reset must clear the approach count");
+	ZENITH_ASSERT_EQ_FLOAT(xFsm.GetApproachElapsedSeconds(), 0.0f, 0.0f,
+		"Reset must clear the approach accumulator");
+	ZENITH_ASSERT_EQ(xFsm.GetState(), ZM_TRAINER_SIGHT_WATCHING,
+		"Reset must still return a cold WATCHING machine (got %s)",
+		ZM_TrainerSightStateName(xFsm.GetState()));
+}
+
+// ---- S7 item 1 SC1: the PURE approach maths ---------------------------------
+
+ZENITH_TEST(ZM_Interaction, Approach_StepIsXZOnlyAndTotalOnDegenerateInput)
+{
+	constexpr float fEPSILON = 0.0001f;
+
+	// ---- (a) the direction points FROM the trainer TOWARD the target -----------
+	const Zenith_Maths::Vector3 xTrainer(0.0f, 0.0f, 0.0f);
+	const Zenith_Maths::Vector3 xTarget(10.0f, 0.0f, 0.0f);
+	const ZM_TrainerApproachStep xStep =
+		ZM_StepTrainerApproach(xTrainer, xTarget, 2.0f, 3.0f);
+	ZENITH_ASSERT_FALSE(xStep.m_bArrived,
+		"ten metres out with a two metre standoff is NOT arrived");
+	ZENITH_ASSERT_EQ_FLOAT(xStep.m_fSpeed, 3.0f, fEPSILON,
+		"a walking step must request the speed it was given, unscaled");
+	// ★ THE SIGN IS THE WHOLE POINT. A transposed (trainer, target) pair answers
+	// (-1,0,0) here, compiles perfectly, keeps both parameters referenced, and sends
+	// the trainer running away from the player forever.
+	ZENITH_ASSERT_NEAR_VEC3(xStep.m_xDirXZ, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f),
+		fEPSILON,
+		"the direction must point FROM the trainer TOWARD the target");
+	ZENITH_ASSERT_EQ_FLOAT(xStep.m_xDirXZ.y, 0.0f, 0.0f,
+		"the direction must carry EXACTLY no vertical component -- gravity and "
+		"terrain response stay in the body's sole ownership");
+
+	// ---- (b) XZ ONLY: height changes NOTHING -----------------------------------
+	const ZM_TrainerApproachStep xHigh =
+		ZM_StepTrainerApproach(Zenith_Maths::Vector3(0.0f, 37.5f, 0.0f), xTarget, 2.0f, 3.0f);
+	ZENITH_ASSERT_NEAR_VEC3(xHigh.m_xDirXZ, xStep.m_xDirXZ, fEPSILON,
+		"a 37.5m height difference must not move the horizontal direction");
+	ZENITH_ASSERT_EQ_FLOAT(xHigh.m_fSpeed, xStep.m_fSpeed, 0.0f,
+		"a height difference must not move the requested speed");
+	ZENITH_ASSERT_EQ(xHigh.m_bArrived, xStep.m_bArrived,
+		"a height difference must not move the arrival answer");
+
+	// One metre apart horizontally and a hundred metres apart vertically IS arrived:
+	// folding Y into the distance would leave a trainer stood on the player's toes
+	// believing he was still a hundred metres out.
+	const ZM_TrainerApproachStep xTall = ZM_StepTrainerApproach(
+		Zenith_Maths::Vector3(0.0f, 100.0f, 0.0f),
+		Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), 2.0f, 3.0f);
+	ZENITH_ASSERT_TRUE(xTall.m_bArrived,
+		"arrival must be measured in XZ ONLY -- a 100m vertical gap with a 1m "
+		"horizontal gap is INSIDE a 2m standoff");
+	ZENITH_ASSERT_EQ_FLOAT(xTall.m_fSpeed, 0.0f, 0.0f,
+		"an arrived step must request exactly zero speed");
+
+	// ---- (c) TOTAL: it never asserts and never answers with a non-finite --------
+	const float fNaN = std::numeric_limits<float>::quiet_NaN();
+	const float fInf = std::numeric_limits<float>::infinity();
+	// ★ DELIBERATELY 5 VALUES, NOT 7 -- DO NOT "RESTORE" -inf AND 2.0f.
+	// Every guard in ZM_StepTrainerApproach is spelled with std::isfinite, so -inf
+	// takes the IDENTICAL branch as +inf (and is named explicitly, as "target.z is
+	// -inf", in Approach_NonFiniteInputYieldsZeroSpeedAndArrived next door). 2.0f is
+	// a plain finite positive with no branch of its own -- 1.0e30f already covers
+	// "finite but large enough to matter to the distance arithmetic", and the healthy
+	// case is pinned by the named fixtures at the top of THIS test. 5^4 = 625 cases.
+	constexpr u_int uVALUE_COUNT = 5u;
+	const float afVALUES[uVALUE_COUNT] = { fNaN, fInf, -1.0f, 0.0f, 1.0e30f };
+
+	u_int uHits = 0u;
+	bool  bEveryAnswerFinite = true;
+	{
+		// NO ZENITH_ASSERT_* MAY APPEAR INSIDE THIS SCOPE (the runner swallows
+		// framework failures while a capture is active), and the hit count MUST be
+		// copied to a local before the closing brace.
+		Zenith_AssertCaptureScope xCapture;
+
+		for (u_int uA = 0u; uA < uVALUE_COUNT; ++uA)
+		{
+			for (u_int uB = 0u; uB < uVALUE_COUNT; ++uB)
+			{
+				for (u_int uC = 0u; uC < uVALUE_COUNT; ++uC)
+				{
+					for (u_int uD = 0u; uD < uVALUE_COUNT; ++uD)
+					{
+						// ★ THE TWO DERIVED INDICES ARE ROTATED, NOT TIED. Feeding
+						// target.z from uA and the speed from uB keeps the STANDOFF
+						// (uD) and the SPEED independent of the position indices, so
+						// "healthy positions with a NaN standoff" and "healthy
+						// positions with a NaN speed" both actually occur and each
+						// guard is exercised in ISOLATION rather than always being
+						// pre-empted by the position guard above it.
+						const float fTargetZ = afVALUES[(uA + 1u) % uVALUE_COUNT];
+						const float fSpeed   = afVALUES[(uB + 2u) % uVALUE_COUNT];
+						// Both heights are pinned NaN: y is never read, and pinning it
+						// to the worst possible value proves so on every one of the
+						// 625 cases instead of spending an axis on it.
+						const ZM_TrainerApproachStep xSwept = ZM_StepTrainerApproach(
+							Zenith_Maths::Vector3(afVALUES[uA], fNaN, afVALUES[uB]),
+							Zenith_Maths::Vector3(afVALUES[uC], fNaN, fTargetZ),
+							afVALUES[uD],
+							fSpeed);
+						if (!std::isfinite(xSwept.m_xDirXZ.x)
+							|| !std::isfinite(xSwept.m_xDirXZ.y)
+							|| !std::isfinite(xSwept.m_xDirXZ.z)
+							|| !std::isfinite(xSwept.m_fSpeed))
+						{
+							bEveryAnswerFinite = false;
+						}
+					}
+				}
+			}
+		}
+
+		uHits = (u_int)xCapture.GetHitCount();
+	}
+
+	ZENITH_ASSERT_EQ(uHits, 0u,
+		"the approach maths asserted on an argument -- Zenith_Assert breaks in EVERY "
+		"config and the whole unit suite runs at boot, so this would kill the whole "
+		"boot unit run rather than fail one test");
+	ZENITH_ASSERT_TRUE(bEveryAnswerFinite,
+		"a degenerate approach input propagated a NaN or an infinity into the answer "
+		"-- a poisoned direction reaches the physics body as a poisoned velocity");
+}
+
+ZENITH_TEST(ZM_Interaction, Approach_StandoffIsInclusiveAndNeverOvershoots)
+{
+	constexpr float fEPSILON  = 0.0001f;
+	constexpr float fSTANDOFF = 2.0f;
+	constexpr float fSPEED    = 2.0f;
+	// ★ 0.1s A STEP, NOT A 60Hz FRAME -- DO NOT "RESTORE" fFRAME_DT HERE.
+	// The properties below (the gap never grows, the trainer never crosses the
+	// target, the walk stops ON the ring) are scale-free: they hold per STEP, not
+	// per second, so a coarse integration pins them exactly as well as a fine one
+	// while running 43 iterations instead of 253. The 10.44m fixture still gives
+	// forty-odd distinct samples of the shrinking gap, which is the whole point.
+	constexpr float fDT       = 0.1f;
+	const float fStepLength   = fSPEED * fDT;
+
+	// The standoff the FSM carries is the value SC3 will hand to this function, so
+	// it is pinned HERE rather than left as a tuning field nothing ever reads. The
+	// FSM itself never sees a position -- this is the only place the two meet.
+	const ZM_TrainerSightFsmTuning xShipped = MakeShippedTuning();
+	ZENITH_ASSERT_GT(xShipped.m_fApproachStandoffMetres, 0.0f,
+		"the shipped standoff must be a real positive distance -- zero or negative "
+		"would walk the trainer into the player he is meant to stop in front of");
+	ZENITH_ASSERT_EQ_FLOAT(xShipped.m_fApproachStandoffMetres, fSTANDOFF, 0.0f,
+		"this unit drives the SHIPPED standoff on purpose; if the tuning moves, move "
+		"the fixture with it rather than letting the two silently drift apart");
+
+	// ---- (a) EXACTLY on the ring is ARRIVED (inclusive, as ZM_StepWalker is) ----
+	const ZM_TrainerApproachStep xOnRing = ZM_StepTrainerApproach(
+		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+		Zenith_Maths::Vector3(fSTANDOFF, 0.0f, 0.0f), fSTANDOFF, fSPEED);
+	ZENITH_ASSERT_TRUE(xOnRing.m_bArrived,
+		"a trainer EXACTLY on the standoff ring has arrived -- the comparison is "
+		"inclusive, and an exclusive one would ask for one more step he must not take");
+	ZENITH_ASSERT_EQ_FLOAT(xOnRing.m_fSpeed, 0.0f, 0.0f,
+		"a trainer on the ring must request exactly zero speed");
+
+	// ---- (b) JUST outside it is NOT arrived (the paired positive) ---------------
+	const ZM_TrainerApproachStep xJustOutside = ZM_StepTrainerApproach(
+		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+		Zenith_Maths::Vector3(fSTANDOFF + 0.01f, 0.0f, 0.0f), fSTANDOFF, fSPEED);
+	ZENITH_ASSERT_FALSE(xJustOutside.m_bArrived,
+		"a centimetre outside the ring is NOT arrived -- without this half, 'arrived' "
+		"could simply be the answer to everything");
+	ZENITH_ASSERT_EQ_FLOAT(xJustOutside.m_fSpeed, fSPEED, fEPSILON,
+		"a trainer outside the ring must request the full speed");
+
+	// ---- (c) the integrated walk never grows the gap and never crosses over -----
+	const Zenith_Maths::Vector3 xTargetPos(10.0f, 0.0f, 3.0f);
+	Zenith_Maths::Vector3 xPos(0.0f, 0.0f, 0.0f);
+	const float fInitialDX = xTargetPos.x - xPos.x;
+	const float fInitialDZ = xTargetPos.z - xPos.z;
+	float fDistance = std::hypot(fInitialDX, fInitialDZ);
+	ZENITH_ASSERT_GT(fDistance, fSTANDOFF,
+		"the walk fixture must START outside the ring or it walks nowhere");
+
+	// The two per-step invariants are checked on every step but REPORTED once: a
+	// direction pointing the wrong way violates them on step 1 and on all 1999
+	// after it, and two thousand identical failure lines would bury the rest of
+	// the boot run.
+	bool  bGapNeverGrew   = true;
+	bool  bNeverCrossedIt = true;
+	u_int uBadStep        = 0u;
+	float fBadFrom        = 0.0f;
+	float fBadTo          = 0.0f;
+
+	u_int uSteps = 0u;
+	bool  bArrived = false;
+	// The bound is 200 for a walk that takes 43 steps: generous enough that a
+	// legitimate rounding wobble cannot trip it, tight enough that a REVERSED
+	// direction (which never arrives) reds in 200 iterations rather than 2000.
+	while (!bArrived && uSteps < 200u)
+	{
+		const ZM_TrainerApproachStep xWalk =
+			ZM_StepTrainerApproach(xPos, xTargetPos, fSTANDOFF, fSPEED);
+		bArrived = xWalk.m_bArrived;
+		if (bArrived)
+		{
+			break;
+		}
+
+		xPos.x += xWalk.m_xDirXZ.x * xWalk.m_fSpeed * fDT;
+		xPos.z += xWalk.m_xDirXZ.z * xWalk.m_fSpeed * fDT;
+		++uSteps;
+
+		const float fDX = xTargetPos.x - xPos.x;
+		const float fDZ = xTargetPos.z - xPos.z;
+		const float fNewDistance = std::hypot(fDX, fDZ);
+		// A transposed (trainer, target) pair breaks this on step 1: the gap grows
+		// instead of shrinking, and the walk then never terminates either.
+		if (fNewDistance > fDistance && bGapNeverGrew)
+		{
+			bGapNeverGrew = false;
+			uBadStep = uSteps;
+			fBadFrom = fDistance;
+			fBadTo   = fNewDistance;
+		}
+		// NEVER THROUGH THE TARGET: the remaining offset must keep pointing the way
+		// it started. A sign flip IS the definition of an overshoot.
+		if ((fDX * fInitialDX + fDZ * fInitialDZ) <= 0.0f)
+		{
+			bNeverCrossedIt = false;
+		}
+		fDistance = fNewDistance;
+	}
+
+	ZENITH_ASSERT_TRUE(bGapNeverGrew,
+		"step %u moved the trainer AWAY from the target (%f -> %f) -- the direction "
+		"is pointing the wrong way", uBadStep, fBadFrom, fBadTo);
+	ZENITH_ASSERT_TRUE(bNeverCrossedIt,
+		"the walk carried the trainer THROUGH the target and out the far side");
+	ZENITH_ASSERT_TRUE(bArrived,
+		"the walk never reached the standoff ring in %u steps -- a direction pointing "
+		"away from the target never converges", uSteps);
+	ZENITH_ASSERT_LE(fDistance, fSTANDOFF,
+		"the walk stopped OUTSIDE the ring it was asked to stop on (%f > %f)",
+		fDistance, fSTANDOFF);
+	ZENITH_ASSERT_GT(fDistance, fSTANDOFF - fStepLength,
+		"the walk blew PAST the ring by more than one step's travel (%f), so it is "
+		"not stopping on the ring at all", fDistance);
+
+	// Once arrived the answer must FREEZE: any residual speed here walks the capsule
+	// into the player it just stopped in front of.
+	const ZM_TrainerApproachStep xHeld =
+		ZM_StepTrainerApproach(xPos, xTargetPos, fSTANDOFF, fSPEED);
+	ZENITH_ASSERT_TRUE(xHeld.m_bArrived,
+		"an arrived walk must stay arrived when asked again");
+	ZENITH_ASSERT_EQ_FLOAT(xHeld.m_fSpeed, 0.0f, 0.0f,
+		"an arrived walk must request EXACTLY zero speed");
+	ZENITH_ASSERT_NEAR_VEC3(xHeld.m_xDirXZ, Zenith_Maths::Vector3(0.0f), 0.0f,
+		"an arrived walk must request an exactly zero direction");
+}
+
+ZENITH_TEST(ZM_Interaction, Approach_NonFiniteInputYieldsZeroSpeedAndArrived)
+{
+	const float fNaN = std::numeric_limits<float>::quiet_NaN();
+	const float fInf = std::numeric_limits<float>::infinity();
+	const Zenith_Maths::Vector3 xHere(0.0f, 0.0f, 0.0f);
+	const Zenith_Maths::Vector3 xThere(10.0f, 0.0f, 0.0f);
+
+	// Each case names exactly ONE poisoned field, so a red message says which guard
+	// stopped working rather than "something about degenerate input".
+	AssertApproachFailedOpen(
+		ZM_StepTrainerApproach(Zenith_Maths::Vector3(fNaN, 0.0f, 0.0f), xThere, 2.0f, 3.0f),
+		"trainer.x is NaN");
+	AssertApproachFailedOpen(
+		ZM_StepTrainerApproach(Zenith_Maths::Vector3(0.0f, 0.0f, fInf), xThere, 2.0f, 3.0f),
+		"trainer.z is +inf");
+	AssertApproachFailedOpen(
+		ZM_StepTrainerApproach(xHere, Zenith_Maths::Vector3(fNaN, 0.0f, 0.0f), 2.0f, 3.0f),
+		"target.x is NaN");
+	AssertApproachFailedOpen(
+		ZM_StepTrainerApproach(xHere, Zenith_Maths::Vector3(0.0f, 0.0f, -fInf), 2.0f, 3.0f),
+		"target.z is -inf");
+	AssertApproachFailedOpen(ZM_StepTrainerApproach(xHere, xThere, fNaN, 3.0f),
+		"the standoff is NaN");
+	AssertApproachFailedOpen(ZM_StepTrainerApproach(xHere, xThere, fInf, 3.0f),
+		"the standoff is +inf");
+	AssertApproachFailedOpen(ZM_StepTrainerApproach(xHere, xThere, -1.0f, 3.0f),
+		"the standoff is negative, which names a ring nothing can be inside");
+	AssertApproachFailedOpen(ZM_StepTrainerApproach(xHere, xThere, 2.0f, fNaN),
+		"the speed is NaN");
+	AssertApproachFailedOpen(ZM_StepTrainerApproach(xHere, xThere, 2.0f, fInf),
+		"the speed is +inf");
+	AssertApproachFailedOpen(ZM_StepTrainerApproach(xHere, xThere, 2.0f, 0.0f),
+		"the speed is zero, so this trainer can never close the gap");
+	AssertApproachFailedOpen(ZM_StepTrainerApproach(xHere, xThere, 2.0f, -1.0f),
+		"the speed is negative, which would otherwise walk him backwards");
+
+	// A NaN HEIGHT is deliberately NOT degenerate: Y is never read, so it must not
+	// be able to veto a perfectly good horizontal approach.
+	const ZM_TrainerApproachStep xNaNHeight = ZM_StepTrainerApproach(
+		Zenith_Maths::Vector3(0.0f, fNaN, 0.0f),
+		Zenith_Maths::Vector3(10.0f, fNaN, 0.0f), 2.0f, 3.0f);
+	ZENITH_ASSERT_FALSE(xNaNHeight.m_bArrived,
+		"a NaN HEIGHT must not fail the approach open -- the maths is XZ-only and "
+		"never reads y, so a poisoned height is simply not its business");
+	ZENITH_ASSERT_EQ_FLOAT(xNaNHeight.m_fSpeed, 3.0f, 0.0001f,
+		"...and the walk must proceed at full speed");
+
+	// A ZERO standoff is legitimate ("stand on the target"), and a coincident pair
+	// must arrive rather than divide by zero on the way to a NaN direction.
+	const ZM_TrainerApproachStep xCoincident =
+		ZM_StepTrainerApproach(xHere, xHere, 0.0f, 3.0f);
+	ZENITH_ASSERT_TRUE(xCoincident.m_bArrived,
+		"a coincident pair with a zero standoff has arrived, not divided by zero");
+	ZENITH_ASSERT_TRUE(std::isfinite(xCoincident.m_xDirXZ.x)
+		&& std::isfinite(xCoincident.m_xDirXZ.z),
+		"a coincident pair must never produce a non-finite direction");
+
+	// THE PAIRED POSITIVE for this entire unit: with every field healthy the SAME
+	// fixture is NOT arrived and asks for the full speed. Without it, a function
+	// that answered "arrived, zero speed" to absolutely everything would pass.
+	const ZM_TrainerApproachStep xHealthy =
+		ZM_StepTrainerApproach(xHere, xThere, 2.0f, 3.0f);
+	ZENITH_ASSERT_FALSE(xHealthy.m_bArrived,
+		"a HEALTHY ten-metre approach must not report arrived");
+	ZENITH_ASSERT_EQ_FLOAT(xHealthy.m_fSpeed, 3.0f, 0.0001f,
+		"a HEALTHY approach must request the full speed");
+}
+
 // ---- Reset ------------------------------------------------------------------
 
 ZENITH_TEST(ZM_Interaction, Fsm_ResetReturnsAColdWatcher)
@@ -995,7 +1841,9 @@ ZENITH_TEST(ZM_Interaction, Fsm_StepNeverAssertsOnAnyDegenerateInput)
 		Zenith_AssertCaptureScope xCapture;
 
 		// The full cross product: 32 bool combinations x 6 deltas x 216 independent
-		// window TRIPLES, each driven from ALL FOUR arms of the machine.
+		// window TRIPLES, each driven from FOUR of the machine's arms. (The fifth,
+		// APPROACHING, is unreachable from here and is swept separately below --
+		// see the ★ note there.)
 		for (u_int uBits = 0u; uBits < 32u; ++uBits)
 		{
 			for (u_int uDelta = 0u; uDelta < uDELTA_COUNT; ++uDelta)
@@ -1051,6 +1899,85 @@ ZENITH_TEST(ZM_Interaction, Fsm_StepNeverAssertsOnAnyDegenerateInput)
 					(void)eCold; (void)eSeed; (void)eEngaged;
 					(void)eChallengeSeed; (void)eChallenging;
 					(void)eSpottedSeed; (void)eSpotted;
+				}
+			}
+		}
+
+		// ---- S7 item 1 SC1: the APPROACHING arm and its three new fields ---------
+		// ★ THE CROSS PRODUCT ABOVE CANNOT REACH THIS ARM, and saying so is the point
+		// of this comment. It seeds four HAND-BUILT fixtures rather than iterating
+		// ZM_TRAINER_SIGHT_STATE_COUNT, its bool sweep is five bits wide, and its
+		// window TRIPLE does not include m_fApproachTimeoutSeconds -- so a new state
+		// reached only by a new input, gated on a new tuning field, is invisible to
+		// it. (The NAME walks below DO iterate to _STATE_COUNT and therefore did pick
+		// the new ordinal up for free.)
+		//
+		// ★ DELIBERATELY 576 CASES, NOT 4608 -- DO NOT "RESTORE" THE WIDER SET.
+		// The boot suite is PER-TEST-OVERHEAD BOUND (every unit pays an ECS scene
+		// reset in Zenith_TestRunner::RunAllTests), so breadth bought here is paid
+		// for at every single boot for the life of the project. What was dropped is
+		// REDUNDANT, not merely cheaper:
+		//   * m_bSightLineClear is TIED to m_bTargetInSight -- 16 bool cases, not 32.
+		//     Step computes `bSees` as their CONJUNCTION once, above the switch, so
+		//     the two mixed pairs are behaviourally identical to (false, false); and
+		//     the 41,472-case sweep above already drives all four raw combinations
+		//     through that very expression.
+		//   * the delta and window inventories drop from six values to THREE. Both
+		//     guards are spelled `!(isfinite(x) && x > 0.0f)`, so +inf, -inf and
+		//     -1.0f take the IDENTICAL branch as NaN. NaN is kept because it is the
+		//     only value that can POISON an accumulator, and 0.0f because it is the
+		//     boundary of the `> 0.0f` comparison itself.
+		// What is NOT reduced, and must not be: both new bools keep all FOUR
+		// combinations, because m_bApproachPossible gates the entry and
+		// m_bApproachArrived gates the exit and neither is swept anywhere else.
+		constexpr u_int uAPPROACH_BIT_COUNT   = 4u;
+		constexpr u_int uAPPROACH_CLASS_COUNT = 3u;
+		const float afAPPROACH_DELTAS[uAPPROACH_CLASS_COUNT]  = { fNaN, 0.0f, fFRAME_DT };
+		const float afAPPROACH_WINDOWS[uAPPROACH_CLASS_COUNT] = { fNaN, 0.0f, 0.5f };
+
+		// Loop-invariant, so hoisted: the seed only has to put a FRESH machine into
+		// APPROACHING, and the tuning/inputs that do it never vary with the sweep.
+		ZM_TrainerSightFsmTuning xSeedTuning = MakeShippedTuning();
+		xSeedTuning.m_fSpottedSeconds = 0.0f;   // fail open so ONE Step reaches the walk
+		const ZM_TrainerSightInputs xSeedInputs = MakeApproachInputs();
+
+		for (u_int uBits = 0u; uBits < 16u; ++uBits)
+		{
+			for (u_int uDelta = 0u; uDelta < uAPPROACH_CLASS_COUNT; ++uDelta)
+			{
+				for (u_int uApproachBits = 0u; uApproachBits < uAPPROACH_BIT_COUNT; ++uApproachBits)
+				{
+					for (u_int uWindow = 0u; uWindow < uAPPROACH_CLASS_COUNT; ++uWindow)
+					{
+						ZM_TrainerSightInputs xInputs;
+						xInputs.m_bMayEngage          = (uBits & 1u) != 0u;
+						xInputs.m_bTargetInSight      = (uBits & 2u) != 0u;
+						// TIED to the bit above on purpose -- see the ★ note.
+						xInputs.m_bSightLineClear     = (uBits & 2u) != 0u;
+						xInputs.m_bChannelBusy        = (uBits & 4u) != 0u;
+						xInputs.m_bChallengeAvailable = (uBits & 8u) != 0u;
+						xInputs.m_bApproachPossible   = (uApproachBits & 1u) != 0u;
+						xInputs.m_bApproachArrived    = (uApproachBits & 2u) != 0u;
+						xInputs.m_fDeltaSeconds       = afAPPROACH_DELTAS[uDelta];
+
+						ZM_TrainerSightFsmTuning xTuning = MakeShippedTuning();
+						xTuning.m_fApproachTimeoutSeconds = afAPPROACH_WINDOWS[uWindow];
+
+						// A GENUINE walking machine, seeded from the hoisted fixture.
+						ZM_TrainerSightFsm xApproaching;
+						const ZM_TRAINER_SIGHT_ACTION eApproachSeed =
+							xApproaching.Step(xSeedInputs, xSeedTuning);
+						const ZM_TRAINER_SIGHT_ACTION eApproaching =
+							xApproaching.Step(xInputs, xTuning);
+
+						// ...and a COLD one, so the rewritten SPOTTED exit is swept
+						// from the entry side as well as from inside the walk.
+						ZM_TrainerSightFsm xColdWalker;
+						const ZM_TRAINER_SIGHT_ACTION eColdWalker =
+							xColdWalker.Step(xInputs, xTuning);
+
+						(void)eApproachSeed; (void)eApproaching; (void)eColdWalker;
+					}
 				}
 			}
 		}

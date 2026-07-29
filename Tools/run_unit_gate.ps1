@@ -12,6 +12,18 @@
 # backend tests, which the Null build has no equivalent of).
 # Exit:   0 = baseline met, 1 = anything else (missing exe, timeout, failures).
 #
+# ★ -TimeoutSec IS A HANG GUARD THAT SILENTLY DOUBLES AS A RUNTIME BUDGET. It
+# exists to kill the known tools-build idle AFTER the units line is logged -- but
+# because that line must be written before the kill, any suite that takes longer
+# than the timeout fails, and it fails as "no 'Unit tests complete' line in boot
+# output", which reads like a crash or a loader failure rather than a slow suite.
+# Zenithmon measured 175/193/229/235s against this 180s default on one idle dev
+# machine on 2026-07-29 -- the suite straddles it, and which side it lands on is
+# decided by machine load. Callers whose suite is anywhere near the default MUST
+# pass explicit headroom (zm-tests.yml passes 600). If you are here because the
+# gate said the line was missing, check the runtime BEFORE you go hunting a
+# loader bug. See ZM-D-163.
+#
 # ASCII-only body; runs under Windows PowerShell 5.1 and pwsh 7.
 
 [CmdletBinding()]
