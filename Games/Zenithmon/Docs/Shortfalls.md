@@ -164,14 +164,50 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
    keeps the shipped grey byte for byte. Measured on the COMMITTED rival:
    `vsGrey=0.6366`, `vsNearestNpc=0.2124`, both against a 0.15 margin.
    **STILL OPEN, and found by W4 rather than introduced by it:**
-   - **A ROSTER APPEARANCE COLLISION.** There are SIX authored Dawnmere NPCs, and
-     `Npc_Wanderer` and `Npc_Warden` BOTH stand on `ZM_HUMAN_TOWN_ELDER` -- six rows, five
-     appearances, those two pixel-identical in the world. The RIVAL is distinct from all
-     five, so W4's own claim holds. **Minimal fix, one token, no serialized byte:** give
-     `ZM_NPC_ROUTE_WARDEN` its own row, `ZM_HUMAN_TRAINER_RANGER` (`OUTFIT_WORKER`, a
-     visibly different family from the elder's `CASUAL`). It can only RAISE the
-     distinct-appearance count the boot unit asserts, so it cannot red anything. Left as a
-     CONTENT decision because W4 wired the column; it did not re-cast the town.
+   - **A ROSTER APPEARANCE COLLISION -- RESOLVED 2026-07-29 (ZM-D-164), AND THE FIX THIS
+     ENTRY USED TO RECOMMEND WAS WRONG.** There were SIX authored Dawnmere NPCs and
+     `Npc_Wanderer` / `Npc_Warden` BOTH stood on `ZM_HUMAN_TOWN_ELDER` -- six rows, five
+     appearances, those two pixel-identical. `ZM_NPC_ROUTE_WARDEN` now names
+     `ZM_HUMAN_TOWN_WARDEN`, a new append-only roster row (`OUTFIT_WORKER` + `HAIR_BLONDE`,
+     `(0.5425, 0.3895, 0.1410)`) whose nearest authored neighbour is the Villager at
+     **0.20661** -- clear of the 0.15 margin and above the tightest pair the town already
+     ships (Caretaker/Elder, 0.20064). Zero serialized bytes, no scene re-authoring, no
+     regen, and the boot count did not move.
+     **★ THE CORRECTION.** This entry previously named `ZM_HUMAN_TRAINER_RANGER` as a
+     one-token fix that "can only RAISE the distinct-appearance count the boot unit
+     asserts, so it cannot red anything." **Both halves were false.** `TRAINER_RANGER` is
+     `OUTFIT_WORKER` + `HAIR_BLACK` -> `(0.337, 0.241, 0.0876)`, only **0.0873** from the
+     Villager. Applied and BUILT, it red `ZM_Data::Npc_AuthoredAppearancesAreMutuallyDistinct`
+     at `ZM_Tests_NpcData.cpp:1021`. The reasoning error was treating that unit as a pure
+     counter: it has a SECOND arm requiring every pair naming different ids to be >= 0.15
+     apart, and a fix can red that arm while raising the count. The root cause is that the
+     greybox palette is `0.45*outfit.primary + 0.25*outfit.accent + 0.30*hair` and reads
+     **neither skin nor build** -- so "a visibly different outfit family" is a property of
+     the SC3 albedo painter, NOT of the one flat colour. A full 49-cell (outfit x hair)
+     sweep found only six cells clear all six constraints; `WORKER`+`BLONDE` was taken over
+     the higher-scoring `LABCOAT`+`WHITE` (0.21547) because `LABCOAT` is the professor's
+     outfit and lands 0.2286 from Aster -- nine thousandths of margin for a future collision.
+     **★ THE BOOT UNIT WAS RATCHETED, NOT MERELY UPDATED.** `uMIN_DISTINCT_APPEARANCES` was
+     the literal `5u` against a `ZENITH_ASSERT_GE`, so a regression straight back to the
+     collision would have passed GREEN -- demonstrated, not assumed: with the fix in place
+     the old bound still passes at 6 >= 5. It is now derived as `(u_int)ZM_NPC_COUNT` (full
+     injectivity), so a seventh NPC duplicating an appearance reds with no literal to
+     remember. The fix also makes `uSharedPairs` unreachably zero, so that zero is now an
+     explicit assertion rather than a counter that can no longer teach the unit anything.
+   - **A NEW, SMALLER LIMIT TAKEN ON IN EXCHANGE.** `HumanGen_PaletteDistinctness`'s
+     `aeCAST` / `uCAST_COUNT` are a HAND-MAINTAINED MIRROR of the `m_eHuman` column with no
+     compiler edge to it. Deleting an id from `aeCAST` while leaving the count reds only
+     *incidentally* -- MSVC value-initialises the missing slot to `0 == ZM_HUMAN_PLAYER_M`,
+     which today happens to sit 0.0472 from Vesper. Had that zero-fill landed on a distant
+     id the mutation would have passed clean, so that unit cannot detect "a cast id went
+     missing", only "these ids collide". Trimming `aeCAST` and `uCAST_COUNT` together is
+     green by construction. `Npc_AuthoredAppearancesAreMutuallyDistinct` reads the REAL
+     column and is the unit that cannot be fooled this way.
+   - **A LATENT PALETTE TRAP, BOOKED NOT FIXED.** `ZM_HUMAN_PROF_ASTER` (`LABCOAT`+`GREY`)
+     resolves to `(0.4730, 0.5880, 0.5695)` -- only **0.0677** from the blockout fallback
+     grey `(0.52, 0.55, 0.60)`, i.e. 45% of the margin. If Professor Aster is ever given an
+     authored `ZM_NpcData` row, his greybox body will be indistinguishable from an UNWIRED
+     one, and the vs-grey clause reds the moment he joins `aeCAST`. Untouched by ZM-D-164.
    - **A COVERAGE BOUNDARY, not a gap.** `ZM_GreyboxVisual` is a file-local class in
      `Zenithmon.cpp` and cannot be named from a `Tests/` TU, so no boot unit can construct
      one. Its wiring is covered ONLY by `ZM_RivalVesperAuthored_Test`'s live material

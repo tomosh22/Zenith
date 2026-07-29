@@ -149,9 +149,17 @@ ticks a Roadmap box**, because the two open S7 boxes ask for something else.
    W3 property:** `SubmitTrainerSpottedIndicator` RETURNS a count measured off Flux's own
    CPU instance queues and callers `+=` it -- a bare `++` beside the call is exactly the
    defect that left every test green with nothing drawn.
-3. **Duplicate NPC appearance** (Shortfalls 1.8-4a). `Npc_Wanderer` and `Npc_Warden` both
-   stand on `ZM_HUMAN_TOWN_ELDER`, so six authored rows wear five appearances. One token;
-   it can only RAISE the distinct-appearance count the boot unit asserts.
+3. **Duplicate NPC appearance -- ✅ DONE 2026-07-29 (ZM-D-164).** `ZM_NPC_ROUTE_WARDEN` now
+   names the new append-only `ZM_HUMAN_TOWN_WARDEN` (`WORKER`+`BLONDE`), nearest authored
+   neighbour 0.20661 against the 0.15 floor. **★ IT WAS NOT ONE TOKEN AND THE RECORDED FIX
+   WAS FALSE:** `ZM_HUMAN_TRAINER_RANGER` sits **0.0873** from the Villager and RED the
+   gate when built -- the "it can only RAISE the count, so it cannot red anything" claim in
+   this file, `Shortfalls.md` and ZM-D-160 read a two-armed unit as a pure counter. The
+   boot unit was also RATCHETED (`uMIN_DISTINCT_APPEARANCES` `5u` -> `ZM_NPC_COUNT`) after
+   the old literal was *demonstrated* inert against the very regression it guarded.
+   Observed: boot **2731 / 2730 / 0 / 1 -- zero delta**, headless 49/0, windowed gallery
+   1/0 (run deliberately: a 36th human staled the HUMANS bake manifest and the headless
+   gate is blind to that, since the gallery skips for "requires graphics", never staleness).
 4. **★ UNBOOKED S7 SLIP, found by the 2026-07-29 doc audit: the BOX (storage) screen.**
    `Roadmap.md:98` (the S6 gate) records "Box is deferred to S7" and `Shortfalls.md:71`
    still carries it with the blocker "needs S7 persistence" -- which S7 SHIPPED. S7 was

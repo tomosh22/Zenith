@@ -974,21 +974,34 @@ ZENITH_TEST(ZM_Data, Npc_RivalAppearanceIsDistinctFromEveryOtherRow)
 		"above are vacuous to the extent the walk skipped any", uCompared);
 }
 
-// ★ THE ROSTER TODAY CARRIES A KNOWN COLLISION, AND THIS UNIT IS WRITTEN AROUND
-// IT RATHER THAN PRETENDING OTHERWISE. Npc_Wanderer and Npc_Warden BOTH stand on
-// ZM_HUMAN_TOWN_ELDER, so six authored rows wear only FIVE appearances and the
-// two of them are pixel-identical in the world. That is a CONTENT decision, not a
-// palette defect -- W4 wired the column, it did not re-cast the town -- so this
-// unit asserts the two properties that are actually owed:
+// ★ THE ROSTER CARRIES NO SHARED APPEARANCES, AND THAT IS NOW AN ASSERTION RATHER
+// THAN AN OBSERVATION. Every one of the ZM_NPC_COUNT authored rows names its OWN
+// ZM_HUMAN_ID -- Npc_Warden stands on ZM_HUMAN_TOWN_WARDEN, a row of his own,
+// where he previously borrowed Npc_Wanderer's ZM_HUMAN_TOWN_ELDER and the two were
+// pixel-identical in the world. So the unit asserts three properties:
 //   * rows naming DIFFERENT humans must look different (a palette collapse reds);
-//   * the roster must keep at least uMIN_DISTINCT_APPEARANCES distinct appearances
-//     (a content collapse reds), and giving the warden his own row only raises the
-//     real number, so fixing the collision cannot red this.
-// Rows naming the SAME human are asserted to be EXACTLY equal, which is what makes
-// the "different" arm above a real discriminator rather than a coincidence.
+//   * NO pair may name the SAME human (uSharedPairs == 0) -- a content collapse
+//     reds, and a row re-pointed at an existing appearance reds HERE first;
+//   * the roster must carry at least uMIN_DISTINCT_APPEARANCES distinct
+//     appearances, which is derived from ZM_NPC_COUNT rather than hard-coded.
+//
+// ★ WHY THE ZERO IS SPELLED OUT. The same-human arm below is UNREACHABLE from the
+// shipped roster, so uSharedPairs can only ever be zero today. Left as a bare
+// counter it would be read-but-inert -- a number the unit consults and can never
+// learn anything from. Asserting the zero converts it into the RATCHET: it is what
+// makes "six rows, six appearances" a promise the table owes rather than a fact
+// that happens to hold. The arm itself is KEPT (not deleted) so that a roster
+// which does regress to a shared row still gets its purity clause checked on the
+// way to failing the zero, and so the totality assertion below keeps summing two
+// counters that between them see every visited pair exactly once.
 ZENITH_TEST(ZM_Data, Npc_AuthoredAppearancesAreMutuallyDistinct)
 {
-	constexpr u_int uMIN_DISTINCT_APPEARANCES = 5u;
+	// DERIVED, not hard-coded at 6: every authored row owes its own appearance, so
+	// the floor IS the row count. This also makes the clause self-ratcheting -- a
+	// SEVENTH NPC that duplicates an existing appearance reds without anyone
+	// remembering to bump a literal, which is exactly how the 5 this replaced went
+	// on passing while six rows wore five faces.
+	constexpr u_int uMIN_DISTINCT_APPEARANCES = (u_int)ZM_NPC_COUNT;
 
 	Zenith_Maths::Vector4 axColours[ZM_NPC_COUNT] = {};
 	for (u_int i = 0; i < ZM_NPC_COUNT; ++i)
@@ -1024,11 +1037,22 @@ ZENITH_TEST(ZM_Data, Npc_AuthoredAppearancesAreMutuallyDistinct)
 	ZENITH_ASSERT_GT(uDistinctPairs, 0u,
 		"no two authored NPC rows name different human ids -- every NPC in Dawnmere "
 		"wears the same face, so the walk above compared nothing");
-	// Sanity on the split itself: uSharedPairs is READ, not ignored, so a roster
-	// where every pair shared a row could not sneak past the guarded walk.
+	// TOTALITY, and it is deliberately summed from BOTH counters rather than
+	// checking uDistinctPairs alone: each arm of the walk bumps exactly one of the
+	// two, so the sum is the walk's own completeness proof and stays a real check
+	// no matter which way a future roster splits. A pair that fell through neither
+	// arm would show up here as a short count.
 	ZENITH_ASSERT_EQ(uDistinctPairs + uSharedPairs,
 		((u_int)ZM_NPC_COUNT * ((u_int)ZM_NPC_COUNT - 1u)) / 2u,
 		"the pairwise walk did not visit every row pair");
+	// THE CONTENT RATCHET. Not a sanity check on the split -- an assertion about the
+	// TABLE: no two authored NPCs may name the same human. Re-pointing any row at an
+	// appearance another row already wears reds this line first, with both names.
+	ZENITH_ASSERT_EQ(uSharedPairs, 0u,
+		"%u authored NPC row pair(s) name the SAME human id -- the Dawnmere cast is "
+		"supposed to be %u rows wearing %u distinct appearances, and two rows sharing "
+		"one makes them pixel-identical in the world",
+		uSharedPairs, (u_int)ZM_NPC_COUNT, (u_int)ZM_NPC_COUNT);
 
 	u_int uDistinctAppearances = 0u;
 	for (u_int i = 0; i < ZM_NPC_COUNT; ++i)

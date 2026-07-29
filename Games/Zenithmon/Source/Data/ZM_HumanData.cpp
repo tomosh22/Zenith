@@ -62,6 +62,18 @@ namespace
 		{ ZM_HUMAN_TOWN_ELDER,      "Elder",       ZM_HUMAN_BUILD_AVERAGE, ZM_HUMAN_SKIN_PALE,  2u, ZM_HUMAN_HAIR_WHITE,  ZM_HUMAN_OUTFIT_CASUAL,   ZM_HUMAN_ATTACHMENT_GLASSES  },
 		{ ZM_HUMAN_TOWN_FIELDHAND,  "Fieldhand",   ZM_HUMAN_BUILD_STOCKY,  ZM_HUMAN_SKIN_BROWN, 0u, ZM_HUMAN_HAIR_BLACK,  ZM_HUMAN_OUTFIT_WORKER,   ZM_HUMAN_ATTACHMENT_HAT      },
 		{ ZM_HUMAN_TOWN_DOCKWORKER, "Dockworker",  ZM_HUMAN_BUILD_STOCKY,  ZM_HUMAN_SKIN_DARK,  1u, ZM_HUMAN_HAIR_BLACK,  ZM_HUMAN_OUTFIT_WORKER,   ZM_HUMAN_ATTACHMENT_HAT      },
+		// ★ The lane warden's OWN row, added because ZM_NPC_ROUTE_WARDEN previously
+		// borrowed ZM_HUMAN_TOWN_ELDER from ZM_NPC_WANDERER and the two were
+		// pixel-identical in the world. The greybox palette is
+		// 0.45*outfit.primary + 0.25*outfit.accent + 0.30*hair and reads NOTHING
+		// else, so OUTFIT + HAIR are the only two axes that can buy separation here:
+		// WORKER + BLONDE lands at (0.5425, 0.3895, 0.1410), whose nearest authored
+		// neighbour is the Villager at 0.2066 -- clear of the 0.15 margin, and clear
+		// of the tightest pair the town already ships (Caretaker/Elder at 0.2006).
+		// WORKER is annotated "dockworker, fieldhand, ranger", which is what a lane
+		// warden is. Build / skin / attachment do NOT enter the palette, so they are
+		// free content choices and are read purely as the character.
+		{ ZM_HUMAN_TOWN_WARDEN,     "Warden",      ZM_HUMAN_BUILD_STOCKY,  ZM_HUMAN_SKIN_TAN,   0u, ZM_HUMAN_HAIR_BLONDE, ZM_HUMAN_OUTFIT_WORKER,   ZM_HUMAN_ATTACHMENT_HAT      },
 	};
 }
 

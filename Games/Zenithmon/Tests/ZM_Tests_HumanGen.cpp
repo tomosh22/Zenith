@@ -2707,10 +2707,17 @@ ZENITH_TEST(ZM_Gen, HumanGen_PaletteTotality)
 // 20. Known-limit W4: the Dawnmere cast is visibly distinct
 // ############################################################################
 
-// THE POINT OF W4. The five appearances the authored Dawnmere NPCs wear
+// THE POINT OF W4. The six appearances the authored Dawnmere NPCs wear
 // (ZM_NpcData.cpp's m_eHuman column) must be numerically separated from one
 // another and from the fallback grey -- otherwise the wiring is correct and
 // INVISIBLE, which is precisely the state Docs/Status.md records.
+//
+// uCAST_COUNT is a HAND-MAINTAINED mirror of that column and there is no compiler
+// edge between them, so an m_eHuman edit that is not mirrored here leaves this
+// unit GREEN AND BLIND -- it would keep proving five ids distinct while a sixth
+// shipped uncovered. The roster-COUPLED unit
+// (ZM_Data::Npc_AuthoredAppearancesAreMutuallyDistinct) is what actually catches
+// that; this list exists to keep the PALETTE half honest without the dependency.
 //
 // The ids are spelled HERE rather than read out of ZM_NpcData: this file is the
 // Gen-layer suite and must not take a dependency on the UI headers ZM_NpcData.h
@@ -2719,13 +2726,14 @@ ZENITH_TEST(ZM_Gen, HumanGen_PaletteTotality)
 // there and a PALETTE edit is caught here.
 ZENITH_TEST(ZM_Gen, HumanGen_PaletteDistinctness)
 {
-	constexpr u_int uCAST_COUNT = 5u;
+	constexpr u_int uCAST_COUNT = 6u;
 	const ZM_HUMAN_ID aeCAST[uCAST_COUNT] =
 	{
 		ZM_HUMAN_TOWN_VILLAGER,    // Npc_Villager
 		ZM_HUMAN_TOWN_SHOPKEEP,    // Npc_TradePostClerk
 		ZM_HUMAN_TOWN_CARETAKER,   // Npc_Caretaker
-		ZM_HUMAN_TOWN_ELDER,       // Npc_Wanderer AND Npc_Warden (they share a row)
+		ZM_HUMAN_TOWN_ELDER,       // Npc_Wanderer
+		ZM_HUMAN_TOWN_WARDEN,      // Npc_RouteWarden
 		ZM_HUMAN_RIVAL_VESPER,     // Npc_RivalVesper
 	};
 

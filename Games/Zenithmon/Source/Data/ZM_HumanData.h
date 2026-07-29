@@ -143,6 +143,7 @@ enum ZM_HUMAN_ID : u_int
 	ZM_HUMAN_TOWN_ELDER,        // "Elder"
 	ZM_HUMAN_TOWN_FIELDHAND,    // "Fieldhand"  Thornacre farmer
 	ZM_HUMAN_TOWN_DOCKWORKER,   // "Dockworker" Tidegate harbour
+	ZM_HUMAN_TOWN_WARDEN,       // "Warden"     lane / route warden
 
 	ZM_HUMAN_COUNT,
 	ZM_HUMAN_NONE = ZM_HUMAN_COUNT   // "no human" sentinel

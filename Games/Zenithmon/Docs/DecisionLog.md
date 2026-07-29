@@ -15,6 +15,117 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-29 -- ZM-D-164 -- The roster appearance collision closes, and ZM-D-160's recorded fix is retracted as FALSE
+
+*(No new `.cpp`, folder, scene, asset, ECS order or serialization version -- `uSERIALIZATION_VERSION`
+stays `2u`, 114 is still next-free -- and therefore **no `Build\regen.ps1`**. Five game-local files.
+This entry is APPENDED rather than editing ZM-D-160 in place, because this log is append-only: the
+false claim stays visible with its correction attached, which is the point of a decision log.)*
+
+### Decision
+
+`ZM_NPC_ROUTE_WARDEN` now names **`ZM_HUMAN_TOWN_WARDEN`**, a new append-only roster row
+(`ZM_HUMAN_OUTFIT_WORKER` + `ZM_HUMAN_HAIR_BLONDE`, `BUILD_STOCKY` / `SKIN_TAN` / `ATTACHMENT_HAT`),
+resolving to `(0.5425, 0.3895, 0.1410)`. `Npc_Wanderer` and `Npc_Warden` are no longer
+pixel-identical; six authored rows now wear six appearances.
+
+**★ ZM-D-160's RECORDED MINIMAL FIX WAS WRONG, AND IT WAS DISPROVED AGAINST THE COMPILER RATHER
+THAN ARGUED.** That entry -- and `Shortfalls.md` verbatim -- named `ZM_HUMAN_TRAINER_RANGER` as a
+one-token fix that *"can only RAISE the distinct-appearance count the boot unit asserts, so it
+cannot red anything."* Applied and built, it produced:
+
+```
+FAILED  ZM_Data::Npc_AuthoredAppearancesAreMutuallyDistinct
+  at Games\Zenithmon\Tests\ZM_Tests_NpcData.cpp:1021
+  'Villager' and 'Warden' name DIFFERENT human ids but are only 0.0873 apart (want >= 0.1500)
+```
+
+**The reasoning error is the reusable part: it read the unit as a pure COUNTER.** The unit has two
+arms -- a distinct-appearance count AND a pairwise margin -- and a fix can red the second while
+satisfying the first. Any claim of the form "this can only raise X, so it cannot red the test that
+asserts X" is only sound if X is the *only* thing the test asserts. Here it was not.
+
+**The root cause is a lossy projection.** `ZM_GetHumanPaletteColour` is
+`0.45*outfit.primary + 0.25*outfit.accent + 0.30*hair` and reads **neither skin nor build**. So
+"`OUTFIT_WORKER` is a visibly different family from the elder's `OUTFIT_CASUAL`" is true of the SC3
+albedo painter and FALSE of the single flat greybox colour: WORKER's primary `(0.42,0.28,0.08)` and
+CASUAL's `(0.44,0.18,0.09)` are near-identical in red, and BLACK-vs-BROWN hair contributes almost
+nothing at 0.30 weight. **Any future re-cast must be checked against the BLEND, never against the
+outfit enum.**
+
+A full 49-cell (outfit x hair) sweep found only **six** cells clear 0.15 against all six constraints
+(the five other authored ids plus the blockout fallback grey). `WORKER`+`BLONDE` (min sep
+**0.20661**, binding constraint Villager) was chosen over the higher-scoring `LABCOAT`+`WHITE`
+(0.21547) on CONTENT grounds: `LABCOAT` is the professor's outfit and lands 0.2286 from Aster, i.e.
+it buys nine thousandths of margin by seeding a future collision. Content plausibility over margin.
+
+### ★ THE UNIT WAS RATCHETED, AND THE OLD BOUND WAS PROVED INERT
+
+`uMIN_DISTINCT_APPEARANCES` was the literal `5u` against a `ZENITH_ASSERT_GE`. With the fix in place
+the true count is 6, so **the old bound still passes -- and would therefore have passed a regression
+straight back to the collision it was written for.** That was demonstrated as a named control, not
+assumed. It is now derived as `(u_int)ZM_NPC_COUNT`: full injectivity, so a seventh NPC duplicating
+an appearance reds without anyone remembering to bump a literal.
+
+Second-order: the fix makes `uSharedPairs` **unreachably zero**, which silently retires the
+same-human arm that the unit's own comment said was what made the different-human arm "a real
+discriminator rather than a coincidence". Rather than leave a counter that is read but can never be
+non-zero, the zero is now an explicit assertion (the roster carries no shared appearances), and the
+`uDistinctPairs + uSharedPairs` total is kept and recommented as the WALK-COMPLETENESS proof, which
+stays meaningful however a future roster splits. (Palette purity itself was already covered
+elsewhere by `HumanGen_PaletteTotality`, which calls the palette twice on every id -- checked, so no
+redundant unit was added.)
+
+### ★ A BLIND SPOT ACCEPTED WITH ITS EYES OPEN
+
+`HumanGen_PaletteDistinctness`'s `aeCAST`/`uCAST_COUNT` are a hand-maintained mirror of the
+`m_eHuman` column with **no compiler edge**. Deleting an id from `aeCAST` while leaving the count at
+6 does red -- but only *incidentally*: MSVC does not warn on a short aggregate initialiser, the slot
+value-initialises to `0 == ZM_HUMAN_PLAYER_M`, and PlayerM happens to sit 0.0472 from Vesper. **Had
+that zero-fill landed on a distant id the mutation would have passed clean.** The unit cannot detect
+"a cast id went missing", only "these ids collide"; trimming cast and count together is green by
+construction. Recorded rather than papered over, because a mutation that reds for the wrong reason
+is not evidence of teeth. The roster-coupled unit is the one that cannot be fooled.
+
+### Verified, not inferred
+
+- **Zero serialized bytes:** `m_eHuman` appears nowhere in `Components/ZM_Interactable.cpp`;
+  `WriteToDataStream` writes the version, `m_eNpcId`, radius, flags, waypoints and tuning. The colour
+  is re-derived at load from the serialized NPC id.
+- **No `Dawnmere.zscen` re-authoring:** the committed scene contains no `Zenith_ModelComponent` and
+  no colour payload at all (authoring runs with the editor STOPPED, so no material exists at
+  `AddStep_SaveScene`). Confirmed by extracting every printable string from the committed file, and
+  by the observed run leaving `Assets/` byte-clean.
+- **The tightest authored pair does NOT move:** it stays Caretaker/Elder at **0.20064**; the
+  warden's nearest is Villager at 0.20661, above it. So `ZM_HumanAppearance.h:69`'s "~0.20" comment
+  and the recorded `vsNearestNpc=0.2124` need no edit. Exactly one recorded figure moves:
+  `otherNpcColours` **5 -> 6**.
+- **★ A CONSEQUENCE NOBODY HAD LISTED, FOUND AND THEN OBSERVED:** a 36th human raises the HUMANS bake
+  enumeration by `ZM_HUMAN_ASSET_KIND_COUNT`, so `ZM_BakeManifestCheck` marks the family STALE. The
+  headless gate is STRUCTURALLY BLIND to this -- `ZM_AssetGallery_Test` skips for "requires
+  graphics", never for staleness -- so the windowed `--filter ZM_AssetGallery_Test` was run
+  deliberately: **PASS, 251 frames, 6.5 s, `Assets/` byte-clean afterwards.** The family re-baked
+  cleanly. Predicted consequences get observed, not booked as unknowns.
+
+- **Tests that lock it:** `Npc_AuthoredAppearancesAreMutuallyDistinct` (ratcheted to `ZM_NPC_COUNT`
+  plus the explicit `uSharedPairs == 0`), `HumanGen_PaletteDistinctness` (cast 5 -> 6),
+  `HumanGen_RosterTotality` (row-order integrity across both insertions). Observed gate,
+  orchestrator-run: Vulkan_True and Null_True both exit 0; headless **49 passed / 0 failed**; boot
+  units **2731 ran / 2730 passed / 0 failed / 1 skipped -- ZERO delta, exactly as predicted**;
+  windowed gallery 1 passed / 0 failed; no scene or asset dirt.
+- **Teeth:** four mutations named per-test, including the mandatory revert-to-`TOWN_ELDER` (reds the
+  ratchet twice) and the `aeCAST` deletion whose incidental redding is documented above. **NOT
+  executed this commit** -- recorded as the battery, since the ratchet's own inertness was already
+  demonstrated directly by control C1 (old `5u` bound passes with the fix in place), which is the
+  claim that actually mattered.
+- **Reversibility:** trivial and additive. The enum is append-only and save-stable by contract; no
+  other row, no serialized field, and no scene byte depends on the new id.
+- **UNVERIFIED and flagged:** that no two of the 36 `ZM_HumanContentHash` bundle values collide
+  (a ~1.5e-7 32-bit birthday risk). It cannot be evaluated statically; the observed green gate is
+  the evidence that it did not occur.
+
+---
+
 ## 2026-07-29 -- ZM-D-163 -- S7 item 3 SC1: the APPROACHING state lands pure and callerless, and the boot gate is found racing its own watchdog
 
 *(No new `.cpp`, `.h`, folder, scene, asset, ECS order or serialization version -- 114 is still
