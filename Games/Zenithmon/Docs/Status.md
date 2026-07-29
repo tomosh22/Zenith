@@ -180,7 +180,18 @@ above:** Vulkan_True and Null_True both exit 0; headless registry **49 passed / 
 boot unit gate **2722 ran / 2721 passed / 0 failed / 1 skipped** -- equal to the pinned
 `zm-tests.yml` baseline, so the tree is green and unchanged.
 
-**★ QUEUE ITEM 1 IS UNDERWAY -- SC1 LANDED (ZM-D-163).** `ZM_TRAINER_SIGHT_APPROACHING` is
+**★ QUEUE ITEM 1 IS UNDERWAY -- SC1 (ZM-D-163) AND SC2 (ZM-D-166) HAVE LANDED.** SC2 adds
+`ZM_TrainerCinematicLatch` as a FOURTH freeze owner, arbitrated by name in
+`ZM_UI_MenuStack::UnfreezePlayer`'s existing guard, **with no refcount on purpose** (one `End()`
+always releases; a counter turns one missed `End()` into a permanently frozen player) and
+`IsActive()` spelled against the registry so an unnameable owner reads INACTIVE. Observed:
+headless **49/0** with `ZM_TrainerSightWalkUp_Test` **754 -> 782 frames** (the frame delta is how
+we know the new phase RAN), boot **2731 -> 2735 / 2734 / 0 / 1**. **★ SC3 OWES A DEBT FROM SC2:**
+deleting the between-tests latch reset currently reds NOTHING, because `Begin()` has no runtime
+caller yet. Phase 7a1 leaves a tripwire armed -- **SC3 must add a batched case that exits
+mid-`APPROACHING`**, which is what finally gives that mutation teeth.
+
+**★ SC1 DETAIL (ZM-D-163).** `ZM_TRAINER_SIGHT_APPROACHING` is
 appended at ordinal 4 with the pure `ZM_StepTrainerApproach`, **callerless** (the ZM-D-153
 shape), so `m_bApproachPossible` defaulting false leaves all 26 shipped FSM units unmodified.
 Observed: headless **49/0** (unmoved), boot **2722 -> 2731 / 2730 passed / 0 failed / 1

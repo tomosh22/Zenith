@@ -15,6 +15,82 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-29 -- ZM-D-166 -- S7 item 3 SC2: a FOURTH freeze owner, arbitrated by NAME in the one existing guard, with NO refcount
+
+*(No new `.cpp`, folder, scene, asset, ECS order or serialization version -- `uSERIALIZATION_VERSION`
+stays `2u`, 114 still next-free -- and therefore **no `Build\regen.ps1`**.)*
+
+### Decision
+
+`ZM_TrainerCinematicLatch` lands beside `ZM_TrainerEngagementLatch` in
+`Source/Interaction/ZM_TrainerSightFsm.{h,cpp}`: an ownerless process-global holding a single
+`ZM_TRAINER_ID`, with `Begin` / `End` / `IsActive` / `GetActiveTrainerForTests` /
+`ResetRuntimeStateForTests`, every function TOTAL and SILENT on an unregistered id, serializing
+NOWHERE. `ZM_UI_MenuStack::UnfreezePlayer` gains exactly ONE clause
+(`|| ZM_TrainerCinematicLatch::IsActive()`) in the warp/battle guard it already had, and
+`Zenithmon.cpp`'s between-tests hook gains the reset. **No new freeze CONCEPT, no refcounted-arbiter
+refactor.**
+
+**Why by name and not by refcount.** `m_bMovementEnabled` is a bare bool that is NOT refcounted, and
+the three existing owners already arbitrate by name in that single guard, so a fourth name is the
+minimal house-idiomatic change. **The absence of a depth counter is a deliberate safety property,
+not laziness:** one `End()` always releases and a re-`Begin` REPLACES the owner. A counter converts
+a single missed `End()` into a player frozen for the rest of the session -- risk R4, and the one
+failure mode this shape makes structurally impossible. For the same reason `IsActive()` is spelled
+against the trainer registry, so a garbage slot reads **INACTIVE**: a freeze owner nobody can name
+must not be able to hold the player. **Fail OPEN on the axis where failing closed strands the user.**
+
+### ★ The automated phase is a NEGATIVE PAIRED WITH A POSITIVE, in the same run
+
+Phase 7a1 rides the existing `ZM_TrainerSightWalkUp_Test` registration (registry stays **49**) and
+runs between `Settle` and `BreakSight` -- the one point where Dawnmere is live, the transition IDLE,
+the Battle scene unloaded and the player a real UNFROZEN controller. It proves the precondition
+(unfrozen at entry), then: latch armed -> push and close a one-line dialogue -> movement stays off
+across **20 sampled frames**; then `End()` -> push and close **the same box the same way** ->
+movement **comes back**.
+
+**The pairing is the whole point.** "Still frozen" on its own is satisfied by a build in which
+nothing ever unfreezes anybody -- precisely the failure a fourth writer of a non-refcounted bool
+invites. Vesper's defeat flag is already set by that point, so `ZM_MayTrainerEngage` answers NO for
+the entire phase and nothing here can raise, bark, or move a counter a later phase reads.
+
+### ★ A MUTATION THAT REDS NOTHING, REPORTED RATHER THAN QUIETLY DROPPED
+
+Deleting the between-tests reset (M4) **reds nothing today, and that was stated plainly instead of
+being dressed up as coverage.** `Begin()` has no shipped runtime caller until SC3, so the only
+arming sites are the four boot units and phase 7a1, and every one releases before exiting (the
+Verify teardown resets on every exit path including failure). The hook therefore has nothing to
+clean and zero current reach.
+
+The response was not to dismiss the mutation but to **arm a tripwire for it**: phase 7a1 reads
+`IsActive()` BEFORE it touches the latch, and Setup deliberately does not clear it, so the moment
+SC3 gives `Begin()` a runtime caller an approach that dies mid-walk leaks a freeze and the next
+batched test reds there. **SC3 owes a batched case that exits mid-`APPROACHING`; that is what
+finally gives M4 teeth.** An honest "no teeth yet, here is when it gets them" is worth more than a
+mutation table with a green row nobody examined.
+
+- **Tests that lock it:** four boot units in the `ZM_Interaction` suite
+  (`CinematicLatch_BeginIsPerTrainerAndEndClearsIt`, `..._UnregisteredIdIsInertAndSilent`,
+  `..._ResetClearsEverything`, `..._ReBeginWhileActiveIsIdempotent`) pin the latch's algebra; phase
+  7a1 pins the ARBITRATION live in baked Dawnmere. Observed gate, orchestrator-run: Vulkan_True and
+  Null_True both exit 0; headless **49 passed / 0 failed** with `ZM_TrainerSightWalkUp_Test`
+  **754 -> 782 frames** (the frame delta is the evidence the new phase RAN rather than skipped);
+  boot units **2735 ran / 2734 passed / 0 failed / 1 skipped**, exactly the predicted +4; no scene
+  or asset dirt. `zm-tests.yml` bumped 2731 -> 2735 in this commit.
+- **Build note:** the first Null build died with `cl : command line error D8040: error creating or
+  communicating with child process` -- the known hung-`cl.exe`/`mspdbsrv` failure, NOT a code error
+  (the Vulkan config had just built the same sources). Clearing the stale toolchain processes fixed
+  it without needing `zenith clean`.
+- **Teeth:** M1 (invert the guard clause) reds the automated phase's BOTH halves and deliberately
+  NOT the boot units -- that asymmetry is the live-wiring proof, since the units never reach
+  `UnfreezePlayer`; M2 (wrong id in `Begin`) reds the two owner-naming units; M3 (`End()` a no-op)
+  reds four places including the paired positive, and is the release-path mutation. **Recorded, not
+  executed.**
+- **Reversibility:** high -- the class is additive and callerless in production; the one-line guard
+  clause reverts without touching the other three owners.
+
+---
+
 ## 2026-07-29 -- ZM-D-165 -- The BOX screen's expiring deferral is caught and RE-DEFERRED IN WRITING (S7 -> S9), and the stale-doc sweep
 
 *(Documentation only -- no source, no scene, no asset, no build. Recorded because a deferral that

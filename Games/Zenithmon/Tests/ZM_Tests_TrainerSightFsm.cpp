@@ -2301,3 +2301,178 @@ ZENITH_TEST(ZM_Interaction, Latch_UnregisteredIdIsInertAndSilent)
 
 	ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
 }
+
+// ---- The process-global CINEMATIC FREEZE latch (S7 item 1 SC2) ----------------
+//
+// The FOURTH freeze owner. Everything below is PURE -- the latch owns no controller
+// and writes no movement bool; it only answers the question
+// ZM_UI_MenuStack::UnfreezePlayer now asks. That arbitration is proven LIVE, in the
+// real overworld, by the freeze-hold/release phase of ZM_TrainerSightWalkUp_Test;
+// these four units pin the latch's own algebra, and the split is deliberate: a
+// mutation to the UnfreezePlayer clause must red the AUTOMATED phase and NOT these,
+// or the wiring was only ever inspected.
+//
+// Every unit resets on ENTRY as well as on exit, for the same reason the engagement
+// latch units above do: this is ownerless process-global state, so a unit that only
+// tidied up afterwards would still inherit whatever ran first.
+
+ZENITH_TEST(ZM_Interaction, CinematicLatch_BeginIsPerTrainerAndEndClearsIt)
+{
+	ZM_TrainerCinematicLatch::ResetRuntimeStateForTests();
+	ZENITH_ASSERT_FALSE(ZM_TrainerCinematicLatch::IsActive(),
+		"a reset cinematic latch holds nobody");
+	ZENITH_ASSERT_EQ((u_int)ZM_TrainerCinematicLatch::GetActiveTrainerForTests(),
+		(u_int)ZM_TRAINER_NONE,
+		"a reset cinematic latch parks the NONE sentinel, not a stale id");
+
+	ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_RIVAL_VESPER);
+	ZENITH_ASSERT_TRUE(ZM_TrainerCinematicLatch::IsActive(),
+		"Begin on a REGISTERED trainer must arm the freeze");
+	// ★ THE OWNER IS NAMED, not merely counted. A Begin that armed the latch for a
+	// FIXED id would satisfy IsActive() forever while attributing every cinematic to
+	// the wrong trainer -- and the release path, which is per-operation rather than
+	// per-caller, would then be releasing something nobody can identify.
+	ZENITH_ASSERT_EQ((u_int)ZM_TrainerCinematicLatch::GetActiveTrainerForTests(),
+		(u_int)ZM_TRAINER_RIVAL_VESPER,
+		"the latch must record the trainer it was actually begun for");
+
+	// A DIFFERENT registered trainer takes it over. Last writer wins, by design: the
+	// alternative (stacking a second claim) is what turns one missed End() into a
+	// permanently frozen player.
+	ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_ROUTE1_RAMBLER);
+	ZENITH_ASSERT_TRUE(ZM_TrainerCinematicLatch::IsActive(),
+		"a hand-over leaves the freeze armed");
+	ZENITH_ASSERT_EQ((u_int)ZM_TrainerCinematicLatch::GetActiveTrainerForTests(),
+		(u_int)ZM_TRAINER_ROUTE1_RAMBLER,
+		"Begin for a second trainer must HAND THE FREEZE OVER, not be ignored in "
+		"favour of the incumbent");
+
+	// ★ ONE End() RELEASES, whatever ran before it. This is the clause that stands
+	// between a walk-up and a player who can never move again.
+	ZM_TrainerCinematicLatch::End();
+	ZENITH_ASSERT_FALSE(ZM_TrainerCinematicLatch::IsActive(),
+		"End must release the freeze");
+	ZENITH_ASSERT_EQ((u_int)ZM_TrainerCinematicLatch::GetActiveTrainerForTests(),
+		(u_int)ZM_TRAINER_NONE,
+		"End must park the NONE sentinel, so no later reader can see a released "
+		"cinematic still naming an owner");
+
+	// TOTAL: a second End() with nothing armed is legal and inert. The release path
+	// must never need a precondition.
+	ZM_TrainerCinematicLatch::End();
+	ZENITH_ASSERT_FALSE(ZM_TrainerCinematicLatch::IsActive(),
+		"a redundant End is inert, never a re-arm");
+
+	ZM_TrainerCinematicLatch::ResetRuntimeStateForTests();
+}
+
+ZENITH_TEST(ZM_Interaction, CinematicLatch_UnregisteredIdIsInertAndSilent)
+{
+	ZM_TrainerCinematicLatch::ResetRuntimeStateForTests();
+
+	u_int uHits = 0u;
+	bool  bActiveAfterGarbage = true;
+	// ★ SAMPLED INSIDE THE SCOPE AND STRICTLY BEFORE ANY End(): End() clears the owner
+	// slot, so releasing first would wipe exactly the stray write this unit exists to
+	// find and the assertion below would pass on a latch that HAD been corrupted.
+	ZM_TRAINER_ID eSlotAfterGarbage = ZM_TRAINER_RIVAL_VESPER;
+	{
+		Zenith_AssertCaptureScope xCapture;
+
+		ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_NONE);
+		ZM_TrainerCinematicLatch::Begin((ZM_TRAINER_ID)9999u);
+		eSlotAfterGarbage    = ZM_TrainerCinematicLatch::GetActiveTrainerForTests();
+		bActiveAfterGarbage  = ZM_TrainerCinematicLatch::IsActive();
+		// End() on a latch nobody armed is part of the SAME totality claim: the release
+		// path may never need a precondition, so it may never assert on one either.
+		ZM_TrainerCinematicLatch::End();
+
+		uHits = (u_int)xCapture.GetHitCount();
+	}
+
+	ZENITH_ASSERT_EQ(uHits, 0u,
+		"the cinematic latch asserted on an unregistered id -- Zenith_Assert breaks in "
+		"EVERY config, so this would kill the whole boot unit run rather than fail one "
+		"test");
+	ZENITH_ASSERT_FALSE(bActiveAfterGarbage,
+		"an unregistered Begin must never arm the freeze -- an un-attributable owner "
+		"holding the player is exactly the stranded-frozen failure");
+	// The RAW slot, not just IsActive(): a stray write parked there would be invisible
+	// to the accessor (which re-validates before answering) but is still corruption --
+	// the SAME reason GetEngagedMaskForTests exists next door.
+	ZENITH_ASSERT_EQ((u_int)eSlotAfterGarbage, (u_int)ZM_TRAINER_NONE,
+		"an unregistered Begin must leave the owner slot bit-for-bit untouched");
+
+	ZM_TrainerCinematicLatch::ResetRuntimeStateForTests();
+}
+
+ZENITH_TEST(ZM_Interaction, CinematicLatch_ResetClearsEverything)
+{
+	ZM_TrainerCinematicLatch::ResetRuntimeStateForTests();
+
+	ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_RIVAL_VESPER);
+	ZENITH_ASSERT_TRUE(ZM_TrainerCinematicLatch::IsActive(),
+		"the fixture must really be armed, or the reset below clears nothing and this "
+		"unit is vacuous");
+
+	ZM_TrainerCinematicLatch::ResetRuntimeStateForTests();
+	ZENITH_ASSERT_FALSE(ZM_TrainerCinematicLatch::IsActive(),
+		"Reset must release the freeze");
+	ZENITH_ASSERT_EQ((u_int)ZM_TrainerCinematicLatch::GetActiveTrainerForTests(),
+		(u_int)ZM_TRAINER_NONE,
+		"Reset must leave the owner slot empty, so this unit cannot leak a FREEZE into "
+		"the rest of the boot suite");
+
+	// ★ AND IT IS THE SAME RELEASE End() PERFORMS. The between-tests hook in
+	// Zenithmon.cpp calls Reset, never End, so if the two ever diverged a batched
+	// automated test could inherit a half-released freeze that no End() would clear.
+	ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_ROUTE1_RAMBLER);
+	ZM_TrainerCinematicLatch::End();
+	const ZM_TRAINER_ID eAfterEnd = ZM_TrainerCinematicLatch::GetActiveTrainerForTests();
+	ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_ROUTE1_RAMBLER);
+	ZM_TrainerCinematicLatch::ResetRuntimeStateForTests();
+	ZENITH_ASSERT_EQ((u_int)ZM_TrainerCinematicLatch::GetActiveTrainerForTests(),
+		(u_int)eAfterEnd,
+		"Reset and End must leave the latch in the SAME observable state -- the "
+		"between-tests hook calls Reset, the runtime calls End, and a divergence there "
+		"is a freeze that survives into the next test");
+}
+
+ZENITH_TEST(ZM_Interaction, CinematicLatch_ReBeginWhileActiveIsIdempotent)
+{
+	ZM_TrainerCinematicLatch::ResetRuntimeStateForTests();
+
+	// ★ THE WHOLE POINT: there is NO REFCOUNT. Arm the same trainer repeatedly and a
+	// SINGLE End() must still release. A depth counter here would be the classic
+	// stranded-player bug -- m_bMovementEnabled is a bare bool with four owners, and
+	// the one that never releases wins forever.
+	ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_RIVAL_VESPER);
+	ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_RIVAL_VESPER);
+	ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_RIVAL_VESPER);
+	ZENITH_ASSERT_TRUE(ZM_TrainerCinematicLatch::IsActive(),
+		"three Begins leave the freeze armed");
+	ZENITH_ASSERT_EQ((u_int)ZM_TrainerCinematicLatch::GetActiveTrainerForTests(),
+		(u_int)ZM_TRAINER_RIVAL_VESPER,
+		"re-arming for the SAME trainer must not disturb the owner");
+
+	ZM_TrainerCinematicLatch::End();
+	ZENITH_ASSERT_FALSE(ZM_TrainerCinematicLatch::IsActive(),
+		"ONE End must release three Begins -- a latch that counted its arms would "
+		"still be holding the player here, and nothing in the shipped code would ever "
+		"call End the missing two times");
+	ZENITH_ASSERT_EQ((u_int)ZM_TrainerCinematicLatch::GetActiveTrainerForTests(),
+		(u_int)ZM_TRAINER_NONE,
+		"the owner slot is empty after the single End");
+
+	// An unregistered Begin must not be able to DISARM a live cinematic either: the
+	// rejection is total in both directions.
+	ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_RIVAL_VESPER);
+	ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_NONE);
+	ZENITH_ASSERT_TRUE(ZM_TrainerCinematicLatch::IsActive(),
+		"a rejected Begin must leave the incumbent cinematic alone");
+	ZENITH_ASSERT_EQ((u_int)ZM_TrainerCinematicLatch::GetActiveTrainerForTests(),
+		(u_int)ZM_TRAINER_RIVAL_VESPER,
+		"a rejected Begin must not overwrite the armed owner with the sentinel");
+
+	ZM_TrainerCinematicLatch::ResetRuntimeStateForTests();
+}

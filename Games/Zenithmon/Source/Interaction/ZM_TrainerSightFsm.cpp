@@ -54,6 +54,53 @@ u_int ZM_TrainerEngagementLatch::GetEngagedMaskForTests()
 	return s_uEngagedMask;
 }
 
+// ---- The cinematic freeze latch (S7 item 1 SC2) ------------------------------
+//
+// See the header for why this is one more NAME in ZM_UI_MenuStack::UnfreezePlayer's
+// existing guard rather than a second freeze mechanism. Nothing here touches the ECS,
+// a controller or the movement bool itself: this class only answers "is a cinematic
+// holding the player right now", and the ONE existing arbitration point does the rest.
+
+ZM_TRAINER_ID ZM_TrainerCinematicLatch::s_eActiveTrainer = ZM_TRAINER_NONE;
+
+void ZM_TrainerCinematicLatch::Begin(ZM_TRAINER_ID eTrainer)
+{
+	if (!ZM_IsRegisteredTrainer(eTrainer))
+	{
+		return;
+	}
+	// LAST WRITER WINS, and there is no counter. Re-arming for the SAME trainer is a
+	// no-op; re-arming for a DIFFERENT one hands the freeze straight over rather than
+	// leaving a second claim behind that the release path would have to discover.
+	s_eActiveTrainer = eTrainer;
+}
+
+void ZM_TrainerCinematicLatch::End()
+{
+	// TOTAL, and unconditional on purpose: the release path must never be the thing
+	// that needs a precondition. A stranded permanently-frozen player is the one
+	// failure mode this class is shaped to make impossible.
+	s_eActiveTrainer = ZM_TRAINER_NONE;
+}
+
+bool ZM_TrainerCinematicLatch::IsActive()
+{
+	// Spelled against the registry rather than as "!= ZM_TRAINER_NONE" so a garbage
+	// value that somehow reached the slot reads INACTIVE. That is the FAIL-OPEN
+	// direction: a freeze owner nobody can name must not be able to hold the player.
+	return ZM_IsRegisteredTrainer(s_eActiveTrainer);
+}
+
+ZM_TRAINER_ID ZM_TrainerCinematicLatch::GetActiveTrainerForTests()
+{
+	return s_eActiveTrainer;
+}
+
+void ZM_TrainerCinematicLatch::ResetRuntimeStateForTests()
+{
+	s_eActiveTrainer = ZM_TRAINER_NONE;
+}
+
 const char* ZM_TrainerSightStateName(ZM_TRAINER_SIGHT_STATE eState)
 {
 	switch (eState)

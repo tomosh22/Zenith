@@ -35,6 +35,15 @@
 // ZENITH_AUTOMATED_TEST_REGISTER: the automated registry count deliberately does
 // not move.
 //
+// S7 item 1 SC2 APPENDS ONE MORE PHASE to the same walk: (7a1), between the settle
+// and the re-arm, proves the FOURTH freeze owner. With ZM_TrainerCinematicLatch armed
+// a dialogue closing must NOT hand movement back, and -- in the SAME run, on the SAME
+// player, through the SAME close path -- with the latch ended it MUST. The pairing is
+// the whole design: "still frozen" alone is satisfied by a build in which nothing ever
+// unfreezes anybody, which is precisely the regression a fourth writer of a
+// non-refcounted bool invites. Again NO new ZENITH_AUTOMATED_TEST_REGISTER: the
+// automated registry count deliberately does not move.
+//
 // TWO SMALL THINGS IN THE MIDDLE ARE LOAD-BEARING; neither is decoration:
 //   * phase (7a) samples ZM_TrainerEngagementLatch::HasEngaged AFTER the walk-up
 //     encounter. That is the ONLY observation in this repo of the production
@@ -208,6 +217,28 @@ namespace
 	constexpr u_int uTS_ENCOUNTERS_UNRESOLVED_BEFORE  = 0xfffffffeu;
 	constexpr u_int uTS_ENCOUNTERS_UNRESOLVED_AT_BARK = 0xffffffffu;
 
+	// ---- S7 item 1 SC2: the CINEMATIC FREEZE LATCH's own budgets ------------
+	//
+	// How long the phase waits, after the battle round trip has settled, for the player
+	// to be UNFROZEN again. This is the phase's ANTI-VACUITY PRECONDITION, not a
+	// convenience: its negative half is "the player is STILL frozen", which a player
+	// who was frozen the whole time satisfies for free.
+	constexpr int iTS_CINE_UNFROZEN_DEADLINE = 90;
+	// One confirm press per frame closes a ONE-LINE box in two frames: the first press
+	// snaps the typewriter to the end and the second advances past the last line
+	// (ZM_UI_DialogueBox::Confirm). This is that budget times thirty, because the
+	// overworld typewriter is a hard constexpr 45 chars/sec that
+	// ZM_SetInstantBattlesForTests does NOT collapse.
+	constexpr int iTS_CINE_DISMISS_DEADLINE = 60;
+	// How many frames "still frozen" is sampled on AFTER the armed box closed. One
+	// frame would be satisfied by a release that merely arrived late -- and a
+	// cinematic freeze released one frame late is still one the player walks out of.
+	constexpr int iTS_CINE_HOLD_FRAMES = 20;
+	// After End(), how long the release may take. ZM_UI_MenuStack::UnfreezePlayer
+	// re-enables movement in the SAME call that closes the box, so this is slack
+	// against a slow frame rather than a race.
+	constexpr int iTS_CINE_RELEASE_DEADLINE = 30;
+
 	// The approach must keep CLOSING; a second of no improvement means stuck
 	// geometry / wrong basis / oscillation, and the test says so immediately.
 	constexpr int   iTS_STALL_LIMIT_FRAMES = 60;
@@ -233,6 +264,11 @@ namespace
 		AwaitInBattle,
 		DriveMenu,
 		Settle,
+		// S7 item 1 SC2. INSERTED between Settle and BreakSight: the one point in the
+		// walk where Dawnmere is active, the transition is IDLE and the player is a
+		// live, UNFROZEN controller -- i.e. the only place the fourth freeze owner can
+		// be proven to both hold and release.
+		CinematicFreeze,
 		BreakSight,
 		HoldInCone,
 		FlaglessArm,
@@ -505,6 +541,26 @@ namespace
 	u_int g_uTSRaiseAtRearm     = 0xffffffffu;
 	u_int g_uTSStateAtBreakEntry = 0xffffffffu;   // diagnostic only; see the phase
 	float g_fTSRearmSeparation  = 0.0f;
+
+	// ---- Phase (7a1): THE CINEMATIC FREEZE LATCH, both halves (S7 item 1 SC2) ----
+	// The negative ("still frozen") and the positive ("movement came back") are
+	// separate observations on purpose: a build in which nothing ever unfreezes
+	// anybody satisfies the negative for free, so Verify requires BOTH.
+	bool g_bTSCineStarted         = false;
+	bool g_bTSCineLatchWasClear   = false;   // want true: nothing leaked a freeze in
+	bool g_bTSCineUnfrozenAtEntry = false;   // want true: THE precondition
+	bool g_bTSCineArmed           = false;   // Begin() took, and named OUR trainer
+	bool g_bTSCineBoxRaised       = false;   // the armed-half box really went up
+	bool g_bTSCineFrozenByBox     = false;   // ...and raising it really froze the player
+	bool g_bTSCineArmedBoxClosed  = false;
+	int  g_iTSCineHeldFrames      = 0;
+	bool g_bTSCineHeldWhileArmed  = false;   // want true: frozen on EVERY held frame
+	bool g_bTSCineEnded           = false;   // End() took
+	bool g_bTSCineBoxRaised2      = false;
+	bool g_bTSCineFreeBoxClosed   = false;
+	bool g_bTSCineReleased        = false;   // want true: movement CAME BACK
+	int  g_iTSCineReleaseFrames   = -1;
+	bool g_bTSCineCompleted       = false;
 
 	// ---- Phase (7): HOLD IN CONE (the flagged arm, end to end) ----
 	bool  g_bTSHoldCompleted        = false;
@@ -1544,8 +1600,239 @@ namespace
 
 		g_uTSHoldMaxRaiseCount = 0u;
 		g_uTSHoldMinRaiseCount = 0xffffffffu;
-		g_eTSPhase = TSPhase::BreakSight;
+		g_eTSPhase = TSPhase::CinematicFreeze;
 		g_iTSPhaseFrames = 0;
+		return true;
+	}
+
+	// Raise the cinematic phase's own one-line box. The line is SHORT on purpose: the
+	// overworld typewriter is a hard constexpr 45 chars/sec (ZM_UI_BattleHUD.cpp:37)
+	// that ZM_SetInstantBattlesForTests does NOTHING for, so every character it does
+	// not have is real frames this phase does not spend.
+	bool TSPushCinematicLine()
+	{
+		const char* const aszLines[] = { "..." };
+		return ZM_UI_MenuStack::TryPushDialogue(aszLines, 1u);
+	}
+
+	// (7a1) ★ THE CINEMATIC FREEZE LATCH, LIVE -- A NEGATIVE PAIRED WITH A POSITIVE,
+	//       IN THE SAME RUN (S7 item 1 SC2).
+	//
+	// THE CLAIM: ZM_UI_MenuStack::UnfreezePlayer now coordinates with a FOURTH freeze
+	// owner. With ZM_TrainerCinematicLatch armed, a dialogue closing underneath a
+	// cinematic must NOT hand movement back; with it released, the very same close must.
+	//
+	// ★ THE NEGATIVE ON ITS OWN WOULD BE WORTHLESS, and that is not a hypothetical here.
+	// "The player is still frozen after the box closed" is satisfied for free by a build
+	// in which nothing ever unfreezes anybody -- which is EXACTLY the failure this latch
+	// is most likely to introduce, because m_bMovementEnabled is a bare bool with no
+	// refcount and four owners now write it. So the phase proves both halves against the
+	// SAME player in the SAME run:
+	//   (a) PRECONDITION -- the player is UNFROZEN when the phase begins;
+	//   (b) ARMED -- open a box, close it, and movement stays OFF for a WINDOW of
+	//       frames, not merely for the frame after the close;
+	//   (c) RELEASED -- End(), then open the SAME box and close it the SAME way, and
+	//       movement must come BACK.
+	// (c) is what gives (b) meaning, and it is the direct test of the release path:
+	// make End() a no-op and (c) is the clause that reds.
+	//
+	// WHY HERE. This is the one point in the walk where Dawnmere is the active scene,
+	// the transition is IDLE, the Battle scene is unloaded and the player is a live
+	// unfrozen controller. The phase leaves the sight machine exactly as it found it:
+	// Vesper's defeat flag is set by now, so ZM_MayTrainerEngage answers NO for its whole
+	// duration and nothing here can raise, bark, or move a counter that phases (7a2) and
+	// (7) go on to read.
+	bool TSPhaseCinematicFreeze()
+	{
+		TSPlayerView xPlayer;
+		if (!FindActivePlayer(xPlayer) || xPlayer.m_pxController == nullptr)
+		{
+			FailTS("the player vanished before the cinematic freeze phase");
+			return false;
+		}
+
+		// ---- (a) THE PRECONDITION ------------------------------------------------
+		if (!g_bTSCineStarted)
+		{
+			// ★ THE LATCH IS READ BEFORE IT IS TOUCHED, and Setup deliberately does NOT
+			// clear it, so this sample doubles as the live tripwire on the between-tests
+			// hook in Zenithmon.cpp. Nothing in the repo arms this latch outside this
+			// phase today, so it cannot red yet; the moment a runtime caller exists, a
+			// test that dies mid-cinematic leaks a FREEZE and this is what sees it.
+			g_bTSCineLatchWasClear = !ZM_TrainerCinematicLatch::IsActive();
+			if (!g_bTSCineLatchWasClear)
+			{
+				FailTS("a cinematic freeze was ALREADY armed when this phase began -- "
+					"something leaked one across the batch and the between-tests hook in "
+					"Zenithmon.cpp did not clear it, so every later test inherits a player "
+					"who can never be unfrozen");
+				return false;
+			}
+			if (!xPlayer.m_pxController->IsMovementEnabled())
+			{
+				// Not a failure yet: the battle resume restores the player and this phase
+				// starts only a handful of frames behind it.
+				if (g_iTSPhaseFrames > iTS_CINE_UNFROZEN_DEADLINE)
+				{
+					FailTS("the player was STILL frozen when the cinematic phase began, so "
+						"the 'still frozen' half below would be satisfied by a build in "
+						"which nothing ever unfreezes anybody -- precisely the vacuous "
+						"negative this phase exists to refuse");
+					return false;
+				}
+				return true;
+			}
+			g_bTSCineUnfrozenAtEntry = true;
+
+			ZM_TrainerCinematicLatch::Begin(eTS_TRAINER);
+			if (!ZM_TrainerCinematicLatch::IsActive()
+				|| ZM_TrainerCinematicLatch::GetActiveTrainerForTests() != eTS_TRAINER)
+			{
+				FailTS("ZM_TrainerCinematicLatch::Begin did not arm the freeze for the "
+					"trainer it was handed -- every clause below would be vacuous");
+				return false;
+			}
+			g_bTSCineArmed = true;
+
+			if (!TSPushCinematicLine())
+			{
+				FailTS("the cinematic phase could not raise a dialogue to close");
+				return false;
+			}
+			g_bTSCineStarted = true;
+			g_iTSPhaseFrames = 0;
+			return true;
+		}
+
+		// ---- (b) THE NEGATIVE: armed, the close must NOT release -----------------
+		if (!g_bTSCineEnded)
+		{
+			if (!g_bTSCineBoxRaised)
+			{
+				// PushDialogueLines is synchronous, so the box is top on this very frame.
+				if (TSTopScreen() != ZM_MENU_SCREEN_DIALOGUE)
+				{
+					FailTS("the cinematic phase's dialogue never became the top screen");
+					return false;
+				}
+				// ★ ANTI-VACUITY ON THE FREEZE ITSELF. PushDialogueLines calls
+				// FreezePlayer only when the stack was EMPTY; a player who was not frozen
+				// here would make "still frozen after the close" a claim about a freeze
+				// that never happened.
+				if (xPlayer.m_pxController->IsMovementEnabled())
+				{
+					FailTS("raising the cinematic phase's dialogue did NOT freeze the "
+						"player, so 'still frozen once it closes' would prove nothing");
+					return false;
+				}
+				g_bTSCineBoxRaised   = true;
+				g_bTSCineFrozenByBox = true;
+				g_iTSPhaseFrames = 0;
+				return true;
+			}
+
+			if (!g_bTSCineArmedBoxClosed)
+			{
+				if (!ZM_UI_MenuStack::IsMenuOpen())
+				{
+					g_bTSCineArmedBoxClosed = true;
+					g_iTSPhaseFrames = 0;
+					return true;
+				}
+				if (g_iTSPhaseFrames > iTS_CINE_DISMISS_DEADLINE)
+				{
+					FailTS("the cinematic phase's armed-half dialogue never closed under "
+						"one confirm press per frame");
+					return false;
+				}
+				// State-setter only (convention C1), the same press DismissChallenge uses.
+				Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+				return true;
+			}
+
+			// THE PROPERTY, on every frame of a real window rather than on one frame.
+			++g_iTSCineHeldFrames;
+			if (xPlayer.m_pxController->IsMovementEnabled())
+			{
+				FailTS("the dialogue closed and handed movement BACK while a cinematic "
+					"freeze was armed -- ZM_UI_MenuStack::UnfreezePlayer is not "
+					"coordinating with the fourth owner, so the player walks out from "
+					"under the walk-up mid-cinematic");
+				return false;
+			}
+			if (g_iTSCineHeldFrames < iTS_CINE_HOLD_FRAMES)
+			{
+				return true;
+			}
+			g_bTSCineHeldWhileArmed = true;
+
+			// ---- (c) THE PAIRED POSITIVE: release, and movement must come back ----
+			ZM_TrainerCinematicLatch::End();
+			if (ZM_TrainerCinematicLatch::IsActive())
+			{
+				FailTS("ZM_TrainerCinematicLatch::End did not release the freeze");
+				return false;
+			}
+			g_bTSCineEnded = true;
+			if (!TSPushCinematicLine())
+			{
+				FailTS("the cinematic phase could not raise its second dialogue");
+				return false;
+			}
+			g_iTSPhaseFrames = 0;
+			return true;
+		}
+
+		if (!g_bTSCineBoxRaised2)
+		{
+			if (TSTopScreen() != ZM_MENU_SCREEN_DIALOGUE)
+			{
+				FailTS("the cinematic phase's second dialogue never became the top screen "
+					"-- the released half must exercise the SAME close path as the armed "
+					"half or it compares nothing");
+				return false;
+			}
+			g_bTSCineBoxRaised2 = true;
+			g_iTSPhaseFrames = 0;
+			return true;
+		}
+
+		if (!g_bTSCineFreeBoxClosed)
+		{
+			if (!ZM_UI_MenuStack::IsMenuOpen())
+			{
+				g_bTSCineFreeBoxClosed = true;
+				g_iTSPhaseFrames = 0;
+				return true;
+			}
+			if (g_iTSPhaseFrames > iTS_CINE_DISMISS_DEADLINE)
+			{
+				FailTS("the cinematic phase's released-half dialogue never closed under "
+					"one confirm press per frame");
+				return false;
+			}
+			Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+			return true;
+		}
+
+		if (xPlayer.m_pxController->IsMovementEnabled())
+		{
+			g_bTSCineReleased      = true;
+			g_iTSCineReleaseFrames = g_iTSPhaseFrames;
+			g_bTSCineCompleted     = true;
+			ClearTSInput();
+			g_eTSPhase = TSPhase::BreakSight;
+			g_iTSPhaseFrames = 0;
+			return true;
+		}
+		if (g_iTSPhaseFrames > iTS_CINE_RELEASE_DEADLINE)
+		{
+			FailTS("with the cinematic freeze ENDED, closing the dialogue did NOT give "
+				"movement back -- the release path is broken and the player is stranded "
+				"permanently frozen. This is the PAIRED POSITIVE: without it the 'still "
+				"frozen' half above is satisfied by a game that never unfreezes anybody");
+			return false;
+		}
 		return true;
 	}
 
@@ -1953,6 +2240,28 @@ namespace
 		g_uTSStateAtBreakEntry = 0xffffffffu;
 		g_fTSRearmSeparation = 0.0f;
 
+		// S7 item 1 SC2. ★ NOTE WHAT IS *NOT* HERE: the cinematic latch itself is
+		// deliberately NOT reset by Setup, unlike ZM_TrainerEngagementLatch below.
+		// Clearing it here would make the phase's own "was a freeze leaked into this
+		// test" check dead by construction, and that check is the only live tripwire on
+		// the between-tests hook in Zenithmon.cpp. Verify's teardown resets it on EVERY
+		// exit path, so nothing this test arms can outlive it.
+		g_bTSCineStarted         = false;
+		g_bTSCineLatchWasClear   = false;
+		g_bTSCineUnfrozenAtEntry = false;
+		g_bTSCineArmed           = false;
+		g_bTSCineBoxRaised       = false;
+		g_bTSCineFrozenByBox     = false;
+		g_bTSCineArmedBoxClosed  = false;
+		g_iTSCineHeldFrames      = 0;
+		g_bTSCineHeldWhileArmed  = false;
+		g_bTSCineEnded           = false;
+		g_bTSCineBoxRaised2      = false;
+		g_bTSCineFreeBoxClosed   = false;
+		g_bTSCineReleased        = false;
+		g_iTSCineReleaseFrames   = -1;
+		g_bTSCineCompleted       = false;
+
 		g_bTSHoldCompleted       = false;
 		g_bTSHoldSawCone         = false;
 		g_uTSHoldMaxRaiseCount   = 0xffffffffu;
@@ -2061,6 +2370,7 @@ namespace
 		case TSPhase::AwaitInBattle: return TSPhaseAwaitInBattle();
 		case TSPhase::DriveMenu:     return TSPhaseDriveMenu();
 		case TSPhase::Settle:        return TSPhaseSettle();
+		case TSPhase::CinematicFreeze: return TSPhaseCinematicFreeze();
 		case TSPhase::BreakSight:    return TSPhaseBreakSight();
 		case TSPhase::HoldInCone:    return TSPhaseHoldInCone();
 		case TSPhase::FlaglessArm:   return TSPhaseFlaglessArm();
@@ -2208,6 +2518,28 @@ namespace
 				g_uTSRamblerMaxChallenge,
 				g_bTSRamblerTransitionMoved ? "true" : "false",
 				g_fTSRamblerSeparation);
+
+			// S7 item 1 SC2: the fourth freeze owner, both halves.
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_TrainerSight] SC2 cinematic freeze: latchWasClear=%s (want true) "
+				"unfrozenAtEntry=%s (want true) armed=%s boxRaised=%s frozenByBox=%s "
+				"armedBoxClosed=%s heldFrames=%d (want %d) heldWhileArmed=%s (want true) "
+				"ended=%s boxRaised2=%s freeBoxClosed=%s released=%s (want true) "
+				"releaseFrames=%d (want <= %d) completed=%s",
+				g_bTSCineLatchWasClear ? "true" : "false",
+				g_bTSCineUnfrozenAtEntry ? "true" : "false",
+				g_bTSCineArmed ? "true" : "false",
+				g_bTSCineBoxRaised ? "true" : "false",
+				g_bTSCineFrozenByBox ? "true" : "false",
+				g_bTSCineArmedBoxClosed ? "true" : "false",
+				g_iTSCineHeldFrames, iTS_CINE_HOLD_FRAMES,
+				g_bTSCineHeldWhileArmed ? "true" : "false",
+				g_bTSCineEnded ? "true" : "false",
+				g_bTSCineBoxRaised2 ? "true" : "false",
+				g_bTSCineFreeBoxClosed ? "true" : "false",
+				g_bTSCineReleased ? "true" : "false",
+				g_iTSCineReleaseFrames, iTS_CINE_RELEASE_DEADLINE,
+				g_bTSCineCompleted ? "true" : "false");
 
 			if (g_bTSFailed)
 			{
@@ -2398,6 +2730,70 @@ namespace
 					"write its prize is farmable one raise per re-entry",
 					(u_int)eTS_TRAINER);
 				bPassed = false;
+			}
+
+			// ====== (7a1) THE CINEMATIC FREEZE LATCH: HOLD *AND* RELEASE (SC2) =====
+			// ★ BOTH HALVES ARE REQUIRED, SEPARATELY. The hold clause alone is satisfied
+			// by any build that never unfreezes anybody -- which is the specific
+			// regression a fourth writer of a non-refcounted bool invites -- so the
+			// release clause is what makes the hold a claim about ARBITRATION rather than
+			// about paralysis.
+			if (!g_bTSCineCompleted)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_TrainerSight] the cinematic freeze phase never completed -- the "
+					"fourth freeze owner is unproven in BOTH directions");
+				bPassed = false;
+			}
+			else
+			{
+				if (!g_bTSCineLatchWasClear
+					|| !g_bTSCineUnfrozenAtEntry
+					|| !g_bTSCineArmed
+					|| !g_bTSCineBoxRaised
+					|| !g_bTSCineFrozenByBox)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] the cinematic freeze phase's preconditions were "
+						"not met (latchClear=%s unfrozenAtEntry=%s armed=%s boxRaised=%s "
+						"frozenByBox=%s) -- 'still frozen after the box closed' would be a "
+						"statement about a player who was already frozen, or about a box "
+						"that never froze him",
+						g_bTSCineLatchWasClear ? "true" : "false",
+						g_bTSCineUnfrozenAtEntry ? "true" : "false",
+						g_bTSCineArmed ? "true" : "false",
+						g_bTSCineBoxRaised ? "true" : "false",
+						g_bTSCineFrozenByBox ? "true" : "false");
+					bPassed = false;
+				}
+				// THE NEGATIVE, over a real window rather than one frame.
+				if (!g_bTSCineHeldWhileArmed || g_iTSCineHeldFrames < iTS_CINE_HOLD_FRAMES)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] with a cinematic freeze ARMED, closing a dialogue "
+						"handed movement back (or the hold was sampled on only %d of its %d "
+						"frames) -- ZM_UI_MenuStack::UnfreezePlayer must leave the player "
+						"frozen for the fourth owner exactly as it already does for the warp "
+						"and battle owners",
+						g_iTSCineHeldFrames, iTS_CINE_HOLD_FRAMES);
+					bPassed = false;
+				}
+				// THE PAIRED POSITIVE. This is the release path -- the one whose failure
+				// strands a player frozen for the rest of the session.
+				if (!g_bTSCineEnded || !g_bTSCineFreeBoxClosed || !g_bTSCineReleased)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_TrainerSight] with the cinematic freeze ENDED, the SAME dialogue "
+						"close did NOT restore movement (ended=%s closed=%s released=%s, "
+						"releaseFrames=%d) -- the freeze can be taken but not given back, "
+						"which is a permanently frozen player, and it also empties the "
+						"'still frozen' clause above of all meaning",
+						g_bTSCineEnded ? "true" : "false",
+						g_bTSCineFreeBoxClosed ? "true" : "false",
+						g_bTSCineReleased ? "true" : "false",
+						g_iTSCineReleaseFrames);
+					bPassed = false;
+				}
 			}
 
 			// ================= (7) SPOTTED ONCE, NOT ONCE PER FRAME =================
@@ -2776,6 +3172,11 @@ namespace
 		ZM_SetInstantBattlesForTests(false);
 		ZM_BattleTransition::ResetRuntimeStateForTests();
 		ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
+		// S7 item 1 SC2: UNCONDITIONAL, and BEFORE the MenuStack reset below. A run that
+		// died inside the cinematic phase leaves a FREEZE armed, and an armed freeze is
+		// exactly what makes the MenuStack's CloseMenu-unfreeze a no-op -- releasing it
+		// here is what lets the next line actually hand the player back.
+		ZM_TrainerCinematicLatch::ResetRuntimeStateForTests();
 		// S7 item 3 SC7: a run that died mid-bark would otherwise leave a DIALOGUE
 		// screen up and the player frozen by MenuStack's own freeze. This closes it
 		// (CloseMenu unfreezes) AFTER the transition reset has restored any parked
@@ -2811,8 +3212,9 @@ static const Zenith_AutomatedTest g_xZMTrainerSightWalkUpTest = {
 	// Above the SUM of the named phase deadlines (420 ready + 1 place + 30 basis +
 	// 900 approach + 150 W3 cancellation/re-entry/complete (30 + 60 + 60) + 30 bark
 	// hold + 180 bark dismiss + 2 bark->battle + 600 in-battle
-	// + 900 drive + 8 settle + 120 re-arm + 200 hold + 200 hold2 + 200 rambler =
-	// 3941). ObserveSecondSpotted RE-ENTERS Approach with its frame counter reset,
+	// + 900 drive + 8 settle + 260 cinematic freeze (90 unfrozen + 60 dismiss + 20
+	// hold + 60 dismiss + 30 release) + 120 re-arm + 200 hold + 200 hold2 + 200
+	// rambler = 4201). ObserveSecondSpotted RE-ENTERS Approach with its frame counter reset,
 	// re-granting that 900 on paper; measured, the second pass costs 1-2 frames
 	// because the machine is already CHALLENGING. The harness jumps straight to
 	// Verify when maxFrames is hit, so this
@@ -2820,7 +3222,7 @@ static const Zenith_AutomatedTest g_xZMTrainerSightWalkUpTest = {
 	// read as a failure rather than a timeout. NOTE: the rambler phase SPENDS its
 	// whole 200 -- it holds the window rather than exiting on the raise -- so the
 	// slack above the sum is what absorbs a slow frame, not an early-exiting phase.
-	/* maxFrames */ 4400,
+	/* maxFrames */ 4700,
 	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMTrainerSightWalkUpTest);

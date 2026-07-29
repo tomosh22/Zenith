@@ -15,6 +15,7 @@
 #include "Zenithmon/Source/CareCenter/ZM_CareCenter.h"  // the SC8 prompt lines + the heal
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"       // ZM_SPECIES_COUNT (the dex size the DEX screen pages over)
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"         // ZM_FindSceneByBuildIndex / ZM_GetWorldSpec / ZM_SCENE_KIND
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"   // ZM_TrainerCinematicLatch::IsActive (the FOURTH freeze owner)
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"         // WriteState / ProbeSlot / ResolveLiveSaveBlocker (S7 SC4)
 #include "Zenithmon/Source/ZM_InputActions.h"           // ReadMenuPressed / ReadConfirmPressed / ReadCancelPressed
 
@@ -1437,8 +1438,16 @@ void ZM_UI_MenuStack::UnfreezePlayer()
 	// Coordinate with the warp / battle owners: if one of them started while the menu
 	// was open it now owns the player's movement-enable, so leave it frozen for them
 	// (watch-out 4). In the normal case (no transition) re-enable movement.
+	//
+	// S7 item 1 SC2 adds the FOURTH owner on the same one line: a trainer cinematic
+	// (the walk-up) holds the player across a dialogue it may itself have raised, so a
+	// box closing underneath it must not hand movement back mid-walk. It is one more
+	// NAME in this list, not a second freeze mechanism -- m_bMovementEnabled is a bare
+	// bool with no refcount, and this guard is the single place the four owners are
+	// arbitrated.
 	if (ZM_GameStateManager::IsWarpInProgress()
-		|| ZM_BattleTransition::IsTransitionActive())
+		|| ZM_BattleTransition::IsTransitionActive()
+		|| ZM_TrainerCinematicLatch::IsActive())
 	{
 		return;
 	}

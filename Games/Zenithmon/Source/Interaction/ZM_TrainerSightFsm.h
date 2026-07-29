@@ -335,3 +335,53 @@ private:
 
 static_assert((u_int)ZM_TRAINER_COUNT <= 32u,
 	"ZM_TrainerEngagementLatch stores one bit per trainer in a single u_int");
+
+// ---- The cinematic freeze latch (S7 item 1 SC2) ------------------------------
+//
+// THE FOURTH FREEZE OWNER -- and deliberately NOT a fourth freeze CONCEPT. The three
+// that already exist (ZM_GameStateManager's warp, ZM_BattleTransition's battle park,
+// ZM_UI_MenuStack's dialogue / pause freeze) all write the SAME bare bool,
+// ZM_PlayerController::m_bMovementEnabled, which is NOT refcounted; they arbitrate BY
+// NAME, in ZM_UI_MenuStack::UnfreezePlayer, which asks whether one of the others now
+// owns the player before it re-enables movement. This latch adds exactly one more
+// name to that one question, and nothing else. There is no second freeze machinery
+// to keep in step, because there is no second freeze machinery.
+//
+// SAME SHAPE AS ZM_TrainerEngagementLatch above, on purpose: OWNERLESS process-global
+// state behind static accessors, which therefore MUST be cleared from the
+// between-tests hook in Zenithmon.cpp (convention C3) -- the harness's scene-0
+// force-reload cannot reach it.
+//
+// IT SERIALIZES NOWHERE, and no version number moves for it. A freeze that survived a
+// save would restore a player who can never move again; the latch is session state
+// about an operation in flight, and an operation in flight does not survive a save.
+//
+// ★ THERE IS NO REFCOUNT, AND THAT IS THE DESIGN. One End() always releases, whatever
+// ran before it, so the release path can never be starved by a Begin nobody paired.
+// A re-Begin while active REPLACES the owner instead of stacking a second claim: the
+// alternative (a depth counter) turns a single missed End() into a player frozen for
+// the rest of the session, which is the standing hazard this class is written around
+// -- m_bMovementEnabled is one bool and four owners now write it.
+//
+// EVERY function is TOTAL and SILENT: an unregistered id (including the
+// ZM_TRAINER_NONE sentinel) is inert -- nothing latches, nothing logs, nothing
+// asserts. Same rule, same reason, as MarkEngaged above.
+class ZM_TrainerCinematicLatch
+{
+public:
+	// Take the freeze for eTrainer. Unregistered ids are ignored outright, so a
+	// caller that lost its row cannot arm a freeze nobody can attribute.
+	static void Begin(ZM_TRAINER_ID eTrainer);
+	// Release it. TOTAL: ending a latch nobody began is legal and inert.
+	static void End();
+	// The question ZM_UI_MenuStack::UnfreezePlayer asks.
+	static bool IsActive();
+	// The RAW owner, for the unit that proves an unregistered Begin latched NOBODY:
+	// asserting only on IsActive() could not see a stray write parked in the slot,
+	// exactly as GetEngagedMaskForTests exists to see a stray bit.
+	static ZM_TRAINER_ID GetActiveTrainerForTests();
+	static void ResetRuntimeStateForTests();
+
+private:
+	static ZM_TRAINER_ID s_eActiveTrainer;
+};

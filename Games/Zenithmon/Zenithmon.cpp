@@ -27,7 +27,7 @@
 #include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"              // ZM_GetHumanPaletteColour (W4)
 #include "Zenithmon/Source/Graph/ZM_GraphAuthoring.h"             // the challenge graph's asset path + builder (S7 SC7)
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // ResetRuntimeStateForTests (between-tests hook)
-#include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"      // ZM_TrainerEngagementLatch (between-tests hook)
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"      // ZM_TrainerEngagementLatch + ZM_TrainerCinematicLatch (between-tests hook)
 #include "Zenithmon/Source/Nav/ZM_NavBake.h"                      // Dawnmere navmesh bake step + asset ref (S7 SC1b)
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"                   // DeleteAllSlotsForTests (between-tests hook)
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"   // sz*_NAME element contract (dialogue authoring)
@@ -1669,6 +1669,13 @@ void Project_RegisterGameComponents()
 		// scene-0 force-reload cannot clear it: without this, one test's engaged
 		// flagless trainer would silence him for every later batched test.
 		ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
+		// S7 item 1 SC2's cinematic freeze latch is ownerless process-global state for
+		// the SAME reason and MUST be cleared for a sharper one: it is a FREEZE OWNER
+		// (ZM_UI_MenuStack::UnfreezePlayer consults it), and m_bMovementEnabled is a
+		// bare bool with no refcount. A test that died mid-cinematic would otherwise
+		// leave this armed and every later batched test would inherit a player who can
+		// never be unfrozen again.
+		ZM_TrainerCinematicLatch::ResetRuntimeStateForTests();
 		// SC7's node counters are ownerless process-global observation state
 		// (convention C3): without this, one test's bark count leaks into every
 		// later batched test.
