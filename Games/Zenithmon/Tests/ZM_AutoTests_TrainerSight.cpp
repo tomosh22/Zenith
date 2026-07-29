@@ -44,6 +44,18 @@
 // non-refcounted bool invites. Again NO new ZENITH_AUTOMATED_TEST_REGISTER: the
 // automated registry count deliberately does not move.
 //
+// S7 item 1 SC3 ADDS NO PHASE AND NO FRAME, DELIBERATELY. Its claim about this
+// suite is a NEGATIVE -- the trainer placed here carries NO COLLIDER, so
+// ZM_Interactable::IsDrivableBodyContractMet answers false for it and the walk-up
+// must not happen at all. A negative that has to hold on every frame is sampled
+// per frame (TSSampleApproachFailOpen, called ahead of the phase switch) rather
+// than in a phase of its own, and the SHIPPED maxFrames below is unchanged --
+// which is itself part of the claim: teaching the FSM to walk cost a trainer who
+// cannot walk exactly nothing. This is the only place in the repo where that
+// fail-open is observed on a LIVE component instead of in a truth table, which is
+// why the fixture must stay collider-less. Again NO new
+// ZENITH_AUTOMATED_TEST_REGISTER: the automated registry count does not move.
+//
 // TWO SMALL THINGS IN THE MIDDLE ARE LOAD-BEARING; neither is decoration:
 //   * phase (7a) samples ZM_TrainerEngagementLatch::HasEngaged AFTER the walk-up
 //     encounter. That is the ONLY observation in this repo of the production
@@ -562,6 +574,33 @@ namespace
 	int  g_iTSCineReleaseFrames   = -1;
 	bool g_bTSCineCompleted       = false;
 
+	// ---- S7 item 1 SC3: THE FAIL-OPEN, SAMPLED ON EVERY FRAME OF THE WHOLE RUN ----
+	//
+	// ★ WHAT THIS FIXTURE IS FOR, RESTATED. The trainer this test places carries NO
+	// COLLIDER at all (see TSPhasePlaceTrainer: it is transient so it can never reach
+	// the committed scene, and bodyless so it adds no static body to a scene several
+	// other windowed tests walk through). That makes it the ONE live trainer in the
+	// repo for which ZM_Interactable::IsDrivableBodyContractMet answers FALSE -- and
+	// therefore the ONE place the walk-up's fail-open can be observed AT RUNTIME
+	// rather than argued from a boot unit's truth table.
+	//
+	// The claim: with no body, the machine must behave EXACTLY as it did before the
+	// walk-up existed -- SPOTTED hands straight to CHALLENGING, no approach is ever
+	// booked, no cinematic freeze is ever taken, and the shipped frame budget
+	// (maxFrames) DOES NOT MOVE. Sampled per frame rather than at phase boundaries so
+	// a single-frame approach could not slip between two checks; costs one component
+	// read on a component every phase already resolves.
+	bool  g_bTSApproachEverPossible = false;      // want false: no body, no walk
+	u_int g_uTSApproachCountMax     = 0u;         // want 0
+	bool  g_bTSApproachHoldEverSeen = false;      // want false: no cinematic freeze
+	bool  g_bTSApproachLatchEverSeen = false;     // want false, before phase (7a1) arms it
+	bool  g_bTSApproachStateEverSeen = false;     // want false: never in APPROACHING
+	// Sampled at the SPOTTED -> CHALLENGING handoff, which is the exact tick the walk
+	// would have been inserted on.
+	u_int g_uTSHandoffApproachCount = 0xffffffffu;   // want 0
+	bool  g_bTSHandoffApproachPossible = true;       // want false
+	bool  g_bTSHandoffSampled       = false;
+
 	// ---- Phase (7): HOLD IN CONE (the flagged arm, end to end) ----
 	bool  g_bTSHoldCompleted        = false;
 	bool  g_bTSHoldSawCone          = false;      // anti-vacuity: the geometry really watched
@@ -719,6 +758,38 @@ namespace
 		return xEntity.IsValid()
 			? xEntity.TryGetComponent<ZM_Interactable>()
 			: nullptr;
+	}
+
+	// S7 item 1 SC3. ONE frame's worth of the fail-open, ORed into the run-wide
+	// observations. Every one of these is a NEGATIVE that must hold on EVERY frame, so
+	// they accumulate the WORST answer seen rather than the latest.
+	void TSSampleApproachFailOpen()
+	{
+		const ZM_Interactable* pxTrainer = ResolveTrainerComponent();
+		if (pxTrainer == nullptr)
+		{
+			return;
+		}
+		g_bTSApproachEverPossible =
+			g_bTSApproachEverPossible || pxTrainer->IsTrainerApproachPossible();
+		const u_int uApproachCount = pxTrainer->GetTrainerApproachCount();
+		if (uApproachCount > g_uTSApproachCountMax)
+		{
+			g_uTSApproachCountMax = uApproachCount;
+		}
+		g_bTSApproachStateEverSeen = g_bTSApproachStateEverSeen
+			|| pxTrainer->GetTrainerSightState() == ZM_TRAINER_SIGHT_APPROACHING;
+		g_bTSApproachHoldEverSeen = g_bTSApproachHoldEverSeen
+			|| pxTrainer->IsTrainerCinematicHoldActive();
+		// ★ SAMPLED ONLY UNTIL PHASE (7a1) ARMS THE LATCH BY HAND. That phase's whole
+		// job is to Begin() the latch on this same trainer, so continuing past it would
+		// make this observation say "a freeze happened" about the one freeze the test
+		// itself asked for.
+		if (!g_bTSCineArmed)
+		{
+			g_bTSApproachLatchEverSeen =
+				g_bTSApproachLatchEverSeen || ZM_TrainerCinematicLatch::IsActive();
+		}
 	}
 
 	// ...and its transform. Same re-resolve discipline, for the same reason.
@@ -1369,9 +1440,20 @@ namespace
 				"window");
 			return false;
 		}
+		// ★ S7 item 1 SC3, THE FAIL-OPEN AT ITS EXACT TICK. This is the handoff the
+		// walk-up is inserted into: with a DYNAMIC CAPSULE the machine would be in
+		// APPROACHING right now. This trainer has NO COLLIDER, so it must be in
+		// CHALLENGING with no approach booked -- i.e. the pre-SC1 beat, unchanged.
+		g_bTSHandoffSampled = true;
+		g_uTSHandoffApproachCount = pxTrainer->GetTrainerApproachCount();
+		g_bTSHandoffApproachPossible = pxTrainer->IsTrainerApproachPossible();
 		if (pxTrainer->GetTrainerSightState() != ZM_TRAINER_SIGHT_CHALLENGING)
 		{
-			FailTS("the completed SPOTTED window did not hand off to CHALLENGING");
+			FailTS("the completed SPOTTED window did not hand off to CHALLENGING. A "
+				"collider-less trainer must take the SHIPPED exit: with "
+				"m_bApproachPossible false the FSM skips APPROACHING entirely, so "
+				"landing anywhere else means the body contract is answering true for a "
+				"component that owns no body at all");
 			return false;
 		}
 		if (pxTrainer->GetTrainerSpottedCount() != 2u
@@ -2333,6 +2415,18 @@ namespace
 		ZM_BattleTransition::ResetRuntimeStateForTests();
 		ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
 
+		// S7 item 1 SC3's fail-open observations. Every one is a NEGATIVE that must
+		// hold on every frame, so they reset to the PASSING value and only the run
+		// itself can spoil them.
+		g_bTSApproachEverPossible    = false;
+		g_uTSApproachCountMax        = 0u;
+		g_bTSApproachHoldEverSeen    = false;
+		g_bTSApproachLatchEverSeen   = false;
+		g_bTSApproachStateEverSeen   = false;
+		g_uTSHandoffApproachCount    = 0xffffffffu;
+		g_bTSHandoffApproachPossible = true;
+		g_bTSHandoffSampled          = false;
+
 		Zenith_InputSimulator::ResetAllInputState();
 		Zenith_InputSimulator::SetFixedDt(fTS_FIXED_DT);
 
@@ -2355,6 +2449,11 @@ namespace
 		}
 
 		++g_iTSPhaseFrames;
+		// S7 item 1 SC3. The fail-open is a per-FRAME negative, so it is sampled ahead
+		// of the switch across every phase rather than inside any one of them. It adds
+		// NO frames -- the shipped budget below is unchanged, which is itself part of
+		// what this sub-commit claims about a trainer who cannot walk.
+		TSSampleApproachFailOpen();
 		switch (g_eTSPhase)
 		{
 		case TSPhase::AwaitReady:    return TSPhaseAwaitReady();
@@ -2446,6 +2545,21 @@ namespace
 				g_uTSSpottedCountAfterComplete,
 				g_fTSSpottedElapsedAfterComplete,
 				ZM_TrainerSightFsmTuning{}.m_fSpottedSeconds);
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_TrainerSight] SC3 fail-open (collider-less trainer): "
+				"approachEverPossible=%s (want false) approachCountMax=%u (want 0) "
+				"stateEverApproaching=%s holdEverActive=%s latchEverActive=%s (all want "
+				"false) | at the SPOTTED->CHALLENGING handoff: sampled=%s "
+				"approachCount=%u (want 0) approachPossible=%s (want false)",
+				g_bTSApproachEverPossible ? "true" : "false",
+				g_uTSApproachCountMax,
+				g_bTSApproachStateEverSeen ? "true" : "false",
+				g_bTSApproachHoldEverSeen ? "true" : "false",
+				g_bTSApproachLatchEverSeen ? "true" : "false",
+				g_bTSHandoffSampled ? "true" : "false",
+				g_uTSHandoffApproachCount,
+				g_bTSHandoffApproachPossible ? "true" : "false");
 
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_TrainerSight] negatives: holdCompleted=%s holdSawCone=%s "
@@ -3076,6 +3190,56 @@ namespace
 						g_bTSRamblerTransitionMoved ? "true" : "false");
 					bPassed = false;
 				}
+			}
+
+			// ====== (S7 item 1 SC3) THE FAIL-OPEN, ON A TRAINER WITH NO BODY =======
+			//
+			// ★ THIS IS THE LOAD-BEARING NEGATIVE OF THE WHOLE WALK-UP FEATURE, not a
+			// convenience. m_bApproachPossible false must mean the machine behaves
+			// EXACTLY as it did before APPROACHING existed -- otherwise every caller
+			// that was never taught about the walk (and the entire pre-SC1 test estate)
+			// silently changes behaviour. The trainer this suite places carries no
+			// collider at all, which makes it the only live component in the repo that
+			// can hold this claim at RUNTIME rather than in a truth table.
+			//
+			// Inverting the body check inside IsDrivableBodyContractMet reds HERE and in
+			// the matching boot unit together: the collider-less fixture would start
+			// trying to walk, freeze the player, and take a cinematic latch nobody in
+			// this suite asked for.
+			if (!g_bTSHandoffSampled)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_TrainerSight] the SPOTTED -> CHALLENGING handoff was never "
+					"sampled, so the SC3 fail-open clauses below measured nothing");
+				bPassed = false;
+			}
+			else if (g_uTSHandoffApproachCount != 0u || g_bTSHandoffApproachPossible)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_TrainerSight] the collider-less trainer reported "
+					"approachPossible=%s and had booked %u approaches at the "
+					"SPOTTED -> CHALLENGING handoff (want false / 0). A component that "
+					"owns NO COLLIDER cannot satisfy the DYNAMIC CAPSULE contract, so "
+					"this is the body check answering backwards",
+					g_bTSHandoffApproachPossible ? "true" : "false",
+					g_uTSHandoffApproachCount);
+				bPassed = false;
+			}
+			if (g_bTSApproachEverPossible || g_uTSApproachCountMax != 0u
+				|| g_bTSApproachStateEverSeen || g_bTSApproachHoldEverSeen
+				|| g_bTSApproachLatchEverSeen)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_TrainerSight] the collider-less trainer walked, or froze the "
+					"player, at some point in the run (everPossible=%s countMax=%u "
+					"everApproaching=%s everHeld=%s everLatched=%s). The fail-open is not "
+					"a convenience: it is what keeps this whole suite -- and every other "
+					"caller that predates the walk-up -- behaving as it did",
+					g_bTSApproachEverPossible ? "true" : "false", g_uTSApproachCountMax,
+					g_bTSApproachStateEverSeen ? "true" : "false",
+					g_bTSApproachHoldEverSeen ? "true" : "false",
+					g_bTSApproachLatchEverSeen ? "true" : "false");
+				bPassed = false;
 			}
 
 			// ====== (SC8) THE AUTHORED RIVAL NEVER TOUCHED THIS SUITE ==============

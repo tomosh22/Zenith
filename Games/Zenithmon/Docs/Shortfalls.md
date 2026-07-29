@@ -220,6 +220,22 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      injectivity), so a seventh NPC duplicating an appearance reds with no literal to
      remember. The fix also makes `uSharedPairs` unreachably zero, so that zero is now an
      explicit assertion rather than a counter that can no longer teach the unit anything.
+   - **★ THE GDD'S COUNTER-STARTER RULE IS UNIMPLEMENTED AND WAS BOOKED NOWHERE UNTIL 2026-07-29.**
+     The GDD specifies that rival battle 1 uses the starter that COUNTERS the player's choice.
+     Vesper's `ZM_TrainerData` row carries a FIXED L5 KINDLET instead. Neither ZM-D-156 nor ZM-D-158
+     mentioned this -- it was found only when `Roadmap.md:161` was audited before ticking. **It
+     cannot be implemented before S8 ships starter choice** (`Roadmap.md:167`), because there is no
+     player starter to counter. Debt against S8; the user ruled on 2026-07-29 to reword and tick
+     line 161 for what actually ships and book this rather than block S7 on an S8 dependency.
+   - **THE CAMERA CUT REMAINS UNBUILT, AND THE S7 TICK DOES NOT CLAIM IT.** `Roadmap.md:104`'s text
+     is `cone + occlusion raycast -> freeze input -> approach -> dialogue -> forced battle -> defeat
+     flags + prize money`; every one of those ships as of SC3. A cinematic camera cut was a W3
+     ASPIRATION (ZM-D-159), never a Roadmap requirement, so it is neither claimed by the tick nor a
+     reason to withhold it. **★ ZM-D-159's stated blocker was WRONG, though:** it recorded the cut as
+     needing "a real engine/game-camera feature". A code survey found `ZM_FollowCamera` is a
+     Zenithmon component (order 103) and the SOLE writer of the camera pose, so an override belongs
+     INSIDE it and needs **no `Zenith/` change at all**. Whoever takes this should not re-inherit the
+     engine-scale estimate.
    - **A NEW, SMALLER LIMIT TAKEN ON IN EXCHANGE.** `HumanGen_PaletteDistinctness`'s
      `aeCAST` / `uCAST_COUNT` are a HAND-MAINTAINED MIRROR of the `m_eHuman` column with no
      compiler edge to it. Deleting an id from `aeCAST` while leaving the count reds only

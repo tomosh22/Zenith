@@ -15,6 +15,123 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-29 -- ZM-D-167 -- S7 item 3 SC3: the rival WALKS, and S7 CLOSES
+
+*(No new `.cpp`, folder, ECS order or serialization version -- `uSERIALIZATION_VERSION` stays `2u`,
+114 still next-free -- so **no `Build\regen.ps1`**. **One committed asset moves:**
+`Assets/Scenes/Dawnmere.zscen`, with the full operational proof below.)*
+
+### Decision
+
+`ZM_QueueDawnmereTrainerNpc` authors `COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC` instead
+of `OBB, STATIC`, and `ZM_Interactable::TickTrainerSight` fills SC1's two inputs, drives the
+APPROACHING arm through the **same two-call velocity idiom as `UpdateWander`**, and holds SC2's
+`ZM_TrainerCinematicLatch` + `SetMovementEnabled(false)` for the walk's duration. **This is the
+sub-commit that ticks `Roadmap.md:104`, and with it S7 is COMPLETE.**
+
+**ZM-D-156 IS AMENDED, NOT REVERSED.** AABB remains forbidden for any authored entity that must face
+a direction -- it forces its body to identity rotation and the physics-to-transform sync writes that
+back over the authored yaw, silently, in the SAVED BYTES, with every boot unit green. That reason is
+unchanged. What changed is the sanctioned alternative: **OBB preserved the yaw but cannot be driven**
+(there is no `RIGIDBODY_TYPE_KINEMATIC`, and a STATIC body cannot take a velocity), so a capsule is
+now the shape for an authored trainer and OBB is left to bodies that must hold a rotation without
+ever moving.
+
+**Risk R1 accepted with four mitigations, because no boot unit could ever have caught it.** A DYNAMIC
+Vesper can be shoved, and `TryConfigureWanderBody` leaves Y rotation free -- a collision could yaw him
+into permanent blindness, a live-state recurrence of the very defect ZM-D-156 fixed, invisible to
+units that reason about compiled constants. Mitigated by locking all three rotation axes on a
+stationary trainer (`!m_bWanderEnabled`, so a patrol keeps its existing `(true,false,true)` byte for
+byte), holding XZ station every non-approaching tick through the same `ZM_BuildPatrolVelocity` idiom,
+repairing the authored yaw while WATCHING, and **measuring drift every frame in the test** rather
+than at phase boundaries -- a shove heals itself the moment the pusher moves. Observed:
+`idleMax=0.0001 m`, `watchFacingMinDot=1.00000`.
+
+### ★ THE CONTROL FLIPPED, ON ONE BINARY, WITH ONLY THE SCENE BYTES DIFFERING
+
+- **Before** (new code, still-committed OBB/STATIC scene): **48 passed, 1 failed** -- exactly
+  `ZM_RivalVesperAuthored_Test`, nothing else.
+- **After** (same binary, re-authored capsule scene): **49 passed, 0 failed.**
+
+This is mutation M3 obtained for free, and it is the pair that carries the information: run only the
+"after" and a green suite says nothing about whether the collider change did anything; run only the
+"before" and the red gets blamed on the wrong thing. ZM-D-156's fail-then-**fail** is on record as
+the counter-example.
+
+### ★ AND AN INTERMEDIATE FAIL-THEN-FAIL THAT WAS A TEST BUG, NOT A MASKED DEFECT
+
+The first "after" run still failed, which is the ZM-D-156 shape and was treated as one. The cause was
+**an inconsistency between two of SC3's own numbers**: `m_fApproachStandoffMetres = 2.0` against a
+hard-coded test band of `1.5`, so **a perfect arrival could never pass.** Fixed by deriving the band
+from the shipped constant (`|endGap - m_fApproachStandoffMetres| <= tolerance`, two-sided so
+overshoot also reds) instead of a second literal.
+
+**Two deeper findings came out of diagnosing it, and both outlive the fix:**
+
+1. **The test could not tell arrival from timeout.** Its failure message asserted "the walk ran out on
+   the FAIL-OPEN timeout" while reasoning purely from a DISTANCE clause with no access to the clock --
+   and it was wrong. `Zenith_InputSimulator` pins dt to 1/30 and `Zenith_Physics` drains whole 1/60
+   steps with no remainder, so physics time IS game time: 43 frames = **1.467 s against a 2.0 s
+   timeout**, i.e. the timeout was arithmetically impossible and the rival had ARRIVED. The residual
+   0.105 m is frame-ordering skew -- the test's `Step` runs before `Physics().Update` and before the
+   component tick, so it reads a pose one integrated frame behind (`4.0 x 1/30 = 0.133 m`), and
+   `2.105 - 0.133 = 1.972 <= 2.0` is exactly what set `m_bArrived`. The FSM deliberately does not
+   clear `m_fApproachElapsed` on completion **so a test can prove the arrival beat the clock**, and
+   nothing sampled it. It does now, and wrong-distance and wrong-ending are separate clauses.
+   **A diagnostic that names a cause it cannot observe is worse than one that says only "failed".**
+2. **A boot unit was certifying a margin the live path does not have.**
+   `Approach_WalkConvergesIntoTheStandoffRingBeforeTheTimeout` PASSED throughout, and not because it
+   shared the bug: it integrated a **frictionless point mass at the full commanded speed and then
+   measured arrival using the same positions it had just integrated.** No friction, no contact
+   response, no start-up latency, no observation skew. A unit that both generates and grades its own
+   trajectory can only confirm its own arithmetic. It now integrates at the derated speed and asserts
+   the residual margin stays positive.
+
+**The `static_assert` was wrong twice and has been corrected.** It read
+`speed * timeout >= fZM_SIGHT_MAX_DISTANCE` -- the FULL sight range rather than
+`range - standoff` (the distance arrival actually depends on), against the NOMINAL speed. `4.0 * 2.0
+>= 8.0` was true at **exactly zero margin while constraining nothing**. It now derates by a named
+`fAPPROACH_SPEED_EFFICIENCY = 0.85f` carrying its measurement and its two structural causes on the
+constant itself, and -- since achieved speed cannot be known at compile time -- **the assumption is
+pinned at runtime in two places** (the boot unit simulates derated; the windowed test logs
+`achievedSpeed` live every run). Observed live: **3.729 m/s, 93.2% of nominal**, above the floor.
+
+### The scene re-author, and its full operational proof
+
+- Authoring boot 1 (windowed `_True`): `sceneAuthoring=AUTHOR_DAWNMERE, warmMask=0x7` -- **not
+  `DEFERRED`**, which silently does nothing and looks successful.
+  SHA256 `3874943E...4E16` (matching ZM-D-161's recorded value, so the tree was unmodified going in)
+  -> **`7DDBD64880A21456DAB13A37EB5BB6C62B15FFB4E61BE9B5B59DCCDBBD1A5C3D`**.
+- Authoring boot 2, identical shape: `AUTHOR_DAWNMERE` again, hash **identical**. The bytes are
+  reproducible from compiled constants.
+- `git status`: **exactly one** tracked asset modified. `Dawnmere.znavmesh` byte-unchanged at
+  `A783FB0A...40B6`.
+- Re-hashed after BOTH the headless and full windowed batches: **still `7DDBD648...`** -- no
+  play-session save baked anything in.
+- **The precondition that made two boots sufficient** (a probe that only varies repetition count
+  proves nothing -- Status.md): ZM-D-148 made scene bytes boot-shape-independent, and SC3's seven new
+  boot units were confirmed to **create no entities**, which is the input that would otherwise vary
+  the authored indices.
+
+- **Tests that lock it:** +7 boot units (`ZM_Tests_Interaction.cpp` 51->57,
+  `ZM_Tests_DawnmerePlacement.cpp` 8->9) and new phases riding the EXISTING `ZM_RivalVesperAuthored_Test`
+  and `ZM_TrainerSightWalkUp_Test` registrations (registry unmoved at **49**). Observed gate: both
+  configs exit 0; headless **49/0**; **full windowed Vulkan 49/0**; boot **2742 ran / 2741 passed /
+  0 failed / 1 skipped**; `zm-tests.yml` bumped 2735 -> 2742. Live walk: `startGap=7.575 ->
+  endGap=2.105`, `elapsed=1.467 s`, `achievedSpeed=3.729 m/s`, `worstBackstep=0.0000`,
+  `approachCount=1`, frozen **43/43** frames, released in **1**, `facingAbsDot=1.00000`.
+- **SC2's debt is paid:** a new phase ends the test **mid-APPROACHING**, leaving the latch armed --
+  the first runtime `Begin()` leak in the repo -- so deleting the between-tests reset now trips phase
+  7a1's tripwire. That mutation redded nothing one commit ago.
+- **NOT claimed by this commit:** the camera cut. It is absent from `Roadmap.md:104`'s text, was a W3
+  aspiration only, and stays booked in Shortfalls 1.8 -- **with ZM-D-159's "needs a real
+  engine/game-camera feature" corrected there**, since `ZM_FollowCamera` is a Zenithmon component
+  (order 103) and the sole writer of the camera pose.
+- **Reversibility:** moderate. The code is additive and gated on `m_bApproachPossible`, but the
+  collider change is in COMMITTED scene bytes; reverting it requires the same two-boot proof.
+
+---
+
 ## 2026-07-29 -- ZM-D-166 -- S7 item 3 SC2: a FOURTH freeze owner, arbitrated by NAME in the one existing guard, with NO refcount
 
 *(No new `.cpp`, folder, scene, asset, ECS order or serialization version -- `uSERIALIZATION_VERSION`

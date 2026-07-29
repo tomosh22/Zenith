@@ -7,7 +7,9 @@
 #include "Zenithmon/Source/Interaction/ZM_NpcWalkerLogic.h"
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"      // the by-value FSM
 
+class Zenith_ColliderComponent;
 class Zenith_DataStream;
+class Zenith_TransformComponent;
 
 // ============================================================================
 // ZM_Interactable (S6 item 3 SC4) -- the ECS component that makes an authored NPC
@@ -55,6 +57,38 @@ ZM_NPC_RAISE_KIND ZM_RaiseKindForRole(ZM_NPC_ROLE eRole);
 // A stable short name for a raise kind, for log lines and unit failure messages.
 // TOTAL: never returns nullptr, never indexes out of bounds ("UNKNOWN" otherwise).
 const char* ZM_NpcRaiseKindName(ZM_NPC_RAISE_KIND eKind);
+
+// S7 item 1 SC3. The five observations the DYNAMIC-CAPSULE body contract is
+// decided from, carried together as ONE value.
+//
+// ★ IT EXISTS SO THERE IS EXACTLY ONE BODY-VALIDATION PATH. The patrol
+// (TryConfigureWanderBody) and the walk-up both ask this same question of the same
+// body; two hand-rolled observation blocks would be free to drift into asking
+// subtly different ones, and the drift would surface as "the trainer walks but the
+// patrol asserts" (or the reverse) with nothing naming the divergence. The
+// DECISION over these fields is the pure ZM_Interactable::IsDrivableBodyContractMet
+// below; this struct is only the reading.
+//
+// The two enum sentinels are chosen to FAIL the contract, so a component with no
+// collider at all can never read as one carrying a legal body.
+struct ZM_InteractableBodyObservation
+{
+	bool m_bEntityValid     = false;
+	bool m_bColliderPresent = false;
+	bool m_bBodyValid       = false;
+	// Derived from the two enums below and kept only so the patrol's strict assert
+	// can name it; the contract itself re-derives it from the enums.
+	bool m_bDynamicCapsule  = false;
+	bool m_bPhysicsActive   = false;
+
+	CollisionVolumeType  m_eVolumeType    = COLLISION_VOLUME_TYPE_AABB;
+	RigidBodyType        m_eRigidBodyType = RIGIDBODY_TYPE_STATIC;
+
+	// Both are only meaningful when m_bColliderPresent / m_bBodyValid hold; a
+	// default-constructed Zenith_PhysicsBodyID is the INVALID sentinel.
+	Zenith_ColliderComponent* m_pxCollider = nullptr;
+	Zenith_PhysicsBodyID      m_xBodyID;
+};
 
 class ZM_Interactable
 {
@@ -175,6 +209,87 @@ public:
 		const Zenith_Maths::Vector3& xTrainerCenter,
 		const Zenith_Maths::Vector3& xTrainerScale);
 
+	// ---- S7 item 1 SC3: the walk-up -----------------------------------------
+
+	// ★ THE FLOOR ON HOW MUCH OF THE COMMANDED WALK SPEED THE BODY ACTUALLY
+	// ACHIEVES, AND IT IS AN ASSUMPTION -- THE COMPILER CANNOT KNOW IT.
+	//
+	// The walk is driven by writing a velocity onto a dynamic capsule, so what the
+	// trainer covers per second is NOT the number handed to SetLinearVelocity. Two
+	// losses are structural: the velocity written during Scenes().Update is not
+	// integrated until the NEXT frame's Physics().Update (one frame of start-up
+	// latency, a fixed cost that matters most on short walks), and Coulomb friction
+	// can bleed up to mu * g * dt off the body inside each step before the next tick
+	// overwrites it. Terrain slope and contact against the player's capsule can take
+	// more.
+	//
+	// MEASURED: 3.816 m/s achieved against 4.0 m/s commanded -- 95.4% -- over a
+	// 5.469 m walk on the committed Dawnmere, headless Null backend, dt 1/30
+	// (2026-07-29). This floor is deliberately well under that so ordinary terrain
+	// variation cannot trip it, while still failing loudly if someone halves the
+	// speed or doubles the friction.
+	//
+	// ★ IT IS PINNED BY A RUNTIME OBSERVATION, NOT BY ITS OWN EXISTENCE.
+	// ZM_RivalVesperAuthored_Test logs achievedSpeed on every run, and
+	// Approach_WalkConvergesIntoTheStandoffRingBeforeTheTimeout simulates the walk
+	// at THIS derated speed rather than the nominal one -- because a boot unit that
+	// integrates a frictionless point mass at the commanded speed certifies a timing
+	// margin the live path does not have, which is exactly what happened the first
+	// time this was written.
+	static constexpr float fAPPROACH_SPEED_EFFICIENCY = 0.85f;
+
+	// THE ONE BODY CONTRACT, as a PURE predicate over the observations, so a boot
+	// unit can walk its whole truth table with no entity, no collider, no physics
+	// world and nothing created. Both the patrol and the walk-up route their
+	// decision through exactly this function.
+	//
+	// "This component owns a valid DYNAMIC CAPSULE body on an active simulation."
+	// The two enum comparisons live HERE rather than at the reading site precisely
+	// so inverting either of them is visible to a headless unit -- a wiring defect
+	// that only a windowed test could see would be a contract with no unit.
+	//
+	// TOTAL: every combination of arguments is defined, and it never asserts.
+	static bool IsDrivableBodyContractMet(bool bEntityValid,
+		bool bColliderPresent,
+		bool bBodyValid,
+		CollisionVolumeType eVolumeType,
+		RigidBodyType eRigidBodyType,
+		bool bPhysicsActive);
+
+	// The facing that points a body along xDirectionXZ, as
+	// AngleAxis(atan2(dir.x, dir.z), +Y) -- the +Z-forward convention
+	// ZM_ForwardFromRotation rotates against.
+	//
+	// ★ NEVER glm::eulerAngles(quat).y. That decomposition COLLAPSES past 90
+	// degrees off +Z and has already cost this repo a full debugging cycle
+	// (ZM-D-156); Approach_YawFacesTravelDirectionAcrossAllFourQuadrants exists to
+	// red on exactly that respelling, which is why the four quadrants are walked
+	// rather than one representative direction.
+	//
+	// TOTAL, and REFUSES rather than inventing: a zero-length or non-finite XZ
+	// direction returns FALSE and leaves xFacingOut untouched. atan2(0, 0) is 0,
+	// which would silently snap the body to face +Z -- i.e. a trainer who arrived
+	// would pivot north on the frame he stopped, and nothing would name the cause.
+	static bool TryBuildApproachFacing(const Zenith_Maths::Vector3& xDirectionXZ,
+		Zenith_Maths::Quat& xFacingOut);
+
+	// MONOTONIC count of walk-ups actually ENTERED by this component. Same doctrine
+	// as the three counters above: a machine stubbed into APPROACHING would satisfy
+	// a state check having taken no step.
+	u_int GetTrainerApproachCount() const { return m_xSightFsm.GetApproachCount(); }
+	float GetTrainerApproachElapsedSeconds() const
+	{
+		return m_xSightFsm.GetApproachElapsedSeconds();
+	}
+	// LAST TICK'S contract answer, for the automated fail-open clause: the
+	// collider-less runtime trainer must report FALSE and take the shipped
+	// SPOTTED exit unchanged.
+	bool IsTrainerApproachPossible() const { return m_bApproachPossible; }
+	// True while THIS component is holding the cinematic freeze. Runtime-only, and
+	// deliberately observable: a test that asserted only on the player's movement
+	// bool could not tell "released" from "never taken".
+	bool IsTrainerCinematicHoldActive() const { return m_bCinematicHoldActive; }
+
 	// Fire this NPC's role: ONE switch over ZM_RaiseKindForRole(row.m_eRole) onto the
 	// three shipped ZM_UI_MenuStack seams. Returns whether a screen was actually
 	// raised. A refusal (no menu singleton, a full dialogue queue, a rejected stock
@@ -194,6 +309,42 @@ private:
 	// enabled patrol. Non-strict calls are used while editor construction may still
 	// be assembling the entity; the first runtime update is strict and fails closed.
 	bool TryConfigureWanderBody(bool bRequireRuntimeReady);
+
+	// ---- S7 item 1 SC3: the shared body half --------------------------------
+
+	// READ the body contract's five observations off this entity. TOTAL: a missing
+	// entity / collider / body / simulation yields an observation whose sentinels
+	// all FAIL the contract. It decides NOTHING -- IsDrivableBodyContractMet does.
+	ZM_InteractableBodyObservation ObserveDrivableBody();
+
+	// Apply the shared NPC body properties, at most once per body IDENTITY (the
+	// m_xConfiguredWanderBodyID cache the patrol already keeps). Shared by the
+	// patrol and the walk-up so a trainer who walks and a patrol who walks are
+	// standing on the same physics, and so the ONE difference between them -- the
+	// YAW LOCK -- is spelled in exactly one place.
+	void ApplyDrivenBodySetup(const ZM_InteractableBodyObservation& xBody);
+
+	// Drive ONE tick of the walk: the two-call velocity idiom UpdateWander uses,
+	// then the travel-direction facing. Writes NO position.
+	void DriveTrainerApproach(const ZM_InteractableBodyObservation& xBody,
+		const ZM_TrainerApproachStep& xStep,
+		Zenith_TransformComponent* pxTransform);
+
+	// The anti-shove half of the same seam: hold XZ station and repair the authored
+	// yaw while this trainer is NOT walking. See the R1 block in the .cpp.
+	void HoldTrainerStation(const ZM_InteractableBodyObservation& xBody,
+		Zenith_TransformComponent* pxTransform);
+
+	// Take / release the cinematic freeze. BOTH are idempotent, and the release is
+	// TOTAL: releasing a hold nobody took is legal and inert.
+	//
+	// ★ THE HOLD IS TIED TO THE OPERATION, NOT TO A CALL SITE. Acquire re-validates
+	// on EVERY tick the machine is APPROACHING (so re-entering this function inside
+	// one logical walk re-applies a no-op rather than stacking a second claim), and
+	// release is driven by "am I still holding one?" rather than by having spotted a
+	// particular transition -- arrival, timeout and cancel all leave through it.
+	void AcquireTrainerCinematicHold(Zenith_EntityID xPlayerID);
+	void ReleaseTrainerCinematicHold();
 
 	// OnUpdate is now these two, in this order. The walker body is UNCHANGED --
 	// it moved verbatim into UpdateWander -- so its behaviour is byte-identical.
@@ -269,4 +420,23 @@ private:
 	ZM_TRAINER_ID      m_eTrainerId = ZM_TRAINER_NONE;
 	ZM_TrainerSightFsm m_xSightFsm;
 	u_int              m_uSpottedIndicatorSubmitCount = 0u;
+
+	// ---- S7 item 1 SC3, ALL RUNTIME-ONLY -------------------------------------
+	// They ride in the same never-serialized block as m_eTrainerId and the watcher,
+	// for the same reason and one sharper one: a cinematic hold that survived a save
+	// would restore a player who can never move again. uSERIALIZATION_VERSION STAYS
+	// 2u and Interactable_TrainerSightIsNotSerialized must stay green WITH NO EDIT.
+	bool m_bApproachPossible    = false;
+	bool m_bCinematicHoldActive = false;
+	// WHICH player this component froze, so the release re-enables the controller it
+	// actually took -- the ZM_UI_MenuStack::m_xFrozenPlayerEntityID precedent.
+	Zenith_EntityID m_xCinematicHeldPlayerID = INVALID_ENTITY_ID;
+	// The AUTHORED facing, captured once per component start, and the flag that says
+	// a capture happened. See the R1 block in the .cpp: a DYNAMIC body can be yawed
+	// by a collision, and a yawed trainer is a PERMANENTLY BLIND one that no boot
+	// unit can see (the units reason about compiled constants; the damage is live
+	// state). Never serialized: it is re-read from the committed transform on every
+	// load, which is strictly stronger than persisting it.
+	Zenith_Maths::Quat m_xWatchFacing = Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
+	bool               m_bWatchFacingCaptured = false;
 };

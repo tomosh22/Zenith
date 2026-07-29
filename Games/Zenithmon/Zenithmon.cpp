@@ -1476,8 +1476,16 @@ namespace
 		xAuto.AddStep_Custom(pfnConfigure);
 	}
 
-	// SC8's one moving NPC intentionally does NOT reuse the stationary helper: the
+	// The PATROLLING NPC intentionally does NOT reuse the stationary helper: the
 	// authored body contract is a solid dynamic capsule, driven only by XZ velocity.
+	//
+	// It was SC8's only moving NPC; S7 item 1 SC3 gave rival Vesper the same body
+	// class for the walk-up (see ZM_QueueDawnmereTrainerNpc below), so "the one
+	// dynamic body in Dawnmere" is no longer true. The two are still authored by
+	// separate functions on purpose -- the wanderer needs an extra half-extent of
+	// spawn clearance and no yaw, the rival needs an authored yaw and no waypoints --
+	// and merging them would trade two readable step lists for one parameterised one
+	// in the single file whose output is a COMMITTED asset.
 	void ZM_QueueDawnmereWanderer(
 		Zenith_EditorAutomation& xAuto,
 		const Zenith_Maths::Vector3& xCenter,
@@ -1509,22 +1517,49 @@ namespace
 	// angleAxis(0). The yaw step sits between scale and collider so the transform is
 	// fully authored before the body is created.
 	//
-	// ★ THE COLLIDER IS OBB, NOT AABB, AND THAT IS LOAD-BEARING -- IT IS THE ONLY
-	// REASON THE AUTHORED YAW SURVIVES TO DISK. The four shipped NPCs all use AABB,
-	// which is why this never surfaced before: Vesper is the first authored entity
-	// that has to FACE anywhere. Zenith_ColliderComponent's body creation reads
+	// ★ THE COLLIDER IS A DYNAMIC CAPSULE, AND **AABB REMAINS FORBIDDEN HERE
+	// FOREVER**. Two separate reasons now stack on this one line; neither replaces
+	// the other, and both have already been paid for once.
+	//
+	// (1) AABB DESTROYS THE AUTHORED YAW -- the ZM-D-156 lesson, UNCHANGED and still
+	// true. Zenith_ColliderComponent's body creation reads
 	//     const JPH::Quat xJoltRot = (eVolumeType == COLLISION_VOLUME_TYPE_AABB)
 	//         ? JPH::Quat::sIdentity() : JPH::Quat(...);
 	// -- an AABB is axis-aligned BY DEFINITION, so it forces the body to identity and
 	// the physics-to-transform sync then writes that identity straight back over the
 	// yaw this function just authored. The scene saves with an unrotated rival who
-	// stares north and is functionally blind, with every boot unit still green,
+	// stares north and is functionally blind, WITH EVERY BOOT UNIT STILL GREEN,
 	// because the units reason about the COMPILED placement constants while the
 	// defect lives in the SAVED BYTES. Only the windowed round trip catches it, and
 	// it did: facingAbsDot=0.22975 against a required 0.999, authoredRot=identity.
-	// OBB shares AABB's box shape exactly and differs ONLY in applying the rotation,
-	// so the occluder footprint the SC6 sight ray sees is unchanged. Do not "tidy"
-	// this back to AABB for consistency with the other four.
+	// The four shipped townsfolk all use AABB and never surfaced this, because none
+	// of them has to FACE anywhere. ANY future authored entity that must face a
+	// direction is subject to the same rule: NOT AABB. Ever.
+	//
+	// (2) S7 item 1 SC3 NEEDS HIM TO **WALK**, so the body is now DYNAMIC and the
+	// shape is a CAPSULE -- exactly what ZM_QueueDawnmereWanderer authors, and
+	// exactly the contract ZM_Interactable::IsDrivableBodyContractMet demands before
+	// ZM_TrainerSightFsm will ever enter APPROACHING. A STATIC body cannot be given a
+	// velocity, so the walk-up would silently never happen; an OBB **would** keep the
+	// yaw (it shares AABB's box shape and differs only in applying the rotation) but
+	// is not a shape this game drives, and two body shapes for "an NPC who moves"
+	// is a distinction with no owner. The capsule is therefore the SANCTIONED shape
+	// for an authored trainer, and OBB is left to bodies that must keep a rotation
+	// without ever moving.
+	//
+	// ★ WHAT THE DYNAMIC BODY COSTS, AND WHERE IT IS PAID. RIGIDBODY_TYPE offers only
+	// DYNAMIC and STATIC -- there is NO KINEMATIC -- so this rival can be physically
+	// SHOVED and, with a free Y axis, YAWED by the player, which would silently
+	// reintroduce exactly the blindness (1) is about. That is mitigated in
+	// ZM_Interactable, not here: the sight tick locks ALL THREE rotation axes on a
+	// stationary trainer's body, holds his XZ station on every tick he is not
+	// walking, and repairs the authored yaw while WATCHING. Read
+	// ZM_Interactable::ApplyDrivenBodySetup / HoldTrainerStation before changing
+	// anything on this line.
+	//
+	// ★ THE OCCLUDER FOOTPRINT CHANGES SHAPE (box -> capsule) but not scale, and the
+	// SC6 sight ray only asks whether SOMETHING blocked the line; the wanderer has
+	// carried a capsule in this same scene since SC8 with no ray fallout.
 	void ZM_QueueDawnmereTrainerNpc(
 		Zenith_EditorAutomation& xAuto,
 		const char* szName,
@@ -1540,7 +1575,7 @@ namespace
 		xAuto.AddStep_SetTransformYaw(fYawRadians);
 		xAuto.AddStep_AddCollider();
 		xAuto.AddStep_AddColliderShape(
-			COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
+			COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
 		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
 		xAuto.AddStep_AddComponent("ZM_Interactable");
 		// NO AddStep_AttachGraph. See ZM_ConfigureRivalVesperNpc.
@@ -2342,6 +2377,18 @@ void Project_RegisterEditorAutomationSteps()
 		// guard, not facing. Any future walk that comes within 8 m of his forward
 		// cone will take a forced battle it never mentions, and it will surface as a
 		// timeout naming a distance rather than naming him.
+		//
+		// ★ S7 item 1 SC3 MADE THAT WORSE IN TWO WAYS, AND BOTH ARE DELIBERATE.
+		// He now carries a DYNAMIC CAPSULE instead of a static box, so he is a body
+		// the player can lean on rather than a wall; and once he spots anyone he
+		// WALKS AT THEM and FREEZES THEM for up to
+		// ZM_TrainerSightFsmTuning::m_fApproachTimeoutSeconds while he closes. A test
+		// that strays into his cone therefore loses control of its player for a
+		// couple of seconds BEFORE the battle it was not expecting. The mitigations
+		// (all-axis rotation lock, per-tick XZ station hold, WATCHING yaw repair)
+		// live in ZM_Interactable and keep him ON this authored spot; the geometry
+		// that keeps every shipped route out of his cone is unchanged and is derived
+		// in Source/World/ZM_DawnmerePlacement.h.
 		//
 		// EVERY COORDINATE AND CLEARANCE IS DERIVED IN
 		// Source/World/ZM_DawnmerePlacement.h -- read that header before moving

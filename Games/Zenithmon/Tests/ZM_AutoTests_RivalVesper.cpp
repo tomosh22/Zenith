@@ -34,6 +34,23 @@
 // an authored scene entity must never be made to do. That file keeps its runtime
 // fixture and gains only a silence clause about this one.
 //
+// ★ S7 ITEM 1 SC3 ADDED THE WALK, AND IT IS THE ONLY PLACE THE RE-AUTHORED BODY
+// CAN BE SHOWN TO MATTER. Phase (6b) sits between the visual beat and the bark: the
+// player is FROZEN and holding no keys, and the gap to the rival's LIVE transform
+// must still close, end inside the standoff band, and hand movement back afterwards.
+// Every clause there is measured off his live pose rather than off the authored
+// coordinates, because the whole claim is that he left them. Revert
+// ZM_QueueDawnmereTrainerNpc to OBB/STATIC and re-author, and (6b) is what reds --
+// no boot unit can, because a static body is a property of the SAVED BYTES.
+//
+// Phases (12)-(14) then buy two things a successful walk cannot: (13) CANCELS a walk
+// mid-flight and requires the freeze to come off (arrival is the exit every happy
+// run takes; cancel is the exit that strands a player forever when it is forgotten),
+// and (14) deliberately ENDS THIS TEST while a walk is still running, leaving
+// ZM_TrainerCinematicLatch ARMED so the between-tests hook in Zenithmon.cpp finally
+// has something to clear. Do not "tidy" (14) by resetting the latch in this test's
+// teardown -- that moves the proof back inside the test and re-hides the hook.
+//
 // WHAT THIS FILE DOES NOT PROVE, stated so nobody reads more into it:
 //   * The authored rival carries NO graph slot. That is pinned at AUTHORING TIME
 //     by ZM_ConfigureRivalVesperNpc's TryGetComponent<Zenith_GraphComponent>()
@@ -175,6 +192,90 @@ namespace
 	// The basis probe must show meaningful, +Z-DOMINANT travel.
 	constexpr float fRV_BASIS_MIN_FORWARD  = 0.5f;
 
+	// ---- S7 item 1 SC3: THE TRAINER'S OWN WALK -------------------------------
+	//
+	// ★ NAMED, AND DELIBERATELY NOT iRV_APPROACH_DEADLINE. That name is already
+	// taken by the PLAYER's walk-up above; this is the window the TRAINER gets to
+	// close the gap once he has spotted anyone, and confusing the two would produce a
+	// diagnostic naming the wrong actor. The FSM caps the walk at
+	// m_fApproachTimeoutSeconds (2.0 s == 60 frames at this test's 1/30 dt), so this
+	// is that budget times three: a slow frame must never be diagnosed by the
+	// harness's maxFrames backstop as "an ordinary stall".
+	constexpr int iRV_TRAINER_APPROACH_DEADLINE = 180;
+	// How long the release may take once the walk ends. The hold is dropped inside
+	// the same TickTrainerSight that leaves APPROACHING, so this is slack against a
+	// slow frame rather than a race.
+	constexpr int iRV_CINE_RELEASE_DEADLINE = 30;
+	// The re-arm walk-back: out past the sight range so the ENGAGED machine re-arms
+	// to WATCHING, then back in to the band below. Generous -- it is two short walks
+	// on a player who has just come out of a battle.
+	constexpr int iRV_REARM_DEADLINE = 420;
+	// The band the re-armed walk must start from: comfortably inside the cone (so he
+	// spots at once) and comfortably outside the standoff ring (so the walk he then
+	// takes is long enough to be caught MID-flight rather than arriving instantly).
+	constexpr float fRV_REARM_MIN_GAP = 5.0f;
+	constexpr float fRV_REARM_MAX_GAP = 6.5f;
+	// How far past the sight range the walk-back must reach before the machine is
+	// judged to have re-armed. 15% of margin against a spring-lagged camera basis.
+	constexpr float fRV_REARM_CLEAR_GAP = fZM_SIGHT_MAX_DISTANCE * 1.15f;
+
+	// The approach must CLOSE, and this is what "closed" means. One frame of the
+	// trainer's own walk at the shipped speed covers ~0.13 m at this dt, so a
+	// requirement of 0.5 m over the whole window is a floor on "he actually moved",
+	// not a per-frame rate.
+	constexpr float fRV_TRAINER_MIN_CLOSURE = 0.5f;
+	// Per-frame monotonicity slack. The trainer walks on Jolt velocity across real
+	// terrain, so a single frame may show float-scale non-improvement; anything
+	// beyond this is him going BACKWARDS, which is exactly the M2 signature
+	// (transposed ZM_StepTrainerApproach arguments).
+	constexpr float fRV_TRAINER_BACKSTEP_SLACK = 0.02f;
+
+	// ---- WHERE THE FINISHED WALK MUST STOP -----------------------------------
+	//
+	// ★ THIS IS DERIVED FROM THE SHIPPED STANDOFF, NEVER TYPED BESIDE IT. The first
+	// revision of this file hard-coded 1.500 m next to an
+	// m_fApproachStandoffMetres of 2.0 m, which made a PERFECT arrival fail: the
+	// trainer stopped exactly where he was told to and the assertion said he had
+	// not. Two numbers describing one ring is the defect; there is now one number
+	// and a tolerance around it.
+	//
+	// ★ THE TOLERANCE IS A MEASURED FRAME-ORDERING ARTEFACT, NOT A FUDGE.
+	// Zenith_Core.cpp's frame order is
+	//     PumpAutomatedTest (this test's Step)  ->  Physics().Update
+	//     ->  Zenith_SyncPhysicsTransforms  ->  Scenes().Update (the component tick)
+	// so this test ALWAYS reads a pose one integrated frame behind the last
+	// measurement ZM_Interactable made. The trainer covers
+	// fWALK_SPEED * fRV_FIXED_DT = 0.133 m in that frame, which is exactly the
+	// 2.105 m this clause observed for a walk whose own final measurement was
+	// 1.972 m -- i.e. INSIDE the 2.0 m ring. Two frames of it, plus 0.25 m for
+	// contact response against a second capsule on real terrain, is the honest
+	// window; anything wider would stop distinguishing an arrival from a timeout,
+	// which is what the elapsed clause below is for.
+	//
+	// fWALK_SPEED is named rather than re-typed because it IS the constant
+	// ZM_Interactable drives the walk with (fZM_TRAINER_APPROACH_SPEED), so the
+	// test's arithmetic and the game's speed cannot drift apart.
+	constexpr float fRV_TRAINER_FRAME_TRAVEL =
+		ZM_PlayerController::fWALK_SPEED * fRV_FIXED_DT;
+	constexpr float fRV_STANDOFF_TOLERANCE =
+		fRV_TRAINER_FRAME_TRAVEL * 2.0f + 0.25f;
+
+	// ---- S7 item 1 SC3 / risk R1: THE ANTI-SHOVE BOUNDS ----------------------
+	//
+	// RIGIDBODY_TYPE has no KINEMATIC, so the authored rival now stands on a body the
+	// player can physically lean on. These two bounds are what turn "he might drift"
+	// from a worry into a measurement.
+	//
+	// (a) BEFORE he has ever walked, he must be ON his authored anchor. A dynamic
+	//     capsule that slides, settles sideways or gets shoved shows up here and
+	//     nowhere else -- the placement clause in phase (1) samples ONE frame at load.
+	constexpr float fRV_IDLE_DRIFT_TOLERANCE = 0.35f;
+	// (b) ONCE he has walked, his displacement is bounded by the geometry of the
+	//     walk itself: he only ever moves toward a target inside his own cone. Twice
+	//     the sight range covers the three approaches this test drives with room to
+	//     spare, and still reds a rival who has been pushed across the plaza.
+	constexpr float fRV_WALKED_DRIFT_TOLERANCE = fZM_SIGHT_MAX_DISTANCE * 2.0f;
+
 	// THE COUPLING TOLERANCES between the committed scene bytes and the compiled
 	// placement header. Both are deliberately tight: the authoring writes these
 	// exact values, so anything but float round-trip noise means the file and the
@@ -215,11 +316,23 @@ namespace
 		BasisProbe,        // (4)
 		Approach,          // (5)
 		AwaitSpotted,      // (6)  the W3 visual beat
+		// S7 item 1 SC3. INSERTED between the visual beat and the bark: the TRAINER's
+		// own walk, which is the sub-commit's centrepiece and the only place a
+		// re-authored DYNAMIC CAPSULE can be shown to be load-bearing.
+		TrainerApproach,   // (6b)
 		AwaitChallenge,    // (7)
 		DismissChallenge,  // (8)
 		AwaitInBattle,     // (9)
 		DriveMenu,         // (10)
 		Settle,            // (11)
+		// S7 item 1 SC3. APPENDED after the shipped round trip, so none of the
+		// clauses above can be affected by them. They exist for the two things a
+		// single successful walk cannot show: that the freeze is RELEASED on the
+		// CANCEL path, and that a test which dies mid-cinematic leaks a freeze the
+		// between-tests hook has to clear.
+		ReArmWalkBack,     // (12)
+		CancelMidApproach, // (13)
+		LeakMidApproach,   // (14)
 		Done,
 	};
 
@@ -397,9 +510,17 @@ namespace
 	bool        g_bRVFailed         = false;
 	bool        g_bRVPrereqsPresent = false;
 	const char* g_szRVFailure       = "test did not reach verification";
-	// Backing store for the ONE failure message that has to carry a MEASUREMENT
-	// (the feet-height delta). FailRV takes a const char*, so the formatted text
-	// needs somewhere to live for the rest of the run.
+	// Backing store for the failure messages that have to carry a MEASUREMENT (the
+	// feet-height delta, and -- since S7 item 1 SC3 -- the four walk-up / cancel /
+	// leak diagnostics). FailRV takes a plain const char* and NOTHING in this file
+	// takes a format, so a measured message is snprintf'd in here first and the
+	// pointer handed over; the text then has to live for the rest of the run.
+	//
+	// ★ ONE BUFFER IS ENOUGH, AND IT IS NOT LUCK: FailRV drives the machine to
+	// RVPhase::Done and latches g_bRVFailed, and every caller returns false
+	// immediately, so Step never runs another phase. Exactly one measured failure
+	// can ever be written. If a future clause ever needs to record a measurement
+	// WITHOUT ending the run, it needs its own buffer, not this one.
 	char        g_szRVMeasuredFailure[512] = { '\0' };
 
 	// ---- (1) THE AUTHORED RESOLUTION ----
@@ -493,6 +614,59 @@ namespace
 	u_int g_uRVSpottedChallengeAtSubmit = 0xffffffffu;   // want 0
 	u_int g_uRVSpottedFramesObserved    = 0u;            // want > 0
 	float g_fRVSpottedElapsedAtSubmit   = -1.0f;
+
+	// ---- (6b) S7 item 1 SC3: THE TRAINER'S OWN WALK -------------------------
+	// EVERY sentinel FAILS CLOSED. The two "did it happen" bools start false, the
+	// closure starts NEGATIVE (Verify wants a real positive distance), the final gap
+	// starts HUGE (Verify wants it inside the standoff band), the counts start at
+	// 0xffffffff, and the two "was the player frozen" clauses are counted rather than
+	// latched -- a single sampled frame would be satisfied by a freeze that arrived
+	// late and left early.
+	bool  g_bRVTrainerApproachSeen     = false;
+	bool  g_bRVTrainerApproachEnded    = false;
+	u_int g_uRVTrainerApproachFrames   = 0u;         // want > 0
+	u_int g_uRVTrainerFrozenFrames     = 0u;         // want == frames observed
+	u_int g_uRVTrainerHeldFrames       = 0u;         // want == frames observed
+	float g_fRVTrainerStartGap         = -1.0f;      // want > the standoff band
+	float g_fRVTrainerEndGap           = 1.0e9f;     // want <= the standoff band
+	float g_fRVTrainerWorstBackstep    = 0.0f;       // want <= the slack
+	u_int g_uRVTrainerApproachCount    = 0xffffffffu;// want 1 at the end of the walk
+	// ★ HOW THE WALK ENDED, MEASURED RATHER THAN INFERRED. ZM_TrainerSightFsm
+	// deliberately does NOT clear m_fApproachElapsed on completion (only the cancel
+	// arm clears it), and its header says in as many words that this is "what lets a
+	// unit prove the arrival beat the clock". The first revision of this file did not
+	// sample it and instead printed "the walk ran out on the FAIL-OPEN timeout" from
+	// a distance clause that could not tell the two apart -- naming a cause it had
+	// never observed. Sentinel is NEGATIVE so an unsampled run cannot look like a
+	// fast arrival.
+	float g_fRVTrainerElapsedAtEnd     = -1.0f;      // want 0 < elapsed < the timeout
+	// The RELEASE half of the paired positive: movement back on, hold down, latch
+	// down -- observed AFTER the walk rather than assumed from its end.
+	bool  g_bRVReleaseObserved         = false;
+	int   g_iRVReleaseFrames           = -1;
+
+	// ---- R1: the anti-shove drift bounds, sampled EVERY frame ---------------
+	bool  g_bRVDriftSampled     = false;
+	float g_fRVIdleDriftMax     = 0.0f;   // want <= fRV_IDLE_DRIFT_TOLERANCE
+	float g_fRVWalkedDriftMax   = 0.0f;   // want <= fRV_WALKED_DRIFT_TOLERANCE
+	float g_fRVWatchFacingMinDot = 2.0f;  // want >= fRV_FACING_MIN_ABS_DOT
+
+	// ---- (12)/(13)/(14) the re-arm, the CANCEL, and the deliberate leak ------
+	bool  g_bRVReArmCleared        = false;
+	bool  g_bRVReArmed             = false;
+	float g_fRVReArmGap            = -1.0f;
+	bool  g_bRVCancelApproachSeen  = false;
+	bool  g_bRVCancelFrozenAtEntry = false;
+	bool  g_bRVCancelHeldAtEntry   = false;
+	bool  g_bRVCancelIssued        = false;
+	bool  g_bRVCancelReleased      = false;
+	int   g_iRVCancelReleaseFrames = -1;
+	u_int g_uRVCancelApproachCount = 0xffffffffu;   // want 2
+	bool  g_bRVLeakApproachSeen    = false;
+	bool  g_bRVLeakFrozen          = false;
+	bool  g_bRVLeakHeld            = false;
+	bool  g_bRVLeakLatchArmed      = false;
+	u_int g_uRVLeakApproachCount   = 0xffffffffu;   // want 3
 
 	// ---- (7)/(8) THE BARK ----
 	// ★ NOT part of g_bRVPrereqsPresent. This one flag gates the BARK CLAUSES in
@@ -670,6 +844,116 @@ namespace
 		return xEntity.IsValid()
 			? xEntity.TryGetComponent<ZM_Interactable>()
 			: nullptr;
+	}
+
+	// ★ HIS LIVE POSE, RE-READ EVERY FRAME. Before SC3 the rival never moved, so
+	// g_xRVVesperPosition (captured once at load) was the whole truth. He now WALKS,
+	// and measuring the walk against the position he started from would report a
+	// gap that closes only because the PLAYER moved -- which is precisely the
+	// mistake the trainer-approach phase exists to rule out.
+	bool RVResolveVesperPose(
+		Zenith_Maths::Vector3& xPositionOut, Zenith_Maths::Quat& xRotationOut)
+	{
+		Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(g_xRVSecondEntityID);
+		Zenith_TransformComponent* pxTransform = xEntity.IsValid()
+			? xEntity.TryGetComponent<Zenith_TransformComponent>()
+			: nullptr;
+		if (pxTransform == nullptr)
+		{
+			return false;
+		}
+		pxTransform->GetPosition(xPositionOut);
+		pxTransform->GetRotation(xRotationOut);
+		return true;
+	}
+
+	// The player's movement bool, through the same unique-player resolve every other
+	// clause here uses. Answers false when there is no resolvable player, which is
+	// the FAIL-CLOSED direction for the "he was frozen" half and is caught separately
+	// by the phase's own player-lost clause.
+	bool RVPlayerMovementEnabled()
+	{
+		RVPlayerView xPlayer;
+		return FindActivePlayer(xPlayer)
+			&& xPlayer.m_pxController != nullptr
+			&& xPlayer.m_pxController->IsMovementEnabled();
+	}
+
+	// ★ THE R1 SAMPLER, CALLED ON EVERY FRAME OF THE WHOLE RUN rather than at phase
+	// boundaries. The defect it exists to catch -- a DYNAMIC capsule shoved off its
+	// anchor, or yawed by a collision into permanent blindness -- is live state that
+	// heals itself the moment the pushing body moves away, so a boundary sample can
+	// easily miss it entirely. Costs one transform read per frame.
+	void RVSampleVesperDrift()
+	{
+		Zenith_Maths::Vector3 xPosition(0.0f);
+		Zenith_Maths::Quat xRotation(1.0f, 0.0f, 0.0f, 0.0f);
+		if (!RVResolveVesperPose(xPosition, xRotation))
+		{
+			return;
+		}
+		g_bRVDriftSampled = true;
+
+		const float fDeltaX = xPosition.x - fZM_DAWNMERE_VESPER_X;
+		const float fDeltaZ = xPosition.z - fZM_DAWNMERE_VESPER_Z;
+		const float fDrift = std::sqrt(fDeltaX * fDeltaX + fDeltaZ * fDeltaZ);
+		if (fDrift > g_fRVWalkedDriftMax)
+		{
+			g_fRVWalkedDriftMax = fDrift;
+		}
+
+		const ZM_Interactable* pxVesper = ResolveVesperComponent();
+		const bool bHasWalked = pxVesper != nullptr
+			&& pxVesper->GetTrainerApproachCount() > 0u;
+		if (!bHasWalked && fDrift > g_fRVIdleDriftMax)
+		{
+			// The IDLE bound only applies before he has ever been asked to move: after
+			// that, displacement is content rather than damage.
+			g_fRVIdleDriftMax = fDrift;
+		}
+
+		// The WATCHING facing repair, measured. A rival who is watching must be
+		// pointing where the committed bytes said, whatever has bumped into him since
+		// -- and it is sampled ONLY in WATCHING because every other state legitimately
+		// owns his facing (the walk authors it outright).
+		if (pxVesper != nullptr
+			&& pxVesper->GetTrainerSightState() == ZM_TRAINER_SIGHT_WATCHING)
+		{
+			const float fDot = RVFacingAbsDot(xRotation, ZM_DawnmereVesperFacing());
+			if (fDot < g_fRVWatchFacingMinDot)
+			{
+				g_fRVWatchFacingMinDot = fDot;
+			}
+		}
+	}
+
+	// The planar gap between the player and the rival's LIVE position.
+	bool RVLiveTrainerGap(float& fGapOut)
+	{
+		RVPlayerView xPlayer;
+		Zenith_Maths::Vector3 xVesperPosition(0.0f);
+		Zenith_Maths::Quat xVesperRotation(1.0f, 0.0f, 0.0f, 0.0f);
+		if (!FindActivePlayer(xPlayer)
+			|| !RVResolveVesperPose(xVesperPosition, xVesperRotation))
+		{
+			return false;
+		}
+		fGapOut = PlanarDistance(xPlayer.m_xPosition, xVesperPosition);
+		return true;
+	}
+
+	// Set or clear the rival's defeat flag on the live game state. Returns whether it
+	// took: the re-arm phases are worthless if the write silently missed.
+	bool RVSetRivalDefeatFlag(bool bSet)
+	{
+		ZM_GameState* pxGameState = nullptr;
+		if (!ZM_GameStateManager::TryGetGameState(pxGameState)
+			|| pxGameState == nullptr)
+		{
+			return false;
+		}
+		ZM_SetStoryFlag(*pxGameState, ZM_STORY_FLAG_RIVAL1_DEFEATED, bSet);
+		return ZM_IsStoryFlagSet(*pxGameState, ZM_STORY_FLAG_RIVAL1_DEFEATED) == bSet;
 	}
 
 	// ★ THE ORDERING PROOF, latched on the FIRST frame the challenge dialogue is
@@ -1280,6 +1564,19 @@ namespace
 			return true;
 		}
 
+		// S7 item 1 SC3, DEFENSIVE ROUTE. The handoff into the trainer's walk normally
+		// happens out of the completed SPOTTED beat one phase down; this catches a
+		// machine that reached APPROACHING by any other road (a degenerate spotted
+		// duration fails OPEN straight through the beat) so the walk is never measured
+		// by a phase whose progress watchdog would read a frozen player as a stall.
+		if (pxVesper->GetTrainerSightState() == ZM_TRAINER_SIGHT_APPROACHING)
+		{
+			ClearRVInput();
+			g_eRVPhase = RVPhase::TrainerApproach;
+			g_iRVPhaseFrames = 0;
+			return true;
+		}
+
 		// Fixed 1/30 stepping leaves the shipped 0.35 s SPOTTED state observable
 		// for many frames. Reaching any later activity without that observation is
 		// therefore a real bypass, not a polling race.
@@ -1349,6 +1646,24 @@ namespace
 			return false;
 		}
 
+		// ★ THE PLAYER-DRIVEN HALF IS OVER ONCE THE TRAINER HAS WALKED. Beyond that
+		// point the rival is standing on the standoff ring and the bark/encounter is
+		// one or two frames away, so continuing to drive toward his AUTHORED position
+		// would walk the player straight through him, and the progress watchdog would
+		// be measuring a player who is deliberately standing still. Wait it out on the
+		// phase deadline alone.
+		if (g_bRVTrainerApproachEnded)
+		{
+			if (g_iRVPhaseFrames > iRV_APPROACH_DEADLINE)
+			{
+				FailRV("the rival finished his walk-up and then never barked and never "
+					"raised -- the handoff out of APPROACHING reached neither the "
+					"challenge graph nor the encounter dispatch");
+				return false;
+			}
+			return true;
+		}
+
 		if (g_fRVCurrentDistance < g_fRVBestDistance - fRV_STALL_IMPROVEMENT)
 		{
 			g_fRVBestDistance = g_fRVCurrentDistance;
@@ -1415,6 +1730,155 @@ namespace
 		}
 
 		g_bRVSpottedCompleted = true;
+		// ★ S7 item 1 SC3. The completed visual beat now hands off to the TRAINER's
+		// walk rather than straight to the bark, and the walk is where the player is
+		// frozen -- so control must leave the player-driven Approach phase here or its
+		// progress watchdog would diagnose a deliberately frozen player as a stall.
+		if (pxVesper->GetTrainerSightState() == ZM_TRAINER_SIGHT_APPROACHING)
+		{
+			ClearRVInput();
+			g_eRVPhase = RVPhase::TrainerApproach;
+			g_iRVPhaseFrames = 0;
+			return true;
+		}
+		g_eRVPhase = RVPhase::Approach;
+		g_iRVPhaseFrames = 0;
+		return true;
+	}
+
+	// (6b) ★ THE CENTREPIECE OF S7 ITEM 1 SC3: THE RIVAL PHYSICALLY WALKS.
+	//
+	// Everything here is measured off his LIVE transform, never off the position the
+	// scene authored, because the whole claim is that he LEFT it. The player is
+	// frozen for the duration and holds no keys, so every metre the gap loses is a
+	// metre HE covered -- which is what makes this phase, and not the player's
+	// walk-up above, the thing the re-authored DYNAMIC CAPSULE is load-bearing for.
+	//
+	// Revert the collider to OBB/STATIC and re-author, and this phase is where it
+	// reds: a static body cannot be given a velocity, so the gap never closes and the
+	// timeout fires with the trainer standing exactly where he started.
+	bool RVPhaseTrainerApproach()
+	{
+		const ZM_Interactable* pxVesper = ResolveVesperComponent();
+		if (pxVesper == nullptr)
+		{
+			FailRV("the authored rival was lost during his own walk-up");
+			return false;
+		}
+
+		float fGap = 0.0f;
+		if (!RVLiveTrainerGap(fGap))
+		{
+			FailRV("the player or the rival stopped resolving during the walk-up, so "
+				"the closing gap could not be measured");
+			return false;
+		}
+
+		if (pxVesper->GetTrainerSightState() == ZM_TRAINER_SIGHT_APPROACHING)
+		{
+			if (!g_bRVTrainerApproachSeen)
+			{
+				g_bRVTrainerApproachSeen = true;
+				g_fRVTrainerStartGap = fGap;
+				g_fRVTrainerEndGap = fGap;
+			}
+			++g_uRVTrainerApproachFrames;
+
+			// ★ THE FREEZE, COUNTED RATHER THAN LATCHED. "IsMovementEnabled() was false
+			// once" is satisfied by a freeze that arrived late and left early; the
+			// clause in Verify compares these counts against the frames observed, so
+			// the freeze has to hold for the WHOLE walk.
+			if (!RVPlayerMovementEnabled())
+			{
+				++g_uRVTrainerFrozenFrames;
+			}
+			if (pxVesper->IsTrainerCinematicHoldActive()
+				&& ZM_TrainerCinematicLatch::IsActive())
+			{
+				++g_uRVTrainerHeldFrames;
+			}
+
+			// MONOTONIC CLOSURE, with a slack that is float noise rather than a metre.
+			// Transposing ZM_StepTrainerApproach's two positions at the live call site
+			// makes the gap OPEN instead, and this is the clause that says so.
+			const float fBackstep = fGap - g_fRVTrainerEndGap;
+			if (fBackstep > g_fRVTrainerWorstBackstep)
+			{
+				g_fRVTrainerWorstBackstep = fBackstep;
+			}
+			g_fRVTrainerEndGap = fGap;
+
+			if (g_iRVPhaseFrames > iRV_TRAINER_APPROACH_DEADLINE)
+			{
+				FailRV("the rival never finished his walk-up. The FSM caps APPROACHING "
+					"at m_fApproachTimeoutSeconds and then FAILS OPEN, so staying in it "
+					"past this deadline means the state is being re-entered every frame "
+					"rather than progressing");
+				return false;
+			}
+			return true;
+		}
+
+		// ---- THE WALK IS OVER. Everything below is the RELEASE half. ----------
+		if (!g_bRVTrainerApproachEnded)
+		{
+			if (!g_bRVTrainerApproachSeen)
+			{
+				// FailRV takes ONE pre-formatted string, so a measured diagnostic is
+				// composed into the shared backing store first -- the same idiom the
+				// feet-height clause in phase (1) uses.
+				snprintf(g_szRVMeasuredFailure, sizeof(g_szRVMeasuredFailure),
+					"the completed SPOTTED beat handed off with no observable "
+					"APPROACHING frame (approachCount=%u). A count of 0 means his "
+					"authored body is not a DYNAMIC CAPSULE -- re-author Dawnmere -- or "
+					"m_bApproachPossible is answering false for a body that satisfies "
+					"the contract; a NON-zero count means the walk arrived on the tick "
+					"it started, i.e. the standoff already covered the gap",
+					pxVesper->GetTrainerApproachCount());
+				FailRV(g_szRVMeasuredFailure);
+				return false;
+			}
+			g_bRVTrainerApproachEnded = true;
+			g_uRVTrainerApproachCount = pxVesper->GetTrainerApproachCount();
+			// Sampled on the FIRST frame after the walk, while the accumulator still
+			// holds the duration the finished walk actually ran.
+			g_fRVTrainerElapsedAtEnd = pxVesper->GetTrainerApproachElapsedSeconds();
+			// ★ THE RELEASE DEADLINE IS MEASURED FROM THE WALK'S END, not from the
+			// phase's start -- the walk itself is allowed to run far longer than the
+			// release window, so sharing one counter would fail every successful run.
+			g_iRVPhaseFrames = 0;
+			return true;
+		}
+
+		// The paired POSITIVE. "Still frozen" on its own is satisfied by a build in
+		// which nothing ever unfreezes anybody, which is the standing hazard of a
+		// fourth writer of a non-refcounted bool.
+		if (!g_bRVReleaseObserved)
+		{
+			const bool bHoldDown = !pxVesper->IsTrainerCinematicHoldActive();
+			// The BARK freezes through ZM_UI_MenuStack the same frame the walk ends, so
+			// the honest release clause is "this component let go", plus movement being
+			// back unless another owner has legitimately taken it.
+			const bool bMovementBack = RVPlayerMovementEnabled()
+				|| ZM_UI_MenuStack::IsMenuOpen()
+				|| ZM_BattleTransition::IsTransitionActive();
+			if (bHoldDown && bMovementBack)
+			{
+				g_bRVReleaseObserved = true;
+				g_iRVReleaseFrames = g_iRVPhaseFrames;
+			}
+			else if (g_iRVPhaseFrames > iRV_CINE_RELEASE_DEADLINE)
+			{
+				FailRV("the rival left APPROACHING but the cinematic freeze was never "
+					"released -- the player is stranded frozen with no owner, which is "
+					"the exact failure ZM_TrainerCinematicLatch is shaped to prevent");
+				return false;
+			}
+			return true;
+		}
+
+		// Hand back to the shipped walk-up phase, which already knows how to read the
+		// bark and the transition apart.
 		g_eRVPhase = RVPhase::Approach;
 		g_iRVPhaseFrames = 0;
 		return true;
@@ -1613,6 +2077,245 @@ namespace
 			g_bRVSettleResolved = true;
 		}
 
+		g_eRVPhase = RVPhase::ReArmWalkBack;
+		g_iRVPhaseFrames = 0;
+		return true;
+	}
+
+	// (12) S7 item 1 SC3. RE-ARM THE RIVAL FOR TWO THINGS THE SUCCESSFUL WALK ABOVE
+	//      CANNOT SHOW. Walk the player OUT past the sight range (an ENGAGED machine
+	//      only re-arms on losing sight), then back IN to a band that is inside the
+	//      cone and outside the standoff ring, then clear the gates by hand.
+	//
+	//      The walk-back is driven with the SAME camera-relative key driver as the
+	//      approach -- no SetPosition anywhere, so the player is still moving on Jolt
+	//      velocity even in a fixture phase.
+	bool RVPhaseReArmWalkBack()
+	{
+		RVPlayerView xPlayer;
+		if (!FindActivePlayer(xPlayer))
+		{
+			FailRV("the player disappeared before the cancel-path re-arm");
+			return false;
+		}
+		const ZM_Interactable* pxVesper = ResolveVesperComponent();
+		if (pxVesper == nullptr)
+		{
+			FailRV("the authored rival disappeared before the cancel-path re-arm");
+			return false;
+		}
+		Zenith_Maths::Vector3 xVesperPosition(0.0f);
+		Zenith_Maths::Quat xVesperRotation(1.0f, 0.0f, 0.0f, 0.0f);
+		if (!RVResolveVesperPose(xVesperPosition, xVesperRotation))
+		{
+			FailRV("the authored rival's transform stopped resolving after the battle");
+			return false;
+		}
+		const float fGap = PlanarDistance(xPlayer.m_xPosition, xVesperPosition);
+
+		if (g_iRVPhaseFrames > iRV_REARM_DEADLINE)
+		{
+			FailRV("the player could not be walked back out of and into the rival's "
+				"cone after the battle -- the cancel-path clauses below never ran. The "
+				"battle leaves the player parked, so this usually means movement was "
+				"never handed back at all");
+			return false;
+		}
+		// The battle's own park is released by ZM_BattleTransition; nothing here may
+		// drive input until it has been.
+		if (!xPlayer.m_pxController->IsMovementEnabled())
+		{
+			ClearRVInput();
+			return true;
+		}
+
+		if (!g_bRVReArmed)
+		{
+			// (a) OUT past the sight range, so ENGAGED re-arms to WATCHING on lost
+			//     sight. Walking a POINT away from him rather than a direction keeps
+			//     the driver camera-relative and identical to the approach.
+			if (fGap < fRV_REARM_CLEAR_GAP)
+			{
+				const Zenith_Maths::Vector3 xAway(
+					xPlayer.m_xPosition.x + (xPlayer.m_xPosition.x - xVesperPosition.x),
+					xPlayer.m_xPosition.y,
+					xPlayer.m_xPosition.z + (xPlayer.m_xPosition.z - xVesperPosition.z));
+				DriveTowardXZ(xPlayer.m_xPosition, xAway);
+				return true;
+			}
+			if (pxVesper->GetTrainerSightState() != ZM_TRAINER_SIGHT_WATCHING)
+			{
+				// Out of range and still not re-armed: give the machine its frames,
+				// the phase deadline above is the backstop.
+				ClearRVInput();
+				return true;
+			}
+			g_bRVReArmed = true;
+			return true;
+		}
+
+		// (b) BACK IN to the band.
+		if (fGap > fRV_REARM_MAX_GAP)
+		{
+			DriveTowardXZ(xPlayer.m_xPosition, xVesperPosition);
+			return true;
+		}
+		ClearRVInput();
+		if (fGap < fRV_REARM_MIN_GAP)
+		{
+			// Overshot on the frame the keys were released; the capsule decelerates on
+			// friction alone, so simply wait rather than driving backwards into an
+			// oscillation.
+			return true;
+		}
+		g_fRVReArmGap = fGap;
+
+		// (c) OPEN THE GATES. Both, and BY HAND: the win set the defeat flag, and the
+		//     raise burnt the session latch. Clearing them is what makes the second
+		//     and third walks possible at all.
+		if (!RVSetRivalDefeatFlag(false))
+		{
+			FailRV("could not clear ZM_STORY_FLAG_RIVAL1_DEFEATED for the cancel-path "
+				"re-arm");
+			return false;
+		}
+		ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
+		g_bRVReArmCleared = true;
+		g_eRVPhase = RVPhase::CancelMidApproach;
+		g_iRVPhaseFrames = 0;
+		return true;
+	}
+
+	// (13) ★ THE CANCEL PATH, WHICH IS THE ONE THAT CAN STRAND A PLAYER FOREVER.
+	//      Arrival releases the freeze on a path a successful run exercises every
+	//      time; CANCEL does not, and a release dropped there leaves a frozen player
+	//      standing in an overworld with no owner left to unfreeze him. This phase
+	//      cancels the walk MID-FLIGHT (by re-setting the defeat flag, which closes
+	//      ZM_MayTrainerEngage under him) and then requires the release.
+	bool RVPhaseCancelMidApproach()
+	{
+		const ZM_Interactable* pxVesper = ResolveVesperComponent();
+		if (pxVesper == nullptr)
+		{
+			FailRV("the authored rival disappeared during the cancel-path walk");
+			return false;
+		}
+		if (g_iRVPhaseFrames > iRV_REARM_DEADLINE)
+		{
+			snprintf(g_szRVMeasuredFailure, sizeof(g_szRVMeasuredFailure),
+				"the re-armed rival never started a second walk-up, so the CANCEL "
+				"path was never exercised (state=%u approachCount=%u)",
+				(u_int)pxVesper->GetTrainerSightState(),
+				pxVesper->GetTrainerApproachCount());
+			FailRV(g_szRVMeasuredFailure);
+			return false;
+		}
+
+		if (!g_bRVCancelIssued)
+		{
+			if (pxVesper->GetTrainerSightState() != ZM_TRAINER_SIGHT_APPROACHING)
+			{
+				return true;
+			}
+			// Sample the hold WHILE it is held, then close the gate under him.
+			g_bRVCancelApproachSeen = true;
+			g_uRVCancelApproachCount = pxVesper->GetTrainerApproachCount();
+			g_bRVCancelFrozenAtEntry = !RVPlayerMovementEnabled();
+			g_bRVCancelHeldAtEntry = pxVesper->IsTrainerCinematicHoldActive()
+				&& ZM_TrainerCinematicLatch::IsActive();
+			if (!RVSetRivalDefeatFlag(true))
+			{
+				FailRV("could not re-set ZM_STORY_FLAG_RIVAL1_DEFEATED to cancel the "
+					"walk mid-flight");
+				return false;
+			}
+			g_bRVCancelIssued = true;
+			g_iRVPhaseFrames = 0;
+			return true;
+		}
+
+		// The machine must abandon the walk (the gate closed), and the freeze must
+		// come off WITH it.
+		const bool bLeftApproach =
+			pxVesper->GetTrainerSightState() != ZM_TRAINER_SIGHT_APPROACHING;
+		const bool bHoldDown = !pxVesper->IsTrainerCinematicHoldActive()
+			&& !ZM_TrainerCinematicLatch::IsActive();
+		// Sampled ONCE and shared by the decision and the diagnostic below, so the
+		// failure text can never report a different movement state from the one that
+		// actually failed the check.
+		const bool bMovementRestored = RVPlayerMovementEnabled();
+		if (bLeftApproach && bHoldDown && bMovementRestored)
+		{
+			g_bRVCancelReleased = true;
+			g_iRVCancelReleaseFrames = g_iRVPhaseFrames;
+			// Re-open the gate for the leak phase. He is already in WATCHING with the
+			// player standing in his cone, so the third walk starts on its own.
+			if (!RVSetRivalDefeatFlag(false))
+			{
+				FailRV("could not re-clear the defeat flag for the leak phase");
+				return false;
+			}
+			ZM_TrainerEngagementLatch::ResetRuntimeStateForTests();
+			g_eRVPhase = RVPhase::LeakMidApproach;
+			g_iRVPhaseFrames = 0;
+			return true;
+		}
+		if (g_iRVPhaseFrames > iRV_CINE_RELEASE_DEADLINE)
+		{
+			snprintf(g_szRVMeasuredFailure, sizeof(g_szRVMeasuredFailure),
+				"the walk was CANCELLED mid-flight and the cinematic freeze was "
+				"never released: leftApproach=%d holdDown=%d movement=%d. A release "
+				"wired to the ARRIVAL path only looks exactly like this, and it strands "
+				"the player frozen with no owner",
+				(int)bLeftApproach, (int)bHoldDown, (int)bMovementRestored);
+			FailRV(g_szRVMeasuredFailure);
+			return false;
+		}
+		return true;
+	}
+
+	// (14) ★ THE DELIBERATE LEAK, AND IT IS THE POINT OF THE PHASE.
+	//
+	//      This test ENDS while the rival is still mid-APPROACHING, so it leaves
+	//      ZM_TrainerCinematicLatch ARMED on purpose. That is the only way the
+	//      between-tests hook's ZM_TrainerCinematicLatch::ResetRuntimeStateForTests()
+	//      line has any teeth at all: until SC3 nothing ever called Begin() at
+	//      runtime, so deleting that line redded nothing. A batched run now inherits a
+	//      freeze owner nobody can name unless the hook clears it.
+	//
+	//      DO NOT "tidy" this by resetting the latch in this test's own teardown --
+	//      that would move the proof back inside the test and re-hide the hook.
+	bool RVPhaseLeakMidApproach()
+	{
+		const ZM_Interactable* pxVesper = ResolveVesperComponent();
+		if (pxVesper == nullptr)
+		{
+			FailRV("the authored rival disappeared before the leak phase");
+			return false;
+		}
+		if (pxVesper->GetTrainerSightState() != ZM_TRAINER_SIGHT_APPROACHING)
+		{
+			if (g_iRVPhaseFrames > iRV_REARM_DEADLINE)
+			{
+				snprintf(g_szRVMeasuredFailure, sizeof(g_szRVMeasuredFailure),
+					"the rival never took a THIRD walk after the cancel, so the "
+					"deliberate mid-cinematic exit never happened (state=%u count=%u)",
+					(u_int)pxVesper->GetTrainerSightState(),
+					pxVesper->GetTrainerApproachCount());
+				FailRV(g_szRVMeasuredFailure);
+				return false;
+			}
+			return true;
+		}
+
+		g_bRVLeakApproachSeen = true;
+		g_uRVLeakApproachCount = pxVesper->GetTrainerApproachCount();
+		g_bRVLeakFrozen = !RVPlayerMovementEnabled();
+		g_bRVLeakHeld = pxVesper->IsTrainerCinematicHoldActive();
+		g_bRVLeakLatchArmed = ZM_TrainerCinematicLatch::IsActive();
+
+		// STOP HERE, mid-walk, with the freeze still on.
+		ClearRVInput();
 		g_eRVPhase = RVPhase::Done;
 		return false;
 	}
@@ -1705,6 +2408,40 @@ namespace
 		g_uRVSpottedFramesObserved = 0u;
 		g_fRVSpottedElapsedAtSubmit = -1.0f;
 
+		g_bRVTrainerApproachSeen   = false;
+		g_bRVTrainerApproachEnded  = false;
+		g_uRVTrainerApproachFrames = 0u;
+		g_uRVTrainerFrozenFrames   = 0u;
+		g_uRVTrainerHeldFrames     = 0u;
+		g_fRVTrainerStartGap       = -1.0f;
+		g_fRVTrainerEndGap         = 1.0e9f;
+		g_fRVTrainerWorstBackstep  = 0.0f;
+		g_uRVTrainerApproachCount  = 0xffffffffu;
+		g_fRVTrainerElapsedAtEnd   = -1.0f;
+		g_bRVReleaseObserved       = false;
+		g_iRVReleaseFrames         = -1;
+
+		g_bRVDriftSampled      = false;
+		g_fRVIdleDriftMax      = 0.0f;
+		g_fRVWalkedDriftMax    = 0.0f;
+		g_fRVWatchFacingMinDot = 2.0f;
+
+		g_bRVReArmCleared        = false;
+		g_bRVReArmed             = false;
+		g_fRVReArmGap            = -1.0f;
+		g_bRVCancelApproachSeen  = false;
+		g_bRVCancelFrozenAtEntry = false;
+		g_bRVCancelHeldAtEntry   = false;
+		g_bRVCancelIssued        = false;
+		g_bRVCancelReleased      = false;
+		g_iRVCancelReleaseFrames = -1;
+		g_uRVCancelApproachCount = 0xffffffffu;
+		g_bRVLeakApproachSeen    = false;
+		g_bRVLeakFrozen          = false;
+		g_bRVLeakHeld            = false;
+		g_bRVLeakLatchArmed      = false;
+		g_uRVLeakApproachCount   = 0xffffffffu;
+
 		g_bRVBarkAssetPresent     = false;
 		g_bRVBarkObserved         = false;
 		g_bRVBarkMissed           = false;
@@ -1795,21 +2532,29 @@ namespace
 		}
 
 		++g_iRVPhaseFrames;
+		// S7 item 1 SC3 / risk R1. Sampled on EVERY frame of EVERY phase, ahead of the
+		// switch, because a shoved or yawed DYNAMIC capsule is transient live state
+		// that a phase-boundary sample would routinely miss. One transform read.
+		RVSampleVesperDrift();
 		switch (g_eRVPhase)
 		{
-		case RVPhase::AwaitReady:       return RVPhaseAwaitReady();
-		case RVPhase::ResolveAuthored:  return RVPhaseResolveAuthored();
-		case RVPhase::ReloadDawnmere:   return RVPhaseReloadDawnmere();
-		case RVPhase::InstallLead:      return RVPhaseInstallLead();
-		case RVPhase::BasisProbe:       return RVPhaseBasisProbe();
-		case RVPhase::Approach:         return RVPhaseApproach();
-		case RVPhase::AwaitSpotted:     return RVPhaseAwaitSpotted();
-		case RVPhase::AwaitChallenge:   return RVPhaseAwaitChallenge();
-		case RVPhase::DismissChallenge: return RVPhaseDismissChallenge();
-		case RVPhase::AwaitInBattle:    return RVPhaseAwaitInBattle();
-		case RVPhase::DriveMenu:        return RVPhaseDriveMenu();
-		case RVPhase::Settle:           return RVPhaseSettle();
-		case RVPhase::Done:             return false;
+		case RVPhase::AwaitReady:        return RVPhaseAwaitReady();
+		case RVPhase::ResolveAuthored:   return RVPhaseResolveAuthored();
+		case RVPhase::ReloadDawnmere:    return RVPhaseReloadDawnmere();
+		case RVPhase::InstallLead:       return RVPhaseInstallLead();
+		case RVPhase::BasisProbe:        return RVPhaseBasisProbe();
+		case RVPhase::Approach:          return RVPhaseApproach();
+		case RVPhase::AwaitSpotted:      return RVPhaseAwaitSpotted();
+		case RVPhase::TrainerApproach:   return RVPhaseTrainerApproach();
+		case RVPhase::AwaitChallenge:    return RVPhaseAwaitChallenge();
+		case RVPhase::DismissChallenge:  return RVPhaseDismissChallenge();
+		case RVPhase::AwaitInBattle:     return RVPhaseAwaitInBattle();
+		case RVPhase::DriveMenu:         return RVPhaseDriveMenu();
+		case RVPhase::Settle:            return RVPhaseSettle();
+		case RVPhase::ReArmWalkBack:     return RVPhaseReArmWalkBack();
+		case RVPhase::CancelMidApproach: return RVPhaseCancelMidApproach();
+		case RVPhase::LeakMidApproach:   return RVPhaseLeakMidApproach();
+		case RVPhase::Done:              return false;
 		}
 		return false;
 	}
@@ -1910,6 +2655,59 @@ namespace
 				g_bRVSpottedMenuIdleAtSubmit ? "true" : "false",
 				g_bRVSpottedTransitionIdleAtSubmit ? "true" : "false",
 				g_uRVSpottedRaiseAtSubmit, g_uRVSpottedChallengeAtSubmit);
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesper] trainerWalk (SC3): seen=%s ended=%s frames=%u "
+				"frozenFrames=%u heldFrames=%u (both want == frames) startGap=%.3f "
+				"endGap=%.3f (want %.3f +/- %.3f) elapsed=%.3f s (want < %.3f s, i.e. "
+				"ARRIVED not timed out) achievedSpeed=%.3f m/s (nominal %.3f) "
+				"closure=%.3f (want >= %.3f) "
+				"worstBackstep=%.4f (want <= %.4f) approachCount=%u (want 1) "
+				"releaseObserved=%s in %d frames (want <= %d) | drift: sampled=%s "
+				"idleMax=%.4f (want <= %.3f) walkedMax=%.4f (want <= %.3f) "
+				"watchFacingMinDot=%.5f (want >= %.5f)",
+				g_bRVTrainerApproachSeen ? "true" : "false",
+				g_bRVTrainerApproachEnded ? "true" : "false",
+				g_uRVTrainerApproachFrames, g_uRVTrainerFrozenFrames,
+				g_uRVTrainerHeldFrames, g_fRVTrainerStartGap, g_fRVTrainerEndGap,
+				ZM_TrainerSightFsmTuning{}.m_fApproachStandoffMetres,
+				fRV_STANDOFF_TOLERANCE,
+				g_fRVTrainerElapsedAtEnd,
+				ZM_TrainerSightFsmTuning{}.m_fApproachTimeoutSeconds,
+				// The ACHIEVED speed, logged on every run so the compile-time
+				// efficiency assumption in ZM_Interactable.cpp is checkable against a
+				// real number instead of being taken on faith.
+				(g_fRVTrainerElapsedAtEnd > 0.0f)
+					? (g_fRVTrainerStartGap - g_fRVTrainerEndGap) / g_fRVTrainerElapsedAtEnd
+					: -1.0f,
+				ZM_PlayerController::fWALK_SPEED,
+				g_fRVTrainerStartGap - g_fRVTrainerEndGap,
+				fRV_TRAINER_MIN_CLOSURE, g_fRVTrainerWorstBackstep,
+				fRV_TRAINER_BACKSTEP_SLACK, g_uRVTrainerApproachCount,
+				g_bRVReleaseObserved ? "true" : "false", g_iRVReleaseFrames,
+				iRV_CINE_RELEASE_DEADLINE,
+				g_bRVDriftSampled ? "true" : "false",
+				g_fRVIdleDriftMax, fRV_IDLE_DRIFT_TOLERANCE,
+				g_fRVWalkedDriftMax, fRV_WALKED_DRIFT_TOLERANCE,
+				g_fRVWatchFacingMinDot, fRV_FACING_MIN_ABS_DOT);
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesper] cancel+leak (SC3): reArmed=%s cleared=%s gap=%.3f "
+				"cancelSeen=%s frozenAtEntry=%s heldAtEntry=%s issued=%s released=%s in "
+				"%d frames count=%u (want 2) | leakSeen=%s frozen=%s held=%s "
+				"latchArmed=%s count=%u (want 3)",
+				g_bRVReArmed ? "true" : "false",
+				g_bRVReArmCleared ? "true" : "false", g_fRVReArmGap,
+				g_bRVCancelApproachSeen ? "true" : "false",
+				g_bRVCancelFrozenAtEntry ? "true" : "false",
+				g_bRVCancelHeldAtEntry ? "true" : "false",
+				g_bRVCancelIssued ? "true" : "false",
+				g_bRVCancelReleased ? "true" : "false", g_iRVCancelReleaseFrames,
+				g_uRVCancelApproachCount,
+				g_bRVLeakApproachSeen ? "true" : "false",
+				g_bRVLeakFrozen ? "true" : "false",
+				g_bRVLeakHeld ? "true" : "false",
+				g_bRVLeakLatchArmed ? "true" : "false", g_uRVLeakApproachCount);
 
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_RivalVesper] bark: assetPresent=%s (false => the bark clauses are "
@@ -2310,6 +3108,233 @@ namespace
 				bPassed = false;
 			}
 
+			// ===== S7 item 1 SC3: THE RIVAL PHYSICALLY WALKED ===================
+			// The GUARD is separate from the measurements on purpose: it names a
+			// MISSING OBSERVATION (he never walked at all -- almost always a scene that
+			// was not re-authored with the DYNAMIC CAPSULE), while the clauses under it
+			// name a walk that happened and was wrong.
+			if (!g_bRVTrainerApproachSeen || !g_bRVTrainerApproachEnded
+				|| g_uRVTrainerApproachFrames == 0u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_RivalVesper] the authored rival never took an observable walk-up "
+					"(seen=%s ended=%s frames=%u). Roadmap item 104 is the claim that he "
+					"WALKS TO THE PLAYER; with this clause failing, every measurement "
+					"below is vacuous. Check that Dawnmere.zscen was re-authored after "
+					"ZM_QueueDawnmereTrainerNpc moved to CAPSULE/DYNAMIC",
+					g_bRVTrainerApproachSeen ? "true" : "false",
+					g_bRVTrainerApproachEnded ? "true" : "false",
+					g_uRVTrainerApproachFrames);
+				bPassed = false;
+			}
+			else
+			{
+				const float fClosure = g_fRVTrainerStartGap - g_fRVTrainerEndGap;
+				if (fClosure < fRV_TRAINER_MIN_CLOSURE)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the rival's walk closed only %.3f m (%.3f -> "
+						"%.3f) against a required %.3f m, WITH THE PLAYER FROZEN AND "
+						"HOLDING NO KEYS -- so he did not move. A STATIC body cannot be "
+						"given a velocity: this is what reverting the authored collider "
+						"to OBB/STATIC looks like",
+						fClosure, g_fRVTrainerStartGap, g_fRVTrainerEndGap,
+						fRV_TRAINER_MIN_CLOSURE);
+					bPassed = false;
+				}
+				if (g_fRVTrainerWorstBackstep > fRV_TRAINER_BACKSTEP_SLACK)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the rival's walk OPENED the gap by %.4f m on at "
+						"least one frame (slack %.4f). Transposing the two positions at "
+						"the live ZM_StepTrainerApproach call site makes him walk AWAY, "
+						"and it is invisible to every boot unit",
+						g_fRVTrainerWorstBackstep, fRV_TRAINER_BACKSTEP_SLACK);
+					bPassed = false;
+				}
+				// ★ HE STOPPED **ON** THE RING. Judged against the SHIPPED standoff
+				// with a tolerance derived from it, so the two can never disagree the
+				// way a hard-coded band did. The window is two-sided on purpose: too
+				// far out means the walk ended without arriving, too far IN means he
+				// walked through the ring he was told to stop on and is standing on
+				// the player.
+				const ZM_TrainerSightFsmTuning xRVShippedTuning;
+				const float fStandoffError = std::fabs(
+					g_fRVTrainerEndGap - xRVShippedTuning.m_fApproachStandoffMetres);
+				if (fStandoffError > fRV_STANDOFF_TOLERANCE)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the rival stopped %.3f m from the player, "
+						"%.3f m off the shipped standoff ring of %.3f m (tolerance "
+						"%.3f = two frames of his own travel plus contact response). "
+						"Read this WITH the elapsed clause below: elapsed short of the "
+						"timeout means he arrived and this is a geometry problem; "
+						"elapsed AT the timeout means he never got here at all",
+						g_fRVTrainerEndGap, fStandoffError,
+						xRVShippedTuning.m_fApproachStandoffMetres,
+						fRV_STANDOFF_TOLERANCE);
+					bPassed = false;
+				}
+				// ★ ARRIVAL, NOT A TIMEOUT -- AND MEASURED. The FSM's timeout FAILS
+				// OPEN, so a walk that never reaches the ring still hands off to the
+				// bark and every downstream clause in this test still passes. Without
+				// this clause the whole phase would certify a trainer who stopped
+				// short as long as he stopped short CONSISTENTLY.
+				if (g_fRVTrainerElapsedAtEnd <= 0.0f
+					|| g_fRVTrainerElapsedAtEnd
+						>= xRVShippedTuning.m_fApproachTimeoutSeconds)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the walk ran %.3f s against a fail-open "
+						"timeout of %.3f s -- it ENDED ON THE CLOCK rather than on "
+						"arrival (or was never sampled). The rival stops wherever he "
+						"happened to be and the beat reads as a stutter, with every "
+						"other clause in this test still green. Either the walk speed "
+						"no longer clears fZM_SIGHT_MAX_DISTANCE minus the standoff "
+						"inside the timeout, or something is holding him up",
+						g_fRVTrainerElapsedAtEnd,
+						xRVShippedTuning.m_fApproachTimeoutSeconds);
+					bPassed = false;
+				}
+				// ★ THE FREEZE, THROUGHOUT. Counted, not latched: a freeze that arrived
+				// late or left early satisfies any single-sample clause.
+				if (g_uRVTrainerFrozenFrames != g_uRVTrainerApproachFrames
+					|| g_uRVTrainerHeldFrames != g_uRVTrainerApproachFrames)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the player was frozen on %u of %u walk frames "
+						"and the cinematic hold was armed on %u -- the freeze must cover "
+						"the WHOLE walk, or the player can move during a cinematic he is "
+						"not supposed to be able to leave",
+						g_uRVTrainerFrozenFrames, g_uRVTrainerApproachFrames,
+						g_uRVTrainerHeldFrames);
+					bPassed = false;
+				}
+				// ...AND THE PAIRED POSITIVE. Without this the clause above is
+				// satisfied by a build in which nothing ever unfreezes anybody.
+				if (!g_bRVReleaseObserved)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the walk ended and the cinematic hold was never "
+						"observed coming off");
+					bPassed = false;
+				}
+				if (g_uRVTrainerApproachCount != 1u)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the finished walk booked %u approaches, expected "
+						"exactly 1 -- a machine re-entering APPROACHING inside one "
+						"spotting would freeze the player again after releasing him",
+						g_uRVTrainerApproachCount);
+					bPassed = false;
+				}
+			}
+
+			// ===== S7 item 1 SC3 / risk R1: HE STAYED WHERE HE WAS AUTHORED ======
+			// RIGIDBODY_TYPE has no KINEMATIC, so this body can be shoved and (without
+			// the all-axis rotation lock) yawed. Both would degrade every geometric
+			// claim ZM_DawnmerePlacement.h makes while redding NOTHING -- the boot
+			// units reason about compiled constants, and the damage is live state.
+			if (!g_bRVDriftSampled)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_RivalVesper] the rival's pose was never sampled, so the R1 drift "
+					"bounds below measured nothing");
+				bPassed = false;
+			}
+			else
+			{
+				if (g_fRVIdleDriftMax > fRV_IDLE_DRIFT_TOLERANCE)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the rival drifted %.4f m off his authored XZ "
+						"BEFORE he had ever been asked to walk (tolerance %.3f). A "
+						"DYNAMIC capsule that slides or is shoved invalidates every "
+						"clearance derived in ZM_DawnmerePlacement.h",
+						g_fRVIdleDriftMax, fRV_IDLE_DRIFT_TOLERANCE);
+					bPassed = false;
+				}
+				if (g_fRVWalkedDriftMax > fRV_WALKED_DRIFT_TOLERANCE)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the rival ended up %.4f m from his authored XZ "
+						"(bound %.3f) -- further than any walk toward a target inside his "
+						"own cone can explain, so he was pushed",
+						g_fRVWalkedDriftMax, fRV_WALKED_DRIFT_TOLERANCE);
+					bPassed = false;
+				}
+				// The WATCHING facing, live. Phase (1) proves the committed BYTES carry
+				// the authored yaw; this proves a DYNAMIC body still carries it after
+				// being walked into, battled and walked into again.
+				if (g_fRVWatchFacingMinDot < fRV_FACING_MIN_ABS_DOT)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the WATCHING rival's live facing fell to |dot| "
+						"%.5f against the authored one (required %.5f). A yawed trainer "
+						"is a PERMANENTLY BLIND one -- this is ZM-D-156 recurring in "
+						"runtime state instead of in the saved bytes",
+						g_fRVWatchFacingMinDot, fRV_FACING_MIN_ABS_DOT);
+					bPassed = false;
+				}
+			}
+
+			// ===== S7 item 1 SC3: THE CANCEL PATH AND THE DELIBERATE LEAK ========
+			if (!g_bRVReArmed || !g_bRVReArmCleared || !g_bRVCancelApproachSeen
+				|| !g_bRVCancelIssued)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_RivalVesper] the cancel path was never reached (reArmed=%s "
+					"cleared=%s approachSeen=%s issued=%s) -- the release clause below "
+					"proves nothing, and the ARRIVAL path is then the only exit with any "
+					"coverage at all",
+					g_bRVReArmed ? "true" : "false",
+					g_bRVReArmCleared ? "true" : "false",
+					g_bRVCancelApproachSeen ? "true" : "false",
+					g_bRVCancelIssued ? "true" : "false");
+				bPassed = false;
+			}
+			else
+			{
+				if (!g_bRVCancelFrozenAtEntry || !g_bRVCancelHeldAtEntry)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the SECOND walk did not freeze the player "
+						"(frozen=%s held=%s), so cancelling it cannot prove a release",
+						g_bRVCancelFrozenAtEntry ? "true" : "false",
+						g_bRVCancelHeldAtEntry ? "true" : "false");
+					bPassed = false;
+				}
+				if (!g_bRVCancelReleased)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] a walk CANCELLED mid-flight never released the "
+						"cinematic freeze -- the player is stranded frozen. This is the "
+						"exit an arrival-only release forgets");
+					bPassed = false;
+				}
+				if (g_uRVCancelApproachCount != 2u)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the cancelled walk was approach #%u, expected #2",
+						g_uRVCancelApproachCount);
+					bPassed = false;
+				}
+			}
+			if (!g_bRVLeakApproachSeen || !g_bRVLeakFrozen || !g_bRVLeakHeld
+				|| !g_bRVLeakLatchArmed || g_uRVLeakApproachCount != 3u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_RivalVesper] the deliberate mid-cinematic exit did not happen "
+					"(seen=%s frozen=%s held=%s latchArmed=%s count=%u, want 3). This "
+					"test is SUPPOSED to end with ZM_TrainerCinematicLatch armed: it is "
+					"the only thing that gives the between-tests hook's reset any teeth",
+					g_bRVLeakApproachSeen ? "true" : "false",
+					g_bRVLeakFrozen ? "true" : "false",
+					g_bRVLeakHeld ? "true" : "false",
+					g_bRVLeakLatchArmed ? "true" : "false", g_uRVLeakApproachCount);
+				bPassed = false;
+			}
+
 			// ===== THE AUTHORED COMPONENT'S OWN COUNTERS ========================
 			// Sampled off the entity the reload resolved, so this is the AUTHORED
 			// rival's own bookkeeping and not the transition's.
@@ -2371,14 +3396,19 @@ static const Zenith_AutomatedTest g_xZMRivalVesperAuthoredTest = {
 	&Step_ZMRivalVesper,
 	&Verify_ZMRivalVesper,
 	// Above the SUM of the named phase deadlines (420 ready + 1 resolve + 424
-	// reload + 1 lead + 30 basis + 900 approach + 60 spotted + 30 bark hold + 180
-	// bark dismiss + 2 bark->battle + 600 in-battle + 900 drive + 8 settle = 3556).
+	// reload + 1 lead + 30 basis + 900 approach + 60 spotted + 180 TRAINER approach
+	// + 30 bark hold + 180 bark dismiss + 2 bark->battle + 600 in-battle + 900 drive
+	// + 8 settle + 420 re-arm + 420 cancel + 420 leak = 4996 worst case, of which the
+	// three S7 item 1 SC3 tails are short walks in practice).
 	// Two
 	// runtime-ready windows -- the initial load and the mid-test reload -- dominate.
 	// The harness jumps straight to Verify when maxFrames is hit, so this must
-	// exceed that sum or a slow-but-valid run would be cut off mid-battle and read
-	// as a failure rather than a timeout.
-	/* maxFrames */ 4000,
+	// exceed the REALISTIC sum or a slow-but-valid run would be cut off mid-battle
+	// and read as a failure rather than a timeout. Raised 4000 -> 4400 by S7 item 1
+	// SC3 for the trainer's own walk and the two cancel/leak tails; every one of
+	// those phases owns a NAMED deadline that fails with a diagnostic first, so this
+	// cap stays a backstop rather than the thing that reports.
+	/* maxFrames */ 4400,
 	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMRivalVesperAuthoredTest);

@@ -96,7 +96,20 @@ build lacks `libcurl-d.dll`, so booting the exe first dies in the loader with
 ZERO stdout and the gate reports the misleading "no 'Unit tests complete' line in
 boot output" rather than a load failure.
 
-**Stage:** **★ S7 IS NOT COMPLETE, AND THE ROADMAP WAS RIGHT ALL ALONG.** This file
+**Stage:** **★★ S7 IS COMPLETE (2026-07-29). Both open boxes are ticked and the stage gate is
+annotated MET.** Item 3 closed by SC1-SC3 (ZM-D-163/166/167): the two verbs W3 had cut on evidence,
+`freeze input` and `approach`, now ship, and the rival physically walks to the player. "Rival
+battle 1" was reworded to what actually ships and ticked under the user's 2026-07-29 ruling, with
+its two GDD deviations booked as S8 debt rather than hidden (Route-1 placement, and the
+counter-starter rule -- which was booked NOWHERE until the pre-tick audit found it). Observed at
+closure: headless **49/0**, full windowed Vulkan **49/0**, boot **2742 / 2741 / 0 / 1**.
+**★ THE CAMERA CUT IS NOT CLAIMED BY THAT TICK** -- it is absent from `Roadmap.md:104`'s text, was a
+W3 aspiration only, and stays booked in Shortfalls 1.8 (with ZM-D-159's "needs a real engine feature"
+claim corrected: `ZM_FollowCamera` is a Zenithmon component and the sole writer of the camera pose).
+**Next: S8, whose go/no-go gate FOLLOWS its four content items rather than preceding them.**
+
+**Historical note on how S7 nearly closed wrong -- keep this, it is the reason the stage is honest:**
+this file previously claimed "S7 COMPLETE" for five commits while
 previously claimed "S7 COMPLETE (items 1-4)"; the user REJECTED that claim on
 2026-07-29, and the Roadmap's own text proves it. `Roadmap.md:104` (S7 item 3)
 specifies `forward cone + occlusion raycast -> FREEZE INPUT -> APPROACH -> dialogue ->

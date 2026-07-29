@@ -11,14 +11,29 @@
 // engine instance -- the key-set constants are constexpr and the gate is all
 // bools in / one enum out. Every fixture is deterministic and hermetic, so no
 // RequestSkip is needed.
+//
+// ★ S7 item 1 SC3 APPENDED THE WALK-UP UNITS AT THE BOTTOM, AND THEY CREATE NO
+// ENTITY. That is a hard constraint rather than a style note: scene authoring bakes
+// in the entity indices assigned during the boot it runs in, and the boot-time unit
+// suite allocates entities FIRST -- so one entity-creating boot unit re-authors
+// different Dawnmere.zscen bytes and invalidates the two-boot hash proof SC3 owes.
+// The units below call only PURE STATICS of ZM_Interactable (nothing is
+// constructed), the pure ZM_TrainerSightFsm (a plain value type), and the pure
+// walker/approach maths.
 // ============================================================================
 
+#include <cmath>     // sqrt / isfinite (the S7 item 1 SC3 walk-up simulation)
 #include <cstring>   // strcmp (reject-name distinctness)
 #include <limits>    // quiet_NaN (the SC3 primitive's documented non-finite arm)
 
 #include "Core/Zenith_TestFramework.h"
 #include "Maths/Zenith_Maths.h"
+#include "Zenithmon/Components/ZM_Interactable.h"        // the S7 item 1 SC3 PURE statics (nothing is constructed)
+#include "Zenithmon/Components/ZM_PlayerController.h"    // fWALK_SPEED -- the walk-up's speed, by name not by literal
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"
+#include "Zenithmon/Source/Interaction/ZM_NpcWalkerLogic.h"     // ZM_BuildPatrolVelocity -- the shared velocity idiom
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"    // ZM_StepTrainerApproach + the machine
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"  // fZM_SIGHT_MAX_DISTANCE -- the cone the walk must cross
 #include "Zenithmon/Source/ZM_InputActions.h"   // the key-set constants the collision units walk
 
 // ---- ZM_ShouldInteract: one unit per blocker --------------------------------
@@ -1128,4 +1143,366 @@ ZENITH_TEST(ZM_Interaction, Facing_NonFiniteOperandFailsClosed)
 		"a non-finite player facing must never hand back a winner -- one body that "
 		"goes non-finite must not make the picker accept whatever probe came first");
 	ZENITH_ASSERT_EQ(uBest, 1u, "no winner -> the unreachable index uCount");
+}
+
+// ============================================================================
+// S7 item 1 SC3 -- THE WALK-UP. Five contracts, all PURE, all entity-free:
+//   * the DYNAMIC-CAPSULE body contract that decides whether the walk may happen
+//     at all (and, by its default answer, that nothing changes when it may not);
+//   * the SPOTTED exit with no body, which must remain the shipped beat;
+//   * the velocity idiom, which must leave the vertical component alone;
+//   * the facing, which must survive the quadrants glm::eulerAngles collapses;
+//   * the speed / timeout / sight-range coupling, integrated rather than argued.
+// ============================================================================
+
+// The body contract, walked as a TRUTH TABLE rather than sampled. It is the ONE
+// gate between "a trainer who can walk" and "a trainer who behaves exactly as he
+// did before this sub-commit", so every way of failing it is worth a line.
+ZENITH_TEST(ZM_Interaction, Approach_PossibleRequiresDynamicCapsuleAndActiveSim)
+{
+	// THE CONTROL. Every falsification below is measured against this, so none of
+	// them can pass merely because the predicate rejects everything.
+	ZENITH_ASSERT_TRUE(ZM_Interactable::IsDrivableBodyContractMet(
+		true, true, true,
+		COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC, true),
+		"a valid DYNAMIC CAPSULE on an active simulation IS drivable -- with this "
+		"clause failing, every negative below is vacuous");
+
+	// The four observations, falsified ONE AT A TIME, so a predicate that had
+	// collapsed into a single term could not pass.
+	ZENITH_ASSERT_FALSE(ZM_Interactable::IsDrivableBodyContractMet(
+		false, true, true, COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC, true),
+		"a component whose parent entity handle is dead owns no body");
+	ZENITH_ASSERT_FALSE(ZM_Interactable::IsDrivableBodyContractMet(
+		true, false, true, COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC, true),
+		"no collider component -> no body to drive");
+	ZENITH_ASSERT_FALSE(ZM_Interactable::IsDrivableBodyContractMet(
+		true, true, false, COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC, true),
+		"a collider whose body was never created (or was torn down) is not drivable");
+	ZENITH_ASSERT_FALSE(ZM_Interactable::IsDrivableBodyContractMet(
+		true, true, true, COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC, false),
+		"no active simulation -> SetLinearVelocity has nowhere to land");
+
+	// EVERY other volume type, walked rather than sampled: the shape is half the
+	// contract, and a future enum insertion must not quietly become drivable.
+	const CollisionVolumeType aeRejectedVolumes[] = {
+		COLLISION_VOLUME_TYPE_AABB,
+		COLLISION_VOLUME_TYPE_OBB,
+		COLLISION_VOLUME_TYPE_SPHERE,
+		COLLISION_VOLUME_TYPE_TERRAIN,
+		COLLISION_VOLUME_TYPE_MODEL_MESH,
+	};
+	for (u_int u = 0u; u < 5u; ++u)
+	{
+		ZENITH_ASSERT_FALSE(ZM_Interactable::IsDrivableBodyContractMet(
+			true, true, true, aeRejectedVolumes[u], RIGIDBODY_TYPE_DYNAMIC, true),
+			"volume type %u is not a CAPSULE and must not be drivable",
+			(u_int)aeRejectedVolumes[u]);
+	}
+
+	// A STATIC body cannot be given a velocity at all, so it is not drivable
+	// whatever its shape.
+	ZENITH_ASSERT_FALSE(ZM_Interactable::IsDrivableBodyContractMet(
+		true, true, true, COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_STATIC, true),
+		"a STATIC capsule cannot be driven -- RIGIDBODY_TYPE has no KINEMATIC, so "
+		"DYNAMIC is the only body class this component can move");
+
+	// THE EXACT PAIR THE COMMITTED SCENE CARRIED BEFORE THIS SUB-COMMIT. Revert
+	// ZM_QueueDawnmereTrainerNpc to OBB/STATIC and re-author, and the authored rival
+	// answers FALSE here -- i.e. the FSM skips APPROACHING and he never walks. That
+	// is the property the scene change is load-bearing FOR, stated where a headless
+	// unit can hold it.
+	ZENITH_ASSERT_FALSE(ZM_Interactable::IsDrivableBodyContractMet(
+		true, true, true, COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC, true),
+		"OBB + STATIC -- the pre-SC3 authored trainer body -- must NOT be drivable");
+}
+
+// THE NO-BEHAVIOUR-CHANGE CLAIM, held as a unit. With no body the machine must take
+// the SHIPPED SPOTTED exit: no APPROACHING, no approach booked, no approach clock
+// started, and the same action on the same tick it always returned.
+ZENITH_TEST(ZM_Interaction, Approach_NoBodyLeavesTheShippedBeatByteForByte)
+{
+	const ZM_TrainerSightFsmTuning xTuning;   // default-constructed IS the shipped tuning
+
+	// ---- (a) a trainer WITH challenge lines: SPOTTED -> CHALLENGING ----------
+	ZM_TrainerSightFsm xTalker;
+	ZM_TrainerSightInputs xInputs;
+	xInputs.m_bMayEngage = true;
+	xInputs.m_bTargetInSight = true;
+	xInputs.m_bSightLineClear = true;
+	xInputs.m_bChallengeAvailable = true;
+	xInputs.m_fDeltaSeconds = 0.1f;
+	// m_bApproachPossible is DELIBERATELY LEFT AT ITS DEFAULT. Spelling it false
+	// would test a value this unit set; leaving it is what pins the DEFAULT, which is
+	// the entire compatibility story for every caller SC1 did not teach.
+	ZENITH_ASSERT_FALSE(xInputs.m_bApproachPossible,
+		"ZM_TrainerSightInputs::m_bApproachPossible must DEFAULT to false -- every "
+		"untaught caller's behaviour rides on that default");
+
+	ZENITH_ASSERT_EQ((u_int)xTalker.Step(xInputs, xTuning),
+		(u_int)ZM_TRAINER_SIGHT_ACTION_NONE, "first sighting opens the visual beat");
+	ZENITH_ASSERT_EQ((u_int)xTalker.GetState(), (u_int)ZM_TRAINER_SIGHT_SPOTTED);
+
+	ZM_TRAINER_SIGHT_ACTION eAction = ZM_TRAINER_SIGHT_ACTION_NONE;
+	u_int uGuard = 0u;
+	while (xTalker.GetState() == ZM_TRAINER_SIGHT_SPOTTED && uGuard < 64u)
+	{
+		eAction = xTalker.Step(xInputs, xTuning);
+		++uGuard;
+	}
+	ZENITH_ASSERT_LT(uGuard, 64u, "the SPOTTED beat never completed");
+	ZENITH_ASSERT_EQ((u_int)eAction, (u_int)ZM_TRAINER_SIGHT_ACTION_RUN_CHALLENGE,
+		"with no body the completed beat hands STRAIGHT to the bark, exactly as it "
+		"did before the walk-up existed");
+	ZENITH_ASSERT_EQ((u_int)xTalker.GetState(), (u_int)ZM_TRAINER_SIGHT_CHALLENGING);
+	ZENITH_ASSERT_EQ(xTalker.GetApproachCount(), 0u,
+		"a bodyless trainer BOOKED a walk -- either the fail-open moved below the "
+		"state entry, or m_bApproachPossible is being ignored");
+	ZENITH_ASSERT_EQ_FLOAT(xTalker.GetApproachElapsedSeconds(), 0.0f, 0.0f,
+		"a bodyless trainer started the approach clock");
+
+	// ---- (b) a SILENT row: SPOTTED -> the encounter, still with no walk -------
+	ZM_TrainerSightFsm xSilent;
+	xInputs.m_bChallengeAvailable = false;
+	ZENITH_ASSERT_EQ((u_int)xSilent.Step(xInputs, xTuning),
+		(u_int)ZM_TRAINER_SIGHT_ACTION_NONE);
+	eAction = ZM_TRAINER_SIGHT_ACTION_NONE;
+	uGuard = 0u;
+	while (xSilent.GetState() == ZM_TRAINER_SIGHT_SPOTTED && uGuard < 64u)
+	{
+		eAction = xSilent.Step(xInputs, xTuning);
+		++uGuard;
+	}
+	ZENITH_ASSERT_LT(uGuard, 64u, "the silent SPOTTED beat never completed");
+	ZENITH_ASSERT_EQ((u_int)eAction, (u_int)ZM_TRAINER_SIGHT_ACTION_RAISE_ENCOUNTER,
+		"a silent bodyless trainer still raises straight out of the visual beat");
+	ZENITH_ASSERT_EQ(xSilent.GetApproachCount(), 0u);
+	ZENITH_ASSERT_EQ(xSilent.GetRaiseCount(), 1u,
+		"exactly one raise per spotting, unchanged");
+}
+
+// The velocity idiom, driven DIRECTLY. The walk and the patrol go through the same
+// helper for one reason: the vertical component belongs to gravity and the terrain,
+// and a walk that wrote a full 3D velocity would launch or bury the trainer while
+// the XZ maths still looked perfect.
+ZENITH_TEST(ZM_Interaction, Approach_VelocityPreservesVerticalComponent)
+{
+	// A FALLING body: the vertical component is real, non-zero, and NOT ours.
+	const Zenith_Maths::Vector3 xFalling(0.0f, -7.25f, 0.0f);
+	const float fSpeed = ZM_PlayerController::fWALK_SPEED;
+
+	const ZM_TrainerApproachStep xStep = ZM_StepTrainerApproach(
+		Zenith_Maths::Vector3(10.0f, 3.0f, 0.0f),
+		Zenith_Maths::Vector3(0.0f, 99.0f, 0.0f),   // a wildly different Y: XZ ONLY
+		2.0f, fSpeed);
+	ZENITH_ASSERT_FALSE(xStep.m_bArrived, "10 m of XZ gap is not an arrival");
+	ZENITH_ASSERT_EQ_FLOAT(xStep.m_xDirXZ.y, 0.0f, 0.0f,
+		"the approach direction must be flat -- Y belongs to the body");
+
+	const Zenith_Maths::Vector3 xVelocity =
+		ZM_BuildPatrolVelocity(xStep.m_xDirXZ, xStep.m_fSpeed, xFalling);
+	ZENITH_ASSERT_EQ_FLOAT(xVelocity.y, xFalling.y, 0.0f,
+		"the walk overwrote the body's vertical velocity -- gravity and terrain "
+		"response are no longer in sole ownership of it");
+	ZENITH_ASSERT_EQ_FLOAT(xVelocity.x, -fSpeed, 0.0005f,
+		"the trainer must travel toward the target along -X at exactly the walk speed");
+	ZENITH_ASSERT_EQ_FLOAT(xVelocity.z, 0.0f, 0.0005f);
+
+	// THE STATION HOLD uses the same helper with a zero request, so the same
+	// guarantee has to hold there: XZ is clamped, Y is untouched.
+	const Zenith_Maths::Vector3 xHeld = ZM_BuildPatrolVelocity(
+		Zenith_Maths::Vector3(0.0f), 0.0f, Zenith_Maths::Vector3(3.0f, -7.25f, -4.0f));
+	ZENITH_ASSERT_EQ_FLOAT(xHeld.x, 0.0f, 0.0f,
+		"the station hold must clamp a shove out of XZ");
+	ZENITH_ASSERT_EQ_FLOAT(xHeld.z, 0.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xHeld.y, -7.25f, 0.0f,
+		"the station hold must NOT clamp the fall -- a held trainer still has to rest "
+		"on the ground");
+}
+
+// THE PAST-90-DEGREES QUADRANTS ARE THE WHOLE POINT. Building the yaw with
+// glm::eulerAngles(quat).y collapses once the direction is more than 90 degrees off
+// +Z, which is why this walks all four quadrants and asserts on the ROTATED FORWARD
+// rather than on quaternion components -- a decomposition bug is invisible in the
+// raw floats and obvious in where the trainer ends up looking.
+ZENITH_TEST(ZM_Interaction, Approach_YawFacesTravelDirectionAcrossAllFourQuadrants)
+{
+	// Deliberately NOT axis-aligned and NOT unit length: the builder normalises, and
+	// off-axis directions are what actually distinguish the two spellings.
+	const Zenith_Maths::Vector3 axDirections[] = {
+		Zenith_Maths::Vector3( 3.0f, 0.0f,  4.0f),   // +X +Z  (inside 90 deg of +Z)
+		Zenith_Maths::Vector3( 4.0f, 0.0f, -3.0f),   // +X -Z  PAST 90 DEGREES
+		Zenith_Maths::Vector3(-3.0f, 0.0f, -4.0f),   // -X -Z  PAST 90 DEGREES
+		Zenith_Maths::Vector3(-4.0f, 0.0f,  3.0f),   // -X +Z
+	};
+
+	for (u_int u = 0u; u < 4u; ++u)
+	{
+		const Zenith_Maths::Vector3& xDirection = axDirections[u];
+		Zenith_Maths::Quat xFacing(1.0f, 0.0f, 0.0f, 0.0f);
+		ZENITH_ASSERT_TRUE(
+			ZM_Interactable::TryBuildApproachFacing(xDirection, xFacing),
+			"quadrant %u is a perfectly good travel direction and must be accepted", u);
+
+		const Zenith_Maths::Vector3 xExpected = ZM_FlattenXZ(xDirection);
+		const float fExpectedLength =
+			std::sqrt(xExpected.x * xExpected.x + xExpected.z * xExpected.z);
+		ZENITH_ASSERT_GT(fExpectedLength, 0.0f, "fixture precondition (quadrant %u)", u);
+
+		// ZM_ForwardFromRotation is the SAME function the sight cone uses to decide
+		// where a trainer is looking, so this asserts the facing in the only terms the
+		// game ever reads it in.
+		const Zenith_Maths::Vector3 xForward = ZM_ForwardFromRotation(xFacing);
+		ZENITH_ASSERT_EQ_FLOAT(xForward.x, xExpected.x / fExpectedLength, 0.0005f,
+			"quadrant %u: the authored facing does not point along the travel "
+			"direction. A yaw rebuilt through glm::eulerAngles(quat).y collapses on "
+			"exactly the quadrants more than 90 degrees off +Z", u);
+		ZENITH_ASSERT_EQ_FLOAT(xForward.z, xExpected.z / fExpectedLength, 0.0005f,
+			"quadrant %u: the authored facing does not point along the travel "
+			"direction", u);
+		ZENITH_ASSERT_EQ_FLOAT(xForward.y, 0.0f, 0.0005f,
+			"quadrant %u: the walk-up facing must be a pure yaw about +Y", u);
+	}
+}
+
+// TOTALITY, and a refusal that MATTERS: atan2(0, 0) is a finite zero, so a builder
+// that answered instead of refusing would pivot an arriving trainer to face +Z on
+// the frame he stopped -- with no NaN, no assert, and nothing to grep for.
+ZENITH_TEST(ZM_Interaction, Approach_FacingIsRefusedForEveryDegenerateDirection)
+{
+	const float fNaNDirection = std::numeric_limits<float>::quiet_NaN();
+	const float fInfDirection = std::numeric_limits<float>::infinity();
+
+	// The sentinel is a RECOGNISABLE non-identity value, so "left untouched" is an
+	// observation rather than a coincidence with the identity a builder might write.
+	const Zenith_Maths::Quat xSentinel(0.5f, 0.5f, 0.5f, 0.5f);
+	const Zenith_Maths::Vector3 axRefused[] = {
+		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),    // the ARRIVAL tick's direction
+		Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f),    // vertical only: no XZ heading
+		Zenith_Maths::Vector3(fNaNDirection, 0.0f, 1.0f),
+		Zenith_Maths::Vector3(1.0f, 0.0f, fNaNDirection),
+		Zenith_Maths::Vector3(fInfDirection, 0.0f, -fInfDirection),
+	};
+
+	for (u_int u = 0u; u < 5u; ++u)
+	{
+		Zenith_Maths::Quat xFacing = xSentinel;
+		ZENITH_ASSERT_FALSE(
+			ZM_Interactable::TryBuildApproachFacing(axRefused[u], xFacing),
+			"degenerate direction %u must be REFUSED, never answered with a yaw", u);
+		ZENITH_ASSERT_EQ_FLOAT(xFacing.w, xSentinel.w, 0.0f,
+			"a refused direction must leave the caller's facing untouched (%u)", u);
+		ZENITH_ASSERT_EQ_FLOAT(xFacing.x, xSentinel.x, 0.0f);
+		ZENITH_ASSERT_EQ_FLOAT(xFacing.y, xSentinel.y, 0.0f);
+		ZENITH_ASSERT_EQ_FLOAT(xFacing.z, xSentinel.z, 0.0f);
+	}
+}
+
+// THE SPEED / TIMEOUT / SIGHT-RANGE COUPLING, PROVEN BY SIMULATION RATHER THAN BY
+// ARITHMETIC. The approach timeout FAILS OPEN: when it expires the machine hands off
+// wherever the trainer happens to be standing. So a walk that is merely too slow
+// produces no failure anywhere -- just a rival who stops short and a beat that reads
+// as a stutter. This integrates the real step from the worst case the cone admits and
+// requires arrival inside the real timeout.
+//
+// ★ IT SIMULATES THE **DERATED** SPEED, AND THE FIRST REVISION'S FAILURE TO DO SO IS
+// WHY THIS COMMENT EXISTS. That revision integrated a frictionless point mass at the
+// full commanded fWALK_SPEED and measured arrival with the same positions it
+// integrated -- no friction, no contact response, no start-up latency, no observation
+// skew. It therefore certified a timing margin the live walk does not have, and it
+// PASSED on the run where the live walk was in question. A unit that models something
+// the shipped path is not cannot be evidence about the shipped path.
+//
+// ZM_Interactable::fAPPROACH_SPEED_EFFICIENCY carries the measured floor and its
+// derivation; ZM_RivalVesperAuthored_Test logs the achieved speed live on every run.
+// This unit is the CHEAP half of that pair: it runs headless in CI where the windowed
+// walk can only RequestSkip.
+ZENITH_TEST(ZM_Interaction, Approach_WalkConvergesIntoTheStandoffRingBeforeTheTimeout)
+{
+	const ZM_TrainerSightFsmTuning xTuning;
+	// The speed the body ACHIEVES, not the one it is handed. Arrival is governed by
+	// the former, and the two are not the same number.
+	const float fSpeed =
+		ZM_PlayerController::fWALK_SPEED * ZM_Interactable::fAPPROACH_SPEED_EFFICIENCY;
+	const float fDt = 1.0f / 60.0f;
+	const float fStepLength = fSpeed * fDt;
+
+	// The efficiency floor is a DERATING, so anything at or above 1 would mean the
+	// body is assumed to travel at least as fast as commanded -- which is the exact
+	// assumption that made the first revision of this unit vacuous.
+	ZENITH_ASSERT_GT(ZM_Interactable::fAPPROACH_SPEED_EFFICIENCY, 0.0f,
+		"the achieved-speed floor must be a positive fraction");
+	ZENITH_ASSERT_LT(ZM_Interactable::fAPPROACH_SPEED_EFFICIENCY, 1.0f,
+		"the achieved-speed floor must be a DERATING of the commanded speed -- at or "
+		"above 1.0 this unit is back to simulating a frictionless point mass");
+
+	// The WORST case: the target sits at the very edge of the sight range, off-axis
+	// and at a different height, so nothing about this fixture is axis-aligned.
+	const Zenith_Maths::Vector3 xTarget(0.0f, 26.0f, 0.0f);
+	Zenith_Maths::Vector3 xTrainer(
+		fZM_SIGHT_MAX_DISTANCE * 0.6f, 24.5f, fZM_SIGHT_MAX_DISTANCE * 0.8f);
+
+	float fElapsed = 0.0f;
+	float fDistance = 1.0e9f;
+	float fPrevDistance = 1.0e9f;
+	bool bArrived = false;
+	bool bMonotonic = true;
+	u_int uSteps = 0u;
+	while (uSteps < 4096u)
+	{
+		const ZM_TrainerApproachStep xStep = ZM_StepTrainerApproach(
+			xTrainer, xTarget, xTuning.m_fApproachStandoffMetres, fSpeed);
+		fDistance = std::sqrt(
+			(xTarget.x - xTrainer.x) * (xTarget.x - xTrainer.x)
+			+ (xTarget.z - xTrainer.z) * (xTarget.z - xTrainer.z));
+		if (fDistance > fPrevDistance)
+		{
+			bMonotonic = false;
+		}
+		fPrevDistance = fDistance;
+		if (xStep.m_bArrived)
+		{
+			bArrived = true;
+			break;
+		}
+		// The SAME two-call idiom the runtime uses: direction + speed through
+		// ZM_BuildPatrolVelocity, integrated over one fixed frame. The trainer stays
+		// 1.5 m below the target for the whole walk and it changes nothing, which is
+		// the XZ-only claim restated as motion.
+		const Zenith_Maths::Vector3 xVelocity = ZM_BuildPatrolVelocity(
+			xStep.m_xDirXZ, xStep.m_fSpeed, Zenith_Maths::Vector3(0.0f));
+		xTrainer.x += xVelocity.x * fDt;
+		xTrainer.z += xVelocity.z * fDt;
+		fElapsed += fDt;
+		++uSteps;
+	}
+
+	ZENITH_ASSERT_TRUE(bArrived,
+		"the walk never reached the standoff ring at all (%u steps)", uSteps);
+	ZENITH_ASSERT_TRUE(bMonotonic,
+		"the walk did not close monotonically -- it oscillated or overshot");
+	ZENITH_ASSERT_LE(fElapsed, xTuning.m_fApproachTimeoutSeconds,
+		"the walk took %.3f s to cross the sight range at the DERATED speed but the "
+		"FSM gives it %.3f s and then FAILS OPEN -- the rival would visibly stop "
+		"short with every test still green. Raise the speed, shorten the cone, "
+		"shrink the standoff, or lengthen the timeout",
+		(double)fElapsed, (double)xTuning.m_fApproachTimeoutSeconds);
+	// ...and the same claim the static_assert in ZM_Interactable.cpp makes, restated
+	// as a MEASURED margin rather than a compile-time inequality, so the log carries
+	// the number a future tuning change has to keep positive.
+	ZENITH_ASSERT_GT(xTuning.m_fApproachTimeoutSeconds - fElapsed, 0.10f,
+		"the derated walk finishes with only %.3f s of the %.3f s timeout to spare -- "
+		"too thin to absorb a slope or a contact, and the timeout fails OPEN so the "
+		"symptom would be a rival who stops short, never a red test",
+		(double)(xTuning.m_fApproachTimeoutSeconds - fElapsed),
+		(double)xTuning.m_fApproachTimeoutSeconds);
+
+	// Arrival is INCLUSIVE, and the step can never carry the trainer PAST the ring by
+	// more than the frame he arrived on -- i.e. he stops ON the standoff, never on
+	// top of the player.
+	ZENITH_ASSERT_LE(fDistance, xTuning.m_fApproachStandoffMetres + 0.0005f,
+		"the walk stopped outside the standoff ring");
+	ZENITH_ASSERT_GE(fDistance,
+		xTuning.m_fApproachStandoffMetres - fStepLength - 0.0005f,
+		"the walk carried the trainer well past the ring it was asked to stop on");
 }

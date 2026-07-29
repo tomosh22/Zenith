@@ -18,6 +18,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "UnitTests/Zenith_AssertCapture.h"                     // the totality proofs
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"   // ZM_ForwardFromRotation
+#include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"    // ZM_TrainerSightFsmTuning -- the walk-up standoff
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
 
@@ -608,4 +609,125 @@ ZENITH_TEST(ZM_Interaction, Vesper_FacingIsDerivedFromTheTownCentreBearing)
 		VesperPoint(), ZM_DawnmereVesperFacing(), xFront, xTuning));
 	ZENITH_ASSERT_FALSE(ZM_IsTargetInTrainerSightFromRotation(
 		VesperPoint(), ZM_DawnmereVesperFacing(), xBehind, xTuning));
+}
+
+// ============================================================================
+// S7 item 1 SC3 -- THE RIVAL NOW MOVES, so every clearance in this file stopped
+// being a statement about a POINT and became one about a DISC.
+//
+// Before SC3 the authored rival was a static box: his separations were fixed and
+// the whiteout-softlock guard above was a claim about one coordinate. He now walks
+// at anyone who enters his cone, which means every geometric argument in
+// ZM_DawnmerePlacement.h has to survive him moving up to
+//   fZM_SIGHT_MAX_DISTANCE - m_fApproachStandoffMetres
+// metres in ANY direction -- that is the exact reach of the walk, because he only
+// starts when the target is inside the cone and stops on the standoff ring.
+//
+// (The OTHER bound on the walk -- that his speed can actually cross that distance
+// inside the fail-open timeout -- is proven by simulation in
+// Approach_WalkConvergesIntoTheStandoffRingBeforeTheTimeout, and is deliberately
+// not restated here: this file may not name a component, so it cannot see the
+// speed. The two bounds are independent and each is asserted where it is visible.)
+// ============================================================================
+ZENITH_TEST(ZM_Interaction, Vesper_ApproachStandoffClearsEveryAuthoredNeighbour)
+{
+	const ZM_TrainerSightFsmTuning xTuning;   // default-constructed IS the shipped tuning
+
+	// THE WALK'S REACH. Derived from the two shipped numbers rather than typed, so
+	// widening the cone or shrinking the standoff moves this claim automatically.
+	const float fWalkRadius =
+		fZM_SIGHT_MAX_DISTANCE - xTuning.m_fApproachStandoffMetres;
+	ZENITH_ASSERT_GT(fWalkRadius, 0.0f,
+		"the standoff is at least as wide as the sight range, so the rival can never "
+		"take a step -- the walk-up is dead content and every clause below is vacuous");
+
+	// The closest any authored body may come to any point the rival can occupy: his
+	// own standoff ring (he must never try to stand inside someone else) plus the
+	// global interact reach (two bodies inside that of each other make "which NPC
+	// answered?" a function of sub-metre walk error, and every walk-up test in this
+	// repo asserts its winner BY ENTITY ID).
+	const float fRequiredClearance =
+		xTuning.m_fApproachStandoffMetres + fZM_INTERACT_MAX_DISTANCE;
+
+	// ---- (a) EVERY authored neighbour, and both patrol endpoints -------------
+	const ZM_DawnmereNpcAnchor& xVesper =
+		ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_RIVAL_VESPER);
+	float fClosest = -1.0f;
+	const char* szClosest = "<none>";
+	for (u_int u = 0u; u < (u_int)ZM_DAWNMERE_NPC_COUNT; ++u)
+	{
+		if (u == (u_int)ZM_DAWNMERE_NPC_RIVAL_VESPER)
+		{
+			continue;
+		}
+		const ZM_DawnmereNpcAnchor& xOther = ZM_GetDawnmereNpcAnchor(u);
+		const float fSeparation = W5PlanarSeparation(xVesper, xOther);
+		if (fClosest < 0.0f || fSeparation < fClosest)
+		{
+			fClosest = fSeparation;
+			szClosest = xOther.m_szEntityName;
+		}
+		ZENITH_ASSERT_GT(fSeparation, fWalkRadius + fRequiredClearance,
+			"'%s' is %.3f m from the rival's anchor, and the walk-up can carry him "
+			"%.3f m of that -- his standoff ring would close to within %.3f m of an "
+			"authored body. Re-derive the placement in ZM_DawnmerePlacement.h",
+			xOther.m_szEntityName, fSeparation, fWalkRadius, fRequiredClearance);
+	}
+	// The patrol endpoints are the one MOVING neighbour, so they are walked too: the
+	// wanderer is not where his anchor says at any given instant.
+	const u_int uWaypointCount = ZM_GetDawnmereWanderWaypointCount();
+	for (u_int u = 0u; u < uWaypointCount; ++u)
+	{
+		const ZM_DawnmereNpcAnchor& xWaypoint = ZM_GetDawnmereWanderWaypoint(u);
+		ZENITH_ASSERT_GT(W5PlanarSeparation(xVesper, xWaypoint),
+			fWalkRadius + fRequiredClearance,
+			"patrol endpoint '%s' (%u) is inside the rival's reachable disc plus its "
+			"clearance -- the two dynamic capsules in this scene could meet",
+			xWaypoint.m_szEntityName, u);
+	}
+	// ANTI-VACUITY: the loop above really walked a roster. A run in which every
+	// neighbour was skipped would satisfy each per-anchor clause by never evaluating
+	// one, and the nearest name is what makes the margin readable in the log.
+	ZENITH_ASSERT_GT(fClosest, 0.0f,
+		"no authored neighbour was measured at all (nearest reported as '%s') -- the "
+		"clearance clauses above are vacuous", szClosest);
+
+	// ---- (b) THE THREE RECORDED CLEARANCES, so the written figures cannot rot --
+	// These are the numbers Shortfalls 1.8 item 1 and this header quote in prose.
+	// Asserting them here means moving an anchor invalidates the PROSE loudly rather
+	// than leaving a comment that quietly describes a different town.
+	ZENITH_ASSERT_EQ_FLOAT(
+		W5PlanarSeparation(xVesper, ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_CARETAKER)),
+		27.20f, 0.01f, "the recorded caretaker clearance (27.2 m) has drifted");
+	ZENITH_ASSERT_EQ_FLOAT(
+		W5PlanarSeparation(xVesper, ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_WARDEN)),
+		28.64f, 0.01f, "the recorded warden clearance (28.6 m) has drifted");
+	ZENITH_ASSERT_EQ_FLOAT(
+		W5PlanarSeparation(xVesper, ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_VILLAGER)),
+		40.50f, 0.01f, "the recorded villager clearance (40.5 m) has drifted");
+
+	// ---- (c) THE WHITEOUT SOFTLOCK, RE-ARGUED UNDER MOTION -------------------
+	// Vesper_PlacementCannotSpawnCampOnTheWhiteoutTarget proves he cannot see the
+	// respawn FROM HIS ANCHOR. He can now leave that anchor, so the guard has to hold
+	// from the WORST point of his reachable disc: a whited-out player must still be
+	// outside the cone of a rival who has walked as far toward the spawn as the
+	// walk-up permits. Losing to him writes no defeat flag, so a rival who could
+	// re-engage on the respawn would loop the player out of the game forever.
+	const float fSpawnSeparation = PlanarDistance(VesperPoint(), SpawnPoint());
+	ZENITH_ASSERT_GT(fSpawnSeparation - fWalkRadius, fZM_SIGHT_MAX_DISTANCE,
+		"the rival stands %.3f m from the whiteout respawn and the walk-up can carry "
+		"him %.3f m of it, leaving %.3f m against a %.3f m sight range -- an honest "
+		"loss would softlock the game in a forced-battle loop",
+		fSpawnSeparation, fWalkRadius, fSpawnSeparation - fWalkRadius,
+		fZM_SIGHT_MAX_DISTANCE);
+
+	// ---- (d) THE z = 480 HOME CORRIDOR, same treatment ----------------------
+	// ZM_PlayerHomeRoundTrip_Test drives that line BLIND with no obstacle avoidance,
+	// and the rival is now a DYNAMIC body that can be walked into rather than a
+	// static wall that would at least stop the capsule predictably.
+	ZENITH_ASSERT_GT(
+		std::fabs(fZM_DAWNMERE_VESPER_Z - fZM_DAWNMERE_TOWN_CENTER_Z) - fWalkRadius,
+		fZM_SIGHT_MAX_DISTANCE,
+		"the rival can walk close enough to the z = %.1f traversal corridor to hijack "
+		"a suite that never mentions him", fZM_DAWNMERE_TOWN_CENTER_Z);
 }

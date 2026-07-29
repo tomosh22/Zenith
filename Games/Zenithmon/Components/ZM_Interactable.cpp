@@ -14,6 +14,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"            // GetActiveScene / GetSceneInfo (the source-scene lookup)
 #include "Zenithmon/Components/ZM_BattleTransition.h"   // IsTransitionActive -- the busy-channel input
 #include "Zenithmon/Components/ZM_GameStateManager.h"   // TryGetGameState -- the live story flags
+#include "Zenithmon/Components/ZM_PlayerController.h"   // SetMovementEnabled + fWALK_SPEED (the walk-up freeze)
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"   // the three shipped raise seams
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"    // ZM_StoryFlagSet (the gate's input)
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"      // ZM_SCENE_ID / ZM_FindSceneByBuildIndex
@@ -79,6 +80,93 @@ namespace
 		return true;
 	}
 
+	// ---- S7 item 1 SC3: the walk-up's own tuning ---------------------------
+	//
+	// The shipped sight-machine tuning, spelled ONCE for this whole file. The FSM
+	// step, the standoff the approach maths stops on, and the timeout the static
+	// assertion below is written against must all be the SAME instance, or the walk
+	// would be measured against one set of numbers and judged against another.
+	constexpr ZM_TrainerSightFsmTuning xZM_SIGHT_TUNING{};
+
+	// ★ THE WALK-UP SPEED IS NOT A NEW TUNING KNOB. It is the PLAYER'S OWN WALK
+	// SPEED -- the one human-body speed this game has already tuned -- so a trainer
+	// closing the gap moves at a rate the player has spent the whole overworld
+	// learning to read. Naming ZM_PlayerController::fWALK_SPEED rather than
+	// re-typing 4.0f is what keeps them from drifting apart silently.
+	constexpr float fZM_TRAINER_APPROACH_SPEED = ZM_PlayerController::fWALK_SPEED;
+
+	// ★ WHAT THE WALK ACTUALLY HAS TO COVER, and it is NOT the whole sight range.
+	// The trainer starts at most fZM_SIGHT_MAX_DISTANCE away (the cone admits no
+	// further) and STOPS on the standoff ring, so the distance that governs arrival
+	// is the difference. The first revision of this file asserted against the full
+	// range, which is a different -- and slacker -- claim than the one that matters.
+	constexpr float fZM_TRAINER_APPROACH_REACH =
+		fZM_SIGHT_MAX_DISTANCE - xZM_SIGHT_TUNING.m_fApproachStandoffMetres;
+
+	// ★ THE COUPLING IS A COMPILE ERROR, NOT A FLAKY FRAME BUDGET. The FSM's
+	// approach timeout FAILS OPEN: when it expires the machine hands off to the
+	// bark/encounter WHEREVER the trainer happens to be standing. So a speed that
+	// cannot cross that reach inside the timeout does not produce a failing test --
+	// it produces a walk that visibly stops short, in a build where every unit is
+	// still green. Lower the speed, widen the cone, shrink the standoff or shorten
+	// the timeout and THIS line is what tells you.
+	//
+	// ★ IT IS WRITTEN AGAINST THE **ACHIEVED** SPEED, NOT THE COMMANDED ONE, AND
+	// THAT DISTINCTION IS THE WHOLE POINT. The previous form multiplied the nominal
+	// fWALK_SPEED by the timeout and compared against the full sight range: it was
+	// true at EXACTLY zero margin (4.0 * 2.0 >= 8.0) and it reasoned about a speed
+	// the body never actually travels at, so it read as proof while proving nothing
+	// about arrival. A compiler cannot know the achieved speed -- friction, contact
+	// response, terrain slope and one frame of integration latency are all runtime
+	// -- so the derating is declared as an ASSUMPTION
+	// (ZM_Interactable::fAPPROACH_SPEED_EFFICIENCY, measured and documented on that
+	// constant) and the assumption itself is pinned by a boot unit and logged live
+	// on every windowed run. An assert that cannot be wrong about the right quantity
+	// is worth less than one that CAN be wrong about it.
+	//
+	// Currently: 4.0 m/s * 0.85 * 2.0 s = 6.8 m against a 6.0 m reach -- 13% margin,
+	// against 95.4% efficiency actually measured.
+	static_assert(
+		fZM_TRAINER_APPROACH_SPEED
+				* ZM_Interactable::fAPPROACH_SPEED_EFFICIENCY
+				* xZM_SIGHT_TUNING.m_fApproachTimeoutSeconds
+			>= fZM_TRAINER_APPROACH_REACH,
+		"the trainer walk-up cannot cross (fZM_SIGHT_MAX_DISTANCE - the standoff "
+		"ring) inside ZM_TrainerSightFsmTuning::m_fApproachTimeoutSeconds at the "
+		"DERATED walk speed -- the fail-open timeout would end the walk with the "
+		"trainer still short of the player, and every downstream test would stay "
+		"green because the timeout hands off to the bark regardless");
+
+	// How far the live rotation may drift from the authored one before the WATCHING
+	// repair writes it back. |dot| of two unit quaternions, so this is ~0.5 degrees:
+	// tight enough that a collision-induced yaw is corrected on the frame it
+	// happens, loose enough that float round-tripping through the body pose is not
+	// a per-frame write.
+	constexpr float fZM_WATCH_FACING_MIN_ABS_DOT = 0.99999f;
+
+	// The player's controller, from the entity id the sight tick already resolved.
+	// Re-resolved per use and never cached: component pools relocate on swap-and-pop.
+	ZM_PlayerController* ZM_ResolvePlayerController(Zenith_EntityID xPlayerID)
+	{
+		if (xPlayerID == INVALID_ENTITY_ID)
+		{
+			return nullptr;
+		}
+		Zenith_Entity xPlayer = g_xEngine.Scenes().ResolveEntity(xPlayerID);
+		return xPlayer.IsValid()
+			? xPlayer.TryGetComponent<ZM_PlayerController>()
+			: nullptr;
+	}
+
+	// |dot| of two rotations. ABSOLUTE because q and -q are the SAME rotation, so a
+	// sign-flipped-but-identical quaternion must not read as drift and trigger a
+	// pointless body write every frame.
+	float ZM_FacingAbsDot(const Zenith_Maths::Quat& xA, const Zenith_Maths::Quat& xB)
+	{
+		const float fDot = xA.w * xB.w + xA.x * xB.x + xA.y * xB.y + xA.z * xB.z;
+		return std::fabs(fDot);
+	}
+
 	// The SIXTH local instance of this three-line lookup (ZM_TallGrassSystem,
 	// ZM_UI_MenuStack, ZM_BattleTransition x2, ZM_GameStateManager already each
 	// hold one); it is a lookup, not a decision, and promoting it would be a new
@@ -128,9 +216,15 @@ ZM_Interactable::ZM_Interactable(Zenith_Entity& xParentEntity)
 void ZM_Interactable::OnStart()
 {
 	m_bLifecycleStarted = true;
+	// FIRST, and before anything else is reset: a component that is being (re)started
+	// is a COLD watcher by definition, so any cinematic freeze it was still holding
+	// belongs to an operation that no longer exists. Releasing it here is what stops
+	// a restart from stranding the player frozen. TOTAL -- inert on a fresh component.
+	ReleaseTrainerCinematicHold();
 	m_xConfiguredWanderBodyID = Zenith_PhysicsBodyID{};
 	m_xWalkerState = ZM_WalkerState{};
 	m_bOwnsInteractionMenu = false;
+	m_bApproachPossible = false;
 	// The sight machine is SESSION state, exactly like m_xWalkerState above: every
 	// start is a cold watcher, and a trainer id that no longer resolves must not
 	// survive as a live watcher either.
@@ -165,6 +259,24 @@ void ZM_Interactable::OnStart()
 	//     that mistake.
 	DeriveTrainerFromNpcRow();
 	SetRadius(m_fRadius);
+
+	// ★ CAPTURE THE AUTHORED FACING AT THE EARLIEST POSSIBLE INSTANT (S7 item 1 SC3,
+	// risk R1). This runs at the TOP of the first Update after deserialization, so
+	// what it reads is the rotation the committed scene bytes carry -- before the
+	// first physics step of this session, and therefore before any contact could
+	// have moved it. Capturing lazily on the first sight tick instead would risk
+	// freezing an already-damaged yaw in as the thing to repair TO.
+	//
+	// Re-captured on every start on purpose: a re-authored scene must be able to
+	// move him without a stale runtime value arguing.
+	m_bWatchFacingCaptured = false;
+	if (Zenith_TransformComponent* pxStartTransform = m_xParentEntity.IsValid()
+			? m_xParentEntity.TryGetComponent<Zenith_TransformComponent>()
+			: nullptr)
+	{
+		pxStartTransform->GetRotation(m_xWatchFacing);
+		m_bWatchFacingCaptured = true;
+	}
 	if (m_bWanderEnabled
 		&& !ZM_IsValidWanderConfiguration(m_xWalkerWaypoints, m_xWalkerTuning))
 	{
@@ -182,6 +294,88 @@ void ZM_Interactable::OnStart()
 	TryConfigureWanderBody(false);
 }
 
+bool ZM_Interactable::IsDrivableBodyContractMet(bool bEntityValid,
+	bool bColliderPresent,
+	bool bBodyValid,
+	CollisionVolumeType eVolumeType,
+	RigidBodyType eRigidBodyType,
+	bool bPhysicsActive)
+{
+	// PURE, and the ONLY place the contract is DECIDED. See the header for why the
+	// two enum comparisons live here rather than at the reading site.
+	return bEntityValid
+		&& bColliderPresent
+		&& bBodyValid
+		&& eVolumeType == COLLISION_VOLUME_TYPE_CAPSULE
+		&& eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC
+		&& bPhysicsActive;
+}
+
+ZM_InteractableBodyObservation ZM_Interactable::ObserveDrivableBody()
+{
+	ZM_InteractableBodyObservation xBody;
+	xBody.m_bEntityValid = m_xParentEntity.IsValid();
+	xBody.m_pxCollider = xBody.m_bEntityValid
+		? m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>()
+		: nullptr;
+	xBody.m_bColliderPresent = xBody.m_pxCollider != nullptr;
+	xBody.m_bBodyValid =
+		xBody.m_bColliderPresent && xBody.m_pxCollider->HasValidBody();
+	if (xBody.m_bColliderPresent)
+	{
+		xBody.m_eVolumeType = xBody.m_pxCollider->GetCollisionVolumeType();
+		xBody.m_eRigidBodyType = xBody.m_pxCollider->GetRigidBodyType();
+	}
+	xBody.m_bDynamicCapsule = xBody.m_bColliderPresent
+		&& xBody.m_eVolumeType == COLLISION_VOLUME_TYPE_CAPSULE
+		&& xBody.m_eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC;
+	xBody.m_bPhysicsActive = g_xEngine.Physics().HasActiveSimulation();
+	if (xBody.m_bBodyValid)
+	{
+		xBody.m_xBodyID = xBody.m_pxCollider->GetBodyID();
+	}
+	return xBody;
+}
+
+void ZM_Interactable::ApplyDrivenBodySetup(
+	const ZM_InteractableBodyObservation& xBody)
+{
+	// Once per body IDENTITY. A body-id change (a rebuilt collider) re-applies
+	// everything below exactly once, which is the behaviour the patrol has always
+	// had; this function is that block, moved verbatim and shared.
+	if (xBody.m_pxCollider == nullptr || m_xConfiguredWanderBodyID == xBody.m_xBodyID)
+	{
+		return;
+	}
+
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+	xBody.m_pxCollider->SetIsSensor(false);
+	xPhysics.SetGravityEnabled(xBody.m_xBodyID, true);
+	// ★ THE YAW LOCK IS THE ONE DIFFERENCE BETWEEN A PATROL BODY AND A STATIONARY
+	// TRAINER'S, AND IT IS THE PRIMARY S7-item-1 R1 MITIGATION.
+	//
+	// RIGIDBODY_TYPE offers only DYNAMIC and STATIC -- there is no KINEMATIC -- so
+	// the authored rival now stands on a body the player can physically shove. With
+	// Y left free (which is what a patrol wants, because nothing writes a walker's
+	// yaw) one shoulder-barge applies real torque about +Y, and a trainer turned a
+	// few degrees off his authored bearing is PERMANENTLY BLIND: the 60-degree cone
+	// stops covering the lane he was authored to watch. That is a live regression of
+	// exactly the defect ZM-D-156 fixed, and NO BOOT UNIT COULD SEE IT -- the units
+	// reason about compiled placement constants while the damage sits in runtime
+	// body state.
+	//
+	// Zenith_Physics::LockRotation zeroes the INVERSE INERTIA on the locked axes, so
+	// no contact can ever produce angular acceleration about them; it does NOT block
+	// a direct pose write, which is what leaves DriveTrainerApproach free to author
+	// the walk's facing. A stationary trainer therefore owns his yaw outright, and
+	// physics owns none of it.
+	xPhysics.LockRotation(xBody.m_xBodyID, true, !m_bWanderEnabled, true);
+	xPhysics.EnforceUpright(xBody.m_xBodyID);
+	xPhysics.SetFriction(xBody.m_xBodyID, fZM_WANDER_BODY_FRICTION);
+	xPhysics.SetRestitution(xBody.m_xBodyID, fZM_WANDER_BODY_RESTITUTION);
+	m_xConfiguredWanderBodyID = xBody.m_xBodyID;
+}
+
 bool ZM_Interactable::TryConfigureWanderBody(bool bRequireRuntimeReady)
 {
 	if (!m_bWanderEnabled)
@@ -189,23 +383,13 @@ bool ZM_Interactable::TryConfigureWanderBody(bool bRequireRuntimeReady)
 		return false;
 	}
 
-	const bool bEntityValid = m_xParentEntity.IsValid();
-	Zenith_ColliderComponent* pxCollider =
-		bEntityValid
-			? m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>()
-			: nullptr;
-	Zenith_Physics& xPhysics = g_xEngine.Physics();
-	const bool bColliderPresent = pxCollider != nullptr;
-	const bool bBodyValid = bColliderPresent && pxCollider->HasValidBody();
-	const bool bDynamicCapsule = bColliderPresent
-		&& pxCollider->GetCollisionVolumeType() == COLLISION_VOLUME_TYPE_CAPSULE
-		&& pxCollider->GetRigidBodyType() == RIGIDBODY_TYPE_DYNAMIC;
-	const bool bPhysicsActive = xPhysics.HasActiveSimulation();
-	const bool bContractValid = bEntityValid
-		&& bColliderPresent
-		&& bBodyValid
-		&& bDynamicCapsule
-		&& bPhysicsActive;
+	// ONE observation, ONE decision -- both shared with the walk-up. The five
+	// diagnostics the strict assert names are the fields of that same observation,
+	// so the message can never describe a body other than the one that was judged.
+	const ZM_InteractableBodyObservation xBody = ObserveDrivableBody();
+	const bool bContractValid = IsDrivableBodyContractMet(
+		xBody.m_bEntityValid, xBody.m_bColliderPresent, xBody.m_bBodyValid,
+		xBody.m_eVolumeType, xBody.m_eRigidBodyType, xBody.m_bPhysicsActive);
 	if (!bContractValid)
 	{
 		m_xConfiguredWanderBodyID = Zenith_PhysicsBodyID{};
@@ -216,8 +400,9 @@ bool ZM_Interactable::TryConfigureWanderBody(bool bRequireRuntimeReady)
 				"simulation and a valid DYNAMIC CAPSULE body "
 				"(npcId=%u entityValid=%d colliderPresent=%d bodyValid=%d "
 				"dynamicCapsule=%d physicsActive=%d)",
-				(u_int)m_eNpcId, (int)bEntityValid, (int)bColliderPresent,
-				(int)bBodyValid, (int)bDynamicCapsule, (int)bPhysicsActive);
+				(u_int)m_eNpcId, (int)xBody.m_bEntityValid,
+				(int)xBody.m_bColliderPresent, (int)xBody.m_bBodyValid,
+				(int)xBody.m_bDynamicCapsule, (int)xBody.m_bPhysicsActive);
 			// Release builds compile the assertion out, so the explicit state change is
 			// the shipping fail-closed path rather than a debug-only diagnostic.
 			m_bWanderEnabled = false;
@@ -225,20 +410,169 @@ bool ZM_Interactable::TryConfigureWanderBody(bool bRequireRuntimeReady)
 		return false;
 	}
 
-	const Zenith_PhysicsBodyID xBodyID = pxCollider->GetBodyID();
-	if (m_xConfiguredWanderBodyID == xBodyID)
+	ApplyDrivenBodySetup(xBody);
+	return true;
+}
+
+bool ZM_Interactable::TryBuildApproachFacing(
+	const Zenith_Maths::Vector3& xDirectionXZ,
+	Zenith_Maths::Quat& xFacingOut)
+{
+	// REFUSE rather than invent. See the header: atan2(0, 0) is a perfectly finite
+	// ZERO, so a degenerate direction would silently author a body facing +Z.
+	if (!std::isfinite(xDirectionXZ.x) || !std::isfinite(xDirectionXZ.z))
 	{
-		return true;
+		return false;
+	}
+	const float fLength = std::hypot(xDirectionXZ.x, xDirectionXZ.z);
+	if (!std::isfinite(fLength) || fLength <= 0.0f)
+	{
+		return false;
 	}
 
-	pxCollider->SetIsSensor(false);
-	xPhysics.SetGravityEnabled(xBodyID, true);
-	xPhysics.LockRotation(xBodyID, true, false, true);
-	xPhysics.EnforceUpright(xBodyID);
-	xPhysics.SetFriction(xBodyID, fZM_WANDER_BODY_FRICTION);
-	xPhysics.SetRestitution(xBodyID, fZM_WANDER_BODY_RESTITUTION);
-	m_xConfiguredWanderBodyID = xBodyID;
+	// X FIRST, Z SECOND -- the +Z-forward convention ZM_ForwardFromRotation rotates
+	// against, and the same argument order ZM_DawnmereVesperYaw uses. NEVER
+	// glm::eulerAngles(quat).y.
+	const float fYaw = std::atan2(xDirectionXZ.x, xDirectionXZ.z);
+	xFacingOut =
+		Zenith_Maths::AngleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
 	return true;
+}
+
+void ZM_Interactable::DriveTrainerApproach(
+	const ZM_InteractableBodyObservation& xBody,
+	const ZM_TrainerApproachStep& xStep,
+	Zenith_TransformComponent* pxTransform)
+{
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+	const Zenith_Maths::Vector3 xCurrentVelocity =
+		xPhysics.GetLinearVelocity(xBody.m_xBodyID);
+	// ★ THE SAME TWO-CALL IDIOM AS UpdateWander, and for the same reason: no
+	// SetPosition and no teleport anywhere, so gravity and terrain response stay in
+	// the SOLE ownership of the body's vertical component. ZM_BuildPatrolVelocity
+	// replaces XZ and copies Y verbatim.
+	xPhysics.SetLinearVelocity(xBody.m_xBodyID,
+		ZM_BuildPatrolVelocity(xStep.m_xDirXZ, xStep.m_fSpeed, xCurrentVelocity));
+
+	// FACE THE TRAVEL DIRECTION. On the arrival tick the direction is exactly zero
+	// and TryBuildApproachFacing REFUSES, which leaves the facing the previous tick
+	// authored -- i.e. still looking at the player -- rather than snapping north.
+	Zenith_Maths::Quat xFacing(1.0f, 0.0f, 0.0f, 0.0f);
+	if (pxTransform != nullptr
+		&& TryBuildApproachFacing(xStep.m_xDirXZ, xFacing))
+	{
+		// SetRotation mirrors onto the physics body (Zenith_TransformComponent
+		// keeps the body authoritative when one exists), so this is the single
+		// write that moves both.
+		pxTransform->SetRotation(xFacing);
+	}
+}
+
+void ZM_Interactable::HoldTrainerStation(
+	const ZM_InteractableBodyObservation& xBody,
+	Zenith_TransformComponent* pxTransform)
+{
+	// A PATROL OWNS ITS OWN VELOCITY. UpdateWander runs immediately after this tick
+	// and would overwrite anything written here anyway; the station hold exists for
+	// the AUTHORED STATIONARY trainer, which is what SC8 placed in Dawnmere.
+	if (m_bWanderEnabled)
+	{
+		return;
+	}
+
+	Zenith_Physics& xPhysics = g_xEngine.Physics();
+	const Zenith_Maths::Vector3 xCurrentVelocity =
+		xPhysics.GetLinearVelocity(xBody.m_xBodyID);
+	// ★ R1, THE TRANSLATION HALF. A DYNAMIC body can be shoved, and a rival nudged
+	// out of his authored spot degrades every geometric claim the placement header
+	// makes (corridor clearances, the whiteout spawn-camp margin) without redding
+	// anything. Zeroing the XZ request every tick he is not walking means a push
+	// costs one frame of contact response rather than an open-ended slide -- and it
+	// is the SAME helper, with the same Y-preserving contract, that the walk itself
+	// goes through, so there is no second velocity convention to keep in step.
+	xPhysics.SetLinearVelocity(xBody.m_xBodyID,
+		ZM_BuildPatrolVelocity(
+			Zenith_Maths::Vector3(0.0f), 0.0f, xCurrentVelocity));
+
+	// ★ R1, THE ROTATION HALF, and it is deliberately WATCHING-ONLY.
+	//   * WATCHING is the only state that can raise, so it is the only state in
+	//     which a stolen yaw makes the trainer permanently blind.
+	//   * Repairing in SPOTTED / CHALLENGING / ENGAGED would fight the presentation
+	//     beats (and, in the runtime-fixture tests, the deliberate rotations that
+	//     break sight mid-beat).
+	//   * It is gated on a live DYNAMIC CAPSULE by the caller, so a bodyless trainer
+	//     -- the collider-less runtime fixture -- keeps its rotation entirely in the
+	//     hands of whoever wrote it. Nothing repairs damage physics cannot do.
+	// The write is conditional on measured drift, so the common case is a dot
+	// product and no body write at all.
+	if (pxTransform == nullptr
+		|| !m_bWatchFacingCaptured
+		|| m_xSightFsm.GetState() != ZM_TRAINER_SIGHT_WATCHING)
+	{
+		return;
+	}
+	Zenith_Maths::Quat xCurrentFacing(1.0f, 0.0f, 0.0f, 0.0f);
+	pxTransform->GetRotation(xCurrentFacing);
+	if (ZM_FacingAbsDot(xCurrentFacing, m_xWatchFacing)
+		< fZM_WATCH_FACING_MIN_ABS_DOT)
+	{
+		pxTransform->SetRotation(m_xWatchFacing);
+	}
+}
+
+void ZM_Interactable::AcquireTrainerCinematicHold(Zenith_EntityID xPlayerID)
+{
+	// RE-VALIDATED ON EVERY TICK OF THE WALK. Begin is last-writer-wins with no
+	// counter, and SetMovementEnabled is a bare bool, so re-application inside one
+	// logical operation is a no-op by construction -- which is exactly the property
+	// the "latch consumed at the top of a re-enterable function" lesson demands.
+	ZM_TrainerCinematicLatch::Begin(m_eTrainerId);
+	m_bCinematicHoldActive = true;
+	if (xPlayerID != INVALID_ENTITY_ID)
+	{
+		m_xCinematicHeldPlayerID = xPlayerID;
+	}
+	if (ZM_PlayerController* pxController =
+			ZM_ResolvePlayerController(m_xCinematicHeldPlayerID))
+	{
+		pxController->SetMovementEnabled(false);
+	}
+}
+
+void ZM_Interactable::ReleaseTrainerCinematicHold()
+{
+	// TOTAL: releasing a hold nobody took is legal and inert. The early-out is what
+	// lets every exit -- arrival, timeout, cancel, a lost trainer row, a restarted
+	// component -- funnel through ONE call without any of them having to know
+	// whether one of the others got there first.
+	if (!m_bCinematicHoldActive)
+	{
+		return;
+	}
+	m_bCinematicHoldActive = false;
+	const Zenith_EntityID xPlayerID = m_xCinematicHeldPlayerID;
+	m_xCinematicHeldPlayerID = INVALID_ENTITY_ID;
+
+	// The latch goes down FIRST so the arbitration below reads the truth: with it
+	// still armed, this function would always decline to hand movement back and the
+	// player would be stranded frozen -- the one failure mode the latch is shaped to
+	// make impossible.
+	ZM_TrainerCinematicLatch::End();
+
+	// THE SAME GUARD LIST ZM_UI_MenuStack::UnfreezePlayer CONSULTS, for the same
+	// reason: m_bMovementEnabled is one bare bool with four owners and no refcount.
+	// IsMenuOpen is included because a bark raised BY THIS WALK freezes through the
+	// menu, and the menu's own close path is what must hand movement back then.
+	if (ZM_GameStateManager::IsWarpInProgress()
+		|| ZM_BattleTransition::IsTransitionActive()
+		|| ZM_UI_MenuStack::IsMenuOpen())
+	{
+		return;
+	}
+	if (ZM_PlayerController* pxController = ZM_ResolvePlayerController(xPlayerID))
+	{
+		pxController->SetMovementEnabled(true);
+	}
 }
 
 void ZM_Interactable::OnUpdate(float fDeltaTime)
@@ -311,6 +645,12 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 {
 	if (!IsTrainerSightEnabled())
 	{
+		// RELEASED BEFORE THE EARLY-OUT, never after it. The hold belongs to the
+		// WALK, and a component that has lost its trainer row has no walk in flight
+		// -- so a row cleared mid-approach (ConfigureTrainerSight failing closed on a
+		// bad id) must not leave the player frozen with nobody able to name why.
+		ReleaseTrainerCinematicHold();
+		m_bApproachPossible = false;
 		return;
 	}
 
@@ -388,8 +728,45 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 		}
 	}
 
+	// ---- S7 item 1 SC3: the two walk-up inputs, filled BEFORE the machine rules --
+	//
+	// ★ FAIL OPEN WITH NO BODY. m_bApproachPossible is the WHOLE compatibility
+	// story: false means ZM_TrainerSightFsm skips APPROACHING entirely and this
+	// component keeps the pre-SC1 SPOTTED exit byte for byte. It is therefore also
+	// the gate on every physics write below -- a trainer this component cannot drive
+	// is a trainer this component does not touch, which is what keeps the
+	// collider-less runtime fixture meaningful rather than merely tolerated.
+	const ZM_InteractableBodyObservation xBody = ObserveDrivableBody();
+	xInputs.m_bApproachPossible = IsDrivableBodyContractMet(
+		xBody.m_bEntityValid, xBody.m_bColliderPresent, xBody.m_bBodyValid,
+		xBody.m_eVolumeType, xBody.m_eRigidBodyType, xBody.m_bPhysicsActive);
+	m_bApproachPossible = xInputs.m_bApproachPossible;
+	if (xInputs.m_bApproachPossible)
+	{
+		// The SAME once-per-body-identity setup the patrol gets, through the SAME
+		// function. Applied here rather than at the moment the walk starts, because
+		// the R1 yaw lock has to be in place BEFORE the first shove, not after the
+		// first sighting.
+		ApplyDrivenBodySetup(xBody);
+	}
+
+	// ★ ARRIVED IS THE DEFAULT, matching ZM_StepTrainerApproach's own fail-open
+	// polarity: "I cannot measure the gap" and "I have walked far enough" must look
+	// identical to the machine, because the only thing it does with this bool is
+	// STOP WAITING. A walk whose body or transform disappears mid-flight therefore
+	// ends on the next tick instead of burning the whole timeout on a dead screen.
+	ZM_TrainerApproachStep xApproach;
+	xApproach.m_bArrived = true;
+	if (xInputs.m_bApproachPossible && bHaveTrainerTransform)
+	{
+		xApproach = ZM_StepTrainerApproach(xTrainerPosition, xPlayerPosition,
+			xZM_SIGHT_TUNING.m_fApproachStandoffMetres,
+			fZM_TRAINER_APPROACH_SPEED);
+	}
+	xInputs.m_bApproachArrived = xApproach.m_bArrived;
+
 	const ZM_TRAINER_SIGHT_ACTION eAction =
-		m_xSightFsm.Step(xInputs, ZM_TrainerSightFsmTuning{});
+		m_xSightFsm.Step(xInputs, xZM_SIGHT_TUNING);
 	if (bHaveTrainerTransform
 		&& m_xSightFsm.GetState() == ZM_TRAINER_SIGHT_SPOTTED)
 	{
@@ -399,6 +776,35 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 		// watching the actual renderer payload rather than a proxy for it.
 		m_uSpottedIndicatorSubmitCount +=
 			SubmitTrainerSpottedIndicator(xTrainerPosition, xTrainerScale);
+	}
+
+	// ---- S7 item 1 SC3: THE WALK, driven AFTER the machine has ruled ------------
+	//
+	// ★ KEYED ON THE STATE, NOT ON A TRANSITION, AND THAT IS THE WHOLE DESIGN. This
+	// block asks "is the operation running?" every single tick, so re-entering
+	// TickTrainerSight inside one logical walk re-applies a no-op instead of
+	// stacking a second claim, and EVERY exit -- arrival, timeout, and cancel alike
+	// -- lands in the same release. A release keyed on "did I just see the
+	// APPROACHING -> X edge?" would have three sites to keep in step, and the one
+	// that got forgotten would strand the player frozen. This project has already
+	// been bitten by a latch consumed at the top of a function its own state machine
+	// re-enters (PollForSpawnAndPlacePlayer re-ran its teleport on every pass); the
+	// lesson is that lifetime belongs to the operation.
+	if (m_xSightFsm.GetState() == ZM_TRAINER_SIGHT_APPROACHING)
+	{
+		AcquireTrainerCinematicHold(xPlayerID);
+		if (m_bApproachPossible)
+		{
+			DriveTrainerApproach(xBody, xApproach, pxTransform);
+		}
+	}
+	else
+	{
+		ReleaseTrainerCinematicHold();
+		if (m_bApproachPossible)
+		{
+			HoldTrainerStation(xBody, pxTransform);
+		}
 	}
 
 	switch (eAction)
@@ -423,16 +829,23 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 	// inside this stack frame), so the latch must already be true if anything
 	// downstream ever re-enters this component.
 	ZM_TrainerEngagementLatch::MarkEngaged(m_eTrainerId);
-	// This component still does NOT freeze the player and still owns no dialogue: it
-	// asks the GRAPH to speak and lets ZM_UI_MenuStack own that freeze, then lets
+	// This component owns no dialogue: it asks the GRAPH to speak and lets
+	// ZM_UI_MenuStack own that freeze, then lets
 	// ZM_BattleTransition::TryParkOverworldPlayer own the battle freeze. The shipped
 	// subscriber owns both halves of the battle side: OnTrainerEncounterEvent
 	// latches, and TryParkOverworldPlayer zeroes velocity, drops gravity and calls
 	// SetMovementEnabled(false). The two owners are strictly SEQUENTIAL -- ECS order
 	// 112 (ZM_UI_MenuStack) closes, pops and UNFREEZES before order 113 (this
-	// component) dispatches, in the SAME frame -- and SC7 added neither. Adding a
-	// third freeze owner here would fight the menu/warp/battle protocol those
-	// systems already coordinate over.
+	// component) dispatches, in the SAME frame.
+	//
+	// ★ S7 item 1 SC3 UPDATED THIS PARAGRAPH RATHER THAN CONTRADICTING IT. What SC6
+	// forbade -- and it was right to -- was a THIRD freeze CONCEPT arbitrated by
+	// nothing. The walk-up is instead the FOURTH OWNER of the one shared bool, and
+	// it arbitrates through the one shared question SC2 added to
+	// ZM_UI_MenuStack::UnfreezePlayer (ZM_TrainerCinematicLatch::IsActive()). By the
+	// time control reaches THIS line the hold has already been released above, so
+	// there is still exactly one freeze owner at every instant, and the dispatch
+	// below still lands on a player nobody else has claimed.
 	Zenith_EventDispatcher::Get().Dispatch(
 		ZM_OnTrainerEncounter{ m_eTrainerId, ZM_ResolveActiveSceneIdForSight() });
 }
@@ -642,8 +1055,14 @@ bool ZM_Interactable::ConfigureWander(const ZM_WalkerWaypoints& xWaypoints,
 
 bool ZM_Interactable::ConfigureTrainerSight(ZM_TRAINER_ID eTrainer)
 {
+	// The machine is about to become a cold watcher, so any walk it was running is
+	// over -- including the freeze that walk was holding. Released FIRST, and
+	// through the one TOTAL release, so installing a new row can never be the thing
+	// that strands the player. Inert unless this component was actually holding one.
+	ReleaseTrainerCinematicHold();
 	m_xSightFsm.Reset();
 	m_uSpottedIndicatorSubmitCount = 0u;
+	m_bApproachPossible = false;
 	// Re-arm the one-shot attach with the machine: the incoming row may be the first
 	// one on this component that has anything to say.
 	m_bChallengeGraphAttempted = false;
@@ -772,6 +1191,12 @@ void ZM_Interactable::ReadFromDataStream(Zenith_DataStream& xStream)
 	// SC7's graph-attach latch rides in the SAME runtime-only block, for the same
 	// reason: a reloaded scene starts with no trainer, a cold watcher and no graph.
 	m_bChallengeGraphAttempted = false;
+	// S7 item 1 SC3's walk-up state rides there too, and the HOLD is released rather
+	// than merely cleared: dropping the flag alone would leave the process-global
+	// latch armed with nobody left who could end it.
+	ReleaseTrainerCinematicHold();
+	m_bApproachPossible = false;
+	m_bWatchFacingCaptured = false;
 	if (uVersion != 1u && uVersion != uSERIALIZATION_VERSION)
 	{
 		return;
@@ -838,5 +1263,13 @@ void ZM_Interactable::RenderPropertiesPanel()
 	ImGui::Text("Interactable: %s", IsInteractable() ? "true" : "false");
 	ImGui::Text("Wander enabled: %s", IsWanderEnabled() ? "true" : "false");
 	ImGui::Text("Waypoint: %u / %u", GetWaypointIndex(), GetWaypointCount());
+	// S7 item 1 SC3. "Approach possible" is the DYNAMIC-CAPSULE body contract as of
+	// the last sight tick, so an authored trainer who silently lost his capsule (the
+	// exact regression the collider change here is about) is visible in the editor
+	// rather than only in a windowed test's timeout.
+	ImGui::Text("Trainer approach: possible=%s count=%u elapsed=%.2f hold=%s",
+		IsTrainerApproachPossible() ? "true" : "false",
+		GetTrainerApproachCount(), GetTrainerApproachElapsedSeconds(),
+		IsTrainerCinematicHoldActive() ? "true" : "false");
 }
 #endif
