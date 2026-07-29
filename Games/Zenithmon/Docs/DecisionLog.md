@@ -15,6 +15,67 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-29 -- ZM-D-165 -- The BOX screen's expiring deferral is caught and RE-DEFERRED IN WRITING (S7 -> S9), and the stale-doc sweep
+
+*(Documentation only -- no source, no scene, no asset, no build. Recorded because a deferral that
+quietly expires leaves no evidence that anyone ever decided anything.)*
+
+### Decision
+
+**`Roadmap.md:98` -- the S6 gate line -- says "Box is deferred to S7". S7 reached its closing
+sub-commits with no Box screen and NO re-deferral recorded anywhere.** A documentation audit found
+it; nobody tripped over it, and nobody would have until someone asked why a Pokemon-class game had
+no storage. The Box screen is now **re-deferred to S9 in writing**, as a checkbox on the S9 list,
+with the S6 line annotated `[SUPERSEDED]` so the trail is followable in both directions.
+
+**★ THE PRINCIPLE: A DEFERRAL THAT NAMES A DESTINATION STAGE IS A COMMITMENT, AND LETTING IT LAPSE
+IS INVISIBLE.** A cut recorded in `Scope.md` is a decision. A deferral is a promise with an address
+on it. When the destination stage closes without it, the promise does not fail loudly -- it simply
+stops being anyone's item, and the only trace is a sentence in a gate line nobody re-reads. That is
+strictly worse than deciding not to build it, because there is no decision to review.
+
+**Why S9 and not S7** (best-guess under the `Questions.md` protocol, logged as Q-2026-07-29-001):
+the storage MODEL is not outstanding -- `ZM_SaveSchema` has persisted boxes **16x30** since S7 item 1
+(ZM-D-136). What is missing is a presenter, in the S6 `Source/UI/ZM_UI_*` by-value idiom that landed
+six screens against ONE ECS order, so it needs no schema change, no ECS order and no serialization
+bump and can land later with **zero rework**. S8's slice (intro -> lab -> starter -> Route 1 -> Gym 1
+-> Badge 1) cannot overflow a 6-slot party, and **a box only becomes functional once the player can
+exceed one, which needs S9's routes and encounter tables. Built in S7 its only reachable state is
+"empty", and an empty box cannot be play-tested.** Cost if the user disagrees: LOW and recoverable --
+it is additive and lands whenever.
+
+### The stale-doc sweep landed with it
+
+An audit found the reference docs disagreeing with reality in several places. Each is corrected in
+place, with the correction visible rather than silently overwritten:
+
+- **`Shortfalls.md`'s "Verdict at a glance" was stamped 2026-07-21** -- eight days and two S7 items
+  stale -- and still named "S7 item 2" as the next autonomous work. It is the FIRST thing a new
+  session trusts, so a stale verdict block is actively misleading rather than merely old. Rewritten,
+  and it now carries the current observed baseline as the single trustworthy number.
+- **`Shortfalls.md` quoted "36 tests / 2392 units"** against the live **49 / 2731**. Rather than
+  chase every occurrence, the verdict block now states that every such figure elsewhere in the file
+  is stale by construction and names itself as the authority.
+- **`Shortfalls.md` listed the save-slot / manual / continue / autosave flows as UNBUILT.** They
+  shipped as S7 item 2 (ZM-D-137..142). Corrected.
+- **`Status.md`'s "Open Questions" list was wrong in BOTH directions** -- it named two ids that are
+  closed (Q-2026-07-21-001 `[CLOSED 2026-07-25]`, Q-2026-07-21-002 `[RESOLVED 2026-07-26]`) and
+  omitted nine that are open. Rebuilt as a POINTER to `Questions.md` with an explicit note that a
+  copy goes stale the moment it tries to be a copy -- which is exactly how it got wrong.
+  Q-2026-07-17-001 is flagged in it: `BiomeForScene` being a hard-coded table rather than a
+  `ZM_WorldSpec` column is harmless today and **will bite S8/S9**, where every new route or town
+  needs a hand-edit instead of a row. Worth closing before content scale-up.
+
+- **Tests that lock it:** none -- documentation. Which is precisely the problem this entry records:
+  **no test asserts that a deferral was honoured, that a verdict block is current, or that a
+  cross-referenced question id still exists.** Doc truth is maintained by audit, and this session
+  needed one to find four separate falsehoods (see also ZM-D-162 and ZM-D-164, where a doc-recorded
+  "fix" was disproved against the compiler). Periodic audits are not optional hygiene here.
+- **Reversibility:** trivial. If the user wants Box inside S7, it is additive with no schema, ECS or
+  scene impact.
+
+---
+
 ## 2026-07-29 -- ZM-D-164 -- The roster appearance collision closes, and ZM-D-160's recorded fix is retracted as FALSE
 
 *(No new `.cpp`, folder, scene, asset, ECS order or serialization version -- `uSERIALIZATION_VERSION`

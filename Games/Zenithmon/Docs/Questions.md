@@ -10,6 +10,41 @@
 
 ## Open
 
+### [OPEN] Q-2026-07-29-001 -- the BOX (storage) screen was deferred INTO S7 and S7 was about to close without it or a re-deferral
+
+**Question.** `Roadmap.md:98` (the S6 gate line) states plainly: **"Box is deferred to S7."**
+`Shortfalls.md` 1.6 still carries the BOX storage screen as missing, with its recorded blocker
+"needs S7 persistence" -- a blocker S7 REMOVED when the save schema, slot layer and Continue path
+shipped. S7 nevertheless reached its closing sub-commits with no Box screen built and **no
+re-deferral recorded anywhere**. Should the Box screen be built inside S7, or explicitly re-deferred?
+
+**Why it is being asked rather than silently dropped.** A deferral that names a destination stage is
+a commitment. Letting it expire unremarked is how scope evaporates -- nobody ever decided not to do
+it, it just stopped being anyone's item. This was found by a documentation audit on 2026-07-29, not
+by anyone tripping over it.
+
+**Best-guess action TAKEN (autonomous, per this file's protocol): RE-DEFERRED to S9, recorded in
+`Roadmap.md` and ZM-D-165.** The reasoning:
+- The durable data already persists. `ZM_SaveSchema` has shipped boxes **16x30** since S7 item 1
+  (ZM-D-136); nothing about the storage MODEL is outstanding. What is missing is a presenter.
+- The screen is additive UI in the established S6 `Source/UI/ZM_UI_*` by-value idiom (the shape that
+  landed six screens against **one** ECS order). It needs no schema change, no new ECS order, and no
+  serialization version bump, so it can land at any later point with **zero rework**.
+- **S8's vertical slice does not need it.** Intro -> lab -> starter choice -> Route 1 -> Gym 1 ->
+  Badge 1 is reachable with a 6-slot party; nothing in that path can overflow one.
+- A box only becomes *functional* when the player can exceed a full party, which requires meaningful
+  catching volume -- i.e. S9's routes and encounter tables. Building the screen in S7 would ship a
+  UI whose only reachable state is "empty", and an empty box cannot be meaningfully play-tested.
+
+**Cost if wrong: LOW, and recoverable.** If the user wants Box inside S7, it is a self-contained
+presenter with no schema, ECS-order or scene impact, so it lands whenever without disturbing
+anything already shipped. The only cost of the delay is that box-related save bytes stay
+exercised by unit round trips rather than by a screen. **The cost of the alternative error --
+silently dropping a recorded deferral -- is worse, because it is invisible.**
+
+**Status:** asked 2026-07-29; **acting on the best guess** (re-deferred to S9 in writing). OPEN for
+user override; either direction remains additive.
+
 ### [RESOLVED 2026-07-28] Q-2026-07-28-001 -- a flagless trainer row has no re-engagement brake, so its prize is farmable
 
 **Question:** how should a trainer with NO defeat story flag be prevented from

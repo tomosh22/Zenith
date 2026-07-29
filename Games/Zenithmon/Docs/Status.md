@@ -1353,11 +1353,24 @@ STAGE GATE sign-off.
   never build. Sweep stray `zenithmon.exe` processes before ending. NEVER commit
   baked assets or `Build/artifacts`. `zenith test Combat` drops a stray
   `EnemyBase.zpfb` in the repo root -- delete it, never commit it.
-- **Open Questions:** Q-2026-07-21-001 (ENGINE: terrain sets up GPU culling
-  resources with no headless guard); Q-2026-07-21-002 (RenderTest
-  `RT_TennisDeterminismDigest` fails windowed); Q-2026-07-17-001
-  (`ZM_BattleTransition::BiomeForScene` is a hard-coded table); Q-2026-07-12-003
-  (`ZM_BattleAI`: file location, no-Struggle, tunable thresholds).
+- **Open Questions -- ★ REBUILT 2026-07-29; the previous list named TWO CLOSED ids and omitted
+  NINE genuinely open ones, i.e. it was wrong in both directions.** `Questions.md` is the
+  authority; this is a pointer, not a copy, and it goes stale the moment it tries to be a copy.
+  Currently `[OPEN]`: **Q-2026-07-29-001** (the BOX screen's S7 deferral -- acted on, re-deferred
+  to S9); Q-2026-07-25-002 (other games' `.zscen` + git-LFS for heavy bakes); Q-2026-07-24-002
+  (S7 item 3's eight adopted defaults; its Q-A part is resolved); Q-2026-07-24-001 (repo-root
+  `AGENTS.md` deletion); Q-2026-07-18-001 (S5 item 5 scoping); Q-2026-07-17-002 (S5 item 4
+  scoping); **Q-2026-07-17-001** (`ZM_BattleTransition::BiomeForScene` is a hard-coded table, not
+  a `ZM_WorldSpec` column -- **harmless today but it WILL bite S8/S9, where every new route or
+  town needs a hand-edit instead of a WorldSpec row; worth closing before content scale-up**);
+  Q-2026-07-12-005 (Battle Tower tuning); Q-2026-07-12-003 (`ZM_BattleAI` rulings);
+  Q-2026-07-12-002 (`ZM_ExpAndLevel` sequencing); Q-2026-07-12-001 (`ZM_ValidateEventStream`
+  rule 7 -- explicitly flagged non-blocking and "a good small standalone task");
+  Q-2026-07-10-004 (unit-test verification gap + baseline-ratchet churn). **CLOSED, and wrongly
+  listed as open until now:** Q-2026-07-21-001 (`[CLOSED 2026-07-25]`, ZM-D-146 -- the Null
+  backend) and Q-2026-07-21-002 (`[RESOLVED 2026-07-26]` -- a test-ISOLATION defect, not a
+  determinism regression). None of the open items blocks anything; the protocol is best-guess
+  and proceed.
 - **The next VISUAL hard-stop is the S8 vertical-slice go/no-go** (manual
   playthrough sign-off). S6/S7 have no visual gate -- the loop runs through them
   automatically.
