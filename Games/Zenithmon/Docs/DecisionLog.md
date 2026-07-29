@@ -15,6 +15,145 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-29 -- ZM-D-161 -- Known-limit W5: per-NPC MEASURED feet heights, and the town square is not flat
+
+*(Fifth and LAST of the explicitly authorised pre-S8-gate known-limit commits. The human
+S8 go/no-go remains UNSIGNED and no S8 content begins. No new `.cpp`, `.h`, folder, ECS
+order or serialization version -- 114 is still next-free -- and therefore **no
+`Build\regen.ps1`**. This one DOES move a committed scene, and pays the full operational
+proof for it.)*
+
+### Decision
+
+**There was never a "sample once".** `fZM_DAWNMERE_TOWN_CENTER_FEET_Y = 25.98577f` is a
+hard-coded literal measured out of band once, and all six authored NPCs plus both
+serialized wanderer waypoints reused it. So W5 is not "call the sampler N times" -- the
+sampler is never called at all. It could not be: the editor add path uses
+`Zenith_TerrainComponent`'s deserialization ctor, which never calls
+`LoadCombinedPhysicsGeometry`, so `CreateTerrainShape` returns nullptr and there is **no
+terrain physics body during authoring**. An authoring-time raycast would MISS.
+
+The heights are therefore **MEASURED at runtime and FROZEN as compiled constants**, which
+is also what `ZM_DawnmerePlacement.h`'s own binding note requires: the committed `.zscen`
+bytes must be reproducible from compiled constants, not from a gitignored terrain bake.
+Live sampling into authored bytes was rejected for exactly that reason.
+
+New pure seam in the EXISTING `Source/World/ZM_DawnmerePlacement.{h,cpp}` (no new TU): a
+six-row anchor table under a deduced-bound `static_assert`, a two-row wander-waypoint
+table, and TOTAL accessors in the `ZM_GetTrainerData` house style -- out of range logs a
+non-fatal `Zenith_Error` and returns an inert `"UNKNOWN"` town-centre sentinel, and a
+non-finite or non-positive capsule half-extent is sanitised to 0 so a garbage argument can
+never produce a NaN transform. `ZM_DawnmereWandererSpawnY` names the dynamic capsule's ONE
+EXTRA half-extent of settle air instead of leaving it open-coded.
+
+**★ THE OBB TRAP WAS AVOIDED BY CONSTRUCTION, not by care.** Every change is one float
+inside an existing `AddStep_SetTransformPosition` argument built at PLAN time.
+`SetPosition` appears nowhere in the diff. That matters because it is write-through to the
+body and fires the pose-changed hook, which runs `SyncPhysicsPoseAndInvalidate` -- copying
+position AND ROTATION back, which is precisely how ZM-D-156's AABB collider wiped Vesper's
+authored yaw out of the SAVED BYTES while every boot unit stayed green. Never mutating a
+transform after `AddStep_AddCollider` makes that whole class unreachable. The detector was
+still run: `ZM_RivalVesperAuthored_Test`'s saved-rotation clause
+(`RVFacingAbsDot >= 0.999`) passed against the RE-AUTHORED bytes in the windowed batch.
+
+### ★ WHAT THE MEASUREMENT ACTUALLY FOUND -- worse than the limit as written
+
+The recorded limit said the sight cone's vertical band was "an inference plus one measured
+value". The observed truth is that authored NPCs were standing **over a metre off their
+own ground**:
+
+| NPC | measured ground | error vs the shared 25.98577 |
+|---|---|---|
+| `Npc_Warden` (478, 498) | 24.61798 | **-1.368 m** |
+| `Npc_Caretaker` (498, 498) | 24.89095 | **-1.095 m** |
+| `Npc_TradePostClerk` (526, 498) | 25.52359 | -0.462 m |
+| `Npc_Wanderer` (540, 476) | 26.40014 | +0.414 m |
+| `Npc_Villager` (512, 490) | 25.66591 | -0.320 m |
+| `Npc_RivalVesper` (490, 524) | 25.86723 | -0.119 m |
+| `WanderWaypoint1` (540, 484) | 26.20189 | +0.216 m |
+
+**Live terrain spread under the roster: 1.78216 m** (min 24.61798, max 26.40014). Dawnmere's
+town square is not remotely flat, and the single shared sample was carrying a metre-scale
+error on two NPCs. Waypoint 0 deliberately has no constant of its own -- it stands at the
+wanderer's exact XZ, and a boot unit pins that binding.
+
+### ★ THE NEGATIVE CONTROL FLIPPED, which is the only reason any of this is believable
+
+Status.md's sixth tripwire: a fail-then-fail is a masked defect, not a control. The work
+was sequenced so the control is structural rather than bolted on. The tree was first built
+with the anchor table still holding the shared value; the boot gate came back **2722 ran /
+2719 passed / 2 failed**, with exactly `DawnmereNpcFeetHeights_SpreadProvesTheyAreNotOneSharedValue`
+and `DawnmereNpcFeetHeights_MostRowsDifferFromTheTownCentreAnchor` red and the other four
+W5 units green. The seven measured constants were then pasted in and NOTHING else changed;
+the same gate came back **2722 / 2721 / 0 / 1**. Red-then-green on one binary shape, with
+the only delta being the constants under test.
+
+### The scene re-author, and its full operational proof
+
+`Dawnmere.zscen` moves: six NPC centre Ys and two serialized patrol-waypoint Ys.
+
+- Authoring boot 1 (windowed `_True`): logged
+  `sceneAuthoring=AUTHOR_DAWNMERE, warmMask=0x7` -- **not** `DEFERRED`, which silently does
+  nothing and looks successful. SHA256 `07B81342...B107` -> **`3874943E58D6D13B57E03CC56BD63431F58FFCFD736A1842F22800246C7F4E16`**.
+- Authoring boot 2 (identical shape): `AUTHOR_DAWNMERE` again, hash **identical**. The bytes
+  are reproducible from compiled constants.
+- `git status`: **exactly one** tracked asset modified. `Dawnmere.znavmesh` is byte-unchanged
+  at `A783FB0A...40B6` -- as required, `fZM_DAWNMERE_TOWN_CENTER_FEET_Y` was NOT touched
+  (it feeds `ZM_NavEval`'s nav grid, and `ZM_BakeDawnmereNavmeshStep` runs on every windowed
+  tools boot, so moving it would have re-baked a SECOND tracked asset).
+- Batches run, then **re-hashed: still `3874943E...`** -- no play-session save baked a
+  `Zenith_GraphComponent` payload or anything else in.
+
+### Tests and observed gate
+
++6 boot units in the existing `Tests/ZM_Tests_DawnmerePlacement.cpp` (spread, anchor
+distinctness, accessor totality under `Zenith_AssertCaptureScope`, centre arithmetic +
+fail-closed half-extents, wanderer clearance, XZ derivations) and +1 automated
+registration, `ZM_DawnmereNpcGroundTruth_Test`, hosted in the existing
+`Tests/ZM_AutoTests_NpcTalk.cpp` (it already guards on the baked Dawnmere assets and loads
+the real committed scene).
+
+The probe is the ORACLE and keeps two clauses deliberately separate, so neither can hide
+the other: **compiled constant vs terrain** (`|measured - table| <= 0.15`) and **committed
+bytes vs terrain** (`|entity.y - (measured + halfExtent)| <= 0.15`). Move the constants
+without re-authoring and the second reds; re-bake the heightmap without re-measuring and
+the first reds. It logs every measured height at INFO on EVERY run, pass or fail -- that
+log is the re-measurement workflow, and a version that logged only on failure would make
+re-measuring impossible the moment it went green. Its two-sided clause is
+`max(measured) - min(measured) >= 0.05` taken off the LIVE heightfield, which is what
+proves from the terrain itself that one shared value really was an approximation.
+
+Observed final gate on the restored tree: boot **2716 -> 2722**
+(**2722 ran / 2721 passed / 0 failed / 1 documented skip**), `zm-tests.yml` bumped from the
+OBSERVED line; automated registry **48 -> 49**; engine reference **1164** untouched; Null and
+Vulkan builds green; Null headless **49/49**; full windowed **49/49 passed / 0 failed / 0
+skipped / 0 zero-frame**.
+
+**Four exact-one-anchor mutations, each built with its exit code checked and each result
+parsed off the OBSERVED line, then restored.** Three redded the boot gate: out-of-range
+returns roster row 0 instead of the sentinel (**exactly 1 unit**); centre = feet +
+half-extent x 0.5 (**2 units**); wanderer drops its extra clearance (**exactly 1 unit**).
+
+**★ THE FOURTH SURVIVED THE BOOT GATE, AND THE CAUSE WAS DETERMINED RATHER THAN ASSUMED**
+(fifth tripwire). Reverting the WARDEN's row to the shared value left the boot gate a clean
+**2722 / 2721 / 0** -- because the spread unit still sees 1.509 m (the caretaker becomes the
+new minimum) and the distinctness unit still sees 5 of 6 rows differing against its
+4-of-6 threshold. That is **correct layering, not a coverage hole**: the boot units are a
+self-consistency claim about compiled constants and cannot prove those constants match the
+terrain. The per-row terrain oracle caught it immediately, naming the exact defect --
+`'Npc_Warden': the compiled feet height 25.98577 is 1.36779 m off the terrain surface
+24.61798` -- while `centreError=0.00000` showed the committed bytes clause still passing,
+exactly the two-clause separation the probe is built around. The boot units' comment says
+in as many words that their greenness must not be read as "the heights are correct".
+
+### Reversibility
+
+MEDIUM. The code is trivially reversible, but the committed `Dawnmere.zscen` is not:
+reverting the constants requires a windowed authoring boot to put the old bytes back.
+Anyone doing so owes the same two-boot hash proof.
+
+---
+
 ## 2026-07-29 -- ZM-D-160 -- Known-limit W4: the `m_eHuman` column finally has a consumer
 
 *(Fourth of five explicitly authorised pre-S8-gate known-limit commits. The human S8

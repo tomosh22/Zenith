@@ -1357,6 +1357,44 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   same-outfit rows really are separated by hair rather than by comment); and replace the
   separation metric's sum of squares with a product (**all 3 distinctness units**, proving
   those clauses are live rather than vacuously satisfied by a large number).
+- **Known-limit W5 -- per-NPC measured feet heights (COMPLETE 2026-07-29, ZM-D-161):**
+  **+6 boot units and +1 automated registration (registry 48 -> 49).** The boot units pin
+  spread, anchor distinctness, accessor totality (under `Zenith_AssertCaptureScope`),
+  centre arithmetic with fail-closed half-extents, the wanderer's extra settle clearance,
+  and the XZ derivations. **Their comment states in as many words that they are a
+  SELF-CONSISTENCY claim about compiled constants and cannot prove those constants match
+  the terrain** -- that is the probe's job, and the battery below proves the division is
+  real rather than rhetorical.
+  `ZM_DawnmereNpcGroundTruth_Test` (in the existing `ZM_AutoTests_NpcTalk.cpp`) is the
+  ORACLE: a real downward raycast at each anchor's XZ against the baked terrain body, with
+  **two deliberately separate clauses** -- constant-vs-terrain and committed-bytes-vs-terrain
+  -- so moving the constants without re-authoring reds the second and re-baking the
+  heightmap without re-measuring reds the first, and neither can mask the other. It **logs
+  every measured height at INFO on every run, pass or fail**, because that log IS the
+  re-measurement workflow; a log-on-failure-only version would become useless the moment it
+  went green. Its two-sided clause is `max(measured) - min(measured) >= 0.05` taken off the
+  LIVE heightfield.
+  **★ THE NEGATIVE CONTROL WAS BUILT INTO THE SEQUENCING AND IT FLIPPED.** The tree was
+  first built with the anchor table still holding the shared value: gate **2722 / 2719 /
+  2 failed**, exactly the spread and distinctness units, other four green. Pasting the seven
+  measured constants and changing nothing else: **2722 / 2721 / 0**. Red-then-green on one
+  binary shape.
+  Observed gate: boot **2716 -> 2722**, pinned from the OBSERVED line; registry **48 -> 49**;
+  engine **1164** untouched; Null headless **49/49**; full windowed **49/49 / 0 failed /
+  0 skipped / 0 zero-frame**. `Dawnmere.zscen` re-authored under the full proof (two
+  `AUTHOR_DAWNMERE` boots, identical SHA256, exactly one tracked asset moved, navmesh
+  byte-unchanged, re-hash after the batches identical).
+  **Four exact-one-anchor mutations**, each rebuilt with its exit code checked and each
+  result parsed off the OBSERVED line, then restored. Three redded the boot gate:
+  out-of-range returns roster row 0 (**1 unit**), centre = feet + half x 0.5 (**2 units**),
+  wanderer drops its extra clearance (**1 unit**).
+  **★ THE FOURTH SURVIVED THE BOOT GATE AND THE CAUSE WAS DETERMINED, not assumed** (fifth
+  tripwire): reverting the WARDEN's single row to the shared value left the boot gate clean,
+  because the spread unit still sees 1.509 m and the distinctness unit still sees 5 of 6
+  rows against its 4-of-6 threshold. That is **correct layering, not a hole** -- the probe
+  caught it instantly and named the exact defect (`the compiled feet height 25.98577 is
+  1.36779 m off the terrain surface 24.61798`) while `centreError=0.00000` showed the
+  committed-bytes clause still passing. A single-row revert is the ORACLE's job by design.
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->
   defeat flag + prize money.
 

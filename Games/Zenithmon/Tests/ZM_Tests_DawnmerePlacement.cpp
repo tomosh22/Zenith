@@ -11,9 +11,12 @@
 // ============================================================================
 
 #include <cmath>
+#include <cstring>   // strcmp (the entity-name uniqueness walk)
+#include <limits>    // quiet_NaN / infinity (the half-extent totality sweep)
 
 #include "Core/Zenith_TestFramework.h"
 #include "Maths/Zenith_Maths.h"
+#include "UnitTests/Zenith_AssertCapture.h"                     // the totality proofs
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"   // ZM_ForwardFromRotation
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
@@ -42,6 +45,488 @@ namespace
 		const float fDeltaZ = xA.z - xB.z;
 		return std::sqrt(fDeltaX * fDeltaX + fDeltaZ * fDeltaZ);
 	}
+
+	// ---- Known-limit W5 fixtures ------------------------------------------------
+
+	// The minimum feet-height SPREAD across the six anchors. It is a floor on
+	// "these are six independent measurements", not a claim about the terrain: at
+	// 0.05 m it is far below any real Dawnmere relief (the town neighbourhood rolls
+	// by roughly half a metre over the roster's 60 m footprint) and far above float
+	// noise, so the only thing that can drive it under is the rows COLLAPSING back
+	// onto one shared value.
+	constexpr float fW5_MIN_FEET_SPREAD = 0.05f;
+
+	// "This row is not just the town-centre anchor again." Generous by float
+	// standards and tiny by terrain standards.
+	constexpr float fW5_ANCHOR_EPSILON = 1.0e-4f;
+
+	// How many of the six must differ from the town-centre anchor. FOUR, not six:
+	// two NPCs genuinely standing on ground that samples to the anchor's height is
+	// legitimate content, while four or more collapsing onto it is the partial
+	// revert this clause exists to catch.
+	constexpr u_int uW5_MIN_ROWS_OFF_THE_ANCHOR = 4u;
+
+	// The shipped Dawnmere human capsule half-extent: scale (0.8, 1.8, 0.8) through
+	// ZM_PlayerController::CalculateCapsuleHalfExtent gives radius 0.4 + half
+	// cylinder 0.5. Restated as a literal rather than called, because this file is
+	// PURE -- naming the component would drag the ECS into the CI unit gate.
+	constexpr float fW5_CAPSULE_HALF_EXTENT = 0.9f;
+
+	// The three out-of-range ids every totality sweep feeds: one past the last row,
+	// two past it, and the all-ones garbage value.
+	constexpr u_int auW5_BAD_IDS[] = {
+		(u_int)ZM_DAWNMERE_NPC_COUNT,
+		(u_int)ZM_DAWNMERE_NPC_COUNT + 1u,
+		0xffffffffu,
+	};
+	constexpr u_int uW5_BAD_ID_COUNT =
+		(u_int)(sizeof(auW5_BAD_IDS) / sizeof(auW5_BAD_IDS[0]));
+
+	bool W5AnchorFieldsFinite(const ZM_DawnmereNpcAnchor& xAnchor)
+	{
+		return xAnchor.m_szEntityName != nullptr
+			&& xAnchor.m_szEntityName[0] != '\0'
+			&& std::isfinite(xAnchor.m_fX)
+			&& std::isfinite(xAnchor.m_fZ)
+			&& std::isfinite(xAnchor.m_fFeetY);
+	}
+
+	// The sentinel is identified by the two fields that CANNOT be a roster row: its
+	// name, and the town-centre XZ that no authored NPC occupies. Deliberately NOT
+	// by its feet height -- in the pass-1 placeholder state every roster row still
+	// carries the anchor's height, so a height-based test of "is this the sentinel?"
+	// would answer yes for all six and prove nothing.
+	bool W5IsSentinelAnchor(const ZM_DawnmereNpcAnchor& xAnchor)
+	{
+		return xAnchor.m_szEntityName != nullptr
+			&& std::strcmp(xAnchor.m_szEntityName, "UNKNOWN") == 0
+			&& xAnchor.m_fX == fZM_DAWNMERE_TOWN_CENTER_X
+			&& xAnchor.m_fZ == fZM_DAWNMERE_TOWN_CENTER_Z;
+	}
+
+	float W5PlanarSeparation(
+		const ZM_DawnmereNpcAnchor& xA, const ZM_DawnmereNpcAnchor& xB)
+	{
+		const float fDeltaX = xA.m_fX - xB.m_fX;
+		const float fDeltaZ = xA.m_fZ - xB.m_fZ;
+		return std::sqrt(fDeltaX * fDeltaX + fDeltaZ * fDeltaZ);
+	}
+}
+
+// ============================================================================
+// KNOWN-LIMIT W5 -- the per-NPC authored feet heights.
+//
+// ★ WHAT THESE SIX UNITS DO AND DO NOT PROVE. They are SELF-CONSISTENCY claims
+// about COMPILED CONSTANTS: that six independent heights exist, that they have not
+// collapsed back onto the town-centre anchor, that the centre/spawn arithmetic is
+// what it says, and that every accessor is total. NONE OF THEM CAN PROVE THE
+// HEIGHTS MATCH THE TERRAIN -- they never touch a heightfield. Do not read their
+// greenness as "the NPC heights are correct".
+//
+// The claim they cannot make is ZM_DawnmereNpcGroundTruth_Test's job
+// (Tests/ZM_AutoTests_NpcTalk.cpp): it loads the COMMITTED Dawnmere, casts a real
+// downward ray at each anchor's XZ against the baked terrain body, and reds if any
+// compiled row has drifted from the surface the capsule actually rests on. That
+// test needs a terrain bake and can RequestSkip, which is exactly why these units
+// exist as well -- and exactly why they must not be mistaken for it.
+// ============================================================================
+
+// THE PREMISE OF W5, stated as a property. Dawnmere is not flat under the roster,
+// so ONE shared height was an approximation. Collapse the table back to a single
+// value and this is exactly zero.
+ZENITH_TEST(ZM_Interaction, DawnmereNpcFeetHeights_SpreadProvesTheyAreNotOneSharedValue)
+{
+	float fMin = ZM_DawnmereNpcFeetY(0u);
+	float fMax = fMin;
+	for (u_int u = 1u; u < (u_int)ZM_DAWNMERE_NPC_COUNT; ++u)
+	{
+		const float fFeet = ZM_DawnmereNpcFeetY(u);
+		if (fFeet < fMin) { fMin = fFeet; }
+		if (fFeet > fMax) { fMax = fFeet; }
+	}
+	const float fSpread = fMax - fMin;
+
+	ZENITH_ASSERT_GE(fSpread, fW5_MIN_FEET_SPREAD,
+		"the six Dawnmere NPC feet heights span only %.5f m (min %.5f, max %.5f) -- "
+		"they are still ONE shared value, so W5's per-NPC measurement has not landed",
+		fSpread, fMin, fMax);
+
+	// ANTI-NONSENSE, and it is the half that makes the clause above safe to tighten.
+	// A mis-pasted measurement (a digit dropped, two rows swapped between scenes)
+	// would satisfy any lower bound while putting an NPC a storey off its
+	// neighbours -- and the picker's and the sight cone's vertical bands are both
+	// fZM_SIGHT_MAX_VERTICAL, so that NPC would be permanently un-talkable.
+	ZENITH_ASSERT_LT(fSpread, fZM_SIGHT_MAX_VERTICAL,
+		"the Dawnmere NPC feet heights span %.5f m, which is at or beyond the shipped "
+		"vertical band of %.3f m -- at least one row is a mis-pasted measurement",
+		fSpread, fZM_SIGHT_MAX_VERTICAL);
+}
+
+// THE PARTIAL-REVERT GUARD. The spread clause alone survives five rows collapsing
+// back onto the town centre while one keeps a measured value; this does not.
+ZENITH_TEST(ZM_Interaction, DawnmereNpcFeetHeights_MostRowsDifferFromTheTownCentreAnchor)
+{
+	u_int uOffTheAnchor = 0u;
+	for (u_int u = 0u; u < (u_int)ZM_DAWNMERE_NPC_COUNT; ++u)
+	{
+		if (std::fabs(ZM_DawnmereNpcFeetY(u) - fZM_DAWNMERE_TOWN_CENTER_FEET_Y)
+			> fW5_ANCHOR_EPSILON)
+		{
+			++uOffTheAnchor;
+		}
+	}
+
+	ZENITH_ASSERT_GE(uOffTheAnchor, uW5_MIN_ROWS_OFF_THE_ANCHOR,
+		"only %u of the %u Dawnmere NPC rows carry a height of their own -- the rest "
+		"are still the town-centre anchor %.5f, which is the very approximation W5 "
+		"exists to remove",
+		uOffTheAnchor, (u_int)ZM_DAWNMERE_NPC_COUNT, fZM_DAWNMERE_TOWN_CENTER_FEET_Y);
+
+	// The wander waypoints are part of the same measurement, and endpoint 0 shares
+	// the wanderer's row BY CONSTRUCTION, so only endpoint 1 is an independent value.
+	ZENITH_ASSERT_GT(
+		std::fabs(ZM_GetDawnmereWanderWaypoint(1u).m_fFeetY
+			- fZM_DAWNMERE_TOWN_CENTER_FEET_Y),
+		fW5_ANCHOR_EPSILON,
+		"the wanderer's far patrol endpoint still reports the town-centre height");
+}
+
+// TOTALITY over IDS. Nothing here may Zenith_Assert: these functions are walked
+// with out-of-range ids on purpose, and Zenith_Assert calls Zenith_DebugBreak() in
+// EVERY configuration -- the whole unit suite runs at boot, so one such assert does
+// not fail a test, it ends the boot unit run and takes the gate down.
+//
+// NO ZENITH_ASSERT_* MAY APPEAR INSIDE THE CAPTURE SCOPE: while one is active,
+// Zenith_TestRunner::HandleFailure swallows framework failures and merely bumps the
+// hit count, so an in-scope assertion could never red this test. Everything is
+// collected into locals and asserted after the scope closes. The hit count must
+// likewise be copied out BEFORE the closing brace -- the destructor restores the
+// previous count, and scopes do not nest.
+ZENITH_TEST(ZM_Interaction, DawnmereNpcAccessors_AreTotalOnEveryDegenerateId)
+{
+	u_int uHits = 0u;
+	u_int uValidRowsSeen      = 0u;
+	u_int uValidRowsFinite    = 0u;
+	u_int uValidRowsClaimed   = 0u;   // ZM_IsDawnmereNpcId said true
+	u_int uValidRowsMistakenForSentinel = 0u;
+	u_int uBadIdsClaimed      = 0u;   // ZM_IsDawnmereNpcId said true -- must stay 0
+	u_int uBadIdsGaveSentinel = 0u;
+	u_int uBadIdsFiniteFeet   = 0u;
+	u_int uBadWaypointsGaveSentinel = 0u;
+	u_int uValidWaypointsFinite     = 0u;
+	const u_int uWaypointCount = ZM_GetDawnmereWanderWaypointCount();
+
+	{
+		Zenith_AssertCaptureScope xCapture;
+
+		for (u_int u = 0u; u < (u_int)ZM_DAWNMERE_NPC_COUNT; ++u)
+		{
+			const ZM_DawnmereNpcAnchor& xAnchor = ZM_GetDawnmereNpcAnchor(u);
+			++uValidRowsSeen;
+			if (W5AnchorFieldsFinite(xAnchor)
+				&& std::isfinite(ZM_DawnmereNpcFeetY(u))
+				&& std::isfinite(ZM_DawnmereNpcCentreY(u, fW5_CAPSULE_HALF_EXTENT)))
+			{
+				++uValidRowsFinite;
+			}
+			if (ZM_IsDawnmereNpcId(u)) { ++uValidRowsClaimed; }
+			if (W5IsSentinelAnchor(xAnchor)) { ++uValidRowsMistakenForSentinel; }
+		}
+
+		for (u_int u = 0u; u < uW5_BAD_ID_COUNT; ++u)
+		{
+			const u_int uBad = auW5_BAD_IDS[u];
+			const ZM_DawnmereNpcAnchor& xAnchor = ZM_GetDawnmereNpcAnchor(uBad);
+			if (ZM_IsDawnmereNpcId(uBad)) { ++uBadIdsClaimed; }
+			if (W5IsSentinelAnchor(xAnchor) && W5AnchorFieldsFinite(xAnchor))
+			{
+				++uBadIdsGaveSentinel;
+			}
+			if (std::isfinite(ZM_DawnmereNpcFeetY(uBad))
+				&& std::isfinite(ZM_DawnmereNpcCentreY(uBad, fW5_CAPSULE_HALF_EXTENT)))
+			{
+				++uBadIdsFiniteFeet;
+			}
+		}
+
+		for (u_int u = 0u; u < uWaypointCount; ++u)
+		{
+			if (W5AnchorFieldsFinite(ZM_GetDawnmereWanderWaypoint(u)))
+			{
+				++uValidWaypointsFinite;
+			}
+		}
+		// The same three degenerate indices, re-aimed at the waypoint accessor. The
+		// NPC COUNT is not one past the last WAYPOINT, so the first two are derived
+		// from the waypoint count instead; only the all-ones garbage value is shared.
+		const u_int auBadWaypoints[] = {
+			uWaypointCount, uWaypointCount + 1u, 0xffffffffu };
+		static_assert(sizeof(auBadWaypoints) / sizeof(auBadWaypoints[0])
+			== uW5_BAD_ID_COUNT,
+			"the two degenerate-index inventories must stay the same length -- the "
+			"count assertion below is written against uW5_BAD_ID_COUNT");
+		for (u_int u = 0u; u < uW5_BAD_ID_COUNT; ++u)
+		{
+			const ZM_DawnmereNpcAnchor& xAnchor =
+				ZM_GetDawnmereWanderWaypoint(auBadWaypoints[u]);
+			if (W5IsSentinelAnchor(xAnchor) && W5AnchorFieldsFinite(xAnchor))
+			{
+				++uBadWaypointsGaveSentinel;
+			}
+		}
+
+		uHits = (u_int)xCapture.GetHitCount();
+	}
+
+	ZENITH_ASSERT_EQ(uHits, 0u,
+		"a Dawnmere placement accessor asserted on an argument -- Zenith_Assert breaks "
+		"in EVERY config and the whole unit suite runs at boot, so this would kill the "
+		"boot unit run rather than fail one test");
+
+	ZENITH_ASSERT_EQ(uValidRowsSeen, (u_int)ZM_DAWNMERE_NPC_COUNT,
+		"the roster walk did not visit every row");
+	ZENITH_ASSERT_EQ(uValidRowsFinite, (u_int)ZM_DAWNMERE_NPC_COUNT,
+		"a roster row carries a null/empty name or a non-finite coordinate");
+	ZENITH_ASSERT_EQ(uValidRowsClaimed, (u_int)ZM_DAWNMERE_NPC_COUNT,
+		"ZM_IsDawnmereNpcId rejected an id the table actually holds");
+	ZENITH_ASSERT_EQ(uValidRowsMistakenForSentinel, 0u,
+		"a REAL roster row is indistinguishable from the UNKNOWN sentinel -- a caller "
+		"that skipped the id check could not tell content from a bad lookup");
+
+	ZENITH_ASSERT_EQ(uBadIdsClaimed, 0u,
+		"ZM_IsDawnmereNpcId accepted an out-of-range id");
+	ZENITH_ASSERT_EQ(uBadIdsGaveSentinel, uW5_BAD_ID_COUNT,
+		"an out-of-range id did not return the DEFINED town-centre sentinel row");
+	ZENITH_ASSERT_EQ(uBadIdsFiniteFeet, uW5_BAD_ID_COUNT,
+		"an out-of-range id produced a non-finite height -- a NaN reaching a transform "
+		"poisons the body, the model matrix and every distance derived from them");
+
+	ZENITH_ASSERT_GT(uWaypointCount, 1u,
+		"the wanderer's patrol must have at least two endpoints to be a patrol");
+	ZENITH_ASSERT_EQ(uValidWaypointsFinite, uWaypointCount,
+		"a wander waypoint carries a null/empty name or a non-finite coordinate");
+	ZENITH_ASSERT_EQ(uBadWaypointsGaveSentinel, uW5_BAD_ID_COUNT,
+		"an out-of-range waypoint index did not return the DEFINED sentinel row");
+}
+
+// TOTALITY over the HALF-EXTENT, plus the arithmetic it feeds. Both halves matter:
+// the equality is what a future refactor would break silently, and the degenerate
+// sweep is what stops a NaN scale reaching an authored transform.
+ZENITH_TEST(ZM_Interaction, DawnmereNpcCentre_IsFeetPlusHalfExtentAndFailsClosed)
+{
+	for (u_int u = 0u; u < (u_int)ZM_DAWNMERE_NPC_COUNT; ++u)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(
+			ZM_DawnmereNpcCentreY(u, fW5_CAPSULE_HALF_EXTENT),
+			ZM_DawnmereNpcFeetY(u) + fW5_CAPSULE_HALF_EXTENT, 1.0e-5f,
+			"row %u's authored centre is no longer its feet plus ONE capsule "
+			"half-extent", u);
+	}
+
+	const float fNaN = std::numeric_limits<float>::quiet_NaN();
+	const float fInf = std::numeric_limits<float>::infinity();
+	const float afDegenerate[] = { fNaN, fInf, -fInf, -1.0f, -0.0f };
+	constexpr u_int uDEGENERATE_COUNT =
+		(u_int)(sizeof(afDegenerate) / sizeof(afDegenerate[0]));
+
+	// Results are collected inside the capture scope and judged outside it: no
+	// ZENITH_ASSERT_* may fire while a scope is active (it would be swallowed).
+	float afCentre[(u_int)ZM_DAWNMERE_NPC_COUNT * uDEGENERATE_COUNT] = {};
+	float afWandererSpawn[uDEGENERATE_COUNT] = {};
+	u_int uHits = 0u;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		for (u_int u = 0u; u < (u_int)ZM_DAWNMERE_NPC_COUNT; ++u)
+		{
+			for (u_int uBad = 0u; uBad < uDEGENERATE_COUNT; ++uBad)
+			{
+				afCentre[u * uDEGENERATE_COUNT + uBad] =
+					ZM_DawnmereNpcCentreY(u, afDegenerate[uBad]);
+			}
+		}
+		for (u_int uBad = 0u; uBad < uDEGENERATE_COUNT; ++uBad)
+		{
+			afWandererSpawn[uBad] = ZM_DawnmereWandererSpawnY(afDegenerate[uBad]);
+		}
+		uHits = (u_int)xCapture.GetHitCount();
+	}
+
+	ZENITH_ASSERT_EQ(uHits, 0u,
+		"a degenerate capsule half-extent made a Dawnmere placement accessor assert");
+
+	for (u_int u = 0u; u < (u_int)ZM_DAWNMERE_NPC_COUNT; ++u)
+	{
+		for (u_int uBad = 0u; uBad < uDEGENERATE_COUNT; ++uBad)
+		{
+			// EXACT equality, tolerance 0: "treated as zero" means the feet height
+			// comes back untouched, not approximately.
+			ZENITH_ASSERT_EQ_FLOAT(afCentre[u * uDEGENERATE_COUNT + uBad],
+				ZM_DawnmereNpcFeetY(u), 0.0f,
+				"row %u did not fail closed to its feet height on degenerate "
+				"half-extent index %u", u, uBad);
+		}
+	}
+	for (u_int uBad = 0u; uBad < uDEGENERATE_COUNT; ++uBad)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(afWandererSpawn[uBad],
+			ZM_DawnmereNpcFeetY(ZM_DAWNMERE_NPC_WANDERER), 0.0f,
+			"the wanderer's spawn height did not fail closed to its feet height on "
+			"degenerate half-extent index %u", uBad);
+	}
+}
+
+// The ONE NPC whose authored Y is not its centre. The extra half-extent of air is
+// what lets gravity settle the only DYNAMIC body in Dawnmere from the FRONT side
+// instead of from inside the mesh, so it is a shipped placement property rather
+// than a convenience.
+ZENITH_TEST(ZM_Interaction, DawnmereWandererSpawn_CarriesExactlyOneExtraHalfExtent)
+{
+	const float fFeet =
+		ZM_DawnmereNpcFeetY(ZM_DAWNMERE_NPC_WANDERER);
+	const float fCentre =
+		ZM_DawnmereNpcCentreY(ZM_DAWNMERE_NPC_WANDERER, fW5_CAPSULE_HALF_EXTENT);
+	const float fSpawn = ZM_DawnmereWandererSpawnY(fW5_CAPSULE_HALF_EXTENT);
+
+	ZENITH_ASSERT_EQ_FLOAT(fSpawn - fCentre, fW5_CAPSULE_HALF_EXTENT, 1.0e-5f,
+		"the wanderer's spawn no longer clears its resting centre by EXACTLY one "
+		"capsule half-extent (spawn %.5f, centre %.5f)", fSpawn, fCentre);
+	ZENITH_ASSERT_EQ_FLOAT(fSpawn - fFeet, 2.0f * fW5_CAPSULE_HALF_EXTENT, 1.0e-5f,
+		"the wanderer's spawn is no longer its measured feet plus TWO half-extents");
+
+	// STRICTLY greater, and it is not implied by the equalities above: a build in
+	// which the half-extent term vanished would satisfy "spawn - centre == half"
+	// only by also making half zero, and this clause is what says out loud that the
+	// air is real.
+	ZENITH_ASSERT_GT(fSpawn, fCentre,
+		"the wanderer is authored AT or BELOW its resting centre -- the capsule "
+		"starts inside the terrain mesh and gravity cannot settle it from the front");
+	ZENITH_ASSERT_GT(fCentre, fFeet,
+		"the wanderer's resting centre is not above its own feet height");
+
+	// The extra air must not be so large that the drop is a fall: one half-extent is
+	// 0.9 m, which settles in about a third of a second.
+	ZENITH_ASSERT_LT(fSpawn - fFeet, fZM_SIGHT_MAX_VERTICAL,
+		"the wanderer is authored more than a full vertical band above its own "
+		"ground -- it would fall through the sight/interact band on the way down");
+}
+
+// The XZ half of the table: the derivations the comments claim, the separations the
+// picker depends on, and the name uniqueness a test resolving entities by name
+// depends on. Feet heights are deliberately NOT touched here -- the two units above
+// own those, so a height regression names a height unit.
+ZENITH_TEST(ZM_Interaction, DawnmereNpcAnchors_KeepTheirAuthoredXZDerivations)
+{
+	const ZM_DawnmereNpcAnchor& xVillager =
+		ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_VILLAGER);
+	const ZM_DawnmereNpcAnchor& xClerk =
+		ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_TRADE_POST_CLERK);
+	const ZM_DawnmereNpcAnchor& xCaretaker =
+		ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_CARETAKER);
+	const ZM_DawnmereNpcAnchor& xWarden =
+		ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_WARDEN);
+	const ZM_DawnmereNpcAnchor& xWanderer =
+		ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_WANDERER);
+	const ZM_DawnmereNpcAnchor& xVesper =
+		ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_RIVAL_VESPER);
+
+	// The derivations, spelled as ARITHMETIC on the town-centre anchor rather than
+	// as re-typed literals: a moved town centre must move the plaza roster with it.
+	ZENITH_ASSERT_EQ_FLOAT(xVillager.m_fX, fZM_DAWNMERE_TOWN_CENTER_X, 0.0f,
+		"the villager left the x = 512 spawn-to-villager corridor");
+	ZENITH_ASSERT_EQ_FLOAT(xVillager.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z + 10.0f, 0.0f,
+		"the villager is no longer 10 m straight +Z of the spawn");
+	ZENITH_ASSERT_EQ_FLOAT(xClerk.m_fX, fZM_DAWNMERE_TOWN_CENTER_X + 14.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xClerk.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xCaretaker.m_fX, fZM_DAWNMERE_TOWN_CENTER_X - 14.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xCaretaker.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xWarden.m_fX, fZM_DAWNMERE_TOWN_CENTER_X - 34.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xWarden.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z + 18.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xWanderer.m_fX, fZM_DAWNMERE_TOWN_CENTER_X + 28.0f, 0.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xWanderer.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z - 4.0f, 0.0f);
+	// The rival's XZ is derived in this file's header; the table must not restate it.
+	ZENITH_ASSERT_EQ_FLOAT(xVesper.m_fX, fZM_DAWNMERE_VESPER_X, 0.0f,
+		"the anchor table and ZM_DawnmerePlacement.h disagree about where the rival "
+		"stands -- his yaw derivation reads the header, so they would silently part");
+	ZENITH_ASSERT_EQ_FLOAT(xVesper.m_fZ, fZM_DAWNMERE_VESPER_Z, 0.0f);
+
+	// ★★ THE THREE FLANK NPCs MUST STAY OFF z = 480. A solid STATIC AABB on that
+	// line wedges ZM_PlayerHomeRoundTrip_Test, which drives from (512, 480) to
+	// (384, 0, 480) with NO obstacle avoidance and dies at its frame cap naming a
+	// distance rather than naming the NPC that blocked it.
+	const ZM_DawnmereNpcAnchor* apxOffCorridor[] = { &xClerk, &xCaretaker, &xWarden };
+	for (u_int u = 0u; u < 3u; ++u)
+	{
+		ZENITH_ASSERT_GT(
+			std::fabs(apxOffCorridor[u]->m_fZ - fZM_DAWNMERE_TOWN_CENTER_Z), 10.0f,
+			"'%s' has drifted onto the z = %.1f Home traversal corridor -- it will "
+			"wedge a suite that never mentions it",
+			apxOffCorridor[u]->m_szEntityName, fZM_DAWNMERE_TOWN_CENTER_Z);
+	}
+
+	// THE CLOSEST PAIR. The picker resolves the NEAREST FACED candidate, so two NPCs
+	// within reach of each other make "which one answered?" a function of sub-metre
+	// walk error and the walk-up tests can no longer assert a winner BY ENTITY ID.
+	// The authored minimum is villager <-> clerk / caretaker at sqrt(14^2 + 8^2) =
+	// 16.1 m, against a 2.5 m global reach.
+	float fClosest = -1.0f;
+	const char* szClosestA = "<none>";
+	const char* szClosestB = "<none>";
+	u_int uNameCollisions = 0u;
+	for (u_int uA = 0u; uA < (u_int)ZM_DAWNMERE_NPC_COUNT; ++uA)
+	{
+		const ZM_DawnmereNpcAnchor& xA = ZM_GetDawnmereNpcAnchor(uA);
+		for (u_int uB = uA + 1u; uB < (u_int)ZM_DAWNMERE_NPC_COUNT; ++uB)
+		{
+			const ZM_DawnmereNpcAnchor& xB = ZM_GetDawnmereNpcAnchor(uB);
+			const float fSeparation = W5PlanarSeparation(xA, xB);
+			if (fClosest < 0.0f || fSeparation < fClosest)
+			{
+				fClosest = fSeparation;
+				szClosestA = xA.m_szEntityName;
+				szClosestB = xB.m_szEntityName;
+			}
+			if (std::strcmp(xA.m_szEntityName, xB.m_szEntityName) == 0)
+			{
+				++uNameCollisions;
+			}
+		}
+	}
+	ZENITH_ASSERT_GT(fClosest, fZM_INTERACT_MAX_DISTANCE * 5.0f,
+		"the closest authored NPC pair is '%s' <-> '%s' at %.3f m, inside 5x the "
+		"global interact reach -- the nearest-faced-candidate picker can now be made "
+		"to answer with either of them",
+		szClosestA, szClosestB, fClosest);
+	// The same separation against the WIDER of the two shipped ranges: being SPOTTED
+	// happens at 8 m, so two trainers inside that of each other would double-engage.
+	ZENITH_ASSERT_GT(fClosest, fZM_SIGHT_MAX_DISTANCE,
+		"the closest authored NPC pair is inside the shipped trainer sight range");
+
+	// Entity NAMES are how every windowed test resolves these bodies out of the
+	// committed scene bytes, and FindEntityByName answers with the first match.
+	ZENITH_ASSERT_EQ(uNameCollisions, 0u,
+		"two authored Dawnmere NPCs share an entity name -- every test that resolves "
+		"one by name would silently measure whichever the scene stored first");
+
+	// The patrol, and the binding that keeps ONE point on the heightfield from
+	// acquiring two independently editable heights.
+	ZENITH_ASSERT_EQ(ZM_GetDawnmereWanderWaypointCount(), 2u,
+		"the authored patrol is written as exactly two endpoints in Zenithmon.cpp");
+	const ZM_DawnmereNpcAnchor& xWaypoint0 = ZM_GetDawnmereWanderWaypoint(0u);
+	const ZM_DawnmereNpcAnchor& xWaypoint1 = ZM_GetDawnmereWanderWaypoint(1u);
+	ZENITH_ASSERT_EQ_FLOAT(xWaypoint0.m_fX, xWanderer.m_fX, 0.0f,
+		"patrol endpoint 0 is no longer the wanderer's own spawn anchor");
+	ZENITH_ASSERT_EQ_FLOAT(xWaypoint0.m_fZ, xWanderer.m_fZ, 0.0f,
+		"patrol endpoint 0 is no longer the wanderer's own spawn anchor");
+	ZENITH_ASSERT_EQ_FLOAT(xWaypoint0.m_fFeetY, xWanderer.m_fFeetY, 0.0f,
+		"patrol endpoint 0 and the wanderer's spawn share one point on the "
+		"heightfield but now carry DIFFERENT measured heights");
+	ZENITH_ASSERT_EQ_FLOAT(xWaypoint1.m_fX, xWanderer.m_fX, 0.0f,
+		"the patrol is authored as a north/south loop on one x line");
+	ZENITH_ASSERT_EQ_FLOAT(xWaypoint1.m_fZ, fZM_DAWNMERE_TOWN_CENTER_Z + 4.0f, 0.0f,
+		"the far patrol endpoint has moved off townCentre.z + 4");
+	ZENITH_ASSERT_EQ_FLOAT(
+		std::fabs(xWaypoint1.m_fZ - xWaypoint0.m_fZ), 8.0f, 0.0f,
+		"the patrol is no longer the authored 8 m leg");
 }
 
 // THE WHITEOUT-SOFTLOCK GUARD, and it is not hypothetical. Losing a trainer battle

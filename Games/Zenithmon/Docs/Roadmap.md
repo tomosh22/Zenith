@@ -143,7 +143,21 @@
   separation metric. **Found and booked, not hidden:** `Npc_Wanderer` and `Npc_Warden`
   both stand on `ZM_HUMAN_TOWN_ELDER`, so six authored rows wear five appearances -- the
   rival is distinct from all five, and the one-token roster fix is named in Shortfalls
-  1.8. The human S8 gate remains unsigned; **NEXT = W5, per-NPC sampled feet heights.**
+  1.8.
+- **Known-limit W5 COMPLETE 2026-07-29 (ZM-D-161), and the pre-S8 known-limit programme is
+  now DONE (W1-W5 all landed).** Every authored NPC, Vesper included, stands on its own
+  MEASURED ground instead of one shared literal. There was never a "sample once" --
+  `fZM_DAWNMERE_TOWN_CENTER_FEET_Y` is a hard-coded value and no terrain sampler is called
+  anywhere, nor could one be at authoring time (no terrain physics body exists then). **The
+  measurement found worse than the recorded limit: the warden was 1.368 m and the caretaker
+  1.095 m off their own ground, live spread 1.782 m.** Heights are measured at runtime and
+  frozen as constants so the committed `.zscen` stays reproducible from compiled constants.
+  Boot **2716 -> 2722**, registry **48 -> 49**, Null and full Vulkan **49/49**;
+  `Dawnmere.zscen` re-authored under the full two-boot SHA256 proof with the navmesh
+  byte-unchanged; four compiled mutations, three redding the boot gate and the fourth
+  correctly caught by the terrain oracle instead.
+  **★ THE NEXT STEP IS THE HUMAN S8 VERTICAL-SLICE GO/NO-GO. It remains UNSIGNED, and no
+  agent may sign it.**
 - [ ] Rival battle 1
 
 *Gate:* automated save -> quit-to-FrontEnd -> continue restores position/party/flags exactly.

@@ -4,10 +4,10 @@
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (ZM numbers OBSERVED 2026-07-28 on a fresh build of both configs
-after known-limit W4):** ZM headless registry **48 passed / 0 failed**; ZM boot unit gate
-**2716 ran / 2715 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
-2716); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
-1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6/SC7/SC8/W2/W3/W4 -- none of
+after known-limit W5):** ZM headless registry **49 passed / 0 failed**; ZM boot unit gate
+**2722 ran / 2721 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
+2722); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
+1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6/SC7/SC8/W2/W3/W4/W5 -- none of
 them touches a `Zenith/` file). The 1 skipped in each is the quarantined
 `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
 
@@ -96,7 +96,7 @@ build lacks `libcurl-d.dll`, so booting the exe first dies in the loader with
 ZERO stdout and the gate reports the misleading "no 'Unit tests complete' line in
 boot output" rather than a load failure.
 
-**Stage:** **S7 COMPLETE (items 1-4). Pre-S8 known-limit closure ACTIVE: W1-W4 of 5 COMPLETE (ZM-D-157/158/159/160); NEXT = W5, per-NPC sampled feet heights.** S0-S6 remain complete. The S8 vertical-slice go/no-go is still a human stop and remains unsigned.
+**Stage:** **S7 COMPLETE (items 1-4). Pre-S8 known-limit closure COMPLETE: ALL FIVE of W1-W5 have landed (ZM-D-157/158/159/160/161). ★ NEXT IS THE HUMAN S8 VERTICAL-SLICE GO/NO-GO, which is still UNSIGNED. Do not start S8 content.** S0-S6 remain complete.
 **Build:** GREEN on the ZM-D-148 diff (scene authoring made boot-shape-independent; all four ZM scenes now TRACKED) on top of SC1b commit B (ZM-D-147 -- baked navmesh persistence). Engine-wide, so it owed and got the full gate: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; engine lib + SentinelECS/Physics/AI (all three exes exit 0); Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True.
 **Tests (commit B):** Null batches, ALL 0-failed: **ZM 44/44** (registry 42 -> 44; both new navmesh tests RUN, not skipped), CB **45/45**, DP **158/158**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 44/44, 0 skipped, 0 failed**. Boot unit gates on the NULL exes: engine **1093 -> 1121** (Combat) and ZM **2515 -> 2546** -- both pinned from the OBSERVED line. Windowed RenderTest 8 passed / 1 failed, only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002). Ratchets (`architecture,lints` and `complexity`) are **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added; two findings this commit DID introduce (an `Editor/` include and a `g_xEngine` reach from EntityComponent) were fixed, not allow-listed. **Asset-less CI condition reproduced locally** (`Zenith/Assets` hidden): ZM 44/44 and both unit gates unchanged; restored by MERGE and `diff -rq`-verified, since the run re-created only 60 of the 89 files and a naive rename-back would have clobbered the tree. **Teeth mutation-proven ×6** (see ZM-D-147; m1 re-run on the final build reds exactly the 3 serialization units).
 
@@ -111,11 +111,12 @@ boot output" rather than a load failure.
 
 **★★ S7 ITEM 3 AND ITEM 4 ARE COMPLETE (SC8, ZM-D-156). THE S8 VERTICAL-SLICE
 GO/NO-GO REMAINS A HUMAN GATE AND IS UNSIGNED.** This session has explicit authority
-only to close its five recorded known limits, not to start S8 content. **W1-W4 of 5 are
-now COMPLETE (ZM-D-157/158/159/160): forced replacement ships, complete authored trainer
+only to close its five recorded known limits, not to start S8 content. **ALL FIVE ARE NOW
+COMPLETE (ZM-D-157/158/159/160/161): forced replacement ships, complete authored trainer
 parties are live, the honest Vesper-loss/whiteout route is proven, a trainer who sees you
-now SHOWS you before he speaks, and the rival no longer looks like a townsperson.
-NEXT = W5, per-NPC sampled feet heights.**
+now SHOWS you before he speaks, the rival no longer looks like a townsperson, and every
+NPC stands on its OWN measured ground. ★ THE NEXT STEP IS THE HUMAN S8 GO/NO-GO. This
+session did not and may not sign it.**
 
 **What the vertical actually does now, end to end:** the player walks around Dawnmere;
 rival Vesper stands AUTHORED in the town at (490, 524) facing the spawn approach; when
@@ -156,6 +157,27 @@ oversold:**
 5. **No test proves the authored Vesper carries no graph slot at RUNTIME** -- it cannot,
    because the runtime attach is idempotent by path. The property rests on an
    authoring-time assert plus the boot-stability check.
+
+**W5 closure, observed rather than inferred -- and it found a bigger defect than the limit
+described.** There was never a "sample once": `fZM_DAWNMERE_TOWN_CENTER_FEET_Y` is a
+hard-coded literal and all six NPCs plus both serialized patrol waypoints reused it. The
+sampler could not have been called at authoring time anyway -- the editor add path uses
+the terrain component's deserialization ctor, which never loads physics geometry, so
+there is NO terrain body during authoring and a raycast would MISS. Heights are therefore
+MEASURED at runtime and FROZEN as constants, which is also what the header's binding note
+requires (committed `.zscen` bytes reproducible from compiled constants, not from a
+gitignored bake). **★ THE OBSERVED TRUTH: the warden stood 1.368 m and the caretaker
+1.095 m off their own ground, with a live terrain spread of 1.782 m under the roster.**
+Dawnmere's square is not flat. **★ THE OBB TRAP IS UNREACHABLE BY CONSTRUCTION here:**
+every change is one float inside an existing `AddStep_SetTransformPosition` argument at
+plan time and `SetPosition` appears nowhere in the diff -- the detector
+(`RVFacingAbsDot >= 0.999` off the SAVED rotation) still ran and passed against the
+re-authored bytes. **★ THE CONTROL FLIPPED:** built with the placeholder table the gate was
+2722/2719/**2 failed** (exactly the spread and distinctness units); pasting the seven
+measured constants and changing nothing else took it to 2722/2721/**0**. Scene re-authored
+with the full proof -- two `AUTHOR_DAWNMERE` boots, identical SHA256 `3874943E...`, exactly
+one tracked asset moved, navmesh byte-unchanged, re-hash after the batches identical.
+Boot **2716 -> 2722**, registry **48 -> 49**.
 
 **W4 closure, observed rather than inferred.** `m_eHuman` feeds a TOTAL palette added to
 the EXISTING `Source/Gen/ZM_HumanAppearance.{h,cpp}` (no new TU), derived from the SAME

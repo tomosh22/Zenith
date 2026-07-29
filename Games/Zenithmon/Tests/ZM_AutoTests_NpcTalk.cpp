@@ -51,6 +51,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"       // Zenith_GetMainCameraAcrossScenes -- the walk's live basis
+#include "EntityComponent/Zenith_PhysicsQuery.h"        // RaycastIgnoring -- the W5 ground-truth probe
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Maths/Zenith_Maths.h"
@@ -64,6 +65,7 @@
 #include "Zenithmon/Source/Data/ZM_NpcData.h"
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"
+#include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"   // the W5 anchor table under test
 
 #include <array>
 #include <cmath>
@@ -1095,5 +1097,572 @@ static const Zenith_AutomatedTest g_xZMNpcTalkTest = {
 	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMNpcTalkTest);
+
+// ============================================================================
+// KNOWN-LIMIT W5 -- ZM_DawnmereNpcGroundTruth_Test.
+//
+// THE ORACLE for the per-NPC feet heights frozen in
+// Source/World/ZM_DawnmerePlacement.h. It loads the COMMITTED Dawnmere, and for
+// each of the six authored NPCs casts a REAL downward ray at that NPC's anchor XZ
+// against the baked terrain body. Two independent things then get checked, and
+// keeping them separate is what makes the failure legible:
+//   * the COMPILED CONSTANT vs the TERRAIN  (|measured - table| <= tolerance);
+//   * the COMMITTED BYTES vs the TERRAIN    (|entity.y - (measured + halfExtent)|).
+// Move the constants without re-authoring and the second reds; regenerate the
+// heightmap without re-measuring and the first reds. Neither can hide the other.
+//
+// ★ IT LOGS EVERY MEASURED HEIGHT AT INFO ON EVERY RUN, PASS OR FAIL. That log is
+// the WORKFLOW: run this test, read the `name=... measured=...` pairs, paste them
+// into the W5 block, rebuild, re-author Dawnmere from a windowed tools boot. A
+// version that logged only on failure would make re-measuring impossible the
+// moment it went green.
+//
+// ★ THE SPREAD CLAUSE IS WHAT MAKES THE WHOLE ITEM NON-VACUOUS, and it is measured
+// off the LIVE heightfield rather than off the table: max(measured) - min(measured)
+// must be a real distance. That is the proof, from the terrain itself, that
+// Dawnmere is NOT flat under the roster -- i.e. that one shared town-centre height
+// really was an approximation. If this clause cannot pass, W5's premise is wrong
+// and we want to know that rather than ship six copies of one number.
+//
+// WHY THIS FILE. It already guards on the baked Dawnmere terrain assets and loads
+// the real committed scene, so the skip path and the scene plumbing are shared and
+// proven. It is deliberately NOT in ZM_AutoTests_Npc.cpp, which loads
+// ADDITIVE_WITHOUT_LOADING onto an empty scene to stay CI-honest and therefore has
+// no terrain to measure, and deliberately NOT in ZM_AutoTests_RivalVesper.cpp,
+// which is about ONE npc.
+//
+// m_bRequiresGraphics = false: nothing here reads a pixel. Physics is live on the
+// Null backend (Zenith_Physics::HasActiveSimulation() is `m_pxPhysicsSystem !=
+// nullptr` and Physics().Initialise() is unconditional), so the rays are real
+// headless. The ONLY skip is "the terrain bake does not exist".
+// ============================================================================
+
+namespace
+{
+	// The ray starts this far ABOVE the compiled feet height and travels down. Two
+	// metres of headroom clears any plausible drift between a stale constant and the
+	// live surface while still starting well below the NPC's own head, and six
+	// metres of travel reaches ground that has dropped a full storey.
+	constexpr float fGT_RAY_START_HEIGHT = 2.0f;
+	constexpr float fGT_RAY_MAX_DISTANCE = 6.0f;
+
+	// How far a compiled row may sit from the surface the capsule actually rests on.
+	// 0.15 m is well under the 2.0 m band the interact picker and the trainer cone
+	// both police, so a row can drift measurably without an NPC going mute -- this
+	// reds first, while the failure is still cheap.
+	constexpr float fGT_HEIGHT_TOLERANCE = 0.15f;
+
+	// The live-terrain spread that proves Dawnmere is not flat under the roster.
+	// Same figure the pure boot unit uses against the compiled table, on purpose:
+	// one of them is a claim about constants, this one is a claim about the world.
+	constexpr float fGT_MIN_TERRAIN_SPREAD = 0.05f;
+
+	constexpr int iGT_RESOLVE_DEADLINE_FRAMES = 900;
+	constexpr int iGT_MEASURE_DEADLINE_FRAMES = 900;
+
+	constexpr u_int uGT_NPC_COUNT = (u_int)ZM_DAWNMERE_NPC_COUNT;
+	// Slots for the patrol endpoints. The table is authored with two; the loops
+	// clamp to ZM_GetDawnmereWanderWaypointCount() so a third would be measured
+	// rather than silently ignored, up to this cap.
+	constexpr u_int uGT_WAYPOINT_SLOTS = 4u;
+
+	enum class GroundTruthPhase
+	{
+		Resolve,   // find all six authored bodies in the committed bytes
+		Measure,   // cast the ground rays until every one of them lands
+		Done,
+	};
+
+	GroundTruthPhase g_eGTPhase       = GroundTruthPhase::Done;
+	int              g_iGTPhaseFrames = 0;
+
+	// ---- Phase flags. ALL DEFAULT TO FAILING. ----
+	bool        g_bGTPrereqsPresent = false;
+	bool        g_bGTSkipped        = false;
+	bool        g_bGTAllResolved    = false;
+	bool        g_bGTAllMeasured    = false;
+	const char* g_szGTFailure       = "test did not reach verification";
+
+	// ---- Per-NPC samples. Every numeric sentinel FAILS CLOSED: a negative
+	// half-extent can never satisfy the centre clause, and a measured height of
+	// -1e9 can never sit inside the tolerance of any authored row. ----
+	bool                  g_abGTResolved[uGT_NPC_COUNT]         = {};
+	Zenith_EntityID       g_axGTEntityID[uGT_NPC_COUNT];
+	Zenith_Maths::Vector3 g_axGTAuthoredPosition[uGT_NPC_COUNT];
+	float                 g_afGTHalfExtent[uGT_NPC_COUNT]       = {};
+	int                   g_aiGTResolveFrame[uGT_NPC_COUNT]     = {};
+	bool                  g_abGTRayHit[uGT_NPC_COUNT]           = {};
+	float                 g_afGTMeasuredFeetY[uGT_NPC_COUNT]    = {};
+	Zenith_EntityID       g_axGTHitEntity[uGT_NPC_COUNT];
+
+	// ---- Patrol-endpoint samples, so the wander waypoints' feet heights can be
+	// re-measured from the same run rather than guessed. ----
+	bool  g_abGTWaypointHit[uGT_WAYPOINT_SLOTS]      = {};
+	float g_afGTWaypointMeasured[uGT_WAYPOINT_SLOTS] = {};
+
+	u_int GTWaypointSampleCount()
+	{
+		const u_int uCount = ZM_GetDawnmereWanderWaypointCount();
+		return (uCount < uGT_WAYPOINT_SLOTS) ? uCount : uGT_WAYPOINT_SLOTS;
+	}
+
+	void FailGT(const char* szReason)
+	{
+		g_szGTFailure = szReason;
+		g_eGTPhase = GroundTruthPhase::Done;
+	}
+
+	// ONE downward cast at an authored XZ. The ignore filter is MANDATORY: every
+	// stationary NPC owns a solid STATIC AABB centred on this exact column, so an
+	// unfiltered ray measures the top of that box and reports the NPC as standing
+	// one body-height above itself -- a self-confirming measurement.
+	Zenith_Physics::RaycastResult GTCastGroundRay(
+		float fX, float fZ, float fStartFeetY, Zenith_EntityID xIgnoreEntity)
+	{
+		const Zenith_Maths::Vector3 xOrigin(
+			fX, fStartFeetY + fGT_RAY_START_HEIGHT, fZ);
+		return Zenith_PhysicsQuery::RaycastIgnoring(
+			xOrigin, Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f),
+			fGT_RAY_MAX_DISTANCE, xIgnoreEntity);
+	}
+
+	// (1) Resolve every authored NPC out of the COMMITTED bytes, capturing each one
+	//     the FIRST frame it appears and never again. The re-capture guard is not
+	//     cosmetic: the wanderer is a DYNAMIC capsule and gravity starts moving it
+	//     immediately, so a sample taken later would measure the fall rather than
+	//     the authoring.
+	bool GTStepResolve()
+	{
+		const bool bScene = g_xEngine.Scenes().GetSceneInfo(
+			g_xEngine.Scenes().GetActiveScene()).m_iBuildIndex
+				== iTALK_OVERWORLD_BUILD_INDEX;
+		Zenith_SceneData* pxData = g_xEngine.Scenes().GetActiveSceneData();
+		if (!bScene || pxData == nullptr)
+		{
+			if (g_iGTPhaseFrames > iGT_RESOLVE_DEADLINE_FRAMES)
+			{
+				FailGT("Dawnmere never became the active scene");
+				return false;
+			}
+			return true;
+		}
+
+		u_int uResolved = 0u;
+		for (u_int u = 0u; u < uGT_NPC_COUNT; ++u)
+		{
+			if (g_abGTResolved[u])
+			{
+				++uResolved;
+				continue;
+			}
+			const ZM_DawnmereNpcAnchor& xAnchor = ZM_GetDawnmereNpcAnchor(u);
+			Zenith_Entity xEntity = pxData->FindEntityByName(xAnchor.m_szEntityName);
+			if (!xEntity.IsValid())
+			{
+				continue;
+			}
+			Zenith_TransformComponent* pxTransform =
+				xEntity.TryGetComponent<Zenith_TransformComponent>();
+			if (pxTransform == nullptr)
+			{
+				continue;
+			}
+			Zenith_Maths::Vector3 xPosition(0.0f);
+			Zenith_Maths::Vector3 xScale(1.0f);
+			pxTransform->GetPosition(xPosition);
+			pxTransform->GetScale(xScale);
+			g_axGTEntityID[u]         = xEntity.GetEntityID();
+			g_axGTAuthoredPosition[u] = xPosition;
+			// The body's OWN scale, never the authoring block's literal: an NPC
+			// re-authored at a different size must be judged against ITS capsule.
+			g_afGTHalfExtent[u] =
+				ZM_PlayerController::CalculateCapsuleHalfExtent(xScale);
+			g_aiGTResolveFrame[u]     = g_iGTPhaseFrames;
+			g_abGTResolved[u]         = true;
+			++uResolved;
+		}
+
+		if (uResolved != uGT_NPC_COUNT)
+		{
+			if (g_iGTPhaseFrames > iGT_RESOLVE_DEADLINE_FRAMES)
+			{
+				FailGT("an authored Dawnmere NPC never resolved out of the committed "
+					"scene bytes -- the per-NPC resolved flags are logged below (a "
+					"false one means that entity name is not in Dawnmere.zscen)");
+				return false;
+			}
+			return true;
+		}
+
+		g_bGTAllResolved = true;
+		g_eGTPhase = GroundTruthPhase::Measure;
+		g_iGTPhaseFrames = 0;
+		return true;
+	}
+
+	// (2) Measure. The rays are RETRIED every frame until they all land, because the
+	//     terrain physics body arrives with streaming rather than with the scene --
+	//     "no hit yet" is a wait, and only the deadline turns it into a failure.
+	bool GTStepMeasure()
+	{
+		u_int uHits = 0u;
+		for (u_int u = 0u; u < uGT_NPC_COUNT; ++u)
+		{
+			if (g_abGTRayHit[u])
+			{
+				++uHits;
+				continue;
+			}
+			const ZM_DawnmereNpcAnchor& xAnchor = ZM_GetDawnmereNpcAnchor(u);
+			const Zenith_Physics::RaycastResult xHit = GTCastGroundRay(
+				xAnchor.m_fX, xAnchor.m_fZ, xAnchor.m_fFeetY, g_axGTEntityID[u]);
+			if (!xHit.m_bHit)
+			{
+				continue;
+			}
+			g_abGTRayHit[u]        = true;
+			g_afGTMeasuredFeetY[u] = xHit.m_xHitPoint.y;
+			g_axGTHitEntity[u]     = xHit.m_xHitEntity;
+			++uHits;
+		}
+
+		const u_int uWaypointCount = GTWaypointSampleCount();
+		u_int uWaypointHits = 0u;
+		for (u_int u = 0u; u < uWaypointCount; ++u)
+		{
+			if (g_abGTWaypointHit[u])
+			{
+				++uWaypointHits;
+				continue;
+			}
+			const ZM_DawnmereNpcAnchor& xWaypoint = ZM_GetDawnmereWanderWaypoint(u);
+			// The wanderer is ignored at BOTH endpoints: it is a live patrolling
+			// capsule and may be standing on either one when the ray goes out.
+			const Zenith_Physics::RaycastResult xHit = GTCastGroundRay(
+				xWaypoint.m_fX, xWaypoint.m_fZ, xWaypoint.m_fFeetY,
+				g_axGTEntityID[ZM_DAWNMERE_NPC_WANDERER]);
+			if (!xHit.m_bHit)
+			{
+				continue;
+			}
+			g_abGTWaypointHit[u]      = true;
+			g_afGTWaypointMeasured[u] = xHit.m_xHitPoint.y;
+			++uWaypointHits;
+		}
+
+		if (uHits != uGT_NPC_COUNT || uWaypointHits != uWaypointCount)
+		{
+			if (g_iGTPhaseFrames > iGT_MEASURE_DEADLINE_FRAMES)
+			{
+				FailGT("a downward probe ray never found ground under an authored "
+					"anchor -- either the terrain physics body never streamed in, or a "
+					"compiled feet height is now more than the probe's reach away from "
+					"the real surface (the per-NPC hit flags are logged below)");
+				return false;
+			}
+			return true;
+		}
+
+		g_bGTAllMeasured = true;
+		g_eGTPhase = GroundTruthPhase::Done;
+		return false;
+	}
+
+	void Setup_DawnmereNpcGroundTruth()
+	{
+		g_eGTPhase          = GroundTruthPhase::Done;
+		g_iGTPhaseFrames    = 0;
+		g_bGTPrereqsPresent = false;
+		g_bGTSkipped        = false;
+		g_bGTAllResolved    = false;
+		g_bGTAllMeasured    = false;
+		g_szGTFailure       = "test did not reach verification";
+
+		for (u_int u = 0u; u < uGT_NPC_COUNT; ++u)
+		{
+			g_abGTResolved[u]         = false;
+			g_axGTEntityID[u]         = INVALID_ENTITY_ID;
+			g_axGTAuthoredPosition[u] = Zenith_Maths::Vector3(0.0f);
+			g_afGTHalfExtent[u]       = -1.0f;        // fails closed
+			g_aiGTResolveFrame[u]     = -1;
+			g_abGTRayHit[u]           = false;
+			g_afGTMeasuredFeetY[u]    = -1.0e9f;      // fails closed
+			g_axGTHitEntity[u]        = INVALID_ENTITY_ID;
+		}
+		for (u_int u = 0u; u < uGT_WAYPOINT_SLOTS; ++u)
+		{
+			g_abGTWaypointHit[u]      = false;
+			g_afGTWaypointMeasured[u] = -1.0e9f;      // fails closed
+		}
+
+		Zenith_InputSimulator::ResetAllInputState();
+
+		// THE ONLY SKIP, and it is deliberately narrow: "the heightfield this test
+		// measures against does not exist". A MISSING NPC, a MOVED NPC and a STALE
+		// constant all FAIL below -- none of them skip. RequestSkip bypasses Verify,
+		// so no fixed-dt or scene-load state may be installed before this point.
+		g_bGTPrereqsPresent = RequiredTalkAssetsPresent();
+		if (!g_bGTPrereqsPresent)
+		{
+			g_bGTSkipped = true;
+			Zenith_AutomatedTestRunner::RequestSkip(
+				"[ZM_DawnmereNpcGroundTruth] the Dawnmere scene / terrain bake is absent "
+				"or incomplete -- there is no heightfield to measure the authored NPC "
+				"feet heights against (run a *_True config once to bake it)");
+			return;
+		}
+
+		Zenith_InputSimulator::SetFixedDt(fTALK_FIXED_DT);
+		g_eGTPhase = GroundTruthPhase::Resolve;
+		g_xEngine.Scenes().LoadSceneByIndex(
+			iTALK_OVERWORLD_BUILD_INDEX, SCENE_LOAD_SINGLE);
+	}
+
+	bool Step_DawnmereNpcGroundTruth(int)
+	{
+		if (g_eGTPhase == GroundTruthPhase::Done)
+		{
+			return false;
+		}
+		++g_iGTPhaseFrames;
+
+		switch (g_eGTPhase)
+		{
+		case GroundTruthPhase::Resolve: return GTStepResolve();
+		case GroundTruthPhase::Measure: return GTStepMeasure();
+		case GroundTruthPhase::Done:    return false;
+		}
+		return false;
+	}
+
+	bool Verify_DawnmereNpcGroundTruth()
+	{
+		Zenith_InputSimulator::ResetAllInputState();
+		Zenith_InputSimulator::ClearFixedDt();
+
+		if (g_bGTSkipped)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereNpcGroundTruth] SKIPPED -- no baked Dawnmere terrain, so "
+				"nothing was measured. The W5 feet heights in "
+				"Source/World/ZM_DawnmerePlacement.h are UNVERIFIED on this run.");
+			// The harness already recorded the skip + its reason in Setup.
+			return true;
+		}
+
+		// ★ THE PASTE-READY LOG, EMITTED ON EVERY RUN, PASS OR FAIL. This is how the
+		// W5 constants are (re-)obtained; see the block comment at the top.
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_DawnmereNpcGroundTruth] MEASURED FEET Y (paste into the W5 block in "
+			"Source/World/ZM_DawnmerePlacement.h): name=%s measured=%.5f | "
+			"name=%s measured=%.5f | name=%s measured=%.5f",
+			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_VILLAGER).m_szEntityName,
+			g_afGTMeasuredFeetY[ZM_DAWNMERE_NPC_VILLAGER],
+			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_TRADE_POST_CLERK).m_szEntityName,
+			g_afGTMeasuredFeetY[ZM_DAWNMERE_NPC_TRADE_POST_CLERK],
+			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_CARETAKER).m_szEntityName,
+			g_afGTMeasuredFeetY[ZM_DAWNMERE_NPC_CARETAKER]);
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_DawnmereNpcGroundTruth] MEASURED FEET Y (paste into the W5 block in "
+			"Source/World/ZM_DawnmerePlacement.h): name=%s measured=%.5f | "
+			"name=%s measured=%.5f | name=%s measured=%.5f | name=%s measured=%.5f",
+			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_WARDEN).m_szEntityName,
+			g_afGTMeasuredFeetY[ZM_DAWNMERE_NPC_WARDEN],
+			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_WANDERER).m_szEntityName,
+			g_afGTMeasuredFeetY[ZM_DAWNMERE_NPC_WANDERER],
+			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_RIVAL_VESPER).m_szEntityName,
+			g_afGTMeasuredFeetY[ZM_DAWNMERE_NPC_RIVAL_VESPER],
+			ZM_GetDawnmereWanderWaypoint(1u).m_szEntityName,
+			g_afGTWaypointMeasured[1]);
+
+		// Per-anchor detail, also on every run: what the table says, what the ground
+		// says, and what the committed transform says, in one line each.
+		for (u_int u = 0u; u < uGT_NPC_COUNT; ++u)
+		{
+			const ZM_DawnmereNpcAnchor& xAnchor = ZM_GetDawnmereNpcAnchor(u);
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereNpcGroundTruth] name=%s xz=(%.1f, %.1f) measured=%.5f "
+				"table=%.5f tableError=%.5f | authoredY=%.5f expectedCentre=%.5f "
+				"centreError=%.5f halfExtent=%.4f | resolved=%d rayHit=%d "
+				"resolveFrame=%d",
+				xAnchor.m_szEntityName, xAnchor.m_fX, xAnchor.m_fZ,
+				g_afGTMeasuredFeetY[u], xAnchor.m_fFeetY,
+				g_afGTMeasuredFeetY[u] - xAnchor.m_fFeetY,
+				g_axGTAuthoredPosition[u].y,
+				g_afGTMeasuredFeetY[u] + g_afGTHalfExtent[u],
+				g_axGTAuthoredPosition[u].y
+					- (g_afGTMeasuredFeetY[u] + g_afGTHalfExtent[u]),
+				g_afGTHalfExtent[u], (int)g_abGTResolved[u], (int)g_abGTRayHit[u],
+				g_aiGTResolveFrame[u]);
+		}
+
+		bool bPassed = g_bGTPrereqsPresent && g_bGTAllResolved && g_bGTAllMeasured;
+		if (!bPassed)
+		{
+			// The phases did not complete, so every measurement below would be a
+			// fail-closed sentinel. Report WHERE it stopped and stop -- a wall of
+			// "-1000000000 is 1e9 m off the surface" errors would bury the one line
+			// that says the terrain body never streamed in.
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereNpcGroundTruth] %s (prereqs=%d allResolved=%d "
+				"allMeasured=%d)",
+				g_szGTFailure, (int)g_bGTPrereqsPresent, (int)g_bGTAllResolved,
+				(int)g_bGTAllMeasured);
+			return false;
+		}
+
+		// ---- (a) THE COMPILED CONSTANT vs THE TERRAIN, per NPC ----
+		float fMinMeasured = 0.0f;
+		float fMaxMeasured = 0.0f;
+		for (u_int u = 0u; u < uGT_NPC_COUNT; ++u)
+		{
+			const ZM_DawnmereNpcAnchor& xAnchor = ZM_GetDawnmereNpcAnchor(u);
+			if (u == 0u || g_afGTMeasuredFeetY[u] < fMinMeasured)
+			{
+				fMinMeasured = g_afGTMeasuredFeetY[u];
+			}
+			if (u == 0u || g_afGTMeasuredFeetY[u] > fMaxMeasured)
+			{
+				fMaxMeasured = g_afGTMeasuredFeetY[u];
+			}
+
+			// The ray must have measured GROUND. Any of the six authored bodies
+			// answering would be a self-confirming measurement, so name it as a
+			// failure rather than trusting the ignore filter to have been enough.
+			for (u_int uOther = 0u; uOther < uGT_NPC_COUNT; ++uOther)
+			{
+				if (g_axGTHitEntity[u] != INVALID_ENTITY_ID
+					&& g_axGTHitEntity[u] == g_axGTEntityID[uOther])
+				{
+					bPassed = false;
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_DawnmereNpcGroundTruth] the probe under '%s' terminated on "
+						"authored NPC '%s' rather than on the terrain -- the measurement "
+						"is a body top, not a ground height",
+						xAnchor.m_szEntityName,
+						ZM_GetDawnmereNpcAnchor(uOther).m_szEntityName);
+				}
+			}
+
+			const float fTableError =
+				std::fabs(g_afGTMeasuredFeetY[u] - xAnchor.m_fFeetY);
+			if (fTableError > fGT_HEIGHT_TOLERANCE)
+			{
+				bPassed = false;
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DawnmereNpcGroundTruth] '%s': the compiled feet height %.5f is "
+					"%.5f m off the terrain surface %.5f (tolerance %.3f) -- re-measure "
+					"the W5 block in Source/World/ZM_DawnmerePlacement.h",
+					xAnchor.m_szEntityName, xAnchor.m_fFeetY, fTableError,
+					g_afGTMeasuredFeetY[u], fGT_HEIGHT_TOLERANCE);
+			}
+
+			// ---- (b) THE COMMITTED BYTES vs THE TERRAIN ----
+			// The five STATIC bodies only. The WANDERER is excluded and gets its own
+			// clause below: it is the one DYNAMIC capsule, authored a deliberate
+			// extra half-extent clear of the ground, and gravity starts closing that
+			// gap the moment the scene loads -- so no runtime observation can pin its
+			// committed spawn height. What pins that is the compiled accessor
+			// (ZM_DawnmereWandererSpawnY) plus its boot unit.
+			if (u == (u_int)ZM_DAWNMERE_NPC_WANDERER)
+			{
+				continue;
+			}
+			const float fExpectedCentre =
+				g_afGTMeasuredFeetY[u] + g_afGTHalfExtent[u];
+			const float fCentreError =
+				std::fabs(g_axGTAuthoredPosition[u].y - fExpectedCentre);
+			if (fCentreError > fGT_HEIGHT_TOLERANCE)
+			{
+				bPassed = false;
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DawnmereNpcGroundTruth] '%s': the COMMITTED transform Y %.5f is "
+					"%.5f m off terrain + halfExtent %.5f (tolerance %.3f) -- Dawnmere "
+					"has not been re-authored since the W5 heights moved",
+					xAnchor.m_szEntityName, g_axGTAuthoredPosition[u].y, fCentreError,
+					fExpectedCentre, fGT_HEIGHT_TOLERANCE);
+			}
+		}
+
+		// ---- (c) THE WANDERER'S OWN CLAUSE ----
+		// Its authored spawn must sit between "resting on the surface" and "one full
+		// extra half-extent above it". The LOWER bound is the one with teeth: it reds
+		// if the capsule is authored INSIDE the terrain mesh, which is precisely the
+		// hazard the extra air exists to avoid and precisely what a collapsed or
+		// stale feet height would reintroduce here (the ground under the patrol sits
+		// noticeably above the town centre).
+		{
+			const u_int uWanderer = (u_int)ZM_DAWNMERE_NPC_WANDERER;
+			const float fHalf = g_afGTHalfExtent[uWanderer];
+			const float fResting = g_afGTMeasuredFeetY[uWanderer] + fHalf;
+			const float fAuthoredCeiling = fResting + fHalf;
+			const float fAuthoredY = g_axGTAuthoredPosition[uWanderer].y;
+			if (fAuthoredY < fResting - fGT_HEIGHT_TOLERANCE
+				|| fAuthoredY > fAuthoredCeiling + fGT_HEIGHT_TOLERANCE)
+			{
+				bPassed = false;
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DawnmereNpcGroundTruth] the wanderer's committed Y %.5f is "
+					"outside [%.5f, %.5f] -- it is authored either INSIDE the terrain "
+					"mesh (gravity cannot settle it from the front) or more than one "
+					"extra half-extent above it",
+					fAuthoredY, fResting - fGT_HEIGHT_TOLERANCE,
+					fAuthoredCeiling + fGT_HEIGHT_TOLERANCE);
+			}
+		}
+
+		// ---- (d) THE PATROL ENDPOINTS vs THE TERRAIN ----
+		const u_int uWaypointCount = GTWaypointSampleCount();
+		for (u_int u = 0u; u < uWaypointCount; ++u)
+		{
+			const ZM_DawnmereNpcAnchor& xWaypoint = ZM_GetDawnmereWanderWaypoint(u);
+			const float fError =
+				std::fabs(g_afGTWaypointMeasured[u] - xWaypoint.m_fFeetY);
+			if (!g_abGTWaypointHit[u] || fError > fGT_HEIGHT_TOLERANCE)
+			{
+				bPassed = false;
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_DawnmereNpcGroundTruth] '%s': compiled feet %.5f vs terrain "
+					"%.5f (error %.5f, hit=%d, tolerance %.3f)",
+					xWaypoint.m_szEntityName, xWaypoint.m_fFeetY,
+					g_afGTWaypointMeasured[u], fError, (int)g_abGTWaypointHit[u],
+					fGT_HEIGHT_TOLERANCE);
+			}
+		}
+
+		// ---- (e) THE TWO-SIDED CLAUSE THAT MAKES W5 NON-VACUOUS ----
+		// Measured off the LIVE heightfield, never off the table: this is the terrain
+		// itself saying that six independent heights were warranted.
+		const float fMeasuredSpread = fMaxMeasured - fMinMeasured;
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_DawnmereNpcGroundTruth] live terrain spread under the roster = %.5f m "
+			"(min %.5f, max %.5f; must be >= %.3f)",
+			fMeasuredSpread, fMinMeasured, fMaxMeasured, fGT_MIN_TERRAIN_SPREAD);
+		if (fMeasuredSpread < fGT_MIN_TERRAIN_SPREAD)
+		{
+			bPassed = false;
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_DawnmereNpcGroundTruth] the live terrain under the six authored "
+				"NPCs is FLAT to within %.5f m -- W5's whole premise (that one shared "
+				"town-centre height was an approximation) does not hold on this "
+				"heightmap, and six measured constants buy nothing",
+				fMeasuredSpread);
+		}
+
+		return bPassed;
+	}
+}
+
+static const Zenith_AutomatedTest g_xZMDawnmereNpcGroundTruthTest = {
+	"ZM_DawnmereNpcGroundTruth_Test",
+	&Setup_DawnmereNpcGroundTruth,
+	&Step_DawnmereNpcGroundTruth,
+	&Verify_DawnmereNpcGroundTruth,
+	// Both waiting phases own a deadline that FAILS with a diagnostic; this cap is
+	// only a backstop above their sum (900 + 900).
+	/* maxFrames */ 2400,
+	false /* m_bRequiresGraphics */,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMDawnmereNpcGroundTruthTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

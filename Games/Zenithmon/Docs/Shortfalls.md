@@ -179,6 +179,25 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      boundary is demonstrated by mutation rather than asserted.
    - The bodies are still **unit cubes**. W4 makes them distinguishable, not
      human-shaped; the generated human meshes are not wired to authored NPCs.
+5. **RESOLVED 2026-07-29 (ZM-D-161) -- PER-NPC SAMPLED FEET HEIGHTS.** Every authored NPC,
+   Vesper included, now stands on its OWN measured ground instead of one shared
+   town-centre literal. **The measurement found a larger defect than the limit described:**
+   the warden was authored **1.368 m** and the caretaker **1.095 m** above their own
+   terrain, with a live spread of **1.782 m** under the six-NPC roster. The heights are
+   MEASURED at runtime and FROZEN as compiled constants -- live sampling was rejected
+   because the committed `.zscen` bytes must stay reproducible from compiled constants
+   rather than from a gitignored terrain bake, and because there is no terrain physics body
+   during authoring at all. `ZM_DawnmereNpcGroundTruth_Test` is the standing oracle and
+   keeps "constant vs terrain" and "committed bytes vs terrain" as SEPARATE clauses so
+   neither can hide the other. `Dawnmere.zscen` moved to SHA256 `3874943E...` under the
+   full two-boot proof; `Dawnmere.znavmesh` did NOT move.
+   **STILL OPEN:**
+   - **The constants go stale if the terrain is re-baked**, and nothing reds at author
+     time -- that is the accepted cost of freezing measured values, and the containment is
+     that the probe test reds at the next local batch. It is the mirror of the risk that
+     live sampling would have introduced, and the cheaper of the two.
+   - **Only Dawnmere is measured.** Thornacre and Route1 have no authored NPCs yet; when
+     they do, they need their own anchors, not this table.
 
 ### 1.9 Post-game
 

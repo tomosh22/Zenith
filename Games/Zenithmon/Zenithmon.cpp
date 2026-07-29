@@ -1377,6 +1377,35 @@ namespace
 			"declared in ZM_Interactable.h)");
 	}
 
+	// The ONE authored body scale every Dawnmere human wears -- the player and all
+	// six NPCs. Named here, rather than re-spelled, because known-limit W5's wander
+	// waypoints need the capsule half-extent it derives and they are authored in a
+	// DIFFERENT function from the placement block below. Two copies of this literal
+	// is exactly how a half-extent and a body stop agreeing.
+	const Zenith_Maths::Vector3 g_xDawnmereHumanScale(0.8f, 1.8f, 0.8f);
+
+	// KNOWN-LIMIT W5. The authored CENTRE of one Dawnmere NPC: the shared anchor's
+	// XZ plus that NPC's OWN measured feet height, lifted by the capsule half-extent.
+	//
+	// ★ IT IS CALLED AT PLAN-BUILD TIME, INSIDE THE AddStep_SetTransformPosition
+	// ARGUMENT, AND THAT IS LOAD-BEARING. Sampling a height and then writing it back
+	// with Zenith_TransformComponent::SetPosition AFTER AddStep_AddCollider would be
+	// write-through to the body and would fire the pose-changed hook, whose
+	// SyncPhysicsPoseAndInvalidate copies position AND ROTATION back -- the exact
+	// mechanism (ZM-D-156) by which an AABB collider wiped rival Vesper's authored
+	// yaw out of the SAVED BYTES while every boot unit stayed green. Keeping the
+	// change to ONE FLOAT PER EXISTING CALL SITE makes that whole class of defect
+	// unreachable by construction. Never grow a post-collider transform write here.
+	Zenith_Maths::Vector3 ZM_DawnmereNpcAuthoredCenter(
+		u_int uNpc, float fCapsuleHalfExtent)
+	{
+		const ZM_DawnmereNpcAnchor& xAnchor = ZM_GetDawnmereNpcAnchor(uNpc);
+		return Zenith_Maths::Vector3(
+			xAnchor.m_fX,
+			ZM_DawnmereNpcCentreY(uNpc, fCapsuleHalfExtent),
+			xAnchor.m_fZ);
+	}
+
 	void ZM_ConfigureWandererNpc()
 	{
 		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
@@ -1390,14 +1419,29 @@ namespace
 			return;
 		}
 
-		ZM_WalkerWaypoints xWaypoints{};
-		xWaypoints.m_uCount = 2u;
 		// A north/south loop at x=540 stays 28 m east of TownCenter spawn, beyond
 		// every existing straight-line traversal corridor and all stationary NPCs.
 		// Waypoint Y is serialized only as an authored reference: ZM_StepWalker is
 		// explicitly XZ-only, while the dynamic capsule owns Y and follows terrain.
-		xWaypoints.m_axPoints[0] = { 540.0f, 26.88577f, 476.0f };
-		xWaypoints.m_axPoints[1] = { 540.0f, 26.88577f, 484.0f };
+		//
+		// KNOWN-LIMIT W5: both endpoints now come from the shared wander-waypoint
+		// table (Source/World/ZM_DawnmerePlacement.h), whose feet heights are the
+		// MEASURED terrain surface at each endpoint rather than the town centre's.
+		// Endpoint 0 shares the wanderer's own anchor row by construction.
+		const float fWaypointHalfExtent =
+			ZM_PlayerController::CalculateCapsuleHalfExtent(g_xDawnmereHumanScale);
+		Zenith_Assert(ZM_GetDawnmereWanderWaypointCount() == 2u,
+			"the authored patrol is written as exactly two endpoints here; the shared "
+			"waypoint table has grown or shrunk");
+		const ZM_DawnmereNpcAnchor& xWaypoint0 = ZM_GetDawnmereWanderWaypoint(0u);
+		const ZM_DawnmereNpcAnchor& xWaypoint1 = ZM_GetDawnmereWanderWaypoint(1u);
+
+		ZM_WalkerWaypoints xWaypoints{};
+		xWaypoints.m_uCount = 2u;
+		xWaypoints.m_axPoints[0] = {
+			xWaypoint0.m_fX, xWaypoint0.m_fFeetY + fWaypointHalfExtent, xWaypoint0.m_fZ };
+		xWaypoints.m_axPoints[1] = {
+			xWaypoint1.m_fX, xWaypoint1.m_fFeetY + fWaypointHalfExtent, xWaypoint1.m_fZ };
 
 		const bool bNpcConfigured = ZM_ConfigureSelectedNpc(ZM_NPC_WANDERER);
 		const bool bPatrolConfigured =
@@ -2076,7 +2120,7 @@ void Project_RegisterEditorAutomationSteps()
 			fZM_DAWNMERE_TOWN_CENTER_X,
 			fZM_DAWNMERE_TOWN_CENTER_FEET_Y,
 			fZM_DAWNMERE_TOWN_CENTER_Z);
-		const Zenith_Maths::Vector3 xPlayerScale(0.8f, 1.8f, 0.8f);
+		const Zenith_Maths::Vector3 xPlayerScale = g_xDawnmereHumanScale;
 		const float fPlayerCapsuleHalfExtent =
 			ZM_PlayerController::CalculateCapsuleHalfExtent(xPlayerScale);
 		const Zenith_Maths::Vector3 xPlayerCenter =
@@ -2155,18 +2199,31 @@ void Project_RegisterEditorAutomationSteps()
 		// fPlayerCapsuleHalfExtent and every NPC centre sits at exactly the player's
 		// authored centre height.
 		//
-		// ★ HEIGHT IS AN ASSUMPTION, NOT A GUARANTEE. Every NPC reuses the ONE feet
-		// height sampled at the town centre (512, 480); this authoring cannot sample
-		// the terrain at each NPC's own XZ, and the rest of this file DOES author
-		// per-location measured heights (see the Home block's three distinct values).
-		// The picker's band is |NPC.y - player.y|, and once the capsule settles the
-		// player's y is terrain(x,z) + halfExtent, so the band reduces to the TERRAIN
-		// DELTA between the spawn and each NPC. Dawnmere's neighbourhood is gently
-		// rolling (the authored anchors differ by ~0.6 m over 128 m), so the +/-2 m
-		// band holds comfortably -- but if a regenerated heightmap ever exceeded it,
-		// that NPC becomes permanently un-talkable. The villager is covered by
-		// ZM_NpcTalk_Test; the clerk and caretaker are NOT yet, so treat a mute one as
-		// a height check first. (S9 should author sampled per-NPC feet.)
+		// ★ HEIGHT IS MEASURED, NOT ASSUMED (known-limit W5). Every NPC used to reuse
+		// the ONE feet height sampled at the town centre (512, 480), which made the
+		// picker's +/-2 m band -- and the trainer cone's fZM_SIGHT_MAX_VERTICAL -- an
+		// inference from a single out-of-band measurement. Each of the six now carries
+		// its OWN feet height in Source/World/ZM_DawnmerePlacement.h's W5 block, and
+		// every centre below is ZM_DawnmereNpcCentreY(id, halfExtent): that NPC's
+		// measured surface plus the shared capsule half-extent.
+		//
+		// THE ORACLE is ZM_DawnmereNpcGroundTruth_Test (Tests/ZM_AutoTests_NpcTalk.cpp).
+		// It loads the COMMITTED Dawnmere, casts a real downward ray at each anchor's
+		// XZ against the baked terrain body, and reds if any compiled row has drifted
+		// from the surface the capsule actually rests on -- so the numbers cannot go
+		// stale silently. It also LOGS every measured height at INFO on every run.
+		//
+		// ★ WHAT RE-MEASURES THEM: regenerating the Dawnmere heightmap (a terrain
+		// recipe, a seed, or the flatten radii in ZM_TerrainAuthoring.cpp). Run that
+		// test, paste its six `measured=` figures into the W5 block, rebuild, and
+		// re-author this scene from a windowed tools boot.
+		//
+		// STILL NOT SAMPLED HERE, and deliberately: this authoring does NOT raycast
+		// the terrain. The committed .zscen bytes must be reproducible from COMPILED
+		// constants rather than from a gitignored terrain bake -- and there is no
+		// terrain physics body during authoring anyway (the editor add path uses the
+		// deserialization ctor, which never calls LoadCombinedPhysicsGeometry), so an
+		// authoring-time raycast would simply MISS.
 		//
 		// SEPARATION is deliberately enormous -- the closest PAIR is 16.1 m, against
 		// a 2.9 m effective reach (2.5 global + 0.4 per-NPC). The picker resolves the
@@ -2195,8 +2252,8 @@ void Project_RegisterEditorAutomationSteps()
 		// existing traversal routes before moving anything in this block.
 		//
 		const Zenith_Maths::Vector3 xNpcScale = xPlayerScale;
-		const Zenith_Maths::Vector3 xVillagerCenter(
-			xTownCenterFeet.x, xPlayerCenter.y, xTownCenterFeet.z + 10.0f);
+		const Zenith_Maths::Vector3 xVillagerCenter = ZM_DawnmereNpcAuthoredCenter(
+			ZM_DAWNMERE_NPC_VILLAGER, fPlayerCapsuleHalfExtent);
 		// z + 18 keeps both off the z = 480 Home-traversal corridor (see above).
 		// Separations against the 2.9 m effective reach (2.5 global + 0.4 authored):
 		//   villager <-> clerk      = sqrt(14^2 + 8^2) = 16.1 m
@@ -2207,10 +2264,10 @@ void Project_RegisterEditorAutomationSteps()
 		// never confuse two of them and the walk-up test can assert the winner BY
 		// ENTITY ID; and neither flank NPC is reachable from spawn, which keeps the
 		// test's out-of-range negative unambiguous.
-		const Zenith_Maths::Vector3 xClerkCenter(
-			xTownCenterFeet.x + 14.0f, xPlayerCenter.y, xTownCenterFeet.z + 18.0f);
-		const Zenith_Maths::Vector3 xCaretakerCenter(
-			xTownCenterFeet.x - 14.0f, xPlayerCenter.y, xTownCenterFeet.z + 18.0f);
+		const Zenith_Maths::Vector3 xClerkCenter = ZM_DawnmereNpcAuthoredCenter(
+			ZM_DAWNMERE_NPC_TRADE_POST_CLERK, fPlayerCapsuleHalfExtent);
+		const Zenith_Maths::Vector3 xCaretakerCenter = ZM_DawnmereNpcAuthoredCenter(
+			ZM_DAWNMERE_NPC_CARETAKER, fPlayerCapsuleHalfExtent);
 		ZM_QueueDawnmereNpc(xAuto, "Npc_Villager",
 			xVillagerCenter, xNpcScale, &ZM_ConfigureVillagerNpc);
 		ZM_QueueDawnmereNpc(xAuto, "Npc_TradePostClerk",
@@ -2239,24 +2296,29 @@ void Project_RegisterEditorAutomationSteps()
 		//   * The Home shell (x 376..392, z 436..476) lies WEST OF the warden, who
 		//     stands at (478, 498): its east face (x = 392) is 86 m west of him, and
 		//     its north face (z = 476) 22 m south. No overlap on either axis.
-		// Height reuses xPlayerCenter.y like every other stationary NPC -- the same
-		// single sampled town-centre feet height, with the caveat block above.
+		// Height is his OWN measured feet plus the shared capsule half-extent, like
+		// every other NPC since known-limit W5 -- see the block above.
 		// ★ When a later stage authors a real Route 1, a warden who is meant to BLOCK
 		// the road belongs on the Route polyline itself. Re-place him there and
 		// re-derive every separation above from scratch -- none of these figures carry
-		// over -- and rewrite his lines in ZM_NpcData.cpp to match the new ground.
-		const Zenith_Maths::Vector3 xRouteWardenCenter(
-			xTownCenterFeet.x - 34.0f, xPlayerCenter.y, xTownCenterFeet.z + 18.0f);
+		// over, INCLUDING his feet height -- and rewrite his lines in ZM_NpcData.cpp
+		// to match the new ground.
+		const Zenith_Maths::Vector3 xRouteWardenCenter = ZM_DawnmereNpcAuthoredCenter(
+			ZM_DAWNMERE_NPC_WARDEN, fPlayerCapsuleHalfExtent);
 		ZM_QueueDawnmereNpc(xAuto, "Npc_Warden",
 			xRouteWardenCenter, xNpcScale, &ZM_ConfigureRouteWardenNpc);
 		// SC8: the fourth row is a deterministic two-point patrol. Both endpoints are
 		// 28 m east of the TownCenter spawn and outside the z=480 Home corridor's
 		// x<=512 run; the nearest stationary NPC (the clerk) remains >19 m away.
-		// Reusing xPlayerCenter.y directly starts this capsule about 0.414 m inside
-		// the higher local terrain mesh. One existing capsule half-extent of clearance
-		// authors it safely above the surface so gravity settles it from the front side.
+		// Its resting centre would put this capsule ON the local surface, which is
+		// higher than the town centre; ONE EXTRA capsule half-extent of clearance
+		// authors it safely above that surface so gravity settles it from the front
+		// side. That special case is NAMED (ZM_DawnmereWandererSpawnY) rather than
+		// open-coded, because it is the one NPC whose authored Y is not its centre.
 		const Zenith_Maths::Vector3 xWandererCenter(
-			540.0f, xPlayerCenter.y + fPlayerCapsuleHalfExtent, 476.0f);
+			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_WANDERER).m_fX,
+			ZM_DawnmereWandererSpawnY(fPlayerCapsuleHalfExtent),
+			ZM_GetDawnmereNpcAnchor(ZM_DAWNMERE_NPC_WANDERER).m_fZ);
 		ZM_QueueDawnmereWanderer(xAuto, xWandererCenter, xNpcScale);
 
 		// ---- S7 item 3 SC8 / item 4: rival Vesper, the FIRST authored trainer ----
@@ -2284,8 +2346,8 @@ void Project_RegisterEditorAutomationSteps()
 		// ★ GDD DEVIATION, RECORDED: canon puts rival battle 1 on "Route 1 (L5)".
 		// Route 1 does not exist in S7. When it is authored, move him and re-derive
 		// every separation from scratch (ZM-D-156, Shortfalls).
-		const Zenith_Maths::Vector3 xRivalVesperCenter(
-			fZM_DAWNMERE_VESPER_X, xPlayerCenter.y, fZM_DAWNMERE_VESPER_Z);
+		const Zenith_Maths::Vector3 xRivalVesperCenter = ZM_DawnmereNpcAuthoredCenter(
+			ZM_DAWNMERE_NPC_RIVAL_VESPER, fPlayerCapsuleHalfExtent);
 		ZM_QueueDawnmereTrainerNpc(xAuto, "Npc_RivalVesper",
 			xRivalVesperCenter, xNpcScale, ZM_DawnmereVesperYaw(),
 			&ZM_ConfigureRivalVesperNpc);
