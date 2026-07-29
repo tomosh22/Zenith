@@ -184,8 +184,8 @@ public:
 	u_int GetTrainerChallengeCount() const { return m_xSightFsm.GetChallengeCount(); }
 	// W3 presentation observations. The FSM count proves a genuine SPOTTED entry;
 	// the submit count is fed from the helper's MEASURED Flux queue growth, so it
-	// proves this live component's line+sphere actually reached the renderer once on
-	// every update that ended in SPOTTED. Both are runtime-only.
+	// proves this live component's gameplay cylinder+sphere actually reached the
+	// renderer once on every update that ended in SPOTTED. Both are runtime-only.
 	u_int GetTrainerSpottedCount() const { return m_xSightFsm.GetSpottedCount(); }
 	float GetTrainerSpottedElapsedSeconds() const
 	{
@@ -196,10 +196,11 @@ public:
 		return m_uSpottedIndicatorSubmitCount;
 	}
 
-	// The ONE renderer submission seam for W3's asset-free exclamation mark. Public
-	// so a boot unit can inspect the exact CPU primitive payload synchronously; live
-	// code calls the same function, and the per-component counter above is fed from
-	// this return value.
+	// The ONE renderer submission seam for W3's asset-free exclamation mark. It uses
+	// Flux's always-rendered gameplay primitive channel, not the tools/debug channel.
+	// Public so a boot unit can inspect the exact CPU primitive payload synchronously;
+	// live code calls the same function, and the per-component counter above is fed
+	// from this return value.
 	//
 	// RETURNS 1 only when BOTH primitives were observed to land in Flux's CPU
 	// instance queues, and 0 otherwise (including a refused non-finite centre). The

@@ -1,10 +1,10 @@
 // =====================================================================
 // Flux_Primitives — Slang module.
 //
-// Subsystem: Primitives. Debug primitive (sphere/box/line/etc) rendering
-// to the G-buffer with per-instance colour and a model matrix supplied
-// via constant buffer. Matte material (roughness 0.8, no metallic, fixed
-// 0.2 ambient) so primitives blend into the deferred lighting pass.
+// Subsystem: Primitives. Debug and gameplay primitive (sphere/box/line/etc)
+// rendering to the G-buffer with per-instance colour and a model matrix supplied
+// via constant buffer. Zero-emissive debug draws retain the matte default-lit
+// material; gameplay draws opt into unlit/emissive output through the final scalar.
 //
 // Imports Common.Frame for view×proj transform and Common.GBuffer for
 // the MakeGBuffer helper.
@@ -34,7 +34,7 @@ struct PrimitivePushConstantLayout
 {
 	float4x4 m_xModelMatrix;
 	float3   m_xColor;
-	float    m_fPadding;
+	float    m_fEmissiveIntensity;
 };
 // DRAW frequency (per-draw model matrix + colour). Declared AFTER the spine
 // #include, so it lands at set 3 (the first set past the persistent 0/1/2).
@@ -64,6 +64,14 @@ GBufferOut fsMain(VsOut input)
 {
 	float4 xDiffuse  = float4(input.colour, 1.0);
 	float3 xNormal   = normalize(input.worldNormal);
-	// Matte debug shading — same constants as the GLSL source.
-	return MakeGBuffer(xDiffuse, xNormal, 0.2, 0.8, 0.0);
+	float fEmissiveIntensity = max(
+		g_xDrawSet.PrimitivePushConstant.m_fEmissiveIntensity, 0.0);
+	uint uShadingModel = (fEmissiveIntensity > 0.0)
+		? GBUFFER_SHADING_UNLIT
+		: GBUFFER_SHADING_DEFAULT_LIT;
+	// Debug primitives retain the old matte, default-lit path (intensity zero).
+	// Production gameplay queues opt into unlit + HDR emissive output, keeping cues
+	// readable under overhead light and in shadow without bypassing depth testing.
+	return MakeGBuffer(xDiffuse, xNormal, 0.2, 0.8, 0.0, 0.5,
+		input.colour * fEmissiveIntensity, 0.0, 0.0, uShadingModel);
 }

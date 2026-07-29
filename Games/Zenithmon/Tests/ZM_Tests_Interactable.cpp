@@ -26,6 +26,7 @@
 
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Core/Zenith_Engine.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "Core/Zenith_TestFramework.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
@@ -126,140 +127,175 @@ ZENITH_TEST(ZM_Interaction, Interactable_DefaultsAreSafe)
 		"the default reach BONUS is zero -- exactly the global reach, never more");
 }
 
-// W3's marker is deliberately an asset-free Flux primitive payload. This unit
-// runs before the main loop, so the renderer cannot drain the CPU queues between
-// the synchronous Add calls and inspection. It preserves every pre-existing queue
-// prefix and cleans its own tail before asserting, even when the payload is wrong.
+// W3's marker is deliberately an asset-free Flux GAMEPLAY-primitive payload. This
+// unit runs before the main loop, so the renderer cannot drain the CPU queues
+// between the synchronous Add calls and inspection. It disables the debug channel
+// while submitting, proves only the always-rendered queues grew, and cleans its own
+// tail before asserting even when the payload is wrong.
 ZENITH_TEST(ZM_Interaction, Interactable_SpottedIndicatorSubmitsOneReadableExclamationMark)
 {
 	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
-	u_int uSphereBefore = 0u;
-	u_int uCubeBefore = 0u;
-	u_int uLineBefore = 0u;
-	u_int uCapsuleBefore = 0u;
-	u_int uCylinderBefore = 0u;
-	u_int uTriangleBefore = 0u;
+	u_int uDebugSphereBefore = 0u;
+	u_int uDebugCubeBefore = 0u;
+	u_int uDebugLineBefore = 0u;
+	u_int uDebugCapsuleBefore = 0u;
+	u_int uDebugCylinderBefore = 0u;
+	u_int uDebugTriangleBefore = 0u;
+	u_int uGameplaySphereBefore = 0u;
+	u_int uGameplayCylinderBefore = 0u;
 	{
 		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
-		uSphereBefore = xPrimitives.m_xSphereInstances.GetSize();
-		uCubeBefore = xPrimitives.m_xCubeInstances.GetSize();
-		uLineBefore = xPrimitives.m_xLineInstances.GetSize();
-		uCapsuleBefore = xPrimitives.m_xCapsuleInstances.GetSize();
-		uCylinderBefore = xPrimitives.m_xCylinderInstances.GetSize();
-		uTriangleBefore = xPrimitives.m_xTriangleInstances.GetSize();
+		uDebugSphereBefore = xPrimitives.m_xSphereInstances.GetSize();
+		uDebugCubeBefore = xPrimitives.m_xCubeInstances.GetSize();
+		uDebugLineBefore = xPrimitives.m_xLineInstances.GetSize();
+		uDebugCapsuleBefore = xPrimitives.m_xCapsuleInstances.GetSize();
+		uDebugCylinderBefore = xPrimitives.m_xCylinderInstances.GetSize();
+		uDebugTriangleBefore = xPrimitives.m_xTriangleInstances.GetSize();
+		uGameplaySphereBefore = xPrimitives.m_xGameplaySphereInstances.GetSize();
+		uGameplayCylinderBefore = xPrimitives.m_xGameplayCylinderInstances.GetSize();
 	}
 
 	// A distinctive centre and mirrored Y scale make every expected coordinate an
-	// independent literal while proving the helper uses absolute model height.
+	// independent literal while proving the helper uses absolute model height. The
+	// tools option is deliberately OFF: a gameplay cue must not ride that channel.
+	Zenith_GraphicsOptions& xGraphicsOptions = Zenith_GraphicsOptions::Get();
+	const bool bDebugPrimitivesEnabledBefore = xGraphicsOptions.m_bPrimitivesEnabled;
+	xGraphicsOptions.m_bPrimitivesEnabled = false;
 	const u_int uSubmitted = ZM_Interactable::SubmitTrainerSpottedIndicator(
 		Zenith_Maths::Vector3(2.5f, -1.0f, 4.25f),
 		Zenith_Maths::Vector3(0.8f, -2.4f, 1.2f));
+	xGraphicsOptions.m_bPrimitivesEnabled = bDebugPrimitivesEnabledBefore;
 
-	u_int uSphereAfter = 0u;
-	u_int uCubeAfter = 0u;
-	u_int uLineAfter = 0u;
-	u_int uCapsuleAfter = 0u;
-	u_int uCylinderAfter = 0u;
-	u_int uTriangleAfter = 0u;
-	u_int uSphereRestored = 0u;
-	u_int uCubeRestored = 0u;
-	u_int uLineRestored = 0u;
-	u_int uCapsuleRestored = 0u;
-	u_int uCylinderRestored = 0u;
-	u_int uTriangleRestored = 0u;
-	bool bHaveSphere = false;
-	bool bHaveLine = false;
+	u_int uDebugSphereAfter = 0u;
+	u_int uDebugCubeAfter = 0u;
+	u_int uDebugLineAfter = 0u;
+	u_int uDebugCapsuleAfter = 0u;
+	u_int uDebugCylinderAfter = 0u;
+	u_int uDebugTriangleAfter = 0u;
+	u_int uGameplaySphereAfter = 0u;
+	u_int uGameplayCylinderAfter = 0u;
+	u_int uDebugSphereRestored = 0u;
+	u_int uDebugCubeRestored = 0u;
+	u_int uDebugLineRestored = 0u;
+	u_int uDebugCapsuleRestored = 0u;
+	u_int uDebugCylinderRestored = 0u;
+	u_int uDebugTriangleRestored = 0u;
+	u_int uGameplaySphereRestored = 0u;
+	u_int uGameplayCylinderRestored = 0u;
+	bool bHaveGameplaySphere = false;
+	bool bHaveGameplayCylinder = false;
 	Flux_PrimitivesSphereInstance xSphere{};
-	Flux_PrimitivesLineInstance xLine{};
+	Flux_PrimitivesCylinderInstance xCylinder{};
 	{
 		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
-		uSphereAfter = xPrimitives.m_xSphereInstances.GetSize();
-		uCubeAfter = xPrimitives.m_xCubeInstances.GetSize();
-		uLineAfter = xPrimitives.m_xLineInstances.GetSize();
-		uCapsuleAfter = xPrimitives.m_xCapsuleInstances.GetSize();
-		uCylinderAfter = xPrimitives.m_xCylinderInstances.GetSize();
-		uTriangleAfter = xPrimitives.m_xTriangleInstances.GetSize();
-		if (uSphereAfter > uSphereBefore)
+		uDebugSphereAfter = xPrimitives.m_xSphereInstances.GetSize();
+		uDebugCubeAfter = xPrimitives.m_xCubeInstances.GetSize();
+		uDebugLineAfter = xPrimitives.m_xLineInstances.GetSize();
+		uDebugCapsuleAfter = xPrimitives.m_xCapsuleInstances.GetSize();
+		uDebugCylinderAfter = xPrimitives.m_xCylinderInstances.GetSize();
+		uDebugTriangleAfter = xPrimitives.m_xTriangleInstances.GetSize();
+		uGameplaySphereAfter = xPrimitives.m_xGameplaySphereInstances.GetSize();
+		uGameplayCylinderAfter = xPrimitives.m_xGameplayCylinderInstances.GetSize();
+		if (uGameplaySphereAfter > uGameplaySphereBefore)
 		{
-			xSphere = xPrimitives.m_xSphereInstances.Get(uSphereBefore);
-			bHaveSphere = true;
+			xSphere = xPrimitives.m_xGameplaySphereInstances.Get(uGameplaySphereBefore);
+			bHaveGameplaySphere = true;
 		}
-		if (uLineAfter > uLineBefore)
+		if (uGameplayCylinderAfter > uGameplayCylinderBefore)
 		{
-			xLine = xPrimitives.m_xLineInstances.Get(uLineBefore);
-			bHaveLine = true;
+			xCylinder = xPrimitives.m_xGameplayCylinderInstances.Get(
+				uGameplayCylinderBefore);
+			bHaveGameplayCylinder = true;
 		}
 
-		while (xPrimitives.m_xSphereInstances.GetSize() > uSphereBefore)
+		while (xPrimitives.m_xSphereInstances.GetSize() > uDebugSphereBefore)
 		{
 			xPrimitives.m_xSphereInstances.PopBack();
 		}
-		while (xPrimitives.m_xCubeInstances.GetSize() > uCubeBefore)
+		while (xPrimitives.m_xCubeInstances.GetSize() > uDebugCubeBefore)
 		{
 			xPrimitives.m_xCubeInstances.PopBack();
 		}
-		while (xPrimitives.m_xLineInstances.GetSize() > uLineBefore)
+		while (xPrimitives.m_xLineInstances.GetSize() > uDebugLineBefore)
 		{
 			xPrimitives.m_xLineInstances.PopBack();
 		}
-		while (xPrimitives.m_xCapsuleInstances.GetSize() > uCapsuleBefore)
+		while (xPrimitives.m_xCapsuleInstances.GetSize() > uDebugCapsuleBefore)
 		{
 			xPrimitives.m_xCapsuleInstances.PopBack();
 		}
-		while (xPrimitives.m_xCylinderInstances.GetSize() > uCylinderBefore)
+		while (xPrimitives.m_xCylinderInstances.GetSize() > uDebugCylinderBefore)
 		{
 			xPrimitives.m_xCylinderInstances.PopBack();
 		}
-		while (xPrimitives.m_xTriangleInstances.GetSize() > uTriangleBefore)
+		while (xPrimitives.m_xTriangleInstances.GetSize() > uDebugTriangleBefore)
 		{
 			xPrimitives.m_xTriangleInstances.PopBack();
 		}
+		while (xPrimitives.m_xGameplaySphereInstances.GetSize()
+			> uGameplaySphereBefore)
+		{
+			xPrimitives.m_xGameplaySphereInstances.PopBack();
+		}
+		while (xPrimitives.m_xGameplayCylinderInstances.GetSize()
+			> uGameplayCylinderBefore)
+		{
+			xPrimitives.m_xGameplayCylinderInstances.PopBack();
+		}
 
-		uSphereRestored = xPrimitives.m_xSphereInstances.GetSize();
-		uCubeRestored = xPrimitives.m_xCubeInstances.GetSize();
-		uLineRestored = xPrimitives.m_xLineInstances.GetSize();
-		uCapsuleRestored = xPrimitives.m_xCapsuleInstances.GetSize();
-		uCylinderRestored = xPrimitives.m_xCylinderInstances.GetSize();
-		uTriangleRestored = xPrimitives.m_xTriangleInstances.GetSize();
+		uDebugSphereRestored = xPrimitives.m_xSphereInstances.GetSize();
+		uDebugCubeRestored = xPrimitives.m_xCubeInstances.GetSize();
+		uDebugLineRestored = xPrimitives.m_xLineInstances.GetSize();
+		uDebugCapsuleRestored = xPrimitives.m_xCapsuleInstances.GetSize();
+		uDebugCylinderRestored = xPrimitives.m_xCylinderInstances.GetSize();
+		uDebugTriangleRestored = xPrimitives.m_xTriangleInstances.GetSize();
+		uGameplaySphereRestored = xPrimitives.m_xGameplaySphereInstances.GetSize();
+		uGameplayCylinderRestored = xPrimitives.m_xGameplayCylinderInstances.GetSize();
 	}
 
 	// ★ THE RETURN VALUE IS THE LIVE CONTRACT. The component's per-frame counter is
 	// fed from it, so if the helper could report a submission it did not make, every
 	// automated assertion downstream would be watching a proxy instead of Flux.
 	ZENITH_ASSERT_EQ(uSubmitted, 1u,
-		"a marker that reached both primitive queues must report exactly one "
+		"a marker that reached both gameplay primitive queues must report exactly one "
 		"submission");
-	ZENITH_ASSERT_EQ(uLineAfter, uLineBefore + 1u,
-		"one marker must append exactly one line");
-	ZENITH_ASSERT_EQ(uSphereAfter, uSphereBefore + 1u,
-		"one marker must append exactly one sphere");
-	ZENITH_ASSERT_EQ(uCubeAfter, uCubeBefore,
-		"the marker must not append a cube");
-	ZENITH_ASSERT_EQ(uCapsuleAfter, uCapsuleBefore,
-		"the marker must not append a capsule");
-	ZENITH_ASSERT_EQ(uCylinderAfter, uCylinderBefore,
-		"the marker must not append a cylinder");
-	ZENITH_ASSERT_EQ(uTriangleAfter, uTriangleBefore,
-		"the marker must not append a triangle");
-	ZENITH_ASSERT_TRUE(bHaveLine, "the appended line payload must be inspectable");
-	ZENITH_ASSERT_TRUE(bHaveSphere, "the appended sphere payload must be inspectable");
+	ZENITH_ASSERT_EQ(uGameplayCylinderAfter, uGameplayCylinderBefore + 1u,
+		"one marker must append exactly one always-rendered gameplay cylinder");
+	ZENITH_ASSERT_EQ(uGameplaySphereAfter, uGameplaySphereBefore + 1u,
+		"one marker must append exactly one always-rendered gameplay sphere");
+	ZENITH_ASSERT_EQ(uDebugSphereAfter, uDebugSphereBefore,
+		"the marker must not append a debug sphere");
+	ZENITH_ASSERT_EQ(uDebugCubeAfter, uDebugCubeBefore,
+		"the marker must not append a debug cube");
+	ZENITH_ASSERT_EQ(uDebugLineAfter, uDebugLineBefore,
+		"the marker must not append a debug line");
+	ZENITH_ASSERT_EQ(uDebugCapsuleAfter, uDebugCapsuleBefore,
+		"the marker must not append a debug capsule");
+	ZENITH_ASSERT_EQ(uDebugCylinderAfter, uDebugCylinderBefore,
+		"the marker must not append a debug cylinder");
+	ZENITH_ASSERT_EQ(uDebugTriangleAfter, uDebugTriangleBefore,
+		"the marker must not append a debug triangle");
+	ZENITH_ASSERT_TRUE(bHaveGameplayCylinder,
+		"the appended gameplay cylinder payload must be inspectable");
+	ZENITH_ASSERT_TRUE(bHaveGameplaySphere,
+		"the appended gameplay sphere payload must be inspectable");
 
-	if (bHaveLine)
+	if (bHaveGameplayCylinder)
 	{
-		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xStart.x, 2.5f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xStart.y, 0.75f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xStart.z, 4.25f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xEnd.x, 2.5f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xEnd.y, 1.40f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xEnd.z, 4.25f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xLine.m_fThickness, 0.10f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xColor.x, 1.0f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xColor.y, 0.82f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xLine.m_xColor.z, 0.08f, fTEST_EPSILON);
-		ZENITH_ASSERT_GT(xLine.m_xEnd.y, xLine.m_xStart.y,
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xStart.x, 2.5f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xStart.y, 0.75f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xStart.z, 4.25f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xEnd.x, 2.5f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xEnd.y, 1.40f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xEnd.z, 4.25f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_fRadius, 0.10f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xColor.x, 1.0f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xColor.y, 0.82f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xColor.z, 0.08f, fTEST_EPSILON);
+		ZENITH_ASSERT_GT(xCylinder.m_xEnd.y, xCylinder.m_xStart.y,
 			"the exclamation stem must be vertical and point upward");
 	}
-	if (bHaveSphere)
+	if (bHaveGameplaySphere)
 	{
 		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xCenter.x, 2.5f, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xCenter.y, 0.45f, fTEST_EPSILON);
@@ -270,26 +306,28 @@ ZENITH_TEST(ZM_Interaction, Interactable_SpottedIndicatorSubmitsOneReadableExcla
 		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xColor.z, 0.08f, fTEST_EPSILON);
 		ZENITH_ASSERT_GT(xSphere.m_xCenter.y - xSphere.m_fRadius, 0.20f,
 			"the full dot must sit strictly above the scaled model top");
-		if (bHaveLine)
+		if (bHaveGameplayCylinder)
 		{
 			ZENITH_ASSERT_LT(xSphere.m_xCenter.y + xSphere.m_fRadius,
-				xLine.m_xStart.y,
+				xCylinder.m_xStart.y,
 				"the dot and stem need readable separation");
 		}
 	}
 
-	ZENITH_ASSERT_EQ(uSphereRestored, uSphereBefore);
-	ZENITH_ASSERT_EQ(uCubeRestored, uCubeBefore);
-	ZENITH_ASSERT_EQ(uLineRestored, uLineBefore);
-	ZENITH_ASSERT_EQ(uCapsuleRestored, uCapsuleBefore);
-	ZENITH_ASSERT_EQ(uCylinderRestored, uCylinderBefore);
-	ZENITH_ASSERT_EQ(uTriangleRestored, uTriangleBefore);
+	ZENITH_ASSERT_EQ(uDebugSphereRestored, uDebugSphereBefore);
+	ZENITH_ASSERT_EQ(uDebugCubeRestored, uDebugCubeBefore);
+	ZENITH_ASSERT_EQ(uDebugLineRestored, uDebugLineBefore);
+	ZENITH_ASSERT_EQ(uDebugCapsuleRestored, uDebugCapsuleBefore);
+	ZENITH_ASSERT_EQ(uDebugCylinderRestored, uDebugCylinderBefore);
+	ZENITH_ASSERT_EQ(uDebugTriangleRestored, uDebugTriangleBefore);
+	ZENITH_ASSERT_EQ(uGameplaySphereRestored, uGameplaySphereBefore);
+	ZENITH_ASSERT_EQ(uGameplayCylinderRestored, uGameplayCylinderBefore);
 
 	// ---- The refused arm: a non-finite CENTRE submits nothing and reports zero ---
 	// The live path cannot reach this (the pure sight predicate fails closed on a
 	// non-finite position first), but the helper is public and static, so its own
 	// refusal is pinned here rather than left to the caller.
-	u_int uRefusedLineAfter = 0u;
+	u_int uRefusedCylinderAfter = 0u;
 	u_int uRefusedSphereAfter = 0u;
 	const float fNaN = std::numeric_limits<float>::quiet_NaN();
 	const u_int uRefused = ZM_Interactable::SubmitTrainerSpottedIndicator(
@@ -297,22 +335,25 @@ ZENITH_TEST(ZM_Interaction, Interactable_SpottedIndicatorSubmitsOneReadableExcla
 		Zenith_Maths::Vector3(0.8f, 2.4f, 1.2f));
 	{
 		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
-		uRefusedLineAfter = xPrimitives.m_xLineInstances.GetSize();
-		uRefusedSphereAfter = xPrimitives.m_xSphereInstances.GetSize();
-		while (xPrimitives.m_xLineInstances.GetSize() > uLineBefore)
+		uRefusedCylinderAfter =
+			xPrimitives.m_xGameplayCylinderInstances.GetSize();
+		uRefusedSphereAfter = xPrimitives.m_xGameplaySphereInstances.GetSize();
+		while (xPrimitives.m_xGameplayCylinderInstances.GetSize()
+			> uGameplayCylinderBefore)
 		{
-			xPrimitives.m_xLineInstances.PopBack();
+			xPrimitives.m_xGameplayCylinderInstances.PopBack();
 		}
-		while (xPrimitives.m_xSphereInstances.GetSize() > uSphereBefore)
+		while (xPrimitives.m_xGameplaySphereInstances.GetSize()
+			> uGameplaySphereBefore)
 		{
-			xPrimitives.m_xSphereInstances.PopBack();
+			xPrimitives.m_xGameplaySphereInstances.PopBack();
 		}
 	}
 	ZENITH_ASSERT_EQ(uRefused, 0u,
 		"a non-finite marker centre must report ZERO submissions");
-	ZENITH_ASSERT_EQ(uRefusedLineAfter, uLineBefore,
-		"a refused marker must not append a line");
-	ZENITH_ASSERT_EQ(uRefusedSphereAfter, uSphereBefore,
+	ZENITH_ASSERT_EQ(uRefusedCylinderAfter, uGameplayCylinderBefore,
+		"a refused marker must not append a gameplay cylinder");
+	ZENITH_ASSERT_EQ(uRefusedSphereAfter, uGameplaySphereBefore,
 		"a refused marker must not append a sphere");
 }
 

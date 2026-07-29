@@ -87,10 +87,10 @@ namespace Flux_Generated_Primitives
 		{
 			unsigned char m_am_xModelMatrix[64]; // slang=matrix offset=0 arrayCount=0 (no C++ mapping)
 			unsigned char m_am_xColor[12]; // slang=vector offset=64 arrayCount=3 (no C++ mapping)
-			float m_fm_fPadding; // slang=float offset=76
+			float m_fm_fEmissiveIntensity; // slang=float offset=76
 		};
 		static_assert(sizeof(PrimitivePushConstant_CB) == 80, "PrimitivePushConstant_CB size drifted from Slang reflection");
-		static_assert(offsetof(PrimitivePushConstant_CB, m_fm_fPadding) == 76, "PrimitivePushConstant.m_fPadding offset drifted from Slang reflection");
+		static_assert(offsetof(PrimitivePushConstant_CB, m_fm_fEmissiveIntensity) == 76, "PrimitivePushConstant.m_fEmissiveIntensity offset drifted from Slang reflection");
 	}
 
 }

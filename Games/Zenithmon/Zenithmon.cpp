@@ -117,7 +117,10 @@ public:
 			return;
 		}
 
-		const Zenith_Maths::Vector4 xBaseColour = ResolveBaseColour();
+		bool bUsesNpcPalette = false;
+		ZM_NPC_ID eNpcId = ZM_NPC_NONE;
+		const Zenith_Maths::Vector4 xBaseColour =
+			ResolveBaseColour(&bUsesNpcPalette, &eNpcId);
 
 		// A RE-RUN must refresh, never restack. ReadFromDataStream clears
 		// m_bInitialised, so a live component that is re-read would OnStart again --
@@ -131,7 +134,7 @@ public:
 			Zenith_MaterialAsset* pxOwnedMaterial = m_xMaterial.GetDirect();
 			if (pxOwnedMaterial != nullptr)
 			{
-				pxOwnedMaterial->SetBaseColor(xBaseColour);
+				ApplyAppearance(*pxOwnedMaterial, xBaseColour, bUsesNpcPalette, eNpcId);
 				m_bInitialised = true;
 			}
 			return;
@@ -151,7 +154,7 @@ public:
 		// to this TU and cannot be named from Tests/), and ZM_RivalVesperAuthored_Test
 		// uses it to find BOTH populations and prove they were kept apart.
 		pxMaterial->SetName("ZM_Greybox");
-		pxMaterial->SetBaseColor(xBaseColour);
+		ApplyAppearance(*pxMaterial, xBaseColour, bUsesNpcPalette, eNpcId);
 		pxMaterial->SetRoughness(0.90f);
 		pxMaterial->SetMetallic(0.0f);
 
@@ -198,13 +201,74 @@ public:
 #endif
 
 private:
+	static constexpr float fNPC_PALETTE_EMISSIVE_INTENSITY = 1.0f;
+	static constexpr float fNPC_PALETTE_AUTHORED_EMISSIVE_WEIGHT = 0.20f;
+
+	static Zenith_Maths::Vector3 ResolveNpcReadabilityTint(ZM_NPC_ID eNpcId)
+	{
+		// Stable row-keyed hues carry the subtle authored human palette through the
+		// display tonemapper without letting its ~0.20 linear-RGB differences collapse
+		// below the same 0.15 promise in framebuffer RGB. They are an emissive carrier,
+		// not a replacement: the material's lit base remains the human-derived colour.
+		switch (eNpcId)
+		{
+		case ZM_NPC_VILLAGER:         return { 0.90f, 0.16f, 0.04f }; // warm orange
+		case ZM_NPC_TRADE_POST_CLERK: return { 0.04f, 0.75f, 0.40f }; // trade-post green
+		case ZM_NPC_CARETAKER:        return { 0.10f, 0.45f, 0.95f }; // care-centre blue
+		case ZM_NPC_WANDERER:         return { 0.85f, 0.15f, 0.70f }; // walking magenta
+		case ZM_NPC_ROUTE_WARDEN:     return { 0.95f, 0.70f, 0.05f }; // warning yellow
+		case ZM_NPC_RIVAL_VESPER:     return { 0.35f, 0.12f, 0.60f }; // rival violet
+		default:                      return { 0.0f, 0.0f, 0.0f };
+		}
+	}
+
+	// The Dawnmere sun is nearly overhead, so the vertical faces visible at player
+	// eye level receive almost no direct light. An NPC-only, palette-derived
+	// emissive floor keeps the resolved colours visible without making the material
+	// unlit: the sun still models the top and any favourably-facing side. Fallback
+	// greyboxes keep the material defaults -- zero emission and default-lit shading.
+	void ApplyAppearance(
+		Zenith_MaterialAsset& xMaterial,
+		const Zenith_Maths::Vector4& xBaseColour,
+		bool bUsesNpcPalette,
+		ZM_NPC_ID eNpcId) const
+	{
+		Zenith_Maths::Vector3 xEmissiveColour(0.0f);
+		if (bUsesNpcPalette)
+		{
+			const Zenith_Maths::Vector3 xAuthoredColour(
+				xBaseColour.x, xBaseColour.y, xBaseColour.z);
+			const Zenith_Maths::Vector3 xReadabilityTint =
+				ResolveNpcReadabilityTint(eNpcId);
+			xEmissiveColour =
+				xAuthoredColour * fNPC_PALETTE_AUTHORED_EMISSIVE_WEIGHT
+				+ xReadabilityTint
+					* (1.0f - fNPC_PALETTE_AUTHORED_EMISSIVE_WEIGHT);
+		}
+
+		xMaterial.SetBaseColor(xBaseColour);
+		xMaterial.SetEmissiveColor(xEmissiveColour);
+		xMaterial.SetEmissiveIntensity(fNPC_PALETTE_EMISSIVE_INTENSITY);
+	}
+
 	// Known-limit W4. The appearance this blockout body wears RIGHT NOW: the
 	// sibling ZM_Interactable's authored ZM_NpcData row -> its ZM_HUMAN_ID -> the
 	// palette. Everything without a resolvable row -- every wall, floor, door,
 	// lintel and prop -- keeps the shipped blockout grey, which is the whole
 	// behaviour-preservation promise of this change.
-	Zenith_Maths::Vector4 ResolveBaseColour() const
+	Zenith_Maths::Vector4 ResolveBaseColour(
+		bool* pbUsesNpcPalette = nullptr,
+		ZM_NPC_ID* peNpcId = nullptr) const
 	{
+		if (pbUsesNpcPalette != nullptr)
+		{
+			*pbUsesNpcPalette = false;
+		}
+		if (peNpcId != nullptr)
+		{
+			*peNpcId = ZM_NPC_NONE;
+		}
+
 		const ZM_Interactable* pxInteractable =
 			m_xParentEntity.TryGetComponent<ZM_Interactable>();
 		if (pxInteractable == nullptr)
@@ -220,7 +284,20 @@ private:
 		{
 			return ZM_GetHumanPaletteFallbackColour();
 		}
-		return ZM_GetHumanPaletteColour(ZM_GetNpcData(eNpcId).m_eHuman);
+		const ZM_HUMAN_ID eHumanId = ZM_GetNpcData(eNpcId).m_eHuman;
+		if (eHumanId >= ZM_HUMAN_COUNT)
+		{
+			return ZM_GetHumanPaletteFallbackColour();
+		}
+		if (pbUsesNpcPalette != nullptr)
+		{
+			*pbUsesNpcPalette = true;
+		}
+		if (peNpcId != nullptr)
+		{
+			*peNpcId = eNpcId;
+		}
+		return ZM_GetHumanPaletteColour(eHumanId);
 	}
 
 	Zenith_Entity m_xParentEntity;

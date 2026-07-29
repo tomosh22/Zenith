@@ -1,15 +1,32 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-28
+**Last updated:** 2026-07-29
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (ZM numbers OBSERVED 2026-07-28 on a fresh build of both configs
-after known-limit W5):** ZM headless registry **49 passed / 0 failed**; ZM boot unit gate
-**2722 ran / 2721 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
-2722); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
-1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6/SC7/SC8/W2/W3/W4/W5 -- none of
-them touches a `Zenith/` file). The 1 skipped in each is the quarantined
-`GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
+down this file (OBSERVED 2026-07-30 at ZM-D-169, on a fresh build of both
+configs):** ZM headless registry **50 passed / 0 failed**; full windowed
+Vulkan **50 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2742 ran / 2741 passed / 0
+failed / 1 skipped** (`zm-tests.yml` pinned to **2742**); engine boot unit gate,
+Null Combat, **1164 ran / 1163 passed / 0 failed / 1 skipped**
+(`run_unit_gate.ps1` default `-Baseline 1164`). The 1 skipped in each is the
+quarantined `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
+**The registry moved 49 -> 50 at ZM-D-169** (`ZM_NpcRenderedPalette_Test`, a genuinely new
+registration); **BOTH unit baselines are UNMOVED**, so no `-Baseline` anywhere changed.
+
+**★ THIS BLOCK AND `zm-tests.yml`'s PIN MOVE TOGETHER OR NOT AT ALL, and on
+2026-07-29 they did not.** This block read 2722 while the workflow was already
+pinned to 2742 -- so the file that shouts "use these numbers" was itself the
+stale one, and `Shortfalls.md` had a THIRD figure (2731). Any commit that adds a
+boot unit updates: the OBSERVED line here, the `-Baseline` in
+`.github/workflows/zm-tests.yml`, and the baseline bullet in `Shortfalls.md`.
+Never write a PREDICTED count into any of the three.
+
+**★ AND `doc-lint` WILL NOT CATCH THIS. `Tools/doc_lint.ps1` hardcodes
+`$docsDir = Games/DevilsPlayground/Docs` and never reads `Games/Zenithmon/Docs`
+at all** -- its "test count consistency across Status / TestPlan /
+BuildEnvironment / AgentBriefing / Shortfalls" check scores DP's five files, not
+this game's. A green `doc-lint` is therefore ZERO evidence about any Zenithmon
+doc. Every drift below was found by hand, twice; treat these docs as unlinted.
 
 **★ THE REGISTRY MOVED AT SC8 (46 -> 47) BUT NOT AT SC7, AND BOTH ARE CORRECT.**
 SC7's three new end-to-end phases live INSIDE the existing
@@ -123,10 +140,26 @@ while every item below was true**:
 3. **The spotted marker draws, but reads as a sphere + diagonal stroke,** not an exclamation mark.
 4. **Dawnmere reads as an open field, not a town** -- no buildings; the Trade Post and Care Center
    are dialogue only.
-**Capture with `Tools\capture_viewport.ps1` (new). Use `-IntervalMs 60` or lower for short beats:**
-dt is pinned to 1/30, so a 0.35 s beat is ~11 frames and the rival's walk ~43 -- at 250 ms you sample
-one frame in eight. Three of the audit's four "not captured" gaps were sampling rate, not absence.
-Evidence: `Build/artifacts/evidence_final/` (git-ignored).
+**★ ITEMS 1 AND 3 ABOVE WERE RESOLVED 2026-07-30 BY ZM-D-169, ON PIXELS** (NPC bodies now read at
+eye level -- min rendered separation **0.2001** against a 0.15 floor, per-body RGB 0.34-0.84 per
+channel where the audit measured 0.004-0.055; the marker now reads as an upright exclamation mark,
+**118 px spanning 7x28**). **Items 2 and 4 remain UNVERIFIED / open.** And the shading CAUSE behind
+item 1 is still unfixed -- only the six NPCs were given an emissive floor.
+
+**★★ DO NOT USE `Tools\capture_viewport.ps1` TO JUDGE A SHORT BEAT. This file used to advise
+`-IntervalMs 60` or lower; THE SCRIPT CANNOT DELIVER THAT.** Measured 2026-07-29/30: it was asked
+for 40 ms and delivered **206 ms** at 2560x1440, and 81 ms at 1280x800 -- PNG encode dominates the
+loop, so the interval parameter is a floor the script never reaches at usable resolutions. dt is
+pinned to 1/30, so a 0.35 s beat is ~11 frames and you sample 1-2 of them. **For any beat shorter
+than about a second, use the frame-exact engine path instead:** `Flux_Screenshot::RequestDump` from
+inside the frame you care about, consumed once per `EndFrame` by `Zenith_Vulkan_Swapchain` (a no-op
+on Null, so gate on `Zenith_IsNullRenderer()`). `ZM_NpcRenderedPalette_Test` and
+`ZM_RivalVesperAuthored_Test` both do this now. **And build the colour predicate from the bytes the
+dump wrote, never from the colour you submitted** -- see ZM-D-169: a marker submitting linear
+`(1.0, 0.82, 0.08)` unlit lands at `RGB(208, 182, 97)`, and two "low blue" scans reported ZERO
+matches across 539 frames of a marker that was rendering perfectly.
+Evidence: `Build/artifacts/evidence_final/` and `Build/artifacts/zenithmon/visual_audit/`
+(both git-ignored).
 
 **Historical note on how S7 nearly closed wrong -- keep this, it is the reason the stage is honest:**
 this file previously claimed "S7 COMPLETE" for five commits while
@@ -157,31 +190,54 @@ the stage.** No S8 content begins, and the S8 go/no-go is NOT the next step --
 
 ## Current task
 
-**★★ FINISH S7. The S8 go/no-go is NOT the next step and no S8 content begins.**
-The five known limits W1-W5 did land (ZM-D-157/158/159/160/161): forced replacement
-ships, complete authored trainer parties are live, the honest Vesper-loss/whiteout route
-is proven, a trainer who sees you now SHOWS you before he speaks, the rival no longer
-looks like a townsperson, and every NPC stands on its OWN measured ground. **None of that
-ticks a Roadmap box**, because the two open S7 boxes ask for something else.
+**★★ S7 IS CLOSED (2026-07-29, ZM-D-167). Both boxes at `Roadmap.md:104` and `:172`
+are ticked and the gate at `Roadmap.md:185` is annotated MET.** This section previously
+said "FINISH S7" and stayed that way after the stage closed; it is the section a session
+acts on, so it outranked the Stage line above it and pointed the next session at finished
+work. Fixed 2026-07-29.
 
-**THE REAL REMAINING S7 QUEUE (user-directed 2026-07-29):**
+**★★ THE ZM-D-168 VISUAL-AUDIT FOLLOW-UP LANDED 2026-07-30 AS ZM-D-169** (built, fully gated
+including the CROSS-GAME engine gate, and committed). Shortfalls **1.8-3c is CLOSED on pixels**
+and the suite has its first pixel-level assertions. Observed: ZM headless **50/0**, full windowed
+**50/0 with ZERO skipped**, ZM boot **2742 / 2741 / 0 / 1 UNMOVED**, engine boot **1164 / 1163 /
+0 / 1 UNMOVED**.
 
-1. **`Roadmap.md:104` -- `freeze input` + `approach`.** The two cut links. This is the
-   item that unticks the box; the rest of its chain already ships. Recorded blockers, to
-   be VERIFIED not trusted: `ZM_FollowCamera::OnLateUpdate` OWNS and overwrites the camera
-   every frame with **no override stack** (Shortfalls 1.8-3a -- the doc's own verdict is
-   that a cut needs camera-ownership arbitration, "a real engine/game-camera feature, not
-   a polish item"), and Vesper is authored STATIONARY with an OBB collider, so walking him
-   needs dynamic-capsule/nav ownership, avoidance, and coordination with the existing
-   freeze/busy-channel seam (1.8-3b). Reuse `m_bChannelBusy` and the menu/battle barriers
-   rather than inventing a second freeze concept.
-2. **Spotted marker off the DEBUG primitives channel** (Shortfalls 1.8-3c). It rides
-   `Zenith_GraphicsOptions::m_bPrimitivesEnabled`, so a tools user who unchecks
-   `Graphics/Primitives/Enabled` loses a GAMEPLAY cue; `ExecuteGBuffer` also early-returns
-   before draining, leaking queued instances while a trainer is SPOTTED. **Preserve the
-   W3 property:** `SubmitTrainerSpottedIndicator` RETURNS a count measured off Flux's own
-   CPU instance queues and callers `+=` it -- a bare `++` beside the call is exactly the
-   defect that left every test green with nothing drawn.
+**★ THE CURRENT TASK IS S8's FOUR CONTENT ITEMS** (`Roadmap.md:198-201`). **The S8 go/no-go is
+NOT the next step** -- per `Roadmap.md:196-203` that gate FOLLOWS those four items rather than
+preceding them, and it is a HUMAN stop that no agent may sign.
+
+**★ AND ZM-D-169 LEFT TWO THINGS OPEN THAT IT WOULD BE EASY TO MISREAD AS DONE:**
+1. **The greybox SHADING defect is NOT fixed.** ZM-D-169 gave the six NPCs an emissive floor;
+   every other blockout -- walls, floors, doors, lintels, props -- still renders near-black on the
+   vertical faces a player at eye level actually sees. The real fix is an ambient/indirect term.
+2. **`m_eHuman` no longer solely determines how an NPC reads on screen.** The emissive floor is
+   20% authored palette + 80% of a NEW `ZM_NPC_ID`-keyed `ResolveNpcReadabilityTint`, so W4's
+   "one row, one appearance" property is now split across two tables that can disagree, and
+   `Npc_AuthoredAppearancesAreMutuallyDistinct` scores only the first. A roster change must update
+   both.
+
+**THE S7 QUEUE AS IT NOW STANDS -- ALL FIVE ITEMS RESOLVED OR RE-HOMED. Kept for the
+audit trail; nothing here is live work:**
+
+1. **`Roadmap.md:104` -- `freeze input` + `approach` -- ✅ DONE 2026-07-29 (SC1-SC3,
+   ZM-D-163/166/167).** Both cut verbs ship: SC1 the pure callerless
+   `ZM_TRAINER_SIGHT_APPROACHING` state + approach maths, SC2 the `ZM_TrainerCinematicLatch`
+   freeze owner (arbitrated by NAME in the one existing guard, deliberately un-refcounted),
+   SC3 the live drive on a `CAPSULE`/`DYNAMIC` Vesper. Observed: 7.575 m -> 2.105 m into a
+   2.0 m standoff in 43 frames / 1.467 s, `worstBackstep=0.0000`, player frozen all 43
+   frames and released in 1, `facingAbsDot=1.00000` off the RE-AUTHORED bytes. **★ THE
+   CAMERA CUT IS NOT CLAIMED BY THAT TICK** -- absent from the box's text, a W3 aspiration
+   only, still unbuilt, still booked in Shortfalls 1.8. The recorded "needs a real
+   engine/game-camera feature" blocker was DISPROVED: `ZM_FollowCamera` is a Zenithmon
+   component (order 103) and the sole writer of the camera pose.
+2. **Spotted marker off the DEBUG primitives channel** (Shortfalls 1.8-3c) -- **⏳ IN
+   FLIGHT, UNCOMMITTED. Not done; do not tick 1.8-3c.** The working tree carries a fix (see
+   "In-flight working tree" below) that has NOT been built, tested or committed. Shortfalls
+   1.8-3c is left OPEN on purpose: marking it closed against an unbuilt diff is precisely
+   the reported-not-observed failure ZM-D-168 exists to punish. **Preserve the W3
+   property:** `SubmitTrainerSpottedIndicator` RETURNS a count measured off Flux's own CPU
+   instance queues and callers `+=` it -- a bare `++` beside the call is exactly the defect
+   that left every test green with nothing drawn.
 3. **Duplicate NPC appearance -- ✅ DONE 2026-07-29 (ZM-D-164).** `ZM_NPC_ROUTE_WARDEN` now
    names the new append-only `ZM_HUMAN_TOWN_WARDEN` (`WORKER`+`BLONDE`), nearest authored
    neighbour 0.20661 against the 0.15 floor. **★ IT WAS NOT ONE TOKEN AND THE RECORDED FIX
@@ -193,27 +249,188 @@ ticks a Roadmap box**, because the two open S7 boxes ask for something else.
    Observed: boot **2731 / 2730 / 0 / 1 -- zero delta**, headless 49/0, windowed gallery
    1/0 (run deliberately: a 36th human staled the HUMANS bake manifest and the headless
    gate is blind to that, since the gallery skips for "requires graphics", never staleness).
-4. **★ UNBOOKED S7 SLIP, found by the 2026-07-29 doc audit: the BOX (storage) screen.**
-   `Roadmap.md:98` (the S6 gate) records "Box is deferred to S7" and `Shortfalls.md:71`
-   still carries it with the blocker "needs S7 persistence" -- which S7 SHIPPED. S7 was
-   about to close without it and **without any re-deferral recorded anywhere.** Either
-   build it or record an explicit re-deferral with a reason; do not let it evaporate.
-5. **Doc reconciliation** (see the audit findings below): the S7 `*Gate:*` line at
-   `Roadmap.md:163` carries no MET annotation though ZM-D-142 states it is satisfied,
-   breaking the S0/S1/S2/S4/S5/S6 pattern; `Shortfalls.md:7-12` is stamped 2026-07-21 and
-   still says "Next autonomous work: S7 item 2"; `Shortfalls.md` 1.7/1.10 quote **36 tests
-   / 2392 units** against the live **49 / 2722**; `Shortfalls.md:243` lists
-   Q-2026-07-21-001 as an open engine gap when it is `[CLOSED 2026-07-25]`; this file's own
-   "Open Questions" list names 2 CLOSED ids and omits 9 genuinely open ones; and
-   `Tests/ZM_AutoTests_SaveContinue.cpp:25` claims graphics-required while its registration
-   at `:665` passes `false`.
+4. **The BOX (storage) screen -- ✅ RESOLVED 2026-07-29 by explicit RE-DEFERRAL (ZM-D-165,
+   Q-2026-07-29-001).** It is now booked at `Roadmap.md:212` under S9, with the reason
+   recorded: the storage MODEL has persisted 16x30 boxes since ZM-D-136, so what is missing
+   is only a presenter in the S6 `Source/UI/ZM_UI_*` by-value idiom (no schema change, no
+   ECS order, no serialization bump -- it lands whenever with zero rework). It belongs in S9
+   because a box is only testable once the player can exceed a full party. **Do not let this
+   deferral expire unremarked a second time.**
+5. **Doc reconciliation -- ✅ DONE 2026-07-29, verified item by item rather than assumed:**
+   the S7 `*Gate:*` line now carries its MET annotation (`Roadmap.md:185`), restoring the
+   S0/S1/S2/S4/S5/S6 pattern; `Shortfalls.md`'s verdict block was re-dated and its
+   "next autonomous work" corrected (it had gone stale a SECOND time -- see the tripwire
+   below); the "36 tests / 2392 units" figures are covered by the trust-this-line disclaimer
+   in `Shortfalls.md`'s "CURRENT VERIFIED BASELINE" bullet, whose own number is now 2742
+   (cited by NAME, not line -- the line numbers in this list drifted the moment the block was
+   edited, which is why the original item 5 pointed at `Roadmap.md:163` for a gate that had
+   moved to `:185`); the false open-gap entry for
+   Q-2026-07-21-001 is gone; this file's "Open Questions" pointer was rebuilt (it had named
+   2 CLOSED ids and omitted 9 open ones); and
+   `Tests/ZM_AutoTests_SaveContinue.cpp:25` no longer claims graphics-required -- its
+   registration passes `false`, so it RUNS on the Null backend and IS CI-visible.
 
-**Baseline re-verified 2026-07-29 on a fresh build of both configs, before any of the
-above:** Vulkan_True and Null_True both exit 0; headless registry **49 passed / 0 failed**;
-boot unit gate **2722 ran / 2721 passed / 0 failed / 1 skipped** -- equal to the pinned
-`zm-tests.yml` baseline, so the tree is green and unchanged.
+**★ THE TRIPWIRE THIS ITEM EARNED: A PROSE SUMMARY GOES STALE TWICE.** `Shortfalls.md`'s
+verdict block was rewritten on 2026-07-29 by ZM-D-165 *specifically because* it had been
+eight days stale -- and by the end of the same day it was wrong again, still asserting "S7
+IS NOT COMPLETE" and still listing SC2/SC3 as remaining after both had landed. Three files
+also held three different boot baselines at once (2722 / 2731 / 2742). **The structural
+lesson: a stage-closing commit must update the Roadmap checkbox AND every prose summary
+that names the stage, in the same commit** -- otherwise the next session inherits a
+confident sentence that outranks the box, which is the exact failure ZM-D-162 was written
+to prevent and which recurred anyway.
 
-**★ QUEUE ITEM 1 IS UNDERWAY -- SC1 (ZM-D-163) AND SC2 (ZM-D-166) HAVE LANDED.** SC2 adds
+**Baseline at S7 closure (2026-07-29, ZM-D-167), superseding the pre-SC1 figures this
+paragraph used to carry:** Vulkan_True and Null_True both exit 0; headless registry
+**49 passed / 0 failed**; full windowed Vulkan **49 passed / 0 failed**; boot unit gate
+**2742 ran / 2741 passed / 0 failed / 1 skipped** -- equal to the pinned `zm-tests.yml`
+baseline, so the tree is green and unchanged.
+
+## The ZM-D-168 follow-up -- BUILT, GATED AND COMMITTED 2026-07-30 as ZM-D-169
+
+**★ THIS SECTION IS NO LONGER LIVE WORK.** It is kept because the inventory and the three traps
+below are the record of what was landed and why; the OBSERVED results are at the end of it and the
+full entry is ZM-D-169. The prose below still describes the diff in the future tense of the session
+that wrote it -- read it as a description of what shipped, not as a plan. Modified:
+`Components/ZM_Interactable.{h,cpp}`, `Tests/ZM_AutoTests_BattleMenu.cpp`,
+`Tests/ZM_AutoTests_RivalVesper.cpp`, `Tests/ZM_Tests_Interactable.cpp`, `Zenithmon.cpp`,
+`Tools/capture_viewport.ps1`, and **six `Zenith/Flux/Primitives` + `Zenith/Flux/Shaders`
+files**. New and untracked: `Tests/ZM_TestTGAHelpers.h`.
+
+It is the follow-up to ZM-D-168's visual audit, in two threads:
+
+1. **The SPOTTED marker moves off the debug-primitives channel** (targets Shortfalls
+   1.8-3c + audit finding 3). `Flux_PrimitivesImpl` gains two dedicated GAMEPLAY queues plus
+   `SubmitGameplayCylinderAndSphere()`, which returns 1 only if BOTH queues grew -- the W3
+   measured-off-Flux property, preserved. `ExecuteGBuffer` now drains the gameplay queues
+   UNCONDITIONALLY (the early-return fires only when debug and gameplay are both empty),
+   closing both the lost-cue and the queue-leak halves. The shader gains
+   `m_fEmissiveIntensity`; non-zero selects `GBUFFER_SHADING_UNLIT`, gameplay draws pass
+   0.5, debug draws pass 0 and keep the old matte path. The stem changes from Flux's flat
+   debug LINE quad to a solid CYLINDER, which is the audit's "sphere + diagonal stroke".
+2. **The suite gets its first pixel-level assertions** (audit findings 1 and 2, whose stated
+   rule was "rendering claims need pixels"). New `ZM_TestTGAHelpers.h` reads
+   `Flux_Screenshot`'s BGRA TGA; new **`ZM_NpcRenderedPalette_Test`** loads committed
+   Dawnmere, teleports the six live NPC model entities into an eye-level lineup, dumps the
+   real framebuffer and measures mean RGB + rendered pairwise separation per body;
+   `ZM_AutoTests_BattleMenu.cpp` captures an `ACTION_ROOT` frame for the HUD half.
+
+**★ THREE THINGS THE NEXT SESSION MUST NOT GET WRONG -- ALL THREE HELD; kept as the record:**
+- **This touches `Zenith/Flux`, so it is an ENGINE change and owes the CROSS-GAME gate,** not
+  just Zenithmon's. The engine baseline **1164** is in scope for the first time since W1-W5
+  (every one of which was game-only). Combat / CityBuilder / DevilsPlayground / RenderTest /
+  TilePuzzle all render debug primitives. **DONE:** three sentinels built + all exit 0, engine
+  boot units **1164 / 1163 / 0 / 1 UNMOVED**, all five games clean on `Null_True`, Combat headless
+  **14/14**.
+- **`ZM_NpcRenderedPalette_Test` is a NEW registration, so the registry moves 49 -> 50** --
+  headless and windowed both. The rewritten interactable unit MODIFIES an existing unit
+  rather than adding one, so boot may stay 2742; take the OBSERVED line, never this sentence.
+  **BOTH PREDICTIONS HELD:** registry **50** in both configs, boot **2742 UNMOVED**.
+- **`Build\regen.ps1` is NOT owed.** The only new file is a HEADER. Regen is for a new `.cpp` or
+  folder. **Correction (verified by grep, 2026-07-29):** this said "included by two existing TUs";
+  `ZM_TestTGAHelpers.h` is included by exactly ONE -- `Tests/ZM_AutoTests_RivalVesper.cpp`.
+  `ZM_AutoTests_BattleMenu.cpp` takes `Flux/Flux_Screenshot.h` and checks its capture with
+  `DiskFilePresent`, never reading a pixel. The no-regen conclusion is unaffected; the count was not.
+
+**★ AND ONE DESIGN CALL THAT NEEDS A RULING, NOT A SILENT LANDING.** Audit finding 1's cause
+was diagnosed as a SHADING gap -- near-overhead sun, no meaningful ambient/indirect term, so
+the vertical faces a player actually sees get almost no light. The tree does not fix that.
+Instead `ZM_GreyboxVisual::ApplyAppearance` gives NPCs an emissive floor: 20% of the authored
+`m_eHuman` palette colour blended with 80% of a NEW row-keyed `ResolveNpcReadabilityTint`
+(six hard-coded hues). That is a game-side readability workaround, and it introduces a
+SECOND colour source alongside W4's palette -- so `m_eHuman` no longer solely determines how
+an NPC reads on screen. Book it as such in ZM-D-169; do not let it read as "the shading
+defect is fixed", and do not let it silently supersede W4.
+
+**★ GATED AND LANDED 2026-07-29 as ZM-D-169. THE PREDICTIONS ABOVE ARE SUPERSEDED BY THE
+OBSERVED LINES BELOW; read these, not them.**
+- **`zenith build Zenithmon` (Vulkan_True) and `--headless` (Null_True): both clean.** No regen
+  was run and none was needed.
+- **Headless registry: `50 passed, 0 failed (of 50)`.** The predicted 49 -> 50 HELD --
+  `ZM_NpcRenderedPalette_Test` is a genuinely new registration. It SKIPS headless
+  (`m_bRequiresGraphics = true`), and a skip counts as a pass, so the headless 50 does not mean it
+  ran there.
+- **Full windowed Vulkan: `50 passed, 0 failed (of 50)`, ZERO skipped** -- every test including
+  both new pixel tests ran for real.
+- **Boot unit gate (Null exe, `-TimeoutSec 600`): `2742 ran, 2741 passed, 0 failed, 1 skipped`.
+  UNMOVED.** The prediction held: the interactable unit was REWRITTEN, not added. **So no baseline
+  moved and nothing was edited in any of the three sites** -- `Status.md`, `zm-tests.yml` and
+  `Shortfalls.md` all already read 2742 and still do. The three-way drift this file warns about was
+  avoided by changing nothing, which is the correct action when the count does not move.
+- **The two risks flagged before the run are both DISPROVED, not merely unobserved.**
+  (1) `NRPHoldLiveNpcLineup`'s per-frame `SetPosition` holds against the physics-to-transform sync:
+  all six bodies were sampled at their projected NDC and returned body colour, not background.
+  (2) `ZM_BattleMenuRun_Test`'s 90-frame `ACTION_ROOT` dwell fits inside the battle leg's deadline
+  -- it passed windowed with the dwell asserted at exactly 90.
+- **W4's `blocksOffGrey=0` arm is unmoved, as predicted:** observed
+  `blocks=4 blocksOffGrey=0 npcBodies=6 npcStillGrey=0 paletteError=0.000000 vsGrey=0.6366
+  vsNearestNpc=0.2124`. The emissive floor's `SetEmissiveIntensity(1.0f)` really is a no-op for
+  non-NPC blockouts, because 1.0 is already the `Zenith_MaterialParamTable` default and the emissive
+  COLOUR stays `(0,0,0)`.
+- **★ 1.8-3c IS NOW CLOSED, ON PIXELS.** `ZM_RivalVesperAuthored_Test` holds
+  `Graphics/Primitives/Enabled` FALSE for the whole run and now takes a frame-exact
+  `Flux_Screenshot::RequestDump` from inside a real SPOTTED frame. Observed: **`SPOTTED marker
+  OBSERVED IN PIXELS: 118 marker-hue px spanning 7x28 in a 1280x720 swapchain capture`** -- an
+  upright exclamation mark over the rival, so the CHANNEL (1.8-3c) and the SHAPE (audit finding 3)
+  are both settled by the same capture. **Mutation-proven:** restoring the old
+  `if (!m_bPrimitivesEnabled) return;` reds it with "reached Flux's queues but NOT the framebuffer:
+  0 marker-hue pixels" and exit 1; reverting returns to green.
+- **★ AND THE AUDIT'S "UNEXPLAINED NULL RESULT" WAS THE MEASURING APPARATUS, TWICE OVER. Read this
+  before trusting any future screen scrape.** The marker was drawing the whole time.
+  1. **The colour predicate was wrong.** A gameplay draw submitting linear `(1.0, 0.82, 0.08)`
+     unlit at 1.5x sounds like "saturated yellow, almost no blue". Measured off the actual bytes it
+     is **`RGB(208, 182, 97)` -- blue/red 0.47, not 0.08.** Two hand-rolled scans keyed on "low
+     blue" reported **zero marker pixels across 539 frames** of two different tests while it
+     rendered perfectly. The false negative was one step from being written up as a render defect.
+  2. **The sampling rate was unreachable.** `capture_viewport.ps1 -IntervalMs 40` delivered
+     **206 ms** at 2560x1440 and 81 ms at 1280x800 -- PNG encode dominates the loop. Its own header
+     advises "60 ms or lower", which the script cannot honour at full size.
+  **The rule: a null result from a hand-rolled screen scrape is evidence about the scrape.** Use the
+  engine's frame-exact dump and derive the predicate from the bytes it writes. The new assertion
+  does both, and records that the marker hue is UNIQUE frame-wide (118 matches, all inside the
+  marker's own 7x28 box, zero elsewhere) so the threshold is defensible rather than tuned.
+- **CROSS-GAME gate, owed because this touches `Zenith/Flux`:** SentinelECS / SentinelPhysics /
+  SentinelAI all built (`Vulkan_..._False`) and all **exit 0**; engine boot units on Null Combat
+  **1164 / 1163 / 0 / 1 UNMOVED**; Combat / CityBuilder / DevilsPlayground / RenderTest /
+  TilePuzzle all **clean on `Null_True`**; and because the change is in the SHARED primitives
+  drain, three of them were also RUN headless rather than only compiled -- Combat **14/14**,
+  CityBuilder **45/45**, DevilsPlayground **158/158**.
+- **Ratchets: both still pre-existing RED, and this commit adds nothing to either.**
+  `architecture,lints` fails on `Zenith_TerrainComponent` (EC->Flux edge + `std::vector` /
+  `std::function`) and per-file `g_xEngine` counts in `Zenith_TerrainEditor.cpp` and
+  `Zenith_EditorAutomation.cpp`; `complexity` fails on `ParseCommandLine`,
+  `ValidateTerrainGridTopology`, `ZENITH_PROPERTY` and duplicate-clusters=10.
+  **Every failing finding names a file this commit does not touch**, and duplicate clusters are at
+  the 10 this file already recorded. The `Flux/Primitives/Flux_PrimitivesImpl.h` mentions in the
+  report are pre-existing ALLOW-LISTED EC->Flux edges (`Zenith_ColliderComponent`,
+  `Zenith_AIWorldHooksInstall`, `Zenith_PhysicsDebugDraw`) plus informational file-size rows --
+  not new findings. `ExecuteGBuffer` grew but is not in the refactor queue's top 20 and added no
+  duplicate cluster despite the two new emissive-parameter render calls. **NOTE the evidence
+  standard here is weaker than the pristine-HEAD-worktree comparison earlier commits used:**
+  ZM-D-031 forbids worktrees, so this is a finding-by-finding check of the failure list, not a
+  byte-identical diff of two reports.
+- **`Games/Zenithmon/Assets` byte-clean** after the full windowed batch -- no scene moved, which is
+  the ZM-D-148 boot-shape-independence property still holding.
+
+**★ AND ONE ENGINE DEFECT FOUND BY READING, WHICH EXPLAINS AUDIT FINDING 3 EXACTLY.**
+`Flux_PrimitivesImpl::RenderLinePrimitives` translates the line quad to `m_xStart` while
+`GenerateUnitLine` spans local y in `[-1, 1]`, so `AddLine(A,B)` draws from `A - dir*len/2` to
+`A + dir*len/2` -- centred on the START, overhanging behind it and stopping short of `B`.
+`RenderCylinderPrimitives` translates to the MIDPOINT, so the two verbs do not cover the same
+segment. The old marker asked for a stem at `top+0.55 .. top+1.20` and got `top+0.225 .. top+0.875`,
+straight through the dot at `top+0.25`: that is the audit's "gold sphere with a diagonal stroke",
+and the flat +Z-facing quad (`ComputeYAxisAlignment` never rolls toward the camera) is the rest of
+it. **Deliberately NOT fixed here** -- it changes debug draws in all five other games and every
+`Add*` composite built on `AddLine` (cross/circle/arrow/cone/arc/polygon/grid/axes), so it owes its
+own cross-game gate. Booked as `task_33ee8059`. The cylinder swap in this diff sidesteps it.
+
+## S7 closure detail and standing lessons (HISTORICAL -- none of this is live work)
+
+Everything from here down is the record of how S7 closed and what it bound for future work.
+It is not a task list. The live task is the "In-flight working tree" section above.
+
+**★ QUEUE ITEM 1 IS COMPLETE -- SC1 (ZM-D-163), SC2 (ZM-D-166) AND SC3 (ZM-D-167) ALL
+LANDED, AND SC3 CLOSED S7.** SC2 adds
 `ZM_TrainerCinematicLatch` as a FOURTH freeze owner, arbitrated by name in
 `ZM_UI_MenuStack::UnfreezePlayer`'s existing guard, **with no refcount on purpose** (one `End()`
 always releases; a counter turns one missed `End()` into a permanently frozen player) and
@@ -229,10 +446,12 @@ appended at ordinal 4 with the pure `ZM_StepTrainerApproach`, **callerless** (th
 shape), so `m_bApproachPossible` defaulting false leaves all 26 shipped FSM units unmodified.
 Observed: headless **49/0** (unmoved), boot **2722 -> 2731 / 2730 passed / 0 failed / 1
 skipped**, every committed `.zscen` byte-unchanged after a boot running all 216 authoring
-steps. Remaining for queue item 1: **SC2** (the cinematic freeze latch + arbitration -- reuse
-`m_bChannelBusy` and the menu/battle barriers, do NOT invent a second freeze concept), **SC3**
-(Vesper actually walks; re-authors `Dawnmere.zscen`, so the full two-boot SHA256 proof is
-owed, and he must stay OBB/keep his authored yaw), **SC4** (the camera cut).
+steps. **All of SC2 and SC3 have since landed (ZM-D-166/167); nothing remains for queue item
+1.** Two corrections this paragraph's original text got wrong and which are worth keeping:
+Vesper did NOT stay OBB -- SC3 moved him to `CAPSULE`/`DYNAMIC` precisely so he could be
+driven, and his authored yaw survived it (`facingAbsDot=1.00000` off the re-authored bytes).
+And **SC4 (the camera cut) was never part of `Roadmap.md:104`'s text**, so it did not block
+the tick; it is unbuilt and stays booked in Shortfalls 1.8.
 
 **★ SC4 REVERSES A RECORDED DECISION ON NEW EVIDENCE, AND THAT IS DELIBERATE.** ZM-D-159 cut
 the camera cut as needing "a real engine/game-camera feature". A code survey found that

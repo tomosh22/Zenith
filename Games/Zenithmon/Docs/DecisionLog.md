@@ -15,6 +15,151 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-30 -- ZM-D-169 -- The ZM-D-168 follow-up: a GAMEPLAY primitive channel, the suite's first pixel assertions, and an NPC emissive floor that is a WORKAROUND
+
+*(Touches `Zenith/Flux/Primitives` + `Zenith/Flux/Shaders`, so this is an ENGINE change and it owed
+the CROSS-GAME gate, not just Zenithmon's. **No `Build\regen.ps1`:** the only new file is a HEADER
+(`Tests/ZM_TestTGAHelpers.h`), and regen is for a new `.cpp` or folder. Observations were taken
+2026-07-29 late through 2026-07-30.)*
+
+### What landed
+
+1. **A gameplay primitive channel in Flux, separate from the debug one.** `Flux_PrimitivesImpl`
+   gains `m_xGameplaySphereInstances` / `m_xGameplayCylinderInstances` plus
+   `SubmitGameplayCylinderAndSphere`. `ExecuteGBuffer` no longer early-returns on
+   `!m_bPrimitivesEnabled`; it returns only when debug AND gameplay are both empty, and drains the
+   gameplay queues unconditionally. The shader's push constant trades its `m_fPadding` for
+   `m_fEmissiveIntensity`; non-zero selects `GBUFFER_SHADING_UNLIT` + HDR emissive, and **debug draws
+   pass 0.0f so they keep the old matte default-lit path byte for byte** -- that is the
+   behaviour-preservation promise to the five other games.
+2. **The trainer SPOTTED marker moved onto it** (Shortfalls 1.8-3c), and its stem changed from
+   Flux's flat debug LINE quad to a solid cylinder.
+3. **The suite's FIRST pixel-level assertions.** `ZM_NpcRenderedPalette_Test` (new registration)
+   loads committed Dawnmere, holds the six live NPC model entities in an eye-level lineup, dumps the
+   real framebuffer and measures rendered pairwise separation. `ZM_RivalVesperAuthored_Test` gains a
+   frame-exact SPOTTED-frame capture + marker assertion. `ZM_AutoTests_BattleMenu.cpp` captures an
+   `ACTION_ROOT` frame.
+
+### ★ THE DESIGN CALL THAT IS A WORKAROUND, AND MUST NOT BE READ AS A FIX
+
+ZM-D-168 diagnosed audit finding 1 as a **SHADING** gap: the sun is near-overhead and the greybox
+material has effectively no ambient/indirect term, so the vertical faces a player at eye level
+actually sees receive almost no light. **This commit does not fix that.** Instead
+`ZM_GreyboxVisual::ApplyAppearance` gives NPCs an emissive floor -- 20% of the authored `m_eHuman`
+palette colour blended with 80% of a NEW row-keyed `ResolveNpcReadabilityTint` (six hard-coded hues).
+
+Three things follow, all of them costs:
+
+- **It is game-side, and the engine defect remains.** Every non-NPC blockout -- walls, floors, doors,
+  lintels, props -- still renders near-black on its vertical faces. Only the six NPCs were rescued.
+- **★ IT INTRODUCES A SECOND COLOUR SOURCE ALONGSIDE W4'S PALETTE, SO `m_eHuman` NO LONGER SOLELY
+  DETERMINES HOW AN NPC READS ON SCREEN.** W4 (ZM-D-160) made `m_eHuman` a TOTAL palette and that
+  claim was the whole point of it. It is now only the LIT base plus a 20% contribution to emission;
+  the dominant on-screen hue comes from a table keyed on `ZM_NPC_ID`, not on `ZM_HUMAN_ID`. **W4 is
+  not superseded and its palette is still load-bearing, but its "one row, one appearance" property
+  is now split across two tables that can disagree.** A future roster change must update both, and
+  `Npc_AuthoredAppearancesAreMutuallyDistinct` scores only the first.
+- **The proper fix is still owed** and is an ambient/indirect term in the greybox shading path,
+  which is cheaper than the roster work `Shortfalls.md` 1.8 used to imply.
+
+### ★ AND THE MEASURING APPARATUS WAS WRONG TWICE, WHICH IS THE METHOD FINDING
+
+ZM-D-168 recorded "an unexplained null result": a yellow-pixel scan over 133 frames found zero
+marker frames while the run logged `submits=11`, and it honestly flagged that the alternative reading
+was a submit that does not draw. **It was drawing. Both failures were in the instrument:**
+
+1. **The colour predicate was PREDICTED, not measured.** The marker submits linear
+   `(1.0, 0.82, 0.08)` drawn unlit at 1.5x, which sounds like "saturated yellow, almost no blue".
+   Measured off the bytes actually written it is **`RGB(208, 182, 97)` -- blue/red 0.47, not 0.08.**
+   Two fresh hand-rolled scans keyed on "low blue" reproduced the zero across **539 frames of two
+   different tests** while the marker rendered perfectly. This was one step from being written up as
+   a rendering defect in this very entry.
+2. **The requested sampling rate was unreachable.** `Tools\capture_viewport.ps1 -IntervalMs 40`
+   delivered **206 ms** at 2560x1440 and 81 ms at 1280x800 -- PNG encode dominates the loop. Its own
+   header advises "60 ms or lower", which the script cannot honour at full size.
+
+**The rule this yields, and it is the mirror image of ZM-D-168's: a null result from a hand-rolled
+screen scrape is evidence about the scrape.** The resolution was to stop scraping and use the
+engine's frame-exact `Flux_Screenshot::RequestDump` from inside the SPOTTED frame, then derive the
+predicate from the bytes it wrote -- verifying first that the hue is UNIQUE frame-wide (118 matches,
+every one inside the marker's own 7x28 box, zero elsewhere) so the threshold is defensible rather
+than tuned to pass.
+
+### ★ AN ENGINE DEFECT FOUND, DIAGNOSED, AND DELIBERATELY NOT FIXED
+
+`Flux_PrimitivesImpl::RenderLinePrimitives` translates the line quad to `m_xStart` while
+`GenerateUnitLine` spans local y in `[-1, 1]`, so **`AddLine(A,B)` draws CENTRED ON A** -- from
+`A - dir*len/2` to `A + dir*len/2`, overhanging behind the start and stopping short of the end.
+`RenderCylinderPrimitives` translates to the midpoint, so the two verbs do not cover the same
+segment. This is the complete explanation of audit finding 3: the stem asked for `top+0.55 ..
+top+1.20` was drawn at `top+0.225 .. top+0.875`, straight through the dot at `top+0.25` -- "a gold
+sphere with a diagonal stroke". The flat +Z-facing quad (`ComputeYAxisAlignment` never rolls toward
+the camera) supplies the "diagonal".
+
+**Not fixed here on purpose:** it changes debug draws in all five other games and every `Add*`
+composite built on `AddLine` (cross / circle / arrow / cone / arc / polygon / grid / axes), some of
+which may have been visually compensated for the offset. It owes its own cross-game gate. Booked as
+`task_33ee8059` and documented in the new `Zenith/Flux/Primitives/CLAUDE.md`. Zenithmon's cylinder
+swap sidesteps it rather than depending on it.
+
+### Observed, not predicted
+
+- `zenith build Zenithmon` (Vulkan_True) and `--headless` (Null_True): **both clean.**
+- Headless registry **50 passed / 0 failed (of 50)** -- the predicted 49 -> 50 held.
+- Full windowed Vulkan **50 passed / 0 failed, ZERO skipped.**
+- ZM boot units **2742 ran / 2741 passed / 0 failed / 1 skipped -- UNMOVED**, so `zm-tests.yml`'s pin,
+  `Status.md`'s baseline block and `Shortfalls.md`'s bullet were all left alone. The prediction that
+  boot might not move held: the interactable unit was REWRITTEN, not added.
+- **Cross-game gate:** SentinelECS / SentinelPhysics / SentinelAI all built and all **exit 0**;
+  engine boot units on Null Combat **1164 / 1163 / 0 / 1 -- UNMOVED**; Combat / CityBuilder /
+  DevilsPlayground / RenderTest / TilePuzzle all **clean on Null_True**. **And because the change is
+  in the SHARED primitives drain rather than beside it, three were RUN and not merely compiled:**
+  Combat **14/14**, CityBuilder **45/45**, DevilsPlayground **158/158** -- all zero-failed. That is
+  the evidence that `fEmissiveIntensity = 0.0f` really does preserve every other game's debug draws.
+- **Ratchets: `architecture,lints` and `complexity` both remain pre-existing RED, and this commit
+  adds nothing to either.** The failures are `Zenith_TerrainComponent` (EC->Flux edge, `std::vector`,
+  `std::function`), per-file `g_xEngine` counts in `Zenith_TerrainEditor.cpp` /
+  `Zenith_EditorAutomation.cpp`, the three cognitive-complexity functions (`ParseCommandLine`,
+  `ValidateTerrainGridTopology`, `ZENITH_PROPERTY`) and duplicate-clusters=10.
+  **Every failing finding names a file this commit does not touch**, and duplicate clusters sit at
+  the 10 `Status.md` already records. `Flux/Primitives/Flux_PrimitivesImpl.h` does appear in the
+  report, but only as pre-existing ALLOW-LISTED EC->Flux edges (`Zenith_ColliderComponent`,
+  `Zenith_AIWorldHooksInstall`, `Zenith_PhysicsDebugDraw`) and informational file-size rows.
+  `ExecuteGBuffer` grew but is not in the refactor queue's top 20 and introduced no new duplicate
+  cluster despite two new emissive-parameter render calls.
+  **★ AND THE EVIDENCE STANDARD IS WEAKER HERE THAN IN EARLIER COMMITS, SO SAY SO:** ZM-D-148 and
+  friends proved "byte-identical to a pristine-HEAD worktree". ZM-D-031 forbids worktrees, so this is
+  a finding-by-finding read of the failure list instead. It is sufficient to conclude nothing was
+  added; it is not the same artifact.
+- **Pixels:** `ZM_NpcRenderedPalette` minimum of all 15 framebuffer separations
+  **0.2001 (Wanderer/Vesper)** against a 0.15 floor, per-body RGB from 0.34 to 0.84 per channel --
+  against the audit's 0.004-0.055 and 0.017-0.041 for the same bodies. `ZM_RivalVesper`
+  **SPOTTED marker OBSERVED IN PIXELS: 118 px spanning 7x28** standalone and **106 px spanning 7x29**
+  inside the batch, with `Graphics/Primitives/Enabled` FALSE for the whole run.
+- `Games/Zenithmon/Assets` **byte-clean** after the windowed batch -- no scene moved.
+
+### Tests that lock it
+
+- `ZM_Interaction::Interactable_SpottedIndicatorSubmitsOneReadableExclamationMark` -- rewritten to
+  disable the debug channel while submitting and to prove only the GAMEPLAY queues grew, that the
+  debug queues are untouched, and that a non-finite centre refuses.
+- `ZM_NpcRenderedPalette_Test` -- rendered NPC separation off real BGRA pixels.
+- `ZM_RivalVesperAuthored_Test` -- the marker's presence AND its tall-and-narrow span (height >= 2x
+  width), which is what distinguishes an upright exclamation mark from the old diagonal stroke.
+- **Mutation-proven:** restoring `if (!m_bPrimitivesEnabled) return;` in `ExecuteGBuffer` reds the
+  marker clause with "reached Flux's queues but NOT the framebuffer: 0 marker-hue pixels" and exit 1;
+  reverting returns to green.
+
+### Reversibility
+
+High for the engine half: the gameplay queues are additive and the debug path is unchanged at
+`fEmissiveIntensity = 0.0f`. **The emissive floor is the part to revisit** -- deleting
+`ResolveNpcReadabilityTint` and the `ApplyAppearance` emission restores W4's single colour source and
+reds `ZM_NpcRenderedPalette_Test`, which is the correct signal that the underlying shading defect was
+never addressed.
+
+---
+
 ## 2026-07-29 -- ZM-D-168 -- The first VISUAL audit of the build, and what a 49/49 green suite does not see
 
 *(Documentation + one new `Tools/` script. No game source, no scene, no asset, no serialization

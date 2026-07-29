@@ -8,10 +8,12 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "Flux/Flux_Screenshot.h"
 #include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Maths/Zenith_Maths.h"
+#include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIRect.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"
@@ -194,6 +196,17 @@ namespace
 		return !xError && ulSize != 0u;
 	}
 
+	// Absolute Build/artifacts/zenithmon/visual_audit dir derived from
+	// GAME_ASSETS_DIR (<repo>/Games/Zenithmon/Assets/ -> up three -> <repo>), so
+	// the framebuffer evidence path is independent of the process working directory.
+	std::filesystem::path BattleMenuVisualAuditDir()
+	{
+		std::error_code xError;
+		const std::filesystem::path xRepoRoot = std::filesystem::weakly_canonical(
+			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..", xError);
+		return xRepoRoot / "Build" / "artifacts" / "zenithmon" / "visual_audit";
+	}
+
 	bool RequiredDawnmereAssetsPresent()
 	{
 		const std::string strRoot = std::string(GAME_ASSETS_DIR);
@@ -362,6 +375,12 @@ namespace
 	constexpr int iBM_RESUME_DEADLINE      = 600;   // player drives the menu to resolution + fade + unload + regrow
 	constexpr int iBM_RESUME_SETTLE_FRAMES = 8;     // let the resume settle before sampling the exact state
 	constexpr int iBM_WHITEOUT_DEADLINE    = 700;   // Whiteout only: fade-out + Dawnmere reload + spawn/camera + fade-in
+	constexpr int iBM_RUN_VISUAL_DWELL_FRAMES = 90; // Run only: leave ACTION_ROOT visible for external pixel capture
+	constexpr int iBM_RUN_VISUAL_CAPTURE_FRAME = iBM_RUN_VISUAL_DWELL_FRAMES / 2;
+	constexpr const char* szBM_RUN_MENU_PANEL_NAME = "BattleHUD_MenuPanel";
+	constexpr const char* szBM_RUN_FIGHT_NAME      = "BattleHUD_ActionFight";
+	constexpr const char* szBM_RUN_CATCH_NAME      = "BattleHUD_ActionCatch";
+	constexpr const char* szBM_RUN_RUN_NAME        = "BattleHUD_ActionRun";
 
 	// ---- Control state (all reset in Setup; batch mode reuses the process) ----
 	MenuTestMode   g_eBMMode              = MenuTestMode::Win;
@@ -375,6 +394,10 @@ namespace
 	bool           g_bBMFailed            = false;
 	const char*    g_szBMFailure          = "test did not reach verification";
 	Zenith_KeyCode g_eBMWalkKey           = ZENITH_KEY_W;
+	int            g_iBMRunVisualDwellFrames = 0;
+	bool           g_bBMRunVisualShotRequested = false;
+	bool           g_bBMRunRootVisualsValid = false;
+	std::string    g_strBMRunVisualShotPath;
 
 	// ---- Entry captures (before the encounter) ----
 	u_int          g_uBMEntryGrassBlades  = 0u;   // grass-restore baseline
@@ -457,6 +480,23 @@ namespace
 		}
 	}
 
+	bool BattleMenuRunRootVisualsMatch(Zenith_UIComponent& xUI)
+	{
+		Zenith_UI::Zenith_UIRect* pxPanel =
+			xUI.FindElement<Zenith_UI::Zenith_UIRect>(szBM_RUN_MENU_PANEL_NAME);
+		Zenith_UI::Zenith_UIButton* pxFight =
+			xUI.FindElement<Zenith_UI::Zenith_UIButton>(szBM_RUN_FIGHT_NAME);
+		Zenith_UI::Zenith_UIButton* pxCatch =
+			xUI.FindElement<Zenith_UI::Zenith_UIButton>(szBM_RUN_CATCH_NAME);
+		Zenith_UI::Zenith_UIButton* pxRun =
+			xUI.FindElement<Zenith_UI::Zenith_UIButton>(szBM_RUN_RUN_NAME);
+
+		return pxPanel != nullptr && pxPanel->IsVisible()
+			&& pxFight != nullptr && pxFight->IsVisible() && pxFight->GetText() == "Fight"
+			&& pxCatch != nullptr && pxCatch->IsVisible() && pxCatch->GetText() == "Catch"
+			&& pxRun != nullptr && pxRun->IsVisible() && pxRun->GetText() == "Run";
+	}
+
 	// Resolve the unique BattleDirector across every loaded scene, drive the menu
 	// per the active mode, and latch the winner / flee / HP-bar-fill outcome. A
 	// no-op when the Battle scene is not loaded (the director entity is absent).
@@ -534,15 +574,34 @@ namespace
 			const bool                bCanCatch = pxDirector->GetCore().IsCatchAllowed();
 			if (eScreen == ZM_BATTLE_MENU_ACTION_ROOT)
 			{
-				// Resolved through the LIVE list (see the Catch drive above): with catching
-				// gated off, Run would sit at index 1, not 2.
-				if (ZM_UI_BattleHUD::MenuRootItemAtIndex(iCursor, bCanCatch) == ZM_BATTLE_MENU_RUN)
+				if (g_iBMRunVisualDwellFrames < iBM_RUN_VISUAL_DWELL_FRAMES)
 				{
-					Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+					++g_iBMRunVisualDwellFrames;
+					if (g_iBMRunVisualDwellFrames == iBM_RUN_VISUAL_CAPTURE_FRAME
+						&& !g_bBMRunVisualShotRequested)
+					{
+						Zenith_UIComponent* pxUI = xEntity.TryGetComponent<Zenith_UIComponent>();
+						g_bBMRunRootVisualsValid = pxUI != nullptr
+							&& BattleMenuRunRootVisualsMatch(*pxUI);
+						Flux_Screenshot::RequestDump(g_strBMRunVisualShotPath.c_str());
+						g_bBMRunVisualShotRequested = true;
+						Zenith_Log(LOG_CATEGORY_UNITTEST,
+							"[ZM_BattleMenuRun] requested ACTION_ROOT framebuffer evidence -> %s",
+							g_strBMRunVisualShotPath.c_str());
+					}
 				}
 				else
 				{
-					Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_DOWN);
+					// Resolved through the LIVE list (see the Catch drive above): with catching
+					// gated off, Run would sit at index 1, not 2.
+					if (ZM_UI_BattleHUD::MenuRootItemAtIndex(iCursor, bCanCatch) == ZM_BATTLE_MENU_RUN)
+					{
+						Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_ENTER);
+					}
+					else
+					{
+						Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_DOWN);
+					}
 				}
 			}
 			// HIDDEN (fading / between turns) or MOVE_SELECT (never reached in this
@@ -607,6 +666,10 @@ namespace
 		g_bBMFailed                = false;
 		g_szBMFailure              = "test did not reach verification";
 		g_eBMWalkKey               = ZENITH_KEY_W;
+		g_iBMRunVisualDwellFrames  = 0;
+		g_bBMRunVisualShotRequested = false;
+		g_bBMRunRootVisualsValid   = false;
+		g_strBMRunVisualShotPath.clear();
 
 		g_uBMEntryGrassBlades      = 0u;
 
@@ -706,6 +769,26 @@ namespace
 	{
 		g_eBMMode = MenuTestMode::Run;
 		SetupCommon();
+		if (!g_bBMPrereqsPresent)
+		{
+			return;
+		}
+
+		const std::filesystem::path xVisualDir = BattleMenuVisualAuditDir();
+		std::error_code xDirError;
+		std::filesystem::create_directories(xVisualDir, xDirError);
+		if (xDirError)
+		{
+			FailBM("could not create the battle-menu visual-audit artifact directory");
+			return;
+		}
+		g_strBMRunVisualShotPath = (xVisualDir / "battle_menu_run_root.tga").string();
+		std::error_code xRemoveError;
+		std::filesystem::remove(g_strBMRunVisualShotPath, xRemoveError);
+		if (xRemoveError)
+		{
+			FailBM("could not remove the stale battle-menu visual-audit capture");
+		}
 	}
 
 	void Setup_ZMBattleMenuCatch()
@@ -1492,6 +1575,34 @@ namespace
 			{
 				// The menu-driven Run reached the engine as a successful flee: a FLEE
 				// event, and NO winner (a flee ends the battle as a draw).
+				if (g_iBMRunVisualDwellFrames != iBM_RUN_VISUAL_DWELL_FRAMES)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuRun] ACTION_ROOT visual dwell reached %d frames, expected exactly %d "
+						"before menu navigation began",
+						g_iBMRunVisualDwellFrames, iBM_RUN_VISUAL_DWELL_FRAMES);
+					bPassed = false;
+				}
+				if (!g_bBMRunVisualShotRequested)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuRun] ACTION_ROOT framebuffer evidence was never requested");
+					bPassed = false;
+				}
+				else if (!DiskFilePresent(g_strBMRunVisualShotPath))
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuRun] ACTION_ROOT framebuffer evidence produced no non-empty TGA: %s",
+						g_strBMRunVisualShotPath.c_str());
+					bPassed = false;
+				}
+				if (!g_bBMRunRootVisualsValid)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_BattleMenuRun] midpoint ACTION_ROOT UI did not resolve a visible menu panel "
+						"plus visible Fight/Catch/Run buttons carrying their expected text");
+					bPassed = false;
+				}
 				if (!g_bBMFleeSeen)
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,

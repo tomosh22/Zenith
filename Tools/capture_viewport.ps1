@@ -19,8 +19,28 @@
 # ★ SAMPLING RATE IS THE DIFFERENCE BETWEEN EVIDENCE AND A MISS. The harness
 # pins dt to 1/30 s. A 0.35 s beat is ~11 frames; the rival's approach walk is
 # ~43 frames (~1.4 s). At 250 ms you sample 1 frame in 8 and will MISS them.
-# Use -IntervalMs 60 or lower for anything short, and treat "I did not capture
-# it" as unproven rather than absent.
+#
+# ★★ AND -IntervalMs IS A FLOOR THIS SCRIPT CANNOT REACH AT USABLE RESOLUTIONS.
+# This header used to say "use -IntervalMs 60 or lower for anything short". It
+# cannot. MEASURED 2026-07-30: -IntervalMs 40 delivered an ACTUAL 206 ms at
+# 2560x1440, and 81 ms at 1280x800 -- CopyFromScreen plus PNG encode of a
+# multi-megapixel frame dominates the loop, so the parameter is advisory and the
+# real rate is set by resolution. A 0.35 s beat therefore gets 1-2 samples even
+# when you asked for 8, which is exactly how ZM-D-168's "zero marker frames"
+# null result happened, and how ZM-D-169 reproduced it twice more.
+#
+# ★ SO: FOR ANY BEAT SHORTER THAN ABOUT A SECOND, DO NOT USE THIS SCRIPT TO
+# DECIDE PRESENCE. Use the frame-exact engine path instead --
+# Flux_Screenshot::RequestDump(path) from inside the frame you care about,
+# consumed once per EndFrame by Zenith_Vulkan_Swapchain (a no-op on the Null
+# backend, so gate the assertion on Zenith_IsNullRenderer()). See
+# ZM_RivalVesperAuthored_Test and ZM_NpcRenderedPalette_Test.
+# This script remains the right tool for WATCHING a run and for long beats.
+#
+# Either way, treat "I did not capture it" as unproven rather than absent -- and
+# if you scan the output for a colour, derive the predicate from bytes the engine
+# actually wrote, never from the colour you submitted (ZM-D-169: an unlit gold
+# marker submitting linear (1.0, 0.82, 0.08) lands at RGB(208, 182, 97)).
 #
 # Output: Build/artifacts/shots/<TestName>/f####.png (git-ignored, never committed).
 # ASCII-only body; pwsh 7.
@@ -32,7 +52,8 @@ param(
     [int]$MaxSeconds = 420,
     [int]$WindowW = 2560,
     [int]$WindowH = 1440,
-    [string]$OutRoot = "Build\artifacts\shots"
+    [string]$OutRoot = "Build\artifacts\shots",
+    [switch]$FullClient
 )
 
 Add-Type -AssemblyName System.Drawing
@@ -79,14 +100,19 @@ if (-not $game) {
 }
 
 $h = $game.MainWindowHandle
-[void][ZmCap]::SetWindowPos($h, [IntPtr]::Zero, 0, 0, $WindowW, $WindowH, 0x0040)
+# CopyFromScreen reads the composed desktop, so merely foregrounding is not
+# sufficient when the invoking app reclaims focus. Keep the game above other
+# windows for the lifetime of this short-lived capture process.
+[void][ZmCap]::SetWindowPos($h, [IntPtr](-1), 0, 0, $WindowW, $WindowH, 0x0040)
 Start-Sleep -Milliseconds 700
 [void][ZmCap]::SetForegroundWindow($h)
 
 # ---- Detect the viewport origin rather than assuming it -------------------
-# Grab one full-client frame, then walk in from the left/top until the flat
-# editor grey stops. A tools build docks the view; a non-tools build has no
-# chrome at all and this correctly resolves to (0,0).
+# Grab one full-client frame and find the strongest edge that is sustained
+# across the perpendicular axis. Sampling a median rejects scene geometry and
+# text, while taking the global peak avoids mistaking an earlier editor toolbar
+# separator for the viewport. A non-tools build (or an uncertain result) falls
+# back to the full client instead of applying a speculative crop.
 $r = New-Object ZmCap+RECT
 [void][ZmCap]::GetClientRect($h, [ref]$r)
 $cw = $r.R - $r.L; $ch = $r.B - $r.T
@@ -99,18 +125,71 @@ $pg.CopyFromScreen($tl.X, $tl.Y, 0, 0, (New-Object System.Drawing.Size($cw, $ch)
 $pg.Dispose()
 
 $viewX = 0; $viewY = 0
-$midY = [int]($ch * 0.5)
-for ($x = 0; $x -lt [math]::Min(900, $cw - 8); $x++) {
-    $a = $probe.GetPixel($x, $midY); $b = $probe.GetPixel($x + 6, $midY)
-    if (([math]::Abs($a.R - $b.R) + [math]::Abs($a.G - $b.G) + [math]::Abs($a.B - $b.B)) -gt 14) { $viewX = $x; break }
+$edgeSpan = 6
+$sampleCount = 31
+$minimumSustainedScore = 24.0
+
+$xFirst = 32
+$xLast = [int][math]::Min($cw * 0.45, $cw - $edgeSpan - 1)
+$xSampleFirstY = [int]($ch * 0.22)
+$xSampleLastY = $ch - 20
+$xScores = [double[]]::new($cw)
+$bestX = 0; $bestXScore = 0.0
+for ($x = $xFirst; $x -le $xLast; $x++) {
+	$values = [int[]]::new($sampleCount)
+	for ($i = 0; $i -lt $sampleCount; $i++) {
+		$sampleY = [int][math]::Round($xSampleFirstY + (($xSampleLastY - $xSampleFirstY) * $i / ($sampleCount - 1)))
+		$a = $probe.GetPixel($x, $sampleY); $b = $probe.GetPixel($x + $edgeSpan, $sampleY)
+		$values[$i] = [math]::Abs($a.R - $b.R) + [math]::Abs($a.G - $b.G) + [math]::Abs($a.B - $b.B)
+	}
+	[Array]::Sort($values)
+	$xScores[$x] = $values[[int]($sampleCount / 2)]
+	if ($xScores[$x] -gt $bestXScore) { $bestXScore = $xScores[$x]; $bestX = $x }
 }
-$midX = [int]($cw * 0.75)
-for ($y = 0; $y -lt [math]::Min(300, $ch - 8); $y++) {
-    $c = $probe.GetPixel($midX, $y)
-    if ($c.R -gt 70 -or $c.G -gt 70 -or $c.B -gt 70) { $viewY = $y; break }
+
+$hasXEdge = $bestXScore -ge $minimumSustainedScore
+if ($hasXEdge) {
+	# Comparing x with x+edgeSpan produces a short high-score band immediately
+	# before the boundary. Its right edge + 1 is the first viewport pixel.
+	$peakBandScore = [math]::Max($minimumSustainedScore, $bestXScore * 0.65)
+	$edgeEnd = $bestX
+	while ($edgeEnd -lt $xLast -and $xScores[$edgeEnd + 1] -ge $peakBandScore) { $edgeEnd++ }
+	$viewX = $edgeEnd + 1
 }
+
+$yFirst = 24
+$yLast = [int][math]::Min($ch * 0.28, $ch - $edgeSpan - 1)
+$ySampleFirstX = if ($viewX -gt 0) {
+	$viewX + [int][math]::Max(32, ($cw - $viewX) * 0.08)
+} else {
+	[int]($cw * 0.35)
+}
+$ySampleLastX = $cw - 24
+$yScores = [double[]]::new($ch)
+$bestY = 0; $bestYScore = 0.0
+for ($y = $yFirst; $y -le $yLast; $y++) {
+	$values = [int[]]::new($sampleCount)
+	for ($i = 0; $i -lt $sampleCount; $i++) {
+		$sampleX = [int][math]::Round($ySampleFirstX + (($ySampleLastX - $ySampleFirstX) * $i / ($sampleCount - 1)))
+		$c = $probe.GetPixel($sampleX, $y); $d = $probe.GetPixel($sampleX, $y + $edgeSpan)
+		$values[$i] = [math]::Abs($c.R - $d.R) + [math]::Abs($c.G - $d.G) + [math]::Abs($c.B - $d.B)
+	}
+	[Array]::Sort($values)
+	$yScores[$y] = $values[[int]($sampleCount / 2)]
+	if ($yScores[$y] -gt $bestYScore) { $bestYScore = $yScores[$y]; $bestY = $y }
+}
+
+$hasYEdge = $bestYScore -ge $minimumSustainedScore
+if ($hasYEdge) {
+	$peakBandScore = [math]::Max($minimumSustainedScore, $bestYScore * 0.65)
+	$edgeEnd = $bestY
+	while ($edgeEnd -lt $yLast -and $yScores[$edgeEnd + 1] -ge $peakBandScore) { $edgeEnd++ }
+	$viewY = $edgeEnd + 1
+}
+
+if (-not ($hasXEdge -and $hasYEdge) -or $FullClient) { $viewX = 0; $viewY = 0 }
 $probe.Dispose()
-"[capture] viewport origin detected at ($viewX,$viewY) in a ${cw}x${ch} client"
+"[capture] viewport origin detected at ($viewX,$viewY) in a ${cw}x${ch} client (edge scores: X=$bestXScore, Y=$bestYScore)"
 
 # ---- Capture loop ---------------------------------------------------------
 $n = 0
@@ -121,6 +200,9 @@ while (-not $proc.HasExited -and $sw.Elapsed.TotalSeconds -lt $MaxSeconds) {
         if (-not [ZmCap]::GetClientRect($h, [ref]$r)) { break }
         $vw = ($r.R - $r.L) - $viewX; $vh = ($r.B - $r.T) - $viewY
         if ($vw -gt 32 -and $vh -gt 32) {
+            # ClientToScreen mutates the point in place. Reusing the previous
+            # screen coordinate makes the capture origin drift every frame.
+            $tl.X = 0; $tl.Y = 0
             [void][ZmCap]::ClientToScreen($h, [ref]$tl)
             $bmp = New-Object System.Drawing.Bitmap $vw, $vh
             $g = [System.Drawing.Graphics]::FromImage($bmp)

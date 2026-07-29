@@ -21,8 +21,16 @@
 //
 // Input is exclusively Zenith_InputSimulator key state. SetFocusedElement and
 // the public programmatic TITLE/LOAD seams do not appear in this file. Every wait
-// has a phase-local deadline and every semantic latch defaults false. The test is
-// graphics-required and self-registers from this TU.
+// has a phase-local deadline and every semantic latch defaults false.
+//
+// ★ THIS TEST IS **NOT** GRAPHICS-REQUIRED, and this comment used to claim it was.
+// Its registration below passes `false /* m_bRequiresGraphics */`, which is correct
+// and deliberate: every assertion here is about BYTES ON DISK and live model state,
+// never about a pixel, so it RUNS FOR REAL on the Null backend instead of skipping.
+// That matters because a skip counts as a PASS in the headless `zm-tests` gate --
+// so this test is CI-visible, and calling it graphics-required invited a future
+// session to "restore" a true flag and silently delete the coverage. A doc audit
+// caught the mismatch on 2026-07-29; the registration was right, the comment wrong.
 // ============================================================================
 
 #include <cmath>

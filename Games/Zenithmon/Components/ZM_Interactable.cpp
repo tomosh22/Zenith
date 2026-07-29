@@ -43,9 +43,9 @@ namespace
 	constexpr float fZM_WANDER_BODY_RESTITUTION = 0.0f;
 	constexpr float fZM_SPOTTED_DOT_OFFSET = 0.25f;
 	constexpr float fZM_SPOTTED_DOT_RADIUS = 0.13f;
-	constexpr float fZM_SPOTTED_LINE_START_OFFSET = 0.55f;
-	constexpr float fZM_SPOTTED_LINE_END_OFFSET = 1.20f;
-	constexpr float fZM_SPOTTED_LINE_THICKNESS = 0.10f;
+	constexpr float fZM_SPOTTED_STEM_START_OFFSET = 0.55f;
+	constexpr float fZM_SPOTTED_STEM_END_OFFSET = 1.20f;
+	constexpr float fZM_SPOTTED_STEM_RADIUS = 0.10f;
 	const Zenith_Maths::Vector3 xZM_SPOTTED_COLOUR(1.0f, 0.82f, 0.08f);
 
 	bool ZM_IsFiniteVector3(const Zenith_Maths::Vector3& xValue)
@@ -608,37 +608,24 @@ u_int ZM_Interactable::SubmitTrainerSpottedIndicator(
 	const float fTop = xTrainerCenter.y + fHeight * 0.5f;
 	const Zenith_Maths::Vector3 xDotCenter(
 		xTrainerCenter.x, fTop + fZM_SPOTTED_DOT_OFFSET, xTrainerCenter.z);
-	const Zenith_Maths::Vector3 xLineStart(
-		xTrainerCenter.x, fTop + fZM_SPOTTED_LINE_START_OFFSET, xTrainerCenter.z);
-	const Zenith_Maths::Vector3 xLineEnd(
-		xTrainerCenter.x, fTop + fZM_SPOTTED_LINE_END_OFFSET, xTrainerCenter.z);
+	const Zenith_Maths::Vector3 xStemStart(
+		xTrainerCenter.x, fTop + fZM_SPOTTED_STEM_START_OFFSET, xTrainerCenter.z);
+	const Zenith_Maths::Vector3 xStemEnd(
+		xTrainerCenter.x, fTop + fZM_SPOTTED_STEM_END_OFFSET, xTrainerCenter.z);
 
 	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
-	u_int uLineBefore = 0u;
-	u_int uSphereBefore = 0u;
-	{
-		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
-		uLineBefore = xPrimitives.m_xLineInstances.GetSize();
-		uSphereBefore = xPrimitives.m_xSphereInstances.GetSize();
-	}
-
-	xPrimitives.AddLine(
-		xLineStart, xLineEnd, xZM_SPOTTED_COLOUR, fZM_SPOTTED_LINE_THICKNESS);
-	xPrimitives.AddSphere(xDotCenter, fZM_SPOTTED_DOT_RADIUS, xZM_SPOTTED_COLOUR);
-
-	// ★ THE RESULT IS MEASURED OFF FLUX, NOT ASSERTED. Every live test watches the
-	// caller's per-frame counter, and that counter is fed from THIS return value --
-	// so a submission that never reached the renderer cannot be reported as one.
-	// A counter incremented merely BESIDE the two Add calls would have left the
-	// whole live contract satisfiable with the calls deleted, which is exactly the
-	// hole this closes. Both queues only ever GROW between the two samples, so a
-	// concurrent producer can inflate the delta but can never hide a missing
-	// primitive of ours.
-	Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
-	return (xPrimitives.m_xLineInstances.GetSize() > uLineBefore
-			&& xPrimitives.m_xSphereInstances.GetSize() > uSphereBefore)
-		? 1u
-		: 0u;
+	// A solid cylinder is readable from every player-camera yaw. The old stem used
+	// Flux's flat debug-line quad, whose fixed world-space face and start-anchored
+	// transform made the exclamation mark collapse or read diagonally at oblique
+	// angles. Both parts now use the dedicated gameplay queues, which stay visible
+	// when a tools user unchecks Graphics/Primitives/Enabled.
+	// ★ THE RESULT IS MEASURED OFF FLUX, NOT ASSERTED. The composite append and
+	// both queue-size samples share Flux's instance mutex with the render-thread
+	// drain, so a drain cannot split the payload or erase it before measurement.
+	// Every live caller += this exact result; there is no proxy increment beside it.
+	return xPrimitives.SubmitGameplayCylinderAndSphere(
+		xStemStart, xStemEnd, fZM_SPOTTED_STEM_RADIUS,
+		xDotCenter, fZM_SPOTTED_DOT_RADIUS, xZM_SPOTTED_COLOUR);
 }
 
 void ZM_Interactable::TickTrainerSight(float fDeltaTime)

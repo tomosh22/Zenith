@@ -43,10 +43,11 @@ struct PrimitivePushConstant
 {
 	Zenith_Maths::Matrix4 m_xModelMatrix;
 	Zenith_Maths::Vector3 m_xColor;
-	float m_fPadding;
+	float m_fEmissiveIntensity;
 };
 
 static constexpr u_int s_uMaxTriangles = 8192;  // Max triangles per frame
+static constexpr float s_fGameplayPrimitiveEmissiveIntensity = 0.5f;
 
 // ========== PROCEDURAL MESH GENERATION ==========
 
@@ -601,6 +602,38 @@ void Flux_PrimitivesImpl::AddTriangle(const Zenith_Maths::Vector3& xV0, const Ze
 	m_xInstanceMutex.Unlock();
 }
 
+u_int Flux_PrimitivesImpl::SubmitGameplayCylinderAndSphere(
+	const Zenith_Maths::Vector3& xCylinderStart,
+	const Zenith_Maths::Vector3& xCylinderEnd, float fCylinderRadius,
+	const Zenith_Maths::Vector3& xSphereCenter, float fSphereRadius,
+	const Zenith_Maths::Vector3& xColor)
+{
+	Zenith_ScopedMutexLock xLock(m_xInstanceMutex);
+	const u_int uCylinderBefore = m_xGameplayCylinderInstances.GetSize();
+	const u_int uSphereBefore = m_xGameplaySphereInstances.GetSize();
+
+	CylinderInstance xCylinder;
+	xCylinder.m_xStart = xCylinderStart;
+	xCylinder.m_xEnd = xCylinderEnd;
+	xCylinder.m_fRadius = fCylinderRadius;
+	xCylinder.m_xColor = xColor;
+	m_xGameplayCylinderInstances.PushBack(xCylinder);
+
+	SphereInstance xSphere;
+	xSphere.m_xCenter = xSphereCenter;
+	xSphere.m_fRadius = fSphereRadius;
+	xSphere.m_xColor = xColor;
+	m_xGameplaySphereInstances.PushBack(xSphere);
+
+	// The render-thread drain uses this same mutex, so it cannot erase one half
+	// between the append and the measurement. The return is therefore about the
+	// Flux queues themselves, not a counter incremented beside an attempted call.
+	return (m_xGameplayCylinderInstances.GetSize() > uCylinderBefore
+			&& m_xGameplaySphereInstances.GetSize() > uSphereBefore)
+		? 1u
+		: 0u;
+}
+
 void Flux_PrimitivesImpl::Clear()
 {
 	m_xInstanceMutex.Lock();
@@ -610,6 +643,8 @@ void Flux_PrimitivesImpl::Clear()
 	m_xCapsuleInstances.Clear();
 	m_xCylinderInstances.Clear();
 	m_xTriangleInstances.Clear();
+	m_xGameplaySphereInstances.Clear();
+	m_xGameplayCylinderInstances.Clear();
 	m_xInstanceMutex.Unlock();
 }
 
@@ -659,12 +694,13 @@ static YAxisAlignment ComputeYAxisAlignment(const Zenith_Maths::Vector3& xStart,
 void Flux_PrimitivesImpl::EmitPrimitiveDraw(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 	const Zenith_Maths::Matrix4& xModelMatrix,
 	const Zenith_Maths::Vector3& xColor,
-	u_int uIndexCount)
+	u_int uIndexCount,
+	float fEmissiveIntensity)
 {
 	PrimitivePushConstant xPushConstant;
 	xPushConstant.m_xModelMatrix = xModelMatrix;
 	xPushConstant.m_xColor = xColor;
-	xPushConstant.m_fPadding = 0.0f;
+	xPushConstant.m_fEmissiveIntensity = fEmissiveIntensity;
 
 	// Slang reflection keys on the variable name, not the GLSL block instance.
 	xBinder.BindDrawConstants(Flux_Generated_Primitives::Primitives::hPrimitivePushConstant, &xPushConstant, sizeof(PrimitivePushConstant));
@@ -672,7 +708,7 @@ void Flux_PrimitivesImpl::EmitPrimitiveDraw(Flux_CommandBuffer* pxCmdList, Flux_
 }
 
 void Flux_PrimitivesImpl::RenderSpherePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
-	const Zenith_Vector<SphereInstance>& xInstances)
+	const Zenith_Vector<SphereInstance>& xInstances, float fEmissiveIntensity)
 {
 	if (xInstances.GetSize() == 0) return;
 
@@ -685,7 +721,8 @@ void Flux_PrimitivesImpl::RenderSpherePrimitives(Flux_CommandBuffer* pxCmdList, 
 		const SphereInstance& xInstance = xInstances.Get(i);
 		Zenith_Maths::Matrix4 xModelMatrix = Zenith_Maths::Translate(Zenith_Maths::Matrix4(1.0f), xInstance.m_xCenter);
 		xModelMatrix = Zenith_Maths::Scale(xModelMatrix, Zenith_Maths::Vector3(xInstance.m_fRadius));
-		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, m_uSphereIndexCount);
+		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor,
+			m_uSphereIndexCount, fEmissiveIntensity);
 	}
 }
 
@@ -757,7 +794,7 @@ void Flux_PrimitivesImpl::RenderCapsulePrimitives(Flux_CommandBuffer* pxCmdList,
 }
 
 void Flux_PrimitivesImpl::RenderCylinderPrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
-	const Zenith_Vector<CylinderInstance>& xInstances)
+	const Zenith_Vector<CylinderInstance>& xInstances, float fEmissiveIntensity)
 {
 	if (xInstances.GetSize() == 0) return;
 
@@ -775,7 +812,8 @@ void Flux_PrimitivesImpl::RenderCylinderPrimitives(Flux_CommandBuffer* pxCmdList
 		Zenith_Maths::Matrix4 xModelMatrix = Zenith_Maths::Translate(Zenith_Maths::Matrix4(1.0f), xCenter);
 		xModelMatrix = xModelMatrix * Zenith_Maths::Mat4Cast(xAlign.m_xRotation);
 		xModelMatrix = Zenith_Maths::Scale(xModelMatrix, Zenith_Maths::Vector3(xInstance.m_fRadius * 2.0f, xAlign.m_fLength * 0.5f, xInstance.m_fRadius * 2.0f));
-		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor, m_uCylinderIndexCount);
+		EmitPrimitiveDraw(pxCmdList, xBinder, xModelMatrix, xInstance.m_xColor,
+			m_uCylinderIndexCount, fEmissiveIntensity);
 	}
 }
 
@@ -838,11 +876,6 @@ void Flux_PrimitivesImpl::RenderTrianglePrimitives(Flux_CommandBuffer* pxCmdList
 
 static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 {
-	if (!Zenith_GraphicsOptions::Get().m_bPrimitivesEnabled)
-	{
-		return;
-	}
-
 	// Non-capturing graph callback (void(*)(Flux_CommandBuffer*, void*)) — it cannot
 	// capture, so it re-enters via g_xEngine.Primitives() to reach the singleton
 	// instance FIRST; cross-subsystem deps (FluxGraphics / VulkanMemory) are
@@ -858,26 +891,45 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	Zenith_Vector<CapsuleInstance> xLocalCapsuleInstances;
 	Zenith_Vector<CylinderInstance> xLocalCylinderInstances;
 	Zenith_Vector<TriangleInstance> xLocalTriangleInstances;
+	Zenith_Vector<SphereInstance> xLocalGameplaySphereInstances;
+	Zenith_Vector<CylinderInstance> xLocalGameplayCylinderInstances;
+	const bool bDebugPrimitivesEnabled =
+		Zenith_GraphicsOptions::Get().m_bPrimitivesEnabled;
 	{
 		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
-		if (xPrimitives.m_xSphereInstances.GetSize() == 0 && xPrimitives.m_xCubeInstances.GetSize() == 0 &&
-			xPrimitives.m_xLineInstances.GetSize() == 0 && xPrimitives.m_xCapsuleInstances.GetSize() == 0 &&
-			xPrimitives.m_xCylinderInstances.GetSize() == 0 && xPrimitives.m_xTriangleInstances.GetSize() == 0)
+		const bool bHaveDebugPrimitives = bDebugPrimitivesEnabled
+			&& (xPrimitives.m_xSphereInstances.GetSize() != 0
+				|| xPrimitives.m_xCubeInstances.GetSize() != 0
+				|| xPrimitives.m_xLineInstances.GetSize() != 0
+				|| xPrimitives.m_xCapsuleInstances.GetSize() != 0
+				|| xPrimitives.m_xCylinderInstances.GetSize() != 0
+				|| xPrimitives.m_xTriangleInstances.GetSize() != 0);
+		const bool bHaveGameplayPrimitives =
+			xPrimitives.m_xGameplaySphereInstances.GetSize() != 0
+			|| xPrimitives.m_xGameplayCylinderInstances.GetSize() != 0;
+		if (!bHaveDebugPrimitives && !bHaveGameplayPrimitives)
 		{
 			return;
 		}
-		for (u_int i = 0; i < xPrimitives.m_xSphereInstances.GetSize(); ++i) xLocalSphereInstances.PushBack(xPrimitives.m_xSphereInstances.Get(i));
-		for (u_int i = 0; i < xPrimitives.m_xCubeInstances.GetSize(); ++i) xLocalCubeInstances.PushBack(xPrimitives.m_xCubeInstances.Get(i));
-		for (u_int i = 0; i < xPrimitives.m_xLineInstances.GetSize(); ++i) xLocalLineInstances.PushBack(xPrimitives.m_xLineInstances.Get(i));
-		for (u_int i = 0; i < xPrimitives.m_xCapsuleInstances.GetSize(); ++i) xLocalCapsuleInstances.PushBack(xPrimitives.m_xCapsuleInstances.Get(i));
-		for (u_int i = 0; i < xPrimitives.m_xCylinderInstances.GetSize(); ++i) xLocalCylinderInstances.PushBack(xPrimitives.m_xCylinderInstances.Get(i));
-		for (u_int i = 0; i < xPrimitives.m_xTriangleInstances.GetSize(); ++i) xLocalTriangleInstances.PushBack(xPrimitives.m_xTriangleInstances.Get(i));
-		xPrimitives.m_xSphereInstances.Clear();
-		xPrimitives.m_xCubeInstances.Clear();
-		xPrimitives.m_xLineInstances.Clear();
-		xPrimitives.m_xCapsuleInstances.Clear();
-		xPrimitives.m_xCylinderInstances.Clear();
-		xPrimitives.m_xTriangleInstances.Clear();
+		if (bDebugPrimitivesEnabled)
+		{
+			for (u_int i = 0; i < xPrimitives.m_xSphereInstances.GetSize(); ++i) xLocalSphereInstances.PushBack(xPrimitives.m_xSphereInstances.Get(i));
+			for (u_int i = 0; i < xPrimitives.m_xCubeInstances.GetSize(); ++i) xLocalCubeInstances.PushBack(xPrimitives.m_xCubeInstances.Get(i));
+			for (u_int i = 0; i < xPrimitives.m_xLineInstances.GetSize(); ++i) xLocalLineInstances.PushBack(xPrimitives.m_xLineInstances.Get(i));
+			for (u_int i = 0; i < xPrimitives.m_xCapsuleInstances.GetSize(); ++i) xLocalCapsuleInstances.PushBack(xPrimitives.m_xCapsuleInstances.Get(i));
+			for (u_int i = 0; i < xPrimitives.m_xCylinderInstances.GetSize(); ++i) xLocalCylinderInstances.PushBack(xPrimitives.m_xCylinderInstances.Get(i));
+			for (u_int i = 0; i < xPrimitives.m_xTriangleInstances.GetSize(); ++i) xLocalTriangleInstances.PushBack(xPrimitives.m_xTriangleInstances.Get(i));
+			xPrimitives.m_xSphereInstances.Clear();
+			xPrimitives.m_xCubeInstances.Clear();
+			xPrimitives.m_xLineInstances.Clear();
+			xPrimitives.m_xCapsuleInstances.Clear();
+			xPrimitives.m_xCylinderInstances.Clear();
+			xPrimitives.m_xTriangleInstances.Clear();
+		}
+		for (u_int i = 0; i < xPrimitives.m_xGameplaySphereInstances.GetSize(); ++i) xLocalGameplaySphereInstances.PushBack(xPrimitives.m_xGameplaySphereInstances.Get(i));
+		for (u_int i = 0; i < xPrimitives.m_xGameplayCylinderInstances.GetSize(); ++i) xLocalGameplayCylinderInstances.PushBack(xPrimitives.m_xGameplayCylinderInstances.Get(i));
+		xPrimitives.m_xGameplaySphereInstances.Clear();
+		xPrimitives.m_xGameplayCylinderInstances.Clear();
 	}
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
@@ -888,6 +940,14 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	xPrimitives.RenderCapsulePrimitives(pxCmdList, xBinder, xLocalCapsuleInstances);
 	xPrimitives.RenderCylinderPrimitives(pxCmdList, xBinder, xLocalCylinderInstances);
 	xPrimitives.RenderTrianglePrimitives(pxCmdList, xBinder, xLocalTriangleInstances);
+
+	// Gameplay cues are depth-tested by the same G-buffer pipeline, but their
+	// non-zero intensity makes the shader write an unlit/emissive surface. These
+	// draws deliberately sit outside the tools-only debug-primitives option.
+	xPrimitives.RenderSpherePrimitives(pxCmdList, xBinder,
+		xLocalGameplaySphereInstances, s_fGameplayPrimitiveEmissiveIntensity);
+	xPrimitives.RenderCylinderPrimitives(pxCmdList, xBinder,
+		xLocalGameplayCylinderInstances, s_fGameplayPrimitiveEmissiveIntensity);
 }
 
 // ========== HELPER FUNCTIONS ==========

@@ -4,37 +4,54 @@
 
 **Scope note (2026-07-09, S0):** at S0 essentially EVERYTHING is a gap -- the project is a booting skeleton. This doc is deliberately structured per major system with a one-line current-state each, so later sessions UPDATE lines in place rather than restructure. When a stage lands, replace that system's status line and add a dated note; do not reorder sections.
 
-**Verdict at a glance (updated 2026-07-29 -- this block had been stamped 2026-07-21 and was EIGHT
-DAYS and two whole S7 items stale, still naming "S7 item 2" as the next work. A verdict block that
-nobody re-reads is worse than none, because it is the first thing a new session trusts):**
-- **★ S7 IS NOT COMPLETE, AND THE ROADMAP CHECKBOXES ARE RIGHT.** `Roadmap.md:104` requires
-  `forward cone + occlusion raycast -> FREEZE INPUT -> APPROACH -> dialogue -> forced battle ->
-  defeat flags + prize money`. Everything shipped EXCEPT `freeze input` and `approach`, both CUT ON
-  EVIDENCE by W3 (ZM-D-159) -- so the unticked boxes are honest. `Status.md` claimed "S7 COMPLETE"
-  for five commits and was retracted on 2026-07-29 (ZM-D-162). **When prose and a checkbox disagree,
-  the checkbox wins, scored against its literal text.**
+**Verdict at a glance (updated 2026-07-29 LATE -- ★ THIS BLOCK HAS NOW GONE STALE TWICE IN ONE
+DAY. It was rewritten earlier on 2026-07-29 (ZM-D-165) precisely because it had been stamped
+2026-07-21 and was eight days stale; by that evening it was wrong again, still asserting "S7 IS
+NOT COMPLETE" and still listing SC2/SC3 as remaining work after both had landed. A verdict block
+that nobody re-reads is worse than none, because it is the first thing a new session trusts --
+and rewriting it once does not immunise it. Update it in the SAME commit that closes a stage.):**
+- **★ S7 IS COMPLETE (2026-07-29, ZM-D-167), AND THE ROADMAP CHECKBOXES ARE THE PROOF.**
+  `Roadmap.md:104` requires `forward cone + occlusion raycast -> FREEZE INPUT -> APPROACH ->
+  dialogue -> forced battle -> defeat flags + prize money`. The two verbs W3 had CUT ON EVIDENCE
+  (ZM-D-159) -- `freeze input` and `approach` -- shipped as SC1-SC3 (ZM-D-163/166/167), so both
+  boxes at `:104` and `:172` are now honestly ticked and the gate at `:185` is annotated MET.
+  **★ THE RULE THAT GOT US HERE, STILL BINDING: when prose and a checkbox disagree, the checkbox
+  wins, scored against its LITERAL text.** `Status.md` once claimed "S7 COMPLETE" for five
+  commits and was retracted (ZM-D-162); the corollary bit in the other direction on the same day,
+  when this block went on denying a closure the boxes recorded. **And the camera cut is NOT
+  claimed by that tick** -- it is absent from `:104`'s text, was a W3 aspiration only, remains
+  unbuilt, and stays booked in 1.8 below.
 - **Stages complete with their required gates closed:** S0-S6. S1's data core and deterministic
   headless battle engine (including feature-complete breeding/gender and Battle Tower logic); S3's
   traversable Dawnmere + live PlayerHome door round trip; S4's five procedural asset generators +
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
-- **★ CURRENT VERIFIED BASELINE (observed 2026-07-29, orchestrator-run, not inferred):** ZM headless
-  registry **49 passed / 0 failed**; ZM boot unit gate **2731 ran / 2730 passed / 0 failed / 1
-  skipped** (`zm-tests.yml` pinned to 2731); engine boot gate **1164 / 1163 / 0 / 1**. The single
-  skip in each is the quarantined `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
+- **★ CURRENT VERIFIED BASELINE (observed 2026-07-29 at S7 closure, ZM-D-167, orchestrator-run,
+  not inferred):** ZM headless registry **49 passed / 0 failed**; full windowed Vulkan **49 passed
+  / 0 failed**; ZM boot unit gate **2742 ran / 2741 passed / 0 failed / 1 skipped**
+  (`zm-tests.yml` pinned to **2742**); engine boot gate **1164 / 1163 / 0 / 1**
+  (`run_unit_gate.ps1` default `-Baseline 1164`). The single skip in each is the quarantined
+  `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
   **Every "36 tests / 2392 units" figure elsewhere in this document is stale by construction --
-  trust this line.**
+  trust this line.** ★ This bullet previously read 2731 while `Status.md` read 2722 and the
+  workflow was pinned to 2742: **three files, three different baselines, all stated as fact.**
+  A commit that adds a boot unit updates all three or none.
 - **S6 (Dialogue, menus, NPCs, shops) COMPLETE.** Four authored Dawnmere NPCs are reachable by walking up and pressing the interact key: villager, Trade Post clerk, Care Center caretaker and wanderer. The wanderer uses a deterministic two-waypoint patrol; `ZM_Interactable` v2 persists the patrol configuration and v1 data loads as a stationary fail-closed fallback. Behaviour-graph and terrain-fed navmesh work deliberately moves to S7.
 - **S7 item 1 full schema-v1 codec is green (ZM-D-135/136):** SC1's 18 durable-model units are joined by 29 schema + 2 literal-golden compatibility units. The pure codec freezes 11 ordered length-framed modules, explicit little-endian widths, transactional streams and an 824-byte v1 golden. Units are **2392 ran / 2391 passed / 0 failed / 1 skipped**; engine remains **1103**; all five Zenithmon builds, headless **36/0** and full windowed **36/0/0** passed; registry remains 36. No visual/human gate applies.
-- **Next autonomous work (2026-07-29):** finish S7 item 3 -- the two cut verbs. SC1 landed the pure
-  callerless `ZM_TRAINER_SIGHT_APPROACHING` state + approach maths (ZM-D-163); remaining are SC2 (the
-  cinematic freeze latch), SC3 (Vesper actually walks -- re-authors `Dawnmere.zscen`, so the two-boot
-  SHA256 proof is owed), SC4 (the camera cut), and SC5 (promote the SPOTTED marker off the debug
-  primitives channel). **SC4 reverses ZM-D-159 on evidence:** `ZM_FollowCamera` is a Zenithmon
-  component (order 103) and the SOLE writer of the camera pose, so the override lives inside it and
-  needs no `Zenith/` change -- the recorded "real engine/game-camera feature" claim is unsupported.
-  There is no human gate during S7; the next human intervention point is the S8 vertical-slice
-  go/no-go, which follows S8's four content items, not precedes them.
+- **The ZM-D-168 follow-up LANDED 2026-07-30 as ZM-D-169** -- the SPOTTED marker is off the
+  debug-primitives channel (1.8-3c below, now closed ON PIXELS) and the suite has its first
+  pixel-level assertions. Because it modified `Zenith/Flux/Primitives` it took the **CROSS-GAME**
+  gate: three sentinels exit 0, engine boot units **1164 / 1163 / 0 / 1 unmoved**, all five other
+  games clean on Null_True. ZM headless **50/0**, full windowed **50/0 with ZERO skipped**, ZM boot
+  **2742 / 2741 / 0 / 1 unmoved** -- so no baseline moved and none of the three pinned sites was
+  touched.
+- **Next autonomous work (2026-07-30):** **S8's four content items** (`Roadmap.md:198-201`). **Still
+  booked here and NOT scheduled:** the camera cut (1.8-3a); the general greybox shading gap the audit
+  diagnosed, which ZM-D-169 **worked around for NPCs only** with an emissive floor rather than fixing
+  -- every non-NPC blockout still renders near-black on the vertical faces a player sees; and the
+  engine's `AddLine` centring bug (`task_33ee8059`). There is no human gate during S8's content work;
+  the next human intervention point is the S8 vertical-slice go/no-go, which **follows** those four
+  items rather than preceding them, and which **no agent may sign**.
 - **What's designed but unbuilt:** the remaining outdoor terrain recipes and all playable Thornacre/Route1 scene content; badge-award gameplay and the League arc (S8+); the BOX storage screen (**re-deferred S7 -> S9 in writing on 2026-07-29, ZM-D-165 / Q-2026-07-29-001, after a doc audit found the S6-era deferral about to expire unremarked**); and the broad world buildout (S9/S10). **Corrected 2026-07-29:** the save-slot / manual / continue / autosave flows are NOT unbuilt -- they SHIPPED as S7 item 2 (ZM-D-137..142), and story-flag gating and trainer battles shipped in S7 items 2-3. The inner disk-payload codec itself now exists. PlayerHome and the outdoor home shell are intentionally replaceable greyboxes, not final art. The full ~25-terrain-set world bake remains a projection (AssetManifest.md 6.3), though the four asset-generator families have been cold-baked together at family scale.
 - **Locked cuts (not gaps -- see Scope.md):** no audio (engine has none), no networking/multiplayer/trading, no Dynamax-analog, battle format singles only, documented volatile-status cuts (Substitute/Encore/Transform/weight moves).
 
@@ -172,12 +189,24 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
    - **No approach walk.** Vesper is authored stationary with an OBB collider (ZM-D-156:
      an AABB destroys his authored yaw). Moving him correctly needs dynamic-capsule/nav
      ownership, avoidance, and freeze coordination with the order-110/111/112/113 seam.
-   - **The marker rides the DEBUG primitives channel.**
-     `Zenith_GraphicsOptions::m_bPrimitivesEnabled` defaults true and Zenithmon never
-     overrides it, so it renders by default -- but it is bound to a live debug variable,
-     so a tools user who unchecks `Graphics/Primitives/Enabled` loses a GAMEPLAY cue, and
-     `ExecuteGBuffer` early-returns before draining so the queued instances leak while a
-     trainer is SPOTTED. Promoting the marker to a real UI or mesh surface is deferred.
+   - **RESOLVED 2026-07-30 (ZM-D-169) -- 1.8-3c, THE DEBUG-CHANNEL DEPENDENCY, AND IT IS PROVEN
+     WITH PIXELS RATHER THAN WITH THE SUBMIT COUNTER.** The marker no longer rides the tools/debug
+     channel. `Flux_PrimitivesImpl` gained two dedicated GAMEPLAY queues plus
+     `SubmitGameplayCylinderAndSphere`, `ExecuteGBuffer` drains them UNCONDITIONALLY (the early
+     return now fires only when debug AND gameplay are both empty), and they render
+     `GBUFFER_SHADING_UNLIT` + emissive so readability does not depend on scene lighting.
+     **Observed:** `ZM_RivalVesperAuthored_Test` holds `Graphics/Primitives/Enabled` **FALSE for
+     the whole run** and a frame-exact swapchain dump on a real SPOTTED frame contains the marker --
+     118 marker-hue px in a 7x28 span, that hue verified UNIQUE across the entire frame (zero
+     matches anywhere else). **Mutation-proven:** restoring the old
+     `if (!m_bPrimitivesEnabled) return;` early return reds that clause with "reached Flux's queues
+     but NOT the framebuffer: 0 marker-hue pixels" and exit 1; reverting it returns to green.
+     The queue-leak half is closed for the gameplay queues by the same unconditional drain.
+     **★ STILL OPEN, and narrower than this entry used to be:** the DEBUG queues are still not
+     drained while the option is off, so debug instances accumulate unconsumed -- pre-existing
+     behaviour, untouched, and noted in `Zenith/Flux/Primitives/CLAUDE.md`. Promoting the marker to
+     a real UI/mesh surface remains unnecessary: the gameplay primitive channel IS the production
+     surface now.
 
    The honest one-line description is now **"a trainer who sees you shows you he has,
    then speaks, then battles you"** -- he still does not walk to you and the camera does
@@ -245,20 +274,36 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      five procedural asset generators ship" and "the battle HUD renders" are currently claims about
      test names, not about pixels. **Resolve with a targeted capture before either is repeated.**
      Evidence: `Build/artifacts/evidence_final/03_battle_arena.png`.
-   - **★ THE SPOTTED MARKER RENDERS BUT DOES NOT READ AS AN EXCLAMATION MARK.** Captured live
-     (`04_spotted_marker.png`): a gold sphere with a diagonal stroke, rather than a vertical bar
-     above a dot. It is also, correctly, drawn over a trainer with no visual body in
-     `ZM_TrainerSightWalkUp_Test` (that fixture is deliberately collider-less). Folded into the
-     already-booked 1.8-3c work: the promotion off the debug-primitives channel should fix the SHAPE
-     at the same time, since both are "this is debug geometry, not a gameplay cue".
-   - **★ AN UNEXPLAINED NULL RESULT, RECORDED RATHER THAN WAVED AWAY.** A yellow-pixel scan across
-     133 frames of `ZM_RivalVesperAuthored_Test` at 100 ms found **zero** marker frames, while that
-     same run's log reports `spotted: frames=11 submits=11` and `settleIndicator=11`. The likely
-     cause is benign -- Vesper is ~7.5 m away, so the marker subtends fewer pixels than the scan
-     threshold -- but the alternative reading is a submit that does not draw, which is EXACTLY the
-     defect W3's review caught once already (the counter was a bare `++` beside the call). The
-     counter now derives from Flux's own queues, so a false positive is unlikely; it is nonetheless
-     **unconfirmed by eye at that distance.**
+   - **RESOLVED 2026-07-30 (ZM-D-169) -- THE MARKER'S SHAPE, AND IT IS NOW PINNED BY PIXELS.** It
+     previously read as "a gold sphere with a diagonal stroke" rather than a bar above a dot. The
+     stem is now a solid `SubmitGameplayCylinderAndSphere` cylinder instead of Flux's flat debug
+     LINE quad, and a swapchain capture taken on a REAL SPOTTED frame shows an upright exclamation
+     mark over the rival: **118 marker-hue pixels spanning 7x28** (height 4x width) in a 1280x720
+     dump. `ZM_RivalVesperAuthored_Test` now asserts both the presence AND the tall-and-narrow span,
+     so the diagonal shape cannot come back silently. **★ AND THE ROOT CAUSE WAS AN ENGINE BUG, NOT
+     A TUNING MISS:** `RenderLinePrimitives` translates the line quad to `m_xStart` while
+     `GenerateUnitLine` spans local y in `[-1, 1]`, so `AddLine(A,B)` draws CENTRED ON A -- the stem
+     asked for `top+0.55 .. top+1.20` was drawn at `top+0.225 .. top+0.875`, straight through the
+     dot at `top+0.25`. That bug is still live for every other `AddLine` caller in the engine and is
+     booked separately (`task_33ee8059`, documented in `Zenith/Flux/Primitives/CLAUDE.md`); Zenithmon
+     merely no longer depends on it.
+   - **★ THE "UNEXPLAINED NULL RESULT" IS EXPLAINED, AND THE FAULT WAS IN THE SCAN.** The audit's
+     yellow-pixel scan found zero marker frames while the run logged `submits=11`, and this entry
+     recorded the honest worry that a submit might not be drawing. It was drawing. **Two independent
+     causes, both in the measuring apparatus:**
+     1. **The predicate was wrong.** The marker submits linear `(1.0, 0.82, 0.08)` unlit at 1.5x,
+        which *sounds* like "saturated yellow, almost no blue" -- but after tonemap/bloom/TAA it
+        lands at `RGB(208, 182, 97)`, blue/red **0.47**, not 0.08. Every "low blue" filter rejects
+        it. Re-running the same style of scan on 2026-07-29/30 reproduced the zero across **539**
+        frames of two different tests while the marker was rendering perfectly.
+     2. **The sampling rate was unreachable.** `Tools\capture_viewport.ps1 -IntervalMs 40` delivered
+        **206 ms** at 2560x1440 and 81 ms at 1280x800 -- PNG encode dominates the loop -- so the
+        header's "use 60 ms or lower" advice cannot be honoured at full size, and a 0.35 s beat gets
+        1-2 samples.
+     **The lesson, which is the opposite of the one this entry was heading toward: a null result
+     from a hand-rolled screen scrape is evidence about the scrape.** The fix was to stop scraping
+     and use the engine's frame-exact `Flux_Screenshot::RequestDump` from inside the SPOTTED frame,
+     then build the colour predicate from the bytes actually written.
    - **★ DAWNMERE READS AS AN OPEN FIELD, NOT A TOWN.** Terrain, grass and height variation render
      well, but there are no buildings, paths or town structure -- the "Trade Post" and "Care Center"
      exist only as dialogue and shop logic attached to NPC blockouts standing in grass. Not a

@@ -87,6 +87,16 @@ public:
 	void AddTriangle(const Zenith_Maths::Vector3& xV0, const Zenith_Maths::Vector3& xV1,
 		const Zenith_Maths::Vector3& xV2, const Zenith_Maths::Vector3& xColor);
 
+	// Production gameplay cues use dedicated queues. Unlike the debug Add* channel,
+	// these queues are consumed even when Graphics/Primitives/Enabled is unchecked,
+	// and are rendered unlit/emissive so their readability is not scene-lighting
+	// dependent. Kept on Flux_PrimitivesImpl so callers can measure the actual CPU
+	// renderer payload rather than incrementing a proxy counter beside a call.
+	u_int SubmitGameplayCylinderAndSphere(const Zenith_Maths::Vector3& xCylinderStart,
+		const Zenith_Maths::Vector3& xCylinderEnd, float fCylinderRadius,
+		const Zenith_Maths::Vector3& xSphereCenter, float fSphereRadius,
+		const Zenith_Maths::Vector3& xColor);
+
 	void Clear();
 
 	void AddCross(const Zenith_Maths::Vector3& xCenter, float fSize, const Zenith_Maths::Vector3& xColor);
@@ -112,9 +122,11 @@ public:
 	void EmitPrimitiveDraw(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Maths::Matrix4& xModelMatrix,
 		const Zenith_Maths::Vector3& xColor,
-		u_int uIndexCount);
+		u_int uIndexCount,
+		float fEmissiveIntensity = 0.0f);
 	void RenderSpherePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
-		const Zenith_Vector<Flux_PrimitivesSphereInstance>& xInstances);
+		const Zenith_Vector<Flux_PrimitivesSphereInstance>& xInstances,
+		float fEmissiveIntensity = 0.0f);
 	void RenderCubePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Vector<Flux_PrimitivesCubeInstance>& xInstances);
 	void RenderLinePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
@@ -122,7 +134,8 @@ public:
 	void RenderCapsulePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Vector<Flux_PrimitivesCapsuleInstance>& xInstances);
 	void RenderCylinderPrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
-		const Zenith_Vector<Flux_PrimitivesCylinderInstance>& xInstances);
+		const Zenith_Vector<Flux_PrimitivesCylinderInstance>& xInstances,
+		float fEmissiveIntensity = 0.0f);
 	void RenderTrianglePrimitives(Flux_CommandBuffer* pxCmdList, Flux_ShaderBinder& xBinder,
 		const Zenith_Vector<Flux_PrimitivesTriangleInstance>& xInstances);
 
@@ -157,6 +170,8 @@ public:
 	Zenith_Vector<Flux_PrimitivesCapsuleInstance>  m_xCapsuleInstances;
 	Zenith_Vector<Flux_PrimitivesCylinderInstance> m_xCylinderInstances;
 	Zenith_Vector<Flux_PrimitivesTriangleInstance> m_xTriangleInstances;
+	Zenith_Vector<Flux_PrimitivesSphereInstance>   m_xGameplaySphereInstances;
+	Zenith_Vector<Flux_PrimitivesCylinderInstance> m_xGameplayCylinderInstances;
 
 	Flux_DynamicVertexBuffer m_xTriangleDynamicVertexBuffer;
 	Flux_IndexBuffer         m_xTriangleIndexBuffer;

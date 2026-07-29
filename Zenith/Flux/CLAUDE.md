@@ -20,6 +20,7 @@ A typical frame compiles into roughly this topologically-sorted order. The rende
 | UnifiedMesh (statics + trees +    | >--> writes MRT diffuse / normals+ambient / material + scene depth
 |   compute-skinned animated meshes)|/
 | Vegetation (grass)                |
+| Primitives (debug + gameplay)     |
 +-----------------------------------+
               |
               v
@@ -36,7 +37,6 @@ A typical frame compiles into roughly this topologically-sorted order. The rende
 | Skybox                      |
 | Volumetric Fog              |
 | Particles                   |
-| Primitives (debug)          |
 +-----------------------------+
               |
               v
@@ -63,6 +63,8 @@ A typical frame compiles into roughly this topologically-sorted order. The rende
 ```
 
 For the full graph lifecycle (Setup -> Compile -> Execute), barrier synthesis, the fluent builder API, and the Print Pass Order debug button, see [RenderGraph/CLAUDE.md](RenderGraph/CLAUDE.md).
+
+> **Primitives sits in the G-buffer block, not with the overlays** — this diagram used to list it beside DeferredShading/Skybox/Fog/Particles. `Flux_PrimitivesImpl::SetupRenderGraph` declares its one pass ("Primitives GBuffer") as a `Writes` of all four core MRTs + the depth attachment, and "Apply Lighting" `Read`s exactly those, so the topological sort can only put Primitives **before** lighting. Primitive draws are therefore lit (or, on the gameplay channel, tagged unlit and passed through) by the deferred pass like any other opaque geometry — they are not composited on top of it.
 
 ## Files
 
@@ -93,7 +95,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `Particles/` - Particle systems
 - `Skybox/` - Sky rendering
 - `Text/` - Text rendering
-- `Primitives/` - Debug primitives
+- `Primitives/` - Debug **and gameplay** primitives (see Primitives/CLAUDE.md). Two independent channels: the `Add*` debug channel, gated on the tools debug variable `Graphics/Primitives/Enabled`; and the `SubmitGameplay*` channel, which is drained unconditionally and drawn unlit/emissive. A production gameplay cue must use the second one.
 - `Gizmos/` - Editor gizmos (see Gizmos/CLAUDE.md)
 - `InstancedMeshes/` - Instance-group registration front-end (`Flux_InstanceGroup` CPU transform/anim SoA + VAT). Stage 4: the draw/cull/shadow passes were retired; `UnifiedMesh` reads the registered groups and draws them. (`Flux_InstanceCulling.h`'s frustum helper is shared with `UnifiedMesh`.)
 - `DynamicLights/` - Clustered dynamic lighting (gather/upload front-end)

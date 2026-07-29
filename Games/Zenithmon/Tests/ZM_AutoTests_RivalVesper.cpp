@@ -6,12 +6,14 @@
 // ZM_AutoTests_RivalVesper -- the windowed/headless gate for S7 item 3 SC8 and
 // S7 item 4: THE AUTHORED RIVAL, off the committed scene bytes.
 //
-// Two independent tests, both m_bRequiresGraphics = FALSE (they assert nothing
-// about pixels, so they run FOR REAL on the Null backend):
+// Two independent gameplay tests are m_bRequiresGraphics = FALSE (they assert
+// nothing about pixels, so they run FOR REAL on the Null backend):
 //   * ZM_RivalVesperAuthored_Test proves the authored rival, visual SPOTTED beat,
 //     and win/payout path.
 //   * ZM_RivalVesperWhiteout_Test proves the exact-starter loss, heal, warp, and
 //     no-immediate-retrigger path.
+// A third focused graphics test at the tail of this TU additively loads the same
+// committed scene and measures all six live NPC bodies in actual swapchain pixels.
 //
 // ★ KNOWN-LIMIT W4 ADDS AN APPEARANCE BLOCK to the first test, and it asserts on
 // MATERIAL STATE, not on pixels, so it too runs for real headless. It samples the
@@ -90,14 +92,18 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"          // the W4 appearance sample (GetName / GetBaseColor)
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Engine.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"   // the W4 appearance sample
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "Flux/Flux_Screenshot.h"
 #include "EntityComponent/Zenith_CameraResolve.h"       // Zenith_GetMainCameraAcrossScenes -- the walk's live basis
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "Maths/Zenith_Maths.h"
+#include "UnitTests/Zenith_UnitTests.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -126,6 +132,12 @@
 #include "Zenithmon/Source/Party/ZM_Monster.h"                  // ZM_BuildMonsterRecord
 #include "Zenithmon/Source/Party/ZM_Party.h"
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"        // the AUTHORED coordinates, shared with the boot units
+
+#ifdef ZENITH_TOOLS
+#include "Core/Zenith_EditorQuery.h"
+#endif
+
+#include "ZM_TestTGAHelpers.h"
 
 #include <array>
 #include <cmath>
@@ -509,6 +521,8 @@ namespace
 	bool        g_bRVActive         = false;
 	bool        g_bRVFailed         = false;
 	bool        g_bRVPrereqsPresent = false;
+	bool        g_bRVPrimitivesOptionSaved = false;
+	bool        g_bRVPrimitivesEnabledBefore = true;
 	const char* g_szRVFailure       = "test did not reach verification";
 	// Backing store for the failure messages that have to carry a MEASUREMENT (the
 	// feet-height delta, and -- since S7 item 1 SC3 -- the four walk-up / cancel /
@@ -605,6 +619,17 @@ namespace
 	// sample prove the marker preceded both the bark and the encounter.
 	bool  g_bRVSpottedObserved          = false;
 	bool  g_bRVSpottedCompleted         = false;
+	// ★ THE PIXEL HALF OF SHORTFALLS 1.8-3c. Everything else about the marker is a
+	// statement about Flux's CPU queues; this is the only thing that can speak for
+	// the framebuffer. The dump is requested from inside a REAL SPOTTED frame (see
+	// RVObserveSpottedFrame) with Graphics/Primitives/Enabled held FALSE for the
+	// whole run, so a marker that reaches the swapchain here reaches it off the
+	// gameplay channel and not off the tools/debug one. Vulkan only:
+	// Flux_Screenshot::RequestDump has exactly one consumer
+	// (Zenith_Vulkan_Swapchain::EndFrame), so on the Null backend it writes nothing
+	// and the assertion is correctly skipped rather than failed.
+	bool        g_bRVMarkerShotRequested = false;
+	std::string g_strRVMarkerShotPath;
 	bool  g_bRVIndicatorObserved        = false;
 	bool  g_bRVSpottedMenuIdleAtSubmit  = false;
 	bool  g_bRVSpottedTransitionIdleAtSubmit = false;
@@ -996,6 +1021,16 @@ namespace
 	{
 		g_bRVSpottedObserved = true;
 		++g_uRVSpottedFramesObserved;
+		// Frame-exact, because a wall-clock screen-grab loop cannot be. Measured
+		// 2026-07-29: Tools\capture_viewport.ps1 asked for 40 ms and delivered
+		// 206 ms at 2560x1440 (PNG encode dominates the loop), so a 0.35 s beat
+		// gets 1-2 samples and "I did not capture it" carries no information. This
+		// asks the swapchain for THIS frame instead.
+		if (!g_bRVMarkerShotRequested && !g_strRVMarkerShotPath.empty())
+		{
+			Flux_Screenshot::RequestDump(g_strRVMarkerShotPath.c_str());
+			g_bRVMarkerShotRequested = true;
+		}
 		g_uRVSpottedCount = xVesper.GetTrainerSpottedCount();
 		g_uRVSpottedIndicatorSubmits =
 			xVesper.GetTrainerSpottedIndicatorSubmitCount();
@@ -2331,6 +2366,8 @@ namespace
 		g_bRVActive         = false;
 		g_bRVFailed         = false;
 		g_bRVPrereqsPresent = false;
+		g_bRVPrimitivesOptionSaved = false;
+		g_bRVPrimitivesEnabledBefore = true;
 		g_szRVFailure       = "test did not reach verification";
 		g_szRVMeasuredFailure[0] = '\0';
 
@@ -2398,6 +2435,26 @@ namespace
 
 		g_bRVSpottedObserved = false;
 		g_bRVSpottedCompleted = false;
+		g_bRVMarkerShotRequested = false;
+		g_strRVMarkerShotPath.clear();
+		if constexpr (!Zenith_IsNullRenderer())
+		{
+			std::error_code xMarkerDirError;
+			const std::filesystem::path xRepoRoot =
+				std::filesystem::weakly_canonical(
+					std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..",
+					xMarkerDirError);
+			const std::filesystem::path xMarkerDir =
+				xRepoRoot / "Build" / "artifacts" / "zenithmon" / "visual_audit";
+			std::filesystem::create_directories(xMarkerDir, xMarkerDirError);
+			if (!xMarkerDirError)
+			{
+				g_strRVMarkerShotPath =
+					(xMarkerDir / "spotted_marker.tga").string();
+				std::error_code xRemoveError;
+				std::filesystem::remove(g_strRVMarkerShotPath, xRemoveError);
+			}
+		}
 		g_bRVIndicatorObserved = false;
 		g_bRVSpottedMenuIdleAtSubmit = false;
 		g_bRVSpottedTransitionIdleAtSubmit = false;
@@ -2506,6 +2563,14 @@ namespace
 		const std::string strChallengeGraphPath =
 			Zenith_AssetRegistry::ResolvePath(szZM_GRAPH_TRAINER_CHALLENGE_ASSET);
 		g_bRVBarkAssetPresent = DiskFilePresent(strChallengeGraphPath);
+
+		// This authored run is also the visual proof that SPOTTED no longer rides
+		// the tools-only debug-primitives toggle. Keep it disabled for the whole run;
+		// the promoted gameplay cylinder/sphere queues must still reach the G-buffer.
+		Zenith_GraphicsOptions& xGraphicsOptions = Zenith_GraphicsOptions::Get();
+		g_bRVPrimitivesEnabledBefore = xGraphicsOptions.m_bPrimitivesEnabled;
+		g_bRVPrimitivesOptionSaved = true;
+		xGraphicsOptions.m_bPrimitivesEnabled = false;
 
 		// Clear the transition's ownerless channel latches AND the ownerless session
 		// latch, so an earlier batched test cannot bleed either in. Neither touches
@@ -3352,6 +3417,111 @@ namespace
 					g_uRVSettleRaise, g_uRVSettleChallenge);
 				bPassed = false;
 			}
+
+			// ===== THE PIXEL ASSERTION (Shortfalls 1.8-3c) ======================
+			// Everything above is about Flux's CPU queues. This reads the ACTUAL
+			// swapchain bytes for a real SPOTTED frame captured with
+			// Graphics/Primitives/Enabled held FALSE all run, so it is the only
+			// clause here that can distinguish "queued" from "drawn" -- exactly the
+			// distinction ZM-D-168's standing rule turns on.
+			//
+			// ★ THE HUE IS MEASURED, NOT PREDICTED, and predicting it is how two
+			// hand-rolled scans produced false negatives on 2026-07-29. The marker
+			// submits linear (1.0, 0.82, 0.08) and is drawn UNLIT at 1.5x, so a
+			// saturated yellow looks obvious -- but after tonemap it lands at
+			// RGB(208, 182, 97), i.e. blue/red ~0.47, and any filter assuming "low
+			// blue" rejects it. That hue was verified UNIQUE across the whole
+			// 1280x720 frame (119 matching pixels, ALL of them inside the marker's
+			// own 7x28 bounding box, zero elsewhere).
+			if constexpr (!Zenith_IsNullRenderer())
+			{
+				ZM_TestTGAImage xMarkerShot;
+				if (!g_bRVMarkerShotRequested || g_strRVMarkerShotPath.empty()
+					|| !ZM_TestLoadTGA(g_strRVMarkerShotPath.c_str(), xMarkerShot))
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] no SPOTTED-frame swapchain capture to read "
+						"(requested=%s path='%s')",
+						g_bRVMarkerShotRequested ? "true" : "false",
+						g_strRVMarkerShotPath.c_str());
+					bPassed = false;
+				}
+				else
+				{
+					u_int uMarkerPixels = 0u;
+					u_int uMinX = xMarkerShot.m_uWidth;
+					u_int uMaxX = 0u;
+					u_int uMinY = xMarkerShot.m_uHeight;
+					u_int uMaxY = 0u;
+					for (uint32_t uY = 0u; uY < xMarkerShot.m_uHeight; ++uY)
+					{
+						for (uint32_t uX = 0u; uX < xMarkerShot.m_uWidth; ++uX)
+						{
+							const uint8_t* puBGRA = xMarkerShot.GetPixelBGRA(uX, uY);
+							const float fBlue = static_cast<float>(puBGRA[0]);
+							const float fGreen = static_cast<float>(puBGRA[1]);
+							const float fRed = static_cast<float>(puBGRA[2]);
+							if (fRed < 170.0f || fRed > 240.0f)
+							{
+								continue;
+							}
+							const float fGreenRatio = fGreen / fRed;
+							const float fBlueRatio = fBlue / fRed;
+							if (fGreenRatio < 0.80f || fGreenRatio > 0.95f
+								|| fBlueRatio < 0.38f || fBlueRatio > 0.56f)
+							{
+								continue;
+							}
+							++uMarkerPixels;
+							uMinX = uX < uMinX ? uX : uMinX;
+							uMaxX = uX > uMaxX ? uX : uMaxX;
+							uMinY = uY < uMinY ? uY : uMinY;
+							uMaxY = uY > uMaxY ? uY : uMaxY;
+						}
+					}
+
+					// 119 observed at 1280x720; 20 leaves room for a smaller window
+					// without accepting a stray pixel or two as a marker.
+					constexpr u_int uMARKER_MIN_PIXELS = 20u;
+					const u_int uSpanX = uMarkerPixels > 0u ? (uMaxX - uMinX + 1u) : 0u;
+					const u_int uSpanY = uMarkerPixels > 0u ? (uMaxY - uMinY + 1u) : 0u;
+					if (uMarkerPixels < uMARKER_MIN_PIXELS)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_RivalVesper] the SPOTTED marker reached Flux's queues but NOT "
+							"the framebuffer: %u marker-hue pixels in %ux%u (want >= %u). The "
+							"gameplay primitive queues must draw with "
+							"Graphics/Primitives/Enabled unchecked",
+							uMarkerPixels, xMarkerShot.m_uWidth, xMarkerShot.m_uHeight,
+							uMARKER_MIN_PIXELS);
+						bPassed = false;
+					}
+					// ★ SHAPE, not just presence -- this is audit finding 3. The OLD
+					// stem was Flux's flat debug LINE quad, which renders centred on
+					// its start point and at an unconstrained roll, so it read as a
+					// DIAGONAL stroke through the dot. A diagonal has a roughly square
+					// bounding box; an upright bar-above-dot is tall and narrow.
+					else if (uSpanY < uSpanX * 2u)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_RivalVesper] the SPOTTED marker drew but is not an upright "
+							"exclamation mark: %u px spanning %ux%u (want height >= 2x width). "
+							"A near-square span is the old diagonal-stroke shape",
+							uMarkerPixels, uSpanX, uSpanY);
+						bPassed = false;
+					}
+					else
+					{
+						Zenith_Log(LOG_CATEGORY_UNITTEST,
+							"[ZM_RivalVesper] SPOTTED marker OBSERVED IN PIXELS: %u marker-hue "
+							"px spanning %ux%u in a %ux%u swapchain capture, with "
+							"Graphics/Primitives/Enabled FALSE for the whole run. TGA=%s",
+							uMarkerPixels, uSpanX, uSpanY,
+							xMarkerShot.m_uWidth, xMarkerShot.m_uHeight,
+							g_strRVMarkerShotPath.c_str());
+					}
+				}
+			}
 		}
 
 		// Always tear down, in order (all guarded), even on a terminal failure: drop
@@ -3382,6 +3552,12 @@ namespace
 			g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 		}
 		Zenith_InputSimulator::ResetAllInputState();
+		if (g_bRVPrimitivesOptionSaved)
+		{
+			Zenith_GraphicsOptions::Get().m_bPrimitivesEnabled =
+				g_bRVPrimitivesEnabledBefore;
+			g_bRVPrimitivesOptionSaved = false;
+		}
 		g_bRVActive = false;
 
 		return bPassed || !g_bRVPrereqsPresent;
@@ -4385,5 +4561,739 @@ static const Zenith_AutomatedTest g_xZMRivalVesperWhiteoutTest = {
 	&Teardown_ZMRivalVesperWhiteout,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMRivalVesperWhiteoutTest);
+
+// ============================================================================
+// ZM_NpcRenderedPalette_Test -- Vulkan framebuffer proof for the six authored
+// Dawnmere NPC bodies.
+//
+// The headless W4 block above proves the material wiring on the CPU. This test
+// closes the remaining gap: it additively loads the committed Dawnmere, finds
+// the six LIVE entities through their serialized ZM_Interactable rows, and
+// temporarily teleports those exact model entities into a controlled eye-level
+// lineup. No lookalike swatches and no copied materials are created.
+//
+// The lighting deliberately reproduces the failure mode that motivated the
+// NPC-only emissive floor: one vertical overhead directional, IBL disabled, and
+// the camera looking horizontally at vertical cube faces. A swapchain TGA is
+// requested after the lineup settles. Verification maps the six projected body
+// centres through the tools viewport into that full-swapchain image, reads the
+// real BGRA pixels, and requires all 15 normalized-RGB separations to remain at
+// least 0.15. Removing ZM_GreyboxVisual's NPC emission therefore makes the
+// vertical faces collapse into the 0.03 ambient fallback and reds this test.
+// ============================================================================
+
+namespace
+{
+	constexpr int iNRP_DAWNMERE_BUILD_INDEX = 2;
+	constexpr float fNRP_FIXED_DT = 1.0f / 60.0f;
+	constexpr float fNRP_MIN_RENDERED_SEPARATION = 0.15f;
+	constexpr float fNRP_LINEUP_Y = 100.0f;
+	constexpr float fNRP_LINEUP_Z = 10.0f;
+	constexpr float fNRP_CAMERA_Z = 0.0f;
+	constexpr u_int uNRP_SAMPLE_RADIUS = 4u;
+	constexpr int iNRP_CAPTURE_EARLIEST_FRAME = 60;
+	constexpr int iNRP_CAPTURE_TIMEOUT_FRAME = 180;
+	constexpr int iNRP_FINISH_HOLD_FRAMES = 12;
+
+	const float g_afNRPLineupX[ZM_NPC_COUNT] =
+	{
+		-5.0f, -3.0f, -1.0f, 1.0f, 3.0f, 5.0f
+	};
+	const ZM_DAWNMERE_NPC_ID g_aeNRPAnchorForNpc[ZM_NPC_COUNT] =
+	{
+		ZM_DAWNMERE_NPC_VILLAGER,
+		ZM_DAWNMERE_NPC_TRADE_POST_CLERK,
+		ZM_DAWNMERE_NPC_CARETAKER,
+		ZM_DAWNMERE_NPC_WANDERER,
+		ZM_DAWNMERE_NPC_WARDEN,
+		ZM_DAWNMERE_NPC_RIVAL_VESPER,
+	};
+	static_assert(
+		static_cast<u_int>(ZM_NPC_COUNT)
+			== static_cast<u_int>(ZM_DAWNMERE_NPC_COUNT),
+		"the rendered lineup mapping must cover every authored Dawnmere NPC");
+
+	struct NRPGraphicsSave
+	{
+		bool m_bSaved = false;
+		bool m_bCPUParticles = true;
+		bool m_bFog = true;
+		bool m_bGizmos = true;
+		bool m_bGPUParticles = true;
+		bool m_bGrass = true;
+		bool m_bBloom = true;
+		bool m_bIBL = true;
+		bool m_bPrimitives = true;
+		bool m_bQuads = true;
+		bool m_bSDFs = true;
+		bool m_bShadows = true;
+		bool m_bSkybox = true;
+		bool m_bSSAO = true;
+		bool m_bSSGI = false;
+		bool m_bSSR = true;
+		bool m_bTerrain = true;
+		bool m_bText = true;
+		bool m_bAutoExposure = true;
+		bool m_bIBLDiffuse = true;
+		bool m_bIBLSpecular = true;
+		bool m_bSkyAtmosphere = true;
+		Zenith_Maths::Vector3 m_xSkyColour = Zenith_Maths::Vector3(0.0f);
+	};
+
+	bool g_bNRPSceneLoaded = false;
+	bool g_bNRPFailed = false;
+	bool g_bNRPLineupCollected = false;
+	bool g_bNRPShotRequested = false;
+	const char* g_szNRPFailure = "test did not reach verification";
+	int g_iNRPShotFrame = -1;
+	std::string g_strNRPShotPath;
+	Zenith_Scene g_xNRPPreviousScene;
+	Zenith_Scene g_xNRPDawnmereScene;
+	Zenith_EntityID g_xNRPCameraID = INVALID_ENTITY_ID;
+	Zenith_EntityID g_axNRPNpcIDs[ZM_NPC_COUNT] = {};
+	Zenith_Maths::Vector2 g_axNRPBodyNdc[ZM_NPC_COUNT] = {};
+	Zenith_Maths::Vector2 g_xNRPViewportPos(0.0f);
+	Zenith_Maths::Vector2 g_xNRPViewportSize(0.0f);
+	NRPGraphicsSave g_xNRPGraphicsSave;
+
+	void NRPFail(const char* szReason)
+	{
+		if (!g_bNRPFailed)
+		{
+			g_szNRPFailure = szReason;
+		}
+		g_bNRPFailed = true;
+	}
+
+	std::filesystem::path NRPVisualAuditDir()
+	{
+		std::error_code xError;
+		const std::filesystem::path xRepoRoot = std::filesystem::weakly_canonical(
+			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..", xError);
+		return xRepoRoot / "Build" / "artifacts" / "zenithmon" / "visual_audit";
+	}
+
+	void NRPApplyGraphicsOptions()
+	{
+		Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+		g_xNRPGraphicsSave.m_bCPUParticles = xOpts.m_bCPUParticlesEnabled;
+		g_xNRPGraphicsSave.m_bFog = xOpts.m_bFogEnabled;
+		g_xNRPGraphicsSave.m_bGizmos = xOpts.m_bGizmosEnabled;
+		g_xNRPGraphicsSave.m_bGPUParticles = xOpts.m_bGPUParticlesEnabled;
+		g_xNRPGraphicsSave.m_bGrass = xOpts.m_bGrassEnabled;
+		g_xNRPGraphicsSave.m_bBloom = xOpts.m_bHDRBloomEnabled;
+		g_xNRPGraphicsSave.m_bIBL = xOpts.m_bIBLEnabled;
+		g_xNRPGraphicsSave.m_bPrimitives = xOpts.m_bPrimitivesEnabled;
+		g_xNRPGraphicsSave.m_bQuads = xOpts.m_bQuadsEnabled;
+		g_xNRPGraphicsSave.m_bSDFs = xOpts.m_bSDFsEnabled;
+		g_xNRPGraphicsSave.m_bShadows = xOpts.m_bShadowsEnabled;
+		g_xNRPGraphicsSave.m_bSkybox = xOpts.m_bSkyboxEnabled;
+		g_xNRPGraphicsSave.m_bSSAO = xOpts.m_bSSAOEnabled;
+		g_xNRPGraphicsSave.m_bSSGI = xOpts.m_bSSGIEnabled;
+		g_xNRPGraphicsSave.m_bSSR = xOpts.m_bSSREnabled;
+		g_xNRPGraphicsSave.m_bTerrain = xOpts.m_bTerrainEnabled;
+		g_xNRPGraphicsSave.m_bText = xOpts.m_bTextEnabled;
+		g_xNRPGraphicsSave.m_bAutoExposure = xOpts.m_bHDRAutoExposureEnabled;
+		g_xNRPGraphicsSave.m_bIBLDiffuse = xOpts.m_bIBLDiffuseEnabled;
+		g_xNRPGraphicsSave.m_bIBLSpecular = xOpts.m_bIBLSpecularEnabled;
+		g_xNRPGraphicsSave.m_bSkyAtmosphere = xOpts.m_bSkyboxAtmosphereEnabled;
+		g_xNRPGraphicsSave.m_xSkyColour = xOpts.m_xSkyboxColour;
+		g_xNRPGraphicsSave.m_bSaved = true;
+
+		xOpts.m_bCPUParticlesEnabled = false;
+		xOpts.m_bFogEnabled = false;
+		xOpts.m_bGizmosEnabled = false;
+		xOpts.m_bGPUParticlesEnabled = false;
+		xOpts.m_bGrassEnabled = false;
+		xOpts.m_bHDRBloomEnabled = false;
+		xOpts.m_bIBLEnabled = false;
+		xOpts.m_bPrimitivesEnabled = false;
+		xOpts.m_bQuadsEnabled = false;
+		xOpts.m_bSDFsEnabled = false;
+		xOpts.m_bShadowsEnabled = false;
+		xOpts.m_bSkyboxEnabled = false;
+		xOpts.m_bSSAOEnabled = false;
+		xOpts.m_bSSGIEnabled = false;
+		xOpts.m_bSSREnabled = false;
+		xOpts.m_bTerrainEnabled = false;
+		xOpts.m_bTextEnabled = false;
+		xOpts.m_bHDRAutoExposureEnabled = false;
+		xOpts.m_bIBLDiffuseEnabled = false;
+		xOpts.m_bIBLSpecularEnabled = false;
+		xOpts.m_bSkyboxAtmosphereEnabled = false;
+		xOpts.m_xSkyboxColour = Zenith_Maths::Vector3(0.015f, 0.015f, 0.018f);
+	}
+
+	void NRPRestoreGraphicsOptions()
+	{
+		if (!g_xNRPGraphicsSave.m_bSaved)
+		{
+			return;
+		}
+
+		Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+		xOpts.m_bCPUParticlesEnabled = g_xNRPGraphicsSave.m_bCPUParticles;
+		xOpts.m_bFogEnabled = g_xNRPGraphicsSave.m_bFog;
+		xOpts.m_bGizmosEnabled = g_xNRPGraphicsSave.m_bGizmos;
+		xOpts.m_bGPUParticlesEnabled = g_xNRPGraphicsSave.m_bGPUParticles;
+		xOpts.m_bGrassEnabled = g_xNRPGraphicsSave.m_bGrass;
+		xOpts.m_bHDRBloomEnabled = g_xNRPGraphicsSave.m_bBloom;
+		xOpts.m_bIBLEnabled = g_xNRPGraphicsSave.m_bIBL;
+		xOpts.m_bPrimitivesEnabled = g_xNRPGraphicsSave.m_bPrimitives;
+		xOpts.m_bQuadsEnabled = g_xNRPGraphicsSave.m_bQuads;
+		xOpts.m_bSDFsEnabled = g_xNRPGraphicsSave.m_bSDFs;
+		xOpts.m_bShadowsEnabled = g_xNRPGraphicsSave.m_bShadows;
+		xOpts.m_bSkyboxEnabled = g_xNRPGraphicsSave.m_bSkybox;
+		xOpts.m_bSSAOEnabled = g_xNRPGraphicsSave.m_bSSAO;
+		xOpts.m_bSSGIEnabled = g_xNRPGraphicsSave.m_bSSGI;
+		xOpts.m_bSSREnabled = g_xNRPGraphicsSave.m_bSSR;
+		xOpts.m_bTerrainEnabled = g_xNRPGraphicsSave.m_bTerrain;
+		xOpts.m_bTextEnabled = g_xNRPGraphicsSave.m_bText;
+		xOpts.m_bHDRAutoExposureEnabled = g_xNRPGraphicsSave.m_bAutoExposure;
+		xOpts.m_bIBLDiffuseEnabled = g_xNRPGraphicsSave.m_bIBLDiffuse;
+		xOpts.m_bIBLSpecularEnabled = g_xNRPGraphicsSave.m_bIBLSpecular;
+		xOpts.m_bSkyboxAtmosphereEnabled = g_xNRPGraphicsSave.m_bSkyAtmosphere;
+		xOpts.m_xSkyboxColour = g_xNRPGraphicsSave.m_xSkyColour;
+		g_xNRPGraphicsSave.m_bSaved = false;
+	}
+
+	void NRPCleanup()
+	{
+		NRPRestoreGraphicsOptions();
+		Zenith_InputSimulator::ClearFixedDt();
+		if (g_xNRPPreviousScene.IsValid())
+		{
+			g_xEngine.Scenes().SetActiveScene(g_xNRPPreviousScene);
+		}
+		if (g_xNRPDawnmereScene.IsValid())
+		{
+			g_xEngine.Scenes().UnloadSceneForced(g_xNRPDawnmereScene);
+			g_xNRPDawnmereScene = Zenith_Scene();
+		}
+		g_bNRPSceneLoaded = false;
+		g_xNRPCameraID = INVALID_ENTITY_ID;
+	}
+
+	Zenith_Maths::Vector3 NRPLineupPosition(u_int uNpc)
+	{
+		return Zenith_Maths::Vector3(
+			g_afNRPLineupX[uNpc], fNRP_LINEUP_Y, fNRP_LINEUP_Z);
+	}
+
+	bool NRPTryCollectLiveNpcBodies()
+	{
+		Zenith_EntityID axFound[ZM_NPC_COUNT];
+		for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
+		{
+			axFound[u] = INVALID_ENTITY_ID;
+		}
+
+		bool bDuplicate = false;
+		g_xEngine.Scenes().QueryActiveScene<
+			ZM_Interactable,
+			Zenith_ModelComponent>().ForEach(
+			[&](Zenith_EntityID xID,
+				ZM_Interactable& xInteractable,
+				Zenith_ModelComponent& xModel)
+			{
+				const ZM_NPC_ID eNpc = xInteractable.GetNpcId();
+				if (eNpc >= ZM_NPC_COUNT || xModel.GetNumMeshes() == 0u)
+				{
+					return;
+				}
+				const Zenith_MaterialAsset* pxMaterial = xModel.GetMaterial(0u);
+				if (pxMaterial == nullptr
+					|| pxMaterial->GetName() != szRV_GREYBOX_MATERIAL)
+				{
+					return;
+				}
+				if (axFound[eNpc] != INVALID_ENTITY_ID)
+				{
+					bDuplicate = true;
+					return;
+				}
+				axFound[eNpc] = xID;
+			});
+
+		if (bDuplicate)
+		{
+			NRPFail("more than one live greybox model resolved to the same NPC row");
+			return false;
+		}
+		for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
+		{
+			if (axFound[u] == INVALID_ENTITY_ID)
+			{
+				return false;
+			}
+			const Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(axFound[u]);
+			const ZM_DawnmereNpcAnchor& xAnchor =
+				ZM_GetDawnmereNpcAnchor(g_aeNRPAnchorForNpc[u]);
+			if (!xEntity.IsValid() || xEntity.GetName() != xAnchor.m_szEntityName)
+			{
+				NRPFail("a live NPC row did not belong to its committed Dawnmere entity name");
+				return false;
+			}
+		}
+		for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
+		{
+			g_axNRPNpcIDs[u] = axFound[u];
+		}
+		g_bNRPLineupCollected = true;
+		return true;
+	}
+
+	bool NRPHoldLiveNpcLineup()
+	{
+		for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
+		{
+			const Zenith_Entity xNpc = g_xEngine.Scenes().ResolveEntity(g_axNRPNpcIDs[u]);
+			Zenith_TransformComponent* pxTransform = xNpc.IsValid()
+				? xNpc.TryGetComponent<Zenith_TransformComponent>()
+				: nullptr;
+			Zenith_ModelComponent* pxModel = xNpc.IsValid()
+				? xNpc.TryGetComponent<Zenith_ModelComponent>()
+				: nullptr;
+			if (pxTransform == nullptr || pxModel == nullptr
+				|| pxModel->GetNumMeshes() == 0u)
+			{
+				NRPFail("a collected authored NPC body disappeared before capture");
+				return false;
+			}
+			pxTransform->SetPosition(NRPLineupPosition(u));
+		}
+		return true;
+	}
+
+	Zenith_CameraComponent* NRPResolveCamera()
+	{
+		const Zenith_Entity xCamera = g_xEngine.Scenes().ResolveEntity(g_xNRPCameraID);
+		return xCamera.IsValid()
+			? xCamera.TryGetComponent<Zenith_CameraComponent>()
+			: nullptr;
+	}
+
+	bool NRPProjectLineup(Zenith_CameraComponent& xCamera)
+	{
+		Zenith_Maths::Matrix4 xView;
+		Zenith_Maths::Matrix4 xProjection;
+		xCamera.BuildViewMatrix(xView);
+		xCamera.BuildProjectionMatrix(xProjection);
+
+		for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
+		{
+			const Zenith_Maths::Vector4 xClip = xProjection * xView
+				* Zenith_Maths::Vector4(NRPLineupPosition(u), 1.0f);
+			if (!std::isfinite(xClip.x) || !std::isfinite(xClip.y)
+				|| !std::isfinite(xClip.w) || xClip.w <= 1.0e-4f)
+			{
+				NRPFail("a lineup body did not project in front of the test camera");
+				return false;
+			}
+			const float fNdcX = xClip.x / xClip.w;
+			const float fNdcY = xClip.y / xClip.w;
+			if (fNdcX <= -0.95f || fNdcX >= 0.95f
+				|| fNdcY <= -0.95f || fNdcY >= 0.95f)
+			{
+				NRPFail("a lineup body projected outside the safe viewport interior");
+				return false;
+			}
+			g_axNRPBodyNdc[u] = Zenith_Maths::Vector2(fNdcX, fNdcY);
+		}
+		return true;
+	}
+
+	bool NRPTryRequestCapture(int iFrame)
+	{
+		Zenith_CameraComponent* pxCamera = NRPResolveCamera();
+		if (pxCamera == nullptr)
+		{
+			NRPFail("the dedicated lineup camera disappeared before capture");
+			return false;
+		}
+
+#ifdef ZENITH_TOOLS
+		if (g_xEditorQuery.m_pfnGetViewportPos == nullptr
+			|| g_xEditorQuery.m_pfnGetViewportSize == nullptr)
+		{
+			NRPFail("the tools viewport query seam is not installed");
+			return false;
+		}
+		g_xNRPViewportPos = g_xEditorQuery.m_pfnGetViewportPos();
+		g_xNRPViewportSize = g_xEditorQuery.m_pfnGetViewportSize();
+		if (g_xNRPViewportSize.x < 320.0f || g_xNRPViewportSize.y < 180.0f)
+		{
+			return false; // editor layout has not reached a sampleable size yet
+		}
+		pxCamera->SetAspectRatio(g_xNRPViewportSize.x / g_xNRPViewportSize.y);
+#else
+		const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
+		if (xOpts.m_uWindowWidth == 0u || xOpts.m_uWindowHeight == 0u)
+		{
+			return false;
+		}
+		pxCamera->SetAspectRatio(
+			static_cast<float>(xOpts.m_uWindowWidth)
+			/ static_cast<float>(xOpts.m_uWindowHeight));
+		g_xNRPViewportPos = Zenith_Maths::Vector2(0.0f);
+		g_xNRPViewportSize = Zenith_Maths::Vector2(
+			static_cast<float>(xOpts.m_uWindowWidth),
+			static_cast<float>(xOpts.m_uWindowHeight));
+#endif
+
+		if (!NRPProjectLineup(*pxCamera))
+		{
+			return false;
+		}
+		Flux_Screenshot::RequestDump(g_strNRPShotPath.c_str());
+		g_bNRPShotRequested = true;
+		g_iNRPShotFrame = iFrame;
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_NpcRenderedPalette] requested actual framebuffer capture -> %s",
+			g_strNRPShotPath.c_str());
+		return true;
+	}
+
+	bool NRPReadMeanRGB(const ZM_TestTGAImage& xImage,
+		float fCenterX, float fCenterY, Zenith_Maths::Vector3& xOut)
+	{
+		if (!xImage.IsValid() || !std::isfinite(fCenterX) || !std::isfinite(fCenterY))
+		{
+			return false;
+		}
+		const int64_t iCenterX = static_cast<int64_t>(std::lround(fCenterX));
+		const int64_t iCenterY = static_cast<int64_t>(std::lround(fCenterY));
+		const int64_t iRadius = static_cast<int64_t>(uNRP_SAMPLE_RADIUS);
+		if (iCenterX - iRadius < 0 || iCenterY - iRadius < 0
+			|| iCenterX + iRadius >= static_cast<int64_t>(xImage.m_uWidth)
+			|| iCenterY + iRadius >= static_cast<int64_t>(xImage.m_uHeight))
+		{
+			return false;
+		}
+
+		uint64_t ulRed = 0u;
+		uint64_t ulGreen = 0u;
+		uint64_t ulBlue = 0u;
+		uint64_t ulSamples = 0u;
+		for (int64_t iY = iCenterY - iRadius; iY <= iCenterY + iRadius; ++iY)
+		{
+			for (int64_t iX = iCenterX - iRadius; iX <= iCenterX + iRadius; ++iX)
+			{
+				const uint8_t* puBGRA = xImage.GetPixelBGRA(
+					static_cast<uint32_t>(iX), static_cast<uint32_t>(iY));
+				ulBlue += puBGRA[0];
+				ulGreen += puBGRA[1];
+				ulRed += puBGRA[2];
+				++ulSamples;
+			}
+		}
+		if (ulSamples == 0u)
+		{
+			return false;
+		}
+		const float fNormalise = 1.0f / (255.0f * static_cast<float>(ulSamples));
+		xOut = Zenith_Maths::Vector3(
+			static_cast<float>(ulRed) * fNormalise,
+			static_cast<float>(ulGreen) * fNormalise,
+			static_cast<float>(ulBlue) * fNormalise);
+		return true;
+	}
+
+	float NRPRenderedSeparation(
+		const Zenith_Maths::Vector3& xA,
+		const Zenith_Maths::Vector3& xB)
+	{
+		const Zenith_Maths::Vector3 xDelta = xA - xB;
+		return std::sqrt(
+			xDelta.x * xDelta.x
+			+ xDelta.y * xDelta.y
+			+ xDelta.z * xDelta.z);
+	}
+}
+
+static void Setup_ZMNpcRenderedPalette()
+{
+	g_bNRPSceneLoaded = false;
+	g_bNRPFailed = false;
+	g_bNRPLineupCollected = false;
+	g_bNRPShotRequested = false;
+	g_szNRPFailure = "test did not reach verification";
+	g_iNRPShotFrame = -1;
+	g_strNRPShotPath.clear();
+	g_xNRPPreviousScene = Zenith_Scene();
+	g_xNRPDawnmereScene = Zenith_Scene();
+	g_xNRPCameraID = INVALID_ENTITY_ID;
+	g_xNRPViewportPos = Zenith_Maths::Vector2(0.0f);
+	g_xNRPViewportSize = Zenith_Maths::Vector2(0.0f);
+	g_xNRPGraphicsSave = NRPGraphicsSave{};
+	for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
+	{
+		g_axNRPNpcIDs[u] = INVALID_ENTITY_ID;
+		g_axNRPBodyNdc[u] = Zenith_Maths::Vector2(0.0f);
+	}
+
+	const std::filesystem::path xVisualDir = NRPVisualAuditDir();
+	std::error_code xDirError;
+	std::filesystem::create_directories(xVisualDir, xDirError);
+	if (xDirError)
+	{
+		NRPFail("could not create Build/artifacts/zenithmon/visual_audit");
+		return;
+	}
+	g_strNRPShotPath = (xVisualDir / "npc_rendered_palette.tga").string();
+	std::remove(g_strNRPShotPath.c_str());
+
+	Zenith_InputSimulator::ResetAllInputState();
+	Zenith_InputSimulator::SetFixedDt(fNRP_FIXED_DT);
+	NRPApplyGraphicsOptions();
+
+	g_xEngine.Scenes().RegisterSceneBuildIndex(
+		iNRP_DAWNMERE_BUILD_INDEX,
+		GAME_ASSETS_DIR "Scenes/Dawnmere" ZENITH_SCENE_EXT);
+	g_xNRPPreviousScene = g_xEngine.Scenes().GetActiveScene();
+	g_xNRPDawnmereScene = g_xEngine.Scenes().LoadSceneByIndex(
+		iNRP_DAWNMERE_BUILD_INDEX, SCENE_LOAD_ADDITIVE);
+	Zenith_SceneData* pxSceneData =
+		g_xEngine.Scenes().GetSceneData(g_xNRPDawnmereScene);
+	if (!g_xNRPDawnmereScene.IsValid() || pxSceneData == nullptr
+		|| !g_xEngine.Scenes().SetActiveScene(g_xNRPDawnmereScene))
+	{
+		NRPFail("could not additively load and activate committed Dawnmere");
+		return;
+	}
+	g_bNRPSceneLoaded = true;
+
+	// Keep exactly one scene-authored directional, rewritten to the failure-
+	// inducing overhead direction. Every other Dawnmere light is suppressed.
+	Zenith_LightComponent* pxOverhead = nullptr;
+	g_xEngine.Scenes().QueryActiveScene<Zenith_LightComponent>().ForEach(
+		[&pxOverhead](Zenith_EntityID, Zenith_LightComponent& xLight)
+		{
+			if (pxOverhead == nullptr
+				&& xLight.GetLightType() == LIGHT_TYPE_DIRECTIONAL)
+			{
+				pxOverhead = &xLight;
+				return;
+			}
+			xLight.SetIntensity(0.0f);
+		});
+	if (pxOverhead == nullptr)
+	{
+		Zenith_Entity xLight =
+			g_xEngine.Scenes().CreateEntity(pxSceneData, "NpcPaletteOverheadLight");
+		pxOverhead = &xLight.AddComponent<Zenith_LightComponent>();
+	}
+	pxOverhead->SetLightType(LIGHT_TYPE_DIRECTIONAL);
+	pxOverhead->SetColor(Zenith_Maths::Vector3(1.0f));
+	pxOverhead->SetIntensity(2.5f);
+	pxOverhead->SetCastShadows(false);
+	pxOverhead->SetWorldDirection(Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f));
+
+	Zenith_Entity xCamera =
+		g_xEngine.Scenes().CreateEntity(pxSceneData, "NpcPaletteEyeLevelCamera");
+	Zenith_CameraComponent& xCameraComponent =
+		xCamera.AddComponent<Zenith_CameraComponent>();
+	xCameraComponent.SetPosition(
+		Zenith_Maths::Vector3(0.0f, fNRP_LINEUP_Y, fNRP_CAMERA_Z));
+	xCameraComponent.SetYaw(0.0);
+	xCameraComponent.SetPitch(0.0);
+	xCameraComponent.SetFOV(glm::radians(55.0f));
+	xCameraComponent.SetNearPlane(0.1f);
+	xCameraComponent.SetFarPlane(100.0f);
+	xCameraComponent.SetAspectRatio(16.0f / 9.0f);
+	g_xNRPCameraID = xCamera.GetEntityID();
+	Zenith_UnitTests::SetMainCameraForTest(pxSceneData, g_xNRPCameraID);
+}
+
+static bool Step_ZMNpcRenderedPalette(int iFrame)
+{
+	if (g_bNRPFailed || !g_bNRPSceneLoaded)
+	{
+		return false;
+	}
+
+	if (!g_bNRPLineupCollected)
+	{
+		NRPTryCollectLiveNpcBodies();
+		if (!g_bNRPLineupCollected)
+		{
+			if (iFrame >= iNRP_CAPTURE_EARLIEST_FRAME)
+			{
+				NRPFail("the six live authored Dawnmere NPC greybox bodies never resolved");
+				return false;
+			}
+			return true;
+		}
+	}
+
+	if (!NRPHoldLiveNpcLineup())
+	{
+		return false;
+	}
+
+	if (!g_bNRPShotRequested && iFrame >= iNRP_CAPTURE_EARLIEST_FRAME)
+	{
+		NRPTryRequestCapture(iFrame);
+		if (!g_bNRPShotRequested && iFrame >= iNRP_CAPTURE_TIMEOUT_FRAME)
+		{
+			NRPFail("the framebuffer capture could not obtain a valid viewport");
+			return false;
+		}
+	}
+
+	return !g_bNRPShotRequested
+		|| iFrame < g_iNRPShotFrame + iNRP_FINISH_HOLD_FRAMES;
+}
+
+static bool Verify_ZMNpcRenderedPalette()
+{
+	bool bPassed = !g_bNRPFailed;
+	if (g_bNRPFailed)
+	{
+		Zenith_Error(LOG_CATEGORY_UNITTEST,
+			"[ZM_NpcRenderedPalette] %s", g_szNRPFailure);
+	}
+	if (!g_bNRPLineupCollected || !g_bNRPShotRequested)
+	{
+		Zenith_Error(LOG_CATEGORY_UNITTEST,
+			"[ZM_NpcRenderedPalette] live lineup/capture incomplete (lineup=%s shot=%s)",
+			g_bNRPLineupCollected ? "true" : "false",
+			g_bNRPShotRequested ? "true" : "false");
+		bPassed = false;
+	}
+
+	ZM_TestTGAImage xImage;
+	if (!g_bNRPShotRequested
+		|| !ZM_TestLoadTGA(g_strNRPShotPath.c_str(), xImage))
+	{
+		Zenith_Error(LOG_CATEGORY_UNITTEST,
+			"[ZM_NpcRenderedPalette] actual framebuffer TGA missing/invalid: %s",
+			g_strNRPShotPath.c_str());
+		bPassed = false;
+	}
+	else
+	{
+#ifndef ZENITH_TOOLS
+		g_xNRPViewportPos = Zenith_Maths::Vector2(0.0f);
+		g_xNRPViewportSize = Zenith_Maths::Vector2(
+			static_cast<float>(xImage.m_uWidth),
+			static_cast<float>(xImage.m_uHeight));
+#endif
+		const float fViewportRight = g_xNRPViewportPos.x + g_xNRPViewportSize.x;
+		const float fViewportBottom = g_xNRPViewportPos.y + g_xNRPViewportSize.y;
+		if (g_xNRPViewportPos.x < 0.0f || g_xNRPViewportPos.y < 0.0f
+			|| g_xNRPViewportSize.x <= 0.0f || g_xNRPViewportSize.y <= 0.0f
+			|| fViewportRight > static_cast<float>(xImage.m_uWidth) + 1.0f
+			|| fViewportBottom > static_cast<float>(xImage.m_uHeight) + 1.0f)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_NpcRenderedPalette] viewport (%.1f,%.1f %.1fx%.1f) is outside TGA %ux%u",
+				g_xNRPViewportPos.x, g_xNRPViewportPos.y,
+				g_xNRPViewportSize.x, g_xNRPViewportSize.y,
+				xImage.m_uWidth, xImage.m_uHeight);
+			bPassed = false;
+		}
+		else
+		{
+			Zenith_Maths::Vector3 axRendered[ZM_NPC_COUNT] = {};
+			bool abSampled[ZM_NPC_COUNT] = {};
+			for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
+			{
+				const float fPixelX = g_xNRPViewportPos.x
+					+ (g_axNRPBodyNdc[u].x * 0.5f + 0.5f) * g_xNRPViewportSize.x;
+				// CameraComponent's Vulkan projection already flips Y; like Combat's
+				// WorldToScreen seam, NDC -1 is the top of the displayed viewport.
+				const float fPixelY = g_xNRPViewportPos.y
+					+ (g_axNRPBodyNdc[u].y * 0.5f + 0.5f) * g_xNRPViewportSize.y;
+				abSampled[u] = NRPReadMeanRGB(xImage, fPixelX, fPixelY, axRendered[u]);
+				const ZM_NpcData& xNpc = ZM_GetNpcData(static_cast<ZM_NPC_ID>(u));
+				if (!abSampled[u])
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_NpcRenderedPalette] %s centre patch (%.1f, %.1f) was unreadable",
+						xNpc.m_szDisplayName, fPixelX, fPixelY);
+					bPassed = false;
+					continue;
+				}
+				Zenith_Log(LOG_CATEGORY_UNITTEST,
+					"[ZM_NpcRenderedPalette] %s framebuffer RGB=(%.4f, %.4f, %.4f) at (%.1f, %.1f)",
+					xNpc.m_szDisplayName,
+					axRendered[u].x, axRendered[u].y, axRendered[u].z,
+					fPixelX, fPixelY);
+			}
+
+			float fMinimum = 2.0f;
+			u_int uMinimumA = 0u;
+			u_int uMinimumB = 0u;
+			u_int uComparedPairs = 0u;
+			for (u_int uA = 0u; uA < ZM_NPC_COUNT; ++uA)
+			{
+				for (u_int uB = uA + 1u; uB < ZM_NPC_COUNT; ++uB)
+				{
+					if (!abSampled[uA] || !abSampled[uB])
+					{
+						continue;
+					}
+					const float fSeparation =
+						NRPRenderedSeparation(axRendered[uA], axRendered[uB]);
+					++uComparedPairs;
+					if (fSeparation < fMinimum)
+					{
+						fMinimum = fSeparation;
+						uMinimumA = uA;
+						uMinimumB = uB;
+					}
+					if (fSeparation < fNRP_MIN_RENDERED_SEPARATION)
+					{
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"[ZM_NpcRenderedPalette] rendered %s/%s separation %.4f < %.2f",
+							ZM_GetNpcData(static_cast<ZM_NPC_ID>(uA)).m_szDisplayName,
+							ZM_GetNpcData(static_cast<ZM_NPC_ID>(uB)).m_szDisplayName,
+							fSeparation, fNRP_MIN_RENDERED_SEPARATION);
+						bPassed = false;
+					}
+				}
+			}
+			if (uComparedPairs != 15u)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_NpcRenderedPalette] compared %u pairs, expected all 15",
+					uComparedPairs);
+				bPassed = false;
+			}
+			else
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST,
+					"[ZM_NpcRenderedPalette] minimum of 15 framebuffer RGB separations: "
+					"%s/%s = %.4f (required >= %.2f), TGA=%s",
+					ZM_GetNpcData(static_cast<ZM_NPC_ID>(uMinimumA)).m_szDisplayName,
+					ZM_GetNpcData(static_cast<ZM_NPC_ID>(uMinimumB)).m_szDisplayName,
+					fMinimum, fNRP_MIN_RENDERED_SEPARATION,
+					g_strNRPShotPath.c_str());
+			}
+		}
+	}
+
+	NRPCleanup();
+	return bPassed;
+}
+
+static void Teardown_ZMNpcRenderedPalette()
+{
+	NRPCleanup();
+	Zenith_InputSimulator::ResetAllInputState();
+}
+
+static const Zenith_AutomatedTest g_xZMNpcRenderedPaletteTest = {
+	"ZM_NpcRenderedPalette_Test",
+	&Setup_ZMNpcRenderedPalette,
+	&Step_ZMNpcRenderedPalette,
+	&Verify_ZMNpcRenderedPalette,
+	/* maxFrames */ 240,
+	true /* m_bRequiresGraphics */,
+	false /* m_bManualOnly */,
+	&Teardown_ZMNpcRenderedPalette,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMNpcRenderedPaletteTest);
 
 #endif // ZENITH_INPUT_SIMULATOR
