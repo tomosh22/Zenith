@@ -96,7 +96,22 @@ build lacks `libcurl-d.dll`, so booting the exe first dies in the loader with
 ZERO stdout and the gate reports the misleading "no 'Unit tests complete' line in
 boot output" rather than a load failure.
 
-**Stage:** **S7 COMPLETE (items 1-4). Pre-S8 known-limit closure COMPLETE: ALL FIVE of W1-W5 have landed (ZM-D-157/158/159/160/161). ★ NEXT IS THE HUMAN S8 VERTICAL-SLICE GO/NO-GO, which is still UNSIGNED. Do not start S8 content.** S0-S6 remain complete.
+**Stage:** **★ S7 IS NOT COMPLETE, AND THE ROADMAP WAS RIGHT ALL ALONG.** This file
+previously claimed "S7 COMPLETE (items 1-4)"; the user REJECTED that claim on
+2026-07-29, and the Roadmap's own text proves it. `Roadmap.md:104` (S7 item 3)
+specifies `forward cone + occlusion raycast -> FREEZE INPUT -> APPROACH -> dialogue ->
+forced battle -> defeat flags + prize money`. Every link in that chain shipped EXCEPT
+`freeze input` and `approach` -- both **CUT ON EVIDENCE** by W3 (ZM-D-159). So the
+`- [ ]` at `Roadmap.md:104` and the `- [ ]` at `Roadmap.md:161` are **HONEST, not stale
+bookkeeping**, and an audit that reads only the DecisionLog will wrongly conclude they
+"should be ticked" -- one did, this session, and was overruled by the box's own text.
+**★ THE LESSON: WHEN STATUS.MD'S PROSE AND A ROADMAP CHECKBOX DISAGREE, THE CHECKBOX
+WINS.** Prose accumulates optimism across sessions and each session inherits the last
+one's summary; the box is what `StartPrompts.md` prompt 0 step 3 actually reads, and it
+is scored against the item's LITERAL text. Pre-S8 known-limit closure W1-W5 did all land
+(ZM-D-157/158/159/160/161), but **closing five recorded limits is not the same as closing
+the stage.** No S8 content begins, and the S8 go/no-go is NOT the next step --
+**FINISHING S7 is.** S0-S6 remain complete.
 **Build:** GREEN on the ZM-D-148 diff (scene authoring made boot-shape-independent; all four ZM scenes now TRACKED) on top of SC1b commit B (ZM-D-147 -- baked navmesh persistence). Engine-wide, so it owed and got the full gate: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; engine lib + SentinelECS/Physics/AI (all three exes exit 0); Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True.
 **Tests (commit B):** Null batches, ALL 0-failed: **ZM 44/44** (registry 42 -> 44; both new navmesh tests RUN, not skipped), CB **45/45**, DP **158/158**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 44/44, 0 skipped, 0 failed**. Boot unit gates on the NULL exes: engine **1093 -> 1121** (Combat) and ZM **2515 -> 2546** -- both pinned from the OBSERVED line. Windowed RenderTest 8 passed / 1 failed, only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002). Ratchets (`architecture,lints` and `complexity`) are **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added; two findings this commit DID introduce (an `Editor/` include and a `g_xEngine` reach from EntityComponent) were fixed, not allow-listed. **Asset-less CI condition reproduced locally** (`Zenith/Assets` hidden): ZM 44/44 and both unit gates unchanged; restored by MERGE and `diff -rq`-verified, since the run re-created only 60 of the 89 files and a naive rename-back would have clobbered the tree. **Teeth mutation-proven ×6** (see ZM-D-147; m1 re-run on the final build reds exactly the 3 serialization units).
 
@@ -109,14 +124,53 @@ boot output" rather than a load failure.
 
 ## Current task
 
-**★★ S7 ITEM 3 AND ITEM 4 ARE COMPLETE (SC8, ZM-D-156). THE S8 VERTICAL-SLICE
-GO/NO-GO REMAINS A HUMAN GATE AND IS UNSIGNED.** This session has explicit authority
-only to close its five recorded known limits, not to start S8 content. **ALL FIVE ARE NOW
-COMPLETE (ZM-D-157/158/159/160/161): forced replacement ships, complete authored trainer
-parties are live, the honest Vesper-loss/whiteout route is proven, a trainer who sees you
-now SHOWS you before he speaks, the rival no longer looks like a townsperson, and every
-NPC stands on its OWN measured ground. ★ THE NEXT STEP IS THE HUMAN S8 GO/NO-GO. This
-session did not and may not sign it.**
+**★★ FINISH S7. The S8 go/no-go is NOT the next step and no S8 content begins.**
+The five known limits W1-W5 did land (ZM-D-157/158/159/160/161): forced replacement
+ships, complete authored trainer parties are live, the honest Vesper-loss/whiteout route
+is proven, a trainer who sees you now SHOWS you before he speaks, the rival no longer
+looks like a townsperson, and every NPC stands on its OWN measured ground. **None of that
+ticks a Roadmap box**, because the two open S7 boxes ask for something else.
+
+**THE REAL REMAINING S7 QUEUE (user-directed 2026-07-29):**
+
+1. **`Roadmap.md:104` -- `freeze input` + `approach`.** The two cut links. This is the
+   item that unticks the box; the rest of its chain already ships. Recorded blockers, to
+   be VERIFIED not trusted: `ZM_FollowCamera::OnLateUpdate` OWNS and overwrites the camera
+   every frame with **no override stack** (Shortfalls 1.8-3a -- the doc's own verdict is
+   that a cut needs camera-ownership arbitration, "a real engine/game-camera feature, not
+   a polish item"), and Vesper is authored STATIONARY with an OBB collider, so walking him
+   needs dynamic-capsule/nav ownership, avoidance, and coordination with the existing
+   freeze/busy-channel seam (1.8-3b). Reuse `m_bChannelBusy` and the menu/battle barriers
+   rather than inventing a second freeze concept.
+2. **Spotted marker off the DEBUG primitives channel** (Shortfalls 1.8-3c). It rides
+   `Zenith_GraphicsOptions::m_bPrimitivesEnabled`, so a tools user who unchecks
+   `Graphics/Primitives/Enabled` loses a GAMEPLAY cue; `ExecuteGBuffer` also early-returns
+   before draining, leaking queued instances while a trainer is SPOTTED. **Preserve the
+   W3 property:** `SubmitTrainerSpottedIndicator` RETURNS a count measured off Flux's own
+   CPU instance queues and callers `+=` it -- a bare `++` beside the call is exactly the
+   defect that left every test green with nothing drawn.
+3. **Duplicate NPC appearance** (Shortfalls 1.8-4a). `Npc_Wanderer` and `Npc_Warden` both
+   stand on `ZM_HUMAN_TOWN_ELDER`, so six authored rows wear five appearances. One token;
+   it can only RAISE the distinct-appearance count the boot unit asserts.
+4. **★ UNBOOKED S7 SLIP, found by the 2026-07-29 doc audit: the BOX (storage) screen.**
+   `Roadmap.md:98` (the S6 gate) records "Box is deferred to S7" and `Shortfalls.md:71`
+   still carries it with the blocker "needs S7 persistence" -- which S7 SHIPPED. S7 was
+   about to close without it and **without any re-deferral recorded anywhere.** Either
+   build it or record an explicit re-deferral with a reason; do not let it evaporate.
+5. **Doc reconciliation** (see the audit findings below): the S7 `*Gate:*` line at
+   `Roadmap.md:163` carries no MET annotation though ZM-D-142 states it is satisfied,
+   breaking the S0/S1/S2/S4/S5/S6 pattern; `Shortfalls.md:7-12` is stamped 2026-07-21 and
+   still says "Next autonomous work: S7 item 2"; `Shortfalls.md` 1.7/1.10 quote **36 tests
+   / 2392 units** against the live **49 / 2722**; `Shortfalls.md:243` lists
+   Q-2026-07-21-001 as an open engine gap when it is `[CLOSED 2026-07-25]`; this file's own
+   "Open Questions" list names 2 CLOSED ids and omits 9 genuinely open ones; and
+   `Tests/ZM_AutoTests_SaveContinue.cpp:25` claims graphics-required while its registration
+   at `:665` passes `false`.
+
+**Baseline re-verified 2026-07-29 on a fresh build of both configs, before any of the
+above:** Vulkan_True and Null_True both exit 0; headless registry **49 passed / 0 failed**;
+boot unit gate **2722 ran / 2721 passed / 0 failed / 1 skipped** -- equal to the pinned
+`zm-tests.yml` baseline, so the tree is green and unchanged.
 
 **What the vertical actually does now, end to end:** the player walks around Dawnmere;
 rival Vesper stands AUTHORED in the town at (490, 524) facing the spawn approach; when

@@ -15,6 +15,80 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-29 -- ZM-D-162 -- S7 is NOT complete: the Roadmap checkbox outranks the Status.md summary
+
+*(Docs only. No source, no scene, no asset, no ECS order, no serialization version, no new
+TU -- and therefore no `Build\regen.ps1`. Recorded as its own entry because the next session
+would otherwise inherit the same false premise this one did.)*
+
+### Decision
+
+**`Status.md` claimed "S7 COMPLETE (items 1-4)". It was wrong, the user rejected it, and
+the two unticked Roadmap boxes were right.** The claim is retracted; S7 remains OPEN with a
+five-item queue recorded in `Status.md`.
+
+The proof is in the box's own text. `Roadmap.md:104` (S7 item 3) reads:
+
+> Trainer sight-cone (forward cone + occlusion raycast) -> **freeze input** -> **approach**
+> -> dialogue -> forced battle -> defeat flags + prize money; ...
+
+Every link shipped across SC1-SC8 **except `freeze input` and `approach`**, and those two
+were explicitly **CUT ON EVIDENCE** by known-limit W3 (ZM-D-159), which recorded the reasons
+(`ZM_FollowCamera::OnLateUpdate` owns the camera every frame with no override stack; the
+OBB-authored stationary Vesper would need dynamic-capsule/nav ownership, avoidance and
+freeze coordination). ZM-D-156's "S7 ITEM 3 AND ITEM 4 BOTH CLOSE HERE" was therefore an
+overclaim at the moment it was written, and every later session's preamble inherited it.
+
+### ★ WHY THIS FOOLED AN AUDIT, WHICH IS THE PART WORTH KEEPING
+
+A read-only audit dispatched THIS session to check checkbox truth concluded both boxes
+"should be ticked", citing ZM-D-156/157/158 and the `Status.md` summary. It was wrong for a
+structural reason, not a careless one: **it scored the boxes against the DecisionLog's
+narrative instead of against the box's literal text.** The DecisionLog is where an
+implementer records what it believes it achieved; the checkbox is the acceptance criterion.
+Grading the work with the worker's own report is not an audit.
+
+**★ THE STANDING RULE, now recorded so it stops being rediscovered: when Status.md's prose
+and a Roadmap checkbox disagree, the CHECKBOX WINS, and it is scored against its LITERAL
+text.** Prose accumulates optimism across sessions because each session starts by reading
+the previous session's summary and rarely re-reads the requirement. The box is what
+`StartPrompts.md` prompt 0 step 3 actually consumes when picking work.
+
+### ★ AN UNBOOKED SLIP THE SAME AUDIT DID FIND
+
+`Roadmap.md:98` (the S6 gate) records **"Box is deferred to S7"**, and `Shortfalls.md:71`
+still carries the BOX storage screen with the blocker "needs S7 persistence" -- a blocker
+S7 removed when the save schema, slot layer and Continue path shipped. S7 was about to close
+without the screen and **without any re-deferral recorded anywhere**. A deferral that names
+a destination stage is a commitment; letting it expire silently is how scope evaporates. It
+is now item 4 of the S7 queue with an explicit either/or: build it, or re-defer it in
+writing with a reason.
+
+### What was verified before any of this was written
+
+A fresh build of both configs, run by the orchestrator, not claimed by a subagent:
+Vulkan_vs2022_Debug_Win64_True and Null_vs2022_Debug_Win64_True both exit 0; headless
+registry **49 passed / 0 failed**; boot unit gate **2722 ran / 2721 passed / 0 failed / 1
+skipped**, equal to the `zm-tests.yml` pin. The tree is green; nothing here is a repair.
+
+### Scope ruling carried by this entry
+
+The user selected three of the four open gaps to fold into S7 closure: the **approach walk +
+camera cut**, the **spotted marker's promotion off the debug-primitives channel**, and the
+**duplicate NPC appearance**. The fourth -- re-placing the rival onto Route 1 (Shortfalls
+1.8-1) -- was NOT selected and stays booked as re-placement debt against whenever Route 1 is
+authored.
+
+- **Tests that lock it:** none; this is a documentation correction. The claim it retracts
+  was never test-backed -- no test asserts stage completeness, which is precisely why a
+  false stage claim survived five subsequent commits.
+- **Reversibility:** trivial (docs only). If the approach walk and camera cut are later cut
+  for good, the honest close is to EDIT `Roadmap.md:104`'s text to match what shipped and
+  record that as a scope decision -- not to tick a box against text the build does not
+  satisfy.
+
+---
+
 ## 2026-07-29 -- ZM-D-161 -- Known-limit W5: per-NPC MEASURED feet heights, and the town square is not flat
 
 *(Fifth and LAST of the explicitly authorised pre-S8-gate known-limit commits. The human
