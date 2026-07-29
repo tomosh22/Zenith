@@ -26,9 +26,9 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   traversable Dawnmere + live PlayerHome door round trip; S4's five procedural asset generators +
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
-- **★ CURRENT VERIFIED BASELINE (observed 2026-07-29 at S7 closure, ZM-D-167, orchestrator-run,
-  not inferred):** ZM headless registry **49 passed / 0 failed**; full windowed Vulkan **49 passed
-  / 0 failed**; ZM boot unit gate **2742 ran / 2741 passed / 0 failed / 1 skipped**
+- **★ CURRENT VERIFIED BASELINE (observed 2026-07-30 at ZM-D-169, orchestrator-run,
+  not inferred):** ZM headless registry **50 passed / 0 failed**; full windowed Vulkan **50 passed
+  / 0 failed, ZERO skipped**; ZM boot unit gate **2742 ran / 2741 passed / 0 failed / 1 skipped**
   (`zm-tests.yml` pinned to **2742**); engine boot gate **1164 / 1163 / 0 / 1**
   (`run_unit_gate.ps1` default `-Baseline 1164`). The single skip in each is the quarantined
   `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
@@ -36,6 +36,11 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   trust this line.** ★ This bullet previously read 2731 while `Status.md` read 2722 and the
   workflow was pinned to 2742: **three files, three different baselines, all stated as fact.**
   A commit that adds a boot unit updates all three or none.
+  **★ AND IT DRIFTED AGAIN ONE COMMIT LATER, IN THE OTHER COLUMN.** ZM-D-169 moved the REGISTRY
+  49 -> 50 and left both unit baselines alone, so the "all three or none" rule was satisfied for
+  units -- and this bullet still said `registry 49` afterwards, because the rule as written only
+  guards the boot-unit number. **The registry count is a fourth figure and it lives only here and
+  in `Status.md`.** Fixed 2026-07-30. A commit that adds an AUTOMATED TEST updates both.
 - **S6 (Dialogue, menus, NPCs, shops) COMPLETE.** Four authored Dawnmere NPCs are reachable by walking up and pressing the interact key: villager, Trade Post clerk, Care Center caretaker and wanderer. The wanderer uses a deterministic two-waypoint patrol; `ZM_Interactable` v2 persists the patrol configuration and v1 data loads as a stationary fail-closed fallback. Behaviour-graph and terrain-fed navmesh work deliberately moves to S7.
 - **S7 item 1 full schema-v1 codec is green (ZM-D-135/136):** SC1's 18 durable-model units are joined by 29 schema + 2 literal-golden compatibility units. The pure codec freezes 11 ordered length-framed modules, explicit little-endian widths, transactional streams and an 824-byte v1 golden. Units are **2392 ran / 2391 passed / 0 failed / 1 skipped**; engine remains **1103**; all five Zenithmon builds, headless **36/0** and full windowed **36/0/0** passed; registry remains 36. No visual/human gate applies.
 - **The ZM-D-168 follow-up LANDED 2026-07-30 as ZM-D-169** -- the SPOTTED marker is off the

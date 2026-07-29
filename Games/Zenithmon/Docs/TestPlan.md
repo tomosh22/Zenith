@@ -1397,6 +1397,34 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   committed-bytes clause still passing. A single-row revert is the ORACLE's job by design.
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->
   defeat flag + prize money.
+- **★ THE SUITE'S FIRST PIXEL-LEVEL ASSERTIONS (2026-07-30, ZM-D-169). Registry 49 -> 50.**
+  Until this commit **no test in this suite asserted anything about a rendered pixel**, which is
+  why ZM-D-168's visual audit found four things a 49/49 green suite could not see. Two now do:
+  - **`ZM_NpcRenderedPalette_Test`** (NEW registration, `m_bRequiresGraphics = true` so it SKIPS
+    headless and runs windowed only). Additively loads the committed Dawnmere, resolves the six
+    LIVE NPC model entities through their serialized `ZM_Interactable` rows, holds them in an
+    eye-level lineup under deliberately hostile lighting (one overhead directional, IBL off,
+    camera horizontal), takes a `Flux_Screenshot::RequestDump`, then maps the six projected body
+    centres through the tools viewport into the real BGRA and requires all 15 pairwise separations
+    >= 0.15. Observed: minimum **0.2001** (Wanderer/Vesper), per-body RGB 0.34-0.84 per channel.
+  - **`ZM_RivalVesperAuthored_Test`** gains a marker clause: `Graphics/Primitives/Enabled` is held
+    FALSE for the whole run and a frame-exact dump is taken from inside a real SPOTTED frame.
+    Asserts presence (**118 marker-hue px**, 106 in batch) AND a tall-and-narrow span (7x28,
+    height >= 2x width), which is what separates an upright exclamation mark from the old diagonal
+    stroke. Gated on `Zenith_IsNullRenderer()` -- `Flux_Screenshot::RequestDump` has exactly one
+    consumer (`Zenith_Vulkan_Swapchain::EndFrame`), so on Null it writes nothing and the clause is
+    correctly skipped rather than failed. **Mutation-proven:** restoring
+    `if (!m_bPrimitivesEnabled) return;` reds it with "reached Flux's queues but NOT the
+    framebuffer: 0 marker-hue pixels", exit 1.
+  **★ TWO CONVENTIONS THIS ESTABLISHES FOR EVERY FUTURE PIXEL TEST, both learned the hard way:**
+  1. **Use the frame-exact engine dump, never a wall-clock screen scrape.**
+     `Tools\capture_viewport.ps1 -IntervalMs 40` delivers an ACTUAL 206 ms at 2560x1440 (PNG encode
+     dominates); a 0.35 s beat gets 1-2 samples.
+  2. **Derive the colour predicate from the bytes the engine wrote, never from the colour you
+     submitted.** An unlit marker submitting linear `(1.0, 0.82, 0.08)` lands at
+     `RGB(208, 182, 97)` -- blue/red 0.47, not 0.08. Two "low blue" scans reported ZERO matches
+     across 539 frames of a marker rendering perfectly, and nearly booked a render defect.
+     Verify the hue is UNIQUE frame-wide before choosing a threshold.
 
 ### 5.8 S8 -- vertical slice
 
