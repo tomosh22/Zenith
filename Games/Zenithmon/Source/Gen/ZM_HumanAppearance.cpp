@@ -8,7 +8,7 @@
 
 #include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"
 
-#include <cmath>   // ceilf, floorf, fabsf
+#include <cmath>   // ceilf, floorf, fabsf, sqrtf, std::isfinite
 
 namespace
 {
@@ -763,4 +763,106 @@ void ZM_AppendHumanAppearanceMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMe
 {
 	ZM_AppendHumanHair(xRecipe, xMesh);
 	ZM_AppendHumanAttachment(xRecipe, xMesh);
+}
+
+// ============================================================================
+// Known-limit W4 -- the greybox appearance palette. See the header for the
+// contract. NOTHING BELOW MAY Zenith_Assert ON ITS ARGUMENTS (the ZM_TrainerData
+// rule, for the same reason: these are called with the sentinel and with garbage
+// on purpose, both by the boot units and by a component that runs before the
+// stale-row clamp).
+// ============================================================================
+
+namespace
+{
+	// The three-way blend. The weights SUM TO ONE, which is what makes the result
+	// a convex combination of three already-[0,1] inputs -- so it is in range by
+	// CONSTRUCTION, and the sanitiser below is a belt for the theme-palette arms
+	// rather than the thing doing the work.
+	//
+	// PRIMARY alone is not enough and that is not a guess: the Dawnmere clerk and
+	// the Dawnmere caretaker both wear ZM_HUMAN_OUTFIT_UNIFORM, and the villager
+	// and the elder both wear ZM_HUMAN_OUTFIT_CASUAL, so an outfit-only palette
+	// would ship two pairs of identical townsfolk. ACCENT separates the outfit
+	// families, HAIR separates two rows inside one family, and the hair weight is
+	// the largest of the two secondaries for exactly that reason.
+	constexpr float fPALETTE_WEIGHT_PRIMARY = 0.45f;
+	constexpr float fPALETTE_WEIGHT_ACCENT  = 0.25f;
+	constexpr float fPALETTE_WEIGHT_HAIR    = 0.30f;
+	constexpr float fPALETTE_WEIGHT_SUM =
+		fPALETTE_WEIGHT_PRIMARY + fPALETTE_WEIGHT_ACCENT + fPALETTE_WEIGHT_HAIR;
+	static_assert(fPALETTE_WEIGHT_SUM > 0.999f && fPALETTE_WEIGHT_SUM < 1.001f,
+		"the palette weights must stay a convex combination -- otherwise the "
+		"in-[0,1] guarantee stops holding by construction");
+
+	// NOT ZM_HumanClamp01: that one leaves a NaN alone (NaN < 0 and NaN > 1 are
+	// both false), and a NaN base colour reaching Flux is worse than a grey cube.
+	float ZM_PaletteSanitiseChannel(float fValue, float fFallback)
+	{
+		if (!std::isfinite(fValue))
+		{
+			return fFallback;   // NaN or an infinity
+		}
+		if (fValue < 0.0f)
+		{
+			return 0.0f;
+		}
+		if (fValue > 1.0f)
+		{
+			return 1.0f;
+		}
+		return fValue;
+	}
+}
+
+Zenith_Maths::Vector4 ZM_GetHumanPaletteFallbackColour()
+{
+	return Zenith_Maths::Vector4(
+		fZM_GREYBOX_FALLBACK_R, fZM_GREYBOX_FALLBACK_G, fZM_GREYBOX_FALLBACK_B, 1.0f);
+}
+
+Zenith_Maths::Vector4 ZM_GetHumanPaletteColour(ZM_HUMAN_ID eId)
+{
+	// ZM_HUMAN_NONE aliases ZM_HUMAN_COUNT, so this single comparison rejects the
+	// sentinel and every garbage value together (the ZM_IsRegisteredTrainer trick).
+	// It is also what keeps ZM_ResolveHumanRecipe -- which IS bounds-asserted --
+	// off the out-of-range path.
+	if ((u_int)eId >= (u_int)ZM_HUMAN_COUNT)
+	{
+		return ZM_GetHumanPaletteFallbackColour();
+	}
+
+	// Routed through the SAME resolve + palette helpers the full albedo painter
+	// uses, so the blockout preview and the finished texture cannot drift apart.
+	const ZM_HumanRecipe xRecipe = ZM_ResolveHumanRecipe(eId);
+	const ZM_HumanOutfitPalette xOutfit = ZM_HumanOutfitColours(xRecipe);
+	const Zenith_Maths::Vector3 xHair = ZM_HumanHairColour(xRecipe);
+
+	const Zenith_Maths::Vector3 xBlend =
+		xOutfit.m_xPrimary * fPALETTE_WEIGHT_PRIMARY
+		+ xOutfit.m_xAccent * fPALETTE_WEIGHT_ACCENT
+		+ xHair * fPALETTE_WEIGHT_HAIR;
+
+	const Zenith_Maths::Vector4 xFallback = ZM_GetHumanPaletteFallbackColour();
+	return Zenith_Maths::Vector4(
+		ZM_PaletteSanitiseChannel(xBlend.x, xFallback.x),
+		ZM_PaletteSanitiseChannel(xBlend.y, xFallback.y),
+		ZM_PaletteSanitiseChannel(xBlend.z, xFallback.z),
+		1.0f);
+}
+
+float ZM_HumanPaletteSeparation(
+	const Zenith_Maths::Vector4& xA, const Zenith_Maths::Vector4& xB)
+{
+	const float fR = xA.x - xB.x;
+	const float fG = xA.y - xB.y;
+	const float fB = xA.z - xB.z;
+	const float fSquared = fR * fR + fG * fG + fB * fB;
+	// FAIL CLOSED. A NaN operand would make every `>= margin` clause built on this
+	// helper false, and a garbage-but-finite one must not read as "far apart".
+	if (!std::isfinite(fSquared))
+	{
+		return 0.0f;
+	}
+	return sqrtf(fSquared);
 }

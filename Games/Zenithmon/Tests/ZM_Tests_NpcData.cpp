@@ -24,6 +24,7 @@
 #include "Zenithmon/Source/Data/ZM_NpcData.h"
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"   // the gate a row's alternate line set hangs off
 #include "Zenithmon/Source/Data/ZM_TrainerData.h"  // ZM_TRAINER_* / ZM_IsRegisteredTrainer
+#include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"  // the W4 greybox appearance palette
 #include "Zenithmon/Source/Shop/ZM_ShopLogic.h"    // ZM_ShopBuyPrice -- the purchasable check
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h" // uMAX_QUEUED_LINES -- the line cap's source
 
@@ -921,4 +922,129 @@ ZENITH_TEST(ZM_Data, Npc_TrainerColumnIsSentinelOrRegistered)
 			"%s names trainer ordinal %u, which is neither the sentinel nor a "
 			"registered row", x.m_szDisplayName, (u_int)x.m_eTrainer);
 	}
+}
+
+// ---- Known-limit W4: the m_eHuman column finally has a consumer --------------
+//
+// ZM_GreyboxVisual (Zenithmon.cpp, order 107) now paints its unit cube with
+// ZM_GetHumanPaletteColour(row.m_eHuman) instead of one fixed grey. These two
+// units are the ROSTER-COUPLED half of that promise: they walk the authored
+// ZM_NpcData rows, so an m_eHuman edit is what reds them. The palette-coupled
+// half (the colours themselves stay apart) is HumanGen_PaletteDistinctness.
+
+// THE W4 CLAIM ITSELF: the rival cannot be mistaken for anyone else in town.
+ZENITH_TEST(ZM_Data, Npc_RivalAppearanceIsDistinctFromEveryOtherRow)
+{
+	const ZM_NpcData& xRival = Npc((u_int)ZM_NPC_RIVAL_VESPER);
+	ZENITH_ASSERT_LT((u_int)xRival.m_eHuman, (u_int)ZM_HUMAN_COUNT,
+		"the rival row names a human id outside the roster, so his palette colour "
+		"would be the FALLBACK GREY and every clause below would be about a grey cube");
+
+	const Zenith_Maths::Vector4 xRivalColour = ZM_GetHumanPaletteColour(xRival.m_eHuman);
+	const Zenith_Maths::Vector4 xFallback = ZM_GetHumanPaletteFallbackColour();
+
+	// The rival must be distinguishable from an UNRESOLVED blockout as well as from
+	// the townsfolk -- otherwise "he is painted" and "he was never wired" look the same.
+	const float fVsGrey = ZM_HumanPaletteSeparation(xRivalColour, xFallback);
+	ZENITH_ASSERT_TRUE(fVsGrey >= fZM_HUMAN_PALETTE_MIN_SEPARATION,
+		"the rival resolves %.4f from the blockout grey (want >= %.4f) -- a painted "
+		"rival would be indistinguishable from an unwired one",
+		fVsGrey, fZM_HUMAN_PALETTE_MIN_SEPARATION);
+
+	// Guarded walk: a comparison count of zero would let this pass having compared
+	// the rival against nobody (which is what a one-row roster would do).
+	u_int uCompared = 0u;
+	for (u_int i = 0; i < ZM_NPC_COUNT; ++i)
+	{
+		if (i == (u_int)ZM_NPC_RIVAL_VESPER)
+		{
+			continue;
+		}
+		++uCompared;
+		const ZM_NpcData& x = Npc(i);
+		const float fSeparation = ZM_HumanPaletteSeparation(
+			xRivalColour, ZM_GetHumanPaletteColour(x.m_eHuman));
+		ZENITH_ASSERT_TRUE(fSeparation >= fZM_HUMAN_PALETTE_MIN_SEPARATION,
+			"the rival and '%s' are only %.4f apart (want >= %.4f) -- known limit W4 "
+			"is that the rival must not read as one of the townsfolk",
+			x.m_szDisplayName, fSeparation, fZM_HUMAN_PALETTE_MIN_SEPARATION);
+	}
+	ZENITH_ASSERT_EQ(uCompared, (u_int)ZM_NPC_COUNT - 1u,
+		"the rival was compared against %u rows, not every other row -- the clauses "
+		"above are vacuous to the extent the walk skipped any", uCompared);
+}
+
+// ★ THE ROSTER TODAY CARRIES A KNOWN COLLISION, AND THIS UNIT IS WRITTEN AROUND
+// IT RATHER THAN PRETENDING OTHERWISE. Npc_Wanderer and Npc_Warden BOTH stand on
+// ZM_HUMAN_TOWN_ELDER, so six authored rows wear only FIVE appearances and the
+// two of them are pixel-identical in the world. That is a CONTENT decision, not a
+// palette defect -- W4 wired the column, it did not re-cast the town -- so this
+// unit asserts the two properties that are actually owed:
+//   * rows naming DIFFERENT humans must look different (a palette collapse reds);
+//   * the roster must keep at least uMIN_DISTINCT_APPEARANCES distinct appearances
+//     (a content collapse reds), and giving the warden his own row only raises the
+//     real number, so fixing the collision cannot red this.
+// Rows naming the SAME human are asserted to be EXACTLY equal, which is what makes
+// the "different" arm above a real discriminator rather than a coincidence.
+ZENITH_TEST(ZM_Data, Npc_AuthoredAppearancesAreMutuallyDistinct)
+{
+	constexpr u_int uMIN_DISTINCT_APPEARANCES = 5u;
+
+	Zenith_Maths::Vector4 axColours[ZM_NPC_COUNT] = {};
+	for (u_int i = 0; i < ZM_NPC_COUNT; ++i)
+	{
+		axColours[i] = ZM_GetHumanPaletteColour(Npc(i).m_eHuman);
+	}
+
+	u_int uDistinctPairs = 0u;
+	u_int uSharedPairs = 0u;
+	for (u_int i = 0; i < ZM_NPC_COUNT; ++i)
+	{
+		for (u_int j = i + 1u; j < ZM_NPC_COUNT; ++j)
+		{
+			const float fSeparation =
+				ZM_HumanPaletteSeparation(axColours[i], axColours[j]);
+			if (Npc(i).m_eHuman == Npc(j).m_eHuman)
+			{
+				++uSharedPairs;
+				ZENITH_ASSERT_EQ_FLOAT(fSeparation, 0.0f, 0.0f,
+					"'%s' and '%s' name the SAME human id but resolve to different "
+					"colours -- the palette is not a pure function of the id",
+					Npc(i).m_szDisplayName, Npc(j).m_szDisplayName);
+				continue;
+			}
+			++uDistinctPairs;
+			ZENITH_ASSERT_TRUE(fSeparation >= fZM_HUMAN_PALETTE_MIN_SEPARATION,
+				"'%s' and '%s' name DIFFERENT human ids but are only %.4f apart "
+				"(want >= %.4f) -- two authored NPCs would read as the same person",
+				Npc(i).m_szDisplayName, Npc(j).m_szDisplayName,
+				fSeparation, fZM_HUMAN_PALETTE_MIN_SEPARATION);
+		}
+	}
+	ZENITH_ASSERT_GT(uDistinctPairs, 0u,
+		"no two authored NPC rows name different human ids -- every NPC in Dawnmere "
+		"wears the same face, so the walk above compared nothing");
+	// Sanity on the split itself: uSharedPairs is READ, not ignored, so a roster
+	// where every pair shared a row could not sneak past the guarded walk.
+	ZENITH_ASSERT_EQ(uDistinctPairs + uSharedPairs,
+		((u_int)ZM_NPC_COUNT * ((u_int)ZM_NPC_COUNT - 1u)) / 2u,
+		"the pairwise walk did not visit every row pair");
+
+	u_int uDistinctAppearances = 0u;
+	for (u_int i = 0; i < ZM_NPC_COUNT; ++i)
+	{
+		bool bSeenEarlier = false;
+		for (u_int j = 0; j < i; ++j)
+		{
+			bSeenEarlier = bSeenEarlier || (Npc(i).m_eHuman == Npc(j).m_eHuman);
+		}
+		if (!bSeenEarlier)
+		{
+			++uDistinctAppearances;
+		}
+	}
+	ZENITH_ASSERT_GE(uDistinctAppearances, uMIN_DISTINCT_APPEARANCES,
+		"the %u authored NPC rows now wear only %u distinct appearances (want >= %u) "
+		"-- collapsing the m_eHuman column makes the W4 wiring correct and INVISIBLE",
+		(u_int)ZM_NPC_COUNT, uDistinctAppearances, uMIN_DISTINCT_APPEARANCES);
 }

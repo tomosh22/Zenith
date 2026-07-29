@@ -156,6 +156,29 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
    The honest one-line description is now **"a trainer who sees you shows you he has,
    then speaks, then battles you"** -- he still does not walk to you and the camera does
    not move.
+4. **RESOLVED 2026-07-29 (ZM-D-160) -- RIVAL VISUAL DISTINCTNESS.** `ZM_NpcData::m_eHuman`
+   is no longer declared-and-ignored: a TOTAL palette in `Source/Gen/ZM_HumanAppearance`
+   derives one flat colour per `ZM_HUMAN_ID` from the SAME outfit/hair tables the SC3
+   albedo painter uses, and `ZM_GreyboxVisual` resolves sibling `ZM_Interactable` -> row
+   -> `m_eHuman` -> palette. Every non-NPC blockout (walls, floors, doors, lintels, props)
+   keeps the shipped grey byte for byte. Measured on the COMMITTED rival:
+   `vsGrey=0.6366`, `vsNearestNpc=0.2124`, both against a 0.15 margin.
+   **STILL OPEN, and found by W4 rather than introduced by it:**
+   - **A ROSTER APPEARANCE COLLISION.** There are SIX authored Dawnmere NPCs, and
+     `Npc_Wanderer` and `Npc_Warden` BOTH stand on `ZM_HUMAN_TOWN_ELDER` -- six rows, five
+     appearances, those two pixel-identical in the world. The RIVAL is distinct from all
+     five, so W4's own claim holds. **Minimal fix, one token, no serialized byte:** give
+     `ZM_NPC_ROUTE_WARDEN` its own row, `ZM_HUMAN_TRAINER_RANGER` (`OUTFIT_WORKER`, a
+     visibly different family from the elder's `CASUAL`). It can only RAISE the
+     distinct-appearance count the boot unit asserts, so it cannot red anything. Left as a
+     CONTENT decision because W4 wired the column; it did not re-cast the town.
+   - **A COVERAGE BOUNDARY, not a gap.** `ZM_GreyboxVisual` is a file-local class in
+     `Zenithmon.cpp` and cannot be named from a `Tests/` TU, so no boot unit can construct
+     one. Its wiring is covered ONLY by `ZM_RivalVesperAuthored_Test`'s live material
+     scan. Adding a header purely to unit-test it was rejected as the worse trade; the
+     boundary is demonstrated by mutation rather than asserted.
+   - The bodies are still **unit cubes**. W4 makes them distinguishable, not
+     human-shaped; the generated human meshes are not wired to authored NPCs.
 
 ### 1.9 Post-game
 

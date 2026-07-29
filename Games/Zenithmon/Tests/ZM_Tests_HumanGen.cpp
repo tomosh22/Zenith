@@ -43,12 +43,20 @@
 //                                      pairwise motion (not metadata) distinction.
 //  18. HumanGen_ClipSetSharedAcrossRoster -- one model-independent clip set
 //                                      validates and rebuilds identically for all.
+//  19. HumanGen_PaletteTotality    -- known-limit W4: the greybox appearance
+//                                      palette is TOTAL (finite, in-range, pure)
+//                                      and never asserts on the sentinel or on
+//                                      garbage; the fallback IS the shipped grey.
+//  20. HumanGen_PaletteDistinctness -- the five appearances the Dawnmere cast
+//                                      wears are numerically separated from each
+//                                      other AND from the fallback grey.
 //
 // PURE / HEADLESS: no disk, no GPU, no ZENITH_TOOLS reach. Runs at boot before
 // the scene loads.
 // ============================================================================
 
 #include "Core/Zenith_TestFramework.h"
+#include "UnitTests/Zenith_AssertCapture.h"           // the W4 palette totality proof
 #include "Zenithmon/Source/Gen/ZM_HumanGen.h"
 #include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"
 #include "Zenithmon/Source/Gen/ZM_CreatureAnimGen.h"
@@ -61,6 +69,7 @@
 #include <cstring>   // strlen, strcmp
 #include <cmath>     // fabsf
 #include <cstdio>    // snprintf
+#include <limits>    // quiet_NaN / infinity (the W4 fail-closed probes)
 #include <string>
 #include <utility>   // pair
 
@@ -2572,4 +2581,189 @@ ZENITH_TEST(ZM_Gen, HumanGen_ClipSetSharedAcrossRoster)
 				"shared clip %u hash depends on preceding human %u generation", c, id);
 		}
 	}
+}
+
+// ############################################################################
+// 19. Known-limit W4: the greybox appearance palette is TOTAL
+// ############################################################################
+
+// The palette runs from ZM_GreyboxVisual::OnStart -- serialization order 107,
+// which starts BEFORE ZM_Interactable (113) has clamped a stale serialized row
+// id. So it is fed the sentinel and out-of-range values on the LIVE path, not
+// only here, and a Zenith_Assert inside it would not fail one test: it calls
+// Zenith_DebugBreak() in EVERY configuration and would kill the whole boot-unit
+// run. This unit pins that it does not.
+ZENITH_TEST(ZM_Gen, HumanGen_PaletteTotality)
+{
+	const Zenith_Maths::Vector4 xFallback = ZM_GetHumanPaletteFallbackColour();
+
+	// The fallback IS the shipped blockout grey, spelled as LITERALS here rather
+	// than read back off the constants: this is the behaviour-preservation pin for
+	// every ZM_QueueGreyboxBlock wall, floor, door and lintel, and reading the
+	// constants back would make it a tautology that agrees with any future edit.
+	ZENITH_ASSERT_EQ_FLOAT(xFallback.x, 0.52f, 0.0f,
+		"the greybox fallback red channel moved -- every authored blockout entity "
+		"in the committed scenes just changed colour");
+	ZENITH_ASSERT_EQ_FLOAT(xFallback.y, 0.55f, 0.0f,
+		"the greybox fallback green channel moved");
+	ZENITH_ASSERT_EQ_FLOAT(xFallback.z, 0.60f, 0.0f,
+		"the greybox fallback blue channel moved");
+	ZENITH_ASSERT_EQ_FLOAT(xFallback.w, 1.0f, 0.0f,
+		"the greybox fallback alpha moved");
+
+	// Every registered id: finite, in gamut, opaque, and PURE (same id twice ==).
+	for (u_int id = 0u; id < (u_int)ZM_HUMAN_COUNT; ++id)
+	{
+		const Zenith_Maths::Vector4 xColour = ZM_GetHumanPaletteColour((ZM_HUMAN_ID)id);
+		ZENITH_ASSERT_TRUE(std::isfinite(xColour.x) && std::isfinite(xColour.y)
+			&& std::isfinite(xColour.z) && std::isfinite(xColour.w),
+			"human %u ('%s') resolves to a non-finite palette colour",
+			id, ZM_GetHumanName((ZM_HUMAN_ID)id));
+		ZENITH_ASSERT_TRUE(xColour.x >= 0.0f && xColour.x <= 1.0f
+			&& xColour.y >= 0.0f && xColour.y <= 1.0f
+			&& xColour.z >= 0.0f && xColour.z <= 1.0f,
+			"human %u ('%s') palette colour (%.4f, %.4f, %.4f) leaves [0,1]",
+			id, ZM_GetHumanName((ZM_HUMAN_ID)id),
+			xColour.x, xColour.y, xColour.z);
+		ZENITH_ASSERT_EQ_FLOAT(xColour.w, 1.0f, 0.0f,
+			"human %u palette colour is not opaque", id);
+
+		const Zenith_Maths::Vector4 xRepeat = ZM_GetHumanPaletteColour((ZM_HUMAN_ID)id);
+		ZENITH_ASSERT_TRUE(ZM_HumanPaletteSeparation(xColour, xRepeat) == 0.0f,
+			"human %u palette colour is not a pure function of the id", id);
+	}
+
+	// The degenerate inventory, under capture. NO ZENITH_ASSERT_* inside the scope:
+	// while a capture scope is active Zenith_TestRunner::HandleFailure swallows
+	// framework failures and merely bumps the hit count, so an in-scope assertion
+	// could never red this test. The count is copied to a local BEFORE the closing
+	// brace, because ~Zenith_AssertCaptureScope restores the previous hit count.
+	constexpr u_int uDEGENERATE_COUNT = 5u;
+	const ZM_HUMAN_ID aeDEGENERATE[uDEGENERATE_COUNT] =
+	{
+		ZM_HUMAN_NONE,
+		ZM_HUMAN_COUNT,
+		(ZM_HUMAN_ID)((u_int)ZM_HUMAN_COUNT + 1u),
+		(ZM_HUMAN_ID)9999u,
+		(ZM_HUMAN_ID)0xFFFFFFFFu,
+	};
+	Zenith_Maths::Vector4 axDegenerate[uDEGENERATE_COUNT] = {};
+	u_int uHits = 0u;
+	{
+		Zenith_AssertCaptureScope xCapture;
+
+		for (u_int u = 0u; u < uDEGENERATE_COUNT; ++u)
+		{
+			axDegenerate[u] = ZM_GetHumanPaletteColour(aeDEGENERATE[u]);
+		}
+		// The separation helper is on the same no-assert contract, and the same
+		// degenerate sweep has to cover it: every W4 clause anywhere is built on it.
+		const Zenith_Maths::Vector4 xNaN(
+			std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f, 1.0f);
+		const Zenith_Maths::Vector4 xInf(
+			std::numeric_limits<float>::infinity(), 0.0f, 0.0f, 1.0f);
+		const float fNaNSeparation = ZM_HumanPaletteSeparation(xNaN, xFallback);
+		const float fInfSeparation = ZM_HumanPaletteSeparation(xInf, xFallback);
+		(void)fNaNSeparation;
+		(void)fInfSeparation;
+
+		uHits = (u_int)xCapture.GetHitCount();
+	}
+
+	ZENITH_ASSERT_EQ(uHits, 0u,
+		"the W4 palette asserted on a degenerate human id -- Zenith_Assert breaks in "
+		"EVERY config, so this would kill the whole boot unit run rather than fail "
+		"one test, and ZM_GreyboxVisual feeds it exactly these values at order 107");
+
+	for (u_int u = 0u; u < uDEGENERATE_COUNT; ++u)
+	{
+		ZENITH_ASSERT_TRUE(
+			axDegenerate[u].x == xFallback.x && axDegenerate[u].y == xFallback.y
+			&& axDegenerate[u].z == xFallback.z && axDegenerate[u].w == xFallback.w,
+			"degenerate human id %u resolved to (%.4f, %.4f, %.4f, %.4f) instead of "
+			"the fallback grey -- an unresolvable NPC must stay a plain blockout cube",
+			(u_int)aeDEGENERATE[u], axDegenerate[u].x, axDegenerate[u].y,
+			axDegenerate[u].z, axDegenerate[u].w);
+	}
+
+	// FAIL-CLOSED, asserted outside the capture scope so it can actually red. A
+	// non-finite operand must read as ZERO separation, never as "far apart" -- every
+	// `separation >= margin` clause in this suite and in the automated gate depends
+	// on that polarity.
+	const Zenith_Maths::Vector4 xNaNColour(
+		std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f, 1.0f);
+	ZENITH_ASSERT_EQ_FLOAT(
+		ZM_HumanPaletteSeparation(xNaNColour, xFallback), 0.0f, 0.0f,
+		"a NaN palette operand must yield ZERO separation (fail closed), not a "
+		"value that could satisfy a distinctness clause");
+	ZENITH_ASSERT_EQ_FLOAT(
+		ZM_HumanPaletteSeparation(xFallback, xFallback), 0.0f, 0.0f,
+		"a colour must be zero distance from itself -- without this the margin "
+		"clauses below could be satisfied by a separation function that never "
+		"returns anything small");
+}
+
+// ############################################################################
+// 20. Known-limit W4: the Dawnmere cast is visibly distinct
+// ############################################################################
+
+// THE POINT OF W4. The five appearances the authored Dawnmere NPCs wear
+// (ZM_NpcData.cpp's m_eHuman column) must be numerically separated from one
+// another and from the fallback grey -- otherwise the wiring is correct and
+// INVISIBLE, which is precisely the state Docs/Status.md records.
+//
+// The ids are spelled HERE rather than read out of ZM_NpcData: this file is the
+// Gen-layer suite and must not take a dependency on the UI headers ZM_NpcData.h
+// pulls. The roster-COUPLED half (the rival's row is the one that differs from
+// every other row) lives in ZM_Tests_NpcData.cpp, so an m_eHuman edit is caught
+// there and a PALETTE edit is caught here.
+ZENITH_TEST(ZM_Gen, HumanGen_PaletteDistinctness)
+{
+	constexpr u_int uCAST_COUNT = 5u;
+	const ZM_HUMAN_ID aeCAST[uCAST_COUNT] =
+	{
+		ZM_HUMAN_TOWN_VILLAGER,    // Npc_Villager
+		ZM_HUMAN_TOWN_SHOPKEEP,    // Npc_TradePostClerk
+		ZM_HUMAN_TOWN_CARETAKER,   // Npc_Caretaker
+		ZM_HUMAN_TOWN_ELDER,       // Npc_Wanderer AND Npc_Warden (they share a row)
+		ZM_HUMAN_RIVAL_VESPER,     // Npc_RivalVesper
+	};
+
+	const Zenith_Maths::Vector4 xFallback = ZM_GetHumanPaletteFallbackColour();
+	Zenith_Maths::Vector4 axColours[uCAST_COUNT] = {};
+	for (u_int u = 0u; u < uCAST_COUNT; ++u)
+	{
+		axColours[u] = ZM_GetHumanPaletteColour(aeCAST[u]);
+	}
+
+	// Guarded walk: a pair count of zero would let every clause below pass having
+	// compared nothing.
+	u_int uPairsCompared = 0u;
+	for (u_int a = 0u; a < uCAST_COUNT; ++a)
+	{
+		const float fVsGrey = ZM_HumanPaletteSeparation(axColours[a], xFallback);
+		ZENITH_ASSERT_TRUE(fVsGrey >= fZM_HUMAN_PALETTE_MIN_SEPARATION,
+			"'%s' resolves %.4f from the blockout grey (want >= %.4f) -- a resolved "
+			"NPC that still looks grey is indistinguishable from an UNRESOLVED one",
+			ZM_GetHumanName(aeCAST[a]), fVsGrey, fZM_HUMAN_PALETTE_MIN_SEPARATION);
+
+		for (u_int b = a + 1u; b < uCAST_COUNT; ++b)
+		{
+			++uPairsCompared;
+			const float fSeparation =
+				ZM_HumanPaletteSeparation(axColours[a], axColours[b]);
+			ZENITH_ASSERT_TRUE(fSeparation >= fZM_HUMAN_PALETTE_MIN_SEPARATION,
+				"'%s' (%.4f, %.4f, %.4f) and '%s' (%.4f, %.4f, %.4f) are only %.4f "
+				"apart (want >= %.4f) -- two Dawnmere NPCs would read as the same "
+				"person",
+				ZM_GetHumanName(aeCAST[a]),
+				axColours[a].x, axColours[a].y, axColours[a].z,
+				ZM_GetHumanName(aeCAST[b]),
+				axColours[b].x, axColours[b].y, axColours[b].z,
+				fSeparation, fZM_HUMAN_PALETTE_MIN_SEPARATION);
+		}
+	}
+	ZENITH_ASSERT_EQ(uPairsCompared, (uCAST_COUNT * (uCAST_COUNT - 1u)) / 2u,
+		"the pairwise walk did not compare every cast pair -- the clauses above are "
+		"vacuous to the extent it skipped any");
 }

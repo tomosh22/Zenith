@@ -4,10 +4,10 @@
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (ZM numbers OBSERVED 2026-07-28 on a fresh build of both configs
-after known-limit W3):** ZM headless registry **48 passed / 0 failed**; ZM boot unit gate
-**2712 ran / 2711 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
-2712); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
-1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6/SC7/SC8/W2/W3 -- none of
+after known-limit W4):** ZM headless registry **48 passed / 0 failed**; ZM boot unit gate
+**2716 ran / 2715 passed / 0 failed / 1 skipped** (`zm-tests.yml` pinned to
+2716); engine boot unit gate, Null Combat, **1164 ran / 1163 passed / 0 failed /
+1 skipped** (`run_unit_gate.ps1` default, unchanged by SC6/SC7/SC8/W2/W3/W4 -- none of
 them touches a `Zenith/` file). The 1 skipped in each is the quarantined
 `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
 
@@ -96,7 +96,7 @@ build lacks `libcurl-d.dll`, so booting the exe first dies in the loader with
 ZERO stdout and the gate reports the misleading "no 'Unit tests complete' line in
 boot output" rather than a load failure.
 
-**Stage:** **S7 COMPLETE (items 1-4). Pre-S8 known-limit closure ACTIVE: W1-W3 of 5 COMPLETE (ZM-D-157/158/159); NEXT = W4, rival visual distinctness.** S0-S6 remain complete. The S8 vertical-slice go/no-go is still a human stop and remains unsigned.
+**Stage:** **S7 COMPLETE (items 1-4). Pre-S8 known-limit closure ACTIVE: W1-W4 of 5 COMPLETE (ZM-D-157/158/159/160); NEXT = W5, per-NPC sampled feet heights.** S0-S6 remain complete. The S8 vertical-slice go/no-go is still a human stop and remains unsigned.
 **Build:** GREEN on the ZM-D-148 diff (scene authoring made boot-shape-independent; all four ZM scenes now TRACKED) on top of SC1b commit B (ZM-D-147 -- baked navmesh persistence). Engine-wide, so it owed and got the full gate: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; engine lib + SentinelECS/Physics/AI (all three exes exit 0); Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True.
 **Tests (commit B):** Null batches, ALL 0-failed: **ZM 44/44** (registry 42 -> 44; both new navmesh tests RUN, not skipped), CB **45/45**, DP **158/158**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 44/44, 0 skipped, 0 failed**. Boot unit gates on the NULL exes: engine **1093 -> 1121** (Combat) and ZM **2515 -> 2546** -- both pinned from the OBSERVED line. Windowed RenderTest 8 passed / 1 failed, only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002). Ratchets (`architecture,lints` and `complexity`) are **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added; two findings this commit DID introduce (an `Editor/` include and a `g_xEngine` reach from EntityComponent) were fixed, not allow-listed. **Asset-less CI condition reproduced locally** (`Zenith/Assets` hidden): ZM 44/44 and both unit gates unchanged; restored by MERGE and `diff -rq`-verified, since the run re-created only 60 of the 89 files and a naive rename-back would have clobbered the tree. **Teeth mutation-proven ×6** (see ZM-D-147; m1 re-run on the final build reds exactly the 3 serialization units).
 
@@ -111,10 +111,11 @@ boot output" rather than a load failure.
 
 **★★ S7 ITEM 3 AND ITEM 4 ARE COMPLETE (SC8, ZM-D-156). THE S8 VERTICAL-SLICE
 GO/NO-GO REMAINS A HUMAN GATE AND IS UNSIGNED.** This session has explicit authority
-only to close its five recorded known limits, not to start S8 content. **W1-W3 of 5 are
-now COMPLETE (ZM-D-157/158/159): forced replacement ships, complete authored trainer
-parties are live, the honest Vesper-loss/whiteout route is proven, and a trainer who
-sees you now SHOWS you before he speaks. NEXT = W4, rival visual distinctness.**
+only to close its five recorded known limits, not to start S8 content. **W1-W4 of 5 are
+now COMPLETE (ZM-D-157/158/159/160): forced replacement ships, complete authored trainer
+parties are live, the honest Vesper-loss/whiteout route is proven, a trainer who sees you
+now SHOWS you before he speaks, and the rival no longer looks like a townsperson.
+NEXT = W5, per-NPC sampled feet heights.**
 
 **What the vertical actually does now, end to end:** the player walks around Dawnmere;
 rival Vesper stands AUTHORED in the town at (490, 524) facing the spawn approach; when
@@ -138,8 +139,14 @@ oversold:**
    walk to you and the camera does not move. **And the marker rides the DEBUG primitives
    channel**, so a tools user who unchecks `Graphics/Primitives/Enabled` loses a gameplay
    cue; promoting it to a real UI/mesh surface is deferred.
-2. **The rival is visually indistinguishable from the four townsfolk.** `ZM_GreyboxVisual`
-   paints one fixed grey and `ZM_NpcData::m_eHuman` is consumed by NOTHING today.
+2. **CLOSED by W4 (ZM-D-160).** `ZM_NpcData::m_eHuman` now feeds a TOTAL palette in
+   `ZM_HumanAppearance`, and `ZM_GreyboxVisual` paints each NPC body with its own row's
+   colour while every non-NPC blockout keeps the shipped grey byte for byte. Measured on
+   the COMMITTED rival: `vsGrey=0.6366`, `vsNearestNpc=0.2124` against a 0.15 margin.
+   **One content collision remains and is booked, not hidden:** `Npc_Wanderer` and
+   `Npc_Warden` both stand on `ZM_HUMAN_TOWN_ELDER`, so six authored rows wear five
+   appearances and those two are pixel-identical. The rival is distinct from all five, so
+   W4's claim holds; the one-token roster fix is named in Shortfalls 1.8.
 3. **Route 1 does not exist**, so the GDD's canonical location for rival battle 1
    ("Route 1, L5") does not either. The Dawnmere placement is a RECORDED deviation
    (Q-D / ZM-D-156) carrying a re-placement debt.
@@ -149,6 +156,23 @@ oversold:**
 5. **No test proves the authored Vesper carries no graph slot at RUNTIME** -- it cannot,
    because the runtime attach is idempotent by path. The property rests on an
    authoring-time assert plus the boot-stability check.
+
+**W4 closure, observed rather than inferred.** `m_eHuman` feeds a TOTAL palette added to
+the EXISTING `Source/Gen/ZM_HumanAppearance.{h,cpp}` (no new TU), derived from the SAME
+outfit/hair tables the SC3 albedo painter uses so the blockout previews the eventual
+human. `ZM_GreyboxVisual` resolves sibling `ZM_Interactable` -> row -> `m_eHuman` ->
+palette; every non-NPC blockout keeps the shipped grey exactly (`blocksOffGrey=0`).
+**★ THE ORDER TRAP, CHECKED NOT ASSUMED:** `OnStart` dispatches in ascending
+serialization order, so the greybox (107) starts BEFORE `ZM_Interactable` (113). That
+would be fatal for the TRAINER id, which IS derived in `OnStart` -- but the NPC ROW
+arrives from `ReadFromDataStream` or the authoring step, so the greybox reads only the
+row and never `GetTrainerId()`. The cost is that the stale-row CLAMP has not run yet,
+which is why the explicit bounds check and the palette's totality are load-bearing.
+**★ AN HONEST COVERAGE BOUNDARY:** `ZM_GreyboxVisual` is file-local to `Zenithmon.cpp`
+and cannot be named from a `Tests/` TU, so NO boot unit can construct one -- the live
+material scan is its only coverage, and mutation M1 demonstrates exactly that (automated
+RED at 355 frames, boot gate cleanly GREEN). Boot **2712 -> 2716**, registry unchanged
+**48**, four mutations proved teeth.
 
 **W3 closure, observed rather than inferred.** `ZM_TRAINER_SIGHT_SPOTTED` is appended
 (ordinal 3, session-only, serialized nowhere) between first sight and SC7's handoff. Arm

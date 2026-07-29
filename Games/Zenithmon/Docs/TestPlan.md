@@ -1320,6 +1320,43 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   accumulation `+=` -> `-=` (**17 units**); and remove the live Flux submission
   (**1 boot unit AND both automated tests** -- the mutation that would have SURVIVED
   before the review fix, and the proof it no longer does).
+- **Known-limit W4 -- rival visual distinctness (COMPLETE 2026-07-29, ZM-D-160):**
+  **+4 boot units, automated registry deliberately UNCHANGED at 48.**
+  `HumanGen_PaletteTotality` sweeps every valid `ZM_HUMAN_ID` plus `ZM_HUMAN_NONE`,
+  `ZM_HUMAN_COUNT` and garbage under a `Zenith_AssertCaptureScope`, requiring finite
+  in-[0,1] channels, a DEFINED fallback out of range, and ZERO asserts.
+  `HumanGen_PaletteDistinctness` pins the palette-coupled half (colours stay >= 0.15
+  apart); `Npc_RivalAppearanceIsDistinctFromEveryOtherRow` and
+  `Npc_AuthoredAppearancesAreMutuallyDistinct` pin the ROSTER-coupled half, so an
+  `m_eHuman` edit is what reds them. Both roster units use a GUARDED walk whose
+  comparison count is itself asserted -- a walk that skipped rows would otherwise pass
+  having compared nobody.
+  **★ THE ROSTER COLLISION IS ENCODED HONESTLY RATHER THAN ASSUMED AWAY:** six authored
+  rows wear five appearances (`Npc_Wanderer` and `Npc_Warden` share
+  `ZM_HUMAN_TOWN_ELDER`), so the unit asserts that rows naming DIFFERENT humans are >=
+  0.15 apart, rows naming the SAME human are EXACTLY equal (which is what makes the
+  "different" arm a discriminator rather than a coincidence), and the roster keeps >= 5
+  distinct appearances. Fixing the collision can only raise that count, so the honest
+  encoding cannot obstruct the fix.
+  `ZM_RivalVesperAuthored_Test` gains a material scan over the COMMITTED scene, logging
+  `blocks / blocksOffGrey / npcBodies / npcStillGrey / otherNpcColours / vesperSampled /
+  vesperExpected / paletteError / vsGrey / vsNearestNpc` and requiring the sampled colour
+  on the authored rival to equal the compiled palette within 1e-4.
+  **★ AN HONEST COVERAGE BOUNDARY, demonstrated rather than claimed:** `ZM_GreyboxVisual`
+  is file-local to `Zenithmon.cpp` and cannot be named from a `Tests/` TU, so no boot unit
+  can construct one -- the live scan is its only coverage. Mutation M1 shows exactly that.
+  Observed gate: boot **2712 -> 2716** (`2716 / 2715 / 0 / 1`), pinned from the OBSERVED
+  line; registry unchanged **48**; engine reference **1164** untouched; Null headless
+  **48/48**; full windowed **48/48 passed / 0 failed / 0 skipped / 0 zero-frame**; no new
+  `.cpp`/`.h`/folder, no ECS order, no serialization change, no scene byte, no regen.
+  **Four exact-one-anchor mutations**, each rebuilt with its exit code checked and each
+  result parsed off the OBSERVED line, then restored: drop the NPC wiring (**automated
+  test RED at its full 355 frames, boot gate correctly GREEN** -- the boundary above);
+  out-of-range returns roster row 0 instead of the fallback (**exactly 1 unit**); collapse
+  the hair term into the outfit primary (**exactly the 2 distinctness units**, confirming
+  same-outfit rows really are separated by hair rather than by comment); and replace the
+  separation metric's sum of squares with a product (**all 3 distinctness units**, proving
+  those clauses are live rather than vacuously satisfied by a large number).
 - P1 trainer battle: sight cone -> forced approach -> dialogue -> battle ->
   defeat flag + prize money.
 

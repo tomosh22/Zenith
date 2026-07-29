@@ -15,6 +15,132 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-29 -- ZM-D-160 -- Known-limit W4: the `m_eHuman` column finally has a consumer
+
+*(Fourth of five explicitly authorised pre-S8-gate known-limit commits. The human S8
+go/no-go remains UNSIGNED and no S8 content begins. No new `.cpp`, `.h`, folder, scene,
+asset, serialization version or ECS order -- 114 is still next-free -- and therefore
+**no `Build\regen.ps1`**.)*
+
+### Decision
+
+`ZM_NpcData::m_eHuman` was declared, range-tested and consumed by NOTHING, while
+`ZM_GreyboxVisual` painted one fixed grey. The column is **wired**, not deleted.
+
+The palette is a new TOTAL seam in the EXISTING `Source/Gen/ZM_HumanAppearance.{h,cpp}`
+(no new TU): `ZM_GetHumanPaletteColour(ZM_HUMAN_ID)` returns one flat colour per human,
+derived from the **same** `ZM_HumanOutfitColours` / `ZM_HumanHairColour` tables the SC3
+albedo painter already uses, so the blockout body reads as a crude preview of the human
+that will replace it rather than an unrelated second opinion. It is a convex blend
+(0.45 primary + 0.25 accent + 0.30 hair, `static_assert`ed to sum to one, which is what
+makes the in-[0,1] guarantee structural rather than clamped). **The hair term is not
+decoration:** the clerk and caretaker both wear `OUTFIT_UNIFORM` and the villager and
+elder both wear `OUTFIT_CASUAL`, so an outfit-only palette would ship two pairs of
+identical townsfolk -- mutation M3 proves that clause has teeth.
+
+Out of range is DEFINED, never asserted: `ZM_HUMAN_NONE` aliases `ZM_HUMAN_COUNT`, so
+one comparison rejects the sentinel and all garbage together and returns the shipped
+greybox grey. `ZM_HumanPaletteSeparation` fails CLOSED (a non-finite operand yields 0),
+so no `separation >= margin` clause can ever be satisfied by garbage.
+
+`ZM_GreyboxVisual::ResolveBaseColour()` walks sibling `ZM_Interactable` -> `GetNpcId()`
+-> bounds check -> `ZM_GetNpcData(...).m_eHuman` -> palette. **Every non-NPC greybox --
+every `ZM_QueueGreyboxBlock` wall, floor, door, lintel and prop -- keeps EXACTLY the
+shipped grey/roughness/metallic**, which is the behaviour-preservation net and is
+asserted live (`blocksOffGrey=0` over 4 blocks).
+
+### ★ THE ORDER-107-vs-113 TRAP, CHECKED RATHER THAN ASSUMED
+
+`OnStart` hooks dispatch in ASCENDING serialization order within one entity
+(`Zenith_ComponentMetaRegistry::DispatchOnStart` -> `DispatchLifecycleHook` over
+`m_xMetasSorted`), so `ZM_GreyboxVisual` (107) starts BEFORE `ZM_Interactable` (113).
+That would be fatal if the thing being read were established in `ZM_Interactable::OnStart`
+-- which is exactly how the TRAINER id works, and exactly the defect class this project
+already records for `TickTrainerSight`/`UpdateWander`. It is **not** how the NPC ROW
+works: `m_eNpcId` arrives from `ReadFromDataStream` (which runs for every component of an
+entity before any pending start is dispatched) or from the `AddStep_Custom` authoring
+step (editor Stopped, no `OnStart` fired at all). So the greybox reads ONLY the row and
+deliberately never touches `GetTrainerId()`.
+
+The one real cost of 113-runs-later is that `ZM_Interactable::OnStart`'s **stale-row
+clamp has not run yet**, so an out-of-range serialized id is still present when the
+greybox looks. Hence the explicit `eNpcId >= ZM_NPC_COUNT` check ahead of the
+bounds-asserting `ZM_GetNpcData`, and hence the palette's totality -- both are
+load-bearing, not defensive.
+
+`ReadFromDataStream` clears `m_bInitialised`, so `OnStart` can re-run on a live
+component. A new runtime-only `m_bMeshEntryAdded` -- deliberately NOT cleared by the
+stream read, because it records what this instance did to the MODEL, which a stream read
+does not undo -- routes a re-run into a refresh-the-colour branch instead of a second
+`AddMeshEntry` that would leave the entity drawing two overlapping cubes with the old
+material on the first.
+
+### ★ A CONTENT COLLISION FOUND AND DELIBERATELY NOT FIXED HERE
+
+There are **six** authored Dawnmere NPCs, not five, and `Npc_Wanderer` and `Npc_Warden`
+BOTH stand on `ZM_HUMAN_TOWN_ELDER`. So six rows wear **five** appearances and those two
+are pixel-identical in the world (visible in the live evidence line as
+`npcBodies=6 ... otherNpcColours=5`).
+
+**The rival is distinct from all five**, so W4's actual claim holds and is visible
+(`vsNearestNpc=0.2124` against a 0.15 margin). Re-casting a townsfolk row is a CONTENT
+decision, not a palette defect, and W4 wired the column rather than re-casting the town
+-- so the collision is RECORDED (Shortfalls 1.8) rather than silently patched. The
+minimal fix, for whoever takes it: give `ZM_NPC_ROUTE_WARDEN` its own row --
+`ZM_HUMAN_TRAINER_RANGER` reads best (`OUTFIT_WORKER`, a visibly different family from
+the elder's `CASUAL`). It is a one-token edit, changes no serialized byte, and can only
+RAISE the distinct-appearance count the boot unit asserts, so it cannot red anything.
+
+`Npc_AuthoredAppearancesAreMutuallyDistinct` is written around the collision honestly
+rather than pretending: rows naming DIFFERENT humans must be >= 0.15 apart, rows naming
+the SAME human must be EXACTLY equal (which is what makes the "different" arm a real
+discriminator rather than a coincidence), and the roster must keep at least five distinct
+appearances.
+
+### An honest coverage boundary
+
+`ZM_GreyboxVisual` is a file-local class in `Zenithmon.cpp` and **cannot be named from a
+`Tests/` TU**, so no boot unit can construct one. Its wiring is covered ONLY by
+`ZM_RivalVesperAuthored_Test`'s live material scan. Mutation M1 demonstrates exactly that
+boundary rather than leaving it as a claim: dropping the wiring reds the automated test
+at its full 355 frames and leaves the boot gate a clean 2716/2715/0. Adding a header for
+`ZM_GreyboxVisual` purely to unit-test it was rejected as a worse trade than recording the
+boundary.
+
+### Tests and observed gate
+
++4 boot units, automated registry deliberately UNCHANGED at **48** (the live coverage
+rides the existing authored-Vesper registration): `HumanGen_PaletteTotality`,
+`HumanGen_PaletteDistinctness`, `Npc_RivalAppearanceIsDistinctFromEveryOtherRow`,
+`Npc_AuthoredAppearancesAreMutuallyDistinct`.
+
+Observed final gate on the restored tree: boot **2712 -> 2716**
+(**2716 ran / 2715 passed / 0 failed / 1 documented skip**), `zm-tests.yml` bumped from
+the OBSERVED line; engine reference **1164** untouched; Null and Vulkan builds green;
+Null headless **48/48**; full windowed **48/48 passed / 0 failed / 0 skipped / 0
+zero-frame**; no scene or asset byte moved. The live evidence line reads
+`blocks=4 blocksOffGrey=0 npcBodies=6 npcStillGrey=0 otherNpcColours=5
+vesperSampled=(0.2090, 0.1965, 0.1716) vesperExpected=(0.2090, 0.1965, 0.1716)
+paletteError=0.000000 vsGrey=0.6366 vsNearestNpc=0.2124` -- the sampled colour on the
+COMMITTED rival matches the compiled palette exactly.
+
+**Four exact-one-anchor mutations, each built with its exit code checked and each result
+parsed off the OBSERVED line, then restored:** drop the NPC wiring so every body falls
+back to grey (**automated test RED at 355 frames, boot gate correctly GREEN** -- the
+coverage boundary above); out-of-range returns roster row 0 instead of the fallback
+(**exactly 1 unit**); collapse the hair term into the outfit primary (**exactly the 2
+distinctness units**, confirming same-outfit rows really are separated by hair); and
+replace the separation metric's sum of squares with a product (**all 3 distinctness
+units**, proving those clauses are live rather than vacuously satisfied).
+
+### Reversibility
+
+HIGH. Nothing is serialized; the colour is re-derived on every load from bytes that were
+already there. Deleting `ResolveBaseColour` and restoring the literal returns the shipped
+grey exactly.
+
+---
+
 ## 2026-07-28 -- ZM-D-159 -- Known-limit W3: a visible SPOTTED beat, with the camera cut and approach walk explicitly cut
 
 *(Third of five explicitly authorised pre-S8-gate known-limit commits. The human S8

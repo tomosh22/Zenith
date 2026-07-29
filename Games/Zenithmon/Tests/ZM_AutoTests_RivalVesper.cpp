@@ -13,6 +13,16 @@
 //   * ZM_RivalVesperWhiteout_Test proves the exact-starter loss, heal, warp, and
 //     no-immediate-retrigger path.
 //
+// ★ KNOWN-LIMIT W4 ADDS AN APPEARANCE BLOCK to the first test, and it asserts on
+// MATERIAL STATE, not on pixels, so it too runs for real headless. It samples the
+// live base colour of every "ZM_Greybox"-named material in the committed Dawnmere
+// and splits them into NPC bodies (which must wear their ZM_NpcData row's palette
+// colour, and specifically the rival must sit a real numeric distance from every
+// other NPC) and everything else -- walls, floors, doors, lintels -- which must
+// still be EXACTLY the shipped blockout grey. The two halves are deliberately
+// complementary: deleting the wiring reds the first, painting everything reds the
+// second, and neither can pass on its own.
+//
 // WHAT IS NEW HERE, and why it is not a copy of ZM_TrainerSightWalkUp_Test. That
 // test PLACES a transient trainer at runtime and calls ConfigureTrainerSight. THIS
 // FILE CONTAINS NO ConfigureTrainerSight CALL AT ALL -- that absence is grep-
@@ -60,10 +70,12 @@
 // ============================================================================
 
 #include "AssetHandling/Zenith_AssetRegistry.h"          // ResolvePath -- the bark asset's disk location
+#include "AssetHandling/Zenith_MaterialAsset.h"          // the W4 appearance sample (GetName / GetBaseColor)
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Engine.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"   // the W4 appearance sample
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_CameraResolve.h"       // Zenith_GetMainCameraAcrossScenes -- the walk's live basis
 #include "Input/Zenith_InputSimulator.h"
@@ -84,10 +96,12 @@
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"               // the bark's screen model (GetTopScreen / IsMenuOpen)
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"      // ZM_SetInstantBattlesForTests
 #include "Zenithmon/Source/Battle/ZM_BattleEvent.h"
+#include "Zenithmon/Source/Data/ZM_NpcData.h"                   // ZM_GetNpcData -- the rival's appearance row (W4)
 #include "Zenithmon/Source/Data/ZM_SpeciesData.h"
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"                // ZM_IsStoryFlagSet
 #include "Zenithmon/Source/Data/ZM_TrainerData.h"
 #include "Zenithmon/Source/Gen/ZM_BakeManifest.h"
+#include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"            // the W4 greybox appearance palette
 #include "Zenithmon/Source/Graph/ZM_GraphAuthoring.h"           // szZM_GRAPH_TRAINER_CHALLENGE_ASSET
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"    // the latch + the observed state
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"  // the SC3 cone, for the spawn-camp poll
@@ -167,6 +181,20 @@ namespace
 	// header have drifted.
 	constexpr float fRV_PLACEMENT_TOLERANCE = 0.01f;    // metres
 	constexpr float fRV_FACING_MIN_ABS_DOT  = 0.999f;   // |dot| of two unit quats
+
+	// ---- Known-limit W4: the AUTHORED APPEARANCE sample ----------------------
+	//
+	// Keyed on the MATERIAL NAME, because ZM_GreyboxVisual is a file-local class in
+	// Zenithmon.cpp and cannot be named from a test TU. Both populations wear a
+	// material called this; what differs is the base colour they were given.
+	const char* const szRV_GREYBOX_MATERIAL = "ZM_Greybox";
+	// Dawnmere authors 4 blockout blocks and 6 NPC bodies; the cap is slack, and the
+	// sample counts anything it had to DROP so a truncated scan reds rather than
+	// quietly reporting a clean subset.
+	constexpr u_int uRV_MAX_SAMPLED_GREYBOX_BODIES = 64u;
+	// The palette is a compiled pure function, so the sampled material colour must
+	// match it to float noise, not "approximately".
+	constexpr float fRV_PALETTE_TOLERANCE = 1.0e-4f;
 
 	// ---- The bark ordering pin's UNRESOLVED sentinels ------------------------
 	//
@@ -391,6 +419,28 @@ namespace
 	// ★ THE MEASUREMENT that turns Zenithmon.cpp's standing "height is an
 	// assumption" caveat into an observation for this ONE npc.
 	float                 g_fRVHeightDelta          = 0.0f;
+
+	// ---- (1b) KNOWN-LIMIT W4: THE AUTHORED APPEARANCE ----
+	// Every sentinel FAILS CLOSED, and the POLARITY of each is chosen for that: the
+	// two "how many did I see" counters start at 0 (Verify wants > 0), the two "how
+	// many were wrong" counters start at 0xffffffff (Verify wants exactly 0), the two
+	// separations start NEGATIVE (Verify wants >= a positive margin), and the palette
+	// ERROR starts HUGE (Verify wants <= a tiny tolerance -- a negative default there
+	// would have passed a run that measured nothing). A run in which the scan never
+	// happened therefore cannot satisfy a single clause.
+	bool                  g_bRVAppearanceSampled     = false;
+	u_int                 g_uRVAppearanceOverflow    = 0xffffffffu;   // want 0
+	u_int                 g_uRVGreyboxBlockCount     = 0u;            // want > 0
+	u_int                 g_uRVGreyboxBlockOffGrey   = 0xffffffffu;   // want 0
+	u_int                 g_uRVNpcVisualCount        = 0u;            // want > 1
+	u_int                 g_uRVNpcVisualStillGrey    = 0xffffffffu;   // want 0
+	u_int                 g_uRVNpcColoursSampled     = 0u;            // want > 0 (excludes the rival)
+	bool                  g_bRVVesperVisualFound     = false;
+	Zenith_Maths::Vector4 g_xRVVesperSampledColour   = Zenith_Maths::Vector4(-1.0f);
+	Zenith_Maths::Vector4 g_xRVVesperExpectedColour  = Zenith_Maths::Vector4(-1.0f);
+	float                 g_fRVVesperPaletteError    = 1.0e9f;   // want <= tolerance
+	float                 g_fRVVesperMinNpcSeparation = -1.0f;  // want >= the margin
+	float                 g_fRVVesperGreySeparation  = -1.0f;   // want >= the margin
 
 	// ---- (2) THE RELOAD ----
 	bool            g_bRVReloadIssued    = false;
@@ -692,6 +742,145 @@ namespace
 		return true;
 	}
 
+	// ★ KNOWN-LIMIT W4. Sample the LIVE material every blockout body in the
+	// committed Dawnmere is wearing, and split it into the two populations the
+	// wiring exists to keep apart:
+	//   * entities WITH a resolvable ZM_NpcData row -- which must wear that row's
+	//     appearance and must NOT still be grey;
+	//   * entities WITHOUT one (the DawnmereHome shell, its two door leaves and its
+	//     lintel) -- which must be EXACTLY the shipped blockout grey, byte for byte.
+	//
+	// The two halves are what make each other non-vacuous. Delete the wiring and the
+	// NPC half reds while the block half stays green; paint EVERYTHING from the
+	// palette and the block half reds while the NPC half stays green. Neither
+	// mistake can pass, and neither clause can pass alone.
+	//
+	// It reads the material off Zenith_ModelComponent rather than off
+	// ZM_GreyboxVisual, which is file-local to Zenithmon.cpp and unnameable here, and
+	// it keys the NPC/non-NPC split on GetNpcId() -- never on the colour it is about
+	// to judge.
+	void RVSampleAuthoredAppearance()
+	{
+		const Zenith_Maths::Vector4 xFallback = ZM_GetHumanPaletteFallbackColour();
+		// The COMPILED expectation, resolved through the same row the component reads.
+		const Zenith_Maths::Vector4 xVesperExpected =
+			ZM_GetHumanPaletteColour(ZM_GetNpcData(ZM_NPC_RIVAL_VESPER).m_eHuman);
+
+		// COLLECT INSIDE THE QUERY, RESOLVE OUTSIDE IT -- the
+		// Zenith_GraphComponent::BroadcastCustomEvent idiom
+		// (Zenith_GraphComponent.cpp gathers receiver ids first, then resolves each).
+		// Nothing but the material read happens under the iterator.
+		Zenith_EntityID axIDs[uRV_MAX_SAMPLED_GREYBOX_BODIES] = {};
+		Zenith_Maths::Vector4 axColours[uRV_MAX_SAMPLED_GREYBOX_BODIES] = {};
+		u_int uCollected = 0u;
+		u_int uOverflow = 0u;
+
+		g_xEngine.Scenes().QueryActiveScene<Zenith_ModelComponent>().ForEach(
+			[&](Zenith_EntityID xID, Zenith_ModelComponent& xModel)
+			{
+				if (xModel.GetNumMeshes() == 0u)
+				{
+					return;
+				}
+				const Zenith_MaterialAsset* pxMaterial = xModel.GetMaterial(0u);
+				if (pxMaterial == nullptr
+					|| pxMaterial->GetName() != szRV_GREYBOX_MATERIAL)
+				{
+					return;   // terrain, buildings, the player -- not a blockout body
+				}
+				if (uCollected >= uRV_MAX_SAMPLED_GREYBOX_BODIES)
+				{
+					++uOverflow;   // Verify reds on this rather than judging a subset
+					return;
+				}
+				axIDs[uCollected] = xID;
+				axColours[uCollected] = pxMaterial->GetBaseColor();
+				++uCollected;
+			});
+
+		u_int uBlockCount = 0u;
+		u_int uBlockOffGrey = 0u;
+		u_int uNpcCount = 0u;
+		u_int uNpcStillGrey = 0u;
+		u_int uOtherColours = 0u;
+		bool  bVesperFound = false;
+		Zenith_Maths::Vector4 xVesperSampled(0.0f);
+		Zenith_Maths::Vector4 axOtherColours[uRV_MAX_SAMPLED_GREYBOX_BODIES] = {};
+
+		for (u_int u = 0u; u < uCollected; ++u)
+		{
+			const Zenith_Maths::Vector4& xColour = axColours[u];
+			const Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(axIDs[u]);
+			const ZM_Interactable* pxInteractable = xEntity.IsValid()
+				? xEntity.TryGetComponent<ZM_Interactable>()
+				: nullptr;
+			// ZM_NPC_NONE aliases ZM_NPC_COUNT, so one comparison covers "no
+			// component", "the sentinel" and "garbage" together.
+			const ZM_NPC_ID eNpcId = (pxInteractable != nullptr)
+				? pxInteractable->GetNpcId()
+				: ZM_NPC_NONE;
+
+			if (eNpcId >= ZM_NPC_COUNT)
+			{
+				++uBlockCount;
+				// EXACT equality, deliberately: the behaviour-preservation claim is
+				// that these bytes did not move at all, not that they moved a little.
+				if (xColour.x != xFallback.x || xColour.y != xFallback.y
+					|| xColour.z != xFallback.z || xColour.w != xFallback.w)
+				{
+					++uBlockOffGrey;
+				}
+				continue;
+			}
+
+			++uNpcCount;
+			if (ZM_HumanPaletteSeparation(xColour, xFallback)
+				< fZM_HUMAN_PALETTE_MIN_SEPARATION)
+			{
+				++uNpcStillGrey;
+			}
+			if (eNpcId == ZM_NPC_RIVAL_VESPER)
+			{
+				bVesperFound = true;
+				xVesperSampled = xColour;
+			}
+			else
+			{
+				axOtherColours[uOtherColours] = xColour;
+				++uOtherColours;
+			}
+		}
+
+		g_uRVAppearanceOverflow   = uOverflow;
+		g_uRVGreyboxBlockCount    = uBlockCount;
+		g_uRVGreyboxBlockOffGrey  = uBlockOffGrey;
+		g_uRVNpcVisualCount       = uNpcCount;
+		g_uRVNpcVisualStillGrey   = uNpcStillGrey;
+		g_uRVNpcColoursSampled    = uOtherColours;
+		g_bRVVesperVisualFound    = bVesperFound;
+		g_xRVVesperExpectedColour = xVesperExpected;
+		if (bVesperFound)
+		{
+			g_xRVVesperSampledColour = xVesperSampled;
+			g_fRVVesperPaletteError =
+				ZM_HumanPaletteSeparation(xVesperSampled, xVesperExpected);
+			g_fRVVesperGreySeparation =
+				ZM_HumanPaletteSeparation(xVesperSampled, xFallback);
+			float fMinSeparation = -1.0f;
+			for (u_int u = 0u; u < uOtherColours; ++u)
+			{
+				const float fSeparation =
+					ZM_HumanPaletteSeparation(xVesperSampled, axOtherColours[u]);
+				if (fMinSeparation < 0.0f || fSeparation < fMinSeparation)
+				{
+					fMinSeparation = fSeparation;
+				}
+			}
+			g_fRVVesperMinNpcSeparation = fMinSeparation;
+		}
+		g_bRVAppearanceSampled = true;
+	}
+
 	// -------------------------------------------------------------------------
 	// Per-phase drivers. Each returns true to keep stepping, false to stop.
 	// -------------------------------------------------------------------------
@@ -854,6 +1043,13 @@ namespace
 			FailRV(g_szRVMeasuredFailure);
 			return false;
 		}
+
+		// ★ KNOWN-LIMIT W4, sampled HERE because this is the first point at which the
+		// committed scene is fully started: every ZM_GreyboxVisual::OnStart in
+		// Dawnmere has run, so every blockout material already carries its final
+		// colour. The clauses live in Verify, so a scan that observes something wrong
+		// still lets the rest of the walk-up run and report.
+		RVSampleAuthoredAppearance();
 
 		g_eRVPhase = RVPhase::ReloadDawnmere;
 		g_iRVPhaseFrames = 0;
@@ -1450,6 +1646,20 @@ namespace
 		g_bRVSpawnOutsideCone  = false;
 		g_fRVHeightDelta       = 0.0f;
 
+		g_bRVAppearanceSampled      = false;
+		g_uRVAppearanceOverflow     = 0xffffffffu;
+		g_uRVGreyboxBlockCount      = 0u;
+		g_uRVGreyboxBlockOffGrey    = 0xffffffffu;
+		g_uRVNpcVisualCount         = 0u;
+		g_uRVNpcVisualStillGrey     = 0xffffffffu;
+		g_uRVNpcColoursSampled      = 0u;
+		g_bRVVesperVisualFound      = false;
+		g_xRVVesperSampledColour    = Zenith_Maths::Vector4(-1.0f);
+		g_xRVVesperExpectedColour   = Zenith_Maths::Vector4(-1.0f);
+		g_fRVVesperPaletteError     = 1.0e9f;
+		g_fRVVesperMinNpcSeparation = -1.0f;
+		g_fRVVesperGreySeparation   = -1.0f;
+
 		g_bRVReloadIssued    = false;
 		g_bRVSecondResolved  = false;
 		g_uRVSecondCount     = 0u;
@@ -1667,6 +1877,27 @@ namespace
 				g_bRVEarlyRaiseSeen ? "true" : "false", g_fRVEarlyRaiseDistance);
 
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_RivalVesper] appearance (W4): sampled=%s overflow=%u (want 0) "
+				"blocks=%u (want >0) "
+				"blocksOffGrey=%u (want 0) npcBodies=%u (want >1) npcStillGrey=%u "
+				"(want 0) otherNpcColours=%u (want >0) vesperFound=%s "
+				"vesperSampled=(%.4f, %.4f, %.4f, %.4f) "
+				"vesperExpected=(%.4f, %.4f, %.4f, %.4f) paletteError=%.6f "
+				"(want <= %.6f) vsGrey=%.4f vsNearestNpc=%.4f (both want >= %.4f)",
+				g_bRVAppearanceSampled ? "true" : "false", g_uRVAppearanceOverflow,
+				g_uRVGreyboxBlockCount, g_uRVGreyboxBlockOffGrey,
+				g_uRVNpcVisualCount, g_uRVNpcVisualStillGrey,
+				g_uRVNpcColoursSampled,
+				g_bRVVesperVisualFound ? "true" : "false",
+				g_xRVVesperSampledColour.x, g_xRVVesperSampledColour.y,
+				g_xRVVesperSampledColour.z, g_xRVVesperSampledColour.w,
+				g_xRVVesperExpectedColour.x, g_xRVVesperExpectedColour.y,
+				g_xRVVesperExpectedColour.z, g_xRVVesperExpectedColour.w,
+				g_fRVVesperPaletteError, fRV_PALETTE_TOLERANCE,
+				g_fRVVesperGreySeparation, g_fRVVesperMinNpcSeparation,
+				fZM_HUMAN_PALETTE_MIN_SEPARATION);
+
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_RivalVesper] spotted: observed=%s completed=%s frames=%u count=%u "
 				"(want 1) indicatorObserved=%s submits=%u (want >0) elapsedAtSubmit=%.3f "
 				"menuIdleAtSubmit=%s transitionIdleAtSubmit=%s raiseAtSubmit=%u "
@@ -1833,6 +2064,85 @@ namespace
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
 						"[ZM_RivalVesper] the purse (%u) plus the prize is at/over the cap -- "
 						"the credit delta would be a saturation artefact", g_uRVMoneyBefore);
+					bPassed = false;
+				}
+			}
+
+			// ===== KNOWN-LIMIT W4: THE AUTHORED APPEARANCE ======================
+			// The GUARD comes first and is separate on purpose: it names a MISSING
+			// OBSERVATION, while the clauses under it name a wiring violation. Without
+			// it a run whose scan found no blockout bodies at all would satisfy
+			// "blocksOffGrey == 0" having measured nothing.
+			if (!g_bRVAppearanceSampled || g_uRVAppearanceOverflow != 0u
+				|| g_uRVGreyboxBlockCount == 0u
+				|| g_uRVNpcVisualCount < 2u || g_uRVNpcColoursSampled == 0u
+				|| !g_bRVVesperVisualFound)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_RivalVesper] the W4 appearance scan did not observe BOTH "
+					"populations off the committed scene (sampled=%s overflow=%u blocks=%u "
+					"npcBodies=%u otherNpcColours=%u vesperFound=%s) -- every appearance "
+					"clause below would be vacuous, or would be judging a truncated subset",
+					g_bRVAppearanceSampled ? "true" : "false", g_uRVAppearanceOverflow,
+					g_uRVGreyboxBlockCount, g_uRVNpcVisualCount, g_uRVNpcColoursSampled,
+					g_bRVVesperVisualFound ? "true" : "false");
+				bPassed = false;
+			}
+			else
+			{
+				// THE BEHAVIOUR-PRESERVATION NET. Dozens of authored blockout entities
+				// across four committed scenes must not have changed colour.
+				if (g_uRVGreyboxBlockOffGrey != 0u)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] %u of %u NON-NPC blockout bodies are no longer "
+						"EXACTLY the shipped greybox grey -- W4 was supposed to repaint NPCs "
+						"only, and every wall/floor/door/lintel in the game wears this",
+						g_uRVGreyboxBlockOffGrey, g_uRVGreyboxBlockCount);
+					bPassed = false;
+				}
+				// ...and its complement, which is what stops the clause above passing
+				// on a build where the wiring was simply deleted.
+				if (g_uRVNpcVisualStillGrey != 0u)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] %u of %u authored NPC bodies came up wearing the "
+						"blockout grey -- their ZM_NpcData row never reached the material, so "
+						"the rival is still indistinguishable from the townsfolk",
+						g_uRVNpcVisualStillGrey, g_uRVNpcVisualCount);
+					bPassed = false;
+				}
+				if (g_fRVVesperPaletteError > fRV_PALETTE_TOLERANCE)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the authored rival is wearing (%.4f, %.4f, %.4f) but "
+						"his compiled ZM_NpcData row resolves to (%.4f, %.4f, %.4f) -- %.6f "
+						"apart. The greybox resolved the WRONG row (or no row at all)",
+						g_xRVVesperSampledColour.x, g_xRVVesperSampledColour.y,
+						g_xRVVesperSampledColour.z, g_xRVVesperExpectedColour.x,
+						g_xRVVesperExpectedColour.y, g_xRVVesperExpectedColour.z,
+						g_fRVVesperPaletteError);
+					bPassed = false;
+				}
+				if (g_fRVVesperGreySeparation < fZM_HUMAN_PALETTE_MIN_SEPARATION)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the rival's live colour is only %.4f from the "
+						"blockout grey (want >= %.4f) -- 'painted' and 'never wired' would "
+						"look the same on screen",
+						g_fRVVesperGreySeparation, fZM_HUMAN_PALETTE_MIN_SEPARATION);
+					bPassed = false;
+				}
+				// ★ THE ACTUAL W4 CLAIM, measured off LIVE materials rather than off the
+				// compiled table: a NUMERIC separation, never a `!=`.
+				if (g_fRVVesperMinNpcSeparation < fZM_HUMAN_PALETTE_MIN_SEPARATION)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] the rival's live colour is only %.4f from the "
+						"NEAREST of the %u other authored NPC bodies (want >= %.4f) -- known "
+						"limit W4 is that he must not read as one of the townsfolk",
+						g_fRVVesperMinNpcSeparation, g_uRVNpcColoursSampled,
+						fZM_HUMAN_PALETTE_MIN_SEPARATION);
 					bPassed = false;
 				}
 			}

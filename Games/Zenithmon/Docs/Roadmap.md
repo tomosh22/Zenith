@@ -131,8 +131,19 @@
   mattered:** the indicator counter the live tests read was a bare `++` beside the
   submit call, so deleting the call would have kept every test green with nothing drawn;
   the helper now RETURNS a value measured off Flux's own queues. Six compiled mutations
-  proved teeth, including the one that would have survived before that fix. The human S8
-  gate remains unsigned; **NEXT = W4, rival visual distinctness.**
+  proved teeth, including the one that would have survived before that fix.
+- **Known-limit W4 COMPLETE 2026-07-29 (ZM-D-160):** `ZM_NpcData::m_eHuman` is no longer
+  declared-and-ignored. A TOTAL palette in the existing `ZM_HumanAppearance` derives one
+  colour per `ZM_HUMAN_ID` from the SAME outfit/hair tables the SC3 albedo painter uses,
+  and `ZM_GreyboxVisual` resolves sibling `ZM_Interactable` -> row -> `m_eHuman` ->
+  palette while every non-NPC blockout keeps the shipped grey byte for byte. Measured on
+  the COMMITTED rival: `vsGrey=0.6366`, `vsNearestNpc=0.2124` against a 0.15 margin. Boot
+  **2712 -> 2716**, registry unchanged **48**, Null and full Vulkan **48/48**; four
+  compiled mutations red the wiring, the totality fallback, the hair term and the
+  separation metric. **Found and booked, not hidden:** `Npc_Wanderer` and `Npc_Warden`
+  both stand on `ZM_HUMAN_TOWN_ELDER`, so six authored rows wear five appearances -- the
+  rival is distinct from all five, and the one-token roster fix is named in Shortfalls
+  1.8. The human S8 gate remains unsigned; **NEXT = W5, per-NPC sampled feet heights.**
 - [ ] Rival battle 1
 
 *Gate:* automated save -> quit-to-FrontEnd -> continue restores position/party/flags exactly.

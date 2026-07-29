@@ -23,6 +23,8 @@
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
+#include "Zenithmon/Source/Data/ZM_NpcData.h"                     // ZM_GetNpcData -- the greybox's appearance row (W4)
+#include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"              // ZM_GetHumanPaletteColour (W4)
 #include "Zenithmon/Source/Graph/ZM_GraphAuthoring.h"             // the challenge graph's asset path + builder (S7 SC7)
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // ResetRuntimeStateForTests (between-tests hook)
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"      // ZM_TrainerEngagementLatch (between-tests hook)
@@ -63,6 +65,37 @@
 // The scene persists this marker while each runtime scene generation rebuilds
 // a unit-cube model on its owning entity. Replacing the marker with final art
 // later does not affect collision or traversal authoring.
+//
+// ---- Known-limit W4: it now wears its NPC's appearance ----------------------
+// An entity that ALSO carries a ZM_Interactable standing on a real ZM_NpcData row
+// is painted with that row's ZM_HUMAN_ID palette colour instead of the blockout
+// grey, which is what finally makes rival Vesper look like someone other than the
+// townsfolk. Everything else -- every ZM_QueueGreyboxBlock wall, floor, door and
+// lintel -- keeps EXACTLY the shipped grey/roughness/metallic it always had.
+//
+// ★ WHY THIS IS SAFE AT ORDER 107, GIVEN ZM_Interactable IS 113.
+// OnStart hooks run in ASCENDING serialization order WITHIN one entity
+// (Zenith_ComponentMetaRegistry::DispatchOnStart -> DispatchLifecycleHook over
+// m_xMetasSorted), so this component starts BEFORE ZM_Interactable does. That
+// would be fatal if the thing we read were established in ZM_Interactable::
+// OnStart -- which is exactly how the trainer id works, and exactly the defect
+// class Docs/Status.md records for TickTrainerSight/UpdateWander. It is NOT how
+// the NPC ROW works: m_eNpcId arrives either from ZM_Interactable::
+// ReadFromDataStream (which provably runs for every component of an entity
+// before any pending start is dispatched -- Zenith_SceneData_Serialization
+// deserializes and marks pending-start, Zenith_SceneData::DispatchPendingStarts
+// drains it on a later Update) or from the AddStep_Custom authoring step (which
+// runs with the editor Stopped, so no OnStart has fired at all). This component
+// deliberately reads ONLY the row, never GetTrainerId().
+//
+// The one thing 113-runs-later does cost us is ZM_Interactable::OnStart's
+// stale-row CLAMP: an out-of-range serialized id has not been reset to
+// ZM_NPC_NONE yet when we look. Hence the explicit bounds check below (ZM_GetNpcData
+// ASSERTS out of range) and hence ZM_GetHumanPaletteColour being TOTAL.
+//
+// NOTHING NEW IS SERIALIZED. WriteToDataStream still emits a single version
+// u_int, so the committed .zscen bytes cannot move; the colour is re-derived on
+// every load from bytes that were already there.
 class ZM_GreyboxVisual
 {
 public:
@@ -84,6 +117,26 @@ public:
 			return;
 		}
 
+		const Zenith_Maths::Vector4 xBaseColour = ResolveBaseColour();
+
+		// A RE-RUN must refresh, never restack. ReadFromDataStream clears
+		// m_bInitialised, so a live component that is re-read would OnStart again --
+		// and a second AddMeshEntry would leave this entity drawing two overlapping
+		// cubes with the OLD material still on the first one. m_bMeshEntryAdded is
+		// deliberately NOT cleared there: it records what this instance actually did
+		// to the model, which a stream read does not undo. A genuine scene load builds
+		// a FRESH component, so it starts false and takes the normal path below.
+		if (m_bMeshEntryAdded)
+		{
+			Zenith_MaterialAsset* pxOwnedMaterial = m_xMaterial.GetDirect();
+			if (pxOwnedMaterial != nullptr)
+			{
+				pxOwnedMaterial->SetBaseColor(xBaseColour);
+				m_bInitialised = true;
+			}
+			return;
+		}
+
 		m_xCubeGeometry = Zenith_MeshGeometryAsset::CreateUnitCube();
 		m_xMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 		Zenith_MeshGeometryAsset* pxGeometryAsset = m_xCubeGeometry.GetDirect();
@@ -93,8 +146,12 @@ public:
 			return;
 		}
 
+		// The NAME stays "ZM_Greybox" for the NPC bodies too, on purpose: it is the
+		// only handle a test TU has on these materials (ZM_GreyboxVisual is file-local
+		// to this TU and cannot be named from Tests/), and ZM_RivalVesperAuthored_Test
+		// uses it to find BOTH populations and prove they were kept apart.
 		pxMaterial->SetName("ZM_Greybox");
-		pxMaterial->SetBaseColor({ 0.52f, 0.55f, 0.60f, 1.0f });
+		pxMaterial->SetBaseColor(xBaseColour);
 		pxMaterial->SetRoughness(0.90f);
 		pxMaterial->SetMetallic(0.0f);
 
@@ -110,6 +167,7 @@ public:
 			return;
 		}
 		pxModel->AddMeshEntry(*pxGeometry, *pxMaterial);
+		m_bMeshEntryAdded = true;
 		m_bInitialised = true;
 	}
 
@@ -130,14 +188,49 @@ public:
 	void RenderPropertiesPanel()
 	{
 		ImGui::TextUnformatted("Replaceable S3 greybox unit cube");
+		// DERIVED live rather than read back off the material, so the panel shows
+		// what the NEXT start would paint -- which is the thing an author editing
+		// the sibling ZM_Interactable's row actually wants to see.
+		const Zenith_Maths::Vector4 xColour = ResolveBaseColour();
+		ImGui::Text("Appearance (W4, derived): %.3f, %.3f, %.3f",
+			xColour.x, xColour.y, xColour.z);
 	}
 #endif
 
 private:
+	// Known-limit W4. The appearance this blockout body wears RIGHT NOW: the
+	// sibling ZM_Interactable's authored ZM_NpcData row -> its ZM_HUMAN_ID -> the
+	// palette. Everything without a resolvable row -- every wall, floor, door,
+	// lintel and prop -- keeps the shipped blockout grey, which is the whole
+	// behaviour-preservation promise of this change.
+	Zenith_Maths::Vector4 ResolveBaseColour() const
+	{
+		const ZM_Interactable* pxInteractable =
+			m_xParentEntity.TryGetComponent<ZM_Interactable>();
+		if (pxInteractable == nullptr)
+		{
+			return ZM_GetHumanPaletteFallbackColour();
+		}
+		// ZM_NPC_NONE aliases ZM_NPC_COUNT, so one comparison rejects the sentinel
+		// and every garbage value together. It must come FIRST: ZM_GetNpcData
+		// asserts on an out-of-range id, and ZM_Interactable's own clamp has not run
+		// yet at order 107 (see the class comment).
+		const ZM_NPC_ID eNpcId = pxInteractable->GetNpcId();
+		if (eNpcId >= ZM_NPC_COUNT)
+		{
+			return ZM_GetHumanPaletteFallbackColour();
+		}
+		return ZM_GetHumanPaletteColour(ZM_GetNpcData(eNpcId).m_eHuman);
+	}
+
 	Zenith_Entity m_xParentEntity;
 	MeshGeometryHandle m_xCubeGeometry;
 	MaterialHandle m_xMaterial;
 	bool m_bInitialised = false;
+	// Runtime-only and NOT reset by ReadFromDataStream: it records whether THIS
+	// instance already pushed a mesh entry onto the model, which a stream read does
+	// not undo. See the re-run branch in OnStart.
+	bool m_bMeshEntryAdded = false;
 };
 
 // ============================================================================
