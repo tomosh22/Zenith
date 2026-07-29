@@ -108,6 +108,26 @@ W3 aspiration only, and stays booked in Shortfalls 1.8 (with ZM-D-159's "needs a
 claim corrected: `ZM_FollowCamera` is a Zenithmon component and the sole writer of the camera pose).
 **Next: S8, whose go/no-go gate FOLLOWS its four content items rather than preceding them.**
 
+**★★ A VISUAL AUDIT ON 2026-07-29 (ZM-D-168) FOUND FOUR THINGS THE GREEN SUITE CANNOT SEE. READ
+THIS BEFORE QUOTING ANY VISUAL CLAIM.** Ten windowed tests, 1212 captured frames, **all ten PASSED
+while every item below was true**:
+1. **NPC blockouts are invisible in play.** Rendered vertical faces sample **0.004-0.055** against
+   terrain at **0.44**; rendered NPC-to-NPC separations are **0.017-0.041** against the 0.15 margin
+   the tests certify at `vsNearestNpc=0.2124`. The tests sample the MATERIAL colour and never read a
+   pixel. **The cause is shading, not the roster:** the top face lights, the sides do not (near-
+   overhead sun, no meaningful ambient term), and sides are all a player sees. ZM-D-160/164 and this
+   file overstated the user-visible effect; the roster fix is correct but moot until shading is done.
+2. **Creature models and the battle HUD are UNVERIFIED by pixels** -- the arena renders as greybox
+   platforms + dome with `Fernfawn` in the hierarchy and the test passing, but no creature and no HUD
+   was observed. May be a sampling miss; do not repeat the claim until captured.
+3. **The spotted marker draws, but reads as a sphere + diagonal stroke,** not an exclamation mark.
+4. **Dawnmere reads as an open field, not a town** -- no buildings; the Trade Post and Care Center
+   are dialogue only.
+**Capture with `Tools\capture_viewport.ps1` (new). Use `-IntervalMs 60` or lower for short beats:**
+dt is pinned to 1/30, so a 0.35 s beat is ~11 frames and the rival's walk ~43 -- at 250 ms you sample
+one frame in eight. Three of the audit's four "not captured" gaps were sampling rate, not absence.
+Evidence: `Build/artifacts/evidence_final/` (git-ignored).
+
 **Historical note on how S7 nearly closed wrong -- keep this, it is the reason the stage is honest:**
 this file previously claimed "S7 COMPLETE" for five commits while
 previously claimed "S7 COMPLETE (items 1-4)"; the user REJECTED that claim on

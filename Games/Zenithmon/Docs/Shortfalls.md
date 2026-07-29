@@ -220,6 +220,50 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      injectivity), so a seventh NPC duplicating an appearance reds with no literal to
      remember. The fix also makes `uSharedPairs` unreachably zero, so that zero is now an
      explicit assertion rather than a counter that can no longer teach the unit anything.
+   - **★★ THE ROSTER FIX ABOVE IS REAL AND VISUALLY MOOT. THE ACTUAL DEFECT IS SHADING, AND ONLY A
+     SCREENSHOT COULD SAY SO (visual audit 2026-07-29, ZM-D-168).** Every NPC blockout renders as a
+     near-black slab in play. Measured off the framebuffer, vertical faces sample
+     **0.004-0.055** per channel while the terrain beside them sits at **0.44**, and rendered
+     pairwise separations between NPCs are **0.017-0.041** -- an order of magnitude BELOW the 0.15
+     margin `Npc_AuthoredAppearancesAreMutuallyDistinct` enforces and which
+     `ZM_RivalVesperAuthored_Test` reports as `vsNearestNpc=0.2124`. **Both tests are honest: they
+     sample `ZM_GreyboxVisual`'s MATERIAL BASE COLOUR and never read a rendered pixel.** The
+     separation guarantee holds in material space and evaporates on screen.
+     **★ THE CAUSE IS NOT THE PALETTE.** The blockout's TOP face renders light grey while its sides
+     are near-black, so the geometry is being shaded normally -- the sun is near-overhead and the
+     greybox material has effectively no ambient/indirect term, so vertical faces receive almost no
+     light. A player at eye level only ever sees vertical faces. **The fix is a shading/ambient one
+     and is far cheaper than the roster work this entry previously implied** -- and W4, ZM-D-160 and
+     ZM-D-164 all overstated their user-visible effect. Evidence:
+     `Build/artifacts/evidence_final/02_overworld_npc_blockout.png`.
+   - **★ UNVERIFIED BY PIXELS, AND PREVIOUSLY ASSERTED FROM TEST NAMES: creature models and the
+     battle HUD.** A windowed `ZM_BattleMenuWin_Test` capture shows the battle arena rendering as
+     greybox platforms + dome + sky, with the `Fernfawn` entity and all six biome dressings present
+     in the hierarchy and the test PASSING -- **but no creature model and no HP panel / text log /
+     Fight-Catch-Run menu was observed in any captured frame.** That may be a sampling miss (the
+     lit battle window is ~2-3 frames wide between fades) rather than an absence. Either way, "S4's
+     five procedural asset generators ship" and "the battle HUD renders" are currently claims about
+     test names, not about pixels. **Resolve with a targeted capture before either is repeated.**
+     Evidence: `Build/artifacts/evidence_final/03_battle_arena.png`.
+   - **★ THE SPOTTED MARKER RENDERS BUT DOES NOT READ AS AN EXCLAMATION MARK.** Captured live
+     (`04_spotted_marker.png`): a gold sphere with a diagonal stroke, rather than a vertical bar
+     above a dot. It is also, correctly, drawn over a trainer with no visual body in
+     `ZM_TrainerSightWalkUp_Test` (that fixture is deliberately collider-less). Folded into the
+     already-booked 1.8-3c work: the promotion off the debug-primitives channel should fix the SHAPE
+     at the same time, since both are "this is debug geometry, not a gameplay cue".
+   - **★ AN UNEXPLAINED NULL RESULT, RECORDED RATHER THAN WAVED AWAY.** A yellow-pixel scan across
+     133 frames of `ZM_RivalVesperAuthored_Test` at 100 ms found **zero** marker frames, while that
+     same run's log reports `spotted: frames=11 submits=11` and `settleIndicator=11`. The likely
+     cause is benign -- Vesper is ~7.5 m away, so the marker subtends fewer pixels than the scan
+     threshold -- but the alternative reading is a submit that does not draw, which is EXACTLY the
+     defect W3's review caught once already (the counter was a bare `++` beside the call). The
+     counter now derives from Flux's own queues, so a false positive is unlikely; it is nonetheless
+     **unconfirmed by eye at that distance.**
+   - **★ DAWNMERE READS AS AN OPEN FIELD, NOT A TOWN.** Terrain, grass and height variation render
+     well, but there are no buildings, paths or town structure -- the "Trade Post" and "Care Center"
+     exist only as dialogue and shop logic attached to NPC blockouts standing in grass. Not a
+     regression and not previously claimed as built, but it is what a first-time viewer sees, and
+     the S8 vertical slice will be judged on it. Evidence: `02_overworld_npc_blockout.png`.
    - **★ THE GDD'S COUNTER-STARTER RULE IS UNIMPLEMENTED AND WAS BOOKED NOWHERE UNTIL 2026-07-29.**
      The GDD specifies that rival battle 1 uses the starter that COUNTERS the player's choice.
      Vesper's `ZM_TrainerData` row carries a FIXED L5 KINDLET instead. Neither ZM-D-156 nor ZM-D-158

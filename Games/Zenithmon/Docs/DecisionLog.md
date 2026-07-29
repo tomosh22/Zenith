@@ -15,6 +15,93 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-29 -- ZM-D-168 -- The first VISUAL audit of the build, and what a 49/49 green suite does not see
+
+*(Documentation + one new `Tools/` script. No game source, no scene, no asset, no serialization
+version, no `.cpp` -- therefore **no `Build\regen.ps1`**. Triggered by the user asking to verify the
+roadmap visually instead of trusting reported numbers. That request was correct and it found things.)*
+
+### What was done
+
+Ten windowed automated tests were run under a new capture harness
+(`Tools/capture_viewport.ps1`), producing **684 + 528 frames**. **All ten PASSED while every finding
+below was true.** Curated evidence lives in `Build/artifacts/evidence_final/` (git-ignored).
+
+### ★ FINDING 1 -- THE NPC BLOCKOUTS ARE INVISIBLE IN PLAY, AND TWO SHIPPED ENTRIES OVERSTATED THIS
+
+`ZM_RivalVesperAuthored_Test` reports `vsNearestNpc=0.2124` against a 0.15 margin, and
+`Npc_AuthoredAppearancesAreMutuallyDistinct` enforces the same floor across the roster. Measured off
+the **framebuffer** instead: NPC vertical faces sample **0.004-0.055** per channel against terrain at
+**0.44**, with rendered pairwise separations of **0.017-0.041** -- roughly an order of magnitude
+below the margin the tests certify.
+
+**Neither test is wrong. Both sample `ZM_GreyboxVisual`'s MATERIAL BASE COLOUR and never read a
+rendered pixel.** The distinctness guarantee is a statement about materials that was reported --
+by this orchestrator, in ZM-D-160, ZM-D-164 and Status.md -- as a statement about what the player
+sees ("the rival no longer looks like a townsperson"). **That inference was unwarranted and is
+retracted.**
+
+**★ AND THE DIAGNOSIS IS CHEAPER THAN THE FIX ALREADY SHIPPED.** The blockout's TOP face renders
+light grey while its sides render near-black, so shading is functioning: the sun is near-overhead and
+the greybox material has effectively no ambient/indirect term, so vertical faces -- **the only faces
+a player at eye level ever sees** -- receive almost no light. This is a SHADING defect, not a roster
+or palette defect. ZM-D-164's roster work (a new `ZM_HUMAN_TOWN_WARDEN`) remains correct and
+worth keeping, but **it changes nothing on screen until the shading is addressed**, and
+`Shortfalls.md` 1.8 framed the whole problem as a roster collision.
+
+### ★ FINDING 2 -- CREATURE MODELS AND THE BATTLE HUD ARE UNVERIFIED BY PIXELS
+
+A windowed battle capture shows the arena as greybox platforms + dome + sky, with `Fernfawn` and all
+six biome dressings present in the hierarchy and the test PASSING -- and **no creature model, HP
+panel, text log or action menu observed in any captured frame.** The lit battle window is only ~2-3
+frames wide between fades, so this may be a sampling miss rather than an absence. **It is recorded as
+UNVERIFIED either way, because "S4's five asset generators ship" and "the battle HUD renders" have
+been repeated from test names rather than from pixels.**
+
+### ★ FINDING 3 -- THE SPOTTED MARKER DRAWS, BUT NOT AS AN EXCLAMATION MARK
+
+Captured live: a gold sphere with a diagonal stroke, not a vertical bar above a dot. Folded into the
+already-booked 1.8-3c promotion off the debug-primitives channel -- the shape and the channel are the
+same problem wearing two hats.
+
+Separately, a yellow-pixel scan over 133 frames of `ZM_RivalVesperAuthored_Test` found **zero**
+marker frames while that run logged `submits=11`. Most probably a pixel-count threshold at 7.5 m, but
+it is **unconfirmed by eye at that distance** and is recorded rather than assumed away, because a
+submit-that-does-not-draw is the exact defect W3's review caught once before.
+
+### ★ THE METHOD FINDING, WHICH IS THE POINT OF THE ENTRY
+
+This is the **fourth** time in one session that a check could not see the thing it was credited with
+proving:
+1. `uMIN_DISTINCT_APPEARANCES = 5u` could not red the collision it guarded (ZM-D-164);
+2. a boot unit integrated a frictionless point mass and graded arrival with the positions it had just
+   integrated (ZM-D-167);
+3. a failure message named "timeout" from a distance clause with no access to the clock (ZM-D-167);
+4. **this one -- and unlike the other three it was NOT caught by making it fail on purpose. It
+   survived review and was written into the DecisionLog as fact.**
+
+**The rule this yields: a test that samples an INPUT to rendering (a material, a transform, a
+submitted count) is evidence about that input and nothing further. Rendering claims need pixels.**
+The Zenithmon suite has no pixel-level assertion anywhere, so **no amount of green in it can support
+a visual claim** -- which is precisely why the project's stage gates require human visual sign-off,
+and why S6/S7 having no visual gate left this gap open for two whole stages.
+
+### Tooling landed with it
+
+`Tools/capture_viewport.ps1`. `AgentBriefing.md` described the SetWindowPos + CopyFromScreen recipe
+but no script implemented it. It **detects** the viewport origin per run rather than assuming it (the
+editor layout scales with window size, so an offset measured at one size is wrong at another -- the
+first capture pass produced images that were ~30% hierarchy panel), and its header records that the
+harness pins dt to 1/30, so a 0.35 s beat is ~11 frames and the rival's walk ~43: **at 250 ms you
+sample one frame in eight and will miss them.** Three of this audit's four "not captured" gaps were
+sampling rate, not absence.
+
+- **Tests that lock it:** none, and that is the finding. No test in the suite asserts anything about
+  a rendered pixel.
+- **Reversibility:** n/a (documentation + an additive tool).
+
+---
+
 ## 2026-07-29 -- ZM-D-167 -- S7 item 3 SC3: the rival WALKS, and S7 CLOSES
 
 *(No new `.cpp`, folder, ECS order or serialization version -- `uSERIALIZATION_VERSION` stays `2u`,
