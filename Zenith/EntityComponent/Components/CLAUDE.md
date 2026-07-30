@@ -12,6 +12,7 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_TweenComponent` | Lightweight property tween system (animates position, scale, rotation over time) |
 | `Zenith_AnimatorComponent` | Skeletal animation **forwarding handle** (auto-discovers skeleton from ModelComponent). The `Flux_AnimationController` lives in `Flux_AnimationControllerStore` (`g_xEngine.AnimationControllers()`), keyed by EntityID — see "AnimatorComponent is a forwarding handle" below |
 | `Zenith_LightComponent` | Dynamic lights (directional, point, spot) |
+| `Zenith_SunComponent` | Exactly-one scene sun authority (direction or time-of-day orbit only; solar colour/radiance derives in Flux) |
 | `Zenith_ColliderComponent` | Physics collision shapes (Jolt integration) |
 | `Zenith_TerrainComponent` | Heightmap-based terrain with streaming |
 | `Zenith_InstancedMeshComponent` | GPU-instanced mesh rendering |
@@ -105,7 +106,7 @@ Components must satisfy the `Zenith_Component` concept defined in `Zenith_Scene.
 Component serialization order is determined by the explicit `order` argument passed to `RegisterComponent<T>(name, order)` at registration time (`Zenith_ComponentMeta_Registration.cpp` for the built-ins). Lower values serialize first. This matters for dependencies (e.g., TerrainComponent must serialize before ColliderComponent that depends on terrain data).
 
 Current order (centralised in `Zenith_ComponentMeta_Registration.cpp`):
-Transform (0), Model (10), Tween (12), Animator (15), Camera (20), Light (25),
+Transform (0), Model (10), Tween (12), Animator (15), Camera (20), Light (25), Sun (26),
 Terrain (40), Collider (50), Graph (60), UI (70), InstancedMesh (80),
 ParticleEmitter (85), AIAgent (90), Attachment (95), NavMesh (96).
 

@@ -70,7 +70,7 @@ Some tests need a GPU (model rendering, material upload, etc) and
 register with `m_bRequiresGraphics = true`. In headless mode the
 harness counts these as PASSED-skipped — the runner's summary counts
 skipped graphics tests as passed, so the reported pass count includes
-tests that were never actually executed (currently 12 of the suite
+tests that were never actually executed (currently 13 of the suite
 require graphics).
 
 **Manual-only tests** (the 8 `PersonalityPlaythrough_*` balance harnesses)
@@ -379,6 +379,7 @@ APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 | Reagents | `Test_P2Reagent_UniquePickupChannel`, `Test_P2Reagent_BogWaterEvaporates`, `Test_P2Reagent_BellSoulRingsBell`, `Test_P2BellSoul_*` |
 | Forge | `Test_P2Forge_*` (4 tests: recipe variants [Iron→SkeletonKey, Wood→Spike], audible-at-30m, priest-hears-the-hammer) |
 | Fog memory | `Test_P2Fog_AelfricNotRevealed`, `Test_P2Fog_LightAddsHole`, `Test_P2Fog_MemoryDimsAfter10s`, `Test_P2Fog_MemoryVisibilityCurve`, `Test_P2Fog_MemoryRasterizeGrid`, `Test_DPFogPass_VisualOutput` (graphics; screenshot pixel-diff via `DP_TestTGAHelpers.h`) |
+| Scene sun | `Test_SceneSunAuthority_Runtime` (graphics; midnight key, runtime IBL convergence + IsReady latch, automatic CSM refit) |
 | Minimap | `Test_T0Minimap_PureMaths`, `Test_DP_Minimap_RevealAndTracking` |
 | Camera modes | `Test_DPCamera_ModeTransition`, `OrbitCameraFollowsPossession_Test` (in Test_GameplaySystems.cpp; replaced `OrbitCameraStaysFixed_Test` when the third-person mode retired the never-follow contract) |
 | HUD | `Test_P2HUD_TutorialHint` (9 cases), `Test_P2HUD_DetailedReadouts` (9 clusters) |

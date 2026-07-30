@@ -14,6 +14,24 @@ pipeline were removed. Procgen (`Source/DPProcLevel/`) is now the only
 gameplay surface, and it is bit-deterministic across `/fp:fast` Debug +
 Release builds (verified by `Test_ProcLevel_DeterminismCheck`).
 
+## Night lighting authority
+
+`ProcLevel.zscen` authors one engine `Zenith_SunComponent` named `NightSun` at
+time-of-day angle 270 degrees (midnight). The component owns solar geometry
+only: the sun travels upward from below the horizon, atmospheric
+transmittance derives a zero direct key, and the same dark sky is reconvolved
+into IBL. There is no DP sun colour, sun intensity, exposure compensation, or
+ambient multiplier. Visibility comes from the scene's four ordinary authored
+point lights and emissive gameplay materials; DP authors no separate moon.
+Those dynamic lights are sanctioned scene radiance in the same sense as any
+lamp, not a second solar source.
+
+`Test_SceneSunAuthority_Runtime` proves the committed midnight datum reaches
+frame constants, changing it to noon restarts and converges the amortised IBL
+state machine while `IsReady()` stays latched, and the same direction change
+refits CSM. `Test_DPFogPass_VisualOutput` remains the pixel lock on the shipped
+night/fog result.
+
 ## File map
 
 ```

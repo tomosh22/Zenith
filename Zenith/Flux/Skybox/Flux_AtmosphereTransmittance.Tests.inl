@@ -14,8 +14,8 @@
 
 namespace
 {
-	// The shipped mid-morning sun (dbg_SunDir): travel direction into the
-	// scene, ~46 degrees elevation.
+	// The engine fallback mid-morning sun: travel direction into the scene,
+	// ~46 degrees elevation. Scenes with no Zenith_SunComponent resolve here.
 	const Zenith_Maths::Vector3 g_xTestSunTravel(-0.4f, -0.7f, -0.55f);
 }
 

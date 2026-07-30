@@ -38,6 +38,85 @@ namespace IBLConfig
 	constexpr u_int uPASSES_PER_FRAME = 8;
 }
 
+// Pure cursor logic behind the frame-amortised regeneration. Keeping the
+// transition function independent of render-graph objects makes restart and
+// convergence semantics directly unit-testable.
+namespace Flux_IBLRegen
+{
+	enum PassType : u_int
+	{
+		PASS_NONE,
+		PASS_IRRADIANCE,
+		PASS_PREFILTER
+	};
+
+	struct Pass
+	{
+		PassType m_eType = PASS_NONE;
+		u_int m_uMip = 0u;
+		u_int m_uFace = 0u;
+	};
+
+	inline void MarkDirty(bool bFirstGeneration, bool& bDirty,
+		IBL_RegenState& eState, u_int& uFace, u_int& uMip)
+	{
+		bDirty = true;
+		if (!bFirstGeneration && eState != IBL_REGEN_IDLE)
+		{
+			// A second lighting change while old convolution work is in flight
+			// must restart at irradiance face zero. Continuing would combine
+			// faces generated from two different skies and then clear dirty.
+			eState = IBL_REGEN_IRRADIANCE;
+			uFace = 0u;
+			uMip = 0u;
+		}
+	}
+
+	inline Pass Next(bool& bDirty, IBL_RegenState& eState, u_int& uFace, u_int& uMip)
+	{
+		if (eState == IBL_REGEN_IDLE)
+		{
+			if (!bDirty)
+			{
+				return Pass();
+			}
+			eState = IBL_REGEN_IRRADIANCE;
+			uFace = 0u;
+			uMip = 0u;
+		}
+
+		if (eState == IBL_REGEN_IRRADIANCE)
+		{
+			Pass xPass;
+			xPass.m_eType = PASS_IRRADIANCE;
+			xPass.m_uFace = uFace++;
+			if (uFace >= 6u)
+			{
+				eState = IBL_REGEN_PREFILTER;
+				uFace = 0u;
+				uMip = 0u;
+			}
+			return xPass;
+		}
+
+		Pass xPass;
+		xPass.m_eType = PASS_PREFILTER;
+		xPass.m_uMip = uMip;
+		xPass.m_uFace = uFace++;
+		if (uFace >= 6u)
+		{
+			uFace = 0u;
+			uMip++;
+			if (uMip >= IBLConfig::uPREFILTER_MIP_COUNT)
+			{
+				eState = IBL_REGEN_IDLE;
+				bDirty = false;
+			}
+		}
+		return xPass;
+	}
+}
+
 // Phase 9: state + behaviour for IBL subsystem.
 class Flux_IBLImpl
 {

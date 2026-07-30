@@ -26,13 +26,15 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   traversable Dawnmere + live PlayerHome door round trip; S4's five procedural asset generators +
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
-- **★ CURRENT VERIFIED BASELINE (re-observed 2026-07-30 at ZM-D-171, every figure off an
+- **★ CURRENT VERIFIED BASELINE (re-observed 2026-07-30 at ZM-D-172, every figure off an
   OBSERVED line):** ZM headless registry **51 passed / 0 failed**; full windowed Vulkan
-  **51 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2751 ran / 2750 passed / 0 failed /
-  1 skipped** (`zm-tests.yml` pinned to **2751**); engine boot gate **1173 / 1172 / 0 / 1**
-  (`run_unit_gate.ps1` default `-Baseline 1173`). ZM-D-171 moved all four (registry +1 =
-  `ZM_ShellLighting_Test`; both unit gates +9 engine lighting units) and updated every pinned
-  site in the same commit. The single skip in each is the quarantined
+  **51 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2759 ran / 2758 passed / 0 failed /
+  1 skipped** (`zm-tests.yml` pinned to **2759**); engine boot gate **1181 / 1180 / 0 / 1**
+  (`run_unit_gate.ps1` default `-Baseline 1181`). ZM-D-171 moved the registry 50 -> 51 via
+  `ZM_ShellLighting_Test` and moved both boot-unit baselines +9 to 2751/1173. ZM-D-172 leaves the
+  registry at 51 and moves both boot-unit baselines +8 for scene-Sun and IBL-regeneration units,
+  to 2759/1181; every pinned site moved from an OBSERVED line in the same commit. The single skip
+  in each is the quarantined
   `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
   **Every "36 tests / 2392 units" figure elsewhere in this document is stale by construction --
   trust this line.** ★ This bullet previously read 2731 while `Status.md` read 2722 and the

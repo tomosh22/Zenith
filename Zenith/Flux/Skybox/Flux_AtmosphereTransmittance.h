@@ -114,7 +114,8 @@ namespace Flux_AtmosphereTransmittance
 	}
 
 	// Per-channel sun transmittance at the reference height for a sun whose
-	// direction of TRAVEL (into the scene, matching dbg_SunDir / GetSunDir)
+	// direction of TRAVEL (into the scene, matching Zenith_SunComponent /
+	// Flux_GraphicsImpl::GetSunDir)
 	// is xSunDirTravel. Coefficients come from AtmosphereConfig scaled by the
 	// same runtime Rayleigh/Mie scales the sky shaders receive.
 	inline Zenith_Maths::Vector3 ComputeSunTransmittance(

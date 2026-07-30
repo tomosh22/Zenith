@@ -84,13 +84,12 @@ static bool Step_MaterialEntityShowcase(int iFrame)
 	if (iFrame >= 8)
 	{
 		g_xEngine.FluxRenderer().GetRenderGraph().SetPassForceDisabled("DP_Fog", true);
-		// The DP night scene leans on fog to dim a bright starfield-IBL + four
-		// 2000-lumen lights; with fog off it blows out. The IBL intensity knob
-		// was deleted (IBL is energy-locked to the sky now), so this DIAGNOSTIC
-		// capture disables IBL outright — the material booth runs on the flat
-		// diagnostic ambient + its own controlled lights. Pin the HDR exposure
-		// low (defeats auto-exposure) and dim the corner lights so the materials
-		// read at their true albedo.
+		// This DIAGNOSTIC material booth isolates the authored point lights from
+		// even DP's physically dark midnight sky/IBL. The IBL intensity knob is
+		// deleted (IBL is energy-locked to the sky), so the capture disables IBL
+		// outright and runs on the flat diagnostic ambient + controlled lights.
+		// Pin exposure low and dim the corner lights so materials read at their
+		// true albedo; these values do not author the scene's shipped night look.
 		Zenith_GraphicsOptions::Get().m_bIBLEnabled = false;
 		g_xEngine.HDR().SetExposure(0.5f);
 		g_xEngine.HDR().SetExposureRange(0.5f, 0.5f);

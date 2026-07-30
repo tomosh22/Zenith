@@ -201,6 +201,11 @@ FreezeExposure, ShowHistogram).
   (`AtmosphereConfig::fSUN_INTENSITY = 7`): the sky is the brightest
   non-emissive content and must not clip into the last bin (the old range 12
   topped out at 4.0 and skewed the metered average).
+- **Scene sun authoring does not add an exposure or energy knob.** A
+  `Zenith_SunComponent` authors direction/time-of-day only. Low-sun warmth,
+  sunset dimming, and a zero key below the horizon derive from atmospheric
+  transmittance; the histogram maximum continues to derive from the same
+  engine anchor, independent of scene direction.
 - **There is no exposure seed value.** The exposure buffer seeds current
   exposure with a `<= 0` "unmetered" sentinel; `Flux_Adaptation.slang` SNAPS to
   its first computed target (or identity while nothing is metered), so the

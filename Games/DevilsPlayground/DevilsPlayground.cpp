@@ -1127,6 +1127,16 @@ namespace
 		// are known.
 		AuthorDPGameSceneFrame();
 
+		// ------ Scene-authored night sun ------------------------------------
+		// Midnight places the solar source below the horizon. Flux derives a
+		// zero direct key from planet-occluded atmospheric transmittance and
+		// re-convolves the dark sky into IBL; there is no authored RGB or light
+		// multiplier. DP's honest night illumination is the four authored point
+		// lights below plus emissive gameplay materials (no separate moon key).
+		g_xEngine.EditorAutomation().AddStep_CreateEntity("NightSun");
+		g_xEngine.EditorAutomation().AddStep_AddComponent("Sun");
+		g_xEngine.EditorAutomation().AddStep_SetSunTimeOfDay(270.0f, 35.0f);
+
 		// ------ Ground plane --------------------------------------------------
 		// SM_Cube is a unit cube anchored at its (0, 0, 0) corner (mesh
 		// bounds [0, 1]³ -- see the .gltf min/max). The visible mesh is
@@ -1153,10 +1163,10 @@ namespace
 			g_xEngine.EditorAutomation().AddStep_SetModelMaterial(0, pxGround);
 		}
 
-		// ------ Four corner lights for general visibility ---------------------
+		// ------ Four corner lights for night visibility -----------------------
 		// Hand-authored point lights at high y so the procgen-spawned walls
-		// + items light up across the bounds. Intensity tuned to a candle /
-		// torch range so the scene isn't over-bloomed.
+		// + items read locally after the physical sun/sky go dark. These are
+		// ordinary authored-radiance scene lights, not a second solar source.
 		const float afLightXZ[4][2] = {
 			{ 25.0f, 25.0f }, { 75.0f, 25.0f },
 			{ 25.0f, 75.0f }, { 75.0f, 75.0f },

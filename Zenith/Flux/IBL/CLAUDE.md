@@ -23,8 +23,10 @@ Image-Based Lighting system for realistic ambient lighting and reflections. Uses
   `AtmosphereConfig::fSUN_INTENSITY` (the engine's ONE radiometric anchor) ×
   per-channel transmittance along the sun ray
   (`Flux/Skybox/Flux_AtmosphereTransmittance.h`, unit-tested + mutation-proven).
-  Sun, sky and ambient therefore cannot drift apart, and there is no tunable
-  sun colour.
+  The ray direction comes from the winning scene `Zenith_SunComponent` (or the
+  exact historical engine fallback if no scene authors one); that component
+  carries direction/time-of-day geometry only. Sun, sky and ambient therefore
+  cannot drift apart, and there is no tunable sun colour or radiance.
 
 ## Architecture
 
@@ -135,6 +137,16 @@ and `UpdateGraphPassEnables()` enables at most `uPASSES_PER_FRAME` (8) of the co
 passes per frame so the cost is spread out. `IsReady()` returns true once all IBL textures have been
 generated at least once (`m_bIBLReady`).
 
+**Runtime sun changes:** `Flux_GraphicsImpl` compares the resolved scene-sun
+direction each frame and calls `MarkAllProbesDirty()` + `UpdateSkyIBL()` on a
+change. A complete refresh is 48 passes (6 irradiance + 42 prefilter) and
+therefore converges in **6 frames** at 8 passes/frame. `IsReady()` stays latched
+while the previous complete cubes remain usable. Dirtying during an in-flight
+prefilter restarts at irradiance face 0; continuing the old cursor would mix
+two skies and then incorrectly clear dirty. `IBLRegeneration::*` units and
+DP's windowed `Test_SceneSunAuthority_Runtime` lock this behaviour, including
+the CSM refit that happens from the same per-frame direction.
+
 ## IBL Math (Split-Sum Approximation)
 
 The specular IBL integral is split into two parts:
@@ -214,7 +226,7 @@ xBinder.BindSRV(xPrefilteredBinding, &g_xEngine.IBL().GetPrefilteredMapSRV());
 
 ### Trigger IBL update when lighting changes:
 ```cpp
-// When sun direction changes significantly
+// Flux_GraphicsImpl does this automatically when scene authority changes.
 g_xEngine.IBL().MarkAllProbesDirty();
 g_xEngine.IBL().UpdateSkyIBL();
 ```

@@ -188,19 +188,6 @@ public:
 	float GetFOV();
 	float GetAspectRatio();
 
-	// Opt-in per-scene directional-sun override (default OFF → games use the
-	// global dbg_SunDir with the DERIVED atmosphere-transmittance sun colour).
-	// xColourRadiance.w is the HDR radiance scalar. Lets a scene pose an
-	// authored cinematic key without changing globals — the one sanctioned way
-	// to light with a non-physical sun.
-	void SetSunOverride(const Zenith_Maths::Vector3& xDir, const Zenith_Maths::Vector4& xColourRadiance)
-	{
-		m_bSunOverride = true;
-		m_xSunDirOverride = xDir;
-		m_xSunColourOverride = xColourRadiance;
-	}
-	void ClearSunOverride() { m_bSunOverride = false; }
-
 	bool BuildCameraMatrices(FrameConstants& xConstants);
 
 	// Dense allocator for bindless-table slots (set 2, g_axTextures[]). Initialised
@@ -299,10 +286,10 @@ public:
 	float                       m_fRenderScaleRequested      = 1.0f;
 	float                       m_fRenderScaleActive         = 1.0f;
 	Zenith_Maths::UVector2      m_xRenderDimsThisBuild       = Zenith_Maths::UVector2(0u, 0u);
-	// Per-scene sun override (see SetSunOverride). Default OFF.
-	bool                        m_bSunOverride = false;
-	Zenith_Maths::Vector3       m_xSunDirOverride = { 0.0f, -1.0f, 0.0f };
-	Zenith_Maths::Vector4       m_xSunColourOverride = { 1.0f, 1.0f, 1.0f, 1.0f };
+	// Last resolved scene-authority direction. A runtime change dirties IBL;
+	// shadows refit every frame from GetSunDir().
+	bool                        m_bHasResolvedSunDirection = false;
+	Zenith_Maths::Vector3       m_xLastResolvedSunDirection = Zenith_Maths::Vector3(0.0f);
 	Flux_BindingGroupLayout     m_xFrameConstantsLayout;
 
 	// Graph-owned transient render-target handles + graph back-ref. G-buffer/

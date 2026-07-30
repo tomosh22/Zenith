@@ -1,12 +1,14 @@
 #include "Zenith.h"
 
 #include "EntityComponent/Components/Zenith_LightComponent.h"
+#include "EntityComponent/Components/Zenith_SunComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 
 // Wave 3: EC-side render-gather (publishes neutral light data to the renderer so
 // Flux_DynamicLights no longer #includes Zenith_LightComponent.h / TransformComponent.h).
 #include "Core/Zenith_RenderGather.h"
+#include "Core/Zenith_SunAuthority.h"
 #include "Core/Zenith_Engine.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -332,9 +334,11 @@ void Zenith_LightComponent::RenderTransformOffsets()
 // (they need the camera frustum + Flux buffers) — this only does the typed
 // query + raw field extraction the renderer previously did itself.
 // ---------------------------------------------------------------------------
+static Zenith_SceneSystem& LightingScenes() { return g_xEngine.Scenes(); }
+
 static void Zenith_GatherLightsImpl(Zenith_Vector<Zenith_LightRenderData>& xOut)
 {
-	g_xEngine.Scenes().QueryAllScenes<Zenith_LightComponent, Zenith_TransformComponent>()
+	LightingScenes().QueryAllScenes<Zenith_LightComponent, Zenith_TransformComponent>()
 		.ForEach([&xOut](Zenith_EntityID uID, Zenith_LightComponent& xLight, Zenith_TransformComponent&)
 	{
 		Zenith_LightRenderData xData;
@@ -360,5 +364,75 @@ static void Zenith_GatherLightsImpl(Zenith_Vector<Zenith_LightRenderData>& xOut)
 // Published to the renderer. Constant-initialised, so referencing g_pfnZenithLightGather
 // from Flux_DynamicLights pulls this TU in (no static-init-order or dead-strip hazard).
 Zenith_LightGatherFn g_pfnZenithLightGather = &Zenith_GatherLightsImpl;
+
+// Sun authority is gathered beside ordinary lights so the whole lighting
+// extraction boundary shares this TU's single, grandfathered scene-system
+// reach. Zenith_SunComponent itself remains a data-only ECS component.
+namespace
+{
+	uint64_t s_ulLastSunConflictSignature = 0u;
+
+	bool SunEntityPrecedes(Zenith_EntityID xCandidate, u_int uWinnerIndex, u_int uWinnerGeneration)
+	{
+		return xCandidate.m_uIndex < uWinnerIndex
+			|| (xCandidate.m_uIndex == uWinnerIndex && xCandidate.m_uGeneration < uWinnerGeneration);
+	}
+
+	void GatherSunAuthority(Zenith_SunAuthorityData& xOut)
+	{
+		xOut = Zenith_SunAuthorityData();
+		Zenith_SceneSystem& xScenes = LightingScenes();
+		Zenith_SceneData* pxActiveScene = xScenes.GetActiveSceneData();
+		u_int uWinnerGeneration = 0xFFFFFFFFu;
+		uint64_t ulConflictSignature = 1469598103934665603ull;
+
+		xScenes.QueryAllScenes<Zenith_SunComponent>().ForEach(
+			[&](Zenith_EntityID xID, Zenith_SunComponent& xSun)
+			{
+				xOut.m_uAuthoredCount++;
+				ulConflictSignature ^= xID.GetPacked();
+				ulConflictSignature *= 1099511628211ull;
+
+				const bool bInActiveScene = pxActiveScene != nullptr
+					&& xScenes.GetSceneDataForEntity(xID) == pxActiveScene;
+				const bool bWins = !xOut.m_bAuthored
+					|| (bInActiveScene && !xOut.m_bSourceIsInActiveScene)
+					|| (bInActiveScene == xOut.m_bSourceIsInActiveScene
+						&& SunEntityPrecedes(xID, xOut.m_uSourceEntityIndex, uWinnerGeneration));
+				if (!bWins)
+				{
+					return;
+				}
+
+				xOut.m_bAuthored = true;
+				xOut.m_xDirection = xSun.GetWorldDirection();
+				xOut.m_uSourceEntityIndex = xID.m_uIndex;
+				uWinnerGeneration = xID.m_uGeneration;
+				xOut.m_bSourceIsInActiveScene = bInActiveScene;
+			});
+
+		if (xOut.m_uAuthoredCount > 1u)
+		{
+			ulConflictSignature ^= (static_cast<uint64_t>(xOut.m_uSourceEntityIndex) << 32)
+				| uWinnerGeneration;
+			ulConflictSignature ^= xOut.m_bSourceIsInActiveScene ? 0xA5A5A5A5A5A5A5A5ull : 0u;
+			if (ulConflictSignature != s_ulLastSunConflictSignature)
+			{
+				Zenith_Warning(LOG_CATEGORY_ECS,
+					"Sun authority conflict: %u loaded Zenith_SunComponents; entity %u wins (%s). "
+					"Rule: active scene first, then lowest stable entity ID.",
+					xOut.m_uAuthoredCount, xOut.m_uSourceEntityIndex,
+					xOut.m_bSourceIsInActiveScene ? "active scene" : "no active-scene Sun");
+				s_ulLastSunConflictSignature = ulConflictSignature;
+			}
+		}
+		else
+		{
+			s_ulLastSunConflictSignature = 0u;
+		}
+	}
+}
+
+Zenith_SunAuthorityGatherFn g_pfnZenithSunAuthorityGather = &GatherSunAuthority;
 
 #include "EntityComponent/Components/Zenith_LightComponent.Tests.inl"

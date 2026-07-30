@@ -3,19 +3,20 @@
 **Last updated:** 2026-07-30
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (RE-OBSERVED 2026-07-30 at ZM-D-171, on fresh builds of both
+down this file (RE-OBSERVED 2026-07-30 at ZM-D-172, on fresh builds of both
 configs):** ZM headless registry **51 passed / 0 failed**; full windowed
-Vulkan **51 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2751 ran / 2750 passed / 0
-failed / 1 skipped** (`zm-tests.yml` pinned to **2751**); engine boot unit gate,
-Null Combat, **1173 ran / 1172 passed / 0 failed / 1 skipped**
-(`run_unit_gate.ps1` default `-Baseline 1173`). The 1 skipped in each is the
+Vulkan **51 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2759 ran / 2758 passed / 0
+failed / 1 skipped** (`zm-tests.yml` pinned to **2759**); engine boot unit gate,
+Null Combat, **1181 ran / 1180 passed / 0 failed / 1 skipped**
+(`run_unit_gate.ps1` default `-Baseline 1181`). The 1 skipped in each is the
 quarantined `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
-**ZM-D-171 moved ALL FOUR figures** -- the registry 50 -> 51 (`ZM_ShellLighting_Test`, the
-as-shipped ambient pixel probe) and both unit baselines +9 (7 `AtmosphereTransmittance` + 2
-`HDRExposure` engine units), so every pinned site was updated from its OBSERVED line in the same
-commit: this block, `zm-tests.yml` `-Baseline`, `Shortfalls.md`'s bullet, and
-`run_unit_gate.ps1`'s default. It was an ENGINE commit (physically-grounded lighting) and took
-the full cross-game gate -- see the ZM-D-171 DecisionLog entry for the observed matrix.
+**ZM-D-171 established registry 51 and baselines 2751/1173**: registry 50 -> 51 via
+`ZM_ShellLighting_Test`, while both boot baselines moved +9. **ZM-D-172 leaves the ZM registry at
+51 and moves only the boot baselines +8**, for the scene-Sun and IBL-regeneration units: 2751 ->
+2759 and 1173 -> 1181. Every pinned site was updated from an OBSERVED line in the same commit:
+this block, `zm-tests.yml` `-Baseline`, `Shortfalls.md`'s bullet, and
+`run_unit_gate.ps1`'s default. Both were ENGINE changes and took the full cross-game gate; see
+ZM-D-171 and ZM-D-172 for their observed matrices.
 
 **★ THIS BLOCK AND `zm-tests.yml`'s PIN MOVE TOGETHER OR NOT AT ALL, and on
 2026-07-29 they did not.** This block read 2722 while the workflow was already

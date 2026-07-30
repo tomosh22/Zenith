@@ -15,6 +15,105 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-30 -- ZM-D-172 -- Scene-authored Sun geometry replaces global/imperative overrides; colour remains atmosphere-derived
+
+*(ENGINE change across EntityComponent, Flux graphics/IBL, editor automation, and two client
+games. New `.cpp` files required `Build\regen.ps1`; the final `zenith regen --check` reports in
+sync. No SSR source was touched. All observations below are from 2026-07-30 final builds.)*
+
+### Decision
+
+1. **Use a dedicated `Zenith_SunComponent`, not a flag on `Zenith_LightComponent`.** A normal
+   Light intentionally serializes and exposes colour/intensity for point, spot, studio, moon and
+   other authored emitters. Reusing it would make forbidden solar radiance editable by
+   construction. Sun instead serializes geometry only: normalized travel direction, or a
+   time-of-day angle plus orbit azimuth (`0` sunrise, `90` noon, `180` sunset, `270` midnight).
+   Its properties panel explicitly states that colour/radiance are derived; there is no hidden
+   colour, intensity, multiplier or exposure field.
+2. **Exactly one authority is resolved across all loaded scenes.** An active-scene Sun wins;
+   otherwise the lowest stable entity ID wins. Multiple authored Suns emit a throttled warning
+   naming the count, winner and rule. The lighting gather lives beside the existing light gather,
+   keeping `Zenith_SunComponent` data-only and introducing no new engine-singleton ratchet reach.
+3. **Opt-out games keep the exact historical fallback.** With no authored Sun the resolver returns
+   the old literal travel direction `{-0.4f, -0.7f, -0.55f}`. Upload normalization and
+   atmosphere-transmittance key derivation are the same operations as before. The global
+   `dbg_SunDir` and the complete `SetSunOverride` / `ClearSunOverride` colour-radiance seam are
+   deleted, with every caller migrated and no compatibility shim retained.
+4. **A runtime direction change invalidates both environment integrals and shadows.** The CSM
+   continues to refit from the resolved direction every frame. IBL marks both cubes dirty and
+   restarts its cursor at face 0 / mip 0 even if a prior regeneration is active. Regeneration is
+   48 passes amortized across 6 frames; existing textures remain usable and `IsReady()` stays
+   latched after first readiness. First generation retains its one-frame all-pass behavior.
+
+### Clients and visual result
+
+- **DevilsPlayground owns midnight as scene data.** `NightSun` is authored at time angle `270`
+  and azimuth `35`; atmospheric transmittance therefore produces a zero direct-sun RGB while the
+  one radiometric anchor remains packed. Existing point lights and emissive materials remain
+  ordinary honest authored emitters--none was brightened to compensate and no fog/exposure fudge
+  was added. `Test_DPFogPass_VisualOutput` measured the new capture at centre `11.8138`, corner
+  `0.0000`; the established threshold needed no recalibration. Before/after captures under
+  `Build/artifacts/scene_sun/` show the intended daylight-to-occult-night move with local light
+  sources still readable.
+- **RenderTest HumanShowcase now creates a scene-owned Sun direction** and no longer drives the
+  deleted imperative override or its authored warm radiance. It remains a geometry-only lighting
+  demonstration.
+- **Zenithmon deliberately authors no Sun.** Its shell probe passes with the exact fallback input.
+  Pre/post captures differ only by normal Vulkan capture variance: mean absolute RGB delta
+  `(0.124, 0.102, 0.068)` on 8-bit channels versus `(0.104, 0.083, 0.061)` between two unchanged
+  post-build repeats. Thus no lighting movement is distinguishable from natural run variance;
+  the literal, normalization path, derived-key inputs and all three pixel probes are unchanged.
+
+### Tests and mutations that lock it
+
+- **Eight new engine units:** Sun vector normalization/zero fallback, the four named orbit
+  positions, midnight derived-key zero, geometry-only serialization, active-scene/lowest-ID
+  conflict resolution, and three IBL cursor contracts (48 passes/6 frames, in-flight dirty restart,
+  ready-latch preservation). Final Null Combat observation: **1181 ran / 1180 passed / 0 failed /
+  1 skipped**; `run_unit_gate.ps1` moved 1173 -> **1181**.
+- **Runtime Vulkan proof:** `Test_SceneSunAuthority_Runtime` verifies the committed midnight
+  direction/key, edits to noon, observes CSM movement, IBL restart and convergence, then restores
+  midnight and waits for reconvolution so following batch tests inherit no lighting state. It
+  passes in **19 frames**. The measured fog probe passes in **166 frames**.
+- **Three rebuilt mutations, each restored:** invert the orbit Y sign -> **1181/1178/2/1**
+  (cardinals + midnight key red); let an inactive-scene Sun win -> **1181/1179/1/1** (precedence
+  red); suppress an in-flight IBL restart -> **1181/1178/2/1** (both cursor guards red). Production
+  restoration returns **1181/1180/0/1**.
+
+### Full observed gate
+
+- Regeneration + check in sync; production Vulkan engine clean. SentinelECS, SentinelPhysics and
+  SentinelAI built at `Vulkan_vs2022_Debug_Win64_False` and all exited 0. Combat, CityBuilder,
+  DevilsPlayground, RenderTest and TilePuzzle all built on `Null_True`; headless runs were Combat
+  **14/14**, CityBuilder **45/45**, DevilsPlayground **159 registered / 0 failed** (21 expected
+  graphics/manual skips).
+- All 12 pre-existing DP `requiresGraphics` registrations plus the new Sun test were run windowed
+  as an explicit 13-test batch. Six pass: the Sun convergence test, measured fog pixel test,
+  material showcase, material-entity showcase, material live-preview, and Graph Editor screenshot
+  tour. Seven unchanged registrations are red in this checkout: `DimLightsCutFog_Test`,
+  `FullPlaythrough_Test`, `Materials_Test`, `Test_GraphEditorLiveAuthoring`,
+  `Test_P1Tuning_PriestValuesMatchConfig`, `Test_P1Villager_TuningMigration`, and
+  `Test_P2Villager_ArchetypeStatsApplied`. Their verify clauses cover authored entity/fog counts,
+  asset registry/gameplay state, or UI input--not solar pixels. The Graph Editor case was retried
+  twice in clean processes and reproducibly stops at frame 56 because its simulated palette clicks
+  create no nodes. These are recorded as unrelated windowed-fixture/UI shortfalls, not hidden as
+  lighting results; the new Sun and fog probes pass together on the final binary.
+- Zenithmon's required order was repeated after the final ratchet-driven linkage cleanup: Vulkan
+  build; Null build; headless **51/51, 0 failed**; boot units **2759 ran / 2758 passed / 0 failed /
+  1 skipped**; full Vulkan **51/51, 0 failed, ZERO skipped**. `Games/Zenithmon/Assets` remained
+  byte-clean. `.github/workflows/zm-tests.yml` moved 2751 -> **2759**.
+- `architecture,lints` remains red only on the established TerrainComponent/TerrainEditor set;
+  `complexity` remains red only on `ParseCommandLine`, `ValidateTerrainGridTopology`, graph-node
+  registration and 10 duplicate clusters. The initially added Sun/editor singleton findings were
+  removed rather than allow-listed or ceiling-bumped.
+
+### Reversibility
+
+Removing a Sun returns that scene to the exact old fallback. Changing its geometry is ordinary
+serialized scene authoring. Reintroducing solar colour/radiance requires a new decision because it
+would violate ZM-D-171's one-anchor energy contract. The three mutations make precedence, orbit
+semantics and regeneration restart behavior fail loudly rather than degrade quietly.
+
 ## 2026-07-30 -- ZM-D-171 -- Physically-grounded lighting: ONE radiometric anchor, ground-bounce IBL, ISO-derived exposure -- every tuned lighting constant DELETED, and the ZM-D-169 emissive floor with them
 
 *(ENGINE change (Flux shading/sky/IBL/HDR + shaders), so it owed the CROSS-GAME gate. New files:

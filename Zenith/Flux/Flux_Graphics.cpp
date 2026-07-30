@@ -10,12 +10,14 @@
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/Flux_BackendTypes.h"
 #include "Core/Zenith_RenderGather.h" // Wave 3: main camera comes through the neutral gather
+#include "Core/Zenith_SunAuthority.h" // scene-authored direction only; no colour/radiance channel
 #include "Core/Zenith_GraphicsOptions.h" // m_bShadowsEnabled (cascade render-view activity sync)
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h" // IsInitialised (main-view cluster-lights flag)
 #include "Flux/TAA/Flux_TAAJitter.h" // TAA sub-pixel jitter injection into the slot-0 GPU payload
 #include "Flux/TAA/Flux_TAAImpl.h"   // GetSceneColourForPostFX routes bloom/tonemap to the TAA resolve output
 #include "Flux/TAA/Flux_TAA_ResolveCPU.h" // Flux_TAAComputeRenderDims — even-quantised render dims for temporal upscaling
 #include "Flux/Skybox/Flux_AtmosphereTransmittance.h" // derived sun key: anchor * per-channel transmittance
+#include "Flux/IBL/Flux_IBLImpl.h" // sun-direction changes restart amortised environment convolution
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -45,22 +47,17 @@ void Flux_GraphicsImpl::BindFullscreenQuad(Flux_CommandBuffer& xCmd, Flux_Pipeli
 Zenith_Maths::Matrix4 Flux_GraphicsImpl::GetViewMatrix()        { return m_xFrameConstants.m_xViewMat; }
 Zenith_Maths::Vector3 Flux_GraphicsImpl::GetSunDir()            { return m_xFrameConstants.m_xSunDir_Pad; }
 
-// Default sun DIRECTION (the way the light travels, into the scene). Normalised
-// at upload. This was near-vertical { 0.1, -1, 0.1 } — a "high noon" key that
-// fully lights up-facing surfaces (terrain) but leaves vertical surfaces
-// (characters, walls) at NdotL ~= 0, so they fall to ambient-only and read as
-// near-black silhouettes. An angled key (~45 deg elevation, lighting +x/+z-facing
-// surfaces) gives form-defining shading on upright geometry. Games that need a
-// specific sun set their own via SetSunOverride / the Sun Direction debug var.
-DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { -0.4, -0.7, -0.55 };
-// There is deliberately NO sun-colour variable. The direct sun key is DERIVED
+// There is deliberately NO global sun direction or sun-colour debug variable.
+// Loaded scenes author direction/time-of-day through Zenith_SunComponent; a
+// scene set with no Sun uses Zenith_GetDefaultSunDirection(), whose value is
+// exactly the historical global value so non-opted-in games remain byte-stable.
+// The direct sun key is DERIVED
 // each frame in UploadFrameConstants from the one radiometric anchor
 // (Skybox sun intensity = top-of-atmosphere solar irradiance) times the
 // per-channel atmospheric transmittance along the sun ray — the same medium
 // the visible sky and the IBL cubes integrate. Sun, sky and ambient therefore
 // stay energy-consistent by construction: warm low sun, dark below horizon,
-// no independently tunable key. Scenes that need an authored cinematic key
-// use the explicit SetSunOverride seam.
+// no independently tunable key.
 
 DEBUGVAR bool dbg_bQuadUtilisationAnalysis = false;
 DEBUGVAR u_int dbg_uTargetPixelsPerTri = 10;
@@ -218,8 +215,6 @@ void Flux_GraphicsImpl::Initialise()
 	// SetupRenderGraph pass, which is already a resize callback.
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	xEngine.DebugVariables().AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
-
 	xEngine.DebugVariables().AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
 	xEngine.DebugVariables().AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
 
@@ -268,6 +263,7 @@ bool Flux_GraphicsImpl::BuildCameraMatrices(FrameConstants& xConstants)
 void Flux_GraphicsImpl::UploadFrameConstants()
 {
 	ZENITH_PROFILE_SCOPE("Flux Upload Frame Constants");
+	Zenith_Engine& xEngine = g_xEngine;
 	bool bCameraValid = BuildCameraMatrices(m_xFrameConstants);
 	m_bCameraValid = bCameraValid;   // exposed via IsCameraValid() for the scene-graph snapshot frustum
 
@@ -280,7 +276,7 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 			// from GetViewProjMatrix()) plus the world reconstruction below — is replaced by the
 			// sun's. So under this override the geometry consumers intentionally cull to the SUN
 			// frustum, consistent with viewing the frame from the light. Not a camera path.
-			m_xFrameConstants.m_xViewProjMat = g_xEngine.Shadows().GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
+			m_xFrameConstants.m_xViewProjMat = xEngine.Shadows().GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
 		}
 		else
 		{
@@ -291,17 +287,36 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 		m_xFrameConstants.m_xInvProjMat = glm::inverse(m_xFrameConstants.m_xProjMat);
 	}
 
-	const Zenith_Maths::Vector3 xSunDir = m_bSunOverride ? m_xSunDirOverride : Zenith_Maths::Vector3(dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z);
+	Zenith_SunAuthorityData xSunAuthority;
+	if (g_pfnZenithSunAuthorityGather)
+	{
+		g_pfnZenithSunAuthorityGather(xSunAuthority);
+	}
+	const Zenith_Maths::Vector3 xSunDir = xSunAuthority.m_xDirection;
+	const Zenith_Maths::Vector4 xNormalisedSunDir = glm::normalize(
+		Zenith_Maths::Vector4(xSunDir.x, xSunDir.y, xSunDir.z, 0.0f));
+	const Zenith_Maths::Vector3 xResolvedSunDir(xNormalisedSunDir);
+	if (m_bHasResolvedSunDirection
+		&& glm::dot(xResolvedSunDir, m_xLastResolvedSunDirection) < 0.999999f)
+	{
+		// Runtime time-of-day changes invalidate both environment integrals.
+		// Existing textures remain usable while the state machine amortises the
+		// replacement; IsReady() deliberately stays latched.
+		Flux_IBLImpl& xIBL = xEngine.IBL();
+		xIBL.MarkAllProbesDirty();
+		xIBL.UpdateSkyIBL();
+	}
+	m_xLastResolvedSunDirection = xResolvedSunDir;
+	m_bHasResolvedSunDirection = true;
+
 	// Derived sun key: chromaticity = per-channel transmittance along the sun
 	// ray, HDR radiance scalar = the Skybox anchor (top-of-atmosphere solar
 	// irradiance). E_sun(ground) = anchor * T_rgb — same medium as the sky and
 	// the IBL convolution, so direct and ambient light cannot drift apart.
-	const Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
-	const Zenith_Maths::Vector4 xSunCol = m_bSunOverride
-		? m_xSunColourOverride
-		: Flux_AtmosphereTransmittance::ComputeSunColourRadiance(
-			xSunDir, xSkybox.GetSunIntensity(), xSkybox.GetRayleighScale(), xSkybox.GetMieScale());
-	m_xFrameConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4(xSunDir.x, xSunDir.y, xSunDir.z, 0.));
+	const Flux_SkyboxImpl& xSkybox = xEngine.Skybox();
+	const Zenith_Maths::Vector4 xSunCol = Flux_AtmosphereTransmittance::ComputeSunColourRadiance(
+		xSunDir, xSkybox.GetSunIntensity(), xSkybox.GetRayleighScale(), xSkybox.GetMieScale());
+	m_xFrameConstants.m_xSunDir_Pad = xNormalisedSunDir;
 	m_xFrameConstants.m_xSunColour_Pad = { xSunCol.x, xSunCol.y, xSunCol.z, xSunCol.w };
 	int32_t iWidth, iHeight;
 	Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
@@ -322,7 +337,7 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 	// buffers the GPU sees (m_xFrameConstants itself is no longer uploaded; its GPU
 	// buffer was removed with Common/Frame.slang, but it stays as the CPU camera-
 	// matrix source for GetViewProjMatrix()/etc. and the mirror source here).
-	const FrameContext& xFrame = g_xEngine.Frame();
+	const FrameContext& xFrame = xEngine.Frame();
 	m_xGlobalConstantsData.m_uFrameIndex    = xFrame.GetFrameIndex();
 	m_xGlobalConstantsData.m_fTimeSeconds   = static_cast<float>(xFrame.GetTimePassed());
 
@@ -393,11 +408,11 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 	m_xViewConstantsData.m_xSunColour_Pad  = m_xFrameConstants.m_xSunColour_Pad;
 	m_xViewConstantsData.m_uViewFlags      =
 		  (Zenith_GraphicsOptions::Get().m_bShadowsEnabled ? FLUX_VIEW_FLAG_SHADOWS_ENABLED : 0u)
-		| (g_xEngine.LightClustering().IsInitialised() ? FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED : 0u)
+		| (xEngine.LightClustering().IsInitialised() ? FLUX_VIEW_FLAG_CLUSTER_LIGHTS_ENABLED : 0u)
 		| FLUX_VIEW_FLAG_SCENE_CONTENT;
 	m_xViewConstantsData.m_uViewSlot       = kuFluxViewSlotMain;
-	g_xEngine.FluxMemory().UploadBufferData(m_xGlobalConstantsBuffer.GetBuffer().m_xVRAMHandle, &m_xGlobalConstantsData, sizeof(GlobalConstants));
-	g_xEngine.FluxMemory().UploadBufferData(m_axViewConstantsBuffers[kuFluxViewSlotMain].GetBuffer().m_xVRAMHandle, &m_xViewConstantsData, sizeof(ViewConstants));
+	xEngine.FluxMemory().UploadBufferData(m_xGlobalConstantsBuffer.GetBuffer().m_xVRAMHandle, &m_xGlobalConstantsData, sizeof(GlobalConstants));
+	xEngine.FluxMemory().UploadBufferData(m_axViewConstantsBuffers[kuFluxViewSlotMain].GetBuffer().m_xVRAMHandle, &m_xViewConstantsData, sizeof(ViewConstants));
 
 	// Keep the registry's MAIN payload in sync — it is the single CPU source of
 	// truth per view (cascade/preview owners stage theirs the same way).

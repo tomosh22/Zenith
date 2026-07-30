@@ -8,6 +8,7 @@
 #include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
+#include "EntityComponent/Components/Zenith_SunComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -224,6 +225,14 @@ namespace
 		xAction.m_afArgs[0] = f;
 		xActions.PushBack(xAction);
 	}
+	inline void Push(ActionList& xActions, ActionType eType, float f1, float f2)
+	{
+		Zenith_EditorAction xAction = {};
+		xAction.m_eType = eType;
+		xAction.m_afArgs[0] = f1;
+		xAction.m_afArgs[1] = f2;
+		xActions.PushBack(xAction);
+	}
 	inline void Push(ActionList& xActions, ActionType eType, float f1, float f2, float f3)
 	{
 		Zenith_EditorAction xAction = {};
@@ -355,6 +364,11 @@ Zenith_Maths::Matrix4 Zenith_EditorAutomation::BuildEulerOffsetMatrix(float fPos
 void Zenith_EditorAutomation::AddStep_SetLightIntensity(float fLumens)              { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_LIGHT_INTENSITY, fLumens); }
 void Zenith_EditorAutomation::AddStep_SetLightRange    (float fMetres)              { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_LIGHT_RANGE,     fMetres); }
 void Zenith_EditorAutomation::AddStep_SetLightColor    (float fR, float fG, float fB) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_LIGHT_COLOR, fR, fG, fB); }
+
+// -- Sun --
+
+void Zenith_EditorAutomation::AddStep_SetSunDirection(float fX, float fY, float fZ) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_SUN_DIRECTION, fX, fY, fZ); }
+void Zenith_EditorAutomation::AddStep_SetSunTimeOfDay(float fAngleDegrees, float fOrbitAzimuthDegrees) { Push(Zenith_EditorAutomation::m_axActions, ActionType::SET_SUN_TIME_OF_DAY, fAngleDegrees, fOrbitAzimuthDegrees); }
 
 // -- UI --
 
@@ -1755,6 +1769,8 @@ bool Zenith_EditorAutomation::TryPreflightTerrainExportChunksRectAction(
 
 void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 {
+	Zenith_Editor& xEditor = g_xEngine.Editor();
+
 	// Terrain-editor authoring actions have their own executor (see above).
 	bool bTerrainActionSucceeded = false;
 	if (TryRouteTerrainEditorAction(xAction, g_xEngine.TerrainEditor(),
@@ -1786,11 +1802,11 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	// Scene operations
 	//--------------------------------------------------------------------------
 	case Zenith_EditorActionType::CREATE_SCENE:
-		g_xEngine.Editor().CreateNewScene(xAction.m_szArg1.c_str());
+		xEditor.CreateNewScene(xAction.m_szArg1.c_str());
 		break;
 
 	case Zenith_EditorActionType::SAVE_SCENE:
-		g_xEngine.Editor().SaveActiveScene(xAction.m_szArg1.c_str());
+		xEditor.SaveActiveScene(xAction.m_szArg1.c_str());
 		break;
 
 	case Zenith_EditorActionType::UNLOAD_SCENE:
@@ -1975,6 +1991,29 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 			"SET_LIGHT_COLOR: selected entity has no LightComponent");
 		pxEntity->GetComponent<Zenith_LightComponent>().SetColor(
 			Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]));
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_SUN_DIRECTION:
+	{
+		Zenith_Entity* pxEntity = xEditor.GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_SUN_DIRECTION");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_SunComponent>(),
+			"SET_SUN_DIRECTION: selected entity has no SunComponent");
+		pxEntity->GetComponent<Zenith_SunComponent>().SetDirection(
+			Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]));
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_SUN_TIME_OF_DAY:
+	{
+		Zenith_Entity* pxEntity = xEditor.GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_SUN_TIME_OF_DAY");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_SunComponent>(),
+			"SET_SUN_TIME_OF_DAY: selected entity has no SunComponent");
+		Zenith_SunComponent& xSun = pxEntity->GetComponent<Zenith_SunComponent>();
+		xSun.SetOrbitAzimuthDegrees(xAction.m_afArgs[1]);
+		xSun.SetTimeOfDayAngleDegrees(xAction.m_afArgs[0]);
 		break;
 	}
 

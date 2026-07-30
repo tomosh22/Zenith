@@ -74,6 +74,11 @@ enum class Zenith_EditorActionType
 	SET_LIGHT_RANGE,
 	SET_LIGHT_COLOR,
 
+	// Sun-authority field edits (geometry only; there is intentionally no
+	// colour/intensity action).
+	SET_SUN_DIRECTION,
+	SET_SUN_TIME_OF_DAY,
+
 	// UI element creation and field edits. The whole UI range, from
 	// CREATE_UI_TEXT through SET_UI_SCROLL_VIEW_CONTENT_SIZE below, must stay
 	// CONTIGUOUS (ExecuteAction routes the range to ExecuteUIAction).
@@ -381,6 +386,10 @@ void AddStep_SetTransformRotationEuler(float fEulerXDeg, float fEulerYDeg, float
 void AddStep_SetLightIntensity(float fLumens);
 void AddStep_SetLightRange(float fMetres);
 void AddStep_SetLightColor(float fR, float fG, float fB);
+
+	// Sun component field edits. Apply after AddStep_AddComponent("Sun").
+void AddStep_SetSunDirection(float fX, float fY, float fZ);
+void AddStep_SetSunTimeOfDay(float fAngleDegrees, float fOrbitAzimuthDegrees);
 
 	//--------------------------------------------------------------------------
 	// UI Step Helpers

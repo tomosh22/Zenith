@@ -164,48 +164,32 @@ void Flux_IBLImpl::RunFirstGenerationFrame(bool (&abRunIrradiance)[6],
 void Flux_IBLImpl::AdvanceAmortizedRegen(bool (&abRunIrradiance)[6],
 	bool (&abRunPrefilter)[IBLConfig::uPREFILTER_MIP_COUNT][6])
 {
-	if (m_bSkyIBLDirty && m_eRegenState == IBL_REGEN_IDLE)
+	const bool bWasIdle = m_eRegenState == IBL_REGEN_IDLE;
+	for (u_int uPass = 0u; uPass < IBLConfig::uPASSES_PER_FRAME; uPass++)
 	{
-		m_eRegenState = IBL_REGEN_IRRADIANCE;
-		m_uRegenFace = 0;
-		m_uRegenMip = 0;
+		const Flux_IBLRegen::Pass xPass = Flux_IBLRegen::Next(
+			m_bSkyIBLDirty, m_eRegenState, m_uRegenFace, m_uRegenMip);
+		if (xPass.m_eType == Flux_IBLRegen::PASS_NONE)
+		{
+			break;
+		}
+		if (xPass.m_eType == Flux_IBLRegen::PASS_IRRADIANCE)
+		{
+			abRunIrradiance[xPass.m_uFace] = true;
+		}
+		else
+		{
+			abRunPrefilter[xPass.m_uMip][xPass.m_uFace] = true;
+		}
+	}
+
+	if (bWasIdle && m_eRegenState != IBL_REGEN_IDLE)
+	{
 		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Starting amortized IBL regeneration");
 	}
-
-	u_int uPassesThisFrame = 0;
-
-	while (m_eRegenState == IBL_REGEN_IRRADIANCE && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
+	if (!bWasIdle && m_eRegenState == IBL_REGEN_IDLE)
 	{
-		abRunIrradiance[m_uRegenFace] = true;
-		m_uRegenFace++;
-		uPassesThisFrame++;
-
-		if (m_uRegenFace >= 6)
-		{
-			m_eRegenState = IBL_REGEN_PREFILTER;
-			m_uRegenFace = 0;
-			m_uRegenMip = 0;
-		}
-	}
-
-	while (m_eRegenState == IBL_REGEN_PREFILTER && uPassesThisFrame < IBLConfig::uPASSES_PER_FRAME)
-	{
-		abRunPrefilter[m_uRegenMip][m_uRegenFace] = true;
-		uPassesThisFrame++;
-
-		m_uRegenFace++;
-		if (m_uRegenFace >= 6)
-		{
-			m_uRegenFace = 0;
-			m_uRegenMip++;
-
-			if (m_uRegenMip >= IBLConfig::uPREFILTER_MIP_COUNT)
-			{
-				m_eRegenState = IBL_REGEN_IDLE;
-				m_bSkyIBLDirty = false;
-				Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Completed amortized IBL regeneration");
-			}
-		}
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Completed amortized IBL regeneration");
 	}
 }
 
@@ -460,12 +444,14 @@ void Flux_IBLImpl::UpdateSkyIBL()
 {
 	// No-op: regeneration is driven by IBLPrepareCallback. Marking the dirty
 	// flag is enough to schedule per-face/per-mip work over the next frames.
-	m_bSkyIBLDirty = true;
+	Flux_IBLRegen::MarkDirty(m_bFirstGeneration, m_bSkyIBLDirty,
+		m_eRegenState, m_uRegenFace, m_uRegenMip);
 }
 
 void Flux_IBLImpl::MarkAllProbesDirty()
 {
-	m_bSkyIBLDirty = true;
+	Flux_IBLRegen::MarkDirty(m_bFirstGeneration, m_bSkyIBLDirty,
+		m_eRegenState, m_uRegenFace, m_uRegenMip);
 }
 
 // Accessors - return const references to prevent modification and signal temporary nature
@@ -508,3 +494,5 @@ void Flux_IBLImpl::RegisterDebugVariables()
 	// TODO: create per-face 2D SRVs for cubemap debug display.
 }
 #endif
+
+#include "Flux/IBL/Flux_IBL.Tests.inl"

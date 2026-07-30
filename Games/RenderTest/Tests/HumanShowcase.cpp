@@ -7,6 +7,7 @@
 #include "Core/Zenith_Engine.h"
 
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"
+#include "EntityComponent/Components/Zenith_SunComponent.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "Flux/MeshAnimation/Flux_AnimationLayer.h"
 #include "Flux/MeshAnimation/Flux_AnimationStateMachine.h"
@@ -14,7 +15,6 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 
 #include "RenderTest/Components/RenderTest_GameplayState.h"
-#include "Flux/Flux_GraphicsImpl.h"   // SetSunOverride (cinematic key for the capture)
 #include "Flux/HDR/Flux_HDRImpl.h"    // pinned manual exposure
 #include "Core/Zenith_GraphicsOptions.h"  // toggle auto-exposure off for the capture
 
@@ -39,6 +39,7 @@
 namespace
 {
 	bool s_bHumanShowcaseSawAnimator = false;
+	Zenith_EntityID s_xHumanShowcaseSun = INVALID_ENTITY_ID;
 
 	// CLI float override (mirrors RenderTest_Tennis::RT_TennisArgFloat) so the
 	// photo camera can be orbited from the command line for multi-angle shadow
@@ -137,6 +138,7 @@ namespace
 	void Setup_HumanShowcase()
 	{
 		s_bHumanShowcaseSawAnimator = false;
+		s_xHumanShowcaseSun = INVALID_ENTITY_ID;
 
 		// Full-body three-quarter view from the sunlit (+X) side: the model
 		// faces +Z at spawn and the directional light favours +X, so a camera
@@ -154,14 +156,16 @@ namespace
 			HumanShowcase_ArgFloat("--humancam-yaw=",   2.3562f),
 			HumanShowcase_ArgFloat("--humancam-pitch=", -0.04f));
 
-		// Cinematic lighting for the capture: pose an authored warm key from the
-		// front-upper-right (camera side) via the per-scene override (default-off
-		// everywhere else); restored in Verify. The sky IBL supplies the fill at
-		// its energy-correct level — the old 0.8 fill dial died with the IBL
-		// intensity knob.
-		g_xEngine.FluxGraphics().SetSunOverride(
-			Zenith_Maths::Vector3(-0.38f, -0.58f, -0.52f),
-			Zenith_Maths::Vector4(1.0f, 0.96f, 0.88f, 3.2f));
+		// Scene-owned cinematic sun pose from the front-upper-right (camera
+		// side). Only DIRECTION is authored: warmth and energy derive from the
+		// atmosphere anchor exactly like every other scene sun. The entity is
+		// removed in Verify, so the RenderTest scene itself retains its fallback.
+		Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
+		Zenith_Assert(pxSceneData != nullptr, "HumanShowcase requires an active scene");
+		Zenith_Entity xSunEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "HumanShowcaseSun");
+		xSunEntity.AddComponent<Zenith_SunComponent>().SetDirection(
+			Zenith_Maths::Vector3(-0.38f, -0.58f, -0.52f));
+		s_xHumanShowcaseSun = xSunEntity.GetEntityID();
 		// Pin exposure: the bright sky otherwise drives auto-exposure to stop down
 		// and underexpose the figure. Lock a manual exposure for a stable, well-lit
 		// portrait. Restored in Verify.
@@ -277,7 +281,15 @@ namespace
 		// Visual demo — pass as long as the player's animator was reachable and
 		// the showcase drove it.
 		RenderTest_GameplayState::s_bPhotoModeActive = false;
-		g_xEngine.FluxGraphics().ClearSunOverride();
+		if (s_xHumanShowcaseSun.IsValid())
+		{
+			Zenith_Entity xSunEntity = g_xEngine.Scenes().ResolveEntity(s_xHumanShowcaseSun);
+			if (xSunEntity.IsValid())
+			{
+				xSunEntity.Destroy();
+			}
+			s_xHumanShowcaseSun = INVALID_ENTITY_ID;
+		}
 		Zenith_GraphicsOptions::Get().m_bHDRAutoExposureEnabled = true;
 		return s_bHumanShowcaseSawAnimator;
 	}
