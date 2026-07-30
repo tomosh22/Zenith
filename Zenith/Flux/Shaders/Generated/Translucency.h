@@ -88,17 +88,15 @@ namespace Flux_Generated_Translucency
 			unsigned int m_ug_bIBLEnabled; // slang=uint offset=0
 			unsigned int m_ug_bIBLDiffuseEnabled; // slang=uint offset=4
 			unsigned int m_ug_bIBLSpecularEnabled; // slang=uint offset=8
-			float m_fg_fIBLIntensity; // slang=float offset=12
-			float m_fg_fAmbientFallbackIntensity; // slang=float offset=16
-			unsigned char m_aPad_20[4];
-			unsigned char m_ag_xCSMTexelSize[8]; // slang=vector offset=24 arrayCount=2 (no C++ mapping)
+			float m_fg_fAmbientFallbackIntensity; // slang=float offset=12
+			unsigned char m_ag_xCSMTexelSize[8]; // slang=vector offset=16 arrayCount=2 (no C++ mapping)
+			unsigned char m_aPad_24[8];
 		};
 		static_assert(sizeof(TranslucencyConstants_CB) == 32, "TranslucencyConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bIBLEnabled) == 0, "TranslucencyConstants.g_bIBLEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bIBLDiffuseEnabled) == 4, "TranslucencyConstants.g_bIBLDiffuseEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(TranslucencyConstants_CB, m_ug_bIBLSpecularEnabled) == 8, "TranslucencyConstants.g_bIBLSpecularEnabled offset drifted from Slang reflection");
-		static_assert(offsetof(TranslucencyConstants_CB, m_fg_fIBLIntensity) == 12, "TranslucencyConstants.g_fIBLIntensity offset drifted from Slang reflection");
-		static_assert(offsetof(TranslucencyConstants_CB, m_fg_fAmbientFallbackIntensity) == 16, "TranslucencyConstants.g_fAmbientFallbackIntensity offset drifted from Slang reflection");
+		static_assert(offsetof(TranslucencyConstants_CB, m_fg_fAmbientFallbackIntensity) == 12, "TranslucencyConstants.g_fAmbientFallbackIntensity offset drifted from Slang reflection");
 		// kind: ConstantBuffer
 		inline constexpr Flux_BindingHandle hDrawConstants{ 4u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct DrawConstants_CB

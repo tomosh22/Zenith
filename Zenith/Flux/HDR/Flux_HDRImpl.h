@@ -5,6 +5,22 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/RenderViews/Flux_RenderViews.h"
 
+// ---- Derived exposure constants (not tuned; unit-tested) -------------------
+// The auto-exposure key is the ISO-standard saturation-based target: a
+// reflected-light meter maps the metered average to K / ISO of saturation
+// (ISO 2720, K = 12.5, ISO 100), with Lagarde & de Rousiers' 1.2 highlight-
+// headroom factor ("Moving Frostbite to PBR", SIGGRAPH 2014, §Exposure).
+constexpr float fHDR_EXPOSURE_KEY_ISO = 12.5f / (100.0f * 1.2f);
+
+// Histogram domain, derived from the radiometric anchor (see
+// AtmosphereConfig::fSUN_INTENSITY): the top bin 2^(min + range) must cover
+// the brightest non-emissive radiance the anchor implies — the sky itself,
+// bounded by the top-of-atmosphere intensity. -10 + 13 -> top 8 >= 7. (The
+// old range 12 topped out at 4.0 and clipped the sky into the last bin,
+// skewing the metered average.)
+constexpr float fHDR_HISTOGRAM_MIN_LOG_LUMINANCE = -10.0f;
+constexpr float fHDR_HISTOGRAM_LOG_LUMINANCE_RANGE = 13.0f;
+
 enum ToneMappingOperator : u_int
 {
 	TONEMAPPING_ACES,
@@ -138,6 +154,6 @@ public:
 	float                     m_fTargetLuminance   = 0.18f;
 	float                     m_fMinExposure       = 0.1f;
 	float                     m_fMaxExposure       = 10.0f;
-	float                     m_fMinLogLuminance   = -10.0f;
-	float                     m_fLogLuminanceRange = 12.0f;
+	float                     m_fMinLogLuminance   = fHDR_HISTOGRAM_MIN_LOG_LUMINANCE;
+	float                     m_fLogLuminanceRange = fHDR_HISTOGRAM_LOG_LUMINANCE_RANGE;
 };

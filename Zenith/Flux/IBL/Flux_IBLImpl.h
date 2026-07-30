@@ -64,11 +64,14 @@ public:
 	const Flux_ShaderResourceView& GetIrradianceMapSRV();
 	const Flux_ShaderResourceView& GetPrefilteredMapSRV();
 
-	void SetIntensity(float fIntensity) { m_fIntensity = fIntensity; }
+	// There is deliberately NO intensity scale on IBL. The irradiance and
+	// prefiltered cubes are energy-correct integrals (E/pi convention) of the
+	// SAME atmosphere the frame renders and the direct sun key derives from,
+	// so any scale here can only break sun<->sky energy consistency. The old
+	// 0.5 was a fudge compensating the auto-exposure metering of the day.
 
 	bool IsEnabled() const;
 	bool IsReady() const { return m_bIBLReady; }
-	float GetIntensity() const { return m_fIntensity; }
 	bool IsDiffuseEnabled() const;
 	bool IsSpecularEnabled() const;
 	bool IsShowBRDFLUT() const;
@@ -130,13 +133,6 @@ public:
 	Flux_Shader                m_xBRDFLUTShader;
 	Flux_Shader                m_xIrradianceConvolveShader;
 	Flux_Shader                m_xPrefilterShader;
-
-	// Configuration. IBL ambient trimmed to 0.5 so the sky-derived ambient is a
-	// FILL, not the dominant term -- the sun key now defines form/contrast
-	// instead of being drowned by ambient (the old flat "ambient soup" look).
-	// (Trimming further deepens shadows but makes log-average auto-exposure
-	// over-expose bright-foreground compositions until metering is improved.)
-	float                      m_fIntensity = 0.5f;
 
 	// Regen state machine.
 	IBL_RegenState             m_eRegenState = IBL_REGEN_IDLE;

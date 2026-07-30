@@ -188,9 +188,11 @@ public:
 	float GetFOV();
 	float GetAspectRatio();
 
-	// Opt-in per-scene directional-sun override (default OFF → games use the global
-	// dbg_SunDir/dbg_SunColour unchanged). xColourRadiance.w is the HDR radiance
-	// scalar. Lets a scene pose a real cinematic key/fill without changing globals.
+	// Opt-in per-scene directional-sun override (default OFF → games use the
+	// global dbg_SunDir with the DERIVED atmosphere-transmittance sun colour).
+	// xColourRadiance.w is the HDR radiance scalar. Lets a scene pose an
+	// authored cinematic key without changing globals — the one sanctioned way
+	// to light with a non-physical sun.
 	void SetSunOverride(const Zenith_Maths::Vector3& xDir, const Zenith_Maths::Vector4& xColourRadiance)
 	{
 		m_bSunOverride = true;

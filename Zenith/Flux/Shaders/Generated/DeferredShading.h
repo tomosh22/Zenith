@@ -90,30 +90,27 @@ namespace Flux_Generated_DeferredShading
 			unsigned int m_ug_uDebugMode; // slang=uint offset=8
 			unsigned int m_ug_bIBLDiffuseEnabled; // slang=uint offset=12
 			unsigned int m_ug_bIBLSpecularEnabled; // slang=uint offset=16
-			float m_fg_fIBLIntensity; // slang=float offset=20
-			unsigned int m_ug_bShowBRDFLUT; // slang=uint offset=24
-			unsigned int m_ug_bForceRoughness; // slang=uint offset=28
-			float m_fg_fForcedRoughness; // slang=float offset=32
-			unsigned int m_ug_bSSREnabled; // slang=uint offset=36
-			unsigned int m_ug_bSSGIEnabled; // slang=uint offset=40
-			float m_fg_fAmbientFallbackIntensity; // slang=float offset=44
-			unsigned int m_ug_bSSAOEnabled; // slang=uint offset=48
-			unsigned char m_aPad_52[12];
+			unsigned int m_ug_bShowBRDFLUT; // slang=uint offset=20
+			unsigned int m_ug_bForceRoughness; // slang=uint offset=24
+			float m_fg_fForcedRoughness; // slang=float offset=28
+			unsigned int m_ug_bSSREnabled; // slang=uint offset=32
+			unsigned int m_ug_bSSGIEnabled; // slang=uint offset=36
+			float m_fg_fAmbientFallbackIntensity; // slang=float offset=40
+			unsigned int m_ug_bSSAOEnabled; // slang=uint offset=44
 		};
-		static_assert(sizeof(DeferredShadingConstants_CB) == 64, "DeferredShadingConstants_CB size drifted from Slang reflection");
+		static_assert(sizeof(DeferredShadingConstants_CB) == 48, "DeferredShadingConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bVisualiseCSMs) == 0, "DeferredShadingConstants.g_bVisualiseCSMs offset drifted from Slang reflection");
 		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bIBLEnabled) == 4, "DeferredShadingConstants.g_bIBLEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_uDebugMode) == 8, "DeferredShadingConstants.g_uDebugMode offset drifted from Slang reflection");
 		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bIBLDiffuseEnabled) == 12, "DeferredShadingConstants.g_bIBLDiffuseEnabled offset drifted from Slang reflection");
 		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bIBLSpecularEnabled) == 16, "DeferredShadingConstants.g_bIBLSpecularEnabled offset drifted from Slang reflection");
-		static_assert(offsetof(DeferredShadingConstants_CB, m_fg_fIBLIntensity) == 20, "DeferredShadingConstants.g_fIBLIntensity offset drifted from Slang reflection");
-		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bShowBRDFLUT) == 24, "DeferredShadingConstants.g_bShowBRDFLUT offset drifted from Slang reflection");
-		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bForceRoughness) == 28, "DeferredShadingConstants.g_bForceRoughness offset drifted from Slang reflection");
-		static_assert(offsetof(DeferredShadingConstants_CB, m_fg_fForcedRoughness) == 32, "DeferredShadingConstants.g_fForcedRoughness offset drifted from Slang reflection");
-		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bSSREnabled) == 36, "DeferredShadingConstants.g_bSSREnabled offset drifted from Slang reflection");
-		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bSSGIEnabled) == 40, "DeferredShadingConstants.g_bSSGIEnabled offset drifted from Slang reflection");
-		static_assert(offsetof(DeferredShadingConstants_CB, m_fg_fAmbientFallbackIntensity) == 44, "DeferredShadingConstants.g_fAmbientFallbackIntensity offset drifted from Slang reflection");
-		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bSSAOEnabled) == 48, "DeferredShadingConstants.g_bSSAOEnabled offset drifted from Slang reflection");
+		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bShowBRDFLUT) == 20, "DeferredShadingConstants.g_bShowBRDFLUT offset drifted from Slang reflection");
+		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bForceRoughness) == 24, "DeferredShadingConstants.g_bForceRoughness offset drifted from Slang reflection");
+		static_assert(offsetof(DeferredShadingConstants_CB, m_fg_fForcedRoughness) == 28, "DeferredShadingConstants.g_fForcedRoughness offset drifted from Slang reflection");
+		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bSSREnabled) == 32, "DeferredShadingConstants.g_bSSREnabled offset drifted from Slang reflection");
+		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bSSGIEnabled) == 36, "DeferredShadingConstants.g_bSSGIEnabled offset drifted from Slang reflection");
+		static_assert(offsetof(DeferredShadingConstants_CB, m_fg_fAmbientFallbackIntensity) == 40, "DeferredShadingConstants.g_fAmbientFallbackIntensity offset drifted from Slang reflection");
+		static_assert(offsetof(DeferredShadingConstants_CB, m_ug_bSSAOEnabled) == 44, "DeferredShadingConstants.g_bSSAOEnabled offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xDiffuseTex{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 		// kind: CombinedTextureSampler

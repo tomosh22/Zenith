@@ -190,7 +190,6 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 		u_int m_uDebugMode;  // 0=normal, 1=cyan (verify running), 2=depth, 3=diffuse
 		u_int m_bIBLDiffuseEnabled;
 		u_int m_bIBLSpecularEnabled;
-		float m_fIBLIntensity;
 		u_int m_bShowBRDFLUT;
 		u_int m_bForceRoughness;
 		float m_fForcedRoughness;
@@ -226,7 +225,6 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 #endif
 	xConstants.m_bIBLDiffuseEnabled = xIBL.IsDiffuseEnabled() ? 1 : 0;
 	xConstants.m_bIBLSpecularEnabled = xIBL.IsSpecularEnabled() ? 1 : 0;
-	xConstants.m_fIBLIntensity = xIBL.GetIntensity();
 	xConstants.m_bShowBRDFLUT = xIBL.IsShowBRDFLUT() ? 1 : 0;
 	xConstants.m_bForceRoughness = xIBL.IsForceRoughness() ? 1 : 0;
 	xConstants.m_fForcedRoughness = xIBL.GetForcedRoughness();

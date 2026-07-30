@@ -10,8 +10,8 @@
 #include "Flux/Flux_Screenshot.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
-#include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
@@ -85,10 +85,13 @@ static bool Step_MaterialEntityShowcase(int iFrame)
 	{
 		g_xEngine.FluxRenderer().GetRenderGraph().SetPassForceDisabled("DP_Fog", true);
 		// The DP night scene leans on fog to dim a bright starfield-IBL + four
-		// 2000-lumen lights; with fog off it blows out. Dial the IBL down, pin the
-		// HDR exposure low (defeats auto-exposure), and dim the corner lights so
-		// the materials read at their true albedo for the showcase.
-		g_xEngine.IBL().SetIntensity(0.06f);
+		// 2000-lumen lights; with fog off it blows out. The IBL intensity knob
+		// was deleted (IBL is energy-locked to the sky now), so this DIAGNOSTIC
+		// capture disables IBL outright — the material booth runs on the flat
+		// diagnostic ambient + its own controlled lights. Pin the HDR exposure
+		// low (defeats auto-exposure) and dim the corner lights so the materials
+		// read at their true albedo.
+		Zenith_GraphicsOptions::Get().m_bIBLEnabled = false;
 		g_xEngine.HDR().SetExposure(0.5f);
 		g_xEngine.HDR().SetExposureRange(0.5f, 0.5f);
 		g_xEngine.Scenes().QueryAllScenes<Zenith_LightComponent>().ForEach(

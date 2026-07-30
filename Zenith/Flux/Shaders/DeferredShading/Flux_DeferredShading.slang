@@ -37,7 +37,6 @@ struct DeferredShadingConstantsLayout
 	uint  g_uDebugMode;            // 0=normal, 1=cyan, 2=depth, 3=diffuse
 	uint  g_bIBLDiffuseEnabled;
 	uint  g_bIBLSpecularEnabled;
-	float g_fIBLIntensity;
 	uint  g_bShowBRDFLUT;
 	uint  g_bForceRoughness;
 	float g_fForcedRoughness;
@@ -205,7 +204,11 @@ float3 ComputeIBLAmbient(float3 xNormal, float3 xViewDir, float3 xAlbedo,
 		xBase = xBase * (1.0 - fClearCoat * fCoatFresnel) + xCoatSpecular * fSpecularAO;
 	}
 
-	return xBase * g_xPassSet.DeferredShadingConstants.g_fIBLIntensity;
+	// No intensity scale: the irradiance/prefilter cubes are energy-correct
+	// integrals of the same sky the frame renders (E/pi convention matching
+	// the Lambert BRDF), so scaling them could only break sun<->sky
+	// consistency. The former 0.5 here was an exposure-era fudge.
+	return xBase;
 }
 
 // ----- Direct lighting (was DeferredShading_Lighting.fxh) -----

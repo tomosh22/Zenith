@@ -542,3 +542,8 @@ void Flux_SkyboxImpl::RegisterDebugVariables()
 	g_xEngine.DebugVariables().AddTexture({ "Flux", "Skybox", "Textures", "TransmittanceLUT" }, this->m_xTransmittanceLUT.SRV());
 }
 #endif
+
+// Unit tests for the CPU transmittance mirror (the derived-sun-key maths).
+// Hosted here because this TU is always linked, so the static-init test
+// registrations survive MSVC dead-stripping.
+#include "Flux/Skybox/Flux_AtmosphereTransmittance.Tests.inl"

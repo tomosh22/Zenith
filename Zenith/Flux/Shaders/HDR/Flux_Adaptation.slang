@@ -65,6 +65,9 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	{
 		g_xPassSet.g_afExposureData[0] = 0.18;
 		g_xPassSet.g_afExposureData[2] = 1.0;
+		// Nothing metered yet: resolve the "unmetered" seed sentinel (<= 0) to
+		// identity so the tonemap never multiplies by zero.
+		if (g_xPassSet.g_afExposureData[1] <= 0.0) g_xPassSet.g_afExposureData[1] = 1.0;
 		return;
 	}
 
@@ -104,8 +107,13 @@ void csMain(uint3 dispatchId : SV_DispatchThreadID)
 	g_xPassSet.g_afExposureData[0] = fAvgLuminance;
 	g_xPassSet.g_afExposureData[2] = fTargetExposure;
 
-	// Eye adaptation — smooth exponential approach to the target.
+	// Eye adaptation — smooth exponential approach to the target. A current
+	// exposure <= 0 is the "unmetered" seed sentinel (set at initialise /
+	// reset / auto-exposure enable): SNAP to the first computed target so the
+	// first metered frame is correctly exposed — there is no authored seed
+	// value to tune.
 	float fCurrentExposure = g_xPassSet.g_afExposureData[1];
+	if (fCurrentExposure <= 0.0) fCurrentExposure = fTargetExposure;
 	float fAdaptationRate  = 1.0 - exp(-g_xPassSet.AdaptationConstants.g_fDeltaTime * g_xPassSet.AdaptationConstants.g_fAdaptationSpeed);
 	g_xPassSet.g_afExposureData[1]    = lerp(fCurrentExposure, fTargetExposure, fAdaptationRate);
 

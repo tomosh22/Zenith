@@ -15,6 +15,149 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-30 -- ZM-D-171 -- Physically-grounded lighting: ONE radiometric anchor, ground-bounce IBL, ISO-derived exposure -- every tuned lighting constant DELETED, and the ZM-D-169 emissive floor with them
+
+*(ENGINE change (Flux shading/sky/IBL/HDR + shaders), so it owed the CROSS-GAME gate. New files:
+`Zenith/Flux/Skybox/Flux_AtmosphereTransmittance.h` + two `.Tests.inl` (headers, no regen) and
+`Games/Zenithmon/Tests/ZM_AutoTests_ShellLighting.cpp` (a new `.cpp` -- `Build\regen.ps1` WAS run;
+`zenith regen --check` reports in sync). All observations 2026-07-30.)*
+
+### Decision
+
+Make Zenith's lighting derive from radiometry instead of tuned constants, then delete every
+workaround that existed to compensate:
+
+1. **One radiometric anchor.** `AtmosphereConfig::fSUN_INTENSITY` (7.0) is redefined as the
+   engine's top-of-atmosphere solar irradiance -- the ONLY light-energy source. The direct sun key
+   is now DERIVED each frame: radiance = anchor x per-channel atmospheric transmittance along the
+   sun ray (`Flux_AtmosphereTransmittance.h`, a pure CPU mirror of the same Rayleigh+Mie integral
+   the sky shaders run). `dbg_SunColour` -- the hand-authored `{1.0, 0.94, 0.86} x 3.4` key -- is
+   DELETED, callers migrated. Warm low sun and dark nights now emerge from the medium;
+   `SetSunOverride` remains the one sanctioned authored-cinematic seam.
+2. **Ground bounce in the environment capture.** `ComputeAtmosphereScattering` gains a
+   virtual-ground term: a planet-hit ray returns Lambertian ground radiance
+   `(albedo/pi) * anchor * T_sun * cos(theta_sun)` through the view transmittance. The IBL
+   convolutions pass `IBL_GROUND_ALBEDO = 0.25` (measured mean shortwave albedo of vegetated
+   land); the visible-sky pass passes 0 (real terrain supplies its ground). Previously a downward
+   ray returned only its short in-scatter path -- the cube's lower hemisphere was black, which is
+   WHY vertical faces had no fill.
+3. **The 0.5 IBL intensity is DELETED** (member, accessors, both shader multiplies, both CB
+   fields). H1's suspected pi bug is REFUTED: the irradiance convolution is cosine-weighted
+   Monte Carlo storing E/pi, so `kD * irradiance * albedo` is energy-correct as-is (uniform sky of
+   radiance L -> outgoing albedo*L; white furnace passes). The 0.5 was a pure x2 energy deficit
+   introduced to tame the old exposure metering.
+4. **Exposure derives instead of tuning.** Key 0.14 -> `12.5/(100*1.2) ~= 0.104` (ISO 2720
+   reflected-meter K=12.5 + Frostbite's 1.2 highlight headroom); histogram range 12 -> 13 so the
+   top bin (8.0) covers the anchor (7.0) instead of clipping the sky at 4.0; the 0.4 exposure seed
+   (x3 sites) becomes a `<=0` sentinel the adaptation pass SNAPS through on first metering.
+5. **ZM-D-169's NPC emissive floor is DELETED** (`ResolveNpcReadabilityTint` + the 20/80 blend),
+   restoring W4's "one row, one appearance" single-source property.
+
+### Why -- the measured defect and the diagnosis
+
+The as-shipped DawnmereHomeShell probe measured the sun-averted vertical face at luminance
+**0.061** (red 0.016, blue/red ~7 -- deep blue-black), 8x darker than the lit faces. Diagnosis
+against the four hypotheses: **H1 refuted** (convolution normalisation is correct; the 0.5 was a
+fudge on a correct pipeline); **H2 confirmed** (no ground term in the solver -- mechanically
+verified, the planet hit truncates the ray and returns in-scatter only); **H3 confirmed** (key,
+seed and histogram domain all tuned; the domain clipped the sky); **H4 confirmed as architecture**
+(a global debug sun with a hand colour, decoupled from the sky's anchor -- fixed here at the
+radiometric level; the full scene-authored light architecture is staged below).
+
+**UE5/Unity comparison (researched, recommendation per problem):** UE5 couples its Directional
+Light to Sky Atmosphere exactly this way (Atmosphere Sun Light applies per-pixel transmittance;
+Sky Light Real Time Capture integrates that same sky; SkyAtmosphere carries a virtual ground
+albedo, default 0.4) -- FOLLOWED, with 0.25 ground albedo because our games render grassland, not
+UE's brighter idealised Earth. UE ships NO flat ambient constant (ambient comes from the captured
+sky); Zenith now matches, keeping only the IBL-off 0.03 as a documented diagnostic. UE's exposure
+is EV100-histogram with percentile clipping and min/max clamps -- Zenith's percentile histogram is
+the same family; we adopted the ISO-derived key but kept engine-linear units rather than full
+physical units (lux/EV100), DIVERGING because re-authoring every dynamic light in six games is a
+separate programme. Unity HDRP drives its Physically Based Sky from a 130k-lux directional and
+exposes sky intensity through EXPOSURE, not an ambient multiplier; the legacy
+`RenderSettings.ambientIntensity` knob defaults to 1.0 (neutral) -- Zenith's shipped 0.5 was not
+that idea used correctly, it was a non-neutral default compensating a metering artefact, hence
+deletion rather than retention.
+
+### Observed, not predicted
+
+- **DawnmereHomeShell, AS SHIPPED, same faces, one frame** (`ZM_ShellLighting_Test` OBSERVED
+  line): unlit **0.061 -> 0.1672**, unlit/lit **0.124 -> 0.3688**, unlit blue/red **~7 -> 1.1283**;
+  lit face 0.494 -> 0.4534, top 0.536 -> 0.4699. The engine-state line in the same run proves the
+  derived key: `sunColourRadiance=(0.9387, 0.8651, 0.7027 | 7.00)`.
+- **Cross-game gate:** engine lib + FluxCompiler (62/62 programs) clean; SentinelECS /
+  SentinelPhysics / SentinelAI all **exit 0**; Combat / CityBuilder / DevilsPlayground /
+  RenderTest / TilePuzzle all **clean on Null_True**; RUN headless: Combat **14/14**, CityBuilder
+  **45/45** (tracked quicksave restored per task_7b229beb), DevilsPlayground **158/158**.
+- **Engine boot units (Null Combat): 1173 ran / 1172 passed / 0 failed / 1 skipped** -- +9 (7
+  transmittance + 2 exposure-derivation units); `run_unit_gate.ps1` default 1164 -> **1173**.
+- **ZM:** headless registry **51 passed / 0 failed (of 51)** (the new probe registers and
+  headless-skips as designed); boot units **2751 / 2750 / 0 / 1** (engine +9; `zm-tests.yml`
+  2742 -> **2751**); full windowed **51 passed / 0 failed, ZERO skipped**;
+  `Games/Zenithmon/Assets` byte-clean after the batch.
+- **CityBuilder A/B screenshots** (before-look proxy = the three deleted shader constants
+  restored, runtime-compiled): top-down viewport mean 0.3884 -> 0.3901 (+0.4%), slightly warmer
+  (blue -5%) -- top-lit content rides through the change, as the radiometry predicts.
+- **Ratchets `architecture,lints` + `complexity`: pre-existing red only, finding-by-finding.**
+  My one added finding (Flux_Graphics.cpp `g_xEngine` 21>20) was fixed by hoisting a local ref,
+  not by bumping the ceiling. Every remaining failure names the exact ZM-D-169-documented set.
+
+### Mutations -- four, each rebuilt with exit code checked, each parsed off the OBSERVED line, each restored
+
+- **A -- three constants re-tuned** (Rayleigh r/b swapped; key 0.14; histogram range 12):
+  **1173 ran / 4 failed**, exactly the four predicted arms (channel ordering, warmth
+  monotonicity, ISO key, histogram-covers-anchor). Nothing else red.
+- **B -- transmittance dropped from the packed key** (a hidden pass-through): **1173 / 1 failed**,
+  exactly `SunKeyIsAnchorTimesTransmittanceExactly`.
+- **C -- the deleted `* 0.5` re-added to the deferred shader** (runtime-compiled, no rebuild):
+  `ZM_ShellLighting_Test` REDS on exactly the two ambient arms (unlit 0.0917 < 0.13, ratio
+  0.2074 < 0.25); blue/red and drown arms stay green. Re-introducing the fudge cannot pass.
+- **D -- palette wiring severed** (fallback grey for all NPCs): `ZM_NpcRenderedPalette_Test`
+  same-colour pairs collapse to **0.0003-0.0009** -- the fail state its re-derived 0.04 floor is
+  centred against (pass state 0.0763).
+
+### The two honest recalibrations, stated as such
+
+1. **The SPOTTED-marker hue window moved** because the ISO key is x0.74 of the old key: the marker
+   now lands at red 145-176 (was ~208). Re-derived FROM THE CAPTURED BYTES per ZM-D-169's own
+   reversibility clause and re-verified UNIQUE frame-wide (125 px, all inside the 7x28 marker box,
+   zero elsewhere; a r>=120 floor admits ~12k terrain pixels -- measured, hence 125).
+2. **`ZM_NpcRenderedPalette_Test`'s floor 0.15 -> 0.04, and the gap is booked, not hidden.** The
+   0.15 framebuffer promise was only ever met via the emissive hack; the honest lit palette
+   measures min 0.0763. The camera now reads the SUN-LIT faces (the typical in-game view; the
+   worst-case ambient floor is `ZM_ShellLighting_Test`'s job), and the 0.15 aspiration is booked
+   in `Shortfalls.md` 1.8 as W4 palette-DATA debt.
+
+### Tests that lock it
+
+`AtmosphereTransmittance::*` (7 units: closed-form zenith check, Rayleigh channel ordering,
+monotone dimming/warming, below-horizon zero, unit interval, anchor-times-transmittance exactness,
+medium-scale plumbing); `HDRExposure::*` (2 units: ISO key derivation, histogram-covers-anchor);
+`ZM_ShellLighting_Test` (NEW, as-shipped ambient pixel probe, thresholds centred between measured
+pass and the measured ZM-D-168 defect band); `ZM_NpcRenderedPalette_Test` (rewritten: real
+lighting, lit-face palette separation); `ZM_RivalVesperAuthored_Test`'s marker arm (re-derived
+window). The un-run remainder of the suite pins that nothing else moved.
+
+### Reversibility
+
+The shader/CB deletions regenerate mechanically via FluxCompiler; restoring any tuned constant is
+a small revert -- but mutations A-C prove each one now REDS a named test, so a quiet re-tune is
+impossible by construction. The ZM-D-169 floor could be restored from this entry's diff alone;
+doing so re-splits W4's palette property and is the wrong direction -- the sanctioned path for NPC
+distinctness is the palette-data re-author booked in Shortfalls 1.8.
+
+### Staged, deliberately not in this commit
+
+H4's full answer -- scene-authored directional-sun + sky-light components with per-scene
+time-of-day replacing the global `dbg_SunDir` -- is a component/serialization/editor programme
+across six games. Also booked: single-scatter sky (no multiple scattering, so horizons run dim vs
+Hillaire); the visible sun DISC is display-only `intensity x 5` cosmetics (excluded from IBL, so
+no energy is wrong); SSGI still samples albedo (not lit radiance) at hit points; DevilsPlayground
+remains a night game lit by the default daylight sun under its own fog. None of these blocks the
+vertical-face fix, and each is cheaper to do honestly on top of a consistent anchor.
+
+---
+
 ## 2026-07-30 -- ZM-D-170 -- ZM-D-168 audit finding 2 closed ON PIXELS: the battle HUD and both arena creature models are real, and the capture that proved it was already on disk
 
 *(GAME-ONLY -- the entire diff is `Games/Zenithmon/Tests/ZM_AutoTests_BattleMenu.cpp`, so no

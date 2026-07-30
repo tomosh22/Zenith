@@ -30,6 +30,17 @@ public static const float  DEFAULT_MIE_G                = 0.76;
 public static const uint   DEFAULT_SKY_SAMPLES          = 16u;
 public static const uint   DEFAULT_LIGHT_SAMPLES        = 8u;
 
+// Virtual-ground albedo for ENVIRONMENT-CAPTURE use (the IBL irradiance /
+// prefilter convolutions). A physical scene parameter, not a look knob:
+// 0.25 is the measured mean shortwave albedo of vegetated land (grassland
+// 0.20-0.26; Earth land average ~0.25), matching the terrain the games
+// render. UE5's SkyAtmosphere ships the same mechanism with ground albedo
+// 0.4 (a brighter idealised Earth); we keep the grassland value. Passes
+// that render REAL geometry in front of the sky (the visible skybox pass)
+// pass 0 — the scene's own terrain supplies the ground there, and a
+// virtual ground would double-count it.
+public static const float  IBL_GROUND_ALBEDO            = 0.25;
+
 public struct AtmosphereResult
 {
 	public float3 xColor;
@@ -94,6 +105,13 @@ public float2 ComputeOpticalDepth(float3 xOrigin,
 // Full atmosphere single-scattering solver. Returns (in-scatter RGB,
 // view transmittance). View transmittance is the average of the per-
 // channel exponentials — mirrors the GLSL contract.
+//
+// fGroundAlbedo > 0 adds a Lambertian VIRTUAL GROUND where the view ray
+// hits the planet: L_ground = (albedo/pi) * fSunIntensity * T_sun * cos,
+// attenuated by the view transmittance. Environment captures (IBL) pass
+// IBL_GROUND_ALBEDO so the lower hemisphere carries real ground bounce;
+// passes whose ground is real scene geometry pass 0. Sun-only bounce:
+// the (second-order) sky->ground->receiver term is omitted.
 public float4 ComputeAtmosphereScattering(float3 xRayOrigin,
 											float3 xRayDir,
 											float3 xSunDir,
@@ -106,7 +124,8 @@ public float4 ComputeAtmosphereScattering(float3 xRayOrigin,
 											float  fAtmosphereRadius,
 											float  fSunIntensity,
 											uint   uSkySamples,
-											uint   uLightSamples)
+											uint   uLightSamples,
+											float  fGroundAlbedo)
 {
 	float2 xAtmosIntersect = RaySphereIntersect(xRayOrigin, xRayDir, fAtmosphereRadius);
 	if (xAtmosIntersect.y < 0.0) return float4(0.0, 0.0, 0.0, 1.0); // ray misses atmosphere
@@ -173,6 +192,33 @@ public float4 ComputeAtmosphereScattering(float3 xRayOrigin,
 	float3 xViewTransmittance = exp(
 		-xRayleighCoeff * xOpticalDepthView.x
 		- fMieCoeff      * xOpticalDepthView.y);
+
+	// Virtual-ground bounce (environment captures only; see the doc comment).
+	// The min() above means a planet hit inside the segment left fRayEnd ==
+	// xPlanetIntersect.x exactly, so this float equality is the hit test.
+	if (fGroundAlbedo > 0.0 && xPlanetIntersect.x > 0.0 && fRayEnd == xPlanetIntersect.x)
+	{
+		float3 xHitPos = xRayOrigin + xRayDir * fRayEnd;
+		float  fHitR   = length(xHitPos);
+		float3 xUp     = xHitPos / fHitR;
+		float  fMuSun  = dot(xUp, xSunDir);
+		if (fMuSun > 0.0)
+		{
+			// Sun transmittance to the hit point — the same integral the
+			// in-scatter loop runs per sample.
+			float2 xLightIntersect = RaySphereIntersect(xHitPos, xSunDir, fAtmosphereRadius);
+			float2 xODLight = ComputeOpticalDepth(
+				xHitPos, xSunDir, max(xLightIntersect.y, 0.0),
+				xRayleighCoeff, fMieCoeff, xScaleHeights,
+				fPlanetRadius, uLightSamples);
+			float3 xSunTrans = exp(-xRayleighCoeff * xODLight.x - fMieCoeff * xODLight.y);
+			// Lambertian: L = (albedo/pi) * E_sun(ground), seen through the
+			// view path's transmittance.
+			float3 xGroundRadiance = (fGroundAlbedo / PI) * fSunIntensity * xSunTrans * fMuSun;
+			xInscatter += xViewTransmittance * xGroundRadiance;
+		}
+	}
+
 	float fTransmittance = dot(xViewTransmittance, float3(0.333, 0.333, 0.333));
 
 	return float4(xInscatter, fTransmittance);
@@ -365,7 +411,11 @@ public float3 RenderSunDisk(float3 xRayDir, float3 xSunDir, float fSunIntensity)
 }
 
 // IBL convenience overload — uses the documented defaults so callers
-// don't have to thread through the long parameter list.
+// don't have to thread through the long parameter list. This is the
+// ENVIRONMENT-CAPTURE path (irradiance + prefilter convolutions), so it
+// enables the virtual ground: without it the cube's lower hemisphere is
+// black and every vertical surface loses the bounce light that fills
+// real-world shadows.
 public AtmosphereResult ComputeAtmosphereScattering(float3 xRayOrigin,
 													  float3 xRayDir,
 													  float3 xSunDir,
@@ -376,7 +426,8 @@ public AtmosphereResult ComputeAtmosphereScattering(float3 xRayOrigin,
 		DEFAULT_RAYLEIGH_COEFF, DEFAULT_MIE_COEFF,
 		float2(DEFAULT_RAYLEIGH_SCALE_HEIGHT, DEFAULT_MIE_SCALE_HEIGHT),
 		DEFAULT_MIE_G, EARTH_RADIUS, ATMOSPHERE_RADIUS,
-		fSunIntensity, DEFAULT_SKY_SAMPLES, DEFAULT_LIGHT_SAMPLES);
+		fSunIntensity, DEFAULT_SKY_SAMPLES, DEFAULT_LIGHT_SAMPLES,
+		IBL_GROUND_ALBEDO);
 	AtmosphereResult o;
 	o.xColor         = xResult.rgb;
 	o.fTransmittance = xResult.a;

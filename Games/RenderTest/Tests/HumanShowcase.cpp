@@ -15,7 +15,6 @@
 
 #include "RenderTest/Components/RenderTest_GameplayState.h"
 #include "Flux/Flux_GraphicsImpl.h"   // SetSunOverride (cinematic key for the capture)
-#include "Flux/IBL/Flux_IBLImpl.h"    // IBL fill intensity
 #include "Flux/HDR/Flux_HDRImpl.h"    // pinned manual exposure
 #include "Core/Zenith_GraphicsOptions.h"  // toggle auto-exposure off for the capture
 
@@ -155,15 +154,14 @@ namespace
 			HumanShowcase_ArgFloat("--humancam-yaw=",   2.3562f),
 			HumanShowcase_ArgFloat("--humancam-pitch=", -0.04f));
 
-		// Cinematic lighting for the capture. The global default sun is a weak,
-		// near-overhead key (dim/flat 'CG' look); pose a real warm key from the
-		// front-upper-right (camera side) at high HDR radiance and drop the IBL to
-		// a fill, giving form-defining shading + specular rolloff. Scoped via the
-		// per-scene override (default-off everywhere else); restored in Verify.
+		// Cinematic lighting for the capture: pose an authored warm key from the
+		// front-upper-right (camera side) via the per-scene override (default-off
+		// everywhere else); restored in Verify. The sky IBL supplies the fill at
+		// its energy-correct level — the old 0.8 fill dial died with the IBL
+		// intensity knob.
 		g_xEngine.FluxGraphics().SetSunOverride(
 			Zenith_Maths::Vector3(-0.38f, -0.58f, -0.52f),
 			Zenith_Maths::Vector4(1.0f, 0.96f, 0.88f, 3.2f));
-		g_xEngine.IBL().SetIntensity(0.8f);
 		// Pin exposure: the bright sky otherwise drives auto-exposure to stop down
 		// and underexpose the figure. Lock a manual exposure for a stable, well-lit
 		// portrait. Restored in Verify.
@@ -280,7 +278,6 @@ namespace
 		// the showcase drove it.
 		RenderTest_GameplayState::s_bPhotoModeActive = false;
 		g_xEngine.FluxGraphics().ClearSunOverride();
-		g_xEngine.IBL().SetIntensity(1.0f);
 		Zenith_GraphicsOptions::Get().m_bHDRAutoExposureEnabled = true;
 		return s_bHumanShowcaseSawAnimator;
 	}

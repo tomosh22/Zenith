@@ -182,11 +182,30 @@ Flux_ShaderResourceView& srv = g_xEngine.FluxGraphics().GetHDRSceneSRV();
 
 Auto-exposure runs as two active compute passes (see Pass placement). `Flux_Luminance.slang`
 builds a 256-bin luminance histogram from the HDR scene into `m_xHistogramBuffer`;
-`Flux_Adaptation.slang` derives the adapted exposure (target luminance, min/max clamp,
-adaptation speed) into `m_xExposureBuffer`, which the tonemap pass consumes. Whether
-auto-exposure is engaged is owned by `Zenith_GraphicsOptions`; the per-frame tuning lives
-in the `Flux/HDR/*` debug variables (TargetLuminance, AdaptationSpeed, Min/MaxExposure,
+`Flux_Adaptation.slang` derives the adapted exposure (5%/95% percentile-trimmed
+weighted average → target = key / average, min/max clamp, adaptation speed) into
+`m_xExposureBuffer`, which the tonemap pass consumes. Whether auto-exposure is
+engaged is owned by `Zenith_GraphicsOptions`; the per-frame tuning lives in the
+`Flux/HDR/*` debug variables (TargetLuminance, AdaptationSpeed, Min/MaxExposure,
 FreezeExposure, ShowHistogram).
+
+**Derived, never tuned (ZM-D-171 — both unit-tested in
+`Flux_HDRExposure.Tests.inl`, mutation-proven):**
+
+- **The key (`dbg_fHDRTargetLuminance`) defaults to `fHDR_EXPOSURE_KEY_ISO =
+  12.5 / (100 * 1.2) ≈ 0.104`** — the ISO 2720 reflected-light-meter target
+  (K = 12.5, ISO 100) with Lagarde & de Rousiers' 1.2 highlight headroom
+  ("Moving Frostbite to PBR", SIGGRAPH 2014). The old 0.14 was tuned by eye.
+- **The histogram domain (`fHDR_HISTOGRAM_MIN_LOG_LUMINANCE = -10`, range 13)**
+  derives its top bin (2^3 = 8) from the radiometric anchor
+  (`AtmosphereConfig::fSUN_INTENSITY = 7`): the sky is the brightest
+  non-emissive content and must not clip into the last bin (the old range 12
+  topped out at 4.0 and skewed the metered average).
+- **There is no exposure seed value.** The exposure buffer seeds current
+  exposure with a `<= 0` "unmetered" sentinel; `Flux_Adaptation.slang` SNAPS to
+  its first computed target (or identity while nothing is metered), so the
+  first metered frame is correctly exposed with no authored guess. (The old
+  0.4 daylight seed at three sites is gone.)
 
 ## Future Work
 

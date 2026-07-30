@@ -15,6 +15,7 @@
 #include "Flux/TAA/Flux_TAAJitter.h" // TAA sub-pixel jitter injection into the slot-0 GPU payload
 #include "Flux/TAA/Flux_TAAImpl.h"   // GetSceneColourForPostFX routes bloom/tonemap to the TAA resolve output
 #include "Flux/TAA/Flux_TAA_ResolveCPU.h" // Flux_TAAComputeRenderDims — even-quantised render dims for temporal upscaling
+#include "Flux/Skybox/Flux_AtmosphereTransmittance.h" // derived sun key: anchor * per-channel transmittance
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -52,15 +53,14 @@ Zenith_Maths::Vector3 Flux_GraphicsImpl::GetSunDir()            { return m_xFram
 // surfaces) gives form-defining shading on upright geometry. Games that need a
 // specific sun set their own via SetSunOverride / the Sun Direction debug var.
 DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { -0.4, -0.7, -0.55 };
-// Sun radiance (.a) is the direct key-light illuminance. It was 1.0 while the
-// sky/IBL ambient bakes from the atmosphere at sun-intensity 20 (see
-// Flux_SkyboxImpl::fSUN_INTENSITY + Flux_IBL irradiance/prefilter capture),
-// so ambient fill drowned the key -> flat, washed "ambient soup" with no
-// form-defining contrast or visible shadows. Raising it to ~12 makes the sun
-// the dominant key (auto-exposure normalises absolute brightness; what matters
-// is the key:fill ratio). The chromaticity is warm ~5500K daylight white; the
-// cool-blue sky ambient stays cool, giving a realistic warm-key/cool-fill split.
-DEBUGVAR Zenith_Maths::Vector4 dbg_SunColour = { 1.0, 0.94, 0.86, 3.4f };
+// There is deliberately NO sun-colour variable. The direct sun key is DERIVED
+// each frame in UploadFrameConstants from the one radiometric anchor
+// (Skybox sun intensity = top-of-atmosphere solar irradiance) times the
+// per-channel atmospheric transmittance along the sun ray — the same medium
+// the visible sky and the IBL cubes integrate. Sun, sky and ambient therefore
+// stay energy-consistent by construction: warm low sun, dark below horizon,
+// no independently tunable key. Scenes that need an authored cinematic key
+// use the explicit SetSunOverride seam.
 
 DEBUGVAR bool dbg_bQuadUtilisationAnalysis = false;
 DEBUGVAR u_int dbg_uTargetPixelsPerTri = 10;
@@ -219,7 +219,6 @@ void Flux_GraphicsImpl::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	xEngine.DebugVariables().AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
-	xEngine.DebugVariables().AddVector4({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
 
 	xEngine.DebugVariables().AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
 	xEngine.DebugVariables().AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
@@ -293,7 +292,15 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 	}
 
 	const Zenith_Maths::Vector3 xSunDir = m_bSunOverride ? m_xSunDirOverride : Zenith_Maths::Vector3(dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z);
-	const Zenith_Maths::Vector4 xSunCol = m_bSunOverride ? m_xSunColourOverride : dbg_SunColour;
+	// Derived sun key: chromaticity = per-channel transmittance along the sun
+	// ray, HDR radiance scalar = the Skybox anchor (top-of-atmosphere solar
+	// irradiance). E_sun(ground) = anchor * T_rgb — same medium as the sky and
+	// the IBL convolution, so direct and ambient light cannot drift apart.
+	const Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
+	const Zenith_Maths::Vector4 xSunCol = m_bSunOverride
+		? m_xSunColourOverride
+		: Flux_AtmosphereTransmittance::ComputeSunColourRadiance(
+			xSunDir, xSkybox.GetSunIntensity(), xSkybox.GetRayleighScale(), xSkybox.GetMieScale());
 	m_xFrameConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4(xSunDir.x, xSunDir.y, xSunDir.z, 0.));
 	m_xFrameConstants.m_xSunColour_Pad = { xSunCol.x, xSunCol.y, xSunCol.z, xSunCol.w };
 	int32_t iWidth, iHeight;
@@ -315,8 +322,9 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 	// buffers the GPU sees (m_xFrameConstants itself is no longer uploaded; its GPU
 	// buffer was removed with Common/Frame.slang, but it stays as the CPU camera-
 	// matrix source for GetViewProjMatrix()/etc. and the mirror source here).
-	m_xGlobalConstantsData.m_uFrameIndex    = g_xEngine.Frame().GetFrameIndex();
-	m_xGlobalConstantsData.m_fTimeSeconds   = static_cast<float>(g_xEngine.Frame().GetTimePassed());
+	const FrameContext& xFrame = g_xEngine.Frame();
+	m_xGlobalConstantsData.m_uFrameIndex    = xFrame.GetFrameIndex();
+	m_xGlobalConstantsData.m_fTimeSeconds   = static_cast<float>(xFrame.GetTimePassed());
 
 	// TAA sub-pixel jitter — proj-only, injected into the slot-0 GPU CB payload ONLY.
 	// m_xFrameConstants (the CPU camera-matrix source) stays unjittered, so culling /

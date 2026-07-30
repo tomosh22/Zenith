@@ -48,10 +48,10 @@ DEBUGVAR u_int dbg_uHDRToneMappingOperator = TONEMAPPING_AGX;
 DEBUGVAR bool dbg_bHDRShowHistogram = false;
 DEBUGVAR bool dbg_bHDRFreezeExposure = false;
 DEBUGVAR float dbg_fHDRAdaptationSpeed = 4.0f;
-// Auto-exposure key (target geometric-mean luminance). Slightly below the 0.18
-// linear-average mid-grey convention because log-average metering on outdoor
-// scenes (bright sky + shadows) reads low and the standard key over-exposes.
-DEBUGVAR float dbg_fHDRTargetLuminance = 0.14f;
+// Auto-exposure key: the ISO-standard saturation-based target (see the
+// derivation on fHDR_EXPOSURE_KEY_ISO in Flux_HDRImpl.h), not a tuned number.
+// The former 0.14 was tuned by eye.
+DEBUGVAR float dbg_fHDRTargetLuminance = fHDR_EXPOSURE_KEY_ISO;
 DEBUGVAR float dbg_fHDRMinExposure = 0.05f;
 DEBUGVAR float dbg_fHDRMaxExposure = 10.0f;
 
@@ -177,10 +177,12 @@ void Flux_HDRImpl::Initialise()
 			"Flux_HDR: Failed to create histogram buffer");
 
 		// Exposure buffer (4 floats: avgLum, currentExp, targetExp, pad).
-		// Seed exposure near a daylight value (0.4), not 1.0, so the scene is
-		// well-exposed immediately and stays close across the smoke runner's
-		// scene reloads (which re-fire this seed).
-		float afInitialExposure[4] = { 0.4f, 0.4f, 0.4f, 0.0f };
+		// Seed current exposure with the <=0 "unmetered" sentinel: the
+		// adaptation pass SNAPS to its first computed target instead of
+		// easing from an arbitrary guess, so the first metered frame is
+		// correctly exposed with no authored seed value. (Slot 0 = avg lum
+		// readback, seeded at the mid-grey convention; slot 2 = target.)
+		float afInitialExposure[4] = { 0.18f, 0.0f, 1.0f, 0.0f };
 		xVulkanMemory.InitialiseReadWriteBuffer(afInitialExposure, 4 * sizeof(float), m_xExposureBuffer);
 		Zenith_Assert(m_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid(),
 			"Flux_HDR: Failed to create exposure buffer");
@@ -228,10 +230,12 @@ void Flux_HDRImpl::Reset()
 	// Reset exposure buffer to default values
 	if (m_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
-		// Seed exposure near a daylight value (0.4), not 1.0, so the scene is
-		// well-exposed immediately and stays close across the smoke runner's
-		// scene reloads (which re-fire this seed).
-		float afInitialExposure[4] = { 0.4f, 0.4f, 0.4f, 0.0f };
+		// Seed current exposure with the <=0 "unmetered" sentinel: the
+		// adaptation pass SNAPS to its first computed target instead of
+		// easing from an arbitrary guess, so the first metered frame is
+		// correctly exposed with no authored seed value. (Slot 0 = avg lum
+		// readback, seeded at the mid-grey convention; slot 2 = target.)
+		float afInitialExposure[4] = { 0.18f, 0.0f, 1.0f, 0.0f };
 		g_xEngine.FluxMemory().UploadBufferData(
 			m_xExposureBuffer.GetBuffer().m_xVRAMHandle,
 			afInitialExposure,
@@ -265,10 +269,12 @@ static void PreExecuteLuminanceHistogram(void* pUserData)
 	xHDR.m_bAutoExposureWasEnabled = bAutoExposure;
 	if (bAutoExposureJustEnabled && xHDR.m_xExposureBuffer.GetBuffer().m_xVRAMHandle.IsValid())
 	{
-		// Seed exposure near a daylight value (0.4), not 1.0, so the scene is
-		// well-exposed immediately and stays close across the smoke runner's
-		// scene reloads (which re-fire this seed).
-		float afInitialExposure[4] = { 0.4f, 0.4f, 0.4f, 0.0f };
+		// Seed current exposure with the <=0 "unmetered" sentinel: the
+		// adaptation pass SNAPS to its first computed target instead of
+		// easing from an arbitrary guess, so the first metered frame is
+		// correctly exposed with no authored seed value. (Slot 0 = avg lum
+		// readback, seeded at the mid-grey convention; slot 2 = target.)
+		float afInitialExposure[4] = { 0.18f, 0.0f, 1.0f, 0.0f };
 		g_xEngine.FluxMemory().UploadBufferData(
 			xHDR.m_xExposureBuffer.GetBuffer().m_xVRAMHandle,
 			afInitialExposure,
@@ -875,3 +881,8 @@ const Flux_ShaderResourceView* Flux_HDRImpl::GetDebugSRV_Bloom2()
 	return &m_pxGraph->GetTransientAttachment(m_aaxBloomChainHandles[kuFluxViewSlotMain][2]).SRV();
 }
 #endif
+
+// Unit tests for the derived (never tuned) exposure constants. Hosted here
+// because this TU is always linked, so the static-init test registrations
+// survive MSVC dead-stripping.
+#include "Flux/HDR/Flux_HDRExposure.Tests.inl"

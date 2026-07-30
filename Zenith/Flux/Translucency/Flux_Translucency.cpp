@@ -29,18 +29,16 @@ struct TranslucencyPassConstants
 	u_int m_bIBLEnabled;
 	u_int m_bIBLDiffuseEnabled;
 	u_int m_bIBLSpecularEnabled;
-	float m_fIBLIntensity;
 	// (shadow/dynamic-light gates are per-view now — g_xView.g_uViewFlags)
 	float m_fAmbientFallbackIntensity;
-	// std140: g_xCSMTexelSize (float2) is 8-byte aligned → offset 24, with a
-	// 4-byte pad at 20. Mirrors TranslucencyConstants_CB in Generated/
-	// Translucency.h (static_asserted below against the reflected layout).
-	u_int m_uPad0;
+	// std140: g_xCSMTexelSize (float2) is 8-byte aligned → offset 16, no pad.
+	// Mirrors TranslucencyConstants_CB in Generated/Translucency.h
+	// (static_asserted below against the reflected layout).
 	float m_fCSMTexelSizeX;
 	float m_fCSMTexelSizeY;
 };
-static_assert(sizeof(TranslucencyPassConstants) == 32, "TranslucencyPassConstants must match the reflected TranslucencyConstants_CB (32B, texelSize at offset 24)");
-static_assert(offsetof(TranslucencyPassConstants, m_fCSMTexelSizeX) == 24, "g_xCSMTexelSize must sit at offset 24 (std140 float2 alignment)");
+static_assert(sizeof(TranslucencyPassConstants) == 24, "TranslucencyPassConstants must match the reflected TranslucencyConstants_CB (24B, texelSize at offset 16)");
+static_assert(offsetof(TranslucencyPassConstants, m_fCSMTexelSizeX) == 16, "g_xCSMTexelSize must sit at offset 16 (std140 float2 alignment)");
 
 static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*);
 
@@ -366,9 +364,7 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 	xConstants.m_bIBLEnabled = (xIBL.IsEnabled() && xIBL.IsReady()) ? 1 : 0;
 	xConstants.m_bIBLDiffuseEnabled = xIBL.IsDiffuseEnabled() ? 1 : 0;
 	xConstants.m_bIBLSpecularEnabled = xIBL.IsSpecularEnabled() ? 1 : 0;
-	xConstants.m_fIBLIntensity = xIBL.GetIntensity();
-	xConstants.m_fAmbientFallbackIntensity = 0.03f;	// matches the deferred default
-	xConstants.m_uPad0 = 0u;
+	xConstants.m_fAmbientFallbackIntensity = 0.03f;	// diagnostic IBL-off path only; matches the deferred default
 	xConstants.m_fCSMTexelSizeX = 1.0f / static_cast<float>(ZENITH_FLUX_CSM_RESOLUTION);
 	xConstants.m_fCSMTexelSizeY = 1.0f / static_cast<float>(ZENITH_FLUX_CSM_RESOLUTION);
 

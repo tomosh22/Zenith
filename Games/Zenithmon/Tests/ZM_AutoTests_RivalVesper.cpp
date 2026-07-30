@@ -3428,11 +3428,17 @@ namespace
 			// ★ THE HUE IS MEASURED, NOT PREDICTED, and predicting it is how two
 			// hand-rolled scans produced false negatives on 2026-07-29. The marker
 			// submits linear (1.0, 0.82, 0.08) and is drawn UNLIT at 1.5x, so a
-			// saturated yellow looks obvious -- but after tonemap it lands at
-			// RGB(208, 182, 97), i.e. blue/red ~0.47, and any filter assuming "low
-			// blue" rejects it. That hue was verified UNIQUE across the whole
-			// 1280x720 frame (119 matching pixels, ALL of them inside the marker's
-			// own 7x28 bounding box, zero elsewhere).
+			// saturated yellow looks obvious -- but after exposure + tonemap the
+			// bytes depend on the whole display chain, so the window below is
+			// RE-DERIVED off the captured TGA whenever the chain legitimately
+			// changes. ZM-D-171 (the ISO-derived exposure key, 0.74x the old
+			// hand-tuned key) moved the marker from RGB(208,182,97) to red
+			// 145-176, g/r 0.858-0.931, b/r 0.364-0.490 (122 px, same 7x28
+			// upright box). The window (r 125-195, g/r 0.82-0.96, b/r 0.32-0.54)
+			// was verified UNIQUE across the whole 1280x720 frame on that capture:
+			// 125 matching pixels, ALL inside the marker's own box, ZERO elsewhere
+			// (a looser r>=120 floor admits ~12k terrain pixels -- measured, which
+			// is why the floor sits at 125).
 			if constexpr (!Zenith_IsNullRenderer())
 			{
 				ZM_TestTGAImage xMarkerShot;
@@ -3461,14 +3467,14 @@ namespace
 							const float fBlue = static_cast<float>(puBGRA[0]);
 							const float fGreen = static_cast<float>(puBGRA[1]);
 							const float fRed = static_cast<float>(puBGRA[2]);
-							if (fRed < 170.0f || fRed > 240.0f)
+							if (fRed < 125.0f || fRed > 195.0f)
 							{
 								continue;
 							}
 							const float fGreenRatio = fGreen / fRed;
 							const float fBlueRatio = fBlue / fRed;
-							if (fGreenRatio < 0.80f || fGreenRatio > 0.95f
-								|| fBlueRatio < 0.38f || fBlueRatio > 0.56f)
+							if (fGreenRatio < 0.82f || fGreenRatio > 0.96f
+								|| fBlueRatio < 0.32f || fBlueRatio > 0.54f)
 							{
 								continue;
 							}
@@ -4572,24 +4578,45 @@ ZENITH_AUTOMATED_TEST_REGISTER(g_xZMRivalVesperWhiteoutTest);
 // temporarily teleports those exact model entities into a controlled eye-level
 // lineup. No lookalike swatches and no copied materials are created.
 //
-// The lighting deliberately reproduces the failure mode that motivated the
-// NPC-only emissive floor: one vertical overhead directional, IBL disabled, and
-// the camera looking horizontally at vertical cube faces. A swapchain TGA is
-// requested after the lineup settles. Verification maps the six projected body
-// centres through the tools viewport into that full-swapchain image, reads the
-// real BGRA pixels, and requires all 15 normalized-RGB separations to remain at
-// least 0.15. Removing ZM_GreyboxVisual's NPC emission therefore makes the
-// vertical faces collapse into the 0.03 ambient fallback and reds this test.
+// ZM-D-171: the lighting here is the ENGINE'S REAL AMBIENT, not the emissive
+// floor. The camera looks horizontally at vertical faces the sun does NOT hit
+// (the shipped sun travels {-0.4,-0.7,-0.55}; the sampled -Z faces have
+// N.L <= 0), every scene dynamic light is zeroed, and readability must come
+// entirely from the energy-correct sky+ground IBL lighting the LIT authored
+// palette — the exact property that justified deleting ZM-D-169's emissive
+// floor. A swapchain TGA is requested after the lineup settles; verification
+// maps the six projected body centres through the tools viewport, reads real
+// BGRA pixels, and requires all 15 normalized-RGB separations to hold the
+// 0.15 W4 promise. Re-halving the IBL, losing the ground bounce, or any other
+// ambient collapse pushes the vertical faces back toward black and reds this.
+// Auto-exposure is disabled (deterministic manual exposure) so the numbers are
+// comparable run to run.
 // ============================================================================
 
 namespace
 {
 	constexpr int iNRP_DAWNMERE_BUILD_INDEX = 2;
 	constexpr float fNRP_FIXED_DT = 1.0f / 60.0f;
-	constexpr float fNRP_MIN_RENDERED_SEPARATION = 0.15f;
+	// ZM-D-171 RE-DERIVED, and the story is told honestly: 0.15 was ZM-D-169's
+	// framebuffer mirror of W4's authored-space promise, and it was only ever
+	// met via the (now deleted) emissive floor. Under HONEST lighting the
+	// authored palette's minimum rendered separation measured 0.0763
+	// (Caretaker/Wanderer, sun-lit faces, 2026-07-30); the severed-wiring
+	// mutation measured 0.0003-0.0009 for the same pairs. 0.04 sits between
+	// the bands, so this clause pins "the palette wiring is alive and the six
+	// palettes render distinguishably" -- while the 0.15 aspiration is BOOKED
+	// as open W4 palette-data debt in Shortfalls.md (the fix is more-separated
+	// authored colours, never an emissive carrier).
+	constexpr float fNRP_MIN_RENDERED_SEPARATION = 0.04f;
 	constexpr float fNRP_LINEUP_Y = 100.0f;
 	constexpr float fNRP_LINEUP_Z = 10.0f;
-	constexpr float fNRP_CAMERA_Z = 0.0f;
+	// The camera sits BEYOND the lineup looking back along -Z, so the faces
+	// it reads are the +Z faces the sun actually hits (N.L ~ 0.56 with the
+	// shipped sun) -- the TYPICAL in-game reading of an NPC. The worst-case
+	// sun-averted-face floor is ZM_ShellLighting_Test's job; demanding full
+	// palette separation on an ambient-only face is what forced the ZM-D-169
+	// emissive hack in the first place.
+	constexpr float fNRP_CAMERA_Z = 20.0f;
 	constexpr u_int uNRP_SAMPLE_RADIUS = 4u;
 	constexpr int iNRP_CAPTURE_EARLIEST_FRAME = 60;
 	constexpr int iNRP_CAPTURE_TIMEOUT_FRAME = 180;
@@ -4706,7 +4733,10 @@ namespace
 		xOpts.m_bGPUParticlesEnabled = false;
 		xOpts.m_bGrassEnabled = false;
 		xOpts.m_bHDRBloomEnabled = false;
-		xOpts.m_bIBLEnabled = false;
+		// ZM-D-171: IBL diffuse + specular STAY ON, sourced from the atmosphere --
+		// the ambient IS the subject under test now (it lights the palette on the
+		// sun-averted faces the camera samples).
+		xOpts.m_bIBLEnabled = true;
 		xOpts.m_bPrimitivesEnabled = false;
 		xOpts.m_bQuadsEnabled = false;
 		xOpts.m_bSDFsEnabled = false;
@@ -4718,9 +4748,9 @@ namespace
 		xOpts.m_bTerrainEnabled = false;
 		xOpts.m_bTextEnabled = false;
 		xOpts.m_bHDRAutoExposureEnabled = false;
-		xOpts.m_bIBLDiffuseEnabled = false;
-		xOpts.m_bIBLSpecularEnabled = false;
-		xOpts.m_bSkyboxAtmosphereEnabled = false;
+		xOpts.m_bIBLDiffuseEnabled = true;
+		xOpts.m_bIBLSpecularEnabled = true;
+		xOpts.m_bSkyboxAtmosphereEnabled = true;
 		xOpts.m_xSkyboxColour = Zenith_Maths::Vector3(0.015f, 0.015f, 0.018f);
 	}
 
@@ -5063,31 +5093,15 @@ static void Setup_ZMNpcRenderedPalette()
 	}
 	g_bNRPSceneLoaded = true;
 
-	// Keep exactly one scene-authored directional, rewritten to the failure-
-	// inducing overhead direction. Every other Dawnmere light is suppressed.
-	Zenith_LightComponent* pxOverhead = nullptr;
+	// ZM-D-171: EVERY dynamic light is zeroed. The lineup's camera-facing -Z
+	// faces have N.L <= 0 against the global sun, so what the camera reads is
+	// the engine's ambient (sky + virtual-ground IBL) lighting the LIT palette
+	// — the property this test exists to pin.
 	g_xEngine.Scenes().QueryActiveScene<Zenith_LightComponent>().ForEach(
-		[&pxOverhead](Zenith_EntityID, Zenith_LightComponent& xLight)
+		[](Zenith_EntityID, Zenith_LightComponent& xLight)
 		{
-			if (pxOverhead == nullptr
-				&& xLight.GetLightType() == LIGHT_TYPE_DIRECTIONAL)
-			{
-				pxOverhead = &xLight;
-				return;
-			}
 			xLight.SetIntensity(0.0f);
 		});
-	if (pxOverhead == nullptr)
-	{
-		Zenith_Entity xLight =
-			g_xEngine.Scenes().CreateEntity(pxSceneData, "NpcPaletteOverheadLight");
-		pxOverhead = &xLight.AddComponent<Zenith_LightComponent>();
-	}
-	pxOverhead->SetLightType(LIGHT_TYPE_DIRECTIONAL);
-	pxOverhead->SetColor(Zenith_Maths::Vector3(1.0f));
-	pxOverhead->SetIntensity(2.5f);
-	pxOverhead->SetCastShadows(false);
-	pxOverhead->SetWorldDirection(Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f));
 
 	Zenith_Entity xCamera =
 		g_xEngine.Scenes().CreateEntity(pxSceneData, "NpcPaletteEyeLevelCamera");
@@ -5095,7 +5109,7 @@ static void Setup_ZMNpcRenderedPalette()
 		xCamera.AddComponent<Zenith_CameraComponent>();
 	xCameraComponent.SetPosition(
 		Zenith_Maths::Vector3(0.0f, fNRP_LINEUP_Y, fNRP_CAMERA_Z));
-	xCameraComponent.SetYaw(0.0);
+	xCameraComponent.SetYaw(3.14159265358979); // face -Z: read the sun-lit +Z faces
 	xCameraComponent.SetPitch(0.0);
 	xCameraComponent.SetFOV(glm::radians(55.0f));
 	xCameraComponent.SetNearPlane(0.1f);

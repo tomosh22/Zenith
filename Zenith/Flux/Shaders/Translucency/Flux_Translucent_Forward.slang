@@ -59,7 +59,6 @@ struct TranslucencyConstantsLayout
 	uint   g_bIBLEnabled;
 	uint   g_bIBLDiffuseEnabled;
 	uint   g_bIBLSpecularEnabled;
-	float  g_fIBLIntensity;
 	// (the shadow/dynamic-light gates moved to the per-view g_xView.g_uViewFlags
 	//  — each render view decides; pass constants carry only pass-local state)
 	float  g_fAmbientFallbackIntensity;
@@ -310,7 +309,9 @@ float3 ComputeForwardIBLAmbient(MaterialSurface s, float3 xViewDir)
 		xBase = xBase * (1.0 - s.ccStrength * fCoatFresnel) + xCoatSpecular * fSpecularAO;
 	}
 
-	return xBase * g_xPassSet.TranslucencyConstants.g_fIBLIntensity;
+	// No intensity scale — matches the deferred path: the IBL cubes are
+	// energy-correct integrals of the frame's own sky.
+	return xBase;
 }
 
 // ----- Sun direct lighting (deferred recipe over a MaterialSurface) -----

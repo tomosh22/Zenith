@@ -1,22 +1,21 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-29
+**Last updated:** 2026-07-30
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (RE-OBSERVED 2026-07-30 at ZM-D-170, on a fresh build of both
-configs):** ZM headless registry **50 passed / 0 failed**; full windowed
-Vulkan **50 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2742 ran / 2741 passed / 0
-failed / 1 skipped** (`zm-tests.yml` pinned to **2742**); engine boot unit gate,
-Null Combat, **1164 ran / 1163 passed / 0 failed / 1 skipped**
-(`run_unit_gate.ps1` default `-Baseline 1164`). The 1 skipped in each is the
+down this file (RE-OBSERVED 2026-07-30 at ZM-D-171, on fresh builds of both
+configs):** ZM headless registry **51 passed / 0 failed**; full windowed
+Vulkan **51 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2751 ran / 2750 passed / 0
+failed / 1 skipped** (`zm-tests.yml` pinned to **2751**); engine boot unit gate,
+Null Combat, **1173 ran / 1172 passed / 0 failed / 1 skipped**
+(`run_unit_gate.ps1` default `-Baseline 1173`). The 1 skipped in each is the
 quarantined `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
-**The registry moved 49 -> 50 at ZM-D-169** (`ZM_NpcRenderedPalette_Test`, a genuinely new
-registration); **BOTH unit baselines are UNMOVED**, so no `-Baseline` anywhere changed.
-**ZM-D-170 moved NOTHING** -- it extended the existing `ZM_BattleMenuRun_Test` rather than
-registering a test, and added no `ZENITH_TEST` case, so all four figures above were RE-OBSERVED
-equal and no site was edited. The engine figure is carried forward from ZM-D-169 and was **not**
-re-run: ZM-D-170 is game-only (one file under `Games/Zenithmon/Tests/`), so it owed no
-cross-game gate. Do not cite it as freshly observed at ZM-D-170.
+**ZM-D-171 moved ALL FOUR figures** -- the registry 50 -> 51 (`ZM_ShellLighting_Test`, the
+as-shipped ambient pixel probe) and both unit baselines +9 (7 `AtmosphereTransmittance` + 2
+`HDRExposure` engine units), so every pinned site was updated from its OBSERVED line in the same
+commit: this block, `zm-tests.yml` `-Baseline`, `Shortfalls.md`'s bullet, and
+`run_unit_gate.ps1`'s default. It was an ENGINE commit (physically-grounded lighting) and took
+the full cross-game gate -- see the ZM-D-171 DecisionLog entry for the observed matrix.
 
 **★ THIS BLOCK AND `zm-tests.yml`'s PIN MOVE TOGETHER OR NOT AT ALL, and on
 2026-07-29 they did not.** This block read 2722 while the workflow was already

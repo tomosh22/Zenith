@@ -4,6 +4,28 @@
 
 Image-Based Lighting system for realistic ambient lighting and reflections. Uses a split-sum approximation with precomputed BRDF LUT for efficient real-time IBL. Provides diffuse irradiance from environment and roughness-based specular reflections.
 
+## The energy contract (ZM-D-171 — read before touching any of this)
+
+- **There is NO IBL intensity scale.** The old `m_fIntensity = 0.5` (and its
+  `g_fIBLIntensity` shader multiply in DeferredShading + Translucency) was an
+  exposure-era fudge and was DELETED. The irradiance cube stores E/π via
+  cosine-weighted Monte Carlo (the π in the Lambert BRDF and the π in the PDF
+  cancel), so `kD * irradiance * albedo` in the deferred shader is
+  energy-correct as-is; any scale on it breaks sun↔sky consistency.
+- **The environment the cubes integrate includes a Lambertian VIRTUAL GROUND**
+  (`IBL_GROUND_ALBEDO = 0.25` in `Shaders/Common/Atmosphere.slang`, the
+  measured mean shortwave albedo of vegetated land; UE5's SkyAtmosphere ships
+  the same mechanism at 0.4). Without it the cube's lower hemisphere is black
+  and every vertical surface loses the bounce light that fills real shadows —
+  the ZM-D-168 "vertical faces render near-black" defect. The visible-sky pass
+  passes ground albedo 0 (real terrain supplies the ground there).
+- **The direct sun key derives from the same atmosphere**: sun radiance =
+  `AtmosphereConfig::fSUN_INTENSITY` (the engine's ONE radiometric anchor) ×
+  per-channel transmittance along the sun ray
+  (`Flux/Skybox/Flux_AtmosphereTransmittance.h`, unit-tested + mutation-proven).
+  Sun, sky and ambient therefore cannot drift apart, and there is no tunable
+  sun colour.
+
 ## Architecture
 
 ```
@@ -68,6 +90,9 @@ Registered in `RegisterDebugVariables()` (guarded by `ZENITH_TOOLS`):
 Enable/diffuse/specular toggles are **not** debug variables — they live in
 `Zenith_GraphicsOptions` (`m_bIBLEnabled`, `m_bIBLDiffuseEnabled`,
 `m_bIBLSpecularEnabled`), read via `IsEnabled()` / `IsDiffuseEnabled()` / `IsSpecularEnabled()`.
+There is no intensity knob (see the energy contract above); `m_bIBLEnabled=false`
+falls back to the flat `dbg_fAmbientFallbackIntensity` (0.03) path in
+DeferredShading — a DIAGNOSTIC state only, never a shipped look.
 
 ## Debug Modes
 

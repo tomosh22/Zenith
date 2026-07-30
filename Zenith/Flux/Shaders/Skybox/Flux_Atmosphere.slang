@@ -117,7 +117,8 @@ GBufferOut fsMain(FullscreenVsOut input)
 					xScaleHeights, g_xPassSet.AtmosphereConstants.g_fMieG,
 					g_xPassSet.AtmosphereConstants.g_fPlanetRadius, g_xPassSet.AtmosphereConstants.g_fAtmosphereRadius,
 					g_xPassSet.AtmosphereConstants.g_fSunIntensity,
-					g_xPassSet.AtmosphereConstants.g_uSkySamples, g_xPassSet.AtmosphereConstants.g_uLightSamples);
+					g_xPassSet.AtmosphereConstants.g_uSkySamples, g_xPassSet.AtmosphereConstants.g_uLightSamples,
+					0.0); // real terrain supplies the ground in the visible sky pass
 				xSkyColor = r.rgb;
 				break;
 			}
@@ -129,7 +130,8 @@ GBufferOut fsMain(FullscreenVsOut input)
 					xScaleHeights, g_xPassSet.AtmosphereConstants.g_fMieG,
 					g_xPassSet.AtmosphereConstants.g_fPlanetRadius, g_xPassSet.AtmosphereConstants.g_fAtmosphereRadius,
 					g_xPassSet.AtmosphereConstants.g_fSunIntensity,
-					g_xPassSet.AtmosphereConstants.g_uSkySamples, g_xPassSet.AtmosphereConstants.g_uLightSamples);
+					g_xPassSet.AtmosphereConstants.g_uSkySamples, g_xPassSet.AtmosphereConstants.g_uLightSamples,
+					0.0); // real terrain supplies the ground in the visible sky pass
 				xSkyColor = m.rgb;
 				break;
 			}

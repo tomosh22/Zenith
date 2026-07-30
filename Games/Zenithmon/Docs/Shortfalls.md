@@ -26,12 +26,13 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   traversable Dawnmere + live PlayerHome door round trip; S4's five procedural asset generators +
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
-- **★ CURRENT VERIFIED BASELINE (re-observed 2026-07-30 at ZM-D-170, orchestrator-run,
-  not inferred -- every figure UNMOVED from ZM-D-169, so nothing here was edited):**
-  ZM headless registry **50 passed / 0 failed**; full windowed Vulkan **50 passed
-  / 0 failed, ZERO skipped**; ZM boot unit gate **2742 ran / 2741 passed / 0 failed / 1 skipped**
-  (`zm-tests.yml` pinned to **2742**); engine boot gate **1164 / 1163 / 0 / 1**
-  (`run_unit_gate.ps1` default `-Baseline 1164`). The single skip in each is the quarantined
+- **★ CURRENT VERIFIED BASELINE (re-observed 2026-07-30 at ZM-D-171, every figure off an
+  OBSERVED line):** ZM headless registry **51 passed / 0 failed**; full windowed Vulkan
+  **51 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2751 ran / 2750 passed / 0 failed /
+  1 skipped** (`zm-tests.yml` pinned to **2751**); engine boot gate **1173 / 1172 / 0 / 1**
+  (`run_unit_gate.ps1` default `-Baseline 1173`). ZM-D-171 moved all four (registry +1 =
+  `ZM_ShellLighting_Test`; both unit gates +9 engine lighting units) and updated every pinned
+  site in the same commit. The single skip in each is the quarantined
   `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
   **Every "36 tests / 2392 units" figure elsewhere in this document is stale by construction --
   trust this line.** ★ This bullet previously read 2731 while `Status.md` read 2722 and the
@@ -55,12 +56,13 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   **2742 / 2741 / 0 / 1 unmoved** -- so no baseline moved and none of the three pinned sites was
   touched.
 - **Next autonomous work (2026-07-30):** **S8's four content items** (`Roadmap.md:198-201`). **Still
-  booked here and NOT scheduled:** the camera cut (1.8-3a); the general greybox shading gap the audit
-  diagnosed, which ZM-D-169 **worked around for NPCs only** with an emissive floor rather than fixing
-  -- every non-NPC blockout still renders near-black on the vertical faces a player sees; and the
-  engine's `AddLine` centring bug (`task_33ee8059`). There is no human gate during S8's content work;
-  the next human intervention point is the S8 vertical-slice go/no-go, which **follows** those four
-  items rather than preceding them, and which **no agent may sign**.
+  booked here and NOT scheduled:** the camera cut (1.8-3a); the W4 palette-data re-author (rendered
+  NPC distinctness back toward 0.15 via more-separated authored colours -- see 1.8-4, the ZM-D-171
+  residual); and the engine's `AddLine` centring bug (`task_33ee8059`). **The general greybox shading
+  gap is CLOSED at engine level (ZM-D-171)** -- vertical faces carry real sky+ground ambient now,
+  measured on pixels, and ZM-D-169's NPC-only emissive workaround is deleted. There is no human gate
+  during S8's content work; the next human intervention point is the S8 vertical-slice go/no-go,
+  which **follows** those four items rather than preceding them, and which **no agent may sign**.
 - **What's designed but unbuilt:** the remaining outdoor terrain recipes and all playable Thornacre/Route1 scene content; badge-award gameplay and the League arc (S8+); the BOX storage screen (**re-deferred S7 -> S9 in writing on 2026-07-29, ZM-D-165 / Q-2026-07-29-001, after a doc audit found the S6-era deferral about to expire unremarked**); and the broad world buildout (S9/S10). **Corrected 2026-07-29:** the save-slot / manual / continue / autosave flows are NOT unbuilt -- they SHIPPED as S7 item 2 (ZM-D-137..142), and story-flag gating and trainer battles shipped in S7 items 2-3. The inner disk-payload codec itself now exists. PlayerHome and the outdoor home shell are intentionally replaceable greyboxes, not final art. The full ~25-terrain-set world bake remains a projection (AssetManifest.md 6.3), though the four asset-generator families have been cold-baked together at family scale.
 - **Locked cuts (not gaps -- see Scope.md):** no audio (engine has none), no networking/multiplayer/trading, no Dynamax-analog, battle format singles only, documented volatile-status cuts (Substitute/Encore/Transform/weight moves).
 
@@ -274,6 +276,22 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      and is far cheaper than the roster work this entry previously implied** -- and W4, ZM-D-160 and
      ZM-D-164 all overstated their user-visible effect. Evidence:
      `Build/artifacts/evidence_final/02_overworld_npc_blockout.png`.
+   - **RESOLVED AT ENGINE LEVEL 2026-07-30 (ZM-D-171), AND THE RESIDUAL IS NAMED.** The engine's
+     ambient was made physically grounded (virtual-ground bounce in the IBL cubes, the 0.5 IBL
+     intensity fudge deleted, the sun key derived from the same atmosphere the sky renders — see
+     the ZM-D-171 DecisionLog entry). Measured AS SHIPPED on the DawnmereHomeShell by the NEW
+     `ZM_ShellLighting_Test`: the sun-averted vertical face went luminance **0.061 → 0.1672**,
+     unlit/lit ratio **0.124 → 0.3688**, and the blue-black cast collapsed (blue/red **~7 → 1.13**).
+     Every blockout benefits — walls, doors, props, not just NPCs — and ZM-D-169's NPC emissive
+     floor is DELETED, restoring W4's "one row, one appearance" single-source property.
+     **★ THE RESIDUAL IS ART DATA, NOT LIGHTING: the authored palette's minimum RENDERED pairwise
+     separation under honest lighting is 0.0763 (Caretaker/Wanderer, sun-lit faces, measured
+     2026-07-30) — the 0.15 framebuffer promise was only ever met via the emissive hack.**
+     `ZM_NpcRenderedPalette_Test`'s floor is re-derived to 0.04 (severed-wiring fail state
+     measured 0.0003–0.0009), pinning "wiring alive + palettes render distinguishably"; raising
+     rendered distinctness back to 0.15 needs MORE-SEPARATED AUTHORED PALETTE COLOURS in
+     `ZM_HumanAppearance`'s outfit/hair tables — booked here, deliberately not smuggled into the
+     engine commit, and never again an emissive carrier.
    - **RESOLVED 2026-07-30 (ZM-D-170) -- CREATURE MODELS AND THE BATTLE HUD, BOTH NOW PINNED BY
      PIXELS. THE AUDIT'S NULL WAS AN OBSERVATION MISS, NOT AN ABSENCE.** This entry previously read
      "UNVERIFIED BY PIXELS ... no creature model and no HP panel / text log / Fight-Catch-Run menu

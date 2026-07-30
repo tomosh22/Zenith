@@ -21,10 +21,17 @@ namespace AtmosphereConfig
 	constexpr float fMIE_G = 0.76f;
 
 	constexpr float fSUN_ANGULAR_RADIUS = 0.00935f;
-	// 20 -> 7: at 20 the atmosphere sky luminance (~20) massively exceeds the
-	// auto-exposure histogram's top bin (luminance 4.0) and, combined with deep
-	// shadows, broke log-average metering (chronic over-exposure). 7 keeps a
-	// bright daylight sky while staying in a range the exposure system handles.
+	// ★ THE ENGINE'S ONE RADIOMETRIC ANCHOR: top-of-atmosphere solar
+	// irradiance, in engine linear-HDR units. Everything luminous derives from
+	// it — the sky (single-scatter inscatter * this), the IBL irradiance +
+	// prefilter cubes (convolved from that sky, including the virtual-ground
+	// bounce), and the direct sun key (this * per-channel transmittance, see
+	// Flux_AtmosphereTransmittance.h). Its ABSOLUTE value is a unit choice
+	// (exposure normalises it away; only ratios are physical); changing it
+	// rescales every absolute HDR constant in the tree (bloom threshold,
+	// exposure clamps, histogram domain — Flux_HDRImpl derives its histogram
+	// top bin from this). It is NOT a look knob: do not touch it to brighten
+	// or darken a scene — that is the exposure system's job.
 	constexpr float fSUN_INTENSITY = 7.0f;
 
 	constexpr u_int uDEFAULT_SKY_SAMPLES = 16;
