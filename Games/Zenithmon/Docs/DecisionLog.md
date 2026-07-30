@@ -15,6 +15,167 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-30 -- ZM-D-170 -- ZM-D-168 audit finding 2 closed ON PIXELS: the battle HUD and both arena creature models are real, and the capture that proved it was already on disk
+
+*(GAME-ONLY -- the entire diff is `Games/Zenithmon/Tests/ZM_AutoTests_BattleMenu.cpp`, so no
+cross-game gate is owed. **No `Build\regen.ps1`:** the only new dependency is a HEADER include
+(`Tests/ZM_TestTGAHelpers.h`, previously included by exactly one TU); regen is for a new `.cpp` or
+folder. All observations 2026-07-30.)*
+
+### Decision
+
+Close ZM-D-168's audit finding 2 -- "creature models and the battle HUD are UNVERIFIED by pixels" --
+by reading the swapchain capture `ZM_BattleMenuRun_Test` was **already writing**, rather than by
+adding a new test. Six pixel arms were added to that test's existing `Verify_`, four for the HUD and
+three for the creatures (the platform arm serves both). **The registry stays at 50.**
+
+### Why -- the hole was sharper than "no coverage"
+
+`ZM_BattleMenuRun_Test` already dwelt 90 frames in `ACTION_ROOT` and already wrote a real
+`Flux_Screenshot::RequestDump` TGA to
+`Build/artifacts/zenithmon/visual_audit/battle_menu_run_root.tga`. Its verification then asserted
+`DiskFilePresent(...)`, UI element visibility, and button text -- and **never read a pixel**. So a
+capture sat on disk that no assertion touched: **evidence produced and never checked, which reads as
+coverage and is not.** That is the same passes-because-it-never-really-checked shape ZM-D-168 exists
+to punish, one level further out. One capture, taken on a frame that is deliberately held still,
+carries BOTH halves of the finding at zero extra runtime -- which is why extending the existing
+registration beat adding a second 240-frame battle round trip.
+
+### ★ THE ANSWER TO THE OPEN CALL: THIS IS NOT A DEFECT. BOTH HALVES RENDER
+
+ZM-D-168 offered that the lit battle window is only ~2-3 frames wide between fades and that this was
+the likely reason its audit saw no creature and no HUD, and it was explicit that if pixels showed
+otherwise **the absence would be the finding**. Pixels say the opposite: on the very first frame
+looked at properly, the HUD draws its HP bar, its text log and all three Fight/Catch/Run buttons, and
+**both** platforms carry a rendered `Fernfawn`. The audit's null was an observation miss, consistent
+with the two apparatus faults ZM-D-169 already booked (a wall-clock `capture_viewport.ps1` that
+cannot reach its requested interval, sampling a beat behind a fade). **No threshold was relaxed and
+no search region was widened to reach this result** -- the first measurement pass already showed
+every element, and the thresholds were then set from those bytes.
+
+**★ AND THE SCOPE OF WHAT THAT PROVES IS NARROWER THAN THE BULLET IT CLOSES.** Shortfalls 1.8 tied
+this to "S4's five procedural asset generators ship". What is now pinned by pixels is that the
+CREATURE MODEL family's output for **one species (FERNFAWN)** reaches the framebuffer inside the
+arena. The other four asset families are untouched by this commit and remain claims about test
+names. Do not let this entry be read as closing S4's generators wholesale.
+
+### What the arms are, and why there is more than one per claim
+
+Every threshold is **centred between a measured pass state and a measured fail state**, not merely
+set below whatever the green run produced. The fail states come from three mutations (below).
+
+| Arm | PASS (observed) | FAIL (observed) | Threshold |
+|---|---|---|---|
+| Enemy HP bar chroma | G-R **+0.428**, G-B **+0.334** | +0.007 / -0.005 | >= 0.20 / >= 0.15 |
+| Fight / Catch / Run vs the panel interior they sit on | luminance **0.586-0.631**, delta **+0.310..+0.355** | 0.277-0.339, +0.000..+0.063 | >= 0.45 and delta >= 0.15 |
+| Log glyph-white px vs a same-sized control box directly above | **522** vs **0** | 0 vs 0 | >= 100, control <= 25 |
+| Creature body vs its own local background 1 m to either side | **0.191 / 0.234** (player), **0.219 / 0.241** (enemy) | 0.068 / 0.001 (enemy) | >= 0.12 |
+| The two creatures read alike | **0.140** | 0.851 | <= 0.30 |
+| Creature body vs the slab under it | **0.918 / 1.052** | 0.007 (player) | >= 0.50 |
+
+**★ THE FINDING THAT JUSTIFIES THE REDUNDANCY: ONE ARM ALONE WOULD HAVE LET HALF THE DEFECT
+THROUGH.** With both creature models dropped, the body-vs-background arm still **PASSED** on the
+player side (0.834 / 0.927) -- that projected point falls on pale stone, not on the local background.
+The arm that caught it was the one written as a mere sample-placement guard ("the patch has not slid
+onto the platform"), which fired at 0.007. It is now documented as load-bearing rather than as
+decoration. The enemy side redded through the intended arm, and the read-alike arm redded on both.
+
+**★ AND ONE THRESHOLD IS DELIBERATELY NOT TIGHTENED, WHICH IS THE MORE INTERESTING CALL.** Hidden,
+the enemy HP bar's rect reads the pale sky behind it at green **0.749** -- which CLEARS the 0.60
+green-level floor. Only the two chroma arms fire. Raising the floor above 0.749 would make the clause
+pass or fail on **what happens to be behind the bar**, which is not a property of the HUD at all. The
+level floor stays a sanity bound and the chroma arms carry the discrimination (28x margin), and the
+constant says so in place.
+
+### Two design calls inside the test
+
+1. **The canvas -> swapchain mapping is derived, not respelled.** UI elements are laid out in canvas
+   space (`Zenith_UICanvas::GetSize()` == the window size) and the editor composites the whole game
+   render into the viewport rect, so `pixel = viewportPos + canvas * (viewportSize / canvasSize)` --
+   the exact inverse of `Zenith_UIElement::GetTransformedMousePosition`'s window->canvas remap.
+   Element rects come from each element's own `GetScreenBounds()`, and the menu panel's reference
+   strip is derived from the panel's and the first button's own bounds. **No anchor/offset/size
+   number from `ZM_ConfigureBattleHUD` is duplicated in the test** -- two sites holding one layout is
+   how a "checked" geometry silently drifts from the drawn one. Mapping verified on the capture: the
+   HP bar's canvas span x[40,280] predicts pixels x[264,408] and the measured green run is x[264,407].
+2. **★ THE LATCH IS DELIBERATELY NOT GATED ON `IsVisible()`.** The visible FLAG is an input to
+   rendering. Gating on it aborted before a single pixel was read, so a hidden element redded as
+   "geometry could not be latched" instead of "this never reached the framebuffer" -- observed, then
+   removed. The flag stays covered separately by `BattleMenuRunRootVisualsMatch`. For the same
+   reason `g_bBMRunRootVisualsValid` is now latched on every attempt rather than only on the
+   capturing one: one defect must not red two clauses and leave neither failure meaning what it says.
+
+### ★ THE IMGUI COLLISION IS REAL ON THIS EXACT CAPTURE
+
+Every region is restricted to the tools viewport rect (ZM-D-169's convention 3), and that is not
+precautionary: a frame-wide "bright green" scan over this very TGA matches the **Console panel's
+green tick marks at x[1089,1142] y[436,447]** alongside the HP bar. A frame-wide scan here would have
+been measuring ImGui. The glyph predicate is likewise strict (all channels >= 220, spread <= 25)
+because the pale stone platform measures (228, 203, 199) and a looser "bright" filter accepts it.
+
+### Mutations -- three, each rebuilt with its exit code checked, each result parsed off the OBSERVED line, each restored
+
+- **M1 -- creature models dropped, entities kept** (`PlaceCreatureModels`' `fnPlaceOne` adds a bare
+  `Zenith_ModelComponent` instead of `LoadModel(szRef)`). RED, exit 1, through **three** independent
+  arms: the player platform guard (0.007), the enemy background arm (0.068 / 0.001), and the
+  read-alike arm (0.851). HUD arms and their numbers **unchanged**, which is the cross-check that the
+  two halves are independent.
+- **M2 -- `BattleHUD_Log` + `BattleHUD_EnemyHPBar` hidden at reveal** (`ZM_UI_BattleHUD::Setup`).
+  RED, exit 1, on exactly those two arms with their own messages; buttons and creatures still passed.
+- **M3 -- the three root buttons hidden** (`bShown = bRoot && iRow >= 0` transposed to `iRow < 0`,
+  keeping both operands referenced). RED, exit 1, on all three button arms; HP bar, log and creatures
+  still passed. **This one also reds the pre-existing `BattleMenuRunRootVisualsMatch` clause, and
+  that is expected and stated rather than hidden** -- the pixel arm emits its own distinct message.
+- **A FOURTH mutation was DISCARDED as too strong, not recorded as a pass.** Inverting
+  `PlaceCreatureModels`' arena-count guard removes the creature ENTITIES, so the latch fails and the
+  dump is never requested -- it reds the test, but before any pixel is read, so it proves the
+  entity-resolution arm and not the pixel arm. M1 replaced it. (It did expose a real diagnostic gap,
+  now fixed: "evidence was never requested" printed without the latch's reason.)
+
+### Tests that lock it
+
+`ZM_BattleMenuRun_Test` (`m_bRequiresGraphics = true`). **No `Zenith_IsNullRenderer()` guard, and
+that is the right way round:** this test SKIPS entirely on the Null backend, so it can never reach the
+clause with a dump that was never written. (`ZM_RivalVesperAuthored_Test`'s marker clause needs the
+opposite treatment, because that test runs for real headless where `RequestDump`'s only consumer,
+`Zenith_Vulkan_Swapchain::EndFrame`, does not exist. Guarding the wrong one either reds CI or
+silently deletes coverage -- and a skip counts as a PASS, so it fails quietly.)
+
+### Observed, not predicted
+
+- `zenith build Zenithmon` (Vulkan_True) and `--headless` (Null_True): **both clean.** No regen run,
+  none needed.
+- Headless registry **50 passed / 0 failed (of 50)** -- **UNMOVED**, as predicted for extending an
+  existing registration rather than adding one.
+- Full windowed Vulkan **50 passed / 0 failed, ZERO skipped.**
+- ZM boot units **2742 ran / 2741 passed / 0 failed / 1 skipped -- UNMOVED** (no `ZENITH_TEST` case
+  added or modified).
+- **★ SO NO COUNT MOVED AND NOTHING WAS EDITED IN ANY OF THE FOUR SITES.** `Status.md`'s baseline
+  block, `.github/workflows/zm-tests.yml`'s `-Baseline 2742`, `Shortfalls.md`'s baseline bullet and
+  the REGISTRY figure in `Status.md` + `Shortfalls.md` all already read the observed values and still
+  do. Changing nothing is the correct action when the count does not move.
+- **Batch vs standalone drift is <= 0.003 on every creature separation** (standalone 0.190 / 0.232 /
+  0.917 and 0.222 / 0.243 / 1.054, agreement 0.141; in-batch 0.191 / 0.234 / 0.918 and 0.219 / 0.241 /
+  1.052, agreement 0.140), and the HUD numbers are byte-identical across all four runs. The fixture
+  is deterministic, so the margins above are real headroom and not run-to-run luck.
+- **Ratchets: not run, and the reason is structural rather than an omission.** `Games` is in
+  `exclude_dirs` for the gating `engine-ci` profile in `Tools/complexity_profiles.json`, so a diff
+  confined to `Games/Zenithmon/Tests/` cannot move `architecture,lints` or `complexity`. (The
+  informational `full-snapshot` profile does scan `Games`; it gates nothing.)
+- `Games/Zenithmon/Assets` byte-clean after the full windowed batch -- the ZM-D-148
+  boot-shape-independence property still holding.
+
+### Reversibility
+
+Trivial and self-contained: the six arms live in one file behind
+`BMPixVerifyActionRootCapture(bPassed)` plus a latch call in the Run drive. Deleting that call and
+the `BMPix*` block restores the previous behaviour exactly and the dump keeps being written. The
+thresholds are named constants each carrying its measured PASS and FAIL band, so a legitimate art or
+lighting change is re-derived by re-running and reading the logged numbers -- **never by nudging a
+constant until the run turns green.**
+
+---
+
 ## 2026-07-30 -- ZM-D-169 -- The ZM-D-168 follow-up: a GAMEPLAY primitive channel, the suite's first pixel assertions, and an NPC emissive floor that is a WORKAROUND
 
 *(Touches `Zenith/Flux/Primitives` + `Zenith/Flux/Shaders`, so this is an ENGINE change and it owed

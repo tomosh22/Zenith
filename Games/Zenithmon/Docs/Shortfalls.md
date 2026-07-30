@@ -26,8 +26,9 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   traversable Dawnmere + live PlayerHome door round trip; S4's five procedural asset generators +
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
-- **★ CURRENT VERIFIED BASELINE (observed 2026-07-30 at ZM-D-169, orchestrator-run,
-  not inferred):** ZM headless registry **50 passed / 0 failed**; full windowed Vulkan **50 passed
+- **★ CURRENT VERIFIED BASELINE (re-observed 2026-07-30 at ZM-D-170, orchestrator-run,
+  not inferred -- every figure UNMOVED from ZM-D-169, so nothing here was edited):**
+  ZM headless registry **50 passed / 0 failed**; full windowed Vulkan **50 passed
   / 0 failed, ZERO skipped**; ZM boot unit gate **2742 ran / 2741 passed / 0 failed / 1 skipped**
   (`zm-tests.yml` pinned to **2742**); engine boot gate **1164 / 1163 / 0 / 1**
   (`run_unit_gate.ps1` default `-Baseline 1164`). The single skip in each is the quarantined
@@ -41,6 +42,9 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   units -- and this bullet still said `registry 49` afterwards, because the rule as written only
   guards the boot-unit number. **The registry count is a fourth figure and it lives only here and
   in `Status.md`.** Fixed 2026-07-30. A commit that adds an AUTOMATED TEST updates both.
+  **★ ZM-D-170 moved NONE of the four**, because it extended an existing registration rather than
+  adding one and touched no `ZENITH_TEST` case. Changing nothing is the correct action when the
+  count does not move -- the rule is "all of them or none", not "edit something every commit".
 - **S6 (Dialogue, menus, NPCs, shops) COMPLETE.** Four authored Dawnmere NPCs are reachable by walking up and pressing the interact key: villager, Trade Post clerk, Care Center caretaker and wanderer. The wanderer uses a deterministic two-waypoint patrol; `ZM_Interactable` v2 persists the patrol configuration and v1 data loads as a stationary fail-closed fallback. Behaviour-graph and terrain-fed navmesh work deliberately moves to S7.
 - **S7 item 1 full schema-v1 codec is green (ZM-D-135/136):** SC1's 18 durable-model units are joined by 29 schema + 2 literal-golden compatibility units. The pure codec freezes 11 ordered length-framed modules, explicit little-endian widths, transactional streams and an 824-byte v1 golden. Units are **2392 ran / 2391 passed / 0 failed / 1 skipped**; engine remains **1103**; all five Zenithmon builds, headless **36/0** and full windowed **36/0/0** passed; registry remains 36. No visual/human gate applies.
 - **The ZM-D-168 follow-up LANDED 2026-07-30 as ZM-D-169** -- the SPOTTED marker is off the
@@ -270,15 +274,34 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      and is far cheaper than the roster work this entry previously implied** -- and W4, ZM-D-160 and
      ZM-D-164 all overstated their user-visible effect. Evidence:
      `Build/artifacts/evidence_final/02_overworld_npc_blockout.png`.
-   - **★ UNVERIFIED BY PIXELS, AND PREVIOUSLY ASSERTED FROM TEST NAMES: creature models and the
-     battle HUD.** A windowed `ZM_BattleMenuWin_Test` capture shows the battle arena rendering as
-     greybox platforms + dome + sky, with the `Fernfawn` entity and all six biome dressings present
-     in the hierarchy and the test PASSING -- **but no creature model and no HP panel / text log /
-     Fight-Catch-Run menu was observed in any captured frame.** That may be a sampling miss (the
-     lit battle window is ~2-3 frames wide between fades) rather than an absence. Either way, "S4's
-     five procedural asset generators ship" and "the battle HUD renders" are currently claims about
-     test names, not about pixels. **Resolve with a targeted capture before either is repeated.**
-     Evidence: `Build/artifacts/evidence_final/03_battle_arena.png`.
+   - **RESOLVED 2026-07-30 (ZM-D-170) -- CREATURE MODELS AND THE BATTLE HUD, BOTH NOW PINNED BY
+     PIXELS. THE AUDIT'S NULL WAS AN OBSERVATION MISS, NOT AN ABSENCE.** This entry previously read
+     "UNVERIFIED BY PIXELS ... no creature model and no HP panel / text log / Fight-Catch-Run menu
+     was observed in any captured frame", and offered that the ~2-3-frame lit battle window between
+     fades might explain it. It did. On the first frame examined properly, **all of it draws.**
+     `ZM_BattleMenuRun_Test` now reads the swapchain TGA it was **already writing** and asserts six
+     arms, every threshold centred between a measured pass state and a measured fail state:
+     - **HUD.** Enemy HP bar chroma **G-R +0.428 / G-B +0.334** (suppressed: +0.007 / -0.005);
+       Fight / Catch / Run at luminance **0.586-0.631** against the panel interior they sit on,
+       delta **+0.310..+0.355** (suppressed: 0.277-0.339, +0.000..+0.063); battle text log **522**
+       glyph-white px against **0** in a same-sized control box directly above it (suppressed: 0).
+     - **Creatures.** Both platforms carry a rendered `Fernfawn`: body vs its own local background
+       1 m to either side **0.191 / 0.234** and **0.219 / 0.241**; the two bodies read alike to
+       **0.140**; each stands **0.918 / 1.052** clear of the slab under it.
+     **★ THE HOLE WAS SHARPER THAN "NO COVERAGE", AND THAT IS THE TRANSFERABLE PART.** The test had
+     dwelt 90 frames in `ACTION_ROOT` and written a real capture for a full commit -- and asserted
+     only `DiskFilePresent(...)` on it. **Evidence produced and never read reads as coverage and is
+     not.** Grep for a capture that no assertion opens before trusting any visual claim.
+     **★ AND THE SCOPE IS NARROWER THAN THIS BULLET USED TO IMPLY.** It coupled the finding to "S4's
+     five procedural asset generators ship". What is pinned is the CREATURE MODEL family for **one
+     species**; the other four families remain claims about test names. **★ ONE ARM WOULD NOT HAVE
+     BEEN ENOUGH:** with both models dropped, the body-vs-background arm still PASSED on the player
+     side (0.834 / 0.927, that point falls on pale stone) and the *placement guard* caught it at
+     0.007. Full reasoning, the three mutations, and the one threshold deliberately left loose (the
+     suppressed HP bar reads sky at green 0.749, so the CHROMA arms discriminate and the level floor
+     is not raised to fit what happens to be behind the bar) are in ZM-D-170.
+     Evidence: `Build/artifacts/zenithmon/visual_audit/battle_menu_run_root.tga`; the audit's
+     original frame was `Build/artifacts/evidence_final/03_battle_arena.png`.
    - **RESOLVED 2026-07-30 (ZM-D-169) -- THE MARKER'S SHAPE, AND IT IS NOW PINNED BY PIXELS.** It
      previously read as "a gold sphere with a diagonal stroke" rather than a bar above a dot. The
      stem is now a solid `SubmitGameplayCylinderAndSphere` cylinder instead of Flux's flat debug

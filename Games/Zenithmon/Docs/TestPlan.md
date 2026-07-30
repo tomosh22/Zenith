@@ -1426,6 +1426,55 @@ user-approved; this paragraph preserves the earlier planning boundary only.
      across 539 frames of a marker rendering perfectly, and nearly booked a render defect.
      Verify the hue is UNIQUE frame-wide before choosing a threshold.
 
+- **★ THE THIRD PIXEL TEST, AND THE ONE WHOSE HOLE WAS SHARPEST (2026-07-30, ZM-D-170).
+  Registry UNMOVED at 50** -- it extends `ZM_BattleMenuRun_Test` rather than registering anything.
+  That test had ALREADY dwelt 90 frames in `ACTION_ROOT` (`iBM_RUN_VISUAL_DWELL_FRAMES`, capture at
+  the midpoint) and ALREADY written a real swapchain TGA -- and asserted only `DiskFilePresent(...)`
+  plus UI visibility and button text on it. **A capture sat on disk that no assertion opened:
+  evidence produced and never read, which reads as coverage and is not.** Six arms now read it,
+  closing both halves of ZM-D-168's audit finding 2 from ONE frame:
+  - **The HUD.** Enemy HP bar chroma **G-R +0.428 / G-B +0.334**; the three root buttons at
+    luminance **0.586-0.631** against the panel interior strip they sit on (delta
+    **+0.310..+0.355**); the battle text log **522** glyph-white px against **0** in a same-sized
+    negative-control box directly above it.
+  - **The creature models.** Both platforms carry a rendered `Fernfawn`, projected through the LIVE
+    battle camera off `ZM_BattleDirector::GetCreatureModelEntityID`: body vs local background 1 m to
+    either side **0.191 / 0.234** and **0.219 / 0.241**; the two bodies read alike to **0.140**;
+    each **0.918 / 1.052** clear of its own slab.
+  **★ FOUR CONVENTIONS THIS ADDS FOR EVERY FUTURE PIXEL TEST:**
+  1. **Threshold-setting is a TWO-SIDED measurement.** Every constant here is centred between an
+     observed PASS and an observed FAIL (from the mutations), not set below whatever the green run
+     produced. A threshold with only a pass sample behind it is a guess.
+  2. **★ ONE ARM PER CLAIM IS NOT ENOUGH, and this is the concrete proof.** With both creature
+     models dropped, the body-vs-background arm still **PASSED** on the player side (0.834 / 0.927)
+     because that projected point lands on pale stone. The arm that caught it was written as a mere
+     sample-placement guard and fired at 0.007. Half the defect would have shipped.
+  3. **★ DO NOT TIGHTEN A THRESHOLD ONTO A PROPERTY OF THE BACKGROUND.** Suppressed, the enemy HP
+     bar's rect reads the sky behind it at green **0.749** -- clearing the 0.60 level floor, so only
+     the CHROMA arms fire. Raising the floor would make the clause turn on what happens to be behind
+     the bar, which is not a property of the HUD. Level floor stays a sanity bound; chroma
+     discriminates (28x margin).
+  4. **Map geometry from the LIVE object, never by respelling the authoring constants.** Element
+     rects come from each element's own `GetScreenBounds()`, the panel's reference strip from the
+     panel's and first button's own bounds, and world points from the live camera's own matrices --
+     then through the tools viewport rect as
+     `pixel = viewportPos + canvas * (viewportSize / canvasSize)`. **And the latch is deliberately
+     NOT gated on `IsVisible()`**: the visible flag is an INPUT to rendering, and gating on it made a
+     hidden element red as "geometry could not be latched" instead of "this never reached the
+     framebuffer".
+  **The ImGui collision is real on this capture, not precautionary:** a frame-wide "bright green"
+  scan matches the Console panel's tick marks at x[1089,1142] y[436,447] alongside the HP bar, so
+  every region is clipped to the viewport rect. The glyph predicate is strict (all channels >= 220,
+  spread <= 25) because the pale stone platform measures (228, 203, 199).
+  **Mutation-proven x3**, each rebuilt with its exit code checked and each result parsed off the
+  OBSERVED line: models dropped but entities kept reds three arms (0.007 / 0.068+0.001 / 0.851);
+  log + enemy HP bar hidden reds exactly those two; the three root buttons hidden reds exactly those
+  three. **A fourth was DISCARDED as too strong rather than recorded as a pass** -- removing the
+  creature ENTITIES aborts the latch, so it reds before any pixel is read and proves a different arm.
+  **No `Zenith_IsNullRenderer()` guard, and that is the right way round:** the test is
+  `m_bRequiresGraphics = true`, so it SKIPS on Null and can never reach the clause with a dump that
+  was never written.
+
 ### 5.8 S8 -- vertical slice
 
 - **`ZM_Slice_Test`:** mini-playthrough new game -> Badge 1

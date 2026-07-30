@@ -6,6 +6,7 @@
 #include "Core/Zenith_Engine.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"   // creature-model mesh count (failure-message context only)
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Flux/Flux_Screenshot.h"
@@ -18,6 +19,7 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+#include "Zenithmon/Components/ZM_BattleArena.h"               // the arena platforms the creature pixels are measured against
 #include "Zenithmon/Components/ZM_BattleDirector.h"           // GetCore / GetHudMenuScreen / GetHudMenuCursor
 #include "Zenithmon/Components/ZM_BattleTransition.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"
@@ -38,7 +40,14 @@
 #include "Zenithmon/Source/UI/ZM_UI_BattleHUD.h"              // ZM_BattleMenuScreen + ZM_BATTLE_MENU_* enums
 #include "Zenithmon/Source/World/ZM_GrassDensityMap.h"
 
+#ifdef ZENITH_TOOLS
+#include "Core/Zenith_EditorQuery.h"
+#endif
+
+#include "ZM_TestTGAHelpers.h"                                 // the engine-written BGRA swapchain dump reader
+
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -381,6 +390,9 @@ namespace
 	constexpr const char* szBM_RUN_FIGHT_NAME      = "BattleHUD_ActionFight";
 	constexpr const char* szBM_RUN_CATCH_NAME      = "BattleHUD_ActionCatch";
 	constexpr const char* szBM_RUN_RUN_NAME        = "BattleHUD_ActionRun";
+	constexpr const char* szBM_RUN_ENEMY_HPBAR_NAME = "BattleHUD_EnemyHPBar";
+	constexpr const char* szBM_RUN_LOG_NAME         = "BattleHUD_Log";
+	constexpr u_int uBM_RUN_ACTION_BUTTON_COUNT     = 3u;
 
 	// ---- Control state (all reset in Setup; batch mode reuses the process) ----
 	MenuTestMode   g_eBMMode              = MenuTestMode::Win;
@@ -497,6 +509,814 @@ namespace
 			&& pxRun != nullptr && pxRun->IsVisible() && pxRun->GetText() == "Run";
 	}
 
+	// =========================================================================
+	// THE ACTION_ROOT PIXEL ASSERTIONS (ZM-D-170) -- audit finding 2 of ZM-D-168,
+	// "creature models and the battle HUD are UNVERIFIED by pixels".
+	//
+	// The Run test ALREADY dwelt 90 frames in ACTION_ROOT and ALREADY wrote a real
+	// swapchain TGA. It then asserted only that the FILE EXISTED, plus UI element
+	// visibility and button text -- i.e. evidence was produced and never read,
+	// which reads as coverage and is not. Every assertion above this block samples
+	// an INPUT to rendering; these are the only ones that can tell "submitted" from
+	// "drawn", which is the distinction ZM-D-168's standing rule turns on.
+	//
+	// ★ EVERY THRESHOLD BELOW IS MEASURED OFF THE BYTES A REAL RUN WROTE
+	// (Build/artifacts/zenithmon/visual_audit/battle_menu_run_root.tga, 1280x720,
+	// tools build) and never predicted from a submitted colour. Predicting instead
+	// of measuring is exactly how ZM-D-169's two "low blue" scans reported zero
+	// matches across 539 frames of a marker that was rendering perfectly.
+	//
+	// ★ AND EVERY REGION IS RESTRICTED TO THE TOOLS VIEWPORT RECT. The dump is the
+	// FULL SWAPCHAIN, so in a tools build it carries the ImGui editor chrome around
+	// the game. On THIS capture a frame-wide "bright green" scan matches the
+	// Console panel's green tick marks at x[1089,1142] y[436,447] as well as the
+	// HP bar -- a frame-wide scan here would be measuring ImGui, not the HUD.
+	//
+	// ★ THE CANVAS -> SWAPCHAIN MAPPING. UI elements are laid out in CANVAS space
+	// (Zenith_UICanvas::GetSize() == the window size) and the editor composites the
+	// whole game render into the viewport rect, so
+	//     pixel = viewportPos + canvas * (viewportSize / canvasSize)
+	// -- the exact inverse of Zenith_UIElement::GetTransformedMousePosition's
+	// window->canvas remap. Verified on the capture: the enemy HP bar's canvas span
+	// x[40,280] predicts pixels x[264,408] and the measured green run is x[264,407].
+	// =========================================================================
+
+	// A patch radius of 4 gives a 9x9 sample; the rendered Fernfawn body measures
+	// ~25x27 px in a 1280x720 dump, so the patch sits well inside it. The platform
+	// slabs are far larger, hence the wider radius there.
+	constexpr u_int uBM_PIX_BODY_RADIUS     = 4u;
+	constexpr u_int uBM_PIX_PLATFORM_RADIUS = 6u;
+	// Metres above the creature entity's ORIGIN to sample. The origin itself
+	// projects onto the legs/ground: measured, the body centre sits ~0.35 m up, the
+	// sampled colour moves by <= 0.15 across +/-0.15 m of jitter (a plateau, not a
+	// knife edge), and 0.70 m clears the model entirely.
+	constexpr float fBM_PIX_BODY_LIFT       = 0.35f;
+	// Metres to either side at the SAME height -- the local BACKGROUND controls.
+	// The creature is ~0.5 m wide, so 1.0 m is four half-widths clear of it.
+	constexpr float fBM_PIX_SIDE_OFFSET     = 1.0f;
+	// Onto the slab's top face (the platform is a unit cube scaled y=0.4).
+	constexpr float fBM_PIX_PLATFORM_LIFT   = 0.2f;
+
+	// ---- creature thresholds (all separations are RGB euclidean in [0,1]) ----
+	// ★ ALL THREE ARE CENTRED BETWEEN A MEASURED PASS STATE AND A MEASURED FAIL
+	// STATE, not merely set below whatever the passing run happened to produce. The
+	// fail state is the mutation that keeps both creature ENTITIES and drops only
+	// their Zenith_ModelComponent model, i.e. "placed but nothing to draw".
+	//
+	// ★ AND ALL THREE ARE LOAD-BEARING, which the mutation is what proved: on the
+	// PLAYER side the body-vs-side arm still PASSED with no model (0.834 / 0.927),
+	// because that projected point falls on pale stone rather than on the local
+	// background. One arm alone would have let half the defect through.
+	//
+	// Body vs its own local background 1 m to either side.
+	// PASS  0.191 / 0.234 (player), 0.219 / 0.241 (enemy) -- in-batch; standalone
+	//       reads 0.190 / 0.232 and 0.222 / 0.243, so batch drift is <= 0.003.
+	// FAIL  0.068 / 0.001 (enemy, model-less).
+	constexpr float fBM_PIX_MIN_BODY_VS_SIDE     = 0.12f;
+	// The two platforms carry the same species, so two REAL renders read alike --
+	// not identically, because the two sides are lit differently.
+	// PASS  0.140 in-batch / 0.141 standalone.   FAIL  0.851 (model-less).
+	constexpr float fBM_PIX_MAX_BODY_VS_BODY     = 0.30f;
+	// Body vs the slab under it. Written as a sample-placement guard -- "the patch
+	// has not slid onto the platform" -- and it earned its keep: it is the arm that
+	// caught the PLAYER side of the model-less mutation.
+	// PASS  0.918 (player) / 1.052 (enemy).   FAIL  0.007 (player, model-less).
+	constexpr float fBM_PIX_MIN_BODY_VS_PLATFORM = 0.50f;
+
+	// ---- HUD thresholds ----
+	// ★ Same discipline as the creature block: each band was measured with the HUD
+	// drawing and again with it suppressed (the mutation hides BattleHUD_Log +
+	// BattleHUD_EnemyHPBar at reveal, and separately hides the three root buttons).
+	//
+	// Enemy HP bar, over its left 40% only, so the clause survives any fill >= 0.4
+	// (it is 1.0 at capture -- the Run drive dwells before submitting anything).
+	// PASS  (0.496, 0.924, 0.590): G-R +0.428, G-B +0.334.
+	// FAIL  (0.742, 0.749, 0.754): G-R +0.007, G-B -0.005.
+	// ★ NOTE WHICH ARM ACTUALLY DISCRIMINATES: the suppressed bar reads the pale sky
+	// behind it at green 0.749, which CLEARS the 0.60 level floor. The two CHROMA
+	// arms are what fire (28x margin). The level floor is kept as a sanity bound and
+	// is deliberately NOT raised above 0.749 -- that would be fitting the threshold
+	// to "the thing behind the bar happens to be sky", which is not a property of
+	// the HUD at all.
+	constexpr float fBM_PIX_HPBAR_SAMPLE_FRACTION = 0.4f;
+	constexpr float fBM_PIX_MIN_HPBAR_GREEN       = 0.60f;
+	constexpr float fBM_PIX_MIN_HPBAR_G_OVER_R    = 0.20f;
+	constexpr float fBM_PIX_MIN_HPBAR_G_OVER_B    = 0.15f;
+	// Action buttons against the panel interior strip they sit on. The strip is
+	// derived from the panel's and the first button's OWN bounds, so no authored
+	// layout number is respelled.
+	// PASS  luminance 0.586-0.631, delta over the strip +0.310..+0.355.
+	// FAIL  luminance 0.277-0.339, delta +0.000..+0.063.
+	constexpr float fBM_PIX_MIN_BUTTON_LUM        = 0.45f;
+	constexpr float fBM_PIX_MIN_BUTTON_OVER_PANEL = 0.15f;
+	constexpr float fBM_PIX_PANEL_STRIP_INSET     = 12.0f;   // canvas px, off both panel edges
+	constexpr float fBM_PIX_PANEL_STRIP_MARGIN    = 4.0f;    // canvas px, off the strip's top/bottom
+	// Log glyphs. PASS 522 strict-white px in the log box against 0 in the same-sized
+	// control box immediately above it; FAIL 0 against 0. The strict channel floor
+	// matters -- the pale stone platform measures (228, 203, 199) and the sky
+	// (184, 188, 195), and a looser "bright" filter accepts the stone.
+	constexpr u_int uBM_PIX_GLYPH_MIN_CHANNEL     = 220u;
+	constexpr u_int uBM_PIX_GLYPH_MAX_SPREAD      = 25u;
+	constexpr u_int uBM_PIX_MIN_LOG_GLYPHS        = 100u;
+	constexpr u_int uBM_PIX_MAX_CONTROL_GLYPHS    = 25u;
+	// The log box is 900 canvas px wide and its right end runs under the menu panel;
+	// clip it clear so no button pixel can be counted as a glyph.
+	constexpr float fBM_PIX_LOG_PANEL_CLEARANCE   = 8.0f;
+
+	struct BMPixCanvasRect
+	{
+		bool  m_bValid  = false;
+		float m_fLeft   = 0.0f;
+		float m_fTop    = 0.0f;
+		float m_fRight  = 0.0f;
+		float m_fBottom = 0.0f;
+	};
+
+	struct BMPixNdcPoint
+	{
+		bool  m_bValid = false;
+		float m_fX     = 0.0f;
+		float m_fY     = 0.0f;
+	};
+
+	struct BMPixRegionStats
+	{
+		Zenith_Maths::Vector3 m_xMean       = Zenith_Maths::Vector3(0.0f);
+		float                 m_fLuminance  = 0.0f;
+		u_int                 m_uGlyphPixels = 0u;
+		u_int                 m_uSamples    = 0u;
+	};
+
+	// ---- latched ON the capture frame; every pixel read happens in Verify ----
+	bool                  g_bBMPixLatched      = false;
+	const char*           g_szBMPixLatchFail   = "the ACTION_ROOT pixel geometry was never latched";
+	Zenith_Maths::Vector2 g_xBMPixViewportPos  = Zenith_Maths::Vector2(0.0f);
+	Zenith_Maths::Vector2 g_xBMPixViewportSize = Zenith_Maths::Vector2(0.0f);
+	Zenith_Maths::Vector2 g_xBMPixCanvasSize   = Zenith_Maths::Vector2(0.0f);
+	BMPixCanvasRect       g_xBMPixEnemyHpBar;
+	BMPixCanvasRect       g_xBMPixMenuPanel;
+	BMPixCanvasRect       g_axBMPixActionButton[uBM_RUN_ACTION_BUTTON_COUNT];
+	BMPixCanvasRect       g_xBMPixLogBox;
+	BMPixNdcPoint         g_axBMPixBody[ZM_SIDE_COUNT];
+	BMPixNdcPoint         g_axBMPixSideLeft[ZM_SIDE_COUNT];
+	BMPixNdcPoint         g_axBMPixSideRight[ZM_SIDE_COUNT];
+	BMPixNdcPoint         g_axBMPixPlatform[ZM_SIDE_COUNT];
+	u_int                 g_auBMPixCreatureMeshes[ZM_SIDE_COUNT] = {};
+	std::string           g_astrBMPixCreatureName[ZM_SIDE_COUNT];
+
+	const char* BMPixSideName(u_int uSide)
+	{
+		return uSide == (u_int)ZM_SIDE_PLAYER ? "player" : "enemy";
+	}
+
+	void BMPixFailLatch(const char* szReason)
+	{
+		g_szBMPixLatchFail = szReason;
+	}
+
+	float BMPixCanvasToPixelX(float fCanvasX)
+	{
+		return g_xBMPixViewportPos.x + fCanvasX * (g_xBMPixViewportSize.x / g_xBMPixCanvasSize.x);
+	}
+
+	float BMPixCanvasToPixelY(float fCanvasY)
+	{
+		return g_xBMPixViewportPos.y + fCanvasY * (g_xBMPixViewportSize.y / g_xBMPixCanvasSize.y);
+	}
+
+	// Zenith_CameraComponent's Vulkan projection already flips Y, so NDC -1 is the
+	// TOP of the displayed viewport (the ZM_NpcRenderedPalette_Test convention).
+	float BMPixNdcToPixelX(float fNdcX)
+	{
+		return g_xBMPixViewportPos.x + (fNdcX * 0.5f + 0.5f) * g_xBMPixViewportSize.x;
+	}
+
+	float BMPixNdcToPixelY(float fNdcY)
+	{
+		return g_xBMPixViewportPos.y + (fNdcY * 0.5f + 0.5f) * g_xBMPixViewportSize.y;
+	}
+
+	float BMPixSeparation(const Zenith_Maths::Vector3& xA, const Zenith_Maths::Vector3& xB)
+	{
+		const Zenith_Maths::Vector3 xDelta = xA - xB;
+		return std::sqrt(xDelta.x * xDelta.x + xDelta.y * xDelta.y + xDelta.z * xDelta.z);
+	}
+
+	bool BMPixMeasurePixelRect(const ZM_TestTGAImage& xImage,
+		float fLeft, float fTop, float fRight, float fBottom, BMPixRegionStats& xOut)
+	{
+		xOut = BMPixRegionStats{};
+		if (!xImage.IsValid())
+		{
+			return false;
+		}
+		const int64_t iLeft   = static_cast<int64_t>(std::lround(fLeft));
+		const int64_t iTop    = static_cast<int64_t>(std::lround(fTop));
+		const int64_t iRight  = static_cast<int64_t>(std::lround(fRight));
+		const int64_t iBottom = static_cast<int64_t>(std::lround(fBottom));
+		if (iLeft < 0 || iTop < 0
+			|| iRight > static_cast<int64_t>(xImage.m_uWidth)
+			|| iBottom > static_cast<int64_t>(xImage.m_uHeight)
+			|| iRight - iLeft < 2 || iBottom - iTop < 2)
+		{
+			return false;
+		}
+
+		uint64_t ulRed = 0u;
+		uint64_t ulGreen = 0u;
+		uint64_t ulBlue = 0u;
+		uint64_t ulSamples = 0u;
+		uint64_t ulGlyphs = 0u;
+		for (int64_t iY = iTop; iY < iBottom; ++iY)
+		{
+			for (int64_t iX = iLeft; iX < iRight; ++iX)
+			{
+				const uint8_t* puBGRA = xImage.GetPixelBGRA(
+					static_cast<uint32_t>(iX), static_cast<uint32_t>(iY));
+				const u_int uBlue  = puBGRA[0];
+				const u_int uGreen = puBGRA[1];
+				const u_int uRed   = puBGRA[2];
+				ulBlue  += uBlue;
+				ulGreen += uGreen;
+				ulRed   += uRed;
+				++ulSamples;
+
+				const u_int uMax = uRed > uGreen
+					? (uRed > uBlue ? uRed : uBlue)
+					: (uGreen > uBlue ? uGreen : uBlue);
+				const u_int uMin = uRed < uGreen
+					? (uRed < uBlue ? uRed : uBlue)
+					: (uGreen < uBlue ? uGreen : uBlue);
+				if (uMin >= uBM_PIX_GLYPH_MIN_CHANNEL
+					&& (uMax - uMin) <= uBM_PIX_GLYPH_MAX_SPREAD)
+				{
+					++ulGlyphs;
+				}
+			}
+		}
+		if (ulSamples == 0u)
+		{
+			return false;
+		}
+
+		const float fNormalise = 1.0f / (255.0f * static_cast<float>(ulSamples));
+		xOut.m_xMean = Zenith_Maths::Vector3(
+			static_cast<float>(ulRed) * fNormalise,
+			static_cast<float>(ulGreen) * fNormalise,
+			static_cast<float>(ulBlue) * fNormalise);
+		xOut.m_fLuminance = (xOut.m_xMean.x + xOut.m_xMean.y + xOut.m_xMean.z) / 3.0f;
+		xOut.m_uGlyphPixels = static_cast<u_int>(ulGlyphs);
+		xOut.m_uSamples = static_cast<u_int>(ulSamples);
+		return true;
+	}
+
+	bool BMPixMeasureCanvasRect(const ZM_TestTGAImage& xImage,
+		float fLeft, float fTop, float fRight, float fBottom, BMPixRegionStats& xOut)
+	{
+		return BMPixMeasurePixelRect(xImage,
+			BMPixCanvasToPixelX(fLeft), BMPixCanvasToPixelY(fTop),
+			BMPixCanvasToPixelX(fRight), BMPixCanvasToPixelY(fBottom), xOut);
+	}
+
+	bool BMPixMeasurePatch(const ZM_TestTGAImage& xImage,
+		const BMPixNdcPoint& xPoint, u_int uRadius, Zenith_Maths::Vector3& xOut)
+	{
+		if (!xPoint.m_bValid)
+		{
+			return false;
+		}
+		const float fCentreX = BMPixNdcToPixelX(xPoint.m_fX);
+		const float fCentreY = BMPixNdcToPixelY(xPoint.m_fY);
+		const float fRadius = static_cast<float>(uRadius);
+		BMPixRegionStats xStats;
+		if (!BMPixMeasurePixelRect(xImage,
+			fCentreX - fRadius, fCentreY - fRadius,
+			fCentreX + fRadius + 1.0f, fCentreY + fRadius + 1.0f, xStats))
+		{
+			return false;
+		}
+		xOut = xStats.m_xMean;
+		return true;
+	}
+
+	// ---- capture-frame latching. Nothing here reads a pixel: the TGA does not
+	// exist until Zenith_Vulkan_Swapchain::EndFrame consumes the dump request, so
+	// every screen-space geometry is captured now and evaluated in Verify. ----
+
+	bool BMPixLatchViewport(Zenith_UIComponent& xUI)
+	{
+		g_xBMPixCanvasSize = xUI.GetCanvas().GetSize();
+#ifdef ZENITH_TOOLS
+		if (g_xEditorQuery.m_pfnGetViewportPos == nullptr
+			|| g_xEditorQuery.m_pfnGetViewportSize == nullptr)
+		{
+			BMPixFailLatch("the tools viewport query seam is not installed");
+			return false;
+		}
+		g_xBMPixViewportPos = g_xEditorQuery.m_pfnGetViewportPos();
+		g_xBMPixViewportSize = g_xEditorQuery.m_pfnGetViewportSize();
+#else
+		// No editor chrome: the game owns the whole window, so canvas space IS
+		// swapchain space and the mapping degenerates to the identity.
+		g_xBMPixViewportPos = Zenith_Maths::Vector2(0.0f);
+		g_xBMPixViewportSize = g_xBMPixCanvasSize;
+#endif
+		if (g_xBMPixCanvasSize.x <= 0.0f || g_xBMPixCanvasSize.y <= 0.0f
+			|| g_xBMPixViewportSize.x < 320.0f || g_xBMPixViewportSize.y < 180.0f)
+		{
+			// Not an error yet -- the editor layout may not have settled. The caller
+			// retries every remaining dwell frame before giving up.
+			BMPixFailLatch("the viewport/canvas rect never reached a sampleable size");
+			return false;
+		}
+		return true;
+	}
+
+	bool BMPixLatchElementRect(Zenith_UIComponent& xUI, const char* szName, BMPixCanvasRect& xOut)
+	{
+		xOut = BMPixCanvasRect{};
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(szName);
+		if (pxElement == nullptr)
+		{
+			return false;
+		}
+		// ★ DELIBERATELY NOT GATED ON IsVisible(). The visible FLAG is an input to
+		// rendering; gating the latch on it would abort before a single pixel was
+		// read, and a hidden element would then red as "geometry could not be
+		// latched" instead of as "this never reached the framebuffer". The flag is
+		// already covered separately by BattleMenuRunRootVisualsMatch.
+		//
+		// The element's OWN computed canvas rect. Reading it here rather than
+		// respelling ZM_ConfigureBattleHUD's anchor/offset/size numbers is deliberate:
+		// two sites holding the same layout is how a "checked" geometry silently
+		// drifts away from the drawn one.
+		const Zenith_Maths::Vector4 xBounds = pxElement->GetScreenBounds();
+		if (!(xBounds.z > xBounds.x) || !(xBounds.w > xBounds.y))
+		{
+			return false;
+		}
+		xOut.m_fLeft   = xBounds.x;
+		xOut.m_fTop    = xBounds.y;
+		xOut.m_fRight  = xBounds.z;
+		xOut.m_fBottom = xBounds.w;
+		xOut.m_bValid  = true;
+		return true;
+	}
+
+	bool BMPixLatchHudRects(Zenith_UIComponent& xUI)
+	{
+		const char* const aszButtonName[uBM_RUN_ACTION_BUTTON_COUNT] =
+		{
+			szBM_RUN_FIGHT_NAME, szBM_RUN_CATCH_NAME, szBM_RUN_RUN_NAME
+		};
+		bool bAll = BMPixLatchElementRect(xUI, szBM_RUN_ENEMY_HPBAR_NAME, g_xBMPixEnemyHpBar);
+		bAll = BMPixLatchElementRect(xUI, szBM_RUN_MENU_PANEL_NAME, g_xBMPixMenuPanel) && bAll;
+		bAll = BMPixLatchElementRect(xUI, szBM_RUN_LOG_NAME, g_xBMPixLogBox) && bAll;
+		for (u_int u = 0u; u < uBM_RUN_ACTION_BUTTON_COUNT; ++u)
+		{
+			bAll = BMPixLatchElementRect(xUI, aszButtonName[u], g_axBMPixActionButton[u]) && bAll;
+		}
+		if (!bAll)
+		{
+			BMPixFailLatch("a HUD element (enemy HP bar / log / menu panel / Fight / "
+				"Catch / Run) is absent from the canvas or has no usable rect");
+		}
+		return bAll;
+	}
+
+	bool BMPixProject(const Zenith_Maths::Matrix4& xViewProjection,
+		const Zenith_Maths::Vector3& xWorld, BMPixNdcPoint& xOut)
+	{
+		xOut = BMPixNdcPoint{};
+		const Zenith_Maths::Vector4 xClip =
+			xViewProjection * Zenith_Maths::Vector4(xWorld, 1.0f);
+		if (!std::isfinite(xClip.x) || !std::isfinite(xClip.y)
+			|| !std::isfinite(xClip.w) || xClip.w <= 1.0e-4f)
+		{
+			return false;
+		}
+		const float fNdcX = xClip.x / xClip.w;
+		const float fNdcY = xClip.y / xClip.w;
+		// Safe interior only: a sample patch straddling the viewport edge would read
+		// the editor chrome next to it.
+		if (fNdcX <= -0.95f || fNdcX >= 0.95f || fNdcY <= -0.95f || fNdcY >= 0.95f)
+		{
+			return false;
+		}
+		xOut.m_fX = fNdcX;
+		xOut.m_fY = fNdcY;
+		xOut.m_bValid = true;
+		return true;
+	}
+
+	bool BMPixResolveArenaPlatforms(Zenith_EntityID (&axOut)[ZM_SIDE_COUNT])
+	{
+		axOut[ZM_SIDE_PLAYER] = INVALID_ENTITY_ID;
+		axOut[ZM_SIDE_ENEMY]  = INVALID_ENTITY_ID;
+		u_int uArenaCount = 0u;
+		g_xEngine.Scenes().QueryAllScenes<ZM_BattleArena>().ForEach(
+			[&axOut, &uArenaCount](Zenith_EntityID, ZM_BattleArena& xArena)
+			{
+				++uArenaCount;
+				if (uArenaCount == 1u)
+				{
+					// Child index order is the arena's own published contract:
+					// 1 = player platform, 2 = enemy platform (ZM_BattleArena.h).
+					axOut[ZM_SIDE_PLAYER] = xArena.GetChildEntityID(1u);
+					axOut[ZM_SIDE_ENEMY]  = xArena.GetChildEntityID(2u);
+				}
+			});
+		return uArenaCount == 1u
+			&& axOut[ZM_SIDE_PLAYER] != INVALID_ENTITY_ID
+			&& axOut[ZM_SIDE_ENEMY] != INVALID_ENTITY_ID;
+	}
+
+	bool BMPixLatchArenaPoints(ZM_BattleDirector& xDirector)
+	{
+		const Zenith_EntityID xCameraID = g_xEngine.Scenes().FindMainCameraEntityAcrossScenes();
+		Zenith_Entity xCameraEntity = g_xEngine.Scenes().ResolveEntity(xCameraID);
+		Zenith_CameraComponent* pxCamera = xCameraEntity.IsValid()
+			? xCameraEntity.TryGetComponent<Zenith_CameraComponent>()
+			: nullptr;
+		if (pxCamera == nullptr)
+		{
+			BMPixFailLatch("the live battle camera did not resolve");
+			return false;
+		}
+		// The camera's OWN matrices, so the projection is exactly the one that drew
+		// the frame -- including whatever aspect ratio the editor left on it.
+		Zenith_Maths::Matrix4 xView;
+		Zenith_Maths::Matrix4 xProjection;
+		pxCamera->BuildViewMatrix(xView);
+		pxCamera->BuildProjectionMatrix(xProjection);
+		const Zenith_Maths::Matrix4 xViewProjection = xProjection * xView;
+
+		Zenith_EntityID axPlatformID[ZM_SIDE_COUNT];
+		if (!BMPixResolveArenaPlatforms(axPlatformID))
+		{
+			BMPixFailLatch("the unique battle arena / its two platforms did not resolve");
+			return false;
+		}
+
+		for (u_int uSide = 0u; uSide < (u_int)ZM_SIDE_COUNT; ++uSide)
+		{
+			const Zenith_EntityID xCreatureID =
+				xDirector.GetCreatureModelEntityID(static_cast<ZM_SIDE>(uSide));
+			Zenith_Entity xCreature = g_xEngine.Scenes().ResolveEntity(xCreatureID);
+			Zenith_TransformComponent* pxCreatureTransform = xCreature.IsValid()
+				? xCreature.TryGetComponent<Zenith_TransformComponent>()
+				: nullptr;
+			if (pxCreatureTransform == nullptr)
+			{
+				BMPixFailLatch("a side's creature model entity did not resolve -- "
+					"ZM_BattleDirector::PlaceCreatureModels placed nothing to photograph");
+				return false;
+			}
+			// Context for the failure message only. A mesh count is an INPUT to
+			// rendering and is never treated here as evidence that anything drew.
+			Zenith_ModelComponent* pxModel = xCreature.TryGetComponent<Zenith_ModelComponent>();
+			g_auBMPixCreatureMeshes[uSide] = pxModel != nullptr ? pxModel->GetNumMeshes() : 0u;
+			g_astrBMPixCreatureName[uSide] = xCreature.GetName();
+
+			Zenith_Entity xPlatform = g_xEngine.Scenes().ResolveEntity(axPlatformID[uSide]);
+			Zenith_TransformComponent* pxPlatformTransform = xPlatform.IsValid()
+				? xPlatform.TryGetComponent<Zenith_TransformComponent>()
+				: nullptr;
+			if (pxPlatformTransform == nullptr)
+			{
+				BMPixFailLatch("a side's arena platform transform did not resolve");
+				return false;
+			}
+
+			Zenith_Maths::Vector3 xCreaturePos;
+			Zenith_Maths::Vector3 xPlatformPos;
+			pxCreatureTransform->GetPosition(xCreaturePos);
+			pxPlatformTransform->GetPosition(xPlatformPos);
+
+			const Zenith_Maths::Vector3 xBody = xCreaturePos
+				+ Zenith_Maths::Vector3(0.0f, fBM_PIX_BODY_LIFT, 0.0f);
+			const bool bProjected =
+				BMPixProject(xViewProjection, xBody, g_axBMPixBody[uSide])
+				&& BMPixProject(xViewProjection,
+					xBody - Zenith_Maths::Vector3(fBM_PIX_SIDE_OFFSET, 0.0f, 0.0f),
+					g_axBMPixSideLeft[uSide])
+				&& BMPixProject(xViewProjection,
+					xBody + Zenith_Maths::Vector3(fBM_PIX_SIDE_OFFSET, 0.0f, 0.0f),
+					g_axBMPixSideRight[uSide])
+				&& BMPixProject(xViewProjection,
+					xPlatformPos + Zenith_Maths::Vector3(0.0f, fBM_PIX_PLATFORM_LIFT, 0.0f),
+					g_axBMPixPlatform[uSide]);
+			if (!bProjected)
+			{
+				BMPixFailLatch("a creature body / side control / platform point did not "
+					"project into the safe viewport interior");
+				return false;
+			}
+		}
+		return true;
+	}
+
+	bool BMPixLatchActionRootGeometry(Zenith_Entity& xDirectorEntity, ZM_BattleDirector& xDirector)
+	{
+		Zenith_UIComponent* pxUI = xDirectorEntity.TryGetComponent<Zenith_UIComponent>();
+		if (pxUI == nullptr)
+		{
+			BMPixFailLatch("the director entity carries no UI component");
+			return false;
+		}
+		g_bBMPixLatched = BMPixLatchViewport(*pxUI)
+			&& BMPixLatchHudRects(*pxUI)
+			&& BMPixLatchArenaPoints(xDirector);
+		return g_bBMPixLatched;
+	}
+
+	// ---- Verify-time evaluation against the bytes the swapchain actually wrote ----
+
+	void BMPixVerifyEnemyHpBar(const ZM_TestTGAImage& xImage, bool& bPassed)
+	{
+		const float fBarRight = g_xBMPixEnemyHpBar.m_fLeft
+			+ (g_xBMPixEnemyHpBar.m_fRight - g_xBMPixEnemyHpBar.m_fLeft)
+			* fBM_PIX_HPBAR_SAMPLE_FRACTION;
+		BMPixRegionStats xBar;
+		if (!BMPixMeasureCanvasRect(xImage, g_xBMPixEnemyHpBar.m_fLeft,
+			g_xBMPixEnemyHpBar.m_fTop, fBarRight, g_xBMPixEnemyHpBar.m_fBottom, xBar))
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] the enemy HP bar's mapped rect fell outside the capture");
+			bPassed = false;
+			return;
+		}
+		if (xBar.m_xMean.y < fBM_PIX_MIN_HPBAR_GREEN
+			|| xBar.m_xMean.y - xBar.m_xMean.x < fBM_PIX_MIN_HPBAR_G_OVER_R
+			|| xBar.m_xMean.y - xBar.m_xMean.z < fBM_PIX_MIN_HPBAR_G_OVER_B)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] the enemy HP bar did NOT reach the framebuffer: its mapped "
+				"rect reads (%.3f, %.3f, %.3f) over %u px, wanted green >= %.2f with G-R >= %.2f "
+				"and G-B >= %.2f. An HP bar that is 'visible' in the UI tree but absent from the "
+				"swapchain is exactly the gap this clause exists to catch",
+				(double)xBar.m_xMean.x, (double)xBar.m_xMean.y, (double)xBar.m_xMean.z,
+				xBar.m_uSamples, (double)fBM_PIX_MIN_HPBAR_GREEN,
+				(double)fBM_PIX_MIN_HPBAR_G_OVER_R, (double)fBM_PIX_MIN_HPBAR_G_OVER_B);
+			bPassed = false;
+			return;
+		}
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_BattleMenuRun] HUD HP bar OBSERVED IN PIXELS: mean (%.3f, %.3f, %.3f) over %u px "
+			"(G-R %+.3f, G-B %+.3f)",
+			(double)xBar.m_xMean.x, (double)xBar.m_xMean.y, (double)xBar.m_xMean.z,
+			xBar.m_uSamples, (double)(xBar.m_xMean.y - xBar.m_xMean.x),
+			(double)(xBar.m_xMean.y - xBar.m_xMean.z));
+	}
+
+	void BMPixVerifyActionButtons(const ZM_TestTGAImage& xImage, bool& bPassed)
+	{
+		// The reference is the panel's OWN interior, in the band between its top edge
+		// and the first button -- so the comparison is "button against the surface it
+		// is drawn on", not "button against a colour someone chose".
+		BMPixRegionStats xStrip;
+		if (!BMPixMeasureCanvasRect(xImage,
+			g_xBMPixMenuPanel.m_fLeft + fBM_PIX_PANEL_STRIP_INSET,
+			g_xBMPixMenuPanel.m_fTop + fBM_PIX_PANEL_STRIP_MARGIN,
+			g_xBMPixMenuPanel.m_fRight - fBM_PIX_PANEL_STRIP_INSET,
+			g_axBMPixActionButton[0].m_fTop - fBM_PIX_PANEL_STRIP_MARGIN, xStrip))
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] the menu panel's interior reference strip could not be measured");
+			bPassed = false;
+			return;
+		}
+
+		const char* const aszButtonName[uBM_RUN_ACTION_BUTTON_COUNT] =
+		{
+			szBM_RUN_FIGHT_NAME, szBM_RUN_CATCH_NAME, szBM_RUN_RUN_NAME
+		};
+		for (u_int u = 0u; u < uBM_RUN_ACTION_BUTTON_COUNT; ++u)
+		{
+			BMPixRegionStats xButton;
+			if (!BMPixMeasureCanvasRect(xImage,
+				g_axBMPixActionButton[u].m_fLeft, g_axBMPixActionButton[u].m_fTop,
+				g_axBMPixActionButton[u].m_fRight, g_axBMPixActionButton[u].m_fBottom, xButton))
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BattleMenuRun] %s's mapped rect fell outside the capture", aszButtonName[u]);
+				bPassed = false;
+				continue;
+			}
+			const float fOverPanel = xButton.m_fLuminance - xStrip.m_fLuminance;
+			if (xButton.m_fLuminance < fBM_PIX_MIN_BUTTON_LUM
+				|| fOverPanel < fBM_PIX_MIN_BUTTON_OVER_PANEL)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BattleMenuRun] %s did NOT reach the framebuffer: its mapped rect reads "
+					"luminance %.3f against a panel interior of %.3f (delta %+.3f), wanted >= %.2f "
+					"and a delta >= %.2f",
+					aszButtonName[u], (double)xButton.m_fLuminance, (double)xStrip.m_fLuminance,
+					(double)fOverPanel, (double)fBM_PIX_MIN_BUTTON_LUM,
+					(double)fBM_PIX_MIN_BUTTON_OVER_PANEL);
+				bPassed = false;
+				continue;
+			}
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] %s OBSERVED IN PIXELS: luminance %.3f vs panel interior %.3f "
+				"(delta %+.3f) over %u px",
+				aszButtonName[u], (double)xButton.m_fLuminance, (double)xStrip.m_fLuminance,
+				(double)fOverPanel, xButton.m_uSamples);
+		}
+	}
+
+	void BMPixVerifyBattleLog(const ZM_TestTGAImage& xImage, bool& bPassed)
+	{
+		// Clip the 900-px-wide log box clear of the menu panel so no button pixel can
+		// ever be counted as a glyph.
+		const float fPanelClip = g_xBMPixMenuPanel.m_fLeft - fBM_PIX_LOG_PANEL_CLEARANCE;
+		const float fLogRight = g_xBMPixLogBox.m_fRight < fPanelClip
+			? g_xBMPixLogBox.m_fRight : fPanelClip;
+		const float fLogHeight = g_xBMPixLogBox.m_fBottom - g_xBMPixLogBox.m_fTop;
+
+		BMPixRegionStats xLog;
+		BMPixRegionStats xControl;
+		// The NEGATIVE CONTROL is the same box translated up by exactly its own
+		// height: same width, same scene, no text. Without it a "bright pixels exist"
+		// count is a claim about the scene, not about the log.
+		if (!BMPixMeasureCanvasRect(xImage, g_xBMPixLogBox.m_fLeft, g_xBMPixLogBox.m_fTop,
+				fLogRight, g_xBMPixLogBox.m_fBottom, xLog)
+			|| !BMPixMeasureCanvasRect(xImage, g_xBMPixLogBox.m_fLeft,
+				g_xBMPixLogBox.m_fTop - fLogHeight, fLogRight, g_xBMPixLogBox.m_fTop, xControl))
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] the battle log box / its negative control could not be measured");
+			bPassed = false;
+			return;
+		}
+		if (xControl.m_uGlyphPixels > uBM_PIX_MAX_CONTROL_GLYPHS)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] the log's negative control already holds %u glyph-white px "
+				"(<= %u expected) -- the search region is NOT clean, so any count inside the log "
+				"box is uninterpretable",
+				xControl.m_uGlyphPixels, uBM_PIX_MAX_CONTROL_GLYPHS);
+			bPassed = false;
+			return;
+		}
+		if (xLog.m_uGlyphPixels < uBM_PIX_MIN_LOG_GLYPHS)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] the battle text log did NOT reach the framebuffer: %u glyph-white "
+				"px in its mapped box (wanted >= %u) against %u in the clean control below it",
+				xLog.m_uGlyphPixels, uBM_PIX_MIN_LOG_GLYPHS, xControl.m_uGlyphPixels);
+			bPassed = false;
+			return;
+		}
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_BattleMenuRun] battle text log OBSERVED IN PIXELS: %u glyph-white px in %u sampled, "
+			"against %u in the same-sized control box directly above it",
+			xLog.m_uGlyphPixels, xLog.m_uSamples, xControl.m_uGlyphPixels);
+	}
+
+	void BMPixVerifyCreatures(const ZM_TestTGAImage& xImage, bool& bPassed)
+	{
+		Zenith_Maths::Vector3 axBody[ZM_SIDE_COUNT] = {};
+		bool abBodySampled[ZM_SIDE_COUNT] = {};
+
+		for (u_int uSide = 0u; uSide < (u_int)ZM_SIDE_COUNT; ++uSide)
+		{
+			Zenith_Maths::Vector3 xBody;
+			Zenith_Maths::Vector3 xLeft;
+			Zenith_Maths::Vector3 xRight;
+			Zenith_Maths::Vector3 xPlatform;
+			if (!BMPixMeasurePatch(xImage, g_axBMPixBody[uSide], uBM_PIX_BODY_RADIUS, xBody)
+				|| !BMPixMeasurePatch(xImage, g_axBMPixSideLeft[uSide], uBM_PIX_BODY_RADIUS, xLeft)
+				|| !BMPixMeasurePatch(xImage, g_axBMPixSideRight[uSide], uBM_PIX_BODY_RADIUS, xRight)
+				|| !BMPixMeasurePatch(xImage, g_axBMPixPlatform[uSide], uBM_PIX_PLATFORM_RADIUS, xPlatform))
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BattleMenuRun] the %s creature's sample patches were unreadable in the capture",
+					BMPixSideName(uSide));
+				bPassed = false;
+				continue;
+			}
+
+			const float fVsLeft     = BMPixSeparation(xBody, xLeft);
+			const float fVsRight    = BMPixSeparation(xBody, xRight);
+			const float fVsPlatform = BMPixSeparation(xBody, xPlatform);
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] %s creature '%s' (%u meshes) body RGB (%.3f, %.3f, %.3f) at "
+				"NDC (%+.3f, %+.3f); vs left control %.3f, vs right control %.3f, vs platform %.3f",
+				BMPixSideName(uSide), g_astrBMPixCreatureName[uSide].c_str(),
+				g_auBMPixCreatureMeshes[uSide],
+				(double)xBody.x, (double)xBody.y, (double)xBody.z,
+				(double)g_axBMPixBody[uSide].m_fX, (double)g_axBMPixBody[uSide].m_fY,
+				(double)fVsLeft, (double)fVsRight, (double)fVsPlatform);
+
+			if (fVsLeft < fBM_PIX_MIN_BODY_VS_SIDE || fVsRight < fBM_PIX_MIN_BODY_VS_SIDE)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BattleMenuRun] NO %s creature reached the framebuffer: the pixels at its "
+					"projected body are %.3f / %.3f from the background %.1f m to either side "
+					"(wanted >= %.2f on both). Its entity '%s' exists with %u meshes, so this is a "
+					"RENDER gap, not a placement one",
+					BMPixSideName(uSide), (double)fVsLeft, (double)fVsRight,
+					(double)fBM_PIX_SIDE_OFFSET, (double)fBM_PIX_MIN_BODY_VS_SIDE,
+					g_astrBMPixCreatureName[uSide].c_str(), g_auBMPixCreatureMeshes[uSide]);
+				bPassed = false;
+			}
+			// The placement guard (see the constant's comment) -- and the arm that
+			// caught the player half of the model-less mutation, where the body
+			// point falls straight through onto pale stone.
+			if (fVsPlatform < fBM_PIX_MIN_BODY_VS_PLATFORM)
+			{
+				Zenith_Error(LOG_CATEGORY_UNITTEST,
+					"[ZM_BattleMenuRun] the %s body sample is only %.3f from its own platform "
+					"(wanted >= %.2f) -- the patch has slid onto the slab, so nothing it reads is "
+					"evidence about a creature",
+					BMPixSideName(uSide), (double)fVsPlatform, (double)fBM_PIX_MIN_BODY_VS_PLATFORM);
+				bPassed = false;
+			}
+
+			axBody[uSide] = xBody;
+			abBodySampled[uSide] = true;
+		}
+
+		if (!abBodySampled[ZM_SIDE_PLAYER] || !abBodySampled[ZM_SIDE_ENEMY])
+		{
+			return;
+		}
+		// Both platforms carry the SAME species in this fixture, so two real renders
+		// read alike. Two unrelated background patches do not: measured, the
+		// model-less mutation puts pale stone on the player side and sky/water on the
+		// enemy side, 0.851 apart against 0.141 when both models really draw.
+		const float fBodies = BMPixSeparation(axBody[ZM_SIDE_PLAYER], axBody[ZM_SIDE_ENEMY]);
+		if (fBodies > fBM_PIX_MAX_BODY_VS_BODY)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] the two arena creatures do not read alike: '%s' vs '%s' differ "
+				"by %.3f (wanted <= %.2f). Two renders of the same species agree; two patches of "
+				"unrelated background do not",
+				g_astrBMPixCreatureName[ZM_SIDE_PLAYER].c_str(),
+				g_astrBMPixCreatureName[ZM_SIDE_ENEMY].c_str(),
+				(double)fBodies, (double)fBM_PIX_MAX_BODY_VS_BODY);
+			bPassed = false;
+			return;
+		}
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_BattleMenuRun] BOTH arena creature models OBSERVED IN PIXELS: '%s' and '%s' agree "
+			"to %.3f and each stands clear of its local background",
+			g_astrBMPixCreatureName[ZM_SIDE_PLAYER].c_str(),
+			g_astrBMPixCreatureName[ZM_SIDE_ENEMY].c_str(), (double)fBodies);
+	}
+
+	void BMPixVerifyActionRootCapture(bool& bPassed)
+	{
+		if (!g_bBMPixLatched)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] no ACTION_ROOT pixel geometry to read the capture with: %s",
+				g_szBMPixLatchFail);
+			bPassed = false;
+			return;
+		}
+
+		ZM_TestTGAImage xImage;
+		if (!ZM_TestLoadTGA(g_strBMRunVisualShotPath.c_str(), xImage))
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] the ACTION_ROOT swapchain capture is missing or not a 32-bit "
+				"top-left BGRA TGA: %s", g_strBMRunVisualShotPath.c_str());
+			bPassed = false;
+			return;
+		}
+
+		const float fViewportRight  = g_xBMPixViewportPos.x + g_xBMPixViewportSize.x;
+		const float fViewportBottom = g_xBMPixViewportPos.y + g_xBMPixViewportSize.y;
+		if (g_xBMPixViewportPos.x < 0.0f || g_xBMPixViewportPos.y < 0.0f
+			|| fViewportRight > static_cast<float>(xImage.m_uWidth) + 1.0f
+			|| fViewportBottom > static_cast<float>(xImage.m_uHeight) + 1.0f)
+		{
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"[ZM_BattleMenuRun] the latched viewport (%.1f,%.1f %.1fx%.1f) is outside the "
+				"%ux%u capture, so no mapped region can be trusted",
+				(double)g_xBMPixViewportPos.x, (double)g_xBMPixViewportPos.y,
+				(double)g_xBMPixViewportSize.x, (double)g_xBMPixViewportSize.y,
+				xImage.m_uWidth, xImage.m_uHeight);
+			bPassed = false;
+			return;
+		}
+		Zenith_Log(LOG_CATEGORY_UNITTEST,
+			"[ZM_BattleMenuRun] reading the ACTION_ROOT capture %ux%u; canvas %.0fx%.0f mapped "
+			"into viewport (%.0f,%.0f %.0fx%.0f). TGA=%s",
+			xImage.m_uWidth, xImage.m_uHeight,
+			(double)g_xBMPixCanvasSize.x, (double)g_xBMPixCanvasSize.y,
+			(double)g_xBMPixViewportPos.x, (double)g_xBMPixViewportPos.y,
+			(double)g_xBMPixViewportSize.x, (double)g_xBMPixViewportSize.y,
+			g_strBMRunVisualShotPath.c_str());
+
+		BMPixVerifyEnemyHpBar(xImage, bPassed);
+		BMPixVerifyActionButtons(xImage, bPassed);
+		BMPixVerifyBattleLog(xImage, bPassed);
+		BMPixVerifyCreatures(xImage, bPassed);
+	}
+
 	// Resolve the unique BattleDirector across every loaded scene, drive the menu
 	// per the active mode, and latch the winner / flee / HP-bar-fill outcome. A
 	// no-op when the Battle scene is not loaded (the director entity is absent).
@@ -577,17 +1397,29 @@ namespace
 				if (g_iBMRunVisualDwellFrames < iBM_RUN_VISUAL_DWELL_FRAMES)
 				{
 					++g_iBMRunVisualDwellFrames;
-					if (g_iBMRunVisualDwellFrames == iBM_RUN_VISUAL_CAPTURE_FRAME
+					// >= rather than == : the dump is only requested once the pixel
+					// geometry has been latched for the SAME frame, and the editor
+					// layout may not be sampleable on the first attempt. Retrying
+					// across the rest of the dwell costs nothing and the first
+					// attempt normally succeeds, so the capture frame is unchanged.
+					if (g_iBMRunVisualDwellFrames >= iBM_RUN_VISUAL_CAPTURE_FRAME
 						&& !g_bBMRunVisualShotRequested)
 					{
 						Zenith_UIComponent* pxUI = xEntity.TryGetComponent<Zenith_UIComponent>();
+						// Latched on EVERY attempt, not only the one that captures: the
+						// UI-visibility clause must stay independent of whether the pixel
+						// geometry latched, or one defect would red both and neither
+						// failure would mean what it says.
 						g_bBMRunRootVisualsValid = pxUI != nullptr
 							&& BattleMenuRunRootVisualsMatch(*pxUI);
-						Flux_Screenshot::RequestDump(g_strBMRunVisualShotPath.c_str());
-						g_bBMRunVisualShotRequested = true;
-						Zenith_Log(LOG_CATEGORY_UNITTEST,
-							"[ZM_BattleMenuRun] requested ACTION_ROOT framebuffer evidence -> %s",
-							g_strBMRunVisualShotPath.c_str());
+						if (BMPixLatchActionRootGeometry(xEntity, *pxDirector))
+						{
+							Flux_Screenshot::RequestDump(g_strBMRunVisualShotPath.c_str());
+							g_bBMRunVisualShotRequested = true;
+							Zenith_Log(LOG_CATEGORY_UNITTEST,
+								"[ZM_BattleMenuRun] requested ACTION_ROOT framebuffer evidence -> %s",
+								g_strBMRunVisualShotPath.c_str());
+						}
 					}
 				}
 				else
@@ -670,6 +1502,29 @@ namespace
 		g_bBMRunVisualShotRequested = false;
 		g_bBMRunRootVisualsValid   = false;
 		g_strBMRunVisualShotPath.clear();
+
+		// The ACTION_ROOT pixel geometry (batch mode reuses the process).
+		g_bBMPixLatched      = false;
+		g_szBMPixLatchFail   = "the ACTION_ROOT pixel geometry was never latched";
+		g_xBMPixViewportPos  = Zenith_Maths::Vector2(0.0f);
+		g_xBMPixViewportSize = Zenith_Maths::Vector2(0.0f);
+		g_xBMPixCanvasSize   = Zenith_Maths::Vector2(0.0f);
+		g_xBMPixEnemyHpBar   = BMPixCanvasRect{};
+		g_xBMPixMenuPanel    = BMPixCanvasRect{};
+		g_xBMPixLogBox       = BMPixCanvasRect{};
+		for (u_int u = 0u; u < uBM_RUN_ACTION_BUTTON_COUNT; ++u)
+		{
+			g_axBMPixActionButton[u] = BMPixCanvasRect{};
+		}
+		for (u_int u = 0u; u < (u_int)ZM_SIDE_COUNT; ++u)
+		{
+			g_axBMPixBody[u]      = BMPixNdcPoint{};
+			g_axBMPixSideLeft[u]  = BMPixNdcPoint{};
+			g_axBMPixSideRight[u] = BMPixNdcPoint{};
+			g_axBMPixPlatform[u]  = BMPixNdcPoint{};
+			g_auBMPixCreatureMeshes[u] = 0u;
+			g_astrBMPixCreatureName[u].clear();
+		}
 
 		g_uBMEntryGrassBlades      = 0u;
 
@@ -1585,8 +2440,11 @@ namespace
 				}
 				if (!g_bBMRunVisualShotRequested)
 				{
+					// The dump is only requested once the pixel geometry latches, so the
+					// latch's own reason is the actionable half of this failure.
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
-						"[ZM_BattleMenuRun] ACTION_ROOT framebuffer evidence was never requested");
+						"[ZM_BattleMenuRun] ACTION_ROOT framebuffer evidence was never requested: %s",
+						g_szBMPixLatchFail);
 					bPassed = false;
 				}
 				else if (!DiskFilePresent(g_strBMRunVisualShotPath))
@@ -1595,6 +2453,20 @@ namespace
 						"[ZM_BattleMenuRun] ACTION_ROOT framebuffer evidence produced no non-empty TGA: %s",
 						g_strBMRunVisualShotPath.c_str());
 					bPassed = false;
+				}
+				else
+				{
+					// ===== THE PIXEL ASSERTIONS (ZM-D-168 audit finding 2) ==========
+					// Everything else in this test -- including the two clauses just
+					// above -- is about an INPUT to rendering: a UI element's visible
+					// flag, its text, an engine event, a file's existence. Only this
+					// call opens the bytes the swapchain wrote. It is gated on no
+					// Zenith_IsNullRenderer() check by design: this test is
+					// m_bRequiresGraphics = true, so it SKIPS entirely on the Null
+					// backend and can never reach here with a dump that was never
+					// written. (ZM_RivalVesperAuthored_Test's marker clause needs the
+					// opposite treatment because that test runs for real headless.)
+					BMPixVerifyActionRootCapture(bPassed);
 				}
 				if (!g_bBMRunRootVisualsValid)
 				{

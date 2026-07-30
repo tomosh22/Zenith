@@ -3,7 +3,7 @@
 **Last updated:** 2026-07-29
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (OBSERVED 2026-07-30 at ZM-D-169, on a fresh build of both
+down this file (RE-OBSERVED 2026-07-30 at ZM-D-170, on a fresh build of both
 configs):** ZM headless registry **50 passed / 0 failed**; full windowed
 Vulkan **50 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2742 ran / 2741 passed / 0
 failed / 1 skipped** (`zm-tests.yml` pinned to **2742**); engine boot unit gate,
@@ -12,6 +12,11 @@ Null Combat, **1164 ran / 1163 passed / 0 failed / 1 skipped**
 quarantined `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
 **The registry moved 49 -> 50 at ZM-D-169** (`ZM_NpcRenderedPalette_Test`, a genuinely new
 registration); **BOTH unit baselines are UNMOVED**, so no `-Baseline` anywhere changed.
+**ZM-D-170 moved NOTHING** -- it extended the existing `ZM_BattleMenuRun_Test` rather than
+registering a test, and added no `ZENITH_TEST` case, so all four figures above were RE-OBSERVED
+equal and no site was edited. The engine figure is carried forward from ZM-D-169 and was **not**
+re-run: ZM-D-170 is game-only (one file under `Games/Zenithmon/Tests/`), so it owed no
+cross-game gate. Do not cite it as freshly observed at ZM-D-170.
 
 **★ THIS BLOCK AND `zm-tests.yml`'s PIN MOVE TOGETHER OR NOT AT ALL, and on
 2026-07-29 they did not.** This block read 2722 while the workflow was already
@@ -134,16 +139,24 @@ while every item below was true**:
    pixel. **The cause is shading, not the roster:** the top face lights, the sides do not (near-
    overhead sun, no meaningful ambient term), and sides are all a player sees. ZM-D-160/164 and this
    file overstated the user-visible effect; the roster fix is correct but moot until shading is done.
-2. **Creature models and the battle HUD are UNVERIFIED by pixels** -- the arena renders as greybox
-   platforms + dome with `Fernfawn` in the hierarchy and the test passing, but no creature and no HUD
-   was observed. May be a sampling miss; do not repeat the claim until captured.
+2. **Creature models and the battle HUD were UNVERIFIED by pixels -- RESOLVED 2026-07-30 (ZM-D-170),
+   AND THE AUDIT'S NULL WAS AN OBSERVATION MISS, NOT AN ABSENCE.** Both halves draw. Six arms on
+   `ZM_BattleMenuRun_Test` read the swapchain TGA it was **already writing**: HP bar chroma
+   **G-R +0.428**, the three root buttons at luminance **0.586-0.631** against a **0.276** panel
+   interior, the text log **522** glyph-white px against **0** in an adjacent control box, and both
+   platforms carrying a rendered `Fernfawn` (body vs local background **0.191-0.241**, the two bodies
+   alike to **0.140**, each **0.918 / 1.052** clear of its slab). Scope is narrower than the old
+   bullet implied: this pins the CREATURE MODEL family for ONE species, not S4's five generators.
 3. **The spotted marker draws, but reads as a sphere + diagonal stroke,** not an exclamation mark.
 4. **Dawnmere reads as an open field, not a town** -- no buildings; the Trade Post and Care Center
    are dialogue only.
 **★ ITEMS 1 AND 3 ABOVE WERE RESOLVED 2026-07-30 BY ZM-D-169, ON PIXELS** (NPC bodies now read at
 eye level -- min rendered separation **0.2001** against a 0.15 floor, per-body RGB 0.34-0.84 per
 channel where the audit measured 0.004-0.055; the marker now reads as an upright exclamation mark,
-**118 px spanning 7x28**). **Items 2 and 4 remain UNVERIFIED / open.** And the shading CAUSE behind
+**118 px spanning 7x28**). **★ ITEM 2 WAS RESOLVED 2026-07-30 BY ZM-D-170, ALSO ON PIXELS, AND IT
+WAS NOT A DEFECT** -- the HUD and both creature models were drawing the whole time; the audit's null
+was an observation miss, and the real hole was that a capture already on disk had no assertion
+touching it. **Item 4 (Dawnmere reads as an open field) remains open.** And the shading CAUSE behind
 item 1 is still unfixed -- only the six NPCs were given an emissive floor.
 
 **★★ DO NOT USE `Tools\capture_viewport.ps1` TO JUDGE A SHORT BEAT. This file used to advise
@@ -201,6 +214,19 @@ including the CROSS-GAME engine gate, and committed). Shortfalls **1.8-3c is CLO
 and the suite has its first pixel-level assertions. Observed: ZM headless **50/0**, full windowed
 **50/0 with ZERO skipped**, ZM boot **2742 / 2741 / 0 / 1 UNMOVED**, engine boot **1164 / 1163 /
 0 / 1 UNMOVED**.
+
+**★★ AND ZM-D-170 LANDED 2026-07-30 ON TOP OF IT, CLOSING AUDIT FINDING 2 ON PIXELS.** GAME-ONLY
+(one file: `Tests/ZM_AutoTests_BattleMenu.cpp`), so no cross-game gate was owed. Observed: ZM headless
+**50/0**, full windowed **50/0 with ZERO skipped**, ZM boot **2742 / 2741 / 0 / 1 UNMOVED** -- **no
+count moved, so none of the four baseline sites was edited.** The battle HUD and both arena creature
+models are now asserted in pixels rather than from test names. **★ THE TRANSFERABLE FINDING IS NOT
+THE RESULT, IT IS THE SHAPE OF THE HOLE:** `ZM_BattleMenuRun_Test` had been dwelling 90 frames and
+writing a real swapchain TGA for a whole commit while asserting only that the FILE EXISTED. Evidence
+produced and never read reads as coverage and is not. Before trusting any visual claim, grep for a
+capture that no assertion opens. Second finding, from the mutation battery: **one arm per claim is not
+enough** -- with both models dropped, the body-vs-background arm still PASSED on the player side
+(0.834/0.927, that point lands on pale stone) and only the arm written as a sample-placement guard
+caught it. Full detail in ZM-D-170.
 
 **★ THE CURRENT TASK IS S8's FOUR CONTENT ITEMS** (`Roadmap.md:198-201`). **The S8 go/no-go is
 NOT the next step** -- per `Roadmap.md:196-203` that gate FOLLOWS those four items rather than
