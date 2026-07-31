@@ -152,11 +152,9 @@ void Flux_TranslucencyImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			RESOURCE_ACCESS_READ_SRV);
 	}
 
-	// IBL textures.
+	// IBL textures (BRDF LUT + both double-buffered cubemaps).
 	Flux_IBLImpl& xIBL = g_xEngine.IBL();
-	xGraph.Read(xPass, xIBL.m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(xPass, xIBL.m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(xPass, xIBL.m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+	xIBL.DeclareConsumerReads(xGraph, xPass);
 
 	// Preview view (S5b): a second translucency instance over the preview view's
 	// HDR target + depth (NO ClearTargets — deferred already cleared the target).
@@ -180,9 +178,7 @@ void Flux_TranslucencyImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			xGraph.ReadBuffer(xPreviewPass, xLightClustering.GetClusterLightIndicesBuffer().GetBuffer(),
 				RESOURCE_ACCESS_READ_SRV);
 		}
-		xGraph.Read(xPreviewPass, xIBL.m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(xPreviewPass, xIBL.m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(xPreviewPass, xIBL.m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+		xIBL.DeclareConsumerReads(xGraph, xPreviewPass);
 	}
 }
 

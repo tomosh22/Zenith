@@ -12,6 +12,7 @@ namespace Flux_SkyboxShaders
 	inline constexpr Flux_ShaderDecl xSkyboxCubemap{ "SkyboxCubemap", "Skybox/Flux_Skybox", "vsMain", "fsMain", nullptr, "spirv_1_3", "Skybox" };
 	inline constexpr Flux_ShaderDecl xSkyboxAtmosphere{ "SkyboxAtmosphere", "Skybox/Flux_Atmosphere", "vsMain", "fsMain", nullptr, "spirv_1_3", "Skybox" };
 	inline constexpr Flux_ShaderDecl xSkyboxTransmittanceLUT{ "SkyboxTransmittanceLUT", "Skybox/Flux_TransmittanceLUT", "vsMain", "fsMain", nullptr, "spirv_1_3", "Skybox" };
+	inline constexpr Flux_ShaderDecl xSkyboxMultiScatterLUT{ "SkyboxMultiScatterLUT", "Skybox/Flux_MultiScatterLUT", "vsMain", "fsMain", nullptr, "spirv_1_3", "Skybox" };
 	inline constexpr Flux_ShaderDecl xSkyboxSkyViewLUT{ "SkyboxSkyViewLUT", "Skybox/Flux_SkyViewLUT", "vsMain", "fsMain", nullptr, "spirv_1_3", "Skybox" };
 
 	inline constexpr const Flux_ShaderDecl* apxALL[] =
@@ -20,6 +21,7 @@ namespace Flux_SkyboxShaders
 		&xSkyboxCubemap,
 		&xSkyboxAtmosphere,
 		&xSkyboxTransmittanceLUT,
+		&xSkyboxMultiScatterLUT,
 		&xSkyboxSkyViewLUT,
 	};
 }

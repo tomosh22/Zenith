@@ -69,29 +69,4 @@ ZENITH_TEST(SunComponent, SerializationRoundTripsGeometryOnly)
 	ZENITH_ASSERT_NEAR_VEC3(xDest.GetWorldDirection(), xSource.GetWorldDirection(), 0.0001f);
 }
 
-ZENITH_TEST(SunComponent, ActiveSceneWinsConflictsThenLowestEntityID)
-{
-	Zenith_TempScene xSceneA("SunConflictA");
-	Zenith_Entity xEntityA = xSceneA.CreateEntity("SunA");
-	xEntityA.AddComponent<Zenith_SunComponent>().SetDirection(Zenith_Maths::Vector3(-1.0f, -1.0f, 0.0f));
-
-	Zenith_TempScene xSceneB("SunConflictB");
-	Zenith_Entity xEntityB = xSceneB.CreateEntity("SunB");
-	xEntityB.AddComponent<Zenith_SunComponent>().SetDirection(Zenith_Maths::Vector3(1.0f, -1.0f, 0.0f));
-	Zenith_Entity xEntityB2 = xSceneB.CreateEntity("SunB2");
-	xEntityB2.AddComponent<Zenith_SunComponent>().SetDirection(Zenith_Maths::Vector3(0.0f, -1.0f, 1.0f));
-
-	Zenith_SunAuthorityData xResolved;
-	g_pfnZenithSunAuthorityGather(xResolved);
-	ZENITH_ASSERT_TRUE(xResolved.m_bAuthored);
-	ZENITH_ASSERT_EQ(xResolved.m_uAuthoredCount, 3u);
-	ZENITH_ASSERT_TRUE(xResolved.m_bSourceIsInActiveScene);
-	ZENITH_ASSERT_EQ(xResolved.m_uSourceEntityIndex, xEntityB.GetEntityID().m_uIndex);
-
-	g_xEngine.Scenes().SetActiveScene(xSceneA.Scene());
-	g_pfnZenithSunAuthorityGather(xResolved);
-	ZENITH_ASSERT_EQ(xResolved.m_uSourceEntityIndex, xEntityA.GetEntityID().m_uIndex);
-	ZENITH_ASSERT_TRUE(xResolved.m_bSourceIsInActiveScene);
-}
-
 #endif // ZENITH_TESTING

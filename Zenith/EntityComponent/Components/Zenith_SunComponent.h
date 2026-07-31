@@ -2,11 +2,31 @@
 
 #include "ZenithECS/Zenith_Entity.h"
 #include "Maths/Zenith_Maths.h"
-#include "Core/Zenith_SunAuthority.h"
+#include "Core/Zenith_EnvironmentAuthority.h"
 
 // A scene Sun owns only solar geometry. It deliberately has no colour,
-// intensity, or radiance field: Flux derives the direct key from the one
-// atmosphere anchor and per-channel transmittance.
+// intensity, radiance, exposure or any equivalent artistic brightness
+// multiplier field: Flux derives the direct solar key from the engine's one
+// radiometric anchor (policy, never scene-authored) and per-channel
+// atmospheric transmittance. It is resolved together with a co-located
+// Zenith_AtmosphereComponent via Zenith_EnvironmentAuthorityData.
+//
+// TODO(second-atmosphere-light): there is exactly ONE Sun. A moon -- Unreal
+// supports two atmosphere lights precisely for this -- is not a second
+// component, it is a spine change: g_xSunDir_Pad / g_xSunColour_Pad are single
+// float4s in the VIEW descriptor set (Flux/Flux_PersistentSetLayouts.h), the sky
+// solvers take one xSunDir and render one disk, CSM fits one direction, and the
+// IBL capture convolves one sun. Until then a night scene gets its visibility
+// from ordinary authored lights, which is what DevilsPlayground does.
+//
+// TODO(look-override): there is deliberately NO artistic sun colour/intensity
+// override, and adding one is NOT a small change of mind -- ZM-D-171 removed
+// exactly those knobs (dbg_SunColour, the IBL 0.5, the key 0.14) because they
+// let the sky and the key light disagree, which is the single most common
+// lighting bug in Unity/Unreal projects. If a project needs a wider look space,
+// widen what is PHYSICALLY authorable (ozone, turbidity, ground albedo, planet
+// radius -- see Shaders/Common/Atmosphere.slang) rather than reintroducing a
+// channel in which sun, sky and ambient can drift apart.
 enum SUN_DIRECTION_MODE : u_int
 {
 	SUN_DIRECTION_MODE_VECTOR = 0,
@@ -47,6 +67,9 @@ public:
 private:
 	static float WrapDegrees(float fDegrees);
 
+	// Not serialized: the owning entity, kept so the TOOLS panel can report
+	// whether THIS entity won the environment authority.
+	Zenith_Entity         m_xParentEntity;
 	SUN_DIRECTION_MODE    m_eDirectionMode = SUN_DIRECTION_MODE_VECTOR;
 	Zenith_Maths::Vector3 m_xDirection = Zenith_GetDefaultSunDirection();
 	float                 m_fTimeOfDayAngleDegrees = 90.0f;

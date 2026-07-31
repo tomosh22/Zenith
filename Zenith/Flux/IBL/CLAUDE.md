@@ -13,12 +13,22 @@ Image-Based Lighting system for realistic ambient lighting and reflections. Uses
   cancel), so `kD * irradiance * albedo` in the deferred shader is
   energy-correct as-is; any scale on it breaks sun↔sky consistency.
 - **The environment the cubes integrate includes a Lambertian VIRTUAL GROUND**
-  (`IBL_GROUND_ALBEDO = 0.25` in `Shaders/Common/Atmosphere.slang`, the
-  measured mean shortwave albedo of vegetated land; UE5's SkyAtmosphere ships
-  the same mechanism at 0.4). Without it the cube's lower hemisphere is black
-  and every vertical surface loses the bounce light that fills real shadows —
-  the ZM-D-168 "vertical faces render near-black" defect. The visible-sky pass
-  passes ground albedo 0 (real terrain supplies the ground there).
+  — now **scene-authored** as `Zenith_AtmosphereComponent::GetGroundAlbedo`
+  (default 0.25, the measured mean shortwave albedo of vegetated land; ~0.7 for
+  snow/desert, ~0.05 for basalt/ocean; UE5's SkyAtmosphere ships the same
+  mechanism at 0.4). It used to be the `IBL_GROUND_ALBEDO` constant in
+  `Shaders/Common/Atmosphere.slang`. Without it the cube's lower hemisphere is
+  black and every vertical surface loses the bounce light that fills real
+  shadows — the ZM-D-168 "vertical faces render near-black" defect. The
+  visible-sky pass passes ground albedo 0 (real terrain supplies the ground
+  there); the multiple-scattering bake **does** use it, because the ground
+  bounce is a real part of the multiply-scattered field.
+- **The sky integral includes orders 2..infinity** (Hillaire multiple
+  scattering), for both the visible sky and the capture, gated by
+  `Zenith_GraphicsOptions::m_bAtmosphereMultiScatteringEnabled`. The maths is
+  shared (`Shaders/Common/MultiScatter.slang`) but the **LUTs are not**: the
+  Skybox bakes from the LIVE medium, the capture from its FROZEN snapshot. One
+  shared LUT would force one of them to integrate the wrong atmosphere.
 - **The direct sun key derives from the same atmosphere**: sun radiance =
   `AtmosphereConfig::fSUN_INTENSITY` (the engine's ONE radiometric anchor) ×
   per-channel transmittance along the sun ray
@@ -122,14 +132,16 @@ IBL_DEBUG_ROUGHNESS_LOD    // Which mip level is sampled
 | `uPREFILTER_MIP_COUNT` | 7 | Prefiltered specular mip chain length |
 | `uMAX_PROBES` | 16 | Maximum IBL probes |
 | `uPASSES_PER_FRAME` | 8 | Regeneration passes executed per frame (frame amortization) |
+| `uBUFFER_COUNT` | 2 | Irradiance/prefiltered cubes are double buffered (coherent publication) |
 
 ## Render-Graph Integration & Frame-Amortized Regeneration
 
-`SetupRenderGraph()` declares **49 render-graph passes** (1 BRDF LUT pass writing a 2D texture + 48 passes writing cubemap subresources):
+`SetupRenderGraph()` declares **97 render-graph passes** (1 BRDF LUT pass writing a 2D texture + 48
+cubemap-subresource passes **per buffer**):
 
 - 1 BRDF LUT pass (`ExecuteBRDFLUTPass`)
-- 6 irradiance face passes (`ExecuteIrradianceFacePass`, one per cube face)
-- 42 prefilter mip-face passes (`ExecutePrefilterMipFacePass`, `uPREFILTER_MIP_COUNT` × 6 faces)
+- 6 irradiance face passes × 2 buffers (`ExecuteIrradianceFacePass`, one per cube face)
+- 42 prefilter mip-face passes × 2 buffers (`ExecutePrefilterMipFacePass`, `uPREFILTER_MIP_COUNT` × 6 faces)
 
 Regeneration is **amortized across multiple frames** rather than done in one frame. `m_eRegenState`
 (`IBL_RegenState`: `IBL_REGEN_IDLE` → `IBL_REGEN_IRRADIANCE` → `IBL_REGEN_PREFILTER`) tracks progress,
@@ -137,15 +149,46 @@ and `UpdateGraphPassEnables()` enables at most `uPASSES_PER_FRAME` (8) of the co
 passes per frame so the cost is spread out. `IsReady()` returns true once all IBL textures have been
 generated at least once (`m_bIBLReady`).
 
-**Runtime sun changes:** `Flux_GraphicsImpl` compares the resolved scene-sun
-direction each frame and calls `MarkAllProbesDirty()` + `UpdateSkyIBL()` on a
-change. A complete refresh is 48 passes (6 irradiance + 42 prefilter) and
-therefore converges in **6 frames** at 8 passes/frame. `IsReady()` stays latched
-while the previous complete cubes remain usable. Dirtying during an in-flight
-prefilter restarts at irradiance face 0; continuing the old cursor would mix
-two skies and then incorrectly clear dirty. `IBLRegeneration::*` units and
-DP's windowed `Test_SceneSunAuthority_Runtime` lock this behaviour, including
-the CSM refit that happens from the same per-frame direction.
+### Runtime capture: `RequestEnvironmentUpdate` (the ONE invalidation path)
+
+`Flux_GraphicsImpl::UploadFrameConstants` offers the whole live environment — resolved sun direction
+plus the authored Rayleigh/Mie/Mie-G medium plus the captured radiometric anchor — to
+`Flux_IBLImpl::RequestEnvironmentUpdate` as a `Flux_IBLEnvironmentSnapshot`, every frame. It does not
+compare anything itself and it never calls `MarkAllProbesDirty` (nor `UpdateSkyIBL`, which was the same
+function under a second name and is deleted). The IBL owns the schedule:
+
+- **Displacement accumulates against the last CAPTURED target**, never the previous frame.
+  Re-basing the baseline every frame is why CityBuilder's 120 s day at 60 FPS (~0.05°/frame, under the
+  ~0.081° dot threshold `Flux_IBLEnvironment::fSUN_DIRECTION_DOT_EPSILON`) used to leave the IBL frozen
+  for the whole day, while at 30 FPS (~0.1°/frame) it crossed every frame and thrashed.
+- **An in-flight generation is never restarted.** Changes arriving mid-generation are *coalesced* into
+  one latest pending target (`m_xPendingEnvironment`); the active snapshot is immutable for the whole
+  generation. Restarting is what starved regeneration at low frame rates.
+- **Completion promotes the pending target** and starts the next generation from it if it still differs
+  — deferred to the *next* tick, because the completing frame's 8 passes have not been recorded yet
+  when the state machine reaches idle.
+
+### Snapshot coherence + coherent publication
+
+Every pass of one generation builds its constants from the frozen `GetActiveEnvironment()` via
+`Flux_IBLPassConstants::BuildIrradiance/BuildPrefilter`. The shaders read the **captured** sun direction
+out of their pass CB — not the live VIEW-set sun — and the **authored** medium, not the
+`Common/Atmosphere.slang` defaults (there is no defaults-only convenience overload left to fall back to;
+the capture entry point is `ComputeEnvironmentCaptureScattering`, which takes the medium).
+
+Because consumers sample the cubes on every frame of a 6-frame generation, in-place writes exposed a
+prefiltered cube whose mips/faces came from two skies for 5 frames out of 6. Both cubes are therefore
+**double buffered**: a generation writes the back pair, and `PublishCompletedGeneration` swaps front/back
+only once a *complete* generation has finished. `GetIrradianceMapSRV()`/`GetPrefilteredMapSRV()` return
+the front pair (Flux rewrites the persistent VIEW-set image each frame, so the swap needs no descriptor
+bookkeeping); consumers declare graph `Read`s of **both** via `DeclareConsumerReads`, since the front
+index flips between graph rebuilds. A first generation seeds both buffers in one frame, which also keeps
+the compile-time validator satisfied that every cube a pass reads has an enabled writer.
+
+`IsReady()` stays latched while the previous complete cubes remain usable. `IBLRegeneration::*` +
+`IBLEnvironment::*` units (including simulated 120 s days at 60 and 30 FPS) and DP's windowed
+`Test_SceneSunAuthority_Runtime` lock this behaviour, including the CSM refit that happens from the same
+per-frame direction.
 
 ## IBL Math (Split-Sum Approximation)
 
@@ -206,8 +249,8 @@ state), `SetupRenderGraph` is appended at the call site, and `Shutdown` runs in 
 **load-bearing** constraint is render-graph declaration order: IBL declares its texture-writing passes
 before `DeferredShading` declares the passes that read those textures.
 
-The sky source (`Skybox`) is registered after IBL; IBL samples it lazily when marked dirty
-(`UpdateSkyIBL()` / the regen state machine), not during `Initialise()`.
+The sky source (`Skybox`) is registered after IBL; IBL samples it lazily when a capture is scheduled
+(`RequestEnvironmentUpdate` / the regen state machine), not during `Initialise()`.
 
 ## Common Operations
 
@@ -225,10 +268,17 @@ xBinder.BindSRV(xPrefilteredBinding, &g_xEngine.IBL().GetPrefilteredMapSRV());
 ```
 
 ### Trigger IBL update when lighting changes:
+There is exactly ONE runtime entry point, and `Flux_GraphicsImpl::UploadFrameConstants` already calls it
+every frame with the resolved environment. Do **not** call `MarkAllProbesDirty()` from gameplay or from
+another renderer system: it bypasses the accumulate/coalesce/never-restart schedule.
 ```cpp
-// Flux_GraphicsImpl does this automatically when scene authority changes.
-g_xEngine.IBL().MarkAllProbesDirty();
-g_xEngine.IBL().UpdateSkyIBL();
+Flux_IBLEnvironmentSnapshot xEnv;
+xEnv.m_xSunDirection  = xResolvedSunDir;      // normalised travel direction
+xEnv.m_fRayleighScale = xAuthored.m_fRayleighScale;
+xEnv.m_fMieScale      = xAuthored.m_fMieScale;
+xEnv.m_fMieG          = xAuthored.m_fMieG;
+xEnv.m_fSunIntensity  = g_xEngine.Skybox().GetSunIntensity();   // captured anchor, read-only
+g_xEngine.IBL().RequestEnvironmentUpdate(xEnv);
 ```
 
 ## Performance Notes
@@ -237,7 +287,23 @@ g_xEngine.IBL().UpdateSkyIBL();
 - Irradiance convolution: ~2ms when updated
 - Prefilter generation: ~10ms when updated (7 mip levels, amortized across frames)
 - Runtime IBL sampling: ~0.2ms added to deferred shading
-- VRAM: BRDF LUT ~1MB, Irradiance ~0.5MB, Prefiltered ~10MB
+- VRAM: BRDF LUT ~1MB, Irradiance ~2×0.5MB, Prefiltered ~2×10MB (double buffered)
+- A first generation now seeds BOTH buffers, so the one-frame boot/resize spike is ~2× the old one
+  (it only happens on a graph rebuild). Steady-state cost is unchanged: 8 passes/frame into the back pair.
+
+## Known limits of the Sun/Atmosphere model (and why)
+
+These are **deliberate** boundaries, not oversights. Each has a `TODO(<tag>)` at the
+place a fix would start; read that comment before attempting one.
+
+| Limit | Where the TODO lives | Why it is expensive |
+|---|---|---|
+| **No ozone absorption** — the medium is purely scattering, so twilight lacks the violet Chappuis band and reads flatter than Unreal's | `TODO(ozone)` in `Shaders/Common/Atmosphere.slang` (+ a pointer in `Common/MultiScatter.slang`) | Not a parameter: a third layer with a *tent* (not exponential) density profile, threaded into both LUT bakes, both solvers, **and** the CPU mirror `Flux_AtmosphereTransmittance.h` — miss the mirror and the direct sun key silently stops agreeing with the sky it is derived from. Re-derives twilight, so pixel baselines move. |
+| **No second atmosphere light (no moon)** | `TODO(second-atmosphere-light)` in `EntityComponent/Components/Zenith_SunComponent.h` | A spine change, not a component: `g_xSunDir_Pad`/`g_xSunColour_Pad` are single `float4`s in the VIEW set (`Flux_PersistentSetLayouts.h`), the sky renders one disk, CSM fits one direction, the capture convolves one sun. DP's night uses ordinary authored lights instead. |
+| **No artistic sun colour/intensity override** | `TODO(look-override)` in `Zenith_SunComponent.h` | ZM-D-171 *removed* exactly those knobs because they let sky and key light disagree. The sanctioned way to widen the look space is to widen what is **physically** authorable. |
+| **Planet/atmosphere radii are compile-time** | `TODO(planet-radius)` in `Shaders/Common/Atmosphere.slang` | Threading them means changing the LUT parameterisation, both bakes, the CPU mirror and the IBL reference height — all of which currently assume the Earth pair. |
+| **Brightness is globally metered** — no way to lift one region without moving the metering everywhere | `TODO(exposure-locality)` in `Flux/Skybox/Flux_SkyboxImpl.h` (beside the anchor) | The fix is *local exposure* in `Flux/HDR`, not a per-scene anchor; an anchor knob re-breaks the agreement the anchor exists to guarantee. |
+| **Ambient lags direct light** by up to one capture | — (inherent) | Amortised capture is the design; Unreal's real-time SkyLight capture has the same property. Tune with `m_fIBLCaptureThresholdDegrees` / `m_uIBLPassesPerFrame`. |
 
 ## Future Work
 

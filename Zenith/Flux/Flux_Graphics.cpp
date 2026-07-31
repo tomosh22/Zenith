@@ -10,14 +10,14 @@
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Flux/Flux_BackendTypes.h"
 #include "Core/Zenith_RenderGather.h" // Wave 3: main camera comes through the neutral gather
-#include "Core/Zenith_SunAuthority.h" // scene-authored direction only; no colour/radiance channel
+#include "Core/Zenith_EnvironmentAuthority.h" // resolved scene environment (sun geometry + atmosphere model); no colour/radiance channel
 #include "Core/Zenith_GraphicsOptions.h" // m_bShadowsEnabled (cascade render-view activity sync)
 #include "Flux/DynamicLights/Flux_LightClusteringImpl.h" // IsInitialised (main-view cluster-lights flag)
 #include "Flux/TAA/Flux_TAAJitter.h" // TAA sub-pixel jitter injection into the slot-0 GPU payload
 #include "Flux/TAA/Flux_TAAImpl.h"   // GetSceneColourForPostFX routes bloom/tonemap to the TAA resolve output
 #include "Flux/TAA/Flux_TAA_ResolveCPU.h" // Flux_TAAComputeRenderDims — even-quantised render dims for temporal upscaling
 #include "Flux/Skybox/Flux_AtmosphereTransmittance.h" // derived sun key: anchor * per-channel transmittance
-#include "Flux/IBL/Flux_IBLImpl.h" // sun-direction changes restart amortised environment convolution
+#include "Flux/IBL/Flux_IBLImpl.h" // Flux_IBLEnvironmentSnapshot: the per-frame environment offer that drives the amortised capture
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -287,35 +287,50 @@ void Flux_GraphicsImpl::UploadFrameConstants()
 		m_xFrameConstants.m_xInvProjMat = glm::inverse(m_xFrameConstants.m_xProjMat);
 	}
 
-	Zenith_SunAuthorityData xSunAuthority;
-	if (g_pfnZenithSunAuthorityGather)
+	Zenith_EnvironmentAuthorityData xEnv;
+	if (g_pfnZenithEnvironmentAuthorityGather)
 	{
-		g_pfnZenithSunAuthorityGather(xSunAuthority);
+		g_pfnZenithEnvironmentAuthorityGather(xEnv);
 	}
-	const Zenith_Maths::Vector3 xSunDir = xSunAuthority.m_xDirection;
+	const Zenith_Maths::Vector3 xSunDir = xEnv.m_xSunDirection;
 	const Zenith_Maths::Vector4 xNormalisedSunDir = glm::normalize(
 		Zenith_Maths::Vector4(xSunDir.x, xSunDir.y, xSunDir.z, 0.0f));
 	const Zenith_Maths::Vector3 xResolvedSunDir(xNormalisedSunDir);
-	if (m_bHasResolvedSunDirection
-		&& glm::dot(xResolvedSunDir, m_xLastResolvedSunDirection) < 0.999999f)
-	{
-		// Runtime time-of-day changes invalidate both environment integrals.
-		// Existing textures remain usable while the state machine amortises the
-		// replacement; IsReady() deliberately stays latched.
-		Flux_IBLImpl& xIBL = xEngine.IBL();
-		xIBL.MarkAllProbesDirty();
-		xIBL.UpdateSkyIBL();
-	}
-	m_xLastResolvedSunDirection = xResolvedSunDir;
-	m_bHasResolvedSunDirection = true;
+
+	// Push the resolved atmosphere medium into the Skybox (it owns the
+	// atmosphere constant buffer + LUT invalidation). The radiometric anchor
+	// is NOT part of the snapshot and is never mutated by the scene.
+	Flux_SkyboxImpl& xSkybox = xEngine.Skybox();
+	xSkybox.ApplyEnvironment(xEnv);
+
+	// Offer the WHOLE live environment (sun geometry + atmosphere medium) to the
+	// IBL as one snapshot. The IBL owns the capture schedule from here: it
+	// measures displacement against its last CAPTURED target (so slow continuous
+	// motion accumulates instead of being re-based every frame), never restarts
+	// a generation in flight, and coalesces mid-generation changes into one
+	// pending target. Direct sunlight + the visible sky below stay per-frame
+	// responsive; only the expensive capture is amortised.
+	Flux_IBLEnvironmentSnapshot xIBLEnv;
+	xIBLEnv.m_xSunDirection       = xResolvedSunDir;
+	xIBLEnv.m_fRayleighScale      = xEnv.m_fRayleighScale;
+	xIBLEnv.m_fMieScale           = xEnv.m_fMieScale;
+	xIBLEnv.m_fMieG               = xEnv.m_fMieG;
+	xIBLEnv.m_fRayleighScaleHeight = xEnv.m_fRayleighScaleHeight;
+	xIBLEnv.m_fMieScaleHeight     = xEnv.m_fMieScaleHeight;
+	xIBLEnv.m_fGroundAlbedo       = xEnv.m_fGroundAlbedo;
+	// Captured from the read-only anchor getter -- never a mutable control.
+	xIBLEnv.m_fSunIntensity       = xSkybox.GetSunIntensity();
+	xIBLEnv.m_bMultiScattering    = Flux_SkyboxImpl::IsMultiScatteringEnabled();
+	xEngine.IBL().RequestEnvironmentUpdate(xIBLEnv);
 
 	// Derived sun key: chromaticity = per-channel transmittance along the sun
-	// ray, HDR radiance scalar = the Skybox anchor (top-of-atmosphere solar
-	// irradiance). E_sun(ground) = anchor * T_rgb — same medium as the sky and
-	// the IBL convolution, so direct and ambient light cannot drift apart.
-	const Flux_SkyboxImpl& xSkybox = xEngine.Skybox();
+	// ray, HDR radiance scalar = the engine's one radiometric anchor
+	// (top-of-atmosphere solar irradiance, read-only policy constant).
+	// E_sun(ground) = anchor * T_rgb — same medium as the sky and the IBL
+	// convolution, so direct and ambient light cannot drift apart.
 	const Zenith_Maths::Vector4 xSunCol = Flux_AtmosphereTransmittance::ComputeSunColourRadiance(
-		xSunDir, xSkybox.GetSunIntensity(), xSkybox.GetRayleighScale(), xSkybox.GetMieScale());
+		xSunDir, xSkybox.GetSunIntensity(), xEnv.m_fRayleighScale, xEnv.m_fMieScale,
+		xEnv.m_fRayleighScaleHeight, xEnv.m_fMieScaleHeight);
 	m_xFrameConstants.m_xSunDir_Pad = xNormalisedSunDir;
 	m_xFrameConstants.m_xSunColour_Pad = { xSunCol.x, xSunCol.y, xSunCol.z, xSunCol.w };
 	int32_t iWidth, iHeight;

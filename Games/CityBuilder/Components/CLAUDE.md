@@ -105,7 +105,4 @@ each frame. `OnAwake` resets the controller (fresh per Play session); `OnUpdate`
 
 ## CB_DayNightCycleComponent.h — day/night
 
-Advances a `CB_DayNight` clock each frame and (windowed only) drives the skybox sun intensity
-(`0.2 + 2.6 × elevation`). `OnStart` creates + publishes the clock; `OnUpdate` advances + applies;
-`OnDestroy` clears the static pointer. `GetCycle()` + static `GetActive()`. Headless: the clock still
-advances; only the skybox call is skipped.
+Advances a `CB_DayNight` clock each frame and drives the authoritative `Zenith_SunComponent` time-of-day angle (co-located on the CityManager environment entity) from the clock -- night brightness results from the sun moving below the horizon + atmospheric transmittance, NOT from animating the renderer's radiometric anchor (the old `g_xEngine.Skybox().SetSunIntensity(0.2 + 2.6 * elevation)` leak is closed). `OnStart` creates + publishes the clock AND attaches the sibling `Zenith_SunComponent` if absent; `OnUpdate` advances the clock then writes `SetTimeOfDayAngleDegrees((timeOfDay - 0.25) * 360)` (0 sunrise, 90 noon, 180 sunset, 270 midnight); `OnDestroy` clears the static pointer. `GetCycle()` + static `GetActive()`. Headless: the clock + sun geometry still advance; nothing in Flux is mutated by gameplay.

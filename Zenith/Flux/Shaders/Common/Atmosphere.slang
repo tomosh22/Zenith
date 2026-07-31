@@ -30,16 +30,39 @@ public static const float  DEFAULT_MIE_G                = 0.76;
 public static const uint   DEFAULT_SKY_SAMPLES          = 16u;
 public static const uint   DEFAULT_LIGHT_SAMPLES        = 8u;
 
-// Virtual-ground albedo for ENVIRONMENT-CAPTURE use (the IBL irradiance /
-// prefilter convolutions). A physical scene parameter, not a look knob:
-// 0.25 is the measured mean shortwave albedo of vegetated land (grassland
-// 0.20-0.26; Earth land average ~0.25), matching the terrain the games
-// render. UE5's SkyAtmosphere ships the same mechanism with ground albedo
-// 0.4 (a brighter idealised Earth); we keep the grassland value. Passes
-// that render REAL geometry in front of the sky (the visible skybox pass)
-// pass 0 — the scene's own terrain supplies the ground there, and a
-// virtual ground would double-count it.
-public static const float  IBL_GROUND_ALBEDO            = 0.25;
+// TODO(ozone): the medium here is purely SCATTERING -- extinction == scattering
+// everywhere in this file and in Common.MultiScatter. Earth's atmosphere also
+// ABSORBS in the Chappuis band via ozone, which is what produces the violet-blue
+// band above a sunset and deepens twilight. Unreal's SkyAtmosphere models it as a
+// third layer with a TENT-shaped density profile (not exponential) centred near
+// 25 km. Adding it is a real change, not a parameter:
+//   - a new `xOzoneCoeff` + tent-profile density feeding the optical-depth
+//     integral in ComputeOpticalDepth / TransmittanceToAtmosphereTop,
+//   - the same term in ComputeMultiScatterPsi's `xExtinction` ONLY (ozone removes
+//     energy without redirecting it; folding it into `xScattering` would brighten
+//     the sky instead of tinting it),
+//   - the CPU mirror in Flux/Skybox/Flux_AtmosphereTransmittance.h, or the direct
+//     sun key silently stops agreeing with the sky it is derived from,
+//   - Zenith_AtmosphereComponent fields + a serialization bump, and
+//   - a re-derivation of any pixel baseline, since twilight visibly changes.
+// It touches the radiometric contract, so it wants the same care as ZM-D-171.
+//
+// TODO(planet-radius): EARTH_RADIUS / ATMOSPHERE_RADIUS are compile-time here and
+// in AtmosphereConfig. Authoring them (an alien world with a thin, tight
+// atmosphere) means threading them through the LUT parameterisation
+// (TransmittanceLutUv), both bakes, the CPU mirror and the IBL reference height
+// -- every one of which currently assumes the Earth pair. Deliberately deferred:
+// the parameter set landed here (densities, scale heights, phase, ground albedo)
+// covers the looks games have actually asked for.
+
+// NOTE: the virtual-ground albedo used to be a constant here (0.25). It is now
+// SCENE-AUTHORED (Zenith_AtmosphereComponent::GetGroundAlbedo, defaulting to
+// the same 0.25 via Zenith_GetDefaultAtmosphereGroundAlbedo) and arrives in the
+// capture's pass constants. It is a physical scene parameter, not a look knob:
+// 0.25 is the measured mean shortwave albedo of vegetated land, ~0.7 is snow,
+// ~0.05 is basalt or open ocean. Passes that render REAL geometry in front of
+// the sky (the visible skybox pass) still pass 0 — the scene's own terrain
+// supplies the ground there, and a virtual ground would double-count it.
 
 public struct AtmosphereResult
 {
@@ -108,10 +131,11 @@ public float2 ComputeOpticalDepth(float3 xOrigin,
 //
 // fGroundAlbedo > 0 adds a Lambertian VIRTUAL GROUND where the view ray
 // hits the planet: L_ground = (albedo/pi) * fSunIntensity * T_sun * cos,
-// attenuated by the view transmittance. Environment captures (IBL) pass
-// IBL_GROUND_ALBEDO so the lower hemisphere carries real ground bounce;
-// passes whose ground is real scene geometry pass 0. Sun-only bounce:
-// the (second-order) sky->ground->receiver term is omitted.
+// attenuated by the view transmittance. Environment captures (IBL) pass the
+// authored ground albedo so the lower hemisphere carries real ground bounce;
+// passes whose ground is real scene geometry pass 0. Sun-only bounce here:
+// the (second-order) sky->ground->receiver term is picked up by the
+// multiple-scattering LUT instead.
 public float4 ComputeAtmosphereScattering(float3 xRayOrigin,
 											float3 xRayDir,
 											float3 xSunDir,
@@ -291,11 +315,38 @@ public float3 SampleTransmittanceLut(Sampler2D xLut,
 	return xLut.Sample(xUv).rgb;
 }
 
+// =====================================================================
+// Multiple scattering (Hillaire). The LUT shares the transmittance LUT's
+// (mu, altitude) parameterisation ON PURPOSE -- the two are baked from the
+// same medium on the same cadence, so one mapping keeps them in lockstep
+// and makes a bake/consume mismatch impossible to introduce silently.
+//
+// The stored quantity is psi_ms: the isotropic radiance contributed by
+// scattering orders 2..infinity, per unit scattering coefficient. A
+// consumer adds
+//     psi_ms * (rayleighDensity*Rs + mieDensity*Ms) * stepSize
+// with NO phase term (the multiply-scattered field is isotropic by
+// assumption) and no view transmittance beyond its own throughput.
+// =====================================================================
+public float3 SampleMultiScatterLut(Sampler2D xLut,
+									 float      fRadius,
+									 float      fMuSun,
+									 float      fPlanetRadius,
+									 float      fAtmosphereRadius)
+{
+	float2 xUv = TransmittanceLutUv(fRadius, fMuSun, fPlanetRadius, fAtmosphereRadius);
+	return xLut.Sample(xUv).rgb;
+}
+
 // LUT-accelerated single-scatter solver. Identical to
 // ComputeAtmosphereScattering except the inner sun-ray optical-depth
 // integral (and its planet-shadow test) is replaced by a single
 // transmittance-LUT fetch per view sample — O(uSkySamples) instead of
 // O(uSkySamples * uLightSamples) per pixel.
+//
+// bMultiScatter folds in the Hillaire multiple-scattering LUT: the orders
+// above the first, isotropic and phase-free. Off = the historical
+// single-scatter look.
 public float4 ComputeAtmosphereScatteringLut(float3    xRayOrigin,
 											   float3    xRayDir,
 											   float3    xSunDir,
@@ -308,7 +359,9 @@ public float4 ComputeAtmosphereScatteringLut(float3    xRayOrigin,
 											   float     fAtmosphereRadius,
 											   float     fSunIntensity,
 											   uint      uSkySamples,
-											   Sampler2D xTransmittanceLut)
+											   Sampler2D xTransmittanceLut,
+											   Sampler2D xMultiScatterLut,
+											   bool      bMultiScatter)
 {
 	float2 xAtmosIntersect = RaySphereIntersect(xRayOrigin, xRayDir, fAtmosphereRadius);
 	if (xAtmosIntersect.y < 0.0) return float4(0.0, 0.0, 0.0, 1.0);
@@ -329,6 +382,7 @@ public float4 ComputeAtmosphereScatteringLut(float3    xRayOrigin,
 
 	float3 xInscatterR       = float3(0.0, 0.0, 0.0);
 	float3 xInscatterM       = float3(0.0, 0.0, 0.0);
+	float3 xInscatterMulti   = float3(0.0, 0.0, 0.0);
 	float2 xOpticalDepthView = float2(0.0, 0.0);
 
 	for (uint i = 0; i < uSkySamples; i++)
@@ -351,11 +405,22 @@ public float4 ComputeAtmosphereScatteringLut(float3    xRayOrigin,
 
 		xInscatterR += xDensity.x * xTransmittance * fStepSize;
 		xInscatterM += xDensity.y * xTransmittance * fStepSize;
+
+		if (bMultiScatter)
+		{
+			// Orders 2..infinity: isotropic, so no phase term and no sun-ray
+			// transmittance (the LUT already integrated both). Only the VIEW
+			// path's transmittance applies.
+			float3 xPsiMs = SampleMultiScatterLut(
+				xMultiScatterLut, fSampleR, fMuSun, fPlanetRadius, fAtmosphereRadius);
+			float3 xScattering = xRayleighCoeff * xDensity.x + fMieCoeff * xDensity.y;
+			xInscatterMulti += xTransView * xScattering * xPsiMs * fStepSize;
+		}
 	}
 
 	float3 xRayleighScatter = xInscatterR * xRayleighCoeff * fRayleighPhase;
 	float3 xMieScatter      = xInscatterM * fMieCoeff      * fMiePhase;
-	float3 xInscatter       = (xRayleighScatter + xMieScatter) * fSunIntensity;
+	float3 xInscatter       = (xRayleighScatter + xMieScatter + xInscatterMulti) * fSunIntensity;
 
 	float3 xViewTransmittance = exp(
 		-xRayleighCoeff * xOpticalDepthView.x
@@ -410,24 +475,90 @@ public float3 RenderSunDisk(float3 xRayDir, float3 xSunDir, float fSunIntensity)
 	return float3(0.0, 0.0, 0.0);
 }
 
-// IBL convenience overload — uses the documented defaults so callers
-// don't have to thread through the long parameter list. This is the
-// ENVIRONMENT-CAPTURE path (irradiance + prefilter convolutions), so it
-// enables the virtual ground: without it the cube's lower hemisphere is
-// black and every vertical surface loses the bounce light that fills
-// real-world shadows.
-public AtmosphereResult ComputeAtmosphereScattering(float3 xRayOrigin,
-													  float3 xRayDir,
-													  float3 xSunDir,
-													  float  fSunIntensity)
+// ENVIRONMENT-CAPTURE entry point (the irradiance + prefilter convolutions).
+//
+// Takes the SAME authored atmosphere medium the visible sky and the direct sun
+// key derive from — the Rayleigh/Mie density scales and the Henyey-Greenstein
+// asymmetry — instead of hard-coding DEFAULT_RAYLEIGH_COEFF / DEFAULT_MIE_COEFF
+// / DEFAULT_MIE_G. There is deliberately NO defaults-only convenience overload:
+// an IBL pass that could silently fall back to the defaults is exactly how the
+// authored atmosphere failed to reach the irradiance/prefiltered cubes while
+// the sky and the sun key already honoured it.
+//
+// This is the capture path, so it enables the virtual ground: without it the
+// cube's lower hemisphere is black and every vertical surface loses the bounce
+// light that fills real-world shadows. Only the planet radii, scale heights and
+// sample counts stay compile-time constants (they are not scene-authored).
+// The medium the capture integrates, packed so the parameter list stays
+// readable as it grows. Every field is scene-authored
+// (Zenith_AtmosphereComponent) except the planet radii and the sample counts.
+public struct EnvironmentCaptureMedium
 {
+	public float fRayleighScale;
+	public float fMieScale;
+	public float fMieG;
+	public float fRayleighScaleHeight;
+	public float fMieScaleHeight;
+	public float fGroundAlbedo;
+};
+
+public AtmosphereResult ComputeEnvironmentCaptureScattering(float3    xRayOrigin,
+															  float3    xRayDir,
+															  float3    xSunDir,
+															  float     fSunIntensity,
+															  EnvironmentCaptureMedium xMedium,
+															  Sampler2D xMultiScatterLut,
+															  bool      bMultiScatter)
+{
+	float3 xRayleighCoeff = DEFAULT_RAYLEIGH_COEFF * xMedium.fRayleighScale;
+	float  fMieCoeff      = DEFAULT_MIE_COEFF      * xMedium.fMieScale;
+	float2 xScaleHeights  = float2(xMedium.fRayleighScaleHeight, xMedium.fMieScaleHeight);
+
 	float4 xResult = ComputeAtmosphereScattering(
 		xRayOrigin, xRayDir, xSunDir, 100000.0,
-		DEFAULT_RAYLEIGH_COEFF, DEFAULT_MIE_COEFF,
-		float2(DEFAULT_RAYLEIGH_SCALE_HEIGHT, DEFAULT_MIE_SCALE_HEIGHT),
-		DEFAULT_MIE_G, EARTH_RADIUS, ATMOSPHERE_RADIUS,
+		xRayleighCoeff, fMieCoeff, xScaleHeights,
+		xMedium.fMieG, EARTH_RADIUS, ATMOSPHERE_RADIUS,
 		fSunIntensity, DEFAULT_SKY_SAMPLES, DEFAULT_LIGHT_SAMPLES,
-		IBL_GROUND_ALBEDO);
+		xMedium.fGroundAlbedo);
+
+	// Orders 2..infinity. The capture's own multi-scatter LUT is baked from the
+	// GENERATION SNAPSHOT's medium, not the live one, so an authored atmosphere
+	// change mid-generation cannot leak into the faces still being convolved.
+	if (bMultiScatter)
+	{
+		float3 xMulti = float3(0.0, 0.0, 0.0);
+		float2 xAtmos = RaySphereIntersect(xRayOrigin, xRayDir, ATMOSPHERE_RADIUS);
+		if (xAtmos.y > 0.0)
+		{
+			float fRayStart = max(0.0, xAtmos.x);
+			float fRayEnd   = min(100000.0, xAtmos.y);
+			float2 xPlanet  = RaySphereIntersect(xRayOrigin, xRayDir, EARTH_RADIUS);
+			if (xPlanet.x > 0.0) fRayEnd = min(fRayEnd, xPlanet.x);
+
+			if (fRayEnd > fRayStart)
+			{
+				float fStepSize = (fRayEnd - fRayStart) / (float)DEFAULT_SKY_SAMPLES;
+				float2 xOpticalDepthView = float2(0.0, 0.0);
+				for (uint i = 0; i < DEFAULT_SKY_SAMPLES; i++)
+				{
+					float  fT         = fRayStart + ((float)i + 0.5) * fStepSize;
+					float3 xSamplePos = xRayOrigin + xRayDir * fT;
+					float  fSampleR   = length(xSamplePos);
+					float2 xDensity   = GetDensity(fSampleR - EARTH_RADIUS, xScaleHeights);
+					xOpticalDepthView += xDensity * fStepSize;
+
+					float  fMuSun     = dot(xSamplePos / fSampleR, xSunDir);
+					float3 xPsiMs     = SampleMultiScatterLut(
+						xMultiScatterLut, fSampleR, fMuSun, EARTH_RADIUS, ATMOSPHERE_RADIUS);
+					float3 xTransView = exp(-xRayleighCoeff * xOpticalDepthView.x - fMieCoeff * xOpticalDepthView.y);
+					float3 xScattering = xRayleighCoeff * xDensity.x + fMieCoeff * xDensity.y;
+					xMulti += xTransView * xScattering * xPsiMs * fStepSize;
+				}
+			}
+		}
+		xResult.rgb += xMulti * fSunIntensity;
+	}
+
 	AtmosphereResult o;
 	o.xColor         = xResult.rgb;
 	o.fTransmittance = xResult.a;

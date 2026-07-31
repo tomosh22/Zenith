@@ -5,7 +5,7 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "Core/Zenith_CommandLine.h"
 #include "CityBuilder/Source/CB_DayNight.h"
-#include "Flux/Skybox/Flux_SkyboxImpl.h"
+#include "EntityComponent/Components/Zenith_SunComponent.h"
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -13,9 +13,12 @@
 
 // ============================================================================
 // CB_DayNightCycleComponent — advances the day/night clock each frame and
-// publishes it as the active cycle. Applying the sun direction to the engine
-// sky/sun light is the visual-pass remainder; the clock + sun math (CB_DayNight)
-// is unit-tested and available to any system that wants the time of day.
+// publishes it as the active cycle. It drives the authoritative
+// Zenith_SunComponent's time-of-day angle from the clock so the city brightens
+// toward noon and darkens at night THROUGH THE SUN MOVING BELOW THE HORIZON +
+// atmospheric transmittance -- NOT by animating the renderer's radiometric
+// anchor (the old g_xEngine.Skybox().SetSunIntensity leak). The clock + sun
+// math (CB_DayNight) is unit-tested; this component is the engine-binding half.
 // ============================================================================
 class CB_DayNightCycleComponent
 {
@@ -80,15 +83,32 @@ public:
 	{
 		m_xCycle = CB_DayNight();
 		s_pxActive = &m_xCycle;
+		// The day/night clock drives the authoritative celestial geometry, not
+		// the renderer's radiance. Co-locate a Zenith_SunComponent on this
+		// environment entity (the intended authoring shape) so the engine's one
+		// resolved Sun carries the moving geometry; night brightness then
+		// emerges from the sun dropping below the horizon + atmospheric
+		// transmittance, not from animating solar intensity.
+		if (!m_xParentEntity.HasComponent<Zenith_SunComponent>())
+		{
+			m_xParentEntity.AddComponent<Zenith_SunComponent>();
+		}
 	}
 
 	void OnUpdate(const float fDt)
 	{
 		m_xCycle.Advance(fDt);
-		// Visual pass: drive the sky's sun intensity from the time of day so the
-		// city visibly brightens toward noon and darkens at night.
-		const float fElev = m_xCycle.GetSunElevation();   // 0 at night .. 1 at noon
-		g_xEngine.Skybox().SetSunIntensity(0.2f + 2.6f * fElev);
+		// Drive the authoritative Zenith_SunComponent time-of-day from the
+		// clock. CB_DayNight: 0.25 sunrise, 0.5 noon, 0.75 sunset, 0 midnight.
+		// The Sun component's orbit convention: 0 sunrise, 90 noon, 180 sunset,
+		// 270 midnight, so the clock phase maps as (timeOfDay - 0.25) * 360
+		// (wrapped by the setter). The renderer derives direct sun radiance from
+		// atmospheric transmittance: below-horizon -> zero, so the city darkens
+		// physically at night. No Flux sun-intensity is mutated.
+		if (Zenith_SunComponent* pxSun = m_xParentEntity.TryGetComponent<Zenith_SunComponent>())
+		{
+			pxSun->SetTimeOfDayAngleDegrees((m_xCycle.m_fTimeOfDay - 0.25f) * 360.0f);
+		}
 	}
 
 	void OnDestroy()

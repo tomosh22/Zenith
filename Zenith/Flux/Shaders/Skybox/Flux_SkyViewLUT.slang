@@ -36,15 +36,18 @@ struct AtmosphereConstantsLayout
 	uint   g_uDebugMode;
 	uint   g_uSkySamples;
 	uint   g_uLightSamples;
-	float2 g_xPad;
+	uint   g_uMultiScatteringEnabled;
+	float  g_fPad;
 };
 
 // PASS frequency. Declared AFTER the spine #include, so it lands at set 3.
-// g_xTransmittanceLUT = precomputed sun-ray transmittance LUT (Common.Atmosphere).
+// g_xTransmittanceLUT = precomputed sun-ray transmittance LUT, g_xMultiScatterLUT
+// = the Hillaire orders-2..infinity LUT (both Common.Atmosphere).
 struct PassParams
 {
 	ConstantBuffer<AtmosphereConstantsLayout> AtmosphereConstants;
 	Sampler2D g_xTransmittanceLUT;
+	Sampler2D g_xMultiScatterLUT;
 };
 ParameterBlock<PassParams> g_xPassSet;
 
@@ -72,7 +75,10 @@ float4 fsMain(FullscreenVsOut input) : SV_Target0
 		g_xPassSet.AtmosphereConstants.g_fMieG,
 		g_xPassSet.AtmosphereConstants.g_fPlanetRadius, g_xPassSet.AtmosphereConstants.g_fAtmosphereRadius,
 		g_xPassSet.AtmosphereConstants.g_fSunIntensity,
-		g_xPassSet.AtmosphereConstants.g_uSkySamples, g_xPassSet.g_xTransmittanceLUT);
+		g_xPassSet.AtmosphereConstants.g_uSkySamples,
+		g_xPassSet.g_xTransmittanceLUT,
+		g_xPassSet.g_xMultiScatterLUT,
+		g_xPassSet.AtmosphereConstants.g_uMultiScatteringEnabled != 0u);
 
 	// in-scatter RGB + view transmittance A
 	return xResult;

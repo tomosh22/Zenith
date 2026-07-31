@@ -61,7 +61,7 @@ namespace
 			std::filesystem::absolute(std::filesystem::path(GAME_ASSETS_DIR)).lexically_normal();
 		while (!xCursor.empty())
 		{
-			if (std::filesystem::exists(xCursor / "AGENTS.md") &&
+			if (std::filesystem::exists(xCursor / "CLAUDE.md") &&
 				std::filesystem::is_directory(xCursor / "Build") &&
 				std::filesystem::is_directory(xCursor / "Games" / "Zenithmon"))
 			{

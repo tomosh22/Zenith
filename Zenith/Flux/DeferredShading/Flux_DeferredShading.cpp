@@ -296,12 +296,10 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	if (g_xEngine.SSGI().IsInitialised())
 		xGraph.ReadTransient(xPass, g_xEngine.SSGI().GetSSGIHandle(), RESOURCE_ACCESS_READ_SRV);
 
-	// IBL textures — BRDF LUT, irradiance cubemap, prefiltered cubemap. Cubemap
-	// reads default to FLUX_RG_ALL_MIPS / FLUX_RG_ALL_LAYERS.
+	// IBL textures — BRDF LUT + both double-buffered cubemaps (see
+	// Flux_IBLImpl::DeclareConsumerReads).
 	Flux_IBLImpl& xIBL = g_xEngine.IBL();
-	xGraph.Read(xPass, xIBL.m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(xPass, xIBL.m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
-	xGraph.Read(xPass, xIBL.m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+	xIBL.DeclareConsumerReads(xGraph, xPass);
 
 	// Preview view (S5a): a second lighting instance over the preview view's own
 	// G-buffer, writing its HDR target. Same record callback — the pass's view
@@ -334,8 +332,6 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			xGraph.ReadTransient(xPreviewPass, g_xEngine.SSR().GetReflectionHandle(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
 		if (g_xEngine.SSGI().IsInitialised())
 			xGraph.ReadTransient(xPreviewPass, g_xEngine.SSGI().GetSSGIHandle(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(xPreviewPass, xIBL.m_xBRDFLUT,        RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(xPreviewPass, xIBL.m_xIrradianceMap,  RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(xPreviewPass, xIBL.m_xPrefilteredMap, RESOURCE_ACCESS_READ_SRV);
+		xIBL.DeclareConsumerReads(xGraph, xPreviewPass);
 	}
 }

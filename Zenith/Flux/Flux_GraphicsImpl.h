@@ -286,10 +286,15 @@ public:
 	float                       m_fRenderScaleRequested      = 1.0f;
 	float                       m_fRenderScaleActive         = 1.0f;
 	Zenith_Maths::UVector2      m_xRenderDimsThisBuild       = Zenith_Maths::UVector2(0u, 0u);
-	// Last resolved scene-authority direction. A runtime change dirties IBL;
-	// shadows refit every frame from GetSunDir().
-	bool                        m_bHasResolvedSunDirection = false;
-	Zenith_Maths::Vector3       m_xLastResolvedSunDirection = Zenith_Maths::Vector3(0.0f);
+	// NOTE: there is deliberately no "last resolved sun direction / atmosphere"
+	// cached here any more. Comparing the live environment against the PREVIOUS
+	// FRAME and then re-basing that baseline every frame is what made slow
+	// continuous sun motion invisible to the IBL (a 120 s day at 60 FPS moves
+	// ~0.05 deg/frame and never crossed the ~0.081 deg threshold) while making
+	// it thrash at low frame rates. The capture schedule now lives entirely in
+	// Flux_IBLImpl, measured against the last CAPTURED target -- see
+	// Flux_IBLImpl::RequestEnvironmentUpdate. Shadows still refit every frame
+	// from GetSunDir(); direct sun + sky stay per-frame responsive.
 	Flux_BindingGroupLayout     m_xFrameConstantsLayout;
 
 	// Graph-owned transient render-target handles + graph back-ref. G-buffer/

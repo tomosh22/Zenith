@@ -163,8 +163,9 @@ namespace Flux_Generated_Skybox
 			unsigned int m_ug_uDebugMode; // slang=uint offset=56
 			unsigned int m_ug_uSkySamples; // slang=uint offset=60
 			unsigned int m_ug_uLightSamples; // slang=uint offset=64
-			unsigned char m_aPad_68[4];
-			unsigned char m_ag_xPad[8]; // slang=vector offset=72 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_uMultiScatteringEnabled; // slang=uint offset=68
+			float m_fg_fPad; // slang=float offset=72
+			unsigned char m_aPad_76[4];
 		};
 		static_assert(sizeof(AtmosphereConstants_CB) == 80, "AtmosphereConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_fg_fPlanetRadius) == 32, "AtmosphereConstants.g_fPlanetRadius offset drifted from Slang reflection");
@@ -176,6 +177,8 @@ namespace Flux_Generated_Skybox
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uDebugMode) == 56, "AtmosphereConstants.g_uDebugMode offset drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uSkySamples) == 60, "AtmosphereConstants.g_uSkySamples offset drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uLightSamples) == 64, "AtmosphereConstants.g_uLightSamples offset drifted from Slang reflection");
+		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uMultiScatteringEnabled) == 68, "AtmosphereConstants.g_uMultiScatteringEnabled offset drifted from Slang reflection");
+		static_assert(offsetof(AtmosphereConstants_CB, m_fg_fPad) == 72, "AtmosphereConstants.g_fPad offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xSkyViewLUT{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
@@ -222,8 +225,9 @@ namespace Flux_Generated_Skybox
 			unsigned int m_ug_uDebugMode; // slang=uint offset=56
 			unsigned int m_ug_uSkySamples; // slang=uint offset=60
 			unsigned int m_ug_uLightSamples; // slang=uint offset=64
-			unsigned char m_aPad_68[4];
-			unsigned char m_ag_xPad[8]; // slang=vector offset=72 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_uMultiScatteringEnabled; // slang=uint offset=68
+			float m_fg_fPad; // slang=float offset=72
+			unsigned char m_aPad_76[4];
 		};
 		static_assert(sizeof(AtmosphereConstants_CB) == 80, "AtmosphereConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_fg_fPlanetRadius) == 32, "AtmosphereConstants.g_fPlanetRadius offset drifted from Slang reflection");
@@ -235,6 +239,53 @@ namespace Flux_Generated_Skybox
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uDebugMode) == 56, "AtmosphereConstants.g_uDebugMode offset drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uSkySamples) == 60, "AtmosphereConstants.g_uSkySamples offset drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uLightSamples) == 64, "AtmosphereConstants.g_uLightSamples offset drifted from Slang reflection");
+		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uMultiScatteringEnabled) == 68, "AtmosphereConstants.g_uMultiScatteringEnabled offset drifted from Slang reflection");
+		static_assert(offsetof(AtmosphereConstants_CB, m_fg_fPad) == 72, "AtmosphereConstants.g_fPad offset drifted from Slang reflection");
+	}
+
+	// ----- SkyboxMultiScatterLUT (Skybox/Flux_MultiScatterLUT) -----
+	namespace SkyboxMultiScatterLUT
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hMultiScatterConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct MultiScatterConstants_CB
+		{
+			unsigned char m_ag_xRayleighScatter[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xMieScatter[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			float m_fg_fPlanetRadius; // slang=float offset=32
+			float m_fg_fAtmosphereRadius; // slang=float offset=36
+			float m_fg_fGroundAlbedo; // slang=float offset=40
+			float m_fg_fPad; // slang=float offset=44
+		};
+		static_assert(sizeof(MultiScatterConstants_CB) == 48, "MultiScatterConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fPlanetRadius) == 32, "MultiScatterConstants.g_fPlanetRadius offset drifted from Slang reflection");
+		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fAtmosphereRadius) == 36, "MultiScatterConstants.g_fAtmosphereRadius offset drifted from Slang reflection");
+		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fGroundAlbedo) == 40, "MultiScatterConstants.g_fGroundAlbedo offset drifted from Slang reflection");
+		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fPad) == 44, "MultiScatterConstants.g_fPad offset drifted from Slang reflection");
 	}
 
 	// ----- SkyboxSkyViewLUT (Skybox/Flux_SkyViewLUT) -----
@@ -279,8 +330,9 @@ namespace Flux_Generated_Skybox
 			unsigned int m_ug_uDebugMode; // slang=uint offset=56
 			unsigned int m_ug_uSkySamples; // slang=uint offset=60
 			unsigned int m_ug_uLightSamples; // slang=uint offset=64
-			unsigned char m_aPad_68[4];
-			unsigned char m_ag_xPad[8]; // slang=vector offset=72 arrayCount=2 (no C++ mapping)
+			unsigned int m_ug_uMultiScatteringEnabled; // slang=uint offset=68
+			float m_fg_fPad; // slang=float offset=72
+			unsigned char m_aPad_76[4];
 		};
 		static_assert(sizeof(AtmosphereConstants_CB) == 80, "AtmosphereConstants_CB size drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_fg_fPlanetRadius) == 32, "AtmosphereConstants.g_fPlanetRadius offset drifted from Slang reflection");
@@ -292,8 +344,12 @@ namespace Flux_Generated_Skybox
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uDebugMode) == 56, "AtmosphereConstants.g_uDebugMode offset drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uSkySamples) == 60, "AtmosphereConstants.g_uSkySamples offset drifted from Slang reflection");
 		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uLightSamples) == 64, "AtmosphereConstants.g_uLightSamples offset drifted from Slang reflection");
+		static_assert(offsetof(AtmosphereConstants_CB, m_ug_uMultiScatteringEnabled) == 68, "AtmosphereConstants.g_uMultiScatteringEnabled offset drifted from Slang reflection");
+		static_assert(offsetof(AtmosphereConstants_CB, m_fg_fPad) == 72, "AtmosphereConstants.g_fPad offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xTransmittanceLUT{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xMultiScatterLUT{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
 }

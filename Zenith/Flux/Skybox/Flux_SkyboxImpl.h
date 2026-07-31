@@ -4,6 +4,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Core/Zenith_EnvironmentAuthority.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 
 namespace AtmosphereConfig
@@ -32,6 +33,14 @@ namespace AtmosphereConfig
 	// exposure clamps, histogram domain — Flux_HDRImpl derives its histogram
 	// top bin from this). It is NOT a look knob: do not touch it to brighten
 	// or darken a scene — that is the exposure system's job.
+	//
+	// TODO(exposure-locality): because the anchor is fixed and there is
+	// deliberately no look override, EVERY "make this area brighter" request
+	// routes through the GLOBAL auto-exposure -- a region cannot be lifted
+	// without changing the metering everywhere. The principled fix is LOCAL
+	// exposure (a spatially varying exposure term in Flux/HDR), NOT a per-scene
+	// anchor: an anchor knob would re-break the sun/sky/ambient agreement this
+	// constant exists to guarantee.
 	constexpr float fSUN_INTENSITY = 7.0f;
 
 	constexpr u_int uDEFAULT_SKY_SAMPLES = 16;
@@ -39,6 +48,12 @@ namespace AtmosphereConfig
 
 	constexpr u_int uTRANSMITTANCE_LUT_WIDTH = 256;
 	constexpr u_int uTRANSMITTANCE_LUT_HEIGHT = 64;
+
+	// Hillaire multiple-scattering LUT. Tiny (32x32) because the quantity is
+	// smooth in both axes (altitude, sun-zenith cosine); the cost is in the
+	// per-texel sphere integral, not the resolution. Baked on the same cadence
+	// as the transmittance LUT (medium changes only), never per frame.
+	constexpr u_int uMULTISCATTER_LUT_SIZE = 32;
 
 	// Low-res sky-view LUT (lat-long). The per-frame raymarch runs at this
 	// resolution instead of full screen; the fullscreen sky pass samples it.
@@ -73,7 +88,9 @@ struct AtmosphereConstants
 	// Ray march settings
 	u_int m_uSkySamples;
 	u_int m_uLightSamples;
-	Zenith_Maths::Vector2 m_xPad;
+	// 1 = fold the Hillaire multiple-scattering LUT into the sky integral.
+	u_int m_uMultiScatteringEnabled;
+	float m_fPad;
 };
 
 enum Skybox_DebugMode : u_int
@@ -122,18 +139,30 @@ public:
 	// that affect transmittance change.
 	void UpdateGraphPassEnables(Flux_RenderGraph& xGraph);
 
-	void SetSunIntensity(float fIntensity)              { m_fSunIntensity = fIntensity; }
-	void SetRayleighScale(float fScale)                 { m_fRayleighScale = fScale; }
-	void SetMieScale(float fScale)                      { m_fMieScale = fScale; }
-	void SetMieG(float fG)                              { m_fMieG = fG; }
+	// Consume the resolved scene environment. Drives the atmosphere-model
+	// members from the single authoritative environment snapshot (sun geometry
+	// is consumed by Flux_Graphics; this carries the atmosphere medium). The
+	// radiometric anchor (m_fSunIntensity) is POLICY and is intentionally NOT
+	// touched here -- it is never scene-authored. Changing the scales here
+	// lets UpdateGraphPassEnables detect the LUT invalidation next compile.
+	void ApplyEnvironment(const Zenith_EnvironmentAuthorityData& xEnv);
 
 	bool IsAtmosphereEnabled() const;
+	// The radiometric anchor exposed read-only. It is the engine's single
+	// light-energy source (AtmosphereConfig::fSUN_INTENSITY) -- never mutated
+	// by gameplay or scene authoring; exposure handles presentation brightness.
 	float GetSunIntensity() const                       { return m_fSunIntensity; }
 	float GetRayleighScale() const                      { return m_fRayleighScale; }
 	float GetMieScale() const                           { return m_fMieScale; }
 	float GetMieG() const                               { return m_fMieG; }
+	float GetRayleighScaleHeight() const                { return m_fRayleighScaleHeight; }
+	float GetMieScaleHeight() const                     { return m_fMieScaleHeight; }
+	// Multiple scattering is a QUALITY option, not a scene property: it changes
+	// how completely the same medium is integrated, not what the medium is.
+	static bool IsMultiScatteringEnabled();
 
 	Flux_ShaderResourceView& GetTransmittanceLUTSRV();
+	Flux_ShaderResourceView& GetMultiScatterLUTSRV();
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	void RegisterDebugVariables();
@@ -145,6 +174,11 @@ public:
 	TextureHandle              m_xCubemapTexture;
 
 	Flux_RenderAttachment      m_xTransmittanceLUT;
+	// Hillaire multiple-scattering LUT. Same invalidation cadence as the
+	// transmittance LUT (both depend only on the medium), and written by the
+	// same "LUT needs update" flag so the pair can never disagree about which
+	// atmosphere they describe.
+	Flux_RenderAttachment      m_xMultiScatterLUT;
 	bool                       m_bLUTNeedsUpdate = true;
 
 	// Sky-view LUT. Persistent (not a graph transient): the "Skybox" pass reads
@@ -165,12 +199,14 @@ public:
 	Flux_Pipeline              m_xAtmospherePipeline;
 	Flux_Pipeline              m_xSolidColourPipeline;
 	Flux_Pipeline              m_xTransmittanceLUTPipeline;
+	Flux_Pipeline              m_xMultiScatterLUTPipeline;
 	Flux_Pipeline              m_xSkyViewLUTPipeline;
 
 	Flux_Shader                m_xCubemapShader;
 	Flux_Shader                m_xAtmosphereShader;
 	Flux_Shader                m_xSolidColourShader;
 	Flux_Shader                m_xTransmittanceLUTShader;
+	Flux_Shader                m_xMultiScatterLUTShader;
 	Flux_Shader                m_xSkyViewLUTShader;
 
 	// Transmittance-LUT generation pass. Enabled only when the LUT needs a
@@ -179,6 +215,7 @@ public:
 	// invalidate the LUT (Rayleigh/Mie scale only — NOT sun intensity / Mie-G /
 	// sky samples, which don't affect transmittance).
 	Flux_PassHandle            m_xTransmittanceLUTPassHandle = {};
+	Flux_PassHandle            m_xMultiScatterLUTPassHandle  = {};
 	Flux_PassHandle            m_xSkyViewLUTPassHandle       = {};
 	// Preview sky-view LUT writer. Reset to invalid at the top of every
 	// SetupRenderGraph and (re)assigned only while the preview view is active
@@ -187,6 +224,9 @@ public:
 	Flux_PassHandle            m_xPreviewSkyViewLUTPassHandle = {};
 	float                      m_fLastLUTRayleighScale      = 1.0f;
 	float                      m_fLastLUTMieScale           = 1.0f;
+	float                      m_fLastLUTRayleighScaleHeight = AtmosphereConfig::fRAYLEIGH_SCALE_HEIGHT;
+	float                      m_fLastLUTMieScaleHeight     = AtmosphereConfig::fMIE_SCALE_HEIGHT;
+	float                      m_fLastLUTGroundAlbedo       = 0.25f;
 
 	Flux_DynamicConstantBuffer m_xAtmosphereConstantsBuffer;
 	Flux_DynamicConstantBuffer m_xSolidColourConstantsBuffer;
@@ -200,4 +240,10 @@ public:
 	float                      m_fRayleighScale             = 1.0f;
 	float                      m_fMieScale                  = 1.0f;
 	float                      m_fMieG                      = AtmosphereConfig::fMIE_G;
+	float                      m_fRayleighScaleHeight       = AtmosphereConfig::fRAYLEIGH_SCALE_HEIGHT;
+	float                      m_fMieScaleHeight            = AtmosphereConfig::fMIE_SCALE_HEIGHT;
+	// Capture-only in the sky sense (the visible sky pass uses 0), but the
+	// multiple-scattering bake needs it: the ground bounce is a real part of the
+	// multiply-scattered field.
+	float                      m_fGroundAlbedo              = 0.25f;
 };

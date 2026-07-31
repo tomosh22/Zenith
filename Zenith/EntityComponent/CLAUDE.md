@@ -27,6 +27,7 @@ via `ZENITH_REGISTER_COMPONENT` semantics (the explicit set + order is installed
 | `Zenith_ModelComponent` | Renderable mesh with material |
 | `Zenith_LightComponent` | Dynamic lights |
 | `Zenith_SunComponent` | Scene-authored solar direction/time-of-day authority; no colour or radiance fields |
+| `Zenith_AtmosphereComponent` | Scene-authored physical atmosphere medium (Rayleigh/Mie density scales, Mie-G, both scale heights, capture ground albedo); co-authored with `Zenith_SunComponent` on one environment entity and resolved together through `Zenith_EnvironmentAuthorityData` (replaces the old `Zenith_SunAuthorityData` Sun-only gather). With `BlendRadius > 0` it is instead a **local blend volume** that lerps the medium over the global one at the view position — see `Components/CLAUDE.md` |
 | `Zenith_ColliderComponent` | Physics collision shapes (Jolt) |
 | `Zenith_TerrainComponent` | Heightmap-based terrain |
 | `Zenith_InstancedMeshComponent` | GPU-instanced mesh rendering |

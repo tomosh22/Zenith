@@ -33,7 +33,8 @@ struct AtmosphereConstantsLayout
 	uint   g_uDebugMode;
 	uint   g_uSkySamples;
 	uint   g_uLightSamples;
-	float2 g_xPad;
+	uint   g_uMultiScatteringEnabled;
+	float  g_fPad;
 };
 
 // PASS frequency. Declared AFTER the spine #include, so it lands at set 3.

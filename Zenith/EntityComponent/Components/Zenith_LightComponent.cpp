@@ -2,13 +2,14 @@
 
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_SunComponent.h"
+#include "EntityComponent/Components/Zenith_AtmosphereComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 
 // Wave 3: EC-side render-gather (publishes neutral light data to the renderer so
 // Flux_DynamicLights no longer #includes Zenith_LightComponent.h / TransformComponent.h).
 #include "Core/Zenith_RenderGather.h"
-#include "Core/Zenith_SunAuthority.h"
+#include "Core/Zenith_EnvironmentAuthority.h"
 #include "Core/Zenith_Engine.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
@@ -365,74 +366,365 @@ static void Zenith_GatherLightsImpl(Zenith_Vector<Zenith_LightRenderData>& xOut)
 // from Flux_DynamicLights pulls this TU in (no static-init-order or dead-strip hazard).
 Zenith_LightGatherFn g_pfnZenithLightGather = &Zenith_GatherLightsImpl;
 
-// Sun authority is gathered beside ordinary lights so the whole lighting
-// extraction boundary shares this TU's single, grandfathered scene-system
-// reach. Zenith_SunComponent itself remains a data-only ECS component.
+// Environment authority (Sun geometry + atmosphere model) is resolved beside
+// ordinary lights so the whole lighting-extraction boundary shares this TU's
+// single, grandfathered scene-system reach. ONE authoritative environment
+// entity is chosen first -- active scene wins, then lowest stable entity ID --
+// and BOTH the Zenith_SunComponent and Zenith_AtmosphereComponent are gathered
+// from that one source. A Sun from one loaded scene is therefore never mixed
+// with an atmosphere from another; a partial rig (only one of the two on the
+// winning entity) falls back to the physical/default value for the missing
+// half. The concrete components stay data-only ECS types; the renderer
+// consumes only the neutral Zenith_EnvironmentAuthorityData.
 namespace
 {
-	uint64_t s_ulLastSunConflictSignature = 0u;
+	uint64_t s_ulLastEnvironmentConflictSignature = 0u;
+	Zenith_EnvironmentAuthorityData s_xLastResolvedEnvironment;
+#ifdef ZENITH_TESTING
+	u_int s_uEnvironmentConflictWarningCount = 0u;
+#endif
+#ifdef ZENITH_TOOLS
+	bool s_bEnvironmentConflictAssertsEnabled = true;
+#endif
 
-	bool SunEntityPrecedes(Zenith_EntityID xCandidate, u_int uWinnerIndex, u_int uWinnerGeneration)
+	struct EnvironmentCandidate
 	{
-		return xCandidate.m_uIndex < uWinnerIndex
-			|| (xCandidate.m_uIndex == uWinnerIndex && xCandidate.m_uGeneration < uWinnerGeneration);
+		Zenith_EntityID          m_xID;
+		bool                     m_bInActiveScene  = false;
+		bool                     m_bHasSun         = false;
+		Zenith_Maths::Vector3    m_xSunDir         = Zenith_Maths::Vector3(0.0f);
+		bool                     m_bHasAtmosphere  = false;
+		Zenith_AtmosphereMedium  m_xMedium;
+	};
+
+	// A LOCAL atmosphere volume: never competes for authority, blends its medium
+	// over the resolved global one by a camera-distance weight.
+	struct EnvironmentBlendVolume
+	{
+		uint64_t                 m_ulPackedID = 0u;
+		float                    m_fPriority  = 0.0f;
+		float                    m_fWeight    = 0.0f;
+		Zenith_AtmosphereMedium  m_xMedium;
+	};
+
+	// Ascending (priority, packed entity ID): lower priority applies FIRST so a
+	// higher-priority volume wins where they overlap, and the tie-break is the
+	// stable ID so the result never depends on ECS query order.
+	bool BlendVolumePrecedes(const EnvironmentBlendVolume& xA, const EnvironmentBlendVolume& xB)
+	{
+		if (xA.m_fPriority != xB.m_fPriority) return xA.m_fPriority < xB.m_fPriority;
+		return xA.m_ulPackedID < xB.m_ulPackedID;
 	}
 
-	void GatherSunAuthority(Zenith_SunAuthorityData& xOut)
+	bool EnvironmentPrecedes(const EnvironmentCandidate& xCand,
+		u_int uWinnerIndex, u_int uWinnerGeneration, bool bWinnerInActive)
 	{
-		xOut = Zenith_SunAuthorityData();
+		// Active-scene environment beats non-active; then lowest stable ID.
+		if (xCand.m_bInActiveScene != bWinnerInActive)
+		{
+			return xCand.m_bInActiveScene;
+		}
+		return xCand.m_xID.m_uIndex < uWinnerIndex
+			|| (xCand.m_xID.m_uIndex == uWinnerIndex && xCand.m_xID.m_uGeneration < uWinnerGeneration);
+	}
+
+	EnvironmentCandidate* FindOrCreateCandidate(Zenith_Vector<EnvironmentCandidate>& axCandidates,
+		Zenith_EntityID xID, bool bInActiveScene)
+	{
+		const uint64_t ulPacked = xID.GetPacked();
+		for (u_int u = 0u; u < axCandidates.GetSize(); u++)
+		{
+			EnvironmentCandidate& rC = axCandidates.Get(u);
+			if (rC.m_xID.GetPacked() == ulPacked)
+			{
+				return &rC;
+			}
+		}
+		axCandidates.EmplaceBack();
+		EnvironmentCandidate& rNew = axCandidates.Get(axCandidates.GetSize() - 1u);
+		rNew.m_xID = xID;
+		rNew.m_bInActiveScene = bInActiveScene;
+		return &rNew;
+	}
+
+	void GatherEnvironmentAuthority(Zenith_EnvironmentAuthorityData& xOut)
+	{
+		xOut = Zenith_EnvironmentAuthorityData();
 		Zenith_SceneSystem& xScenes = LightingScenes();
 		Zenith_SceneData* pxActiveScene = xScenes.GetActiveSceneData();
-		u_int uWinnerGeneration = 0xFFFFFFFFu;
-		uint64_t ulConflictSignature = 1469598103934665603ull;
+
+		Zenith_Vector<EnvironmentCandidate> axCandidates;
 
 		xScenes.QueryAllScenes<Zenith_SunComponent>().ForEach(
 			[&](Zenith_EntityID xID, Zenith_SunComponent& xSun)
 			{
-				xOut.m_uAuthoredCount++;
-				ulConflictSignature ^= xID.GetPacked();
-				ulConflictSignature *= 1099511628211ull;
-
-				const bool bInActiveScene = pxActiveScene != nullptr
+				const bool bInActive = pxActiveScene != nullptr
 					&& xScenes.GetSceneDataForEntity(xID) == pxActiveScene;
-				const bool bWins = !xOut.m_bAuthored
-					|| (bInActiveScene && !xOut.m_bSourceIsInActiveScene)
-					|| (bInActiveScene == xOut.m_bSourceIsInActiveScene
-						&& SunEntityPrecedes(xID, xOut.m_uSourceEntityIndex, uWinnerGeneration));
-				if (!bWins)
-				{
-					return;
-				}
-
-				xOut.m_bAuthored = true;
-				xOut.m_xDirection = xSun.GetWorldDirection();
-				xOut.m_uSourceEntityIndex = xID.m_uIndex;
-				uWinnerGeneration = xID.m_uGeneration;
-				xOut.m_bSourceIsInActiveScene = bInActiveScene;
+				EnvironmentCandidate* pxC = FindOrCreateCandidate(axCandidates, xID, bInActive);
+				pxC->m_bHasSun = true;
+				pxC->m_xSunDir = xSun.GetWorldDirection();
 			});
 
-		if (xOut.m_uAuthoredCount > 1u)
+		// Blend volumes are collected in the SAME walk but kept out of the
+		// candidate set: a local volume is an intentional regional override, not
+		// a competitor for authority, so it must never win and never conflict.
+		//
+		// The blend position is the VIEW position (Unity's rule -- an environment
+		// is what the viewer is standing in), taken from the neutral render
+		// gather rather than by resolving Zenith_CameraComponent directly. That
+		// is the same boundary Flux itself consumes, so the volume the renderer
+		// blends is always the volume the rendered camera is inside, and this
+		// gather keeps naming no camera type.
+		Zenith_Vector<EnvironmentBlendVolume> axBlendVolumes;
+		Zenith_Maths::Vector3 xBlendPosition(0.0f);
+		bool bHaveBlendPosition = false;
+		if (g_pfnZenithCameraGather != nullptr)
 		{
-			ulConflictSignature ^= (static_cast<uint64_t>(xOut.m_uSourceEntityIndex) << 32)
-				| uWinnerGeneration;
-			ulConflictSignature ^= xOut.m_bSourceIsInActiveScene ? 0xA5A5A5A5A5A5A5A5ull : 0u;
-			if (ulConflictSignature != s_ulLastSunConflictSignature)
+			Zenith_CameraRenderData xCamera;
+			g_pfnZenithCameraGather(xCamera);
+			if (xCamera.m_bValid)
 			{
+				xBlendPosition = Zenith_Maths::Vector3(xCamera.m_xPositionPad);
+				bHaveBlendPosition = true;
+			}
+		}
+
+		// GLOBAL atmospheres: authority candidates, exactly as before.
+		xScenes.QueryAllScenes<Zenith_AtmosphereComponent>().ForEach(
+			[&](Zenith_EntityID xID, Zenith_AtmosphereComponent& xAtmo)
+			{
+				if (xAtmo.IsLocalBlendVolume())
+				{
+					return;   // handled by the volume walk below
+				}
+				const bool bInActive = pxActiveScene != nullptr
+					&& xScenes.GetSceneDataForEntity(xID) == pxActiveScene;
+				EnvironmentCandidate* pxC = FindOrCreateCandidate(axCandidates, xID, bInActive);
+				pxC->m_bHasAtmosphere = true;
+				pxC->m_xMedium = xAtmo.GetMedium();
+			});
+
+		// LOCAL volumes: a separate walk that also requires a transform (the
+		// sphere needs a centre). With no camera resolved yet -- boot, or a
+		// headless scene with none -- there is no position to weight against, so
+		// no volume contributes and the global base resolves alone.
+		if (bHaveBlendPosition)
+		{
+			xScenes.QueryAllScenes<Zenith_AtmosphereComponent, Zenith_TransformComponent>().ForEach(
+				[&](Zenith_EntityID xID, Zenith_AtmosphereComponent& xAtmo, Zenith_TransformComponent& xTransform)
+				{
+					if (!xAtmo.IsLocalBlendVolume())
+					{
+						return;
+					}
+					Zenith_Maths::Vector3 xCentre;
+					xTransform.GetPosition(xCentre);
+					const float fWeight = Zenith_ComputeBlendVolumeWeight(
+						glm::length(xBlendPosition - xCentre),
+						xAtmo.GetBlendRadius(), xAtmo.GetBlendFalloff());
+					if (fWeight <= 0.0f)
+					{
+						return;
+					}
+					EnvironmentBlendVolume xVolume;
+					xVolume.m_ulPackedID = xID.GetPacked();
+					xVolume.m_fPriority  = xAtmo.GetBlendPriority();
+					xVolume.m_fWeight    = fWeight;
+					xVolume.m_xMedium    = xAtmo.GetMedium();
+					axBlendVolumes.PushBack(xVolume);
+				});
+		}
+
+		// Choose the one authoritative environment entity.
+		const EnvironmentCandidate* pxWinner = nullptr;
+		for (u_int u = 0u; u < axCandidates.GetSize(); u++)
+		{
+			const EnvironmentCandidate& rC = axCandidates.Get(u);
+			if (pxWinner == nullptr
+				|| EnvironmentPrecedes(rC, pxWinner->m_xID.m_uIndex,
+					pxWinner->m_xID.m_uGeneration, pxWinner->m_bInActiveScene))
+			{
+				pxWinner = &rC;
+			}
+		}
+
+		// Diagnostics counts.
+		for (u_int u = 0u; u < axCandidates.GetSize(); u++)
+		{
+			if (axCandidates.Get(u).m_bHasSun)         xOut.m_uSunAuthoredCount++;
+			if (axCandidates.Get(u).m_bHasAtmosphere)  xOut.m_uAtmosphereAuthoredCount++;
+		}
+		xOut.m_uEnvironmentEntityCount = axCandidates.GetSize();
+
+		if (pxWinner != nullptr)
+		{
+			if (pxWinner->m_bHasSun)
+			{
+				xOut.m_bSunAuthored = true;
+				xOut.m_xSunDirection = pxWinner->m_xSunDir;
+				xOut.m_bSunSourceIsInActiveScene = pxWinner->m_bInActiveScene;
+			}
+			if (pxWinner->m_bHasAtmosphere)
+			{
+				xOut.m_bAtmosphereAuthored = true;
+			}
+			xOut.m_uEnvironmentEntityIndex = pxWinner->m_xID.m_uIndex;
+			xOut.m_uEnvironmentEntityGeneration = pxWinner->m_xID.m_uGeneration;
+			xOut.m_bEnvironmentSourceIsInActiveScene = pxWinner->m_bInActiveScene;
+		}
+
+		// ---- Medium: the global base, then every local volume in order -------
+		// The base is the winner's medium (or the physical defaults if the winner
+		// authored no atmosphere). Each local volume then LERPS the accumulated
+		// medium toward its own values by its weight. With no volumes this is the
+		// single-winner rule verbatim, which is why existing scenes are unaffected.
+		Zenith_AtmosphereMedium xMedium;
+		if (pxWinner != nullptr && pxWinner->m_bHasAtmosphere)
+		{
+			xMedium = pxWinner->m_xMedium;
+		}
+
+		// Insertion sort by (priority, id) -- volume counts are tiny, and this is
+		// what makes the composed result independent of ECS query order.
+		for (u_int i = 1u; i < axBlendVolumes.GetSize(); i++)
+		{
+			const EnvironmentBlendVolume xKey = axBlendVolumes.Get(i);
+			u_int j = i;
+			while (j > 0u && BlendVolumePrecedes(xKey, axBlendVolumes.Get(j - 1u)))
+			{
+				axBlendVolumes.Get(j) = axBlendVolumes.Get(j - 1u);
+				j--;
+			}
+			axBlendVolumes.Get(j) = xKey;
+		}
+		for (u_int u = 0u; u < axBlendVolumes.GetSize(); u++)
+		{
+			const EnvironmentBlendVolume& rV = axBlendVolumes.Get(u);
+			xMedium = Zenith_BlendAtmosphereLayer(xMedium, rV.m_xMedium, rV.m_fWeight);
+			xOut.m_fBlendWeightTotal += rV.m_fWeight;
+		}
+		xOut.m_uBlendVolumesApplied = axBlendVolumes.GetSize();
+		if (axBlendVolumes.GetSize() > 0u)
+		{
+			// A local volume authored the medium the renderer will use, even when
+			// no global environment entity exists.
+			xOut.m_bAtmosphereAuthored = true;
+		}
+
+		xOut.m_fRayleighScale       = xMedium.m_fRayleighScale;
+		xOut.m_fMieScale            = xMedium.m_fMieScale;
+		xOut.m_fMieG                = xMedium.m_fMieG;
+		xOut.m_fRayleighScaleHeight = xMedium.m_fRayleighScaleHeight;
+		xOut.m_fMieScaleHeight      = xMedium.m_fMieScaleHeight;
+		xOut.m_fGroundAlbedo        = xMedium.m_fGroundAlbedo;
+
+		// Conflict warning: more than one environment entity is a conflict (e.g.
+		// a Sun on one entity + an atmosphere on another -- the atmosphere is
+		// ignored, since the world is defined by the one winning entity). Throttled
+		// by a deterministic, query-order-independent signature so the warning
+		// fires once per distinct conflict set, not every frame.
+		if (xOut.m_uEnvironmentEntityCount > 1u && pxWinner != nullptr)
+		{
+			// Signature over EVERY candidate (id + Sun mask + Atmosphere mask +
+			// active-scene membership), not just the winner: a LOSING candidate
+			// gaining or losing a Sun/Atmosphere changes the counts the warning
+			// reports and which authored halves are being dropped, so it must
+			// produce a fresh warning. The helper is pure + query-order
+			// independent (see Core/Zenith_EnvironmentAuthority.h).
+			Zenith_Vector<Zenith_EnvironmentConflictCandidate> axSigCandidates;
+			for (u_int u = 0u; u < axCandidates.GetSize(); u++)
+			{
+				const EnvironmentCandidate& rC = axCandidates.Get(u);
+				Zenith_EnvironmentConflictCandidate xSig;
+				xSig.m_ulPackedEntityID = rC.m_xID.GetPacked();
+				xSig.m_bHasSun          = rC.m_bHasSun;
+				xSig.m_bHasAtmosphere   = rC.m_bHasAtmosphere;
+				xSig.m_bInActiveScene   = rC.m_bInActiveScene;
+				axSigCandidates.PushBack(xSig);
+			}
+			const uint64_t ulSig = Zenith_ComputeEnvironmentConflictSignature(
+				axSigCandidates.GetDataPointer(), axSigCandidates.GetSize(),
+				pxWinner->m_xID.GetPacked(), pxActiveScene != nullptr);
+
+			if (ulSig != s_ulLastEnvironmentConflictSignature)
+			{
+#ifdef ZENITH_TESTING
+				s_uEnvironmentConflictWarningCount++;
+#endif
 				Zenith_Warning(LOG_CATEGORY_ECS,
-					"Sun authority conflict: %u loaded Zenith_SunComponents; entity %u wins (%s). "
-					"Rule: active scene first, then lowest stable entity ID.",
-					xOut.m_uAuthoredCount, xOut.m_uSourceEntityIndex,
-					xOut.m_bSourceIsInActiveScene ? "active scene" : "no active-scene Sun");
-				s_ulLastSunConflictSignature = ulConflictSignature;
+					"Environment authority conflict: %u environment entities (%u Suns, %u atmospheres); "
+					"entity %u wins (%s). Rule: active scene first, then lowest stable entity ID. "
+					"Sun and atmosphere are resolved together from the one winning entity. "
+					"To vary the atmosphere by region, give the extra entity a Blend Radius > 0 "
+					"instead -- a local volume blends and never conflicts.",
+					xOut.m_uEnvironmentEntityCount, xOut.m_uSunAuthoredCount, xOut.m_uAtmosphereAuthoredCount,
+					xOut.m_uEnvironmentEntityIndex,
+					xOut.m_bEnvironmentSourceIsInActiveScene ? "active scene" : "no active-scene environment");
+				s_ulLastEnvironmentConflictSignature = ulSig;
+
+#ifdef ZENITH_TOOLS
+				// A tools build is an AUTHORING session, and this is silent data
+				// loss: the losing entity's Sun and/or atmosphere is dropped on
+				// the floor and the scene renders as though it were never
+				// authored. Fail loudly here rather than let it ship. Runtime
+				// builds keep the warning only -- a shipped game must not die on
+				// a content bug the player cannot fix.
+				Zenith_Assert(!s_bEnvironmentConflictAssertsEnabled,
+					"Environment authority conflict: %u global environment entities. Exactly one entity may "
+					"carry the scene Sun/Atmosphere. Entity %u wins; the others are IGNORED. Delete them, or "
+					"set Blend Radius > 0 to turn them into local atmosphere volumes.",
+					xOut.m_uEnvironmentEntityCount, xOut.m_uEnvironmentEntityIndex);
+#endif
 			}
 		}
 		else
 		{
-			s_ulLastSunConflictSignature = 0u;
+			s_ulLastEnvironmentConflictSignature = 0u;
 		}
+
+		// Cache for the TOOLS property-panel banner (diagnostics only; reading it
+		// never re-gathers, so a panel cannot trip the assert above).
+		s_xLastResolvedEnvironment = xOut;
 	}
 }
 
-Zenith_SunAuthorityGatherFn g_pfnZenithSunAuthorityGather = &GatherSunAuthority;
+const Zenith_EnvironmentAuthorityData& Zenith_GetLastResolvedEnvironmentAuthority()
+{
+	return s_xLastResolvedEnvironment;
+}
+
+#ifdef ZENITH_TOOLS
+Zenith_ScopedEnvironmentConflictAssertSuppression::Zenith_ScopedEnvironmentConflictAssertSuppression()
+	: m_bPrevious(s_bEnvironmentConflictAssertsEnabled)
+{
+	s_bEnvironmentConflictAssertsEnabled = false;
+}
+
+Zenith_ScopedEnvironmentConflictAssertSuppression::~Zenith_ScopedEnvironmentConflictAssertSuppression()
+{
+	s_bEnvironmentConflictAssertsEnabled = m_bPrevious;
+}
+#endif
+
+Zenith_EnvironmentAuthorityGatherFn g_pfnZenithEnvironmentAuthorityGather = &GatherEnvironmentAuthority;
+
+#ifdef ZENITH_TESTING
+uint64_t Zenith_GetLastEnvironmentConflictSignatureForTest()
+{
+	return s_ulLastEnvironmentConflictSignature;
+}
+
+u_int Zenith_GetEnvironmentConflictWarningCountForTest()
+{
+	return s_uEnvironmentConflictWarningCount;
+}
+
+void Zenith_ResetEnvironmentConflictThrottleForTest()
+{
+	s_ulLastEnvironmentConflictSignature = 0u;
+	s_uEnvironmentConflictWarningCount = 0u;
+}
+#endif
 
 #include "EntityComponent/Components/Zenith_LightComponent.Tests.inl"
+#include "EntityComponent/Components/Zenith_EnvironmentAuthority.Tests.inl"

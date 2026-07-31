@@ -2,6 +2,7 @@
 #include "Flux/Skybox/Flux_Skybox_Shaders.h"
 
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
+#include "Flux/Skybox/Flux_AtmosphereTransmittance.h"
 #include "Core/Zenith_Engine.h"
 
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -129,6 +130,12 @@ void Flux_SkyboxImpl::BuildPipelines()
 		this->m_xSkyViewLUTShader, this->m_xSkyViewLUTPipeline,
 		Flux_SkyboxShaders::xSkyboxSkyViewLUT, this->m_xSkyViewLUT.m_xSurfaceInfo.m_eFormat);
 
+	// Multiple-scattering LUT bake (live medium; the IBL bakes its own copy from
+	// its frozen snapshot).
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		this->m_xMultiScatterLUTShader, this->m_xMultiScatterLUTPipeline,
+		Flux_SkyboxShaders::xSkyboxMultiScatterLUT, this->m_xMultiScatterLUT.m_xSurfaceInfo.m_eFormat);
+
 	// The transmittance / sky-view LUTs depend on these shaders, so any (re)build
 	// must regenerate them. Already the default at first init; the load-bearing
 	// case is hot-reload, where the shader-rebuild auto-wire fires BuildPipelines
@@ -142,8 +149,9 @@ void Flux_SkyboxImpl::Initialise()
 
 	// Atmosphere & solid-colour CB allocations are one-time — kept in
 	// Initialise so hot-reload's BuildPipelines() doesn't leak them.
-	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&this->m_xAtmosphereConstants, sizeof(AtmosphereConstants), this->m_xAtmosphereConstantsBuffer);
-	g_xEngine.FluxMemory().InitialiseDynamicConstantBuffer(&this->m_xSolidColourConstants, sizeof(SkyboxOverrideConstants), this->m_xSolidColourConstantsBuffer);
+	auto& xMemory = g_xEngine.FluxMemory();
+	xMemory.InitialiseDynamicConstantBuffer(&this->m_xAtmosphereConstants, sizeof(AtmosphereConstants), this->m_xAtmosphereConstantsBuffer);
+	xMemory.InitialiseDynamicConstantBuffer(&this->m_xSolidColourConstants, sizeof(SkyboxOverrideConstants), this->m_xSolidColourConstantsBuffer);
 
 	BuildPipelines();
 
@@ -170,8 +178,9 @@ void Flux_SkyboxImpl::ReleaseAssetReferences()
 void Flux_SkyboxImpl::Shutdown()
 {
 	DestroyRenderTargets();
-	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(this->m_xAtmosphereConstantsBuffer);
-	g_xEngine.FluxMemory().DestroyDynamicConstantBuffer(this->m_xSolidColourConstantsBuffer);
+	auto& xMemory = g_xEngine.FluxMemory();
+	xMemory.DestroyDynamicConstantBuffer(this->m_xAtmosphereConstantsBuffer);
+	xMemory.DestroyDynamicConstantBuffer(this->m_xSolidColourConstantsBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox shut down");
 }
 
@@ -192,6 +201,12 @@ void Flux_SkyboxImpl::CreateRenderTargets()
 
 	xBuilder.BuildColour(this->m_xTransmittanceLUT, "Skybox Transmittance LUT");
 
+	// Multiple-scattering LUT (32x32). Same invalidation cadence as the
+	// transmittance LUT: both depend only on the medium.
+	xBuilder.m_uWidth = AtmosphereConfig::uMULTISCATTER_LUT_SIZE;
+	xBuilder.m_uHeight = AtmosphereConfig::uMULTISCATTER_LUT_SIZE;
+	xBuilder.BuildColour(this->m_xMultiScatterLUT, "Skybox Multi-Scatter LUT");
+
 	// Sky-view LUT (low-res lat-long). Raymarched once per frame and sampled by
 	// the fullscreen sky pass. Same memory flags + format as the transmittance LUT.
 	xBuilder.m_uWidth = AtmosphereConfig::uSKYVIEW_LUT_WIDTH;
@@ -207,21 +222,30 @@ void Flux_SkyboxImpl::CreateRenderTargets()
 
 void Flux_SkyboxImpl::DestroyRenderTargets()
 {
+	// One hoisted reach rather than four (the per-file engine-singleton ratchet
+	// counts tokens, and this is the same object every time anyway).
+	auto& xMemory = g_xEngine.FluxMemory();
 	if (this->m_xTransmittanceLUT.m_xVRAMHandle.IsValid())
 	{
-		g_xEngine.FluxMemory().QueueVRAMDeletion(this->m_xTransmittanceLUT.m_xVRAMHandle,
+		xMemory.QueueVRAMDeletion(this->m_xTransmittanceLUT.m_xVRAMHandle,
 			this->m_xTransmittanceLUT.RTV().m_xImageViewHandle, this->m_xTransmittanceLUT.DSV().m_xImageViewHandle,
 			this->m_xTransmittanceLUT.SRV().m_xImageViewHandle, this->m_xTransmittanceLUT.UAV(0).m_xImageViewHandle);
 	}
+	if (this->m_xMultiScatterLUT.m_xVRAMHandle.IsValid())
+	{
+		xMemory.QueueVRAMDeletion(this->m_xMultiScatterLUT.m_xVRAMHandle,
+			this->m_xMultiScatterLUT.RTV().m_xImageViewHandle, this->m_xMultiScatterLUT.DSV().m_xImageViewHandle,
+			this->m_xMultiScatterLUT.SRV().m_xImageViewHandle, this->m_xMultiScatterLUT.UAV(0).m_xImageViewHandle);
+	}
 	if (this->m_xSkyViewLUT.m_xVRAMHandle.IsValid())
 	{
-		g_xEngine.FluxMemory().QueueVRAMDeletion(this->m_xSkyViewLUT.m_xVRAMHandle,
+		xMemory.QueueVRAMDeletion(this->m_xSkyViewLUT.m_xVRAMHandle,
 			this->m_xSkyViewLUT.RTV().m_xImageViewHandle, this->m_xSkyViewLUT.DSV().m_xImageViewHandle,
 			this->m_xSkyViewLUT.SRV().m_xImageViewHandle, this->m_xSkyViewLUT.UAV(0).m_xImageViewHandle);
 	}
 	if (this->m_xPreviewSkyViewLUT.m_xVRAMHandle.IsValid())
 	{
-		g_xEngine.FluxMemory().QueueVRAMDeletion(this->m_xPreviewSkyViewLUT.m_xVRAMHandle,
+		xMemory.QueueVRAMDeletion(this->m_xPreviewSkyViewLUT.m_xVRAMHandle,
 			this->m_xPreviewSkyViewLUT.RTV().m_xImageViewHandle, this->m_xPreviewSkyViewLUT.DSV().m_xImageViewHandle,
 			this->m_xPreviewSkyViewLUT.SRV().m_xImageViewHandle, this->m_xPreviewSkyViewLUT.UAV(0).m_xImageViewHandle);
 	}
@@ -248,17 +272,20 @@ static void PreExecuteSkybox(void*)
 		// (atmosphere OR cubemap mode), not just atmosphere mode: the transmittance
 		// LUT generator reads these and may run (e.g. on a graph recompile) even in
 		// cubemap mode. The cubemap shader ignores them; the upload is ~80 bytes.
+		// Scale heights come from the resolved scene atmosphere now (they used to
+		// be compile-time constants); the base coefficients stay physical
+		// constants scaled by the authored densities.
 		xSkybox.m_xAtmosphereConstants.m_xRayleighScatter = Zenith_Maths::Vector4(
 			AtmosphereConfig::afRAYLEIGH_SCATTER[0],
 			AtmosphereConfig::afRAYLEIGH_SCATTER[1],
 			AtmosphereConfig::afRAYLEIGH_SCATTER[2],
-			AtmosphereConfig::fRAYLEIGH_SCALE_HEIGHT);
+			xSkybox.GetRayleighScaleHeight());
 
 		xSkybox.m_xAtmosphereConstants.m_xMieScatter = Zenith_Maths::Vector4(
 			AtmosphereConfig::fMIE_SCATTER,
 			AtmosphereConfig::fMIE_SCATTER,
 			AtmosphereConfig::fMIE_SCATTER,
-			AtmosphereConfig::fMIE_SCALE_HEIGHT);
+			xSkybox.GetMieScaleHeight());
 
 		xSkybox.m_xAtmosphereConstants.m_fPlanetRadius = AtmosphereConfig::fEARTH_RADIUS;
 		xSkybox.m_xAtmosphereConstants.m_fAtmosphereRadius = AtmosphereConfig::fATMOSPHERE_RADIUS;
@@ -271,7 +298,9 @@ static void PreExecuteSkybox(void*)
 
 		xSkybox.m_xAtmosphereConstants.m_uSkySamples = dbg_uSkySamples;
 		xSkybox.m_xAtmosphereConstants.m_uLightSamples = dbg_uLightSamples;
-		xSkybox.m_xAtmosphereConstants.m_xPad = Zenith_Maths::Vector2(0.0f);
+		xSkybox.m_xAtmosphereConstants.m_uMultiScatteringEnabled =
+			Flux_SkyboxImpl::IsMultiScatteringEnabled() ? 1u : 0u;
+		xSkybox.m_xAtmosphereConstants.m_fPad = 0.0f;
 
 		g_xEngine.FluxMemory().UploadBufferData(xSkybox.m_xAtmosphereConstantsBuffer.GetBuffer().m_xVRAMHandle, &xSkybox.m_xAtmosphereConstants, sizeof(AtmosphereConstants));
 	}
@@ -368,6 +397,34 @@ static void ExecuteTransmittanceLUT(Flux_CommandBuffer* pxCommandList, void*)
 	xSkybox.m_bLUTNeedsUpdate = false;
 }
 
+static void ExecuteMultiScatterLUT(Flux_CommandBuffer* pxCommandList, void*)
+{
+	// Non-capturing graph callback. Bakes the 32x32 Hillaire multiple-scattering
+	// LUT from the LIVE medium (the IBL bakes a separate copy from its frozen
+	// snapshot -- see Flux_AtmosphereTransmittance::MultiScatterConstants).
+	Flux_SkyboxImpl& xSkybox = g_xEngine.Skybox();
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+
+	const Flux_AtmosphereTransmittance::MultiScatterConstants xConsts =
+		Flux_AtmosphereTransmittance::BuildMultiScatterConstants(
+			xSkybox.GetRayleighScale(), xSkybox.GetMieScale(),
+			xSkybox.GetRayleighScaleHeight(), xSkybox.GetMieScaleHeight(),
+			xSkybox.m_fGroundAlbedo);
+
+	pxCommandList->SetPipeline(&xSkybox.m_xMultiScatterLUTPipeline);
+	pxCommandList->SetVertexBuffer(xGraphics.m_xQuadMesh.GetVertexBuffer());
+	pxCommandList->SetIndexBuffer(xGraphics.m_xQuadMesh.GetIndexBuffer());
+
+	{
+		Flux_ShaderBinder xBinder(*pxCommandList);
+		xBinder.BindDrawConstants(
+			Flux_Generated_Skybox::SkyboxMultiScatterLUT::hMultiScatterConstants,
+			&xConsts, sizeof(xConsts));
+	}
+
+	pxCommandList->DrawIndexed(6);
+}
+
 static void ExecuteSkyViewLUT(Flux_CommandBuffer* pxCommandList, void*)
 {
 	// Non-capturing graph callback. Raymarches the atmosphere once per frame into
@@ -385,6 +442,7 @@ static void ExecuteSkyViewLUT(Flux_CommandBuffer* pxCommandList, void*)
 		namespace SkyView = Flux_Generated_Skybox::SkyboxSkyViewLUT;
 		xBinder.BindCBV(SkyView::hAtmosphereConstants, &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
 		xBinder.BindSRV(SkyView::hg_xTransmittanceLUT, &xSkybox.m_xTransmittanceLUT.SRV());
+		xBinder.BindSRV(SkyView::hg_xMultiScatterLUT, &xSkybox.m_xMultiScatterLUT.SRV());
 	}
 
 	pxCommandList->DrawIndexed(6);
@@ -409,9 +467,17 @@ void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Sky-view LUT generation. Reads the transmittance LUT, raymarches the
 	// atmosphere once per frame into the low-res sky-view LUT. Enabled every frame
 	// in atmosphere mode (tracks the moving sun); see UpdateGraphPassEnables.
+	// Multiple-scattering LUT bake. Declared after the transmittance LUT (which
+	// it does NOT read -- it integrates the sun ray analytically) and before the
+	// sky-view LUT that samples it.
+	this->m_xMultiScatterLUTPassHandle = xGraph.AddPass("Skybox Multi-Scatter LUT", ExecuteMultiScatterLUT)
+		.ClearTargets()
+		.Writes(this->m_xMultiScatterLUT, RESOURCE_ACCESS_WRITE_RTV);
+
 	this->m_xSkyViewLUTPassHandle = xGraph.AddPass("Skybox Sky-View LUT", ExecuteSkyViewLUT)
 		.ClearTargets()
 		.Reads (this->m_xTransmittanceLUT, RESOURCE_ACCESS_READ_SRV)
+		.Reads (this->m_xMultiScatterLUT,  RESOURCE_ACCESS_READ_SRV)
 		.Writes(this->m_xSkyViewLUT,       RESOURCE_ACCESS_WRITE_RTV);
 
 	// Sky render pass (writes the G-buffer MRT). Registered AFTER the opaque
@@ -457,6 +523,7 @@ void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			.View(kuFluxViewSlotPreview)
 			.ClearTargets()
 			.Reads (this->m_xTransmittanceLUT,  RESOURCE_ACCESS_READ_SRV)
+			.Reads (this->m_xMultiScatterLUT,   RESOURCE_ACCESS_READ_SRV)
 			.Writes(this->m_xPreviewSkyViewLUT, RESOURCE_ACCESS_WRITE_RTV);
 
 		xGraph.AddPass("Skybox (Preview)", ExecuteSkybox)
@@ -484,21 +551,40 @@ void Flux_SkyboxImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 		m_bLUTNeedsUpdate = true;
 
 	// Regenerate when a transmittance-affecting param changes. Only the Rayleigh
-	// and Mie SCALES are runtime-mutable; the coefficients/scale-heights/radii are
-	// compile-time constants. Sun intensity (post-scatter multiplier), Mie-G
-	// (phase function) and the sky-sample count do NOT affect transmittance and
-	// are deliberately excluded.
-	if (m_fRayleighScale != m_fLastLUTRayleighScale || m_fMieScale != m_fLastLUTMieScale)
+	// and Mie SCALES are runtime-mutable (driven by ApplyEnvironment from the
+	// resolved Zenith_AtmosphereComponent); the coefficients/scale-heights/radii
+	// are compile-time constants. The radiometric anchor (sun intensity), the
+	// Mie-G phase asymmetry and the sky-sample count do NOT affect transmittance
+	// and are deliberately excluded (see Flux_AtmosphereTransmittance::TransmittanceLUTChanged).
+	if (Flux_AtmosphereTransmittance::TransmittanceLUTChanged(
+			m_fLastLUTRayleighScale, m_fLastLUTMieScale,
+			m_fLastLUTRayleighScaleHeight, m_fLastLUTMieScaleHeight,
+			m_fRayleighScale, m_fMieScale, m_fRayleighScaleHeight, m_fMieScaleHeight))
 	{
 		m_bLUTNeedsUpdate = true;
 		m_fLastLUTRayleighScale = m_fRayleighScale;
 		m_fLastLUTMieScale = m_fMieScale;
+		m_fLastLUTRayleighScaleHeight = m_fRayleighScaleHeight;
+		m_fLastLUTMieScaleHeight = m_fMieScaleHeight;
+	}
+	// The ground albedo does NOT affect transmittance, but it does affect the
+	// multiple-scattering bake (the ground bounce is part of the multiply-
+	// scattered field). Both LUTs ride one flag, so fold it in here.
+	if (m_fGroundAlbedo != m_fLastLUTGroundAlbedo)
+	{
+		m_bLUTNeedsUpdate = true;
+		m_fLastLUTGroundAlbedo = m_fGroundAlbedo;
 	}
 
 	// Cheap enable toggle (no MarkDirty): re-enables the writer the frame after a
 	// param change without a full recompile; the flag is cleared in the record
 	// callback so the pass runs exactly once per refresh.
 	xGraph.SetEnabled(m_xTransmittanceLUTPassHandle, m_bLUTNeedsUpdate);
+	// The multiple-scattering LUT depends on exactly the same medium inputs
+	// (plus the ground albedo, which only ever changes alongside them), so it
+	// rides the same flag -- the two can never disagree about which atmosphere
+	// they describe.
+	xGraph.SetEnabled(m_xMultiScatterLUTPassHandle, m_bLUTNeedsUpdate);
 
 	// Sky-view LUT: regenerate EVERY frame in atmosphere mode (it tracks the
 	// moving sun). Also force-enable on a dirty compile so the "Skybox" pass's
@@ -522,6 +608,39 @@ void Flux_SkyboxImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 
 // Getters
 bool Flux_SkyboxImpl::IsAtmosphereEnabled() const { return Zenith_GraphicsOptions::Get().m_bSkyboxAtmosphereEnabled; }
+
+void Flux_SkyboxImpl::ApplyEnvironment(const Zenith_EnvironmentAuthorityData& xEnv)
+{
+	// Drive the atmosphere-model members from the one resolved environment
+	// snapshot. Sun geometry is consumed by Flux_Graphics (it owns the frame
+	// constants); this carries only the medium. The radiometric anchor
+	// (m_fSunIntensity) is POLICY and is deliberately not mutated here -- it
+	// is never scene-authored. UpdateGraphPassEnables detects the scale delta
+	// against m_fLastLUT* next compile and regenerates the transmittance LUT.
+	m_fRayleighScale = xEnv.m_fRayleighScale;
+	m_fMieScale = xEnv.m_fMieScale;
+	m_fMieG = xEnv.m_fMieG;
+	m_fRayleighScaleHeight = xEnv.m_fRayleighScaleHeight;
+	m_fMieScaleHeight = xEnv.m_fMieScaleHeight;
+	// m_fGroundAlbedo is NOT stored here: the visible sky passes ground albedo 0
+	// (real terrain supplies the ground in front of it), so it is a capture-only
+	// input consumed by the IBL snapshot. The Skybox's multi-scatter bake DOES
+	// use it -- see PreExecuteSkybox, which reads it from the resolved snapshot.
+	m_fGroundAlbedo = xEnv.m_fGroundAlbedo;
+	// m_bSkyboxAtmosphereEnabled stays a graphics/debug override (owned by
+	// Zenith_GraphicsOptions): it represents whether the renderer DRAWS the
+	// atmosphere, not whether the authored world physically has one.
+}
+
+bool Flux_SkyboxImpl::IsMultiScatteringEnabled()
+{
+	return Zenith_GraphicsOptions::Get().m_bAtmosphereMultiScatteringEnabled;
+}
+
+Flux_ShaderResourceView& Flux_SkyboxImpl::GetMultiScatterLUTSRV()
+{
+	return this->m_xMultiScatterLUT.SRV();
+}
 
 Flux_ShaderResourceView& Flux_SkyboxImpl::GetTransmittanceLUTSRV()
 {

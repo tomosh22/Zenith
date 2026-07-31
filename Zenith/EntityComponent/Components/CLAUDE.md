@@ -13,6 +13,7 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_AnimatorComponent` | Skeletal animation **forwarding handle** (auto-discovers skeleton from ModelComponent). The `Flux_AnimationController` lives in `Flux_AnimationControllerStore` (`g_xEngine.AnimationControllers()`), keyed by EntityID — see "AnimatorComponent is a forwarding handle" below |
 | `Zenith_LightComponent` | Dynamic lights (directional, point, spot) |
 | `Zenith_SunComponent` | Exactly-one scene sun authority (direction or time-of-day orbit only; solar colour/radiance derives in Flux) |
+| `Zenith_AtmosphereComponent` | Scene-authored physical atmosphere medium (Rayleigh/Mie density scales, Mie-G phase asymmetry, both exponential scale heights, capture ground albedo) co-authored with a `Zenith_SunComponent` on one environment entity; resolved together via `Zenith_EnvironmentAuthorityData`. Also doubles as a **local blend volume** when `BlendRadius > 0` (see below). No radiometric anchor / exposure / renderer state (those are Flux-side) |
 | `Zenith_ColliderComponent` | Physics collision shapes (Jolt integration) |
 | `Zenith_TerrainComponent` | Heightmap-based terrain with streaming |
 | `Zenith_InstancedMeshComponent` | GPU-instanced mesh rendering |
@@ -34,6 +35,38 @@ Key invariants (pinned by the `Animator` regression suite in `Core/Zenith_UnitTe
 - **Exactly one controller per entity, exactly one Destroy.** `Destroy(EntityID)` is idempotent. Both the component dtor and `OnDestroy` call it (whichever fires first does the work; the second is a no-op). A **moved-from** component is neutralised (`m_bMovedOut = true`, cached pointer nulled) so the pool's move-construct-then-destruct-source sequence never double-frees — the moved-to instance shares the same EntityID-keyed controller.
 - **`GetCurrentAnimatorStateInfo()` returns `Zenith_AnimatorStateInfo`** — an EC-side mirror POD of `Flux_AnimatorStateInfo` (same field names/types + `IsName`). It is implicitly convertible to `Flux_AnimatorStateInfo` (operator defined in the `.cpp`), so callers that include the Flux state-machine header keep compiling unchanged. The mirror is what lets the by-value return stay Flux-include-free in the header.
 - **Render path is unaffected.** Skinning matrices are read from `Zenith_ModelComponent::GetSkeletonInstance()->GetSkinningMatrices()` by the unified compute-skinning path, never from the controller. Relocating the controller's *ownership* cannot regress rendering. Serialization byte-format is unchanged (no `.zscen` / `.zprfb` bump).
+
+## Environment authority: one global Sun/Atmosphere + local blend volumes
+
+The environment resolves in **two layers** (Unity's Volume model, minus the parts
+that do not apply):
+
+- **BASE** — exactly one *global* environment entity (`BlendRadius == 0`), chosen by
+  active-scene-first then lowest stable entity ID. **More than one global is a
+  conflict**, and in a `ZENITH_TOOLS` build it is now a hard `Zenith_Assert`, not
+  just a log line — it is silent data loss (the loser's Sun/Atmosphere is dropped
+  and the scene renders as though it were never authored). The Sun and Atmosphere
+  property panels also paint a red banner on any losing entity. Tests that build a
+  conflict on purpose scope the assert off with
+  `Zenith_ScopedEnvironmentConflictAssertSuppression`.
+- **LOCAL** — any number of `Zenith_AtmosphereComponent`s with `BlendRadius > 0`.
+  Each is a sphere around its own transform; its weight falls from 1 inside
+  `radius - falloff` to 0 at `radius`, evaluated at the **view position** (taken
+  from the neutral render gather, so it is exactly the camera the renderer draws
+  from). They are applied in ascending `(BlendPriority, entity ID)` and each LERPs
+  the accumulated medium toward its own values — so overlapping volumes compose
+  predictably and the result never depends on ECS query order. A local volume
+  never competes for authority and never conflicts.
+
+**The Sun is deliberately never blended.** It is a celestial object: its direction
+cannot depend on where the camera stands, and making it do so would break both the
+shadow fit and the direct↔ambient agreement the system is built on. Only the medium
+is local — a dusty basin, a humid valley, a smoggy district.
+
+A scene with no local volumes resolves bit-identically to the single-winner rule
+that predates this, which is why the feature is safe on by default. Pure helpers
+(`Zenith_ComputeBlendVolumeWeight`, `Zenith_BlendAtmosphereLayer`) live in
+`Core/Zenith_EnvironmentAuthority.h` and are unit-tested directly.
 
 ## Creating a New Component
 
@@ -107,6 +140,7 @@ Component serialization order is determined by the explicit `order` argument pas
 
 Current order (centralised in `Zenith_ComponentMeta_Registration.cpp`):
 Transform (0), Model (10), Tween (12), Animator (15), Camera (20), Light (25), Sun (26),
+Atmosphere (27),
 Terrain (40), Collider (50), Graph (60), UI (70), InstancedMesh (80),
 ParticleEmitter (85), AIAgent (90), Attachment (95), NavMesh (96).
 

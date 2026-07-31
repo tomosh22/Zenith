@@ -15,17 +15,31 @@ import Common.Fullscreen;
 import Common.PBR;
 import Common.Atmosphere;
 
+// The whole GENERATION SNAPSHOT, frozen on the CPU (Flux_IBLPassConstants) —
+// same contract as Flux_IrradianceConvolution: no per-frame spine reads, the
+// authored atmosphere medium instead of the Atmosphere.slang defaults.
 struct PrefilterConstantsLayout
 {
-	float g_fRoughness;
-	uint  g_uUseAtmosphere;
-	float g_fSunIntensity;
-	uint  g_uFaceIndex;
+	float4 g_xSunDirection;        // direction the light TRAVELS into the scene; w unused
+	float  g_fSunIntensity;        // the engine's one radiometric anchor (captured, never authored)
+	float  g_fRayleighScale;       // ---- authored atmosphere medium ----
+	float  g_fMieScale;
+	float  g_fMieG;
+	float  g_fRayleighScaleHeight;
+	float  g_fMieScaleHeight;
+	float  g_fGroundAlbedo;        // virtual ground the capture integrates
+	uint   g_uUseAtmosphere;
+	uint   g_uMultiScatteringEnabled;
+	uint   g_uFaceIndex;
+	float  g_fRoughness;
+	float  g_fPad0;
 };
 struct PassParams
 {
 	ConstantBuffer<PrefilterConstantsLayout> PrefilterConstants;
 	SamplerCube g_xSkyboxCubemap;
+	// See Flux_IrradianceConvolution: the capture's OWN multi-scatter LUT.
+	Sampler2D g_xMultiScatterLUT;
 };
 ParameterBlock<PassParams> g_xPassSet;
 
@@ -57,12 +71,23 @@ float3 SampleEnvironment(float3 xDir)
 {
 	if (g_xPassSet.PrefilterConstants.g_uUseAtmosphere > 0u)
 	{
-		float3 xSunDir = normalize(-GetSunDir_Pad().xyz);
-		AtmosphereResult xResult = ComputeAtmosphereScattering(
+		// The CAPTURED sun-travel direction, negated to point AT the sun.
+		float3 xSunDir = normalize(-g_xPassSet.PrefilterConstants.g_xSunDirection.xyz);
+		EnvironmentCaptureMedium xMedium;
+		xMedium.fRayleighScale       = g_xPassSet.PrefilterConstants.g_fRayleighScale;
+		xMedium.fMieScale            = g_xPassSet.PrefilterConstants.g_fMieScale;
+		xMedium.fMieG                = g_xPassSet.PrefilterConstants.g_fMieG;
+		xMedium.fRayleighScaleHeight = g_xPassSet.PrefilterConstants.g_fRayleighScaleHeight;
+		xMedium.fMieScaleHeight      = g_xPassSet.PrefilterConstants.g_fMieScaleHeight;
+		xMedium.fGroundAlbedo        = g_xPassSet.PrefilterConstants.g_fGroundAlbedo;
+		AtmosphereResult xResult = ComputeEnvironmentCaptureScattering(
 			float3(0.0, EARTH_RADIUS + IBL_REFERENCE_HEIGHT_METERS, 0.0),
 			normalize(xDir),
 			xSunDir,
-			g_xPassSet.PrefilterConstants.g_fSunIntensity);
+			g_xPassSet.PrefilterConstants.g_fSunIntensity,
+			xMedium,
+			g_xPassSet.g_xMultiScatterLUT,
+			g_xPassSet.PrefilterConstants.g_uMultiScatteringEnabled != 0u);
 		return xResult.xColor;
 	}
 	return g_xPassSet.g_xSkyboxCubemap.Sample(xDir).rgb;

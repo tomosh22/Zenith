@@ -41,6 +41,12 @@ void Zenith_GraphicsOptions::RegisterDebugVariables()
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "IBL", "Diffuse" }, xOpts.m_bIBLDiffuseEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "IBL", "Specular" }, xOpts.m_bIBLSpecularEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "Skybox", "Atmosphere" }, xOpts.m_bSkyboxAtmosphereEnabled);
+	// The multiple-scattering escape hatch is only an escape hatch if it can be
+	// reached at runtime. The LUTs themselves do not change (the flag gates
+	// whether the solvers SAMPLE them, and the sky CB is re-uploaded every
+	// frame), but the flag is part of the IBL capture snapshot, so toggling it
+	// also re-captures the ambient -- an A/B is a toggle, not a rebuild.
+	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "Skybox", "MultiScattering" }, xOpts.m_bAtmosphereMultiScatteringEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "SSAO", "Blur" }, xOpts.m_bSSAOBlurEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "SSR", "RoughnessBlur" }, xOpts.m_bSSRRoughnessBlurEnabled);
 	g_xEngine.DebugVariables().AddBoolean({ "Graphics", "SSGI", "Denoise" }, xOpts.m_bSSGIDenoiseEnabled);

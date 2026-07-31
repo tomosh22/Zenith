@@ -9,6 +9,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_SunComponent.h"
+#include "EntityComponent/Components/Zenith_AtmosphereComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
@@ -65,6 +66,10 @@ void Zenith_RegisterEngineComponents()
 	xRegistry.RegisterComponent<Zenith_CameraComponent>("Camera", 20);
 	xRegistry.RegisterComponent<Zenith_LightComponent>("Light", 25);
 	xRegistry.RegisterComponent<Zenith_SunComponent>("Sun", 26);
+	// Atmosphere sits immediately after Sun (order 27): both are co-authored on
+	// one environment entity and resolved together (Zenith_EnvironmentAuthority).
+	// It carries atmosphere-model inputs only -- no radiometric anchor.
+	xRegistry.RegisterComponent<Zenith_AtmosphereComponent>("Atmosphere", 27);
 	xRegistry.RegisterComponent<Zenith_TerrainComponent>("Terrain", 40);   // Must be before Collider
 	xRegistry.RegisterComponent<Zenith_ColliderComponent>("Collider", 50);
 	// Behaviour Graphs (the scripting-system replacement) at order 60 — the
@@ -114,6 +119,7 @@ void Zenith_RegisterEngineComponents()
 	xEditorRegistry.RegisterComponent<Zenith_CameraComponent>("Camera");
 	xEditorRegistry.RegisterComponent<Zenith_LightComponent>("Light");
 	xEditorRegistry.RegisterComponent<Zenith_SunComponent>("Sun");
+	xEditorRegistry.RegisterComponent<Zenith_AtmosphereComponent>("Atmosphere");
 	xEditorRegistry.RegisterComponent<Zenith_ColliderComponent>("Collider");
 	xEditorRegistry.RegisterComponent<Zenith_TerrainComponent>("Terrain");
 	xEditorRegistry.RegisterComponent<Zenith_InstancedMeshComponent>("InstancedMesh");

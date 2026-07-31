@@ -12,8 +12,14 @@ namespace Flux_IBLShaders
 	inline constexpr Flux_ShaderDecl xIBL_IrradianceConvolution{ "IBL_IrradianceConvolution", "IBL/Flux_IrradianceConvolution", "vsMain", "fsMain", nullptr, "spirv_1_3", "IBL" };
 	inline constexpr Flux_ShaderDecl xIBL_PrefilterEnvMap{ "IBL_PrefilterEnvMap", "IBL/Flux_PrefilterEnvMap", "vsMain", "fsMain", nullptr, "spirv_1_3", "IBL" };
 
+	// The capture's OWN multiple-scattering LUT bake. Same .slang the Skybox
+	// uses for its live-medium copy; two decls so each feature owns a program it
+	// can hot-reload and build pipelines for independently.
+	inline constexpr Flux_ShaderDecl xIBL_MultiScatterLUT{ "IBL_MultiScatterLUT", "IBL/Flux_IBLMultiScatterLUT", "vsMain", "fsMain", nullptr, "spirv_1_3", "IBL" };
+
 	inline constexpr const Flux_ShaderDecl* apxALL[] =
 	{
+		&xIBL_MultiScatterLUT,
 		&xIBL_BRDFIntegration,
 		&xIBL_IrradianceConvolution,
 		&xIBL_PrefilterEnvMap,

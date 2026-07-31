@@ -54,6 +54,51 @@ namespace Flux_Generated_IBL
 		static_assert(offsetof(g_xView_CB, m_ug_uViewSlot) == 468, "g_xView.g_uViewSlot offset drifted from Slang reflection");
 	}
 
+	// ----- IBL_MultiScatterLUT (IBL/Flux_IBLMultiScatterLUT) -----
+	namespace IBL_MultiScatterLUT
+	{
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xGlobal{ 0u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_axMaterials{ 0u, 1u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hg_xView{ 1u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xCSM{ 1u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xShadowMatrices{ 1u, 2u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xLightBuffer{ 1u, 3u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightCounts{ 1u, 4u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: StructuredBuffer
+		inline constexpr Flux_BindingHandle hg_xClusterLightIndices{ 1u, 5u, FLUX_RESOURCE_KIND_STRUCTURED_BUFFER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xBRDFLUT{ 1u, 6u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xIrradianceMap{ 1u, 7u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xPrefilteredMap{ 1u, 8u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: UnboundedTextureArray
+		inline constexpr Flux_BindingHandle hg_axTextures{ 2u, 0u, FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY, 0u };
+		// kind: ConstantBuffer
+		inline constexpr Flux_BindingHandle hMultiScatterConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
+		struct MultiScatterConstants_CB
+		{
+			unsigned char m_ag_xRayleighScatter[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			unsigned char m_ag_xMieScatter[16]; // slang=vector offset=16 arrayCount=4 (no C++ mapping)
+			float m_fg_fPlanetRadius; // slang=float offset=32
+			float m_fg_fAtmosphereRadius; // slang=float offset=36
+			float m_fg_fGroundAlbedo; // slang=float offset=40
+			float m_fg_fPad; // slang=float offset=44
+		};
+		static_assert(sizeof(MultiScatterConstants_CB) == 48, "MultiScatterConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fPlanetRadius) == 32, "MultiScatterConstants.g_fPlanetRadius offset drifted from Slang reflection");
+		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fAtmosphereRadius) == 36, "MultiScatterConstants.g_fAtmosphereRadius offset drifted from Slang reflection");
+		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fGroundAlbedo) == 40, "MultiScatterConstants.g_fGroundAlbedo offset drifted from Slang reflection");
+		static_assert(offsetof(MultiScatterConstants_CB, m_fg_fPad) == 44, "MultiScatterConstants.g_fPad offset drifted from Slang reflection");
+	}
+
 	// ----- IBL_BRDFIntegration (IBL/Flux_BRDFIntegration) -----
 	namespace IBL_BRDFIntegration
 	{
@@ -90,18 +135,37 @@ namespace Flux_Generated_IBL
 		inline constexpr Flux_BindingHandle hIrradianceConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct IrradianceConstants_CB
 		{
-			unsigned int m_ug_uUseAtmosphere; // slang=uint offset=0
-			float m_fg_fSunIntensity; // slang=float offset=4
-			unsigned int m_ug_uFaceIndex; // slang=uint offset=8
-			float m_fg_fPad; // slang=float offset=12
+			unsigned char m_ag_xSunDirection[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			float m_fg_fSunIntensity; // slang=float offset=16
+			float m_fg_fRayleighScale; // slang=float offset=20
+			float m_fg_fMieScale; // slang=float offset=24
+			float m_fg_fMieG; // slang=float offset=28
+			float m_fg_fRayleighScaleHeight; // slang=float offset=32
+			float m_fg_fMieScaleHeight; // slang=float offset=36
+			float m_fg_fGroundAlbedo; // slang=float offset=40
+			unsigned int m_ug_uUseAtmosphere; // slang=uint offset=44
+			unsigned int m_ug_uMultiScatteringEnabled; // slang=uint offset=48
+			unsigned int m_ug_uFaceIndex; // slang=uint offset=52
+			float m_fg_fPad0; // slang=float offset=56
+			float m_fg_fPad1; // slang=float offset=60
 		};
-		static_assert(sizeof(IrradianceConstants_CB) == 16, "IrradianceConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(IrradianceConstants_CB, m_ug_uUseAtmosphere) == 0, "IrradianceConstants.g_uUseAtmosphere offset drifted from Slang reflection");
-		static_assert(offsetof(IrradianceConstants_CB, m_fg_fSunIntensity) == 4, "IrradianceConstants.g_fSunIntensity offset drifted from Slang reflection");
-		static_assert(offsetof(IrradianceConstants_CB, m_ug_uFaceIndex) == 8, "IrradianceConstants.g_uFaceIndex offset drifted from Slang reflection");
-		static_assert(offsetof(IrradianceConstants_CB, m_fg_fPad) == 12, "IrradianceConstants.g_fPad offset drifted from Slang reflection");
+		static_assert(sizeof(IrradianceConstants_CB) == 64, "IrradianceConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_fg_fSunIntensity) == 16, "IrradianceConstants.g_fSunIntensity offset drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_fg_fRayleighScale) == 20, "IrradianceConstants.g_fRayleighScale offset drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_fg_fMieScale) == 24, "IrradianceConstants.g_fMieScale offset drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_fg_fMieG) == 28, "IrradianceConstants.g_fMieG offset drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_fg_fRayleighScaleHeight) == 32, "IrradianceConstants.g_fRayleighScaleHeight offset drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_fg_fMieScaleHeight) == 36, "IrradianceConstants.g_fMieScaleHeight offset drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_fg_fGroundAlbedo) == 40, "IrradianceConstants.g_fGroundAlbedo offset drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_ug_uUseAtmosphere) == 44, "IrradianceConstants.g_uUseAtmosphere offset drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_ug_uMultiScatteringEnabled) == 48, "IrradianceConstants.g_uMultiScatteringEnabled offset drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_ug_uFaceIndex) == 52, "IrradianceConstants.g_uFaceIndex offset drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_fg_fPad0) == 56, "IrradianceConstants.g_fPad0 offset drifted from Slang reflection");
+		static_assert(offsetof(IrradianceConstants_CB, m_fg_fPad1) == 60, "IrradianceConstants.g_fPad1 offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xSkyboxCubemap{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xMultiScatterLUT{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
 	// ----- IBL_PrefilterEnvMap (IBL/Flux_PrefilterEnvMap) -----
@@ -135,18 +199,37 @@ namespace Flux_Generated_IBL
 		inline constexpr Flux_BindingHandle hPrefilterConstants{ 3u, 0u, FLUX_RESOURCE_KIND_CONSTANT_BUFFER, 1u };
 		struct PrefilterConstants_CB
 		{
-			float m_fg_fRoughness; // slang=float offset=0
-			unsigned int m_ug_uUseAtmosphere; // slang=uint offset=4
-			float m_fg_fSunIntensity; // slang=float offset=8
-			unsigned int m_ug_uFaceIndex; // slang=uint offset=12
+			unsigned char m_ag_xSunDirection[16]; // slang=vector offset=0 arrayCount=4 (no C++ mapping)
+			float m_fg_fSunIntensity; // slang=float offset=16
+			float m_fg_fRayleighScale; // slang=float offset=20
+			float m_fg_fMieScale; // slang=float offset=24
+			float m_fg_fMieG; // slang=float offset=28
+			float m_fg_fRayleighScaleHeight; // slang=float offset=32
+			float m_fg_fMieScaleHeight; // slang=float offset=36
+			float m_fg_fGroundAlbedo; // slang=float offset=40
+			unsigned int m_ug_uUseAtmosphere; // slang=uint offset=44
+			unsigned int m_ug_uMultiScatteringEnabled; // slang=uint offset=48
+			unsigned int m_ug_uFaceIndex; // slang=uint offset=52
+			float m_fg_fRoughness; // slang=float offset=56
+			float m_fg_fPad0; // slang=float offset=60
 		};
-		static_assert(sizeof(PrefilterConstants_CB) == 16, "PrefilterConstants_CB size drifted from Slang reflection");
-		static_assert(offsetof(PrefilterConstants_CB, m_fg_fRoughness) == 0, "PrefilterConstants.g_fRoughness offset drifted from Slang reflection");
-		static_assert(offsetof(PrefilterConstants_CB, m_ug_uUseAtmosphere) == 4, "PrefilterConstants.g_uUseAtmosphere offset drifted from Slang reflection");
-		static_assert(offsetof(PrefilterConstants_CB, m_fg_fSunIntensity) == 8, "PrefilterConstants.g_fSunIntensity offset drifted from Slang reflection");
-		static_assert(offsetof(PrefilterConstants_CB, m_ug_uFaceIndex) == 12, "PrefilterConstants.g_uFaceIndex offset drifted from Slang reflection");
+		static_assert(sizeof(PrefilterConstants_CB) == 64, "PrefilterConstants_CB size drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_fg_fSunIntensity) == 16, "PrefilterConstants.g_fSunIntensity offset drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_fg_fRayleighScale) == 20, "PrefilterConstants.g_fRayleighScale offset drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_fg_fMieScale) == 24, "PrefilterConstants.g_fMieScale offset drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_fg_fMieG) == 28, "PrefilterConstants.g_fMieG offset drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_fg_fRayleighScaleHeight) == 32, "PrefilterConstants.g_fRayleighScaleHeight offset drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_fg_fMieScaleHeight) == 36, "PrefilterConstants.g_fMieScaleHeight offset drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_fg_fGroundAlbedo) == 40, "PrefilterConstants.g_fGroundAlbedo offset drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_ug_uUseAtmosphere) == 44, "PrefilterConstants.g_uUseAtmosphere offset drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_ug_uMultiScatteringEnabled) == 48, "PrefilterConstants.g_uMultiScatteringEnabled offset drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_ug_uFaceIndex) == 52, "PrefilterConstants.g_uFaceIndex offset drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_fg_fRoughness) == 56, "PrefilterConstants.g_fRoughness offset drifted from Slang reflection");
+		static_assert(offsetof(PrefilterConstants_CB, m_fg_fPad0) == 60, "PrefilterConstants.g_fPad0 offset drifted from Slang reflection");
 		// kind: CombinedTextureSampler
 		inline constexpr Flux_BindingHandle hg_xSkyboxCubemap{ 3u, 1u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
+		// kind: CombinedTextureSampler
+		inline constexpr Flux_BindingHandle hg_xMultiScatterLUT{ 3u, 2u, FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER, 1u };
 	}
 
 }

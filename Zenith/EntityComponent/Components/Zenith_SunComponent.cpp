@@ -4,6 +4,9 @@
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
+// Zenith_RenderEnvironmentAuthorityBanner — shared with the Atmosphere panel so
+// both halves of an environment entity report the same authority verdict.
+#include "EntityComponent/Components/Zenith_AtmosphereComponent.h"
 #endif
 
 namespace
@@ -12,7 +15,8 @@ namespace
 	constexpr float fDIRECTION_EPSILON = 0.0001f;
 }
 
-Zenith_SunComponent::Zenith_SunComponent(Zenith_Entity&)
+Zenith_SunComponent::Zenith_SunComponent(Zenith_Entity& xEntity)
+	: m_xParentEntity(xEntity)
 {
 }
 
@@ -102,6 +106,10 @@ void Zenith_SunComponent::RenderPropertiesPanel()
 	}
 
 	const char* aszModes[] = { "Direction Vector", "Time of Day" };
+	// A Sun always competes for the one environment authority (there is no
+	// "local sun" -- the sun is celestial, see Zenith_BlendAtmosphereLayer).
+	Zenith_RenderEnvironmentAuthorityBanner(m_xParentEntity, false);
+
 	int iMode = static_cast<int>(m_eDirectionMode);
 	if (ImGui::Combo("Direction Mode", &iMode, aszModes, SUN_DIRECTION_MODE_COUNT))
 	{
