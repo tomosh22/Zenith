@@ -130,6 +130,43 @@ public:
 	// Out-of-line (.cpp): dereferencing the forward-declared Flux_MeshGeometry
 	// to return a reference needs the full type.
 	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const;
+
+	// TODO(terrain-height-query): there is NO way to ask this component "what is
+	// the ground height at world XZ?", and the only substitute -- a physics
+	// raycast -- answers a materially different question. Booked as Shortfalls E8
+	// (Games/Zenithmon/Docs/Shortfalls.md) / task_0515a49e.
+	//
+	// A raycast returns the first BODY below a point, not the terrain surface, so
+	// anything standing on the ground occludes the query. That is not a corner
+	// case, it is the normal case, and it is not filterable:
+	//   * Zenith_Physics::Raycast / Zenith_PhysicsQuery::RaycastIgnoring take
+	//     exactly ONE ignore entity, so two overlapping bodies over a column are
+	//     unmeasurable, full stop;
+	//   * restarting the ray below a hit does not rescue it, because an object
+	//     STANDING on the ground has its underside AT the surface -- and anything
+	//     deliberately embedded (a shell sunk 0.05 m so no visible gap opens) has
+	//     it BELOW the surface, so the restart begins underneath the terrain;
+	//   * it needs the terrain physics body to have STREAMED IN, so it is
+	//     frame-dependent, and unusable at authoring time altogether -- the editor
+	//     add path uses the deserialization ctor and never calls
+	//     LoadCombinedPhysicsGeometry, so an authoring-time cast simply MISSES.
+	//
+	// Two tiers, and they buy different things:
+	//   TIER 1 (cheap) -- serve the query from GetPhysicsMeshGeometry() directly,
+	//     a triangle lookup with no Jolt and no body filtering. Removes the
+	//     occlusion problem entirely. Still needs the geometry streamed.
+	//   TIER 2 (the real prize) -- keep or load the heightfield. NOTE this
+	//     component holds no height data at runtime: it loads baked mesh chunks,
+	//     and Terrain/<Set>/Height.ztxtr is read only by the TOOLS editor path.
+	//     Tier 2 would make the query work at AUTHORING time, which would retire
+	//     the whole measure-once-and-freeze-as-a-constant dance that
+	//     Games/Zenithmon/Source/World/ZM_DawnmerePlacement.h is built around.
+	//
+	// Live cost today (ZM-D-173): Zenithmon's Home door jambs sit on the shell's
+	// own face, so two solid bodies stand over each jamb's column and their
+	// authored heights are derived from ground sampled 0.5 m away instead. The
+	// residual is bounded by local relief but is genuinely UNMEASURED, because the
+	// column that would measure it is the one that cannot be probed.
 	// Material accessors (4-material palette)
 	static constexpr u_int TERRAIN_MATERIAL_COUNT = 4;
 	Zenith_MaterialAsset* GetMaterial(u_int uIndex) const { Zenith_Assert(uIndex < TERRAIN_MATERIAL_COUNT, "Invalid material index"); return m_axMaterials[uIndex].GetDirect(); }

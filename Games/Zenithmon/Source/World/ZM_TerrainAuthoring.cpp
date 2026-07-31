@@ -65,7 +65,17 @@ namespace
 	const ZM_TerrainPadSpec s_axDawnmerePads[] =
 	{
 		{ "Plaza", { 512.0f, 512.0f }, 60.0f, 45.0f, 4u },
-		{ "Home", { 384.0f, 456.0f }, 36.0f, 26.0f, 4u },
+		// ZM-D-173: the Home pad moved +40 m in Z with the shell it flattens
+		// ground for. The shell now occupies z 476..516 with its entrance on the
+		// -Z face, so a pad still centred at z=456 would flatten the forecourt and
+		// leave the building itself on unlevelled ground. Radius, target height and
+		// pass count are UNCHANGED -- only the centre moves.
+		//
+		// ★ THE PATH ENDPOINT DELIBERATELY DID NOT MOVE WITH IT. The Home dirt path
+		// still terminates at (384, 456); its flatten radius overlaps this pad, so
+		// the two together pave one continuous walkway from the plaza into the
+		// forecourt the camera now trails into.
+		{ "Home", { 384.0f, 496.0f }, 36.0f, 26.0f, 4u },
 		{ "Lab", { 640.0f, 552.0f }, 48.0f, 38.0f, 4u },
 		{ "RouteGate", { 512.0f, 896.0f }, 30.0f, 0.0f, 0u },
 	};
@@ -99,8 +109,12 @@ namespace
 	{
 		{ "TownCenter", { 512.0f, 24.0f, 480.0f } },
 		{ "Plaza", { 512.0f, 24.0f, 512.0f } },
-		{ "Home", { 384.0f, 24.0f, 456.0f } },
-		{ "FromHome", { 384.0f, 24.0f, 482.0f } },
+		// ZM-D-173: both moved with the relocated Home. "Home" tracks the shell's
+		// new centre; "FromHome" tracks the return spawn, which is now SOUTH of the
+		// -Z entrance rather than north of the old +Z one. Y stays 24 -- these are
+		// recipe METADATA at the nominal target height, not measured surfaces.
+		{ "Home", { 384.0f, 24.0f, 496.0f } },
+		{ "FromHome", { 384.0f, 24.0f, 468.0f } },
 		{ "Lab", { 640.0f, 24.0f, 552.0f } },
 		{ "FromLab", { 640.0f, 24.0f, 520.0f } },
 		{ "FromRoute1", { 512.0f, 24.0f, 864.0f } },

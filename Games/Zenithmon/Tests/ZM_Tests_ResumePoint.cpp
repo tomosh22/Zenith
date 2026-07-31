@@ -93,9 +93,10 @@ namespace
 	// A build index no ZM_WorldSpec row carries (rows are 0/1/2/3/20/40/41/42).
 	constexpr u_int uUNRESOLVABLE_BUILD_INDEX = 999u;
 
-	// The authored Dawnmere player CENTRE (Zenithmon.cpp's TownCenter feet
-	// (512, 25.98577, 480) + the 0.9 capsule half-extent).
-	const Zenith_Maths::Vector3 xVALID_CENTRE(512.0f, 26.88577f, 480.0f);
+	// The authored Dawnmere player CENTRE (the TownCenter feet anchor
+	// (512, 25.99055, 480) + the 0.9 capsule half-extent). Re-measured at ZM-D-173,
+	// when moving the Home terrain pad regenerated the whole Dawnmere heightmap.
+	const Zenith_Maths::Vector3 xVALID_CENTRE(512.0f, 26.89055f, 480.0f);
 	constexpr float fVALID_YAW = 0.7f;
 
 	// Far outside ANY plausible world extent. Deliberately NOT written against a

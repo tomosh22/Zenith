@@ -298,8 +298,12 @@ biggest suite; all headless, all seeded (C8).
   count-ratcheted into the then-current shared engine unit gate (**1078**
   registered) and Zenithmon CI boot unit gate (**1773** registered); the latter
   expected 1772 passed, 0 failed and the one quarantined skip. Those are
-  historical S3 values: the current S7 item 1 SC2 references are **1103**
-  engine-only and **2392** combined engine + Zenithmon units.
+  historical S3 values. **This document does not restate the current ones** --
+  the pins are `Tools/run_unit_gate.ps1`'s default (engine-only) and
+  `.github/workflows/zm-tests.yml`'s `-Baseline` (combined), with `Status.md`'s
+  CURRENT BASELINE block as the readable record. The S7 item 1 SC2 figures that
+  used to be quoted here as "current" (1103 / 2392) were 2026-07-21 values and
+  had drifted badly by 2026-08-01.
 - **E2 engine unit tests (SHIPPED -- exactly three):**
 
   | Test | Contract covered |
@@ -377,15 +381,18 @@ biggest suite; all headless, all seeded (C8).
   not a terrain-only acceptance ceiling; no byte cap exists, warm "seconds" is
   qualitative, and one measured route does not create a statistical upper
   bound. Thornacre/Route1 have no authored playable scenes or trees.
-- **Input/controller/camera unit tests (SHIPPED -- exactly 20):** all live in
-  `Tests/ZM_Tests_Overworld.cpp` and split **5 / 4 / 5 / 4 / 2**:
+- **Input/controller/camera unit tests (SHIPPED -- exactly 22):** all live in
+  `Tests/ZM_Tests_Overworld.cpp` and split **5 / 4 / 5 / 6 / 2**.
+  The camera category moved 4 -> 6 at ZM-D-173; both totals are counted from
+  that file's actual `ZENITH_TEST` inventory rather than carried forward from
+  a plan:
 
   | Category (count) | Locked contract |
   |---|---|
   | `ZM_OverworldInput` (5) | WASD and arrow aliases; opposite-axis cancellation; pressed-edge Enter/Space confirm, Escape/Backspace cancel, M/Tab menu; either Shift held for run |
   | `ZM_OverworldController` (4) | Camera-forward flattening + normalized diagonals; 4/7 m/s horizontal-world speed with vertical preservation; walkable-downhill tangent adhesion preserves stronger falls and positive step-assist rises; inclusive 45-degree classification and steeper-uphill blocking; step qualification requires lower obstruction, upper clearance, a walkable landing and rise <=0.40 m |
   | `ZM_OverworldPhysics` (5) | Real dynamic generic capsule grounds/falls/stays upright; walk/run/release drives real velocity; invalid/nonpositive dt is a full observable/animation/body/facing no-op; static wall blocks; Jolt ramp normals classify slopes; low-step query accepts while tall obstacle rejects without reboosting an existing rise |
-  | `ZM_OverworldCamera` (4) | Fixed-heading desired pose; omega-8 critical spring has no overshoot; collision padding/minimum-arm clamp; a real occluder pushes inward and recovery moves outward |
+  | `ZM_OverworldCamera` (6) | Fixed-heading desired pose; omega-8 critical spring has no overshoot; collision padding/minimum-arm clamp; a real occluder pushes inward and recovery moves outward; **(ZM-D-173)** a SENSOR volume straddling the arm ray neither clamps it nor reports the camera constrained; a SOLID occluder behind a sensor still clamps -- to the distance derived from the SOLID's near face, which is only reachable if the ray passed through the sensor |
   | `ZM_OverworldECS` (2) | Version-1-only component serialization; unique orders 102/103 plus lifecycle, generation-safe same-scene target reacquisition, rejection of still-live cross-scene cached targets, and missing-dependency safety |
 
   The runtime under test uses the transform scale to create a dynamic upright
@@ -1555,3 +1562,45 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   inform balance, but no automated test claims to assess fun.
 - **Nintendo-content comparison** -- Zenithmon ships original species/names;
   tests assert OUR data tables, never external ones.
+
+## 8. The camera-clearance guards (ZM-D-173) and what they do NOT cover
+
+`Tests/ZM_AutoTests_CameraClearance.cpp` adds **two permanent P1 registrations**,
+taking the automated registry **51 -> 53**. Both load the COMMITTED Dawnmere
+against the REAL baked terrain, both run on the **Null** backend
+(`m_bRequiresGraphics = false`), and neither creates, moves or teleports anything.
+
+| Test | What it asserts | Skips only when |
+|---|---|---|
+| `ZM_DawnmereHomeGroundTruth_Test` | The MEASUREMENT ORACLE. Casts a real downward ray at each of the ten Home placement columns and reds if a compiled row in `Source/World/ZM_DawnmerePlacement.h` has drifted from the surface the world actually has (same 0.15 m tolerance as the W5 NPC oracle). Logs every measured value at INFO on every run -- this is how those constants are re-obtained after a terrain recipe change. | The Dawnmere scene or the terrain bake is genuinely absent |
+| `ZM_DawnmereCameraClearance_Test` | The CONTRACT GUARD. At every authoritative sample it runs the SHIPPED camera maths (`ComputeDesiredPosition` + `ClampArmDistance`) against the SHIPPED physics world and requires the clamped arm to keep **>= 50% of the authored 6.0008 m** pivot->camera distance. Also asserts the scene's captured yaw is still the authored 0, so a scene yaw edit cannot silently invalidate every sample direction. | as above |
+
+**The two probes are filtered differently on purpose.** The oracle ignores the
+Home SHELL at every column, because the shell is the thing the table POSITIONS
+and the committed scene still carries its previous placement until the
+re-authoring boot. The clearance guard ignores only the PLAYER, so a route or
+approach that ends up under the building fails there, by name. Asking one probe
+to do both jobs is what produced a 900-frame timeout blaming terrain streaming
+for a column that was simply under a wall.
+
+### ★ The enforceable boundary, stated so it cannot be oversold
+
+The clearance guard covers a **named sample table -- 308 samples as of
+ZM-D-173**:
+
+- the town-centre -> door-staging drive, every 1.0 m (130);
+- the staging -> door-trigger approach, every 0.25 m including both endpoints (17);
+- both segments of the Home dirt path `(512,512) -> (454,486) -> (384,456)`, every 1.0 m (143);
+- a 1.5 m ring plus centre around `FromHomeSpawn` (9) and around TownCenter (9).
+
+**This is NOT a proof that every mathematically standable point in Dawnmere
+satisfies the contract.** It is deterministic, actor-free coverage of the
+critical movement areas and the interaction approaches.
+
+It carries **no rings around NPCs, deliberately**: a live NPC can legitimately
+occupy the camera ray, which would make a static-layout guard nondeterministic.
+
+**A newly authored region must add ITS primary traversal paths, warp approaches
+and actor-free interaction approaches to that table as part of authoring it.**
+A region added without extending the table is unguarded, and the suite will not
+say so.

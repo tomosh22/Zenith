@@ -131,10 +131,14 @@ namespace
 	//     * far more than the 2 m the "this is NOT marker placement" gate needs,
 	//     * a heading of atan2(6, -9) ~= 2.56 rad, so the yaw round trip is not
 	//       vacuous, and
-	//     * ~130 m from Dawnmere's only warp sensor, HomeDoorTrigger at
-	//       (384, 27.161484, 476) scale (3,2,2). ZM_WarpTrigger resets its overlap
-	//       latch in OnStart, so a freshly loaded scene starts UNLATCHED and a pose
-	//       restored inside that volume would instantly re-warp.
+	//     * ~134 m from Dawnmere's only warp sensor, HomeDoorTrigger -- whose
+	//       authored placement lives in ZM_GetDawnmereHomeDoorTrigger()
+	//       (Source/World/ZM_DawnmerePlacement.h) and is cited by NAME rather than
+	//       by coordinate, because ZM-D-173 moved it and a restated literal would
+	//       have gone stale silently. ZM_WarpTrigger resets its overlap latch in
+	//       OnStart, so a freshly loaded scene starts UNLATCHED and a pose restored
+	//       inside that volume would instantly re-warp. The margin is >40x the
+	//       sensor's own half-depth, so the Home relocation cannot close it.
 	constexpr float fWALK_OFFSET_X = 6.0f;
 	constexpr float fWALK_OFFSET_Z = -9.0f;
 	constexpr float fWALK_ARRIVAL_RADIUS = 0.6f;

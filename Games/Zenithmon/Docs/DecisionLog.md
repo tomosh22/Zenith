@@ -15,6 +15,188 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-07-31 -- ZM-D-173 -- The fixed-yaw overworld camera is kept; ordinary raycasts stop seeing sensors, and Dawnmere's Home moves +40 m so its entrance faces the camera side
+
+*(ENGINE change in `Zenith/Physics` -- it alters every ordinary raycast in the
+engine -- plus a Zenithmon terrain-recipe change, a scene re-author and a navmesh
+re-bake. A new `.cpp` under `Games/Zenithmon/Tests/` required `Build\regen.ps1`.
+Every number below is from an OBSERVED line on the final builds of 2026-07-31.)*
+
+### Decision
+
+1. **The fixed heading stays.** `ZM_FollowCamera` captures the yaw its scene
+   authored and keeps it; there is no rotation input, no per-region yaw, no
+   occluder fading and no camera-volume cast. `GetAuthoredYaw()` is added as a
+   READ-ONLY accessor so the real-scene guard can drive the camera maths with the
+   yaw the SCENE carries instead of a hard-coded 0 that a later scene edit could
+   silently invalidate. There is deliberately no setter.
+2. **Ordinary engine raycasts ignore SENSOR bodies.** Both public
+   `Zenith_Physics::Raycast` overloads now filter them out via two file-local
+   Jolt filters; the body-id overload composes the sensor rule with its ignored
+   body by *inheriting* `IgnoreSingleBodyFilter::ShouldCollide(BodyID)` rather
+   than replacing it, and an INVALID ignore id still skips sensors rather than
+   degrading to an unfiltered cast. The flag is read in the LOCKED callback, so
+   `SetIsSensor` takes effect on the very next cast.
+   **Every shipped caller is a line-of-sight/occlusion query** -- camera-arm
+   occlusion, AI sight cones, ground and step probes, editor picking -- and a
+   sensor is by definition a volume you walk through, so a sensor answering one
+   is always wrong. It shipped as one: Zenithmon's `HomeDoorTrigger` sat on the
+   doorway camera ray.
+   **No sensor-including overload is added.** A caller census found nothing that
+   wants trigger volumes back from an occlusion query; a future feature that
+   genuinely needs to probe triggers must request an explicitly named API rather
+   than silently re-broadening what every LOS query means.
+3. **The Home moves +40 m in Z, complete and unresized, and the terrain pad moves
+   with it.** The shell keeps its `(16, 6, 40)` scale and now occupies **z
+   476..516** with its entrance on the **-Z** face; the pad centre moves
+   `(384,456) -> (384,496)` with its radii, target height and pass count
+   unchanged. The Home dirt-path endpoint deliberately stays at `(384,456)` --
+   its radius overlaps the moved pad and it remains the forecourt connection.
+4. **All Home placement data is hoisted into one shared block.** Shell, both door
+   jambs, lintel, sensor, `FromHomeSpawn`, both drive waypoints, the authored
+   camera yaw and a ten-row MEASURED ground table now live in
+   `Source/World/ZM_DawnmerePlacement.h`, consumed by the tools authoring, the
+   boot units, the traversal test and the lighting probe alike.
+
+### Why the old placement was wrong, stated as the measurement
+
+The camera trails toward **-Z**. With the shell at z 436..476 and its entrance on
+the **+Z** face, standing at the doorway put the entire 16x40 m building behind
+the player. Measured on the committed scene before the move:
+`'HomeDoorTrigger' at (384.0, 476.0): the camera arm clamps to 1.0000 m of the
+authored 6.0008 m (needs >= 3.0004 m) -- blocked by the shell at 0.0000 m`. The
+pivot started INSIDE the shell, so the arm collapsed to its 1.0 m floor.
+
+### The clearance contract, and its coverage boundary
+
+Pivot = feet + 1.5; desired camera = feet + 3.9 and 5.5 m back; pivot->camera =
+**6.0008 m**; the clamped arm must keep **>= 3.0004 m**. Collision padding is a
+**longitudinal 0.20 m subtraction**, not a widened volume, so a solid hit before
+**~3.2004 m** violates the rule.
+`ZM_DawnmereCameraClearance_Test` enforces it at **308 named samples** against
+the real physics world. **That table is the boundary; it is not a proof about
+every standable point**, and it carries no NPC rings on purpose (a live NPC may
+legitimately occupy the ray, which would make a static-layout guard
+nondeterministic). New S8 areas must extend it as part of their authoring.
+
+### Tests, and the red evidence that came before the fixes
+
+Tests were written and run against the OLD behaviour first, in two stages.
+
+- **STAGE 1 -- no sensor fix, Home not moved: `2817 ran, 2807 passed, 8 failed`.**
+  Red: the four engine units
+  (`Physics::Raycast{SkipsSensorBodies,ReachesSolidBehindSensor,IgnoreBodyComposesWithSensorSkip,SensorToggleObservedLive}`),
+  both camera fixtures
+  (`ZM_OverworldCamera::{SensorVolumeDoesNotClampTheArm,SolidOccluderStillClampsBesideASensor}`)
+  and both placement units
+  (`ZM_Interaction::{HomeBlockoutSatisfiesCameraClearance,HomeApproachIsClearOfTheDriveCorridor}`).
+  Both new automated guards failed too.
+- **STAGE 2 -- sensor fix applied, Home still NOT moved: `2817 ran, 2813 passed,
+  2 failed`.** The six sensor/camera units went green; the two placement units
+  and the doorway clearance guard stayed red, which is exactly the split that
+  shows the sensor fix and the relocation are independent causes.
+- **THE CONTROL FLIPPED.** `ZM_DawnmereCameraClearance_Test` on the old scene:
+  **10 clearance violations + 11 malformed samples**, every violation naming
+  `DawnmereHomeShell`. After the move: **`violations=0 malformed=0 of 308
+  samples`**. A fail-then-fail would have proved nothing; the pair is the
+  evidence.
+- Final: **`2817 ran, 2815 passed, 0 failed, 2 skipped`**.
+
+### Two probe defects the work exposed, both fixed
+
+- **A down-ray that ends on a solid body is a DIFFERENT finding from one that
+  finds nothing**, and conflating them cost a 900-frame timeout blaming terrain
+  streaming for a column that was simply under a building. The probe now treats a
+  non-terrain hit as TERMINAL and names the body; only "no hit at all" waits.
+  Diagnosis went from **902 frames to 3**.
+- **The door jambs cannot be measured on their own columns.** The entrance plane
+  coincides with a shell face and each jamb straddles it, so two solid bodies
+  stand on the exact surface being measured, both with their undersides AT it --
+  no single-body ignore filter can see past the pair, and
+  `Zenith_TerrainComponent` exposes no height query that would bypass colliders
+  altogether. The door ground samples are taken **0.5 m out into the forecourt**.
+  **★ AND THE RESIDUAL IS UNMEASURED, WHICH IS NOT THE SAME AS SMALL.** This entry
+  first claimed the offset costs "~1 cm, two orders of magnitude inside the 0.15 m
+  tolerance"; that figure came from a gradient measured on a DIFFERENT stretch
+  (z 470->474 at x=384) and the arithmetic was wrong as well. The samples that
+  actually bracket the doorway disagree on the SIGN -- (384, 474) reads 26.29139
+  against door columns of 26.228/26.216 at z=475.5 (falling with +Z), while the
+  shell corners at z=476 (26.30190 at x=376, 26.17619 at x=392) interpolate ABOVE
+  those door samples (rising with +Z). Eroded terrain is not locally linear and
+  neither extrapolation is evidence. What IS bounded is the consequence: local
+  relief over half a metre here is a couple of centimetres, so the worst case is a
+  cm-scale gap or embed under a 3 m TRANSITIONAL greybox pier the player never
+  reaches (the warp sensor fires 2 m short). The oracle's own claim is unaffected
+  and exact: it verifies each compiled row against the ground at the column that
+  row NAMES. **The underlying engine gap is booked as Shortfalls E8**
+  (terrain height query, task_0515a49e); closing it is what would let these rows
+  be sampled on their own columns.
+
+### What re-measuring cost, and what it bought
+
+Moving the pad regenerated the WHOLE Dawnmere heightmap (the recipe's hydraulic
+erosion is region-wide, not pad-local), so every measured height moved. The six
+W5 NPC rows and both waypoints moved by **0.4 mm to 9.7 mm** -- far inside
+tolerance, i.e. nothing was broken -- and were repasted anyway, because the
+property that block maintains is that the constants EQUAL the measurement.
+**The town-centre anchor moved 4.8 mm (25.98577 -> 25.99055), and that re-bakes
+the committed `Dawnmere.znavmesh`**, a second tracked asset. The header's old
+"MUST NOT MOVE" note is superseded and rewritten: the cost is accepted and
+recorded rather than avoided by leaving a knowingly stale number in place.
+`ZM_NavmeshAsset_Test` passes on the re-baked mesh (373,412 bytes, unchanged
+size).
+
+### One test needed re-framing, and it caught itself
+
+`ZM_ShellLighting_Test` measures ambient on a sun-averted face against a sun-lit
+one. The shipped sun travels `(-0.410, -0.717, -0.564)`, so it comes FROM +X/+Z
+and lights the +X and +Z faces. Pointing the probe at the new **-Z** entrance
+gave it TWO averted faces and it correctly failed with `unlit/lit 1.0004 > 0.92
+-- ambient has drowned the sun key`. **The thresholds were not touched.** The
+faces are now named by their relation to the SUN rather than by axis, the X sign
+is derived from the live sun direction and the Z sign from the authored entrance,
+and the UNLIT sample is now the entrance face itself -- what a player at their own
+front door actually looks at. Observed: **unlit 0.1791, lit 0.4011, top 0.4640,
+unlit/lit 0.4464, blue/red 1.3629**, all inside the shipped bands.
+
+### Full observed gate
+
+- `Build\regen.ps1` green. Zenithmon `Vulkan_True` and `Null_True` both clean.
+- **Scene authoring is deterministic and the re-author is stable.** Two control
+  boots before the change re-authored `Dawnmere.zscen` to HEAD's exact bytes
+  (`7DDBD648...`) twice, which also resolved a 2-byte working-tree drift in rival
+  Vesper's authored quaternion as generated output from an earlier toolchain
+  state rather than user work. Boot **B** and boot **C** after the change both
+  produced scene `F403A489...` and navmesh `DCAA8403...` -- **identical**.
+- **The scene diff is exactly the intended set.** Same length (4,176 bytes), 38
+  differing bytes in 19 float slots: the six Home entities, plus the
+  town-centre-following heights (spawn marker, Player, six NPCs, two waypoints).
+  All ten new Home values present; all eight old values gone. No unrelated
+  authored entity moved.
+- Zenithmon: headless registry **53 passed / 0 failed**; full windowed Vulkan
+  **53 passed / 0 failed, ZERO skipped**; boot units **2817 ran / 2815 passed /
+  0 failed / 2 skipped**. `Games/Zenithmon/Assets` byte-stable across both
+  batches.
+- **Cross-game, owed because this is an engine raycast change:** Combat,
+  DevilsPlayground and RenderTest rebuilt on `Null_True` and re-gated at their
+  pre-change totals + 4 (1231 -> 1235, 1232 -> 1236, 1322 -> 1326).
+
+### A pre-existing red found on the way in
+
+`.github/workflows/zm-tests.yml` was pinned to **2804** while HEAD actually
+produced **2809**, so `zm-tests` was already failing on `master` before this
+change -- the pin was written for a commit that did not match. This commit sets
+it from the OBSERVED line, which fixes that forward as a side effect. Recording
+it so the fix is not mistaken for a baseline this change alone earned.
+
+### Reversibility
+
+Full. The sensor filters are two file-local classes and two call sites; deleting
+them restores the previous raycast semantics (and reds four engine units plus two
+camera fixtures). The Home placement is data in one header/`.cpp` pair -- restore
+the previous constants and the pad centre, then re-author from a windowed tools
+boot. Nothing was serialized, no schema moved, and no ECS order was taken.
+
 ## 2026-07-30 -- ZM-D-172 -- Scene-authored Sun geometry replaces global/imperative overrides; colour remains atmosphere-derived
 
 *(ENGINE change across EntityComponent, Flux graphics/IBL, editor automation, and two client

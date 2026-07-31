@@ -70,6 +70,14 @@ public:
 	bool IsCollisionConstrained() const { return m_bCollisionConstrained; }
 	Zenith_EntityID GetTargetEntityID() const { return m_xTargetEntityID; }
 
+	// The heading captured from the co-located Camera component at OnStart, which
+	// this camera then keeps for the whole scene. READ-ONLY on purpose: the fixed
+	// heading IS the shipped design, so there is deliberately no setter and no
+	// rotation input. It is exposed so the real-scene clearance guard can drive
+	// ComputeDesiredPosition with the yaw the SCENE authored rather than with a
+	// hard-coded 0 that a later scene edit could silently invalidate.
+	float GetAuthoredYaw() const { return m_fAuthoredYaw; }
+
 private:
 	static constexpr float fPIVOT_HEIGHT = 0.60f;
 	static constexpr float fCAMERA_HEIGHT = 3.0f;

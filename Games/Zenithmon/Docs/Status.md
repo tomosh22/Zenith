@@ -1,15 +1,37 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-07-31
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (RE-OBSERVED 2026-07-30 at ZM-D-172, on fresh builds of both
-configs):** ZM headless registry **51 passed / 0 failed**; full windowed
-Vulkan **51 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2759 ran / 2758 passed / 0
-failed / 1 skipped** (`zm-tests.yml` pinned to **2759**); engine boot unit gate,
-Null Combat, **1181 ran / 1180 passed / 0 failed / 1 skipped**
-(`run_unit_gate.ps1` default `-Baseline 1181`). The 1 skipped in each is the
-quarantined `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
+down this file (RE-OBSERVED 2026-07-31 at ZM-D-173, on fresh builds of both
+configs):** ZM headless registry **53 passed / 0 failed**; full windowed
+Vulkan **53 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2817 ran / 2815 passed / 0
+failed / 2 skipped** (`zm-tests.yml` pinned to **2817**); engine boot unit gate,
+Null Combat, **1235 ran / 1234 passed / 0 failed / 1 skipped**
+(`run_unit_gate.ps1` default `-Baseline 1235`). One skip in each is the
+quarantined `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d); ZM carries a
+second, ZM-side skip.
+
+**★★ AND THE NUMBER THIS FILE CARRIED BEFORE ZM-D-173 WAS WRONG IN A WAY THE
+'ALL THREE OR NONE' RULE BELOW DOES NOT CATCH.** A clean HEAD build measured
+immediately before that work reported **2809 ran, 2 skipped** -- while this
+block said 2759, `Shortfalls.md` said 2759, and `zm-tests.yml` was pinned to
+**2804**. So `zm-tests` was ALREADY RED on master, and the second skip had
+appeared with no document recording it. The rule assumes the three sites drift
+APART; here all three were stale together against the actual binary, which only
+a MEASUREMENT finds. **Measure the baseline on a clean build at the START of a
+session, before trusting any of the three.** ZM-D-173 set all of them from
+OBSERVED lines; only +8 of the move (2809 -> 2817) was earned by that change.
+
+**★ ZM-D-173 (2026-07-31) IS AN ENGINE CHANGE AND TOOK THE CROSS-GAME GATE.**
+Ordinary `Zenith_Physics::Raycast` calls now IGNORE SENSOR BODIES -- every shipped
+caller is a line-of-sight/occlusion query and a sensor is a volume you walk
+through -- so all four engine sensor units land in every game's boot total
+(+4 each: Combat 1231 -> 1235, DevilsPlayground 1232 -> 1236, RenderTest
+1322 -> 1326). It also RELOCATED Dawnmere's Home +40 m in Z with its terrain
+pad, so the entrance faces the -Z side the fixed-yaw camera trails into, and
+added two permanent automated guards (registry 51 -> 53). The scene and navmesh
+were re-authored and are hash-stable across two equivalent boots.
 **ZM-D-171 established registry 51 and baselines 2751/1173**: registry 50 -> 51 via
 `ZM_ShellLighting_Test`, while both boot baselines moved +9. **ZM-D-172 leaves the ZM registry at
 51 and moves only the boot baselines +8**, for the scene-Sun and IBL-regeneration units: 2751 ->

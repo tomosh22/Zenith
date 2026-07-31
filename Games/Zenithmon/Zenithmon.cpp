@@ -1405,7 +1405,10 @@ namespace
 	// waypoints need the capsule half-extent it derives and they are authored in a
 	// DIFFERENT function from the placement block below. Two copies of this literal
 	// is exactly how a half-extent and a body stop agreeing.
-	const Zenith_Maths::Vector3 g_xDawnmereHumanScale(0.8f, 1.8f, 0.8f);
+	const Zenith_Maths::Vector3 g_xDawnmereHumanScale(
+		fZM_DAWNMERE_HUMAN_SCALE_X,
+		fZM_DAWNMERE_HUMAN_SCALE_Y,
+		fZM_DAWNMERE_HUMAN_SCALE_Z);
 
 	// KNOWN-LIMIT W5. The authored CENTRE of one Dawnmere NPC: the shared anchor's
 	// XZ plus that NPC's OWN measured feet height, lifted by the capsule half-extent.
@@ -2229,28 +2232,45 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
 		xAuto.AddStep_AddComponent("ZM_PlayerController");
 
-		// Replaceable outdoor Home blockout. The shell's front face meets the
-		// sampled doorway at z=476; the sensor sits in front of that solid face
-		// so a returning player overlaps it before physical contact.
+		// Replaceable outdoor Home blockout. Every coordinate below comes from the
+		// shared ZM-D-173 block in Source/World/ZM_DawnmerePlacement.h -- the
+		// SAME data the boot units and the real-scene clearance guard read -- so
+		// "the camera fits behind the player at this doorway" is arithmetic a test
+		// runs rather than a claim this comment makes. Read that header before
+		// moving any of it: the entrance face, the sensor, the spawn marker and
+		// the traversal route are one interlocking placement, and the terrain pad
+		// in ZM_TerrainAuthoring.cpp moves with them.
+		const ZM_DawnmereBlockout xHomeShell = ZM_GetDawnmereHomeShell();
+		const ZM_DawnmereBlockout xHomeDoorLeft = ZM_GetDawnmereHomeDoorLeft();
+		const ZM_DawnmereBlockout xHomeDoorRight = ZM_GetDawnmereHomeDoorRight();
+		const ZM_DawnmereBlockout xHomeLintel = ZM_GetDawnmereHomeDoorLintel();
+		const ZM_DawnmereBlockout xHomeTrigger = ZM_GetDawnmereHomeDoorTrigger();
+		const Zenith_Maths::Vector3 xFromHomeSpawnFeet =
+			ZM_GetDawnmereFromHomeSpawnFeet();
 		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeShell",
-			{ 384.0f, 27.440985f, 456.0f }, { 16.0f, 6.0f, 40.0f });
+			xHomeShell.m_xCenter, xHomeShell.m_xScale);
 		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeDoorLeft",
-			{ 382.0f, 27.661484f, 476.0f }, { 1.0f, 3.0f, 0.5f });
+			xHomeDoorLeft.m_xCenter, xHomeDoorLeft.m_xScale);
 		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeDoorRight",
-			{ 386.0f, 27.661484f, 476.0f }, { 1.0f, 3.0f, 0.5f });
+			xHomeDoorRight.m_xCenter, xHomeDoorRight.m_xScale);
 		ZM_QueueGreyboxBlock(xAuto, "DawnmereHomeDoorLintel",
-			{ 384.0f, 29.411484f, 476.0f }, { 5.0f, 0.5f, 0.5f });
+			xHomeLintel.m_xCenter, xHomeLintel.m_xScale);
 
 		xAuto.AddStep_CreateEntity("FromHomeSpawn");
 		xAuto.AddStep_SetEntityTransient(false);
-		xAuto.AddStep_SetTransformPosition(384.0f, 26.590313f, 482.0f);
+		xAuto.AddStep_SetTransformPosition(
+			xFromHomeSpawnFeet.x, xFromHomeSpawnFeet.y, xFromHomeSpawnFeet.z);
 		xAuto.AddStep_AddComponent("ZM_SpawnPoint");
 		xAuto.AddStep_Custom(&ZM_ConfigureFromHomeSpawnPoint);
 
 		xAuto.AddStep_CreateEntity("HomeDoorTrigger");
 		xAuto.AddStep_SetEntityTransient(false);
-		xAuto.AddStep_SetTransformPosition(384.0f, 27.161484f, 476.0f);
-		xAuto.AddStep_SetTransformScale(3.0f, 2.0f, 2.0f);
+		xAuto.AddStep_SetTransformPosition(
+			xHomeTrigger.m_xCenter.x, xHomeTrigger.m_xCenter.y,
+			xHomeTrigger.m_xCenter.z);
+		xAuto.AddStep_SetTransformScale(
+			xHomeTrigger.m_xScale.x, xHomeTrigger.m_xScale.y,
+			xHomeTrigger.m_xScale.z);
 		xAuto.AddStep_AddCollider();
 		xAuto.AddStep_AddColliderShape(
 			COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
@@ -2302,24 +2322,32 @@ void Project_RegisterEditorAutomationSteps()
 		// (ZM_DawnmerePlayerCamera_Test already proves held-W moves the yaw-zero
 		// player +Z), so the walk needs no unproven basis assumption.
 		//
-		// ★★ THE OTHER TWO MUST STAY OFF z = 480. A solid STATIC AABB on that line
-		// WEDGES A DIFFERENT, ALREADY-GREEN TEST: ZM_PlayerHomeRoundTrip_Test drives
-		// the player from the TownCenter spawn (512, 480) to xDoorStaging
-		// (384, 0, 480) with DriveTowardXZ, which has NO obstacle avoidance -- |dz|
-		// is inside its 0.08 dead zone, so it holds ONLY 'A' and runs pure -X along
-		// z = 480. An NPC box there stops the capsule head-on (the 1.8 m body is far
-		// above the 0.40 m step assist), the staging tolerance is never met, and that
-		// test dies at its frame cap with a timeout that names distance, not the NPC.
-		// So both flank NPCs are pushed to z + 18, keeping 18 m of clearance from the
-		// Home corridor while staying 14 m off the x = 512 spawn-to-villager corridor
-		// and well clear of the Home shell (x 376..392, z 436..476).
+		// ★★ THE OTHER TWO MUST STAY OFF THE HOME DRIVE CORRIDOR. A solid STATIC
+		// AABB on it WEDGES A DIFFERENT, ALREADY-GREEN TEST:
+		// ZM_PlayerHomeRoundTrip_Test drives the player from the TownCenter spawn
+		// (512, 480) to the door staging waypoint with DriveTowardXZ, which has NO
+		// obstacle avoidance. An NPC box on that line stops the capsule head-on
+		// (the 1.8 m body is far above the 0.40 m step assist), the staging
+		// tolerance is never met, and that test dies at its frame cap with a
+		// timeout that names distance, not the NPC.
+		// ★ ZM-D-173 CHANGED THAT CORRIDOR'S SHAPE. It used to be pure -X along
+		// z = 480 (|dz| inside DriveTowardXZ's 0.08 dead zone, so only 'A' was
+		// held); with the Home relocated the staging waypoint is
+		// ZM_GetDawnmereHomeDoorStagingXZ() -- currently (384, 470) -- so the leg is
+		// a shallow diagonal that drops 10 m in Z across 128 m in X. Anything
+		// between z = 470 and z = 480 on that run is now in the way, which the two
+		// flank NPCs at z + 18 still clear by 18 m.
+		// So both flank NPCs are pushed to z + 18, keeping 18 m of clearance from
+		// the Home corridor while staying 14 m off the x = 512 spawn-to-villager
+		// corridor and well clear of the Home shell (x 376..392, z 476..516).
 		// A scene-placement change can regress a suite it never mentions -- check the
 		// existing traversal routes before moving anything in this block.
 		//
 		const Zenith_Maths::Vector3 xNpcScale = xPlayerScale;
 		const Zenith_Maths::Vector3 xVillagerCenter = ZM_DawnmereNpcAuthoredCenter(
 			ZM_DAWNMERE_NPC_VILLAGER, fPlayerCapsuleHalfExtent);
-		// z + 18 keeps both off the z = 480 Home-traversal corridor (see above).
+		// z + 18 keeps both off the Home-traversal corridor, which since ZM-D-173
+		// runs from (512, 480) down to the door staging waypoint at (384, 470).
 		// Separations against the 2.9 m effective reach (2.5 global + 0.4 authored):
 		//   villager <-> clerk      = sqrt(14^2 + 8^2) = 16.1 m
 		//   villager <-> caretaker  = sqrt(14^2 + 8^2) = 16.1 m
@@ -2346,7 +2374,7 @@ void Project_RegisterEditorAutomationSteps()
 		// rather than a road-blocker. The position itself is derived under exactly the
 		// constraints stated above, NOT eyeballed:
 		//   * z + 18 is the SAME clearance the two flank NPCs use, so the warden is
-		//     18 m off the z = 480 Home traversal corridor that
+		//     18 m off the Home traversal corridor (z 470..480 since ZM-D-173) that
 		//     ZM_PlayerHomeRoundTrip_Test drives blind along. Anything nearer would
 		//     re-open the wedging hazard the block above is written to prevent.
 		//   * x - 34 keeps it 34 m off the x = 512 spawn-to-villager corridor.
@@ -2358,9 +2386,12 @@ void Project_RegisterEditorAutomationSteps()
 		//     wanderer patrol (540, 476..484) = 63.6 m at its nearest endpoint;
 		//     TownCenter spawn = sqrt(34^2 + 18^2) = 38.5 m, so the warden is not
 		//     reachable from spawn and the existing out-of-range negative stays clean.
-		//   * The Home shell (x 376..392, z 436..476) lies WEST OF the warden, who
-		//     stands at (478, 498): its east face (x = 392) is 86 m west of him, and
-		//     its north face (z = 476) 22 m south. No overlap on either axis.
+		//   * The Home shell (x 376..392, z 476..516 since ZM-D-173) lies WEST OF the
+		//     warden, who stands at (478, 498): its east face (x = 392) is 86 m west
+		//     of him. That single axis is the whole clearance now -- the relocated
+		//     shell's Z span DOES straddle z = 498, so the old "and 22 m south"
+		//     half of this claim is gone. 86 m on X is separation enough; do not
+		//     re-derive it from Z.
 		// Height is his OWN measured feet plus the shared capsule half-extent, like
 		// every other NPC since known-limit W5 -- see the block above.
 		// ★ When a later stage authors a real Route 1, a warden who is meant to BLOCK
@@ -2373,7 +2404,7 @@ void Project_RegisterEditorAutomationSteps()
 		ZM_QueueDawnmereNpc(xAuto, "Npc_Warden",
 			xRouteWardenCenter, xNpcScale, &ZM_ConfigureRouteWardenNpc);
 		// SC8: the fourth row is a deterministic two-point patrol. Both endpoints are
-		// 28 m east of the TownCenter spawn and outside the z=480 Home corridor's
+		// 28 m east of the TownCenter spawn and outside the Home corridor's
 		// x<=512 run; the nearest stationary NPC (the clerk) remains >19 m away.
 		// Its resting centre would put this capsule ON the local surface, which is
 		// higher than the town centre; ONE EXTRA capsule half-extent of clearance

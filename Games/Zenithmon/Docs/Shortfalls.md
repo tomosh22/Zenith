@@ -26,16 +26,21 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   traversable Dawnmere + live PlayerHome door round trip; S4's five procedural asset generators +
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
-- **★ CURRENT VERIFIED BASELINE (re-observed 2026-07-30 at ZM-D-172, every figure off an
-  OBSERVED line):** ZM headless registry **51 passed / 0 failed**; full windowed Vulkan
-  **51 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2759 ran / 2758 passed / 0 failed /
-  1 skipped** (`zm-tests.yml` pinned to **2759**); engine boot gate **1181 / 1180 / 0 / 1**
-  (`run_unit_gate.ps1` default `-Baseline 1181`). ZM-D-171 moved the registry 50 -> 51 via
-  `ZM_ShellLighting_Test` and moved both boot-unit baselines +9 to 2751/1173. ZM-D-172 leaves the
-  registry at 51 and moves both boot-unit baselines +8 for scene-Sun and IBL-regeneration units,
-  to 2759/1181; every pinned site moved from an OBSERVED line in the same commit. The single skip
-  in each is the quarantined
-  `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d).
+- **★ CURRENT VERIFIED BASELINE (re-observed 2026-07-31 at ZM-D-173, every figure off an
+  OBSERVED line):** ZM headless registry **53 passed / 0 failed**; full windowed Vulkan
+  **53 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2817 ran / 2815 passed / 0 failed /
+  2 skipped** (`zm-tests.yml` pinned to **2817**); engine boot gate **1235 / 1234 / 0 / 1**
+  (`run_unit_gate.ps1` default `-Baseline 1235`). ZM-D-173 moved the registry 51 -> 53
+  (`ZM_DawnmereHomeGroundTruth_Test` + `ZM_DawnmereCameraClearance_Test`) and both boot-unit
+  baselines +8 -- four ENGINE sensor-raycast units, which every game inherits, plus two camera
+  fixtures and two Home-placement units.
+  **★ AND THE PRE-CHANGE ZM FIGURE WAS NOT WHAT ANY DOCUMENT SAID.** Measured on a clean
+  HEAD build immediately before this work: **2809 ran, 2 skipped** -- while this bullet said
+  2759, `Status.md` said 2759 and `zm-tests.yml` was pinned to **2804**. The workflow pin was
+  therefore already RED on master, and the second skip had appeared unrecorded. Both are fixed
+  forward here from OBSERVED lines; neither was earned by this change.
+  The skips are the quarantined
+  `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d) plus one ZM-side skip.
   **Every "36 tests / 2392 units" figure elsewhere in this document is stale by construction --
   trust this line.** ★ This bullet previously read 2731 while `Status.md` read 2722 and the
   workflow was pinned to 2742: **three files, three different baselines, all stated as fact.**
@@ -199,6 +204,18 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
    - **No camera cut.** `ZM_FollowCamera::OnLateUpdate` OWNS and overwrites the camera
      every frame and there is no override stack. A cinematic cut needs camera-ownership
      arbitration -- a real engine/game-camera feature, not a polish item.
+   - **★ THE FIXED HEADING IS THE SHIPPED DESIGN, NOT A SHORTFALL (ZM-D-173).** The camera
+     keeps the yaw its scene authored and resolves occlusion by raycasting pivot -> desired
+     position. What WAS a defect is fixed: ordinary engine raycasts used to report SENSOR
+     bodies, so Dawnmere's `HomeDoorTrigger` collapsed the arm at the door it exists to
+     open, and the Home shell sat entirely on the camera side of that doorway. Both are
+     closed, and the contract is now enforced on the real physics world by
+     `ZM_DawnmereCameraClearance_Test` -- the clamped arm must keep >= 50% of the authored
+     6.0008 m pivot->camera distance at **308 named samples** (measured: violations=0,
+     malformed=0). **That sample table is the enforceable boundary, not a proof about every
+     standable point in Dawnmere**, and it deliberately carries no rings around NPCs, since a
+     live NPC may legitimately occupy the ray. New S8 areas must extend it as part of their
+     authoring.
    - **No approach walk.** Vesper is authored stationary with an OBB collider (ZM-D-156:
      an AABB destroys his authored yaw). Moving him correctly needs dynamic-capsule/nav
      ownership, avoidance, and freeze coordination with the order-110/111/112/113 seam.
@@ -428,7 +445,7 @@ Current automated coverage is **36 registered automated tests** (`zenith test Ze
 
 ---
 
-## 2. Known engine gaps being tracked (E1-E7)
+## 2. Known engine gaps being tracked (E1-E8)
 
 All additive + back-compatible; each lands with unit tests + a RenderTest boot regression check. Sizes and rationale from the approved plan.
 
@@ -441,6 +458,7 @@ All additive + back-compatible; each lands with unit tests + a RenderTest boot r
 | E5 | **RESOLVED 2026-07-16 (ZM-D-092):** `Flux_GrassImpl::Reset()` widened to a full `ClearSceneData()` (instances/flags/density map/chunks/counters) + wired into the SINGLE-load render-reset hook; +3 engine units | Leakage would put tall grass inside gyms and interiors | S5 |
 | E7 | **DEFERRED future work -- navmesh OPTION B (ZM-D-145).** A RUNTIME-GENERATED overworld nav path: (a) build the navmesh on scene load from the terrain **COLLISION** mesh -- physics is live headless (ZM-D-127), so this sidesteps the render-side Q-2026-07-21-001 GPU-culling assert that blocks harvesting the live *render* terrain; (b) **TILING** so `Zenith_NavMeshGenerator`'s single-grid `iMaxDim=1024` clamp stops bounding resolution over a large domain (finer than ~1 m over 1024 m) -- this is exactly what UE (Recast `NavMeshBoundsVolume`) and Unity (`NavMeshSurface`, Terrain as a native source) ship for terrain worlds; plus (c) actual agent routing/local avoidance. Closely related to E6 (the fixed-4096 m grid). **Zenithmon does NOT need this now:** S7 trainers use straight-line approach (genre-authentic), and persistence **SHIPPED** via option C (committed disk-baked `.znavmesh` + the reusable engine bake/load feature, ZM-D-147/SC1b), which needs none of B. Lands as its own explicitly-gated ENGINE sub-commit (ZenithAI/terrain, owing the full engine-unit + RenderTest-regression + cross-game sweep) when populated-world NPC pathing/obstacle-avoidance actually needs it. | Roaming/obstacle-avoiding overworld NPC navigation in populated towns (beyond scripted straight-line trainers) | S9/S10 (or post-ship) |
 | E6 | **DEFERRED, post-Zenithmon TODO.** Terrain world-space extent is a global compile-time constant (`Flux_TerrainConfig::CHUNK_GRID_SIZE`/`CHUNK_SIZE_WORLD`/`TERRAIN_SIZE`, `Flux_TerrainConfig.h:27-36`) -- every terrain is a fixed 4096x4096 m grid; density is likewise a fixed constant (`fLowLODDensity`, `Zenith_TerrainComponent.cpp:493`), not a per-instance field. E2's rect export only crops that same fixed grid, it does not resize it, so a tiny route and a large city are forced to the same world-space size today. Fix requires the grid constants to become per-instance serialized fields + dynamic GPU/CPU buffers in the streaming manager + a decoupled density field -- explicitly out of scope for Zenithmon per the E2 rationale ("compile-time constants pervade streaming/grass"). **Keep in mind on every terrain-touching task through the rest of development -- do not build content-side workarounds assuming this changes mid-project.** Revisit as a dedicated engine initiative after Zenithmon ships. | Post-S12 |
+| E8 | **DEFERRED, booked 2026-08-01 (ZM-D-173), task_0515a49e.** **`Zenith_TerrainComponent` exposes no ground-height query** -- there is no `GetHeightAt(x, z)` of any name on its public surface (verified: the surface is all render/culling/material/asset-set accessors plus `HasPhysicsGeometry`/`GetPhysicsMeshGeometry`), so the ONLY way to ask where the ground is, is a physics raycast. That answers a materially different question -- *what is the first BODY below this point* -- and the difference is not filterable: **(a)** `Zenith_Physics::Raycast` / `Zenith_PhysicsQuery::RaycastIgnoring` take exactly ONE ignore entity, so two overlapping bodies over a column are unmeasurable; **(b)** restarting the ray below a hit does not rescue it, because anything STANDING on the ground has its underside AT the surface and anything deliberately embedded (the Home shell sinks 0.05 m so no visible gap opens) has it BELOW the surface; **(c)** it needs the terrain physics body STREAMED IN, so it is frame-dependent and unusable at authoring time -- the editor add path uses the deserialization ctor and never calls `LoadCombinedPhysicsGeometry`, so an authoring-time cast MISSES. **Two tiers:** TIER 1 serves the query from `GetPhysicsMeshGeometry()` as a triangle lookup (no Jolt, no body filtering -- removes the occlusion problem, still needs streaming); TIER 2 keeps or loads the heightfield (**note the runtime component holds NO height data** -- it loads baked mesh chunks, and `Terrain/<Set>/Height.ztxtr` is read only by the TOOLS editor path) and would make the query work at AUTHORING time. Lands as its own explicitly-gated ENGINE sub-commit (EntityComponent/terrain, owing the engine-unit + cross-game sweep). | **Bitten today:** ZM-D-173's Home door jambs sit on the shell's own face, so two solid bodies stand over each jamb's column; their authored heights are derived from ground sampled 0.5 m away and the residual is bounded by local relief but genuinely UNMEASURED, because the column that would measure it is the one that cannot be probed. TIER 2 would additionally retire the measure-once-freeze-as-a-constant workflow that `Source/World/ZM_DawnmerePlacement.h` (W5 + ZM-D-173) is built around. | Post-S12 (TIER 2); TIER 1 whenever a blockout a player can walk up to needs its own column measured |
 
 ---
 

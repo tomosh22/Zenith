@@ -52,12 +52,18 @@ pattern), active from S0. Required check name: **`zm-tests`**.
      (`if: always()` -- results survive red runs).
 
 **Unit-test baseline ratchet:** step 8's `-Baseline` is the exact registered
-unit-test count of `zenithmon.exe`: the **combined engine + Zenithmon** suite.
-At S7 item 1 SC2 it is **2392**: 2391 passed, 0 failed, and 1 quarantined
-`GraphComponent::RegistryWideNodeRoundTrip` skip. This is deliberately distinct
-from the **1103 engine-only reference** owned by `engine-gate` and the default
-engine gate invocation of `Tools/run_unit_gate.ps1`; the two values are not
-interchangeable. Every commit that changes the `ZM_*` count -- and any engine
+unit-test count of `zenithmon.exe`: the **combined engine + Zenithmon** suite. It is
+deliberately distinct from the **engine-only reference** owned by `engine-gate` and
+the default invocation of `Tools/run_unit_gate.ps1`; the two are not interchangeable.
+
+**The live values are the pins themselves** -- the `-Baseline` in
+`.github/workflows/zm-tests.yml` and the `$Baseline` default in
+`Tools/run_unit_gate.ps1` -- with `Status.md`'s CURRENT BASELINE block as the
+human-readable record. **This document deliberately quotes neither.** It used to
+state 2392 and 1103 as though current; those were the S7 item 1 SC2 figures of
+2026-07-21 and were ~425 and ~130 behind by 2026-08-01 (found during ZM-D-173). A
+policy document that restates a number which moves every commit just becomes a
+third disagreeing source -- the exact failure this ratchet exists to prevent. Every commit that changes the `ZM_*` count -- and any engine
 change that changes the registrations visible in the game executable -- bumps
 the explicit `zm-tests.yml` number in the same commit. This mirrors
 engine-gate's exact-count discipline and guards against unit tests silently
@@ -134,7 +140,7 @@ gate.
 | `complexity.yml` (`complexity-gate`) | Engine-wide complexity-ceiling ratchet (analyze_code_complexity.py thresholds). |
 | `layering-gate.yml` (`layering-gate`) | Architecture ratchet: layer-DAG direction, ECS-leaf purity, encapsulation + convention lints. |
 | `memory-gate.yml` (`memory-gate`) | Memory-budget ratchet: committed baseline JSON validation, no build needed. |
-| `engine-gate.yml` (`engine-gate`) | Engine-only proofs: Sentinel leaf-purity links (SentinelECS/Physics/AI) + the engine-only boot-unit reference, currently 1103. This is separate from `zm-tests`'s 2392-test combined engine + Zenithmon executable gate. |
+| `engine-gate.yml` (`engine-gate`) | Engine-only proofs: Sentinel leaf-purity links (SentinelECS/Physics/AI) + the engine-only boot-unit reference. Separate from `zm-tests`'s combined engine + Zenithmon executable gate; the two counts are never interchangeable. **Neither number is restated here** -- read them from the pins (`Tools/run_unit_gate.ps1` default, `zm-tests.yml`'s `-Baseline`) or `Status.md`. |
 | `shader-validation.yml` (`shader-validation`) | Shader catalog validity + feature parity; fails if running FluxCompiler dirties the generated tree. |
 | `doc-lint.yml` (`doc-lint`) | Cross-document consistency lint (currently DP-scoped docs via Tools/doc_lint.ps1). |
 | `scaffold-smoke.yml` (`scaffold-smoke`) | Path-filtered proof that `zenith new` still produces a game that builds + boots; non-required burn-in. |

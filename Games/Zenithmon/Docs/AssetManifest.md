@@ -385,21 +385,71 @@ or dressed scenes.
   cleared all Dawnmere grass state.
 - **Scene-owned traversal pair + feet marker:** the ignored `Dawnmere.zscen`
   authors `TownCenterSpawn` with order-105 `ZM_SpawnPoint`, tag `TownCenter`,
-  and transform **(512, 25.98577, 480)**. Spawn-marker transforms denote feet,
+  and transform **(512, 25.99055, 480)**. Spawn-marker transforms denote feet,
   not capsule centres. It also authors a `Player` at the scale-derived centre
-  **(512, 26.88577, 480)** with transform scale
+  **(512, 26.89055, 480)** with transform scale
   **(0.8, 1.8, 0.8)**, a dynamic generic capsule, and order-102
   `ZM_PlayerController`; its main camera carries order-103 `ZM_FollowCamera`
   with authored yaw 0. The exact surface sample plus the 0.9 m capsule
   half-extent produces that centre. A SINGLE reload replaces the scene-owned
   Player/camera while the persistent manager places and re-enables the new
-  generation at the marker. Dawnmere now additionally authors a replaceable
-  greybox home shell at `(384,27.440985,456)`, a `FromHome` feet marker at
-  **(384,26.590313,482)**, and the live `HomeDoorTrigger` at
-  `(384,27.161484,476)` targeting **build 40 / `Door`**. The order-107
+  generation at the marker. The order-107
   `ZM_GreyboxVisual` marker rebuilds unit-cube visuals at runtime; these
   transitional blocks create no baked model/material files and are explicitly
   replaced by the S4 art pipeline without changing collision or traversal.
+
+### The Dawnmere Home, its entrance and its approach (ZM-D-173)
+
+Every coordinate below is authored from ONE place --
+`Source/World/ZM_DawnmerePlacement.h`'s ZM-D-173 block -- which the boot units
+and both real-scene guards read as well. All Y values are DERIVED by fixed
+formulas from ground heights MEASURED on the baked heightfield by
+`ZM_DawnmereHomeGroundTruth_Test`; none is hand-tuned.
+
+| Entity | Authored transform | Scale | Notes |
+|---|---|---|---|
+| `DawnmereHomeShell` | **(384, 29.126190, 496)** | (16, 6, 40) | occupies **z 476..516**; Y = lowest of four measured footprint corners (26.17619) + 3.0 - 0.05 embed |
+| `DawnmereHomeDoorLeft` | **(382, 27.728149, 476)** | (1, 3, 0.5) | own measured ground 26.22815 + 1.5 |
+| `DawnmereHomeDoorRight` | **(386, 27.716360, 476)** | (1, 3, 0.5) | own measured ground 26.21636 + 1.5 |
+| `DawnmereHomeDoorLintel` | **(384, 29.478149, 476)** | (5, 0.5, 0.5) | higher door ground + 3.25 |
+| `HomeDoorTrigger` | **(384, 27.291389, 474)** | (3, 2, 2) | sensor, occupies **z 473..475**; measured ground 26.29139 + 1.0; targets **build 40 / `Door`** |
+| `FromHomeSpawn` | **(384, 26.076151, 468)** | -- | FEET marker, the measured surface verbatim |
+
+The entrance decoration plane is **z = 476**, which is the shell's **-Z** face.
+Before ZM-D-173 the shell sat at z 436..476 with its entrance on the **+Z** face,
+which put the whole building behind the player at the doorway.
+
+#### Camera-arm clearance contract (binding)
+
+The overworld camera keeps the yaw captured from the scene (**0** for Dawnmere)
+and resolves occlusion by raycasting from the player pivot to the desired camera
+position. At that yaw, for a player standing on ground at height `feet`:
+
+| Quantity | Value |
+|---|---|
+| player capsule centre | `feet + 0.9` (scale-derived half-extent) |
+| camera pivot | centre + 0.6 = **`feet + 1.5`** |
+| desired camera | centre + 3.0 vertically = **`feet + 3.9`**, and 5.5 m behind the authored forward |
+| pivot -> camera distance | `sqrt(5.5^2 + 2.4^2)` = **6.0008 m** |
+| **required clamped arm** | **>= 50% of that = 3.0004 m** |
+
+**Collision padding is a LONGITUDINAL 0.20 m subtraction off the hit distance,
+not a widened collision volume.** A solid hit before **~3.2004 m** therefore
+violates the rule. `ZM_FollowCamera::ClampArmDistance` is the authority; the
+tests call it rather than restating it.
+
+**What enforces it, and how far that reaches.**
+`ZM_DawnmereCameraClearance_Test` runs the shipped camera maths against the real
+committed Dawnmere physics world at an authoritative sample table -- **308
+samples** as of ZM-D-173: the town-centre -> door-staging drive at 1 m, the
+staging -> trigger approach at 0.25 m, both segments of the Home dirt path
+`(512,512) -> (454,486) -> (384,456)` at 1 m, and 1.5 m rings around
+`FromHomeSpawn` and TownCenter. **That table is the enforceable boundary. It does
+NOT prove every mathematically standable point in Dawnmere**, and it carries no
+rings around NPCs on purpose -- a live NPC can legitimately occupy the camera ray
+and would make a static-layout guard nondeterministic. **A newly authored region
+must add its own critical routes and actor-free interaction approaches to that
+table as part of authoring it.**
 
 The complete ZM-D-054 measurement registry is workspace-local and ignored:
 

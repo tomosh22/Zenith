@@ -264,6 +264,14 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipeIdentityAndBounds)
 	ZENITH_ASSERT_EQ(xRecipe.m_uPadCount, 4u);
 	AssertPoint2(xRecipe.m_pxPads[0].m_xCentre, 512.0f, 512.0f);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[0].m_fFlattenRadius, 60.0f, fEPSILON);
+	// ZM-D-173: the Home pad moved +40 m in Z with the shell. Its radii, target
+	// height and pass count did NOT move -- pinning all four here is what stops a
+	// "just nudge the pad" edit from silently re-levelling the forecourt.
+	ZENITH_ASSERT_STREQ(xRecipe.m_pxPads[1].m_szName, "Home");
+	AssertPoint2(xRecipe.m_pxPads[1].m_xCentre, 384.0f, 496.0f);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[1].m_fFlattenRadius, 36.0f, fEPSILON);
+	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[1].m_fDirtRadius, 26.0f, fEPSILON);
+	ZENITH_ASSERT_EQ(xRecipe.m_pxPads[1].m_uDirtPassCount, 4u);
 	ZENITH_ASSERT_EQ_FLOAT(xRecipe.m_pxPads[3].m_fFlattenRadius, 30.0f, fEPSILON);
 	ZENITH_ASSERT_EQ(xRecipe.m_pxPads[3].m_uDirtPassCount, 0u);
 
@@ -292,6 +300,13 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereRecipeIdentityAndBounds)
 	ZENITH_ASSERT_EQ(xRecipe.m_uLandmarkCount, 10u);
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxLandmarks[0].m_szName, "TownCenter");
 	AssertPoint3(xRecipe.m_pxLandmarks[0].m_xPosition, 512.0f, 24.0f, 480.0f);
+	// ZM-D-173: both Home landmarks moved with the relocated shell and its return
+	// spawn. Y stays 24 -- recipe metadata at the nominal target height, never a
+	// measured surface, which is why it does NOT track the placement table.
+	ZENITH_ASSERT_STREQ(xRecipe.m_pxLandmarks[2].m_szName, "Home");
+	AssertPoint3(xRecipe.m_pxLandmarks[2].m_xPosition, 384.0f, 24.0f, 496.0f);
+	ZENITH_ASSERT_STREQ(xRecipe.m_pxLandmarks[3].m_szName, "FromHome");
+	AssertPoint3(xRecipe.m_pxLandmarks[3].m_xPosition, 384.0f, 24.0f, 468.0f);
 	ZENITH_ASSERT_STREQ(xRecipe.m_pxLandmarks[6].m_szName, "FromRoute1");
 	AssertPoint3(xRecipe.m_pxLandmarks[6].m_xPosition, 512.0f, 24.0f, 864.0f);
 	AssertPoint3(xRecipe.m_pxLandmarks[9].m_xPosition, 462.0f, 24.0f, 548.0f);

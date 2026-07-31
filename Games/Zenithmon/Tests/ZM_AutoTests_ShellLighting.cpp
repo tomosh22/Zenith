@@ -47,6 +47,7 @@
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+#include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"   // ZM-D-173: the shell-relative framing
 
 #include <cmath>
 #include <cstdio>
@@ -81,14 +82,36 @@ namespace
 
 	const char* szSL_SHELL_ENTITY = "DawnmereHomeShell";
 
+	// ★ THE FACES ARE NAMED BY THEIR RELATIONSHIP TO THE SUN, NOT BY AN AXIS.
+	// ZM-D-173 moved the Home's entrance from the +Z face to the -Z face, and the
+	// shipped sun travels (-0.41, -0.72, -0.56) -- i.e. it comes FROM +X/+Y/+Z, so
+	// it lights the +X and +Z faces and averts the -X and -Z ones. The old framing
+	// happened to pair an unlit -X face with a lit +Z face; naming them by axis
+	// made that coincidence look like a rule, and re-pointing the camera at the new
+	// entrance produced TWO sun-averted faces and an unlit/lit ratio of 1.0004.
+	// Which axis is lit is now DERIVED from the live sun direction below.
 	enum SLFace : u_int
 	{
-		SL_FACE_UNLIT_X,
-		SL_FACE_LIT_Z,
+		SL_FACE_UNLIT,
+		SL_FACE_LIT,
 		SL_FACE_TOP,
 		SL_FACE_COUNT
 	};
-	const char* g_aszSLFaceNames[SL_FACE_COUNT] = { "UNLIT-X", "LIT+Z", "TOP" };
+	const char* g_aszSLFaceNames[SL_FACE_COUNT] = { "UNLIT", "LIT", "TOP" };
+
+	// +1 when the sun lights the shell's +X face, -1 when it lights the -X face.
+	// The sun TRAVELS along GetSunDir(), so it arrives from the opposite side.
+	float SLLitXSign()
+	{
+		const Zenith_Maths::Vector3 xSunDir = g_xEngine.FluxGraphics().GetSunDir();
+		return xSunDir.x < 0.0f ? 1.0f : -1.0f;
+	}
+
+	// -1 when the entrance is the shell's MIN-Z face, +1 when it is the MAX-Z face.
+	float SLEntranceZSign(float fShellCentreZ)
+	{
+		return fZM_DAWNMERE_HOME_ENTRANCE_Z < fShellCentreZ ? -1.0f : 1.0f;
+	}
 
 	bool g_bSLSceneLoaded = false;
 	bool g_bSLFailed = false;
@@ -176,15 +199,26 @@ namespace
 		pxTransform->GetScale(xScale);
 		const Zenith_Maths::Vector3 xHalf = xScale * 0.5f;
 
-		// The camera sits south-west of and above the shell (see Setup), so the
-		// visible portions are: the -X face's southern half, the +Z face's
-		// western half, and the top's south-west quadrant.
-		g_axSLFaceWorld[SL_FACE_UNLIT_X] = Zenith_Maths::Vector3(
-			xPos.x - xHalf.x, xPos.y, xPos.z + xHalf.z * 0.5f);
-		g_axSLFaceWorld[SL_FACE_LIT_Z] = Zenith_Maths::Vector3(
-			xPos.x - xHalf.x * 0.5f, xPos.y, xPos.z + xHalf.z);
+		// The camera sits on the SUN-LIT X side and on the ENTRANCE side in Z (see
+		// Setup), so one frame holds a sun-lit vertical face, a sun-averted one and
+		// the top. Both signs are DERIVED -- from the live sun and from the authored
+		// entrance -- so neither the ZM-D-173 relocation nor a future sun change can
+		// leave this probe sampling a face the camera cannot see, or two faces on
+		// the same side of the terminator.
+		//
+		// UNLIT is the ENTRANCE face, which is the one that matters: it is what a
+		// player walking up to their own front door actually looks at.
+		const float fEntranceSign = SLEntranceZSign(xPos.z);
+		const float fLitXSign = SLLitXSign();
+		g_axSLFaceWorld[SL_FACE_UNLIT] = Zenith_Maths::Vector3(
+			xPos.x + xHalf.x * 0.5f * fLitXSign, xPos.y,
+			xPos.z + xHalf.z * fEntranceSign);
+		g_axSLFaceWorld[SL_FACE_LIT] = Zenith_Maths::Vector3(
+			xPos.x + xHalf.x * fLitXSign, xPos.y,
+			xPos.z + xHalf.z * 0.5f * fEntranceSign);
 		g_axSLFaceWorld[SL_FACE_TOP] = Zenith_Maths::Vector3(
-			xPos.x - xHalf.x * 0.5f, xPos.y + xHalf.y, xPos.z + xHalf.z * 0.5f);
+			xPos.x + xHalf.x * 0.5f * fLitXSign, xPos.y + xHalf.y,
+			xPos.z + xHalf.z * 0.5f * fEntranceSign);
 
 		g_bSLShellResolved = true;
 		return true;
@@ -394,12 +428,29 @@ static void Setup_ZMShellLighting()
 	}
 	g_bSLSceneLoaded = true;
 
-	// Camera: south-west of the shell and above, so ONE frame holds the
-	// sun-averted -X face (left), the sun-facing +Z face (right), and the top.
+	// Camera: off the shell's SUN-LIT X side and above, so ONE frame holds the
+	// sun-averted ENTRANCE face, the sun-lit X face, and the top.
 	// The aim is computed from the direction (GetFacingDir convention:
 	// pitch = asin(dir.y), yaw = atan2(-dir.x, dir.z)).
-	const Zenith_Maths::Vector3 xCameraPos(356.0f, 45.0f, 496.0f);
-	const Zenith_Maths::Vector3 xLookTarget(384.0f, 27.0f, 460.0f);
+	//
+	// ★ ZM-D-173: BOTH POINTS ARE NOW SHELL-RELATIVE, AND BOTH SIGNS ARE DERIVED.
+	// The framing distances are the ones this probe shipped with -- camera
+	// (+/-28, +17.56, +/-40), target (0, -0.44, +/-4) from the shell centre. The Z
+	// sign follows the ENTRANCE (which moved from the +Z face to the -Z face when
+	// the Home was relocated) and the X sign follows the SUN, so the frame always
+	// contains one lit and one averted vertical face. Deriving from
+	// ZM_GetDawnmereHomeShell() rather than restating absolutes is what stops the
+	// next Home move from silently pointing this camera at the back of the
+	// building and re-measuring a different face.
+	const ZM_DawnmereBlockout xShellPlacement = ZM_GetDawnmereHomeShell();
+	const float fSLEntranceSign = SLEntranceZSign(xShellPlacement.m_xCenter.z);
+	const float fSLLitXSign = SLLitXSign();
+	const Zenith_Maths::Vector3 xCameraPos = xShellPlacement.m_xCenter
+		+ Zenith_Maths::Vector3(
+			28.0f * fSLLitXSign, 17.559015f, 40.0f * fSLEntranceSign);
+	const Zenith_Maths::Vector3 xLookTarget = xShellPlacement.m_xCenter
+		+ Zenith_Maths::Vector3(
+			0.0f, -0.440985f, 4.0f * fSLEntranceSign);
 	const Zenith_Maths::Vector3 xDir = glm::normalize(xLookTarget - xCameraPos);
 
 	Zenith_Entity xCamera =
@@ -510,15 +561,15 @@ static bool Verify_ZMShellLighting()
 				SLLuminance(axFaceRGB[u]), fPixelX, fPixelY);
 		}
 
-		if (abSampled[SL_FACE_UNLIT_X] && abSampled[SL_FACE_LIT_Z]
+		if (abSampled[SL_FACE_UNLIT] && abSampled[SL_FACE_LIT]
 			&& abSampled[SL_FACE_TOP])
 		{
-			const float fUnlit = SLLuminance(axFaceRGB[SL_FACE_UNLIT_X]);
-			const float fLit = SLLuminance(axFaceRGB[SL_FACE_LIT_Z]);
+			const float fUnlit = SLLuminance(axFaceRGB[SL_FACE_UNLIT]);
+			const float fLit = SLLuminance(axFaceRGB[SL_FACE_LIT]);
 			const float fTop = SLLuminance(axFaceRGB[SL_FACE_TOP]);
 			const float fRatio = fUnlit / glm::max(fLit, 1.0e-4f);
-			const float fBlueOverRed = axFaceRGB[SL_FACE_UNLIT_X].z
-				/ glm::max(axFaceRGB[SL_FACE_UNLIT_X].x, 1.0e-4f);
+			const float fBlueOverRed = axFaceRGB[SL_FACE_UNLIT].z
+				/ glm::max(axFaceRGB[SL_FACE_UNLIT].x, 1.0e-4f);
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_ShellLighting] OBSERVED unlit=%.4f lit=%.4f top=%.4f "
 				"unlit/lit=%.4f unlitBlueOverRed=%.4f, TGA=%s",

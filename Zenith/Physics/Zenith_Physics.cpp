@@ -26,6 +26,10 @@
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
+// Body::IsSensor() -- read in the LOCKED filter callbacks below. BodyFilter.h only
+// forward-declares JPH::Body, so the definition is carried explicitly rather than
+// leaned on some other header having reached it first.
+#include <Jolt/Physics/Body/Body.h>
 
 // Wrapper<->Jolt conversion: Zenith_PhysicsBodyID mirrors JPH::BodyID's
 // single-uint32 representation, so conversion is a bit copy.
@@ -798,6 +802,57 @@ Zenith_Maths::Quat Zenith_Physics::GetBodyRotation(Zenith_PhysicsBodyID xBodyID)
 	return Zenith_Maths::Quat(xJoltRot.GetW(), xJoltRot.GetX(), xJoltRot.GetY(), xJoltRot.GetZ());
 }
 
+// ============================================================================
+// SENSOR-SKIPPING RAY FILTERS (ZM-D-173)
+//
+// THE CONTRACT BOTH PUBLIC Raycast OVERLOADS NOW HONOUR: an ordinary raycast
+// ignores SENSOR bodies. Every shipped caller is a line-of-sight / occlusion
+// query -- camera-arm occlusion, trainer sight cones, ground and step probes,
+// editor picking -- and all of them are asking "is something SOLID between these
+// two points?". A sensor is by definition a volume you walk THROUGH, so a sensor
+// answering one of those queries is always the wrong answer. It shipped as one:
+// Zenithmon's HomeDoorTrigger sits on the doorway camera ray and collapsed the
+// camera arm at the door it exists to open.
+//
+// The flag is read via Body::IsSensor() in the LOCKED callback, so the live body
+// state decides -- a body toggled with SetIsSensor between casts is honoured
+// immediately, which is what a door that arms and disarms itself needs.
+//
+// ★ NO SENSOR-INCLUDING OVERLOAD IS ADDED, DELIBERATELY. A caller census at
+// ZM-D-173 found no code that wants trigger volumes back. If a future feature
+// genuinely needs to probe triggers, it must ask for an explicitly named API
+// rather than re-broadening what every ordinary LOS query means.
+// ============================================================================
+
+// The unfiltered cast's replacement: everything except sensors.
+class SkipSensorBodyFilter : public JPH::BodyFilter
+{
+public:
+	virtual bool ShouldCollideLocked(const JPH::Body& inBody) const override
+	{
+		return !inBody.IsSensor();
+	}
+};
+
+// The body-id overload's filter: the caller's ignored body AND every sensor.
+// ShouldCollide(BodyID) is deliberately NOT overridden -- that is where
+// IgnoreSingleBodyFilter implements the ignore, and inheriting it is what keeps
+// the two rules composed rather than one silently replacing the other.
+class SkipSensorIgnoreSingleBodyFilter : public JPH::IgnoreSingleBodyFilter
+{
+public:
+	explicit SkipSensorIgnoreSingleBodyFilter(const JPH::BodyID& inBodyID)
+		: JPH::IgnoreSingleBodyFilter(inBodyID)
+	{
+	}
+
+	virtual bool ShouldCollideLocked(const JPH::Body& inBody) const override
+	{
+		return !inBody.IsSensor()
+			&& JPH::IgnoreSingleBodyFilter::ShouldCollideLocked(inBody);
+	}
+};
+
 // Shared implementation. The body filter is supplied by the caller; passing the
 // default-constructed JPH::BodyFilter() makes this equivalent to an unfiltered cast.
 static Zenith_Physics::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xOrigin,
@@ -848,18 +903,23 @@ static Zenith_Physics::RaycastResult RaycastImpl(const Zenith_Maths::Vector3& xO
 Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector3& xOrigin,
 	const Zenith_Maths::Vector3& xDirection, float fMaxDistance)
 {
-	return RaycastImpl(xOrigin, xDirection, fMaxDistance, m_pxPhysicsSystem, JPH::BodyFilter());
+	SkipSensorBodyFilter xFilter;
+	return RaycastImpl(xOrigin, xDirection, fMaxDistance, m_pxPhysicsSystem, xFilter);
 }
 
 Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector3& xOrigin,
 	const Zenith_Maths::Vector3& xDirection, float fMaxDistance, Zenith_PhysicsBodyID xIgnoreBody)
 {
+	// The invalid-ignore path is NOT an unfiltered cast: it still skips sensors,
+	// so a caller that passes an unresolved body id gets the same LOS semantics as
+	// the single-argument overload rather than a quietly different query.
 	if (xIgnoreBody.IsInvalid())
 	{
-		return RaycastImpl(xOrigin, xDirection, fMaxDistance, m_pxPhysicsSystem, JPH::BodyFilter());
+		SkipSensorBodyFilter xFilter;
+		return RaycastImpl(xOrigin, xDirection, fMaxDistance, m_pxPhysicsSystem, xFilter);
 	}
 
-	JPH::IgnoreSingleBodyFilter xFilter(ToJolt(xIgnoreBody));
+	SkipSensorIgnoreSingleBodyFilter xFilter(ToJolt(xIgnoreBody));
 	return RaycastImpl(xOrigin, xDirection, fMaxDistance, m_pxPhysicsSystem, xFilter);
 }
 

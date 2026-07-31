@@ -84,9 +84,19 @@ public:
 		float m_fDistance = 0.0f;
 		Zenith_EntityID m_xHitEntity = INVALID_ENTITY_ID;
 	};
+	// ★ BOTH OVERLOADS IGNORE SENSOR BODIES (ZM-D-173). These are line-of-sight /
+	// occlusion queries — "is something SOLID between these two points?" — and a
+	// sensor is by definition a volume you walk through, so a sensor answering one
+	// is always the wrong answer. The flag is read LIVE off the body, so
+	// SetIsSensor takes effect on the very next cast. There is deliberately no
+	// sensor-including overload: a feature that genuinely needs to probe trigger
+	// volumes must request an explicitly named API rather than re-broadening what
+	// every ordinary occlusion query means. See Physics/CLAUDE.md.
 	RaycastResult Raycast(const Zenith_Maths::Vector3& xOrigin, const Zenith_Maths::Vector3& xDirection, float fMaxDistance);
-	// Body-id ignore overload — leaf-clean (no concrete-component lookup). The
-	// EntityID convenience form lives engine-side in Zenith_PhysicsQuery::RaycastIgnoring.
+	// Body-id ignore overload — leaf-clean (no concrete-component lookup). Ignores
+	// sensors AND the requested body; an INVALID id still skips sensors, so it
+	// degrades to the single-argument overload rather than to an unfiltered cast.
+	// The EntityID convenience form lives engine-side in Zenith_PhysicsQuery::RaycastIgnoring.
 	RaycastResult Raycast(const Zenith_Maths::Vector3& xOrigin, const Zenith_Maths::Vector3& xDirection, float fMaxDistance, Zenith_PhysicsBodyID xIgnoreBody);
 
 	static constexpr double s_fDesiredFramerate = 1.0 / 60.0;

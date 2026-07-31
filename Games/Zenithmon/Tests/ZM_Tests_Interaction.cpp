@@ -28,8 +28,10 @@
 
 #include "Core/Zenith_TestFramework.h"
 #include "Maths/Zenith_Maths.h"
+#include "Zenithmon/Components/ZM_FollowCamera.h"        // ZM-D-173: the camera's PURE statics (nothing is constructed)
 #include "Zenithmon/Components/ZM_Interactable.h"        // the S7 item 1 SC3 PURE statics (nothing is constructed)
 #include "Zenithmon/Components/ZM_PlayerController.h"    // fWALK_SPEED -- the walk-up's speed, by name not by literal
+#include "Zenithmon/Source/World/ZM_DawnmerePlacement.h" // ZM-D-173: the shared Home blockout + approach
 #include "Zenithmon/Source/Interaction/ZM_InteractionLogic.h"
 #include "Zenithmon/Source/Interaction/ZM_NpcWalkerLogic.h"     // ZM_BuildPatrolVelocity -- the shared velocity idiom
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"    // ZM_StepTrainerApproach + the machine
@@ -1505,4 +1507,323 @@ ZENITH_TEST(ZM_Interaction, Approach_WalkConvergesIntoTheStandoffRingBeforeTheTi
 	ZENITH_ASSERT_GE(fDistance,
 		xTuning.m_fApproachStandoffMetres - fStepLength - 0.0005f,
 		"the walk carried the trainer well past the ring it was asked to stop on");
+}
+
+// ============================================================================
+// ZM-D-173 -- THE HOME BLOCKOUT vs THE FIXED-YAW CAMERA, AS ARITHMETIC
+//
+// Still PURE: ray/AABB slab maths over the COMPILED placement constants and the
+// camera's own pure statics. No scene, no physics, no terrain. What these two
+// units can prove is that the AUTHORED geometry satisfies the clearance contract
+// and that the drive corridor misses the shell; what they cannot prove is that
+// the committed scene bytes or the baked heightfield agree with those constants.
+// That is ZM_DawnmereCameraClearance_Test / ZM_DawnmereHomeGroundTruth_Test's job
+// (Tests/ZM_AutoTests_CameraClearance.cpp), and it needs a terrain bake -- which
+// is exactly why these exist too, and exactly why their greenness must not be
+// read as "the Home is correctly placed in the shipped scene".
+// ============================================================================
+
+namespace
+{
+	// The fraction of the authored pivot->camera distance that must survive the
+	// clamp. Half the arm still frames the player; below that the camera is
+	// through the character's shoulders and the doorway is unusable.
+	constexpr float fHOME_MIN_ARM_FRACTION = 0.5f;
+
+	// The SOLID Home blockouts, in the order the authoring queues them. The door
+	// SENSOR is deliberately absent: since ZM-D-173 ordinary engine raycasts skip
+	// sensor bodies, so a sensor cannot clamp the arm and including it here would
+	// model a query the engine no longer performs. The separate arm below asserts
+	// that this exclusion is load-bearing rather than incidental.
+	u_int HomeSolidBlockouts(ZM_DawnmereBlockout (&axOut)[4])
+	{
+		axOut[0] = ZM_GetDawnmereHomeShell();
+		axOut[1] = ZM_GetDawnmereHomeDoorLeft();
+		axOut[2] = ZM_GetDawnmereHomeDoorRight();
+		axOut[3] = ZM_GetDawnmereHomeDoorLintel();
+		return 4u;
+	}
+
+	// Slab-method ray/AABB. Returns the ENTRY distance along a unit direction, or
+	// a negative sentinel for "no intersection inside fMaxDistance". A ray that
+	// STARTS inside the box returns 0.0 -- the worst case, and the one the old
+	// doorway actually hit.
+	float RayAabbEntryDistance(
+		const Zenith_Maths::Vector3& xOrigin,
+		const Zenith_Maths::Vector3& xDirection,
+		float fMaxDistance,
+		const ZM_DawnmereBlockout& xBox)
+	{
+		const Zenith_Maths::Vector3 xMin = xBox.Min();
+		const Zenith_Maths::Vector3 xMax = xBox.Max();
+		float fEnter = 0.0f;
+		float fExit = fMaxDistance;
+		for (int iAxis = 0; iAxis < 3; ++iAxis)
+		{
+			const float fO = xOrigin[iAxis];
+			const float fD = xDirection[iAxis];
+			// Parallel to this slab: handled explicitly rather than via 1/0, so a
+			// ray exactly on a slab plane cannot produce a NaN that silently
+			// swallows the whole test.
+			if (std::fabs(fD) < 1.0e-8f)
+			{
+				if (fO < xMin[iAxis] || fO > xMax[iAxis])
+				{
+					return -1.0f;
+				}
+				continue;
+			}
+			float fNear = (xMin[iAxis] - fO) / fD;
+			float fFar = (xMax[iAxis] - fO) / fD;
+			if (fNear > fFar)
+			{
+				const float fSwap = fNear;
+				fNear = fFar;
+				fFar = fSwap;
+			}
+			fEnter = fNear > fEnter ? fNear : fEnter;
+			fExit = fFar < fExit ? fFar : fExit;
+			if (fEnter > fExit)
+			{
+				return -1.0f;
+			}
+		}
+		return fEnter;
+	}
+
+	// The XZ footprint of the shell, expanded by the player capsule radius, as a
+	// 2D min/max pair. A route that misses this cannot graze the real box.
+	void HomeShellExpandedFootprint(
+		Zenith_Maths::Vector2& xMinOut, Zenith_Maths::Vector2& xMaxOut)
+	{
+		const ZM_DawnmereBlockout xShell = ZM_GetDawnmereHomeShell();
+		const Zenith_Maths::Vector3 xMin = xShell.Min();
+		const Zenith_Maths::Vector3 xMax = xShell.Max();
+		xMinOut = Zenith_Maths::Vector2(
+			xMin.x - fZM_DAWNMERE_PLAYER_RADIUS, xMin.z - fZM_DAWNMERE_PLAYER_RADIUS);
+		xMaxOut = Zenith_Maths::Vector2(
+			xMax.x + fZM_DAWNMERE_PLAYER_RADIUS, xMax.z + fZM_DAWNMERE_PLAYER_RADIUS);
+	}
+
+	// 2D segment vs AABB, same slab method over the segment's own [0,1] parameter.
+	bool SegmentIntersectsRect2D(
+		const Zenith_Maths::Vector2& xA, const Zenith_Maths::Vector2& xB,
+		const Zenith_Maths::Vector2& xMin, const Zenith_Maths::Vector2& xMax)
+	{
+		float fEnter = 0.0f;
+		float fExit = 1.0f;
+		for (int iAxis = 0; iAxis < 2; ++iAxis)
+		{
+			const float fO = xA[iAxis];
+			const float fD = xB[iAxis] - xA[iAxis];
+			if (std::fabs(fD) < 1.0e-8f)
+			{
+				if (fO < xMin[iAxis] || fO > xMax[iAxis])
+				{
+					return false;
+				}
+				continue;
+			}
+			float fNear = (xMin[iAxis] - fO) / fD;
+			float fFar = (xMax[iAxis] - fO) / fD;
+			if (fNear > fFar)
+			{
+				const float fSwap = fNear;
+				fNear = fFar;
+				fFar = fSwap;
+			}
+			fEnter = fNear > fEnter ? fNear : fEnter;
+			fExit = fFar < fExit ? fFar : fExit;
+			if (fEnter > fExit)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// +1 if the entrance plane is the shell's MAX-Z face, -1 if it is the MIN-Z
+	// face. Derived rather than spelled, so the "outside the entrance" claims
+	// below stay true statements about the placement instead of assumptions that
+	// silently invert when the shell moves.
+	float HomeEntranceOutwardSign()
+	{
+		return fZM_DAWNMERE_HOME_ENTRANCE_Z < ZM_GetDawnmereHomeShell().m_xCenter.z
+			? -1.0f : 1.0f;
+	}
+}
+
+// THE CONTRACT. At every column of the door approach the clamped camera arm must
+// keep at least half the authored pivot->camera distance. This runs the SHIPPED
+// ZM_FollowCamera maths -- ComputeDesiredPosition for the ray and
+// ClampArmDistance for the clamp -- against the SHIPPED blockout constants, so a
+// tuning change to either lands here rather than in a comment.
+ZENITH_TEST(ZM_Interaction, HomeBlockoutSatisfiesCameraClearance)
+{
+	const float fHalfExtent = ZM_PlayerController::CalculateCapsuleHalfExtent(
+		Zenith_Maths::Vector3(fZM_DAWNMERE_HUMAN_SCALE_X,
+			fZM_DAWNMERE_HUMAN_SCALE_Y, fZM_DAWNMERE_HUMAN_SCALE_Z));
+	ZENITH_ASSERT_EQ_FLOAT(fHalfExtent, 0.9f, 1.0e-4f,
+		"the clearance contract is stated against a 0.9 m capsule half-extent");
+
+	ZM_DawnmereBlockout axSolids[4];
+	const u_int uSolidCount = HomeSolidBlockouts(axSolids);
+	const char* aszNames[4] = { "shell", "doorLeft", "doorRight", "lintel" };
+
+	// The three approach columns the compiled table actually measures ground for:
+	// where the drive aligns with the doorway, where the sensor is, and where a
+	// player returning out of the house is placed.
+	const u_int auColumns[] = {
+		(u_int)ZM_DAWNMERE_HOME_SAMPLE_STAGING,
+		(u_int)ZM_DAWNMERE_HOME_SAMPLE_TRIGGER,
+		(u_int)ZM_DAWNMERE_HOME_SAMPLE_SPAWN,
+	};
+	const u_int uColumnCount = (u_int)(sizeof(auColumns) / sizeof(auColumns[0]));
+
+	for (u_int uIndex = 0u; uIndex < uColumnCount; ++uIndex)
+	{
+		const ZM_DawnmereNpcAnchor& xColumn =
+			ZM_GetDawnmereHomeSample(auColumns[uIndex]);
+		const Zenith_Maths::Vector3 xCentre(
+			xColumn.m_fX, xColumn.m_fFeetY + fHalfExtent, xColumn.m_fZ);
+		const Zenith_Maths::Vector3 xPivot = xCentre
+			+ Zenith_Maths::Vector3(0.0f, ZM_FollowCamera::GetPivotHeight(), 0.0f);
+		const Zenith_Maths::Vector3 xDesired =
+			ZM_FollowCamera::ComputeDesiredPosition(
+				xCentre, fZM_DAWNMERE_AUTHORED_CAMERA_YAW);
+		const Zenith_Maths::Vector3 xArm = xDesired - xPivot;
+		const float fDesiredArm = glm::length(xArm);
+		ZENITH_ASSERT_GT(fDesiredArm, 0.0001f,
+			"'%s': the authored arm is degenerate", xColumn.m_szEntityName);
+		const Zenith_Maths::Vector3 xDirection = xArm / fDesiredArm;
+
+		bool bHit = false;
+		float fHitDistance = fDesiredArm;
+		const char* szBlocker = "none";
+		for (u_int uSolid = 0u; uSolid < uSolidCount; ++uSolid)
+		{
+			const float fEntry = RayAabbEntryDistance(
+				xPivot, xDirection, fDesiredArm, axSolids[uSolid]);
+			if (fEntry >= 0.0f && fEntry < fHitDistance)
+			{
+				bHit = true;
+				fHitDistance = fEntry;
+				szBlocker = aszNames[uSolid];
+			}
+		}
+
+		const float fClamped =
+			ZM_FollowCamera::ClampArmDistance(fDesiredArm, bHit, fHitDistance);
+		const float fRequired = fDesiredArm * fHOME_MIN_ARM_FRACTION;
+		ZENITH_ASSERT_GE(fClamped, fRequired,
+			"'%s' at (%.1f, %.1f): the camera arm clamps to %.4f m of the authored "
+			"%.4f m (needs >= %.4f m) -- blocked by the %s at %.4f m. The Home "
+			"blockout is on the camera side of the player at this column",
+			xColumn.m_szEntityName, (double)xColumn.m_fX, (double)xColumn.m_fZ,
+			(double)fClamped, (double)fDesiredArm, (double)fRequired,
+			szBlocker, (double)fHitDistance);
+	}
+
+	// * AND THE ARM THAT MAKES THE SENSOR EXCLUSION LOAD-BEARING RATHER THAN
+	// CONVENIENT. At the sensor column the authored camera ray genuinely passes
+	// through the door trigger's volume. If ordinary raycasts still reported
+	// sensors, THAT is what the clamp would read -- and since the pivot starts
+	// inside the box the arm would collapse to its 1.0 m floor. Delete the engine
+	// filter and the real-scene guard goes red; delete this arm and nothing
+	// records why the filter exists.
+	{
+		const ZM_DawnmereNpcAnchor& xTriggerColumn =
+			ZM_GetDawnmereHomeSample(ZM_DAWNMERE_HOME_SAMPLE_TRIGGER);
+		const Zenith_Maths::Vector3 xCentre(xTriggerColumn.m_fX,
+			xTriggerColumn.m_fFeetY + fHalfExtent, xTriggerColumn.m_fZ);
+		const Zenith_Maths::Vector3 xPivot = xCentre
+			+ Zenith_Maths::Vector3(0.0f, ZM_FollowCamera::GetPivotHeight(), 0.0f);
+		const Zenith_Maths::Vector3 xDesired =
+			ZM_FollowCamera::ComputeDesiredPosition(
+				xCentre, fZM_DAWNMERE_AUTHORED_CAMERA_YAW);
+		const Zenith_Maths::Vector3 xArm = xDesired - xPivot;
+		const float fDesiredArm = glm::length(xArm);
+		const float fSensorEntry = RayAabbEntryDistance(
+			xPivot, xArm / fDesiredArm, fDesiredArm,
+			ZM_GetDawnmereHomeDoorTrigger());
+		ZENITH_ASSERT_GE(fSensorEntry, 0.0f,
+			"the door sensor no longer intersects the authored camera ray, so the "
+			"engine-side sensor skip is no longer what keeps this doorway usable -- "
+			"re-derive the exclusion above before trusting it");
+		ZENITH_ASSERT_LT(
+			ZM_FollowCamera::ClampArmDistance(fDesiredArm, true, fSensorEntry),
+			fDesiredArm * fHOME_MIN_ARM_FRACTION,
+			"a sensor-reading clamp must violate the contract, or this arm proves nothing");
+	}
+}
+
+// THE ROUTE. ZM_PlayerHomeRoundTrip_Test drives the player to the doorway with
+// DriveTowardXZ, which has NO obstacle avoidance -- a segment that clips the
+// shell does not fail gracefully, it wedges the capsule until that test's frame
+// cap and reports a distance rather than an obstruction. So the corridor is a
+// checked property, expanded by the player radius so "just grazes it" also reds.
+ZENITH_TEST(ZM_Interaction, HomeApproachIsClearOfTheDriveCorridor)
+{
+	Zenith_Maths::Vector2 xExpandedMin(0.0f);
+	Zenith_Maths::Vector2 xExpandedMax(0.0f);
+	HomeShellExpandedFootprint(xExpandedMin, xExpandedMax);
+
+	const Zenith_Maths::Vector3 xStaging = ZM_GetDawnmereHomeDoorStagingXZ();
+	const Zenith_Maths::Vector3 xTarget = ZM_GetDawnmereHomeDoorTargetXZ();
+	const Zenith_Maths::Vector2 xTownCenter(
+		fZM_DAWNMERE_TOWN_CENTER_X, fZM_DAWNMERE_TOWN_CENTER_Z);
+	const Zenith_Maths::Vector2 xStagingXZ(xStaging.x, xStaging.z);
+	const Zenith_Maths::Vector2 xTargetXZ(xTarget.x, xTarget.z);
+
+	ZENITH_ASSERT_FALSE(
+		SegmentIntersectsRect2D(xTownCenter, xStagingXZ, xExpandedMin, xExpandedMax),
+		"the town-centre -> staging drive (%.1f,%.1f)->(%.1f,%.1f) crosses the Home "
+		"shell expanded to x[%.2f,%.2f] z[%.2f,%.2f]; DriveTowardXZ has no avoidance "
+		"and would wedge the capsule there",
+		(double)xTownCenter.x, (double)xTownCenter.y,
+		(double)xStagingXZ.x, (double)xStagingXZ.y,
+		(double)xExpandedMin.x, (double)xExpandedMax.x,
+		(double)xExpandedMin.y, (double)xExpandedMax.y);
+	ZENITH_ASSERT_FALSE(
+		SegmentIntersectsRect2D(xStagingXZ, xTargetXZ, xExpandedMin, xExpandedMax),
+		"the staging -> door-target approach (%.1f,%.1f)->(%.1f,%.1f) crosses the "
+		"expanded Home shell x[%.2f,%.2f] z[%.2f,%.2f]",
+		(double)xStagingXZ.x, (double)xStagingXZ.y,
+		(double)xTargetXZ.x, (double)xTargetXZ.y,
+		(double)xExpandedMin.x, (double)xExpandedMax.x,
+		(double)xExpandedMin.y, (double)xExpandedMax.y);
+
+	// The approach must also END on the doorway rather than beside it: the target
+	// is the sensor's own column, so a moved sensor cannot leave the drive aimed
+	// at empty ground.
+	const ZM_DawnmereBlockout xTrigger = ZM_GetDawnmereHomeDoorTrigger();
+	ZENITH_ASSERT_EQ_FLOAT(xTargetXZ.x, xTrigger.m_xCenter.x, 1.0e-4f,
+		"the drive target must share the door sensor's X centreline");
+	ZENITH_ASSERT_EQ_FLOAT(xTargetXZ.y, xTrigger.m_xCenter.z, 1.0e-4f,
+		"the drive target must be the door sensor's own column");
+
+	// The sensor and the return spawn must both sit OUTSIDE the shell on the
+	// entrance side. A sensor centred in the entrance face is the failure this
+	// catches: it puts the trigger inside the wall the camera has to see past,
+	// and makes "overlap before physical contact" a coincidence of box depth.
+	const float fOutward = HomeEntranceOutwardSign();
+	const Zenith_Maths::Vector3 xSpawn = ZM_GetDawnmereFromHomeSpawnFeet();
+	ZENITH_ASSERT_GT(
+		(xTrigger.m_xCenter.z - fZM_DAWNMERE_HOME_ENTRANCE_Z) * fOutward, 0.0f,
+		"the door sensor at z=%.2f is not strictly outside the entrance plane "
+		"z=%.2f (outward sign %.0f)",
+		(double)xTrigger.m_xCenter.z, (double)fZM_DAWNMERE_HOME_ENTRANCE_Z,
+		(double)fOutward);
+	ZENITH_ASSERT_GT(
+		(xSpawn.z - fZM_DAWNMERE_HOME_ENTRANCE_Z) * fOutward, 0.0f,
+		"the FromHome spawn at z=%.2f is not on the entrance side of the shell "
+		"(entrance plane z=%.2f, outward sign %.0f)",
+		(double)xSpawn.z, (double)fZM_DAWNMERE_HOME_ENTRANCE_Z, (double)fOutward);
+	// ...and the entrance plane must actually BE one of the shell's two Z faces,
+	// so the outward sign above is derived from geometry rather than from a
+	// coincidence that survives a shell resize.
+	const ZM_DawnmereBlockout xShell = ZM_GetDawnmereHomeShell();
+	const float fEntranceFace = fOutward < 0.0f ? xShell.Min().z : xShell.Max().z;
+	ZENITH_ASSERT_EQ_FLOAT(fZM_DAWNMERE_HOME_ENTRANCE_Z, fEntranceFace, 1.0e-3f,
+		"the entrance decoration plane must coincide with a shell Z face");
 }

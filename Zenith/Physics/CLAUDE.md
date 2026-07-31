@@ -35,7 +35,36 @@ Static manager for physics simulation. Key responsibilities:
 - Update physics with fixed 60 Hz timestep (uses frame time accumulator)
 - Manage body lifecycle
 - Process deferred collision events on main thread
-- Raycast functionality for camera/editor interaction. Two public `Raycast(...)` overloads return a `RaycastResult` (`m_bHit`, `m_xHitPoint`, `m_xHitNormal`, `m_fDistance`, `m_xHitEntity`); the second overload takes a `Zenith_PhysicsBodyID` to ignore. The EntityID-ignore convenience form lives engine-side in `Zenith_PhysicsQuery::RaycastIgnoring`.
+- Raycast functionality for camera/editor interaction. Two public `Raycast(...)` overloads return a `RaycastResult` (`m_bHit`, `m_xHitPoint`, `m_xHitNormal`, `m_fDistance`, `m_xHitEntity`); the second overload takes a `Zenith_PhysicsBodyID` to ignore. The EntityID-ignore convenience form lives engine-side in `Zenith_PhysicsQuery::RaycastIgnoring`. **Both overloads IGNORE SENSOR BODIES** — see below.
+
+### Ordinary raycasts ignore sensors (ZM-D-173)
+
+**The contract:** both public `Raycast` overloads skip any body whose
+`JPH::Body::IsSensor()` is true. The body-id overload additionally skips the body
+it was asked to ignore; passing an INVALID id still skips sensors, so it degrades
+to the single-argument overload rather than to an unfiltered cast.
+
+**Why.** Every shipped caller is a line-of-sight / occlusion query — camera-arm
+occlusion, AI sight cones, ground and step probes, editor picking — all asking
+"is something *solid* between these two points?". A sensor is by definition a
+volume the player walks through, so a sensor answering one of those queries is
+always a wrong answer, and it shipped as one: Zenithmon's `HomeDoorTrigger`
+collapsed the overworld camera arm at the doorway it exists to open.
+
+**How.** Two file-local filters in `Zenith_Physics.cpp`: `SkipSensorBodyFilter`
+(a `JPH::BodyFilter` whose `ShouldCollideLocked` rejects sensors) and
+`SkipSensorIgnoreSingleBodyFilter` (a `JPH::IgnoreSingleBodyFilter` that adds the
+same locked check while *inheriting* `ShouldCollide(BodyID)`, which is where the
+ignore actually lives — so the two rules compose instead of one replacing the
+other). The flag is read in the LOCKED callback, so it is the live body state:
+`SetIsSensor` takes effect on the very next cast.
+
+**No sensor-including overload exists, deliberately.** A caller census at
+ZM-D-173 found nothing that wants trigger volumes back from an occlusion query.
+A future feature that genuinely needs to probe triggers must request an
+explicitly named API rather than silently re-broadening what every ordinary LOS
+query means. Coverage: `Physics/Raycast{SkipsSensorBodies,ReachesSolidBehindSensor,IgnoreBodyComposesWithSensorSkip,SensorToggleObservedLive}`
+in `Zenith/EntityComponent/Zenith_Physics.Tests.inl`.
 - Memory diagnostics: `GetJoltMemoryAllocated()` / `GetJoltAllocationCount()` report Jolt allocator usage for diagnostics
 
 ## Collision System

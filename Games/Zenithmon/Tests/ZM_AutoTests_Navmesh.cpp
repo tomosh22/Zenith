@@ -49,7 +49,7 @@ namespace
 	// The sampled ground height the coverage grid is built at. The generator
 	// voxelises at 0.2 m cell height, so the baked surface lands NEAR this, not
 	// exactly on it -- hence the coarse band. Exact agreement is phase C's job.
-	constexpr float fZM_NAV_GROUND_HEIGHT = 25.98577f;
+	constexpr float fZM_NAV_GROUND_HEIGHT = 25.99055f;
 	constexpr float fZM_NAV_GROUND_TOLERANCE = 2.0f;
 
 	// A generated polygon counts as walkable when its normal points up.

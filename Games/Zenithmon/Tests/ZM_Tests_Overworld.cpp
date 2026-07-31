@@ -845,7 +845,7 @@ ZENITH_TEST(ZM_OverworldPhysics, JoltStepQueriesAcceptLowAndRejectTallObstacle)
 }
 
 // -----------------------------------------------------------------------------
-// Follow camera (4)
+// Follow camera (6)
 // -----------------------------------------------------------------------------
 
 ZENITH_TEST(ZM_OverworldCamera, DesiredPoseUsesFixedHeadingAndLooksAtPivot)
@@ -968,6 +968,107 @@ ZENITH_TEST(ZM_OverworldCamera, RealOccluderPushesInThenCameraRecoversOutward)
 	ZENITH_ASSERT_GT(xFollow.GetCurrentArmDistance(), fConstrainedDistance + 0.5f);
 	ZENITH_ASSERT_EQ_FLOAT(xFollow.GetCurrentArmDistance(),
 		fUnobstructedDistance, 0.02f);
+}
+
+// ZM-D-173. A sensor is a volume the player walks THROUGH, so it must never
+// shorten the camera arm. Zenithmon's own HomeDoorTrigger is exactly such a
+// volume and sits directly on the doorway camera ray; before the engine-side
+// sensor skip it collapsed the arm at the door it exists to open.
+//
+// This uses the REAL ZM_FollowCamera against a REAL Jolt body rather than
+// ClampArmDistance in isolation: the defect was never in the clamp, it was in
+// what the raycast reported, and only a live query can see that.
+ZENITH_TEST(ZM_OverworldCamera, SensorVolumeDoesNotClampTheArm)
+{
+	PhysicsSceneScope xFixture("ZM_Physics_CameraSensorPassthrough");
+	if (!xFixture.m_bReady) { return; }
+
+	Zenith_Entity xPlayer = g_xEngine.Scenes().CreateEntity(
+		xFixture.m_pxSceneData, "Player");
+	xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition({ 0.0f, 0.0f, 0.0f });
+
+	// Straddles the whole arm ray, exactly as a doorway trigger does.
+	Zenith_Entity xSensor = CreateBox(xFixture.m_pxSceneData, "DoorwaySensor",
+		{ 0.0f, 1.7f, -2.5f }, { 4.0f, 3.0f, 2.0f }, RIGIDBODY_TYPE_STATIC);
+	xSensor.GetComponent<Zenith_ColliderComponent>().SetIsSensor(true);
+	StepPhysics(1u);
+
+	Zenith_Entity xCamera = g_xEngine.Scenes().CreateEntity(
+		xFixture.m_pxSceneData, "FollowCamera");
+	Zenith_CameraComponent& xCameraComponent =
+		xCamera.AddComponent<Zenith_CameraComponent>();
+	xCameraComponent.SetYaw(0.0);
+	ZM_FollowCamera& xFollow = xCamera.AddComponent<ZM_FollowCamera>();
+	xFollow.OnStart();
+	xFollow.OnLateUpdate(fTEST_DT);
+
+	const Zenith_Maths::Vector3 xPivot(0.0f,
+		ZM_FollowCamera::GetPivotHeight(), 0.0f);
+	const float fUnobstructedDistance = glm::length(
+		ZM_FollowCamera::ComputeDesiredPosition({ 0.0f, 0.0f, 0.0f }, 0.0f) - xPivot);
+
+	ZENITH_ASSERT_FALSE(xFollow.IsCollisionConstrained(),
+		"a sensor volume must not report the camera as obstructed");
+	ZENITH_ASSERT_EQ_FLOAT(xFollow.GetCurrentArmDistance(),
+		fUnobstructedDistance, fTEST_EPSILON,
+		"the arm must reach its full unconstrained length through a sensor");
+}
+
+// The companion, and the one that stops the fix from being "raycasts stopped
+// working". A solid occluder BEHIND a sensor must still clamp -- which is only
+// observable if the ray passed THROUGH the sensor to reach it, so the expected
+// distance is derived from the SOLID's near face, not the sensor's.
+ZENITH_TEST(ZM_OverworldCamera, SolidOccluderStillClampsBesideASensor)
+{
+	PhysicsSceneScope xFixture("ZM_Physics_CameraSensorThenSolid");
+	if (!xFixture.m_bReady) { return; }
+
+	Zenith_Entity xPlayer = g_xEngine.Scenes().CreateEntity(
+		xFixture.m_pxSceneData, "Player");
+	xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition({ 0.0f, 0.0f, 0.0f });
+
+	const Zenith_Maths::Vector3 xPivot(0.0f,
+		ZM_FollowCamera::GetPivotHeight(), 0.0f);
+	const Zenith_Maths::Vector3 xDesired =
+		ZM_FollowCamera::ComputeDesiredPosition({ 0.0f, 0.0f, 0.0f }, 0.0f);
+	const float fDesiredArm = glm::length(xDesired - xPivot);
+	const Zenith_Maths::Vector3 xDirection = (xDesired - xPivot) / fDesiredArm;
+
+	// The sensor is NEARER the pivot than the wall. Reading the sensor gives a
+	// clamped arm of ~2.42 m; reading the wall gives ~4.06 m. The two are far
+	// enough apart that no tolerance can confuse them.
+	Zenith_Entity xSensor = CreateBox(xFixture.m_pxSceneData, "DoorwaySensor",
+		{ 0.0f, 1.7f, -2.5f }, { 4.0f, 3.0f, 0.2f }, RIGIDBODY_TYPE_STATIC);
+	xSensor.GetComponent<Zenith_ColliderComponent>().SetIsSensor(true);
+	CreateBox(xFixture.m_pxSceneData, "SolidWall",
+		{ 0.0f, 2.3f, -4.0f }, { 4.0f, 3.0f, 0.2f }, RIGIDBODY_TYPE_STATIC);
+	StepPhysics(1u);
+
+	Zenith_Entity xCamera = g_xEngine.Scenes().CreateEntity(
+		xFixture.m_pxSceneData, "FollowCamera");
+	Zenith_CameraComponent& xCameraComponent =
+		xCamera.AddComponent<Zenith_CameraComponent>();
+	xCameraComponent.SetYaw(0.0);
+	ZM_FollowCamera& xFollow = xCamera.AddComponent<ZM_FollowCamera>();
+	xFollow.OnStart();
+	xFollow.OnLateUpdate(fTEST_DT);
+
+	// Derived from the AUTHORED wall, not from the query under test: the ray
+	// reaches the wall's near face (centre -4.0 plus its 0.1 half-depth) and the
+	// clamp subtracts the LONGITUDINAL padding from that distance.
+	const float fWallNearFaceZ = -4.0f + 0.1f;
+	const float fExpectedHitDistance = fWallNearFaceZ / xDirection.z;
+	const float fExpectedArm =
+		fExpectedHitDistance - ZM_FollowCamera::GetCollisionPadding();
+
+	ZENITH_ASSERT_TRUE(xFollow.IsCollisionConstrained(),
+		"a solid wall must still constrain the arm even with a sensor in front of it");
+	ZENITH_ASSERT_EQ_FLOAT(xFollow.GetCurrentArmDistance(), fExpectedArm, 0.02f,
+		"the arm must be clamped by the SOLID wall behind the sensor, not by the sensor");
+	ZENITH_ASSERT_EQ_FLOAT(
+		ZM_FollowCamera::ClampArmDistance(fDesiredArm, true, fExpectedHitDistance),
+		fExpectedArm, fTEST_EPSILON,
+		"the expected arm must be what the shipped clamp produces for that hit");
 }
 
 // -----------------------------------------------------------------------------

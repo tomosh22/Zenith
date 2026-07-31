@@ -832,6 +832,161 @@ ZENITH_TEST(Physics, RaycastMaxDistanceRespected)
 }
 
 //==============================================================================
+// Cat 6b: Ordinary raycasts ignore SENSOR bodies (ZM-D-173)
+//
+// THE CONTRACT UNDER TEST. Both public Zenith_Physics::Raycast overloads are
+// line-of-sight / occlusion queries: every shipped caller asks "is something
+// SOLID between these two points?" -- camera-arm occlusion, the trainer sight
+// cone, ground probes, the step assist, editor picking. A sensor is by
+// definition a volume you walk through, so a sensor answering one of those
+// queries is always a wrong answer. Before ZM-D-173 they did answer: Zenithmon's
+// HomeDoorTrigger collapsed the camera arm from the doorway it exists to open.
+//
+// Each test below asserts the HIT ENTITY (or a miss), never merely m_bHit: a
+// filter that skipped the wrong body would still report "hit", and a test that
+// only read the boolean would call that a pass.
+//==============================================================================
+ZENITH_TEST(Physics, RaycastSkipsSensorBodies)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_RaySensorSkip", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	Zenith_Entity xSensor = CreatePhysicsSphere(pxSceneData, "SensorOnly",
+		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_STATIC, 1.0f);
+	xSensor.GetComponent<Zenith_ColliderComponent>().SetIsSensor(true);
+	StepPhysics(1);
+
+	Zenith_Physics::RaycastResult xResult = g_xEngine.Physics().Raycast(
+		Zenith_Maths::Vector3(0, 0, -10),
+		Zenith_Maths::Vector3(0, 0, 1),
+		20.0f);
+
+	ZENITH_ASSERT_FALSE(xResult.m_bHit,
+		"an ordinary raycast must pass straight through a sensor volume");
+	ZENITH_ASSERT_EQ(xResult.m_xHitEntity, INVALID_ENTITY_ID,
+		"a skipped sensor must leave the hit entity unresolved, not merely unreported");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+ZENITH_TEST(Physics, RaycastReachesSolidBehindSensor)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_RaySensorThrough", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	// The sensor is NEARER the ray origin than the wall, so an unfiltered cast
+	// terminates on it and never sees the wall at all. Asserting the wall's ID is
+	// therefore the whole test: it proves the ray CONTINUED rather than merely
+	// that something was hit.
+	Zenith_Entity xSensor = CreatePhysicsSphere(pxSceneData, "NearSensor",
+		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_STATIC, 1.0f);
+	xSensor.GetComponent<Zenith_ColliderComponent>().SetIsSensor(true);
+	Zenith_Entity xWall = CreatePhysicsBox(pxSceneData, "SolidWall",
+		Zenith_Maths::Vector3(0, 0, 5), Zenith_Maths::Vector3(4, 4, 0.5f),
+		RIGIDBODY_TYPE_STATIC);
+	const Zenith_EntityID xWallID = xWall.GetEntityID();
+	StepPhysics(1);
+
+	Zenith_Physics::RaycastResult xResult = g_xEngine.Physics().Raycast(
+		Zenith_Maths::Vector3(0, 0, -10),
+		Zenith_Maths::Vector3(0, 0, 1),
+		20.0f);
+
+	ZENITH_ASSERT_TRUE(xResult.m_bHit, "the solid wall behind the sensor must still be found");
+	ZENITH_ASSERT_EQ(xResult.m_xHitEntity, xWallID,
+		"the ray must terminate on the SOLID wall, not on the nearer sensor");
+	ZENITH_ASSERT_TRUE(xResult.m_fDistance > 14.0f,
+		"a hit at the sensor's range would mean the sensor answered (got %f)", xResult.m_fDistance);
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+ZENITH_TEST(Physics, RaycastIgnoreBodyComposesWithSensorSkip)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_RaySensorIgnore", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	// Three bodies on one ray, nearest first: a sensor, the explicitly ignored
+	// body, and the wall that must answer. Only a filter that honours BOTH rules
+	// reaches the wall -- drop the sensor rule and the sensor answers, drop the
+	// ignore rule and the ignored body does.
+	Zenith_Entity xSensor = CreatePhysicsSphere(pxSceneData, "NearSensor",
+		Zenith_Maths::Vector3(0, 0, -4), RIGIDBODY_TYPE_STATIC, 1.0f);
+	xSensor.GetComponent<Zenith_ColliderComponent>().SetIsSensor(true);
+	Zenith_Entity xIgnored = CreatePhysicsSphere(pxSceneData, "IgnoredSolid",
+		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_STATIC, 1.0f);
+	Zenith_Entity xWall = CreatePhysicsBox(pxSceneData, "SolidWall",
+		Zenith_Maths::Vector3(0, 0, 5), Zenith_Maths::Vector3(4, 4, 0.5f),
+		RIGIDBODY_TYPE_STATIC);
+	const Zenith_EntityID xWallID = xWall.GetEntityID();
+	StepPhysics(1);
+
+	Zenith_Physics::RaycastResult xResult = g_xEngine.Physics().Raycast(
+		Zenith_Maths::Vector3(0, 0, -10),
+		Zenith_Maths::Vector3(0, 0, 1),
+		20.0f,
+		xIgnored.GetComponent<Zenith_ColliderComponent>().GetBodyID());
+
+	ZENITH_ASSERT_TRUE(xResult.m_bHit, "the wall behind both filtered bodies must be found");
+	ZENITH_ASSERT_EQ(xResult.m_xHitEntity, xWallID,
+		"the body-id overload must skip the sensor AND its requested ignore body");
+
+	// The same overload handed an INVALID ignore id takes a different code path
+	// inside Zenith_Physics::Raycast; it must still skip the sensor, and it must
+	// now stop on the no-longer-ignored solid.
+	Zenith_Physics::RaycastResult xNoIgnore = g_xEngine.Physics().Raycast(
+		Zenith_Maths::Vector3(0, 0, -10),
+		Zenith_Maths::Vector3(0, 0, 1),
+		20.0f,
+		Zenith_PhysicsBodyID());
+
+	ZENITH_ASSERT_TRUE(xNoIgnore.m_bHit, "the invalid-ignore path must still hit the solids");
+	ZENITH_ASSERT_EQ(xNoIgnore.m_xHitEntity, xIgnored.GetEntityID(),
+		"with nothing ignored the ray must stop on the nearest SOLID, still skipping the sensor");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+ZENITH_TEST(Physics, RaycastSensorToggleObservedLive)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_RaySensorToggle", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	// ONE body, three casts. The filter must read the body's LIVE sensor flag at
+	// query time rather than anything cached when the collider was built -- which
+	// is what Zenithmon's door needs, since ZM_WarpTrigger re-asserts the flag on
+	// its own schedule long after authoring.
+	Zenith_Entity xTarget = CreatePhysicsSphere(pxSceneData, "ToggledBody",
+		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_STATIC, 1.0f);
+	Zenith_ColliderComponent& xCollider = xTarget.GetComponent<Zenith_ColliderComponent>();
+	const Zenith_EntityID xTargetID = xTarget.GetEntityID();
+	StepPhysics(1);
+
+	const Zenith_Maths::Vector3 xOrigin(0, 0, -10);
+	const Zenith_Maths::Vector3 xDirection(0, 0, 1);
+
+	Zenith_Physics::RaycastResult xSolid = g_xEngine.Physics().Raycast(xOrigin, xDirection, 20.0f);
+	ZENITH_ASSERT_EQ(xSolid.m_xHitEntity, xTargetID,
+		"a solid body must answer before the flag is set");
+
+	xCollider.SetIsSensor(true);
+	StepPhysics(1);
+	Zenith_Physics::RaycastResult xAsSensor = g_xEngine.Physics().Raycast(xOrigin, xDirection, 20.0f);
+	ZENITH_ASSERT_FALSE(xAsSensor.m_bHit,
+		"the same body must stop answering once it becomes a sensor");
+	ZENITH_ASSERT_EQ(xAsSensor.m_xHitEntity, INVALID_ENTITY_ID);
+
+	xCollider.SetIsSensor(false);
+	StepPhysics(1);
+	Zenith_Physics::RaycastResult xSolidAgain = g_xEngine.Physics().Raycast(xOrigin, xDirection, 20.0f);
+	ZENITH_ASSERT_EQ(xSolidAgain.m_xHitEntity, xTargetID,
+		"clearing the flag must restore the body to the query");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+//==============================================================================
 // Cat 7: Body Configuration
 //==============================================================================
 ZENITH_TEST(Physics, LockRotationPreventsAngularVelocity)

@@ -20,6 +20,7 @@
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
+#include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"   // ZM-D-173: the shared Home approach route
 
 #include <array>
 #include <cmath>
@@ -561,7 +562,7 @@ namespace
 					== xCamera.m_xEntityID;
 			const bool bExactPlacement =
 				std::fabs(xMarkerFeet.x - 512.0f) <= fPOSITION_EPSILON
-				&& std::fabs(xMarkerFeet.y - 25.98577f) <= fPOSITION_EPSILON
+				&& std::fabs(xMarkerFeet.y - 25.99055f) <= fPOSITION_EPSILON
 				&& std::fabs(xMarkerFeet.z - 480.0f) <= fPOSITION_EPSILON
 				&& std::fabs(fCapsuleHalfExtent - 0.9f) <= fPOSITION_EPSILON
 				&& glm::length(xPlayer.m_xPosition - xExpectedCenter)
@@ -948,10 +949,23 @@ namespace
 					&& std::fabs(xPlayer.m_pxController->GetRequestedSpeed()
 						- ZM_PlayerController::fRUN_SPEED) <= 0.001f
 					&& glm::length(Zenith_Maths::Vector2(xVelocity.x, xVelocity.z)) > 1.0f;
-				// The Home shell reaches z=476 and is solid. First align with the
-				// doorway while the capsule remains safely outside that face, then
-				// approach along -Z so the authored trigger is the first contact.
-				const Zenith_Maths::Vector3 xDoorStaging(384.0f, 0.0f, 480.0f);
+				// ZM-D-173: both waypoints come from the shared placement block in
+				// Source/World/ZM_DawnmerePlacement.h, so the Home cannot move
+				// without this route moving with it -- DriveTowardXZ has NO obstacle
+				// avoidance, and a route left pointing at the old doorway does not
+				// fail gracefully, it wedges the capsule against the relocated shell
+				// and times out reporting a distance.
+				//
+				// The route: first ALIGN with the doorway from the south, staying
+				// clear of the shell's solid entrance face while the capsule is
+				// still outside it; then make a short +Z move into the authored
+				// sensor so the trigger is the first thing contacted. The
+				// staging-clear property (that the alignment leg never crosses the
+				// player-radius-expanded shell) is a boot unit --
+				// ZM_Interaction/HomeApproachIsClearOfTheDriveCorridor -- rather
+				// than a claim this comment makes.
+				const Zenith_Maths::Vector3 xDoorStaging =
+					ZM_GetDawnmereHomeDoorStagingXZ();
 				if (!g_bHomeDoorStagingReached)
 				{
 					constexpr float fSTAGING_TOLERANCE = 0.5f;
@@ -965,7 +979,7 @@ namespace
 				else
 				{
 					DriveTowardXZ(xPlayer.m_xPosition,
-						Zenith_Maths::Vector3(384.0f, 0.0f, 476.0f));
+						ZM_GetDawnmereHomeDoorTargetXZ());
 				}
 			}
 			else
@@ -1401,8 +1415,14 @@ namespace
 							!= xActive
 						|| g_xEngine.Scenes().ResolveEntity(xCamera.m_xEntityID).GetScene()
 							!= xActive
+						// ZM-D-173 moved this marker with the Home. The value is a
+						// LITERAL on purpose: this clause reads the COMMITTED scene
+						// bytes, so sharing ZM_GetDawnmereFromHomeSpawnFeet() here
+						// would compare the authoring constants against themselves
+						// and stop proving that the scene was re-authored at all.
+						// Observed on the regenerated heightfield, 2026-07-31.
 						|| glm::length(xFeet - Zenith_Maths::Vector3(
-							384.0f, 26.590313f, 482.0f)) > fPOSITION_EPSILON
+							384.0f, 26.076151f, 468.0f)) > fPOSITION_EPSILON
 						|| !bPlayerContactSettled || !bBodyContactSettled
 						|| glm::length(g_xEngine.Physics().GetLinearVelocity(xBody))
 							> fVELOCITY_EPSILON

@@ -103,14 +103,20 @@ Plus, always:
   records, append-transactional writes, exact-length transactional reads and an
   independent literal 824-byte v1 golden. Its 29 schema + 2 compatibility units
   join SC1's 18 model units. There is no fake v0 migration and the codec owns no
-  slot/disk/ECS concerns. The local Zenithmon closure is green: all five builds;
-  boot units **2392 ran / 2391 passed / 0 failed / 1 skipped**, engine reference
-  **1103**, headless automation **36 passed / 0 failed**, and full windowed
-  automation **36 passed / 0 failed / 0 skipped** with no zero-frame tests. The
-  registry remains **36** tests. ECS orders 100-113 are occupied; **next free is
-  114**. The authoritative current stage and exact task live in Status.md. No
-  human or visual gate is pending; S7 continues autonomously toward the S8
-  vertical-slice go/no-go.
+  slot/disk/ECS concerns.
+
+  **★ DO NOT READ TEST COUNTS OUT OF THIS FILE. The ONE live source is the
+  CURRENT BASELINE block at the top of `Status.md`.** The figures that used to sit
+  here -- boot units 2392 / engine 1103 / registry 36 -- were the S7 item 1 SC2
+  closure snapshot of **2026-07-21**, but they were written in the present tense
+  with no date, so they went on reading as current while drifting ~425 boot units
+  and 17 registrations behind (found 2026-08-01 during ZM-D-173). They are
+  deliberately NOT refreshed here: a second copy of a number that moves every
+  commit is the drift, not the cure. `Tools/doc_lint.ps1` cannot catch this -- it
+  hardcodes DevilsPlayground's Docs and never reads this directory at all.
+
+  ECS orders 100-113 are occupied; **next free is 114**. The authoritative current
+  stage and exact task live in Status.md.
 
 ### Document map
 

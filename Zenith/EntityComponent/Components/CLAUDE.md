@@ -15,7 +15,7 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_SunComponent` | Exactly-one scene sun authority (direction or time-of-day orbit only; solar colour/radiance derives in Flux) |
 | `Zenith_AtmosphereComponent` | Scene-authored physical atmosphere medium (Rayleigh/Mie density scales, Mie-G phase asymmetry, both exponential scale heights, capture ground albedo) co-authored with a `Zenith_SunComponent` on one environment entity; resolved together via `Zenith_EnvironmentAuthorityData`. Also doubles as a **local blend volume** when `BlendRadius > 0` (see below). No radiometric anchor / exposure / renderer state (those are Flux-side) |
 | `Zenith_ColliderComponent` | Physics collision shapes (Jolt integration) |
-| `Zenith_TerrainComponent` | Heightmap-based terrain with streaming |
+| `Zenith_TerrainComponent` | Heightmap-based terrain with streaming. **It exposes NO ground-height query** — see below |
 | `Zenith_InstancedMeshComponent` | GPU-instanced mesh rendering |
 | `Zenith_ParticleEmitterComponent` | Particle effect emitters |
 | `Zenith_GraphComponent` | Behaviour Graph host (multiple .bgraph slots per entity, hot-reloadable) |
@@ -23,6 +23,34 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_AIAgentComponent` | Behaviour tree execution + blackboard state (AI system integration) |
 | `Zenith_AttachmentComponent` | Bone-attachment that follows a named bone on another entity each frame (e.g. racket in hand, held weapon) |
 | `Zenith_NavMeshComponent` | Baked-navmesh holder — loads a committed `.znavmesh` in `OnStart` and owns it for the component's lifetime; rich TOOLS debugging panel |
+
+## Terrain has no ground-height query (task_0515a49e / Zenithmon Shortfalls E8)
+
+`Zenith_TerrainComponent` has no `GetHeightAt(x, z)` of any name — its public
+surface is render/culling/material/asset-set accessors plus `HasPhysicsGeometry()`
+/ `GetPhysicsMeshGeometry()`. **The only way to ask where the ground is, is a
+physics raycast, and that answers a materially different question:** *what is the
+first BODY below this point*. Anything standing on the ground occludes it, and the
+difference is not filterable —
+
+- `Zenith_Physics::Raycast` / `Zenith_PhysicsQuery::RaycastIgnoring` take exactly
+  **one** ignore entity, so two overlapping bodies over a column are unmeasurable;
+- restarting the ray below a hit does not rescue it: an object *standing* on the
+  ground has its underside AT the surface, and anything deliberately embedded (a
+  shell sunk 0.05 m so no visible gap opens) has it BELOW the surface;
+- it needs the terrain physics body **streamed in**, so it is frame-dependent and
+  unusable at authoring time — the editor add path uses the deserialization ctor
+  and never calls `LoadCombinedPhysicsGeometry`, so an authoring-time cast MISSES.
+
+Two tiers if you pick this up: **Tier 1** serves the query from
+`GetPhysicsMeshGeometry()` as a triangle lookup (no Jolt, no body filtering —
+removes the occlusion problem, still needs streaming); **Tier 2** keeps or loads
+the heightfield — note this component holds **no** height data at runtime, it
+loads baked mesh chunks and `Terrain/<Set>/Height.ztxtr` is read only by the TOOLS
+editor path — which would make the query work at authoring time.
+
+Full detail and the caller it currently bites (ZM-D-173's Home door jambs) is in
+the `TODO(terrain-height-query)` block in `Zenith_TerrainComponent.h`.
 
 ## AnimatorComponent is a forwarding handle (Wave-19 ownership relocation)
 
