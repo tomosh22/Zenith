@@ -123,6 +123,7 @@
 #include "Zenithmon/Source/Core/ZM_SaveSchema.h"
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"
 #include "Zenithmon/Source/Save/ZM_Autosave.h"
 #include "Zenithmon/Source/Save/ZM_ResumePoint.h"
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"
@@ -902,7 +903,8 @@ namespace
 	// ZM_GameState temporary of its frame (the starter factory return).
 	void MABuildDistinctive()
 	{
-		g_xMADistinctive = ZM_MakeStarterGameState();
+		g_xMADistinctive = ZM_MakeNewGameState();
+		ZM_ApplyStarterChoice(g_xMADistinctive, ZM_STARTER_CHOICE_FERNFAWN);
 		g_xMADistinctive.m_uMoney = uMA_DISTINCTIVE_MONEY;
 		ZM_SetStoryFlag(g_xMADistinctive, ZM_STORY_FLAG_MET_PROFESSOR, true);
 		ZM_Monster xProof = ZM_BuildMonsterRecord(ZM_SPECIES_NIBBIN, 9u);

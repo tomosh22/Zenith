@@ -22,6 +22,7 @@
 #include "Zenithmon/Source/Interaction/ZM_InteractionRuntime.h"   // TryResolveActivePlayer -- THE player seam
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"    // the SC3 pure cone (unmodified)
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightProbe.h"    // the occlusion filter
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"              // ZM_CanEnterBattle -- the gate's fourth observation
 #include "Zenithmon/Source/World/ZM_EncounterEvents.h"            // ZM_OnTrainerEncounter
 
 #ifdef ZENITH_TOOLS
@@ -643,7 +644,7 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 
 	const ZM_TrainerData& xRow = ZM_GetTrainerData(m_eTrainerId);
 
-	// The gate's two observations. No reachable game state means NOTHING HAS
+	// The gate's three observations. No reachable game state means NOTHING HAS
 	// HAPPENED YET -- the identical ruling Interact() already makes for story-gated
 	// dialogue. Every defeat flag then reads clear, so a flagged trainer IS
 	// engageable, which is exactly the answer a fresh save gives.
@@ -654,9 +655,24 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 		bHasGameState && ZM_IsStoryFlagSet(*pxGameState, xRow.m_eDefeatFlag);
 	const bool bLatchSet = ZM_TrainerEngagementLatch::HasEngaged(m_eTrainerId);
 
+	// The SAME "NOTHING HAS HAPPENED YET" ruling the two lines above make: with no
+	// reachable game state the player is treated as ABLE to battle, which is the
+	// pre-SC3 answer at every site. A `false` here would silently disable every
+	// trainer in any scene that runs without a GameStateManager -- a live behaviour
+	// change in exactly the windowed tests this commit must not move.
+	//
+	// INERT TODAY, and deliberately so (S8 item 1 SC3). ZM_Party exposes no removal
+	// path at all and all three seed sites grant a starter, so nothing production can
+	// reach shrinks a party to empty and ZM_CanEnterBattle answers true on every
+	// reachable path. Landing the wiring while it cannot fire is what makes the arm
+	// independently unit-testable at zero behavioural risk; a later sub-commit makes
+	// production partyless behind a gate that already shipped green.
+	const bool bPlayerCanBattle = !bHasGameState || ZM_CanEnterBattle(*pxGameState);
+
 	ZM_TrainerSightInputs xInputs;
 	xInputs.m_fDeltaSeconds = fDeltaTime;
-	xInputs.m_bMayEngage = ZM_MayTrainerEngage(xRow, bDefeatFlagSet, bLatchSet);
+	xInputs.m_bMayEngage =
+		ZM_MayTrainerEngage(xRow, bDefeatFlagSet, bLatchSet, bPlayerCanBattle);
 	// THE PRECONDITION ACCESSORS. IsTransitionActive() is the only public window
 	// onto the battle machine (there is NO accessor for its two pending latches),
 	// so the FSM additionally treats a raise as unconfirmed until the channel is

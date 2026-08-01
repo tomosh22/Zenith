@@ -63,7 +63,8 @@
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
 #include "Zenithmon/Source/Core/ZM_SaveSchema.h"
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"
-#include "Zenithmon/Source/Party/ZM_GameState.h"
+#include "Zenithmon/Source/Party/ZM_GameState.h"        // ZM_MakeNewGameState
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"    // ZM_ApplyStarterChoice / ZM_STARTER_CHOICE_FERNFAWN
 #include "Zenithmon/Source/Save/ZM_ResumePoint.h"
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"
@@ -676,6 +677,31 @@ ZENITH_AUTOMATED_TEST_REGISTER(g_xZMSaveContinueTest);
 
 namespace
 {
+	// Seed an EXISTING state to the exact composition the manager's three seed sites
+	// ship: a new game plus the Fernfawn grant, which is what the deleted starter
+	// seed produced field for field. Several fixtures below nickname or read
+	// m_xParty.Get(0u) -- and Get() Zenith_Asserts on an empty party, which breaks
+	// the process in EVERY config -- so this must stay the COMPOSED state, never a
+	// bare ZM_MakeNewGameState(). It also has to match what
+	// ZM_GameStateManager::RequestNewGame publishes, because
+	// SCPhaseAwaitNewGameAccepted compares the live state against it.
+	//
+	// ★ BY REFERENCE, NOT A RETURNING FACTORY, AND THAT IS THE STACK BUDGET TALKING.
+	// A `ZM_GameState SCMake...()` would add a frame holding one more live
+	// ZM_GameState at the deepest point of every call: under /Od NRVO does not fire,
+	// so the helper's named local is copied into the caller's slot while
+	// ZM_MakeNewGameState's own local is still alive. At ~100-200 KB apiece against
+	// this exe's 1 MB main-thread reserve that is exactly the arithmetic that
+	// overflowed __chkstk here before the per-phase split (see the note above
+	// SCPhaseAwaitEmptyTitle). Written this way the peak is IDENTICAL to the
+	// single-factory call it replaces, and SCWriteDiskFixtures keeps its documented
+	// two-ZM_GameState ceiling.
+	void SCSeedFernfawnStarter(ZM_GameState& xStateOut)
+	{
+		xStateOut = ZM_MakeNewGameState();
+		ZM_ApplyStarterChoice(xStateOut, ZM_STARTER_CHOICE_FERNFAWN);
+	}
+
 	void SCFail(const char* szReason)
 	{
 		g_szSCFailure = szReason;
@@ -874,7 +900,7 @@ namespace
 			// New Game must replace a real, valid non-starter rather than merely leave the
 			// manager's default starter untouched. Keep the transient whiteout latch false
 			// so only the simulated Enter edge can own the next transition.
-			g_xSCNewGameCanary = ZM_MakeStarterGameState();
+			SCSeedFernfawnStarter(g_xSCNewGameCanary);
 			std::snprintf(g_xSCNewGameCanary.m_xParty.Get(0u).m_szNickname,
 				sizeof(g_xSCNewGameCanary.m_xParty.Get(0u).m_szNickname), "NewCanary");
 			g_xSCNewGameCanary.m_uMoney = 8080u;
@@ -934,7 +960,8 @@ namespace
 		if (pxManager != nullptr && pxMenu != nullptr
 			&& ZM_GameStateManager::IsWarpInProgress())
 		{
-			const ZM_GameState xStarter = ZM_MakeStarterGameState();
+			ZM_GameState xStarter;
+			SCSeedFernfawnStarter(xStarter);
 			g_bSCNewGameAccepted = pxManager->GetTargetBuildIndex() == iSC_DAWNMERE_BUILD;
 			g_bSCNewGamePublishedStarter =
 				ZM_GameStateManager::TryGetGameState(pxLive) && pxLive != nullptr
@@ -1030,14 +1057,16 @@ namespace
 
 	// The fixture phase is itself split in TWO so the monster-staging frame stays
 	// free of disk-read state and the disk frame stays free of monsters:
-	// SCBuildSavedStateFixture owns the starter temporary plus the three
-	// ZM_Monster staging records (one ZM_GameState), SCWriteDiskFixtures owns the
+	// SCBuildSavedStateFixture owns the three ZM_Monster staging records and NO
+	// ZM_GameState local at all -- SCSeedFernfawnStarter writes the composed seed
+	// straight into the global, which is why it takes a reference rather than
+	// returning one -- while SCWriteDiskFixtures owns the
 	// read-back candidate and the damage source (two ZM_GameState -- the
 	// per-function ceiling noted above). Call order is the original straight-line
 	// order -- build the saved state completely, then touch disk.
 	void SCBuildSavedStateFixture()
 	{
-		g_xSCSaved = ZM_MakeStarterGameState();
+		SCSeedFernfawnStarter(g_xSCSaved);
 		g_xSCSaved.m_xParty = ZM_Party{};
 		ZM_Monster xLead = ZM_BuildMonsterRecord(ZM_SPECIES_NIBBIN, 17u);
 		std::snprintf(xLead.m_szNickname, sizeof(xLead.m_szNickname), "DiskProof");
@@ -1099,7 +1128,8 @@ namespace
 			ZM_SAVE_SLOT_AUTO, xAutoReadback).IsOk()
 			&& SCCanonicalEqual(g_xSCSaved, xAutoReadback);
 
-		const ZM_GameState xDamageSource = ZM_MakeStarterGameState();
+		ZM_GameState xDamageSource;
+		SCSeedFernfawnStarter(xDamageSource);
 		g_bSCDamagedReady = ZM_SaveSlots::WriteState(
 			xDamageSource, ZM_SAVE_SLOT_0).IsOk()
 			&& SCCorruptSlot(ZM_SAVE_SLOT_0)
@@ -1140,7 +1170,7 @@ namespace
 			return false;
 		}
 
-		g_xSCQueueCanary = ZM_MakeStarterGameState();
+		SCSeedFernfawnStarter(g_xSCQueueCanary);
 		std::snprintf(g_xSCQueueCanary.m_xParty.Get(0u).m_szNickname,
 			sizeof(g_xSCQueueCanary.m_xParty.Get(0u).m_szNickname), "QueueCanary");
 		g_xSCQueueCanary.m_uMoney = 606060u;
@@ -1179,7 +1209,7 @@ namespace
 		// The synthetic busy transition and transient whiteout canary must not survive
 		// this callback. No runtime frame sees either one.
 		ZM_GameStateManager::ResetRuntimeStateForTests();
-		*pxLive = ZM_MakeStarterGameState();
+		SCSeedFernfawnStarter(*pxLive);
 		SCResetSlotOperationTrace();
 		if (!g_bSCQueueRefusalExactRead || !g_bSCQueueRefusalStateUnchanged
 			|| !g_bSCQueueRefusalTransitionUnchanged)
@@ -1298,7 +1328,7 @@ namespace
 			SCFail("persistent live state was unavailable for deliberate scramble");
 			return false;
 		}
-		g_xSCScramble = ZM_MakeStarterGameState();
+		SCSeedFernfawnStarter(g_xSCScramble);
 		g_xSCScramble.m_uMoney = 73u;
 		ZM_SetStoryFlag(g_xSCScramble, ZM_STORY_FLAG_GYM1_DEFEATED, true);
 		g_xSCScramble.m_xWorldPosition = g_xSCSaved.m_xWorldPosition;

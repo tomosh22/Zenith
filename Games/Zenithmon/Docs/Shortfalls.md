@@ -26,9 +26,13 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   traversable Dawnmere + live PlayerHome door round trip; S4's five procedural asset generators +
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
-- **★ CURRENT VERIFIED BASELINE (re-observed 2026-08-01 at ZM-D-174, every figure off an
-  OBSERVED line):** ZM headless registry **54 passed / 0 failed**; ZM boot unit gate
-  **2825 ran / 2823 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to **2825**); engine boot
+- **★ CURRENT VERIFIED BASELINE (re-observed 2026-08-01 at ZM-D-175, every figure off an
+  OBSERVED line):** ZM headless registry **54 passed / 0 failed** (UNMOVED by ZM-D-175, which adds
+  no automated test); ZM boot unit gate **2840 ran / 2838 passed / 0 failed / 2 skipped**
+  (`zm-tests.yml` pinned to **2840**) -- ZM-D-175 added **+15** boot units (13 `ZM_Starter` in
+  `Tests/ZM_Tests_StarterChoice.cpp`, 2 `ZM_Interaction` for the inert `bPlayerCanBattle` arm in
+  `Tests/ZM_Tests_TrainerSightFsm.cpp`). Its predecessor ZM-D-174 stood at registry 54 / boot
+  **2825 / 2823 / 0 / 2**; engine boot
   gate **1235 / 1234 / 0 / 1** (`run_unit_gate.ps1` default `-Baseline 1235` -- this is the ENGINE
   cross-game number and did NOT move; ZM-D-174 is GAME-ONLY and touched no file under `Zenith/`).
   ZM-D-174 moved the registry 53 -> 54 (`ZM_ProfLabWarp_Test`) and the ZM boot baseline

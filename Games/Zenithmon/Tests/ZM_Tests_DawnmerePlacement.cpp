@@ -534,7 +534,7 @@ ZENITH_TEST(ZM_Interaction, DawnmereNpcAnchors_KeepTheirAuthoredXZDerivations)
 // routes through the WILD write-back (m_bPendingWhiteout), heals, and warps the
 // player to the Dawnmere TownCenter (ZM_GameStateManager.cpp:177-186) WITHOUT
 // setting RIVAL1_DEFEATED -- and ZM_MayTrainerEngage's flagged arm ignores the
-// session latch (ZM_TrainerSightFsm.cpp:83-86). So a rival whose cone covered the
+// session latch (ZM_TrainerSightFsm.cpp). So a rival whose cone covered the
 // respawn would re-challenge forever and the player could never reach the Care
 // Center. RANGE is what prevents that, which is why clause (b) exists.
 ZENITH_TEST(ZM_Interaction, Vesper_PlacementCannotSpawnCampOnTheWhiteoutTarget)

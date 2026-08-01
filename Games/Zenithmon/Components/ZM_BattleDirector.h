@@ -76,9 +76,11 @@ public:
 
 	// --- Pure static decision surface (unit-tested with NO entity/scene/graphics) ---
 
-	// A deterministic, reproducible placeholder spec for the player side (the real
-	// party comes from a later box): a fixed valid starter at level 5, so every call
-	// returns the same bytes and m_eSpecies != NONE / m_aeMoves[0] != NONE.
+	// A deterministic, reproducible placeholder spec for the player side, used ONLY
+	// when there is no live party lead to build from (no GameStateManager, or an
+	// empty party): the Fernfawn starter row at the shared starter level, sourced
+	// from the ONE starter table so there is no second hard-coded species. Every
+	// call returns the same bytes and m_eSpecies != NONE / m_aeMoves[0] != NONE.
 	static ZM_BattleMonsterSpec BuildPlaceholderPlayerSpec();
 	// The S5 wild-battle config: wild, no exp award (all other fields default).
 	static ZM_BattleConfig      BuildBattleConfig();

@@ -129,12 +129,27 @@ const char* ZM_TrainerSightActionName(ZM_TRAINER_SIGHT_ACTION eAction)
 
 bool ZM_MayTrainerEngage(const ZM_TrainerData& xRow,
 	bool bDefeatFlagSet,
-	bool bSessionLatchSet)
+	bool bSessionLatchSet,
+	bool bPlayerCanBattle)
 {
 	// The UNKNOWN row ZM_GetTrainerData hands back for a bad id carries
 	// ZM_TRAINER_NONE, so this one comparison rejects it and every hand-built
 	// garbage row together. Fail CLOSED: an unauthored trainer never battles.
 	if (!ZM_IsRegisteredTrainer(xRow.m_eId))
+	{
+		return false;
+	}
+	// The player must have something to send out. Placed BEFORE the flag/latch split
+	// so ONE clause closes BOTH arms rather than being duplicated at the two returns
+	// below -- THAT position is observable, because the split's two arms can answer
+	// true.
+	//
+	// Its position relative to the registration guard above is NOT observable, and no
+	// test claims otherwise: both clauses return the same `false`, so no input can
+	// distinguish this order from the reverse one. It sits second because "this row
+	// was never authored" is the more fundamental rejection to read first, not
+	// because anything checks.
+	if (!bPlayerCanBattle)
 	{
 		return false;
 	}

@@ -17,6 +17,7 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Zenithmon/Source/Party/ZM_Bag.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"   // ZM_ApplyStarterChoice (the starter half of the seed)
 
 namespace
 {
@@ -450,7 +451,10 @@ ZENITH_TEST(ZM_Bag, Money_SpendRejectsUnaffordableAndAllowsExactBalance)
 
 ZENITH_TEST(ZM_Bag, Starter_SeedsTheEconomyAndKeepsTheOldGuarantees)
 {
-	const ZM_GameState xState = ZM_MakeStarterGameState();
+	// The composition every production seed site ships. The party assertions below
+	// are why this is NOT a bare ZM_MakeNewGameState().
+	ZM_GameState xState = ZM_MakeNewGameState();
+	ZM_ApplyStarterChoice(xState, ZM_STARTER_CHOICE_FERNFAWN);
 
 	ZENITH_ASSERT_EQ(xState.m_uMoney, 3000u, "the starter purse is the ruled placeholder 3000");
 	ZENITH_ASSERT_EQ(xState.m_xBag.GetCount(ZM_ITEM_CATCHORB), 5u, "five Catch Orbs to start");
@@ -467,7 +471,8 @@ ZENITH_TEST(ZM_Bag, Starter_SeedsTheEconomyAndKeepsTheOldGuarantees)
 
 ZENITH_TEST(ZM_Bag, Starter_ItemsLandInTheirTablePockets)
 {
-	const ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState = ZM_MakeNewGameState();
+	ZM_ApplyStarterChoice(xState, ZM_STARTER_CHOICE_FERNFAWN);
 
 	const ZM_ITEM_CATEGORY eBallPocket = PocketOf(ZM_ITEM_CATCHORB);
 	const ZM_ITEM_CATEGORY eMedPocket  = PocketOf(ZM_ITEM_SALVE);

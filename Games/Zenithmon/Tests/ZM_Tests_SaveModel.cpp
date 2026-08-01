@@ -10,6 +10,7 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Zenithmon/Source/Party/ZM_Monster.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"
 #include "Zenithmon/Source/Party/ZM_BoxStorage.h"
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h"
 #include "Zenithmon/Source/Battle/ZM_BattleTower.h"
@@ -443,7 +444,11 @@ ZENITH_TEST(ZM_Save, Options_DefaultTextSpeedIsNormal)
 
 ZENITH_TEST(ZM_Save, StarterState_SeedsSeenCaughtAndEmptyNewModules)
 {
-	const ZM_GameState xState = ZM_MakeStarterGameState();
+	// The composition every production seed site ships: a new game plus the
+	// Fernfawn grant. Field for field what the deleted starter seed produced, so
+	// every assertion below keeps its exact meaning.
+	ZM_GameState xState = ZM_MakeNewGameState();
+	ZM_ApplyStarterChoice(xState, ZM_STARTER_CHOICE_FERNFAWN);
 	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), 1u, "starter retains its single party lead");
 	ZENITH_ASSERT_TRUE(xState.IsSeen(ZM_SPECIES_FERNFAWN), "the starter species is seen");
 	ZENITH_ASSERT_TRUE(xState.IsCaught(ZM_SPECIES_FERNFAWN), "the starter species is caught");

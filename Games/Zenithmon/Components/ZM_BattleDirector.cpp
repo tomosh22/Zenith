@@ -20,6 +20,7 @@
 #include "Zenithmon/Source/Party/ZM_GameState.h"           // ZM_GameState (party lead read + write-back)
 #include "Zenithmon/Source/Party/ZM_Monster.h"             // ZM_MonsterToBattleSpec (real lead -> battle seed)
 #include "Zenithmon/Source/Party/ZM_BattleWriteBack.h"     // ZM_ApplyBattleResultToParty (SC3 write-back)
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"       // the ONE starter table (placeholder species + level)
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -33,13 +34,6 @@
 // by turn, and end the round-trip via ZM_BattleTransition::RequestBattleEnd()
 // exactly once; it also owns and drives the ZM_UI_BattleHUD (SC4). ZM-D-102/103.
 // ============================================================================
-
-// A fixed valid starter (dex row 0). BuildPlaceholderPlayerSpec pins this so the
-// player spec is deterministic and reproducible; a starter at level 5 always has a
-// level-1 same-type move (ZM_GetSpeciesLearnset guarantees a level-1 STAB pick), so
-// m_aeMoves[0] != ZM_MOVE_NONE.
-static const ZM_SPECIES_ID s_ePLACEHOLDER_PLAYER_SPECIES = ZM_SPECIES_FERNFAWN;
-static const u_int         s_uPLACEHOLDER_PLAYER_LEVEL   = 5u;
 
 // Test-only catch-ball override (S5 item 5 SC4). Mirrors ZM_SetInstantBattlesForTests: a
 // process-lifetime static the RUNNING drive substitutes onto any ITEM (catch) action the
@@ -443,8 +437,23 @@ void ZM_BattleDirector::SetCreatureModelSpecies(ZM_SIDE eSide, ZM_SPECIES_ID eSp
 
 ZM_BattleMonsterSpec ZM_BattleDirector::BuildPlaceholderPlayerSpec()
 {
-	// Deterministic (same bytes every call): a fixed valid starter at a fixed level.
-	return ZM_BuildWildEnemySpec(s_ePLACEHOLDER_PLAYER_SPECIES, s_uPLACEHOLDER_PLAYER_LEVEL);
+	// Deterministic (same bytes every call), and NOT a second hard-coded species:
+	// the one starter table (ZM_StarterChoice.h) owns both the species and the level,
+	// so the duplicate file-statics this function used to read are DELETED rather
+	// than left to drift against the seed (S8 item 1 SC3). Byte-identical: the
+	// Fernfawn row resolves to ZM_SPECIES_FERNFAWN and uZM_STARTER_LEVEL is 5.
+	//
+	// This branch is reached ONLY when there is no live party lead (no
+	// GameStateManager, or an empty party) -- when one exists, RunSetup and
+	// RunTrainerSetup already build the player side from ZM_Party::Lead(). It stays
+	// static and state-free precisely because "derive it from the lead" is undefined
+	// on the branch whose whole precondition is that there is no lead.
+	//
+	// A starter at level 5 always has a level-1 same-type move
+	// (ZM_GetSpeciesLearnset guarantees a level-1 STAB pick), so m_aeMoves[0] is
+	// never ZM_MOVE_NONE.
+	return ZM_BuildWildEnemySpec(
+		ZM_ResolvePlayerStarterSpecies(ZM_STARTER_CHOICE_FERNFAWN), uZM_STARTER_LEVEL);
 }
 
 ZM_BattleConfig ZM_BattleDirector::BuildBattleConfig()

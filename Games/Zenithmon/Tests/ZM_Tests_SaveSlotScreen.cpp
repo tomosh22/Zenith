@@ -47,7 +47,8 @@
 #include "FileAccess/Zenith_FileAccess.h"
 #include "SaveData/Zenith_SaveData.h"
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"   // near-miss ROOT names for the foreign-name fixtures
-#include "Zenithmon/Source/Party/ZM_GameState.h"    // ZM_MakeStarterGameState (the disk fixtures)
+#include "Zenithmon/Source/Party/ZM_GameState.h"    // ZM_MakeNewGameState (the disk fixtures)
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"  // ZM_ApplyStarterChoice (their starter half)
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"
 #include "Zenithmon/Source/UI/ZM_UI_SaveSlots.h"
 
@@ -259,7 +260,9 @@ namespace
 	// caller can bail before asserting on a status it never actually got.
 	bool WriteStarterSlot(ZM_SAVE_SLOT eSlot)
 	{
-		const ZM_GameState xState = ZM_MakeStarterGameState();
+		// The composition production ships: a new game plus the Fernfawn grant.
+		ZM_GameState xState = ZM_MakeNewGameState();
+		ZM_ApplyStarterChoice(xState, ZM_STARTER_CHOICE_FERNFAWN);
 		const Zenith_Status xStatus = ZM_SaveSlots::WriteState(xState, eSlot);
 		ZENITH_ASSERT_TRUE(xStatus.IsOk(),
 			"the disk fixture failed to write slot %u (error %u)",

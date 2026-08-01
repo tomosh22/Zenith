@@ -11,7 +11,8 @@
 #include "UnitTests/Zenith_AssertCapture.h"               // SC5: the trainer payout's totality proof
 #include "Zenithmon/Source/Party/ZM_Monster.h"
 #include "Zenithmon/Source/Party/ZM_Party.h"
-#include "Zenithmon/Source/Party/ZM_GameState.h"
+#include "Zenithmon/Source/Party/ZM_GameState.h"          // ZM_MakeNewGameState
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"      // ZM_ApplyStarterChoice / ZM_STARTER_CHOICE_FERNFAWN
 #include "Zenithmon/Source/Party/ZM_BattleWriteBack.h"   // ZM_ApplyBattleResultToParty (win-only lead persist)
 #include "Zenithmon/Source/Battle/ZM_BattleMonster.h"    // ZM_BuildBattleMonster, uZM_CURHP_UNSPECIFIED
 #include "Zenithmon/Source/Battle/ZM_BattleDirectorCore.h" // ZM_BuildWildEnemySpec
@@ -64,6 +65,31 @@ namespace
 			if (xRec.m_axMoves[i].m_eMove == eMove) { return true; }
 		}
 		return false;
+	}
+
+	// The exact composition production ships (ZM_GameStateManager's three seed
+	// sites): a new game plus the Fernfawn grant. This is what the deleted
+	// starter seed produced field for field, so every unit routed through it keeps
+	// the fixture it was written against.
+	//
+	// GameState_NewGamePlusFernfawnIsSingleValidStarter deliberately does NOT use
+	// it: that unit IS the composition's contract and may not be routed through the
+	// helper it exists to pin -- a helper that silently stopped granting anything
+	// would then take the unit down with it and the unit would be proving nothing.
+	//
+	// ★ BY REFERENCE, NOT A RETURNING FACTORY, AND THAT IS THE STACK BUDGET TALKING.
+	// A `ZM_GameState MakeFernfawn...()` holds one MORE live ZM_GameState at the
+	// deepest point of every call: under /Od NRVO does not fire, so the helper's named
+	// local is copied into the caller's slot while ZM_MakeNewGameState's own local is
+	// still alive. ZM_GameState is dominated by ZM_BoxStorage, so that third copy is
+	// tens of KB against this exe's 1 MB main-thread reserve -- the same arithmetic
+	// that overflowed __chkstk in Tests/ZM_AutoTests_SaveContinue.cpp (see the note
+	// above SCSeedFernfawnStarter there, whose shape this deliberately mirrors).
+	// Written this way the peak matches the single-factory call it replaces.
+	void SeedFernfawnStarterFixture(ZM_GameState& xStateOut)
+	{
+		xStateOut = ZM_MakeNewGameState();
+		ZM_ApplyStarterChoice(xStateOut, ZM_STARTER_CHOICE_FERNFAWN);
 	}
 
 	// --- real-core drive helpers (SC5). Mirror ZM_Tests_BattleDirector's file-local
@@ -290,11 +316,17 @@ ZENITH_TEST(ZM_Party, GameState_CaughtSetMarkQueryCountIdempotent)
 	ZENITH_ASSERT_EQ(xState.GetCaughtCount(), 2u, "NONE is ignored");
 }
 
-// The starter GameState is exactly one valid Fernfawn L5 with a level-1 move,
-// its species marked caught, and no pending whiteout.
-ZENITH_TEST(ZM_Party, GameState_MakeStarterIsSingleValidStarter)
+// The composition every production seed site ships -- a new game plus the
+// Fernfawn grant -- is exactly one valid Fernfawn L5 with a level-1 move, its
+// species marked caught, and no pending whiteout.
+//
+// Spelled INLINE rather than through SeedFernfawnStarterFixture(): this unit is
+// the composition's contract, so routing it through the helper would make it
+// restate the helper instead of pinning the two production calls.
+ZENITH_TEST(ZM_Party, GameState_NewGamePlusFernfawnIsSingleValidStarter)
 {
-	const ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState = ZM_MakeNewGameState();
+	ZM_ApplyStarterChoice(xState, ZM_STARTER_CHOICE_FERNFAWN);
 
 	ZENITH_ASSERT_EQ(xState.m_xParty.Count(), 1u, "exactly one starter");
 	const ZM_Monster& xLead = xState.m_xParty.Get(0u);
@@ -905,7 +937,8 @@ ZENITH_TEST(ZM_Party, Party_HealAllFullFromLossRestoresEveryMember)
 // authored defeat flag, and does nothing else.
 ZENITH_TEST(ZM_Party, TrainerReward_WinCreditsThePrizeAndSetsTheDefeatFlag)
 {
-	ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState;
+	SeedFernfawnStarterFixture(xState);
 	const ZM_TrainerData& xRow = ZM_GetTrainerData(ZM_TRAINER_RIVAL_VESPER);
 	const u_int uMoneyBefore = xState.m_uMoney;
 	const u_int uPartyBefore = xState.m_xParty.Count();
@@ -957,7 +990,7 @@ ZENITH_TEST(ZM_Party, TrainerReward_LossAndDrawPayNothingAndLeaveTheWhiteoutToTh
 	ZM_GameState xState;
 	for (u_int u = 0u; u < 3u; ++u)
 	{
-		xState = ZM_MakeStarterGameState();
+		SeedFernfawnStarterFixture(xState);
 		const u_int uMoneyBefore = xState.m_uMoney;
 
 		const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
@@ -989,7 +1022,8 @@ ZENITH_TEST(ZM_Party, TrainerReward_LossAndDrawPayNothingAndLeaveTheWhiteoutToTh
 // frozen ZM_GameState. m_bFlagNewlySet is the lever that gate will read.
 ZENITH_TEST(ZM_Party, TrainerReward_SecondWinIsFlagIdempotentAndPaysAgain)
 {
-	ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState;
+	SeedFernfawnStarterFixture(xState);
 	const u_int uMoneyBefore = xState.m_uMoney;
 	ZENITH_ASSERT_LT(uMoneyBefore + 1000u, uZM_MONEY_CAP,
 		"two prizes must fit under the cap or the second credit is a saturation artefact");
@@ -1021,7 +1055,7 @@ ZENITH_TEST(ZM_Party, TrainerReward_MoneyAtTheCapCreditsNothingAndStillSetsTheFl
 	ZM_GameState xState;
 
 	// Case A -- exactly at the cap: nothing lands, the flag still does.
-	xState = ZM_MakeStarterGameState();
+	SeedFernfawnStarterFixture(xState);
 	xState.m_uMoney = uZM_MONEY_CAP;
 	{
 		const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
@@ -1036,7 +1070,7 @@ ZENITH_TEST(ZM_Party, TrainerReward_MoneyAtTheCapCreditsNothingAndStillSetsTheFl
 	}
 
 	// Case B -- partial headroom: exactly the headroom lands, not the whole prize.
-	xState = ZM_MakeStarterGameState();
+	SeedFernfawnStarterFixture(xState);
 	xState.m_uMoney = uZM_MONEY_CAP - 100u;
 	{
 		const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
@@ -1048,7 +1082,7 @@ ZENITH_TEST(ZM_Party, TrainerReward_MoneyAtTheCapCreditsNothingAndStillSetsTheFl
 
 	// Case C -- an imported over-cap purse (only reachable through a hand-edited
 	// save; module 7 restores the full uint32). AddMoney credits nothing there.
-	xState = ZM_MakeStarterGameState();
+	SeedFernfawnStarterFixture(xState);
 	xState.m_uMoney = uZM_MONEY_CAP + 5000u;
 	{
 		const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
@@ -1071,7 +1105,8 @@ ZENITH_TEST(ZM_Party, TrainerReward_UnflaggedRowStillPaysAndWritesNoFlag)
 		"the rambler no longer carries ZM_STORY_FLAG_NONE -- this case no longer covers "
 		"the unflagged arm");
 
-	ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState;
+	SeedFernfawnStarterFixture(xState);
 	const u_int uMoneyBefore = xState.m_uMoney;
 
 	const ZM_TrainerRewardResult xResult = ZM_ApplyTrainerResultToGameState(
@@ -1104,7 +1139,8 @@ ZENITH_TEST(ZM_Party, TrainerReward_UnregisteredTrainerIsATotalSilentNoOp)
 		(ZM_TRAINER_ID)77u
 	};
 
-	ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState;
+	SeedFernfawnStarterFixture(xState);
 	const u_int uMoneyBefore = xState.m_uMoney;
 
 	// NO ZENITH_ASSERT_* inside the capture scope (it swallows framework failures),

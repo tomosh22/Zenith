@@ -3,13 +3,15 @@
 **Last updated:** 2026-08-01
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (RE-OBSERVED 2026-08-01 at ZM-D-174, on fresh builds of both
+down this file (RE-OBSERVED 2026-08-01 at ZM-D-175, on fresh builds of both
 configs):** ZM headless registry **54 passed / 0 failed**; ZM boot unit gate
-**2825 ran / 2823 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
-**2825**); engine boot unit gate, Null Combat, **1235 ran / 1234 passed / 0
+**2840 ran / 2838 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
+**2840**); engine boot unit gate, Null Combat, **1235 ran / 1234 passed / 0
 failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1235`). One skip in
 each is the quarantined `GraphComponent::RegistryWideNodeRoundTrip`
 (task_726cc81d); ZM carries a second, ZM-side skip.
+ZM-D-175 moved the boot baseline **2825 -> 2840** (+15) and left the registry at
+**54** -- it adds no automated test. ZM-D-174 stood at registry 54 / boot 2825.
 **`run_unit_gate.ps1`'s 1235 default is the ENGINE cross-game number and MUST NOT
 move for a game-only change** -- ZM-D-174 touched no file under `Zenith/`, so it
 bumped only the three ZM-side sites.

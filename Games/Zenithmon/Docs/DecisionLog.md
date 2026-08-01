@@ -15,6 +15,103 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-01 -- ZM-D-175 -- S8 item 1 SC3: the starter seed is split, `ZM_MakeStarterGameState` is DELETED, and the empty-party gate lands while it is provably inert
+
+*(GAME-ONLY -- zero files under `Zenith/`, so no cross-game engine gate was owed.
+Three new files required `Build\regen.ps1`. BEHAVIOUR-PRESERVING BY DESIGN: not
+one runtime observable moves. Every number below is from an OBSERVED line.)*
+
+### Decision
+
+1. **`ZM_MakeStarterGameState` is SPLIT and DELETED in the same commit**, into a
+   partyless, dex-empty `ZM_MakeNewGameState()` that keeps the economy (3000
+   money, 5x CATCHORB, 3x SALVE) and a TOTAL
+   `ZM_ApplyStarterChoice(ZM_GameState&, ZM_STARTER_CHOICE)`. All **41** call
+   sites across **18** files migrate in this commit -- the no-legacy mandate
+   forbids leaving the old surface behind. Production sites and the between-tests
+   reset now COMPOSE an explicit Fernfawn L5 grant, so behaviour is bit-identical
+   and every windowed fixture keeps its lead monster.
+2. **`ZM_CanEnterBattle` keys on EMPTINESS ALONE, and that is a ruling.** The
+   fainted-aware form `!IsEmpty() && !AllFainted()` is NOT inert:
+   `ZM_BattleWriteBack.cpp:95` latches `m_bPendingWhiteout` on a loss while the
+   heal runs later in `ZM_GameStateManager::OnUpdate` once the transition is
+   IDLE -- so a fully fainted party is a REAL window that
+   `ZM_Interactable::TickTrainerSight` ticks through every frame, and keying on
+   fainting would move `m_bMayEngage` during it. The shipped form matches
+   `ZM_BattleDirector.cpp:232`/`:294` byte for byte. Note `ZM_Party::AllFainted()`
+   answers TRUE for an empty party, which is exactly what makes the wrong form
+   look correct.
+3. **The predicate and the new `bPlayerCanBattle` arm on `ZM_MayTrainerEngage`
+   land NOW, while INERT.** `ZM_Party`'s only mutators are `Add`, `Get` and
+   `HealAllFull` -- there is **no removal path anywhere**, and `ZM_BoxStorage`
+   exposes no deposit/withdraw -- so nothing in production can shrink a party to
+   empty. That is what makes "inert" a proven property rather than an assumption,
+   and it lets a later sub-commit flip production partyless behind a gate that
+   already shipped green.
+4. **`ZM_MayTrainerEngage`'s new parameter deliberately has NO default
+   argument**, so a missed call site is a hard compile error rather than a silent
+   wrong value. All 13 sites were updated.
+5. **The counter-starter column is AUTHORED, not derived.** Deriving it by
+   querying `ZM_TypeChart` would make the agreement unit a tautology that can
+   never fail; authored, it is a real tripwire over both the column and the chart.
+   Nothing consumes it yet -- the shipped Vesper row stays a literal so behaviour
+   does not move, and a unit asserts the two agree.
+
+### Deviation from the plan text, recorded so nobody "fixes" it back
+
+The plan said to derive `ZM_BattleDirector`'s placeholder species "from the live
+party lead". That is not implementable: both call sites invoke
+`BuildPlaceholderPlayerSpec` ONLY in the `else` of a branch whose precondition is
+that the party is EMPTY, so there is no lead to derive from. The shipped form
+sources it from the starter table instead. The actual goal -- deleting the second
+hard-coded Fernfawn -- is met, and the result is byte-identical.
+
+### Tests that lock it
+
+**+15 boot units** (2825 -> **2840**), registry UNMOVED at **54**: 13 `ZM_Starter`
+units in `Tests/ZM_Tests_StarterChoice.cpp` and 2 `ZM_Interaction` units
+extending -- not rewriting -- the existing `ZM_MayTrainerEngage` truth table, so
+the defeat-flag and session-latch arms are re-proved unmoved.
+
+**MUTATION-PROVEN, and the mutation was chosen to be SUBTLE.** Replacing
+`xState.MarkCaught(xRow.m_eSpecies)` with `xState.MarkCaught(ZM_SPECIES_FERNFAWN)`
+inside `ZM_ApplyStarterChoice` COMPILES and PASSES for the Fernfawn choice --
+which is the production path -- so 14 of the 15 new units and every existing suite
+stay green. Observed: **2840 ran, 2837 passed, 1 failed**, and the one failure was
+exactly `ZM_Starter::Apply_MarksOnlyTheChosenSpeciesSeenAndCaught`. It manifests
+because the body is a transcription of a site where the species WAS a file-static
+constant, and leaving that constant behind in one of the two lines that used it is
+precisely what a split-and-parameterise refactor gets wrong. Green restored on
+revert.
+
+### A comment corrected rather than a test fabricated
+
+A source comment claimed the new clause's position relative to the registration
+guard was "pinned" by an existing unit. It is not, and CANNOT be: both clauses
+return `false`, so their relative order is unobservable for every possible input.
+The comment was reworded to say so. **No test was invented to "pin" it** -- an
+assertion that appeared to check an unobservable property would be checking
+nothing, which is the failure mode this project hunts.
+
+### One consistency fix the review caught
+
+Three test fixtures returned `ZM_GameState` BY VALUE while
+`ZM_AutoTests_SaveContinue.cpp` documents that the by-value form is exactly what
+previously overflowed `__chkstk` there. Under `/Od` MSVC applies no NRVO, so each
+by-value call held three live `ZM_GameState` (~+78 KB peak, dominated by
+`ZM_BoxStorage`'s 16x30 slots). All three converted to the by-reference idiom
+across **19** call sites -- four more than the review's list, found by the fixer's
+own grep and reported rather than worked around.
+
+### Reversibility
+
+Moderate. Game-only and behaviour-preserving, but it touches 30 files and deletes
+a widely-called function, so a revert is a single `git revert` rather than a
+surgical edit. No save schema, ECS order or serialization version moved --
+`ZM_ApplyStarterChoice` deliberately sets no story flag.
+
+---
+
 ## 2026-08-01 -- ZM-D-174 -- S8 item 1 SC1: the ProfLab interior is authored and build index 41 is registered, closing a shipped warp wedge; a control proves Dawnmere's scene drift is NOT ours
 
 *(GAME-ONLY -- zero files under `Zenith/`, so no cross-game engine gate was owed.

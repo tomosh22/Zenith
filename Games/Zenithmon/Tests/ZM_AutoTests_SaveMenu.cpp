@@ -70,6 +70,7 @@
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"
 #include "Zenithmon/Source/UI/ZM_UI_DialogueBox.h"
 #include "Zenithmon/Source/UI/ZM_UI_SaveSlots.h"
@@ -1538,7 +1539,8 @@ namespace
 		ZM_SaveSlots::SetTestSlotNamesForTests(true);
 		ZM_SaveSlots::DeleteAllSlotsForTests();
 		Zenith_SaveData::ClearForTest();
-		const ZM_GameState xFixture = ZM_MakeStarterGameState();
+		ZM_GameState xFixture = ZM_MakeNewGameState();
+		ZM_ApplyStarterChoice(xFixture, ZM_STARTER_CHOICE_FERNFAWN);
 		g_bRQAutoFixtureReady = ZM_SaveSlots::WriteState(
 			xFixture, ZM_SAVE_SLOT_AUTO).IsOk()
 			&& ZM_SaveSlots::ProbeSlot(ZM_SAVE_SLOT_AUTO) == ZM_SAVE_SLOT_READY;

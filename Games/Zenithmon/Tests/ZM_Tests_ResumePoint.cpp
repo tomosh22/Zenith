@@ -71,6 +71,7 @@
 #include "Zenithmon/Source/Core/ZM_SaveSchema.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
 #include "Zenithmon/Source/Party/ZM_GameState.h"
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"     // ZM_ApplyStarterChoice (the starter half of the fixture)
 #include "Zenithmon/Source/Save/ZM_Autosave.h"
 #include "Zenithmon/Source/Save/ZM_ResumePoint.h"
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"
@@ -296,7 +297,8 @@ ZENITH_TEST(ZM_Save, Resume_UnsetSceneSentinelIsInvalidScene)
 	// A default-constructed ZM_GameState is exactly this shape, and it is what
 	// every brand-new game carries -- so the same answer must come back from the
 	// model's own default, not merely from a hand-built copy of it.
-	const ZM_GameState xStarter = ZM_MakeStarterGameState();
+	ZM_GameState xStarter = ZM_MakeNewGameState();
+	ZM_ApplyStarterChoice(xStarter, ZM_STARTER_CHOICE_FERNFAWN);
 	const ZM_RESUME_VALIDITY eStarterValidity =
 		ZM_ValidateResume(xStarter.m_xWorldPosition, true);
 	ZENITH_ASSERT_EQ((u_int)eStarterValidity, (u_int)ZM_RESUME_INVALID_SCENE,
@@ -874,7 +876,8 @@ ZENITH_TEST(ZM_Save, Codec_ResumeDecisionSurvivesASchemaRoundTrip)
 	ZENITH_ASSERT_TRUE(bMade, "the round-trip fixture failed to build");
 	if (!bMade) { return; }
 
-	ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState = ZM_MakeNewGameState();
+	ZM_ApplyStarterChoice(xState, ZM_STARTER_CHOICE_FERNFAWN);
 	xState.m_xWorldPosition = xBuilt;
 
 	const Zenith_Vector<u_int8> xBytes = EncodeState(xState, "the resume round trip");

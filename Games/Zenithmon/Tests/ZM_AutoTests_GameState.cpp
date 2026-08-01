@@ -33,8 +33,10 @@
 // resolved pointer BEFORE the load and re-observed through a FRESH resolution
 // AFTER it: only the one persistent instance could carry that mutation across.
 //
-// The seed is the fixed D4 starter (ZM_MakeStarterGameState): a party whose sole
-// lead is Fernfawn at L5, with Fernfawn marked in the caught-set. The between-
+// The seed is the fixed D4 starter -- ZM_MakeNewGameState() composed with
+// ZM_ApplyStarterChoice(state, ZM_STARTER_CHOICE_FERNFAWN), which is what every
+// production seed site ships: a party whose sole lead is Fernfawn at L5, with
+// Fernfawn marked in the caught-set. The between-
 // tests hook re-seeds the GameState to this starter before every test, so the
 // starter assertions below are deterministic in the batch and this test needs no
 // manual GameState reset -- it only leaves the scene clean on the way out.
@@ -45,7 +47,8 @@
 // git-ignored, so a fresh CI checkout skips rather than fails. Only a windowed
 // *_True run bakes + loads the scenes and drives the slice.
 //
-// SC2's pure surface (ZM_MakeStarterGameState) is already covered by SC1 units;
+// SC2's pure surface (ZM_MakeNewGameState + ZM_ApplyStarterChoice) is already
+// covered by SC1 units and by Tests/ZM_Tests_StarterChoice.cpp;
 // the manager accessor is ECS-coupled (it needs the live persistent singleton),
 // so it is proven here by this one windowed test and NOT by any pure T0 unit.
 // ============================================================================

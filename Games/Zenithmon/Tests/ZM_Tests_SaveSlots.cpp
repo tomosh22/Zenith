@@ -90,7 +90,8 @@
 #include "Zenithmon/Source/Data/ZM_StoryFlags.h"                 // S7 item 3 SC8 U8: ZM_SetStoryFlag / ZM_IsStoryFlagSet
 #include "Zenithmon/Source/Data/ZM_TrainerData.h"                // S7 item 3 SC8 U8: ZM_GetTrainerData / ZM_TRAINER_RIVAL_VESPER
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"     // S7 item 3 SC8 U8: ZM_MayTrainerEngage
-#include "Zenithmon/Source/Party/ZM_GameState.h"
+#include "Zenithmon/Source/Party/ZM_GameState.h"                // ZM_MakeNewGameState
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"             // ZM_ApplyStarterChoice (the starter half of the fixture)
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"
 
 namespace
@@ -195,6 +196,33 @@ namespace
 		ZM_Monster xMonster = ZM_BuildMonsterRecord(eSpecies, uLevel);
 		SetNickname(xMonster, szNickname);
 		return xMonster;
+	}
+
+	// The exact composition production ships (ZM_GameStateManager's three seed
+	// sites): a new game plus the Fernfawn grant. This is what the deleted
+	// starter seed produced field for field, so every unit below keeps the fixture
+	// it was written against and no assertion changes meaning.
+	//
+	// It is deliberately NOT a bare ZM_MakeNewGameState(): several units here need a
+	// party to corrupt, to nickname, or to round-trip, and swapping a fixture for a
+	// partyless one under cover of a behaviour-preserving refactor is how a defect
+	// hides. Partyless fixtures belong to the sub-commit that flips production.
+	//
+	// ★ BY REFERENCE, NOT A RETURNING FACTORY, AND THAT IS THE STACK BUDGET TALKING.
+	// A `ZM_GameState MakeFernfawn...()` holds one MORE live ZM_GameState at the
+	// deepest point of every call: under /Od NRVO does not fire, so the helper's named
+	// local is copied into the caller's slot while ZM_MakeNewGameState's own local is
+	// still alive. ZM_GameState is dominated by ZM_BoxStorage, so that third copy is
+	// tens of KB against this exe's 1 MB main-thread reserve -- the same arithmetic
+	// that overflowed __chkstk in Tests/ZM_AutoTests_SaveContinue.cpp (see the note
+	// above SCSeedFernfawnStarter there, whose shape this deliberately mirrors). It
+	// matters most in the two units below that hold a SECOND ZM_GameState alive
+	// alongside this one. Written this way the peak matches the single-factory call
+	// it replaces.
+	void SeedFernfawnStarterFixture(ZM_GameState& xStateOut)
+	{
+		xStateOut = ZM_MakeNewGameState();
+		ZM_ApplyStarterChoice(xStateOut, ZM_STARTER_CHOICE_FERNFAWN);
 	}
 
 	// The exact state behind the frozen 824-byte v1 golden
@@ -1021,7 +1049,8 @@ ZENITH_TEST(ZM_Save, Slot_WriteThenProbeIsReady)
 	ZM_SlotDiskScope xScope;
 	if (!RequireTestSlotNames(xScope, "Slot_WriteThenProbeIsReady")) { return; }
 
-	const ZM_GameState xStarter = ZM_MakeStarterGameState();
+	ZM_GameState xStarter;
+	SeedFernfawnStarterFixture(xStarter);
 	const Zenith_Status xStatus = ZM_SaveSlots::WriteState(xStarter, ZM_SAVE_SLOT_0);
 	AssertStatus(xStatus, Zenith_ErrorCode::SUCCESS, "WriteState(starter, Save0)");
 
@@ -1360,7 +1389,8 @@ ZENITH_TEST(ZM_Save, Slot_OverwriteReplacesRatherThanAppends)
 	// ZM_SaveSchema::Write APPENDS at the destination cursor (ZM_SaveSchema.cpp:1084),
 	// so a write path that reuses a stream without resetting produces A+B.
 	const ZM_GameState xFirst = MakeMaximalState(0u);
-	const ZM_GameState xSecond = ZM_MakeStarterGameState();
+	ZM_GameState xSecond;
+	SeedFernfawnStarterFixture(xSecond);
 	const Zenith_Vector<u_int8> xSecondBlob = EncodeBlob(xSecond, "second state");
 	ZENITH_ASSERT_GT(xSecondBlob.GetSize(), 0u, "second fixture encoded to nothing");
 	if (xSecondBlob.GetSize() == 0u) { return; }
@@ -1903,7 +1933,8 @@ ZENITH_TEST(ZM_Save, Slot_WriteRejectsAnOutOfRangeSlot)
 	ZM_SlotDiskScope xScope;
 	if (!RequireTestSlotNames(xScope, "Slot_WriteRejectsAnOutOfRangeSlot")) { return; }
 
-	const ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState;
+	SeedFernfawnStarterFixture(xState);
 	const ZM_SAVE_SLOT aeBadSlots[] = { ZM_SAVE_SLOT_NONE, (ZM_SAVE_SLOT)uGARBAGE_SLOT_ID };
 	for (u_int u = 0u; u < 2u; ++u)
 	{
@@ -1985,7 +2016,8 @@ ZENITH_TEST(ZM_Save, Slot_WriteRejectsAnInvalidStateWithoutCreatingAFile)
 	// A party count past uZM_MAX_PARTY_SIZE -- ZM_SaveSchema::ValidateState's very
 	// first check. m_uCount is a public field, so this shape is reachable exactly the
 	// way a corrupted or mis-authored state would be.
-	ZM_GameState xInvalid = ZM_MakeStarterGameState();
+	ZM_GameState xInvalid;
+	SeedFernfawnStarterFixture(xInvalid);
 	xInvalid.m_xParty.m_uCount = 7u;
 
 	const Zenith_Status xStatus = ZM_SaveSlots::WriteState(xInvalid, ZM_SAVE_SLOT_0);
@@ -2086,7 +2118,9 @@ ZENITH_TEST(ZM_Save, Slot_DeleteRemovesTheFileAndReportsFalseWhenAlreadyAbsent)
 	if (!RequireTestSlotNames(xScope, "Slot_DeleteRemovesTheFileAndReportsFalseWhenAlreadyAbsent")) { return; }
 
 	// Phase 1 -- a present file is deleted and reported as deleted.
-	AssertStatus(ZM_SaveSlots::WriteState(ZM_MakeStarterGameState(), ZM_SAVE_SLOT_2),
+	ZM_GameState xStarter;
+	SeedFernfawnStarterFixture(xStarter);
+	AssertStatus(ZM_SaveSlots::WriteState(xStarter, ZM_SAVE_SLOT_2),
 		Zenith_ErrorCode::SUCCESS, "WriteState(starter, Save2)");
 	ZENITH_ASSERT_TRUE(Zenith_SaveData::SlotExists(ZM_SaveSlots::SlotName(ZM_SAVE_SLOT_2)),
 		"the fixture file was not created");
@@ -2140,7 +2174,9 @@ ZENITH_TEST(ZM_Save, Slot_AnySlotOccupiedCountsDamagedButAnySlotReadyDoesNot)
 		"a damaged save must NOT count as ready");
 
 	// Phase 3 -- add a good Save0 alongside it.
-	AssertStatus(ZM_SaveSlots::WriteState(ZM_MakeStarterGameState(), ZM_SAVE_SLOT_0),
+	ZM_GameState xStarter;
+	SeedFernfawnStarterFixture(xStarter);
+	AssertStatus(ZM_SaveSlots::WriteState(xStarter, ZM_SAVE_SLOT_0),
 		Zenith_ErrorCode::SUCCESS, "WriteState(starter, Save0)");
 	ZENITH_ASSERT_TRUE(ZM_SaveSlots::AnySlotOccupied(), "a good save is not occupied");
 	ZENITH_ASSERT_TRUE(ZM_SaveSlots::AnySlotReady(), "a good save is not ready");
@@ -2295,19 +2331,25 @@ ZENITH_TEST(ZM_Save, Rival1DefeatSurvivesASlotRoundTripAndSilencesVesper)
 
 	// NON-VACUITY: with the flag CLEAR he WOULD engage, so the FALSE below is caused
 	// by the flag rather than by the row being inert.
-	ZENITH_ASSERT_TRUE(ZM_MayTrainerEngage(xVesper, false, false),
+	// The FOURTH argument is the player's ability to battle, passed TRUE here and at
+	// the clause below: this unit is about the DEFEAT FLAG surviving disk, so the
+	// partyless arm is held open and proven separately by
+	// Gate_PartylessPlayerIsClosedOnBothArms (Tests/ZM_Tests_TrainerSightFsm.cpp).
+	ZENITH_ASSERT_TRUE(ZM_MayTrainerEngage(xVesper, false, false, true),
 		"an undefeated rival must be engageable, or the clause below is vacuous");
 
 	// The starter state is the canonical VALID source: ZM_SaveSchema::Write
 	// validates before it emits a byte, and this unit is about the FLAG, not about
 	// what an under-populated state does to the codec.
-	ZM_GameState xWritten = ZM_MakeStarterGameState();
+	ZM_GameState xWritten;
+	SeedFernfawnStarterFixture(xWritten);
 	ZM_SetStoryFlag(xWritten, ZM_STORY_FLAG_RIVAL1_DEFEATED, true);
 	AssertStatus(ZM_SaveSlots::WriteState(xWritten, ZM_SAVE_SLOT_0),
 		Zenith_ErrorCode::SUCCESS, "WriteState(rival defeated, Save0)");
 
 	// Scrambled on purpose: a target that already agreed would restate the fixture.
-	ZM_GameState xRead = ZM_MakeStarterGameState();
+	ZM_GameState xRead;
+	SeedFernfawnStarterFixture(xRead);
 	ZM_SetStoryFlag(xRead, ZM_STORY_FLAG_RIVAL1_DEFEATED, false);
 	AssertStatus(ZM_SaveSlots::ReadState(ZM_SAVE_SLOT_0, xRead),
 		Zenith_ErrorCode::SUCCESS, "ReadState(Save0)");
@@ -2324,7 +2366,7 @@ ZENITH_TEST(ZM_Save, Rival1DefeatSurvivesASlotRoundTripAndSilencesVesper)
 	// deliberately passed FALSE: a FLAGGED row ignores it (ZM_MayTrainerEngage in
 	// ZM_TrainerSightFsm.h), so this proves the PERSISTENT flag is the sole guard
 	// after a process restart, which is exactly the state a Continue lands in.
-	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xVesper, bFlagAfterRead, false),
+	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xVesper, bFlagAfterRead, false, true),
 		"a defeated rival re-challenges after a save/reload");
 #else
 	ZENITH_SKIP("save-slot disk instrumentation is unavailable in this configuration");

@@ -38,8 +38,13 @@ namespace
 
 	// -- fixed parties (species + level ONLY; ZM_BuildWildEnemySpec derives the rest) --
 
-	// The rival mirrors the player: the starter is FERNFAWN (Grass,
-	// ZM_GameState.cpp), so Vesper brings the Fire counterpart at the same level.
+	// The rival mirrors the player: production grants FERNFAWN (Grass) at
+	// uZM_STARTER_LEVEL -- the authority is the starter table in
+	// ZM_StarterChoice.h, NOT ZM_GameState.cpp, which no longer names a species --
+	// so Vesper brings the Fire counterpart at the same level. This row stays a
+	// LITERAL rather than calling ZM_ResolveCounterStarterSpecies: the table is
+	// compiled const data and a boot unit asserts the two agree, which is a real
+	// tripwire, where a derived row would be a tautology.
 	// One monster, because the player owns exactly one when this battle happens.
 	const ZM_TrainerPartyMember s_axPartyVesper[] =
 	{

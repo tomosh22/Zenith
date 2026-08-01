@@ -15,7 +15,8 @@
 #include "Zenithmon/Components/ZM_PlayerController.h"
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
-#include "Zenithmon/Source/Party/ZM_GameState.h"   // ZM_MakeStarterGameState
+#include "Zenithmon/Source/Party/ZM_GameState.h"       // ZM_MakeNewGameState
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"   // ZM_ApplyStarterChoice + ZM_STARTER_CHOICE_FERNFAWN
 #include "Zenithmon/Source/Save/ZM_Autosave.h"     // the milestone autosave latch (SC3)
 #include "Zenithmon/Source/Save/ZM_ResumePoint.h"  // the PURE resume decision surface (SC3)
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"
@@ -119,7 +120,17 @@ void ZM_GameStateManager::OnStart()
 	// re-authored manager is retired as a duplicate above and never gets here, and
 	// the singleton's OnStart runs only once. Seeding BEFORE DontDestroyOnLoad lets
 	// the starter ride the cross-scene move with the rest of this component.
-	m_xGameState = ZM_MakeStarterGameState();
+	//
+	// Seeded as a NEW GAME plus an EXPLICIT Fernfawn grant (S8 item 1 SC3). The two
+	// statements together are byte-for-byte the state the deleted single-call seed
+	// produced -- the party/dex members ZM_ApplyStarterChoice touches are disjoint
+	// from the money/bag/whiteout members ZM_MakeNewGameState seeds, so the changed
+	// mutation order is unobservable. The Fernfawn choice is spelled HERE, at the
+	// production seed site, rather than hidden inside a composed helper: which
+	// starter a new game owns is a game decision, and the later lab beat replaces
+	// exactly this one line.
+	m_xGameState = ZM_MakeNewGameState();
+	ZM_ApplyStarterChoice(m_xGameState, ZM_STARTER_CHOICE_FERNFAWN);
 
 	// Moving to the persistent scene relocates this component's pool entry.
 	// Nothing may access `this` after the call.
@@ -360,7 +371,13 @@ bool ZM_GameStateManager::RequestNewGame()
 {
 	// Build the replacement first. No live state changes until the ordinary warp
 	// transaction has passed every validation gate and owns the transition.
-	const ZM_GameState xStarter = ZM_MakeStarterGameState();
+	//
+	// NON-CONST because the composition needs two statements (S8 item 1 SC3): a new
+	// game, then the explicit Fernfawn grant. It is still a pure LOCAL until the
+	// assignment below, so the transactional property this comment protects -- no
+	// live state changes before every gate passes -- is untouched.
+	ZM_GameState xStarter = ZM_MakeNewGameState();
+	ZM_ApplyStarterChoice(xStarter, ZM_STARTER_CHOICE_FERNFAWN);
 	ZM_GameStateManager* pxManager = ResolveAuthoritativeManager();
 	if (pxManager == nullptr
 		|| !pxManager->TryQueueWarp(uNEW_GAME_BUILD_INDEX, szNEW_GAME_SPAWN_TAG))
@@ -654,11 +671,15 @@ void ZM_GameStateManager::ResetGameStateForTests()
 {
 	// The DontDestroyOnLoad manager (and its m_xGameState) usually survives between
 	// batched tests, so a test that caught a monster or levelled the party would leak
-	// forward. Re-seed to the fixed starter. A safe no-op when no manager exists yet.
+	// forward. Re-seed to a new game plus the Fernfawn grant -- the SAME composition
+	// the two production seed sites use, so every batched windowed test still starts
+	// from exactly one full-health L5 Fernfawn and nothing about the between-tests
+	// fixture moves (S8 item 1 SC3). A safe no-op when no manager exists yet.
 	ZM_GameState* pxGameState = nullptr;
 	if (TryGetGameState(pxGameState))
 	{
-		*pxGameState = ZM_MakeStarterGameState();
+		*pxGameState = ZM_MakeNewGameState();
+		ZM_ApplyStarterChoice(*pxGameState, ZM_STARTER_CHOICE_FERNFAWN);
 	}
 }
 

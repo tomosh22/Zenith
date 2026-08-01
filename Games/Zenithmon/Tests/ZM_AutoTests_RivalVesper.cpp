@@ -131,6 +131,7 @@
 #include "Zenithmon/Source/Party/ZM_GameState.h"
 #include "Zenithmon/Source/Party/ZM_Monster.h"                  // ZM_BuildMonsterRecord
 #include "Zenithmon/Source/Party/ZM_Party.h"
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"            // ZM_ApplyStarterChoice / ZM_STARTER_CHOICE_FERNFAWN
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"        // the AUTHORED coordinates, shared with the boot units
 
 #ifdef ZENITH_TOOLS
@@ -4102,11 +4103,13 @@ namespace
 				return false;
 			}
 
-			// The exact production starter: one full-health L5 Fernfawn, no edits.
-			*pxGameState = ZM_MakeStarterGameState();
+			// The exact production starter: one full-health L5 Fernfawn, no edits --
+			// composed exactly as ZM_GameStateManager's seed sites compose it.
+			*pxGameState = ZM_MakeNewGameState();
+			ZM_ApplyStarterChoice(*pxGameState, ZM_STARTER_CHOICE_FERNFAWN);
 			if (pxGameState->m_xParty.Count() != 1u)
 			{
-				FailRVW("ZM_MakeStarterGameState did not produce exactly one member");
+				FailRVW("the new-game + Fernfawn composition did not produce exactly one member");
 				return false;
 			}
 			const ZM_Monster& xLead = pxGameState->m_xParty.Get(0u);

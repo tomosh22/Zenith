@@ -20,7 +20,8 @@
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"       // the host's ROOT names (near-miss fixtures)
 #include "Zenithmon/Source/Data/ZM_ItemData.h"
 #include "Zenithmon/Source/Party/ZM_Bag.h"
-#include "Zenithmon/Source/Party/ZM_GameState.h"        // ZM_MakeStarterGameState (the end-to-end fixture)
+#include "Zenithmon/Source/Party/ZM_GameState.h"        // ZM_MakeNewGameState (the end-to-end fixture)
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"    // ZM_ApplyStarterChoice (its starter half)
 #include "Zenithmon/Source/UI/ZM_UI_Bag.h"
 #include "Zenithmon/Source/UI/ZM_UI_Dex.h"              // a dex CELL name (near-miss fixture)
 
@@ -459,7 +460,8 @@ ZENITH_TEST(ZM_BagScreen, Reset_ReturnsAMidFlightScreenToFresh)
 
 ZENITH_TEST(ZM_BagScreen, StarterBag_ListsTheSeededPocketsAndMoney)
 {
-	const ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState = ZM_MakeNewGameState();
+	ZM_ApplyStarterChoice(xState, ZM_STARTER_CHOICE_FERNFAWN);
 
 	// The seeded pockets are resolved through the ITEM TABLE, never a hard-coded index,
 	// so re-categorising an item cannot silently make this test read the wrong pocket.
@@ -494,7 +496,7 @@ ZENITH_TEST(ZM_BagScreen, StarterBag_ListsTheSeededPocketsAndMoney)
 		ZM_GetItemName(ZM_ITEM_SALVE)), "the medicine row names the Salve");
 
 	// The header carries the seeded purse (read off the state -- the starting figure is
-	// tuning data owned by ZM_MakeStarterGameState, not a constant to duplicate here).
+	// tuning data owned by ZM_MakeNewGameState, not a constant to duplicate here).
 	ZENITH_ASSERT_GT(xState.m_uMoney, 0u,
 		"the starter must seed some money or the header assertion is vacuous");
 	const std::string strHeader = ZM_UI_Bag::FormatHeader(eBallPocket, xState.m_uMoney);

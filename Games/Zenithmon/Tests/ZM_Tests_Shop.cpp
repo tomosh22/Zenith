@@ -24,7 +24,8 @@
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"       // the host's ROOT names (near-miss fixtures)
 #include "Zenithmon/Source/Data/ZM_ItemData.h"
 #include "Zenithmon/Source/Party/ZM_Bag.h"
-#include "Zenithmon/Source/Party/ZM_GameState.h"        // ZM_MakeStarterGameState + uZM_MONEY_CAP
+#include "Zenithmon/Source/Party/ZM_GameState.h"        // ZM_MakeNewGameState + uZM_MONEY_CAP
+#include "Zenithmon/Source/Party/ZM_StarterChoice.h"    // ZM_ApplyStarterChoice (the starter half of the fixture)
 #include "Zenithmon/Source/Shop/ZM_ShopLogic.h"
 #include "Zenithmon/Source/UI/ZM_UI_Bag.h"              // a bag ROW name (near-miss fixture)
 #include "Zenithmon/Source/UI/ZM_UI_Shop.h"
@@ -111,6 +112,29 @@ namespace
 			}
 		}
 		return ZM_ITEM_NONE;
+	}
+
+	// The exact composition production ships: a new game plus the Fernfawn grant --
+	// what the deleted starter seed produced field for field.
+	//
+	// The shop units read only the purse and the bag, so a partyless
+	// ZM_MakeNewGameState() would compile and pass. It is deliberately NOT used:
+	// swapping a fixture for a different one under cover of a behaviour-preserving
+	// refactor changes what these units exercise without changing what they claim.
+	//
+	// ★ BY REFERENCE, NOT A RETURNING FACTORY, AND THAT IS THE STACK BUDGET TALKING.
+	// A `ZM_GameState MakeFernfawn...()` holds one MORE live ZM_GameState at the
+	// deepest point of every call: under /Od NRVO does not fire, so the helper's named
+	// local is copied into the caller's slot while ZM_MakeNewGameState's own local is
+	// still alive. ZM_GameState is dominated by ZM_BoxStorage, so that third copy is
+	// tens of KB against this exe's 1 MB main-thread reserve -- the same arithmetic
+	// that overflowed __chkstk in Tests/ZM_AutoTests_SaveContinue.cpp (see the note
+	// above SCSeedFernfawnStarter there, whose shape this deliberately mirrors).
+	// Written this way the peak matches the single-factory call it replaces.
+	void SeedFernfawnStarterFixture(ZM_GameState& xStateOut)
+	{
+		xStateOut = ZM_MakeNewGameState();
+		ZM_ApplyStarterChoice(xStateOut, ZM_STARTER_CHOICE_FERNFAWN);
 	}
 }
 
@@ -536,7 +560,8 @@ ZENITH_TEST(ZM_Shop, Sell_AnOverflowingCreditIsRefusedNotWrapped)
 ZENITH_TEST(ZM_Shop, BuyThenSell_RoundTripsAgainstTheStarterState)
 {
 	// End to end on the REAL starter fixture: the screen the player actually opens.
-	ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState;
+	SeedFernfawnStarterFixture(xState);
 	const u_int uMoneyBefore = xState.m_uMoney;
 	const u_int uOrbsBefore = xState.m_xBag.GetCount(ZM_ITEM_CATCHORB);
 	ZENITH_ASSERT_GT(uMoneyBefore, 0u, "the starter seeds money or this test is vacuous");
@@ -1004,7 +1029,8 @@ ZENITH_TEST(ZM_Shop, Quantity_StepsAndClampsThroughTheConfirmDispatch)
 
 ZENITH_TEST(ZM_Shop, Confirm_BuysTheSelectedEntryAgainstTheLiveStateAndReportsIt)
 {
-	ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState;
+	SeedFernfawnStarterFixture(xState);
 	const u_int uMoneyBefore = xState.m_uMoney;
 	const u_int uOrbsBefore = xState.m_xBag.GetCount(ZM_ITEM_CATCHORB);
 
@@ -1151,7 +1177,8 @@ ZENITH_TEST(ZM_Shop, Confirm_RefusalsAreReportedAndSpendNothing)
 
 ZENITH_TEST(ZM_Shop, Confirm_ARowTheExitAndAForeignNameSpendNothing)
 {
-	ZM_GameState xState = ZM_MakeStarterGameState();
+	ZM_GameState xState;
+	SeedFernfawnStarterFixture(xState);
 	const u_int uMoneyBefore = xState.m_uMoney;
 	const ZM_Bag xBagBefore = xState.m_xBag;
 

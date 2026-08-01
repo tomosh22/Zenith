@@ -1931,8 +1931,10 @@ namespace
 	// so every frame of the hold runs the WATCHING arm and ZM_MayTrainerEngage is the
 	// only thing standing between it and a second raise.
 	//
-	// THE SESSION LATCH IS CLEARED HERE ON PURPOSE. ZM_MayTrainerEngage has two
-	// independent arms; Vesper's row is FLAGGED, but the production MarkEngaged has
+	// THE SESSION LATCH IS CLEARED HERE ON PURPOSE. ZM_MayTrainerEngage splits into
+	// two independent arms once its two closed-for-everyone clauses (unregistered
+	// row, and -- since S8 item 1 SC3 -- a player with nothing to send out) have
+	// passed; Vesper's row is FLAGGED, but the production MarkEngaged has
 	// also set his session latch, so with both set, deleting the defeat-flag arm would
 	// leave the latch arm answering "no" and the hold would stay green. Clearing the
 	// SESSION-scoped latch while the PERSISTENT story flag stays set is exactly the

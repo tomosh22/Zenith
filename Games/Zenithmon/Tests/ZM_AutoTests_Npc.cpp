@@ -141,7 +141,8 @@ namespace
 	// DontDestroyOnLoad ZM_GameStateManager's ZM_GameState, so a flag set here would
 	// otherwise be visible to every test that runs after this one in the same process.
 	// Zenithmon.cpp's between-tests hook does re-seed the whole state
-	// (ZM_GameStateManager::ResetGameStateForTests -> *pxGameState = ZM_MakeStarterGameState(),
+	// (ZM_GameStateManager::ResetGameStateForTests -> a fresh ZM_MakeNewGameState()
+	// plus the Fernfawn grant,
 	// whose ZM_StoryFlagSet is all-zero), so the leak is already covered -- but this test
 	// restores the flag itself in Verify anyway rather than depending on a hook it does
 	// not own, and because Verify is the only place that runs on EVERY exit path

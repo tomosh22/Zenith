@@ -2145,15 +2145,16 @@ ZENITH_TEST(ZM_Interaction, Gate_FlaggedRowKeysOnItsDefeatFlagAndIgnoresTheLatch
 {
 	const ZM_TrainerData& xRow = ZM_GetTrainerData(ZM_TRAINER_RIVAL_VESPER);
 
-	// All four corners of (defeatFlagSet, sessionLatchSet).
-	ZENITH_ASSERT_TRUE(ZM_MayTrainerEngage(xRow, false, false),
+	// All four corners of (defeatFlagSet, sessionLatchSet), with the player ABLE to
+	// battle; the partyless half-cube is Gate_PartylessPlayerIsClosedOnBothArms below.
+	ZENITH_ASSERT_TRUE(ZM_MayTrainerEngage(xRow, false, false, true),
 		"an undefeated flagged trainer may engage");
-	ZENITH_ASSERT_TRUE(ZM_MayTrainerEngage(xRow, false, true),
+	ZENITH_ASSERT_TRUE(ZM_MayTrainerEngage(xRow, false, true, true),
 		"the SESSION LATCH must NOT gate a FLAGGED row -- a loss writes no flag, so "
 		"the rival stays re-battleable after the player heals up");
-	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xRow, true, false),
+	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xRow, true, false, true),
 		"a defeated flagged trainer may NOT engage");
-	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xRow, true, true),
+	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xRow, true, true, true),
 		"a defeated flagged trainer may NOT engage, latch or no latch");
 }
 
@@ -2169,15 +2170,16 @@ ZENITH_TEST(ZM_Interaction, Gate_FlaglessRowKeysOnTheSessionLatchAndIgnoresTheFl
 		"a flagless row's defeat flag can never read as SET -- that is precisely why "
 		"this arm keys on the session latch instead");
 
-	// All four corners of (defeatFlagSet, sessionLatchSet).
-	ZENITH_ASSERT_TRUE(ZM_MayTrainerEngage(xRow, false, false),
+	// All four corners of (defeatFlagSet, sessionLatchSet), with the player ABLE to
+	// battle; the partyless half-cube is Gate_PartylessPlayerIsClosedOnBothArms below.
+	ZENITH_ASSERT_TRUE(ZM_MayTrainerEngage(xRow, false, false, true),
 		"an un-battled flagless trainer may engage");
-	ZENITH_ASSERT_TRUE(ZM_MayTrainerEngage(xRow, true, false),
+	ZENITH_ASSERT_TRUE(ZM_MayTrainerEngage(xRow, true, false, true),
 		"a flag input is MEANINGLESS for a flagless row and must not gate it");
-	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xRow, false, true),
+	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xRow, false, true, true),
 		"a flagless trainer who already forced a battle THIS SESSION may not engage "
 		"again -- otherwise the prize money is farmable");
-	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xRow, true, true),
+	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xRow, true, true, true),
 		"the latched flagless trainer stays closed with the flag set too");
 }
 
@@ -2188,12 +2190,84 @@ ZENITH_TEST(ZM_Interaction, Gate_UnregisteredRowFailsClosed)
 	// error line is EXPECTED output of this unit, not a failure.
 	const ZM_TrainerData& xUnknown = ZM_GetTrainerData(ZM_TRAINER_NONE);
 
-	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xUnknown, false, false),
+	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xUnknown, false, false, true),
 		"an UNREGISTERED row must fail CLOSED -- it carries ZM_STORY_FLAG_NONE, so "
 		"without the registration guard it would fall into the flagless arm and "
 		"answer true");
-	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xUnknown, false, true),
+	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xUnknown, false, true, true),
 		"an unregistered row is closed with the latch set too");
+}
+
+// ---- The THIRD arm (S8 item 1 SC3): the player must have something to send out --
+//
+// The clause is INERT in the shipped game -- ZM_Party exposes no removal path at
+// all, ZM_BoxStorage no deposit/withdraw, and every seed site grants a starter, so
+// ZM_CanEnterBattle answers true on every path production can reach. That is
+// exactly WHY the two units below exist: an arm nothing exercises at runtime has
+// no other evidence that it works, and the sub-commit that flips production
+// partyless must land on top of a gate that already shipped green.
+//
+// The eight (defeatFlagSet, sessionLatchSet) corners with bPlayerCanBattle TRUE
+// are the two arm units above, which now assert their old mixed answers against
+// the explicit true -- so those units supply this one's non-vacuity, and this one
+// is not merely restating "false everywhere" over inputs that were already false.
+
+ZENITH_TEST(ZM_Interaction, Gate_PartylessPlayerIsClosedOnBothArms)
+{
+	// One fixture of EACH kind, because the new clause has to close the FLAGGED and
+	// the FLAGLESS arm alike. A single fixture would leave whichever arm it does not
+	// take entirely unproven, and the clause sits above the split precisely so one
+	// return covers both.
+	const ZM_TrainerData& xFlagged  = ZM_GetTrainerData(ZM_TRAINER_RIVAL_VESPER);
+	const ZM_TrainerData& xFlagless = ZM_GetTrainerData(ZM_TRAINER_ROUTE1_RAMBLER);
+
+	const ZM_TrainerData* apxRows[2] = { &xFlagged, &xFlagless };
+	const char* aszRowLabels[2] = { "the FLAGGED rival", "the FLAGLESS rambler" };
+
+	// All four corners of (defeatFlagSet, sessionLatchSet) per fixture -- including
+	// the two corners that answer TRUE above. Walking only the corners that were
+	// already false would prove nothing about the new clause.
+	const bool abFlag[4]  = { false, false, true,  true  };
+	const bool abLatch[4] = { false, true,  false, true  };
+
+	for (u_int uRow = 0u; uRow < 2u; ++uRow)
+	{
+		for (u_int uCorner = 0u; uCorner < 4u; ++uCorner)
+		{
+			ZENITH_ASSERT_FALSE(
+				ZM_MayTrainerEngage(*apxRows[uRow], abFlag[uCorner], abLatch[uCorner], false),
+				"%s engaged a player with NOTHING TO SEND OUT (flag %u, latch %u) -- a "
+				"trainer who forces a battle against an empty party is a softlock, not "
+				"a challenge", aszRowLabels[uRow], (u_int)abFlag[uCorner],
+				(u_int)abLatch[uCorner]);
+		}
+	}
+}
+
+ZENITH_TEST(ZM_Interaction, Gate_PlayerCanBattleNeverOpensAnUnregisteredRow)
+{
+	// ZM_GetTrainerData logs a non-fatal Zenith_Error for the sentinel and returns
+	// the shared UNKNOWN row -- it does NOT assert, so this is safe at boot. That
+	// error line is EXPECTED output of this unit, not a failure.
+	const ZM_TrainerData& xUnknown = ZM_GetTrainerData(ZM_TRAINER_NONE);
+
+	// OUTCOME, and deliberately NOT order. In ZM_MayTrainerEngage the registration
+	// guard and the bPlayerCanBattle clause both return the same `false`, so their
+	// relative position is unobservable BY CONSTRUCTION -- no input distinguishes the
+	// two orderings, and neither this unit nor any other pins it. Do not add one: an
+	// assertion that appeared to check it would be checking nothing.
+	//
+	// What IS pinned here is the outcome that matters: an unregistered row stays shut
+	// for BOTH values of bPlayerCanBattle, so the newer clause cannot open one. The
+	// first case is the non-vacuous one -- the UNKNOWN row carries ZM_STORY_FLAG_NONE
+	// and would take the flagless arm, which
+	// Gate_FlaglessRowKeysOnTheSessionLatchAndIgnoresTheFlag shows answering TRUE for a
+	// REGISTERED row under exactly these inputs.
+	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xUnknown, false, false, true),
+		"an unregistered row opened once the player could battle -- an unauthored row "
+		"must fail closed whatever the player has to send out");
+	ZENITH_ASSERT_FALSE(ZM_MayTrainerEngage(xUnknown, false, false, false),
+		"an unregistered row is closed for a partyless player too");
 }
 
 // ---- ANTI-VACUITY: the shipped roster must still have one row of each kind ----

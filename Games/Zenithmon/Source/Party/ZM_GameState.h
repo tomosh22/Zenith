@@ -182,7 +182,12 @@ struct ZM_GameState
 	}
 };
 
-// The fixed starter GameState (D4): a single Fernfawn L5 party lead, its species
-// marked seen+caught, no pending whiteout, the starting economy, and default-empty
-// values for every other durable module. Deterministic (no RNG).
-ZM_GameState ZM_MakeStarterGameState();
+// A NEW GAME's durable state: NO party, an EMPTY dex, no story flags, no badges,
+// and the starting economy. Deterministic; pure (no RNG, no ECS, no I/O).
+//
+// It grants NO monster. The starter arrives through ZM_ApplyStarterChoice
+// (ZM_StarterChoice.h), which every caller composes onto this state, so "what
+// does a new game own" and "which starter did the player pick" are separable and
+// separately testable. There is deliberately NO third helper that does both:
+// one would be the deleted ZM_MakeStarterGameState under a new name.
+ZM_GameState ZM_MakeNewGameState();

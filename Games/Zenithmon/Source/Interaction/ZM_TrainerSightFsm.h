@@ -70,7 +70,7 @@ enum ZM_TRAINER_SIGHT_ACTION : u_int
 // already-shipped seam, named here so the glue cannot invent a second source.
 struct ZM_TrainerSightInputs
 {
-	// ZM_MayTrainerEngage(row, defeatFlagSet, sessionLatchSet).
+	// ZM_MayTrainerEngage(row, defeatFlagSet, sessionLatchSet, playerCanBattle).
 	bool  m_bMayEngage      = false;
 	// ZM_IsTargetInTrainerSightFromRotation(...) -- the SC3 pure cone. UNCHANGED.
 	bool  m_bTargetInSight  = false;
@@ -285,6 +285,8 @@ ZM_TrainerApproachStep ZM_StepTrainerApproach(const Zenith_Maths::Vector3& xTrai
 // row and the two observations, so both arms are unit-testable with no game state.
 //
 //   * row NOT registered (the shared UNKNOWN row, or garbage) -> FALSE, closed.
+//   * the player cannot battle (no party to send out) -> FALSE, closed, whichever
+//     arm the row would otherwise take.
 //   * row HAS a defeat flag (m_eDefeatFlag < ZM_STORY_FLAG_COUNT) -> !bDefeatFlagSet.
 //   * row has NO defeat flag (ZM_STORY_FLAG_NONE, as ZM_TRAINER_ROUTE1_RAMBLER's
 //     is) -> !bSessionLatchSet.
@@ -303,10 +305,17 @@ ZM_TrainerApproachStep ZM_StepTrainerApproach(const Zenith_Maths::Vector3& xTrai
 // "this trainer has already forced a battle this session", which is exactly what
 // its name says and is not farmable in either direction.
 //
+// bPlayerCanBattle is answered by exactly one seam -- ZM_CanEnterBattle(state)
+// (ZM_StarterChoice.h) -- and arrives here as a plain bool, so this header keeps
+// its "plain values in, one action out" contract and pulls in no game state.
+// It takes NO DEFAULT ARGUMENT on purpose: a default would let every shipped call
+// site compile untouched, which is precisely how a new arm ships untested.
+//
 // TOTAL. Never asserts.
 bool ZM_MayTrainerEngage(const ZM_TrainerData& xRow,
 	bool bDefeatFlagSet,
-	bool bSessionLatchSet);
+	bool bSessionLatchSet,
+	bool bPlayerCanBattle);
 
 // ---- The session latch -------------------------------------------------------
 //
