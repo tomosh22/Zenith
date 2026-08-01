@@ -54,14 +54,18 @@ too. The writer now emits dense authoring-order indices, pinned by
 modified in `git status` after a boot, that is a REGRESSION of that property —
 investigate it rather than just re-committing.
 
-**One KNOWN violation of that rule is open, and it is NOT slot allocation.** A
-windowed tools boot leaves `Assets/Scenes/Dawnmere.zscen` modified by exactly
-**2 bytes** (offsets 3627 / 3635 — the low-order mantissa of `Npc_RivalVesper`'s
-rotation quaternion). ZM-D-174 ran a control at clean HEAD that reproduced the
-same hash, so it PRE-DATES that work; the cause is undiagnosed and tracked as
-**Q-2026-08-01-002** in [Questions.md](Questions.md). Do not read a dirty
-`Dawnmere.zscen` as evidence that your own change broke boot-shape independence
-until you have checked it against that question.
+**The one KNOWN violation of that rule is CLOSED as of ZM-D-179, and its cause was
+NOT slot allocation.** From ZM-D-173 to ZM-D-178 a windowed tools boot left
+`Assets/Scenes/Dawnmere.zscen` modified by exactly **2 bytes** (offsets 3627 / 3635
+— the low-order mantissa of `Npc_RivalVesper`'s rotation quaternion).
+`Zenith_TransformComponent::WriteToDataStream` was serializing the **live Jolt
+body's** pose, so an authored rotation was a function of physics state; the bytes
+committed at `a6c66b68` are the one boot in five whose state differed, and they are
+provably not `sin`/`cos` of any single float yaw, which rules out codegen drift.
+Serialization now emits the transform's own cached pose unless the body has moved
+past the engine's own `PhysicsPoseDiffersFromCache` threshold. **A dirty `.zscen`
+after a boot is therefore a real signal again — investigate it.** Full diagnosis:
+**Q-2026-08-01-002** in [Questions.md](Questions.md) and ZM-D-179.
 
 Everything else — creatures, humans, buildings, props, terrain (~641 MB) —
 stays git-ignored. Adopting git-LFS for the heavy families is a separate, still

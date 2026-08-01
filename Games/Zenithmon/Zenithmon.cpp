@@ -7,6 +7,7 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_NavMeshComponent.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"   // the authored-rotation save guard (ZM-D-179)
 #include "SaveData/Zenith_SaveData.h"
 #include "Zenithmon/Components/ZM_BattleArena.h"
 #include "Zenithmon/Components/ZM_BattleDirector.h"
@@ -64,6 +65,7 @@
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"         // the shared ProfLab interior coordinates (S8 SC1)
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
 
+#include <cstring>
 #include <filesystem>
 #include <string>
 #endif
@@ -1445,6 +1447,95 @@ namespace
 			"declared in ZM_Interactable.h)");
 	}
 
+	// The scene-byte guard below is about ULPs, so it compares BIT PATTERNS. A
+	// tolerance comparison -- even a zero one -- cannot express "these are the same
+	// bits", and a 1-ULP yaw drift is invisible to every dot-product assertion in the
+	// suite (1 - |dot| lands around 1e-14).
+	u_int ZM_FloatBits(float fValue)
+	{
+		u_int uBits = 0u;
+		std::memcpy(&uBits, &fValue, sizeof(uBits));
+		return uBits;
+	}
+
+	bool ZM_FloatBitsEqual(float fA, float fB)
+	{
+		return ZM_FloatBits(fA) == ZM_FloatBits(fB);
+	}
+
+	// ★ THE LAST STEP BEFORE Dawnmere IS SAVED, AND IT EXISTS BECAUSE THIS EXACT
+	// PROPERTY BROKE ONCE (Q-2026-08-01-002 / ZM-D-179).
+	//
+	// The rival is the only authored entity in this game carrying a NON-IDENTITY
+	// rotation, and ZM_DawnmerePlacement.h's contract is that the committed bytes are
+	// reproducible from COMPILED constants. They stopped being: the commit at
+	// a6c66b68 shipped a quaternion 1 ULP off in y and ~10 in w from
+	// ZM_DawnmereVesperFacing(), a value no other boot of the same source reproduces,
+	// so every windowed boot since has left Dawnmere.zscen dirty in git status -- and
+	// a permanently dirty tracked scene is a permanently disabled tripwire.
+	//
+	// The cause was that Zenith_TransformComponent serialized the LIVE JOLT BODY's
+	// rotation rather than the authored one (ZM-D-179 fixed that engine-side). This
+	// step is the game-side proof that the fix holds, and it is deliberately NOT a
+	// GetRotation() comparison: it runs the REAL serializer into a scratch stream and
+	// reads back the exact bytes AddStep_SaveScene is about to write. A boot unit
+	// cannot do this -- units run before any scene is authored, and the damage lives
+	// in the saved bytes, which is the ZM-D-156 lesson in its original form.
+	void ZM_VerifyAuthoredRivalFacingStep()
+	{
+		Zenith_Entity* pxSelectedEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxSelectedEntity != nullptr,
+			"the rival facing guard needs Npc_RivalVesper selected");
+		if (pxSelectedEntity == nullptr)
+		{
+			return;
+		}
+
+		Zenith_DataStream xScratch;
+		pxSelectedEntity->GetComponent<Zenith_TransformComponent>()
+			.WriteToDataStream(xScratch);
+		xScratch.SetCursor(0u);
+		Zenith_Maths::Vector3 xSerialisedPosition;
+		Zenith_Maths::Quat xSerialisedRotation;
+		xScratch >> xSerialisedPosition;
+		xScratch >> xSerialisedRotation;
+
+		const Zenith_Maths::Quat xAuthored = ZM_DawnmereVesperFacing();
+
+		// The LIVE BODY's rotation is logged beside the serialized one because the two
+		// were the same value before ZM-D-179 and are now allowed to differ sub-epsilon.
+		// Anyone re-opening Q-2026-08-01-002 wants to know whether the divergence this
+		// commit made harmless is dormant or live on their machine, and the answer is
+		// one grep away rather than another day of archaeology.
+		Zenith_Maths::Quat xLiveBodyRotation;
+		pxSelectedEntity->GetComponent<Zenith_TransformComponent>()
+			.GetRotation(xLiveBodyRotation);
+		Zenith_Log(LOG_CATEGORY_EDITOR,
+			"[ZM Authoring] Npc_RivalVesper rotation: authored=(%08X %08X %08X %08X) "
+			"serialised=(%08X %08X %08X %08X) liveBody=(%08X %08X %08X %08X)",
+			ZM_FloatBits(xAuthored.x), ZM_FloatBits(xAuthored.y),
+			ZM_FloatBits(xAuthored.z), ZM_FloatBits(xAuthored.w),
+			ZM_FloatBits(xSerialisedRotation.x), ZM_FloatBits(xSerialisedRotation.y),
+			ZM_FloatBits(xSerialisedRotation.z), ZM_FloatBits(xSerialisedRotation.w),
+			ZM_FloatBits(xLiveBodyRotation.x), ZM_FloatBits(xLiveBodyRotation.y),
+			ZM_FloatBits(xLiveBodyRotation.z), ZM_FloatBits(xLiveBodyRotation.w));
+
+		const bool bBitExact =
+			ZM_FloatBitsEqual(xSerialisedRotation.x, xAuthored.x)
+			&& ZM_FloatBitsEqual(xSerialisedRotation.y, xAuthored.y)
+			&& ZM_FloatBitsEqual(xSerialisedRotation.z, xAuthored.z)
+			&& ZM_FloatBitsEqual(xSerialisedRotation.w, xAuthored.w);
+		Zenith_Assert(bBitExact,
+			"Dawnmere is about to be saved with a rival rotation that is NOT "
+			"ZM_DawnmereVesperFacing(): serialised (%08X %08X %08X %08X) vs authored "
+			"(%08X %08X %08X %08X). See Q-2026-08-01-002 -- do NOT re-commit the "
+			"scene until this is understood.",
+			ZM_FloatBits(xSerialisedRotation.x), ZM_FloatBits(xSerialisedRotation.y),
+			ZM_FloatBits(xSerialisedRotation.z), ZM_FloatBits(xSerialisedRotation.w),
+			ZM_FloatBits(xAuthored.x), ZM_FloatBits(xAuthored.y),
+			ZM_FloatBits(xAuthored.z), ZM_FloatBits(xAuthored.w));
+	}
+
 	// The ONE authored body scale every Dawnmere human wears -- the player and all
 	// six NPCs. Named here, rather than re-spelled, because known-limit W5's wander
 	// waypoints need the capsule half-extent it derives and they are authored in a
@@ -2615,6 +2706,13 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_CreateEntity("DawnmereNavMesh");
 		xAuto.AddStep_AddComponent("NavMesh");
 		xAuto.AddStep_Custom(&ZM_ConfigureDawnmereNavMesh);
+
+		// ★ IMMEDIATELY BEFORE THE SAVE, NOT ANYWHERE EARLIER. The guard serializes the
+		// rival's transform for real and compares the resulting bytes with
+		// ZM_DawnmereVesperFacing(); run it any earlier and a later step could still
+		// move the value it just cleared. See ZM_VerifyAuthoredRivalFacingStep.
+		xAuto.AddStep_SelectEntity("Npc_RivalVesper");
+		xAuto.AddStep_Custom(&ZM_VerifyAuthoredRivalFacingStep);
 
 		xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Dawnmere" ZENITH_SCENE_EXT);
 		xAuto.AddStep_UnloadScene();

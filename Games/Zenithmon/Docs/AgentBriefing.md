@@ -480,8 +480,13 @@ WINDOWED `_True` boot, and Dawnmere additionally needs every terrain recipe
 already warm -- two boots on a fresh clone (boot 1 bakes terrain, boot 2 authors
 Dawnmere). Scene bytes are boot-shape-independent, so **a boot must NOT leave a
 `.zscen` modified in `git status`**; if one does, that is a regression to
-investigate rather than re-commit (Q-2026-08-01-002 is a live, undiagnosed
-2-byte instance on `Dawnmere.zscen`).
+investigate rather than re-commit. **That property was violated for five commits
+and is repaired as of ZM-D-179** (Q-2026-08-01-002): the Transform used to
+serialize the LIVE JOLT BODY's pose, so an authored rotation was a function of
+physics state, and one boot's state differed by ~10 ULP in `Npc_RivalVesper`'s
+quaternion. Serialization now emits the transform's own cached pose unless the
+body has genuinely moved. **A dirty `.zscen` is once again a real signal --
+treat it as one.**
 
 ---
 

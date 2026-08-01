@@ -12,6 +12,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
+#include "DataStream/Zenith_DataStream.h"
 
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -21,6 +22,7 @@
 
 
 #include <cmath>
+#include <cstring>
 
 //==============================================================================
 // PhysicsTestComponent - tracks collision callbacks via static counters.
@@ -194,6 +196,15 @@ static Zenith_Maths::Vector3 GetBodyPosition(const Zenith_ColliderComponent& xCo
 [[maybe_unused]] static bool ApproxEqual(float fA, float fB, float fEpsilon = 0.01f)
 {
 	return std::abs(fA - fB) < fEpsilon;
+}
+
+// Bit pattern of a float. The serialized-pose tests are about ULPs, and a tolerance
+// comparison -- even a zero tolerance -- cannot express "these are the same bits".
+[[maybe_unused]] static u_int FloatBits(float fValue)
+{
+	u_int uBits = 0u;
+	std::memcpy(&uBits, &fValue, sizeof(uBits));
+	return uBits;
 }
 
 //==============================================================================
@@ -1523,6 +1534,126 @@ ZENITH_TEST(Physics, ColliderPhysicsMeshSurvivesRelocation)
 	ZENITH_ASSERT_TRUE(xColBMoved.GetPhysicsMesh() != nullptr, "ColliderPhysicsMeshSurvivesRelocation: relocated physics mesh accessible");
 	ZENITH_ASSERT_FALSE(xColBMoved.GetIncludeInNavMesh(), "ColliderPhysicsMeshSurvivesRelocation: relocated collider keeps navmesh-exclude flag");
 	ZENITH_ASSERT_TRUE(xColBMoved.HasValidBody(), "ColliderPhysicsMeshSurvivesRelocation: relocated collider keeps a valid body");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+//==============================================================================
+// Cat 11: Serialized pose vs live body pose (Q-2026-08-01-002 / ZM-D-179)
+//
+// Zenith_TransformComponent::WriteToDataStream reads the LIVE physics body through
+// GetPosition/GetRotation, so before ZM-D-179 whatever bits the body happened to hold
+// went straight to disk -- and a Jolt body's quaternion is rewritten by paths that are
+// not value-preserving at float precision (normalisation on create/SetRotation, and
+// Zenith_Physics::EnforceUpright's quat -> forward -> JPH::ATan2 -> sRotation round trip
+// through Jolt's own polynomial trig, which Jolt uses deliberately in place of
+// std::sin/std::cos). That made an AUTHORED rotation a function of physics state: the
+// committed Zenithmon Dawnmere.zscen carries a Npc_RivalVesper quaternion 1 ULP off in y
+// and ~10 in w that no other boot of the same source reproduces.
+//
+// The rule these two pin, together: BELOW the engine's own "the body really moved"
+// threshold the cache is serialized verbatim; ABOVE it the live body still wins. One
+// without the other is not the property -- freezing the cache unconditionally would
+// silently stop saving anything physics moved.
+//==============================================================================
+ZENITH_TEST(Physics, TransformSerializationIgnoresSubEpsilonBodyPoseNoise)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_SerialiseNoise", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	// A SPHERE, not an AABB: Zenith_ColliderComponent forces an AABB body to identity
+	// (axis-aligned by definition), which would erase the rotation this test is about.
+	Zenith_Entity xEntity = CreatePhysicsSphere(pxSceneData, "SerialiseNoiseSphere",
+		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
+	Zenith_TransformComponent& xT = xEntity.GetComponent<Zenith_TransformComponent>();
+	Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
+
+	// Zenithmon's authored rival yaw, verbatim: atan2(22, -44) about +Y.
+	const float fAUTHORED_YAW = std::atan2(22.0f, -44.0f);
+	const Zenith_Maths::Quat xAuthored =
+		Zenith_Maths::AngleAxis(fAUTHORED_YAW, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	xT.SetRotation(xAuthored);
+
+	// SILENT, SUB-EPSILON body rotation change -- straight through Jolt's body interface,
+	// so no transform setter and no pose-change hook updates the cache. This is what a
+	// normalisation or an EnforceUpright round trip does, only large enough to be
+	// unmistakable in the assert output.
+	const Zenith_Maths::Quat xNudged = Zenith_Maths::AngleAxis(
+		fAUTHORED_YAW + 1.0e-4f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	JPH::BodyInterface& xBI = g_xEngine.Physics().GetJoltSystem()->GetBodyInterface();
+	xBI.SetRotation(JPH::BodyID(xCollider.GetBodyID().m_uID),
+		JPH::Quat(xNudged.x, xNudged.y, xNudged.z, xNudged.w), JPH::EActivation::DontActivate);
+
+	// THE PREMISE IS MEASURED, NOT ASSERTED IN A COMMENT: the nudge has to land INSIDE
+	// the engine's 1e-6 rotation threshold, or this test would be pinning the other
+	// branch and would pass for the wrong reason.
+	const float fDot = xNudged.x * xAuthored.x + xNudged.y * xAuthored.y
+		+ xNudged.z * xAuthored.z + xNudged.w * xAuthored.w;
+	ZENITH_ASSERT_LT(1.0f - std::abs(fDot), 1.0e-6f,
+		"SerialiseNoise: the nudge must be sub-epsilon or this test pins the wrong branch");
+
+	// ...and it must still be a DIFFERENT set of bits, or nothing is being discriminated.
+	Zenith_Maths::Quat xLiveBodyRot;
+	xT.GetRotation(xLiveBodyRot);
+	ZENITH_ASSERT_NE(FloatBits(xLiveBodyRot.y), FloatBits(xAuthored.y),
+		"SerialiseNoise: the live body must actually differ from the authored value");
+
+	Zenith_DataStream xStream;
+	xT.WriteToDataStream(xStream);
+	xStream.SetCursor(0u);
+	Zenith_Maths::Vector3 xSerialisedPos;
+	Zenith_Maths::Quat xSerialisedRot;
+	xStream >> xSerialisedPos;
+	xStream >> xSerialisedRot;
+
+	ZENITH_ASSERT_EQ(FloatBits(xSerialisedRot.x), FloatBits(xAuthored.x),
+		"SerialiseNoise: serialized rotation.x must be the AUTHORED bits, not the body's");
+	ZENITH_ASSERT_EQ(FloatBits(xSerialisedRot.y), FloatBits(xAuthored.y),
+		"SerialiseNoise: serialized rotation.y must be the AUTHORED bits, not the body's");
+	ZENITH_ASSERT_EQ(FloatBits(xSerialisedRot.z), FloatBits(xAuthored.z),
+		"SerialiseNoise: serialized rotation.z must be the AUTHORED bits, not the body's");
+	ZENITH_ASSERT_EQ(FloatBits(xSerialisedRot.w), FloatBits(xAuthored.w),
+		"SerialiseNoise: serialized rotation.w must be the AUTHORED bits, not the body's");
+
+	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
+}
+
+ZENITH_TEST(Physics, TransformSerializationFollowsAGenuineBodyMove)
+{
+	Zenith_Scene xTestScene = g_xEngine.Scenes().LoadScene("PhysicsTest_SerialiseMoved", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	Zenith_Entity xEntity = CreatePhysicsSphere(pxSceneData, "SerialiseMovedSphere",
+		Zenith_Maths::Vector3(0, 0, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
+	Zenith_TransformComponent& xT = xEntity.GetComponent<Zenith_TransformComponent>();
+	Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
+	g_xEngine.Physics().SetGravityEnabled(xCollider.GetBodyID(), false);
+
+	// A SILENT, SUPRA-epsilon move -- exactly what a Jolt simulation step does between
+	// frames, and exactly what a scene save is supposed to capture.
+	const Zenith_Maths::Vector3 xMoved(10.0f, 20.0f, 30.0f);
+	const Zenith_Maths::Quat xTurned =
+		Zenith_Maths::AngleAxis(1.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	JPH::BodyInterface& xBI = g_xEngine.Physics().GetJoltSystem()->GetBodyInterface();
+	xBI.SetPositionAndRotation(JPH::BodyID(xCollider.GetBodyID().m_uID),
+		JPH::RVec3(xMoved.x, xMoved.y, xMoved.z),
+		JPH::Quat(xTurned.x, xTurned.y, xTurned.z, xTurned.w), JPH::EActivation::DontActivate);
+
+	Zenith_DataStream xStream;
+	xT.WriteToDataStream(xStream);
+	xStream.SetCursor(0u);
+	Zenith_Maths::Vector3 xSerialisedPos;
+	Zenith_Maths::Quat xSerialisedRot;
+	xStream >> xSerialisedPos;
+	xStream >> xSerialisedRot;
+
+	ZENITH_ASSERT_NEAR_VEC3(xSerialisedPos, xMoved, 0.001f,
+		"SerialiseMoved: a body that really moved must serialize where it moved to");
+	ZENITH_ASSERT_EQ_FLOAT(xSerialisedRot.y, xTurned.y, 0.001f,
+		"SerialiseMoved: a body that really turned must serialize the turned rotation");
 
 	g_xEngine.Scenes().UnloadSceneForced(xTestScene);
 }

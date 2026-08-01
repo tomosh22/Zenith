@@ -3,15 +3,18 @@
 **Last updated:** 2026-08-01
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (RE-OBSERVED 2026-08-01 at ZM-D-176/177, on fresh builds of both
-configs; the block previously mis-attributed these to ZM-D-175, which actually
-stood at registry 54 / boot 2840):** ZM headless registry **56 passed / 0 failed**
+down this file (RE-OBSERVED 2026-08-01 at ZM-D-179, on fresh builds of both
+configs):** ZM headless registry **56 passed / 0 failed**
 -- and full windowed Vulkan **56 / 0 with ZERO skipped**; ZM boot unit gate
-**2847 ran / 2845 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
-**2847**); engine boot unit gate, Null Combat, **1235 ran / 1234 passed / 0
-failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1235`). One skip in
+**2849 ran / 2847 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
+**2849**); engine boot unit gate, Null Combat, **1237 ran / 1236 passed / 0
+failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1237`). One skip in
 each is the quarantined `GraphComponent::RegistryWideNodeRoundTrip`
 (task_726cc81d); ZM carries a second, ZM-side skip.
+**ZM-D-179 is an ENGINE change, so BOTH boot baselines move together (+2 each):**
+2847 -> 2849 and 1235 -> 1237, for the two new
+`Physics::TransformSerialization*` units. The registry is UNMOVED at 56 -- it added
+no automated test.
 ZM-D-176 moved the boot baseline **2840 -> 2847** (+7) and the registry **54 -> 56**
 (`ZM_InteriorTint_Test`, `ZM_InteriorTintPixels_Test`). ZM-D-175 had moved the boot
 baseline **2825 -> 2840** (+15) with the registry unmoved at 54; ZM-D-174 stood at
@@ -256,6 +259,25 @@ the note itself. **What survives unchanged: the go/no-go is still NOT the next s
 content items (the four unticked boxes under Roadmap's **"S8 -- Vertical slice, go/no-go"** heading)
 are, and the gate FOLLOWS them. *(Cited by NAME, not line: every line-number citation in this file
 has drifted at least once, which is the lesson recorded further down.)*
+**★ GATE OBSERVED AT ZM-D-179 (2026-08-01) -- the CROSS-GAME one, because it is an ENGINE change
+in `Zenith/EntityComponent`. Every figure below is an OBSERVED line.** ZM headless **56 / 0**;
+full windowed Vulkan **56 / 0, all 56 RAN**; ZM boot gate **2849 / 2847 / 0 / 2** (PASS);
+engine boot gate on Null Combat **1237 / 1236 / 0 / 1** (PASS); Combat headless **14 / 0**,
+CityBuilder **46 / 0**, DevilsPlayground **159 / 0**, RenderTest **11 / 0**; TilePuzzle Null_True
+builds clean; SentinelECS / SentinelPhysics / SentinelAI all built and all **exit 0**;
+`zenith regen --check` in sync. **Teeth mutation-proven:** transposing the new
+`if (!PhysicsPoseDiffersFromCache(...))` polarity reds **exactly** the two new units
+(2849 / 2845 / **2** / 2) -- both arms of each -- and nothing else; restoring returns to 0 failed.
+Ratchets both stay pre-existing RED and this commit adds nothing: `architecture,lints` fails on
+`Zenith_TerrainComponent` (EC->Flux edge + `std::vector`/`std::function`) and per-file `g_xEngine`
+counts in `Zenith_GraphicsOptions.cpp` (33>32) and `Zenith_TerrainEditor.cpp` (22>21);
+`complexity` on `ParseCommandLine`, `ValidateTerrainGridTopology`, `ZENITH_PROPERTY` and
+duplicate-clusters=10. **Not one failing finding names a file this commit touches** --
+`Zenith_TransformComponent.cpp` is absent from both lists, because the fix reuses the existing
+getters and adds no `g_xEngine` token. **And `Dawnmere.zscen` now reproduces:** two consecutive
+windowed authoring boots both wrote SHA256 `F403A489D0B11C77...`, which is what is committed here,
+so a boot leaves `git status` clean again.
+
 **Build:** GREEN on the ZM-D-148 diff (scene authoring made boot-shape-independent; all four ZM scenes now TRACKED) on top of SC1b commit B (ZM-D-147 -- baked navmesh persistence). Engine-wide, so it owed and got the full gate: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; engine lib + SentinelECS/Physics/AI (all three exes exit 0); Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True.
 **Tests (commit B):** Null batches, ALL 0-failed: **ZM 44/44** (registry 42 -> 44; both new navmesh tests RUN, not skipped), CB **45/45**, DP **158/158**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 44/44, 0 skipped, 0 failed**. Boot unit gates on the NULL exes: engine **1093 -> 1121** (Combat) and ZM **2515 -> 2546** -- both pinned from the OBSERVED line. Windowed RenderTest 8 passed / 1 failed, only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002). Ratchets (`architecture,lints` and `complexity`) are **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added; two findings this commit DID introduce (an `Editor/` include and a `g_xEngine` reach from EntityComponent) were fixed, not allow-listed. **Asset-less CI condition reproduced locally** (`Zenith/Assets` hidden): ZM 44/44 and both unit gates unchanged; restored by MERGE and `diff -rq`-verified, since the run re-created only 60 of the 89 files and a naive rename-back would have clobbered the tree. **Teeth mutation-proven ×6** (see ZM-D-147; m1 re-run on the final build reds exactly the 3 serialization units).
 
@@ -350,6 +372,36 @@ byte-for-byte, and a `git stash`-ed, regenerated, rebuilt **clean HEAD** produce
 `F403A489D0B11C77...`. The control REPRODUCED instead of flipping, so ProfLab changes Dawnmere's
 bytes not at all -- master's committed scene simply no longer reproduces from master's own source.
 `Dawnmere.zscen` was RESTORED and excluded from the commit; the cause is un-diagnosed and booked.
+
+**★★ DIAGNOSED AND FIXED 2026-08-01 AS ZM-D-179 -- AND THE FRAMING ABOVE WAS BACKWARDS.** The
+question asked why today's boot no longer reproduces master's bytes. `git show <commit>:<path>` at
+each of the four commits that ever wrote this file answers it the other way round: the quaternion is
+`0x3F7926D9 / 0x3E6B4456` at `012b04bc`, `dcabda50` **and** `1abbc440`, and
+`0x3F7926D8 / 0x3E6B444C` only at `a6c66b68` (ZM-D-173). Today's boot makes it four-for-five.
+**HEAD's committed bytes are the outlier; the source never changed.**
+- **Cause: (b).** `Zenith_TransformComponent::WriteToDataStream` serialized the **live Jolt body's**
+  pose (`GetRotation` returns the body whenever one exists), so a tracked asset was a function of
+  physics state. Vesper is the only authored entity here with both a non-identity rotation and a body
+  that keeps one -- the DYNAMIC CAPSULE ZM-D-156 forced on him. Jolt's quaternion paths are not
+  value-preserving at float precision, and `Zenith_Physics::EnforceUpright` (called on this body by
+  `ZM_Interactable::ApplyDrivenBodySetup`) round-trips quat -> forward -> `JPH::ATan2` ->
+  `sRotation` through Jolt's own polynomial trig.
+- **Cause (a) is DISPROVED, not merely unsupported.** The committed pair is not `sin`/`cos` of any
+  single float yaw -- `y` implies a yaw of `0x402B6372/73`, `w` implies `0x402B6375/76`, three yaw
+  ULPs apart. No codegen of `angleAxis(<a float yaw>)` emits a self-inconsistent pair, so the bytes
+  never came out of the authoring computation. **"It's only two mantissa bits of codegen drift" was
+  the wrong ending, and the bytes say so.**
+- **The fix** serializes the transform's own cached pose unless the body moved past
+  `PhysicsPoseDiffersFromCache` -- the engine's OWN threshold, the one the post-physics sweep already
+  uses to decide whether to believe the body at all. Two engine units pin both branches
+  (mutation-proven: transposing the polarity reds exactly those two and nothing else), and a
+  tools-only guard serializes the rival's transform for real and bit-compares it with
+  `ZM_DawnmereVesperFacing()` immediately before `AddStep_SaveScene`.
+- **★ ON THIS MACHINE THE DIVERGENCE IS DORMANT** -- an instrumented boot logs
+  `authored == serialised == liveBody == (0, 3F7926D9, 0, 3E6B4456)` -- so the fix moved **no byte**
+  of today's output. The bytes committed with ZM-D-179 are the ones four of the five boots produced.
+- **What was NOT established, and should not be quietly upgraded later:** the ZM-D-173 binary cannot
+  be re-run, so *which* physics write produced those exact bits was never witnessed.
 
 **★ ZM-D-169 LEFT TWO THINGS OPEN AND ZM-D-171 CLOSED BOTH ON 2026-07-30. Corrected here
 2026-08-01 -- this block still asserted both as open, in the section a session acts on.** What it

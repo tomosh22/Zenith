@@ -400,6 +400,33 @@ void Zenith_TransformComponent::WriteToDataStream(Zenith_DataStream& xStream)
 	GetPosition(xPos);
 	GetRotation(xRot);
 
+	// ★ SUB-EPSILON BODY NOISE MUST NOT REACH DISK (Q-2026-08-01-002 / ZM-D-179).
+	// GetPosition/GetRotation read the LIVE Jolt body whenever one exists, so without
+	// this the serialized pose is whatever the body happens to hold -- and a body's
+	// quaternion is rewritten by paths that are not value-preserving at float
+	// precision (Jolt normalizes on create/SetRotation, and Zenith_Physics::
+	// EnforceUpright round-trips quat -> forward vector -> JPH::ATan2 -> sRotation
+	// through Jolt's own polynomial trig, which it uses deliberately in place of
+	// std::sin/std::cos). An AUTHORED entity therefore serialized a few ULP away from
+	// the rotation the authoring code set, non-reproducibly: Zenithmon's committed
+	// Dawnmere.zscen carries such a value for Npc_RivalVesper, 1 ULP off in y and
+	// ~10 in w, which no other boot of the same source reproduces.
+	//
+	// PhysicsPoseDiffersFromCache is the engine's OWN definition of "the body really
+	// moved" -- the same predicate the post-physics sweep uses to decide whether to
+	// commit a body pose into the cache at all. Below that threshold the sweep
+	// deliberately declines to update m_xPosition/m_xRotation, so serializing the raw
+	// body pose was writing a value the rest of the engine had already decided not to
+	// believe. Above it, the live pose still wins and a genuinely moved body still
+	// serializes where it moved to. Bodyless entities fall through unchanged (the
+	// getters already returned the cache, so the predicate is false and this is a
+	// self-assignment).
+	if (!PhysicsPoseDiffersFromCache(xPos, xRot))
+	{
+		xPos = m_xPosition;
+		xRot = m_xRotation;
+	}
+
 	xStream << xPos;
 	xStream << xRot;
 	xStream << m_xScale;

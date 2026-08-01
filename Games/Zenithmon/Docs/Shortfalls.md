@@ -26,10 +26,14 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   traversable Dawnmere + live PlayerHome door round trip; S4's five procedural asset generators +
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
-- **★ CURRENT VERIFIED BASELINE (re-observed 2026-08-01 at ZM-D-176, every figure off an
+- **★ CURRENT VERIFIED BASELINE (re-observed 2026-08-01 at ZM-D-179, every figure off an
   OBSERVED line):** ZM headless registry **56 passed / 0 failed**; ZM boot unit gate
-  **2847 ran / 2845 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to **2847**) --
-  ZM-D-176 added **+7** boot units and **+2** automated tests (`ZM_InteriorTint_Test`,
+  **2849 ran / 2847 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to **2849**) --
+  ZM-D-179 added **+2 ENGINE** boot units
+  (`Physics::TransformSerializationIgnoresSubEpsilonBodyPoseNoise` and
+  `...FollowsAGenuineBodyMove`) and **no** automated test, so the registry is unmoved at 56
+  and the ENGINE baseline moves with it. ZM-D-176 stood at boot **2847 / 2845 / 0 / 2**,
+  having added **+7** boot units and **+2** automated tests (`ZM_InteriorTint_Test`,
   `ZM_InteriorTintPixels_Test`) for the PlayerHome tint and the New-Game entry-point move.
   ZM-D-175 stood at registry 54 / boot **2840 / 2838 / 0 / 2** (+15 units, registry unmoved);
   ZM-D-174 at registry 54 / boot **2825 / 2823 / 0 / 2**; engine boot

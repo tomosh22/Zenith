@@ -35,6 +35,11 @@ public:
 	// CURRENT (v7) layout: pos/rot/scale, no parent. The 1-arg ReadFromDataStream is the
 	// current-format reader (no parent); the 2-arg overload is the version-aware reader
 	// the meta registry prefers -- it migrates the in-blob parent for uSchemaVersion < 7.
+	//
+	// The POSE it emits is the live physics body's when the body has genuinely moved
+	// (PhysicsPoseDiffersFromCache), and the cached m_xPosition/m_xRotation otherwise --
+	// so sub-epsilon body noise cannot reach disk and an authored transform serializes
+	// bit-exactly. See the block comment in the .cpp before changing this.
 	void WriteToDataStream(Zenith_DataStream& xStream);
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 	void ReadFromDataStream(Zenith_DataStream& xStream, u_int uSchemaVersion);

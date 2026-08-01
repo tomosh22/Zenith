@@ -10,7 +10,62 @@
 
 ## Open
 
-### [OPEN] Q-2026-08-01-002 -- the committed `Dawnmere.zscen` does NOT reproduce from master's own source (PRE-EXISTING, proven by a control that did not flip)
+### [RESOLVED] Q-2026-08-01-002 -- the committed `Dawnmere.zscen` does NOT reproduce from master's own source (PRE-EXISTING, proven by a control that did not flip)
+
+**RESOLVED 2026-08-01 (ZM-D-179). Cause: (b) -- the authored rotation was read back out
+of the Jolt body at save time, so a tracked scene file was a function of physics state.
+Cause (a), codegen/toolchain drift, is RULED OUT ON THE BYTES; cause (c) is what made
+one boot's physics state differ. The full entry is ZM-D-179; the short version:**
+
+1. **The commit that introduced the odd bytes is `a6c66b68` (ZM-D-173), and nothing since.**
+   `git show <commit>:Games/Zenithmon/Assets/Scenes/Dawnmere.zscen` at each of the four
+   commits that ever wrote this file shows `Npc_RivalVesper`'s quaternion as
+   `0x3F7926D9 / 0x3E6B4456` at `012b04bc` (SC8), `dcabda50` (W5) **and** `1abbc440`
+   (SC3) -- and `0x3F7926D8 / 0x3E6B444C` only at `a6c66b68`. Four authoring boots agree;
+   one does not. **HEAD's committed bytes are the outlier, not today's boot.**
+2. **`0x3F7926D9 / 0x3E6B4456` IS the compiled constant, measured rather than argued.**
+   An instrumented windowed authoring boot logs, at the save point,
+   `authored=(00000000 3F7926D9 00000000 3E6B4456) serialised=(...same...)
+   liveBody=(...same...)`. It is also exactly `glm::angleAxis(atan2f(22, -44), +Y)`
+   evaluated in float32.
+3. **Cause (a) is ruled out by arithmetic, not by absence of evidence.** The committed
+   pair is not `sin/cos` of ANY single float yaw: the `y` value implies a yaw of
+   `0x402B6372`/`0x402B6373`, the `w` value implies `0x402B6375`/`0x402B6376`. No
+   codegen of `angleAxis(<a float yaw>)` -- FMA-contracted, reassociated or folded --
+   can emit a pair that disagrees with itself by three yaw ULPs. The bytes did not come
+   out of the authoring computation at all.
+4. **What they DID come out of:** `Zenith_TransformComponent::WriteToDataStream` called
+   `GetPosition`/`GetRotation`, and those return the **live Jolt body's** pose whenever
+   the entity has one (the code even said so: *"we get current values from physics if a
+   rigid body exists"*). Vesper is the only authored entity in the game with both a
+   non-identity rotation and a body that keeps it (a DYNAMIC CAPSULE, per ZM-D-156).
+   Jolt's quaternion paths are not value-preserving at float precision, and
+   `Zenith_Physics::EnforceUpright` -- which `ZM_Interactable::ApplyDrivenBodySetup`
+   calls on this exact body -- round-trips quat -> forward vector -> `JPH::ATan2` ->
+   `JPH::Quat::sRotation` through Jolt's **own polynomial trig**
+   (`Jolt/Math/Trigonometry.h`: *"std::sin etc. are not platform independent and will
+   lead to non-deterministic simulation"*). A pair that is not sin/cos of one angle is
+   what an approximate-trig round trip yields and what `glm::angleAxis` cannot.
+5. **The fix severs the dependency** (ZM-D-179): serialization now emits the transform's
+   own cached pose unless the body has moved past `PhysicsPoseDiffersFromCache` -- the
+   engine's OWN "the body really moved" threshold, the same one the post-physics sweep
+   uses to decide whether to write the body pose into the cache at all. Below it the
+   sweep already declines to believe the body; serialization was believing it anyway.
+   Two engine units pin both sides, and a tools-only guard runs the real serializer and
+   compares the bytes bit-for-bit with `ZM_DawnmereVesperFacing()` immediately before
+   `AddStep_SaveScene`.
+6. **Honest limit:** the ZM-D-173 binary no longer exists, so *which* physics write
+   produced those exact bits was not witnessed. What is proven is the dependency, that
+   the committed value cannot have come from the authoring computation, and that the
+   value now reaching disk is the compiled constant.
+
+**On this machine today the divergence is DORMANT** -- `liveBody` and the cache agree
+bit-for-bit, so the fix changes no byte of today's output. That is deliberate: the bytes
+committed with ZM-D-179 are the ones four of the five boots produced, not a new value.
+
+---
+
+*(Original entry, kept verbatim as the record of what was known before the diagnosis.)*
 
 **The finding.** A windowed tools boot re-authors `Assets/Scenes/Dawnmere.zscen` and leaves it
 **modified** in `git status`. `CLAUDE.md` states the invariant plainly -- *"a boot must NOT leave a
@@ -70,6 +125,8 @@ day it stays un-diagnosed is a day the tripwire that would catch it is disabled.
 **Status:** found and proven 2026-08-01 during SC1's gate; **acting on the best guess** (restored,
 excluded from the commit, drift left un-repaired and un-hidden). OPEN for a ruling on whether to
 spend a session bisecting it.
+**-> SUPERSEDED the same day: the session was spent, the cause is (b), and the fix shipped as
+ZM-D-179. See the RESOLVED block at the top of this entry.**
 
 ### [RESOLVED 2026-08-01] Q-2026-08-01-001 -- does S8's "Intro" move the NEW GAME entry point from Dawnmere to PlayerHome?
 

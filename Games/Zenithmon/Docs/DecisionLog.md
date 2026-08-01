@@ -15,6 +15,117 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-01 -- ZM-D-179 -- A tracked scene's authored rotation stops being a function of physics state; Q-2026-08-01-002 is diagnosed and Dawnmere reproduces again
+
+*(ENGINE change in `Zenith/EntityComponent`, so it owes and got the CROSS-GAME gate.
+Also one game file and one tracked asset.)*
+
+**Decision.** `Zenith_TransformComponent::WriteToDataStream` now serializes the
+transform's **own cached pose** unless the physics body has moved past
+`PhysicsPoseDiffersFromCache`, in which case the live body still wins. `Dawnmere.zscen`
+is re-authored and committed at the bytes its own source produces. Two engine units pin
+both branches, and a tools-only authoring guard runs the real serializer and compares
+the result bit-for-bit with `ZM_DawnmereVesperFacing()` immediately before
+`AddStep_SaveScene`.
+
+The alternative considered and REJECTED was to `git checkout` the file, or to re-commit
+the two bytes as benign codegen drift. Both were available and cheap; both would have
+left a tracked asset whose contents depend on runtime physics state, and the second
+would have recorded a cause that the bytes themselves disprove (see below).
+
+### The cause, and how each candidate was settled
+
+Q-2026-08-01-002 listed three: **(a)** codegen/toolchain drift on a deterministic
+computation, **(b)** read back from the Jolt body, **(c)** an authoring-order or
+warm-terrain difference. The answer is **(b), triggered by (c)**; **(a) is ruled out on
+the bytes**.
+
+1. **The outlier is HEAD, not today.** `Dawnmere.zscen` has been written by exactly four
+   commits. `Npc_RivalVesper`'s quaternion reads `0x3F7926D9 / 0x3E6B4456` at
+   `012b04bc`, `dcabda50` **and** `1abbc440`, and `0x3F7926D8 / 0x3E6B444C` only at
+   `a6c66b68` (ZM-D-173). A fifth boot -- today's, on a clean build of HEAD -- produces
+   `0x3F7926D9 / 0x3E6B4456` again. **Four boots agree and one does not**, which inverts
+   the framing the question was written in: master's source was never the thing that
+   changed.
+2. **That value IS the compiled constant, and it was MEASURED, not inferred.** An
+   instrumented authoring boot logs at the save point:
+   `Npc_RivalVesper rotation: authored=(00000000 3F7926D9 00000000 3E6B4456)
+   serialised=(00000000 3F7926D9 00000000 3E6B4456) liveBody=(00000000 3F7926D9 00000000
+   3E6B4456)`. It is also exactly `glm::angleAxis(atan2f(22.0f, -44.0f), +Y)` in float32.
+3. **★ (a) IS DISPROVED BY ARITHMETIC, WHICH IS WHY THE "just re-commit it as codegen
+   drift" ENDING WOULD HAVE BEEN A LIE.** A `sin`/`cos` pair from one angle is not free
+   to disagree with itself. Decoding the committed bytes: `y = 0x3F7926D8` is the
+   correctly-rounded sine of a yaw in `{0x402B6372, 0x402B6373}`, while
+   `w = 0x3E6B444C` is the cosine of a yaw in `{0x402B6375, 0x402B6376}` -- **three yaw
+   ULPs apart**. No codegen of `angleAxis(<a float yaw>)` -- contracted, reassociated,
+   folded or interpreted -- emits a self-inconsistent pair. The committed quaternion did
+   not come out of the authoring computation at all. (Its norm is also `1 - 7.6e-8`,
+   where the compiled value's is `1 + 1.6e-8`.)
+4. **Where it DID come from.** `WriteToDataStream` called `GetPosition`/`GetRotation`,
+   which return the **live Jolt body's** pose whenever the entity has one -- the code
+   said so in a one-line comment (*"we get current values from physics if a rigid body
+   exists"*) that had never been read as "a committed asset is a function of physics
+   state". Vesper is the only authored entity in this game with both a non-identity
+   rotation and a body that keeps one (ZM-D-156 forced him to a DYNAMIC CAPSULE
+   precisely because AABB destroys an authored yaw). Jolt's quaternion paths are not
+   value-preserving at float precision, and `Zenith_Physics::EnforceUpright` -- called on
+   this exact body by `ZM_Interactable::ApplyDrivenBodySetup` -- round-trips
+   quat -> forward vector -> `JPH::ATan2` -> `JPH::Quat::sRotation` through **Jolt's own
+   polynomial trig**, which Jolt uses deliberately in place of `std::sin`/`std::cos`
+   (`Jolt/Math/Trigonometry.h`: *"std::sin etc. are not platform independent and will
+   lead to non-deterministic simulation"*). A self-inconsistent sin/cos pair is exactly
+   what an approximate-trig round trip yields and exactly what `glm::angleAxis` cannot.
+5. **(c) is the trigger, not a rival explanation.** ZM-D-173 relocated the Home pad and
+   regenerated the whole Dawnmere heightmap, so its authoring boot is the one boot in the
+   set whose runtime state differed. That is what a physics-state dependency looks like
+   when it fires: rarely, and on the boot that changed something else.
+
+**★ WHAT IS NOT ESTABLISHED, STATED PLAINLY.** The ZM-D-173 binary cannot be re-run, so
+*which* physics write produced those precise bits was never witnessed. Proven are: the
+dependency exists in the shipped code; the committed value cannot have come from the
+authoring computation; and the value now reaching disk is the compiled constant. A
+scalar model of `EnforceUpright` in float32 is a **fixed point** for the current
+quaternion, so the round trip is not unconditionally lossy -- it is lossy from some
+inputs, and which input that boot's body held is unknowable now.
+
+**★ AND THE DIVERGENCE IS DORMANT ON THIS MACHINE TODAY** -- `liveBody`, the cache and
+the compiled constant all agree bit-for-bit, so the fix moves **no byte** of today's
+output. That is the point, not a weakness: the bytes committed here are the ones four of
+the five boots produced, and the fix removes the mechanism rather than adjusting a value.
+
+**Why the fix is shaped this way.** `PhysicsPoseDiffersFromCache` is not a new threshold
+invented for this commit -- it is the predicate `SyncPhysicsPoseAndInvalidate` already
+uses to decide whether a body pose is worth committing into `m_xPosition`/`m_xRotation`
+at all. Below it the engine **already declined to believe the body**; serialization was
+believing it anyway and writing it to disk. Freezing the cache unconditionally was
+rejected: it would silently stop saving anything physics moved, which is what the
+original one-line comment existed to provide.
+
+**Tests that lock it.**
+- `Physics::TransformSerializationIgnoresSubEpsilonBodyPoseNoise` -- authors Vesper's own
+  yaw, nudges the Jolt body by `1e-4 rad` straight through `BodyInterface` (no setter, no
+  hook), then serializes and asserts all four rotation components are the **AUTHORED
+  BITS**. It measures its own premise rather than asserting it in a comment: it checks
+  that the nudge really is inside the `1e-6` threshold (or it would be pinning the other
+  branch and passing for the wrong reason) **and** that the live body really does differ
+  in bits (or nothing is being discriminated). Comparison is on bit patterns via
+  `FloatBits`, because a tolerance -- even zero -- cannot express "the same bits", and a
+  1-ULP yaw drift is invisible to every dot-product assertion in the suite (`1 - |dot|`
+  lands near `1e-14`, which is why `ZM_RivalVesperAuthored_Test`'s `facingAbsDot=1.00000`
+  was green throughout).
+- `Physics::TransformSerializationFollowsAGenuineBodyMove` -- the other half, and it is
+  not decoration: without it the first unit is satisfied by a fix that never serializes
+  physics at all.
+- `ZM_VerifyAuthoredRivalFacingStep` (tools-only, game side) -- the end-to-end guard, run
+  as the step immediately before `AddStep_SaveScene`. It does **not** compare
+  `GetRotation()`; it serializes the transform into a scratch `Zenith_DataStream` and
+  reads back the exact bytes the save is about to write. A boot unit cannot do this --
+  units run before any scene is authored and the damage lives in the saved bytes, which
+  is the ZM-D-156 lesson in its original form.
+
+**Reversibility:** easy. The engine change is one `if` in one function; the guard is one
+`AddStep_Custom`; the scene is re-authorable from a windowed tools boot.
+
 ## 2026-08-01 -- ZM-D-178 -- Full `Docs/` audit against the code; line-number citations are retired in favour of section names
 
 *(DOCS-ONLY: no source file changed, so no build or gate is owed. Four auditors
@@ -309,6 +420,12 @@ and master's committed scene no longer reproduces from master's own source.
 `Dawnmere.zscen` was RESTORED and excluded from this commit, because committing a
 2-byte change whose cause is undiagnosed would launder a pre-existing defect into
 an unrelated diff. Cause un-diagnosed and booked as **Q-2026-08-01-002**.
+*(DIAGNOSED 2026-08-01 in ZM-D-179: the Transform serialized the live Jolt body's pose,
+so the authored rotation was a function of physics state. This control was sound and its
+conclusion stands -- ProfLab really does change nothing -- but "master's committed scene
+no longer reproduces from master's own source" reads the asymmetry backwards. Three
+earlier commits and today's boot all produce the same value; `a6c66b68` is the one that
+does not.)*
 
 ### Reversibility
 

@@ -89,6 +89,15 @@ Scene bytes are boot-shape-independent (dense authoring-order file indices), so 
 boot must NOT leave a scene modified in `git status`. If one ever does, that is a
 regression of that property -- investigate it rather than just re-committing.
 
+That invariant held again from ZM-D-179 (2026-08-01), which fixed the one instance
+it had ever lost: `Zenith_TransformComponent` used to serialize the LIVE JOLT BODY's
+pose, so any authored entity with a body was saving a rotation that depended on
+physics state, and `Npc_RivalVesper`'s drifted by ~10 ULP in one boot. Serialization
+now emits the transform's own cached pose unless the body has genuinely moved, and a
+tools-only guard bit-compares the rival's serialized rotation with
+`ZM_DawnmereVesperFacing()` immediately before the save. See `Docs/DecisionLog.md`
+ZM-D-179 / `Docs/Questions.md` Q-2026-08-01-002.
+
 ## Testing
 
 ```

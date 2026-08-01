@@ -152,8 +152,10 @@ git-ignored** -- `FrontEnd`, `Battle`, `Dawnmere`, `PlayerHome` and `ProfLab`
 (ZM-D-147 / ZM-D-148 / ZM-D-174) -- which is what lets CI verify scene content
 on a fresh checkout with no bake. Scene bytes are boot-shape-independent (dense
 authoring-order file indices), so a boot must NOT leave a scene modified in
-`git status`; one known 2-byte violation on `Dawnmere.zscen` is open as
-Q-2026-08-01-002. Everything else under `Assets/` remains git-ignored.
+`git status`; the one known 2-byte violation on `Dawnmere.zscen`
+(Q-2026-08-01-002) is CLOSED as of ZM-D-179 -- the Transform no longer serializes
+a live physics body's pose over the authored one. Everything else under `Assets/`
+remains git-ignored.
 
 **Chunk.** Terrain streaming unit: a terrain is a 64x64 grid of 64 m chunks
 (4096 m square). Zenithmon bakes only a rect subset per scene via E2; see
