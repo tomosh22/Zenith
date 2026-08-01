@@ -55,6 +55,7 @@
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"        // the shared authored coordinates (S7 item 3 SC8)
+#include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"         // the shared ProfLab interior coordinates (S8 SC1)
 #include "Zenithmon/Source/World/ZM_TerrainAuthoring.h"
 
 #include <filesystem>
@@ -1301,6 +1302,18 @@ namespace
 			"Dawnmere Home doorway warp configuration is invalid");
 	}
 
+	// ProfLab's arrival marker. A SEPARATE function from ZM_ConfigureDoorSpawnPoint
+	// above even though both install "Door": that one is named for PlayerHome and
+	// spells its tag as a literal, whereas this one reads the tag ProfLab's shared
+	// placement header mirrors from the compiled world table, so a table rename
+	// cannot leave this authoring behind. AddStep_Custom takes a captureless
+	// void (*)(), so one function per configured entity is unavoidable regardless.
+	void ZM_ConfigureProfLabDoorSpawnPoint()
+	{
+		Zenith_Assert(ZM_SetSelectedSpawnPointTag(szZM_PROFLAB_SPAWN_TAG),
+			"ProfLab arrival spawn tag is not a valid spawn tag");
+	}
+
 	// ---- S6 item 3 SC5: the authored Dawnmere NPCs ---------------------------
 	//
 	// Reach BONUS authored onto every Dawnmere NPC. 0.4 is this NPC's OWN AABB
@@ -2071,8 +2084,97 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Battle" ZENITH_SCENE_EXT);
 	xAuto.AddStep_UnloadScene();
 
-	// Null (headless/CI) builds still author the FrontEnd, Battle and
-	// terrain-independent PlayerHome scenes above -- preserve that split exactly.
+	// ProfLab ("Aster's Lab", the ZM_SCENE_PROFLAB row of the compiled world
+	// table) is a terrain-independent interior, so like PlayerHome it is authored
+	// on EVERY tools boot including headless/cold-terrain ones -- it is
+	// deliberately NOT inside the AUTHOR_DAWNMERE gate below, which exists only to
+	// protect terrain-derived content. An interior has no terrain to protect.
+	//
+	// ★ EVERY COORDINATE, SCALE, NAME AND TAG BELOW COMES FROM
+	// Source/World/ZM_ProfLabPlacement.h -- the SAME data the boot units and the
+	// automated arrival test read. Nothing here re-spells a literal, because a
+	// constant spelled at both sites cannot red a drift.
+	//
+	// ★ NO ZM_WarpTrigger, AND THAT IS DELIBERATE. ZM_WorldSpec declares
+	// ProfLab -> Dawnmere via spawn tag "FromLab", but Dawnmere.zscen authors only
+	// the "TownCenter" and "FromHome" markers. An exit configured against
+	// "FromLab" would pass IsWarpDestinationValid -- which reads only the compiled
+	// tag list, never the actual scene -- and then park the warp machine in
+	// WAITING_FOR_SPAWN, which has no timeout: an opaque fade and a frozen player,
+	// forever. The exit, the "FromLab" marker and the Dawnmere-side Lab door all
+	// land together in the sub-commit that owns re-writing Dawnmere.zscen.
+	xAuto.AddStep_CreateScene(szZM_PROFLAB_SCENE_NAME);
+	for (u_int uBlock = 0u; uBlock < (u_int)ZM_PROFLAB_BLOCK_COUNT; ++uBlock)
+	{
+		const ZM_PROFLAB_BLOCK eBlock = (ZM_PROFLAB_BLOCK)uBlock;
+		const ZM_ProfLabBlockout xBlock = ZM_GetProfLabBlock(eBlock);
+		ZM_QueueGreyboxBlock(xAuto, ZM_GetProfLabBlockName(eBlock),
+			xBlock.m_xCenter, xBlock.m_xScale);
+	}
+
+	// The single arrival marker. Its transform is the marker's FEET: the warp adds
+	// the capsule half-extent at spawn time (ZM_GameStateManager::CalculateSpawnCenter),
+	// so authoring a body centre here would put an arriving player half a body
+	// into the ceiling.
+	const Zenith_Maths::Vector3 xProfLabSpawnFeet = ZM_GetProfLabSpawnFeet();
+	xAuto.AddStep_CreateEntity(szZM_PROFLAB_SPAWN_ENTITY_NAME);
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_SetTransformPosition(
+		xProfLabSpawnFeet.x, xProfLabSpawnFeet.y, xProfLabSpawnFeet.z);
+	xAuto.AddStep_AddComponent("ZM_SpawnPoint");
+	xAuto.AddStep_Custom(&ZM_ConfigureProfLabDoorSpawnPoint);
+
+	// The authored player stands ON that marker. CAPSULE, not AABB or OBB: it is
+	// the one body here that moves.
+	const Zenith_Maths::Vector3 xProfLabPlayerCenter = ZM_GetProfLabPlayerCenter();
+	xAuto.AddStep_CreateEntity(szZM_PROFLAB_PLAYER_ENTITY_NAME);
+	xAuto.AddStep_SetEntityTransient(false);
+	xAuto.AddStep_SetTransformPosition(
+		xProfLabPlayerCenter.x, xProfLabPlayerCenter.y, xProfLabPlayerCenter.z);
+	xAuto.AddStep_SetTransformScale(fZM_PROFLAB_PLAYER_SCALE_X,
+		fZM_PROFLAB_PLAYER_SCALE_Y, fZM_PROFLAB_PLAYER_SCALE_Z);
+	xAuto.AddStep_AddCollider();
+	xAuto.AddStep_AddColliderShape(
+		COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+	xAuto.AddStep_AddComponent("ZM_PlayerController");
+
+	// Camera forward at yaw 0 is +Z, so the camera sits on the player's -Z side
+	// looking back toward the +Z entrance -- which is why the hall extends into -Z
+	// and the aperture is the +Z face. The X and Z below are the follow camera's own
+	// arm length straight back from the arrival point, i.e. exactly where the spring
+	// settles in plan view.
+	//
+	// The Y is NOT the settled height, and is not meant to be: it is
+	// fZM_PROFLAB_CAMERA_HEIGHT above the FLOOR, while
+	// ZM_FollowCamera::ComputeDesiredPosition adds that same height to the player's
+	// CENTRE and therefore settles one capsule half-extent higher. Nothing snaps
+	// visibly because ZM_FollowCamera::OnStart clears the spring state, so the first
+	// OnLateUpdate after the scene loads jumps the spring straight to the desired
+	// pose rather than easing toward it -- the authored Y is only ever the pose of a
+	// camera that has not ticked yet. The shipped PlayerHome camera above is authored
+	// at the same 3.0 in the same way. (The relationship between the two points is
+	// asserted, not assumed: clause (5) of the boot unit
+	// ProfLab_FollowCameraTrailsIntoTheRoomAtTheAuthoredYaw.)
+	const Zenith_Maths::Vector3 xProfLabCameraPos = ZM_GetProfLabCameraPosition();
+	xAuto.AddStep_CreateEntity(szZM_PROFLAB_CAMERA_ENTITY_NAME);
+	xAuto.AddStep_AddCamera();
+	xAuto.AddStep_SetCameraPosition(
+		xProfLabCameraPos.x, xProfLabCameraPos.y, xProfLabCameraPos.z);
+	xAuto.AddStep_SetCameraYaw(fZM_PROFLAB_CAMERA_YAW);
+	xAuto.AddStep_SetCameraPitch(fZM_PROFLAB_CAMERA_PITCH);
+	xAuto.AddStep_SetCameraFOV(glm::radians(fZM_PROFLAB_CAMERA_FOV_DEGREES));
+	xAuto.AddStep_SetCameraNear(fZM_PROFLAB_CAMERA_NEAR);
+	xAuto.AddStep_SetCameraFar(fZM_PROFLAB_CAMERA_FAR);
+	xAuto.AddStep_AddComponent("ZM_FollowCamera");
+	xAuto.AddStep_SetAsMainCamera();
+
+	xAuto.AddStep_SaveScene(
+		GAME_ASSETS_DIR "Scenes/ProfLab" ZENITH_SCENE_EXT);
+	xAuto.AddStep_UnloadScene();
+
+	// Null (headless/CI) builds still author the FrontEnd, Battle and the
+	// terrain-independent PlayerHome and ProfLab interiors above -- preserve that
+	// split exactly.
 	// What they must NOT do is mutate terrain assets or author the Dawnmere
 	// Terrain/Flux scene: a null backend would bake render content from nothing
 	// and overwrite good baked terrain. Those two stay DEFERRED.
@@ -2492,5 +2594,6 @@ void Project_LoadInitialScene()
 	g_xEngine.Scenes().RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Battle" ZENITH_SCENE_EXT);
 	g_xEngine.Scenes().RegisterSceneBuildIndex(2, GAME_ASSETS_DIR "Scenes/Dawnmere" ZENITH_SCENE_EXT);
 	g_xEngine.Scenes().RegisterSceneBuildIndex(40, GAME_ASSETS_DIR "Scenes/PlayerHome" ZENITH_SCENE_EXT);
+	g_xEngine.Scenes().RegisterSceneBuildIndex(41, GAME_ASSETS_DIR "Scenes/ProfLab" ZENITH_SCENE_EXT);
 	g_xEngine.Scenes().LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

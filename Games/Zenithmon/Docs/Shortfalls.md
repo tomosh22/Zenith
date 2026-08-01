@@ -26,11 +26,15 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   traversable Dawnmere + live PlayerHome door round trip; S4's five procedural asset generators +
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
-- **★ CURRENT VERIFIED BASELINE (re-observed 2026-07-31 at ZM-D-173, every figure off an
-  OBSERVED line):** ZM headless registry **53 passed / 0 failed**; full windowed Vulkan
-  **53 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2817 ran / 2815 passed / 0 failed /
-  2 skipped** (`zm-tests.yml` pinned to **2817**); engine boot gate **1235 / 1234 / 0 / 1**
-  (`run_unit_gate.ps1` default `-Baseline 1235`). ZM-D-173 moved the registry 51 -> 53
+- **★ CURRENT VERIFIED BASELINE (re-observed 2026-08-01 at ZM-D-174, every figure off an
+  OBSERVED line):** ZM headless registry **54 passed / 0 failed**; ZM boot unit gate
+  **2825 ran / 2823 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to **2825**); engine boot
+  gate **1235 / 1234 / 0 / 1** (`run_unit_gate.ps1` default `-Baseline 1235` -- this is the ENGINE
+  cross-game number and did NOT move; ZM-D-174 is GAME-ONLY and touched no file under `Zenith/`).
+  ZM-D-174 moved the registry 53 -> 54 (`ZM_ProfLabWarp_Test`) and the ZM boot baseline
+  2817 -> **2825** (+8 ProfLab placement units). The prior figures, still true of their commit:
+  registry 53, boot 2817 / 2815 / 0 / 2, full windowed Vulkan 53/0 with ZERO skipped.
+  ZM-D-173 moved the registry 51 -> 53
   (`ZM_DawnmereHomeGroundTruth_Test` + `ZM_DawnmereCameraClearance_Test`) and both boot-unit
   baselines +8 -- four ENGINE sensor-raycast units, which every game inherits, plus two camera
   fixtures and two Home-placement units.

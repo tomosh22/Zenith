@@ -15,6 +15,97 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-01 -- ZM-D-174 -- S8 item 1 SC1: the ProfLab interior is authored and build index 41 is registered, closing a shipped warp wedge; a control proves Dawnmere's scene drift is NOT ours
+
+*(GAME-ONLY -- zero files under `Zenith/`, so no cross-game engine gate was owed.
+Two new `.cpp` under `Games/Zenithmon/Tests/` and one new header required
+`Build\regen.ps1`. Every number below is from an OBSERVED line.)*
+
+### Decision
+
+1. **`ProfLab` is authored in the ALWAYS-RUN section, not behind the
+   `AUTHOR_DAWNMERE` gate.** It is an INTERIOR with an empty terrain set, so it
+   depends on no warm terrain recipe and a **headless** tools boot authors it --
+   the same reasoning ZM-D-147 used. Consequence, and the reason this matters:
+   `Assets/Scenes/ProfLab.zscen` is reproducible in CI with no GPU, unlike
+   `Dawnmere.zscen` which needs a windowed boot with terrain warm.
+2. **Build index 41 is registered in `Project_LoadInitialScene`.** This closes a
+   wedge that was ALREADY SHIPPED and that no test could see:
+   `ZM_WorldSpec` has long carried the ProfLab row (41 / INTERIOR / tag `"Door"`),
+   and `ZM_GameStateManager::IsWarpDestinationValid` consults ONLY that compiled
+   tag list and never the scene registry -- so `RequestWarp(41, "Door")` returned
+   **true** while index 41 resolved to nothing, parking the transition machine
+   permanently in `WAITING_FOR_SPAWN` with the player frozen behind a fully
+   opaque fade. Boot units are structurally blind to it: they run BEFORE
+   `Project_LoadInitialScene`.
+3. **Every geometric literal lives once, in `Source/World/ZM_ProfLabPlacement.h`,
+   and the authoring READS it.** A placement constant left file-local in
+   `Zenithmon.cpp`'s anonymous namespace is not nameable from a `Tests/` TU, so a
+   test would have to re-spell it -- and a re-spelled constant cannot red a drift,
+   making the assertion decorative. That hazard has already cost this project a
+   cycle (see the `ZM_GreyboxVisual` entry in Shortfalls).
+4. **NO new unit was added to `Tests/ZM_Tests_WorldSpec.cpp`.** Its 12 existing
+   `ZM_Data` units already cover the ProfLab row generically, and a new
+   "row 41 is INTERIOR with tag Door" unit would pass IDENTICALLY before and
+   after this change -- a pass-then-pass control, which by this project's own
+   rule proves nothing.
+
+### Why
+
+The riskiest unknown in S8 item 1 was whether a brand-new interior scene loads,
+resolves its spawn, places the player, readies the camera and produces
+byte-identical output -- so it is proven FIRST, in a sub-commit that touches
+nothing in Dawnmere and therefore has zero blast radius on 53 existing tests.
+
+### Tests that lock it
+
+`ZM_ProfLabWarp_Test` (registry **53 -> 54**, `m_bRequiresGraphics = false` so it
+is CI-visible and NOT skipped) plus **8** placement boot units (**2817 -> 2825**).
+
+**The automated test was MUTATION-PROVEN LIVE, not argued.** Pointing
+`RegisterSceneBuildIndex(41, ...)` at `PlayerHome` **compiles and does not hang** --
+PlayerHome also offers tag `"Door"`, so the warp completes, the player spawns, the
+camera readies and movement re-enables, and every generic clause stays green. The
+test **RED anyway** (observed `FAIL exit=1`, 31 frames) on its ProfLab-specific
+entity clause, and went green again on revert. A "a warp completed" assertion
+would have survived that mutation. This is exactly the discrimination ZM-D-170
+demanded: one arm per claim is not enough, and the arm that catches it must be the
+specific one.
+
+**Booked, not hidden:** the harness swallows the child process's stdout, so
+`ZM_ProfLabWarp_Test.json` carries `"failures": []` and the diagnostic text the
+test composes is unreadable from the result artifact. That is the project's own
+"evidence produced but never read" pattern occurring in the tooling.
+
+### The Dawnmere drift -- found here, proven NOT ours, deliberately not repaired
+
+A windowed boot re-authors `Dawnmere.zscen` and leaves it dirty, violating
+CLAUDE.md's "a boot must NOT leave a scene modified" invariant. Exactly **two
+bytes** differ (offsets 3627/3635), both low-order mantissa bytes of
+`Npc_RivalVesper`'s authored rotation quaternion (`0x3F7926D8`->`D9`,
+`0x3E6B444C`->`56`): 1 ULP in y, ~10 ULP in w. Position, scale, every other
+entity and `Dawnmere.znavmesh` are byte-identical.
+
+**Both arms of the control were run, because this project's recorded lesson is
+that a negative control proves nothing until it flips.** Two windowed boots of the
+SC1 build agreed byte-for-byte (`F403A489D0B11C77...`); then the SC1 work was
+stashed, the tree regenerated and rebuilt at a clean HEAD, and a windowed boot run
+with none of it present -- producing **the identical hash**. The control
+**REPRODUCED rather than flipping**: ProfLab changes Dawnmere's bytes not at all,
+and master's committed scene no longer reproduces from master's own source.
+`Dawnmere.zscen` was RESTORED and excluded from this commit, because committing a
+2-byte change whose cause is undiagnosed would launder a pre-existing defect into
+an unrelated diff. Cause un-diagnosed and booked as **Q-2026-08-01-002**.
+
+### Reversibility
+
+High. Game-only and purely additive: one header, two test TUs, one new committed
+scene, and five lines in `Zenithmon.cpp`. Reverting restores the wedge (which is
+the pre-existing state), and no save schema, ECS order or serialization version
+moved.
+
+---
+
 ## 2026-07-31 -- ZM-D-173 -- The fixed-yaw overworld camera is kept; ordinary raycasts stop seeing sensors, and Dawnmere's Home moves +40 m so its entrance faces the camera side
 
 *(ENGINE change in `Zenith/Physics` -- it alters every ordinary raycast in the

@@ -10,6 +10,107 @@
 
 ## Open
 
+### [OPEN] Q-2026-08-01-002 -- the committed `Dawnmere.zscen` does NOT reproduce from master's own source (PRE-EXISTING, proven by a control that did not flip)
+
+**The finding.** A windowed tools boot re-authors `Assets/Scenes/Dawnmere.zscen` and leaves it
+**modified** in `git status`. `CLAUDE.md` states the invariant plainly -- *"a boot must NOT leave a
+scene modified in git status. If one ever does, that is a regression of that property -- investigate
+it rather than just re-committing."* So it was investigated rather than re-committed.
+
+**What actually differs: two bytes.** `cmp -l` against `HEAD` reports exactly two differing offsets,
+3627 and 3635, both inside the `Npc_RivalVesper` entity's `Transform` component -- specifically the
+lowest-order mantissa bytes of the authored rotation quaternion:
+
+| | y component | w component |
+|---|---|---|
+| committed (`HEAD`) | `0x3F7926D8` | `0x3E6B444C` |
+| re-authored | `0x3F7926D9` | `0x3E6B4456` |
+
+That is a 1-ULP difference in y and ~10 ULP in w. Position `(490.0, 26.767, 524.0)` and scale
+`(0.8, 1.8, 0.8)` are byte-identical, as is every other entity in the file, and
+`Assets/Navmesh/Dawnmere.znavmesh` stays clean.
+
+**IT IS NOT CAUSED BY THE PROFLAB WORK -- and that was PROVEN, not assumed.** This project's own
+recorded lesson is that *a negative control proves nothing until it flips*, so both arms were run:
+
+1. **Stability arm.** Two windowed authoring boots of the *same* SC1 build produced byte-identical
+   `Dawnmere.zscen` (`F403A489D0B11C77...` twice). Authoring is deterministic run-to-run.
+2. **Control arm.** The SC1 work was `git stash`-ed, the tree regenerated and rebuilt at a clean
+   `HEAD`, and a windowed boot run with **none** of the ProfLab change present. It produced
+   **`F403A489D0B11C77...` -- the identical hash.**
+
+The control **reproduced instead of flipping**, which is the answer: master's committed bytes differ
+from what master's own source authors today. Adding ProfLab changes Dawnmere's bytes not at all.
+
+**Why this matters more than two mantissa bytes.** The drift is behaviourally negligible -- a 1-ULP
+yaw cannot move `facingAbsDot=1.00000`. Its importance is as a **tripwire**: the "a boot leaves no
+scene dirty" property is what makes scene-byte regressions visible at all, and while it is violated
+the signal is permanently noisy, so the NEXT real scene-byte defect arrives inside an
+already-dirty `git status` and reads as normal. ZM-D-173 recorded Dawnmere as "re-authored and
+hash-stable across two equivalent boots" -- true of two boots of one build, and silent about
+whether the committed bytes still reproduce.
+
+**Best-guess action TAKEN (autonomous, per this file's protocol): `Dawnmere.zscen` was RESTORED to
+its committed bytes and left out of the ProfLab commit.** Reasoning: the drift is not that commit's
+to carry, committing a 2-byte change whose cause is undiagnosed would launder a pre-existing defect
+into an unrelated diff, and restoring keeps the sub-commit exactly one concern wide.
+
+**The un-diagnosed part, stated honestly:** *why* the bytes moved is NOT established. Candidates not
+yet discriminated -- (a) the quaternion is derived through a path sensitive to compiler codegen
+(FMA contraction) and the committed bytes predate a toolchain or flag change; (b) it is read back
+from the Jolt body after the ZM-D-156 OBB collider sync, making it sensitive to physics state; (c)
+an authoring-order or warm-terrain difference between the boot that committed it and a boot today.
+Discriminating them is a bounded task: author Dawnmere at the ZM-D-173 commit and bisect forward.
+
+**Cost if wrong: LOW now, RISING with time.** If the drift is benign the cost of the delay is only a
+persistently dirty `git status` after windowed runs. If it is a symptom of something real -- a
+physics-dependent authored rotation would be exactly the ZM-D-156 hazard resurfacing -- then every
+day it stays un-diagnosed is a day the tripwire that would catch it is disabled.
+
+**Status:** found and proven 2026-08-01 during SC1's gate; **acting on the best guess** (restored,
+excluded from the commit, drift left un-repaired and un-hidden). OPEN for a ruling on whether to
+spend a session bisecting it.
+
+### [OPEN] Q-2026-08-01-001 -- does S8's "Intro" move the NEW GAME entry point from Dawnmere to PlayerHome?
+
+**Question.** `Roadmap.md:209`'s literal text is **"Intro -> lab -> starter choice"**. A candidate
+S8 sub-commit would re-point New Game from `uNEW_GAME_BUILD_INDEX = 2u` /
+`szNEW_GAME_SPAWN_TAG = "TownCenter"` (Dawnmere) to PlayerHome build index 40 / tag `"Door"`, and
+re-point `s_axConnFrontEnd` (`Source/Data/ZM_WorldSpec.cpp:18`) to match -- so a new run begins in
+the player's bedroom, walks out, and crosses town to the lab. **Should it?**
+
+**Why it is being asked rather than decided autonomously.** `Scope.md:78-84` states plainly that
+**no agent may widen scope on its own judgment**. Nothing in the authored docs requires the move:
+the Roadmap line says "Intro", not "intro at home", and while `GameDesignDocument.md:468-469` places
+Mom and the bag in the player home, it never says a run must BEGIN there. The constants it would
+move also carry a shipped comment written specifically to keep them independent
+(`Components/ZM_GameStateManager.h:35-39` -- *"Kept semantically separate from whiteout... so either
+flow may move later without silently moving the other"*), and they sit behind a prior user ruling
+(Q-2026-07-18-001 ruling 5, ZM-D-141). An adversarial review pass flagged this as the one genuine
+scope violation in the S8 plan; every other finding was a correctness bug it could fix itself.
+
+**Best-guess action TAKEN (autonomous, per this file's protocol): NOT MOVING IT.** S8 builds the
+intro beat, the lab and starter choice with the entry point left where it ships. The reasoning:
+- The three things the Roadmap line actually names -- intro, lab, starter choice -- are all
+  reachable from the Dawnmere entry point. None of them requires the move.
+- The move is cheap to make LATER and expensive to make and then revert NOW: `s_aszTagsPlayerHome[]
+  = { "Door" }` already ships (`ZM_WorldSpec.cpp:31`), so `IsWarpDestinationValid(40u, "Door")`
+  returns true today with **zero data edits and zero scene bytes**. The blocker is a ruling, not
+  code.
+- Moving it re-points `ZM_SaveContinue_Test`'s disk-authentic New Game assertions and every fixture
+  keyed on TownCenter arrival. Doing that speculatively, then reverting, re-pins those fixtures
+  twice.
+
+**Cost if wrong: LOW-MEDIUM and front-loaded.** If the user wants the run to start at home, it is a
+two-constant edit plus the WorldSpec connection row plus a fixture re-pin -- self-contained, no
+schema change, no ECS order, no new scene. The cost is paid once whenever the ruling lands. **The
+cost of the opposite error is worse and less visible:** silently relocating the game's opening on an
+agent's own reading of one Roadmap word, against a shipped comment that exists to prevent exactly
+that.
+
+**Status:** asked 2026-08-01; **acting on the best guess** (entry point unchanged). OPEN for the
+user's ruling; either direction stays additive.
+
 ### [OPEN] Q-2026-07-29-001 -- the BOX (storage) screen was deferred INTO S7 and S7 was about to close without it or a re-deferral
 
 **Question.** `Roadmap.md:98` (the S6 gate line) states plainly: **"Box is deferred to S7."**

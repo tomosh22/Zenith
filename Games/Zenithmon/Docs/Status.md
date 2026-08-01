@@ -1,16 +1,26 @@
 # Zenithmon Status
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-08-01
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (RE-OBSERVED 2026-07-31 at ZM-D-173, on fresh builds of both
-configs):** ZM headless registry **53 passed / 0 failed**; full windowed
-Vulkan **53 passed / 0 failed, ZERO skipped**; ZM boot unit gate **2817 ran / 2815 passed / 0
-failed / 2 skipped** (`zm-tests.yml` pinned to **2817**); engine boot unit gate,
-Null Combat, **1235 ran / 1234 passed / 0 failed / 1 skipped**
-(`run_unit_gate.ps1` default `-Baseline 1235`). One skip in each is the
-quarantined `GraphComponent::RegistryWideNodeRoundTrip` (task_726cc81d); ZM carries a
-second, ZM-side skip.
+down this file (RE-OBSERVED 2026-08-01 at ZM-D-174, on fresh builds of both
+configs):** ZM headless registry **54 passed / 0 failed**; ZM boot unit gate
+**2825 ran / 2823 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
+**2825**); engine boot unit gate, Null Combat, **1235 ran / 1234 passed / 0
+failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1235`). One skip in
+each is the quarantined `GraphComponent::RegistryWideNodeRoundTrip`
+(task_726cc81d); ZM carries a second, ZM-side skip.
+**`run_unit_gate.ps1`'s 1235 default is the ENGINE cross-game number and MUST NOT
+move for a game-only change** -- ZM-D-174 touched no file under `Zenith/`, so it
+bumped only the three ZM-side sites.
+
+**★ THE 2026-08-01 SESSION RE-MEASURED BEFORE EDITING A LINE, AND THIS TIME THE
+THREE SITES AGREED.** A clean build of both configs read **2817 / 2815 / 0 / 2**
+and registry **53/0** -- exactly what this block, `zm-tests.yml` and
+`Shortfalls.md` all claimed. That is the first session in three where the pinned
+numbers survived contact with a fresh binary. The habit is still mandatory: it
+cost one build to confirm, and the two occasions it was skipped both shipped a
+red `zm-tests`.
 
 **★★ AND THE NUMBER THIS FILE CARRIED BEFORE ZM-D-173 WAS WRONG IN A WAY THE
 'ALL THREE OR NONE' RULE BELOW DOES NOT CATCH.** A clean HEAD build measured
@@ -263,9 +273,48 @@ enough** -- with both models dropped, the body-vs-background arm still PASSED on
 (0.834/0.927, that point lands on pale stone) and only the arm written as a sample-placement guard
 caught it. Full detail in ZM-D-170.
 
-**★ THE CURRENT TASK IS S8's FOUR CONTENT ITEMS** (`Roadmap.md:198-201`). **The S8 go/no-go is
-NOT the next step** -- per `Roadmap.md:196-203` that gate FOLLOWS those four items rather than
-preceding them, and it is a HUMAN stop that no agent may sign.
+**★ THE CURRENT TASK IS S8's FOUR CONTENT ITEMS** (`Roadmap.md:209-212`; the older `:198-201`
+citation drifted when the file was edited). **The S8 go/no-go is NOT the next step** -- per
+`Roadmap.md:207-214` that gate FOLLOWS those four items rather than preceding them, and it is a
+HUMAN stop that no agent may sign.
+
+**★★ S8 ITEM 1 ("Intro -> lab -> starter choice", `Roadmap.md:209`) IS IN PROGRESS. SC1 LANDED
+2026-08-01 AS ZM-D-174; THE BOX IS NOT TICKED AND MUST NOT BE.** SC1 is the first of several
+sub-commits and delivers only the *lab shell*: the `ProfLab` interior authored to
+`Assets/Scenes/ProfLab.zscen` (committed, per ZM-D-148), build index **41 registered**, 8 placement
+boot units, and `ZM_ProfLabWarp_Test` proving the warp round trip. **Nothing of "Intro", the
+professor, or "starter choice" exists yet.** Remaining, in the planned order: the Dawnmere lab
+exterior + door trigger + `FromLab` spawn; Professor Aster (NPC row + palette + authored into
+ProfLab); the starter-choice screen + grant + `STARTER_RECEIVED`; and the intro beat itself.
+
+**★ SC1 CLOSED A LIVE WEDGE THAT WAS ALREADY SHIPPED.** `ZM_WorldSpec` has carried the ProfLab row
+(build index 41, INTERIOR, tag `"Door"`) for some time, and `IsWarpDestinationValid` consults ONLY
+that compiled tag list -- never the actual scene registry. So `RequestWarp(41, "Door")` returned
+**true** on master while index 41 was unregistered, parking the machine forever in
+`WAITING_FOR_SPAWN` with the player frozen behind a fully opaque fade. No test could see it because
+boot units run BEFORE `Project_LoadInitialScene`. Registering 41 closes it.
+
+**★ AND THE ONE THING SC1 DELIBERATELY DID NOT DO: it did not tick anything on the strength of a
+green test.** `ZM_ProfLabWarp_Test` was mutation-proven live, not argued: pointing
+`RegisterSceneBuildIndex(41, ...)` at `PlayerHome` still completes a warp, spawns the player, readies
+the camera and re-enables movement -- every generic clause stays green -- and the test **RED** anyway
+on its ProfLab-specific entity clause (observed `FAIL exit=1`, 31 frames), then went green again on
+revert. A generic "a warp completed" assertion would have survived that mutation and proved nothing.
+**Booked honestly:** the harness swallows the child process's stdout and
+`ZM_ProfLabWarp_Test.json` reports `"failures": []`, so the failure text the test carefully composes
+is not readable from the result artifact -- a real instance of the project's own
+"evidence produced but never read" pattern, now recorded in Shortfalls rather than left as a surprise.
+
+**★★ AND SC1's GATE FOUND A PRE-EXISTING DEFECT ON master THAT IS NOT SC1's -- PROVEN BY A CONTROL
+THAT DID NOT FLIP. See Q-2026-08-01-002.** A windowed boot re-authors `Dawnmere.zscen` and leaves it
+dirty, violating CLAUDE.md's "a boot must NOT leave a scene modified" invariant. Exactly **two bytes**
+differ (offsets 3627/3635), both low-order mantissa bytes of `Npc_RivalVesper`'s authored rotation
+quaternion -- 1 ULP in y, ~10 ULP in w; position, scale, every other entity and the navmesh are
+byte-identical. **Both arms were run rather than one:** two windowed boots of the SC1 build agreed
+byte-for-byte, and a `git stash`-ed, regenerated, rebuilt **clean HEAD** produced the *same* hash
+`F403A489D0B11C77...`. The control REPRODUCED instead of flipping, so ProfLab changes Dawnmere's
+bytes not at all -- master's committed scene simply no longer reproduces from master's own source.
+`Dawnmere.zscen` was RESTORED and excluded from the commit; the cause is un-diagnosed and booked.
 
 **★ ZM-D-169 LEFT TWO THINGS OPEN AND ZM-D-171 CLOSED BOTH ON 2026-07-30. Corrected here
 2026-08-01 -- this block still asserted both as open, in the section a session acts on.** What it
