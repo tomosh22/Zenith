@@ -31,6 +31,41 @@
 // so this test is CI-visible, and calling it graphics-required invited a future
 // session to "restore" a true flag and silently delete the coverage. A doc audit
 // caught the mismatch on 2026-07-29; the registration was right, the comment wrong.
+//
+// ★ ZM-D-176 -- WHERE A NEW GAME NOW LANDS, AND WHY THIS FIXTURE STILL WALKS IN
+// DAWNMERE.
+//
+// A new run no longer materialises in the town square: it begins in the player's
+// bedroom, at ZM_GameStateManager::uNEW_GAME_BUILD_INDEX (PlayerHome) on its
+// szNEW_GAME_SPAWN_TAG marker, and leaves through the shipped
+// PlayerHomeExitTrigger. The arrival phases below were re-pointed accordingly and
+// a new AwaitPlayerHome phase proves the arrival on BOTH axes -- the active scene
+// AND the tag the transition recorded -- because a scene match alone would also
+// be satisfied by a warp that landed on the wrong marker in the right room.
+//
+// The phase then issues an EXPLICIT RequestWarp into Dawnmere's TownCenter and
+// every downstream clause resumes unchanged. That is deliberate, not laziness:
+//   * the walk/capture/save/resume clauses are calibrated to DAWNMERE's geometry
+//     (fSC_MIN_WALK_DISTANCE against the open square, fSC_MIN_FROM_TOWNCENTER
+//     against the marker this test warps to, the saved blob's build index). Run
+//     inside the 16 x 12 m bedroom instead and a held W reaches the exit sensor
+//     in ~1.1 m -- under the 3 m walk floor -- so the fixture would be measuring
+//     a different, weaker property while still looking green;
+//   * driving OUT through the exit trigger instead is the same trap from the far
+//     side: Dawnmere's "FromHome" marker sits ~5 m from the home sensor, so a 3 m
+//     walk lands nearly back inside it;
+//   * and nothing is lost by warping, because the PlayerHome -> Dawnmere DRIVE is
+//     already proven end to end by ZM_PlayerHomeRoundTrip_Test.
+// The explicit warp costs one extra scene load, which is why the load-count clause
+// below expects +2 rather than +1.
+//
+// ★ THE CONSTANTS ARE READ, NEVER RE-SPELLED. GetTargetBuildIndex() is compared
+// against ZM_GameStateManager::uNEW_GAME_BUILD_INDEX, so this fixture cannot
+// disagree with the shipped flow. That alone would still pass if someone reverted
+// the constant to Dawnmere, so a SECOND, NEGATIVE latch requires the destination
+// to differ from iSC_DAWNMERE_BUILD. Pinning the constant's VALUE is a different
+// job and belongs to the boot units in Tests/ZM_Tests_NewGameEntry.cpp; the split
+// is deliberate and neither layer is decorative.
 // ============================================================================
 
 #include <cmath>
@@ -75,6 +110,13 @@ namespace
 {
 	constexpr float fSC_FIXED_DT = 1.0f / 60.0f;
 	constexpr int iSC_FRONTEND_BUILD = 0;
+	// ★ STILL 2, AND STILL NEEDED AFTER ZM-D-176. Dawnmere is no longer where a
+	// new run lands, but it is still the EXPLICIT warp target this fixture drives
+	// to, the build index the saved blob must carry, and the scene the resume arm
+	// returns to. There is deliberately NO iSC_PLAYERHOME_BUILD beside it: the new
+	// entry point is read from ZM_GameStateManager::uNEW_GAME_BUILD_INDEX, because
+	// a literal 40 here could not red a drift in the constant the game actually
+	// uses -- both sides would simply be typed twice.
 	constexpr int iSC_DAWNMERE_BUILD = 2;
 
 	constexpr float fSC_MIN_WALK_DISTANCE = 3.0f;
@@ -86,6 +128,10 @@ namespace
 
 	constexpr int iSC_FRONTEND_DEADLINE = 600;
 	constexpr int iSC_TRANSITION_DEADLINE = 480;
+	// ZM-D-176: the new-game arrival gets its OWN deadline and its OWN failure
+	// text. Folding it into the Dawnmere budget would report "never settled in
+	// Dawnmere" for a bedroom that never loaded, which names the wrong room.
+	constexpr int iSC_PLAYERHOME_DEADLINE = 600;
 	constexpr int iSC_DAWNMERE_DEADLINE = 600;
 	constexpr int iSC_WALK_DEADLINE = 360;
 	constexpr int iSC_REST_DEADLINE = 180;
@@ -315,6 +361,22 @@ namespace
 			&& xPlayer.m_pxController != nullptr && xPlayer.m_pxController->IsGrounded();
 	}
 
+	// ZM-D-176. The new-game arrival gate, stated in the SAME three terms
+	// SCDawnmereReady uses for its scene half -- the destination is live, no warp
+	// still owns the screen, and physics is actually simulating -- but keyed on
+	// the SHIPPED constant rather than on a literal, so the fixture follows the
+	// entry point wherever it moves. The player/grounded clauses SCDawnmereReady
+	// adds are deliberately absent: this phase drives no input, it only observes
+	// the arrival and then warps on, so waiting for a settled capsule would buy
+	// nothing and could stall on an interior's tighter spawn.
+	bool SCPlayerHomeReady()
+	{
+		return SCActiveBuildIndex()
+				== static_cast<int>(ZM_GameStateManager::uNEW_GAME_BUILD_INDEX)
+			&& !ZM_GameStateManager::IsWarpInProgress()
+			&& g_xEngine.Physics().HasActiveSimulation();
+	}
+
 	bool SCFrontEndTitleReady()
 	{
 		ZM_GameStateManager* pxManager = SCResolveManager();
@@ -332,6 +394,13 @@ namespace
 		{
 			"Scenes/FrontEnd" ZENITH_SCENE_EXT,
 			"Scenes/Dawnmere" ZENITH_SCENE_EXT,
+			// ZM-D-176: a new run now begins in PlayerHome, so this fixture
+			// depends on that interior's scene file. It is a TRACKED asset
+			// (ZM-D-148) and so should always be present, but the guard is listed
+			// with the rest rather than assumed: a fresh checkout that somehow
+			// lacks it should SKIP with a named prerequisite, not die 600 frames
+			// later complaining that a bedroom never settled.
+			"Scenes/PlayerHome" ZENITH_SCENE_EXT,
 			"Terrain/Dawnmere/Height" ZENITH_TEXTURE_EXT,
 			"Terrain/Dawnmere/Splatmap_RGBA" ZENITH_TEXTURE_EXT,
 			"Terrain/Dawnmere/GrassDensity" ZENITH_TEXTURE_EXT,
@@ -531,6 +600,11 @@ namespace
 		AwaitEmptyTitle,
 		ActivateNewGame,
 		AwaitNewGameAccepted,
+		// ZM-D-176. INSERTED between acceptance and the Dawnmere fixture: the
+		// bedroom a new run now begins in. It observes the two-sided arrival and
+		// then warps EXPLICITLY into Dawnmere, leaving every later phase against
+		// the geometry it was measured on (see the file header).
+		AwaitPlayerHome,
 		AwaitDawnmere,
 		WalkFromTownCenter,
 		RestAfterWalk,
@@ -592,7 +666,16 @@ namespace
 	bool g_bSCNewGameFocused = false;
 	bool g_bSCNewGameCanaryInstalled = false;
 	bool g_bSCNewGameAccepted = false;
+	// ZM-D-176. The NEGATIVE half of the acceptance proof. g_bSCNewGameAccepted
+	// reads the shipped constant, which proves the FLOW HONOURS THE CONSTANT --
+	// and would go on passing if someone quietly reverted that constant to
+	// Dawnmere. This latch proves the DESTINATION ACTUALLY MOVED. Neither clause
+	// subsumes the other, and pinning the constant's VALUE is the boot units' job.
+	bool g_bSCNewGameNotDawnmere = false;
 	bool g_bSCNewGamePublishedStarter = false;
+	// The two-sided PlayerHome arrival: the right scene, on the right marker.
+	bool g_bSCPlayerHomeReady = false;
+	bool g_bSCPlayerHomeSpawnTag = false;
 	bool g_bSCNewGameProbeTraceExact = false;
 	bool g_bSCNewGameNoSlotTouch = false;
 	bool g_bSCTitleClosedOnNewGameWarp = false;
@@ -666,11 +749,13 @@ static const Zenith_AutomatedTest g_xZMSaveContinueTest = {
 	&Setup_ZMSaveContinue,
 	&Step_ZMSaveContinue,
 	&Verify_ZMSaveContinue,
-	// Phase-local maxima sum to less than 5900 frames (including both 600-frame
-	// Dawnmere settles, both 600-frame FrontEnd settles, every refusal/prompt and
-	// every focus walk). The harness cap sits above that sum so a named phase
-	// deadline, not this backstop, diagnoses every ordinary stall.
-	/* maxFrames */ 6500,
+	// Phase-local maxima sum to less than 6500 frames (including both 600-frame
+	// Dawnmere settles, both 600-frame FrontEnd settles, ZM-D-176's 600-frame
+	// PlayerHome settle, every refusal/prompt and every focus walk). The harness
+	// cap sits above that sum so a named phase deadline, not this backstop,
+	// diagnoses every ordinary stall -- which is why adding the PlayerHome phase
+	// RAISED this cap by its own budget instead of eating the existing margin.
+	/* maxFrames */ 7200,
 	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMSaveContinueTest);
@@ -716,7 +801,10 @@ namespace
 		g_bSCNewGameFocused = false;
 		g_bSCNewGameCanaryInstalled = false;
 		g_bSCNewGameAccepted = false;
+		g_bSCNewGameNotDawnmere = false;
 		g_bSCNewGamePublishedStarter = false;
+		g_bSCPlayerHomeReady = false;
+		g_bSCPlayerHomeSpawnTag = false;
 		g_bSCNewGameProbeTraceExact = false;
 		g_bSCNewGameNoSlotTouch = false;
 		g_bSCTitleClosedOnNewGameWarp = false;
@@ -829,7 +917,7 @@ namespace
 		{
 			g_bSCSkipped = true;
 			Zenith_AutomatedTestRunner::RequestSkip(
-				"[ZM_SaveContinue] FrontEnd/Dawnmere assets are absent");
+				"[ZM_SaveContinue] FrontEnd/PlayerHome/Dawnmere assets are absent");
 			return;
 		}
 
@@ -962,7 +1050,15 @@ namespace
 		{
 			ZM_GameState xStarter;
 			SCSeedFernfawnStarter(xStarter);
-			g_bSCNewGameAccepted = pxManager->GetTargetBuildIndex() == iSC_DAWNMERE_BUILD;
+			// ZM-D-176, and READ FROM THE CONSTANT: whatever the shipped new-game
+			// destination is, the real Enter edge must have queued a transition to
+			// exactly it. GetTargetBuildIndex() is u_int (ZM_GameStateManager.h),
+			// so the comparison is made in that type rather than against an int.
+			g_bSCNewGameAccepted = pxManager->GetTargetBuildIndex()
+				== ZM_GameStateManager::uNEW_GAME_BUILD_INDEX;
+			// ...and the negative that a reverted constant cannot satisfy.
+			g_bSCNewGameNotDawnmere = pxManager->GetTargetBuildIndex()
+				!= static_cast<u_int>(iSC_DAWNMERE_BUILD);
 			g_bSCNewGamePublishedStarter =
 				ZM_GameStateManager::TryGetGameState(pxLive) && pxLive != nullptr
 				&& SCCanonicalEqual(*pxLive, xStarter)
@@ -987,13 +1083,63 @@ namespace
 				SCFail("New Game did not replace the installed canary with a fresh starter");
 				return false;
 			}
-			g_eSCPhase = SCPhase::AwaitDawnmere;
+			g_eSCPhase = SCPhase::AwaitPlayerHome;
 			g_iSCPhaseFrames = 0; return true;
 		}
 		if (g_iSCPhaseFrames > iSC_TRANSITION_DEADLINE)
 		{
-			SCFail("real New Game Enter was not accepted as a Dawnmere transition");
+			SCFail("real New Game Enter was not accepted as a PlayerHome transition");
 			return false;
+		}
+		return true;
+	}
+
+	// ZM-D-176. THE NEW-GAME ARRIVAL, PROVEN ON BOTH AXES, then handed to the
+	// shipped Dawnmere fixture by an EXPLICIT warp (see the file header for why
+	// the walk/save/resume legs are not re-homed into the bedroom).
+	//
+	// The scene half alone is not the claim: a warp that loaded the right room and
+	// then placed the player on some other marker would satisfy it. The tag half
+	// is what makes "landed at the authored door" a checked property, and it is
+	// read from ZM_GameStateManager::szNEW_GAME_SPAWN_TAG rather than typed here.
+	//
+	// No input is held in this phase, and the "Door" marker does not overlap the
+	// PlayerHomeExitTrigger, so the player cannot re-warp out from under us before
+	// the observation is taken.
+	bool SCPhaseAwaitPlayerHome()
+	{
+		if (SCPlayerHomeReady())
+		{
+			ZM_GameStateManager* pxManager = SCResolveManager();
+			const char* szArrived =
+				ZM_GameStateManager::GetActiveSceneArrivedSpawnTag();
+			g_bSCPlayerHomeReady = pxManager != nullptr
+				&& pxManager->GetIssuedLoadRequestCount()
+					== g_uSCNewGameLoadsBefore + 1u;
+			g_bSCPlayerHomeSpawnTag = szArrived != nullptr
+				&& std::strcmp(szArrived,
+					ZM_GameStateManager::szNEW_GAME_SPAWN_TAG) == 0;
+			if (!g_bSCPlayerHomeReady || !g_bSCPlayerHomeSpawnTag)
+			{
+				SCFail("New Game reached PlayerHome but not on its authored marker "
+					"(or issued the wrong number of loads getting there)");
+				return false;
+			}
+			// The one deliberate hand-off. Everything downstream of here is the
+			// SHIPPED Dawnmere fixture, unchanged and calibrated to Dawnmere's
+			// geometry; this warp is what puts it back on that ground.
+			if (!ZM_GameStateManager::RequestWarp(
+				static_cast<u_int>(iSC_DAWNMERE_BUILD), "TownCenter"))
+			{
+				SCFail("the explicit PlayerHome -> Dawnmere warp was refused");
+				return false;
+			}
+			g_eSCPhase = SCPhase::AwaitDawnmere;
+			g_iSCPhaseFrames = 0; return true;
+		}
+		if (g_iSCPhaseFrames > iSC_PLAYERHOME_DEADLINE)
+		{
+			SCFail("New Game never settled in PlayerHome"); return false;
 		}
 		return true;
 	}
@@ -1004,8 +1150,12 @@ namespace
 		{
 			ZM_GameStateManager* pxManager = SCResolveManager();
 			float fYaw = 0.0f;
+			// ZM-D-176: TWO loads, not one -- New Game's own load of PlayerHome,
+			// plus the explicit warp this fixture issues to get back onto
+			// Dawnmere's geometry. A run that somehow reached Dawnmere in a single
+			// load did not go through the new entry point at all.
 			g_bSCDawnmereReady = pxManager != nullptr
-				&& pxManager->GetIssuedLoadRequestCount() == g_uSCNewGameLoadsBefore + 1u
+				&& pxManager->GetIssuedLoadRequestCount() == g_uSCNewGameLoadsBefore + 2u
 				&& SCReadPlayerPose(g_xSCTownCenter, fYaw);
 			g_eSCPhase = SCPhase::WalkFromTownCenter;
 			g_iSCPhaseFrames = 0; return true;
@@ -1746,6 +1896,7 @@ namespace
 		case SCPhase::AwaitEmptyTitle:         return SCPhaseAwaitEmptyTitle();
 		case SCPhase::ActivateNewGame:         return SCPhaseActivateNewGame();
 		case SCPhase::AwaitNewGameAccepted:    return SCPhaseAwaitNewGameAccepted();
+		case SCPhase::AwaitPlayerHome:         return SCPhaseAwaitPlayerHome();
 		case SCPhase::AwaitDawnmere:           return SCPhaseAwaitDawnmere();
 		case SCPhase::WalkFromTownCenter:      return SCPhaseWalkFromTownCenter();
 		case SCPhase::RestAfterWalk:           return SCPhaseRestAfterWalk();
@@ -1786,8 +1937,10 @@ namespace
 
 		const bool bTitleAndNewGame = g_bSCEmptyTitle && g_bSCContinueHidden
 			&& g_bSCNewGameFocused && g_bSCNewGameCanaryInstalled
-			&& g_bSCNewGameAccepted && g_bSCNewGamePublishedStarter
+			&& g_bSCNewGameAccepted && g_bSCNewGameNotDawnmere
+			&& g_bSCNewGamePublishedStarter
 			&& g_bSCNewGameNoSlotTouch && g_bSCTitleClosedOnNewGameWarp
+			&& g_bSCPlayerHomeReady && g_bSCPlayerHomeSpawnTag
 			&& g_bSCDawnmereReady && g_bSCWalked && g_bSCRested;
 		const bool bFixture = g_bSCAliasesActive && g_bSCCaptured
 			&& g_bSCSavedStateDistinctive && g_bSCAutoReady && g_bSCAutoDiskReadback
@@ -1842,15 +1995,19 @@ namespace
 		{
 			Zenith_Error(LOG_CATEGORY_UNITTEST,
 				"[ZM_SaveContinue] TITLE/NewGame failed "
-				"(empty/hidden/focus/canary/accepted/starter/noSlot/closed/ready/walk/rest="
-				"%s/%s/%s/%s/%s/%s/%s/%s/%s/%s/%s)",
+				"(empty/hidden/focus/canary/accepted/notDawnmere/starter/noSlot/closed/"
+				"homeReady/homeTag/ready/walk/rest="
+				"%s/%s/%s/%s/%s/%s/%s/%s/%s/%s/%s/%s/%s/%s)",
 				g_bSCEmptyTitle ? "true" : "false", g_bSCContinueHidden ? "true" : "false",
 				g_bSCNewGameFocused ? "true" : "false",
 				g_bSCNewGameCanaryInstalled ? "true" : "false",
 				g_bSCNewGameAccepted ? "true" : "false",
+				g_bSCNewGameNotDawnmere ? "true" : "false",
 				g_bSCNewGamePublishedStarter ? "true" : "false",
 				g_bSCNewGameNoSlotTouch ? "true" : "false",
 				g_bSCTitleClosedOnNewGameWarp ? "true" : "false",
+				g_bSCPlayerHomeReady ? "true" : "false",
+				g_bSCPlayerHomeSpawnTag ? "true" : "false",
 				g_bSCDawnmereReady ? "true" : "false", g_bSCWalked ? "true" : "false",
 				g_bSCRested ? "true" : "false");
 		}

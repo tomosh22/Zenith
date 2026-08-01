@@ -714,7 +714,8 @@ bool ZM_GameStateManager::TryQueueWarp(
 		: nullptr;
 
 	// FrontEnd is the sole playerless source scene: choosing New Game uses the
-	// same validated transition path into Dawnmere before a Player exists. Any
+	// same validated transition path into PlayerHome (ZM-D-176) before a Player
+	// exists -- the destination moved, this branch did not. Any
 	// PlayerController authored there must still satisfy the normal unique-body
 	// contract; every non-FrontEnd source always requires one.
 	const Zenith_Scene xSourceScene = g_xEngine.Scenes().GetActiveScene();

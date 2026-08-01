@@ -4,14 +4,28 @@
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
 down this file (RE-OBSERVED 2026-08-01 at ZM-D-175, on fresh builds of both
-configs):** ZM headless registry **54 passed / 0 failed**; ZM boot unit gate
-**2840 ran / 2838 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
-**2840**); engine boot unit gate, Null Combat, **1235 ran / 1234 passed / 0
+configs):** ZM headless registry **56 passed / 0 failed**; ZM boot unit gate
+**2847 ran / 2845 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
+**2847**); engine boot unit gate, Null Combat, **1235 ran / 1234 passed / 0
 failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1235`). One skip in
 each is the quarantined `GraphComponent::RegistryWideNodeRoundTrip`
 (task_726cc81d); ZM carries a second, ZM-side skip.
-ZM-D-175 moved the boot baseline **2825 -> 2840** (+15) and left the registry at
-**54** -- it adds no automated test. ZM-D-174 stood at registry 54 / boot 2825.
+ZM-D-176 moved the boot baseline **2840 -> 2847** (+7) and the registry **54 -> 56**
+(`ZM_InteriorTint_Test`, `ZM_InteriorTintPixels_Test`). ZM-D-175 had moved the boot
+baseline **2825 -> 2840** (+15) with the registry unmoved at 54; ZM-D-174 stood at
+registry 54 / boot 2825.
+
+**★ ZM-D-176 MOVED NO SCENE BYTES, AND THAT WAS MEASURED RATHER THAN ARGUED.** The
+PlayerHome tint is **derived at runtime** from the entity name in
+`ZM_GreyboxVisual::ResolveBlockoutColour`, not stored -- `WriteToDataStream` still
+emits a single `u_int`, and `ZM_QueueGreyboxBlock`'s signature is UNCHANGED, so no
+caller can pass a different colour and no scene can pick one up. The PlayerHome
+authoring was simultaneously rewritten from seven literal calls to a derived loop
+over `Source/World/ZM_PlayerHomePlacement.h`, and **all five committed `.zscen`
+hashes were identical before and after an authoring boot** (Battle `1BEB0615`,
+Dawnmere `B85FFE25`, FrontEnd `F7209CF5`, PlayerHome `AAE75C14`, ProfLab
+`F6C55B47`). A serialized colour field would have moved ProfLab's and Dawnmere's
+bytes too, which is why it was rejected.
 **`run_unit_gate.ps1`'s 1235 default is the ENGINE cross-game number and MUST NOT
 move for a game-only change** -- ZM-D-174 touched no file under `Zenith/`, so it
 bumped only the three ZM-side sites.

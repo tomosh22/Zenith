@@ -193,7 +193,8 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 	// TITLE is a persistent-root session, not scene state. OnStart does not rerun when the
 	// surviving MenuRoot returns to FrontEnd, so raise it from settled active-scene state;
 	// conversely, tear the whole TITLE -> LOAD -> DIALOGUE stack down the instant another
-	// transition or scene owns the screen so no title control can leak into Dawnmere.
+	// transition or scene owns the screen so no title control can leak into the world
+	// (PlayerHome as of ZM-D-176; the rule is destination-agnostic).
 	if (m_xStack.Contains(ZM_MENU_SCREEN_TITLE)
 		&& (!bFrontEndActive || bWarpInProgress || bBattleTransitionActive))
 	{

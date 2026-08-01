@@ -1079,6 +1079,16 @@ namespace
 	// ZM_GreyboxVisual, which is file-local to Zenithmon.cpp and unnameable here, and
 	// it keys the NPC/non-NPC split on GetNpcId() -- never on the colour it is about
 	// to judge.
+	//
+	// ★ THE SCAN IS DAWNMERE-SCOPED, AND SINCE ZM-D-176 THAT IS LOAD-BEARING. It
+	// walks the ACTIVE scene, and PlayerHome is never active in this test -- so
+	// the "must be EXACTLY the shipped grey" half above is a claim about
+	// DAWNMERE'S blockout bodies only. It cannot see, and must not be read as
+	// covering, PlayerHome's seven shell blocks, which now deliberately wear the
+	// warm ZM-D-176 interior tint. The two greybox interiors are covered by
+	// ZM_InteriorTint_Test (Tests/ZM_AutoTests_InteriorTint.cpp), which loads
+	// PlayerHome and ProfLab in turn and judges each against its own expected
+	// colour. Nothing about this file changed for ZM-D-176 except this note.
 	void RVSampleAuthoredAppearance()
 	{
 		const Zenith_Maths::Vector4 xFallback = ZM_GetHumanPaletteFallbackColour();
@@ -2954,8 +2964,14 @@ namespace
 			}
 			else
 			{
-				// THE BEHAVIOUR-PRESERVATION NET. Dozens of authored blockout entities
-				// across four committed scenes must not have changed colour.
+				// THE BEHAVIOUR-PRESERVATION NET, SCOPED HONESTLY. The scan walks the
+				// ACTIVE scene, so this clause covers DAWNMERE'S authored blockout
+				// entities -- its home shell, the two door leaves and the lintel -- and
+				// nothing else. It used to claim "four committed scenes", which was
+				// never true of a scene-scoped walk and became actively misleading at
+				// ZM-D-176: PlayerHome's seven shell blocks now wear a warm interior
+				// tint on purpose, and this test cannot see them (nor should it red on
+				// them). The other interiors are ZM_InteriorTint_Test's job.
 				if (g_uRVGreyboxBlockOffGrey != 0u)
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,

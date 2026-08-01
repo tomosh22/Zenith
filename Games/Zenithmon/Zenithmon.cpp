@@ -38,6 +38,12 @@
 #include "Zenithmon/Source/UI/ZM_UI_SaveSlots.h"     // sz*_NAME + RowElementName contract (S7 SC4 save-screen authoring)
 #include "Zenithmon/Source/UI/ZM_UI_Shop.h"          // sz*_NAME + RowElementName + geometry contract (shop authoring)
 #include "Zenithmon/Source/UI/ZM_UI_TitleMenu.h"     // title panel / Continue / New Game authoring contract (S7 SC5)
+// ★ UNCONDITIONAL, and NOT in the ZENITH_TOOLS block below that carries
+// ZM_ProfLabPlacement.h. ZM_GreyboxVisual compiles in EVERY configuration and
+// reads ZM_IsPlayerHomeBlockName / ZM_GetPlayerHomeInteriorTintColour from here
+// (ZM-D-176); the tools-only authoring loop reads the block table from the same
+// file, so both sides share one spelling.
+#include "Zenithmon/Source/World/ZM_PlayerHomePlacement.h"      // the PlayerHome shell + its ZM-D-176 warm tint
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 
@@ -71,8 +77,15 @@
 // An entity that ALSO carries a ZM_Interactable standing on a real ZM_NpcData row
 // is painted with that row's ZM_HUMAN_ID palette colour instead of the blockout
 // grey, which is what finally makes rival Vesper look like someone other than the
-// townsfolk. Everything else -- every ZM_QueueGreyboxBlock wall, floor, door and
-// lintel -- keeps EXACTLY the shipped grey/roughness/metallic it always had.
+// townsfolk.
+//
+// ---- ZM-D-176: the non-NPC answer is no longer one colour -------------------
+// The SEVEN PlayerHome shell blocks named by Source/World/ZM_PlayerHomePlacement.h
+// wear a warm interior tint instead, so the player's bedroom stops reading as the
+// same greybox room as ProfLab (both ship an identical seven-block shell). Every
+// OTHER ZM_QueueGreyboxBlock wall, floor, door and lintel -- ProfLab's seven,
+// Dawnmere's four, and every future prop -- keeps EXACTLY the shipped
+// grey/roughness/metallic it always had. See ResolveBlockoutColour below.
 //
 // ★ WHY THIS IS SAFE AT ORDER 107, GIVEN ZM_Interactable IS 113.
 // OnStart hooks run in ASCENDING serialization order WITHIN one entity
@@ -220,15 +233,15 @@ private:
 	// Known-limit W4. The appearance this blockout body wears RIGHT NOW: the
 	// sibling ZM_Interactable's authored ZM_NpcData row -> its ZM_HUMAN_ID -> the
 	// palette. Everything without a resolvable row -- every wall, floor, door,
-	// lintel and prop -- keeps the shipped blockout grey, which is the whole
-	// behaviour-preservation promise of this change.
+	// lintel and prop -- takes ResolveBlockoutColour below, which is the shipped
+	// blockout grey everywhere except PlayerHome's seven shell blocks (ZM-D-176).
 	Zenith_Maths::Vector4 ResolveBaseColour() const
 	{
 		const ZM_Interactable* pxInteractable =
 			m_xParentEntity.TryGetComponent<ZM_Interactable>();
 		if (pxInteractable == nullptr)
 		{
-			return ZM_GetHumanPaletteFallbackColour();
+			return ResolveBlockoutColour();
 		}
 		// ZM_NPC_NONE aliases ZM_NPC_COUNT, so one comparison rejects the sentinel
 		// and every garbage value together. It must come FIRST: ZM_GetNpcData
@@ -237,14 +250,33 @@ private:
 		const ZM_NPC_ID eNpcId = pxInteractable->GetNpcId();
 		if (eNpcId >= ZM_NPC_COUNT)
 		{
-			return ZM_GetHumanPaletteFallbackColour();
+			return ResolveBlockoutColour();
 		}
 		const ZM_HUMAN_ID eHumanId = ZM_GetNpcData(eNpcId).m_eHuman;
 		if (eHumanId >= ZM_HUMAN_COUNT)
 		{
-			return ZM_GetHumanPaletteFallbackColour();
+			return ResolveBlockoutColour();
 		}
 		return ZM_GetHumanPaletteColour(eHumanId);
+	}
+
+	// ZM-D-176. The non-NPC answer is no longer a single colour: the seven
+	// PlayerHome shell blocks wear a warm interior tint so the player's bedroom
+	// stops reading as the same greybox room as ProfLab. Keyed on the ENTITY
+	// NAME, matched EXACTLY against the same inventory the authoring loop walks
+	// (Source/World/ZM_PlayerHomePlacement.h) -- one spelling, so a rename moves
+	// both sides together. Nothing here is serialized: this is the W4 derivation
+	// contract (ZM_HumanAppearance.h:52-55), unchanged.
+	//
+	// ★ WHY THE NAME IS SAFE TO READ AT ORDER 107. It is established by
+	// AddStep_CreateEntity at authoring time (editor Stopped, no OnStart has
+	// fired) and by scene deserialization before any pending start is drained --
+	// the identical argument the class comment above makes for the NPC row.
+	Zenith_Maths::Vector4 ResolveBlockoutColour() const
+	{
+		return ZM_IsPlayerHomeBlockName(m_xParentEntity.GetName().c_str())
+			? ZM_GetPlayerHomeInteriorTintColour()
+			: ZM_GetHumanPaletteFallbackColour();
 	}
 
 	Zenith_Entity m_xParentEntity;
@@ -1972,21 +2004,25 @@ void Project_RegisterEditorAutomationSteps()
 	// PlayerHome is a terrain-independent interior and is authored on every
 	// tools boot, including headless/cold terrain runs. All shell pieces carry
 	// a replaceable procedural greybox visual and their own static collider.
+	//
+	// ★ EVERY COORDINATE, SCALE AND NAME BELOW COMES FROM
+	// Source/World/ZM_PlayerHomePlacement.h -- the SAME data the ZM-D-176 tint
+	// resolver, the boot units and the automated tint test read. Nothing here
+	// re-spells a literal, because a constant spelled at both sites cannot red a
+	// drift. The derived values are dyadic rationals and are bit-identical to the
+	// seven literal calls this loop replaced, so the committed PlayerHome.zscen
+	// bytes do not move.
+	//
+	// ★ THE ORDER IS PART OF THE CONTRACT (ZM-D-148 dense authoring-order file
+	// indices): appending a block is fine, reordering rewrites the scene bytes.
 	xAuto.AddStep_CreateScene("PlayerHome");
-	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeFloor",
-		{ 0.0f, -0.25f, 0.0f }, { 16.0f, 0.5f, 12.0f });
-	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeBackWall",
-		{ 0.0f, 1.5f, -6.0f }, { 16.0f, 3.0f, 0.5f });
-	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeLeftWall",
-		{ -8.0f, 1.5f, 0.0f }, { 0.5f, 3.0f, 12.0f });
-	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeRightWall",
-		{ 8.0f, 1.5f, 0.0f }, { 0.5f, 3.0f, 12.0f });
-	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeFrontLeft",
-		{ -5.0f, 1.5f, 6.0f }, { 6.0f, 3.0f, 0.5f });
-	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeFrontRight",
-		{ 5.0f, 1.5f, 6.0f }, { 6.0f, 3.0f, 0.5f });
-	ZM_QueueGreyboxBlock(xAuto, "PlayerHomeLintel",
-		{ 0.0f, 2.75f, 6.0f }, { 4.0f, 0.5f, 0.5f });
+	for (u_int uBlock = 0u; uBlock < (u_int)ZM_PLAYERHOME_BLOCK_COUNT; ++uBlock)
+	{
+		const ZM_PLAYERHOME_BLOCK eBlock = (ZM_PLAYERHOME_BLOCK)uBlock;
+		const ZM_PlayerHomeBlockout xBlock = ZM_GetPlayerHomeBlock(eBlock);
+		ZM_QueueGreyboxBlock(xAuto, ZM_GetPlayerHomeBlockName(eBlock),
+			xBlock.m_xCenter, xBlock.m_xScale);
+	}
 
 	xAuto.AddStep_CreateEntity("DoorSpawn");
 	xAuto.AddStep_SetEntityTransient(false);

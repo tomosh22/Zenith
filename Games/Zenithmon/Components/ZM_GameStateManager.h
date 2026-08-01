@@ -30,13 +30,22 @@ public:
 	static constexpr float fFADE_DURATION_SECONDS = 0.20f;
 	static constexpr const char* szFADE_ELEMENT_NAME = "WarpFade";
 	// SC5 whiteout destination: Dawnmere Village (build index 2), its TownCenter spawn.
+	// ★ UNCHANGED BY ZM-D-176, AND THAT IS THE POINT. The separation comment below
+	// exists precisely so the new-game move cannot drag whiteout along with it.
 	static constexpr u_int uWHITEOUT_BUILD_INDEX = 2u;
 	static constexpr const char* szWHITEOUT_SPAWN_TAG = "TownCenter";
-	// A new run enters Dawnmere through the ordinary validated warp path. Kept
-	// semantically separate from whiteout even though both currently share a
-	// destination, so either flow may move later without silently moving the other.
-	static constexpr u_int uNEW_GAME_BUILD_INDEX = 2u;
-	static constexpr const char* szNEW_GAME_SPAWN_TAG = "TownCenter";
+	// ZM-D-176: a new run now begins in the player's bedroom -- PlayerHome (build
+	// index 40) at its "Door" marker -- and leaves through the shipped
+	// PlayerHomeExitTrigger into Dawnmere, instead of materialising in the town
+	// square. The pair was ALREADY semantically separate from whiteout; as of this
+	// change the two flows no longer share a destination at all, and
+	// ZM_Data/NewGameEntry_DiffersFromTheWhiteoutDestination asserts they DIFFER
+	// in BOTH fields so a future edit cannot quietly re-merge them.
+	// The literal 40 is reconciled against the world table by
+	// NewGameEntry_DestinationIsThePlayerHomeDoor (ZM_GetWorldSpec is not
+	// constexpr, so a static constexpr cannot resolve it here).
+	static constexpr u_int uNEW_GAME_BUILD_INDEX = 40u;
+	static constexpr const char* szNEW_GAME_SPAWN_TAG = "Door";
 	// The title screen, and the ONLY playerless destination in the game: FrontEnd
 	// authors no Player, no ZM_SpawnPoint and no ZM_FollowCamera. Spelled as the
 	// literal build index rather than resolved through ZM_GetWorldSpec on purpose --
@@ -83,7 +92,7 @@ public:
 	static bool TryGetGameState(ZM_GameState*& pxGameStateOut);
 
 	// Manager-owned title transactions. New Game stages the fixed starter, queues
-	// the ordinary FrontEnd -> Dawnmere warp, then publishes the starter only after
+	// the ordinary FrontEnd -> PlayerHome warp (ZM-D-176), then publishes the starter only after
 	// the queue accepts it; it never touches a save slot. Continue reads the selected
 	// slot into a local candidate, queues its validated resume position, then publishes
 	// the complete candidate. Any failure leaves the live state and resume latch alone.

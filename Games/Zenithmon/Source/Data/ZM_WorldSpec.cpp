@@ -15,7 +15,18 @@ namespace
 #define ZM_ARRLEN(a) ((u_int)(sizeof(a) / sizeof((a)[0])))
 
 	// -- warp connections (target scene + the spawn tag reached there) --
-	const ZM_SceneConnection s_axConnFrontEnd[]  = { { ZM_SCENE_DAWNMERE, "TownCenter" } };
+	// ZM-D-176: a new run enters at PlayerHome's "Door" (the table row mirrors
+	// ZM_GameStateManager::uNEW_GAME_BUILD_INDEX / szNEW_GAME_SPAWN_TAG, and
+	// NewGameEntry_FrontEndRowMirrorsTheNewGameConstants asserts the mirror).
+	// ★ THIS ROW CHANGES NO RUNTIME BEHAVIOUR. IsWarpDestinationValid reads only
+	// ZM_FindSceneByBuildIndex + the target's spawn-tag list, never m_pxConnections;
+	// the constants alone decide where New Game lands. This is a coherence edit,
+	// enforced only by the ZM_Data units.
+	// Known, accepted side effect: Dawnmere's offered "TownCenter" tag now has no
+	// inbound connection edge. It keeps a real reader -- the whiteout pair -- and
+	// no unit requires the converse (the suite asserts connections resolve, never
+	// that every offered tag is targeted).
+	const ZM_SceneConnection s_axConnFrontEnd[]  = { { ZM_SCENE_PLAYERHOME, "Door" } };
 	const ZM_SceneConnection s_axConnDawnmere[]  = { { ZM_SCENE_ROUTE1, "FromDawnmere" }, { ZM_SCENE_PLAYERHOME, "Door" }, { ZM_SCENE_PROFLAB, "Door" } };
 	const ZM_SceneConnection s_axConnThornacre[] = { { ZM_SCENE_ROUTE1, "FromThornacre" }, { ZM_SCENE_GYM1, "Door" } };
 	const ZM_SceneConnection s_axConnRoute1[]    = { { ZM_SCENE_DAWNMERE, "FromRoute1" }, { ZM_SCENE_THORNACRE, "FromRoute1" } };

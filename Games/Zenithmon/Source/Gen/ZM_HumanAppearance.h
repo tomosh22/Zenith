@@ -58,6 +58,16 @@ void ZM_AppendHumanAppearanceMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMe
 // The SHIPPED blockout grey, spelled ONCE. This is what every non-NPC greybox
 // entity (walls, floors, doors, props) wears and must keep wearing byte for
 // byte, and it doubles as the palette's inert answer for an id it cannot serve.
+//
+// ★ ONE CARVE-OUT, ZM-D-176: the SEVEN PlayerHome shell blocks named by
+// Source/World/ZM_PlayerHomePlacement.h wear ZM_GetPlayerHomeInteriorTintColour()
+// instead, so the player's bedroom stops reading as the same greybox room as
+// ProfLab. That is an ADDED branch in ZM_GreyboxVisual::ResolveBlockoutColour
+// keyed to those seven names -- NOT an edit to the three values below, which
+// still paint ProfLab's seven blocks, Dawnmere's four, and every other prop.
+// ★ THESE THREE VALUES MUST NOT MOVE. Live boot units measure every palette
+// entry's separation from them (ZM_Tests_HumanGen.cpp, ZM_Tests_NpcData.cpp),
+// and ZM_HUMAN_PROF_ASTER already sits only 0.0677 away.
 inline constexpr float fZM_GREYBOX_FALLBACK_R = 0.52f;
 inline constexpr float fZM_GREYBOX_FALLBACK_G = 0.55f;
 inline constexpr float fZM_GREYBOX_FALLBACK_B = 0.60f;

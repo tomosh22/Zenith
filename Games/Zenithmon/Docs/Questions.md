@@ -71,7 +71,17 @@ day it stays un-diagnosed is a day the tripwire that would catch it is disabled.
 excluded from the commit, drift left un-repaired and un-hidden). OPEN for a ruling on whether to
 spend a session bisecting it.
 
-### [OPEN] Q-2026-08-01-001 -- does S8's "Intro" move the NEW GAME entry point from Dawnmere to PlayerHome?
+### [RESOLVED 2026-08-01] Q-2026-08-01-001 -- does S8's "Intro" move the NEW GAME entry point from Dawnmere to PlayerHome?
+
+**RESOLVED BY USER RULING 2026-08-01 (ZM-D-176): YES -- the entry point moves to
+PlayerHome (build 40, tag `"Door"`), AND the PlayerHome interior is tinted slightly
+yellow so it no longer reads as the same room as ProfLab.** The best-guess action
+below (leave it unmoved) is superseded. The tint was not part of the original
+question: it was added by the user after windowed captures showed PlayerHome and
+ProfLab are an identical seven-block greybox shell, which would have made the intro
+beat read as a bug. Full rationale and accepted consequences in ZM-D-176.
+
+*Original question, kept for the audit trail:*
 
 **Question.** `Roadmap.md:209`'s literal text is **"Intro -> lab -> starter choice"**. A candidate
 S8 sub-commit would re-point New Game from `uNEW_GAME_BUILD_INDEX = 2u` /

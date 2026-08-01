@@ -15,6 +15,65 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-01 -- ZM-D-176 -- USER RULING: the New Game entry point MOVES to PlayerHome, and the home interior is tinted to distinguish it from the lab
+
+*(USER SCOPE DECISION, recorded BEFORE implementation as `Scope.md:78-84` requires.
+Resolves **Q-2026-08-01-001**, which an agent was forbidden to decide on its own
+judgment.)*
+
+### What the user ruled
+
+Verbatim intent: *"Change the colour of the PlayerHome interior to a slightly
+yellow colour so it looks different to ProfLab, then go ahead with the PlayerHome
+start point."* Two decisions:
+
+1. **APPROVED -- the New Game entry point moves** from Dawnmere
+   (`uNEW_GAME_BUILD_INDEX = 2u`, `szNEW_GAME_SPAWN_TAG = "TownCenter"`) to
+   PlayerHome (build index 40, tag `"Door"`). A new run now begins in the player's
+   home and walks out into Dawnmere.
+2. **APPROVED -- the PlayerHome interior is tinted slightly yellow**, so it no
+   longer reads as the same room as ProfLab.
+
+### Why the ruling was asked for, and what the evidence showed
+
+`Scope.md:78-84` states that no agent may widen scope on its own judgment. Nothing
+in the authored docs *required* the move: `Roadmap.md:209` says "Intro", not
+"intro at home", and while `GameDesignDocument.md:468-469` puts Mom and the bag in
+the player home, it never says a run must BEGIN there. The constants also carry a
+shipped comment written specifically to keep them independent
+(`Components/ZM_GameStateManager.h:35-39`) and sat behind a prior user ruling
+(Q-2026-07-18-001 ruling 5, ZM-D-141).
+
+**The visual evidence is what made the second decision necessary, and it was not
+anticipated by any planner.** Windowed captures of both candidate start points put
+next to the ProfLab capture showed that `PlayerHome` and `ProfLab` are THE SAME
+ROOM: an identical seven-block greybox shell -- Floor, BackWall, LeftWall,
+RightWall, FrontLeft, FrontRight, Lintel -- with the same proportions, the same
+doorway and the same absent roof, differing only in that ProfLab has no exit
+trigger. The intro beat as buildable before this ruling was therefore "wake in a
+grey box, cross an empty field, enter an indistinguishable grey box" -- which
+reads as a bug rather than as an opening. The tint is the minimum change that
+makes the two rooms legible as different places.
+
+### Consequences accepted with the ruling
+
+- `ZM_SaveContinue_Test`'s disk-authentic New Game assertions and every fixture
+  keyed on TownCenter arrival are re-pointed.
+- **The whiteout constants MUST NOT follow.** `ZM_GameStateManager.h:35-37`'s
+  comment exists precisely to keep the two flows independent, so the move owes a
+  unit proving they still differ.
+- The tint changes `PlayerHome.zscen` bytes, so it owes the full two-boot SHA256
+  re-author proof and a WINDOWED round trip -- a unit suite reasons about compiled
+  constants and structurally cannot see a scene-byte defect.
+
+### Reversibility
+
+High for the entry point (two constants plus a WorldSpec connection row; no
+schema, ECS order or serialization change). High for the tint (an authored colour
+plus a scene re-author).
+
+---
+
 ## 2026-08-01 -- ZM-D-175 -- S8 item 1 SC3: the starter seed is split, `ZM_MakeStarterGameState` is DELETED, and the empty-party gate lands while it is provably inert
 
 *(GAME-ONLY -- zero files under `Zenith/`, so no cross-game engine gate was owed.
