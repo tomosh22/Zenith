@@ -5,11 +5,15 @@
 #include "Core/Multithreading/Zenith_Multithreading.h"   // Zenith_ScopedMutexLock (the primitive-queue sample)
 #include "Core/Zenith_Engine.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "AssetHandling/Zenith_FontAsset.h"   // GetActiveOrDefaultMetrics -- the name-tag centring width
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"   // the runtime graph host
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "Flux/Flux_GraphicsImpl.h"    // GetViewProjMatrix -- the name-tag world-to-screen projection
 #include "Flux/Primitives/Flux_PrimitivesImpl.h"
 #include "Physics/Zenith_Physics.h"
+#include "UI/Zenith_UICanvas.h"        // SubmitText -- the name-tag draw call
+#include "Zenith_OS_Include.h"         // Zenith_Window::GetInstance -- the name-tag pixel-space size
 #include "ZenithECS/Zenith_EventSystem.h"            // Zenith_EventDispatcher -- the encounter channel
 #include "ZenithECS/Zenith_SceneSystem.h"            // GetActiveScene / GetSceneInfo (the source-scene lookup)
 #include "Zenithmon/Components/ZM_BattleTransition.h"   // IsTransitionActive -- the busy-channel input
@@ -584,6 +588,70 @@ void ZM_Interactable::OnUpdate(float fDeltaTime)
 	// every such trainer permanently blind while every unit test still passed.
 	TickTrainerSight(fDeltaTime);
 	UpdateWander(fDeltaTime);
+
+	SubmitNameText(m_xParentEntity.IsValid()
+		? m_xParentEntity.TryGetComponent<Zenith_TransformComponent>()
+		: nullptr);
+}
+
+void ZM_Interactable::SubmitNameText(Zenith_TransformComponent* pxTransform)
+{
+	if (m_eNpcId >= ZM_NPC_COUNT || !pxTransform)
+	{
+		return;
+	}
+
+	Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+	if (!pxCanvas)
+	{
+		return;
+	}
+
+	// Anchor a little above the collider's top face rather than the entity's own
+	// (centre) position, so the tag floats above the NPC's head rather than
+	// through its chest -- the same "anchor + fixed offset" idiom
+	// RenderTest_TennisMatchComponent::SubmitScoreText uses for the net-height
+	// score anchor.
+	constexpr float fHEAD_MARGIN = 0.35f;
+	Zenith_Maths::Vector3 xPosition;
+	Zenith_Maths::Vector3 xScale;
+	pxTransform->GetPosition(xPosition);
+	pxTransform->GetScale(xScale);
+	const Zenith_Maths::Vector3 xAnchor(xPosition.x, xPosition.y + xScale.y * 0.5f + fHEAD_MARGIN, xPosition.z);
+
+	const Zenith_Maths::Matrix4 xViewProj = g_xEngine.FluxGraphics().GetViewProjMatrix();
+	const Zenith_Maths::Vector4 xClip = xViewProj * Zenith_Maths::Vector4(xAnchor, 1.0f);
+	if (xClip.w <= 0.0001f)
+	{
+		return;
+	}
+
+	int iWidth = 1280;
+	int iHeight = 720;
+	if (Zenith_Window::GetInstance())
+	{
+		Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
+	}
+
+	const float fNdcX = xClip.x / xClip.w;
+	const float fNdcY = xClip.y / xClip.w;
+	const Zenith_Maths::Vector2 xPixelPos(
+		(fNdcX * 0.5f + 0.5f) * static_cast<float>(iWidth),
+		(fNdcY * 0.5f + 0.5f) * static_cast<float>(iHeight));
+
+	const float fSize = glm::clamp(700.0f / xClip.w, 12.0f, 28.0f);
+	const char* szName = ZM_GetNpcData(m_eNpcId).m_szDisplayName;
+
+	// SubmitText's position is the LEFT edge of the string (Flux_TextQueue has no
+	// alignment concept of its own -- Zenith_UIText::GetTextWidth does this same
+	// per-glyph-advance sum to centre a UI label). Shift left by half the string's
+	// width so xPixelPos lands in the MIDDLE of the name, matching the head anchor,
+	// rather than the tag reading off to the right of the NPC.
+	const float fTextWidth = static_cast<float>(std::strlen(szName))
+		* fSize * Zenith_FontAsset::GetActiveOrDefaultMetrics().fEmAdvance;
+	const Zenith_Maths::Vector2 xCenteredPixelPos(xPixelPos.x - fTextWidth * 0.5f, xPixelPos.y);
+
+	pxCanvas->SubmitText(szName, xCenteredPixelPos, fSize, Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
 }
 
 u_int ZM_Interactable::SubmitTrainerSpottedIndicator(

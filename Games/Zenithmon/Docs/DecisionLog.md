@@ -15,6 +15,37 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-01 -- ZM-D-180 -- Floating NPC name tags, reusing RenderTest's world-to-screen text idiom rather than a new engine primitive
+
+*(Implementation decision, not a scope ruling -- the feature was requested directly and no
+existing doc claimed otherwise.)*
+
+**What shipped:** every `ZM_Interactable` NPC now draws its `ZM_NpcData::m_szDisplayName`
+above its head every frame, via a new private `ZM_Interactable::SubmitNameText()` called at
+the tail of `OnUpdate` (`Components/ZM_Interactable.cpp`). No new ECS component, no new
+serialized field, no scene-byte change.
+
+**Why this shape:** the engine has no world-space text primitive -- `Flux_TextQueue` /
+`Zenith_UIText` are screen-space-pixel only (`Zenith/UI/CLAUDE.md`). RenderTest's tennis
+scoreboard (`RenderTest_TennisMatchComponent::SubmitScoreText`) already solved exactly this
+problem: project a world anchor through `g_xEngine.FluxGraphics().GetViewProjMatrix()`,
+convert NDC to pixels, and submit ordinary 2D text via
+`Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas()->SubmitText()`, with a `900/clip.w`-style
+distance-scaled font size. `SubmitNameText` is the same idiom (anchor = transform position +
+`scale.y * 0.5 + 0.35` head margin, size clamp `12..28` off `700/clip.w`), so a second engine
+primitive was never built for one game's use.
+
+**Tests:** no new automated/unit test -- there is no new decision surface to characterize
+(the string source `m_szDisplayName` and the projection math are both already covered
+indirectly: the row data by the existing `ZM_Tests_*` data-integrity units, the projection
+idiom by RenderTest's own tennis coverage). Verified instead by: `zenithmon.exe` full
+headless registry unchanged at **56/56 passed** (no test added, none broken), and two
+windowed runs -- a full Dawnmere authoring boot and `ZM_NpcTalk_Test` (which walks the
+player up to `Npc_Villager` and talks, 85 frames / ~4 s with every `ZM_Interactable` on
+screen ticking `SubmitNameText` every frame) -- both completed with zero new errors/asserts
+in the log. Boot/registry baselines in `Status.md` are UNMOVED by design: this touches no
+serialized data and adds no test, so none of the three pinned counts should move.
+
 ## 2026-08-01 -- ZM-D-179 -- A tracked scene's authored rotation stops being a function of physics state; Q-2026-08-01-002 is diagnosed and Dawnmere reproduces again
 
 *(ENGINE change in `Zenith/EntityComponent`, so it owes and got the CROSS-GAME gate.

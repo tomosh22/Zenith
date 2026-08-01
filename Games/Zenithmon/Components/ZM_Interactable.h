@@ -355,6 +355,14 @@ private:
 	void TickTrainerSight(float fDeltaTime);
 	void UpdateWander(float fDeltaTime);
 
+	// The floating name tag above this NPC's head. Same world-to-screen idiom as
+	// RenderTest_TennisMatchComponent::SubmitScoreText -- there is no engine
+	// world-space text primitive, so this projects a world anchor through the
+	// active view-proj matrix and submits ordinary 2D UI text at the resulting
+	// pixel position every frame. A no-op for an unconfigured (ZM_NPC_NONE)
+	// component, so an interactable added but never given a row stays silent.
+	void SubmitNameText(Zenith_TransformComponent* pxTransform);
+
 	// S7 item 3 SC8. The AUTHORED trainer's identity, recovered from the compiled
 	// ZM_NpcData row named by the already-serialized m_eNpcId.
 	//
