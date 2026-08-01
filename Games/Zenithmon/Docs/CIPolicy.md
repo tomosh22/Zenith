@@ -92,15 +92,18 @@ WorldSpec-integrity tests. These touch no disk assets and no GPU, so they
 run in FULL on every `zm-tests` invocation. This is a deliberate design
 constraint on all new tests, not an accident (see TestPlan.md).
 
-**Current S7 item 1 SC2 snapshot (2026-07-21):** the automated registry remains
-unchanged at **36** P1 tests. The fresh headless gate reported **36 passed / 0
+**S7 item 1 SC2 snapshot (2026-07-21; historical, not a current baseline -- relabelled
+2026-08-01, when it was still headed "Current" and contradicting the paragraph above that
+says this document quotes no live counts. The registry has since moved 36 -> 53 and both
+unit figures by several hundred; the live values are the pins):** the automated registry
+then held **36** P1 tests. The headless gate of that day reported **36 passed / 0
 failed**: three tests executed semantically and 33 graphics-required tests took
 their expected skip paths (the harness counts a requested skip as a pass). The
 fresh full windowed gate reported **36 passed / 0 failed / 0 skipped**, with
 every test reporting a positive frame count. Regen and five serial builds also
 passed: all four Vulkan Debug/Release x Tools true/false configurations and the
-D3D12 Debug Tools=false link proof. The boot-unit result is the combined **2392
-/ 2391 / 0 / 1** contract described above; the engine-only reference remains
+D3D12 Debug Tools=false link proof. The boot-unit result was then the combined **2392
+/ 2391 / 0 / 1** contract described above, against an engine-only reference of
 **1103**. The 31 new pure codec/golden units do not change the automated
 registry. SC2 has no visual or human gate.
 

@@ -94,9 +94,13 @@ Plus, always:
   lowercase continuations like `Zenithmon` are distinct words and valid). The
   shared pinned vectors live in `Tools/ZenithCli/Tests/name_validation_cases.txt`;
   the buildsystem suite passed 45 / 0 after the change.
-- **Current landmark (2026-07-21): S0-S6 COMPLETE; S7 item 1 COMPLETE through
-  the durable-model and schema-v1 freezes (`ZM-D-135/136`); item 2 story flags
-  + slots/manual/continue/autosave is NEXT.** The model owns party-first 16x30
+- **Landmark AS OF 2026-07-21, kept for the schema detail below -- ★ NOT the current
+  stage.** It read "item 2 story flags + slots/manual/continue/autosave is NEXT"; that
+  shipped as ZM-D-137..142, **S7 COMPLETE 2026-07-29**, and the live stage is **S8** (its
+  four content items at `Roadmap.md:198-201`; the go/no-go gate FOLLOWS them and is a human
+  stop). Corrected 2026-08-01 -- the stage line lives in `Status.md`, never here. As of that
+  date: S0-S7 COMPLETE, S7 item 1 having landed the durable-model and schema-v1 freezes
+  (`ZM-D-135/136`). The model owns party-first 16x30
   box storage, seen/caught, 4096 story bits, 8 badges, daycare, tower, world,
   options and complete monster instance state. `ZM_SaveSchema` now freezes that
   inventory as a pure explicit-LE 11-module payload with 61-byte monster

@@ -178,8 +178,16 @@ channel where the audit measured 0.004-0.055; the marker now reads as an upright
 **118 px spanning 7x28**). **★ ITEM 2 WAS RESOLVED 2026-07-30 BY ZM-D-170, ALSO ON PIXELS, AND IT
 WAS NOT A DEFECT** -- the HUD and both creature models were drawing the whole time; the audit's null
 was an observation miss, and the real hole was that a capture already on disk had no assertion
-touching it. **Item 4 (Dawnmere reads as an open field) remains open.** And the shading CAUSE behind
-item 1 is still unfixed -- only the six NPCs were given an emissive floor.
+touching it. **Item 4 (Dawnmere reads as an open field) remains open.** **★ AND THE SHADING CAUSE
+BEHIND ITEM 1 WAS FIXED ON 2026-07-30 BY ZM-D-171 (corrected here 2026-08-01).** This block used to
+end "the shading CAUSE behind item 1 is still unfixed -- only the six NPCs were given an emissive
+floor". The engine's ambient is now physically grounded (virtual-ground bounce in the IBL cubes,
+the 0.5 IBL fudge deleted, the sun key derived from the same atmosphere the sky renders), measured
+on the DawnmereHomeShell by `ZM_ShellLighting_Test`: sun-averted vertical face luminance
+**0.061 -> 0.1672**, unlit/lit **0.124 -> 0.3688**, blue/red cast **~7 -> 1.13**. Every blockout
+benefits, not just NPCs, **and ZM-D-169's NPC emissive floor was DELETED with it.** The residual is
+ART DATA, not lighting: minimum RENDERED pairwise separation under honest lighting is **0.0763**,
+so the palette re-author needed to reach 0.15 on screen stays booked in Shortfalls 1.8-4.
 
 **★★ DO NOT USE `Tools\capture_viewport.ps1` TO JUDGE A SHORT BEAT. This file used to advise
 `-IntervalMs 60` or lower; THE SCRIPT CANNOT DELIVER THAT.** Measured 2026-07-29/30: it was asked
@@ -211,8 +219,13 @@ WINS.** Prose accumulates optimism across sessions and each session inherits the
 one's summary; the box is what `StartPrompts.md` prompt 0 step 3 actually reads, and it
 is scored against the item's LITERAL text. Pre-S8 known-limit closure W1-W5 did all land
 (ZM-D-157/158/159/160/161), but **closing five recorded limits is not the same as closing
-the stage.** No S8 content begins, and the S8 go/no-go is NOT the next step --
-**FINISHING S7 is.** S0-S6 remain complete.
+the stage.** S0-S6 remain complete.
+**★ THE LAST TWO SENTENCES OF THIS NOTE EXPIRED ON 2026-07-29 AND ARE CORRECTED HERE (2026-08-01).**
+They read *"No S8 content begins, and the S8 go/no-go is NOT the next step -- FINISHING S7 is."*
+S7 closed later that same day (SC1-SC3, ZM-D-163/166/167), so the instruction now points at
+finished work -- the exact failure mode this historical note exists to warn about, reproduced by
+the note itself. **What survives unchanged: the go/no-go is still NOT the next step.** S8's four
+content items (`Roadmap.md:198-201`) are, and the gate FOLLOWS them.
 **Build:** GREEN on the ZM-D-148 diff (scene authoring made boot-shape-independent; all four ZM scenes now TRACKED) on top of SC1b commit B (ZM-D-147 -- baked navmesh persistence). Engine-wide, so it owed and got the full gate: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; engine lib + SentinelECS/Physics/AI (all three exes exit 0); Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True.
 **Tests (commit B):** Null batches, ALL 0-failed: **ZM 44/44** (registry 42 -> 44; both new navmesh tests RUN, not skipped), CB **45/45**, DP **158/158**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 44/44, 0 skipped, 0 failed**. Boot unit gates on the NULL exes: engine **1093 -> 1121** (Combat) and ZM **2515 -> 2546** -- both pinned from the OBSERVED line. Windowed RenderTest 8 passed / 1 failed, only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002). Ratchets (`architecture,lints` and `complexity`) are **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added; two findings this commit DID introduce (an `Editor/` include and a `g_xEngine` reach from EntityComponent) were fixed, not allow-listed. **Asset-less CI condition reproduced locally** (`Zenith/Assets` hidden): ZM 44/44 and both unit gates unchanged; restored by MERGE and `diff -rq`-verified, since the run re-created only 60 of the 89 files and a naive rename-back would have clobbered the tree. **Teeth mutation-proven ×6** (see ZM-D-147; m1 re-run on the final build reds exactly the 3 serialization units).
 
@@ -254,15 +267,24 @@ caught it. Full detail in ZM-D-170.
 NOT the next step** -- per `Roadmap.md:196-203` that gate FOLLOWS those four items rather than
 preceding them, and it is a HUMAN stop that no agent may sign.
 
-**★ AND ZM-D-169 LEFT TWO THINGS OPEN THAT IT WOULD BE EASY TO MISREAD AS DONE:**
-1. **The greybox SHADING defect is NOT fixed.** ZM-D-169 gave the six NPCs an emissive floor;
-   every other blockout -- walls, floors, doors, lintels, props -- still renders near-black on the
-   vertical faces a player at eye level actually sees. The real fix is an ambient/indirect term.
-2. **`m_eHuman` no longer solely determines how an NPC reads on screen.** The emissive floor is
-   20% authored palette + 80% of a NEW `ZM_NPC_ID`-keyed `ResolveNpcReadabilityTint`, so W4's
-   "one row, one appearance" property is now split across two tables that can disagree, and
-   `Npc_AuthoredAppearancesAreMutuallyDistinct` scores only the first. A roster change must update
-   both.
+**★ ZM-D-169 LEFT TWO THINGS OPEN AND ZM-D-171 CLOSED BOTH ON 2026-07-30. Corrected here
+2026-08-01 -- this block still asserted both as open, in the section a session acts on.** What it
+said, and what is actually true:
+1. **"The greybox SHADING defect is NOT fixed."** It is, at ENGINE level. ZM-D-171 made the
+   ambient physically grounded, so vertical faces carry real sky+ground light -- measured, not
+   argued: sun-averted face luminance **0.061 -> 0.1672**, unlit/lit **0.124 -> 0.3688**, blue/red
+   **~7 -> 1.13** on the DawnmereHomeShell (`ZM_ShellLighting_Test`). It benefits every blockout --
+   walls, floors, doors, lintels, props -- not only the six NPCs.
+2. **"`m_eHuman` no longer solely determines how an NPC reads on screen."** It does again.
+   ZM-D-171 **DELETED** ZM-D-169's emissive floor and its `ResolveNpcReadabilityTint` second
+   colour source, restoring W4's "one row, one appearance" single-source property, so
+   `Npc_AuthoredAppearancesAreMutuallyDistinct` is once more scoring the only table that decides
+   appearance.
+**★ WHAT IS GENUINELY STILL OPEN IS NARROWER AND IS ART DATA, NOT LIGHTING:** the authored
+palette's minimum RENDERED pairwise separation under honest lighting is **0.0763**
+(Caretaker/Wanderer) -- the 0.15 framebuffer promise was only ever met via the emissive hack, so
+`ZM_NpcRenderedPalette_Test`'s floor is honestly 0.04 and raising rendered distinctness back to
+0.15 needs more-separated colours in `ZM_HumanAppearance`. Booked in Shortfalls 1.8-4.
 
 **THE S7 QUEUE AS IT NOW STANDS -- ALL FIVE ITEMS RESOLVED OR RE-HOMED. Kept for the
 audit trail; nothing here is live work:**
@@ -278,14 +300,18 @@ audit trail; nothing here is live work:**
    only, still unbuilt, still booked in Shortfalls 1.8. The recorded "needs a real
    engine/game-camera feature" blocker was DISPROVED: `ZM_FollowCamera` is a Zenithmon
    component (order 103) and the sole writer of the camera pose.
-2. **Spotted marker off the DEBUG primitives channel** (Shortfalls 1.8-3c) -- **⏳ IN
-   FLIGHT, UNCOMMITTED. Not done; do not tick 1.8-3c.** The working tree carries a fix (see
-   "In-flight working tree" below) that has NOT been built, tested or committed. Shortfalls
-   1.8-3c is left OPEN on purpose: marking it closed against an unbuilt diff is precisely
-   the reported-not-observed failure ZM-D-168 exists to punish. **Preserve the W3
-   property:** `SubmitTrainerSpottedIndicator` RETURNS a count measured off Flux's own CPU
-   instance queues and callers `+=` it -- a bare `++` beside the call is exactly the defect
-   that left every test green with nothing drawn.
+2. **Spotted marker off the DEBUG primitives channel** (Shortfalls 1.8-3c) -- **✅ DONE
+   2026-07-30 (ZM-D-169, committed `ffcc20af`); 1.8-3c IS CLOSED, ON PIXELS.** This item read
+   "⏳ IN FLIGHT, UNCOMMITTED. Not done; do not tick 1.8-3c" until 2026-08-01, describing a
+   working tree that had been built, gated and committed two days earlier -- and pointing at an
+   "In-flight working tree" section that no longer exists. Observed at closure:
+   `ZM_RivalVesperAuthored_Test` holds `Graphics/Primitives/Enabled` FALSE for the whole run and
+   a frame-exact swapchain dump on a real SPOTTED frame carries **118 marker-hue px spanning
+   7x28**, that hue unique frame-wide; mutation-proven by restoring the old
+   `if (!m_bPrimitivesEnabled) return;`. **The W3 property was preserved and still binds:**
+   the gameplay submit RETURNS a count measured off Flux's own CPU instance queues and callers
+   `+=` it -- a bare `++` beside the call is exactly the defect that left every test green with
+   nothing drawn.
 3. **Duplicate NPC appearance -- ✅ DONE 2026-07-29 (ZM-D-164).** `ZM_NPC_ROUTE_WARDEN` now
    names the new append-only `ZM_HUMAN_TOWN_WARDEN` (`WORKER`+`BLONDE`), nearest authored
    neighbour 0.20661 against the 0.15 floor. **★ IT WAS NOT ONE TOKEN AND THE RECORDED FIX
@@ -475,7 +501,10 @@ own cross-game gate. Booked as `task_33ee8059`. The cylinder swap in this diff s
 ## S7 closure detail and standing lessons (HISTORICAL -- none of this is live work)
 
 Everything from here down is the record of how S7 closed and what it bound for future work.
-It is not a task list. The live task is the "In-flight working tree" section above.
+It is not a task list. **The live task is S8's four content items (`Roadmap.md:198-201`) -- see
+"Current task" above.** This sentence used to point at an "In-flight working tree" section, which
+was removed when ZM-D-169 was committed on 2026-07-30, leaving a dangling pointer; fixed
+2026-08-01.
 
 **★ QUEUE ITEM 1 IS COMPLETE -- SC1 (ZM-D-163), SC2 (ZM-D-166) AND SC3 (ZM-D-167) ALL
 LANDED, AND SC3 CLOSED S7.** SC2 adds
@@ -864,6 +893,15 @@ Then SC2 `ZM_TrainerData` + `ZM_STORY_FLAG_RIVAL1_DEFEATED` -> SC3 sight cone ->
 **PER-SC GATE -- run in this exact order, every time:** `Build\regen.ps1` (ONLY when a new .cpp or folder was added) -> `zenith build Zenithmon` -> `zenith test Zenithmon --headless` (heals DLLs) -> `Tools\run_unit_gate.ps1 -Exe ... -Baseline <N> -TimeoutSec 300` (the 300 s timeout-kill is EXPECTED) -> full windowed `zenith test Zenithmon`. **Two standing tripwires:** (a) never write a PREDICTED unit count into `zm-tests.yml` -- only the OBSERVED one from the boot log; (b) the engine baseline **1121 must remain unchanged** unless an explicitly-scoped engine change owns the cross-game gate.
 
 ## Last completed
+
+**★ THIS SECTION'S "Prior:" CHAIN STOPS AT ZM-D-153 AND WAS NEVER EXTENDED. It is a
+HISTORICAL chain, not the latest work; corrected 2026-08-01.** The actual last completed work
+is **ZM-D-173 (2026-07-31)** -- engine raycasts ignore sensor bodies, Dawnmere's Home relocated
++40 m with its terrain pad, registry 51 -> 53, boot units 2809 -> 2817. Everything since
+ZM-D-153 is recorded in the top-of-file blocks and in `DecisionLog.md` (newest first): ZM-D-154
+through ZM-D-167 closed S7, ZM-D-168 was the visual audit, ZM-D-169/170 landed the first pixel
+assertions, ZM-D-171/172 the physically-grounded lighting, ZM-D-173 the above. **The chain below
+is left intact as the S7-era record; do not read its top entry as current.**
 
 **S7 item 3 SC5 -- TRAINER FORCED-BATTLE ENTRY + PRIZE/DEFEAT WRITE-BACK
 (ZM-D-153).** The vertical's core. New pure leaf

@@ -4,8 +4,8 @@
 
 **Scope note (2026-07-09, S0):** at S0 essentially EVERYTHING is a gap -- the project is a booting skeleton. This doc is deliberately structured per major system with a one-line current-state each, so later sessions UPDATE lines in place rather than restructure. When a stage lands, replace that system's status line and add a dated note; do not reorder sections.
 
-**Verdict at a glance (updated 2026-07-29 LATE -- ★ THIS BLOCK HAS NOW GONE STALE TWICE IN ONE
-DAY. It was rewritten earlier on 2026-07-29 (ZM-D-165) precisely because it had been stamped
+**Verdict at a glance (baseline bullet re-observed 2026-07-31 at ZM-D-173; whole block
+re-verified line by line 2026-08-01 -- ★ AND IT HAD GONE STALE TWICE IN ONE DAY BEFORE THAT. It was rewritten earlier on 2026-07-29 (ZM-D-165) precisely because it had been stamped
 2026-07-21 and was eight days stale; by that evening it was wrong again, still asserting "S7 IS
 NOT COMPLETE" and still listing SC2/SC3 as remaining work after both had landed. A verdict block
 that nobody re-reads is worse than none, because it is the first thing a new session trusts --
@@ -62,7 +62,9 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   games clean on Null_True. ZM headless **50/0**, full windowed **50/0 with ZERO skipped**, ZM boot
   **2742 / 2741 / 0 / 1 unmoved** -- so no baseline moved and none of the three pinned sites was
   touched.
-- **Next autonomous work (2026-07-30):** **S8's four content items** (`Roadmap.md:198-201`). **Still
+- **Next autonomous work (re-verified 2026-08-01; unchanged since 2026-07-30 -- ZM-D-171/172/173
+  all landed in between and none of them was S8 content):** **S8's four content items**
+  (`Roadmap.md:198-201`), none of which is built. **Still
   booked here and NOT scheduled:** the camera cut (1.8-3a); the W4 palette-data re-author (rendered
   NPC distinctness back toward 0.15 via more-separated authored colours -- see 1.8-4, the ZM-D-171
   residual); and the engine's `AddLine` centring bug (`task_33ee8059`). **The general greybox shading
@@ -201,9 +203,14 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
    behind cover cancels cleanly; a busy channel pauses without consuming the sighting; a
    corrupt duration fails open on a free tick. **STILL OPEN, and cut on evidence rather
    than overlooked:**
-   - **No camera cut.** `ZM_FollowCamera::OnLateUpdate` OWNS and overwrites the camera
-     every frame and there is no override stack. A cinematic cut needs camera-ownership
-     arbitration -- a real engine/game-camera feature, not a polish item.
+   - **No camera cut -- STILL UNBUILT, but ★ THE BLOCKER THIS BULLET STATED WAS DISPROVED**
+     (see "THE CAMERA CUT REMAINS UNBUILT" further down this section; corrected here 2026-08-01
+     so the two do not disagree). `ZM_FollowCamera::OnLateUpdate` OWNS and overwrites the camera
+     every frame and there is no override stack, so an override is genuinely still needed -- but
+     `ZM_FollowCamera` is a **Zenithmon component (order 103)** and the SOLE writer of the camera
+     pose, so it belongs INSIDE that component and needs **no `Zenith/` change at all**. This
+     bullet used to call it "a real engine/game-camera feature, not a polish item"; whoever takes
+     it should not re-inherit that estimate.
    - **★ THE FIXED HEADING IS THE SHIPPED DESIGN, NOT A SHORTFALL (ZM-D-173).** The camera
      keeps the yaw its scene authored and resolves occlusion by raycasting pivot -> desired
      position. What WAS a defect is fixed: ordinary engine raycasts used to report SENSOR
@@ -216,9 +223,16 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      standable point in Dawnmere**, and it deliberately carries no rings around NPCs, since a
      live NPC may legitimately occupy the ray. New S8 areas must extend it as part of their
      authoring.
-   - **No approach walk.** Vesper is authored stationary with an OBB collider (ZM-D-156:
-     an AABB destroys his authored yaw). Moving him correctly needs dynamic-capsule/nav
-     ownership, avoidance, and freeze coordination with the order-110/111/112/113 seam.
+   - **RESOLVED 2026-07-29 (SC1-SC3, ZM-D-163/166/167) -- THE APPROACH WALK, AND THE COLLIDER
+     CLAIM WITH IT.** This bullet read *"No approach walk. Vesper is authored stationary with an
+     OBB collider (ZM-D-156: an AABB destroys his authored yaw). Moving him correctly needs
+     dynamic-capsule/nav ownership, avoidance, and freeze coordination with the
+     order-110/111/112/113 seam."* All of that was then built, and **he is no longer OBB** --
+     SC3 moved him to `CAPSULE`/`DYNAMIC` precisely so he could be driven, and his authored yaw
+     survived it (`facingAbsDot=1.00000` off the re-authored bytes). Observed end to end: he
+     closes **7.575 m -> 2.105 m** into a 2.0 m standoff in **43 frames / 1.467 s** at
+     **3.729 m/s**, `worstBackstep=0.0000`, with the player frozen by `ZM_TrainerCinematicLatch`
+     for all 43 frames and released in 1. Stale until 2026-08-01.
    - **RESOLVED 2026-07-30 (ZM-D-169) -- 1.8-3c, THE DEBUG-CHANNEL DEPENDENCY, AND IT IS PROVEN
      WITH PIXELS RATHER THAN WITH THE SUBMIT COUNTER.** The marker no longer rides the tools/debug
      channel. `Flux_PrimitivesImpl` gained two dedicated GAMEPLAY queues plus
@@ -238,9 +252,10 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      a real UI/mesh surface remains unnecessary: the gameplay primitive channel IS the production
      surface now.
 
-   The honest one-line description is now **"a trainer who sees you shows you he has,
-   then speaks, then battles you"** -- he still does not walk to you and the camera does
-   not move.
+   The honest one-line description is now **"a trainer who sees you shows you he has, walks up
+   to you, speaks, and battles you"** -- **the camera still does not move.** (Updated 2026-08-01:
+   this sentence ended "-- he still does not walk to you and the camera does not move", which
+   ZM-D-167's approach walk had already falsified on 2026-07-29.)
 4. **RESOLVED 2026-07-29 (ZM-D-160) -- RIVAL VISUAL DISTINCTNESS.** `ZM_NpcData::m_eHuman`
    is no longer declared-and-ignored: a TOTAL palette in `Source/Gen/ZM_HumanAppearance`
    derives one flat colour per `ZM_HUMAN_ID` from the SAME outfit/hair tables the SC3
