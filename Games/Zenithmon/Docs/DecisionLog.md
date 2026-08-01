@@ -15,6 +15,63 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-01 -- ZM-D-178 -- Full `Docs/` audit against the code; line-number citations are retired in favour of section names
+
+*(DOCS-ONLY: no source file changed, so no build or gate is owed. Four auditors
+corrected disjoint doc sets against the repo, then a read-only consistency sweep
+scored the whole directory as a set.)*
+
+### Why this was run at all
+
+`Tools/doc_lint.ps1` hardcodes `$docsDir = Games/DevilsPlayground/Docs` and never
+reads `Games/Zenithmon/Docs`. **A green `doc-lint` is therefore ZERO evidence
+about any Zenithmon doc** -- these files are unlinted and every drift in them has
+been found by hand. This is the first full sweep.
+
+### What it found (the shape, not the list)
+
+- **The recurring failure is confirmed as structural, not incidental.** The worst
+  single item was `Shortfalls.md`'s "next autonomous work" bullet, which read
+  *"S8's four content items, none of which is built"* and carried a
+  **"re-verified 2026-08-01"** stamp -- applied the same day four S8 sub-commits
+  landed. A confident sentence, freshly re-dated, outranking an unticked checkbox.
+- **A cross-check pass is worth more than the auditors.** Two of the nine residual
+  inconsistencies were **INTRODUCED by the audit itself** (an NPC roster corrected
+  from four to five when the answer is six; a CI step list renumbered without
+  updating a back-reference). An audit without an independent sweep would have
+  shipped both as fixes.
+- **`Games/Zenithmon/CLAUDE.md` was self-contradictory** -- one line said
+  `FrontEnd.zscen` is not checked in, another said all scenes are committed -- and
+  it is AUTO-LOADED into every session, so it was the highest-leverage error in
+  the tree. Both counts were also short by one after ProfLab landed.
+- Two technical claims had propagated widely and were corrected everywhere:
+  "headless skips Flux" (it does not -- Null is a BUILD CONFIG and every render
+  path runs against no-op calls; what is absent is *pixels*), and "a fresh CI
+  checkout has NO `Assets/`" (six files are tracked).
+
+### The convention this establishes
+
+**Cite documents by SECTION NAME, not by line number.** Every line-number
+citation audited in the living docs had drifted -- several had drifted *twice*,
+including sentences that were themselves written to correct an earlier drifted
+citation. A line number is a fact about a file's current formatting, which every
+edit invalidates; a section name is a fact about its content. Existing citations
+are converted opportunistically as the surrounding text is touched.
+
+### What was deliberately NOT done
+
+Historical figures were left in place wherever they are labelled as belonging to
+their commit (2817 / 2825 / 2840, registry 51 / 53 / 54). They are the audit trail
+and are not stale; only sentences asserting them as CURRENT were corrected. Nor
+was `MasterPlan.md`'s body rewritten -- it declares itself read-only history, so
+its two superseded technical claims were named in its header banner instead.
+
+### Reversibility
+
+Total. Docs only.
+
+---
+
 ## 2026-08-01 -- ZM-D-176 -- USER RULING: the New Game entry point MOVES to PlayerHome, and the home interior is tinted to distinguish it from the lab
 
 *(USER SCOPE DECISION, recorded BEFORE implementation as `Scope.md:78-84` requires.

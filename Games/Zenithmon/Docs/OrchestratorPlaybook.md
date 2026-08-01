@@ -222,12 +222,28 @@ All from repo root, PowerShell:
 ```
 zenith regen                                 # only if files were added/removed
 zenith build Zenithmon                       # Vulkan_vs2022_Debug_Win64_True
-zenith test Zenithmon --headless             # full batch gate
+zenith test Zenithmon --headless             # AUTOMATED batch only -- see below
 zenith test Zenithmon --filter <Test>        # scoped / windowed iteration
 zenith clean Zenithmon                       # recovery: hung cl.exe / locked pdbs
+
+pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\run_unit_gate.ps1 `
+  -Exe Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe `
+  -Baseline <ZM count from Status.md> -TimeoutSec 600
 ```
 
-Fallback: `pwsh -File Tools\zenith.ps1 <verb> ...`. msbuild direct:
+**`zenith test` IS NOT THE WHOLE GATE.** It passes `--skip-unit-tests`, so the
+boot `ZENITH_TEST` suite -- every `ZM_*` unit -- runs ONLY under
+`Tools\run_unit_gate.ps1` (which boots the Null exe and asserts the full
+registered count ran with 0 failed). Both are required before any commit;
+`.github/workflows/zm-tests.yml` runs them as two separate steps for the same
+reason. `run_unit_gate.ps1`'s built-in `-Baseline` default is the **ENGINE**
+number and must never be used for Zenithmon -- always pass the ZM count
+explicitly, and bump it here and in `zm-tests.yml` in the SAME commit when the
+`ZM_*` unit count changes.
+
+Fallback: `pwsh -NoProfile -File Tools\zenith.ps1 <verb> ...` (that exact prefix
+is what `.claude/settings.json` allowlists; allow rules prefix-match the whole
+command string, so `pwsh -File ...` matches no rule and prompts). msbuild direct:
 `/t:Zenithmon` on `Games\Zenithmon\zenithmon_win64.sln`, never the whole sln.
 Test exit codes: 0 OK / 1 usage / 2 validation / 3 generation /
 4 build-or-test / 5 not-found. The old `Tools/run_*_tests.ps1` runners were
@@ -373,6 +389,7 @@ integrate, gate, commit.
 | Review diffs (logic + all engine changes) | Reviewer subagent |
 | Reference-doc bodies (GDD, TestPlan, ...) | Doc Maintainer subagent |
 | **zenith build / test / regen / run** | **Orchestrator only** |
+| **Tools\run_unit_gate.ps1 (the ZM_* boot units)** | **Orchestrator only** |
 | **msbuild / game executable** | **Orchestrator only** |
 | Splice shared-table rows (ZM_WorldSpec) | Orchestrator |
 | Write Status / Roadmap / DecisionLog / Questions / Shortfalls | Orchestrator |

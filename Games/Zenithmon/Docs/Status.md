@@ -3,8 +3,10 @@
 **Last updated:** 2026-08-01
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (RE-OBSERVED 2026-08-01 at ZM-D-175, on fresh builds of both
-configs):** ZM headless registry **56 passed / 0 failed**; ZM boot unit gate
+down this file (RE-OBSERVED 2026-08-01 at ZM-D-176/177, on fresh builds of both
+configs; the block previously mis-attributed these to ZM-D-175, which actually
+stood at registry 54 / boot 2840):** ZM headless registry **56 passed / 0 failed**
+-- and full windowed Vulkan **56 / 0 with ZERO skipped**; ZM boot unit gate
 **2847 ran / 2845 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
 **2847**); engine boot unit gate, Null Combat, **1235 ran / 1234 passed / 0
 failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1235`). One skip in
@@ -251,7 +253,9 @@ They read *"No S8 content begins, and the S8 go/no-go is NOT the next step -- FI
 S7 closed later that same day (SC1-SC3, ZM-D-163/166/167), so the instruction now points at
 finished work -- the exact failure mode this historical note exists to warn about, reproduced by
 the note itself. **What survives unchanged: the go/no-go is still NOT the next step.** S8's four
-content items (`Roadmap.md:198-201`) are, and the gate FOLLOWS them.
+content items (the four unticked boxes under Roadmap's **"S8 -- Vertical slice, go/no-go"** heading)
+are, and the gate FOLLOWS them. *(Cited by NAME, not line: every line-number citation in this file
+has drifted at least once, which is the lesson recorded further down.)*
 **Build:** GREEN on the ZM-D-148 diff (scene authoring made boot-shape-independent; all four ZM scenes now TRACKED) on top of SC1b commit B (ZM-D-147 -- baked navmesh persistence). Engine-wide, so it owed and got the full gate: `Build\regen.ps1` GREEN + `zenith regen --check` in sync; engine lib + SentinelECS/Physics/AI (all three exes exit 0); Zenithmon Vulkan_True + Null_True; Combat / CityBuilder / DevilsPlayground / RenderTest / TilePuzzle Null_True.
 **Tests (commit B):** Null batches, ALL 0-failed: **ZM 44/44** (registry 42 -> 44; both new navmesh tests RUN, not skipped), CB **45/45**, DP **158/158**, RT 9/9, Combat 14/14. Full **windowed Vulkan ZM 44/44, 0 skipped, 0 failed**. Boot unit gates on the NULL exes: engine **1093 -> 1121** (Combat) and ZM **2515 -> 2546** -- both pinned from the OBSERVED line. Windowed RenderTest 8 passed / 1 failed, only the documented pre-existing `RT_TennisDeterminismDigest` (Q-2026-07-21-002). Ratchets (`architecture,lints` and `complexity`) are **byte-identical to a pristine-HEAD worktree** -- both stay pre-existing RED, nothing added; two findings this commit DID introduce (an `Editor/` include and a `g_xEngine` reach from EntityComponent) were fixed, not allow-listed. **Asset-less CI condition reproduced locally** (`Zenith/Assets` hidden): ZM 44/44 and both unit gates unchanged; restored by MERGE and `diff -rq`-verified, since the run re-created only 60 of the 89 files and a naive rename-back would have clobbered the tree. **Teeth mutation-proven ×6** (see ZM-D-147; m1 re-run on the final build reds exactly the 3 serialization units).
 
@@ -294,14 +298,29 @@ citation drifted when the file was edited). **The S8 go/no-go is NOT the next st
 `Roadmap.md:207-214` that gate FOLLOWS those four items rather than preceding them, and it is a
 HUMAN stop that no agent may sign.
 
-**★★ S8 ITEM 1 ("Intro -> lab -> starter choice", `Roadmap.md:209`) IS IN PROGRESS. SC1 LANDED
-2026-08-01 AS ZM-D-174; THE BOX IS NOT TICKED AND MUST NOT BE.** SC1 is the first of several
-sub-commits and delivers only the *lab shell*: the `ProfLab` interior authored to
-`Assets/Scenes/ProfLab.zscen` (committed, per ZM-D-148), build index **41 registered**, 8 placement
-boot units, and `ZM_ProfLabWarp_Test` proving the warp round trip. **Nothing of "Intro", the
-professor, or "starter choice" exists yet.** Remaining, in the planned order: the Dawnmere lab
-exterior + door trigger + `FromLab` spawn; Professor Aster (NPC row + palette + authored into
-ProfLab); the starter-choice screen + grant + `STARTER_RECEIVED`; and the intro beat itself.
+**★★ S8 ITEM 1 ("Intro -> lab -> starter choice", `Roadmap.md:209`) IS IN PROGRESS. FOUR
+SUB-COMMITS HAVE LANDED (ZM-D-174/175/176/177); THE BOX IS NOT TICKED AND MUST NOT BE.**
+
+*LANDED so far:*
+- **ZM-D-174** -- the `ProfLab` interior shell authored to `Assets/Scenes/ProfLab.zscen`
+  (committed, per ZM-D-148), build index **41 registered** (closing a live warp wedge), 8 placement
+  boot units, `ZM_ProfLabWarp_Test`.
+- **ZM-D-175** -- the starter **DATA layer** and the seed split: `ZM_MakeStarterGameState` DELETED
+  into `ZM_MakeNewGameState()` + `ZM_ApplyStarterChoice()`, plus the empty-party battle predicate
+  and trainer engage gate landed while provably inert. Behaviour-preserving.
+- **ZM-D-176** -- a **USER SCOPE RULING**: New Game now begins in **PlayerHome** (build 40, tag
+  `"Door"`), and the home interior is tinted warm so it no longer reads as the same greybox room as
+  ProfLab. The whiteout constants deliberately did NOT follow.
+- **ZM-D-177** -- the tint pixel probe's absolute framebuffer bounds retracted as a false premise;
+  its relative separation kept unchanged.
+
+*STILL NOT BUILT -- what item 1 needs before its box may be ticked:* the Dawnmere lab **EXTERIOR**
++ door trigger + `FromLab` spawn; **Professor Aster** (NPC row + palette + authored into ProfLab --
+note the review found Mom/Maren's palette collides at EXACTLY 0.0000 with the Villager's, so any
+new human owes a palette re-author); the **starter-choice SCREEN** -- the model and the grant both
+ship, so only the presenter is missing; and the **intro beat** itself. There is no cutscene or
+movie system anywhere in the codebase, and none is in scope: "Intro" here means a playable
+gameplay beat.
 
 **★ SC1 CLOSED A LIVE WEDGE THAT WAS ALREADY SHIPPED.** `ZM_WorldSpec` has carried the ProfLab row
 (build index 41, INTERIOR, tag `"Door"`) for some time, and `IsWarpDestinationValid` consults ONLY
@@ -566,7 +585,8 @@ own cross-game gate. Booked as `task_33ee8059`. The cylinder swap in this diff s
 ## S7 closure detail and standing lessons (HISTORICAL -- none of this is live work)
 
 Everything from here down is the record of how S7 closed and what it bound for future work.
-It is not a task list. **The live task is S8's four content items (`Roadmap.md:198-201`) -- see
+It is not a task list. **The live task is S8's four content items (the unticked boxes under
+Roadmap's "S8 -- Vertical slice, go/no-go" heading; item 1 is IN PROGRESS, items 2-4 unstarted) -- see
 "Current task" above.** This sentence used to point at an "In-flight working tree" section, which
 was removed when ZM-D-169 was committed on 2026-07-30, leaving a dangling pointer; fixed
 2026-08-01.

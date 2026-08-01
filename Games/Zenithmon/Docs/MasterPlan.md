@@ -10,9 +10,45 @@
 > **Precedence:** [Roadmap.md](Roadmap.md) tracks live execution state and
 > supersedes this file's stage/status wording; [Scope.md](Scope.md) is the
 > binding in/out gate; [DecisionLog.md](DecisionLog.md) records deviations.
+> **The plan's PR-based workflow below is SUPERSEDED (ZM-D-031, 2026-07-10):**
+> wherever this file says work lands as pull requests, nothing merges red, or
+> `zm-tests` is a required PR check, the live rule is that ALL work is committed
+> DIRECTLY to `master` -- no branches, no PRs, no worktrees -- with the LOCAL
+> gate as the authority and `zm-tests` running post-push as a backstop only.
 > Engine file:line citations below were verified 2026-07-09 and drift with the
 > engine -- re-verify before acting on them (the E1-E5 rows especially).
 > Treat this file as READ-ONLY history; corrections happen in the living docs.
+>
+> **Two TECHNICAL claims in the body are SUPERSEDED (2026-08-01).** These are
+> not stage/status wording -- they are facts an agent could act on wrongly, and
+> `CLAUDE.md` links this file as the program plan, so they are corrected HERE
+> rather than only in the living docs:
+> 1. **":54 -- *Headless skips Flux ⇒ graphics tests must set
+>    `m_bRequiresGraphics=true`*" is WRONG about the mechanism.** Headless is a
+>    BUILD CONFIG, not a runtime branch: a `Null_*` config compiles the GPU-less
+>    `Zenith/Null` backend and creates the window hidden, so **every render path
+>    still RUNS** against no-op backend calls. What it cannot do is produce
+>    PIXELS -- `Flux_Screenshot::ConsumePendingDump` has exactly one consumer
+>    (`Zenith_Vulkan_Swapchain::EndFrame`), so on Null a dump is silently never
+>    written. `m_bRequiresGraphics` is therefore for tests that READ PIXELS, and
+>    it is not free: a skip counts as a PASS, making the test CI-invisible.
+>    Authority: [TestPlan.md](TestPlan.md) convention C5.
+> 2. **":139 / :68 -- *baked assets are git-ignored so a fresh CI checkout has
+>    NO `Assets/`*" is no longer true in full.** `.gitignore:103-104` re-includes
+>    `**/*.zscen` and `**/*.znavmesh` at any depth, so **SIX files are TRACKED**
+>    (ZM-D-147/148/174): `Assets/Navmesh/Dawnmere.znavmesh` plus the five scenes
+>    `Battle`, `Dawnmere`, `FrontEnd`, `PlayerHome`, `ProfLab`. They are present
+>    on CI, their absence is a DEFECT, and the tests that consume them carry no
+>    `RequestSkip`. The exists-guard rule still governs every git-ignored family.
+>    Authority: [TestPlan.md](TestPlan.md) convention C6 + `git ls-files
+>    Games/Zenithmon/Assets`.
+>
+> Also at :54, the **harness flag list is now incomplete** -- `zenith test` has
+> since gained `--tests A,B,C` and `--batch-order reverse|rotate:N` (the
+> cross-test-leak and batch-order diagnosis probes), plus
+> `--exit-after-frames N` and `--assertions-log F`. The full parsed set is
+> `Tools/ZenithCli/ZenithCli.psm1:490-513`; treat that as the source of truth,
+> not this file.
 
 ---
 # Zenithmon — Pokémon SwSh-class monster-collecting RPG on Zenith

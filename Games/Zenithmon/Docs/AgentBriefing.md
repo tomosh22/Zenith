@@ -48,7 +48,10 @@ Plus, always:
 - **Run Sharpmake / `zenith regen` in a git worktree.** Generated vcxprojs bake
   the cwd's absolute path.
 - **Commit baked assets.** Everything under `Assets/` that tools builds generate
-  is git-ignored; keep it that way.
+  is git-ignored, with SIX deliberate exceptions that ARE tracked (ZM-D-147/148):
+  `Assets/Navmesh/Dawnmere.znavmesh` and all five `Assets/Scenes/*.zscen`
+  (Battle, Dawnmere, FrontEnd, PlayerHome, ProfLab). Do not add a seventh
+  without a DecisionLog entry, and keep everything else ignored.
 - **Run two MSBuilds concurrently.** mspdbsrv + output-dir locks force serial
   dispatch (this is about parallel *agents*/processes; a single build using
   `-maxCpuCount` is fine).
@@ -71,7 +74,8 @@ Plus, always:
   disk assets. Zero file I/O in headless logic tests. The "assets baked to disk"
   mandate covers meshes/textures/anims/terrains/scenes only.
 - **All art is procedurally generated** by `#ifdef ZENITH_TOOLS` code and baked
-  to `Assets/` (git-ignored), under manifest guards so warm boots skip the bake.
+  to `Assets/` (git-ignored apart from the six tracked files noted above), under
+  manifest guards so warm boots skip the bake.
 - **Historical S0 snapshot (2026-07-09, branch
   `zenithmon/s0-skeleton`):** project scaffolded
   via `zenith new Zenithmon`; `ZM_GameComponent` (registered `"ZM_Game"`,
@@ -97,8 +101,11 @@ Plus, always:
 - **Landmark AS OF 2026-07-21, kept for the schema detail below -- ★ NOT the current
   stage.** It read "item 2 story flags + slots/manual/continue/autosave is NEXT"; that
   shipped as ZM-D-137..142, **S7 COMPLETE 2026-07-29**, and the live stage is **S8** (its
-  four content items at `Roadmap.md:198-201`; the go/no-go gate FOLLOWS them and is a human
-  stop). Corrected 2026-08-01 -- the stage line lives in `Status.md`, never here. As of that
+  four content items at `Roadmap.md:209-212`, the gate at `:214`; the go/no-go gate FOLLOWS
+  them and is a human stop). ★ Those line numbers drift whenever the file is edited -- this
+  citation read `:198-201` until 2026-08-01 -- so **find the S8 items by the `## S8`
+  heading; treat any Roadmap line number quoted here as a hint, not an address.**
+  Corrected 2026-08-01 -- the stage line lives in `Status.md`, never here. As of that
   date: S0-S7 COMPLETE, S7 item 1 having landed the durable-model and schema-v1 freezes
   (`ZM-D-135/136`). The model owns party-first 16x30
   box storage, seen/caught, 4096 story bits, 8 badges, daycare, tower, world,
@@ -166,10 +173,27 @@ Plus, always:
 2. **Write the tests first** (or alongside). The TestPlan entry for the system
    defines what must exist. Confirm new tests fail before the implementation.
 3. **Implement** the smallest change that makes them pass.
-4. **Run the LOCAL gate (the authority):** `zenith build Zenithmon`, then the
-   boot unit gate (`pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe <exe>
-   -Baseline N` -- runs the ZM_* unit tests `zenith test` skips) and
-   `zenith test Zenithmon --headless` -- all green.
+4. **Run the LOCAL gate (the authority):** `zenith build Zenithmon` AND
+   `zenith build Zenithmon --headless`, then `zenith test Zenithmon --headless`,
+   and only THEN the boot unit gate
+   (`pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe <Null exe> -Baseline N
+   -TimeoutSec 600` -- it runs the ZM_* unit tests `zenith test` skips). All
+   green. Four details, each of which has cost a wasted run:
+   - **Both builds are needed.** Headless is a BUILD CONFIG
+     (`Null_vs2022_Debug_Win64_True`), not a runtime flag, and test DISCOVERY
+     always uses the Null exe -- so even a *windowed* `zenith test` aborts with
+     "test discovery needs the Null build" until you have built it.
+   - **`-Exe` must be the `Null_*` exe.** `run_unit_gate.ps1`'s own header says
+     so: a Vulkan exe hangs in `vkEnumeratePhysicalDevices` on a GPU-less box
+     and its unit count differs (it compiles the Vulkan-only tests too).
+   - **`-TimeoutSec` is not optional here.** The 180 s default sits *inside* the
+     ZM suite's measured runtime (175/193/229/235 s), and losing that race is
+     reported as "no 'Unit tests complete' line in boot output" -- which reads
+     like a crash or a DLL failure. `zm-tests.yml` passes 600; so should you.
+   - **Order matters:** the unit gate runs AFTER `zenith test`, because
+     `zenith test` heals the fresh Null output dir's runtime DLLs. Booting a
+     brand-new `Null_*` build first dies in the loader with zero stdout, and the
+     gate then reports that same misleading "no units line" message.
 5. **Update the docs in the same commit:** tick the [Roadmap.md](Roadmap.md) box,
    append to [DecisionLog.md](DecisionLog.md) if you decided anything
    non-trivial, refresh [Status.md](Status.md) at session end. Stage gates
@@ -366,14 +390,17 @@ and any affected format docs are updated **in the same commit**.
 ### 4.5 Direct-master pre-push checklist
 
 1. Tests land with the system; failed before, pass after.
-2. `zenith test Zenithmon --headless` fully green locally.
+2. `zenith test Zenithmon --headless` fully green locally, AND the boot unit
+   gate green at the pinned baseline (2.2 step 4) -- `zenith test` skips the
+   unit suite, so a green batch alone proves nothing about it.
 3. No new `std::` containers / `std::function`.
 4. New `.cpp` files start with `#include "Zenith.h"`; headers `#pragma once`.
 5. Tools code in `#ifdef ZENITH_TOOLS`; automated tests in
    `#ifdef ZENITH_INPUT_SIMULATOR`.
 6. If files were added: `Build\regen.ps1` (or `zenith regen`) ran; no generated
    files committed.
-7. No baked assets committed.
+7. No baked assets committed -- and `git status` shows NO modified `.zscen`
+   (they are tracked; a boot that dirties one is a regression, see 5.3).
 8. No scope creep (check [Scope.md](Scope.md)).
 9. Roadmap box ticked; DecisionLog appended; Status refreshed.
 
@@ -386,13 +413,22 @@ Run from the repo root `C:\dev\Zenith` in PowerShell.
 ### 5.1 The zenith CLI (preferred)
 
 ```
-zenith build Zenithmon                      # msbuild the per-game sln, /t:Zenithmon
+zenith build Zenithmon                      # msbuild the per-game sln, /t:Zenithmon (Vulkan_..._True)
+zenith build Zenithmon --headless           # the Null_* (GPU-less) config -- REQUIRED before any zenith test
 zenith run Zenithmon                        # launch the newest built exe
-zenith test Zenithmon --headless            # full batch, headless
-zenith test Zenithmon --filter ZM_Boot_Test # scoped (windowed unless --headless)
+zenith test Zenithmon --headless            # full batch, on the Null exe
+zenith test Zenithmon --filter ZM_Boot_Test # scoped (windowed unless --headless); forces per-process
+zenith test Zenithmon --tests A,B           # ordered named run in ONE process -- and it STREAMS engine stdout
 zenith regen                                # regenerate all solutions (after file adds / .zproj changes)
+zenith regen --check                        # staleness report only
 zenith clean Zenithmon                      # kill hung cl.exe/mspdbsrv + wipe output/obj
 ```
+
+**`--headless` is a CONFIG SELECTOR everywhere -- there is no runtime
+`--headless` flag on the exe.** It swaps in `Null_vs2022_Debug_Win64_True`
+(`Build/zenith_config.psd1`), which compiles the GPU-less `Zenith/Null` backend
+and creates its window hidden. Test discovery ALWAYS uses that exe, so build it
+even when the run itself is windowed.
 
 Fallback if `zenith` is not on PATH: `pwsh -File Tools\zenith.ps1 <verb> ...`
 (the CLI implementation is `Tools/ZenithCli/ZenithCli.psm1` +
@@ -402,9 +438,10 @@ Fallback if `zenith` is not on PATH: `pwsh -File Tools\zenith.ps1 <verb> ...`
 `c29e28f8`.** There is no `run_zm_tests.ps1` and never will be -- every gate
 uses `zenith test Zenithmon`.
 
-Test harness flags: `--filter / --headless / --results-dir / --config /
---per-process / --fail-fast`. Exit codes: 0 OK / 1 usage / 2 validation /
-3 generation / 4 build-or-test failure / 5 not-found.
+Test harness flags: `--filter / --tier / --tests / --batch-order / --headless /
+--results-dir / --config / --per-process / --fail-fast / --build /
+--exit-after-frames / --assertions-log`. Exit codes: 0 OK / 1 usage /
+2 validation / 3 generation / 4 build-or-test failure / 5 not-found.
 
 ### 5.2 Direct msbuild (what `zenith build` does)
 
@@ -424,14 +461,27 @@ pre-existing-red in ToolsEnabled configs).
 | `Vulkan_vs2022_Debug_Win64_False` | runtime-only; loads baked scenes, skips ZENITH_TOOLS code |
 | `Vulkan_vs2022_Release_Win64_True` | release + tools |
 | `Vulkan_vs2022_Release_Win64_False` | release runtime |
-| + `D3D12_vs2022_Debug_Win64_False` | null-backend **link proof** (Flux backend-neutrality) |
+| + `Null_vs2022_Debug_Win64_True` | **THE headless/CI build** -- every headless batch, the boot unit gate and every `zm-tests` step after the compile proofs execute THIS exe |
+| + `D3D12_vs2022_Debug_Win64_False` | reserved-backend **link proof** (Flux backend-neutrality) |
 
-### 5.3 First-run scene caveat
+### 5.3 First-run bake caveat
 
-`Assets/Scenes/FrontEnd.zscen` is **not checked in** -- it is authored on boot
-by `Project_RegisterEditorAutomationSteps` (tools-only) and saved via
-`AddStep_SaveScene`. Your **first build + run must be a `*_True` config** to
-bake it; `_False` and CI runners load the baked file (or skip -- see 6.6).
+**All five `Assets/Scenes/*.zscen` ARE checked in** (Battle, Dawnmere, FrontEnd,
+PlayerHome, ProfLab -- ZM-D-148), as is `Assets/Navmesh/Dawnmere.znavmesh`
+(ZM-D-147). A fresh clone therefore already has every scene the game loads; the
+committed bytes are what it reads. (This section claimed the opposite until
+2026-08-01 -- verify with `git ls-files Games/Zenithmon/Assets`.)
+
+Everything ELSE under `Assets/` -- meshes, textures, anims, terrains, graphs --
+is git-ignored and authored on boot by `Project_RegisterEditorAutomationSteps`
+(tools-only) via `AddStep_*`, so your **first build + run must still be a
+`*_True` config** to bake it. Re-authoring the *committed* files needs a
+WINDOWED `_True` boot, and Dawnmere additionally needs every terrain recipe
+already warm -- two boots on a fresh clone (boot 1 bakes terrain, boot 2 authors
+Dawnmere). Scene bytes are boot-shape-independent, so **a boot must NOT leave a
+`.zscen` modified in `git status`**; if one does, that is a regression to
+investigate rather than re-commit (Q-2026-08-01-002 is a live, undiagnosed
+2-byte instance on `Dawnmere.zscen`).
 
 ---
 
@@ -476,20 +526,26 @@ engine change lands with:
 
 ### 6.5 Baked assets are never committed
 
-`Assets/` output (meshes, textures, anims, terrains, scenes, graphs) is
-git-ignored, regenerated by `*_True` builds under manifest guards
+`Assets/` output (meshes, textures, anims, terrains, graphs) is git-ignored --
+**except the six tracked files: five `.zscen` + `Dawnmere.znavmesh`
+(ZM-D-147/148)** -- and is regenerated by `*_True` builds under manifest guards
 (generator-version stamp + file-existence -- see
 [AssetManifest.md](AssetManifest.md)). Bake determinism (same seed ->
 byte-identical output) is a tested invariant from S4 on.
 
 ### 6.6 Asset-dependent tests RequestSkip when assets are absent
 
-CI checkouts have **no `Assets/`** (git-ignored). Every automated test that
-needs a baked asset or scene must exists-guard and call
-`RequestSkip(szReason)` (`Zenith_AutomatedTest.h`) instead of failing --
-the established CI-fix pattern (engine commit `94813489`). Headless runs skip
-Flux entirely, so graphics-dependent tests must set `m_bRequiresGraphics = true`
-(auto-skipped headless).
+A CI checkout's **only** Zenithmon assets are the six tracked files (five
+`.zscen` + `Dawnmere.znavmesh`); every baked mesh/texture/anim/terrain is
+absent. Every automated test that needs one of those must exists-guard and call
+`RequestSkip(szReason)` (`Zenith_AutomatedTest.h`) instead of failing -- the
+established CI-fix pattern (engine commit `94813489`).
+
+**A headless run does NOT skip Flux.** The `Null_*` config compiles the GPU-less
+`Zenith/Null` backend, so every render path RUNS -- pass callbacks, uploads, the
+editor ImGui frame -- against no-op backend calls; that is what makes a headless
+run representative of a windowed one. Only tests that genuinely READ PIXELS set
+`m_bRequiresGraphics = true`, and only those are auto-skipped there.
 
 ### 6.7 Test-harness footguns (permanent)
 
@@ -596,11 +652,45 @@ them.
   checks go through `zenith test Zenithmon --filter <Test>` (harness-managed
   exit) or `--list-automated-tests` (exits by itself), or pair the flag with
   `--automated-test <name>`. Sweep strays with `Get-Process zenithmon`.
-- **Windowed screenshot evidence** (visual gates): run the game windowed via a
-  harness-managed `--filter` test or `zenith run`, then capture with the
-  SetWindowPos + CopyFromScreen recipe (see the RenderTest capture notes
-  referenced from MasterPlan.md's verification section). Store captures under
+- **Windowed visual evidence** (visual gates): run the game windowed via a
+  harness-managed test or `zenith run`, and capture with the ENGINE's
+  frame-exact path in preference to any screen scrape --
+  `Flux_Screenshot::RequestDump(szPath)` called from inside the frame you care
+  about, consumed once per `EndFrame` by `Zenith_Vulkan_Swapchain`, which writes
+  an uncompressed 32-bit BGRA **`.tga`**. It captures the render target, not the
+  window, so it is immune to window position, occlusion and ImGui dock focus;
+  it is a **no-op on the Null backend**, so gate the assertion on
+  `Zenith_IsNullRenderer()`. `Tests/ZM_TestTGAHelpers.h` reads the result back.
+  The wall-clock alternatives (SetWindowPos + CopyFromScreen, referenced from
+  MasterPlan.md's Verification section; `Tools\capture_viewport.ps1`) cannot
+  sample a short beat -- capture_viewport was asked for 40 ms and delivered
+  206 ms at 2560x1440, PNG encode dominating the loop. **Derive the colour
+  predicate from the bytes the dump actually wrote, never from the colour you
+  submitted** (a marker submitting linear `(1.0, 0.82, 0.08)` lands at
+  `RGB(208, 182, 97)`; two "low blue" scans reported ZERO matches across 539
+  frames of something rendering perfectly). Store captures under
   `Build/artifacts/` (never committed) and record paths in Status.md.
+- **★ A FAILING TEST'S OWN DIAGNOSTIC TEXT IS UNREADABLE FROM BOTH THE RESULT
+  JSON AND THE CONSOLE. This has cost two diagnoses -- do not spend a third.**
+  Two independent facts compose into one blind spot:
+  1. **The JSON never carries it.** `Zenith_AutomatedTest.h` states the
+     `"failures"` field "is currently always an empty array -- there is no
+     per-test mechanism for structured failure messages yet, only the pass/fail
+     bool. Tests that need detail today print to stdout instead." So
+     `Build/artifacts/test_results/**/<Test>.json` reads `"failures": []` even
+     for a test that FAILED.
+  2. **The harness throws the stdout away.** Its PER-PROCESS path -- which
+     `--filter`, `--per-process` and `--fail-fast` each force -- invokes the exe
+     as `& $Exe @runArgs 2>&1 | Out-Null`
+     (`Tools/ZenithCli/ZenithTestHarness.psm1`), discarding the child's stdout
+     AND stderr. Every `Zenith_Log`/`Zenith_Error` line the test composed is
+     gone; all you get is `FAIL exit=$code`.
+  **To actually READ the failure text, avoid the per-process path:**
+  `zenith test Zenithmon --tests <TestName>` runs the named set in one process
+  and tees engine output to the console (`Tee-Object | Out-Host`), as does an
+  un-filtered full batch. Failing that, invoke the exe directly with
+  `--automated-test <Name> --test-results <path>` and read its stdout yourself
+  (never with a bare `--exit-after-frames` -- see the bullet above).
 - **Unattended permission surface:** the checked-in `.claude/settings.json`
   allowlists git, GitHub inspection, the zenith/regen/gate/scaffold script
   entry points, and msbuild, so loop iterations do not stall on prompts

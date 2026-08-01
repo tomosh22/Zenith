@@ -9,7 +9,15 @@ ManualSetupChecklist.md.
 CIPolicy.md (the CI runner's version of this environment), TestPlan.md
 (test-harness conventions), Status.md (current build health).
 
-**Last updated:** 2026-07-09 (S0).
+**Last updated:** 2026-08-01 (doc audit at `c9d64994`: section 3's
+"FrontEnd.zscen is baked, not committed" premise was false -- all five `.zscen`
+are tracked; the Null/headless build requirement, the boot unit gate, and the
+real CI DLL-heal were added; the `.NET SDK` row corrected to runtime-only).
+A follow-up sweep the same day split the **Vulkan SDK** row: 1.3.290.0 is the
+CI pin, never a local requirement -- the local machine runs 1.4.313.1 and
+builds green, and the old "point `$env:VULKAN_SDK` at the pinned version"
+instruction was unattainable here (1.3.290.0 is not installed).
+Section 7's known-good snapshot remains an S0 (2026-07-09) record.
 
 ---
 
@@ -19,10 +27,10 @@ CIPolicy.md (the CI runner's version of this environment), TestPlan.md
 |---|---|---|---|
 | Windows | 10 (19041+) or 11 | Win32 + Vulkan target | `(Get-CimInstance Win32_OperatingSystem).Caption` |
 | Visual Studio | 2022 toolset (any edition) with "Desktop development with C++" | MSBuild + C++20 compiler | `vswhere.exe -products * -requires Microsoft.VisualStudio.Workload.NativeDesktop -property installationPath` |
-| Vulkan SDK | **pinned 1.3.290.0** (matches the CI zenith-setup action) | graphics API + vulkan-1.dll loader | `$env:VULKAN_SDK` points at the pinned version |
+| Vulkan SDK | **locally: any 1.3+ SDK** (this machine runs **1.4.313.1**). **CI pins 1.3.290.0** -- that pin is a CI FACT (`zm-tests.yml` `VULKAN_SDK_VERSION`, consumed by the zenith-setup action), NOT a local requirement; do not reinstall to match it. | graphics API + vulkan-1.dll loader | `$env:VULKAN_SDK` is set and points at an installed 1.3+ SDK (`ls (Split-Path $env:VULKAN_SDK -Parent)` lists what you have) |
 | Slang | **pinned 2026.1** (fetched by CI; local tree under `Middleware/slang/`) | shader compiler + runtime DLLs | `ls Middleware\slang\bin\slang.dll` |
 | vcpkg | as provisioned by `.github/actions/zenith-setup` | third-party deps | CI-managed; local machines use the checked-in Middleware tree |
-| .NET SDK | 6.0+ | Sharpmake (`regen.ps1 -UseDotnet`) | `dotnet --version` |
+| .NET **runtime** | 6.0+ | Sharpmake's `-UseDotnet` fallback (`dotnet exec Sharpmake/Sharpmake.Application.dll`). The **SDK is NOT required** -- regen's default path runs the tracked prebuilt `Sharpmake/Sharpmake.Application.exe` and needs no dotnet at all. | `dotnet exec Sharpmake\Sharpmake.Application.dll` runs. **Do not check with `dotnet --version`** -- that needs the SDK and fails on a runtime-only machine (as this one does) while regen works fine. |
 | PowerShell | 7+ (`pwsh.exe`) recommended; 5.1 works for most flows (see 4.1 caveat) | zenith CLI + build scripts | `pwsh -Command '$PSVersionTable.PSVersion'` |
 | Git | 2.30+ | source control | `git --version` |
 
@@ -54,12 +62,21 @@ when descriptors/Sharpmake change or after adding source files.
 
 ## 3. First build MUST be Vulkan_vs2022_Debug_Win64_True
 
-The tools (`_True`) build runs editor automation at boot and **bakes
-FrontEnd.zscen** (build index 0) plus every other generated asset (see
-AssetManifest.md) -- all git-ignored, so a fresh checkout has none of them.
-A `_False` (non-tools) build does not author anything; it LOADS the baked
-`.zscen` files and will have nothing to load until a `_True` build has run
-once.
+The tools (`_True`) build runs editor automation at boot and bakes every
+generated asset -- meshes, textures, anims, terrains (see AssetManifest.md) --
+all git-ignored, so a fresh checkout has none of them. A `_False` (non-tools)
+build authors nothing and will render an empty/untextured world until a `_True`
+build has run once.
+
+**The five `.zscen` files are NOT in that set -- they are committed.** All five
+(`Battle`, `Dawnmere`, `FrontEnd`, `PlayerHome`, `ProfLab`) plus
+`Assets/Navmesh/Dawnmere.znavmesh` are tracked (ZM-D-147/148); verify with
+`git ls-files Games/Zenithmon/Assets`. This section claimed FrontEnd.zscen was
+baked-not-committed until the 2026-08-01 audit. Re-authoring the committed
+files needs a WINDOWED `_True` boot, and Dawnmere needs the terrain recipes
+already warm -- two boots on a fresh clone. You normally never need to: the
+committed bytes are what the game loads, and a boot must NOT leave a `.zscen`
+dirty in `git status`.
 
 ```powershell
 # Recommended
@@ -87,6 +104,15 @@ ZenithTestHarness.psm1) is the ONLY test runner. The old per-game
 `Tools/run_*_tests.ps1` scripts were deleted at commit `c29e28f8` -- never
 reference them.
 
+**Build the Null config first.** `--headless` is a BUILD-CONFIG selector
+(`Null_vs2022_Debug_Win64_True`, from `Build/zenith_config.psd1`), not a runtime
+flag, and test DISCOVERY always uses the Null exe -- so even a *windowed*
+`zenith test` aborts with "test discovery needs the Null build" until it exists:
+
+```powershell
+.\zenith.bat build Zenithmon --headless
+```
+
 ```powershell
 # Full headless batch (the CI command)
 .\zenith.bat test Zenithmon --headless
@@ -94,13 +120,28 @@ reference them.
 # With results JSON (what CI archives)
 .\zenith.bat test Zenithmon --headless --results-dir Build/artifacts/test_results/zenithmon
 
-# Filter to one test during dev (forces per-process)
+# Filter to one test during dev (forces per-process -- and per-process DISCARDS
+# the child's stdout, so the test's own failure text is lost; see the note below)
 .\zenith.bat test Zenithmon --filter ZM_Boot --headless
+
+# Named run in ONE process -- this path TEES engine output to the console,
+# so it is how you read a failing test's diagnostics
+.\zenith.bat test Zenithmon --tests ZM_Boot_Test
 ```
 
-Flags: `--filter / --headless / --results-dir / --config / --per-process /
---fail-fast`. Exit codes: 0 OK, 1 usage, 2 validation, 3 generation,
-4 build-or-test failure, 5 not-found.
+Flags: `--filter / --tier / --tests / --batch-order / --headless /
+--results-dir / --config / --per-process / --fail-fast / --build /
+--exit-after-frames / --assertions-log`. Exit codes: 0 OK, 1 usage,
+2 validation, 3 generation, 4 build-or-test failure, 5 not-found.
+
+**Result JSON carries no failure text.** `Zenith_AutomatedTest.h` records that
+the per-test JSON's `"failures"` field "is currently always an empty array ...
+Tests that need detail today print to stdout instead", and the harness's
+per-process path (`--filter` / `--per-process` / `--fail-fast`) runs the exe as
+`& $Exe @runArgs 2>&1 | Out-Null`. Between them, a failing test's
+`Zenith_Log`/`Zenith_Error` output is unreachable from both the console and
+`Build/artifacts/test_results/**/<Test>.json`. Use `--tests <Name>` (or a full
+batch) when you need to read it.
 
 ### 4.1 The pwsh form (sandboxed agent sessions)
 
@@ -115,27 +156,66 @@ pwsh -NoProfile -File Tools/zenith.ps1 test Zenithmon --headless
 pwsh -NoProfile -File Tools/zenith.ps1 build Zenithmon
 ```
 
+### 4.2 The boot unit gate (`zenith test` does NOT run it)
+
+`zenith test` passes `--skip-unit-tests`, so the ZENITH_TEST suite runs only
+here (and in the equivalent `zm-tests` step):
+
+```powershell
+pwsh -NoProfile -File Tools\run_unit_gate.ps1 `
+    -Exe Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe `
+    -Baseline <N> -TimeoutSec 600
+```
+
+- `-Exe` **must** be the `Null_*` build -- a Vulkan exe hangs in
+  `vkEnumeratePhysicalDevices` and its unit count differs (it also compiles the
+  Vulkan-only tests).
+- `-TimeoutSec 600` is not optional for Zenithmon: the script's 180 s default
+  sits inside this suite's measured runtime (175/193/229/235 s on one idle dev
+  machine), and losing that race is reported as "no 'Unit tests complete' line
+  in boot output" -- which reads like a crash rather than a slow suite
+  (ZM-D-163). `zm-tests.yml` passes 600.
+- Run it AFTER `zenith test`, which heals a fresh Null output dir's DLLs.
+- `-Baseline` is the live pin in `.github/workflows/zm-tests.yml`; the script's
+  own `$Baseline` default is the ENGINE-only number and the two are never
+  interchangeable. Read current values from those pins / Status.md, never from
+  this file.
+
 ---
 
 ## 5. Runtime DLL notes
 
-Two DLL families must sit next to `zenithmon.exe`
-(`Games\Zenithmon\Build\output\win64\vulkan_vs2022_debug_win64_true\`):
+Every game exe dir needs more DLLs than the Sharpmake post-build event copies.
+A FIRST build in a new config leaves them absent and the exe dies with
+STATUS_DLL_NOT_FOUND (exit `0xC0000135`) before `main()` -- an empty log that
+reads as a build failure.
 
 1. **The Slang tree** -- the post-build event copies `slang.dll` itself, but
    the full dependency tree (slang-rt, slang-glslang, slang-glsl-module,
-   slang-llvm, slang-compiler, gfx) is needed at runtime or the exe dies
-   with STATUS_DLL_NOT_FOUND. Source: `Middleware\slang\bin\*.dll`.
-2. **vulkan-1.dll** -- from `$env:VULKAN_SDK\Bin\` on machines whose system
-   loader is missing/stale (CI always copies it).
+   slang-llvm, slang-compiler, gfx) is needed at runtime. Source:
+   `Middleware\slang\bin\*.dll`.
+2. **The assimp runtime tree** -- `assimp-vc143-mt[d]` + draco / minizip /
+   poly2tri / pugixml / zlib. The engine links the assimp import chain into
+   EVERY game exe. Debug DLLs live in `Tools\Middleware\assimp\debug\bin`,
+   release in the bare `Tools\Middleware\assimp\bin`.
+3. **vulkan-1.dll** -- only for `Vulkan_*` exes, from `$env:VULKAN_SDK\Bin\`, on
+   machines whose system loader is missing/stale. **A `Null_*` build never loads
+   a Vulkan loader and does not want it** -- which is why the CI step does not
+   copy it.
+
+**Use the shared healer rather than hand-copying** -- it is the single source of
+truth for what an exe dir needs, never overwrites an existing DLL, and is
+exactly what `zenith test` and the `zm-tests` "Copy runtime DLLs" step call:
 
 ```powershell
-$exeDir = 'Games\Zenithmon\Build\output\win64\vulkan_vs2022_debug_win64_true'
-Copy-Item 'Middleware\slang\bin\*.dll' $exeDir -Force
-Copy-Item (Join-Path $env:VULKAN_SDK 'Bin\vulkan-1.dll') $exeDir -Force
+Import-Module .\Build\zenith_buildsystem.psm1 -Force
+Repair-ZenithRuntimeDlls -ExeDir (Resolve-Path `
+    'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true').Path
 ```
 
-This mirrors the "Copy runtime DLLs" step in `.github/workflows/zm-tests.yml`.
+(NOTE the leading `.\` on the Import-Module path: without it PowerShell reads
+the argument as a MODULE NAME and searches `$PSModulePath`, not the repo -- a
+defect that once killed four CI gates.)
 
 ---
 
@@ -148,9 +228,11 @@ This mirrors the "Copy runtime DLLs" step in `.github/workflows/zm-tests.yml`.
 | `LNK1318: Unexpected PDB error` | locked PDB from a dead build | `zenith clean` |
 | Aux tools (FluxCompiler etc.) fail in a `_True` build | you built the whole sln | always `/t:Zenithmon` (or `zenith build Zenithmon`) -- the aux tools are pre-existing-red |
 | Two builds fighting / random lock failures | parallel MSBuild dispatch from concurrent agents | serialize builds -- one MSBuild at a time on this machine |
-| Runtime STATUS_DLL_NOT_FOUND | Slang tree / vulkan-1.dll missing beside the exe | section 5 above |
-| `_False` build boots to nothing / missing scene | FrontEnd.zscen never baked | build + run `Vulkan_vs2022_Debug_Win64_True` once (section 3) |
-| Tests missing from `--list-automated-tests` | non-tools build, or test .cpp not linked (MSVC dead-strip) | rebuild `_True`; ensure the test TU is referenced |
+| Runtime STATUS_DLL_NOT_FOUND (`0xC0000135`) / exe exits with an EMPTY log | Slang or assimp tree missing beside the exe (typical of a FIRST build in a new config) | `Repair-ZenithRuntimeDlls` -- section 5 above |
+| Unit gate says "no 'Unit tests complete' line in boot output" | usually NOT a crash: either the 180 s default timeout expired, or the exe died in the loader (row above) | pass `-TimeoutSec 600`; run the gate after `zenith test` (section 4.2) |
+| `zenith test` errors "test discovery needs the Null build" | the `Null_*` exe has never been built | `zenith build Zenithmon --headless` (section 4) |
+| Build boots to an untextured / empty-looking world | generated meshes+textures+terrain never baked (the `.zscen` files themselves ARE committed) | build + run `Vulkan_vs2022_Debug_Win64_True` once (section 3) |
+| Tests missing from `--list-automated-tests` | non-tools build, or test .cpp not linked (MSVC dead-strip), or a new `.cpp` added without a regen | rebuild `_True`; `Build\regen.ps1`; ensure the test TU is referenced |
 | `zenith.bat` fails oddly inside an agent sandbox | 5.1 shim Get-FileHash quirk | use the pwsh form (section 4.1) |
 
 ---

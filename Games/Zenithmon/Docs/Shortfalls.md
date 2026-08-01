@@ -61,7 +61,7 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   **★ ZM-D-170 moved NONE of the four**, because it extended an existing registration rather than
   adding one and touched no `ZENITH_TEST` case. Changing nothing is the correct action when the
   count does not move -- the rule is "all of them or none", not "edit something every commit".
-- **S6 (Dialogue, menus, NPCs, shops) COMPLETE.** Four authored Dawnmere NPCs are reachable by walking up and pressing the interact key: villager, Trade Post clerk, Care Center caretaker and wanderer. The wanderer uses a deterministic two-waypoint patrol; `ZM_Interactable` v2 persists the patrol configuration and v1 data loads as a stationary fail-closed fallback. Behaviour-graph and terrain-fed navmesh work deliberately moves to S7.
+- **S6 (Dialogue, menus, NPCs, shops) COMPLETE.** Four authored Dawnmere NPCs are reachable by walking up and pressing the interact key: villager, Trade Post clerk, Care Center caretaker and wanderer. **[SNAPSHOT AT THE S6 CLOSE -- the roster is now SIX. S7 appended `Npc_Warden` (item 2 SC1, the story gate) and `Npc_RivalVesper` (item 3 SC8, ZM-D-156); `s_axDawnmereNpcAnchors` in `Source/World/ZM_DawnmerePlacement.cpp` has six rows and `ZM_NPC_COUNT` is 6.]** The wanderer uses a deterministic two-waypoint patrol; `ZM_Interactable` v2 persists the patrol configuration and v1 data loads as a stationary fail-closed fallback. Behaviour-graph and terrain-fed navmesh work deliberately moves to S7.
 - **S7 item 1 full schema-v1 codec is green (ZM-D-135/136):** SC1's 18 durable-model units are joined by 29 schema + 2 literal-golden compatibility units. The pure codec freezes 11 ordered length-framed modules, explicit little-endian widths, transactional streams and an 824-byte v1 golden. Units are **2392 ran / 2391 passed / 0 failed / 1 skipped**; engine remains **1103**; all five Zenithmon builds, headless **36/0** and full windowed **36/0/0** passed; registry remains 36. No visual/human gate applies.
 - **The ZM-D-168 follow-up LANDED 2026-07-30 as ZM-D-169** -- the SPOTTED marker is off the
   debug-primitives channel (1.8-3c below, now closed ON PIXELS) and the suite has its first
@@ -70,9 +70,22 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   games clean on Null_True. ZM headless **50/0**, full windowed **50/0 with ZERO skipped**, ZM boot
   **2742 / 2741 / 0 / 1 unmoved** -- so no baseline moved and none of the three pinned sites was
   touched.
-- **Next autonomous work (re-verified 2026-08-01; unchanged since 2026-07-30 -- ZM-D-171/172/173
-  all landed in between and none of them was S8 content):** **S8's four content items**
-  (`Roadmap.md:198-201`), none of which is built. **Still
+- **★ Next autonomous work (REWRITTEN 2026-08-01 at ZM-D-177; the sentence this replaces was wrong
+  on three counts and is the exact failure this file keeps recording).** It read *"S8's four content
+  items (`Roadmap.md:198-201`), none of which is built"* and was "re-verified" the same day four S8
+  sub-commits landed. Wrong on: (1) ZM-D-174/175/176/177 have since landed and **all four ARE S8
+  content**; (2) "none of which is built" is false -- **item 1 is IN PROGRESS**; (3) the citation had
+  drifted -- S8's items are `Roadmap.md:209-212` and its gate is `:214`. A confident sentence
+  outranking an unticked checkbox, again.
+  **TRUE POSITION AT HEAD `c9d64994`: S8 item 1 ("Intro -> lab -> starter choice",
+  `Roadmap.md:209`) is IN PROGRESS and its box is deliberately UNTICKED.** Landed: the ProfLab
+  interior shell + build index 41 (ZM-D-174); the starter DATA layer + seed split with
+  `ZM_MakeStarterGameState` deleted (ZM-D-175); the New Game entry point moved to PlayerHome and the
+  interior tinted warm (ZM-D-176, a USER ruling); the tint probe's premise corrected (ZM-D-177).
+  **NOT built, and what item 1 still needs:** the Dawnmere lab EXTERIOR + door trigger + `FromLab`
+  spawn; **Professor Aster** (NPC row + palette + authored into ProfLab); the **starter-choice
+  SCREEN** (the model and grant exist -- only the presenter is missing); and the intro beat itself.
+  Items 2-4 of S8 (`Roadmap.md:210-212`) remain wholly unbuilt. **Still
   booked here and NOT scheduled:** the camera cut (1.8-3a); the W4 palette-data re-author (rendered
   NPC distinctness back toward 0.15 via more-separated authored colours -- see 1.8-4, the ZM-D-171
   residual); and the engine's `AddLine` centring bug (`task_33ee8059`). **The general greybox shading
@@ -400,8 +413,9 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
    - **★ THE GDD'S COUNTER-STARTER RULE IS UNIMPLEMENTED AND WAS BOOKED NOWHERE UNTIL 2026-07-29.**
      The GDD specifies that rival battle 1 uses the starter that COUNTERS the player's choice.
      Vesper's `ZM_TrainerData` row carries a FIXED L5 KINDLET instead. Neither ZM-D-156 nor ZM-D-158
-     mentioned this -- it was found only when `Roadmap.md:161` was audited before ticking. **It
-     cannot be implemented before S8 ships starter choice** (`Roadmap.md:167`), because there is no
+     mentioned this -- it was found only when the rival-battle checkbox was audited before ticking. **It
+     cannot be implemented before S8 ships the starter-choice SCREEN** (the data and grant landed at
+     ZM-D-175; only the presenter is missing), because there is no
      player starter to counter. Debt against S8; the user ruled on 2026-07-29 to reword and tick
      line 161 for what actually ships and book this rather than block S7 on an S8 dependency.
    - **THE CAMERA CUT REMAINS UNBUILT, AND THE S7 TICK DOES NOT CLAIM IT.** `Roadmap.md:104`'s text

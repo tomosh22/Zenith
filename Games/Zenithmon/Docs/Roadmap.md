@@ -107,7 +107,7 @@ for the honest 'what is still missing' list (the trainer LOSS path is untested, 
 spotted beat, and one-monster trainer battles remain)."* All three named limits are closed -- the
 loss path by `ZM_RivalVesperWhiteout_Test` (W2, ZM-D-158), the spotted beat by W3 (ZM-D-159) and
 pinned in pixels by ZM-D-169, and the one-monster clamp by W1 (ZM-D-157). **And the go/no-go is NOT
-next:** per `Roadmap.md:196-203` that gate FOLLOWS S8's four content items rather than preceding
+next:** per the **"S8 -- Vertical slice, go/no-go"** section below that gate FOLLOWS S8's four content items rather than preceding
 them. It does remain a HUMAN stop that no agent may sign.
 - **Known-limit W1 COMPLETE 2026-07-28 (ZM-D-157), superseding the now-stale
   one-monster clause at the end of the trainer item above:** forced replacement
@@ -167,7 +167,9 @@ them. It does remain a HUMAN stop that no agent may sign.
   **★ [CORRECTED 2026-08-01 -- THE NEXT STEP IS *NOT* THE GO/NO-GO.** This line closed the
   W1-W5 known-limit programme and read the stage boundary as the next event; it was written
   on 2026-07-29 before S7 item 3 itself closed (SC1-SC3, ZM-D-163/166/167). The gate at
-  `Roadmap.md:203` FOLLOWS S8's four content items at `:198-201`, none of which is built. The
+  the S8 `*Gate:*` line FOLLOWS S8's four content items. **[UPDATED 2026-08-01: "none of which is
+  built" was true when written and is now FALSE -- item 1 is IN PROGRESS (ZM-D-174/175/176/177);
+  items 2-4 remain unbuilt. Line citations replaced with section names, having drifted twice.]** The
   gate does remain UNSIGNED, and no agent may sign it.]**
 - **★ ITEM 3 TICKED 2026-07-29 (SC1-SC3, ZM-D-163/166/167), AND SCORED AGAINST ITS LITERAL TEXT.**
   The two verbs W3 cut on evidence -- `freeze input` and `approach` -- now ship: SC1 the pure
@@ -190,7 +192,10 @@ them. It does remain a HUMAN stop that no agent may sign.
   re-placement debt (Shortfalls 1.8-1, ZM-D-156); (b) **the GDD's counter-starter rule is
   unimplemented and was booked NOWHERE until now** -- the rival's starter is a fixed species rather
   than the counter to the player's, and it CANNOT be implemented before S8 ships starter choice
-  (`Roadmap.md:167`). Both are recorded in Shortfalls 1.8 as explicit debt against S8.
+  (S8's "Intro -> lab -> starter choice" item). Both are recorded in Shortfalls 1.8 as explicit debt
+  against S8. **[2026-08-01: the starter DATA and grant now ship (ZM-D-175) and the counter column is
+  authored; what still blocks the rule is the starter-choice SCREEN, so the player's pick is not yet
+  a runtime fact the rival can mirror.]**
 
 *Gate:* automated save -> quit-to-FrontEnd -> continue restores position/party/flags exactly.
 **MET 2026-07-29.** Satisfied by `ZM_SaveContinue_Test` (`Tests/ZM_AutoTests_SaveContinue.cpp`, the

@@ -59,8 +59,10 @@ driving encounter-table weights and catch difficulty.
 **Rental team.** A Battle Tower option: a generated loaner team used for a
 streak run instead of the player's own party.
 
-**Shiny.** A rare palette variant of a species: hue-rotated albedo + child
-material on the same mesh. Rolled at monster generation.
+**Shiny.** A rare palette variant of a species: hue-rotated albedo (band
+[80,280) deg) + an **INDEPENDENT** material over the same mesh, with its own
+`_shiny.ztxtr` -- explicitly NOT a child of the base material (ZM-D-065; see
+[AssetManifest.md](AssetManifest.md) 1.2). Rolled at monster generation.
 
 **STAB.** Same-Type Attack Bonus -- the damage multiplier applied when a move's
 type matches one of the user's types. Part of the Gen-V damage formula in
@@ -82,9 +84,19 @@ ZM-D-004).
 occlusion raycast (deliberately NOT the engine perception subsystem). On spot:
 input freeze, approach, dialogue, forced battle.
 
-**Whiteout.** The player's loss state: the whole party faints, the player
-respawns at the last heal point with a money penalty (exact respawn/penalty
-rules TBD at S7).
+**Whiteout.** The player's loss state: the whole party faints. **The rules
+SHIPPED at S7 and are no longer TBD** -- `ZM_BattleWriteBack` latches
+`m_bPendingWhiteout`, and `ZM_GameStateManager::OnUpdate` (once the transition
+is IDLE and no battle transition is active) heals the party FULL and warps to a
+FIXED destination: Dawnmere Village, build index 2, spawn tag `TownCenter`
+(`uWHITEOUT_BUILD_INDEX` / `szWHITEOUT_SPAWN_TAG`). Two things the older
+description got wrong: the destination is fixed, not "the last heal point"
+(there is no heal-point registry), and **no money penalty is implemented** --
+the write-back only CREDITS prize money on a win. The whiteout destination is
+deliberately distinct from the New Game entry point (PlayerHome / `Door`,
+ZM-D-176); the boot unit
+`ZM_Data/NewGameEntry_DiffersFromTheWhiteoutDestination` asserts they differ in
+BOTH fields so a future edit cannot quietly re-merge them.
 
 ---
 
@@ -119,10 +131,29 @@ callback run between batched tests (alongside a forced scene-0 reload).
 Zenithmon registers game-global resets here from S0, including
 `Zenith_SaveData::ClearForTest`.
 
+**Blockout / greybox shell.** The transitional box geometry every Zenithmon
+interior is built from until the S4 art pipeline dresses it: named entities each
+carrying a unit-cube `ZM_GreyboxVisual` (serialization order 107) plus their own
+static AABB collider, authored as centre + scale by `AddStep_*`. `PlayerHome`
+and `ProfLab` ship the SAME seven-block shell -- floor, back wall, left/right
+walls, a front PAIR flanking an aperture, and a lintel bridging it -- differing
+only in room size (16 x 12 m vs 20 x 16 m). The entrance is an ABSENCE of
+geometry, not a hinged panel, which is why every block can stay
+`COLLISION_VOLUME_TYPE_AABB` (an AABB collider forces identity rotation, so
+anything that must FACE somewhere needs OBB instead). Blocks create no baked
+model or material file. Block ORDER is part of the scene contract: appending is
+free, reordering rewrites the `.zscen` bytes (ZM-D-148).
+
 **Boot-authored scene.** A scene re-authored every ZENITH_TOOLS boot by
-editor-automation `AddStep_*` calls and saved as a git-ignored `.zscen`;
-non-tools builds load the baked file. FrontEnd.zscen (build index 0) is
-Zenithmon's first (DecisionLog ZM-D-012).
+editor-automation `AddStep_*` calls and saved as a `.zscen`; non-tools builds
+load the baked file. FrontEnd.zscen (build index 0) is Zenithmon's first
+(DecisionLog ZM-D-012). **The five authored so far are COMMITTED, not
+git-ignored** -- `FrontEnd`, `Battle`, `Dawnmere`, `PlayerHome` and `ProfLab`
+(ZM-D-147 / ZM-D-148 / ZM-D-174) -- which is what lets CI verify scene content
+on a fresh checkout with no bake. Scene bytes are boot-shape-independent (dense
+authoring-order file indices), so a boot must NOT leave a scene modified in
+`git status`; one known 2-byte violation on `Dawnmere.zscen` is open as
+Q-2026-08-01-002. Everything else under `Assets/` remains git-ignored.
 
 **Chunk.** Terrain streaming unit: a terrain is a 64x64 grid of 64 m chunks
 (4096 m square). Zenithmon bakes only a rect subset per scene via E2; see
@@ -137,9 +168,58 @@ battle engine -- the single source of truth consumed by both unit tests (exact
 expected streams) and `ZM_BattleDirector` (presentation). The engine never
 formats strings or touches UI.
 
-**Headless.** Running without graphics (`--headless`): Flux is skipped, tests
-with `m_bRequiresGraphics=true` auto-skip. The CI backbone is the headless
+**Headless.** **A BUILD CONFIG, NOT A RUNTIME FLAG** -- there is no runtime
+`--headless` (`Zenith/Core/Zenith_CommandLine.h`). A `Null_*` config defines
+`ZENITH_NULL_RENDERER`, compiles `Zenith/Null` instead of Vulkan, and creates
+its window hidden. **Flux is NOT skipped**: every render path still RUNS against
+no-op backend calls, which is what makes a headless CI run representative. Only
+tests that read PIXELS (`m_bRequiresGraphics=true`) auto-skip. The `--headless`
+you type is a `zenith` CLI flag that SELECTS the Null exe
+(`zenith build|test Zenithmon --headless`). The CI backbone is that headless
 suite; see [CIPolicy.md](CIPolicy.md) and [TestPlan.md](TestPlan.md).
+
+**Interior tint (derived at runtime).** ZM-D-176's warm colour on PlayerHome's
+seven shell blocks, so the player's bedroom stops reading as the same greybox
+room as ProfLab. `ZM_GreyboxVisual` asks
+`ZM_IsPlayerHomeBlockName(entityName)` at `OnStart` and substitutes
+`ZM_GetPlayerHomeInteriorTintColour()` (0.61, 0.57, 0.43) for the shared
+`ZM_GetHumanPaletteFallbackColour()` grey (0.52, 0.55, 0.60). **Derived, never
+stored:** no `.ztxtr`, `.zmtrl` or `.zscen` byte encodes it, which is why the
+change moved no `PlayerHome.zscen` byte. The shared `fZM_GREYBOX_FALLBACK_*`
+grey is untouched and still worn by ProfLab's blocks and every prop. The name
+match is EXACT, never a prefix -- a prefix test would also catch
+`PlayerHomeCamera` / `PlayerHomeExitTrigger`.
+
+**New-game seed.** `ZM_MakeNewGameState()`
+(`Source/Party/ZM_GameState.{h,cpp}`) returns the durable state a brand-new run
+starts from: money 3000, 5x Catch Orb, 3x Salve -- and **an EMPTY party and
+dex**. It is partyless on purpose: ZM-D-175 split the old
+`ZM_MakeStarterGameState` (**DELETED**; any doc still naming it is stale) into
+this plus `ZM_ApplyStarterChoice`, so seeding a run and choosing a starter are
+separate steps. Neither bumps the save schema (still v1) nor sets a story flag.
+A new run now begins at PlayerHome (build index 40) on its `Door` marker
+(ZM-D-176), which is deliberately NOT the whiteout destination.
+
+**Party-emptiness gate.** `ZM_CanEnterBattle(state)`
+(`Source/Party/ZM_StarterChoice.h`) -- "does the player own anything to send
+out?". It keys on `!m_xParty.IsEmpty()` ALONE, by ruling, not by oversight: the
+fainted-aware form would also fire in the real window between a loss latching
+`m_bPendingWhiteout` and the heal running in `ZM_GameStateManager::OnUpdate`,
+which would be a live behaviour change. (Note `ZM_Party::AllFainted()` answers
+TRUE for an empty party, which makes the wrong form look correct.) It landed at
+ZM-D-175 provably INERT.
+
+**Placement header.** The one place a scene's authored coordinates live so the
+tools authoring and the tests read the SAME numbers:
+`Source/World/ZM_DawnmerePlacement.{h,cpp}`, `ZM_ProfLabPlacement.h`,
+`ZM_PlayerHomePlacement.h`. All are PURE (no ECS, scene, physics, `g_xEngine`,
+allocation or I/O) and are NOT `ZENITH_TOOLS`-gated, so boot units in a headless
+CI build -- where `Project_RegisterEditorAutomationSteps` is compiled out
+entirely -- can still read them. **The rule they exist to enforce: never
+re-spell a literal from one at a call site.** A constant spelled twice cannot
+red a drift, because both sides move together and the assertion becomes
+decorative. Build indices are deliberately NOT in them: those live in the
+compiled `ZM_WorldSpec` table.
 
 **Regenerate-first.** Repo policy: everything Sharpmake emits is git-ignored, so
 run `Build\regen.ps1` (or `zenith regen`) after any `.zproj`/`Sharpmake_*.cs`
@@ -156,6 +236,20 @@ carries a target build index + spawn tag; after the SINGLE load,
 replacement scene-owned Player, then holds the screen opaque until the
 replacement scene-owned main follow camera targets that exact generation
 (DecisionLog ZM-D-006/056/057).
+
+**Starter choice.** `ZM_StarterChoice`
+(`Source/Party/ZM_StarterChoice.{h,cpp}`, ZM-D-175): a compiled-const table in
+the ZM-D-009 idiom, one row per `ZM_STARTER_CHOICE` -- Fernfawn (F01, Grass),
+Kindlet (F02, Fire), Finlet (F03, Water) -- each row also naming the choice
+whose species COUNTERS it (authored, not derived from `ZM_TypeChart`, so the
+agreement unit is a real tripwire rather than a tautology).
+`ZM_ApplyStarterChoice(state, choice)` grants exactly one
+`ZM_BuildMonsterRecord(species, uZM_STARTER_LEVEL = 5)` into the party and marks
+it caught (caught implies seen); it touches PARTY AND DEX ONLY and sets NO story
+flag -- `ZM_STORY_FLAG_STARTER_RECEIVED` exists and is left CLEAR so the save
+bytes do not move. Every accessor is TOTAL and never calls `Zenith_Assert`.
+**As of ZM-D-175 the data layer and the grant exist; the professor and the
+starter-choice SCREEN do not** -- S8 item 1 is in progress, not complete.
 
 **Terrain set.** Per-component serialized asset-subdirectory name for terrain
 (engine change E1), e.g. `Terrain/Route01/` -- lifts the one-terrain-per-game

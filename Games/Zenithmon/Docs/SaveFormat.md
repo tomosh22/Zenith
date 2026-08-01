@@ -9,15 +9,26 @@ The v1 module order, field order, widths, encodings and validation rules below
 are frozen by `Tests/ZM_Tests_SaveSchema.cpp` plus the independent literal-byte
 golden in `Tests/ZM_Tests_SaveMigration.cpp`. They are no longer proposals.
 
-**Current S7 status:** `Games/Zenithmon/Source/Core/ZM_SaveSchema.{h,cpp}` is a
+**Current status (S7 item 2 is COMPLETE; S7 closed 2026-07-29, ZM-D-167).**
+`Games/Zenithmon/Source/Core/ZM_SaveSchema.{h,cpp}` is a
 pure game-payload codec for the complete durable `ZM_GameState` inventory; it
 names no file, slot, ECS type or scene. Slot identity and disk I/O are owned by
 `Source/Save/ZM_SaveSlots.{h,cpp}` (S7 item 2 SC2, ZM-D-138; see "Slot layer"
 below). SC3 (ZM-D-139) shipped world-position capture/resume and the
 edge-triggered milestone-autosave foundation. SC4 (ZM-D-140) shipped the manual
-Save0-2 UI and root Save/Quit without changing one persistent byte. The title
-menu and Continue remain SC5; SC6 closes disk-backed restoration and milestone
-autosave coverage.
+Save0-2 UI and root Save/Quit without changing one persistent byte. SC5
+(ZM-D-141, 2026-07-24) shipped the title menu, New Game and the disk-authentic
+Continue gate; SC6 (ZM-D-142, 2026-07-24) closed the milestone-autosave test
+obligation and completed item 2. **Nothing in this document is still owed.**
+
+**The schema has NOT moved since v1 shipped.** In particular ZM-D-175 (S8 item 1
+SC3) split the starter seed -- `ZM_MakeStarterGameState` was DELETED and replaced
+by a partyless `ZM_MakeNewGameState()` plus `ZM_ApplyStarterChoice()`
+(`Source/Party/ZM_StarterChoice.{h,cpp}`) -- and deliberately did NOT bump
+`uSCHEMA_VERSION_CURRENT`, add a module, or set a story flag.
+`ZM_STORY_FLAG_STARTER_RECEIVED` (index 2) exists in the registry and is left
+CLEAR, so the save bytes are unchanged. Any doc or comment still naming
+`ZM_MakeStarterGameState` is stale.
 
 Public API (`ZM_SaveSchema.h`):
 
@@ -473,8 +484,10 @@ serialization order.
   GYM1_DEFEATED`); their producers plus the planned badge/story-scene, League and
   tower-bank triggers land only with the gameplay that can emit them. The current
   scene-arrival trigger drains once per frame from `ZM_GameStateManager::OnUpdate`
-  while the scene is IDLE and overworld. SC6 still owes the milestone-autosave
-  closure test; declaring the trigger vocabulary is not claiming every producer.
+  while the scene is IDLE and overworld. SC6 (ZM-D-142) CLOSED the
+  milestone-autosave closure test with the windowed `ZM_MilestoneAutosave_Test`
+  (`Tests/ZM_AutoTests_SaveAutosave.cpp`); declaring the trigger vocabulary is
+  still not claiming every producer.
 
 ## What is NOT saved
 
@@ -504,8 +517,10 @@ serialization order.
   failed / 1 skipped**; the engine-only reference remains **1103**. All five
   Zenithmon configurations, headless automation **36/0**, and full windowed
   automation **36/0/0** were green; the automated registry remains 36.
-- `Tests/ZM_Tests_SaveSlots.cpp` contains **33** `ZM_Save` tests over the slot
-  layer (item 2 SC2): the four distinct file stems, their `_Test` aliases and the
+- `Tests/ZM_Tests_SaveSlots.cpp` contains **34** `ZM_Save` tests over the slot
+  layer -- the **33** item 2 SC2 shipped, plus
+  `Rival1DefeatSurvivesASlotRoundTripAndSilencesVesper` added later by S7 item 3:
+  the four distinct file stems, their `_Test` aliases and the
   totality of every name map; manual-vs-Auto classification and display copy;
   empty/ready/damaged probing including a damaged slot left byte-identical across
   a probe and a read; a maximal all-eleven-module round trip; per-slot and
@@ -540,8 +555,9 @@ serialization order.
   documented skip**; headless discovery/gate **40/40**; full windowed **40/40
   passed, 0 failed, 0 skipped, 0 zero-frame**; save directory empty; exact-diff
   check green. No commit, push or CI result is claimed yet.
-- **Still owed:** SC6 (re-scoped, ZM-D-141) closes the milestone-autosave test
-  obligation only. SC5 SHIPPED 2026-07-24: the title menu consumes the
+- **Nothing owed: item 2 is COMPLETE.** SC6 (re-scoped, ZM-D-141) closed the
+  milestone-autosave test obligation on 2026-07-24 (ZM-D-142) with the windowed
+  `ZM_MilestoneAutosave_Test`. SC5 SHIPPED 2026-07-24: the title menu consumes the
   READY-slot LOAD seam (EMPTY/DAMAGED non-loadable; DAMAGED still counts as
   occupied for Continue visibility), and `ZM_SaveContinue_Test` (**247
   frames**) is the disk-authentic gate -- save, quit to FrontEnd, deliberately

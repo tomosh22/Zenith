@@ -70,7 +70,8 @@ Unit-test categories planned per stage: `ZM_Boot` (S0, shipped), `ZM_Data` /
 `ZM_OverworldInput` / `ZM_OverworldController` / `ZM_OverworldPhysics` /
 `ZM_OverworldCamera` / `ZM_OverworldECS` / `ZM_WorldTraversal` (S3,
 shipped), `ZM_Gen` (S4),
-`ZM_Encounter` (S5), `ZM_UI` (S6), `ZM_Save` / `ZM_Nav` (S7). New systems get a
+`ZM_Encounter` (S5), `ZM_UI` (S6), `ZM_Save` / `ZM_Nav` (S7),
+`ZM_Starter` (S8 -- see 5.8). New systems get a
 new category, never a grab-bag.
 
 ---
@@ -93,32 +94,66 @@ Each rule with its one-line why. Violations are review blockers.
   excessive presentation-frame budget.
 - **C3 -- Every ownerless global gets a reset in the between-tests hook**
   (registered in `Zenithmon.cpp` via
-  `Zenith_AutomatedTestRunner::RegisterBetweenTestsHook`; currently
-  `Zenith_SaveData::ClearForTest` -- the hook grows in the SAME PR as each new
-  global system lands).
+  `Zenith_AutomatedTestRunner::RegisterBetweenTestsHook` -- the hook grows in the
+  SAME PR as each new global system lands. As of ZM-D-177 it runs
+  **eleven** resets, in order --
+  `ZM_BattleTransition` / `ZM_UI_MenuStack` / `ZM_InteractionRuntime` /
+  `ZM_TrainerEngagementLatch` / `ZM_TrainerCinematicLatch` /
+  `ZM_GraphNodeTestCounters` / `ZM_GameStateManager::ResetRuntimeStateForTests`,
+  then `ZM_GameStateManager::ResetGameStateForTests`,
+  `ZM_SetInstantBattlesForTests(false)`, `ZM_SaveSlots::DeleteAllSlotsForTests`
+  and finally `Zenith_SaveData::ClearForTest`. Read the hook, not this list, when
+  it matters: the ORDER is load-bearing -- `DeleteAllSlotsForTests` precedes
+  `ClearForTest` because the latter wipes only the in-memory write log and
+  readback stash and deliberately deletes no files, so a `.zsave` written by one
+  test would otherwise survive into the next test AND the next process).
   *Why:* batched tests share one process; state that no entity owns leaks
   silently into the next test.
 - **C4 -- Rely on the scene-0 force-reload between batched tests** for
   entity-owned state; clean up via OnDestroy, not via the hook.
   *Why:* the harness reloads scene 0 between tests, so entity-owned state has
   a guaranteed teardown path already.
-- **C5 -- Set `m_bRequiresGraphics = true` on any test that touches Flux**
-  (rendered output, grass instances, screenshot probes).
-  *Why:* headless runs skip Flux entirely; such tests auto-skip instead of
-  crashing on the GPU-less CI runner.
+- **C5 -- Set `m_bRequiresGraphics = true` on any test that reads back RENDERED
+  OUTPUT** (a `Flux_Screenshot::RequestDump` pixel probe, or state only a real
+  GPU produces).
+  *Why:* NOT "headless skips Flux" -- a `Null_*` build runs every render path
+  against no-op backend calls (see section 3). What it does not do is produce
+  PIXELS: `Flux_Screenshot::ConsumePendingDump` has exactly ONE consumer,
+  `Zenith_Vulkan_Swapchain::EndFrame`, so on Null the dump is silently never
+  written. Such tests auto-skip rather than assert against a file that does not
+  exist.
+  **★ AND THE FLAG IS NOT FREE -- A SKIP COUNTS AS A PASS.** Setting it makes a
+  test CI-INVISIBLE, so anything provable without pixels should be proved by a
+  second `m_bRequiresGraphics = false` test that CI can actually see. The
+  ZM-D-176 pair is the worked example: `ZM_InteriorTint_Test` (headless,
+  material-level) is the gate; `ZM_InteriorTintPixels_Test` (windowed, pixel)
+  closes the last mile and is carried by the local gate alone. Reaching for the
+  flag because a test "touches rendering" is how coverage goes quiet.
 - **C6 -- Asset- or scene-dependent tests exists-guard their inputs and call
   `RequestSkip(szReason)` when absent.**
-  *Why:* baked assets are git-ignored, so a fresh CI checkout has NO
-  `Assets/` -- a hard dependency would fail every PR (the engine-wide CI-fix
-  pattern from commit `94813489`).
+  *Why:* baked assets are git-ignored -- apart from the six tracked files
+  below, a fresh CI checkout has NO baked `Assets/` content, and a hard
+  dependency would fail every PR (the engine-wide CI-fix pattern from commit
+  `94813489`).
   **DEVIATION -- the two COMMITTED asset families do NOT skip (ZM-D-147).**
-  `Assets/Navmesh/Dawnmere.znavmesh` and `Assets/Scenes/Dawnmere.zscen` are
-  TRACKED, so on CI they are always present and their absence is a DEFECT, not
-  a condition to tolerate. `ZM_NavmeshAsset_Test` and `ZM_DawnmereHeadless_Test`
+  `.gitignore:103-104` re-includes `**/*.znavmesh` and `**/*.zscen` at any
+  depth, so `Assets/Navmesh/Dawnmere.znavmesh` and **all five**
+  `Assets/Scenes/*.zscen` -- `Battle`, `Dawnmere`, `FrontEnd`, `PlayerHome`,
+  `ProfLab` (the fifth added by ZM-D-174) -- are TRACKED. On CI they are always
+  present and their absence is a DEFECT, not a condition to tolerate.
+  `ZM_NavmeshAsset_Test`, `ZM_DawnmereHeadless_Test` and `ZM_ProfLabWarp_Test`
   therefore carry NO `RequestSkip`. Skipping would also be self-defeating: a
   skip counts as a PASS, so the one gate proving the committed navmesh loads
   would go quiet exactly when it broke. C6 continues to apply to every
   git-ignored family.
+  **A DEFENSIVE guard over a tracked file is allowed, and must say so.**
+  `ZM_InteriorTint_Test` and `ZM_InteriorTintPixels_Test` DO `RequestSkip` when
+  `PlayerHome.zscen`/`ProfLab.zscen` are missing, with the reason stated at the
+  callsite: the guard is expected NEVER to fire, and exists so a mangled
+  checkout reports a NAMED prerequisite instead of scanning an empty scene and
+  reporting a clean subset. That is the opposite of tolerating absence -- but
+  it is still a skip-as-pass, so it is only defensible because a second clause
+  reds on a scan that observed nothing (see 5.8).
 - **C7 -- Test TUs compile directly into the game exe** (`Tests/*.cpp` are
   project sources, never a static lib).
   *Why:* MSVC dead-strips static registrars in unreferenced library objects,
@@ -139,8 +174,10 @@ from the log alone.
 
 ## 3. Runner reference
 
-The unified harness -- there is NO per-game runner script (the old
-`Tools/run_*_tests.ps1` scripts were deleted engine-wide at `c29e28f8`):
+The unified harness -- there is NO per-game runner script (`c29e28f8` replaced
+the old `Tools/run_*_tests.ps1` with thin forwarders onto the shared module and
+`ac985ab3` then DELETED them; only `Tools/run_unit_gate.ps1`, which is the T0
+gate and not a per-game runner, survives in `Tools/`):
 
 ```
 zenith test Zenithmon --headless                      # full batch (default mode)
@@ -154,11 +191,14 @@ Implementation: `Tools/ZenithCli/ZenithCli.psm1` (`Invoke-ZenithTest`) ->
 | Flag | Effect |
 |---|---|
 | `--filter <substr>` | Run matching tests only; **forces per-process mode** (the in-engine batch flag has no filter) |
-| `--headless` | No window, Flux skipped; `m_bRequiresGraphics` tests auto-skip |
+| `--headless` | **A CONFIG SELECTOR, not a runtime flag** (`ZenithCli.psm1`): it swaps the exe for the game's `Null_*` build, which defines `ZENITH_NULL_RENDERER` and creates its window hidden. Every render path still RUNS, against no-op backend calls -- Flux is NOT skipped. Only `m_bRequiresGraphics` tests auto-skip. An explicit `--config` always wins |
 | `--results-dir <dir>` | Per-test JSON output location |
 | `--config <cfg>` | Build configuration override (default `Vulkan_vs2022_Debug_Win64_True`) |
 | `--per-process` | One process per test -- slower, bullet-proof against state leaks |
 | `--fail-fast` | Abort the batch on first failure |
+| `--tests A,B,C` | Ordered single-process run of exactly these tests: the cross-test-leak probe ("does A contaminate B?" in one boot). Composes with nothing else |
+| `--batch-order reverse\|rotate:N` | Reorder the full batch without changing its set -- the other half of the leak probe. Requires the full batch (no `--filter`/`--per-process`/`--fail-fast`) |
+| `--tier <N>` / `--build` / `--exit-after-frames <N>` / `--assertions-log <f>` | Tier select; build first; per-test frame ceiling (default 8500); assertion-log path |
 
 | Exit code | Meaning |
 |---|---|
@@ -172,7 +212,35 @@ Implementation: `Tools/ZenithCli/ZenithCli.psm1` (`Invoke-ZenithTest`) ->
 **Batch vs per-process:** batch (default) boots the engine once and runs every
 registered test in one process -- minutes instead of tens of minutes -- which
 is why conventions C3/C4 (state hygiene) are load-bearing. Per-process is the
-fallback when chasing a suspected cross-test leak.
+fallback when chasing a suspected cross-test leak. **Test DISCOVERY always uses
+the Null exe** regardless of `--config`, because listing from a Vulkan build
+hangs in `vkEnumeratePhysicalDevices` on a GPU-less runner -- so a windowed run
+still needs `zenith build Zenithmon --headless` to have happened at least once.
+
+### ★ STANDING HAZARD -- a red run's diagnostic is NOT in its result JSON
+
+Two independent facts compose into a trap that has now cost two sessions
+(first booked at ZM-D-174, hit again at ZM-D-176/177):
+
+1. **The engine hardcodes `"failures": []`.** `Zenith_AutomatedTest.cpp:778`
+   writes that literal into every per-test JSON, pass or fail; the header says
+   so in as many words ("there is no per-test mechanism for structured failure
+   messages yet, only the pass/fail bool. Tests that need detail today print to
+   stdout instead"). A JSON with `"passed": false` and `"failures": []` is the
+   NORMAL shape of a failure, not a corrupt artifact.
+2. **The per-process branch discards child stdout.**
+   `ZenithTestHarness.psm1:435` runs the exe as `2>&1 | Out-Null`. Because
+   `--filter` FORCES per-process, the single most common way to run one test
+   is exactly the way that throws its `Zenith_Log`/`Zenith_Error` output away.
+   (The batch branch, line 348, tees to host and does keep it.)
+
+**Consequence, stated so nobody re-derives it:** a focused windowed
+`--filter` run tells you only *whether* it failed. To read WHY, run it without
+`--filter` (batch, output teed) or invoke the exe directly with
+`--automated-test <name>`. A test whose only evidence is a number it printed
+must have that number recorded by hand at the gate, or the test has told nobody
+anything -- which is why the calibrated figures in 5.8's pixel probe are
+labelled as measured OUT OF BAND.
 
 Unit tests run before scene load on an ordinary game boot, but `zenith test`
 deliberately launches the game with `--skip-unit-tests`; the harness does not
@@ -188,12 +256,25 @@ Workflow: `.github/workflows/zm-tests.yml` (clone of `dp-tests.yml`), active
 since S0. Steps: checkout -> `zenith-setup` action (Vulkan SDK 1.3.290.0,
 Slang 2026.1) -> `Build/regen.ps1 -UseDotnet` -> build
 `Vulkan_vs2022_Debug_Win64_True` (`/t:Zenithmon`) -> build
-`D3D12_vs2022_Debug_Win64_False` (backend-neutrality link proof) -> DLL copies
--> headless boot check -> **boot unit-test gate** (`Tools/run_unit_gate.ps1` --
-the ONLY CI step that runs the ZENITH_TEST T0 suite, since `zenith test` and the
-boot check both pass `--skip-unit-tests`) -> `zenith.bat test Zenithmon
---headless --results-dir Build/artifacts/test_results/zenithmon` (the P1
-automated suite) -> upload artifact `zm-test-results` (`if: always()`).
+**`Null_vs2022_Debug_Win64_True`** (THE headless/CI build -- the exe every
+later step actually runs) -> build `D3D12_vs2022_Debug_Win64_False`
+(backend-neutrality link proof) -> DLL copies -> headless boot check
+(`--list-automated-tests --skip-tool-exports --skip-unit-tests` on the Null exe)
+-> **boot unit-test gate** (`Tools/run_unit_gate.ps1 -Exe <Null exe> -Baseline N
+-TimeoutSec 600` -- the ONLY CI step that runs the ZENITH_TEST T0 suite, since
+`zenith test` and the boot check both pass `--skip-unit-tests`) ->
+`zenith.bat test Zenithmon --headless --results-dir
+Build/artifacts/test_results/zenithmon` (the P1 automated suite) -> upload
+artifact `zm-test-results` (`if: always()`). **THREE configurations are built,
+not two** -- omitting the Null build from a mental model of this gate is how one
+concludes the headless suite runs on the Vulkan binary, which it never does.
+
+`-TimeoutSec 600` is **not optional** and the helper's own 180 s default is
+actively wrong here: the watchdog kills the known tools-build idle only AFTER
+the units line is logged, so it doubles as a ceiling on how long the suite may
+take, and the suite has been measured straddling 180 s (ZM-D-163). Losing that
+race reports "no 'Unit tests complete' line in boot output", which reads like a
+crash.
 
 The CI runner is GPU-less and asset-less (assets are git-ignored), so the CI
 backbone is exactly the T0 suites plus the headless-safe P1 tests; everything
@@ -209,6 +290,23 @@ manual GitHub-UI step -- tracked in
 
 Counts are targets from the approved plan; they set the bar for stage gates,
 not a hard ceiling. Test names below are illustrative until their stage lands.
+
+**★ THIS SECTION IS NOT AN INVENTORY, AND THE GAP RUNS BOTH WAYS.** The document
+header warns that a named test may not exist yet. The commoner failure is the
+reverse: **a registered test this document never names.** `Tools/doc_lint.ps1`
+hardcodes DevilsPlayground's `Docs/` directory and never reads Zenithmon's, so a
+green doc-lint is ZERO evidence about this file -- it is unlinted and drifts
+silently. As of ZM-D-177, **eleven** of the 56 registered automated tests appear
+nowhere below: `ZM_MenuOpenClose_Test`, `ZM_DialogueTalk_Test`,
+`ZM_PartyScreen_Test`, `ZM_DexScreen_Test`, `ZM_BagScreen_Test`,
+`ZM_ShopScreen_Test`, `ZM_CareCenterHeal_Test` (all
+`Tests/ZM_AutoTests_UI.cpp`), `ZM_BattleHUD_Test`,
+`ZM_BattleArenaOwnScene_Test`, `ZM_GameStatePersistence_Test` and
+`ZM_TerrainGrassResumeRegen_Test`. Their contracts live in their own files'
+header comments. **The authoritative registry is
+`grep -c ZENITH_AUTOMATED_TEST_REGISTER Games/Zenithmon/Tests/*.cpp`, and the
+authoritative unit inventory is `grep -c "ZENITH_TEST("` -- never a total quoted
+in prose here, including a total quoted in this paragraph.**
 
 ### 5.0 S0 -- skeleton (SHIPPED)
 
@@ -511,9 +609,14 @@ building generator below adds **10** more (1886 -> 1896; 9 units + 1 bake smoke)
 the prop generator below adds **9** more (1896 -> 1905; 8 units + 1 bake
 smoke), and `ZM_BakeManifest` below adds the final **3** more (1905 -> 1908;
 `EnumerationMatchesRoster` all-config + `RebakeByteIdentical`/`GuardWarmStale`
-tools-only). The whole `ZM_Gen` T0 category is now **135** units, eight of which
+tools-only). That accounting totals **135** units at the S4 close, eight of which
 (the six generator bake smokes plus the two `ZM_BakeManifest` tools-only cases)
 are `ZENITH_TOOLS`-only, so `_False`/Android configs register them as empty TUs.
+**The live `ZM_Gen` count is 137** -- known-limit W4 (ZM-D-160, section 5.7)
+appended `HumanGen_PaletteTotality` and `HumanGen_PaletteDistinctness` to
+`Tests/ZM_Tests_HumanGen.cpp`, so its `ZM_Gen` inventory is 20, not the 18 the
+human-generator box below itemises. The category is not frozen at S4; count it
+from the files.
 
 #### ZM_Gen -- creature generator (SHIPPED)
 
@@ -807,8 +910,13 @@ smoke] to reach 1896, the prop generator adds **+9** [8 units + 1 bake smoke] to
 reach 1905, and `ZM_BakeManifest` adds the final **+3** [`EnumerationMatchesRoster`
 all-config + `RebakeByteIdentical`/`GuardWarmStale` tools-only] to reach 1908).
 S5 item 1 (`ZM_BattleArena`, ZM-D-089) then adds **+5** T0 units to reach **1913**,
-so `.github/workflows/zm-tests.yml` now runs `run_unit_gate.ps1 -Baseline 1913`
-(see section 5.5).
+and `.github/workflows/zm-tests.yml` was bumped to `-Baseline 1913` at that
+commit (see section 5.5). **That is a 2026-07-16 value and this document does
+not restate the current pin** -- per the standing rule in 5.3, the pins are
+`.github/workflows/zm-tests.yml`'s `-Baseline` (Zenithmon, combined engine+ZM)
+and `Tools/run_unit_gate.ps1`'s default (engine-only), with `Status.md`'s CURRENT
+BASELINE block as the readable record. They are DIFFERENT numbers and the
+engine-only default must never be made to track the Zenithmon one.
 
 **All S4 generator families are now built** (creatures, creature animation,
 humans, buildings, props), gated by the per-family `ZM_BakeManifest` marker
@@ -826,7 +934,9 @@ arena at world Y = -2000 -- a dome + 2 platforms + 6 per-biome dressing prop
 sets, exactly one shown at a time. Determinism/placement are golden-pinned
 (`uSERIALIZATION_VERSION` = 1, `fARENA_WORLD_Y` = -2000, `uBIOME_COUNT` = 6).
 
-- **T0 `ZM_BattleArena` units (SHIPPED -- 5)** in `Tests/ZM_Tests_BattleArena.cpp`,
+- **T0 `ZM_BattleArena` units (5 at ZM-D-089; the file now holds 6)** in
+  `Tests/ZM_Tests_BattleArena.cpp` -- a later commit added
+  `ChildCountMatchesArenaComposition`, which is not itemised below,
   pure/all-config (no disk, no GPU, no entity construction -- only the `static`
   helpers + the compiled `ZM_PropData`/`ZM_WorldSpec` tables): `BiomeEnumCoverage`
   (the 6-biome roster agrees across the battle enum, the component constant, the
@@ -974,32 +1084,62 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   At this item-3 snapshot, applying exp on a real win + party mutation was item
   5's scope (that gate ended the battle via the item-4 `RequestBattleEnd()` seam,
   with no resolution). Item 5 subsequently shipped.
-- **P1 catch test:** rigged catch succeeds; monster lands in party; dex
-  updates.
-- **P1 bleed-through screenshot check:** scripted capture during battle
-  asserting the overworld does not render into the battle view (the one
-  pixel-adjacent test; `m_bRequiresGraphics`, stage-gate only).
+- **P1 catch test -- SHIPPED as `ZM_BattleMenuCatch_Test`** (item 5 SC4,
+  `Tests/ZM_AutoTests_BattleMenu.cpp`, `m_bRequiresGraphics`): forces a DISTINCT
+  wild KINDLET, installs a guaranteed-catch `ZM_ITEM_PRIMEORB`, drives the menu to
+  Catch, and asserts the core ends with the PLAYER as winner while the persistent
+  GameState gains a party member AND a marked caught-set entry. Its three
+  siblings in the same file -- `ZM_BattleMenuWin_Test`, `ZM_BattleMenuRun_Test`,
+  `ZM_BattleMenuWhiteout_Test` -- are equally shipped and equally undocumented
+  here; read the file's header comment for their contracts.
+- **P1 bleed-through screenshot check -- STILL NOT WRITTEN.** Scripted capture
+  during battle asserting the overworld does not render into the battle view
+  (`m_bRequiresGraphics`, stage-gate only). Note the framing "the one
+  pixel-adjacent test" is itself superseded: the suite now has four pixel-reading
+  probes (5.7's `ZM_NpcRenderedPalette_Test`, the `ZM_RivalVesperAuthored_Test`
+  marker clause and the `ZM_BattleMenuRun_Test` arms, plus 5.8's
+  `ZM_InteriorTintPixels_Test`) and their conventions apply to this one when it
+  is written.
 
 ### 5.6 S6 -- UI flows
 
-- **Shipped surface.** The overworld root menu has exactly **Party / Bag /
-  Dex / Exit**. Dialogue, the buy-only **Trade Post** screen, and the Care
-  Center yes/no heal prompt are reached through the same menu stack. Box is
-  deferred to S7. `ZM_ShopLogic` selling exists and is pure-unit-covered, but
-  S6 does not claim a sell UI flow.
+- **Shipped surface AT THE S6 CLOSE.** The overworld root menu has exactly
+  **Party / Bag / Dex / Exit**. Dialogue, the buy-only **Trade Post** screen,
+  and the Care Center yes/no heal prompt are reached through the same menu
+  stack. Box is deferred to S7. `ZM_ShopLogic` selling exists and is
+  pure-unit-covered, but S6 does not claim a sell UI flow.
+  **SUPERSEDED on both counts.** (1) The root menu is now **SIX** entries, not
+  four: S7 item 2 SC4 (ZM-D-140) INSERTED `SAVE` and `QUIT` *before* `EXIT`
+  (which moved 3 -> 5), so `Components/ZM_UI_MenuStack.h` declares
+  `ZM_MENU_ROOT_PARTY/BAG/DEX/SAVE/QUIT/EXIT` with
+  `ZM_MENU_ROOT_ITEM_COUNT = 6u`. The insertion point is load-bearing, not
+  cosmetic: `ZM_AutoTests_UI`'s focus walk drives DOWN/UP off the ENUM ordinal,
+  so an entry placed visually above EXIT but numbered after it would oscillate
+  to its deadline. (2) The Box screen was NOT delivered in S7 -- ZM-D-165 /
+  Q-2026-07-29-001 **re-deferred it to S9** (`Roadmap.md:223`, the `ZM_UI_Box`
+  line). The original S6 deferral at `Roadmap.md:98` already carries that
+  annotation; this copy did not until now. The storage MODEL is not
+  outstanding -- `ZM_SaveSchema` has persisted 16x30 boxes since ZM-D-136 --
+  only the presenter is.
 - **T0 units.** Headless-safe `ZM_UI` units cover stack push/pop, dialogue
   paging/choice latches, focus order, party/bag/dex presenters, atomic shop
   buy/sell logic, and interaction dispatch. `ZM_NpcWalkerLogic` units cover
   deterministic XZ steering, arrival/dwell, halt, invalid inputs, and
   preservation of the body's vertical velocity. The walker has no RNG,
   navmesh, scene, UI, or ECS dependency.
-- **Authored NPC surface.** Dawnmere contains exactly four NPCs:
+- **Authored NPC surface AT THE S6 CLOSE -- four NPCs:**
   `Npc_Villager`, `Npc_TradePostClerk`, `Npc_Caretaker`, and
   `Npc_Wanderer`. The Wanderer follows an authored, deterministic two-point
   patrol; opening its own dialogue halts it and closing the dialogue resumes
   it. NPC roles dispatch in C++ through `ZM_Interactable` for S6.
   `ZM_GraphAuthoring` and terrain-backed navmesh integration are deferred to
   S7.
+  **SUPERSEDED -- the roster is SIX rows, not four.** S7 appended
+  `ZM_NPC_ROUTE_WARDEN` (item 2 SC1, the first story-gated dialogue) and
+  `ZM_NPC_RIVAL_VESPER` (item 3 SC8), so `ZM_NPC_COUNT == 6` in
+  `Source/Data/ZM_NpcData.h`. Section 5.7's W4 box depends on that six: it pins
+  that the six rows wear FIVE appearances, `Npc_Wanderer` and `Npc_Warden`
+  sharing `ZM_HUMAN_TOWN_ELDER`. Read the enum, not this paragraph.
 - **P1 walk-up proofs** (`Tests/ZM_AutoTests_NpcTalk.cpp` and
   `Tests/ZM_AutoTests_NpcServices.cpp`) reach the real authored entities using
   physics movement and `ZENITH_KEY_E`:
@@ -1038,7 +1178,9 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   the non-skipped local filters are their evidence. `ZM_NpcDispatch_Test` is
   the headless semantic dispatch proof and now asserts the role-specific
   screen/action rather than merely any raised screen. S6 has no visual or
-  human gate. S7 is next.
+  human gate. **("S7 is next" was true when written on 2026-07-21 and is not
+  now: S7 COMPLETE 2026-07-29, and S8 item 1 is in progress -- see 5.8.
+  `Roadmap.md` is the authority on stage state; this document is not.)**
 
 ### 5.7 S7 -- save/load, story flags, trainers
 
@@ -1269,8 +1411,12 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   mutation because it killed the process instead of producing a parseable unit result.
 - **Known-limit W2 -- honest rival loss/whiteout (COMPLETE 2026-07-28,
   ZM-D-158):** new independent `ZM_RivalVesperWhiteout_Test` registration, runnable on
-  Null, starts with `ZM_MakeStarterGameState()`'s exact level-5 Fernfawn and physically
-  walks to the committed authored Vesper. Before input it captures the live director
+  Null, starts with the exact level-5 Fernfawn and physically
+  walks to the committed authored Vesper. **(SYMBOL RENAMED, ZM-D-175: the seed was
+  `ZM_MakeStarterGameState()` when this was written; that function is DELETED. Today
+  the same composition is `ZM_MakeNewGameState()` followed by
+  `ZM_ApplyStarterChoice(state, ZM_STARTER_CHOICE_FERNFAWN)` -- see 5.8. Any doc,
+  comment or test still naming `ZM_MakeStarterGameState` is stale.)** Before input it captures the live director
   core and pins exact parties/vitals/PP/status plus Catch/Run refusal. It navigates the
   real HUD to a legitimate second learned move and requires the matching PLAYER
   `MOVE_USED` event, then a natural ENEMY winner; move slot 0 was empirically rejected
@@ -1482,12 +1628,315 @@ user-approved; this paragraph preserves the earlier planning boundary only.
   `m_bRequiresGraphics = true`, so it SKIPS on Null and can never reach the clause with a dump that
   was never written.
 
+- **★ THE FIFTH CONVENTION, AND THE ONE THAT COST A RETRACTION (2026-08-01, ZM-D-177).
+  AN ABSOLUTE FRAMEBUFFER RATIO IS A PROPERTY OF THE SCENE'S LIGHTING, NOT OF THE
+  MATERIAL. ONLY A RELATIVE SEPARATION BETWEEN TWO SURFACES IS A PROPERTY OF A TINT.**
+  `ZM_InteriorTintPixels_Test` (5.8) originally carried, alongside its relative margin,
+  two ABSOLUTE red/blue bounds, reasoned as: "the shipped blockout grey is COOL
+  (B > G > R), therefore an untinted room lands BELOW 1.0 and a tinted room ABOVE it."
+  The first windowed run disproved it -- ProfLab's UNTINTED floor measured red/blue
+  **1.0742**, above the bound that demanded it stay under, and PlayerHome's tinted floor
+  **1.3045**. **BOTH sit above 1.0.**
+  The bound silently assumed **albedo ordering survives to the framebuffer.** It does
+  not: a rendered pixel is albedo TIMES illuminant, and under ZM-D-171's
+  physically-grounded lighting the illuminant is WARM (a sun key derived from atmosphere
+  transmittance, plus ground-bounce IBL), so a neutral-to-cool albedo under a warm
+  illuminant still renders WARM. Both rooms are open-topped seven-block shells with no
+  ceiling, making the floor's top face the most sun-exposed surface in the room -- the
+  0.887 figure the bound leaned on came from `ZM_ShellLighting_Test`'s SUN-AVERTED,
+  ambient-only face, the opposite lighting regime.
+  **So the bound would have failed on an UNTINTED room, before the tint existed.** It
+  never encoded a property of the tint. It was RETRACTED, not weakened; the signed
+  relative margin (PlayerHome MINUS ProfLab >= 0.15) survives because the only way to
+  satisfy it is for the tinted room to render measurably warmer than the untinted one --
+  a tint that never reaches the framebuffer collapses the gap, and a tint that LEAKED
+  into the lab warms both rooms together and also collapses it.
+  **Generalised rule for every future pixel test:** pin a DIFFERENCE between two
+  surfaces measured in the same regime. If an absolute bound is genuinely needed, it is
+  a *capture-sanity* band -- applied identically to both samples, deliberately generous,
+  and labelled as NOT evidence of the property under test (that probe's 0.70-3.00
+  red/blue band exists only to catch a framing regression that put one patch on open
+  sky, which could widen the gap and pass falsely). An absolute ratio pinned tight is a
+  tripwire for ordinary atmosphere re-tuning: it reds for a reason unrelated to the
+  thing it claims to test. **This is also why the ZM-D-170 conventions above --
+  especially "threshold-setting is a TWO-SIDED measurement" -- are necessary but not
+  sufficient: the retracted bound HAD a measurement behind it. What it lacked was a
+  measurement of the NEGATIVE case, which is the only thing that would have shown the
+  premise was false.**
+- **★ AND A PIXEL TEST'S NUMBERS MUST BE RECORDED BY HAND.** See the standing hazard in
+  section 3: a `--filter` run is per-process, per-process discards child stdout, and the
+  result JSON's `"failures"` is a hardcoded `[]`. Every calibrated figure in 5.8's pixel
+  probe was therefore measured OUT OF BAND by the orchestrator off the dumped TGAs, and
+  is labelled as such at the callsite. A pixel test whose observed values nobody
+  transcribes has produced evidence and read none of it.
+
 ### 5.8 S8 -- vertical slice
 
-- **`ZM_Slice_Test`:** mini-playthrough new game -> Badge 1
+**STATE, so nothing below is read as more than it is: S8 item 1 ("Intro -> lab
+-> starter choice") is IN PROGRESS and its `Roadmap.md` box is deliberately
+UNTICKED.** The professor and the starter-choice SCREEN are NOT built. What has
+shipped is the ground under them: the lab interior and its warp (ZM-D-174), the
+starter DATA and the seed split (ZM-D-175), and the New Game entry point plus
+the bedroom's visual separation from the lab (ZM-D-176/177). The S8 go/no-go
+gate follows all four `Roadmap.md` S8 boxes and requires a manual visual
+playthrough sign-off; it is a HUMAN stop and no agent may sign it. **Do not
+describe S8 as complete, and do not read this section's greenness as "the intro
+works".**
+
+These three sub-commits took the automated registry **53 -> 56** (see section 8
+for the 51 -> 53 step) and added **+30** boot units, split
++8 `ZM_WorldTraversal` (ProfLab placement), +3 `ZM_WorldTraversal` (PlayerHome
+interior), +13 `ZM_Starter` (a NEW category), +4 `ZM_Data` (new-game entry) and
++2 `ZM_Interaction` (the empty-party gate), against one renamed `ZM_Party` case
+that nets zero.
+
+**#### ZM_ProfLab -- Aster's Lab interior + build index 41 (item 1, SHIPPED ZM-D-174)**
+
+`Assets/Scenes/ProfLab.zscen` becomes the fifth TRACKED scene; the interior is a
+seven-block open-topped shell (floor, back/left/right walls, two front-wall stubs
+flanking the doorway, lintel) authored entirely from the new pure header
+`Source/World/ZM_ProfLabPlacement.h`. Build index **41** is spelled ONCE, in
+`Source/Data/ZM_WorldSpec.cpp`; every consumer resolves it through
+`m_uBuildIndex`.
+
+- **T0 `ZM_WorldTraversal` units (SHIPPED -- exactly 8)** in
+  `Tests/ZM_Tests_ProfLabPlacement.cpp`. PURE: no scene, no entity, no physics,
+  no assets, no `g_xEngine` -- and, per the ZM-D-148 precondition, **they create
+  NO entity**, because the boot unit suite allocates entities before scene
+  authoring and one entity-creating unit would re-author different `.zscen`
+  bytes and invalidate the two-boot identical-SHA256 proof.
+
+  | Test | Contract covered |
+  |---|---|
+  | `ProfLab_WorldSpecRowIsTheInteriorWithNoTerrain` | The compiled row is kind INTERIOR with an empty terrain set and offers exactly the tag its one inbound connection names; no build-index literal appears anywhere but `ZM_WorldSpec.cpp` |
+  | `ProfLab_BlockoutExtentsArePositiveAndFinite` | ANTI-VACUITY, and the clause that makes every other walk mean anything: finite centres and strictly positive extents. A zero/negative scale inverts the AABB (`Min()` past `Max()`), which every containment claim would then evaluate against nonsense while still returning a bool |
+  | `ProfLab_DoorSpawnStandsOnTheFloorWithCameraClearance` | The Door spawn stands ON the floor, INSIDE the room, with arm room behind it -- including the feet-vs-centre convention that has bitten this project before (`ZM_SpawnPoint` markers are FEET; the warp adds the capsule half-extent, so a marker authored at a body centre drops the player half a body into the ceiling). The half-extent is MIRRORED from the shipped constant, never re-spelled |
+  | `ProfLab_FollowCameraTrailsIntoTheRoomAtTheAuthoredYaw` | ZM-D-173 restated for an interior: one authored yaw for the whole scene, trailing toward -Z, so the doorway must be the +Z face and the room must open BEHIND the arriving player. The header's three mirrored camera constants are asserted against `ZM_FollowCamera`'s own getters, so re-tuning the camera without re-deriving the placement reds immediately instead of the room quietly becoming too short two commits later |
+  | `ProfLab_HeaderSpawnTagMatchesTheWorldSpecRow` | The tag is spelled ONCE. Authoring installs `szZM_PROFLAB_SPAWN_TAG` on the marker and `IsWarpDestinationValid` compares against `ZM_WorldSpec`'s offered list; typed twice they could diverge by one byte and the only symptom would be a warp that never completes |
+  | `ProfLab_DoorApertureAdmitsTheAuthoredPlayer` | The aperture is an ABSENCE of geometry -- the gap between the two front stubs, capped by the lintel -- so its clear size is measured from the boxes that bound it. Widen either stub until they meet and this says the doorway has been walled up |
+  | `ProfLab_BlockNamesAreUniquePrintableLookupKeys` | The keys `ZM_ProfLabWarp_Test`'s clause I looks up. A duplicated name makes two rows resolve to one entity (so a genuinely misplaced block is compared against its twin and PASSES); a name with a space or control byte is a silent miss reported as "entity not found" with no cause |
+  | `ProfLab_ShellEnclosesTheFloorOnEverySide` | The four bounding sides reach the slab's edges and stand tall enough that a player cannot see or step over them. A wall one scale component short leaves a corner gap no doorway-only measurement would notice |
+
+  **★ THE BOUNDARY, STATED BY THE FILE ITSELF.** These eight run BEFORE the
+  initial scene loads, so they can see NEITHER the scene registry NOR one byte of
+  `ProfLab.zscen`. They cannot detect a missing `RegisterSceneBuildIndex` and
+  cannot prove the committed bytes match the header. Those are clauses A and I of
+  the automated test below. **Their greenness is not "ProfLab is reachable".**
+
+- **P1 `ZM_ProfLabWarp_Test` (SHIPPED, headless-safe)** in
+  `Tests/ZM_AutoTests_ProfLab.cpp`: `m_bRequiresGraphics = false`, max **1,200**
+  frames, fixed dt **1/60** (C2 default -- it presses no key and drives no
+  traversal; every phase waits on the warp machine, so the 30 Hz cadence
+  `ZM_PlayerHomeRoundTrip_Test` justifies for its 128 m input drive would only
+  halve the resolution of the fade/barrier observations). **NO asset probe and NO
+  `RequestSkip` anywhere** -- `ProfLab.zscen` is TRACKED, so absence is a defect
+  (the ZM-D-147 deviation under C6). It warps from the PLAYERLESS FrontEnd via
+  `RequestWarp` rather than walking a Dawnmere trigger, so there is no git-ignored
+  prerequisite left to guard and therefore no split-guard to get wrong. Per-phase
+  driver functions (the ZM-D-141 stack rule) even though it holds no
+  `ZM_GameState` local, and every placement value is READ from
+  `ZM_ProfLabPlacement.h` -- the only numeric literals in the file are epsilons
+  and frame deadlines. Three phases with budgets 180 / 600 / 120 summing to 900,
+  **deliberately inside the 1,200 cap** so a NAMED deadline fires before the
+  harness backstop.
+
+  Ten verification clauses: **A** the active scene really is ProfLab (not merely
+  "a warp completed"); **B** the player stands on the marker, at rest; **C** the
+  camera is main + aimed and control is handed back; **D** the camera kept the yaw
+  every clearance figure assumes; **E** no fade/opaque-load/camera barrier was
+  skipped; **F** exactly one SINGLE load, target cleared; **G** the FrontEnd is
+  gone; **H** an interior owns no terrain grass; **I** the committed scene bytes
+  agree with the header across all seven shell blocks; **I2** the three authored
+  entities that are NOT shell blocks (the arrival marker by NAME as well as by
+  TAG -- pinning the two lookup keys to each other -- and the player's authored
+  scale, from which the doorway width, headroom and capsule half-extent are all
+  derived).
+
+  **★ WHY THIS TEST EXISTS, AND WHY NO WorldSpec UNIT COULD REPLACE IT.** The
+  ProfLab row had shipped in the compiled world table and all 12 `ZM_Data`
+  WorldSpec units were GREEN against it, including the FrontEnd-reachability walk.
+  None could see the live wedge, because `IsWarpDestinationValid` consults ONLY
+  the compiled tag list and never `Zenith_SceneSystem`'s build-index registry: an
+  UNREGISTERED destination passes validation, the warp is ACCEPTED, and the
+  machine parks in `ZM_WARP_TRANSITION_WAITING_FOR_SPAWN` -- **which has no
+  timeout** -- leaving the player frozen behind a permanently opaque fade. A
+  silent hang, not a crash. The WarpIn deadline exists so the symptom is a named
+  failure naming the missing `RegisterSceneBuildIndex` line rather than a bare
+  frame cap that names nothing.
+
+**#### ZM_Starter -- the starter seed split (item 1, SHIPPED ZM-D-175)**
+
+`Source/Party/ZM_StarterChoice.{h,cpp}` ships the authored trio (Fernfawn/Grass,
+Kindlet/Fire, Finlet/Water at `uZM_STARTER_LEVEL = 5`) in the ZM-D-009
+compiled-const-table idiom, and **`ZM_MakeStarterGameState` is DELETED**, split
+into two: `ZM_MakeNewGameState()` seeds a PARTYLESS new game (dex empty, economy
+intact) and `ZM_ApplyStarterChoice(state, choice)` grants the one level-5 lead.
+**Any doc, comment or test naming `ZM_MakeStarterGameState` is stale** -- the
+between-tests hook's re-seed (C3) is now
+`ZM_MakeNewGameState()` + `ZM_ApplyStarterChoice(..., ZM_STARTER_CHOICE_FERNFAWN)`.
+
+- **T0 `ZM_Starter` units (SHIPPED -- exactly 13)** in
+  `Tests/ZM_Tests_StarterChoice.cpp`. A NEW category, deliberately distinct from
+  `ZM_Party` / `ZM_Save` / `ZM_Data` (per section 1's "new systems get a new
+  category, never a grab-bag"): a shared category would bury a starter regression
+  among the ~forty party-model units. All pure/headless -- compiled tables, free
+  functions over a by-value `ZM_GameState`, and the frozen type chart -- so every
+  fixture is hermetic and no `RequestSkip` is needed.
+
+  | Count | Cases / locked contract |
+  |---:|---|
+  | 3 | `Table_RowsAreDenseAndSelfConsistent`, `Table_EveryStarterIsAStageOneSingleTypedRareSpecies`, `Table_SpeciesAndChoicesAreDistinct`: the roster is dense from zero and self-indexing, every row is a stage-1 single-typed rare species, and no species or choice repeats |
+  | 1 | `Accessor_OutOfRangeFailsClosedAndNeverAsserts`: TOTAL accessors under a `Zenith_AssertCaptureScope`, so "it never asserts" is an ASSERTION rather than "the process happened not to die this time" |
+  | 2 | `Counter_ColumnAgreesWithTheTypeChart`, `Counter_FormsOneCycleOverEveryChoice`: `m_eCounteredBy` is AUTHORED, not derived -- deriving it by querying `ZM_TypeChart` would make the first unit a tautology that can never fail; authored, it is a real tripwire over both the column and the chart. The second pins that the three counters form ONE cycle rather than degenerating |
+  | 1 | `NewGame_IsPartylessAndDexEmptyButKeepsTheEconomy`: the split's whole point -- a new game grants NO monster |
+  | 4 | `Apply_GrantsExactlyOneLevelFiveLeadForEveryChoice`, `Apply_MarksOnlyTheChosenSpeciesSeenAndCaught`, `Apply_RejectsAnOutOfRangeChoiceWithoutMutatingTheState` (also under a capture scope), `Apply_TouchesOnlyPartyAndDex` |
+  | 1 | `CanEnterBattle_KeysOnPartyEmptinessAndIgnoresFainting`: emptiness, NOT health -- a fainted party can still enter |
+  | 1 | `Roster_VesperBringsTheAuthoredCounterToTheFernfawnStarter`: closes half of the GDD counter-starter debt booked at ZM-D-156 |
+
+  **★ THE HAZARD THIS FILE IS WRITTEN AROUND, and the reason its walks look
+  defensive.** `ZM_GetSpeciesData`, `ZM_TypeChart::GetEffectiveness` and
+  `ZM_BuildMonsterRecord` all `Zenith_Assert` on out-of-range input, and
+  `Zenith_Assert` calls `Zenith_DebugBreak()` in EVERY configuration -- there is
+  no build in which it degrades to a log. **One bad value does not fail one unit:
+  it ENDS the whole ~2,800-unit boot run and takes the gate down.** Every walk
+  therefore guards its own indices before dereferencing a table and bails on a red
+  rather than pressing on. This applies to any future unit reaching those seams.
+
+- **T0 `ZM_Interaction` units (SHIPPED -- exactly 2)** in
+  `Tests/ZM_Tests_TrainerSightFsm.cpp`, for `ZM_MayTrainerEngage`'s new
+  `bPlayerCanBattle` input (answered by exactly one seam, `ZM_CanEnterBattle`).
+  **The gate LANDED INERT** -- nothing partyless is reachable until the
+  starter-choice screen exists -- which is precisely why it needs units now rather
+  than a live route later.
+  - `Gate_PartylessPlayerIsClosedOnBothArms` walks **all four corners** of
+    (defeatFlag, sessionLatch) for **one fixture of EACH kind** (the FLAGGED rival
+    and the FLAGLESS rambler), including the two corners that answer TRUE for a
+    party-bearing player. Walking only the corners that were already false would
+    prove nothing about the new clause.
+  - `Gate_PlayerCanBattleNeverOpensAnUnregisteredRow` pins the OUTCOME and
+    **deliberately not the order**: the registration guard and the
+    `bPlayerCanBattle` clause both return the same `false`, so their relative
+    position is unobservable BY CONSTRUCTION -- no input distinguishes the two
+    orderings. **Do not add an assertion that appears to check it; it would be
+    checking nothing.**
+
+**#### ZM_PlayerHome -- New Game entry + the warm interior tint (item 1, SHIPPED ZM-D-176/177)**
+
+USER RULING (ZM-D-176): a new run now begins at PlayerHome build **40** at tag
+`"Door"` (`ZM_GameStateManager::uNEW_GAME_BUILD_INDEX` /
+`szNEW_GAME_SPAWN_TAG`), and the bedroom is tinted slightly warm so it stops
+reading as the same greybox room as Aster's lab. ProfLab is left EXACTLY as it
+is. The tint is DERIVED at runtime from the entity name and is **not
+serialized**, so the change moves no scene bytes.
+
+- **T0 `ZM_Data` units (SHIPPED -- exactly 4)** in
+  `Tests/ZM_Tests_NewGameEntry.cpp`, pure and entity-free:
+  `NewGameEntry_DestinationIsThePlayerHomeDoor`,
+  `NewGameEntry_DiffersFromTheWhiteoutDestination` (build 40/`"Door"` vs the
+  whiteout's build 2/`"TownCenter"` -- the clause that keeps the two flows from
+  silently re-merging), `NewGameEntry_FrontEndRowMirrorsTheNewGameConstants`, and
+  `NewGameEntry_PlayerHomeConnectsBackToDawnmere`. **Nothing here re-spells 40 or
+  `"Door"`**: every clause reads the manager's constants and reconciles them
+  against the compiled world table, so a unit cannot compare a literal against
+  itself.
+  **★ THEIR BOUNDARY:** running before the initial scene loads, they cannot prove
+  the destination is REGISTERED (an unregistered index passes
+  `IsWarpDestinationValid`, is accepted, then parks forever in
+  `WAITING_FOR_SPAWN`) and cannot prove a real Enter on the title goes there.
+  That is `ZM_SaveContinue_Test`'s `AwaitPlayerHome` phase. **Their greenness is
+  not "New Game works".**
+- **T0 `ZM_WorldTraversal` units (SHIPPED -- exactly 3)** in
+  `Tests/ZM_Tests_PlayerHomeInterior.cpp`, mirroring the ProfLab file:
+  `PlayerHome_TintIsDistinctFromTheBlockoutGrey` (COMPUTES the separation between
+  the two shipped colours with the shipped measuring function against the shipped
+  `fZM_HUMAN_PALETTE_MIN_SEPARATION` = 0.15 margin -- it does not restate the
+  expected pairing, which could not red a drift),
+  `PlayerHome_BlockNamesAreTheTintedInventory` (the name predicate selects exactly
+  the seven shell blocks), and `PlayerHome_BlockoutGeometryIsTheAuthoredRoom`.
+  **★ THEIR BOUNDARY, stated by the file:** they prove the tint CONSTANT is warm,
+  slight and far from the grey. They cannot prove it reached a material (that is
+  `ZM_InteriorTint_Test`) and certainly cannot prove it reached a pixel (that is
+  `ZM_InteriorTintPixels_Test`). **Their greenness is not "the bedroom is
+  yellow".**
+- **P1 `ZM_InteriorTint_Test` (SHIPPED, headless-safe)** in
+  `Tests/ZM_AutoTests_InteriorTint.cpp`: `m_bRequiresGraphics = false`
+  (**deliberately**), max **600** frames, fixed dt 1/60, with a `Teardown` that
+  returns to FrontEnd.
+  **THE ONLY CI-VISIBLE PROOF THAT THE TINT REACHED ANYTHING**, and headless
+  deliberately: a skip counts as a PASS in `zm-tests`, so a graphics-required tint
+  test would be silent exactly where it is needed. It keys on the MATERIAL NAME
+  (`"ZM_Greybox"`) because `ZM_GreyboxVisual` is file-local to `Zenithmon.cpp` and
+  unnameable from a test TU -- the same idiom `ZM_RivalVesperAuthored_Test`
+  already runs headlessly, which is the evidence that `OnStart` really does build
+  its model and material on Null. Both build indices and both expected colours are
+  read from the compiled table and the shipped accessors; neither is re-spelled.
+  Three arms that make each other non-vacuous:
+  - **ARM 1** -- every one of PlayerHome's seven blockout materials carries the
+    tint (tolerance 1e-4: a compiled colour reaching a runtime material is a
+    float-noise claim).
+  - **ARM 2** -- every one of ProfLab's seven is EXACTLY the shipped blockout
+    grey, byte for byte. Exact equality deliberately: the ruling was that the lab
+    is left exactly as it is, which is a claim about bytes that did not move at
+    all, not bytes that moved a little.
+  - **ARM 3** -- the separation **between the two SAMPLES**, not between the two
+    constants. A clause measuring the constants would be the boot unit again, one
+    layer further from the truth; this one measures what the two scenes actually
+    put on their walls.
+
+    Delete the tint and arms 1+3 red while 2 stays green; paint everything and
+    arms 2+3 red while 1 stays green. **Neither mistake can pass.**
+  - **The anti-vacuity clause that licenses its `RequestSkip`:** each room's scan
+    must observe EXACTLY its seven blocks with zero overflow, and a truncated or
+    empty scan REDS. Without it, "every sampled material carries the tint" is
+    satisfied by sampling nothing. The failure text says so, and says that a zero
+    count on Null must be booked as a coverage boundary with an explicit skip --
+    **never left passing on an empty scan.**
+- **P1 `ZM_InteriorTintPixels_Test` (SHIPPED, windowed)** in
+  `Tests/ZM_AutoTests_PlayerHomeTintPixels.cpp`: `m_bRequiresGraphics = true`,
+  max **1,100** frames, fixed dt 1/60. **The only test in the game that reads a
+  PlayerHome pixel**, and honestly NOT the primary gate: the material ->
+  framebuffer path is shared with every other greybox body and already pinned by
+  `ZM_NpcRenderedPalette_Test` / `ZM_ShellLighting_Test`, and being
+  graphics-required it SKIPS-as-passes in `zm-tests`. **It must be RUN WINDOWED
+  and its numbers RECORDED BY HAND** (section 3's stdout hazard), or it has told
+  nobody anything. It dumps one swapchain TGA per room to
+  `Build/artifacts/zenithmon/visual_audit/`, touches NO graphics option
+  (auto-exposure runs as shipped, captured only after 120 frames of adaptation),
+  and derives every sample point and camera pose from the two placement headers as
+  PROPORTIONS, so the 16x12x3.0 m bedroom and the 20x16x3.5 m lab are framed
+  identically and the two measurements are comparable by construction.
+  - **The statistic is the floor patch's RED / BLUE ratio** -- a chromaticity
+    ratio, not a luminance, because exposure is a scalar that largely cancels, so
+    two rooms that each adapted to their own auto-exposure remain comparable.
+  - **ONE asserted property: the SIGNED separation** (PlayerHome MINUS ProfLab
+    >= **0.15**). A lab that rendered warmer than the bedroom goes negative and
+    fails. Calibrated on the first windowed run (2026-08-01): **1.3045** and
+    **1.0742**, an observed gap of **0.2303**. Those three figures were measured
+    OUT OF BAND off the two TGAs by averaging a floor band, not by the 9x9 patch
+    the code reads, so they corroborate the RELATIVE property and are NOT a
+    baseline for this probe's own OBSERVED line -- prefer the OBSERVED line.
+  - **0.15 is neither weakened nor tightened.** It already clears the observed gap
+    with ~1.5x headroom, and raising it to hug 0.2303 would make the clause a
+    tripwire for ordinary lighting drift, redding for a reason unrelated to the
+    tint.
+  - **A capture-sanity band (red/blue in [0.70, 3.00]) applied to BOTH rooms
+    IDENTICALLY, and it is NOT evidence of the tint.** It closes one real hole in
+    a difference-only check: if a framing regression put one room's patch on open
+    sky (strongly blue) the gap could widen and pass FALSELY. If a lighting
+    re-tune moves a room outside this band, WIDEN THE BAND -- these bounds track
+    lighting; the margin above does not.
+  - **★ ZM-D-177 RETRACTED THIS TEST'S ABSOLUTE BOUNDS AS A FALSE PREMISE.** Full
+    reasoning is recorded as the fifth pixel-test convention at the end of 5.7.
+    Short form: the retracted pair asserted "grey below 1.0, tint above 1.0",
+    which assumed albedo ordering survives to the framebuffer. It does not -- both
+    rooms measured ABOVE 1.0 -- so the bound would have failed on an untinted
+    room. **Do not add an absolute ratio back.**
+
+- **`ZM_Slice_Test` (NOT YET WRITTEN):** mini-playthrough new game -> Badge 1
   (CB_HumanSession-style flat action script + probe snapshots, ~4-6k frames,
   windowed). Runs at the gate via `--filter`; joins the batch only if it fits
-  the budget (section 6).
+  the budget (section 6). It is `Roadmap.md`'s fourth S8 item and cannot be
+  written until the three content items above it land.
 
 ### 5.9 S9/S10 -- world buildout
 
@@ -1566,7 +2015,12 @@ user-approved; this paragraph preserves the earlier planning boundary only.
 ## 8. The camera-clearance guards (ZM-D-173) and what they do NOT cover
 
 `Tests/ZM_AutoTests_CameraClearance.cpp` adds **two permanent P1 registrations**,
-taking the automated registry **51 -> 53**. Both load the COMMITTED Dawnmere
+taking the automated registry **51 -> 53** at ZM-D-173. (**That is a delta, not
+the current total: the registry is 56 as of ZM-D-177** -- S8's
+`ZM_ProfLabWarp_Test`, `ZM_InteriorTint_Test` and `ZM_InteriorTintPixels_Test`
+took it 53 -> 56, see 5.8. Count registrations from
+`grep -c ZENITH_AUTOMATED_TEST_REGISTER Tests/*.cpp`, never from a prose total.)
+Both load the COMMITTED Dawnmere
 against the REAL baked terrain, both run on the **Null** backend
 (`m_bRequiresGraphics = false`), and neither creates, moves or teleports anything.
 

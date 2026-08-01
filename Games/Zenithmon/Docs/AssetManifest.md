@@ -13,11 +13,14 @@ Scope.md (what is cut), TestPlan.md (determinism + generator test specs),
 BuildEnvironment.md (the tools build that runs the bake), CIPolicy.md
 (why CI never sees these files), Roadmap.md (S3/S4 stage gates).
 
-**Last updated:** 2026-07-21 (S6 COMPLETE. The S4 asset-generator contract remains
-unchanged: `ZM_BakeManifest` SHIPPED (ZM-D-085), the full-family S4 asset gate was
-SIGNED OFF (ZM-D-088), and all four families remain guarded and git-ignored.
-S6 added boot-authored menu/NPC scene content, documented in section 5; it
-produced no behaviour-graph or navmesh asset.)
+**Last updated:** 2026-08-01 (audited against HEAD `c9d64994`). The S4
+asset-generator contract remains unchanged: `ZM_BakeManifest` SHIPPED (ZM-D-085),
+the full-family S4 asset gate was SIGNED OFF (ZM-D-088), and all four generator
+families remain guarded and git-ignored. Since the previous 2026-07-21 (S6) pass
+the COMMITTED inventory grew twice: `ZM_TrainerChallenge.bgraph` became the first
+real behaviour-graph output (ZM-D-155, git-ignored like every other bake), and
+`Assets/Scenes/ProfLab.zscen` became the FIFTH tracked scene (ZM-D-174). Sections
+0.1, 0.2 and 5 carry those changes.
 
 ---
 
@@ -34,12 +37,13 @@ pipeline -- the "asset team" is generator/authoring code
 (`Games/Zenithmon/Tools/` for the S4 families and
 `Source/World/ZM_TerrainAuthoring` for S3 terrain).
 
-**TWO deliberate exceptions, both added by SC1b (ZM-D-145 / ZM-D-147):**
+**TWO deliberate exceptions, added by SC1b (ZM-D-145 / ZM-D-147) and widened to
+every scene by ZM-D-148:**
 
 | Committed file | Size | Why it is tracked |
 |---|---|---|
 | `Assets/Navmesh/Dawnmere.znavmesh` | ~365 KB | Loadable with NO GPU, NO terrain component and NO other asset — which is what makes navigation CI-verifiable for the first time. Byte-deterministic across bakes. |
-| `Assets/Scenes/*.zscen` (all four) | 1.8–27 KB each | Scene content, loadable on a fresh checkout with no bake. `Dawnmere.zscen` matters most: a Null/CI boot never authors it (the Dawnmere block is windowed + all-warm gated), so without it CI has no Dawnmere scene and the authored navmesh component has no gate. |
+| `Assets/Scenes/*.zscen` (all **five**) | 1.6–27 KB each | Scene content, loadable on a fresh checkout with no bake. `Dawnmere.zscen` matters most: a Null/CI boot never authors it (the Dawnmere block is windowed + all-warm gated), so without it CI has no Dawnmere scene and the authored navmesh component has no gate. The five are `FrontEnd` (27,125 B), `Battle` (4,965 B), `Dawnmere` (4,176 B), `PlayerHome` (1,800 B) and `ProfLab` (1,590 B, added by ZM-D-174). |
 
 **Scene bytes are boot-shape-independent (ZM-D-148), which is what makes this
 safe.** Scenes used to bake process-global entity SLOT indices into their file
@@ -49,6 +53,15 @@ too. The writer now emits dense authoring-order indices, pinned by
 `Scene::SceneBytesAreIndependentOfSlotAllocation`. If a scene file ever shows up
 modified in `git status` after a boot, that is a REGRESSION of that property —
 investigate it rather than just re-committing.
+
+**One KNOWN violation of that rule is open, and it is NOT slot allocation.** A
+windowed tools boot leaves `Assets/Scenes/Dawnmere.zscen` modified by exactly
+**2 bytes** (offsets 3627 / 3635 — the low-order mantissa of `Npc_RivalVesper`'s
+rotation quaternion). ZM-D-174 ran a control at clean HEAD that reproduced the
+same hash, so it PRE-DATES that work; the cause is undiagnosed and tracked as
+**Q-2026-08-01-002** in [Questions.md](Questions.md). Do not read a dirty
+`Dawnmere.zscen` as evidence that your own change broke boot-shape independence
+until you have checked it against that question.
 
 Everything else — creatures, humans, buildings, props, terrain (~641 MB) —
 stays git-ignored. Adopting git-LFS for the heavy families is a separate, still
@@ -65,7 +78,7 @@ open user decision.
 | Props | ~25 models (incl. ~6 battle-dome biome dressing sets) | ZM_PropGen | S4 |
 | Terrain sets | 1 per outdoor scene, ~25 sets | ZM_TerrainAuthoring (engine E1 + E2 shipped) | S3 (three measurement terrain families complete; only Dawnmere has a preview scene) -> S9/S10 (all) |
 | Scenes | ~40 .zscen (boot-authored via AddStep_*) | ZM_SceneAuthoring from ZM_WorldSpec | S0 (FrontEnd) onward |
-| Behaviour graphs | Future .bgraph glue graphs (none shipped through S6) | ZM_GraphAuthoring (Zenith_GraphBuilder DSL) | S7 onward (explicitly deferred from S6) |
+| Behaviour graphs | **1 shipped** `.bgraph` (`game:Graphs/ZM_TrainerChallenge.bgraph`); more are future glue graphs | ZM_GraphAuthoring (Zenith_GraphBuilder DSL) | S7 item 3 SC7 (ZM-D-155); was deferred from S6 |
 
 ### 0.3 What is deliberately NOT an asset
 
@@ -383,7 +396,8 @@ or dressed scenes.
   physics on a graphics boot. First load and reload each generated/uploaded
   exactly **200,159 blades from 5,133 triangles**, then FrontEnd teardown
   cleared all Dawnmere grass state.
-- **Scene-owned traversal pair + feet marker:** the ignored `Dawnmere.zscen`
+- **Scene-owned traversal pair + feet marker:** the committed `Dawnmere.zscen`
+  (tracked since ZM-D-148; it was an ignored output when this row was written)
   authors `TownCenterSpawn` with order-105 `ZM_SpawnPoint`, tag `TownCenter`,
   and transform **(512, 25.99055, 480)**. Spawn-marker transforms denote feet,
   not capsule centres. It also authors a `Player` at the scale-derived centre
@@ -469,40 +483,81 @@ recipes.
 
 ---
 
-## 5. Scenes and graphs (boot-authored, also git-ignored)
+## 5. Scenes and graphs (boot-authored; the five shipped scenes are COMMITTED)
 
 ~40 .zscen (0 FrontEnd, 1 Battle, 2-12 towns, 20-34 routes + Victory Road,
 40+ interiors, 95 Tower) are authored from ZM_WorldSpec via shared AddStep_*
-helpers. Future .bgraph glue graphs use ZM_GraphAuthoring, but none exists
-through S6: the closed NPC-role dispatch is C++, with graph authoring deferred
-to S7. Generated scenes follow the same rule as everything else under Assets/:
-regenerated by tools builds, never committed. `FrontEnd.zscen` (build index 0)
+helpers. `.bgraph` glue graphs use ZM_GraphAuthoring; **one exists** —
+`game:Graphs/ZM_TrainerChallenge.bgraph`, written by the tools boot's
+`AddStep_GraphBuild` and loaded at runtime by
+`ZM_Interactable::EnsureTrainerChallengeGraph` (ZM-D-155). It is an ordinary
+git-ignored bake. The remaining NPC-role dispatch is still C++.
+
+**Scenes are the exception to the never-commit rule (section 0.1).** The five
+authored so far — `FrontEnd`, `Battle`, `Dawnmere`, `PlayerHome`, `ProfLab` —
+are TRACKED (ZM-D-147 / ZM-D-148 / ZM-D-174); scenes not yet authored will be
+regenerated by tools builds as before. `FrontEnd.zscen` (build index 0)
 authors the non-transient `ZM_GameStateRoot` with order-104
 `ZM_GameStateManager` plus a full-screen black order-10000 `WarpFade` UIOverlay;
 runtime `OnStart` makes that root persistent and retires duplicate managers.
-It also authors `ZM_MenuRoot`; its S6 root menu entries are exactly **Party,
-Bag, Dex, Exit**. No Box entry is authored in S6; Box is deferred to S7.
+It also authors `ZM_MenuRoot`. Its root menu entries were the four S6 ones
+(Party, Bag, Dex, Exit); S7 item 2 SC4 (ZM-D-140) INSERTED **Save** and **Quit**
+before Exit, so the shipped inventory is now the **six** of
+`ZM_MENU_ROOT_ITEM` — Party, Bag, Dex, Save, Quit, Exit — plus the S7 SC5 title
+controls (`Continue` / `New Game`) sharing the same persistent root. Still no
+Box entry: ZM-D-165 RE-DEFERRED the Box screen from S7 to **S9**.
 `Dawnmere.zscen` (build index 2) authors the
 exact `TownCenter` and `FromHome` feet markers, scene-owned Player/camera, and
 live home-door edge described above. `PlayerHome.zscen` (build index 40) is
 terrain-independent and authored on every tools boot, including headless: a
 collidable greybox shell, scene-owned Player/camera, `Door` feet marker at
 `(0,0,3.5)`, and `PlayerHomeExitTrigger` at `(0,1,5.2)` targeting
-**build 2 / `FromHome`**. All three scenes are ignored outputs; their real
-Dawnmere -> PlayerHome -> Dawnmere route is covered by the S3 P1. The measured
+**build 2 / `FromHome`**. ZM-D-176 also made that `Door` marker the **New Game
+entry point** (`ZM_GameStateManager::uNEW_GAME_BUILD_INDEX` = 40,
+`szNEW_GAME_SPAWN_TAG` = `"Door"`), and tinted the seven shell blocks warm —
+see the note under `ProfLab.zscen` below. `ProfLab.zscen` (build index 41,
+ZM-D-174) is likewise terrain-independent and authored on every tools boot: the
+same seven-block greybox shell at 20 x 16 m (vs PlayerHome's 16 x 12 m),
+`ProfLabDoorSpawn` tagged `Door`, a scene-owned Player and `ProfLabCamera`, all
+read from `Source/World/ZM_ProfLabPlacement.h`. **It carries NO
+`ZM_WarpTrigger` on purpose** — `ZM_WorldSpec` declares ProfLab -> Dawnmere via
+tag `FromLab`, but `Dawnmere.zscen` authors no such marker, so an exit
+configured today would pass `IsWarpDestinationValid` and then park the warp
+machine in `WAITING_FOR_SPAWN` forever. The exit, the `FromLab` marker and the
+Dawnmere-side Lab door land together in a later sub-commit. All five scenes are
+COMMITTED (section 0.1); the real Dawnmere -> PlayerHome -> Dawnmere route is
+covered by the S3 P1. The measured
 Thornacre and Route1 terrain families do **not** imply that their scenes,
 trees, dressing, traversal, or gameplay content exist.
 
-S6 extends `Dawnmere.zscen` with exactly four greybox NPC entities:
+**The PlayerHome tint is DERIVED AT RUNTIME, not baked and not serialized
+(ZM-D-176).** `ZM_GreyboxVisual` (order 107) asks
+`ZM_IsPlayerHomeBlockName(entityName)` at `OnStart` and substitutes
+`ZM_GetPlayerHomeInteriorTintColour()` (0.61, 0.57, 0.43) for the shared
+`ZM_GetHumanPaletteFallbackColour()` grey. No `.ztxtr`, `.zmtrl` or `.zscen`
+byte encodes it — the seven blockout entities are byte-identical to their
+untinted selves, which is why ZM-D-176 moved no `PlayerHome.zscen` byte.
+`fZM_GREYBOX_FALLBACK_*` is untouched and still worn by ProfLab's seven blocks,
+Dawnmere's blockout and every prop.
+
+S6 extends `Dawnmere.zscen` with four greybox NPC entities:
 `Npc_Villager`, `Npc_TradePostClerk`, `Npc_Caretaker`, and `Npc_Wanderer`.
+(TWO MORE were added later by S7: `Npc_Warden`, the story-gated lane warden
+(item 2 SC1 / ZM-D-137), and the trainer `Npc_RivalVesper` (item 3 SC8 /
+ZM-D-156). The current inventory is the **six** rows of
+`Source/World/ZM_DawnmerePlacement.cpp`'s anchor table, not four --
+`ZM_DAWNMERE_NPC_ID` in the matching header enumerates six ids before
+`ZM_DAWNMERE_NPC_COUNT`, and a `static_assert` on the deduced table bound holds
+the two in lockstep.)
 The Villager, Trade Post clerk, and Caretaker are stationary. The Wanderer is
 a dynamic capsule with a deterministic two-point north/south patrol at
 `x=540`, `z=476..484`; its authored component data carries the waypoints and
 tuning, while runtime cursor/dwell state is not an asset. The patrol uses no
-RNG, halts for its own active dialogue, and resumes afterward. S6 emits no
-`.bgraph` or navmesh file: `ZM_GraphAuthoring` and terrain-backed navmesh
-integration are both S7 work, and the shipped patrol is serialized scene data
-rather than a substitute graph/navmesh asset.
+RNG, halts for its own active dialogue, and resumes afterward. S6 itself emitted
+no `.bgraph` and no navmesh file — the shipped patrol is serialized scene data,
+not a substitute graph/navmesh asset. Both landed afterwards: the committed
+`Assets/Navmesh/Dawnmere.znavmesh` at ZM-D-147, and the single
+`ZM_TrainerChallenge.bgraph` at ZM-D-155.
 
 `ZM_Interactable` scene serialization is v2: patrol enablement, waypoint count,
 points and tuning persist as authored configuration. A v1 component stream

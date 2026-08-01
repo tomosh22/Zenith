@@ -5,7 +5,7 @@
 is authored here and becomes binding as each stage implements it
 **Author:** Design (Claude), from the user-approved plan
 (`zenithmon-pok-mon-nested-puddle.md`, locked 2026-07-08)
-**Last updated:** 2026-07-09 (S0)
+**Last updated:** 2026-08-01 (doc audit only; last content pass 2026-07-09, S0)
 **Scope authority:** [Scope.md](Scope.md) is the binding in/out gate. This
 document details the IN column; it cannot re-add anything Scope cuts.
 **Update policy:** updated per phase (stage gates S1, S8, S9/S10, S11). Names
@@ -76,8 +76,8 @@ at the bottom, and you finish at the zenith.
 
 Build indices are locked by the plan: 0 FrontEnd, 1 Battle, 2-12
 towns/cities, 20-34 routes + Victory Road, 40+ interiors, 95 Battle Tower.
-`ZM_WorldSpec` (S1) encodes this table; its integrity tests enforce that
-every connection, spawn tag, gym, and encounter row below resolves.
+`ZM_WorldSpec` encodes only the SUBSET of this table that has shipped -- 8 rows
+as of 2026-08-01 (FrontEnd, Battle, Dawnmere, Thornacre, Route 1, Player's Home, Aster's Lab, Thornacre Gym) -- and its integrity tests bind only those rows. Every other row below is DESIGN INTENT, not encoded content.
 
 #### Core scenes
 
@@ -235,7 +235,7 @@ One-line identities:
 ## 4. Starters
 
 Three 3-stage families, gift-only (RARE tier), handed out in Aster's lab.
-Vesper takes the family strong against the player's pick. The classic
+Vesper takes the family strong against the player's pick -- **DESIGN INTENT, NOT SHIPPED:** the counter column exists (`ZM_StarterChoice`'s `m_eCounteredBy` / `ZM_ResolveCounterStarterSpecies`) but nothing consumes it, and Vesper's `ZM_TrainerData` row is a fixed L5 Kindlet; booked as debt against S8 in Shortfalls 1.8. The classic
 grass/fire/water triangle maps to Grass/Fire/Water; each family gains a
 second type at its final stage.
 
@@ -444,11 +444,11 @@ numbers.
 | Post-game | region-wide | Champion rematch L65-70; legendaries L60-70 | route wilds +10 |
 | Battle Tower | Zenith Gate | all battles clamped to L50 | -- |
 
-**Rival battle beats (6):** Route 1 (L5, scripted first battle), Tidegate
+**Rival battle beats (6) -- DESIGN INTENT, not shipped state:** Route 1 (L5,
+scripted first battle; **Route 1 is not authored, so what actually ships today is this battle placed in Dawnmere -- ZM-D-156, with the re-placement debt booked in Shortfalls 1.8-1**), Tidegate
 docks (~L21, pre-Gym 3), Milldown Crossing (~L30), Route 11 snowline (~L40,
 Vesper's first on-screen loss to the player that visibly lands), Highcrown
-Pass gate (~L50), Zenith Gate steps (~L54, final -- fought as equals before
-the League doors). Post-game: standing Tower-lobby rematch.
+Pass gate (~L50), Zenith Gate steps (~L54, final -- fought as equals before the League doors). Post-game: standing Tower-lobby rematch.
 
 **Post-game:** Mom's trainer-card scene at home unlocks the Champion rematch
 row; Zenaris/Nadirath become approachable (Highcrown summit / Route 10 bog

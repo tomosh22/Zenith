@@ -13,7 +13,10 @@ AssetManifest.md (why the runner has no assets).
 **Status:** LIVING -- update whenever a gate is added/retired or branch
 protection changes.
 
-**Last updated:** 2026-07-21 (S7 item 1 SC2 schema-v1 codec freeze -- ZM-D-136).
+**Last updated:** 2026-08-01 (doc audit at `c9d64994`: section 1's step list
+re-verified line-by-line against `.github/workflows/zm-tests.yml` -- the Null
+build step was missing, the DLL-copy and boot-check steps described a
+`vulkan-1.dll` copy and a `--headless` flag that the workflow does not use).
 
 ---
 
@@ -27,31 +30,47 @@ pattern), active from S0. Required check name: **`zm-tests`**.
 - **Concurrency:** superseded PR pushes cancel the in-flight run
   (`cancel-in-progress` on pull_request only); master pushes always
   complete.
-- **Steps:**
+- **Steps** (verified against the YAML 2026-08-01):
   1. Checkout.
   2. `./.github/actions/zenith-setup` -- provisions MSBuild, vcpkg,
      Vulkan SDK **1.3.290.0**, Slang **2026.1**.
   3. `Build/regen.ps1 -UseDotnet` (regenerate-first policy; generated files
      are git-ignored so a fresh checkout has none).
   4. Build `Games\Zenithmon\zenithmon_win64.sln /t:Zenithmon`
-     `Vulkan_vs2022_Debug_Win64_True`.
-  5. Build `D3D12_vs2022_Debug_Win64_False` -- the backend-neutrality
-     LINK proof (null backend; no rendering).
-  6. Copy runtime DLLs into the exe dir (full Slang tree +
-     vulkan-1.dll -- see BuildEnvironment.md section 5).
-  7. Headless boot check: `zenithmon.exe --list-automated-tests
-     --skip-tool-exports --skip-unit-tests --headless` must exit 0.
-  8. **Boot unit tests** (`Tools/run_unit_gate.ps1 -Exe <zenithmon.exe>
-     -Baseline N`): boots headless with tool-exports ON, runs the ZENITH_TEST
-     suite (engine units + Zenithmon `ZM_*` cases), and fails on any failure or a
-     count != baseline. Steps 7 and 9 both pass `--skip-unit-tests`, so this is
-     the ONLY step that runs the unit suite -- the S1+ data-core gate backbone.
-  9. `zenith.bat test Zenithmon --headless --results-dir
-     Build/artifacts/test_results/zenithmon` (the automated/P1 suite).
-  10. Upload the per-test JSON as artifact **`zm-test-results`**
+     `Vulkan_vs2022_Debug_Win64_True` -- a COMPILE proof only. **It is never
+     executed on the runner** (a Vulkan boot hangs in
+     `vkEnumeratePhysicalDevices` on a GPU-less box).
+  5. Build `Null_vs2022_Debug_Win64_True` -- **THE headless/CI build. Every
+     step below runs THIS exe** (`Build/output/win64/null_vs2022_debug_win64_true/`).
+     Headless is a build config, not a flag.
+  6. Build `D3D12_vs2022_Debug_Win64_False` -- the backend-neutrality
+     LINK proof (reserved null backend; no rendering).
+  7. Heal runtime DLLs in the Null exe dir via
+     `Repair-ZenithRuntimeDlls` from `Build/zenith_buildsystem.psm1` -- the full
+     Slang dependency tree (the post-build event copies only `slang.dll`) plus
+     the assimp runtime tree. **No `vulkan-1.dll`:** the Null backend never
+     loads a Vulkan loader. A first build in a new config leaves these absent
+     and the exe dies with STATUS_DLL_NOT_FOUND (0xC0000135) before `main()` --
+     an empty log that reads as a build failure.
+  8. Boot check: `zenithmon.exe --list-automated-tests --skip-tool-exports
+     --skip-unit-tests` must exit 0. (No `--headless` -- that flag does not
+     exist; the Null build is what makes it headless.)
+  9. **Boot unit tests** (`Tools/run_unit_gate.ps1 -Exe <Null zenithmon.exe>
+     -Baseline N -TimeoutSec 600`): boots the Null exe with tool-exports ON,
+     runs the ZENITH_TEST suite (engine units + Zenithmon `ZM_*` cases), and
+     fails on any failure or a count != baseline. Steps 8 and 10 both pass
+     `--skip-unit-tests`, so this is the ONLY step that runs the unit suite --
+     the S1+ data-core gate backbone. **`-TimeoutSec` is load-bearing:** the
+     script's 180 s default sits inside the ZM suite's measured runtime, and
+     losing that race is reported as "no 'Unit tests complete' line in boot
+     output", which reads like a crash (ZM-D-163).
+  10. `zenith.bat test Zenithmon --headless --results-dir
+     Build/artifacts/test_results/zenithmon` (the automated/P1 suite; the path
+     is the workflow's `ZM_RESULTS_DIR` env var).
+  11. Upload the per-test JSON as artifact **`zm-test-results`**
      (`if: always()` -- results survive red runs).
 
-**Unit-test baseline ratchet:** step 8's `-Baseline` is the exact registered
+**Unit-test baseline ratchet:** step 9's `-Baseline` is the exact registered
 unit-test count of `zenithmon.exe`: the **combined engine + Zenithmon** suite. It is
 deliberately distinct from the **engine-only reference** owned by `engine-gate` and
 the default invocation of `Tools/run_unit_gate.ps1`; the two are not interchangeable.
@@ -75,15 +94,20 @@ Q-2026-07-10-004.
 Two hard facts about GitHub-hosted `windows-latest` runners shape
 everything:
 
-1. **No GPU / no Vulkan ICD.** The engine boots with `--headless`
-   (short-circuits Flux init so `vkEnumeratePhysicalDevices` never runs);
-   tests tagged `m_bRequiresGraphics=true` are skipped by the harness
-   (skip counts as pass). Windowed/graphics tests therefore run LOCALLY at
-   stage gates, never in CI.
-2. **No baked assets.** Everything under `Games/Zenithmon/Assets/` is
-   git-ignored (AssetManifest.md), so a fresh CI checkout has NO Assets/
-   directory. Every asset/scene-dependent automated test must exists-guard
-   and `RequestSkip` (the commit-`94813489` pattern).
+1. **No GPU / no Vulkan ICD.** The runner executes the `Null_*` BUILD (there is
+   no `--headless` runtime flag): it compiles the GPU-less `Zenith/Null` backend
+   and creates its window hidden, so no Vulkan instance is created and
+   `vkEnumeratePhysicalDevices` never runs. Every render path still RUNS against
+   no-op backend calls -- only tests tagged `m_bRequiresGraphics=true`, i.e.
+   those that genuinely READ PIXELS, are skipped by the harness (skip counts as
+   pass). Pixel-reading tests therefore run LOCALLY at stage gates, never in CI.
+2. **Almost no baked assets.** Everything under `Games/Zenithmon/Assets/` is
+   git-ignored (AssetManifest.md) **except six tracked files** -- five
+   `Assets/Scenes/*.zscen` (ZM-D-148) and `Assets/Navmesh/Dawnmere.znavmesh`
+   (ZM-D-147). Those six are precisely what lets CI verify scene content and
+   navigation with no GPU and no bake. Every automated test needing anything
+   ELSE (meshes, textures, anims, terrains) must exists-guard and `RequestSkip`
+   (the commit-`94813489` pattern).
 
 Consequence: **the CI backbone is the headless pure-logic suites** -- boot
 unit tests and, as stages land, battle engine / data-table / stats / AI /
@@ -94,7 +118,7 @@ constraint on all new tests, not an accident (see TestPlan.md).
 
 **S7 item 1 SC2 snapshot (2026-07-21; historical, not a current baseline -- relabelled
 2026-08-01, when it was still headed "Current" and contradicting the paragraph above that
-says this document quotes no live counts. The registry has since moved 36 -> 53 and both
+says this document quotes no live counts. The registry has since moved 36 -> 56 and both
 unit figures by several hundred; the live values are the pins):** the automated registry
 then held **36** P1 tests. The headless gate of that day reported **36 passed / 0
 failed**: three tests executed semantically and 33 graphics-required tests took
@@ -206,9 +230,10 @@ open.
 2. **Reproduce locally first:** `zenith test Zenithmon --headless` mirrors the
    CI automated/P1 step (BuildEnvironment.md section 4). For a red UNIT test,
    reproduce the boot gate instead -- `Tools/run_unit_gate.ps1 -Exe
-   <zenithmon.exe> -Baseline <N>`, or boot `zenithmon.exe --list-automated-tests
-   --headless` WITHOUT `--skip-unit-tests` -- because `zenith test` skips unit
-   tests. If green locally but red in CI, suspect the two runner constraints
+   <Null zenithmon.exe> -Baseline <N> -TimeoutSec 600`, or boot that same Null
+   exe with `--list-automated-tests` WITHOUT `--skip-unit-tests` -- because
+   `zenith test` skips unit tests. (Both forms need the `Null_*` exe:
+   `zenith build Zenithmon --headless`.) If green locally but red in CI, suspect the two runner constraints
    (section 2) -- an asset-dependent test missing its exists-guard/RequestSkip,
    or a graphics dependency missing its `m_bRequiresGraphics` tag.
 3. **Get data, don't theorize:** pull the `zm-test-results` artifact and

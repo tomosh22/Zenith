@@ -27,10 +27,16 @@ Games/Zenithmon/
   Components/                    # ECS-facing game components
   Source/Battle/                 # Headless deterministic battle engine
   Source/Data/                   # Compiled const gameplay tables + pure formulas
+  Source/World/                  # Scene placement + terrain/encounter authoring --
+                                 #   ZM_DawnmerePlacement.{h,cpp},
+                                 #   ZM_PlayerHomePlacement.h, ZM_ProfLabPlacement.h
+                                 #   (the compiled anchors each scene is authored from)
+  Source/UI/, Source/Save/, ...  # + Core, Gen, Graph, Interaction, Nav, Party,
+                                 #   Shop, CareCenter -- by-value, non-ECS logic
   Tests/ZM_Tests_*.cpp           # Boot, data, stats, battle, and integrity units
   Tests/ZM_AutoTests_*.cpp       # Harness-managed automated/windowed tests
   Assets/Scenes/                 # BOOT-AUTHORED (see below) and COMMITTED --
-                                 #   all four scenes are tracked (ZM-D-148)
+                                 #   all FIVE scenes are tracked (ZM-D-148/174)
   Assets/Navmesh/                # Dawnmere.znavmesh -- COMMITTED, CI-loadable
   Docs/                          # Cross-session knowledge base (Status/Roadmap/GDD/...)
   CLAUDE.md                      # This file
@@ -53,26 +59,31 @@ msbuild Games\Zenithmon\zenithmon_win64.sln /t:Zenithmon /p:Configuration=Vulkan
 Games\Zenithmon\Build\output\win64\vulkan_vs2022_debug_win64_true\zenithmon.exe
 ```
 
-## First-run scene caveat (IMPORTANT)
+## Scene authoring + committed assets (IMPORTANT)
 
-`Assets/Scenes/FrontEnd.zscen` is **not checked in** -- it is authored on boot by
-`Project_RegisterEditorAutomationSteps` (a **tools-only** function) and saved via
-`AddStep_SaveScene`. Because that function is compiled out of non-tools builds:
+**SIX assets ARE committed** (verify with `git ls-files Games/Zenithmon/Assets`):
+`Assets/Navmesh/Dawnmere.znavmesh` (ZM-D-147) and all **five**
+`Assets/Scenes/*.zscen` -- `Battle`, `Dawnmere`, `FrontEnd`, `PlayerHome`,
+`ProfLab` (the fifth added by ZM-D-174) (ZM-D-148). `.gitignore` re-includes
+`**/*.zscen` and `**/*.znavmesh` at any depth, which is what lets CI verify
+navigation and scene content with no GPU and no bake. **On a normal clone you
+need no bake step: the committed bytes are what the game loads**, in `_True`,
+`_False` and Android builds alike.
 
-* Your **first build + run must be a `*_True` config** (e.g.
-  `Vulkan_vs2022_Debug_Win64_True`). That boot authors and saves `FrontEnd.zscen`.
-* Thereafter, `*_False` and Android builds **load** the baked `FrontEnd.zscen`.
+Scenes are AUTHORED by `Project_RegisterEditorAutomationSteps` -- a
+**tools-only** function, compiled out of non-tools builds -- and saved via
+`AddStep_SaveScene`. So if you ever need to REGENERATE them (a deliberate
+re-author, not routine work):
 
-If a `_False` build shows an empty scene, run a `_True` build once to bake it.
-
-**Five assets ARE committed:** `Assets/Navmesh/Dawnmere.znavmesh` (ZM-D-147) and
-all four `Assets/Scenes/*.zscen` (ZM-D-148). They are what let CI verify
-navigation and scene content with no GPU and no bake. The navmesh and
-`Dawnmere.zscen` are re-authored only by a **windowed** tools boot, and Dawnmere
-additionally needs every terrain recipe already warm -- so on a fresh clone it
-takes **two** `_True` boots to regenerate them (boot 1 bakes terrain, boot 2
-authors Dawnmere). You do not normally need to: the committed bytes are what the
-game loads.
+* Only a **`*_True` config** (e.g. `Vulkan_vs2022_Debug_Win64_True`) can author
+  a scene at all. A `_False` boot can only load.
+* The navmesh and `Dawnmere.zscen` additionally need a **windowed** boot, and
+  Dawnmere needs every terrain recipe already warm -- so on a fresh clone it
+  takes **two** `_True` boots to regenerate them (boot 1 bakes terrain, boot 2
+  authors Dawnmere).
+* Dawnmere's re-author is gated behind an explicit authoring mode
+  (`sceneAuthoring=AUTHOR_DAWNMERE`); a `DEFERRED` boot silently authors nothing
+  and still looks successful.
 
 Scene bytes are boot-shape-independent (dense authoring-order file indices), so a
 boot must NOT leave a scene modified in `git status`. If one ever does, that is a
