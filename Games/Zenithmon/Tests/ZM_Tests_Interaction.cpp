@@ -1660,9 +1660,7 @@ namespace
 // tuning change to either lands here rather than in a comment.
 ZENITH_TEST(ZM_Interaction, HomeBlockoutSatisfiesCameraClearance)
 {
-	const float fHalfExtent = ZM_PlayerController::CalculateCapsuleHalfExtent(
-		Zenith_Maths::Vector3(fZM_DAWNMERE_HUMAN_SCALE_X,
-			fZM_DAWNMERE_HUMAN_SCALE_Y, fZM_DAWNMERE_HUMAN_SCALE_Z));
+	const float fHalfExtent = fZM_HUMAN_BODY_HALF_HEIGHT;
 	ZENITH_ASSERT_EQ_FLOAT(fHalfExtent, 0.9f, 1.0e-4f,
 		"the clearance contract is stated against a 0.9 m capsule half-extent");
 

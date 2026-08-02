@@ -530,11 +530,9 @@ namespace
 				g_xEngine.Scenes().GetPersistentScene());
 			Zenith_Maths::Vector3 xMarkerFeet(0.0f);
 			xSpawnEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xMarkerFeet);
-			const float fCapsuleHalfExtent =
-				ZM_PlayerController::CalculateCapsuleHalfExtent(xPlayer.m_xScale);
+			const float fCapsuleHalfExtent = fZM_HUMAN_BODY_HALF_HEIGHT;
 			const Zenith_Maths::Vector3 xExpectedCenter =
-				ZM_GameStateManager::CalculateSpawnCenter(
-					xMarkerFeet, xPlayer.m_xScale);
+				ZM_GameStateManager::CalculateSpawnCenter(xMarkerFeet);
 			const Zenith_Maths::Vector3 xBodyPosition =
 				g_xEngine.Physics().GetBodyPosition(xPlayer.m_pxCollider->GetBodyID());
 			const Zenith_Maths::Vector3 xLinearVelocity =
@@ -875,7 +873,7 @@ namespace
 					}
 					xSpawn.GetComponent<Zenith_TransformComponent>().GetPosition(xFeet);
 					const Zenith_Maths::Vector3 xExpected =
-						ZM_GameStateManager::CalculateSpawnCenter(xFeet, xPlayer.m_xScale);
+						ZM_GameStateManager::CalculateSpawnCenter(xFeet);
 					if (!g_bHomeInitialFadeOutSeen || !g_bHomeInitialOpaqueLoadSeen
 						|| !g_bHomeInitialCameraBarrierSeen || !g_bHomeInitialFadeInSeen
 						|| g_xHomeFrontEndScene.IsValid()
@@ -1126,7 +1124,7 @@ namespace
 					}
 					xSpawn.GetComponent<Zenith_TransformComponent>().GetPosition(xFeet);
 					const Zenith_Maths::Vector3 xExpected =
-						ZM_GameStateManager::CalculateSpawnCenter(xFeet, xPlayer.m_xScale);
+						ZM_GameStateManager::CalculateSpawnCenter(xFeet);
 					const Zenith_PhysicsBodyID xBody = xPlayer.m_pxCollider->GetBodyID();
 					if (!g_bHomeDoorInputMotionSeen || !g_bHomeDoorCollisionSeen
 						|| !g_bHomeDoorFadeOutSeen || !g_bHomeDoorOpaqueLoadSeen
@@ -1325,7 +1323,7 @@ namespace
 					{
 						xSpawn.GetComponent<Zenith_TransformComponent>().GetPosition(xFeet);
 						const Zenith_Maths::Vector3 xExpected =
-							ZM_GameStateManager::CalculateSpawnCenter(xFeet, xPlayer.m_xScale);
+							ZM_GameStateManager::CalculateSpawnCenter(xFeet);
 						const Zenith_PhysicsBodyID xBody = xPlayer.m_pxCollider->GetBodyID();
 						g_bDawnmereReturnPlacementResetSeen =
 							glm::length(xPlayer.m_xPosition - xExpected) <= fPOSITION_EPSILON
@@ -1385,7 +1383,7 @@ namespace
 					}
 					xSpawn.GetComponent<Zenith_TransformComponent>().GetPosition(xFeet);
 					const Zenith_Maths::Vector3 xExpected =
-						ZM_GameStateManager::CalculateSpawnCenter(xFeet, xPlayer.m_xScale);
+						ZM_GameStateManager::CalculateSpawnCenter(xFeet);
 					const Zenith_PhysicsBodyID xBody = xPlayer.m_pxCollider->GetBodyID();
 					const Zenith_Maths::Vector3 xPlayerDelta =
 						xPlayer.m_xPosition - xExpected;
@@ -1420,9 +1418,9 @@ namespace
 						// bytes, so sharing ZM_GetDawnmereFromHomeSpawnFeet() here
 						// would compare the authoring constants against themselves
 						// and stop proving that the scene was re-authored at all.
-						// Observed on the regenerated heightfield, 2026-07-31.
+						// Observed on the divisor-4 collision mesh, 2026-08-02.
 						|| glm::length(xFeet - Zenith_Maths::Vector3(
-							384.0f, 26.076151f, 468.0f)) > fPOSITION_EPSILON
+							384.0f, 26.542120f, 468.0f)) > fPOSITION_EPSILON
 						|| !bPlayerContactSettled || !bBodyContactSettled
 						|| glm::length(g_xEngine.Physics().GetLinearVelocity(xBody))
 							> fVELOCITY_EPSILON

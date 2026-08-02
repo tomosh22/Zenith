@@ -5,8 +5,10 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "ZenithECS/Zenith_Entity.h"
 
-// Terrain-local owner of Zenithmon's rendered Dawnmere grass. This is only the
-// rendering bridge; S5 owns encounter sampling and all tall-grass gameplay.
+// Terrain-local owner of Zenithmon's rendered Dawnmere TALL GRASS. This is the
+// rendering bridge for the Pokemon-style encounter mechanic; S5 owns encounter
+// sampling and all tall-grass gameplay. Blade height is visual presentation only:
+// the shared painted density map remains the gameplay authority.
 class ZM_TerrainGrass
 {
 public:
@@ -49,7 +51,7 @@ public:
 private:
 	static constexpr uint32_t uGRASS_RETRY_FRAME_CAP = 300;
 	// Blades/m² multiplier at generation (× GrassConfig::uBLADES_PER_SQM = 50).
-	// 0.70 → ~35 blades/m² in fully-painted lawn; with the per-region chunk LOD in
+	// 0.70 → ~35 blades/m² in fully-painted TALL GRASS; with the per-region chunk LOD in
 	// Flux_Grass, grass near the camera now renders at LOD0 (full density) rather
 	// than the whole terrain collapsing to one distant LOD.
 	static constexpr float fGRASS_DENSITY_SCALE = 0.70f;

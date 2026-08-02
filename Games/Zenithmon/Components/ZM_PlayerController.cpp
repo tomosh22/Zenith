@@ -3,6 +3,7 @@
 #include "Zenithmon/Components/ZM_PlayerController.h"
 
 #include "Zenithmon/Components/ZM_GameStateManager.h"
+#include "Zenithmon/Source/World/ZM_HumanBody.h"   // THE body contract (no longer scale-derived)
 #include "Zenithmon/Source/ZM_InputActions.h"
 
 #include "Core/Zenith_Engine.h"
@@ -21,10 +22,6 @@
 #include "imgui.h"
 #endif
 
-namespace
-{
-	constexpr float fCOLLIDER_MIN_SCALE = 0.001f;
-}
 
 ZM_PlayerController::ZM_PlayerController(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)
@@ -414,21 +411,6 @@ float ZM_PlayerController::CalculateStepAssistVelocity(
 	return glm::max(fCurrentVerticalVelocity, fBoundedAssist);
 }
 
-float ZM_PlayerController::CalculateCapsuleHalfExtent(
-	const Zenith_Maths::Vector3& xScale)
-{
-	Zenith_Maths::Vector3 xClampedScale = xScale;
-	xClampedScale.x = glm::max(xClampedScale.x, fCOLLIDER_MIN_SCALE);
-	xClampedScale.y = glm::max(xClampedScale.y, fCOLLIDER_MIN_SCALE);
-	xClampedScale.z = glm::max(xClampedScale.z, fCOLLIDER_MIN_SCALE);
-
-	const float fRadius = glm::max(xClampedScale.x, xClampedScale.z) * 0.5f;
-	const float fHalfCylinder = glm::max(
-		fCOLLIDER_MIN_SCALE,
-		xClampedScale.y * 0.5f - fRadius);
-	return fRadius + fHalfCylinder;
-}
-
 void ZM_PlayerController::ResetRuntimeState()
 {
 	m_bMovementEnabled = true;
@@ -478,9 +460,25 @@ void ZM_PlayerController::EnsureAndConfigureBody()
 	}
 	if (!pxCollider->HasValidBody())
 	{
-		// Generic AddCollider deliberately derives the capsule dimensions from
-		// Transform scale, so the serialized collider round-trips exactly.
-		pxCollider->AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+		// FIRST IN: create the body with the contract's dimensions directly. The
+		// explicit setter deliberately refuses to CREATE a body, and the generic
+		// AddCollider would derive a capsule from transform scale -- which, now that
+		// the player is authored at a UNIFORM model scale, degenerates into a sphere.
+		pxCollider->AddCapsuleCollider(fZM_HUMAN_BODY_CAPSULE_RADIUS,
+			fZM_HUMAN_BODY_CAPSULE_HALF_CYLINDER, RIGIDBODY_TYPE_DYNAMIC);
+	}
+	else
+	{
+		// REPLACING an existing configured body -- a deserialized collider comes back
+		// scale-derived, because explicit capsule dimensions do not serialize.
+		//
+		// ★ IT MUST RUN BEFORE THE CONFIGURATION BLOCK BELOW. Installing dimensions
+		// rebuilds the Jolt body and therefore drops sensor state, gravity and the
+		// rotation locks; the setter says so in its header, and this is the owner
+		// re-applying them. A no-op request (the shape already matches) leaves the
+		// body ID untouched, so a repeated OnStart costs nothing.
+		pxCollider->SetExplicitCapsuleDimensions(fZM_HUMAN_BODY_CAPSULE_RADIUS,
+			fZM_HUMAN_BODY_CAPSULE_HALF_CYLINDER);
 	}
 	if (!pxCollider->HasValidBody())
 	{
@@ -546,7 +544,7 @@ bool ZM_PlayerController::ProbeGround(
 		Zenith_PhysicsQuery::RaycastIgnoring(
 			xPosition,
 			Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f),
-			GetCapsuleHalfExtent() + fGROUND_PROBE_EXTENSION,
+			fZM_HUMAN_BODY_HALF_HEIGHT + fGROUND_PROBE_EXTENSION,
 			m_xParentEntity.GetEntityID());
 	if (!xGroundHit.m_bHit)
 	{
@@ -694,9 +692,3 @@ void ZM_PlayerController::RotateTowardsMovement(
 	xTransform.SetRotation(xNewRotation);
 }
 
-float ZM_PlayerController::GetCapsuleHalfExtent() const
-{
-	Zenith_Maths::Vector3 xScale;
-	m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
-	return CalculateCapsuleHalfExtent(xScale);
-}

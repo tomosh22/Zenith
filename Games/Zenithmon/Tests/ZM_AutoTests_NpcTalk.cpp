@@ -1273,10 +1273,9 @@ namespace
 			pxTransform->GetScale(xScale);
 			g_axGTEntityID[u]         = xEntity.GetEntityID();
 			g_axGTAuthoredPosition[u] = xPosition;
-			// The body's OWN scale, never the authoring block's literal: an NPC
-			// re-authored at a different size must be judged against ITS capsule.
-			g_afGTHalfExtent[u] =
-				ZM_PlayerController::CalculateCapsuleHalfExtent(xScale);
+			// THE BODY CONTRACT, never the transform scale: every human wears the
+			// same compiled body regardless of how large its model is drawn.
+			g_afGTHalfExtent[u] = fZM_HUMAN_BODY_HALF_HEIGHT;
 			g_aiGTResolveFrame[u]     = g_iGTPhaseFrames;
 			g_abGTResolved[u]         = true;
 			++uResolved;

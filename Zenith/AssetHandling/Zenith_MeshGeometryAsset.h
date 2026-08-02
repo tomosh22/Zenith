@@ -85,6 +85,18 @@ public:
 	static MeshGeometryHandle CreateUnitCube();
 
 	/**
+	 * Create a renderable box of the given HALF-extents, centred on the origin
+	 * (cached per size). CreateUnitCube is the half-extent-0.5 case.
+	 *
+	 * For a caller that needs a block of a stated SIZE and cannot express it as a
+	 * transform scale — an entity whose scale already belongs to a model, say.
+	 * Unlike CreateFromGeometryData this carries UVs, tangents and colours and IS
+	 * uploaded, so it renders.
+	 * @return Registry-managed asset containing the box
+	 */
+	static MeshGeometryHandle CreateBox(const Zenith_Maths::Vector3& xHalfExtents);
+
+	/**
 	 * Create a unit sphere geometry (cached per segment count)
 	 * @param uSegments Number of latitude/longitude segments (default 16)
 	 * @return Registry-managed asset containing unit sphere

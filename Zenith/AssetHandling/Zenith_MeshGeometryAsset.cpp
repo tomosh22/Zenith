@@ -6,6 +6,7 @@
 #include "Profiling/Zenith_Profiling.h"
 
 #include <cmath>
+#include <cstdio>   // snprintf -- CreateBox's per-size cache key
 
 //------------------------------------------------------------------------------
 // Internal primitive generators
@@ -482,6 +483,27 @@ MeshGeometryHandle Zenith_MeshGeometryAsset::CreateUnitCube()
 	Zenith_MeshGeometryAsset* pxAsset = new Zenith_MeshGeometryAsset();
 	pxAsset->m_pxGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::GenerateUnitCube(*pxAsset->m_pxGeometry);
+	return Zenith_AssetRegistry::AdoptOrGet<Zenith_MeshGeometryAsset>(strPath, pxAsset);
+}
+
+MeshGeometryHandle Zenith_MeshGeometryAsset::CreateBox(const Zenith_Maths::Vector3& xHalfExtents)
+{
+	// Cached per SIZE, the way CreateUnitSphere caches per segment count. The key is
+	// the three half-extents formatted to a fixed precision, so two callers asking
+	// for the same block share one geometry instead of each allocating its own.
+	char acKey[128];
+	snprintf(acKey, sizeof(acKey), "procedural://box_%.6f_%.6f_%.6f",
+		xHalfExtents.x, xHalfExtents.y, xHalfExtents.z);
+	const std::string strPath(acKey);
+
+	if (MeshGeometryHandle xExisting = Zenith_AssetRegistry::Acquire<Zenith_MeshGeometryAsset>(strPath); xExisting.IsResolved())
+	{
+		return xExisting;
+	}
+
+	Zenith_MeshGeometryAsset* pxAsset = new Zenith_MeshGeometryAsset();
+	pxAsset->m_pxGeometry = new Flux_MeshGeometry();
+	Flux_MeshGeometry::GenerateBox(*pxAsset->m_pxGeometry, xHalfExtents);
 	return Zenith_AssetRegistry::AdoptOrGet<Zenith_MeshGeometryAsset>(strPath, pxAsset);
 }
 

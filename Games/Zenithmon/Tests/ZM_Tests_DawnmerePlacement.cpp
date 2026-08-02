@@ -21,6 +21,7 @@
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightFsm.h"    // ZM_TrainerSightFsmTuning -- the walk-up standoff
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightLogic.h"
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"
+#include "Zenithmon/Source/World/ZM_PlayerHomePlacement.h"
 
 namespace
 {
@@ -67,11 +68,11 @@ namespace
 	// revert this clause exists to catch.
 	constexpr u_int uW5_MIN_ROWS_OFF_THE_ANCHOR = 4u;
 
-	// The shipped Dawnmere human capsule half-extent: scale (0.8, 1.8, 0.8) through
-	// ZM_PlayerController::CalculateCapsuleHalfExtent gives radius 0.4 + half
-	// cylinder 0.5. Restated as a literal rather than called, because this file is
-	// PURE -- naming the component would drag the ECS into the CI unit gate.
-	constexpr float fW5_CAPSULE_HALF_EXTENT = 0.9f;
+	// The shipped human capsule half-extent, read from the ONE compiled body
+	// contract (radius 0.4 + half cylinder 0.5). It used to be restated as a
+	// literal here because the only other spelling lived on an ECS component this
+	// PURE file must not name; the contract header is pure, so it can be named.
+	constexpr float fW5_CAPSULE_HALF_EXTENT = fZM_HUMAN_BODY_HALF_HEIGHT;
 
 	// The three out-of-range ids every totality sweep feeds: one past the last row,
 	// two past it, and the all-ones garbage value.
@@ -730,4 +731,56 @@ ZENITH_TEST(ZM_Interaction, Vesper_ApproachStandoffClearsEveryAuthoredNeighbour)
 		fZM_SIGHT_MAX_DISTANCE,
 		"the rival can walk close enough to the z = %.1f traversal corridor to hijack "
 		"a suite that never mentions him", fZM_DAWNMERE_TOWN_CENTER_Z);
+}
+
+// The Dawnmere facade is a visual exterior for the separately loaded PlayerHome
+// scene.  These values must share one real-world scale: the exterior may round
+// the interior's wall envelope up to a clean blockout metre, but it must never
+// become a deep placeholder building with an unrelated doorway.
+ZENITH_TEST(ZM_Interaction, HomeExterior_EnvelopeAndEntranceMatchPlayerHomeContract)
+{
+	const ZM_DawnmereBlockout xShell = ZM_GetDawnmereHomeShell();
+	const ZM_DawnmereBlockout xLeftJamb = ZM_GetDawnmereHomeDoorLeft();
+	const ZM_DawnmereBlockout xRightJamb = ZM_GetDawnmereHomeDoorRight();
+	const ZM_DawnmereBlockout xTrigger = ZM_GetDawnmereHomeDoorTrigger();
+
+	const float fInteriorOuterWidth =
+		fZM_PLAYERHOME_HALF_WIDTH * 2.0f + fZM_PLAYERHOME_WALL_THICKNESS;
+	const float fInteriorOuterDepth =
+		fZM_PLAYERHOME_HALF_DEPTH * 2.0f + fZM_PLAYERHOME_WALL_THICKNESS;
+
+	// Rounded up, never rounded down: the interior's outer wall envelope fits
+	// inside the facade with less than one deliberately cosmetic metre spare.
+	ZENITH_ASSERT_GE(xShell.m_xScale.x, fInteriorOuterWidth,
+		"the Dawnmere facade is %.2f m wide but PlayerHome's outer wall envelope is %.2f m",
+		xShell.m_xScale.x, fInteriorOuterWidth);
+	ZENITH_ASSERT_LT(xShell.m_xScale.x - fInteriorOuterWidth, 1.0f,
+		"the Dawnmere facade has %.2f m of unexplained width beyond PlayerHome's %.2f m envelope",
+		xShell.m_xScale.x - fInteriorOuterWidth, fInteriorOuterWidth);
+	ZENITH_ASSERT_GE(xShell.m_xScale.z, fInteriorOuterDepth,
+		"the Dawnmere facade is %.2f m deep but PlayerHome's outer wall envelope is %.2f m",
+		xShell.m_xScale.z, fInteriorOuterDepth);
+	ZENITH_ASSERT_LT(xShell.m_xScale.z - fInteriorOuterDepth, 1.0f,
+		"the Dawnmere facade has %.2f m of unexplained depth beyond PlayerHome's %.2f m envelope",
+		xShell.m_xScale.z - fInteriorOuterDepth, fInteriorOuterDepth);
+	ZENITH_ASSERT_GE(xShell.m_xScale.y, fZM_PLAYERHOME_WALL_HEIGHT,
+		"the Dawnmere facade is lower than PlayerHome's %.2f m walls",
+		fZM_PLAYERHOME_WALL_HEIGHT);
+
+	// The exterior entrance lives on the facade's -Z face, and its clear frame
+	// plus sensor use the exact 4.0 x 2.5 m PlayerHome aperture.
+	ZENITH_ASSERT_EQ_FLOAT(xShell.Min().z, fZM_DAWNMERE_HOME_ENTRANCE_Z, 0.0f,
+		"the exterior entrance no longer lies on the Dawnmere facade's -Z face");
+	const float fExteriorApertureWidth = xRightJamb.Min().x - xLeftJamb.Max().x;
+	ZENITH_ASSERT_EQ_FLOAT(fExteriorApertureWidth,
+		fZM_PLAYERHOME_APERTURE_HALF_WIDTH * 2.0f, 0.0f,
+		"the exterior frame width no longer matches PlayerHome's entrance aperture");
+	ZENITH_ASSERT_EQ_FLOAT(xLeftJamb.m_xScale.y, fZM_PLAYERHOME_APERTURE_HEIGHT, 0.0f,
+		"the exterior jamb height no longer matches PlayerHome's entrance aperture");
+	ZENITH_ASSERT_EQ_FLOAT(xRightJamb.m_xScale.y, fZM_PLAYERHOME_APERTURE_HEIGHT, 0.0f,
+		"the exterior jamb height no longer matches PlayerHome's entrance aperture");
+	ZENITH_ASSERT_EQ_FLOAT(xTrigger.m_xScale.x, fExteriorApertureWidth, 0.0f,
+		"the exterior portal sensor no longer covers exactly the visible entrance");
+	ZENITH_ASSERT_EQ_FLOAT(xTrigger.m_xScale.y, fZM_PLAYERHOME_APERTURE_HEIGHT, 0.0f,
+		"the exterior portal sensor no longer matches the visible entrance height");
 }

@@ -31,6 +31,14 @@ Games/Zenithmon/
                                  #   ZM_DawnmerePlacement.{h,cpp},
                                  #   ZM_PlayerHomePlacement.h, ZM_ProfLabPlacement.h
                                  #   (the compiled anchors each scene is authored from)
+                                 #   ZM_HumanBody.h -- THE body contract: how big a
+                                 #     person is (1.8 m tall, 0.8 m footprint, a
+                                 #     0.4/0.5 capsule), installed explicitly and
+                                 #     NEVER derived from transform scale (ZM-D-181)
+                                 #   ZM_HumanAssetPolicy.{h,cpp} -- the injectable
+                                 #     "is the human bake loadable right now?" seam;
+                                 #     how a test forces the cold-start fallback
+                                 #     without touching shared baked files
   Source/UI/, Source/Save/, ...  # + Core, Gen, Graph, Interaction, Nav, Party,
                                  #   Shop, CareCenter -- by-value, non-ECS logic
   Tests/ZM_Tests_*.cpp           # Boot, data, stats, battle, and integrity units

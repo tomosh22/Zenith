@@ -35,6 +35,10 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Zenith_PhysicsTransformSync.h"  // Phase 1 post-physics transform sweep
+#include "Physics/Zenith_Physics.h"                       // explicit-collider-dimension raycast probes
+#include "Flux/Primitives/Flux_PrimitivesImpl.h"          // explicit box vs its debug wireframe
+#include "Core/Multithreading/Zenith_Multithreading.h"    // Zenith_ScopedMutexLock (primitive-queue sample)
+#include <limits>                                         // quiet_NaN / infinity (fail-closed probes)
 #include "EntityComponent/Components/Zenith_LightComponent.h"  // WS10 fuzz cross-check (Light is a headless-safe component)
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_AnimatorComponent.h"  // WS19 forwarding-handle relocation tests
@@ -10508,6 +10512,354 @@ void Zenith_UnitTests::TestColliderRebuildKeepsMovedTransform(){
 		ZENITH_ASSERT_TRUE(xAfter.x > 19.0f,
 			"ColliderRebuildKeepsMovedTransform(sim): rebuilt body must not snap toward origin (x=%.2f)", xAfter.x);
 	}
+}
+
+// --- Explicit collider dimensions ------------------------------------------
+// SetExplicitCapsuleDimensions / SetExplicitBoxHalfExtents let a caller STATE the
+// body it means instead of having it derived from transform scale. That matters
+// the moment an entity carries a model: the model dictates the scale, and a
+// UNIFORM scale degenerates a scale-derived capsule into a sphere.
+//
+// The shapes below are MEASURED off the live Jolt body with real raycasts, not
+// read back from the component's own fields -- a setter that stored its arguments
+// and never rebuilt would pass a field-reading test and ship a wrong body.
+
+namespace
+{
+	// Distance from xFrom to the first solid surface along xDir, or -1 on a miss.
+	// Cast ranges are short and the fixtures sit far out in world space, so nothing
+	// else in the shared test scene can answer.
+	float ColliderProbeDistance(const Zenith_Maths::Vector3& xFrom,
+		const Zenith_Maths::Vector3& xDir, float fMaxDistance)
+	{
+		const Zenith_Physics::RaycastResult xHit =
+			g_xEngine.Physics().Raycast(xFrom, xDir, fMaxDistance);
+		return xHit.m_bHit ? xHit.m_fDistance : -1.0f;
+	}
+
+	// The half-height and radius of the capsule body actually standing at xCentre.
+	void ColliderMeasureCapsule(const Zenith_Maths::Vector3& xCentre,
+		float& fHalfHeightOut, float& fRadiusOut)
+	{
+		constexpr float fSTANDOFF = 4.0f;
+		const float fDown = ColliderProbeDistance(
+			xCentre + Zenith_Maths::Vector3(0.0f, fSTANDOFF, 0.0f),
+			Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), fSTANDOFF * 2.0f);
+		const float fSide = ColliderProbeDistance(
+			xCentre + Zenith_Maths::Vector3(fSTANDOFF, 0.0f, 0.0f),
+			Zenith_Maths::Vector3(-1.0f, 0.0f, 0.0f), fSTANDOFF * 2.0f);
+		fHalfHeightOut = (fDown < 0.0f) ? -1.0f : (fSTANDOFF - fDown);
+		fRadiusOut     = (fSide < 0.0f) ? -1.0f : (fSTANDOFF - fSide);
+	}
+}
+
+ZENITH_TEST(Collider, ColliderExplicitCapsuleDimensions) { Zenith_UnitTests::TestColliderExplicitCapsuleDimensions(); }
+
+void Zenith_UnitTests::TestColliderExplicitCapsuleDimensions(){
+
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxSceneData, "no active scene to build the fixture in");
+	if (pxSceneData == nullptr) { return; }
+
+	const Zenith_Maths::Vector3 xCentre(400.0f, 400.0f, 400.0f);
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "ExplicitCapsuleDims");
+	Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+	xT.SetPosition(xCentre);
+	// A UNIFORM scale -- the case that motivates the whole feature. A scale-derived
+	// capsule here would be a SPHERE (radius 1.0, cylinder clamped to the minimum).
+	xT.SetScale(Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f));
+
+	Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+	xCol.AddCapsuleCollider(0.4f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
+	g_xEngine.Physics().SetGravityEnabled(xCol.GetBodyID(), false);
+
+	float fHalfHeight = 0.0f;
+	float fRadius = 0.0f;
+	ColliderMeasureCapsule(xCentre, fHalfHeight, fRadius);
+	ZENITH_ASSERT_TRUE(std::abs(fHalfHeight - 0.9f) < 0.02f,
+		"AddCapsuleCollider(0.4, 0.5) must stand radius+cylinder = 0.9 tall (measured %.4f)",
+		fHalfHeight);
+	ZENITH_ASSERT_TRUE(std::abs(fRadius - 0.4f) < 0.02f,
+		"AddCapsuleCollider(0.4, 0.5) must be 0.4 wide (measured %.4f)", fRadius);
+
+	// THE SETTER'S UNITS ARE THE SAME PAIR: a radius, and the CYLINDER half-height
+	// excluding the caps -- so the capsule stands (radius + cylinder) tall.
+	xCol.SetExplicitCapsuleDimensions(0.6f, 0.7f);
+	ColliderMeasureCapsule(xCentre, fHalfHeight, fRadius);
+	ZENITH_ASSERT_TRUE(std::abs(fHalfHeight - 1.3f) < 0.02f,
+		"SetExplicitCapsuleDimensions(0.6, 0.7) must stand 1.3 tall (measured %.4f)",
+		fHalfHeight);
+	ZENITH_ASSERT_TRUE(std::abs(fRadius - 0.6f) < 0.02f,
+		"SetExplicitCapsuleDimensions(0.6, 0.7) must be 0.6 wide (measured %.4f)", fRadius);
+
+	// It is a SHAPE setter: the rigid-body type is what the caller configured.
+	ZENITH_ASSERT_EQ((int)xCol.GetRigidBodyType(), (int)RIGIDBODY_TYPE_DYNAMIC,
+		"the explicit-dimension setter must preserve the rigid body type");
+	ZENITH_ASSERT_EQ((int)xCol.GetCollisionVolumeType(), (int)COLLISION_VOLUME_TYPE_CAPSULE,
+		"a capsule setter leaves a capsule volume");
+
+	// ...and it is genuinely scale-INDEPENDENT: re-scaling the entity rebuilds the
+	// collider, and the explicit shape must survive that rebuild unchanged.
+	xT.SetScale(Zenith_Maths::Vector3(0.25f, 0.25f, 0.25f));
+	ColliderMeasureCapsule(xCentre, fHalfHeight, fRadius);
+	ZENITH_ASSERT_TRUE(std::abs(fHalfHeight - 1.3f) < 0.02f,
+		"an explicit capsule must not follow the transform scale (measured %.4f)",
+		fHalfHeight);
+}
+
+ZENITH_TEST(Collider, ColliderExplicitBoxHalfExtents) { Zenith_UnitTests::TestColliderExplicitBoxHalfExtents(); }
+
+void Zenith_UnitTests::TestColliderExplicitBoxHalfExtents(){
+
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxSceneData, "no active scene to build the fixture in");
+	if (pxSceneData == nullptr) { return; }
+
+	const Zenith_Maths::Vector3 xCentre(420.0f, 400.0f, 400.0f);
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "ExplicitBoxDims");
+	Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+	xT.SetPosition(xCentre);
+	xT.SetScale(Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f));
+
+	Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+	xCol.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+
+	Zenith_Maths::Vector3 xHalf(0.0f);
+	Zenith_Maths::Vector3 xOffset(0.0f);
+	xCol.ComputeBoxDimensionsAndOffset(Zenith_Maths::Vector3(2.0f), xHalf, xOffset, false);
+	ZENITH_ASSERT_TRUE(std::abs(xHalf.x - 1.0f) < 1.0e-4f && std::abs(xHalf.y - 1.0f) < 1.0e-4f,
+		"a scale-derived box must be half the scale before the explicit setter runs "
+		"(got (%.4f, %.4f, %.4f))", xHalf.x, xHalf.y, xHalf.z);
+
+	// HALF-extents, matching CreateBoxShape's vocabulary. 0.4 x 0.9 x 0.4 is
+	// reachable by NEITHER the scale-derived path (1, 1, 1 at this scale) NOR the
+	// mesh-bounds path, so the assertions below genuinely discriminate.
+	const Zenith_Maths::Vector3 xExplicit(0.4f, 0.9f, 0.4f);
+	xCol.SetExplicitBoxHalfExtents(xExplicit);
+
+	// Every scale gives the same answer, and the local offset is ZERO: an explicit
+	// box is centred on the entity, never shifted by mesh bounds.
+	const Zenith_Maths::Vector3 axProbeScales[] = {
+		Zenith_Maths::Vector3(2.0f), Zenith_Maths::Vector3(0.1f),
+		Zenith_Maths::Vector3(37.0f, 0.5f, 3.0f)
+	};
+	for (const Zenith_Maths::Vector3& xProbe : axProbeScales)
+	{
+		xCol.ComputeBoxDimensionsAndOffset(xProbe, xHalf, xOffset, false);
+		ZENITH_ASSERT_TRUE(std::abs(xHalf.x - xExplicit.x) < 1.0e-5f
+			&& std::abs(xHalf.y - xExplicit.y) < 1.0e-5f
+			&& std::abs(xHalf.z - xExplicit.z) < 1.0e-5f,
+			"an explicit box must ignore the transform scale (scale (%.2f, %.2f, %.2f) "
+			"gave (%.4f, %.4f, %.4f))", xProbe.x, xProbe.y, xProbe.z,
+			xHalf.x, xHalf.y, xHalf.z);
+		ZENITH_ASSERT_TRUE(std::abs(xOffset.x) < 1.0e-6f && std::abs(xOffset.y) < 1.0e-6f
+			&& std::abs(xOffset.z) < 1.0e-6f,
+			"an explicit box must carry a ZERO local offset (got (%.4f, %.4f, %.4f))",
+			xOffset.x, xOffset.y, xOffset.z);
+	}
+
+	// The LIVE body agrees -- the setter rebuilt it rather than only storing fields.
+	const float fTopDistance = ColliderProbeDistance(
+		xCentre + Zenith_Maths::Vector3(0.0f, 4.0f, 0.0f),
+		Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f), 8.0f);
+	ZENITH_ASSERT_TRUE(fTopDistance >= 0.0f && std::abs((4.0f - fTopDistance) - xExplicit.y) < 0.02f,
+		"the live Jolt box must stand %.2f above its centre (measured %.4f)",
+		xExplicit.y, 4.0f - fTopDistance);
+
+	// ...and so does the debug wireframe, because both route through
+	// ComputeBoxDimensionsAndOffset rather than each sizing itself.
+	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
+	u_int uCubesBefore = 0u;
+	{
+		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
+		uCubesBefore = xPrimitives.m_xCubeInstances.GetSize();
+	}
+	xCol.QueueDebugDraw(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	bool bHaveCube = false;
+	Flux_PrimitivesCubeInstance xCube{};
+	{
+		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
+		if (xPrimitives.m_xCubeInstances.GetSize() == uCubesBefore + 1u)
+		{
+			xCube = xPrimitives.m_xCubeInstances.Get(uCubesBefore);
+			bHaveCube = true;
+		}
+		while (xPrimitives.m_xCubeInstances.GetSize() > uCubesBefore)
+		{
+			xPrimitives.m_xCubeInstances.PopBack();
+		}
+	}
+	ZENITH_ASSERT_TRUE(bHaveCube, "QueueDebugDraw must append exactly one wireframe cube");
+	if (bHaveCube)
+	{
+		ZENITH_ASSERT_TRUE(std::abs(xCube.m_xHalfExtents.x - xExplicit.x) < 1.0e-5f
+			&& std::abs(xCube.m_xHalfExtents.y - xExplicit.y) < 1.0e-5f
+			&& std::abs(xCube.m_xHalfExtents.z - xExplicit.z) < 1.0e-5f,
+			"the debug wireframe must be the explicit box, not a scale-derived one "
+			"(got (%.4f, %.4f, %.4f))", xCube.m_xHalfExtents.x, xCube.m_xHalfExtents.y,
+			xCube.m_xHalfExtents.z);
+	}
+}
+
+ZENITH_TEST(Collider, ColliderExplicitDimensionsFailClosed) { Zenith_UnitTests::TestColliderExplicitDimensionsFailClosed(); }
+
+void Zenith_UnitTests::TestColliderExplicitDimensionsFailClosed(){
+
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxSceneData, "no active scene to build the fixture in");
+	if (pxSceneData == nullptr) { return; }
+
+	const float fNaN = std::numeric_limits<float>::quiet_NaN();
+	const float fInf = std::numeric_limits<float>::infinity();
+
+	// --- No configured body: warn and change NOTHING --------------------------
+	// This is also the uninitialised-enum path: a freshly constructed component has
+	// no meaningful m_eVolumeType/m_eRigidBodyType at all. "Changed nothing" is
+	// OBSERVED, not assumed: the collider added afterwards must come out
+	// scale-derived, which it cannot be if the refused call had stored its extents.
+	{
+		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "ExplicitDims_NoBody");
+		Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+		xT.SetPosition(Zenith_Maths::Vector3(440.0f, 400.0f, 400.0f));
+		xT.SetScale(Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f));
+
+		Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+		xCol.SetExplicitBoxHalfExtents(Zenith_Maths::Vector3(0.4f, 0.9f, 0.4f));
+		xCol.SetExplicitCapsuleDimensions(0.6f, 0.7f);
+		ZENITH_ASSERT_FALSE(xCol.HasValidBody(),
+			"a setter must never CREATE a body");
+
+		xCol.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+		Zenith_Maths::Vector3 xHalf(0.0f), xOffset(0.0f);
+		xCol.ComputeBoxDimensionsAndOffset(Zenith_Maths::Vector3(2.0f), xHalf, xOffset, false);
+		ZENITH_ASSERT_TRUE(std::abs(xHalf.y - 1.0f) < 1.0e-4f,
+			"a setter refused for want of a body must leave NO state behind "
+			"(the later scale-derived box came out %.4f tall)", xHalf.y);
+	}
+
+	// --- Non-finite / non-positive input on a LIVE body -----------------------
+	{
+		const Zenith_Maths::Vector3 xCentre(460.0f, 400.0f, 400.0f);
+		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "ExplicitDims_BadInput");
+		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(xCentre);
+
+		Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+		xCol.AddCapsuleCollider(0.4f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
+		g_xEngine.Physics().SetGravityEnabled(xCol.GetBodyID(), false);
+		const Zenith_PhysicsBodyID xBodyBefore = xCol.GetBodyID();
+
+		xCol.SetExplicitCapsuleDimensions(-1.0f, 0.5f);
+		xCol.SetExplicitCapsuleDimensions(0.0f, 0.5f);
+		xCol.SetExplicitCapsuleDimensions(fNaN, 0.5f);
+		xCol.SetExplicitCapsuleDimensions(0.4f, fInf);
+		xCol.SetExplicitBoxHalfExtents(Zenith_Maths::Vector3(0.4f, fNaN, 0.4f));
+
+		ZENITH_ASSERT_TRUE(xCol.GetBodyID() == xBodyBefore,
+			"a refused request must not rebuild the body");
+		float fHalfHeight = 0.0f, fRadius = 0.0f;
+		ColliderMeasureCapsule(xCentre, fHalfHeight, fRadius);
+		ZENITH_ASSERT_TRUE(std::abs(fHalfHeight - 0.9f) < 0.02f
+			&& std::abs(fRadius - 0.4f) < 0.02f,
+			"a refused request must leave the shape untouched (measured %.4f / %.4f)",
+			fHalfHeight, fRadius);
+	}
+
+	// --- A box setter refuses to GUESS between AABB and OBB -------------------
+	// The two build the same box and differ only in whether the entity's rotation
+	// reaches the body, so silently picking one would decide whether an authored
+	// facing survives.
+	{
+		Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "ExplicitDims_WrongVolume");
+		xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(
+			Zenith_Maths::Vector3(480.0f, 400.0f, 400.0f));
+		Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+		xCol.AddCapsuleCollider(0.4f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
+		g_xEngine.Physics().SetGravityEnabled(xCol.GetBodyID(), false);
+
+		xCol.SetExplicitBoxHalfExtents(Zenith_Maths::Vector3(0.4f, 0.9f, 0.4f));
+		ZENITH_ASSERT_EQ((int)xCol.GetCollisionVolumeType(), (int)COLLISION_VOLUME_TYPE_CAPSULE,
+			"a box setter on a capsule collider must change nothing");
+	}
+}
+
+ZENITH_TEST(Collider, ColliderExplicitDimensionsNoOpOnMatch) { Zenith_UnitTests::TestColliderExplicitDimensionsNoOpOnMatch(); }
+
+void Zenith_UnitTests::TestColliderExplicitDimensionsNoOpOnMatch(){
+
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxSceneData, "no active scene to build the fixture in");
+	if (pxSceneData == nullptr) { return; }
+
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "ExplicitDims_NoOp");
+	xEnt.GetComponent<Zenith_TransformComponent>().SetPosition(
+		Zenith_Maths::Vector3(500.0f, 400.0f, 400.0f));
+	Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+	xCol.AddCapsuleCollider(0.4f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
+	g_xEngine.Physics().SetGravityEnabled(xCol.GetBodyID(), false);
+
+	// An exact repeat is a no-op, so the body ID survives repeated OnStart -- which
+	// matters to anything keyed on body-ID identity.
+	const Zenith_PhysicsBodyID xIDBefore = xCol.GetBodyID();
+	xCol.SetExplicitCapsuleDimensions(0.4f, 0.5f);
+	xCol.SetExplicitCapsuleDimensions(0.4f, 0.5f);
+	ZENITH_ASSERT_TRUE(xCol.GetBodyID() == xIDBefore,
+		"re-stating the SAME capsule must not rebuild the body");
+
+	// ★ THE COMPARISON IS AGAINST THE CLAMPED STORED VALUES, NOT THE ARGUMENTS.
+	// Both requests below clamp to Jolt's convex radius, so the second must be a
+	// no-op even though it names a different number than the first.
+	xCol.SetExplicitCapsuleDimensions(0.4f, 0.01f);
+	const Zenith_PhysicsBodyID xIDClamped = xCol.GetBodyID();
+	xCol.SetExplicitCapsuleDimensions(0.4f, 0.03f);
+	ZENITH_ASSERT_TRUE(xCol.GetBodyID() == xIDClamped,
+		"a request that CLAMPS onto the current shape must not churn the body");
+
+	// A genuinely different shape does rebuild -- otherwise the clauses above pass
+	// for a setter that simply never does anything.
+	xCol.SetExplicitCapsuleDimensions(0.7f, 0.8f);
+	ZENITH_ASSERT_FALSE(xCol.GetBodyID() == xIDClamped,
+		"a DIFFERENT capsule must rebuild the body");
+}
+
+ZENITH_TEST(Collider, ColliderExplicitBoxSurvivesMove) { Zenith_UnitTests::TestColliderExplicitBoxSurvivesMove(); }
+
+void Zenith_UnitTests::TestColliderExplicitBoxSurvivesMove(){
+
+	// Components live in RELOCATING pools: a swap-and-pop or a Grow move-constructs
+	// every component. A field the move forgets silently reverts the body to
+	// scale-derived sizing at some later, unrelated moment.
+	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
+	ZENITH_ASSERT_NOT_NULL(pxSceneData, "no active scene to build the fixture in");
+	if (pxSceneData == nullptr) { return; }
+
+	Zenith_Entity xEnt = g_xEngine.Scenes().CreateEntity(pxSceneData, "ExplicitDims_Move");
+	Zenith_TransformComponent& xT = xEnt.GetComponent<Zenith_TransformComponent>();
+	xT.SetPosition(Zenith_Maths::Vector3(520.0f, 400.0f, 400.0f));
+	xT.SetScale(Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f));
+
+	const Zenith_Maths::Vector3 xExplicit(0.4f, 0.9f, 0.4f);
+	Zenith_Maths::Vector3 xHalf(0.0f), xOffset(0.0f);
+	{
+		Zenith_ColliderComponent& xCol = xEnt.AddComponent<Zenith_ColliderComponent>();
+		xCol.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+		xCol.SetExplicitBoxHalfExtents(xExplicit);
+
+		// Move-CONSTRUCT, exactly as a pool relocation does. The moved-to instance
+		// owns the body from here, so it is scoped to destroy it once; the pooled
+		// source is left body-less and its destructor becomes a no-op.
+		Zenith_ColliderComponent xMoved(std::move(xCol));
+		xMoved.ComputeBoxDimensionsAndOffset(Zenith_Maths::Vector3(2.0f), xHalf, xOffset, false);
+	}
+	ZENITH_ASSERT_TRUE(std::abs(xHalf.x - xExplicit.x) < 1.0e-5f
+		&& std::abs(xHalf.y - xExplicit.y) < 1.0e-5f
+		&& std::abs(xHalf.z - xExplicit.z) < 1.0e-5f,
+		"the explicit box half-extents must survive a component move (got "
+		"(%.4f, %.4f, %.4f) -- a relocating pool would have reverted this body to "
+		"scale-derived sizing)", xHalf.x, xHalf.y, xHalf.z);
+
+	// The move must have taken the body with it rather than copying ownership.
+	ZENITH_ASSERT_FALSE(xEnt.GetComponent<Zenith_ColliderComponent>().HasValidBody(),
+		"a moved-from collider must not still claim the body");
 }
 
 // --- Loading a corrupted (truncated) prefab file ---------------------------

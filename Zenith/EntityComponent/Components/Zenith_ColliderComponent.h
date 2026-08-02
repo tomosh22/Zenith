@@ -82,6 +82,56 @@ public:
 	void AddCapsuleCollider(float fRadius, float fHalfHeight, RigidBodyType eRigidBodyType);
 	void RebuildCollider(); // Rebuild collider with current transform (e.g., after scale change)
 
+	//--------------------------------------------------------------------------
+	// Explicit shape dimensions on an ALREADY-CONFIGURED collider.
+	//
+	// WHY THEY EXIST. Scale-derived sizing is only correct while the entity's
+	// transform scale IS its body box. It stops being correct the moment the
+	// entity carries a MODEL, because the model then dictates the scale — and a
+	// UNIFORM scale degenerates a scale-derived capsule into a sphere
+	// (Editor/Zenith_EditorAutomation.h says so in as many words). These setters
+	// are how a caller states the body it means, independently of how big the
+	// thing is drawn. Explicit capsule dimensions do NOT serialize
+	// (WriteToDataStream emits {volumeType, bodyType, debugFlag} only, and
+	// ReadFromDataStream re-adds a scale-derived collider), so whoever owns the
+	// body must install them again after every load.
+	//
+	// UNITS. The capsule pair matches AddCapsuleCollider exactly: a radius, and
+	// the CYLINDER half-height EXCLUDING the caps — so the capsule stands
+	// (fRadius + fCylinderHalfHeight) tall in each direction. The box takes
+	// HALF-extents, matching CreateBoxShape and ComputeBoxDimensionsAndOffset.
+	//
+	// THEY REPLACE A SHAPE; THEY NEVER CREATE ONE. Neither takes a RigidBodyType:
+	// each preserves the collider's existing m_eRigidBodyType. Called on a
+	// collider with no live body they WARN and change nothing — which is also
+	// what protects them from a freshly constructed component, whose
+	// m_eVolumeType/m_eRigidBodyType are uninitialised until AddCollider or
+	// ReadFromDataStream has run. A caller that may be first-in must create the
+	// body the normal way (AddCapsuleCollider / AddCollider) and use the setter
+	// only when replacing an existing configured one.
+	//
+	// VALIDATION IS FAIL-CLOSED. Every component must be finite and > 0; values
+	// below JPH::cDefaultConvexRadius are clamped exactly as CreateBoxShape
+	// already clamps them. Invalid input warns and leaves the body untouched —
+	// never an assert, because these are fed derived numbers and an assert would
+	// kill the whole boot unit suite rather than log a bad call.
+	//
+	// A REQUEST THAT MATCHES THE CURRENT SHAPE IS A NO-OP, compared against the
+	// validated-and-clamped STORED values rather than the raw arguments (so a
+	// request that clamps onto the current shape does not churn the body either).
+	// That keeps the body ID stable across repeated OnStart, which matters to
+	// anything keyed on body-ID identity.
+	//
+	// ★ THEY DO NOT PRESERVE BODY CONFIGURATION. Replacing the shape goes through
+	// RebuildCollider, which destroys and recreates the Jolt body and therefore
+	// drops sensor state, gravity-enabled and locked axes. Zenith_Physics exposes
+	// getters for friction and restitution ONLY, so a capture-and-restore is not
+	// implementable through the public API — whoever configured the body must
+	// re-apply that configuration after calling these.
+	//--------------------------------------------------------------------------
+	void SetExplicitCapsuleDimensions(float fRadius, float fCylinderHalfHeight);
+	void SetExplicitBoxHalfExtents(const Zenith_Maths::Vector3& xHalfExtents);
+
 	// 2026-05-25: toggle the body between solid (default) and sensor.
 	// Sensor bodies still register overlap events but don't physically
 	// collide -- other bodies pass straight through. Used by DPDoor to
@@ -149,10 +199,20 @@ private:
 	CollisionVolumeType m_eVolumeType;
 	RigidBodyType m_eRigidBodyType;
 
-	// Explicit capsule dimensions (used when AddCapsuleCollider is called)
+	// Explicit capsule dimensions (used when AddCapsuleCollider is called, or
+	// SetExplicitCapsuleDimensions).
 	float m_fExplicitCapsuleRadius = 0.0f;
 	float m_fExplicitCapsuleHalfHeight = 0.0f;
 	bool m_bUseExplicitCapsuleDimensions = false;
+	// Explicit BOX half-extents (SetExplicitBoxHalfExtents). When set,
+	// ComputeBoxDimensionsAndOffset returns these verbatim with a ZERO local
+	// offset — mesh bounds and transform scale are both bypassed — so the Jolt
+	// shape, the debug wireframe and the navmesh geometry builder all see one box.
+	// MUST be transferred by the move constructor and move assignment, like the
+	// capsule fields above: components live in relocating pools, and a missed
+	// field silently reverts a body to scale-derived sizing on the next Grow.
+	Zenith_Maths::Vector3 m_xExplicitBoxHalfExtents = Zenith_Maths::Vector3(0.0f);
+	bool m_bUseExplicitBoxHalfExtents = false;
 	bool m_bDebugDrawPhysicsMesh = false;
 	// See SetIncludeInNavMesh comment. Defaults to true so existing colliders
 	// (floors, walls, props) continue to contribute navmesh geometry without

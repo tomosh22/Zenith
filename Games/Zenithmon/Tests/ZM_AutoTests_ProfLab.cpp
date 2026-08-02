@@ -72,6 +72,7 @@
 #include "Zenithmon/Components/ZM_TerrainGrassComponent.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"
+#include "Zenithmon/Source/World/ZM_HumanBody.h"
 
 #include <cmath>
 #include <cstdarg>
@@ -728,7 +729,7 @@ namespace
 		Zenith_Maths::Vector3 xMarkerFeet(0.0f);
 		xSpawn.GetComponent<Zenith_TransformComponent>().GetPosition(xMarkerFeet);
 		const Zenith_Maths::Vector3 xExpectedCenter =
-			ZM_GameStateManager::CalculateSpawnCenter(xMarkerFeet, xPlayer.m_xScale);
+			ZM_GameStateManager::CalculateSpawnCenter(xMarkerFeet);
 		const Zenith_PhysicsBodyID xBody = xPlayer.m_pxCollider->GetBodyID();
 		const Zenith_Maths::Vector3 xBodyPosition =
 			g_xEngine.Physics().GetBodyPosition(xBody);
@@ -1003,9 +1004,9 @@ namespace
 				return false;
 			}
 
-			const Zenith_Maths::Vector3 xHeaderScale(
-				fZM_PROFLAB_PLAYER_SCALE_X, fZM_PROFLAB_PLAYER_SCALE_Y,
-				fZM_PROFLAB_PLAYER_SCALE_Z);
+			// The authored scale is the human MODEL scale, uniform, and NOT the body
+			// box -- the body is installed from the compiled contract at runtime.
+			const Zenith_Maths::Vector3 xHeaderScale(fZM_HUMAN_VISUAL_SCALE);
 			if (glm::length(xPlayer.m_xScale - xHeaderScale) > fPOSITION_EPSILON)
 			{
 				FailProfLabDetailed(

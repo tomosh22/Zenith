@@ -26,7 +26,12 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   traversable Dawnmere + live PlayerHome door round trip; S4's five procedural asset generators +
   `ZM_BakeManifest`, visually approved (ZM-D-088); S5's full overworld<->battle slice, visually
   approved (ZM-D-112); and S6's dialogue/menu/NPC/shop surface all remain complete.
-- **★ CURRENT VERIFIED BASELINE (re-observed 2026-08-01 at ZM-D-179, every figure off an
+- **★ THE LIVE BASELINE IS IN `Status.md`'s TOP BLOCK. READ IT, NOT THIS PARAGRAPH.** As of
+  2026-08-02 (ZM-D-182, OBSERVED on a clean `Null_` build): registry **55**, ZM boot
+  **2864 ran / 2862 passed / 0 failed / 2 skipped**, engine boot **1242**. Everything below
+  this line is the HISTORY of how those numbers got there, kept because the derivations are
+  the audit trail -- every figure in it is true of ITS commit and stale as a current claim.
+- **Baseline as re-observed 2026-08-01 at ZM-D-179 (every figure off an
   OBSERVED line):** ZM headless registry **56 passed / 0 failed**; ZM boot unit gate
   **2849 ran / 2847 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to **2849**) --
   ZM-D-179 added **+2 ENGINE** boot units
@@ -36,9 +41,11 @@ and rewriting it once does not immunise it. Update it in the SAME commit that cl
   having added **+7** boot units and **+2** automated tests (`ZM_InteriorTint_Test`,
   `ZM_InteriorTintPixels_Test`) for the PlayerHome tint and the New-Game entry-point move.
   ZM-D-175 stood at registry 54 / boot **2840 / 2838 / 0 / 2** (+15 units, registry unmoved);
-  ZM-D-174 at registry 54 / boot **2825 / 2823 / 0 / 2**; engine boot
-  gate **1235 / 1234 / 0 / 1** (`run_unit_gate.ps1` default `-Baseline 1235` -- this is the ENGINE
-  cross-game number and did NOT move; ZM-D-174 is GAME-ONLY and touched no file under `Zenith/`).
+  ZM-D-174 at registry 54 / boot **2825 / 2823 / 0 / 2**; the engine boot gate stood at
+  **1235 / 1234 / 0 / 1** at ZM-D-174 (GAME-ONLY: it touched no file under `Zenith/`).
+  ★ **THAT 1235 IS HISTORICAL AND WAS LEFT STALE HERE UNTIL 2026-08-01.** The engine gate
+  moved to 1237 at ZM-D-179 and to **1242** at ZM-D-181; `run_unit_gate.ps1`'s default is
+  **1242**. Status.md's top block is the live figure -- read it, not this paragraph.
   ZM-D-174 moved the registry 53 -> 54 (`ZM_ProfLabWarp_Test`) and the ZM boot baseline
   2817 -> **2825** (+8 ProfLab placement units). The prior figures, still true of their commit:
   registry 53, boot 2817 / 2815 / 0 / 2, full windowed Vulkan 53/0 with ZERO skipped.
@@ -346,11 +353,17 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      **★ THE RESIDUAL IS ART DATA, NOT LIGHTING: the authored palette's minimum RENDERED pairwise
      separation under honest lighting is 0.0763 (Caretaker/Wanderer, sun-lit faces, measured
      2026-07-30) — the 0.15 framebuffer promise was only ever met via the emissive hack.**
-     `ZM_NpcRenderedPalette_Test`'s floor is re-derived to 0.04 (severed-wiring fail state
+     `ZM_NpcRenderedPalette_Test`'s floor was re-derived to 0.04 (severed-wiring fail state
      measured 0.0003–0.0009), pinning "wiring alive + palettes render distinguishably"; raising
      rendered distinctness back to 0.15 needs MORE-SEPARATED AUTHORED PALETTE COLOURS in
      `ZM_HumanAppearance`'s outfit/hair tables — booked here, deliberately not smuggled into the
      engine commit, and never again an emissive carrier.
+     ★ **ZM-D-181 SUPERSEDED THE TEST, NOT THE DEBT.** NPCs wear generated human MODELS now, so
+     that framebuffer test was measuring a picture the game had stopped drawing; it was DELETED
+     rather than re-baselined against uncharacterised content (registry 56 -> 55). The palette
+     itself survives as the COLD-START FALLBACK's colour, so the "more-separated authored
+     colours" debt above is still real — it is simply no longer about what the player normally
+     sees. Nothing currently reads real pixels off an NPC body.
    - **RESOLVED 2026-07-30 (ZM-D-170) -- CREATURE MODELS AND THE BATTLE HUD, BOTH NOW PINNED BY
      PIXELS. THE AUDIT'S NULL WAS AN OBSERVATION MISS, NOT AN ABSENCE.** This entry previously read
      "UNVERIFIED BY PIXELS ... no creature model and no HP panel / text log / Fight-Catch-Run menu
@@ -445,13 +458,23 @@ real trainer battle, and his identity survives save/reload by a zero-byte route.
      grey `(0.52, 0.55, 0.60)`, i.e. 45% of the margin. If Professor Aster is ever given an
      authored `ZM_NpcData` row, his greybox body will be indistinguishable from an UNWIRED
      one, and the vs-grey clause reds the moment he joins `aeCAST`. Untouched by ZM-D-164.
-   - **A COVERAGE BOUNDARY, not a gap.** `ZM_GreyboxVisual` is a file-local class in
-     `Zenithmon.cpp` and cannot be named from a `Tests/` TU, so no boot unit can construct
-     one. Its wiring is covered ONLY by `ZM_RivalVesperAuthored_Test`'s live material
-     scan. Adding a header purely to unit-test it was rejected as the worse trade; the
-     boundary is demonstrated by mutation rather than asserted.
-   - The bodies are still **unit cubes**. W4 makes them distinguishable, not
-     human-shaped; the generated human meshes are not wired to authored NPCs.
+   - **THE COVERAGE BOUNDARY IS CLOSED (ZM-D-181).** `ZM_GreyboxVisual` is still a
+     file-local class that cannot be NAMED from a `Tests/` TU, but boot units now drive
+     it through its registered component META (`GetMetaByName("ZM_GreyboxVisual")` ->
+     `m_pfnCreate` / `m_pfnOnStart`) -- see `Tests/ZM_Tests_HumanVisual.cpp`. No header
+     was added; the registry was already the seam.
+   - **THE BODIES ARE NO LONGER UNIT CUBES (ZM-D-181).** The six authored Dawnmere NPCs
+     and the player wear the generated `ZM_HumanGen` models, animated Idle/Walk off
+     commanded speed. **The honest new limit is narrower:** the model is what a WARM tree
+     draws. On a cold clone with no human bake and no way to make one (a non-tools
+     build), a resolved human falls back to a proportioned 0.8 x 1.8 x 0.8 palette block
+     -- the exact body the game used to ship, in the same place. Its GAMEPLAY dimensions
+     are identical either way, because the collider comes from the compiled contract in
+     `Source/World/ZM_HumanBody.h` and never from the bake.
+   - **W4's palette debt is RE-SCOPED, not closed.** The palette is now the cold-start
+     fallback's colour rather than the shipped appearance, so "two authored appearances
+     sit only 0.20 apart" is a claim about the fallback. It still wants more-separated
+     authored colours; it is no longer what the player normally sees.
 5. **RESOLVED 2026-07-29 (ZM-D-161) -- PER-NPC SAMPLED FEET HEIGHTS.** Every authored NPC,
    Vesper included, now stands on its OWN measured ground instead of one shared
    town-centre literal. **The measurement found a larger defect than the limit described:**

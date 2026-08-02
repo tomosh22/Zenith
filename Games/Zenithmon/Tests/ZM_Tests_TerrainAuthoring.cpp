@@ -538,15 +538,23 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereManifestRequiresEveryOutput)
 	ZENITH_ASSERT_FALSE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot));
 	ZENITH_ASSERT_TRUE(WriteNonEmptyFile(xFirstOutput));
 
-	WriteTestManifest(xMarker, "ZMTR", 1u, 771u, 8u);
+	// ★ THE VERSION TRACKS THE CONSTANT, IT IS NEVER SPELLED AS A LITERAL. These
+	// clauses each inject exactly ONE defect, so every other field must be the
+	// CURRENT valid value -- a hard-coded `1u` silently becomes a second defect the
+	// moment uZM_TERRAIN_MANIFEST_VERSION is bumped, which turns the positive
+	// control below into a false failure and the wrong-version negative into a
+	// false pass. (Observed for real: the ZM-D-182 bump to v2 reddened both.)
+	// The wrong-version case is therefore stated RELATIVE to the constant.
+	constexpr u_int uCURRENT = uZM_TERRAIN_MANIFEST_VERSION;
+	WriteTestManifest(xMarker, "ZMTR", uCURRENT, 771u, 8u);   // defect: short stamp
 	ZENITH_ASSERT_FALSE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot));
-	WriteTestManifest(xMarker, "BAD!", 1u, 771u);
+	WriteTestManifest(xMarker, "BAD!", uCURRENT, 771u);       // defect: magic
 	ZENITH_ASSERT_FALSE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot));
-	WriteTestManifest(xMarker, "ZMTR", 2u, 771u);
+	WriteTestManifest(xMarker, "ZMTR", uCURRENT + 1u, 771u);  // defect: version
 	ZENITH_ASSERT_FALSE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot));
-	WriteTestManifest(xMarker, "ZMTR", 1u, 770u);
+	WriteTestManifest(xMarker, "ZMTR", uCURRENT, 770u);       // defect: count
 	ZENITH_ASSERT_FALSE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot));
-	WriteTestManifest(xMarker, "ZMTR", 1u, 771u);
+	WriteTestManifest(xMarker, "ZMTR", uCURRENT, 771u);       // no defect: warm again
 	ZENITH_ASSERT_TRUE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot));
 
 	// Phase one invalidates every completion signal and all old textures before
@@ -610,7 +618,9 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereManifestRequiresEveryOutput)
 	const std::filesystem::path xOutsideSplat = xOutside / "Splatmap_RGBA.ztxtr";
 	const std::filesystem::path xOutsideGrass = xOutside / "GrassDensity.ztxtr";
 	const std::filesystem::path xOutsideSentinel = xOutside / "must-not-change.sentinel";
-	WriteTestManifest(xOutsideMarker, "ZMTR", 1u, 771u);
+	// Current version, not a literal: this stamp stands in for a REAL warm tree
+	// outside the junction, and the clause is that nothing here is touched.
+	WriteTestManifest(xOutsideMarker, "ZMTR", uZM_TERRAIN_MANIFEST_VERSION, 771u);
 	ZENITH_ASSERT_TRUE(WriteNonEmptyFile(xOutsideHeight));
 	ZENITH_ASSERT_TRUE(WriteNonEmptyFile(xOutsideSplat));
 	ZENITH_ASSERT_TRUE(WriteNonEmptyFile(xOutsideGrass));

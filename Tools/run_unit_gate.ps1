@@ -29,7 +29,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Exe,
-    [int]$Baseline = 1237,
+    [int]$Baseline = 1242,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

@@ -625,6 +625,77 @@ ZENITH_TEST(ZM_Gen, CreatureGen_SizeClassScaleGolden)
 	ZENITH_ASSERT_LT(ZM_SizeClassScale(ZM_SIZE_LARGE),  ZM_SizeClassScale(ZM_SIZE_HUGE),   "LARGE < HUGE");
 }
 
+// Size classes are artistic multipliers, not a substitute for measuring a built
+// body. This lock makes each creature's metre-space bounds observable on a cold
+// checkout and proves that the arena/gallery correction lands every mesh on its
+// declared grounded or hover floor without changing a generated vertex.
+ZENITH_TEST(ZM_Gen, CreatureGen_MeasuredOriginPolicy)
+{
+	u_int uChecked = 0u;
+	u_int uGrounded = 0u;
+	u_int uHovering = 0u;
+	for (u_int u = 0u; u < (u_int)ZM_SPECIES_COUNT; ++u)
+	{
+		const ZM_SPECIES_ID eSpecies = (ZM_SPECIES_ID)u;
+		if (!HasBuilder(eSpecies)) { continue; }
+
+		const ZM_CreatureBodyMetrics xMetrics = ZM_MeasureCreatureBody(eSpecies);
+		ZENITH_ASSERT_GT(xMetrics.m_uVertexCount, 0u,
+			"species %u has no vertices to measure", u);
+		ZENITH_ASSERT_TRUE(std::isfinite(xMetrics.m_fMinX)
+			&& std::isfinite(xMetrics.m_fMaxX)
+			&& std::isfinite(xMetrics.m_fMinY)
+			&& std::isfinite(xMetrics.m_fMaxY)
+			&& std::isfinite(xMetrics.m_fMinZ)
+			&& std::isfinite(xMetrics.m_fMaxZ),
+			"species %u has non-finite measured bounds", u);
+		ZENITH_ASSERT_TRUE(xMetrics.m_fWidth > 0.0f
+			&& xMetrics.m_fHeight > 0.0f
+			&& xMetrics.m_fDepth > 0.0f,
+			"species %u has degenerate measured extent %.6f x %.6f x %.6f m",
+			u, xMetrics.m_fWidth, xMetrics.m_fHeight, xMetrics.m_fDepth);
+
+		const ZM_CreatureRecipe xRecipe = ZM_ResolveCreatureRecipe(eSpecies);
+		const ZM_CREATURE_ORIGIN_POLICY ePolicy = ZM_GetCreatureOriginPolicy(xRecipe.m_eArchetype);
+		ZENITH_ASSERT_TRUE(ePolicy < ZM_CREATURE_ORIGIN_POLICY_COUNT,
+			"species %u resolved an invalid origin policy %u", u, (u_int)ePolicy);
+		const float fExpectedFloor = ZM_CreaturePresentationFloorY(ePolicy);
+		const float fOffset = ZM_CreaturePresentationOriginOffsetY(eSpecies);
+		ZENITH_ASSERT_EQ_FLOAT(xMetrics.m_fMinY + fOffset, fExpectedFloor, 1.0e-5f,
+			"species %u does not land on its measured presentation floor (min %.6f + "
+			"offset %.6f vs %.6f)", u, xMetrics.m_fMinY, fOffset, fExpectedFloor);
+
+		if (ePolicy == ZM_CREATURE_ORIGIN_GROUNDED)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(fExpectedFloor, 0.0f, 0.0f,
+				"grounded species %u has a non-zero presentation floor", u);
+			++uGrounded;
+		}
+		else
+		{
+			ZENITH_ASSERT_EQ_FLOAT(fExpectedFloor, fZM_CREATURE_HOVER_CLEARANCE_METRES, 0.0f,
+				"hovering species %u lost its explicit hover clearance", u);
+			++uHovering;
+		}
+
+		// The measurement is a pure generator query, never a read of whichever
+		// .zmesh happens to be present on disk.
+		const ZM_CreatureBodyMetrics xAgain = ZM_MeasureCreatureBody(eSpecies);
+		ZENITH_ASSERT_TRUE(xAgain.m_uVertexCount == xMetrics.m_uVertexCount
+			&& xAgain.m_fMinY == xMetrics.m_fMinY
+			&& xAgain.m_fMaxY == xMetrics.m_fMaxY,
+			"species %u creature measurement is not deterministic", u);
+		++uChecked;
+	}
+
+	ZENITH_ASSERT_EQ(uChecked, (u_int)ZM_SPECIES_COUNT,
+		"the measured-origin sweep did not cover every wired species");
+	ZENITH_ASSERT_GT(uGrounded, 0u,
+		"the origin policy sweep found no grounded creatures");
+	ZENITH_ASSERT_GT(uHovering, 0u,
+		"the origin policy sweep found no hovering creatures");
+}
+
 // ZM_FormatBoneName: iIndex < 0 yields the bare base name; iIndex >= 0 appends a
 // zero-padded 2-digit suffix. Direct coverage of the deterministic bone-name formatter.
 ZENITH_TEST(ZM_Gen, CreatureGen_FormatBoneName)

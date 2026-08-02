@@ -35,9 +35,9 @@
 #include "Core/Zenith_TestFramework.h"
 #include "Maths/Zenith_Maths.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"        // the camera's PURE statics (nothing is constructed)
-#include "Zenithmon/Components/ZM_PlayerController.h"    // CalculateCapsuleHalfExtent -- by name, not by literal
 #include "Zenithmon/Components/ZM_SpawnPoint.h"          // IsTagValid / uTAG_CAPACITY -- the tag contract
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"
+#include "Zenithmon/Source/World/ZM_HumanBody.h"         // THE body contract -- by name, not by literal
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"
 
 namespace
@@ -73,13 +73,11 @@ namespace
 	// inline so it reads as "the opposite direction" and not as a tuning value.
 	constexpr float fPROFLAB_HALF_TURN_RADIANS = 3.14159265f;
 
-	// The authored player capsule half-extent, computed through the SHIPPED
-	// formula rather than restated, so a controller tuning change lands here.
+	// The authored player capsule half-extent, read from the SHIPPED body contract
+	// rather than restated, so a re-tune of the body lands here.
 	float ProfLabPlayerHalfExtent()
 	{
-		return ZM_PlayerController::CalculateCapsuleHalfExtent(
-			Zenith_Maths::Vector3(fZM_PROFLAB_PLAYER_SCALE_X,
-				fZM_PROFLAB_PLAYER_SCALE_Y, fZM_PROFLAB_PLAYER_SCALE_Z));
+		return fZM_HUMAN_BODY_HALF_HEIGHT;
 	}
 
 	// ★ THE PLAYER RADIUS AND THE SPAWN FEET ARE NOT RE-IMPLEMENTED HERE. Local
@@ -350,25 +348,22 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_DoorSpawnStandsOnTheFloorWithCameraCleara
 	const Zenith_Maths::Vector3 xFeet = ZM_GetProfLabSpawnFeet();
 	const float fRadius = fZM_PROFLAB_PLAYER_RADIUS;
 
-	// (0) ★ THE MIRRORED CAPSULE HALF-EXTENT IS THE SHIPPED ONE. The header
-	//     SPELLS fZM_PROFLAB_PLAYER_CAPSULE_HALF_EXTENT because it is pure and
-	//     cannot call a component, and ZM_GetProfLabPlayerCenter -- which the
-	//     authoring writes into the scene -- reads that mirror. The automated
-	//     arrival clause compares the arrived body against
-	//     ZM_GameStateManager::CalculateSpawnCenter, which reads the REAL
-	//     formula. The two agree only while this clause holds: re-tune
-	//     ZM_PlayerController's capsule and without this the authored body and
-	//     the arrival point would split with every other unit still green.
+	// (0) ★ THE AUTHORED HALF-EXTENT AND THE ARRIVAL HALF-EXTENT ARE ONE NUMBER.
+	//     ZM_GetProfLabPlayerCenter -- which the authoring writes into the scene --
+	//     reads fZM_PROFLAB_PLAYER_CAPSULE_HALF_EXTENT, while the automated arrival
+	//     clause compares the arrived body against
+	//     ZM_GameStateManager::CalculateSpawnCenter. Both now resolve to the body
+	//     contract, and this clause is what keeps that true: reintroduce a local
+	//     literal on either side and the authored body would split from the point
+	//     the warp computes, with every other unit still green.
 	ZENITH_ASSERT_EQ_FLOAT(fZM_PROFLAB_PLAYER_CAPSULE_HALF_EXTENT,
 		ProfLabPlayerHalfExtent(), fPROFLAB_EXACT_EPSILON,
-		"the placement header mirrors a %.5f m capsule half-extent but "
-		"ZM_PlayerController::CalculateCapsuleHalfExtent(%.4f, %.4f, %.4f) "
-		"returns %.5f -- the authored Player body (ZM_GetProfLabPlayerCenter, "
-		"which reads the mirror) would no longer land on the point the warp "
-		"computes at arrival (CalculateSpawnCenter, which reads the formula)",
+		"the placement header states a %.5f m capsule half-extent but the body "
+		"contract says %.5f -- the authored Player body (ZM_GetProfLabPlayerCenter) "
+		"would no longer land on the point the warp computes at arrival "
+		"(CalculateSpawnCenter)",
 		(double)fZM_PROFLAB_PLAYER_CAPSULE_HALF_EXTENT,
-		(double)fZM_PROFLAB_PLAYER_SCALE_X, (double)fZM_PROFLAB_PLAYER_SCALE_Y,
-		(double)fZM_PROFLAB_PLAYER_SCALE_Z, (double)ProfLabPlayerHalfExtent());
+		(double)ProfLabPlayerHalfExtent());
 
 	// (1) The spawn's X column is inside the floor slab by at least the body
 	//     radius -- a marker on the boundary puts half the capsule off the slab.
@@ -705,13 +700,13 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_DoorApertureAdmitsTheAuthoredPlayer)
 		(double)xLeft.m_xCenter.x, (double)xRight.m_xCenter.x);
 
 	const float fClearWidth = ProfLabApertureClearWidth();
-	const float fRequiredWidth = fZM_PROFLAB_PLAYER_SCALE_X
+	const float fRequiredWidth = fZM_HUMAN_BODY_FOOTPRINT
 		+ 2.0f * fPROFLAB_APERTURE_SIDE_MARGIN;
 	ZENITH_ASSERT_GT(fClearWidth, fRequiredWidth,
 		"the doorway's clear width is %.4f m; the authored player is %.4f m wide "
 		"and needs %.2f m beside each shoulder (%.4f m total) -- widen a front "
 		"stub any further and the interior has no usable exit",
-		(double)fClearWidth, (double)fZM_PROFLAB_PLAYER_SCALE_X,
+		(double)fClearWidth, (double)fZM_HUMAN_BODY_FOOTPRINT,
 		(double)fPROFLAB_APERTURE_SIDE_MARGIN, (double)fRequiredWidth);
 
 	// The gap has to be where the player actually is, not merely somewhere along
@@ -731,13 +726,13 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_DoorApertureAdmitsTheAuthoredPlayer)
 	// standing player rather than the doorway's own width.
 	const float fClearHeight = ProfLabApertureClearHeight();
 	const float fRequiredHeight =
-		fZM_PROFLAB_PLAYER_SCALE_Y + fPROFLAB_APERTURE_HEAD_MARGIN;
+		fZM_HUMAN_BODY_HEIGHT + fPROFLAB_APERTURE_HEAD_MARGIN;
 	ZENITH_ASSERT_GT(fClearHeight, fRequiredHeight,
 		"the doorway's clear height is %.4f m (floor surface %.4f to lintel "
 		"underside %.4f); the authored player stands %.4f m and needs %.2f m of "
 		"headroom", (double)fClearHeight, (double)xFloor.Max().y,
 		(double)ZM_GetProfLabBlock(ZM_PROFLAB_BLOCK_LINTEL).Min().y,
-		(double)fZM_PROFLAB_PLAYER_SCALE_Y,
+		(double)fZM_HUMAN_BODY_HEIGHT,
 		(double)fPROFLAB_APERTURE_HEAD_MARGIN);
 
 	// The lintel must actually SPAN the gap it caps, or the "clear height" above
@@ -873,10 +868,10 @@ ZENITH_TEST(ZM_WorldTraversal, ProfLab_ShellEnclosesTheFloorOnEverySide)
 	{
 		const ZM_ProfLabBlockout xSide = ZM_GetProfLabBlock(aeSides[uSide]);
 		const float fRise = xSide.Max().y - xFloor.Max().y;
-		ZENITH_ASSERT_GE(fRise, fZM_PROFLAB_PLAYER_SCALE_Y,
+		ZENITH_ASSERT_GE(fRise, fZM_HUMAN_BODY_HEIGHT,
 			"'%s' rises only %.4f m above the floor; the authored player is "
 			"%.4f m tall and would see (and step) over it",
 			ZM_GetProfLabBlockName(aeSides[uSide]), (double)fRise,
-			(double)fZM_PROFLAB_PLAYER_SCALE_Y);
+			(double)fZM_HUMAN_BODY_HEIGHT);
 	}
 }

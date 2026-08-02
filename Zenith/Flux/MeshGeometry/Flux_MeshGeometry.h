@@ -81,6 +81,13 @@ public:
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, Zenith_Maths::Matrix4 xTransform);
 	static void GenerateUnitCube(Flux_MeshGeometry& xGeometryOut);
+	// The general box GenerateUnitCube is a special case of: centred on the origin,
+	// spanning -half..+half per axis, with the same 24-vertex/36-index layout,
+	// winding, per-face UVs and tangent basis. For a caller that needs a renderable
+	// block of a stated SIZE and cannot express it as a transform scale (an entity
+	// whose scale already belongs to a model, say).
+	static void GenerateBox(Flux_MeshGeometry& xGeometryOut,
+		const Zenith_Maths::Vector3& xHalfExtents);
 	// Procedural primitives. GenerateCapsule builds a sphere stretched along Y by
 	// fHeight (a true cylinder+hemispheres capsule is approximated); GenerateCone
 	// builds a base ring + apex + base centre. Both fill the geometry, build the

@@ -67,6 +67,14 @@ void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, 
 
 void Flux_MeshGeometry::GenerateUnitCube(Flux_MeshGeometry& xGeometryOut)
 {
+	// The unit cube IS a box of half-extent 0.5 on every axis. Forwarding rather
+	// than duplicating keeps the two from drifting in winding, UVs or tangents.
+	GenerateBox(xGeometryOut, Zenith_Maths::Vector3(0.5f, 0.5f, 0.5f));
+}
+
+void Flux_MeshGeometry::GenerateBox(Flux_MeshGeometry& xGeometryOut,
+	const Zenith_Maths::Vector3& xHalfExtents)
+{
 	// 24 vertices (4 per face for proper normals)
 	// 36 indices (6 faces * 2 triangles * 3 indices)
 	xGeometryOut.m_uNumVerts = 24;
@@ -135,41 +143,46 @@ void Flux_MeshGeometry::GenerateUnitCube(Flux_MeshGeometry& xGeometryOut)
 		xGeometryOut.m_puIndices[uIdx++] = uBase + 3;
 	};
 
-	// Unit cube from -0.5 to 0.5 on each axis
+	// Box centred on the origin, spanning -half..+half on each axis. With
+	// xHalfExtents == 0.5 these are bit-for-bit the old unit-cube literals.
+	const float fX = xHalfExtents.x;
+	const float fY = xHalfExtents.y;
+	const float fZ = xHalfExtents.z;
+
 	// +Z face (front)
 	AddFace(
-		{ -0.5f, -0.5f,  0.5f }, {  0.5f, -0.5f,  0.5f },
-		{ -0.5f,  0.5f,  0.5f }, {  0.5f,  0.5f,  0.5f },
+		{ -fX, -fY,  fZ }, {  fX, -fY,  fZ },
+		{ -fX,  fY,  fZ }, {  fX,  fY,  fZ },
 		{ 0.f, 0.f, 1.f }, { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }
 	);
 	// -Z face (back)
 	AddFace(
-		{  0.5f, -0.5f, -0.5f }, { -0.5f, -0.5f, -0.5f },
-		{  0.5f,  0.5f, -0.5f }, { -0.5f,  0.5f, -0.5f },
+		{  fX, -fY, -fZ }, { -fX, -fY, -fZ },
+		{  fX,  fY, -fZ }, { -fX,  fY, -fZ },
 		{ 0.f, 0.f, -1.f }, { -1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }
 	);
 	// +Y face (top)
 	AddFace(
-		{ -0.5f,  0.5f,  0.5f }, {  0.5f,  0.5f,  0.5f },
-		{ -0.5f,  0.5f, -0.5f }, {  0.5f,  0.5f, -0.5f },
+		{ -fX,  fY,  fZ }, {  fX,  fY,  fZ },
+		{ -fX,  fY, -fZ }, {  fX,  fY, -fZ },
 		{ 0.f, 1.f, 0.f }, { 1.f, 0.f, 0.f }, { 0.f, 0.f, -1.f }
 	);
 	// -Y face (bottom)
 	AddFace(
-		{ -0.5f, -0.5f, -0.5f }, {  0.5f, -0.5f, -0.5f },
-		{ -0.5f, -0.5f,  0.5f }, {  0.5f, -0.5f,  0.5f },
+		{ -fX, -fY, -fZ }, {  fX, -fY, -fZ },
+		{ -fX, -fY,  fZ }, {  fX, -fY,  fZ },
 		{ 0.f, -1.f, 0.f }, { 1.f, 0.f, 0.f }, { 0.f, 0.f, 1.f }
 	);
 	// +X face (right)
 	AddFace(
-		{  0.5f, -0.5f,  0.5f }, {  0.5f, -0.5f, -0.5f },
-		{  0.5f,  0.5f,  0.5f }, {  0.5f,  0.5f, -0.5f },
+		{  fX, -fY,  fZ }, {  fX, -fY, -fZ },
+		{  fX,  fY,  fZ }, {  fX,  fY, -fZ },
 		{ 1.f, 0.f, 0.f }, { 0.f, 0.f, -1.f }, { 0.f, 1.f, 0.f }
 	);
 	// -X face (left)
 	AddFace(
-		{ -0.5f, -0.5f, -0.5f }, { -0.5f, -0.5f,  0.5f },
-		{ -0.5f,  0.5f, -0.5f }, { -0.5f,  0.5f,  0.5f },
+		{ -fX, -fY, -fZ }, { -fX, -fY,  fZ },
+		{ -fX,  fY, -fZ }, { -fX,  fY,  fZ },
 		{ -1.f, 0.f, 0.f }, { 0.f, 0.f, 1.f }, { 0.f, 1.f, 0.f }
 	);
 

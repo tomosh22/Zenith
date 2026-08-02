@@ -150,7 +150,6 @@ namespace
 	constexpr float fZM_AG_CREATURE_HEIGHT = 4.5f;   // hero content -- kept prominent
 	constexpr float fZM_AG_HUMAN_HEIGHT    = 4.5f;   // hero content -- kept prominent
 	constexpr float fZM_AG_BUILDING_HEIGHT = 6.5f;
-	constexpr float fZM_AG_HUMAN_NOMINAL_M = 1.8f;    // a build-1.0 human is ~1.8m tall
 	constexpr float fZM_AG_MIN_DENOM       = 1.0e-3f; // guard against a zero natural size
 
 	// Per-column WIDTH budget for the families whose footprint width varies a lot vs
@@ -361,7 +360,10 @@ namespace
 	}
 
 	// One shared shape per family: resolve the family's MODEL ref -> create the
-	// entity -> ground it at (X,0,rowZ) + uniform scale -> LoadModel. Skinned
+	// entity -> place it at (X,y,rowZ) + uniform scale -> LoadModel. Props and
+	// buildings use their authored feet origin; creatures use their measured
+	// grounded/hover policy; humans are CENTRE-anchored and sit at half their
+	// display height. Skinned
 	// (creature/human) and static (building/prop) both load via LoadModel; the
 	// skinned families render in their bind pose (no animator attached). Humans'
 	// .zmodel references the shared game:Humans/Shared/Human.zskel, which LoadModel
@@ -389,10 +391,14 @@ namespace
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		const float fX = (static_cast<float>(uIndex) - (static_cast<float>(uZM_AG_CREATURES) - 1.0f) * 0.5f)
 			* fZM_AG_CREATURE_PITCH;
-		xTransform.SetPosition({ fX, 0.0f, fZM_AG_CREATURE_ROW_Z });
-
 		const float fSizeScale = ZM_ResolveCreatureRecipe(xEntry.m_eSpecies).m_fSizeScale;
 		const float fScale = fZM_AG_CREATURE_HEIGHT / std::max(fSizeScale, fZM_AG_MIN_DENOM);
+		// The gallery deliberately normalises family display size, but it must still
+		// honour the same measured mesh-origin policy as the battle presenter or a
+		// serpent can sink through the common floor while a floater drifts arbitrarily.
+		xTransform.SetPosition({ fX,
+			ZM_CreaturePresentationOriginOffsetY(xEntry.m_eSpecies) * fScale,
+			fZM_AG_CREATURE_ROW_Z });
 		xTransform.SetScale({ fScale, fScale, fScale });
 
 		xEntity.AddComponent<Zenith_ModelComponent>().LoadModel(szRef);
@@ -412,9 +418,15 @@ namespace
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		const float fX = (static_cast<float>(uIndex) - (static_cast<float>(uZM_AG_HUMANS) - 1.0f) * 0.5f)
 			* fZM_AG_HUMAN_PITCH;
-		xTransform.SetPosition({ fX, 0.0f, fZM_AG_HUMAN_ROW_Z });
+		// Humans are CENTRE-ANCHORED (ZM_HumanGen v2), so the entity origin is the
+		// body's middle, not its feet: a human placed at y=0 would stand half-sunk
+		// through the gallery floor. Lift by half the display height.
+		xTransform.SetPosition({ fX, fZM_AG_HUMAN_HEIGHT * 0.5f, fZM_AG_HUMAN_ROW_Z });
 
-		const float fNaturalHeight = fZM_AG_HUMAN_NOMINAL_M * ZM_ResolveHumanRecipe(eId).m_fHeightScale;
+		// MEASURED, not nominal. The old fZM_AG_HUMAN_NOMINAL_M * m_fHeightScale
+		// guessed at the loft's output; ZM_MeasureHumanBody reports what the loft
+		// actually built, over the body prefix (a hat must not shrink its wearer).
+		const float fNaturalHeight = ZM_MeasureHumanBody(eId).m_fHeight;
 		const float fScale = fZM_AG_HUMAN_HEIGHT / std::max(fNaturalHeight, fZM_AG_MIN_DENOM);
 		xTransform.SetScale({ fScale, fScale, fScale });
 

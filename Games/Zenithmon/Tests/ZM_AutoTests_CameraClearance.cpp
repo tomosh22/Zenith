@@ -737,10 +737,10 @@ namespace
 		g_xCCPlayerID = xPlayer.GetEntityID();
 		g_fCCAuthoredYaw = fYaw;
 		g_bCCYawCaptured = true;
-		// The PLAYER'S own scale, never a literal: a re-scaled player must be
-		// judged against ITS capsule.
-		g_fCCCapsuleHalfExtent =
-			ZM_PlayerController::CalculateCapsuleHalfExtent(xPlayerScale);
+		// THE BODY CONTRACT, never the transform scale. A human's body no longer
+		// derives from how big its model is drawn, so judging clearance against a
+		// scale-derived capsule would measure a body that does not exist.
+		g_fCCCapsuleHalfExtent = fZM_HUMAN_BODY_HALF_HEIGHT;
 		g_bCCResolved = true;
 		g_eCCPhase = CCPhase::Probe;
 		g_iCCFrames = 0;

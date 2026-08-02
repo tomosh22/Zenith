@@ -161,6 +161,16 @@ Scaffolding: `zenith new Zenithmon` creates the `.zproj` + template files and re
 - *Terrain per outdoor scene* (~25): recipe per scene in `ZM_TerrainAuthoring` — ResetSession → SetAssetSet → GenerateProcedural(sceneSeed) → route-corridor Flatten dabs along authored polyline (ledges = adjacent flatten heights, water = below-plane + water quad) → town pads at building footprints → Erode → AutoSplat ×4 + dirt-path splat along polyline → GrassDensity brush patches beside (never on) the path = encounter fields → TreeBrush edges → SaveTextures + ExportChunksRect.
 - *Scenes* (~40: ~25 outdoor + ~14 interiors + battle + FrontEnd): authored from `ZM_WorldSpec` through shared `AddStep_*` helpers (buildings, NPCs + graphs, gates, spawn points, camera, UI canvas) → SaveScene. Build indices: 0 FrontEnd, 1 Battle, 2–12 towns, 20–34 routes + Victory Road, 40+ interiors, 95 Tower.
 - Full cold bake ≈ 30–50 min; warm boot with valid stamps ≈ seconds; byte-identical re-bake is a tested invariant.
+- **★ A STAMP IS `(generator version, expected file COUNT)` — IT DOES NOT HASH THE BAKED BYTES.**
+  So the guard is only as good as the version discipline: any change that rewrites a family's
+  or a terrain's output CONTENTS while emitting the same number of files leaves every warm tree
+  reporting warm forever. Bump the version **in the same commit** as the generator change
+  (`uZM_*GEN_VERSION`, `uZM_TERRAIN_MANIFEST_VERSION`). Two live examples: `ZM_HumanGen` v1→v2
+  for the centre-anchored bind space (ZM-D-181), and `uZM_TERRAIN_MANIFEST_VERSION` 1→2 for the
+  collision-density change (ZM-D-182) — the latter was nearly missed, and a stale terrain bake
+  does not degrade gracefully, it loads with **no physics body at all**. CI cannot catch a
+  missed bump: `Assets/` is git-ignored so CI always bakes cold and always passes, while every
+  existing developer tree silently breaks. See DecisionLog ZM-D-182.
 
 ## CI gate — `zm-tests` (required PR check, modeled on [dp-tests.yml](.github/workflows/dp-tests.yml))
 

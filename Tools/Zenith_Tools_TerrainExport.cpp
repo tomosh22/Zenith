@@ -755,8 +755,10 @@ static void ExportHeightmapInternal(const Zenith_Image& xHeightmap, const std::s
 	// Export LOW detail render meshes (density divisor 4, always resident)
 	ExportMesh(4, "Render_LOW", xHeightmap, strOutputDir);
 
-	// Export physics mesh (density divisor 8)
-	ExportMesh(8, "Physics", xHeightmap, strOutputDir);
+	// Export physics mesh (density divisor 4). This remains lower-poly than the
+	// HIGH render mesh, but gives characters a four-metre collision surface rather
+	// than the visibly coarse eight-metre one.
+	ExportMesh(4, "Physics", xHeightmap, strOutputDir);
 }
 
 static bool ExportHeightmapRectInternal(const Zenith_Image& xHeightmap,
@@ -771,7 +773,7 @@ static bool ExportHeightmapRectInternal(const Zenith_Image& xHeightmap,
 
 	return ExportMeshInternal(1, "Render", xHeightmap, strOutputDir, &xRect) &&
 		ExportMeshInternal(4, "Render_LOW", xHeightmap, strOutputDir, &xRect) &&
-		ExportMeshInternal(8, "Physics", xHeightmap, strOutputDir, &xRect);
+		ExportMeshInternal(4, "Physics", xHeightmap, strOutputDir, &xRect);
 }
 
 void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir)

@@ -190,15 +190,21 @@ ZM_HumanRecipe ZM_ResolveHumanRecipe(ZM_HUMAN_ID eId)
 
 // ============================================================================
 // Shared skeleton -- THE canonical bone emit (16 bones, StickFigure core names,
-// identity bind-local rotation on EVERY bone, feet grounded near world y=0).
+// identity bind-local rotation on EVERY bone, CENTRE-ANCHORED bind space).
 // ============================================================================
 void ZM_AppendSharedHumanBones(ZM_GenMesh& xMesh)
 {
 	const Zenith_Maths::Quat    xIdentity = glm::identity<Zenith_Maths::Quat>();
 	const Zenith_Maths::Vector3 xUnitScale(1.0f);
 
-	// Root lifted to hip height (world y=1.0) so the leg chain descends to y=0.
-	ZM_GenAddBone(xMesh, "Root",          -1,       Zenith_Maths::Vector3( 0.00f,  1.0f, 0.0f), xIdentity, xUnitScale);   // 0
+	// v1 put Root at hip height y=1.0 with the leg chain descending to y=0. v2
+	// anchors the shared bind space on the canonical body's CENTRE, so Root drops
+	// by fZM_HUMAN_MESH_CENTRE_Y. It is the ONLY bone that moves: Root is the only
+	// bone with parent -1, so every other local translation is already relative to
+	// a parent that carries the shift (subtracting from all 16 would compound it
+	// down the hierarchy). The matching vertex translation is the post-pass at the
+	// end of ZM_BuildHumanMesh.
+	ZM_GenAddBone(xMesh, "Root",          -1,       Zenith_Maths::Vector3( 0.00f,  fZM_HUMAN_ROOT_BIND_Y, 0.0f), xIdentity, xUnitScale);   // 0
 	ZM_GenAddBone(xMesh, "Spine",         HB_ROOT,  Zenith_Maths::Vector3( 0.00f,  0.5f, 0.0f), xIdentity, xUnitScale);   // 1
 	ZM_GenAddBone(xMesh, "Neck",          HB_SPINE, Zenith_Maths::Vector3( 0.00f,  0.7f, 0.0f), xIdentity, xUnitScale);   // 2
 	ZM_GenAddBone(xMesh, "Head",          HB_NECK,  Zenith_Maths::Vector3( 0.00f,  0.2f, 0.0f), xIdentity, xUnitScale);   // 3

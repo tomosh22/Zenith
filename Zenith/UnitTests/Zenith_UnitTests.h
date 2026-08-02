@@ -330,6 +330,13 @@ public:
 	// Regression: RebuildCollider must rebuild at the body's current transform,
 	// not a stale cached one (Engine change 1 of the prefab-instantiate work).
 	static void TestColliderRebuildKeepsMovedTransform();
+	// SetExplicitCapsuleDimensions / SetExplicitBoxHalfExtents: the shape a caller
+	// STATES, independently of how big the entity is drawn.
+	static void TestColliderExplicitCapsuleDimensions();
+	static void TestColliderExplicitBoxHalfExtents();
+	static void TestColliderExplicitDimensionsFailClosed();
+	static void TestColliderExplicitDimensionsNoOpOnMatch();
+	static void TestColliderExplicitBoxSurvivesMove();
 	static void TestDataParallelTaskCallingThreadParticipates();
 	static void TestTaskReuseAfterWait();
 

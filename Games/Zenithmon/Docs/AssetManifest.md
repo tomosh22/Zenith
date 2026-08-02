@@ -181,6 +181,35 @@ byte-identical across every species of an archetype. They are part of the
 
 ## 2. Humans (~35 models)
 
+> **★ ZM-D-181: THIS FAMILY NOW HAS A SHIPPED RUNTIME CONSUMER.** Until then the
+> only thing that loaded a human `.zmodel` was the asset-gallery test. The six
+> authored Dawnmere NPCs and the player in all three scenes now wear these models,
+> animated Idle <-> Walk off commanded speed. Four things changed with it:
+>
+> * **The bind space is CENTRE-ANCHORED (generator v2).** v1 built feet-near-y=0;
+>   Zenithmon's authored entity position is the body CENTRE, so the mesh moved to
+>   meet it rather than the whole game moving to meet the mesh. It is a rigid
+>   translation of the root bone (the only bone with parent -1) and every vertex,
+>   so skinning and the rotation-only shared clips are mathematically untouched.
+>   **The version bump is load-bearing**: every v1 bake on disk is feet-at-zero and
+>   would render sunk into the floor.
+> * **Body metrics are MEASURED over the body vertex PREFIX.** `ZM_MeasureHumanBody`
+>   measures the six body loft parts only -- hair and attachments are excluded, so a
+>   hat cannot decide how tall its wearer is -- and it measures BEFORE the anchor, so
+>   it can never be circular. `fZM_HUMAN_CANONICAL_BODY_HEIGHT` (2.604300) and
+>   `fZM_HUMAN_MESH_CENTRE_Y` (1.307005) are pinned by a boot unit that re-derives
+>   both from a freshly built mesh. They are MODEL-space units, not metres.
+> * **`fZM_HUMAN_VISUAL_SCALE`** (`Source/World/ZM_HumanBody.h`) is the uniform
+>   authored transform scale that maps that ~2.6-unit body onto the game's 1.8 m
+>   body contract.
+> * **Readiness is a policy, and the bake is LAZY.** `ZM_AreHumanAssetsReady`
+>   (`Source/World/ZM_HumanAssetPolicy.h`) asks the manifest; on a cold TOOLS tree it
+>   spends one bake attempt and re-asks. On a `_False` build or a cold clone that
+>   cannot bake, a resolved human draws the proportioned palette fallback block
+>   instead. **Appearance is bake-dependent; GAMEPLAY DIMENSIONS ARE NOT** -- the
+>   collider comes from the compiled body contract either way.
+
+
 - **ONE shared skeleton** (generalized StickFigure) + **ONE shared 9-clip
   set** -- every human model binds the same .zskel and reuses the same
   .zanim files. No per-model clips.
@@ -339,8 +368,16 @@ standalone editor session can open.
 | GrassDensity.ztxtr | R32F | doubles as the gameplay tall-grass encounter map (ZM_TallGrassSystem keeps its own CPU copy) |
 | Render_X_Y.zmesh | exactly 1 per exported chunk | HIGH render source; a missing/invalid sparse source becomes `SOURCE_UNAVAILABLE` at runtime |
 | Render_LOW_X_Y.zmesh | exactly 1 per exported chunk | LOW render source |
-| Physics_X_Y.zmesh | exactly 1 per exported chunk | physics source |
+| Physics_X_Y.zmesh | exactly 1 per exported chunk | physics source; **density divisor 4** (289 verts / 1536 indices per chunk) since ZM-D-182, deliberately coarser than the HIGH render mesh. `Zenith_TerrainComponent` VALIDATES these counts against `Flux_TerrainVertexLayout` and rejects a mismatch, so a chunk baked at another divisor does not degrade -- the terrain gets no physics body at all |
 | ZM_TerrainRecipe.manifest | 12-byte binary marker | terrain-family warm gate: ASCII `ZMTR`, little-endian version, little-endian required-output count; published atomically only after every required output validates |
+
+> **★ THE WARM GATE IS `(version, COUNT)` -- IT DOES NOT HASH THE BYTES.** Any change that
+> rewrites chunk CONTENTS while emitting the same number of files (a collision-density change
+> being the exact case) leaves a stale tree reporting warm forever. **Bump
+> `uZM_TERRAIN_MANIFEST_VERSION` in the same commit**, and bump the sibling markers in
+> CityBuilder and RenderTest too -- see DecisionLog ZM-D-182 and
+> `Zenith/Flux/Terrain/CLAUDE.md`. CI cannot catch a miss: `**/Assets/` is gitignored, so CI
+> always bakes cold and always passes while every existing developer tree silently breaks.
 
 **Rect export only (E2):** bounds are inclusive, non-normalizing, and must
 satisfy `0 <= min <= max < 64` on both axes while containing the hard-required
@@ -404,38 +441,74 @@ or dressed scenes.
   (tracked since ZM-D-148; it was an ignored output when this row was written)
   authors `TownCenterSpawn` with order-105 `ZM_SpawnPoint`, tag `TownCenter`,
   and transform **(512, 25.99055, 480)**. Spawn-marker transforms denote feet,
-  not capsule centres. It also authors a `Player` at the scale-derived centre
-  **(512, 26.89055, 480)** with transform scale
-  **(0.8, 1.8, 0.8)**, a dynamic generic capsule, and order-102
+  not capsule centres. It also authors a `Player` at the centre
+  **(512, 26.89055, 480)**, a dynamic capsule, and order-102
   `ZM_PlayerController`; its main camera carries order-103 `ZM_FollowCamera`
   with authored yaw 0. The exact surface sample plus the 0.9 m capsule
   half-extent produces that centre. A SINGLE reload replaces the scene-owned
   Player/camera while the persistent manager places and re-enables the new
-  generation at the marker. The order-107
-  `ZM_GreyboxVisual` marker rebuilds unit-cube visuals at runtime; these
-  transitional blocks create no baked model/material files and are explicitly
-  replaced by the S4 art pipeline without changing collision or traversal.
+  generation at the marker.
+  ★ **UPDATED AT ZM-D-181 -- THE SCALE IS NO LONGER THE BODY.** The player's
+  authored transform scale is now the UNIFORM `fZM_HUMAN_VISUAL_SCALE`
+  (1.8 / 2.6043 ~ 0.691), which exists only to land the generated human MODEL on
+  the body contract; it is **not** (0.8, 1.8, 0.8) and nothing may derive a body
+  from it (a uniform scale degenerates a scale-derived capsule into a sphere).
+  The 0.9 m half-extent above now comes from the compiled contract in
+  `Source/World/ZM_HumanBody.h`, and the capsule is installed explicitly by
+  `ZM_PlayerController::EnsureAndConfigureBody`. The order-107 `ZM_GreyboxVisual`
+  no longer rebuilds a unit cube for a human: the six authored NPCs and the player
+  wear the baked `ZM_HumanGen` models with an Idle/Walk animator, and the palette
+  block survives only as the COLD-START FALLBACK when no human bake is loadable.
+  Walls, floors, doors and lintels are still unit cubes and are unchanged.
 
-### The Dawnmere Home, its entrance and its approach (ZM-D-173)
+### The Dawnmere Home, its entrance and its approach (ZM-D-173, re-shaped at ZM-D-181)
 
 Every coordinate below is authored from ONE place --
-`Source/World/ZM_DawnmerePlacement.h`'s ZM-D-173 block -- which the boot units
+`Source/World/ZM_DawnmerePlacement.h`'s Home block -- which the boot units
 and both real-scene guards read as well. All Y values are DERIVED by fixed
 formulas from ground heights MEASURED on the baked heightfield by
-`ZM_DawnmereHomeGroundTruth_Test`; none is hand-tuned.
+`ZM_DawnmereHomeGroundTruth_Test`; none is hand-tuned. **The formulas, not the
+numbers, are the contract** -- the numbers below are what those formulas evaluate
+to against the current measured table and move whenever it is re-measured.
+
+★ **RE-MEASURED AT ZM-D-182**, because the terrain's collision divisor moved 8 -> 4
+and the ground samples are real raycasts against the collision mesh. A recipe,
+seed, flatten-radius **or density** change re-measures them; run
+`ZM_DawnmereHomeGroundTruth_Test`, paste its `MEASURED FEET Y` lines into
+`ZM_DawnmerePlacement.cpp`, and every Y below follows automatically.
+
+★ **THE Y COLUMN BELOW IS NOT HAND-ARITHMETIC.** It is the oracle's own
+`DERIVED authored Y` log line, verified against a freshly re-baked divisor-4
+terrain on 2026-08-02 (`shell=27.544590 doorLeft=27.470591 doorRight=27.442789
+lintel=28.970591 trigger=27.536751 spawnFeet=26.542120`, every row's
+`tableError=0.00000`). If you ever need to refresh this table, read that line
+rather than recomputing the formulas by hand.
 
 | Entity | Authored transform | Scale | Notes |
 |---|---|---|---|
-| `DawnmereHomeShell` | **(384, 29.126190, 496)** | (16, 6, 40) | occupies **z 476..516**; Y = lowest of four measured footprint corners (26.17619) + 3.0 - 0.05 embed |
-| `DawnmereHomeDoorLeft` | **(382, 27.728149, 476)** | (1, 3, 0.5) | own measured ground 26.22815 + 1.5 |
-| `DawnmereHomeDoorRight` | **(386, 27.716360, 476)** | (1, 3, 0.5) | own measured ground 26.21636 + 1.5 |
-| `DawnmereHomeDoorLintel` | **(384, 29.478149, 476)** | (5, 0.5, 0.5) | higher door ground + 3.25 |
-| `HomeDoorTrigger` | **(384, 27.291389, 474)** | (3, 2, 2) | sensor, occupies **z 473..475**; measured ground 26.29139 + 1.0; targets **build 40 / `Door`** |
-| `FromHomeSpawn` | **(384, 26.076151, 468)** | -- | FEET marker, the measured surface verbatim |
+| `DawnmereHomeShell` | **(384, 27.54459, 482.5)** | (17, 4, 13) | occupies **x 375.5..392.5, z 476..489**; Y = lowest of four measured footprint corners (25.59459) + half height 2.0 - 0.05 embed |
+| `DawnmereHomeDoorLeft` | **(381.75, 27.47059, 476)** | (0.5, 2.5, 0.5) | jamb; own measured ground 26.22059 + half height 1.25 |
+| `DawnmereHomeDoorRight` | **(386.25, 27.44279, 476)** | (0.5, 2.5, 0.5) | jamb; own measured ground 26.19279 + 1.25 |
+| `DawnmereHomeDoorLintel` | **(384, 28.97059, 476)** | (5, 0.5, 0.5) | higher door ground (26.22059) + a full 2.5 m jamb + its own half thickness 0.25 |
+| `HomeDoorTrigger` | **(384, 27.53675, 474)** | (4, 2.5, 2) | sensor, occupies **z 473..475**; measured ground 26.28675 + 1.25; targets **build 40 / `Door`** |
+| `FromHomeSpawn` | **(384, 26.54212, 468)** | -- | FEET marker, the measured surface verbatim |
 
 The entrance decoration plane is **z = 476**, which is the shell's **-Z** face.
-Before ZM-D-173 the shell sat at z 436..476 with its entrance on the **+Z** face,
-which put the whole building behind the player at the doorway.
+
+**★ THE ENTRANCE IS A FRAME, NOT A DOOR PANEL.** The two jambs span x 381.5..382.0
+and x 386.0..386.5, leaving a **4.0 m wide x 2.5 m tall opening** they do not fill,
+bridged by the lintel. That aperture is deliberately the PlayerHome interior's own,
+so the exterior and interior portals read as one home entrance rather than two
+unrelated blockout scales. Nothing swings and nothing closes: the warp is the
+sensor 2 m out, so the player is taken through before ever reaching the gap.
+
+**Shape history.** Before ZM-D-173 the shell sat at z 436..476 with its entrance on
+the **+Z** face, which put the whole building behind the player at the doorway.
+ZM-D-173 moved it +40 m to z 476..516 at (16, 6, 40). **ZM-D-181 replaced that
+16 x 6 x 40 m false depth with the present 17 x 4 x 13 m envelope** -- the rounded-up
+outer envelope of PlayerHome's 16.5 x 12.5 m interior walls -- keeping the -Z
+entrance at z = 476 so the open forecourt, the fixed-yaw camera direction, the
+trigger and the return route all survive unchanged.
 
 #### Camera-arm clearance contract (binding)
 
@@ -488,6 +561,31 @@ recipes.
 ---
 
 ## 5. Scenes and graphs (boot-authored; the five shipped scenes are COMMITTED)
+
+> **★ ZM-D-181 RE-AUTHORED THREE OF THE FIVE.** The six greybox NPC entities in
+> `Dawnmere.zscen` are now six HUMAN-MODEL entities, and the Player in all three of
+> `Dawnmere` / `PlayerHome` / `ProfLab` gained a `ZM_GreyboxVisual` so it is drawn
+> at all (it never had a visual before). **What moved in the bytes is narrow and
+> deliberate: the transform SCALE, and one added component.** Positions did not
+> move, collider steps did not move, the rival's yaw step did not move, and the
+> step ORDER did not move -- which is what keeps ZM-D-148's dense authoring-order
+> file indices stable.
+>
+> New SHA256 (both consecutive authoring boots wrote identical bytes):
+> `Dawnmere` `6817534989B1A083...`, `PlayerHome` `DBBFB78311A55BBF...`,
+> `ProfLab` `1BCAABC9EA4A6FC5...`. `Battle` and `FrontEnd` are untouched.
+>
+> **`Assets/Navmesh/Dawnmere.znavmesh` is UNCHANGED (`DCAA8403...`), and it must
+> be.** Its bake is a flat coverage grid that never reads a collider
+> (`Source/Nav/ZM_NavBake.cpp:29-38`), so a navmesh that moved would mean something
+> other than the scale had changed.
+>
+> **The model is NOT authored into the scene, deliberately.**
+> `Zenith_ModelComponent::WriteToDataStream` serializes its MATERIALS verbatim,
+> which would make the committed bytes a function of a gitignored `.zmtrl` bake.
+> The model is added at runtime by `ZM_GreyboxVisual`, exactly as the unit cube
+> always was.
+
 
 ~40 .zscen (0 FrontEnd, 1 Battle, 2-12 towns, 20-34 routes + Victory Road,
 40+ interiors, 95 Tower) are authored from ZM_WorldSpec via shared AddStep_*

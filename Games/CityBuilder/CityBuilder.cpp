@@ -274,7 +274,13 @@ static void CB_EnsureTerrainAssets()
 	// Hills heightmap -> chunk bake. Slow; gated on a version marker so it re-bakes
 	// once when the terrain shape changes, then the on-disk chunk meshes (which now
 	// carry the hill geometry) are reused.
-	const std::string strHillMarker = strTerrainDir + "terrain_hills_v4.marker";   // bump to force a re-bake when HillNorm changes
+	// ★ BUMP FOR ANY CHANGE TO THE BAKED BYTES, not only to HillNorm. v5 is not a
+	// terrain-shape change: the engine's physics chunks moved from a density
+	// divisor of 8 (81 verts) to 4 (289 verts), and Zenith_TerrainComponent
+	// validates a loaded chunk against Flux_TerrainVertexLayout — so every v4
+	// bake's Physics_*.zmesh is now rejected and the city would load with NO
+	// terrain collision.
+	const std::string strHillMarker = strTerrainDir + "terrain_hills_v5.marker";   // bump to force a re-bake when HillNorm or the baked chunk layout changes
 	if (!std::filesystem::exists(strHillMarker))
 	{
 		const std::string strHeightmap = strTerrainDir + "CityHeightmap" ZENITH_TEXTURE_EXT;

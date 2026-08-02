@@ -2,9 +2,10 @@
 
 // ============================================================================
 // ZM_HumanMesh -- the S4 SC2/SC3 per-model human mesh loft. The authored ring rows
-// are the StickFigure golden torso/head/arm/leg tables, translated +1Y so the
-// shared feet remain near world y=0. BUILD girth and the fixed MESH-domain draw
-// stream vary radii only; the separate modest recipe height scales authored Y.
+// are the StickFigure golden torso/head/arm/leg tables, translated +1Y so the loft
+// builds feet-near-zero; a v2 post-pass then rigidly CENTRE-ANCHORS the whole bind
+// space (see the block in ZM_HumanGen.h). BUILD girth and the fixed MESH-domain
+// draw stream vary radii only; the separate modest recipe height scales authored Y.
 // The shared 16-bone skeleton, Cx/Cz centres and bone indices never vary.
 // ============================================================================
 
@@ -193,49 +194,116 @@ namespace
 	}
 }
 
+namespace
+{
+	// The PRE-ANCHOR build, shared by ZM_BuildHumanMesh and ZM_MeasureHumanBody so
+	// the metrics can never be measured against a different mesh than the one that
+	// ships. Returns the BODY VERTEX PREFIX: the vertex count captured immediately
+	// before ZM_AppendHumanAppearanceMesh, i.e. the six body loft parts and nothing
+	// else. Hair and attachments live past it, which is exactly why a hat cannot
+	// decide how tall a person is.
+	u_int ZM_BuildHumanMeshUnanchored(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh)
+	{
+		xMesh.Reset();
+
+		// ALL randomness is consumed up front in this fixed order. Left/right limbs
+		// share their girth draws so the bind-pose silhouette stays mirrored.
+		ZM_GenRNG xMeshRng = ZM_MakeGenRNG(xRecipe, ZM_GEN_DOMAIN_MESH);
+		const float fTorsoRxJ       = xMeshRng.NextFloatRange(0.96f, 1.04f); // 1 side girth
+		const float fTorsoRzJ       = xMeshRng.NextFloatRange(0.96f, 1.04f); // 2 front/back girth
+		const float fTorsoSuperJ    = xMeshRng.NextFloatRange(0.96f, 1.00f); // 3 torso roundness
+		const float fHeadSizeJ      = xMeshRng.NextFloatRange(0.97f, 1.03f); // 4 head size
+		const float fArmGirthJ      = xMeshRng.NextFloatRange(0.94f, 1.06f); // 5 shared arm girth
+		const float fLegGirthJ      = xMeshRng.NextFloatRange(0.94f, 1.06f); // 6 shared leg girth
+
+		const float fBuildWidth = ZM_HumanBuildWidthScale(xRecipe.m_eBuild);
+		const float fHeadBuild  = ZM_HumanAttenuateBuild(fBuildWidth, 0.25f);
+		const float fLimbBuild  = ZM_HumanAttenuateBuild(fBuildWidth, 0.65f);
+		const float fTorsoSuper = ZM_HumanClampSuperEllipse(
+			ZM_HumanBuildSuperEllipse(xRecipe.m_eBuild) * fTorsoSuperJ);
+
+		ZM_AppendSharedHumanBones(xMesh);
+
+		ZM_AppendHumanTorso(xMesh, xRecipe.m_fHeightScale,
+			fBuildWidth * fTorsoRxJ, fBuildWidth * fTorsoRzJ, fTorsoSuper);
+		ZM_AppendHumanHeadNeck(xMesh, xRecipe.m_fHeightScale, fHeadBuild * fHeadSizeJ);
+		ZM_AppendHumanArm(xMesh, -1.0f, HB_LUARM, HB_LLARM, HB_LHAND, xZM_HUMAN_UV_ARM_L,
+			xRecipe.m_fHeightScale, fLimbBuild * fArmGirthJ);
+		ZM_AppendHumanArm(xMesh,  1.0f, HB_RUARM, HB_RLARM, HB_RHAND, xZM_HUMAN_UV_ARM_R,
+			xRecipe.m_fHeightScale, fLimbBuild * fArmGirthJ);
+		ZM_AppendHumanLeg(xMesh, -1.0f, HB_LULEG, HB_LLLEG, HB_LFOOT, xZM_HUMAN_UV_LEG_L,
+			xRecipe.m_fHeightScale, fLimbBuild * fLegGirthJ);
+		ZM_AppendHumanLeg(xMesh,  1.0f, HB_RULEG, HB_RLLEG, HB_RFOOT, xZM_HUMAN_UV_LEG_R,
+			xRecipe.m_fHeightScale, fLimbBuild * fLegGirthJ);
+
+		const u_int uBodyVertexPrefix = xMesh.GetNumVerts();
+		ZM_AppendHumanAppearanceMesh(xRecipe, xMesh);
+		return uBodyVertexPrefix;
+	}
+}
+
 // ============================================================================
 // Per-model mesh builder: exactly six body loft parts and exactly six MESH-domain
-// proportion draws, followed by categorical SC3 appearance parts. No
-// SKELETON-domain draws are permitted because every model binds the same fixed
-// skeleton.
+// proportion draws, followed by categorical SC3 appearance parts, then the v2
+// centre anchor. No SKELETON-domain draws are permitted because every model binds
+// the same fixed skeleton.
 // ============================================================================
 void ZM_BuildHumanMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh)
 {
-	xMesh.Reset();
+	ZM_BuildHumanMeshUnanchored(xRecipe, xMesh);
 
-	// ALL randomness is consumed up front in this fixed order. Left/right limbs
-	// share their girth draws so the bind-pose silhouette stays mirrored.
-	ZM_GenRNG xMeshRng = ZM_MakeGenRNG(xRecipe, ZM_GEN_DOMAIN_MESH);
-	const float fTorsoRxJ       = xMeshRng.NextFloatRange(0.96f, 1.04f); // 1 side girth
-	const float fTorsoRzJ       = xMeshRng.NextFloatRange(0.96f, 1.04f); // 2 front/back girth
-	const float fTorsoSuperJ    = xMeshRng.NextFloatRange(0.96f, 1.00f); // 3 torso roundness
-	const float fHeadSizeJ      = xMeshRng.NextFloatRange(0.97f, 1.03f); // 4 head size
-	const float fArmGirthJ      = xMeshRng.NextFloatRange(0.94f, 1.06f); // 5 shared arm girth
-	const float fLegGirthJ      = xMeshRng.NextFloatRange(0.94f, 1.06f); // 6 shared leg girth
-
-	const float fBuildWidth = ZM_HumanBuildWidthScale(xRecipe.m_eBuild);
-	const float fHeadBuild  = ZM_HumanAttenuateBuild(fBuildWidth, 0.25f);
-	const float fLimbBuild  = ZM_HumanAttenuateBuild(fBuildWidth, 0.65f);
-	const float fTorsoSuper = ZM_HumanClampSuperEllipse(
-		ZM_HumanBuildSuperEllipse(xRecipe.m_eBuild) * fTorsoSuperJ);
-
-	ZM_AppendSharedHumanBones(xMesh);
-
-	ZM_AppendHumanTorso(xMesh, xRecipe.m_fHeightScale,
-		fBuildWidth * fTorsoRxJ, fBuildWidth * fTorsoRzJ, fTorsoSuper);
-	ZM_AppendHumanHeadNeck(xMesh, xRecipe.m_fHeightScale, fHeadBuild * fHeadSizeJ);
-	ZM_AppendHumanArm(xMesh, -1.0f, HB_LUARM, HB_LLARM, HB_LHAND, xZM_HUMAN_UV_ARM_L,
-		xRecipe.m_fHeightScale, fLimbBuild * fArmGirthJ);
-	ZM_AppendHumanArm(xMesh,  1.0f, HB_RUARM, HB_RLARM, HB_RHAND, xZM_HUMAN_UV_ARM_R,
-		xRecipe.m_fHeightScale, fLimbBuild * fArmGirthJ);
-	ZM_AppendHumanLeg(xMesh, -1.0f, HB_LULEG, HB_LLLEG, HB_LFOOT, xZM_HUMAN_UV_LEG_L,
-		xRecipe.m_fHeightScale, fLimbBuild * fLegGirthJ);
-	ZM_AppendHumanLeg(xMesh,  1.0f, HB_RULEG, HB_RLLEG, HB_RFOOT, xZM_HUMAN_UV_LEG_R,
-		xRecipe.m_fHeightScale, fLimbBuild * fLegGirthJ);
-	ZM_AppendHumanAppearanceMesh(xRecipe, xMesh);
+	// v2 CENTRE ANCHOR. A rigid translation of every vertex by the SHARED constant
+	// -- never this model's own centre, which would desync the fixed rig from the
+	// mesh. It runs AFTER the appearance parts so hats and satchels ride along, and
+	// it is the vertex half of the anchor whose bone half is Root's bind position
+	// in ZM_AppendSharedHumanBones. Normals and tangents are translation-invariant.
+	const u_int uVerts = xMesh.GetNumVerts();
+	for (u_int u = 0u; u < uVerts; ++u)
+	{
+		xMesh.m_xPositions.Get(u).y -= fZM_HUMAN_MESH_CENTRE_Y;
+	}
 
 	// EmitRing already wrote analytic loft normals; never regenerate them. This is
 	// the sole finalisation sequence and is intentionally byte-idempotent.
 	ZM_GenGenerateTangents(xMesh);
 	ZM_GenNormalizeSkinWeights(xMesh);
+}
+
+// ============================================================================
+// Body metrics -- measured over the PRE-ANCHOR body vertex prefix. Deliberately
+// NOT derived from the finished mesh: that mesh is already centred, so measuring
+// it would be circular, and it carries hair/attachment vertices that must not
+// define the body.
+// ============================================================================
+ZM_HumanBodyMetrics ZM_MeasureHumanBody(ZM_HUMAN_ID eId)
+{
+	return ZM_MeasureHumanBody(ZM_ResolveHumanRecipe(eId));
+}
+
+ZM_HumanBodyMetrics ZM_MeasureHumanBody(const ZM_HumanRecipe& xRecipe)
+{
+	ZM_GenMesh xMesh;
+	const u_int uBodyVertexPrefix = ZM_BuildHumanMeshUnanchored(xRecipe, xMesh);
+
+	ZM_HumanBodyMetrics xMetrics;
+	if (uBodyVertexPrefix == 0u)
+	{
+		return xMetrics;   // defined answer for an impossible mesh; never a read past the end
+	}
+
+	float fMinY = xMesh.m_xPositions.Get(0u).y;
+	float fMaxY = fMinY;
+	for (u_int u = 1u; u < uBodyVertexPrefix; ++u)
+	{
+		const float fY = xMesh.m_xPositions.Get(u).y;
+		if (fY < fMinY) { fMinY = fY; }
+		if (fY > fMaxY) { fMaxY = fY; }
+	}
+
+	xMetrics.m_fMinY            = fMinY;
+	xMetrics.m_fMaxY            = fMaxY;
+	xMetrics.m_fHeight          = fMaxY - fMinY;
+	xMetrics.m_fCentreY         = 0.5f * (fMinY + fMaxY);
+	xMetrics.m_uBodyVertexCount = uBodyVertexPrefix;
+	return xMetrics;
 }

@@ -273,7 +273,11 @@ Component serialization orders: ZM components claim **100+** and remain unique:
 `ZM_GameComponent` = 100, `ZM_TerrainGrass` = 101,
 `ZM_PlayerController` = 102, `ZM_FollowCamera` = 103,
 `ZM_GameStateManager` = 104, `ZM_SpawnPoint` = 105, `ZM_WarpTrigger` = 106,
-the replaceable blockout renderer `ZM_GreyboxVisual` = 107, the battle-arena
+`ZM_GreyboxVisual` = 107 -- **no longer only a blockout renderer** since ZM-D-181:
+it serves two populations, painting walls/floors/doors/lintels as replaceable
+greybox unit cubes AND giving the six authored NPCs and the player their generated
+`ZM_HumanGen` model + Idle/Walk animator, falling back to a proportioned palette
+block when no human bake is loadable -- the battle-arena
 manager `ZM_BattleArena` = 108, the tall-grass encounter system
 `ZM_TallGrassSystem` = 109, `ZM_BattleTransition` = 110, `ZM_BattleDirector` =
 111, `ZM_UI_MenuStack` = 112, and `ZM_Interactable` = 113; **next free is 114**.

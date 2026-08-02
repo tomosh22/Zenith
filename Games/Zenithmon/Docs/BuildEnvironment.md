@@ -95,6 +95,26 @@ zenith run Zenithmon
 # Games\Zenithmon\Build\output\win64\vulkan_vs2022_debug_win64_true\zenithmon.exe
 ```
 
+**★ AN ALREADY-WARM TREE RE-BAKES WHENEVER A GENERATOR VERSION MOVES, AND THAT IS
+NOT A FAULT.** Bake stamps are `(version, expected file count)` and do not hash the
+baked bytes, so a change that rewrites contents without changing the file count is
+invalidated *only* by its version bump. Two are live right now and both cost a
+one-off re-bake on an existing tree:
+
+| Bump | Cost on next `_True` boot |
+|---|---|
+| `uZM_HUMANGEN_VERSION` 1 -> 2 (ZM-D-181, centre-anchored bind space) | re-bakes the 35-model humans family |
+| `uZM_TERRAIN_MANIFEST_VERSION` 1 -> 2 (ZM-D-182, collision divisor 8 -> 4) | re-bakes **all three** terrain recipes, several minutes |
+
+If a boot appears to hang for minutes on a tree that was warm yesterday, check
+whether a version moved before hunting a bug. **A terrain bake that is interrupted
+leaves the family cold** (`ZM_PrepareTerrainBake` removes the stamp first), so it
+restarts next boot -- do not run the bake under a short watchdog such as
+`run_unit_gate.ps1`, which kills the process; let a normal `zenith run` finish it
+once. The Dawnmere scene is NOT re-authored by a bake boot
+(`m_bAuthorDawnmereScene` requires every recipe already warm), so no committed
+`.zscen` moves while the bake is catching up.
+
 ---
 
 ## 4. Run + test commands

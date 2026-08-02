@@ -244,7 +244,7 @@ an oblique camera — the default near-top-down view masks gentle slopes (see th
 out for a screenshot).
 
 To change the terrain shape: edit `HillNorm` + **bump the marker version** in
-`CityBuilder.cpp` (`terrain_hills_vN.marker`, currently **v4**) — that forces a one-time
+`CityBuilder.cpp` (`terrain_hills_vN.marker`, currently **v5**) — that forces a one-time
 re-bake on the next **windowed `_True`** run (`CB_EnsureTerrainAssets` re-writes the 4096px
 heightmap + chunk meshes; takes a few minutes). `_False` only loads the baked chunks, so a
 `_True` run must bake first.

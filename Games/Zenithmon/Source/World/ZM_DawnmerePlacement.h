@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Maths/Zenith_Maths.h"   // Vector3 / Quat / AngleAxis
+#include "Zenithmon/Source/World/ZM_HumanBody.h"   // THE human body contract
 
 // ============================================================================
 // ZM_DawnmerePlacement (S7 item 3 SC8) -- the authored world coordinates that
@@ -292,48 +293,47 @@ const ZM_DawnmereNpcAnchor& ZM_GetDawnmereWanderWaypoint(u_int uIndex);
 // the captured yaw equals this value before trusting any of its samples.
 inline constexpr float fZM_DAWNMERE_AUTHORED_CAMERA_YAW = 0.0f;
 
-// The authored Dawnmere human capsule scale -- the player's and every NPC's.
-// Hoisted because the whole clearance contract is stated in terms of the
-// half-extent this scale produces (0.4 m radius + 0.5 m half cylinder = 0.9 m),
-// so a test that re-spelled the scale could quietly disagree with the authoring.
-inline constexpr float fZM_DAWNMERE_HUMAN_SCALE_X = 0.8f;
-inline constexpr float fZM_DAWNMERE_HUMAN_SCALE_Y = 1.8f;
-inline constexpr float fZM_DAWNMERE_HUMAN_SCALE_Z = 0.8f;
-
-// The XZ half-width the corridor clearances expand the Home shell by: the player
-// capsule's RADIUS, i.e. half the scale's X. A route that stays outside the
-// expanded box cannot graze the real box with the real body.
-inline constexpr float fZM_DAWNMERE_PLAYER_RADIUS =
-	fZM_DAWNMERE_HUMAN_SCALE_X * 0.5f;
+// The XZ half-width the corridor clearances expand the Home shell by: the human
+// capsule's RADIUS. A route that stays outside the expanded box cannot graze the
+// real box with the real body.
+//
+// ★ IT IS THE BODY CONTRACT'S RADIUS, NOT A FUNCTION OF THE AUTHORED SCALE. The
+// clearance figures below are stated against a 0.9 m capsule half-extent (0.4 m
+// radius + 0.5 m half cylinder), and that body is now installed from the compiled
+// contract in Source/World/ZM_HumanBody.h rather than derived from the transform
+// -- which is what lets a human be authored at a uniform MODEL scale without the
+// capsule collapsing into a sphere.
+inline constexpr float fZM_DAWNMERE_PLAYER_RADIUS = fZM_HUMAN_BODY_CAPSULE_RADIUS;
 
 // ---- Home XZ and scales (the parts that are NOT terrain-derived) -----------
 // The shell, both door jambs, the lintel, the sensor, the spawn marker and both
 // drive waypoints all share one X centreline.
 inline constexpr float fZM_DAWNMERE_HOME_X = 384.0f;
 
-// Shell: a 16 x 6 x 40 m box centred here, so it occupies z 476..516 -- moved
-// +40 m by ZM-D-173 so its ENTRANCE is the -Z face and the fixed-yaw camera,
-// which trails toward -Z, looks into the open forecourt instead of into the
-// building. The terrain pad in ZM_TerrainAuthoring.cpp moved with it.
-inline constexpr float fZM_DAWNMERE_HOME_SHELL_Z       = 496.0f;
-inline constexpr float fZM_DAWNMERE_HOME_SHELL_SCALE_X = 16.0f;
-inline constexpr float fZM_DAWNMERE_HOME_SHELL_SCALE_Y = 6.0f;
-inline constexpr float fZM_DAWNMERE_HOME_SHELL_SCALE_Z = 40.0f;
+// The PlayerHome interior is authoritative: its 16 x 12 m clear room plus
+// 0.5 m perimeter walls has a 16.5 x 12.5 m outer envelope. This exterior is
+// the deliberately rounded-up 17 x 13 m envelope, with a 4 m facade/roof mass.
+// It occupies z 476..489. Keeping the -Z entrance at z=476 preserves the open
+// forecourt, fixed-yaw camera direction, trigger, and return route established
+// by ZM-D-173 while removing the former 16 x 6 x 40 m false depth.
+inline constexpr float fZM_DAWNMERE_HOME_SHELL_Z       = 482.5f;
+inline constexpr float fZM_DAWNMERE_HOME_SHELL_SCALE_X = 17.0f;
+inline constexpr float fZM_DAWNMERE_HOME_SHELL_SCALE_Y = 4.0f;
+inline constexpr float fZM_DAWNMERE_HOME_SHELL_SCALE_Z = 13.0f;
 
 // The entrance decoration plane: both door jambs and the lintel stand on it, and
 // it coincides with one of the shell's two Z faces.
-// ★ THE ENTRANCE IS A FRAME, NOT A DOOR PANEL. DawnmereHomeDoorLeft/Right are
-// two solid 1 x 3 x 0.5 m JAMBS at x 381.5..382.5 and x 385.5..386.5, flanking a
-// 3 m OPENING they do not fill, with the 5 x 0.5 x 0.5 m lintel bridging the top
-// at +3 m. Nothing swings and nothing closes: the warp is the sensor 2 m out, so
-// the player is taken through before ever reaching the gap. (A 0.5 m-thick,
-// 1 m-wide slab is masonry-pier proportions, not a door panel -- if you read
-// these as leaves you will also read the doorway as blocked, which it is not.)
+// ★ THE ENTRANCE IS A FRAME, NOT A DOOR PANEL. Its 4.0 x 2.5 m opening is the
+// exact PlayerHome interior aperture, flanked by two 0.5 x 2.5 x 0.5 m jambs
+// and bridged by a 5.0 x 0.5 x 0.5 m lintel. Nothing swings and nothing closes:
+// the warp is the sensor 2 m out, so the player is taken through before reaching
+// the gap. This makes the separate exterior and interior portal read as one
+// deliberately wide home entrance instead of two unrelated blockout scales.
 inline constexpr float fZM_DAWNMERE_HOME_ENTRANCE_Z    = 476.0f;
-inline constexpr float fZM_DAWNMERE_HOME_DOOR_LEFT_X   = 382.0f;
-inline constexpr float fZM_DAWNMERE_HOME_DOOR_RIGHT_X  = 386.0f;
-inline constexpr float fZM_DAWNMERE_HOME_DOOR_SCALE_X  = 1.0f;
-inline constexpr float fZM_DAWNMERE_HOME_DOOR_SCALE_Y  = 3.0f;
+inline constexpr float fZM_DAWNMERE_HOME_DOOR_LEFT_X   = 381.75f;
+inline constexpr float fZM_DAWNMERE_HOME_DOOR_RIGHT_X  = 386.25f;
+inline constexpr float fZM_DAWNMERE_HOME_DOOR_SCALE_X  = 0.5f;
+inline constexpr float fZM_DAWNMERE_HOME_DOOR_SCALE_Y  = 2.5f;
 inline constexpr float fZM_DAWNMERE_HOME_DOOR_SCALE_Z  = 0.5f;
 inline constexpr float fZM_DAWNMERE_HOME_LINTEL_SCALE_X = 5.0f;
 inline constexpr float fZM_DAWNMERE_HOME_LINTEL_SCALE_Y = 0.5f;
@@ -345,8 +345,8 @@ inline constexpr float fZM_DAWNMERE_HOME_LINTEL_SCALE_Z = 0.5f;
 // wall is both the thing the camera ray has to see past and a trigger whose
 // "overlap before contact" property was an accident of its own box depth.
 inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_Z       = 474.0f;
-inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_SCALE_X = 3.0f;
-inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_SCALE_Y = 2.0f;
+inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_SCALE_X = 4.0f;
+inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_SCALE_Y = 2.5f;
 inline constexpr float fZM_DAWNMERE_HOME_TRIGGER_SCALE_Z = 2.0f;
 
 // Where a player returning OUT of the house is placed (a FEET anchor), and the
@@ -372,9 +372,10 @@ inline constexpr float fZM_DAWNMERE_HOME_DOOR_TARGET_Z  = 474.0f;
 // (Tests/ZM_AutoTests_CameraClearance.cpp), which logs every value at INFO on
 // every run and REDS if a compiled row has drifted from the real surface.
 //
-// ★ WHAT RE-MEASURES THEM: regenerating the Dawnmere heightmap -- a terrain
-// recipe change, a seed change, or a flatten-radius change in
-// ZM_TerrainAuthoring.cpp. Moving the Home PAD is exactly such a change.
+// ★ WHAT RE-MEASURES THEM: regenerating the Dawnmere heightmap OR changing its
+// collision density -- a terrain recipe/seed/flatten-radius change in
+// ZM_TerrainAuthoring.cpp, or a physics divisor change in the terrain exporter.
+// Moving the Home PAD is exactly such a change.
 // ============================================================================
 
 enum ZM_DAWNMERE_HOME_SAMPLE : u_int
@@ -422,11 +423,11 @@ struct ZM_DawnmereBlockout
 
 // Each Y below is DERIVED from the measured table by a FIXED formula, spelled
 // once here so no consumer can re-derive it differently:
-//   shell   = min(the four corner grounds) + 3.0 - 0.05   (half-height, minus a
+//   shell   = min(the four corner grounds) + 2.0 - 0.05   (half-height, minus a
 //             deliberate 0.05 m embed so no visible gap opens under the box)
-//   doors   = their OWN measured ground + 1.5             (half of the 3 m jamb)
-//   lintel  = max(the two door grounds)   + 3.25          (clears a 3 m doorway)
-//   trigger = its measured ground         + 1.0           (half of the 2 m sensor)
+//   doors   = their OWN measured ground + 1.25            (half of the 2.5 m jamb)
+//   lintel  = max(the two door grounds)   + 2.75          (clears the 2.5 m opening)
+//   trigger = its measured ground         + 1.25          (half of the 2.5 m sensor)
 ZM_DawnmereBlockout ZM_GetDawnmereHomeShell();
 ZM_DawnmereBlockout ZM_GetDawnmereHomeDoorLeft();
 ZM_DawnmereBlockout ZM_GetDawnmereHomeDoorRight();

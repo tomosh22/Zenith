@@ -12,18 +12,27 @@
 //     and win/payout path.
 //   * ZM_RivalVesperWhiteout_Test proves the exact-starter loss, heal, warp, and
 //     no-immediate-retrigger path.
-// A third focused graphics test at the tail of this TU additively loads the same
-// committed scene and measures all six live NPC bodies in actual swapchain pixels.
+// ★ A THIRD, GRAPHICS-REQUIRED TEST USED TO LIVE AT THE TAIL OF THIS TU AND WAS
+// DELETED AT ZM-D-181. ZM_NpcRenderedPalette_Test read actual swapchain pixels off
+// the six NPC bodies and required all 15 RGB separations to clear a floor derived
+// (at ZM-D-171) from PALETTE-COLOURED BLOCKS. Those bodies are generated human
+// MODELS now, wearing baked textures, so the quantity it measured no longer exists
+// and its constant described a picture the game does not draw. It was removed
+// rather than re-baselined: a floor guessed against new content would be a number
+// that LOOKS like a check. If a pixel-level "the six read as six different people"
+// gate is wanted back, it must be DERIVED the way ZM-D-171 derived the old one --
+// run it, read the separations, run the severed-wiring mutation, read that band,
+// and set the floor strictly between the two.
 //
-// ★ KNOWN-LIMIT W4 ADDS AN APPEARANCE BLOCK to the first test, and it asserts on
-// MATERIAL STATE, not on pixels, so it too runs for real headless. It samples the
-// live base colour of every "ZM_Greybox"-named material in the committed Dawnmere
-// and splits them into NPC bodies (which must wear their ZM_NpcData row's palette
-// colour, and specifically the rival must sit a real numeric distance from every
-// other NPC) and everything else -- walls, floors, doors, lintels -- which must
-// still be EXACTLY the shipped blockout grey. The two halves are deliberately
-// complementary: deleting the wiring reds the first, painting everything reds the
-// second, and neither can pass on its own.
+// ★ THE APPEARANCE BLOCK IN THE FIRST TEST asserts on COMPONENT STATE, not on
+// pixels, so it runs for real headless -- and it is what survives. It is split by
+// the SAME ZM_AreHumanAssetsReady() call the runtime made: WARM, every NPC must
+// wear the .zmodel its own ZM_NpcData row names; COLD, every NPC must wear its
+// row's palette colour on the fallback block. Either way the complement holds
+// unconditionally -- walls, floors, doors and lintels must still be EXACTLY the
+// shipped blockout grey. The two halves are deliberately complementary: deleting
+// the wiring reds the first, painting everything reds the second, and neither can
+// pass on its own.
 //
 // WHAT IS NEW HERE, and why it is not a copy of ZM_TrainerSightWalkUp_Test. That
 // test PLACES a transient trainer at runtime and calls ConfigureTrainerSight. THIS
@@ -133,6 +142,7 @@
 #include "Zenithmon/Source/Party/ZM_Party.h"
 #include "Zenithmon/Source/Party/ZM_StarterChoice.h"            // ZM_ApplyStarterChoice / ZM_STARTER_CHOICE_FERNFAWN
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"        // the AUTHORED coordinates, shared with the boot units
+#include "Zenithmon/Source/World/ZM_HumanAssetPolicy.h"          // the SAME warm/cold question the runtime asked
 
 #ifdef ZENITH_TOOLS
 #include "Core/Zenith_EditorQuery.h"
@@ -571,6 +581,11 @@ namespace
 	u_int                 g_uRVNpcVisualCount        = 0u;            // want > 1
 	u_int                 g_uRVNpcVisualStillGrey    = 0xffffffffu;   // want 0
 	u_int                 g_uRVNpcColoursSampled     = 0u;            // want > 0 (excludes the rival)
+	// WARM/COLD split: which population the runtime actually built, and how many
+	// NPCs carry the model their own row names. Recorded from the SAME policy call
+	// the runtime made, never inferred from what the scan happened to find.
+	bool                  g_bRVHumansWarm            = false;
+	u_int                 g_uRVNpcModelsCorrect      = 0u;            // want == g_uRVNpcVisualCount when warm
 	bool                  g_bRVVesperVisualFound     = false;
 	Zenith_Maths::Vector4 g_xRVVesperSampledColour   = Zenith_Maths::Vector4(-1.0f);
 	Zenith_Maths::Vector4 g_xRVVesperExpectedColour  = Zenith_Maths::Vector4(-1.0f);
@@ -1096,6 +1111,14 @@ namespace
 		const Zenith_Maths::Vector4 xVesperExpected =
 			ZM_GetHumanPaletteColour(ZM_GetNpcData(ZM_NPC_RIVAL_VESPER).m_eHuman);
 
+		// ★ THE SAME QUESTION THE RUNTIME ASKED. Whether an NPC wears a model or the
+		// cold-start block is decided by ZM_AreHumanAssetsReady, so this test asks it
+		// too rather than inferring the answer from what it happens to find -- an
+		// inference would turn "the wiring is severed" into "ah, must be cold".
+		const bool bWarm = ZM_AreHumanAssetsReady();
+		g_bRVHumansWarm = bWarm;
+
+		// ---- HALF ONE: the blockout bodies ----------------------------------
 		// COLLECT INSIDE THE QUERY, RESOLVE OUTSIDE IT -- the
 		// Zenith_GraphComponent::BroadcastCustomEvent idiom
 		// (Zenith_GraphComponent.cpp gathers receiver ids first, then resolves each).
@@ -1116,7 +1139,7 @@ namespace
 				if (pxMaterial == nullptr
 					|| pxMaterial->GetName() != szRV_GREYBOX_MATERIAL)
 				{
-					return;   // terrain, buildings, the player -- not a blockout body
+					return;   // terrain, buildings, a human MODEL -- not a block body
 				}
 				if (uCollected >= uRV_MAX_SAMPLED_GREYBOX_BODIES)
 				{
@@ -1130,40 +1153,105 @@ namespace
 
 		u_int uBlockCount = 0u;
 		u_int uBlockOffGrey = 0u;
-		u_int uNpcCount = 0u;
-		u_int uNpcStillGrey = 0u;
-		u_int uOtherColours = 0u;
-		bool  bVesperFound = false;
-		Zenith_Maths::Vector4 xVesperSampled(0.0f);
-		Zenith_Maths::Vector4 axOtherColours[uRV_MAX_SAMPLED_GREYBOX_BODIES] = {};
-
 		for (u_int u = 0u; u < uCollected; ++u)
 		{
-			const Zenith_Maths::Vector4& xColour = axColours[u];
 			const Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(axIDs[u]);
 			const ZM_Interactable* pxInteractable = xEntity.IsValid()
 				? xEntity.TryGetComponent<ZM_Interactable>()
 				: nullptr;
 			// ZM_NPC_NONE aliases ZM_NPC_COUNT, so one comparison covers "no
 			// component", "the sentinel" and "garbage" together.
-			const ZM_NPC_ID eNpcId = (pxInteractable != nullptr)
-				? pxInteractable->GetNpcId()
-				: ZM_NPC_NONE;
+			if (pxInteractable != nullptr && pxInteractable->GetNpcId() < ZM_NPC_COUNT)
+			{
+				continue;   // an NPC wearing the cold block; half two judges it
+			}
+			++uBlockCount;
+			// EXACT equality, deliberately: the behaviour-preservation claim is that
+			// these bytes did not move at all, not that they moved a little.
+			const Zenith_Maths::Vector4& xColour = axColours[u];
+			if (xColour.x != xFallback.x || xColour.y != xFallback.y
+				|| xColour.z != xFallback.z || xColour.w != xFallback.w)
+			{
+				++uBlockOffGrey;
+			}
+		}
 
+		// ---- HALF TWO: the NPC bodies ---------------------------------------
+		// Walked from the ROWS rather than from the materials, because a warm NPC
+		// carries its own baked material and would simply not appear in a
+		// material-name scan -- which would make every clause about NPCs silently
+		// vacuous instead of red.
+		Zenith_EntityID axNpcIDs[uRV_MAX_SAMPLED_GREYBOX_BODIES] = {};
+		u_int uNpcIDs = 0u;
+		g_xEngine.Scenes().QueryActiveScene<ZM_Interactable>().ForEach(
+			[&](Zenith_EntityID xID, ZM_Interactable& xInteractable)
+			{
+				if (xInteractable.GetNpcId() >= ZM_NPC_COUNT
+					|| uNpcIDs >= uRV_MAX_SAMPLED_GREYBOX_BODIES)
+				{
+					return;
+				}
+				axNpcIDs[uNpcIDs++] = xID;
+			});
+
+		u_int uNpcCount = 0u;
+		u_int uNpcStillGrey = 0u;
+		u_int uNpcModelsCorrect = 0u;
+		u_int uOtherColours = 0u;
+		bool  bVesperFound = false;
+		Zenith_Maths::Vector4 xVesperSampled(0.0f);
+		Zenith_Maths::Vector4 axOtherColours[uRV_MAX_SAMPLED_GREYBOX_BODIES] = {};
+
+		for (u_int u = 0u; u < uNpcIDs; ++u)
+		{
+			const Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(axNpcIDs[u]);
+			const ZM_Interactable* pxInteractable = xEntity.IsValid()
+				? xEntity.TryGetComponent<ZM_Interactable>()
+				: nullptr;
+			const Zenith_ModelComponent* pxModel = xEntity.IsValid()
+				? xEntity.TryGetComponent<Zenith_ModelComponent>()
+				: nullptr;
+			if (pxInteractable == nullptr || pxModel == nullptr)
+			{
+				continue;
+			}
+			const ZM_NPC_ID eNpcId = pxInteractable->GetNpcId();
 			if (eNpcId >= ZM_NPC_COUNT)
 			{
-				++uBlockCount;
-				// EXACT equality, deliberately: the behaviour-preservation claim is
-				// that these bytes did not move at all, not that they moved a little.
-				if (xColour.x != xFallback.x || xColour.y != xFallback.y
-					|| xColour.z != xFallback.z || xColour.w != xFallback.w)
+				continue;
+			}
+			++uNpcCount;
+
+			if (bWarm)
+			{
+				// WARM: the body wears its OWN generated model, resolved through the
+				// same row -> ZM_HUMAN_ID -> asset-path chain the component walks.
+				char acExpectedRef[256];
+				const ZM_HUMAN_ID eHumanId = ZM_GetNpcData(eNpcId).m_eHuman;
+				if (eHumanId < ZM_HUMAN_COUNT
+					&& ZM_HumanAssetPath(eHumanId, ZM_HUMAN_ASSET_MODEL, acExpectedRef,
+						(u_int)sizeof(acExpectedRef))
+					&& pxModel->GetModelPath() == acExpectedRef)
 				{
-					++uBlockOffGrey;
+					++uNpcModelsCorrect;
+				}
+				if (eNpcId == ZM_NPC_RIVAL_VESPER)
+				{
+					bVesperFound = true;
 				}
 				continue;
 			}
 
-			++uNpcCount;
+			// COLD: the proportioned palette block, judged exactly as it always was.
+			const Zenith_MaterialAsset* pxMaterial = pxModel->GetNumMeshes() > 0u
+				? pxModel->GetMaterial(0u)
+				: nullptr;
+			if (pxMaterial == nullptr
+				|| pxMaterial->GetName() != szRV_GREYBOX_MATERIAL)
+			{
+				continue;   // neither a model nor a block: Verify's count guard reds
+			}
+			const Zenith_Maths::Vector4 xColour = pxMaterial->GetBaseColor();
 			if (ZM_HumanPaletteSeparation(xColour, xFallback)
 				< fZM_HUMAN_PALETTE_MIN_SEPARATION)
 			{
@@ -1186,10 +1274,11 @@ namespace
 		g_uRVGreyboxBlockOffGrey  = uBlockOffGrey;
 		g_uRVNpcVisualCount       = uNpcCount;
 		g_uRVNpcVisualStillGrey   = uNpcStillGrey;
+		g_uRVNpcModelsCorrect     = uNpcModelsCorrect;
 		g_uRVNpcColoursSampled    = uOtherColours;
 		g_bRVVesperVisualFound    = bVesperFound;
 		g_xRVVesperExpectedColour = xVesperExpected;
-		if (bVesperFound)
+		if (bVesperFound && !bWarm)
 		{
 			g_xRVVesperSampledColour = xVesperSampled;
 			g_fRVVesperPaletteError =
@@ -2404,6 +2493,8 @@ namespace
 		g_uRVNpcVisualCount         = 0u;
 		g_uRVNpcVisualStillGrey     = 0xffffffffu;
 		g_uRVNpcColoursSampled      = 0u;
+		g_bRVHumansWarm             = false;
+		g_uRVNpcModelsCorrect       = 0u;
 		g_bRVVesperVisualFound      = false;
 		g_xRVVesperSampledColour    = Zenith_Maths::Vector4(-1.0f);
 		g_xRVVesperExpectedColour   = Zenith_Maths::Vector4(-1.0f);
@@ -2949,16 +3040,19 @@ namespace
 			// "blocksOffGrey == 0" having measured nothing.
 			if (!g_bRVAppearanceSampled || g_uRVAppearanceOverflow != 0u
 				|| g_uRVGreyboxBlockCount == 0u
-				|| g_uRVNpcVisualCount < 2u || g_uRVNpcColoursSampled == 0u
+				|| g_uRVNpcVisualCount < 2u
+					|| (!g_bRVHumansWarm && g_uRVNpcColoursSampled == 0u)
 				|| !g_bRVVesperVisualFound)
 			{
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
-					"[ZM_RivalVesper] the W4 appearance scan did not observe BOTH "
+					"[ZM_RivalVesper] the appearance scan did not observe BOTH "
 					"populations off the committed scene (sampled=%s overflow=%u blocks=%u "
-					"npcBodies=%u otherNpcColours=%u vesperFound=%s) -- every appearance "
-					"clause below would be vacuous, or would be judging a truncated subset",
+					"npcBodies=%u warm=%s otherNpcColours=%u vesperFound=%s) -- every "
+					"appearance clause below would be vacuous, or would be judging a "
+					"truncated subset",
 					g_bRVAppearanceSampled ? "true" : "false", g_uRVAppearanceOverflow,
-					g_uRVGreyboxBlockCount, g_uRVNpcVisualCount, g_uRVNpcColoursSampled,
+					g_uRVGreyboxBlockCount, g_uRVNpcVisualCount,
+					g_bRVHumansWarm ? "true" : "false", g_uRVNpcColoursSampled,
 					g_bRVVesperVisualFound ? "true" : "false");
 				bPassed = false;
 			}
@@ -2983,7 +3077,25 @@ namespace
 				}
 				// ...and its complement, which is what stops the clause above passing
 				// on a build where the wiring was simply deleted.
-				if (g_uRVNpcVisualStillGrey != 0u)
+				// ★ THE COMPLEMENT HAS TWO SHAPES, AND WHICH ONE APPLIES IS DECIDED
+				// BY THE SAME POLICY THE RUNTIME CONSULTED -- never by what the scan
+				// happened to find. WARM: every NPC wears the model its own row names.
+				// COLD: the proportioned fallback block in its own palette colour, the
+				// clause this test has always run. Both say "the row reached the body",
+				// about two different pictures.
+				if (g_bRVHumansWarm && g_uRVNpcModelsCorrect != g_uRVNpcVisualCount)
+				{
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"[ZM_RivalVesper] only %u of %u authored NPC bodies wear the human "
+						"model their own ZM_NpcData row names -- the row never reached the "
+						"model, so the rival is still indistinguishable from the townsfolk",
+						g_uRVNpcModelsCorrect, g_uRVNpcVisualCount);
+					bPassed = false;
+				}
+				// The palette clauses measure the COLD fallback. On a warm tree they are
+				// not skipped for convenience: there is no palette on screen to measure,
+				// and the model clause above is the claim in its place.
+				if (!g_bRVHumansWarm && g_uRVNpcVisualStillGrey != 0u)
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
 						"[ZM_RivalVesper] %u of %u authored NPC bodies came up wearing the "
@@ -2992,7 +3104,7 @@ namespace
 						g_uRVNpcVisualStillGrey, g_uRVNpcVisualCount);
 					bPassed = false;
 				}
-				if (g_fRVVesperPaletteError > fRV_PALETTE_TOLERANCE)
+				if (!g_bRVHumansWarm && g_fRVVesperPaletteError > fRV_PALETTE_TOLERANCE)
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
 						"[ZM_RivalVesper] the authored rival is wearing (%.4f, %.4f, %.4f) but "
@@ -3004,7 +3116,8 @@ namespace
 						g_fRVVesperPaletteError);
 					bPassed = false;
 				}
-				if (g_fRVVesperGreySeparation < fZM_HUMAN_PALETTE_MIN_SEPARATION)
+				if (!g_bRVHumansWarm
+					&& g_fRVVesperGreySeparation < fZM_HUMAN_PALETTE_MIN_SEPARATION)
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
 						"[ZM_RivalVesper] the rival's live colour is only %.4f from the "
@@ -3015,7 +3128,8 @@ namespace
 				}
 				// ★ THE ACTUAL W4 CLAIM, measured off LIVE materials rather than off the
 				// compiled table: a NUMERIC separation, never a `!=`.
-				if (g_fRVVesperMinNpcSeparation < fZM_HUMAN_PALETTE_MIN_SEPARATION)
+				if (!g_bRVHumansWarm
+					&& g_fRVVesperMinNpcSeparation < fZM_HUMAN_PALETTE_MIN_SEPARATION)
 				{
 					Zenith_Error(LOG_CATEGORY_UNITTEST,
 						"[ZM_RivalVesper] the rival's live colour is only %.4f from the "
@@ -3927,8 +4041,8 @@ namespace
 		// because that is the production function whose result the warp consumes.
 		// Following a bad production offset with the same helper would compare a
 		// wrong placement to itself and stay green.
-		const Zenith_Maths::Vector3 xExpected = xFeet + Zenith_Maths::Vector3(
-			0.0f, ZM_PlayerController::CalculateCapsuleHalfExtent(xScale), 0.0f);
+		const Zenith_Maths::Vector3 xExpected = xFeet
+			+ Zenith_Maths::Vector3(0.0f, fZM_HUMAN_BODY_HALF_HEIGHT, 0.0f);
 		g_fRVWTransformSpawnError = RVWDistance(xPlayer.m_xPosition, xExpected);
 		g_fRVWBodySpawnError = RVWDistance(
 			g_xEngine.Physics().GetBodyPosition(xPlayer.m_pxCollider->GetBodyID()),
@@ -4586,747 +4700,5 @@ static const Zenith_AutomatedTest g_xZMRivalVesperWhiteoutTest = {
 	&Teardown_ZMRivalVesperWhiteout,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMRivalVesperWhiteoutTest);
-
-// ============================================================================
-// ZM_NpcRenderedPalette_Test -- Vulkan framebuffer proof for the six authored
-// Dawnmere NPC bodies.
-//
-// The headless W4 block above proves the material wiring on the CPU. This test
-// closes the remaining gap: it additively loads the committed Dawnmere, finds
-// the six LIVE entities through their serialized ZM_Interactable rows, and
-// temporarily teleports those exact model entities into a controlled eye-level
-// lineup. No lookalike swatches and no copied materials are created.
-//
-// ZM-D-171: the lighting here is the ENGINE'S REAL AMBIENT, not the emissive
-// floor. The camera looks horizontally at vertical faces the sun does NOT hit
-// (the shipped sun travels {-0.4,-0.7,-0.55}; the sampled -Z faces have
-// N.L <= 0), every scene dynamic light is zeroed, and readability must come
-// entirely from the energy-correct sky+ground IBL lighting the LIT authored
-// palette — the exact property that justified deleting ZM-D-169's emissive
-// floor. A swapchain TGA is requested after the lineup settles; verification
-// maps the six projected body centres through the tools viewport, reads real
-// BGRA pixels, and requires all 15 normalized-RGB separations to hold the
-// 0.15 W4 promise. Re-halving the IBL, losing the ground bounce, or any other
-// ambient collapse pushes the vertical faces back toward black and reds this.
-// Auto-exposure is disabled (deterministic manual exposure) so the numbers are
-// comparable run to run.
-// ============================================================================
-
-namespace
-{
-	constexpr int iNRP_DAWNMERE_BUILD_INDEX = 2;
-	constexpr float fNRP_FIXED_DT = 1.0f / 60.0f;
-	// ZM-D-171 RE-DERIVED, and the story is told honestly: 0.15 was ZM-D-169's
-	// framebuffer mirror of W4's authored-space promise, and it was only ever
-	// met via the (now deleted) emissive floor. Under HONEST lighting the
-	// authored palette's minimum rendered separation measured 0.0763
-	// (Caretaker/Wanderer, sun-lit faces, 2026-07-30); the severed-wiring
-	// mutation measured 0.0003-0.0009 for the same pairs. 0.04 sits between
-	// the bands, so this clause pins "the palette wiring is alive and the six
-	// palettes render distinguishably" -- while the 0.15 aspiration is BOOKED
-	// as open W4 palette-data debt in Shortfalls.md (the fix is more-separated
-	// authored colours, never an emissive carrier).
-	constexpr float fNRP_MIN_RENDERED_SEPARATION = 0.04f;
-	constexpr float fNRP_LINEUP_Y = 100.0f;
-	constexpr float fNRP_LINEUP_Z = 10.0f;
-	// The camera sits BEYOND the lineup looking back along -Z, so the faces
-	// it reads are the +Z faces the sun actually hits (N.L ~ 0.56 with the
-	// shipped sun) -- the TYPICAL in-game reading of an NPC. The worst-case
-	// sun-averted-face floor is ZM_ShellLighting_Test's job; demanding full
-	// palette separation on an ambient-only face is what forced the ZM-D-169
-	// emissive hack in the first place.
-	constexpr float fNRP_CAMERA_Z = 20.0f;
-	constexpr u_int uNRP_SAMPLE_RADIUS = 4u;
-	constexpr int iNRP_CAPTURE_EARLIEST_FRAME = 60;
-	constexpr int iNRP_CAPTURE_TIMEOUT_FRAME = 180;
-	constexpr int iNRP_FINISH_HOLD_FRAMES = 12;
-
-	const float g_afNRPLineupX[ZM_NPC_COUNT] =
-	{
-		-5.0f, -3.0f, -1.0f, 1.0f, 3.0f, 5.0f
-	};
-	const ZM_DAWNMERE_NPC_ID g_aeNRPAnchorForNpc[ZM_NPC_COUNT] =
-	{
-		ZM_DAWNMERE_NPC_VILLAGER,
-		ZM_DAWNMERE_NPC_TRADE_POST_CLERK,
-		ZM_DAWNMERE_NPC_CARETAKER,
-		ZM_DAWNMERE_NPC_WANDERER,
-		ZM_DAWNMERE_NPC_WARDEN,
-		ZM_DAWNMERE_NPC_RIVAL_VESPER,
-	};
-	static_assert(
-		static_cast<u_int>(ZM_NPC_COUNT)
-			== static_cast<u_int>(ZM_DAWNMERE_NPC_COUNT),
-		"the rendered lineup mapping must cover every authored Dawnmere NPC");
-
-	struct NRPGraphicsSave
-	{
-		bool m_bSaved = false;
-		bool m_bCPUParticles = true;
-		bool m_bFog = true;
-		bool m_bGizmos = true;
-		bool m_bGPUParticles = true;
-		bool m_bGrass = true;
-		bool m_bBloom = true;
-		bool m_bIBL = true;
-		bool m_bPrimitives = true;
-		bool m_bQuads = true;
-		bool m_bSDFs = true;
-		bool m_bShadows = true;
-		bool m_bSkybox = true;
-		bool m_bSSAO = true;
-		bool m_bSSGI = false;
-		bool m_bSSR = true;
-		bool m_bTerrain = true;
-		bool m_bText = true;
-		bool m_bAutoExposure = true;
-		bool m_bIBLDiffuse = true;
-		bool m_bIBLSpecular = true;
-		bool m_bSkyAtmosphere = true;
-		Zenith_Maths::Vector3 m_xSkyColour = Zenith_Maths::Vector3(0.0f);
-	};
-
-	bool g_bNRPSceneLoaded = false;
-	bool g_bNRPFailed = false;
-	bool g_bNRPLineupCollected = false;
-	bool g_bNRPShotRequested = false;
-	const char* g_szNRPFailure = "test did not reach verification";
-	int g_iNRPShotFrame = -1;
-	std::string g_strNRPShotPath;
-	Zenith_Scene g_xNRPPreviousScene;
-	Zenith_Scene g_xNRPDawnmereScene;
-	Zenith_EntityID g_xNRPCameraID = INVALID_ENTITY_ID;
-	Zenith_EntityID g_axNRPNpcIDs[ZM_NPC_COUNT] = {};
-	Zenith_Maths::Vector2 g_axNRPBodyNdc[ZM_NPC_COUNT] = {};
-	Zenith_Maths::Vector2 g_xNRPViewportPos(0.0f);
-	Zenith_Maths::Vector2 g_xNRPViewportSize(0.0f);
-	NRPGraphicsSave g_xNRPGraphicsSave;
-
-	void NRPFail(const char* szReason)
-	{
-		if (!g_bNRPFailed)
-		{
-			g_szNRPFailure = szReason;
-		}
-		g_bNRPFailed = true;
-	}
-
-	std::filesystem::path NRPVisualAuditDir()
-	{
-		std::error_code xError;
-		const std::filesystem::path xRepoRoot = std::filesystem::weakly_canonical(
-			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..", xError);
-		return xRepoRoot / "Build" / "artifacts" / "zenithmon" / "visual_audit";
-	}
-
-	void NRPApplyGraphicsOptions()
-	{
-		Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
-		g_xNRPGraphicsSave.m_bCPUParticles = xOpts.m_bCPUParticlesEnabled;
-		g_xNRPGraphicsSave.m_bFog = xOpts.m_bFogEnabled;
-		g_xNRPGraphicsSave.m_bGizmos = xOpts.m_bGizmosEnabled;
-		g_xNRPGraphicsSave.m_bGPUParticles = xOpts.m_bGPUParticlesEnabled;
-		g_xNRPGraphicsSave.m_bGrass = xOpts.m_bGrassEnabled;
-		g_xNRPGraphicsSave.m_bBloom = xOpts.m_bHDRBloomEnabled;
-		g_xNRPGraphicsSave.m_bIBL = xOpts.m_bIBLEnabled;
-		g_xNRPGraphicsSave.m_bPrimitives = xOpts.m_bPrimitivesEnabled;
-		g_xNRPGraphicsSave.m_bQuads = xOpts.m_bQuadsEnabled;
-		g_xNRPGraphicsSave.m_bSDFs = xOpts.m_bSDFsEnabled;
-		g_xNRPGraphicsSave.m_bShadows = xOpts.m_bShadowsEnabled;
-		g_xNRPGraphicsSave.m_bSkybox = xOpts.m_bSkyboxEnabled;
-		g_xNRPGraphicsSave.m_bSSAO = xOpts.m_bSSAOEnabled;
-		g_xNRPGraphicsSave.m_bSSGI = xOpts.m_bSSGIEnabled;
-		g_xNRPGraphicsSave.m_bSSR = xOpts.m_bSSREnabled;
-		g_xNRPGraphicsSave.m_bTerrain = xOpts.m_bTerrainEnabled;
-		g_xNRPGraphicsSave.m_bText = xOpts.m_bTextEnabled;
-		g_xNRPGraphicsSave.m_bAutoExposure = xOpts.m_bHDRAutoExposureEnabled;
-		g_xNRPGraphicsSave.m_bIBLDiffuse = xOpts.m_bIBLDiffuseEnabled;
-		g_xNRPGraphicsSave.m_bIBLSpecular = xOpts.m_bIBLSpecularEnabled;
-		g_xNRPGraphicsSave.m_bSkyAtmosphere = xOpts.m_bSkyboxAtmosphereEnabled;
-		g_xNRPGraphicsSave.m_xSkyColour = xOpts.m_xSkyboxColour;
-		g_xNRPGraphicsSave.m_bSaved = true;
-
-		xOpts.m_bCPUParticlesEnabled = false;
-		xOpts.m_bFogEnabled = false;
-		xOpts.m_bGizmosEnabled = false;
-		xOpts.m_bGPUParticlesEnabled = false;
-		xOpts.m_bGrassEnabled = false;
-		xOpts.m_bHDRBloomEnabled = false;
-		// ZM-D-171: IBL diffuse + specular STAY ON, sourced from the atmosphere --
-		// the ambient IS the subject under test now (it lights the palette on the
-		// sun-averted faces the camera samples).
-		xOpts.m_bIBLEnabled = true;
-		xOpts.m_bPrimitivesEnabled = false;
-		xOpts.m_bQuadsEnabled = false;
-		xOpts.m_bSDFsEnabled = false;
-		xOpts.m_bShadowsEnabled = false;
-		xOpts.m_bSkyboxEnabled = false;
-		xOpts.m_bSSAOEnabled = false;
-		xOpts.m_bSSGIEnabled = false;
-		xOpts.m_bSSREnabled = false;
-		xOpts.m_bTerrainEnabled = false;
-		xOpts.m_bTextEnabled = false;
-		xOpts.m_bHDRAutoExposureEnabled = false;
-		xOpts.m_bIBLDiffuseEnabled = true;
-		xOpts.m_bIBLSpecularEnabled = true;
-		xOpts.m_bSkyboxAtmosphereEnabled = true;
-		xOpts.m_xSkyboxColour = Zenith_Maths::Vector3(0.015f, 0.015f, 0.018f);
-	}
-
-	void NRPRestoreGraphicsOptions()
-	{
-		if (!g_xNRPGraphicsSave.m_bSaved)
-		{
-			return;
-		}
-
-		Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
-		xOpts.m_bCPUParticlesEnabled = g_xNRPGraphicsSave.m_bCPUParticles;
-		xOpts.m_bFogEnabled = g_xNRPGraphicsSave.m_bFog;
-		xOpts.m_bGizmosEnabled = g_xNRPGraphicsSave.m_bGizmos;
-		xOpts.m_bGPUParticlesEnabled = g_xNRPGraphicsSave.m_bGPUParticles;
-		xOpts.m_bGrassEnabled = g_xNRPGraphicsSave.m_bGrass;
-		xOpts.m_bHDRBloomEnabled = g_xNRPGraphicsSave.m_bBloom;
-		xOpts.m_bIBLEnabled = g_xNRPGraphicsSave.m_bIBL;
-		xOpts.m_bPrimitivesEnabled = g_xNRPGraphicsSave.m_bPrimitives;
-		xOpts.m_bQuadsEnabled = g_xNRPGraphicsSave.m_bQuads;
-		xOpts.m_bSDFsEnabled = g_xNRPGraphicsSave.m_bSDFs;
-		xOpts.m_bShadowsEnabled = g_xNRPGraphicsSave.m_bShadows;
-		xOpts.m_bSkyboxEnabled = g_xNRPGraphicsSave.m_bSkybox;
-		xOpts.m_bSSAOEnabled = g_xNRPGraphicsSave.m_bSSAO;
-		xOpts.m_bSSGIEnabled = g_xNRPGraphicsSave.m_bSSGI;
-		xOpts.m_bSSREnabled = g_xNRPGraphicsSave.m_bSSR;
-		xOpts.m_bTerrainEnabled = g_xNRPGraphicsSave.m_bTerrain;
-		xOpts.m_bTextEnabled = g_xNRPGraphicsSave.m_bText;
-		xOpts.m_bHDRAutoExposureEnabled = g_xNRPGraphicsSave.m_bAutoExposure;
-		xOpts.m_bIBLDiffuseEnabled = g_xNRPGraphicsSave.m_bIBLDiffuse;
-		xOpts.m_bIBLSpecularEnabled = g_xNRPGraphicsSave.m_bIBLSpecular;
-		xOpts.m_bSkyboxAtmosphereEnabled = g_xNRPGraphicsSave.m_bSkyAtmosphere;
-		xOpts.m_xSkyboxColour = g_xNRPGraphicsSave.m_xSkyColour;
-		g_xNRPGraphicsSave.m_bSaved = false;
-	}
-
-	void NRPCleanup()
-	{
-		NRPRestoreGraphicsOptions();
-		Zenith_InputSimulator::ClearFixedDt();
-		if (g_xNRPPreviousScene.IsValid())
-		{
-			g_xEngine.Scenes().SetActiveScene(g_xNRPPreviousScene);
-		}
-		if (g_xNRPDawnmereScene.IsValid())
-		{
-			g_xEngine.Scenes().UnloadSceneForced(g_xNRPDawnmereScene);
-			g_xNRPDawnmereScene = Zenith_Scene();
-		}
-		g_bNRPSceneLoaded = false;
-		g_xNRPCameraID = INVALID_ENTITY_ID;
-	}
-
-	Zenith_Maths::Vector3 NRPLineupPosition(u_int uNpc)
-	{
-		return Zenith_Maths::Vector3(
-			g_afNRPLineupX[uNpc], fNRP_LINEUP_Y, fNRP_LINEUP_Z);
-	}
-
-	bool NRPTryCollectLiveNpcBodies()
-	{
-		Zenith_EntityID axFound[ZM_NPC_COUNT];
-		for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
-		{
-			axFound[u] = INVALID_ENTITY_ID;
-		}
-
-		bool bDuplicate = false;
-		g_xEngine.Scenes().QueryActiveScene<
-			ZM_Interactable,
-			Zenith_ModelComponent>().ForEach(
-			[&](Zenith_EntityID xID,
-				ZM_Interactable& xInteractable,
-				Zenith_ModelComponent& xModel)
-			{
-				const ZM_NPC_ID eNpc = xInteractable.GetNpcId();
-				if (eNpc >= ZM_NPC_COUNT || xModel.GetNumMeshes() == 0u)
-				{
-					return;
-				}
-				const Zenith_MaterialAsset* pxMaterial = xModel.GetMaterial(0u);
-				if (pxMaterial == nullptr
-					|| pxMaterial->GetName() != szRV_GREYBOX_MATERIAL)
-				{
-					return;
-				}
-				if (axFound[eNpc] != INVALID_ENTITY_ID)
-				{
-					bDuplicate = true;
-					return;
-				}
-				axFound[eNpc] = xID;
-			});
-
-		if (bDuplicate)
-		{
-			NRPFail("more than one live greybox model resolved to the same NPC row");
-			return false;
-		}
-		for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
-		{
-			if (axFound[u] == INVALID_ENTITY_ID)
-			{
-				return false;
-			}
-			const Zenith_Entity xEntity = g_xEngine.Scenes().ResolveEntity(axFound[u]);
-			const ZM_DawnmereNpcAnchor& xAnchor =
-				ZM_GetDawnmereNpcAnchor(g_aeNRPAnchorForNpc[u]);
-			if (!xEntity.IsValid() || xEntity.GetName() != xAnchor.m_szEntityName)
-			{
-				NRPFail("a live NPC row did not belong to its committed Dawnmere entity name");
-				return false;
-			}
-		}
-		for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
-		{
-			g_axNRPNpcIDs[u] = axFound[u];
-		}
-		g_bNRPLineupCollected = true;
-		return true;
-	}
-
-	bool NRPHoldLiveNpcLineup()
-	{
-		for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
-		{
-			const Zenith_Entity xNpc = g_xEngine.Scenes().ResolveEntity(g_axNRPNpcIDs[u]);
-			Zenith_TransformComponent* pxTransform = xNpc.IsValid()
-				? xNpc.TryGetComponent<Zenith_TransformComponent>()
-				: nullptr;
-			Zenith_ModelComponent* pxModel = xNpc.IsValid()
-				? xNpc.TryGetComponent<Zenith_ModelComponent>()
-				: nullptr;
-			if (pxTransform == nullptr || pxModel == nullptr
-				|| pxModel->GetNumMeshes() == 0u)
-			{
-				NRPFail("a collected authored NPC body disappeared before capture");
-				return false;
-			}
-			pxTransform->SetPosition(NRPLineupPosition(u));
-		}
-		return true;
-	}
-
-	Zenith_CameraComponent* NRPResolveCamera()
-	{
-		const Zenith_Entity xCamera = g_xEngine.Scenes().ResolveEntity(g_xNRPCameraID);
-		return xCamera.IsValid()
-			? xCamera.TryGetComponent<Zenith_CameraComponent>()
-			: nullptr;
-	}
-
-	bool NRPProjectLineup(Zenith_CameraComponent& xCamera)
-	{
-		Zenith_Maths::Matrix4 xView;
-		Zenith_Maths::Matrix4 xProjection;
-		xCamera.BuildViewMatrix(xView);
-		xCamera.BuildProjectionMatrix(xProjection);
-
-		for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
-		{
-			const Zenith_Maths::Vector4 xClip = xProjection * xView
-				* Zenith_Maths::Vector4(NRPLineupPosition(u), 1.0f);
-			if (!std::isfinite(xClip.x) || !std::isfinite(xClip.y)
-				|| !std::isfinite(xClip.w) || xClip.w <= 1.0e-4f)
-			{
-				NRPFail("a lineup body did not project in front of the test camera");
-				return false;
-			}
-			const float fNdcX = xClip.x / xClip.w;
-			const float fNdcY = xClip.y / xClip.w;
-			if (fNdcX <= -0.95f || fNdcX >= 0.95f
-				|| fNdcY <= -0.95f || fNdcY >= 0.95f)
-			{
-				NRPFail("a lineup body projected outside the safe viewport interior");
-				return false;
-			}
-			g_axNRPBodyNdc[u] = Zenith_Maths::Vector2(fNdcX, fNdcY);
-		}
-		return true;
-	}
-
-	bool NRPTryRequestCapture(int iFrame)
-	{
-		Zenith_CameraComponent* pxCamera = NRPResolveCamera();
-		if (pxCamera == nullptr)
-		{
-			NRPFail("the dedicated lineup camera disappeared before capture");
-			return false;
-		}
-
-#ifdef ZENITH_TOOLS
-		if (g_xEditorQuery.m_pfnGetViewportPos == nullptr
-			|| g_xEditorQuery.m_pfnGetViewportSize == nullptr)
-		{
-			NRPFail("the tools viewport query seam is not installed");
-			return false;
-		}
-		g_xNRPViewportPos = g_xEditorQuery.m_pfnGetViewportPos();
-		g_xNRPViewportSize = g_xEditorQuery.m_pfnGetViewportSize();
-		if (g_xNRPViewportSize.x < 320.0f || g_xNRPViewportSize.y < 180.0f)
-		{
-			return false; // editor layout has not reached a sampleable size yet
-		}
-		pxCamera->SetAspectRatio(g_xNRPViewportSize.x / g_xNRPViewportSize.y);
-#else
-		const Zenith_GraphicsOptions& xOpts = Zenith_GraphicsOptions::Get();
-		if (xOpts.m_uWindowWidth == 0u || xOpts.m_uWindowHeight == 0u)
-		{
-			return false;
-		}
-		pxCamera->SetAspectRatio(
-			static_cast<float>(xOpts.m_uWindowWidth)
-			/ static_cast<float>(xOpts.m_uWindowHeight));
-		g_xNRPViewportPos = Zenith_Maths::Vector2(0.0f);
-		g_xNRPViewportSize = Zenith_Maths::Vector2(
-			static_cast<float>(xOpts.m_uWindowWidth),
-			static_cast<float>(xOpts.m_uWindowHeight));
-#endif
-
-		if (!NRPProjectLineup(*pxCamera))
-		{
-			return false;
-		}
-		Flux_Screenshot::RequestDump(g_strNRPShotPath.c_str());
-		g_bNRPShotRequested = true;
-		g_iNRPShotFrame = iFrame;
-		Zenith_Log(LOG_CATEGORY_UNITTEST,
-			"[ZM_NpcRenderedPalette] requested actual framebuffer capture -> %s",
-			g_strNRPShotPath.c_str());
-		return true;
-	}
-
-	bool NRPReadMeanRGB(const ZM_TestTGAImage& xImage,
-		float fCenterX, float fCenterY, Zenith_Maths::Vector3& xOut)
-	{
-		if (!xImage.IsValid() || !std::isfinite(fCenterX) || !std::isfinite(fCenterY))
-		{
-			return false;
-		}
-		const int64_t iCenterX = static_cast<int64_t>(std::lround(fCenterX));
-		const int64_t iCenterY = static_cast<int64_t>(std::lround(fCenterY));
-		const int64_t iRadius = static_cast<int64_t>(uNRP_SAMPLE_RADIUS);
-		if (iCenterX - iRadius < 0 || iCenterY - iRadius < 0
-			|| iCenterX + iRadius >= static_cast<int64_t>(xImage.m_uWidth)
-			|| iCenterY + iRadius >= static_cast<int64_t>(xImage.m_uHeight))
-		{
-			return false;
-		}
-
-		uint64_t ulRed = 0u;
-		uint64_t ulGreen = 0u;
-		uint64_t ulBlue = 0u;
-		uint64_t ulSamples = 0u;
-		for (int64_t iY = iCenterY - iRadius; iY <= iCenterY + iRadius; ++iY)
-		{
-			for (int64_t iX = iCenterX - iRadius; iX <= iCenterX + iRadius; ++iX)
-			{
-				const uint8_t* puBGRA = xImage.GetPixelBGRA(
-					static_cast<uint32_t>(iX), static_cast<uint32_t>(iY));
-				ulBlue += puBGRA[0];
-				ulGreen += puBGRA[1];
-				ulRed += puBGRA[2];
-				++ulSamples;
-			}
-		}
-		if (ulSamples == 0u)
-		{
-			return false;
-		}
-		const float fNormalise = 1.0f / (255.0f * static_cast<float>(ulSamples));
-		xOut = Zenith_Maths::Vector3(
-			static_cast<float>(ulRed) * fNormalise,
-			static_cast<float>(ulGreen) * fNormalise,
-			static_cast<float>(ulBlue) * fNormalise);
-		return true;
-	}
-
-	float NRPRenderedSeparation(
-		const Zenith_Maths::Vector3& xA,
-		const Zenith_Maths::Vector3& xB)
-	{
-		const Zenith_Maths::Vector3 xDelta = xA - xB;
-		return std::sqrt(
-			xDelta.x * xDelta.x
-			+ xDelta.y * xDelta.y
-			+ xDelta.z * xDelta.z);
-	}
-}
-
-static void Setup_ZMNpcRenderedPalette()
-{
-	g_bNRPSceneLoaded = false;
-	g_bNRPFailed = false;
-	g_bNRPLineupCollected = false;
-	g_bNRPShotRequested = false;
-	g_szNRPFailure = "test did not reach verification";
-	g_iNRPShotFrame = -1;
-	g_strNRPShotPath.clear();
-	g_xNRPPreviousScene = Zenith_Scene();
-	g_xNRPDawnmereScene = Zenith_Scene();
-	g_xNRPCameraID = INVALID_ENTITY_ID;
-	g_xNRPViewportPos = Zenith_Maths::Vector2(0.0f);
-	g_xNRPViewportSize = Zenith_Maths::Vector2(0.0f);
-	g_xNRPGraphicsSave = NRPGraphicsSave{};
-	for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
-	{
-		g_axNRPNpcIDs[u] = INVALID_ENTITY_ID;
-		g_axNRPBodyNdc[u] = Zenith_Maths::Vector2(0.0f);
-	}
-
-	const std::filesystem::path xVisualDir = NRPVisualAuditDir();
-	std::error_code xDirError;
-	std::filesystem::create_directories(xVisualDir, xDirError);
-	if (xDirError)
-	{
-		NRPFail("could not create Build/artifacts/zenithmon/visual_audit");
-		return;
-	}
-	g_strNRPShotPath = (xVisualDir / "npc_rendered_palette.tga").string();
-	std::remove(g_strNRPShotPath.c_str());
-
-	Zenith_InputSimulator::ResetAllInputState();
-	Zenith_InputSimulator::SetFixedDt(fNRP_FIXED_DT);
-	NRPApplyGraphicsOptions();
-
-	g_xEngine.Scenes().RegisterSceneBuildIndex(
-		iNRP_DAWNMERE_BUILD_INDEX,
-		GAME_ASSETS_DIR "Scenes/Dawnmere" ZENITH_SCENE_EXT);
-	g_xNRPPreviousScene = g_xEngine.Scenes().GetActiveScene();
-	g_xNRPDawnmereScene = g_xEngine.Scenes().LoadSceneByIndex(
-		iNRP_DAWNMERE_BUILD_INDEX, SCENE_LOAD_ADDITIVE);
-	Zenith_SceneData* pxSceneData =
-		g_xEngine.Scenes().GetSceneData(g_xNRPDawnmereScene);
-	if (!g_xNRPDawnmereScene.IsValid() || pxSceneData == nullptr
-		|| !g_xEngine.Scenes().SetActiveScene(g_xNRPDawnmereScene))
-	{
-		NRPFail("could not additively load and activate committed Dawnmere");
-		return;
-	}
-	g_bNRPSceneLoaded = true;
-
-	// ZM-D-171: EVERY dynamic light is zeroed. The lineup's camera-facing -Z
-	// faces have N.L <= 0 against the global sun, so what the camera reads is
-	// the engine's ambient (sky + virtual-ground IBL) lighting the LIT palette
-	// — the property this test exists to pin.
-	g_xEngine.Scenes().QueryActiveScene<Zenith_LightComponent>().ForEach(
-		[](Zenith_EntityID, Zenith_LightComponent& xLight)
-		{
-			xLight.SetIntensity(0.0f);
-		});
-
-	Zenith_Entity xCamera =
-		g_xEngine.Scenes().CreateEntity(pxSceneData, "NpcPaletteEyeLevelCamera");
-	Zenith_CameraComponent& xCameraComponent =
-		xCamera.AddComponent<Zenith_CameraComponent>();
-	xCameraComponent.SetPosition(
-		Zenith_Maths::Vector3(0.0f, fNRP_LINEUP_Y, fNRP_CAMERA_Z));
-	xCameraComponent.SetYaw(3.14159265358979); // face -Z: read the sun-lit +Z faces
-	xCameraComponent.SetPitch(0.0);
-	xCameraComponent.SetFOV(glm::radians(55.0f));
-	xCameraComponent.SetNearPlane(0.1f);
-	xCameraComponent.SetFarPlane(100.0f);
-	xCameraComponent.SetAspectRatio(16.0f / 9.0f);
-	g_xNRPCameraID = xCamera.GetEntityID();
-	Zenith_UnitTests::SetMainCameraForTest(pxSceneData, g_xNRPCameraID);
-}
-
-static bool Step_ZMNpcRenderedPalette(int iFrame)
-{
-	if (g_bNRPFailed || !g_bNRPSceneLoaded)
-	{
-		return false;
-	}
-
-	if (!g_bNRPLineupCollected)
-	{
-		NRPTryCollectLiveNpcBodies();
-		if (!g_bNRPLineupCollected)
-		{
-			if (iFrame >= iNRP_CAPTURE_EARLIEST_FRAME)
-			{
-				NRPFail("the six live authored Dawnmere NPC greybox bodies never resolved");
-				return false;
-			}
-			return true;
-		}
-	}
-
-	if (!NRPHoldLiveNpcLineup())
-	{
-		return false;
-	}
-
-	if (!g_bNRPShotRequested && iFrame >= iNRP_CAPTURE_EARLIEST_FRAME)
-	{
-		NRPTryRequestCapture(iFrame);
-		if (!g_bNRPShotRequested && iFrame >= iNRP_CAPTURE_TIMEOUT_FRAME)
-		{
-			NRPFail("the framebuffer capture could not obtain a valid viewport");
-			return false;
-		}
-	}
-
-	return !g_bNRPShotRequested
-		|| iFrame < g_iNRPShotFrame + iNRP_FINISH_HOLD_FRAMES;
-}
-
-static bool Verify_ZMNpcRenderedPalette()
-{
-	bool bPassed = !g_bNRPFailed;
-	if (g_bNRPFailed)
-	{
-		Zenith_Error(LOG_CATEGORY_UNITTEST,
-			"[ZM_NpcRenderedPalette] %s", g_szNRPFailure);
-	}
-	if (!g_bNRPLineupCollected || !g_bNRPShotRequested)
-	{
-		Zenith_Error(LOG_CATEGORY_UNITTEST,
-			"[ZM_NpcRenderedPalette] live lineup/capture incomplete (lineup=%s shot=%s)",
-			g_bNRPLineupCollected ? "true" : "false",
-			g_bNRPShotRequested ? "true" : "false");
-		bPassed = false;
-	}
-
-	ZM_TestTGAImage xImage;
-	if (!g_bNRPShotRequested
-		|| !ZM_TestLoadTGA(g_strNRPShotPath.c_str(), xImage))
-	{
-		Zenith_Error(LOG_CATEGORY_UNITTEST,
-			"[ZM_NpcRenderedPalette] actual framebuffer TGA missing/invalid: %s",
-			g_strNRPShotPath.c_str());
-		bPassed = false;
-	}
-	else
-	{
-#ifndef ZENITH_TOOLS
-		g_xNRPViewportPos = Zenith_Maths::Vector2(0.0f);
-		g_xNRPViewportSize = Zenith_Maths::Vector2(
-			static_cast<float>(xImage.m_uWidth),
-			static_cast<float>(xImage.m_uHeight));
-#endif
-		const float fViewportRight = g_xNRPViewportPos.x + g_xNRPViewportSize.x;
-		const float fViewportBottom = g_xNRPViewportPos.y + g_xNRPViewportSize.y;
-		if (g_xNRPViewportPos.x < 0.0f || g_xNRPViewportPos.y < 0.0f
-			|| g_xNRPViewportSize.x <= 0.0f || g_xNRPViewportSize.y <= 0.0f
-			|| fViewportRight > static_cast<float>(xImage.m_uWidth) + 1.0f
-			|| fViewportBottom > static_cast<float>(xImage.m_uHeight) + 1.0f)
-		{
-			Zenith_Error(LOG_CATEGORY_UNITTEST,
-				"[ZM_NpcRenderedPalette] viewport (%.1f,%.1f %.1fx%.1f) is outside TGA %ux%u",
-				g_xNRPViewportPos.x, g_xNRPViewportPos.y,
-				g_xNRPViewportSize.x, g_xNRPViewportSize.y,
-				xImage.m_uWidth, xImage.m_uHeight);
-			bPassed = false;
-		}
-		else
-		{
-			Zenith_Maths::Vector3 axRendered[ZM_NPC_COUNT] = {};
-			bool abSampled[ZM_NPC_COUNT] = {};
-			for (u_int u = 0u; u < ZM_NPC_COUNT; ++u)
-			{
-				const float fPixelX = g_xNRPViewportPos.x
-					+ (g_axNRPBodyNdc[u].x * 0.5f + 0.5f) * g_xNRPViewportSize.x;
-				// CameraComponent's Vulkan projection already flips Y; like Combat's
-				// WorldToScreen seam, NDC -1 is the top of the displayed viewport.
-				const float fPixelY = g_xNRPViewportPos.y
-					+ (g_axNRPBodyNdc[u].y * 0.5f + 0.5f) * g_xNRPViewportSize.y;
-				abSampled[u] = NRPReadMeanRGB(xImage, fPixelX, fPixelY, axRendered[u]);
-				const ZM_NpcData& xNpc = ZM_GetNpcData(static_cast<ZM_NPC_ID>(u));
-				if (!abSampled[u])
-				{
-					Zenith_Error(LOG_CATEGORY_UNITTEST,
-						"[ZM_NpcRenderedPalette] %s centre patch (%.1f, %.1f) was unreadable",
-						xNpc.m_szDisplayName, fPixelX, fPixelY);
-					bPassed = false;
-					continue;
-				}
-				Zenith_Log(LOG_CATEGORY_UNITTEST,
-					"[ZM_NpcRenderedPalette] %s framebuffer RGB=(%.4f, %.4f, %.4f) at (%.1f, %.1f)",
-					xNpc.m_szDisplayName,
-					axRendered[u].x, axRendered[u].y, axRendered[u].z,
-					fPixelX, fPixelY);
-			}
-
-			float fMinimum = 2.0f;
-			u_int uMinimumA = 0u;
-			u_int uMinimumB = 0u;
-			u_int uComparedPairs = 0u;
-			for (u_int uA = 0u; uA < ZM_NPC_COUNT; ++uA)
-			{
-				for (u_int uB = uA + 1u; uB < ZM_NPC_COUNT; ++uB)
-				{
-					if (!abSampled[uA] || !abSampled[uB])
-					{
-						continue;
-					}
-					const float fSeparation =
-						NRPRenderedSeparation(axRendered[uA], axRendered[uB]);
-					++uComparedPairs;
-					if (fSeparation < fMinimum)
-					{
-						fMinimum = fSeparation;
-						uMinimumA = uA;
-						uMinimumB = uB;
-					}
-					if (fSeparation < fNRP_MIN_RENDERED_SEPARATION)
-					{
-						Zenith_Error(LOG_CATEGORY_UNITTEST,
-							"[ZM_NpcRenderedPalette] rendered %s/%s separation %.4f < %.2f",
-							ZM_GetNpcData(static_cast<ZM_NPC_ID>(uA)).m_szDisplayName,
-							ZM_GetNpcData(static_cast<ZM_NPC_ID>(uB)).m_szDisplayName,
-							fSeparation, fNRP_MIN_RENDERED_SEPARATION);
-						bPassed = false;
-					}
-				}
-			}
-			if (uComparedPairs != 15u)
-			{
-				Zenith_Error(LOG_CATEGORY_UNITTEST,
-					"[ZM_NpcRenderedPalette] compared %u pairs, expected all 15",
-					uComparedPairs);
-				bPassed = false;
-			}
-			else
-			{
-				Zenith_Log(LOG_CATEGORY_UNITTEST,
-					"[ZM_NpcRenderedPalette] minimum of 15 framebuffer RGB separations: "
-					"%s/%s = %.4f (required >= %.2f), TGA=%s",
-					ZM_GetNpcData(static_cast<ZM_NPC_ID>(uMinimumA)).m_szDisplayName,
-					ZM_GetNpcData(static_cast<ZM_NPC_ID>(uMinimumB)).m_szDisplayName,
-					fMinimum, fNRP_MIN_RENDERED_SEPARATION,
-					g_strNRPShotPath.c_str());
-			}
-		}
-	}
-
-	NRPCleanup();
-	return bPassed;
-}
-
-static void Teardown_ZMNpcRenderedPalette()
-{
-	NRPCleanup();
-	Zenith_InputSimulator::ResetAllInputState();
-}
-
-static const Zenith_AutomatedTest g_xZMNpcRenderedPaletteTest = {
-	"ZM_NpcRenderedPalette_Test",
-	&Setup_ZMNpcRenderedPalette,
-	&Step_ZMNpcRenderedPalette,
-	&Verify_ZMNpcRenderedPalette,
-	/* maxFrames */ 240,
-	true /* m_bRequiresGraphics */,
-	false /* m_bManualOnly */,
-	&Teardown_ZMNpcRenderedPalette,
-};
-ZENITH_AUTOMATED_TEST_REGISTER(g_xZMNpcRenderedPaletteTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

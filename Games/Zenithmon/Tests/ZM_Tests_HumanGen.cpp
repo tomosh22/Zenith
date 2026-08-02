@@ -50,6 +50,13 @@
 //  20. HumanGen_PaletteDistinctness -- the five appearances the Dawnmere cast
 //                                      wears are numerically separated from each
 //                                      other AND from the fallback grey.
+//  21. HumanGen_BodyMetricsPinned  -- the two v2 anchor constants re-derive from a
+//                                      freshly built mesh, and the metric is
+//                                      body-only (hair/attachment cannot move it).
+//  22. HumanGen_BindSpaceCentreAnchored -- the v2 anchor is a RIGID translation of
+//                                      rig + mesh: only the root bone moved, the
+//                                      canonical body sits on the origin, and each
+//                                      model lands where its height scale says.
 //
 // PURE / HEADLESS: no disk, no GPU, no ZENITH_TOOLS reach. Runs at boot before
 // the scene loads.
@@ -61,6 +68,9 @@
 #include "Zenithmon/Source/Gen/ZM_HumanAppearance.h"
 #include "Zenithmon/Source/Gen/ZM_CreatureAnimGen.h"
 #include "Zenithmon/Source/Data/ZM_HumanData.h"
+// The body contract, for the ONE cross-cutting clause below: that the generator's
+// MEASURED canonical body and the game's authored body box actually agree.
+#include "Zenithmon/Source/World/ZM_HumanBody.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_HashMap.h"
@@ -550,6 +560,22 @@ namespace
 			}
 		}
 		return xScan;
+	}
+
+	// The v2 centre anchor, mirrored for a DIRECTLY appended appearance mesh.
+	// ZM_AppendHumanHair / ZM_AppendHumanAttachment are geometry APPENDERS: they
+	// emit in the pre-anchor loft space, and ZM_BuildHumanMesh translates the whole
+	// mesh once, immediately before finalisation. A direct build must therefore
+	// apply it at exactly the same point -- tangents are derived from vertex
+	// deltas, and deltas of shifted floats do not round identically to deltas of
+	// unshifted ones, so anchoring afterwards would fail the byte-exact suffix
+	// comparisons for a reason that is not a defect.
+	void ApplyBindSpaceAnchor(ZM_GenMesh& xMesh)
+	{
+		for (u_int u = 0u; u < xMesh.GetNumVerts(); ++u)
+		{
+			xMesh.m_xPositions.Get(u).y -= fZM_HUMAN_MESH_CENTRE_Y;
+		}
 	}
 
 	bool MeshSafeForFinalization(const ZM_GenMesh& xMesh, u_int& uFirstBadIndex)
@@ -1835,6 +1861,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_HairStyleSilhouettes)
 			"hair style %u is unsafe to finalise (bad index slot %u)", style, uFirstBadIndex);
 		if (bSafeToFinalise)
 		{
+			ApplyBindSpaceAnchor(xHairA);
 			ZM_GenGenerateTangents(xHairA);
 			ZM_GenNormalizeSkinWeights(xHairA);
 		}
@@ -1849,6 +1876,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_HairStyleSilhouettes)
 			style, uSecondBadIndex);
 		if (bSecondSafeToFinalise)
 		{
+			ApplyBindSpaceAnchor(xHairB);
 			ZM_GenGenerateTangents(xHairB);
 			ZM_GenNormalizeSkinWeights(xHairB);
 		}
@@ -2058,6 +2086,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 				attachment, uFirstBadIndex);
 			if (bSafeToFinalise)
 			{
+				ApplyBindSpaceAnchor(xAttachmentA);
 				ZM_GenGenerateTangents(xAttachmentA);
 				ZM_GenNormalizeSkinWeights(xAttachmentA);
 			}
@@ -2072,6 +2101,7 @@ ZENITH_TEST(ZM_Gen, HumanGen_AttachmentSilhouettes)
 				attachment, uSecondBadIndex);
 			if (bSecondSafeToFinalise)
 			{
+				ApplyBindSpaceAnchor(xAttachmentB);
 				ZM_GenGenerateTangents(xAttachmentB);
 				ZM_GenNormalizeSkinWeights(xAttachmentB);
 			}
@@ -2774,4 +2804,276 @@ ZENITH_TEST(ZM_Gen, HumanGen_PaletteDistinctness)
 	ZENITH_ASSERT_EQ(uPairsCompared, (uCAST_COUNT * (uCAST_COUNT - 1u)) / 2u,
 		"the pairwise walk did not compare every cast pair -- the clauses above are "
 		"vacuous to the extent it skipped any");
+}
+
+// ############################################################################
+// 21. Body metrics are MEASURED, body-only, and pin the two anchor constants
+// ############################################################################
+
+// fZM_HUMAN_CANONICAL_BODY_HEIGHT and fZM_HUMAN_MESH_CENTRE_Y are compiled
+// literals that the whole game's sizing hangs off: the first sets the authored
+// visual scale, the second is the rigid shift applied to the shared bind space.
+// This case RE-DERIVES both from a freshly built mesh, so a generator edit that
+// changes the loft reds this gate instead of silently mis-sizing every human.
+//
+// It also pins the two properties that make the numbers trustworthy:
+//   * the metric is taken over the BODY PREFIX, so hair and attachments cannot
+//     move it -- proved by varying both axes and requiring an unchanged result;
+//   * the canonical row is still the 1.0 reference build, so "canonical" means
+//     what the constants assume it means.
+ZENITH_TEST(ZM_Gen, HumanGen_BodyMetricsPinned)
+{
+	const ZM_HumanRecipe xCanonical = ZM_ResolveHumanRecipe(eZM_HUMAN_CANONICAL_MODEL);
+
+	// --- The canonical row is the 1.0 reference build ------------------------
+	ZENITH_ASSERT_EQ((u_int)xCanonical.m_eBuild, (u_int)ZM_HUMAN_BUILD_AVERAGE,
+		"the canonical model '%s' is no longer ZM_HUMAN_BUILD_AVERAGE -- every "
+		"anchor constant below was derived assuming it is",
+		ZM_GetHumanName(eZM_HUMAN_CANONICAL_MODEL));
+	ZENITH_ASSERT_EQ_FLOAT(xCanonical.m_fHeightScale, 1.0f, 0.0f,
+		"the canonical model's height scale must be exactly 1.0");
+	// The canonical model wears a hat. That is the whole point of measuring the
+	// body prefix, so pin it: if the roster ever strips it, the accessory-
+	// independence clause below stops proving anything.
+	ZENITH_ASSERT_EQ((u_int)xCanonical.m_eAttachment, (u_int)ZM_HUMAN_ATTACHMENT_CAP,
+		"the canonical model no longer wears an attachment -- the accessory-"
+		"independence clause below would then be vacuous");
+
+	// --- The two constants, re-derived --------------------------------------
+	const ZM_HumanBodyMetrics xMetrics = ZM_MeasureHumanBody(eZM_HUMAN_CANONICAL_MODEL);
+
+	ZENITH_ASSERT_GT(xMetrics.m_uBodyVertexCount, 0u,
+		"the canonical body prefix is empty -- nothing was measured");
+	ZENITH_ASSERT_TRUE(xMetrics.m_fMinY < xMetrics.m_fMaxY,
+		"canonical body bounds are degenerate (min %.6f, max %.6f)",
+		xMetrics.m_fMinY, xMetrics.m_fMaxY);
+
+	ZENITH_ASSERT_EQ_FLOAT(xMetrics.m_fHeight, fZM_HUMAN_CANONICAL_BODY_HEIGHT, 1.0e-4f,
+		"fZM_HUMAN_CANONICAL_BODY_HEIGHT is stale: the canonical body now measures "
+		"%.6f. RE-DERIVE the constant from this number -- do not widen the tolerance",
+		xMetrics.m_fHeight);
+	ZENITH_ASSERT_EQ_FLOAT(xMetrics.m_fCentreY, fZM_HUMAN_MESH_CENTRE_Y, 1.0e-4f,
+		"fZM_HUMAN_MESH_CENTRE_Y is stale: the canonical body centre now measures "
+		"%.6f. RE-DERIVE the constant from this number -- every human in the game "
+		"is anchored by it",
+		xMetrics.m_fCentreY);
+
+	// A plausible body, so a wildly broken loft cannot quietly re-pin itself. The
+	// band is MODEL-space: the loft inherits the StickFigure golden ring tables and
+	// builds a ~2.6-unit body, which fZM_HUMAN_VISUAL_SCALE turns into 1.8 m.
+	ZENITH_ASSERT_TRUE(xMetrics.m_fHeight > 2.0f && xMetrics.m_fHeight < 3.2f,
+		"canonical body height %.6f is not a plausible loft-space human",
+		xMetrics.m_fHeight);
+
+	// --- The visual scale lands the body on the body contract ----------------
+	ZENITH_ASSERT_EQ_FLOAT(xMetrics.m_fHeight * fZM_HUMAN_VISUAL_SCALE,
+		fZM_HUMAN_BODY_HEIGHT, 1.0e-4f,
+		"fZM_HUMAN_VISUAL_SCALE does not map the canonical body onto the %.2f m body "
+		"contract (it lands at %.6f)", fZM_HUMAN_BODY_HEIGHT,
+		xMetrics.m_fHeight * fZM_HUMAN_VISUAL_SCALE);
+
+	// --- Purity --------------------------------------------------------------
+	const ZM_HumanBodyMetrics xAgain = ZM_MeasureHumanBody(eZM_HUMAN_CANONICAL_MODEL);
+	ZENITH_ASSERT_TRUE(xAgain.m_fMinY == xMetrics.m_fMinY
+		&& xAgain.m_fMaxY == xMetrics.m_fMaxY
+		&& xAgain.m_uBodyVertexCount == xMetrics.m_uBodyVertexCount,
+		"ZM_MeasureHumanBody is not pure -- two measurements of the same id differ");
+
+	// --- Accessories do NOT participate --------------------------------------
+	// Vary the attachment across every slot and the hair across every style; the
+	// body prefix must not move by a single float. A hat that could change the
+	// measurement would size the entire cast off headwear.
+	u_int uVariantsChecked = 0u;
+	for (u_int a = 0u; a < (u_int)ZM_HUMAN_ATTACHMENT_COUNT; ++a)
+	{
+		ZM_HumanRecipe xVariant = xCanonical;
+		xVariant.m_eAttachment = (ZM_HUMAN_ATTACHMENT)a;
+		const ZM_HumanBodyMetrics xVar = ZM_MeasureHumanBody(xVariant);
+		++uVariantsChecked;
+		ZENITH_ASSERT_TRUE(xVar.m_fMinY == xMetrics.m_fMinY
+			&& xVar.m_fMaxY == xMetrics.m_fMaxY
+			&& xVar.m_uBodyVertexCount == xMetrics.m_uBodyVertexCount,
+			"attachment %u moved the BODY metric (min %.6f max %.6f verts %u vs "
+			"%.6f / %.6f / %u) -- the measurement is not body-only",
+			a, xVar.m_fMinY, xVar.m_fMaxY, xVar.m_uBodyVertexCount,
+			xMetrics.m_fMinY, xMetrics.m_fMaxY, xMetrics.m_uBodyVertexCount);
+	}
+	for (u_int h = 0u; h < uZM_HUMAN_HAIR_STYLE_COUNT; ++h)
+	{
+		ZM_HumanRecipe xVariant = xCanonical;
+		xVariant.m_uHairStyle = h;
+		const ZM_HumanBodyMetrics xVar = ZM_MeasureHumanBody(xVariant);
+		++uVariantsChecked;
+		ZENITH_ASSERT_TRUE(xVar.m_fMinY == xMetrics.m_fMinY
+			&& xVar.m_fMaxY == xMetrics.m_fMaxY
+			&& xVar.m_uBodyVertexCount == xMetrics.m_uBodyVertexCount,
+			"hair style %u moved the BODY metric -- the measurement is not body-only", h);
+	}
+	ZENITH_ASSERT_EQ(uVariantsChecked,
+		(u_int)ZM_HUMAN_ATTACHMENT_COUNT + uZM_HUMAN_HAIR_STYLE_COUNT,
+		"the appearance-axis sweep skipped variants -- it proves less than it claims");
+}
+
+// ############################################################################
+// 22. The shared bind space is CENTRE-ANCHORED, rig and mesh together
+// ############################################################################
+
+// The v2 anchor is a RIGID translation of the shared bind space by
+// fZM_HUMAN_MESH_CENTRE_Y. This case proves all three halves of that claim
+// against the SHIPPED mesh (not arithmetic about it):
+//   * the canonical body's centre lands on the entity origin;
+//   * every other model lands where its own m_fHeightScale says it should, and
+//     accessories are allowed to stick out past the body box;
+//   * ONLY the root bone's translation moved -- checked by forward-kinematically
+//     resolving bones deep in two different chains and requiring each to be its
+//     v1 world height minus exactly the anchor.
+ZENITH_TEST(ZM_Gen, HumanGen_BindSpaceCentreAnchored)
+{
+	// --- Rig: only Root moved ------------------------------------------------
+	ZM_GenMesh xRig;
+	ZM_AppendSharedHumanBones(xRig);
+	ZENITH_ASSERT_EQ(xRig.GetNumBones(), uZM_HUMAN_BONE_COUNT,
+		"the shared rig is not the frozen 16 bones");
+
+	const ZM_GenBone& xRoot = xRig.m_xBones.Get(0u);
+	ZENITH_ASSERT_STREQ(xRoot.m_szName, "Root", "bone 0 is not the root");
+	ZENITH_ASSERT_EQ(xRoot.m_iParent, -1, "the root bone must have no parent");
+	ZENITH_ASSERT_EQ_FLOAT(xRoot.m_xLocalPos.y, fZM_HUMAN_ROOT_BIND_Y, 1.0e-5f,
+		"the root bind height is not the anchored one");
+	ZENITH_ASSERT_EQ_FLOAT(xRoot.m_xLocalPos.x, 0.0f, 1.0e-6f, "the anchor moved the root in X");
+	ZENITH_ASSERT_EQ_FLOAT(xRoot.m_xLocalPos.z, 0.0f, 1.0e-6f, "the anchor moved the root in Z");
+
+	// FK-resolve a bone's world bind height by walking parents to the root.
+	const auto WorldBindY = [&xRig](const char* szBone) -> float
+	{
+		int iIndex = ZM_GenMeshFindBone(xRig, szBone);
+		float fY = 0.0f;
+		while (iIndex >= 0)
+		{
+			const ZM_GenBone& xBone = xRig.m_xBones.Get((u_int)iIndex);
+			fY += xBone.m_xLocalPos.y;
+			iIndex = xBone.m_iParent;
+		}
+		return fY;
+	};
+
+	// v1 world bind heights (the frozen parent-local table): both feet at 0, the
+	// head at 2.4. If the anchor had been subtracted from all 16 bones instead of
+	// the root alone it would have compounded down each chain, and these two --
+	// three and four joints deep -- would be wrong by different amounts.
+	struct ChainProbe { const char* m_szBone; float m_fV1WorldY; };
+	const ChainProbe axPROBES[] =
+	{
+		{ "LeftFoot",  0.0f },
+		{ "RightFoot", 0.0f },
+		{ "Head",      2.4f },
+		{ "LeftHand",  1.4f },   // Root 1.0 + Spine 0.5 + LUArm 0.6 - 0.4 - 0.3
+	};
+	for (const ChainProbe& xProbe : axPROBES)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(WorldBindY(xProbe.m_szBone),
+			xProbe.m_fV1WorldY - fZM_HUMAN_MESH_CENTRE_Y, 1.0e-5f,
+			"bone '%s' did not move by exactly the anchor -- the translation must "
+			"touch the ROOT bone only, or it compounds down the hierarchy",
+			xProbe.m_szBone);
+	}
+
+	// --- Mesh: every model's body lands where its height scale says ----------
+	u_int uModelsChecked = 0u;
+	for (u_int id = 0u; id < (u_int)ZM_HUMAN_COUNT; ++id)
+	{
+		const ZM_HUMAN_ID eId = (ZM_HUMAN_ID)id;
+		const ZM_HumanRecipe      xRecipe  = ZM_ResolveHumanRecipe(eId);
+		const ZM_HumanBodyMetrics xMetrics = ZM_MeasureHumanBody(eId);
+
+		ZM_GenMesh xMesh;
+		ZM_BuildHumanMesh(xRecipe, xMesh);
+		ZENITH_ASSERT_TRUE(xMetrics.m_uBodyVertexCount > 0u
+			&& xMetrics.m_uBodyVertexCount <= xMesh.GetNumVerts(),
+			"human %u body prefix %u does not index its own mesh (%u verts)",
+			id, xMetrics.m_uBodyVertexCount, xMesh.GetNumVerts());
+
+		// Measure the SHIPPED mesh's body prefix.
+		float fBodyMin = xMesh.m_xPositions.Get(0u).y;
+		float fBodyMax = fBodyMin;
+		for (u_int u = 1u; u < xMetrics.m_uBodyVertexCount; ++u)
+		{
+			const float fY = xMesh.m_xPositions.Get(u).y;
+			if (fY < fBodyMin) { fBodyMin = fY; }
+			if (fY > fBodyMax) { fBodyMax = fY; }
+		}
+		const float fBodyCentre = 0.5f * (fBodyMin + fBodyMax);
+
+		// The anchor is rigid: the shipped body is the measured body, shifted.
+		ZENITH_ASSERT_EQ_FLOAT(fBodyMax - fBodyMin, xMetrics.m_fHeight, 1.0e-4f,
+			"human %u body height changed across the anchor -- it is not a rigid "
+			"translation", id);
+		ZENITH_ASSERT_EQ_FLOAT(fBodyCentre, xMetrics.m_fCentreY - fZM_HUMAN_MESH_CENTRE_Y,
+			1.0e-4f, "human %u body centre is not its measured centre minus the anchor", id);
+
+		// The whole cast lofts about the same pre-anchor floor, so a model built at
+		// height scale h carries its centre to ~= canonicalCentre * h and the anchor
+		// leaves canonicalCentre * (h - 1). NOT "all 35 are centred" -- that is
+		// impossible with differing height scales, and claiming it would be a lie.
+		const float fExpectedCentre = fZM_HUMAN_MESH_CENTRE_Y * (xRecipe.m_fHeightScale - 1.0f);
+		ZENITH_ASSERT_EQ_FLOAT(fBodyCentre, fExpectedCentre, 0.05f,
+			"human %u ('%s', height scale %.3f) sits %.4f off the origin; its build "
+			"only justifies %.4f", id, ZM_GetHumanName(eId), xRecipe.m_fHeightScale,
+			fBodyCentre, fExpectedCentre);
+
+		// Accessories may extend past the body box -- they simply do not define it.
+		const Zenith_Maths::Vector3 xFullMin = ZM_GenMeshBoundsMin(xMesh);
+		const Zenith_Maths::Vector3 xFullMax = ZM_GenMeshBoundsMax(xMesh);
+		ZENITH_ASSERT_TRUE(xFullMin.y <= fBodyMin + 1.0e-4f && xFullMax.y >= fBodyMax - 1.0e-4f,
+			"human %u full bounds do not contain its own body box", id);
+
+		++uModelsChecked;
+	}
+	ZENITH_ASSERT_EQ(uModelsChecked, (u_int)ZM_HUMAN_COUNT,
+		"the anchor sweep did not cover the whole roster");
+
+	// The canonical model IS the origin -- that is what makes the constant a centre.
+	ZM_GenMesh xCanonicalMesh;
+	ZM_BuildHumanMesh(ZM_ResolveHumanRecipe(eZM_HUMAN_CANONICAL_MODEL), xCanonicalMesh);
+	const ZM_HumanBodyMetrics xCanonMetrics = ZM_MeasureHumanBody(eZM_HUMAN_CANONICAL_MODEL);
+	float fMin = xCanonicalMesh.m_xPositions.Get(0u).y;
+	float fMax = fMin;
+	for (u_int u = 1u; u < xCanonMetrics.m_uBodyVertexCount; ++u)
+	{
+		const float fY = xCanonicalMesh.m_xPositions.Get(u).y;
+		if (fY < fMin) { fMin = fY; }
+		if (fY > fMax) { fMax = fY; }
+	}
+	ZENITH_ASSERT_EQ_FLOAT(0.5f * (fMin + fMax), 0.0f, 1.0e-4f,
+		"the canonical body is not centred on the entity origin");
+
+	// At least one model must actually wear something that pokes out, or the
+	// "accessories may exceed the body box" clause above is vacuous.
+	bool bSawAccessoryOverhang = false;
+	for (u_int id = 0u; id < (u_int)ZM_HUMAN_COUNT && !bSawAccessoryOverhang; ++id)
+	{
+		const ZM_HUMAN_ID eId = (ZM_HUMAN_ID)id;
+		const ZM_HumanBodyMetrics xM = ZM_MeasureHumanBody(eId);
+		ZM_GenMesh xMesh;
+		ZM_BuildHumanMesh(ZM_ResolveHumanRecipe(eId), xMesh);
+		if (xMesh.GetNumVerts() <= xM.m_uBodyVertexCount) { continue; }
+
+		float fBodyMax = xMesh.m_xPositions.Get(0u).y;
+		for (u_int u = 1u; u < xM.m_uBodyVertexCount; ++u)
+		{
+			const float fY = xMesh.m_xPositions.Get(u).y;
+			if (fY > fBodyMax) { fBodyMax = fY; }
+		}
+		for (u_int u = xM.m_uBodyVertexCount; u < xMesh.GetNumVerts(); ++u)
+		{
+			if (xMesh.m_xPositions.Get(u).y > fBodyMax + 1.0e-3f)
+			{
+				bSawAccessoryOverhang = true;
+				break;
+			}
+		}
+	}
+	ZENITH_ASSERT_TRUE(bSawAccessoryOverhang,
+		"no model's accessories reach past its body box -- the body-prefix "
+		"measurement is not actually excluding anything");
 }

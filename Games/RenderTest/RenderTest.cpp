@@ -1065,7 +1065,12 @@ static void InitializeRenderTestResources()
 // flanks, was 104/134 over 62/78 → ~53deg) at pushed-out radii 185/265.
 // v6: whole campus (+ its hills/grass/trees + scattered feature hills) recentred from
 // the (256,256) corner to the terrain centre (2048,2048) — every world XZ shifted +1792.
-static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v6.marker";
+// v7: NOT a terrain-shape change — the engine's physics chunks moved from a
+// density divisor of 8 (81 verts) to 4 (289 verts). Zenith_TerrainComponent
+// validates a loaded chunk against Flux_TerrainVertexLayout, so every v6 bake's
+// Physics_*.zmesh is now rejected and the campus would load with NO collision.
+// Bump this for any baked-BYTE change, not only when the heightfield moves.
+static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v7.marker";
 
 static bool RenderTest_TerrainAssetsNeedRegeneration()
 {

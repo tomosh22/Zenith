@@ -178,6 +178,26 @@ Terrain collision uses separate mesh, not render LODs:
 - Single combined mesh for all 4,096 chunks (no subdivision) — `LoadCombinedPhysicsGeometry()` loads each `Physics_X_Y.zmesh` and `Flux_MeshGeometry::Combine()`s them into one unified Jolt mesh
 - Always resident, never streamed
 - Generated at component initialization
+- Physics chunks use a density divisor of 4 (17 x 17 vertices / 4 m quads in a 64 m chunk), intentionally lower density than HIGH render chunks (65 x 65 / 1 m). Do not raise it to render density merely to correct a visual issue; choose collision density explicitly and rebake affected terrain assets.
+
+> **★ CHANGING THE DIVISOR IS A BREAKING ASSET CHANGE — BUMP EVERY GAME'S BAKE STAMP IN THE SAME COMMIT.**
+> `TryReadTerrainChunkSnapshot` REJECTS any chunk whose vertex/index counts differ from
+> `Flux_TerrainVertexLayout`, so a stale bake does not degrade — chunk (0,0) fails validation and
+> `LoadCombinedPhysicsGeometry` returns with **no physics body at all**. It logs a `Zenith_Error` and
+> the game keeps running, so it presents as characters falling through the world rather than as a
+> stale asset. Each game gates its bake on its own stamp, and **none of them hash the chunk bytes** —
+> Zenithmon's manifest is `(version, file COUNT)` and a density change moves neither, so a stale tree
+> reports warm forever. The stamps that must move together:
+>
+> | Game | Stamp |
+> |---|---|
+> | Zenithmon | `uZM_TERRAIN_MANIFEST_VERSION` (`Games/Zenithmon/Source/World/ZM_TerrainAuthoring.h`) |
+> | CityBuilder | `terrain_hills_vN.marker` (`Games/CityBuilder/CityBuilder.cpp`) |
+> | RenderTest | `sk_szTerrainProcMarkerRel` → `terrain_proc_vN.marker` (`Games/RenderTest/RenderTest.cpp`) |
+>
+> CI cannot catch this: `**/Assets/` is gitignored, so every CI run bakes cold and passes while every
+> developer tree with an existing bake silently loses collision. The same applies to any future change
+> that rewrites baked chunk BYTES without changing the file count.
 
 ### Rendering System
 Terrain submits separate task each frame:

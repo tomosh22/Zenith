@@ -18,8 +18,10 @@ struct ZM_GrassTile
 // Gameplay-side tall-grass owner (S5). Keeps its OWN CPU density copy (independent
 // of ZM_TerrainGrass's render feed), quantizes the active player to 1 m tiles, and
 // on a tile transition onto grass rolls a per-route encounter (ZM_EncounterZone)
-// and dispatches ZM_OnWildEncounter. Shares its entity with the terrain component.
-// EMITS the event only -- it does NOT load the battle (item 3 subscribes).
+// and dispatches ZM_OnWildEncounter. Therefore a painted density region means
+// Pokemon-style TALL GRASS, not decorative lawn; its 0.30-0.80 m rendered blades
+// are intentionally allowed to look knee-high. Shares its entity with the terrain
+// component. EMITS the event only -- it does NOT load the battle (item 3 subscribes).
 class ZM_TallGrassSystem
 {
 public:

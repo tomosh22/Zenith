@@ -134,7 +134,14 @@ Zenithmon registers game-global resets here from S0, including
 **Blockout / greybox shell.** The transitional box geometry every Zenithmon
 interior is built from until the S4 art pipeline dresses it: named entities each
 carrying a unit-cube `ZM_GreyboxVisual` (serialization order 107) plus their own
-static AABB collider, authored as centre + scale by `AddStep_*`. `PlayerHome`
+static AABB collider, authored as centre + scale by `AddStep_*`.
+★ SINCE ZM-D-181 THIS MEANS WALLS, FLOORS, DOORS, LINTELS AND INTERIOR SHELLS
+ONLY -- **not NPC or player bodies**, which now wear the generated human models.
+The same component still serves both populations, but the blockout branch is the
+one that must stay byte-for-byte as it shipped. The one blockout-shaped thing that
+is NOT a wall is the **human fallback block**: the proportioned 0.8 x 1.8 x 0.8
+palette-coloured box a resolved human falls back to when the human bake is absent
+and cannot be made. It is a degraded PICTURE, never a different body. `PlayerHome`
 and `ProfLab` ship the SAME seven-block shell -- floor, back wall, left/right
 walls, a front PAIR flanking an aperture, and a lintel bridging it -- differing
 only in room size (16 x 12 m vs 20 x 16 m). The entrance is an ABSENCE of
@@ -143,6 +150,17 @@ geometry, not a hinged panel, which is why every block can stay
 anything that must FACE somewhere needs OBB instead). Blocks create no baked
 model or material file. Block ORDER is part of the scene contract: appending is
 free, reordering rewrites the `.zscen` bytes (ZM-D-148).
+
+**Human body contract.** `Source/World/ZM_HumanBody.h` -- the single compiled
+statement of how big a person is in Zenithmon: 1.8 m tall, 0.8 m footprint, a
+capsule of radius 0.4 and cylinder half-height 0.5, and the uniform
+`fZM_HUMAN_VISUAL_SCALE` that lands a generated human MODEL on that box. Before
+ZM-D-181 the size was derived from TRANSFORM SCALE; it could not stay that way,
+because the scale now belongs to the model and is uniform, and a uniform scale
+degenerates a scale-derived capsule into a sphere. Bodies are installed from these
+constants explicitly, via `Zenith_ColliderComponent::SetExplicit{CapsuleDimensions,
+BoxHalfExtents}`. The consequence worth remembering: **gameplay dimensions do not
+depend on whether the human bake exists.**
 
 **Boot-authored scene.** A scene re-authored every ZENITH_TOOLS boot by
 editor-automation `AddStep_*` calls and saved as a `.zscen`; non-tools builds

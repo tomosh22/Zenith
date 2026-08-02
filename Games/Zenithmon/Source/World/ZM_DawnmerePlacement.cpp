@@ -200,9 +200,9 @@ namespace
 	// jamb's authored height comes from ground half a metre away, and the ground at
 	// its OWN column is unmeasurable by construction -- so the difference between
 	// them is never observed. Do not quote a figure for it. The samples that
-	// bracket the doorway do not agree on even the SIGN: (384, 474) reads 26.29139
-	// while the two door columns at z=475.5 read 26.228/26.216 (falling with +Z),
-	// yet the shell corners at z=476 -- 26.30190 at x=376 and 26.17619 at x=392 --
+	// bracket the doorway do not agree on even the SIGN: (384, 474) reads 26.28675
+	// while the two door columns at z=475.5 read 26.22059/26.19279 (falling with +Z),
+	// yet the shell corners at z=476 -- 26.30927 at x=376 and 26.22234 at x=392 --
 	// interpolate ABOVE those door samples (rising with +Z). Eroded terrain is not
 	// locally linear and neither extrapolation is evidence.
 	// What IS bounded is the consequence: the local relief over half a metre here
@@ -223,26 +223,27 @@ namespace
 	// ONE VALUE PER LINE, column named in the row. Each is the `measured=` figure
 	// ZM_DawnmereHomeGroundTruth_Test (Tests/ZM_AutoTests_CameraClearance.cpp)
 	// logged for that column: a REAL downward raycast at that XZ against the baked
-	// Dawnmere terrain body, taken headless on the Null backend on 2026-07-31,
-	// AFTER the forced heightmap regeneration that moved the Home pad. They are
+	// Dawnmere terrain body, taken headless on the Null backend on 2026-08-02,
+	// AFTER its collision topology changed from 8 m to 4 m quads. They are
 	// OBSERVED, never derived.
 	//
-	// ★ WHAT RE-MEASURES THEM: any change to the Dawnmere terrain recipe -- a pad,
-	// a path, a seed, a flatten radius. Run that test, read its `MEASURED FEET Y`
+	// ★ WHAT RE-MEASURES THEM: any change to the Dawnmere terrain recipe OR its
+	// collision topology -- a pad, path, seed, flatten radius, or density divisor.
+	// Run that test, read its `MEASURED FEET Y`
 	// lines, paste them here, rebuild, and re-author Dawnmere from a windowed tools
 	// boot. The derived authored Y values below follow automatically.
 	constexpr ZM_DawnmereNpcAnchor s_axDawnmereHomeSamples[] =
 	{
 		// name,                x,                              z,                              measured feet Y
-		{ "HomeShell_MinXMinZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MIN_Z,           26.30190f },
-		{ "HomeShell_MaxXMinZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MIN_Z,           26.17619f },
-		{ "HomeShell_MinXMaxZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MAX_Z,           26.31600f },
-		{ "HomeShell_MaxXMaxZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MAX_Z,           26.32870f },
-		{ "HomeDoorLeft",       fZM_DAWNMERE_HOME_DOOR_LEFT_X,  fZM_HOME_DOOR_SAMPLE_Z,         26.22815f },
-		{ "HomeDoorRight",      fZM_DAWNMERE_HOME_DOOR_RIGHT_X, fZM_HOME_DOOR_SAMPLE_Z,         26.21636f },
-		{ "HomeDoorTrigger",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_TRIGGER_Z,    26.29139f },
-		{ "FromHomeSpawn",      fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_FROM_HOME_SPAWN_Z, 26.07615f },
-		{ "HomeDoorStaging",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_DOOR_STAGING_Z, 26.25094f },
+		{ "HomeShell_MinXMinZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MIN_Z,           26.30927f },
+		{ "HomeShell_MaxXMinZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MIN_Z,           26.22234f },
+		{ "HomeShell_MinXMaxZ", fZM_HOME_SHELL_MIN_X,           fZM_HOME_SHELL_MAX_Z,           25.61314f },
+		{ "HomeShell_MaxXMaxZ", fZM_HOME_SHELL_MAX_X,           fZM_HOME_SHELL_MAX_Z,           25.59459f },
+		{ "HomeDoorLeft",       fZM_DAWNMERE_HOME_DOOR_LEFT_X,  fZM_HOME_DOOR_SAMPLE_Z,         26.22059f },
+		{ "HomeDoorRight",      fZM_DAWNMERE_HOME_DOOR_RIGHT_X, fZM_HOME_DOOR_SAMPLE_Z,         26.19279f },
+		{ "HomeDoorTrigger",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_TRIGGER_Z,    26.28675f },
+		{ "FromHomeSpawn",      fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_FROM_HOME_SPAWN_Z, 26.54212f },
+		{ "HomeDoorStaging",    fZM_DAWNMERE_HOME_X,            fZM_DAWNMERE_HOME_DOOR_STAGING_Z, 26.48395f },
 		// The anchor row, so the oracle re-checks the town centre on the same run.
 		{ "TownCenter",         fZM_DAWNMERE_TOWN_CENTER_X,     fZM_DAWNMERE_TOWN_CENTER_Z,     fZM_DAWNMERE_TOWN_CENTER_FEET_Y },
 	};

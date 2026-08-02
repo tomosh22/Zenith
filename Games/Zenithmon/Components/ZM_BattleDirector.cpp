@@ -382,7 +382,14 @@ void ZM_BattleDirector::PlaceCreatureModels(ZM_SPECIES_ID ePlayerSpecies, ZM_SPE
 			return INVALID_ENTITY_ID;
 		}
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
-		xTransform.SetPosition(xPos);
+		// Creature bind origins are deliberately measured rather than assumed to be
+		// feet-at-zero. Grounded bodies are placed on the platform; aquatic and
+		// floater bodies receive their explicit hover clearance. This is a transform
+		// correction only -- battle models remain cosmetic and no creature bake or
+		// collision dimension changes here.
+		Zenith_Maths::Vector3 xPresentedPos = xPos;
+		xPresentedPos.y += ZM_CreaturePresentationOriginOffsetY(eSpecies);
+		xTransform.SetPosition(xPresentedPos);
 		// A missing/unbaked .zmodel loads model-less (mirrors ZM_BattleArena dressing).
 		xEntity.AddComponent<Zenith_ModelComponent>().LoadModel(szRef);
 		return xEntity.GetEntityID();

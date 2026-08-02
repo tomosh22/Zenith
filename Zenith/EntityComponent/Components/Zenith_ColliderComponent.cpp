@@ -79,6 +79,8 @@ Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_ColliderComponent&& xO
 	, m_fExplicitCapsuleRadius(xOther.m_fExplicitCapsuleRadius)
 	, m_fExplicitCapsuleHalfHeight(xOther.m_fExplicitCapsuleHalfHeight)
 	, m_bUseExplicitCapsuleDimensions(xOther.m_bUseExplicitCapsuleDimensions)
+	, m_xExplicitBoxHalfExtents(xOther.m_xExplicitBoxHalfExtents)
+	, m_bUseExplicitBoxHalfExtents(xOther.m_bUseExplicitBoxHalfExtents)
 	, m_bDebugDrawPhysicsMesh(xOther.m_bDebugDrawPhysicsMesh)
 	, m_bIncludeInNavMesh(xOther.m_bIncludeInNavMesh)
 	, m_pxTerrainMeshData(xOther.m_pxTerrainMeshData)
@@ -110,10 +112,11 @@ Zenith_ColliderComponent& Zenith_ColliderComponent::operator=(Zenith_ColliderCom
 			delete m_pxTerrainMeshData;
 		}
 
-		// Take ownership from source. The capsule dimensions and navmesh-include flag
-		// are transferred too — without them a component-pool relocation (swap-and-pop /
-		// Grow) would silently reset an explicit-capsule or navmesh-excluded collider to
-		// its defaults. m_xPhysicsMeshAsset's move-assign releases our old handle.
+		// Take ownership from source. The explicit capsule/box dimensions and the
+		// navmesh-include flag are transferred too — without them a component-pool
+		// relocation (swap-and-pop / Grow) would silently reset an explicitly-sized or
+		// navmesh-excluded collider to its defaults, and the body would come back
+		// scale-derived. m_xPhysicsMeshAsset's move-assign releases our old handle.
 		m_xParentEntity = xOther.m_xParentEntity;
 		m_pxRigidBody = xOther.m_pxRigidBody;
 		m_xBodyID = xOther.m_xBodyID;
@@ -122,6 +125,8 @@ Zenith_ColliderComponent& Zenith_ColliderComponent::operator=(Zenith_ColliderCom
 		m_fExplicitCapsuleRadius = xOther.m_fExplicitCapsuleRadius;
 		m_fExplicitCapsuleHalfHeight = xOther.m_fExplicitCapsuleHalfHeight;
 		m_bUseExplicitCapsuleDimensions = xOther.m_bUseExplicitCapsuleDimensions;
+		m_xExplicitBoxHalfExtents = xOther.m_xExplicitBoxHalfExtents;
+		m_bUseExplicitBoxHalfExtents = xOther.m_bUseExplicitBoxHalfExtents;
 		m_bDebugDrawPhysicsMesh = xOther.m_bDebugDrawPhysicsMesh;
 		m_bIncludeInNavMesh = xOther.m_bIncludeInNavMesh;
 		m_pxTerrainMeshData = xOther.m_pxTerrainMeshData;
@@ -242,6 +247,19 @@ void Zenith_ColliderComponent::ComputeBoxDimensionsAndOffset(
 	// the wireframe was sized purely from entity scale while the physics
 	// shape was mesh-aware, and the two visualisations drifted apart for
 	// every multi-meter wall in the level — confusing when debugging.
+	// EXPLICIT half-extents win outright, ahead of BOTH the scale-derived default
+	// and the mesh-aware branch below: the caller has stated the box it means, so
+	// neither the transform scale nor a model's bounds may re-decide it, and the
+	// local offset is zero because an explicit box is centred on the entity. Doing
+	// it HERE rather than in CreateBoxShape is what makes the Jolt shape, the debug
+	// wireframe and Zenith_AINavGeometry agree for free instead of drifting apart.
+	if (m_bUseExplicitBoxHalfExtents)
+	{
+		xHalfExtentsOut = m_xExplicitBoxHalfExtents;
+		xLocalOffsetOut = Zenith_Maths::Vector3(0.0f);
+		return;
+	}
+
 	xHalfExtentsOut.x = std::abs(xScale.x) * 0.5f;
 	xHalfExtentsOut.y = std::abs(xScale.y) * 0.5f;
 	xHalfExtentsOut.z = std::abs(xScale.z) * 0.5f;
@@ -818,6 +836,121 @@ void Zenith_ColliderComponent::AddCapsuleCollider(float fRadius, float fHalfHeig
 
 	// Delegate to AddCollider which will use the explicit dimensions
 	AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, eRigidBodyType);
+}
+
+namespace
+{
+	// What an explicit dimension has to be before it may reach Jolt: finite,
+	// strictly positive, and at least Jolt's convex radius. The floor is not a
+	// preference — CreateBoxShape already clamps to exactly this, so a smaller
+	// request could never have been honoured. Returns false (writing nothing) when
+	// the value is unusable, so a caller can fail the whole request rather than
+	// build a body out of half-sanitised numbers.
+	bool SanitiseExplicitExtent(float fValue, float& fOut)
+	{
+		if (!std::isfinite(fValue) || fValue <= 0.0f)
+		{
+			return false;
+		}
+		fOut = std::max(fValue, static_cast<float>(JPH::cDefaultConvexRadius));
+		return true;
+	}
+}
+
+void Zenith_ColliderComponent::SetExplicitCapsuleDimensions(float fRadius, float fCylinderHalfHeight)
+{
+	float fSafeRadius = 0.0f;
+	float fSafeHalfHeight = 0.0f;
+	if (!SanitiseExplicitExtent(fRadius, fSafeRadius)
+		|| !SanitiseExplicitExtent(fCylinderHalfHeight, fSafeHalfHeight))
+	{
+		Zenith_Warning(LOG_CATEGORY_PHYSICS,
+			"SetExplicitCapsuleDimensions: refusing radius=%g halfHeight=%g "
+			"(both must be finite and > 0); the body is left untouched",
+			fRadius, fCylinderHalfHeight);
+		return;
+	}
+
+	// No live body means nothing to replace, and — on a freshly constructed
+	// component — no initialised volume/rigid-body type to preserve either. Warn
+	// and change NOTHING: a caller that may be first-in creates the body the
+	// normal way and uses this only to replace an existing configured one.
+	if (!HasValidBody())
+	{
+		Zenith_Warning(LOG_CATEGORY_PHYSICS,
+			"SetExplicitCapsuleDimensions: no configured collider on this entity; "
+			"create one with AddCapsuleCollider/AddCollider first. Nothing changed");
+		return;
+	}
+
+	// No-op on a match, compared against the STORED (validated + clamped) values so
+	// that a request which clamps onto the current shape does not churn the body.
+	// The body ID stays stable across repeated OnStart as a result.
+	if (m_bUseExplicitCapsuleDimensions
+		&& m_eVolumeType == COLLISION_VOLUME_TYPE_CAPSULE
+		&& m_fExplicitCapsuleRadius == fSafeRadius
+		&& m_fExplicitCapsuleHalfHeight == fSafeHalfHeight)
+	{
+		return;
+	}
+
+	m_fExplicitCapsuleRadius = fSafeRadius;
+	m_fExplicitCapsuleHalfHeight = fSafeHalfHeight;
+	m_bUseExplicitCapsuleDimensions = true;
+	// A capsule is unambiguously one volume type, so replacing the shape sets it.
+	// The RIGID BODY type is deliberately preserved: this is a shape setter, not a
+	// re-authoring of what the body is for.
+	m_eVolumeType = COLLISION_VOLUME_TYPE_CAPSULE;
+	RebuildCollider();
+}
+
+void Zenith_ColliderComponent::SetExplicitBoxHalfExtents(const Zenith_Maths::Vector3& xHalfExtents)
+{
+	Zenith_Maths::Vector3 xSafe(0.0f);
+	if (!SanitiseExplicitExtent(xHalfExtents.x, xSafe.x)
+		|| !SanitiseExplicitExtent(xHalfExtents.y, xSafe.y)
+		|| !SanitiseExplicitExtent(xHalfExtents.z, xSafe.z))
+	{
+		Zenith_Warning(LOG_CATEGORY_PHYSICS,
+			"SetExplicitBoxHalfExtents: refusing half-extents (%g, %g, %g) "
+			"(every component must be finite and > 0); the body is left untouched",
+			xHalfExtents.x, xHalfExtents.y, xHalfExtents.z);
+		return;
+	}
+
+	if (!HasValidBody())
+	{
+		Zenith_Warning(LOG_CATEGORY_PHYSICS,
+			"SetExplicitBoxHalfExtents: no configured collider on this entity; "
+			"create one with AddCollider first. Nothing changed");
+		return;
+	}
+
+	// ★ THE VOLUME TYPE IS PRESERVED, NOT CHOSEN. AABB and OBB build the same box
+	// and differ ONLY in whether the entity's rotation reaches the body, so picking
+	// one here would silently decide whether an authored facing survives. A caller
+	// that wants a rotating box authors OBB; this setter refuses to guess.
+	if (m_eVolumeType != COLLISION_VOLUME_TYPE_AABB
+		&& m_eVolumeType != COLLISION_VOLUME_TYPE_OBB)
+	{
+		Zenith_Warning(LOG_CATEGORY_PHYSICS,
+			"SetExplicitBoxHalfExtents: this collider is volume type %d, not a box; "
+			"re-add it as AABB or OBB first. Nothing changed",
+			static_cast<int>(m_eVolumeType));
+		return;
+	}
+
+	if (m_bUseExplicitBoxHalfExtents
+		&& m_xExplicitBoxHalfExtents.x == xSafe.x
+		&& m_xExplicitBoxHalfExtents.y == xSafe.y
+		&& m_xExplicitBoxHalfExtents.z == xSafe.z)
+	{
+		return;
+	}
+
+	m_xExplicitBoxHalfExtents = xSafe;
+	m_bUseExplicitBoxHalfExtents = true;
+	RebuildCollider();
 }
 
 void Zenith_ColliderComponent::QueueDebugDraw(const Zenith_Maths::Vector3& xColor) const

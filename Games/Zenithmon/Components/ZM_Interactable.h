@@ -207,8 +207,7 @@ public:
 	// caller adds the result rather than incrementing unconditionally, which is what
 	// stops the live contract from being satisfiable with the submission removed.
 	static u_int SubmitTrainerSpottedIndicator(
-		const Zenith_Maths::Vector3& xTrainerCenter,
-		const Zenith_Maths::Vector3& xTrainerScale);
+		const Zenith_Maths::Vector3& xTrainerCenter);
 
 	// ---- S7 item 1 SC3: the walk-up -----------------------------------------
 
@@ -324,6 +323,11 @@ private:
 	// standing on the same physics, and so the ONE difference between them -- the
 	// YAW LOCK -- is spelled in exactly one place.
 	void ApplyDrivenBodySetup(const ZM_InteractableBodyObservation& xBody);
+
+	// Feed the shared human animator's "Speed" parameter from whatever velocity this
+	// component just commanded -- including the ZERO a stationary trainer commands.
+	// A no-op on an entity with no animator (a blockout, or a cold-start fallback).
+	void DriveAnimatorSpeed(float fSpeed);
 
 	// Drive ONE tick of the walk: the two-call velocity idiom UpdateWander uses,
 	// then the travel-direction facing. Writes NO position.

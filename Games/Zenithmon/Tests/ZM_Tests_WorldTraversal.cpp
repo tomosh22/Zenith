@@ -24,6 +24,7 @@
 #include "Zenithmon/Components/ZM_FollowCamera.h"
 #include "Zenithmon/Components/ZM_GameStateManager.h"
 #include "Zenithmon/Components/ZM_PlayerController.h"
+#include "Zenithmon/Source/World/ZM_HumanBody.h"   // THE body contract
 #include "Zenithmon/Components/ZM_SpawnPoint.h"
 #include "Zenithmon/Components/ZM_WarpTrigger.h"
 
@@ -811,7 +812,10 @@ ZENITH_TEST(ZM_WorldTraversal, WarpTriggerLatchRequestsExactlyOnceAndResetsForNe
 	ZENITH_ASSERT_EQ(xManager.GetIssuedLoadRequestCount(), 1u);
 }
 
-ZENITH_TEST(ZM_WorldTraversal, PlacementUsesMarkerFeetPlusScaledCapsuleHalfExtentAndZeroesMotion)
+// ★ RENAMED AT ZM-D-182 (was ...PlusScaledCapsuleHalfExtent...). The half extent is no
+// longer SCALED off the player's transform -- it is the compiled body contract -- and the
+// clause below now proves exactly that rather than merely restating it.
+ZENITH_TEST(ZM_WorldTraversal, PlacementUsesMarkerFeetPlusContractCapsuleHalfExtentAndZeroesMotion)
 {
 	ZENITH_ASSERT_TRUE(ResetEmptyPhysicsWorld());
 	Zenith_SceneData* pxSceneData = GetActiveSceneData();
@@ -822,17 +826,29 @@ ZENITH_TEST(ZM_WorldTraversal, PlacementUsesMarkerFeetPlusScaledCapsuleHalfExten
 	if (!xPlayer.IsValid()) { return; }
 
 	const Zenith_Maths::Vector3 xMarkerFeet(512.0f, 25.99055f, 480.0f);
-	Zenith_Maths::Vector3 xPlayerScale(0.0f);
-	xPlayer.GetComponent<Zenith_TransformComponent>().GetScale(xPlayerScale);
-	const float fHalfExtent =
-		ZM_PlayerController::CalculateCapsuleHalfExtent(xPlayerScale);
+	const float fHalfExtent = fZM_HUMAN_BODY_HALF_HEIGHT;
 	const Zenith_Maths::Vector3 xSpawnCenter =
-		ZM_GameStateManager::CalculateSpawnCenter(xMarkerFeet, xPlayerScale);
+		ZM_GameStateManager::CalculateSpawnCenter(xMarkerFeet);
 	ZENITH_ASSERT_EQ_FLOAT(fHalfExtent, 0.9f, 0.00001f);
 	ZENITH_ASSERT_NEAR_VEC3(xSpawnCenter,
 		Zenith_Maths::Vector3(512.0f, 26.89055f, 480.0f), 0.00001f);
 	ZENITH_ASSERT_EQ_FLOAT(xSpawnCenter.y - fHalfExtent,
 		xMarkerFeet.y, 0.00001f);
+
+	// ★ THE CONVERSION IS SCALE-INDEPENDENT, AND THIS IS WHERE THAT IS PROVED.
+	// It used to be derived from the player's transform scale, so this clause was a
+	// real cross-check; the migration to the compiled contract would have left it a
+	// tautology (a constant compared against itself) if it were only re-spelled.
+	// Re-scaling the player must therefore move the answer by exactly nothing --
+	// which is the property that lets a human be authored at a uniform MODEL scale.
+	Zenith_TransformComponent& xPlayerTransform =
+		xPlayer.GetComponent<Zenith_TransformComponent>();
+	Zenith_Maths::Vector3 xAuthoredScale(0.0f);
+	xPlayerTransform.GetScale(xAuthoredScale);
+	xPlayerTransform.SetScale(Zenith_Maths::Vector3(4.0f, 0.25f, 4.0f));
+	ZENITH_ASSERT_NEAR_VEC3(ZM_GameStateManager::CalculateSpawnCenter(xMarkerFeet),
+		xSpawnCenter, 0.0f);
+	xPlayerTransform.SetScale(xAuthoredScale);
 
 	Zenith_ColliderComponent& xCollider =
 		xPlayer.GetComponent<Zenith_ColliderComponent>();

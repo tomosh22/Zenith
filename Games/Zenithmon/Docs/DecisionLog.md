@@ -15,6 +15,239 @@ Tuning-value changes go in git history, not here.
 
 ---
 
+## 2026-08-02 -- ZM-D-182 -- ENGINE-WIDE: terrain collision moves from 8 m to 4 m quads, and every game's bake stamp is bumped in the same commit because a stale bake loses its physics body outright
+
+**What shipped:** `Flux_TerrainVertexLayout`'s physics chunks move from a density divisor of
+8 (81 verts / 384 indices) to **4** (289 / 1536), and `Zenith_Tools_TerrainExport` exports at
+the new density. Collision stays deliberately coarser than the HIGH render mesh (65 x 65 at
+1 m); 4 m quads simply stop a player reading as ungrounded on Dawnmere's uneven terrain.
+
+**Why this is a DecisionLog entry and not a tuning value.** It is an engine change with a
+cross-game blast radius, and its failure mode is silent. `TryReadTerrainChunkSnapshot`
+**rejects** a chunk whose vertex/index counts disagree with the compiled layout, so a stale
+bake does not render slightly wrong -- chunk (0,0) fails validation, `LoadCombinedPhysicsGeometry`
+returns early, and the terrain loads with **no physics body at all**. That is a `Zenith_Error`
+line and then a running game, so it presents as characters falling through the world rather
+than as a stale asset.
+
+**★ WHAT NEARLY SHIPPED WITH IT: nothing forced a re-bake.** None of the three bake stamps
+hashes the chunk bytes. Zenithmon's terrain manifest is `(version, file COUNT)` -- a density
+change moves neither, so `HasValidManifest` reports a v1 tree warm forever. CityBuilder and
+RenderTest gate on marker filenames that likewise only ever moved for shape changes. Measured
+on the tree this landed from: Dawnmere had been re-baked (256 chunks @ 28,201 bytes) while
+Route1 (384), Thornacre (256) and the shared RenderTest/CityBuilder `Terrain/` directory
+(8,192) were all still 7,785-byte divisor-8 chunks and would have stayed that way. So the
+stamps move together, in this commit:
+
+| Game | Stamp | Change |
+|---|---|---|
+| Zenithmon | `uZM_TERRAIN_MANIFEST_VERSION` | 1 -> **2** |
+| CityBuilder | `terrain_hills_vN.marker` | v4 -> **v5** |
+| RenderTest | `terrain_proc_vN.marker` | v6 -> **v7** |
+
+**★ AND CI COULD NOT HAVE CAUGHT IT.** `**/Assets/` is gitignored, so every CI run bakes
+cold and passes. The gate is green precisely when the bug is invisible; only trees with an
+existing bake -- i.e. every developer's -- lose collision. Treat "CI is green" as no evidence
+at all for any change to baked asset SHAPE.
+
+**Cost accepted:** always-resident Jolt collision vertices per terrain go 332k -> 1.18M
+(3.57x). Booked deliberately; re-check against `Tools/memory_budget_baseline.json` if a
+terrain ever grows past the current 4,096-chunk grid.
+
+**Consequence for Dawnmere's placement table:** the collision surface moved, so every
+`s_axDawnmereHomeSamples` row is a re-measured raycast against the divisor-4 mesh (see the
+ZM-D-181 entry). `ZM_DawnmereHomeGroundTruth_Test` is what re-derives them; the header now
+names a density change as a re-measure trigger alongside a recipe change.
+
+**Tests that lock it:** `Flux_TerrainVertexLayout`'s `static_assert` pins 289/1536 (it moves
+in lockstep with the constant, so it is a spelling guard, not a gate);
+`ZM_Tests_TerrainRecipeSet` reads `uZM_TERRAIN_MANIFEST_VERSION` symbolically and so follows
+the bump; `ZM_DawnmereHomeGroundTruth_Test` reds if a compiled feet row drifts from the real
+surface, which is the clause that would have caught a half-done re-bake.
+
+**Reversibility:** low cost, high friction. Reverting the divisor means bumping all three
+stamps AGAIN (a revert is just as much a byte change as the original) and re-measuring the
+Dawnmere table a second time. `Zenith/Flux/Terrain/CLAUDE.md` now carries the stamp table so
+the next person changing this does not have to rediscover it.
+
+**★ THE BUMP WAS THEN CONFIRMED EMPIRICALLY, NOT JUST REASONED.** A windowed
+`Vulkan_..._True` boot reported `warmMask=0x0, queueMask=0x7, queued=3,
+sceneAuthoring=DEFERRED` -- i.e. all three recipes correctly went COLD and re-baked, and the
+boot correctly authored no scene while doing so. Afterwards Route1 and Thornacre's physics
+chunks measured **28,201 bytes** where they had been **7,785** (divisor-8), so the stale
+chunks that would have loaded with no physics body are gone. Without the stamp bump those two
+recipes would have reported warm and kept the 7,785-byte chunks indefinitely.
+
+**★ AND IT SETTLED Q-2026-08-02-001 ON THE WAY.** The `Dawnmere.zscen` row in Status.md
+disagreed with the file on disk. Rather than re-pin the row on sight, the two-boot proof was
+actually run: boots 2 and 3 both reported `sceneAuthoring=AUTHOR_DAWNMERE` and both wrote
+`E7413197...9716`, matching each other and the existing file. **Dawnmere authoring is
+deterministic; the recorded row was merely stale.** All five committed scenes were byte-stable
+across both authoring boots and `Dawnmere.znavmesh` did not move -- so boot-shape independence
+(ZM-D-148/179) holds at the new collision density too. The discipline point is recorded in
+Questions.md: pasting the on-disk hash over the stale one would have reached the right answer
+by a route that proves nothing, and the previous Dawnmere hash disagreement (Q-2026-08-01-002)
+turned out to be a real engine defect.
+
+---
+
+## 2026-08-01 -- ZM-D-181 -- NPCs and the player wear the generated human models; the human BODY becomes a compiled contract instead of a function of transform scale
+
+**What shipped:** the six authored Dawnmere NPCs and the player in all three scenes draw
+the `ZM_HumanGen` models S4 has been baking since 2026-07-16 (`game:Humans/<Name>/<Name>.zmodel`),
+animated Idle <-> Walk off commanded speed. `ZM_HumanGen` bumps to **v2**: the shared bind
+space is CENTRE-ANCHORED. `Source/World/ZM_HumanBody.h` is new and is now the only statement
+of how big a person is; `Zenith_ColliderComponent` gains
+`SetExplicit{CapsuleDimensions,BoxHalfExtents}` so bodies are installed from that contract.
+Three `.zscen` files were re-authored (Status.md carries the hashes); `Dawnmere.znavmesh` did
+not move.
+
+**Why the MESH moved and not the entity origin.** Three things must agree about where the
+entity origin is: the model renders with its mesh origin there, the capsule is centred on it
+(`Zenith_ColliderComponent` has no offset path at all), and the box sits at origin +
+`meshCentre * scale`. Zenithmon's authored position is the **capsule centre** (`feetY + 0.9`)
+and the whole game speaks that vocabulary -- camera pivot, `ProbeGround`, the sight-cone
+origin, the walk-up standoff, both head anchors, every spawn point, the camera-clearance
+table. Moving the origin to the feet was therefore off the table; the blast radius is the
+whole game. So the generator translates its bind space down by
+`fZM_HUMAN_MESH_CENTRE_Y` instead. It is a RIGID translation of the root bone and every
+vertex, so skinning and animation are mathematically untouched (the shared clips are
+rotation-only with root motion disabled).
+
+**Why only the ROOT bone moves.** Root is the only bone with parent `-1`, so its local
+translation IS its world bind position; every other bone is parent-local and follows for
+free. Subtracting the anchor from all sixteen would compound it down each chain -- which is
+why `HumanGen_BindSpaceCentreAnchored` FK-resolves bones three and four joints deep and
+requires each to be its v1 height minus exactly the anchor, rather than checking the root
+alone.
+
+**Why the metrics are BODY-ONLY, PRE-ANCHOR, and MEASURED.**
+* **Body-only:** `ZM_BuildHumanMesh` appends hair and attachments after the body, so a
+  measurement over the whole mesh would let a HAT decide how tall its wearer is. The metric
+  is taken over the body vertex PREFIX -- the count captured immediately before
+  `ZM_AppendHumanAppearanceMesh` -- and a unit varies every attachment slot and every hair
+  style and requires the number not to move by one float.
+* **Pre-anchor:** measuring the finished mesh would be circular; it is already centred.
+* **Measured:** the pre-implementation estimate of these constants read entirely plausibly
+  and was **wrong by roughly 60%** -- the loft inherits the StickFigure golden ring tables
+  and builds a ~2.6-unit body, not a 1.8-unit one. `HumanGen_BodyMetricsPinned` re-derives
+  both constants from a freshly built mesh on every boot, so a generator edit reds the gate
+  instead of silently mis-sizing the entire cast. **Never transcribe these from a table.**
+
+**Why ONE shared centre and not a per-model one.** The skeleton is shared and FIXED while
+`m_fHeightScale` (0.97..1.03) scales vertices only. A per-model anchor would desync rig from
+mesh. The residual is a few centimetres of deliberate build variety, and the unit asserts
+each model lands at `canonicalCentre * (heightScale - 1)` rather than claiming all 35 are
+centred -- which would be a lie.
+
+**Why the bodies come from a compiled contract rather than scale or mesh bounds.** Four
+verified facts stack:
+1. Explicit capsule dimensions **do not serialize** -- `WriteToDataStream` emits only
+   `{volumeType, bodyType, debugFlag}` and `ReadFromDataStream` re-adds a SCALE-DERIVED
+   collider. So whoever owns a body must re-install its dimensions after every load.
+2. A **uniform** scale degenerates a scale-derived capsule into a sphere
+   (`Zenith_EditorAutomation.h:562-565` says so). The uniform model scale therefore REQUIRES
+   explicit dimensions; it is not a preference.
+3. The model must NOT be authored into the scene: `Zenith_ModelComponent::WriteToDataStream`
+   serializes its MATERIALS verbatim, which would make the committed `.zscen` bytes a
+   function of a gitignored `.zmtrl` bake -- exactly what `ZM_DawnmerePlacement.h:101-114`
+   forbids. The model is added at runtime instead.
+4. Mesh-bounds sizing would make the body a function of the bake too.
+
+**Why the collider setter does NOT preserve body configuration, and who re-applies it.**
+Replacing a shape goes through `RebuildCollider`, which drops sensor state, gravity and
+locked axes; `Zenith_Physics` exposes getters for friction and restitution ONLY, so a
+capture-and-restore is not implementable through the public API. The rule is instead
+**whoever configures a body installs its dimensions, or re-applies after a rebuild**:
+* the **player**'s body belongs to `ZM_PlayerController::EnsureAndConfigureBody`, which
+  installs the dimensions immediately BEFORE its own sensor/gravity/lock/friction block;
+* the **wanderer and Vesper** are rebuilt by the visual at order 107 and re-configured by
+  `ZM_Interactable::ApplyDrivenBodySetup` at 113, which is keyed on body-ID IDENTITY and so
+  re-applies exactly once. The ordering is favourable rather than lucky, and it is pinned;
+* the **four static townsfolk** have no configuration to lose.
+A request that MATCHES the current shape is a no-op compared against the validated-and-clamped
+STORED values, so a repeated `OnStart` leaves the body ID -- and therefore
+`ApplyDrivenBodySetup`'s key -- untouched.
+
+**Why the visual is a state machine and not a bool.** `Zenith_ModelComponent::LoadModel`
+always calls `ClearModel`, replacing the skeleton INSTANCE, while
+`Zenith_AnimatorComponent::TryDiscoverSkeleton` returns immediately once the controller is
+initialised. A second `LoadModel` therefore leaves the controller bound to a DESTROYED
+instance -- and a flag that merely suppresses duplicate clips does not prevent it. The
+component records `{kind, humanId}` and rebinds the controller explicitly after any model
+replacement. That is safe because all 35 humans share ONE rig, so bone names and indices are
+identical across any swap and the clips/layers/state machine survive `Initialize`. A
+`HUMAN -> HUMAN_FALLBACK` transition additionally CLEARS first, because `AddMeshEntry`
+APPENDS. **A dangling skeleton passes a counting test**, which is why the re-entry coverage
+ticks animation rather than counting clips.
+
+**Why asset readiness is an injectable policy.** A cold start in a tools build BAKES and
+thereby becomes warm, so the fallback branch would otherwise be unreachable from an automated
+test -- and the alternative way to force it (renaming or deleting the shared baked files)
+would race every other test in the batch and corrupt a developer tree. `ZM_HumanAssetPolicy`
+is a two-function-pointer seam with a scoped guard. **The bake-attempt latch lives IN the
+policy value, not in a file static**: otherwise a forced-cold `TryBake()` returning false
+would consume the PRODUCTION policy's one attempt and leave the restored default permanently
+unable to bake. Warmth itself is re-queried every time; only the attempt is latched. The
+between-tests hook resets the policy so a leaked override cannot bleed forward. This is not
+the unconditional full-family boot bake `ZM_BakeManifest.h:71-75` objects to: humans only,
+and only when a scene carrying humans loads.
+
+**Why the cold fallback is dimensionally identical to the warm path.** It is built at
+`bodyDims / fZM_HUMAN_VISUAL_SCALE` in model space, so after the uniform authored scale it is
+exactly the 0.8 x 1.8 x 0.8 block the game used to ship, in the same place, wearing the same
+`ZM_Greybox` material and palette colour. Its collider comes from the same contract. **A cold
+tree is a picture problem, never a gameplay one.** (This needed one small engine addition:
+`Flux_MeshGeometry::GenerateBox` / `Zenith_MeshGeometryAsset::CreateBox`, because
+`CreateFromGeometryData` builds CPU-only geometry with no UVs, no tangents and no GPU upload
+and therefore cannot render. `GenerateUnitCube` now forwards to `GenerateBox(0.5)`.)
+
+**Why scenes stay authorable on a COLD tree.** No warm-bake assertion runs before the save.
+The authored scale is `fZM_HUMAN_VISUAL_SCALE`, a constexpr derived from compiled generator
+data that never reads a `.zmodel`; and authoring runs with the editor STOPPED, so no
+`OnStart` fires and the lazy bake has had no opportunity to run. An assertion there would
+fire on every fresh clone. **Asset warmth is a prerequisite for LOOKING at the game, not for
+saving it.**
+
+**Rejected alternatives:**
+* **Feet-origin entities** -- the correct model in isolation, and off the table: the authored
+  position is the capsule centre and the entire game reads it that way.
+* **OBB bodies for every human** -- the four statics keep AABB; only an entity that must FACE
+  somewhere needs OBB, and both of those are capsules already.
+* **A runtime child entity carrying the model** -- adds an entity per human, a parenting
+  dependency and a second transform to keep in step, to avoid one rigid translation.
+* **A non-serialized local offset on `Zenith_ModelComponent`** -- kept as the DOCUMENTED
+  FALLBACK if the rig/mesh agreement unit ever fails, because it needs no generator change
+  and no re-bake, but it would have to be folded into the snapshot fill, the animator's world
+  matrix AND `ComputeBoxDimensionsAndOffset` -- three places instead of one.
+
+**Tests that lock it:** `HumanGen_BodyMetricsPinned`, `HumanGen_BindSpaceCentreAnchored`
+(Tests/ZM_Tests_HumanGen.cpp); `HumanVisual_BodyContractIsTheShippedBody`,
+`HumanVisual_BlockoutIsUntouched`, `HumanVisual_ColdFallbackShipsTheContractBlock`,
+`HumanVisual_ColdStartIsIdempotent`,
+`HumanVisual_AssetPolicyRestoresTheProductionDefault` (Tests/ZM_Tests_HumanVisual.cpp);
+engine `Collider::ColliderExplicit*` x5 (Zenith/Core/Zenith_UnitTests.Tests.inl);
+`ZM_RivalVesperAuthored_Test`'s appearance sample, now split warm/cold off the SAME policy
+the runtime consulted; `ZM_ProfLabWarp_Test`'s scene-bytes guard, re-pointed at the visual
+scale.
+
+**One test was DELETED, and deliberately not replaced (registry 56 -> 55).**
+`ZM_NpcRenderedPalette_Test` read real swapchain pixels off the six NPC bodies and required
+all 15 RGB separations to clear a floor ZM-D-171 derived against PALETTE-COLOURED BLOCKS.
+Those bodies are textured models now, so the quantity it measured no longer exists on screen
+and its constant described a picture the game had stopped drawing. Re-baselining it would have
+meant inventing a floor for content nobody had characterised -- a number that LOOKS like a
+check, which is the exact failure mode ZM-D-171 was written to avoid. **The cost is stated
+rather than hidden: nothing now reads real pixels off an NPC body.** Bringing a pixel gate back
+means DERIVING it ZM-D-171's way (run it, read the separations, run the severed-wiring
+mutation, read that band, set the floor strictly between), under a name that is not about a
+palette.
+
+**Reversibility:** high for the game side (revert the authored scale and the visual, re-author);
+the generator v2 anchor requires a re-bake, which the version bump forces automatically.
+
+---
+
 ## 2026-08-01 -- ZM-D-180 -- Floating NPC name tags, reusing RenderTest's world-to-screen text idiom rather than a new engine primitive
 
 *(Implementation decision, not a scope ruling -- the feature was requested directly and no

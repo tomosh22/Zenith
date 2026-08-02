@@ -70,8 +70,6 @@ public:
 		float fCurrentVerticalVelocity,
 		float fRise,
 		float fDeltaTime);
-	static float CalculateCapsuleHalfExtent(
-		const Zenith_Maths::Vector3& xScale);
 
 	float GetRequestedSpeed() const { return m_fRequestedSpeed; }
 	bool IsGrounded() const { return m_bGrounded; }
@@ -107,7 +105,6 @@ private:
 	void RotateTowardsMovement(
 		const Zenith_Maths::Vector3& xMoveDirection,
 		float fDeltaTime);
-	float GetCapsuleHalfExtent() const;
 
 	Zenith_Entity m_xParentEntity;
 	// Stateless by-value glue (S6 item 3 SC4): interaction rides on the controller

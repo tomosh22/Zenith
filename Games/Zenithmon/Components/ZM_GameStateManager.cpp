@@ -21,6 +21,7 @@
 #include "Zenithmon/Source/Save/ZM_ResumePoint.h"  // the PURE resume decision surface (SC3)
 #include "Zenithmon/Source/Save/ZM_SaveSlots.h"
 #include "Zenithmon/Source/UI/ZM_FadeOverlay.h"
+#include "Zenithmon/Source/World/ZM_HumanBody.h"   // feet <-> centre conversion
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -313,8 +314,7 @@ bool ZM_GameStateManager::IsWarpInProgress()
 bool ZM_GameStateManager::TryGetUniqueActiveScenePlayerEntityID(
 	Zenith_EntityID& xEntityIDOut)
 {
-	Zenith_Maths::Vector3 xUnusedScale(1.0f);
-	return FindUniquePlayerInScene(xEntityIDOut, xUnusedScale);
+	return FindUniquePlayerInScene(xEntityIDOut);
 }
 
 bool ZM_GameStateManager::TryGetUniqueSingletonEntityID(
@@ -432,8 +432,7 @@ const char* ZM_GameStateManager::GetActiveSceneArrivedSpawnTag()
 bool ZM_GameStateManager::CaptureWorldPosition(ZM_GameState& xStateInOut)
 {
 	Zenith_EntityID xPlayerEntityID = INVALID_ENTITY_ID;
-	Zenith_Maths::Vector3 xUnusedScale(1.0f);
-	if (!FindUniquePlayerInScene(xPlayerEntityID, xUnusedScale))
+	if (!FindUniquePlayerInScene(xPlayerEntityID))
 	{
 		// The ordinary answer on FrontEnd and in any headless context. Not an error:
 		// "there is no player to capture" is exactly what a playerless scene means.
@@ -585,13 +584,10 @@ bool ZM_GameStateManager::IsWarpDestinationValid(
 }
 
 Zenith_Maths::Vector3 ZM_GameStateManager::CalculateSpawnCenter(
-	const Zenith_Maths::Vector3& xMarkerFeetPosition,
-	const Zenith_Maths::Vector3& xPlayerScale)
+	const Zenith_Maths::Vector3& xMarkerFeetPosition)
 {
-	return xMarkerFeetPosition + Zenith_Maths::Vector3(
-		0.0f,
-		ZM_PlayerController::CalculateCapsuleHalfExtent(xPlayerScale),
-		0.0f);
+	return xMarkerFeetPosition
+		+ Zenith_Maths::Vector3(0.0f, fZM_HUMAN_BODY_HALF_HEIGHT, 0.0f);
 }
 
 float ZM_GameStateManager::AdvanceFadeAlpha(
@@ -703,9 +699,8 @@ bool ZM_GameStateManager::TryQueueWarp(
 	}
 
 	Zenith_EntityID xPlayerEntityID = INVALID_ENTITY_ID;
-	Zenith_Maths::Vector3 xUnusedScale(1.0f);
 	const bool bHasUniquePlayer =
-		FindUniquePlayerInScene(xPlayerEntityID, xUnusedScale);
+		FindUniquePlayerInScene(xPlayerEntityID);
 	Zenith_Entity xPlayerEntity = bHasUniquePlayer
 		? g_xEngine.Scenes().ResolveEntity(xPlayerEntityID)
 		: Zenith_Entity();
@@ -854,8 +849,7 @@ void ZM_GameStateManager::PollForSpawnAndPlacePlayer()
 	}
 
 	Zenith_EntityID xPlayerEntityID = INVALID_ENTITY_ID;
-	Zenith_Maths::Vector3 xPlayerScale(1.0f);
-	if (!FindUniquePlayerInScene(xPlayerEntityID, xPlayerScale))
+	if (!FindUniquePlayerInScene(xPlayerEntityID))
 	{
 		FreezeActiveScenePlayers();
 		return;
@@ -909,8 +903,8 @@ void ZM_GameStateManager::PollForSpawnAndPlacePlayer()
 
 	Zenith_Maths::Vector3 xMarkerFeetPosition;
 	pxSpawnTransform->GetPosition(xMarkerFeetPosition);
-	const Zenith_Maths::Vector3 xSpawnCenter = CalculateSpawnCenter(
-		xMarkerFeetPosition, xPlayerScale);
+	const Zenith_Maths::Vector3 xSpawnCenter =
+		CalculateSpawnCenter(xMarkerFeetPosition);
 	const Zenith_PhysicsBodyID xPlayerBodyID = pxPlayerCollider->GetBodyID();
 	xPhysics.TeleportBody(xPlayerBodyID, xSpawnCenter);
 	xPhysics.SetLinearVelocity(xPlayerBodyID, Zenith_Maths::Vector3(0.0f));
@@ -1161,8 +1155,7 @@ bool ZM_GameStateManager::TryResolveFrozenTargetPlayer(
 {
 	pxControllerOut = nullptr;
 	Zenith_EntityID xPlayerEntityID = INVALID_ENTITY_ID;
-	Zenith_Maths::Vector3 xUnusedScale(1.0f);
-	if (!FindUniquePlayerInScene(xPlayerEntityID, xUnusedScale)
+	if (!FindUniquePlayerInScene(xPlayerEntityID)
 		|| xPlayerEntityID != m_xFrozenPlayerEntityID)
 	{
 		return false;
@@ -1214,11 +1207,9 @@ bool ZM_GameStateManager::HasUniqueReadyFollowCamera(
 }
 
 bool ZM_GameStateManager::FindUniquePlayerInScene(
-	Zenith_EntityID& xPlayerEntityIDOut,
-	Zenith_Maths::Vector3& xPlayerScaleOut)
+	Zenith_EntityID& xPlayerEntityIDOut)
 {
 	xPlayerEntityIDOut = INVALID_ENTITY_ID;
-	xPlayerScaleOut = Zenith_Maths::Vector3(1.0f);
 	if (!g_xEngine.Physics().HasActiveSimulation())
 	{
 		return false;
@@ -1238,7 +1229,6 @@ bool ZM_GameStateManager::FindUniquePlayerInScene(
 	if (uPlayerCount != 1u)
 	{
 		xPlayerEntityIDOut = INVALID_ENTITY_ID;
-		xPlayerScaleOut = Zenith_Maths::Vector3(1.0f);
 		return false;
 	}
 
@@ -1258,10 +1248,8 @@ bool ZM_GameStateManager::FindUniquePlayerInScene(
 		|| pxCollider->GetRigidBodyType() != RIGIDBODY_TYPE_DYNAMIC)
 	{
 		xPlayerEntityIDOut = INVALID_ENTITY_ID;
-		xPlayerScaleOut = Zenith_Maths::Vector3(1.0f);
 		return false;
 	}
 
-	pxTransform->GetScale(xPlayerScaleOut);
 	return true;
 }

@@ -227,6 +227,69 @@ void ZM_BuildCreatureMesh(const ZM_CreatureRecipe& xRecipe, ZM_GenMesh& xMesh)
 #endif
 }
 
+// ============================================================================
+// Physical bounds + presentation origin.
+// ============================================================================
+ZM_CreatureBodyMetrics ZM_MeasureCreatureBody(ZM_SPECIES_ID eId)
+{
+	const ZM_CreatureRecipe xRecipe = ZM_ResolveCreatureRecipe(eId);
+	ZM_GenMesh xMesh;
+	ZM_BuildCreatureMesh(xRecipe, xMesh);
+
+	ZM_CreatureBodyMetrics xMetrics;
+	xMetrics.m_uVertexCount = xMesh.GetNumVerts();
+	if (xMetrics.m_uVertexCount == 0u)
+	{
+		return xMetrics;
+	}
+
+	const Zenith_Maths::Vector3 xFirst = xMesh.m_xPositions.Get(0u);
+	xMetrics.m_fMinX = xMetrics.m_fMaxX = xFirst.x;
+	xMetrics.m_fMinY = xMetrics.m_fMaxY = xFirst.y;
+	xMetrics.m_fMinZ = xMetrics.m_fMaxZ = xFirst.z;
+	for (u_int u = 1u; u < xMetrics.m_uVertexCount; ++u)
+	{
+		const Zenith_Maths::Vector3& xPos = xMesh.m_xPositions.Get(u);
+		if (xPos.x < xMetrics.m_fMinX) { xMetrics.m_fMinX = xPos.x; }
+		if (xPos.x > xMetrics.m_fMaxX) { xMetrics.m_fMaxX = xPos.x; }
+		if (xPos.y < xMetrics.m_fMinY) { xMetrics.m_fMinY = xPos.y; }
+		if (xPos.y > xMetrics.m_fMaxY) { xMetrics.m_fMaxY = xPos.y; }
+		if (xPos.z < xMetrics.m_fMinZ) { xMetrics.m_fMinZ = xPos.z; }
+		if (xPos.z > xMetrics.m_fMaxZ) { xMetrics.m_fMaxZ = xPos.z; }
+	}
+	xMetrics.m_fWidth  = xMetrics.m_fMaxX - xMetrics.m_fMinX;
+	xMetrics.m_fHeight = xMetrics.m_fMaxY - xMetrics.m_fMinY;
+	xMetrics.m_fDepth  = xMetrics.m_fMaxZ - xMetrics.m_fMinZ;
+	return xMetrics;
+}
+
+ZM_CREATURE_ORIGIN_POLICY ZM_GetCreatureOriginPolicy(ZM_ARCHETYPE eArchetype)
+{
+	switch (eArchetype)
+	{
+	case ZM_ARCHETYPE_AQUATIC:
+	case ZM_ARCHETYPE_FLOATER_PLANTOID:
+		return ZM_CREATURE_ORIGIN_HOVERING;
+	default:
+		return ZM_CREATURE_ORIGIN_GROUNDED;
+	}
+}
+
+float ZM_CreaturePresentationFloorY(ZM_CREATURE_ORIGIN_POLICY ePolicy)
+{
+	return ePolicy == ZM_CREATURE_ORIGIN_HOVERING
+		? fZM_CREATURE_HOVER_CLEARANCE_METRES
+		: 0.0f;
+}
+
+float ZM_CreaturePresentationOriginOffsetY(ZM_SPECIES_ID eId)
+{
+	const ZM_CreatureBodyMetrics xMetrics = ZM_MeasureCreatureBody(eId);
+	const ZM_CreatureRecipe xRecipe = ZM_ResolveCreatureRecipe(eId);
+	return ZM_CreaturePresentationFloorY(ZM_GetCreatureOriginPolicy(xRecipe.m_eArchetype))
+		- xMetrics.m_fMinY;
+}
+
 ZM_GenImage ZM_BuildCreatureAlbedo(const ZM_CreatureRecipe& xRecipe)
 {
 	// (P6) the ALBEDO domain drives the (single) synth rng.

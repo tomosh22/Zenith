@@ -254,7 +254,19 @@ struct ZM_TerrainBakeBatchPlan
 	bool m_bAuthorDawnmereScene = false;
 };
 
-constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 1u;
+// ★ BUMP THIS WHENEVER THE BAKED BYTES CHANGE SHAPE, not just when a recipe's
+// PARAMETERS change. The stamp is (version, output COUNT) only, so a change that
+// rewrites every chunk's CONTENTS while emitting the same number of files -- a
+// collision-density change being the exact case -- leaves a stale tree looking
+// warm. A stale physics chunk then fails Zenith_TerrainComponent's vertex/index
+// validation and the terrain loads with NO PHYSICS BODY at all, which reads as a
+// gameplay bug rather than as a stale asset.
+//   v1 -> v2: physics chunks moved from a density divisor of 8 (81 verts) to 4
+//             (289 verts). Every v1 bake on disk is rejected by
+//             Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT, so the bump
+//             is load-bearing -- without it Route1 and Thornacre stay warm and
+//             silently lose their collision.
+constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 2u;
 constexpr u_int uZM_TERRAIN_RECIPE_COUNT = 3u;
 constexpr u_int uZM_DAWNMERE_REQUIRED_OUTPUT_COUNT = 771u;
 constexpr u_int uZM_THORNACRE_REQUIRED_OUTPUT_COUNT = 771u;

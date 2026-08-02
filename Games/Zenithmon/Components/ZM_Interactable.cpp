@@ -6,6 +6,7 @@
 #include "Core/Zenith_Engine.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "AssetHandling/Zenith_FontAsset.h"   // GetActiveOrDefaultMetrics -- the name-tag centring width
+#include "EntityComponent/Components/Zenith_AnimatorComponent.h"   // SetFloat("Speed") -- the Idle<->Walk blend
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"   // the runtime graph host
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -28,6 +29,7 @@
 #include "Zenithmon/Source/Interaction/ZM_TrainerSightProbe.h"    // the occlusion filter
 #include "Zenithmon/Source/Party/ZM_StarterChoice.h"              // ZM_CanEnterBattle -- the gate's fourth observation
 #include "Zenithmon/Source/World/ZM_EncounterEvents.h"            // ZM_OnTrainerEncounter
+#include "Zenithmon/Source/World/ZM_HumanBody.h"                  // THE body contract (head anchors)
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -444,6 +446,19 @@ bool ZM_Interactable::TryBuildApproachFacing(
 	return true;
 }
 
+// Report how fast this NPC is actually being COMMANDED to move, so the shared
+// human animator can blend Idle <-> Walk. Reporting ZERO while stationary is the
+// whole point: without it a standing trainer moon-walks. Silent when there is no
+// animator, which is every blockout and every cold-start fallback block.
+void ZM_Interactable::DriveAnimatorSpeed(float fSpeed)
+{
+	if (Zenith_AnimatorComponent* pxAnimator =
+		m_xParentEntity.TryGetComponent<Zenith_AnimatorComponent>())
+	{
+		pxAnimator->SetFloat("Speed", fSpeed);
+	}
+}
+
 void ZM_Interactable::DriveTrainerApproach(
 	const ZM_InteractableBodyObservation& xBody,
 	const ZM_TrainerApproachStep& xStep,
@@ -458,6 +473,7 @@ void ZM_Interactable::DriveTrainerApproach(
 	// replaces XZ and copies Y verbatim.
 	xPhysics.SetLinearVelocity(xBody.m_xBodyID,
 		ZM_BuildPatrolVelocity(xStep.m_xDirXZ, xStep.m_fSpeed, xCurrentVelocity));
+	DriveAnimatorSpeed(xStep.m_fSpeed);
 
 	// FACE THE TRAVEL DIRECTION. On the arrival tick the direction is exactly zero
 	// and TryBuildApproachFacing REFUSES, which leaves the facing the previous tick
@@ -498,6 +514,7 @@ void ZM_Interactable::HoldTrainerStation(
 	xPhysics.SetLinearVelocity(xBody.m_xBodyID,
 		ZM_BuildPatrolVelocity(
 			Zenith_Maths::Vector3(0.0f), 0.0f, xCurrentVelocity));
+	DriveAnimatorSpeed(0.0f);
 
 	// ★ R1, THE ROTATION HALF, and it is deliberately WATCHING-ONLY.
 	//   * WATCHING is the only state that can raise, so it is the only state in
@@ -607,17 +624,21 @@ void ZM_Interactable::SubmitNameText(Zenith_TransformComponent* pxTransform)
 		return;
 	}
 
-	// Anchor a little above the collider's top face rather than the entity's own
-	// (centre) position, so the tag floats above the NPC's head rather than
-	// through its chest -- the same "anchor + fixed offset" idiom
+	// Anchor a little above the BODY's top rather than the entity's own (centre)
+	// position, so the tag floats above the NPC's head rather than through its
+	// chest -- the same "anchor + fixed offset" idiom
 	// RenderTest_TennisMatchComponent::SubmitScoreText uses for the net-height
 	// score anchor.
+	//
+	// ★ THE BODY CONTRACT, NOT THE TRANSFORM SCALE. The scale describes how large
+	// the MODEL is drawn, which is a uniform factor with no relationship to how
+	// tall a person is; reading it here would drop the tag straight through the
+	// chest. Every human is fZM_HUMAN_BODY_HEIGHT tall, centred on its origin.
 	constexpr float fHEAD_MARGIN = 0.35f;
 	Zenith_Maths::Vector3 xPosition;
-	Zenith_Maths::Vector3 xScale;
 	pxTransform->GetPosition(xPosition);
-	pxTransform->GetScale(xScale);
-	const Zenith_Maths::Vector3 xAnchor(xPosition.x, xPosition.y + xScale.y * 0.5f + fHEAD_MARGIN, xPosition.z);
+	const Zenith_Maths::Vector3 xAnchor(xPosition.x,
+		xPosition.y + fZM_HUMAN_BODY_HALF_HEIGHT + fHEAD_MARGIN, xPosition.z);
 
 	const Zenith_Maths::Matrix4 xViewProj = g_xEngine.FluxGraphics().GetViewProjMatrix();
 	const Zenith_Maths::Vector4 xClip = xViewProj * Zenith_Maths::Vector4(xAnchor, 1.0f);
@@ -655,8 +676,7 @@ void ZM_Interactable::SubmitNameText(Zenith_TransformComponent* pxTransform)
 }
 
 u_int ZM_Interactable::SubmitTrainerSpottedIndicator(
-	const Zenith_Maths::Vector3& xTrainerCenter,
-	const Zenith_Maths::Vector3& xTrainerScale)
+	const Zenith_Maths::Vector3& xTrainerCenter)
 {
 	// A non-finite CENTRE is refused outright rather than fed to Flux. The live
 	// path cannot produce one -- ZM_IsTargetInTrainerSight fails closed on any
@@ -668,13 +688,13 @@ u_int ZM_Interactable::SubmitTrainerSpottedIndicator(
 		return 0u;
 	}
 
-	// The greybox NPC transform is centred on the model. Absolute Y scale handles
-	// mirrored authoring, and a non-finite value falls back to unit height so a bad
-	// presentation scale cannot poison Flux's instance buffers.
-	const float fHeight = std::isfinite(xTrainerScale.y)
-		? std::fabs(xTrainerScale.y)
-		: 1.0f;
-	const float fTop = xTrainerCenter.y + fHeight * 0.5f;
+	// ★ THE BODY CONTRACT, NOT THE TRANSFORM SCALE. A human transform is centred on
+	// its body, and the body's size is compiled -- the scale only says how large the
+	// model is drawn. Deriving the head height from scale used to work only while
+	// the two were the same number, and would now park the "!" inside the ribcage.
+	// It also cannot be poisoned by a bad presentation scale, which is why the old
+	// non-finite fallback is gone rather than replaced.
+	const float fTop = xTrainerCenter.y + fZM_HUMAN_BODY_HALF_HEIGHT;
 	const Zenith_Maths::Vector3 xDotCenter(
 		xTrainerCenter.x, fTop + fZM_SPOTTED_DOT_OFFSET, xTrainerCenter.z);
 	const Zenith_Maths::Vector3 xStemStart(
@@ -770,7 +790,6 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 	Zenith_Maths::Vector3 xPlayerPosition(0.0f);
 	Zenith_Maths::Quat xPlayerRotation(1.0f, 0.0f, 0.0f, 0.0f);
 	Zenith_Maths::Vector3 xTrainerPosition(0.0f);
-	Zenith_Maths::Vector3 xTrainerScale(1.0f);
 	bool bHaveTrainerTransform = false;
 	const bool bHavePlayer = ZM_InteractionRuntime::TryResolveActivePlayer(
 		xPlayerID, xPlayerPosition, xPlayerRotation);
@@ -779,7 +798,6 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 		Zenith_Maths::Quat xTrainerRotation(1.0f, 0.0f, 0.0f, 0.0f);
 		pxTransform->GetPosition(xTrainerPosition);
 		pxTransform->GetRotation(xTrainerRotation);
-		pxTransform->GetScale(xTrainerScale);
 		bHaveTrainerTransform = true;
 
 		// The SC3 PURE cone, unmodified and unduplicated. Rotation form, never
@@ -846,7 +864,7 @@ void ZM_Interactable::TickTrainerSight(float fDeltaTime)
 		// cannot leave this advancing, so a live test watching this counter is
 		// watching the actual renderer payload rather than a proxy for it.
 		m_uSpottedIndicatorSubmitCount +=
-			SubmitTrainerSpottedIndicator(xTrainerPosition, xTrainerScale);
+			SubmitTrainerSpottedIndicator(xTrainerPosition);
 	}
 
 	// ---- S7 item 1 SC3: THE WALK, driven AFTER the machine has ruled ------------
@@ -1060,6 +1078,7 @@ void ZM_Interactable::UpdateWander(float fDeltaTime)
 	// helper replaces XZ while preserving Y verbatim for gravity/terrain response.
 	xPhysics.SetLinearVelocity(xBodyID,
 		ZM_BuildPatrolVelocity(xStep.m_xDirXZ, xStep.m_fSpeed, xCurrentVelocity));
+	DriveAnimatorSpeed(xStep.m_fSpeed);
 }
 
 bool ZM_Interactable::SetNpcId(ZM_NPC_ID eId)

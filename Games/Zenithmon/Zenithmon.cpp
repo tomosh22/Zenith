@@ -5,8 +5,14 @@
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "EntityComponent/Components/Zenith_AnimatorComponent.h"   // the human locomotion animator
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"   // the explicit human body contract
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_NavMeshComponent.h"
+#include "Flux/MeshAnimation/Flux_AnimationController.h"           // clips + layer + state machine
+#include "Flux/MeshAnimation/Flux_AnimationStateMachine.h"
+#include "Flux/MeshAnimation/Flux_BlendTree.h"
+#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"        // the instance LoadModel replaces on every load
 #include "EntityComponent/Components/Zenith_TransformComponent.h"   // the authored-rotation save guard (ZM-D-179)
 #include "SaveData/Zenith_SaveData.h"
 #include "Zenithmon/Components/ZM_BattleArena.h"
@@ -44,9 +50,13 @@
 // reads ZM_IsPlayerHomeBlockName / ZM_GetPlayerHomeInteriorTintColour from here
 // (ZM-D-176); the tools-only authoring loop reads the block table from the same
 // file, so both sides share one spelling.
+#include "Zenithmon/Source/World/ZM_HumanAssetPolicy.h"           // is the human bake loadable right now?
+#include "Zenithmon/Source/World/ZM_HumanBody.h"               // THE human body contract (size, capsule, visual scale)
 #include "Zenithmon/Source/World/ZM_PlayerHomePlacement.h"      // the PlayerHome shell + its ZM-D-176 warm tint
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
+
+#include <string>
 
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Core/Zenith_AutomatedTest.h"
@@ -56,7 +66,6 @@
 #include "Core/Zenith_CommandLine.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorAutomation.h"
-#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_GraphComponent.h"   // the SC8 no-graph authoring pin
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
@@ -70,47 +79,71 @@
 #include <string>
 #endif
 
-// Asset-free blockout visual used by the authored S3 interiors and doorway.
-// The scene persists this marker while each runtime scene generation rebuilds
-// a unit-cube model on its owning entity. Replacing the marker with final art
-// later does not affect collision or traversal authoring.
+// ZM_GreyboxVisual -- the ONE visual component every authored Zenithmon entity
+// wears, and the thing that decides what it looks like.
 //
-// ---- Known-limit W4: it now wears its NPC's appearance ----------------------
-// An entity that ALSO carries a ZM_Interactable standing on a real ZM_NpcData row
-// is painted with that row's ZM_HUMAN_ID palette colour instead of the blockout
-// grey, which is what finally makes rival Vesper look like someone other than the
-// townsfolk.
+// It serves TWO POPULATIONS, and keeping them apart is the whole design:
 //
-// ---- ZM-D-176: the non-NPC answer is no longer one colour -------------------
-// The SEVEN PlayerHome shell blocks named by Source/World/ZM_PlayerHomePlacement.h
-// wear a warm interior tint instead, so the player's bedroom stops reading as the
-// same greybox room as ProfLab (both ship an identical seven-block shell). Every
-// OTHER ZM_QueueGreyboxBlock wall, floor, door and lintel -- ProfLab's seven,
-// Dawnmere's four, and every future prop -- keeps EXACTLY the shipped
-// grey/roughness/metallic it always had. See ResolveBlockoutColour below.
+//   BLOCKOUT  -- every wall, floor, door, lintel and interior shell. A unit cube
+//                in the shipped blockout grey (or PlayerHome's warm interior tint,
+//                ZM-D-176). This branch is BYTE-FOR-BYTE what it has always been
+//                and must stay that way: ZM_AutoTests_InteriorTint measures the
+//                tint to 1.0e-4.
+//   HUMAN     -- the six authored Dawnmere NPCs and the player. These get the
+//                generated humanoid MODEL (ZM_HumanGen's centre-anchored bind
+//                space) plus an Idle/Walk animator, and their physics body is
+//                installed from the COMPILED body contract.
+//
+// ★ THE HUMAN BRANCH IS THE ONE THAT MOVED. Before this, an NPC and a doorframe
+// were the same object on screen: both a grey unit cube, the NPC merely tinted
+// from its ZM_HUMAN_ID palette entry. The palette has not gone -- it is now the
+// COLD-START FALLBACK (see below) rather than the shipped appearance.
+//
+// ★ COLD STARTS ARE A PICTURE PROBLEM, NEVER A GAMEPLAY ONE. If the human bake is
+// absent and cannot be made (a non-tools build on a fresh clone), a resolved human
+// gets a proportioned 0.8 x 1.8 x 0.8 block in its palette colour instead of a
+// model -- the exact block the game used to ship, in the exact same place. Its
+// COLLIDER comes from the same compiled contract either way, so the capsule, the
+// ground probe, the camera pivot, the head anchors and every spawn point measure
+// the same body whether or not a single asset exists on disk.
+//
+// ★ WHY THIS IS A STATE MACHINE AND NOT A BOOL. Zenith_ModelComponent::LoadModel
+// always calls ClearModel, replacing the skeleton INSTANCE, while
+// Zenith_AnimatorComponent::TryDiscoverSkeleton returns immediately once the
+// controller is initialised. A second LoadModel therefore leaves the controller
+// bound to a DESTROYED instance, which a flag that merely suppresses duplicate
+// clips does not prevent. So this component records what it actually loaded and
+// re-binds the controller explicitly after any model replacement. That is safe
+// because ALL 35 humans share ONE rig: bone names and indices are identical across
+// any model swap, so clips, layers and the state machine survive the rebind.
 //
 // ★ WHY THIS IS SAFE AT ORDER 107, GIVEN ZM_Interactable IS 113.
 // OnStart hooks run in ASCENDING serialization order WITHIN one entity
 // (Zenith_ComponentMetaRegistry::DispatchOnStart -> DispatchLifecycleHook over
 // m_xMetasSorted), so this component starts BEFORE ZM_Interactable does. That
 // would be fatal if the thing we read were established in ZM_Interactable::
-// OnStart -- which is exactly how the trainer id works, and exactly the defect
-// class Docs/Status.md records for TickTrainerSight/UpdateWander. It is NOT how
-// the NPC ROW works: m_eNpcId arrives either from ZM_Interactable::
-// ReadFromDataStream (which provably runs for every component of an entity
-// before any pending start is dispatched -- Zenith_SceneData_Serialization
-// deserializes and marks pending-start, Zenith_SceneData::DispatchPendingStarts
-// drains it on a later Update) or from the AddStep_Custom authoring step (which
-// runs with the editor Stopped, so no OnStart has fired at all). This component
-// deliberately reads ONLY the row, never GetTrainerId().
+// OnStart -- which is exactly how the trainer id works. It is NOT how the NPC ROW
+// works: m_eNpcId arrives either from ZM_Interactable::ReadFromDataStream (which
+// provably runs for every component of an entity before any pending start is
+// dispatched) or from the AddStep_Custom authoring step (which runs with the
+// editor Stopped, so no OnStart has fired at all). This component deliberately
+// reads ONLY the row, never GetTrainerId().
 //
 // The one thing 113-runs-later does cost us is ZM_Interactable::OnStart's
 // stale-row CLAMP: an out-of-range serialized id has not been reset to
-// ZM_NPC_NONE yet when we look. Hence the explicit bounds check below (ZM_GetNpcData
-// ASSERTS out of range) and hence ZM_GetHumanPaletteColour being TOTAL.
+// ZM_NPC_NONE yet when we look. Hence the explicit bounds check below.
 //
-// NOTHING NEW IS SERIALIZED. WriteToDataStream still emits a single version
-// u_int, so the committed .zscen bytes cannot move; the colour is re-derived on
+// ★ REBUILDING THE BODY AT 107 IS SAFE, AND CHECKED. Installing explicit
+// dimensions destroys and recreates the Jolt body, which drops sensor state,
+// gravity and rotation locks. The two DYNAMIC NPCs get all of that re-applied by
+// ZM_Interactable::ApplyDrivenBodySetup at 113, which is keyed on body-ID
+// identity -- so a rebuild here makes it re-apply exactly once. The four STATIC
+// townsfolk have no such configuration to lose, and the PLAYER's body is not
+// touched here at all (ZM_PlayerController::EnsureAndConfigureBody owns it and
+// installs the same dimensions immediately before its own configuration block).
+//
+// NOTHING NEW IS SERIALIZED. WriteToDataStream still emits a single version u_int,
+// so the committed .zscen bytes cannot move; everything below is re-derived on
 // every load from bytes that were already there.
 class ZM_GreyboxVisual
 {
@@ -128,44 +161,368 @@ public:
 
 	void OnStart()
 	{
-		if (m_bInitialised || !m_xParentEntity.IsValid())
+		if (!m_xParentEntity.IsValid())
 		{
 			return;
 		}
 
-		const Zenith_Maths::Vector4 xBaseColour = ResolveBaseColour();
-
-		// A RE-RUN must refresh, never restack. ReadFromDataStream clears
-		// m_bInitialised, so a live component that is re-read would OnStart again --
-		// and a second AddMeshEntry would leave this entity drawing two overlapping
-		// cubes with the OLD material still on the first one. m_bMeshEntryAdded is
-		// deliberately NOT cleared there: it records what this instance actually did
-		// to the model, which a stream read does not undo. A genuine scene load builds
-		// a FRESH component, so it starts false and takes the normal path below.
-		if (m_bMeshEntryAdded)
+		// THE EARLY BRANCH, and deliberately so: an entity that resolves to no NPC
+		// row and carries no ZM_PlayerController is a blockout, and never reaches a
+		// line of human code.
+		const ZM_HUMAN_ID eHumanId = ResolveHumanId();
+		if (eHumanId >= ZM_HUMAN_COUNT)
 		{
-			Zenith_MaterialAsset* pxOwnedMaterial = m_xMaterial.GetDirect();
-			if (pxOwnedMaterial != nullptr)
+			ApplyBlockout();
+			return;
+		}
+		ApplyHuman(eHumanId);
+	}
+
+	void WriteToDataStream(Zenith_DataStream& xStream) const
+	{
+		xStream << 1u;
+	}
+
+	void ReadFromDataStream(Zenith_DataStream& xStream)
+	{
+		u_int uVersion = 0u;
+		xStream >> uVersion;
+		(void)uVersion;
+		// m_eLoadedKind / m_eLoadedHumanId / m_bAnimatorAuthored are deliberately NOT
+		// cleared: they record what THIS instance actually did to the model and the
+		// animator, which a stream read does not undo. A genuine scene load builds a
+		// FRESH component, so it starts at NONE and takes the normal path.
+	}
+
+#ifdef ZENITH_TOOLS
+	void RenderPropertiesPanel()
+	{
+		const ZM_HUMAN_ID eHumanId = ResolveHumanId();
+		if (eHumanId < ZM_HUMAN_COUNT)
+		{
+			ImGui::Text("Human: %s (%s)", ZM_GetHumanName(eHumanId), KindName(m_eLoadedKind));
+			const Zenith_Maths::Vector4 xColour = ZM_GetHumanPaletteColour(eHumanId);
+			ImGui::Text("Cold-start fallback colour: %.3f, %.3f, %.3f",
+				xColour.x, xColour.y, xColour.z);
+			return;
+		}
+		ImGui::TextUnformatted("Replaceable S3 greybox unit cube");
+		// DERIVED live rather than read back off the material, so the panel shows
+		// what the NEXT start would paint.
+		const Zenith_Maths::Vector4 xColour = ResolveBlockoutColour();
+		ImGui::Text("Appearance (derived): %.3f, %.3f, %.3f",
+			xColour.x, xColour.y, xColour.z);
+	}
+#endif
+
+private:
+	// What this component last put on the entity. HUMAN_FALLBACK is a first-class
+	// state, not an error: it is what a cold tree ships, and it must be able to
+	// transition to HUMAN (and back) without stacking meshes.
+	enum ZM_VISUAL_KIND : u_int
+	{
+		ZM_VISUAL_NONE,
+		ZM_VISUAL_BLOCKOUT,
+		ZM_VISUAL_HUMAN_FALLBACK,
+		ZM_VISUAL_HUMAN,
+	};
+
+	static const char* KindName(ZM_VISUAL_KIND eKind)
+	{
+		switch (eKind)
+		{
+		case ZM_VISUAL_BLOCKOUT:       return "blockout";
+		case ZM_VISUAL_HUMAN_FALLBACK: return "cold fallback block";
+		case ZM_VISUAL_HUMAN:          return "model";
+		default:                       return "nothing yet";
+		}
+	}
+
+	// ---- Who is this? -------------------------------------------------------
+	// NAME-INDEPENDENT on purpose, so all three scenes work: an NPC is whoever its
+	// sibling ZM_Interactable's authored row says, and the player is whoever
+	// carries the controller.
+	ZM_HUMAN_ID ResolveHumanId() const
+	{
+		if (const ZM_Interactable* pxInteractable =
+			m_xParentEntity.TryGetComponent<ZM_Interactable>())
+		{
+			// ZM_NPC_NONE aliases ZM_NPC_COUNT, so one comparison rejects the sentinel
+			// and every garbage value together. It must come FIRST: ZM_GetNpcData
+			// asserts on an out-of-range id, and ZM_Interactable's own clamp has not
+			// run yet at order 107 (see the class comment).
+			const ZM_NPC_ID eNpcId = pxInteractable->GetNpcId();
+			if (eNpcId >= ZM_NPC_COUNT)
+			{
+				return ZM_HUMAN_NONE;
+			}
+			return ZM_GetNpcData(eNpcId).m_eHuman;
+		}
+		if (m_xParentEntity.TryGetComponent<ZM_PlayerController>() != nullptr)
+		{
+			// ZM_HUMAN_PLAYER_F's row and bake both exist, but nothing selects a
+			// gender and the save schema has no field for one -- see Docs/Questions.md.
+			return ZM_HUMAN_PLAYER_M;
+		}
+		return ZM_HUMAN_NONE;
+	}
+
+	// ---- BLOCKOUT: unchanged, and it must stay unchanged ---------------------
+	void ApplyBlockout()
+	{
+		const Zenith_Maths::Vector4 xBaseColour = ResolveBlockoutColour();
+
+		// A RE-RUN must REFRESH, never restack. ReadFromDataStream can hand this
+		// instance a different sibling row, and a second AddMeshEntry would leave the
+		// entity drawing two overlapping cubes with the OLD material on the first.
+		if (m_eLoadedKind == ZM_VISUAL_BLOCKOUT)
+		{
+			if (Zenith_MaterialAsset* pxOwnedMaterial = m_xMaterial.GetDirect())
 			{
 				ApplyAppearance(*pxOwnedMaterial, xBaseColour);
-				m_bInitialised = true;
 			}
 			return;
 		}
 
-		m_xCubeGeometry = Zenith_MeshGeometryAsset::CreateUnitCube();
-		m_xMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
-		Zenith_MeshGeometryAsset* pxGeometryAsset = m_xCubeGeometry.GetDirect();
-		Zenith_MaterialAsset* pxMaterial = m_xMaterial.GetDirect();
-		if (pxGeometryAsset == nullptr || pxMaterial == nullptr)
+		m_xGeometry = Zenith_MeshGeometryAsset::CreateUnitCube();
+		if (!BuildBlockMesh(xBaseColour))
+		{
+			return;
+		}
+		m_eLoadedKind = ZM_VISUAL_BLOCKOUT;
+	}
+
+	// ---- HUMAN: model when warm, proportioned palette block when cold --------
+	void ApplyHuman(ZM_HUMAN_ID eHumanId)
+	{
+		// The body first and unconditionally: gameplay dimensions must not depend on
+		// whether the picture loaded.
+		InstallHumanBody();
+
+		const ZM_VISUAL_KIND eDesired = ZM_AreHumanAssetsReady()
+			? ZM_VISUAL_HUMAN
+			: ZM_VISUAL_HUMAN_FALLBACK;
+		if (m_eLoadedKind == eDesired && m_eLoadedHumanId == eHumanId)
+		{
+			return;   // nothing to do -- no LoadModel, no AddMeshEntry, no rebuild
+		}
+
+		Zenith_ModelComponent* pxModel =
+			m_xParentEntity.TryGetComponent<Zenith_ModelComponent>();
+		if (pxModel == nullptr)
+		{
+			pxModel = &m_xParentEntity.AddComponent<Zenith_ModelComponent>();
+		}
+
+		if (eDesired == ZM_VISUAL_HUMAN && ApplyHumanModel(*pxModel, eHumanId))
+		{
+			m_eLoadedKind    = ZM_VISUAL_HUMAN;
+			m_eLoadedHumanId = eHumanId;
+			return;
+		}
+
+		// Cold, or the model refused to load. Either way the block is what ships.
+		// ★ CLEAR FIRST. AddMeshEntry APPENDS to an existing instance, so without
+		// this a HUMAN -> HUMAN_FALLBACK transition would draw the block ON TOP of
+		// the human still in the model.
+		if (m_eLoadedKind != ZM_VISUAL_NONE)
+		{
+			pxModel->ClearModel();
+		}
+		m_xGeometry = Zenith_MeshGeometryAsset::CreateBox(Zenith_Maths::Vector3(
+			fZM_HUMAN_BODY_FOOTPRINT * 0.5f / fZM_HUMAN_VISUAL_SCALE,
+			fZM_HUMAN_BODY_HALF_HEIGHT / fZM_HUMAN_VISUAL_SCALE,
+			fZM_HUMAN_BODY_FOOTPRINT * 0.5f / fZM_HUMAN_VISUAL_SCALE));
+		if (!BuildBlockMesh(ZM_GetHumanPaletteColour(eHumanId)))
+		{
+			return;
+		}
+		m_eLoadedKind    = ZM_VISUAL_HUMAN_FALLBACK;
+		m_eLoadedHumanId = eHumanId;
+	}
+
+	// Load the baked model and (re)bind the animator. False if the model did not
+	// resolve, in which case the caller falls back to the block.
+	bool ApplyHumanModel(Zenith_ModelComponent& xModel, ZM_HUMAN_ID eHumanId)
+	{
+		char acModelRef[256];
+		if (!ZM_HumanAssetPath(eHumanId, ZM_HUMAN_ASSET_MODEL, acModelRef,
+			static_cast<u_int>(sizeof(acModelRef))))
+		{
+			return false;
+		}
+
+		xModel.LoadModel(std::string(acModelRef));
+		Flux_SkeletonInstance* pxSkeleton = xModel.GetSkeletonInstance();
+		if (pxSkeleton == nullptr)
+		{
+			// LoadModel REFUSES a missing file without clearing, so the model may still
+			// hold whatever was there. Say so and let the caller clear + fall back.
+			Zenith_Warning(LOG_CATEGORY_GAMEPLAY,
+				"[ZM_GreyboxVisual] '%s' reported warm but did not load; using the "
+				"cold-start block", acModelRef);
+			return false;
+		}
+
+		// The material handle belongs to the block paths; a model carries its own.
+		m_xMaterial = MaterialHandle();
+		m_xGeometry = MeshGeometryHandle();
+
+		EnsureHumanAnimator(*pxSkeleton);
+		return true;
+	}
+
+	// ---- The body: a COMPILED contract, never the transform scale ------------
+	void InstallHumanBody()
+	{
+		// The PLAYER's body belongs to ZM_PlayerController::EnsureAndConfigureBody,
+		// which installs these same dimensions immediately BEFORE its sensor/gravity/
+		// lock/friction block. Installing them here as well would rebuild the body out
+		// from under that configuration, for nothing.
+		if (m_xParentEntity.TryGetComponent<ZM_PlayerController>() != nullptr)
 		{
 			return;
 		}
 
-		// The NAME stays "ZM_Greybox" for the NPC bodies too, on purpose: it is the
-		// only handle a test TU has on these materials (ZM_GreyboxVisual is file-local
-		// to this TU and cannot be named from Tests/), and ZM_RivalVesperAuthored_Test
-		// uses it to find BOTH populations and prove they were kept apart.
+		Zenith_ColliderComponent* pxCollider =
+			m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
+		if (pxCollider == nullptr || !pxCollider->HasValidBody())
+		{
+			return;   // nothing configured to re-shape; the setters would only warn
+		}
+
+		if (pxCollider->GetCollisionVolumeType() == COLLISION_VOLUME_TYPE_CAPSULE)
+		{
+			pxCollider->SetExplicitCapsuleDimensions(
+				fZM_HUMAN_BODY_CAPSULE_RADIUS, fZM_HUMAN_BODY_CAPSULE_HALF_CYLINDER);
+			return;
+		}
+		pxCollider->SetExplicitBoxHalfExtents(Zenith_Maths::Vector3(
+			fZM_HUMAN_BODY_FOOTPRINT * 0.5f,
+			fZM_HUMAN_BODY_HALF_HEIGHT,
+			fZM_HUMAN_BODY_FOOTPRINT * 0.5f));
+	}
+
+	// ---- The animator: Idle + Walk, driven off speed ------------------------
+	void EnsureHumanAnimator(Flux_SkeletonInstance& xSkeleton)
+	{
+		Zenith_AnimatorComponent* pxAnimator =
+			m_xParentEntity.TryGetComponent<Zenith_AnimatorComponent>();
+		if (pxAnimator == nullptr)
+		{
+			pxAnimator = &m_xParentEntity.AddComponent<Zenith_AnimatorComponent>();
+		}
+		Flux_AnimationController& xController = pxAnimator->GetController();
+
+		// ★ REBIND, EVERY TIME, BEFORE ANYTHING ELSE. LoadModel replaced the skeleton
+		// INSTANCE and Zenith_AnimatorComponent::TryDiscoverSkeleton returns
+		// immediately once the controller is initialised, so without this an already-
+		// initialised controller would keep pointing at the destroyed one. Initialize
+		// re-takes the skeleton asset handle and re-initialises every existing layer's
+		// pose, so the clips, the layer and the state machine below all survive it.
+		xController.Initialize(&xSkeleton);
+
+		if (m_bAnimatorAuthored)
+		{
+			return;   // clips/layers/parameters are added exactly once per instance
+		}
+
+		// Clips are NOT auto-loaded from the .zmodel's animation list; they have to be
+		// added by path. Both are the SHARED set every human binds.
+		if (!AddSharedClip(xController, ZM_HUMAN_SHARED_ASSET_ANIM_IDLE)
+			|| !AddSharedClip(xController, ZM_HUMAN_SHARED_ASSET_ANIM_WALK))
+		{
+			return;   // leave m_bAnimatorAuthored false so a later start can retry
+		}
+
+		Flux_AnimationLayer* pxLayer = xController.AddLayer("ZM_HumanBase");
+		if (pxLayer == nullptr)
+		{
+			return;
+		}
+		pxLayer->SetWeight(1.0f);
+		pxLayer->SetBlendMode(LAYER_BLEND_OVERRIDE);
+
+		Flux_AnimationStateMachine* pxMachine =
+			pxLayer->CreateStateMachine("ZM_HumanLocomotion");
+		if (pxMachine == nullptr)
+		{
+			return;
+		}
+		Flux_AnimationClipCollection& xClips = xController.GetClipCollection();
+		pxMachine->GetParameters().AddFloat("Speed", 0.0f);
+
+		AddClipState(*pxMachine, xClips, "Idle", ZM_HumanClipName(ZM_HUMAN_CLIP_IDLE));
+		AddClipState(*pxMachine, xClips, "Walk", ZM_HumanClipName(ZM_HUMAN_CLIP_WALK));
+
+		AddSpeedTransition(*pxMachine, "Idle", "Walk",
+			Flux_TransitionCondition::CompareOp::Greater, fZM_HUMAN_WALK_SPEED_THRESHOLD);
+		AddSpeedTransition(*pxMachine, "Walk", "Idle",
+			Flux_TransitionCondition::CompareOp::LessEqual, fZM_HUMAN_WALK_SPEED_THRESHOLD);
+
+		m_bAnimatorAuthored = true;
+	}
+
+	static bool AddSharedClip(Flux_AnimationController& xController,
+		ZM_HUMAN_SHARED_ASSET_KIND eKind)
+	{
+		char acRef[256];
+		if (!ZM_HumanSharedAssetPath(eKind, acRef, static_cast<u_int>(sizeof(acRef))))
+		{
+			return false;
+		}
+		return xController.AddClipFromFile(
+			Zenith_AssetRegistry::ResolvePath(std::string(acRef))) != nullptr;
+	}
+
+	static void AddClipState(Flux_AnimationStateMachine& xMachine,
+		Flux_AnimationClipCollection& xClips, const char* szState, const char* szClip)
+	{
+		Flux_AnimationState* pxState = xMachine.AddState(szState);
+		Flux_AnimationClip* pxClip = xClips.GetClip(szClip);
+		if (pxState != nullptr && pxClip != nullptr)
+		{
+			pxState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClip, 1.0f));
+		}
+	}
+
+	static void AddSpeedTransition(Flux_AnimationStateMachine& xMachine,
+		const char* szFrom, const char* szTo,
+		Flux_TransitionCondition::CompareOp eOp, float fThreshold)
+	{
+		Flux_AnimationState* pxFrom = xMachine.GetState(szFrom);
+		if (pxFrom == nullptr)
+		{
+			return;
+		}
+		Flux_StateTransition xTransition;
+		xTransition.m_strTargetStateName = szTo;
+		xTransition.m_fTransitionDuration = fZM_HUMAN_LOCOMOTION_BLEND_SECONDS;
+
+		Flux_TransitionCondition xCondition;
+		xCondition.m_strParameterName = "Speed";
+		xCondition.m_eParamType = Flux_AnimationParameters::ParamType::Float;
+		xCondition.m_eCompareOp = eOp;
+		xCondition.m_fThreshold = fThreshold;
+		xTransition.m_xConditions.PushBack(xCondition);
+
+		pxFrom->AddTransition(xTransition);
+	}
+
+	// ---- Shared block-mesh construction (BLOCKOUT and HUMAN_FALLBACK) --------
+	// Both wear the name "ZM_Greybox" on purpose: it is the only handle a test TU
+	// has on these materials (this class is file-local and cannot be named from
+	// Tests/), and ZM_RivalVesperAuthored_Test uses it to find both populations.
+	bool BuildBlockMesh(const Zenith_Maths::Vector4& xBaseColour)
+	{
+		m_xMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		Zenith_MeshGeometryAsset* pxGeometryAsset = m_xGeometry.GetDirect();
+		Zenith_MaterialAsset* pxMaterial = m_xMaterial.GetDirect();
+		if (pxGeometryAsset == nullptr || pxMaterial == nullptr)
+		{
+			return false;
+		}
+
 		pxMaterial->SetName("ZM_Greybox");
 		ApplyAppearance(*pxMaterial, xBaseColour);
 		pxMaterial->SetRoughness(0.90f);
@@ -180,100 +537,37 @@ public:
 		Flux_MeshGeometry* pxGeometry = pxGeometryAsset->GetGeometry();
 		if (pxGeometry == nullptr)
 		{
-			return;
+			return false;
 		}
 		pxModel->AddMeshEntry(*pxGeometry, *pxMaterial);
-		m_bMeshEntryAdded = true;
-		m_bInitialised = true;
+		return true;
 	}
 
-	void WriteToDataStream(Zenith_DataStream& xStream) const
-	{
-		xStream << 1u;
-	}
-
-	void ReadFromDataStream(Zenith_DataStream& xStream)
-	{
-		u_int uVersion = 0u;
-		xStream >> uVersion;
-		(void)uVersion;
-		m_bInitialised = false;
-	}
-
-#ifdef ZENITH_TOOLS
-	void RenderPropertiesPanel()
-	{
-		ImGui::TextUnformatted("Replaceable S3 greybox unit cube");
-		// DERIVED live rather than read back off the material, so the panel shows
-		// what the NEXT start would paint -- which is the thing an author editing
-		// the sibling ZM_Interactable's row actually wants to see.
-		const Zenith_Maths::Vector4 xColour = ResolveBaseColour();
-		ImGui::Text("Appearance (W4, derived): %.3f, %.3f, %.3f",
-			xColour.x, xColour.y, xColour.z);
-	}
-#endif
-
-private:
-	// ZM-D-171: the ZM-D-169 NPC emissive floor (ResolveNpcReadabilityTint +
-	// a 20/80 authored/tint emissive blend) is DELETED. It existed to work
-	// around vertical faces rendering near-black under the engine's old
-	// sky-only, half-intensity ambient; with the engine's energy-consistent
-	// sun + ground-bounce IBL, the LIT palette carries readability again and
-	// m_eHuman is once more the SINGLE source of an NPC's on-screen colour
-	// (W4's "one row, one appearance" property, un-split).
+	// ZM-D-171: the ZM-D-169 NPC emissive floor is DELETED. With the engine's
+	// energy-consistent sun + ground-bounce IBL the LIT palette carries readability
+	// on its own.
 	void ApplyAppearance(
 		Zenith_MaterialAsset& xMaterial,
 		const Zenith_Maths::Vector4& xBaseColour) const
 	{
 		xMaterial.SetBaseColor(xBaseColour);
-		// Explicit zeros, not "leave alone": the re-run refresh path reuses a
-		// LIVE material that may still carry the old floor's emission.
+		// Explicit zeros, not "leave alone": the re-run refresh path reuses a LIVE
+		// material that may still carry the old floor's emission.
 		xMaterial.SetEmissiveColor(Zenith_Maths::Vector3(0.0f));
 		xMaterial.SetEmissiveIntensity(0.0f);
 	}
 
-	// Known-limit W4. The appearance this blockout body wears RIGHT NOW: the
-	// sibling ZM_Interactable's authored ZM_NpcData row -> its ZM_HUMAN_ID -> the
-	// palette. Everything without a resolvable row -- every wall, floor, door,
-	// lintel and prop -- takes ResolveBlockoutColour below, which is the shipped
-	// blockout grey everywhere except PlayerHome's seven shell blocks (ZM-D-176).
-	Zenith_Maths::Vector4 ResolveBaseColour() const
-	{
-		const ZM_Interactable* pxInteractable =
-			m_xParentEntity.TryGetComponent<ZM_Interactable>();
-		if (pxInteractable == nullptr)
-		{
-			return ResolveBlockoutColour();
-		}
-		// ZM_NPC_NONE aliases ZM_NPC_COUNT, so one comparison rejects the sentinel
-		// and every garbage value together. It must come FIRST: ZM_GetNpcData
-		// asserts on an out-of-range id, and ZM_Interactable's own clamp has not run
-		// yet at order 107 (see the class comment).
-		const ZM_NPC_ID eNpcId = pxInteractable->GetNpcId();
-		if (eNpcId >= ZM_NPC_COUNT)
-		{
-			return ResolveBlockoutColour();
-		}
-		const ZM_HUMAN_ID eHumanId = ZM_GetNpcData(eNpcId).m_eHuman;
-		if (eHumanId >= ZM_HUMAN_COUNT)
-		{
-			return ResolveBlockoutColour();
-		}
-		return ZM_GetHumanPaletteColour(eHumanId);
-	}
-
-	// ZM-D-176. The non-NPC answer is no longer a single colour: the seven
-	// PlayerHome shell blocks wear a warm interior tint so the player's bedroom
-	// stops reading as the same greybox room as ProfLab. Keyed on the ENTITY
-	// NAME, matched EXACTLY against the same inventory the authoring loop walks
+	// ZM-D-176. The non-human answer is not a single colour: the seven PlayerHome
+	// shell blocks wear a warm interior tint so the player's bedroom stops reading
+	// as the same greybox room as ProfLab. Keyed on the ENTITY NAME, matched EXACTLY
+	// against the same inventory the authoring loop walks
 	// (Source/World/ZM_PlayerHomePlacement.h) -- one spelling, so a rename moves
-	// both sides together. Nothing here is serialized: this is the W4 derivation
-	// contract (ZM_HumanAppearance.h:52-55), unchanged.
+	// both sides together. Nothing here is serialized.
 	//
 	// ★ WHY THE NAME IS SAFE TO READ AT ORDER 107. It is established by
-	// AddStep_CreateEntity at authoring time (editor Stopped, no OnStart has
-	// fired) and by scene deserialization before any pending start is drained --
-	// the identical argument the class comment above makes for the NPC row.
+	// AddStep_CreateEntity at authoring time (editor Stopped, no OnStart has fired)
+	// and by scene deserialization before any pending start is drained -- the
+	// identical argument the class comment makes for the NPC row.
 	Zenith_Maths::Vector4 ResolveBlockoutColour() const
 	{
 		return ZM_IsPlayerHomeBlockName(m_xParentEntity.GetName().c_str())
@@ -282,13 +576,13 @@ private:
 	}
 
 	Zenith_Entity m_xParentEntity;
-	MeshGeometryHandle m_xCubeGeometry;
+	MeshGeometryHandle m_xGeometry;
 	MaterialHandle m_xMaterial;
-	bool m_bInitialised = false;
-	// Runtime-only and NOT reset by ReadFromDataStream: it records whether THIS
-	// instance already pushed a mesh entry onto the model, which a stream read does
-	// not undo. See the re-run branch in OnStart.
-	bool m_bMeshEntryAdded = false;
+	// Runtime-only and NOT reset by ReadFromDataStream: they record what THIS
+	// instance did to the model and the animator, which a stream read does not undo.
+	ZM_VISUAL_KIND m_eLoadedKind = ZM_VISUAL_NONE;
+	ZM_HUMAN_ID m_eLoadedHumanId = ZM_HUMAN_NONE;
+	bool m_bAnimatorAuthored = false;
 };
 
 // ============================================================================
@@ -1536,15 +1830,17 @@ namespace
 			ZM_FloatBits(xAuthored.z), ZM_FloatBits(xAuthored.w));
 	}
 
-	// The ONE authored body scale every Dawnmere human wears -- the player and all
-	// six NPCs. Named here, rather than re-spelled, because known-limit W5's wander
-	// waypoints need the capsule half-extent it derives and they are authored in a
-	// DIFFERENT function from the placement block below. Two copies of this literal
-	// is exactly how a half-extent and a body stop agreeing.
-	const Zenith_Maths::Vector3 g_xDawnmereHumanScale(
-		fZM_DAWNMERE_HUMAN_SCALE_X,
-		fZM_DAWNMERE_HUMAN_SCALE_Y,
-		fZM_DAWNMERE_HUMAN_SCALE_Z);
+	// The ONE authored TRANSFORM SCALE every Dawnmere human wears -- the player and
+	// all six NPCs. Named here, rather than re-spelled, because it is written from a
+	// DIFFERENT function than the placement block below.
+	//
+	// ★ IT IS A DRAWING SCALE, NOT A BODY. It exists to land the generated human
+	// MODEL on the body contract, and it is UNIFORM -- which is precisely why the
+	// bodies can no longer be derived from it (a uniform scale degenerates a
+	// scale-derived capsule into a sphere). Anything that needs to know how big a
+	// person is reads Source/World/ZM_HumanBody.h; the bodies themselves are
+	// installed explicitly from that same contract at runtime.
+	const Zenith_Maths::Vector3 g_xDawnmereHumanScale(fZM_HUMAN_VISUAL_SCALE);
 
 	// KNOWN-LIMIT W5. The authored CENTRE of one Dawnmere NPC: the shared anchor's
 	// XZ plus that NPC's OWN measured feet height, lifted by the capsule half-extent.
@@ -1590,8 +1886,6 @@ namespace
 		// table (Source/World/ZM_DawnmerePlacement.h), whose feet heights are the
 		// MEASURED terrain surface at each endpoint rather than the town centre's.
 		// Endpoint 0 shares the wanderer's own anchor row by construction.
-		const float fWaypointHalfExtent =
-			ZM_PlayerController::CalculateCapsuleHalfExtent(g_xDawnmereHumanScale);
 		Zenith_Assert(ZM_GetDawnmereWanderWaypointCount() == 2u,
 			"the authored patrol is written as exactly two endpoints here; the shared "
 			"waypoint table has grown or shrunk");
@@ -1601,9 +1895,9 @@ namespace
 		ZM_WalkerWaypoints xWaypoints{};
 		xWaypoints.m_uCount = 2u;
 		xWaypoints.m_axPoints[0] = {
-			xWaypoint0.m_fX, xWaypoint0.m_fFeetY + fWaypointHalfExtent, xWaypoint0.m_fZ };
+			xWaypoint0.m_fX, xWaypoint0.m_fFeetY + fZM_HUMAN_BODY_HALF_HEIGHT, xWaypoint0.m_fZ };
 		xWaypoints.m_axPoints[1] = {
-			xWaypoint1.m_fX, xWaypoint1.m_fFeetY + fWaypointHalfExtent, xWaypoint1.m_fZ };
+			xWaypoint1.m_fX, xWaypoint1.m_fFeetY + fZM_HUMAN_BODY_HALF_HEIGHT, xWaypoint1.m_fZ };
 
 		const bool bNpcConfigured = ZM_ConfigureSelectedNpc(ZM_NPC_WANDERER);
 		const bool bPatrolConfigured =
@@ -1888,6 +2182,12 @@ void Project_RegisterGameComponents()
 		// survive into the next test AND into the next process.
 		ZM_SaveSlots::DeleteAllSlotsForTests();
 		Zenith_SaveData::ClearForTest();
+		// A forced-cold human-asset override is scoped, but a test that leaked one
+		// (an early return past its guard, a throw) would hand its "there is no bake"
+		// answer to every test that ran afterwards -- and those would silently start
+		// asserting against fallback blocks instead of models. Restore the production
+		// policy, with a fresh bake latch, between every pair of tests.
+		ZM_ResetHumanAssetPolicy();
 	});
 #endif
 }
@@ -2123,11 +2423,13 @@ void Project_RegisterEditorAutomationSteps()
 
 	xAuto.AddStep_CreateEntity("Player");
 	xAuto.AddStep_SetEntityTransient(false);
-	xAuto.AddStep_SetTransformPosition(0.0f, 0.9f, 3.5f);
-	xAuto.AddStep_SetTransformScale(0.8f, 1.8f, 0.8f);
+	xAuto.AddStep_SetTransformPosition(0.0f, fZM_HUMAN_BODY_HALF_HEIGHT, 3.5f);
+	xAuto.AddStep_SetTransformScale(
+		fZM_HUMAN_VISUAL_SCALE, fZM_HUMAN_VISUAL_SCALE, fZM_HUMAN_VISUAL_SCALE);
 	xAuto.AddStep_AddCollider();
 	xAuto.AddStep_AddColliderShape(
 		COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+	xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
 	xAuto.AddStep_AddComponent("ZM_PlayerController");
 
 	xAuto.AddStep_CreateEntity("PlayerHomeCamera");
@@ -2258,11 +2560,12 @@ void Project_RegisterEditorAutomationSteps()
 	xAuto.AddStep_SetEntityTransient(false);
 	xAuto.AddStep_SetTransformPosition(
 		xProfLabPlayerCenter.x, xProfLabPlayerCenter.y, xProfLabPlayerCenter.z);
-	xAuto.AddStep_SetTransformScale(fZM_PROFLAB_PLAYER_SCALE_X,
-		fZM_PROFLAB_PLAYER_SCALE_Y, fZM_PROFLAB_PLAYER_SCALE_Z);
+	xAuto.AddStep_SetTransformScale(
+		fZM_HUMAN_VISUAL_SCALE, fZM_HUMAN_VISUAL_SCALE, fZM_HUMAN_VISUAL_SCALE);
 	xAuto.AddStep_AddCollider();
 	xAuto.AddStep_AddColliderShape(
 		COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+	xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
 	xAuto.AddStep_AddComponent("ZM_PlayerController");
 
 	// Camera forward at yaw 0 is +Z, so the camera sits on the player's -Z side
@@ -2418,8 +2721,7 @@ void Project_RegisterEditorAutomationSteps()
 			fZM_DAWNMERE_TOWN_CENTER_FEET_Y,
 			fZM_DAWNMERE_TOWN_CENTER_Z);
 		const Zenith_Maths::Vector3 xPlayerScale = g_xDawnmereHumanScale;
-		const float fPlayerCapsuleHalfExtent =
-			ZM_PlayerController::CalculateCapsuleHalfExtent(xPlayerScale);
+		const float fPlayerCapsuleHalfExtent = fZM_HUMAN_BODY_HALF_HEIGHT;
 		const Zenith_Maths::Vector3 xPlayerCenter =
 			xTownCenterFeet + Zenith_Maths::Vector3(
 				0.0f, fPlayerCapsuleHalfExtent, 0.0f);
@@ -2439,7 +2741,7 @@ void Project_RegisterEditorAutomationSteps()
 		xAuto.AddStep_AddComponent("ZM_TerrainGrass");
 
 		// Spawn markers are feet/surface anchors. Runtime warps and this authored
-		// preview placement share the controller's scale-derived capsule extent.
+		// preview placement share ONE compiled capsule half-extent.
 		xAuto.AddStep_CreateEntity("TownCenterSpawn");
 		xAuto.AddStep_SetEntityTransient(false);
 		xAuto.AddStep_SetTransformPosition(
@@ -2450,7 +2752,7 @@ void Project_RegisterEditorAutomationSteps()
 		// The player and camera are Dawnmere-owned. SINGLE scene loads therefore
 		// replace both entities instead of carrying movement/camera state between
 		// scenes. TownCenter is the exact sampled terrain surface; adding the
-		// scale-derived 0.9 m capsule half-extent produces the authored centre.
+		// contract's 0.9 m capsule half-extent produces the authored centre.
 		xAuto.AddStep_CreateEntity("Player");
 		xAuto.AddStep_SetEntityTransient(false);
 		xAuto.AddStep_SetTransformPosition(
@@ -2459,6 +2761,7 @@ void Project_RegisterEditorAutomationSteps()
 			xPlayerScale.x, xPlayerScale.y, xPlayerScale.z);
 		xAuto.AddStep_AddCollider();
 		xAuto.AddStep_AddColliderShape(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+		xAuto.AddStep_AddComponent("ZM_GreyboxVisual");
 		xAuto.AddStep_AddComponent("ZM_PlayerController");
 
 		// Replaceable outdoor Home blockout. Every coordinate below comes from the
@@ -2568,7 +2871,7 @@ void Project_RegisterEditorAutomationSteps()
 		// flank NPCs at z + 18 still clear by 18 m.
 		// So both flank NPCs are pushed to z + 18, keeping 18 m of clearance from
 		// the Home corridor while staying 14 m off the x = 512 spawn-to-villager
-		// corridor and well clear of the Home shell (x 376..392, z 476..516).
+		// corridor and well clear of the Home shell (x 375.5..392.5, z 476..489).
 		// A scene-placement change can regress a suite it never mentions -- check the
 		// existing traversal routes before moving anything in this block.
 		//
@@ -2615,12 +2918,10 @@ void Project_RegisterEditorAutomationSteps()
 		//     wanderer patrol (540, 476..484) = 63.6 m at its nearest endpoint;
 		//     TownCenter spawn = sqrt(34^2 + 18^2) = 38.5 m, so the warden is not
 		//     reachable from spawn and the existing out-of-range negative stays clean.
-		//   * The Home shell (x 376..392, z 476..516 since ZM-D-173) lies WEST OF the
-		//     warden, who stands at (478, 498): its east face (x = 392) is 86 m west
-		//     of him. That single axis is the whole clearance now -- the relocated
-		//     shell's Z span DOES straddle z = 498, so the old "and 22 m south"
-		//     half of this claim is gone. 86 m on X is separation enough; do not
-		//     re-derive it from Z.
+		//   * The Home shell (x 375.5..392.5, z 476..489) lies SOUTH-WEST of the
+		//     warden, who stands at (478, 498): its east face is 85.5 m west and its
+		//     north face is 9 m south. That is ample clearance; re-check both axes
+		//     if either the facade footprint or the warden placement moves.
 		// Height is his OWN measured feet plus the shared capsule half-extent, like
 		// every other NPC since known-limit W5 -- see the block above.
 		// ★ When a later stage authors a real Route 1, a warden who is meant to BLOCK

@@ -296,14 +296,15 @@ header warns that a named test may not exist yet. The commoner failure is the
 reverse: **a registered test this document never names.** `Tools/doc_lint.ps1`
 hardcodes DevilsPlayground's `Docs/` directory and never reads Zenithmon's, so a
 green doc-lint is ZERO evidence about this file -- it is unlinted and drifts
-silently. As of ZM-D-177, **eleven** of the 56 registered automated tests appear
+silently. As of ZM-D-177, **eleven** of the then-56 registered automated tests appear
 nowhere below: `ZM_MenuOpenClose_Test`, `ZM_DialogueTalk_Test`,
 `ZM_PartyScreen_Test`, `ZM_DexScreen_Test`, `ZM_BagScreen_Test`,
 `ZM_ShopScreen_Test`, `ZM_CareCenterHeal_Test` (all
 `Tests/ZM_AutoTests_UI.cpp`), `ZM_BattleHUD_Test`,
 `ZM_BattleArenaOwnScene_Test`, `ZM_GameStatePersistence_Test` and
 `ZM_TerrainGrassResumeRegen_Test`. Their contracts live in their own files'
-header comments. **The authoritative registry is
+header comments. (The registry is **55** since ZM-D-181 deleted
+`ZM_NpcRenderedPalette_Test`; the eleven above are unaffected.) **The authoritative registry is
 `grep -c ZENITH_AUTOMATED_TEST_REGISTER Games/Zenithmon/Tests/*.cpp`, and the
 authoritative unit inventory is `grep -c "ZENITH_TEST("` -- never a total quoted
 in prose here, including a total quoted in this paragraph.**
@@ -511,7 +512,7 @@ biggest suite; all headless, all seeded (C8).
   | 4 | `ManagerSingletonLookupRejectsMissingAndDuplicates`, `ManagerRequestValidationIsTransactional`, `ManagerStateMachineDefersSingleLoadOneTick`, `ManagerPersistenceKeepsEntityIDAcrossSceneGeneration`: unique generation-bearing singleton, duplicate retirement, WorldSpec validation, FrontEnd build-0 playerless exception, immediate source freeze, exactly-one deferred SINGLE request, explicit waiting states, and persistent full-ID identity across scene-slot reuse |
   | 3 | `SpawnPointTagValidationBoundaries`, `SpawnPointLookupRequiresUniqueSameSceneMatch`, `SpawnPointSerializationVersionRoundTripAndLegacyFallback`: 1-31 printable ASCII bytes in a fixed 32-byte buffer, exact-case unique same-scene lookup, duplicate/missing failure, and fixed v1 scene-component stream |
   | 3 | `WarpTriggerConfigurationAndVersionRoundTrip`, `WarpTriggerFiltersSensorOtherBodyAndNonPlayer`, `WarpTriggerLatchRequestsExactlyOnceAndResetsForNextOverlap`: validated fixed v1 stream, sensor reassertion, real sensor pass-through, only the unique active-scene valid dynamic-capsule Player accepted, one request per overlap, and latch reset only for the exact full generation-bearing ID after the manager is reset |
-  | 2 | `PlacementUsesMarkerFeetPlusScaledCapsuleHalfExtentAndZeroesMotion`, `WarpResolutionFreezesThenResetsOnMissingDuplicateAndGenerationChange`: feet-marker centre derivation, one-time teleport, zero linear/angular velocity, reset-enable-idle completion, destination `OnStart` freeze, missing/duplicate marker hold, and entity/scene generation changes without stale-ID acceptance |
+  | 2 | `PlacementUsesMarkerFeetPlusContractCapsuleHalfExtentAndZeroesMotion`, `WarpResolutionFreezesThenResetsOnMissingDuplicateAndGenerationChange`: feet-marker centre derivation (and that it is SCALE-INDEPENDENT -- re-scaling the player must not move it), one-time teleport, zero linear/angular velocity, reset-enable-idle completion, destination `OnStart` freeze, missing/duplicate marker hold, and entity/scene generation changes without stale-ID acceptance |
   | 1 | `FadeAdvanceClampsInvalidDtAndRuntimeReset`: 0.20 s alpha policy, invalid/nonpositive-dt no-op, persistent `WarpFade` authoring/reload reassertion and reset; plus the production global quad queue's ascending cross-canvas sort, stable equal-key order, actual `Zenith_UICanvas` sort-key forwarding, 1024-quad drop-newest capacity guard, highest-sort text-overlay clip arbitration, complete pending-queue + bg/fg/total-counter + clip drain across legacy/render-graph Text disabled/reset paths, and clean re-enable; also proves `Flux_ModelInstance` material-handle retain/release and registry reclamation after procedural empty-model `Zenith_ModelComponent` deserialization, plus direct zero-duration UIOverlay Show/Hide synchronous opacity/visibility/interaction behavior |
   | 1 | `FadeOutBlocksSingleLoadUntilOpaqueAndIssuesExactlyOnce`: the source freezes immediately, no SINGLE request issues below alpha 1, a 0.25 s one-tick opacity crossing renders the real manager canvas inside the load callback and requires an actual sort-10000 alpha-1 fade quad before permission, and opaque waiting updates cannot issue twice |
   | 1 | `PlacementAndCameraReadinessStayLockedBeforeFadeIn`: placement/motion reset occurs behind black; missing, unstarted, duplicate, non-main, or wrong-target cameras hold opacity/input; exactly one main Camera + `ZM_FollowCamera` targeting the replacement generation begins fade-in |
@@ -1672,6 +1673,73 @@ user-approved; this paragraph preserves the earlier planning boundary only.
 
 ### 5.8 S8 -- vertical slice
 
+#### ZM-D-181 -- the human bodies (12 new boot units, registry UNMOVED at 56)
+
+**Boot baselines at this change: ZM 2861, engine (Null Combat) 1242.** Both moved because the
+change touches `Zenith/` as well as the game.
+
+| Case | File | What it pins |
+|---|---|---|
+| `HumanGen_BodyMetricsPinned` | `Tests/ZM_Tests_HumanGen.cpp` | Re-derives BOTH v2 anchor constants from a freshly built mesh; pins the canonical row is the 1.0 reference build AND still wears an attachment; varies every attachment slot and hair style and requires the BODY metric not to move by one float. |
+| `HumanGen_BindSpaceCentreAnchored` | " | The anchor is a RIGID translation of rig + mesh. FK-resolves four bones, three and four joints deep, and requires each to be its v1 world height minus exactly the anchor -- which is what catches "subtracted from all 16 bones" (that compounds). The canonical body sits on the origin; every other model lands at `canonicalCentre * (heightScale - 1)`; accessories may exceed the body box, and at least one must, or the body-prefix measurement proves nothing. |
+| `HumanVisual_BodyContractIsTheShippedBody` | `Tests/ZM_Tests_HumanVisual.cpp` | The migration's receipt: the compiled contract is BIT-IDENTICAL to what the retired scale-derived formula returned, plus the feet<->centre conversion and the ground-probe reach. |
+| `HumanVisual_BlockoutIsUntouched` | " | A wall still gets the UNIT cube in the exact shipped grey, and never acquires a human model, an animator or an explicit body. |
+| `HumanVisual_ColdFallbackShipsTheContractBlock` | " | Forced cold: the palette block draws at exactly 0.8 x 1.8 x 0.8 after the uniform authored scale, and its COLLIDER is the contract -- the cold path is a picture problem, never a gameplay one. |
+| `HumanVisual_ColdStartIsIdempotent` | " | Three extra `OnStart`s append nothing (`AddMeshEntry` APPENDS). |
+| `HumanVisual_AssetPolicyRestoresTheProductionDefault` | " | A scoped forced-cold override leaves the production policy AND its bake latch exactly as it found them. |
+| `HumanVisual_RestartPreservesTheAnimatorRig` | " | **The only unit that reaches the WARM branch** (ZM-D-182). Under the PRODUCTION policy, a repeated `OnStart` must re-bind the controller without WIPING the rig (states go null) or DUPLICATING it (layer count grows) -- the two failure modes pull in opposite directions, so a fix for one that causes the other cannot pass. It is the first check of the claim `EnsureHumanAnimator` rests on: that `Flux_AnimationController::Initialize` re-initialises EXISTING layers rather than dropping them. On a cold tree it asserts the fallback's own invariants and logs which branch ran, so it is never vacuous; the body-contract clause is asserted on BOTH branches. ★ The only case in this file that reads disk. |
+| `Collider::ColliderExplicitCapsuleDimensions` | `Zenith/Core/Zenith_UnitTests.Tests.inl` | Units MEASURED off the live Jolt body with raycasts, at a UNIFORM scale (the case that motivates the feature); rigid-body type preserved; the shape survives a later re-scale. |
+| `Collider::ColliderExplicitBoxHalfExtents` | " | Half-extents ignore the transform scale entirely, carry a ZERO local offset, and the debug wireframe agrees because both route through `ComputeBoxDimensionsAndOffset`. |
+| `Collider::ColliderExplicitDimensionsFailClosed` | " | No live body -> warn and leave NO state behind (OBSERVED: the collider added afterwards still comes out scale-derived); non-finite/non-positive input leaves the body untouched; a box setter refuses to guess between AABB and OBB. |
+| `Collider::ColliderExplicitDimensionsNoOpOnMatch` | " | The no-op compares against the CLAMPED STORED values, so a request that clamps onto the current shape does not churn the body -- which is what keeps the body ID stable for `ApplyDrivenBodySetup`'s identity key. |
+| `Collider::ColliderExplicitBoxSurvivesMove` | " | The explicit fields survive a component MOVE; a relocating pool would otherwise revert the body to scale-derived sizing at some later, unrelated moment. |
+
+#### World-scale contracts (two new game-only boot units)
+
+**Boot baseline at THIS change: ZM 2863; engine (Null Combat) stays 1242.** The added
+contracts are pure generator/placement checks, so they do not move the 55-test
+automated registry or the cross-game engine suite.
+★ **The CURRENT baseline is ZM 2864** (ZM-D-182 added
+`HumanVisual_RestartPreservesTheAnimatorRig`); engine and registry are unmoved at
+1242 / 55. OBSERVED 2026-08-02 on a clean `Null_` build:
+`2864 ran, 2862 passed, 0 failed, 2 skipped`. Status.md's top block is the live
+figure -- read it, not this paragraph.
+
+| Case | File | What it pins |
+|---|---|---|
+| `CreatureGen_MeasuredOriginPolicy` | `Tests/ZM_Tests_CreatureGen.cpp` | Measures every generated creature body in metres from a fresh in-memory mesh, checks non-degenerate deterministic bounds, and requires every model to land exactly on its declared grounded (0 m) or hovering (0.25 m) presentation floor. The existing `CreatureGen_SizeClassScaleGolden` test remains the artistic target-scale ladder. |
+| `HomeExterior_EnvelopeAndEntranceMatchPlayerHomeContract` | `Tests/ZM_Tests_DawnmerePlacement.cpp` | Requires the Dawnmere facade to contain, but not grow beyond one cosmetic metre of, PlayerHome's authoritative wall envelope; pins the shared 4.0 x 2.5 m aperture, -Z facade entrance, and portal sensor. |
+
+**`ZM_RivalVesperAuthored_Test`'s appearance sample is now WARM/COLD split**, keyed
+off `ZM_AreHumanAssetsReady()` -- **the same call the runtime made**, never inferred
+from what the scan happened to find (that inference would turn "the wiring is
+severed" into "ah, must be cold"). Warm: every NPC wears the `.zmodel` its own row
+names. Cold: the palette clauses this test has always run. The blockout half is
+unconditional in both.
+
+**`ZM_ProfLabWarp_Test`'s scene-bytes guard** now compares the authored player scale
+against `fZM_HUMAN_VISUAL_SCALE`, so a missed re-author still reds.
+
+**★ `ZM_NpcRenderedPalette_Test` WAS DELETED, NOT RE-BASELINED (registry 56 -> 55).**
+It was a graphics-required framebuffer test whose `0.04` separation floor was
+derived at ZM-D-171 against **palette-coloured blocks**. Those bodies are generated
+human MODELS now, wearing baked textures, so the quantity it measured no longer
+exists on screen. Re-baselining it would have meant guessing a floor against content
+nobody had characterised -- a number that LOOKS like a check. Deleting it states the
+gap instead of disguising it.
+
+**What is therefore NOT covered any more:** nothing reads real swapchain pixels off
+an NPC body. The surviving coverage is `ZM_RivalVesperAuthored_Test`'s appearance
+block, which asserts on COMPONENT state (the model path when warm, the material
+colour when cold) and runs for real headless -- so "the row reached the body" is
+still gated, but "the six render as six visibly different people" is not.
+
+**If it is wanted back, DERIVE it, do not guess.** ZM-D-171's method: run it, read
+the logged separations, run the severed-wiring mutation, read THAT band, set the
+floor strictly between the two, and record both measured numbers and the date. And
+give it a name that is not about a palette.
+
+
 **STATE, so nothing below is read as more than it is: S8 item 1 ("Intro -> lab
 -> starter choice") is IN PROGRESS and its `Roadmap.md` box is deliberately
 UNTICKED.** The professor and the starter-choice SCREEN are NOT built. What has
@@ -2026,7 +2094,7 @@ against the REAL baked terrain, both run on the **Null** backend
 
 | Test | What it asserts | Skips only when |
 |---|---|---|
-| `ZM_DawnmereHomeGroundTruth_Test` | The MEASUREMENT ORACLE. Casts a real downward ray at each of the ten Home placement columns and reds if a compiled row in `Source/World/ZM_DawnmerePlacement.h` has drifted from the surface the world actually has (same 0.15 m tolerance as the W5 NPC oracle). Logs every measured value at INFO on every run -- this is how those constants are re-obtained after a terrain recipe change. | The Dawnmere scene or the terrain bake is genuinely absent |
+| `ZM_DawnmereHomeGroundTruth_Test` | The MEASUREMENT ORACLE. Casts a real downward ray at each of the ten Home placement columns and reds if a compiled row in `Source/World/ZM_DawnmerePlacement.h` has drifted from the surface the world actually has (same 0.15 m tolerance as the W5 NPC oracle). Logs every measured value at INFO on every run -- this is how those constants are re-obtained after a terrain recipe change **or a collision-density change** (ZM-D-182: the samples are real raycasts against the COLLISION mesh, so a physics-divisor change moves them just as a recipe change does). | The Dawnmere scene or the terrain bake is genuinely absent |
 | `ZM_DawnmereCameraClearance_Test` | The CONTRACT GUARD. At every authoritative sample it runs the SHIPPED camera maths (`ComputeDesiredPosition` + `ClampArmDistance`) against the SHIPPED physics world and requires the clamped arm to keep **>= 50% of the authored 6.0008 m** pivot->camera distance. Also asserts the scene's captured yaw is still the authored 0, so a scene yaw edit cannot silently invalidate every sample direction. | as above |
 
 **The two probes are filtered differently on purpose.** The oracle ignores the

@@ -137,9 +137,11 @@ public:
 	bool IsPlayerlessDestination() const { return m_bTargetIsPlayerless; }
 
 	static bool IsWarpDestinationValid(u_int uTargetBuildIndex, const char* szSpawnTag);
+	// Spawn MARKERS store FEET; bodies store CENTRES. This is the only place the
+	// two conventions meet, and it converts with the compiled body contract --
+	// NOT with the player's transform scale, which no longer describes the body.
 	static Zenith_Maths::Vector3 CalculateSpawnCenter(
-		const Zenith_Maths::Vector3& xMarkerFeetPosition,
-		const Zenith_Maths::Vector3& xPlayerScale);
+		const Zenith_Maths::Vector3& xMarkerFeetPosition);
 	// Deterministic, headless-safe fade policy. Invalid/nonpositive delta time
 	// leaves the clamped current alpha unchanged.
 	static float AdvanceFadeAlpha(
@@ -201,9 +203,7 @@ private:
 	bool IsTargetSceneActive() const;
 	bool TryResolveFrozenTargetPlayer(ZM_PlayerController*& pxControllerOut) const;
 	static bool HasUniqueReadyFollowCamera(Zenith_EntityID xPlayerEntityID);
-	static bool FindUniquePlayerInScene(
-		Zenith_EntityID& xPlayerEntityIDOut,
-		Zenith_Maths::Vector3& xPlayerScaleOut);
+	static bool FindUniquePlayerInScene(Zenith_EntityID& xPlayerEntityIDOut);
 
 	static Zenith_EntityID s_xSingletonEntityID;
 	static LoadSceneRequestCallback s_pfnLoadSceneRequestForTests;

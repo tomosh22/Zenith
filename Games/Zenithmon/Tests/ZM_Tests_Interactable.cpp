@@ -155,15 +155,15 @@ ZENITH_TEST(ZM_Interaction, Interactable_SpottedIndicatorSubmitsOneReadableExcla
 		uGameplayCylinderBefore = xPrimitives.m_xGameplayCylinderInstances.GetSize();
 	}
 
-	// A distinctive centre and mirrored Y scale make every expected coordinate an
-	// independent literal while proving the helper uses absolute model height. The
-	// tools option is deliberately OFF: a gameplay cue must not ride that channel.
+	// A distinctive centre makes every expected coordinate below an independent
+	// literal: the body half-height is compiled (0.9), so the model top is
+	// -1.0 + 0.9 = -0.1 and each figure is that plus one authored offset. The tools
+	// option is deliberately OFF: a gameplay cue must not ride that channel.
 	Zenith_GraphicsOptions& xGraphicsOptions = Zenith_GraphicsOptions::Get();
 	const bool bDebugPrimitivesEnabledBefore = xGraphicsOptions.m_bPrimitivesEnabled;
 	xGraphicsOptions.m_bPrimitivesEnabled = false;
 	const u_int uSubmitted = ZM_Interactable::SubmitTrainerSpottedIndicator(
-		Zenith_Maths::Vector3(2.5f, -1.0f, 4.25f),
-		Zenith_Maths::Vector3(0.8f, -2.4f, 1.2f));
+		Zenith_Maths::Vector3(2.5f, -1.0f, 4.25f));
 	xGraphicsOptions.m_bPrimitivesEnabled = bDebugPrimitivesEnabledBefore;
 
 	u_int uDebugSphereAfter = 0u;
@@ -283,10 +283,10 @@ ZENITH_TEST(ZM_Interaction, Interactable_SpottedIndicatorSubmitsOneReadableExcla
 	if (bHaveGameplayCylinder)
 	{
 		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xStart.x, 2.5f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xStart.y, 0.75f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xStart.y, 0.45f, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xStart.z, 4.25f, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xEnd.x, 2.5f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xEnd.y, 1.40f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xEnd.y, 1.10f, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xEnd.z, 4.25f, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_fRadius, 0.10f, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xCylinder.m_xColor.x, 1.0f, fTEST_EPSILON);
@@ -298,14 +298,14 @@ ZENITH_TEST(ZM_Interaction, Interactable_SpottedIndicatorSubmitsOneReadableExcla
 	if (bHaveGameplaySphere)
 	{
 		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xCenter.x, 2.5f, fTEST_EPSILON);
-		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xCenter.y, 0.45f, fTEST_EPSILON);
+		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xCenter.y, 0.15f, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xCenter.z, 4.25f, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_fRadius, 0.13f, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xColor.x, 1.0f, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xColor.y, 0.82f, fTEST_EPSILON);
 		ZENITH_ASSERT_EQ_FLOAT(xSphere.m_xColor.z, 0.08f, fTEST_EPSILON);
-		ZENITH_ASSERT_GT(xSphere.m_xCenter.y - xSphere.m_fRadius, 0.20f,
-			"the full dot must sit strictly above the scaled model top");
+		ZENITH_ASSERT_GT(xSphere.m_xCenter.y - xSphere.m_fRadius, -0.10f,
+			"the full dot must sit strictly above the body's top (-0.10)");
 		if (bHaveGameplayCylinder)
 		{
 			ZENITH_ASSERT_LT(xSphere.m_xCenter.y + xSphere.m_fRadius,
@@ -331,8 +331,7 @@ ZENITH_TEST(ZM_Interaction, Interactable_SpottedIndicatorSubmitsOneReadableExcla
 	u_int uRefusedSphereAfter = 0u;
 	const float fNaN = std::numeric_limits<float>::quiet_NaN();
 	const u_int uRefused = ZM_Interactable::SubmitTrainerSpottedIndicator(
-		Zenith_Maths::Vector3(2.5f, fNaN, 4.25f),
-		Zenith_Maths::Vector3(0.8f, 2.4f, 1.2f));
+		Zenith_Maths::Vector3(2.5f, fNaN, 4.25f));
 	{
 		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
 		uRefusedCylinderAfter =

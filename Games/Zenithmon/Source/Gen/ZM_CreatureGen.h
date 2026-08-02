@@ -125,6 +125,55 @@ ZM_ArchetypeBuilderFn ZM_GetArchetypeBuilder(ZM_ARCHETYPE eArchetype);
 // bone cap (30).
 void ZM_BuildCreatureMesh(const ZM_CreatureRecipe& xRecipe, ZM_GenMesh& xMesh);
 
+// ---------------------------------------------------------------------------
+// Physical bounds + presentation origin.
+// ---------------------------------------------------------------------------
+// Creature meshes already use the game's world-space units; this explicit
+// measurement seam makes that fact testable instead of treating the size-class
+// multiplier as a physical size. The values are mesh-local metres under the
+// game's one-world-unit-is-one-metre contract.
+struct ZM_CreatureBodyMetrics
+{
+	float m_fMinX = 0.0f;
+	float m_fMaxX = 0.0f;
+	float m_fMinY = 0.0f;
+	float m_fMaxY = 0.0f;
+	float m_fMinZ = 0.0f;
+	float m_fMaxZ = 0.0f;
+	float m_fWidth  = 0.0f;
+	float m_fHeight = 0.0f;
+	float m_fDepth  = 0.0f;
+	u_int m_uVertexCount = 0u;
+};
+
+// Grounded models rest exactly on their presentation floor. Aquatic and
+// floater/plantoid models deliberately hover above it; their clearance is a
+// presentation policy, not an accidental consequence of whichever mesh vertex
+// happened to be lowest.
+enum ZM_CREATURE_ORIGIN_POLICY : u_int
+{
+	ZM_CREATURE_ORIGIN_GROUNDED,
+	ZM_CREATURE_ORIGIN_HOVERING,
+	ZM_CREATURE_ORIGIN_POLICY_COUNT
+};
+
+inline constexpr float fZM_CREATURE_HOVER_CLEARANCE_METRES = 0.25f;
+
+// Pure, in-memory measurement. It never reads a baked mesh, so it remains valid
+// on a cold checkout and detects a generator change before stale assets can hide
+// it. Metrics include every mesh vertex: creatures have no accessory/body-prefix
+// distinction like humans do.
+ZM_CreatureBodyMetrics ZM_MeasureCreatureBody(ZM_SPECIES_ID eId);
+
+// Origin policy derives only from the already-resolved body plan. The returned
+// offset is added to an entity whose Y marks the arena/gallery floor; after the
+// translation the mesh's minimum Y equals either 0 (grounded) or the explicit
+// hover clearance. It changes presentation only and does NOT alter generated
+// meshes, collision, species data, or bake manifests.
+ZM_CREATURE_ORIGIN_POLICY ZM_GetCreatureOriginPolicy(ZM_ARCHETYPE eArchetype);
+float ZM_CreaturePresentationFloorY(ZM_CREATURE_ORIGIN_POLICY ePolicy);
+float ZM_CreaturePresentationOriginOffsetY(ZM_SPECIES_ID eId);
+
 // Base albedo: ZM_SynthCreatureAlbedo driven by an ALBEDO-domain rng.
 ZM_GenImage ZM_BuildCreatureAlbedo(const ZM_CreatureRecipe& xRecipe);
 

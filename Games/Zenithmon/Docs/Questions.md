@@ -10,6 +10,98 @@
 
 ## Open
 
+### [RESOLVED] Q-2026-08-02-001 -- the working-tree `Dawnmere.zscen` did NOT match the SHA256 the authoring-proof table recorded
+
+**RESOLVED 2026-08-02 (ZM-D-182). Cause: the recorded row was STALE, not a defect.
+Dawnmere authoring is deterministic; the table simply described an earlier authoring pair
+and was never refreshed after the Home facade re-shape.**
+
+**The proof, run rather than assumed.** Three windowed `Vulkan_..._True` boots of
+`zenithmon.exe --automated-test ZM_Boot_Test --skip-unit-tests`:
+
+| Boot | `[ZM Terrain] Batch result` | Dawnmere.zscen |
+|---|---|---|
+| 1 | `warmMask=0x0, queueMask=0x7, queued=3, sceneAuthoring=DEFERRED` | untouched |
+| 2 | `warmMask=0x7, queueMask=0x0, sceneAuthoring=AUTHOR_DAWNMERE` | `E7413197...9716` |
+| 3 | `warmMask=0x7, queueMask=0x0, sceneAuthoring=AUTHOR_DAWNMERE` | `E7413197...9716` |
+
+Boots 2 and 3 agree with each other AND with the file that was already on disk, so the
+on-disk bytes are the ones the compiled constants produce. All five committed scenes were
+byte-stable across both authoring boots, and `Dawnmere.znavmesh` did not move
+(`DCAA8403...96E1D`). Status.md's table now carries `E7413197...9716` with this proof
+attached.
+
+**★ WHAT THIS EPISODE IS WORTH REMEMBERING FOR.** The cheap move was to paste the on-disk
+hash over the recorded one the moment the mismatch was spotted -- and it would have produced
+the RIGHT ANSWER by the WRONG ROUTE, leaving a table that claims a two-boot proof nobody had
+run. The mismatch had two candidate causes (a stale row, or non-deterministic authoring) and
+they are indistinguishable without running the boots; only one of them is benign. The
+previous time a Dawnmere hash disagreed (Q-2026-08-01-002) the cause was a real engine defect.
+**A hash table's value is entirely in the discipline that a row is only ever written from an
+observed pair.**
+
+**Original question (kept for the record).** Status.md's "WORLD-SCALE AUTHORING PROOF
+(2026-08-02)" table recorded `Dawnmere.zscen` = `D1464B77...5118`, produced by two
+consecutive `AUTHOR_DAWNMERE` boots that "wrote identical scene bytes". The file on disk
+hashed `E7413197...9716`. The other four committed scenes matched their recorded hashes
+exactly. **Which of the two byte strings was the one meant to ship, and why did the recorded
+proof stop describing the file?**
+
+**What is already ruled out.** It is not a later boot overwriting it: `Dawnmere.zscen` was
+last written 2026-08-02 15:24:47, which PREDATES every build and gate boot run while
+investigating this (first build 17:52:57). Those gate boots DID rewrite `Battle`,
+`FrontEnd`, `PlayerHome` and `ProfLab` -- all four came back BYTE-IDENTICAL, so the
+boot-shape-independence invariant is intact and the tools boot is not the culprit. Dawnmere
+is specifically not re-authored by an ordinary boot (`m_bAuthorDawnmereScene` requires
+`m_bAllWarm && m_uQueueRecipeMask == 0`), which is consistent with its older timestamp.
+
+**Why it is NOT being "fixed" by pasting the new hash.** That is precisely the move
+ZM-D-179 / Q-2026-08-01-002 exist to forbid. A scene-byte change owes **two** authoring
+boots with identical SHA256 as proof, and the recorded table claims exactly that proof was
+obtained for a DIFFERENT string. Re-pinning the doc to whatever is on disk would convert an
+unexplained divergence into a documented fact without anyone having established which
+string is correct -- and the last time a Dawnmere hash was quietly accepted, the cause
+turned out to be a real engine defect (the transform serializing live Jolt state).
+
+**Guess taken at the time:** none -- deliberately left OPEN until the boots were run. The
+benign explanation (stale row) and the serious one (non-deterministic authoring) both fit the
+evidence, and only the boots separate them. The benign one proved correct.
+
+**Method note for the next person.** An authoring boot is
+`<windowed _True exe> --automated-test ZM_Boot_Test --skip-unit-tests`, run DIRECTLY so you
+can grep stdout for `sceneAuthoring=AUTHOR_DAWNMERE` -- a `DEFERRED` boot silently authors
+nothing and still exits 0. Dawnmere authors only when every terrain recipe is already warm
+(`m_bAuthorDawnmereScene = m_bAllWarm && queueMask == 0`), so after a
+`uZM_TERRAIN_MANIFEST_VERSION` bump you need **three** boots: one to re-bake (which correctly
+reports `DEFERRED`), then the two that author. Do not run the bake under a short watchdog --
+`ZM_PrepareTerrainBake` removes the stamp first, so a killed bake leaves the family cold and
+you simply pay for it again.
+
+**Status:** [RESOLVED 2026-08-02]
+
+### [OPEN] Q-2026-08-01-003 -- the player is always `ZM_HUMAN_PLAYER_M`; nothing selects a gender and the save has no field for one
+
+**Question.** `ZM_HUMAN_PLAYER_F` has a roster row and a baked model, exactly like
+`ZM_HUMAN_PLAYER_M`. Nothing in the game chooses between them: there is no
+character-creation step, and `ZM_SaveSchema` carries no gender field. Should
+Zenithmon ship a player-gender choice, and if so, at which beat (New Game, or a
+later mirror/wardrobe)?
+
+**Context.** ZM-D-181 wired the player's visual. `ZM_GreyboxVisual::ResolveHumanId`
+returns `ZM_HUMAN_PLAYER_M` for any entity carrying a `ZM_PlayerController`. Making
+it selectable is a **save-schema change** (a new persisted field plus a migration),
+not a rendering change -- which is why it was not folded in.
+
+**Best guess taken:** ship `PLAYER_M` fixed. The seam is one function, so adding the
+choice later touches `ResolveHumanId`, the save schema and one UI beat, and nothing
+else.
+
+**Cost if wrong:** low and additive. No committed scene byte depends on it (the
+model is added at runtime), and no existing save would have to be re-read
+differently -- a migration would default the new field to `PLAYER_M`.
+
+**Status:** [OPEN]
+
 ### [RESOLVED] Q-2026-08-01-002 -- the committed `Dawnmere.zscen` does NOT reproduce from master's own source (PRE-EXISTING, proven by a control that did not flip)
 
 **RESOLVED 2026-08-01 (ZM-D-179). Cause: (b) -- the authored rotation was read back out

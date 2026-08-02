@@ -40,7 +40,10 @@ class Flux_AnimationClip;
 // ZM_BakeManifest (a later box) stamps this per-family version; bump it whenever
 // this module's generation algorithms change so stale bakes self-invalidate
 // (AssetManifest 7: "fix the generator, bump its version, re-bake").
-constexpr u_int uZM_HUMANGEN_VERSION = 1u;
+//   v1 -> v2: the shared bind space is CENTRE-ANCHORED (see the block below the
+//             recipe section). Every v1 bake on disk is feet-at-y=0 and would
+//             render sunk into the floor, so the bump is load-bearing.
+constexpr u_int uZM_HUMANGEN_VERSION = 2u;
 
 // The shared humanoid skeleton is EXACTLY these 16 bones (the frozen StickFigure
 // core names). ZM_AppendSharedHumanBones is the single canonical emit; both the
@@ -126,6 +129,84 @@ struct ZM_HumanRecipe
 // Resolve a human id into its full generation recipe (bounds-asserted id).
 ZM_HumanRecipe ZM_ResolveHumanRecipe(ZM_HUMAN_ID eId);
 
+// ---------------------------------------------------------------------------
+// CENTRE-ANCHORED BIND SPACE (generator v2) + BODY METRICS
+//
+// v1 built every human with the feet near y=0. Zenithmon's authored entity
+// position is the CAPSULE CENTRE (feet + half the body height) and the whole game
+// speaks that vocabulary -- camera pivot, ground probe, sight-cone origin, walk-up
+// standoff, both head anchors, every spawn point, the camera-clearance table. So
+// the entity origin could not move to the feet; the MESH moves instead. The shared
+// bind space is rigidly translated DOWN by fZM_HUMAN_MESH_CENTRE_Y, which puts the
+// canonical body's centre on the entity origin and lets a human be authored with
+// the model on the entity itself.
+//
+// Because it is a RIGID translation of the root bone AND every vertex, skinning
+// and animation are mathematically untouched: the shared clips are rotation-only
+// with root motion disabled, and every other bone is parent-local (so subtracting
+// from all 16 would compound down the hierarchy -- only Root moves).
+//
+// "BODY" means the six loft parts ZM_BuildHumanMesh emits BEFORE
+// ZM_AppendHumanAppearanceMesh -- torso, head/neck, two arms, two legs. Hair and
+// attachments are DELIBERATELY excluded: a hat must not decide how tall someone
+// is. Accessories may extend past the body box; they simply do not define it. And
+// the measurement is taken BEFORE the anchor translation, so it is never circular.
+// ---------------------------------------------------------------------------
+
+// THE one human whose body defines the shared bind space. It must be a single
+// shared constant: the skeleton is shared and FIXED while m_fHeightScale (0.97 ..
+// 1.03) scales vertices only, so a per-model centre would desync rig from mesh.
+// The residual is a few centimetres of deliberate build variety.
+// HumanGen_BodyMetricsPinned pins that this row remains ZM_HUMAN_BUILD_AVERAGE
+// with m_fHeightScale == 1.0, and that its ZM_HUMAN_ATTACHMENT_CAP does not
+// participate (metrics use the body prefix only).
+constexpr ZM_HUMAN_ID eZM_HUMAN_CANONICAL_MODEL = ZM_HUMAN_PLAYER_M;
+
+// Measured over the CANONICAL model's PRE-ANCHOR body prefix. Both are PINNED by
+// HumanGen_BodyMetricsPinned, which re-derives them from a freshly built mesh --
+// a generator edit therefore reds the gate instead of silently mis-sizing every
+// human in the game.
+// MEASURED 2026-08-01 by HumanGen_BodyMetricsPinned on a clean Null_ build. These
+// are MODEL-space units, not metres: the loft inherits the StickFigure golden ring
+// tables, which build a ~2.6-unit-tall body. fZM_HUMAN_VISUAL_SCALE is what turns
+// that into the game's 1.8 m.
+inline constexpr float fZM_HUMAN_CANONICAL_BODY_HEIGHT = 2.604300f;
+inline constexpr float fZM_HUMAN_MESH_CENTRE_Y         = 1.307005f;
+
+// Where the root bone sits once the bind space is anchored. Root is the ONLY bone
+// with parent -1, so its local translation is its world bind position; every other
+// bone is parent-local and follows for free.
+inline constexpr float fZM_HUMAN_ROOT_BIND_Y = 1.0f - fZM_HUMAN_MESH_CENTRE_Y;
+
+// (The uniform authored scale that maps a canonical body onto the game's body
+// box is fZM_HUMAN_VISUAL_SCALE, and it lives with the rest of the body contract
+// in Source/World/ZM_HumanBody.h -- how big a person is is a GAME statement, not
+// a generator one.)
+
+// The vertical extent of one human's BODY (see above), in PRE-ANCHOR bind space.
+struct ZM_HumanBodyMetrics
+{
+	float m_fMinY    = 0.0f;
+	float m_fMaxY    = 0.0f;
+	float m_fHeight  = 0.0f;   // m_fMaxY - m_fMinY
+	float m_fCentreY = 0.0f;   // 0.5f * (m_fMinY + m_fMaxY)
+
+	// The body vertex PREFIX these numbers were taken over. The anchor adds and
+	// removes no vertices and reorders nothing, so the SAME prefix indexes the body
+	// of the finished ZM_BuildHumanMesh output -- which is how a test measures the
+	// shipped mesh instead of trusting arithmetic about it.
+	u_int m_uBodyVertexCount = 0u;
+};
+
+// Build eId's mesh and measure its body prefix. A pure function of compiled data:
+// it never reads a .zmodel, which is what keeps scene authoring possible on a cold
+// tree with no human bake at all.
+ZM_HumanBodyMetrics ZM_MeasureHumanBody(ZM_HUMAN_ID eId);
+
+// Recipe-level overload -- the primitive. Lets a test vary ONE appearance axis
+// (hair style, attachment) and prove the body metric does not move.
+ZM_HumanBodyMetrics ZM_MeasureHumanBody(const ZM_HumanRecipe& xRecipe);
+
 // Seed a domain's generation RNG from a resolved recipe. THE single entry point
 // through which randomness reaches any builder (keeps the determinism invariant
 // auditable: every stream comes from a pre-derived domain seed).
@@ -139,9 +220,10 @@ inline ZM_GenRNG ZM_MakeGenRNG(const ZM_HumanRecipe& xRecipe, ZM_GEN_DOMAIN eDom
 // bones (Root, Spine, Neck, Head, the two arm chains, the two leg chains) into
 // xMesh, parent-before-child, with IDENTITY bind-local rotation on EVERY bone
 // (mandatory: the rotation-only shared clips are absolute-local, so a non-identity
-// bind rotation would pose every model wrong) and unit bind scale. The bind pose
-// grounds the feet near world y=0. Both the per-model mesh builder AND the shared
-// bake call this, guaranteeing the same bone count/names/index order everywhere.
+// bind rotation would pose every model wrong) and unit bind scale. The bind pose is
+// CENTRE-ANCHORED (v2): Root sits at fZM_HUMAN_ROOT_BIND_Y, which is the only bone
+// the anchor touches. Both the per-model mesh builder AND the shared .zskel bake
+// call this, so the rig and every mesh move together and can never drift.
 void ZM_AppendSharedHumanBones(ZM_GenMesh& xMesh);
 
 // ---------------------------------------------------------------------------

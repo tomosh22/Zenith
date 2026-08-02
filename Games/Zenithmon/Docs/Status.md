@@ -1,39 +1,126 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-01
+**Last updated:** 2026-08-02
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (RE-OBSERVED 2026-08-01 at ZM-D-179, on fresh builds of both
-configs):** ZM headless registry **56 passed / 0 failed**
--- and full windowed Vulkan **56 / 0 with ZERO skipped**; ZM boot unit gate
-**2849 ran / 2847 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
-**2849**); engine boot unit gate, Null Combat, **1237 ran / 1236 passed / 0
-failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1237`). One skip in
+down this file (RE-OBSERVED 2026-08-02 after ZM-D-182, on a fresh Null_ build):**
+ZM headless registry **55 passed / 0 failed**; ZM boot unit gate
+**2864 ran / 2862 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
+**2864**); engine boot unit gate, Null Combat, **1242 ran / 1241 passed / 0
+failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1242`). One skip in
 each is the quarantined `GraphComponent::RegistryWideNodeRoundTrip`
 (task_726cc81d); ZM carries a second, ZM-side skip.
-**ZM-D-179 is an ENGINE change, so BOTH boot baselines move together (+2 each):**
-2847 -> 2849 and 1235 -> 1237, for the two new
-`Physics::TransformSerialization*` units. The registry is UNMOVED at 56 -- it added
-no automated test.
-ZM-D-176 moved the boot baseline **2840 -> 2847** (+7) and the registry **54 -> 56**
-(`ZM_InteriorTint_Test`, `ZM_InteriorTintPixels_Test`). ZM-D-175 had moved the boot
-baseline **2825 -> 2840** (+15) with the registry unmoved at 54; ZM-D-174 stood at
-registry 54 / boot 2825.
+**ZM-D-182 moves the ZM boot inventory only: 2863 -> 2864** (+1
+`HumanVisual_RestartPreservesTheAnimatorRig`, the only unit that reaches the WARM
+human branch). It changes no unit under `Zenith/`, so the engine baseline remains
+**1242** and the registered-test inventory remains **55**.
+Before it, the world-scale update had moved the ZM boot inventory 2861 -> 2863
+(+1 measured creature origin-policy unit, +1 PlayerHome/exterior-envelope unit).
 
-**★ ZM-D-176 MOVED NO SCENE BYTES, AND THAT WAS MEASURED RATHER THAN ARGUED.** The
-PlayerHome tint is **derived at runtime** from the entity name in
-`ZM_GreyboxVisual::ResolveBlockoutColour`, not stored -- `WriteToDataStream` still
-emits a single `u_int`, and `ZM_QueueGreyboxBlock`'s signature is UNCHANGED, so no
-caller can pass a different colour and no scene can pick one up. The PlayerHome
-authoring was simultaneously rewritten from seven literal calls to a derived loop
-over `Source/World/ZM_PlayerHomePlacement.h`, and **all five committed `.zscen`
-hashes were identical before and after an authoring boot** (Battle `1BEB0615`,
-Dawnmere `B85FFE25`, FrontEnd `F7209CF5`, PlayerHome `AAE75C14`, ProfLab
-`F6C55B47`). A serialized colour field would have moved ProfLab's and Dawnmere's
-bytes too, which is why it was rejected.
-**`run_unit_gate.ps1`'s 1235 default is the ENGINE cross-game number and MUST NOT
+**★ ZM-D-182 ALSO BUMPS EVERY TERRAIN BAKE STAMP, AND THAT COSTS A BOOT.** The
+physics collision divisor moved 8 -> 4, which rewrites every `Physics_*.zmesh`
+without changing the FILE COUNT -- so no stamp would have invalidated, and a
+warm tree would have loaded terrain with **no physics body at all**
+(`TryReadTerrainChunkSnapshot` rejects a mismatched chunk; the game then runs
+with characters falling through the world). `uZM_TERRAIN_MANIFEST_VERSION` is now
+**2**, so **the next tools boot re-bakes all three recipes (several minutes)**.
+Dawnmere's re-bake is redundant -- it was already divisor-4 -- but the stamp is
+per-version, not per-content, and a redundant bake is byte-identical and safe.
+The bake boot does NOT re-author any scene (`m_bAuthorDawnmereScene` requires
+`m_bAllWarm`), so no committed `.zscen` moves; re-authoring still needs the
+separate `sceneAuthoring=AUTHOR_DAWNMERE` boot. CityBuilder (`terrain_hills_v5`)
+and RenderTest (`terrain_proc_v7`) were bumped in the same change. See DecisionLog
+ZM-D-182 and `Zenith/Flux/Terrain/CLAUDE.md`.
+
+**★ WORLD-SCALE AUTHORING PROOF (2026-08-02).** Two consecutive warm windowed
+`_True` boots ran `sceneAuthoring=AUTHOR_DAWNMERE` with `warmMask=0x7` and wrote
+identical scene bytes. The only exterior re-author was Dawnmere, whose 17 x 13 m
+Home facade now encloses the PlayerHome interior's 16.5 x 12.5 m wall envelope;
+the interior scenes did not move in this pass.
+
+> **★ THE `Dawnmere.zscen` ROW WAS STALE AND IS NOW RE-PROVEN (2026-08-02, ZM-D-182).**
+> The row read `D1464B77...5118` while the file on disk hashed `E7413197...9716`. That was
+> raised as Q-2026-08-02-001 and deliberately NOT re-pinned on sight -- a scene-byte change
+> owes two authoring boots with identical SHA256, and pasting the on-disk value would have
+> manufactured a proof nobody obtained. **The proof was then actually run** (see the table
+> below): Dawnmere authoring is DETERMINISTIC, the old row simply described an earlier
+> authoring pair and was never refreshed after the Home facade re-shape. Q-2026-08-02-001 is
+> RESOLVED.
+
+**★ AUTHORING PROOF RE-RUN 2026-08-02 AFTER ZM-D-182 (supersedes the pre-ZM-D-182 table).**
+Three windowed `Vulkan_..._True` boots of
+`zenithmon.exe --automated-test ZM_Boot_Test --skip-unit-tests`:
+
+| Boot | `[ZM Terrain] Batch result` | Dawnmere.zscen |
+|---|---|---|
+| 1 | `warmMask=0x0, queueMask=0x7, queued=3, sceneAuthoring=DEFERRED` | untouched (a bake boot correctly authors nothing) |
+| 2 | `warmMask=0x7, queueMask=0x0, sceneAuthoring=AUTHOR_DAWNMERE` | `E7413197...9716` |
+| 3 | `warmMask=0x7, queueMask=0x0, sceneAuthoring=AUTHOR_DAWNMERE` | `E7413197...9716` (**identical**) |
+
+Boot 1 also re-baked all three terrain recipes at the new collision density -- Route1 and
+Thornacre went from 7,785-byte (divisor-8) physics chunks to 28,201-byte (divisor-4) ones,
+which is ZM-D-182's stamp bump doing exactly its job. **All five scenes were byte-stable
+across boots 2 and 3**, so boot-shape independence holds at the new density too.
+
+| Asset | SHA256 |
+|---|---|
+| `Dawnmere.zscen` | `E7413197370FF760C76DD0D30979436D541B3134EE972729BF429D4C57FA9716` (**re-proven by boots 2+3 above**) |
+| `PlayerHome.zscen` | `DBBFB78311A55BBF942A7A5BF9928F43E9493A10CDA89110515A3B6A7987C780` |
+| `ProfLab.zscen` | `1BCAABC9EA4A6FC559727C9573F47F7B7304052C586FB1D0519ADAF73DB75856` |
+| `Dawnmere.znavmesh` | `DCAA84035A258B12FA23627FF719C0567018470C8055A1E0FB54D6C1F1F96E1D` (**unchanged**) |
+
+**ZM-D-181 touches BOTH sides, so both boot baselines move:** ZM 2849 -> **2861**
+(+12: 2 human-generator units, 5 engine collider units, 5 human-visual units) and
+the engine 1237 -> **1242** (+5, the explicit-collider-dimension units). The
+registry moves **56 -> 55**: ZM-D-181 added no automated test and DELETED one
+(`ZM_NpcRenderedPalette_Test` -- it measured pixel separation between palette
+blocks that the game no longer draws; see TestPlan 5.8).
+ZM-D-179 had moved both together (+2 each) for the two new
+`Physics::TransformSerialization*` units; ZM-D-176 moved the boot baseline
+**2840 -> 2847** (+7) and the registry **54 -> 56** (`ZM_InteriorTint_Test`,
+`ZM_InteriorTintPixels_Test`); ZM-D-175 had moved it **2825 -> 2840** (+15) with
+the registry unmoved at 54; ZM-D-174 stood at registry 54 / boot 2825.
+
+**★ ZM-D-181 DELIBERATELY MOVED SCENE BYTES -- THE FIRST CHANGE SINCE ZM-D-176 TO
+DO SO ON PURPOSE.** Three of the five committed scenes were re-authored, because
+the six Dawnmere NPCs and the player stopped being unit cubes and became the
+generated human models S4 has been baking since 2026-07-16. The authored change is
+narrow by construction: **only `AddStep_SetTransformScale` moved** (from the
+0.8 x 1.8 x 0.8 body box to the uniform `fZM_HUMAN_VISUAL_SCALE`), plus a
+`ZM_GreyboxVisual` component added to the three Player entities. Positions,
+collider steps, the rival's yaw step, the component lists and the step ORDER are
+byte-identical.
+
+Post-authoring SHA256 (two consecutive windowed `_True` authoring boots wrote
+**identical** bytes, which is the idempotence proof ZM-D-148 requires):
+
+| Scene | SHA256 | Moved? |
+|---|---|---|
+| `Battle.zscen` | `1BEB0615F7FE62D9...` | no |
+| `Dawnmere.zscen` | `6817534989B1A083...` | **yes** |
+| `FrontEnd.zscen` | `F7209CF525A1C66C...` | no |
+| `PlayerHome.zscen` | `DBBFB78311A55BBF...` | **yes** |
+| `ProfLab.zscen` | `1BCAABC9EA4A6FC5...` | **yes** |
+
+**`Dawnmere.znavmesh` is UNCHANGED (`DCAA8403...`), and that is a REQUIREMENT, not
+an observation.** Its bake is a flat coverage grid that never reads a collider
+(`Source/Nav/ZM_NavBake.cpp:29-38`), so a navmesh that moved would mean something
+else moved with it. Verify it every time.
+
+**★ THE HUMAN BODY IS NO LONGER A FUNCTION OF TRANSFORM SCALE.** ZM-D-181's
+load-bearing change is `Source/World/ZM_HumanBody.h`: one compiled statement of
+how big a person is (1.8 m tall, 0.8 m footprint, a 0.4 / 0.5 capsule), installed
+into the Jolt body EXPLICITLY through the new
+`Zenith_ColliderComponent::SetExplicit{CapsuleDimensions,BoxHalfExtents}`. It had
+to move: the authored scale now belongs to the MODEL and is UNIFORM, and a uniform
+scale degenerates a scale-derived capsule into a sphere. The consequence worth
+repeating is that **gameplay dimensions no longer depend on whether the human bake
+exists** -- a cold clone draws a proportioned palette block and measures the same
+body.
+
+**`run_unit_gate.ps1`'s default is the ENGINE cross-game number and MUST NOT
 move for a game-only change** -- ZM-D-174 touched no file under `Zenith/`, so it
-bumped only the three ZM-side sites.
+bumped only the three ZM-side sites. ZM-D-181 DOES touch `Zenith/`, so it moves.
 
 **★ THE 2026-08-01 SESSION RE-MEASURED BEFORE EDITING A LINE, AND THIS TIME THE
 THREE SITES AGREED.** A clean build of both configs read **2817 / 2815 / 0 / 2**
@@ -428,9 +515,12 @@ said, and what is actually true:
    appearance.
 **★ WHAT IS GENUINELY STILL OPEN IS NARROWER AND IS ART DATA, NOT LIGHTING:** the authored
 palette's minimum RENDERED pairwise separation under honest lighting is **0.0763**
-(Caretaker/Wanderer) -- the 0.15 framebuffer promise was only ever met via the emissive hack, so
-`ZM_NpcRenderedPalette_Test`'s floor is honestly 0.04 and raising rendered distinctness back to
-0.15 needs more-separated colours in `ZM_HumanAppearance`. Booked in Shortfalls 1.8-4.
+(Caretaker/Wanderer) -- the 0.15 framebuffer promise was only ever met via the emissive hack.
+★ **SUPERSEDED AT ZM-D-181:** the palette is no longer what an NPC normally wears (it is the
+COLD-START FALLBACK's colour), and `ZM_NpcRenderedPalette_Test` -- which pinned this at a 0.04
+floor -- was DELETED rather than re-baselined against content nobody had characterised. The
+0.0763/0.15 figures remain true of the fallback. Booked in Shortfalls 1.8-4.
+**Nothing now reads real swapchain pixels off an NPC body**; see TestPlan 5.8.
 
 **THE S7 QUEUE AS IT NOW STANDS -- ALL FIVE ITEMS RESOLVED OR RE-HOMED. Kept for the
 audit trail; nothing here is live work:**

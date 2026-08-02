@@ -186,13 +186,29 @@ jobs:
           # hunting a phantom. 600s is pure headroom: a genuinely hung boot still
           # fails, just later. See ZM-D-163.
           #
-          # ZM-D-173 SET THIS FROM AN OBSERVED LINE, AND FOUND THE PREVIOUS ONE
-          # ALREADY WRONG. The pin read 2804 while a clean HEAD build produced
-          # 2809, so this gate was RED on master before that work started. 2817
-          # is 2809 + 8: four ENGINE sensor-raycast units (which every game
-          # inherits) plus two camera fixtures and two Home-placement units.
+          # ★ THIS PIN IS SET FROM AN OBSERVED LINE, NEVER ARITHMETIC. ZM-D-173
+          # found the previous one already wrong -- it read 2804 while a clean
+          # HEAD build produced 2809, so this gate was RED on master before that
+          # work started. Whoever moves it runs a clean Null_ build, reads the
+          # "Unit tests complete: N ran" line, and pastes N here.
+          #
+          # History, newest first (the DERIVATION is the audit trail; the OBSERVED
+          # number is the authority):
+          #   2864  ZM-D-182  observed 2026-08-02 on a clean Null_ build. +1: the
+          #                   ZM_HumanVisual rig-rebind unit. run_unit_gate.ps1's
+          #                   engine default stays 1242 -- ZM-D-182 added no unit
+          #                   under Zenith/.
+          #   2863  ZM-D-181  observed. +14 = five explicit-collider ENGINE units
+          #                   (which every game inherits, and which took the engine
+          #                   gate 1237 -> 1242) + nine game units: five
+          #                   ZM_HumanVisual, two ZM_Gen human-anchor, one creature
+          #                   origin-policy, one Home-exterior envelope.
+          #   2849  ZM-D-180  name tags.
+          #   2825  ZM-D-174  +8 ProfLab placement units.
+          #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
+          #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2849 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2864 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

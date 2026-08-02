@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Maths/Zenith_Maths.h"   // Vector3
+#include "Zenithmon/Source/World/ZM_HumanBody.h"   // THE human body contract
 
 // ============================================================================
 // ZM_ProfLabPlacement (S8 SC1) -- the authored ProfLab interior coordinates that
@@ -89,33 +90,17 @@ inline constexpr float fZM_PROFLAB_INNER_MIN_Z =
 inline constexpr float fZM_PROFLAB_FLOOR_TOP_Y = 0.0f;
 
 // ---- The player capsule -----------------------------------------------------
-// The same 0.8 x 1.8 x 0.8 human capsule Dawnmere and PlayerHome author. Hoisted
-// because the camera clearance contract is stated in terms of the half-extent
-// this scale produces (0.4 m radius + 0.5 m half cylinder = 0.9 m), so a test
-// that re-spelled the scale could quietly disagree with the authoring.
-inline constexpr float fZM_PROFLAB_PLAYER_SCALE_X = 0.8f;
-inline constexpr float fZM_PROFLAB_PLAYER_SCALE_Y = 1.8f;
-inline constexpr float fZM_PROFLAB_PLAYER_SCALE_Z = 0.8f;
+// The same human body every scene installs. NOT re-spelled here and NOT derived
+// from a transform scale: both figures come straight from the ONE compiled body
+// contract, so the authoring (which writes ZM_GetProfLabPlayerCenter off the half
+// extent) and the arrival (ZM_GameStateManager::CalculateSpawnCenter) cannot
+// drift apart -- they now read the same constant rather than two mirrors of it.
+inline constexpr float fZM_PROFLAB_PLAYER_CAPSULE_HALF_EXTENT =
+	fZM_HUMAN_BODY_HALF_HEIGHT;
 
-// MIRRORED, not re-derived: this must equal
-// ZM_PlayerController::CalculateCapsuleHalfExtent({ the three scales above }).
-// It is spelled here rather than called because this header is PURE and that
-// function lives on a component.
-//
-// THE MIRROR IS A BOOT UNIT, NOT A PROMISE: clause (0) of
-// ZM_WorldTraversal/ProfLab_DoorSpawnStandsOnTheFloorWithCameraClearance in
-// Tests/ZM_Tests_ProfLabPlacement.cpp calls the shipped formula with the three
-// scales above and compares it against this constant. It has to: the authoring
-// writes ZM_GetProfLabPlayerCenter (which reads THIS number) while the automated
-// arrival clause compares against ZM_GameStateManager::CalculateSpawnCenter
-// (which reads the REAL formula), so a controller re-tune would otherwise split
-// the authored body from the arrival point with every other unit still green.
-inline constexpr float fZM_PROFLAB_PLAYER_CAPSULE_HALF_EXTENT = 0.9f;
-
-// The capsule's XZ half-width -- half the scale's X. A clearance stated against
-// this cannot be satisfied by a body that would actually graze the wall.
-inline constexpr float fZM_PROFLAB_PLAYER_RADIUS =
-	fZM_PROFLAB_PLAYER_SCALE_X * 0.5f;
+// The capsule's XZ half-width. A clearance stated against this cannot be
+// satisfied by a body that would actually graze the wall.
+inline constexpr float fZM_PROFLAB_PLAYER_RADIUS = fZM_HUMAN_BODY_CAPSULE_RADIUS;
 
 // ---- The arrival marker -----------------------------------------------------
 // A FEET anchor (ZM_GameStateManager::CalculateSpawnCenter adds the capsule

@@ -61,12 +61,16 @@ namespace Flux_TerrainVertexLayout
 	inline constexpr uint32_t uHIGH_CHUNK_INDEX_COUNT = CalculateChunkIndexCount(1u);
 	inline constexpr uint32_t uLOW_CHUNK_VERTEX_COUNT = CalculateChunkVertexCount(4u);
 	inline constexpr uint32_t uLOW_CHUNK_INDEX_COUNT = CalculateChunkIndexCount(4u);
-	inline constexpr uint32_t uPHYSICS_CHUNK_VERTEX_COUNT = CalculateChunkVertexCount(8u);
-	inline constexpr uint32_t uPHYSICS_CHUNK_INDEX_COUNT = CalculateChunkIndexCount(8u);
+	// Collision deliberately remains lower density than the nearby HIGH render
+	// mesh, but an 8 m grid is too coarse for a player to read as grounded on
+	// Zenithmon's uneven terrain. Four-metre quads retain the collision budget
+	// advantage while keeping the collision surface close to what is rendered.
+	inline constexpr uint32_t uPHYSICS_CHUNK_VERTEX_COUNT = CalculateChunkVertexCount(4u);
+	inline constexpr uint32_t uPHYSICS_CHUNK_INDEX_COUNT = CalculateChunkIndexCount(4u);
 	static_assert(uHIGH_CHUNK_VERTEX_COUNT == 4225u, "HIGH terrain chunks must retain 65x65 vertices");
 	static_assert(uHIGH_CHUNK_INDEX_COUNT == 24576u, "HIGH terrain chunks must retain 64x64 quads at six indices per quad");
 	static_assert(uLOW_CHUNK_VERTEX_COUNT == 289u && uLOW_CHUNK_INDEX_COUNT == 1536u,
 		"LOW terrain chunks must retain their density-divisor-4 topology");
-	static_assert(uPHYSICS_CHUNK_VERTEX_COUNT == 81u && uPHYSICS_CHUNK_INDEX_COUNT == 384u,
-		"Physics terrain chunks must retain their density-divisor-8 topology");
+	static_assert(uPHYSICS_CHUNK_VERTEX_COUNT == 289u && uPHYSICS_CHUNK_INDEX_COUNT == 1536u,
+		"Physics terrain chunks must retain their density-divisor-4 topology");
 }
