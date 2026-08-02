@@ -76,6 +76,37 @@ xGraph.AddPass("HiZ Mip", ExecuteHiZMip)
 - `Flux_Buffer` — long-lived buffers (vertex, index, structured).
 - `Flux_TransientHandle` — graph-owned handles for resources whose lifetime fits inside a single Compile cycle. Transients can alias by pool; aliasing is opt-in (default on, debug toggle exposed).
 
+### Producer-before-consumer (the ordering invariant that bites)
+
+Edges come from declaration order: `FindBestWriter` links a reader to a writer of the same resource
+**only when that writer is declared EARLIER in the setup walk**. If every writer is declared later,
+no edge forms — reader and producer are then mutually **unordered**, and Kahn's sort may emit them in
+either order. This is worse than a missing barrier: the consumer can read data the producer has not
+written yet this frame.
+
+`Validate()` catches it via `ValidateProducerBeforeConsumer` (a `Zenith_Check`, so it logs loudly in
+shipping without crashing). **Zero violations is the contract** —
+`GetProducerBeforeConsumerViolationCount()` exposes the count so tests can assert it, and the
+`Core::RenderGraphProducerBeforeConsumer*` units pin both directions.
+
+It is exempt in exactly four cases: the reader is also a writer (read-modify-write self-orders); an
+earlier writer exists; the reader has a **direct** `DependsOn` on a writer; or the read is declared
+temporal (below). For a cross-feature read, the fix is almost always to declare the producer feature
+earlier in `RegisterDefaultFeatures` — that is how the shadow cascades' reads of the UnifiedMesh cull
+output are ordered.
+
+### Temporal (previous-frame) reads
+
+`ReadPrevFrame(...)` / `ReadBufferPrevFrame(...)` (fluent: `.ReadsPrevFrame(...)` /
+`.ReadsBufferPrevFrame(...)`) declare that a pass consumes what the graph wrote **last** frame, so its
+producer is legitimately declared after it and runs after it every frame — the TAA history ping-pong
+is the canonical case. Identical to `Read` in every respect except that
+`ValidateProducerBeforeConsumer` skips that one usage. Correct synchronisation still comes from the
+cross-frame cyclic seed in `SynthesizeBarriers`, not from the marker.
+
+Use it ONLY when reading one-frame-stale content is the intent. Applying it to a same-frame producer
+that is merely mis-ordered silences the check without fixing the race.
+
 ### Access types
 `ResourceAccess` (in `Flux_Enums.h`) enumerates the access patterns the graph understands: `READ_SRV`, `READ_DEPTH`, `WRITE_RTV`, `WRITE_DSV`, `WRITE_UAV`, `READWRITE_UAV`, `READ_INDIRECT_ARG`, `READ_BUFFER_SRV`, `HOST_TRANSFER_WRITE`, `UNDEFINED`. Stage discrimination (vertex vs fragment vs compute) is handled inside the access-to-Vulkan translator, not exposed at the graph level.
 

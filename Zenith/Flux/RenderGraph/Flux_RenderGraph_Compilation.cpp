@@ -159,13 +159,25 @@ void Flux_RenderGraph::ValidatePassAttachmentCounts(const Flux_RenderGraph_Pass*
 //
 // Runs once per Compile (not per-frame), so the cost is negligible. Exemptions
 // that are NOT bugs: a reader that is also a writer (read-modify-write self-
-// orders) and a reader that directly DependsOn one of the writers. Enforced as a
-// Zenith_Check (shipping-survivable: logs loudly, doesn't crash) — confirmed
-// clean across the full 115-pass graph. (Only DIRECT DependsOn is exempted; a
-// reader ordered solely via a transitive DependsOn chain would log a benign
-// false positive — none exist today.)
+// orders), a reader that directly DependsOn one of the writers, and a TEMPORAL
+// read explicitly declared via ReadPrevFrame/ReadsPrevFrame (the consumer wants
+// last frame's content, so a later producer is the intent — e.g. the TAA history,
+// whose cross-frame barrier comes from the cyclic seed in SynthesizeBarriers).
+// Enforced as a Zenith_Check (shipping-survivable: logs loudly, doesn't crash).
+//
+// (Only DIRECT DependsOn is exempted; a reader ordered solely via a transitive
+// DependsOn chain would log a benign false positive — none exist today.)
+//
+// HISTORY — why this fires loudly rather than warning softly: it was clean when
+// written, then regressed. "Shadows" was registered BEFORE "UnifiedMesh" in
+// RegisterDefaultFeatures while the cascade passes read UnifiedMesh's cull-output
+// and skinned-arena buffers, so all four cascades and their own producers ended up
+// mutually UNORDERED. Kahn interleaved them — Cascade 1 ran between "Unified Cull
+// Reset" and "Unified Mesh Culling" and drew from indirect args that had just been
+// zeroed. Missing edge => arbitrary order => wrong data, not just a missing barrier.
 void Flux_RenderGraph::ValidateProducerBeforeConsumer() const
 {
+    m_uProducerBeforeConsumerViolations = 0;
     for (Zenith_HashMap<void*, ResourceTraffic>::Iterator it(m_xTraffic); !it.Done(); it.Next())
     {
         const ResourceTraffic& xTraffic = it.GetValue();
@@ -186,9 +198,20 @@ void Flux_RenderGraph::ValidateProducerBeforeConsumer() const
             }
             if (bExempt) continue;
 
-            // No earlier (or self) writer. Legitimate only if the reader explicitly
-            // DependsOn one of the writers (direct dependency provides the ordering).
+            // No earlier (or self) writer. Legitimate if the reader declared this
+            // usage as a TEMPORAL read — it wants last frame's content, so its
+            // producer running later is the whole point.
             const Flux_RenderGraph_Pass* pxReader = m_xPasses.Get(uReader);
+            bool bPrevFrameRead = false;
+            for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator itU(pxReader->m_xReads); !itU.Done(); itU.Next())
+            {
+                const Flux_RenderGraph_ResourceUsage& rxUsage = itU.GetData();
+                if (rxUsage.m_xResource.GetVoidPtr() == it.GetKey() && rxUsage.m_bPrevFrameRead) { bPrevFrameRead = true; break; }
+            }
+            if (bPrevFrameRead) continue;
+
+            // Otherwise legitimate only if the reader explicitly DependsOn one of the
+            // writers (direct dependency provides the ordering).
             bool bDependsOnWriter = false;
             for (Zenith_Vector<u_int>::Iterator itD(pxReader->m_xExplicitDependencies); !itD.Done() && !bDependsOnWriter; itD.Next())
                 for (Zenith_Vector<u_int>::Iterator itW(xWriters); !itW.Done(); itW.Next())
@@ -197,11 +220,22 @@ void Flux_RenderGraph::ValidateProducerBeforeConsumer() const
 
             const Flux_RenderGraph_Resource* pxRes = m_xResources.TryGet(it.GetKey());
             const char* szRes = (pxRes != nullptr) ? pxRes->m_xResource.GetName().c_str() : "<unknown>";
+            // Buffers have no name (Flux_Buffer carries none), so '<buffer>' alone
+            // can't identify the producer. Name the WRITER passes instead — that is
+            // what a reader needs to know to fix the declaration order / DependsOn.
+            std::string strWriters;
+            for (Zenith_Vector<u_int>::Iterator itW(xWriters); !itW.Done(); itW.Next())
+            {
+                if (!strWriters.empty()) strWriters += ", ";
+                strWriters += m_xPasses.Get(itW.GetData())->DebugName();
+                strWriters += " (#" + std::to_string(itW.GetData()) + ")";
+            }
+            m_uProducerBeforeConsumerViolations++;
             Zenith_Check(false,
-                "Flux_RenderGraph: pass '%s' reads '%s' but every writer is declared LATER in the setup walk "
-                "— the read-after-write edge + barrier are dropped. Declare the producer before the consumer, "
-                "or add DependsOn(producer).",
-                pxReader->DebugName(), szRes);
+                "Flux_RenderGraph: pass '%s' (#%u) reads '%s' but every writer is declared LATER in the setup walk "
+                "— the read-after-write edge + barrier are dropped. Writers: %s. Declare the producer before the "
+                "consumer, or add DependsOn(producer).",
+                pxReader->DebugName(), uReader, szRes, strWriters.c_str());
         }
     }
 }

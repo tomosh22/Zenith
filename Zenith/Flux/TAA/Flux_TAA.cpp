@@ -283,7 +283,12 @@ void Flux_TAAImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.Reads(xGraphics.GetHDRSceneTarget(kuFluxViewSlotMain),   RESOURCE_ACCESS_READ_SRV)
 		.Reads(xGraphics.GetVelocityAttachment(kuFluxViewSlotMain), RESOURCE_ACCESS_READ_SRV)
 		.Reads(xGraphics.GetDepthAttachment(kuFluxViewSlotMain),  RESOURCE_ACCESS_READ_SRV)
-		.Reads(m_xHistory,                                        RESOURCE_ACCESS_READ_SRV)
+		// TEMPORAL read — this is LAST frame's history, so its only writer
+		// ("TAA CopyToHistory") is deliberately declared after this pass and runs
+		// after it every frame. ReadsPrevFrame states that intent so the
+		// producer-before-consumer check stays strict everywhere else; the
+		// cross-frame barrier comes from SynthesizeBarriers' cyclic image seed.
+		.ReadsPrevFrame(m_xHistory,                               RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(m_xResolvedOutputHandle,                 RESOURCE_ACCESS_WRITE_UAV);
 
 	// Persist the resolved output into the history for next frame (read-then-write WAR

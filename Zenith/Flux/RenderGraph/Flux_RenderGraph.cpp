@@ -442,6 +442,21 @@ Flux_PassBuilder&& Flux_PassBuilder::WritesBuffer(Flux_Buffer& xBuffer, Resource
     return std::move(*this);
 }
 
+Flux_PassBuilder&& Flux_PassBuilder::ReadsPrevFrame(Flux_RenderAttachment& xImage, ResourceAccess eAccess,
+                                                    u_int uMip, u_int uMipCount) &&
+{
+    AssertAlive("ReadsPrevFrame");
+    m_pxGraph->ReadPrevFrame(m_xPass, xImage, eAccess, uMip, uMipCount);
+    return std::move(*this);
+}
+
+Flux_PassBuilder&& Flux_PassBuilder::ReadsBufferPrevFrame(Flux_Buffer& xBuffer, ResourceAccess eAccess) &&
+{
+    AssertAlive("ReadsBufferPrevFrame");
+    m_pxGraph->ReadBufferPrevFrame(m_xPass, xBuffer, eAccess);
+    return std::move(*this);
+}
+
 Flux_PassBuilder&& Flux_PassBuilder::ReadsTransient(Flux_TransientHandle xHandle, ResourceAccess eAccess) &&
 {
     AssertAlive("ReadsTransient");
@@ -521,8 +536,11 @@ void Flux_PassBuilder::SetUserData(void* pData)
 }
 
 void Flux_RenderGraph::AddResourceUsage(u_int uPassIndex, const Flux_GraphResource& xResource, ResourceAccess eAccess,
-                                        u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount, bool bWrite)
+                                        u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount, bool bWrite,
+                                        bool bPrevFrameRead)
 {
+    Zenith_Assert(!(bWrite && bPrevFrameRead),
+        "Flux_RenderGraph: prev-frame marking is a READ-only concept (pass %u)", uPassIndex);
     // Handle validity is checked at the public API layer by AssertPassHandleValid,
     // which this private helper's callers (Read/Write/*) invoke before calling.
     // Keep the index check here as defense in depth.
@@ -559,6 +577,7 @@ void Flux_RenderGraph::AddResourceUsage(u_int uPassIndex, const Flux_GraphResour
     xUsage.m_uMipCount = uMipCount;
     xUsage.m_uLayer = uLayer;
     xUsage.m_uLayerCount = uLayerCount;
+    xUsage.m_bPrevFrameRead = bPrevFrameRead;
     if (bWrite) pxPass->m_xWrites.PushBack(xUsage);
     else pxPass->m_xReads.PushBack(xUsage);
 }
@@ -599,6 +618,19 @@ void Flux_RenderGraph::WriteBuffer(Flux_PassHandle xPass, Flux_Buffer& xBuffer, 
 {
     AssertPassHandleValid(xPass, "WriteBuffer");
     AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(xBuffer), eAccess, 0, 1, 0, 1, true);
+}
+
+void Flux_RenderGraph::ReadPrevFrame(Flux_PassHandle xPass, Flux_RenderAttachment& xImage, ResourceAccess eAccess,
+                                     u_int uMip, u_int uMipCount)
+{
+    AssertPassHandleValid(xPass, "ReadPrevFrame(Image)");
+    AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(xImage), eAccess, uMip, uMipCount, 0, 1, false, true);
+}
+
+void Flux_RenderGraph::ReadBufferPrevFrame(Flux_PassHandle xPass, Flux_Buffer& xBuffer, ResourceAccess eAccess)
+{
+    AssertPassHandleValid(xPass, "ReadBufferPrevFrame");
+    AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(xBuffer), eAccess, 0, 1, 0, 1, false, true);
 }
 
 void Flux_RenderGraph::DependsOn(Flux_PassHandle xDependentPass, Flux_PassHandle xDependencyPass)

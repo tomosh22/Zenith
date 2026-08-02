@@ -241,11 +241,18 @@ stack graph and assert pass/edge structure without booting Flux.
   Editing `Bindings.slang` alone => the existing exe recompiles it at runtime (no rebuild).
 - **`GetMRTAttachment` asserts `eIndex < uFLUX_MRT_CORE_COUNT`** — velocity access goes through the
   distinct `GetVelocityAttachment()`, never `GetMRTAttachment(MRT_INDEX_VELOCITY)`.
-- The `[Core] Check failed: pass 'Shadow Cascade N' reads '<buffer>' ...` and `'TAA Resolve' reads
-  'TAA History' ...` lines are **pre-existing** (the cull-buffer cross-frame cyclic-barrier deferral
-  and the persistent-history read-after-write). They scale with the number of graph compiles per run
-  (velocity-on triggers extra rebuilds), so counts differ between `--taa=0` and `--taa=1` runs — not
-  a regression.
+- **The producer-before-consumer check is CLEAN — it firing at all is a regression.** It used to log
+  `pass 'Shadow Cascade N' reads '<buffer>' ...` and `'TAA Resolve' reads 'TAA History' ...` at every
+  boot; both are fixed and must stay at zero:
+  - The cascade lines were a **real dropped edge**, not a benign cross-frame deferral: `Shadows` was
+    registered before `UnifiedMesh`, so the cascades were mutually UNORDERED with the passes producing
+    their cull args and one cascade drew from just-zeroed indirect args. Fixed by declaring
+    `UnifiedMesh` first (`Flux_FeatureRegistry.cpp`), gated by
+    `Core::FeatureRegistryUnifiedMeshPrecedesShadows`.
+  - The `TAA History` line was a genuine false positive — the resolve *wants* last frame's content.
+    It now declares that with `.ReadsPrevFrame(...)` instead of `.Reads(...)`, which exempts that one
+    usage. Reach for `ReadsPrevFrame`/`ReadBufferPrevFrame` ONLY for real temporal reads; using it to
+    quiet a mis-ordered same-frame producer re-hides the shadow bug.
 - RenderTest's default camera faces the sky/horizon, so **edge-AA / de-ghosting is not visually
   judgeable there** — use a geometry-facing camera for silhouette checks.
 

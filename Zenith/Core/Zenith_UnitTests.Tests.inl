@@ -17760,6 +17760,7 @@ void Zenith_UnitTests::TestGizmoGetEditableTransform_ReturnsNullForInvalidTarget
 // provide end-to-end correctness coverage for the compiled + executed graph.
 
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Flux/Flux_FeatureRegistry.h"   // live setup-walk order (producer-before-consumer gate)
 
 static void EmptyRecordCallback(Flux_CommandBuffer*, void*) {}
 
@@ -18263,6 +18264,193 @@ void Zenith_UnitTests::TestRenderGraphCyclicReadOnlyNoBarrier(){
 	ZENITH_ASSERT_EQ(uA, 0, "TestRenderGraphCyclicReadOnlyNoBarrier: first reader expected 0 buffer barriers (read-after-read collapse under cyclic seed), got %u", uA);
 	ZENITH_ASSERT_EQ(uB, 0, "TestRenderGraphCyclicReadOnlyNoBarrier: second reader expected 0 buffer barriers (read-after-read), got %u", uB);
 
+}
+
+// ============================================================================
+// ValidateProducerBeforeConsumer — the shadow-cascade dropped-edge regression
+// ============================================================================
+// A reader whose every writer is declared LATER in the setup walk gets NO edge
+// (FindBestWriter requires writer < reader), so reader and producer are mutually
+// unordered and Kahn may emit them in either order. That is what happened when
+// "Shadows" was registered before "UnifiedMesh": each "Shadow Cascade N" pass read
+// the cull-output / skinned-arena buffers that UnifiedMesh's passes write, and the
+// observed order interleaved them — Cascade 1 landed between "Unified Cull Reset"
+// (which zeroes the indirect args) and "Unified Mesh Culling" (which refills them),
+// so it drew from zeroed args: no casters at all in that cascade.
+//
+// These tests build the same shape on a stack graph. m_uProducerBeforeConsumerViolations
+// is the machine-readable result of the check (the Zenith_Check only logs), so the
+// negative case below intentionally emits one "Check failed" line — that is the
+// check working, not a test failure.
+
+// Helper: the regressed topology — reader declared FIRST, its only writer SECOND.
+static void SeedUnorderedReaderWriter(Flux_RenderGraph& xGraph, Flux_ReadWriteBuffer& xBuffer,
+	Flux_PassHandle& xOutReader, Flux_PassHandle& xOutWriter)
+{
+	xBuffer.GetBuffer().m_xVRAMHandle.SetValue(0);
+	xBuffer.GetBuffer().m_ulSize = 256;
+
+	// "Shadow Cascade"-alike: reads the indirect args...
+	xOutReader = xGraph.AddPass("ConsumerDeclaredFirst", EmptyRecordCallback);
+	xGraph.ReadBuffer(xOutReader, xBuffer.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+	// ..."Unified Mesh Culling"-alike: writes them, but is declared AFTER.
+	xOutWriter = xGraph.AddPass("ProducerDeclaredSecond", EmptyRecordCallback);
+	xGraph.WriteBuffer(xOutWriter, xBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+}
+
+ZENITH_TEST(Core, RenderGraphProducerBeforeConsumerDetectsUnordered) { Zenith_UnitTests::TestRenderGraphProducerBeforeConsumerDetectsUnordered(); }
+void Zenith_UnitTests::TestRenderGraphProducerBeforeConsumerDetectsUnordered(){
+
+	Flux_RenderGraph xGraph;
+	Flux_ReadWriteBuffer xBuffer;
+	Flux_PassHandle xReader, xWriter;
+	SeedUnorderedReaderWriter(xGraph, xBuffer, xReader, xWriter);
+
+	xGraph.BuildResourceTraffic();
+	xGraph.ValidateProducerBeforeConsumer();
+
+	ZENITH_ASSERT_EQ(xGraph.GetProducerBeforeConsumerViolationCount(), 1,
+		"the consumer-before-producer topology MUST be reported — this is the shadow-cascade bug's exact shape. "
+		"If this reads 0 the check has been relaxed into uselessness; got %u",
+		xGraph.GetProducerBeforeConsumerViolationCount());
+
+	// And prove the claim the check makes: no reader<-writer edge exists, so the
+	// sort is free to run the consumer first. (BuildAdjacencyFromTraffic is what
+	// TopologicalSort calls; the reader's in-degree stays 0.)
+	xGraph.InitAdjacencyData();
+	xGraph.BuildAdjacencyFromTraffic();
+	ZENITH_ASSERT_EQ(xGraph.m_xInDegree.Get(xReader.m_uIndex), 0,
+		"the dropped edge IS the defect: the consumer must have in-degree 0 (nothing orders it after its producer). "
+		"Got %u", xGraph.m_xInDegree.Get(xReader.m_uIndex));
+}
+
+ZENITH_TEST(Core, RenderGraphProducerBeforeConsumerAcceptsOrdered) { Zenith_UnitTests::TestRenderGraphProducerBeforeConsumerAcceptsOrdered(); }
+void Zenith_UnitTests::TestRenderGraphProducerBeforeConsumerAcceptsOrdered(){
+
+	// (1) Producer declared FIRST — the fix applied to the feature walk. Silent.
+	{
+		Flux_RenderGraph xGraph;
+		Flux_ReadWriteBuffer xBuffer;
+		xBuffer.GetBuffer().m_xVRAMHandle.SetValue(0);
+		xBuffer.GetBuffer().m_ulSize = 256;
+
+		Flux_PassHandle xWriter = xGraph.AddPass("Producer", EmptyRecordCallback);
+		xGraph.WriteBuffer(xWriter, xBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+		Flux_PassHandle xReader = xGraph.AddPass("Consumer", EmptyRecordCallback);
+		xGraph.ReadBuffer(xReader, xBuffer.GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+
+		xGraph.BuildResourceTraffic();
+		xGraph.ValidateProducerBeforeConsumer();
+		ZENITH_ASSERT_EQ(xGraph.GetProducerBeforeConsumerViolationCount(), 0,
+			"an earlier-declared writer is the normal, correct case — must not fire. Got %u",
+			xGraph.GetProducerBeforeConsumerViolationCount());
+
+		// The edge the check exists to protect must actually be there.
+		xGraph.InitAdjacencyData();
+		xGraph.BuildAdjacencyFromTraffic();
+		ZENITH_ASSERT_EQ(xGraph.m_xInDegree.Get(xReader.m_uIndex), 1,
+			"producer-before-consumer must yield exactly one incoming edge on the consumer. Got %u",
+			xGraph.m_xInDegree.Get(xReader.m_uIndex));
+	}
+
+	// (2) Reader is also a writer of the same resource — the HiZ mip-chain shape
+	// (read mip N-1, write mip N on one image). Traffic keys on the resource, so
+	// the pass appears in BOTH lists and self-orders; a later writer of another
+	// mip must not make that fire.
+	{
+		Flux_RenderGraph xGraph;
+		Flux_RenderAttachment xImage; xImage.m_xVRAMHandle.SetValue(4004u);
+
+		Flux_PassHandle xMip = xGraph.AddPass("HiZMipReadWrite", EmptyRecordCallback);
+		xGraph.Read (xMip, xImage, RESOURCE_ACCESS_READ_SRV,   0, 1);
+		xGraph.Write(xMip, xImage, RESOURCE_ACCESS_WRITE_UAV,  1, 1);
+		Flux_PassHandle xLater = xGraph.AddPass("LaterMipWriter", EmptyRecordCallback);
+		xGraph.Write(xLater, xImage, RESOURCE_ACCESS_WRITE_UAV, 2, 1);
+
+		xGraph.BuildResourceTraffic();
+		xGraph.ValidateProducerBeforeConsumer();
+		ZENITH_ASSERT_EQ(xGraph.GetProducerBeforeConsumerViolationCount(), 0,
+			"a reader that also writes the resource self-orders — must not fire. Got %u",
+			xGraph.GetProducerBeforeConsumerViolationCount());
+	}
+
+	// (3) Reader has a DIRECT DependsOn its later writer. Silent (explicit ordering).
+	{
+		Flux_RenderGraph xGraph;
+		Flux_ReadWriteBuffer xBuffer;
+		Flux_PassHandle xReader, xWriter;
+		SeedUnorderedReaderWriter(xGraph, xBuffer, xReader, xWriter);
+		xGraph.DependsOn(xReader, xWriter);
+
+		xGraph.BuildResourceTraffic();
+		xGraph.ValidateProducerBeforeConsumer();
+		ZENITH_ASSERT_EQ(xGraph.GetProducerBeforeConsumerViolationCount(), 0,
+			"a direct DependsOn(producer) supplies the ordering the declaration order didn't — must not fire. Got %u",
+			xGraph.GetProducerBeforeConsumerViolationCount());
+	}
+}
+
+ZENITH_TEST(Core, RenderGraphProducerBeforeConsumerPrevFrameRead) { Zenith_UnitTests::TestRenderGraphProducerBeforeConsumerPrevFrameRead(); }
+void Zenith_UnitTests::TestRenderGraphProducerBeforeConsumerPrevFrameRead(){
+
+	// The TAA-history shape: the consumer wants LAST frame's content, so its writer
+	// is deliberately declared after it. ReadBufferPrevFrame states that intent.
+	// Built as the byte-identical twin of the unordered case above so the ONLY
+	// difference is the marker — that is what makes this an exemption rather than a
+	// hole: same topology, opposite verdict, decided solely by the declaration.
+	Flux_RenderGraph xGraph;
+	Flux_ReadWriteBuffer xBuffer;
+	xBuffer.GetBuffer().m_xVRAMHandle.SetValue(0);
+	xBuffer.GetBuffer().m_ulSize = 256;
+
+	Flux_PassHandle xReader = xGraph.AddPass("TemporalConsumer", EmptyRecordCallback);
+	xGraph.ReadBufferPrevFrame(xReader, xBuffer.GetBuffer(), RESOURCE_ACCESS_READ_BUFFER_SRV);
+	Flux_PassHandle xWriter = xGraph.AddPass("HistoryProducer", EmptyRecordCallback);
+	xGraph.WriteBuffer(xWriter, xBuffer.GetBuffer(), RESOURCE_ACCESS_WRITE_UAV);
+
+	xGraph.BuildResourceTraffic();
+	xGraph.ValidateProducerBeforeConsumer();
+	ZENITH_ASSERT_EQ(xGraph.GetProducerBeforeConsumerViolationCount(), 0,
+		"an explicitly-declared previous-frame read wants a later producer — must not fire. Got %u",
+		xGraph.GetProducerBeforeConsumerViolationCount());
+
+	// The marker must be the ONLY thing suppressing it: an ordinary Read() of the
+	// same resource, same order, still fires.
+	Flux_RenderGraph xPlainGraph;
+	Flux_ReadWriteBuffer xPlainBuffer;
+	Flux_PassHandle xPlainReader, xPlainWriter;
+	SeedUnorderedReaderWriter(xPlainGraph, xPlainBuffer, xPlainReader, xPlainWriter);
+	xPlainGraph.BuildResourceTraffic();
+	xPlainGraph.ValidateProducerBeforeConsumer();
+	ZENITH_ASSERT_EQ(xPlainGraph.GetProducerBeforeConsumerViolationCount(), 1,
+		"without the prev-frame marker the identical topology MUST still fire, or the exemption is a hole. Got %u",
+		xPlainGraph.GetProducerBeforeConsumerViolationCount());
+}
+
+// The live gate. Everything above tests the checker; this tests the ACTUAL feature
+// table this build ships — the thing that regressed. The setup-walk order IS the
+// render-graph declaration order, so "UnifiedMesh before Shadows" is precisely what
+// lets each cascade's cull-output read find an earlier writer. Guarded against
+// vacuity: both steps must exist, or a rename would make the comparison trivially
+// pass. (RegisterDefaultFeatures runs during renderer init, well before RunAllTests.)
+ZENITH_TEST(Core, FeatureRegistryUnifiedMeshPrecedesShadows) { Zenith_UnitTests::TestFeatureRegistryUnifiedMeshPrecedesShadows(); }
+void Zenith_UnitTests::TestFeatureRegistryUnifiedMeshPrecedesShadows(){
+
+	const Flux_FeatureRegistry& xReg = Flux_FeatureRegistry::Get();
+	const u_int uUnified = xReg.FindSetupStepIndex("UnifiedMesh");
+	const u_int uShadows = xReg.FindSetupStepIndex("Shadows");
+
+	ZENITH_ASSERT_TRUE(uUnified != UINT32_MAX,
+		"setup step 'UnifiedMesh' must exist, or this ordering assertion is vacuous");
+	ZENITH_ASSERT_TRUE(uShadows != UINT32_MAX,
+		"setup step 'Shadows' must exist, or this ordering assertion is vacuous");
+
+	ZENITH_ASSERT_TRUE(uUnified < uShadows,
+		"'UnifiedMesh' must be declared BEFORE 'Shadows': every Shadow Cascade pass reads UnifiedMesh's "
+		"cull-output + skinned-arena buffers, and a reader only links to an EARLIER-declared writer. With "
+		"Shadows first the edges vanish and the cascades run unordered against their own producers "
+		"(Cascade 1 drew from just-zeroed indirect args). Got UnifiedMesh=%u, Shadows=%u",
+		uUnified, uShadows);
 }
 
 // ============================================================================

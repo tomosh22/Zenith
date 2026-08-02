@@ -132,6 +132,12 @@ public:
                               u_int uLayer = 0, u_int uLayerCount = 1) &&;
     Flux_PassBuilder&& ReadsBuffer (Flux_Buffer& xBuffer, ResourceAccess eAccess) &&;
     Flux_PassBuilder&& WritesBuffer(Flux_Buffer& xBuffer, ResourceAccess eAccess) &&;
+    // TEMPORAL reads — see Flux_RenderGraph::ReadPrevFrame. Declares that the content
+    // consumed is what the graph wrote LAST frame, so a later-declared producer is
+    // intentional and ValidateProducerBeforeConsumer stays quiet for this usage.
+    Flux_PassBuilder&& ReadsPrevFrame (Flux_RenderAttachment& xImage, ResourceAccess eAccess = RESOURCE_ACCESS_READ_SRV,
+                                       u_int uMip = 0, u_int uMipCount = FLUX_RG_ALL_MIPS) &&;
+    Flux_PassBuilder&& ReadsBufferPrevFrame(Flux_Buffer& xBuffer, ResourceAccess eAccess) &&;
     Flux_PassBuilder&& ReadsTransient (Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_READ_SRV) &&;
     Flux_PassBuilder&& WritesTransient(Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_WRITE_RTV) &&;
     Flux_PassBuilder&& ReadsTransient (Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount) &&;
@@ -379,6 +385,24 @@ public:
     void ReadBuffer(Flux_PassHandle xPass, Flux_Buffer& xBuffer, ResourceAccess eAccess);
     void WriteBuffer(Flux_PassHandle xPass, Flux_Buffer& xBuffer, ResourceAccess eAccess);
 
+    // TEMPORAL read: this pass consumes what the graph wrote to the resource LAST
+    // frame (a history / ping-pong buffer), so the producer is legitimately declared
+    // AFTER this consumer and runs after it every frame. Identical to Read() in every
+    // respect except that ValidateProducerBeforeConsumer skips this usage — use it
+    // ONLY when reading stale-by-one-frame content is the intent, never to silence
+    // the check on a same-frame producer that is merely mis-ordered.
+    void ReadPrevFrame(Flux_PassHandle xPass, Flux_RenderAttachment& xImage, ResourceAccess eAccess = RESOURCE_ACCESS_READ_SRV,
+                       u_int uMip = 0, u_int uMipCount = FLUX_RG_ALL_MIPS);
+    void ReadBufferPrevFrame(Flux_PassHandle xPass, Flux_Buffer& xBuffer, ResourceAccess eAccess);
+
+    // How many producer-before-consumer violations the LAST Validate() found.
+    // MUST be 0 for a correctly declared graph: a non-zero count means at least one
+    // pass reads a resource whose every writer is declared later, so reader and
+    // producer are mutually unordered and the topological sort may run them in
+    // either order (see ValidateProducerBeforeConsumer). Asserted by the
+    // RenderGraphProducerBeforeConsumer* tests and the live boot gate.
+    u_int GetProducerBeforeConsumerViolationCount() const { return m_uProducerBeforeConsumerViolations; }
+
     void ReadTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_READ_SRV);
     void WriteTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess = RESOURCE_ACCESS_WRITE_RTV);
     void ReadTransient(Flux_PassHandle xPass, Flux_TransientHandle xHandle, ResourceAccess eAccess, u_int uMip, u_int uMipCount);
@@ -480,6 +504,12 @@ private:
     bool m_bDirty = true;
     bool m_bEnabledMaskDirty = false;
 
+    // Number of producer-before-consumer violations found by the LAST Validate().
+    // Mutable so the const validator can record its own result. Exposed via
+    // GetProducerBeforeConsumerViolationCount() so the invariant is machine-
+    // checkable (a test can assert 0) instead of only scrapeable from the log.
+    mutable u_int m_uProducerBeforeConsumerViolations = 0;
+
     // Owner tag applied to passes added by the current setup step (see
     // SetCurrentSetupOwner). Transient per-walk state; reset to nullptr by Clear().
     const char* m_szCurrentSetupOwner = nullptr;
@@ -545,7 +575,8 @@ private:
     Flux_RenderGraph_Pass* GetPass(u_int uIdx) const;
     void TrackResource(const Flux_GraphResource& xResource);
     void AddResourceUsage(u_int uPassIndex, const Flux_GraphResource& xResource, ResourceAccess eAccess,
-                          u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount, bool bWrite);
+                          u_int uMip, u_int uMipCount, u_int uLayer, u_int uLayerCount, bool bWrite,
+                          bool bPrevFrameRead = false);
     void BuildResourceTraffic();
     void Validate() const;
     void ValidatePassMemoryFlagCompatibility(const Flux_RenderGraph_Pass* pxP) const;

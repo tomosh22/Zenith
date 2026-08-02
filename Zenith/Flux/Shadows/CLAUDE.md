@@ -72,6 +72,13 @@ engine has **no TAA** — anything that jitters per-frame would crawl/sparkle.
   set). Per-cascade GPU frustum culling of the unified scene populates each
   cascade view's slice of the shared cull-output buffers, so each shadow view
   draws only the objects inside its own frustum.
+- **`UnifiedMesh` MUST be registered before `Shadows`** in `RegisterDefaultFeatures`.
+  The `ReadBuffer` declarations in `SetupRenderGraph` are what order the cascades
+  after the cull — but a reader only links to an EARLIER-declared writer, so with
+  `Shadows` first they produced no edges at all and the cascades ran unordered
+  against their own producers (one landed between the cull-args reset and the cull,
+  drawing zero casters). `Flux_RenderGraph::ValidateProducerBeforeConsumer` guards
+  this; `Core::FeatureRegistryUnifiedMeshPrecedesShadows` pins the registration order.
 - `ShadowSampling` CB (binding 24, set 0) carries per-cascade split view-depths /
   world-per-texel / depth-range + global filter params. GPU mirror is
   `Flux_ShadowSamplingGPU` (`Flux_ShadowsImpl.h`); it MUST match

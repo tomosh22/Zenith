@@ -10,10 +10,16 @@ A typical frame compiles into roughly this topologically-sorted order. The rende
 +-----------------------------+
               |
               v
++-----------------------------------+  GPU-driven opaque setup (compute)
+| Unified Skinning                  |--> skins animated meshes into the shared arena
+| Unified Cull Reset -> Culling     |--> fills the per-(view,bucket) cull-output +
++-----------------------------------+    indirect-arg buffers for EVERY view, camera
+              |                           and shadow cascade alike
+              v
 +-----------------------------+    Cascaded Shadow Maps (4 cascades)
-| Shadow cascades             |--> writes shadow depth targets
-+-----------------------------+
-              |
+| Shadow cascades             |--> writes shadow depth targets; draws INDIRECT from
++-----------------------------+    the cull output above, which is why the cull must
+              |                     precede them (see the ordering note below)
               v
 +-----------------------------------+  G-buffer build
 | Terrain                           |\
@@ -63,6 +69,16 @@ A typical frame compiles into roughly this topologically-sorted order. The rende
 ```
 
 For the full graph lifecycle (Setup -> Compile -> Execute), barrier synthesis, the fluent builder API, and the Print Pass Order debug button, see [RenderGraph/CLAUDE.md](RenderGraph/CLAUDE.md).
+
+> **The shadow cascades run AFTER the unified cull, not first.** The diagram used to open with the
+> cascades because "shadows come first" is the folklore order. They can't: each cascade issues an
+> indirect draw from the cull-output buffers that `UnifiedMesh`'s compute passes fill for all views at
+> once, so the cull is its producer. That ordering is carried by the cascade passes' declared
+> `ReadBuffer`s — which only become graph edges if `UnifiedMesh` is registered BEFORE `Shadows` in
+> `RegisterDefaultFeatures` (a reader links only to an EARLIER-declared writer). It wasn't, the edges
+> were silently absent, and the sort interleaved the cascades with their own producers — one drew from
+> indirect args the reset had just zeroed. `Flux_RenderGraph::ValidateProducerBeforeConsumer` now
+> guards it and must stay at zero violations.
 
 > **Primitives sits in the G-buffer block, not with the overlays** — this diagram used to list it beside DeferredShading/Skybox/Fog/Particles. `Flux_PrimitivesImpl::SetupRenderGraph` declares its one pass ("Primitives GBuffer") as a `Writes` of all four core MRTs + the depth attachment, and "Apply Lighting" `Read`s exactly those, so the topological sort can only put Primitives **before** lighting. Primitive draws are therefore lit (or, on the gameplay channel, tagged unlit and passed through) by the deferred pass like any other opaque geometry — they are not composited on top of it.
 

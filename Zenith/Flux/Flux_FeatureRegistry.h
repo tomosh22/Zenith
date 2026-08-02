@@ -189,6 +189,12 @@ public:
 	// after each step (see Zenith_GameRenderFeatures).
 	void RunSetup(Flux_RenderGraph& xGraph) const;
 
+	// Position of a named setup step in the walk, or UINT32_MAX if absent. The
+	// walk order IS the render-graph declaration order, so comparing two indices
+	// answers "is X declared before Y?" — which is exactly the producer-before-
+	// consumer invariant a cross-feature resource read depends on. O(n) strcmp scan.
+	u_int FindSetupStepIndex(const char* szName) const;
+
 	// True if a setup step with this exact name exists in the walk. Used to
 	// validate game-feature runAfter anchors (Zenith_GameRenderFeatures). O(n)
 	// strcmp scan; names are static-lifetime literals.

@@ -23,6 +23,15 @@ struct Flux_RenderGraph_ResourceUsage
     u_int m_uMipCount = 1;
     u_int m_uLayer = 0;
     u_int m_uLayerCount = 1;
+    // TEMPORAL reads only (declared via ReadPrevFrame / ReadsPrevFrame): this pass
+    // consumes the content the graph wrote LAST frame, so its producer is expected
+    // to be declared later in the setup walk and to run after it every frame.
+    // Suppresses ValidateProducerBeforeConsumer for THIS usage only — nothing else
+    // in the graph reads the flag. Correct synchronisation still comes from the
+    // cross-frame cyclic seed in SynthesizeBarriers (SeedCyclicBufferState /
+    // SeedCyclicImageState), which orders the frame's first touch against the
+    // previous frame's final access.
+    bool m_bPrevFrameRead = false;
 };
 
 struct Flux_RenderGraph_Resource

@@ -729,6 +729,21 @@ public:
 	// seed injects nothing spurious onto the engine's read-only persistent buffers.
 	static void TestRenderGraphCyclicReadOnlyNoBarrier();
 
+	// ValidateProducerBeforeConsumer regression set. The shadow-cascade bug: the
+	// "Shadows" feature was declared BEFORE "UnifiedMesh" while its cascade passes
+	// read UnifiedMesh's cull-output buffers, so no reader->writer edge formed and
+	// the cascades were mutually UNORDERED with their own producers (Kahn ran one
+	// of them between the cull-args reset and the cull that refills them). These
+	// pin both directions: the check must still RED on that topology, and must stay
+	// quiet on each legitimately-ordered shape.
+	static void TestRenderGraphProducerBeforeConsumerDetectsUnordered();
+	static void TestRenderGraphProducerBeforeConsumerAcceptsOrdered();
+	static void TestRenderGraphProducerBeforeConsumerPrevFrameRead();
+	// Live gate on the real feature table this build ships: "UnifiedMesh" must be
+	// declared before "Shadows" in the setup walk, which is what makes the cascade
+	// reads find an earlier writer.
+	static void TestFeatureRegistryUnifiedMeshPrecedesShadows();
+
 	// WS7 keystone (C1C2): InstancedMeshes Prepare-gather determinism / thread-safety
 	// regression. With GPU culling forced OFF (the path that used to double-call
 	// UpdateGPUBuffers across two concurrent record callbacks), the per-group CPU

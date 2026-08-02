@@ -164,15 +164,20 @@ void Flux_FeatureRegistry::AddSetupStep(const char* szName, void (*pfnSetup)(Flu
 	m_uNumSetup++;
 }
 
-bool Flux_FeatureRegistry::HasSetupStepNamed(const char* szName) const
+u_int Flux_FeatureRegistry::FindSetupStepIndex(const char* szName) const
 {
-	if (szName == nullptr) return false;
+	if (szName == nullptr) return UINT32_MAX;
 	for (u_int u = 0; u < m_uNumSetup; u++)
 	{
 		if (m_axSetupSteps[u].m_szName != nullptr && strcmp(m_axSetupSteps[u].m_szName, szName) == 0)
-			return true;
+			return u;
 	}
-	return false;
+	return UINT32_MAX;
+}
+
+bool Flux_FeatureRegistry::HasSetupStepNamed(const char* szName) const
+{
+	return FindSetupStepIndex(szName) != UINT32_MAX;
 }
 
 void Flux_FeatureRegistry::RunSetup(Flux_RenderGraph& xGraph) const
@@ -327,11 +332,22 @@ void Flux_FeatureRegistry::RegisterDefaultFeaturesInto(Flux_FeatureRegistry& xRe
 	RegisterFeature<&Zenith_Engine::FluxGraphics>(xReg, "FluxGraphics");
 
 	RegisterFeature<&Zenith_Engine::IBL>(xReg, "IBL", Flux_IBLShaders::apxALL);
-	RegisterFeature<&Zenith_Engine::Shadows>(xReg, "Shadows");
 	// Unified GPU-driven opaque-mesh path: the single G-buffer producer for opaque statics +
 	// instanced foliage (Stage 4 retired the per-object StaticMeshes/InstancedMeshes draw loops;
 	// it sits at the old StaticMeshes slot). Must precede DeferredShading which consumes the G-buffer.
+	//
+	// MUST ALSO PRECEDE Shadows — load-bearing, not cosmetic. Each "Shadow Cascade N" pass
+	// declares a READ of the unified skinned arena + the cull-output visible-index / indirect-args
+	// buffers, whose ONLY writers are this feature's Skinning / Cull Reset / Culling passes. The
+	// edge-builder (FindBestWriter) links a reader only to a writer declared EARLIER in the setup
+	// walk, so with Shadows first those reads produced NO edges: the cascades and their own
+	// producers were mutually unordered, and Kahn interleaved them (observed: Cascade 0 before
+	// Skinning/Reset/Cull; Cascade 1 between Reset and Cull, i.e. drawing from indirect args the
+	// reset had just zeroed — no casters at all in that cascade). Declaring UnifiedMesh first makes
+	// every cascade read find an earlier writer, so the reset->cull->cascade edges and their
+	// WRITE_UAV->READ barriers actually form. ValidateProducerBeforeConsumer guards this.
 	RegisterFeature<&Zenith_Engine::UnifiedMesh>(xReg, "UnifiedMesh", Flux_UnifiedMeshShaders::apxALL);
+	RegisterFeature<&Zenith_Engine::Shadows>(xReg, "Shadows");
 	RegisterFeature<&Zenith_Engine::Terrain>(xReg, "Terrain", Flux_TerrainShaders::apxALL);
 	RegisterFeature<&Zenith_Engine::Primitives>(xReg, "Primitives", Flux_PrimitivesShaders::apxALL);
 	// Stage 4: InstancedMeshes is now a shader-less registration front-end (the unified path
