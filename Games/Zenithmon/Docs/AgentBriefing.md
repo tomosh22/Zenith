@@ -655,12 +655,28 @@ them.
 - **Post-push CI re-evaluation:** never use `gh run rerun`. A red `zm-tests`
   run is corrected by a new direct commit to `master`; that push produces a
   fresh run for the new commit (ZM-D-031).
-- **Never launch a game exe bare with `--exit-after-frames N`:** that flag is a
-  per-TEST max-frames override, consumed only while an automated test runs; a
-  bare tools build idles in the editor FOREVER (orphaned processes). Boot
-  checks go through `zenith test Zenithmon --filter <Test>` (harness-managed
-  exit) or `--list-automated-tests` (exits by itself), or pair the flag with
-  `--automated-test <name>`. Sweep strays with `Get-Process zenithmon`.
+- **Never launch ANY game exe bare with `--exit-after-frames N`** -- this is an
+  ENGINE flag, not a Zenithmon one. It is parsed by
+  `Zenith_AutomatedTestRunner::ParseCommandLine`
+  ([Zenith_AutomatedTest.cpp](../../../Zenith/Core/Zenith_AutomatedTest.cpp)
+  :610) as a per-TEST max-frames OVERRIDE, consumed ONLY while an automated test
+  runs. Without `--automated-test <name>` / `--all-automated-tests` it does
+  nothing and a tools build idles in the editor FOREVER (orphaned processes).
+  It also REPLACES every test's own `maxFrames` when it does apply, so never
+  pass it "for safety".
+  **Signature when you hit it:** the game boots fine, finishes its automation
+  steps, then the log STOPS GROWING while CPU keeps climbing and the process
+  never exits. That is this -- not a hung frame, and not a broken flag.
+  Boot checks go through `zenith test Zenithmon --filter <Test>`
+  (harness-managed exit) or `--list-automated-tests` (exits by itself), or pair
+  the flag with `--automated-test <name>`. Sweep strays with
+  `Get-Process zenithmon` (or the exe name of whichever game you launched).
+  Cost paid TWICE: once on `zenithmon.exe`, then again 2026-08-02 on
+  `rendertest.exe` during engine-wide render-graph work, because this bullet
+  read as Zenithmon-only and the engine's own header
+  ([Zenith_AutomatedTest.h](../../../Zenith/Core/Zenith_AutomatedTest.h):30)
+  still describes the flag as "tick at most N frames then exit" with no such
+  qualifier. Any game's exe, any session: same rule.
 - **Windowed visual evidence** (visual gates): run the game windowed via a
   harness-managed test or `zenith run`, and capture with the ENGINE's
   frame-exact path in preference to any screen scrape --

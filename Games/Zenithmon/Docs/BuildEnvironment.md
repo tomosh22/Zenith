@@ -154,6 +154,15 @@ Flags: `--filter / --tier / --tests / --batch-order / --headless /
 --exit-after-frames / --assertions-log`. Exit codes: 0 OK, 1 usage,
 2 validation, 3 generation, 4 build-or-test failure, 5 not-found.
 
+**`--exit-after-frames` only does anything while an automated test is running.**
+It is safe in the list above only because `zenith test` always runs one. It is an
+engine flag the harness forwards to the exe, and it is a per-TEST max-frames
+OVERRIDE -- it replaces every test's own `maxFrames`, so don't pass it "for
+safety" or you will truncate long tests into failures. Handed to a **bare game
+exe** with no `--automated-test` / `--all-automated-tests` it is silently ignored
+and a tools build idles in the editor forever. See the bullet in
+[AgentBriefing.md](AgentBriefing.md) section 9 for the failure signature.
+
 **Result JSON carries no failure text.** `Zenith_AutomatedTest.h` records that
 the per-test JSON's `"failures"` field "is currently always an empty array ...
 Tests that need detail today print to stdout instead", and the harness's
