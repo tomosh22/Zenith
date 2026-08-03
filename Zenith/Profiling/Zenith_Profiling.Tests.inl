@@ -632,6 +632,26 @@ ZENITH_TEST(Profiling, BootTimelineLODBudget)
 
 #endif // ZENITH_TOOLS
 
+// --exit-after-unit-tests must NOT be mistaken for an automated-test selection
+// flag. That implication is load-bearing, not cosmetic: ZM_SaveSlots keys its
+// "_Test" save-file aliasing on an explicit opt-in PRECISELY because the boot
+// ZENITH_TEST suite runs without IsAutomatedTestRun() set, and if adding this flag
+// to the unit gate had flipped that, every disk unit in the gate would have been
+// aimed at the developer's real Save0/Save1/Save2 files.
+//
+// Stated as an implication rather than a value, because the value is
+// invocation-dependent -- this very batch runs BOTH ways (the unit gate passes the
+// flag, a developer launch does not) and Parse is deliberately not re-run here (it
+// would clobber the process-wide flag state for the rest of the batch).
+ZENITH_TEST(CommandLine, ExitAfterUnitTestsIsNotAnAutomatedTestRun)
+{
+	if (Zenith_CommandLine::IsExitAfterUnitTestsRequested())
+	{
+		ZENITH_ASSERT_FALSE(Zenith_CommandLine::IsAutomatedTestRun(),
+			"--exit-after-unit-tests must not imply an automated-test run (ZM_SaveSlots keys disk redirection off that)");
+	}
+}
+
 // Live engine state, READ-ONLY: this batch runs inside the suspended window that
 // Zenith_Engine::InitialiseProject opens around RunAllTests. If this ever reads
 // ACTIVE, the profiler's own self-tests (ProfilingOverflow especially) are being

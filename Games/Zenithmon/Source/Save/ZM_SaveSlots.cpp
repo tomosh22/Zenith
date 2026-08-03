@@ -89,8 +89,8 @@ namespace
 	// The explicit test-name opt-in behind ZM_SaveSlots::SetTestSlotNamesForTests.
 	//
 	// A file-scope mutable static is normally a smell, and this one is a deliberate
-	// exception: the boot ZENITH_TEST suite runs under `
-	// --exit-after-frames 120` and under a plain developer launch, neither of which
+	// exception: the boot ZENITH_TEST suite runs under
+	// `--exit-after-unit-tests` and under a plain developer launch, neither of which
 	// sets Zenith_CommandLine::IsAutomatedTestRun(), so keying the "_Test" aliases on
 	// that flag alone leaves every disk unit either skipped (zero coverage) or aimed
 	// at the player's real Save0/Save1/Save2/Auto files. There is no per-call seam to

@@ -18,6 +18,11 @@
 // the harness skips those in Null builds. See AutomatedTest.h for that flag and
 // Games/DevilsPlayground/Docs/CIPolicy.md for the CI policy that depends on it.
 //
+// NOTE --exit-after-frames is NOT a general "quit after N frames" switch: it is
+// consumed only inside Zenith_AutomatedTestRunner's Stepping phase, so it does
+// nothing without an --automated-test selection flag. To boot and quit, use
+// --exit-after-unit-tests (below) or --bench-ecs.
+//
 // Other engine CLI flags (--list-automated-tests, --automated-test,
 // --all-automated-tests, --exit-after-frames, --fixed-dt,
 // --test-results, --test-results-dir, --skip-tool-exports,
@@ -103,6 +108,22 @@ namespace Zenith_CommandLine
     // Returns nullptr when absent (the default: one extra summary LINE is logged
     // either way, but no table is built and no file is written).
     const char* GetUnitTestTimingsPath();
+
+    // `--exit-after-unit-tests`: shut down cleanly the moment Zenith_Init returns,
+    // which is AFTER the boot-time RunAllTests batch has run and logged its tally.
+    //
+    // This exists because `--exit-after-frames N` is NOT a general "run N frames
+    // then quit" switch -- it is parsed by Zenith_AutomatedTestRunner and consumed
+    // only inside its Stepping phase, so with no --automated-test selection flag
+    // the runner is inactive, Tick() early-outs, and the flag does nothing at all.
+    // The unit gate passed it for exactly that purpose and consequently idled
+    // forever, with its watchdog kill as the only thing ending the process -- which
+    // made every gate run cost the FULL -TimeoutSec whether it passed or failed.
+    //
+    // Exiting here (rather than from inside RunAllTests) means the engine is fully
+    // initialised, so teardown runs the normal ordered shutdown. Same run-then-exit
+    // shape as --bench-ecs.
+    bool IsExitAfterUnitTestsRequested();
 
     // Pure split of `--boot-profile-dump[=path]`: returns the text after the first
     // '=', or szDefaultPath for the bare form (and for a trailing '=' with nothing

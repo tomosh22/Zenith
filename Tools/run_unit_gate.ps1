@@ -12,24 +12,36 @@
 # backend tests, which the Null build has no equivalent of).
 # Exit:   0 = baseline met, 1 = anything else (missing exe, timeout, failures).
 #
-# ★ -TimeoutSec IS A HANG GUARD THAT SILENTLY DOUBLES AS A RUNTIME BUDGET. It
-# exists to kill the known tools-build idle AFTER the units line is logged -- but
-# because that line must be written before the kill, any suite that takes longer
-# than the timeout fails, and it fails as "no 'Unit tests complete' line in boot
-# output", which reads like a crash or a loader failure rather than a slow suite.
-# Zenithmon measured 175/193/229/235s against this 180s default on one idle dev
-# machine on 2026-07-29 -- the suite straddles it, and which side it lands on is
-# decided by machine load. Callers whose suite is anywhere near the default MUST
-# pass explicit headroom (zm-tests.yml passes 600). If you are here because the
-# gate said the line was missing, check the runtime BEFORE you go hunting a
-# loader bug. See ZM-D-163.
+# ★ -TimeoutSec IS NOW A REAL HANG GUARD, NOT THE RUN LENGTH. The exe is launched
+# with --exit-after-unit-tests and terminates ITSELF the moment Zenith_Init returns
+# (the boot ZENITH_TEST batch lives inside it), so a healthy run exits on its own
+# and costs only what the suite actually takes. Raising the timeout no longer costs
+# anything on a passing run; it only widens the window before a genuinely wedged
+# boot is killed.
+#
+# It did NOT used to work that way. The exe was launched with
+# `--exit-after-frames 120`, which LOOKS like "run 120 frames then quit" but is
+# parsed by Zenith_AutomatedTestRunner and consumed only inside its Stepping phase
+# -- so with no --automated-test selection flag the runner is inactive, Tick()
+# early-outs, and the flag does nothing whatsoever. The game therefore idled
+# forever and the watchdog kill was the ONLY thing ending the process, which meant
+# every run -- pass or fail -- burned the entire -TimeoutSec. zm-tests.yml passing
+# 600 was 10 minutes per run, always.
+#
+# Two failure modes still surface as "no 'Unit tests complete' line", and neither
+# is a slow suite. Check them BEFORE raising the timeout:
+#   * an EMPTY log usually means STATUS_DLL_NOT_FOUND (exit 0xC0000135) -- the exe
+#     died before main(). Fix with Repair-ZenithRuntimeDlls (Build/zenith_buildsystem.psm1);
+#     `zenith test` heals automatically, this script does not.
+#   * a truncated log means the boot genuinely wedged. That is what the guard is for.
+# See ZM-D-163.
 #
 # ASCII-only body; runs under Windows PowerShell 5.1 and pwsh 7.
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Exe,
-    [int]$Baseline = 1270,
+    [int]$Baseline = 1271,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )
@@ -47,9 +59,9 @@ if ($LogPath -eq "") {
     $LogPath = Join-Path $root 'unit_gate_boot.log'
 }
 
-# Boot far enough for units-at-boot to complete, then exit. Games can hang at
-# shutdown (known), so a watchdog + kill guards the gate; the units line has
-# already been written by then.
+# Boot far enough for units-at-boot to complete, then exit -- which the exe now
+# does BY ITSELF via --exit-after-unit-tests. The watchdog below stays as a guard
+# against a genuinely wedged boot; on a healthy run it never fires.
 #
 # Deliberately NO --skip-tool-exports: the engine unit suite includes asset-export
 # tests (ProceduralTree::*, StickFigure*) that reload GenerateTestAssets output from
@@ -62,7 +74,7 @@ if ($LogPath -eq "") {
 Write-Host "[unit_gate] Booting $Exe (baseline $Baseline, timeout ${TimeoutSec}s)..." -ForegroundColor Cyan
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = (Resolve-Path $Exe).Path
-$psi.Arguments = '--exit-after-frames 120'
+$psi.Arguments = '--exit-after-unit-tests'
 $psi.WorkingDirectory = Split-Path (Resolve-Path $Exe).Path
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
@@ -71,7 +83,9 @@ $proc = [System.Diagnostics.Process]::Start($psi)
 $stdout = $proc.StandardOutput.ReadToEndAsync()
 $stderr = $proc.StandardError.ReadToEndAsync()
 if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
-    Write-Host "[unit_gate] timeout after ${TimeoutSec}s; killing (units line should already be logged)" -ForegroundColor Yellow
+    # A healthy run exits on its own (--exit-after-unit-tests). Reaching here means
+    # the boot wedged, or died before main() -- see the DLL note in the header.
+    Write-Host "[unit_gate] timeout after ${TimeoutSec}s; killing (boot did not self-terminate)" -ForegroundColor Yellow
     try { $proc.Kill() } catch { }
 }
 $outText = $stdout.Result + "`n" + $stderr.Result

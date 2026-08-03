@@ -194,6 +194,11 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   2893  exit-after-unit-tests  observed 2026-08-03 on a Null_ build.
+          #                   +1: CommandLine::ExitAfterUnitTestsIsNotAnAutomatedTestRun.
+          #                   The gate now boots with --exit-after-unit-tests and the exe
+          #                   self-terminates, so -TimeoutSec is a real hang guard again
+          #                   (a run went 600s -> ~75s). Engine default 1270 -> 1271.
           #   2892  per-test timings  observed 2026-08-03 on a Null_ build. +1:
           #                   Core::UnitTestTimingReport, covering the new
           #                   --unit-test-timings plumbing. Engine default 1269 -> 1270.
@@ -223,7 +228,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2892 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2893 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

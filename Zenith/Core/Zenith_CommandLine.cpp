@@ -19,6 +19,7 @@ namespace
     const char* s_szBootProfileDump = nullptr;
     bool        s_bSkipBootCapture  = false;
     const char* s_szUnitTestTimings = nullptr;
+    bool        s_bExitAfterUnitTests = false;
 
     // --boot-profile-dump with no "=path" writes here. A file-scope literal, not a
     // buffer: the accessor hands back a process-lifetime pointer exactly like the
@@ -45,6 +46,7 @@ namespace Zenith_CommandLine
         s_szBootProfileDump = nullptr;
         s_bSkipBootCapture  = false;
         s_szUnitTestTimings = nullptr;
+        s_bExitAfterUnitTests = false;
 
         if (argv != nullptr)
         {
@@ -116,6 +118,10 @@ namespace Zenith_CommandLine
                 {
                     s_szUnitTestTimings = ResolveBootProfileDumpArg(argv[i], szDEFAULT_UNIT_TEST_TIMINGS);
                 }
+                else if (std::strcmp(argv[i], "--exit-after-unit-tests") == 0)
+                {
+                    s_bExitAfterUnitTests = true;
+                }
             }
         }
 
@@ -185,6 +191,12 @@ namespace Zenith_CommandLine
     {
         if (!s_bParsed) return nullptr;
         return s_szUnitTestTimings;
+    }
+
+    bool IsExitAfterUnitTestsRequested()
+    {
+        if (!s_bParsed) return false;
+        return s_bExitAfterUnitTests;
     }
 
     const char* ResolveBootProfileDumpArg(const char* szArg, const char* szDefaultPath)

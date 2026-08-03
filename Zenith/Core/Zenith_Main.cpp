@@ -158,6 +158,30 @@ void Zenith_Core::Zenith_Main()
 		}
 	}
 
+	// --exit-after-unit-tests: the boot ZENITH_TEST batch has already run and logged
+	// its tally (it lives inside Zenith_Init, in InitialiseProject), so there is
+	// nothing left for the unit gate to wait for. Exit through the normal ordered
+	// teardown, exactly like --bench-ecs above.
+	//
+	// This flag exists because `--exit-after-frames N` looks like it should do this
+	// and DOESN'T: it is consumed only inside Zenith_AutomatedTestRunner's Stepping
+	// phase, so without an --automated-test selection flag the runner is inactive,
+	// Tick() early-outs, and the flag is inert. Tools/run_unit_gate.ps1 passed it and
+	// consequently idled until its watchdog killed the process — which is why every
+	// unit-gate run cost the entire -TimeoutSec regardless of the result.
+	//
+	// Deliberately AFTER the --bench-ecs block: both are run-then-exit switches, and
+	// if somebody passes both, the benchmark they explicitly asked for still runs.
+	if (Zenith_CommandLine::IsExitAfterUnitTestsRequested())
+	{
+		// NOTE the wording: must NOT contain "unit tests complete". run_unit_gate.ps1
+		// scrapes the tally with a case-insensitive match on that phrase and takes the
+		// LAST hit, so a chattier message here silently shadows the real tally line.
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "--exit-after-unit-tests: boot batch finished, shutting down");
+		Zenith_Core::Zenith_FullShutdown();
+		std::exit(0);
+	}
+
 #ifdef ZENITH_INPUT_SIMULATOR
 	// EXT-3a: parse harness CLI flags AFTER Zenith_Init (so the registry has
 	// been populated by static initializers and `--list-automated-tests` can

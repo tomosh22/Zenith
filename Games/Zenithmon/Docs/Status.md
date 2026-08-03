@@ -6,9 +6,9 @@
 down this file (RE-OBSERVED 2026-08-03 after the boot-profiling work, on a
 Null_ build):**
 ZM headless registry **55 passed / 0 failed**; ZM boot unit gate
-**2892 ran / 2890 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
-**2892**); engine boot unit gate, Null Combat, **1270 ran / 1269 passed / 0
-failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1270`). One skip in
+**2893 ran / 2891 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
+**2893**); engine boot unit gate, Null Combat, **1271 ran / 1270 passed / 0
+failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1271`). One skip in
 each is the quarantined `GraphComponent::RegistryWideNodeRoundTrip`
 (task_726cc81d); ZM carries a second, ZM-side skip.
 
@@ -21,7 +21,9 @@ pins moved by 27 rather than 23 because **they were already stale by 4**: commit
 `33531b6a` (shadow-cascade ordering) added four engine units and updated neither
 pin, so HEAD was really 2868 / 1246, not 2864 / 1242. A follow-up added one more
 engine unit (`Core::UnitTestTimingReport`, for the `--unit-test-timings`
-plumbing), taking both pins to **2892 / 1270**.
+plumbing), taking both pins to **2892 / 1270**; then one more
+(`CommandLine::ExitAfterUnitTestsIsNotAnAutomatedTestRun`) with the
+`--exit-after-unit-tests` gate fix, taking them to **2893 / 1271**.
 **ZM-D-182 moves the ZM boot inventory only: 2863 -> 2864** (+1
 `HumanVisual_RestartPreservesTheAnimatorRig`, the only unit that reaches the WARM
 human branch). It changes no unit under `Zenith/`, so the engine baseline remains
