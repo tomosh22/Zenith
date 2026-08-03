@@ -69,8 +69,8 @@ public:
 	/**
 	 * Serialization for scene save/load
 	 */
-	void WriteToDataStream(Zenith_DataStream& xStream) const;
-	void ReadFromDataStream(Zenith_DataStream& xStream);
+	void WriteToDataStream(Zenith_DataStream& xStream) const override;
+	void ReadFromDataStream(Zenith_DataStream& xStream) override;
 
 	// Envelope-aware, status-returning parse of an in-memory .zmesh stream — the
 	// file-load error contract. The static LoadFromFile is ReadFromFile + ParseStream;
