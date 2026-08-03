@@ -261,9 +261,17 @@ ZENITH_TEST(IBLEnvironment, SimulatedDayAt60FpsKeepsCompletingGenerations)
 	IBLTestPrimePastFirstGeneration(xIBL, 0.0f);
 	const u_int uBaseGenerations = xIBL.GetCompletedGenerationCount();
 
+	// ★ THE ANGULAR STEP IS THE SCENARIO; THE FRAME COUNT IS ONLY THE HORIZON.
+	// The defect this pins depends on 0.05 deg/FRAME (below the ~0.081 deg capture
+	// threshold, so a previous-frame baseline could never fire) -- which is fixed by
+	// fDt * fDegreesPerSecond and is UNCHANGED here. Simulating a fifth of the day
+	// keeps that step exactly and still separates "many generations" from the bug's
+	// ZERO by a wide margin; the full 7200 frames cost 13 s, ~10% of the entire
+	// engine unit suite. Do NOT "simplify" this by changing the day length or dt --
+	// that would change the deg/frame the whole test is about.
 	const float fDt = 1.0f / 60.0f;
 	const float fDegreesPerSecond = 360.0f / 120.0f;  // one 120 s day
-	const u_int uFrames = 7200u;                      // 120 s at 60 FPS
+	const u_int uFrames = 1440u;                      // 24 s of that day at 60 FPS
 	u_int uMaxIdleRun = 0u;
 	u_int uIdleRun = 0u;
 	for (u_int uFrame = 0u; uFrame < uFrames; uFrame++)
@@ -274,13 +282,16 @@ ZENITH_TEST(IBLEnvironment, SimulatedDayAt60FpsKeepsCompletingGenerations)
 		else                               { uIdleRun = 0u; }
 	}
 
+	// Threshold scaled with the horizon (was >100 over 7200 frames). The bug being
+	// pinned produced ZERO, so any lower bound well above zero separates it.
 	const u_int uCompleted = xIBL.GetCompletedGenerationCount() - uBaseGenerations;
-	ZENITH_ASSERT_GT(uCompleted, 100u, "a 120 s day must complete many IBL generations at 60 FPS");
+	ZENITH_ASSERT_GT(uCompleted, 20u, "a moving sun must keep completing IBL generations at 60 FPS");
 	ZENITH_ASSERT_LT(uMaxIdleRun, 12u, "regeneration must never stall for long while the sun is moving");
-	// The capture must TRACK the sun, not lag a whole day behind it.
-	const Zenith_Maths::Vector3 xEndOfDay = IBLTestSunDirForOrbitDegrees(
+	// The capture must TRACK the sun, not lag behind it. Derived from uFrames, so it
+	// follows the horizon automatically.
+	const Zenith_Maths::Vector3 xFinalOrbit = IBLTestSunDirForOrbitDegrees(
 		static_cast<float>(uFrames - 1u) * fDt * fDegreesPerSecond);
-	ZENITH_ASSERT_GT(glm::dot(xIBL.GetActiveEnvironment().m_xSunDirection, xEndOfDay), 0.9999f,
+	ZENITH_ASSERT_GT(glm::dot(xIBL.GetActiveEnvironment().m_xSunDirection, xFinalOrbit), 0.9999f,
 		"the captured target advanced with the day");
 }
 
@@ -294,9 +305,14 @@ ZENITH_TEST(IBLEnvironment, SimulatedDayAt30FpsNeitherRestartsNorStarves)
 	IBLTestPrimePastFirstGeneration(xIBL, 0.0f);
 	const u_int uBaseGenerations = xIBL.GetCompletedGenerationCount();
 
+	// Same reasoning as the 60 FPS case: 0.1 deg/FRAME is the scenario (it crosses
+	// the threshold EVERY frame, which is what used to rewind the 48-pass cursor),
+	// and that is set by fDt * fDegreesPerSecond, not by the horizon. The
+	// starts == completions assertion below is a per-generation identity, so it
+	// holds over any window long enough to contain several generations.
 	const float fDt = 1.0f / 30.0f;
 	const float fDegreesPerSecond = 360.0f / 120.0f;
-	const u_int uFrames = 3600u;                       // 120 s at 30 FPS
+	const u_int uFrames = 720u;                        // 24 s of the day at 30 FPS
 	u_int uIrradianceFaceZeroStarts = 0u;
 	for (u_int uFrame = 0u; uFrame < uFrames; uFrame++)
 	{
@@ -317,7 +333,7 @@ ZENITH_TEST(IBLEnvironment, SimulatedDayAt30FpsNeitherRestartsNorStarves)
 	ZENITH_ASSERT_FALSE(xIBL.HasPendingEnvironment(), "nothing is left queued");
 
 	const u_int uCompleted = xIBL.GetCompletedGenerationCount() - uBaseGenerations;
-	ZENITH_ASSERT_GT(uCompleted, 100u, "generations must still COMPLETE at 30 FPS");
+	ZENITH_ASSERT_GT(uCompleted, 20u, "generations must still COMPLETE at 30 FPS");
 	// A restart re-runs irradiance face 0 without completing, so starts and
 	// completions would diverge. They must match exactly.
 	ZENITH_ASSERT_EQ(uIrradianceFaceZeroStarts, uCompleted,

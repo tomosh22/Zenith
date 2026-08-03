@@ -522,14 +522,48 @@ ZENITH_TEST(ZM_TerrainAuthoring, DawnmereManifestRequiresEveryOutput)
 	}
 
 	// Every individual required output is independently part of the warm gate.
-	for (u_int i = 0; i < xOutputs.GetSize(); ++i)
+	//
+	// SAMPLED, NOT EXHAUSTIVE, and deliberately so. ZM_IsTerrainBakeWarm walks the
+	// enumerated output list and rejects on the first non-empty-file miss, so if it
+	// honours output 0 and output N-1 it honours every index in between BY
+	// CONSTRUCTION -- there is no per-index branch for a sample to miss. What is
+	// genuinely at risk is a whole CATEGORY dropping out of enumeration, and the
+	// uRender/uRenderLow/uPhysics/uTextures counts asserted above already cover that
+	// exhaustively and for free. So this loop samples one representative of each
+	// category plus both ends.
+	//
+	// It used to remove-and-restore all 771 outputs, taking a full warm check each
+	// time. That is O(n^2) in FILESYSTEM syscalls -- ~594,000 file-existence checks
+	// for zero extra defect-detection power -- and was 27 s, ~20% of the entire
+	// engine unit suite on its own. The sibling
+	// ZM_TerrainRecipeSet::ManifestsEncodePerRecipeCounts... covers this same
+	// invariant for EVERY recipe, sampled, in a tenth of the time; this is the
+	// shape to copy.
 	{
-		const std::filesystem::path xOutput = xGuard.m_xRoot / xOutputs.Get(i);
-		std::filesystem::remove(xOutput, xError);
-		ZENITH_ASSERT_FALSE(static_cast<bool>(xError));
-		ZENITH_ASSERT_FALSE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot),
-			"warm bake ignored missing required output %u", i);
-		ZENITH_ASSERT_TRUE(WriteNonEmptyFile(xOutput));
+		const u_int uCount = xOutputs.GetSize();
+		const u_int auSampleIndices[] =
+		{
+			0u,                    // first (a Render_ chunk)
+			1u,
+			uCount / 4u,           // inside the Render_LOW_ run
+			uCount / 2u,           // inside the Physics_ run
+			(uCount * 3u) / 4u,
+			uCount - 4u,           // the three trailing textures
+			uCount - 2u,
+			uCount - 1u,           // last
+		};
+		for (u_int uSample = 0; uSample < sizeof(auSampleIndices) / sizeof(auSampleIndices[0]); ++uSample)
+		{
+			const u_int i = auSampleIndices[uSample];
+			if (i >= uCount) continue;
+
+			const std::filesystem::path xOutput = xGuard.m_xRoot / xOutputs.Get(i);
+			std::filesystem::remove(xOutput, xError);
+			ZENITH_ASSERT_FALSE(static_cast<bool>(xError));
+			ZENITH_ASSERT_FALSE(ZM_IsTerrainBakeWarm(xRecipe, xGuard.m_xRoot),
+				"warm bake ignored missing required output %u", i);
+			ZENITH_ASSERT_TRUE(WriteNonEmptyFile(xOutput));
+		}
 	}
 
 	// Existing-but-empty is not complete either.

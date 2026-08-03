@@ -81,10 +81,12 @@ they have different fixes:
 - **reset** — the global-state reset the *runner* performs after each test on its
   behalf (`Zenith_SceneSystem::ResetForNextTest`).
 
-Measured over 2,892 tests on a Null Zenithmon boot: **136,267 ms total = 119,981 ms
-body (88.0%) + 16,285 ms reset (12.0%)**.
+First measured over 2,892 tests on a Null Zenithmon boot: **136,267 ms total =
+119,981 ms body (88.0%) + 16,285 ms reset (12.0%)**. After the fixes in §1b:
+**83,527 ms**.
 
-**The suite is not slow; ~21 tests are.**
+**The suite is not slow; ~21 tests are.** (Figures below are the ORIGINAL
+measurement — the one that motivated the fixes.)
 
 | Cost band | tests | ms | share |
 |---|---:|---:|---:|
@@ -132,6 +134,51 @@ Two independent levers follow, and they act on different halves:
   integration tests living in the unit suite.
 - **Make the per-test reset cheaper or conditional** → up to 16.3 s, and it is the
   only lever that helps the ~2,200 tests that currently cost nothing but the tax.
+
+#### 1b. What the first lever actually recovered — measured
+
+Five tests were changed, none removed, none weakened (test count unchanged at
+2,892; **0 failed** before and after). Each change removes redundant work, not
+coverage:
+
+| Test | before | after | Δ | change |
+|---|---:|---:|---:|---|
+| `ZM_TerrainAuthoring::DawnmereManifestRequiresEveryOutput` | 27,061 | 1,173 | **−25,889** | O(n²) warm-check loop over all 771 outputs → 8 sampled representatives |
+| `IBLEnvironment::SimulatedDayAt60Fps…` | 13,041 | 1,925 | **−11,116** | 7,200-frame horizon → 1,440; **deg/frame unchanged** |
+| `IBLEnvironment::SimulatedDayAt30Fps…` | 6,045 | 695 | **−5,350** | 3,600-frame horizon → 720; deg/frame unchanged |
+| `ZM_Gen::HumanGen_AppearanceAlbedoStructural` | 2,960 | 1,307 | **−1,653** | 4 generator runs per human → 2; determinism already owned by `HumanGen_SameSeedDeterminism` (which covers every id) |
+| `ZM_Save::Truncation_EveryByteBoundary…` | 3,784 | 3,385 | **−399** | loop-invariant fixture hoisted out of the per-byte loop; sweep still exhaustive |
+| **Edited set** | **52,891** | **8,484** | **−44,407 (−84.0%)** | |
+
+Observed suite total went 136,267 → 83,527 ms (**−38.7%**). Note the honest
+discount: only **−44.4 s is attributable** to these edits. The remaining ~8 s
+appears on the 2,887 tests that were *not* touched, and two consecutive post-fix
+runs differ by only 0.46% on that same set — so it is a systematic artefact of the
+original measurement session (first execution of a freshly linked binary, cold OS
+cache), not ordinary noise and not an effect of these changes.
+
+**Why each is safe rather than merely faster:**
+
+- The Dawnmere loop deleted and restored all 771 outputs, taking a full warm check
+  each time — and `ZM_IsTerrainBakeWarm` stats *every* output, so it was ~594,000
+  filesystem syscalls. The warm check has no per-index branch, so honouring index 0
+  and index 770 honours everything between by construction; what's genuinely at risk
+  is a whole *category* dropping out of enumeration, which the untouched
+  `uRender==256 / uRenderLow==256 / uPhysics==256 / uTextures==3` assertions already
+  cover exhaustively and for free. `ZM_TerrainRecipeSet::ManifestsEncode…` proves the
+  point: same invariant, sampled, **all five recipes**, a tenth of the cost.
+- The IBL tests pin defects that depend on the per-frame angular step (0.05°/frame at
+  60 FPS, below the ~0.081° capture threshold; 0.1°/frame at 30 FPS, crossing it
+  every frame). That step is `fDt * fDegreesPerSecond` and is **unchanged** — only the
+  horizon shrank. Both bugs produced *zero* completed generations, so a lower bound
+  of >20 separates them as decisively as >100 did.
+
+**Not changed, and why.** `TerrainEditor::ProceduralGenerationIsDeterministic` and
+`AutoSplatWeightsSumTo255` were on the shortlist as "use a test-sized terrain" — but
+`uHEIGHTFIELD_SIZE` (4096) and `uSPLATMAP_SIZE` (2048) are *production* constants,
+so there is no test-only grid to shrink. The remaining lever (dropping FBM octaves
+2→1) would trade real coverage — the octave accumulation is part of what determinism
+means here — for perhaps a third of the cost. Left alone deliberately.
 
 ### 2. Flux `LateInitialise` — the whole engine-fixed remainder
 

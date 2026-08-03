@@ -754,11 +754,19 @@ ZENITH_TEST(ZM_Save, Module_LengthAndTopLevelTrailingBytesAreExact)
 ZENITH_TEST(ZM_Save, Truncation_EveryByteBoundaryReturnsCorruptData)
 {
 	const std::vector<uint8_t> xBytes = Encode(MakeWireFixture());
+
+	// The fixture is rebuilt from scratch on every one of the ~N byte boundaries in
+	// the original; it is loop-invariant, so build it ONCE and copy. The truncated
+	// COPY below is deliberately kept (rather than aliasing xBytes with a shorter
+	// length): an over-read past the stream's declared size then runs off a real
+	// allocation and the Debug allocator's guard bytes catch it, which is a genuine
+	// part of what this test proves.
+	const ZM_GameState xPristine = MakeWireFixture();
 	for (u_int uLength = 0u; uLength < xBytes.size(); ++uLength)
 	{
 		std::vector<uint8_t> xTruncated(xBytes.begin(), xBytes.begin() + uLength);
-		ZM_GameState xDestination = MakeWireFixture();
-		const ZM_GameState xBefore = xDestination;
+		ZM_GameState xDestination = xPristine;
+		const ZM_GameState& xBefore = xPristine;
 		Zenith_DataStream xStream(xTruncated.data(), xTruncated.size());
 		const Zenith_Status xStatus = ZM_SaveSchema::Read(xStream, xTruncated.size(), xDestination);
 		ZENITH_ASSERT_FALSE(xStatus.IsOk(), "truncation at byte %u decoded", uLength);

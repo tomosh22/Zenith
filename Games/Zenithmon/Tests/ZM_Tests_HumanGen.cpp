@@ -1644,17 +1644,17 @@ ZENITH_TEST(ZM_Gen, HumanGen_AppearanceAlbedoStructural)
 				"human %u domain %u seed is not the canonical derivation", id, d);
 		}
 
+		// ONE build per human, not two. This test is the STRUCTURAL one (dims, packing,
+		// finiteness, unit range, opacity, colour variation); same-seed determinism is
+		// owned by ZM_Gen::HumanGen_SameSeedDeterminism, which exists for exactly that
+		// and re-builds every human itself. Doing it here as well doubled the cost of
+		// the roster's most expensive generator for a property already covered.
 		const ZM_GenImage xAlbedoA = ZM_BuildHumanAlbedo(xRecipe);
-		const ZM_GenImage xAlbedoB = ZM_BuildHumanAlbedo(xRecipe);
 		ZENITH_ASSERT_FALSE(xAlbedoA.IsEmpty(), "human %u direct albedo is empty", id);
 		ZENITH_ASSERT_EQ(xAlbedoA.GetWidth(), uZM_HUMAN_ALBEDO_RESOLUTION,
 			"human %u albedo width differs from the shared resolution", id);
 		ZENITH_ASSERT_EQ(xAlbedoA.GetHeight(), uZM_HUMAN_ALBEDO_RESOLUTION,
 			"human %u albedo height differs from the shared resolution", id);
-		ZENITH_ASSERT_TRUE(xAlbedoA.Equals(xAlbedoB),
-			"human %u direct albedo is not deterministic", id);
-		ZENITH_ASSERT_EQ(xAlbedoA.ContentHash(), xAlbedoB.ContentHash(),
-			"human %u direct albedo hash is not deterministic", id);
 
 		const HumanImageScan xScan = ScanHumanImage(xAlbedoA);
 		ZENITH_ASSERT_TRUE(xScan.m_bPackedSizeMatches,
@@ -1671,18 +1671,15 @@ ZENITH_TEST(ZM_Gen, HumanGen_AppearanceAlbedoStructural)
 		ZENITH_ASSERT_GE(xScan.m_uDistinctRGB, uHUMAN_MIN_MATERIAL_COLOURS,
 			"human %u albedo must contain structural skin/hair/outfit colour variation", id);
 
+		// Likewise ONE bundle build. The property THIS test owns is that the complete
+		// driver routes through the shared albedo builder (equality against xAlbedoA);
+		// bundle determinism is HumanGen_SameSeedDeterminism's job.
 		ZM_Human xFullA;
-		ZM_Human xFullB;
 		ZM_BuildHuman(eId, xFullA);
-		ZM_BuildHuman(eId, xFullB);
 		ZENITH_ASSERT_TRUE(xFullA.m_xAlbedo.Equals(xAlbedoA),
 			"human %u complete driver did not use the shared albedo builder", id);
 		ZENITH_ASSERT_EQ(xFullA.m_xAlbedo.ContentHash(), xAlbedoA.ContentHash(),
 			"human %u complete-driver albedo hash differs from the direct builder", id);
-		ZENITH_ASSERT_TRUE(ZM_HumanBuildEqual(xFullA, xFullB),
-			"human %u complete appearance bundle is not deterministic", id);
-		ZENITH_ASSERT_EQ(ZM_HumanContentHash(xFullA), ZM_HumanContentHash(xFullB),
-			"human %u complete appearance hash is not deterministic", id);
 		auBundleHashes[id] = ZM_HumanContentHash(xFullA);
 	}
 
