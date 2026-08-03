@@ -8,6 +8,15 @@ struct Zenith_TestCase
 	const char* m_strName;
 	void (*m_pfnTest)();
 	Zenith_TestCase* m_pxNext;
+
+	// Per-test wall clock, filled in by RunAllTests. Two separate numbers because
+	// they have different fixes: m_fBodyMs is the test itself, m_fResetMs is the
+	// per-test global-state reset the runner performs AFTERWARDS on its behalf (a
+	// full ECS scene reset). A suite dominated by the second one is not a suite of
+	// slow tests. Declared last so the ZENITH_TEST aggregate initialiser, which
+	// names only the four fields above, keeps compiling (these value-initialise).
+	double m_fBodyMs;
+	double m_fResetMs;
 };
 
 // One captured assertion failure. Collected silently during the run and
@@ -61,6 +70,20 @@ public:
 	u_int GetSkippedCount() const { return m_uSkippedCount; }
 	u_int GetTestCount()    const { return m_uTestCount;    }
 
+	// Registration order is REVERSE of execution order (RegisterTest pushes onto
+	// the head), which is why the report sorts rather than walking this directly.
+	const Zenith_TestCase* GetFirstTest() const { return m_pxFirstTest; }
+
+	// Totals over the whole suite, in the same two buckets as Zenith_TestCase.
+	double GetTotalBodyMs()  const { return m_fTotalBodyMs;  }
+	double GetTotalResetMs() const { return m_fTotalResetMs; }
+
+	// Every test, slowest first, with its share and the running cumulative share —
+	// so "how much would fixing the top N recover" is readable straight off the
+	// table. Written by RunAllTests when --unit-test-timings is on; callable
+	// directly by a test. pFile == nullptr is a no-op.
+	void WriteTimingReport(FILE* pFile) const;
+
 private:
 	Zenith_TestRunner() = default;
 	Zenith_TestRunner(const Zenith_TestRunner&) = delete;
@@ -75,6 +98,8 @@ private:
 	u_int               m_uSkippedCount    = 0;
 	bool                m_bCurrentTestFailed  = false;
 	bool                m_bCurrentTestSkipped = false;
+	double              m_fTotalBodyMs        = 0.0;
+	double              m_fTotalResetMs       = 0.0;
 
 	// Installed by a higher layer (EngineComposition TU) via SetResetHook.
 	static inline void (*m_pfnResetHook)() = nullptr;

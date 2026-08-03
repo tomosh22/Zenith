@@ -196,7 +196,19 @@ Not everything moves onto the engine. These carve-outs are deliberate and the as
   `Zenith_AutomatedTestRunner::ParseCommandLine` runs: `--boot-profile-dump[=path]`
   (`GetBootProfileDumpPath`, plus the pure `ResolveBootProfileDumpArg` splitter so the
   parsing contract is testable without re-running `Parse` and clobbering process-wide
-  flag state) and `--skip-boot-capture` (`IsBootCaptureSkipped`).
+  flag state) and `--skip-boot-capture` (`IsBootCaptureSkipped`). Same rationale for
+  `--unit-test-timings[=path]` (`GetUnitTestTimingsPath`): the boot-time
+  `RunAllTests` batch reads it from inside `Zenith_Init`.
+
+## Unit-test timings
+
+`Zenith_TestRunner` times every registered case and splits the cost in two —
+`m_fBodyMs` (the test) and `m_fResetMs` (the per-test global-state reset the runner
+performs on its behalf, via the `SetResetHook` seam). One `TimingSummary` line is
+logged on every run; `--unit-test-timings[=path]` additionally dumps the full
+per-test table, slowest first, with per-test and cumulative share. The runner stays
+Core-L0-clean about it: it carries a two-line `std::chrono` timebase rather than
+reaching for the profiler. Findings: **[Docs/BootProfiling.md](../../Docs/BootProfiling.md) §1a**.
 - **`Zenith_GraphicsOptions`** — populated once by `Project_SetGraphicsOptions` at boot. Read-only thereafter.
 
 ### Static-init registration side-lists

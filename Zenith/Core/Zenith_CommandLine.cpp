@@ -18,11 +18,13 @@ namespace
     const char* s_szTestSaveRunId   = nullptr;
     const char* s_szBootProfileDump = nullptr;
     bool        s_bSkipBootCapture  = false;
+    const char* s_szUnitTestTimings = nullptr;
 
     // --boot-profile-dump with no "=path" writes here. A file-scope literal, not a
     // buffer: the accessor hands back a process-lifetime pointer exactly like the
     // argv-derived paths beside it.
     const char* const szDEFAULT_BOOT_PROFILE_DUMP = "zenith_boot_profile_dump.txt";
+    const char* const szDEFAULT_UNIT_TEST_TIMINGS = "zenith_unit_test_timings.txt";
 }
 
 namespace Zenith_CommandLine
@@ -42,6 +44,7 @@ namespace Zenith_CommandLine
         s_szTestSaveRunId   = nullptr;
         s_szBootProfileDump = nullptr;
         s_bSkipBootCapture  = false;
+        s_szUnitTestTimings = nullptr;
 
         if (argv != nullptr)
         {
@@ -106,6 +109,13 @@ namespace Zenith_CommandLine
                 {
                     s_bSkipBootCapture = true;
                 }
+                // Per-test timings. Parsed here for the same reason as the boot
+                // flags: RunAllTests fires inside Zenith_Init, long before the
+                // automated-test runner parses anything.
+                else if (std::strncmp(argv[i], "--unit-test-timings", 19) == 0)
+                {
+                    s_szUnitTestTimings = ResolveBootProfileDumpArg(argv[i], szDEFAULT_UNIT_TEST_TIMINGS);
+                }
             }
         }
 
@@ -169,6 +179,12 @@ namespace Zenith_CommandLine
     {
         if (!s_bParsed) return false;   // Android never parses: capture stays ON
         return s_bSkipBootCapture;
+    }
+
+    const char* GetUnitTestTimingsPath()
+    {
+        if (!s_bParsed) return nullptr;
+        return s_szUnitTestTimings;
     }
 
     const char* ResolveBootProfileDumpArg(const char* szArg, const char* szDefaultPath)

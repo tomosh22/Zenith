@@ -71,6 +71,68 @@ engine floor in the fourth.
 This is a *policy* cost, not an engine cost: it is 0 ms with `--skip-unit-tests`,
 and the automated-test harness already passes that flag by design.
 
+#### 1a. Which tests — `--unit-test-timings[=path]`
+
+`Zenith_TestRunner` now times every case and can dump the whole list, slowest
+first, with per-test and cumulative share. It splits the cost two ways, because
+they have different fixes:
+
+- **body** — the test itself,
+- **reset** — the global-state reset the *runner* performs after each test on its
+  behalf (`Zenith_SceneSystem::ResetForNextTest`).
+
+Measured over 2,892 tests on a Null Zenithmon boot: **136,267 ms total = 119,981 ms
+body (88.0%) + 16,285 ms reset (12.0%)**.
+
+**The suite is not slow; ~21 tests are.**
+
+| Cost band | tests | ms | share |
+|---|---:|---:|---:|
+| ≥ 1000 ms | 21 | 91,970 | 67.5% |
+| ≥ 500 ms | 25 | 94,759 | 69.5% |
+| ≥ 100 ms | 91 | 106,285 | 78.0% |
+| ≥ 10 ms | 671 | 123,949 | 91.0% |
+
+Top 10 tests = **56.6%** of the suite; top 25 = 69.5%; top 100 = 78.6%.
+
+| # | Test | total ms |
+|---:|---|---:|
+| 1 | `ZM_TerrainAuthoring::DawnmereManifestRequiresEveryOutput` | 27,061 |
+| 2 | `ZM_Gen::CreatureGen_UniversalBundlePerSpecies` | 13,374 |
+| 3 | `IBLEnvironment::SimulatedDayAt60FpsKeepsCompletingGenerations` | 13,041 |
+| 4 | `IBLEnvironment::SimulatedDayAt30FpsNeitherRestartsNorStarves` | 6,045 |
+| 5 | `ZM_Save::Truncation_EveryByteBoundaryReturnsCorruptData` | 3,784 |
+| 6 | `TerrainEditor::ProceduralGenerationIsDeterministic` | 3,604 |
+| 7 | `ZM_Gen::HumanGen_AppearanceAlbedoStructural` | 2,960 |
+| 8 | `ZM_TerrainRecipeSet::ManifestsEncodePerRecipeCounts…` | 2,765 |
+| 9 | `ECS::QuerySparseLegacyEquivalence` | 2,324 |
+| 10 | `TerrainEditor::AutoSplatWeightsSumTo255` | 2,138 |
+
+By category:
+
+| Category | tests | ms | share |
+|---|---:|---:|---:|
+| `ZM_Gen` | 140 | 36,935 | 27.1% |
+| `ZM_TerrainAuthoring` | 3 | 27,069 | 19.9% |
+| `IBLEnvironment` | 19 | 19,479 | 14.3% |
+| `TerrainEditor` | 17 | 9,093 | 6.7% |
+| `Automation` | 97 | 7,041 | 5.2% |
+| `ZM_Save` | 133 | 6,265 | 4.6% |
+
+**The reset is a flat tax, and it is the floor for everything else.** Median test
+*body* is **0.015 ms**; median *reset* is **5.26 ms** (mean 5.63 ms). 2,214 of 2,892
+tests (77%) have a body under 1 ms, and 2,036 under 0.1 ms — so for the large
+majority of the suite, the reset is essentially the entire cost. That is why no
+test measures under 1 ms total despite most doing almost nothing.
+
+Two independent levers follow, and they act on different halves:
+
+- **Fix or gate the ~21 heavyweights** → up to 92 s (67.5%), most of it content
+  generation and terrain authoring rather than engine logic. These read like
+  integration tests living in the unit suite.
+- **Make the per-test reset cheaper or conditional** → up to 16.3 s, and it is the
+  only lever that helps the ~2,200 tests that currently cost nothing but the tax.
+
 ### 2. Flux `LateInitialise` — the whole engine-fixed remainder
 
 With units and exports skipped, `Boot InitialiseGPUAssets` **is** the boot:

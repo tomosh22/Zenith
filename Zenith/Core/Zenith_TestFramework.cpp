@@ -3,8 +3,27 @@
 
 #ifdef ZENITH_TESTING
 
+#include "Collections/Zenith_Vector.h"
+#include "Core/Zenith_CommandLine.h"
+
+#include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <cmath>
+
+// The runner is Core L0 and deliberately names no subsystem — not even the
+// profiler — so it carries its own two-line timebase rather than reaching for
+// Zenith_Profiling_Detail. Same clock underneath.
+static u_int64 Zenith_TestClockTicks()
+{
+	return static_cast<u_int64>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+}
+static double Zenith_TestTicksToMs(const u_int64 uBegin, const u_int64 uEnd)
+{
+	using Period = std::chrono::high_resolution_clock::period;
+	const double fTicksToNs = static_cast<double>(Period::num) * 1.0e9 / static_cast<double>(Period::den);
+	return static_cast<double>(uEnd - uBegin) * fTicksToNs / 1.0e6;
+}
 
 #ifdef ZENITH_WINDOWS
 // __try / __except / EXCEPTION_EXECUTE_HANDLER. Per the W5.2 note in Zenith.h,
@@ -58,7 +77,9 @@ void Zenith_TestRunner::RunAllTests()
 		m_bCurrentTestFailed  = false;
 		m_bCurrentTestSkipped = false;
 
+		const u_int64 uBodyBegin = Zenith_TestClockTicks();
 		pxCase->m_pfnTest();
+		const u_int64 uBodyEnd = Zenith_TestClockTicks();
 
 		if (m_bCurrentTestSkipped)    m_uSkippedCount++;
 		else if (m_bCurrentTestFailed) m_uFailedCount++;
@@ -74,6 +95,14 @@ void Zenith_TestRunner::RunAllTests()
 		// because a catastrophically broken test could corrupt the state we're
 		// about to touch.
 		Zenith_TestResetGlobalState();
+		const u_int64 uResetEnd = Zenith_TestClockTicks();
+
+		// Charged to the test that CAUSED it, but reported in its own column: the
+		// reset is work the runner does on the test's behalf, not work the test did.
+		pxCase->m_fBodyMs  = Zenith_TestTicksToMs(uBodyBegin, uBodyEnd);
+		pxCase->m_fResetMs = Zenith_TestTicksToMs(uBodyEnd, uResetEnd);
+		m_fTotalBodyMs  += pxCase->m_fBodyMs;
+		m_fTotalResetMs += pxCase->m_fResetMs;
 	}
 
 	// Final summary — the only unit-test logging the suite emits.
@@ -84,6 +113,29 @@ void Zenith_TestRunner::RunAllTests()
 		m_uFailedCount,
 		m_uSkippedCount
 		);
+
+	// One machine-readable line ALWAYS (it is one line, and the boot report's
+	// `UnitTests` phase is meaningless without knowing how it splits), then the
+	// full per-test table only when it was asked for.
+	Zenith_Log(LOG_CATEGORY_UNITTEST,
+		"[UnitTest] TimingSummary totalMs=%.1f bodyMs=%.1f resetMs=%.1f tests=%u",
+		m_fTotalBodyMs + m_fTotalResetMs, m_fTotalBodyMs, m_fTotalResetMs, m_uTestCount);
+
+	const char* szTimingPath = Zenith_CommandLine::GetUnitTestTimingsPath();
+	if (szTimingPath != nullptr)
+	{
+		WriteTimingReport(stdout);
+		fflush(stdout);
+
+		FILE* pxFile = nullptr;
+		fopen_s(&pxFile, szTimingPath, "w");
+		if (pxFile != nullptr)
+		{
+			WriteTimingReport(pxFile);
+			fclose(pxFile);
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "Unit-test timings -> %s", szTimingPath);
+		}
+	}
 	if (m_uSkippedCount > 0)
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "  skipped: %u", m_uSkippedCount);
@@ -103,6 +155,52 @@ void Zenith_TestRunner::RunAllTests()
 
 	if(m_uFailedCount)
 		Zenith_DebugBreak();
+}
+
+void Zenith_TestRunner::WriteTimingReport(FILE* pFile) const
+{
+	if (pFile == nullptr) return;
+
+	// Collect first, sort second: the registry is a singly-linked list in REVERSE
+	// registration order, and the interesting order is by cost.
+	Zenith_Vector<const Zenith_TestCase*> xCases;
+	for (const Zenith_TestCase* pxCase = m_pxFirstTest; pxCase != nullptr; pxCase = pxCase->m_pxNext)
+	{
+		xCases.PushBack(pxCase);
+	}
+	std::sort(xCases.GetDataPointer(), xCases.GetDataPointer() + xCases.GetSize(),
+		[](const Zenith_TestCase* pxA, const Zenith_TestCase* pxB)
+		{ return (pxA->m_fBodyMs + pxA->m_fResetMs) > (pxB->m_fBodyMs + pxB->m_fResetMs); });
+
+	const double fTotalMs = m_fTotalBodyMs + m_fTotalResetMs;
+
+	fprintf(pFile, "\n=== Unit-test timings (every registered test, slowest first) ===\n");
+	fprintf(pFile, "Tests: %u | Total: %.1f ms | Body: %.1f ms (%.1f%%) | Per-test reset: %.1f ms (%.1f%%)\n",
+		m_uTestCount, fTotalMs,
+		m_fTotalBodyMs,  fTotalMs > 0.0 ? (m_fTotalBodyMs  / fTotalMs) * 100.0 : 0.0,
+		m_fTotalResetMs, fTotalMs > 0.0 ? (m_fTotalResetMs / fTotalMs) * 100.0 : 0.0);
+	fprintf(pFile, "'reset' is the global-state reset the RUNNER performs after each test, not work the test did.\n\n");
+
+	fprintf(pFile, "%6s  %-58s %11s %11s %11s %8s %8s\n",
+		"rank", "Category::Name", "total (ms)", "body (ms)", "reset (ms)", "%", "cum %");
+	fprintf(pFile, "------  ---------------------------------------------------------- ----------- ----------- ----------- -------- --------\n");
+
+	double fCumulativeMs = 0.0;
+	for (u_int u = 0; u < xCases.GetSize(); ++u)
+	{
+		const Zenith_TestCase* pxCase = xCases.Get(u);
+		const double fCaseMs = pxCase->m_fBodyMs + pxCase->m_fResetMs;
+		fCumulativeMs += fCaseMs;
+
+		char acLabel[128];
+		snprintf(acLabel, sizeof(acLabel), "%s::%s", pxCase->m_strCategory, pxCase->m_strName);
+
+		fprintf(pFile, "%6u  %-58s %11.3f %11.3f %11.3f %7.2f%% %7.2f%%\n",
+			u + 1, acLabel, fCaseMs, pxCase->m_fBodyMs, pxCase->m_fResetMs,
+			fTotalMs > 0.0 ? (fCaseMs / fTotalMs) * 100.0 : 0.0,
+			fTotalMs > 0.0 ? (fCumulativeMs / fTotalMs) * 100.0 : 0.0);
+	}
+	fprintf(pFile, "\n");
 }
 
 void Zenith_TestRunner::HandleFailure(const char* strType, const char* strMsg, const char* strFile, int iLine)

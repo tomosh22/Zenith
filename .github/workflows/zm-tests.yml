@@ -194,6 +194,9 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   2892  per-test timings  observed 2026-08-03 on a Null_ build. +1:
+          #                   Core::UnitTestTimingReport, covering the new
+          #                   --unit-test-timings plumbing. Engine default 1269 -> 1270.
           #   2891  boot-profiling  observed 2026-08-03 on a Null_ build. +27 over
           #                   the PIN of 2864, which was ALREADY STALE by 4: the
           #                   shadow-cascade fix (33531b6a) added four engine units
@@ -220,7 +223,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2891 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2892 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

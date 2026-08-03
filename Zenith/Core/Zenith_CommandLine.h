@@ -97,6 +97,13 @@ namespace Zenith_CommandLine
     const char* GetBootProfileDumpPath();
     bool        IsBootCaptureSkipped();
 
+    // `--unit-test-timings[=path]`: dump every registered unit test with its wall
+    // clock, slowest first, at the end of the boot-time RunAllTests batch. Same
+    // parse-here rationale as the boot flags — the batch runs inside Zenith_Init.
+    // Returns nullptr when absent (the default: one extra summary LINE is logged
+    // either way, but no table is built and no file is written).
+    const char* GetUnitTestTimingsPath();
+
     // Pure split of `--boot-profile-dump[=path]`: returns the text after the first
     // '=', or szDefaultPath for the bare form (and for a trailing '=' with nothing
     // after it). Exposed so the parsing contract is testable WITHOUT re-running

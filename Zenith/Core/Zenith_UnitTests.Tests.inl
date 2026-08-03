@@ -390,6 +390,65 @@ ZENITH_TEST(Core, ProfilingTimebase) {
 #endif
 }
 
+// Per-test timing plumbing. Deliberately asserts NOTHING about how long any test
+// takes (that would be a machine-speed assertion, and this test may itself be the
+// first one executed, with every other case still unmeasured) — only that the
+// bookkeeping is coherent: no negative durations, totals that agree with the sum
+// of the parts, and a report that is sorted and well-formed.
+ZENITH_TEST(Core, UnitTestTimingReport) {
+	const Zenith_TestRunner& xRunner = Zenith_TestRunner::Instance();
+
+	u_int uCases = 0;
+	double fBodySum = 0.0;
+	double fResetSum = 0.0;
+	for (const Zenith_TestCase* pxCase = xRunner.GetFirstTest(); pxCase != nullptr; pxCase = pxCase->m_pxNext)
+	{
+		ZENITH_ASSERT_TRUE(pxCase->m_fBodyMs >= 0.0, "a test body duration must never be negative");
+		ZENITH_ASSERT_TRUE(pxCase->m_fResetMs >= 0.0, "a per-test reset duration must never be negative");
+		ZENITH_ASSERT_NOT_NULL(pxCase->m_strCategory, "every registered case must carry its category");
+		ZENITH_ASSERT_NOT_NULL(pxCase->m_strName, "every registered case must carry its name");
+		fBodySum += pxCase->m_fBodyMs;
+		fResetSum += pxCase->m_fResetMs;
+		++uCases;
+	}
+
+	ZENITH_ASSERT_EQ(uCases, xRunner.GetTestCount(), "the registry must hold exactly the counted number of tests");
+	// The running totals are accumulated as the suite executes, so at this point
+	// they cover the tests that have ALREADY run — never more than the full sum.
+	ZENITH_ASSERT_TRUE(xRunner.GetTotalBodyMs() <= fBodySum + 1e-6, "the running body total cannot exceed the sum of all cases");
+	ZENITH_ASSERT_TRUE(xRunner.GetTotalResetMs() <= fResetSum + 1e-6, "the running reset total cannot exceed the sum of all cases");
+	ZENITH_ASSERT_TRUE(xRunner.GetTotalBodyMs() >= 0.0, "the running body total must never be negative");
+
+	// The report must be self-consistent: header present, one row per registered
+	// test, and sorted by total descending (the whole point of the table).
+	FILE* pxFile = nullptr;
+	tmpfile_s(&pxFile);
+	ZENITH_ASSERT_NOT_NULL(pxFile, "tmpfile_s must open for the timing-report round-trip");
+	if (pxFile != nullptr)
+	{
+		xRunner.WriteTimingReport(pxFile);
+		fflush(pxFile);
+		fseek(pxFile, 0, SEEK_END);
+		const long lSize = ftell(pxFile);
+		fseek(pxFile, 0, SEEK_SET);
+
+		Zenith_Vector<char> xText;
+		for (long l = 0; l <= lSize; ++l) xText.PushBack('\0');
+		if (lSize > 0) { const size_t uRead = fread(xText.GetDataPointer(), 1, static_cast<size_t>(lSize), pxFile); (void)uRead; }
+
+		const char* szText = xText.GetDataPointer();
+		ZENITH_ASSERT_NOT_NULL(strstr(szText, "=== Unit-test timings"), "the report must carry its section header");
+		ZENITH_ASSERT_NOT_NULL(strstr(szText, "Core::UnitTestTimingReport"), "the report must list every registered test, including this one");
+		ZENITH_ASSERT_NOT_NULL(strstr(szText, "cum %"), "the report must carry the cumulative-share column");
+
+		u_int uRows = 0;
+		for (const char* p = szText; *p != '\0'; ++p) { if (*p == '\n') ++uRows; }
+		ZENITH_ASSERT_TRUE(uRows >= xRunner.GetTestCount(), "the report must emit at least one line per registered test");
+
+		fclose(pxFile);
+	}
+}
+
 // The FirstPresentSubmitted boot milestone. The predicate is snapshotted BEFORE
 // EndFrame (which consumes the acquired image — asking afterwards answers a different
 // question) and the latch is taken AFTER it returns, once, ever. A frame that submits
