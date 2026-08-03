@@ -191,6 +191,12 @@ Not everything moves onto the engine. These carve-outs are deliberate and the as
 
 ### Read-only after boot
 - **`Zenith_CommandLine`** — parsed once during process startup. Read-only thereafter.
+  Two boot-profiling flags live here rather than with a consumer, because the profiler
+  reads them while allocating its boot capture *inside* `Zenith_Init` — long before
+  `Zenith_AutomatedTestRunner::ParseCommandLine` runs: `--boot-profile-dump[=path]`
+  (`GetBootProfileDumpPath`, plus the pure `ResolveBootProfileDumpArg` splitter so the
+  parsing contract is testable without re-running `Parse` and clobbering process-wide
+  flag state) and `--skip-boot-capture` (`IsBootCaptureSkipped`).
 - **`Zenith_GraphicsOptions`** — populated once by `Project_SetGraphicsOptions` at boot. Read-only thereafter.
 
 ### Static-init registration side-lists
@@ -203,5 +209,21 @@ Not everything moves onto the engine. These carve-outs are deliberate and the as
 
 ### The documented singleton
 - **`Zenith_Engine g_xEngine` itself** — the one and only intentional process-level singleton. Everything else hangs off it.
+
+### Lifetime carve-out: the profiler's boot control block
+
+`Zenith_Profiling` owns a heap `BootControlBlock` allocated in its **constructor** (not
+`Initialise`) because the main thread's `RegisterThread` runs *before* `Initialise` and
+must stamp the block onto its ring. It is the one engine-owned allocation that may
+**outlive** its owner: `Shutdown` deliberately leaves a still-live producer's ring
+allocated (the FileWatcher never joins), and that ring holds a pointer into the block,
+so the block is freed only when every ring was freed with it — otherwise it is
+intentionally leaked alongside them. Before freeing anything, `Shutdown` publishes the
+`DEAD` state and nulls the profiler back-pointer **under the block's mutex**, so a
+producer racing teardown reads `DEAD` and drops its event rather than dereferencing a
+deleted profiler. See `Profiling/CLAUDE.md` for the full protocol. `Zenith_Init` also
+takes an optional `Zenith_BootMarkerBundle*` — plain POD, owned as a **local** by the
+platform entry point — so pre-engine timestamps reach the capture without any static
+storage.
 
 **Practical rule of thumb:** if you find yourself reaching for `static` for new mutable state, check this list. If your case isn't on it, the answer is probably "put it on an `*Impl` class held by `Zenith_Engine`" — see how any of the existing subsystems are wired up for the pattern.

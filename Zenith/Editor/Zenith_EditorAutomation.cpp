@@ -30,6 +30,11 @@
 #include "Prefab/Zenith_Prefab.h"
 #include "Maths/Zenith_Maths.h"
 #include "DataStream/Zenith_DataStream.h"
+// Boot-tail attribution: the timebase + the milestone sink (reached through the
+// INJECTED profiler pointer, never g_xEngine), and the dump path for .tail.txt.
+#include "Core/Zenith_CommandLine.h"
+#include "Profiling/Zenith_Profiling.h"
+#include <algorithm>
 #include <filesystem>
 
 bool Zenith_EditorAutomation::IsRunning()  { return Zenith_EditorAutomation::m_bRunning; }
@@ -39,12 +44,61 @@ bool Zenith_EditorAutomation::IsComplete() { return Zenith_EditorAutomation::m_b
 // Execution
 //=============================================================================
 
-void Zenith_EditorAutomation::Begin()
+// A step slow enough to be worth naming in the log as it happens, rather than only in
+// the completion summary. Automation runs one step per FRAME, so anything past this is
+// a visible hitch on the way to the first interactive frame.
+static constexpr double fAUTOMATION_SLOW_STEP_MS = 100.0;
+
+void Zenith_EditorAutomation::Begin(bool bProductionTail, Zenith_Profiling* pxProfiling)
 {
 	m_uCurrentAction = 0;
 	m_bRunning = true;
 	m_bComplete = false;
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Begin: %u steps queued", m_axActions.GetSize());
+
+	m_bProductionTail = bProductionTail;
+	m_pxProfiling = pxProfiling;
+	m_xStepTimings.Clear();
+	m_fTotalStepMs = 0.0;
+	m_uUntrackedSteps = 0;
+
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Begin: %u steps queued%s",
+		m_axActions.GetSize(), bProductionTail ? " (production tail: timing enabled)" : "");
+}
+
+// The queue just drained. For the production session this is the end of the "boot
+// tail" — the stretch after Zenith_Init returns during which the game is still
+// building itself one step per frame, and which the boot report alone cannot see.
+void Zenith_EditorAutomation::FinishSession()
+{
+	m_bRunning = false;
+	m_bComplete = true;
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Complete: all %u steps executed", m_axActions.GetSize());
+	m_axActions.Clear();
+
+	if (!m_bProductionTail) return;
+
+	WriteTailReport(stdout);
+	fflush(stdout);
+
+	if (m_pxProfiling != nullptr)
+	{
+		m_pxProfiling->RecordBootMilestone("AutomationQueueDrained");
+	}
+
+	// Second bounded artifact, alongside the boot dump, when one was requested.
+	const char* szBootDump = Zenith_CommandLine::GetBootProfileDumpPath();
+	if (szBootDump != nullptr)
+	{
+		const std::string strTailPath = std::string(szBootDump) + ".tail.txt";
+		FILE* pxTail = nullptr;
+		fopen_s(&pxTail, strTailPath.c_str(), "w");
+		if (pxTail != nullptr)
+		{
+			WriteTailReport(pxTail);
+			fclose(pxTail);
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Tail report -> %s", strTailPath.c_str());
+		}
+	}
 }
 
 void Zenith_EditorAutomation::ExecuteNextStep()
@@ -54,27 +108,135 @@ void Zenith_EditorAutomation::ExecuteNextStep()
 
 	if (m_uCurrentAction >= m_axActions.GetSize())
 	{
-		m_bRunning = false;
-		m_bComplete = true;
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Complete: all %u steps executed", m_axActions.GetSize());
-		m_axActions.Clear();
+		FinishSession();
 		return;
 	}
 
 	const Zenith_EditorAction& xAction = m_axActions.Get(m_uCurrentAction);
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Step %u/%u", m_uCurrentAction + 1, m_axActions.GetSize());
 
+	// Wall clock, not a profile zone: a step spans a whole frame's worth of editor
+	// work and the boot capture is already sealed by the time any of this runs.
+	const u_int64 uStepBegin = m_bProductionTail ? Zenith_Profiling_Detail::GetTimestamp() : 0;
+
 	ExecuteAction(xAction);
+
+	if (m_bProductionTail)
+	{
+		const double fStepMs = static_cast<double>(Zenith_Profiling_Detail::GetTimestamp() - uStepBegin)
+			* Zenith_Profiling_Detail::GetTicksToNs() / 1.0e6;
+		RecordStepTiming(xAction, m_uCurrentAction, fStepMs);
+	}
+
 	m_uCurrentAction++;
 
 	// Detect completion immediately after executing the last step
 	if (m_uCurrentAction >= m_axActions.GetSize())
 	{
-		m_bRunning = false;
-		m_bComplete = true;
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] Complete: all %u steps executed", m_axActions.GetSize());
-		m_axActions.Clear();
+		FinishSession();
 	}
+}
+
+void Zenith_EditorAutomation::RecordStepTiming(const Zenith_EditorAction& xAction, const u_int uIndex, const double fStepMs)
+{
+	m_fTotalStepMs += fStepMs;
+
+	if (fStepMs > fAUTOMATION_SLOW_STEP_MS)
+	{
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorAutomation] SLOW step %u '%s' took %.1f ms",
+			uIndex, DescribeStep(xAction, uIndex).c_str(), fStepMs);
+	}
+
+	if (m_xStepTimings.GetSize() >= uMAX_TRACKED_STEPS)
+	{
+		++m_uUntrackedSteps;   // never silently: WriteTailReport prints the count
+		return;
+	}
+
+	StepTiming xTiming;
+	xTiming.m_strName = DescribeStep(xAction, uIndex);
+	xTiming.m_fMilliseconds = fStepMs;
+	xTiming.m_uIndex = uIndex;
+	m_xStepTimings.PushBack(xTiming);
+}
+
+// An explicit name when the author gave one, otherwise index + action-type id — enough
+// to find the step in Project_RegisterEditorAutomationSteps without naming them all.
+std::string Zenith_EditorAutomation::DescribeStep(const Zenith_EditorAction& xAction, const u_int uIndex)
+{
+	if (!xAction.m_szStepName.empty()) return xAction.m_szStepName;
+
+	char acName[64];
+	snprintf(acName, sizeof(acName), "step %u (type %d)", uIndex, static_cast<int>(xAction.m_eType));
+	return std::string(acName);
+}
+
+namespace
+{
+	// Descending by cost. Returns indices so the stored order stays execution order.
+	Zenith_Vector<u_int> SortStepsByCost(const Zenith_Vector<Zenith_EditorAutomation::StepTiming>& xTimings)
+	{
+		Zenith_Vector<u_int> xOrder;
+		for (u_int u = 0; u < xTimings.GetSize(); ++u) xOrder.PushBack(u);
+		std::sort(xOrder.GetDataPointer(), xOrder.GetDataPointer() + xOrder.GetSize(),
+			[&xTimings](const u_int uA, const u_int uB) { return xTimings.Get(uA).m_fMilliseconds > xTimings.Get(uB).m_fMilliseconds; });
+		return xOrder;
+	}
+}
+
+void Zenith_EditorAutomation::WriteStepsSoFar(FILE* pxFile) const
+{
+	if (pxFile == nullptr) return;
+
+	fprintf(pxFile, "\n=== Automation steps so far (%u executed, %.1f ms total) ===\n",
+		m_uCurrentAction, m_fTotalStepMs);
+
+	if (!m_bProductionTail)
+	{
+		fprintf(pxFile, "(no production automation session — nothing to attribute)\n");
+		return;
+	}
+
+	fprintf(pxFile, "%-52s %12s\n", "Step", "ms");
+	fprintf(pxFile, "---------------------------------------------------- ------------\n");
+	for (u_int u = 0; u < m_xStepTimings.GetSize(); ++u)
+	{
+		const StepTiming& xTiming = m_xStepTimings.Get(u);
+		fprintf(pxFile, "%-52s %12.3f\n", xTiming.m_strName.c_str(), xTiming.m_fMilliseconds);
+	}
+	if (m_uUntrackedSteps > 0)
+	{
+		fprintf(pxFile, "(+%u further steps executed but not tracked — cap %u)\n", m_uUntrackedSteps, uMAX_TRACKED_STEPS);
+	}
+}
+
+void Zenith_EditorAutomation::WriteTailReport(FILE* pxFile) const
+{
+	if (pxFile == nullptr) return;
+
+	fprintf(pxFile, "\n=== Automation tail (post-Zenith_Init, one step per frame) ===\n");
+	if (!m_bProductionTail)
+	{
+		fprintf(pxFile, "(no production automation session — nothing to attribute)\n\n");
+		return;
+	}
+
+	fprintf(pxFile, "Steps: %u tracked", m_xStepTimings.GetSize());
+	if (m_uUntrackedSteps > 0) fprintf(pxFile, " (+%u untracked, cap %u)", m_uUntrackedSteps, uMAX_TRACKED_STEPS);
+	fprintf(pxFile, " | Total: %.1f ms\n", m_fTotalStepMs);
+
+	const Zenith_Vector<u_int> xOrder = SortStepsByCost(m_xStepTimings);
+	const u_int uShow = xOrder.GetSize() < 10u ? xOrder.GetSize() : 10u;
+
+	fprintf(pxFile, "\n%-52s %12s %10s\n", "Slowest steps", "ms", "% of tail");
+	fprintf(pxFile, "---------------------------------------------------- ------------ ----------\n");
+	for (u_int u = 0; u < uShow; ++u)
+	{
+		const StepTiming& xTiming = m_xStepTimings.Get(xOrder.Get(u));
+		const double fShare = (m_fTotalStepMs > 0.0) ? (xTiming.m_fMilliseconds / m_fTotalStepMs) * 100.0 : 0.0;
+		fprintf(pxFile, "%-52s %12.3f %10.1f\n", xTiming.m_strName.c_str(), xTiming.m_fMilliseconds, fShare);
+	}
+	fprintf(pxFile, "\n");
 }
 
 void Zenith_EditorAutomation::Reset()
@@ -83,6 +245,11 @@ void Zenith_EditorAutomation::Reset()
 	m_uCurrentAction = 0;
 	m_bRunning = false;
 	m_bComplete = false;
+	m_bProductionTail = false;
+	m_pxProfiling = nullptr;
+	m_xStepTimings.Clear();
+	m_fTotalStepMs = 0.0;
+	m_uUntrackedSteps = 0;
 }
 
 //=============================================================================
@@ -823,9 +990,15 @@ void Zenith_EditorAutomation::AddStep_LoadInitialScene(void (*pfnCallback)())
 
 void Zenith_EditorAutomation::AddStep_Custom(void (*pfnFunc)())
 {
+	AddStep_Custom(pfnFunc, nullptr);
+}
+
+void Zenith_EditorAutomation::AddStep_Custom(void (*pfnFunc)(), const char* szStepName)
+{
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = Zenith_EditorActionType::CUSTOM_STEP;
 	xAction.m_pfnFunc = pfnFunc;
+	xAction.m_szStepName = SafeStr(szStepName);
 	m_axActions.PushBack(xAction);
 }
 

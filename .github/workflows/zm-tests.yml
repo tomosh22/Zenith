@@ -194,6 +194,18 @@ jobs:
           #
           # History, newest first (the DERIVATION is the audit trail; the OBSERVED
           # number is the authority):
+          #   2891  boot-profiling  observed 2026-08-03 on a Null_ build. +27 over
+          #                   the PIN of 2864, which was ALREADY STALE by 4: the
+          #                   shadow-cascade fix (33531b6a) added four engine units
+          #                   and moved neither this pin nor the engine default, so
+          #                   HEAD was really 2868. +23 new: 18 boot-capture units
+          #                   in Zenith_Profiling.Tests.inl (+1 CommandLine boot-flag
+          #                   split), 1 dump-coordinator latch unit in
+          #                   Zenith_Main.Tests.inl, 1 present-latch unit, 1
+          #                   automation-session-gating unit, 2 boot-timeline
+          #                   helper units. All are ENGINE units, so
+          #                   run_unit_gate.ps1's engine default moves in lockstep:
+          #                   1242 -> 1269.
           #   2864  ZM-D-182  observed 2026-08-02 on a clean Null_ build. +1: the
           #                   ZM_HumanVisual rig-rebind unit. run_unit_gate.ps1's
           #                   engine default stays 1242 -- ZM-D-182 added no unit
@@ -208,7 +220,7 @@ jobs:
           #   2817  ZM-D-173  = 2809 + 8: four ENGINE sensor-raycast units plus
           #                   two camera fixtures and two Home-placement units.
           $exe = 'Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe'
-          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2864 -TimeoutSec 600
+          pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe $exe -Baseline 2891 -TimeoutSec 600
           if ($LASTEXITCODE -ne 0) { Write-Error "boot unit tests failed (see log above)"; exit $LASTEXITCODE }
 
       - name: Run Zenithmon tests

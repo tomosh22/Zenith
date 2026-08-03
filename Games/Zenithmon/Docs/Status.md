@@ -1,15 +1,25 @@
 # Zenithmon Status
 
-**Last updated:** 2026-08-02
+**Last updated:** 2026-08-03
 
 **★ CURRENT BASELINE -- USE THESE NUMBERS, not the older ones quoted further
-down this file (RE-OBSERVED 2026-08-02 after ZM-D-182, on a fresh Null_ build):**
+down this file (RE-OBSERVED 2026-08-03 after the boot-profiling work, on a
+Null_ build):**
 ZM headless registry **55 passed / 0 failed**; ZM boot unit gate
-**2864 ran / 2862 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
-**2864**); engine boot unit gate, Null Combat, **1242 ran / 1241 passed / 0
-failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1242`). One skip in
+**2891 ran / 2889 passed / 0 failed / 2 skipped** (`zm-tests.yml` pinned to
+**2891**); engine boot unit gate, Null Combat, **1269 ran / 1268 passed / 0
+failed / 1 skipped** (`run_unit_gate.ps1` default `-Baseline 1269`). One skip in
 each is the quarantined `GraphComponent::RegistryWideNodeRoundTrip`
 (task_726cc81d); ZM carries a second, ZM-side skip.
+
+**Boot profiling moves both inventories by the SAME +23**, because every new unit
+is an engine unit: 18 boot-capture units + 1 CommandLine boot-flag unit
+(`Zenith/Profiling/Zenith_Profiling.Tests.inl`), 1 dump-coordinator latch unit
+(`Zenith/Core/Zenith_Main.Tests.inl`), 1 present-latch unit, 1
+automation-session-gating unit, and 2 boot-timeline helper units. The recorded
+pins moved by 27 rather than 23 because **they were already stale by 4**: commit
+`33531b6a` (shadow-cascade ordering) added four engine units and updated neither
+pin, so HEAD was really 2868 / 1246, not 2864 / 1242.
 **ZM-D-182 moves the ZM boot inventory only: 2863 -> 2864** (+1
 `HumanVisual_RestartPreservesTheAnimatorRig`, the only unit that reaches the WARM
 human branch). It changes no unit under `Zenith/`, so the engine baseline remains

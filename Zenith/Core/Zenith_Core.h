@@ -6,12 +6,18 @@
 // and onto Zenith_Engine::Frame() (FrameContext). All call sites that
 // previously read Zenith_Core::GetDt() now read
 // g_xEngine.Frame().GetDt() directly.
+struct Zenith_BootMarkerBundle;
+
 namespace Zenith_Core
 {
 #ifdef ZENITH_WINDOWS
 	void Zenith_Main();
 #endif
-	void Zenith_Init();
+	// pxMarkers carries timestamps the platform entry point took BEFORE the engine
+	// existed (process start, the window-create bracket). The forwarder imports them
+	// into the boot capture and then seals it, so nothing has to be stored statically
+	// and there is no post-seal marker import. Callers with no markers pass nullptr.
+	void Zenith_Init(const Zenith_BootMarkerBundle* pxMarkers = nullptr);
 	void Zenith_Shutdown();
 	// Convenience wrapper: Shutdown + delete window singleton + any other
 	// "init-only" teardown the steady-state main-loop exit performs. Use

@@ -480,6 +480,8 @@ void Zenith_Engine::InitialiseRuntimeServices()
 // Asset directories + registry, then tools-only asset exports.
 void Zenith_Engine::InitialiseAssets()
 {
+	ZENITH_PROFILE_SCOPE("Boot InitialiseAssets");
+
 	// Set asset directories before registry initialization.
 	// Game assets dir comes from the game project (each game defines
 	// GAME_ASSETS_DIR); both baked dirs are ABSOLUTE paths into the build
@@ -520,15 +522,29 @@ void Zenith_Engine::InitialiseAssets()
 		// (e.g. the engine-gate) leaves the last marker as the last log line,
 		// pinpointing which export died. Pairs with the unbuffered stdout set in
 		// main() so the marker actually reaches a captured pipe.
+		// Braced per-export scopes: the boot report needs to say WHICH export is the
+		// long pole, not just that the phase took N seconds.
 		Zenith_Log(LOG_CATEGORY_CORE, "Tool export: meshes...");
-		ExportAllMeshes();
+		{
+			ZENITH_PROFILE_SCOPE("Boot Tool Export/Meshes");
+			ExportAllMeshes();
+		}
 		Zenith_Log(LOG_CATEGORY_CORE, "Tool export: textures...");
-		ExportAllTextures();
+		{
+			ZENITH_PROFILE_SCOPE("Boot Tool Export/Textures");
+			ExportAllTextures();
+		}
 		//ExportHeightmap();
 		Zenith_Log(LOG_CATEGORY_CORE, "Tool export: font atlas...");
-		ExportDefaultFontAtlas();  // Generate font atlas from TTF
+		{
+			ZENITH_PROFILE_SCOPE("Boot Tool Export/Font Atlas");
+			ExportDefaultFontAtlas();  // Generate font atlas from TTF
+		}
 		Zenith_Log(LOG_CATEGORY_CORE, "Tool export: test assets...");
-		GenerateTestAssets();      // Generate procedural test assets (StickFigure, Tree)
+		{
+			ZENITH_PROFILE_SCOPE("Boot Tool Export/Test Assets");
+			GenerateTestAssets();      // Generate procedural test assets (StickFigure, Tree)
+		}
 		Zenith_Log(LOG_CATEGORY_CORE, "Tool asset exports complete.");
 	}
 #endif
@@ -537,6 +553,8 @@ void Zenith_Engine::InitialiseAssets()
 // Window + device spin-up (EarlyInitialise), then physics.
 void Zenith_Engine::InitialiseRendererAndPhysics()
 {
+	ZENITH_PROFILE_SCOPE("Boot InitialiseRendererAndPhysics");
+
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::EarlyInitialise...");
 	g_xEngine.FluxRenderer().EarlyInitialise();
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Physics::Initialise...");
@@ -552,6 +570,8 @@ void Zenith_Engine::InitialiseRendererAndPhysics()
 // Component registrar install + verification, scene bootstrap, runtime hooks.
 void Zenith_Engine::InitialiseECS()
 {
+	ZENITH_PROFILE_SCOPE("Boot InitialiseECS");
+
 	// ECS leaf-extraction Phase 4: install the engine-side built-in component
 	// registrar onto the ECS reflection core, then force the one-time
 	// EnsureInitialized() drain. Done BEFORE scene bootstrap (and before the first
@@ -693,6 +713,8 @@ void Zenith_Engine::InitialiseECS()
 // GPU-dependent assets + pinned textures, then Flux LateInitialise.
 void Zenith_Engine::InitialiseGPUAssets()
 {
+	ZENITH_PROFILE_SCOPE("Boot InitialiseGPUAssets");
+
 	//#TO_TODO: move somewhere sensible
 	Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after g_xEngine.FluxRenderer().EarlyInitialise()
 
@@ -748,7 +770,12 @@ void Zenith_Engine::InitialiseGPUAssets()
 		g_xEngine.FluxGraphics().m_xWaterNormalTexture.Set(pxWhiteFallback);
 	}
 
-	g_xEngine.FluxMemory().Flush();
+	{
+		// Blocking GPU wait — kept out of the pinned-texture loads above so the report
+		// does not charge the wait to whichever load happened to run last.
+		ZENITH_PROFILE_SCOPE("Flux Boot GPU Flush");
+		g_xEngine.FluxMemory().Flush();
+	}
 	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::LateInitialise...");
 	g_xEngine.FluxRenderer().LateInitialise();
 }
@@ -756,6 +783,8 @@ void Zenith_Engine::InitialiseGPUAssets()
 // Editor init + export debug buttons (tools builds only).
 void Zenith_Engine::InitialiseEditor()
 {
+	ZENITH_PROFILE_SCOPE("Boot InitialiseEditor");
+
 #if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES
 	Zenith_GraphicsOptions::RegisterDebugVariables();
 	// Frame deps passed by member (not read back via g_xEngine inside the
@@ -770,9 +799,17 @@ void Zenith_Engine::InitialiseEditor()
 }
 
 // Game callbacks: behaviours, unit tests, resources/automation or initial scene.
+// NOTE: deliberately NO body zone on this function. The unit-test batch below runs
+// inside it, and ProfilingNestingOverflow / ProfilingUnmatchedEnd both assert the
+// producer stack is at depth 0 — an enclosing scope would break them. Boot phases are
+// depth-0 SIBLINGS instead: braced scopes around each part, and the test block is
+// measured by an instance-call marker pair rather than a zone.
 void Zenith_Engine::InitialiseProject()
 {
-	Project_RegisterGameComponents();
+	{
+		ZENITH_PROFILE_SCOPE("Boot Project/RegisterGameComponents");
+		Project_RegisterGameComponents();
+	}
 
 #ifdef ZENITH_TOOLS
 
@@ -780,7 +817,10 @@ void Zenith_Engine::InitialiseProject()
 	// every editor boot so the files on disk always match the generator.
 	// Must run before anything resolves them via Zenith_AssetRegistry (the
 	// terrain editor lazy-loads on first cursor draw, long after boot).
-	Zenith_TerrainEditor::RegenerateBrushTextures();
+	{
+		ZENITH_PROFILE_SCOPE("Boot Project/RegenerateBrushTextures");
+		Zenith_TerrainEditor::RegenerateBrushTextures();
+	}
 #endif
 
 	// Run unit tests BEFORE loading the game scene
@@ -796,7 +836,18 @@ void Zenith_Engine::InitialiseProject()
 		// legitimately owns the L1 reference (Zenith_SceneSystem). Keeps the
 		// L0 Core test runner free of any ECS include/symbol dependency.
 		Zenith_TestRunner::SetResetHook(&Zenith_SceneSystem::ResetForNextTest);
+
+		// Boot capture MUST stand down across the batch: the profiler's own self-tests
+		// need exactly what capture takes away — TestProfiling needs its events to
+		// survive to its own EndFrame, and ProfilingOverflow needs an UNCONSUMED ring
+		// (its whole contract is "no consumer => the excess drops"). Suspend flushes
+		// what we have and stops routing; Resume discards the leftovers and
+		// re-baselines the drop counters so the batch never shows up as boot drops.
+		m_pxProfiling->AddBootMarker("UnitTestsBegin");
+		m_pxProfiling->SuspendBootCapture();
 		Zenith_TestRunner::Instance().RunAllTests();
+		m_pxProfiling->ResumeBootCapture();
+		m_pxProfiling->AddBootMarker("UnitTestsEnd");
 	}
 #endif
 
@@ -804,16 +855,30 @@ void Zenith_Engine::InitialiseProject()
 	// Initialize game-specific resources (geometry, materials, prefabs, particle configs).
 	// GPU allocations record into the memory command buffer lazily; Flush drains
 	// them synchronously before automation begins.
-	Project_InitializeResources();
-	g_xEngine.FluxMemory().Flush();
+	{
+		ZENITH_PROFILE_SCOPE("Boot Project/InitializeResources");
+		Project_InitializeResources();
+	}
+	{
+		ZENITH_PROFILE_SCOPE("Boot Project/Resource Flush");
+		g_xEngine.FluxMemory().Flush();
+	}
 
 	// Register automation steps and begin execution (one step per frame in main loop)
-	Project_RegisterEditorAutomationSteps();
-	g_xEngine.EditorAutomation().Begin();
+	{
+		ZENITH_PROFILE_SCOPE("Boot Project/RegisterEditorAutomationSteps");
+		Project_RegisterEditorAutomationSteps();
+	}
+	// THE production session: the profiler is injected (the automation TU holds no
+	// engine-singleton reference of its own) and the tail attribution turns on. Unit
+	// tests drive this same global object earlier in boot, and their queues have
+	// already completed by now — the flag is what keeps their steps out of the report.
+	g_xEngine.EditorAutomation().Begin(true, m_pxProfiling);
 #else
 	// Non-tools: load pre-generated scene files
 	// Run a tools build first to generate .zscen files
 	{
+		ZENITH_PROFILE_SCOPE("Boot Project/LoadInitialScene");
 		Zenith_LifecycleDeferralGuard xLoadingGuard(g_xEngine.Scenes().MutableLifecycleLoadingFlagForGuard());
 		Project_LoadInitialScene();
 	}
@@ -834,11 +899,35 @@ void Zenith_Engine::InitialiseProject()
 
 void Zenith_Engine::Initialise()
 {
+	// Phases A-E run BEFORE the profiler can record anything: it only comes online
+	// midway through E (InitialiseRuntimeServices allocates it, registers the main
+	// thread, then calls Initialise). They therefore cannot carry a profile zone —
+	// time them with plain locals and import the pairs the moment E returns. The
+	// remaining phases F-K carry ordinary depth-0 body zones instead.
+	const u_int64 uAllocCoreBegin      = Zenith_Profiling_Detail::GetTimestamp();
 	AllocateCoreState();
+	const u_int64 uAllocRendererBegin  = Zenith_Profiling_Detail::GetTimestamp();
 	AllocateRenderer();
+	const u_int64 uAllocFluxBegin      = Zenith_Profiling_Detail::GetTimestamp();
 	AllocateFluxSubsystems();
+	const u_int64 uAllocEditorBegin    = Zenith_Profiling_Detail::GetTimestamp();
 	AllocateEditorSubsystems();
+	const u_int64 uRuntimeServicesBegin = Zenith_Profiling_Detail::GetTimestamp();
 	InitialiseRuntimeServices();
+	const u_int64 uRuntimeServicesEnd  = Zenith_Profiling_Detail::GetTimestamp();
+
+	// Paired by name in the boot report's phase table ("<Phase>Begin"/"<Phase>End").
+	m_pxProfiling->AddBootMarker("AllocateCoreStateBegin",         uAllocCoreBegin);
+	m_pxProfiling->AddBootMarker("AllocateCoreStateEnd",           uAllocRendererBegin);
+	m_pxProfiling->AddBootMarker("AllocateRendererBegin",          uAllocRendererBegin);
+	m_pxProfiling->AddBootMarker("AllocateRendererEnd",            uAllocFluxBegin);
+	m_pxProfiling->AddBootMarker("AllocateFluxSubsystemsBegin",    uAllocFluxBegin);
+	m_pxProfiling->AddBootMarker("AllocateFluxSubsystemsEnd",      uAllocEditorBegin);
+	m_pxProfiling->AddBootMarker("AllocateEditorSubsystemsBegin",  uAllocEditorBegin);
+	m_pxProfiling->AddBootMarker("AllocateEditorSubsystemsEnd",    uRuntimeServicesBegin);
+	m_pxProfiling->AddBootMarker("InitialiseRuntimeServicesBegin", uRuntimeServicesBegin);
+	m_pxProfiling->AddBootMarker("InitialiseRuntimeServicesEnd",   uRuntimeServicesEnd);
+
 	InitialiseAssets();
 	InitialiseRendererAndPhysics();
 	InitialiseECS();

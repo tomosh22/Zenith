@@ -65,6 +65,99 @@ the consumer, never the hot path. Pause is consumer-side — producers never rea
 (`high_resolution_clock`); `GetTicksToNs()` converts at display time (folds to 1.0 on MSVC).
 Events store ticks, not chrono time-points.
 
+## Boot capture
+
+> The measured breakdown this produced — the ranked phase table, the cross-game
+> control, capture overhead, and the fix recommendations — is
+> **[Docs/BootProfiling.md](../../Docs/BootProfiling.md)**. This section is the
+> mechanism; that document is the finding.
+
+The profiler is otherwise strictly **frame**-oriented, and that makes boot invisible to
+it: boot zones land in the per-thread 8,192-entry rings, **nothing drains them before
+the first `EndFrame`**, so a ring saturates and every newer event is dropped — and the
+survivors get mis-attributed to frame 1. Boot capture closes that hole.
+
+- **Where the events go.** When a ring fills while the capture is `ACTIVE`, the producer
+  becomes, briefly, the consumer: under the control mutex it drains **every** ring into
+  a permanent `BootCapture` and then publishes its own pending event. Nothing is lost,
+  and the steady state pays one relaxed atomic load on the (already slow) ring-full path.
+- **State machine** — `DISABLED | ACTIVE | SUSPENDED | SEALED | DEAD`, atomic, all
+  transitions under the control mutex.
+  - `DISABLED` = `--skip-boot-capture`: never allocated, ring-full is a plain drop from
+    process start. The calibration mode.
+  - `SUSPENDED` brackets the boot-time `RunAllTests` batch. **This is required, not an
+    optimisation:** `TestProfiling` needs its events to survive to its own `EndFrame`,
+    and `ProfilingOverflow`'s entire contract is "no consumer ⇒ the excess drops".
+  - `SEALED` at the end of `Zenith_Init`. Only pre-cutoff stragglers still land.
+- **Lifetime — the control block.** The hot path never used to dereference the profiler;
+  the routing branch must. `Shutdown` deliberately leaves live producers' rings allocated
+  and the engine then deletes the profiler, so a raw owner pointer on a ring **would
+  dangle**. Everything the routing path touches (mutex, state, thread-buffer table,
+  profiler back-pointer) therefore lives on a heap `BootControlBlock` allocated in the
+  profiler's **constructor** (before the main thread's `RegisterThread`). `Shutdown`
+  publishes `DEAD` and nulls the back-pointer **under the mutex, before freeing
+  anything**; the block is freed only if every ring was freed with it, and otherwise
+  **intentionally leaked** alongside the surviving rings (bounded, process teardown only —
+  an extension of the documented ring-leak policy, not a new one).
+- **The first-frame boundary.** The first post-seal `BeginFrame` records
+  `m_uFirstFrameOriginTicks` once. Post-seal frame drains divert only events beginning
+  **before** it into the capture's late list, so boot stragglers are captured while an
+  ordinary cross-frame scope at frame N is never boot-attributed. Residual pre-origin
+  events in a frame snapshot now clip to the timeline's left edge instead of vanishing
+  (`SignedTickDeltaToNs` — the unsigned form underflowed to ~1.8e19 ns).
+- **Label policy.** A permanent snapshot cannot hold arbitrary transient `const char*`
+  labels, so `Ingest` drops them and keeps only the interned zone identity. Nothing
+  label-bearing (render passes) runs at boot.
+- **Raw retention.** Aggregates, markers and milestones always; raw events + the
+  seal-time sort only under `ZENITH_TOOLS` or `--boot-profile-dump` (so a non-tools
+  Android build is aggregates-only). Per-zone aggregates keep counting **past** the raw
+  cap, so the table stays complete when the timeline is truncated.
+- **Attribution.** Engine phases A–E ran before the profiler existed, so they are timed
+  with plain locals in `Zenith_Engine::Initialise` and imported as `<Phase>Begin` /
+  `<Phase>End` marker pairs; F–K carry ordinary depth-0 body zones. `InitialiseProject`
+  deliberately has **no** body zone — the unit-test batch runs inside it and
+  `ProfilingNestingOverflow` / `ProfilingUnmatchedEnd` assert depth 0. Flux contributes
+  `Boot Flux/...` sub-scopes and one `Flux Feature Init/<name>` zone per feature (shader
+  compilation is attributed at feature granularity by design: `Flux_Shader` is a backend
+  alias with no backend-neutral per-program seam).
+- **Milestones** — `FirstFrameCompleted` (shared `Zenith_MainLoop`, after
+  `AdvanceFrameIndex`, so Android is covered and acquire-skip frames are not counted),
+  `FirstPresentSubmitted` (the swapchain facade's `ShouldWaitOnImageAvailableSemaphore()`
+  snapshotted **before** `EndFrame` — false on the Null and D3D12 no-op facades, so no
+  backend TU is touched), `AutomationQueueDrained`. Unavailable ones print `N/A`.
+
+### `--boot-profile-dump[=path]` / `--skip-boot-capture`
+
+`--boot-profile-dump` writes the boot artifact once, to stdout **and** the file:
+the boot report (headline + markers/milestones + phase table + per-zone aggregates),
+the **frame-1 per-zone table**, and the automation steps executed so far. Frame 1 is in
+the primary artifact deliberately — automation steps run *inside* the frame, before
+submission, so step 1 (for Zenithmon, the navmesh bake) directly extends the time to
+first present. One idempotent coordinator serves three call sites (main loop,
+`--memory-capture` loop, orderly-shutdown fallback) so no exit path loses the report.
+
+A machine-readable summary line is logged on **every** run, including under
+`--skip-boot-capture`, so a calibration run stays directly comparable:
+
+```
+[Profiling] BootSummary totalMs=… state=active|disabled events=… truncated=… late=… unattributed=… drops=… sealMs=…
+```
+
+The production automation session also emits `<path>.tail.txt` at completion: per-step
+wall clock, the slowest ten, and a `SLOW step` log line for anything over ~100 ms. All
+tail attribution is gated on that **production** session — unit tests drive the same
+global automation object during boot, and their queues complete before the game's real
+queue is even registered.
+
+### Boot tab (ZENITH_TOOLS)
+
+Statistics read `BootZoneAgg` exclusively (so they are right even when raw is
+truncated/off). The timeline uses a running-max-end **overlap index** — a viewport deep
+into boot still picks up a long scope that entered it from far to the left — plus LOD
+(sub-half-pixel bars skipped) and a hard per-frame draw budget with a "zoom in" hint. A
+`partial: N truncated / M late / K unattributed` badge means a partial capture can never
+read as a complete one.
+
 ## GPU per-pass timing (Flux)
 
 Alongside the CPU zones, the profiler holds a **GPU channel**: one timing per

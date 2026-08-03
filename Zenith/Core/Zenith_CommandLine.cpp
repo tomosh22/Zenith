@@ -16,6 +16,13 @@ namespace
     const char* s_szAssetsRoot      = nullptr;
     const char* s_szTestSaveRoot    = nullptr;
     const char* s_szTestSaveRunId   = nullptr;
+    const char* s_szBootProfileDump = nullptr;
+    bool        s_bSkipBootCapture  = false;
+
+    // --boot-profile-dump with no "=path" writes here. A file-scope literal, not a
+    // buffer: the accessor hands back a process-lifetime pointer exactly like the
+    // argv-derived paths beside it.
+    const char* const szDEFAULT_BOOT_PROFILE_DUMP = "zenith_boot_profile_dump.txt";
 }
 
 namespace Zenith_CommandLine
@@ -33,6 +40,8 @@ namespace Zenith_CommandLine
         s_szAssetsRoot      = nullptr;
         s_szTestSaveRoot    = nullptr;
         s_szTestSaveRunId   = nullptr;
+        s_szBootProfileDump = nullptr;
+        s_bSkipBootCapture  = false;
 
         if (argv != nullptr)
         {
@@ -82,6 +91,20 @@ namespace Zenith_CommandLine
                 else if (std::strcmp(argv[i], "--test-save-run-id") == 0 && i + 1 < argc)
                 {
                     s_szTestSaveRunId = argv[++i];
+                }
+                // Boot profiling. Parsed HERE (not by a consumer) because the profiler
+                // reads both while allocating the boot capture, which happens inside
+                // Zenith_Init -- long before the automated-test runner parses anything.
+                // `--boot-profile-dump` alone uses the default filename; the "=path"
+                // form points it somewhere else (the bounded artifact runs give every
+                // run a unique path under Build/artifacts).
+                else if (std::strncmp(argv[i], "--boot-profile-dump", 19) == 0)
+                {
+                    s_szBootProfileDump = ResolveBootProfileDumpArg(argv[i], szDEFAULT_BOOT_PROFILE_DUMP);
+                }
+                else if (std::strcmp(argv[i], "--skip-boot-capture") == 0)
+                {
+                    s_bSkipBootCapture = true;
                 }
             }
         }
@@ -134,6 +157,26 @@ namespace Zenith_CommandLine
     {
         if (!s_bParsed) return nullptr;
         return s_szTestSaveRunId;
+    }
+
+    const char* GetBootProfileDumpPath()
+    {
+        if (!s_bParsed) return nullptr;
+        return s_szBootProfileDump;
+    }
+
+    bool IsBootCaptureSkipped()
+    {
+        if (!s_bParsed) return false;   // Android never parses: capture stays ON
+        return s_bSkipBootCapture;
+    }
+
+    const char* ResolveBootProfileDumpArg(const char* szArg, const char* szDefaultPath)
+    {
+        if (szArg == nullptr) return szDefaultPath;
+        const char* pxEq = std::strchr(szArg, '=');
+        // A trailing "=" with nothing after it is the bare form, not an empty path.
+        return (pxEq != nullptr && pxEq[1] != '\0') ? (pxEq + 1) : szDefaultPath;
     }
 
     std::string ResolveUnderAssetsRoot(const std::string& strBakedDir, const char* szOverrideRoot, const std::string& strRelativeUnderRoot)

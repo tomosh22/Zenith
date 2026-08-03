@@ -30,6 +30,7 @@ class Zenith_MaterialAsset;
 class Flux_MeshGeometry;
 class Zenith_TerrainEditor;
 class Zenith_UnitTests;
+class Zenith_Profiling;
 
 //-----------------------------------------------------------------------------
 // Action Types
@@ -293,6 +294,11 @@ struct Zenith_EditorAction
 	void* m_pArg2 = nullptr;  // Type determined by m_eType (e.g. Zenith_MaterialAsset*)
 	void (*m_pfnFunc)() = nullptr;
 	void (*m_pfnGraphBuild)(class Zenith_GraphBuilder&) = nullptr;	// GRAPH_BUILD only
+	// Optional human name for the boot/tail attribution tables. Empty means "unnamed",
+	// which reports as the step's index + action-type id. Only worth setting on steps
+	// heavy enough to matter (a bake, a big export) — the whole point is to make a
+	// long pole legible without naming two hundred trivial field edits.
+	std::string m_szStepName;
 };
 
 //-----------------------------------------------------------------------------
@@ -304,11 +310,37 @@ public:
 	//--------------------------------------------------------------------------
 	// Execution
 	//--------------------------------------------------------------------------
-void Begin();
+	// bProductionTail marks THE ONE session that drains the game's real authoring
+	// queue (Zenith_Engine::InitialiseProject). Everything attribution-related — per
+	// step timing, slow-step logs, the completion summary, the AutomationQueueDrained
+	// milestone, the .tail.txt artifact — is gated on it, because unit tests drive
+	// this same global object during boot and their queues complete BEFORE the
+	// production queue is even registered. Without the gate the tail report would be
+	// a mix of test fixtures and real work.
+	//
+	// pxProfiling is INJECTED rather than reached via g_xEngine so this TU gains no
+	// new engine-singleton reference. Null is fine: milestones are simply skipped.
+void Begin(bool bProductionTail = false, Zenith_Profiling* pxProfiling = nullptr);
 bool IsRunning();
 bool IsComplete();
 void ExecuteNextStep();
 void Reset();
+
+	// Per-step wall-clock, in execution order, for the production session only.
+	struct StepTiming
+	{
+		std::string m_strName;
+		double      m_fMilliseconds = 0.0;
+		u_int       m_uIndex = 0;
+	};
+
+	// Steps executed SO FAR, oldest first (production session only; empty otherwise).
+	const Zenith_Vector<StepTiming>& GetStepTimings() const { return m_xStepTimings; }
+
+	// Attribution tables. WriteStepsSoFar is what the boot-profile dump embeds while
+	// the queue is still draining; WriteTailReport is the completion artifact.
+	void WriteStepsSoFar(FILE* pxFile) const;
+	void WriteTailReport(FILE* pxFile) const;
 
 	//--------------------------------------------------------------------------
 	// Scene Step Helpers
@@ -720,6 +752,10 @@ void AddStep_LoadInitialScene(void (*pfnCallback)());
 	// Custom Step (for game-specific operations)
 	//--------------------------------------------------------------------------
 void AddStep_Custom(void (*pfnFunc)());
+	// Named overload: the step shows up under szStepName in the tail attribution
+	// tables instead of a bare index. Use it for the steps that are actually
+	// expensive — a navmesh bake, a terrain export — so a long pole is legible.
+void AddStep_Custom(void (*pfnFunc)(), const char* szStepName);
 
 public:
 	// ===== Data members (was Zenith_EditorAutomation) =====
@@ -728,8 +764,22 @@ public:
 	bool                               m_bRunning       = false;
 	bool                               m_bComplete      = false;
 
+	// ===== Production-tail attribution (see Begin) =====
+	// Bounded like every other capture in this system: a runaway queue truncates and
+	// SAYS SO rather than silently reporting a partial table as complete.
+	static constexpr u_int uMAX_TRACKED_STEPS = 4096;
+	bool                      m_bProductionTail   = false;
+	Zenith_Profiling*         m_pxProfiling       = nullptr;
+	Zenith_Vector<StepTiming> m_xStepTimings;
+	double                    m_fTotalStepMs      = 0.0;
+	u_int                     m_uUntrackedSteps   = 0;   // executed past uMAX_TRACKED_STEPS
+
 private:
 	friend class Zenith_UnitTests;
+	// Shared completion path for both places ExecuteNextStep can drain the queue.
+	void FinishSession();
+	void RecordStepTiming(const Zenith_EditorAction& xAction, const u_int uIndex, const double fStepMs);
+	static std::string DescribeStep(const Zenith_EditorAction& xAction, const u_int uIndex);
 	// Narrow injected seam for rect-export preflight. It traverses the same
 	// contiguous range router and executor as production, but stops immediately
 	// before the expensive physical export.

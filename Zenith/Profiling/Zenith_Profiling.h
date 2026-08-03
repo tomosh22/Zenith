@@ -25,6 +25,33 @@
 
 class Zenith_Multithreading;
 
+// Boot markers gathered by the platform entry point BEFORE the engine exists, handed
+// to Zenith_Core::Zenith_Init by pointer and imported into the boot capture just
+// before it seals. Plain POD with static-literal names: the platform layer owns the
+// storage as a local, so nothing is stored statically and nothing outlives the call.
+// Callers that have no markers (Android, the automated-test driver) pass nullptr.
+struct Zenith_BootMarkerBundle
+{
+	static constexpr u_int uMAX_BOOT_BUNDLE_MARKERS = 16;
+
+	struct Marker
+	{
+		const char* m_szName = nullptr;   // static literal, never owned
+		u_int64     m_uTicks = 0;
+	};
+
+	Marker  m_axMarkers[uMAX_BOOT_BUNDLE_MARKERS]{};
+	u_int   m_uCount = 0;
+	u_int64 m_uProcessStartTicks = 0;     // ~ platform entry point; the boot timeline origin
+
+	void Add(const char* szName, const u_int64 uTicks)
+	{
+		if (m_uCount >= uMAX_BOOT_BUNDLE_MARKERS) return;
+		m_axMarkers[m_uCount].m_szName = szName;
+		m_axMarkers[m_uCount].m_uTicks = uTicks;
+		++m_uCount;
+	}
+};
 
 // Dense zone ids. Every recorded event stores a Zenith_ProfileZoneID, minted lazily by
 // RegisterZone from a string name (content-deduped). The ZENITH_PROFILE_SCOPE("Name")
@@ -88,8 +115,11 @@ namespace Zenith_Profiling_Detail
 class Zenith_Profiling
 {
 public:
-	Zenith_Profiling() = default;
-	~Zenith_Profiling() = default;
+	// Non-trivial: the ctor allocates the BootControlBlock so it exists before the
+	// main thread's RegisterThread (which runs BEFORE Initialise). The dtor frees it
+	// only if Shutdown did not already decide to leak it alongside surviving rings.
+	Zenith_Profiling();
+	~Zenith_Profiling();
 	Zenith_Profiling(const Zenith_Profiling&) = delete;
 	Zenith_Profiling& operator=(const Zenith_Profiling&) = delete;
 
@@ -119,6 +149,9 @@ public:
 	static constexpr u_int uMAX_PROFILE_DEPTH   = 64;
 	static constexpr u_int uFRAME_HISTORY       = 256;
 
+	// Declared in full below (it needs uMAX_ZONES). ThreadBuffer only holds a pointer.
+	struct BootControlBlock;
+
 	// One per producing thread. Producer = the owning thread (writes the ring with
 	// one release-store per completed scope, NO lock). Consumer = the main thread
 	// (drains via DrainPending). m_axStack is producer-private; the cursors are the
@@ -144,6 +177,13 @@ public:
 		u_int                m_uThreadID = ~0u;
 		bool                 m_bDropWarned = false;    // consumer-owned (main thread only)
 		bool                 m_bUnmatchedWarned = false;
+
+		// Everything the ring-full routing path dereferences lives behind this ONE
+		// pointer (mutex, state, buffer table, profiler back-pointer), and the block
+		// outlives every ring it is stamped on — see BootControlBlock. Set once at
+		// RegisterThread, never cleared, so a producer racing Shutdown reads DEAD
+		// rather than a dangling profiler.
+		BootControlBlock*    m_pxControl = nullptr;
 	};
 
 	// Per-thread event lists for one displayed frame, keyed by thread id. Reused
@@ -182,6 +222,38 @@ public:
 
 	void ClearEvents();
 	void WriteTextReport(FILE* pFile);
+
+	// ---- Boot capture API (see the Boot capture section further down) --------
+	// Bracket the boot-time unit-test run: the profiler's own self-tests need an
+	// un-drained ring (ProfilingOverflow) and events that survive to their own
+	// EndFrame (TestProfiling), neither of which is true while ring-full routing
+	// is draining into the capture.
+	void SuspendBootCapture();
+	void ResumeBootCapture();
+
+	// Seal the capture at the end of Zenith_Init: stamp the cutoff, take the final
+	// drain, import the platform marker bundle, then sort the raw events. Idempotent;
+	// always logs the machine-readable BootSummary line (even when capture is off).
+	void EndBootCapture(const Zenith_BootMarkerBundle* pxBundle = nullptr);
+
+	// Depth-0 boot phase markers (paired by name: "<X>Begin" / "<X>End") and one-shot
+	// milestones ("FirstFrameCompleted", ...). Both no-op once the capture is gone.
+	void AddBootMarker(const char* szName);
+	void AddBootMarker(const char* szName, const u_int64 uTicks);
+	void RecordBootMilestone(const char* szName);
+
+	// True once EndBootCapture has sealed a live capture (false when disabled).
+	bool IsBootCaptureSealed() const;
+	void WriteBootReport(FILE* pFile);
+
+	// Per-zone table for the last PUBLISHED frame, under a caller-supplied title.
+	// The boot artifact uses it for frame 1, which is part of the wait to first
+	// present: editor-automation steps run inside the frame, before submission.
+	void WriteDisplayFrameZoneTable(FILE* pFile, const char* szTitle) const;
+
+	// Per-thread ring lookup (tests/diagnostics). The table itself lives on the
+	// control block so the routing path reaches it through one pointer.
+	ThreadBuffer* GetThreadBuffer(const u_int uThreadID) const;
 
 	// ---- GPU per-pass timing channel ---------------------------------------
 	// Populated by the render backend's deferred timestamp readback: one entry per
@@ -262,11 +334,6 @@ public:
 	// per-thread ring via the tl_pxBuffer thread_local in the .cpp).
 	Zenith_Multithreading* m_pxThreading = nullptr;
 
-	// Thread-buffer table: fixed capacity, published with release at RegisterThread,
-	// read with acquire at drain. Never reallocates, so the consumer can iterate it
-	// concurrently with a late registration with no data race.
-	std::atomic<ThreadBuffer*> m_apxThreadBuffers[uMAX_PROFILE_THREADS]{};
-
 	// Four heap snapshots, swapped/copied by pointer — see Zenith_Profiling.cpp §B.
 	Snapshot* m_pxAccumulator = nullptr;   // the frame currently being built
 	Snapshot* m_pxDisplay     = nullptr;   // the previous (published) frame
@@ -321,9 +388,148 @@ public:
 	// Main-thread id (captured at Initialise) so the timeline can label its lane "Main".
 	u_int m_uMainThreadID = ~0u;
 
-	// Registration (threads + zones) is the only structural mutation; the drain/hot
-	// paths are lock-free.
-	Zenith_Mutex_NoProfiling m_xRegistrationMutex;
+	// ======================= Boot capture ===================================
+	// The frame profiler cannot see boot: nothing drains the 8K per-thread rings
+	// until the first EndFrame, so a ring saturates and every newer event is
+	// dropped. Boot capture gives the ring-full case a second destination — a
+	// permanent, bounded snapshot of everything recorded before Zenith_Init
+	// returns — and seals it at a cutoff tick so ordinary frame-era back-pressure
+	// goes back to plain drops.
+
+	enum BootCaptureState : u_int
+	{
+		BOOT_CAPTURE_DISABLED = 0,   // --skip-boot-capture: never allocated; plain drop
+		BOOT_CAPTURE_ACTIVE,         // recording; a full ring drains into the capture
+		BOOT_CAPTURE_SUSPENDED,      // RunAllTests window: no consumer, plain drop
+		BOOT_CAPTURE_SEALED,         // boot over; only pre-cutoff stragglers still land
+		BOOT_CAPTURE_DEAD,           // Shutdown ran; the profiler back-pointer is null
+	};
+
+	// Per-zone rollup. Counts EVERY boot event, including those past the raw cap,
+	// so the aggregate table is complete even when the raw timeline is truncated.
+	struct BootZoneAgg
+	{
+		u_int64 m_uCount     = 0;
+		u_int64 m_uTotalTicks = 0;
+		u_int64 m_uMinTicks  = ~0ull;
+		u_int64 m_uMaxTicks  = 0;
+	};
+
+	// A raw boot event plus the thread that produced it. NOTE the label policy: a
+	// permanent snapshot cannot hold arbitrary transient `const char*` labels, so
+	// Ingest drops them and the capture keeps only stable interned zone identities.
+	// (No label-bearing zone — they are render passes — runs at boot.)
+	struct BootRawEvent
+	{
+		Event m_xEvent;
+		u_int m_uThreadID = ~0u;
+	};
+
+	// Static-literal name + tick. Used for both phase markers ("<X>Begin"/"<X>End",
+	// paired by name in the report) and one-shot milestones.
+	struct BootMarker
+	{
+		const char* m_szName = nullptr;   // static literal, never owned
+		u_int64     m_uTicks = 0;
+	};
+
+	// Engine-free plain struct: constructible standalone in a unit test, with an
+	// injectable raw-event cap so truncation is deterministic to exercise.
+	struct BootCapture
+	{
+		static constexpr u_int uDEFAULT_MAX_RAW_EVENTS = 512 * 1024;
+		static constexpr u_int uMAX_LATE_EVENTS        = 4 * 1024;
+		static constexpr u_int uMAX_MARKERS            = 64;
+		static constexpr u_int uMAX_MILESTONES         = 8;
+
+		void Configure(const u_int uMaxRawEvents, const bool bRetainRaw, const u_int64 uOriginTicks);
+
+		// Aggregates only (sentinel-guarded). Both ingest paths funnel through it.
+		void IngestAggregate(const Event& xEvent);
+		// Pre-seal ingest: aggregates always, raw only while retained and under cap.
+		void Ingest(const Event& xEvent, const u_int uThreadID);
+		// Post-seal boot-era straggler: aggregates + the bounded pending-late list.
+		void IngestLate(const Event& xEvent, const u_int uThreadID);
+		// Main-thread publish step: swap pending into the immutable published list.
+		void PublishLate();
+
+		void AddMarker(const char* szName, const u_int64 uTicks);
+		void SetMilestone(const char* szName, const u_int64 uTicks);   // first-wins
+		const BootMarker* FindMilestone(const char* szName) const;
+
+		// Drop accounting is reported as deltas over NON-SUSPENDED intervals only.
+		void FoldDropDelta(const u_int uThreadID, const u_int64 uCurrentDrops);
+		void RebaselineDrops(const u_int uThreadID, const u_int64 uCurrentDrops);
+		u_int64 GetTotalDrops() const;
+
+		void Seal(const u_int64 uCutoffTicks);
+
+		u_int   m_uMaxRawEvents = uDEFAULT_MAX_RAW_EVENTS;
+		bool    m_bRetainRaw    = false;
+		bool    m_bSealed       = false;
+		u_int64 m_uOriginTicks  = 0;
+		u_int64 m_uCutoffTicks  = 0;
+		double  m_fSealOverheadMs = 0.0;
+
+		BootZoneAgg m_axZoneAggs[uMAX_ZONES];
+		u_int64 m_uTotalEvents         = 0;
+		u_int64 m_uTruncatedRawEvents  = 0;
+		u_int64 m_uUnattributedEvents  = 0;   // sentinel / overflow zone ids
+		u_int64 m_uLateEvents          = 0;   // post-seal boot-era arrivals (counted always)
+		u_int64 m_uLateDropped         = 0;   // late arrivals past uMAX_LATE_EVENTS
+
+		Zenith_Vector<BootRawEvent> m_xRawEvents;       // sorted by begin at Seal
+		Zenith_Vector<BootRawEvent> m_xLatePending;     // written under the control mutex
+		Zenith_Vector<BootRawEvent> m_xLatePublished;   // immutable once published
+
+		BootMarker m_axMarkers[uMAX_MARKERS];
+		u_int      m_uMarkerCount = 0;
+		BootMarker m_axMilestones[uMAX_MILESTONES];
+		u_int      m_uMilestoneCount = 0;
+
+		u_int64 m_aulDropBaseline[uMAX_PROFILE_THREADS]{};
+		u_int64 m_aulDropAccum[uMAX_PROFILE_THREADS]{};
+	};
+
+	// Heap-allocated in the Zenith_Profiling CONSTRUCTOR (so it exists before the
+	// main thread's RegisterThread, which runs before Initialise) and freed by
+	// Shutdown only when every ring was freed with it — otherwise deliberately
+	// leaked alongside the surviving rings, extending the documented ring-leak
+	// policy. That is what makes the routing path lifetime-safe: every pointer it
+	// dereferences (mutex, state, table, profiler) lives HERE, and Shutdown sets
+	// DEAD + nulls m_pxProfiling under m_xMutex before the profiler is deleted, so
+	// a producer that loses the race sees DEAD and falls back to a plain drop.
+	struct BootControlBlock
+	{
+		// Registration (threads + zones), every drain, and boot routing.
+		Zenith_Mutex_NoProfiling m_xMutex;
+
+		// Thread-buffer table: fixed capacity, published with release at
+		// RegisterThread, read with acquire at drain. Never reallocates, so the
+		// consumer can iterate it concurrently with a late registration.
+		std::atomic<ThreadBuffer*> m_apxThreadBuffers[uMAX_PROFILE_THREADS]{};
+
+		std::atomic<u_int> m_uState{ BOOT_CAPTURE_DISABLED };   // BootCaptureState
+
+		// Boot/frame divide. m_uCutoffTicks is written under m_xMutex at seal but read
+		// by producers OUTSIDE it (the ring-full fast pre-check needs it to tell a
+		// post-seal boot straggler from ordinary frame-era back-pressure), hence
+		// atomic. m_uFirstFrameOriginTicks is the IMMUTABLE first-production-frame
+		// boundary: post-seal frame drains route only events beginning before it into
+		// the capture, so an ordinary cross-frame scope at frame N is never
+		// boot-attributed.
+		std::atomic<u_int64> m_uCutoffTicks{ 0 };
+		std::atomic<u_int64> m_uFirstFrameOriginTicks{ 0 };
+		u_int64              m_uInitTicks = 0;   // fallback origin when no bundle arrives
+
+		Zenith_Profiling* m_pxProfiling = nullptr;   // nulled under m_xMutex at Shutdown
+	};
+
+	BootControlBlock* GetControlBlock() const { return m_pxControl; }
+	BootCapture*      GetBootCapture() const { return m_pxBootCapture; }
+
+	BootControlBlock* m_pxControl = nullptr;      // allocated in the ctor, see above
+	BootCapture*      m_pxBootCapture = nullptr;  // owned; null while DISABLED/DEAD
 
 	bool m_bInitialised = false;
 };

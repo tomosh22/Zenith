@@ -4,10 +4,12 @@
 
 #include "Core/Zenith_EditorWindowNames.h"
 
+#include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
+#include <algorithm>
 #include <cstring>
 
 #if ZENITH_MEMORY_TRACKING_ANY
@@ -33,10 +35,30 @@ static inline double TickDeltaToMs(const u_int64 uBegin, const u_int64 uEnd)
 	return TickDeltaToNs(uBegin, uEnd) / 1.0e6;
 }
 
+// SIGNED tick delta: uEnd may legitimately precede uBegin (an event that started
+// before the snapshot it is rendered against — a boot straggler, or the pre-existing
+// inter-frame-gap quirk where a scope opened in the previous frame's tail). The
+// unsigned form underflows to ~1.8e19 ns and the consumer silently culls the event;
+// the signed form yields a negative offset that clips to the left edge instead.
+static inline double SignedTickDeltaToNs(const u_int64 uBegin, const u_int64 uEnd)
+{
+	return static_cast<double>(static_cast<int64_t>(uEnd - uBegin)) * Zenith_Profiling_Detail::GetTicksToNs();
+}
+static inline double SignedTickDeltaToMs(const u_int64 uBegin, const u_int64 uEnd)
+{
+	return SignedTickDeltaToNs(uBegin, uEnd) / 1.0e6;
+}
+
 // The producing thread's own ring. Set at RegisterThread, cleared at
 // UnregisterThread. The hot path (Begin/EndProfile) reaches the ring ONLY through
 // this thread_local — no g_xEngine reach, no lock, no hashmap.
 thread_local static Zenith_Profiling::ThreadBuffer* tl_pxBuffer = nullptr;
+
+// Set while THIS thread is inside a boot drain (the ring-full routing path takes a
+// lock, walks every ring and appends into the capture — all of which can itself be
+// profiled). Suppressing both halves keeps begin/end balanced, so the in-flight
+// stack and depth never mutate mid-drain.
+thread_local static bool tl_bInBootDrain = false;
 
 // Pause is a CONSUMER-side concept (rev. 3): producers never read it. When paused,
 // EndFrame still drains the rings (so they don't back-pressure) but discards the
@@ -57,12 +79,159 @@ DEBUGVAR bool  dbg_bShowMemoryHUD     = false;
 #endif
 #endif
 
+// --- Consumer: drain + snapshot helpers -----------------------------------
+// Ordered ABOVE the hot path because the ring-full routing branch drives them: when
+// a producer fills its ring while boot capture is ACTIVE, that producer briefly
+// BECOMES the consumer. Everything here runs under BootControlBlock::m_xMutex, which
+// Register/UnregisterThread also take, so no drain can touch a freed ring.
+
+static void ResetSnapshotLengths(Zenith_Profiling::Snapshot& xSnap)
+{
+	// Clear inner vector lengths but keep their capacity (no realloc), and keep the
+	// map entries — so steady state never reallocates. Never call HashMap::Clear,
+	// which would destroy the inner vectors and free their capacity.
+	for (Zenith_HashMap<u_int, Zenith_Vector<Zenith_Profiling::Event>>::Iterator xIt(xSnap.m_xThreadEvents); !xIt.Done(); xIt.Next())
+	{
+		xIt.GetValueMutable().Clear();
+	}
+}
+
+// Where a drain sends what it reads. Both destinations are independently optional:
+//   snapshot only          -> ordinary frame drain (behaviour identical to before)
+//   boot only              -> ACTIVE ring-full routing / suspend flush / seal flush
+//   snapshot + boot(late)  -> post-seal frame drain: boot-era stragglers (those
+//                             beginning before the immutable first-frame boundary)
+//                             are ALSO copied into the capture's late list
+//   neither                -> discard (advance read cursors only)
+struct DrainTarget
+{
+	Zenith_Profiling::Snapshot*    m_pxSnapshot = nullptr;
+	Zenith_Profiling::BootCapture* m_pxBoot     = nullptr;
+	bool    m_bBootIsLate        = false;
+	u_int64 m_uBootBoundaryTicks = 0;                // late mode: begin < this, or skip
+	const Zenith_Profiling* m_pxNames = nullptr;     // GetZoneName for the long-event warning
+};
+
+// Drains ONE ring. Caller holds the control mutex. Static + global-free so every
+// routing case is deterministically unit-testable without an engine.
+static void DrainRingInto(Zenith_Profiling::ThreadBuffer& xBuf, const u_int uThreadID, const DrainTarget& xTarget)
+{
+	const u_int64 uWrite = xBuf.m_uWriteCursor.load(std::memory_order_acquire);
+	const u_int64 uRead = xBuf.m_uReadCursor.load(std::memory_order_relaxed);  // consumer owns it
+
+	if (uWrite != uRead)
+	{
+		// Resolved once, outside the loop, exactly as before.
+		Zenith_Vector<Zenith_Profiling::Event>* pxEvents = nullptr;
+		if (xTarget.m_pxSnapshot != nullptr)
+		{
+			pxEvents = xTarget.m_pxSnapshot->m_xThreadEvents.TryGet(uThreadID);
+			if (pxEvents == nullptr)
+			{
+				pxEvents = &xTarget.m_pxSnapshot->m_xThreadEvents.Emplace(uThreadID);
+			}
+		}
+
+		for (u_int64 u = uRead; u < uWrite; ++u)
+		{
+			const Zenith_Profiling::Event& xEvent = xBuf.m_axEvents[u % Zenith_Profiling::uRING_CAPACITY];
+
+			if (xTarget.m_pxBoot != nullptr)
+			{
+				if (!xTarget.m_bBootIsLate)
+				{
+					xTarget.m_pxBoot->Ingest(xEvent, uThreadID);
+				}
+				else if (xEvent.m_uBeginTicks < xTarget.m_uBootBoundaryTicks)
+				{
+					xTarget.m_pxBoot->IngestLate(xEvent, uThreadID);
+				}
+			}
+
+			if (pxEvents == nullptr) continue;
+			pxEvents->PushBack(xEvent);
+
+			// Long-event warning: SNAPSHOT destinations only. Boot phases legitimately
+			// run for hundreds of ms (shader compiles, asset exports, the unit-test
+			// batch), so warning on a boot drain would be pure noise.
+			const double fDurationSeconds = TickDeltaToNs(xEvent.m_uBeginTicks, xEvent.m_uEndTicks) / 1.0e9;
+			if (fDurationSeconds > fPROFILING_MAX_EVENT_TIME_SECONDS && xTarget.m_pxNames != nullptr)
+			{
+				const char* szName = xEvent.m_szLabel ? xEvent.m_szLabel : xTarget.m_pxNames->GetZoneName(xEvent.m_uZoneID);
+				Zenith_Warning(LOG_CATEGORY_CORE, "Profiling: Event '%s' took %.3fms (threshold: %.3fms) on thread %u",
+					szName, fDurationSeconds * 1000.0f, fPROFILING_MAX_EVENT_TIME_SECONDS * 1000.0f, uThreadID);
+			}
+		}
+	}
+
+	xBuf.m_uReadCursor.store(uWrite, std::memory_order_release);  // free slots
+
+	// Warn-once diagnostics. Owned by whoever is draining, always under the control
+	// mutex — during boot routing that is a producer thread, not the main thread.
+	if (!xBuf.m_bDropWarned && xBuf.m_uDroppedEvents.load(std::memory_order_relaxed) > 0)
+	{
+		xBuf.m_bDropWarned = true;
+		Zenith_Warning(LOG_CATEGORY_CORE, "Profiling: thread %u dropped events (ring capacity %u exceeded in a frame)", uThreadID, Zenith_Profiling::uRING_CAPACITY);
+	}
+	if (!xBuf.m_bUnmatchedWarned && xBuf.m_uUnmatchedEnds.load(std::memory_order_relaxed) > 0)
+	{
+		xBuf.m_bUnmatchedWarned = true;
+		Zenith_Warning(LOG_CATEGORY_CORE, "Profiling: thread %u had unmatched EndProfile call(s)", uThreadID);
+	}
+}
+
+// Drains EVERY registered ring. Caller holds the control mutex.
+static void DrainAllRingsLocked(Zenith_Profiling::BootControlBlock& xControl, const DrainTarget& xTarget)
+{
+	for (u_int uThreadID = 0; uThreadID < Zenith_Profiling::uMAX_PROFILE_THREADS; ++uThreadID)
+	{
+		Zenith_Profiling::ThreadBuffer* pxBuf = xControl.m_apxThreadBuffers[uThreadID].load(std::memory_order_acquire);
+		if (pxBuf == nullptr) continue;
+		DrainRingInto(*pxBuf, uThreadID, xTarget);
+	}
+}
+
+// Locking wrapper for the frame paths (EndFrame / ClearEvents / WriteTextReport).
+// pxDest == nullptr discards. Post-seal it additionally copies boot-era stragglers
+// into the capture's late list; see BootControlBlock::m_uFirstFrameOriginTicks.
+static void DrainAllRings(Zenith_Profiling& xSelf, Zenith_Profiling::Snapshot* pxDest)
+{
+	Zenith_Profiling::BootControlBlock* pxControl = xSelf.GetControlBlock();
+	if (pxControl == nullptr) return;
+
+	Zenith_ScopedMutexLock_T xLock(pxControl->m_xMutex);
+
+	DrainTarget xTarget;
+	xTarget.m_pxSnapshot = pxDest;
+	xTarget.m_pxNames = &xSelf;
+
+	if (pxControl->m_uState.load(std::memory_order_relaxed) == Zenith_Profiling::BOOT_CAPTURE_SEALED)
+	{
+		const u_int64 uBoundary = pxControl->m_uFirstFrameOriginTicks.load(std::memory_order_relaxed);
+		if (uBoundary != 0)
+		{
+			xTarget.m_pxBoot = xSelf.GetBootCapture();
+			xTarget.m_bBootIsLate = true;
+			xTarget.m_uBootBoundaryTicks = uBoundary;
+		}
+	}
+
+	DrainAllRingsLocked(*pxControl, xTarget);
+
+	if (xTarget.m_pxBoot != nullptr)
+	{
+		xTarget.m_pxBoot->PublishLate();   // main thread, same lock, before any UI read
+	}
+}
+
 // --- Hot path (producer, lock-free) ---------------------------------------
 // Both the member Begin/EndProfile and the Zenith_Profiling_Detail:: bridge route
-// here. Operates purely on tl_pxBuffer.
+// here. Operates purely on tl_pxBuffer, except for the ring-full branch below.
 
 static void DoBeginProfileZone(const Zenith_ProfileZoneID uZoneID, const char* szLabel)
 {
+	if (tl_bInBootDrain) return;   // balanced with the matching guard in DoEndProfileZone
+
 	Zenith_Profiling::ThreadBuffer* pxBuf = tl_pxBuffer;
 	if (pxBuf == nullptr) return;
 
@@ -80,8 +249,94 @@ static void DoBeginProfileZone(const Zenith_ProfileZoneID uZoneID, const char* s
 	xFrame.m_uStartTicks = Zenith_Profiling_Detail::GetTimestamp();
 }
 
+// Ring has room: one producer-private cursor bump plus one release store. Factored
+// out so the routing path can reuse it verbatim after a drain frees space.
+static inline void WriteAndPublishEvent(Zenith_Profiling::ThreadBuffer& xBuf, const u_int64 uWrite, const Zenith_Profiling::Event& xEvent)
+{
+	xBuf.m_axEvents[uWrite % Zenith_Profiling::uRING_CAPACITY] = xEvent;
+	xBuf.m_uWriteLocal = uWrite + 1;
+	xBuf.m_uWriteCursor.store(uWrite + 1, std::memory_order_release);   // PUBLISH
+}
+
+// The ring is FULL. What happens next is decided entirely by the boot-capture state,
+// re-read under the control mutex — the check outside the lock is only a fast bail
+// for the overwhelmingly common not-ACTIVE (steady-state) case, which costs one
+// relaxed load and behaves exactly as the pre-boot-capture code did.
+static void RouteFullRingEvent(Zenith_Profiling::ThreadBuffer& xBuf, const Zenith_Profiling::Event& xPending)
+{
+	Zenith_Profiling::BootControlBlock* pxControl = xBuf.m_pxControl;
+	if (pxControl == nullptr)
+	{
+		xBuf.m_uDroppedEvents.fetch_add(1, std::memory_order_relaxed);   // DROP
+		return;
+	}
+
+	// Fast bail without touching the lock. Once SEALED, every event begins at or after
+	// the cutoff, so the second clause is false forever and the steady-state cost of
+	// boot capture on this (already slow) path is one relaxed load and a compare.
+	{
+		const u_int uFastState = pxControl->m_uState.load(std::memory_order_relaxed);
+		const bool bMaybeRoutable = (uFastState == Zenith_Profiling::BOOT_CAPTURE_ACTIVE)
+			|| (uFastState == Zenith_Profiling::BOOT_CAPTURE_SEALED
+				&& xPending.m_uBeginTicks < pxControl->m_uCutoffTicks.load(std::memory_order_relaxed));
+		if (!bMaybeRoutable)
+		{
+			xBuf.m_uDroppedEvents.fetch_add(1, std::memory_order_relaxed);   // DROP
+			return;
+		}
+	}
+
+	tl_bInBootDrain = true;
+	{
+		Zenith_ScopedMutexLock_T xLock(pxControl->m_xMutex);
+
+		// Everything dereferenced from here lives on the control block, which outlives
+		// the profiler. DEAD => m_pxProfiling is already null => nothing to deref.
+		Zenith_Profiling* pxProfiling = pxControl->m_pxProfiling;
+		Zenith_Profiling::BootCapture* pxCapture = (pxProfiling != nullptr) ? pxProfiling->GetBootCapture() : nullptr;
+		const u_int uState = pxControl->m_uState.load(std::memory_order_relaxed);
+
+		if (uState == Zenith_Profiling::BOOT_CAPTURE_ACTIVE && pxCapture != nullptr)
+		{
+			DrainTarget xTarget;
+			xTarget.m_pxBoot = pxCapture;
+			DrainAllRingsLocked(*pxControl, xTarget);
+
+			// The cursors moved under us, so the pre-drain values are stale. Re-read,
+			// then write + publish under the SAME lock: no other producer's drain can
+			// interleave between the space check and the publish.
+			const u_int64 uWrite = xBuf.m_uWriteLocal;
+			const u_int64 uRead = xBuf.m_uReadCursor.load(std::memory_order_acquire);
+			if (uWrite - uRead < Zenith_Profiling::uRING_CAPACITY)
+			{
+				WriteAndPublishEvent(xBuf, uWrite, xPending);
+			}
+			else
+			{
+				xBuf.m_uDroppedEvents.fetch_add(1, std::memory_order_relaxed);
+			}
+		}
+		else if (uState == Zenith_Profiling::BOOT_CAPTURE_SEALED && pxCapture != nullptr
+			&& xPending.m_uBeginTicks < pxControl->m_uCutoffTicks.load(std::memory_order_relaxed))
+		{
+			// A boot-era scope that only just closed. Post-seal arrivals always go to
+			// the late list — the raw list was sorted and frozen at Seal.
+			pxCapture->IngestLate(xPending, xBuf.m_uThreadID);
+		}
+		else
+		{
+			// SUSPENDED (ProfilingOverflow's no-consumer contract), DISABLED, DEAD, or
+			// ordinary frame-era back-pressure at or after the cutoff.
+			xBuf.m_uDroppedEvents.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+	tl_bInBootDrain = false;
+}
+
 static void DoEndProfileZone(const Zenith_ProfileZoneID uZoneID)
 {
+	if (tl_bInBootDrain) return;   // balanced with the matching guard in DoBeginProfileZone
+
 	Zenith_Profiling::ThreadBuffer* pxBuf = tl_pxBuffer;
 	if (pxBuf == nullptr) return;
 
@@ -100,91 +355,24 @@ static void DoEndProfileZone(const Zenith_ProfileZoneID uZoneID)
 	}
 
 	const u_int uDepth = --pxBuf->m_uDepth;
-	const Zenith_Profiling::ThreadBuffer::InFlight& xFrame = pxBuf->m_axStack[uDepth];
+	// BY VALUE, not a reference into the popped stack slot: the routing path below can
+	// re-enter this thread's producer state, which would overwrite that slot.
+	const Zenith_Profiling::ThreadBuffer::InFlight xFrame = pxBuf->m_axStack[uDepth];
 	// The depth model is authoritative; uZoneID is informational. A mismatched id is
 	// tolerated in release (the top in-flight scope is popped regardless).
 	(void)uZoneID;
 
+	const Zenith_Profiling::Event xPending(xFrame.m_uStartTicks, uEnd, xFrame.m_uZoneID, uDepth, xFrame.m_szLabel);
+
 	const u_int64 uWrite = pxBuf->m_uWriteLocal;
 	const u_int64 uRead = pxBuf->m_uReadCursor.load(std::memory_order_acquire);  // back-pressure
-	if (uWrite - uRead >= Zenith_Profiling::uRING_CAPACITY)
+	if (uWrite - uRead < Zenith_Profiling::uRING_CAPACITY)
 	{
-		pxBuf->m_uDroppedEvents.fetch_add(1, std::memory_order_relaxed);          // DROP
+		WriteAndPublishEvent(*pxBuf, uWrite, xPending);
 		return;
 	}
 
-	pxBuf->m_axEvents[uWrite % Zenith_Profiling::uRING_CAPACITY] =
-		Zenith_Profiling::Event(xFrame.m_uStartTicks, uEnd, xFrame.m_uZoneID, uDepth, xFrame.m_szLabel);
-	pxBuf->m_uWriteLocal = uWrite + 1;
-	pxBuf->m_uWriteCursor.store(uWrite + 1, std::memory_order_release);          // PUBLISH
-}
-
-// --- Consumer (main thread): drain + snapshot helpers ---------------------
-// All run on the main thread under m_xRegistrationMutex (NOT the hot path), so a
-// concurrent Register/UnregisterThread can never free a ring mid-drain.
-
-static void ResetSnapshotLengths(Zenith_Profiling::Snapshot& xSnap)
-{
-	// Clear inner vector lengths but keep their capacity (no realloc), and keep the
-	// map entries — so steady state never reallocates. Never call HashMap::Clear,
-	// which would destroy the inner vectors and free their capacity.
-	for (Zenith_HashMap<u_int, Zenith_Vector<Zenith_Profiling::Event>>::Iterator xIt(xSnap.m_xThreadEvents); !xIt.Done(); xIt.Next())
-	{
-		xIt.GetValueMutable().Clear();
-	}
-}
-
-// Drains every ring's completed events. pxDest == nullptr discards (advances read
-// cursors only); otherwise appends into pxDest keyed by thread id.
-static void DrainAllRings(Zenith_Profiling& xSelf, Zenith_Profiling::Snapshot* pxDest)
-{
-	Zenith_ScopedMutexLock_T xLock(xSelf.m_xRegistrationMutex);
-
-	for (u_int uThreadID = 0; uThreadID < Zenith_Profiling::uMAX_PROFILE_THREADS; ++uThreadID)
-	{
-		Zenith_Profiling::ThreadBuffer* pxBuf = xSelf.m_apxThreadBuffers[uThreadID].load(std::memory_order_acquire);
-		if (pxBuf == nullptr) continue;
-
-		const u_int64 uWrite = pxBuf->m_uWriteCursor.load(std::memory_order_acquire);
-		const u_int64 uRead = pxBuf->m_uReadCursor.load(std::memory_order_relaxed);  // consumer owns it
-
-		if (pxDest != nullptr && uWrite != uRead)
-		{
-			Zenith_Vector<Zenith_Profiling::Event>* pxEvents = pxDest->m_xThreadEvents.TryGet(uThreadID);
-			if (pxEvents == nullptr)
-			{
-				pxEvents = &pxDest->m_xThreadEvents.Emplace(uThreadID);
-			}
-			for (u_int64 u = uRead; u < uWrite; ++u)
-			{
-				const Zenith_Profiling::Event& xEvent = pxBuf->m_axEvents[u % Zenith_Profiling::uRING_CAPACITY];
-				pxEvents->PushBack(xEvent);
-
-				// Long-event warning lives on the consumer (never the hot path).
-				const double fDurationSeconds = TickDeltaToNs(xEvent.m_uBeginTicks, xEvent.m_uEndTicks) / 1.0e9;
-				if (fDurationSeconds > fPROFILING_MAX_EVENT_TIME_SECONDS)
-				{
-					const char* szName = xEvent.m_szLabel ? xEvent.m_szLabel : xSelf.GetZoneName(xEvent.m_uZoneID);
-					Zenith_Warning(LOG_CATEGORY_CORE, "Profiling: Event '%s' took %.3fms (threshold: %.3fms) on thread %u",
-						szName, fDurationSeconds * 1000.0f, fPROFILING_MAX_EVENT_TIME_SECONDS * 1000.0f, uThreadID);
-				}
-			}
-		}
-
-		pxBuf->m_uReadCursor.store(uWrite, std::memory_order_release);  // free slots
-
-		// Warn-once diagnostics (consumer-owned flags).
-		if (!pxBuf->m_bDropWarned && pxBuf->m_uDroppedEvents.load(std::memory_order_relaxed) > 0)
-		{
-			pxBuf->m_bDropWarned = true;
-			Zenith_Warning(LOG_CATEGORY_CORE, "Profiling: thread %u dropped events (ring capacity %u exceeded in a frame)", uThreadID, Zenith_Profiling::uRING_CAPACITY);
-		}
-		if (!pxBuf->m_bUnmatchedWarned && pxBuf->m_uUnmatchedEnds.load(std::memory_order_relaxed) > 0)
-		{
-			pxBuf->m_bUnmatchedWarned = true;
-			Zenith_Warning(LOG_CATEGORY_CORE, "Profiling: thread %u had unmatched EndProfile call(s)", uThreadID);
-		}
-	}
+	RouteFullRingEvent(*pxBuf, xPending);
 }
 
 // Capacity-preserving copy: clear dst lengths (keep capacity), then append src.
@@ -210,7 +398,253 @@ static void CopyInto(Zenith_Profiling::Snapshot& xDst, const Zenith_Profiling::S
 	xDst.m_uEndTicks = xSrc.m_uEndTicks;
 }
 
+// --- Boot capture storage -------------------------------------------------
+// Engine-free by construction: every method below touches only the struct, so a
+// unit test can drive truncation, late routing and drop accounting with a local
+// instance and no engine, no threads and no rings.
+
+void Zenith_Profiling::BootCapture::Configure(const u_int uMaxRawEvents, const bool bRetainRaw, const u_int64 uOriginTicks)
+{
+	m_uMaxRawEvents = uMaxRawEvents;
+	m_bRetainRaw = bRetainRaw;
+	m_uOriginTicks = uOriginTicks;
+	m_uCutoffTicks = 0;
+	m_bSealed = false;
+
+	if (bRetainRaw && uMaxRawEvents > 0)
+	{
+		// A modest up-front reservation (never the full cap — that would be tens of MB
+		// for the 512K default) so early boot ingest doesn't realloc every few events.
+		m_xRawEvents.Reserve(uMaxRawEvents < 4096u ? uMaxRawEvents : 4096u);
+	}
+}
+
+void Zenith_Profiling::BootCapture::IngestAggregate(const Event& xEvent)
+{
+	++m_uTotalEvents;
+
+	// Sentinel guard: ZENITH_PROFILE_ZONE_NULL / _OVERFLOW are 0xFFFFFFFF / 0xFFFFFFFE,
+	// far past the descriptor table. Counted as unattributed, never used to index.
+	if (xEvent.m_uZoneID >= uMAX_ZONES)
+	{
+		++m_uUnattributedEvents;
+		return;
+	}
+
+	const u_int64 uTicks = (xEvent.m_uEndTicks >= xEvent.m_uBeginTicks)
+		? (xEvent.m_uEndTicks - xEvent.m_uBeginTicks) : 0ull;
+
+	BootZoneAgg& xAgg = m_axZoneAggs[xEvent.m_uZoneID];
+	++xAgg.m_uCount;
+	xAgg.m_uTotalTicks += uTicks;
+	if (uTicks < xAgg.m_uMinTicks) xAgg.m_uMinTicks = uTicks;
+	if (uTicks > xAgg.m_uMaxTicks) xAgg.m_uMaxTicks = uTicks;
+}
+
+void Zenith_Profiling::BootCapture::Ingest(const Event& xEvent, const u_int uThreadID)
+{
+	IngestAggregate(xEvent);   // aggregates keep counting past the raw cap
+
+	if (!m_bRetainRaw) return;
+	if (m_xRawEvents.GetSize() >= m_uMaxRawEvents)
+	{
+		++m_uTruncatedRawEvents;
+		return;
+	}
+
+	BootRawEvent xRaw;
+	xRaw.m_xEvent = xEvent;
+	// LABEL POLICY: a permanent snapshot cannot hold arbitrary transient `const char*`
+	// pointers, so labels are dropped at ingest and only the stable interned zone
+	// identity is retained. Nothing label-bearing (render passes) runs at boot.
+	xRaw.m_xEvent.m_szLabel = nullptr;
+	xRaw.m_uThreadID = uThreadID;
+	m_xRawEvents.PushBack(xRaw);
+}
+
+void Zenith_Profiling::BootCapture::IngestLate(const Event& xEvent, const u_int uThreadID)
+{
+	IngestAggregate(xEvent);
+	++m_uLateEvents;
+
+	// The raw list was sorted and frozen at Seal, so post-seal raw arrivals go to the
+	// bounded pending list instead; the main thread publishes them (see PublishLate).
+	if (!m_bRetainRaw) return;
+	if (m_xLatePending.GetSize() + m_xLatePublished.GetSize() >= uMAX_LATE_EVENTS)
+	{
+		++m_uLateDropped;
+		return;
+	}
+
+	BootRawEvent xRaw;
+	xRaw.m_xEvent = xEvent;
+	xRaw.m_xEvent.m_szLabel = nullptr;
+	xRaw.m_uThreadID = uThreadID;
+	m_xLatePending.PushBack(xRaw);
+}
+
+void Zenith_Profiling::BootCapture::PublishLate()
+{
+	const u_int uPending = m_xLatePending.GetSize();
+	if (uPending == 0) return;
+
+	for (u_int u = 0; u < uPending; ++u)
+	{
+		m_xLatePublished.PushBack(m_xLatePending.Get(u));
+	}
+	m_xLatePending.Clear();
+
+	// Lazy re-sort on publish: late events arrive in close order, not begin order.
+	std::sort(m_xLatePublished.GetDataPointer(), m_xLatePublished.GetDataPointer() + m_xLatePublished.GetSize(),
+		[](const BootRawEvent& xA, const BootRawEvent& xB) { return xA.m_xEvent.m_uBeginTicks < xB.m_xEvent.m_uBeginTicks; });
+}
+
+void Zenith_Profiling::BootCapture::AddMarker(const char* szName, const u_int64 uTicks)
+{
+	if (szName == nullptr || m_uMarkerCount >= uMAX_MARKERS) return;
+	m_axMarkers[m_uMarkerCount].m_szName = szName;
+	m_axMarkers[m_uMarkerCount].m_uTicks = uTicks;
+	++m_uMarkerCount;
+}
+
+const Zenith_Profiling::BootMarker* Zenith_Profiling::BootCapture::FindMilestone(const char* szName) const
+{
+	if (szName == nullptr) return nullptr;
+	for (u_int u = 0; u < m_uMilestoneCount; ++u)
+	{
+		if (m_axMilestones[u].m_szName != nullptr && strcmp(m_axMilestones[u].m_szName, szName) == 0)
+		{
+			return &m_axMilestones[u];
+		}
+	}
+	return nullptr;
+}
+
+void Zenith_Profiling::BootCapture::SetMilestone(const char* szName, const u_int64 uTicks)
+{
+	if (szName == nullptr || m_uMilestoneCount >= uMAX_MILESTONES) return;
+	if (FindMilestone(szName) != nullptr) return;   // first-wins
+	m_axMilestones[m_uMilestoneCount].m_szName = szName;
+	m_axMilestones[m_uMilestoneCount].m_uTicks = uTicks;
+	++m_uMilestoneCount;
+}
+
+void Zenith_Profiling::BootCapture::FoldDropDelta(const u_int uThreadID, const u_int64 uCurrentDrops)
+{
+	if (uThreadID >= uMAX_PROFILE_THREADS) return;
+	if (uCurrentDrops > m_aulDropBaseline[uThreadID])
+	{
+		m_aulDropAccum[uThreadID] += uCurrentDrops - m_aulDropBaseline[uThreadID];
+	}
+	m_aulDropBaseline[uThreadID] = uCurrentDrops;   // folding also re-baselines
+}
+
+void Zenith_Profiling::BootCapture::RebaselineDrops(const u_int uThreadID, const u_int64 uCurrentDrops)
+{
+	if (uThreadID >= uMAX_PROFILE_THREADS) return;
+	m_aulDropBaseline[uThreadID] = uCurrentDrops;
+}
+
+u_int64 Zenith_Profiling::BootCapture::GetTotalDrops() const
+{
+	u_int64 uTotal = 0;
+	for (u_int u = 0; u < uMAX_PROFILE_THREADS; ++u) uTotal += m_aulDropAccum[u];
+	return uTotal;
+}
+
+void Zenith_Profiling::BootCapture::Seal(const u_int64 uCutoffTicks)
+{
+	// The cutoff is stamped by the CALLER before the final drain and passed in here;
+	// the sort below therefore cannot contaminate the boot window, only be measured.
+	m_uCutoffTicks = uCutoffTicks;
+	m_bSealed = true;
+
+	if (!m_bRetainRaw || m_xRawEvents.GetSize() == 0) return;
+
+	const u_int64 uSortBegin = Zenith_Profiling_Detail::GetTimestamp();
+	std::sort(m_xRawEvents.GetDataPointer(), m_xRawEvents.GetDataPointer() + m_xRawEvents.GetSize(),
+		[](const BootRawEvent& xA, const BootRawEvent& xB) { return xA.m_xEvent.m_uBeginTicks < xB.m_xEvent.m_uBeginTicks; });
+	m_fSealOverheadMs = TickDeltaToMs(uSortBegin, Zenith_Profiling_Detail::GetTimestamp());
+}
+
+// --- Boot capture: locked helpers -----------------------------------------
+// Caller holds the control mutex for all three.
+
+static void FoldAllDropDeltasLocked(Zenith_Profiling::BootControlBlock& xControl, Zenith_Profiling::BootCapture& xCapture)
+{
+	for (u_int u = 0; u < Zenith_Profiling::uMAX_PROFILE_THREADS; ++u)
+	{
+		Zenith_Profiling::ThreadBuffer* pxBuf = xControl.m_apxThreadBuffers[u].load(std::memory_order_acquire);
+		if (pxBuf == nullptr) continue;
+		xCapture.FoldDropDelta(u, pxBuf->m_uDroppedEvents.load(std::memory_order_relaxed));
+	}
+}
+
+static void RebaselineAllDropsLocked(Zenith_Profiling::BootControlBlock& xControl, Zenith_Profiling::BootCapture& xCapture)
+{
+	for (u_int u = 0; u < Zenith_Profiling::uMAX_PROFILE_THREADS; ++u)
+	{
+		Zenith_Profiling::ThreadBuffer* pxBuf = xControl.m_apxThreadBuffers[u].load(std::memory_order_acquire);
+		if (pxBuf == nullptr) continue;
+		xCapture.RebaselineDrops(u, pxBuf->m_uDroppedEvents.load(std::memory_order_relaxed));
+	}
+}
+
+// A thread is exiting and its ring is about to be freed — it can hold the only record
+// of work that thread did during boot, which the pre-boot-capture code simply threw
+// away. Route it by state, then fold its drop delta so the accounting stays whole.
+static void FlushExitingRingLocked(Zenith_Profiling::BootControlBlock& xControl,
+	Zenith_Profiling::BootCapture* pxCapture, Zenith_Profiling::ThreadBuffer& xBuf, const u_int uThreadID)
+{
+	const u_int uState = xControl.m_uState.load(std::memory_order_relaxed);
+
+	DrainTarget xTarget;
+	if (pxCapture != nullptr)
+	{
+		if (uState == Zenith_Profiling::BOOT_CAPTURE_ACTIVE)
+		{
+			xTarget.m_pxBoot = pxCapture;
+		}
+		else if (uState == Zenith_Profiling::BOOT_CAPTURE_SEALED)
+		{
+			xTarget.m_pxBoot = pxCapture;
+			xTarget.m_bBootIsLate = true;
+			xTarget.m_uBootBoundaryTicks = xControl.m_uCutoffTicks.load(std::memory_order_relaxed);
+		}
+		// SUSPENDED / DISABLED / DEAD: discard — the target stays empty.
+	}
+
+	DrainRingInto(xBuf, uThreadID, xTarget);
+
+	if (xTarget.m_pxBoot != nullptr)
+	{
+		xTarget.m_pxBoot->FoldDropDelta(uThreadID, xBuf.m_uDroppedEvents.load(std::memory_order_relaxed));
+	}
+}
+
 // --- Lifecycle ------------------------------------------------------------
+
+Zenith_Profiling::Zenith_Profiling()
+{
+	// The control block is allocated HERE, not in Initialise: the main thread's
+	// RegisterThread runs first (Zenith_Engine::InitialiseRuntimeServices allocates
+	// this object, then registers the main thread, then calls Initialise) and must be
+	// able to stamp the block onto its ring. Single-threaded at this point — no task
+	// worker exists yet — so no lock is needed to publish it.
+	m_pxControl = new BootControlBlock();
+	m_pxControl->m_pxProfiling = this;
+	m_pxControl->m_uInitTicks = Zenith_Profiling_Detail::GetTimestamp();
+}
+
+Zenith_Profiling::~Zenith_Profiling()
+{
+	// Shutdown nulls m_pxControl after deciding free-or-leak, so this only fires for a
+	// profiler that was never shut down (a standalone test instance).
+	delete m_pxControl;
+	m_pxControl = nullptr;
+	delete m_pxBootCapture;
+	m_pxBootCapture = nullptr;
+}
 
 void Zenith_Profiling::Initialise(Zenith_Multithreading& xThreading)
 {
@@ -231,44 +665,98 @@ void Zenith_Profiling::Initialise(Zenith_Multithreading& xThreading)
 	m_uTotalFrameZone = RegisterZone("Total Frame");
 	m_uMainThreadID = xThreading.GetMainThreadID();
 
+	// Boot capture comes online here — roughly midway through engine phase E. Zones
+	// recorded BEFORE this point are not lost: they are still sitting in the rings, and
+	// the first drain (ring-full routing, or the seal flush) sweeps them in.
+	if (!Zenith_CommandLine::IsBootCaptureSkipped())
+	{
+		// Raw events (and the seal-time sort) are TOOLS / dump-only: a non-tools Android
+		// build keeps aggregates, markers and milestones and skips the raw timeline.
+#ifdef ZENITH_TOOLS
+		const bool bRetainRaw = true;
+#else
+		const bool bRetainRaw = (Zenith_CommandLine::GetBootProfileDumpPath() != nullptr);
+#endif
+		m_pxBootCapture = new BootCapture();
+		m_pxBootCapture->Configure(BootCapture::uDEFAULT_MAX_RAW_EVENTS, bRetainRaw, m_pxControl->m_uInitTicks);
+
+		Zenith_ScopedMutexLock_T xLock(m_pxControl->m_xMutex);
+		m_pxControl->m_uState.store(BOOT_CAPTURE_ACTIVE, std::memory_order_release);
+	}
+
 	m_bInitialised = true;
 }
 
 void Zenith_Profiling::Shutdown()
 {
-	Zenith_ScopedMutexLock_T xLock(m_xRegistrationMutex);
+	if (m_pxControl == nullptr) return;
 
 	const u_int uMainID = m_pxThreading ? m_pxThreading->GetMainThreadID() : ~0u;
+	bool bAllRingsFreed = true;
 
-	// Clear the main thread's TLS before freeing its ring (this runs on the main
-	// thread, after the task workers have joined + unregistered).
-	tl_pxBuffer = nullptr;
-
-	for (u_int u = 0; u < uMAX_PROFILE_THREADS; ++u)
 	{
-		ThreadBuffer* pxBuf = m_apxThreadBuffers[u].load(std::memory_order_relaxed);
-		if (pxBuf == nullptr) continue;
+		Zenith_ScopedMutexLock_T xLock(m_pxControl->m_xMutex);
 
-		if (u == uMainID)
+		// State first, back-pointer second, BOTH before anything is freed: a producer
+		// racing us blocks on this mutex, then reads DEAD and drops its event without
+		// dereferencing the profiler.
+		m_pxControl->m_uState.store(BOOT_CAPTURE_DEAD, std::memory_order_release);
+		m_pxControl->m_pxProfiling = nullptr;
+
+		// Clear the main thread's TLS before freeing its ring (this runs on the main
+		// thread, after the task workers have joined + unregistered).
+		tl_pxBuffer = nullptr;
+
+		for (u_int u = 0; u < uMAX_PROFILE_THREADS; ++u)
 		{
-			m_apxThreadBuffers[u].store(nullptr, std::memory_order_release);
-			delete pxBuf;
-		}
-		else
-		{
-			// A producer that never unregistered (e.g. the FileWatcher, whose
-			// shutdown sleeps rather than joins) may still be live and writing its
-			// ring. Leave it allocated rather than risk a use-after-free; harmless
-			// at process teardown.
-			Zenith_Warning(LOG_CATEGORY_CORE, "Profiling: thread %u still registered at shutdown; leaving its ring allocated to avoid a use-after-free", u);
+			ThreadBuffer* pxBuf = m_pxControl->m_apxThreadBuffers[u].load(std::memory_order_relaxed);
+			if (pxBuf == nullptr) continue;
+
+			if (u == uMainID)
+			{
+				m_pxControl->m_apxThreadBuffers[u].store(nullptr, std::memory_order_release);
+				delete pxBuf;
+			}
+			else
+			{
+				// A producer that never unregistered (e.g. the FileWatcher, whose
+				// shutdown sleeps rather than joins) may still be live and writing its
+				// ring. Leave it allocated rather than risk a use-after-free; harmless
+				// at process teardown.
+				bAllRingsFreed = false;
+				Zenith_Warning(LOG_CATEGORY_CORE, "Profiling: thread %u still registered at shutdown; leaving its ring allocated to avoid a use-after-free", u);
+			}
 		}
 	}
+
+	if (bAllRingsFreed)
+	{
+		delete m_pxControl;
+	}
+	else
+	{
+		// Deliberate, bounded, process-teardown-only leak: a surviving ring still points
+		// at this block and its producer may take the mutex at any moment. This extends
+		// the existing ring-leak policy rather than trading it for a use-after-free.
+		Zenith_Warning(LOG_CATEGORY_CORE, "Profiling: boot control block intentionally leaked alongside the surviving ring(s)");
+	}
+	m_pxControl = nullptr;
+
+	// Safe to free now: state is DEAD and the back-pointer is null, so no producer can
+	// still reach the capture (it is only ever resolved through m_pxProfiling).
+	delete m_pxBootCapture; m_pxBootCapture = nullptr;
 
 	delete m_pxAccumulator; m_pxAccumulator = nullptr;
 	delete m_pxDisplay;     m_pxDisplay = nullptr;
 	delete m_pxWorst;       m_pxWorst = nullptr;
 	delete m_pxPinned;      m_pxPinned = nullptr;
 	m_bInitialised = false;
+}
+
+Zenith_Profiling::ThreadBuffer* Zenith_Profiling::GetThreadBuffer(const u_int uThreadID) const
+{
+	if (m_pxControl == nullptr || uThreadID >= uMAX_PROFILE_THREADS) return nullptr;
+	return m_pxControl->m_apxThreadBuffers[uThreadID].load(std::memory_order_acquire);
 }
 
 void Zenith_Profiling::RegisterThread()
@@ -283,35 +771,202 @@ void Zenith_Profiling::RegisterThread()
 		tl_pxBuffer = nullptr;
 		return;
 	}
+	if (m_pxControl == nullptr)
+	{
+		tl_pxBuffer = nullptr;
+		return;
+	}
 
-	Zenith_ScopedMutexLock_T xLock(m_xRegistrationMutex);
-	ThreadBuffer* pxBuf = m_apxThreadBuffers[uThreadID].load(std::memory_order_relaxed);
+	Zenith_ScopedMutexLock_T xLock(m_pxControl->m_xMutex);
+	ThreadBuffer* pxBuf = m_pxControl->m_apxThreadBuffers[uThreadID].load(std::memory_order_relaxed);
 	if (pxBuf == nullptr)
 	{
 		pxBuf = new ThreadBuffer();
 		pxBuf->m_uThreadID = uThreadID;
-		m_apxThreadBuffers[uThreadID].store(pxBuf, std::memory_order_release);
+		pxBuf->m_pxControl = m_pxControl;   // stamped once, never cleared
+		m_pxControl->m_apxThreadBuffers[uThreadID].store(pxBuf, std::memory_order_release);
 	}
 	tl_pxBuffer = pxBuf;
 }
 
 void Zenith_Profiling::UnregisterThread()
 {
-	// Producer-thread exit: free this thread's ring and clear its TLS. Runs under the
-	// registration mutex, which the consumer's drain also takes, so the drain can
-	// never touch a freed ring.
+	// Producer-thread exit: FLUSH this thread's ring (it can hold the only record of
+	// the boot work this thread did), then free it and clear its TLS. Runs under the
+	// control mutex, which every drain also takes, so no drain can touch a freed ring.
 	const u_int uThreadID = g_xEngine.Threading().GetCurrentThreadID();
-	if (uThreadID >= uMAX_PROFILE_THREADS)
+	if (uThreadID >= uMAX_PROFILE_THREADS || m_pxControl == nullptr)
 	{
 		tl_pxBuffer = nullptr;
 		return;
 	}
 
-	Zenith_ScopedMutexLock_T xLock(m_xRegistrationMutex);
-	ThreadBuffer* pxBuf = m_apxThreadBuffers[uThreadID].load(std::memory_order_relaxed);
-	m_apxThreadBuffers[uThreadID].store(nullptr, std::memory_order_release);
+	Zenith_ScopedMutexLock_T xLock(m_pxControl->m_xMutex);
+	ThreadBuffer* pxBuf = m_pxControl->m_apxThreadBuffers[uThreadID].load(std::memory_order_relaxed);
+	m_pxControl->m_apxThreadBuffers[uThreadID].store(nullptr, std::memory_order_release);
 	tl_pxBuffer = nullptr;
-	delete pxBuf;
+
+	if (pxBuf != nullptr)
+	{
+		FlushExitingRingLocked(*m_pxControl, m_pxBootCapture, *pxBuf, uThreadID);
+		delete pxBuf;
+	}
+}
+
+// --- Boot capture: state transitions --------------------------------------
+
+void Zenith_Profiling::SuspendBootCapture()
+{
+	// The profiler's own boot-time self-tests need what capture takes away:
+	// TestProfiling needs its events to survive to its own EndFrame, and
+	// ProfilingOverflow needs an UNCONSUMED ring. Flush what we have, then stop
+	// routing until Resume.
+	if (m_pxControl == nullptr) return;
+
+	Zenith_ScopedMutexLock_T xLock(m_pxControl->m_xMutex);
+	if (m_pxControl->m_uState.load(std::memory_order_relaxed) != BOOT_CAPTURE_ACTIVE) return;
+
+	if (m_pxBootCapture != nullptr)
+	{
+		DrainTarget xTarget;
+		xTarget.m_pxBoot = m_pxBootCapture;
+		DrainAllRingsLocked(*m_pxControl, xTarget);
+		FoldAllDropDeltasLocked(*m_pxControl, *m_pxBootCapture);
+	}
+	m_pxControl->m_uState.store(BOOT_CAPTURE_SUSPENDED, std::memory_order_release);
+}
+
+void Zenith_Profiling::ResumeBootCapture()
+{
+	if (m_pxControl == nullptr) return;
+
+	Zenith_ScopedMutexLock_T xLock(m_pxControl->m_xMutex);
+	if (m_pxControl->m_uState.load(std::memory_order_relaxed) != BOOT_CAPTURE_SUSPENDED) return;
+
+	// Discard whatever the suspended window left behind (the self-tests deliberately
+	// overflow a ring) and re-baseline the drop counters, so the report's drop deltas
+	// only ever cover non-suspended intervals.
+	DrainTarget xDiscard;
+	DrainAllRingsLocked(*m_pxControl, xDiscard);
+	if (m_pxBootCapture != nullptr)
+	{
+		RebaselineAllDropsLocked(*m_pxControl, *m_pxBootCapture);
+	}
+	m_pxControl->m_uState.store(BOOT_CAPTURE_ACTIVE, std::memory_order_release);
+}
+
+// The stable, machine-readable line. Emitted on EVERY run — including under
+// --skip-boot-capture — so a calibration run stays comparable with a captured one.
+static void LogBootSummaryLine(const Zenith_Profiling::BootCapture* pxCapture, const u_int64 uOriginTicks, const u_int64 uCutoffTicks)
+{
+	const double fTotalMs = SignedTickDeltaToMs(uOriginTicks, uCutoffTicks);
+	if (pxCapture == nullptr)
+	{
+		Zenith_Log(LOG_CATEGORY_CORE, "[Profiling] BootSummary totalMs=%.3f state=disabled events=0 truncated=0 late=0 unattributed=0 drops=0 sealMs=0.000", fTotalMs);
+		return;
+	}
+	Zenith_Log(LOG_CATEGORY_CORE, "[Profiling] BootSummary totalMs=%.3f state=active events=%llu truncated=%llu late=%llu unattributed=%llu drops=%llu sealMs=%.3f",
+		fTotalMs,
+		static_cast<unsigned long long>(pxCapture->m_uTotalEvents),
+		static_cast<unsigned long long>(pxCapture->m_uTruncatedRawEvents),
+		static_cast<unsigned long long>(pxCapture->m_uLateEvents),
+		static_cast<unsigned long long>(pxCapture->m_uUnattributedEvents),
+		static_cast<unsigned long long>(pxCapture->GetTotalDrops()),
+		pxCapture->m_fSealOverheadMs);
+}
+
+void Zenith_Profiling::EndBootCapture(const Zenith_BootMarkerBundle* pxBundle)
+{
+	if (m_pxControl == nullptr) return;
+
+	u_int64 uOriginTicks = 0;
+	u_int64 uCutoffTicks = 0;
+	{
+		Zenith_ScopedMutexLock_T xLock(m_pxControl->m_xMutex);
+
+		const u_int uState = m_pxControl->m_uState.load(std::memory_order_relaxed);
+		if (uState == BOOT_CAPTURE_DEAD) return;
+
+		uOriginTicks = (pxBundle != nullptr && pxBundle->m_uProcessStartTicks != 0)
+			? pxBundle->m_uProcessStartTicks
+			: m_pxControl->m_uInitTicks;
+
+		if (uState == BOOT_CAPTURE_ACTIVE || uState == BOOT_CAPTURE_SUSPENDED)
+		{
+			// Cutoff FIRST — before the final drain, and long before the sort — so
+			// nothing the seal itself costs can land inside the boot window.
+			m_pxControl->m_uCutoffTicks.store(Zenith_Profiling_Detail::GetTimestamp(), std::memory_order_release);
+
+			if (m_pxBootCapture != nullptr)
+			{
+				DrainTarget xTarget;
+				xTarget.m_pxBoot = m_pxBootCapture;
+				DrainAllRingsLocked(*m_pxControl, xTarget);
+				FoldAllDropDeltasLocked(*m_pxControl, *m_pxBootCapture);
+
+				// Import the platform bundle BEFORE sealing: no post-seal marker import,
+				// and no static storage anywhere for the pre-engine timestamps.
+				if (pxBundle != nullptr)
+				{
+					for (u_int u = 0; u < pxBundle->m_uCount; ++u)
+					{
+						m_pxBootCapture->AddMarker(pxBundle->m_axMarkers[u].m_szName, pxBundle->m_axMarkers[u].m_uTicks);
+					}
+				}
+				m_pxBootCapture->m_uOriginTicks = uOriginTicks;
+			}
+
+			m_pxControl->m_uState.store(BOOT_CAPTURE_SEALED, std::memory_order_release);
+			if (m_pxBootCapture != nullptr)
+			{
+				m_pxBootCapture->Seal(m_pxControl->m_uCutoffTicks.load(std::memory_order_relaxed));   // sorts; measures its own cost
+			}
+		}
+		else if (uState == BOOT_CAPTURE_DISABLED)
+		{
+			// --skip-boot-capture: no drain ever routes here. We still stamp a cutoff so
+			// the always-on summary line below carries a comparable total.
+			m_pxControl->m_uCutoffTicks.store(Zenith_Profiling_Detail::GetTimestamp(), std::memory_order_release);
+		}
+		// SEALED: idempotent — leave the cutoff and the sealed capture exactly as they are.
+
+		uCutoffTicks = m_pxControl->m_uCutoffTicks.load(std::memory_order_relaxed);
+		if (m_pxBootCapture != nullptr) uOriginTicks = m_pxBootCapture->m_uOriginTicks;
+	}
+
+	LogBootSummaryLine(m_pxBootCapture, uOriginTicks, uCutoffTicks);
+}
+
+void Zenith_Profiling::AddBootMarker(const char* szName)
+{
+	AddBootMarker(szName, Zenith_Profiling_Detail::GetTimestamp());
+}
+
+void Zenith_Profiling::AddBootMarker(const char* szName, const u_int64 uTicks)
+{
+	if (m_pxControl == nullptr || m_pxBootCapture == nullptr) return;
+
+	Zenith_ScopedMutexLock_T xLock(m_pxControl->m_xMutex);
+	const u_int uState = m_pxControl->m_uState.load(std::memory_order_relaxed);
+	if (uState == BOOT_CAPTURE_DISABLED || uState == BOOT_CAPTURE_DEAD) return;
+	m_pxBootCapture->AddMarker(szName, uTicks);
+}
+
+void Zenith_Profiling::RecordBootMilestone(const char* szName)
+{
+	if (m_pxControl == nullptr || m_pxBootCapture == nullptr) return;
+
+	Zenith_ScopedMutexLock_T xLock(m_pxControl->m_xMutex);
+	const u_int uState = m_pxControl->m_uState.load(std::memory_order_relaxed);
+	if (uState == BOOT_CAPTURE_DISABLED || uState == BOOT_CAPTURE_DEAD) return;
+	m_pxBootCapture->SetMilestone(szName, Zenith_Profiling_Detail::GetTimestamp());
+}
+
+bool Zenith_Profiling::IsBootCaptureSealed() const
+{
+	return m_pxControl != nullptr
+		&& m_pxBootCapture != nullptr
+		&& m_pxControl->m_uState.load(std::memory_order_relaxed) == BOOT_CAPTURE_SEALED;
 }
 
 // --- Frame boundaries -----------------------------------------------------
@@ -321,6 +976,18 @@ void Zenith_Profiling::BeginFrame()
 	// Reset the accumulator BEFORE accumulating this frame, then open TOTAL_FRAME.
 	ResetSnapshotLengths(*m_pxAccumulator);
 	m_pxAccumulator->m_uBeginTicks = Zenith_Profiling_Detail::GetTimestamp();
+
+	// Record the IMMUTABLE first-production-frame boundary exactly once. Post-seal
+	// frame drains route only events beginning BEFORE it into the boot capture, so
+	// boot-era stragglers are still captured while an ordinary cross-frame scope at
+	// frame N is never boot-attributed (which would contaminate the capture forever).
+	if (m_pxControl != nullptr
+		&& m_pxControl->m_uState.load(std::memory_order_relaxed) == BOOT_CAPTURE_SEALED
+		&& m_pxControl->m_uFirstFrameOriginTicks.load(std::memory_order_relaxed) == 0)
+	{
+		m_pxControl->m_uFirstFrameOriginTicks.store(m_pxAccumulator->m_uBeginTicks, std::memory_order_relaxed);
+	}
+
 	BeginProfileZone(m_uTotalFrameZone);
 }
 
@@ -415,8 +1082,9 @@ void Zenith_Profiling::EndProfileZone(const Zenith_ProfileZoneID uZoneID)
 Zenith_ProfileZoneID Zenith_Profiling::RegisterZone(const char* szStaticName)
 {
 	if (szStaticName == nullptr) return ZENITH_PROFILE_ZONE_NULL;
+	if (m_pxControl == nullptr) return ZENITH_PROFILE_ZONE_OVERFLOW;   // post-Shutdown
 
-	Zenith_ScopedMutexLock_T xLock(m_xRegistrationMutex);
+	Zenith_ScopedMutexLock_T xLock(m_pxControl->m_xMutex);
 
 	// Content dedup: the same name from any number of call sites maps to ONE id.
 	const u_int uCount = m_uZoneCount.load(std::memory_order_relaxed);
@@ -605,14 +1273,11 @@ namespace
 		return xSorted;
 	}
 
-	// Frame-time headline + the sorted per-zone CPU table.
-	void WriteHeadlineAndZoneTable(FILE* pFile, const Zenith_Profiling& xSelf, double fDisplayFrameMs,
-		u_int uThreadCount, u_int uTotalEvents,
+	// The sorted per-zone CPU table. Shared verbatim by the frame report and the boot
+	// report — the two differ only in where the stats came from.
+	void WriteZoneTable(FILE* pFile, const Zenith_Profiling& xSelf,
 		const Zenith_Vector<Zenith_ProfileZoneID>& xSorted, const Zenith_Vector<IndexStats>& xStats)
 	{
-		fprintf(pFile, "\n=== Profiling Report ===\n");
-		fprintf(pFile, "Frame: %.3f ms (%.1f FPS, last complete) | Threads: %u | Events: %u\n\n",
-			fDisplayFrameMs, fDisplayFrameMs > 0.0 ? 1000.0 / fDisplayFrameMs : 0.0, uThreadCount, uTotalEvents);
 		fprintf(pFile, "%-40s %12s %10s %12s %12s %12s\n",
 			"Profile Zone", "Total (ms)", "Calls", "Avg (ms)", "Min (ms)", "Max (ms)");
 		fprintf(pFile, "---------------------------------------- ------------ ---------- ------------ ------------ ------------\n");
@@ -629,6 +1294,142 @@ namespace
 				fAvgMs,
 				xStat.fMinMs,
 				xStat.fMaxMs);
+		}
+	}
+
+	// Frame-time headline + the sorted per-zone CPU table.
+	void WriteHeadlineAndZoneTable(FILE* pFile, const Zenith_Profiling& xSelf, double fDisplayFrameMs,
+		u_int uThreadCount, u_int uTotalEvents,
+		const Zenith_Vector<Zenith_ProfileZoneID>& xSorted, const Zenith_Vector<IndexStats>& xStats)
+	{
+		fprintf(pFile, "\n=== Profiling Report ===\n");
+		fprintf(pFile, "Frame: %.3f ms (%.1f FPS, last complete) | Threads: %u | Events: %u\n\n",
+			fDisplayFrameMs, fDisplayFrameMs > 0.0 ? 1000.0 / fDisplayFrameMs : 0.0, uThreadCount, uTotalEvents);
+		WriteZoneTable(pFile, xSelf, xSorted, xStats);
+	}
+
+	// --- Boot report helpers ------------------------------------------------
+
+	// Boot phase markers pair by name: "<Phase>Begin" with "<Phase>End". Returns the
+	// shared prefix length, or 0 when szName does not carry the suffix at all.
+	u_int BootMarkerPrefixLen(const char* szName, const char* szSuffix)
+	{
+		if (szName == nullptr) return 0;
+		const size_t uNameLen = strlen(szName);
+		const size_t uSuffixLen = strlen(szSuffix);
+		if (uNameLen <= uSuffixLen) return 0;
+		if (strcmp(szName + (uNameLen - uSuffixLen), szSuffix) != 0) return 0;
+		return static_cast<u_int>(uNameLen - uSuffixLen);
+	}
+
+	// One line of the boot phase table. m_fDurationMs < 0 means a POINT (an unpaired
+	// marker) rather than a range. The name is printed with an explicit precision
+	// because a marker-pair row shows only the shared prefix, not the whole literal.
+	struct BootPhaseRow
+	{
+		const char* m_szName = nullptr;
+		u_int       m_uNameLen = 0;
+		u_int64     m_uBeginTicks = 0;
+		double      m_fDurationMs = -1.0;
+	};
+
+	// The phase table is the UNION of depth-0 main-thread zones (the phases that could
+	// carry a body zone) and marker pairs (the phases that ran before the profiler
+	// existed, plus the zone-free unit-test batch), sorted by start.
+	void CollectBootPhaseRows(const Zenith_Profiling& xSelf, const Zenith_Profiling::BootCapture& xCapture,
+		const u_int uMainThreadID, Zenith_Vector<BootPhaseRow>& xRows)
+	{
+		for (u_int u = 0; u < xCapture.m_xRawEvents.GetSize(); ++u)
+		{
+			const Zenith_Profiling::BootRawEvent& xRaw = xCapture.m_xRawEvents.Get(u);
+			if (xRaw.m_uThreadID != uMainThreadID || xRaw.m_xEvent.m_uDepth != 0) continue;
+
+			BootPhaseRow xRow;
+			xRow.m_szName = xSelf.GetZoneName(xRaw.m_xEvent.m_uZoneID);
+			xRow.m_uNameLen = static_cast<u_int>(strlen(xRow.m_szName));
+			xRow.m_uBeginTicks = xRaw.m_xEvent.m_uBeginTicks;
+			xRow.m_fDurationMs = TickDeltaToMs(xRaw.m_xEvent.m_uBeginTicks, xRaw.m_xEvent.m_uEndTicks);
+			xRows.PushBack(xRow);
+		}
+
+		for (u_int u = 0; u < xCapture.m_uMarkerCount; ++u)
+		{
+			const Zenith_Profiling::BootMarker& xMarker = xCapture.m_axMarkers[u];
+			if (xMarker.m_szName == nullptr) continue;
+
+			const u_int uBeginPrefix = BootMarkerPrefixLen(xMarker.m_szName, "Begin");
+			const u_int uEndPrefix = BootMarkerPrefixLen(xMarker.m_szName, "End");
+
+			BootPhaseRow xRow;
+			xRow.m_szName = xMarker.m_szName;
+			xRow.m_uBeginTicks = xMarker.m_uTicks;
+
+			if (uBeginPrefix > 0)
+			{
+				xRow.m_uNameLen = uBeginPrefix;
+				for (u_int v = 0; v < xCapture.m_uMarkerCount; ++v)
+				{
+					const Zenith_Profiling::BootMarker& xOther = xCapture.m_axMarkers[v];
+					if (BootMarkerPrefixLen(xOther.m_szName, "End") != uBeginPrefix) continue;
+					if (strncmp(xMarker.m_szName, xOther.m_szName, uBeginPrefix) != 0) continue;
+					xRow.m_fDurationMs = SignedTickDeltaToMs(xMarker.m_uTicks, xOther.m_uTicks);
+					break;
+				}
+			}
+			else if (uEndPrefix > 0)
+			{
+				// Already represented by its Begin; only list it when it has none.
+				bool bHasBegin = false;
+				for (u_int v = 0; v < xCapture.m_uMarkerCount && !bHasBegin; ++v)
+				{
+					bHasBegin = BootMarkerPrefixLen(xCapture.m_axMarkers[v].m_szName, "Begin") == uEndPrefix
+						&& strncmp(xMarker.m_szName, xCapture.m_axMarkers[v].m_szName, uEndPrefix) == 0;
+				}
+				if (bHasBegin) continue;
+				xRow.m_uNameLen = static_cast<u_int>(strlen(xMarker.m_szName));
+			}
+			else
+			{
+				xRow.m_uNameLen = static_cast<u_int>(strlen(xMarker.m_szName));
+			}
+
+			xRows.PushBack(xRow);
+		}
+
+		std::sort(xRows.GetDataPointer(), xRows.GetDataPointer() + xRows.GetSize(),
+			[](const BootPhaseRow& xA, const BootPhaseRow& xB) { return xA.m_uBeginTicks < xB.m_uBeginTicks; });
+	}
+
+	void WriteBootPhaseTable(FILE* pFile, const Zenith_Vector<BootPhaseRow>& xRows, const u_int64 uOriginTicks)
+	{
+		fprintf(pFile, "\n%-44s %12s %12s\n", "Boot Phase", "Start (ms)", "Duration(ms)");
+		fprintf(pFile, "-------------------------------------------- ------------ ------------\n");
+		for (u_int u = 0; u < xRows.GetSize(); ++u)
+		{
+			const BootPhaseRow& xRow = xRows.Get(u);
+			const double fStartMs = SignedTickDeltaToMs(uOriginTicks, xRow.m_uBeginTicks);
+			if (xRow.m_fDurationMs < 0.0)
+				fprintf(pFile, "%-44.*s %12.3f %12s\n", static_cast<int>(xRow.m_uNameLen), xRow.m_szName, fStartMs, "(point)");
+			else
+				fprintf(pFile, "%-44.*s %12.3f %12.3f\n", static_cast<int>(xRow.m_uNameLen), xRow.m_szName, fStartMs, xRow.m_fDurationMs);
+		}
+	}
+
+	// Per-zone boot aggregates converted into the same IndexStats the frame report
+	// uses, so SortZonesByTotalTime + WriteZoneTable are reused unchanged.
+	void BuildBootZoneStats(const Zenith_Profiling::BootCapture& xCapture, const u_int uZoneCount, Zenith_Vector<IndexStats>& xStats)
+	{
+		const double fTicksToMs = Zenith_Profiling_Detail::GetTicksToNs() / 1.0e6;
+		xStats.Reserve(uZoneCount);
+		for (u_int u = 0; u < uZoneCount; ++u)
+		{
+			const Zenith_Profiling::BootZoneAgg& xAgg = xCapture.m_axZoneAggs[u];
+			IndexStats xStat;
+			xStat.uCallCount = static_cast<uint32_t>(xAgg.m_uCount);
+			xStat.fTotalMs = static_cast<double>(xAgg.m_uTotalTicks) * fTicksToMs;
+			xStat.fMinMs = (xAgg.m_uCount > 0) ? static_cast<double>(xAgg.m_uMinTicks) * fTicksToMs : 1e30;
+			xStat.fMaxMs = static_cast<double>(xAgg.m_uMaxTicks) * fTicksToMs;
+			xStats.PushBack(xStat);
 		}
 	}
 
@@ -727,6 +1528,110 @@ void Zenith_Profiling::WriteTextReport(FILE* pFile)
 	Zenith_MemoryManagement::WriteReport(pFile);
 #endif
 
+	fprintf(pFile, "\n");
+}
+
+// Everything recorded before Zenith_Init returned: headline, marker/milestone table,
+// phase table, per-zone aggregates. Safe to call before OR after the seal (an unsealed
+// capture simply reports a zero cutoff), and safe with capture disabled.
+void Zenith_Profiling::WriteBootReport(FILE* pFile)
+{
+	if (pFile == nullptr) return;
+
+	if (m_pxBootCapture == nullptr || m_pxControl == nullptr)
+	{
+		fprintf(pFile, "\n=== Boot Profile ===\n(boot capture disabled — see --skip-boot-capture)\n\n");
+		return;
+	}
+
+	{
+		// Fold stragglers that arrived since the last frame drain. Main thread, same
+		// lock, before any read — the published list is immutable from here on.
+		Zenith_ScopedMutexLock_T xLock(m_pxControl->m_xMutex);
+		m_pxBootCapture->PublishLate();
+	}
+
+	const BootCapture& xCap = *m_pxBootCapture;
+	const double fTotalMs = SignedTickDeltaToMs(xCap.m_uOriginTicks, xCap.m_uCutoffTicks);
+
+	fprintf(pFile, "\n=== Boot Profile (process start -> Zenith_Init returned) ===\n");
+	fprintf(pFile, "Total: %.3f ms | Events: %llu | Raw retained: %u (truncated %llu) | Late: %llu (dropped %llu)\n",
+		fTotalMs,
+		static_cast<unsigned long long>(xCap.m_uTotalEvents),
+		xCap.m_xRawEvents.GetSize(),
+		static_cast<unsigned long long>(xCap.m_uTruncatedRawEvents),
+		static_cast<unsigned long long>(xCap.m_uLateEvents),
+		static_cast<unsigned long long>(xCap.m_uLateDropped));
+	fprintf(pFile, "Unattributed: %llu | Ring drops (non-suspended intervals): %llu | Seal overhead: %.3f ms | Sealed: %s\n",
+		static_cast<unsigned long long>(xCap.m_uUnattributedEvents),
+		static_cast<unsigned long long>(xCap.GetTotalDrops()),
+		xCap.m_fSealOverheadMs,
+		xCap.m_bSealed ? "yes" : "no");
+
+	// Milestones. The canonical three always print, N/A when the run never reached
+	// them (an early-exit path, or the null/D3D12 no-op present facades).
+	{
+		static const char* const s_aszCanonicalMilestones[] =
+			{ "FirstFrameCompleted", "FirstPresentSubmitted", "AutomationQueueDrained" };
+		fprintf(pFile, "\n%-44s %12s\n", "Milestone", "At (ms)");
+		fprintf(pFile, "-------------------------------------------- ------------\n");
+		for (const char* szMilestone : s_aszCanonicalMilestones)
+		{
+			const BootMarker* pxFound = xCap.FindMilestone(szMilestone);
+			if (pxFound != nullptr)
+				fprintf(pFile, "%-44s %12.3f\n", szMilestone, SignedTickDeltaToMs(xCap.m_uOriginTicks, pxFound->m_uTicks));
+			else
+				fprintf(pFile, "%-44s %12s\n", szMilestone, "N/A");
+		}
+		// Anything else a game or subsystem recorded.
+		for (u_int u = 0; u < xCap.m_uMilestoneCount; ++u)
+		{
+			const BootMarker& xMilestone = xCap.m_axMilestones[u];
+			bool bCanonical = false;
+			for (const char* szMilestone : s_aszCanonicalMilestones)
+			{
+				bCanonical = bCanonical || (xMilestone.m_szName != nullptr && strcmp(xMilestone.m_szName, szMilestone) == 0);
+			}
+			if (bCanonical) continue;
+			fprintf(pFile, "%-44s %12.3f\n", xMilestone.m_szName, SignedTickDeltaToMs(xCap.m_uOriginTicks, xMilestone.m_uTicks));
+		}
+	}
+
+	Zenith_Vector<BootPhaseRow> xRows;
+	CollectBootPhaseRows(*this, xCap, m_uMainThreadID, xRows);
+	WriteBootPhaseTable(pFile, xRows, xCap.m_uOriginTicks);
+
+	const u_int uZoneCount = m_uZoneCount.load(std::memory_order_acquire);
+	Zenith_Vector<IndexStats> xStats;
+	BuildBootZoneStats(xCap, uZoneCount, xStats);
+	const Zenith_Vector<Zenith_ProfileZoneID> xSorted = SortZonesByTotalTime(xStats, uZoneCount);
+	fprintf(pFile, "\n");
+	WriteZoneTable(pFile, *this, xSorted, xStats);
+
+	fprintf(pFile, "\n");
+}
+
+void Zenith_Profiling::WriteDisplayFrameZoneTable(FILE* pFile, const char* szTitle) const
+{
+	if (pFile == nullptr) return;
+
+	const u_int uZoneCount = m_uZoneCount.load(std::memory_order_acquire);
+	Zenith_Vector<IndexStats> xStats;
+	xStats.Reserve(uZoneCount);
+	for (u_int u = 0; u < uZoneCount; ++u) xStats.PushBack(IndexStats{});
+
+	Zenith_Vector<LabelStat> xLabelStats;
+	u_int uTotalEvents = 0;
+	u_int uThreadCount = 0;
+	// Non-destructive: reads the already-published display snapshot, never the rings.
+	AggregateZoneAndLabelStats(*m_pxDisplay, uZoneCount, xStats, xLabelStats, uTotalEvents, uThreadCount);
+
+	const double fFrameMs = TickDeltaToMs(m_pxDisplay->m_uBeginTicks, m_pxDisplay->m_uEndTicks);
+	fprintf(pFile, "\n=== %s ===\n", szTitle != nullptr ? szTitle : "Frame");
+	fprintf(pFile, "Wall clock: %.3f ms | Threads: %u | Events: %u\n\n", fFrameMs, uThreadCount, uTotalEvents);
+
+	const Zenith_Vector<Zenith_ProfileZoneID> xSorted = SortZonesByTotalTime(xStats, uZoneCount);
+	WriteZoneTable(pFile, *this, xSorted, xStats);
 	fprintf(pFile, "\n");
 }
 
@@ -862,13 +1767,14 @@ static void FormatThreadLaneName(char* pszOut, size_t uSize, u_int uThreadID, u_
 
 // Aggregated per-zone statistics for the displayed frame, summed across all threads,
 // with a substring filter and total-time-descending sort.
-static void RenderStatistics(Zenith_Profiling& xSelf)
+// Takes the snapshot EXPLICITLY rather than reaching for the display one, so the same
+// table can render any snapshot (worst frame, pinned frame, a boot straggler set).
+static void RenderStatistics(Zenith_Profiling& xSelf, const Zenith_Profiling::Snapshot& xDisp)
 {
 	static char ls_acFilter[64] = "";
 	ImGui::SetNextItemWidth(200.0f);
 	ImGui::InputText("Filter", ls_acFilter, sizeof(ls_acFilter));
 
-	const Zenith_Profiling::Snapshot& xDisp = xSelf.GetDisplaySnapshot();
 	const u_int uZoneCount = xSelf.m_uZoneCount.load(std::memory_order_acquire);
 
 	struct Stat { double fTotal = 0.0; double fMin = 1e30; double fMax = 0.0; u_int uCalls = 0; };
@@ -1364,6 +2270,272 @@ void Zenith_Profiling::RenderMemoryHUD()
 }
 #endif // ZENITH_MEMORY_TRACKING_ANY
 
+// ---- Boot tab ---------------------------------------------------------------
+// The boot capture is a permanent, sealed snapshot rather than a per-frame one, so
+// its viewer has different problems from the frame timeline: hundreds of thousands of
+// events spanning many seconds, and long scopes that enter the viewport from far off
+// to the left. The three helpers below are pure and deterministic precisely so those
+// two behaviours are unit-testable without ImGui.
+
+// Running max of end ticks over a begin-sorted list. Monotonic non-decreasing by
+// construction, which is what makes the binary search below valid.
+static Zenith_Vector<u_int64> BuildRunningMaxEnd(const Zenith_Vector<Zenith_Profiling::BootRawEvent>& xSortedByBegin)
+{
+	Zenith_Vector<u_int64> xMaxEnd;
+	xMaxEnd.Reserve(xSortedByBegin.GetSize());
+	u_int64 uRunning = 0;
+	for (u_int u = 0; u < xSortedByBegin.GetSize(); ++u)
+	{
+		const u_int64 uEnd = xSortedByBegin.Get(u).m_xEvent.m_uEndTicks;
+		if (uEnd > uRunning) uRunning = uEnd;
+		xMaxEnd.PushBack(uRunning);
+	}
+	return xMaxEnd;
+}
+
+// First index that could still be alive at uWindowBeginTicks. Everything before it is
+// GUARANTEED to have ended earlier, so it can be skipped outright — while a single
+// long scope that started at tick 0 and runs the whole boot still pulls the answer
+// back to 0, which a naive "first begin >= window" search would miss entirely.
+// Returns the list size when nothing can overlap.
+static u_int FirstPossiblyVisibleBootEvent(const Zenith_Vector<u_int64>& xRunningMaxEnd, const u_int64 uWindowBeginTicks)
+{
+	u_int uLo = 0;
+	u_int uHi = xRunningMaxEnd.GetSize();
+	while (uLo < uHi)
+	{
+		const u_int uMid = uLo + (uHi - uLo) / 2;
+		if (xRunningMaxEnd.Get(uMid) >= uWindowBeginTicks) uHi = uMid;
+		else uLo = uMid + 1;
+	}
+	return uLo;
+}
+
+// One past the last index whose begin is before uWindowEndTicks.
+static u_int LastPossiblyVisibleBootEvent(const Zenith_Vector<Zenith_Profiling::BootRawEvent>& xSortedByBegin, const u_int64 uWindowEndTicks)
+{
+	u_int uLo = 0;
+	u_int uHi = xSortedByBegin.GetSize();
+	while (uLo < uHi)
+	{
+		const u_int uMid = uLo + (uHi - uLo) / 2;
+		if (xSortedByBegin.Get(uMid).m_xEvent.m_uBeginTicks < uWindowEndTicks) uLo = uMid + 1;
+		else uHi = uMid;
+	}
+	return uLo;
+}
+
+// Draw budget + LOD. A sub-half-pixel bar cannot be seen, and a fully zoomed-out boot
+// can put hundreds of thousands of bars in the viewport — the hard cap keeps a frame
+// bounded, and the caller tells the user when it bit rather than silently truncating.
+static constexpr float fBOOT_MIN_BAR_PX  = 0.5f;
+static constexpr u_int uBOOT_DRAW_BUDGET = 20000;
+
+static bool BootTimelineShouldDraw(const float fWidthPx, const u_int uDrawnSoFar, const u_int uDrawBudget)
+{
+	if (uDrawnSoFar >= uDrawBudget) return false;
+	return fWidthPx >= fBOOT_MIN_BAR_PX;
+}
+
+struct BootViewState
+{
+	float m_fZoom = 1.0f;
+	float m_fScroll = 0.0f;
+	float m_fVerticalScale = 1.0f;
+	int   m_iMaxDepth = 8;
+	char  m_acFilter[64] = "";
+};
+
+// Per-zone aggregate table. Reads BootZoneAgg EXCLUSIVELY — never the raw list — so it
+// stays complete and correct even when raw retention truncated or is off entirely.
+static void RenderBootStatistics(Zenith_Profiling& xSelf, const Zenith_Profiling::BootCapture& xCapture, BootViewState& xState)
+{
+	const u_int uZoneCount = xSelf.m_uZoneCount.load(std::memory_order_acquire);
+	const double fTicksToMs = Zenith_Profiling_Detail::GetTicksToNs() / 1.0e6;
+
+	ImGui::SetNextItemWidth(200.0f);
+	ImGui::InputText("Filter##Boot", xState.m_acFilter, sizeof(xState.m_acFilter));
+
+	Zenith_Vector<Zenith_ProfileZoneID> xSorted;
+	for (u_int u = 0; u < uZoneCount; ++u)
+	{
+		if (xCapture.m_axZoneAggs[u].m_uCount == 0) continue;
+		if (xState.m_acFilter[0] != '\0' && strstr(xSelf.GetZoneName(u), xState.m_acFilter) == nullptr) continue;
+		xSorted.PushBack(u);
+	}
+	std::sort(xSorted.GetDataPointer(), xSorted.GetDataPointer() + xSorted.GetSize(),
+		[&xCapture](const Zenith_ProfileZoneID uA, const Zenith_ProfileZoneID uB)
+		{ return xCapture.m_axZoneAggs[uA].m_uTotalTicks > xCapture.m_axZoneAggs[uB].m_uTotalTicks; });
+
+	if (!ImGui::BeginTable("BootStats", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0.0f, 220.0f)))
+		return;
+	ImGui::TableSetupColumn("Zone", ImGuiTableColumnFlags_WidthStretch);
+	ImGui::TableSetupColumn("Total ms", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+	ImGui::TableSetupColumn("Avg ms", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+	ImGui::TableSetupColumn("Max ms", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+	ImGui::TableSetupColumn("Calls", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+	ImGui::TableHeadersRow();
+
+	for (u_int u = 0; u < xSorted.GetSize(); ++u)
+	{
+		const Zenith_ProfileZoneID uZoneID = xSorted.Get(u);
+		const Zenith_Profiling::BootZoneAgg& xAgg = xCapture.m_axZoneAggs[uZoneID];
+		const double fTotalMs = static_cast<double>(xAgg.m_uTotalTicks) * fTicksToMs;
+
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(0);
+		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ZoneColour(uZoneID)), "%s", xSelf.GetZoneName(uZoneID));
+		ImGui::TableSetColumnIndex(1); ImGui::Text("%.3f", fTotalMs);
+		ImGui::TableSetColumnIndex(2); ImGui::Text("%.3f", fTotalMs / static_cast<double>(xAgg.m_uCount));
+		ImGui::TableSetColumnIndex(3); ImGui::Text("%.3f", static_cast<double>(xAgg.m_uMaxTicks) * fTicksToMs);
+		ImGui::TableSetColumnIndex(4); ImGui::Text("%llu", static_cast<unsigned long long>(xAgg.m_uCount));
+	}
+	ImGui::EndTable();
+}
+
+// Draws one begin-sorted list into the boot canvas and returns how many bars it drew.
+static u_int RenderBootTimelineList(Zenith_Profiling& xSelf, const Zenith_Vector<Zenith_Profiling::BootRawEvent>& xEvents,
+	const Zenith_Vector<u_int64>& xRunningMaxEnd, const BootViewState& xState,
+	const ImVec2 xCanvasPos, const float fCanvasWidth, const float fPixelsPerTick,
+	const u_int64 uOriginTicks, const u_int64 uWindowBeginTicks, const u_int64 uWindowEndTicks,
+	const float fRowHeight, const u_int uDrawnAlready)
+{
+	if (xEvents.GetSize() == 0) return 0;
+
+	ImDrawList* pxDrawList = ImGui::GetWindowDrawList();
+	const u_int uFirst = FirstPossiblyVisibleBootEvent(xRunningMaxEnd, uWindowBeginTicks);
+	const u_int uLast = LastPossiblyVisibleBootEvent(xEvents, uWindowEndTicks);
+
+	u_int uDrawn = 0;
+	for (u_int u = uFirst; u < uLast; ++u)
+	{
+		const Zenith_Profiling::BootRawEvent& xRaw = xEvents.Get(u);
+		if (xRaw.m_xEvent.m_uEndTicks < uWindowBeginTicks) continue;                 // ended before the window
+		if (static_cast<int>(xRaw.m_xEvent.m_uDepth) > xState.m_iMaxDepth) continue;
+
+		const float fStartPx = static_cast<float>(SignedTickDeltaToNs(uOriginTicks, xRaw.m_xEvent.m_uBeginTicks)) * fPixelsPerTick - xState.m_fScroll;
+		const float fEndPx = static_cast<float>(SignedTickDeltaToNs(uOriginTicks, xRaw.m_xEvent.m_uEndTicks)) * fPixelsPerTick - xState.m_fScroll;
+		if (!BootTimelineShouldDraw(fEndPx - fStartPx, uDrawnAlready + uDrawn, uBOOT_DRAW_BUDGET)) continue;
+
+		const float fRowY = xCanvasPos.y + (xRaw.m_uThreadID * (xState.m_iMaxDepth + 1) + xRaw.m_xEvent.m_uDepth) * fRowHeight;
+		const ImVec2 xMin(xCanvasPos.x + std::max(fStartPx, 0.0f), fRowY);
+		const ImVec2 xMax(xCanvasPos.x + std::min(fEndPx, fCanvasWidth), fRowY + fRowHeight - 2.0f);
+		pxDrawList->AddRectFilled(xMin, xMax, ZoneColour(xRaw.m_xEvent.m_uZoneID), 2.0f);
+
+		const char* szName = xSelf.GetZoneName(xRaw.m_xEvent.m_uZoneID);
+		if (ImGui::CalcTextSize(szName).x <= (xMax.x - xMin.x))
+		{
+			pxDrawList->AddText(xMin, IM_COL32_WHITE, szName);
+		}
+		++uDrawn;
+	}
+	return uDrawn;
+}
+
+static void RenderBootTimeline(Zenith_Profiling& xSelf, const Zenith_Profiling::BootCapture& xCapture, BootViewState& xState)
+{
+	if (xCapture.m_xRawEvents.GetSize() == 0 && xCapture.m_xLatePublished.GetSize() == 0)
+	{
+		ImGui::TextDisabled("No raw boot events retained (aggregates-only build — see the raw-retention policy).");
+		return;
+	}
+
+	// The axis spans the whole capture, including anything that closed after the
+	// cutoff (a straggler's tail is real time the user waited).
+	u_int64 uAxisEnd = xCapture.m_uCutoffTicks;
+	for (u_int u = 0; u < xCapture.m_xLatePublished.GetSize(); ++u)
+	{
+		uAxisEnd = std::max(uAxisEnd, xCapture.m_xLatePublished.Get(u).m_xEvent.m_uEndTicks);
+	}
+	const double fTotalNs = SignedTickDeltaToNs(xCapture.m_uOriginTicks, uAxisEnd);
+	if (fTotalNs <= 0.0)
+	{
+		ImGui::TextDisabled("Boot capture spans no measurable time.");
+		return;
+	}
+
+	ImGui::SliderFloat("Vertical Scale##Boot", &xState.m_fVerticalScale, 0.5f, 4.0f, "%.1fx");
+	ImGui::SliderInt("Max Depth##Boot", &xState.m_iMaxDepth, 0, 16);
+
+	const float fRowHeight = 16.0f * xState.m_fVerticalScale;
+	const float fCanvasWidth = ImGui::GetContentRegionAvail().x;
+
+	ImGui::BeginChild("BootTimeline", ImVec2(0.0f, 260.0f), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+	ImGui::Dummy(ImVec2(fCanvasWidth, 240.0f));
+	const ImVec2 xCanvasPos = ImGui::GetItemRectMin();
+	const bool bHovered = ImGui::IsItemHovered();
+
+	if (bHovered)
+	{
+		if (ImGui::GetIO().MouseWheel != 0.0f)
+		{
+			const float fOldZoom = xState.m_fZoom;
+			xState.m_fZoom = std::clamp(xState.m_fZoom * (1.0f + ImGui::GetIO().MouseWheel * 0.1f), 1.0f, 10000.0f);
+			const float fMouseX = ImGui::GetMousePos().x - xCanvasPos.x;
+			xState.m_fScroll = std::max(0.0f, (xState.m_fScroll + fMouseX) * (xState.m_fZoom / fOldZoom) - fMouseX);
+		}
+		if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle))
+		{
+			xState.m_fScroll = std::max(0.0f, xState.m_fScroll - ImGui::GetIO().MouseDelta.x);
+		}
+	}
+
+	const float fPixelsPerNs = (fCanvasWidth * xState.m_fZoom) / static_cast<float>(fTotalNs);
+	const double fNsToTicks = 1.0 / Zenith_Profiling_Detail::GetTicksToNs();
+	const u_int64 uWindowBegin = xCapture.m_uOriginTicks + static_cast<u_int64>((xState.m_fScroll / fPixelsPerNs) * fNsToTicks);
+	const u_int64 uWindowEnd = xCapture.m_uOriginTicks + static_cast<u_int64>(((xState.m_fScroll + fCanvasWidth) / fPixelsPerNs) * fNsToTicks);
+
+	// Rebuilt per frame: the capture is sealed, so this is a pure function of an
+	// immutable list — cheap enough at boot-capture sizes, and impossible to stale.
+	const Zenith_Vector<u_int64> xRawMaxEnd = BuildRunningMaxEnd(xCapture.m_xRawEvents);
+	const Zenith_Vector<u_int64> xLateMaxEnd = BuildRunningMaxEnd(xCapture.m_xLatePublished);
+
+	u_int uDrawn = RenderBootTimelineList(xSelf, xCapture.m_xRawEvents, xRawMaxEnd, xState,
+		xCanvasPos, fCanvasWidth, fPixelsPerNs, xCapture.m_uOriginTicks, uWindowBegin, uWindowEnd, fRowHeight, 0);
+	uDrawn += RenderBootTimelineList(xSelf, xCapture.m_xLatePublished, xLateMaxEnd, xState,
+		xCanvasPos, fCanvasWidth, fPixelsPerNs, xCapture.m_uOriginTicks, uWindowBegin, uWindowEnd, fRowHeight, uDrawn);
+
+	ImGui::EndChild();
+
+	if (uDrawn >= uBOOT_DRAW_BUDGET)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "Draw budget reached (%u bars) — zoom in to see the rest.", uBOOT_DRAW_BUDGET);
+	}
+}
+
+static void RenderBootView(Zenith_Profiling& xSelf, BootViewState& xState)
+{
+	const Zenith_Profiling::BootCapture* pxCapture = xSelf.GetBootCapture();
+	if (pxCapture == nullptr)
+	{
+		ImGui::TextDisabled("Boot capture is disabled for this run (--skip-boot-capture).");
+		return;
+	}
+
+	const double fTotalMs = SignedTickDeltaToMs(pxCapture->m_uOriginTicks, pxCapture->m_uCutoffTicks);
+	ImGui::Text("Boot: %.1f ms | Events: %llu | Sealed: %s", fTotalMs,
+		static_cast<unsigned long long>(pxCapture->m_uTotalEvents), pxCapture->m_bSealed ? "yes" : "no");
+
+	// Completeness badge: never let a truncated capture read as a complete one.
+	if (pxCapture->m_uTruncatedRawEvents > 0 || pxCapture->m_uLateEvents > 0 || pxCapture->m_uUnattributedEvents > 0)
+	{
+		ImGui::SameLine();
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), " | partial: %llu truncated / %llu late / %llu unattributed",
+			static_cast<unsigned long long>(pxCapture->m_uTruncatedRawEvents),
+			static_cast<unsigned long long>(pxCapture->m_uLateEvents),
+			static_cast<unsigned long long>(pxCapture->m_uUnattributedEvents));
+	}
+
+	if (ImGui::CollapsingHeader("Boot Timeline", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		RenderBootTimeline(xSelf, *pxCapture, xState);
+	}
+	if (ImGui::CollapsingHeader("Boot Statistics", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		RenderBootStatistics(xSelf, *pxCapture, xState);
+	}
+}
+
 void Zenith_Profiling::RenderToImGui()
 {
 	ImGui::Begin(szEDITOR_WINDOW_PROFILING);
@@ -1372,6 +2544,7 @@ void Zenith_Profiling::RenderToImGui()
 	static bool ls_bShowStats = true;
 	static u_int ls_uSelectedThreadID = 0;
 	static GPUViewState ls_xGPUView;
+	static BootViewState ls_xBootView;
 
 	// Frame statistics (the previous, published frame).
 	const float fFrameDurationMs = static_cast<float>(TickDeltaToMs(m_pxDisplay->m_uBeginTicks, m_pxDisplay->m_uEndTicks));
@@ -1416,7 +2589,7 @@ void Zenith_Profiling::RenderToImGui()
 
 		if (ImGui::BeginTabItem("Statistics"))
 		{
-			RenderStatistics(*this);
+			RenderStatistics(*this, GetDisplaySnapshot());
 			ImGui::EndTabItem();
 		}
 
@@ -1435,6 +2608,14 @@ void Zenith_Profiling::RenderToImGui()
 		if (ImGui::BeginTabItem("GPU"))
 		{
 			RenderGPUView(*this, ls_xGPUView);
+			ImGui::EndTabItem();
+		}
+
+		// Boot tab: the one view that is NOT per-frame — a permanent, sealed snapshot
+		// of everything recorded before Zenith_Init returned.
+		if (ImGui::BeginTabItem("Boot"))
+		{
+			RenderBootView(*this, ls_xBootView);
 			ImGui::EndTabItem();
 		}
 
@@ -1471,6 +2652,11 @@ struct TimelineRenderContext
 	int iMinDepthToRender;
 	int iMaxDepthToRender;
 	int iMaxDepthToRenderSeparately;
+	// Carried on the context instead of reached from the renderer: the timeline body
+	// used to open with a g_xEngine.Profiling() call purely to resolve zone names and
+	// the main-thread lane label.
+	const Zenith_Profiling* pxSelf;
+	const Zenith_Profiling::Snapshot* pxSnapshot;
 };
 
 struct TimelineHoveredEvent
@@ -1484,8 +2670,8 @@ struct TimelineHoveredEvent
 // mouse hovers, so the caller can render the tooltip outside the loop.
 static TimelineHoveredEvent RenderTimelineEvents(const TimelineRenderContext& xCtx)
 {
-	auto& xSelf = g_xEngine.Profiling();
-	const Zenith_Profiling::Snapshot& xDisplay = xSelf.GetDisplaySnapshot();
+	const Zenith_Profiling& xSelf = *xCtx.pxSelf;
+	const Zenith_Profiling::Snapshot& xDisplay = *xCtx.pxSnapshot;
 	TimelineHoveredEvent xHovered;
 	for (Zenith_HashMap<u_int, Zenith_Vector<Zenith_Profiling::Event>>::Iterator xIt(xDisplay.m_xThreadEvents); !xIt.Done(); xIt.Next())
 	{
@@ -1509,8 +2695,11 @@ static TimelineHoveredEvent RenderTimelineEvents(const TimelineRenderContext& xC
 				? (xEvent.m_uDepth - static_cast<u_int>(xCtx.iMinDepthToRender))
 				: (static_cast<u_int>(xCtx.iMaxDepthToRenderSeparately) - static_cast<u_int>(xCtx.iMinDepthToRender));
 
-			const float fEventStartNs = static_cast<float>(TickDeltaToNs(xDisplay.m_uBeginTicks, xEvent.m_uBeginTicks));
-			const float fEventEndNs = static_cast<float>(TickDeltaToNs(xDisplay.m_uBeginTicks, xEvent.m_uEndTicks));
+			// SIGNED: a scope opened before this snapshot began (a boot straggler, or the
+			// inter-frame-gap quirk) yields a NEGATIVE offset that clips to the left edge
+			// below. The unsigned form underflowed to ~1.8e19 ns and the event vanished.
+			const float fEventStartNs = static_cast<float>(SignedTickDeltaToNs(xDisplay.m_uBeginTicks, xEvent.m_uBeginTicks));
+			const float fEventEndNs = static_cast<float>(SignedTickDeltaToNs(xDisplay.m_uBeginTicks, xEvent.m_uEndTicks));
 			const float fEventDurationNs = fEventEndNs - fEventStartNs;
 
 			const float fStartPx = (fEventStartNs * xCtx.fCanvasTimeScale) - xCtx.fTimelineScroll;
@@ -1662,6 +2851,8 @@ void Zenith_Profiling::RenderTimelineView(TimelineViewState& xState)
 	xCtx.iMinDepthToRender = xState.m_iMinDepthToRender;
 	xCtx.iMaxDepthToRender = xState.m_iMaxDepthToRender;
 	xCtx.iMaxDepthToRenderSeparately = xState.m_iMaxDepthToRenderSeparately;
+	xCtx.pxSelf = this;
+	xCtx.pxSnapshot = m_pxDisplay;
 
 	const TimelineHoveredEvent xHovered = RenderTimelineEvents(xCtx);
 	RenderTimelineHoverTooltip(xHovered, fFrameDuration);
@@ -1772,12 +2963,10 @@ static Zenith_Vector<ProfileNode> BuildProfileHierarchy(const Zenith_Vector<Zeni
 	return xRootNodes;
 }
 
-static void RenderThreadSelector(u_int& uThreadID)
+static void RenderThreadSelector(u_int& uThreadID, const Zenith_Profiling::Snapshot& xDisplay)
 {
 	ImGui::Text("Select Thread:");
 
-	auto& xSelf = g_xEngine.Profiling();
-	const Zenith_Profiling::Snapshot& xDisplay = xSelf.GetDisplaySnapshot();
 	Zenith_Vector<u_int> xAvailableThreads;
 	for (Zenith_HashMap<u_int, Zenith_Vector<Zenith_Profiling::Event>>::Iterator xIt(xDisplay.m_xThreadEvents); !xIt.Done(); xIt.Next())
 	{
@@ -1897,7 +3086,7 @@ static void RenderProfileNodeRow(const ProfileNode& xNode, u_int uIndentLevel, P
 
 void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThreadID)
 {
-	RenderThreadSelector(uThreadID);
+	RenderThreadSelector(uThreadID, *m_pxDisplay);
 	ImGui::Separator();
 
 	const Zenith_Vector<Event>* pxThreadEvents = m_pxDisplay->m_xThreadEvents.TryGet(uThreadID);
@@ -1947,12 +3136,24 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 // and the function-wrapper macro expand to nothing). These stubs only catch the few direct
 // g_xEngine.Profiling().X() callers (frame loop, mutex, tools), each now a single empty
 // call. No rings, no snapshots, no threads registered -> nothing to tear down.
+Zenith_Profiling::Zenith_Profiling() {}
+Zenith_Profiling::~Zenith_Profiling() {}
 void Zenith_Profiling::Initialise(Zenith_Multithreading&) {}
 void Zenith_Profiling::Shutdown() {}
 void Zenith_Profiling::RegisterThread() {}
 void Zenith_Profiling::UnregisterThread() {}
 void Zenith_Profiling::BeginFrame() {}
 void Zenith_Profiling::EndFrame() {}
+Zenith_Profiling::ThreadBuffer* Zenith_Profiling::GetThreadBuffer(const u_int) const { return nullptr; }
+void Zenith_Profiling::SuspendBootCapture() {}
+void Zenith_Profiling::ResumeBootCapture() {}
+void Zenith_Profiling::EndBootCapture(const Zenith_BootMarkerBundle*) {}
+void Zenith_Profiling::AddBootMarker(const char*) {}
+void Zenith_Profiling::AddBootMarker(const char*, const u_int64) {}
+void Zenith_Profiling::RecordBootMilestone(const char*) {}
+bool Zenith_Profiling::IsBootCaptureSealed() const { return false; }
+void Zenith_Profiling::WriteBootReport(FILE*) {}
+void Zenith_Profiling::WriteDisplayFrameZoneTable(FILE*, const char*) const {}
 Zenith_ProfileZoneID Zenith_Profiling::RegisterZone(const char*) { return ZENITH_PROFILE_ZONE_NULL; }
 void Zenith_Profiling::BeginProfileZone(const Zenith_ProfileZoneID, const char*) {}
 void Zenith_Profiling::EndProfileZone(const Zenith_ProfileZoneID) {}
@@ -1982,3 +3183,11 @@ void Zenith_Profiling::RenderMemoryHUD() {}
 #endif
 
 #endif // ZENITH_PROFILING_ENABLED
+
+// Boot-capture tests live beside the implementation they exercise: the routing
+// helpers and BootCapture are file-static / engine-free by design, and hosting them
+// here keeps this TU always-linked (see the MSVC static-init dead-strip note — a
+// Tests.inl in an unreferenced .obj never registers).
+#ifdef ZENITH_TESTING
+#include "Profiling/Zenith_Profiling.Tests.inl"
+#endif

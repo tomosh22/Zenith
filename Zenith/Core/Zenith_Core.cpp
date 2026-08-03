@@ -274,11 +274,21 @@ static void SubmitRenderWork(bool bSubmitRenderWork)
 // memory op may run between here and that submit), then record + submit the
 // render command buffers (windowed only). Manual profile scopes because these
 // are instance methods, not free callables.
+// Pure decision half of the FirstPresentSubmitted latch. Split out so the contract —
+// the predicate is SNAPSHOTTED before EndFrame consumes the acquired image, and the
+// latch is taken after it returns — is testable without a swapchain or a device.
+static bool ShouldLatchFirstPresent(const bool bPresentWillSubmitSnapshot, const bool bAlreadyLatched)
+{
+	return bPresentWillSubmitSnapshot && !bAlreadyLatched;
+}
+
 static void EndFrameSubmitAndPresent(bool bSubmitRenderWork)
 {
+	Zenith_Engine& xEngine = g_xEngine;
+
 	{
 		Zenith_Profiling::ScopeZone xMemMgrProfile(ZENITH_PROFILE_ZONE("Flux Memory Manager"));
-		g_xEngine.FluxMemory().SubmitFrameMemoryWork();
+		xEngine.FluxMemory().SubmitFrameMemoryWork();
 	}
 
 	Zenith_MemoryManagement::EndFrame();
@@ -286,16 +296,36 @@ static void EndFrameSubmitAndPresent(bool bSubmitRenderWork)
 #if ZENITH_MEMORY_TRACKING_ANY
 	// Feed the once-per-frame memory snapshot into the profiler's Memory tab/HUD/report.
 	// SampleFrame() is a pure counter read; PushMemorySample skips itself while paused.
-	g_xEngine.Profiling().PushMemorySample(Zenith_MemoryManagement::SampleFrame());
+	xEngine.Profiling().PushMemorySample(Zenith_MemoryManagement::SampleFrame());
 #endif
+
+	// Boot milestone "FirstPresentSubmitted", latched below. The predicate is snapshotted
+	// BEFORE EndFrame because EndFrame is what consumes the acquired image — asking
+	// afterwards answers a different question. Backend variance goes entirely through
+	// this facade call: the Null and D3D12 swapchains are no-op facades that return
+	// false, and a Vulkan acquire-skip frame returns false too, so the milestone stays
+	// N/A exactly when nothing was actually submitted for presentation. No backend TU
+	// is touched. The name stays honest — submitted, not confirmed on screen.
+	const bool bPresentWillSubmit = xEngine.FluxSwapchain().ShouldWaitOnImageAvailableSemaphore();
 
 	{
 		Zenith_Profiling::ScopeZone xEndFrameProfile(ZENITH_PROFILE_ZONE("Flux PlatformAPI End Frame"));
-		g_xEngine.FluxBackend().EndFrame(bSubmitRenderWork);
+		xEngine.FluxBackend().EndFrame(bSubmitRenderWork);
 	}
+
+	// Once-latched at the CALL SITE, not inside the profiler: RecordBootMilestone is
+	// first-wins but takes the control mutex to find that out, and this is the steady
+	// -state frame path. Main-thread only, so a plain local static is sufficient.
+	static bool ls_bFirstPresentLatched = false;
+	if (ShouldLatchFirstPresent(bPresentWillSubmit, ls_bFirstPresentLatched))
+	{
+		ls_bFirstPresentLatched = true;
+		xEngine.Profiling().RecordBootMilestone("FirstPresentSubmitted");
+	}
+
 	{
 		Zenith_Profiling::ScopeZone xSwapchainEndFrameProfile(ZENITH_PROFILE_ZONE("Flux Swapchain End Frame"));
-		g_xEngine.FluxSwapchain().EndFrame();
+		xEngine.FluxSwapchain().EndFrame();
 	}
 }
 
@@ -327,8 +357,20 @@ void Zenith_Core::Zenith_MainLoop()
 	// End of frame: deferred-deletion countdown, then advance the engine frame
 	// index. The advance happens AFTER Swapchain::EndFrame so the present uses the
 	// slot for frame N before the ring index moves to N+1.
-	g_xEngine.FluxRenderer().ProcessFrameEnd();
-	g_xEngine.Frame().AdvanceFrameIndex();
+	Zenith_Engine& xEngine = g_xEngine;
+	xEngine.FluxRenderer().ProcessFrameEnd();
+	xEngine.Frame().AdvanceFrameIndex();
+
+	// Boot milestone "FirstFrameCompleted". Placed HERE, in the shared main loop, so
+	// Android is covered too — and after AdvanceFrameIndex so the resize-skip early
+	// return above (which deliberately does NOT advance) cannot count as a completed
+	// frame. Once-latched at the call site so the steady state costs one bool test.
+	static bool ls_bFirstFrameLatched = false;
+	if (!ls_bFirstFrameLatched)
+	{
+		ls_bFirstFrameLatched = true;
+		xEngine.Profiling().RecordBootMilestone("FirstFrameCompleted");
+	}
 }
 
 #ifdef ZENITH_TESTING

@@ -3226,4 +3226,39 @@ ZENITH_TEST(Automation, AttachToBoneStep)
 	EDITOR_TEST_END(TestAttachToBoneStep);
 }
 
+// Boot-tail attribution is gated on the PRODUCTION session, and this test is itself
+// the reason why: unit tests drive the same global automation object during boot, and
+// their queues complete long before the game's real queue is registered. A test
+// session must record nothing, or the tail report becomes a mix of fixtures and real
+// authoring work. The named-step overload is covered here too, since the name is what
+// makes a long pole legible in that report.
+ZENITH_TEST(EditorAutomation, AutomationSessionGating)
+{
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.Reset();
+
+	static bool ls_bRan = false;
+	ls_bRan = false;
+	xAuto.AddStep_Custom([]() { ls_bRan = true; }, "Gating Probe Step");
+
+	// Default session == a test session: no production tail.
+	xAuto.Begin();
+	xAuto.ExecuteNextStep();
+
+	ZENITH_ASSERT_TRUE(ls_bRan, "the step must still execute in a non-production session");
+	ZENITH_ASSERT_EQ(xAuto.GetStepTimings().GetSize(), 0u, "a test session must record NO step timings");
+
+	// The name is carried on the queued action regardless of session kind — only the
+	// recording is gated.
+	xAuto.Reset();
+	xAuto.AddStep_Custom([]() {}, "Named Probe Step");
+	ZENITH_ASSERT_STREQ(xAuto.m_axActions.Get(0).m_szStepName.c_str(), "Named Probe Step",
+		"the named AddStep_Custom overload must carry the name onto the action");
+	xAuto.AddStep_Custom([]() {});
+	ZENITH_ASSERT_TRUE(xAuto.m_axActions.Get(1).m_szStepName.empty(),
+		"the unnamed overload must leave the name empty (reported as index + type id)");
+
+	xAuto.Reset();
+}
+
 #endif // ZENITH_TOOLS

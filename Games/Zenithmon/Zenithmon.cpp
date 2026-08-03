@@ -2246,7 +2246,7 @@ void Project_RegisterEditorAutomationSteps()
 	// terrain at all (it harvests a pure coverage grid from the const recipe
 	// table). Running it first also guarantees the committed asset exists by the
 	// time the Dawnmere block authors a component that loads it.
-	xAuto.AddStep_Custom(&ZM_BakeDawnmereNavmeshStep);
+	xAuto.AddStep_Custom(&ZM_BakeDawnmereNavmeshStep, "ZM NavMesh Bake (Dawnmere)");
 
 	// Graphs are authored before any scene, so a scene that later references one
 	// cannot race the asset. The executor is GPU-free (Zenith_EditorAutomation.cpp:

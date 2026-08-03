@@ -80,6 +80,30 @@ namespace Zenith_CommandLine
     const char* GetTestSaveRoot();
     const char* GetTestSaveRunId();
 
+    // Boot profiling: `--boot-profile-dump[=path]` and `--skip-boot-capture`.
+    //
+    // GetBootProfileDumpPath returns nullptr when the flag was absent, otherwise the
+    // requested path (or "zenith_boot_profile_dump.txt" for the bare form). The
+    // profiler reads it while allocating the boot capture -- inside Zenith_Init, long
+    // before Zenith_AutomatedTestRunner::ParseCommandLine runs -- which is why these
+    // two live here rather than with their consumer. In a NON-tools build the flag
+    // also opts the capture into retaining raw events (tools builds always do).
+    //
+    // IsBootCaptureSkipped is the calibration switch: the capture is never allocated,
+    // a full ring drops exactly as it did before boot capture existed, and only the
+    // machine-readable BootSummary line is logged -- so a calibration run stays
+    // directly comparable with a captured one. Android never calls Parse, so both
+    // return their defaults there (capture on, no dump, aggregates only).
+    const char* GetBootProfileDumpPath();
+    bool        IsBootCaptureSkipped();
+
+    // Pure split of `--boot-profile-dump[=path]`: returns the text after the first
+    // '=', or szDefaultPath for the bare form (and for a trailing '=' with nothing
+    // after it). Exposed so the parsing contract is testable WITHOUT re-running
+    // Parse, which would clobber the process-wide flag state for the rest of a
+    // test batch (see the note at the head of Zenith_CommandLine.Tests.inl).
+    const char* ResolveBootProfileDumpArg(const char* szArg, const char* szDefaultPath);
+
     // Pick the effective on-disk dir for a baked compile-time path given an
     // optional override root. Pure: no override (null/empty) returns the baked
     // dir UNCHANGED (including the deliberately-empty "" that FluxCompiler/

@@ -6,6 +6,10 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Profiling/Zenith_Profiling.h"
+#ifdef ZENITH_TOOLS
+// The boot artifact embeds the automation steps executed so far — frame 1 runs step 1.
+#include "Editor/Zenith_EditorAutomation.h"
+#endif
 
 #include <cstdlib>
 #include <cstring>
@@ -16,13 +20,75 @@
 #include "Input/Zenith_InputSimulator.h"
 #endif
 
+// Writes every boot-profiling section, in the order the artifact presents them.
+// Shared by stdout and the dump file so the two can never drift apart.
+//
+// Frame 1 is deliberately part of the PRIMARY artifact, not a footnote: automation
+// steps execute inside the frame BEFORE submission and present, so whatever the game
+// queued as step 1 (for Zenithmon, the navmesh bake) directly extends the time to
+// first present. Reporting boot without it would understate the wait.
+static void WriteBootProfileSections(FILE* pxFile)
+{
+	Zenith_Profiling& xProfiling = g_xEngine.Profiling();
+	xProfiling.WriteBootReport(pxFile);
+	xProfiling.WriteDisplayFrameZoneTable(pxFile, "Frame 1 (first production frame)");
+
+#ifdef ZENITH_TOOLS
+	g_xEngine.EditorAutomation().WriteStepsSoFar(pxFile);
+#endif
+}
+
+// ONE idempotent coordinator, so no call site can lose the report. Whichever of the
+// three fires first writes stdout AND the dump file exactly once:
+//   (a) the main loop, on the first iteration after the first frame completes
+//   (b) the --memory-capture loop, which exits without ever reaching the main loop
+//   (c) Zenith_FullShutdown, covering --bench-ecs / --list-automated-tests / early
+//       exits -- milestones that never happened simply print as N/A.
+// Must run BEFORE Zenith_Shutdown in case (c): the profiler is gone after it.
+// The coordinator's decision half, split out so the once-only contract is testable
+// without writing files. Claims the latch and returns true on the first call that has
+// a path; every later call — whatever its reason — returns false.
+static bool ClaimBootProfileDump(const char* szPath, bool& bWrittenLatch)
+{
+	if (szPath == nullptr) return false;
+	if (bWrittenLatch) return false;
+	bWrittenLatch = true;
+	return true;
+}
+
+static void TryWriteBootProfileDump(const char* szReason)
+{
+	const char* szPath = Zenith_CommandLine::GetBootProfileDumpPath();
+
+	static bool ls_bWritten = false;
+	if (!ClaimBootProfileDump(szPath, ls_bWritten)) return;
+
+	Zenith_Log(LOG_CATEGORY_CORE, "Boot profile dump (%s) -> %s", szReason, szPath);
+
+	WriteBootProfileSections(stdout);
+	fflush(stdout);
+
+	FILE* pxDumpFile = nullptr;
+	fopen_s(&pxDumpFile, szPath, "w");
+	if (pxDumpFile != nullptr)
+	{
+		WriteBootProfileSections(pxDumpFile);
+		fclose(pxDumpFile);
+	}
+}
+
 // Phase 0: Zenith_Init / Zenith_Shutdown bodies moved into
 // Zenith_Engine::Initialise / Shutdown (see Zenith_Engine.cpp). These
 // stay as thin forwarders so every existing caller (Android_Main.cpp,
 // AutomatedTest.cpp, this file's Zenith_Main below) keeps working.
-void Zenith_Core::Zenith_Init()
+void Zenith_Core::Zenith_Init(const Zenith_BootMarkerBundle* pxMarkers)
 {
 	g_xEngine.Initialise();
+
+	// Boot is over. Sealing HERE (in the shared forwarder rather than in
+	// Zenith_Main) covers Windows, Android and the automated-test driver alike, and
+	// lands before --bench-ecs / --memory-capture by construction.
+	g_xEngine.Profiling().EndBootCapture(pxMarkers);
 }
 
 void Zenith_Core::Zenith_Shutdown()
@@ -43,6 +109,11 @@ void Zenith_Core::Zenith_Shutdown()
 // to call one function.
 void Zenith_Core::Zenith_FullShutdown()
 {
+	// Last chance to emit the boot artifact: the early-exit paths (--bench-ecs,
+	// --list-automated-tests, test-not-found) funnel through here and never reach the
+	// main loop. No-op when the dump was already written, or never requested.
+	TryWriteBootProfileDump("orderly shutdown");
+
 	g_xEngine.Scenes().SetMainLoopRunning(false);
 	Zenith_Shutdown();
 	delete Zenith_Window::GetInstance();
@@ -51,12 +122,25 @@ void Zenith_Core::Zenith_FullShutdown()
 #ifdef ZENITH_WINDOWS
 void Zenith_Core::Zenith_Main()
 {
+	// Boot markers the engine cannot take itself: everything here happens before
+	// Zenith_Init, so the profiler does not exist yet. Local storage handed to
+	// Zenith_Init by pointer — nothing static, nothing outliving this frame.
+	Zenith_BootMarkerBundle xBootMarkers;
+	xBootMarkers.m_uProcessStartTicks = Zenith_Profiling_Detail::GetTimestamp();
+
 	// Graphics options are populated inside Zenith_Init() for all platforms
 	// but we need window dimensions before that, so call it here too (idempotent)
 	Project_SetGraphicsOptions(Zenith_GraphicsOptions::Get());
 	Zenith_CommandLine::Parse(__argc, __argv);
+
+	xBootMarkers.Add("WindowCreateBegin", Zenith_Profiling_Detail::GetTimestamp());
 	Zenith_Window::Initialise("Zenith", Zenith_GraphicsOptions::Get().m_uWindowWidth, Zenith_GraphicsOptions::Get().m_uWindowHeight);
-	Zenith_Init();
+	xBootMarkers.Add("WindowCreateEnd", Zenith_Profiling_Detail::GetTimestamp());
+
+	Zenith_Init(&xBootMarkers);
+
+	// One reach for the whole function (the loops below hit it several times each).
+	Zenith_Profiling& xProfiling = g_xEngine.Profiling();
 
 	// --bench-ecs: run the GPU-free ECS micro-benchmark once (after engine init
 	// so the scene system / component registry are live) then exit cleanly.
@@ -126,9 +210,14 @@ void Zenith_Core::Zenith_Main()
 			}
 			for (u_int f = 0; f < uCaptureFrames && !Zenith_Window::GetInstance()->ShouldClose(); ++f)
 			{
-				g_xEngine.Profiling().BeginFrame();
+				xProfiling.BeginFrame();
 				Zenith_Core::Zenith_MainLoop();
-				g_xEngine.Profiling().EndFrame();
+				xProfiling.EndFrame();
+				// Same trigger point as the main loop: right after the first frame
+				// completes. This loop exits straight into teardown, so without its own
+				// call site the artifact would only ever come from the shutdown
+				// fallback — with a colder, less useful first-frame picture.
+				if (f == 0) TryWriteBootProfileDump("first frame complete (--memory-capture)");
 			}
 			Zenith_MemoryManagement::WriteReport(stdout);
 			fflush(stdout);
@@ -145,19 +234,22 @@ void Zenith_Core::Zenith_Main()
 	}
 #endif
 
+	// Fires the boot artifact once, on the first loop iteration that completes a frame.
+	bool bBootDumpPending = true;
+
 	while (!Zenith_Window::GetInstance()->ShouldClose())
 	{
-		g_xEngine.Profiling().BeginFrame();
+		xProfiling.BeginFrame();
 		Zenith_Core::Zenith_MainLoop();
 		if (bProfilingDump && (++uProfilingDumpFrame % 120u) == 0u)
 		{
-			g_xEngine.Profiling().WriteTextReport(stdout);
+			xProfiling.WriteTextReport(stdout);
 			fflush(stdout);
 			FILE* pxDumpFile = nullptr;
 			fopen_s(&pxDumpFile, "zenith_profiling_dump.txt", "w");
 			if (pxDumpFile)
 			{
-				g_xEngine.Profiling().WriteTextReport(pxDumpFile);
+				xProfiling.WriteTextReport(pxDumpFile);
 				fclose(pxDumpFile);
 			}
 		}
@@ -182,9 +274,24 @@ void Zenith_Core::Zenith_Main()
 			}
 		}
 #endif
-		g_xEngine.Profiling().EndFrame();
+		xProfiling.EndFrame();
+
+		// The boot artifact's first-frame section reads the DISPLAY snapshot, which
+		// EndFrame above has just published — so this must come after it, not before.
+		if (bBootDumpPending)
+		{
+			bBootDumpPending = false;
+			TryWriteBootProfileDump("first frame complete");
+		}
 	}
 
 	Zenith_FullShutdown();
 }
+#endif
+
+// Hosted here (not in a game TU) because this TU is always linked — the entry point
+// and the Zenith_Init/Shutdown forwarders live in it — so the static registrar
+// cannot be dead-stripped.
+#ifdef ZENITH_TESTING
+#include "Core/Zenith_Main.Tests.inl"
 #endif

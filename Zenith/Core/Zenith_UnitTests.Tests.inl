@@ -335,7 +335,7 @@ ZENITH_TEST(Core, ProfilingOverflow) {
 	g_xEngine.Profiling().ClearEvents();   // free the ring (read cursor -> write cursor)
 	const Zenith_ProfileZoneID uZ = g_xEngine.Profiling().RegisterZone("Overflow Test Zone");
 	const u_int uMain = g_xEngine.Threading().GetCurrentThreadID();
-	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().m_apxThreadBuffers[uMain].load(std::memory_order_acquire);
+	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().GetThreadBuffer(uMain);
 	ZENITH_ASSERT_TRUE(pxBuf != nullptr, "main thread must be registered");
 	const u_int64 uDropsBefore = pxBuf->m_uDroppedEvents.load();
 	const u_int uExcess = 100;
@@ -358,7 +358,7 @@ ZENITH_TEST(Core, ProfilingNestingOverflow) {
 	for (u_int i = 0; i < uDepth; ++i) g_xEngine.Profiling().BeginProfileZone(uZ);
 	for (u_int i = 0; i < uDepth; ++i) g_xEngine.Profiling().EndProfileZone(uZ);
 	const u_int uMain = g_xEngine.Threading().GetCurrentThreadID();
-	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().m_apxThreadBuffers[uMain].load(std::memory_order_acquire);
+	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().GetThreadBuffer(uMain);
 	ZENITH_ASSERT_EQ(pxBuf->m_uDepth, 0u, "deep nesting must balance back to depth 0");
 	ZENITH_ASSERT_EQ(pxBuf->m_uSuppressedDepth, 0u, "suppressed-depth must balance back to 0");
 	g_xEngine.Profiling().ClearEvents();
@@ -369,7 +369,7 @@ ZENITH_TEST(Core, ProfilingNestingOverflow) {
 ZENITH_TEST(Core, ProfilingUnmatchedEnd) {
 #if ZENITH_PROFILING_ENABLED
 	const u_int uMain = g_xEngine.Threading().GetCurrentThreadID();
-	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().m_apxThreadBuffers[uMain].load(std::memory_order_acquire);
+	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().GetThreadBuffer(uMain);
 	ZENITH_ASSERT_EQ(pxBuf->m_uDepth, 0u, "precondition: no scope open at test start");
 	const u_int64 uUnmatchedBefore = pxBuf->m_uUnmatchedEnds.load();
 	const Zenith_ProfileZoneID uZ = g_xEngine.Profiling().RegisterZone("Unmatched Zone");
@@ -388,6 +388,19 @@ ZENITH_TEST(Core, ProfilingTimebase) {
 	ZENITH_ASSERT_TRUE(t1 >= t0, "GetTimestamp must be monotonic non-decreasing");
 	ZENITH_ASSERT_TRUE(Zenith_Profiling_Detail::GetTicksToNs() > 0.0, "ticks->ns scale must be positive");
 #endif
+}
+
+// The FirstPresentSubmitted boot milestone. The predicate is snapshotted BEFORE
+// EndFrame (which consumes the acquired image — asking afterwards answers a different
+// question) and the latch is taken AFTER it returns, once, ever. A frame that submits
+// nothing — every frame on the Null and D3D12 no-op present facades, and a Vulkan
+// acquire-skip frame — must leave the milestone unset so the report says N/A rather
+// than claiming a present that never happened.
+ZENITH_TEST(Core, PresentLatchLogic) {
+	ZENITH_ASSERT_TRUE(ShouldLatchFirstPresent(true, false), "the first submitting frame must latch");
+	ZENITH_ASSERT_FALSE(ShouldLatchFirstPresent(true, true), "a later submitting frame must not re-latch");
+	ZENITH_ASSERT_FALSE(ShouldLatchFirstPresent(false, false), "a non-submitting frame must never latch");
+	ZENITH_ASSERT_FALSE(ShouldLatchFirstPresent(false, true), "a non-submitting frame must not disturb an existing latch");
 }
 
 // A live WriteTextReport drains into the SAME frame accumulator that EndFrame publishes,
@@ -416,7 +429,7 @@ ZENITH_TEST(Core, ProfilingPerfSmoke) {
 	g_xEngine.Profiling().ClearEvents();
 	const Zenith_ProfileZoneID uZ = g_xEngine.Profiling().RegisterZone("Perf Smoke Zone");
 	const u_int uMain = g_xEngine.Threading().GetCurrentThreadID();
-	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().m_apxThreadBuffers[uMain].load(std::memory_order_acquire);
+	Zenith_Profiling::ThreadBuffer* pxBuf = g_xEngine.Profiling().GetThreadBuffer(uMain);
 	const u_int64 uDropsBefore = pxBuf->m_uDroppedEvents.load();
 	const u_int uN = Zenith_Profiling::uRING_CAPACITY / 2;   // nominal load, no drops expected
 	const u_int64 t0 = Zenith_Profiling_Detail::GetTimestamp();

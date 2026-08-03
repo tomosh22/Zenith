@@ -313,6 +313,8 @@ Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpecMRT(
 
 void Flux_RendererImpl::EarlyInitialise()
 {
+	ZENITH_PROFILE_SCOPE("Boot Flux EarlyInitialise");
+
 	// Flux_PerFrame must initialise BEFORE backend Initialise so backends can
 	// register their begin/end-frame callbacks during their own setup. The
 	// counter starts at 0 and the ring index is correctly defined from the
@@ -320,14 +322,30 @@ void Flux_RendererImpl::EarlyInitialise()
 	PerFrameInitialise();
 
 	auto& xEngine = g_xEngine;
-	xEngine.FluxBackend().Initialise();
-	xEngine.FluxMemory().Initialise();
-	xEngine.FluxBackend().InitialisePerFrameResources(); // Must be after memory manager init
-	xEngine.FluxGraphics().InitialiseSamplers(); // Must be before any CreateShaderResourceView calls (bindless registration)
+	{
+		// Device / instance creation — the first genuinely expensive boot step, and
+		// backend-neutral to measure (the Null backend just returns).
+		ZENITH_PROFILE_SCOPE("Boot Flux/Backend Initialise");
+		xEngine.FluxBackend().Initialise();
+	}
+	{
+		ZENITH_PROFILE_SCOPE("Boot Flux/Memory Initialise");
+		xEngine.FluxMemory().Initialise();
+	}
+	{
+		ZENITH_PROFILE_SCOPE("Boot Flux/PerFrame Resources");
+		xEngine.FluxBackend().InitialisePerFrameResources(); // Must be after memory manager init
+	}
+	{
+		ZENITH_PROFILE_SCOPE("Boot Flux/Samplers");
+		xEngine.FluxGraphics().InitialiseSamplers(); // Must be before any CreateShaderResourceView calls (bindless registration)
+	}
 }
 
 void Flux_RendererImpl::LateInitialise()
 {
+	ZENITH_PROFILE_SCOPE("Boot Flux LateInitialise");
+
 	auto& xEngine = g_xEngine;
 
 	// Subsystem dependency graph (A -> B means A must init before B):
@@ -347,7 +365,10 @@ void Flux_RendererImpl::LateInitialise()
 #if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)
 	// Initialize Slang compiler before any shader loading. Slang is the Vulkan
 	// SPIR-V toolchain; the D3D12 null backend loads pre-baked reflection only.
-	Flux_SlangCompiler::Initialise();
+	{
+		ZENITH_PROFILE_SCOPE("Boot Flux/Slang Compiler Initialise");
+		Flux_SlangCompiler::Initialise();
+	}
 	// Tell the Slang session where to resolve `import` / `loadModule` paths from
 	// (the shader source root) so runtime shader compilation finds the Common/*
 	// modules. Baked SHADER_SOURCE_ROOT is an absolute build-machine path; a
@@ -358,7 +379,10 @@ void Flux_RendererImpl::LateInitialise()
 	Flux_SlangCompiler::AddSearchPath(strShaderRoot.c_str());
 #endif
 
-	xEngine.FluxSwapchain().Initialise();
+	{
+		ZENITH_PROFILE_SCOPE("Boot Flux/Swapchain Initialise");
+		xEngine.FluxSwapchain().Initialise();
+	}
 
 #ifdef ZENITH_TOOLS
 	// Bring up the hot-reload watcher BEFORE any subsystem Initialise() so
@@ -367,7 +391,10 @@ void Flux_RendererImpl::LateInitialise()
 	// before Initialise, but starting the file watcher early means the
 	// `firing N rebuild callback(s)` log line picks up edits made even
 	// during engine boot.)
-	Flux_ShaderHotReload::Initialise();
+	{
+		ZENITH_PROFILE_SCOPE("Boot Flux/ShaderHotReload Initialise");
+		Flux_ShaderHotReload::Initialise();
+	}
 #endif
 
 #ifdef ZENITH_TOOLS
@@ -376,7 +403,10 @@ void Flux_RendererImpl::LateInitialise()
 	// (FluxGraphics included), so bringing it up before the feature walk is
 	// dependency-safe. Gizmos (which DOES depend on ImGui) is registered as a
 	// feature and initialised by the walk.
-	xEngine.FluxBackend().InitialiseImGui();
+	{
+		ZENITH_PROFILE_SCOPE("Boot Flux/ImGui Initialise");
+		xEngine.FluxBackend().InitialiseImGui();
+	}
 #endif
 
 	// The per-subsystem Initialise() ladder walks the Flux_FeatureRegistry in
@@ -400,8 +430,19 @@ void Flux_RendererImpl::LateInitialise()
 	for (u_int uFeature = 0; uFeature < xRegistry.GetNumFeatures(); uFeature++)
 	{
 		const Flux_FeatureDesc& xDesc = xRegistry.GetFeatures()[uFeature];
-		if (xDesc.m_pfnInitialise != nullptr)
-			xDesc.m_pfnInitialise();
+		if (xDesc.m_pfnInitialise == nullptr) continue;
+
+		// Interned PER FEATURE (RegisterZone content-dedups, so the name maps to one
+		// stable id) — otherwise the whole ladder collapses into a single total and the
+		// boot report cannot say WHICH feature is the long pole. Shader compilation is
+		// attributed at this granularity by design: Flux_Shader is a backend alias with
+		// ~46 feature-level call sites and no backend-neutral per-program seam.
+		// Cold path — once per feature at boot, never per frame.
+		char acFeatureZone[96];
+		snprintf(acFeatureZone, sizeof(acFeatureZone), "Flux Feature Init/%s", xDesc.m_szName != nullptr ? xDesc.m_szName : "(unnamed)");
+		Zenith_Profiling::ScopeZone xFeatureScope(Zenith_Profiling_Detail::RegisterZone(acFeatureZone));
+
+		xDesc.m_pfnInitialise();
 	}
 
 #ifdef ZENITH_TOOLS
@@ -413,7 +454,12 @@ void Flux_RendererImpl::LateInitialise()
 #endif
 
 	// Drain the GPU uploads staged by swapchain init + the feature walk above.
-	xEngine.FluxMemory().Flush();
+	{
+		// Blocking: the boot report needs this separated from the feature walk that
+		// STAGED the uploads, or the wait is charged to whichever feature ran last.
+		ZENITH_PROFILE_SCOPE("Flux Boot GPU Flush");
+		xEngine.FluxMemory().Flush();
+	}
 
 	// Create and compile the render graph
 	m_pxRenderGraph = new Flux_RenderGraph();
