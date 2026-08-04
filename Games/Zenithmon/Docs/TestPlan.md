@@ -312,7 +312,10 @@ in prose here, including a total quoted in this paragraph.**
 ### 5.0 S0 -- skeleton (SHIPPED)
 
 - T0: `ZM_Boot` x2 (`ProjectNameIsZenithmon`, `GameAssetsDirectoryIsNonEmpty`)
-  in `Tests/ZM_Tests_Boot.cpp`.
+  in `Tests/ZM_Tests_Boot.cpp`. `GameAssetsDirectoryIsNonEmpty` asserts the
+  DESKTOP contract; on Android it asserts the inverse (`GAME_ASSETS_DIR` is
+  compiled in as `""` so AAssetManager can address APK assets relatively), as
+  does `ZM_Nav::DawnmereNavmeshBakePathIsAbsoluteAndTyped`.
 - P1: `ZM_Boot_Test` (`Tests/ZM_AutoTests_Boot.cpp`) -- FrontEnd scene boots
   and `ZM_GameComponent` resolves.
 - Verified at S0: build green; `zenith test Zenithmon --headless` = 1 passed /

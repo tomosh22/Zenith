@@ -163,6 +163,16 @@ void Zenith_UIButton::HandleInputEvents(bool bInteractable, bool bHovered, bool 
 	{
 		if (m_bMouseDownLastFrame && m_bMousePressedInside && bHovered)
 		{
+			// Raise the canvas-level pointer-activate edge as well as the optional
+			// direct callback. Games that dispatch by the FOCUSED ELEMENT'S NAME
+			// (rather than SetOnClick, whose `this` userdata dangles when the ECS
+			// pool relocates) have no other way to see a click at all -- without
+			// this, every such menu is keyboard/gamepad-only and simply cannot be
+			// operated by touch.
+			if (m_pxCanvas != nullptr)
+			{
+				m_pxCanvas->NotifyPointerActivate(this);
+			}
 			if (m_pfnOnClick)
 			{
 				m_pfnOnClick(m_pxUserData);

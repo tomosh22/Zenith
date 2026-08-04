@@ -120,7 +120,13 @@ complexity_report_ci/
 
 # Android build outputs
 *.apk
-Games/TilePuzzle/Android/app/build/
+Games/*/Android/.agde/
+Games/*/Android/.gradle/
+Games/*/Android/.idea/
+Games/*/Android/app/build/
+Games/*/Android/build/
+Games/*/Android/local.properties
+Games/*/Android/*.iml
 
 # ImGui layout persistence lives outside the repo (%LOCALAPPDATA%/Zenith/<GameName>/imgui.ini);
 # the in-repo default layout is code-built (Zenith_Editor's DockBuilder pass).
@@ -157,7 +163,6 @@ Games/*/build/
 /Build/FreeType/
 /Build/msdfgen/
 /Build/msdf-atlas-gen/
-/Games/TilePuzzle/Android/build/
 # ZenithHub launcher build artifacts (its output/ is not under a Build/ dir).
 ZenithHub/output/
 

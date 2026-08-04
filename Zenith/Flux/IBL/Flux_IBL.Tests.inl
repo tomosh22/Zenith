@@ -1,7 +1,6 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Core/Zenith_CommandLine.h"   // ResolveUnderAssetsRoot — shader-source scan below
-#include <fstream>
-#include <iterator>
+#include "FileAccess/Zenith_FileAccess.h"  // shader-source read (APK-aware on Android)
 #include <string>
 
 ZENITH_TEST(IBLRegeneration, AmortizedCursorConvergesInSixFrames)
@@ -729,12 +728,21 @@ namespace
 			strPath += '/';
 		}
 		strPath += szRelativePath;
-		std::ifstream xFile(strPath, std::ios::binary);
-		if (!xFile.is_open())
+
+		// Route through Zenith_FileAccess rather than a raw ifstream. On
+		// Android the shader sources ship INSIDE the APK and are reachable
+		// only via AAssetManager, which is precisely what this abstraction
+		// wraps; SHADER_SOURCE_ROOT is "" there, so strPath is already the
+		// APK-relative asset path. A raw ifstream saw nothing, and these two
+		// tests were the only failures in the whole suite on Android.
+		uint64_t ulSize = 0;
+		char* pcData = Zenith_FileAccess::ReadFile(strPath.c_str(), ulSize);
+		if (pcData == nullptr)
 		{
 			return false;
 		}
-		strOut.assign(std::istreambuf_iterator<char>(xFile), std::istreambuf_iterator<char>());
+		strOut.assign(pcData, static_cast<size_t>(ulSize));
+		Zenith_FileAccess::FreeFileData(pcData);
 		return !strOut.empty();
 	}
 

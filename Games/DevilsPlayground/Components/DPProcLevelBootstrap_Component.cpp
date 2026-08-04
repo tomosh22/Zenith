@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
+#include "Core/Zenith_PlatformEnvironment.h"
 
 #include "Components/DPProcLevelBootstrap_Component.h"
 
@@ -72,25 +73,19 @@ void DPProcLevelBootstrap_Component::OnAwake()
 	DP_Knots::ResetForNewRun();
 	DP_Knots::Initialise();
 
-#if defined(_MSC_VER)
-#  pragma warning(push)
-#  pragma warning(disable: 4996)
-#endif
-	if (const char* szEnv = std::getenv("DP_PROCGEN_SEED"))
+	char acSeed[64];
+	if (Zenith_PlatformEnvironment::GetVariable("DP_PROCGEN_SEED", acSeed, sizeof(acSeed)))
 	{
-		if (szEnv[0] != '\0')
+		if (acSeed[0] != '\0')
 		{
 			char* pszEnd = nullptr;
-			const unsigned long long uParsed = std::strtoull(szEnv, &pszEnd, 10);
-			if (pszEnd != szEnv)
+			const unsigned long long uParsed = std::strtoull(acSeed, &pszEnd, 10);
+			if (pszEnd != acSeed)
 			{
 				m_uSeed = static_cast<uint64_t>(uParsed);
 			}
 		}
 	}
-#if defined(_MSC_VER)
-#  pragma warning(pop)
-#endif
 	DPProcLevel::GenConfig xConfig;
 	xConfig.fWallHalfThickness = 0.4f;
 	const float fRawLockedFrac = DP_Tuning::Get<float>("interactables.door_locked_fraction");

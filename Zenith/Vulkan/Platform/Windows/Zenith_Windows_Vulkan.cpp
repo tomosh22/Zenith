@@ -22,8 +22,10 @@ namespace Zenith_Vulkan_Platform
 	VkSurfaceKHR CreateSurface(VkInstance xInstance)
 	{
 		GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();
-		VkSurfaceKHR xSurface;
-		glfwCreateWindowSurface(xInstance, pxWindow, nullptr, &xSurface);
+		VkSurfaceKHR xSurface = VK_NULL_HANDLE;
+		const VkResult eResult = glfwCreateWindowSurface(xInstance, pxWindow, nullptr, &xSurface);
+		Zenith_Assert(eResult == VK_SUCCESS && xSurface != VK_NULL_HANDLE,
+			"glfwCreateWindowSurface failed: %d", static_cast<int>(eResult));
 		return xSurface;
 	}
 }

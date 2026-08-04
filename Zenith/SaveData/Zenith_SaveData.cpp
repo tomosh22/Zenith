@@ -2,6 +2,7 @@
 
 #include "SaveData/Zenith_SaveData.h"
 #include "Core/Zenith_CommandLine.h"   // automated-test detection + sandbox flags
+#include "Core/Zenith_PlatformStdio.h"
 
 #include <cstring>
 #include <cstdio>
@@ -114,13 +115,8 @@ namespace Zenith_SaveData
 	static bool ReadSandboxMarkerRunId(const std::filesystem::path& xMarkerPath, std::string& strRunIdOut)
 	{
 		strRunIdOut.clear();
-		std::FILE* pxFile = nullptr;
-#ifdef _MSC_VER
-		if (::fopen_s(&pxFile, xMarkerPath.string().c_str(), "rb") != 0 || pxFile == nullptr) return false;
-#else
-		pxFile = std::fopen(xMarkerPath.string().c_str(), "rb");
+		std::FILE* pxFile = Zenith_PlatformStdio::OpenFile(xMarkerPath.string().c_str(), "rb");
 		if (pxFile == nullptr) return false;
-#endif
 		char acMagic[64] = { 0 };
 		char acRunId[256] = { 0 };
 		const bool bReadMagic = (std::fgets(acMagic, sizeof(acMagic), pxFile) != nullptr);
@@ -146,13 +142,8 @@ namespace Zenith_SaveData
 	static void WriteSandboxMarker(const std::filesystem::path& xDirectory, const char* szRunId)
 	{
 		const std::filesystem::path xMarker = xDirectory / kszSandboxMarkerName;
-		std::FILE* pxFile = nullptr;
-#ifdef _MSC_VER
-		if (::fopen_s(&pxFile, xMarker.string().c_str(), "wb") != 0 || pxFile == nullptr) return;
-#else
-		pxFile = std::fopen(xMarker.string().c_str(), "wb");
+		std::FILE* pxFile = Zenith_PlatformStdio::OpenFile(xMarker.string().c_str(), "wb");
 		if (pxFile == nullptr) return;
-#endif
 		std::fprintf(pxFile, "%s\n%s\n", kszSandboxMarkerMagic, szRunId != nullptr ? szRunId : "");
 		std::fclose(pxFile);
 	}

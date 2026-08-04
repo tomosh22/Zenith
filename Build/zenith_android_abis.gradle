@@ -1,0 +1,44 @@
+// zenith_android_abis.gradle -- the Android ABI axis, for every game's app module.
+// =============================================================================
+// Applied by each Games/<Game>/Android/app/build.gradle:
+//
+//     apply from: '../../../../Build/zenith_android_abis.gradle'
+//
+// This is the Gradle-side mirror of ZenithAndroidAbi in Build/Sharpmake_Common.cs
+// (and of AndroidAbis in Build/zenith_config.psd1, which is keyed the OTHER way
+// round -- token to dir -- for the PowerShell tooling). Keeping it in ONE file
+// means adding an ABI is three edits total, not three per game. A buildsystem
+// selftest compares all three sources and fails on drift.
+//
+// GOTCHA: this file lives OUTSIDE every game's Gradle project hierarchy
+// (Build/ vs Games/<Game>/Android/), so it is not in the daemon's watched set.
+// A long-lived Gradle daemon can keep serving a stale compiled copy after you
+// edit it -- an ABI change appearing not to take effect means you want
+// `gradlew --stop` (or `--no-daemon`) before concluding anything.
+// =============================================================================
+
+// Key   = canonical Android ABI name -- what abiFilters takes and what the
+//         on-disk jniLibs/<abi>/ directory is called.
+// Value = the token AGDE's OutDir uses for its config folder.
+// The two differ for arm64 (arm64-v8a vs arm64_v8a) and coincide for x86_64,
+// which is precisely why hardcoding either spelling is silently wrong.
+//
+// x86_64 exists so games run on the Android emulator: the QEMU2 emulator cannot
+// host an arm64 guest on an x86_64 host, so x86_64 is the only ABI a dev box
+// with no ARM hardware can actually execute.
+ext.zenithAbis = ['arm64-v8a': 'arm64_v8a', 'x86_64': 'x86_64']
+
+// AGDE writes each ABI's native libs to
+//   <game>/build/output/agde/<token>_vs2022_<buildType>_agde_false/<abi>/lib*.so
+// (Sharpmake pins that OutDir -- see Sharpmake_Games.cs), so each config folder
+// is already a valid jniLibs root. Listing every ABI lets Gradle merge them into
+// one multi-ABI APK; a folder for an ABI that hasn't been built is simply
+// absent, so the APK carries whichever ABIs actually exist.
+//
+// These point at the pinned OutDir, NOT at build/obj (the intermediate dir).
+// IntDir is not overridden, so it carries the "vulkan_" render-backend prefix
+// that OutDir omits and its name changes whenever the backend fragment does --
+// which had already left hardcoded build/obj paths stale once.
+ext.zenithJniLibDirs = { String buildType ->
+	ext.zenithAbis.values().collect { "../../build/output/agde/${it}_vs2022_${buildType}_agde_false" }
+}

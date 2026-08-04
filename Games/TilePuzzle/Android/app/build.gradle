@@ -2,6 +2,11 @@ plugins {
 	id 'com.android.application'
 }
 
+// The Android ABI axis + the per-ABI jniLibs roots. Shared by every game so
+// adding an ABI is one edit; the Sharpmake-side mirror is ZenithAndroidAbi in
+// Build/Sharpmake_Common.cs.
+apply from: '../../../../Build/zenith_android_abis.gradle'
+
 android {
 	namespace 'com.zenith.tilepuzzle'
 	compileSdk 34
@@ -14,7 +19,7 @@ android {
 		versionName '1.0'
 
 		ndk {
-			abiFilters 'arm64-v8a'
+			abiFilters.addAll(zenithAbis.keySet())
 		}
 	}
 
@@ -35,15 +40,13 @@ android {
 				'../../../../Zenith/Flux/Shaders'
 			]
 		}
-		// Point jniLibs at AGDE's IntDir (contains arm64-v8a/libtilepuzzle.so + libc++_shared.so)
+		// src/<type>/jniLibs carries hand-staged extras (e.g. the downloaded
+		// Vulkan validation layer), staged independently for each supported ABI.
 		debug {
-			jniLibs.srcDirs = [
-				'../../build/obj/agde/arm64_v8a_vs2022_debug_agde_false',
-				'src/debug/jniLibs'
-			]
+			jniLibs.srcDirs = zenithJniLibDirs('debug') + ['src/debug/jniLibs']
 		}
 		release {
-			jniLibs.srcDirs = ['../../build/obj/agde/arm64_v8a_vs2022_release_agde_false']
+			jniLibs.srcDirs = zenithJniLibDirs('release')
 		}
 	}
 }

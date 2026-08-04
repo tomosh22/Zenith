@@ -227,7 +227,13 @@ void ZM_UI_MenuStack::OnUpdate(float fDeltaSeconds)
 	//    per-canvas UpdateFocusNavigation (keyboard confirm / cancel are NOT wired
 	//    engine-side, so they are game-supplied here). Both readers are pure edge
 	//    queries with no consume side effect, so reading them up front is free. --
-	const bool bConfirm = ZM_InputActions::ReadConfirmPressed();
+	// A TAP on a focusable element is a confirm on that element. The engine's
+	// canvas raises the edge and moves focus first (Zenith_UICanvas::
+	// NotifyPointerActivate), so this feeds the SAME dispatch-by-focused-name
+	// switch below that Enter does -- no per-button SetOnClick, no second code
+	// path only pointers can travel. Without it every menu in this game is
+	// keyboard/gamepad-only, i.e. completely inoperable on Android.
+	const bool bConfirm = ZM_InputActions::ReadConfirmPressed() || ReadPointerConfirm();
 	const bool bCancel  = ZM_InputActions::ReadCancelPressed();
 
 	// ONE per-screen input-routing switch: every screen owns its own confirm / cancel
@@ -1466,6 +1472,16 @@ Zenith_UIComponent* ZM_UI_MenuStack::ResolveUI() const
 	return m_xParentEntity.IsValid()
 		? m_xParentEntity.TryGetComponent<Zenith_UIComponent>()
 		: nullptr;
+}
+
+bool ZM_UI_MenuStack::ReadPointerConfirm() const
+{
+	// Mouse/touch activation of a focusable element, raised by the engine canvas
+	// this frame. Read (not consumed) exactly like the confirm/cancel key edges,
+	// so the per-screen routing switch stays the only place that decides what a
+	// confirm MEANS.
+	Zenith_UIComponent* pxUI = ResolveUI();
+	return pxUI != nullptr && pxUI->GetCanvas().WasPointerActivateThisFrame();
 }
 
 const char* ZM_UI_MenuStack::ResolveFocusedElementName() const

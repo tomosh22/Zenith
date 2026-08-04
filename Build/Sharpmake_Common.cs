@@ -24,6 +24,51 @@ public enum RenderBackend
 	Null = 4
 }
 
+// Android ABI axis. The agde target set spans every ABI listed in All, so a
+// game's Android build produces one native lib per ABI and Gradle merges them
+// into a single multi-ABI APK.
+//
+// Two spellings of each ABI are load-bearing and they are NOT interchangeable:
+//   * ConfigToken -- the underscore form Sharpmake bakes into the config name
+//     (e.g. "Vulkan_arm64_v8a_vs2022_Debug_Agde_False"), because Sharpmake
+//     derives config-name fragments from the C# enum member names.
+//   * DirName -- the canonical Android ABI directory name that AGDE packages
+//     from and Gradle's jniLibs expects (jniLibs/<DirName>/lib*.so).
+// They coincide for x86_64 and differ for arm64 (arm64_v8a vs arm64-v8a), which
+// is exactly the trap that makes hardcoding either one silently wrong.
+public static class ZenithAndroidAbi
+{
+	// Every ABI the agde configs are generated for. arm64-v8a is what real
+	// devices run; x86_64 is what the Android emulator runs on an x86_64 host
+	// (the QEMU2 emulator cannot host an arm64 guest at all), so it is the only
+	// way to exercise the Android build on a dev box with no ARM hardware.
+	// Widening the axis is a one-line edit HERE -- every agde project reads it.
+	public static Android.AndroidBuildTargets All =>
+		Android.AndroidBuildTargets.arm64_v8a | Android.AndroidBuildTargets.x86_64;
+
+	// Config-name fragment token for one ABI (underscore form).
+	public static string ConfigToken(Android.AndroidBuildTargets eAbi)
+	{
+		switch (eAbi)
+		{
+			case Android.AndroidBuildTargets.arm64_v8a: return "arm64_v8a";
+			case Android.AndroidBuildTargets.x86_64:    return "x86_64";
+			default: throw new Exception("ZenithAndroidAbi: unsupported ABI '" + eAbi + "'");
+		}
+	}
+
+	// On-disk ABI directory name for one ABI (jniLibs / AGDE packaging form).
+	public static string DirName(Android.AndroidBuildTargets eAbi)
+	{
+		switch (eAbi)
+		{
+			case Android.AndroidBuildTargets.arm64_v8a: return "arm64-v8a";
+			case Android.AndroidBuildTargets.x86_64:    return "x86_64";
+			default: throw new Exception("ZenithAndroidAbi: unsupported ABI '" + eAbi + "'");
+		}
+	}
+}
+
 // Custom target supporting both Windows and Android platforms
 public class ZenithTarget : ITarget
 {

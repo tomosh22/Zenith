@@ -415,6 +415,10 @@ private:
 	// is exactly how every by-name dispatch site uses it.
 	const char* ResolveFocusedElementName() const;
 
+	// True when a pointer (mouse/touch) activated a focusable element this frame.
+	// Feeds the same confirm routing as the keyboard edge; see the call site.
+	bool ReadPointerConfirm() const;
+
 	static Zenith_EntityID s_xSingletonEntityID;
 
 	// Stored BY VALUE (never a reference): a reference member would dangle on the

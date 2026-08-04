@@ -12,6 +12,9 @@ Android-specific implementations for windowing (ANativeWindow), threading (pthre
 - `Callstack/Zenith_Android_Callstack.h` - libunwind/dladdr-based stack trace capture
 - `FileAccess/Zenith_Android_FileAccess.cpp` - Android file access (AAssetManager for APK assets, filesystem fallback for writable storage)
 - `Zenith_Android_DebugBreak.cpp` - `Zenith_DebugBreak()` via `raise(SIGTRAP)` (with assert-capture support)
+- `Zenith_Android_Main.cpp` - `android_main()` entry point + the activity/cmd-pipe loop
+- `Zenith_Android_PlatformStdio.cpp` - POSIX-backed file opening and temporary files (the Android half of `Core/Zenith_PlatformStdio.h`; the Windows half is `Zenith_Windows_PlatformStdio.cpp`)
+- `Zenith_Android_PlatformEnvironment.cpp` - POSIX-backed environment-variable reads (the Android half of `Core/Zenith_PlatformEnvironment.h`)
 
 ## Window (Zenith_Window)
 
@@ -109,7 +112,7 @@ Code that is Windows-only or unavailable on Android uses these guards:
 |-------|---------|
 | `#ifdef ZENITH_WINDOWS` | Slang shader compiler, `Zenith_Main()` loop, `_aligned_malloc`, MSVC intrinsics |
 | `#ifdef ZENITH_TOOLS` | Assimp import, editor, hot reload, asset export (never defined on Android) |
-| `#ifdef _MSC_VER` | MSVC-specific intrinsics like `__popcnt` (use `__builtin_popcount` on Clang) |
+| Platform-specific CRT behaviour | Put the implementation in matching `Windows/` and `Android/` translation units; do not branch on compiler macros in shared code |
 
 Key files with Android guards:
 - `Flux_SlangCompiler.cpp` - Slang SDK includes and `Flux_SlangCompiler` methods wrapped in `#ifdef ZENITH_WINDOWS`; `Flux_ShaderReflection` methods are unconditional
@@ -121,7 +124,7 @@ Key files with Android guards:
 - `Zenith_AssetRegistry.h` - `Zenith_TypeIndex` (compile-time type IDs via static address) replaces `std::type_index`/`typeid` (RTTI is disabled)
 - `Zenith_FileWatcher.cpp` - `std::error_code` overloads instead of `try`/`catch` (exceptions are disabled)
 - `Flux_ParticleEmitterConfig.h` - Explicit `static_cast<float>(RAND_MAX)` to avoid Clang implicit conversion warning
-- `TilePuzzle_Rules.h` - `TILEPUZZLE_POPCNT` macro dispatches to `__popcnt` (MSVC) or `__builtin_popcount` (Clang)
+- `TilePuzzle_Rules.h` / `TilePuzzle_Solver.h` - C++20 `std::popcount` is portable across MSVC and Clang
 
 ### Shader System
 
@@ -143,19 +146,90 @@ Android does not have the Slang shader compiler at runtime. Shaders must be pre-
 
 `Zenith/Android/NativeGlue/` contains `android_native_app_glue.h` and `.c` copied from the NDK (`$(ANDROID_NDK_ROOT)/sources/android/native_app_glue/`). These provide the `ANativeActivity_onCreate` entry point and event loop infrastructure. The `.c` file is excluded from PCH.
 
+### ABIs: arm64-v8a (devices) and x86_64 (the emulator)
+
+Both ABIs are built from one axis, `ZenithAndroidAbi.All` in
+`Build/Sharpmake_Common.cs`, mirrored Gradle-side by
+`Build/zenith_android_abis.gradle`. Gradle merges every ABI that has actually
+been built into a single APK.
+
+**x86_64 is the only way to run on the local emulator.** Google's QEMU2 emulator
+cannot host an arm64 guest on an x86_64 host at all (`"Avd's CPU Architecture
+'arm64' is not supported by the QEMU2 emulator on x86_64 host"`), so a dev box
+with no physical ARM device can only exercise Android through x86_64.
+
+Config names carry the ABI: `Vulkan_<abi_token>_vs2022_<Debug|Release>_Agde_False`
+with platform `Android-<abi-dir>`. Mind the two spellings — the config token uses
+underscores (`arm64_v8a`), the on-disk ABI directory uses a dash (`arm64-v8a`);
+they coincide only for `x86_64`.
+
+### Debug APK validation layer
+
+`ZENITH_FLUX_PROFILING` is defined unconditionally in `Zenith.h`, so
+`GetRequiredInstanceExtensions` asks for `VK_EXT_debug_utils`. On Android that
+extension is commonly supplied by the **validation layer**, not the platform
+loader. `Zenith_Vulkan::CreateInstance` treats the diagnostics extension as
+optional, so a layer-less APK still boots, but you want the layer for useful
+validation diagnostics:
+
+```
+pwsh ./Build/download_validation_layer.ps1 -Game <Game> -Abi x86_64
+```
+
+It stages into `Games/<Game>/Android/app/src/debug/jniLibs/<abi>/`.
+
 ### Deployment Steps
 
 ```
 1. Build\regen.ps1                  # Regenerate solutions (per-game + engine)
 2. Build FluxCompiler (Win64)       # Build shader compiler
 3. Run FluxCompiler.exe             # Generate .spv + .spv.refl
-4. Build Games\<Game>\<game>_agde.sln /t:<Game>   # Build the game's AGDE solution
-5. deploy_android.bat debug Game    # Stage .so + libc++_shared.so
-6. cd Games/Game/Android
-7. gradlew assembleDebug            # Build APK
-8. adb install -r app/build/outputs/apk/debug/app-debug.apk
-9. adb shell am start -n com.zenith.game/android.app.NativeActivity
+4. pwsh Build\download_validation_layer.ps1 -Game <Game> -Abi x86_64   # debug only
+5. msbuild Games\<Game>\<game>_agde.sln /t:<Game> ^
+     /p:Configuration=Vulkan_x86_64_vs2022_Debug_Agde_False /p:Platform=Android-x86_64
+   # AGDE runs Gradle itself and emits the APK under
+   #   Games/<Game>/Build/output/agde/x86_64_vs2022_debug_agde_false/
+6. adb install -r -t <that>.apk     # -t is REQUIRED: AGP marks debug APKs testOnly
+7. adb shell am start -n com.zenith.<game>/android.app.NativeActivity
 ```
+
+Two staging models are in play, and which one a game uses is per-game:
+
+| Game | `jniLibs.srcDirs` | Needs `deploy_android.ps1`? |
+|---|---|---|
+| TilePuzzle, Zenithmon | `zenithJniLibDirs(<buildType>)` — straight at the pinned AGDE OutDir | No; the AGDE path above is self-contained |
+| Combat, DevilsPlayground, RenderTest | `['jniLibs']` — hand-staged `app/jniLibs/<abi>/` | **Yes**, run it before Gradle |
+
+`deploy_android.ps1` (`-Abi <abi dir name>|all`, ABIs from the shared axis)
+stages both the game `.so` and the NDK's `libc++_shared.so` per ABI. All five
+games take `abiFilters` from `Build/zenith_android_abis.gradle`, so an ABI that
+was never built is simply absent from the APK rather than an error.
+
+### Reading engine logs on device
+
+`Zenith_Log`/`Warning`/`Error` route to **logcat** on Android (an app's stdout is
+discarded, which used to make the engine completely silent on device). Tags are
+`Zenith.<Category>` — note the categories are mixed-case (`Zenith.Vulkan`,
+`Zenith.Core`, `Zenith.Renderer`), not upper-case:
+
+```
+adb logcat -s Zenith.Vulkan Zenith.Core        # one or more categories
+adb logcat | Select-String "Zenith\."          # everything the engine logs
+```
+
+### Selecting the JDK (per machine, NOT per repo)
+
+No game's `gradle.properties` pins `org.gradle.java.home` — it is an absolute,
+machine-local path, and once set Gradle will NOT fall back to `JAVA_HOME`, so a
+tracked pin hard-fails on every other machine. Set it once, for every game, in
+your own `%USERPROFILE%\.gradle\gradle.properties`:
+
+```properties
+org.gradle.java.home=C\:/Program Files/Android/Android Studio/jbr
+```
+
+Or point `JAVA_HOME` at a JDK Gradle 8.13 accepts (17–23; it rejects 24+ with
+`Unsupported class file major version`).
 
 ### Gradle Configuration
 
@@ -163,7 +237,7 @@ Each game has `Games/<Game>/Android/app/build.gradle` that bundles:
 - `../../Assets` - Game-specific assets
 - `../../../../Zenith/Assets` - Engine assets (fonts, default textures, etc.)
 
-TilePuzzle additionally bundles `../../../../Zenith/Flux/Shaders` - pre-compiled shaders (`.spv` + `.spv.refl`) for runtime loading.
+TilePuzzle and Zenithmon additionally bundle `../../../../Zenith/Flux/Shaders` - pre-compiled shaders (`.spv` + `.spv.refl`) for runtime loading. Android has no runtime shader compilation, so a game that omits this cannot render.
 
 ### Known Constraints
 
@@ -172,4 +246,46 @@ TilePuzzle additionally bundles `../../../../Zenith/Flux/Shaders` - pre-compiled
 - **No `std::function`** - Use function pointers
 - **No Slang runtime** - Shaders must be pre-compiled via FluxCompiler
 - **No Assimp** - Asset import is `#ifdef ZENITH_TOOLS` only; use pre-baked `.zanim`/`.zmesh` formats
-- **Save data** - `Zenith_SaveData::Load` may fail (no writable working directory without using `internalDataPath`)
+- **Save data** - `Zenith_SaveData` writes under `internalDataPath`. `android_main`
+  also `chdir()`s the process there, so plain RELATIVE paths (the boot-profile /
+  memory dumps, the unit-test batch's `TestData/`) now resolve to a writable
+  location. Without that chdir the cwd is `/`, which is read-only, and
+  `std::filesystem` throws with exceptions disabled — i.e. it terminated the
+  process mid-`Zenith_Init`.
+- **Missing files are RECOVERABLE, not assertions** - `Zenith_Android_FileAccess`
+  uses `Zenith_Check` (log + continue) for a failed open, matching the Windows
+  sibling, and zeroes the `ulSize` out-param on the failure path. Callers pair
+  the two (`Zenith_DataStream::ReadFromFile` asserts
+  `m_pData != nullptr || m_ulDataSize == 0`), and the asset registry's contract
+  is that `Get<T>()` of a missing path is a clean null.
+- **Reading engine-owned files in tests** - go through `Zenith_FileAccess`, never a
+  raw `std::ifstream`: on Android the file may be inside the APK, reachable only
+  via AAssetManager. (This is what made the IBL shader-source tests fail there.)
+- **Surface rotation is handled by the COMPOSITOR, not by pre-rotation** -
+  `preTransform` declares the rotation the app has already baked into its
+  content, and Zenith bakes none. `Zenith_Vulkan_Swapchain::Initialise` used to
+  pass `capabilities.currentTransform` anyway, which is a lie, so any activity
+  whose `screenOrientation` differed from the panel's NATIVE orientation rendered
+  **sideways** — every landscape game on a portrait phone.
+
+  It now requests **`IDENTITY`** whenever `supportedTransforms` offers it
+  (`Flux_SwapchainPolicy::SelectPreTransform`), and the presentation engine
+  applies the rotation itself. Correct on every orientation, so a game is free to
+  declare whatever `screenOrientation` it wants — only TilePuzzle is `portrait`;
+  Combat, DevilsPlayground, RenderTest and Zenithmon are all `landscape`, i.e.
+  rotated relative to a portrait-native panel, and all correct.
+  If a surface ever refuses `IDENTITY` the code falls back to `currentTransform`
+  (the one value the spec guarantees) and logs a warning naming both masks, so a
+  sideways image is never unexplained.
+
+  **The cost:** the compositor does an extra rotation pass on a rotated surface,
+  where true *pre-rotation* — baking the transform into the projection, viewport
+  and scissor — would be free. That remains the optimisation, and it has to be
+  threaded through shared render code used by every platform. Correctness first.
+  The decision logic is backend-neutral and unit-tested in every config
+  (`Flux/Flux_SwapchainPolicy.Tests.inl`), including the Null CI build.
+- **Wall-clock perf budgets in tests don't transfer here** - the emulator is far
+  slower than a dev box, and per-dispatch overhead can dominate to the point
+  that a benchmark's phases converge. `GraphComponent::ThousandEntityUpdateBenchmark`
+  is `ZENITH_SKIP`-ped on Android for exactly this reason; it stays fully
+  enforced on desktop, where its budgets were calibrated.

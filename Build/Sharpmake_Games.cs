@@ -59,7 +59,7 @@ public abstract class GameProject : ZenithBaseProject
 				Optimization = Optimization.Debug | Optimization.Release,
 				ToolsEnabled = ToolsEnabled.False,
 				RenderBackend = RenderBackend.Vulkan,
-				AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
+				AndroidBuildTargets = ZenithAndroidAbi.All
 			});
 		}
 	}
@@ -155,9 +155,23 @@ public abstract class GameProject : ZenithBaseProject
 			conf.CustomProperties.Add("AndroidGradleBuildDir", zenithRoot + "/Games/" + GameName + "/Android");
 			conf.CustomProperties.Add("AndroidApplicationModule", "app");
 
-			// AGDE packaging requires OutDir to end with the ABI directory (arm64-v8a\)
+			// AGDE packaging requires OutDir to end with the ABI directory
+			// (.../<abi>\), because AGDE hands Gradle the PARENT of OutDir as the
+			// jniLibs source root and Gradle then expects <root>/<abi>/lib*.so.
+			//
+			// The leaf is the canonical ABI dir name (arm64-v8a / x86_64) while the
+			// config folder above it uses the config-name token (arm64_v8a /
+			// x86_64) -- see ZenithAndroidAbi for why those two differ.
+			//
+			// Note this override deliberately omits the "vulkan_" render-backend
+			// prefix that Sharpmake's default output naming would add (agde is
+			// Vulkan-only, so the prefix carries no information here). The
+			// UN-overridden IntDir does carry it, which is why the two trees are
+			// named differently on disk -- Gradle must read this one.
 			string configSuffix = target.Optimization == Optimization.Debug ? "debug" : "release";
-			string agdeOutDir = "$(ProjectDir)output\\agde\\arm64_v8a_vs2022_" + configSuffix + "_agde_false\\arm64-v8a\\";
+			string agdeOutDir = "$(ProjectDir)output\\agde\\"
+				+ ZenithAndroidAbi.ConfigToken(target.AndroidBuildTargets) + "_vs2022_" + configSuffix + "_agde_false\\"
+				+ ZenithAndroidAbi.DirName(target.AndroidBuildTargets) + "\\";
 			conf.CustomProperties.Add("OutDir", agdeOutDir);
 
 			// Map MSBuild configuration name to Gradle build type (debug/release)
@@ -243,7 +257,7 @@ public abstract class GameSolution : Solution
 				Optimization = Optimization.Debug | Optimization.Release,
 				ToolsEnabled = ToolsEnabled.False,
 				RenderBackend = RenderBackend.Vulkan,
-				AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
+				AndroidBuildTargets = ZenithAndroidAbi.All
 			});
 		}
 	}

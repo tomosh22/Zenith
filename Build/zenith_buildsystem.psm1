@@ -505,6 +505,65 @@ function ConvertTo-ZenithOutputDir {
     return $Config.ToLowerInvariant()
 }
 
+function Get-ZenithAndroidAbis {
+    # The ABI axis, from zenith_config.psd1. Returns an array of objects, one per
+    # ABI, each carrying BOTH load-bearing spellings so a caller never has to pick
+    # (and never has to transpose a hashtable):
+    #   Token   -- the config-name fragment  ('arm64_v8a')
+    #   DirName -- the on-disk ABI directory ('arm64-v8a')
+    # They coincide for x86_64 and differ for arm64, which is exactly why every
+    # call site must take the one it needs from here rather than spell it inline.
+    # Sorted by DirName so the order is deterministic across runs.
+    [CmdletBinding()]
+    param()
+    $map = (Get-ZenithBuildConfigData).AndroidAbis
+    $list = @($map.Keys | ForEach-Object {
+        [pscustomobject]@{ Token = $_; DirName = $map[$_] }
+    } | Sort-Object DirName)
+    # Comma operator: a bare `return @(...)` is re-enumerated by the pipeline, so
+    # a ONE-ABI axis would hand the caller a bare object instead of an array and
+    # $abis[0] would silently index into the object's properties. Wrapping keeps
+    # the array intact at every axis size.
+    return ,$list
+}
+
+function Get-ZenithAndroidAbiToken {
+    # Validates an ABI config token against the axis. Central so no caller can
+    # pass the DIR spelling ('arm64-v8a') where the TOKEN ('arm64_v8a') is meant
+    # and get a plausible-looking config name for a config that does not exist.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$AbiToken)
+    $known = @((Get-ZenithAndroidAbis) | ForEach-Object { $_.Token })
+    if ($known -notcontains $AbiToken) {
+        throw "unknown Android ABI config token '$AbiToken'; known tokens: $($known -join ', ')"
+    }
+    return $AbiToken
+}
+
+function Get-ZenithAndroidOutDir {
+    # The OutDir leaf Sharpmake pins for an agde config (no backend prefix).
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$AbiToken,
+        [Parameter(Mandatory)][string]$BuildType   # 'debug' | 'release'
+    )
+    $tpl = (Get-ZenithBuildConfigData).AndroidOutDirTemplate
+    return [string]::Format($tpl, (Get-ZenithAndroidAbiToken $AbiToken), $BuildType.ToLowerInvariant())
+}
+
+function Get-ZenithAndroidMsBuildConfig {
+    # The MSBuild /p:Configuration name for an agde config (backend-prefixed).
+    # Pair it with platform 'Android-<DirName>' -- note the dash spelling.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$AbiToken,
+        [Parameter(Mandatory)][string]$BuildType   # 'debug' | 'release'
+    )
+    $tpl = (Get-ZenithBuildConfigData).AndroidMsBuildConfigTemplate
+    $titled = (Get-Culture).TextInfo.ToTitleCase($BuildType.ToLowerInvariant())
+    return [string]::Format($tpl, (Get-ZenithAndroidAbiToken $AbiToken), $titled)
+}
+
 function Get-ZenithGameExePath {
     # Composes the expected exe path for a game+config. Pure string composition;
     # existence is the caller's concern.
@@ -841,6 +900,10 @@ Export-ModuleMember -Function @(
     'Get-ZenithBuildConfigData',
     'Get-ZenithDefaultConfig',
     'ConvertTo-ZenithOutputDir',
+    'Get-ZenithAndroidAbis',
+    'Get-ZenithAndroidAbiToken',
+    'Get-ZenithAndroidOutDir',
+    'Get-ZenithAndroidMsBuildConfig',
     'Get-ZenithGameExePath',
     'Stop-ZenithBuildProcesses',
     'Repair-ZenithRuntimeDlls',

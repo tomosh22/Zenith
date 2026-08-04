@@ -116,9 +116,42 @@ Config axes (fragments): **RenderBackend** (`Vulkan_` = real renderer /
 `Null_` = the GPU-less backend every headless run executes on / `D3D12_` = a
 reserved no-op backend kept as the link-neutrality proof) × **vs2022** ×
 **Optimization** (`Debug`/`Release`) × **Win64/Agde** × **ToolsEnabled**
-(`True` = editor/tools, `False` = runtime-only). agde is Vulkan-only and
-carries NO backend prefix (a single-valued fragment is omitted from the name).
-Example: `Vulkan_vs2022_Debug_Win64_True`.
+(`True` = editor/tools, `False` = runtime-only). Example:
+`Vulkan_vs2022_Debug_Win64_True`.
+
+**agde also carries the `Vulkan_` prefix, plus an ABI fragment.** agde is
+Vulkan-only, but Sharpmake emits the backend fragment anyway because it is
+multi-valued across the target set as a whole, and it adds the Android ABI:
+
+| agde config | MSBuild Platform |
+|-------------|------------------|
+| `Vulkan_arm64_v8a_vs2022_Debug_Agde_False` | `Android-arm64-v8a` |
+| `Vulkan_arm64_v8a_vs2022_Release_Agde_False` | `Android-arm64-v8a` |
+| `Vulkan_x86_64_vs2022_Debug_Agde_False` | `Android-x86_64` |
+| `Vulkan_x86_64_vs2022_Release_Agde_False` | `Android-x86_64` |
+
+The ABI axis is `ZenithAndroidAbi.All` in `Sharpmake_Common.cs` — one list every
+agde project reads. It has **three** mirrors, because C#, Gradle and PowerShell
+cannot share a literal, and widening the axis means editing all three:
+
+| Mirror | Read by | Orientation |
+|---|---|---|
+| `ZenithAndroidAbi` (`Sharpmake_Common.cs`) | every agde project | `ConfigToken()` / `DirName()` |
+| `Build/zenith_android_abis.gradle` | every game's `app/build.gradle` | dir name → token |
+| `AndroidAbis` (`Build/zenith_config.psd1`) | all PowerShell tooling, via `Get-ZenithAndroidAbis` | token → dir name (the **transpose** of the Gradle map) |
+
+A buildsystem selftest compares all three and fails on drift; read the psd1 one
+through the accessor, which returns both spellings as named fields.
+`arm64-v8a` is what physical devices run; **`x86_64` is what the Android
+emulator runs**, because the QEMU2 emulator cannot host an arm64 guest on an
+x86_64 host at all. A dev box with no ARM device can only exercise Android
+through x86_64. Gradle merges every built ABI into one APK, so an APK contains
+whichever ABIs you actually built.
+
+Mind the two spellings: the config name uses `arm64_v8a` (underscores) while the
+on-disk ABI directory is `arm64-v8a` (dash). They coincide for `x86_64`, which
+is exactly what makes hardcoding either spelling silently wrong — see
+`ZenithAndroidAbi.ConfigToken` vs `.DirName`.
 
 > **Headless is a build config, not a flag.** There is no `--headless` engine
 > flag. A `Null_*` config defines `ZENITH_NULL_RENDERER`, compiles `Zenith/Null`
@@ -256,7 +289,9 @@ expansion, dispatcher exit codes, and the test-harness parsers/tally.
   invent a new ad-hoc `Build/<thing>_results` dir.
 - **`dist/`** (gitignored) holds `zenith package` output.
 - Tracked under `Build/`: ONLY hand-written files (`Sharpmake_*.cs`, scripts,
-  `zenith_config.psd1`, `Templates/`, `Tests/`, `TestData/`) — ~39 files.
+  `zenith_config.psd1`, `zenith_android_abis.gradle` — the shared Android ABI
+  axis every game's `app/build.gradle` applies — `Templates/`, `Tests/`,
+  `TestData/`) — ~39 files.
 - Two regression tests in the buildsystem selftest lock this forever: no
   generated/transient pattern may appear in `git ls-files`, and no hand-written
   build file may be gitignored.
@@ -320,6 +355,18 @@ Notes:
 - Android/AGDE is deliberately NOT in CI (AGDE VSIX absent from hosted
   runners); descriptor-level AGDE generation is exercised by every regen.
   Revisit with a self-hosted runner.
+  **That gap has teeth.** Because nothing compiles the Android tree on a push,
+  it bit-rots silently: an Android bring-up on 2026-08-03 found the agde build
+  broken by MSVC-only `fopen_s`/`tmpfile_s` calls added the SAME day, plus a
+  use-after-free in the Android thread bootstrap and several
+  Windows-only-contract unit tests. All of it would have been a one-line CI
+  failure. Until a runner exists, **build at least one agde config by hand
+  before trusting the Android target**:
+  ```
+  msbuild Games\TilePuzzle\tilepuzzle_agde.sln /t:TilePuzzle ^
+    /p:Configuration=Vulkan_x86_64_vs2022_Debug_Agde_False /p:Platform=Android-x86_64
+  ```
+  x86_64 is the cheap one to check because it also RUNS, on the local emulator.
 
 ## 9. Build hygiene and troubleshooting
 

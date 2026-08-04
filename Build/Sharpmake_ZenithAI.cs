@@ -45,7 +45,7 @@ public class ZenithAILibProject : ZenithBaseProject
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.False,
 			RenderBackend = RenderBackend.Vulkan,
-			AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
+			AndroidBuildTargets = ZenithAndroidAbi.All
 		});
 
 		// The whole AI directory.

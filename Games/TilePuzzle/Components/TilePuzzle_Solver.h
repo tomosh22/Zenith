@@ -38,6 +38,7 @@
 #include <vector>
 #include <unordered_map>
 #include <chrono>
+#include <bit>
 #include <cstdint>
 #include <cstring>
 
@@ -323,7 +324,7 @@ public:
 					// Check unlock threshold (hardware popcount)
 					if (auUnlockThresholds[uDragShape] > 0)
 					{
-						uint32_t uEliminatedCount = TILEPUZZLE_POPCNT(uOuterMask);
+						uint32_t uEliminatedCount = std::popcount(uOuterMask);
 						if (uEliminatedCount < auUnlockThresholds[uDragShape])
 							continue;
 					}
@@ -794,7 +795,7 @@ public:
 
 					if (auUnlockThresholds[uDragShape] > 0)
 					{
-						uint32_t uEliminatedCount = TILEPUZZLE_POPCNT(uOuterMask);
+						uint32_t uEliminatedCount = std::popcount(uOuterMask);
 						if (uEliminatedCount < auUnlockThresholds[uDragShape])
 							continue;
 					}

@@ -168,6 +168,33 @@ vk::Fence& Zenith_Vulkan::GetCurrentInFlightFence()
 	return m_pxCurrentFrame->m_xFence;
 }
 
+void Zenith_Vulkan::ResetCurrentInFlightFence()
+{
+	// Paired 1:1 with the submit that passes GetCurrentInFlightFence(). Deliberately
+	// NOT done in Zenith_Vulkan_PerFrame::BeginFrame — see the lifecycle note there:
+	// a frame can begin and then be abandoned by an out-of-date acquire without ever
+	// submitting, and a fence reset on such a frame never gets re-signalled.
+#ifdef ZENITH_DEBUG
+	// BeginFrame waited on this fence and (by the rule above) did not reset it, so
+	// it must still be signalled here. Unsignalled means the pairing broke — either
+	// a second reset without an intervening wait, or a submit that never happened.
+	{
+		const vk::Result eStatus = m_xDevice.getFenceStatus(m_pxCurrentFrame->m_xFence);
+		Zenith_Assert(eStatus == vk::Result::eSuccess,
+			"Zenith_Vulkan::ResetCurrentInFlightFence: fence is not signalled (%d). "
+			"Every reset must be preceded by the BeginFrame wait and followed by exactly "
+			"one submit — see the lifecycle note in Zenith_Vulkan_PerFrame::BeginFrame.",
+			static_cast<int>(eStatus));
+	}
+#endif
+	// ArrayProxy overload, NOT resetFences(1, &fence): the pointer form always
+	// returns a [[nodiscard]] vk::Result, which VkCheck discards when exceptions
+	// are enabled (warnings are errors here). The ArrayProxy form returns void in
+	// that mode and vk::Result when VULKAN_HPP_NO_EXCEPTIONS is set, so VkCheck is
+	// correct either way.
+	VkCheck(m_xDevice.resetFences(m_pxCurrentFrame->m_xFence));
+}
+
 const bool Zenith_Vulkan::ShouldSubmitDrawCalls() { return dbg_bSubmitDrawCalls; }
 const bool Zenith_Vulkan::ShouldUseDescSetCache() { return dbg_bUseDescSetCache; }
 const bool Zenith_Vulkan::ShouldOnlyUpdateDirtyDescriptors() { return dbg_bOnlyUpdateDirtyDescriptors; }
@@ -597,9 +624,6 @@ void Zenith_Vulkan::CreateInstance()
 		.setEngineVersion(VK_MAKE_VERSION(1, 0, 0))
 		.setApiVersion(VK_API_VERSION_1_3);
 
-	// Get platform-specific Vulkan extensions
-	std::vector<const char*> xExtensions = Zenith_Vulkan_Platform::GetRequiredInstanceExtensions();
-
 #ifdef ZENITH_DEBUG
 	// Check which validation layers are actually available on this device
 	std::vector<const char*> xEnabledLayers;
@@ -626,6 +650,103 @@ void Zenith_Vulkan::CreateInstance()
 		}
 	}
 #endif
+
+	// Resolve the platform's mandatory WSI extensions plus optional diagnostics
+	// against what the loader and enabled layers actually provide.
+	//
+	// This filter is load-bearing on Android. VK_EXT_debug_utils is requested
+	// whenever ZENITH_FLUX_PROFILING is defined -- which Zenith.h does
+	// UNCONDITIONALLY, release as well as debug -- but on Android that
+	// extension comes from the VALIDATION LAYER, not the platform loader.
+	// Requesting absent debug utilities is not a soft failure: the whole
+	// vkCreateInstance returns VK_ERROR_EXTENSION_NOT_PRESENT. That extension is
+	// optional and may be dropped, but VK_KHR_surface and the platform surface
+	// extension are required to render and must fail initialisation clearly.
+	//
+	// The availability set must include the extensions the layers we are about
+	// to ENABLE provide, which is why this runs after the layer selection above:
+	// a plain enumerateInstanceExtensionProperties() lists only the loader's own
+	// and implicit layers', so filtering against it alone would discard
+	// debug_utils even when the validation layer is present and would have
+	// supplied it.
+	std::vector<vk::ExtensionProperties> xAvailableExtensions = VkUnwrap(vk::enumerateInstanceExtensionProperties());
+#ifdef ZENITH_DEBUG
+	for (const char* szLayerName : xEnabledLayers)
+	{
+		const std::vector<vk::ExtensionProperties> xLayerExtensions =
+			VkUnwrap(vk::enumerateInstanceExtensionProperties(std::string(szLayerName)));
+		xAvailableExtensions.insert(xAvailableExtensions.end(), xLayerExtensions.begin(), xLayerExtensions.end());
+	}
+#endif
+
+	std::vector<const char*> xRequestedExtensions = Zenith_Vulkan_Platform::GetRequiredInstanceExtensions();
+#ifdef ZENITH_DEBUG
+	// VkValidationFeaturesEXT is owned by VK_EXT_validation_features. Request it
+	// only when a validation layer is active; if the layer does not expose it,
+	// ordinary validation remains usable without the feature pNext chain.
+	if (!xEnabledLayers.empty())
+	{
+		xRequestedExtensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
+	}
+	bool bValidationFeaturesEnabled = false;
+#endif
+	m_bDebugUtilsEnabled = false;
+	bool bMissingRequiredExtension = false;
+	std::vector<const char*> xExtensions;
+	for (const char* szExtensionName : xRequestedExtensions)
+	{
+		bool bFound = false;
+		for (const vk::ExtensionProperties& xExtension : xAvailableExtensions)
+		{
+			if (strcmp(szExtensionName, xExtension.extensionName) == 0)
+			{
+				bFound = true;
+				break;
+			}
+		}
+		if (bFound)
+		{
+			xExtensions.push_back(szExtensionName);
+			if (strcmp(szExtensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0)
+			{
+				// Gates the debug messenger AND the per-pass debug markers --
+				// both dispatch through vkGetInstanceProcAddr, which returns
+				// null for a disabled extension, so calling them unguarded is a
+				// jump to address 0.
+				m_bDebugUtilsEnabled = true;
+			}
+#ifdef ZENITH_DEBUG
+			else if (strcmp(szExtensionName, VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME) == 0)
+			{
+				bValidationFeaturesEnabled = true;
+			}
+#endif
+		}
+		else
+		{
+			const bool bOptionalDebugUtils = strcmp(szExtensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0;
+#ifdef ZENITH_DEBUG
+			const bool bOptionalValidationFeatures =
+				strcmp(szExtensionName, VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME) == 0;
+#else
+			const bool bOptionalValidationFeatures = false;
+#endif
+			if (bOptionalDebugUtils || bOptionalValidationFeatures)
+			{
+				Zenith_Warning(LOG_CATEGORY_VULKAN, "Optional instance extension not available, skipping: %s", szExtensionName);
+			}
+			else
+			{
+				bMissingRequiredExtension = true;
+				Zenith_Error(LOG_CATEGORY_VULKAN, "Required instance extension not available: %s", szExtensionName);
+			}
+		}
+	}
+	Zenith_Assert(!bMissingRequiredExtension, "Required Vulkan WSI extension is unavailable");
+	if (bMissingRequiredExtension)
+	{
+		return;
+	}
 
 	// Synchronization validation — catches missed/wrong layout transitions and
 	// host-device sync errors that the standard validator silently lets through.
@@ -662,8 +783,12 @@ void Zenith_Vulkan::CreateInstance()
 		.setPpEnabledExtensionNames(xExtensions.data())
 #ifdef ZENITH_DEBUG
 		.setEnabledLayerCount(static_cast<uint32_t>(xEnabledLayers.size()))
-		.setPpEnabledLayerNames(xEnabledLayers.data())
-		.setPNext(&xValidationFeatures);
+		.setPpEnabledLayerNames(xEnabledLayers.data());
+	// The pNext structure is legal only when its owning extension was enabled.
+	if (bValidationFeaturesEnabled)
+	{
+		xInstanceInfo.setPNext(&xValidationFeatures);
+	}
 #else
 		.setEnabledLayerCount(0);
 #endif
@@ -693,6 +818,16 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL Zenith_Vulkan::DebugCallback(vk::DebugUtilsMess
 #ifdef ZENITH_DEBUG
 void Zenith_Vulkan::CreateDebugMessenger()
 {
+	// CreateInstance drops instance extensions that will not be there, so
+	// VK_EXT_debug_utils may not be enabled even in a debug build -- on Android
+	// it exists only when a validation layer .so shipped in the APK. Creating a
+	// messenger for a disabled extension is invalid usage, so check first.
+	if (!m_bDebugUtilsEnabled)
+	{
+		Zenith_Log(LOG_CATEGORY_VULKAN, "VK_EXT_debug_utils unavailable; no debug messenger (validation output will be silent)");
+		return;
+	}
+
 	vk::DebugUtilsMessengerCreateInfoEXT xCreateInfo = vk::DebugUtilsMessengerCreateInfoEXT()
 		.setMessageSeverity(vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
 			vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
@@ -1599,6 +1734,14 @@ void Zenith_Vulkan_PerFrame::ReadbackGPUTimers()
 	// first uMAX_GPU_TIMERS claims actually wrote queries), so a frame with more
 	// passes than the budget must never read past the pool / the stack buffer.
 	const u_int uTimers = (m_uGPUTimerReadbackCount < uMAX_GPU_TIMERS) ? m_uGPUTimerReadbackCount : uMAX_GPU_TIMERS;
+
+	// Consume the count: these queries are read exactly once. Zenith_Vulkan::EndFrame
+	// rewrites it for the next submission, but an ABANDONED frame (out-of-date acquire
+	// -> Swapchain::BeginFrame returns false) never reaches EndFrame and does not
+	// advance the ring index, so without this the NEXT frame re-enters the same slot
+	// and re-reads the identical, never-reset query pool -- republishing the previous
+	// frame's pass timings as if they were new.
+	m_uGPUTimerReadbackCount = 0;
 	const u_int uQueries = uTimers * 2;
 	u_int64 auResults[uMAX_GPU_TIMERS * 2];
 
@@ -1698,11 +1841,21 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 	Zenith_Profiling& xProfiling = g_xEngine.Profiling();
 
 	xProfiling.BeginProfileZone(ZENITH_PROFILE_ZONE("Vulkan Wait For GPU"));
-	vk::Result eResult = xDevice.waitForFences(1, &m_xFence, VK_TRUE, UINT64_MAX);
+	const vk::Result eResult = xDevice.waitForFences(1, &m_xFence, VK_TRUE, UINT64_MAX);
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to wait for fence");
 	xProfiling.EndProfileZone(ZENITH_PROFILE_ZONE("Vulkan Wait For GPU"));
-	eResult = xDevice.resetFences(1, &m_xFence);
-	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to reset fence");
+
+	// NO resetFences here. The reset belongs with the submit that re-signals the
+	// fence (Zenith_Vulkan::ResetCurrentInFlightFence, called from
+	// Zenith_Vulkan_Swapchain::EndFrame), because a frame can BEGIN and then be
+	// ABANDONED without ever submitting: an out-of-date acquire makes
+	// Zenith_Vulkan_Swapchain::BeginFrame return false, and Zenith_MainLoop then
+	// returns before EndFrameSubmitAndPresent — the only path that signals this
+	// fence. Resetting here would leave this slot's fence permanently unsignalled
+	// and the next BeginFrame on the same ring slot would block forever in the
+	// waitForFences above. Leaving it signalled makes the abandoned-frame wait a
+	// no-op, which is exactly right: nothing was submitted, so there is nothing
+	// to wait for.
 
 #ifdef ZENITH_FLUX_PROFILING
 	// GPU profiler: the fence is now signalled, so this slot's previous-frame

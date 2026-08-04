@@ -15,12 +15,7 @@
 
 #include "TilePuzzle_Types.h"
 
-#ifdef _MSC_VER
-#include <intrin.h>
-#define TILEPUZZLE_POPCNT(x) __popcnt(x)
-#else
-#define TILEPUZZLE_POPCNT(x) __builtin_popcount(x)
-#endif
+#include <bit>
 
 namespace TilePuzzle_Rules
 {
@@ -78,7 +73,7 @@ namespace TilePuzzle_Rules
 		// Conditional shape check: requires enough cats eliminated to unlock
 		if (xMoving.uUnlockThreshold > 0)
 		{
-			uint32_t uEliminatedCount = TILEPUZZLE_POPCNT(uEliminatedCatsMask);
+			uint32_t uEliminatedCount = std::popcount(uEliminatedCatsMask);
 			if (uEliminatedCount < xMoving.uUnlockThreshold)
 				return false;
 		}

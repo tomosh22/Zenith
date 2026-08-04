@@ -61,7 +61,7 @@ public class ZenithBaseLibProject : ZenithBaseProject
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.False,
 			RenderBackend = RenderBackend.Vulkan,
-			AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
+			AndroidBuildTargets = ZenithAndroidAbi.All
 		});
 
 		// Use the engine root as SourceRootPath so the project's relative
@@ -192,7 +192,7 @@ public class ZenithProject : ZenithBaseProject
 			Optimization = Optimization.Debug | Optimization.Release,
 			ToolsEnabled = ToolsEnabled.False,
 			RenderBackend = RenderBackend.Vulkan,
-			AndroidBuildTargets = Android.AndroidBuildTargets.arm64_v8a
+			AndroidBuildTargets = ZenithAndroidAbi.All
 		});
 
 		// Common excludes for all platforms

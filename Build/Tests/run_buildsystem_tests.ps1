@@ -305,10 +305,11 @@ try {
 
     # ========================================================================
     Write-Host "`n[7] Real Games/*/*.zproj sanity" -ForegroundColor Cyan
-    Invoke-Test "all 5 real descriptors validate clean" {
+    # CityBuilder, Combat, DevilsPlayground, RenderTest, TilePuzzle, Zenithmon.
+    Invoke-Test "all 6 real descriptors validate clean" {
         $scan = Get-ZenithGameDescriptors -GamesRoot (Join-Path $repoRoot 'Games')
         if ($scan.Errors.Count -gt 0) { throw ("real descriptor errors: " + ($scan.Errors -join '; ')) }
-        Assert-Equal 5 $scan.Descriptors.Count "expected 5 real descriptors"
+        Assert-Equal 6 $scan.Descriptors.Count "expected 6 real descriptors"
     }
     Invoke-Test "android flags match reality (CityBuilder is false)" {
         $scan = Get-ZenithGameDescriptors -GamesRoot (Join-Path $repoRoot 'Games')
@@ -317,8 +318,11 @@ try {
         Assert-False $byName['CityBuilder'].Android "CityBuilder android:false"
         Assert-True $byName['Combat'].Android "Combat android:true"
         Assert-True $byName['DevilsPlayground'].Android "DP android:true"
+        Assert-True $byName['Zenithmon'].Android "Zenithmon android:true"
+        # Combat, DevilsPlayground, RenderTest, TilePuzzle, Zenithmon.
+        # CityBuilder is the only android:false game.
         $trueCount = @($scan.Descriptors | Where-Object { $_.Android }).Count
-        Assert-Equal 4 $trueCount "expected exactly 4 android:true games"
+        Assert-Equal 5 $trueCount "expected exactly 5 android:true games"
     }
     Invoke-Test "TilePuzzle carries its two offline-tool extra projects" {
         $scan = Get-ZenithGameDescriptors -GamesRoot (Join-Path $repoRoot 'Games')
@@ -332,8 +336,106 @@ try {
 
     Invoke-Test "config data loads with the expected keys" {
         $cfg = Get-ZenithBuildConfigData
-        foreach ($k in @('DefaultConfigWin64', 'HubConfigWin64', 'AndroidConfigTemplate', 'SlangVersion', 'VulkanSdkVersion', 'ArtifactsRoot')) {
+        foreach ($k in @('DefaultConfigWin64', 'HubConfigWin64', 'AndroidOutDirTemplate',
+                'AndroidMsBuildConfigTemplate', 'AndroidAbis', 'SlangVersion', 'VulkanSdkVersion', 'ArtifactsRoot')) {
             Assert-True ($cfg.ContainsKey($k)) "config key '$k' present"
+        }
+    }
+    Invoke-Test "the Android ABI axis carries both spellings of each ABI" {
+        $cfg = Get-ZenithBuildConfigData
+        # Key = config-name token, Value = on-disk ABI dir. They differ for
+        # arm64 and coincide for x86_64 -- the trap ZenithAndroidAbi documents.
+        Assert-Equal 'arm64-v8a' $cfg.AndroidAbis['arm64_v8a'] "arm64 dir name"
+        Assert-Equal 'x86_64'    $cfg.AndroidAbis['x86_64']    "x86_64 dir name"
+    }
+    Invoke-Test "agde MSBuild config name carries the Vulkan_ prefix and the ABI" {
+        $cfg = Get-ZenithBuildConfigData
+        Assert-Equal 'Vulkan_x86_64_vs2022_Debug_Agde_False' ($cfg.AndroidMsBuildConfigTemplate -f 'x86_64', 'Debug') "emulator config name"
+        Assert-Equal 'x86_64_vs2022_debug_agde_false' ($cfg.AndroidOutDirTemplate -f 'x86_64', 'debug') "emulator OutDir leaf"
+    }
+    Invoke-Test "Get-ZenithAndroidAbis hands back both spellings, per ABI" {
+        $abis = Get-ZenithAndroidAbis
+        Assert-Equal 2 $abis.Count "ABI count"
+        $arm = $abis | Where-Object { $_.Token -eq 'arm64_v8a' }
+        Assert-Equal 'arm64-v8a' $arm.DirName "arm64 DirName from accessor"
+        # Accessor output must never be indexed positionally by spelling alone --
+        # this pins that Token and DirName really are distinct fields.
+        Assert-True ($arm.Token -ne $arm.DirName) "arm64 spellings differ"
+    }
+    Invoke-Test "Android path accessors match the psd1 templates" {
+        Assert-Equal 'x86_64_vs2022_debug_agde_false' (Get-ZenithAndroidOutDir -AbiToken 'x86_64' -BuildType 'debug') "OutDir accessor"
+        Assert-Equal 'Vulkan_arm64_v8a_vs2022_Release_Agde_False' (Get-ZenithAndroidMsBuildConfig -AbiToken 'arm64_v8a' -BuildType 'release') "MSBuild config accessor"
+    }
+    Invoke-Test "the ABI axis agrees across Sharpmake, Gradle and zenith_config" {
+        # THE drift test. The axis is declared in three places by necessity
+        # (C#/Gradle/PowerShell cannot share a literal); nothing but this test
+        # stops them diverging, and a divergence is silent -- either an APK
+        # missing an ABI, or a packaged ABI with no native lib in it.
+        #
+        # It compares the full token->dir PAIR from every source, and it READS
+        # each source's own spelling rather than re-deriving one. An earlier cut
+        # of this test transformed the Sharpmake enum name with a hardcoded
+        # `-replace '_v8a$','-v8a'`, which (a) never looked at ZenithAndroidAbi's
+        # ConfigToken/DirName switch tables at all, so a wrong spelling THERE --
+        # exactly the trap the axis exists to prevent -- passed green, and
+        # (b) baked in the very rule under test, so a correct widening to an ABI
+        # that does not follow the _v8a pattern would have gone red.
+        $cfgPairs = @((Get-ZenithAndroidAbis) | ForEach-Object { "$($_.Token)=>$($_.DirName)" } | Sort-Object)
+
+        $commonCs = Get-Content -Raw (Join-Path $repoRoot 'Build/Sharpmake_Common.cs')
+
+        # Pull each switch table body out by name, then the case -> literal pairs.
+        function Get-AbiSwitchMap([string]$Source, [string]$FnName) {
+            if ($Source -notmatch ("(?s)string\s+" + [regex]::Escape($FnName) + "\s*\([^)]*\)\s*\{(.*?)\n\t\}")) {
+                throw "could not find ZenithAndroidAbi.$FnName in Sharpmake_Common.cs"
+            }
+            $map = @{}
+            foreach ($m in [regex]::Matches($Matches[1], 'case\s+Android\.AndroidBuildTargets\.(\w+)\s*:\s*return\s+"([^"]+)"')) {
+                $map[$m.Groups[1].Value] = $m.Groups[2].Value
+            }
+            if ($map.Count -eq 0) { throw "ZenithAndroidAbi.$FnName has no case arms" }
+            return $map
+        }
+        $tokenMap = Get-AbiSwitchMap $commonCs 'ConfigToken'
+        $dirMap = Get-AbiSwitchMap $commonCs 'DirName'
+
+        # ZenithAndroidAbi.All -- the enum members the agde configs are generated for.
+        if ($commonCs -notmatch 'AndroidBuildTargets\s+All\s*=>([^;]+);') {
+            throw "could not find ZenithAndroidAbi.All in Sharpmake_Common.cs"
+        }
+        $allMembers = @([regex]::Matches($Matches[1], 'AndroidBuildTargets\.(\w+)') | ForEach-Object { $_.Groups[1].Value })
+
+        # Every ABI in All must be spelled by BOTH switch tables, or ConfigToken/
+        # DirName throws at generation time for it.
+        foreach ($member in $allMembers) {
+            Assert-True $tokenMap.ContainsKey($member) "ConfigToken covers '$member'"
+            Assert-True $dirMap.ContainsKey($member)   "DirName covers '$member'"
+        }
+        $sharpmakePairs = @($allMembers | ForEach-Object { "$($tokenMap[$_])=>$($dirMap[$_])" } | Sort-Object)
+
+        # Gradle: ext.zenithAbis = ['arm64-v8a': 'arm64_v8a', ...] -- DIR : TOKEN,
+        # the TRANSPOSE of the psd1 map. Normalise to token=>dir before comparing.
+        $gradle = Get-Content -Raw (Join-Path $repoRoot 'Build/zenith_android_abis.gradle')
+        if ($gradle -notmatch 'ext\.zenithAbis\s*=\s*\[([^\]]+)\]') {
+            throw "could not find ext.zenithAbis in zenith_android_abis.gradle"
+        }
+        $gradlePairs = @([regex]::Matches($Matches[1], "'([^']+)'\s*:\s*'([^']+)'") |
+            ForEach-Object { "$($_.Groups[2].Value)=>$($_.Groups[1].Value)" } | Sort-Object)
+
+        Assert-Equal ($cfgPairs -join ' | ') ($sharpmakePairs -join ' | ') "Sharpmake axis vs zenith_config"
+        Assert-Equal ($cfgPairs -join ' | ') ($gradlePairs -join ' | ')    "Gradle axis vs zenith_config"
+    }
+    Invoke-Test "every android:true game applies the shared ABI axis" {
+        # A game that hardcodes abiFilters silently drops every other ABI at
+        # package time, which reads as INSTALL_FAILED_NO_MATCHING_ABIS on device.
+        $scan = Get-ZenithGameDescriptors
+        foreach ($d in @($scan.Descriptors | Where-Object { $_.Android })) {
+            $gradlePath = Join-Path $repoRoot "Games/$($d.Name)/Android/app/build.gradle"
+            Assert-True (Test-Path $gradlePath) "$($d.Name) has app/build.gradle"
+            $text = Get-Content -Raw $gradlePath
+            Assert-True ($text -match 'zenith_android_abis\.gradle') "$($d.Name) applies the shared ABI axis"
+            Assert-True ($text -match 'abiFilters\.addAll\(\s*zenithAbis\.keySet\(\)\s*\)') "$($d.Name) filters on the shared axis"
+            Assert-False ($text -match "abiFilters\s+'") "$($d.Name) does not hardcode an ABI"
         }
     }
     Invoke-Test "default config is the documented Vulkan Debug True" {
@@ -425,7 +527,12 @@ try {
         [System.IO.File]::WriteAllText((Join-Path $slang 'slang.dll'), 'fresh', $utf8NoBom)
         [System.IO.File]::WriteAllText((Join-Path $slang 'slang-rt.dll'), 'fresh', $utf8NoBom)
         [System.IO.File]::WriteAllText((Join-Path $exeDir 'slang.dll'), 'existing', $utf8NoBom)
-        $copied = @(Repair-ZenithRuntimeDlls -ExeDir $exeDir -SlangBinDir $slang -SiblingGlob (Join-Path $base 'nosuch/*'))
+        # -AssimpBinDir MUST be overridden too, or the function falls back to the
+        # REAL repo Tools/Middleware/assimp/bin and this test's count depends on
+        # whether the dev box happens to have the assimp middleware checked out
+        # (7 copies here, 1 on a bare machine). All three sources get fixtures.
+        $copied = @(Repair-ZenithRuntimeDlls -ExeDir $exeDir -SlangBinDir $slang `
+                -AssimpBinDir (Join-Path $base 'nosuchassimp') -SiblingGlob (Join-Path $base 'nosuch/*'))
         Assert-Equal 1 $copied.Count "exactly one DLL copied"
         Assert-Equal 'slang-rt.dll' $copied[0] "the missing one"
         Assert-Equal 'existing' (Get-Content -LiteralPath (Join-Path $exeDir 'slang.dll') -Raw) "existing DLL untouched"
@@ -436,7 +543,10 @@ try {
         $sib = Join-Path $base 'games/B/leaf'
         New-Item -ItemType Directory -Force -Path $exeDir, $sib | Out-Null
         [System.IO.File]::WriteAllText((Join-Path $sib 'assimp.dll'), 'sib', $utf8NoBom)
-        $copied = @(Repair-ZenithRuntimeDlls -ExeDir $exeDir -SlangBinDir (Join-Path $base 'nosuchslang') -SiblingGlob (Join-Path $base 'games/*/leaf'))
+        # As above: every source needs a fixture, including assimp, or the real
+        # repo middleware leaks into the count on a fully-provisioned machine.
+        $copied = @(Repair-ZenithRuntimeDlls -ExeDir $exeDir -SlangBinDir (Join-Path $base 'nosuchslang') `
+                -AssimpBinDir (Join-Path $base 'nosuchassimp') -SiblingGlob (Join-Path $base 'games/*/leaf'))
         Assert-Equal 1 $copied.Count "one DLL from sibling"
         Assert-True (Test-Path (Join-Path $exeDir 'assimp.dll')) "assimp.dll copied"
     }
@@ -490,7 +600,11 @@ try {
     Invoke-Test "no generated/transient files are git-tracked" {
         Push-Location $repoRoot
         try {
-            $bad = @(git ls-files -- "Build/*.vcxproj*" "Build/*.sln" "Games/*/build/*.vcxproj*" "Games/*/Build/*.vcxproj*" "Build/*.log" "Build/tmpclaude-*" "Build/dp_telemetry" "Build/citybuilder_test_results" "Build/artifacts" 2>$null)
+            # Android: .gradle/ is Gradle's own cache and .agde/ is AGDE-generated
+            # (it bakes a machine-local MSBuild path and the last-built ABI). Both
+            # were tracked for TilePuzzle until they were untracked; a .gitignore
+            # rule alone does NOT untrack, so this pattern is what keeps them out.
+            $bad = @(git ls-files -- "Build/*.vcxproj*" "Build/*.sln" "Games/*/build/*.vcxproj*" "Games/*/Build/*.vcxproj*" "Build/*.log" "Build/tmpclaude-*" "Build/dp_telemetry" "Build/citybuilder_test_results" "Build/artifacts" "Games/*/Android/.gradle/*" "Games/*/Android/.agde/*" "Games/*/Android/app/build/*" "Games/*/Android/local.properties" 2>$null)
         }
         finally { Pop-Location }
         if ($bad.Count -gt 0) { throw ("tracked generated/transient files (policy violation): " + ($bad -join '; ')) }
@@ -502,7 +616,17 @@ try {
             $mustNotIgnore = @(
                 'Build/Sharpmake_Common.cs', 'Build/regen.ps1', 'Build/zenith_buildsystem.psm1',
                 'Build/zenith_config.psd1', 'Build/Templates/NewGame/template.json',
-                'Build/Tests/run_buildsystem_tests.ps1'
+                'Build/Tests/run_buildsystem_tests.ps1',
+                # Hand-written and load-bearing: every game's app/build.gradle
+                # does `apply from:` this. The Games/*/Android/ ignore rules sit
+                # close enough to it that a widened rule could swallow it.
+                'Build/zenith_android_abis.gradle',
+                # Per-game Gradle scaffolding is hand-written, and lives right
+                # next to the .gradle/ + .agde/ dirs that ARE ignored.
+                'Games/TilePuzzle/Android/app/build.gradle',
+                'Games/TilePuzzle/Android/settings.gradle',
+                'Games/Zenithmon/Android/app/build.gradle',
+                'Games/Zenithmon/Android/app/src/main/AndroidManifest.xml'
             )
             $ignored = @(git check-ignore @mustNotIgnore 2>$null)
         }

@@ -4,6 +4,7 @@
 // not-found, no-tests-registered). Zenith_Window.h is platform-routed by
 // Zenith.h so the include is portable between win64 and Android.
 #include "Core/Zenith_Core.h"
+#include "Core/Zenith_PlatformStdio.h"
 
 #ifdef ZENITH_INPUT_SIMULATOR
 
@@ -755,14 +756,8 @@ static void WriteResultsJson(const RunnerState& xRunner,
 
 	if (szPath == nullptr) return;
 
-	std::FILE* pxFile = nullptr;
-#ifdef _MSC_VER
-	const errno_t iErr = ::fopen_s(&pxFile, szPath, "wb");
-	if (iErr != 0 || pxFile == nullptr)
-#else
-	pxFile = std::fopen(szPath, "wb");
+	std::FILE* pxFile = Zenith_PlatformStdio::OpenFile(szPath, "wb");
 	if (pxFile == nullptr)
-#endif
 	{
 		Zenith_Warning(LOG_CATEGORY_CORE,
 			"AutomatedTest: failed to open results path %s", szPath);
@@ -808,13 +803,8 @@ static void WriteInfrastructureFailureJson(const char* szReason, const char* szB
 	char axPath[512];
 	std::snprintf(axPath, sizeof(axPath), "%s/_infrastructure.json", s_xRunner.m_szResultsDir);
 
-	std::FILE* pxFile = nullptr;
-#ifdef _MSC_VER
-	if (::fopen_s(&pxFile, axPath, "wb") != 0 || pxFile == nullptr) return;
-#else
-	pxFile = std::fopen(axPath, "wb");
+	std::FILE* pxFile = Zenith_PlatformStdio::OpenFile(axPath, "wb");
 	if (pxFile == nullptr) return;
-#endif
 	std::fprintf(pxFile,
 		"{\n"
 		"  \"infrastructureFailure\": true,\n"

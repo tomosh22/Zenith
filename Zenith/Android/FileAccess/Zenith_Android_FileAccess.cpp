@@ -52,7 +52,7 @@ namespace Zenith_FileAccess
 
 	char* ReadFile(const char* szFilename)
 	{
-		uint64_t ulSize;
+		uint64_t ulSize = 0;
 		return ReadFile(szFilename, ulSize);
 	}
 
@@ -79,8 +79,22 @@ namespace Zenith_FileAccess
 		std::ifstream xFile(acResolvedPath, std::ios::ate | std::ios::binary);
 		if (!xFile.is_open())
 		{
+			// Zenith_Check, NOT Zenith_Assert -- matching the Windows sibling
+			// (Zenith_Windows_FileAccess.cpp). "File is missing" is a
+			// RECOVERABLE condition this function already handles by returning
+			// null, and callers rely on that: the asset registry's contract is
+			// that Get<T>() of a non-existent path resolves to null, which
+			// Zenith_AssetRegistry.Tests.inl (AssetLoader/GetMissingFileReturnsNull)
+			// tests directly by loading "__loader_missing__.*". Breaking here
+			// made that passing test kill the process on Android.
 			LOGE("Failed to open file: %s (resolved: %s)", szFilename, acResolvedPath);
-			Zenith_Assert(false, "Failed to open file %s", szFilename);
+			Zenith_Check(false, "Failed to open file %s", szFilename);
+			// ulSize MUST be zeroed on the failure path, exactly as the Windows
+			// sibling does. Callers pair the two: Zenith_DataStream::ReadFromFile
+			// asserts `m_pData != nullptr || m_ulDataSize == 0`, so leaving the
+			// out-param untouched turned a clean "file missing -> null" into a
+			// hard assert one layer up.
+			ulSize = 0;
 			return nullptr;
 		}
 
@@ -159,8 +173,11 @@ namespace Zenith_FileAccess
 		std::ofstream xFile(acResolvedPath, std::ios::trunc | std::ios::binary);
 		if (!xFile.is_open())
 		{
+			// Check, not assert -- same reasoning as ReadFile above, and the
+			// same tier the fail() diagnostic below already uses. WriteFile is
+			// void and best-effort by contract.
 			LOGE("Failed to open file for writing: %s", szFilename);
-			Zenith_Assert(false, "Failed to open file %s for writing", szFilename);
+			Zenith_Check(false, "Failed to open file %s for writing", szFilename);
 			return;
 		}
 

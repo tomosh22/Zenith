@@ -23,5 +23,18 @@ ZENITH_TEST(ZM_Boot, GameAssetsDirectoryIsNonEmpty)
 {
 	const char* szDir = Project_GetGameAssetsDirectory();
 	ZENITH_ASSERT_NOT_NULL(szDir);
+	if (szDir == nullptr)
+	{
+		return;
+	}
+#ifdef ZENITH_ANDROID
+	// Inverted on Android BY DESIGN: GAME_ASSETS_DIR is compiled in as ""
+	// (Sharpmake_Games.cs) because assets are bundled into the APK and
+	// AAssetManager addresses them by a path RELATIVE to the assets root, so
+	// any prefix would break every load. The test name reflects the desktop
+	// contract asserted below.
+	ZENITH_ASSERT_TRUE(szDir[0] == '\0', "GAME_ASSETS_DIR must be empty on Android (APK-relative asset paths)");
+#else
 	ZENITH_ASSERT_TRUE(szDir[0] != '\0', "GAME_ASSETS_DIR must not be empty");
+#endif
 }

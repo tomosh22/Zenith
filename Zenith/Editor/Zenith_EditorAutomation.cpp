@@ -1,4 +1,6 @@
 #include "Zenith.h"
+
+#include "Core/Zenith_PlatformStdio.h"
 #include "Core/Zenith_Engine.h"
 #ifdef ZENITH_TOOLS
 
@@ -90,8 +92,7 @@ void Zenith_EditorAutomation::FinishSession()
 	if (szBootDump != nullptr)
 	{
 		const std::string strTailPath = std::string(szBootDump) + ".tail.txt";
-		FILE* pxTail = nullptr;
-		fopen_s(&pxTail, strTailPath.c_str(), "w");
+		FILE* pxTail = Zenith_PlatformStdio::OpenFile(strTailPath.c_str(), "w");
 		if (pxTail != nullptr)
 		{
 			WriteTailReport(pxTail);

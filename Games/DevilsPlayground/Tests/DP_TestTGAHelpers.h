@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "Core/Zenith_PlatformStdio.h"
+
 struct DP_TestTGAImage
 {
 	DP_TestTGAImage() = default;
@@ -36,8 +38,8 @@ struct DP_TestTGAImage
 // invalid) on missing file or any format the engine writer never produces.
 inline bool DP_TestLoadTGA(const char* szPath, DP_TestTGAImage& xOut)
 {
-	std::FILE* pFile = nullptr;
-	if (fopen_s(&pFile, szPath, "rb") != 0 || pFile == nullptr) return false;
+	std::FILE* pFile = Zenith_PlatformStdio::OpenFile(szPath, "rb");
+	if (pFile == nullptr) return false;
 
 	uint8_t aHeader[18] = {};
 	if (std::fread(aHeader, 1, sizeof(aHeader), pFile) != sizeof(aHeader))

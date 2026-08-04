@@ -405,13 +405,34 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const TextureForm
 	const bool bHasDepth = eDepthStencilFormat != TEXTURE_FORMAT_NONE;
 
 	vk::ImageLayout eLayout = vk::ImageLayout::eColorAttachmentOptimal;
+	// The layout the colour attachment is in when the pass BEGINS. Equal to
+	// eLayout for an ordinary render target; a presentable swapchain image is
+	// the one exception -- see the PRESENT case.
+	vk::ImageLayout eInitialLayout = vk::ImageLayout::eColorAttachmentOptimal;
 	switch (eUsage)
 	{
 	case RENDER_TARGET_USAGE_RENDERTARGET:
 		eLayout = vk::ImageLayout::eColorAttachmentOptimal;
+		eInitialLayout = eLayout;
 		break;
 	case RENDER_TARGET_USAGE_PRESENT:
 		eLayout = vk::ImageLayout::ePresentSrcKHR;
+		// UNDEFINED on entry, PresentSrc on exit.
+		//
+		// The present pass always CLEARs its target (Zenith_Vulkan_Swapchain::
+		// BindAsTarget), so the swapchain image's previous contents are never
+		// read and declaring UNDEFINED simply lets the driver discard them.
+		//
+		// This is what makes it unnecessary -- and it WAS necessary while the
+		// initial layout was PresentSrc -- to pre-transition every swapchain
+		// image into PresentSrc right after vkCreateSwapchainKHR. That
+		// pre-transition was a spec violation: those images have not been
+		// acquired, and a presentable image may only be touched between
+		// vkAcquireNextImageKHR and vkQueuePresentKHR. Vulkan SDK 1.3.x
+		// validation passed it silently; the 1.4.x layers Android debug builds
+		// ship report it as an error ("performs a layout transition on
+		// presentable VkImage, but the image has not been acquired").
+		eInitialLayout = vk::ImageLayout::eUndefined;
 		break;
 	default:
 		Zenith_Assert(false, "Unsupported usage");
@@ -431,7 +452,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const TextureForm
 			.setStoreOp(xVulkan.ConvertToVkStoreAction(eColourStore))
 			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-			.setInitialLayout(eLayout)
+			.setInitialLayout(eInitialLayout)
 			.setFinalLayout(eLayout);
 
 		xAttachmentRefs.at(i)

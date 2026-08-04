@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Core/Zenith_Engine.h"
+#include "Core/Zenith_PlatformEnvironment.h"
 
 #ifdef ZENITH_INPUT_SIMULATOR
 
@@ -749,16 +750,11 @@ namespace
 		// per process; absent the env var the legacy single-process layout
 		// is preserved. Result example with prefix:
 		//   <tempdir>/seed42_Casual_dp_personality_Casual_playthrough.ztlm
-#if defined(_MSC_VER)
-#  pragma warning(push)
-#  pragma warning(disable: 4996)  // std::getenv "may be unsafe"
-#endif
-		const char* szPrefix = std::getenv("DP_TEST_TMP_PREFIX");
-#if defined(_MSC_VER)
-#  pragma warning(pop)
-#endif
-		std::string strPrefix = (szPrefix != nullptr && *szPrefix != '\0')
-			? std::string(szPrefix) + "_" : std::string();
+		char acPrefix[512];
+		const bool bHasPrefix = Zenith_PlatformEnvironment::GetVariable(
+			"DP_TEST_TMP_PREFIX", acPrefix, sizeof(acPrefix));
+		std::string strPrefix = (bHasPrefix && acPrefix[0] != '\0')
+			? std::string(acPrefix) + "_" : std::string();
 		std::string strBase = strPrefix + "dp_personality_"
 			+ g_xActiveCfg.szName + "_" + sz;
 		xDir /= strBase;

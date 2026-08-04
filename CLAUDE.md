@@ -191,8 +191,9 @@ Each project supports these configurations. Every win64 config is prefixed by th
 render backend: `Vulkan_` (the real renderer), `Null_` (the GPU-less backend that
 **every headless run executes on**), or `D3D12_` (a reserved no-op backend kept as
 the link-neutrality proof). The table shows the `Vulkan_` rows in full; the other
-two prefixes offer the same four combinations. **agde carries no backend prefix** —
-its target set is Vulkan-only, so Sharpmake omits the single-valued fragment.
+two prefixes offer the same four combinations. **agde carries the `Vulkan_` prefix
+too, plus an ABI fragment** — `Vulkan_arm64_v8a_…` (devices) and `Vulkan_x86_64_…`
+(the emulator, the only ABI a machine with no ARM device can run).
 
 > **HEADLESS IS A BUILD CONFIG, NOT A FLAG.** There is no `--headless`. A `Null_*`
 > config defines `ZENITH_NULL_RENDERER`, compiles `Zenith/Null` instead of Vulkan,
@@ -210,8 +211,9 @@ its target set is Vulkan-only, so Sharpmake omits the single-valued fragment.
 | `Vulkan_vs2022_Release_Win64_False` | Windows | No | Release build, runtime only |
 | `Null_vs2022_Debug_Win64_True` | Windows | Yes | **The headless/CI build** — GPU-less, hidden window |
 | `D3D12_vs2022_Debug_Win64_False` | Windows | No | Reserved-backend link/neutrality proof (+ _True / Release variants) |
-| `arm64_v8a_vs2022_Debug_Agde_False` | Android | No | Android debug build |
-| `arm64_v8a_vs2022_Release_Agde_False` | Android | No | Android release build |
+| `Vulkan_arm64_v8a_vs2022_Debug_Agde_False` | Android (`Android-arm64-v8a`) | No | Android debug, physical devices |
+| `Vulkan_arm64_v8a_vs2022_Release_Agde_False` | Android (`Android-arm64-v8a`) | No | Android release, physical devices |
+| `Vulkan_x86_64_vs2022_Debug_Agde_False` | Android (`Android-x86_64`) | No | **The emulator build** (+ Release variant) |
 
 ### Projects
 
@@ -220,7 +222,7 @@ its target set is Vulkan-only, so Sharpmake omits the single-valued fragment.
 | Zenith | Core engine library | Static lib (.lib) |
 | FluxCompiler | Shader compiler utility (Windows only) | Executable (.exe) |
 | ZenithTools | Asset tools (Windows only) | Executable (.exe) |
-| Game projects | Combat, TilePuzzle, RenderTest, CityBuilder (SimCity/C:S-style — see Games/CityBuilder/CLAUDE.md), DevilsPlayground | Executable (.exe) / Shared lib (.so) |
+| Game projects | Combat, TilePuzzle, RenderTest, CityBuilder (SimCity/C:S-style — see Games/CityBuilder/CLAUDE.md), DevilsPlayground, Zenithmon (monster-collecting RPG — see Games/Zenithmon/CLAUDE.md) | Executable (.exe) / Shared lib (.so) |
 
 ### Building and Running
 
@@ -251,7 +253,8 @@ font libs) present in the sln are pre-existing-red in `ToolsEnabled=True`.
 > `Null_vs2022_Debug_Win64_True` (the GPU-less headless/CI backend; see
 > `Zenith/Null/CLAUDE.md`), or `D3D12_vs2022_Debug_Win64_False` (the reserved
 > backend kept as a link-neutrality proof; see `Zenith/D3D12/CLAUDE.md`). The
-> output dir is the lowercased config name. agde carries no prefix (Vulkan-only).
+> output dir is the lowercased config name. AGDE configs carry the Vulkan prefix
+> plus an ABI token (for example `Vulkan_arm64_v8a_vs2022_Debug_Agde_False`).
 
 **Using Visual Studio:** `zenith open <Name>` regenerates then opens
 `Games/<Name>/<name>_win64.sln`; set the game as startup project, pick a config

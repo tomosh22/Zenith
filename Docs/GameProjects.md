@@ -53,7 +53,7 @@ Unknown JSON keys are a **hard error** (a typo net — `andriod` or `extraDefine
 not silently no-op).
 
 **Android note:** `CityBuilder` is `android:false` (it has no `Android/`
-Gradle tree). The other 4 games are `android:true`.
+Gradle tree). The other 5 games are `android:true`.
 
 ## Generation — one command, one Sharpmake run
 
@@ -91,7 +91,7 @@ Sharpmake lowercases solution filenames.
 | Solution | Location | Contents |
 |----------|----------|----------|
 | `<name>_win64.sln` | `Games/<Name>/` | ZenithBase/ECS/Physics/AI + Zenith aggregate + FluxCompiler (Vulkan) + font libs (tools) + **the one game** + its `extraSharpmakeProjects`. No Sentinels, no other games. |
-| `<name>_agde.sln` | `Games/<Name>/` | Same, Android — only for `android:true` games (4 of 5). |
+| `<name>_agde.sln` | `Games/<Name>/` | Same, Android — only for `android:true` games (5 of 6). |
 | `zenith_engine_win64.sln` | `Build/` | Engine libs + Sentinels (`_False`) + FluxCompiler + font libs + **ZenithHub**. **Zero games, ever.** Engine CI gates + pure engine work. |
 
 The game **vcxproj** files stay under `Games/<Name>/Build/` (so output dirs and config

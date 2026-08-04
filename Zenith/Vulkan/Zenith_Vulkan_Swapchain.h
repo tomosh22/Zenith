@@ -78,6 +78,33 @@ public:
 
 	bool                         m_bShouldWaitOnImageAvailableSem = false;
 
+	// The surface transform the ACTIVE swapchain was built against (a
+	// VkSurfaceTransformFlagBitsKHR bit, held as a plain u_int32 so
+	// Flux_SwapchainPolicy can stay backend-neutral). Compared against the
+	// surface's current transform to decide whether a SUBOPTIMAL result is
+	// worth rebuilding for.
+	u_int32                      m_uSurfaceTransform = 0;
+
+	// A rebuild deferred to the top of the next BeginFrame, because the frame
+	// that discovered the condition was still presentable and finishing it beats
+	// dropping it. The two strengths are NOT interchangeable:
+	//   IF_CHANGED -- SUBOPTIMAL. Advisory: the swapchain still works. Rebuild
+	//                 only if the extent or transform actually moved, otherwise a
+	//                 driver that reports SUBOPTIMAL permanently (which is what
+	//                 an IDENTITY preTransform on a rotated surface does) would
+	//                 tear the swapchain down every single frame.
+	//   ALWAYS     -- OUT_OF_DATE from present. MANDATORY per spec: the swapchain
+	//                 is retired and no longer usable. Never gate this on a
+	//                 capability comparison -- the reason it retired need not be
+	//                 visible in VkSurfaceCapabilitiesKHR at all.
+	enum RecreateRequest : u_int8
+	{
+		RECREATE_REQUEST_NONE = 0,
+		RECREATE_REQUEST_IF_CHANGED,
+		RECREATE_REQUEST_ALWAYS,
+	};
+	RecreateRequest              m_eRecreateRequest = RECREATE_REQUEST_NONE;
+
 	// Command buffer for the final-frame present blit. The blit pipeline + shader
 	// + recording are owned by the backend-neutral Flux_Present feature; only this
 	// command buffer (whose record-pass begin / submit / present are inherently
@@ -96,4 +123,13 @@ public:
 
 private:
 	void BindAsTarget();
+
+	// Destroys the per-image views AND releases their registry handles. Both
+	// halves are required: the recreation path used to destroy only the views,
+	// leaking two Flux_ImageViewHandles per swapchain image on every resize.
+	void ReleaseImageViewsAndHandles();
+
+	// GPU-idle teardown + rebuild of the swapchain and everything derived from
+	// it. Shared by the OUT_OF_DATE path and the deferred SUBOPTIMAL rebuild.
+	void RecreateSwapchain();
 };

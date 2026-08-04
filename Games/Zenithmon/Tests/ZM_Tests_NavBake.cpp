@@ -72,8 +72,20 @@ ZENITH_TEST(ZM_Nav, DawnmereNavmeshBakePathIsAbsoluteAndTyped)
 	ZENITH_ASSERT_TRUE(strPath.find("Dawnmere") != std::string::npos,
 		"The bake destination is named for its scene");
 
+#ifdef ZENITH_ANDROID
+	// Android inverts the absoluteness half of this contract, by design.
+	// GAME_ASSETS_DIR is compiled in as "" there (Sharpmake_Games.cs) because
+	// assets are bundled into the APK and AAssetManager addresses them by a
+	// path RELATIVE to the assets root -- any prefix would break every load.
+	// The typed/foldered/named assertions above are the load-bearing ones and
+	// still hold; the test name reflects the desktop case.
+	ZENITH_ASSERT_TRUE(!strPath.empty() && strPath.find(':') == std::string::npos && strPath[0] != '/',
+		"The bake destination is APK-relative on Android");
+#else
 	// An absolute path (GAME_ASSETS_DIR is compiled in), so the bake does not
 	// depend on the working directory the exe was launched from.
-	const bool bAbsolute = strPath.find(':') != std::string::npos || strPath[0] == '/';
+	const bool bAbsolute = !strPath.empty()
+		&& (strPath.find(':') != std::string::npos || strPath[0] == '/');
 	ZENITH_ASSERT_TRUE(bAbsolute, "The bake destination is absolute");
+#endif
 }

@@ -1,6 +1,16 @@
 #pragma once
 
+#include "Core/Zenith_PlatformStdio.h"
+
 #ifdef ZENITH_TESTING
+
+// Temp-file open for report round-trip tests. The platform translation units
+// select the C runtime and Android supplies a writable-directory fallback.
+// nullptr remains a legitimate environment failure that callers may skip.
+inline FILE* Zenith_TestOpenTempFile()
+{
+	return Zenith_PlatformStdio::OpenTemporaryFile();
+}
 
 struct Zenith_TestCase
 {

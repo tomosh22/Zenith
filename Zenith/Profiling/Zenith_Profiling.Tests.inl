@@ -501,10 +501,14 @@ ZENITH_TEST(Profiling, BootCaptureReport)
 	pxProfiling->m_pxBootCapture->SetMilestone("FirstFrameCompleted", 1400);
 	pxProfiling->m_pxBootCapture->Seal(1500);
 
-	FILE* pxFile = nullptr;
-	tmpfile_s(&pxFile);
-	ZENITH_ASSERT_NOT_NULL(pxFile, "tmpfile() must open for the report round-trip");
-	if (pxFile != nullptr)
+	// No temp file (Android — see Zenith_TestOpenTempFile) skips the round-trip;
+	// the skip must free the profiler this test allocated above.
+	FILE* pxFile = Zenith_TestOpenTempFile();
+	if (pxFile == nullptr)
+	{
+		delete pxProfiling;
+		ZENITH_SKIP("no temp file available for the boot-report round-trip");
+	}
 	{
 		pxProfiling->WriteBootReport(pxFile);
 
@@ -532,10 +536,13 @@ ZENITH_TEST(Profiling, BootCaptureReportDisabled)
 {
 	Zenith_Profiling* pxProfiling = new Zenith_Profiling();
 
-	FILE* pxFile = nullptr;
-	tmpfile_s(&pxFile);
-	ZENITH_ASSERT_NOT_NULL(pxFile, "tmpfile() must open for the disabled-report round-trip");
-	if (pxFile != nullptr)
+	// Same skip contract as the test above.
+	FILE* pxFile = Zenith_TestOpenTempFile();
+	if (pxFile == nullptr)
+	{
+		delete pxProfiling;
+		ZENITH_SKIP("no temp file available for the disabled-report round-trip");
+	}
 	{
 		pxProfiling->WriteBootReport(pxFile);
 

@@ -6,6 +6,7 @@
 
 #include <android_native_app_glue.h>
 #include <android/log.h>
+#include <unistd.h>	// chdir -- see android_main
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "Zenith", __VA_ARGS__))
 #define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "Zenith", __VA_ARGS__))
@@ -141,8 +142,56 @@ void android_main(android_app* pxApp)
 	// Initialize file access with AAssetManager for reading APK assets
 	Zenith_FileAccess::InitialisePlatform(pxApp->activity->assetManager);
 
+	// Make internalDataPath the working directory so RELATIVE paths work too.
+	//
+	// An Android process starts with cwd "/", which is read-only. Every engine
+	// path that is relative rather than routed through Zenith_FileAccess --
+	// the boot-profile/memory dumps, and above all the unit-test batch that
+	// Zenith_Init runs at every boot (`create_directories("TestData")` and
+	// friends) -- therefore resolved against an unwritable root. That is not a
+	// soft failure: std::filesystem throws, exceptions are disabled on this
+	// platform, and the process terminates during Zenith_Init.
+	const char* szInternalDataPath = pxApp->activity->internalDataPath;
+	if (szInternalDataPath == nullptr || szInternalDataPath[0] == '\0'
+		|| chdir(szInternalDataPath) != 0)
+	{
+		LOGE("Cannot enter internalDataPath '%s'; aborting before engine initialisation",
+			szInternalDataPath != nullptr ? szInternalDataPath : "(null)");
+		ANativeActivity_finish(pxApp->activity);
+
+		// Do NOT just return. The framework's UI thread parks in
+		// android_app_set_activity_state waiting for THIS thread to consume the
+		// lifecycle command off the cmd pipe (only android_app_pre_exec_cmd
+		// assigns activityState, and it is reachable only from process_cmd
+		// here). Returning without draining leaves the UI thread blocked and the
+		// activity ANRs instead of finishing. Pump until the framework's destroy
+		// arrives, then fall through to the normal exit -- nothing was
+		// initialised, so there is nothing to shut down.
+		while (!pxApp->destroyRequested)
+		{
+			int iEvents = 0;
+			android_poll_source* pxSource = nullptr;
+			const int iPollResult = ALooper_pollOnce(-1, nullptr, &iEvents, (void**)&pxSource);
+			if (iPollResult == ALOOPER_POLL_ERROR)
+			{
+				// A broken looper never delivers the destroy, and re-polling it
+				// would spin at 100% CPU forever -- recreating the very ANR this
+				// drain exists to prevent. Give up and let the process go.
+				LOGE("Looper error while draining after chdir failure; abandoning drain");
+				break;
+			}
+			if (pxSource != nullptr)
+			{
+				pxSource->process(pxApp, pxSource);
+			}
+		}
+
+		LOGI("android_main exiting (internalDataPath unusable)");
+		return;
+	}
+
 	// Set writable directory for file writes (saves, unit test output, etc.)
-	Zenith_FileAccess::SetWritableDirectory(pxApp->activity->internalDataPath);
+	Zenith_FileAccess::SetWritableDirectory(szInternalDataPath);
 
 	// Store app state for window class
 	Zenith_Window::SetAndroidApp(pxApp);

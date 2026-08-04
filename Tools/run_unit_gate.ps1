@@ -41,7 +41,12 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Exe,
-    [int]$Baseline = 1271,
+    # Engine unit count at boot. EXACT equality is asserted below, so this must
+    # be bumped in the SAME commit as any change to the registered-test set --
+    # adding tests reddens the gate exactly as loudly as deleting them.
+    # 1271 -> 1284: +13 for Flux/Flux_SwapchainPolicy.Tests.inl (observed
+    # 2026-08-04 on a Null_ Combat build).
+    [int]$Baseline = 1284,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

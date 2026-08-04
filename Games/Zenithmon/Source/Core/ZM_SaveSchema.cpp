@@ -170,14 +170,20 @@ namespace
 			return true;
 		}
 
-		bool U64(uint64_t& ulOut)
+		// Out-param is the ENGINE's u_int64, not uint64_t, because that is what
+		// every field this fills is declared as (e.g. ZM_BattleTower::m_ulSeed).
+		// The two are the same type on Windows but NOT on Android/LP64, where
+		// uint64_t is `unsigned long` and u_int64 is `unsigned long long` --
+		// distinct types, so a u_int64 lvalue will not bind to a uint64_t&.
+		// Everything else in this file is internal and stays on stdint types.
+		bool U64(u_int64& ulOut)
 		{
 			uint8_t auBytes[8];
 			if (!Bytes(auBytes, sizeof(auBytes))) { return false; }
 			ulOut = 0u;
 			for (u_int u = 0u; u < 8u; ++u)
 			{
-				ulOut |= (uint64_t)auBytes[u] << (u * 8u);
+				ulOut |= (u_int64)auBytes[u] << (u * 8u);
 			}
 			return true;
 		}

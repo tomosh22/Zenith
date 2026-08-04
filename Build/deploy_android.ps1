@@ -15,7 +15,11 @@
 [CmdletBinding()]
 param(
     [ValidateSet('debug', 'release')][string]$BuildType = 'debug',
-    [string]$Game = ''
+    [string]$Game = '',
+    # Deliberately NOT a [ValidateSet]: the ABI axis comes from
+    # zenith_config.psd1 at runtime, and a literal set here would silently
+    # reject a newly-added ABI. Validated against the config below.
+    [string]$Abi = 'all'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,16 +27,39 @@ $buildDir = $PSScriptRoot
 $repoRoot = Split-Path -Parent $buildDir
 Import-Module (Join-Path $buildDir 'zenith_buildsystem.psm1') -Force
 
-$agdeConfig = "arm64_v8a_vs2022_${BuildType}_agde_false"
-$abi = 'arm64-v8a'
+# The ABI axis comes from zenith_config.psd1 (mirroring ZenithAndroidAbi in
+# Sharpmake_Common.cs / Build/zenith_android_abis.gradle) -- adding an ABI must
+# not require editing this script. Only the NDK sysroot triple is local, because
+# it is an NDK layout detail no other consumer of the axis needs.
+$allAbis = Get-ZenithAndroidAbis
+$ndkTriples = @{
+    'arm64-v8a' = 'aarch64-linux-android'
+    'x86_64'    = 'x86_64-linux-android'
+}
 
-# libc++_shared.so from the NDK (AGDE uses the c++_shared STL).
-$cppShared = $null
-foreach ($ndkRoot in @($env:ANDROID_NDK_ROOT, $env:ANDROID_NDK)) {
-    if ($ndkRoot -and -not $cppShared) {
-        $candidate = Join-Path $ndkRoot 'toolchains\llvm\prebuilt\windows-x86_64\sysroot\usr\lib\aarch64-linux-android\libc++_shared.so'
-        if (Test-Path $candidate) { $cppShared = $candidate }
+if ($Abi -eq 'all') {
+    $abis = $allAbis
+} else {
+    $abis = @($allAbis | Where-Object { $_.DirName -eq $Abi })
+    if ($abis.Count -eq 0) {
+        $known = ($allAbis | ForEach-Object { $_.DirName }) -join ', '
+        Write-Host "deploy_android: unknown ABI '$Abi'. Known ABIs: $known, all" -ForegroundColor Red
+        exit 4
     }
+}
+
+# libc++_shared.so from the NDK (AGDE uses the c++_shared STL) -- per ABI.
+# $Triple may be empty for an ABI with no entry in $ndkTriples; treat that as
+# "no STL to stage" rather than probing a malformed path.
+function Get-CppShared([string]$Triple) {
+    if ([string]::IsNullOrEmpty($Triple)) { return $null }
+    foreach ($ndkRoot in @($env:ANDROID_NDK_ROOT, $env:ANDROID_NDK)) {
+        if ($ndkRoot) {
+            $candidate = Join-Path $ndkRoot "toolchains\llvm\prebuilt\windows-x86_64\sysroot\usr\lib\$Triple\libc++_shared.so"
+            if (Test-Path $candidate) { return $candidate }
+        }
+    }
+    return $null
 }
 
 # Discover android:true games from descriptors.
@@ -51,46 +78,78 @@ if ($Game -ne '') {
     }
 }
 
-Write-Host "deploy_android: $($androidGames.Count) android game(s), $BuildType: $((@($androidGames | ForEach-Object { $_.Name })) -join ', ')" -ForegroundColor Cyan
+# ${BuildType} must be brace-delimited: a bare "$BuildType:" parses the colon as a
+# scope/drive qualifier (like $env:PATH) and is a hard PARSE error, which took the
+# whole script down before it ran a single line.
+Write-Host "deploy_android: $($androidGames.Count) android game(s), ${BuildType}: $((@($androidGames | ForEach-Object { $_.Name })) -join ', ')" -ForegroundColor Cyan
 
 $staged = 0
-$failed = 0
+$missing = 0        # an ABI that simply was not built -- informational, NOT a failure
+$emptyGames = 0     # a game for which NOTHING could be staged -- the real failure
 foreach ($d in $androidGames) {
     $name = $d.Name
     $lib = "lib$($name.ToLowerInvariant()).so"
-    $so = Join-Path $repoRoot "Games\$name\Build\output\agde\$agdeConfig\$lib"
-    $jniDir = Join-Path $repoRoot "Games\$name\Android\app\jniLibs\$abi"
-
+    $gameStaged = 0
     Write-Host "`n=== $name ==="
-    if (-not (Test-Path $so)) {
-        Write-Host "  WARNING: $so not found" -ForegroundColor Yellow
-        Write-Host "  Build the game's AGDE solution first:" -ForegroundColor Yellow
-        Write-Host "    msbuild Games\$name\$($name.ToLowerInvariant())_agde.sln /p:Configuration=$agdeConfig /p:Platform=Android-arm64-v8a"
-        $failed++
-        continue
+
+    # NOTE the loop variable is NOT $abi: PowerShell variable names are
+    # case-insensitive, so $abi would alias the [string]-typed $Abi PARAMETER and
+    # silently coerce each ABI object to its ToString() form (leaving .Token empty).
+    foreach ($abiEntry in $abis) {
+        $a = $abiEntry.DirName
+        # The OutDir Sharpmake pins (no backend prefix) -- see Sharpmake_Games.cs.
+        $agdeOutDir = Get-ZenithAndroidOutDir -AbiToken $abiEntry.Token -BuildType $BuildType
+        $so = Join-Path $repoRoot "Games\$name\Build\output\agde\$agdeOutDir\$a\$lib"
+        $jniDir = Join-Path $repoRoot "Games\$name\Android\app\jniLibs\$a"
+
+        if (-not (Test-Path $so)) {
+            # Not an error when only some ABIs were built -- Gradle merges
+            # whichever exist. Say so and move on.
+            Write-Host "  $a : not built ($so)" -ForegroundColor Yellow
+            $msbConfig = Get-ZenithAndroidMsBuildConfig -AbiToken $abiEntry.Token -BuildType $BuildType
+            Write-Host "    msbuild Games\$name\$($name.ToLowerInvariant())_agde.sln /t:$name /p:Configuration=$msbConfig /p:Platform=Android-$a"
+            $missing++
+            continue
+        }
+        New-Item -ItemType Directory -Force -Path $jniDir | Out-Null
+        Copy-Item $so (Join-Path $jniDir $lib) -Force
+        $cppShared = Get-CppShared $ndkTriples[$a]
+        if ($cppShared) {
+            Copy-Item $cppShared (Join-Path $jniDir 'libc++_shared.so') -Force
+        }
+        else {
+            # AGDE links against the c++_shared STL, so an APK without this .so
+            # dies at load with UnsatisfiedLinkError. Staging the game lib alone
+            # is NOT a complete stage -- say so instead of reporting plain green.
+            Write-Host "  $a : WARNING no libc++_shared.so staged (set ANDROID_NDK_ROOT or ANDROID_NDK)" -ForegroundColor Yellow
+        }
+        Write-Host "  $a : staged to $jniDir" -ForegroundColor Green
+        $staged++
+        $gameStaged++
     }
-    New-Item -ItemType Directory -Force -Path $jniDir | Out-Null
-    Copy-Item $so (Join-Path $jniDir $lib) -Force
-    Write-Host "  Copied $lib"
-    if ($cppShared) {
-        Copy-Item $cppShared (Join-Path $jniDir 'libc++_shared.so') -Force
-        Write-Host "  Copied libc++_shared.so"
+
+    if ($gameStaged -eq 0) {
+        Write-Host "  no ABI staged for $name" -ForegroundColor Red
+        $emptyGames++
     }
-    Write-Host "  Staged to $jniDir" -ForegroundColor Green
-    $staged++
 }
 
 Write-Host ""
 Write-Host "============================================================================"
-Write-Host "Done. Staged: $staged  Failed/Missing: $failed"
+Write-Host "Done. Staged: $staged  Not built: $missing  Games with nothing staged: $emptyGames"
 if ($staged -gt 0) {
     Write-Host ""
     Write-Host "Next steps:"
     Write-Host "  cd Games\<GameName>\Android"
     Write-Host "  .\gradlew assembleDebug"
-    Write-Host "  adb install -r app\build\outputs\apk\debug\app-debug.apk"
+    # -t is REQUIRED: AGP marks debug APKs testOnly, and adb refuses them without it.
+    Write-Host "  adb install -r -t app\build\outputs\apk\debug\app-debug.apk"
 }
 Write-Host "============================================================================"
 
-if ($failed -gt 0) { exit 1 }
+# A partially-built axis is the NORMAL case (you usually build one ABI at a time,
+# and -Abi defaults to 'all'), so an unbuilt ABI must not fail the script -- that
+# is what the "not an error" comment above the $missing++ has always claimed.
+# Only a game for which NOTHING could be staged is a genuine failure.
+if ($emptyGames -gt 0) { exit 1 }
 exit 0

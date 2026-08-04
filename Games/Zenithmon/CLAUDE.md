@@ -134,7 +134,23 @@ assets are absent) are documented in `Docs/TestPlan.md`. CI gate:
 
 ## Android
 
-This game is win64-only (`"android": false` in `Zenithmon.zproj`). To add an
-Android build: copy an existing game's `Android/` Gradle tree (e.g.
-`Games/Combat/Android`), retarget its package/name, set `"android": true` in the
-descriptor, and run `zenith regen`.
+This game ships an Android build (`"android": true` in `Zenithmon.zproj`), with
+its Gradle tree under `Games/Zenithmon/Android/` (`com.zenith.zenithmon`). It is
+multi-ABI: `app/build.gradle` applies the shared axis
+`Build/zenith_android_abis.gradle`, so `abiFilters` and the `jniLibs` roots come
+from the one list that mirrors `ZenithAndroidAbi.All` in
+`Build/Sharpmake_Common.cs` — arm64-v8a for devices, x86_64 for the emulator
+(the only ABI a dev box with no ARM hardware can execute).
+
+```
+msbuild Games\Zenithmon\zenithmon_agde.sln /t:Zenithmon ^
+  /p:Configuration=Vulkan_x86_64_vs2022_Debug_Agde_False /p:Platform=Android-x86_64
+adb install -r -t <apk>        REM -t is REQUIRED: AGP marks debug APKs testOnly
+```
+
+The manifest declares `landscape` as a game-design choice. Orientation is no
+longer a technical constraint: the swapchain requests an `IDENTITY` preTransform
+so the compositor handles any surface rotation — including landscape on a
+portrait-native panel, which is what the emulator (`Medium_Phone`) is.
+See `Zenith/Android/CLAUDE.md` for the full bring-up sequence, the two ABI
+spellings, and how surface rotation is handled.

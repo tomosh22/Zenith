@@ -5,6 +5,7 @@
 
 #include "Collections/Zenith_Vector.h"
 #include "Core/Zenith_CommandLine.h"
+#include "Core/Zenith_PlatformStdio.h"
 
 #include <algorithm>
 #include <chrono>
@@ -81,9 +82,12 @@ void Zenith_TestRunner::RunAllTests()
 		pxCase->m_pfnTest();
 		const u_int64 uBodyEnd = Zenith_TestClockTicks();
 
-		if (m_bCurrentTestSkipped)    m_uSkippedCount++;
-		else if (m_bCurrentTestFailed) m_uFailedCount++;
-		else                           m_uPassedCount++;
+		// A later environment skip must never downgrade an assertion already
+		// recorded by the same test. Several round-trip and bake tests perform
+		// useful checks before discovering that an optional resource is absent.
+		if (m_bCurrentTestFailed)       m_uFailedCount++;
+		else if (m_bCurrentTestSkipped) m_uSkippedCount++;
+		else                            m_uPassedCount++;
 
 		m_pxCurrentCase = nullptr;
 
@@ -127,8 +131,7 @@ void Zenith_TestRunner::RunAllTests()
 		WriteTimingReport(stdout);
 		fflush(stdout);
 
-		FILE* pxFile = nullptr;
-		fopen_s(&pxFile, szTimingPath, "w");
+		FILE* pxFile = Zenith_PlatformStdio::OpenFile(szTimingPath, "w");
 		if (pxFile != nullptr)
 		{
 			WriteTimingReport(pxFile);

@@ -249,9 +249,24 @@ void Zenith_UICanvas::UpdateFocusNavigation()
         ActivateFocused();
 }
 
+void Zenith_UICanvas::NotifyPointerActivate(Zenith_UIElement* pxElement)
+{
+    // Focus FIRST, then raise the edge: a consumer dispatches by the focused
+    // element's name, so the two must be consistent within the same frame.
+    if (pxElement != nullptr && pxElement->IsFocusable())
+    {
+        SetFocusedElement(pxElement);
+    }
+    m_bPointerActivateThisFrame = true;
+}
+
 void Zenith_UICanvas::Update(float fDt)
 {
     UpdateSize();
+
+    // Clear BEFORE the element walk below, which is what re-raises it. Clearing
+    // after would eat the click in the same frame it happened.
+    m_bPointerActivateThisFrame = false;
 
     UpdateFocusNavigation();
 

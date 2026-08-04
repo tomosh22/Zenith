@@ -9,6 +9,7 @@
 
 #include <pthread.h>
 #include <unistd.h>
+#include <cerrno>
 #include <cstring>
 
 // TLS state stays per-thread (carve-out per refactor plan -- threads
@@ -45,7 +46,12 @@ Zenith_Android_Semaphore::~Zenith_Android_Semaphore()
 
 void Zenith_Android_Semaphore::Wait()
 {
-	int iResult = sem_wait(&m_xSemaphore);
+	int iResult;
+	do
+	{
+		iResult = sem_wait(&m_xSemaphore);
+	}
+	while (iResult != 0 && errno == EINTR);
 	Zenith_Assert(iResult == 0, "Failed to wait for semaphore");
 }
 
@@ -77,12 +83,27 @@ static void* ThreadInit(void* pParams)
 {
 	g_xEngine.Threading().RegisterThread();
 	const ThreadParams* pxParams = static_cast<const ThreadParams*>(pParams);
+
+	// Copy EVERYTHING out of pxParams BEFORE signalling.
+	//
+	// ThreadParams and the semaphore are locals on Platform_CreateThread's
+	// stack, and that function returns the moment the signal lands -- so from
+	// Signal() onwards this pointer dangles. Reading m_pfnFunc / m_pUserData
+	// after the signal (as this did) is a use-after-free racing the creator's
+	// stack teardown. It usually won on desktop and lost often enough on the
+	// Android emulator to segfault calling a garbage function pointer.
+	const Zenith_ThreadFunction pfnFunc = pxParams->m_pfnFunc;
+	const void* pUserData = pxParams->m_pUserData;
+	Zenith_Android_Semaphore* pxSemaphore = pxParams->m_pxSemaphore;
+
 	// Copy thread name with guaranteed null termination
 	size_t uNameLen = strnlen(pxParams->m_szName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH - 1);
 	memcpy(tl_g_acThreadName, pxParams->m_szName, uNameLen);
 	tl_g_acThreadName[uNameLen] = '\0';
-	pxParams->m_pxSemaphore->Signal();
-	pxParams->m_pfnFunc(pxParams->m_pUserData);
+
+	// pxParams must not be touched past this point.
+	pxSemaphore->Signal();
+	pfnFunc(pUserData);
 	return nullptr;
 }
 
@@ -102,8 +123,15 @@ void Zenith_Multithreading::Platform_CreateThread(const char* szName, Zenith_Thr
 	pthread_attr_setstacksize(&xAttr, 128 * 1024);
 	pthread_attr_setdetachstate(&xAttr, PTHREAD_CREATE_DETACHED);
 
-	pthread_create(&xThread, &xAttr, ThreadInit, &xParams);
+	const int iCreateResult = pthread_create(&xThread, &xAttr, ThreadInit, &xParams);
 	pthread_attr_destroy(&xAttr);
+	if (iCreateResult != 0)
+	{
+		// The API has no failure channel and callers immediately schedule work
+		// against the new thread, so creation failure is not recoverable here.
+		Zenith_Assert(false, "pthread_create failed with error %d", iCreateResult);
+		return;
+	}
 
 	xSemaphore.Wait();
 }

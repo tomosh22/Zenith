@@ -1,91 +1,123 @@
-# Download Vulkan validation layer for Android arm64-v8a
-# Places it in the debug jniLibs directory for the TilePuzzle game
+# download_validation_layer.ps1 -- fetch the Khronos Vulkan validation layer for
+# an Android ABI and stage it into a game's debug jniLibs.
+# =============================================================================
+# WHY THIS IS USEFUL ON A DEBUG BUILD: the engine requests VK_EXT_debug_utils
+# whenever ZENITH_FLUX_PROFILING is defined. On Android that extension is often
+# supplied by the validation layer, not the platform loader. The engine treats
+# it as optional so an APK without the layer can still boot, but each ABI that
+# should provide validation diagnostics needs its own layer .so staged here.
+#
+# Usage (from Build/ or anywhere):
+#   pwsh ./Build/download_validation_layer.ps1                        # TilePuzzle, both ABIs
+#   pwsh ./Build/download_validation_layer.ps1 -Abi x86_64            # one ABI
+#   pwsh ./Build/download_validation_layer.ps1 -Game Zenithmon        # another game
+#
+# ASCII-only body; runs under Windows PowerShell 5.1 and pwsh 7.
+# =============================================================================
 
-$ErrorActionPreference = "Stop"
+[CmdletBinding()]
+param(
+    [string]$Game = 'TilePuzzle',
+    # Deliberately NOT a [ValidateSet]: the ABI axis comes from
+    # zenith_config.psd1 at runtime, and a literal set here would silently
+    # reject a newly-added ABI. Validated against the config below.
+    [string]$Abi = 'all'
+)
 
-# Target directory
-$targetDir = "$PSScriptRoot\..\Games\TilePuzzle\Android\app\src\debug\jniLibs\arm64-v8a"
+$ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'zenith_buildsystem.psm1') -Force
 
-# Check if already downloaded
-if (Test-Path "$targetDir\libVkLayer_khronos_validation.so") {
-    Write-Host "Validation layer already exists at $targetDir"
+# ABI -> the path fragment the layer archive uses for that ABI's .so. Only the
+# archive-naming aliases are local; the ABI axis itself comes from the config.
+$abiMatch = @{
+    'arm64-v8a' = 'arm64-v8a|arm64|aarch64'
+    'x86_64'    = 'x86_64|x86-64'
+}
+$allAbiNames = @((Get-ZenithAndroidAbis) | ForEach-Object { $_.DirName })
+if ($Abi -eq 'all') {
+    $abis = $allAbiNames
+} else {
+    $abis = @($allAbiNames | Where-Object { $_ -eq $Abi })
+    if ($abis.Count -eq 0) {
+        Write-Host "download_validation_layer: unknown ABI '$Abi'. Known ABIs: $($allAbiNames -join ', '), all" -ForegroundColor Red
+        exit 4
+    }
+}
+
+# An ABI added to the axis but not to $abiMatch would silently stage nothing.
+$unmatched = @($abis | Where-Object { -not $abiMatch.ContainsKey($_) })
+if ($unmatched.Count -gt 0) {
+    Write-Host "download_validation_layer: no archive-name pattern for ABI(s): $($unmatched -join ', ')." -ForegroundColor Red
+    Write-Host "  Add an entry to `$abiMatch in this script." -ForegroundColor Red
+    exit 4
+}
+
+$gameAndroidDir = "$PSScriptRoot\..\Games\$Game\Android"
+if (-not (Test-Path $gameAndroidDir)) {
+    Write-Host "download_validation_layer: '$Game' has no Android/ tree at $gameAndroidDir" -ForegroundColor Red
+    exit 2
+}
+
+# Skip work entirely if every requested ABI is already staged.
+$missing = @($abis | Where-Object {
+    -not (Test-Path "$gameAndroidDir\app\src\debug\jniLibs\$_\libVkLayer_khronos_validation.so")
+})
+if ($missing.Count -eq 0) {
+    Write-Host "Validation layer already staged for $Game : $($abis -join ', ')"
     exit 0
 }
+Write-Host "download_validation_layer: $Game needs $($missing -join ', ')" -ForegroundColor Cyan
 
-# Get recent releases
 Write-Host "Fetching Vulkan Validation Layer releases..."
-$releases = Invoke-RestMethod -Uri "https://api.github.com/repos/KhronosGroup/Vulkan-ValidationLayers/releases?per_page=10" -Headers @{"User-Agent"="Mozilla/5.0"}
+$releases = Invoke-RestMethod -Uri "https://api.github.com/repos/KhronosGroup/Vulkan-ValidationLayers/releases?per_page=10" -Headers @{"User-Agent" = "Mozilla/5.0" }
 
-foreach ($release in $releases) {
-    Write-Host ("  {0}" -f $release.tag_name)
-}
-
-# Find a release with android assets - try SDK 1.3.296.0 or similar
 $targetRelease = $null
 foreach ($release in $releases) {
-    $androidAsset = $release.assets | Where-Object { $_.name -match "android" }
-    if ($androidAsset) {
+    if ($release.assets | Where-Object { $_.name -match "android" }) {
         $targetRelease = $release
-        Write-Host ("`nFound release with Android assets: {0}" -f $release.tag_name)
+        Write-Host ("Found release with Android assets: {0}" -f $release.tag_name)
         break
     }
 }
-
 if (-not $targetRelease) {
-    Write-Host "`nNo release with Android assets found in recent releases."
-    Write-Host "Listing all assets from first release for inspection:"
-    foreach ($asset in $releases[0].assets) {
-        Write-Host ("  {0} ({1:N2} MB)" -f $asset.name, ($asset.size / 1MB))
-    }
+    Write-Host "No release with Android assets found in the 10 most recent releases." -ForegroundColor Red
     exit 1
 }
 
-# Find the Android asset - list all matching and pick the right one
 $androidAssets = @($targetRelease.assets | Where-Object { $_.name -match "android" })
-Write-Host "`nAndroid assets found:"
-foreach ($a in $androidAssets) {
-    Write-Host ("  {0} ({1:N2} MB)" -f $a.name, ($a.size / 1MB))
-}
-
-# Prefer the one that seems to be the validation layer binary (not source, not headers)
 $androidAsset = $androidAssets | Where-Object { $_.name -match "\.zip$" } | Select-Object -First 1
-if (-not $androidAsset) {
-    $androidAsset = $androidAssets[0]
-}
-Write-Host ("`nSelected: {0} ({1:N2} MB)" -f $androidAsset.name, ($androidAsset.size / 1MB))
+if (-not $androidAsset) { $androidAsset = $androidAssets[0] }
+Write-Host ("Selected: {0} ({1:N2} MB)" -f $androidAsset.name, ($androidAsset.size / 1MB))
 
-# Download
 $downloadPath = "$env:TEMP\validation_layer_android.zip"
-Write-Host "Downloading to $downloadPath..."
-Invoke-WebRequest -Uri $androidAsset.browser_download_url -OutFile $downloadPath -Headers @{"User-Agent"="Mozilla/5.0"}
-
-# Extract
 $extractPath = "$env:TEMP\validation_layer_extract"
+Write-Host "Downloading..."
+Invoke-WebRequest -Uri $androidAsset.browser_download_url -OutFile $downloadPath -Headers @{"User-Agent" = "Mozilla/5.0" }
 if (Test-Path $extractPath) { Remove-Item -Recurse -Force $extractPath }
 Write-Host "Extracting..."
 Expand-Archive -Path $downloadPath -DestinationPath $extractPath
 
-# Find the arm64-v8a .so
-Write-Host "Looking for arm64-v8a validation layer..."
-$soFile = Get-ChildItem -Path $extractPath -Recurse -Filter "libVkLayer_khronos_validation.so" | Where-Object { $_.FullName -match "arm64" -or $_.FullName -match "aarch64" }
-
-if (-not $soFile) {
-    Write-Host "Could not find arm64 validation layer .so. Files found:"
-    Get-ChildItem -Path $extractPath -Recurse -Filter "*.so" | ForEach-Object { Write-Host ("  {0}" -f $_.FullName) }
-    exit 1
+$staged = 0
+$failed = 0
+foreach ($a in $missing) {
+    $pattern = $abiMatch[$a]
+    $soFile = Get-ChildItem -Path $extractPath -Recurse -Filter "libVkLayer_khronos_validation.so" |
+        Where-Object { $_.FullName -match $pattern } | Select-Object -First 1
+    if (-not $soFile) {
+        Write-Host "  $a : NOT FOUND in the archive" -ForegroundColor Yellow
+        $failed++
+        continue
+    }
+    $targetDir = "$gameAndroidDir\app\src\debug\jniLibs\$a"
+    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+    Copy-Item $soFile.FullName "$targetDir\libVkLayer_khronos_validation.so" -Force
+    Write-Host ("  {0} : staged ({1:N2} MB)" -f $a, ($soFile.Length / 1MB)) -ForegroundColor Green
+    $staged++
 }
 
-Write-Host ("Found: {0}" -f $soFile.FullName)
-
-# Create target directory and copy
-New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-Copy-Item $soFile.FullName "$targetDir\libVkLayer_khronos_validation.so"
-
-Write-Host ("`nValidation layer installed to: {0}" -f $targetDir)
-Write-Host ("File size: {0:N2} MB" -f ((Get-Item "$targetDir\libVkLayer_khronos_validation.so").Length / 1MB))
-
-# Cleanup
 Remove-Item -Force $downloadPath -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $extractPath -ErrorAction SilentlyContinue
 
-Write-Host "Done!"
+Write-Host "Done. Staged: $staged  Missing: $failed"
+if ($failed -gt 0) { exit 1 }
+exit 0

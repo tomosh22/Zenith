@@ -1,0 +1,56 @@
+plugins {
+	id 'com.android.application'
+}
+
+// The Android ABI axis + the per-ABI jniLibs roots. Shared by every game so
+// adding an ABI is one edit; the Sharpmake-side mirror is ZenithAndroidAbi in
+// Build/Sharpmake_Common.cs.
+apply from: '../../../../Build/zenith_android_abis.gradle'
+
+android {
+	namespace 'com.zenith.zenithmon'
+	compileSdk 34
+
+	defaultConfig {
+		applicationId 'com.zenith.zenithmon'
+		minSdk 26
+		targetSdk 34
+		versionCode 1
+		versionName '1.0'
+
+		ndk {
+			abiFilters.addAll(zenithAbis.keySet())
+		}
+	}
+
+	buildTypes {
+		debug {}
+		release {
+			minifyEnabled false
+			signingConfig signingConfigs.debug
+		}
+	}
+
+	sourceSets {
+		main {
+			// Bundle game assets, engine assets, and pre-compiled shaders into
+			// the APK. Android has no runtime shader compilation
+			// (SHADER_SOURCE_ROOT is win64-only), so the baked .spv under
+			// Zenith/Flux/Shaders must ship.
+			assets.srcDirs = [
+				'../../Assets',
+				'../../../../Zenith/Assets',
+				'../../../../Zenith/Flux/Shaders'
+			]
+		}
+		// src/<type>/jniLibs carries hand-staged extras (the downloaded Vulkan
+		// validation layer, which supplies validation diagnostics and commonly
+		// VK_EXT_debug_utils on Android; see Build/download_validation_layer.ps1).
+		debug {
+			jniLibs.srcDirs = zenithJniLibDirs('debug') + ['src/debug/jniLibs']
+		}
+		release {
+			jniLibs.srcDirs = zenithJniLibDirs('release')
+		}
+	}
+}

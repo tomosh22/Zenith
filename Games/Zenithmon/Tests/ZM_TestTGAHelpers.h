@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "Core/Zenith_PlatformStdio.h"
+
 struct ZM_TestTGAImage
 {
 	ZM_TestTGAImage() = default;
@@ -35,8 +37,8 @@ struct ZM_TestTGAImage
 
 inline bool ZM_TestLoadTGA(const char* szPath, ZM_TestTGAImage& xOut)
 {
-	std::FILE* pFile = nullptr;
-	if (fopen_s(&pFile, szPath, "rb") != 0 || pFile == nullptr)
+	std::FILE* pFile = Zenith_PlatformStdio::OpenFile(szPath, "rb");
+	if (pFile == nullptr)
 	{
 		return false;
 	}
@@ -84,4 +86,3 @@ inline bool ZM_TestLoadTGA(const char* szPath, ZM_TestTGAImage& xOut)
 	xOut.m_uHeight = uHeight;
 	return true;
 }
-

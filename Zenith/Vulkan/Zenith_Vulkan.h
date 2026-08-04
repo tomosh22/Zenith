@@ -210,6 +210,15 @@ public:
 	float GetTimestampPeriod() const { return m_fTimestampPeriod; }
 #endif
 
+	// True only if VK_EXT_debug_utils survived CreateInstance's availability
+	// filter. Everything that dispatches a debug_utils entry point -- the debug
+	// messenger and the per-pass Begin/EndDebugMarker labels -- must check this
+	// first: vkGetInstanceProcAddr returns NULL for a disabled extension, so an
+	// unguarded call is a jump to address 0. On Android the extension comes from
+	// the validation layer, so an APK shipping no layer .so lands in exactly
+	// that state.
+	bool IsDebugUtilsEnabled() const { return m_bDebugUtilsEnabled; }
+
 #ifdef ZENITH_TOOLS
 	void InitialiseImGui();
 	void InitialiseImGuiRenderPass();
@@ -284,6 +293,11 @@ public:
 	const uint32_t GetQueueIndex(CommandType eType);
 	const vk::DescriptorPool& GetDefaultDescriptorPool();
 	vk::Fence& GetCurrentInFlightFence();
+	// Unsignals the current ring slot's fence so the next submit can signal it.
+	// MUST be called exactly once, immediately before the submit that passes
+	// GetCurrentInFlightFence() — a submit against an already-signalled fence is
+	// invalid, and a reset that is never followed by a submit deadlocks the slot.
+	void ResetCurrentInFlightFence();
 
 	const bool ShouldSubmitDrawCalls();
 	const bool ShouldUseDescSetCache();
@@ -341,6 +355,7 @@ public:
 	// Instance / surface / device.
 	vk::Instance                  m_xInstance;
 	vk::DebugUtilsMessengerEXT    m_xDebugMessenger;
+	bool                          m_bDebugUtilsEnabled = false;
 #ifdef ZENITH_FLUX_PROFILING
 	vk::DispatchLoaderDynamic     m_xDispatchLoader;
 #endif

@@ -1214,6 +1214,14 @@ void Zenith_Vulkan_CommandBuffer::RenderImGui()
 #ifdef ZENITH_FLUX_PROFILING
 void Zenith_Vulkan_CommandBuffer::BeginDebugMarker(const char* szName)
 {
+	// vkCmdBeginDebugUtilsLabelEXT resolves to NULL when VK_EXT_debug_utils is
+	// not enabled, so this must be gated or it is a jump to address 0. On
+	// Android the extension is layer-provided, so any APK without a validation
+	// layer .so for its ABI lands here on the very first recorded pass.
+	if (!m_pxVulkan->IsDebugUtilsEnabled())
+	{
+		return;
+	}
 	vk::DebugUtilsLabelEXT xLabel = vk::DebugUtilsLabelEXT()
 		.setPLabelName(szName)
 		.setColor({ 1.0f, 1.0f, 1.0f, 1.0f });
@@ -1222,6 +1230,10 @@ void Zenith_Vulkan_CommandBuffer::BeginDebugMarker(const char* szName)
 
 void Zenith_Vulkan_CommandBuffer::EndDebugMarker()
 {
+	if (!m_pxVulkan->IsDebugUtilsEnabled())
+	{
+		return;
+	}
 	m_xCurrentCmdBuffer.endDebugUtilsLabelEXT(m_pxVulkan->GetDispatchLoader());
 }
 

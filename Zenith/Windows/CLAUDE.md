@@ -14,6 +14,8 @@ Windows-specific implementations for windowing (GLFW), threading (CRITICAL_SECTI
 - `FileAccess/Zenith_Windows_FileAccess.cpp` - Cross-platform file I/O implementation (ReadFile, WriteFile, FileExists, etc.)
 - `Zenith_Windows_FileWatcher.cpp` - File-system monitoring via `ReadDirectoryChangesW` (`ZENITH_TOOLS`-only)
 - `Zenith_Windows_DebugBreak.cpp` - `Zenith_DebugBreak()` with assert-capture support
+- `Zenith_Windows_PlatformStdio.cpp` - secure CRT-backed file opening and temporary files
+- `Zenith_Windows_PlatformEnvironment.cpp` - secure CRT-backed environment-variable reads
 
 ## Window (Zenith_Window)
 

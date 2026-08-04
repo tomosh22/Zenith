@@ -36,6 +36,7 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "Zenith_OS_Include.h"
 
+#include <bit>
 #include <cstring>
 #include <algorithm>
 #include <unordered_set> // #TODO: Replace with engine hash map
@@ -3781,16 +3782,16 @@ private:
 		uint32_t uAllMask = (1u << 3) - 1; // 0b111
 
 		// 0 eliminated: not complete
-		if (TILEPUZZLE_POPCNT(0u) >= 3)
+		if (std::popcount(0u) >= 3)
 		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: 0 eliminated should not be complete"); bPass = false; }
 
 		// 2 eliminated: not complete
 		uint32_t uPartial = 0x3;
-		if (TILEPUZZLE_POPCNT(uPartial) >= 3)
+		if (std::popcount(uPartial) >= 3)
 		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: 2 eliminated should not be complete"); bPass = false; }
 
 		// All 3 eliminated: complete
-		if (TILEPUZZLE_POPCNT(uAllMask) < 3)
+		if (std::popcount(uAllMask) < 3)
 		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: all eliminated should be complete"); bPass = false; }
 
 		return bPass;

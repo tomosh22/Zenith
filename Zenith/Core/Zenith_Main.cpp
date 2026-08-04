@@ -4,6 +4,7 @@
 #include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
+#include "Core/Zenith_PlatformStdio.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Profiling/Zenith_Profiling.h"
 #ifdef ZENITH_TOOLS
@@ -68,8 +69,7 @@ static void TryWriteBootProfileDump(const char* szReason)
 	WriteBootProfileSections(stdout);
 	fflush(stdout);
 
-	FILE* pxDumpFile = nullptr;
-	fopen_s(&pxDumpFile, szPath, "w");
+	FILE* pxDumpFile = Zenith_PlatformStdio::OpenFile(szPath, "w");
 	if (pxDumpFile != nullptr)
 	{
 		WriteBootProfileSections(pxDumpFile);
@@ -245,8 +245,7 @@ void Zenith_Core::Zenith_Main()
 			}
 			Zenith_MemoryManagement::WriteReport(stdout);
 			fflush(stdout);
-			FILE* pxCsv = nullptr;
-			fopen_s(&pxCsv, "zenith_memory_dump.csv", "w");
+			FILE* pxCsv = Zenith_PlatformStdio::OpenFile("zenith_memory_dump.csv", "w");
 			if (pxCsv != nullptr)
 			{
 				Zenith_MemoryManagement::WriteReportCSV(pxCsv);
@@ -269,8 +268,7 @@ void Zenith_Core::Zenith_Main()
 		{
 			xProfiling.WriteTextReport(stdout);
 			fflush(stdout);
-			FILE* pxDumpFile = nullptr;
-			fopen_s(&pxDumpFile, "zenith_profiling_dump.txt", "w");
+			FILE* pxDumpFile = Zenith_PlatformStdio::OpenFile("zenith_profiling_dump.txt", "w");
 			if (pxDumpFile)
 			{
 				xProfiling.WriteTextReport(pxDumpFile);
@@ -282,15 +280,13 @@ void Zenith_Core::Zenith_Main()
 		{
 			Zenith_MemoryManagement::WriteReport(stdout);
 			fflush(stdout);
-			FILE* pxMemTxt = nullptr;
-			fopen_s(&pxMemTxt, "zenith_memory_dump.txt", "w");
+			FILE* pxMemTxt = Zenith_PlatformStdio::OpenFile("zenith_memory_dump.txt", "w");
 			if (pxMemTxt)
 			{
 				Zenith_MemoryManagement::WriteReport(pxMemTxt);
 				fclose(pxMemTxt);
 			}
-			FILE* pxMemCsv = nullptr;
-			fopen_s(&pxMemCsv, "zenith_memory_dump.csv", "w");
+			FILE* pxMemCsv = Zenith_PlatformStdio::OpenFile("zenith_memory_dump.csv", "w");
 			if (pxMemCsv)
 			{
 				Zenith_MemoryManagement::WriteReportCSV(pxMemCsv);

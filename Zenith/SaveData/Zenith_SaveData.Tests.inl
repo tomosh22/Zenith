@@ -148,12 +148,7 @@ ZENITH_TEST(SaveDataSandbox, SuppliedRootIsRefusedWithoutAMatchingOwnershipMarke
 	// A FILE rather than a directory.
 	const std::filesystem::path xFile = xScratch / "not_a_dir.txt";
 	{
-		std::FILE* pxF = nullptr;
-#ifdef _MSC_VER
-		::fopen_s(&pxF, xFile.string().c_str(), "wb");
-#else
-		pxF = std::fopen(xFile.string().c_str(), "wb");
-#endif
+		std::FILE* pxF = Zenith_PlatformStdio::OpenFile(xFile.string().c_str(), "wb");
 		if (pxF) std::fclose(pxF);
 	}
 	ZENITH_ASSERT_FALSE(Zenith_SaveData::TryAcceptSuppliedSandboxRoot(xFile.string().c_str(), "run-1", xAccepted),
@@ -176,12 +171,7 @@ ZENITH_TEST(SaveDataSandbox, WipeDeletesOnlyZsaveFilesNonRecursively)
 	{
 		std::error_code xEC;
 		std::filesystem::create_directories(xPath.parent_path(), xEC);
-		std::FILE* pxF = nullptr;
-#ifdef _MSC_VER
-		::fopen_s(&pxF, xPath.string().c_str(), "wb");
-#else
-		pxF = std::fopen(xPath.string().c_str(), "wb");
-#endif
+		std::FILE* pxF = Zenith_PlatformStdio::OpenFile(xPath.string().c_str(), "wb");
 		if (pxF) { std::fputc('x', pxF); std::fclose(pxF); }
 	};
 
@@ -216,13 +206,8 @@ ZENITH_TEST(SaveDataSandbox, WipeRefusesADirectoryWhoseMarkerVanished)
 	Zenith_SaveData::WriteSandboxMarker(xScratch, "vanish-run");
 
 	std::error_code xEC;
-	std::FILE* pxF = nullptr;
 	const std::filesystem::path xSlot = xScratch / (std::string("slot") + ZENITH_SAVE_EXT);
-#ifdef _MSC_VER
-	::fopen_s(&pxF, xSlot.string().c_str(), "wb");
-#else
-	pxF = std::fopen(xSlot.string().c_str(), "wb");
-#endif
+	std::FILE* pxF = Zenith_PlatformStdio::OpenFile(xSlot.string().c_str(), "wb");
 	if (pxF) std::fclose(pxF);
 
 	std::filesystem::remove(xScratch / ".zenith_test_save_root", xEC);

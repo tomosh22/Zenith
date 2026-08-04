@@ -95,6 +95,21 @@ public:
     void SetFocusedElement(Zenith_UIElement* pxElement);
     Zenith_UIElement* GetFocusedElement() const { return m_pxFocusedElement; }
 
+    // A POINTER (mouse or touch) activation of a focusable element this frame.
+    //
+    // Raised by the element itself when a click completes, and consumed exactly
+    // like a keyboard/gamepad confirm EDGE. This is what lets touch reach menus
+    // at all: games here dispatch a confirm BY THE FOCUSED ELEMENT'S NAME and
+    // deliberately never use SetOnClick(this) -- a `this` userdata dangles when
+    // the ECS component pool relocates. So a tap must do what Enter does: move
+    // focus to the element and raise the confirm edge, leaving one dispatch path
+    // rather than a second, parallel one that only pointers can travel.
+    //
+    // Cleared at the top of Update(), so it is true for the remainder of the
+    // frame in which the click completed.
+    void NotifyPointerActivate(Zenith_UIElement* pxElement);
+    bool WasPointerActivateThisFrame() const { return m_bPointerActivateThisFrame; }
+
     void NavigateUp();
     void NavigateDown();
     void NavigateLeft();
@@ -147,6 +162,7 @@ private:
 
     // Focus navigation
     Zenith_UIElement* m_pxFocusedElement = nullptr;
+    bool m_bPointerActivateThisFrame = false;
     void CollectFocusableElements(Zenith_UIElement* pxElement, Zenith_UIElement** apxOut, uint32_t& uCount, uint32_t uMax) const;
     Zenith_UIElement* FindNearestFocusable(Zenith_UIElement* pxFrom, float fDirX, float fDirY) const;
 

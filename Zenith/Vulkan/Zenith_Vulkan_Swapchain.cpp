@@ -8,9 +8,11 @@
 #include "Flux/Flux_PerFrame.h"
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/Flux_SwapchainPolicy.h"
 #include "Flux/Present/Flux_PresentImpl.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Core/Zenith_CommandLine.h"
+#include "Core/Zenith_PlatformStdio.h"
 #include "Flux/Flux_Screenshot.h"
 
 #include <cstdio>
@@ -38,6 +40,20 @@ struct SwapChainSupportDetails
 	std::vector <vk::SurfaceFormatKHR> m_xFormats;
 	std::vector <vk::PresentModeKHR> m_xPresentModes;
 };
+
+// Capabilities ONLY. The full QuerySwapChainSupport also enumerates formats and
+// present modes -- two more WSI round trips and two heap-allocating vectors --
+// which the per-frame rebuild check does not read. That check runs EVERY frame
+// on a rotated Android surface, because requesting an IDENTITY preTransform
+// against a ROTATE_90 surface makes VK_SUBOPTIMAL_KHR the permanent steady
+// state, so the difference is per-frame cost on the exact platform this all
+// exists to serve.
+static vk::SurfaceCapabilitiesKHR QuerySurfaceCapabilities()
+{
+	Zenith_Vulkan_Swapchain& xSwapchain = g_xEngine.FluxSwapchain();
+	return VkUnwrap(xSwapchain.m_pxVulkan->GetPhysicalDevice()
+		.getSurfaceCapabilitiesKHR(xSwapchain.m_pxVulkan->GetSurface()));
+}
 
 static SwapChainSupportDetails QuerySwapChainSupport()
 {
@@ -76,32 +92,92 @@ static vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::Surfac
 	return xAvailableFormats[0];
 }
 
+// Bit values are fixed by the Vulkan spec; Flux_SurfaceTransform mirrors them so
+// the policy can stay backend-neutral (and therefore testable in the Null config).
+static_assert(static_cast<u_int32>(vk::SurfaceTransformFlagBitsKHR::eIdentity) == Flux_SurfaceTransform::uIDENTITY, "IDENTITY bit drifted");
+static_assert(static_cast<u_int32>(vk::SurfaceTransformFlagBitsKHR::eRotate90) == Flux_SurfaceTransform::uROTATE_90, "ROTATE_90 bit drifted");
+static_assert(static_cast<u_int32>(vk::SurfaceTransformFlagBitsKHR::eRotate180) == Flux_SurfaceTransform::uROTATE_180, "ROTATE_180 bit drifted");
+static_assert(static_cast<u_int32>(vk::SurfaceTransformFlagBitsKHR::eRotate270) == Flux_SurfaceTransform::uROTATE_270, "ROTATE_270 bit drifted");
+static_assert(static_cast<u_int32>(vk::SurfaceTransformFlagBitsKHR::eHorizontalMirror) == Flux_SurfaceTransform::uHORIZONTAL_MIRROR, "HORIZONTAL_MIRROR bit drifted");
+static_assert(static_cast<u_int32>(vk::SurfaceTransformFlagBitsKHR::eHorizontalMirrorRotate90) == Flux_SurfaceTransform::uHORIZONTAL_MIRROR_ROTATE_90, "HM_ROTATE_90 bit drifted");
+static_assert(static_cast<u_int32>(vk::SurfaceTransformFlagBitsKHR::eHorizontalMirrorRotate180) == Flux_SurfaceTransform::uHORIZONTAL_MIRROR_ROTATE_180, "HM_ROTATE_180 bit drifted");
+static_assert(static_cast<u_int32>(vk::SurfaceTransformFlagBitsKHR::eHorizontalMirrorRotate270) == Flux_SurfaceTransform::uHORIZONTAL_MIRROR_ROTATE_270, "HM_ROTATE_270 bit drifted");
+static_assert(static_cast<u_int32>(vk::SurfaceTransformFlagBitsKHR::eInherit) == Flux_SurfaceTransform::uINHERIT, "INHERIT bit drifted");
+static_assert(std::numeric_limits<uint32_t>::max() == Flux_SwapchainPolicy::uNO_CURRENT_EXTENT, "currentExtent sentinel drifted");
+
+// Blocks until the platform surface has a non-zero size again.
+//
+// MUST be called BEFORE QuerySwapChainSupport, not after. A minimised Win32
+// window reports currentExtent {0,0} AND minImageExtent == maxImageExtent ==
+// {0,0} (the spec explicitly allows maxImageExtent to be (0,0) when minimised).
+// Waiting inside ChooseSwapExtent -- i.e. after the caps were already captured
+// -- then clamped the restored window size against those stale zero caps and
+// produced 0x0 all over again, recreating the very invalid swapchain the guard
+// was added to prevent. Every capability read after this point (currentExtent,
+// min/maxImageExtent, minImageCount, supportedTransforms, currentTransform) is
+// therefore from the RESTORED surface.
+static void WaitForPresentableSurface()
+{
+#ifdef ZENITH_WINDOWS
+	GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();
+	int32_t iWidth = 0;
+	int32_t iHeight = 0;
+	glfwGetFramebufferSize(pxWindow, &iWidth, &iHeight);
+	while (iWidth == 0 || iHeight == 0)
+	{
+		// Blocking wait -- the app is minimised, there is nothing to render, and
+		// spinning here would burn a core.
+		glfwWaitEvents();
+		glfwGetFramebufferSize(pxWindow, &iWidth, &iHeight);
+	}
+#endif
+	// Android has no equivalent wait here: the activity's own looper owns that,
+	// and Zenith_Android_Main gates the frame on s_bWindowReady. ChooseSwapExtent
+	// still guards the zero case below so a caller that ignores that gate gets a
+	// loud error rather than an invalid swapchain.
+}
+
 static vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& xCapabilities)
 {
-	if (xCapabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
+	// Rejects BOTH the UINT32_MAX "you pick" sentinel and a zero extent. The zero
+	// case is a surface with no presentable size (a MINIMISED window, or an
+	// Android activity with no live surface): a 0x0 swapchain is invalid usage
+	// and DebugCallback escalates the validation error into a process kill.
+	// On Windows WaitForPresentableSurface has already blocked until this is
+	// true, so the fall-through below is the sentinel path only.
+	if (Flux_SwapchainPolicy::IsCurrentExtentUsable(xCapabilities.currentExtent.width,
+			xCapabilities.currentExtent.height))
 	{
 		return xCapabilities.currentExtent;
 	}
 
+	int32_t iExtentWidth = 0;
+	int32_t iExtentHeight = 0;
 #ifdef ZENITH_WINDOWS
-	GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();
-	int32_t iExtentWidth, iExtentHeight;
-	glfwGetFramebufferSize(pxWindow, &iExtentWidth, &iExtentHeight);
-
-	// Wait for non-zero framebuffer size (can be 0 during monitor transitions or minimization)
-	while (iExtentWidth == 0 || iExtentHeight == 0)
-	{
-		glfwGetFramebufferSize(pxWindow, &iExtentWidth, &iExtentHeight);
-		glfwWaitEvents();
-	}
+	glfwGetFramebufferSize(Zenith_Window::GetInstance()->GetNativeWindow(), &iExtentWidth, &iExtentHeight);
 #else
-	int32_t iExtentWidth, iExtentHeight;
 	Zenith_Window::GetInstance()->GetSize(iExtentWidth, iExtentHeight);
 #endif
 
 	vk::Extent2D xExtent = { static_cast<uint32_t>(iExtentWidth), static_cast<uint32_t>(iExtentHeight) };
 	xExtent.width = Zenith_Maths::Clamp(xExtent.width, xCapabilities.minImageExtent.width, xCapabilities.maxImageExtent.width);
 	xExtent.height = Zenith_Maths::Clamp(xExtent.height, xCapabilities.minImageExtent.height, xCapabilities.maxImageExtent.height);
+
+	if (!Flux_SwapchainPolicy::IsCurrentExtentUsable(xExtent.width, xExtent.height))
+	{
+		// Reachable only with no live surface (in practice: Android, called
+		// without waiting for the window). A 1x1 swapchain is legal where a 0x0
+		// one is not, so the process survives to report the real problem.
+		Zenith_Error(LOG_CATEGORY_VULKAN,
+			"Swapchain: no presentable surface extent (window %dx%d, caps min %ux%u max %ux%u); "
+			"falling back to 1x1. Initialise ran with no live window -- the frame should be "
+			"gated on the window being ready.",
+			iExtentWidth, iExtentHeight,
+			xCapabilities.minImageExtent.width, xCapabilities.minImageExtent.height,
+			xCapabilities.maxImageExtent.width, xCapabilities.maxImageExtent.height);
+		xExtent.width = xExtent.width == 0u ? 1u : xExtent.width;
+		xExtent.height = xExtent.height == 0u ? 1u : xExtent.height;
+	}
 	return xExtent;
 }
 
@@ -136,6 +212,9 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	m_pxProfiling    = &g_xEngine.Profiling();
 
 	const vk::SurfaceKHR& xSurface = m_pxVulkan->GetSurface();
+
+	// BEFORE the capability query, never after -- see WaitForPresentableSurface.
+	WaitForPresentableSurface();
 
 	SwapChainSupportDetails xSwapChainSupport = QuerySwapChainSupport();
 	vk::SurfaceFormatKHR xSurfaceFormat = ChooseSwapSurfaceFormat(xSwapChainSupport.m_xFormats);
@@ -190,7 +269,37 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		xCreateInfo.queueFamilyIndexCount = 0;
 		xCreateInfo.pQueueFamilyIndices = nullptr;
 	}
-	xCreateInfo.preTransform = xSwapChainSupport.m_xCapabilities.currentTransform;
+	// preTransform declares the rotation the APP has already baked into its
+	// content. Zenith bakes none, so declaring currentTransform on a rotated
+	// surface renders sideways -- which is what every landscape Android activity
+	// on a portrait-native panel did. Ask for IDENTITY when the surface offers
+	// it and let the presentation engine rotate. See Flux_SwapchainPolicy.
+	const u_int32 uSupportedTransforms = static_cast<u_int32>(xSwapChainSupport.m_xCapabilities.supportedTransforms);
+	const u_int32 uCurrentTransform = static_cast<u_int32>(xSwapChainSupport.m_xCapabilities.currentTransform);
+	const u_int32 uChosenTransform = Flux_SwapchainPolicy::SelectPreTransform(uSupportedTransforms, uCurrentTransform);
+	xCreateInfo.preTransform = static_cast<vk::SurfaceTransformFlagBitsKHR>(uChosenTransform);
+	m_uSurfaceTransform = uCurrentTransform;
+
+	if (Flux_SwapchainPolicy::WillRenderRotated(uSupportedTransforms, uCurrentTransform))
+	{
+		// Only reachable on a surface that refuses IDENTITY. Creating the
+		// swapchain anyway beats failing, but say plainly why it looks wrong.
+		Zenith_Warning(LOG_CATEGORY_VULKAN,
+			"Surface does not support IDENTITY preTransform (current=0x%X, supported=0x%X); "
+			"the image will be presented rotated. Fixing this needs pre-rotation baked into "
+			"the projection/viewport in shared render code.",
+			uCurrentTransform, uSupportedTransforms);
+
+		// A quarter-turn preTransform puts the images in DISPLAY-native space, so
+		// the extent has to be swapped to match or the frame is aspect-mangled on
+		// top of being rotated. (Never taken on the IDENTITY path, where the
+		// images live in window space and currentExtent is already right.)
+		if (Flux_SwapchainPolicy::ShouldTransposeExtent(uChosenTransform))
+		{
+			std::swap(xCreateInfo.imageExtent.width, xCreateInfo.imageExtent.height);
+			xExtent = xCreateInfo.imageExtent;
+		}
+	}
 	// Use INHERIT if OPAQUE is not supported (Android only supports INHERIT)
 	if (xSwapChainSupport.m_xCapabilities.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eOpaque)
 	{
@@ -216,7 +325,15 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	for (uint32_t u = 0; u < m_xImages.size(); u++)
 	{
 		vk::Image& xImage = m_xImages[u];
-		m_pxVulkanMemory->ImageTransitionBarrier(xImage, vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
+
+		// NO layout transition here. Swapchain images come out of
+		// vkCreateSwapchainKHR in UNDEFINED and are owned by the presentation
+		// engine until vkAcquireNextImageKHR hands one over -- transitioning
+		// them here touched images we do not own, which is undefined behaviour
+		// (validation: "performs a layout transition on presentable VkImage,
+		// but the image has not been acquired"). The present render pass now
+		// declares an UNDEFINED initial layout instead, so there is nothing to
+		// establish up front. See TargetSetupToRenderPass's PRESENT case.
 
 		vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
 			.setAspectMask(vk::ImageAspectFlagBits::eColor)
@@ -258,6 +375,16 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		static_cast<int>(xSurfaceFormat.format),
 		uImageCount,
 		static_cast<int>(ePresentMode));
+	// Surface transform, once per swapchain creation. Without this a rotated
+	// surface is invisible in the logs and a correctly-oriented frame cannot be
+	// distinguished from one that was never rotated in the first place -- which
+	// is exactly what makes an orientation bug so hard to confirm either way.
+	// 0x1=IDENTITY 0x2=ROT90 0x4=ROT180 0x8=ROT270.
+	Zenith_Log(LOG_CATEGORY_VULKAN,
+		"Swapchain surface transform: current=0x%X, supported=0x%X, requested preTransform=0x%X%s",
+		uCurrentTransform, uSupportedTransforms, uChosenTransform,
+		uChosenTransform == uCurrentTransform ? " (app-space == display-space)"
+											  : " (presentation engine rotates)");
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Swapchain surface capabilities: minImages=%u, maxImages=%u, minExtent=%ux%u, maxExtent=%ux%u",
 		xSwapChainSupport.m_xCapabilities.minImageCount,
 		xSwapChainSupport.m_xCapabilities.maxImageCount,
@@ -291,19 +418,13 @@ void Zenith_Vulkan_Swapchain::Shutdown()
 	m_xCopyToFramebufferCmd.GetCurrentCmdBuffer() = VK_NULL_HANDLE;
 	m_xCopyToFramebufferCmd.SetCurrentRenderPass(VK_NULL_HANDLE);
 
+	// Same views + registry handles the recreation path releases -- one
+	// implementation so the two can never drift again (the recreation path used
+	// to drop the handles, leaking two per image per resize).
+	ReleaseImageViewsAndHandles();
+
 	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		Flux_RenderAttachment& xAttachment = m_axColourAttachments[u];
-		if (xAttachment.SRV().m_xImageViewHandle.IsValid())
-		{
-			m_pxVulkanMemory->ReleaseImageViewHandle(xAttachment.SRV().m_xImageViewHandle);
-		}
-		if (xAttachment.RTV().m_xImageViewHandle.IsValid())
-		{
-			m_pxVulkanMemory->ReleaseImageViewHandle(xAttachment.RTV().m_xImageViewHandle);
-		}
-		xAttachment = Flux_RenderAttachment();
-
 		if (m_axImageAvailableSemaphores[u])
 		{
 			xDevice.destroySemaphore(m_axImageAvailableSemaphores[u]);
@@ -316,15 +437,6 @@ void Zenith_Vulkan_Swapchain::Shutdown()
 		}
 	}
 
-	for (vk::ImageView& xImageView : m_xImageViews)
-	{
-		if (xImageView)
-		{
-			xDevice.destroyImageView(xImageView);
-			xImageView = VK_NULL_HANDLE;
-		}
-	}
-	m_xImageViews.clear();
 	m_xImages.clear();
 
 	if (m_xSwapChain)
@@ -337,6 +449,8 @@ void Zenith_Vulkan_Swapchain::Shutdown()
 	m_xExtent = vk::Extent2D();
 	m_uCurrentImageIndex = 0;
 	m_bShouldWaitOnImageAvailableSem = false;
+	m_uSurfaceTransform = 0;
+	m_eRecreateRequest = RECREATE_REQUEST_NONE;
 
 	m_pxVulkan       = nullptr;
 	m_pxVulkanMemory = nullptr;
@@ -346,37 +460,138 @@ void Zenith_Vulkan_Swapchain::Shutdown()
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan swapchain shut down");
 }
 
+void Zenith_Vulkan_Swapchain::ReleaseImageViewsAndHandles()
+{
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+
+	// The registry handles MUST go back with the views. Destroying only the
+	// vk::ImageView (what the recreation path used to do) leaked two
+	// Flux_ImageViewHandles per swapchain image on every single resize.
+	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		Flux_RenderAttachment& xAttachment = m_axColourAttachments[u];
+		if (xAttachment.SRV().m_xImageViewHandle.IsValid())
+		{
+			m_pxVulkanMemory->ReleaseImageViewHandle(xAttachment.SRV().m_xImageViewHandle);
+		}
+		if (xAttachment.RTV().m_xImageViewHandle.IsValid())
+		{
+			m_pxVulkanMemory->ReleaseImageViewHandle(xAttachment.RTV().m_xImageViewHandle);
+		}
+		xAttachment = Flux_RenderAttachment();
+	}
+
+	for (vk::ImageView& xImageView : m_xImageViews)
+	{
+		if (xImageView)
+		{
+			// Direct destroy, not deferred: every caller has already made the GPU idle.
+			xDevice.destroyImageView(xImageView);
+			xImageView = VK_NULL_HANDLE;
+		}
+	}
+	m_xImageViews.clear();
+}
+
+void Zenith_Vulkan_Swapchain::RecreateSwapchain()
+{
+	const vk::Device& xDevice = m_pxVulkan->GetDevice();
+
+	// Wait for GPU to finish using all resources before destroying them.
+	// This prevents "semaphore in use" errors during window resize/maximize.
+	m_pxVulkan->WaitForGPUIdle();
+
+	ReleaseImageViewsAndHandles();
+
+	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		xDevice.destroySemaphore(m_axImageAvailableSemaphores[u]);
+		xDevice.destroySemaphore(m_axRenderFinishedSemaphores[u]);
+	}
+	m_xImages.clear();
+	xDevice.destroySwapchainKHR(m_xSwapChain);
+
+	Initialise();
+	m_pxFluxRenderer->OnResChange();
+
+	// Whatever prompted the rebuild is now satisfied by the fresh swapchain.
+	m_eRecreateRequest = RECREATE_REQUEST_NONE;
+}
+
 bool Zenith_Vulkan_Swapchain::BeginFrame()
 {
 	m_pxProfiling->BeginProfileZone(ZENITH_PROFILE_ZONE("Flux Swapchain Begin Frame"));
 	const vk::Device& xDevice = m_pxVulkan->GetDevice();
 
+	// A deferred rebuild requested by last frame's acquire or present, so the
+	// frame that discovered it could still be presented.
+	if (m_eRecreateRequest != RECREATE_REQUEST_NONE)
+	{
+		bool bRebuild = true;
+		if (m_eRecreateRequest == RECREATE_REQUEST_IF_CHANGED)
+		{
+			// Advisory (SUBOPTIMAL): only rebuild if something the swapchain is
+			// built FROM actually moved. Capabilities only -- see
+			// QuerySurfaceCapabilities for why the full query is too expensive here.
+			const vk::SurfaceCapabilitiesKHR xCaps = QuerySurfaceCapabilities();
+			bRebuild = Flux_SwapchainPolicy::ShouldRecreateForSuboptimal(
+				xCaps.currentExtent.width, xCaps.currentExtent.height,
+				static_cast<u_int32>(xCaps.currentTransform),
+				m_xExtent.width, m_xExtent.height, m_uSurfaceTransform);
+		}
+
+		if (bRebuild)
+		{
+			RecreateSwapchain();
+			m_pxProfiling->EndProfileZone(ZENITH_PROFILE_ZONE("Flux Swapchain Begin Frame"));
+			// Abandon this frame. Safe because the ring slot's fence is only
+			// reset immediately before its submit -- see the lifecycle note in
+			// Zenith_Vulkan_PerFrame::BeginFrame.
+			return false;
+		}
+
+		// Suboptimal for a reason we cannot act on. Stop asking. (Never reached
+		// for RECREATE_REQUEST_ALWAYS, which is mandatory.)
+		m_eRecreateRequest = RECREATE_REQUEST_NONE;
+	}
+
 	//#TO_TODO: -1 here to shut up validation layer
 	vk::Result eResult = xDevice.acquireNextImageKHR(m_xSwapChain, UINT64_MAX - 1, m_axImageAvailableSemaphores[GetCurrentFrameIndex()], nullptr, &m_uCurrentImageIndex);
 
-	m_bShouldWaitOnImageAvailableSem = eResult == vk::Result::eSuccess;
+	const bool bImageAcquired = eResult == vk::Result::eSuccess || eResult == vk::Result::eSuboptimalKHR;
+	m_bShouldWaitOnImageAvailableSem = bImageAcquired;
 
-	Zenith_Assert(eResult == vk::Result::eSuccess || eResult == vk::Result::eErrorOutOfDateKHR, "Failed to acquire swapchain image");
+	Zenith_Assert(bImageAcquired || eResult == vk::Result::eErrorOutOfDateKHR, "Failed to acquire swapchain image");
 
 	if (eResult == vk::Result::eErrorOutOfDateKHR)
 	{
-		// Wait for GPU to finish using all resources before destroying them
-		// This prevents "semaphore in use" errors during window resize/maximize
-		m_pxVulkan->WaitForGPUIdle();
+		RecreateSwapchain();
+		m_pxProfiling->EndProfileZone(ZENITH_PROFILE_ZONE("Flux Swapchain Begin Frame"));
+		return false;
+	}
 
-		// Cleanup swapchain resources before recreation
-		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-		{
-			// Destroy image views directly - GPU is already idle so no deferred deletion needed
-			xDevice.destroyImageView(m_xImageViews[u]);
-			xDevice.destroySemaphore(m_axImageAvailableSemaphores[u]);
-			xDevice.destroySemaphore(m_axRenderFinishedSemaphores[u]);
-		}
-		m_xImages.clear();
-		m_xImageViews.clear();
-		xDevice.destroySwapchainKHR(m_xSwapChain);
-		Initialise();
-		m_pxFluxRenderer->OnResChange();
+	if (eResult == vk::Result::eSuboptimalKHR)
+	{
+		// Still a usable image, so present this frame and rebuild at the top of
+		// the next one. Without this the swapchain stayed stale forever on any
+		// resize/rotation that never escalated to OUT_OF_DATE.
+		m_eRecreateRequest = RECREATE_REQUEST_IF_CHANGED;
+	}
+
+	if (!bImageAcquired)
+	{
+		// Neither SUCCESS/SUBOPTIMAL nor OUT_OF_DATE -- e.g. SURFACE_LOST from a
+		// display hot-unplug, or an Android surface torn down mid-frame. Without
+		// a recreate request the main loop would abandon EVERY subsequent frame
+		// against the same dead swapchain, silently, forever. A forced rebuild is
+		// the only recovery available from here; if the surface itself is gone it
+		// will keep failing, but loudly and while trying.
+		Zenith_Error(LOG_CATEGORY_VULKAN,
+			"Swapchain acquire failed with %d; forcing a swapchain rebuild to attempt recovery.",
+			static_cast<int>(eResult));
+		m_eRecreateRequest = RECREATE_REQUEST_ALWAYS;
+		m_pxProfiling->EndProfileZone(ZENITH_PROFILE_ZONE("Flux Swapchain Begin Frame"));
+		return false;
 	}
 	m_pxProfiling->EndProfileZone(ZENITH_PROFILE_ZONE("Flux Swapchain Begin Frame"));
 	return true;
@@ -543,12 +758,7 @@ namespace
 			xSwapchain.m_xImageFormat == vk::Format::eB8G8R8A8Unorm ||
 			xSwapchain.m_xImageFormat == vk::Format::eB8G8R8A8Srgb;
 
-		std::FILE* pFile = nullptr;
-#ifdef _MSC_VER
-		::fopen_s(&pFile, szPath, "wb");
-#else
-		pFile = std::fopen(szPath, "wb");
-#endif
+		std::FILE* pFile = Zenith_PlatformStdio::OpenFile(szPath, "wb");
 		if (pFile != nullptr)
 		{
 			uint8_t aHeader[18] = {};
@@ -627,6 +837,12 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		.setPSignalSemaphores(m_bShouldWaitOnImageAvailableSem ? &m_axRenderFinishedSemaphores[m_uCurrentImageIndex] : nullptr)
 		.setSignalSemaphoreCount(m_bShouldWaitOnImageAvailableSem ? 1 : 0);
 
+	// Unsignal the ring slot's fence immediately before the one submit that
+	// re-signals it. Paired here rather than in PerFrame::BeginFrame so a frame
+	// abandoned by an out-of-date acquire (BeginFrame returned false, so we never
+	// got here) leaves the fence signalled instead of deadlocking the slot.
+	m_pxVulkan->ResetCurrentInFlightFence();
+
 	VkCheck(m_pxVulkan->GetQueue(COMMANDTYPE_GRAPHICS).submit(xRenderSubmitInfo, m_pxVulkan->GetCurrentInFlightFence()));
 
 	// --screenshot: capture the freshly-rendered swapchain image on the
@@ -660,13 +876,27 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 			.setWaitSemaphoreCount(1)
 			.setPWaitSemaphores(&m_axRenderFinishedSemaphores[m_uCurrentImageIndex]);
 
-#ifdef ZENITH_ASSERT
-		vk::Result eResult =
-#endif
-			m_pxVulkan->GetQueue(COMMANDTYPE_PRESENT).presentKHR(&presentInfo);
+		// The result is consumed unconditionally now (not just under an assert):
+		// present is the FIRST place a resize or rotation shows up on many
+		// drivers, and dropping it left the swapchain stale until something else
+		// escalated to OUT_OF_DATE.
+		const vk::Result ePresentResult = m_pxVulkan->GetQueue(COMMANDTYPE_PRESENT).presentKHR(&presentInfo);
 
-		Zenith_Assert(eResult == vk::Result::eSuccess || eResult == vk::Result::eErrorOutOfDateKHR || eResult == vk::Result::eSuboptimalKHR, "Failed to present");
+		Zenith_Assert(ePresentResult == vk::Result::eSuccess || ePresentResult == vk::Result::eErrorOutOfDateKHR || ePresentResult == vk::Result::eSuboptimalKHR, "Failed to present");
 
+		if (ePresentResult == vk::Result::eErrorOutOfDateKHR)
+		{
+			// MANDATORY: the swapchain is retired. Must NOT be routed through the
+			// did-anything-change check -- the reason it retired need not show up
+			// in VkSurfaceCapabilitiesKHR at all.
+			m_eRecreateRequest = RECREATE_REQUEST_ALWAYS;
+		}
+		else if (ePresentResult == vk::Result::eSuboptimalKHR)
+		{
+			// Advisory: rebuild at the top of the next BeginFrame, but only if
+			// something actually changed.
+			m_eRecreateRequest = RECREATE_REQUEST_IF_CHANGED;
+		}
 	}
 	// Frame index advance is owned by Zenith_MainLoop (FrameContext), which
 	// bumps it once at the bottom of the loop. Removed the local counter bump

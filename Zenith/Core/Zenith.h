@@ -15,6 +15,11 @@
 #include <algorithm>
 #pragma warning(pop)
 
+#ifdef ZENITH_ANDROID
+// Zenith_LogImpl routes to logcat on Android -- an app's stdout is discarded.
+#include <android/log.h>
+#endif
+
 using u_int = unsigned int;
 
 using u_int8 = unsigned char;
@@ -138,12 +143,34 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 	snprintf(prefixedBuffer, sizeof(prefixedBuffer), "[%s] %s",
 		Zenith_GetLogCategoryName(eCategory), buffer);
 
+#ifdef ZENITH_ANDROID
+	// An Android app's stdout goes to /dev/null, so a plain printf makes the
+	// ENTIRE engine silent on device -- which is exactly when logs matter most,
+	// since there is no console to attach to. Route to logcat instead, carrying
+	// the severity so `adb logcat *:E` filters correctly, and tag by category so
+	// `adb logcat -s Zenith.Vulkan` works. NOTE the category names are
+	// mixed-case (Zenith_LogCategoryNames: "Vulkan", "Core", "Renderer", ...) and
+	// `logcat -s` matches tags EXACTLY -- "Zenith.VULKAN" silently matches nothing.
+	static const int aiAndroidPriority[] = { ANDROID_LOG_INFO, ANDROID_LOG_WARN, ANDROID_LOG_ERROR };
+	const int iPriority = (eLevel >= 0 && eLevel <= 2) ? aiAndroidPriority[eLevel] : ANDROID_LOG_INFO;
+
+	char acTag[64];
+	snprintf(acTag, sizeof(acTag), "Zenith.%s", Zenith_GetLogCategoryName(eCategory));
+
+	// The category is already in the tag; log the unprefixed message so it is
+	// not repeated on every line.
+	__android_log_write(iPriority, acTag, buffer);
+#else
 	printf("%s\n", prefixedBuffer);
 	fflush(stdout);
+#endif
 #ifdef ZENITH_TOOLS
 	Zenith_EditorAddLogMessage(prefixedBuffer, eLevel, eCategory);
 #else
 	(void)eLevel;
+	// On Android the prefix lives in the logcat tag, so the composed buffer has
+	// no consumer in a non-tools build -- and warnings are errors here.
+	(void)prefixedBuffer;
 #endif
 }
 

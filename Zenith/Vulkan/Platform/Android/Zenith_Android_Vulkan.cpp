@@ -31,8 +31,10 @@ namespace Zenith_Vulkan_Platform
 		xCreateInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
 		xCreateInfo.window = pxWindow;
 
-		VkSurfaceKHR xSurface;
-		vkCreateAndroidSurfaceKHR(xInstance, &xCreateInfo, nullptr, &xSurface);
+		VkSurfaceKHR xSurface = VK_NULL_HANDLE;
+		const VkResult eResult = vkCreateAndroidSurfaceKHR(xInstance, &xCreateInfo, nullptr, &xSurface);
+		Zenith_Assert(eResult == VK_SUCCESS && xSurface != VK_NULL_HANDLE,
+			"vkCreateAndroidSurfaceKHR failed: %d", static_cast<int>(eResult));
 		return xSurface;
 	}
 }

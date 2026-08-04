@@ -421,10 +421,13 @@ ZENITH_TEST(Core, UnitTestTimingReport) {
 
 	// The report must be self-consistent: header present, one row per registered
 	// test, and sorted by total descending (the whole point of the table).
-	FILE* pxFile = nullptr;
-	tmpfile_s(&pxFile);
-	ZENITH_ASSERT_NOT_NULL(pxFile, "tmpfile_s must open for the timing-report round-trip");
-	if (pxFile != nullptr)
+	// A platform with no temp file (Android — see Zenith_TestOpenTempFile) skips
+	// the round-trip; every assertion above has already run there.
+	FILE* pxFile = Zenith_TestOpenTempFile();
+	if (pxFile == nullptr)
+	{
+		ZENITH_SKIP("no temp file available for the timing-report round-trip");
+	}
 	{
 		xRunner.WriteTimingReport(pxFile);
 		fflush(pxFile);

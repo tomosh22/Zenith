@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+	<application
+		android:hasCode="false"
+		android:label="@string/app_name">
+
+		<!-- landscape is a GAME DESIGN choice, not a technical constraint.
+		     Zenith_Vulkan_Swapchain requests an IDENTITY preTransform whenever the
+		     surface offers it, so the presentation engine rotates the image and any
+		     orientation renders correctly (see Zenith/Android/CLAUDE.md), including
+		     landscape on a portrait-native panel, which is what this is.
+		     NOTE: no double hyphen anywhere in this comment; it is illegal in XML
+		     and the manifest merger fails to parse the file. -->
+		<activity
+			android:name="android.app.NativeActivity"
+			android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+			android:exported="true"
+			android:screenOrientation="landscape">
+
+			<meta-data
+				android:name="android.app.lib_name"
+				android:value="zenithmon" />
+
+			<intent-filter>
+				<action android:name="android.intent.action.MAIN" />
+				<category android:name="android.intent.category.LAUNCHER" />
+			</intent-filter>
+		</activity>
+	</application>
+</manifest>
