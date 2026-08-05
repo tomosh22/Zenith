@@ -189,7 +189,7 @@ public abstract class ZenithBaseProject : Project
 			conf.AdditionalCompilerOptions.Add("-Wno-nonportable-include-path");
 		}
 
-		// One render-backend define per config; Flux_BackendGuard.h #errors unless
+		// One render-backend define per config; Core/Zenith_BackendAliases.h #errors unless
 		// exactly one is set. Agde is always Vulkan (its targets carry Vulkan).
 		// Explicit three-way (never a fall-through `else`): an unhandled fragment
 		// value must be a build error here, not a config that silently compiles

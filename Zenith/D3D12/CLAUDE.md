@@ -24,8 +24,11 @@ dummy value. Real D3D12 (DXIL, descriptor heaps, presentation) is future work.
 Selected by the Sharpmake `RenderBackend` fragment (`D3D12_*` configs define
 `ZENITH_D3D12`). The seam:
 
-- `Flux/Flux_Fwd.h` — `#elif defined(ZENITH_D3D12)` block forward-declares the 12
-  `Zenith_D3D12_*` classes and aliases `Flux_* = Zenith_D3D12_*`.
+- `Core/Zenith_BackendAliases.h` — `#elif defined(ZENITH_D3D12)` block
+  forward-declares the 12 `Zenith_D3D12_*` classes and aliases
+  `Flux_* = Zenith_D3D12_*`. (Moved out of `Flux/Flux_Fwd.h` on 2026-08-05 —
+  see `Zenith/Null/CLAUDE.md` for why; `Flux/Flux_Fwd.h` includes it, so no
+  consumer changed.) It also `#error`s unless EXACTLY ONE backend is defined.
 - `Flux/Flux_BackendTypes.h` — pulls `Zenith_PlatformGraphics_Include_D3D12.h`
   (this dir) for the full class definitions when `ZENITH_D3D12` is set.
 - `Flux/Backend/Flux_BackendConformance.cpp` — a `#ifdef ZENITH_D3D12` block

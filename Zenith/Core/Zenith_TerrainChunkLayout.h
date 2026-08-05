@@ -1,10 +1,28 @@
 #pragma once
 
-#include "Flux/Flux_Enums.h"
+#include "Core/Zenith_VertexAttributeTypes.h"
 
 #include <cstdint>
 
-namespace Flux_TerrainVertexLayout
+// ============================================================================
+// Zenith_TerrainChunkLayout
+//
+// THE on-disk contract for a baked terrain chunk: the element table a
+// Render_X_Y / Physics_X_Y .zmesh serializes, the packed vertex stride, and
+// the per-density vertex/index counts. Every static_assert below freezes a
+// value that baked assets on disk already depend on -- changing one is a
+// breaking asset change (see Flux/Terrain/CLAUDE.md on bake stamps).
+//
+// WHY THIS LIVES IN Core: it is read from two directions. Flux consumes it as
+// a GPU vertex layout, and the asset side (Zenith_TerrainComponent's chunk
+// loader, the terrain exporter in ZenithTools) consumes it as a FILE FORMAT --
+// to validate a chunk's serialized element descriptors and to walk vertex data
+// at the right stride. Owning it Flux-side forced the EntityComponent chunk
+// loader to take an edge into Flux purely to learn the shape of the bytes it
+// was reading. It describes the bytes, so it lives with the format.
+// ============================================================================
+
+namespace Zenith_TerrainChunkLayout
 {
 	struct Element
 	{

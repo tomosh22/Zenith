@@ -741,103 +741,16 @@ bool Zenith_Editor::ProcessDeferredSceneOperations()
 	return true;
 }
 
+// In-frame entry point. NO GPU sync: Update() runs before render-task
+// submission so no render tasks are active, and every GPU resource the scene
+// teardown frees is queued through QueueVRAMDeletion's MAX_FRAMES_IN_FLIGHT+1
+// grace period — the same contract the runtime LoadScene teardown relies on
+// mid-play. Stalling here would be a per-load hitch for no benefit.
 bool Zenith_Editor::HandlePendingSceneLoad()
 {
 	m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = false;
 
-	// No GPU sync needed: Update() runs before render-task submission so no
-	// render tasks are active, and the teardown below frees its GPU resources
-	// through QueueVRAMDeletion's MAX_FRAMES_IN_FLIGHT+1 grace period — the
-	// same contract the runtime LoadScene teardown relies on mid-play.
-
-	bool bIsBackupRestore = m_xEditorState.m_xPlayBackup.m_bHasBackup && m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath == m_xEditorState.m_xPlayBackup.m_strBackupScenePath;
-
-	// When restoring from backup (editor Stop), clean up all game scenes and persistent entities.
-	// The backup handle may be stale - games using SCENE_LOAD_SINGLE during Play destroy
-	// the original scene. We unload ALL non-persistent scenes unconditionally.
-	if (bIsBackupRestore)
-	{
-		// 1. Reset all Flux render systems BEFORE destroying entities.
-		// This clears Flux system state (registered meshes, particles, etc.)
-		// so entity destructors don't interact with stale render system references.
-		// Matches the SCENE_LOAD_SINGLE cleanup order (ResetAllRenderSystems -> UnloadAllNonPersistent).
-		g_xEngine.Scenes().ResetAllRenderSystems();
-
-		Zenith_Scene xPersistentScene = g_xEngine.Scenes().GetPersistentScene();
-
-		// 2. Force-unload all non-persistent scenes. Uses UnloadSceneForced to bypass
-		// the "last scene" guard - after SCENE_LOAD_SINGLE during play, only one
-		// game scene remains and UnloadScene would silently refuse to unload it.
-		Zenith_Vector<Zenith_Scene> axScenesToUnload;
-		// GetSceneAt returns INVALID_SCENE past the last visible scene, so walk
-		// slot order until that sentinel (was bounded by GetLoadedSceneCount).
-		for (uint32_t i = 0; ; ++i)
-		{
-			Zenith_Scene xScene = g_xEngine.Scenes().GetSceneAt(i);
-			if (!xScene.IsValid()) break;
-			if (xScene == xPersistentScene) continue;
-			axScenesToUnload.PushBack(xScene);
-		}
-		for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
-		{
-			g_xEngine.Scenes().UnloadSceneForced(axScenesToUnload.Get(i));
-		}
-
-		// 3. Reset persistent scene entities (destroys all entities, clears component pools)
-		Zenith_SceneData* pxPersistentData = g_xEngine.Scenes().GetSceneData(xPersistentScene);
-		if (pxPersistentData)
-		{
-			pxPersistentData->Reset();
-		}
-
-		// 4. Create fresh scene with the original name and restore metadata
-		Zenith_Scene xRestoredScene = g_xEngine.Scenes().LoadScene(m_xEditorState.m_xPlayBackup.m_strBackupSceneName, SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
-		g_xEngine.Scenes().SetActiveScene(xRestoredScene);
-
-		Zenith_SceneData* pxRestoredData = g_xEngine.Scenes().GetSceneData(xRestoredScene);
-		if (pxRestoredData)
-		{
-			Zenith_EditorSceneAccess::Editor_SetPath(pxRestoredData, m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath);
-			Zenith_EditorSceneAccess::Editor_SetBuildIndex(pxRestoredData, m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex);
-		}
-	}
-
-	// Load the scene file into the active scene (backup restore or explicit scene load)
-	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
-	if (pxSceneData)
-	{
-		Zenith_EditorSceneAccess::LoadFromFile(pxSceneData, m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
-	}
-	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from %s", m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
-
-	// Clear selection as entity pointers are now invalid
-	ClearSelection();
-
-	// Clear undo/redo history as entity IDs are now invalid
-	g_xEngine.UndoSystem().Clear();
-
-	// Clear game camera entity pointer as it's now invalid (entity from old scene)
-	m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
-
-	if (bIsBackupRestore)
-	{
-		// Delete the temporary backup file
-		std::filesystem::remove(m_xEditorState.m_xPlayBackup.m_strBackupScenePath);
-		m_xEditorState.m_xPlayBackup.m_bHasBackup = false;
-		m_xEditorState.m_xPlayBackup.m_strBackupScenePath = "";
-		m_xEditorState.m_xPlayBackup.m_iBackupSceneHandle = -1;
-		m_xEditorState.m_xPlayBackup.m_strBackupSceneName = "";
-		m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = "";
-		m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = -1;
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Backup scene file cleaned up");
-	}
-
-	if (m_xEditorState.m_xCamera.m_bInitialized)
-	{
-		SwitchToEditorCamera();
-	}
-
-	m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.clear();
+	LoadPendingSceneIntoActiveScene(false, "");
 
 	return false;
 }

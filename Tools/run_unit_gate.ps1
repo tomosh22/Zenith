@@ -46,7 +46,10 @@ param(
     # adding tests reddens the gate exactly as loudly as deleting them.
     # 1271 -> 1284: +13 for Flux/Flux_SwapchainPolicy.Tests.inl (observed
     # 2026-08-04 on a Null_ Combat build).
-    [int]$Baseline = 1284,
+    # 1284 -> 1289: +5 CommandLine ParseArgs characterization tests, added with
+    # the complexity-gate remediation's table-driven rewrite of
+    # Zenith_CommandLine::Parse (observed 2026-08-05 on a Null_ Combat build).
+    [int]$Baseline = 1289,
     [int]$TimeoutSec = 180,
     [string]$LogPath = ""
 )

@@ -531,6 +531,9 @@ void Zenith_TerrainEditor::UpdatePerFrame(const Zenith_TerrainEditorFrameContext
 
 void Zenith_TerrainEditor::HandleViewportInput(const Zenith_TerrainEditorFrameContext& xCtx)
 {
+	// One hoisted reference for every input query below — the per-file
+	// engine-singleton ratchet counts each g_xEngine token, not each subsystem.
+	Zenith_Input& xInput = g_xEngine.Input();
 	if (!m_bEditModeEnabled)
 	{
 		if (m_bStrokeActive)
@@ -543,11 +546,11 @@ void Zenith_TerrainEditor::HandleViewportInput(const Zenith_TerrainEditorFrameCo
 	// Brush radius shortcuts ([ / ]) when the viewport has focus.
 	if (xCtx.m_bViewportFocused)
 	{
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_LEFT_BRACKET))
+		if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_LEFT_BRACKET))
 		{
 			m_xBrush.m_fRadius = std::max(1.0f, m_xBrush.m_fRadius * 0.8f);
 		}
-		if (g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_KEY_RIGHT_BRACKET))
+		if (xInput.WasKeyPressedThisFrame(ZENITH_KEY_RIGHT_BRACKET))
 		{
 			m_xBrush.m_fRadius = std::min(512.0f, m_xBrush.m_fRadius * 1.25f);
 		}
@@ -555,7 +558,7 @@ void Zenith_TerrainEditor::HandleViewportInput(const Zenith_TerrainEditorFrameCo
 
 	// Cursor ray (viewport-relative mouse, matching HandleObjectPicking).
 	Zenith_Maths::Vector2_64 xGlobalMousePos;
-	g_xEngine.Input().GetMousePosition(xGlobalMousePos);
+	xInput.GetMousePosition(xGlobalMousePos);
 	Zenith_Maths::Vector2 xViewportMousePos = {
 		static_cast<float>(xGlobalMousePos.x - xCtx.m_xViewportPos.x),
 		static_cast<float>(xGlobalMousePos.y - xCtx.m_xViewportPos.y)
@@ -577,10 +580,10 @@ void Zenith_TerrainEditor::HandleViewportInput(const Zenith_TerrainEditorFrameCo
 	// the viewport (or mid-stroke) — gizmo + picking are skipped this frame.
 	m_bConsumedViewportInput = bMouseInViewport || m_bStrokeActive;
 
-	const bool bLMBHeld = g_xEngine.Input().IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
-	const bool bLMBPressed = g_xEngine.Input().WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
-	const bool bCtrl = g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT_CONTROL) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT_CONTROL);
-	const bool bShift = g_xEngine.Input().IsKeyDown(ZENITH_KEY_LEFT_SHIFT) || g_xEngine.Input().IsKeyDown(ZENITH_KEY_RIGHT_SHIFT);
+	const bool bLMBHeld = xInput.IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	const bool bLMBPressed = xInput.WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT);
+	const bool bCtrl = xInput.IsKeyDown(ZENITH_KEY_LEFT_CONTROL) || xInput.IsKeyDown(ZENITH_KEY_RIGHT_CONTROL);
+	const bool bShift = xInput.IsKeyDown(ZENITH_KEY_LEFT_SHIFT) || xInput.IsKeyDown(ZENITH_KEY_RIGHT_SHIFT);
 
 	// Ctrl+click eyedroppers: sample the flatten/set-height target, or capture
 	// the stamp buffer, from the terrain under the cursor.
@@ -749,6 +752,7 @@ void Zenith_TerrainEditor::DrawBrushCursor() const
 	static constexpr float fY_OFFSET = 0.4f;
 
 	const Zenith_Maths::Vector3 xColor = GetToolColour();
+	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
 
 	const float fRadius = m_xBrush.m_fRadius;
 	Zenith_Maths::Vector3 xPrevOuter;
@@ -769,8 +773,8 @@ void Zenith_TerrainEditor::DrawBrushCursor() const
 
 		if (u > 0)
 		{
-			g_xEngine.Primitives().AddLine(xPrevOuter, xOuter, xColor, 0.15f);
-			g_xEngine.Primitives().AddLine(xPrevInner, xInner, xColor * 0.6f, 0.08f);
+			xPrimitives.AddLine(xPrevOuter, xOuter, xColor, 0.15f);
+			xPrimitives.AddLine(xPrevInner, xInner, xColor * 0.6f, 0.08f);
 		}
 		xPrevOuter = xOuter;
 		xPrevInner = xInner;
@@ -778,7 +782,7 @@ void Zenith_TerrainEditor::DrawBrushCursor() const
 
 	// Centre marker.
 	const Zenith_Maths::Vector3 xCentre = { m_xCursorPos.x, m_xCursorPos.y + fY_OFFSET, m_xCursorPos.z };
-	g_xEngine.Primitives().AddLine(xCentre, xCentre + Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f), xColor, 0.15f);
+	xPrimitives.AddLine(xCentre, xCentre + Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f), xColor, 0.15f);
 }
 
 //-----------------------------------------------------------------------------
@@ -1344,17 +1348,18 @@ void Zenith_TerrainEditor::PushStrokeUndoCommand()
 
 		// Live-budget enforcement: clear the stack (freeing commands returns
 		// their bytes) rather than silently dropping history piecemeal.
+		Zenith_UndoSystem& xUndo = g_xEngine.UndoSystem();
 		const u_int64 ulNewBytes = static_cast<u_int64>(xBefore.GetSize()) + xAfter.GetSize();
 		if (m_ulUndoBytesLive + ulNewBytes > ulUNDO_BUDGET_BYTES)
 		{
 			Zenith_Log(LOG_CATEGORY_EDITOR, "[TerrainEditor] Terrain undo budget exceeded (%llu MB live) - clearing undo history",
 				static_cast<unsigned long long>(m_ulUndoBytesLive >> 20));
-			g_xEngine.UndoSystem().Clear();
+			xUndo.Clear();
 		}
 
 		Zenith_UndoCommand_TerrainEdit* pxCommand = new Zenith_UndoCommand_TerrainEdit(
 			*this, eMap, xRegion.m_uX0, xRegion.m_uY0, uW, uH, std::move(xBefore), std::move(xAfter));
-		g_xEngine.UndoSystem().Execute(pxCommand);
+		xUndo.Execute(pxCommand);
 
 		xRegion.m_bTouched = false;
 		xRegion.m_xCapturedTileBits.Clear();

@@ -182,7 +182,9 @@ Terrain collision uses separate mesh, not render LODs:
 
 > **★ CHANGING THE DIVISOR IS A BREAKING ASSET CHANGE — BUMP EVERY GAME'S BAKE STAMP IN THE SAME COMMIT.**
 > `TryReadTerrainChunkSnapshot` REJECTS any chunk whose vertex/index counts differ from
-> `Flux_TerrainVertexLayout`, so a stale bake does not degrade — chunk (0,0) fails validation and
+> `Zenith_TerrainChunkLayout` (`Core/Zenith_TerrainChunkLayout.h` -- the baked-chunk
+> file-format contract, moved out of Flux so the EntityComponent chunk loader can read it
+> without an edge into Flux), so a stale bake does not degrade — chunk (0,0) fails validation and
 > `LoadCombinedPhysicsGeometry` returns with **no physics body at all**. It logs a `Zenith_Error` and
 > the game keeps running, so it presents as characters falling through the world rather than as a
 > stale asset. Each game gates its bake on its own stamp, and **none of them hash the chunk bytes** —

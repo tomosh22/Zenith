@@ -2,10 +2,12 @@
 
 #include <type_traits>
 
-// Backend seam: forward-decls + the Flux_* aliases (Flux_PlatformAPI /
-// Flux_MemoryManager / Flux_Swapchain). Light header -- no full backend
-// headers, so Zenith_Engine.h stays cheap to include.
-#include "Flux/Flux_Fwd.h"
+// Backend seam: the selection guard + the Flux_* aliases this header needs
+// (Flux_PlatformAPI / Flux_MemoryManager / Flux_Swapchain -- the only three
+// names it took from Flux_Fwd.h, all of which forward-declare BACKEND classes
+// rather than Flux types). Light header -- no full backend headers, so
+// Zenith_Engine.h stays cheap to include, and Core keeps no edge into Flux.
+#include "Core/Zenith_BackendAliases.h"
 
 // Forward decls -- keep this header light. Full subsystem headers are
 // only included by Zenith_Engine.cpp where the accessor bodies live.

@@ -3,6 +3,7 @@
 // Engine-wide configuration constants are now in ZenithConfig.h
 // This file includes them for backward compatibility with existing code
 #include "Core/ZenithConfig.h"
+#include "Core/Zenith_VertexAttributeTypes.h"
 
 enum CommandType
 {
@@ -105,28 +106,9 @@ enum MeshTopology
 	MESH_TOPOLOGY_TRIANGLESTRIPS,
 };
 
-enum ShaderDataType
-{
-	SHADER_DATA_TYPE_FLOAT,
-	SHADER_DATA_TYPE_FLOAT2,
-	SHADER_DATA_TYPE_FLOAT3,
-	SHADER_DATA_TYPE_FLOAT4,
-	SHADER_DATA_TYPE_INT,
-	SHADER_DATA_TYPE_INT2,
-	SHADER_DATA_TYPE_INT3,
-	SHADER_DATA_TYPE_INT4,
-	SHADER_DATA_TYPE_UINT,
-	SHADER_DATA_TYPE_UINT2,
-	SHADER_DATA_TYPE_UINT3,
-	SHADER_DATA_TYPE_UINT4,
-	SHADER_DATA_TYPE_MAT3,
-	SHADER_DATA_TYPE_MAT4,
-	SHADER_DATA_TYPE_BOOL,
-	// Packed vertex attribute types
-	SHADER_DATA_TYPE_HALF2,				// float16x2 (4 bytes) - maps to VK_FORMAT_R16G16_SFLOAT
-	SHADER_DATA_TYPE_SNORM10_10_10_2,	// A2B10G10R10 signed normalized (4 bytes) - maps to VK_FORMAT_A2B10G10R10_SNORM_PACK32
-	SHADER_DATA_TYPE_NONE
-};
+// ShaderDataType is ALSO a serialized mesh-format tag, so it is owned by
+// Core/Zenith_VertexAttributeTypes.h and re-exported here -- every consumer
+// that reaches it through this header is unaffected.
 
 // Canonical resource taxonomy carried through reflection -> pipeline layout.
 // Captures the distinctions Slang reflection exposes (separate vs combined

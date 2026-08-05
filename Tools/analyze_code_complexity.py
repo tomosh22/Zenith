@@ -1253,8 +1253,31 @@ class CppAnalyzer:
         brace_start, brace_end. Line numbers are 1-indexed.
         """
         if self.parser_backend == 'tree-sitter':
-            return self._find_function_boundaries_ts(code)
-        return self._find_function_boundaries_regex(code)
+            found = self._find_function_boundaries_ts(code)
+        else:
+            found = self._find_function_boundaries_regex(code)
+        return [f for f in found if not self._is_ignored_macro_name(f['name'])]
+
+    def _is_ignored_macro_name(self, func_name: str) -> bool:
+        """
+        True when a "function" the parser found is really an `ignore_macros` macro.
+
+        A macro invocation written without a trailing semicolon (e.g.
+        `ZENITH_PROPERTY(int32_t, m_iFoo, 0)` followed by a `{`-bearing block) makes
+        both backends error-recover into a phantom function: tree-sitter absorbs the
+        following declarations into one node, reporting hundreds of lines of CC and
+        cognitive complexity for source that contains no function at all.
+
+        `_strip_ignored_macros` already erases these macros' *arguments* before the
+        complexity scan, but detection runs off the macro *name*, so the phantom
+        survives with the stripped body's metrics. Filtering at detection is the fix.
+        """
+        if not self.ignore_macros:
+            return False
+        # Parsers may report a qualified name (`Some::Scope::MACRO`); match the
+        # trailing identifier as well as the whole string.
+        bare = func_name.rsplit('::', 1)[-1].strip()
+        return func_name in self.ignore_macros or bare in self.ignore_macros
 
     def _find_function_boundaries_regex(self, code: str) -> List[Dict]:
         """

@@ -60,22 +60,33 @@ namespace
 		return strOut;
 	}
 
+	// ONE enumeration of the resource kinds, two projections of it. These were
+	// two hand-maintained switches over the same enum in the same order, so a
+	// new FluxResourceKind could be (and would eventually be) added to one and
+	// forgotten in the other — the friendly name would read "Unknown" while the
+	// emitted handle still compiled, or vice versa. Adding a kind now means
+	// adding exactly one row here.
+	#define FLUX_RESOURCE_KIND_TABLE(X)                       \
+		X(CONSTANT_BUFFER,          "ConstantBuffer")         \
+		X(STRUCTURED_BUFFER,        "StructuredBuffer")       \
+		X(RW_STRUCTURED_BUFFER,     "RWStructuredBuffer")     \
+		X(BYTE_ADDRESS_BUFFER,      "ByteAddressBuffer")      \
+		X(RW_BYTE_ADDRESS_BUFFER,   "RWByteAddressBuffer")    \
+		X(TEXTURE,                  "Texture")                \
+		X(RW_TEXTURE,               "RWTexture")              \
+		X(SAMPLER,                  "Sampler")                \
+		X(COMBINED_TEXTURE_SAMPLER, "CombinedTextureSampler") \
+		X(ACCELERATION_STRUCTURE,   "AccelerationStructure")  \
+		X(UNBOUNDED_TEXTURE_ARRAY,  "UnboundedTextureArray")  \
+		X(PARAMETER_BLOCK,          "ParameterBlock")
+
 	const char* ResourceKindName(FluxResourceKind eKind)
 	{
 		switch (eKind)
 		{
-		case FLUX_RESOURCE_KIND_CONSTANT_BUFFER:        return "ConstantBuffer";
-		case FLUX_RESOURCE_KIND_STRUCTURED_BUFFER:      return "StructuredBuffer";
-		case FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER:   return "RWStructuredBuffer";
-		case FLUX_RESOURCE_KIND_BYTE_ADDRESS_BUFFER:    return "ByteAddressBuffer";
-		case FLUX_RESOURCE_KIND_RW_BYTE_ADDRESS_BUFFER: return "RWByteAddressBuffer";
-		case FLUX_RESOURCE_KIND_TEXTURE:                return "Texture";
-		case FLUX_RESOURCE_KIND_RW_TEXTURE:             return "RWTexture";
-		case FLUX_RESOURCE_KIND_SAMPLER:                return "Sampler";
-		case FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER: return "CombinedTextureSampler";
-		case FLUX_RESOURCE_KIND_ACCELERATION_STRUCTURE: return "AccelerationStructure";
-		case FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY: return "UnboundedTextureArray";
-		case FLUX_RESOURCE_KIND_PARAMETER_BLOCK:        return "ParameterBlock";
+	#define FLUX_RESOURCE_KIND_CASE(Token, szName) case FLUX_RESOURCE_KIND_##Token: return szName;
+		FLUX_RESOURCE_KIND_TABLE(FLUX_RESOURCE_KIND_CASE)
+	#undef FLUX_RESOURCE_KIND_CASE
 		default: return "Unknown";
 		}
 	}
@@ -85,18 +96,9 @@ namespace
 	{
 		switch (eKind)
 		{
-		case FLUX_RESOURCE_KIND_CONSTANT_BUFFER:          return "FLUX_RESOURCE_KIND_CONSTANT_BUFFER";
-		case FLUX_RESOURCE_KIND_STRUCTURED_BUFFER:        return "FLUX_RESOURCE_KIND_STRUCTURED_BUFFER";
-		case FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER:     return "FLUX_RESOURCE_KIND_RW_STRUCTURED_BUFFER";
-		case FLUX_RESOURCE_KIND_BYTE_ADDRESS_BUFFER:      return "FLUX_RESOURCE_KIND_BYTE_ADDRESS_BUFFER";
-		case FLUX_RESOURCE_KIND_RW_BYTE_ADDRESS_BUFFER:   return "FLUX_RESOURCE_KIND_RW_BYTE_ADDRESS_BUFFER";
-		case FLUX_RESOURCE_KIND_TEXTURE:                  return "FLUX_RESOURCE_KIND_TEXTURE";
-		case FLUX_RESOURCE_KIND_RW_TEXTURE:               return "FLUX_RESOURCE_KIND_RW_TEXTURE";
-		case FLUX_RESOURCE_KIND_SAMPLER:                  return "FLUX_RESOURCE_KIND_SAMPLER";
-		case FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER: return "FLUX_RESOURCE_KIND_COMBINED_TEXTURE_SAMPLER";
-		case FLUX_RESOURCE_KIND_ACCELERATION_STRUCTURE:   return "FLUX_RESOURCE_KIND_ACCELERATION_STRUCTURE";
-		case FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY:  return "FLUX_RESOURCE_KIND_UNBOUNDED_TEXTURE_ARRAY";
-		case FLUX_RESOURCE_KIND_PARAMETER_BLOCK:          return "FLUX_RESOURCE_KIND_PARAMETER_BLOCK";
+	#define FLUX_RESOURCE_KIND_CASE(Token, szName) case FLUX_RESOURCE_KIND_##Token: return "FLUX_RESOURCE_KIND_" #Token;
+		FLUX_RESOURCE_KIND_TABLE(FLUX_RESOURCE_KIND_CASE)
+	#undef FLUX_RESOURCE_KIND_CASE
 		default: return "FLUX_RESOURCE_KIND_UNKNOWN";
 		}
 	}

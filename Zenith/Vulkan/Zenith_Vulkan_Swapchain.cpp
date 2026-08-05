@@ -206,10 +206,11 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	// params on this Initialise()). Every other reach routes through these.
 	// Initialise() also runs on swapchain recreation (resize) — re-caching the
 	// same pointers each time is harmless.
-	m_pxVulkan       = &g_xEngine.FluxBackend();
-	m_pxVulkanMemory = &g_xEngine.FluxMemory();
-	m_pxFluxRenderer = &g_xEngine.FluxRenderer();
-	m_pxProfiling    = &g_xEngine.Profiling();
+	Zenith_Engine& xEngine = g_xEngine;
+	m_pxVulkan       = &xEngine.FluxBackend();
+	m_pxVulkanMemory = &xEngine.FluxMemory();
+	m_pxFluxRenderer = &xEngine.FluxRenderer();
+	m_pxProfiling    = &xEngine.Profiling();
 
 	const vk::SurfaceKHR& xSurface = m_pxVulkan->GetSurface();
 

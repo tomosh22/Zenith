@@ -2,7 +2,8 @@
 #include "Flux/Flux_RendererImpl.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
-#include "Flux/Terrain/Flux_TerrainVertexLayout.h"
+#include "Core/Zenith_TerrainChunkLayout.h"
+#include "Core/Zenith_BakedMeshReader.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/Terrain.h" // typed binding handles
@@ -15,7 +16,6 @@
 #include <fstream>
 #include <limits>
 #include <type_traits>
-#include <vector>
 
 using namespace Flux_TerrainConfig;
 
@@ -24,115 +24,31 @@ DEBUGVAR bool dbg_bLogTerrainStreaming = false;
 
 namespace
 {
-	static_assert(Flux_TerrainVertexLayout::uHIGH_CHUNK_VERTEX_COUNT <= STREAMING_VERTEX_BUFFER_SIZE / Flux_TerrainVertexLayout::uVERTEX_STRIDE,
+	static_assert(Zenith_TerrainChunkLayout::uHIGH_CHUNK_VERTEX_COUNT <= STREAMING_VERTEX_BUFFER_SIZE / Zenith_TerrainChunkLayout::uVERTEX_STRIDE,
 		"A canonical HIGH terrain chunk must fit in the streaming vertex buffer");
-	static_assert(Flux_TerrainVertexLayout::uHIGH_CHUNK_INDEX_COUNT <= STREAMING_INDEX_BUFFER_SIZE / sizeof(uint32_t),
+	static_assert(Zenith_TerrainChunkLayout::uHIGH_CHUNK_INDEX_COUNT <= STREAMING_INDEX_BUFFER_SIZE / sizeof(uint32_t),
 		"A canonical HIGH terrain chunk must fit in the streaming index buffer");
 
 	struct TerrainMeshSourceData
 	{
-		std::vector<u_int8> m_auVertexData;
-		std::vector<uint32_t> m_auIndices;
+		Zenith_Vector<u_int8> m_auVertexData;
+		Zenith_Vector<uint32_t> m_auIndices;
 		uint32_t m_uNumVerts = 0;
 		uint32_t m_uNumIndices = 0;
 	};
 
-	class TerrainMeshFileReader
-	{
-	public:
-		explicit TerrainMeshFileReader(const char* szPath)
-			: m_xFile(szPath, std::ios::binary | std::ios::ate)
-		{
-			if (!m_xFile.good())
-				return;
-
-			const std::streamoff iSize = static_cast<std::streamoff>(m_xFile.tellg());
-			if (iSize <= 0)
-				return;
-
-			m_ulRemaining = static_cast<uint64_t>(iSize);
-			m_xFile.seekg(0, std::ios::beg);
-			m_bValid = m_xFile.good();
-		}
-
-		template<typename T>
-		bool Read(T& xValue)
-		{
-			static_assert(std::is_trivially_copyable_v<T>);
-			return ReadBytes(&xValue, sizeof(T));
-		}
-
-		bool ReadBytes(void* pData, uint64_t ulSize)
-		{
-			if (!m_bValid || pData == nullptr || ulSize > m_ulRemaining ||
-				ulSize > static_cast<uint64_t>((std::numeric_limits<std::streamsize>::max)()))
-			{
-				return false;
-			}
-
-			m_xFile.read(static_cast<char*>(pData), static_cast<std::streamsize>(ulSize));
-			if (!m_xFile || static_cast<uint64_t>(m_xFile.gcount()) != ulSize)
-			{
-				m_bValid = false;
-				return false;
-			}
-
-			m_ulRemaining -= ulSize;
-			return true;
-		}
-
-		bool Skip(uint64_t ulSize)
-		{
-			if (!m_bValid || ulSize > m_ulRemaining ||
-				ulSize > static_cast<uint64_t>((std::numeric_limits<std::streamoff>::max)()))
-			{
-				return false;
-			}
-
-			m_xFile.seekg(static_cast<std::streamoff>(ulSize), std::ios::cur);
-			if (!m_xFile)
-			{
-				m_bValid = false;
-				return false;
-			}
-
-			m_ulRemaining -= ulSize;
-			return true;
-		}
-
-		bool HasRemaining(uint64_t ulSize) const
-		{
-			return m_bValid && ulSize <= m_ulRemaining;
-		}
-
-		bool ReadAttribute(uint64_t ulDataSize, void* pData = nullptr)
-		{
-			static_assert(sizeof(bool) == sizeof(uint8_t), "The .zmesh attribute flag format requires one-byte bools");
-			uint8_t uPresent = 0;
-			if (!Read(uPresent) || uPresent > 1u)
-				return false;
-			if (uPresent == 0u)
-				return pData == nullptr;
-			return pData != nullptr ? ReadBytes(pData, ulDataSize) : Skip(ulDataSize);
-		}
-
-	private:
-		std::ifstream m_xFile;
-		uint64_t m_ulRemaining = 0;
-		bool m_bValid = false;
-	};
 
 	bool TryLoadTerrainMeshSource(const char* szPath, uint32_t uExpectedVertexStride, TerrainMeshSourceData& xDataOut)
 	{
-		TerrainMeshFileReader xReader(szPath);
+		Zenith_BakedMeshReader xReader(szPath);
 
 		// Terrain bakes have one canonical layout. Validate the serialized
 		// element descriptors directly so corrupt data never reaches the
 		// assertion-based general mesh loader and same-size, wrong-order layouts
 		// cannot be uploaded into the unified terrain buffer.
 		uint32_t uNumElements = 0;
-		if (!xReader.Read(uNumElements) || uNumElements != Flux_TerrainVertexLayout::uELEMENT_COUNT ||
-			uExpectedVertexStride != Flux_TerrainVertexLayout::uVERTEX_STRIDE)
+		if (!xReader.Read(uNumElements) || uNumElements != Zenith_TerrainChunkLayout::uELEMENT_COUNT ||
+			uExpectedVertexStride != Zenith_TerrainChunkLayout::uVERTEX_STRIDE)
 		{
 			return false;
 		}
@@ -141,7 +57,7 @@ namespace
 		for (uint32_t u = 0; u < uNumElements; ++u)
 		{
 			Flux_BufferElement xElement;
-			const Flux_TerrainVertexLayout::Element& xExpected = Flux_TerrainVertexLayout::axELEMENTS[u];
+			const Zenith_TerrainChunkLayout::Element& xExpected = Zenith_TerrainChunkLayout::axELEMENTS[u];
 			if (!xReader.Read(xElement) || xElement.m_eType != xExpected.m_eType ||
 				xElement.m_uSize != xExpected.m_uSize || xElement.m_uOffset != uExpectedOffset)
 			{
@@ -154,8 +70,8 @@ namespace
 		uint32_t uBoneMapCount = 0;
 		if (!xReader.Read(xDataOut.m_uNumVerts) || !xReader.Read(xDataOut.m_uNumIndices) ||
 			!xReader.Read(uNumBones) || !xReader.Read(uBoneMapCount) ||
-			xDataOut.m_uNumVerts != Flux_TerrainVertexLayout::uHIGH_CHUNK_VERTEX_COUNT ||
-			xDataOut.m_uNumIndices != Flux_TerrainVertexLayout::uHIGH_CHUNK_INDEX_COUNT ||
+			xDataOut.m_uNumVerts != Zenith_TerrainChunkLayout::uHIGH_CHUNK_VERTEX_COUNT ||
+			xDataOut.m_uNumIndices != Zenith_TerrainChunkLayout::uHIGH_CHUNK_INDEX_COUNT ||
 			uNumBones != 0u || uBoneMapCount != 0u)
 		{
 			return false;
@@ -165,7 +81,7 @@ namespace
 		if (!xReader.ReadBytes(auMaterialColor, sizeof(auMaterialColor)))
 			return false;
 
-		const uint64_t ulVertexDataSize = static_cast<uint64_t>(xDataOut.m_uNumVerts) * Flux_TerrainVertexLayout::uVERTEX_STRIDE;
+		const uint64_t ulVertexDataSize = static_cast<uint64_t>(xDataOut.m_uNumVerts) * Zenith_TerrainChunkLayout::uVERTEX_STRIDE;
 		const uint64_t ulIndexDataSize = static_cast<uint64_t>(xDataOut.m_uNumIndices) * sizeof(uint32_t);
 		// Both required payload flags plus the seven optional attribute flags
 		// must exist. Check this lower bound before allocating from file counts,
@@ -174,10 +90,10 @@ namespace
 		if (!xReader.HasRemaining(ulVertexDataSize + ulIndexDataSize + ulATTRIBUTE_FLAG_COUNT))
 			return false;
 
-		xDataOut.m_auVertexData.resize(static_cast<size_t>(ulVertexDataSize));
-		xDataOut.m_auIndices.resize(xDataOut.m_uNumIndices);
-		if (!xReader.ReadAttribute(ulVertexDataSize, xDataOut.m_auVertexData.data()) ||
-			!xReader.ReadAttribute(ulIndexDataSize, xDataOut.m_auIndices.data()))
+		xDataOut.m_auVertexData.Resize(static_cast<u_int>(ulVertexDataSize), 0u);
+		xDataOut.m_auIndices.Resize(xDataOut.m_uNumIndices, 0u);
+		if (!xReader.ReadAttribute(ulVertexDataSize, true, xDataOut.m_auVertexData.GetDataPointer()) ||
+			!xReader.ReadAttribute(ulIndexDataSize, true, xDataOut.m_auIndices.GetDataPointer()))
 		{
 			return false;
 		}
@@ -191,13 +107,13 @@ namespace
 		const uint64_t ulVector3DataSize = static_cast<uint64_t>(xDataOut.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
 		const uint64_t ulVector4DataSize = static_cast<uint64_t>(xDataOut.m_uNumVerts) * sizeof(Zenith_Maths::Vector4);
 		const uint64_t ulBoneAttributeSize = static_cast<uint64_t>(xDataOut.m_uNumVerts) * MAX_BONES_PER_VERTEX * sizeof(uint32_t);
-		return xReader.ReadAttribute(ulVector3DataSize) && // positions
-			xReader.ReadAttribute(ulVector3DataSize) &&      // normals
-			xReader.ReadAttribute(ulVector3DataSize) &&      // tangents
-			xReader.ReadAttribute(ulVector3DataSize) &&      // bitangents
-			xReader.ReadAttribute(ulVector4DataSize) &&      // colours
-			xReader.ReadAttribute(ulBoneAttributeSize) &&    // bone IDs
-			xReader.ReadAttribute(ulBoneAttributeSize);      // bone weights
+		return xReader.ReadAttribute(ulVector3DataSize, false) && // positions
+			xReader.ReadAttribute(ulVector3DataSize, false) &&      // normals
+			xReader.ReadAttribute(ulVector3DataSize, false) &&      // tangents
+			xReader.ReadAttribute(ulVector3DataSize, false) &&      // bitangents
+			xReader.ReadAttribute(ulVector4DataSize, false) &&      // colours
+			xReader.ReadAttribute(ulBoneAttributeSize, false) &&    // bone IDs
+			xReader.ReadAttribute(ulBoneAttributeSize, false);      // bone weights
 	}
 }
 
@@ -938,20 +854,20 @@ Flux_TerrainStreamInResult Flux_TerrainStreamingManagerImpl::StreamInLOD(Flux_Te
 	if (xState.m_pfnChunkVertexHook != nullptr)
 	{
 		xState.m_pfnChunkVertexHook(xState.m_pChunkVertexHookUser, uChunkX, uChunkY,
-			xChunkMesh.m_auVertexData.data(), uNumVerts, uVertexStride);
+			xChunkMesh.m_auVertexData.GetDataPointer(), uNumVerts, uVertexStride);
 	}
 
 	// Upload to GPU
 	xVulkanMemory.UploadBufferDataAtOffset(
 		xState.m_xUnifiedVertexBuffer.GetBuffer().m_xVRAMHandle,
-		xChunkMesh.m_auVertexData.data(),
+		xChunkMesh.m_auVertexData.GetDataPointer(),
 		ulVertexDataSize,
 		ulVertexOffsetBytes
 	);
 
 	xVulkanMemory.UploadBufferDataAtOffset(
 		xState.m_xUnifiedIndexBuffer.GetBuffer().m_xVRAMHandle,
-		xChunkMesh.m_auIndices.data(),
+		xChunkMesh.m_auIndices.GetDataPointer(),
 		ulIndexDataSize,
 		ulIndexOffsetBytes
 	);

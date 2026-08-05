@@ -385,7 +385,7 @@ standalone editor session can open.
 | GrassDensity.ztxtr | R32F | doubles as the gameplay tall-grass encounter map (ZM_TallGrassSystem keeps its own CPU copy) |
 | Render_X_Y.zmesh | exactly 1 per exported chunk | HIGH render source; a missing/invalid sparse source becomes `SOURCE_UNAVAILABLE` at runtime |
 | Render_LOW_X_Y.zmesh | exactly 1 per exported chunk | LOW render source |
-| Physics_X_Y.zmesh | exactly 1 per exported chunk | physics source; **density divisor 4** (289 verts / 1536 indices per chunk) since ZM-D-182, deliberately coarser than the HIGH render mesh. `Zenith_TerrainComponent` VALIDATES these counts against `Flux_TerrainVertexLayout` and rejects a mismatch, so a chunk baked at another divisor does not degrade -- the terrain gets no physics body at all |
+| Physics_X_Y.zmesh | exactly 1 per exported chunk | physics source; **density divisor 4** (289 verts / 1536 indices per chunk) since ZM-D-182, deliberately coarser than the HIGH render mesh. `Zenith_TerrainComponent` VALIDATES these counts against `Zenith_TerrainChunkLayout` (`Zenith/Core/Zenith_TerrainChunkLayout.h`; named `Flux_TerrainVertexLayout` before 2026-08-05) and rejects a mismatch, so a chunk baked at another divisor does not degrade -- the terrain gets no physics body at all |
 | ZM_TerrainRecipe.manifest | 12-byte binary marker | terrain-family warm gate: ASCII `ZMTR`, little-endian version, little-endian required-output count; published atomically only after every required output validates |
 
 > **★ THE WARM GATE IS `(version, COUNT)` -- IT DOES NOT HASH THE BYTES.** Any change that

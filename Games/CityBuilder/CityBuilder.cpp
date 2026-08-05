@@ -277,7 +277,7 @@ static void CB_EnsureTerrainAssets()
 	// ★ BUMP FOR ANY CHANGE TO THE BAKED BYTES, not only to HillNorm. v5 is not a
 	// terrain-shape change: the engine's physics chunks moved from a density
 	// divisor of 8 (81 verts) to 4 (289 verts), and Zenith_TerrainComponent
-	// validates a loaded chunk against Flux_TerrainVertexLayout — so every v4
+	// validates a loaded chunk against Zenith_TerrainChunkLayout — so every v4
 	// bake's Physics_*.zmesh is now rejected and the city would load with NO
 	// terrain collision.
 	const std::string strHillMarker = strTerrainDir + "terrain_hills_v5.marker";   // bump to force a re-bake when HillNorm or the baked chunk layout changes

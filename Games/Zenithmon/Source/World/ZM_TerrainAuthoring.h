@@ -263,7 +263,7 @@ struct ZM_TerrainBakeBatchPlan
 // gameplay bug rather than as a stale asset.
 //   v1 -> v2: physics chunks moved from a density divisor of 8 (81 verts) to 4
 //             (289 verts). Every v1 bake on disk is rejected by
-//             Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT, so the bump
+//             Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT, so the bump
 //             is load-bearing -- without it Route1 and Thornacre stay warm and
 //             silently lose their collision.
 constexpr u_int uZM_TERRAIN_MANIFEST_VERSION = 2u;

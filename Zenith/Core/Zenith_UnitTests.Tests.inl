@@ -85,7 +85,7 @@
 
 // Terrain streaming (for chunk distance tests)
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
-#include "Flux/Terrain/Flux_TerrainVertexLayout.h"
+#include "Core/Zenith_TerrainChunkLayout.h"
 
 // Slang reflection schema + codegen. Both headers are platform-neutral
 // (Slang DLL access is gated inside the .cpp via ZENITH_WINDOWS), so the
@@ -15409,21 +15409,30 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 		"First-use preflight requires a missing Assets parent");
 	ZENITH_ASSERT_TRUE(xPathEditor.SetAssetSet("FirstUseSet"), "First-use named terrain set must stage successfully");
 	std::string strFirstUseDirectory;
+	struct FirstUseLeaseContext
+	{
+		std::string* m_pstrDirectory;
+		const std::filesystem::path* m_pxTarget;
+		const std::filesystem::path* m_pxOutside;
+	};
+	FirstUseLeaseContext xFirstUseContext{
+		&strFirstUseDirectory, &xFirstUseTarget, &xLeaseMutationOutside };
 	const bool bFirstUsePrepared = Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
 		"FirstUseSet", xFirstUseRoot.string(),
-		[&](const std::string& strPreparedDirectory)
+		[](void* pContext, const std::string& strPreparedDirectory) -> bool
 		{
-			strFirstUseDirectory = strPreparedDirectory;
+			FirstUseLeaseContext& xLease = *static_cast<FirstUseLeaseContext*>(pContext);
+			*xLease.m_pstrDirectory = strPreparedDirectory;
 #ifdef ZENITH_WINDOWS
 			DWORD uMutationOpenError = ERROR_SUCCESS;
 			ZENITH_ASSERT_FALSE(TrySetTerrainTestDirectoryJunction(
-				xFirstUseTarget, xLeaseMutationOutside, &uMutationOpenError),
+				*xLease.m_pxTarget, *xLease.m_pxOutside, &uMutationOpenError),
 				"A held target lease must deny GENERIC_WRITE/reparse mutation for the full callback lifetime");
 			ZENITH_ASSERT_EQ(uMutationOpenError, static_cast<DWORD>(ERROR_SHARING_VIOLATION),
 				"The reparse attack must fail at its competing GENERIC_WRITE open because the held target participates in read-share accounting");
 #endif
 			return true;
-		});
+		}, &xFirstUseContext);
 	ZENITH_ASSERT_TRUE(bFirstUsePrepared,
 		"A first named terrain set must safely create its missing Assets, Terrain, and target directories");
 	ZENITH_ASSERT_EQ(strFirstUseDirectory, xFirstUseTarget.generic_string() + "/", "First-use preparation must resolve the named target");
@@ -15451,11 +15460,11 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 	bool bRollbackCallbackEntered = false;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
 		"RollbackSet", xRollbackTerrain.string(),
-		[&](const std::string&)
+		[](void* pContext, const std::string&) -> bool
 		{
-			bRollbackCallbackEntered = true;
+			*static_cast<bool*>(pContext) = true;
 			return false;
-		}), "A failed prepared-directory operation must report failure");
+		}, &bRollbackCallbackEntered), "A failed prepared-directory operation must report failure");
 	ZENITH_ASSERT_TRUE(bRollbackCallbackEntered,
 		"Rollback coverage requires preparation to succeed before callback failure");
 	ZENITH_ASSERT_TRUE(std::filesystem::is_directory(xRollbackGameRoot),
@@ -15483,11 +15492,11 @@ void Zenith_UnitTests::TestTerrainEditorAssetSetResolvesLegacyAndNamedBakeDirect
 	bool bAssetsJunctionCallbackEntered = false;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
 		"RejectedSet", xAssetsJunctionTerrain.string(),
-		[&](const std::string&)
+		[](void* pContext, const std::string&) -> bool
 		{
-			bAssetsJunctionCallbackEntered = true;
+			*static_cast<bool*>(pContext) = true;
 			return true;
-		}), "A reparse redirect at the Assets segment must be rejected");
+		}, &bAssetsJunctionCallbackEntered), "A reparse redirect at the Assets segment must be rejected");
 	ZENITH_ASSERT_FALSE(bAssetsJunctionCallbackEntered,
 		"Assets-junction rejection must precede callback entry");
 	ZENITH_ASSERT_FALSE(std::filesystem::exists(xAssetsJunctionOutside / "Terrain"),
@@ -15982,7 +15991,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	xState.m_xIndexAllocator.Initialize(16u, "MissingHighLODIndexTest");
 	xState.m_uCachedHighLODVertexCount = 8u;
 	xState.m_uCachedHighLODIndexCount = 8u;
-	xState.m_uVertexStride = Flux_TerrainVertexLayout::uVERTEX_STRIDE;
+	xState.m_uVertexStride = Zenith_TerrainChunkLayout::uVERTEX_STRIDE;
 	xState.m_xLastCameraPos = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
 
 	const uint32_t uResidentChunk = Flux_TerrainStreamingManagerImpl::ChunkCoordsToIndex(63u, 63u);
@@ -16044,19 +16053,19 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	Flux_BufferLayout xIncompatibleLayout;
 	xIncompatibleLayout.GetElements().PushBack(Flux_BufferElement(SHADER_DATA_TYPE_FLOAT2));
 	xIncompatibleLayout.GetElements().PushBack(Flux_BufferElement(SHADER_DATA_TYPE_FLOAT3));
-	for (uint32_t u = 2u; u < Flux_TerrainVertexLayout::uELEMENT_COUNT; u++)
+	for (uint32_t u = 2u; u < Zenith_TerrainChunkLayout::uELEMENT_COUNT; u++)
 	{
 		xIncompatibleLayout.GetElements().PushBack(
-			Flux_BufferElement(Flux_TerrainVertexLayout::axELEMENTS[u].m_eType));
+			Flux_BufferElement(Zenith_TerrainChunkLayout::axELEMENTS[u].m_eType));
 	}
 	xIncompatibleLayout.CalculateOffsetsAndStrides();
-	ZENITH_ASSERT_EQ(xIncompatibleLayout.GetElements().GetSize(), Flux_TerrainVertexLayout::uELEMENT_COUNT, "The incompatible fixture must retain the canonical element count");
-	ZENITH_ASSERT_EQ(xIncompatibleLayout.GetStride(), Flux_TerrainVertexLayout::uVERTEX_STRIDE, "The incompatible fixture must retain the canonical total stride");
+	ZENITH_ASSERT_EQ(xIncompatibleLayout.GetElements().GetSize(), Zenith_TerrainChunkLayout::uELEMENT_COUNT, "The incompatible fixture must retain the canonical element count");
+	ZENITH_ASSERT_EQ(xIncompatibleLayout.GetStride(), Zenith_TerrainChunkLayout::uVERTEX_STRIDE, "The incompatible fixture must retain the canonical total stride");
 
-	const uint32_t uCanonicalVertexCount = Flux_TerrainVertexLayout::uHIGH_CHUNK_VERTEX_COUNT;
-	const uint32_t uCanonicalIndexCount = Flux_TerrainVertexLayout::uHIGH_CHUNK_INDEX_COUNT;
+	const uint32_t uCanonicalVertexCount = Zenith_TerrainChunkLayout::uHIGH_CHUNK_VERTEX_COUNT;
+	const uint32_t uCanonicalIndexCount = Zenith_TerrainChunkLayout::uHIGH_CHUNK_INDEX_COUNT;
 	std::vector<u_int8> auVertexPayload(
-		static_cast<size_t>(uCanonicalVertexCount) * Flux_TerrainVertexLayout::uVERTEX_STRIDE, 0u);
+		static_cast<size_t>(uCanonicalVertexCount) * Zenith_TerrainChunkLayout::uVERTEX_STRIDE, 0u);
 	std::vector<uint32_t> auIndexPayload(uCanonicalIndexCount, 0u);
 	std::vector<Zenith_Maths::Vector3> axPositionPayload(uCanonicalVertexCount, Zenith_Maths::Vector3(0.0f));
 	Zenith_HashMap<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>> xEmptyBoneMap;
@@ -16119,9 +16128,9 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		uint32_t uFixtureMutation)
 	{
 		Flux_BufferLayout xLayout;
-		for (uint32_t u = 0u; u < Flux_TerrainVertexLayout::uELEMENT_COUNT; u++)
+		for (uint32_t u = 0u; u < Zenith_TerrainChunkLayout::uELEMENT_COUNT; u++)
 		{
-			xLayout.GetElements().PushBack(Flux_BufferElement(Flux_TerrainVertexLayout::axELEMENTS[u].m_eType));
+			xLayout.GetElements().PushBack(Flux_BufferElement(Zenith_TerrainChunkLayout::axELEMENTS[u].m_eType));
 		}
 		xLayout.CalculateOffsetsAndStrides();
 
@@ -16132,7 +16141,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 			uIndexCount, "A canonical terrain fixture must have exactly two triangles per grid cell");
 
 		std::vector<u_int8> auVertices(
-			static_cast<size_t>(uVertexCount) * Flux_TerrainVertexLayout::uVERTEX_STRIDE, 0u);
+			static_cast<size_t>(uVertexCount) * Zenith_TerrainChunkLayout::uVERTEX_STRIDE, 0u);
 		std::vector<uint32_t> auIndices;
 		auIndices.reserve(uIndexCount);
 		std::vector<Zenith_Maths::Vector3> axPositions(uVertexCount);
@@ -16153,7 +16162,7 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 				static_cast<float>(uX), static_cast<float>(uZ)
 			};
 			std::memcpy(auVertices.data() +
-				static_cast<size_t>(uVertex) * Flux_TerrainVertexLayout::uVERTEX_STRIDE,
+				static_cast<size_t>(uVertex) * Zenith_TerrainChunkLayout::uVERTEX_STRIDE,
 				afPackedPositionAndUV, sizeof(afPackedPositionAndUV));
 		};
 		// Match ExportChunkBatch exactly: N x N interior vertices first, then
@@ -16238,6 +16247,44 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		{
 			axNormals[0] = Zenith_Maths::Vector3(0.0f);
 		}
+		else if (uFixtureMutation == 5u)
+		{
+			// Collapse vertex 1 onto vertex 0's grid slot. Two vertices claiming
+			// one slot must be rejected as a duplicate owner, before any of the
+			// triangle-topology checks get a chance to fire.
+			axPositions[1] = axPositions[0];
+			const float afPacked[5] = {
+				axPositions[1].x, axPositions[1].y, axPositions[1].z, 0.0f, 0.0f };
+			std::memcpy(auVertices.data() +
+				static_cast<size_t>(Zenith_TerrainChunkLayout::uVERTEX_STRIDE),
+				afPacked, sizeof(afPacked));
+		}
+		else if (uFixtureMutation == 6u)
+		{
+			// Packed vertex-buffer X disagrees with the position stream by far
+			// more than the grid epsilon. Both streams stay finite and on-grid,
+			// so only the cross-stream agreement check can catch this.
+			const float fDivergentX = axPositions[0].x + 0.5f;
+			std::memcpy(auVertices.data(), &fDivergentX, sizeof(float));
+		}
+		else if (uFixtureMutation == 7u)
+		{
+			// One index past the end of the vertex array.
+			auIndices[0] = uVertexCount;
+		}
+		else if (uFixtureMutation == 8u)
+		{
+			// Degenerate triangle: two corners are the same vertex.
+			auIndices[1] = auIndices[0];
+		}
+		else if (uFixtureMutation == 9u)
+		{
+			// A triangle spanning two grid cells rather than one. Indices 0/1/2
+			// are the first interior row, so their grid X values are 0/1/2.
+			auIndices[0] = 0u;
+			auIndices[1] = 2u;
+			auIndices[2] = 1u;
+		}
 
 		Zenith_DataStream xMesh;
 		xMesh << xLayout.GetElements();
@@ -16266,112 +16313,151 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 
 	const std::filesystem::path xLowAnchorPath = xArtifacts.m_xDirectory / "Render_LOW_0_0.zmesh";
 	WriteCanonicalTerrainSource(xLowAnchorPath,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, 0u);
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 0u);
 	Flux_MeshGeometry xLowAnchor;
 	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xLowAnchorPath.string(),
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xLowAnchor),
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xLowAnchor),
 		"A canonical LOW (0,0) authority must remain loadable without a GPU upload");
-	ZENITH_ASSERT_EQ(xLowAnchor.GetNumVerts(), Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+	ZENITH_ASSERT_EQ(xLowAnchor.GetNumVerts(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		"The LOW authority must retain the exporter topology");
 	Flux_MeshGeometry xMissingLowAuthority;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
 		(xArtifacts.m_xDirectory / "MissingAuthority" / "Render_LOW_0_0.zmesh").string(),
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xMissingLowAuthority),
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xMissingLowAuthority),
 		"A missing LOW (0,0) authority must fail validation so runtime marks render geometry unusable");
 
 	const std::filesystem::path xPhysicsAnchorPath = xArtifacts.m_xDirectory / "Physics_0_0.zmesh";
 	WriteCanonicalTerrainSource(xPhysicsAnchorPath,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 0u);
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 0u);
 	Flux_MeshGeometry xPhysicsAnchor;
 	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPhysicsAnchorPath.string(),
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xPhysicsAnchor),
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xPhysicsAnchor),
 		"A canonical physics (0,0) authority with normals must remain loadable without a GPU upload");
 	Flux_MeshGeometry xMissingPhysicsAuthority;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
 		(xArtifacts.m_xDirectory / "MissingAuthority" / "Physics_0_0.zmesh").string(),
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xMissingPhysicsAuthority),
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xMissingPhysicsAuthority),
 		"A missing physics (0,0) authority must fail validation so runtime produces no physics body");
 
 	Flux_MeshGeometry xMissingLow;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
 		(xArtifacts.m_xDirectory / "Render_LOW_0_1.zmesh").string(),
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xMissingLow),
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xMissingLow),
 		"A missing non-anchor LOW source must be rejected nonassertingly as zero geometry");
 	ZENITH_ASSERT_EQ(xMissingLow.GetNumVerts(), 0u,
 		"A missing non-anchor LOW source must not partially populate geometry");
 
 	const std::filesystem::path xCorruptPhysicsPath = xArtifacts.m_xDirectory / "Physics_0_1.zmesh";
 	Zenith_DataStream xTruncatedPhysics;
-	xTruncatedPhysics << uint32_t(Flux_TerrainVertexLayout::uELEMENT_COUNT);
+	xTruncatedPhysics << uint32_t(Zenith_TerrainChunkLayout::uELEMENT_COUNT);
 	xTruncatedPhysics.WriteToFile(xCorruptPhysicsPath.string().c_str());
 	Flux_MeshGeometry xCorruptPhysics;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xCorruptPhysicsPath.string(),
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xCorruptPhysics),
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xCorruptPhysics),
 		"A truncated non-anchor physics source must be rejected before the assertion-based loader");
 	ZENITH_ASSERT_EQ(xCorruptPhysics.GetNumVerts(), 0u,
 		"A corrupt non-anchor physics source must not partially populate geometry");
 
 	const std::filesystem::path xPhysicsWithoutNormalsPath = xArtifacts.m_xDirectory / "Physics_0_2.zmesh";
 	WriteCanonicalTerrainSource(xPhysicsWithoutNormalsPath,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, false, 0u);
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, false, 0u);
 	Flux_MeshGeometry xPhysicsWithoutNormals;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPhysicsWithoutNormalsPath.string(),
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xPhysicsWithoutNormals),
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xPhysicsWithoutNormals),
 		"A physics source without the required normal stream must contribute no physics geometry");
 
 	const std::filesystem::path xAlternateDiagonalPath =
 		xArtifacts.m_xDirectory / "Render_LOW_AlternateDiagonal.zmesh";
 	WriteCanonicalTerrainSource(xAlternateDiagonalPath,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, 1u);
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 1u);
 	Flux_MeshGeometry xAlternateDiagonal;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		xAlternateDiagonalPath.string(), Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xAlternateDiagonal),
+		xAlternateDiagonalPath.string(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xAlternateDiagonal),
 		"A regular grid using the non-exporter diagonal must fail exact terrain-topology validation");
 
 	const std::filesystem::path xReversedWindingPath =
 		xArtifacts.m_xDirectory / "Render_LOW_ReversedWinding.zmesh";
 	WriteCanonicalTerrainSource(xReversedWindingPath,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, 2u);
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 2u);
 	Flux_MeshGeometry xReversedWinding;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		xReversedWindingPath.string(), Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xReversedWinding),
+		xReversedWindingPath.string(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xReversedWinding),
 		"A single reversed terrain triangle must fail canonical winding validation");
 
 	const std::filesystem::path xNonFinitePath =
 		xArtifacts.m_xDirectory / "Render_LOW_NonFinite.zmesh";
 	WriteCanonicalTerrainSource(xNonFinitePath,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, 3u);
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 3u);
 	Flux_MeshGeometry xNonFinite;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		xNonFinitePath.string(), Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xNonFinite),
+		xNonFinitePath.string(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xNonFinite),
 		"A non-finite terrain position must fail before geometry allocation");
 
 	const std::filesystem::path xDegenerateNormalPath =
 		xArtifacts.m_xDirectory / "Physics_DegenerateNormal.zmesh";
 	WriteCanonicalTerrainSource(xDegenerateNormalPath,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 4u);
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 4u);
 	Flux_MeshGeometry xDegenerateNormal;
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
-		xDegenerateNormalPath.string(), Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xDegenerateNormal),
+		xDegenerateNormalPath.string(), Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xDegenerateNormal),
 		"A required zero-length physics normal must fail validation");
+
+	// Grid-topology rejection paths that the mutations above do not reach. Each
+	// fixture is canonical except for one targeted defect, so each pins exactly
+	// one branch of the validator rather than a shared early-out.
+	struct TerrainRejectionCase
+	{
+		uint32_t m_uMutation;
+		const char* m_szName;
+		const char* m_szExpectation;
+	};
+	static constexpr TerrainRejectionCase axREJECTION_CASES[] = {
+		{ 5u, "DuplicateGridSlot",
+			"Two vertices resolving to one grid slot must fail duplicate-owner validation" },
+		{ 6u, "PackedPositionMismatch",
+			"A packed vertex position disagreeing with the position stream must fail validation" },
+		{ 7u, "IndexOutOfRange",
+			"An index past the vertex count must fail validation before any position read" },
+		{ 8u, "DegenerateTriangle",
+			"A triangle with two identical corners must fail validation" },
+		{ 9u, "NonAdjacentGridSpan",
+			"A triangle spanning two grid cells must fail single-cell topology validation" },
+	};
+	for (const TerrainRejectionCase& xCase : axREJECTION_CASES)
+	{
+		const std::filesystem::path xCasePath = xArtifacts.m_xDirectory /
+			(std::string("Render_LOW_") + xCase.m_szName + ".zmesh");
+		WriteCanonicalTerrainSource(xCasePath,
+			Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xCase.m_uMutation);
+		Flux_MeshGeometry xCaseGeometry;
+		ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::TryLoadTerrainChunkSource(
+			xCasePath.string(), Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xCaseGeometry),
+			"%s (fixture mutation %u: %s)", xCase.m_szExpectation,
+			xCase.m_uMutation, xCase.m_szName);
+		ZENITH_ASSERT_EQ(xCaseGeometry.GetNumVerts(), 0u,
+			"A rejected terrain source must not partially populate geometry (%s)",
+			xCase.m_szName);
+	}
 
 	// Exercise the production-shared sparse combination core with real bounded
 	// .zmesh snapshots. This pins anchor authority, compact offsets, missing
@@ -16383,8 +16469,8 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	{
 		WriteCanonicalTerrainSource(xSparseDirectory /
 			("Render_LOW_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zmesh"),
-			Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-			Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, 0u);
+			Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, 0u);
 	};
 	WriteLowChunk(0u, 0u);
 	WriteLowChunk(1u, 0u);
@@ -16403,8 +16489,8 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		const std::filesystem::path xPath = xContext.m_xDirectory /
 			("Render_LOW_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zmesh");
 		return Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPath.string(),
-			Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-			Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xGeometryOut);
+			Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xGeometryOut);
 	};
 
 	std::vector<Flux_TerrainChunkInitData> axSparseInit(Flux_TerrainConfig::TOTAL_CHUNKS);
@@ -16423,8 +16509,8 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	const uint32_t uSparseGridSize = 4u;
 	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
 		uSparseGridSize,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * uSparseGridSize * uSparseGridSize,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * uSparseGridSize * uSparseGridSize,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * uSparseGridSize * uSparseGridSize,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT * uSparseGridSize * uSparseGridSize,
 		LoadLowChunk, &xSparseContext, axSparseInit.data(), pxSparseCombined,
 		xSparseDiagnostics), "A valid (0,0) anchor must allow sparse non-anchor LOW loading");
 	ZENITH_ASSERT_NOT_NULL(pxSparseCombined, "Successful sparse combination must return owned geometry");
@@ -16446,23 +16532,23 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		Zenith_TerrainComponent::uMAX_SPARSE_WARNING_SAMPLES - 1u], 1u,
 		"The capped warning sample order must match the production X/Y traversal");
 	ZENITH_ASSERT_EQ(pxSparseCombined->GetNumVerts(),
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * 3u,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * 3u,
 		"Sparse combination must compact only present chunk vertices");
 	ZENITH_ASSERT_EQ(pxSparseCombined->GetNumIndices(),
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * 3u,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT * 3u,
 		"Sparse combination must compact only present chunk indices");
 	ZENITH_ASSERT_EQ(pxSparseCombined->GetIndexData()[
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT],
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT],
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		"The second retained chunk's first index must be offset by the first chunk's compact vertex count");
 	const uint32_t uAnchorInit = Flux_TerrainConfig::ChunkCoordsToIndex(0u, 0u);
 	const uint32_t uPresentInit = Flux_TerrainConfig::ChunkCoordsToIndex(1u, 0u);
 	const uint32_t uMissingInit = Flux_TerrainConfig::ChunkCoordsToIndex(0u, 1u);
 	ZENITH_ASSERT_EQ(axSparseInit[uAnchorInit].m_uVertexCount,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
 		"Anchor init data must retain its validated vertex count");
 	ZENITH_ASSERT_EQ(axSparseInit[uPresentInit].m_uIndexCount,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT,
 		"Present non-anchor init data must retain its validated index count");
 	ZENITH_ASSERT_EQ(axSparseInit[uMissingInit].m_uVertexCount, 0u,
 		"Missing chunk init data must remain clean/zero rather than alias a compact predecessor");
@@ -16475,8 +16561,8 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xMissingAnchorDiagnostics;
 	Flux_MeshGeometry* pxMissingAnchorCombined = reinterpret_cast<Flux_MeshGeometry*>(1);
 	ZENITH_ASSERT_FALSE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
-		2u, Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * 4u,
+		2u, Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT * 4u,
 		LoadLowChunk, &xMissingAnchorContext, nullptr, pxMissingAnchorCombined,
 		xMissingAnchorDiagnostics), "A missing (0,0) source must reject the complete grid transaction");
 	ZENITH_ASSERT_NULL(pxMissingAnchorCombined,
@@ -16493,17 +16579,17 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xDenseDiagnostics;
 	Flux_MeshGeometry* pxDenseCombined = nullptr;
 	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
-		2u, Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * 4u,
+		2u, Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT * 4u,
 		LoadLowChunk, &xSparseContext, nullptr, pxDenseCombined, xDenseDiagnostics),
 		"A complete dense 2x2 grid must retain legacy startup behavior through the shared core");
 	ZENITH_ASSERT_EQ(xDenseDiagnostics.m_uSkippedCount, 0u,
 		"Dense legacy combination must emit no sparse diagnostics");
 	ZENITH_ASSERT_EQ(pxDenseCombined->GetNumVerts(),
-		Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * 4u,
 		"Dense compact combination must contain exactly four canonical chunks without seam padding");
 	ZENITH_ASSERT_EQ(pxDenseCombined->GetNumIndices(),
-		Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * 4u,
+		Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT * 4u,
 		"Dense compact combination must retain exact exporter index counts");
 	delete pxDenseCombined;
 
@@ -16516,8 +16602,8 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		WriteCanonicalTerrainSource(xSparsePhysicsDirectory /
 			("Physics_" + std::to_string(xCoords.first) + "_" +
 				std::to_string(xCoords.second) + ".zmesh"),
-			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 0u);
+			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, 0u);
 	}
 	SparseGridLoadContext xSparsePhysicsContext{ xSparsePhysicsDirectory };
 	auto LoadPhysicsChunk = [](void* pContext, uint32_t uX, uint32_t uY,
@@ -16528,26 +16614,26 @@ void Zenith_UnitTests::TestTerrainStreamingMissingHighLODSourceDoesNotEvictOrAll
 		const std::filesystem::path xPath = xContext.m_xDirectory /
 			("Physics_" + std::to_string(uX) + "_" + std::to_string(uY) + ".zmesh");
 		return Zenith_TerrainComponent::TryLoadTerrainChunkSource(xPath.string(),
-			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xGeometryOut);
+			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xGeometryOut);
 	};
 	Zenith_TerrainComponent::TerrainSparseLoadDiagnostics xPhysicsDiagnostics;
 	Flux_MeshGeometry* pxPhysicsCombined = nullptr;
 	ZENITH_ASSERT_TRUE(Zenith_TerrainComponent::CombineTerrainChunkGridCore(
-		2u, Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT * 4u,
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT * 4u,
+		2u, Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT * 4u,
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT * 4u,
 		LoadPhysicsChunk, &xSparsePhysicsContext, nullptr, pxPhysicsCombined,
 		xPhysicsDiagnostics),
 		"Sparse physics combination must use the same non-asserting shared core");
 	ZENITH_ASSERT_EQ(xPhysicsDiagnostics.m_uSkippedCount, 2u,
 		"A 2x2 physics grid with anchor and diagonal source must skip two non-anchors");
 	ZENITH_ASSERT_EQ(pxPhysicsCombined->GetNumVerts(),
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT * 2u,
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT * 2u,
 		"Sparse physics vertices must compact exactly the retained sources");
 	ZENITH_ASSERT_NOT_NULL(pxPhysicsCombined->m_pxNormals,
 		"Combined physics geometry must retain the required normal stream");
 	ZENITH_ASSERT_TRUE(pxPhysicsCombined->m_pxNormals[
-		Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT].y > 0.99f,
+		Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT].y > 0.99f,
 		"The appended physics chunk normal stream must use the compact vertex offset");
 	delete pxPhysicsCombined;
 }

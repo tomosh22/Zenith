@@ -150,7 +150,8 @@ See `Profiling/CLAUDE.md`.
 ### Backend type aliases
 
 Engine code never names `Zenith_Vulkan_*` types directly — it uses the backend-neutral
-`Flux_*` aliases defined in `Zenith_PlatformGraphics_Include.h` (and `Flux/Flux_Fwd.h`),
+`Flux_*` aliases defined in `Zenith_PlatformGraphics_Include.h` (and
+`Core/Zenith_BackendAliases.h`, which `Flux/Flux_Fwd.h` includes),
 which resolve to the Vulkan classes here or the D3D12 null-backend equivalents:
 `Flux_Pipeline`, `Flux_PipelineBuilder`, `Flux_Shader`, `Flux_RootSig`,
 `Flux_RootSigBuilder`, `Flux_ComputePipelineBuilder`.

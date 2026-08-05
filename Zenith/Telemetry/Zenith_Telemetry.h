@@ -255,6 +255,14 @@ namespace Zenith_Telemetry
 		const Zenith_Vector<Event>&       GetEvents() const   { return m_axEvents; }
 
 	private:
+		// The whole write — size estimate, serialize, write binary, optional
+		// JSON export — shared verbatim by End() and FlushSnapshot(). The ONLY
+		// difference between those two is whether m_bRecording is cleared, so
+		// each is now that one line plus this call.
+		bool WriteRunToDisk(const char* szBinaryPath,
+		                    const char* szJsonPathOrNull,
+		                    const char* (*pfnEventTypeToString)(uint16_t));
+
 		bool                          m_bRecording = false;
 		bool                          m_bPaused    = false;
 		uint32_t                      m_uFrameIdx  = 0;

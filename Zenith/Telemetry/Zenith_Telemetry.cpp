@@ -366,13 +366,10 @@ namespace Zenith_Telemetry
 		xOut << uEnd;
 	}
 
-	bool Recorder::End(const char* szBinaryPath,
-	                   const char* szJsonPathOrNull,
-	                   const char* (*pfnEventTypeToString)(uint16_t))
+	bool Recorder::WriteRunToDisk(const char* szBinaryPath,
+	                              const char* szJsonPathOrNull,
+	                              const char* (*pfnEventTypeToString)(uint16_t))
 	{
-		if (!m_bRecording) return false;
-		m_bRecording = false;
-
 		// Estimate buffer size: header ~64 bytes + 1 byte type tag per
 		// record + ~60 bytes per event + ~(40 + 32*entities) per sample.
 		// Round up generously to avoid the auto-resize hot path.
@@ -394,27 +391,22 @@ namespace Zenith_Telemetry
 		return true;
 	}
 
+	bool Recorder::End(const char* szBinaryPath,
+	                   const char* szJsonPathOrNull,
+	                   const char* (*pfnEventTypeToString)(uint16_t))
+	{
+		if (!m_bRecording) return false;
+		m_bRecording = false;
+		return WriteRunToDisk(szBinaryPath, szJsonPathOrNull, pfnEventTypeToString);
+	}
+
 	bool Recorder::FlushSnapshot(const char* szBinaryPath,
 	                             const char* szJsonPathOrNull,
 	                             const char* (*pfnEventTypeToString)(uint16_t))
 	{
 		if (!m_bRecording) return false;
 		// Same write as End(), but do NOT clear m_bRecording — recording continues.
-		uint64_t ulEstimate = 256u
-		                    + static_cast<uint64_t>(m_axEvents.GetSize()) * 100u
-		                    + static_cast<uint64_t>(m_axFrames.GetSize()) * 1024u;
-		if (ulEstimate < 4096u) ulEstimate = 4096u;
-		Zenith_DataStream xStream(ulEstimate);
-		SerializeRun(m_xHeader, m_axFrames, m_axEvents, xStream);
-		xStream.WriteToFile(szBinaryPath);
-
-		if (szJsonPathOrNull != nullptr)
-		{
-			Reader xReader;
-			if (!xReader.LoadFromFile(szBinaryPath)) return false;
-			if (!xReader.ExportJson(szJsonPathOrNull, pfnEventTypeToString)) return false;
-		}
-		return true;
+		return WriteRunToDisk(szBinaryPath, szJsonPathOrNull, pfnEventTypeToString);
 	}
 
 	// =========================================================

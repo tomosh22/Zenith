@@ -227,89 +227,36 @@ namespace Zenith_TestAssert_Detail
 #pragma warning(push)
 #pragma warning(disable: 4018 4389)
 
-template<typename T, typename U>
-inline void Zenith_TestAssertEq(const T& xA, const U& xB,
-	const char* strExprA, const char* strExprB,
-	const char* strFile, int iLine, const char* strFormat, ...)
-{
-	if (!(xA == xB))
-	{
-		va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
-			"ZENITH_ASSERT_EQ", "!=", strExprA, strExprB, strFile, iLine, strFormat, args);
-		va_end(args);
+// All six differ only in their FAILURE condition and the two labels they
+// report — the va_list plumbing, the signature, and the EmitCompareFailure
+// call are identical — so one generator defines the family. ZENITH_ASSERT_NE
+// deliberately tests operator== rather than operator!=, so the failure
+// CONDITION is the parameter and not a bare operator token; that keeps each
+// assertion's operator requirements exactly what they were.
+#define ZENITH_DEFINE_COMPARE_ASSERT(Suffix, FailCondition, szAssertName, szFailedRelation) \
+	template<typename T, typename U>                                                        \
+	inline void Zenith_TestAssert##Suffix(const T& xA, const U& xB,                         \
+		const char* strExprA, const char* strExprB,                                         \
+		const char* strFile, int iLine, const char* strFormat, ...)                         \
+	{                                                                                       \
+		if (FailCondition)                                                                  \
+		{                                                                                   \
+			va_list args; va_start(args, strFormat);                                        \
+			Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,                            \
+				szAssertName, szFailedRelation, strExprA, strExprB,                         \
+				strFile, iLine, strFormat, args);                                           \
+			va_end(args);                                                                   \
+		}                                                                                   \
 	}
-}
 
-template<typename T, typename U>
-inline void Zenith_TestAssertNe(const T& xA, const U& xB,
-	const char* strExprA, const char* strExprB,
-	const char* strFile, int iLine, const char* strFormat, ...)
-{
-	if (xA == xB)
-	{
-		va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
-			"ZENITH_ASSERT_NE", "==", strExprA, strExprB, strFile, iLine, strFormat, args);
-		va_end(args);
-	}
-}
+ZENITH_DEFINE_COMPARE_ASSERT(Eq, !(xA == xB), "ZENITH_ASSERT_EQ", "!=")
+ZENITH_DEFINE_COMPARE_ASSERT(Ne,  (xA == xB), "ZENITH_ASSERT_NE", "==")
+ZENITH_DEFINE_COMPARE_ASSERT(Gt, !(xA >  xB), "ZENITH_ASSERT_GT", "<=")
+ZENITH_DEFINE_COMPARE_ASSERT(Lt, !(xA <  xB), "ZENITH_ASSERT_LT", ">=")
+ZENITH_DEFINE_COMPARE_ASSERT(Ge, !(xA >= xB), "ZENITH_ASSERT_GE", "<")
+ZENITH_DEFINE_COMPARE_ASSERT(Le, !(xA <= xB), "ZENITH_ASSERT_LE", ">")
 
-template<typename T, typename U>
-inline void Zenith_TestAssertGt(const T& xA, const U& xB,
-	const char* strExprA, const char* strExprB,
-	const char* strFile, int iLine, const char* strFormat, ...)
-{
-	if (!(xA > xB))
-	{
-		va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
-			"ZENITH_ASSERT_GT", "<=", strExprA, strExprB, strFile, iLine, strFormat, args);
-		va_end(args);
-	}
-}
-
-template<typename T, typename U>
-inline void Zenith_TestAssertLt(const T& xA, const U& xB,
-	const char* strExprA, const char* strExprB,
-	const char* strFile, int iLine, const char* strFormat, ...)
-{
-	if (!(xA < xB))
-	{
-		va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
-			"ZENITH_ASSERT_LT", ">=", strExprA, strExprB, strFile, iLine, strFormat, args);
-		va_end(args);
-	}
-}
-
-template<typename T, typename U>
-inline void Zenith_TestAssertGe(const T& xA, const U& xB,
-	const char* strExprA, const char* strExprB,
-	const char* strFile, int iLine, const char* strFormat, ...)
-{
-	if (!(xA >= xB))
-	{
-		va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
-			"ZENITH_ASSERT_GE", "<", strExprA, strExprB, strFile, iLine, strFormat, args);
-		va_end(args);
-	}
-}
-
-template<typename T, typename U>
-inline void Zenith_TestAssertLe(const T& xA, const U& xB,
-	const char* strExprA, const char* strExprB,
-	const char* strFile, int iLine, const char* strFormat, ...)
-{
-	if (!(xA <= xB))
-	{
-		va_list args; va_start(args, strFormat);
-		Zenith_TestAssert_Detail::EmitCompareFailure(xA, xB,
-			"ZENITH_ASSERT_LE", ">", strExprA, strExprB, strFile, iLine, strFormat, args);
-		va_end(args);
-	}
-}
+#undef ZENITH_DEFINE_COMPARE_ASSERT
 
 #pragma warning(pop)  // restore C4018 / C4389
 

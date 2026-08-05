@@ -846,11 +846,32 @@ namespace
 			(std::filesystem::path(GAME_ASSETS_DIR) / "Terrain").string();
 		bool bLeaseEntered = false;
 		const char* szFailureStage = "asset-directory lease";
+		// WithPreparedTerrainAssetDirectory takes a captureless thunk + opaque
+		// context (it is a plain function pointer, not std::function), so the
+		// lambda's captures move into this struct. The lease is synchronous, so
+		// a stack context outlives the call.
+		struct TerminalBakeContext
+		{
+			const ZM_TerrainAuthoringRecipe* m_pxRecipe;
+			Zenith_TerrainEditor* m_pxEditor;
+			const char* m_szExpectedSet;
+			const std::string* m_pstrTerrainRoot;
+			bool* m_pbLeaseEntered;
+			const char** m_pszFailureStage;
+		};
+		TerminalBakeContext xBakeContext{ &xRecipe, &xEditor, szExpectedSet,
+			&strTerrainRoot, &bLeaseEntered, &szFailureStage };
 		const bool bSucceeded = Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
 			szExpectedSet, strTerrainRoot,
-			[&](const std::string& strPreparedDirectory)
+			[](void* pContext, const std::string& strPreparedDirectory) -> bool
 			{
-				bLeaseEntered = true;
+				TerminalBakeContext& xCtx = *static_cast<TerminalBakeContext*>(pContext);
+				const ZM_TerrainAuthoringRecipe& xRecipe = *xCtx.m_pxRecipe;
+				Zenith_TerrainEditor& xEditor = *xCtx.m_pxEditor;
+				const char* szExpectedSet = xCtx.m_szExpectedSet;
+				const std::string& strTerrainRoot = *xCtx.m_pstrTerrainRoot;
+				const char*& szFailureStage = *xCtx.m_pszFailureStage;
+				*xCtx.m_pbLeaseEntered = true;
 				Zenith_Log(LOG_CATEGORY_TERRAIN,
 					"[ZM Terrain] Terminal bake begin: stagedSet='%s', expectedSet='%s', output='%s', status='%s'",
 					xEditor.GetAssetSet().c_str(), szExpectedSet,
@@ -921,7 +942,7 @@ namespace
 						"[ZM Terrain] Failed to remove terminal manifest residue while target lease was held");
 				}
 				return bStepSucceeded;
-			});
+			}, &xBakeContext);
 		CompleteTerrainBakeMeasurement(xRecipe, bSucceeded);
 
 		if (!bSucceeded)
@@ -1367,7 +1388,7 @@ bool ZM_PrepareTerrainBake(const ZM_TerrainAuthoringRecipe& xRecipe,
 	const std::string strTerrainRoot = (xGameAssetsRoot / "Terrain").string();
 	return Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
 		xRecipe.m_pxWorldSpec->m_szTerrainSet, strTerrainRoot,
-		[&](const std::string& strPreparedDirectory)
+		[](void*, const std::string& strPreparedDirectory) -> bool
 		{
 			const std::filesystem::path xMarker =
 				PreparedChildPath(strPreparedDirectory, szMANIFEST_NAME);
@@ -1393,7 +1414,7 @@ bool ZM_PrepareTerrainBake(const ZM_TerrainAuthoringRecipe& xRecipe,
 				}
 			}
 			return true;
-		});
+		}, nullptr);
 }
 
 bool ZM_FinalizeTerrainBake(const ZM_TerrainAuthoringRecipe& xRecipe,
@@ -1405,13 +1426,20 @@ bool ZM_FinalizeTerrainBake(const ZM_TerrainAuthoringRecipe& xRecipe,
 	}
 
 	const std::string strTerrainRoot = (xGameAssetsRoot / "Terrain").string();
+	struct FinalizeBakeContext
+	{
+		const ZM_TerrainAuthoringRecipe* m_pxRecipe;
+		const std::string* m_pstrTerrainRoot;
+	};
+	FinalizeBakeContext xFinalizeContext{ &xRecipe, &strTerrainRoot };
 	return Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
 		xRecipe.m_pxWorldSpec->m_szTerrainSet, strTerrainRoot,
-		[&](const std::string& strPreparedDirectory)
+		[](void* pContext, const std::string& strPreparedDirectory) -> bool
 		{
+			FinalizeBakeContext& xCtx = *static_cast<FinalizeBakeContext*>(pContext);
 			return FinalizePreparedTerrainBake(
-				xRecipe, strPreparedDirectory, strTerrainRoot);
-		});
+				*xCtx.m_pxRecipe, strPreparedDirectory, *xCtx.m_pstrTerrainRoot);
+		}, &xFinalizeContext);
 }
 
 ZM_TERRAIN_BAKE_QUEUE_RESULT ZM_QueueTerrainBake(

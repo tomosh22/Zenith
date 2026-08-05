@@ -571,11 +571,21 @@ static bool BuildOrderedListFromNames(const char* szSpec)
 	return true;
 }
 
-void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
+// The two selection arguments that are NOT written straight onto s_xRunner:
+// both are resolved later, once the mutual-exclusion checks have run.
+struct HarnessArgScan
 {
-	const char* szNamedList  = nullptr;
-	const char* szBatchOrder = nullptr;
+	const char* m_szNamedList  = nullptr;
+	const char* m_szBatchOrder = nullptr;
+};
 
+// Pass 1: read argv onto the runner. Recognises the harness flags only, and
+// ignores everything else (the engine flags Zenith_CommandLine owns, plus the
+// game's own arguments). A value flag with nothing after it is ignored, which
+// is what the `i + 1 < argc` guard in each match condition encodes.
+static HarnessArgScan ScanHarnessCommandLine(int argc, char** argv)
+{
+	HarnessArgScan xScan;
 	for (int i = 1; i < argc; ++i)
 	{
 		const char* szArg = argv[i];
@@ -590,7 +600,7 @@ void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
 		}
 		else if (std::strcmp(szArg, "--automated-tests") == 0 && i + 1 < argc)
 		{
-			szNamedList = argv[++i];
+			xScan.m_szNamedList = argv[++i];
 		}
 		else if (std::strcmp(szArg, "--all-automated-tests") == 0)
 		{
@@ -598,7 +608,7 @@ void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
 		}
 		else if (std::strcmp(szArg, "--batch-order") == 0 && i + 1 < argc)
 		{
-			szBatchOrder = argv[++i];
+			xScan.m_szBatchOrder = argv[++i];
 		}
 		else if (std::strcmp(szArg, "--test-results") == 0 && i + 1 < argc)
 		{
@@ -617,24 +627,19 @@ void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
 			s_xRunner.m_fFixedDt = static_cast<float>(std::atof(argv[++i]));
 		}
 	}
+	return xScan;
+}
 
-	if (s_xRunner.m_bListThenExit)
-	{
-		PrintRegisteredTests();
-		// Clean shutdown instead of a bare std::exit so GPU/Jolt/audio
-		// resources release in the normal order. Without it,
-		// --list-automated-tests would leak VRAM allocations, Jolt's
-		// body-interface lock, and the GLFW window — usually observable only
-		// as a noisy exit code from the Vulkan validation layer, but bad
-		// hygiene in any case.
-		ExitHarness(0);
-	}
-
+// Pass 2: validate the requested selection. Exits the harness (never returns)
+// on any misuse; returns the parsed batch order and how many selection modes
+// were requested so the caller can distinguish "none" from "exactly one".
+static int ValidateHarnessSelection(const HarnessArgScan& xScan, BatchOrderSpec& xOrderOut)
+{
 	// The three selection flags each BUILD the ordered execution list, so
 	// supplying more than one is an ambiguous request rather than a merge.
 	const int iModes = CountSelectedModes(
 		s_xRunner.m_szRequestedName != nullptr,
-		szNamedList != nullptr,
+		xScan.m_szNamedList != nullptr,
 		s_xRunner.m_bRunAllTests);
 	if (iModes > 1)
 	{
@@ -646,26 +651,25 @@ void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
 	// --batch-order reorders the FULL suite; it is meaningless against an
 	// explicit name list (which already states its order) or a single test.
 	// Rejecting it loudly beats silently ignoring it in a diagnosis run.
-	if (szBatchOrder != nullptr && !s_xRunner.m_bRunAllTests)
+	if (xScan.m_szBatchOrder != nullptr && !s_xRunner.m_bRunAllTests)
 	{
 		std::printf("ERROR: --batch-order requires --all-automated-tests.\n");
 		ExitHarness(2);
 	}
-	const BatchOrderSpec xOrder = ParseBatchOrderSpec(szBatchOrder);
-	if (!xOrder.m_bValid)
+	xOrderOut = ParseBatchOrderSpec(xScan.m_szBatchOrder);
+	if (!xOrderOut.m_bValid)
 	{
 		std::printf("ERROR: --batch-order '%s' is not understood. "
-			"Use 'reverse' or 'rotate:<N>' with N >= 0.\n", szBatchOrder);
+			"Use 'reverse' or 'rotate:<N>' with N >= 0.\n", xScan.m_szBatchOrder);
 		ExitHarness(2);
 	}
+	return iModes;
+}
 
-	if (iModes == 0)
-	{
-		// No automated-test mode requested — leave the harness disabled and
-		// let the normal game boot proceed.
-		return;
-	}
-
+// Pass 3: turn the validated selection into s_apxOrderedNodes. Exits the
+// harness (never returns) if the selection cannot be satisfied.
+static void BuildHarnessExecutionList(const HarnessArgScan& xScan, const BatchOrderSpec& xOrder)
+{
 	if (s_xRunner.m_bRunAllTests)
 	{
 		if (!CollectAllNodesInRegistrationOrder())
@@ -680,45 +684,78 @@ void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
 			ExitHarness(2);
 		}
 		ApplyBatchOrder(s_apxOrderedNodes, s_iOrderedCount, xOrder);
+		return;
 	}
-	else if (szNamedList != nullptr)
+
+	if (xScan.m_szNamedList != nullptr)
 	{
 		s_xRunner.m_bRunNamedList = true;
 		// BuildOrderedListFromNames prints its own diagnosis (unknown names,
 		// empty list, capacity) before returning false.
-		if (!BuildOrderedListFromNames(szNamedList))
+		if (!BuildOrderedListFromNames(xScan.m_szNamedList))
 		{
 			ExitHarness(2);
 		}
-	}
-	else
-	{
-		const Zenith_AutomatedTestNode* pxNode = FindNodeByName(s_xRunner.m_szRequestedName);
-		if (pxNode == nullptr)
-		{
-			std::printf("ERROR: --automated-test '%s' not found in registry. "
-				"Run with --list-automated-tests for the full list.\n",
-				s_xRunner.m_szRequestedName);
-			ExitHarness(2);
-		}
-		s_apxOrderedNodes[0] = pxNode;
-		s_iOrderedCount      = 1;
+		return;
 	}
 
-	// Echo the plan whenever the order is NOT the historical default, so a
-	// diagnosis run records exactly what it executed. A plain
-	// --all-automated-tests run stays quiet (158 extra lines is noise).
-	if (s_xRunner.m_bRunNamedList || szBatchOrder != nullptr)
+	const Zenith_AutomatedTestNode* pxNode = FindNodeByName(s_xRunner.m_szRequestedName);
+	if (pxNode == nullptr)
 	{
-		std::printf("[AutomatedTest] Execution order (%d test(s)):\n", s_iOrderedCount);
-		for (int i = 0; i < s_iOrderedCount; ++i)
-		{
-			const Zenith_AutomatedTest* pxTest = s_apxOrderedNodes[i]->m_pxTest;
-			std::printf("  %3d. %s\n", i + 1,
-				(pxTest && pxTest->m_szName) ? pxTest->m_szName : "(unnamed)");
-		}
-		std::fflush(stdout);
+		std::printf("ERROR: --automated-test '%s' not found in registry. "
+			"Run with --list-automated-tests for the full list.\n",
+			s_xRunner.m_szRequestedName);
+		ExitHarness(2);
 	}
+	s_apxOrderedNodes[0] = pxNode;
+	s_iOrderedCount      = 1;
+}
+
+// Echo the plan whenever the order is NOT the historical default, so a
+// diagnosis run records exactly what it executed. A plain
+// --all-automated-tests run stays quiet (158 extra lines is noise).
+static void EchoHarnessExecutionPlan(const HarnessArgScan& xScan)
+{
+	if (!s_xRunner.m_bRunNamedList && xScan.m_szBatchOrder == nullptr)
+		return;
+
+	std::printf("[AutomatedTest] Execution order (%d test(s)):\n", s_iOrderedCount);
+	for (int i = 0; i < s_iOrderedCount; ++i)
+	{
+		const Zenith_AutomatedTest* pxTest = s_apxOrderedNodes[i]->m_pxTest;
+		std::printf("  %3d. %s\n", i + 1,
+			(pxTest && pxTest->m_szName) ? pxTest->m_szName : "(unnamed)");
+	}
+	std::fflush(stdout);
+}
+
+void Zenith_AutomatedTestRunner::ParseCommandLine(int argc, char** argv)
+{
+	const HarnessArgScan xScan = ScanHarnessCommandLine(argc, argv);
+
+	if (s_xRunner.m_bListThenExit)
+	{
+		PrintRegisteredTests();
+		// Clean shutdown instead of a bare std::exit so GPU/Jolt/audio
+		// resources release in the normal order. Without it,
+		// --list-automated-tests would leak VRAM allocations, Jolt's
+		// body-interface lock, and the GLFW window — usually observable only
+		// as a noisy exit code from the Vulkan validation layer, but bad
+		// hygiene in any case.
+		ExitHarness(0);
+	}
+
+	BatchOrderSpec xOrder;
+	const int iModes = ValidateHarnessSelection(xScan, xOrder);
+	if (iModes == 0)
+	{
+		// No automated-test mode requested — leave the harness disabled and
+		// let the normal game boot proceed.
+		return;
+	}
+
+	BuildHarnessExecutionList(xScan, xOrder);
+	EchoHarnessExecutionPlan(xScan);
 
 	Zenith_InputSimulator::Enable();
 	s_xRunner.m_iCurrentIndex = 0;

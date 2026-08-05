@@ -227,23 +227,33 @@ void Zenith_Editor::WaitForGPUAndFlushDeferred(const char* szReason)
 	g_xEngine.FluxRenderer().ClearPendingRenderPasses();
 }
 
-// Pending scene load: flush GPU; if this is the editor's stop-mode backup
-// restore, force-unload every non-persistent scene and reset the persistent
-// scene's entities (game's SCENE_LOAD_SINGLE may have destroyed the original
-// scene during play, leaving a stale backup handle); then create a fresh
-// scene and load the file into it. Also handles plain (non-backup) loads.
-void Zenith_Editor::HandlePendingSceneLoadDeferred()
+// Pending scene load: optionally flush GPU; if this is the editor's stop-mode
+// backup restore, force-unload every non-persistent scene and reset the
+// persistent scene's entities (game's SCENE_LOAD_SINGLE may have destroyed the
+// original scene during play, leaving a stale backup handle); then create a
+// fresh scene and load the file into it. Also handles plain (non-backup) loads.
+//
+// This is THE scene-load body. It used to exist twice — once here and once as
+// Zenith_Editor::HandlePendingSceneLoad in Zenith_Editor.cpp — 83 duplicated
+// lines across two live paths, where a fix to the backup-restore teardown
+// applied to one would silently leave the other broken. See the header for
+// what the two parameters capture.
+void Zenith_Editor::LoadPendingSceneIntoActiveScene(bool bWaitForGPU, const char* szLogPrefix)
 {
-	if (!m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad) return;
-	m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = false;
-
-	WaitForGPUAndFlushDeferred("scene load");
+	if (bWaitForGPU)
+	{
+		WaitForGPUAndFlushDeferred("scene load");
+	}
 
 	const bool bIsBackupRestore = m_xEditorState.m_xPlayBackup.m_bHasBackup && m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath == m_xEditorState.m_xPlayBackup.m_strBackupScenePath;
 
 	if (bIsBackupRestore)
 	{
-		// 1. Reset all Flux render systems BEFORE destroying entities.
+		// 1. Reset all Flux render systems BEFORE destroying entities. This
+		// clears Flux system state (registered meshes, particles, etc.) so
+		// entity destructors don't interact with stale render system
+		// references. Matches the SCENE_LOAD_SINGLE cleanup order
+		// (ResetAllRenderSystems -> UnloadAllNonPersistent).
 		g_xEngine.Scenes().ResetAllRenderSystems();
 
 		Zenith_Scene xPersistentScene = g_xEngine.Scenes().GetPersistentScene();
@@ -285,13 +295,16 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 		}
 	}
 
+	// Load the scene file into the active scene (backup restore or explicit load).
 	Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetActiveSceneData();
 	if (pxSceneData)
 	{
 		Zenith_EditorSceneAccess::LoadFromFile(pxSceneData, m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath);
 	}
-	Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene loaded from %s", m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "%sScene loaded from %s", szLogPrefix, m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.c_str());
 
+	// Selection, undo history and the cached game camera are all keyed by
+	// EntityIDs that the load just invalidated.
 	ClearSelection();
 	g_xEngine.UndoSystem().Clear();
 	m_xEditorState.m_xCamera.m_uGameCameraEntity = INVALID_ENTITY_ID;
@@ -305,7 +318,7 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 		m_xEditorState.m_xPlayBackup.m_strBackupSceneName = "";
 		m_xEditorState.m_xPlayBackup.m_strBackupOriginalPath = "";
 		m_xEditorState.m_xPlayBackup.m_iBackupBuildIndex = -1;
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Backup scene file cleaned up");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "%sBackup scene file cleaned up", szLogPrefix);
 	}
 
 	if (m_xEditorState.m_xCamera.m_bInitialized)
@@ -314,6 +327,17 @@ void Zenith_Editor::HandlePendingSceneLoadDeferred()
 	}
 
 	m_xEditorState.m_xDeferredOps.m_strPendingSceneLoadPath.clear();
+}
+
+// Out-of-frame entry point (FlushPendingSceneOperations, the unit-test seam).
+// Runs outside the frame loop where the per-frame deferred-deletion tick is not
+// running, so it must wait for GPU idle first.
+void Zenith_Editor::HandlePendingSceneLoadDeferred()
+{
+	if (!m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad) return;
+	m_xEditorState.m_xDeferredOps.m_bPendingSceneLoad = false;
+
+	LoadPendingSceneIntoActiveScene(true, "[FlushPending] ");
 }
 
 void Zenith_Editor::FlushPendingSceneOperations()

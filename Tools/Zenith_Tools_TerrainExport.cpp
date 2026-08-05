@@ -1,7 +1,7 @@
 #include "Zenith.h"
 #include "Zenith_Tools_TerrainExport.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Terrain/Flux_TerrainVertexLayout.h"
+#include "Core/Zenith_TerrainChunkLayout.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
@@ -73,18 +73,18 @@ static uint32_t PackSNORM10_10_10_2(float fX, float fY, float fZ, float fW)
 // vertex is acceptable.
 static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 {
-	for (uint32_t uElement = 0; uElement < Flux_TerrainVertexLayout::uELEMENT_COUNT; uElement++)
+	for (uint32_t uElement = 0; uElement < Zenith_TerrainChunkLayout::uELEMENT_COUNT; uElement++)
 	{
 		xMesh.m_xBufferLayout.GetElements().PushBack(
-			{ Flux_TerrainVertexLayout::axELEMENTS[uElement].m_eType });
+			{ Zenith_TerrainChunkLayout::axELEMENTS[uElement].m_eType });
 	}
 	xMesh.m_xBufferLayout.CalculateOffsetsAndStrides();
 
 	const uint32_t uCalculatedStride = xMesh.m_xBufferLayout.GetStride();
-	Zenith_Assert(uCalculatedStride == Flux_TerrainVertexLayout::uVERTEX_STRIDE,
+	Zenith_Assert(uCalculatedStride == Zenith_TerrainChunkLayout::uVERTEX_STRIDE,
 		"Terrain exporter layout must match the canonical HIGH terrain vertex stride");
 	(void)uCalculatedStride;
-	const uint32_t uStride = Flux_TerrainVertexLayout::uVERTEX_STRIDE;
+	const uint32_t uStride = Zenith_TerrainChunkLayout::uVERTEX_STRIDE;
 
 	xMesh.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * uStride));
 
@@ -98,14 +98,14 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 		pPos[0] = xMesh.m_pxPositions[i].x;
 		pPos[1] = xMesh.m_pxPositions[i].y;
 		pPos[2] = xMesh.m_pxPositions[i].z;
-		uOffset += Flux_TerrainVertexLayout::axELEMENTS[0].m_uSize;
+		uOffset += Zenith_TerrainChunkLayout::axELEMENTS[0].m_uSize;
 
 		// UV: float2 (8 bytes) — full 32-bit precision so heightmap-pixel-scale
 		// UVs don't collapse on the upper half of the terrain.
 		float* pUV = reinterpret_cast<float*>(pVertex + uOffset);
 		pUV[0] = xMesh.m_pxUVs[i].x;
 		pUV[1] = xMesh.m_pxUVs[i].y;
-		uOffset += Flux_TerrainVertexLayout::axELEMENTS[1].m_uSize;
+		uOffset += Zenith_TerrainChunkLayout::axELEMENTS[1].m_uSize;
 
 		// Normal: SNORM10:10:10:2 (4 bytes), w=0
 		uint32_t* pNormal = reinterpret_cast<uint32_t*>(pVertex + uOffset);
@@ -115,7 +115,7 @@ static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
 			xMesh.m_pxNormals[i].z,
 			0.0f
 		);
-		uOffset += Flux_TerrainVertexLayout::axELEMENTS[2].m_uSize;
+		uOffset += Zenith_TerrainChunkLayout::axELEMENTS[2].m_uSize;
 
 		// Tangent + BitangentSign: SNORM10:10:10:2 (4 bytes)
 		float fBitangentSign = glm::dot(
@@ -406,9 +406,9 @@ static void ValidateHighChunkCounts(float fDensity, const Flux_MeshGeometry& xMe
 		return;
 	}
 
-	Zenith_Assert(xMesh.m_uNumVerts == Flux_TerrainVertexLayout::uHIGH_CHUNK_VERTEX_COUNT,
+	Zenith_Assert(xMesh.m_uNumVerts == Zenith_TerrainChunkLayout::uHIGH_CHUNK_VERTEX_COUNT,
 		"HIGH terrain exporter vertex count must match the canonical terrain contract");
-	Zenith_Assert(xMesh.m_uNumIndices == Flux_TerrainVertexLayout::uHIGH_CHUNK_INDEX_COUNT,
+	Zenith_Assert(xMesh.m_uNumIndices == Zenith_TerrainChunkLayout::uHIGH_CHUNK_INDEX_COUNT,
 		"HIGH terrain exporter index count must match the canonical terrain contract");
 	(void)xMesh;
 }

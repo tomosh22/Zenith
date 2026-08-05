@@ -185,6 +185,15 @@ shipped townsfolk never surfaced this.
 the new density. Collision stays deliberately coarser than the HIGH render mesh (65 x 65 at
 1 m); 4 m quads simply stop a player reading as ungrounded on Dawnmere's uneven terrain.
 
+> **Naming note (2026-08-05, after this entry):** `Flux_TerrainVertexLayout` was
+> renamed `Zenith_TerrainChunkLayout` and moved from
+> `Zenith/Flux/Terrain/Flux_TerrainVertexLayout.h` to
+> `Zenith/Core/Zenith_TerrainChunkLayout.h` by the complexity-gate remediation. The
+> element table, stride, counts and every `static_assert` moved verbatim -- this is a
+> relocation, not a contract change. It moved because the table describes the
+> SERIALIZED chunk format, so the EntityComponent chunk loader had to take an edge
+> into Flux purely to learn the shape of the bytes it was reading.
+
 **Why this is a DecisionLog entry and not a tuning value.** It is an engine change with a
 cross-game blast radius, and its failure mode is silent. `TryReadTerrainChunkSnapshot`
 **rejects** a chunk whose vertex/index counts disagree with the compiled layout, so a stale
@@ -222,7 +231,7 @@ terrain ever grows past the current 4,096-chunk grid.
 ZM-D-181 entry). `ZM_DawnmereHomeGroundTruth_Test` is what re-derives them; the header now
 names a density change as a re-measure trigger alongside a recipe change.
 
-**Tests that lock it:** `Flux_TerrainVertexLayout`'s `static_assert` pins 289/1536 (it moves
+**Tests that lock it:** `Flux_TerrainVertexLayout`'s (now `Zenith_TerrainChunkLayout`) `static_assert` pins 289/1536 (it moves
 in lockstep with the constant, so it is a spelling guard, not a gate);
 `ZM_Tests_TerrainRecipeSet` reads `uZM_TERRAIN_MANIFEST_VERSION` symbolically and so follows
 the bump; `ZM_DawnmereHomeGroundTruth_Test` reds if a compiled feet row drifts from the real
@@ -6789,9 +6798,11 @@ Two things writing them corrected:
   terrain grid/density remain the deferred E6 limitation.
 - **Shared format contract:** `Flux_TerrainExportRect` is the single signed,
   transactional bounds/enumeration contract used by tools, editor, and tests.
-  `Flux_TerrainVertexLayout` is the single HIGH chunk element order/size/stride
-  contract used by exporter and streaming reader; canonical HIGH chunks are
-  exactly 4,225 vertices and 24,576 indices at a 28-byte stride.
+  `Flux_TerrainVertexLayout` (renamed `Zenith_TerrainChunkLayout` and moved to
+  `Zenith/Core/Zenith_TerrainChunkLayout.h` on 2026-08-05) is the single HIGH chunk
+  element order/size/stride contract used by exporter and streaming reader;
+  canonical HIGH chunks are exactly 4,225 vertices and 24,576 indices at a 28-byte
+  stride.
 - **Sparse-stream contract:** missing, truncated, malformed, wrong-layout, or
   incompatible HIGH sources are validated by a bounded non-asserting reader
   before any eviction, allocation, residency, dirty-state, or stats mutation.

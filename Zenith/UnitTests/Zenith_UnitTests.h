@@ -806,6 +806,15 @@ public:
 	static void TestCommandLineResolveUnderRootTrimsRootSeparators();
 	static void TestCommandLineResolveUnderRootEmptyBakedPassthrough();
 
+	// Zenith_CommandLine::ParseArgs — the pure parser. Characterization
+	// coverage for EVERY flag the table owns, plus the argv edge cases
+	// (null argv, null entries, unknown args, a value flag with no value).
+	static void TestCommandLineParseDefaults();
+	static void TestCommandLineParseEveryBareFlag();
+	static void TestCommandLineParseEveryValueFlag();
+	static void TestCommandLineParsePrefixedFlags();
+	static void TestCommandLineParseArgvEdgeCases();
+
 	// Flux_RootMotion::SamplePosition/Rotation Delta tests (verify the
 	// shared SampleRootMotionDeltas templated helper handles edge cases:
 	// empty list, single keyframe, between-frames lerp, identical-timestamp

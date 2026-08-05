@@ -33,6 +33,33 @@
 
 namespace Zenith_CommandLine
 {
+    // Every flag this parser owns, in one value type. Defaults here ARE the
+    // no-flag defaults, which is what makes Parse's "reset before parsing"
+    // contract a single assignment rather than a dozen lines that can drift
+    // out of step with the accessors.
+    struct Flags
+    {
+        bool        m_bAutomatedTestRun   = false;
+        bool        m_bNoImGuiIni         = false;
+        bool        m_bShaderDebugO0      = false;
+        const char* m_szScreenshotPath    = nullptr;
+        u_int       m_uScreenshotFrame    = 120;
+        const char* m_szAssetsRoot        = nullptr;
+        const char* m_szTestSaveRoot      = nullptr;
+        const char* m_szTestSaveRunId     = nullptr;
+        const char* m_szBootProfileDump   = nullptr;
+        bool        m_bSkipBootCapture    = false;
+        const char* m_szUnitTestTimings   = nullptr;
+        bool        m_bExitAfterUnitTests = false;
+    };
+
+    // Pure parse: reads argv, touches NO process state, returns the result.
+    // Exposed for the same reason as ResolveBootProfileDumpArg — it lets the
+    // parser be exercised against arbitrary argv without clobbering the flag
+    // state the rest of the running test batch depends on. Unrecognised
+    // arguments are ignored, as is a value-taking flag with no value after it.
+    Flags ParseArgs(int argc, char** argv);
+
     // Parse the process command line into the static accessor state. Call
     // ONCE during the earliest start-up step (Zenith_Core::Zenith_Main on
     // Windows, before window creation). Repeat calls overwrite previous

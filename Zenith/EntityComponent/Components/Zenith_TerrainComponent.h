@@ -3,7 +3,6 @@
 #include "ZenithECS/Zenith_Entity.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
-#include <functional>
 #include <string>
 
 // Forward declarations only — this header includes NO Flux header (Wave-18
@@ -314,13 +313,17 @@ public:
 	// Editor UI — main entry point; section helpers below.
 	void RenderPropertiesPanel();
 	bool IsTerrainInitializedForEditor() const;
-	using TerrainDirectoryOperation = std::function<bool(const std::string&)>;
+	// Captureless thunk + opaque context, matching TerrainChunkLoadCallback above.
+	// The lease is strictly synchronous, so the context only has to outlive the
+	// enclosing call — callers stack-allocate a small struct and pass its address.
+	using TerrainDirectoryOperation = bool(*)(void*, const std::string&);
 	// Opens a handle-bound lease on the existing game directory, its Assets child,
 	// the Terrain root, and selected target for the complete synchronous operation.
 	// Missing ignored directories are created one checked segment at a time;
 	// handles deny delete sharing so none can be replaced during the callback.
 	static bool WithPreparedTerrainAssetDirectory(const std::string& strAssetSet,
-		const std::string& strTerrainRoot, const TerrainDirectoryOperation& xOperation);
+		const std::string& strTerrainRoot, TerrainDirectoryOperation pfnOperation,
+		void* pOperationContext);
 	// Atomically renames one simple child filename to another while the same
 	// handle-bound target lease remains active. This is the publication primitive
 	// for completion markers whose final rename must not relax directory sharing.
@@ -330,7 +333,8 @@ public:
 	// Empty-set textures use the legacy Assets/Textures/Terrain sibling and need
 	// their own lease. Named textures delegate to the named Terrain target above.
 	static bool WithPreparedTerrainTextureDirectory(const std::string& strAssetSet,
-		const std::string& strTerrainRoot, const TerrainDirectoryOperation& xOperation);
+		const std::string& strTerrainRoot, TerrainDirectoryOperation pfnOperation,
+		void* pOperationContext);
 
 	// End-to-end regeneration from an in-memory heightfield (the terrain
 	// editor's bake): cleanup -> delete terrain files -> ExportHeightmapFromMat

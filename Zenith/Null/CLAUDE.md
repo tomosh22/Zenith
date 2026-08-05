@@ -23,13 +23,18 @@ same code a windowed one does.
 Selected by the Sharpmake `RenderBackend` fragment (`Null_*` configs define
 `ZENITH_NULL_RENDERER`). The seam:
 
-- `Flux/Flux_Fwd.h` — `#elif defined(ZENITH_NULL_RENDERER)` block forward-declares
-  the 12 `Zenith_Null_*` classes and aliases `Flux_* = Zenith_Null_*`.
+- `Core/Zenith_BackendAliases.h` — `#elif defined(ZENITH_NULL_RENDERER)` block
+  forward-declares the 12 `Zenith_Null_*` classes and aliases
+  `Flux_* = Zenith_Null_*`. (It lived in `Flux/Flux_Fwd.h` until 2026-08-05;
+  every name it declares is a BACKEND class selected by a build define, not a
+  Flux type, and owning it Flux-side forced `Core/Zenith_Engine.h` to carry a
+  Core -> Flux include edge. `Flux/Flux_Fwd.h` includes it, so every existing
+  consumer is unaffected.)
 - `Flux/Flux_BackendTypes.h` — pulls `Zenith_PlatformGraphics_Include_Null.h`
   (this dir) for the full class definitions.
 - `Flux/Backend/Flux_BackendConformance.cpp` — a `#ifdef ZENITH_NULL_RENDERER`
   block `static_assert`s every backend concept against the `Zenith_Null_*` classes.
-- `Flux/Flux_BackendGuard.h` — `#error`s unless EXACTLY ONE of
+- `Core/Zenith_BackendAliases.h` — `#error`s unless EXACTLY ONE of
   `ZENITH_VULKAN` / `ZENITH_D3D12` / `ZENITH_NULL_RENDERER` is defined.
 
 ## Relationship to `Zenith/D3D12`

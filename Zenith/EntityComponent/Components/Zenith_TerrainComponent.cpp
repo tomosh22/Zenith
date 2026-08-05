@@ -7,7 +7,8 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
-#include "Flux/Terrain/Flux_TerrainVertexLayout.h"
+#include "Core/Zenith_TerrainChunkLayout.h"
+#include "Core/Zenith_BakedMeshReader.h"
 #include "Maths/Zenith_FrustumCulling.h"
 // Wave 3 PART B: terrain render-record gather (so Flux_Terrain drops Zenith_TerrainComponent.h).
 #include "Core/Zenith_Engine.h"
@@ -21,7 +22,6 @@
 #include <fstream>
 #include <limits>
 #include <type_traits>
-#include <vector>
 
 // The Flux GPU state these methods operate on now lives on the owning
 // Flux_TerrainStreamingState (Wave-18 relocation). Accessing
@@ -47,100 +47,36 @@ namespace
 {
 	struct TerrainChunkSourceSnapshot
 	{
-		std::vector<u_int8> m_auVertexData;
-		std::vector<uint32_t> m_auIndices;
-		std::vector<Zenith_Maths::Vector3> m_axPositions;
-		std::vector<Zenith_Maths::Vector3> m_axNormals;
+		Zenith_Vector<u_int8> m_auVertexData;
+		Zenith_Vector<uint32_t> m_auIndices;
+		Zenith_Vector<Zenith_Maths::Vector3> m_axPositions;
+		Zenith_Vector<Zenith_Maths::Vector3> m_axNormals;
 		Zenith_Maths::Vector4 m_xMaterialColor = Zenith_Maths::Vector4(1.0f);
 		uint32_t m_uVertexCount = 0;
 		uint32_t m_uIndexCount = 0;
 	};
 
-	class TerrainComponentMeshReader
+
+	// Grid geometry derived once by ValidateGridDimensions and threaded through
+	// the two later stages, so none of them re-derives it (and none of them can
+	// derive it differently).
+	struct TerrainGridExtents
 	{
-	public:
-		explicit TerrainComponentMeshReader(const char* szPath)
-			: m_xFile(szPath, std::ios::binary | std::ios::ate)
-		{
-			if (!m_xFile.good())
-				return;
-			const std::streamoff iSize = static_cast<std::streamoff>(m_xFile.tellg());
-			if (iSize <= 0)
-				return;
-			m_ulRemaining = static_cast<uint64_t>(iSize);
-			m_xFile.seekg(0, std::ios::beg);
-			m_bValid = m_xFile.good();
-		}
-
-		template<typename T>
-		bool Read(T& xValue)
-		{
-			static_assert(std::is_trivially_copyable_v<T>);
-			return ReadBytes(&xValue, sizeof(T));
-		}
-
-		bool ReadBytes(void* pData, uint64_t ulSize)
-		{
-			if (!m_bValid || pData == nullptr || ulSize > m_ulRemaining ||
-				ulSize > static_cast<uint64_t>((std::numeric_limits<std::streamsize>::max)()))
-			{
-				return false;
-			}
-			m_xFile.read(static_cast<char*>(pData), static_cast<std::streamsize>(ulSize));
-			if (!m_xFile || static_cast<uint64_t>(m_xFile.gcount()) != ulSize)
-			{
-				m_bValid = false;
-				return false;
-			}
-			m_ulRemaining -= ulSize;
-			return true;
-		}
-
-		bool Skip(uint64_t ulSize)
-		{
-			if (!m_bValid || ulSize > m_ulRemaining ||
-				ulSize > static_cast<uint64_t>((std::numeric_limits<std::streamoff>::max)()))
-			{
-				return false;
-			}
-			m_xFile.seekg(static_cast<std::streamoff>(ulSize), std::ios::cur);
-			if (!m_xFile)
-			{
-				m_bValid = false;
-				return false;
-			}
-			m_ulRemaining -= ulSize;
-			return true;
-		}
-
-		bool HasRemaining(uint64_t ulSize) const
-		{
-			return m_bValid && ulSize <= m_ulRemaining;
-		}
-
-		bool ReadAttribute(uint64_t ulDataSize, bool bRequired, void* pData = nullptr,
-			bool* pbPresentOut = nullptr)
-		{
-			static_assert(sizeof(bool) == sizeof(uint8_t), "The .zmesh attribute flag format requires one-byte bools");
-			uint8_t uPresent = 0;
-			if (!Read(uPresent) || uPresent > 1u)
-				return false;
-			if (pbPresentOut != nullptr)
-				*pbPresentOut = uPresent != 0u;
-			if (uPresent == 0u)
-				return !bRequired;
-			return pData != nullptr ? ReadBytes(pData, ulDataSize) : Skip(ulDataSize);
-		}
-
-		bool IsAtEnd() const { return m_bValid && m_ulRemaining == 0u; }
-
-	private:
-		std::ifstream m_xFile;
-		uint64_t m_ulRemaining = 0;
-		bool m_bValid = false;
+		uint32_t m_uVerticesPerEdge = 0;
+		uint32_t m_uQuadsPerEdge = 0;
+		float m_fMinX = 0.0f;
+		float m_fMinZ = 0.0f;
+		float m_fSpacingX = 0.0f;
+		float m_fSpacingZ = 0.0f;
 	};
 
-	bool ValidateTerrainGridTopology(const TerrainChunkSourceSnapshot& xSnapshot, bool bRequireNormals)
+	static constexpr float fGRID_EPSILON = 1.0e-3f;
+
+	// STAGE 1 - counts, buffer sizes, and the world-space grid extents.
+	// Rejects anything whose declared counts disagree with a square grid, whose
+	// streams are the wrong length, or whose positions are non-finite/degenerate.
+	bool ValidateGridDimensions(const TerrainChunkSourceSnapshot& xSnapshot, bool bRequireNormals,
+		TerrainGridExtents& xExtentsOut)
 	{
 		uint32_t uVerticesPerEdge = 1u;
 		while (static_cast<uint64_t>(uVerticesPerEdge) * uVerticesPerEdge < xSnapshot.m_uVertexCount)
@@ -150,9 +86,9 @@ namespace
 
 		const uint32_t uQuadsPerEdge = uVerticesPerEdge - 1u;
 		if (xSnapshot.m_uIndexCount != uQuadsPerEdge * uQuadsPerEdge * 6u ||
-			xSnapshot.m_axPositions.size() != xSnapshot.m_uVertexCount ||
-			xSnapshot.m_auVertexData.size() != static_cast<size_t>(xSnapshot.m_uVertexCount) * Flux_TerrainVertexLayout::uVERTEX_STRIDE ||
-			(bRequireNormals && xSnapshot.m_axNormals.size() != xSnapshot.m_uVertexCount))
+			xSnapshot.m_axPositions.GetSize() != xSnapshot.m_uVertexCount ||
+			static_cast<size_t>(xSnapshot.m_auVertexData.GetSize()) != static_cast<size_t>(xSnapshot.m_uVertexCount) * Zenith_TerrainChunkLayout::uVERTEX_STRIDE ||
+			(bRequireNormals && xSnapshot.m_axNormals.GetSize() != xSnapshot.m_uVertexCount))
 		{
 			return false;
 		}
@@ -176,35 +112,52 @@ namespace
 		if (!std::isfinite(fSpacingX) || !std::isfinite(fSpacingZ) || fSpacingX <= 1.0e-6f || fSpacingZ <= 1.0e-6f)
 			return false;
 
-		static constexpr float fGRID_EPSILON = 1.0e-3f;
-		std::vector<uint32_t> auVertexGridX(xSnapshot.m_uVertexCount);
-		std::vector<uint32_t> auVertexGridZ(xSnapshot.m_uVertexCount);
-		std::vector<int32_t> aiGridOwners(xSnapshot.m_uVertexCount, -1);
+		xExtentsOut.m_uVerticesPerEdge = uVerticesPerEdge;
+		xExtentsOut.m_uQuadsPerEdge = uQuadsPerEdge;
+		xExtentsOut.m_fMinX = fMinX;
+		xExtentsOut.m_fMinZ = fMinZ;
+		xExtentsOut.m_fSpacingX = fSpacingX;
+		xExtentsOut.m_fSpacingZ = fSpacingZ;
+		return true;
+	}
+
+	// STAGE 2 - every vertex lands on exactly one distinct grid slot, its packed
+	// vertex-buffer position agrees with the position stream, and (when present)
+	// its normal is finite and non-degenerate. Fills the per-vertex grid
+	// coordinates stage 3 needs.
+	bool ValidateVertexGrid(const TerrainChunkSourceSnapshot& xSnapshot, const TerrainGridExtents& xExtents,
+		Zenith_Vector<uint32_t>& auVertexGridXOut, Zenith_Vector<uint32_t>& auVertexGridZOut)
+	{
+		auVertexGridXOut.Resize(xSnapshot.m_uVertexCount, 0u);
+		auVertexGridZOut.Resize(xSnapshot.m_uVertexCount, 0u);
+		Zenith_Vector<int32_t> aiGridOwners(xSnapshot.m_uVertexCount);
+		aiGridOwners.Resize(xSnapshot.m_uVertexCount, -1);
+
 		for (uint32_t u = 0u; u < xSnapshot.m_uVertexCount; ++u)
 		{
-			const Zenith_Maths::Vector3& xPosition = xSnapshot.m_axPositions[u];
-			const float fGridX = (xPosition.x - fMinX) / fSpacingX;
-			const float fGridZ = (xPosition.z - fMinZ) / fSpacingZ;
+			const Zenith_Maths::Vector3& xPosition = xSnapshot.m_axPositions.Get(u);
+			const float fGridX = (xPosition.x - xExtents.m_fMinX) / xExtents.m_fSpacingX;
+			const float fGridZ = (xPosition.z - xExtents.m_fMinZ) / xExtents.m_fSpacingZ;
 			const int32_t iGridX = static_cast<int32_t>(std::round(fGridX));
 			const int32_t iGridZ = static_cast<int32_t>(std::round(fGridZ));
-			if (iGridX < 0 || iGridZ < 0 || iGridX >= static_cast<int32_t>(uVerticesPerEdge) ||
-				iGridZ >= static_cast<int32_t>(uVerticesPerEdge) ||
-				std::fabs(xPosition.x - (fMinX + iGridX * fSpacingX)) > fGRID_EPSILON ||
-				std::fabs(xPosition.z - (fMinZ + iGridZ * fSpacingZ)) > fGRID_EPSILON)
+			if (iGridX < 0 || iGridZ < 0 || iGridX >= static_cast<int32_t>(xExtents.m_uVerticesPerEdge) ||
+				iGridZ >= static_cast<int32_t>(xExtents.m_uVerticesPerEdge) ||
+				std::fabs(xPosition.x - (xExtents.m_fMinX + iGridX * xExtents.m_fSpacingX)) > fGRID_EPSILON ||
+				std::fabs(xPosition.z - (xExtents.m_fMinZ + iGridZ * xExtents.m_fSpacingZ)) > fGRID_EPSILON)
 			{
 				return false;
 			}
 
-			const uint32_t uSlot = static_cast<uint32_t>(iGridZ) * uVerticesPerEdge + static_cast<uint32_t>(iGridX);
-			if (aiGridOwners[uSlot] != -1)
+			const uint32_t uSlot = static_cast<uint32_t>(iGridZ) * xExtents.m_uVerticesPerEdge + static_cast<uint32_t>(iGridX);
+			if (aiGridOwners.Get(uSlot) != -1)
 				return false;
-			aiGridOwners[uSlot] = static_cast<int32_t>(u);
-			auVertexGridX[u] = static_cast<uint32_t>(iGridX);
-			auVertexGridZ[u] = static_cast<uint32_t>(iGridZ);
+			aiGridOwners.Get(uSlot) = static_cast<int32_t>(u);
+			auVertexGridXOut.Get(u) = static_cast<uint32_t>(iGridX);
+			auVertexGridZOut.Get(u) = static_cast<uint32_t>(iGridZ);
 
 			float afVertexPositionAndUV[5];
 			std::memcpy(afVertexPositionAndUV,
-				xSnapshot.m_auVertexData.data() + static_cast<size_t>(u) * Flux_TerrainVertexLayout::uVERTEX_STRIDE,
+				xSnapshot.m_auVertexData.GetDataPointer() + static_cast<size_t>(u) * Zenith_TerrainChunkLayout::uVERTEX_STRIDE,
 				sizeof(afVertexPositionAndUV));
 			for (float fValue : afVertexPositionAndUV)
 			{
@@ -219,9 +172,9 @@ namespace
 			}
 		}
 
-		if (!xSnapshot.m_axNormals.empty())
+		if (xSnapshot.m_axNormals.GetSize() != 0u)
 		{
-			if (xSnapshot.m_axNormals.size() != xSnapshot.m_uVertexCount)
+			if (xSnapshot.m_axNormals.GetSize() != xSnapshot.m_uVertexCount)
 				return false;
 			for (const Zenith_Maths::Vector3& xNormal : xSnapshot.m_axNormals)
 			{
@@ -233,75 +186,111 @@ namespace
 				}
 			}
 		}
+		return true;
+	}
 
+	// The corner bit a vertex contributes to its cell's 4-bit occupancy mask.
+	uint8_t TerrainCellCornerBit(const Zenith_Vector<uint32_t>& auVertexGridX,
+		const Zenith_Vector<uint32_t>& auVertexGridZ,
+		uint32_t uVertexIndex, uint32_t uMinGridX, uint32_t uMinGridZ)
+	{
+		const uint32_t uLocalX = auVertexGridX.Get(uVertexIndex) - uMinGridX;
+		const uint32_t uLocalZ = auVertexGridZ.Get(uVertexIndex) - uMinGridZ;
+		return static_cast<uint8_t>(1u << (uLocalZ * 2u + uLocalX));
+	}
+
+	// One triangle: in-range distinct indices, confined to a single grid cell,
+	// clockwise in XZ, and split along the diagonal the exporter emits for that
+	// cell. Records its corner mask into the per-cell tally.
+	bool ValidateTerrainTriangle(const TerrainChunkSourceSnapshot& xSnapshot, const TerrainGridExtents& xExtents,
+		const Zenith_Vector<uint32_t>& auVertexGridX, const Zenith_Vector<uint32_t>& auVertexGridZ,
+		uint32_t uA, uint32_t uB, uint32_t uC,
+		Zenith_Vector<uint8_t>& auTriangleCounts, Zenith_Vector<uint8_t>& auFirstMasks,
+		Zenith_Vector<uint8_t>& auSecondMasks)
+	{
+		if (uA >= xSnapshot.m_uVertexCount || uB >= xSnapshot.m_uVertexCount || uC >= xSnapshot.m_uVertexCount ||
+			uA == uB || uA == uC || uB == uC)
+		{
+			return false;
+		}
+
+		const uint32_t uMinGridX = std::min({ auVertexGridX.Get(uA), auVertexGridX.Get(uB), auVertexGridX.Get(uC) });
+		const uint32_t uMaxGridX = std::max({ auVertexGridX.Get(uA), auVertexGridX.Get(uB), auVertexGridX.Get(uC) });
+		const uint32_t uMinGridZ = std::min({ auVertexGridZ.Get(uA), auVertexGridZ.Get(uB), auVertexGridZ.Get(uC) });
+		const uint32_t uMaxGridZ = std::max({ auVertexGridZ.Get(uA), auVertexGridZ.Get(uB), auVertexGridZ.Get(uC) });
+		if (uMaxGridX != uMinGridX + 1u || uMaxGridZ != uMinGridZ + 1u)
+			return false;
+
+		const Zenith_Maths::Vector3& xA = xSnapshot.m_axPositions.Get(uA);
+		const Zenith_Maths::Vector3& xB = xSnapshot.m_axPositions.Get(uB);
+		const Zenith_Maths::Vector3& xC = xSnapshot.m_axPositions.Get(uC);
+		const float fProjectedTwiceArea = (xB.x - xA.x) * (xC.z - xA.z) - (xB.z - xA.z) * (xC.x - xA.x);
+		// The terrain exporter emits clockwise XZ winding (a,c,b / c,a,d).
+		// Reject a reversed or degenerate triangle rather than accepting a
+		// topologically complete grid whose physics/render faces disagree.
+		if (!std::isfinite(fProjectedTwiceArea) || fProjectedTwiceArea >= -1.0e-6f)
+			return false;
+
+		const uint8_t uMask = static_cast<uint8_t>(
+			TerrainCellCornerBit(auVertexGridX, auVertexGridZ, uA, uMinGridX, uMinGridZ) |
+			TerrainCellCornerBit(auVertexGridX, auVertexGridZ, uB, uMinGridX, uMinGridZ) |
+			TerrainCellCornerBit(auVertexGridX, auVertexGridZ, uC, uMinGridX, uMinGridZ));
+		// ExportChunkBatch writes the N x N interior first, then stitches the
+		// positive-X and positive-Z edge vertices. Interior cells use the
+		// a-c split (0xB/0xD); either stitched positive edge uses the opposite
+		// diagonal (0x7/0xE). Both retain the same clockwise winding.
+		const bool bPositiveEdgeCell =
+			uMinGridX + 1u == xExtents.m_uQuadsPerEdge ||
+			uMinGridZ + 1u == xExtents.m_uQuadsPerEdge;
+		const bool bExpectedTriangleMask = bPositiveEdgeCell
+			? (uMask == 0x7u || uMask == 0xEu)
+			: (uMask == 0xBu || uMask == 0xDu);
+		if (!bExpectedTriangleMask)
+			return false;
+
+		const uint32_t uCell = uMinGridZ * xExtents.m_uQuadsPerEdge + uMinGridX;
+		if (auTriangleCounts.Get(uCell) == 0u)
+			auFirstMasks.Get(uCell) = uMask;
+		else if (auTriangleCounts.Get(uCell) == 1u)
+			auSecondMasks.Get(uCell) = uMask;
+		else
+			return false;
+		auTriangleCounts.Get(uCell)++;
+		return true;
+	}
+
+	// STAGE 3 - every cell is covered by exactly two triangles split along the
+	// exporter's diagonal for that cell.
+	bool ValidateIndexTopology(const TerrainChunkSourceSnapshot& xSnapshot, const TerrainGridExtents& xExtents,
+		const Zenith_Vector<uint32_t>& auVertexGridX, const Zenith_Vector<uint32_t>& auVertexGridZ)
+	{
+		const uint32_t uQuadsPerEdge = xExtents.m_uQuadsPerEdge;
 		const uint32_t uCellCount = uQuadsPerEdge * uQuadsPerEdge;
-		std::vector<uint8_t> auTriangleCounts(uCellCount, 0u);
-		std::vector<uint8_t> auFirstMasks(uCellCount, 0u);
-		std::vector<uint8_t> auSecondMasks(uCellCount, 0u);
+		Zenith_Vector<uint8_t> auTriangleCounts(uCellCount);
+		Zenith_Vector<uint8_t> auFirstMasks(uCellCount);
+		Zenith_Vector<uint8_t> auSecondMasks(uCellCount);
+		auTriangleCounts.Resize(uCellCount, 0u);
+		auFirstMasks.Resize(uCellCount, 0u);
+		auSecondMasks.Resize(uCellCount, 0u);
+
 		for (uint32_t uTriangle = 0u; uTriangle < xSnapshot.m_uIndexCount; uTriangle += 3u)
 		{
-			const uint32_t uA = xSnapshot.m_auIndices[uTriangle];
-			const uint32_t uB = xSnapshot.m_auIndices[uTriangle + 1u];
-			const uint32_t uC = xSnapshot.m_auIndices[uTriangle + 2u];
-			if (uA >= xSnapshot.m_uVertexCount || uB >= xSnapshot.m_uVertexCount || uC >= xSnapshot.m_uVertexCount ||
-				uA == uB || uA == uC || uB == uC)
+			if (!ValidateTerrainTriangle(xSnapshot, xExtents, auVertexGridX, auVertexGridZ,
+				xSnapshot.m_auIndices.Get(uTriangle),
+				xSnapshot.m_auIndices.Get(uTriangle + 1u),
+				xSnapshot.m_auIndices.Get(uTriangle + 2u),
+				auTriangleCounts, auFirstMasks, auSecondMasks))
 			{
 				return false;
 			}
-
-			const uint32_t uMinGridX = std::min({ auVertexGridX[uA], auVertexGridX[uB], auVertexGridX[uC] });
-			const uint32_t uMaxGridX = std::max({ auVertexGridX[uA], auVertexGridX[uB], auVertexGridX[uC] });
-			const uint32_t uMinGridZ = std::min({ auVertexGridZ[uA], auVertexGridZ[uB], auVertexGridZ[uC] });
-			const uint32_t uMaxGridZ = std::max({ auVertexGridZ[uA], auVertexGridZ[uB], auVertexGridZ[uC] });
-			if (uMaxGridX != uMinGridX + 1u || uMaxGridZ != uMinGridZ + 1u)
-				return false;
-
-			const Zenith_Maths::Vector3& xA = xSnapshot.m_axPositions[uA];
-			const Zenith_Maths::Vector3& xB = xSnapshot.m_axPositions[uB];
-			const Zenith_Maths::Vector3& xC = xSnapshot.m_axPositions[uC];
-			const float fProjectedTwiceArea = (xB.x - xA.x) * (xC.z - xA.z) - (xB.z - xA.z) * (xC.x - xA.x);
-			// The terrain exporter emits clockwise XZ winding (a,c,b / c,a,d).
-			// Reject a reversed or degenerate triangle rather than accepting a
-			// topologically complete grid whose physics/render faces disagree.
-			if (!std::isfinite(fProjectedTwiceArea) || fProjectedTwiceArea >= -1.0e-6f)
-				return false;
-
-			auto CornerBit = [&](uint32_t uVertexIndex) -> uint8_t
-			{
-				const uint32_t uLocalX = auVertexGridX[uVertexIndex] - uMinGridX;
-				const uint32_t uLocalZ = auVertexGridZ[uVertexIndex] - uMinGridZ;
-				return static_cast<uint8_t>(1u << (uLocalZ * 2u + uLocalX));
-			};
-			const uint8_t uMask = static_cast<uint8_t>(CornerBit(uA) | CornerBit(uB) | CornerBit(uC));
-			// ExportChunkBatch writes the N x N interior first, then stitches the
-			// positive-X and positive-Z edge vertices. Interior cells use the
-			// a-c split (0xB/0xD); either stitched positive edge uses the opposite
-			// diagonal (0x7/0xE). Both retain the same clockwise winding.
-			const bool bPositiveEdgeCell =
-				uMinGridX + 1u == uQuadsPerEdge ||
-				uMinGridZ + 1u == uQuadsPerEdge;
-			const bool bExpectedTriangleMask = bPositiveEdgeCell
-				? (uMask == 0x7u || uMask == 0xEu)
-				: (uMask == 0xBu || uMask == 0xDu);
-			if (!bExpectedTriangleMask)
-				return false;
-
-			const uint32_t uCell = uMinGridZ * uQuadsPerEdge + uMinGridX;
-			if (auTriangleCounts[uCell] == 0u)
-				auFirstMasks[uCell] = uMask;
-			else if (auTriangleCounts[uCell] == 1u)
-				auSecondMasks[uCell] = uMask;
-			else
-				return false;
-			auTriangleCounts[uCell]++;
 		}
 
 		for (uint32_t uCell = 0u; uCell < uCellCount; ++uCell)
 		{
-			if (auTriangleCounts[uCell] != 2u)
+			if (auTriangleCounts.Get(uCell) != 2u)
 				return false;
-			const uint8_t uMissingA = static_cast<uint8_t>((~auFirstMasks[uCell]) & 0xFu);
-			const uint8_t uMissingB = static_cast<uint8_t>((~auSecondMasks[uCell]) & 0xFu);
+			const uint8_t uMissingA = static_cast<uint8_t>((~auFirstMasks.Get(uCell)) & 0xFu);
+			const uint8_t uMissingB = static_cast<uint8_t>((~auSecondMasks.Get(uCell)) & 0xFu);
 			const uint32_t uCellX = uCell % uQuadsPerEdge;
 			const uint32_t uCellZ = uCell / uQuadsPerEdge;
 			const bool bPositiveEdgeCell =
@@ -318,19 +307,38 @@ namespace
 		return true;
 	}
 
+	// The three stages run in order and each depends on the previous one having
+	// passed: stage 2 needs the extents stage 1 derives, stage 3 needs the
+	// per-vertex grid coordinates stage 2 fills. Rejection ORDER is therefore
+	// unchanged from the single function this replaced, which matters - the
+	// Terrain suite's fixture mutations each pin one specific rejection.
+	bool ValidateTerrainGridTopology(const TerrainChunkSourceSnapshot& xSnapshot, bool bRequireNormals)
+	{
+		TerrainGridExtents xExtents;
+		if (!ValidateGridDimensions(xSnapshot, bRequireNormals, xExtents))
+			return false;
+
+		Zenith_Vector<uint32_t> auVertexGridX(xSnapshot.m_uVertexCount);
+		Zenith_Vector<uint32_t> auVertexGridZ(xSnapshot.m_uVertexCount);
+		if (!ValidateVertexGrid(xSnapshot, xExtents, auVertexGridX, auVertexGridZ))
+			return false;
+
+		return ValidateIndexTopology(xSnapshot, xExtents, auVertexGridX, auVertexGridZ);
+	}
+
 	bool TryReadTerrainChunkSnapshot(const std::string& strPath, uint32_t uExpectedVertexCount,
 		uint32_t uExpectedIndexCount, bool bRequireNormals, TerrainChunkSourceSnapshot& xSnapshotOut)
 	{
-		TerrainComponentMeshReader xReader(strPath.c_str());
+		Zenith_BakedMeshReader xReader(strPath.c_str());
 		uint32_t uElementCount = 0;
-		if (!xReader.Read(uElementCount) || uElementCount != Flux_TerrainVertexLayout::uELEMENT_COUNT)
+		if (!xReader.Read(uElementCount) || uElementCount != Zenith_TerrainChunkLayout::uELEMENT_COUNT)
 			return false;
 
 		uint32_t uExpectedOffset = 0;
 		for (uint32_t u = 0; u < uElementCount; ++u)
 		{
 			Flux_BufferElement xElement;
-			const Flux_TerrainVertexLayout::Element& xExpected = Flux_TerrainVertexLayout::axELEMENTS[u];
+			const Zenith_TerrainChunkLayout::Element& xExpected = Zenith_TerrainChunkLayout::axELEMENTS[u];
 			if (!xReader.Read(xElement) || xElement.m_eType != xExpected.m_eType ||
 				xElement.m_uSize != xExpected.m_uSize || xElement.m_uOffset != uExpectedOffset)
 			{
@@ -352,27 +360,27 @@ namespace
 		if (!xReader.Read(xSnapshotOut.m_xMaterialColor))
 			return false;
 
-		const uint64_t ulVertexDataSize = static_cast<uint64_t>(xSnapshotOut.m_uVertexCount) * Flux_TerrainVertexLayout::uVERTEX_STRIDE;
+		const uint64_t ulVertexDataSize = static_cast<uint64_t>(xSnapshotOut.m_uVertexCount) * Zenith_TerrainChunkLayout::uVERTEX_STRIDE;
 		const uint64_t ulIndexDataSize = static_cast<uint64_t>(xSnapshotOut.m_uIndexCount) * sizeof(uint32_t);
 		static constexpr uint64_t ulATTRIBUTE_FLAG_COUNT = 9u;
 		if (!xReader.HasRemaining(ulVertexDataSize + ulIndexDataSize + ulATTRIBUTE_FLAG_COUNT))
 			return false;
 
-		xSnapshotOut.m_auVertexData.resize(static_cast<size_t>(ulVertexDataSize));
-		xSnapshotOut.m_auIndices.resize(xSnapshotOut.m_uIndexCount);
-		xSnapshotOut.m_axPositions.resize(xSnapshotOut.m_uVertexCount);
-		xSnapshotOut.m_axNormals.resize(xSnapshotOut.m_uVertexCount);
-		if (!xReader.ReadAttribute(ulVertexDataSize, true, xSnapshotOut.m_auVertexData.data()))
+		xSnapshotOut.m_auVertexData.Resize(static_cast<u_int>(ulVertexDataSize), 0u);
+		xSnapshotOut.m_auIndices.Resize(xSnapshotOut.m_uIndexCount, 0u);
+		xSnapshotOut.m_axPositions.Resize(xSnapshotOut.m_uVertexCount, Zenith_Maths::Vector3(0.0f));
+		xSnapshotOut.m_axNormals.Resize(xSnapshotOut.m_uVertexCount, Zenith_Maths::Vector3(0.0f));
+		if (!xReader.ReadAttribute(ulVertexDataSize, true, xSnapshotOut.m_auVertexData.GetDataPointer()))
 			return false;
-		if (!xReader.ReadAttribute(ulIndexDataSize, true, xSnapshotOut.m_auIndices.data()))
+		if (!xReader.ReadAttribute(ulIndexDataSize, true, xSnapshotOut.m_auIndices.GetDataPointer()))
 			return false;
 
 		const uint64_t ulVector3DataSize = static_cast<uint64_t>(xSnapshotOut.m_uVertexCount) * sizeof(Zenith_Maths::Vector3);
 		const uint64_t ulVector4DataSize = static_cast<uint64_t>(xSnapshotOut.m_uVertexCount) * sizeof(Zenith_Maths::Vector4);
 		const uint64_t ulBoneAttributeSize = static_cast<uint64_t>(xSnapshotOut.m_uVertexCount) * MAX_BONES_PER_VERTEX * sizeof(uint32_t);
 		bool bNormalsPresent = false;
-		const bool bDecoded = xReader.ReadAttribute(ulVector3DataSize, true, xSnapshotOut.m_axPositions.data()) &&
-			xReader.ReadAttribute(ulVector3DataSize, bRequireNormals, xSnapshotOut.m_axNormals.data(), &bNormalsPresent) &&
+		const bool bDecoded = xReader.ReadAttribute(ulVector3DataSize, true, xSnapshotOut.m_axPositions.GetDataPointer()) &&
+			xReader.ReadAttribute(ulVector3DataSize, bRequireNormals, xSnapshotOut.m_axNormals.GetDataPointer(), &bNormalsPresent) &&
 			xReader.ReadAttribute(ulVector3DataSize, false) &&           // tangents
 			xReader.ReadAttribute(ulVector3DataSize, false) &&           // bitangents
 			xReader.ReadAttribute(ulVector4DataSize, false) &&           // colours
@@ -382,7 +390,7 @@ namespace
 		if (!bDecoded)
 			return false;
 		if (!bNormalsPresent)
-			xSnapshotOut.m_axNormals.clear();
+			xSnapshotOut.m_axNormals.Clear();
 		return ValidateTerrainGridTopology(xSnapshotOut, bRequireNormals);
 	}
 }
@@ -395,7 +403,7 @@ bool Zenith_TerrainComponent::TryLoadTerrainChunkSource(const std::string& strPa
 	if (!TryReadTerrainChunkSnapshot(strPath, uExpectedVertexCount, uExpectedIndexCount, bRequireNormals, xSnapshot))
 		return false;
 
-	const uint64_t ulVertexDataSize = xSnapshot.m_auVertexData.size();
+	const uint64_t ulVertexDataSize = xSnapshot.m_auVertexData.GetSize();
 	const uint64_t ulIndexDataSize = static_cast<uint64_t>(xSnapshot.m_uIndexCount) * sizeof(uint32_t);
 	const uint64_t ulPositionDataSize = static_cast<uint64_t>(xSnapshot.m_uVertexCount) * sizeof(Zenith_Maths::Vector3);
 	u_int8* pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(ulVertexDataSize));
@@ -412,14 +420,14 @@ bool Zenith_TerrainComponent::TryLoadTerrainChunkSource(const std::string& strPa
 		return false;
 	}
 
-	std::memcpy(pVertexData, xSnapshot.m_auVertexData.data(), static_cast<size_t>(ulVertexDataSize));
-	std::memcpy(puIndices, xSnapshot.m_auIndices.data(), static_cast<size_t>(ulIndexDataSize));
-	std::memcpy(pxPositions, xSnapshot.m_axPositions.data(), static_cast<size_t>(ulPositionDataSize));
+	std::memcpy(pVertexData, xSnapshot.m_auVertexData.GetDataPointer(), static_cast<size_t>(ulVertexDataSize));
+	std::memcpy(puIndices, xSnapshot.m_auIndices.GetDataPointer(), static_cast<size_t>(ulIndexDataSize));
+	std::memcpy(pxPositions, xSnapshot.m_axPositions.GetDataPointer(), static_cast<size_t>(ulPositionDataSize));
 	if (bRequireNormals)
-		std::memcpy(pxNormals, xSnapshot.m_axNormals.data(), static_cast<size_t>(ulPositionDataSize));
+		std::memcpy(pxNormals, xSnapshot.m_axNormals.GetDataPointer(), static_cast<size_t>(ulPositionDataSize));
 
-	for (uint32_t u = 0u; u < Flux_TerrainVertexLayout::uELEMENT_COUNT; ++u)
-		xGeometryOut.m_xBufferLayout.GetElements().PushBack(Flux_BufferElement(Flux_TerrainVertexLayout::axELEMENTS[u].m_eType));
+	for (uint32_t u = 0u; u < Zenith_TerrainChunkLayout::uELEMENT_COUNT; ++u)
+		xGeometryOut.m_xBufferLayout.GetElements().PushBack(Flux_BufferElement(Zenith_TerrainChunkLayout::axELEMENTS[u].m_eType));
 	xGeometryOut.m_xBufferLayout.CalculateOffsetsAndStrides();
 	xGeometryOut.m_uNumVerts = xSnapshot.m_uVertexCount;
 	xGeometryOut.m_uNumIndices = xSnapshot.m_uIndexCount;
@@ -1048,8 +1056,8 @@ void Zenith_TerrainComponent::CalculateLowLODBufferSizes(uint32_t& uTotalVertsOu
 	// Each exporter output is a self-contained 16x16-quad LOW chunk. The
 	// previous seam allowance over-reserved every interior chunk even though
 	// no extra seam geometry exists in the serialized source.
-	uTotalVertsOut = Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT * TOTAL_CHUNKS;
-	uTotalIndicesOut = Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT * TOTAL_CHUNKS;
+	uTotalVertsOut = Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT * TOTAL_CHUNKS;
+	uTotalIndicesOut = Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT * TOTAL_CHUNKS;
 }
 
 void Zenith_TerrainComponent::LogSparseLoadDiagnostics(const char* szSourceKind,
@@ -1232,8 +1240,8 @@ bool Zenith_TerrainComponent::LoadCombinedPhysicsGeometryCore(uint32_t uGridSize
 		return false;
 	if (m_pxPhysicsGeometry != nullptr)
 		return true;
-	const uint32_t uTotalVerts = Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT * uGridSize * uGridSize;
-	const uint32_t uTotalIndices = Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT * uGridSize * uGridSize;
+	const uint32_t uTotalVerts = Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT * uGridSize * uGridSize;
+	const uint32_t uTotalIndices = Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT * uGridSize * uGridSize;
 	const bool bCombined = CombineTerrainChunkGridCore(uGridSize, uTotalVerts, uTotalIndices,
 		pfnLoadChunk, pLoadContext, nullptr, m_pxPhysicsGeometry, xDiagnosticsOut);
 	if (!bCombined)
@@ -1258,8 +1266,8 @@ void Zenith_TerrainComponent::LoadAndCombineLowLODChunks(uint32_t uTotalVerts, u
 		const std::string strPath = xLoadContext.m_strDirectory + "Render_LOW_" +
 			std::to_string(uX) + "_" + std::to_string(uY) + ZENITH_MESH_EXT;
 		return TryLoadTerrainChunkSource(strPath,
-			Flux_TerrainVertexLayout::uLOW_CHUNK_VERTEX_COUNT,
-			Flux_TerrainVertexLayout::uLOW_CHUNK_INDEX_COUNT, false, xGeometryOut);
+			Zenith_TerrainChunkLayout::uLOW_CHUNK_VERTEX_COUNT,
+			Zenith_TerrainChunkLayout::uLOW_CHUNK_INDEX_COUNT, false, xGeometryOut);
 	};
 
 	TerrainSparseLoadDiagnostics xDiagnostics;
@@ -1347,8 +1355,8 @@ void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
 		const std::string strPath = xLoadContext.m_strDirectory + "Physics_" +
 			std::to_string(uX) + "_" + std::to_string(uY) + ZENITH_MESH_EXT;
 		return TryLoadTerrainChunkSource(strPath,
-			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
-			Flux_TerrainVertexLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xGeometryOut);
+			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_VERTEX_COUNT,
+			Zenith_TerrainChunkLayout::uPHYSICS_CHUNK_INDEX_COUNT, true, xGeometryOut);
 	};
 
 	TerrainSparseLoadDiagnostics xDiagnostics;

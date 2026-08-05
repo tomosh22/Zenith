@@ -15,7 +15,6 @@
 #include "Flux/Terrain/Flux_TerrainImpl.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
 #include <filesystem>
-#include <vector>
 
 #ifdef ZENITH_TESTING
 #include "UnitTests/Zenith_UnitTests.h"
@@ -208,12 +207,21 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 		const std::string strTerrainRoot =
 			(std::filesystem::path(Project_GetGameAssetsDirectory()) / "Terrain").string();
 		bool bLeaseEntered = false;
+		struct CreateTerrainContext
+		{
+			Zenith_TerrainComponent* m_pxSelf;
+			bool* m_pbLeaseEntered;
+			const std::string* m_pstrOutputDir;
+		};
+		CreateTerrainContext xCreateContext{ this, &bLeaseEntered, &strOutputDir };
 		if (!WithPreparedTerrainAssetDirectory(m_strTerrainAssetSet, strTerrainRoot,
-			[&](const std::string& strValidatedOutputDir)
+			[](void* pContext, const std::string& strValidatedOutputDir) -> bool
 			{
-			bLeaseEntered = true;
+			CreateTerrainContext& xCreate = *static_cast<CreateTerrainContext*>(pContext);
+			Zenith_TerrainComponent& xSelf = *xCreate.m_pxSelf;
+			*xCreate.m_pbLeaseEntered = true;
 			if (NormalizeDirectoryPathForComparison(strValidatedOutputDir) !=
-				NormalizeDirectoryPathForComparison(strOutputDir))
+				NormalizeDirectoryPathForComparison(*xCreate.m_pstrOutputDir))
 			{
 				return false;
 			}
@@ -230,9 +238,9 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Export complete. Initializing terrain...");
 
 			// Create blank materials for initial rendering
-			const std::string strEntityName = m_xParentEntity.GetName().empty()
-				? ("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex))
-				: m_xParentEntity.GetName();
+			const std::string strEntityName = xSelf.m_xParentEntity.GetName().empty()
+				? ("Entity_" + std::to_string(xSelf.m_xParentEntity.GetEntityID().m_uIndex))
+				: xSelf.m_xParentEntity.GetName();
 
 			auto xhMat0 = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
 			Zenith_MaterialAsset* pxMat0 = xhMat0.GetDirect();
@@ -240,16 +248,16 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 			Zenith_MaterialAsset* pxMat1 = xhMat1.GetDirect();
 			if (pxMat0) pxMat0->SetName(strEntityName + "_Terrain_Mat0");
 			if (pxMat1) pxMat1->SetName(strEntityName + "_Terrain_Mat1");
-			m_axMaterials[0].Set(pxMat0);
-			m_axMaterials[1].Set(pxMat1);
+			xSelf.m_axMaterials[0].Set(pxMat0);
+			xSelf.m_axMaterials[1].Set(pxMat1);
 
-			EnsureMaterialSlotsPopulated();
-			InitializeRenderResources();
-			LoadCombinedPhysicsGeometry();
+			xSelf.EnsureMaterialSlotsPopulated();
+			xSelf.InitializeRenderResources();
+			xSelf.LoadCombinedPhysicsGeometry();
 
 			s_bTerrainExportInProgress = false;
-			const bool bInitialized = IsTerrainInitializedForEditor() &&
-				HasPhysicsGeometry() && !m_bTerrainGeometryUnusable;
+			const bool bInitialized = xSelf.IsTerrainInitializedForEditor() &&
+				xSelf.HasPhysicsGeometry() && !xSelf.m_bTerrainGeometryUnusable;
 			if (bInitialized)
 			{
 				s_strTerrainExportStatus = "Terrain created successfully!";
@@ -261,7 +269,7 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 				Zenith_Warning(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain creation did not produce complete live state");
 			}
 			return bInitialized;
-			}))
+			}, &xCreateContext))
 		{
 			if (!bLeaseEntered)
 			{
@@ -371,11 +379,12 @@ namespace
 			ReleaseHandles();
 			if (!m_bKeepCreatedDirectories)
 			{
-				for (auto xIt = m_axCreatedDirectories.rbegin();
-					xIt != m_axCreatedDirectories.rend(); ++xIt)
+				// Reverse order: a directory we created can only be removed once
+				// every child we created beneath it has already gone.
+				for (u_int u = m_axCreatedDirectories.GetSize(); u > 0u; --u)
 				{
 					std::error_code xRemoveError;
-					std::filesystem::remove(*xIt, xRemoveError);
+					std::filesystem::remove(m_axCreatedDirectories.Get(u - 1u), xRemoveError);
 				}
 			}
 		}
@@ -466,13 +475,14 @@ namespace
 			return true;
 		}
 
-		bool Run(const Zenith_TerrainComponent::TerrainDirectoryOperation& xOperation)
+		bool Run(Zenith_TerrainComponent::TerrainDirectoryOperation pfnOperation,
+			void* pOperationContext)
 		{
-			if (!xOperation || m_strDirectory.empty())
+			if (pfnOperation == nullptr || m_strDirectory.empty())
 			{
 				return false;
 			}
-			const bool bSucceeded = xOperation(m_strDirectory);
+			const bool bSucceeded = pfnOperation(pOperationContext, m_strDirectory);
 			m_bKeepCreatedDirectories = bSucceeded;
 			return bSucceeded;
 		}
@@ -489,7 +499,7 @@ namespace
 					!xFilename.has_parent_path() && xFilename == xFilename.filename() &&
 					xFilename != "." && xFilename != "..";
 			};
-			if (m_strDirectory.empty() || m_ahDirectories.empty() ||
+			if (m_strDirectory.empty() || m_ahDirectories.GetSize() == 0u ||
 				!IsSimpleFilename(xSourceFilename) ||
 				!IsSimpleFilename(xDestinationFilename) ||
 				xSourceFilename == xDestinationFilename)
@@ -549,10 +559,12 @@ namespace
 				CloseHandle(hSource);
 				return false;
 			}
-			std::vector<u_int8> auRenameBuffer(
-				sizeof(TerrainFileRenameInformation) + ulFilenameBytes, 0u);
+			const u_int uRenameBufferSize = static_cast<u_int>(
+				sizeof(TerrainFileRenameInformation) + ulFilenameBytes);
+			Zenith_Vector<u_int8> auRenameBuffer(uRenameBufferSize);
+			auRenameBuffer.Resize(uRenameBufferSize, 0u);
 			auto* pxRename = reinterpret_cast<TerrainFileRenameInformation*>(
-				auRenameBuffer.data());
+				auRenameBuffer.GetDataPointer());
 			pxRename->m_bReplaceIfExists = FALSE;
 			pxRename->m_hRootDirectory = nullptr;
 			pxRename->m_uFileNameLength = static_cast<ULONG>(ulFilenameBytes);
@@ -573,7 +585,7 @@ namespace
 
 			TerrainIoStatusBlock xIoStatus = {};
 			const LONG iStatus = pfnNtSetInformationFile(hSource, &xIoStatus,
-				pxRename, static_cast<ULONG>(auRenameBuffer.size()),
+				pxRename, static_cast<ULONG>(auRenameBuffer.GetSize()),
 				uFILE_RENAME_INFORMATION_CLASS);
 			CloseHandle(hSource);
 			return iStatus >= 0;
@@ -715,7 +727,7 @@ namespace
 				return false;
 			}
 
-			m_ahDirectories.push_back(hDirectory);
+			m_ahDirectories.PushBack(hDirectory);
 			return true;
 		}
 
@@ -733,7 +745,7 @@ namespace
 
 			if (CreateDirectoryW(xChild.c_str(), nullptr))
 			{
-				m_axCreatedDirectories.push_back(xChild);
+				m_axCreatedDirectories.PushBack(xChild);
 			}
 			else if (GetLastError() != ERROR_ALREADY_EXISTS)
 			{
@@ -747,14 +759,16 @@ namespace
 
 		void ReleaseHandles()
 		{
-			for (auto xIt = m_ahDirectories.rbegin(); xIt != m_ahDirectories.rend(); ++xIt)
+			// Reverse order: children are opened after their parents, so closing
+			// back-to-front releases each lease before the one it nests inside.
+			for (u_int u = m_ahDirectories.GetSize(); u > 0u; --u)
 			{
-				CloseHandle(*xIt);
+				CloseHandle(m_ahDirectories.Get(u - 1u));
 			}
-			m_ahDirectories.clear();
+			m_ahDirectories.Clear();
 		}
 
-		std::vector<HANDLE> m_ahDirectories;
+		Zenith_Vector<HANDLE> m_ahDirectories;
 #else
 		bool OpenCheckedDirectory(const std::filesystem::path& xDirectory,
 			const std::filesystem::path* pxExpectedFinalPath,
@@ -783,7 +797,7 @@ namespace
 		void ReleaseHandles() {}
 #endif
 
-		std::vector<std::filesystem::path> m_axCreatedDirectories;
+		Zenith_Vector<std::filesystem::path> m_axCreatedDirectories;
 		std::string m_strDirectory;
 		bool m_bKeepCreatedDirectories = false;
 	};
@@ -833,14 +847,14 @@ bool Zenith_TerrainComponent::ValidateTerrainAssetSetTarget(const std::string& s
 
 bool Zenith_TerrainComponent::WithPreparedTerrainAssetDirectory(
 	const std::string& strAssetSet, const std::string& strTerrainRoot,
-	const TerrainDirectoryOperation& xOperation)
+	TerrainDirectoryOperation pfnOperation, void* pOperationContext)
 {
 	TerrainPreparedDirectoryLease xLease;
 	if (!xLease.PrepareTerrainTarget(strAssetSet, strTerrainRoot))
 	{
 		return false;
 	}
-	return xLease.Run(xOperation);
+	return xLease.Run(pfnOperation, pOperationContext);
 }
 
 bool Zenith_TerrainComponent::RenamePreparedTerrainAssetFileAtomically(
@@ -852,16 +866,25 @@ bool Zenith_TerrainComponent::RenamePreparedTerrainAssetFileAtomically(
 	{
 		return false;
 	}
-	return xLease.Run([&](const std::string&)
+
+	struct RenameContext
+	{
+		TerrainPreparedDirectoryLease* m_pxLease;
+		const std::string* m_pstrSourceFilename;
+		const std::string* m_pstrDestinationFilename;
+	};
+	RenameContext xContext{ &xLease, &strSourceFilename, &strDestinationFilename };
+	return xLease.Run([](void* pContext, const std::string&) -> bool
 		{
-			return xLease.RenameChildFileAtomically(
-				strSourceFilename, strDestinationFilename);
-		});
+			RenameContext& xRename = *static_cast<RenameContext*>(pContext);
+			return xRename.m_pxLease->RenameChildFileAtomically(
+				*xRename.m_pstrSourceFilename, *xRename.m_pstrDestinationFilename);
+		}, &xContext);
 }
 
 bool Zenith_TerrainComponent::WithPreparedTerrainTextureDirectory(
 	const std::string& strAssetSet, const std::string& strTerrainRoot,
-	const TerrainDirectoryOperation& xOperation)
+	TerrainDirectoryOperation pfnOperation, void* pOperationContext)
 {
 	if (!IsValidTerrainAssetSetName(strAssetSet))
 	{
@@ -870,7 +893,7 @@ bool Zenith_TerrainComponent::WithPreparedTerrainTextureDirectory(
 	if (!strAssetSet.empty())
 	{
 		return WithPreparedTerrainAssetDirectory(
-			strAssetSet, strTerrainRoot, xOperation);
+			strAssetSet, strTerrainRoot, pfnOperation, pOperationContext);
 	}
 
 	TerrainPreparedDirectoryLease xLease;
@@ -878,7 +901,7 @@ bool Zenith_TerrainComponent::WithPreparedTerrainTextureDirectory(
 	{
 		return false;
 	}
-	return xLease.Run(xOperation);
+	return xLease.Run(pfnOperation, pOperationContext);
 }
 
 // Production cleanup wrapper re-runs the non-destructive canonical check
@@ -888,18 +911,26 @@ bool Zenith_TerrainComponent::DeleteExistingTerrainFilesForAssetSet(
 {
 	const std::string strTerrainRoot =
 		(std::filesystem::path(Project_GetGameAssetsDirectory()) / "Terrain").string();
+	struct DeleteContext
+	{
+		const std::string* m_pstrAssetSet;
+		const std::string* m_pstrTerrainRoot;
+		const std::string* m_pstrResolvedDirectory;
+	};
+	DeleteContext xContext{ &strAssetSet, &strTerrainRoot, &strResolvedDirectory };
 	return WithPreparedTerrainAssetDirectory(strAssetSet, strTerrainRoot,
-		[&](const std::string& strValidatedDirectory)
+		[](void* pContext, const std::string& strValidatedDirectory) -> bool
 		{
+			DeleteContext& xDelete = *static_cast<DeleteContext*>(pContext);
 			if (!ValidateTerrainAssetSetTarget(
-				strAssetSet, strTerrainRoot, strResolvedDirectory) ||
+				*xDelete.m_pstrAssetSet, *xDelete.m_pstrTerrainRoot, *xDelete.m_pstrResolvedDirectory) ||
 				NormalizeDirectoryPathForComparison(strValidatedDirectory) !=
-					NormalizeDirectoryPathForComparison(strResolvedDirectory))
+					NormalizeDirectoryPathForComparison(*xDelete.m_pstrResolvedDirectory))
 			{
 				return false;
 			}
 			return DeleteExistingTerrainFilesInDirectory(strValidatedDirectory);
-		});
+		}, &xContext);
 }
 
 // Private non-recursive core. Named sets also keep Height/Splatmap/GrassDensity
@@ -988,13 +1019,27 @@ bool Zenith_TerrainComponent::RunTerrainRegenerationInternalForTerrainRoot(
 	// operation. Its no-delete-share handles prevent the checked Assets, Terrain,
 	// and target directories from being renamed or replaced mid-regeneration.
 	bool bLeaseEntered = false;
+	struct RegenerateContext
+	{
+		Zenith_TerrainComponent* m_pxSelf;
+		bool* m_pbLeaseEntered;
+		const std::string* m_pstrTerrainRoot;
+		const std::string* m_pstrOutputDir;
+		const Zenith_Image* m_pxHeightfield;
+	};
+	RegenerateContext xRegenContext{ this, &bLeaseEntered, &strTerrainRoot,
+		&strOutputDir, pxHeightfield };
 	const bool bSucceeded = WithPreparedTerrainAssetDirectory(
 		m_strTerrainAssetSet, strTerrainRoot,
-		[&](const std::string& strValidatedDirectory)
+		[](void* pContext, const std::string& strValidatedDirectory) -> bool
 		{
-		bLeaseEntered = true;
+		RegenerateContext& xRegen = *static_cast<RegenerateContext*>(pContext);
+		Zenith_TerrainComponent& xSelf = *xRegen.m_pxSelf;
+		const std::string& strOutputDir = *xRegen.m_pstrOutputDir;
+		const Zenith_Image* pxHeightfield = xRegen.m_pxHeightfield;
+		*xRegen.m_pbLeaseEntered = true;
 		if (!ValidateTerrainAssetSetTarget(
-			m_strTerrainAssetSet, strTerrainRoot, strOutputDir) ||
+			xSelf.m_strTerrainAssetSet, *xRegen.m_pstrTerrainRoot, strOutputDir) ||
 			NormalizeDirectoryPathForComparison(strValidatedDirectory) !=
 				NormalizeDirectoryPathForComparison(strOutputDir))
 		{
@@ -1005,7 +1050,7 @@ bool Zenith_TerrainComponent::RunTerrainRegenerationInternalForTerrainRoot(
 	s_strTerrainExportStatus = "Cleaning up existing terrain...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Starting terrain regeneration...");
 
-	CleanupPriorGenerationForRegenerate();
+	xSelf.CleanupPriorGenerationForRegenerate();
 
 	s_strTerrainExportStatus = "Deleting existing terrain meshes...";
 	if (!DeleteExistingTerrainFilesInDirectory(strValidatedDirectory))
@@ -1030,16 +1075,16 @@ bool Zenith_TerrainComponent::RunTerrainRegenerationInternalForTerrainRoot(
 
 	s_strTerrainExportStatus = "Initializing render resources...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Reinitializing render resources...");
-	EnsureMaterialSlotsPopulated();
-	InitializeRenderResources();
+	xSelf.EnsureMaterialSlotsPopulated();
+	xSelf.InitializeRenderResources();
 
 	s_strTerrainExportStatus = "Loading physics geometry...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Loading new physics geometry...");
-	LoadCombinedPhysicsGeometry();
+	xSelf.LoadCombinedPhysicsGeometry();
 
 	s_bTerrainExportInProgress = false;
-	const bool bInitialized = IsTerrainInitializedForEditor() &&
-		HasPhysicsGeometry() && !m_bTerrainGeometryUnusable;
+	const bool bInitialized = xSelf.IsTerrainInitializedForEditor() &&
+		xSelf.HasPhysicsGeometry() && !xSelf.m_bTerrainGeometryUnusable;
 	if (bInitialized)
 	{
 		s_strTerrainExportStatus = "Terrain regenerated successfully!";
@@ -1052,7 +1097,7 @@ bool Zenith_TerrainComponent::RunTerrainRegenerationInternalForTerrainRoot(
 			"[TerrainComponent] Terrain regeneration did not produce complete live state");
 	}
 	return bInitialized;
-		});
+		}, &xRegenContext);
 	if (!bLeaseEntered)
 	{
 		s_strTerrainExportStatus = "Terrain regeneration refused an unvalidated output directory.";

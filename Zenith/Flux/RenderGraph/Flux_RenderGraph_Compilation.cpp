@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Flux/RenderGraph/Flux_RenderGraph_AccessNames.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -13,31 +14,9 @@
 //
 // All shared state (m_xPasses, m_xTraffic, m_xResources, m_axTransients,
 // m_xAdjacency, m_xInDegree, m_xEdgeSet, m_xExecutionOrder) is reachable
-// via member access because every function is a class method. The only
-// file-static helper needed (AccessToString) is copied here rather than
-// exposed through an internal header — it's a tiny switch-on-enum.
+// via member access because every function is a class method. The one shared
+// helper (Flux_AccessToString) lives in Flux_RenderGraph_AccessNames.h.
 //=============================================================================
-
-// Local copy of the file-static helper defined in Flux_RenderGraph.cpp. Kept
-// here to avoid introducing a shared internal header for a 10-line function.
-static const char* AccessToString(ResourceAccess eAccess)
-{
-    switch (eAccess)
-    {
-        case RESOURCE_ACCESS_UNDEFINED:           return "UNDEFINED";
-        case RESOURCE_ACCESS_READ_SRV:            return "READ_SRV";
-        case RESOURCE_ACCESS_READ_DEPTH:          return "READ_DEPTH";
-        case RESOURCE_ACCESS_WRITE_RTV:           return "WRITE_RTV";
-        case RESOURCE_ACCESS_WRITE_DSV:           return "WRITE_DSV";
-        case RESOURCE_ACCESS_WRITE_UAV:           return "WRITE_UAV";
-        case RESOURCE_ACCESS_READWRITE_UAV:      return "READWRITE_UAV";
-        case RESOURCE_ACCESS_READ_INDIRECT_ARG:   return "READ_INDIRECT_ARG";
-        case RESOURCE_ACCESS_READ_BUFFER_SRV:     return "READ_BUFFER_SRV";
-        case RESOURCE_ACCESS_READ_VERTEX_BUFFER:  return "READ_VERTEX_BUFFER";
-        case RESOURCE_ACCESS_HOST_TRANSFER_WRITE: return "HOST_TRANSFER_WRITE";
-    }
-    return "???";
-}
 
 void Flux_RenderGraph::ValidateOrphanedReads() const
 {
@@ -281,7 +260,7 @@ void Flux_RenderGraph::ValidatePassMemoryFlagCompatibility(const Flux_RenderGrap
         {
             Zenith_Assert(rxInfo.m_uMemoryFlags & (1u << MEMORY_FLAGS__UNORDERED_ACCESS),
                 "Flux_RenderGraph::Validate: pass '%s' declares %s %s on attachment '%s' without MEMORY_FLAGS__UNORDERED_ACCESS (memFlags=0x%x, fmt=%d, %ux%u mips=%u)",
-                pxP->DebugName(), szDir, AccessToString(rxUsage.m_eAccess), rxUsage.m_xResource.GetName().c_str(),
+                pxP->DebugName(), szDir, Flux_AccessToString(rxUsage.m_eAccess), rxUsage.m_xResource.GetName().c_str(),
                 rxInfo.m_uMemoryFlags, (int)rxInfo.m_eFormat, rxInfo.m_uWidth, rxInfo.m_uHeight, rxInfo.m_uNumMips);
         }
     };

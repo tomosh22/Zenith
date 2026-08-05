@@ -82,7 +82,7 @@ void Zenith_ValidateTerrainPhysicsBodies(const char* szContext)
 				"has no physics geometry -- %u dynamic body(ies) in loaded scenes will FALL "
 				"THROUGH THE WORLD. This is an ASSET problem, not a gameplay one: the baked "
 				"Physics_*.zmesh chunks are missing, or STALE and rejected by "
-				"Flux_TerrainVertexLayout's vertex/index validation. A bake stamp that is "
+				"Zenith_TerrainChunkLayout's vertex/index validation. A bake stamp that is "
 				"(version, file COUNT) does NOT notice a content-only change, so a warm-looking "
 				"tree can sit in this state forever -- re-bake this terrain and bump its stamp. "
 				"See Zenith/Flux/Terrain/CLAUDE.md and Games/Zenithmon/Docs/DecisionLog.md ZM-D-182.",

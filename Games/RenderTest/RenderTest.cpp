@@ -1067,7 +1067,7 @@ static void InitializeRenderTestResources()
 // the (256,256) corner to the terrain centre (2048,2048) — every world XZ shifted +1792.
 // v7: NOT a terrain-shape change — the engine's physics chunks moved from a
 // density divisor of 8 (81 verts) to 4 (289 verts). Zenith_TerrainComponent
-// validates a loaded chunk against Flux_TerrainVertexLayout, so every v6 bake's
+// validates a loaded chunk against Zenith_TerrainChunkLayout, so every v6 bake's
 // Physics_*.zmesh is now rejected and the campus would load with NO collision.
 // Bump this for any baked-BYTE change, not only when the heightfield moves.
 static const char* sk_szTerrainProcMarkerRel = "Terrain/terrain_proc_v7.marker";

@@ -2,6 +2,7 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Flux/RenderGraph/Flux_RenderGraph_AccessNames.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/RenderViews/Flux_RenderViews.h" // FLUX_MAX_RENDER_VIEWS (SetPassView range assert)
@@ -105,25 +106,6 @@ static bool IsAccessLegalForKind(ResourceAccess eAccess, Flux_GraphResourceKind 
     return false;
 }
 
-static const char* AccessToString(ResourceAccess eAccess)
-{
-    switch (eAccess)
-    {
-        case RESOURCE_ACCESS_UNDEFINED:           return "UNDEFINED";
-        case RESOURCE_ACCESS_READ_SRV:            return "READ_SRV";
-        case RESOURCE_ACCESS_READ_DEPTH:          return "READ_DEPTH";
-        case RESOURCE_ACCESS_WRITE_RTV:           return "WRITE_RTV";
-        case RESOURCE_ACCESS_WRITE_DSV:           return "WRITE_DSV";
-        case RESOURCE_ACCESS_WRITE_UAV:           return "WRITE_UAV";
-        case RESOURCE_ACCESS_READWRITE_UAV:      return "READWRITE_UAV";
-        case RESOURCE_ACCESS_READ_INDIRECT_ARG:   return "READ_INDIRECT_ARG";
-        case RESOURCE_ACCESS_READ_BUFFER_SRV:     return "READ_BUFFER_SRV";
-        case RESOURCE_ACCESS_READ_VERTEX_BUFFER:  return "READ_VERTEX_BUFFER";
-        case RESOURCE_ACCESS_HOST_TRANSFER_WRITE: return "HOST_TRANSFER_WRITE";
-    }
-    return "???";
-}
-
 // Subresource ranges [uMipA, uMipA+uMipACount) vs [uMipB, uMipB+uMipBCount)
 // and same for layers. Returns true if any (mip, layer) pair is in both.
 static bool SubresourceRangesOverlap(u_int uMipA, u_int uMipACount, u_int uLayerA, u_int uLayerACount,
@@ -150,13 +132,13 @@ static void ValidateAccessMode(ResourceAccess eAccess, bool bWrite, u_int uPassI
     {
         Zenith_Assert(IsWriteAccess(eAccess),
             "Flux_RenderGraph::Write: access '%s' is not a write mode (pass %u)",
-            AccessToString(eAccess), uPassIndex);
+            Flux_AccessToString(eAccess), uPassIndex);
     }
     else
     {
         Zenith_Assert(IsReadAccess(eAccess),
             "Flux_RenderGraph::Read: access '%s' is not a read mode (pass %u)",
-            AccessToString(eAccess), uPassIndex);
+            Flux_AccessToString(eAccess), uPassIndex);
     }
 }
 
@@ -197,7 +179,7 @@ static void ValidateImageSubresource(const Flux_GraphResource& xResource, Resour
     {
         Zenith_Assert(IsDepthFormat(rxInfo.m_eFormat),
             "Flux_RenderGraph::%s: depth access '%s' on non-depth format (pass %u)",
-            szCaller, AccessToString(eAccess), uPassIndex);
+            szCaller, Flux_AccessToString(eAccess), uPassIndex);
     }
     if (eAccess == RESOURCE_ACCESS_WRITE_RTV)
     {
@@ -216,7 +198,7 @@ static void ValidateImageSubresource(const Flux_GraphResource& xResource, Resour
     {
         Zenith_Assert(rxInfo.m_uMemoryFlags & (1u << MEMORY_FLAGS__UNORDERED_ACCESS),
             "Flux_RenderGraph::%s: '%s' requires MEMORY_FLAGS__UNORDERED_ACCESS on attachment (pass %u)",
-            szCaller, AccessToString(eAccess), uPassIndex);
+            szCaller, Flux_AccessToString(eAccess), uPassIndex);
     }
 }
 
@@ -250,7 +232,7 @@ static void CheckSubresourceConflicts(Flux_RenderGraph_Pass* pxPass, const Flux_
                                       uMip, uMipCount, uLayer, uLayerCount)) continue;
         Zenith_Assert(rxPrev.m_eAccess == eAccess,
             "Flux_RenderGraph::%s: pass %u declares overlapping %s on same resource with conflicting access '%s' vs '%s'",
-            szCaller, uPassIndex, szCaller, AccessToString(rxPrev.m_eAccess), AccessToString(eAccess));
+            szCaller, uPassIndex, szCaller, Flux_AccessToString(rxPrev.m_eAccess), Flux_AccessToString(eAccess));
     }
     const Zenith_Vector<Flux_RenderGraph_ResourceUsage>& rxOther = bWrite ? pxPass->m_xReads : pxPass->m_xWrites;
     for (Zenith_Vector<Flux_RenderGraph_ResourceUsage>::Iterator it(rxOther); !it.Done(); it.Next())
@@ -265,11 +247,11 @@ static void CheckSubresourceConflicts(Flux_RenderGraph_Pass* pxPass, const Flux_
             "declare read-modify-write exactly once as RESOURCE_ACCESS_READWRITE_UAV on either "
             "Read() or Write() (not both), or narrow the subresource ranges so they don't overlap",
             uPassIndex, pxPass->DebugName(), xResource.GetName().c_str(),
-            AccessToString(rxPrev.m_eAccess), rxPrev.m_uMipLevel,
+            Flux_AccessToString(rxPrev.m_eAccess), rxPrev.m_uMipLevel,
                 (rxPrev.m_uMipCount == FLUX_RG_ALL_MIPS ? rxPrev.m_uMipLevel + 99 : rxPrev.m_uMipLevel + rxPrev.m_uMipCount),
                 rxPrev.m_uLayer,
                 (rxPrev.m_uLayerCount == FLUX_RG_ALL_LAYERS ? rxPrev.m_uLayer + 99 : rxPrev.m_uLayer + rxPrev.m_uLayerCount),
-            AccessToString(eAccess), uMip,
+            Flux_AccessToString(eAccess), uMip,
                 (uMipCount == FLUX_RG_ALL_MIPS ? uMip + 99 : uMip + uMipCount),
                 uLayer,
                 (uLayerCount == FLUX_RG_ALL_LAYERS ? uLayer + 99 : uLayer + uLayerCount));
@@ -555,7 +537,7 @@ void Flux_RenderGraph::AddResourceUsage(u_int uPassIndex, const Flux_GraphResour
     ValidateAccessMode(eAccess, bWrite, uPassIndex);
     Zenith_Assert(IsAccessLegalForKind(eAccess, xResource.GetKind()),
         "Flux_RenderGraph::%s: access '%s' illegal for resource kind %d (pass %u)",
-        szCaller, AccessToString(eAccess), (int)xResource.GetKind(), uPassIndex);
+        szCaller, Flux_AccessToString(eAccess), (int)xResource.GetKind(), uPassIndex);
 
     if (xResource.IsImageLike())
     {
@@ -910,7 +892,7 @@ void Flux_RenderGraph::WriteTransient(Flux_PassHandle xPass, Flux_TransientHandl
     {
         Zenith_Assert(pxT->m_xDesc.m_uMemoryFlags & (1u << MEMORY_FLAGS__UNORDERED_ACCESS),
             "Flux_RenderGraph::WriteTransient: '%s' requires MEMORY_FLAGS__UNORDERED_ACCESS in transient desc (pass %u)",
-            AccessToString(eAccess), xPass.m_uIndex);
+            Flux_AccessToString(eAccess), xPass.m_uIndex);
     }
     if (eAccess == RESOURCE_ACCESS_WRITE_DSV)
     {
@@ -959,7 +941,7 @@ void Flux_RenderGraph::WriteTransient(Flux_PassHandle xPass, Flux_TransientHandl
     {
         Zenith_Assert(pxT->m_xDesc.m_uMemoryFlags & (1u << MEMORY_FLAGS__UNORDERED_ACCESS),
             "Flux_RenderGraph::WriteTransient: '%s' requires MEMORY_FLAGS__UNORDERED_ACCESS in transient desc (pass %u)",
-            AccessToString(eAccess), xPass.m_uIndex);
+            Flux_AccessToString(eAccess), xPass.m_uIndex);
     }
     Write(xPass, pxT->m_xAttachment, eAccess, uMip, uMipCount);
 }
@@ -1006,7 +988,7 @@ void Flux_RenderGraph::WriteTransient(Flux_PassHandle xPass, Flux_TransientHandl
     {
         Zenith_Assert(pxT->m_xDesc.m_uMemoryFlags & (1u << MEMORY_FLAGS__UNORDERED_ACCESS),
             "Flux_RenderGraph::WriteTransient: '%s' requires MEMORY_FLAGS__UNORDERED_ACCESS in transient desc (pass %u)",
-            AccessToString(eAccess), xPass.m_uIndex);
+            Flux_AccessToString(eAccess), xPass.m_uIndex);
     }
     AddResourceUsage(xPass.m_uIndex, Flux_GraphResource(pxT->m_xAttachment), eAccess, uMip, uMipCount, uLayer, uLayerCount, true);
 }

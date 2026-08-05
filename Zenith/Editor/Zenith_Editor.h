@@ -243,6 +243,19 @@ public:
 	void WaitForGPUAndFlushDeferred(const char* szReason);
 	void HandlePendingSceneLoadDeferred();
 
+	// The scene-load body itself — backup-restore teardown, load-into-active,
+	// selection/undo/camera invalidation, backup-file cleanup. Shared by the
+	// in-frame path (HandlePendingSceneLoad) and the out-of-frame test entry
+	// point (HandlePendingSceneLoadDeferred), which differ in exactly two
+	// things, both parameters here:
+	//   bWaitForGPU — the in-frame path runs before render-task submission, so
+	//     the QueueVRAMDeletion grace period already covers it and it must NOT
+	//     stall; the test entry point runs outside the frame loop where the
+	//     per-frame deletion tick is not running, so it must.
+	//   szLogPrefix — "" in-frame, "[FlushPending] " for the test path.
+	// Assumes m_bPendingSceneLoad has already been consumed by the caller.
+	void LoadPendingSceneIntoActiveScene(bool bWaitForGPU, const char* szLogPrefix);
+
 	void UpdateEditorInput();
 
 	// Content Browser
