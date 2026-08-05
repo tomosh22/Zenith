@@ -4,6 +4,13 @@
 #include "Core/Callstack/Zenith_Callstack.h"
 #include "Profiling/Zenith_Profiling.h"
 
+// CRITICAL_SECTION + Enter/Leave/Initialize/DeleteCriticalSection for the mutex
+// shims below. Per the W5.2 note in Core/Zenith_Win32.h, <Windows.h> is NOT in the
+// PCH; this TU used to get it transitively via vulkan.hpp (pulled by Flux.h), so
+// only the Null_ / D3D12_ configs -- which include no Vulkan -- ever failed here.
+// Always the guarded wrapper, never a raw <Windows.h> (APIENTRY / LEAN_AND_MEAN).
+#include "Core/Zenith_Win32.h"
+
 // L0 platform + infra contract for the AI leaf
 // ===========================================
 // ZenithAI + ZenithPhysics + ZenithECS + ZenithBase reference a small, fixed set of
@@ -68,6 +75,13 @@ namespace Zenith_Profiling_Detail
 }
 
 // Profiling-free mutex Locks (the real impls instrument via g_xEngine.Profiling()).
+//
+// Zenith_Windows_Multithreading.cpp static_asserts the header's opaque byte storage
+// against the real CRITICAL_SECTION; that TU is deliberately NOT linked here, so
+// re-assert it -- otherwise the reinterpret_casts below are unchecked.
+static_assert(sizeof(CRITICAL_SECTION) <= 64, "m_axCriticalSectionStorage is too small for CRITICAL_SECTION");
+static_assert(alignof(CRITICAL_SECTION) <= 8, "m_axCriticalSectionStorage alignment is too weak for CRITICAL_SECTION");
+
 template<>
 void Zenith_Windows_Mutex_T<true>::Lock()
 {

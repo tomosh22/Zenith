@@ -6,6 +6,9 @@
 #      (Sharpmake_Solutions.cs) and an accidental leaf->engine edge fails their
 #      link with a hard unresolved external. Fixed + green as of 2026-07
 #      (the leaf seams are enumerated in Tests/Sentinel*/sentinel_platform.cpp).
+#      Built + run in Vulkan_ AND Null_ since 2026-08: a Vulkan-only sentinel step
+#      cannot see PCH-include rot, because vulkan.hpp still leaks <Windows.h> into
+#      every TU. See the note on the build step.
 #   2. The engine unit-test suite at boot (dedicated gate; the game test
 #      workflows run with --skip-unit-tests). Combat carries the gate: its
 #      Vulkan_Debug_True build also proves the engine lib transitively.
@@ -86,29 +89,44 @@ jobs:
           ./regen.ps1 -UseDotnet
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: Build Sentinels (leaf-purity link proof, Vulkan _False)
+      - name: Build Sentinels (leaf-purity link proof, Vulkan + Null _False)
         shell: pwsh
         run: |
           # Sentinels exist ONLY in ToolsEnabled=False configs. Each /t: is a
           # separate invocation so a failure names its sentinel.
-          foreach ($t in @('SentinelECS', 'SentinelPhysics', 'SentinelAI')) {
-              msbuild Build\zenith_engine_win64.sln `
-                  /t:$t `
-                  /p:Configuration=Vulkan_vs2022_Debug_Win64_False `
-                  /p:Platform=x64 `
-                  /p:WindowsTargetPlatformVersion=10.0 `
-                  -maxCpuCount -nologo -clp:Summary -clp:ErrorsOnly
-              if ($LASTEXITCODE -ne 0) { Write-Error "$t failed"; exit 1 }
+          #
+          # BOTH render backends, deliberately. W5.2 took <Windows.h> out of the PCH,
+          # but a Vulkan_ config still pulls it transitively via Flux.h -> vulkan.hpp;
+          # Null_ and D3D12_ include no Vulkan at all. A Vulkan-only gate therefore
+          # compiles a TU that names a Win32 type WITHOUT Core/Zenith_Win32.h perfectly
+          # green -- which is exactly how all three Tests/Sentinel*/sentinel_platform.cpp
+          # sat with an undefined CRITICAL_SECTION (5x C2061 each) while this gate
+          # reported success. Null_ is the cheap half of the pair (no Vulkan SDK headers
+          # in the PCH) and catches that whole class; D3D12_ fails the same way and is
+          # omitted only to keep the step short.
+          foreach ($cfg in @('Vulkan_vs2022_Debug_Win64_False', 'Null_vs2022_Debug_Win64_False')) {
+              foreach ($t in @('SentinelECS', 'SentinelPhysics', 'SentinelAI')) {
+                  msbuild Build\zenith_engine_win64.sln `
+                      /t:$t `
+                      /p:Configuration=$cfg `
+                      /p:Platform=x64 `
+                      /p:WindowsTargetPlatformVersion=10.0 `
+                      -maxCpuCount -nologo -clp:Summary -clp:ErrorsOnly
+                  if ($LASTEXITCODE -ne 0) { Write-Error "$t failed ($cfg)"; exit 1 }
+              }
           }
 
       - name: Run Sentinels (leaf-proof exes execute clean)
         shell: pwsh
         run: |
-          $dir = 'Build\output\win64\vulkan_vs2022_debug_win64_false'
-          foreach ($s in @('sentinelecs', 'sentinelphysics', 'sentinelai')) {
-              & "$dir\$s.exe"
-              if ($LASTEXITCODE -ne 0) { Write-Error "$s exited $LASTEXITCODE"; exit 1 }
-              Write-Host "$s OK"
+          # Output dir is the lowercased config name (see CLAUDE.md build section).
+          foreach ($cfg in @('Vulkan_vs2022_Debug_Win64_False', 'Null_vs2022_Debug_Win64_False')) {
+              $dir = "Build\output\win64\$($cfg.ToLower())"
+              foreach ($s in @('sentinelecs', 'sentinelphysics', 'sentinelai')) {
+                  & "$dir\$s.exe"
+                  if ($LASTEXITCODE -ne 0) { Write-Error "$s exited $LASTEXITCODE ($cfg)"; exit 1 }
+                  Write-Host "$s OK ($cfg)"
+              }
           }
 
       - name: Build Combat (Vulkan_Debug_True; engine lib transitively)
