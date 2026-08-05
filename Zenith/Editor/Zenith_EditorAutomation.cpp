@@ -1250,6 +1250,18 @@ namespace
 		Zenith_Assert(bOk, "EditorAutomation material step %s('%s') failed", szAction, szArg ? szArg : "");
 		(void)bOk; (void)szAction; (void)szArg;
 	}
+
+	// Shared boilerplate for the many field-edit actions that all start with
+	// "get the selected entity, assert it exists". szActionName goes straight
+	// into the assert message, matching what every case used to spell out by
+	// hand (e.g. "No entity selected for SET_CAMERA_POSITION"). Callers that
+	// also require a specific component still assert that separately.
+	Zenith_Entity& GetSelectedEntityChecked(const char* szActionName)
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for %s", szActionName);
+		return *pxEntity;
+	}
 }
 
 // All material authoring actions (MATERIAL_CREATE .. MATERIAL_SAVE, kept
@@ -1952,206 +1964,93 @@ bool Zenith_EditorAutomation::TryPreflightTerrainExportChunksRectAction(
 		TerrainRectExecutionMode::PreflightOnly, bSucceeded) && bSucceeded;
 }
 
-void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
+//-----------------------------------------------------------------------------
+// Field-edit sub-executors. Each covers one CONTIGUOUS enum range, mirroring
+// the Terrain/UI/Material splits above — ExecuteAction routes the whole range
+// here instead of carrying every case in its own switch. Keep each range
+// contiguous in Zenith_EditorAutomation.h when adding action types.
+//-----------------------------------------------------------------------------
+
+// Camera field edits (SET_CAMERA_POSITION .. SET_MAIN_CAMERA).
+static void ExecuteCameraAction(const Zenith_EditorAction& xAction)
 {
-	Zenith_Editor& xEditor = g_xEngine.Editor();
-
-	// Terrain-editor authoring actions have their own executor (see above).
-	bool bTerrainActionSucceeded = false;
-	if (TryRouteTerrainEditorAction(xAction, g_xEngine.TerrainEditor(),
-		TerrainRectExecutionMode::Production, bTerrainActionSucceeded))
-	{
-		(void)bTerrainActionSucceeded;
-		return;
-	}
-
-	// UI authoring actions likewise have their own executor (see below).
-	if (xAction.m_eType >= Zenith_EditorActionType::CREATE_UI_TEXT &&
-		xAction.m_eType <= Zenith_EditorActionType::SET_UI_SCROLL_VIEW_CONTENT_SIZE)
-	{
-		ExecuteUIAction(xAction);
-		return;
-	}
-
-	// Material editor authoring actions have their own executor too.
-	if (xAction.m_eType >= Zenith_EditorActionType::MATERIAL_CREATE &&
-		xAction.m_eType <= Zenith_EditorActionType::MATERIAL_SAVE)
-	{
-		ExecuteMaterialAction(xAction);
-		return;
-	}
-
 	switch (xAction.m_eType)
 	{
-	//--------------------------------------------------------------------------
-	// Scene operations
-	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::CREATE_SCENE:
-		xEditor.CreateNewScene(xAction.m_szArg1.c_str());
-		break;
-
-	case Zenith_EditorActionType::SAVE_SCENE:
-		xEditor.SaveActiveScene(xAction.m_szArg1.c_str());
-		break;
-
-	case Zenith_EditorActionType::UNLOAD_SCENE:
-		g_xEngine.Editor().UnloadActiveScene();
-		break;
-
-	//--------------------------------------------------------------------------
-	// Entity operations
-	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::CREATE_ENTITY:
-		g_xEngine.Editor().CreateEntity(xAction.m_szArg1.c_str());
-		break;
-
-	case Zenith_EditorActionType::SELECT_ENTITY:
-		g_xEngine.Editor().SelectEntityByName(xAction.m_szArg1.c_str());
-		break;
-
-	case Zenith_EditorActionType::SET_ENTITY_TRANSIENT:
-		g_xEngine.Editor().SetSelectedEntityTransient(xAction.m_bArg);
-		break;
-
-	//--------------------------------------------------------------------------
-	// Component operations
-	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::ADD_COMPONENT:
-		g_xEngine.Editor().AddComponentToSelected(xAction.m_szArg1.c_str());
-		break;
-
-	case Zenith_EditorActionType::ATTACH_TO_BONE:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for ATTACH_TO_BONE");
-		Zenith_SceneData* pxSceneData = pxEntity->GetSceneData();
-		Zenith_Assert(pxSceneData, "ATTACH_TO_BONE: selected entity has no scene");
-		// Resolve the skeleton target by name within the same scene (authored earlier
-		// in the step list).
-		Zenith_Entity xTarget = pxSceneData->FindEntityByName(xAction.m_szArg1.c_str());
-		Zenith_Assert(xTarget.IsValid(), "ATTACH_TO_BONE: target entity not found by name");
-		if (!pxEntity->HasComponent<Zenith_AttachmentComponent>())
-		{
-			pxEntity->AddComponent<Zenith_AttachmentComponent>();
-		}
-		const Zenith_Maths::Matrix4 xOffset = BuildEulerOffsetMatrix(
-			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2],
-			xAction.m_afArgs[3], xAction.m_afArgs[4], xAction.m_afArgs[5]);
-		pxEntity->GetComponent<Zenith_AttachmentComponent>().AttachToBone(
-			xTarget, xAction.m_szArg2.c_str(), xOffset);
-		break;
-	}
-
-	//--------------------------------------------------------------------------
-	// Camera field edits
-	//--------------------------------------------------------------------------
 	case Zenith_EditorActionType::SET_CAMERA_POSITION:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_POSITION");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetPosition(
+		GetSelectedEntityChecked("SET_CAMERA_POSITION").GetComponent<Zenith_CameraComponent>().SetPosition(
 			{xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]});
 		break;
-	}
 
 	case Zenith_EditorActionType::SET_CAMERA_PITCH:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_PITCH");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetPitch(xAction.m_afArgs[0]);
+		GetSelectedEntityChecked("SET_CAMERA_PITCH").GetComponent<Zenith_CameraComponent>().SetPitch(xAction.m_afArgs[0]);
 		break;
-	}
 
 	case Zenith_EditorActionType::SET_CAMERA_YAW:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_YAW");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetYaw(xAction.m_afArgs[0]);
+		GetSelectedEntityChecked("SET_CAMERA_YAW").GetComponent<Zenith_CameraComponent>().SetYaw(xAction.m_afArgs[0]);
 		break;
-	}
 
 	case Zenith_EditorActionType::SET_CAMERA_FOV:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_FOV");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetFOV(xAction.m_afArgs[0]);
+		GetSelectedEntityChecked("SET_CAMERA_FOV").GetComponent<Zenith_CameraComponent>().SetFOV(xAction.m_afArgs[0]);
 		break;
-	}
 
 	case Zenith_EditorActionType::SET_CAMERA_NEAR:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_NEAR");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetNearPlane(xAction.m_afArgs[0]);
+		GetSelectedEntityChecked("SET_CAMERA_NEAR").GetComponent<Zenith_CameraComponent>().SetNearPlane(xAction.m_afArgs[0]);
 		break;
-	}
 
 	case Zenith_EditorActionType::SET_CAMERA_FAR:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_FAR");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetFarPlane(xAction.m_afArgs[0]);
+		GetSelectedEntityChecked("SET_CAMERA_FAR").GetComponent<Zenith_CameraComponent>().SetFarPlane(xAction.m_afArgs[0]);
 		break;
-	}
 
 	case Zenith_EditorActionType::SET_CAMERA_ASPECT:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_CAMERA_ASPECT");
-		pxEntity->GetComponent<Zenith_CameraComponent>().SetAspectRatio(xAction.m_afArgs[0]);
+		GetSelectedEntityChecked("SET_CAMERA_ASPECT").GetComponent<Zenith_CameraComponent>().SetAspectRatio(xAction.m_afArgs[0]);
 		break;
-	}
 
 	case Zenith_EditorActionType::SET_MAIN_CAMERA:
 		g_xEngine.Editor().SetSelectedAsMainCamera();
 		break;
 
-	//--------------------------------------------------------------------------
-	// Transform field edits
-	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::SET_TRANSFORM_POSITION:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_POSITION");
-		pxEntity->GetComponent<Zenith_TransformComponent>().SetPosition(
-			{xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]});
+	default:
+		Zenith_Assert(false, "Non-camera action routed to ExecuteCameraAction");
 		break;
 	}
+}
+
+// Transform field edits (SET_TRANSFORM_POSITION .. SET_TRANSFORM_ROTATION_QUAT).
+static void ExecuteTransformAction(const Zenith_EditorAction& xAction)
+{
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::SET_TRANSFORM_POSITION:
+		GetSelectedEntityChecked("SET_TRANSFORM_POSITION").GetComponent<Zenith_TransformComponent>().SetPosition(
+			{xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]});
+		break;
 
 	case Zenith_EditorActionType::SET_TRANSFORM_SCALE:
-	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_SCALE");
-		pxEntity->GetComponent<Zenith_TransformComponent>().SetScale(
+		GetSelectedEntityChecked("SET_TRANSFORM_SCALE").GetComponent<Zenith_TransformComponent>().SetScale(
 			{xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]});
 		break;
-	}
 
 	case Zenith_EditorActionType::SET_TRANSFORM_ROTATION_YAW:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_ROTATION_YAW");
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_TRANSFORM_ROTATION_YAW");
 		const float fYaw = xAction.m_afArgs[0];
-		const Zenith_Maths::Quat xRot = glm::angleAxis(
-			fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-		pxEntity->GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
+		const Zenith_Maths::Quat xRot = glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		xEntity.GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
 		break;
 	}
 
 	case Zenith_EditorActionType::SET_TRANSFORM_ROTATION:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_ROTATION");
-		const Zenith_Maths::Quat xRot = BuildEulerRotation(
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_TRANSFORM_ROTATION");
+		const Zenith_Maths::Quat xRot = Zenith_EditorAutomation::BuildEulerRotation(
 			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]);
-		pxEntity->GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
+		xEntity.GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
 		break;
 	}
 
 	case Zenith_EditorActionType::SET_TRANSFORM_ROTATION_QUAT:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_TRANSFORM_ROTATION_QUAT");
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_TRANSFORM_ROTATION_QUAT");
 		// NO MATH, DELIBERATELY -- see the header. The args arrive in SERIALIZED
 		// order (x, y, z, w) and glm::quat's constructor takes (w, x, y, z), so the
 		// reorder here is the whole body of this case. SetRotation stores the value
@@ -2160,72 +2059,83 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		const Zenith_Maths::Quat xRot(
 			xAction.m_afArgs[3], xAction.m_afArgs[0],
 			xAction.m_afArgs[1], xAction.m_afArgs[2]);
-		pxEntity->GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
+		xEntity.GetComponent<Zenith_TransformComponent>().SetRotation(xRot);
 		break;
 	}
 
+	default:
+		Zenith_Assert(false, "Non-transform action routed to ExecuteTransformAction");
+		break;
+	}
+}
+
+// Light + sun field edits (SET_LIGHT_INTENSITY .. SET_SUN_TIME_OF_DAY).
+static void ExecuteLightAction(const Zenith_EditorAction& xAction)
+{
+	switch (xAction.m_eType)
+	{
 	case Zenith_EditorActionType::SET_LIGHT_INTENSITY:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_INTENSITY");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_LIGHT_INTENSITY");
+		Zenith_Assert(xEntity.HasComponent<Zenith_LightComponent>(),
 			"SET_LIGHT_INTENSITY: selected entity has no LightComponent");
-		pxEntity->GetComponent<Zenith_LightComponent>().SetIntensity(xAction.m_afArgs[0]);
+		xEntity.GetComponent<Zenith_LightComponent>().SetIntensity(xAction.m_afArgs[0]);
 		break;
 	}
 
 	case Zenith_EditorActionType::SET_LIGHT_RANGE:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_RANGE");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_LIGHT_RANGE");
+		Zenith_Assert(xEntity.HasComponent<Zenith_LightComponent>(),
 			"SET_LIGHT_RANGE: selected entity has no LightComponent");
-		pxEntity->GetComponent<Zenith_LightComponent>().SetRange(xAction.m_afArgs[0]);
+		xEntity.GetComponent<Zenith_LightComponent>().SetRange(xAction.m_afArgs[0]);
 		break;
 	}
 
 	case Zenith_EditorActionType::SET_LIGHT_COLOR:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_LIGHT_COLOR");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_LightComponent>(),
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_LIGHT_COLOR");
+		Zenith_Assert(xEntity.HasComponent<Zenith_LightComponent>(),
 			"SET_LIGHT_COLOR: selected entity has no LightComponent");
-		pxEntity->GetComponent<Zenith_LightComponent>().SetColor(
+		xEntity.GetComponent<Zenith_LightComponent>().SetColor(
 			Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]));
 		break;
 	}
 
 	case Zenith_EditorActionType::SET_SUN_DIRECTION:
 	{
-		Zenith_Entity* pxEntity = xEditor.GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_SUN_DIRECTION");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_SunComponent>(),
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_SUN_DIRECTION");
+		Zenith_Assert(xEntity.HasComponent<Zenith_SunComponent>(),
 			"SET_SUN_DIRECTION: selected entity has no SunComponent");
-		pxEntity->GetComponent<Zenith_SunComponent>().SetDirection(
+		xEntity.GetComponent<Zenith_SunComponent>().SetDirection(
 			Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2]));
 		break;
 	}
 
 	case Zenith_EditorActionType::SET_SUN_TIME_OF_DAY:
 	{
-		Zenith_Entity* pxEntity = xEditor.GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_SUN_TIME_OF_DAY");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_SunComponent>(),
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_SUN_TIME_OF_DAY");
+		Zenith_Assert(xEntity.HasComponent<Zenith_SunComponent>(),
 			"SET_SUN_TIME_OF_DAY: selected entity has no SunComponent");
-		Zenith_SunComponent& xSun = pxEntity->GetComponent<Zenith_SunComponent>();
+		Zenith_SunComponent& xSun = xEntity.GetComponent<Zenith_SunComponent>();
 		xSun.SetOrbitAzimuthDegrees(xAction.m_afArgs[1]);
 		xSun.SetTimeOfDayAngleDegrees(xAction.m_afArgs[0]);
 		break;
 	}
 
-	//--------------------------------------------------------------------------
-	// Script operations
-	//--------------------------------------------------------------------------
-	case Zenith_EditorActionType::ATTACH_GRAPH:  g_xEngine.Editor().AttachGraphToSelected(xAction.m_szArg1.c_str()); break;
+	default:
+		Zenith_Assert(false, "Non-light action routed to ExecuteLightAction");
+		break;
+	}
+}
 
-	//--------------------------------------------------------------------------
-	// Graph authoring (each case = one atomic graph-editor action)
-	//--------------------------------------------------------------------------
+// Graph authoring actions (GRAPH_OPEN_FRESH .. GRAPH_CLOSE). ATTACH_GRAPH is
+// NOT part of this range (the enum has the UI/Material blocks between them)
+// and stays in ExecuteAction's own switch.
+static void ExecuteGraphAuthoringAction(const Zenith_EditorAction& xAction)
+{
+	switch (xAction.m_eType)
+	{
 	case Zenith_EditorActionType::GRAPH_OPEN_FRESH:            Zenith_GraphEditorPanel::OpenAssetFresh(xAction.m_szArg1.c_str()); break;
 	case Zenith_EditorActionType::GRAPH_ADD_NODE:              GraphActionChecked(Zenith_GraphEditorPanel::Action_AddNode(xAction.m_szArg1.c_str()), "GraphAddNode", xAction.m_szArg1.c_str()); break;
 	case Zenith_EditorActionType::GRAPH_SELECT_NODE:           GraphActionChecked(Zenith_GraphEditorPanel::Action_SelectNode(xAction.m_szArg1.c_str(), static_cast<u_int>(xAction.m_aiArgs[0])), "GraphSelectNode", xAction.m_szArg1.c_str()); break;
@@ -2263,49 +2173,61 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 	}
 	case Zenith_EditorActionType::GRAPH_CLOSE:                 Zenith_GraphEditorPanel::Close(); break;
 
-	//--------------------------------------------------------------------------
-	// Particle operations
-	//--------------------------------------------------------------------------
+	default:
+		Zenith_Assert(false, "Non-graph action routed to ExecuteGraphAuthoringAction");
+		break;
+	}
+}
+
+// Particle field edits (SET_PARTICLE_CONFIG .. SET_PARTICLE_EMITTING).
+static void ExecuteParticleAction(const Zenith_EditorAction& xAction)
+{
+	switch (xAction.m_eType)
+	{
 	case Zenith_EditorActionType::SET_PARTICLE_CONFIG:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_PARTICLE_CONFIG");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_ParticleEmitterComponent>(), "Selected entity has no ParticleEmitterComponent");
-		pxEntity->GetComponent<Zenith_ParticleEmitterComponent>().SetConfig(
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_PARTICLE_CONFIG");
+		Zenith_Assert(xEntity.HasComponent<Zenith_ParticleEmitterComponent>(), "Selected entity has no ParticleEmitterComponent");
+		xEntity.GetComponent<Zenith_ParticleEmitterComponent>().SetConfig(
 			static_cast<Flux_ParticleEmitterConfig*>(xAction.m_pArg));
 		break;
 	}
 
 	case Zenith_EditorActionType::SET_PARTICLE_CONFIG_BY_NAME:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_PARTICLE_CONFIG_BY_NAME");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_ParticleEmitterComponent>(), "Selected entity has no ParticleEmitterComponent");
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_PARTICLE_CONFIG_BY_NAME");
+		Zenith_Assert(xEntity.HasComponent<Zenith_ParticleEmitterComponent>(), "Selected entity has no ParticleEmitterComponent");
 		Flux_ParticleEmitterConfig* pxConfig = Flux_ParticleEmitterConfig::Find(xAction.m_szArg1.c_str());
 		Zenith_Assert(pxConfig, "Particle config not found: %s", xAction.m_szArg1.c_str());
-		pxEntity->GetComponent<Zenith_ParticleEmitterComponent>().SetConfig(pxConfig);
+		xEntity.GetComponent<Zenith_ParticleEmitterComponent>().SetConfig(pxConfig);
 		break;
 	}
 
 	case Zenith_EditorActionType::SET_PARTICLE_EMITTING:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_PARTICLE_EMITTING");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_ParticleEmitterComponent>(), "Selected entity has no ParticleEmitterComponent");
-		pxEntity->GetComponent<Zenith_ParticleEmitterComponent>().SetEmitting(xAction.m_bArg);
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_PARTICLE_EMITTING");
+		Zenith_Assert(xEntity.HasComponent<Zenith_ParticleEmitterComponent>(), "Selected entity has no ParticleEmitterComponent");
+		xEntity.GetComponent<Zenith_ParticleEmitterComponent>().SetEmitting(xAction.m_bArg);
 		break;
 	}
 
-	//--------------------------------------------------------------------------
-	// Collider operations
-	//--------------------------------------------------------------------------
+	default:
+		Zenith_Assert(false, "Non-particle action routed to ExecuteParticleAction");
+		break;
+	}
+}
+
+// Collider + model actions (ADD_COLLIDER_SHAPE .. SET_MODEL_MATERIAL).
+static void ExecuteColliderModelAction(const Zenith_EditorAction& xAction)
+{
+	switch (xAction.m_eType)
+	{
 	case Zenith_EditorActionType::ADD_COLLIDER_SHAPE:
 	case Zenith_EditorActionType::ADD_CAPSULE_COLLIDER:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for collider-shape action");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_ColliderComponent>(), "Selected entity has no ColliderComponent");
-		Zenith_ColliderComponent& xCollider = pxEntity->GetComponent<Zenith_ColliderComponent>();
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("collider-shape action");
+		Zenith_Assert(xEntity.HasComponent<Zenith_ColliderComponent>(), "Selected entity has no ColliderComponent");
+		Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xAction.m_eType == Zenith_EditorActionType::ADD_CAPSULE_COLLIDER)
 		{
 			// Explicit capsule dimensions (radius, cylinder half-height).
@@ -2320,38 +2242,32 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		break;
 	}
 
-	//--------------------------------------------------------------------------
-	// Model operations
-	//--------------------------------------------------------------------------
 	case Zenith_EditorActionType::ADD_MESH_ENTRY:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for ADD_MESH_ENTRY");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_ModelComponent>(), "Selected entity has no ModelComponent");
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("ADD_MESH_ENTRY");
+		Zenith_Assert(xEntity.HasComponent<Zenith_ModelComponent>(), "Selected entity has no ModelComponent");
 		Flux_MeshGeometry* pxGeometry = static_cast<Flux_MeshGeometry*>(xAction.m_pArg);
 		Zenith_MaterialAsset* pxMaterial = static_cast<Zenith_MaterialAsset*>(xAction.m_pArg2);
 		Zenith_Assert(pxGeometry, "Null geometry for ADD_MESH_ENTRY");
 		Zenith_Assert(pxMaterial, "Null material for ADD_MESH_ENTRY");
-		pxEntity->GetComponent<Zenith_ModelComponent>().AddMeshEntry(*pxGeometry, *pxMaterial);
+		xEntity.GetComponent<Zenith_ModelComponent>().AddMeshEntry(*pxGeometry, *pxMaterial);
 		break;
 	}
 
 	case Zenith_EditorActionType::LOAD_MODEL:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for LOAD_MODEL");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_ModelComponent>(), "Selected entity has no ModelComponent");
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("LOAD_MODEL");
+		Zenith_Assert(xEntity.HasComponent<Zenith_ModelComponent>(), "Selected entity has no ModelComponent");
 		Zenith_Assert(!xAction.m_szArg1.empty(), "Null path for LOAD_MODEL");
-		pxEntity->GetComponent<Zenith_ModelComponent>().LoadModel(xAction.m_szArg1.c_str());
+		xEntity.GetComponent<Zenith_ModelComponent>().LoadModel(xAction.m_szArg1.c_str());
 		break;
 	}
 
 	case Zenith_EditorActionType::SET_MODEL_MATERIAL:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_MODEL_MATERIAL");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_ModelComponent>(), "Selected entity has no ModelComponent");
-		Zenith_ModelComponent& xModel = pxEntity->GetComponent<Zenith_ModelComponent>();
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_MODEL_MATERIAL");
+		Zenith_Assert(xEntity.HasComponent<Zenith_ModelComponent>(), "Selected entity has no ModelComponent");
+		Zenith_ModelComponent& xModel = xEntity.GetComponent<Zenith_ModelComponent>();
 		// Soften: missing model means the previous LOAD_MODEL silently failed
 		// (file not found in CI checkouts where Assets/Meshes/ is .gitignore'd).
 		// LOAD_MODEL logs an error and returns; downstream SET_MODEL_MATERIAL
@@ -2362,7 +2278,7 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 			Zenith_Warning(LOG_CATEGORY_EDITOR,
 				"SET_MODEL_MATERIAL skipped on entity %u: no model loaded "
 				"(likely a missing .zmodel asset on this checkout)",
-				static_cast<u_int>(pxEntity->GetEntityID().m_uIndex));
+				static_cast<u_int>(xEntity.GetEntityID().m_uIndex));
 			break;
 		}
 		const int iIndex = xAction.m_aiArgs[0];
@@ -2376,45 +2292,60 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		break;
 	}
 
-	//--------------------------------------------------------------------------
-	// Terrain operations
-	//--------------------------------------------------------------------------
+	default:
+		Zenith_Assert(false, "Non-collider/model action routed to ExecuteColliderModelAction");
+		break;
+	}
+}
+
+// Terrain material field edits (SET_TERRAIN_MATERIAL, SET_TERRAIN_SPLATMAP_PATH).
+// Distinct from the TERRAIN_EDITOR_* range above, which edits the terrain editor
+// session rather than a Zenith_TerrainComponent's material slots.
+static void ExecuteTerrainMaterialAction(const Zenith_EditorAction& xAction)
+{
+	switch (xAction.m_eType)
+	{
 	case Zenith_EditorActionType::SET_TERRAIN_MATERIAL:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_TERRAIN_MATERIAL");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_TerrainComponent>(), "Selected entity has no TerrainComponent");
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_TERRAIN_MATERIAL");
+		Zenith_Assert(xEntity.HasComponent<Zenith_TerrainComponent>(), "Selected entity has no TerrainComponent");
 		const int iSlot = xAction.m_aiArgs[0];
 		Zenith_MaterialAsset* pxMaterial = static_cast<Zenith_MaterialAsset*>(xAction.m_pArg);
 		Zenith_Assert(iSlot >= 0 && iSlot < static_cast<int>(Zenith_TerrainComponent::TERRAIN_MATERIAL_COUNT),
 			"SET_TERRAIN_MATERIAL slot %d out of range [0, %u)", iSlot, Zenith_TerrainComponent::TERRAIN_MATERIAL_COUNT);
 		Zenith_Assert(pxMaterial, "Null material for SET_TERRAIN_MATERIAL");
-		pxEntity->GetComponent<Zenith_TerrainComponent>().GetMaterialHandle(static_cast<u_int>(iSlot)).Set(pxMaterial);
+		xEntity.GetComponent<Zenith_TerrainComponent>().GetMaterialHandle(static_cast<u_int>(iSlot)).Set(pxMaterial);
 		break;
 	}
 
 	case Zenith_EditorActionType::SET_TERRAIN_SPLATMAP_PATH:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for SET_TERRAIN_SPLATMAP_PATH");
-		Zenith_Assert(pxEntity->HasComponent<Zenith_TerrainComponent>(), "Selected entity has no TerrainComponent");
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("SET_TERRAIN_SPLATMAP_PATH");
+		Zenith_Assert(xEntity.HasComponent<Zenith_TerrainComponent>(), "Selected entity has no TerrainComponent");
 		Zenith_Assert(!xAction.m_szArg1.empty(), "Null path for SET_TERRAIN_SPLATMAP_PATH");
-		pxEntity->GetComponent<Zenith_TerrainComponent>().GetSplatmapHandle().SetPath(xAction.m_szArg1.c_str());
+		xEntity.GetComponent<Zenith_TerrainComponent>().GetSplatmapHandle().SetPath(xAction.m_szArg1.c_str());
 		break;
 	}
 
-	//--------------------------------------------------------------------------
-	// Prefab variant authoring
-	//--------------------------------------------------------------------------
+	default:
+		Zenith_Assert(false, "Non-terrain-material action routed to ExecuteTerrainMaterialAction");
+		break;
+	}
+}
+
+// Prefab variant authoring (CREATE_PREFAB_FROM_SELECTED .. INSTANTIATE_PREFAB).
+static void ExecutePrefabAction(const Zenith_EditorAction& xAction)
+{
+	switch (xAction.m_eType)
+	{
 	case Zenith_EditorActionType::CREATE_PREFAB_FROM_SELECTED:
 	{
-		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
-		Zenith_Assert(pxEntity, "No entity selected for CREATE_PREFAB_FROM_SELECTED");
+		Zenith_Entity& xEntity = GetSelectedEntityChecked("CREATE_PREFAB_FROM_SELECTED");
 		Zenith_Assert(!xAction.m_szArg1.empty(), "Null prefab name for CREATE_PREFAB_FROM_SELECTED");
 		Zenith_Assert(!xAction.m_szArg2.empty(), "Null save path for CREATE_PREFAB_FROM_SELECTED");
 
 		Zenith_Prefab xPrefab;
-		const bool bCreated = xPrefab.CreateFromEntity(*pxEntity, xAction.m_szArg1.c_str());
+		const bool bCreated = xPrefab.CreateFromEntity(xEntity, xAction.m_szArg1.c_str());
 		Zenith_Assert(bCreated, "CreateFromEntity failed for '%s'", xAction.m_szArg1.c_str());
 		const bool bSaved = xPrefab.SaveToFile(xAction.m_szArg2.c_str());
 		Zenith_Assert(bSaved, "SaveToFile failed for '%s'", xAction.m_szArg2.c_str());
@@ -2502,6 +2433,167 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		g_xEngine.Editor().SelectEntity(xEntity.GetEntityID());
 		break;
 	}
+
+	default:
+		Zenith_Assert(false, "Non-prefab action routed to ExecutePrefabAction");
+		break;
+	}
+}
+
+void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
+{
+	Zenith_Editor& xEditor = g_xEngine.Editor();
+
+	// Terrain-editor authoring actions have their own executor (see above).
+	bool bTerrainActionSucceeded = false;
+	if (TryRouteTerrainEditorAction(xAction, g_xEngine.TerrainEditor(),
+		TerrainRectExecutionMode::Production, bTerrainActionSucceeded))
+	{
+		(void)bTerrainActionSucceeded;
+		return;
+	}
+
+	// UI authoring actions likewise have their own executor (see below).
+	if (xAction.m_eType >= Zenith_EditorActionType::CREATE_UI_TEXT &&
+		xAction.m_eType <= Zenith_EditorActionType::SET_UI_SCROLL_VIEW_CONTENT_SIZE)
+	{
+		ExecuteUIAction(xAction);
+		return;
+	}
+
+	// Material editor authoring actions have their own executor too.
+	if (xAction.m_eType >= Zenith_EditorActionType::MATERIAL_CREATE &&
+		xAction.m_eType <= Zenith_EditorActionType::MATERIAL_SAVE)
+	{
+		ExecuteMaterialAction(xAction);
+		return;
+	}
+
+	// Remaining field-edit ranges, same contiguous-range-router pattern.
+	if (xAction.m_eType >= Zenith_EditorActionType::SET_CAMERA_POSITION &&
+		xAction.m_eType <= Zenith_EditorActionType::SET_MAIN_CAMERA)
+	{
+		ExecuteCameraAction(xAction);
+		return;
+	}
+
+	if (xAction.m_eType >= Zenith_EditorActionType::SET_TRANSFORM_POSITION &&
+		xAction.m_eType <= Zenith_EditorActionType::SET_TRANSFORM_ROTATION_QUAT)
+	{
+		ExecuteTransformAction(xAction);
+		return;
+	}
+
+	if (xAction.m_eType >= Zenith_EditorActionType::SET_LIGHT_INTENSITY &&
+		xAction.m_eType <= Zenith_EditorActionType::SET_SUN_TIME_OF_DAY)
+	{
+		ExecuteLightAction(xAction);
+		return;
+	}
+
+	// Enum order is OPEN_FRESH..CLOSE then BUILD tacked on after (see header) --
+	// the range end is GRAPH_BUILD, not GRAPH_CLOSE, so the whole contiguous
+	// block routes here.
+	if (xAction.m_eType >= Zenith_EditorActionType::GRAPH_OPEN_FRESH &&
+		xAction.m_eType <= Zenith_EditorActionType::GRAPH_BUILD)
+	{
+		ExecuteGraphAuthoringAction(xAction);
+		return;
+	}
+
+	if (xAction.m_eType >= Zenith_EditorActionType::SET_PARTICLE_CONFIG &&
+		xAction.m_eType <= Zenith_EditorActionType::SET_PARTICLE_EMITTING)
+	{
+		ExecuteParticleAction(xAction);
+		return;
+	}
+
+	if (xAction.m_eType >= Zenith_EditorActionType::ADD_COLLIDER_SHAPE &&
+		xAction.m_eType <= Zenith_EditorActionType::SET_MODEL_MATERIAL)
+	{
+		ExecuteColliderModelAction(xAction);
+		return;
+	}
+
+	if (xAction.m_eType >= Zenith_EditorActionType::SET_TERRAIN_MATERIAL &&
+		xAction.m_eType <= Zenith_EditorActionType::SET_TERRAIN_SPLATMAP_PATH)
+	{
+		ExecuteTerrainMaterialAction(xAction);
+		return;
+	}
+
+	if (xAction.m_eType >= Zenith_EditorActionType::CREATE_PREFAB_FROM_SELECTED &&
+		xAction.m_eType <= Zenith_EditorActionType::INSTANTIATE_PREFAB)
+	{
+		ExecutePrefabAction(xAction);
+		return;
+	}
+
+	switch (xAction.m_eType)
+	{
+	//--------------------------------------------------------------------------
+	// Scene operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::CREATE_SCENE:
+		xEditor.CreateNewScene(xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::SAVE_SCENE:
+		xEditor.SaveActiveScene(xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::UNLOAD_SCENE:
+		g_xEngine.Editor().UnloadActiveScene();
+		break;
+
+	//--------------------------------------------------------------------------
+	// Entity operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::CREATE_ENTITY:
+		g_xEngine.Editor().CreateEntity(xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::SELECT_ENTITY:
+		g_xEngine.Editor().SelectEntityByName(xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::SET_ENTITY_TRANSIENT:
+		g_xEngine.Editor().SetSelectedEntityTransient(xAction.m_bArg);
+		break;
+
+	//--------------------------------------------------------------------------
+	// Component operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::ADD_COMPONENT:
+		g_xEngine.Editor().AddComponentToSelected(xAction.m_szArg1.c_str());
+		break;
+
+	case Zenith_EditorActionType::ATTACH_TO_BONE:
+	{
+		Zenith_Entity* pxEntity = g_xEngine.Editor().GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for ATTACH_TO_BONE");
+		Zenith_SceneData* pxSceneData = pxEntity->GetSceneData();
+		Zenith_Assert(pxSceneData, "ATTACH_TO_BONE: selected entity has no scene");
+		// Resolve the skeleton target by name within the same scene (authored earlier
+		// in the step list).
+		Zenith_Entity xTarget = pxSceneData->FindEntityByName(xAction.m_szArg1.c_str());
+		Zenith_Assert(xTarget.IsValid(), "ATTACH_TO_BONE: target entity not found by name");
+		if (!pxEntity->HasComponent<Zenith_AttachmentComponent>())
+		{
+			pxEntity->AddComponent<Zenith_AttachmentComponent>();
+		}
+		const Zenith_Maths::Matrix4 xOffset = BuildEulerOffsetMatrix(
+			xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2],
+			xAction.m_afArgs[3], xAction.m_afArgs[4], xAction.m_afArgs[5]);
+		pxEntity->GetComponent<Zenith_AttachmentComponent>().AttachToBone(
+			xTarget, xAction.m_szArg2.c_str(), xOffset);
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// Script operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::ATTACH_GRAPH:  g_xEngine.Editor().AttachGraphToSelected(xAction.m_szArg1.c_str()); break;
 
 	//--------------------------------------------------------------------------
 	// Scene loading operations

@@ -438,6 +438,33 @@ private:
 	// PRNG so the engine has one sampling idiom, not two.
 	float SampleUnit() const;
 
+	// ---- GetRandomReachablePointInRadius helpers ----
+	// Split out of the sampling function so each phase is independently named
+	// and testable; see the .cpp for the phase-by-phase rationale.
+
+	// Phase 2: BFS over polygon adjacency from uCenterPoly, bounded by the
+	// horizontal disc of radius sqrt(fRadiusSq) around xCenter. Appends every
+	// unblocked polygon whose 2D footprint overlaps the disc to axReachableOut.
+	// Returns false if the BFS's soft visit cap was hit (still usable -- the
+	// caller samples from whatever partial set was collected).
+	bool CollectReachablePolygons(uint32_t uCenterPoly, const Zenith_Maths::Vector3& xCenter,
+		float fRadiusSq, Zenith_Vector<uint32_t>& axReachableOut) const;
+
+	// Phase 3: cumulative per-polygon area over axReachable, for area-weighted
+	// polygon selection. Returns the total area (0 if every polygon is
+	// degenerate); afCumulativeAreaOut is parallel to axReachable.
+	float BuildAreaCDF(const Zenith_Vector<uint32_t>& axReachable,
+		Zenith_Vector<float>& afCumulativeAreaOut) const;
+
+	// Phase 4 inner step: fan-triangulate xPoly around its first vertex,
+	// weighted-pick a triangle by area, then uniform-sample a barycentric
+	// point inside it. Returns false only for a degenerate (zero-area) polygon.
+	// A reusable primitive -- nothing here is specific to reachability
+	// sampling, so decal placement / spawn scattering / vegetation seeding
+	// can call it directly instead of re-deriving fan-triangulation sampling.
+	bool SampleUniformPointInPolygon(const Zenith_NavMeshPolygon& xPoly,
+		Zenith_Maths::Vector3& xOut) const;
+
 	// Bounding box
 	Zenith_Maths::Vector3 m_xBoundsMin;
 	Zenith_Maths::Vector3 m_xBoundsMax;

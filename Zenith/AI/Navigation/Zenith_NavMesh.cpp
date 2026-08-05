@@ -33,6 +33,25 @@ namespace
 	constexpr uint64_t ulNAVMESH_MIN_POLYGON_BYTES = 68ull;
 
 	constexpr uint64_t ulNAVMESH_VERTEX_BYTES = 3ull * sizeof(float);
+
+	// Shared by GetRandomReachablePointInRadius's polygon pick (Phase 4) and
+	// SampleUniformPointInPolygon's triangle pick: walk a cumulative-weight
+	// array and return the index of the first entry the scaled sample lands
+	// in. fPick = SampleUnit() * fTotal is always < the final cumulative value
+	// (SampleUnit is exclusive of 1.0), so the fallback below is unreachable
+	// in practice; it defaults to index 0 rather than GetSize()-1 to match
+	// both call sites' pre-extraction behaviour exactly.
+	uint32_t PickWeightedIndex(const Zenith_Vector<float>& afCumulative, float fPick)
+	{
+		for (uint32_t i = 0; i < afCumulative.GetSize(); ++i)
+		{
+			if (fPick <= afCumulative.Get(i))
+			{
+				return i;
+			}
+		}
+		return 0;
+	}
 }
 
 // ========== Zenith_NavMeshPolygon ==========
@@ -921,42 +940,16 @@ float Zenith_NavMesh::SampleUnit() const
 	return static_cast<float>(ulValue >> 40) * (1.0f / 16777216.0f);
 }
 
-bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3& xCenter,
-	float fRadius,
-	Zenith_Maths::Vector3& xOutPoint,
-	uint32_t uMaxAttempts) const
+bool Zenith_NavMesh::CollectReachablePolygons(uint32_t uCenterPoly, const Zenith_Maths::Vector3& xCenter,
+	float fRadiusSq, Zenith_Vector<uint32_t>& axReachableOut) const
 {
-	if (fRadius <= 0.0f) return false;
-	if (m_axPolygons.GetSize() == 0) return false;
-
-	// ---- Phase 1: locate the source polygon ---------------------------------
-	// Use a search distance comfortably larger than the requested radius so a
-	// caller standing slightly off-mesh still finds a starting island.
-	uint32_t uCenterPoly = UINT32_MAX;
-	Zenith_Maths::Vector3 xNearestOnMesh;
-	const float fLocateMaxDist = fRadius + 5.0f;
-	if (!FindNearestPolygon(xCenter, uCenterPoly, xNearestOnMesh, fLocateMaxDist))
-	{
-		return false;
-	}
-
-	// ---- Phase 2: BFS over polygon adjacency, bounded by horizontal radius --
 	// Visited as parallel array of bools (not a hash set) for speed.
 	const uint32_t uPolyCount = m_axPolygons.GetSize();
 	Zenith_Vector<bool> axVisited;
 	axVisited.Reserve(uPolyCount);
 	for (uint32_t i = 0; i < uPolyCount; ++i) axVisited.PushBack(false);
 
-	Zenith_Vector<uint32_t> axReachable;       // polygons reachable within fRadius
-	Zenith_Vector<uint32_t> axQueue;            // BFS frontier
-
-	const float fRadiusSq = fRadius * fRadius;
-	auto fnHorizontalDistSq = [](const Zenith_Maths::Vector3& a, const Zenith_Maths::Vector3& b)
-	{
-		const float fDx = a.x - b.x;
-		const float fDz = a.z - b.z;
-		return fDx * fDx + fDz * fDz;
-	};
+	Zenith_Vector<uint32_t> axQueue;   // BFS frontier
 
 	// 2D AABB-vs-disc test. Returns true when ANY part of the polygon's
 	// horizontal footprint sits inside the sphere of `fRadius` around
@@ -966,7 +959,7 @@ bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3
 	// synthetic flat navmesh is one 300 m quad centred far from any
 	// gameplay-positioned agent. With this test the priest's 15 m
 	// patrol radius still finds the one-and-only flat polygon as
-	// reachable, sampling continues normally, and Phase 4's per-sample
+	// reachable, sampling continues normally, and the caller's per-sample
 	// distance check enforces the actual disc constraint.
 	auto fnPolygonOverlapsDisc = [&](uint32_t uPolyIdx) -> bool
 	{
@@ -985,7 +978,7 @@ bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3
 
 	// Soft visit-count cap as a runaway-BFS fallback. Hitting this is a
 	// warning, not a hard correctness limit — we just stop expanding the
-	// frontier and rejection-sample within whatever we have so far.
+	// frontier and the caller rejection-samples within whatever we have so far.
 	constexpr uint32_t uMAX_BFS_VISITS = 256;
 	uint32_t uVisitCount = 0;
 
@@ -1008,7 +1001,7 @@ bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3
 		// door collider.
 		if (!xPoly.IsBlocked() && fnPolygonOverlapsDisc(uPoly))
 		{
-			axReachable.PushBack(uPoly);
+			axReachableOut.PushBack(uPoly);
 		}
 
 		// Expand to neighbours whose footprint also overlaps the disc. The
@@ -1038,7 +1031,93 @@ bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3
 		Zenith_Log(LOG_CATEGORY_AI,
 			"NavMesh::GetRandomReachablePointInRadius hit BFS visit cap (%u). "
 			"Sampling within partial reachable set.", uMAX_BFS_VISITS);
+		return false;
 	}
+	return true;
+}
+
+float Zenith_NavMesh::BuildAreaCDF(const Zenith_Vector<uint32_t>& axReachable,
+	Zenith_Vector<float>& afCumulativeAreaOut) const
+{
+	afCumulativeAreaOut.Reserve(axReachable.GetSize());
+	float fTotalArea = 0.0f;
+	for (uint32_t i = 0; i < axReachable.GetSize(); ++i)
+	{
+		const uint32_t uIdx = axReachable.Get(i);
+		const float fArea = m_axPolygons.Get(uIdx).m_fArea;
+		// Guard zero-area polys (degenerate triangles) — skip from sampling
+		// by treating them as zero weight, which they already are.
+		fTotalArea += fArea;
+		afCumulativeAreaOut.PushBack(fTotalArea);
+	}
+	return fTotalArea;
+}
+
+bool Zenith_NavMesh::SampleUniformPointInPolygon(const Zenith_NavMeshPolygon& xPoly,
+	Zenith_Maths::Vector3& xOut) const
+{
+	const uint32_t uVerts = xPoly.m_axVertexIndices.GetSize();
+	if (uVerts < 3) return false;
+
+	// Fan-triangulate around vertex 0; weight per-triangle area.
+	const Zenith_Maths::Vector3& xV0 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(0));
+	Zenith_Vector<float> afTriCumArea;
+	afTriCumArea.Reserve(uVerts - 2);
+	float fTriTotal = 0.0f;
+	for (uint32_t t = 1; t + 1 < uVerts; ++t)
+	{
+		const Zenith_Maths::Vector3& xVa = m_axVertices.Get(xPoly.m_axVertexIndices.Get(t));
+		const Zenith_Maths::Vector3& xVb = m_axVertices.Get(xPoly.m_axVertexIndices.Get(t + 1));
+		const Zenith_Maths::Vector3 xCross = glm::cross(xVa - xV0, xVb - xV0);
+		const float fTriArea = 0.5f * glm::length(xCross);
+		fTriTotal += fTriArea;
+		afTriCumArea.PushBack(fTriTotal);
+	}
+
+	if (fTriTotal <= 0.0f) return false;
+
+	// Pick a triangle, weighted by area.
+	const uint32_t uTriIdx = PickWeightedIndex(afTriCumArea, SampleUnit() * fTriTotal);
+
+	// Uniform barycentric sample inside the triangle.
+	const Zenith_Maths::Vector3& xVa = m_axVertices.Get(xPoly.m_axVertexIndices.Get(uTriIdx + 1));
+	const Zenith_Maths::Vector3& xVb = m_axVertices.Get(xPoly.m_axVertexIndices.Get(uTriIdx + 2));
+	float fU = SampleUnit();
+	float fV = SampleUnit();
+	if (fU + fV > 1.0f)
+	{
+		// Fold back into the triangle (Turk's barycentric trick).
+		fU = 1.0f - fU;
+		fV = 1.0f - fV;
+	}
+	const float fW = 1.0f - fU - fV;
+	xOut = fW * xV0 + fU * xVa + fV * xVb;
+	return true;
+}
+
+bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3& xCenter,
+	float fRadius,
+	Zenith_Maths::Vector3& xOutPoint,
+	uint32_t uMaxAttempts) const
+{
+	if (fRadius <= 0.0f) return false;
+	if (m_axPolygons.GetSize() == 0) return false;
+
+	// ---- Phase 1: locate the source polygon ---------------------------------
+	// Use a search distance comfortably larger than the requested radius so a
+	// caller standing slightly off-mesh still finds a starting island.
+	uint32_t uCenterPoly = UINT32_MAX;
+	Zenith_Maths::Vector3 xNearestOnMesh;
+	const float fLocateMaxDist = fRadius + 5.0f;
+	if (!FindNearestPolygon(xCenter, uCenterPoly, xNearestOnMesh, fLocateMaxDist))
+	{
+		return false;
+	}
+
+	// ---- Phase 2: BFS over polygon adjacency, bounded by horizontal radius --
+	const float fRadiusSq = fRadius * fRadius;
+	Zenith_Vector<uint32_t> axReachable;   // polygons reachable within fRadius
+	CollectReachablePolygons(uCenterPoly, xCenter, fRadiusSq, axReachable);
 
 	if (axReachable.GetSize() == 0)
 	{
@@ -1049,82 +1128,26 @@ bool Zenith_NavMesh::GetRandomReachablePointInRadius(const Zenith_Maths::Vector3
 
 	// ---- Phase 3: build cumulative area weights for polygon selection ------
 	Zenith_Vector<float> afCumulativeArea;
-	afCumulativeArea.Reserve(axReachable.GetSize());
-	float fTotalArea = 0.0f;
-	for (uint32_t i = 0; i < axReachable.GetSize(); ++i)
-	{
-		const uint32_t uIdx = axReachable.Get(i);
-		const float fArea = m_axPolygons.Get(uIdx).m_fArea;
-		// Guard zero-area polys (degenerate triangles) — skip from sampling
-		// by treating them as zero weight, which they already are.
-		fTotalArea += fArea;
-		afCumulativeArea.PushBack(fTotalArea);
-	}
-
+	const float fTotalArea = BuildAreaCDF(axReachable, afCumulativeArea);
 	if (fTotalArea <= 0.0f) return false;
 
 	// ---- Phase 4: rejection sampling --------------------------------------
+	auto fnHorizontalDistSq = [](const Zenith_Maths::Vector3& a, const Zenith_Maths::Vector3& b)
+	{
+		const float fDx = a.x - b.x;
+		const float fDz = a.z - b.z;
+		return fDx * fDx + fDz * fDz;
+	};
+
 	for (uint32_t uAttempt = 0; uAttempt < uMaxAttempts; ++uAttempt)
 	{
 		// Pick a polygon weighted by area.
-		const float fPolyPick = SampleUnit() * fTotalArea;
-		uint32_t uPickedPolyArrayIdx = 0;
-		for (uint32_t i = 0; i < afCumulativeArea.GetSize(); ++i)
-		{
-			if (fPolyPick <= afCumulativeArea.Get(i))
-			{
-				uPickedPolyArrayIdx = i;
-				break;
-			}
-		}
+		const uint32_t uPickedPolyArrayIdx = PickWeightedIndex(afCumulativeArea, SampleUnit() * fTotalArea);
 		const uint32_t uPolyIdx = axReachable.Get(uPickedPolyArrayIdx);
 		const Zenith_NavMeshPolygon& xPoly = m_axPolygons.Get(uPolyIdx);
 
-		const uint32_t uVerts = xPoly.m_axVertexIndices.GetSize();
-		if (uVerts < 3) continue;
-
-		// Fan-triangulate around vertex 0; weight per-triangle area.
-		const Zenith_Maths::Vector3& xV0 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(0));
-		Zenith_Vector<float> afTriCumArea;
-		afTriCumArea.Reserve(uVerts - 2);
-		float fTriTotal = 0.0f;
-		for (uint32_t t = 1; t + 1 < uVerts; ++t)
-		{
-			const Zenith_Maths::Vector3& xVa = m_axVertices.Get(xPoly.m_axVertexIndices.Get(t));
-			const Zenith_Maths::Vector3& xVb = m_axVertices.Get(xPoly.m_axVertexIndices.Get(t + 1));
-			const Zenith_Maths::Vector3 xCross = glm::cross(xVa - xV0, xVb - xV0);
-			const float fTriArea = 0.5f * glm::length(xCross);
-			fTriTotal += fTriArea;
-			afTriCumArea.PushBack(fTriTotal);
-		}
-
-		if (fTriTotal <= 0.0f) continue;
-
-		// Pick a triangle.
-		const float fTriPick = SampleUnit() * fTriTotal;
-		uint32_t uTriIdx = 0;
-		for (uint32_t i = 0; i < afTriCumArea.GetSize(); ++i)
-		{
-			if (fTriPick <= afTriCumArea.Get(i))
-			{
-				uTriIdx = i;
-				break;
-			}
-		}
-
-		// Uniform barycentric sample inside the triangle.
-		const Zenith_Maths::Vector3& xVa = m_axVertices.Get(xPoly.m_axVertexIndices.Get(uTriIdx + 1));
-		const Zenith_Maths::Vector3& xVb = m_axVertices.Get(xPoly.m_axVertexIndices.Get(uTriIdx + 2));
-		float fU = SampleUnit();
-		float fV = SampleUnit();
-		if (fU + fV > 1.0f)
-		{
-			// Fold back into the triangle (Turk's barycentric trick).
-			fU = 1.0f - fU;
-			fV = 1.0f - fV;
-		}
-		const float fW = 1.0f - fU - fV;
-		const Zenith_Maths::Vector3 xCandidate = fW * xV0 + fU * xVa + fV * xVb;
+		Zenith_Maths::Vector3 xCandidate;
+		if (!SampleUniformPointInPolygon(xPoly, xCandidate)) continue;
 
 		// Snap to the navmesh surface.
 		Zenith_Maths::Vector3 xSnapped;
